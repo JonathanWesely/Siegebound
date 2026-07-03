@@ -1,6 +1,7 @@
 # Siegebound — Game Design Document
 
 <!-- v2 (2026-07-02). Changes from v1: 50-card deck with duplicates + per-card copy caps; 6-card hand + next-card preview; card pool expanded 6 → 28 (new towers, hero upgrades, spells, spawners); Miner rebalanced (economy payback was too fast); unit targeting profiles replace hero-first priority (kiting exploit); overtime income; premium stylized art bar; milestones restructured 6 → 8. Written for the agent team: concrete numbers over adjectives, acceptance criteria per mechanic, a tiny Milestone 1, and an explicit Out of Scope. Numbers are first-pass and meant to be tuned during playtests. -->
+<!-- v2.1 (2026-07-03). M1 playtest round-1: baseline combat legibility pulled forward from M7 into M1 — visible hero swing animation + per-hit impact feedback (§3.1), units telegraph attacks (§3.8), floating castle HP bars (§3.9). The full §6 juice checklist remains M7. -->
 
 ## 1. Overview
 - **Genre:** Real-time 3D card-battler / hero-action / lane-strategy hybrid.
@@ -35,6 +36,7 @@ One subsection per mechanic. Acceptance criteria are how QA verifies it.
 ### 3.1 Hero Movement & Combat
 - WASD moves the hero; mouse controls camera/facing. Move speed **500 units/s**, sprint (hold Shift) **750 units/s**.
 - LMB performs a melee attack: **20 damage** to **all** enemies in a **150-unit** forward arc (**60°** cone), **0.5 s** cooldown.
+- **Attack feedback (M1+, playtest 2026-07-03):** every swing plays a visible attack animation, and every damaging hit spawns an impact effect — damage must be readable without logs. (Baseline only; the full §6 juice checklist remains M7.)
 - Hero has **200 HP** base (modifiable by upgrades, §3.10). Out-of-combat regeneration: **5 HP/s** after 8 s without taking or dealing damage.
 - On death, the hero respawns at its own castle after **5 s** (hero death does not lose the match — only castle destruction does). Upgrades persist through death.
 - **Acceptance:** hero moves at 500 u/s (750 sprinting); an LMB swing damages every enemy unit within 150 units and inside the 60° cone for 20 HP; a target at 200 units is unaffected; hero at 0 HP disappears and respawns at its castle within 5–6 s with all purchased upgrades intact; a hero at 150/200 HP untouched for 8 s begins regenerating 5 HP/s.
@@ -99,11 +101,13 @@ Every unit runs the same state machine (**Advance → Acquire → Attack → Rea
 - **Advance:** move toward the enemy castle along the shortest valid path (UE navigation).
 - **Attack:** in range, deal damage on the unit's cadence.
 - **Reacquire/leash:** if the target dies or moves beyond **900 units**, resume Advance. (Deliberate change from v1: no hero-first priority — a sprinting hero must not be able to kite entire waves off-lane.)
+- **Attack telegraph (M1+, playtest 2026-07-03):** every unit visibly telegraphs its attack plus an impact effect on hit. Blockout tier: a procedural lunge toward the target is acceptable until the M7 skeletal/animation pass.
 - **Acceptance:** a Standard unit walks toward the enemy castle, engages the nearest enemy entering 600, and resumes advancing when it dies; a Siege unit walks past enemy units without engaging and attacks the first tower/wall in its path; a Support unit follows friendlies and heals the nearest damaged one; a unit whose target sprints 900+ units away disengages and resumes Advance.
 
 ### 3.9 Castle & Win Condition
 - Each castle has **2000 HP**, is destructible, and does not attack. Damage model per §3.0 (melee 100% / Siege 200% / projectiles+spells 50%).
 - **Castle crumble states:** visible damage stages at **75% / 50% / 25%** HP (mesh/material swap + debris FX) — legibility and drama.
+- **Castle HP bar (M1+, playtest 2026-07-03):** each castle shows a floating HP bar above its mesh — live-updating on every HP change, hidden on destruction, restored full on Play Again. (The §7 top-of-HUD castle bars remain the M2+ HUD spec; this floating bar is the in-world baseline.)
 - When a castle reaches 0 HP the match ends: Victory/Defeat screen with **Play Again** (full state reset: gold, deck, hand, units, buildings, upgrades, castle HP, match clock).
 - **Acceptance:** dealing 2000 damage destroys the castle and triggers the correct end screen; an Archer volley (projectile) deals half its listed damage to the castle while an Ogre (Siege) deals double; crumble visuals appear at each threshold; Play Again restores every value in this document to its starting state; a match cannot end any other way.
 

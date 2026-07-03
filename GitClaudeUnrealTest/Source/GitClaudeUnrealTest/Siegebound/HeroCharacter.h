@@ -5,10 +5,14 @@
 #include "CoreMinimal.h"
 #include "GitClaudeUnrealTestCharacter.h"
 #include "Siegebound/TeamId.h"
+#include "Templates/SubclassOf.h"
 #include "HeroCharacter.generated.h"
 
+class UAnimMontage;
+class UCameraShakeBase;
 class UInputAction;
 class UInputMappingContext;
+class UNiagaraSystem;
 class AHeroCharacter;
 
 /**
@@ -29,6 +33,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnHeroDied, AHeroCharacter*, DeadHe
  *  - Melee on IA_Attack: MeleeDamage to ALL enemy ITeamAgent actors within
  *    MeleeRange AND inside a ±MeleeHalfAngleDegrees forward cone, rate-limited
  *    to one swing per MeleeCooldown seconds. No friendly fire.
+ *  - Attack feedback (TASK-016, playtest R1): AttackMontage on every
+ *    non-suppressed swing that passes the cooldown (hit or whiff), HitImpactEffect
+ *    per enemy actually damaged, HitCameraShake once per swing that damaged >= 1
+ *    enemy. Purely visual — damage timing/numbers never depend on any of it; all
+ *    four assets are optional (wired on BP_HeroCharacter in TASK-017).
  *  - 200 max HP; regenerates RegenRate HP/s starting RegenDelay seconds after
  *    last taking OR dealing damage, stopping at max.
  *  - At 0 HP: hidden, input + collision disabled, OnHeroDied broadcast once.
@@ -167,6 +176,36 @@ protected:
 	/** Minimum seconds between melee swings (GDD §3.1: 0.5). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Combat", meta = (ClampMin = "0"))
 	float MeleeCooldown = 0.5f;
+
+	/**
+	 *  Montage played on EVERY swing that passes the cooldown gate — hit or whiff —
+	 *  while melee is not suppressed. VISUAL ONLY: damage is applied immediately in
+	 *  DoMeleeAttack and never gated on anim notifies (playtest R1 finding 1).
+	 *  Wired on BP_HeroCharacter in TASK-017 (/Game/Variant_Combat/Anims/AM_ComboAttack
+	 *  or AM_ChargedAttack); null-safe — unset means no montage, damage unchanged.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Combat|Feedback")
+	TObjectPtr<UAnimMontage> AttackMontage;
+
+	/** Optional montage section to start at so exactly one swing plays (chosen in TASK-017); NAME_None plays from the start. */
+	UPROPERTY(EditAnywhere, Category = "Combat|Feedback")
+	FName AttackMontageSection = NAME_None;
+
+	/**
+	 *  Impact effect spawned once per enemy actually damaged this swing, at the closest
+	 *  point on that enemy's collision to the hero (fallback: its actor location).
+	 *  Wired in TASK-017 (/Game/Variant_Combat/VFX/NS_Damage); null-safe.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Combat|Feedback")
+	TObjectPtr<UNiagaraSystem> HitImpactEffect;
+
+	/**
+	 *  Camera shake played once per swing on the local player controller when the
+	 *  swing damaged >= 1 enemy, via ClientStartCameraShake. Wired in TASK-017
+	 *  (/Game/Variant_Combat/Blueprints/BP_CameraShake_Hit_Enemy); null-safe.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Combat|Feedback")
+	TSubclassOf<UCameraShakeBase> HitCameraShake;
 
 	/** Maximum hit points (GDD §3.1: 200). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Hero", meta = (ClampMin = "1"))

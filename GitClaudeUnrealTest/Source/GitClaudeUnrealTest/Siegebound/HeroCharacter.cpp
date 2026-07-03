@@ -2,6 +2,8 @@
 
 #include "Siegebound/HeroCharacter.h"
 
+#include "Animation/AnimMontage.h"
+#include "Camera/CameraShakeBase.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
@@ -13,6 +15,8 @@
 #include "GitClaudeUnrealTest.h"
 #include "InputMappingContext.h"
 #include "Kismet/GameplayStatics.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 
 namespace
 {
@@ -144,6 +148,17 @@ void AHeroCharacter::DoMeleeAttack()
 	}
 	LastMeleeTime = Now;
 
+	// swing feedback (TASK-016, playtest R1 finding 1): montage on EVERY swing that
+	// passes the cooldown — hit or whiff. Suppressed/dead swings returned above and
+	// never reach here. VISUAL ONLY: damage below is applied immediately this frame
+	// and never waits on anim notifies. Null-safe — nothing is wired until TASK-017.
+	// PlayAnimMontage itself jumps to the start section when one is set
+	// (NAME_None plays from the montage start).
+	if (AttackMontage)
+	{
+		PlayAnimMontage(AttackMontage, 1.0f, AttackMontageSection);
+	}
+
 	const FVector MyLocation = GetActorLocation();
 
 	// facing in the horizontal plane (character yaw; bOrientRotationToMovement keeps pitch/roll at 0)
@@ -161,6 +176,11 @@ void AHeroCharacter::DoMeleeAttack()
 	UGameplayStatics::GetAllActorsWithInterface(World, UTeamAgent::StaticClass(), TeamAgents);
 
 	bool bDealtDamage = false;
+
+	// TASK-016 feedback-only tracking: true when >= 1 target's TakeDamage actually
+	// applied damage (receivers return 0 for ignored hits). Deliberately separate from
+	// bDealtDamage, which stays byte-identical to M1 for the regen re-arm below.
+	bool bAnyEnemyDamaged = false;
 
 	for (AActor* Target : TeamAgents)
 	{
@@ -206,14 +226,38 @@ void AHeroCharacter::DoMeleeAttack()
 		}
 
 		// hero as instigator/causer so receivers (castle, units) can attribute team (GDD §3.0)
-		UGameplayStatics::ApplyDamage(Target, MeleeDamage, GetController(), this, UDamageType::StaticClass());
+		const float DamageApplied = UGameplayStatics::ApplyDamage(Target, MeleeDamage, GetController(), this, UDamageType::StaticClass());
 		bDealtDamage = true;
+
+		// impact feedback (TASK-016): puff at the exact point we struck — ClosestPoint is
+		// the closest point on the target's collision, already fallen back to the actor
+		// location above when no usable collision exists — but only for targets that
+		// really took damage (e.g. a destroyed castle returns 0 and gets no puff).
+		if (DamageApplied > 0.f)
+		{
+			bAnyEnemyDamaged = true;
+			if (HitImpactEffect)
+			{
+				UNiagaraFunctionLibrary::SpawnSystemAtLocation(World, HitImpactEffect, ClosestPoint);
+			}
+		}
 	}
 
 	// dealing damage re-arms the out-of-combat regen delay (GDD §3.1); a whiff does not
 	if (bDealtDamage)
 	{
 		LastCombatTime = Now;
+	}
+
+	// hit feedback (TASK-016): one camera shake per swing when >= 1 enemy was actually
+	// damaged, on the local player controller (M1 is local-only; an AI/unpossessed hero
+	// simply has no APlayerController and no shake). Null-safe until TASK-017 wires it.
+	if (bAnyEnemyDamaged && HitCameraShake)
+	{
+		if (APlayerController* PC = Cast<APlayerController>(GetController()))
+		{
+			PC->ClientStartCameraShake(HitCameraShake);
+		}
 	}
 }
 

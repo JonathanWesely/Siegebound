@@ -54,6 +54,21 @@ Owned by the **manager** agent. All agents MUST follow these. If a needed patter
 - Blue placement half: X <= 0; Red half: X >= 0
 - Level marker actors are TargetPoints named `<Purpose>Anchor_<Team>`: `CastleAnchor_Blue`, `CastleAnchor_Red`
 
+## Delegates (C++)
+- Pattern: `FOn<Owner><Event>`, declared in the owner's header; the UPROPERTY(BlueprintAssignable) member is named `On<Owner><Event>`. Existing: `FOnCastleDestroyed`, `FOnGoldChanged`, `FOnCastleHPChanged(float CurrentHP, float MaxHP)`
+- Broadcast on every ACTUAL value change and on reset paths; never on refused/ignored mutations (e.g., friendly-fire damage)
+- UI consumers must seed from a getter first, THEN bind (qa/TASK-005-report.md major 2 — a bind-only widget created at a pinned value stays stale)
+
+## Template-donor rule (Variant_* and other template Content)
+- Template content is READ-ONLY. Reuse it exactly two ways: (a) direct soft-reference (montages, Niagara systems, camera shakes, anim BPs), or (b) duplicate into a /Game/ project folder and modify only the duplicate. Never edit a donor in place.
+- UMG: MCP tooling cannot author widget trees from scratch — every new widget starts as a duplicate of a donor (e.g., `/Game/Variant_Combat/UI/UI_LifeBar`, `/Game/Input/Touch/UI_TouchSimple`) and is rewired incrementally.
+- BP function params: enum-typed params are impossible via MCP — use byte (uint8) or float params instead.
+- Approved donors so far: `AM_ComboAttack` / `AM_ChargedAttack` / `ABP_Manny_Combat` (hero attack anim), `NS_Damage` (hit impact VFX), `BP_CameraShake_Hit_Enemy` (hit shake), `UI_LifeBar` (health bars) — all under /Game/Variant_Combat/.
+
+## Widgets with C++ bases
+- Pattern: `U<Name>Widget` (UUserWidget subclass) in Source/GitClaudeUnrealTest/Siegebound/, files `<Name>Widget.h/.cpp`; the UMG asset `WBP_<Name>` in Content/UI/ is reparented to it. Widget-facing events are BlueprintImplementableEvents with float/byte params only. Example: `UCastleHealthBarWidget` ↔ `/Game/UI/WBP_CastleHealthBar`
+- UWidgetComponents on actors are named `<Purpose>Widget` (e.g., `HPBarWidget` on `ACastle`)
+
 ## Numbering
 Variants use two digits: `SM_Rock_01`, `SM_Rock_02`
 

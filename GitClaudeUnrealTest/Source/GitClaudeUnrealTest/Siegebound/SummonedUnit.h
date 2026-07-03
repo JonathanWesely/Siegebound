@@ -10,6 +10,7 @@
 
 class AAIController;
 class UDataTable;
+class UNiagaraSystem;
 class UStaticMeshComponent;
 
 /**
@@ -53,6 +54,17 @@ enum class ESummonedUnitState : uint8
  *  - Destructible: at 0 HP the actor is destroyed (units don't respawn).
  *  - VisualMesh (static mesh on the capsule) is intentionally left without a
  *    mesh in C++ — the blueprint child BP_Unit_<CardID> assigns it (TASK-010).
+ *  - Attack feedback (TASK-020, blockout tier — no skeletal rig until M7):
+ *    each cadence hit runs ONE lunge cycle on VisualMesh — relative location
+ *    driven along the capsule's LOCAL +X (actor forward; relative location is
+ *    expressed in the parent capsule's axes, so the mesh's own -90° import-fix
+ *    yaw per handoffs/TASK-014.md is irrelevant) out AttackLungeDistance and
+ *    back, sine-eased, over AttackLungeDuration clamped to 0.8 × Cadence. The
+ *    BP-authored rest pose is cached once at BeginPlay and restored EXACTLY at
+ *    cycle end, on leaving Attack, and on death — zero drift. Each landed hit
+ *    also spawns AttackImpactEffect at the contact point (closest point on the
+ *    target's collision; fallback: target location). Purely visual — damage
+ *    numbers/timing are untouched.
  *
  *  Spawners (TASK-007): prefer SpawnActorDeferred → InitUnit(Team, CardID) →
  *  FinishSpawning, so BeginPlay binds the right card. InitUnit also works
@@ -73,6 +85,13 @@ public:
 
 	/** Applies incoming damage (no friendly fire, GDD §3.0) and destroys the unit at 0 HP. */
 	virtual float TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
+
+	/**
+	 *  Drives ONLY the attack-lunge visual (TASK-020). The state machine stays
+	 *  timer-driven (TASK-004: never per-tick); tick starts disabled and is
+	 *  enabled solely while a lunge cycle is animating.
+	 */
+	virtual void Tick(float DeltaSeconds) override;
 
 	/**
 	 *  Spawner hook (TASK-007): sets the team and the card row this unit's stats
@@ -148,6 +167,33 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|AI", meta = (ClampMin = "0.05"))
 	float StateCheckInterval = 0.25f;
 
+	/**
+	 *  Blockout "attack animation" (TASK-020): how far VisualMesh lunges along the
+	 *  capsule's local +X (actor forward) on each cadence hit. Purely visual —
+	 *  damage math is untouched. ~0 disables the lunge; negative recoils backward.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Combat|Feedback")
+	float AttackLungeDistance = 40.f;
+
+	/**
+	 *  Seconds for one out-and-back lunge cycle, sine-eased. Clamped at cycle
+	 *  start to 0.8 × Cadence so the mesh is guaranteed back at rest before the
+	 *  next hit (hits are never less than Cadence apart). <= 0 disables the lunge.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Combat|Feedback")
+	float AttackLungeDuration = 0.3f;
+
+	/**
+	 *  Impact puff spawned at the contact point (closest point on the target's
+	 *  collision to this unit; fallback: target location) on each damage
+	 *  application (TASK-020). Defaults to the READ-ONLY Variant_Combat donor
+	 *  NS_Damage — referenced, never edited (CONVENTIONS template-donor rule).
+	 *  Resolved and cached ONCE at BeginPlay — no per-attack sync-load hitch; a
+	 *  missing asset is logged once and means no VFX, never a crash.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Combat|Feedback")
+	TSoftObjectPtr<UNiagaraSystem> AttackImpactEffect;
+
 private:
 
 	/**
@@ -187,6 +233,24 @@ private:
 	/** Yaws the unit toward the target (cosmetic, while attacking). */
 	void FaceTarget(const AActor* Target);
 
+	/**
+	 *  Starts ONE lunge cycle from the exact cached rest pose (TASK-020).
+	 *  Cycle duration = min(AttackLungeDuration, 0.8 × Cadence). No-op when the
+	 *  rest pose is uncached, VisualMesh is missing, or the cycle is degenerate
+	 *  (~0 distance or <= 0 duration).
+	 */
+	void StartAttackLunge();
+
+	/**
+	 *  Ends any lunge: restores VisualMesh to EXACTLY the cached rest pose and
+	 *  disables tick. Idempotent — called at cycle end, on leaving Attack
+	 *  (EnterAdvance/EnterIdle), and on death, guaranteeing zero drift.
+	 */
+	void StopAttackLunge();
+
+	/** Per-frame lunge driver (runs only while a cycle is active): Base + Distance · sin(π · elapsed / duration) along the capsule's local +X. */
+	void UpdateLunge(float DeltaSeconds);
+
 	/** Convenience: the possessing AAIController, or nullptr. */
 	AAIController* GetAIController() const;
 
@@ -207,6 +271,14 @@ private:
 	 *  Falls back to the actor origin when no usable collision exists.
 	 */
 	static float GetDistanceToTarget(const FVector& From, const AActor* Target);
+
+	/**
+	 *  As above, additionally returning the closest point itself — the impact-VFX
+	 *  contact point (TASK-020). OutClosestPoint falls back to the target's actor
+	 *  location when no usable collision exists (ZeroVector only for a null target,
+	 *  in which case the returned distance is float-max and callers bail).
+	 */
+	static float GetDistanceToTarget(const FVector& From, const AActor* Target, FVector& OutClosestPoint);
 
 	/**
 	 *  Resolves the attacking team from a damage event — same chain as
@@ -247,6 +319,28 @@ private:
 	/** Goal of the last MoveToActor request — avoids re-pathing every state check. */
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> CurrentMoveGoal;
+
+	/**
+	 *  Hard cache of AttackImpactEffect, resolved ONCE at BeginPlay (TASK-020) —
+	 *  keeps the Niagara system alive against GC and avoids per-attack sync loads.
+	 */
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraSystem> CachedAttackImpactEffect;
+
+	/** BP-authored VisualMesh rest pose (RELATIVE location), cached once at BeginPlay — the lunge only ever writes Base + f(elapsed) or exactly Base. */
+	FVector VisualMeshBaseRelativeLocation = FVector::ZeroVector;
+
+	/** True once the rest pose was cached at BeginPlay; the lunge never runs without it. */
+	bool bVisualMeshBaseCached = false;
+
+	/** True while a lunge cycle is animating — actor tick is enabled exactly then. */
+	bool bLungeActive = false;
+
+	/** Seconds into the current lunge cycle. */
+	float LungeElapsed = 0.f;
+
+	/** Duration of the current cycle: min(AttackLungeDuration, 0.8 × Cadence), fixed at cycle start. */
+	float LungeCycleDuration = 0.f;
 
 	/** True once the card stats were bound from DT_Cards; the state machine only runs afterwards. */
 	bool bStatsLoaded = false;

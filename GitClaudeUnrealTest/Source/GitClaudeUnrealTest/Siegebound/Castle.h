@@ -12,6 +12,8 @@ class ACastle;
 class UMaterialInterface;
 class UStaticMesh;
 class UStaticMeshComponent;
+class UUserWidget;
+class UWidgetComponent;
 
 /**
  *  Broadcast exactly once when a castle's HP reaches 0 (GDD §3.9).
@@ -20,6 +22,16 @@ class UStaticMeshComponent;
  *  subscribes to this on every ACastle at BeginPlay.
  */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCastleDestroyed, ACastle*, DestroyedCastle, ETeamId, CastleTeam);
+
+/**
+ *  Broadcast on every ACTUAL CurrentHP change (playtest R1 finding 2, TASK-018):
+ *  after damage is applied in TakeDamage — NEVER for ignored friendly fire,
+ *  which changes nothing — plus in ResetCastle and once at BeginPlay (seed).
+ *  UI consumers must still seed from GetCurrentHP()/GetMaxHP() FIRST and bind
+ *  second (qa/TASK-005-report.md major 2); UCastleHealthBarWidget::InitForCastle
+ *  does exactly that.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCastleHPChanged, float, CurrentHP, float, MaxHP);
 
 /**
  *  Siegebound castle (GDD §3.9). One per team, placed at the CastleAnchor
@@ -31,6 +43,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCastleDestroyed, ACastle*, Destr
  *  - ResetCastle() (Play Again, §3.9) restores full HP, visibility, and collision.
  *  - Mesh and per-team material are soft references resolved null-safe in
  *    OnConstruction — the art assets are produced in parallel and may not exist yet.
+ *  - Overhead HP bar (playtest R1 finding 2, TASK-018): screen-space HPBarWidget
+ *    component; its widget class is soft-resolved null-safe at BeginPlay
+ *    (WBP_CastleHealthBar, built in TASK-019 — a missing asset is a silent
+ *    no-op). Hidden on destruction, shown again by ResetCastle().
  */
 UCLASS()
 class GITCLAUDEUNREALTEST_API ACastle : public AActor, public ITeamAgent
@@ -44,6 +60,10 @@ public:
 	/** Fired exactly once when this castle is destroyed. Win-condition hook for ASiegeGameMode (TASK-006). */
 	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Castle")
 	FOnCastleDestroyed OnCastleDestroyed;
+
+	/** Fired on every actual HP change, in ResetCastle, and once at BeginPlay (seed). Drives WBP_CastleHealthBar (TASK-018/019). */
+	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Castle")
+	FOnCastleHPChanged OnCastleHPChanged;
 
 	//~ Begin ITeamAgent interface
 	virtual ETeamId GetTeamId() const override { return Team; }
@@ -78,12 +98,16 @@ public:
 
 protected:
 
-	/** Seeds CurrentHP from MaxHP. */
+	/** Seeds CurrentHP from MaxHP, fires the OnCastleHPChanged seed broadcast, and initializes the HP bar widget (null-safe). */
 	virtual void BeginPlay() override;
 
 	/** Static mesh root. Mesh asset assigned null-safe in OnConstruction from CastleMeshAsset. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Castle")
 	TObjectPtr<UStaticMeshComponent> CastleMesh;
+
+	/** Screen-space overhead HP bar (DrawSize 256x32 at Z+1050 — the castle mesh is 900 tall). Widget class resolved null-safe at BeginPlay from HPBarWidgetClass. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Castle")
+	TObjectPtr<UWidgetComponent> HPBarWidget;
 
 	/** Which team owns this castle. Set per level instance (Castle_Blue = Blue, Castle_Red = Red). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Castle")
@@ -105,10 +129,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Visuals")
 	TSoftObjectPtr<UMaterialInterface> TeamMaterialRed;
 
+	/** HP bar widget class, /Game/UI/WBP_CastleHealthBar (TASK-019). Missing asset = silent no-op, never a crash. */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Visuals")
+	TSoftClassPtr<UUserWidget> HPBarWidgetClass;
+
 private:
 
 	/** Loads (if available) and applies the castle mesh and the Team-appropriate material. Never crashes on missing assets. */
 	void ApplyTeamVisuals();
+
+	/** Resolves HPBarWidgetClass null-safe (missing = silent no-op), assigns it to HPBarWidget, and calls InitForCastle on the created UCastleHealthBarWidget. */
+	void InitHPBarWidget();
 
 	/** Single-fire destruction: guards on bDestroyed, hides the actor, disables collision, broadcasts OnCastleDestroyed. */
 	void HandleDestroyed();

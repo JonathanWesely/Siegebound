@@ -16,6 +16,8 @@
 #include "GitClaudeUnrealTest.h"
 #include "Kismet/GameplayStatics.h"
 #include "Navigation/PathFollowingComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 #include "Siegebound/CardRow.h"
 #include "Siegebound/Castle.h"
 #include "Siegebound/HeroCharacter.h"
@@ -38,8 +40,12 @@ namespace
 
 ASummonedUnit::ASummonedUnit()
 {
-	// state machine runs on a ~0.25 s timer (TASK-004 spec) — never per-tick
-	PrimaryActorTick.bCanEverTick = false;
+	// state machine runs on a ~0.25 s timer (TASK-004 spec) — never per-tick.
+	// Tick exists SOLELY for the attack-lunge visual (TASK-020): it starts
+	// disabled, is enabled only while a <= 0.8×Cadence lunge cycle animates,
+	// and is re-disabled at every cycle end. Gameplay logic never ticks.
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 
 	// AI-driven navmesh walker: the default AAIController possesses us whether
 	// the unit was placed in a level or spawned by the card play (TASK-007)
@@ -66,11 +72,41 @@ ASummonedUnit::ASummonedUnit()
 	// data contract (TASK-004 names block): stats resolve from this table at BeginPlay,
 	// never from code (GDD §3.0). The table is imported in TASK-008 and may not exist yet.
 	CardTableAsset = TSoftObjectPtr<UDataTable>(FSoftObjectPath(TEXT("/Game/Data/DT_Cards.DT_Cards")));
+
+	// blockout impact puff (TASK-020 names block): Variant_Combat donor, READ-ONLY —
+	// soft-referenced, never edited (CONVENTIONS template-donor rule). Resolved and
+	// cached once at BeginPlay; a BP child may retarget or clear it.
+	AttackImpactEffect = TSoftObjectPtr<UNiagaraSystem>(FSoftObjectPath(TEXT("/Game/Variant_Combat/VFX/NS_Damage.NS_Damage")));
 }
 
 void ASummonedUnit::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// TASK-020: cache the BP-authored rest pose ONCE, post-construction (BP defaults
+	// and construction scripts have run by now — BP_Unit_Footman offsets the mesh down
+	// by the capsule half-height, TASK-010). The lunge only ever writes Base + f(elapsed)
+	// or exactly Base, so the pose cannot drift no matter how many cycles run.
+	if (VisualMesh)
+	{
+		VisualMeshBaseRelativeLocation = VisualMesh->GetRelativeLocation();
+		bVisualMeshBaseCached = true;
+	}
+
+	// TASK-020: resolve the impact effect ONCE — never per attack (no sync-load hitch
+	// on the cadence). In practice NS_Damage is already resident by the time a unit
+	// spawns (the hero hard-references it via TASK-016/017), making this a lookup,
+	// not a disk load. Cleared-in-BP (IsNull) is a silent designer opt-out.
+	if (!AttackImpactEffect.IsNull())
+	{
+		CachedAttackImpactEffect = AttackImpactEffect.LoadSynchronous();
+		if (!CachedAttackImpactEffect)
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("ASummonedUnit '%s': impact effect '%s' failed to load — attacks will show no impact VFX."),
+				*GetNameSafe(this), *AttackImpactEffect.ToString());
+		}
+	}
 
 	LoadStatsAndStart();
 }
@@ -365,6 +401,7 @@ void ASummonedUnit::EnterAdvance(AActor* Goal)
 	if (State == ESummonedUnitState::Attack)
 	{
 		GetWorldTimerManager().ClearTimer(AttackTimerHandle);
+		StopAttackLunge(); // leaving Attack: mesh back to EXACTLY the rest pose (TASK-020)
 	}
 	State = ESummonedUnitState::Advance;
 
@@ -421,6 +458,7 @@ void ASummonedUnit::EnterIdle()
 	CurrentMoveGoal = nullptr;
 
 	GetWorldTimerManager().ClearTimer(AttackTimerHandle);
+	StopAttackLunge(); // leaving Attack (or defensive from Advance): exact rest pose (TASK-020)
 	if (AAIController* AI = GetAIController())
 	{
 		AI->StopMovement();
@@ -439,7 +477,12 @@ void ASummonedUnit::PerformAttack()
 	{
 		return; // the next state check clears the target and resumes Advance
 	}
-	if (GetDistanceToTarget(GetActorLocation(), Target) > AttackRange)
+
+	// range re-check also yields the contact point for the impact VFX (TASK-020):
+	// the closest point on the target's collision to us, already fallen back to the
+	// target's actor location when it has no usable collision
+	FVector ImpactPoint = FVector::ZeroVector;
+	if (GetDistanceToTarget(GetActorLocation(), Target, ImpactPoint) > AttackRange)
 	{
 		return; // drifted out of range between checks — no hit, the state check re-chases
 	}
@@ -447,8 +490,19 @@ void ASummonedUnit::PerformAttack()
 	FaceTarget(Target);
 
 	// team attribution (TASK-002 castle contract): this unit as DamageCauser AND its
-	// controller as EventInstigator, so receivers resolve our team either way (GDD §3.0)
-	UGameplayStatics::ApplyDamage(Target, AttackDamage, GetController(), this, UDamageType::StaticClass());
+	// controller as EventInstigator, so receivers resolve our team either way (GDD §3.0).
+	// TASK-020 only CAPTURES the return value — arguments and timing are unchanged.
+	const float DamageApplied = UGameplayStatics::ApplyDamage(Target, AttackDamage, GetController(), this, UDamageType::StaticClass());
+
+	// attack feedback (TASK-020): the swing (lunge) plays on every executed cadence hit;
+	// the impact puff only when damage actually landed — a receiver that zeroed the hit
+	// (e.g. a castle destroyed this same tick) gets no puff. Same return-value reading
+	// as the hero's TASK-016 flagged decision 1.
+	StartAttackLunge();
+	if (DamageApplied > 0.f && CachedAttackImpactEffect)
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), CachedAttackImpactEffect, ImpactPoint);
+	}
 
 	if (const UWorld* World = GetWorld())
 	{
@@ -469,6 +523,78 @@ void ASummonedUnit::FaceTarget(const AActor* Target)
 	{
 		SetActorRotation(ToTarget.Rotation());
 	}
+}
+
+void ASummonedUnit::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	// tick exists ONLY for the lunge visual (TASK-020) — see the constructor note
+	UpdateLunge(DeltaSeconds);
+}
+
+void ASummonedUnit::StartAttackLunge()
+{
+	if (!VisualMesh || !bVisualMeshBaseCached)
+	{
+		return; // no rest pose to return to — never move the mesh without one
+	}
+
+	// one cycle per cadence hit, never longer than 0.8 × Cadence, so the mesh is
+	// guaranteed back at rest before the next hit (hits are >= Cadence apart via
+	// the LastAttackTime gate in EnterAttack). AttackCadence >= MinAttackCadence,
+	// so the clamp can never produce a zero-length cycle on its own.
+	const float CycleDuration = FMath::Min(AttackLungeDuration, 0.8f * AttackCadence);
+	if (CycleDuration <= UE_KINDA_SMALL_NUMBER || FMath::IsNearlyZero(AttackLungeDistance))
+	{
+		return; // degenerate cycle — designer disabled the lunge
+	}
+
+	// (re)start from the exact rest pose: even a defensive mid-cycle restart can
+	// never accumulate drift, because the pose is only ever written as Base + f
+	VisualMesh->SetRelativeLocation(VisualMeshBaseRelativeLocation);
+	LungeCycleDuration = CycleDuration;
+	LungeElapsed = 0.f;
+	bLungeActive = true;
+	SetActorTickEnabled(true);
+}
+
+void ASummonedUnit::StopAttackLunge()
+{
+	// restore EXACTLY the cached BP-authored pose (TASK-020 zero-drift contract);
+	// idempotent — restoring an already-resting mesh writes the same value
+	if (bVisualMeshBaseCached && VisualMesh)
+	{
+		VisualMesh->SetRelativeLocation(VisualMeshBaseRelativeLocation);
+	}
+	bLungeActive = false;
+	LungeElapsed = 0.f;
+	SetActorTickEnabled(false);
+}
+
+void ASummonedUnit::UpdateLunge(float DeltaSeconds)
+{
+	if (!bLungeActive)
+	{
+		SetActorTickEnabled(false); // stray tick with no cycle running — go back to sleep
+		return;
+	}
+
+	LungeElapsed += DeltaSeconds;
+	if (!VisualMesh || LungeElapsed >= LungeCycleDuration)
+	{
+		StopAttackLunge(); // cycle end: exact rest pose, tick off
+		return;
+	}
+
+	// sine ease, out and back: 0 → AttackLungeDistance at the half cycle → 0.
+	// The offset is applied to the RELATIVE location, which lives in the parent
+	// CAPSULE's axes — local +X is actor forward (the unit faces its target via
+	// FaceTarget), so this is correct for either team/facing and is untouched by
+	// the mesh's own -90° import-fix yaw (handoffs/TASK-014.md).
+	const float Alpha = LungeElapsed / LungeCycleDuration;
+	const float Offset = AttackLungeDistance * FMath::Sin(UE_PI * Alpha);
+	VisualMesh->SetRelativeLocation(VisualMeshBaseRelativeLocation + FVector(Offset, 0.f, 0.f));
 }
 
 AAIController* ASummonedUnit::GetAIController() const
@@ -555,6 +681,9 @@ void ASummonedUnit::HandleDeath()
 	GetWorldTimerManager().ClearTimer(StateTimerHandle);
 	GetWorldTimerManager().ClearTimer(AttackTimerHandle);
 
+	// death restores the exact rest pose before the actor goes away (TASK-020 contract)
+	StopAttackLunge();
+
 	if (AAIController* AI = GetAIController())
 	{
 		AI->StopMovement();
@@ -598,6 +727,14 @@ bool ASummonedUnit::IsTargetAlive(const AActor* Target)
 
 float ASummonedUnit::GetDistanceToTarget(const FVector& From, const AActor* Target)
 {
+	FVector ClosestPointUnused = FVector::ZeroVector;
+	return GetDistanceToTarget(From, Target, ClosestPointUnused);
+}
+
+float ASummonedUnit::GetDistanceToTarget(const FVector& From, const AActor* Target, FVector& OutClosestPoint)
+{
+	OutClosestPoint = FVector::ZeroVector;
+
 	if (!Target)
 	{
 		return TNumericLimits<float>::Max();
@@ -606,13 +743,15 @@ float ASummonedUnit::GetDistanceToTarget(const FVector& From, const AActor* Targ
 	// closest point on the target's collision, mirroring the hero melee (TASK-003):
 	// the castle's origin sits at the center of an ~800x800 footprint and would never
 	// come within Range/AggroRadius of a unit standing at its walls. ECC_Pawn is blocked
-	// by pawn capsules and by the castle's BlockAll mesh (TASK-002).
-	FVector ClosestPoint = FVector::ZeroVector;
-	const float Distance = Target->ActorGetDistanceToCollision(From, ECC_Pawn, ClosestPoint);
+	// by pawn capsules and by the castle's BlockAll mesh (TASK-002). The closest point
+	// doubles as the impact-VFX contact point (TASK-020).
+	const float Distance = Target->ActorGetDistanceToCollision(From, ECC_Pawn, OutClosestPoint);
 	if (Distance < 0.f)
 	{
-		// no usable collision (e.g. SM_Castle not imported yet, TASK-013) — actor origin fallback
-		return static_cast<float>(FVector::Dist(From, Target->GetActorLocation()));
+		// no usable collision (e.g. SM_Castle not imported yet, TASK-013) — actor origin
+		// fallback for both the distance and the contact point (TASK-020 spec fallback)
+		OutClosestPoint = Target->GetActorLocation();
+		return static_cast<float>(FVector::Dist(From, OutClosestPoint));
 	}
 	return Distance;
 }

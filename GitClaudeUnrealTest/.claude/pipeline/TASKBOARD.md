@@ -27,7 +27,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 Source: `Docs/GDD.md` §9. Only the current milestone is decomposed into tasks; later milestones stay one-liners until reached.
 
-1. **M1 — Core loop, local, one card** — `done`
+1. **M1 — Core loop, local, one card** — `feedback-in-progress` (exit criteria passed 2026-07-03; reopened same day for playtest round-1 combat-legibility fixes → TASK-016..020)
 2. M2 — Economy + deck/hand + core set + defenses — `not-started`
 3. M3 — Bot opponent = real 1v1 match — `not-started`
 4. M4 — Card Set II (16 cards, keywords, hero upgrades) — `not-started`
@@ -35,6 +35,29 @@ Source: `Docs/GDD.md` §9. Only the current milestone is decomposed into tasks; 
 6. M6 — Deck-builder meta — `not-started`
 7. M7 — Premium art & feel pass — `not-started`
 8. M8 — Networked 1v1 multiplayer — `not-started`
+
+### M1 CHECKPOINT — 2026-07-03 (read this first on resume)
+**M1 exit criteria are PIE-verified** (all 8 checks passed; commits df4bcd9 → 4d30efb → 8a87400 → 5029403 → 7011b7b → 4255c1d, none pushed). **Current state: playtest round-1 feedback received 2026-07-03 → M1 reopened as `feedback-in-progress`.** Next actions in order:
+1. Run TASK-016..020 (see "M1 playtest feedback — round 1" below). Dispatch: TASK-016 + TASK-018 in parallel now; TASK-020 after TASK-016 (shared Build.cs edit); TASK-017 and TASK-019 are editor tasks — one at a time.
+2. User re-playtests with real hardware input (round 2) — agents can only inject simulated input, so the LMB finding needs a human hand on the mouse to close.
+3. On user go-ahead after round 2: manager decomposes M2 (economy + deck/hand + core set + defenses). Manager should also move the done TASK-001..011 blocks below into ## Done while decomposing.
+
+### M1 playtest feedback — round 1 (2026-07-03)
+User verdict: core loop works, but combat is illegible. Three findings → five tasks (no new art; all visuals reuse template Variant_Combat donors):
+1. **Hero LMB shows no response** — no swing animation, no hit feedback; player cannot tell the castle is being damaged. MCP-injected PIE at M1 exit DID apply damage mechanically, so this is primarily a feedback gap — but TASK-017 must ALSO verify real-input plumbing (input mode / HUD hit-testing swallowing clicks), not assume. → TASK-016 (C++ hooks) + TASK-017 (editor wiring + verification).
+2. **No visible castle health bar** — damage progress from footmen/hero unreadable. → TASK-018 (C++ delegate + widget component + widget base class) + TASK-019 (WBP_CastleHealthBar duplicated from Variant_Combat's UI_LifeBar).
+3. **Footman has no attacking animation.** Footman is a static mesh — blockout answer is a procedural lunge, NOT a skeletal re-rig (that is M7). → TASK-020 (C++ only).
+M1 is NOT complete until TASK-016..020 are `done` and the user confirms in a round-2 playtest. Code tasks route through ready-for-qa as usual; compile/assembly/commit happen at integration (no build-master tasks on the board, per M1 decisions).
+
+**Carry-overs recorded from M1 final assembly & QA (feed into M2+ decomposition):**
+- Arena has NO boundary — hero can sprint off the slab and fall forever (blocking volumes or KillZ+respawn; M2).
+- SM_Castle plinth collision spans the full 814×820 base ~90 units high — nothing can stand/be placed within ~410 units of a castle anchor. Affects M2 gold-node (±1200,0) and building placement near castles.
+- PlayerStart was MOVED at integration: (-1700,0,100) → (-1400,0,100) (castle collision enclosed the old spot). handoffs/TASK-015.md's transform table is stale on that row.
+- Card button unclickable under GameOnly input (no cursor) — keyboard "1" is the trigger until the M2 hand UI (qa/TASK-007-report.md WARN-4).
+- WBP_VictoryScreen::SetWinner uses a byte param, not ETeamId (MCP tooling can't author enum BP params) — ABI-identical, orchestrator-approved deviation (handoffs/TASK-011.md).
+- Match end does not freeze units/income under the Victory screen — TODO(M2) (qa/TASK-006-report.md); team-aware PlayerStart selection — TODO(M3); placement lacks navmesh projection (castle roof is placeable) — TODO(M2).
+- Uncommitted working-tree residue (deliberate): editor boot-resave deltas on SM_Castle/SM_Footman .uassets, .mcp.json, 2 pre-existing __ExternalActors__ files, untracked Docs/GDD-TEMPLATE.md. Next build-master decides their fate.
+- Cosmetic: Shift triggers an engine debug-binding log line each press (BaseInput.ini default; overridable in Config/DefaultInput.ini).
 
 ### M1 manager decisions (binding for all M1 tasks)
 - M1 is built in a **new map `/Game/Maps/L_Arena`** (Content/Maps/L_Arena.umap). `Content/ThirdPerson/Lvl_ThirdPerson` stays untouched.
@@ -294,6 +317,143 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
     From TASK-005 QA (qa/TASK-005-report.md, major 2): FOnGoldChanged only fires on actual value changes —
     WBP_HUD MUST seed its gold text from ASiegePlayerState::GetGold() on construct, then bind the delegate,
     or a widget created while gold is pinned (e.g. 999) stays stale.
+
+### TASK-016 — Hero attack feedback hooks (C++)
+- assignee: gameplay-programmer
+- status: integrating (qa-passed qa/TASK-016-report.md; build-master batch with 018+020)
+- blocked-by: none
+- parallel-safe: yes
+- spec: >
+    Files only, no editor. Playtest R1 finding 1. In AHeroCharacter add UPROPERTYs (EditAnywhere,
+    Category "Combat|Feedback"): TObjectPtr<UAnimMontage> AttackMontage; FName AttackMontageSection
+    (default NAME_None); TObjectPtr<UNiagaraSystem> HitImpactEffect; TSubclassOf<UCameraShakeBase>
+    HitCameraShake. All left unset in C++ (wired in TASK-017); EVERY use null-safe — code must compile
+    and behave with nothing assigned (M1 house style). Behavior: (1) on every melee swing that passes the
+    0.5 s cooldown — hit OR whiff — and only when melee is NOT suppressed (placement mode), call
+    PlayAnimMontage(AttackMontage) and jump to AttackMontageSection if set; the montage is VISUAL ONLY —
+    damage timing/numbers stay exactly as M1 (20 dmg, 150 units, 60-degree cone, 0.5 s cooldown), never
+    gate damage on anim notifies. (2) For each enemy actually damaged, spawn HitImpactEffect at the closest
+    point on that target's collision to the hero (fallback: target GetActorLocation) via
+    UNiagaraFunctionLibrary::SpawnSystemAtLocation. (3) If >=1 enemy was damaged this swing,
+    ClientStartCameraShake(HitCameraShake) on the local PlayerController. (4) Add "Niagara" to
+    Source/GitClaudeUnrealTest/GitClaudeUnrealTest.Build.cs dependency modules — this task OWNS that
+    Build.cs edit (TASK-020 is serialized behind it for exactly this file). Acceptance: compiles and runs
+    clean with nothing wired; swing/damage behavior byte-identical to M1 incl. suppression; with TASK-017's
+    assets wired, every swing plays the montage and every damaging hit spawns the effect + shake.
+- names: >
+    AHeroCharacter (Source/GitClaudeUnrealTest/Siegebound/HeroCharacter.h/.cpp) — UPROPERTYs AttackMontage,
+    AttackMontageSection, HitImpactEffect, HitCameraShake. Build.cs:
+    Source/GitClaudeUnrealTest/GitClaudeUnrealTest.Build.cs (add Niagara). Donor assets wired in TASK-017
+    (exact, READ-ONLY): /Game/Variant_Combat/Anims/AM_ComboAttack (or AM_ChargedAttack),
+    /Game/Variant_Combat/VFX/NS_Damage, /Game/Variant_Combat/Blueprints/BP_CameraShake_Hit_Enemy.
+
+### TASK-017 — Wire hero attack feedback + LMB real-input verification (editor)
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: TASK-016 (integrated + compiled)
+- parallel-safe: no
+- spec: >
+    Editor/MCP work. (1) On /Game/Blueprints/BP_HeroCharacter assign: AttackMontage =
+    /Game/Variant_Combat/Anims/AM_ComboAttack — use AM_ChargedAttack instead if it reads better as ONE
+    swing inside the 0.5 s cooldown; set AttackMontageSection so exactly one swing section plays; record
+    the choice in the handoff. HitImpactEffect = /Game/Variant_Combat/VFX/NS_Damage. HitCameraShake =
+    /Game/Variant_Combat/Blueprints/BP_CameraShake_Hit_Enemy. All Variant_Combat assets are READ-ONLY
+    donors — reference, never edit (CONVENTIONS template-donor rule). (2) Montage playback path: first try
+    keeping anim class ABP_Unarmed and verify the montage VISIBLY plays in PIE (its slot must exist in
+    ABP_Unarmed's graph). If it does not play, set BP_HeroCharacter AnimClass =
+    /Game/Variant_Combat/Anims/ABP_Manny_Combat and re-verify walk/sprint/jump locomotion AND montage AND
+    no per-frame cast/error spam in the log. If BOTH fail, stop and write findings to the handoff for
+    manager re-spec — do NOT edit any Variant_* asset. (3) LMB click-swallow investigation (user reports
+    LMB "does nothing" on real hardware; MCP injection applied damage — verify, don't assume): a) WBP_HUD
+    root and panels are Not Hit-Testable (Self Only), only the card button hit-testable; b) input mode is
+    GameOnly with bShowMouseCursor false outside placement mode, including after PlayAgain; c) LMB maps
+    only to IA_Attack in IMC_Hero (no competing consuming mapping). Fix what is broken; record findings —
+    even "nothing found" — in handoffs/TASK-017.md. (4) PIE verify via MCP injection: LMB swings play the
+    montage visibly, Red castle drops 20/swing, impact effect appears at the hit point, shake fires.
+    Acceptance: all of (4) pass + handoff documents the montage path chosen and the click-swallow findings;
+    real-hardware confirmation is explicitly deferred to user playtest round 2.
+- names: >
+    /Game/Blueprints/BP_HeroCharacter. Donors (exact, read-only): /Game/Variant_Combat/Anims/AM_ComboAttack,
+    AM_ChargedAttack, ABP_Manny_Combat; /Game/Variant_Combat/VFX/NS_Damage;
+    /Game/Variant_Combat/Blueprints/BP_CameraShake_Hit_Enemy. Inspected: /Game/UI/WBP_HUD,
+    /Game/Input/IMC_Hero, /Game/Input/Actions/IA_Attack.
+
+### TASK-018 — Castle HP delegate + health-bar widget component (C++)
+- assignee: gameplay-programmer
+- status: integrating (qa-passed qa/TASK-018-report.md; build-master batch with 016+020)
+- blocked-by: none
+- parallel-safe: yes
+- spec: >
+    Files only, no editor. Playtest R1 finding 2. (1) ACastle: declare dynamic multicast delegate
+    FOnCastleHPChanged(float CurrentHP, float MaxHP); UPROPERTY(BlueprintAssignable) OnCastleHPChanged.
+    Broadcast on every ACTUAL CurrentHP change (after applying damage in TakeDamage — NOT on ignored
+    friendly-fire damage), in ResetCastle, and once at BeginPlay (seed). Add BlueprintPure float
+    GetCurrentHP() / GetMaxHP(). (2) ACastle: UWidgetComponent "HPBarWidget" attached to root — Space =
+    Screen, DrawSize 256x32, relative location (0,0,1050) (castle mesh is 900 tall); widget class resolved
+    null-safe at BeginPlay from a TSoftClassPtr<UUserWidget> defaulting to
+    /Game/UI/WBP_CastleHealthBar.WBP_CastleHealthBar_C (asset arrives in TASK-019 — a missing asset is a
+    silent no-op, never a crash). Hide the component when the castle is destroyed; show it again in
+    ResetCastle. (3) New class UCastleHealthBarWidget : UUserWidget in CastleHealthBarWidget.h/.cpp:
+    UFUNCTION BlueprintCallable InitForCastle(ACastle*) — seeds by calling OnHPChanged(GetCurrentHP(),
+    GetMaxHP()) immediately, THEN binds OnCastleHPChanged (seed-then-bind, per qa/TASK-005-report.md
+    major 2); UFUNCTION BlueprintImplementableEvent OnHPChanged(float CurrentHP, float MaxHP) — float
+    params only, MCP cannot author enum BP params. ACastle BeginPlay: if HPBarWidget's user widget is a
+    UCastleHealthBarWidget, call InitForCastle(this). Verify "UMG" is already in Build.cs (it is, from M1
+    widgets) — do not touch Build.cs otherwise (TASK-016 owns the Niagara edit). Acceptance: compiles and
+    runs with no widget asset present; 3 enemy hits = exactly 3 broadcasts with correct values; friendly
+    damage = 0 broadcasts; destroyed -> bar hidden; ResetCastle -> broadcast(2000,2000) + bar visible.
+- names: >
+    ACastle (Source/GitClaudeUnrealTest/Siegebound/Castle.h/.cpp) — delegate FOnCastleHPChanged, property
+    OnCastleHPChanged, component HPBarWidget, getters GetCurrentHP/GetMaxHP. UCastleHealthBarWidget in
+    Source/GitClaudeUnrealTest/Siegebound/CastleHealthBarWidget.h/.cpp — functions InitForCastle,
+    OnHPChanged. Widget asset (exact, built in TASK-019): /Game/UI/WBP_CastleHealthBar.
+
+### TASK-019 — WBP_CastleHealthBar from UI_LifeBar donor (editor)
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: TASK-018 (integrated + compiled)
+- parallel-safe: no
+- spec: >
+    Editor/MCP work. DUPLICATE donor /Game/Variant_Combat/UI/UI_LifeBar -> /Game/UI/WBP_CastleHealthBar
+    (MCP cannot author widget trees from scratch; never edit the donor). Reparent the duplicate to
+    UCastleHealthBarWidget. Strip all template logic/bindings referencing Variant_Combat classes; keep the
+    bar visuals. Implement event OnHPChanged(CurrentHP, MaxHP): ProgressBar SetPercent(CurrentHP / MaxHP),
+    guard MaxHP > 0. If the donor has a numeric text block, bind it to "Current / Max" as ints; otherwise
+    bar-only is fine. Placeholder styling acceptable (premium UI pass is M7). Acceptance (PIE in L_Arena):
+    both castles show a full overhead bar at boot; hero swings on the Red castle lower its bar live in
+    20-HP steps; footman attacks lower it in 12-HP steps; at 0 HP the bar disappears with the castle;
+    Play Again -> both bars full and visible again.
+- names: >
+    /Game/UI/WBP_CastleHealthBar (parent UCastleHealthBarWidget; donor /Game/Variant_Combat/UI/UI_LifeBar,
+    READ-ONLY).
+
+### TASK-020 — Footman procedural attack lunge + impact VFX (C++)
+- assignee: gameplay-programmer
+- status: integrating (qa-passed qa/TASK-020-report.md; build-master batch with 016+018)
+- blocked-by: TASK-016 (shared Build.cs edit only — Niagara module lands there; no logic dependency)
+- parallel-safe: yes
+- spec: >
+    Files only, no editor. Playtest R1 finding 3. Blockout-tier "attack animation" for the static-mesh
+    footman — NO skeletal rig (M7). In ASummonedUnit: (1) each time the Attack state deals its cadence hit,
+    run one lunge cycle on the VisualMesh component: offset its RELATIVE location along local +X (the
+    capsule's local X is actor forward — do NOT use the mesh's own rotation; VisualMesh carries a -90 yaw
+    import fix per handoffs/TASK-014.md) out AttackLungeDistance (default 40.0) and back, sine-eased, over
+    AttackLungeDuration (default 0.3 s), clamped to 0.8 x Cadence. Cache the BP-authored base relative
+    location once at BeginPlay (post-construction); drive offset as Base + f(elapsed); ALWAYS restore
+    exactly Base at cycle end, on leaving the Attack state, and on death — zero drift after any number of
+    cycles. UPROPERTYs (EditAnywhere, Category "Combat|Feedback"): float AttackLungeDistance = 40.f, float
+    AttackLungeDuration = 0.3f. (2) On each damage application spawn AttackImpactEffect —
+    TSoftObjectPtr<UNiagaraSystem> with C++ default /Game/Variant_Combat/VFX/NS_Damage.NS_Damage (READ-ONLY
+    donor, referenced not edited) — at the closest point on the target's collision to the unit (fallback:
+    target location); null-safe; resolve/cache once, no per-attack sync-load hitch. Do NOT touch Build.cs —
+    TASK-016 owns the Niagara module edit. Acceptance: in PIE a footman attacking the Red castle visibly
+    lunges toward it once per 1.0 s with a damage puff at the contact point; mesh sits at exact rest pose
+    between hits and after 50+ attacks; correct for either team/facing; damage numbers/timing unchanged;
+    stats still read from DT_Cards (nothing hardcoded).
+- names: >
+    ASummonedUnit (Source/GitClaudeUnrealTest/Siegebound/SummonedUnit.h/.cpp) — UPROPERTYs
+    AttackLungeDistance, AttackLungeDuration, AttackImpactEffect; existing component VisualMesh.
+    Donor (exact, read-only): /Game/Variant_Combat/VFX/NS_Damage.
 
 ---
 
