@@ -27,7 +27,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 Source: `Docs/GDD.md` §9. Only the current milestone is decomposed into tasks; later milestones stay one-liners until reached.
 
-1. **M1 — Core loop, local, one card** — `in-progress`
+1. **M1 — Core loop, local, one card** — `done`
 2. M2 — Economy + deck/hand + core set + defenses — `not-started`
 3. M3 — Bot opponent = real 1v1 match — `not-started`
 4. M4 — Card Set II (16 cards, keywords, hero upgrades) — `not-started`
@@ -159,7 +159,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-006 — GameMode: win condition, hero respawn, Play Again reset (C++)
 - assignee: gameplay-programmer
-- status: integrating (compile batch #2) (qa/TASK-006-report.md re-review loop 1 — 0 blockers; HasMatchEnded fix verified exact, no other code changed; ready for integration)
+- status: done (commit 7011b7b) (qa/TASK-006-report.md re-review loop 1 — 0 blockers; HasMatchEnded fix verified exact, no other code changed; ready for integration)
 - blocked-by: TASK-002, TASK-003, TASK-005, TASK-007
 - parallel-safe: yes
 - spec: >
@@ -188,7 +188,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-007 — PlayerController: Footman card play + placement mode (C++)
 - assignee: gameplay-programmer
-- status: integrating (compile batch #2) (qa/TASK-007-report.md — 0 blockers, 4 warnings, 4 nits)
+- status: done (commit 7011b7b) (qa/TASK-007-report.md — 0 blockers, 4 warnings, 4 nits)
 - blocked-by: TASK-001, TASK-004, TASK-005
 - parallel-safe: yes
 - spec: >
@@ -220,7 +220,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-008 — Import DT_Cards data table (editor)
 - assignee: gameplay-programmer
-- status: integrating (compile batch #2 commit)
+- status: done (commit 7011b7b)
 - blocked-by: TASK-001
 - parallel-safe: no
 - spec: >
@@ -234,7 +234,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-009 — Input assets + BP_HeroCharacter (editor)
 - assignee: gameplay-programmer
-- status: integrating (compile batch #2 commit; PIE speed check at final assembly)
+- status: done (commit 7011b7b; PIE speed check at final assembly)
 - blocked-by: TASK-003
 - parallel-safe: no
 - spec: >
@@ -259,7 +259,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-010 — BP_Unit_Footman (editor)
 - assignee: gameplay-programmer
-- status: integrating (compile batch #2 commit)
+- status: done (commit 7011b7b)
 - blocked-by: TASK-004, TASK-008, TASK-014
 - parallel-safe: no
 - spec: >
@@ -275,7 +275,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-011 — HUD + Victory widgets (editor)
 - assignee: gameplay-programmer
-- status: backlog
+- status: done (M1 final commit)
 - blocked-by: TASK-005, TASK-006, TASK-007
 - parallel-safe: no
 - spec: >
