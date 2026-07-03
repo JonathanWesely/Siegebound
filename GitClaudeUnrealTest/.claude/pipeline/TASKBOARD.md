@@ -53,7 +53,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-001 — Card data types, team types & cards.csv
 - assignee: gameplay-programmer
-- status: integrating (compile batch #1)
+- status: done (commit 5029403)
 - blocked-by: none
 - parallel-safe: yes
 - spec: >
@@ -74,7 +74,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-002 — Castle actor (C++)
 - assignee: gameplay-programmer
-- status: integrating (compile batch #1)
+- status: done (commit 5029403)
 - blocked-by: TASK-001
 - parallel-safe: yes
 - spec: >
@@ -95,7 +95,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-003 — Hero character (C++)
 - assignee: gameplay-programmer
-- status: integrating (compile batch #1)
+- status: done (commit 5029403)
 - blocked-by: TASK-001
 - parallel-safe: yes
 - spec: >
@@ -117,7 +117,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-004 — Summoned unit AI, Standard profile (C++)
 - assignee: gameplay-programmer
-- status: integrating (compile batch #1)
+- status: done (commit 5029403)
 - blocked-by: TASK-001, TASK-002
 - parallel-safe: yes
 - spec: >
@@ -142,7 +142,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-005 — Gold economy on PlayerState (C++)
 - assignee: gameplay-programmer
-- status: integrating (compile batch #1)
+- status: done (commit 5029403)
 - blocked-by: none
 - parallel-safe: yes
 - spec: >
@@ -159,7 +159,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-006 — GameMode: win condition, hero respawn, Play Again reset (C++)
 - assignee: gameplay-programmer
-- status: backlog
+- status: integrating (compile batch #2) (qa/TASK-006-report.md re-review loop 1 — 0 blockers; HasMatchEnded fix verified exact, no other code changed; ready for integration)
 - blocked-by: TASK-002, TASK-003, TASK-005, TASK-007
 - parallel-safe: yes
 - spec: >
@@ -188,7 +188,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-007 — PlayerController: Footman card play + placement mode (C++)
 - assignee: gameplay-programmer
-- status: backlog
+- status: integrating (compile batch #2) (qa/TASK-007-report.md — 0 blockers, 4 warnings, 4 nits)
 - blocked-by: TASK-001, TASK-004, TASK-005
 - parallel-safe: yes
 - spec: >
@@ -220,7 +220,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-008 — Import DT_Cards data table (editor)
 - assignee: gameplay-programmer
-- status: backlog
+- status: integrating (compile batch #2 commit)
 - blocked-by: TASK-001
 - parallel-safe: no
 - spec: >
@@ -234,7 +234,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-009 — Input assets + BP_HeroCharacter (editor)
 - assignee: gameplay-programmer
-- status: backlog
+- status: integrating (compile batch #2 commit; PIE speed check at final assembly)
 - blocked-by: TASK-003
 - parallel-safe: no
 - spec: >
@@ -259,7 +259,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-010 — BP_Unit_Footman (editor)
 - assignee: gameplay-programmer
-- status: backlog
+- status: integrating (compile batch #2 commit)
 - blocked-by: TASK-004, TASK-008, TASK-014
 - parallel-safe: no
 - spec: >
