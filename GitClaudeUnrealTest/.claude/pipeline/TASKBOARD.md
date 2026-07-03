@@ -53,7 +53,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-001 — Card data types, team types & cards.csv
 - assignee: gameplay-programmer
-- status: qa-passed
+- status: integrating (compile batch #1)
 - blocked-by: none
 - parallel-safe: yes
 - spec: >
@@ -74,7 +74,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-002 — Castle actor (C++)
 - assignee: gameplay-programmer
-- status: in-progress
+- status: integrating (compile batch #1)
 - blocked-by: TASK-001
 - parallel-safe: yes
 - spec: >
@@ -95,7 +95,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-003 — Hero character (C++)
 - assignee: gameplay-programmer
-- status: in-progress
+- status: integrating (compile batch #1)
 - blocked-by: TASK-001
 - parallel-safe: yes
 - spec: >
@@ -117,7 +117,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-004 — Summoned unit AI, Standard profile (C++)
 - assignee: gameplay-programmer
-- status: backlog
+- status: integrating (compile batch #1)
 - blocked-by: TASK-001, TASK-002
 - parallel-safe: yes
 - spec: >
@@ -142,7 +142,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### TASK-005 — Gold economy on PlayerState (C++)
 - assignee: gameplay-programmer
-- status: qa-passed
+- status: integrating (compile batch #1)
 - blocked-by: none
 - parallel-safe: yes
 - spec: >
@@ -181,6 +181,10 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 - names: >
     ASiegeGameMode in Source/GitClaudeUnrealTest/Siegebound/SiegeGameMode.h/.cpp; function PlayAgain.
     Referenced (exact): /Game/Blueprints/BP_HeroCharacter, /Game/Maps/L_Arena.
+- qa-note: >
+    From TASK-005 QA (qa/TASK-005-report.md, major 1): ASiegePlayerState::ResetGold() restarts the income
+    timer — PlayAgain must clear timers BEFORE calling ResetGold (or clear selectively), never after,
+    or the income timer dies.
 
 ### TASK-007 — PlayerController: Footman card play + placement mode (C++)
 - assignee: gameplay-programmer
@@ -209,6 +213,10 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
     /Game/Data/DT_Cards (row Footman), /Game/Blueprints/Units/BP_Unit_Footman, /Game/Meshes/SM_Footman,
     /Game/Materials/M_Ghost (param GhostColor), /Game/UI/WBP_HUD, /Game/UI/WBP_VictoryScreen,
     /Game/Input/Actions/IA_Card1, /Game/Input/Actions/IA_CancelPlace.
+- qa-note: >
+    From TASK-003 QA (qa/TASK-003-report.md, warning 2): AHeroCharacter::ResetHero deliberately preserves
+    bMeleeSuppressed — the controller MUST call SetMeleeSuppressed(false) on EVERY placement-mode exit path
+    (confirm, cancel, match end, hero death), or the hero can be left unable to melee.
 
 ### TASK-008 — Import DT_Cards data table (editor)
 - assignee: gameplay-programmer
@@ -243,6 +251,11 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 - names: >
     /Game/Input/Actions/IA_Sprint, IA_Attack, IA_Card1, IA_CancelPlace; /Game/Input/IMC_Hero;
     /Game/Blueprints/BP_HeroCharacter (parent AHeroCharacter).
+- handoff-note: >
+    From handoffs/TASK-003.md: BP_HeroCharacter must ALSO assign the inherited template slots
+    JumpAction/MoveAction/LookAction/MouseLookAction (template's SetupPlayerInputComponent binds them);
+    AHeroCharacter adds IMC_Hero itself in NotifyControllerChanged at priority 1 — only assign the
+    HeroMappingContext/SprintAction/AttackAction UPROPERTYs, do not add the context elsewhere.
 
 ### TASK-010 — BP_Unit_Footman (editor)
 - assignee: gameplay-programmer
@@ -277,80 +290,38 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
     castle brings up Victory; Play Again returns to a fully reset playable match.
 - names: >
     /Game/UI/WBP_HUD, /Game/UI/WBP_VictoryScreen (widgets); calls EnterPlacementMode, PlayAgain.
-
-### TASK-012 — Team-color + ghost materials (art)
-- assignee: art-director
-- status: integrating
-- blocked-by: none
-- parallel-safe: yes
-- spec: >
-    Blockout-tier materials that later premium passes (M7) can upgrade in place. (1) Master material
-    /Game/Materials/M_TeamColor with a vector parameter named EXACTLY "TeamColor" (CONVENTIONS Team
-    contract); a simple vertical gradient (darker base -> lighter top, §6 spirit) is welcome but optional at
-    this tier. (2) Instances: /Game/Materials/Instances/MI_TeamColor_Blue with TeamColor = linear
-    (0.05, 0.30, 1.00); /Game/Materials/Instances/MI_TeamColor_Red with TeamColor = linear (1.00, 0.10,
-    0.05). (3) /Game/Materials/M_Ghost: translucent, unlit, two-sided, vector parameter named EXACTLY
-    "GhostColor" defaulting to green (0,1,0) at ~0.35 opacity — the programmer swaps it to red at runtime
-    for invalid placement (§3.5). Acceptance: applying MI_TeamColor_Blue vs _Red to the same mesh reads
-    unmistakably blue vs red at 15 m; M_Ghost renders see-through and recolors via GhostColor.
-- names: >
-    /Game/Materials/M_TeamColor (param TeamColor), /Game/Materials/M_Ghost (param GhostColor),
-    /Game/Materials/Instances/MI_TeamColor_Blue, /Game/Materials/Instances/MI_TeamColor_Red.
-
-### TASK-013 — Castle blockout mesh (art)
-- assignee: art-director
-- status: in-progress (Blender modeling + FBX export; editor import deferred until editor free)
-- blocked-by: TASK-012
-- parallel-safe: yes
-- spec: >
-    One castle static mesh in Blender, blockout tier but with a readable keep-and-towers silhouette
-    (identifiable at 15 m, §6): footprint ~800x800 units, height ~900 units, origin at ground-center,
-    <= 15k tris, ONE material slot with /Game/Materials/Instances/MI_TeamColor_Blue assigned as default
-    (code swaps the instance per team — same mesh serves both castles). Simple collision (box/convex) so
-    units and the hero collide. Import to /Game/Meshes/SM_Castle. Later premium passes replace this mesh at
-    the same path without breaking references. Acceptance: imports clean at correct scale next to the
-    ~180-unit mannequin; one material slot; blocks movement.
-- names: >
-    /Game/Meshes/SM_Castle (single material slot, default MI_TeamColor_Blue).
-
-### TASK-014 — Footman blockout mesh (art)
-- assignee: art-director
-- status: in-progress (Blender modeling + FBX export; editor import deferred until editor free)
-- blocked-by: TASK-012
-- parallel-safe: yes
-- spec: >
-    Placeholder Footman static mesh in Blender: chunky stylized proportions (~2.5-3 heads tall, §6),
-    ~180 units tall, sword-and-shield silhouette readable at 15 m, <= 8k tris, ONE material slot with
-    /Game/Materials/Instances/MI_TeamColor_Blue as default. Static mesh only — no rig/anim in M1 (units are
-    capsule-driven; skeletal swap comes with the M7 art pass at the same visual-slot contract). Import to
-    /Game/Meshes/SM_Footman. This exact path is also used by the placement ghost (TASK-007). Acceptance:
-    imports clean at ~180 units, one material slot, origin at feet-center.
-- names: >
-    /Game/Meshes/SM_Footman (single material slot, default MI_TeamColor_Blue).
-
-### TASK-015 — L_Arena blockout level (art)
-- assignee: art-director
-- status: in-progress
-- blocked-by: none
-- parallel-safe: yes
-- spec: >
-    New level per GDD §5 at /Game/Maps/L_Arena (do NOT modify Lvl_ThirdPerson). Symmetric layout on the
-    CONVENTIONS world-axes contract: flat walkable ground ~6400 (X) x 3200 (Y) centered on origin at Z=0;
-    Blue side -X, Red side +X. Place TargetPoints named EXACTLY CastleAnchor_Blue at (-2000, 0, 0) and
-    CastleAnchor_Red at (+2000, 0, 0) — castles ~4000 units apart; integration places the ACastle actors at
-    these anchors, art does NOT place castles. Visible centerline stripe along X=0 (thin emissive plane or
-    decal, no gameplay collision). PlayerStart at (-1700, 0, 100) facing +X. NavMeshBoundsVolume covering
-    the entire ground so units path castle-to-castle; a NavMesh appears (P key) across both halves. Lighting:
-    DirectionalLight + SkyLight + SkyAtmosphere + ExponentialHeightFog, defaults fine (premium lighting is
-    M7). Leave open silhouette room for M7 set dressing and for M2 gold nodes near (±1200, 0). Acceptance
-    (§5): PIE loads L_Arena with walkable ground; navmesh covers both halves; anchors and PlayerStart at the
-    exact coordinates; centerline visibly divides the halves.
-- names: >
-    /Game/Maps/L_Arena; actors CastleAnchor_Blue, CastleAnchor_Red (TargetPoints), PlayerStart;
-    centerline marker actor named CenterlineMarker.
+- qa-note: >
+    From TASK-005 QA (qa/TASK-005-report.md, major 2): FOnGoldChanged only fires on actual value changes —
+    WBP_HUD MUST seed its gold text from ASiegePlayerState::GetGold() on construct, then bind the delegate,
+    or a widget created while gold is pinned (e.g. 999) stays stale.
 
 ---
 
 ## Done
 
-(move completed tasks here)
+### TASK-012 — Team-color + ghost materials (art)
+- assignee: art-director
+- status: done (commit 4d30efb; scaffolding commit df4bcd9)
+- summary: /Game/Materials/M_TeamColor (param TeamColor) + MI_TeamColor_Blue/_Red + M_Ghost (param
+    GhostColor, bonus scalar GhostOpacity). Handoff: handoffs/TASK-012.md.
+
+### TASK-013 — Castle blockout mesh (art)
+- assignee: art-director
+- status: done (commit 8a87400)
+- summary: /Game/Meshes/SM_Castle — 2414 tris, 814x820x900 units, 9 UCX hulls, slot 0 = MI_TeamColor_Blue.
+    FBX source Content/RawAssets/Castle.fbx. Handoff: handoffs/TASK-013.md.
+    NOTE for final assembly: give Castle_Red yaw 180 so the gates face each other.
+
+### TASK-014 — Footman blockout mesh (art)
+- assignee: art-director
+- status: done (commit 8a87400)
+- summary: /Game/Meshes/SM_Footman — 2152 tris, 180 units tall, feet-center origin, capsule collision,
+    slot 0 = MI_TeamColor_Blue. FBX source Content/RawAssets/Footman.fbx. Handoff: handoffs/TASK-014.md
+    (VisualMesh needs -90° yaw on the BP per the handoff's facing note).
+
+### TASK-015 — L_Arena blockout level (art)
+- assignee: art-director
+- status: done (commit 8a87400)
+- summary: /Game/Maps/L_Arena — ground 6400x3200 top at Z=0, CastleAnchor_Blue (-2000,0,0),
+    CastleAnchor_Red (+2000,0,0), PlayerStart (-1700,0,100) yaw 0, DecalActor centerline, navmesh both
+    halves, PIE smoke-tested. Support asset /Game/Materials/M_CenterlineStripe. Handoff: handoffs/TASK-015.md.
