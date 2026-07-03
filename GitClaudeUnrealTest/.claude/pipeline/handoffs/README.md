@@ -1,0 +1,1 @@
+Handoff notes live here: `TASK-###-programmer.md` / `TASK-###-artist.md`. Written by the agent finishing a task; read by qa-reviewer and build-master. This is how agents pass details to each other without sharing context.
