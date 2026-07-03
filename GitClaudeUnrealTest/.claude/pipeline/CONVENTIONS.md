@@ -38,11 +38,21 @@ Owned by the **manager** agent. All agents MUST follow these. If a needed patter
 ## Blueprint subclasses of C++ classes
 - Name = `BP_` + C++ class name without its prefix: `BP_HeroCharacter` (from `AHeroCharacter`) — in Content/Blueprints/
 - Per-card unit blueprints: `BP_Unit_<CardID>` in Content/Blueprints/Units/ (e.g., `BP_Unit_Footman`)
+- Per-card building blueprints: `BP_Building_<CardID>` in Content/Blueprints/Buildings/ (e.g., `BP_Building_ArrowTower`, `BP_Building_Wall`)
+- Code spawns card actors by composed soft-class path from the CardID: `/Game/Blueprints/Units/BP_Unit_<CardID>.BP_Unit_<CardID>_C` (units/economy) and `/Game/Blueprints/Buildings/BP_Building_<CardID>.BP_Building_<CardID>_C` (buildings) — always null-safe (missing BP = refused play + log, never a crash)
+
+## Per-card visual assets
+- A card actor's visual mesh asset is `SM_<CardID>` in Content/Meshes/ (e.g., `SM_Footman`, `SM_ArrowTower`). This is a code contract: placement-ghost previews resolve `/Game/Meshes/SM_<CardID>` by string.
+- The mesh component on card actors (ASummonedUnit, ABuilding) is named exactly `VisualMesh`.
 
 ## Data-driven card stats (GDD §3.0)
 - Source of truth: `Docs/Data/cards.csv` (checked into Git), imported as `/Game/Data/DT_Cards` with row struct `FCardRow`
-- Row name = CardID in PascalCase (e.g., `Footman`); code and blueprints reference cards by CardID FName
+- Row name = CardID in PascalCase, no spaces (e.g., `Footman`, `ArrowTower`); code and blueprints reference cards by CardID FName; `DisplayName` carries the spaced human name ("Arrow Tower")
 - Never hardcode a stat that exists in the table
+- FCardRow columns beyond the GDD §4 stat columns (registry — CSV header must match UPROPERTY names 1:1):
+  - `DeckCount` (int32) — copies of this card in the default 50-card deck (GDD §3.4); all DeckCount values must sum to exactly 50; 0 = not in the default deck
+  - `bRanged` (bool) — true if the card's attack is delivered by a homing projectile (GDD §3.0) instead of melee contact
+- Mechanic RULES (not per-card stats) — e.g., active miner cap 6, building clearance 200, overtime at 420 s — are UPROPERTY defaults in the owning class with a `// GDD §x.x` comment; they do not get CSV columns
 
 ## Team contract
 - Enum `ETeamId { Blue, Red }`. The local player is always Blue; the enemy is Red
@@ -53,6 +63,16 @@ Owned by the **manager** agent. All agents MUST follow these. If a needed patter
 - In `L_Arena`: Blue castle at (X=-2000, Y=0), Red castle at (X=+2000, Y=0); the centerline is the plane X=0
 - Blue placement half: X <= 0; Red half: X >= 0
 - Level marker actors are TargetPoints named `<Purpose>Anchor_<Team>`: `CastleAnchor_Blue`, `CastleAnchor_Red`
+- Gold nodes (GDD §5, 800 units in front of each castle): `AGoldNode` instances `GoldNode_Blue` at (-1200, 0), `GoldNode_Red` at (+1200, 0)
+- Team-owned level instances are named `<Thing>_<Team>` (e.g., `Castle_Blue`, `GoldNode_Red`)
+
+## Damage types (C++)
+- UDamageType subclasses named `USiegeDamageType_<Kind>`, all declared in `Source/GitClaudeUnrealTest/Siegebound/DamageTypes.h/.cpp`
+- Existing kinds: `Melee`, `Projectile` (reserved for later milestones: `Siege` M4, `Spell` M5)
+- Damage-vs-castle scaling (GDD §3.0) is decided by `ACastle::TakeDamage` reading `DamageEvent.DamageTypeClass`: Projectile = 50%, Melee/default = 100% (Siege 200% arrives M4). Attackers tag projectile damage; melee needs no tag.
+
+## Raw asset sources
+- Blender FBX exports live in `Content/RawAssets/<AssetNameWithoutPrefix>.fbx` (e.g., `Castle.fbx` → `SM_Castle`); the FBX is checked into Git alongside the imported .uasset
 
 ## Delegates (C++)
 - Pattern: `FOn<Owner><Event>`, declared in the owner's header; the UPROPERTY(BlueprintAssignable) member is named `On<Owner><Event>`. Existing: `FOnCastleDestroyed`, `FOnGoldChanged`, `FOnCastleHPChanged(float CurrentHP, float MaxHP)`
@@ -66,7 +86,7 @@ Owned by the **manager** agent. All agents MUST follow these. If a needed patter
 - Approved donors so far: `AM_ComboAttack` / `AM_ChargedAttack` / `ABP_Manny_Combat` (hero attack anim), `NS_Damage` (hit impact VFX), `BP_CameraShake_Hit_Enemy` (hit shake), `UI_LifeBar` (health bars) — all under /Game/Variant_Combat/.
 
 ## Widgets with C++ bases
-- Pattern: `U<Name>Widget` (UUserWidget subclass) in Source/GitClaudeUnrealTest/Siegebound/, files `<Name>Widget.h/.cpp`; the UMG asset `WBP_<Name>` in Content/UI/ is reparented to it. Widget-facing events are BlueprintImplementableEvents with float/byte params only. Example: `UCastleHealthBarWidget` ↔ `/Game/UI/WBP_CastleHealthBar`
+- Pattern: `U<Name>Widget` (UUserWidget subclass) in Source/GitClaudeUnrealTest/Siegebound/, files `<Name>Widget.h/.cpp`; the UMG asset `WBP_<Name>` in Content/UI/ is reparented to it. Widget-facing events are BlueprintImplementableEvents with float/int/bool/byte/FString params only (never enums). Examples: `UCastleHealthBarWidget` ↔ `/Game/UI/WBP_CastleHealthBar`, `UCardHandWidget` ↔ `/Game/UI/WBP_CardHand`
 - UWidgetComponents on actors are named `<Purpose>Widget` (e.g., `HPBarWidget` on `ACastle`)
 
 ## Numbering

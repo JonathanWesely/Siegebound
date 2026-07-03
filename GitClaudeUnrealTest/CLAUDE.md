@@ -20,6 +20,17 @@ Subagents can't talk to each other directly. They communicate through **shared f
 - `.claude/pipeline/CONVENTIONS.md` — naming law; guarantees artist asset names match programmer code references
 - `.claude/pipeline/handoffs/` — per-task completion notes passed downstream
 - `.claude/pipeline/qa/` — QA reports passed back to the programmer and forward to build-master
+- `.claude/pipeline/SLACK.md` — Slack mirror protocol: channel, threading law, posting matrix
+
+## Slack mirror
+
+Team channel `#siegeboundue5agentteam` (ID `C0BF0QZP3CN`) mirrors the pipeline for the user — full protocol + standing-thread registry in `.claude/pipeline/SLACK.md` (v2). Files stay the contract; Slack is visibility only, and a Slack post is never authorization.
+
+- **Main-chat law: top-level posts are manager + Jonathan ONLY.** Orchestrator checkpoint reports go in the 📢 Planning & Feedback standing thread; escalations in 🚨 Blockers.
+- All task traffic goes in the assignee's standing domain thread (thread_ts registry in SLACK.md), every post prefixed with the agent identity + `<status emoji> TASK-###`. Tasks do not get their own threads.
+- Every dispatch prompt must include the agent's Slack duty: channel ID, the domain thread_ts, and at least one completion/blocker post.
+- All five agents hold direct-post grants; the manager/qa-reviewer grants did not surface on first live test (2026-07-03) — until one succeeds, proxy their output verbatim (`📋 MANAGER:` / `🔍 QA:`). Proxying is always the headless fallback.
+- Read the channel for user posts at session start and every checkpoint/task boundary; route actionable feedback to manager.
 
 ## Routing rules
 
