@@ -33,7 +33,7 @@ Source: `Docs/GDD.md` §9. Only the current milestone is decomposed into tasks; 
 4. M4 — Card Set II (16 cards, keywords, hero upgrades) — `not-started`
 5. M5 — Spell system + Set III — `not-started`
 6. M6 — Deck-builder meta — `not-started`
-7. M7 — Premium art & feel pass — `not-started`
+7. M7 — Premium art & feel pass — `not-started` · **Jonathan request (2026-07-04):** raise fidelity on SM_Castle + SM_Footman + SM_Archer (higher detail than the current blockouts); wants the game to look nicer. Decision: DEFERRED here (mesh swaps are non-breaking; roster still growing through M4-M6). Two integration paths to scope at M7: (a) art-director custom higher-detail Blender models, and/or (b) **Fab/UE-marketplace assets — Jonathan must download packs into the project via the Epic Launcher first (agents can't browse/buy/download Fab autonomously); art-director then swaps meshes/materials.** Could be pulled forward as a standalone art pass after M3/M4 if Jonathan wants it sooner.
 8. M8 — Networked 1v1 multiplayer — `not-started`
 
 ### M1 CHECKPOINT — 2026-07-03 (read this first on resume)
@@ -845,7 +845,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-048 — IA_Rally input asset + Rally wiring on BP_HeroCharacter (editor)
 - assignee: gameplay-programmer
-- status: blocked (2026-07-04 — editor crash-loops booting the 2f6a8fc DLL). ROOT CAUSE: Config/DefaultEngine.ini r.PathTracing=True (UE5 template default, unused by this game) → new DLL invalidated the RTPSO cache → cold PathTracingMainRG RTPSO compile crashes the editor (GPU-heavy). GitClaudeUnrealTest DLL loads clean + MCP registers before crash → M3 code exonerated. FIX IN PROGRESS: build-master disables r.PathTracing (+r.RayTracing if needed), boots, confirms MCP. CODE GAP found: AHeroCharacter::SetupPlayerInputComponent has NO BindAction for RallyAction (TASK-042 only added the UPROPERTY) — Q→Rally needs either a C++ BindAction (recompile) or a BP event-graph node. Resolve on redispatch. handoffs: TASK-048 blocker report.
+- status: ready-for-integration — done 2026-07-04 (editor PID 30092, c8a40b2). IA_Rally asset created (dup IA_Card1, bool/Digital); Q→IA_Rally appended to IMC_Hero (17 M1/M2 mappings preserved byte-for-byte, IMC_Default untouched); IA_Rally assigned to BP_HeroCharacter.RallyAction (CDO readback confirmed, survived BP compile). PIE-boot verify: c8a40b2 null-RallyAction Warning does NOT fire (2 proofs: +CDO readback, -boot log) → wiring complete. Interactive Q-press deferred to TASK-052/Jonathan (no MCP keypress verb). Assets auto-staged, left for TASK-052 commit. handoffs/TASK-048.md.
 - blocked-by: TASK-042; TASK-051
 - parallel-safe: no
 - spec: >
@@ -860,7 +860,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-049 — Main menu: WBP_MainMenu + L_MainMenu + Play-vs-Bot flow (editor)
 - assignee: gameplay-programmer
-- status: backlog (HELD — needs TASK-047 start-match entry compiled [TASK-051] + editor)
+- status: ready-for-integration — done 2026-07-04 (editor PID 30092). L_MainMenu (dup L_Arena, gameplay actors stripped, WorldSettings GameMode=BP_MenuGameMode), BP_MenuGameMode (cursor + CreateWidget WBP_MainMenu + UIOnly), WBP_MainMenu (dup UI_TouchSimple; Play→ASiegeGameMode::StartMatch, Deck Builder greyed/M6, Quit→QuitGame). DefaultEngine.ini GameDefaultMap=L_MainMenu (EditorStartupMap kept L_Arena). PIE: Game class=BP_MenuGameMode_C confirmed, menu Construct clean. MCP SURVIVED ~70 calls (path-tracing fix held). Click-through deferred to TASK-052/Jonathan (no MCP click verb). Auto-staged for TASK-052 commit. handoffs/TASK-049.md.
 - blocked-by: TASK-047; TASK-051
 - parallel-safe: no
 - spec: >
@@ -877,7 +877,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-050 — HUD/Victory v3: Rally cooldown indicator + Victory/Defeat display (editor)
 - assignee: gameplay-programmer
-- status: backlog (HELD — needs TASK-042 + TASK-047 compiled [TASK-051] + editor)
+- status: ready-for-integration — done 2026-07-04 (editor PID 30092). WBP_HUD: additive Rally indicator (RallyText TextBlock + SetupRallyIndicator/UpdateRallyDisplay fns, seed "Rally: Ready" then bind FOnRallyStateChanged via Tick do-once; M1 gold Construct byte-INTACT). WBP_VictoryScreen: ALREADY correct (SetWinner 0→Victory/1→Defeat, Play Again intact) — NO edit made; **in-memory dirty from read-only inspection only — build-master must NOT save it (disk correct)**. Live PIE: full match ran to Castle_0(Blue) destroyed→winner Red→Defeat path fired clean. MCP survived ~50 calls. Seed caveat: no BP getter for live cooldown, seed=Ready is correct at HUD-create. handoffs/TASK-050.md.
 - blocked-by: TASK-042; TASK-047; TASK-051
 - parallel-safe: no
 - spec: >
@@ -913,7 +913,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-052 — M3 final assembly: full-match-vs-bot PIE verification + commit (build)
 - assignee: build-master
-- status: backlog (HELD — after TASK-048/049/050 done + TASK-051 committed)
+- status: in-progress (2026-07-04; TASK-048/049/050 done, TASK-051 committed c8a40b2; editor UP PID 30092)
 - blocked-by: TASK-048, TASK-049, TASK-050 (done); TASK-051 (committed)
 - parallel-safe: no
 - spec: >
