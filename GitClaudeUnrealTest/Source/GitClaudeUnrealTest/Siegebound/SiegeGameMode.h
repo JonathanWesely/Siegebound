@@ -13,12 +13,14 @@ class AHeroCharacter;
 class ASiegePlayerController;
 
 /**
- *  Siegebound game mode (GDD §3.9 / §3.1, M1 scope) — win condition, hero
- *  respawn, and the Play Again full reset. Set as the project default via
- *  Config/DefaultEngine.ini (GlobalDefaultGameMode = /Script/GitClaudeUnrealTest.SiegeGameMode).
+ *  Siegebound game mode (GDD §3.9 / §3.1 / §3.2, M2 scope) — win condition,
+ *  match-end world freeze, hero respawn, and the Play Again full reset. Set as
+ *  the project default via Config/DefaultEngine.ini
+ *  (GlobalDefaultGameMode = /Script/GitClaudeUnrealTest.SiegeGameMode).
  *
  *  Class defaults:
- *  - PlayerStateClass       = ASiegePlayerState (TASK-005 gold economy)
+ *  - GameStateClass         = ASiegeGameState (TASK-024 match clock + overtime)
+ *  - PlayerStateClass       = ASiegePlayerState (TASK-005 gold economy, TASK-024 rate composition)
  *  - PlayerControllerClass  = ASiegePlayerController (TASK-007 card play / end screen)
  *  - DefaultPawnClass       = /Game/Blueprints/BP_HeroCharacter (TASK-009), resolved
  *    LAZILY in GetDefaultPawnClassForController via TSoftClassPtr::LoadSynchronous
@@ -33,9 +35,12 @@ class ASiegePlayerController;
  *  in the level (Castle_Blue / Castle_Red, placed at integration). The team whose
  *  castle fell loses — Red castle destroyed => Winner = Blue (Victory), Blue
  *  destroyed => Winner = Red (Defeat variant, wired even though nothing damages
- *  Blue in M1). The winner is pushed to every ASiegePlayerController via
- *  HandleMatchEnd. A bMatchEnded latch guarantees the match ends at most once,
- *  and NOTHING else can end a match.
+ *  Blue in M1). Before the end screen goes up, FreezeWorldAtMatchEnd() freezes
+ *  the world under it (TASK-024, closing qa/TASK-006-report.md finding 2):
+ *  units FreezeAI'd, tower fire loops silenced, in-flight projectiles cleared,
+ *  income paused, match clock stopped. The winner is then pushed to every
+ *  ASiegePlayerController via HandleMatchEnd. A bMatchEnded latch guarantees
+ *  the match ends at most once, and NOTHING else can end a match.
  *
  *  Hero respawn (GDD §3.1): the hero's FOnHeroDied (bound in SetPlayerDefaults,
  *  which runs for every pawn this mode hands to a player) schedules a respawn
@@ -45,11 +50,20 @@ class ASiegePlayerController;
  *  restored). After match end the hero stays down; PlayAgain() revives it.
  *
  *  Timer policy (QA-BINDING, TASKBOARD TASK-006 qa-note from qa/TASK-005-report.md):
- *  this class clears ONLY the specific FTimerHandle it owns (HeroRespawnTimerHandle).
- *  It never calls ClearAllTimersForObject on foreign objects or any world-wide
- *  clear — ASiegePlayerState's income timer and the units' AI timers belong to
- *  those objects (they clean themselves up in their EndPlay). In PlayAgain() the
- *  own-timer clear runs BEFORE ResetGold(), which restarts the income timer.
+ *  in PlayAgain() this class clears ONLY the specific FTimerHandle it owns
+ *  (HeroRespawnTimerHandle), BEFORE ResetGold() (which restarts the income
+ *  timer) — never a world-wide clear, and never another system's timer:
+ *  ASiegePlayerState's income timer and the units' AI timers belong to those
+ *  objects (they clean themselves up in their EndPlay). ONE deliberate, narrow
+ *  exception (TASK-024, fixing qa/TASK-027-report.md WARN-1): the MATCH-END
+ *  freeze silences every ATower's fire loop via the public
+ *  FTimerManager::ClearAllTimersForObject — Tower.h/.cpp are frozen qa-passed
+ *  contracts with a private timer handle and no public stop hook, the fire
+ *  loop is the only timer a tower ever arms (qa/TASK-027 verified), nothing
+ *  can legitimately re-arm it (stats bind exactly once), and PlayAgain
+ *  destroys all buildings regardless. The invariant this policy protects is
+ *  untouched: the income timer's owner is never targeted on any path — the
+ *  match-end freeze pauses income through ASiegePlayerState's OWN PauseIncome().
  */
 UCLASS()
 class GITCLAUDEUNREALTEST_API ASiegeGameMode : public AGameModeBase
@@ -61,17 +75,28 @@ public:
 	ASiegeGameMode();
 
 	/**
-	 *  Full match reset (GDD §3.9 M1 scope) — called by WBP_VictoryScreen's
-	 *  Play Again button (TASK-011). In order:
+	 *  Full match reset (GDD §3.9, M2 scope — TASK-006 base + TASK-024 v2) —
+	 *  called by WBP_VictoryScreen's Play Again button (TASK-011). In order:
 	 *    1. clears this mode's own pending hero-respawn timer (BEFORE ResetGold —
 	 *       qa-note ordering; only our own handle, never other systems' timers),
 	 *    2. destroys every ASummonedUnit,
+	 *    2b. destroys every ABuilding (§3.9 "buildings"; ATower::EndPlay clears
+	 *        its own fire timer synchronously, and dead walls heal the navmesh),
+	 *    2c. destroys every in-flight AProjectile (qa/TASK-026-report.md WARN-1 —
+	 *        load-bearing for a MID-MATCH reset, where units/towers may have
+	 *        fired this very frame; a no-op after a normal match end),
 	 *    3. ResetCastle() on every ACastle (back to 2000/2000, re-armed),
-	 *    4. ResetGold() on every ASiegePlayerState (back to 50; restarts income),
+	 *    3b. ASiegeGameState::ResetClock() — clock to 0, overtime latch cleared
+	 *        (MUST precede step 4: ResetEconomy re-derives the rate against it),
+	 *    4. per ASiegePlayerState: ResetEconomy() (miners 0, rate re-derived),
+	 *       ResetGold() (back to 50; restarts income), ResumeIncome() (lifts the
+	 *       match-end pause; idempotent when never paused),
 	 *    5. re-arms the win condition and restores the hero at its start with
 	 *       full HP, repossessed, input enabled,
 	 *    6. ASiegePlayerController::HandleMatchReset() (removes the end screen,
-	 *       restores game-only input — TASK-007 contract).
+	 *       restores game-only input — TASK-007 contract), then a fresh deck +
+	 *       hand via the controller's UDeckComponent::ResetDeck() (§3.9 "deck,
+	 *       hand"; reached by component class, null-safe until TASK-023 lands).
 	 *  Safe against double invocation: re-entrant calls are dropped by a guard,
 	 *  and a second sequential call just re-runs steps that are all idempotent.
 	 */
@@ -153,6 +178,24 @@ private:
 	 *  is picked up by the next spawn.
 	 */
 	UClass* ResolveHeroPawnClass();
+
+	/**
+	 *  Match-end world freeze (§3.9 / M2 exit criteria, TASK-024) — runs once
+	 *  from OnCastleDestroyedHandler, BEFORE the end screen goes up, closing
+	 *  qa/TASK-006-report.md finding 2 and both M2 carry-forwards:
+	 *    1. FreezeAI() on every ASummonedUnit (TASK-028 contract — permanent,
+	 *       idempotent; frozen units idle until PlayAgain destroys them),
+	 *    2. silences every ATower's fire loop (qa/TASK-027-report.md WARN-1)
+	 *       via FTimerManager::ClearAllTimersForObject — the one sanctioned
+	 *       foreign-timer exception, see the class comment,
+	 *    3. destroys every in-flight AProjectile (qa/TASK-026-report.md WARN-1 —
+	 *       none may land damage under the Victory screen),
+	 *    4. PauseIncome() on every ASiegePlayerState,
+	 *    5. StopClock() on the ASiegeGameState.
+	 *  After this, nothing in the world can deal damage, spawn a projectile,
+	 *  accrue gold, or advance the clock until PlayAgain().
+	 */
+	void FreezeWorldAtMatchEnd();
 
 	/** Respawn-timer callback. */
 	void RespawnHero();

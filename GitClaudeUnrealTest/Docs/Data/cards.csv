@@ -1,2 +1,7 @@
-,DisplayName,CardType,Cost,MaxCopies,HP,Damage,Range,Cadence,Speed,Profile,Notes
-Footman,Footman,Unit,3,12,80,12,120,1.0,400,Standard,Basic melee line unit
+,DisplayName,CardType,Cost,MaxCopies,HP,Damage,Range,Cadence,Speed,Profile,Notes,DeckCount,bRanged
+Footman,Footman,Unit,3,12,80,12,120,1.0,400,Standard,Basic melee line unit,12,false
+Archer,Archer,Unit,4,10,45,10,700,1.2,350,Standard,Ranged line unit,10,true
+Knight,Knight,Unit,6,6,200,15,120,1.2,300,Standard,Heavy melee tank,6,false
+Miner,Miner,Economy,8,4,30,0,0,0,350,None,Non-combat economy unit; +1 gold/s on arrival (GDD 3.3),4,false
+ArrowTower,Arrow Tower,Building,5,8,150,15,900,1.5,0,None,Anti-unit tower,8,true
+Wall,Wall,Building,4,10,300,0,0,0,0,None,Blocks unit pathing,10,false

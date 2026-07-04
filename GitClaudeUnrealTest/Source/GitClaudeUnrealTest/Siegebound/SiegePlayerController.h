@@ -5,18 +5,19 @@
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
 #include "UObject/SoftObjectPtr.h"
+#include "Siegebound/CardRow.h" // ECardType (the PendingCardType member; FCardRow comes along)
 #include "Siegebound/TeamId.h"
 #include "SiegePlayerController.generated.h"
 
 class AHeroCharacter;
 class AStaticMeshActor;
 class UDataTable;
+class UDeckComponent;
 class UInputAction;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class UStaticMesh;
 class UUserWidget;
-struct FCardRow;
 
 /**
  *  Broadcast whenever a card play is refused for a player-facing reason
@@ -27,38 +28,75 @@ struct FCardRow;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCardPlayRefused, FName, CardID, FText, Reason);
 
 /**
- *  Siegebound player controller — card play + unit placement mode (GDD §3.5, M1 subset).
+ *  M2 refusal surface (TASK-023): broadcast on EVERY refused card play or
+ *  discard with a short player-facing, §3.0-style reason ("Not enough gold",
+ *  "No card in that hand slot", "Miner limit reached" [TASK-030], ...). The
+ *  hand HUD (TASK-033) binds here to flash refusal messages. Play refusals
+ *  ALSO fire the M1 OnCardPlayRefused (with the card context); discard
+ *  refusals fire only this delegate — a discard is not a card play.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCardRefused, const FString&, Reason);
+
+/**
+ *  Siegebound player controller — hand play, discard, and card placement mode
+ *  (GDD §3.4/§3.5/§3.6; M1 placement subset + TASK-023 hand v2 + TASK-030
+ *  placement v2).
  *
- *  M1 scope: ONE always-available Footman card, no hand/deck (TODO(M2)).
+ *  Deck & hand (M2, TASK-022/023): UDeckComponent default subobject
+ *  "DeckComponent" — built (BuildAndShuffle) at BeginPlay = match start (the
+ *  component never self-builds, TASK-022 flagged decision 12) and rebuilt
+ *  (ResetDeck) in HandleMatchReset, which ASiegeGameMode::PlayAgain already
+ *  calls. PlayHandSlot(0..5) plays a hand slot (keys 1..6); the card leaves
+ *  the hand only at placement CONFIRM (M2 ruling). DiscardHandSlot charges
+ *  the fixed 1-gold §3.6 fee, then moves the card. Holding IA_UICursor
+ *  (Left Alt, TASK-032) shows the mouse cursor for HUD clicks and suspends
+ *  camera look; releasing restores M1 game-only free-look.
  *
+ *  Placement v2 (GDD §3.5, TASK-030):
  *  - BeginPlay creates and adds /Game/UI/WBP_HUD (soft class, null-safe —
  *    the widget is built in TASK-011; missing = log once and continue).
- *  - EnterPlacementMode(CardID): reads Cost from the /Game/Data/DT_Cards row
- *    (never hardcoded, GDD §3.0), refuses if the player can't afford it, then
- *    enters placement mode: mouse cursor shown, hero melee suppressed
+ *  - EnterPlacementMode(CardID): reads the /Game/Data/DT_Cards row (never
+ *    hardcoded, GDD §3.0); refuses when the player can't afford the Cost,
+ *    the hero is dead, or — Miner card only — the §3.3 alive-miner cap is
+ *    full (ASiegePlayerState::CanAddMiner, "Miner limit reached", checked
+ *    BEFORE any gold or mode state moves). Then enters placement mode:
+ *    mouse cursor shown, hero melee suppressed
  *    (AHeroCharacter::SetMeleeSuppressed — TASK-003), and a ghost preview
- *    (SM_Footman + dynamic instance of M_Ghost, "GhostColor" green/red)
- *    follows a per-frame cursor-to-ground trace.
- *  - Valid placement = ground hit AND X <= 0 (Blue half; centerline X=0 per
- *    CONVENTIONS world-axes contract).
- *  - Confirm = LMB while in mode: SpendGold(Cost), deferred-spawn the card's
- *    unit class (/Game/Blueprints/Units/BP_Unit_<CardID>, ASummonedUnit
- *    fallback) with InitUnit(Team, CardID), exit mode. An invalid click
- *    refuses, spends nothing, and STAYS in mode.
+ *    (/Game/Meshes/SM_<CardID>, engine-sphere fallback; dynamic instance of
+ *    M_Ghost, "GhostColor" green/red) follows a per-frame cursor trace.
+ *  - Valid placement (ALL cards) = ground hit AND X <= 0 (Blue half per
+ *    CONVENTIONS) AND the point projects onto the navmesh within
+ *    NavProjectionExtent (refuses castle-roof and plinth-top hits — the M1
+ *    carry-over) AND outside every castle's plinth keep-out box
+ *    (CastlePlinthClearance). Building cards additionally require
+ *    >= BuildingClearance from the nearest other ABuilding (§3.5; castles
+ *    are NOT buildings for that rule). Violations show the red ghost.
+ *  - Confirm = LMB while in mode: re-gate the miner cap, resolve the card's
+ *    BP class by CardType (Unit/Economy →
+ *    /Game/Blueprints/Units/BP_Unit_<CardID>; Building →
+ *    /Game/Blueprints/Buildings/BP_Building_<CardID>; missing BP = refuse +
+ *    exit, NO gold spent), then SpendGold(Cost), InitUnit/InitBuilding(Team,
+ *    CardID) + FinishSpawning at the clicked point, and
+ *    ConfirmPlayFromHand(PendingHandSlot). An invalid click refuses, spends
+ *    nothing, and STAYS in mode.
  *  - Cancel = IA_CancelPlace (RMB/Esc): exit with no cost.
  *  - HandleMatchEnd(Winner): exits placement mode, shows
  *    /Game/UI/WBP_VictoryScreen (soft class, null-safe) and switches to
- *    UI-only input. HandleMatchReset() restores play (TASK-006 PlayAgain).
+ *    UI-only input. HandleMatchReset() restores play (TASK-006 PlayAgain)
+ *    and defensively exits placement mode FIRST (qa/TASK-023-report.md WARN).
  *
  *  QA-BINDING (qa/TASK-003-report.md warning 2): AHeroCharacter::ResetHero
  *  deliberately preserves bMeleeSuppressed, so this controller calls
  *  SetMeleeSuppressed(false) on EVERY placement-mode exit path — confirm,
- *  cancel, match end, hero death (OnHeroDied), unpossession, and EndPlay.
- *  ExitPlacementMode() releases the suppression before any early-out.
+ *  confirm-time refusal exits (miner cap / missing BP class), cancel, match
+ *  end, hero death (OnHeroDied), unpossession, match reset, and EndPlay.
+ *  Every one funnels through ExitPlacementMode(), which releases the
+ *  suppression before any early-out.
  *
- *  All content references (widgets, data table, ghost mesh/material, input
- *  actions) are soft and resolved null-safe at runtime — missing assets log
- *  a warning and never block the placement logic itself.
+ *  All content references (widgets, data table, ghost meshes/material, input
+ *  actions, card BP classes) are soft and resolved null-safe at runtime —
+ *  missing assets log and never crash; a missing card BP refuses the play
+ *  cleanly with no gold spent (CONVENTIONS composed soft-class law).
  */
 UCLASS()
 class GITCLAUDEUNREALTEST_API ASiegePlayerController : public APlayerController
@@ -73,12 +111,50 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Cards")
 	FOnCardPlayRefused OnCardPlayRefused;
 
+	/** Fired on EVERY refused play or discard with the §3.0-style reason string. The hand HUD (TASK-033) binds here. */
+	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Cards")
+	FOnCardRefused OnCardRefused;
+
 	/**
-	 *  Starts placement mode for the given card (HUD card button or the
-	 *  IA_Card1 key). Reads the card's Cost from /Game/Data/DT_Cards (GDD
-	 *  §3.0 — never hardcoded) and refuses (log + OnCardPlayRefused) when the
-	 *  data is missing, the player can't afford it, the match has ended, the
-	 *  hero is dead, or placement mode is already active.
+	 *  Plays the card in hand slot 0..5 (GDD §3.5; keys 1..6 / TASK-033 card
+	 *  buttons). Refuses (log + OnCardRefused, play refusals also
+	 *  OnCardPlayRefused) on: empty/out-of-range slot, missing DT_Cards row,
+	 *  gold < Cost (grey-out is the widget's job), or a not-yet-supported card
+	 *  type (Spell = M5, HeroUpgrade/Utility instants = M4). Unit/Building/
+	 *  Economy cards enter placement mode for the slot's CardID — entry can
+	 *  additionally refuse a dead hero ("Hero is down") or a capped Miner
+	 *  ("Miner limit reached", §3.3 — TASK-030). The card leaves the hand
+	 *  ONLY at placement CONFIRM (M2 ruling), so cancel costs nothing.
+	 *  Post-match and mid-placement presses are ignored (no broadcast),
+	 *  mirroring the M1 EnterPlacementMode early-outs.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Cards")
+	void PlayHandSlot(int32 Slot);
+
+	/**
+	 *  Discards the card in hand slot 0..5 for the fixed DiscardCost (1 gold,
+	 *  GDD §3.6) and draws its replacement. Refuses (log + OnCardRefused) on:
+	 *  empty/out-of-range slot — checked BEFORE any gold moves
+	 *  (qa/TASK-022-report.md WARN-1 guard) — or SpendGold refusal at 0 gold.
+	 *  Ignored after match end; refused during placement mode (discarding the
+	 *  slot being placed would desync the pending confirm).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Cards")
+	void DiscardHandSlot(int32 Slot);
+
+	/** Deck & hand model (TASK-022). Never null (default subobject). TASK-029/033 widgets seed-then-bind from it. */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Deck")
+	UDeckComponent* GetDeckComponent() const { return DeckComponent; }
+
+	/**
+	 *  Starts placement mode for the given card (PlayHandSlot, the HUD card
+	 *  button, or the IA_Card1 key). Reads the card's row from
+	 *  /Game/Data/DT_Cards (GDD §3.0 — never hardcoded) and refuses (log +
+	 *  both refusal delegates) when the data is missing, the player can't
+	 *  afford it, the hero is dead, or — Miner card only — the §3.3
+	 *  alive-miner cap is full (CanAddMiner pre-check, "Miner limit reached",
+	 *  no gold moves — TASK-030). Post-match / already-placing calls are
+	 *  silent ignores (M1 early-outs).
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Cards")
 	void EnterPlacementMode(FName CardID);
@@ -107,9 +183,15 @@ public:
 
 	/**
 	 *  Play Again support (GDD §3.9) — called by ASiegeGameMode::PlayAgain
-	 *  (TASK-006): removes the victory screen if still up (idempotent with the
-	 *  widget's own RemoveFromParent), clears the match-ended latch, and
-	 *  restores game-only input with the cursor hidden.
+	 *  (TASK-006): defensively exits placement mode FIRST
+	 *  (qa/TASK-023-report.md WARN — an out-of-contract mid-placement call
+	 *  must never rebuild the hand under a live PendingHandSlot), removes the
+	 *  victory screen if still up (idempotent with the widget's own
+	 *  RemoveFromParent), clears the match-ended latch and any stuck
+	 *  IA_UICursor hold, resets the deck to a fresh §3.4 deal
+	 *  (DeckComponent->ResetDeck — the controller-side deck-reset entry point
+	 *  TASK-024's PlayAgain v2 consumes), and restores game-only input with
+	 *  the cursor hidden.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Match")
 	void HandleMatchReset();
@@ -124,13 +206,13 @@ public:
 
 protected:
 
-	/** Creates and adds the HUD widget (soft class, null-safe — TASK-011 builds it). */
+	/** Builds the deck at match start (GDD §3.4, TASK-022 timing contract), then creates and adds the HUD widget (soft class, null-safe — TASK-011 builds it). */
 	virtual void BeginPlay() override;
 
-	/** Defensive placement-mode exit on teardown (releases melee suppression, destroys the ghost). */
+	/** Defensive placement-mode exit on teardown (releases melee suppression, destroys the ghost, ends any IA_UICursor hold). */
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-	/** Binds IA_Card1 / IA_CancelPlace on the enhanced input component (null-safe, soft-resolved by path). */
+	/** Binds IA_Card1..IA_Card6, IA_UICursor and IA_CancelPlace on the enhanced input component (all null-safe, soft-resolved by path; missing assets skip their binding). */
 	virtual void SetupInputComponent() override;
 
 	/** Placement mode per-frame work: cancel poll, cursor-to-ground trace, ghost update, confirm poll. */
@@ -142,8 +224,23 @@ protected:
 	/** Unsubscribes from the hero and defensively exits placement mode. */
 	virtual void OnUnPossess() override;
 
-	/** IA_Card1 pressed: play the M1 card slot (Card1CardID = Footman). */
+	/**
+	 *  IA_Card1 pressed (key "1"): plays hand slot 0 when it holds a card;
+	 *  falls back to the M1 always-available Footman placement while the hand
+	 *  is empty (the qa/TASK-021-report.md WARN-2 window — deck builds empty
+	 *  until the TASK-031 reimport), so the M1 key-1 flow keeps working
+	 *  unchanged until the real deck data lands.
+	 */
 	void OnCard1Pressed();
+
+	/** IA_Card2..IA_Card6 pressed (keys "2".."6"): play hand slot 1..5 (bound with the slot as payload). */
+	void OnCardSlotKeyPressed(int32 Slot);
+
+	/** IA_UICursor (Left Alt) pressed: show the cursor (GameAndUI) and suspend camera look for HUD clicks (M2 input ruling). */
+	void OnUICursorPressed();
+
+	/** IA_UICursor released (Completed AND Canceled): restore game-only free-look unless placement mode still owns the cursor. */
+	void OnUICursorReleased();
 
 	/** IA_CancelPlace pressed (RMB/Esc): leave placement mode at no cost. */
 	void OnCancelPlacePressed();
@@ -154,9 +251,32 @@ protected:
 
 protected:
 
-	/** Card played by the IA_Card1 slot. M1's single always-available card (GDD §3.5). TODO(M2): hand/deck. */
+	/**
+	 *  Deck & hand model (GDD §3.4, TASK-022) — default subobject named exactly
+	 *  "DeckComponent". Built by this controller at BeginPlay (match start) and
+	 *  reset in HandleMatchReset (the PlayAgain flow) — the component never
+	 *  self-builds (TASK-022 flagged decision 12).
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Deck")
+	TObjectPtr<UDeckComponent> DeckComponent;
+
+	/** M1 fallback card for key "1" while the hand is empty (WARN-2 window). TASK-033 retires the fallback with the HUD. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Cards")
 	FName Card1CardID = FName(TEXT("Footman"));
+
+	/**
+	 *  CardID whose plays are gated by the alive-miner cap
+	 *  (ASiegePlayerState::CanAddMiner — checked at placement entry AND
+	 *  confirm, refusing "Miner limit reached" with zero gold movement).
+	 *  // GDD §3.3 — active cap 6 miners; a 7th Miner card is refused per the
+	 *  §3.0 refund rule (net-zero pre-check, M2 ruling)
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Cards")
+	FName MinerCardID = FName(TEXT("Miner"));
+
+	/** Fixed discard charge — discarding costs 1 gold and is refused below it (GDD §3.6). Mechanic rule, not a CSV column (CONVENTIONS registry). */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Cards", meta = (ClampMin = "0"))
+	int32 DiscardCost = 1;
 
 	/** Card stat table (GDD §3.0). Imported in TASK-008 — resolved null-safe at play time. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Cards")
@@ -170,9 +290,15 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|UI")
 	TSoftClassPtr<UUserWidget> VictoryScreenClass;
 
-	/** Ghost preview mesh, /Game/Meshes/SM_Footman (TASK-014). Missing = invisible ghost, placement still works. */
+	/**
+	 *  Ghost fallback mesh, /Engine/BasicShapes/Sphere (engine asset,
+	 *  read-only), used when the card's own /Game/Meshes/SM_<CardID> is
+	 *  missing (TASK-030 ghost generalization; per-card meshes arrive in
+	 *  TASK-014/037/038). Both missing = invisible ghost, placement still
+	 *  works (M1 degradation rule).
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement")
-	TSoftObjectPtr<UStaticMesh> GhostMeshAsset;
+	TSoftObjectPtr<UStaticMesh> GhostFallbackMeshAsset;
 
 	/** Ghost material, /Game/Materials/M_Ghost (TASK-012; vector param "GhostColor"). Missing = default material. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement")
@@ -182,6 +308,30 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> Card1Action;
 
+	/** IA_Card2 slot (key "2" -> hand slot 1). Left unset, it soft-resolves from Card2ActionAsset (asset arrives in TASK-032). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> Card2Action;
+
+	/** IA_Card3 slot (key "3" -> hand slot 2). Left unset, it soft-resolves from Card3ActionAsset (TASK-032). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> Card3Action;
+
+	/** IA_Card4 slot (key "4" -> hand slot 3). Left unset, it soft-resolves from Card4ActionAsset (TASK-032). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> Card4Action;
+
+	/** IA_Card5 slot (key "5" -> hand slot 4). Left unset, it soft-resolves from Card5ActionAsset (TASK-032). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> Card5Action;
+
+	/** IA_Card6 slot (key "6" -> hand slot 5). Left unset, it soft-resolves from Card6ActionAsset (TASK-032). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> Card6Action;
+
+	/** IA_UICursor slot (hold Left Alt = cursor for HUD clicks, M2 input ruling). Left unset, it soft-resolves from UICursorActionAsset (TASK-032). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> UICursorAction;
+
 	/** IA_CancelPlace slot. Left unset, it soft-resolves from CancelPlaceActionAsset. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> CancelPlaceAction;
@@ -189,6 +339,30 @@ protected:
 	/** Soft path for IA_Card1 (/Game/Input/Actions/IA_Card1, created in TASK-009). */
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TSoftObjectPtr<UInputAction> Card1ActionAsset;
+
+	/** Soft path for IA_Card2 (/Game/Input/Actions/IA_Card2, created in TASK-032). */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TSoftObjectPtr<UInputAction> Card2ActionAsset;
+
+	/** Soft path for IA_Card3 (/Game/Input/Actions/IA_Card3, created in TASK-032). */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TSoftObjectPtr<UInputAction> Card3ActionAsset;
+
+	/** Soft path for IA_Card4 (/Game/Input/Actions/IA_Card4, created in TASK-032). */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TSoftObjectPtr<UInputAction> Card4ActionAsset;
+
+	/** Soft path for IA_Card5 (/Game/Input/Actions/IA_Card5, created in TASK-032). */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TSoftObjectPtr<UInputAction> Card5ActionAsset;
+
+	/** Soft path for IA_Card6 (/Game/Input/Actions/IA_Card6, created in TASK-032). */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TSoftObjectPtr<UInputAction> Card6ActionAsset;
+
+	/** Soft path for IA_UICursor (/Game/Input/Actions/IA_UICursor, created in TASK-032). */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TSoftObjectPtr<UInputAction> UICursorActionAsset;
 
 	/** Soft path for IA_CancelPlace (/Game/Input/Actions/IA_CancelPlace, created in TASK-009). */
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
@@ -198,6 +372,40 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement")
 	float PlacementMaxX = 0.f;
 
+	/**
+	 *  Minimum 2D distance from the nearest other ABuilding for a
+	 *  Building-card placement — closer shows the red ghost and refuses the
+	 *  click with no gold spent. Castles are NOT buildings for this rule
+	 *  (class-disjoint; the plinth keep-out covers them). Mechanic rule, not a
+	 *  CSV column (CONVENTIONS registry). // GDD §3.5 — buildings require 200
+	 *  units of clearance from any other building
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement", meta = (ClampMin = "0"))
+	float BuildingClearance = 200.f;
+
+	/**
+	 *  Box half-extent for the placement navmesh projection (GDD §3.5 via
+	 *  TASK-030): a point is placeable only if it projects onto the navmesh
+	 *  within this extent — refusing castle-roof and plinth-top cursor hits
+	 *  (the M1 carry-over). The vertical half-extent MUST stay well below the
+	 *  ~90-unit SM_Castle plinth height, or a plinth-top point could project
+	 *  down to the ground navmesh and read as valid.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement")
+	FVector NavProjectionExtent = FVector(50.f, 50.f, 50.f);
+
+	/**
+	 *  Castle plinth keep-out, applied as a 2D box half-extent around every
+	 *  ACastle: points inside are refused for ALL cards. M1 carry-over —
+	 *  SM_Castle's plinth collision spans ~814x820 units (~90 high, half-extent
+	 *  ~410); the box guarantees plinth points always read invalid even where
+	 *  the navmesh leaves walkable islands on the plinth rim that
+	 *  ProjectPointToNavigation alone would accept. 420 = half-extent + margin
+	 *  (the margin band is already navmesh-eroded by agent radius).
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement", meta = (ClampMin = "0"))
+	float CastlePlinthClearance = 420.f;
+
 	/** Ghost tint for a valid point (M_Ghost "GhostColor", TASK-012). */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement")
 	FLinearColor ValidGhostColor = FLinearColor(0.f, 1.f, 0.f);
@@ -206,19 +414,34 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement")
 	FLinearColor InvalidGhostColor = FLinearColor(1.f, 0.f, 0.f);
 
-	/** Yaw applied to the ghost so the raw SM_Footman faces +X (TASK-014 handoff: mesh needs -90°). */
+	/** Yaw applied to the ghost so raw SM_<CardID> meshes face +X — the whole family shares SM_Footman's export orientation and -90° fix (TASK-014/037/038 handoffs). */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement")
 	float GhostYawOffset = -90.f;
 
 private:
 
-	/** Confirm click (LMB in mode): validate, SpendGold, deferred-spawn + InitUnit, exit. Invalid = refuse, stay. */
+	/** Why the latest traced cursor point is invalid — drives the confirm-refusal message (the §3.5 clearance rule gets its own reason). */
+	enum class EPlacementInvalidReason : uint8
+	{
+		None,      // point is valid
+		Point,     // no ground hit / enemy half / off the navmesh / castle plinth
+		Clearance  // building within BuildingClearance of another building
+	};
+
+	/**
+	 *  Confirm click (LMB in mode): reason-mapped refusal on an invalid point
+	 *  (stay in mode); miner-cap re-gate and BP-class resolve refusals exit the
+	 *  mode with no gold spent (nothing a different click could fix); otherwise
+	 *  SpendGold, deferred-spawn by CardType (InitUnit / InitBuilding — the
+	 *  TASK-027 contract passes the REAL CardID, qa/TASK-027 WARN-2),
+	 *  FinishSpawning, ConfirmPlayFromHand, exit.
+	 */
 	void TryConfirmPlacement();
 
-	/** Per-frame: cursor-to-ground trace, validity (ground AND X <= PlacementMaxX), ghost position + color. */
+	/** Per-frame: cursor-to-ground trace, validity v2 (ground, own half, navmesh projection, plinth keep-out, building clearance), ghost position + color. */
 	void UpdatePlacementGhost();
 
-	/** Spawns the ghost actor (movable, collision off, SM_Footman + M_Ghost MID) — every asset null-safe. */
+	/** Spawns the ghost actor (movable, collision off, per-card SM_<CardID> or the fallback sphere + M_Ghost MID) — every asset null-safe. */
 	void SpawnPlacementGhost();
 
 	/** Destroys the ghost actor and drops the dynamic material instance. */
@@ -231,24 +454,60 @@ private:
 	const FCardRow* ResolveCardRow(FName CardID, FString& OutError) const;
 
 	/**
-	 *  Resolves the unit class for a card: /Game/Blueprints/Units/BP_Unit_<CardID>
-	 *  (CONVENTIONS blueprint-subclass pattern; Footman -> BP_Unit_Footman, TASK-010).
-	 *  Missing/incompatible class falls back to ASummonedUnit with a log —
-	 *  the fallback spawns logic-complete but meshless (VisualMesh unset in C++).
+	 *  Resolves the BP class to spawn for a card by its CardType (CONVENTIONS
+	 *  composed soft-class paths, TASK-030): Unit/Economy →
+	 *  /Game/Blueprints/Units/BP_Unit_<CardID> (must be an ASummonedUnit;
+	 *  TASK-010/034); Building → /Game/Blueprints/Buildings/
+	 *  BP_Building_<CardID> (must be an ABuilding; TASK-035). Missing or
+	 *  incompatible = nullptr — the caller refuses the play with NO gold spent
+	 *  (the M1 meshless-ASummonedUnit fallback is retired per the spec).
 	 */
-	UClass* ResolveUnitClass(FName CardID) const;
+	UClass* ResolveCardActorClass(FName CardID, ECardType CardType) const;
 
-	/** Logs and broadcasts a player-facing refusal (OnCardPlayRefused). */
+	/** Ghost mesh for a card: /Game/Meshes/SM_<CardID> (CONVENTIONS per-card visual contract), else GhostFallbackMeshAsset, else nullptr (invisible ghost). */
+	UStaticMesh* ResolveGhostMesh(FName CardID) const;
+
+	/**
+	 *  True when Point projects onto the navmesh within NavProjectionExtent
+	 *  (GDD §3.5 placement rule, TASK-030). No nav system / no nav data in the
+	 *  world = degrade OPEN to the M1 half+ground rule with ONE warning (house
+	 *  null-safety law: a missing system never bricks placement) — NOT a
+	 *  refusal. Non-const only for the warn-once latch.
+	 */
+	bool IsPointOnNavmesh(const FVector& Point);
+
+	/** True when Point is >= BuildingClearance (2D) from every live ABuilding (§3.5 building rule; dying buildings skipped via IsBuildingDestroyed). */
+	bool HasBuildingClearance(const FVector& Point) const;
+
+	/** True when Point lies inside any ACastle's plinth keep-out box (CastlePlinthClearance 2D half-extents) — refused for all cards, castle HP irrelevant. */
+	bool IsPointInsideCastlePlinth(const FVector& Point) const;
+
+	/** Broadcasts a play refusal on BOTH delegates: OnCardPlayRefused (M1 card context) and OnCardRefused (M2 reason string). */
 	void RefuseCardPlay(FName CardID, const FText& Reason);
 
-	/** Hard slot if assigned, else LoadSynchronous of the soft path; null (with one log) if neither resolves. */
-	UInputAction* ResolveInputAction(const TObjectPtr<UInputAction>& HardSlot, const TSoftObjectPtr<UInputAction>& SoftAsset, const TCHAR* ActionName) const;
+	/** Broadcasts OnCardRefused only — the shared M2 refusal surface (discard refusals land here without the play delegate). */
+	void BroadcastRefusal(const FText& Reason);
 
-	/** Applies the placement-mode input state (cursor + Game&UI) or restores game-only input. */
-	void ApplyPlacementInputState(bool bEnteringPlacement);
+	/** Ends the IA_UICursor hold if active: clears bUICursorHeld and decrements the ignore-look counter exactly once. */
+	void ClearUICursorHold();
+
+	/** Hard slot if assigned, else LoadSynchronous of the soft path; null (with one log naming the creating task) if neither resolves. */
+	UInputAction* ResolveInputAction(const TObjectPtr<UInputAction>& HardSlot, const TSoftObjectPtr<UInputAction>& SoftAsset, const TCHAR* ActionName, const TCHAR* CreatedInTask) const;
+
+	/**
+	 *  Applies the input state implied by the current cursor owners: placement
+	 *  mode OR a held IA_UICursor = GameAndUI + visible cursor; neither = M1
+	 *  game-only free-look with the cursor hidden. Never runs after match end —
+	 *  HandleMatchEnd owns the UI-only end-screen state until HandleMatchReset
+	 *  clears the latch.
+	 */
+	void ApplyCursorInputState();
 
 	/** True while placement mode is active. */
 	bool bInPlacementMode = false;
+
+	/** True while IA_UICursor is held — pairs the SetIgnoreLookInput +1/-1 exactly once (the engine API is counter-based). */
+	bool bUICursorHeld = false;
 
 	/** Latched by HandleMatchEnd, cleared by HandleMatchReset. Blocks card plays while up. */
 	bool bMatchEnded = false;
@@ -264,6 +523,25 @@ private:
 
 	/** Cost read from DT_Cards on EnterPlacementMode — spent only on a confirmed valid click. */
 	int32 PendingCost = 0;
+
+	/** CardType read from DT_Cards on EnterPlacementMode — selects the confirm spawn path and the §3.5 building clearance rule (TASK-030). */
+	ECardType PendingCardType = ECardType::Unit;
+
+	/** Reason the latest traced point is invalid (None while bPlacementValid; recomputed with it every frame in placement mode). */
+	EPlacementInvalidReason PlacementInvalidReason = EPlacementInvalidReason::Point;
+
+	/** One-shot latch for the no-navmesh degrade-open warning (IsPointOnNavmesh). */
+	bool bWarnedNoNavData = false;
+
+	/**
+	 *  Hand slot the active placement came from (set by PlayHandSlot just
+	 *  before EnterPlacementMode), or INDEX_NONE on the M1 paths (WBP_HUD
+	 *  Footman button / key-1 empty-hand fallback), which bypass the hand
+	 *  entirely. The card leaves the hand only at CONFIRM (M2 ruling):
+	 *  TryConfirmPlacement consumes it via ConfirmPlayFromHand; every
+	 *  placement exit clears it.
+	 */
+	int32 PendingHandSlot = INDEX_NONE;
 
 	/** Hero whose melee we suppressed — un-suppressed on EVERY exit path (QA TASK-003 warning 2). */
 	UPROPERTY(Transient)

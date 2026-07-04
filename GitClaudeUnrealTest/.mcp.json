@@ -8,8 +8,18 @@
 		},
 		"blender":
 		{
-			"command": "uvx",
-			"args": ["blender-mcp"]
+			"command": "C:/Program Files/Blender Foundation/Blender 5.1/5.1/python/bin/python.exe",
+			"args": [
+				"-u",
+				"-X",
+				"utf8",
+				"C:/GitProjects/GitHub/GitClaudeUnrealTesting/GitClaudeUnrealTest/Tools/blender_mcp_bridge.py"
+			],
+			"env":
+			{
+				"PYTHONUTF8": "1",
+				"PYTHONIOENCODING": "utf-8"
+			}
 		}
 	}
 }

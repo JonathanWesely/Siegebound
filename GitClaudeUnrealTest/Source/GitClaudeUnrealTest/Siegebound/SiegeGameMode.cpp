@@ -7,16 +7,22 @@
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerStart.h"
 #include "GitClaudeUnrealTest.h"
+#include "Siegebound/Building.h"
 #include "Siegebound/Castle.h"
 #include "Siegebound/HeroCharacter.h"
+#include "Siegebound/Projectile.h"
+#include "Siegebound/SiegeGameState.h"
 #include "Siegebound/SiegePlayerController.h"
 #include "Siegebound/SiegePlayerState.h"
 #include "Siegebound/SummonedUnit.h"
+#include "Siegebound/Tower.h"
 #include "TimerManager.h"
 
 ASiegeGameMode::ASiegeGameMode()
 {
-	// Framework classes per the TASK-006 spec (TASK-005 / TASK-007 contracts).
+	// Framework classes per the TASK-006 spec (TASK-005 / TASK-007 contracts);
+	// GameStateClass per TASK-024 (match clock + overtime latch, GDD §3.2).
+	GameStateClass = ASiegeGameState::StaticClass();
 	PlayerStateClass = ASiegePlayerState::StaticClass();
 	PlayerControllerClass = ASiegePlayerController::StaticClass();
 
@@ -135,6 +141,11 @@ void ASiegeGameMode::OnCastleDestroyedHandler(ACastle* DestroyedCastle, ETeamId 
 		CastleTeam == ETeamId::Blue ? TEXT("Blue") : TEXT("Red"),
 		Winner == ETeamId::Blue ? TEXT("Blue") : TEXT("Red"));
 
+	// Freeze the world BEFORE the end screen goes up (§3.9 / M2 exit criteria,
+	// TASK-024 — closes the qa/TASK-006-report.md finding-2 TODO(M2)): units,
+	// towers, in-flight projectiles, income, and the match clock all stop here.
+	FreezeWorldAtMatchEnd();
+
 	// Push the result to the (M1: single local) player controller(s) — shows the
 	// end screen and switches to UI-only input (TASK-007 contract).
 	bool bNotifiedAnyController = false;
@@ -152,6 +163,87 @@ void ASiegeGameMode::OnCastleDestroyedHandler(ACastle* DestroyedCastle, ETeamId 
 		UE_LOG(LogGitClaudeUnrealTest, Warning,
 			TEXT("[%s] Match ended but no ASiegePlayerController was found to show the end screen."), *GetNameSafe(this));
 	}
+}
+
+void ASiegeGameMode::FreezeWorldAtMatchEnd()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// 1) Units: permanent, idempotent AI stop (ASummonedUnit::FreezeAI,
+	//    TASK-028 contract) — movement, attack/acquire timers, and any
+	//    in-flight lunge all end with zero residual offset; frozen units idle
+	//    until PlayAgain destroys them. FreezeAI never spawns or destroys
+	//    actors, so calling it inside a live iterator is safe.
+	int32 FrozenUnits = 0;
+	for (TActorIterator<ASummonedUnit> It(World); It; ++It)
+	{
+		It->FreezeAI();
+		++FrozenUnits;
+	}
+
+	// 2) Towers (qa/TASK-027-report.md WARN-1): a live ATower would keep
+	//    acquiring and firing at the frozen units under the Victory screen
+	//    (bAIFrozen units are alive to its acquisition gate). Tower.h/.cpp are
+	//    frozen qa-passed contracts — private fire-timer handle, no public
+	//    stop hook — so the loop is silenced through FTimerManager's public
+	//    per-object surface instead. Safe and permanent: the fire loop is the
+	//    ONLY timer a tower ever arms (qa/TASK-027 verified), OnStatsLoaded is
+	//    single-fire so nothing can re-arm it, and PlayAgain destroys every
+	//    building regardless. This is the ONE sanctioned exception to the
+	//    own-timers-only policy — see the class comment.
+	int32 SilencedTowers = 0;
+	for (TActorIterator<ATower> It(World); It; ++It)
+	{
+		World->GetTimerManager().ClearAllTimersForObject(*It);
+		++SilencedTowers;
+	}
+
+	// 3) In-flight projectiles (qa/TASK-026-report.md WARN-1): one landing
+	//    after this frame would deal post-match damage under the Victory
+	//    screen. Destroyed rather than frozen — a projectile hanging in midair
+	//    under the end screen would just be debris. Collected first: never
+	//    Destroy() out of a live TActorIterator. With units frozen and towers
+	//    silenced above, nothing can spawn a new one until PlayAgain.
+	TArray<AProjectile*> Projectiles;
+	for (TActorIterator<AProjectile> It(World); It; ++It)
+	{
+		Projectiles.Add(*It);
+	}
+	for (AProjectile* Projectile : Projectiles)
+	{
+		if (IsValid(Projectile))
+		{
+			Projectile->Destroy();
+		}
+	}
+
+	// 4) Income (§3.9 freeze): every player state — §3.2's overtime symmetry
+	//    means every ASiegePlayerState shares the frozen state (M3 bot ready).
+	//    PauseIncome is the player state's OWN API (timer policy intact).
+	if (GameState)
+	{
+		for (APlayerState* PS : GameState->PlayerArray)
+		{
+			if (ASiegePlayerState* SiegePS = Cast<ASiegePlayerState>(PS))
+			{
+				SiegePS->PauseIncome();
+			}
+		}
+	}
+
+	// 5) Match clock: frozen at the final time until PlayAgain resets it.
+	if (ASiegeGameState* SiegeGameState = Cast<ASiegeGameState>(GameState))
+	{
+		SiegeGameState->StopClock();
+	}
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("[%s] Match-end freeze: %d unit(s) frozen, %d tower(s) silenced, %d projectile(s) cleared, income paused, clock stopped."),
+		*GetNameSafe(this), FrozenUnits, SilencedTowers, Projectiles.Num());
 }
 
 void ASiegeGameMode::HandleHeroDied(AHeroCharacter* DeadHero)
@@ -295,15 +387,17 @@ void ASiegeGameMode::PlayAgain()
 	}
 	TGuardValue<bool> ReentrancyGuard(bPlayAgainInProgress, true);
 
-	UE_LOG(LogGitClaudeUnrealTest, Log, TEXT("[%s] PlayAgain: full match reset (GDD §3.9 M1 scope)."), *GetNameSafe(this));
+	UE_LOG(LogGitClaudeUnrealTest, Log, TEXT("[%s] PlayAgain: full match reset (GDD §3.9, M2 scope)."), *GetNameSafe(this));
 
 	// 1) Timers — QA-BINDING (TASKBOARD TASK-006 qa-note, from qa/TASK-005-report.md
 	//    major 1): ASiegePlayerState::ResetGold() RESTARTS the income timer, so any
 	//    timer clearing must happen BEFORE step 4, never after. We clear ONLY the
 	//    specific handle this class owns — never ClearAllTimersForObject on foreign
 	//    objects and never a world-wide clear, which could silently kill the income
-	//    timer or other systems' timers. The units' AI timers die with the units in
-	//    step 2 (their EndPlay clears them); the PlayerState manages its own.
+	//    timer or other systems' timers. (The match-END freeze's tower silencing is
+	//    the one sanctioned exception — see the class comment; it never runs in this
+	//    function.) The units' and buildings' own timers die with their actors in
+	//    steps 2/2b (their EndPlay clears them); the PlayerState manages its own.
 	GetWorldTimerManager().ClearTimer(HeroRespawnTimerHandle);
 
 	// 2) Zero summoned units (§3.9). Collected first — never Destroy() out of a
@@ -321,6 +415,42 @@ void ASiegeGameMode::PlayAgain()
 		}
 	}
 
+	// 2b) Zero buildings (§3.9 "Play Again (full state reset: ... buildings)",
+	//     TASK-024 — ABuilding is the TASK-027 contract; ATower included by
+	//     inheritance). Same collect-then-destroy pattern. Safe: ATower::EndPlay
+	//     clears its own fire timer synchronously inside Destroy(), and a dead
+	//     wall's mesh unregisters from the nav octree so the navmesh heals.
+	TArray<ABuilding*> Buildings;
+	for (TActorIterator<ABuilding> It(GetWorld()); It; ++It)
+	{
+		Buildings.Add(*It);
+	}
+	for (ABuilding* Building : Buildings)
+	{
+		if (IsValid(Building))
+		{
+			Building->Destroy();
+		}
+	}
+
+	// 2c) Clear in-flight projectiles (qa/TASK-026-report.md WARN-1): one still
+	//     flying across the reset could hit a freshly reset castle for stale
+	//     damage. Load-bearing for a MID-MATCH PlayAgain — units/towers may
+	//     have fired this very frame; after a normal match end the freeze
+	//     already swept them and this is a no-op.
+	TArray<AProjectile*> Projectiles;
+	for (TActorIterator<AProjectile> It(GetWorld()); It; ++It)
+	{
+		Projectiles.Add(*It);
+	}
+	for (AProjectile* Projectile : Projectiles)
+	{
+		if (IsValid(Projectile))
+		{
+			Projectile->Destroy();
+		}
+	}
+
 	// 3) Castles back to 2000/2000, visible, colliding. ResetCastle() also
 	//    re-arms OnCastleDestroyed; our BeginPlay binding persists on the actor,
 	//    so the win condition works again without rebinding.
@@ -329,15 +459,38 @@ void ASiegeGameMode::PlayAgain()
 		It->ResetCastle();
 	}
 
-	// 4) Gold back to 50 (§3.2). Safe AFTER step 1: ResetGold() restarts its own
-	//    income timer and nothing later in this function clears any timer.
+	// 3b) Match clock back to 0:00, overtime latch cleared, clock running again
+	//     (§3.9 "match clock"; the §3.2 doubling re-arms for the new match).
+	//     MUST precede step 4: ResetEconomy() re-derives each player's gold
+	//     rate by reading this latch live — clearing it first lands the rate
+	//     on the base 2/s.
+	if (ASiegeGameState* SiegeGameState = Cast<ASiegeGameState>(GameState))
+	{
+		SiegeGameState->ResetClock();
+	}
+	else
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("[%s] PlayAgain: no ASiegeGameState — match clock/overtime not reset (GameStateClass should be ASiegeGameState, TASK-024)."),
+			*GetNameSafe(this));
+	}
+
+	// 4) Economy + gold (§3.2/§3.3/§3.9). Safe AFTER step 1: ResetGold()
+	//    restarts its own income timer and nothing later in this function
+	//    clears any timer. Per player state, in order: ResetEconomy (miner
+	//    counts to 0, rate re-derived against the just-cleared overtime latch),
+	//    ResetGold (back to 50; restarts income — M1 law), ResumeIncome (lifts
+	//    the match-end pause; idempotent when never paused — PlayAgain is a
+	//    legal mid-match reset).
 	if (GameState)
 	{
 		for (APlayerState* PS : GameState->PlayerArray)
 		{
 			if (ASiegePlayerState* SiegePS = Cast<ASiegePlayerState>(PS))
 			{
+				SiegePS->ResetEconomy();
 				SiegePS->ResetGold();
+				SiegePS->ResumeIncome();
 			}
 		}
 	}
@@ -348,7 +501,13 @@ void ASiegeGameMode::PlayAgain()
 	RestoreHeroAtStart();
 
 	// 6) Controllers last: drop the end screen (idempotent with the widget's own
-	//    RemoveFromParent) and restore game-only input (TASK-007 contract).
+	//    RemoveFromParent) and restore game-only input (TASK-007 contract),
+	//    then a fresh deck + hand (§3.9 "deck, hand" — TASK-022 contract).
+	//    HandleMatchReset is now the SINGLE §3.9 deck-reset entry point:
+	//    TASK-023 wired DeckComponent->ResetDeck() into it (null-safe there),
+	//    so the game mode no longer resets the deck a second time. This closes
+	//    qa/TASK-024-report.md WARN-1 (PlayAgain double ResetDeck) — the
+	//    game-mode-side drop was authorized on TASK-030 (handoffs/TASK-030.md).
 	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 	{
 		if (ASiegePlayerController* SiegePC = Cast<ASiegePlayerController>(It->Get()))

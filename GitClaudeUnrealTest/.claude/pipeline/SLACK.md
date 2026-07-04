@@ -36,7 +36,7 @@ All work traffic lives in a fixed registry of threads, each rooted by one manage
 `thread_ts` = the Slack ts of the thread's root post. Whoever creates a root (manager directly, or orchestrator proxying) records the ts here immediately. **A thread is not live until its ts is recorded.** Replies use `thread_ts` from this table; never start a parallel root.
 
 Rollout note (2026-07-03): all five roots proxy-posted by the orchestrator and the registry is LIVE (announcement ts 1783116247.895729). Known issue: manager's direct Slack tools did not surface on first live test despite the agent-definition grant — direct posting for manager/qa-reviewer is unproven until one of them succeeds; proxy fallback is operative and lossless.
-Update (2026-07-03, M2 decomposition dispatch): manager direct posting PROVEN — M2 plan posted directly into 📢 Planning & Feedback (ts 1783118663.840379). qa-reviewer direct posting still unproven; proxy fallback remains for headless runs.
+Update (2026-07-03, M2 decomposition dispatch): manager direct posting PROVEN — M2 plan posted directly into 📢 Planning & Feedback (ts 1783118663.840379). Update (2026-07-03, TASK-026 QA): qa-reviewer direct posting ALSO PROVEN (ts 1783120490.139939) — all five agents verified direct; proxy fallback remains for headless runs only. Known qa-reviewer limitation: it has no partial-edit tool, so its BOARD status flips may still need orchestrator proxy on a fast-moving board (Slack posting is unaffected).
 
 ### Routing (task assignee → thread)
 

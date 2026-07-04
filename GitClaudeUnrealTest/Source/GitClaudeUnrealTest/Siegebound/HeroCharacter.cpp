@@ -296,6 +296,31 @@ float AHeroCharacter::TakeDamage(float Damage, const FDamageEvent& DamageEvent, 
 	return ActualDamage;
 }
 
+void AHeroCharacter::FellOutOfWorld(const UDamageType& dmgType)
+{
+	// Deliberately NOT calling Super: AActor::FellOutOfWorld() destroys the
+	// actor, and the hero must survive falling off the world (TASK-024, M1
+	// carry-over — GDD §3.1: hero death never loses the match).
+
+	// Already dead: the hidden corpse can sit below KillZ until the respawn
+	// teleport (the engine re-invokes this per movement tick down there) —
+	// the respawn timer is already running, or the match ended and PlayAgain
+	// owns restoration. Nothing to do either way.
+	if (bDead)
+	{
+		return;
+	}
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("[%s] Hero fell out of the world (KillZ) — routing through the standard death -> 5 s respawn path (GDD §3.1) instead of AActor's Destroy()."),
+		*GetNameSafe(this));
+
+	// The exact combat-death path: exactly-once side effects (hide, stop
+	// movement — which also ends the fall — disable input/collision) plus the
+	// OnHeroDied broadcast that drives the game mode's 5 s respawn (TASK-006).
+	HandleDeath();
+}
+
 bool AHeroCharacter::IsFriendlyDamage(AController* EventInstigator, AActor* DamageCauser) const
 {
 	// prefer the damage causer's team (hero melee and unit attacks pass the attacking actor)

@@ -42,6 +42,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnHeroDied, AHeroCharacter*, DeadHe
  *    last taking OR dealing damage, stopping at max.
  *  - At 0 HP: hidden, input + collision disabled, OnHeroDied broadcast once.
  *    ResetHero() restores the hero (called by the game mode on respawn/Play Again).
+ *  - Falling past the world's KillZ (TASK-036 arena boundary) is a DEATH, not
+ *    a Destroy: FellOutOfWorld routes into the same path as lethal damage, so
+ *    the standard 5 s respawn brings the hero back (TASK-024, M1 carry-over).
  *  - SetMeleeSuppressed(true) disables melee while the placement mode owns
  *    the LMB (TASK-007).
  *
@@ -68,6 +71,21 @@ public:
 
 	/** Applies incoming damage (no friendly fire), tracks combat time for regen, and triggers death at 0 HP. */
 	virtual float TakeDamage(float Damage, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
+
+	/**
+	 *  KillZ handler (M1 "sprints off the slab and falls forever" carry-over,
+	 *  closed by TASK-024; TASK-036 sets L_Arena's KillZ = -2000 and the
+	 *  boundary volumes). A hero falling out of the world dies through the
+	 *  EXACT combat-death path — HandleDeath() hides it, stops movement and
+	 *  input, and broadcasts OnHeroDied once, so the game mode's standard 5 s
+	 *  respawn (§3.1) brings it back at its castle. Deliberately does NOT call
+	 *  Super: AActor::FellOutOfWorld() would Destroy() the pawn, and the hero
+	 *  must survive falling off the world. The engine re-checks per movement
+	 *  tick while an actor sits below KillZ, so repeat calls on the hidden
+	 *  corpse early-out on the death latch until the respawn teleports it back
+	 *  above ground (or PlayAgain does, if the match has ended).
+	 */
+	virtual void FellOutOfWorld(const class UDamageType& dmgType) override;
 
 	/**
 	 *  Performs the melee swing if allowed (alive, not suppressed, off cooldown):

@@ -12,6 +12,7 @@
 #include "GameFramework/Pawn.h"
 #include "Materials/MaterialInterface.h"
 #include "Siegebound/CastleHealthBarWidget.h"
+#include "Siegebound/DamageTypes.h"
 
 ACastle::ACastle()
 {
@@ -144,16 +145,29 @@ float ACastle::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, A
 		return 0.0f;
 	}
 
-	// M1: only melee exists and it applies at 100%.
-	// TODO(M2): scale by attack profile — projectiles apply at 50% vs castles,
-	// Siege-profile attacks at 200% (GDD §3.9/§4).
-	CurrentHP = FMath::Max(CurrentHP - ActualDamage, 0.0f);
+	// Damage-vs-castle scaling (GDD §3.0, TASK-026), read from the damage TYPE.
+	// USiegeDamageType_Projectile — and any subclass — applies at 50% (the
+	// anti-sniping rule); melee/default/untyped applies at 100% (melee needs no
+	// tag, CONVENTIONS damage-type registry — M1 attackers pass base UDamageType
+	// and stay byte-identical). Scaling lives ONLY here (M2 ruling): units, hero,
+	// and buildings take listed damage from everything.
+	// TODO(M4): USiegeDamageType_Siege = 200% vs castle (GDD §3.0/§3.9).
+	// TODO(M5): spell damage types = 50% vs castle (GDD §3.0).
+	float ScaledDamage = ActualDamage;
+	const UClass* IncomingDamageType = DamageEvent.DamageTypeClass.Get();
+	if (IncomingDamageType && IncomingDamageType->IsChildOf(USiegeDamageType_Projectile::StaticClass()))
+	{
+		ScaledDamage *= 0.5f;
+	}
+
+	CurrentHP = FMath::Max(CurrentHP - ScaledDamage, 0.0f);
 
 	// Actual HP change -> broadcast (TASK-018). Ignored friendly fire and hits on a
 	// destroyed castle returned above WITHOUT touching CurrentHP, so a broadcast here
-	// always reports a real change (CurrentHP > 0 and ActualDamage > 0 guarantee the
-	// clamp lowered the value). Fired BEFORE HandleDestroyed so listeners see the
-	// 0-HP value before the destroyed event hides the bar.
+	// always reports a real change (CurrentHP > 0 and ScaledDamage > 0 guarantee the
+	// clamp lowered the value — half of a positive float is still positive). Fired
+	// BEFORE HandleDestroyed so listeners see the 0-HP value before the destroyed
+	// event hides the bar.
 	OnCastleHPChanged.Broadcast(CurrentHP, MaxHP);
 
 	if (CurrentHP <= 0.0f)
@@ -161,7 +175,10 @@ float ACastle::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, A
 		HandleDestroyed();
 	}
 
-	return ActualDamage;
+	// AActor contract: return the damage actually applied — the SCALED amount the
+	// castle really took. Melee returns exactly the M1 value; attacker hit feedback
+	// (TASK-016/020 puff-on-damage checks) keys off > 0 and is unaffected either way.
+	return ScaledDamage;
 }
 
 void ACastle::HandleDestroyed()

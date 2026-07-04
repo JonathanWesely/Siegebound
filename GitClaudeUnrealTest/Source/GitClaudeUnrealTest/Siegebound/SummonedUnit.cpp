@@ -20,7 +20,9 @@
 #include "NiagaraSystem.h"
 #include "Siegebound/CardRow.h"
 #include "Siegebound/Castle.h"
+#include "Siegebound/DamageTypes.h"
 #include "Siegebound/HeroCharacter.h"
+#include "Siegebound/Projectile.h"
 #include "TimerManager.h"
 
 namespace
@@ -87,7 +89,10 @@ void ASummonedUnit::BeginPlay()
 	// and construction scripts have run by now — BP_Unit_Footman offsets the mesh down
 	// by the capsule half-height, TASK-010). The lunge only ever writes Base + f(elapsed)
 	// or exactly Base, so the pose cannot drift no matter how many cycles run.
-	if (VisualMesh)
+	// !bVisualMeshBaseCached guard: qa/TASK-020-report.md WARN-1, folded in on this
+	// touch per its instruction — a re-BeginPlay after a mid-lunge stream-out must not
+	// recapture a lunging pose as the new base. The first BeginPlay is unaffected.
+	if (VisualMesh && !bVisualMeshBaseCached)
 	{
 		VisualMeshBaseRelativeLocation = VisualMesh->GetRelativeLocation();
 		bVisualMeshBaseCached = true;
@@ -145,9 +150,43 @@ void ASummonedUnit::InitUnit(ETeamId InTeam, FName InCardID)
 	}
 }
 
+void ASummonedUnit::FreezeAI()
+{
+	// idempotent; a dying unit already ran the same shutdown in HandleDeath
+	if (bAIFrozen || bDead)
+	{
+		return;
+	}
+	bAIFrozen = true;
+
+	// stop the brain: the acquire/state decisions and the attack cadence. The flag
+	// additionally gates LoadStatsAndStart/UpdateState/PerformAttack, so a frozen
+	// unit can never be restarted (e.g. by a late InitUnit on a never-bound unit).
+	GetWorldTimerManager().ClearTimer(StateTimerHandle);
+	GetWorldTimerManager().ClearTimer(AttackTimerHandle);
+
+	// cancel any in-flight lunge: VisualMesh back to EXACTLY the cached rest pose
+	// and tick off (TASK-020 zero-drift contract — zero residual offset)
+	StopAttackLunge();
+
+	// stop the walk. This also covers subclasses' moves (AMinerUnit's gold-node
+	// walk, TASK-025): StopMovement aborts whatever path request is in flight.
+	if (AAIController* AI = GetAIController())
+	{
+		AI->StopMovement();
+	}
+
+	// park as Idle until destroyed (match-end freeze, TASK-024 contract)
+	State = ESummonedUnitState::Idle;
+	CurrentTarget = nullptr;
+	CurrentMoveGoal = nullptr;
+}
+
 void ASummonedUnit::LoadStatsAndStart()
 {
-	if (bDead || bStatsLoaded)
+	// bAIFrozen: a match-end-frozen unit stays parked (TASK-028) — even a late
+	// InitUnit on a never-bound unit must not start the state machine.
+	if (bDead || bStatsLoaded || bAIFrozen)
 	{
 		return;
 	}
@@ -180,12 +219,14 @@ void ASummonedUnit::LoadStatsAndStart()
 	}
 
 	// bind the card stats (TASK-004 spec: HP → max/current, Speed → MaxWalkSpeed,
-	// Damage/Range/Cadence → attack). Values are applied as authored (§3.0).
+	// Damage/Range/Cadence → attack; TASK-028: bRanged → delivery). Values are
+	// applied as authored (§3.0).
 	MaxHP = Row->HP;
 	CurrentHP = MaxHP;
 	AttackDamage = Row->Damage;
 	AttackRange = Row->Range;
 	AttackCadence = FMath::Max(Row->Cadence, MinAttackCadence);
+	bRangedAttack = Row->bRanged;
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		Movement->MaxWalkSpeed = Row->Speed;
@@ -216,7 +257,9 @@ void ASummonedUnit::LoadStatsAndStart()
 
 void ASummonedUnit::UpdateState()
 {
-	if (bDead || !bStatsLoaded)
+	// bAIFrozen is defense-in-depth (TASK-028): FreezeAI clears this timer, but a
+	// frozen unit must make no decisions even if something ever re-armed it.
+	if (bDead || !bStatsLoaded || bAIFrozen)
 	{
 		return;
 	}
@@ -467,7 +510,8 @@ void ASummonedUnit::EnterIdle()
 
 void ASummonedUnit::PerformAttack()
 {
-	if (bDead || !bStatsLoaded)
+	// bAIFrozen is defense-in-depth (TASK-028): FreezeAI clears the attack timer
+	if (bDead || !bStatsLoaded || bAIFrozen)
 	{
 		return;
 	}
@@ -489,21 +533,36 @@ void ASummonedUnit::PerformAttack()
 
 	FaceTarget(Target);
 
-	// team attribution (TASK-002 castle contract): this unit as DamageCauser AND its
-	// controller as EventInstigator, so receivers resolve our team either way (GDD §3.0).
-	// TASK-020 only CAPTURES the return value — arguments and timing are unchanged.
-	const float DamageApplied = UGameplayStatics::ApplyDamage(Target, AttackDamage, GetController(), this, UDamageType::StaticClass());
-
-	// attack feedback (TASK-020): the swing (lunge) plays on every executed cadence hit;
-	// the impact puff only when damage actually landed — a receiver that zeroed the hit
-	// (e.g. a castle destroyed this same tick) gets no puff. Same return-value reading
-	// as the hero's TASK-016 flagged decision 1.
-	StartAttackLunge();
-	if (DamageApplied > 0.f && CachedAttackImpactEffect)
+	if (bRangedAttack)
 	{
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), CachedAttackImpactEffect, ImpactPoint);
+		// ranged delivery (TASK-028): the cadence hit launches a homing projectile
+		// instead of applying melee damage — the damage lands when the projectile
+		// impacts (ACastle halves projectile-typed damage on ITS side, §3.0). NO
+		// lunge and NO melee puff for ranged attacks: the projectile and its own
+		// impact VFX are the telegraph (GDD §3.8 / TASK-028 spec).
+		FireProjectileAt(Target);
+	}
+	else
+	{
+		// melee delivery — the M1/TASK-020 path, unchanged (TASK-028 headline rule).
+		// team attribution (TASK-002 castle contract): this unit as DamageCauser AND its
+		// controller as EventInstigator, so receivers resolve our team either way (GDD §3.0).
+		// TASK-020 only CAPTURES the return value — arguments and timing are unchanged.
+		const float DamageApplied = UGameplayStatics::ApplyDamage(Target, AttackDamage, GetController(), this, UDamageType::StaticClass());
+
+		// attack feedback (TASK-020): the swing (lunge) plays on every executed cadence hit;
+		// the impact puff only when damage actually landed — a receiver that zeroed the hit
+		// (e.g. a castle destroyed this same tick) gets no puff. Same return-value reading
+		// as the hero's TASK-016 flagged decision 1.
+		StartAttackLunge();
+		if (DamageApplied > 0.f && CachedAttackImpactEffect)
+		{
+			UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), CachedAttackImpactEffect, ImpactPoint);
+		}
 	}
 
+	// stamped for ranged shots exactly like melee hits — the cadence gate in
+	// EnterAttack stays honest across target swaps for both delivery modes
 	if (const UWorld* World = GetWorld())
 	{
 		LastAttackTime = World->GetTimeSeconds();
@@ -522,6 +581,39 @@ void ASummonedUnit::FaceTarget(const AActor* Target)
 	if (!ToTarget.IsNearlyZero())
 	{
 		SetActorRotation(ToTarget.Rotation());
+	}
+}
+
+void ASummonedUnit::FireProjectileAt(AActor* Target)
+{
+	UWorld* World = GetWorld();
+	if (!World || !Target)
+	{
+		return;
+	}
+
+	// pawn-shooter rule (TASK-026 contract): Instigator = this, so receivers'
+	// no-friendly-fire checks resolve our team through the TASK-002 chain
+	// (instigating controller's pawn / damage causer's instigator pawn).
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Owner = this;
+	SpawnParameters.Instigator = this;
+	// the projectile carries no collision (TASK-026) — never let spawn adjustment
+	// nudge it away from the capsule it deliberately spawns inside of
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	// spawn at the unit (spec), aimed at the target — the aim is cosmetic, the
+	// projectile re-aims at the target's CURRENT location every tick (TASK-026).
+	// Scale 1: the projectile's visual carries its own fixed child scale.
+	const FVector MuzzleLocation = GetActorLocation();
+	const FVector ToTarget = Target->GetActorLocation() - MuzzleLocation;
+	const FRotator FireRotation = ToTarget.IsNearlyZero() ? GetActorRotation() : ToTarget.Rotation();
+
+	if (AProjectile* Projectile = World->SpawnActor<AProjectile>(AProjectile::StaticClass(), FTransform(FireRotation, MuzzleLocation), SpawnParameters))
+	{
+		// own team, current target, row Damage, projectile-typed — ACastle applies
+		// the §3.0 50% on ITS side (TASK-026); units/hero take the listed damage.
+		Projectile->InitProjectile(Team, Target, AttackDamage, USiegeDamageType_Projectile::StaticClass());
 	}
 }
 

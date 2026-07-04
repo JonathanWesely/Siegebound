@@ -71,9 +71,13 @@ public:
 
 	/**
 	 *  Applies incoming damage. Same-team instigators are ignored entirely (no friendly
-	 *  fire, §3.0). Melee applies at 100%.
-	 *  TODO(M2): scale by attack profile — projectiles apply at 50% vs castles and
-	 *  Siege-profile attacks at 200% (GDD §3.9/§4). Only melee exists in M1.
+	 *  fire, §3.0). Damage-vs-castle scaling (§3.0, TASK-026) is read from
+	 *  DamageEvent.DamageTypeClass and applied ONLY here (M2 ruling — units/hero/
+	 *  buildings take listed damage everywhere else): USiegeDamageType_Projectile
+	 *  (and subclasses) = 50%, melee/default/untyped = 100%. Returns the SCALED
+	 *  amount the castle actually took.
+	 *  TODO(M4): USiegeDamageType_Siege = 200% vs castle (GDD §3.0/§3.9).
+	 *  TODO(M5): spell damage types = 50% vs castle (GDD §3.0).
 	 */
 	virtual float TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
 

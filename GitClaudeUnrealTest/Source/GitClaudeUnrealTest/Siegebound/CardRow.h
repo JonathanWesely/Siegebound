@@ -87,4 +87,12 @@ struct GITCLAUDEUNREALTEST_API FCardRow : public FTableRowBase
 	/** Designer notes; not used by gameplay code */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Card")
 	FString Notes;
+
+	/** Copies of this card in the default 50-card deck; 0 = not in the default deck (GDD section 3.4) */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Card")
+	int32 DeckCount = 0;
+
+	/** True if the card's attack is delivered by a homing projectile instead of melee contact (GDD section 3.0) */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Stats")
+	bool bRanged = false;
 };

@@ -27,8 +27,8 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 Source: `Docs/GDD.md` §9. Only the current milestone is decomposed into tasks; later milestones stay one-liners until reached.
 
-1. **M1 — Core loop, local, one card** — `feedback-in-progress` (exit criteria passed 2026-07-03; reopened same day for playtest round-1 combat-legibility fixes → TASK-016..020; stays open until Jonathan confirms round 2)
-2. **M2 — Economy + deck/hand + core set + defenses** — `decomposed — file tasks executing, editor tasks gated on round-2 sign-off` (TASK-021..040; gates + M2a/M2b sequencing in "M2 manager decisions" below)
+1. **M1 — Core loop, local, one card** — `done (playtested + signed off by Jonathan 2026-07-03 evening; round-1 combat-legibility findings all fixed and confirmed)`
+2. **M2 — Economy + deck/hand + core set + defenses** — `current — RESUMED 2026-07-03: Blender MCP + UE5 MCP both UP; ALL gates open, M2 fully unblocked. Frontier: TASK-025+030 (code redispatch), TASK-037 (art)` (TASK-021..040; gates + M2a/M2b sequencing in "M2 manager decisions" below)
 3. M3 — Bot opponent = real 1v1 match — `not-started`
 4. M4 — Card Set II (16 cards, keywords, hero upgrades) — `not-started`
 5. M5 — Spell system + Set III — `not-started`
@@ -48,6 +48,9 @@ Source: `Docs/GDD.md` §9. Only the current milestone is decomposed into tasks; 
 - **ALL M2 editor-mutating work and all M2 compile/integration** (TASK-031..036, TASK-039, TASK-040) is `blocked-by: round-2 sign-off` — the playtest environment must not change until Jonathan confirms round 2.
 - Blender modeling tasks (TASK-037, TASK-038) additionally need `Blender MCP available` (roll call 2026-07-03: blender-mcp configured but not connected; needs Blender running with the addon).
 - M1's TASK-016..020 blocks and statuses were deliberately left untouched by the M2 decomposition (TASK-019 in flight at time of writing).
+- **Round-2 READY announced (2026-07-03, manager):** Jonathan notified via channel top-level (ts 1783119963.113549) + DM at commit 4f95730 (TASK-016..020 all done, PIE-verified; editor running the committed state) — awaiting his round-2 playtest; M2 editor/compile gates stay closed until sign-off.
+
+**2026-07-03 evening — M1 ROUND-2 SIGN-OFF (final, manager):** Jonathan playtested and confirmed verbatim "I just did a playtest of milestone 1, everything looks good" — zero new findings. All round-1 combat-legibility fixes confirmed on real hardware, including the LMB real-input finding (TASK-017 carry-item) — now closed. M1 is `done`; TASK-016..020 moved to ## Done; the `round-2 sign-off` blocker is cleared from TASK-031..040. Remaining external gate: `Blender MCP available` on TASK-037/038.
 
 ### M1 playtest feedback — round 1 (2026-07-03)
 User verdict: core loop works, but combat is illegible. Three findings → five tasks (no new art; all visuals reuse template Variant_Combat donors):
@@ -104,152 +107,28 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ## Active tasks
 
-### TASK-016 — Hero attack feedback hooks (C++)
-- assignee: gameplay-programmer
-- status: done (commit f6fa7ba; qa/TASK-016-report.md PASS)
-- blocked-by: none
-- parallel-safe: yes
-- spec: >
-    Files only, no editor. Playtest R1 finding 1. In AHeroCharacter add UPROPERTYs (EditAnywhere,
-    Category "Combat|Feedback"): TObjectPtr<UAnimMontage> AttackMontage; FName AttackMontageSection
-    (default NAME_None); TObjectPtr<UNiagaraSystem> HitImpactEffect; TSubclassOf<UCameraShakeBase>
-    HitCameraShake. All left unset in C++ (wired in TASK-017); EVERY use null-safe — code must compile
-    and behave with nothing assigned (M1 house style). Behavior: (1) on every melee swing that passes the
-    0.5 s cooldown — hit OR whiff — and only when melee is NOT suppressed (placement mode), call
-    PlayAnimMontage(AttackMontage) and jump to AttackMontageSection if set; the montage is VISUAL ONLY —
-    damage timing/numbers stay exactly as M1 (20 dmg, 150 units, 60-degree cone, 0.5 s cooldown), never
-    gate damage on anim notifies. (2) For each enemy actually damaged, spawn HitImpactEffect at the closest
-    point on that target's collision to the hero (fallback: target GetActorLocation) via
-    UNiagaraFunctionLibrary::SpawnSystemAtLocation. (3) If >=1 enemy was damaged this swing,
-    ClientStartCameraShake(HitCameraShake) on the local PlayerController. (4) Add "Niagara" to
-    Source/GitClaudeUnrealTest/GitClaudeUnrealTest.Build.cs dependency modules — this task OWNS that
-    Build.cs edit (TASK-020 is serialized behind it for exactly this file). Acceptance: compiles and runs
-    clean with nothing wired; swing/damage behavior byte-identical to M1 incl. suppression; with TASK-017's
-    assets wired, every swing plays the montage and every damaging hit spawns the effect + shake.
-- names: >
-    AHeroCharacter (Source/GitClaudeUnrealTest/Siegebound/HeroCharacter.h/.cpp) — UPROPERTYs AttackMontage,
-    AttackMontageSection, HitImpactEffect, HitCameraShake. Build.cs:
-    Source/GitClaudeUnrealTest/GitClaudeUnrealTest.Build.cs (add Niagara). Donor assets wired in TASK-017
-    (exact, READ-ONLY): /Game/Variant_Combat/Anims/AM_ComboAttack (or AM_ChargedAttack),
-    /Game/Variant_Combat/VFX/NS_Damage, /Game/Variant_Combat/Blueprints/BP_CameraShake_Hit_Enemy.
-
-### TASK-017 — Wire hero attack feedback + LMB real-input verification (editor)
-- assignee: gameplay-programmer
-- status: ready-for-integration (PIE-verified 2026-07-03; handoffs/TASK-017.md — all 4 props were already wired by the interrupted session, this run verified: montage AM_ComboAttack sec Melee01 on ABP_Unarmed, −20 HP/swing, NS_Damage + camera shake fire, 12/12 real-path LMB clicks land, no click-swallow found)
-- blocked-by: TASK-016 (integrated + compiled)
-- parallel-safe: no
-- spec: >
-    Editor/MCP work. (1) On /Game/Blueprints/BP_HeroCharacter assign: AttackMontage =
-    /Game/Variant_Combat/Anims/AM_ComboAttack — use AM_ChargedAttack instead if it reads better as ONE
-    swing inside the 0.5 s cooldown; set AttackMontageSection so exactly one swing section plays; record
-    the choice in the handoff. HitImpactEffect = /Game/Variant_Combat/VFX/NS_Damage. HitCameraShake =
-    /Game/Variant_Combat/Blueprints/BP_CameraShake_Hit_Enemy. All Variant_Combat assets are READ-ONLY
-    donors — reference, never edit (CONVENTIONS template-donor rule). (2) Montage playback path: first try
-    keeping anim class ABP_Unarmed and verify the montage VISIBLY plays in PIE (its slot must exist in
-    ABP_Unarmed's graph). If it does not play, set BP_HeroCharacter AnimClass =
-    /Game/Variant_Combat/Anims/ABP_Manny_Combat and re-verify walk/sprint/jump locomotion AND montage AND
-    no per-frame cast/error spam in the log. If BOTH fail, stop and write findings to the handoff for
-    manager re-spec — do NOT edit any Variant_* asset. (3) LMB click-swallow investigation (user reports
-    LMB "does nothing" on real hardware; MCP injection applied damage — verify, don't assume): a) WBP_HUD
-    root and panels are Not Hit-Testable (Self Only), only the card button hit-testable; b) input mode is
-    GameOnly with bShowMouseCursor false outside placement mode, including after PlayAgain; c) LMB maps
-    only to IA_Attack in IMC_Hero (no competing consuming mapping). Fix what is broken; record findings —
-    even "nothing found" — in handoffs/TASK-017.md. (4) PIE verify via MCP injection: LMB swings play the
-    montage visibly, Red castle drops 20/swing, impact effect appears at the hit point, shake fires.
-    Acceptance: all of (4) pass + handoff documents the montage path chosen and the click-swallow findings;
-    real-hardware confirmation is explicitly deferred to user playtest round 2.
-- names: >
-    /Game/Blueprints/BP_HeroCharacter. Donors (exact, read-only): /Game/Variant_Combat/Anims/AM_ComboAttack,
-    AM_ChargedAttack, ABP_Manny_Combat; /Game/Variant_Combat/VFX/NS_Damage;
-    /Game/Variant_Combat/Blueprints/BP_CameraShake_Hit_Enemy. Inspected: /Game/UI/WBP_HUD,
-    /Game/Input/IMC_Hero, /Game/Input/Actions/IA_Attack.
-
-### TASK-018 — Castle HP delegate + health-bar widget component (C++)
-- assignee: gameplay-programmer
-- status: done (commit f6fa7ba; qa/TASK-018-report.md PASS)
-- blocked-by: none
-- parallel-safe: yes
-- spec: >
-    Files only, no editor. Playtest R1 finding 2. (1) ACastle: declare dynamic multicast delegate
-    FOnCastleHPChanged(float CurrentHP, float MaxHP); UPROPERTY(BlueprintAssignable) OnCastleHPChanged.
-    Broadcast on every ACTUAL CurrentHP change (after applying damage in TakeDamage — NOT on ignored
-    friendly-fire damage), in ResetCastle, and once at BeginPlay (seed). Add BlueprintPure float
-    GetCurrentHP() / GetMaxHP(). (2) ACastle: UWidgetComponent "HPBarWidget" attached to root — Space =
-    Screen, DrawSize 256x32, relative location (0,0,1050) (castle mesh is 900 tall); widget class resolved
-    null-safe at BeginPlay from a TSoftClassPtr<UUserWidget> defaulting to
-    /Game/UI/WBP_CastleHealthBar.WBP_CastleHealthBar_C (asset arrives in TASK-019 — a missing asset is a
-    silent no-op, never a crash). Hide the component when the castle is destroyed; show it again in
-    ResetCastle. (3) New class UCastleHealthBarWidget : UUserWidget in CastleHealthBarWidget.h/.cpp:
-    UFUNCTION BlueprintCallable InitForCastle(ACastle*) — seeds by calling OnHPChanged(GetCurrentHP(),
-    GetMaxHP()) immediately, THEN binds OnCastleHPChanged (seed-then-bind, per qa/TASK-005-report.md
-    major 2); UFUNCTION BlueprintImplementableEvent OnHPChanged(float CurrentHP, float MaxHP) — float
-    params only, MCP cannot author enum BP params. ACastle BeginPlay: if HPBarWidget's user widget is a
-    UCastleHealthBarWidget, call InitForCastle(this). Verify "UMG" is already in Build.cs (it is, from M1
-    widgets) — do not touch Build.cs otherwise (TASK-016 owns the Niagara edit). Acceptance: compiles and
-    runs with no widget asset present; 3 enemy hits = exactly 3 broadcasts with correct values; friendly
-    damage = 0 broadcasts; destroyed -> bar hidden; ResetCastle -> broadcast(2000,2000) + bar visible.
-- names: >
-    ACastle (Source/GitClaudeUnrealTest/Siegebound/Castle.h/.cpp) — delegate FOnCastleHPChanged, property
-    OnCastleHPChanged, component HPBarWidget, getters GetCurrentHP/GetMaxHP. UCastleHealthBarWidget in
-    Source/GitClaudeUnrealTest/Siegebound/CastleHealthBarWidget.h/.cpp — functions InitForCastle,
-    OnHPChanged. Widget asset (exact, built in TASK-019): /Game/UI/WBP_CastleHealthBar.
-
-### TASK-019 — WBP_CastleHealthBar from UI_LifeBar donor (editor)
-- assignee: gameplay-programmer
-- status: ready-for-integration (audit-and-finish complete 2026-07-03: orphan session had finished the widget correctly at 14:41 — audited state is SHA256-identical; all 6 PIE acceptance items PASS incl. zero Accessed None; donor UI_LifeBar verdict = merely resaved, NOT functionally altered [structural diff vs pristine template]; handoffs/TASK-019.md. CAUTION for build-master: donor likely dirty in editor MEMORY — never save-all; staged widget blob == worktree so unstage is conflict-free)
-- blocked-by: TASK-018 (integrated + compiled)
-- parallel-safe: no
-- spec: >
-    Editor/MCP work. DUPLICATE donor /Game/Variant_Combat/UI/UI_LifeBar -> /Game/UI/WBP_CastleHealthBar
-    (MCP cannot author widget trees from scratch; never edit the donor). Reparent the duplicate to
-    UCastleHealthBarWidget. Strip all template logic/bindings referencing Variant_Combat classes; keep the
-    bar visuals. Implement event OnHPChanged(CurrentHP, MaxHP): ProgressBar SetPercent(CurrentHP / MaxHP),
-    guard MaxHP > 0. If the donor has a numeric text block, bind it to "Current / Max" as ints; otherwise
-    bar-only is fine. Placeholder styling acceptable (premium UI pass is M7). Acceptance (PIE in L_Arena):
-    both castles show a full overhead bar at boot; hero swings on the Red castle lower its bar live in
-    20-HP steps; footman attacks lower it in 12-HP steps; at 0 HP the bar disappears with the castle;
-    Play Again -> both bars full and visible again.
-- names: >
-    /Game/UI/WBP_CastleHealthBar (parent UCastleHealthBarWidget; donor /Game/Variant_Combat/UI/UI_LifeBar,
-    READ-ONLY).
-
-### TASK-020 — Footman procedural attack lunge + impact VFX (C++)
-- assignee: gameplay-programmer
-- status: done (commit f6fa7ba; qa/TASK-020-report.md PASS)
-- blocked-by: TASK-016 (shared Build.cs edit only — Niagara module lands there; no logic dependency)
-- parallel-safe: yes
-- spec: >
-    Files only, no editor. Playtest R1 finding 3. Blockout-tier "attack animation" for the static-mesh
-    footman — NO skeletal rig (M7). In ASummonedUnit: (1) each time the Attack state deals its cadence hit,
-    run one lunge cycle on the VisualMesh component: offset its RELATIVE location along local +X (the
-    capsule's local X is actor forward — do NOT use the mesh's own rotation; VisualMesh carries a -90 yaw
-    import fix per handoffs/TASK-014.md) out AttackLungeDistance (default 40.0) and back, sine-eased, over
-    AttackLungeDuration (default 0.3 s), clamped to 0.8 x Cadence. Cache the BP-authored base relative
-    location once at BeginPlay (post-construction); drive offset as Base + f(elapsed); ALWAYS restore
-    exactly Base at cycle end, on leaving the Attack state, and on death — zero drift after any number of
-    cycles. UPROPERTYs (EditAnywhere, Category "Combat|Feedback"): float AttackLungeDistance = 40.f, float
-    AttackLungeDuration = 0.3f. (2) On each damage application spawn AttackImpactEffect —
-    TSoftObjectPtr<UNiagaraSystem> with C++ default /Game/Variant_Combat/VFX/NS_Damage.NS_Damage (READ-ONLY
-    donor, referenced not edited) — at the closest point on the target's collision to the unit (fallback:
-    target location); null-safe; resolve/cache once, no per-attack sync-load hitch. Do NOT touch Build.cs —
-    TASK-016 owns the Niagara module edit. Acceptance: in PIE a footman attacking the Red castle visibly
-    lunges toward it once per 1.0 s with a damage puff at the contact point; mesh sits at exact rest pose
-    between hits and after 50+ attacks; correct for either team/facing; damage numbers/timing unchanged;
-    stats still read from DT_Cards (nothing hardcoded).
-- names: >
-    ASummonedUnit (Source/GitClaudeUnrealTest/Siegebound/SummonedUnit.h/.cpp) — UPROPERTYs
-    AttackLungeDistance, AttackLungeDuration, AttackImpactEffect; existing component VisualMesh.
-    Donor (exact, read-only): /Game/Variant_Combat/VFX/NS_Damage.
+(empty — M1 complete: TASK-016..020 moved to ## Done. Current work: the ## M2 tasks section below.)
 
 ---
 
 ## M2 tasks (decomposed 2026-07-03)
 
-File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blocked-by: [021, 026] → [022, 027, 028] → [023, 024, 029] → [025, 030]. Editor/build tasks (031..036, 039, 040) wait for round-2 sign-off; Blender tasks (037, 038) also need Blender MCP.
+### M2 RESUME — 2026-07-03: Blender MCP + UE5 MCP both confirmed UP by Jonathan (`/mcp`); Blender verified live. M2 fully unblocked. Dispatch frontier: TASK-025 + TASK-030 (code, fresh redispatch — no handoffs on disk) and TASK-037 (art, Blender). TASK-039 waits on 025+030 qa-passed.
+
+### PLANNED SESSION SHUTDOWN — 2026-07-03 night (read this first on resume)
+Jonathan deliberately closed all Claude clients to fix a blender-mcp bridge-process swarm (Claude Desktop's blender extension + stale /mcp bridges + an orphaned pre-warm tree were racing for the addon's single-client socket on 9876). **RESOLVED 2026-07-03 (next session):** the swarm was a symptom, not the root cause. The real fault was the wrong MCP client — `.mcp.json` pointed `blender` at the third-party `uvx blender-mcp`, whose wire protocol is incompatible with the **official Blender 5.1 Lab MCP addon** that actually owns port 9876. Every request came back as unparseable bytes and hung ~40s, past Claude Code's 30s startup timeout. A second, subtler fault also had to be fixed: the addon's OWN `mcp_bridge.py` speaks only Content-Length (LSP) framing, but MCP stdio (and Claude Code) use newline-delimited JSON, so it *also* hangs Code (worked in Desktop, which uses Content-Length). Final fix = a repo dual-framing bridge `Tools/blender_mcp_bridge.py` (auto-detects framing) that `.mcp.json` now launches; verified with live newline + Content-Length round-trips. Full writeup: Obsidian note "Blender MCP — official addon vs uvx client". State at shutdown:
+- **qa-passed (8/10 file tasks): 021, 022, 023, 024, 026, 027, 028, 029.** All QA reports in qa/, all handoffs in handoffs/.
+- **TASK-025 + TASK-030 agents were IN-FLIGHT at shutdown** and died with the session. On resume, check for handoffs/TASK-025.md and handoffs/TASK-030.md + their 🧪 posts in the Dev & QA Slack thread: if a handoff exists, that task is done → route to QA; if absent/partial, redispatch fresh with audit-first instructions (TASK-027 incident pattern — expect partial files: MinerUnit/GoldNode .h/.cpp for 025; SiegePlayerController edits for 030).
+- After 025 + 030 pass QA → **TASK-039** (build-master: editor bounce, batch compile, THEN TASK-031 DT_Cards reimport IMMEDIATELY before any PIE per qa/TASK-021 WARN-2, residue cleanup incl. the three lock-blocked files, commit) → editor wave 032..036 → TASK-040.
+- Uncommitted-but-QA-passed code on disk: all M2 file-task changes since commit 4f95730 (Source/Siegebound: CardRow, DeckComponent, SiegePlayerController, SiegeGameState [new], SiegePlayerState, SiegeGameMode, HeroCharacter, Building/Tower [new], Projectile/DamageTypes [new], SummonedUnit, CardHandWidget [new], + Docs/Data/cards.csv, Config/DefaultEngine.ini navmesh line). NOTHING commits until TASK-039's compile passes.
+- Unreal editor was left RUNNING with MCP up (frozen at 4f95730 content state); it may be closed/rebooted freely — TASK-039 bounces it anyway.
+- Blender restart order for art (037/038): start **Blender 5.1** (the official Lab MCP addon requires 5.1+; 5.0 cannot run it) + addon Connect FIRST, then verify only ONE Claude client has the `blender` server connected — Desktop's blender extension and Code both hitting 9876 contend on the addon's single-threaded socket. Then **fully restart Claude Code** (it reads `.mcp.json` at startup; `/mcp` reconnect may not hot-reload) — `/mcp` should then show `blender` connected. Protocol is settled: `.mcp.json` launches the repo dual-framing bridge `Tools/blender_mcp_bridge.py` (tools: `execute_blender_code`, `get_scene_info`, `get_object_info`) — no "probe protocol" step. art-director already updated for `execute_blender_code`.
+
+File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blocked-by: [021, 026] → [022, 027, 028] → [023, 024, 029] → [025, 030]. Editor/build tasks (031..036, 039, 040): round-2 sign-off received 2026-07-03 — unblocked per their remaining blocked-by lines (TASK-039 compile leads); Blender tasks (037, 038) still need Blender MCP.
 
 ### TASK-021 — Core-set card data: FCardRow columns + cards.csv rows (files)
 - assignee: gameplay-programmer
-- status: ready-for-qa (handoffs/TASK-021.md; 5 flagged decisions for QA ruling; DeckCount sums to 50, M1 Footman bytes preserved)
+- status: qa-passed (qa/TASK-021-report.md — 0 blockers, 2 warns, 1 nit; all 5 flagged decisions ruled PASS)
 - blocked-by: none
 - parallel-safe: yes
 - spec: >
@@ -279,7 +158,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-022 — Deck & hand model: UDeckComponent (C++)
 - assignee: gameplay-programmer
-- status: backlog
+- status: qa-passed (qa/TASK-022-report.md — 0 blockers, 1 warn, 2 nits; all 14 flagged decisions ruled PASS; WARN-1 = TASK-023 discard-order gold-leak guard, carry-forward)
 - blocked-by: TASK-021
 - parallel-safe: yes
 - spec: >
@@ -307,7 +186,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-023 — PlayerController v2: hand play, discard, refusal messages, input plumbing (C++)
 - assignee: gameplay-programmer
-- status: backlog
+- status: qa-passed (qa/TASK-023-report.md — 0 blockers, 1 warn, 1 nit; all 18 flagged decisions ruled PASS; all three scrutiny walks clean; qa/TASK-022 WARN-1 gold-leak closure verified; M1 seven-exit-path law intact; FOnCardRefused seam to TASK-029 character-exact; WARN = defensive ExitPlacementMode in HandleMatchReset, carry to TASK-030)
 - blocked-by: TASK-022
 - parallel-safe: yes
 - spec: >
@@ -342,7 +221,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-024 — Match clock, overtime, economy v2, match-end freeze (C++)
 - assignee: gameplay-programmer
-- status: backlog
+- status: qa-passed (qa/TASK-024-report.md — 0 blockers, 1 warn, 2 nits; 13/13 flagged decisions ruled PASS/ACCEPTED; all 3 carry-forward closures VERIFIED CLOSED; qa/TASK-005 major-1 income-timer law intact; WARN-1 = PlayAgain double ResetDeck [TASK-023 seam], verified benign — drop one call in a later pass)
 - blocked-by: TASK-027, TASK-028
 - parallel-safe: yes
 - spec: >
@@ -384,7 +263,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-025 — Miner unit + gold node (C++)
 - assignee: gameplay-programmer
-- status: backlog
+- status: qa-passed (build-fix loop 1 folded 2026-07-04: MinerUnit.cpp C4458 shadows cleared — local Owner→OwnerState ×3, loop PlayerState→IterPlayerState; pure local renames, no seams/stats. Batch-wide compiler-level shadow sweep confirms module shadow-clean. handoffs/TASK-025.md). Prior logic QA (0 blk/1 warn/1 nit, no-attack seal verified load-bearing) stands.
 - blocked-by: TASK-021, TASK-024
 - parallel-safe: yes
 - spec: >
@@ -412,7 +291,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-026 — Projectile actor + damage types + castle damage scaling (C++)
 - assignee: gameplay-programmer
-- status: in-progress (dispatched 2026-07-03 ~15:45, M2 wave 1)
+- status: qa-passed (qa/TASK-026-report.md — 0 blockers, 1 warn, 4 nits; all 10 flagged decisions ruled PASS/ACCEPTED; M1 castle melee path verified identical incl. both TakeDamage return-value consumers; WARN carry-forward: in-flight projectiles vs match-end freeze/PlayAgain → TASK-024/040)
 - blocked-by: none
 - parallel-safe: yes
 - spec: >
@@ -444,7 +323,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-027 — Building base + tower (C++) + dynamic navmesh config
 - assignee: gameplay-programmer
-- status: backlog
+- status: qa-passed (qa/TASK-027-report.md — 0 blockers, 2 warns, 4 nits; all 13 flagged decisions ruled PASS/ACCEPTED; resume-seam audit clean; ini verified single-section/next-boot-only; WARN carry-forwards: match-end tower firing → TASK-024, InitBuilding-deferred-must-pass-real-CardID constraint → TASK-030)
 - blocked-by: TASK-026
 - parallel-safe: yes
 - spec: >
@@ -473,7 +352,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-028 — Summoned unit v2: ranged attacks + FreezeAI (C++)
 - assignee: gameplay-programmer
-- status: backlog
+- status: qa-passed (qa/TASK-028-report.md PASS — 0 blockers / 0 warnings / 2 nits; 11/11 flagged decisions ruled; heightened-scrutiny out-of-scope sweep CLEAN; closes qa/TASK-020 WARN-1; compile gated on TASK-039 batch)
 - blocked-by: TASK-021, TASK-026
 - parallel-safe: yes
 - spec: >
@@ -496,7 +375,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-029 — Card hand widget C++ base: UCardHandWidget (C++)
 - assignee: gameplay-programmer
-- status: backlog
+- status: qa-passed (build-fixes loop 1+2 folded 2026-07-04: loop-1 cleared UHT param shadow, loop-2 cleared CardHandWidget.cpp/.h C4458 shadows — loop var Slot→SlotIndex, PushHandSlot param Slot→SlotIndex; pure local renames, RequestPlay/DiscardSlot + BIE signatures untouched. Batch shadow sweep clean. handoffs/TASK-029.md). Prior logic QA (0 blk/1 warn/3 nit, TASK-023 seam clean, WARN-1 TASK-033 idempotent-BIE) stands.
 - blocked-by: TASK-022
 - parallel-safe: yes
 - spec: >
@@ -522,7 +401,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-030 — Placement v2: navmesh projection, building clearance, generalized spawn, miner cap (C++)
 - assignee: gameplay-programmer
-- status: backlog
+- status: qa-passed (qa/TASK-030-report.md — 0 blockers, 2 warns, 3 nits; all 3 flagged items APPROVED [SiegeGameMode ResetDeck drop clean, Build.cs +NavigationSystem correct, CastlePlinthClearance acceptable]; TASK-023 baseline intact; all 3 carry-forward WARNs closed; melee-suppression on all 10 exit paths; NavigationSystem APIs verified vs UE 5.8). handoffs/TASK-030-programmer.md. BUILD NOTE for TASK-039: Build.cs delta forces a FULL editor rebuild, not hot-reload. Ready for TASK-039 batch.
 - blocked-by: TASK-023, TASK-024, TASK-027
 - parallel-safe: yes
 - spec: >
@@ -555,7 +434,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 ### TASK-031 — DT_Cards reimport: 6-row core set (editor)
 - assignee: gameplay-programmer
 - status: backlog
-- blocked-by: round-2 sign-off; TASK-021; TASK-039 (FCardRow columns compiled)
+- blocked-by: TASK-021; TASK-039 (FCardRow columns compiled)
 - parallel-safe: no
 - spec: >
     Editor/MCP work. Reimport Docs/Data/cards.csv into the existing /Game/Data/DT_Cards (row struct
@@ -571,7 +450,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 ### TASK-032 — Input assets v2: IA_Card2..6 + IA_UICursor (editor)
 - assignee: gameplay-programmer
 - status: backlog
-- blocked-by: round-2 sign-off; TASK-023; TASK-039 (controller slots compiled)
+- blocked-by: TASK-023; TASK-039 (controller slots compiled)
 - parallel-safe: no
 - spec: >
     Editor/MCP work. Create bool/Digital input actions in /Game/Input/Actions/: IA_Card2 (key 2), IA_Card3
@@ -591,7 +470,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 ### TASK-033 — WBP_CardHand + HUD v2 wiring (editor)
 - assignee: gameplay-programmer
 - status: backlog
-- blocked-by: round-2 sign-off; TASK-029; TASK-031; TASK-039 (widget base + delegates compiled)
+- blocked-by: TASK-029; TASK-031; TASK-039 (widget base + delegates compiled)
 - parallel-safe: no
 - spec: >
     Editor/MCP work. Placeholder styling fine (premium UI is M7); bindings exact. (1) Create
@@ -619,7 +498,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 ### TASK-034 — BP_Unit_Archer / BP_Unit_Knight / BP_Unit_Miner (editor)
 - assignee: gameplay-programmer
 - status: backlog
-- blocked-by: round-2 sign-off; TASK-031; TASK-037 (meshes); TASK-039 (AMinerUnit/ranged code compiled)
+- blocked-by: TASK-031; TASK-037 (meshes); TASK-039 (AMinerUnit/ranged code compiled)
 - parallel-safe: no
 - spec: >
     Editor/MCP work. Three BPs in /Game/Blueprints/Units/, all Team default Blue, capsule sized to mesh,
@@ -640,7 +519,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 ### TASK-035 — BP_Building_ArrowTower / BP_Building_Wall (editor)
 - assignee: gameplay-programmer
 - status: backlog
-- blocked-by: round-2 sign-off; TASK-031; TASK-038 (meshes); TASK-039 (ABuilding/ATower compiled)
+- blocked-by: TASK-031; TASK-038 (meshes); TASK-039 (ABuilding/ATower compiled)
 - parallel-safe: no
 - spec: >
     Editor/MCP work. New folder /Game/Blueprints/Buildings/ (CONVENTIONS). (1) BP_Building_ArrowTower —
@@ -659,7 +538,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 ### TASK-036 — L_Arena v2: gold nodes, arena boundary, KillZ (editor)
 - assignee: gameplay-programmer
 - status: backlog
-- blocked-by: round-2 sign-off; TASK-038 (SM_GoldNode imported); TASK-039 (AGoldNode compiled)
+- blocked-by: TASK-038 (SM_GoldNode imported); TASK-039 (AGoldNode compiled)
 - parallel-safe: no
 - spec: >
     Editor/MCP work in /Game/Maps/L_Arena. (1) Place two AGoldNode actors per the arena contract:
@@ -681,8 +560,8 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-037 — Unit blockout meshes: SM_Archer, SM_Knight, SM_Miner (art)
 - assignee: art-director
-- status: backlog
-- blocked-by: round-2 sign-off (import step); Blender MCP available
+- status: ready-for-integration — done 2026-07-04. All 3 imported to /Game/Meshes/ (SM_Miner 1124 tris/173u, SM_Archer 1558 tris/180u, SM_Knight 1244 tris/190u; feet-center origin, slot0 MI_TeamColor_Blue, zero warnings, distinct silhouettes Knight>Archer>Miner). FBX in Content/RawAssets/. handoffs/TASK-037.md. .uassets stay UNTRACKED until TASK-040 art commit (NOT TASK-039). Note: collision hulls include weapon overhang — swap to body capsule at BP integration if desired.
+- blocked-by: none (Blender MCP available ✓ 2026-07-03 — confirmed UP by Jonathan, verified live)
 - parallel-safe: no
 - spec: >
     Blender MCP + editor import. Three humanoid blockouts in the SM_Footman family style (GDD §6:
@@ -706,7 +585,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 ### TASK-038 — Structure blockout meshes: SM_ArrowTower, SM_Wall, SM_GoldNode + M_GoldGlow (art)
 - assignee: art-director
 - status: backlog
-- blocked-by: round-2 sign-off (import step); Blender MCP available
+- blocked-by: none (Blender MCP available ✓ 2026-07-03 — confirmed UP by Jonathan, verified live)
 - parallel-safe: no
 - spec: >
     Blender MCP + editor import. Three structure blockouts (GDD §6: <= 15k tris each, beveled, blockout
@@ -732,7 +611,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 ### TASK-039 — M2 code batch: compile, residue adjudication, commit (build)
 - assignee: build-master
 - status: backlog
-- blocked-by: round-2 sign-off; TASK-021..030 all qa-passed
+- blocked-by: TASK-021..030 all qa-passed
 - parallel-safe: no
 - spec: >
     Build-master. Runs ONLY after Jonathan's round-2 sign-off, and after M1's own R1 integration
@@ -852,3 +731,32 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
     CastleAnchor_Red (+2000,0,0), PlayerStart (-1700,0,100) yaw 0, DecalActor centerline, navmesh both
     halves, PIE smoke-tested. Support asset /Game/Materials/M_CenterlineStripe. Handoff: handoffs/TASK-015.md.
     (PlayerStart later moved to (-1400,0,100) at M1 final assembly — see M1 checkpoint carry-overs.)
+
+### TASK-016 — Hero attack feedback hooks (C++) — done (commit f6fa7ba)
+- gameplay-programmer. AHeroCharacter "Combat|Feedback" UPROPERTYs (AttackMontage/AttackMontageSection,
+  HitImpactEffect, HitCameraShake); null-safe montage + impact VFX + camera shake per swing, damage
+  timing byte-identical to M1; Niagara module added to Build.cs. Handoff: handoffs/TASK-016.md;
+  QA: qa/TASK-016-report.md.
+
+### TASK-017 — Wire hero attack feedback + LMB real-input verification (editor) — done (commit 4f95730)
+- gameplay-programmer. BP_HeroCharacter wired: AM_ComboAttack section Melee01 on ABP_Unarmed, NS_Damage
+  impact, BP_CameraShake_Hit_Enemy; PIE-verified −20 HP/swing; no click-swallow found — real-hardware
+  LMB confirmed closed at round-2 sign-off (2026-07-03). Handoff: handoffs/TASK-017.md.
+
+### TASK-018 — Castle HP delegate + health-bar widget component (C++) — done (commit f6fa7ba)
+- gameplay-programmer. ACastle FOnCastleHPChanged (broadcast on real HP change/reset/BeginPlay seed) +
+  screen-space HPBarWidget component + GetCurrentHP/GetMaxHP; UCastleHealthBarWidget base
+  (InitForCastle seed-then-bind, OnHPChanged BIE). Handoff: handoffs/TASK-018.md;
+  QA: qa/TASK-018-report.md.
+
+### TASK-019 — WBP_CastleHealthBar from UI_LifeBar donor (editor) — done (commit 4f95730)
+- gameplay-programmer. /Game/UI/WBP_CastleHealthBar (UI_LifeBar duplicate reparented to
+  UCastleHealthBarWidget); all 6 PIE acceptance items passed; donor restored to HEAD; build-master
+  reset-and-restaged a stale staged widget blob — the committed blob is the audited SHA. Handoff:
+  handoffs/TASK-019.md.
+
+### TASK-020 — Footman procedural attack lunge + impact VFX (C++) — done (commit f6fa7ba)
+- gameplay-programmer. ASummonedUnit sine-eased VisualMesh lunge per cadence hit
+  (AttackLungeDistance/Duration, drift-free base restore) + NS_Damage impact puff per damage
+  application; Build.cs untouched (TASK-016 owns Niagara). Handoff: handoffs/TASK-020.md;
+  QA: qa/TASK-020-report.md.

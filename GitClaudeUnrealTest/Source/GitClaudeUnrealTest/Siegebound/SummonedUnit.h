@@ -26,7 +26,7 @@ enum class ESummonedUnitState : uint8
 	Idle,
 	/** Moving toward the acquired target — or toward the enemy castle when none. */
 	Advance,
-	/** Acquired target within Range: dealing Damage every Cadence seconds. */
+	/** Acquired target within Range: dealing Damage (melee) or firing a homing projectile (bRanged rows) every Cadence seconds. */
 	Attack
 };
 
@@ -65,6 +65,19 @@ enum class ESummonedUnitState : uint8
  *    also spawns AttackImpactEffect at the contact point (closest point on the
  *    target's collision; fallback: target location). Purely visual — damage
  *    numbers/timing are untouched.
+ *  - Ranged delivery (TASK-028): rows with bRanged true (Archer) run the SAME
+ *    state machine (aggro 600, leash 900, Range gate from the row — Archer
+ *    700), but each cadence hit SPAWNS a homing AProjectile at the unit
+ *    (InitProjectile: own team, current target, row Damage,
+ *    USiegeDamageType_Projectile — the castle halves projectile damage on ITS
+ *    side, GDD §3.0/TASK-026) instead of applying melee damage. NO lunge and
+ *    NO melee impact puff for ranged attacks — the projectile and its own
+ *    impact VFX are the telegraph (§3.8). Melee rows (Footman/Knight) run the
+ *    M1/TASK-020 path unchanged.
+ *  - FreezeAI (TASK-028, the match-end freeze contract consumed by TASK-024):
+ *    permanently parks the unit — timers cleared, movement stopped, any
+ *    in-flight lunge cancelled to the exact rest pose, Idle until destroyed.
+ *    Inherited by AMinerUnit (TASK-025) — the base also stops its walk.
  *
  *  Spawners (TASK-007): prefer SpawnActorDeferred → InitUnit(Team, CardID) →
  *  FinishSpawning, so BeginPlay binds the right card. InitUnit also works
@@ -102,6 +115,24 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Unit")
 	void InitUnit(ETeamId InTeam, FName InCardID);
+
+	/**
+	 *  Match-end freeze (TASK-028; called by the game mode at match end per the
+	 *  TASK-024 contract, and inherited by AMinerUnit — the base StopMovement
+	 *  also halts its gold-node walk, TASK-025). Permanently stops the unit's
+	 *  AI: clears the state (acquire) and attack timers, cancels any in-flight
+	 *  lunge and restores VisualMesh to EXACTLY the cached rest pose (zero
+	 *  residual offset), stops movement, and parks the unit in Idle until it is
+	 *  destroyed. Idempotent; safe on dead or never-bound units. A frozen unit
+	 *  can never restart: stat binding and both timer callbacks are gated on
+	 *  the frozen flag. Virtual so subclasses with extra drives can extend it.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Unit")
+	virtual void FreezeAI();
+
+	/** True once FreezeAI ran (PIE verification hook for the TASK-024 match-end freeze). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Unit")
+	bool IsAIFrozen() const { return bAIFrozen; }
 
 	/** Current hit points, in [0, MaxHP]. PIE verification hook (TASK-010). */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Unit")
@@ -234,6 +265,17 @@ private:
 	void FaceTarget(const AActor* Target);
 
 	/**
+	 *  Ranged delivery (TASK-028): spawns a homing AProjectile at the unit,
+	 *  aimed at Target (cosmetic — the projectile re-aims at the target's
+	 *  CURRENT location every tick), armed via InitProjectile with our team,
+	 *  the row Damage, and USiegeDamageType_Projectile (ACastle applies §3.0's
+	 *  50% on ITS side, TASK-026). Spawn sets Instigator = this — the TASK-026
+	 *  pawn-shooter rule — so receiver no-friendly-fire checks resolve our
+	 *  team through the TASK-002 chain. Null-safe on world/target/spawn.
+	 */
+	void FireProjectileAt(AActor* Target);
+
+	/**
 	 *  Starts ONE lunge cycle from the exact cached rest pose (TASK-020).
 	 *  Cycle duration = min(AttackLungeDuration, 0.8 × Cadence). No-op when the
 	 *  rest pose is uncached, VisualMesh is missing, or the cycle is degenerate
@@ -269,6 +311,10 @@ private:
 	 *  (mirrors the hero melee, TASK-003) so large-footprint targets — the
 	 *  castle's ~800x800 base, origin at center — measure from their walls.
 	 *  Falls back to the actor origin when no usable collision exists.
+	 *  TODO(post-TASK-028, qa/TASK-026-report.md NIT-4): three hand-mirrors of
+	 *  this closest-point pattern exist (hero melee inline, this pair,
+	 *  AProjectile::GetDistanceToTarget) — consolidate into ONE shared static
+	 *  on the next wave that owns all three files; never add a fourth mirror.
 	 */
 	static float GetDistanceToTarget(const FVector& From, const AActor* Target);
 
@@ -307,6 +353,10 @@ private:
 	/** Seconds between attacks, from the card row (Footman: 1.0). */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Unit", meta = (AllowPrivateAccess = "true"))
 	float AttackCadence = 1.f;
+
+	/** True when this row's attack is delivered by a homing projectile (row bRanged — Archer). False (melee) leaves the M1 path untouched (TASK-028). */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Unit", meta = (AllowPrivateAccess = "true"))
+	bool bRangedAttack = false;
 
 	/** Current state-machine mode. */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Unit", meta = (AllowPrivateAccess = "true"))
@@ -347,6 +397,9 @@ private:
 
 	/** True from HP hitting 0; death side effects run exactly once. */
 	bool bDead = false;
+
+	/** True once FreezeAI ran (TASK-028 match-end freeze): the unit idles until destroyed — stat binding and both timer callbacks are gated on this. */
+	bool bAIFrozen = false;
 
 	/** One-shot guard for the missing-AIController warning. */
 	bool bWarnedNoAIController = false;
