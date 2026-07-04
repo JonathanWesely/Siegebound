@@ -697,7 +697,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ## M3 tasks (decomposed 2026-07-04 — HELD)
 
-### M3 — HELD: DO NOT START before Jonathan approves M2 (read this first)
+### M3 — ACTIVE (Jonathan authorized M3 on `main` 2026-07-04; safety branch `m2-testable` @ f903cf0 preserves the M2-testable state — the HELD/interference text below is SUPERSEDED, M3 may disrupt main's M2 testability by design)
 **Interference gate (overnight constraint):** adding ANY new `.cpp`/`.h` to the Siegebound module makes the editor rebuild-on-boot, which could break Jonathan's in-progress M2 playtest. So **every M3 task — including the file-only C++ ones — is HELD tonight**: decomposed-and-ready, NOT dispatched. On M2 sign-off, dispatch order: file-only C++ wave first (TASK-042 + TASK-043 in parallel — different files), then TASK-044 (after 042) / TASK-045 (after 043), then TASK-046 (after 044+045) and TASK-047 (after 045; parallel with 046 — different files); build-master compiles the batch (TASK-051); editor tasks 048/049/050 after the batch compiles; TASK-052 verifies last. **Every code task (042–047) implies a QA review** (standard qa loop). M3 = GDD §9-3 + §4 Bot Opponent + §4 hero Rally + §7 main menu.
 
 **M3 design rulings (binding for all M3 tasks):**
@@ -711,7 +711,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-042 — Hero Rally ability + unit move-speed buff API (C++)
 - assignee: gameplay-programmer
-- status: backlog (HELD — M3 code gated on M2 sign-off)
+- status: qa-passed (qa/TASK-042-report.md — 0 blockers, 0 warns, 3 nits; all 3 flagged items ACCEPTED; full MaxWalkSpeed-writer census confirms zero drift risk; FreezeAI zero-residual verified; C4458 clean; M1/M2 byte-preserved). handoffs/TASK-042.md. Ready for TASK-051 M3 batch compile.
 - blocked-by: none
 - parallel-safe: yes (parallel with TASK-043; TASK-044 serializes AFTER it — shared SummonedUnit files)
 - spec: >
@@ -736,7 +736,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-043 — Multi-team economy: PlayerState Team tag + GetPlayerStateForTeam + miner team-resolution (C++)
 - assignee: gameplay-programmer
-- status: backlog (HELD)
+- status: qa-passed (qa/TASK-043-report.md — 0 blockers, 1 warn, 2 nits; all 3 flagged decisions ACCEPTED; M2 Blue-side economy byte-for-byte CONFIRMED; InitNewPlayer signature verified UE 5.8; C4458 clean). WARN (non-blocking, carry to TASK-044 MinerUnit pass): mis-teamed miner's 0.25s retry poll re-logs ~4/s — the null-PS branch lacks the one-shot guard; never fires in designed flows. handoffs/TASK-043.md. Ready for TASK-051 batch compile.
 - blocked-by: none
 - parallel-safe: yes (parallel with TASK-042 — different files)
 - spec: >
@@ -757,7 +757,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-044 — Team-driven visuals: MI_TeamColor by Team at BeginPlay (C++)
 - assignee: gameplay-programmer
-- status: backlog (HELD)
+- status: qa-passed (qa/TASK-044-report.md — 0 blockers, 1 warn, 2 nits). All 3 actor types color correctly (units/miners via base BeginPlay, buildings own); NO spawn-timing hole (Team set before FinishSpawning + idempotent InitUnit/InitBuilding re-apply — bot Red unit can't render blue); Blue-side byte no-op; TASK-043 WARN closure verified sound (never suppresses a legit resolution in designed flows). C4458 clean. handoffs/TASK-044.md. Ready for TASK-051 batch compile.
 - blocked-by: TASK-042 (serialize — shares SummonedUnit files)
 - parallel-safe: no
 - spec: >
@@ -774,7 +774,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-045 — ASiegeBotController: AIController brain, economy + deck ownership, spawn + Play Again reset (C++)
 - assignee: gameplay-programmer
-- status: backlog (HELD)
+- status: qa-passed (qa/TASK-045-report.md — 0 blockers, 0 warns, 2 nits; all 4 flagged decisions ACCEPTED; M2 player Blue economy + match flow NON-REGRESSED confirmed — independent PS, consistent exclude[PlayerController-iter]/include[PlayerArray] asymmetry, no first-PS assumption). FORWARD-DEP: once TASK-046 fills EvaluateDecisions, bot must stop playing under Victory screen — 046 gates on match-active AND 047 wires StopDecisionTimer into the freeze. handoffs/TASK-045.md. Ready for TASK-051 batch compile.
 - blocked-by: TASK-043
 - parallel-safe: yes (new class pair; TASK-046 serializes AFTER it — same bot file)
 - spec: >
@@ -797,7 +797,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-046 — Bot decision loop: 2 s ordered rules + placement + LogSiegeBot decision trace (C++)
 - assignee: gameplay-programmer
-- status: backlog (HELD)
+- status: qa-passed (qa/TASK-046-report.md — 0 blockers, 2 warns, 3 nits; all 5 flagged decisions ACCEPTED). Both hard invariants CONFIRMED: never-unaffordable (Cost<=Gold before every SpendGold, destroy-on-fail) + never-Blue-half (X>=0 on navmesh-snapped point, all paths). Placement fidelity vs TASK-030 identical (plinth 420, clearance 200, castle-not-building); SiegePlayerController NOT edited. WARN-1 NavProjectionExtent (200,200,1000) vs player (50,50,50) — justified (no cursor trace), re-validated. WARN-2 rule-4 discard-fee pre-check — unreachable in M3, harden before M4/M5. C4458 clean, C4244-safe. handoffs/TASK-046.md.
 - blocked-by: TASK-044, TASK-045
 - parallel-safe: yes (bot-internal; parallel with TASK-047 — different files)
 - spec: >
@@ -823,7 +823,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-047 — Match resolution v3: win/lose by team + main-menu level-flow hook (C++)
 - assignee: gameplay-programmer
-- status: backlog (HELD)
+- status: qa-passed (qa/TASK-047-report.md — 0 blockers, 0 warns, 1 nit [header doc-comment omits new step 6, cosmetic]). Win/lose byte mapping CONFIRMED correct (Red castle→Victory, Blue→Defeat; SetWinner byte Blue=0/Red=1, ETeamId enum:uint8; M1 win-display path verified non-regressed). Bot-freeze WORKS (StopDecisionTimer in FreezeWorldAtMatchEnd step6, IsValid-guarded, idempotent). PlayAgain both-sides reset, no Blue-side regression. StartMatch static+WorldContext valid UE5.8. C4458 clean. handoffs/TASK-047.md. Ready for TASK-051 batch compile.
 - blocked-by: TASK-045 (serialize GameMode edits after the bot-spawn edits)
 - parallel-safe: yes (parallel with TASK-046 — different files)
 - spec: >
@@ -896,7 +896,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-051 — M3 code batch: compile + residue adjudication + commit (build)
 - assignee: build-master
-- status: backlog (HELD — runs only after M2 sign-off AND TASK-042..047 all qa-passed)
+- status: in-progress (2026-07-04; all TASK-042..047 qa-passed; M3 batch compile on main)
 - blocked-by: TASK-042, TASK-043, TASK-044, TASK-045, TASK-046, TASK-047 (all qa-passed)
 - parallel-safe: no
 - spec: >

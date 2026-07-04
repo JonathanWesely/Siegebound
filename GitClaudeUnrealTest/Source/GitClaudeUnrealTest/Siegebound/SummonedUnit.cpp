@@ -15,6 +15,7 @@
 #include "GameFramework/DamageType.h"
 #include "GitClaudeUnrealTest.h"
 #include "Kismet/GameplayStatics.h"
+#include "Materials/MaterialInterface.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
@@ -113,13 +114,48 @@ void ASummonedUnit::BeginPlay()
 		}
 	}
 
+	// TASK-044 (CONVENTIONS Team contract): recolor VisualMesh to the ACTUAL Team.
+	// The deferred spawn sets Team before BeginPlay (InitUnit → FinishSpawning,
+	// TASK-030/046), so the correct team material lands here; AMinerUnit inherits
+	// this via Super::BeginPlay. Purely cosmetic — the -90° yaw rest pose, the
+	// TASK-020 lunge, and the melee/ranged attack paths are untouched (slot 0 only).
+	ApplyTeamMaterial();
+
 	LoadStatsAndStart();
+}
+
+void ASummonedUnit::ApplyTeamMaterial()
+{
+	// TASK-044 — CONVENTIONS Team contract: the bot reuses the player's BP_Unit_*
+	// assets (authored with the Blue placeholder material); this overrides slot 0 by
+	// the ACTUAL Team so a Red-spawned unit reads red with no Red BP duplicate. Blue
+	// re-applies the identical MI_TeamColor_Blue, so Blue-side visuals are unchanged.
+	if (!VisualMesh)
+	{
+		return;
+	}
+
+	// cached static resolve (spec): the two MI instances resolve ONCE per process and
+	// are shared by every unit/miner — never a per-attack/per-frame load. The paths are
+	// the CONVENTIONS Team contract. LoadSynchronous re-resolves through the soft path
+	// if GC ever unloaded them and returns nullptr for a missing asset — in which case
+	// the slot is left as authored (null-safe, never a crash — the AProjectile::
+	// ApplyTeamVisuals pattern, mirrored; keep the MI paths in sync by hand).
+	static const TSoftObjectPtr<UMaterialInterface> BlueTeamMaterial(FSoftObjectPath(TEXT("/Game/Materials/Instances/MI_TeamColor_Blue.MI_TeamColor_Blue")));
+	static const TSoftObjectPtr<UMaterialInterface> RedTeamMaterial(FSoftObjectPath(TEXT("/Game/Materials/Instances/MI_TeamColor_Red.MI_TeamColor_Red")));
+
+	const TSoftObjectPtr<UMaterialInterface>& TeamMat = (Team == ETeamId::Red) ? RedTeamMaterial : BlueTeamMaterial;
+	if (UMaterialInterface* ResolvedTeamMat = TeamMat.LoadSynchronous())
+	{
+		VisualMesh->SetMaterial(0, ResolvedTeamMat);
+	}
 }
 
 void ASummonedUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(StateTimerHandle);
 	GetWorldTimerManager().ClearTimer(AttackTimerHandle);
+	GetWorldTimerManager().ClearTimer(MoveSpeedBuffTimerHandle); // TASK-042: no dangling buff-restore on a destroyed unit
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -127,6 +163,16 @@ void ASummonedUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void ASummonedUnit::InitUnit(ETeamId InTeam, FName InCardID)
 {
 	Team = InTeam;
+
+	// TASK-044: keep VisualMesh's team color matched to a late/updated Team. Deferred
+	// spawns (InitUnit before FinishSpawning — the TASK-030/046 path) run this
+	// pre-BeginPlay (HasActorBegunPlay() false) and BeginPlay does the single apply; a
+	// plain SpawnActor + InitUnit (or a post-bind Team update) re-applies for the now-
+	// current Team. Idempotent and null-safe; runs even on the stats-already-bound path.
+	if (HasActorBegunPlay())
+	{
+		ApplyTeamMaterial();
+	}
 
 	if (bStatsLoaded)
 	{
@@ -169,6 +215,10 @@ void ASummonedUnit::FreezeAI()
 	// and tick off (TASK-020 zero-drift contract — zero residual offset)
 	StopAttackLunge();
 
+	// end any active move-speed buff (TASK-042): clear its timer and restore the
+	// base speed EXACTLY, so a match-end freeze leaves zero residual walk speed
+	EndMoveSpeedBuff();
+
 	// stop the walk. This also covers subclasses' moves (AMinerUnit's gold-node
 	// walk, TASK-025): StopMovement aborts whatever path request is in flight.
 	if (AAIController* AI = GetAIController())
@@ -180,6 +230,67 @@ void ASummonedUnit::FreezeAI()
 	State = ESummonedUnitState::Idle;
 	CurrentTarget = nullptr;
 	CurrentMoveGoal = nullptr;
+}
+
+void ASummonedUnit::ApplyMoveSpeedBuff(float Multiplier, float Duration)
+{
+	// a dying unit is being destroyed, and a match-end-frozen unit stays parked
+	// (TASK-028) — neither should take a Rally buff. Rally never targets these
+	// (the hero skips dead units), but guard defensively so the API is safe anywhere.
+	if (bDead || bAIFrozen)
+	{
+		return;
+	}
+
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (!Movement)
+	{
+		return;
+	}
+
+	// Capture the resting base speed ONCE per buff episode. A refresh while the buff
+	// is already active must NOT recapture the already-buffed speed — that is exactly
+	// the drift the TASK-020 lunge lesson warns against. The base is only ever taken
+	// from the resting (unbuffed) MaxWalkSpeed and restored EXACTLY on end.
+	if (!bMoveSpeedBuffActive)
+	{
+		MoveSpeedBuffBaseSpeed = Movement->MaxWalkSpeed;
+		bMoveSpeedBuffActive = true;
+	}
+
+	// No stacking: the buffed speed is always Base × Multiplier from the stored base,
+	// so re-applying only REFRESHES (never compounds) the same-magnitude boost.
+	Movement->MaxWalkSpeed = MoveSpeedBuffBaseSpeed * Multiplier;
+
+	// (Re)arm the restore timer with a fresh Duration — this is the refresh (never a
+	// stack, since a single one-shot handle is reused). A non-positive Duration is a
+	// defensive immediate restore (Rally always passes RallyDuration = 5 s > 0).
+	if (Duration > 0.f)
+	{
+		GetWorldTimerManager().SetTimer(MoveSpeedBuffTimerHandle, this, &ASummonedUnit::EndMoveSpeedBuff, Duration, /*bLoop=*/ false);
+	}
+	else
+	{
+		EndMoveSpeedBuff();
+	}
+}
+
+void ASummonedUnit::EndMoveSpeedBuff()
+{
+	// idempotent: clear the timer either way, restore only when a buff is live so the
+	// base speed is written back EXACTLY once (zero residual drift, TASK-020 contract)
+	GetWorldTimerManager().ClearTimer(MoveSpeedBuffTimerHandle);
+
+	if (!bMoveSpeedBuffActive)
+	{
+		return;
+	}
+	bMoveSpeedBuffActive = false;
+
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->MaxWalkSpeed = MoveSpeedBuffBaseSpeed;
+	}
 }
 
 void ASummonedUnit::LoadStatsAndStart()

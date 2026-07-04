@@ -1,0 +1,791 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+#include "Siegebound/SiegeBotController.h"
+
+#include "Components/CapsuleComponent.h"
+#include "Engine/DataTable.h"
+#include "Engine/World.h"
+#include "EngineUtils.h"
+#include "GitClaudeUnrealTest.h"
+#include "NavigationSystem.h"
+#include "TimerManager.h"
+#include "UObject/SoftObjectPtr.h"
+#include "Siegebound/Building.h"
+#include "Siegebound/CardRow.h"
+#include "Siegebound/Castle.h"
+#include "Siegebound/DeckComponent.h"
+#include "Siegebound/GoldNode.h"
+#include "Siegebound/HeroCharacter.h"
+#include "Siegebound/SiegeGameMode.h"
+#include "Siegebound/SiegePlayerState.h"
+#include "Siegebound/SummonedUnit.h"
+
+DEFINE_LOG_CATEGORY(LogSiegeBot);
+
+namespace
+{
+	/** Small lift above the projected ground so a spawned capsule never starts interpenetrating the floor (mirrors ASiegePlayerController). */
+	constexpr float SpawnGroundClearance = 2.f;
+
+	/** ACharacter's default capsule half-height — fallback when the unit class CDO has no capsule to measure. */
+	constexpr float DefaultCapsuleHalfHeight = 88.f;
+
+	/** One resolvable hand card the bot can reason about — empty slots and rows that fail to resolve are dropped before the §4 rules scan. */
+	struct FBotHandCard
+	{
+		int32 Slot = INDEX_NONE;
+		FName CardID = NAME_None;
+		const FCardRow* Row = nullptr;
+	};
+
+	/** Unit or Building = a "defensive play" (a body to block / a tower to shoot); Economy/Instant/Spell are not. */
+	bool IsDefensiveType(ECardType Type)
+	{
+		return Type == ECardType::Unit || Type == ECardType::Building;
+	}
+
+	/**
+	 *  Card types the bot can only cycle out (forward-compat, GDD §4): the bot
+	 *  has no hero (HeroUpgrade), and neither spells (M5) nor instants (M4/Utility)
+	 *  are implemented. Unit/Building/Economy are all playable and never counted here.
+	 */
+	bool IsUnplayableByBot(ECardType Type)
+	{
+		return Type == ECardType::Spell || Type == ECardType::HeroUpgrade || Type == ECardType::Utility;
+	}
+
+	/**
+	 *  Cheapest AFFORDABLE Unit/Building card; ties prefer a Unit (always
+	 *  placeable at the centerline, no clearance constraint). Returns the index
+	 *  INTO HandCards (not the deck slot), or INDEX_NONE. bOutIsBuilding reports
+	 *  the winner's family for the caller's spawn geometry.
+	 */
+	int32 FindCheapestDefensiveCard(const TArray<FBotHandCard>& HandCards, int32 Gold, bool& bOutIsBuilding)
+	{
+		int32 BestIndex = INDEX_NONE;
+		for (int32 Index = 0; Index < HandCards.Num(); ++Index)
+		{
+			const FCardRow* Row = HandCards[Index].Row;
+			if (!IsDefensiveType(Row->CardType) || Row->Cost > Gold)
+			{
+				continue;
+			}
+			if (BestIndex == INDEX_NONE)
+			{
+				BestIndex = Index;
+				continue;
+			}
+			const FCardRow* Best = HandCards[BestIndex].Row;
+			const bool bCheaper = Row->Cost < Best->Cost;
+			const bool bTiePreferUnit = (Row->Cost == Best->Cost) &&
+				(Best->CardType == ECardType::Building && Row->CardType == ECardType::Unit);
+			if (bCheaper || bTiePreferUnit)
+			{
+				BestIndex = Index;
+			}
+		}
+		if (BestIndex != INDEX_NONE)
+		{
+			bOutIsBuilding = (HandCards[BestIndex].Row->CardType == ECardType::Building);
+		}
+		return BestIndex;
+	}
+
+	/** Most-expensive AFFORDABLE Unit card (rule 3 — units only, not buildings). Index into HandCards, or INDEX_NONE. */
+	int32 FindMostExpensiveUnitCard(const TArray<FBotHandCard>& HandCards, int32 Gold)
+	{
+		int32 BestIndex = INDEX_NONE;
+		for (int32 Index = 0; Index < HandCards.Num(); ++Index)
+		{
+			const FCardRow* Row = HandCards[Index].Row;
+			if (Row->CardType != ECardType::Unit || Row->Cost > Gold)
+			{
+				continue;
+			}
+			if (BestIndex == INDEX_NONE || Row->Cost > HandCards[BestIndex].Row->Cost)
+			{
+				BestIndex = Index;
+			}
+		}
+		return BestIndex;
+	}
+
+	/** First AFFORDABLE Miner card in hand (rule 2). Index into HandCards, or INDEX_NONE. */
+	int32 FindAffordableMinerCard(const TArray<FBotHandCard>& HandCards, int32 Gold, FName MinerRowID)
+	{
+		for (int32 Index = 0; Index < HandCards.Num(); ++Index)
+		{
+			if (HandCards[Index].CardID == MinerRowID && HandCards[Index].Row->Cost <= Gold)
+			{
+				return Index;
+			}
+		}
+		return INDEX_NONE;
+	}
+
+	/** Most-expensive UNPLAYABLE card (rule 4). Index into HandCards, or INDEX_NONE. */
+	int32 FindMostExpensiveUnplayableCard(const TArray<FBotHandCard>& HandCards)
+	{
+		int32 BestIndex = INDEX_NONE;
+		for (int32 Index = 0; Index < HandCards.Num(); ++Index)
+		{
+			if (!IsUnplayableByBot(HandCards[Index].Row->CardType))
+			{
+				continue;
+			}
+			if (BestIndex == INDEX_NONE || HandCards[Index].Row->Cost > HandCards[BestIndex].Row->Cost)
+			{
+				BestIndex = Index;
+			}
+		}
+		return BestIndex;
+	}
+}
+
+ASiegeBotController::ASiegeBotController()
+{
+	// §4 "controls no hero": this AIController possesses nothing. bWantsPlayerState
+	// makes the engine auto-create a PlayerState of ASiegeGameMode::PlayerStateClass
+	// (= ASiegePlayerState) for it in PostInitializeComponents — reusing the M2
+	// economy verbatim (accrual, §3.2 overtime, §3.3 miner income) for the bot.
+	bWantsPlayerState = true;
+
+	// The bot never possesses a pawn, so its AI logic is never gated on possession
+	// — the decision loop runs on a timer regardless (defensive: this flag governs
+	// behavior-tree logic, which the bot does not use, but keeping it off avoids any
+	// possess-driven start/stop that a future component pass might introduce).
+	bStartAILogicOnPossess = false;
+
+	// Deck & hand model (GDD §3.4, TASK-022) — subobject name is a spec contract.
+	// The component self-defaults its CardTableAsset to /Game/Data/DT_Cards, so the
+	// bot's deck builds with no extra wiring. It never self-builds; BeginPlay does.
+	DeckComponent = CreateDefaultSubobject<UDeckComponent>(TEXT("DeckComponent"));
+
+	// The decision loop (TASK-046) reads each hand card's Cost/CardType from the
+	// SAME table (GDD §3.0 — never hardcodes a stat). Soft, resolved null-safe per
+	// decision; matches ASiegePlayerController's CardTableAsset path (TASK-008).
+	CardTableAsset = TSoftObjectPtr<UDataTable>(FSoftObjectPath(TEXT("/Game/Data/DT_Cards.DT_Cards")));
+}
+
+void ASiegeBotController::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// Build the bot's deck + deal its hand of 6 (GDD §3.4) at match start. The
+	// component never self-builds (TASK-022 flagged decision 12) — the controller
+	// owns the timing, exactly as ASiegePlayerController does for the player.
+	if (DeckComponent)
+	{
+		DeckComponent->BuildAndShuffle();
+	}
+	else
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Error,
+			TEXT("ASiegeBotController '%s': DeckComponent subobject missing (TASK-022/045) — the bot has no deck or hand this match."),
+			*GetNameSafe(this));
+	}
+
+	// Start the §4 decision cadence. EvaluateDecisions is a no-op in this shell
+	// (TASK-045); TASK-046 fills it. ASiegeGameMode tags this controller's
+	// PlayerState Team=Red right after spawning it — that identity is set before
+	// any miner or decision needs it (no miner spawns during match-start BeginPlay).
+	StartDecisionTimer();
+}
+
+void ASiegeBotController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// Own-timer hygiene only — this class never touches other objects' timers.
+	StopDecisionTimer();
+
+	Super::EndPlay(EndPlayReason);
+}
+
+ASiegePlayerState* ASiegeBotController::GetBotPlayerState() const
+{
+	// GetPlayerState<T> reads the inherited PlayerState UPROPERTY without shadowing
+	// it (CONVENTIONS C4458 law: no local named PlayerState). Null until the engine
+	// creates it in PostInitializeComponents; valid by BeginPlay.
+	return GetPlayerState<ASiegePlayerState>();
+}
+
+void ASiegeBotController::StartDecisionTimer()
+{
+	if (UWorld* World = GetWorld())
+	{
+		// SetTimer on the same handle replaces any existing timer, so repeated
+		// calls (BeginPlay, then ResetBot on each Play Again) never stack.
+		World->GetTimerManager().SetTimer(
+			DecisionTimerHandle, this, &ASiegeBotController::EvaluateDecisions,
+			DecisionIntervalSeconds, /*bLoop*/ true);
+	}
+}
+
+void ASiegeBotController::StopDecisionTimer()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(DecisionTimerHandle);
+	}
+}
+
+void ASiegeBotController::EvaluateDecisions()
+{
+	// (0) MATCH-ACTIVE GATE (TASK-045 forward-dep / GDD §3.9): never act under the
+	// Victory screen. TASK-047 ALSO calls StopDecisionTimer() in the match-end
+	// freeze — this is the bot-internal half of that belt-and-suspenders.
+	if (!IsMatchActive())
+	{
+		return;
+	}
+
+	UDeckComponent* Deck = GetDeckComponent();
+	ASiegePlayerState* BotState = GetBotPlayerState();
+	if (!Deck || !BotState)
+	{
+		// Shell not fully wired (TASK-045 BeginPlay already logged a missing deck);
+		// a null Red PlayerState is transient at match start — no-op, retry next tick.
+		return;
+	}
+
+	const UDataTable* CardTable = CardTableAsset.LoadSynchronous();
+	if (!CardTable)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASiegeBotController '%s': DT_Cards ('%s') unavailable — bot cannot read card stats this tick (no play)."),
+			*GetNameSafe(this), *CardTableAsset.ToString());
+		return;
+	}
+
+	// Gather the resolvable hand ONCE (skip empty slots + rows that don't resolve —
+	// e.g. the qa/TASK-021 WARN-2 empty-deck window before TASK-031 reimports).
+	TArray<FBotHandCard> HandCards;
+	const int32 HandSize = Deck->GetHandSize();
+	HandCards.Reserve(HandSize);
+	for (int32 SlotIndex = 0; SlotIndex < HandSize; ++SlotIndex)
+	{
+		const FName CardID = Deck->GetHandCardID(SlotIndex);
+		if (CardID.IsNone())
+		{
+			continue;
+		}
+		const FCardRow* Row = CardTable->FindRow<FCardRow>(CardID, TEXT("ASiegeBotController::EvaluateDecisions"), /*bWarnIfRowMissing=*/ false);
+		if (Row)
+		{
+			HandCards.Add(FBotHandCard{ SlotIndex, CardID, Row });
+		}
+	}
+
+	if (HandCards.Num() == 0)
+	{
+		return; // empty / unresolved hand — nothing to decide this tick
+	}
+
+	const int32 Gold = BotState->GetGold();
+	AActor* NearestIntruder = FindNearestEnemyIntruderOnBotHalf();
+
+	// ================= §4 ordered rules — play the FIRST that fires =================
+
+	// ---- Rule 1: DEFEND — enemy units on the bot half AND an affordable defensive play ----
+	if (NearestIntruder)
+	{
+		bool bChosenIsBuilding = false;
+		const int32 CardIndex = FindCheapestDefensiveCard(HandCards, Gold, bChosenIsBuilding);
+		if (CardIndex != INDEX_NONE)
+		{
+			const FBotHandCard& Chosen = HandCards[CardIndex];
+
+			// A tower goes BETWEEN the nearest intruder and Castle_Red; a unit goes
+			// to the bot centerline (§4). Both clamp to the bot half + navmesh below.
+			FVector Desired;
+			if (bChosenIsBuilding)
+			{
+				const FVector CastleRed = GetCastleRedLocation();
+				const FVector IntruderLocation = NearestIntruder->GetActorLocation();
+				const FVector ToIntruder2D = FVector(IntruderLocation.X - CastleRed.X, IntruderLocation.Y - CastleRed.Y, 0.f);
+				const FVector Dir2D = ToIntruder2D.GetSafeNormal();
+				const float IntruderDist = static_cast<float>(ToIntruder2D.Size());
+				const float MinStandoff = CastlePlinthClearance + 150.f; // clear of the plinth keep-out
+				const float Standoff = FMath::Clamp(TowerDefenseStandoff, MinStandoff, FMath::Max(MinStandoff, IntruderDist - 100.f));
+				Desired = Dir2D.IsNearlyZero()
+					? CastleRed + FVector(-Standoff, 0.f, 0.f) // intruder atop the castle: fall back toward the centerline
+					: CastleRed + Dir2D * Standoff;
+				Desired.Z = CastleRed.Z;
+			}
+			else
+			{
+				Desired = FVector(BotCenterlineSpawnX, FMath::FRandRange(-BotSpawnLaneSpread, BotSpawnLaneSpread), GetCastleRedLocation().Z);
+			}
+
+			FVector SpawnPoint;
+			if (ComputeValidBotSpawnPoint(Desired, bChosenIsBuilding, SpawnPoint))
+			{
+				const int32 GoldBefore = Gold;
+				if (SpawnBotCardActor(Chosen.CardID, bChosenIsBuilding, SpawnPoint, *BotState, Chosen.Row->Cost))
+				{
+					Deck->ConfirmPlayFromHand(Chosen.Slot);
+					UE_LOG(LogSiegeBot, Log,
+						TEXT("[Bot %s] Rule 1 (Defend): played %s '%s' (cost %d) at (%.0f, %.0f, %.0f) vs intruder '%s' — gold %d->%d."),
+						*GetNameSafe(this), bChosenIsBuilding ? TEXT("building") : TEXT("unit"),
+						*Chosen.CardID.ToString(), Chosen.Row->Cost,
+						SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z,
+						*GetNameSafe(NearestIntruder), GoldBefore, BotState->GetGold());
+				}
+			}
+			else
+			{
+				UE_LOG(LogGitClaudeUnrealTest, Verbose,
+					TEXT("ASiegeBotController '%s': Rule 1 wanted '%s' but found no valid spawn point this tick — retrying next tick."),
+					*GetNameSafe(this), *Chosen.CardID.ToString());
+			}
+			return; // rule 1 fired: it owns this tick (a refused point simply retries next tick)
+		}
+		// no AFFORDABLE defensive card → rule 1 did NOT fire; fall through
+	}
+
+	// ---- Rule 2: ECONOMY — half is clear, fewer than the miner target, affordable Miner ----
+	if (!NearestIntruder && BotState->GetAliveMinerCount() < TargetMinerCount && BotState->CanAddMiner())
+	{
+		const int32 CardIndex = FindAffordableMinerCard(HandCards, Gold, MinerCardID);
+		if (CardIndex != INDEX_NONE)
+		{
+			const FBotHandCard& Chosen = HandCards[CardIndex];
+
+			// Spawn just in FRONT of GoldNode_Red (toward the centerline) so the
+			// miner walks the last stretch, then activates its +1/s at the node.
+			const float ApproachSign = (BotTeam == ETeamId::Red) ? -1.f : 1.f;
+			const FVector Desired = GetGoldNodeRedLocation() + FVector(ApproachSign * MinerNodeApproachOffset, 0.f, 0.f);
+
+			FVector SpawnPoint;
+			if (ComputeValidBotSpawnPoint(Desired, /*bIsBuilding=*/ false, SpawnPoint))
+			{
+				const int32 GoldBefore = Gold;
+				if (SpawnBotCardActor(Chosen.CardID, /*bIsBuilding=*/ false, SpawnPoint, *BotState, Chosen.Row->Cost))
+				{
+					Deck->ConfirmPlayFromHand(Chosen.Slot);
+					UE_LOG(LogSiegeBot, Log,
+						TEXT("[Bot %s] Rule 2 (Economy): played Miner '%s' (cost %d) toward GoldNode_Red at (%.0f, %.0f, %.0f) — miners now %d/%d, gold %d->%d."),
+						*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost,
+						SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z,
+						BotState->GetAliveMinerCount(), TargetMinerCount, GoldBefore, BotState->GetGold());
+				}
+			}
+			else
+			{
+				UE_LOG(LogGitClaudeUnrealTest, Verbose,
+					TEXT("ASiegeBotController '%s': Rule 2 wanted a Miner but found no valid spawn point this tick."),
+					*GetNameSafe(this));
+			}
+			return; // rule 2 fired
+		}
+	}
+
+	// ---- Rule 3: ATTACK — banked to the threshold, most-expensive affordable UNIT at the centerline ----
+	if (Gold >= AttackBankThreshold)
+	{
+		const int32 CardIndex = FindMostExpensiveUnitCard(HandCards, Gold);
+		if (CardIndex != INDEX_NONE)
+		{
+			const FBotHandCard& Chosen = HandCards[CardIndex];
+			const FVector Desired = FVector(BotCenterlineSpawnX, FMath::FRandRange(-BotSpawnLaneSpread, BotSpawnLaneSpread), GetCastleRedLocation().Z);
+
+			FVector SpawnPoint;
+			if (ComputeValidBotSpawnPoint(Desired, /*bIsBuilding=*/ false, SpawnPoint))
+			{
+				const int32 GoldBefore = Gold;
+				if (SpawnBotCardActor(Chosen.CardID, /*bIsBuilding=*/ false, SpawnPoint, *BotState, Chosen.Row->Cost))
+				{
+					Deck->ConfirmPlayFromHand(Chosen.Slot);
+					UE_LOG(LogSiegeBot, Log,
+						TEXT("[Bot %s] Rule 3 (Attack): played unit '%s' (cost %d) at centerline (%.0f, %.0f, %.0f) — gold %d->%d."),
+						*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost,
+						SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z, GoldBefore, BotState->GetGold());
+				}
+			}
+			else
+			{
+				UE_LOG(LogGitClaudeUnrealTest, Verbose,
+					TEXT("ASiegeBotController '%s': Rule 3 wanted '%s' but found no valid spawn point this tick."),
+					*GetNameSafe(this), *Chosen.CardID.ToString());
+			}
+			return; // rule 3 fired
+		}
+	}
+
+	// ---- Rule 4: CYCLE — an unplayable card in hand AND the discard fee available ----
+	{
+		const int32 CardIndex = FindMostExpensiveUnplayableCard(HandCards);
+		if (CardIndex != INDEX_NONE && Gold >= BotDiscardCost)
+		{
+			const FBotHandCard& Chosen = HandCards[CardIndex];
+			const int32 GoldBefore = Gold;
+			// SpendGold re-checks affordability (no change/broadcast if it fails); Gold
+			// is still current here because every firing rule above returns.
+			if (BotState->SpendGold(BotDiscardCost))
+			{
+				Deck->DiscardFromHand(Chosen.Slot);
+				UE_LOG(LogSiegeBot, Log,
+					TEXT("[Bot %s] Rule 4 (Cycle): discarded unplayable '%s' (cost %d) for %d gold — gold %d->%d."),
+					*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost, BotDiscardCost, GoldBefore, BotState->GetGold());
+			}
+			return; // rule 4 fired
+		}
+	}
+
+	// No rule fired — bank gold and wait (no decision-trace line; a harmless idle tick).
+}
+
+bool ASiegeBotController::IsMatchActive() const
+{
+	if (const UWorld* World = GetWorld())
+	{
+		if (const ASiegeGameMode* Mode = Cast<ASiegeGameMode>(World->GetAuthGameMode()))
+		{
+			return !Mode->HasMatchEnded();
+		}
+	}
+	// No SiegeGameMode resolvable (degenerate world): permit — TASK-047's
+	// StopDecisionTimer() is the authoritative match-end freeze regardless.
+	return true;
+}
+
+bool ASiegeBotController::IsOnOwnHalf(double X) const
+{
+	// Red's own half is X >= boundary (CONVENTIONS world axes); a Blue bot flips it.
+	return (BotTeam == ETeamId::Red) ? (X >= BotHalfBoundaryX) : (X <= BotHalfBoundaryX);
+}
+
+AActor* ASiegeBotController::FindNearestEnemyIntruderOnBotHalf() const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	const ETeamId EnemyTeam = (BotTeam == ETeamId::Red) ? ETeamId::Blue : ETeamId::Red;
+	const FVector CastleRed = GetCastleRedLocation();
+
+	AActor* Nearest = nullptr;
+	double NearestDistSq = TNumericLimits<double>::Max();
+
+	// Enemy summoned units standing on the bot half (the §4 "enemy units").
+	for (TActorIterator<ASummonedUnit> It(World); It; ++It)
+	{
+		ASummonedUnit* Unit = *It;
+		if (!IsValid(Unit) || Unit->IsUnitDead() || Unit->GetTeamId() != EnemyTeam)
+		{
+			continue;
+		}
+		const FVector UnitLocation = Unit->GetActorLocation();
+		if (!IsOnOwnHalf(UnitLocation.X))
+		{
+			continue;
+		}
+		const double DistSq = FVector::DistSquared2D(UnitLocation, CastleRed);
+		if (DistSq < NearestDistSq)
+		{
+			NearestDistSq = DistSq;
+			Nearest = Unit;
+		}
+	}
+
+	// The enemy hero also counts as pushing onto the bot half — so "player pushes
+	// onto the bot half → a defensive play" holds whether they advance with units
+	// OR their own hero (flagged decision; see handoffs/TASK-046.md). Alive only.
+	for (TActorIterator<AHeroCharacter> It(World); It; ++It)
+	{
+		AHeroCharacter* Hero = *It;
+		if (!IsValid(Hero) || Hero->IsDead() || Hero->GetTeamId() != EnemyTeam)
+		{
+			continue;
+		}
+		const FVector HeroLocation = Hero->GetActorLocation();
+		if (!IsOnOwnHalf(HeroLocation.X))
+		{
+			continue;
+		}
+		const double DistSq = FVector::DistSquared2D(HeroLocation, CastleRed);
+		if (DistSq < NearestDistSq)
+		{
+			NearestDistSq = DistSq;
+			Nearest = Hero;
+		}
+	}
+
+	return Nearest;
+}
+
+FVector ASiegeBotController::GetCastleRedLocation() const
+{
+	if (UWorld* World = GetWorld())
+	{
+		for (TActorIterator<ACastle> It(World); It; ++It)
+		{
+			const ACastle* Castle = *It;
+			if (IsValid(Castle) && Castle->GetTeamId() == BotTeam)
+			{
+				return Castle->GetActorLocation();
+			}
+		}
+	}
+	return CastleRedFallbackLocation;
+}
+
+FVector ASiegeBotController::GetGoldNodeRedLocation() const
+{
+	if (UWorld* World = GetWorld())
+	{
+		for (TActorIterator<AGoldNode> It(World); It; ++It)
+		{
+			const AGoldNode* Node = *It;
+			if (IsValid(Node) && Node->GetTeam() == BotTeam)
+			{
+				return Node->GetActorLocation();
+			}
+		}
+	}
+	return GoldNodeRedFallbackLocation;
+}
+
+bool ASiegeBotController::ComputeValidBotSpawnPoint(const FVector& Desired, bool bIsBuilding, FVector& OutPoint)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(World);
+	if (!NavSys || !NavSys->GetDefaultNavDataInstance())
+	{
+		// No nav system / data: degrade OPEN to the half + plinth (+ clearance)
+		// rule with one warning (house null-safety law — a missing system must
+		// never brick the bot). L_Arena always has nav data, so this never fires there.
+		if (!bWarnedNoNavData)
+		{
+			bWarnedNoNavData = true;
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("ASiegeBotController '%s': no navigation data — bot spawn navmesh projection (GDD §3.5) skipped, using the half/plinth rule only."),
+				*GetNameSafe(this));
+		}
+		if (IsBotHalfPointClear(Desired, bIsBuilding))
+		{
+			OutPoint = Desired;
+			return true;
+		}
+		return false;
+	}
+
+	// Deterministic candidate ring: the desired point first, then widening rings —
+	// so a plinth / clearance / half failure walks outward to the nearest clear,
+	// on-navmesh spot instead of stalling forever on one refused point.
+	static const float RingRadii[] = { 0.f, 250.f, 500.f, 800.f, 1100.f };
+	static const int32 RingDirections = 8;
+	for (float Radius : RingRadii)
+	{
+		const int32 NumSamples = (Radius <= 0.f) ? 1 : RingDirections;
+		for (int32 SampleIndex = 0; SampleIndex < NumSamples; ++SampleIndex)
+		{
+			const double Angle = (2.0 * PI * SampleIndex) / RingDirections;
+			const FVector Candidate = Desired + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
+
+			FNavLocation Projected;
+			if (!NavSys->ProjectPointToNavigation(Candidate, Projected, NavProjectionExtent))
+			{
+				continue;
+			}
+			if (IsBotHalfPointClear(Projected.Location, bIsBuilding))
+			{
+				OutPoint = Projected.Location;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool ASiegeBotController::IsBotHalfPointClear(const FVector& Point, bool bIsBuilding) const
+{
+	if (!IsOnOwnHalf(Point.X))
+	{
+		return false; // NEVER the enemy (Blue) half
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	// Castle plinth keep-out (mirrors ASiegePlayerController): no spawn inside any
+	// castle's ~814x820 plinth footprint (2D box, CastlePlinthClearance half-extent).
+	for (TActorIterator<ACastle> It(World); It; ++It)
+	{
+		const ACastle* Castle = *It;
+		if (!IsValid(Castle))
+		{
+			continue;
+		}
+		const FVector CastleLocation = Castle->GetActorLocation();
+		if (FMath::Abs(Point.X - CastleLocation.X) <= CastlePlinthClearance &&
+			FMath::Abs(Point.Y - CastleLocation.Y) <= CastlePlinthClearance)
+		{
+			return false;
+		}
+	}
+
+	// Building clearance (buildings only): >= BuildingClearance (2D) from every
+	// live building — the §3.5 200-unit rule applied to bot placements too.
+	if (bIsBuilding)
+	{
+		const double ClearanceSq = FMath::Square(static_cast<double>(BuildingClearance));
+		for (TActorIterator<ABuilding> It(World); It; ++It)
+		{
+			const ABuilding* Building = *It;
+			if (!IsValid(Building) || Building->IsBuildingDestroyed())
+			{
+				continue;
+			}
+			if (FVector::DistSquared2D(Building->GetActorLocation(), Point) < ClearanceSq)
+			{
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+UClass* ASiegeBotController::ResolveBotCardActorClass(FName CardID, bool bIsBuilding) const
+{
+	// CONVENTIONS composed soft-class paths (the SAME assets the player uses; the
+	// spawn tags Team=Red and TASK-044 recolors at BeginPlay — no Red BP duplicate).
+	const FString CardName = CardID.ToString();
+	const FString ClassPath = bIsBuilding
+		? FString::Printf(TEXT("/Game/Blueprints/Buildings/BP_Building_%s.BP_Building_%s_C"), *CardName, *CardName)
+		: FString::Printf(TEXT("/Game/Blueprints/Units/BP_Unit_%s.BP_Unit_%s_C"), *CardName, *CardName);
+	UClass* RequiredBase = bIsBuilding ? ABuilding::StaticClass() : ASummonedUnit::StaticClass();
+
+	UClass* ActorClass = TSoftClassPtr<AActor>(FSoftObjectPath(ClassPath)).LoadSynchronous();
+	if (ActorClass && ActorClass->IsChildOf(RequiredBase))
+	{
+		return ActorClass;
+	}
+
+	UE_LOG(LogGitClaudeUnrealTest, Warning,
+		TEXT("ASiegeBotController '%s': card class '%s' missing or not a %s (built in TASK-034/035) — bot play skipped, no gold spent (CONVENTIONS composed soft-class law)."),
+		*GetNameSafe(this), *ClassPath, *RequiredBase->GetName());
+	return nullptr;
+}
+
+AActor* ASiegeBotController::SpawnBotCardActor(FName CardID, bool bIsBuilding, const FVector& SpawnPoint, ASiegePlayerState& BotState, int32 Cost)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	UClass* ActorClass = ResolveBotCardActorClass(CardID, bIsBuilding);
+	if (!ActorClass)
+	{
+		return nullptr; // logged in the resolver — NO gold spent
+	}
+
+	if (bIsBuilding)
+	{
+		// Building spawns flush with the projected ground; root is Static-mobility,
+		// so AlwaysSpawn keeps it exactly where the point sits. Instigator is
+		// deliberately nullptr (tower shots stay unattributable — TASK-027 property).
+		const FTransform SpawnTransform(FRotator::ZeroRotator, SpawnPoint);
+		ABuilding* Building = World->SpawnActorDeferred<ABuilding>(
+			ActorClass, SpawnTransform, /*Owner=*/ this, /*Instigator=*/ nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (!Building)
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Error,
+				TEXT("ASiegeBotController '%s': SpawnActorDeferred failed for building '%s' — no gold spent."),
+				*GetNameSafe(this), *CardID.ToString());
+			return nullptr;
+		}
+
+		// Gold is the LAST gate: a refusal destroys the half-spawned actor so exactly
+		// Cost is deducted iff a building appears (TASK-030 destroy-on-fail pattern).
+		if (!BotState.SpendGold(Cost))
+		{
+			Building->Destroy();
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("ASiegeBotController '%s': SpendGold(%d) refused at spawn for '%s' (the CanAfford pre-check should prevent this) — building discarded, no gold spent."),
+				*GetNameSafe(this), Cost, *CardID.ToString());
+			return nullptr;
+		}
+
+		Building->InitBuilding(BotTeam, CardID);
+		Building->FinishSpawning(SpawnTransform);
+		return Building;
+	}
+
+	// Unit/Economy: lift the spawn so the capsule stands on the projected ground.
+	float CapsuleHalfHeight = DefaultCapsuleHalfHeight;
+	if (const ASummonedUnit* UnitCDO = ActorClass->GetDefaultObject<ASummonedUnit>())
+	{
+		if (const UCapsuleComponent* Capsule = UnitCDO->GetCapsuleComponent())
+		{
+			CapsuleHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+		}
+	}
+	const FTransform SpawnTransform(FRotator::ZeroRotator, SpawnPoint + FVector(0.f, 0.f, CapsuleHalfHeight + SpawnGroundClearance));
+	ASummonedUnit* Unit = World->SpawnActorDeferred<ASummonedUnit>(
+		ActorClass, SpawnTransform, /*Owner=*/ this, /*Instigator=*/ nullptr,
+		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+	if (!Unit)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Error,
+			TEXT("ASiegeBotController '%s': SpawnActorDeferred failed for unit '%s' — no gold spent."),
+			*GetNameSafe(this), *CardID.ToString());
+		return nullptr;
+	}
+
+	if (!BotState.SpendGold(Cost))
+	{
+		Unit->Destroy();
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASiegeBotController '%s': SpendGold(%d) refused at spawn for '%s' (the CanAfford pre-check should prevent this) — unit discarded, no gold spent."),
+			*GetNameSafe(this), Cost, *CardID.ToString());
+		return nullptr;
+	}
+
+	Unit->InitUnit(BotTeam, CardID);
+	Unit->FinishSpawning(SpawnTransform);
+	return Unit;
+}
+
+void ASiegeBotController::ResetBot()
+{
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASiegeBotController '%s': ResetBot (Play Again, GDD §3.9) — fresh deck, economy, decision timer."),
+		*GetNameSafe(this));
+
+	// 1) Fresh §3.4 deck + hand of 6 for the new match. The bot is an AAIController,
+	//    NOT an ASiegePlayerController, so ASiegeGameMode::PlayAgain's player-
+	//    controller loop (which resets the player's deck via HandleMatchReset) never
+	//    reaches it — ResetBot is the bot's §3.9 deck-reset entry point.
+	if (DeckComponent)
+	{
+		DeckComponent->ResetDeck();
+	}
+
+	// 2) Miner/rate economy back to base. Idempotent belt-and-braces: the bot's
+	//    ASiegePlayerState is also in GameState->PlayerArray, so PlayAgain's generic
+	//    per-player-state loop already ran ResetEconomy + ResetGold + ResumeIncome on
+	//    it (gold to 50, income timer restarted) after ASiegeGameState::ResetClock(),
+	//    so the rate re-derives against a cleared overtime latch there. This call
+	//    keeps ResetBot self-contained if ever invoked on its own.
+	if (ASiegePlayerState* BotPS = GetBotPlayerState())
+	{
+		BotPS->ResetEconomy();
+	}
+
+	// 3) A clean decision cadence for the new match (clears any running/stale handle
+	//    first). TASK-047 stops the timer at match end; Play Again restarts it here.
+	StartDecisionTimer();
+}

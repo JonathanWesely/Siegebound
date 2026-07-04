@@ -10,6 +10,7 @@
 
 class ACastle;
 class AHeroCharacter;
+class ASiegeBotController;
 class ASiegePlayerController;
 
 /**
@@ -64,6 +65,18 @@ class ASiegePlayerController;
  *  destroys all buildings regardless. The invariant this policy protects is
  *  untouched: the income timer's owner is never targeted on any path — the
  *  match-end freeze pauses income through ASiegePlayerState's OWN PauseIncome().
+ *
+ *  Bot opponent (GDD §4 / §9-3, M3 — TASK-045): BeginPlay spawns EXACTLY ONE
+ *  ASiegeBotController (an AAIController that possesses no pawn) and tags its
+ *  auto-created ASiegePlayerState Team=Red — completing the TASK-043
+ *  InitNewPlayer forward-ref (player PS Blue, bot PS Red; the mode sets both).
+ *  The bot then owns a Red economy identical to the player's; PlayAgain() calls
+ *  ResetBot() on it (deck + economy + decision timer). Adding this second
+ *  PlayerState does not perturb the Blue player: every ASiegePlayerState owns an
+ *  independent gold/timer/miner state, the PlayerArray freeze/reset loops are
+ *  already generic over all of them, and the player-controller loops skip the
+ *  AIController (so it never takes the end screen, and its deck reset is
+ *  ResetBot's — not the player's HandleMatchReset path).
  */
 UCLASS()
 class GITCLAUDEUNREALTEST_API ASiegeGameMode : public AGameModeBase
@@ -104,6 +117,25 @@ public:
 	void PlayAgain();
 
 	/**
+	 *  Main-menu level-flow entry (GDD §7 / §9-3, TASK-047 → consumed by
+	 *  WBP_MainMenu in TASK-049): travels to the arena map (ArenaLevel, default
+	 *  /Game/Maps/L_Arena — CONVENTIONS map) to START a fresh match vs the bot.
+	 *
+	 *  STATIC + WorldContext deliberately: L_MainMenu runs its OWN (menu) game
+	 *  mode (TASK-049), NOT an ASiegeGameMode, so the menu widget must be able to
+	 *  start a match WITHOUT an ASiegeGameMode instance present — a non-static
+	 *  member would force the caller to find-and-cast a game mode that is not
+	 *  there. The arena map path is read from the CDO's ArenaLevel UPROPERTY so it
+	 *  stays designer-editable while the function stays static-callable from any
+	 *  Blueprint. Opening the level boots a clean ASiegeGameMode in L_Arena, whose
+	 *  BeginPlay spawns the bot and deals both decks — a brand-new match, so no
+	 *  in-place reset (PlayAgain) is needed on this path. Null-safe: logs and
+	 *  no-ops if the world context or the arena path cannot be resolved.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Match", meta = (WorldContext = "WorldContextObject"))
+	static void StartMatch(const UObject* WorldContextObject);
+
+	/**
 	 *  True from the first castle destruction until PlayAgain(). Native override
 	 *  of AGameModeBase::HasMatchEnded — the base declares it as a UFUNCTION
 	 *  (BlueprintCallable, Category=Game), and UHT forbids a new UFUNCTION macro
@@ -114,7 +146,7 @@ public:
 
 protected:
 
-	/** Binds OnCastleDestroyed on every ACastle in the level (all present at BeginPlay — placed at integration). */
+	/** Binds OnCastleDestroyed on every ACastle in the level (all present at BeginPlay — placed at integration), then spawns the single Red bot opponent (SpawnBot, TASK-045). */
 	virtual void BeginPlay() override;
 
 	/** Clears this mode's own respawn timer. */
@@ -122,6 +154,19 @@ protected:
 
 	/** Lazy, null-safe hero pawn class: BP_HeroCharacter when it exists, else AHeroCharacter (see class comment). */
 	virtual UClass* GetDefaultPawnClassForController_Implementation(AController* InController) override;
+
+	/**
+	 *  Player-creation hook (TASK-043 multi-team economy): tags the local
+	 *  player's ASiegePlayerState Team=Blue at creation — the CONVENTIONS team
+	 *  contract, the identity ASiegeGameState::GetPlayerStateForTeam resolves.
+	 *  Runs once per real player login, after the PlayerState is created and
+	 *  assigned (the engine itself dereferences NewPlayerController->PlayerState
+	 *  here). The default is already Blue, so this is belt-and-braces for the
+	 *  player and the M2 economy is untouched. The bot's Red PS is NOT set here —
+	 *  this hook only runs for player logins; TASK-045 tags it where the bot is
+	 *  spawned.
+	 */
+	virtual FString InitNewPlayer(APlayerController* NewPlayerController, const FUniqueNetIdRepl& UniqueId, const FString& Options, const FString& Portal = TEXT("")) override;
 
 	/**
 	 *  Runs for every pawn this mode hands to a player (initial spawn and any
@@ -156,6 +201,25 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Classes")
 	TSoftClassPtr<AHeroCharacter> HeroPawnClassAsset;
+
+	/**
+	 *  Class of the AI opponent spawned at match start (GDD §4, TASK-045).
+	 *  Defaults to ASiegeBotController; a designer may swap in a subclass. The
+	 *  bot possesses no pawn — it plays cards for the Red team through its own
+	 *  economy + deck (see the class comment).
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Classes")
+	TSubclassOf<ASiegeBotController> BotControllerClass;
+
+	/**
+	 *  Arena map opened by StartMatch (GDD §7 main-menu flow, TASK-047 →
+	 *  TASK-049). Defaults to /Game/Maps/L_Arena (CONVENTIONS map). A soft world
+	 *  reference so the menu never force-loads the arena until Play is pressed;
+	 *  StartMatch reads it from the CDO (it is static). Editable so a designer can
+	 *  point the menu at a different arena without a recompile.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Match")
+	TSoftObjectPtr<UWorld> ArenaLevel;
 
 	/** Seconds between hero death and respawn (GDD §3.1: exactly 5). */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Hero", meta = (ClampMin = "0"))
@@ -222,6 +286,16 @@ private:
 	/** First ASiegePlayerController in the world (M1 is single local player), or nullptr. */
 	ASiegePlayerController* FindLocalSiegeController() const;
 
+	/**
+	 *  Spawns the single Red bot opponent (GDD §4, TASK-045) at match start and
+	 *  tags its auto-created ASiegePlayerState Team=Red (the TASK-043 forward-ref).
+	 *  Runs from BeginPlay, after GameState exists and the local player has logged
+	 *  in (so PlayerStateClass is set and the bot's PlayerState resolves). Guarded
+	 *  against spawning a second bot — exactly one exists per match, reused across
+	 *  Play Again (which is in-place; BeginPlay never re-runs).
+	 */
+	void SpawnBot();
+
 	/** Resolved hero pawn class (BP_HeroCharacter once loaded). Never a failed resolve. */
 	UPROPERTY(Transient)
 	TSubclassOf<APawn> ResolvedHeroPawnClass;
@@ -229,6 +303,10 @@ private:
 	/** The hero pawn this mode last handed to a player — respawn target. TODO(M8): per-player hero/timer tracking for multiplayer (single-hero assumption holds through M7, qa/TASK-006-report.md finding 6). */
 	UPROPERTY(Transient)
 	TObjectPtr<AHeroCharacter> TrackedHero;
+
+	/** The single Red bot opponent, spawned in SpawnBot and reset in PlayAgain (GDD §4, TASK-045). Null until spawned; one per match. */
+	UPROPERTY(Transient)
+	TObjectPtr<ASiegeBotController> BotController;
 
 	/** Double match-end guard: latched by the first castle destruction, cleared only by PlayAgain(). */
 	bool bMatchEnded = false;

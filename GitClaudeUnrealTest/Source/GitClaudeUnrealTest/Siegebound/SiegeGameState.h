@@ -4,7 +4,10 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameStateBase.h"
+#include "Siegebound/TeamId.h"
 #include "SiegeGameState.generated.h"
+
+class ASiegePlayerState;
 
 /**
  *  Broadcast exactly once per match when the clock crosses OvertimeStartSeconds
@@ -84,6 +87,19 @@ public:
 	/** True from the §3.2 overtime threshold until ResetClock(). ASiegePlayerState::GetGoldRate() reads this live to double the base income. */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Match")
 	bool IsOvertimeActive() const { return bOvertimeActive; }
+
+	/**
+	 *  Multi-team economy accessor (TASK-043): returns the ASiegePlayerState
+	 *  whose Team tag matches, iterating this game state's PlayerArray. In a
+	 *  single-player-state world (M2) it returns the one Blue player state for
+	 *  Team==Blue and nullptr for Red — identical to the pre-M3 assumption of a
+	 *  single economy — while the M3 bot's Red player state makes both teams
+	 *  resolve. Consumers (AMinerUnit, and later the bot) bind income to the
+	 *  right side through this instead of grabbing the first player state.
+	 *  Returns nullptr and logs when no player state carries the requested team.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Match")
+	ASiegePlayerState* GetPlayerStateForTeam(ETeamId Team) const;
 
 protected:
 

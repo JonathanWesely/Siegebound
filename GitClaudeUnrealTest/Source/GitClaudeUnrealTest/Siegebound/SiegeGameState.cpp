@@ -2,7 +2,9 @@
 
 #include "Siegebound/SiegeGameState.h"
 
+#include "GameFramework/PlayerState.h"
 #include "GitClaudeUnrealTest.h"
+#include "Siegebound/SiegePlayerState.h"
 
 ASiegeGameState::ASiegeGameState()
 {
@@ -66,4 +68,34 @@ void ASiegeGameState::ResetClock()
 	// Reset-path broadcast (CONVENTIONS delegate law): displays snap back to
 	// 0:00 immediately instead of waiting for the first elapsed second.
 	OnMatchClockChanged.Broadcast(0);
+}
+
+ASiegePlayerState* ASiegeGameState::GetPlayerStateForTeam(ETeamId Team) const
+{
+	// Iterate PlayerArray (TASK-043 multi-team economy): the Blue player state
+	// and — once the M3 bot spawns (TASK-045) — the Red bot state both live
+	// here. Return the first whose Team tag matches. The loop var is named
+	// IterPlayerState, NOT PlayerState: AGameStateBase has no reflected
+	// PlayerState member, but the CONVENTIONS no-shadow rule is applied anyway.
+	for (APlayerState* IterPlayerState : PlayerArray)
+	{
+		if (ASiegePlayerState* SiegePS = Cast<ASiegePlayerState>(IterPlayerState))
+		{
+			if (SiegePS->GetTeam() == Team)
+			{
+				return SiegePS;
+			}
+		}
+	}
+
+	// None carries this team. For Blue this only happens before the player
+	// state exists; for Red it is the normal M2 result (no bot) and the brief
+	// pre-spawn window in M3 — callers that poll re-resolve. Logged so a
+	// genuinely mis-teamed consumer (a miner for a team with no economy) is
+	// visible rather than silently untracked.
+	UE_LOG(LogGitClaudeUnrealTest, Warning,
+		TEXT("[%s] GetPlayerStateForTeam(%s): no ASiegePlayerState carries that team (normal for Red until the M3 bot spawns, TASK-045)."),
+		*GetNameSafe(this), Team == ETeamId::Blue ? TEXT("Blue") : TEXT("Red"));
+
+	return nullptr;
 }

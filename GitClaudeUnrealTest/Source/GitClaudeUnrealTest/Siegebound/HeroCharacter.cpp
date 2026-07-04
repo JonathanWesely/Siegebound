@@ -17,6 +17,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
+#include "Siegebound/SummonedUnit.h"
+#include "TimerManager.h"
 
 namespace
 {
@@ -261,6 +263,74 @@ void AHeroCharacter::DoMeleeAttack()
 	}
 }
 
+void AHeroCharacter::Rally()
+{
+	// dead hero has no abilities; ResetHero re-enables Rally on respawn
+	if (bDead)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// cooldown gate (GDD §4: 20 s). A press on cooldown is a no-op — but we still
+	// emit the optional refusal broadcast so a HUD can flash the remaining time.
+	const double Now = World->GetTimeSeconds();
+	const double SinceLastRally = Now - LastRallyTime;
+	if (SinceLastRally < RallyCooldown)
+	{
+		const float CooldownRemaining = static_cast<float>(RallyCooldown - SinceLastRally);
+		OnRallyStateChanged.Broadcast(/*bReady=*/ false, CooldownRemaining);
+		return;
+	}
+	LastRallyTime = Now;
+
+	// Buff every friendly (same-team) summoned unit within RallyRadius: +RallySpeedBonus
+	// move speed for RallyDuration seconds (GDD §4 — units ONLY, never the hero, never
+	// enemy units). GetAllActorsOfClass(ASummonedUnit) already excludes the hero, castles
+	// and buildings; the team check drops enemy units. AMinerUnit is an ASummonedUnit
+	// subclass, so friendly miners are included (a harmless temporary walk boost).
+	const FVector MyLocation = GetActorLocation();
+	const float RallyRadiusSquared = RallyRadius * RallyRadius;
+	const float SpeedMultiplier = 1.f + RallySpeedBonus;
+
+	TArray<AActor*> UnitActors;
+	UGameplayStatics::GetAllActorsOfClass(World, ASummonedUnit::StaticClass(), UnitActors);
+	for (AActor* UnitActor : UnitActors)
+	{
+		ASummonedUnit* FriendlyUnit = Cast<ASummonedUnit>(UnitActor);
+		if (!FriendlyUnit || FriendlyUnit->IsUnitDead() || FriendlyUnit->GetTeamId() != Team)
+		{
+			continue;
+		}
+
+		// center-to-center range: units are small pawn capsules, so the simple distance
+		// is the natural "within 600" test (unlike the melee, which uses closest-point
+		// for the castle's huge footprint).
+		if (FVector::DistSquared(MyLocation, FriendlyUnit->GetActorLocation()) > RallyRadiusSquared)
+		{
+			continue;
+		}
+
+		FriendlyUnit->ApplyMoveSpeedBuff(SpeedMultiplier, RallyDuration);
+	}
+
+	// start the cooldown and tell listeners Rally is now unavailable; OnRallyReady
+	// broadcasts (true, 0) when RallyCooldown elapses (GDD §4).
+	OnRallyStateChanged.Broadcast(/*bReady=*/ false, RallyCooldown);
+	World->GetTimerManager().SetTimer(RallyCooldownTimerHandle, this, &AHeroCharacter::OnRallyReady, RallyCooldown, /*bLoop=*/ false);
+}
+
+void AHeroCharacter::OnRallyReady()
+{
+	// cooldown elapsed — Rally is usable again (GDD §4). CooldownRemaining = 0.
+	OnRallyStateChanged.Broadcast(/*bReady=*/ true, 0.f);
+}
+
 float AHeroCharacter::TakeDamage(float Damage, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
 	if (bDead)
@@ -389,4 +459,10 @@ void AHeroCharacter::ResetHero()
 	// fresh cooldown/regen state: can swing immediately; full HP so regen is idle anyway
 	LastMeleeTime = -1.0e9;
 	LastCombatTime = -1.0e9;
+
+	// fresh Rally state (TASK-042): drop any pending cooldown so a respawned hero can
+	// Rally immediately, and tell listeners it is ready (mirrors the melee/regen reset).
+	GetWorldTimerManager().ClearTimer(RallyCooldownTimerHandle);
+	LastRallyTime = -1.0e9;
+	OnRallyStateChanged.Broadcast(/*bReady=*/ true, 0.f);
 }

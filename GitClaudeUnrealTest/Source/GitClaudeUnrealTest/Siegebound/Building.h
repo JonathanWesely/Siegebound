@@ -146,6 +146,18 @@ private:
 	 */
 	void LoadStats();
 
+	/**
+	 *  TASK-044 (CONVENTIONS Team contract): overrides VisualMesh slot 0 with the
+	 *  MI_TeamColor matching the building's ACTUAL Team, so a Red-spawned building
+	 *  (the M3 bot's tower/wall) recolors at runtime without a Red BP duplicate. The
+	 *  BP-authored MI_TeamColor_Blue is only the design-time placeholder — a Blue
+	 *  building re-applies the identical Blue instance, so M2 Blue visuals stay
+	 *  byte-for-byte. The two MI instances resolve through cached function-local
+	 *  statics (never a hot-path load) and are null-safe (a missing asset leaves the
+	 *  authored slot, never a crash). Cosmetic only: slot 0 material, nothing else.
+	 */
+	void ApplyTeamMaterial();
+
 	/** Single-fire destruction: guards on bDestroyed, then destroys the actor (§3.7; the navmesh heals via component unregistration). */
 	void HandleDestroyed();
 

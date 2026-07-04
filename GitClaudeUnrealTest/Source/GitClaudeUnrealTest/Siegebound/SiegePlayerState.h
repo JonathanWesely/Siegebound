@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerState.h"
+#include "Siegebound/TeamId.h"
 #include "SiegePlayerState.generated.h"
 
 class ASiegeGameState;
@@ -71,6 +72,25 @@ public:
 	/** Fired on every actual alive-miner-count change and on ResetEconomy. The HUD's "x/6" miner counter binds here (TASK-033), seeded from GetAliveMinerCount() first. */
 	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Miners")
 	FOnMinerCountChanged OnMinerCountChanged;
+
+	// --- Multi-team economy (GDD §4 bot opponent, TASK-043) ---
+
+	/**
+	 *  The team this economy belongs to (CONVENTIONS team contract): the local
+	 *  player is ALWAYS Blue, the M3 bot is Red. ASiegeGameMode tags each player
+	 *  state at creation (Blue for the local player; Red for the bot's PS once
+	 *  TASK-045 lands), and ASiegeGameState::GetPlayerStateForTeam(Team) resolves
+	 *  the owning economy by it — so a miner (or any team-economy consumer) binds
+	 *  income to the right side instead of assuming the single/first player state
+	 *  (M2 assumed one). Identity, NOT economy state: never touched by
+	 *  ResetEconomy/ResetGold (Play Again keeps each side's team).
+	 */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Team")
+	ETeamId GetTeam() const { return Team; }
+
+	/** Sets the owning team (ASiegeGameMode calls this once per player state at creation — TASK-043). Team is identity; no economy delegate fires. */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Team")
+	void SetTeam(ETeamId InTeam) { Team = InTeam; }
 
 	/** Current gold, always in [0, MaxGold]. HUD should call this once on construct to seed its display, then rely on OnGoldChanged. */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Gold")
@@ -176,6 +196,15 @@ protected:
 
 	/** Stops the passive income timer and unbinds the overtime handler. */
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	/**
+	 *  Owning team (TASK-043). Default Blue so a single-player-state world (M2)
+	 *  resolves the local economy for Blue and behaves byte-for-byte as before;
+	 *  ASiegeGameMode sets it explicitly at creation and tags the bot PS Red
+	 *  (TASK-045). Mutate via SetTeam(). // GDD §4 — two coexisting economies
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Team")
+	ETeamId Team = ETeamId::Blue;
 
 	/** Gold at match start and after a Play Again reset (GDD §3.2). */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Gold", meta = (ClampMin = "0"))

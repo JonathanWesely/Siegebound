@@ -7,10 +7,12 @@
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerStart.h"
 #include "GitClaudeUnrealTest.h"
+#include "Kismet/GameplayStatics.h"
 #include "Siegebound/Building.h"
 #include "Siegebound/Castle.h"
 #include "Siegebound/HeroCharacter.h"
 #include "Siegebound/Projectile.h"
+#include "Siegebound/SiegeBotController.h"
 #include "Siegebound/SiegeGameState.h"
 #include "Siegebound/SiegePlayerController.h"
 #include "Siegebound/SiegePlayerState.h"
@@ -36,6 +38,17 @@ ASiegeGameMode::ASiegeGameMode()
 
 	// Content contract (TASKBOARD TASK-006 names block / CONVENTIONS.md).
 	HeroPawnClassAsset = TSoftClassPtr<AHeroCharacter>(FSoftObjectPath(TEXT("/Game/Blueprints/BP_HeroCharacter.BP_HeroCharacter_C")));
+
+	// AI opponent (GDD §4, TASK-045): the C++ bot brain by default. Unlike the
+	// hero pawn (a content blueprint resolved lazily), this is a pure C++ class
+	// with no asset dependency, so a direct StaticClass default is safe at
+	// construction — no load, no missing-asset log.
+	BotControllerClass = ASiegeBotController::StaticClass();
+
+	// Main-menu start-match target (GDD §7, TASK-047 → TASK-049). Soft world ref
+	// (CONVENTIONS map /Game/Maps/L_Arena) — read from the CDO by the static
+	// StartMatch; the menu never force-loads the arena until Play is pressed.
+	ArenaLevel = TSoftObjectPtr<UWorld>(FSoftObjectPath(TEXT("/Game/Maps/L_Arena.L_Arena")));
 }
 
 void ASiegeGameMode::BeginPlay()
@@ -58,6 +71,11 @@ void ASiegeGameMode::BeginPlay()
 			TEXT("[%s] No ACastle actors found at BeginPlay — the win condition is unreachable. Integration places Castle_Blue/Castle_Red in L_Arena."),
 			*GetNameSafe(this));
 	}
+
+	// Spawn the single Red bot opponent (GDD §4, TASK-045). GameState exists by
+	// BeginPlay and the local player has already logged in (InitNewPlayer tagged
+	// its PS Blue), so PlayerStateClass is set for the bot's auto-created PS.
+	SpawnBot();
 }
 
 void ASiegeGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -99,6 +117,33 @@ UClass* ASiegeGameMode::ResolveHeroPawnClass()
 	}
 
 	return AHeroCharacter::StaticClass();
+}
+
+FString ASiegeGameMode::InitNewPlayer(APlayerController* NewPlayerController, const FUniqueNetIdRepl& UniqueId, const FString& Options, const FString& Portal)
+{
+	// Super creates/finishes the player state assignment (the engine sets the
+	// player name / unique id on NewPlayerController->PlayerState in here).
+	const FString ErrorMessage = Super::InitNewPlayer(NewPlayerController, UniqueId, Options, Portal);
+
+	// Multi-team economy (TASK-043): the local player is ALWAYS Blue (CONVENTIONS
+	// team contract). Tag its player state so ASiegeGameState::GetPlayerStateForTeam
+	// (Blue) resolves it and a Blue miner binds income to this economy. The
+	// default is already Blue, so this is belt-and-braces — the M2 economy is
+	// unchanged either way.
+	if (NewPlayerController)
+	{
+		if (ASiegePlayerState* SiegePS = NewPlayerController->GetPlayerState<ASiegePlayerState>())
+		{
+			SiegePS->SetTeam(ETeamId::Blue);
+		}
+	}
+
+	// The bot's Red ASiegePlayerState is tagged Team=Red in SpawnBot() (TASK-045)
+	// — NOT here: InitNewPlayer only runs for real player logins, so it is not the
+	// bot's tagging site. This completes the TASK-043 forward-ref (the mode sets
+	// both teams: Blue here, Red in SpawnBot).
+
+	return ErrorMessage;
 }
 
 void ASiegeGameMode::SetPlayerDefaults(APawn* PlayerPawn)
@@ -241,9 +286,26 @@ void ASiegeGameMode::FreezeWorldAtMatchEnd()
 		SiegeGameState->StopClock();
 	}
 
+	// 6) Bot decision loop (GDD §4, TASK-047 — the TASK-045 forward-dependency):
+	//    step 4 above already PAUSED the bot's income (its Red ASiegePlayerState
+	//    is in PlayerArray) and step 1 FROZE its already-spawned units, but the
+	//    bot's own 2 s decision timer is a separate handle that would keep ticking
+	//    EvaluateDecisions under the Victory screen — playing fresh cards and
+	//    spawning fresh Red units into a frozen match. StopDecisionTimer() halts
+	//    that loop (the public TASK-045 hook). Idempotent; ResetBot() re-arms it on
+	//    Play Again. (TASK-046 also gates EvaluateDecisions on match-active as
+	//    belt-and-suspenders; this is the freeze-side stop TASK-047 owns.) Uses the
+	//    single tracked bot member — exactly one bot per match (SpawnBot).
+	bool bBotStopped = false;
+	if (IsValid(BotController))
+	{
+		BotController->StopDecisionTimer();
+		bBotStopped = true;
+	}
+
 	UE_LOG(LogGitClaudeUnrealTest, Log,
-		TEXT("[%s] Match-end freeze: %d unit(s) frozen, %d tower(s) silenced, %d projectile(s) cleared, income paused, clock stopped."),
-		*GetNameSafe(this), FrozenUnits, SilencedTowers, Projectiles.Num());
+		TEXT("[%s] Match-end freeze: %d unit(s) frozen, %d tower(s) silenced, %d projectile(s) cleared, income paused, clock stopped, bot decision loop %s."),
+		*GetNameSafe(this), FrozenUnits, SilencedTowers, Projectiles.Num(), bBotStopped ? TEXT("stopped") : TEXT("absent"));
 }
 
 void ASiegeGameMode::HandleHeroDied(AHeroCharacter* DeadHero)
@@ -495,6 +557,18 @@ void ASiegeGameMode::PlayAgain()
 		}
 	}
 
+	// 4b) Reset the bot (GDD §4 / §3.9, TASK-045): fresh deck + hand, decision
+	//     timer restarted (and an idempotent ResetEconomy). The bot's gold-to-50
+	//     and income-timer restart already happened in step 4's generic loop (its
+	//     ASiegePlayerState is in PlayerArray); ResetBot owns only what that loop
+	//     cannot reach — the bot's DECK (the player-controller reset loop in step 6
+	//     skips the AAIController) and the DECISION timer. Runs after step 3b's
+	//     ResetClock, so ResetBot's ResetEconomy re-derives against a cleared latch.
+	if (IsValid(BotController))
+	{
+		BotController->ResetBot();
+	}
+
 	// 5) Re-arm the win condition, then the hero back at its start: full HP,
 	//    repossessed, input restored (works for a dead OR alive hero).
 	bMatchEnded = false;
@@ -517,6 +591,39 @@ void ASiegeGameMode::PlayAgain()
 	}
 }
 
+void ASiegeGameMode::StartMatch(const UObject* WorldContextObject)
+{
+	// Static main-menu entry (GDD §7, TASK-047 → TASK-049): open the arena into a
+	// brand-new match. No ASiegeGameMode instance is required — L_MainMenu runs its
+	// own menu game mode — so the arena path comes from the CDO, and the world
+	// context is threaded from the calling widget (Blueprint auto-fills it).
+	if (!WorldContextObject)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("[ASiegeGameMode::StartMatch] No world context object — cannot open the arena (GDD §7 main-menu flow)."));
+		return;
+	}
+
+	const ASiegeGameMode* Defaults = GetDefault<ASiegeGameMode>();
+	const TSoftObjectPtr<UWorld> Arena = Defaults ? Defaults->ArenaLevel : TSoftObjectPtr<UWorld>();
+	if (Arena.IsNull())
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("[ASiegeGameMode::StartMatch] ArenaLevel is unset on the CDO — cannot start a match (expected /Game/Maps/L_Arena)."));
+		return;
+	}
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("[ASiegeGameMode::StartMatch] Main menu -> opening arena '%s' into a fresh match vs the bot (GDD §7)."),
+		*Arena.ToString());
+
+	// OpenLevelBySoftObjectPtr resolves the FULL asset path (robust vs a bare
+	// short package name in a packaged build) and performs an absolute travel to a
+	// clean world: the new ASiegeGameMode's BeginPlay spawns the bot and deals both
+	// decks, so this route needs no in-place reset.
+	UGameplayStatics::OpenLevelBySoftObjectPtr(WorldContextObject, Arena);
+}
+
 ASiegePlayerController* ASiegeGameMode::FindLocalSiegeController() const
 {
 	UWorld* World = GetWorld();
@@ -526,7 +633,9 @@ ASiegePlayerController* ASiegeGameMode::FindLocalSiegeController() const
 	}
 
 	// M1 is strictly single local player (CONVENTIONS: the local player is
-	// always Blue) — the first ASiegePlayerController is THE player.
+	// always Blue) — the first ASiegePlayerController is THE player. The Red bot
+	// is an AAIController, so it is never in the PlayerController iterator: this
+	// stays the Blue player unambiguously even with the bot present.
 	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
 	{
 		if (ASiegePlayerController* SiegePC = Cast<ASiegePlayerController>(It->Get()))
@@ -536,4 +645,66 @@ ASiegePlayerController* ASiegeGameMode::FindLocalSiegeController() const
 	}
 
 	return nullptr;
+}
+
+void ASiegeGameMode::SpawnBot()
+{
+	// Exactly one bot per match (GDD §4). BeginPlay runs once per world begin, and
+	// PlayAgain is an in-place reset that never re-runs BeginPlay, so this is
+	// normally the only call — the guard covers a defensive re-entry only.
+	if (IsValid(BotController))
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// Fall back to the C++ bot if a designer cleared the class in a subclass CDO.
+	TSubclassOf<ASiegeBotController> ClassToSpawn = BotControllerClass;
+	if (!ClassToSpawn)
+	{
+		ClassToSpawn = ASiegeBotController::StaticClass();
+	}
+
+	// A controller has no physical presence, so AlwaysSpawn (no collision test).
+	// It possesses nothing (§4 "controls no hero"); bWantsPlayerState creates its
+	// ASiegePlayerState (PlayerStateClass = ASiegePlayerState) in the bot's
+	// PostInitializeComponents — valid before SpawnActor returns. RF_Transient so
+	// the runtime-spawned controller never tries to save into the map.
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParams.ObjectFlags |= RF_Transient;
+
+	BotController = World->SpawnActor<ASiegeBotController>(ClassToSpawn, FTransform::Identity, SpawnParams);
+	if (!BotController)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Error,
+			TEXT("[%s] Failed to spawn the ASiegeBotController (GDD §4, TASK-045) — the match has no AI opponent."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	// Tag the bot's auto-created ASiegePlayerState Team=Red — completing the
+	// TASK-043 forward-ref (the mode sets both teams: Blue in InitNewPlayer, Red
+	// here). The value comes from the bot's own BotTeam so the PS team, the §4
+	// spawn geometry, and GetPlayerStateForTeam can never diverge. Team is pure
+	// identity: no economy delegate fires and GetGoldRate never reads it, so
+	// setting it just after the PS's BeginPlay does not disturb the bot's accrual.
+	if (ASiegePlayerState* BotPS = BotController->GetBotPlayerState())
+	{
+		BotPS->SetTeam(BotController->GetBotTeam());
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("[%s] Spawned bot opponent '%s' with a Red ASiegePlayerState '%s' (GDD §4, TASK-045)."),
+			*GetNameSafe(this), *GetNameSafe(BotController), *GetNameSafe(BotPS));
+	}
+	else
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("[%s] Bot '%s' has no ASiegePlayerState to tag Team=Red (bWantsPlayerState should have created one of PlayerStateClass=ASiegePlayerState) — its Red economy will not resolve via GetPlayerStateForTeam."),
+			*GetNameSafe(this), *GetNameSafe(BotController));
+	}
 }

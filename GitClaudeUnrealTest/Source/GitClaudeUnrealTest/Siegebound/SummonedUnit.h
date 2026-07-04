@@ -117,15 +117,31 @@ public:
 	void InitUnit(ETeamId InTeam, FName InCardID);
 
 	/**
+	 *  Rally buff hook (TASK-042, GDD §4; called by AHeroCharacter::Rally on
+	 *  friendly units within range). Applies a TEMPORARY max-walk-speed multiplier
+	 *  for Duration seconds, then restores the base speed EXACTLY via a timer.
+	 *  Re-applying REFRESHES the duration and NEVER stacks: the resting base speed
+	 *  is captured ONCE per buff episode (a refresh reads the stored base, never the
+	 *  already-buffed speed), so the base can never permanently drift (the TASK-020
+	 *  cache-once, restore-exactly lesson). No-op on dead or match-end-frozen units;
+	 *  null-safe without a movement component. Non-positive Duration restores now;
+	 *  FreezeAI cancels an active buff and restores the base with zero residual.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Unit")
+	void ApplyMoveSpeedBuff(float Multiplier, float Duration);
+
+	/**
 	 *  Match-end freeze (TASK-028; called by the game mode at match end per the
 	 *  TASK-024 contract, and inherited by AMinerUnit — the base StopMovement
 	 *  also halts its gold-node walk, TASK-025). Permanently stops the unit's
 	 *  AI: clears the state (acquire) and attack timers, cancels any in-flight
 	 *  lunge and restores VisualMesh to EXACTLY the cached rest pose (zero
 	 *  residual offset), stops movement, and parks the unit in Idle until it is
-	 *  destroyed. Idempotent; safe on dead or never-bound units. A frozen unit
-	 *  can never restart: stat binding and both timer callbacks are gated on
-	 *  the frozen flag. Virtual so subclasses with extra drives can extend it.
+	 *  destroyed. Also ends any active move-speed buff (TASK-042), clearing its
+	 *  timer and restoring the base speed with zero residual. Idempotent; safe on
+	 *  dead or never-bound units. A frozen unit can never restart: stat binding and
+	 *  both timer callbacks are gated on the frozen flag. Virtual so subclasses with
+	 *  extra drives can extend it.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Unit")
 	virtual void FreezeAI();
@@ -235,6 +251,19 @@ private:
 	 */
 	void LoadStatsAndStart();
 
+	/**
+	 *  TASK-044 (CONVENTIONS Team contract): overrides VisualMesh slot 0 with the
+	 *  MI_TeamColor matching the unit's ACTUAL Team, so a Red-spawned unit (the M3
+	 *  bot's) recolors at runtime without a Red BP duplicate. The BP-authored
+	 *  MI_TeamColor_Blue is only the design-time placeholder — a Blue unit re-applies
+	 *  the identical Blue instance, so M1/M2 Blue visuals stay byte-for-byte. The two
+	 *  MI instances resolve through cached function-local statics (never a per-attack/
+	 *  per-frame load) and are null-safe (a missing asset leaves the authored slot,
+	 *  never a crash). Inherited by AMinerUnit through Super::BeginPlay — the base
+	 *  apply covers miners too. Cosmetic only: slot 0 material, nothing else.
+	 */
+	void ApplyTeamMaterial();
+
 	/** Periodic state check (every StateCheckInterval): leash/Reacquire, Acquire, then Attack or Advance. */
 	void UpdateState();
 
@@ -298,6 +327,14 @@ private:
 
 	/** Kills the unit exactly once: clears timers, stops movement, destroys the actor (units don't respawn). */
 	void HandleDeath();
+
+	/**
+	 *  Ends the move-speed buff (TASK-042): clears the buff timer and restores the
+	 *  base speed captured at the start of the buff episode EXACTLY. Idempotent —
+	 *  a no-op when no buff is active. Timer callback for ApplyMoveSpeedBuff; also
+	 *  called by FreezeAI so a match-end freeze leaves zero residual speed.
+	 */
+	void EndMoveSpeedBuff();
 
 	/**
 	 *  True if Target is a live combatant: valid, castle not destroyed
@@ -412,4 +449,18 @@ private:
 
 	/** Drives PerformAttack every AttackCadence seconds while in Attack. */
 	FTimerHandle AttackTimerHandle;
+
+	/** True while a temporary move-speed buff is active (TASK-042 Rally). */
+	bool bMoveSpeedBuffActive = false;
+
+	/**
+	 *  Resting MaxWalkSpeed captured ONCE when the current buff episode began. The
+	 *  buffed speed is only ever written as Base × Multiplier, and the buff ends by
+	 *  restoring EXACTLY this value — so no number of refreshes can drift the base
+	 *  (the TASK-020 cache-once/restore-exactly contract, applied to walk speed).
+	 */
+	float MoveSpeedBuffBaseSpeed = 0.f;
+
+	/** Drives EndMoveSpeedBuff once the buff Duration elapses; re-armed (refreshed) on re-apply, never stacked. */
+	FTimerHandle MoveSpeedBuffTimerHandle;
 };

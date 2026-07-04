@@ -10,6 +10,7 @@
 #include "GitClaudeUnrealTest.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "Siegebound/GoldNode.h"
+#include "Siegebound/SiegeGameState.h"
 #include "Siegebound/SiegePlayerState.h"
 #include "TimerManager.h"
 
@@ -238,7 +239,7 @@ void AMinerUnit::UpdateMining()
 			{
 				bWarnedIncomeSkipped = true;
 				UE_LOG(LogGitClaudeUnrealTest, Warning,
-					TEXT("AMinerUnit '%s': arrived at '%s' with no registered owner player state — mining activates no income (Red miners are untracked until M3)."),
+					TEXT("AMinerUnit '%s': arrived at '%s' with no registered owner player state — mining activates no income (its team's ASiegePlayerState was never resolvable; TASK-043 resolves both Blue and Red)."),
 					*GetNameSafe(this), *GetNameSafe(Node));
 			}
 		}
@@ -326,44 +327,52 @@ void AMinerUnit::TryRegisterWithOwnerState()
 
 ASiegePlayerState* AMinerUnit::ResolveOwningPlayerState()
 {
-	// The local player is ALWAYS Blue (CONVENTIONS team contract, M1/M2 law).
-	// ASiegePlayerState carries no team field (frozen TASK-024 surface), so
-	// team→state resolution beyond that law is impossible without a base
-	// change — a Red miner is untracked until the M3 bot brings a second
-	// player state (documented in handoffs/TASK-025.md for the M3 breakdown).
-	if (Team != ETeamId::Blue)
+	// Multi-team economy (TASK-043): resolve the OWNING team's player state
+	// through ASiegeGameState::GetPlayerStateForTeam(Team) rather than grabbing
+	// the first player state (M2 assumed a single economy). With only the Blue
+	// player present this returns the same single Blue state M2 resolved —
+	// byte-identical income behaviour — while a Red bot miner (M3) resolves the
+	// bot's Red state, so a Red miner raises only the bot's rate and vice-versa.
+	const UWorld* World = GetWorld();
+	ASiegeGameState* SiegeGameState = World ? World->GetGameState<ASiegeGameState>() : nullptr;
+	if (!SiegeGameState)
 	{
+		// No game state yet (early-spawn ordering edge) — the arrival poll retries.
 		if (!bWarnedNoOwnerState)
 		{
 			bWarnedNoOwnerState = true;
 			UE_LOG(LogGitClaudeUnrealTest, Warning,
-				TEXT("AMinerUnit '%s': no ASiegePlayerState exists for team Red until M3 — miner walks and stands but is untracked (no cap counting, no income)."),
+				TEXT("AMinerUnit '%s': no ASiegeGameState yet — economy registration retries on the arrival poll (GameStateClass = ASiegeGameState, TASK-024)."),
 				*GetNameSafe(this));
 		}
 		return nullptr;
 	}
 
-	const UWorld* World = GetWorld();
-	const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
-	if (GameState)
+	// GetPlayerStateForTeam logs its own "none for this team" warning (TASK-043),
+	// so no duplicate here. In every real flow the owning economy exists before
+	// any miner can spawn (Blue from match start; the M3 bot's Red before it
+	// ever plays an 8-gold Miner), so this resolves on the first call and the
+	// poll never re-queries.
+	//
+	// TASK-044 (closes qa/TASK-043 WARN): a genuinely mis-teamed miner would return
+	// null here on EVERY 0.25 s upkeep poll, and GetPlayerStateForTeam logs
+	// unconditionally on its not-found path — ~4 Warning lines/sec forever. One-shot
+	// the team lookup: once it fails with a LIVE GameState, stop re-querying so the
+	// accessor logs exactly once. This does NOT touch the no-GameState-yet retry above
+	// (a separate branch that keeps retrying); it only stops the pointless re-query of
+	// a miner whose team has no player state — which never happens in the designed
+	// flows, where the owning economy exists before the miner spawns.
+	if (bWarnedNoTeamPlayerState)
 	{
-		for (APlayerState* IterPlayerState : GameState->PlayerArray)
-		{
-			if (ASiegePlayerState* SiegePlayerState = Cast<ASiegePlayerState>(IterPlayerState))
-			{
-				return SiegePlayerState;
-			}
-		}
+		return nullptr;
 	}
 
-	if (!bWarnedNoOwnerState)
+	ASiegePlayerState* OwnerState = SiegeGameState->GetPlayerStateForTeam(Team);
+	if (!OwnerState)
 	{
-		bWarnedNoOwnerState = true;
-		UE_LOG(LogGitClaudeUnrealTest, Warning,
-			TEXT("AMinerUnit '%s': no ASiegePlayerState in the game state's PlayerArray yet — registration will retry on the arrival poll."),
-			*GetNameSafe(this));
+		bWarnedNoTeamPlayerState = true;
 	}
-	return nullptr;
+	return OwnerState;
 }
 
 AGoldNode* AMinerUnit::FindNearestSameTeamGoldNode() const

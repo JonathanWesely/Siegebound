@@ -9,6 +9,7 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
 #include "GitClaudeUnrealTest.h"
+#include "Materials/MaterialInterface.h"
 #include "Siegebound/CardRow.h"
 
 ABuilding::ABuilding()
@@ -50,12 +51,54 @@ void ABuilding::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// TASK-044 (CONVENTIONS Team contract): recolor VisualMesh to the ACTUAL Team.
+	// The deferred spawn sets Team before BeginPlay (InitBuilding → FinishSpawning,
+	// TASK-030/046), so the correct team material lands here. Cosmetic only — the
+	// BlockAll collision, nav relevance, and stat binding are untouched (slot 0 only).
+	ApplyTeamMaterial();
+
 	LoadStats();
+}
+
+void ABuilding::ApplyTeamMaterial()
+{
+	// TASK-044 — CONVENTIONS Team contract: the bot reuses the player's BP_Building_*
+	// assets (authored with the Blue placeholder material); this overrides slot 0 by
+	// the ACTUAL Team so a Red-spawned building reads red with no Red BP duplicate.
+	// Blue re-applies the identical MI_TeamColor_Blue, so Blue-side visuals are unchanged.
+	if (!VisualMesh)
+	{
+		return;
+	}
+
+	// cached static resolve (spec): the two MI instances resolve ONCE per process and
+	// are shared by every building — never a hot-path load. LoadSynchronous re-resolves
+	// through the soft path if GC ever unloaded them and returns nullptr for a missing
+	// asset — in which case the slot is left as authored (null-safe; the AProjectile::
+	// ApplyTeamVisuals pattern, mirrored — keep the MI paths in sync by hand).
+	static const TSoftObjectPtr<UMaterialInterface> BlueTeamMaterial(FSoftObjectPath(TEXT("/Game/Materials/Instances/MI_TeamColor_Blue.MI_TeamColor_Blue")));
+	static const TSoftObjectPtr<UMaterialInterface> RedTeamMaterial(FSoftObjectPath(TEXT("/Game/Materials/Instances/MI_TeamColor_Red.MI_TeamColor_Red")));
+
+	const TSoftObjectPtr<UMaterialInterface>& TeamMat = (Team == ETeamId::Red) ? RedTeamMaterial : BlueTeamMaterial;
+	if (UMaterialInterface* ResolvedTeamMat = TeamMat.LoadSynchronous())
+	{
+		VisualMesh->SetMaterial(0, ResolvedTeamMat);
+	}
 }
 
 void ABuilding::InitBuilding(ETeamId InTeam, FName InCardID)
 {
 	Team = InTeam;
+
+	// TASK-044: keep VisualMesh's team color matched to a late/updated Team. Deferred
+	// spawns (InitBuilding before FinishSpawning — TASK-030/046) run this pre-BeginPlay
+	// (HasActorBegunPlay() false) and BeginPlay does the single apply; a plain
+	// SpawnActor + InitBuilding (or a post-bind Team update) re-applies for the now-
+	// current Team. Idempotent and null-safe; runs even on the stats-already-bound path.
+	if (HasActorBegunPlay())
+	{
+		ApplyTeamMaterial();
+	}
 
 	if (bStatsLoaded)
 	{

@@ -23,6 +23,16 @@ class AHeroCharacter;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnHeroDied, AHeroCharacter*, DeadHero);
 
 /**
+ *  Broadcast on every Rally cooldown-state change (TASK-042, GDD §4):
+ *  - on a successful Rally: (bReady=false, CooldownRemaining=RallyCooldown)
+ *  - when the cooldown elapses:  (bReady=true,  CooldownRemaining=0)
+ *  - (optional refusal) on a press during cooldown: (bReady=false, remaining).
+ *  The HUD (TASK-050) binds here to drive the Rally readiness indicator; the hero
+ *  itself owns no UI (loose coupling, mirrors OnHeroDied / the CONVENTIONS delegate law).
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnRallyStateChanged, bool, bReady, float, CooldownRemaining);
+
+/**
  *  Siegebound player hero (GDD §3.1).
  *
  *  Subclasses the abstract third-person template character to inherit the
@@ -64,6 +74,10 @@ public:
 	/** Fired exactly once per death. The game mode (TASK-006) binds here for respawn timing. */
 	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Hero")
 	FOnHeroDied OnHeroDied;
+
+	/** Fired on every Rally cooldown-state change (TASK-042). The HUD (TASK-050) binds here. */
+	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Hero")
+	FOnRallyStateChanged OnRallyStateChanged;
 
 	//~ Begin ITeamAgent Interface
 	virtual ETeamId GetTeamId() const override { return Team; }
@@ -108,6 +122,19 @@ public:
 	bool IsMeleeSuppressed() const { return bMeleeSuppressed; }
 
 	/**
+	 *  Hero active ability (GDD §4, bound to IA_Rally in TASK-048; also callable from
+	 *  blueprint/UI). If off cooldown: buffs every friendly (same-team) ASummonedUnit
+	 *  within RallyRadius by +RallySpeedBonus move speed for RallyDuration seconds
+	 *  (via ApplyMoveSpeedBuff), starts the RallyCooldown, and broadcasts
+	 *  OnRallyStateChanged(false, RallyCooldown); a second broadcast (true, 0) fires
+	 *  when the cooldown elapses. Does NOTHING to the hero's own speed and never
+	 *  touches enemy units. A press while on cooldown is a no-op (optional refusal
+	 *  broadcast). No-op while dead. Null-safe with no world/units present.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Combat")
+	void Rally();
+
+	/**
 	 *  Restores the hero to a playable state after death or Play Again (GDD §3.9):
 	 *  full HP, visible, collision + movement + input re-enabled.
 	 *  Respawn timing and placement belong to the game mode (TASK-006) — it moves
@@ -150,6 +177,9 @@ protected:
 	/** Kills the hero exactly once: hide, disable input/collision/movement, broadcast OnHeroDied. */
 	void HandleDeath();
 
+	/** Rally cooldown-timer callback (TASK-042): broadcasts OnRallyStateChanged(true, 0) — Rally usable again. */
+	void OnRallyReady();
+
 	/** True when the damage is attributable to the hero's own team (DamageCauser first, then EventInstigator's pawn). */
 	bool IsFriendlyDamage(AController* EventInstigator, AActor* DamageCauser) const;
 
@@ -170,6 +200,10 @@ protected:
 	/** Input action slot for /Game/Input/Actions/IA_Attack — assigned on BP_HeroCharacter in TASK-009. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> AttackAction;
+
+	/** Input action slot for /Game/Input/Actions/IA_Rally (key Q) — assigned + bound on BP_HeroCharacter in TASK-048. Null-safe until then. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> RallyAction;
 
 	/** Base movement speed in u/s (GDD §3.1: 500). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Movement", meta = (ClampMin = "0"))
@@ -194,6 +228,22 @@ protected:
 	/** Minimum seconds between melee swings (GDD §3.1: 0.5). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Combat", meta = (ClampMin = "0"))
 	float MeleeCooldown = 0.5f;
+
+	/** Rally: radius in units within which friendly units are buffed. // GDD §4 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Combat", meta = (ClampMin = "0"))
+	float RallyRadius = 600.f;
+
+	/** Rally: fractional move-speed bonus applied to each buffed unit (0.25 = +25%). // GDD §4 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Combat", meta = (ClampMin = "0"))
+	float RallySpeedBonus = 0.25f;
+
+	/** Rally: seconds each friendly unit keeps the move-speed buff. // GDD §4 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Combat", meta = (ClampMin = "0"))
+	float RallyDuration = 5.f;
+
+	/** Rally: seconds before Rally can be used again. // GDD §4 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Combat", meta = (ClampMin = "0"))
+	float RallyCooldown = 20.f;
 
 	/**
 	 *  Montage played on EVERY swing that passes the cooldown gate — hit or whiff —
@@ -254,4 +304,10 @@ private:
 
 	/** World time the hero last took or dealt damage (regen gate). */
 	double LastCombatTime = -1.0e9;
+
+	/** World time of the last successful Rally (cooldown gate). Seeded far in the past so the first Rally is always allowed. */
+	double LastRallyTime = -1.0e9;
+
+	/** Drives OnRallyReady once RallyCooldown elapses after a successful Rally, to broadcast the ready state. */
+	FTimerHandle RallyCooldownTimerHandle;
 };

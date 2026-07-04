@@ -145,12 +145,13 @@ private:
 	void TryRegisterWithOwnerState();
 
 	/**
-	 *  The owning team's ASiegePlayerState. The local player is ALWAYS Blue
-	 *  (CONVENTIONS team contract), so Blue resolves to the first
-	 *  ASiegePlayerState in the game state's PlayerArray. ASiegePlayerState
-	 *  carries no team field (frozen TASK-024 surface), so a Red miner has no
-	 *  resolvable owner until the M3 bot introduces one — it walks and stands
-	 *  but is untracked (warned once). Nullptr when unresolvable.
+	 *  The owning team's ASiegePlayerState, resolved through
+	 *  ASiegeGameState::GetPlayerStateForTeam(Team) (TASK-043 multi-team economy)
+	 *  — no longer "the first player state" (M2 assumed one). A Blue miner binds
+	 *  the player's Blue economy; a Red bot miner binds the bot's Red economy, so
+	 *  each miner raises only its own side's rate. Nullptr when the game state or
+	 *  the team's player state is not resolvable yet (the arrival poll retries);
+	 *  in a single-Blue-PS world this returns the same Blue state M2 resolved.
 	 */
 	ASiegePlayerState* ResolveOwningPlayerState();
 
@@ -172,8 +173,11 @@ private:
 	/** True once AddMinerIncome ran (arrival while registered) — RemoveMinerIncome fires at death iff this, per the §3.3 killed-en-route rule. */
 	bool bIncomeActive = false;
 
-	/** One-shot guard: owner player state unresolvable (Red team pre-M3, or empty PlayerArray). */
+	/** One-shot guard: the ASiegeGameState is not available yet at resolve time (early-spawn edge). The "no player state for this team" case is logged by GetPlayerStateForTeam (TASK-043), not here. */
 	bool bWarnedNoOwnerState = false;
+
+	/** One-shot guard (TASK-044, closes qa/TASK-043 WARN): with a LIVE GameState, the team's ASiegePlayerState was not found — a genuinely mis-teamed miner. Latched so the 0.25 s upkeep poll stops re-querying GetPlayerStateForTeam (whose not-found path logs unconditionally), turning ~4 Warning lines/sec into exactly one. Distinct from bWarnedNoOwnerState (the no-GameState-yet retry, which is left untouched). */
+	bool bWarnedNoTeamPlayerState = false;
 
 	/** One-shot guard: no AAIController possessing the miner (poll keeps retrying — possession can land a tick after spawn). Named distinctly from the base's private bWarnedNoAIController — no shadowing. */
 	bool bWarnedNoWalkController = false;
