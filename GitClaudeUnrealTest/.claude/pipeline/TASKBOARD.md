@@ -845,7 +845,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-048 — IA_Rally input asset + Rally wiring on BP_HeroCharacter (editor)
 - assignee: gameplay-programmer
-- status: backlog (HELD — needs TASK-042 compiled [TASK-051] + editor)
+- status: blocked (2026-07-04 — editor crash-loops booting the 2f6a8fc DLL). ROOT CAUSE: Config/DefaultEngine.ini r.PathTracing=True (UE5 template default, unused by this game) → new DLL invalidated the RTPSO cache → cold PathTracingMainRG RTPSO compile crashes the editor (GPU-heavy). GitClaudeUnrealTest DLL loads clean + MCP registers before crash → M3 code exonerated. FIX IN PROGRESS: build-master disables r.PathTracing (+r.RayTracing if needed), boots, confirms MCP. CODE GAP found: AHeroCharacter::SetupPlayerInputComponent has NO BindAction for RallyAction (TASK-042 only added the UPROPERTY) — Q→Rally needs either a C++ BindAction (recompile) or a BP event-graph node. Resolve on redispatch. handoffs: TASK-048 blocker report.
 - blocked-by: TASK-042; TASK-051
 - parallel-safe: no
 - spec: >
@@ -896,7 +896,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-051 — M3 code batch: compile + residue adjudication + commit (build)
 - assignee: build-master
-- status: in-progress (2026-07-04; all TASK-042..047 qa-passed; M3 batch compile on main)
+- status: done (commit 2f6a8fc on main, parent f903cf0, NOT pushed; 29 files +2685/-46). Clean compile+link FIRST TRY (~17s, no shadow errors, ZERO build-fix loops — C4458 discipline held). No Content residue; donors untouched; m2-testable still @ f903cf0. Editor left DOWN on the 2f6a8fc DLL (TASK-048 boots it). TASK-042..047 code committed here (→ done; manager wraps to ## Done at M3 finish). handoffs/TASK-051.md.
 - blocked-by: TASK-042, TASK-043, TASK-044, TASK-045, TASK-046, TASK-047 (all qa-passed)
 - parallel-safe: no
 - spec: >

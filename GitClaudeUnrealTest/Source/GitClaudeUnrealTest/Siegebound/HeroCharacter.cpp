@@ -112,6 +112,16 @@ void AHeroCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 		{
 			UE_LOG(LogGitClaudeUnrealTest, Warning, TEXT("AHeroCharacter '%s': AttackAction not assigned (expected /Game/Input/Actions/IA_Attack via BP_HeroCharacter, TASK-009) — melee input disabled."), *GetNameSafe(this));
 		}
+
+		// Rally active ability (GDD §4) — bound to IA_Rally / key Q via BP_HeroCharacter in TASK-048
+		if (RallyAction)
+		{
+			EnhancedInputComponent->BindAction(RallyAction, ETriggerEvent::Started, this, &AHeroCharacter::Rally);
+		}
+		else
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Warning, TEXT("AHeroCharacter '%s': RallyAction not assigned (expected /Game/Input/Actions/IA_Rally via BP_HeroCharacter, TASK-048) — rally input disabled."), *GetNameSafe(this));
+		}
 	}
 }
 

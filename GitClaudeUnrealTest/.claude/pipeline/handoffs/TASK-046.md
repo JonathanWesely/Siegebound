@@ -58,3 +58,39 @@ All plays route through `DeckComponent->ConfirmPlayFromHand(slot)` (discards thr
 
 ## Assets referenced (built by parallel/earlier tasks; all null-safe)
 `/Game/Data/DT_Cards` · `/Game/Blueprints/Units/BP_Unit_<CardID>` (Footman/Archer/Knight/Miner) · `/Game/Blueprints/Buildings/BP_Building_<CardID>` (ArrowTower/Wall) · level actors `Castle_Red` (`ACastle` Team=Red), `GoldNode_Red` (`AGoldNode` Team=Red).
+
+---
+
+## Unity-ODR build-fix (loop 1) — shared spawn constants
+
+**Author:** gameplay-programmer · **Compile:** NOT compiled (build-master re-batches) · **Git:** untouched · **Board:** NOT edited
+
+**Ownership note:** build-master appended this error to `qa/TASK-042-report.md` by mistake. The real owner of the bot-placement code is **TASK-046** (this task), so the fix and this note live here.
+
+### The error (exit 6, C2374/C2086 redefinition)
+Under the adaptive unity build, a bucket shift merged `SiegeBotController.cpp` and `SiegePlayerController.cpp` into one translation unit. Each file had defined the SAME two file-scope anonymous-namespace constants, so once co-compiled they collided:
+- `SiegeBotController.cpp` — `constexpr float SpawnGroundClearance = 2.f;` + `constexpr float DefaultCapsuleHalfHeight = 88.f;`
+- `SiegePlayerController.cpp` — `constexpr float SpawnGroundClearance = 2.f;` + `constexpr float DefaultCapsuleHalfHeight = 88.f;`
+
+### Verification before unifying
+- Grepped both definitions: values were **byte-for-byte identical** (`2.f` and `88.f`) in both files — safe to unify with no behavior change.
+- Grepped the whole `Source/` tree: **no third file** defines either name. The only definitions now live in the new header.
+- All **4 use-sites** confirmed updated to the `SiegeSpawn::` names (both compute the spawn Z-offset `CapsuleHalfHeight + SpawnGroundClearance`).
+
+### The fix — single source of truth
+1. **New file** `Source/GitClaudeUnrealTest/Siegebound/SiegeSpawnConstants.h` — `namespace SiegeSpawn { inline constexpr float SpawnGroundClearance = 2.f; inline constexpr float DefaultCapsuleHalfHeight = 88.f; }`. `inline constexpr` gives a single ODR-safe definition even when many TUs include it, and even under any future unity-bucket merge.
+2. **`SiegeBotController.cpp`** — added `#include "Siegebound/SiegeSpawnConstants.h"` (alphabetical, between `SiegePlayerState.h` and `SummonedUnit.h`); removed ONLY the two `constexpr` constants (and their doc comments) from the existing anon namespace; use-sites at (new) lines 723 & 731 now read `SiegeSpawn::DefaultCapsuleHalfHeight` / `SiegeSpawn::SpawnGroundClearance`.
+3. **`SiegePlayerController.cpp`** — added the same include (between `SiegePlayerState.h` and `SummonedUnit.h`); use-sites at (new) lines 896 & 904 updated to the `SiegeSpawn::` names.
+
+### Preserved content — nothing else touched
+- **`SiegeBotController.cpp`** anon namespace was NOT deleted — it still holds `struct FBotHandCard`, `IsDefensiveType()`, and the rest of the bot helpers. Only the two shared constants were removed from it.
+- **`SiegePlayerController.cpp`** anon namespace held ONLY those two constants, so it became empty and was removed entirely (constructor now follows the include block directly). No other player-controller logic changed.
+
+**Behavior-preserving mechanical dedupe — no gameplay logic changed.**
+
+### For QA to scrutinize
+- Confirm `inline constexpr` header approach is acceptable (chosen over an `extern`/`.cpp` pair — header-only is simpler and ODR-safe for `constexpr`).
+- Confirm include ordering matches CONVENTIONS (alphabetical within the `Siegebound/` group).
+- No new locals were introduced, so the C4458 shadow concern is unchanged.
+
+**Files touched:** `SiegeSpawnConstants.h` (new), `SiegeBotController.cpp`, `SiegePlayerController.cpp`. I did NOT compile, did NOT run Git, did NOT edit the board.

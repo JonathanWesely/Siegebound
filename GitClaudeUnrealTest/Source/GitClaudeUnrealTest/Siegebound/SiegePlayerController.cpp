@@ -24,16 +24,8 @@
 #include "Siegebound/DeckComponent.h"
 #include "Siegebound/HeroCharacter.h"
 #include "Siegebound/SiegePlayerState.h"
+#include "Siegebound/SiegeSpawnConstants.h"
 #include "Siegebound/SummonedUnit.h"
-
-namespace
-{
-	/** Small lift above the traced ground point so the spawned capsule never starts interpenetrating the floor. */
-	constexpr float SpawnGroundClearance = 2.f;
-
-	/** ACharacter's default capsule half-height — fallback when the unit class CDO has no capsule to measure. */
-	constexpr float DefaultCapsuleHalfHeight = 88.f;
-}
 
 ASiegePlayerController::ASiegePlayerController()
 {
@@ -901,7 +893,7 @@ void ASiegePlayerController::TryConfirmPlacement()
 	{
 		// Unit/Economy path — the M1 TASK-007 flow, class now resolved per
 		// CardType. Lift the spawn so the capsule stands on the traced ground.
-		float CapsuleHalfHeight = DefaultCapsuleHalfHeight;
+		float CapsuleHalfHeight = SiegeSpawn::DefaultCapsuleHalfHeight;
 		if (const ASummonedUnit* UnitCDO = ActorClass->GetDefaultObject<ASummonedUnit>())
 		{
 			if (const UCapsuleComponent* Capsule = UnitCDO->GetCapsuleComponent())
@@ -909,7 +901,7 @@ void ASiegePlayerController::TryConfirmPlacement()
 				CapsuleHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
 			}
 		}
-		const FTransform SpawnTransform(FRotator::ZeroRotator, PlacementLocation + FVector(0.f, 0.f, CapsuleHalfHeight + SpawnGroundClearance));
+		const FTransform SpawnTransform(FRotator::ZeroRotator, PlacementLocation + FVector(0.f, 0.f, CapsuleHalfHeight + SiegeSpawn::SpawnGroundClearance));
 
 		// deferred spawn (TASK-004 handoff: preferred path) so InitUnit binds the
 		// card BEFORE BeginPlay reads DT_Cards — never a mis-teamed first state check

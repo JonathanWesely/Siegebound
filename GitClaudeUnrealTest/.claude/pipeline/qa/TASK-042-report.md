@@ -35,3 +35,41 @@ Verdict: **PASS**
 - Clean pre-compile PASS; no blockers. Compile as part of the M3 batch (TASK-051) with the other qa-passed M3 code tasks.
 - `RallyAction` is intentionally null/unbound until TASK-048 (IA_Rally, key Q); `OnRallyStateChanged` is bound by the HUD in TASK-050 — neither is required for this compile.
 - No new module/`Build.cs` dependency introduced.
+
+---
+
+## BUILD-MASTER COMPILE RESULT — 2026-07-04 (M3 recompile after Rally binding + path-tracing fix)
+
+**Verdict: BUILD FAILED — exit code 6 (`Result: Failed (OtherCompilationError)`). NOT committed. Editor NOT booted. Handing back for a code fix.**
+
+### The Rally change (TASK-042) is INNOCENT — it compiled clean
+- `[1/5] Compile [x64] HeroCharacter.cpp` produced **zero** diagnostics. The one-line guarded `BindAction(RallyAction, ETriggerEvent::Started, ...)` addition is fine. No C4457/8/9 shadow warnings, as predicted.
+
+### Actual failure: latent duplicate-symbol (ODR) collision under adaptive unity — owned by TASK-045
+The failing action was `[2/5] Compile [x64] Module.GitClaudeUnrealTest.cpp` (the module unity blob). Both of these files declare, at **file scope inside an anonymous `namespace`**, two identically-named `constexpr` constants:
+- `SiegeBotController.cpp:28` — `constexpr float SpawnGroundClearance = 2.f;`  (comment: "mirrors ASiegePlayerController")
+- `SiegeBotController.cpp:31` — `constexpr float DefaultCapsuleHalfHeight = 88.f;`
+- `SiegePlayerController.cpp:32` — `constexpr float SpawnGroundClearance = 2.f;`  (pre-existing)
+- `SiegePlayerController.cpp:35` — `constexpr float DefaultCapsuleHalfHeight = 88.f;` (pre-existing)
+
+Compiler errors (verbatim):
+```
+SiegePlayerController.cpp(32,18): error C2374: '`anonymous-namespace'::SpawnGroundClearance': redefinition; multiple initialization
+    note: SiegeBotController.cpp(28,18): see declaration of '`anonymous-namespace'::SpawnGroundClearance'
+SiegePlayerController.cpp(32,18): error C2086: 'const float `anonymous-namespace'::SpawnGroundClearance': redefinition
+SiegePlayerController.cpp(35,18): error C2374: '`anonymous-namespace'::DefaultCapsuleHalfHeight': redefinition; multiple initialization
+    note: SiegeBotController.cpp(31,18): see declaration of '`anonymous-namespace'::DefaultCapsuleHalfHeight'
+SiegePlayerController.cpp(35,18): error C2086: 'const float `anonymous-namespace'::DefaultCapsuleHalfHeight': redefinition
+```
+
+### Why it "passed" at 2f6a8fc but fails now (NOT a regression from my edit)
+Adaptive unity excluded my just-edited `HeroCharacter.cpp` from the unity file (`[Adaptive Build] Excluded from GitClaudeUnrealTest unity file: HeroCharacter.cpp`). That shifted the unity bucket boundaries so `SiegePlayerController.cpp` and `SiegeBotController.cpp` were merged into the **same** translation unit for the first time, where their internal-linkage constants collide. At 2f6a8fc (TASK-051's full compile) a different unity layout kept them in separate TUs, so the collision was masked. **The defect is real and layout-fragile** — it will recur on any future re-bucket. Do NOT "fix" this by forcing a full/non-unity rebuild to dodge it; the duplicate symbols must be removed.
+
+### Recommended fix (gameplay-programmer, route to TASK-045 — do NOT let build-master edit code)
+Dedupe the shared constants. Cleanest: hoist `SpawnGroundClearance` and `DefaultCapsuleHalfHeight` into one shared spot (e.g. a small `SiegeSpawnConstants.h` or an existing shared header) and include it in both controllers, removing both local copies. Alternatively give the bot's copies distinct names. Either restores unity-safety.
+
+### Build-master state after failure (all per protocol)
+- No commit made. Working tree still holds the intended, uncommitted edits: `Config/DefaultEngine.ini` (r.PathTracing=False), `Source/.../HeroCharacter.cpp` (Rally binding), `.claude/pipeline/TASKBOARD.md`, `handoffs/TASK-042.md`, and untracked `handoffs/TASK-051.md`. The Rally fix + path-tracing fix are preserved for the re-batch once TASK-045 is fixed & re-QA'd.
+- The two stray editor re-saves (`BP_Building_ArrowTower.uasset`, `L_Arena.umap`) were restored to HEAD before the build.
+- Editor NOT booted (gated on a clean build; a boot now would trigger rebuild-on-boot and hit the same error).
+- Full build log: scratchpad `build_m3.log` (exit code in `build_m3.rc`).

@@ -75,3 +75,14 @@ No local/param/loop var shadows an inherited reflected UPROPERTY. Rally locals: 
 - **TASK-048** wires `RallyAction` to IA_Rally (key Q) at the same bind site as IA_Sprint/IA_Attack in `SetupPlayerInputComponent`, calling `Rally()` on `ETriggerEvent::Started`. `RallyAction` is null-safe until then; add a Warning-log branch mirroring Sprint/Attack if desired.
 - **TASK-050** binds `OnRallyStateChanged` on the HUD for the Rally readiness indicator (seed from state, then bind — CONVENTIONS delegate law).
 - Defaults are live once compiled; no editor work required for the C++ behavior itself.
+
+## Rally input binding (build-fix) — 2026-07-04
+
+TASK-042 added `RallyAction` + `Rally()` but never bound the input, so Q→Rally() did nothing. Closed the gap in `HeroCharacter.cpp` only.
+
+- **File:** `Source/GitClaudeUnrealTest/Siegebound/HeroCharacter.cpp`, in `SetupPlayerInputComponent`, inside the existing `Cast<UEnhancedInputComponent>` scope, directly **after** the `AttackAction` block.
+- **Exact line added:** `EnhancedInputComponent->BindAction(RallyAction, ETriggerEvent::Started, this, &AHeroCharacter::Rally);`
+- Wrapped in the same `if (RallyAction)` null-guard as Attack, with a matching `else` Warning log (RallyAction unassigned until BP_HeroCharacter is wired in TASK-048). `ETriggerEvent::Started` = press, matching AttackAction.
+- **Signature check:** `Rally()` is a no-arg `UFUNCTION(BlueprintCallable)` (HeroCharacter.h:135) — compatible with `UEnhancedInputComponent::BindAction`'s member-function overload (no bound params). No shadow locals introduced (no C4458 risk).
+- **NOT touched:** Sprint/Attack bindings unchanged; `RallyAction` UPROPERTY unchanged; no `.h` edit (no new include/forward decl needed). No compile, no Git, no TASKBOARD edit.
+- Supersedes the "add a Warning-log branch mirroring Sprint/Attack if desired" note in the TASK-048 line above — that branch is now in place; TASK-048 only needs to author the IA_Rally asset + IMC_Hero (key Q) mapping and assign `RallyAction` on BP_HeroCharacter.

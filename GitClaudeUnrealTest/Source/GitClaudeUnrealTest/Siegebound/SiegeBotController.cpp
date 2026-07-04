@@ -18,18 +18,13 @@
 #include "Siegebound/HeroCharacter.h"
 #include "Siegebound/SiegeGameMode.h"
 #include "Siegebound/SiegePlayerState.h"
+#include "Siegebound/SiegeSpawnConstants.h"
 #include "Siegebound/SummonedUnit.h"
 
 DEFINE_LOG_CATEGORY(LogSiegeBot);
 
 namespace
 {
-	/** Small lift above the projected ground so a spawned capsule never starts interpenetrating the floor (mirrors ASiegePlayerController). */
-	constexpr float SpawnGroundClearance = 2.f;
-
-	/** ACharacter's default capsule half-height — fallback when the unit class CDO has no capsule to measure. */
-	constexpr float DefaultCapsuleHalfHeight = 88.f;
-
 	/** One resolvable hand card the bot can reason about — empty slots and rows that fail to resolve are dropped before the §4 rules scan. */
 	struct FBotHandCard
 	{
@@ -725,7 +720,7 @@ AActor* ASiegeBotController::SpawnBotCardActor(FName CardID, bool bIsBuilding, c
 	}
 
 	// Unit/Economy: lift the spawn so the capsule stands on the projected ground.
-	float CapsuleHalfHeight = DefaultCapsuleHalfHeight;
+	float CapsuleHalfHeight = SiegeSpawn::DefaultCapsuleHalfHeight;
 	if (const ASummonedUnit* UnitCDO = ActorClass->GetDefaultObject<ASummonedUnit>())
 	{
 		if (const UCapsuleComponent* Capsule = UnitCDO->GetCapsuleComponent())
@@ -733,7 +728,7 @@ AActor* ASiegeBotController::SpawnBotCardActor(FName CardID, bool bIsBuilding, c
 			CapsuleHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
 		}
 	}
-	const FTransform SpawnTransform(FRotator::ZeroRotator, SpawnPoint + FVector(0.f, 0.f, CapsuleHalfHeight + SpawnGroundClearance));
+	const FTransform SpawnTransform(FRotator::ZeroRotator, SpawnPoint + FVector(0.f, 0.f, CapsuleHalfHeight + SiegeSpawn::SpawnGroundClearance));
 	ASummonedUnit* Unit = World->SpawnActorDeferred<ASummonedUnit>(
 		ActorClass, SpawnTransform, /*Owner=*/ this, /*Instigator=*/ nullptr,
 		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
