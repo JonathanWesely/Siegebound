@@ -28,6 +28,7 @@ Owned by the **manager** agent. All agents MUST follow these. If a needed patter
 - One class per header/cpp pair; file name = class name without prefix
 - Exception: pure data types (enums, structs, UInterfaces) may share a header-only file when they form one concept (e.g., `TeamId.h`)
 - Gameplay-relevant members exposed with UPROPERTY/UFUNCTION; use TObjectPtr for UObject members
+- **No shadowing inherited reflected members (coding law):** no local variable, function parameter, or loop variable may shadow an inherited reflected UPROPERTY — e.g. `Owner`/`PlayerState`/`Instigator`/`Controller` on AActor/APawn/AController, `Slot` on UWidget. UHT + the UE toolchain compile this as a HARD ERROR (C4457 param / C4458 member / C4459 global), not a warning. Rename the local (e.g. `OwnerState`, `IterPlayerState`, `SlotIndex`). **QA MUST scan every code task for this class of shadow pre-compile** — it slipped past QA twice in the M2 batch (TASK-025, TASK-029) and cost 2 build loops.
 
 ## C++ layout — Siegebound gameplay
 - All new Siegebound gameplay code lives in `Source/GitClaudeUnrealTest/Siegebound/`
@@ -58,6 +59,7 @@ Owned by the **manager** agent. All agents MUST follow these. If a needed patter
 - Enum `ETeamId { Blue, Red }`. The local player is always Blue; the enemy is Red
 - Team master material `/Game/Materials/M_TeamColor` exposes a vector parameter named exactly `TeamColor`
 - Instances: `/Game/Materials/Instances/MI_TeamColor_Blue` = linear (0.05, 0.30, 1.00); `/Game/Materials/Instances/MI_TeamColor_Red` = linear (1.00, 0.10, 0.05)
+- **Team-driven visuals (M3):** team-owned actors (units, buildings, miners) apply the matching `MI_TeamColor_<Team>` to their `VisualMesh` slot 0 in `BeginPlay` from their `Team` value; the Blue material authored on the BP is only the design-time placeholder, so the bot's Red units recolor at spawn. Gold nodes are the exception — they carry the authored `M_GoldGlow` emissive regardless of team.
 
 ## World axes (arena contract)
 - In `L_Arena`: Blue castle at (X=-2000, Y=0), Red castle at (X=+2000, Y=0); the centerline is the plane X=0
@@ -78,6 +80,9 @@ Owned by the **manager** agent. All agents MUST follow these. If a needed patter
 - Pattern: `FOn<Owner><Event>`, declared in the owner's header; the UPROPERTY(BlueprintAssignable) member is named `On<Owner><Event>`. Existing: `FOnCastleDestroyed`, `FOnGoldChanged`, `FOnCastleHPChanged(float CurrentHP, float MaxHP)`
 - Broadcast on every ACTUAL value change and on reset paths; never on refused/ignored mutations (e.g., friendly-fire damage)
 - UI consumers must seed from a getter first, THEN bind (qa/TASK-005-report.md major 2 — a bind-only widget created at a pinned value stays stale)
+
+## Logging (C++)
+- Gameplay log categories are named `LogSiege<Domain>`, declared in the owning module. The M3 rule-based bot's decision trace uses **`LogSiegeBot`** — exactly one line per fired decision (which of the §4 ordered rules played, what card, and where), so the "logged decision trace" acceptance in GDD §4 is grep-able.
 
 ## Template-donor rule (Variant_* and other template Content)
 - Template content is READ-ONLY. Reuse it exactly two ways: (a) direct soft-reference (montages, Niagara systems, camera shakes, anim BPs), or (b) duplicate into a /Game/ project folder and modify only the duplicate. Never edit a donor in place.

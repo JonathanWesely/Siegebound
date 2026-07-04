@@ -28,8 +28,8 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 Source: `Docs/GDD.md` §9. Only the current milestone is decomposed into tasks; later milestones stay one-liners until reached.
 
 1. **M1 — Core loop, local, one card** — `done (playtested + signed off by Jonathan 2026-07-03 evening; round-1 combat-legibility findings all fixed and confirmed)`
-2. **M2 — Economy + deck/hand + core set + defenses** — `current — RESUMED 2026-07-03: Blender MCP + UE5 MCP both UP; ALL gates open, M2 fully unblocked. Frontier: TASK-025+030 (code redispatch), TASK-037 (art)` (TASK-021..040; gates + M2a/M2b sequencing in "M2 manager decisions" below)
-3. M3 — Bot opponent = real 1v1 match — `not-started`
+2. **M2 — Economy + deck/hand + core set + defenses** — `done-pending-playtest (functionally complete, committed aafd968+5bb9507 not pushed; 1 known gap = visual hand UI manual pass [TASK-041]; awaiting Jonathan's round-1 M2 playtest)` (TASK-021..040; M2a/M2b exit criteria in "M2 manager decisions" below)
+3. **M3 — Bot opponent = real 1v1 match** — `decomposed-and-HELD (TASK-042..052; do NOT start until Jonathan approves M2 — even the file-only C++ tasks are held tonight to protect the M2 playtest from the editor's rebuild-on-boot; see "## M3 tasks")`
 4. M4 — Card Set II (16 cards, keywords, hero upgrades) — `not-started`
 5. M5 — Spell system + Set III — `not-started`
 6. M6 — Deck-builder meta — `not-started`
@@ -107,11 +107,56 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ## Active tasks
 
-(empty — M1 complete: TASK-016..020 moved to ## Done. Current work: the ## M2 tasks section below.)
+(empty — M1 + M2 both complete/committed. M2 = done-pending-playtest [code aafd968, editor/art 5bb9507, NOT pushed]; the one open M2 item is TASK-041 [visual hand UI manual pass]. M3 is decomposed-and-HELD in ## M3 tasks — do NOT dispatch before Jonathan approves M2. See the M2 COMPLETE banner in ## M2 tasks.)
 
 ---
 
 ## M2 tasks (decomposed 2026-07-03)
+
+### M2 COMPLETE — 2026-07-04 (done-pending-playtest; read this first)
+All M2 tasks integrated + committed on `main`, **NOT pushed**: C++ batch TASK-021..030 at **aafd968** (via TASK-039); editor/art TASK-031/032/034/035/036/037/038 + assembly TASK-040 at **5bb9507** (via TASK-040). TASK-033 = **done PARTIAL** — the functional data path is wired, but the VISUAL hand UI is deferred to **TASK-041**, a manual UMG pass (MCP cannot author widget trees). That deferral is the ONE known M2 gap.
+- **Playable now:** hotkeys **1–6** play hand slots; hold **Left Alt** for the UI cursor (click cards / discard / placement). WASD + mouse + Shift-sprint + LMB melee as in M1.
+- **Open M2 items (still part of M2 completion):** TASK-041 (visual hand UI + HUD stat texts) — see "### M2 open items" immediately below; plus a WATCH line to confirm the Victory screen shows on castle-destroy in a REAL playtest (a Simulate-mode session logged `no ASiegePlayerController to show end screen` — M1 shipped it working, so likely a Simulate artifact).
+- TASK-021..040 statuses below are flipped to `done`; the full task blocks are left in place (not relocated to ## Done) to preserve the M2 audit trail.
+
+### M2 open items (cleanup group — close these before M2 is fully signed off)
+
+#### TASK-041 — WBP_CardHand visual hand UI + HUD stat texts (manual UMG pass)
+- assignee: gameplay-programmer
+- status: backlog (PRIORITY — the one known M2 gap; expected to be a manual / Jonathan-assisted session because MCP cannot author widget trees)
+- blocked-by: none (all C++ symbols shipped at aafd968; the data path is live — WBP_CardHand is reparented to UCardHandWidget and InitForController fires at runtime)
+- parallel-safe: no (edits WBP_CardHand + WBP_HUD; coordinate with M3 TASK-050 which also edits WBP_HUD — do this one first, or fold the Rally indicator into it)
+- spec: >
+    Manual UMG designer pass. MCP cannot author widget trees from scratch, so this is a hands-on session
+    (possibly Jonathan's own). Complete the deferred TASK-033 visual work; the C++ BIE contract + exact
+    recipes + node IDs are all in handoffs/TASK-033.md. (1) WBP_CardHand: author the 6-slot hand tree
+    (DisplayName + cost per slot; greyed/disabled when bAffordable false, §3.5); each slot = a play button
+    (OnClicked → RequestPlaySlot(index)) + a small discard button labeled "1" (OnClicked →
+    RequestDiscardSlot(index), §3.6/§7); a next-card preview slot; a refusal-message text shown ~2 s (§3.0).
+    Render the three C++ BIEs (OnHandSlotUpdated / OnNextCardUpdated / OnCardRefusedMessage) — empty CardID/
+    DisplayName ⇒ hide that face; never type costs/names into UMG (all arrive from DT_Cards via the BIEs).
+    Flip the WBP_CardHand root to SelfHitTestInvisible with only the interactive children Visible (final
+    WARN-4 posture: cards clickable under Alt-cursor + in placement mode, gameplay LMB not swallowed).
+    (2) WBP_HUD: add gold-rate "+N/s" (seed GetGoldRate, bind OnGoldRateChanged), miner "x/6" (seed
+    GetAliveMinerCount, bind OnMinerCountChanged; the "6" = MaxActiveMiners), overtime indicator (hidden
+    until OnOvertimeStarted, §3.2) — each SEEDED from a getter first, THEN bound (seed-then-bind law).
+    (3) Remove the M1 single-Footman card button in the designer, at the same time the visual hand ships
+    (no UI gap). Do NOT round-trip the protected M1 gold Construct (TASK-033 note — it is lossy for
+    GetDataTableRow / delegate-bind nodes and can silently regress the shipped gold counter). Acceptance
+    (PIE): 6 slots + preview live-update on play/discard/reshuffle; a card greys the instant gold drops
+    below its cost; discard deducts 1 and redraws; refusal messages appear and fade; gold-rate/miner/
+    overtime texts track their delegates; the M1 gold counter is unchanged.
+- names: >
+    /Game/UI/WBP_CardHand (parent UCardHandWidget), /Game/UI/WBP_HUD (additive). Calls: RequestPlaySlot,
+    RequestDiscardSlot. BIEs: OnHandSlotUpdated, OnNextCardUpdated, OnCardRefusedMessage. Delegates:
+    FOnGoldRateChanged, FOnMinerCountChanged, FOnOvertimeStarted, FOnGoldChanged. Recipes + node IDs:
+    handoffs/TASK-033.md.
+
+#### WATCH — Victory-screen playtest confirm (not a task; close at Jonathan's M2 playtest)
+- Confirm the Victory/Defeat screen appears on castle-destroy during a REAL (non-Simulate) playtest. TASK-040
+  logged `no ASiegePlayerController to show end screen` in a Simulate-mode session; M1 shipped this working,
+  so it is most likely a Simulate artifact. If it fails in real PIE, it becomes a gameplay-programmer task in
+  the M2 cleanup group. (Also benign: a `LogCrowdFollowing … UCrowdManager` line at PIE teardown — ignore.)
 
 ### M2 RESUME — 2026-07-03: Blender MCP + UE5 MCP both confirmed UP by Jonathan (`/mcp`); Blender verified live. M2 fully unblocked. Dispatch frontier: TASK-025 + TASK-030 (code, fresh redispatch — no handoffs on disk) and TASK-037 (art, Blender). TASK-039 waits on 025+030 qa-passed.
 
@@ -128,7 +173,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-021 — Core-set card data: FCardRow columns + cards.csv rows (files)
 - assignee: gameplay-programmer
-- status: qa-passed (qa/TASK-021-report.md — 0 blockers, 2 warns, 1 nit; all 5 flagged decisions ruled PASS)
+- status: done (code committed aafd968 via TASK-039). qa-passed (qa/TASK-021-report.md — 0 blockers, 2 warns, 1 nit; all 5 flagged decisions ruled PASS)
 - blocked-by: none
 - parallel-safe: yes
 - spec: >
@@ -158,7 +203,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-022 — Deck & hand model: UDeckComponent (C++)
 - assignee: gameplay-programmer
-- status: qa-passed (qa/TASK-022-report.md — 0 blockers, 1 warn, 2 nits; all 14 flagged decisions ruled PASS; WARN-1 = TASK-023 discard-order gold-leak guard, carry-forward)
+- status: done (code committed aafd968 via TASK-039). qa-passed (qa/TASK-022-report.md — 0 blockers, 1 warn, 2 nits; all 14 flagged decisions ruled PASS; WARN-1 = TASK-023 discard-order gold-leak guard, carry-forward)
 - blocked-by: TASK-021
 - parallel-safe: yes
 - spec: >
@@ -186,7 +231,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-023 — PlayerController v2: hand play, discard, refusal messages, input plumbing (C++)
 - assignee: gameplay-programmer
-- status: qa-passed (qa/TASK-023-report.md — 0 blockers, 1 warn, 1 nit; all 18 flagged decisions ruled PASS; all three scrutiny walks clean; qa/TASK-022 WARN-1 gold-leak closure verified; M1 seven-exit-path law intact; FOnCardRefused seam to TASK-029 character-exact; WARN = defensive ExitPlacementMode in HandleMatchReset, carry to TASK-030)
+- status: done (code committed aafd968 via TASK-039). qa-passed (qa/TASK-023-report.md — 0 blockers, 1 warn, 1 nit; all 18 flagged decisions ruled PASS; all three scrutiny walks clean; qa/TASK-022 WARN-1 gold-leak closure verified; M1 seven-exit-path law intact; FOnCardRefused seam to TASK-029 character-exact; WARN = defensive ExitPlacementMode in HandleMatchReset, carry to TASK-030)
 - blocked-by: TASK-022
 - parallel-safe: yes
 - spec: >
@@ -221,7 +266,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-024 — Match clock, overtime, economy v2, match-end freeze (C++)
 - assignee: gameplay-programmer
-- status: qa-passed (qa/TASK-024-report.md — 0 blockers, 1 warn, 2 nits; 13/13 flagged decisions ruled PASS/ACCEPTED; all 3 carry-forward closures VERIFIED CLOSED; qa/TASK-005 major-1 income-timer law intact; WARN-1 = PlayAgain double ResetDeck [TASK-023 seam], verified benign — drop one call in a later pass)
+- status: done (code committed aafd968 via TASK-039). qa-passed (qa/TASK-024-report.md — 0 blockers, 1 warn, 2 nits; 13/13 flagged decisions ruled PASS/ACCEPTED; all 3 carry-forward closures VERIFIED CLOSED; qa/TASK-005 major-1 income-timer law intact; WARN-1 = PlayAgain double ResetDeck [TASK-023 seam], verified benign — drop one call in a later pass)
 - blocked-by: TASK-027, TASK-028
 - parallel-safe: yes
 - spec: >
@@ -263,7 +308,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-025 — Miner unit + gold node (C++)
 - assignee: gameplay-programmer
-- status: qa-passed (build-fix loop 1 folded 2026-07-04: MinerUnit.cpp C4458 shadows cleared — local Owner→OwnerState ×3, loop PlayerState→IterPlayerState; pure local renames, no seams/stats. Batch-wide compiler-level shadow sweep confirms module shadow-clean. handoffs/TASK-025.md). Prior logic QA (0 blk/1 warn/1 nit, no-attack seal verified load-bearing) stands.
+- status: done (code committed aafd968 via TASK-039). qa-passed (build-fix loop 1 folded 2026-07-04: MinerUnit.cpp C4458 shadows cleared — local Owner→OwnerState ×3, loop PlayerState→IterPlayerState; pure local renames, no seams/stats. Batch-wide compiler-level shadow sweep confirms module shadow-clean. handoffs/TASK-025.md). Prior logic QA (0 blk/1 warn/1 nit, no-attack seal verified load-bearing) stands.
 - blocked-by: TASK-021, TASK-024
 - parallel-safe: yes
 - spec: >
@@ -291,7 +336,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-026 — Projectile actor + damage types + castle damage scaling (C++)
 - assignee: gameplay-programmer
-- status: qa-passed (qa/TASK-026-report.md — 0 blockers, 1 warn, 4 nits; all 10 flagged decisions ruled PASS/ACCEPTED; M1 castle melee path verified identical incl. both TakeDamage return-value consumers; WARN carry-forward: in-flight projectiles vs match-end freeze/PlayAgain → TASK-024/040)
+- status: done (code committed aafd968 via TASK-039). qa-passed (qa/TASK-026-report.md — 0 blockers, 1 warn, 4 nits; all 10 flagged decisions ruled PASS/ACCEPTED; M1 castle melee path verified identical incl. both TakeDamage return-value consumers; WARN carry-forward: in-flight projectiles vs match-end freeze/PlayAgain → TASK-024/040)
 - blocked-by: none
 - parallel-safe: yes
 - spec: >
@@ -323,7 +368,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-027 — Building base + tower (C++) + dynamic navmesh config
 - assignee: gameplay-programmer
-- status: qa-passed (qa/TASK-027-report.md — 0 blockers, 2 warns, 4 nits; all 13 flagged decisions ruled PASS/ACCEPTED; resume-seam audit clean; ini verified single-section/next-boot-only; WARN carry-forwards: match-end tower firing → TASK-024, InitBuilding-deferred-must-pass-real-CardID constraint → TASK-030)
+- status: done (code committed aafd968 via TASK-039). qa-passed (qa/TASK-027-report.md — 0 blockers, 2 warns, 4 nits; all 13 flagged decisions ruled PASS/ACCEPTED; resume-seam audit clean; ini verified single-section/next-boot-only; WARN carry-forwards: match-end tower firing → TASK-024, InitBuilding-deferred-must-pass-real-CardID constraint → TASK-030)
 - blocked-by: TASK-026
 - parallel-safe: yes
 - spec: >
@@ -352,7 +397,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-028 — Summoned unit v2: ranged attacks + FreezeAI (C++)
 - assignee: gameplay-programmer
-- status: qa-passed (qa/TASK-028-report.md PASS — 0 blockers / 0 warnings / 2 nits; 11/11 flagged decisions ruled; heightened-scrutiny out-of-scope sweep CLEAN; closes qa/TASK-020 WARN-1; compile gated on TASK-039 batch)
+- status: done (code committed aafd968 via TASK-039). qa-passed (qa/TASK-028-report.md PASS — 0 blockers / 0 warnings / 2 nits; 11/11 flagged decisions ruled; heightened-scrutiny out-of-scope sweep CLEAN; closes qa/TASK-020 WARN-1; compile gated on TASK-039 batch)
 - blocked-by: TASK-021, TASK-026
 - parallel-safe: yes
 - spec: >
@@ -375,7 +420,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-029 — Card hand widget C++ base: UCardHandWidget (C++)
 - assignee: gameplay-programmer
-- status: qa-passed (build-fixes loop 1+2 folded 2026-07-04: loop-1 cleared UHT param shadow, loop-2 cleared CardHandWidget.cpp/.h C4458 shadows — loop var Slot→SlotIndex, PushHandSlot param Slot→SlotIndex; pure local renames, RequestPlay/DiscardSlot + BIE signatures untouched. Batch shadow sweep clean. handoffs/TASK-029.md). Prior logic QA (0 blk/1 warn/3 nit, TASK-023 seam clean, WARN-1 TASK-033 idempotent-BIE) stands.
+- status: done (code committed aafd968 via TASK-039). qa-passed (build-fixes loop 1+2 folded 2026-07-04: loop-1 cleared UHT param shadow, loop-2 cleared CardHandWidget.cpp/.h C4458 shadows — loop var Slot→SlotIndex, PushHandSlot param Slot→SlotIndex; pure local renames, RequestPlay/DiscardSlot + BIE signatures untouched. Batch shadow sweep clean. handoffs/TASK-029.md). Prior logic QA (0 blk/1 warn/3 nit, TASK-023 seam clean, WARN-1 TASK-033 idempotent-BIE) stands.
 - blocked-by: TASK-022
 - parallel-safe: yes
 - spec: >
@@ -401,7 +446,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-030 — Placement v2: navmesh projection, building clearance, generalized spawn, miner cap (C++)
 - assignee: gameplay-programmer
-- status: qa-passed (qa/TASK-030-report.md — 0 blockers, 2 warns, 3 nits; all 3 flagged items APPROVED [SiegeGameMode ResetDeck drop clean, Build.cs +NavigationSystem correct, CastlePlinthClearance acceptable]; TASK-023 baseline intact; all 3 carry-forward WARNs closed; melee-suppression on all 10 exit paths; NavigationSystem APIs verified vs UE 5.8). handoffs/TASK-030-programmer.md. BUILD NOTE for TASK-039: Build.cs delta forces a FULL editor rebuild, not hot-reload. Ready for TASK-039 batch.
+- status: done (code committed aafd968 via TASK-039). qa-passed (qa/TASK-030-report.md — 0 blockers, 2 warns, 3 nits; all 3 flagged items APPROVED [SiegeGameMode ResetDeck drop clean, Build.cs +NavigationSystem correct, CastlePlinthClearance acceptable]; TASK-023 baseline intact; all 3 carry-forward WARNs closed; melee-suppression on all 10 exit paths; NavigationSystem APIs verified vs UE 5.8). handoffs/TASK-030-programmer.md. BUILD NOTE for TASK-039: Build.cs delta forces a FULL editor rebuild, not hot-reload. Ready for TASK-039 batch.
 - blocked-by: TASK-023, TASK-024, TASK-027
 - parallel-safe: yes
 - spec: >
@@ -433,7 +478,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-031 — DT_Cards reimport: 6-row core set (editor)
 - assignee: gameplay-programmer
-- status: done 2026-07-04 (editor booted on aafd968 DLL, left UP w/ MCP reachable for the rest of the wave). MCP has no reimport verb → used reference-safe in-place row rebuild from cards.csv (asset GUID + CSV linkage preserved). 6 rows verified: DeckCount sum=50, bRanged true only Archer+ArrowTower, all §4 values exact. WATCH: benign `LogDataTable: Missing RowStruct while saving` log — row data confirmed on disk; build-master re-verify 6 rows on fresh load at TASK-040. handoffs/TASK-031.md. (No commit — TASK-040 commits.)
+- status: done (integrated + committed 5bb9507 via TASK-040; 2026-07-04, editor booted on aafd968 DLL, left UP w/ MCP reachable for the rest of the wave). MCP has no reimport verb → used reference-safe in-place row rebuild from cards.csv (asset GUID + CSV linkage preserved). 6 rows verified: DeckCount sum=50, bRanged true only Archer+ArrowTower, all §4 values exact. WATCH: benign `LogDataTable: Missing RowStruct while saving` log — row data confirmed on disk; build-master re-verify 6 rows on fresh load at TASK-040. handoffs/TASK-031.md. (No commit — TASK-040 commits.)
 - blocked-by: TASK-021; TASK-039 (FCardRow columns compiled)
 - parallel-safe: no
 - spec: >
@@ -449,7 +494,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-032 — Input assets v2: IA_Card2..6 + IA_UICursor (editor)
 - assignee: gameplay-programmer
-- status: ready-for-integration — done 2026-07-04. IA_Card2..6 (keys 2-6) + IA_UICursor (LeftAlt) created in /Game/Input/Actions/ (dup'd from IA_Card1); 6 mappings appended to IMC_Hero (11 M1 mappings preserved byte-for-byte, IMC_Default untouched). Wiring = assets at the soft-path locations the aafd968 controller SetupInputComponent already resolves (no BP subclass). PIE: clean boot, deck dealt 50-card pile from DT_Cards, ZERO input-resolution warnings. Interactive key/Alt behavior verified structurally (no MCP keypress-inject verb) — TASK-040 full PIE + Jonathan close it. Shift-log ini tweak SKIPPED (deliberate). handoffs/TASK-032.md. (TASK-040 commits.)
+- status: done (integrated + committed 5bb9507 via TASK-040). IA_Card2..6 (keys 2-6) + IA_UICursor (LeftAlt) created in /Game/Input/Actions/ (dup'd from IA_Card1); 6 mappings appended to IMC_Hero (11 M1 mappings preserved byte-for-byte, IMC_Default untouched). Wiring = assets at the soft-path locations the aafd968 controller SetupInputComponent already resolves (no BP subclass). PIE: clean boot, deck dealt 50-card pile from DT_Cards, ZERO input-resolution warnings. Interactive key/Alt behavior verified structurally (no MCP keypress-inject verb) — TASK-040 full PIE + Jonathan close it. Shift-log ini tweak SKIPPED (deliberate). handoffs/TASK-032.md. (TASK-040 commits.)
 - blocked-by: TASK-023; TASK-039 (controller slots compiled)
 - parallel-safe: no
 - spec: >
@@ -469,7 +514,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-033 — WBP_CardHand + HUD v2 wiring (editor)
 - assignee: gameplay-programmer
-- status: ready-for-integration (PARTIAL — 2026-07-04, MCP survived w/ mitigation). DONE: WBP_CardHand created (dup WBP_HUD donor, reparented to UCardHandWidget), Construct→InitForController; WBP_HUD spawns it at runtime (do-once tick, Collapsed) so the C++ seed-then-bind DATA PATH runs end-to-end; M1 gold Construct left byte-intact (zero regression). DEFERRED to a MANUAL UMG designer pass (MCP cannot author widget trees + round-trip would risk regressing the shipped M1 gold counter): the 6-slot visual tree + 3 BIE renderers, preview/refusal text, HUD stat texts (gold-rate/miner-count/overtime), footman-button removal. NOT a code failure — tooling limit; recipes+symbols in handoffs/TASK-033.md. Play/discard works via hotkeys 1-6. THE one known M2 gap for Jonathan's morning.
+- status: done (PARTIAL — visual hand UI deferred to a manual UMG task [TASK-041]; data path wired + committed 5bb9507 via TASK-040). DONE: WBP_CardHand created (dup WBP_HUD donor, reparented to UCardHandWidget), Construct→InitForController; WBP_HUD spawns it at runtime (do-once tick, Collapsed) so the C++ seed-then-bind DATA PATH runs end-to-end; M1 gold Construct left byte-intact (zero regression). DEFERRED to a MANUAL UMG designer pass (MCP cannot author widget trees + round-trip would risk regressing the shipped M1 gold counter): the 6-slot visual tree + 3 BIE renderers, preview/refusal text, HUD stat texts (gold-rate/miner-count/overtime), footman-button removal. NOT a code failure — tooling limit; recipes+symbols in handoffs/TASK-033.md. Play/discard works via hotkeys 1-6. THE one known M2 gap for Jonathan's morning.
 - blocked-by: TASK-029; TASK-031; TASK-039 (widget base + delegates compiled)
 - parallel-safe: no
 - spec: >
@@ -497,7 +542,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-034 — BP_Unit_Archer / BP_Unit_Knight / BP_Unit_Miner (editor)
 - assignee: gameplay-programmer
-- status: ready-for-integration — done 2026-07-04. 3 BPs in /Game/Blueprints/Units/ cloning BP_Unit_Footman recipe: Archer(ASummonedUnit/SM_Archer), Knight(ASummonedUnit/SM_Knight), Miner(AMinerUnit/SM_Miner); Team=Blue, -90 yaw, slot0 MI_TeamColor_Blue, no stats on BP, compiled clean. SIE verify PASS: Archer 45/350 ranged, Knight 200/300 melee, Miner 30/350 (no-attack seal holds); Archer/Knight correctly acquired Red Castle (no friendly fire). Deferred to TASK-040: full combat/economy PIE (needs 036 gold nodes + waves). MCP stable. handoffs/TASK-034.md. (TASK-040 commits.)
+- status: done (integrated + committed 5bb9507 via TASK-040). 3 BPs in /Game/Blueprints/Units/ cloning BP_Unit_Footman recipe: Archer(ASummonedUnit/SM_Archer), Knight(ASummonedUnit/SM_Knight), Miner(AMinerUnit/SM_Miner); Team=Blue, -90 yaw, slot0 MI_TeamColor_Blue, no stats on BP, compiled clean. SIE verify PASS: Archer 45/350 ranged, Knight 200/300 melee, Miner 30/350 (no-attack seal holds); Archer/Knight correctly acquired Red Castle (no friendly fire). Deferred to TASK-040: full combat/economy PIE (needs 036 gold nodes + waves). MCP stable. handoffs/TASK-034.md. (TASK-040 commits.)
 - blocked-by: TASK-031; TASK-037 (meshes); TASK-039 (AMinerUnit/ranged code compiled)
 - parallel-safe: no
 - spec: >
@@ -518,7 +563,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-035 — BP_Building_ArrowTower / BP_Building_Wall (editor)
 - assignee: gameplay-programmer
-- status: ready-for-integration — done 2026-07-04. /Game/Blueprints/Buildings/ BP_Building_ArrowTower(ATower/SM_ArrowTower) + BP_Building_Wall(ABuilding/SM_Wall); Team-default, slot0 MI_TeamColor_Blue, BlockAll, bCanEverAffectNavigation=true (Wall pinned per §3.7/TASK-038), no stats on BP, compiled clean. Verify PASS: ArrowTower 150HP/900/1.5/15, Wall 300HP from DT_Cards; LIVE tower-fire check — tower acquired+killed a Red Footman via projectiles, no friendly-fire on Wall (validates ATower+AProjectile+damagetype stack). Deferred to TASK-040: wall reroute via navmesh carve + 300-dmg death + tower 1000-range boundary. MCP stable. handoffs/TASK-035.md. (TASK-040 commits.)
+- status: done (integrated + committed 5bb9507 via TASK-040). /Game/Blueprints/Buildings/ BP_Building_ArrowTower(ATower/SM_ArrowTower) + BP_Building_Wall(ABuilding/SM_Wall); Team-default, slot0 MI_TeamColor_Blue, BlockAll, bCanEverAffectNavigation=true (Wall pinned per §3.7/TASK-038), no stats on BP, compiled clean. Verify PASS: ArrowTower 150HP/900/1.5/15, Wall 300HP from DT_Cards; LIVE tower-fire check — tower acquired+killed a Red Footman via projectiles, no friendly-fire on Wall (validates ATower+AProjectile+damagetype stack). Deferred to TASK-040: wall reroute via navmesh carve + 300-dmg death + tower 1000-range boundary. MCP stable. handoffs/TASK-035.md. (TASK-040 commits.)
 - blocked-by: TASK-031; TASK-038 (meshes); TASK-039 (ABuilding/ATower compiled)
 - parallel-safe: no
 - spec: >
@@ -537,7 +582,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-036 — L_Arena v2: gold nodes, arena boundary, KillZ (editor)
 - assignee: gameplay-programmer
-- status: ready-for-integration — done 2026-07-04. L_Arena SAVED (is_dirty=false). GoldNode_Blue(-1200,0,0)/GoldNode_Red(+1200,0,0) AGoldNode w/ SM_GoldNode+M_GoldGlow glowing. Arena boundary = 4 invisible collision walls (engine-cube StaticMeshActors, BlockAll, bHiddenInGame, bCanEverAffectNavigation=FALSE verified) enclosing 6400×3200, 1800 headroom — DEVIATION (orchestrator-accepted): MCP-spawned ABlockingVolume brushes come degenerate, so used property-verified collision boxes instead (functionally identical, flagged for QA). KillZ=-2000. Verify: edge-trace blocks at 100u all 4 sides; 10s PIE miner found GoldNode_Blue, zero nav-fails, deck 50/6. Deferred to TASK-040: exact miner walk-secs, KillZ respawn timing, full escape sweep. handoffs/TASK-036.md. (TASK-040 commits.)
+- status: done (integrated + committed 5bb9507 via TASK-040). L_Arena SAVED (is_dirty=false). GoldNode_Blue(-1200,0,0)/GoldNode_Red(+1200,0,0) AGoldNode w/ SM_GoldNode+M_GoldGlow glowing. Arena boundary = 4 invisible collision walls (engine-cube StaticMeshActors, BlockAll, bHiddenInGame, bCanEverAffectNavigation=FALSE verified) enclosing 6400×3200, 1800 headroom — DEVIATION (orchestrator-accepted): MCP-spawned ABlockingVolume brushes come degenerate, so used property-verified collision boxes instead (functionally identical, flagged for QA). KillZ=-2000. Verify: edge-trace blocks at 100u all 4 sides; 10s PIE miner found GoldNode_Blue, zero nav-fails, deck 50/6. Deferred to TASK-040: exact miner walk-secs, KillZ respawn timing, full escape sweep. handoffs/TASK-036.md. (TASK-040 commits.)
 - blocked-by: TASK-038 (SM_GoldNode imported); TASK-039 (AGoldNode compiled)
 - parallel-safe: no
 - spec: >
@@ -560,7 +605,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-037 — Unit blockout meshes: SM_Archer, SM_Knight, SM_Miner (art)
 - assignee: art-director
-- status: ready-for-integration — done 2026-07-04. All 3 imported to /Game/Meshes/ (SM_Miner 1124 tris/173u, SM_Archer 1558 tris/180u, SM_Knight 1244 tris/190u; feet-center origin, slot0 MI_TeamColor_Blue, zero warnings, distinct silhouettes Knight>Archer>Miner). FBX in Content/RawAssets/. handoffs/TASK-037.md. .uassets stay UNTRACKED until TASK-040 art commit (NOT TASK-039). Note: collision hulls include weapon overhang — swap to body capsule at BP integration if desired.
+- status: done (integrated + committed 5bb9507 via TASK-040). All 3 imported to /Game/Meshes/ (SM_Miner 1124 tris/173u, SM_Archer 1558 tris/180u, SM_Knight 1244 tris/190u; feet-center origin, slot0 MI_TeamColor_Blue, zero warnings, distinct silhouettes Knight>Archer>Miner). FBX in Content/RawAssets/. handoffs/TASK-037.md. .uassets stay UNTRACKED until TASK-040 art commit (NOT TASK-039). Note: collision hulls include weapon overhang — swap to body capsule at BP integration if desired.
 - blocked-by: none (Blender MCP available ✓ 2026-07-03 — confirmed UP by Jonathan, verified live)
 - parallel-safe: no
 - spec: >
@@ -584,7 +629,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-038 — Structure blockout meshes: SM_ArrowTower, SM_Wall, SM_GoldNode + M_GoldGlow (art)
 - assignee: art-director
-- status: ready-for-integration — done 2026-07-04. SM_GoldNode (222 tris, 190×200×249, slot0 M_GoldGlow emissive warm-yellow HDR), SM_Wall (264 tris, 400×100×250 EXACT, UCX box full visual, slot0 MI_TeamColor_Blue), SM_ArrowTower (512 tris, 250×250×497, UCX box = base footprint, slot0 MI_TeamColor_Blue). Ground-center origin, zero import warnings (fixed missing-UV tangent issue). Editor left UP. handoffs/TASK-038.md. FLAGS for TASK-040/build-master: UE Git provider AUTO-STAGED the 4 new .uasset (TASK-037's are untracked — normalize at TASK-040 art commit); confirm bCanEverAffectNavigation=true on BP_Building_Wall (TASK-035, §3.7 navmesh carve).
+- status: done (integrated + committed 5bb9507 via TASK-040). SM_GoldNode (222 tris, 190×200×249, slot0 M_GoldGlow emissive warm-yellow HDR), SM_Wall (264 tris, 400×100×250 EXACT, UCX box full visual, slot0 MI_TeamColor_Blue), SM_ArrowTower (512 tris, 250×250×497, UCX box = base footprint, slot0 MI_TeamColor_Blue). Ground-center origin, zero import warnings (fixed missing-UV tangent issue). Editor left UP. handoffs/TASK-038.md. FLAGS for TASK-040/build-master: UE Git provider AUTO-STAGED the 4 new .uasset (TASK-037's are untracked — normalize at TASK-040 art commit); confirm bCanEverAffectNavigation=true on BP_Building_Wall (TASK-035, §3.7 navmesh carve).
 - blocked-by: none (Blender MCP available ✓ 2026-07-03 — confirmed UP by Jonathan, verified live)
 - parallel-safe: no
 - spec: >
@@ -610,7 +655,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-039 — M2 code batch: compile, residue adjudication, commit (build)
 - assignee: build-master
-- status: done (commit aafd968 on main, NOT pushed; 60 files +7166/-370). Clean compile+LINK on attempt #3 after 2 build-fix loops (UHT param-shadow, then 6× C4458 var-shadows — all mechanical local renames, batch swept shadow-clean). Committed: M2 C++ 021-030 + Build.cs + cards.csv + DefaultEngine.ini + pipeline docs + Blender-bridge infra + new .gitignore (/Content/Dev/). Art .uasset/.fbx left UNTRACKED for TASK-040. Editor left DOWN on the clean aafd968 DLL — TASK-031 boots it. handoffs/TASK-039.md. FOLLOW-UP (manager): add QA-checklist rule for inherited-reflected-member shadows.
+- status: done (commit aafd968 on main, NOT pushed; 60 files +7166/-370). Clean compile+LINK on attempt #3 after 2 build-fix loops (UHT param-shadow, then 6× C4458 var-shadows — all mechanical local renames, batch swept shadow-clean). Committed: M2 C++ 021-030 + Build.cs + cards.csv + DefaultEngine.ini + pipeline docs + Blender-bridge infra + new .gitignore (/Content/Dev/). Art .uasset/.fbx left UNTRACKED for TASK-040. Editor left DOWN on the clean aafd968 DLL — TASK-031 boots it. handoffs/TASK-039.md. FOLLOW-UP (manager): add QA-checklist rule for inherited-reflected-member shadows — DONE 2026-07-04, codified in CONVENTIONS.md ("No shadowing inherited reflected members" coding law).
 - blocked-by: TASK-021..030 all qa-passed
 - parallel-safe: no
 - spec: >
@@ -631,7 +676,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-040 — M2 final assembly: PIE exit-criteria verification + commit (build)
 - assignee: build-master
-- status: in-progress (2026-07-04; all TASK-031..038 done, editor UP PID 35508). Known gap coming in: TASK-033 visual hand UI deferred to manual pass.
+- status: done (commit 5bb9507 on main, NOT pushed). All asset wiring PASS (zero missing-ref warnings); DT_Cards 6 rows exact (DeckCount sum=50, bRanged only Archer+ArrowTower); live PASS on deck-builds-50 / deals-6, miner pathing, tower auto-fire, and match-end freeze. Interactive criteria (card play via keys, discard, placement clicks, Play Again, 7:00 overtime) DEFERRED to Jonathan's hands-on playtest — MCP has no keypress-injection; the underlying code is all qa-passed. Known gap: TASK-033 visual hand UI → TASK-041 manual pass. WATCH: (1) confirm the Victory screen shows on castle-destroy in a REAL playtest (a Simulate session logged `no ASiegePlayerController to show end screen`); (2) benign `LogCrowdFollowing … UCrowdManager` log at PIE teardown (ignore). handoffs/TASK-040.md.
 - blocked-by: TASK-031..038 all done/ready-for-integration
 - parallel-safe: no
 - spec: >
@@ -647,6 +692,243 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 - names: >
     /Game/Maps/L_Arena; full M2 asset set per TASK-031..038 names blocks. Handoff:
     .claude/pipeline/handoffs/TASK-040.md.
+
+---
+
+## M3 tasks (decomposed 2026-07-04 — HELD)
+
+### M3 — HELD: DO NOT START before Jonathan approves M2 (read this first)
+**Interference gate (overnight constraint):** adding ANY new `.cpp`/`.h` to the Siegebound module makes the editor rebuild-on-boot, which could break Jonathan's in-progress M2 playtest. So **every M3 task — including the file-only C++ ones — is HELD tonight**: decomposed-and-ready, NOT dispatched. On M2 sign-off, dispatch order: file-only C++ wave first (TASK-042 + TASK-043 in parallel — different files), then TASK-044 (after 042) / TASK-045 (after 043), then TASK-046 (after 044+045) and TASK-047 (after 045; parallel with 046 — different files); build-master compiles the batch (TASK-051); editor tasks 048/049/050 after the batch compiles; TASK-052 verifies last. **Every code task (042–047) implies a QA review** (standard qa loop). M3 = GDD §9-3 + §4 Bot Opponent + §4 hero Rally + §7 main menu.
+
+**M3 design rulings (binding for all M3 tasks):**
+- **Bot = `ASiegeBotController : AAIController`, possesses no pawn** (§4 "controls no hero"). Spawned by `ASiegeGameMode` at match start on the **Red** team; `bWantsPlayerState = true` so it auto-creates a Red `ASiegePlayerState` → the M2 economy (accrual, overtime rate, miner income, Pause/Resume/ResetEconomy) is reused verbatim for the bot. It owns a `UDeckComponent` (TASK-022, unchanged — the component is controller-agnostic).
+- **Multi-team economy:** `ASiegePlayerState` gains a `Team` (ETeamId) tag; `ASiegeGameState::GetPlayerStateForTeam(ETeamId)` iterates `PlayerArray`. Miners and any team-economy consumer resolve their economy through that accessor instead of assuming the single player (M2 assumed one). Player PS = Blue, bot PS = Red (GameMode sets both).
+- **Bot units are Red at spawn** via the team-material rule (TASK-044): the bot reuses the SAME `BP_Unit_*` / `BP_Building_*` assets the player uses; the spawn path sets `Team=Red` and BeginPlay applies `MI_TeamColor_Red`. No Red-specific BP duplicates.
+- **Bot spawn geometry:** units at the bot's centerline (just inside X≥0), miners to `GoldNode_Red`, defensive towers between the nearest intruder and `Castle_Red`. Reuses the player's placement validity (own half = X≥0 for Red, navmesh projection, building clearance 200).
+- **Rally (§4 hero active):** units-only buff (NOT the hero); +25% move & sprint for 5 s to friendly units within 600; 20 s cooldown; key **Q**. Values are UPROPERTY defaults with `// GDD §4` comments (mechanic rule, not CSV).
+- **Win/lose (§3.9):** Blue castle destroyed → **Defeat**; Red castle destroyed → **Victory**; winner passed to `WBP_VictoryScreen::SetWinner` (byte param, existing M1 deviation). Bot economy/deck/units reset on Play Again alongside the player.
+- Unchanged laws still in force: stats in DT_Cards/cards.csv, `Variant_*` donors READ-ONLY, `L_Arena` is the arena, local player always Blue, only ONE editor-mutating task at a time.
+
+### TASK-042 — Hero Rally ability + unit move-speed buff API (C++)
+- assignee: gameplay-programmer
+- status: backlog (HELD — M3 code gated on M2 sign-off)
+- blocked-by: none
+- parallel-safe: yes (parallel with TASK-043; TASK-044 serializes AFTER it — shared SummonedUnit files)
+- spec: >
+    Files only. GDD §4 (Player Hero active ability) + §3.8. (1) ASummonedUnit: add
+    ApplyMoveSpeedBuff(float Multiplier, float Duration) (BlueprintCallable) — applies a temporary max-walk-
+    speed multiplier and restores the base after Duration via timer; re-applying REFRESHES the duration (no
+    stacking) and never permanently drifts the base (store the base once, restore exactly — the TASK-020
+    drift-free lunge lesson). FreezeAI must clear the buff timer and restore base speed. (2) AHeroCharacter:
+    Rally() (BlueprintCallable, bound to IA_Rally in TASK-048): if off cooldown, iterate every friendly
+    (same-team ITeamAgent) ASummonedUnit within RallyRadius and call ApplyMoveSpeedBuff(1.0 + RallySpeedBonus,
+    RallyDuration); start RallyCooldown; broadcast FOnRallyStateChanged(bool bReady, float CooldownRemaining)
+    on use and when it comes back ready. UPROPERTY defaults (// GDD §4): RallyRadius=600.f, RallySpeedBonus=
+    0.25f, RallyDuration=5.f, RallyCooldown=20.f. Null-safe; a press on cooldown is a no-op (optional refusal
+    broadcast). Acceptance: pressing Rally speeds every friendly unit within 600 by 25% for 5 s then restores
+    EXACTLY, does nothing to the hero, is unusable again for 20 s, and the delegate reports cooldown state;
+    enemy units unaffected; FreezeAI cancels an active buff cleanly with no residual speed.
+- names: >
+    AHeroCharacter (Siegebound/HeroCharacter.h/.cpp) — Rally(); UPROPERTYs RallyRadius, RallySpeedBonus,
+    RallyDuration, RallyCooldown, UInputAction RallyAction; delegate FOnRallyStateChanged (member
+    OnRallyStateChanged). ASummonedUnit (Siegebound/SummonedUnit.h/.cpp) — ApplyMoveSpeedBuff. Input asset
+    (TASK-048): /Game/Input/Actions/IA_Rally.
+
+### TASK-043 — Multi-team economy: PlayerState Team tag + GetPlayerStateForTeam + miner team-resolution (C++)
+- assignee: gameplay-programmer
+- status: backlog (HELD)
+- blocked-by: none
+- parallel-safe: yes (parallel with TASK-042 — different files)
+- spec: >
+    Files only. Enables two coexisting economies (player Blue + bot Red). (1) ASiegePlayerState: add UPROPERTY
+    Team (ETeamId, default Blue); ASiegeGameMode sets the player PS Team=Blue and (once TASK-045 lands) the
+    bot PS Team=Red at creation. (2) ASiegeGameState: add ASiegePlayerState* GetPlayerStateForTeam(ETeamId
+    Team) — iterate the GameState PlayerArray, return the ASiegePlayerState whose Team matches (null + log if
+    none). (3) AMinerUnit and any other team-economy consumer resolve their economy via
+    GetPlayerStateForTeam(OwnTeam) instead of assuming the single/first player state. Preserve ALL M2 income
+    behavior byte-for-byte for the Blue player. Acceptance: with a Blue player PS and a Red bot PS present,
+    GetPlayerStateForTeam returns the correct one per team; a Red miner arriving at GoldNode_Red raises only
+    the BOT's rate (player's unchanged) and vice-versa; killing a Red miner drops only the bot's rate.
+- names: >
+    ASiegePlayerState (Siegebound/SiegePlayerState.h/.cpp) — UPROPERTY Team. ASiegeGameState
+    (Siegebound/SiegeGameState.h/.cpp) — GetPlayerStateForTeam. ASiegeGameMode
+    (Siegebound/SiegeGameMode.h/.cpp) — sets Team on each PS. AMinerUnit (Siegebound/MinerUnit.h/.cpp) —
+    economy resolution via GetPlayerStateForTeam. Enum ETeamId (TeamId.h).
+
+### TASK-044 — Team-driven visuals: MI_TeamColor by Team at BeginPlay (C++)
+- assignee: gameplay-programmer
+- status: backlog (HELD)
+- blocked-by: TASK-042 (serialize — shares SummonedUnit files)
+- parallel-safe: no
+- spec: >
+    Files only. CONVENTIONS Team contract (bot units must read Red). In ASummonedUnit, ABuilding, and
+    AMinerUnit, at BeginPlay apply the MI_TeamColor matching Team to VisualMesh slot 0: Blue →
+    /Game/Materials/Instances/MI_TeamColor_Blue, Red → MI_TeamColor_Red (soft refs, cached, null-safe). The
+    BP-authored Blue material stays the design-time default; this overrides by actual Team. Do NOT disturb the
+    -90 yaw VisualMesh convention or the M1 melee/lunge / M2 ranged paths. AGoldNode is exempt (keeps
+    M_GoldGlow). Acceptance: an actor spawned Team=Red shows the red material; Team=Blue shows blue; zero
+    change to any M1/M2 Blue-side visual.
+- names: >
+    ASummonedUnit, ABuilding, AMinerUnit (Siegebound/) — team-material apply in BeginPlay;
+    /Game/Materials/Instances/MI_TeamColor_Blue, /Game/Materials/Instances/MI_TeamColor_Red.
+
+### TASK-045 — ASiegeBotController: AIController brain, economy + deck ownership, spawn + Play Again reset (C++)
+- assignee: gameplay-programmer
+- status: backlog (HELD)
+- blocked-by: TASK-043
+- parallel-safe: yes (new class pair; TASK-046 serializes AFTER it — same bot file)
+- spec: >
+    Files only (new class pair) — the bot SHELL, no decision rules yet (those are TASK-046). GDD §4/§9-3.
+    ASiegeBotController : AAIController, bWantsPlayerState=true, possesses no pawn, Team=Red. Match-start path
+    (spawned by ASiegeGameMode): its auto-created ASiegePlayerState is tagged Red (TASK-043) and its economy
+    starts identically to the player (accrual, overtime via GameState, miner income); create a UDeckComponent
+    default subobject named DeckComponent and BuildAndShuffle at match start. Provide the reset entry point the
+    GameMode calls on Play Again (ResetDeck + ResetEconomy + clear the decision timer). Stub EvaluateDecisions()
+    (empty — filled in TASK-046) on a repeating timer (UPROPERTY DecisionIntervalSeconds=2.f // GDD §4).
+    ASiegeGameMode spawns exactly ONE bot at match start and resets it on Play Again; the bot is a no-op until
+    TASK-046. Acceptance: on BeginPlay the bot exists with a Red ASiegePlayerState whose gold accrues +2/s
+    (+4/s in overtime), a 50-card deck + hand of 6, and a 2 s timer ticking EvaluateDecisions (currently
+    no-op); Play Again resets the bot's gold/deck/timer; no pawn possessed; the player's economy untouched.
+- names: >
+    ASiegeBotController in Source/GitClaudeUnrealTest/Siegebound/SiegeBotController.h/.cpp — component
+    DeckComponent, function EvaluateDecisions, UPROPERTY DecisionIntervalSeconds, reset entry ResetBot.
+    Spawned/owned by ASiegeGameMode (Siegebound/SiegeGameMode.h/.cpp). Uses UDeckComponent [TASK-022], Red
+    ASiegePlayerState economy [TASK-024/043].
+
+### TASK-046 — Bot decision loop: 2 s ordered rules + placement + LogSiegeBot decision trace (C++)
+- assignee: gameplay-programmer
+- status: backlog (HELD)
+- blocked-by: TASK-044, TASK-045
+- parallel-safe: yes (bot-internal; parallel with TASK-047 — different files)
+- spec: >
+    Files only. Implement GDD §4 Bot Opponent inside ASiegeBotController::EvaluateDecisions — every 2 s, play
+    the FIRST rule that fires: (1) if enemy (Blue) units are on the bot's half (X≥0) AND gold ≥ the cheapest
+    affordable defensive play → play a unit at the bot centerline OR a tower between the nearest intruder and
+    Castle_Red; (2) else if alive miners < 3 AND no enemy units on the bot half AND gold ≥ 8 → play Miner (to
+    GoldNode_Red); (3) else if gold ≥ 12 → play the most-expensive affordable UNIT card in hand at the bot
+    centerline; (4) else if the hand holds an unplayable card AND gold ≥ 1 → discard the most-expensive card.
+    Plays route through the deck (ConfirmPlayFromHand / DiscardFromHand) + SpendGold on the bot PS, spawn the
+    composed BP by CardID (Team=Red, team-material via TASK-044) on a navmesh-projected, own-half, clearance-
+    valid point (reuse the placement validity rules; a refused point retries next tick). NEVER plays a card it
+    can't afford; NEVER spawns on the Blue half. Decision trace: exactly one LogSiegeBot line per fired rule
+    (rule # + card + location). Bot has no hero → Hero-Upgrade/Spell/Instant cards are treated as discards
+    (forward-compat for M4/M5). Acceptance (§4): player idle → bot reaches 3 miners then attacks in growing
+    waves; player pushes onto the bot half → a defensive play within 2 s; the bot never plays an unaffordable
+    card and never spawns on the Blue half; the log shows which rule fired for every play/discard.
+- names: >
+    ASiegeBotController (Siegebound/SiegeBotController.h/.cpp) — EvaluateDecisions body; log category
+    LogSiegeBot (CONVENTIONS Logging). Spawns /Game/Blueprints/Units/BP_Unit_<CardID>,
+    /Game/Blueprints/Buildings/BP_Building_<CardID> (Team=Red). Targets GoldNode_Red, Castle_Red. Uses
+    UDeckComponent API [TASK-022], CanAddMiner/economy [TASK-024/043], placement validity rules [TASK-030].
+
+### TASK-047 — Match resolution v3: win/lose by team + main-menu level-flow hook (C++)
+- assignee: gameplay-programmer
+- status: backlog (HELD)
+- blocked-by: TASK-045 (serialize GameMode edits after the bot-spawn edits)
+- parallel-safe: yes (parallel with TASK-046 — different files)
+- spec: >
+    Files only. GDD §3.9/§9-3 full win/lose. (1) ASiegeGameMode: on castle-destroyed, resolve the winner by
+    the destroyed castle's team — Blue castle destroyed → local player LOSES (Defeat); Red castle destroyed →
+    local player WINS (Victory). Pass the winning ETeamId to the end screen via the existing WBP_VictoryScreen
+    SetWinner byte (M1 deviation); the controller shows Victory vs Defeat accordingly. (2) Freeze the bot with
+    the player at match end (bot decision timer stopped, its units frozen by the existing FreezeAI sweep) and
+    reset the bot on Play Again (call TASK-045's ResetBot). (3) Main-menu hook: a BlueprintCallable entry to
+    start a match (OpenLevel L_Arena) for WBP_MainMenu (TASK-049). Acceptance: destroying the Red castle shows
+    Victory + Play Again; the Blue castle shows Defeat + Play Again; Play Again fully resets BOTH sides (player
+    + bot: gold/deck/hand/miners/buildings/clock/castles/hero); a match cannot end any other way; the menu
+    start-match entry opens L_Arena.
+- names: >
+    ASiegeGameMode (Siegebound/SiegeGameMode.h/.cpp), ASiegeGameState (Siegebound/SiegeGameState.h/.cpp),
+    ASiegePlayerController (Siegebound/SiegePlayerController.h/.cpp — end-screen winner display). Uses
+    WBP_VictoryScreen SetWinner (byte); ResetBot [TASK-045]. Start-match entry consumed by WBP_MainMenu
+    [TASK-049]. Opens /Game/Maps/L_Arena.
+
+### TASK-048 — IA_Rally input asset + Rally wiring on BP_HeroCharacter (editor)
+- assignee: gameplay-programmer
+- status: backlog (HELD — needs TASK-042 compiled [TASK-051] + editor)
+- blocked-by: TASK-042; TASK-051
+- parallel-safe: no
+- spec: >
+    Editor/MCP work. Create /Game/Input/Actions/IA_Rally (bool/Digital, key Q; duplicate an existing IA_Card*
+    for the pattern). Add it to /Game/Input/IMC_Hero (do NOT touch IMC_Default). Wire the AHeroCharacter
+    RallyAction UPROPERTY at the same binding site IA_Sprint/IA_Card1 use (record the pattern in the handoff).
+    All existing M1/M2 bindings unchanged. Acceptance (PIE): pressing Q triggers Rally (friendly units within
+    600 speed up 25% for 5 s; 20 s cooldown); WASD / mouse / Shift / LMB / 1–6 / Alt all still work.
+- names: >
+    /Game/Input/Actions/IA_Rally; /Game/Input/IMC_Hero; wiring on /Game/Blueprints/BP_HeroCharacter
+    (RallyAction slot per handoffs/TASK-009.md pattern).
+
+### TASK-049 — Main menu: WBP_MainMenu + L_MainMenu + Play-vs-Bot flow (editor)
+- assignee: gameplay-programmer
+- status: backlog (HELD — needs TASK-047 start-match entry compiled [TASK-051] + editor)
+- blocked-by: TASK-047; TASK-051
+- parallel-safe: no
+- spec: >
+    Editor/MCP work. GDD §7 main menu. (1) Create /Game/Maps/L_MainMenu (minimal: camera + skybox; a menu
+    GameMode with a mouse cursor). (2) Create /Game/UI/WBP_MainMenu (duplicate a donor per the UMG donor rule
+    — pure BP nodes, no C++ base needed) with: Play (vs Bot) → start a match (TASK-047 entry, or OpenLevel
+    L_Arena); Deck Builder button present but disabled/greyed (M6); Quit → Quit Game. (3) Set L_MainMenu as
+    the game's default map (Config/DefaultEngine.ini GameDefaultMap; leave EditorStartupMap so devs still open
+    L_Arena directly). Acceptance (PIE from L_MainMenu): Play opens L_Arena into a live match vs the bot; Quit
+    exits; Deck Builder is visibly disabled; L_Arena still opens directly for dev testing.
+- names: >
+    /Game/Maps/L_MainMenu; /Game/UI/WBP_MainMenu; Config/DefaultEngine.ini (GameDefaultMap). Start-match
+    entry from ASiegeGameMode [TASK-047]. Opens /Game/Maps/L_Arena.
+
+### TASK-050 — HUD/Victory v3: Rally cooldown indicator + Victory/Defeat display (editor)
+- assignee: gameplay-programmer
+- status: backlog (HELD — needs TASK-042 + TASK-047 compiled [TASK-051] + editor)
+- blocked-by: TASK-042; TASK-047; TASK-051
+- parallel-safe: no
+- spec: >
+    Editor/MCP work, ADDITIVE to WBP_HUD / WBP_VictoryScreen (guard the M1 gold Construct + M2 additions per
+    TASK-033's lesson — additive only; do NOT round-trip the protected Construct). (1) WBP_HUD: add a Rally
+    cooldown indicator seeded from the hero and bound to FOnRallyStateChanged (ready vs cooling-down +
+    remaining seconds). (2) WBP_VictoryScreen: confirm the byte winner drives Victory vs Defeat text (Blue win
+    = Victory for the local player, Red win = Defeat); wire the Defeat state if missing. Acceptance (PIE):
+    using Rally greys/animates the indicator for 20 s then restores; destroying the Red castle shows Victory,
+    the Blue castle shows Defeat; Play Again clears both. NOTE: shares WBP_HUD with the deferred TASK-041
+    visual-hand pass — do TASK-041 first, or fold the Rally indicator into it, so the two UMG passes don't
+    collide.
+- names: >
+    /Game/UI/WBP_HUD (additive), /Game/UI/WBP_VictoryScreen. Delegate FOnRallyStateChanged [TASK-042];
+    SetWinner byte [TASK-047].
+
+### TASK-051 — M3 code batch: compile + residue adjudication + commit (build)
+- assignee: build-master
+- status: backlog (HELD — runs only after M2 sign-off AND TASK-042..047 all qa-passed)
+- blocked-by: TASK-042, TASK-043, TASK-044, TASK-045, TASK-046, TASK-047 (all qa-passed)
+- parallel-safe: no
+- spec: >
+    Build-master. Compile the accumulated M3 C++ batch (TASK-042..047) with the standard Build.bat command;
+    editor-bounce protocol (editor must release the DLL). Any compile error → append to the failing task's QA
+    report, set qa-failed, stop (counts as a QA loop; build-master never edits code). **Pre-compile: scan the
+    batch for inherited-reflected-member shadows (CONVENTIONS coding law — cost 2 loops in M2).** Adjudicate
+    any working-tree residue. Commit the M3 code batch + pipeline docs (TASKBOARD/CONVENTIONS/SLACK deltas)
+    with task IDs. Acceptance: clean build; git status clean of unexplained residue; commit hash on the board
+    + posted in 🔧 Build & Git. Do NOT push.
+- names: >
+    Build command per CLAUDE.md. Commit pattern: "TASK-042..047: M3 bot opponent + hero Rally + multi-team
+    economy + win/lose (C++ batch)".
+
+### TASK-052 — M3 final assembly: full-match-vs-bot PIE verification + commit (build)
+- assignee: build-master
+- status: backlog (HELD — after TASK-048/049/050 done + TASK-051 committed)
+- blocked-by: TASK-048, TASK-049, TASK-050 (done); TASK-051 (committed)
+- parallel-safe: no
+- spec: >
+    Build-master. Final M3 integration in editor + Git. (1) Verify all M3 assets resolve with zero load
+    warnings (IA_Rally, WBP_MainMenu, L_MainMenu, HUD/Victory edits, bot spawn). (2) PIE the §9-3 slice: main
+    menu → Play vs Bot → L_Arena; the bot accrues gold, reaches 3 miners while the player is idle, attacks in
+    growing waves, defends within 2 s when pushed, never plays unaffordable cards; the LogSiegeBot trace shows
+    the fired rule per play; Rally (Q) buffs friendly units 25%/5 s on a 20 s cooldown; destroying the Red
+    castle = Victory, the Blue castle = Defeat; Play Again resets BOTH sides. Record pass/fail per line; fails
+    route back per the QA loop. (3) Confirm the slice is RECORDABLE (full match-vs-AI clip + AI decision-trace
+    log). (4) Commit all M3 editor assets with task IDs; hash on the board; post in 🔧 Build & Git. Do NOT
+    push. Flag the M3 checkpoint ready for Jonathan's playtest.
+- names: >
+    /Game/Maps/L_MainMenu, /Game/Maps/L_Arena; /Game/UI/WBP_MainMenu, WBP_HUD, WBP_VictoryScreen;
+    /Game/Input/Actions/IA_Rally. Handoff: .claude/pipeline/handoffs/TASK-052.md.
 
 ---
 
