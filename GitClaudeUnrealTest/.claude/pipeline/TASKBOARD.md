@@ -433,7 +433,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-031 — DT_Cards reimport: 6-row core set (editor)
 - assignee: gameplay-programmer
-- status: backlog
+- status: done 2026-07-04 (editor booted on aafd968 DLL, left UP w/ MCP reachable for the rest of the wave). MCP has no reimport verb → used reference-safe in-place row rebuild from cards.csv (asset GUID + CSV linkage preserved). 6 rows verified: DeckCount sum=50, bRanged true only Archer+ArrowTower, all §4 values exact. WATCH: benign `LogDataTable: Missing RowStruct while saving` log — row data confirmed on disk; build-master re-verify 6 rows on fresh load at TASK-040. handoffs/TASK-031.md. (No commit — TASK-040 commits.)
 - blocked-by: TASK-021; TASK-039 (FCardRow columns compiled)
 - parallel-safe: no
 - spec: >
@@ -449,7 +449,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-032 — Input assets v2: IA_Card2..6 + IA_UICursor (editor)
 - assignee: gameplay-programmer
-- status: backlog
+- status: ready-for-integration — done 2026-07-04. IA_Card2..6 (keys 2-6) + IA_UICursor (LeftAlt) created in /Game/Input/Actions/ (dup'd from IA_Card1); 6 mappings appended to IMC_Hero (11 M1 mappings preserved byte-for-byte, IMC_Default untouched). Wiring = assets at the soft-path locations the aafd968 controller SetupInputComponent already resolves (no BP subclass). PIE: clean boot, deck dealt 50-card pile from DT_Cards, ZERO input-resolution warnings. Interactive key/Alt behavior verified structurally (no MCP keypress-inject verb) — TASK-040 full PIE + Jonathan close it. Shift-log ini tweak SKIPPED (deliberate). handoffs/TASK-032.md. (TASK-040 commits.)
 - blocked-by: TASK-023; TASK-039 (controller slots compiled)
 - parallel-safe: no
 - spec: >
@@ -469,7 +469,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-033 — WBP_CardHand + HUD v2 wiring (editor)
 - assignee: gameplay-programmer
-- status: backlog
+- status: ready-for-integration (PARTIAL — 2026-07-04, MCP survived w/ mitigation). DONE: WBP_CardHand created (dup WBP_HUD donor, reparented to UCardHandWidget), Construct→InitForController; WBP_HUD spawns it at runtime (do-once tick, Collapsed) so the C++ seed-then-bind DATA PATH runs end-to-end; M1 gold Construct left byte-intact (zero regression). DEFERRED to a MANUAL UMG designer pass (MCP cannot author widget trees + round-trip would risk regressing the shipped M1 gold counter): the 6-slot visual tree + 3 BIE renderers, preview/refusal text, HUD stat texts (gold-rate/miner-count/overtime), footman-button removal. NOT a code failure — tooling limit; recipes+symbols in handoffs/TASK-033.md. Play/discard works via hotkeys 1-6. THE one known M2 gap for Jonathan's morning.
 - blocked-by: TASK-029; TASK-031; TASK-039 (widget base + delegates compiled)
 - parallel-safe: no
 - spec: >
@@ -497,7 +497,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-034 — BP_Unit_Archer / BP_Unit_Knight / BP_Unit_Miner (editor)
 - assignee: gameplay-programmer
-- status: backlog
+- status: ready-for-integration — done 2026-07-04. 3 BPs in /Game/Blueprints/Units/ cloning BP_Unit_Footman recipe: Archer(ASummonedUnit/SM_Archer), Knight(ASummonedUnit/SM_Knight), Miner(AMinerUnit/SM_Miner); Team=Blue, -90 yaw, slot0 MI_TeamColor_Blue, no stats on BP, compiled clean. SIE verify PASS: Archer 45/350 ranged, Knight 200/300 melee, Miner 30/350 (no-attack seal holds); Archer/Knight correctly acquired Red Castle (no friendly fire). Deferred to TASK-040: full combat/economy PIE (needs 036 gold nodes + waves). MCP stable. handoffs/TASK-034.md. (TASK-040 commits.)
 - blocked-by: TASK-031; TASK-037 (meshes); TASK-039 (AMinerUnit/ranged code compiled)
 - parallel-safe: no
 - spec: >
@@ -518,7 +518,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-035 — BP_Building_ArrowTower / BP_Building_Wall (editor)
 - assignee: gameplay-programmer
-- status: backlog
+- status: ready-for-integration — done 2026-07-04. /Game/Blueprints/Buildings/ BP_Building_ArrowTower(ATower/SM_ArrowTower) + BP_Building_Wall(ABuilding/SM_Wall); Team-default, slot0 MI_TeamColor_Blue, BlockAll, bCanEverAffectNavigation=true (Wall pinned per §3.7/TASK-038), no stats on BP, compiled clean. Verify PASS: ArrowTower 150HP/900/1.5/15, Wall 300HP from DT_Cards; LIVE tower-fire check — tower acquired+killed a Red Footman via projectiles, no friendly-fire on Wall (validates ATower+AProjectile+damagetype stack). Deferred to TASK-040: wall reroute via navmesh carve + 300-dmg death + tower 1000-range boundary. MCP stable. handoffs/TASK-035.md. (TASK-040 commits.)
 - blocked-by: TASK-031; TASK-038 (meshes); TASK-039 (ABuilding/ATower compiled)
 - parallel-safe: no
 - spec: >
@@ -537,7 +537,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-036 — L_Arena v2: gold nodes, arena boundary, KillZ (editor)
 - assignee: gameplay-programmer
-- status: backlog
+- status: ready-for-integration — done 2026-07-04. L_Arena SAVED (is_dirty=false). GoldNode_Blue(-1200,0,0)/GoldNode_Red(+1200,0,0) AGoldNode w/ SM_GoldNode+M_GoldGlow glowing. Arena boundary = 4 invisible collision walls (engine-cube StaticMeshActors, BlockAll, bHiddenInGame, bCanEverAffectNavigation=FALSE verified) enclosing 6400×3200, 1800 headroom — DEVIATION (orchestrator-accepted): MCP-spawned ABlockingVolume brushes come degenerate, so used property-verified collision boxes instead (functionally identical, flagged for QA). KillZ=-2000. Verify: edge-trace blocks at 100u all 4 sides; 10s PIE miner found GoldNode_Blue, zero nav-fails, deck 50/6. Deferred to TASK-040: exact miner walk-secs, KillZ respawn timing, full escape sweep. handoffs/TASK-036.md. (TASK-040 commits.)
 - blocked-by: TASK-038 (SM_GoldNode imported); TASK-039 (AGoldNode compiled)
 - parallel-safe: no
 - spec: >
@@ -584,7 +584,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-038 — Structure blockout meshes: SM_ArrowTower, SM_Wall, SM_GoldNode + M_GoldGlow (art)
 - assignee: art-director
-- status: backlog
+- status: ready-for-integration — done 2026-07-04. SM_GoldNode (222 tris, 190×200×249, slot0 M_GoldGlow emissive warm-yellow HDR), SM_Wall (264 tris, 400×100×250 EXACT, UCX box full visual, slot0 MI_TeamColor_Blue), SM_ArrowTower (512 tris, 250×250×497, UCX box = base footprint, slot0 MI_TeamColor_Blue). Ground-center origin, zero import warnings (fixed missing-UV tangent issue). Editor left UP. handoffs/TASK-038.md. FLAGS for TASK-040/build-master: UE Git provider AUTO-STAGED the 4 new .uasset (TASK-037's are untracked — normalize at TASK-040 art commit); confirm bCanEverAffectNavigation=true on BP_Building_Wall (TASK-035, §3.7 navmesh carve).
 - blocked-by: none (Blender MCP available ✓ 2026-07-03 — confirmed UP by Jonathan, verified live)
 - parallel-safe: no
 - spec: >
@@ -610,7 +610,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-039 — M2 code batch: compile, residue adjudication, commit (build)
 - assignee: build-master
-- status: backlog
+- status: done (commit aafd968 on main, NOT pushed; 60 files +7166/-370). Clean compile+LINK on attempt #3 after 2 build-fix loops (UHT param-shadow, then 6× C4458 var-shadows — all mechanical local renames, batch swept shadow-clean). Committed: M2 C++ 021-030 + Build.cs + cards.csv + DefaultEngine.ini + pipeline docs + Blender-bridge infra + new .gitignore (/Content/Dev/). Art .uasset/.fbx left UNTRACKED for TASK-040. Editor left DOWN on the clean aafd968 DLL — TASK-031 boots it. handoffs/TASK-039.md. FOLLOW-UP (manager): add QA-checklist rule for inherited-reflected-member shadows.
 - blocked-by: TASK-021..030 all qa-passed
 - parallel-safe: no
 - spec: >
@@ -631,7 +631,7 @@ File tasks (TASK-021..030) dispatch NOW per the gates above; wave order from blo
 
 ### TASK-040 — M2 final assembly: PIE exit-criteria verification + commit (build)
 - assignee: build-master
-- status: backlog
+- status: in-progress (2026-07-04; all TASK-031..038 done, editor UP PID 35508). Known gap coming in: TASK-033 visual hand UI deferred to manual pass.
 - blocked-by: TASK-031..038 all done/ready-for-integration
 - parallel-safe: no
 - spec: >
