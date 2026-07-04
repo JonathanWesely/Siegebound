@@ -389,12 +389,20 @@ void ASiegePlayerController::PlayHandSlot(int32 Slot)
 
 	case ECardType::HeroUpgrade:
 	case ECardType::Utility:
+		// Instant-resolving types (GDD §3.10/§4, TASK-059): resolve IMMEDIATELY with
+		// NO placement step — the effect lands, Cost is spent, and a replacement is
+		// drawn on success; every refusal moves NO gold (§3.0). Affordability was
+		// pre-checked above; SiegeState is non-null here (checked above).
+		ResolveInstantPlay(Slot, CardID, *Row, *SiegeState);
+		break;
+
 	default:
-		// Instant-resolving types arrive with Set II (GDD §3.10, M4)
-		UE_LOG(LogGitClaudeUnrealTest, Log,
-			TEXT("ASiegePlayerController '%s': hand slot %d ('%s') refused — Instant card types arrive in M4 (GDD §3.10)."),
-			*GetNameSafe(this), Slot, *CardID.ToString());
-		RefuseCardPlay(CardID, NSLOCTEXT("Siegebound", "CardRefused_InstantsM4", "Instant cards are not available yet"));
+		// Unreachable — every ECardType is handled above (defensive refusal for a
+		// future/corrupt CardType, no gold moved).
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASiegePlayerController '%s': hand slot %d ('%s') refused — unhandled CardType %d."),
+			*GetNameSafe(this), Slot, *CardID.ToString(), static_cast<int32>(Row->CardType));
+		RefuseCardPlay(CardID, NSLOCTEXT("Siegebound", "CardRefused_Unsupported", "Card not available"));
 		break;
 	}
 }
@@ -589,6 +597,8 @@ void ASiegePlayerController::EnterPlacementMode(FName CardID)
 	PendingCardID = CardID;
 	PendingCost = Row->Cost;
 	PendingCardType = Row->CardType; // selects the confirm spawn path + the §3.5 building clearance rule (TASK-030)
+	PendingSwarmCount = Row->SwarmCount; // Swarm keyword (GDD §3.0): >0 spawns copies at confirm (Militia Mob = 4, TASK-059)
+	bPendingIsBuilding = IsBuildingCard(CardID, Row->CardType); // building spawn path + §3.5 clearance, incl. Economy Deep Mine (TASK-059)
 
 	// suppress hero melee while placement owns the LMB (TASK-003 API);
 	// PlacementHero records exactly whose suppression we must release on exit
@@ -636,6 +646,8 @@ void ASiegePlayerController::ExitPlacementMode()
 	PendingCardID = NAME_None;
 	PendingCost = 0;
 	PendingCardType = ECardType::Unit;
+	PendingSwarmCount = 0;
+	bPendingIsBuilding = false;
 	PendingHandSlot = INDEX_NONE; // hand plays consume it in TryConfirmPlacement BEFORE this exit
 
 	DestroyPlacementGhost();
@@ -845,7 +857,7 @@ void ASiegePlayerController::TryConfirmPlacement()
 	const ETeamId Team = IsValid(PlacementHero) ? PlacementHero->GetTeamId() : ETeamId::Blue;
 
 	AActor* Spawned = nullptr;
-	if (PendingCardType == ECardType::Building)
+	if (bPendingIsBuilding)
 	{
 		// Building path (TASK-027 spawn contract): buildings spawn AT the
 		// clicked point, flush with the traced ground — the root is
@@ -891,49 +903,47 @@ void ASiegePlayerController::TryConfirmPlacement()
 	}
 	else
 	{
-		// Unit/Economy path — the M1 TASK-007 flow, class now resolved per
-		// CardType. Lift the spawn so the capsule stands on the traced ground.
-		float CapsuleHalfHeight = SiegeSpawn::DefaultCapsuleHalfHeight;
-		if (const ASummonedUnit* UnitCDO = ActorClass->GetDefaultObject<ASummonedUnit>())
-		{
-			if (const UCapsuleComponent* Capsule = UnitCDO->GetCapsuleComponent())
-			{
-				CapsuleHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
-			}
-		}
-		const FTransform SpawnTransform(FRotator::ZeroRotator, PlacementLocation + FVector(0.f, 0.f, CapsuleHalfHeight + SiegeSpawn::SpawnGroundClearance));
-
-		// deferred spawn (TASK-004 handoff: preferred path) so InitUnit binds the
-		// card BEFORE BeginPlay reads DT_Cards — never a mis-teamed first state check
-		ASummonedUnit* Unit = World->SpawnActorDeferred<ASummonedUnit>(
-			ActorClass,
-			SpawnTransform,
-			/*Owner=*/ this,
-			/*Instigator=*/ GetPawn(),
-			ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
-		if (!Unit)
+		// Unit/Economy path — spawn via the SHARED swarm entry (TASK-059), which the
+		// bot (TASK-060) reuses so player and bot swarms match. A Unit card with
+		// SwarmCount > 0 (Militia Mob = 4) spawns that many copies in a
+		// SwarmSpawnRadius circle for ONE Cost; everything else spawns a single unit
+		// at the validated point (byte-for-byte with TASK-007/030). Spawn FIRST, then
+		// gate gold — the M1 discipline generalized to N: gold moves iff at least one
+		// unit committed, and a spend refusal unwinds EVERY copy (net-zero refund,
+		// §3.0). Gold cannot actually drop during placement (plays/discards are refused
+		// in-mode; income only adds), so the spend refusal below is defensive.
+		TArray<ASummonedUnit*> SwarmUnits = SpawnUnitSwarm(
+			World, ActorClass, PendingCardID, Team,
+			/*Owner=*/ this, /*Instigator=*/ GetPawn(),
+			PlacementLocation, PendingSwarmCount, SwarmSpawnRadius);
+		if (SwarmUnits.Num() == 0)
 		{
 			UE_LOG(LogGitClaudeUnrealTest, Error,
-				TEXT("ASiegePlayerController '%s': SpawnActorDeferred failed for '%s' (%s) — no gold spent, staying in placement mode."),
+				TEXT("ASiegePlayerController '%s': SpawnUnitSwarm produced no units for '%s' (%s) — no gold spent, staying in placement mode."),
 				*GetNameSafe(this), *PendingCardID.ToString(), *GetNameSafe(ActorClass));
 			return;
 		}
 
-		// gold is the last gate before commit: a refusal destroys the half-spawned
-		// actor, so exactly Cost is deducted if and only if a unit appears (§3.5)
+		// gold is the last gate before commit: a refusal destroys EVERY spawned copy,
+		// so exactly one Cost is deducted if and only if the swarm appears (§3.5)
 		if (!SiegeState->SpendGold(PendingCost))
 		{
-			Unit->Destroy();
+			for (ASummonedUnit* SwarmUnit : SwarmUnits)
+			{
+				if (IsValid(SwarmUnit))
+				{
+					SwarmUnit->Destroy();
+				}
+			}
 			UE_LOG(LogGitClaudeUnrealTest, Log,
-				TEXT("ASiegePlayerController '%s': SpendGold(%d) refused at confirm for '%s' — staying in placement mode."),
-				*GetNameSafe(this), PendingCost, *PendingCardID.ToString());
+				TEXT("ASiegePlayerController '%s': SpendGold(%d) refused at confirm for '%s' — %d spawned unit(s) unwound, staying in placement mode."),
+				*GetNameSafe(this), PendingCost, *PendingCardID.ToString(), SwarmUnits.Num());
 			RefuseCardPlay(PendingCardID, NSLOCTEXT("Siegebound", "CardRefused_CantAfford", "Not enough gold"));
 			return;
 		}
 
-		Unit->InitUnit(Team, PendingCardID);
-		Unit->FinishSpawning(SpawnTransform);
-		Spawned = Unit;
+		// representative actor for the shared success log below (all copies are one play)
+		Spawned = SwarmUnits[0];
 	}
 
 	// M2 ruling: the card leaves the hand at CONFIRM — only now, with gold spent
@@ -991,7 +1001,7 @@ void ASiegePlayerController::UpdatePlacementGhost()
 	{
 		bValid = IsPointOnNavmesh(PlacementLocation) && !IsPointInsideCastlePlinth(PlacementLocation);
 	}
-	if (bValid && PendingCardType == ECardType::Building && !HasBuildingClearance(PlacementLocation))
+	if (bValid && bPendingIsBuilding && !HasBuildingClearance(PlacementLocation))
 	{
 		bValid = false;
 		PlacementInvalidReason = EPlacementInvalidReason::Clearance;
@@ -1123,33 +1133,36 @@ const FCardRow* ASiegePlayerController::ResolveCardRow(FName CardID, FString& Ou
 
 UClass* ASiegePlayerController::ResolveCardActorClass(FName CardID, ECardType CardType) const
 {
-	// CONVENTIONS composed soft-class paths, selected by CardType (TASK-030):
-	// Unit/Economy -> /Game/Blueprints/Units/BP_Unit_<CardID>   (TASK-010/034)
-	// Building     -> /Game/Blueprints/Buildings/BP_Building_<CardID> (TASK-035)
-	// Missing/incompatible = nullptr; the caller refuses the play with NO gold
-	// spent (composed soft-class law — the M1 meshless fallback is retired).
+	// CONVENTIONS composed soft-class paths, selected by the card's EFFECTIVE spawn
+	// category (TASK-030 + TASK-059): a Building card OR an Economy-typed building
+	// card (Deep Mine — CardType Economy but ADeepMine under /Blueprints/Buildings/,
+	// TASK-057) resolves /Game/Blueprints/Buildings/BP_Building_<CardID> (ABuilding);
+	// a Unit card OR an Economy-typed UNIT card (Miner) resolves
+	// /Game/Blueprints/Units/BP_Unit_<CardID> (ASummonedUnit). Missing/incompatible =
+	// nullptr; the caller refuses the play with NO gold spent (composed soft-class
+	// law — the M1 meshless fallback is retired). IsBuildingCard is the single source
+	// shared with the confirm spawn branch + the §3.5 clearance rule.
 	const FString CardName = CardID.ToString();
 	FString ClassPath;
 	UClass* RequiredBase = nullptr;
 	const TCHAR* CreatedInTask = TEXT("");
-	switch (CardType)
+
+	if (IsBuildingCard(CardID, CardType))
 	{
-	case ECardType::Unit:
-	case ECardType::Economy:
+		ClassPath = FString::Printf(TEXT("/Game/Blueprints/Buildings/BP_Building_%s.BP_Building_%s_C"), *CardName, *CardName);
+		RequiredBase = ABuilding::StaticClass();
+		CreatedInTask = TEXT("TASK-035/063");
+	}
+	else if (CardType == ECardType::Unit || CardType == ECardType::Economy)
+	{
 		ClassPath = FString::Printf(TEXT("/Game/Blueprints/Units/BP_Unit_%s.BP_Unit_%s_C"), *CardName, *CardName);
 		RequiredBase = ASummonedUnit::StaticClass();
 		CreatedInTask = TEXT("TASK-010/034");
-		break;
-
-	case ECardType::Building:
-		ClassPath = FString::Printf(TEXT("/Game/Blueprints/Buildings/BP_Building_%s.BP_Building_%s_C"), *CardName, *CardName);
-		RequiredBase = ABuilding::StaticClass();
-		CreatedInTask = TEXT("TASK-035");
-		break;
-
-	default:
-		// PlayHandSlot's type switch keeps every other CardType out of
-		// placement mode — reaching this is a caller regression
+	}
+	else
+	{
+		// PlayHandSlot's type switch keeps every other CardType out of placement
+		// mode (instants resolve without a spawn) — reaching this is a caller regression.
 		UE_LOG(LogGitClaudeUnrealTest, Error,
 			TEXT("ASiegePlayerController '%s': ResolveCardActorClass('%s') — CardType %d is not a placement type (gated in PlayHandSlot)."),
 			*GetNameSafe(this), *CardName, static_cast<int32>(CardType));
@@ -1166,6 +1179,239 @@ UClass* ASiegePlayerController::ResolveCardActorClass(FName CardID, ECardType Ca
 		TEXT("ASiegePlayerController '%s': card class '%s' missing or not a %s (built in %s) — play refused, no gold spent (CONVENTIONS composed soft-class law)."),
 		*GetNameSafe(this), *ClassPath, *RequiredBase->GetName(), CreatedInTask);
 	return nullptr;
+}
+
+bool ASiegePlayerController::IsBuildingCard(FName CardID, ECardType CardType) const
+{
+	// Single source of truth for the building spawn branch, the §3.5 clearance rule,
+	// and the BP-class path (TASK-059). Every Building card is a building; so is an
+	// Economy-typed card whose ACTOR is an ABuilding — currently only Deep Mine (its
+	// row is CardType Economy for the §8 raidable-economy semantics, but ADeepMine
+	// derives ABuilding). The set is the editable BuildingEconomyCardIDs UPROPERTY
+	// (not a hardcoded CardID), so a future Economy-building needs no code change
+	// (TASK-057 routing carry-forward).
+	if (CardType == ECardType::Building)
+	{
+		return true;
+	}
+	return CardType == ECardType::Economy && BuildingEconomyCardIDs.Contains(CardID);
+}
+
+void ASiegePlayerController::ResolveInstantPlay(int32 Slot, FName CardID, const FCardRow& Row, ASiegePlayerState& SiegeState)
+{
+	// INSTANT resolution (GDD §3.5/§3.10/§4, TASK-059): HeroUpgrade and Utility cards
+	// resolve IMMEDIATELY — NO placement step. Affordability was already gated by the
+	// CanAfford pre-check in PlayHandSlot (no gold moved). The card leaves the hand
+	// (ConfirmPlayFromHand → redraw) and gold is spent ONLY when the effect actually
+	// lands — every refusal path below moves NO gold (§3.0 full refund).
+	if (Row.CardType == ECardType::HeroUpgrade)
+	{
+		AHeroCharacter* Hero = Cast<AHeroCharacter>(GetPawn());
+		if (!Hero)
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("ASiegePlayerController '%s': hero upgrade '%s' refused — no hero pawn to upgrade (no gold spent)."),
+				*GetNameSafe(this), *CardID.ToString());
+			RefuseCardPlay(CardID, NSLOCTEXT("Siegebound", "CardRefused_NoHero", "Hero unavailable"));
+			return;
+		}
+
+		// Apply FIRST — the result decides refund (TASK-058 contract): there is no
+		// RemoveUpgrade, so we MUST know the result before spending. Spend + draw only
+		// on Applied; RefusedAtMaxStacks / RefusedInvalidCard refuse with NO spend.
+		const EHeroUpgradeResult Result = Hero->ApplyUpgrade(CardID);
+		switch (Result)
+		{
+		case EHeroUpgradeResult::Applied:
+			// Gold cannot fail here (CanAfford held in the SAME synchronous call stack;
+			// nothing spent in between, income only adds). A false return would mean the
+			// upgrade was granted without payment — logged as a hard-invariant tripwire.
+			if (!SiegeState.SpendGold(Row.Cost))
+			{
+				UE_LOG(LogGitClaudeUnrealTest, Error,
+					TEXT("ASiegePlayerController '%s': SpendGold(%d) failed AFTER ApplyUpgrade('%s') returned Applied — upgrade granted without payment (should be unreachable; CanAfford held at entry)."),
+					*GetNameSafe(this), Row.Cost, *CardID.ToString());
+			}
+			ConfirmInstantDraw(Slot, CardID);
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("ASiegePlayerController '%s': played hero upgrade '%s' for %d gold — stack applied, replacement drawn (GDD §3.10)."),
+				*GetNameSafe(this), *CardID.ToString(), Row.Cost);
+			break;
+
+		case EHeroUpgradeResult::RefusedAtMaxStacks:
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("ASiegePlayerController '%s': hero upgrade '%s' refused — already at max stacks (no gold spent, §3.10 full refund)."),
+				*GetNameSafe(this), *CardID.ToString());
+			RefuseCardPlay(CardID, FText::Format(
+				NSLOCTEXT("Siegebound", "CardRefused_MaxStacks", "{0} at max stacks"),
+				Row.DisplayName.IsEmpty() ? FText::FromName(CardID) : FText::FromString(Row.DisplayName)));
+			break;
+
+		case EHeroUpgradeResult::RefusedInvalidCard:
+		default:
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("ASiegePlayerController '%s': hero upgrade '%s' refused — ApplyUpgrade could not resolve the card/stack cap (no gold spent)."),
+				*GetNameSafe(this), *CardID.ToString());
+			RefuseCardPlay(CardID, NSLOCTEXT("Siegebound", "CardRefused_UpgradeInvalid", "Upgrade unavailable"));
+			break;
+		}
+		return;
+	}
+
+	// Utility Instant (GDD §4). Masons repairs the friendly castle over time; any
+	// other Utility CardID has no Instant effect yet and is refused with no gold moved.
+	if (CardID == MasonsCardID)
+	{
+		// pre-check (§3.5 order): a living friendly castle to repair. None → refuse,
+		// no spend (net-zero). Friendly team mirrors the confirm-path team resolution.
+		const AHeroCharacter* Hero = Cast<AHeroCharacter>(GetPawn());
+		const ETeamId FriendlyTeam = IsValid(Hero) ? Hero->GetTeamId() : ETeamId::Blue;
+		ACastle* FriendlyCastle = FindFriendlyCastle(FriendlyTeam);
+		if (!FriendlyCastle)
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("ASiegePlayerController '%s': Masons refused — no living friendly (%s) castle to repair (no gold spent)."),
+				*GetNameSafe(this), FriendlyTeam == ETeamId::Blue ? TEXT("Blue") : TEXT("Red"));
+			RefuseCardPlay(CardID, NSLOCTEXT("Siegebound", "CardRefused_NoCastle", "No castle to repair"));
+			return;
+		}
+
+		// spend, then apply the effect, then draw (spec order). SpendGold cannot fail
+		// after the same-stack CanAfford pre-check — the tripwire covers the invariant.
+		if (!SiegeState.SpendGold(Row.Cost))
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Error,
+				TEXT("ASiegePlayerController '%s': SpendGold(%d) failed for Masons AFTER the CanAfford pre-check — no heal, no draw (should be unreachable)."),
+				*GetNameSafe(this), Row.Cost);
+			RefuseCardPlay(CardID, NSLOCTEXT("Siegebound", "CardRefused_CantAfford", "Not enough gold"));
+			return;
+		}
+
+		FriendlyCastle->HealOverTime(MasonsHealAmount, MasonsHealDuration);
+		ConfirmInstantDraw(Slot, CardID);
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': played Masons for %d gold — repairing castle '%s' %.0f HP over %.0fs, replacement drawn (GDD §4)."),
+			*GetNameSafe(this), Row.Cost, *GetNameSafe(FriendlyCastle), MasonsHealAmount, MasonsHealDuration);
+		return;
+	}
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASiegePlayerController '%s': Utility card '%s' refused — no Instant effect implemented for it (no gold spent)."),
+		*GetNameSafe(this), *CardID.ToString());
+	RefuseCardPlay(CardID, NSLOCTEXT("Siegebound", "CardRefused_UtilityUnknown", "Card not available"));
+}
+
+void ASiegePlayerController::ConfirmInstantDraw(int32 Slot, FName CardID)
+{
+	// Instant plays leave the hand at RESOLUTION (there is no placement CONFIRM step):
+	// move the slot to discard and redraw its replacement (§3.4). Null-safe; a false
+	// return is a regression tripwire — the slot was validated non-empty in
+	// PlayHandSlot and nothing mutated the hand since (instants are fully synchronous).
+	if (!DeckComponent)
+	{
+		return;
+	}
+	if (!DeckComponent->ConfirmPlayFromHand(Slot))
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Error,
+			TEXT("ASiegePlayerController '%s': ConfirmPlayFromHand(%d) refused for instant '%s' — hand mutated during a synchronous instant (should be impossible)."),
+			*GetNameSafe(this), Slot, *CardID.ToString());
+	}
+}
+
+ACastle* ASiegePlayerController::FindFriendlyCastle(ETeamId FriendlyTeam) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	// The first living (non-destroyed) castle on the friendly team (M1 is one castle
+	// per team). A destroyed friendly castle means that side already lost, so the
+	// match has ended and this play is gated out upstream — the !IsCastleDestroyed
+	// guard is belt-and-braces.
+	for (TActorIterator<ACastle> It(World); It; ++It)
+	{
+		ACastle* Castle = *It;
+		if (IsValid(Castle) && Castle->GetTeamId() == FriendlyTeam && !Castle->IsCastleDestroyed())
+		{
+			return Castle;
+		}
+	}
+	return nullptr;
+}
+
+TArray<ASummonedUnit*> ASiegePlayerController::SpawnUnitSwarm(
+	UWorld* World, UClass* UnitClass, FName CardID, ETeamId Team,
+	AActor* SpawnOwner, APawn* SpawnInstigator, const FVector& Center, int32 Count, float Radius)
+{
+	TArray<ASummonedUnit*> Spawned;
+	if (!World || !UnitClass)
+	{
+		return Spawned;
+	}
+
+	// One shared capsule-lift for the whole group — every copy is the same class
+	// (mirrors the M1/M2 single-unit lift so Count<=1 stays byte-for-byte).
+	float CapsuleHalfHeight = SiegeSpawn::DefaultCapsuleHalfHeight;
+	if (const ASummonedUnit* UnitCDO = UnitClass->GetDefaultObject<ASummonedUnit>())
+	{
+		if (const UCapsuleComponent* Capsule = UnitCDO->GetCapsuleComponent())
+		{
+			CapsuleHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+		}
+	}
+	const float LiftZ = CapsuleHalfHeight + SiegeSpawn::SpawnGroundClearance;
+
+	const int32 SpawnCount = FMath::Max(1, Count);
+
+	// Swarm (Count > 1, GDD §3.0 — Militia Mob = 4): arrange the copies evenly on a
+	// circle of Radius around Center and navmesh-project EACH ring point so no copy
+	// spawns off the walkable surface (falling back to the raw ring point when there
+	// is no nav data / the projection misses). Count <= 1 is the single-unit case:
+	// spawn AT Center (the confirm path already validated it on the navmesh — no
+	// reprojection, so the existing single-unit spawn is unchanged).
+	UNavigationSystemV1* NavSys = (SpawnCount > 1) ? UNavigationSystemV1::GetCurrent(World) : nullptr;
+	const float ExtentXY = FMath::Max(Radius * 0.5f, 100.f);
+	const FVector RingProjectExtent(ExtentXY, ExtentXY, 200.f);
+
+	for (int32 Index = 0; Index < SpawnCount; ++Index)
+	{
+		FVector GroundPoint = Center;
+		if (SpawnCount > 1)
+		{
+			const float Angle = (2.f * PI * Index) / SpawnCount;
+			GroundPoint = Center + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
+			if (NavSys)
+			{
+				FNavLocation Projected;
+				if (NavSys->ProjectPointToNavigation(GroundPoint, Projected, RingProjectExtent))
+				{
+					GroundPoint = Projected.Location;
+				}
+			}
+		}
+
+		// deferred spawn (TASK-004 preferred path) so InitUnit binds the card BEFORE
+		// BeginPlay reads DT_Cards — never a mis-teamed first state check.
+		const FTransform SpawnTransform(FRotator::ZeroRotator, GroundPoint + FVector(0.f, 0.f, LiftZ));
+		ASummonedUnit* Unit = World->SpawnActorDeferred<ASummonedUnit>(
+			UnitClass,
+			SpawnTransform,
+			SpawnOwner,
+			SpawnInstigator,
+			ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+		if (!Unit)
+		{
+			continue;
+		}
+		Unit->InitUnit(Team, CardID);
+		Unit->FinishSpawning(SpawnTransform);
+		Spawned.Add(Unit);
+	}
+
+	return Spawned;
 }
 
 UStaticMesh* ASiegePlayerController::ResolveGhostMesh(FName CardID) const

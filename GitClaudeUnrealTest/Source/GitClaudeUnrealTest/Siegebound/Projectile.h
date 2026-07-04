@@ -36,6 +36,12 @@ class UStaticMeshComponent;
  *    castle scales it to 50% on ITS side, TASK-026/M2 ruling), then destroys
  *    itself (§3.0 "destroyed on impact"). A same-team target is never damaged
  *    (belt-and-braces §3.0 gate over the shooter's own enemy-only acquisition).
+ *  - AoE variant (TASK-056, Bomb Tower): when InitProjectile is armed with
+ *    AoERadius > 0, the impact resolves as a RADIAL blast at the impact point
+ *    (FSiegeCombatStatics::ApplyRadialDamage — enemies within the radius only,
+ *    never a friendly, TASK-055) INSTEAD of the single-target hit, then destroys
+ *    itself and spawns the same NS_Damage donor. AoERadius == 0 (the default, and
+ *    every M2/M3 Archer/Longbowman/tower shot) is the UNCHANGED single-target path.
  *  - Team attribution for receiver-side no-friendly-fire checks (TASK-002
  *    chain) is INSTIGATOR-plumbed: ApplyDamage passes GetInstigatorController()
  *    as EventInstigator and this projectile as DamageCauser, and the receivers'
@@ -77,9 +83,15 @@ public:
 	 *  re-initialization is ignored with a warning: fire a NEW projectile per
 	 *  shot. A null/dead target is tolerated (warned): the projectile expires
 	 *  harmlessly on its first tick.
+	 *
+	 *  InAoERadius (TASK-056, default 0): > 0 makes the impact a RADIAL blast at
+	 *  the impact point (Bomb Tower — row AoERadius 250) via ApplyRadialDamage
+	 *  INSTEAD of the single-target hit; 0 (every M2/M3 shot — Archer, Longbowman,
+	 *  Arrow/Ballista Tower) keeps the single-target behavior byte-for-byte. The
+	 *  defaulted param leaves all existing 4-arg callers unchanged.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Projectile")
-	void InitProjectile(ETeamId InTeam, AActor* InTarget, float InDamage, TSubclassOf<UDamageType> InDamageTypeClass);
+	void InitProjectile(ETeamId InTeam, AActor* InTarget, float InDamage, TSubclassOf<UDamageType> InDamageTypeClass, float InAoERadius = 0.f);
 
 	/** Team this projectile fights for (set by InitProjectile). NOT ITeamAgent by design — see the class comment. */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Projectile")
@@ -184,6 +196,17 @@ private:
 	/** Damage-type class tagged onto the hit (USiegeDamageType_Projectile from ranged attackers; castle-side scaling reads it). */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Projectile", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<UDamageType> DamageTypeClass;
+
+	/**
+	 *  Splash radius for the impact (TASK-056; Bomb Tower row AoERadius 250). > 0
+	 *  turns the impact into a RADIAL blast at the impact point (FSiegeCombatStatics::
+	 *  ApplyRadialDamage — enemies within the radius only, no friendly fire) INSTEAD
+	 *  of a single-target hit; 0 (the default, and every M2/M3 shot) keeps the
+	 *  unchanged single-target behavior. Set by InitProjectile from the shooter's
+	 *  card row — this actor never reads DT_Cards.
+	 */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Projectile", meta = (AllowPrivateAccess = "true"))
+	float AoERadius = 0.f;
 
 	/**
 	 *  Hard cache of ImpactEffect, resolved ONCE at BeginPlay (TASK-020

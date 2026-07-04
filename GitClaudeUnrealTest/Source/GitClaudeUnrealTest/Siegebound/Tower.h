@@ -36,6 +36,16 @@
  *    attribute, so receivers resolve tower hits as unattributable-and-apply
  *    (their documented contract). Owner is set on the projectile; Instigator
  *    is deliberately left unset (TASK-026 handoff, non-pawn shooter form).
+ *  - Row-driven variants (TASK-056, NO new class): the acquire/idle loop above
+ *    is shared; two extra row cells re-shape it. A row with AoERadius > 0
+ *    (BombTower — 180 HP, 25 damage, 800 range, 2.5 s, AoERadius 250) fires an
+ *    AoE projectile that blasts every enemy within the radius at the impact point
+ *    (anti-swarm splash, §3.7). A row with MinRange > 0 (BallistaTower — 120 HP,
+ *    45 damage, 1400 range, 3.0 s, MinRange 300) acquires the nearest enemy
+ *    WITHIN Range but OUTSIDE the MinRange blind spot (§4); a closer target is
+ *    ignored and the loop re-scans next cadence. Both stay plain ATower, so
+ *    BP_Building_BombTower/BallistaTower parent ATower directly (TASK-063).
+ *    ArrowTower (AoERadius 0, MinRange 0) is behavior-unchanged.
  */
 UCLASS()
 class GITCLAUDEUNREALTEST_API ATower : public ABuilding
@@ -71,10 +81,12 @@ private:
 	void ScanAndFire();
 
 	/**
-	 *  Nearest alive enemy unit-or-hero within Range (GDD §3.7). Positive class
-	 *  gate (ASummonedUnit incl. subclasses, AHeroCharacter) — castles,
-	 *  buildings, and future non-pawn ITeamAgent types can never be acquired.
-	 *  Returns nullptr when nothing valid is in range.
+	 *  Nearest alive enemy unit-or-hero within Range (GDD §3.7) and — when
+	 *  AttackMinRange > 0 (BallistaTower, TASK-056) — OUTSIDE the MinRange blind
+	 *  spot: a target closer than MinRange is ignored (§4). Positive class gate
+	 *  (ASummonedUnit incl. subclasses, AHeroCharacter) — castles, buildings, and
+	 *  future non-pawn ITeamAgent types can never be acquired. Returns nullptr when
+	 *  nothing valid is in the [MinRange, Range] ring.
 	 */
 	AActor* AcquireTarget() const;
 
@@ -92,6 +104,25 @@ private:
 	/** Seconds between shots, from the card row (ArrowTower: 1.5). <= 0 means the loop was never armed. */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Tower", meta = (AllowPrivateAccess = "true"))
 	float AttackCadence = 0.f;
+
+	/**
+	 *  Splash radius, from the card row (TASK-056; BombTower 250, 0 = single
+	 *  target). > 0 makes each shot an AoE projectile that blasts every enemy
+	 *  within the radius at the impact point (FSiegeCombatStatics::ApplyRadialDamage,
+	 *  carried on the projectile via InitProjectile); 0 (ArrowTower/BallistaTower)
+	 *  fires the unchanged single-target projectile.
+	 */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Tower", meta = (AllowPrivateAccess = "true"))
+	float AttackAoERadius = 0.f;
+
+	/**
+	 *  Inner blind-spot radius, from the card row (TASK-056; BallistaTower 300,
+	 *  0 = none). When > 0, AcquireTarget ignores any enemy CLOSER than this — the
+	 *  tower only hits targets in the [MinRange, Range] ring (§4). 0
+	 *  (ArrowTower/BombTower) disables the check, so acquisition is unchanged.
+	 */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Tower", meta = (AllowPrivateAccess = "true"))
+	float AttackMinRange = 0.f;
 
 	/** Drives ScanAndFire every AttackCadence seconds, armed once in OnStatsLoaded (Cadence > 0 rows only). */
 	FTimerHandle FireTimerHandle;

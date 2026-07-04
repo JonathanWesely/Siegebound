@@ -13,6 +13,7 @@
 #include "Materials/MaterialInterface.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
+#include "Siegebound/SiegeCombatStatics.h"
 
 AProjectile::AProjectile()
 {
@@ -82,7 +83,7 @@ void AProjectile::BeginPlay()
 	}
 }
 
-void AProjectile::InitProjectile(ETeamId InTeam, AActor* InTarget, float InDamage, TSubclassOf<UDamageType> InDamageTypeClass)
+void AProjectile::InitProjectile(ETeamId InTeam, AActor* InTarget, float InDamage, TSubclassOf<UDamageType> InDamageTypeClass, float InAoERadius)
 {
 	// one shot, one projectile: re-arming a live projectile is a shooter bug
 	if (bInitialized)
@@ -96,6 +97,11 @@ void AProjectile::InitProjectile(ETeamId InTeam, AActor* InTarget, float InDamag
 
 	Team = InTeam;
 	Damage = InDamage;
+
+	// TASK-056: > 0 makes the impact a radial blast (Bomb Tower row AoERadius 250);
+	// 0 (the default, and every M2/M3 shot) keeps the single-target path exactly
+	// as today. A stray negative is clamped to 0 (treated as single-target).
+	AoERadius = FMath::Max(InAoERadius, 0.f);
 
 	// null damage type: fall back to base UDamageType EXPLICITLY (castles read
 	// untyped as 100%, TASK-026 castle scaling) rather than relying on
@@ -231,6 +237,34 @@ void AProjectile::Tick(float DeltaSeconds)
 
 void AProjectile::HandleImpact(const FVector& ImpactPoint)
 {
+	// TASK-056 AoE branch (Bomb Tower): AoERadius > 0 resolves the impact as a
+	// RADIAL blast at the impact point INSTEAD of a single-target hit. The
+	// friendly-fire authority is ApplyRadialDamage's own Team filter (TASK-055) —
+	// enemies within the radius only, never a friendly — so the single-target
+	// same-team gate below is not needed here (and the homed Target is not used
+	// for damage; the blast is location-based). Each caught enemy is routed
+	// through its own TakeDamage, so per-fortification scaling still applies.
+	// This branch is only ever reached when AoERadius > 0; the single-target path
+	// below is UNCHANGED (byte-for-byte) for every AoERadius == 0 shot.
+	if (AoERadius > 0.f)
+	{
+		FSiegeCombatStatics::ApplyRadialDamage(
+			GetWorld(), GetInstigatorController(), Team, ImpactPoint, AoERadius, Damage, DamageTypeClass);
+
+		// §3.8/§3.7 impact telegraph: the existing NS_Damage donor at the blast
+		// point. Unconditional (unlike single-target's damage-landed gate) — a
+		// blast is a blast even when it catches nothing, and ApplyRadialDamage
+		// returns no total to gate on. Missing/cleared effect = no VFX, never a crash.
+		if (CachedImpactEffect)
+		{
+			UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), CachedImpactEffect, ImpactPoint);
+		}
+
+		// §3.0: destroyed on impact, same as the single-target path.
+		Destroy();
+		return;
+	}
+
 	// §3.0 no friendly fire, belt-and-braces: shooters only fire at enemies
 	// (TASK-027/028 acquisition) and receiver-side checks ignore same-team hits
 	// where the instigator chain resolves — but a projectile must never damage a

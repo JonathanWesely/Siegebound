@@ -117,12 +117,45 @@ public:
 	 *  Gold added per income tick: base GoldPerTick (2), doubled while the
 	 *  ASiegeGameState overtime latch is active (§3.2 — the latch is read LIVE
 	 *  every call, never cached, so the rate cannot desync from the shared
-	 *  clock), plus MinerGoldPerTick (1) per ARRIVED miner (§3.3). With the
-	 *  default 1.0 s tick this is gold per second. This is exactly what the
-	 *  next income tick will add — HandleGoldTick calls this same function.
+	 *  clock), plus MinerGoldPerTick (1) per ARRIVED miner (§3.3), plus the flat
+	 *  non-miner income (§8 Deep Mine, TASK-057). With the default 1.0 s tick
+	 *  this is gold per second. This is exactly what the next income tick will
+	 *  add — HandleGoldTick calls this same function.
 	 */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Gold")
 	int32 GetGoldRate() const;
+
+	// --- Flat non-miner income (GDD §8 Deep Mine, TASK-057) ---
+	//
+	// A SECOND, SEPARATE income accumulator that composes into GetGoldRate()
+	// additively — exactly like arrived-miner income — but is NOT a miner: it
+	// never touches AliveMinerCount, MaxActiveMiners, CanAddMiner, or the miner
+	// delegates, so the M2/M3 miner economy + cap are byte-for-byte unchanged.
+	// ADeepMine registers +DeepMineIncome here on placement and removes it on
+	// death (§8 raidable economy). Deliberately GENERIC (an int32 gold-per-tick
+	// delta) so any future flat-income source can reuse it (TASK-059/060).
+
+	/**
+	 *  Adds GoldPerTickDelta to the flat (non-miner) income accumulator, then
+	 *  broadcasts OnGoldRateChanged if the composed rate actually changed.
+	 *  ADeepMine calls AddIncome(DeepMineIncome) at BeginPlay — the §8 +2/s
+	 *  starts the instant the mine is placed (no walk, unlike a miner). A
+	 *  non-positive delta is refused + logged (register/unregister must stay
+	 *  symmetric and positive). No miner count/cap interaction.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Gold")
+	void AddIncome(int32 GoldPerTickDelta);
+
+	/**
+	 *  Removes GoldPerTickDelta from the flat (non-miner) income accumulator,
+	 *  then broadcasts OnGoldRateChanged if the composed rate actually changed.
+	 *  ADeepMine calls RemoveIncome(DeepMineIncome) on death (§8 raidable). A
+	 *  non-positive delta, or an amount that would drive the accumulator below
+	 *  0, is refused + logged (a caller removed more than it added). No miner
+	 *  count/cap interaction.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Gold")
+	void RemoveIncome(int32 GoldPerTickDelta);
 
 	/**
 	 *  +1 miner income (§3.3): AMinerUnit calls this exactly once when it
@@ -271,6 +304,17 @@ private:
 	/** Miners whose +1/s income is active (arrived at the node and still alive, §3.3). Never legitimately exceeds AliveMinerCount. */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Miners", meta = (AllowPrivateAccess = "true"))
 	int32 MinerIncomeCount = 0;
+
+	/**
+	 *  Flat non-miner income in gold per tick (§8 Deep Mine, TASK-057): the sum
+	 *  of every AddIncome minus RemoveIncome. SEPARATE from the miner counts and
+	 *  the MaxActiveMiners cap — composed into GetGoldRate() additively and
+	 *  zeroed by ResetEconomy (Play Again). Never doubled by overtime (like
+	 *  miner income — only the BASE rate doubles at 7:00, §3.2). Mutated only by
+	 *  AddIncome/RemoveIncome and ResetEconomy.
+	 */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Gold", meta = (AllowPrivateAccess = "true"))
+	int32 FlatIncomePerTick = 0;
 
 	/** Last composed rate broadcast through OnGoldRateChanged (change detection; seeded in BeginPlay). */
 	int32 CachedGoldRate = 0;

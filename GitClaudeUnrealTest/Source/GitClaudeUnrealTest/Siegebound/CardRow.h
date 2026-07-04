@@ -95,4 +95,42 @@ struct GITCLAUDEUNREALTEST_API FCardRow : public FTableRowBase
 	/** True if the card's attack is delivered by a homing projectile instead of melee contact (GDD section 3.0) */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Stats")
 	bool bRanged = false;
+
+	// --- M4 Set II keyword / behavior columns (GDD section 3.0/section 4). Sparse: defaults leave core cards unchanged. ---
+
+	/** Charge keyword: the first attack after >=2s of uninterrupted movement deals 2x (GDD 3.0). Cavalry. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Keywords")
+	bool bCharge = false;
+
+	/** Slayer keyword: 2x damage vs targets whose MaxHP >= 150 (GDD 3.0). Pikeman. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Keywords")
+	bool bSlayer = false;
+
+	/** Suicide keyword: the unit explodes on contact/death, dealing Damage as AoE over AoERadius, then dies (GDD 4). Sapper. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Keywords")
+	bool bSuicide = false;
+
+	/** Swarm keyword: if >0, playing the card spawns this many copies in a 300-unit circle for one cost (GDD 3.0). Militia Mob = 4. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Keywords")
+	int32 SwarmCount = 0;
+
+	/** Splash radius for area attackers; 0 = single target (GDD 4). Sapper 250, Bomb Tower 250. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Stats")
+	float AoERadius = 0.0f;
+
+	/** Inner blind-spot radius; the actor cannot fire at targets closer than this (GDD 4). Ballista Tower 300. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Stats")
+	float MinRange = 0.0f;
+
+	/** Spawner building: CardID spawned every SpawnInterval seconds (GDD 4). Barracks = Footman. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spawner")
+	FName SpawnCardID = NAME_None;
+
+	/** Spawner building: seconds between spawns (GDD 4). Barracks = 8. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spawner")
+	float SpawnInterval = 0.0f;
+
+	/** Spawner building: self-destruct after this many seconds (GDD 4). Barracks = 60. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spawner")
+	float Lifetime = 0.0f;
 };

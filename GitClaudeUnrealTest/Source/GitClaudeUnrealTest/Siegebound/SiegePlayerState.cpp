@@ -133,7 +133,59 @@ int32 ASiegePlayerState::GetGoldRate() const
 	const int32 BaseRate = bOvertime ? (GoldPerTick * OvertimeIncomeMultiplier) : GoldPerTick;
 
 	// GDD §3.3: +1 per miner that ARRIVED at its node; en-route miners add nothing.
-	return BaseRate + (MinerIncomeCount * MinerGoldPerTick);
+	// GDD §8: plus the flat non-miner income (Deep Mines, TASK-057) — additive
+	// and separate from the miner count/cap; not doubled by overtime (only the
+	// base doubled above), mirroring miner income.
+	return BaseRate + (MinerIncomeCount * MinerGoldPerTick) + FlatIncomePerTick;
+}
+
+void ASiegePlayerState::AddIncome(int32 GoldPerTickDelta)
+{
+	if (GoldPerTickDelta <= 0)
+	{
+		// register/unregister must stay symmetric and positive (ADeepMine passes
+		// its DeepMineIncome UPROPERTY, GDD §8 = 2). A 0/negative amount is a
+		// caller bug, never a legitimate flat-income registration.
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("[%s] AddIncome(%d) refused — flat income deltas must be positive (TASK-057 §8 Deep Mine)."),
+			*GetNameSafe(this), GoldPerTickDelta);
+		return;
+	}
+
+	FlatIncomePerTick += GoldPerTickDelta;
+
+	// A positive delta always raises the composed rate — broadcast on the actual
+	// change (CONVENTIONS delegate law). Separate from the miner path entirely:
+	// GetAliveMinerCount / CanAddMiner / the miner delegates are never touched.
+	RefreshGoldRate(/*bForceBroadcast*/ false);
+}
+
+void ASiegePlayerState::RemoveIncome(int32 GoldPerTickDelta)
+{
+	if (GoldPerTickDelta <= 0)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("[%s] RemoveIncome(%d) refused — flat income deltas must be positive (TASK-057 §8 Deep Mine)."),
+			*GetNameSafe(this), GoldPerTickDelta);
+		return;
+	}
+
+	if (GoldPerTickDelta > FlatIncomePerTick)
+	{
+		// A caller removed more than was ever added (symmetry broken). Clamp to 0
+		// so the rate can never go below base, and log — the ADeepMine contract is
+		// AddIncome once at BeginPlay, RemoveIncome once on death.
+		UE_LOG(LogGitClaudeUnrealTest, Error,
+			TEXT("[%s] RemoveIncome(%d) exceeds the flat income accumulator (%d) — clamped to 0 (a Deep Mine unregistered more than it registered; TASK-057)."),
+			*GetNameSafe(this), GoldPerTickDelta, FlatIncomePerTick);
+		FlatIncomePerTick = 0;
+	}
+	else
+	{
+		FlatIncomePerTick -= GoldPerTickDelta;
+	}
+
+	RefreshGoldRate(/*bForceBroadcast*/ false);
 }
 
 void ASiegePlayerState::AddMinerIncome()
@@ -223,6 +275,13 @@ void ASiegePlayerState::ResetEconomy()
 {
 	AliveMinerCount = 0;
 	MinerIncomeCount = 0;
+
+	// §8 Deep Mine income cleared too (TASK-057): Play Again destroys every
+	// ABuilding first (game mode step 2b → ADeepMine::EndPlay → RemoveIncome),
+	// so this is normally already 0 — zeroing it unconditionally here is the
+	// same belt-and-braces as the miner counts above, and covers a mid-match
+	// reset where a mine slipped the destroy sweep.
+	FlatIncomePerTick = 0;
 
 	// Reset-path broadcasts (CONVENTIONS delegate law): unconditional, so HUD
 	// listeners re-seed even when the values were already at base. The game

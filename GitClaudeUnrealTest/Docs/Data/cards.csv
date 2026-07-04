@@ -1,7 +1,23 @@
-,DisplayName,CardType,Cost,MaxCopies,HP,Damage,Range,Cadence,Speed,Profile,Notes,DeckCount,bRanged
-Footman,Footman,Unit,3,12,80,12,120,1.0,400,Standard,Basic melee line unit,12,false
-Archer,Archer,Unit,4,10,45,10,700,1.2,350,Standard,Ranged line unit,10,true
-Knight,Knight,Unit,6,6,200,15,120,1.2,300,Standard,Heavy melee tank,6,false
-Miner,Miner,Economy,8,4,30,0,0,0,350,None,Non-combat economy unit; +1 gold/s on arrival (GDD 3.3),4,false
-ArrowTower,Arrow Tower,Building,5,8,150,15,900,1.5,0,None,Anti-unit tower,8,true
-Wall,Wall,Building,4,10,300,0,0,0,0,None,Blocks unit pathing,10,false
+,DisplayName,CardType,Cost,MaxCopies,HP,Damage,Range,Cadence,Speed,Profile,Notes,DeckCount,bRanged,bCharge,bSlayer,bSuicide,SwarmCount,AoERadius,MinRange,SpawnCardID,SpawnInterval,Lifetime
+Footman,Footman,Unit,3,12,80,12,120,1.0,400,Standard,Basic melee line unit,6,false,false,false,false,0,0,0,None,0,0
+Archer,Archer,Unit,4,10,45,10,700,1.2,350,Standard,Ranged line unit,4,true,false,false,false,0,0,0,None,0,0
+Knight,Knight,Unit,6,6,200,15,120,1.2,300,Standard,Heavy melee tank,2,false,false,false,false,0,0,0,None,0,0
+Miner,Miner,Economy,8,4,30,0,0,0,350,None,Non-combat economy unit; +1 gold/s on arrival (GDD 3.3),3,false,false,false,false,0,0,0,None,0,0
+ArrowTower,Arrow Tower,Building,5,8,150,15,900,1.5,0,None,Anti-unit tower,2,true,false,false,false,0,0,0,None,0,0
+Wall,Wall,Building,4,10,300,0,0,0,0,None,Blocks unit pathing,3,false,false,false,false,0,0,0,None,0,0
+MilitiaMob,Militia Mob,Unit,5,6,25,6,120,1.0,400,Standard,Swarm: spawns 4 copies for one cost (GDD 3.0),2,false,false,false,false,4,0,0,None,0,0
+Pikeman,Pikeman,Unit,5,6,100,30,120,1.5,350,Standard,Slayer: 2x damage vs MaxHP >= 150 (GDD 3.0),2,false,false,true,false,0,0,0,None,0,0
+Sapper,Sapper,Unit,5,4,60,80,120,1.0,500,Siege,Siege suicide: explodes for 80 AoE in 250 then dies (GDD 4),2,false,false,false,true,0,250,0,None,0,0
+Cavalry,Cavalry,Unit,7,4,140,20,120,1.0,600,Standard,Charge: first attack after 2s movement deals 2x (GDD 3.0),2,false,true,false,false,0,0,0,None,0,0
+Longbowman,Longbowman,Unit,6,4,70,18,1200,1.5,300,Standard,Long-range ranged unit (GDD 4),2,true,false,false,false,0,0,0,None,0,0
+Cleric,Cleric,Unit,6,3,90,8,400,1.0,350,Support,Support: heals nearest damaged friendly 8 HP/s in 400 no attack (GDD 3.8),2,false,false,false,false,0,0,0,None,0,0
+Ogre,Ogre,Unit,12,2,500,35,120,1.5,250,Siege,Siege tank: ignores units targets buildings then castle (GDD 3.8),2,false,false,false,false,0,0,0,None,0,0
+BombTower,Bomb Tower,Building,8,4,180,25,800,2.5,0,None,AoE tower: 25 damage in 250 splash every 2.5s (GDD 3.7),2,true,false,false,false,0,250,0,None,0,0
+BallistaTower,Ballista Tower,Building,7,4,120,45,1400,3.0,0,None,Long-range tower: 45 dmg blind spot inside 300 (GDD 4),2,true,false,false,false,0,0,300,None,0,0
+Barracks,Barracks,Building,10,3,250,0,0,0,0,None,Spawner: spawns Footman every 8s self-destructs at 60s (GDD 4),2,false,false,false,false,0,0,0,Footman,8,60
+DeepMine,Deep Mine,Economy,15,2,200,0,0,0,0,None,Raidable economy: +2 gold/s UPROPERTY on ADeepMine (GDD 8),2,false,false,false,false,0,0,0,None,0,0
+Masons,Masons,Utility,8,3,0,0,0,0,0,None,Instant: repairs 300 HP over 10s UPROPERTY on effect (GDD 4),2,false,false,false,false,0,0,0,None,0,0
+SharpenedBlade,Sharpened Blade,HeroUpgrade,6,2,0,0,0,0,0,None,Hero upgrade: +10 melee damage per stack cap 2 (GDD 3.10),2,false,false,false,false,0,0,0,None,0,0
+PlateArmor,Plate Armor,HeroUpgrade,6,2,0,0,0,0,0,None,Hero upgrade: +100 max HP per stack cap 2 heals 100 (GDD 3.10),2,false,false,false,false,0,0,0,None,0,0
+SwiftBoots,Swift Boots,HeroUpgrade,5,1,0,0,0,0,0,None,Hero upgrade: +25% move speed cap 1 (GDD 3.10),1,false,false,false,false,0,0,0,None,0,0
+WarBanner,War Banner,HeroUpgrade,8,1,0,0,0,0,0,None,Hero upgrade: aura 600 +20% friendly unit damage cap 1 (GDD 4),1,false,false,false,false,0,0,0,None,0,0

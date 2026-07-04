@@ -2,7 +2,6 @@
 
 #include "Siegebound/SiegeBotController.h"
 
-#include "Components/CapsuleComponent.h"
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -17,8 +16,8 @@
 #include "Siegebound/GoldNode.h"
 #include "Siegebound/HeroCharacter.h"
 #include "Siegebound/SiegeGameMode.h"
+#include "Siegebound/SiegePlayerController.h"
 #include "Siegebound/SiegePlayerState.h"
-#include "Siegebound/SiegeSpawnConstants.h"
 #include "Siegebound/SummonedUnit.h"
 
 DEFINE_LOG_CATEGORY(LogSiegeBot);
@@ -40,9 +39,15 @@ namespace
 	}
 
 	/**
-	 *  Card types the bot can only cycle out (forward-compat, GDD §4): the bot
-	 *  has no hero (HeroUpgrade), and neither spells (M5) nor instants (M4/Utility)
-	 *  are implemented. Unit/Building/Economy are all playable and never counted here.
+	 *  Card types the bot can NEVER play (GDD §4 M4 extension — the rule-4 discard
+	 *  set): the bot controls no hero (HeroUpgrade), and neither spells (M5) nor
+	 *  Instants (Utility/Masons) are actionable by an AI with no hero. These are the
+	 *  ONLY cards rule 4 cycles. Unit/Building/Economy are playable TYPES and are never
+	 *  discarded here — an UNAFFORDABLE Unit/Building/Economy is classified "unplayable
+	 *  THIS tick" by the PLAY rules (rules 1-3 only ever select an affordable card — the
+	 *  never-play-unaffordable invariant), but it is deliberately NOT a discard
+	 *  candidate: the bot BANKS toward it (e.g. an Ogre needs 12 gold, §4), so cycling
+	 *  it away would break the "growing Set II waves incl. Ogres" acceptance.
 	 */
 	bool IsUnplayableByBot(ECardType Type)
 	{
@@ -111,6 +116,24 @@ namespace
 		for (int32 Index = 0; Index < HandCards.Num(); ++Index)
 		{
 			if (HandCards[Index].CardID == MinerRowID && HandCards[Index].Row->Cost <= Gold)
+			{
+				return Index;
+			}
+		}
+		return INDEX_NONE;
+	}
+
+	/**
+	 *  First AFFORDABLE Economy card that is BUILDING-routed (Deep Mine — GDD §4 M4;
+	 *  mirrors ASiegePlayerController::BuildingEconomyCardIDs / TASK-059). Index into
+	 *  HandCards, or INDEX_NONE. No miner-cap interaction — Deep Mine is not a miner.
+	 */
+	int32 FindAffordableEconomyBuildingCard(const TArray<FBotHandCard>& HandCards, int32 Gold, const TArray<FName>& BuildingEconomyIDs)
+	{
+		for (int32 Index = 0; Index < HandCards.Num(); ++Index)
+		{
+			const FBotHandCard& Card = HandCards[Index];
+			if (Card.Row->CardType == ECardType::Economy && Card.Row->Cost <= Gold && BuildingEconomyIDs.Contains(Card.CardID))
 			{
 				return Index;
 			}
@@ -315,7 +338,7 @@ void ASiegeBotController::EvaluateDecisions()
 			if (ComputeValidBotSpawnPoint(Desired, bChosenIsBuilding, SpawnPoint))
 			{
 				const int32 GoldBefore = Gold;
-				if (SpawnBotCardActor(Chosen.CardID, bChosenIsBuilding, SpawnPoint, *BotState, Chosen.Row->Cost))
+				if (SpawnBotCardActor(Chosen.CardID, bChosenIsBuilding, SpawnPoint, *BotState, Chosen.Row->Cost, Chosen.Row->SwarmCount))
 				{
 					Deck->ConfirmPlayFromHand(Chosen.Slot);
 					UE_LOG(LogSiegeBot, Log,
@@ -337,40 +360,80 @@ void ASiegeBotController::EvaluateDecisions()
 		// no AFFORDABLE defensive card → rule 1 did NOT fire; fall through
 	}
 
-	// ---- Rule 2: ECONOMY — half is clear, fewer than the miner target, affordable Miner ----
-	if (!NearestIntruder && BotState->GetAliveMinerCount() < TargetMinerCount && BotState->CanAddMiner())
+	// ---- Rule 2: ECONOMY — half is clear; a Miner (under the target + cap) or a Deep Mine ----
+	if (!NearestIntruder)
 	{
-		const int32 CardIndex = FindAffordableMinerCard(HandCards, Gold, MinerCardID);
-		if (CardIndex != INDEX_NONE)
+		// 2a) MINER — byte-for-byte with TASK-046: only while ALIVE miners are under
+		//     the target AND the §3.3 hard cap (CanAddMiner) still allows one more.
+		if (BotState->GetAliveMinerCount() < TargetMinerCount && BotState->CanAddMiner())
 		{
-			const FBotHandCard& Chosen = HandCards[CardIndex];
-
-			// Spawn just in FRONT of GoldNode_Red (toward the centerline) so the
-			// miner walks the last stretch, then activates its +1/s at the node.
-			const float ApproachSign = (BotTeam == ETeamId::Red) ? -1.f : 1.f;
-			const FVector Desired = GetGoldNodeRedLocation() + FVector(ApproachSign * MinerNodeApproachOffset, 0.f, 0.f);
-
-			FVector SpawnPoint;
-			if (ComputeValidBotSpawnPoint(Desired, /*bIsBuilding=*/ false, SpawnPoint))
+			const int32 CardIndex = FindAffordableMinerCard(HandCards, Gold, MinerCardID);
+			if (CardIndex != INDEX_NONE)
 			{
-				const int32 GoldBefore = Gold;
-				if (SpawnBotCardActor(Chosen.CardID, /*bIsBuilding=*/ false, SpawnPoint, *BotState, Chosen.Row->Cost))
+				const FBotHandCard& Chosen = HandCards[CardIndex];
+
+				// Spawn just in FRONT of GoldNode_Red (toward the centerline) so the
+				// miner walks the last stretch, then activates its +1/s at the node.
+				const float ApproachSign = (BotTeam == ETeamId::Red) ? -1.f : 1.f;
+				const FVector Desired = GetGoldNodeRedLocation() + FVector(ApproachSign * MinerNodeApproachOffset, 0.f, 0.f);
+
+				FVector SpawnPoint;
+				if (ComputeValidBotSpawnPoint(Desired, /*bIsBuilding=*/ false, SpawnPoint))
 				{
-					Deck->ConfirmPlayFromHand(Chosen.Slot);
-					UE_LOG(LogSiegeBot, Log,
-						TEXT("[Bot %s] Rule 2 (Economy): played Miner '%s' (cost %d) toward GoldNode_Red at (%.0f, %.0f, %.0f) — miners now %d/%d, gold %d->%d."),
-						*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost,
-						SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z,
-						BotState->GetAliveMinerCount(), TargetMinerCount, GoldBefore, BotState->GetGold());
+					const int32 GoldBefore = Gold;
+					if (SpawnBotCardActor(Chosen.CardID, /*bIsBuilding=*/ false, SpawnPoint, *BotState, Chosen.Row->Cost, /*SwarmCount=*/ 0))
+					{
+						Deck->ConfirmPlayFromHand(Chosen.Slot);
+						UE_LOG(LogSiegeBot, Log,
+							TEXT("[Bot %s] Rule 2 (Economy): played Miner '%s' (cost %d) toward GoldNode_Red at (%.0f, %.0f, %.0f) — miners now %d/%d, gold %d->%d."),
+							*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost,
+							SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z,
+							BotState->GetAliveMinerCount(), TargetMinerCount, GoldBefore, BotState->GetGold());
+					}
 				}
+				else
+				{
+					UE_LOG(LogGitClaudeUnrealTest, Verbose,
+						TEXT("ASiegeBotController '%s': Rule 2 wanted a Miner but found no valid spawn point this tick."),
+						*GetNameSafe(this));
+				}
+				return; // rule 2 fired (Miner)
 			}
-			else
+		}
+
+		// 2b) DEEP MINE — a building-routed economy play (§4 M4). No miner-cap
+		//     interaction (Deep Mine is not a miner): it just needs the half clear
+		//     (guaranteed by the enclosing !NearestIntruder) and an affordable Deep
+		//     Mine in hand. Spawned near GoldNode_Red, deep in the bot half, honoring
+		//     the §3.5 building clearance via ComputeValidBotSpawnPoint(bIsBuilding).
+		{
+			const int32 CardIndex = FindAffordableEconomyBuildingCard(HandCards, Gold, BuildingEconomyCardIDs);
+			if (CardIndex != INDEX_NONE)
 			{
-				UE_LOG(LogGitClaudeUnrealTest, Verbose,
-					TEXT("ASiegeBotController '%s': Rule 2 wanted a Miner but found no valid spawn point this tick."),
-					*GetNameSafe(this));
+				const FBotHandCard& Chosen = HandCards[CardIndex];
+				const FVector Desired = GetGoldNodeRedLocation();
+
+				FVector SpawnPoint;
+				if (ComputeValidBotSpawnPoint(Desired, /*bIsBuilding=*/ true, SpawnPoint))
+				{
+					const int32 GoldBefore = Gold;
+					if (SpawnBotCardActor(Chosen.CardID, /*bIsBuilding=*/ true, SpawnPoint, *BotState, Chosen.Row->Cost, /*SwarmCount=*/ 0))
+					{
+						Deck->ConfirmPlayFromHand(Chosen.Slot);
+						UE_LOG(LogSiegeBot, Log,
+							TEXT("[Bot %s] Rule 2 (Economy): played Deep Mine '%s' (cost %d) near GoldNode_Red at (%.0f, %.0f, %.0f) — gold %d->%d."),
+							*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost,
+							SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z, GoldBefore, BotState->GetGold());
+					}
+				}
+				else
+				{
+					UE_LOG(LogGitClaudeUnrealTest, Verbose,
+						TEXT("ASiegeBotController '%s': Rule 2 wanted a Deep Mine but found no valid spawn point this tick."),
+						*GetNameSafe(this));
+				}
+				return; // rule 2 fired (Deep Mine)
 			}
-			return; // rule 2 fired
 		}
 	}
 
@@ -387,7 +450,7 @@ void ASiegeBotController::EvaluateDecisions()
 			if (ComputeValidBotSpawnPoint(Desired, /*bIsBuilding=*/ false, SpawnPoint))
 			{
 				const int32 GoldBefore = Gold;
-				if (SpawnBotCardActor(Chosen.CardID, /*bIsBuilding=*/ false, SpawnPoint, *BotState, Chosen.Row->Cost))
+				if (SpawnBotCardActor(Chosen.CardID, /*bIsBuilding=*/ false, SpawnPoint, *BotState, Chosen.Row->Cost, Chosen.Row->SwarmCount))
 				{
 					Deck->ConfirmPlayFromHand(Chosen.Slot);
 					UE_LOG(LogSiegeBot, Log,
@@ -406,23 +469,36 @@ void ASiegeBotController::EvaluateDecisions()
 		}
 	}
 
-	// ---- Rule 4: CYCLE — an unplayable card in hand AND the discard fee available ----
+	// ---- Rule 4: CYCLE — a card the bot can NEVER play in hand AND the discard fee available ----
+	// HARDENED (folds the M3 TASK-046 WARN-2, now LIVE — Set II adds HeroUpgrade/
+	// Utility/Instant cards the bot cannot play): (a) the fee is charged ONLY when
+	// gold >= BotDiscardCost (guarded in the condition below — never at 0 gold), and
+	// (b) the card is DISCARDED FIRST and the fee charged ONLY if the discard actually
+	// happened (DiscardFromHand return-checked), so a no-op discard never bleeds a
+	// gold charge. Rule 4 charges at most once then returns → no double-charge.
 	{
 		const int32 CardIndex = FindMostExpensiveUnplayableCard(HandCards);
 		if (CardIndex != INDEX_NONE && Gold >= BotDiscardCost)
 		{
 			const FBotHandCard& Chosen = HandCards[CardIndex];
 			const int32 GoldBefore = Gold;
-			// SpendGold re-checks affordability (no change/broadcast if it fails); Gold
-			// is still current here because every firing rule above returns.
-			if (BotState->SpendGold(BotDiscardCost))
+			if (Deck->DiscardFromHand(Chosen.Slot))
 			{
-				Deck->DiscardFromHand(Chosen.Slot);
+				// The gold >= BotDiscardCost gate above holds this same tick (income
+				// only adds between checks), so SpendGold cannot fail here; a false
+				// return is a hard-invariant tripwire (the card already left the hand —
+				// at worst one free cycle, never a double-charge).
+				if (!BotState->SpendGold(BotDiscardCost))
+				{
+					UE_LOG(LogGitClaudeUnrealTest, Warning,
+						TEXT("ASiegeBotController '%s': Rule 4 discarded '%s' but SpendGold(%d) refused at gold %d — should be unreachable (gold >= fee held this tick)."),
+						*GetNameSafe(this), *Chosen.CardID.ToString(), BotDiscardCost, GoldBefore);
+				}
 				UE_LOG(LogSiegeBot, Log,
 					TEXT("[Bot %s] Rule 4 (Cycle): discarded unplayable '%s' (cost %d) for %d gold — gold %d->%d."),
 					*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost, BotDiscardCost, GoldBefore, BotState->GetGold());
 			}
-			return; // rule 4 fired
+			return; // rule 4 fired (a no-op discard still owns the tick; retry next tick)
 		}
 	}
 
@@ -672,7 +748,7 @@ UClass* ASiegeBotController::ResolveBotCardActorClass(FName CardID, bool bIsBuil
 	return nullptr;
 }
 
-AActor* ASiegeBotController::SpawnBotCardActor(FName CardID, bool bIsBuilding, const FVector& SpawnPoint, ASiegePlayerState& BotState, int32 Cost)
+AActor* ASiegeBotController::SpawnBotCardActor(FName CardID, bool bIsBuilding, const FVector& SpawnPoint, ASiegePlayerState& BotState, int32 Cost, int32 SwarmCount)
 {
 	UWorld* World = GetWorld();
 	if (!World)
@@ -719,39 +795,46 @@ AActor* ASiegeBotController::SpawnBotCardActor(FName CardID, bool bIsBuilding, c
 		return Building;
 	}
 
-	// Unit/Economy: lift the spawn so the capsule stands on the projected ground.
-	float CapsuleHalfHeight = SiegeSpawn::DefaultCapsuleHalfHeight;
-	if (const ASummonedUnit* UnitCDO = ActorClass->GetDefaultObject<ASummonedUnit>())
-	{
-		if (const UCapsuleComponent* Capsule = UnitCDO->GetCapsuleComponent())
-		{
-			CapsuleHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
-		}
-	}
-	const FTransform SpawnTransform(FRotator::ZeroRotator, SpawnPoint + FVector(0.f, 0.f, CapsuleHalfHeight + SiegeSpawn::SpawnGroundClearance));
-	ASummonedUnit* Unit = World->SpawnActorDeferred<ASummonedUnit>(
-		ActorClass, SpawnTransform, /*Owner=*/ this, /*Instigator=*/ nullptr,
-		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
-	if (!Unit)
+	// Unit/Economy: spawn via the SHARED swarm entry (TASK-059) so the bot's swarms
+	// match the player's. SpawnPoint is the GROUND point (already navmesh-projected +
+	// own-half/clearance-validated by ComputeValidBotSpawnPoint); SpawnUnitSwarm
+	// applies the capsule lift. SwarmCount>1 (Militia Mob = 4) fans copies on a
+	// SwarmSpawnRadius circle for ONE Cost; SwarmCount<=1 spawns a single unit AT
+	// SpawnPoint (byte-for-byte with the M1/M2 single-unit spawn). Instigator is
+	// deliberately nullptr (the bot has no pawn — unit team attribution resolves via
+	// each unit's own ITeamAgent, TASK-002/004 chain).
+	TArray<ASummonedUnit*> SwarmUnits = ASiegePlayerController::SpawnUnitSwarm(
+		World, ActorClass, CardID, BotTeam,
+		/*SpawnOwner=*/ this, /*SpawnInstigator=*/ nullptr,
+		SpawnPoint, FMath::Max(1, SwarmCount), SwarmSpawnRadius);
+	if (SwarmUnits.Num() == 0)
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Error,
-			TEXT("ASiegeBotController '%s': SpawnActorDeferred failed for unit '%s' — no gold spent."),
+			TEXT("ASiegeBotController '%s': SpawnUnitSwarm produced no units for '%s' — no gold spent."),
 			*GetNameSafe(this), *CardID.ToString());
 		return nullptr;
 	}
 
+	// Gold is the LAST gate (destroy-on-fail): a refusal unwinds EVERY spawned copy,
+	// so exactly Cost is deducted iff the swarm appears — the TASK-030 pattern
+	// generalized to N (the same discipline the player's confirm path uses, TASK-059).
 	if (!BotState.SpendGold(Cost))
 	{
-		Unit->Destroy();
+		for (ASummonedUnit* SwarmUnit : SwarmUnits)
+		{
+			if (IsValid(SwarmUnit))
+			{
+				SwarmUnit->Destroy();
+			}
+		}
 		UE_LOG(LogGitClaudeUnrealTest, Warning,
-			TEXT("ASiegeBotController '%s': SpendGold(%d) refused at spawn for '%s' (the CanAfford pre-check should prevent this) — unit discarded, no gold spent."),
-			*GetNameSafe(this), Cost, *CardID.ToString());
+			TEXT("ASiegeBotController '%s': SpendGold(%d) refused at spawn for '%s' (the CanAfford pre-check should prevent this) — %d unit(s) unwound, no gold spent."),
+			*GetNameSafe(this), Cost, *CardID.ToString(), SwarmUnits.Num());
 		return nullptr;
 	}
 
-	Unit->InitUnit(BotTeam, CardID);
-	Unit->FinishSpawning(SpawnTransform);
-	return Unit;
+	// Representative actor — all copies are one play (one LogSiegeBot line at the rule).
+	return SwarmUnits[0];
 }
 
 void ASiegeBotController::ResetBot()

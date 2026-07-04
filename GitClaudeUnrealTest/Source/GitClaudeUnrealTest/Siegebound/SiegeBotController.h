@@ -131,15 +131,24 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/**
-	 *  The §4 bot decision loop, fired every DecisionIntervalSeconds.
-	 *
-	 *  EMPTY in this task (TASK-045 = the bot SHELL). TASK-046 fills this with
-	 *  the GDD §4 ordered rules (defensive play → miners → attack unit → discard),
-	 *  routing plays through GetDeckComponent()'s ConfirmPlayFromHand / DiscardFromHand
+	 *  The §4 bot decision loop, fired every DecisionIntervalSeconds. Plays the FIRST
+	 *  ordered rule whose conditions hold, then returns (one rule owns the tick):
+	 *    1. DEFEND  — enemy intruder on the bot half + an affordable defensive Unit/
+	 *                 Building (incl. the Set II towers) → cheapest at the centerline
+	 *                 (unit) or between the intruder and Castle_Red (building).
+	 *    2. ECONOMY — half clear → a Miner (under the target + §3.3 cap) or a Deep
+	 *                 Mine (building-routed economy, no cap; §4 M4).
+	 *    3. ATTACK  — banked to AttackBankThreshold → the most-expensive affordable
+	 *                 UNIT (now reaching Ogre/Cavalry/Pikeman/…; Militia Mob spawns
+	 *                 SwarmCount copies via the shared swarm path, TASK-059).
+	 *    4. CYCLE   — a card the bot can NEVER play (HeroUpgrade/Utility/Spell — the
+	 *                 bot has no hero; §4 M4) + gold >= the fee → discard the most-
+	 *                 expensive such card (hardened: discard-first, charge-on-success).
+	 *  Plays route through GetDeckComponent() (ConfirmPlayFromHand / DiscardFromHand)
 	 *  + SpendGold on GetBotPlayerState(), spawning the composed BP_Unit_/BP_Building_
-	 *  by CardID (Team=Red) on a placement-valid own-half point, and logging one
-	 *  LogSiegeBot line per fired rule. Until then the bot accrues gold and holds
-	 *  a hand but plays nothing.
+	 *  by CardID (Team=Red, team material via TASK-044) on a navmesh-projected, own-
+	 *  half (X>=0), clearance-valid point. NEVER plays an unaffordable card; NEVER
+	 *  spawns on the Blue half; exactly one LogSiegeBot line per fired rule.
 	 */
 	void EvaluateDecisions();
 
@@ -187,6 +196,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot")
 	FName MinerCardID = FName(TEXT("Miner"));
 
+	/**
+	 *  Economy-typed cards whose ACTOR is a building (rule 2 Deep Mine, §4 M4 —
+	 *  mirrors ASiegePlayerController::BuildingEconomyCardIDs / TASK-059). Deep Mine's
+	 *  DT_Cards row is CardType Economy (§8 raidable economy) but ADeepMine derives
+	 *  ABuilding under /Game/Blueprints/Buildings/, so the bot routes it down the
+	 *  BUILDING spawn path with NO miner-cap interaction. Editable so a future
+	 *  economy-building needs no code change.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot")
+	TArray<FName> BuildingEconomyCardIDs = { FName(TEXT("DeepMine")) };
+
 	/** Card stat table (GDD §3.0) — the bot reads Cost/CardType per hand card to select a rule; NEVER hardcodes a stat. Soft, resolved null-safe each decision. Matches /Game/Data/DT_Cards. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot")
 	TSoftObjectPtr<UDataTable> CardTableAsset;
@@ -204,6 +224,16 @@ protected:
 	/** Half-width of the Y band units spawn across so waves fan out instead of stacking on one point. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
 	float BotSpawnLaneSpread = 900.f;
+
+	/**
+	 *  Swarm fan radius — a SwarmCount card (Militia Mob = 4) spawns its copies on a
+	 *  circle of this radius around the validated centerline point, via the shared
+	 *  ASiegePlayerController::SpawnUnitSwarm (TASK-059) so the bot's Militia Mob
+	 *  matches the player's. Kept < BotCenterlineSpawnX (350) so a centered fan never
+	 *  crosses onto the Blue half (min copy X = 350 - 300 = 50 >= 0). // GDD §3.0
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
+	float SwarmSpawnRadius = 300.f; // GDD §3.0
 
 	/** How far in FRONT of GoldNode_Red (toward the centerline) a rule-2 miner spawns, so it walks the last stretch to the node like the player's miners. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
@@ -283,12 +313,18 @@ private:
 	/**
 	 *  Resolves + spawns the composed BP for CardID with Team = BotTeam (TASK-044
 	 *  recolors it Red at BeginPlay), spending Cost as the LAST gate so gold moves
-	 *  iff the actor appears (the TASK-030 destroy-on-fail pattern). bIsBuilding
+	 *  iff at least one actor appears (the TASK-030 destroy-on-fail pattern). bIsBuilding
 	 *  selects /Game/Blueprints/Buildings/BP_Building_<CardID> vs
-	 *  /Game/Blueprints/Units/BP_Unit_<CardID>. Null-safe: a missing/incompatible
-	 *  BP logs and returns nullptr with NO gold spent. Returns the spawned actor.
+	 *  /Game/Blueprints/Units/BP_Unit_<CardID>. UNITS route through the shared
+	 *  ASiegePlayerController::SpawnUnitSwarm (TASK-059) so SwarmCount>1 (Militia Mob
+	 *  = 4) spawns that many copies on a SwarmSpawnRadius circle for ONE Cost and the
+	 *  bot's swarm matches the player's; SwarmCount<=1 (and every building) spawns a
+	 *  single actor. SpawnPoint is the GROUND point (the swarm helper applies the
+	 *  capsule lift; buildings spawn flush). Null-safe: a missing/incompatible BP or a
+	 *  zero-spawn logs and returns nullptr with NO gold spent. Returns a representative
+	 *  spawned actor.
 	 */
-	AActor* SpawnBotCardActor(FName CardID, bool bIsBuilding, const FVector& SpawnPoint, ASiegePlayerState& BotState, int32 Cost);
+	AActor* SpawnBotCardActor(FName CardID, bool bIsBuilding, const FVector& SpawnPoint, ASiegePlayerState& BotState, int32 Cost, int32 SwarmCount);
 
 	/** Composed soft-class resolve (CONVENTIONS): BP_Unit_<CardID> (must be ASummonedUnit) or BP_Building_<CardID> (must be ABuilding). nullptr + log if missing/incompatible. */
 	UClass* ResolveBotCardActorClass(FName CardID, bool bIsBuilding) const;

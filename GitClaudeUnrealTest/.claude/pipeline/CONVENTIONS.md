@@ -51,9 +51,18 @@ Owned by the **manager** agent. All agents MUST follow these. If a needed patter
 - Row name = CardID in PascalCase, no spaces (e.g., `Footman`, `ArrowTower`); code and blueprints reference cards by CardID FName; `DisplayName` carries the spaced human name ("Arrow Tower")
 - Never hardcode a stat that exists in the table
 - FCardRow columns beyond the GDD §4 stat columns (registry — CSV header must match UPROPERTY names 1:1):
-  - `DeckCount` (int32) — copies of this card in the default 50-card deck (GDD §3.4); all DeckCount values must sum to exactly 50; 0 = not in the default deck
+  - `DeckCount` (int32) — copies of this card in the default 50-card deck (GDD §3.4); all DeckCount values must sum to exactly 50; 0 = not in the default deck. **M4 note:** the M4 test deck (TASK-053) repurposes DeckCount as an expanded 22-card 50-count deck so Set II is reachable until the M6 deck-builder — still sums to 50, each ≤ MaxCopies.
   - `bRanged` (bool) — true if the card's attack is delivered by a homing projectile (GDD §3.0) instead of melee contact
-- Mechanic RULES (not per-card stats) — e.g., active miner cap 6, building clearance 200, overtime at 420 s — are UPROPERTY defaults in the owning class with a `// GDD §x.x` comment; they do not get CSV columns
+  - **M4 keyword/behavior columns (Set II, TASK-053):** typed one-per-concept, sparse (defaults shown):
+    - `bCharge` (bool, false) — Charge keyword: first attack after ≥2 s uninterrupted movement deals 2× (GDD §3.0). (Cavalry)
+    - `bSlayer` (bool, false) — Slayer keyword: 2× damage vs targets with MaxHP ≥ 150 (GDD §3.0). (Pikeman)
+    - `bSuicide` (bool, false) — unit explodes on contact/death then dies, dealing its Damage as AoE over `AoERadius` (GDD §4). (Sapper)
+    - `SwarmCount` (int32, 0) — Swarm keyword: >0 ⇒ playing the card spawns this many copies in a 300-unit circle for one cost (GDD §3.0). (Militia Mob = 4)
+    - `AoERadius` (float, 0) — splash radius for area attackers; 0 = single target. (Sapper 250, Bomb Tower 250)
+    - `MinRange` (float, 0) — inner blind-spot radius; the actor cannot fire at targets closer than this (GDD §4). (Ballista Tower 300)
+    - `SpawnCardID` (FName, None) / `SpawnInterval` (float, 0) / `Lifetime` (float, 0) — spawner building: spawns `SpawnCardID` every `SpawnInterval` s, self-destructs after `Lifetime` s (GDD §4). (Barracks = Footman / 8 / 60)
+  - The keyword-set token approach is deferred; M5's Chain adds its own typed column when it arrives.
+- Mechanic RULES (not per-card stats) — e.g., active miner cap 6, building clearance 200, overtime at 420 s, Swarm 300-unit spawn circle, Charge 2 s / 2× multipliers, Slayer 150-HP / 2× threshold, Deep Mine +2 gold/s, Masons 300 HP over 10 s, hero-upgrade magnitudes (§3.10), Rally 600/25%/5 s/20 s — are UPROPERTY defaults in the owning class with a `// GDD §x.x` comment; they do not get CSV columns
 
 ## Team contract
 - Enum `ETeamId { Blue, Red }`. The local player is always Blue; the enemy is Red
@@ -70,8 +79,8 @@ Owned by the **manager** agent. All agents MUST follow these. If a needed patter
 
 ## Damage types (C++)
 - UDamageType subclasses named `USiegeDamageType_<Kind>`, all declared in `Source/GitClaudeUnrealTest/Siegebound/DamageTypes.h/.cpp`
-- Existing kinds: `Melee`, `Projectile` (reserved for later milestones: `Siege` M4, `Spell` M5)
-- Damage-vs-castle scaling (GDD §3.0) is decided by `ACastle::TakeDamage` reading `DamageEvent.DamageTypeClass`: Projectile = 50%, Melee/default = 100% (Siege 200% arrives M4). Attackers tag projectile damage; melee needs no tag.
+- Kinds: `Melee`, `Projectile`, `Siege` (**added M4, TASK-054**); `Spell` reserved M5
+- Damage-vs-fortification scaling (GDD §3.0) reads `DamageEvent.DamageTypeClass`: Projectile = 50%, Melee/default = 100%, **`Siege` = 200%**. **M4 ruling:** the 200% applies to BOTH the castle (`ACastle::TakeDamage`) AND buildings (`ABuilding::TakeDamage`) — Siege units (Profile=Siege: Ogre, Sapper) tag their attacks with `USiegeDamageType_Siege`. Units and the hero always take the listed damage (no scaling). Attackers tag projectile/siege damage; melee needs no tag.
 
 ## Raw asset sources
 - Blender FBX exports live in `Content/RawAssets/<AssetNameWithoutPrefix>.fbx` (e.g., `Castle.fbx` → `SM_Castle`); the FBX is checked into Git alongside the imported .uasset

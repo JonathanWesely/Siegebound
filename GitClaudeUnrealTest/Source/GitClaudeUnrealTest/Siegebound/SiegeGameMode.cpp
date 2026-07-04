@@ -8,6 +8,7 @@
 #include "GameFramework/PlayerStart.h"
 #include "GitClaudeUnrealTest.h"
 #include "Kismet/GameplayStatics.h"
+#include "Siegebound/Barracks.h"
 #include "Siegebound/Building.h"
 #include "Siegebound/Castle.h"
 #include "Siegebound/HeroCharacter.h"
@@ -247,6 +248,22 @@ void ASiegeGameMode::FreezeWorldAtMatchEnd()
 		++SilencedTowers;
 	}
 
+	// 2b) Barracks spawners (TASK-057): a live ABarracks would keep summoning
+	//     fresh units into a frozen match under the Victory screen. Unlike a
+	//     tower, the Barracks is a class I author with a public FreezeAI() hook
+	//     (stops both its spawn + self-destruct timers), so freeze it the same
+	//     way units are FreezeAI()d — a clean per-object stop, no reach into a
+	//     private handle. FreezeAI never spawns/destroys, so it is safe inside
+	//     the live iterator; PlayAgain destroys every building regardless.
+	//     (Deep Mines need no per-mine hook here — step 4's PauseIncome stops
+	//     their flat income with all other accrual.)
+	int32 FrozenBarracks = 0;
+	for (TActorIterator<ABarracks> It(World); It; ++It)
+	{
+		It->FreezeAI();
+		++FrozenBarracks;
+	}
+
 	// 3) In-flight projectiles (qa/TASK-026-report.md WARN-1): one landing
 	//    after this frame would deal post-match damage under the Victory
 	//    screen. Destroyed rather than frozen — a projectile hanging in midair
@@ -304,8 +321,8 @@ void ASiegeGameMode::FreezeWorldAtMatchEnd()
 	}
 
 	UE_LOG(LogGitClaudeUnrealTest, Log,
-		TEXT("[%s] Match-end freeze: %d unit(s) frozen, %d tower(s) silenced, %d projectile(s) cleared, income paused, clock stopped, bot decision loop %s."),
-		*GetNameSafe(this), FrozenUnits, SilencedTowers, Projectiles.Num(), bBotStopped ? TEXT("stopped") : TEXT("absent"));
+		TEXT("[%s] Match-end freeze: %d unit(s) frozen, %d tower(s) silenced, %d barracks frozen, %d projectile(s) cleared, income paused, clock stopped, bot decision loop %s."),
+		*GetNameSafe(this), FrozenUnits, SilencedTowers, FrozenBarracks, Projectiles.Num(), bBotStopped ? TEXT("stopped") : TEXT("absent"));
 }
 
 void ASiegeGameMode::HandleHeroDied(AHeroCharacter* DeadHero)
@@ -572,6 +589,15 @@ void ASiegeGameMode::PlayAgain()
 	// 5) Re-arm the win condition, then the hero back at its start: full HP,
 	//    repossessed, input restored (works for a dead OR alive hero).
 	bMatchEnded = false;
+	// Clear hero Instant upgrades on Play Again (GDD §3.9, TASK-058 required
+	// integration): upgrades PERSIST through respawn (ResetHero re-applies them),
+	// so ResetHero — the shared respawn+PlayAgain path — cannot self-distinguish a
+	// match reset. Clearing here BEFORE RestoreHeroAtStart means the subsequent
+	// ResetHero re-applies zero stacks → a clean base hero (handoffs/TASK-058.md).
+	if (IsValid(TrackedHero))
+	{
+		TrackedHero->ResetUpgrades();
+	}
 	RestoreHeroAtStart();
 
 	// 6) Controllers last: drop the end screen (idempotent with the widget's own

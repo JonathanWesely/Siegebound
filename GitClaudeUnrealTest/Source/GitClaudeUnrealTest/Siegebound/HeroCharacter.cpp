@@ -6,6 +6,7 @@
 #include "Camera/CameraShakeBase.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Engine/DataTable.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -17,6 +18,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
+#include "Siegebound/CardRow.h"
 #include "Siegebound/SummonedUnit.h"
 #include "TimerManager.h"
 
@@ -24,6 +26,12 @@ namespace
 {
 	/** Priority of IMC_Hero on the input subsystem — above any template context (which the template controllers add at 0). */
 	constexpr int32 HeroMappingContextPriority = 1;
+
+	//~ Instant hero-upgrade CardIDs (TASK-058) — must match the DT_Cards row names (CONVENTIONS: CardID = row name).
+	const FName UpgradeCardID_SharpenedBlade(TEXT("SharpenedBlade"));
+	const FName UpgradeCardID_PlateArmor(TEXT("PlateArmor"));
+	const FName UpgradeCardID_SwiftBoots(TEXT("SwiftBoots"));
+	const FName UpgradeCardID_WarBanner(TEXT("WarBanner"));
 }
 
 AHeroCharacter::AHeroCharacter()
@@ -33,14 +41,32 @@ AHeroCharacter::AHeroCharacter()
 
 	// GDD §3.1 base walk speed (BeginPlay re-applies in case a blueprint tweaks WalkSpeed)
 	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
+
+	// data contract (TASK-058 names block): stack caps resolve from MaxCopies in this table
+	// at ApplyUpgrade time, never from code (GDD §3.0). Mirrors ASummonedUnit's CardTableAsset.
+	CardTableAsset = TSoftObjectPtr<UDataTable>(FSoftObjectPath(TEXT("/Game/Data/DT_Cards.DT_Cards")));
 }
 
 void AHeroCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
-	CurrentHP = MaxHP;
-	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
+	// hard-resolve DT_Cards once (TASK-058): ApplyUpgrade reads MaxCopies from it for the stack cap.
+	// DT_Cards is small and already resident by the time a hero exists (units hard-reference it);
+	// a missing table is logged and refuses upgrade plays rather than guessing a cap (GDD §3.0).
+	CachedCardTable = CardTableAsset.IsNull() ? nullptr : CardTableAsset.LoadSynchronous();
+	if (!CachedCardTable)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("AHeroCharacter '%s': DT_Cards ('%s') unavailable at BeginPlay — hero-upgrade stack caps cannot be resolved; upgrade plays will be refused until it loads."),
+			*GetNameSafe(this), *CardTableAsset.ToString());
+	}
+
+	// no upgrades own the fresh hero yet, so effective == base here; use the effective accessors
+	// anyway so the initial state is identical to a respawn re-apply (single code path).
+	bSprinting = false;
+	CurrentHP = GetEffectiveMaxHP();
+	ApplyMovementSpeed();
 
 	// far in the past: the first swing is never cooldown-blocked and a below-max hero regens immediately
 	LastMeleeTime = -1.0e9;
@@ -51,13 +77,15 @@ void AHeroCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	// out-of-combat regen (GDD §3.1): 5 HP/s starting 8 s after last taking OR dealing damage, stops at max
-	if (!bDead && CurrentHP < MaxHP)
+	// out-of-combat regen (GDD §3.1): 5 HP/s starting 8 s after last taking OR dealing damage, stops at max.
+	// Cap is the EFFECTIVE max (base + Plate Armor bonus, TASK-058) — never the raw base.
+	const float EffectiveMaxHP = GetEffectiveMaxHP();
+	if (!bDead && CurrentHP < EffectiveMaxHP)
 	{
 		const UWorld* World = GetWorld();
 		if (World && (World->GetTimeSeconds() - LastCombatTime) >= RegenDelay)
 		{
-			CurrentHP = FMath::Min(CurrentHP + (RegenRate * DeltaSeconds), MaxHP);
+			CurrentHP = FMath::Min(CurrentHP + (RegenRate * DeltaSeconds), EffectiveMaxHP);
 		}
 	}
 }
@@ -129,13 +157,17 @@ void AHeroCharacter::StartSprint()
 {
 	if (!bDead)
 	{
-		GetCharacterMovement()->MaxWalkSpeed = SprintSpeed;
+		// track the sprint state so ApplyMovementSpeed picks the sprint tier; effective speed
+		// composes Swift Boots (TASK-058) on top of the base SprintSpeed (base never mutated).
+		bSprinting = true;
+		ApplyMovementSpeed();
 	}
 }
 
 void AHeroCharacter::StopSprint()
 {
-	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
+	bSprinting = false;
+	ApplyMovementSpeed();
 }
 
 void AHeroCharacter::DoMeleeAttack()
@@ -237,8 +269,10 @@ void AHeroCharacter::DoMeleeAttack()
 			}
 		}
 
-		// hero as instigator/causer so receivers (castle, units) can attribute team (GDD §3.0)
-		const float DamageApplied = UGameplayStatics::ApplyDamage(Target, MeleeDamage, GetController(), this, UDamageType::StaticClass());
+		// hero as instigator/causer so receivers (castle, units) can attribute team (GDD §3.0).
+		// EFFECTIVE melee = base MeleeDamage + Sharpened Blade bonus (TASK-058) — composed live,
+		// base never mutated, so it persists through respawn and resets with the stacks.
+		const float DamageApplied = UGameplayStatics::ApplyDamage(Target, GetEffectiveMeleeDamage(), GetController(), this, UDamageType::StaticClass());
 		bDealtDamage = true;
 
 		// impact feedback (TASK-016): puff at the exact point we struck — ClosestPoint is
@@ -360,7 +394,7 @@ float AHeroCharacter::TakeDamage(float Damage, const FDamageEvent& DamageEvent, 
 		return 0.f;
 	}
 
-	CurrentHP = FMath::Clamp(CurrentHP - ActualDamage, 0.f, MaxHP);
+	CurrentHP = FMath::Clamp(CurrentHP - ActualDamage, 0.f, GetEffectiveMaxHP());
 
 	// taking damage re-arms the out-of-combat regen delay (GDD §3.1)
 	if (const UWorld* World = GetWorld())
@@ -432,10 +466,16 @@ void AHeroCharacter::HandleDeath()
 	bDead = true;
 	CurrentHP = 0.f;
 
-	// stop and freeze movement (also clears a held sprint)
+	// stop and freeze movement (also clears a held sprint). Upgrades PERSIST through death
+	// (stacks are untouched here); the effective resting speed still composes Swift Boots.
+	bSprinting = false;
 	GetCharacterMovement()->StopMovementImmediately();
 	GetCharacterMovement()->DisableMovement();
-	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
+	GetCharacterMovement()->MaxWalkSpeed = GetEffectiveWalkSpeed();
+
+	// pause the War Banner aura while dead/hidden — the stack persists and ResetHero re-arms
+	// the pulse on respawn (TASK-058 persistence). Clears the timer only, never the stack.
+	StopWarBannerAura();
 
 	// hide and disable collision (GDD §3.1)
 	SetActorHiddenInGame(true);
@@ -452,16 +492,22 @@ void AHeroCharacter::HandleDeath()
 void AHeroCharacter::ResetHero()
 {
 	bDead = false;
-	CurrentHP = MaxHP;
+
+	// Upgrades PERSIST through death (GDD §3.10, TASK-058): the stack counts were NOT cleared
+	// by HandleDeath, so re-apply their cumulative mods onto the freshly-restored base here —
+	// this is the death→respawn persistence hook. Full HP is the EFFECTIVE max (base + Plate
+	// Armor), so a Plate-Armored hero respawns at, e.g., 300/300.
+	CurrentHP = GetEffectiveMaxHP();
 
 	// restore visibility and collision
 	SetActorHiddenInGame(false);
 	SetActorEnableCollision(true);
 
-	// restore movement at base walk speed
+	// restore movement; effective walk speed re-applies Swift Boots (base never mutated).
+	bSprinting = false;
 	GetCharacterMovement()->StopMovementImmediately();
 	GetCharacterMovement()->SetMovementMode(MOVE_Walking);
-	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
+	ApplyMovementSpeed();
 
 	// restore input (mirrors HandleDeath's DisableInput)
 	EnableInput(Cast<APlayerController>(GetController()));
@@ -475,4 +521,212 @@ void AHeroCharacter::ResetHero()
 	GetWorldTimerManager().ClearTimer(RallyCooldownTimerHandle);
 	LastRallyTime = -1.0e9;
 	OnRallyStateChanged.Broadcast(/*bReady=*/ true, 0.f);
+
+	// re-arm the War Banner aura pulse if it is still owned (paused by HandleDeath); no-op otherwise.
+	StartWarBannerAura();
+
+	// re-push the current upgrade loadout so a HUD rebuilt around the respawn (TASK-064) is accurate.
+	BroadcastUpgradesChanged();
+}
+
+EHeroUpgradeResult AHeroCharacter::ApplyUpgrade(FName UpgradeCardID)
+{
+	// Only the four Instant upgrades are valid here (GDD §3.10/§4). An unknown CardID is a
+	// caller error — refuse with no side effects so the play is refunded net-zero (§3.0).
+	const bool bKnownUpgrade =
+		UpgradeCardID == UpgradeCardID_SharpenedBlade ||
+		UpgradeCardID == UpgradeCardID_PlateArmor ||
+		UpgradeCardID == UpgradeCardID_SwiftBoots ||
+		UpgradeCardID == UpgradeCardID_WarBanner;
+	if (!bKnownUpgrade)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("AHeroCharacter '%s': ApplyUpgrade('%s') is not a known hero upgrade (expected SharpenedBlade/PlateArmor/SwiftBoots/WarBanner) — refused."),
+			*GetNameSafe(this), *UpgradeCardID.ToString());
+		return EHeroUpgradeResult::RefusedInvalidCard;
+	}
+
+	// The stack cap is the card's MaxCopies from DT_Cards (never hardcoded, GDD §3.0). A missing
+	// table/row yields 0 — refuse rather than guess (mirrors the unit's "no table → no stats").
+	const int32 StackCap = GetStackCapForUpgrade(UpgradeCardID);
+	if (StackCap <= 0)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("AHeroCharacter '%s': ApplyUpgrade('%s') could not resolve a stack cap from DT_Cards (MaxCopies) — refused."),
+			*GetNameSafe(this), *UpgradeCardID.ToString());
+		return EHeroUpgradeResult::RefusedInvalidCard;
+	}
+
+	// Over-cap: refuse so TASK-059 shows "… at max stacks" and refunds with NO spend (§3.10).
+	if (GetUpgradeStackCount(UpgradeCardID) >= StackCap)
+	{
+		return EHeroUpgradeResult::RefusedAtMaxStacks;
+	}
+
+	// Add the stack, then apply the per-stack effect. Base stats are NEVER mutated — every bonus
+	// derives live from the (now incremented) stack count, so respawn re-application is automatic
+	// and there is nothing to drift (the Rally/aura cache-once discipline, applied to the hero).
+	if (UpgradeCardID == UpgradeCardID_SharpenedBlade)
+	{
+		++SharpenedBladeStacks; // melee bonus is live via GetEffectiveMeleeDamage()
+	}
+	else if (UpgradeCardID == UpgradeCardID_PlateArmor)
+	{
+		++PlateArmorStacks; // raises GetEffectiveMaxHP() by MaxHPBonus
+		// heal by exactly one stack's MaxHPBonus, clamped to the NEW effective max (GDD §3.10:
+		// "heals 100"). Skipped while dead — a corpse is not revived; respawn heals to full max.
+		if (!bDead)
+		{
+			CurrentHP = FMath::Min(CurrentHP + MaxHPBonus, GetEffectiveMaxHP());
+		}
+	}
+	else if (UpgradeCardID == UpgradeCardID_SwiftBoots)
+	{
+		++SwiftBootsStacks;
+		ApplyMovementSpeed(); // push the new effective walk/sprint into the movement component
+	}
+	else // WarBanner
+	{
+		++WarBannerStacks;
+		StartWarBannerAura(); // begins pulsing SetAuraDamageBonus on friendlies (no-op while dead — resumes on respawn)
+	}
+
+	BroadcastUpgradesChanged();
+	return EHeroUpgradeResult::Applied;
+}
+
+void AHeroCharacter::ResetUpgrades()
+{
+	// Full reset to the base hero (GDD §3.9 Play Again). Called by the match-reset owner
+	// (ASiegeGameMode::PlayAgain — see handoffs/TASK-058.md; wired outside this task's files).
+	SharpenedBladeStacks = 0;
+	PlateArmorStacks = 0;
+	SwiftBootsStacks = 0;
+	WarBannerStacks = 0;
+
+	// aura off, speed back to base, and drop any Plate-Armor HP overflow above the new base max.
+	StopWarBannerAura();
+	ApplyMovementSpeed();
+	CurrentHP = FMath::Min(CurrentHP, GetEffectiveMaxHP());
+
+	BroadcastUpgradesChanged();
+}
+
+void AHeroCharacter::ApplyMovementSpeed()
+{
+	// single place that writes MaxWalkSpeed from the effective speeds — walk vs sprint per the
+	// held-sprint flag. Base WalkSpeed/SprintSpeed are never mutated; Swift Boots composes here.
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->MaxWalkSpeed = bSprinting ? GetEffectiveSprintSpeed() : GetEffectiveWalkSpeed();
+	}
+}
+
+void AHeroCharacter::StartWarBannerAura()
+{
+	// aura only runs while the upgrade is owned AND the hero is alive; it resumes on respawn
+	// (ResetHero calls this) after HandleDeath paused it.
+	if (bDead || WarBannerStacks <= 0)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// idempotent re-arm (cap 1 means at most one owner, but ResetHero may re-call): clear then set.
+	World->GetTimerManager().ClearTimer(WarBannerAuraTimerHandle);
+
+	// buff in-range friendlies immediately, then keep pulsing every interval.
+	PulseWarBannerAura();
+	World->GetTimerManager().SetTimer(WarBannerAuraTimerHandle, this, &AHeroCharacter::PulseWarBannerAura, WarBannerPulseInterval, /*bLoop=*/ true);
+}
+
+void AHeroCharacter::StopWarBannerAura()
+{
+	// clears the pulse timer ONLY — never the stack (persistence). The units' own aura windows
+	// then self-expire via SetAuraDamageBonus's one-shot timer (TASK-055), restoring exactly 1.0.
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(WarBannerAuraTimerHandle);
+	}
+}
+
+void AHeroCharacter::PulseWarBannerAura()
+{
+	if (bDead || WarBannerStacks <= 0)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const FVector MyLocation = GetActorLocation();
+	const float AuraRadiusSquared = WarBannerAuraRadius * WarBannerAuraRadius;
+
+	// window slightly longer than the pulse interval so a unit that stays in range never flickers
+	// between pulses; a unit that walks out keeps the bonus for at most this window, then it
+	// self-expires on the unit's side (SetAuraDamageBonus refresh-not-stack contract, TASK-055).
+	const float PulseDuration = WarBannerPulseInterval * 2.f;
+
+	// mirror Rally's iterate-friendlies-in-radius loop (TASK-042): GetAllActorsOfClass(ASummonedUnit)
+	// already excludes the hero, castles and buildings; the team check drops enemy units; a friendly
+	// miner (an ASummonedUnit) is harmlessly included (its combat machine is sealed). SetAuraDamageBonus
+	// itself no-ops on dead/match-end-frozen units, so a match-end aura pulse buffs nobody.
+	TArray<AActor*> UnitActors;
+	UGameplayStatics::GetAllActorsOfClass(World, ASummonedUnit::StaticClass(), UnitActors);
+	for (AActor* UnitActor : UnitActors)
+	{
+		ASummonedUnit* FriendlyUnit = Cast<ASummonedUnit>(UnitActor);
+		if (!FriendlyUnit || FriendlyUnit->IsUnitDead() || FriendlyUnit->GetTeamId() != Team)
+		{
+			continue;
+		}
+
+		if (FVector::DistSquared(MyLocation, FriendlyUnit->GetActorLocation()) > AuraRadiusSquared)
+		{
+			continue;
+		}
+
+		FriendlyUnit->SetAuraDamageBonus(WarBannerDamageBonus, PulseDuration);
+	}
+}
+
+int32 AHeroCharacter::GetStackCapForUpgrade(FName UpgradeCardID) const
+{
+	if (const UDataTable* CardTable = CachedCardTable)
+	{
+		static const FString Context(TEXT("AHeroCharacter::GetStackCapForUpgrade"));
+		if (const FCardRow* Row = CardTable->FindRow<FCardRow>(UpgradeCardID, Context, /*bWarnIfRowMissing=*/ false))
+		{
+			return Row->MaxCopies;
+		}
+	}
+	return 0; // table/row unavailable — caller refuses; the cap is never guessed (GDD §3.0)
+}
+
+int32 AHeroCharacter::GetUpgradeStackCount(FName UpgradeCardID) const
+{
+	if (UpgradeCardID == UpgradeCardID_SharpenedBlade) { return SharpenedBladeStacks; }
+	if (UpgradeCardID == UpgradeCardID_PlateArmor)     { return PlateArmorStacks; }
+	if (UpgradeCardID == UpgradeCardID_SwiftBoots)     { return SwiftBootsStacks; }
+	if (UpgradeCardID == UpgradeCardID_WarBanner)      { return WarBannerStacks; }
+	return 0;
+}
+
+int32 AHeroCharacter::GetUpgradeStackCap(FName UpgradeCardID) const
+{
+	return GetStackCapForUpgrade(UpgradeCardID);
+}
+
+void AHeroCharacter::BroadcastUpgradesChanged()
+{
+	OnHeroUpgradesChanged.Broadcast(SharpenedBladeStacks, PlateArmorStacks, SwiftBootsStacks, WarBannerStacks);
 }

@@ -41,6 +41,23 @@ void ATower::OnStatsLoaded(const FCardRow& Row)
 	AttackDamage = Row.Damage;
 	AttackRange = Row.Range;
 
+	// TASK-056 row-driven variants (no new class): AoERadius > 0 → each shot is an
+	// AoE projectile (BombTower 250); MinRange > 0 → blind-spot acquire (Ballista
+	// 300). Both default 0 for ArrowTower, leaving its behavior unchanged. Stats
+	// from DT_Cards (GDD §3.0), never hardcoded.
+	AttackAoERadius = Row.AoERadius;
+	AttackMinRange = Row.MinRange;
+
+	// a blind spot that swallows the whole range means the tower can never acquire
+	// anything — surface it (don't clamp: stats are data, never fudged in code —
+	// the LoadStats/§3.0 discipline). ArrowTower/BombTower (MinRange 0) skip this.
+	if (AttackMinRange > 0.f && AttackMinRange >= AttackRange)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ATower '%s': row '%s' MinRange %.1f >= Range %.1f — the blind spot covers the whole range; this tower can never acquire a target (BallistaTower authors 300/1400). Check Docs/Data/cards.csv."),
+			*GetNameSafe(this), *CardID.ToString(), AttackMinRange, AttackRange);
+	}
+
 	// qa/TASK-021-report.md WARN-1 (BINDING): FTimerManager::SetTimer with a
 	// rate <= 0 CLEARS the timer instead of scheduling it — and a Cadence <= 0
 	// row means "this card does not attack" anyway. Refuse to arm, and never
@@ -107,6 +124,10 @@ AActor* ATower::AcquireTarget() const
 
 	const FVector MyLocation = GetActorLocation();
 	const double RangeSq = FMath::Square(static_cast<double>(AttackRange));
+	// TASK-056 blind-spot lower bound (BallistaTower 300): 0 for Arrow/Bomb, so
+	// their MinRangeSq is 0 and the DistSq < MinRangeSq term below is never true —
+	// their acquisition stays byte-for-byte unchanged.
+	const double MinRangeSq = FMath::Square(static_cast<double>(AttackMinRange));
 
 	AActor* Best = nullptr;
 	double BestDistSq = TNumericLimits<double>::Max();
@@ -160,7 +181,11 @@ AActor* ATower::AcquireTarget() const
 		// projectile's own closest-point impact test (TASK-026) governs the
 		// actual hit.
 		const double DistSq = FVector::DistSquared(MyLocation, Candidate->GetActorLocation());
-		if (DistSq > RangeSq || DistSq >= BestDistSq)
+		// out of range, inside the blind spot (BallistaTower MinRange 300, §4 —
+		// same origin-to-origin metric as the Range gate above), or not the closest
+		// so far — skip. MinRangeSq == 0 (Arrow/Bomb) makes the blind-spot term
+		// inert (DistSq < 0 is impossible), so their acquisition is unchanged.
+		if (DistSq > RangeSq || DistSq < MinRangeSq || DistSq >= BestDistSq)
 		{
 			continue;
 		}
@@ -212,9 +237,11 @@ void ATower::FireProjectileAt(AActor* Target)
 	}
 
 	// arm it exactly once, right after spawn (TASK-026 contract): own team, the
-	// freshly acquired target, ROW damage (ArrowTower 15), projectile-typed so
-	// the castle-side §3.0 scaling reads it. The target was re-validated at
-	// fire time by construction — AcquireTarget only returns alive, hostile,
-	// in-range candidates.
-	Projectile->InitProjectile(Team, Target, AttackDamage, USiegeDamageType_Projectile::StaticClass());
+	// freshly acquired target, ROW damage, projectile-typed so the castle-side
+	// §3.0 scaling reads it, and the ROW AoERadius (TASK-056) — > 0 (BombTower 250)
+	// makes the impact a radial blast, 0 (ArrowTower/BallistaTower) the unchanged
+	// single-target hit. The target was re-validated at fire time by construction —
+	// AcquireTarget only returns alive, hostile, in-range (and, for Ballista,
+	// outside-MinRange) candidates.
+	Projectile->InitProjectile(Team, Target, AttackDamage, USiegeDamageType_Projectile::StaticClass(), AttackAoERadius);
 }

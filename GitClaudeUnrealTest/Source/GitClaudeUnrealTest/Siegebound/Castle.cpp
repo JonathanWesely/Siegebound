@@ -10,7 +10,9 @@
 #include "Engine/StaticMesh.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
+#include "GitClaudeUnrealTest.h"
 #include "Materials/MaterialInterface.h"
+#include "TimerManager.h"
 #include "Siegebound/CastleHealthBarWidget.h"
 #include "Siegebound/DamageTypes.h"
 
@@ -145,17 +147,22 @@ float ACastle::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, A
 		return 0.0f;
 	}
 
-	// Damage-vs-castle scaling (GDD §3.0, TASK-026), read from the damage TYPE.
-	// USiegeDamageType_Projectile — and any subclass — applies at 50% (the
-	// anti-sniping rule); melee/default/untyped applies at 100% (melee needs no
+	// Damage-vs-fortification scaling (GDD §3.0), read from the damage TYPE.
+	// USiegeDamageType_Siege — and any subclass — applies at 200% (Siege units,
+	// Ogre/Sapper, batter the castle, TASK-054); USiegeDamageType_Projectile at
+	// 50% (the anti-sniping rule); melee/default/untyped at 100% (melee needs no
 	// tag, CONVENTIONS damage-type registry — M1 attackers pass base UDamageType
-	// and stay byte-identical). Scaling lives ONLY here (M2 ruling): units, hero,
-	// and buildings take listed damage from everything.
-	// TODO(M4): USiegeDamageType_Siege = 200% vs castle (GDD §3.0/§3.9).
-	// TODO(M5): spell damage types = 50% vs castle (GDD §3.0).
+	// and stay byte-identical). Siege and Projectile are disjoint types, so the
+	// branch order is irrelevant. Units and the hero take listed damage from
+	// everything (scaling is castle/building-only).
+	// TODO(Spell 50% — M5): spell damage types = 50% vs castle (GDD §3.0).
 	float ScaledDamage = ActualDamage;
 	const UClass* IncomingDamageType = DamageEvent.DamageTypeClass.Get();
-	if (IncomingDamageType && IncomingDamageType->IsChildOf(USiegeDamageType_Projectile::StaticClass()))
+	if (IncomingDamageType && IncomingDamageType->IsChildOf(USiegeDamageType_Siege::StaticClass()))
+	{
+		ScaledDamage *= 2.0f;
+	}
+	else if (IncomingDamageType && IncomingDamageType->IsChildOf(USiegeDamageType_Projectile::StaticClass()))
 	{
 		ScaledDamage *= 0.5f;
 	}
@@ -191,6 +198,10 @@ void ACastle::HandleDestroyed()
 	}
 	bDestroyed = true;
 
+	// A fallen castle stops any in-progress Masons repair (TASK-059) — nothing
+	// heals a destroyed objective, and the timer must not tick on a hidden actor.
+	StopHealOverTime();
+
 	// Hide the mesh and stop colliding (GDD §3.9) BEFORE broadcasting, so any
 	// listener querying this castle during the event already sees it destroyed.
 	SetActorHiddenInGame(true);
@@ -209,7 +220,9 @@ void ACastle::HandleDestroyed()
 
 void ACastle::ResetCastle()
 {
-	// Play Again (GDD §3.9): back to full HP, visible, solid, and armed to fire again.
+	// Play Again (GDD §3.9): cancel any in-progress Masons repair (TASK-059) first,
+	// then back to full HP, visible, solid, and armed to fire again.
+	StopHealOverTime();
 	bDestroyed = false;
 	CurrentHP = MaxHP;
 	SetActorHiddenInGame(false);
@@ -258,4 +271,78 @@ bool ACastle::TryGetInstigatorTeam(AController* EventInstigator, AActor* DamageC
 
 	// No team could be resolved (e.g. world/kill-Z damage) — caller applies the damage.
 	return false;
+}
+
+void ACastle::HealOverTime(float Total, float Duration)
+{
+	// A destroyed castle absorbs no repair; a non-positive amount/duration is a
+	// caller error (never scheduled — matches the §3.0 "no free effect" discipline).
+	if (bDestroyed)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ACastle '%s': HealOverTime ignored — castle is destroyed."), *GetNameSafe(this));
+		return;
+	}
+	if (Total <= 0.0f || Duration <= 0.0f)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ACastle '%s': HealOverTime(%.1f over %.1fs) ignored — Total and Duration must be positive."),
+			*GetNameSafe(this), Total, Duration);
+		return;
+	}
+
+	// Add to the running pool and (re)derive the per-tick delivery so the WHOLE
+	// remaining pool lands over Duration — a second Masons reinforces the stream
+	// (restack) rather than replacing it (TASK-059).
+	HealRemaining += Total;
+	const float TicksOverDuration = FMath::Max(Duration / HealTickInterval, 1.0f);
+	HealPerTick = HealRemaining / TicksOverDuration;
+
+	// Already at full? Nothing to deliver (never over MaxHP) — drop the pool.
+	if (CurrentHP >= MaxHP)
+	{
+		StopHealOverTime();
+		return;
+	}
+
+	// (Re)arm the repeating tick; SetTimer replaces on the same handle (no stacking).
+	GetWorldTimerManager().SetTimer(HealTimerHandle, this, &ACastle::HandleHealTick, HealTickInterval, /*bLoop=*/ true);
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ACastle '%s': repairing %.0f HP over %.1fs (%.1f/tick every %.2fs; %.0f/%.0f HP now)."),
+		*GetNameSafe(this), Total, Duration, HealPerTick, HealTickInterval, CurrentHP, MaxHP);
+}
+
+void ACastle::HandleHealTick()
+{
+	// Stop the stream if the castle fell, the pool emptied, or HP is already full.
+	if (bDestroyed || HealRemaining <= 0.0f || CurrentHP >= MaxHP)
+	{
+		StopHealOverTime();
+		return;
+	}
+
+	const float Delta = FMath::Min(HealPerTick, HealRemaining);
+	const float NewHP = FMath::Min(CurrentHP + Delta, MaxHP); // clamp — never over MaxHP
+	const float Applied = NewHP - CurrentHP;
+	CurrentHP = NewHP;
+	HealRemaining = FMath::Max(HealRemaining - Delta, 0.0f);
+
+	// Broadcast only on an ACTUAL change (mirrors TakeDamage's real-change contract).
+	if (Applied > 0.0f)
+	{
+		OnCastleHPChanged.Broadcast(CurrentHP, MaxHP);
+	}
+
+	if (HealRemaining <= 0.0f || CurrentHP >= MaxHP)
+	{
+		StopHealOverTime();
+	}
+}
+
+void ACastle::StopHealOverTime()
+{
+	GetWorldTimerManager().ClearTimer(HealTimerHandle);
+	HealRemaining = 0.0f;
+	HealPerTick = 0.0f;
 }

@@ -11,6 +11,7 @@
 #include "GitClaudeUnrealTest.h"
 #include "Materials/MaterialInterface.h"
 #include "Siegebound/CardRow.h"
+#include "Siegebound/DamageTypes.h"
 
 ABuilding::ABuilding()
 {
@@ -218,17 +219,30 @@ float ABuilding::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent,
 		return 0.f;
 	}
 
-	// LISTED damage, no type scaling: the §3.0 projectile-50% rule applies ONLY
-	// in ACastle::TakeDamage (M2 ruling; TASK-026 handoff: "TASK-027's ABuilding
-	// must likewise NOT scale"). An Archer bolt hurts a wall for its listed 10.
-	CurrentHP = FMath::Max(CurrentHP - ActualDamage, 0.f);
+	// Damage-vs-fortification scaling (GDD §3.0, M4 ruling — TASK-054): Siege
+	// units (Ogre, Sapper) batter buildings for 200% via USiegeDamageType_Siege,
+	// exactly like the castle. Everything else takes LISTED damage — the §3.0
+	// projectile-50% rule stays castle-ONLY (an Archer bolt still hurts a wall for
+	// its listed 10; M2 ruling / TASK-026 handoff). Siege is the only building-side
+	// scaler.
+	// TODO(Spell 50% — M5): spell damage types vs buildings (GDD §3.0).
+	float ScaledDamage = ActualDamage;
+	const UClass* IncomingDamageType = DamageEvent.DamageTypeClass.Get();
+	if (IncomingDamageType && IncomingDamageType->IsChildOf(USiegeDamageType_Siege::StaticClass()))
+	{
+		ScaledDamage *= 2.0f;
+	}
+
+	CurrentHP = FMath::Max(CurrentHP - ScaledDamage, 0.f);
 
 	if (CurrentHP <= 0.f)
 	{
 		HandleDestroyed();
 	}
 
-	return ActualDamage;
+	// return the SCALED amount actually applied (the ACastle contract) — a Siege
+	// hit reports 2×, everything else its listed value.
+	return ScaledDamage;
 }
 
 void ABuilding::HandleDestroyed()

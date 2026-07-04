@@ -9,8 +9,11 @@
 #include "Siegebound/TeamId.h"
 #include "SiegePlayerController.generated.h"
 
+class ACastle;
 class AHeroCharacter;
 class AStaticMeshActor;
+class ASiegePlayerState;
+class ASummonedUnit;
 class UDataTable;
 class UDeckComponent;
 class UInputAction;
@@ -118,14 +121,16 @@ public:
 	/**
 	 *  Plays the card in hand slot 0..5 (GDD §3.5; keys 1..6 / TASK-033 card
 	 *  buttons). Refuses (log + OnCardRefused, play refusals also
-	 *  OnCardPlayRefused) on: empty/out-of-range slot, missing DT_Cards row,
-	 *  gold < Cost (grey-out is the widget's job), or a not-yet-supported card
-	 *  type (Spell = M5, HeroUpgrade/Utility instants = M4). Unit/Building/
-	 *  Economy cards enter placement mode for the slot's CardID — entry can
-	 *  additionally refuse a dead hero ("Hero is down") or a capped Miner
-	 *  ("Miner limit reached", §3.3 — TASK-030). The card leaves the hand
-	 *  ONLY at placement CONFIRM (M2 ruling), so cancel costs nothing.
-	 *  Post-match and mid-placement presses are ignored (no broadcast),
+	 *  OnCardPlayRefused) on: empty/out-of-range slot, missing DT_Cards row, or
+	 *  gold < Cost (grey-out is the widget's job). Routing by CardType:
+	 *  Unit/Building/Economy → placement mode for the slot's CardID (entry can
+	 *  additionally refuse a dead hero "Hero is down" or a capped Miner "Miner
+	 *  limit reached", §3.3 — TASK-030); the card leaves the hand ONLY at placement
+	 *  CONFIRM (M2 ruling), so cancel costs nothing. HeroUpgrade/Utility → resolve
+	 *  IMMEDIATELY with NO placement step (TASK-059): the effect lands, the Cost is
+	 *  spent, and a replacement is drawn — an over-cap upgrade or an unrepairable
+	 *  Masons is refused with NO gold moved (§3.0/§3.10 full refund). Spell → M5
+	 *  (GDD §3.11). Post-match and mid-placement presses are ignored (no broadcast),
 	 *  mirroring the M1 EnterPlacementMode early-outs.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Cards")
@@ -204,6 +209,23 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Match")
 	bool HasMatchEnded() const { return bMatchEnded; }
 
+	/**
+	 *  Shared unit-spawn entry (GDD §3.0 Swarm, TASK-059) reused by the player
+	 *  confirm path AND the bot (TASK-060) so both produce identical swarms. Spawns
+	 *  Count copies of UnitClass for CardID/Team: Count > 1 arranges them evenly on a
+	 *  circle of Radius around Center with EACH ring point navmesh-projected (falling
+	 *  back to the raw ring point when there is no nav data / projection fails);
+	 *  Count <= 1 spawns a single unit AT Center with no reprojection (the confirm
+	 *  path already validated it on the navmesh — the M1/M2 single-unit spawn stays
+	 *  byte-for-byte). Every copy is capsule-lifted onto the ground and
+	 *  deferred-spawned → InitUnit(Team, CardID) → FinishSpawning (stats bind before
+	 *  BeginPlay, TASK-004/030). Static + fully parameterized (no controller state)
+	 *  so the bot can call it as ASiegePlayerController::SpawnUnitSwarm(...). Returns
+	 *  the spawned units (empty on total failure); the CALLER owns the gold gate —
+	 *  this helper never touches gold.
+	 */
+	static TArray<ASummonedUnit*> SpawnUnitSwarm(UWorld* World, UClass* UnitClass, FName CardID, ETeamId Team, AActor* SpawnOwner, APawn* SpawnInstigator, const FVector& Center, int32 Count, float Radius);
+
 protected:
 
 	/** Builds the deck at match start (GDD §3.4, TASK-022 timing contract), then creates and adds the HUD widget (soft class, null-safe — TASK-011 builds it). */
@@ -273,6 +295,29 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Cards")
 	FName MinerCardID = FName(TEXT("Miner"));
+
+	/** Utility Instant CardID that repairs the friendly castle over time (Masons, GDD §4). PlayHandSlot routes it through ResolveInstantPlay → ACastle::HealOverTime. */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Cards")
+	FName MasonsCardID = FName(TEXT("Masons"));
+
+	/** Masons: total castle HP repaired (GDD §4: 300). Mechanic magnitude → class UPROPERTY, not a CSV column (CONVENTIONS). // GDD §4 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Cards", meta = (ClampMin = "0"))
+	float MasonsHealAmount = 300.f; // GDD §4
+
+	/** Masons: seconds the repair is spread over (GDD §4: 10). // GDD §4 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Cards", meta = (ClampMin = "0.05"))
+	float MasonsHealDuration = 10.f; // GDD §4
+
+	/**
+	 *  Economy-typed cards whose ACTOR is a building (TASK-059 carry-forward of the
+	 *  TASK-057 routing note): Deep Mine's row is CardType Economy for the §8
+	 *  raidable-economy semantics, but ADeepMine derives ABuilding and lives at
+	 *  /Game/Blueprints/Buildings/. Listing its CardID here routes it down the
+	 *  BUILDING spawn path + the §3.5 building-clearance rule instead of the unit
+	 *  path (IsBuildingCard). Editable so a future Economy-building needs no code change.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Cards")
+	TArray<FName> BuildingEconomyCardIDs = { FName(TEXT("DeepMine")) };
 
 	/** Fixed discard charge — discarding costs 1 gold and is refused below it (GDD §3.6). Mechanic rule, not a CSV column (CONVENTIONS registry). */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Cards", meta = (ClampMin = "0"))
@@ -418,6 +463,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement")
 	float GhostYawOffset = -90.f;
 
+	/** Swarm ring radius (GDD §3.0): a Unit card with SwarmCount > 0 spawns its copies on a circle of this radius around the placement point (Militia Mob = 4 at 300). // GDD §3.0 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement", meta = (ClampMin = "0"))
+	float SwarmSpawnRadius = 300.f; // GDD §3.0
+
 private:
 
 	/** Why the latest traced cursor point is invalid — drives the confirm-refusal message (the §3.5 clearance rule gets its own reason). */
@@ -463,6 +512,33 @@ private:
 	 *  (the M1 meshless-ASummonedUnit fallback is retired per the spec).
 	 */
 	UClass* ResolveCardActorClass(FName CardID, ECardType CardType) const;
+
+	/**
+	 *  True when the card spawns an ABuilding: every Building card, plus Economy
+	 *  cards whose actor is a building (Deep Mine — CardType Economy, but ADeepMine
+	 *  under /Blueprints/Buildings/, TASK-057). The single source of truth for the
+	 *  confirm spawn branch, the §3.5 building-clearance rule, and the BP-class path
+	 *  (BuildingEconomyCardIDs drives the Economy exception — TASK-059).
+	 */
+	bool IsBuildingCard(FName CardID, ECardType CardType) const;
+
+	/**
+	 *  Resolves a HeroUpgrade/Utility Instant IMMEDIATELY (GDD §3.5/§3.10/§4,
+	 *  TASK-059) — no placement step. HeroUpgrade → AHeroCharacter::ApplyUpgrade
+	 *  (TASK-058): spend Cost + draw only on Applied; RefusedAtMaxStacks →
+	 *  "… at max stacks" with no spend; RefusedInvalidCard → refuse. Utility Masons
+	 *  → repair the friendly castle (ACastle::HealOverTime) then spend + draw; any
+	 *  other Utility CardID is refused. EVERY refusal path moves NO gold (§3.0 full
+	 *  refund). SiegeState is the already-resolved player state (affordability was
+	 *  pre-checked in PlayHandSlot).
+	 */
+	void ResolveInstantPlay(int32 Slot, FName CardID, const FCardRow& Row, ASiegePlayerState& SiegeState);
+
+	/** Instant resolution's hand step: ConfirmPlayFromHand(Slot) → discard + redraw (§3.4), null-safe, with a tripwire log on the impossible false return. */
+	void ConfirmInstantDraw(int32 Slot, FName CardID);
+
+	/** First living (non-destroyed) ACastle on FriendlyTeam, or nullptr (Masons repair target lookup, TASK-059). */
+	ACastle* FindFriendlyCastle(ETeamId FriendlyTeam) const;
 
 	/** Ghost mesh for a card: /Game/Meshes/SM_<CardID> (CONVENTIONS per-card visual contract), else GhostFallbackMeshAsset, else nullptr (invisible ghost). */
 	UStaticMesh* ResolveGhostMesh(FName CardID) const;
@@ -526,6 +602,12 @@ private:
 
 	/** CardType read from DT_Cards on EnterPlacementMode — selects the confirm spawn path and the §3.5 building clearance rule (TASK-030). */
 	ECardType PendingCardType = ECardType::Unit;
+
+	/** SwarmCount read from DT_Cards on EnterPlacementMode (TASK-059): >0 spawns that many copies at confirm for one Cost (Militia Mob = 4). 0/1 = single unit. */
+	int32 PendingSwarmCount = 0;
+
+	/** True when the pending card spawns an ABuilding (Building cards + Economy building cards like Deep Mine) — the single source for the confirm spawn branch AND the §3.5 clearance rule (TASK-059). */
+	bool bPendingIsBuilding = false;
 
 	/** Reason the latest traced point is invalid (None while bPlacementValid; recomputed with it every frame in placement mode). */
 	EPlacementInvalidReason PlacementInvalidReason = EPlacementInvalidReason::Point;

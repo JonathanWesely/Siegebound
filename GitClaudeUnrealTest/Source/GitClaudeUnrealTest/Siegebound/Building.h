@@ -24,10 +24,11 @@ struct FCardRow;
  *    stats — CurrentHP 0, so it dies to the first enemy hit rather than
  *    standing invincible (the ASummonedUnit failure-mode precedent).
  *  - Destructible (§3.7): TakeDamage ignores same-team damage entirely (§3.0
- *    no friendly fire — the ACastle/ASummonedUnit receiver pattern), takes
- *    LISTED damage from everything else (the §3.0 projectile-50% scaling lives
- *    ONLY in ACastle::TakeDamage — M2 ruling), and at 0 HP destroys the actor
- *    (crumble FX is M7). Destroy() unregisters VisualMesh from the navigation
+ *    no friendly fire — the ACastle/ASummonedUnit receiver pattern), scales
+ *    USiegeDamageType_Siege to 200% (Siege units batter fortifications — M4
+ *    ruling, TASK-054) and takes LISTED damage from every other type (the §3.0
+ *    projectile-50% scaling stays castle-ONLY — M2 ruling), and at 0 HP destroys
+ *    the actor (crumble FX is M7). Destroy() unregisters VisualMesh from the navigation
  *    octree, so the dynamic navmesh heals and units path through the gap a
  *    dead wall leaves.
  *  - Stationary, tickless: the BASE never starts a timer of any kind —
@@ -79,9 +80,11 @@ public:
 
 	/**
 	 *  Applies incoming damage. Same-team damage is ignored entirely (no
-	 *  friendly fire, GDD §3.0). Buildings take LISTED damage from every damage
-	 *  type — the §3.0 damage-vs-castle scaling applies ONLY in ACastle (M2
-	 *  ruling / TASK-026). At 0 HP the actor is destroyed (§3.7; crumble FX M7).
+	 *  friendly fire, GDD §3.0). USiegeDamageType_Siege scales to 200% (Siege
+	 *  units batter fortifications — M4 ruling, TASK-054); every other type takes
+	 *  LISTED damage (the §3.0 projectile-50% rule stays castle-ONLY — M2 ruling /
+	 *  TASK-026). Returns the SCALED amount applied. At 0 HP the actor is
+	 *  destroyed (§3.7; crumble FX M7).
 	 */
 	virtual float TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
 

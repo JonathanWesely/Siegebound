@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "UObject/SoftObjectPtr.h"
+#include "Siegebound/CardRow.h"
 #include "Siegebound/TeamId.h"
 #include "SummonedUnit.generated.h"
 
@@ -31,7 +32,10 @@ enum class ESummonedUnitState : uint8
 };
 
 /**
- *  Siegebound summoned unit, Standard targeting profile (GDD §3.8 + §4).
+ *  Siegebound summoned unit — Standard, Siege, and Support targeting profiles
+ *  (GDD §3.8 + §4). The profile is bound from the card row and UpdateState
+ *  dispatches on it: Standard is the M1/M2 body below (unchanged), Siege and
+ *  Support are the M4 additions (TASK-054).
  *
  *  ACharacter driven by a plain AAIController (AutoPossessAI
  *  PlacedInWorldOrSpawned) walking the navmesh via MoveToActor.
@@ -77,7 +81,18 @@ enum class ESummonedUnitState : uint8
  *  - FreezeAI (TASK-028, the match-end freeze contract consumed by TASK-024):
  *    permanently parks the unit — timers cleared, movement stopped, any
  *    in-flight lunge cancelled to the exact rest pose, Idle until destroyed.
- *    Inherited by AMinerUnit (TASK-025) — the base also stops its walk.
+ *    Inherited by AMinerUnit (TASK-025) — the base also stops its walk. Extended
+ *    in TASK-054 to also stop the Support heal timer and drop the heal target.
+ *  - Targeting profiles (TASK-054, GDD §3.8), dispatched at the top of
+ *    UpdateState on the row-bound Profile:
+ *      Standard — the M1 melee / M2 ranged body below (unchanged). None (miners,
+ *        whose combat machine is sealed by AMinerUnit) also runs this body.
+ *      Siege (Ogre, Sapper) — ignores units and the hero entirely; advances on
+ *        the nearest enemy ABuilding, else the enemy castle, and tags its melee
+ *        with USiegeDamageType_Siege (ACastle/ABuilding scale it to 200%).
+ *      Support (Cleric) — NEVER attacks; follows the nearest friendly and heals
+ *        the nearest DAMAGED friendly ASummonedUnit within Range at row Damage
+ *        HP/s (clamped to MaxHP, friendlies only) on a dedicated heal timer.
  *
  *  Spawners (TASK-007): prefer SpawnActorDeferred → InitUnit(Team, CardID) →
  *  FinishSpawning, so BeginPlay binds the right card. InitUnit also works
@@ -131,6 +146,34 @@ public:
 	void ApplyMoveSpeedBuff(float Multiplier, float Duration);
 
 	/**
+	 *  Support-profile heal sink (TASK-054, GDD §3.8): adds Amount HP, clamped to
+	 *  MaxHP (no overheal). No-op on a dead, match-end-frozen, or never-bound unit
+	 *  and on a non-positive Amount. Friendly-only / no-enemy-heal is enforced by
+	 *  the CALLER (the Support state machine only ever heals same-team units) — this
+	 *  is the raw apply. Units carry no HP-changed delegate (only ACastle does), so
+	 *  there is nothing to broadcast.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Unit")
+	void ApplyHealing(float Amount);
+
+	/**
+	 *  War Banner aura hook (TASK-055, consumed by the hero upgrade in TASK-058): applies a
+	 *  TEMPORARY additive damage-output multiplier of (1 + Bonus) for Duration seconds, then
+	 *  restores it to EXACTLY 1.0 via a timer. Bonus 0.20 = +20% dealt damage (War Banner, GDD §4).
+	 *
+	 *  Refresh-not-stack (the ApplyMoveSpeedBuff discipline): re-applying OVERWRITES the multiplier
+	 *  from the bonus (never compounds off the already-buffed value) and re-arms the single one-shot
+	 *  timer, so a friendly hero re-pulsing the aura only refreshes the same-magnitude bonus and its
+	 *  window. The multiplier is stored SEPARATELY from the row-bound AttackDamage and composed at
+	 *  strike time (ComputeOutputDamage), so — unlike an in-place base mutation — it can never drift:
+	 *  expiry always resets to the literal 1.0. No-op on a dead or match-end-frozen unit; a
+	 *  non-positive Bonus or Duration clears any active aura immediately. FreezeAI ends it with zero
+	 *  residual (same contract as the move-speed buff).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Unit")
+	void SetAuraDamageBonus(float Bonus, float Duration);
+
+	/**
 	 *  Match-end freeze (TASK-028; called by the game mode at match end per the
 	 *  TASK-024 contract, and inherited by AMinerUnit — the base StopMovement
 	 *  also halts its gold-node walk, TASK-025). Permanently stops the unit's
@@ -138,10 +181,13 @@ public:
 	 *  lunge and restores VisualMesh to EXACTLY the cached rest pose (zero
 	 *  residual offset), stops movement, and parks the unit in Idle until it is
 	 *  destroyed. Also ends any active move-speed buff (TASK-042), clearing its
-	 *  timer and restoring the base speed with zero residual. Idempotent; safe on
-	 *  dead or never-bound units. A frozen unit can never restart: stat binding and
-	 *  both timer callbacks are gated on the frozen flag. Virtual so subclasses with
-	 *  extra drives can extend it.
+	 *  timer and restoring the base speed with zero residual, and stops Support
+	 *  healing (TASK-054): clears the heal timer and drops the heal target, so a
+	 *  frozen Cleric mends no one (Siege pathing / Support following stop via the
+	 *  state-timer clear and StopMovement). Idempotent; safe on dead or never-bound
+	 *  units. A frozen unit can never restart: stat binding and the state/attack/
+	 *  heal timer callbacks are all gated on the frozen flag. Virtual so subclasses
+	 *  with extra drives can extend it.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Unit")
 	virtual void FreezeAI();
@@ -215,6 +261,45 @@ protected:
 	float StateCheckInterval = 0.25f;
 
 	/**
+	 *  Support profile (Cleric) heal-tick cadence (TASK-054). The heal RATE is the
+	 *  row Damage (HP/sec); this only sets the granularity — each tick applies
+	 *  Damage × SupportHealInterval, so the per-second total is invariant to this
+	 *  value. ~0.1 s reads as continuous; never per-tick (TASK-004 law).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|AI", meta = (ClampMin = "0.05"))
+	float SupportHealInterval = 0.1f;
+
+	/**
+	 *  CHARGE keyword (TASK-055, GDD §3.0 — Cavalry): seconds of uninterrupted movement
+	 *  required to prime the charge. The first attack after this much continuous advancing
+	 *  deals × ChargeMultiplier, then reverts until momentum is rebuilt. Mechanic RULE, not
+	 *  a card stat (CONVENTIONS) — the per-card bCharge flag is the CSV column; these
+	 *  magnitudes live here as UPROPERTY // GDD defaults.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Keywords", meta = (ClampMin = "0"))
+	float ChargeMoveSeconds = 2.f; // GDD §3.0
+
+	/** CHARGE damage multiplier for the primed first hit (GDD §3.0: 2×). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Keywords", meta = (ClampMin = "1"))
+	float ChargeMultiplier = 2.f; // GDD §3.0
+
+	/**
+	 *  Min speed (u/s) counted as "moving" for CHARGE bookkeeping — an implementation detail
+	 *  (blocked/stalled detection on the 0.25 s state timer), NOT a GDD stat. A unit slower
+	 *  than this while advancing is treated as blocked and loses its momentum.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Keywords", meta = (ClampMin = "0"))
+	float ChargeMoveSpeedThreshold = 50.f;
+
+	/** SLAYER damage multiplier vs high-HP targets (GDD §3.0: 2×). Pikeman. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Keywords", meta = (ClampMin = "1"))
+	float SlayerMultiplier = 2.f; // GDD §3.0
+
+	/** SLAYER applies to any target whose MaxHP is >= this (GDD §3.0: 150). Pikeman. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Keywords", meta = (ClampMin = "0"))
+	float SlayerHPThreshold = 150.f; // GDD §3.0
+
+	/**
 	 *  Blockout "attack animation" (TASK-020): how far VisualMesh lunges along the
 	 *  capsule's local +X (actor forward) on each cadence hit. Purely visual —
 	 *  damage math is untouched. ~0 disables the lunge; negative recoils backward.
@@ -278,6 +363,38 @@ private:
 	/** Nearest standing enemy castle (Team != ours, not IsCastleDestroyed), via actor iteration. */
 	AActor* FindNearestEnemyCastle() const;
 
+	/**
+	 *  Siege-profile state (TASK-054, GDD §3.8): IGNORE units and the hero;
+	 *  target the nearest enemy ABuilding, else the enemy castle, and advance/
+	 *  attack it (melee tagged USiegeDamageType_Siege via PerformAttack).
+	 */
+	void UpdateStateSiege();
+
+	/**
+	 *  Support-profile state (TASK-054, GDD §3.8): NEVER attacks; heals the nearest
+	 *  DAMAGED friendly within Range and follows the nearest friendly (the damaged
+	 *  one if any, else the nearest friendly combat unit; a lone Cleric idles).
+	 */
+	void UpdateStateSupport();
+
+	/** Nearest standing enemy ABuilding (Team != ours, not destroyed) — the Siege structure search; covers ATower and every ABuilding subclass. */
+	AActor* FindNearestEnemyBuilding() const;
+
+	/** Nearest DAMAGED (CurrentHP < MaxHP) friendly ASummonedUnit within AttackRange, excluding self — the Support heal target. */
+	ASummonedUnit* FindNearestDamagedFriendly() const;
+
+	/** Nearest friendly COMBAT unit (Profile Standard or Siege — not Support/Miner), excluding self — the Support follow goal when nobody is hurt. */
+	ASummonedUnit* FindNearestFriendlyCombatUnit() const;
+
+	/** Arms the Support heal timer if not already running (idempotent); first tick after SupportHealInterval. */
+	void StartHealing();
+
+	/** Clears the Support heal timer (idempotent). Called when no heal target is in range, and by FreezeAI / HandleDeath / EndPlay. */
+	void StopHealing();
+
+	/** Heal-timer callback (Support): re-validates SupportHealTarget (friendly, alive, damaged, in range) then heals row Damage × SupportHealInterval, clamped to MaxHP. */
+	void PerformHeal();
+
 	/** Enters/keeps Attack: stops moving and runs the attack timer at Cadence (first hit respects the elapsed cooldown). */
 	void EnterAttack();
 
@@ -301,8 +418,11 @@ private:
 	 *  50% on ITS side, TASK-026). Spawn sets Instigator = this — the TASK-026
 	 *  pawn-shooter rule — so receiver no-friendly-fire checks resolve our
 	 *  team through the TASK-002 chain. Null-safe on world/target/spawn.
+	 *  DamageAmount is the CENTRALIZED output (TASK-055): row Damage × Charge ×
+	 *  Slayer × Aura, computed once in PerformAttack and carried to the projectile
+	 *  (Archer/Longbowman with no keywords and no aura pass exactly the row Damage).
 	 */
-	void FireProjectileAt(AActor* Target);
+	void FireProjectileAt(AActor* Target, float DamageAmount);
 
 	/**
 	 *  Starts ONE lunge cycle from the exact cached rest pose (TASK-020).
@@ -335,6 +455,53 @@ private:
 	 *  called by FreezeAI so a match-end freeze leaves zero residual speed.
 	 */
 	void EndMoveSpeedBuff();
+
+	/**
+	 *  Ends the War Banner damage aura (TASK-055): clears the aura timer and restores the
+	 *  damage-output multiplier to EXACTLY 1.0. Idempotent — a no-op when no aura is active.
+	 *  Timer callback for SetAuraDamageBonus; also called by FreezeAI so a match-end freeze
+	 *  leaves zero residual damage buff (mirrors EndMoveSpeedBuff).
+	 */
+	void EndAuraDamageBuff();
+
+	/**
+	 *  Centralized damage OUTPUT (TASK-055): row Damage × Charge × Slayer × Aura, composed in
+	 *  ONE place so every modifier stacks predictably. Consumes the primed charge (single hit)
+	 *  and reads Target's MaxHP for the Slayer gate. Siege 200% is applied fortification-side by
+	 *  the damage TYPE (TASK-054), NOT here — composing it here would double-count. Returns
+	 *  AttackDamage bit-for-bit for a non-keyword, un-auraed unit (M1/M2 non-regression).
+	 *  Non-const: consumes the charge.
+	 */
+	float ComputeOutputDamage(const AActor* Target);
+
+	/**
+	 *  CHARGE bookkeeping (TASK-055), called at the top of every UpdateState: accumulates
+	 *  uninterrupted advancing time and primes the charge at ChargeMoveSeconds; a stall (blocked)
+	 *  or a full stop (Idle) drops it. No-op unless bCharge (Cavalry) — every other unit is
+	 *  byte-unchanged. Deliberately does NOT reset on entering Attack (tracking and the state
+	 *  dispatch share one UpdateState — resetting here would race the very hit that should be
+	 *  charged); the charge is consumed exactly once in ComputeOutputDamage.
+	 */
+	void TrackChargeMovement();
+
+	/**
+	 *  SUICIDE keyword (TASK-055, Sapper — a Siege + bSuicide unit): the single detonation.
+	 *  Applies the AoE blast (ApplyDetonation) then kills the unit (HandleDeath) — no melee, no
+	 *  repeat attacks. Triggered by UpdateStateSiege on reaching attack range; HandleDeath also
+	 *  detonates if the Sapper is killed en route, and the bDetonated guard keeps it to one blast.
+	 */
+	void Detonate();
+
+	/**
+	 *  Applies the Sapper's one AoE blast at its location: row Damage over row AoERadius,
+	 *  USiegeDamageType_Siege (200% vs castle/buildings), enemies only (FSiegeCombatStatics::
+	 *  ApplyRadialDamage). Guarded by bDetonated so a contact-trigger and a death-trigger can
+	 *  never double-blast. Nothing hardcoded — Damage/AoERadius come from the DT_Cards row.
+	 */
+	void ApplyDetonation();
+
+	/** Max HP of a damage target across the known combat types (unit/castle/building/hero); 0 for unknown — the Slayer HP gate. */
+	static float GetTargetMaxHP(const AActor* Target);
 
 	/**
 	 *  True if Target is a live combatant: valid, castle not destroyed
@@ -395,6 +562,26 @@ private:
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Unit", meta = (AllowPrivateAccess = "true"))
 	bool bRangedAttack = false;
 
+	/** CHARGE keyword flag, bound from the row (TASK-055 — Cavalry). Non-charge units never track/prime, so they are byte-unchanged. */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Unit", meta = (AllowPrivateAccess = "true"))
+	bool bCharge = false;
+
+	/** SLAYER keyword flag, bound from the row (TASK-055 — Pikeman). ×2 vs targets with MaxHP >= SlayerHPThreshold. */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Unit", meta = (AllowPrivateAccess = "true"))
+	bool bSlayer = false;
+
+	/** SUICIDE keyword flag, bound from the row (TASK-055 — Sapper). Detonates once on contact/death, then dies. */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Unit", meta = (AllowPrivateAccess = "true"))
+	bool bSuicide = false;
+
+	/** Blast radius for the bSuicide detonation, bound from the row AoERadius (TASK-055 — Sapper 250). 0 for non-AoE units. */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Unit", meta = (AllowPrivateAccess = "true"))
+	float AoERadius = 0.f;
+
+	/** Targeting/behavior profile bound from the card row (TASK-054): Standard (M1/M2 body), Siege, or Support. None (miners) runs the Standard body — AMinerUnit seals its own machine. */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Unit", meta = (AllowPrivateAccess = "true"))
+	ECardProfile Profile = ECardProfile::Standard;
+
 	/** Current state-machine mode. */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Unit", meta = (AllowPrivateAccess = "true"))
 	ESummonedUnitState State = ESummonedUnitState::Idle;
@@ -450,6 +637,12 @@ private:
 	/** Drives PerformAttack every AttackCadence seconds while in Attack. */
 	FTimerHandle AttackTimerHandle;
 
+	/** Support profile (Cleric): the friendly ASummonedUnit currently being healed (weak — the healer never owns its lifetime; re-validated each heal tick). */
+	TWeakObjectPtr<ASummonedUnit> SupportHealTarget;
+
+	/** Drives PerformHeal every SupportHealInterval while a damaged friendly is in range (Support profile). Cleared by StopHealing / FreezeAI / HandleDeath / EndPlay. */
+	FTimerHandle HealTimerHandle;
+
 	/** True while a temporary move-speed buff is active (TASK-042 Rally). */
 	bool bMoveSpeedBuffActive = false;
 
@@ -463,4 +656,26 @@ private:
 
 	/** Drives EndMoveSpeedBuff once the buff Duration elapses; re-armed (refreshed) on re-apply, never stacked. */
 	FTimerHandle MoveSpeedBuffTimerHandle;
+
+	/** Accumulated uninterrupted-advance time for CHARGE (TASK-055); reset on stall / stop / consume. */
+	float ChargeMoveElapsed = 0.f;
+
+	/** True once >= ChargeMoveSeconds of continuous movement has been logged; consumed by the next attack (CHARGE). */
+	bool bChargePrimed = false;
+
+	/**
+	 *  War Banner damage-output multiplier (TASK-055): 1.0 = no aura. Set to (1 + Bonus) by
+	 *  SetAuraDamageBonus and reset to EXACTLY 1.0 on expiry. Stored SEPARATELY from AttackDamage
+	 *  and composed at strike time (ComputeOutputDamage), so it can never drift the row-bound base.
+	 */
+	float AuraDamageMultiplier = 1.f;
+
+	/** True while a War Banner damage aura is active (TASK-055). */
+	bool bAuraDamageBuffActive = false;
+
+	/** Drives EndAuraDamageBuff once the aura Duration elapses; re-armed (refreshed) on re-apply, never stacked. */
+	FTimerHandle AuraDamageBuffTimerHandle;
+
+	/** True once the bSuicide detonation has fired (TASK-055) — guarantees exactly ONE blast (contact OR death, never both). */
+	bool bDetonated = false;
 };
