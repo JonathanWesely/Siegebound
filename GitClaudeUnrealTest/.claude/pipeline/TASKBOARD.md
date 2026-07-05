@@ -30,7 +30,7 @@ Source: `Docs/GDD.md` §9. Only the current milestone is decomposed into tasks; 
 1. **M1 — Core loop, local, one card** — `done (playtested + signed off by Jonathan 2026-07-03 evening; round-1 combat-legibility findings all fixed and confirmed)`
 2. **M2 — Economy + deck/hand + core set + defenses** — `done-pending-playtest (functionally complete, committed aafd968+5bb9507 not pushed; 1 known gap = visual hand UI manual pass [TASK-041]; awaiting Jonathan's round-1 M2 playtest)` (TASK-021..040; M2a/M2b exit criteria in "M2 manager decisions" below)
 3. **M3 — Bot opponent = real 1v1 match** — `done (committed 2f6a8fc + c8a40b2 + 56247c9, not pushed; m3-testable @ 56247c9; slice verified, interactive items pending Jonathan's playtest)`
-4. **M4 — Card Set II (16 cards, keywords, hero upgrades)** — `current (decomposed 2026-07-04 → TASK-053..069; Jonathan greenlit M4, developed on main; branches m2-testable @ f903cf0 + m3-testable @ 56247c9 preserve prior slices; see "## M4 tasks")`
+4. **M4 — Card Set II (16 cards, keywords, hero upgrades)** — `done (committed 65861ce + e586699, not pushed; m4-testable @ e586699; slice verified, interactive items pending Jonathan's playtest)` (TASK-053..069; branches m2-testable @ f903cf0 + m3-testable @ 56247c9 + m4-testable @ e586699 preserve the milestone slices; see "## M4 tasks")
 5. M5 — Spell system + Set III — `not-started`
 6. M6 — Deck-builder meta — `not-started`
 7. M7 — Premium art & feel pass — `not-started` · **Jonathan request (2026-07-04):** raise fidelity on SM_Castle + SM_Footman + SM_Archer (higher detail than the current blockouts); wants the game to look nicer. Decision: DEFERRED here (mesh swaps are non-breaking; roster still growing through M4-M6). Two integration paths to scope at M7: (a) art-director custom higher-detail Blender models, and/or (b) **Fab/UE-marketplace assets — Jonathan must download packs into the project via the Epic Launcher first (agents can't browse/buy/download Fab autonomously); art-director then swaps meshes/materials.** Could be pulled forward as a standalone art pass after M3/M4 if Jonathan wants it sooner.
@@ -107,7 +107,132 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ## Active tasks
 
-(empty — M1/M2/M3 all complete + committed [none pushed]. **M4 is decomposed-and-READY in ## M4 tasks (TASK-053..069, statuses `backlog`)** — Jonathan greenlit M4; first parallel wave = TASK-053 [card data, files] + TASK-065/066/067 [art meshes, Blender]. Open carry-forwards tracked in the "## M4 tasks" carry-forward block: (a) M3 WATCH transient-Blue-unit cold-boot reconfirm, (b) TASK-046 WARN-2 discard hardening [folded into TASK-060], (c) M2 TASK-041 visual hand UI manual pass [still open].)
+**M1/M2/M3/M4 all complete + committed on `main` (nothing pushed).** M4 wrapped 2026-07-04 — code **65861ce** (via TASK-068) + editor/art **e586699** (via TASK-069); milestone preserved on **m4-testable @ e586699** (the full-game superset M2+M3+M4). **M5 (Spell system + Set III) is NOT started** — Jonathan authorized only through M4; awaiting his go-ahead + M2/M3/M4 playtest feedback before decomposing M5.
+
+**Current state (2026-07-05):** on `main` @ **5c1fcb7**, clean tree, NOT pushed. **TASK-070** (L_Arena stray-actor cleanup, a745799) and **TASK-041** (visual hand UI, 5c1fcb7) are BOTH `done` + committed — the one known M2 gap (visual hand) is CLOSED and the M3 transient-Blue-unit WATCH is CLOSED. Branches m2/m3/m4-testable preserved. Old carry-forwards resolved: (a) M2 TASK-041 visual hand UI — DONE (5c1fcb7); (b) M3 transient-Blue-unit WATCH — CLOSED by TASK-070; (c) TASK-046 WARN-2 bot discard hardening — CLOSED in TASK-060.
+
+### Sandbox / test-tooling feature (TASK-071..073) — Jonathan-approved 2026-07-05
+**This is a developer/test affordance, NOT M5 content — building it does NOT break the "M5 not authorized" hold.** Jonathan wants a calm "Sandbox (No Bot)" test bench to exercise the full 22-card roster on `main` without the enemy AI's chaos. Not a milestone; it lives in Active tasks and integrates as a small chain. Mechanism = a level-open URL option `Sandbox=1` (NOT a GameInstance) — full naming law in CONVENTIONS.md "Dev / test tooling". Chain runs strictly in sequence: **TASK-071 (C++ gate) → TASK-072 (menu button, editor) → TASK-073 (build-master integrate + commit).** The editor is CLOSED now; build-master relaunches it (and compiles TASK-071) before the editor/UMG task. Note: `WBP_MainMenu` already EXISTS at `/Game/UI/WBP_MainMenu` (TASK-049) — the menu is a real widget, not a level-BP.
+
+#### TASK-071 — Sandbox bot-spawn gate + generous economy (C++)
+- assignee: gameplay-programmer
+- status: done (committed e9cb7f7 via TASK-073). QA PASS (0 blocker/0 warn/2 nit; Red-PS null-safety complete, shadow-clean, StartMatch byte-identical, AddGold correct). Compile PASS clean. ORCH RULINGS: AddGold ACCEPTED, 999 gold ACCEPTED. handoffs/TASK-071.md, qa/TASK-071-report.md.
+- blocked-by: none
+- parallel-safe: yes (file-only C++; touches SiegeGameMode.h/.cpp only. Within this feature the chain is strictly serial 071→072→073, but 071 shares no files with any other open work)
+- spec: >
+    Files only, no editor, no compile. This is a dev/test affordance (Sandbox/test-tooling — see CONVENTIONS.md
+    "Dev / test tooling"), NOT M5/GDD content. Goal: when a sandbox flag is set, L_Arena boots with NO enemy
+    bot so the full 22-card roster is freely testable against a static Red-castle target dummy (M1-like, but with
+    the full M2/M3/M4 hand + roster).
+    (0) AUDIT FIRST: the bot spawn site is already located — ASiegeGameMode::SpawnBot() (SiegeGameMode.cpp
+    ~line 677, called from BeginPlay) spawns the single ASiegeBotController into the member BotController; the
+    Red bot ASiegePlayerState is created by the bot controller's bWantsPlayerState. Confirm this before editing;
+    do NOT introduce a USiegeGameInstance (none exists — use the level-open option instead).
+    (1) Latch a sandbox flag from a level-open URL option: override AGameModeBase::InitGame (or read the mode's
+    OptionsString at the earliest safe point) and set a new `bool bSandboxMatch` when
+    UGameplayStatics::HasOption(Options, TEXT("Sandbox")) is true. The token string is exactly "Sandbox" (=1).
+    bSandboxMatch persists for the life of the L_Arena world so PlayAgain stays sandbox.
+    (2) Gate the bot: SpawnBot() early-returns when bSandboxMatch is true — no ASiegeBotController spawned, no Red
+    bot PlayerState seeded, no bot decisions ever fire. Everything else (Blue player, hero, castles, hand, deck,
+    economy tick, win condition binding on both castles) stays exactly as today. Verify nothing dereferences the
+    Red ASiegePlayerState unconditionally in a way that would crash when it is absent (win condition, overtime
+    rate, GetPlayerStateForTeam(Red) callers) — Blue units target the Red ACastle actor directly, which still
+    exists, so the roster stays testable; guard any Red-PS read null-safely.
+    (3) Menu entry: add `static void StartSandboxMatch(const UObject* WorldContextObject)`
+    (UFUNCTION BlueprintCallable, WorldContext) mirroring the existing StartMatch, but pass the Options string
+    "Sandbox=1" through UGameplayStatics::OpenLevelBySoftObjectPtr(WorldContextObject, ArenaLevel, true,
+    TEXT("Sandbox=1")). Do NOT change StartMatch's signature or behavior (Play vs Bot must be byte-identical).
+    (4) Generous economy: add UPROPERTY(EditDefaultsOnly, Category="Siegebound|Sandbox") int32 SandboxStartingGold
+    = 9999 (// dev sandbox — full roster freely playable). When bSandboxMatch is true, grant the Blue player this
+    starting pile once at match start THROUGH the existing ASiegePlayerState gold API (do not bypass it / do not
+    hardcode a raw gold field write). Keep the normal gold rate.
+    (5) CONVENTIONS shadow law (C4457/58/59): no local/param/loop var may shadow an inherited reflected UPROPERTY
+    (Owner/PlayerState/Instigator/Controller/etc.) — the InitGame override's `Options`/`ErrorMessage` params are
+    engine-named, keep new locals distinct. QA MUST scan this task for shadow vars pre-compile.
+    Acceptance: with the option set (open L_Arena?Sandbox=1, i.e. via StartSandboxMatch), at BeginPlay there is
+    ZERO ASiegeBotController in the world and no bot ever plays a card; the Blue player starts with SandboxStartingGold
+    and the full hand/roster is playable against Castle_Red; PlayAgain in a sandbox match does NOT spawn a bot.
+    Without the option (StartMatch / Play vs Bot), the bot spawns and behaves EXACTLY as today. Nothing hardcoded
+    that lives in DT_Cards; the StartMatch path is unchanged.
+- names: >
+    ASiegeGameMode (Source/GitClaudeUnrealTest/Siegebound/SiegeGameMode.h/.cpp) — new member bool bSandboxMatch;
+    UPROPERTY int32 SandboxStartingGold (default 9999); static void StartSandboxMatch(const UObject* WorldContextObject);
+    InitGame override to parse the option. Option token: "Sandbox" (value 1), parsed via
+    UGameplayStatics::HasOption / passed via OpenLevelBySoftObjectPtr Options="Sandbox=1". Bot gate:
+    ASiegeGameMode::SpawnBot() early-return; class ASiegeBotController (Siegebound/SiegeBotController.h).
+    Player gold API: existing ASiegePlayerState gold methods (Siegebound/SiegePlayerState.h). Arena target:
+    ArenaLevel (/Game/Maps/L_Arena). Full naming law: CONVENTIONS.md "Dev / test tooling".
+
+#### TASK-072 — "Sandbox (No Bot)" main-menu button (editor / UMG)
+- assignee: gameplay-programmer
+- status: done (committed e9cb7f7 via TASK-073; WBP_MainMenu.uasset). Additive Btn_Sandbox "Sandbox (No Bot)" at VBox index 1 (Play·Sandbox·Deck·Quit), OnClicked→static StartSandboxMatch (WorldContext=self). Play-vs-Bot binding byte-identical. Compiles clean + saved. handoffs/TASK-072.md.
+- blocked-by: TASK-071 (needs the compiled StartSandboxMatch UFUNCTION resolvable in the editor to bind the button)
+- parallel-safe: no (editor-mutating — single editor instance; edits WBP_MainMenu. Requires the editor running with TASK-071 compiled in — build-master performs the editor-bounce compile of TASK-071 before this task, per the M2/M4 "C++ compiles, then editor wave" pattern)
+- spec: >
+    Editor/MCP UMG work in /Game/UI/WBP_MainMenu (it EXISTS — TASK-049 authored it; the orchestrator's "no
+    WBP_MainMenu" note is stale). ADDITIVE only. (1) Read the existing menu: find the current "Play vs Bot"
+    button (bound OnClicked → ASiegeGameMode::StartMatch) and note its parent panel + naming so the new button
+    matches its layout/style. (2) Add a sibling button `Btn_Sandbox` directly next to it, label text
+    "Sandbox (No Bot)"; bind its OnClicked to call the static ASiegeGameMode::StartSandboxMatch (WorldContext =
+    self). (3) Do NOT disturb the existing Play-vs-Bot button, its binding, or any other menu widget/nav — this is
+    purely additive; the existing button must still open L_Arena with the bot exactly as today.
+    Acceptance (verified at integration PIE by build-master): the menu shows both buttons; clicking "Sandbox
+    (No Bot)" opens L_Arena with NO enemy bot; clicking "Play vs Bot" still opens L_Arena WITH the bot. MCP-authored
+    UMG is reliable now (TASK-041/050/064). Post the WBP_MainMenu save + button name in the handoff.
+- names: >
+    /Game/UI/WBP_MainMenu — new button `Btn_Sandbox`, label "Sandbox (No Bot)", OnClicked →
+    ASiegeGameMode::StartSandboxMatch (from TASK-071). Existing button (do not touch) calls
+    ASiegeGameMode::StartMatch. Full naming law: CONVENTIONS.md "Dev / test tooling".
+
+#### TASK-073 — Sandbox mode integration: compile, PIE-verify, commit (build-master)
+- assignee: build-master
+- status: done (commit e9cb7f7 on main, parent 5c1fcb7, NOT pushed; 9 files selective, +231/-0 code additive). Phase1 compile PASS (clean, ~23s). PIE: Play-vs-Bot REGRESSION verified LIVE (bot spawns + Rule2/3/4 decisions + Red PS present → gate didn't break shipping). Sandbox branch NOT drivable via MCP (bSandboxMatch is non-reflected; StartPIE ignores ?Sandbox=1 AdditionalServerGameOptions — proven via listen-server test; no console-open/UFUNCTION-invoke/menu-click injection) → QA-verified + compiled, needs Jonathan's 1 menu-click to confirm live (expect log: "Sandbox match", "SpawnBot skipped", "granted 9999 gold (now 999)"). Both menu buttons present (structural). Editor left UP PID 16916 on L_Arena. handoffs/TASK-073.md.
+  - FOLLOW-UP: CONVENTIONS.md "Dev/test tooling" section left unstaged → committing separately.
+- blocked-by: TASK-071, TASK-072
+- parallel-safe: no (owns the single editor + the compile + the Git commit)
+- spec: >
+    Integration for the Sandbox/test-tooling feature. (1) Relaunch the UE editor (currently CLOSED) and compile the
+    TASK-071 C++ via the standard editor-bounce/Build.bat — this compile must happen BEFORE TASK-072's UMG binding
+    can resolve StartSandboxMatch, so sequence: compile TASK-071 → hand back to the orchestrator so TASK-072 authors
+    the button against the live module → then this integration completes. If the compile fails, append errors to
+    qa/TASK-071-report.md and route back to gameplay-programmer (counts as a QA loop). (2) After TASK-072 lands,
+    PIE-verify the full slice: main menu (L_MainMenu) shows both buttons → click "Sandbox (No Bot)" → L_Arena boots
+    with ZERO ASiegeBotController (check logs: no "Spawned bot opponent" line; no LogSiegeBot decisions), Blue starts
+    with the generous SandboxStartingGold, and the full roster is playable via the visual hand / hotkeys 1–6 against
+    the static Castle_Red with NO opposing AI. (3) Regression: from the menu click "Play vs Bot" → confirm the bot
+    STILL spawns exactly as today (the "Spawned bot opponent … Red ASiegePlayerState" log line appears and the bot
+    plays cards). (4) Commit to `main` with the task IDs (TASK-071/072/073) in the message. **NOT pushed** (no remote
+    push without Jonathan's explicit instruction). Post compile result + commit hash in 🔧 Build & Git.
+    Acceptance: clean compile; sandbox slice verified bot-free + roster playable; Play-vs-Bot regression confirmed
+    bot-present; committed to main, not pushed.
+- names: >
+    Build target GitClaudeUnrealTestEditor (Build.bat per CLAUDE.md). Maps: /Game/Maps/L_MainMenu (menu),
+    /Game/Maps/L_Arena (match). Verify absence of ASiegeBotController; StartSandboxMatch vs StartMatch paths.
+    Commit to main only, not pushed.
+
+### TASK-070 — L_Arena stray-actor cleanup (editor)
+- assignee: gameplay-programmer
+- status: done (commit a745799 on main, parent e586699, NOT pushed; selective — only L_Arena.umap + handoff). Removed 3 M2 TM040_ verification strays (Footman_C_1/Miner_C_2/ArrowTower_C_1); 27 intended actors intact; PIE clean-start VERIFIED (0 strays, bot opens Rule 3 Attack not t=0 defend) → M3 transient-unit WATCH CLOSED. main-only fix (m2/m3/m4-testable snapshots still carry the strays → playtest full game on MAIN for clean start). NOTE (tuning, not defect): bot opens with attack not economy (affords Ogre at start) — possible balance item for playtest. handoffs/TASK-070.md.
+- blocked-by: none
+- parallel-safe: no (editor-mutating — one editor instance; touches L_Arena.umap)
+- spec: >
+    Editor/MCP work in /Game/Maps/L_Arena. Root-caused in handoffs/TASK-069.md: three verification actors
+    were accidentally saved into L_Arena.umap during the M2 editor pass and have been committed on EVERY
+    branch since 5bb9507 / 40b69ef — they appear as stray units at match start and make the bot play a
+    Rule-1 "defend" at t=0 (it reads them as an enemy push on its half). (1) Delete the three stray actor
+    instances from L_Arena: BP_Unit_Footman_C_1, BP_Unit_Miner_C_2, BP_Building_ArrowTower_C_1 (confirm by
+    class + transform before deleting; do NOT touch the legitimate GoldNode_Blue/Red, Castle_Blue/Red,
+    arena boundary volumes, PlayerStart, KillZ, nav, or decal actors). (2) Re-save L_Arena (is_dirty=false).
+    (3) PIE a COLD-BOOT match start and verify a CLEAN start: zero stray Blue/Red units on the field at
+    t=0, and the bot does NOT play a Rule-1 defensive card at t=0 (LogSiegeBot shows no defend until the
+    player actually pushes onto the bot half). Fixing on `main` ONLY — the -testable branches are frozen
+    snapshots; the fix lands going forward. build-master commits the re-saved L_Arena at integration.
+    Acceptance: L_Arena saved clean; PIE match starts with zero stray actors; the M3 transient-Blue-unit
+    WATCH is closed; no legitimate arena actor disturbed.
+- names: >
+    /Game/Maps/L_Arena (L_Arena.umap). Stray actors to remove: BP_Unit_Footman_C_1, BP_Unit_Miner_C_2,
+    BP_Building_ArrowTower_C_1. Preserve: GoldNode_Blue (-1200,0,0), GoldNode_Red (+1200,0,0), Castle_Blue,
+    Castle_Red, arena boundary volumes, PlayerStart, WorldSettings KillZ. Root cause: handoffs/TASK-069.md.
 
 ---
 
@@ -123,7 +248,7 @@ All M2 tasks integrated + committed on `main`, **NOT pushed**: C++ batch TASK-02
 
 #### TASK-041 — WBP_CardHand visual hand UI + HUD stat texts (manual UMG pass)
 - assignee: gameplay-programmer
-- status: backlog (PRIORITY — the one known M2 gap; expected to be a manual / Jonathan-assisted session because MCP cannot author widget trees)
+- status: done (commit 5c1fcb7 on main, parent a745799, NOT pushed; 3 files +164/-4). DONE FULLY via MCP 2026-07-04 (editor UP PID 19464). M2 KNOWN GAP CLOSED — no human designer pass needed (path-tracing instability that killed TASK-033 is gone). WBP_HUD: GoldRateText/MinerCountText/OvertimeText, seed-then-bind (GetGoldRate→OnGoldRateChanged, GetAliveMinerCount→OnMinerCountChanged, IsOvertimeActive→OnOvertimeStarted; "/6"=MaxActiveMiners const). WBP_CardHand: full 6-slot hand via runtime BuildHandTree — per slot DisplayName+cost, play btn→RequestPlaySlot(i), discard "1"→RequestDiscardSlot(i), SetIsEnabled(bAffordable) grey, + preview + ~2s refusal; all 3 BIEs rendered (OnHandSlotUpdated/OnNextCardUpdated/OnCardRefusedMessage), empty CardID hides face, nothing typed in UMG. WARN-4: root SelfHitTestInvisible + interactive children Visible. Footman btn retired (collapsed — Btn_Jump anchors gold Construct nav, can't hard-delete). PRESERVED (readback+PIE): M1 gold Construct byte-intact, M3 Rally + M4 upgrade row intact, InitForController path. MCP survived ~140 calls; clean PIE boot 0 errors. Interactive click/grey/discard → Jonathan's playtest. build-master commits WBP_HUD+WBP_CardHand. handoffs/TASK-041.md.
 - blocked-by: none (all C++ symbols shipped at aafd968; the data path is live — WBP_CardHand is reparented to UCardHandWidget and InitForController fires at runtime)
 - parallel-safe: no (edits WBP_CardHand + WBP_HUD; coordinate with M3 TASK-050 which also edits WBP_HUD — do this one first, or fold the Rally indicator into it)
 - spec: >
@@ -944,8 +1069,14 @@ All M3 tasks integrated + committed on `main`, **NOT pushed**: C++ batch TASK-04
 
 ## M4 tasks (decomposed 2026-07-04)
 
-### M4 — CURRENT (Jonathan greenlit M4 2026-07-04; developed on `main`; branches `m2-testable` @ f903cf0 + `m3-testable` @ 56247c9 preserve prior slices)
-M4 = GDD §9-4 + §4 Set II (16 cards) + §3.0 keywords (Siege/Charge/Slayer/Swarm) + §3.8 Siege & Support profiles + §3.10 hero upgrades + §4 Bot Set II extension. **Slice:** expanded-roster combat clip — Ogre push vs Bomb Tower defense. Statuses are `backlog` (Jonathan authorized M4 — NOT held). **Every code task (053–060) implies a QA review** (standard qa loop); the chain ends at build-master integration (TASK-068 compile, TASK-069 final assembly).
+### M4 COMPLETE — 2026-07-04 (done; committed, not pushed; read this first)
+All M4 tasks integrated + committed on `main`, **NOT pushed**: C++ batch TASK-053..060 at **65861ce** (via TASK-068, parent 56247c9, clean compile+link first try); editor/art TASK-061..067 + assembly TASK-069 at **e586699** (parent 65861ce). Milestone preserved on branch **m4-testable @ e586699** = the FULL-GAME superset M2+M3+M4 (earlier slices on **m3-testable @ 56247c9** + **m2-testable @ f903cf0**). TASK-053..069 all `done`; blocks left in place (not relocated to ## Done) to preserve the M4 audit trail.
+- **Slice verified (TASK-069):** §9-4 expanded-roster slice — ZERO M4-feature FAILs. LIVE PASS: the bot self-drives Set II (repeated Ogre push, discards upgrades/Instants, never unaffordable / never Blue-half, Siege army killed the Blue castle 2000→0 in ~41 s), DT_Cards 22-row reconfirmed warm+cold (DeckCount=50, save-clean), and a real-PIE Defeat screen fired (closes the M2 "no PlayerController end-screen" watch).
+- **DEFERRED to Jonathan's playtest** (each backed by a code-QA PASS; MCP cannot inject card-play): keyword fires (Charge/Slayer/Swarm/Suicide/Siege), Support heal, new-tower behaviors (Bomb AoE, Ballista blind spot), Barracks spawn+expire, Deep Mine +2/s, and hero-upgrade apply/stack/cap/refund + persist-through-death + reset-on-PlayAgain.
+- **FOLLOW-UP found → TASK-070 (backlog, in ## Active tasks):** 3 stray verification actors committed into L_Arena.umap since M2 (BP_Unit_Footman_C_1, BP_Unit_Miner_C_2, BP_Building_ArrowTower_C_1) — present on ALL branches; cause the "stray Blue unit at match start" + a bot t=0 defend. Root cause in handoffs/TASK-069.md.
+
+### M4 — COMPLETE (Jonathan greenlit M4 2026-07-04; developed on `main`; branches `m2-testable` @ f903cf0 + `m3-testable` @ 56247c9 + `m4-testable` @ e586699 preserve the milestone slices)
+M4 = GDD §9-4 + §4 Set II (16 cards) + §3.0 keywords (Siege/Charge/Slayer/Swarm) + §3.8 Siege & Support profiles + §3.10 hero upgrades + §4 Bot Set II extension. **Slice:** expanded-roster combat clip — Ogre push vs Bomb Tower defense. Statuses are all `done` (code TASK-053..060 @ 65861ce, editor/art TASK-061..067 @ e586699, not pushed). **Every code task (053–060) implied a QA review** (standard qa loop); the chain ended at build-master integration (TASK-068 compile, TASK-069 final assembly).
 
 **Dispatch order (from blocked-by):**
 - **Wave 1 (parallel, start immediately):** TASK-053 (card data, files) + the three art mesh tasks TASK-065 / TASK-066 / TASK-067 (Blender modeling runs parallel with code; the editor-IMPORT step of each art task serializes with all editor-mutating tasks — one editor instance).
@@ -974,7 +1105,7 @@ M4 = GDD §9-4 + §4 Set II (16 cards) + §3.0 keywords (Siege/Charge/Slayer/Swa
 
 ### TASK-053 — Card data: FCardRow keyword columns + cards.csv Set II rows + M4 test deck (files)
 - assignee: gameplay-programmer
-- status: qa-passed (qa/TASK-053-report.md — 0 blk/0 warn/0 nit). CONFIRMED: header↔FCardRow 1:1 name+order (TASK-061 reimport will warn zero); DeckCount = exactly 50 (each ≥1 ≤MaxCopies); all 16 Set II rows §4 character-exact; 6 core rows byte-unchanged; keyword-column sparsity clean; no enum adds/shadowing. Data foundation for TASK-054-060. handoffs/TASK-053.md.
+- status: done (committed 65861ce via TASK-068, not pushed). qa-passed (qa/TASK-053-report.md — 0 blk/0 warn/0 nit). CONFIRMED: header↔FCardRow 1:1 name+order (TASK-061 reimport will warn zero); DeckCount = exactly 50 (each ≥1 ≤MaxCopies); all 16 Set II rows §4 character-exact; 6 core rows byte-unchanged; keyword-column sparsity clean; no enum adds/shadowing. Data foundation for TASK-054-060. handoffs/TASK-053.md.
 - blocked-by: none
 - parallel-safe: yes
 - spec: >
@@ -1020,7 +1151,7 @@ M4 = GDD §9-4 + §4 Set II (16 cards) + §3.0 keywords (Siege/Charge/Slayer/Swa
 
 ### TASK-054 — New targeting profiles: Siege + Support + Siege damage type & castle/building 200% (files)
 - assignee: gameplay-programmer
-- status: qa-passed (qa/TASK-054-report.md — 0 blk/0 warn/3 nit; both interp calls ACCEPTED [Siege nearest-building map-wide, Support fallback follows combat units]). NON-REGRESSION CONFIRMED: Standard/melee/ranged/miners byte-identical M3 (Profile dispatch returns before untouched Standard body); castle Siege×2 before Projectile×0.5-castle-only; building Siege×2 branch, ScaledDamage==ActualDamage for non-Siege. Cleric heals 8/s≤400 clamped, never attacks. FreezeAI stops healing. C4458 clean, TASK-055 seam clean. handoffs/TASK-054-programmer.md. Ready for TASK-068 batch.
+- status: done (committed 65861ce via TASK-068, not pushed). qa-passed (qa/TASK-054-report.md — 0 blk/0 warn/3 nit; both interp calls ACCEPTED [Siege nearest-building map-wide, Support fallback follows combat units]). NON-REGRESSION CONFIRMED: Standard/melee/ranged/miners byte-identical M3 (Profile dispatch returns before untouched Standard body); castle Siege×2 before Projectile×0.5-castle-only; building Siege×2 branch, ScaledDamage==ActualDamage for non-Siege. Cleric heals 8/s≤400 clamped, never attacks. FreezeAI stops healing. C4458 clean, TASK-055 seam clean. handoffs/TASK-054-programmer.md. Ready for TASK-068 batch.
 - blocked-by: TASK-053
 - parallel-safe: yes (parallel with TASK-057 — different files; TASK-055 serializes AFTER it on SummonedUnit)
 - spec: >
@@ -1048,7 +1179,7 @@ M4 = GDD §9-4 + §4 Set II (16 cards) + §3.0 keywords (Siege/Charge/Slayer/Swa
 
 ### TASK-055 — Standard keywords: Charge / Slayer / Swarm + damage-multiplier infra + AoE radial helper + Sapper suicide (files)
 - assignee: gameplay-programmer
-- status: qa-passed (qa/TASK-055-report.md — 0 blk/0 warn/3 nit). CONFIRMED: non-keyword ComputeOutputDamage bit-for-bit AttackDamage; ONE-hit charge (bChargePrimed consumed once); SINGLE detonation (bDetonated+bDead guards); drift-free aura (multiplier separate, restore 1.0f, FreezeAI/EndPlay clear); NO friendly-fire radial (GetTeamId==Team sole authority, closest-point reaches fortifications, routes through TakeDamage so Siege fires). Downstream signatures verified: FSiegeCombatStatics::ApplyRadialDamage (→056), ASummonedUnit::SetAuraDamageBonus (→058). No Build.cs. C4458 clean. NIT: fold the 3 closest-point mirrors into SiegeCombatStatics later (qa/TASK-026 NIT-4). handoffs/TASK-055.md. Ready for TASK-068 batch.
+- status: done (committed 65861ce via TASK-068, not pushed). qa-passed (qa/TASK-055-report.md — 0 blk/0 warn/3 nit). CONFIRMED: non-keyword ComputeOutputDamage bit-for-bit AttackDamage; ONE-hit charge (bChargePrimed consumed once); SINGLE detonation (bDetonated+bDead guards); drift-free aura (multiplier separate, restore 1.0f, FreezeAI/EndPlay clear); NO friendly-fire radial (GetTeamId==Team sole authority, closest-point reaches fortifications, routes through TakeDamage so Siege fires). Downstream signatures verified: FSiegeCombatStatics::ApplyRadialDamage (→056), ASummonedUnit::SetAuraDamageBonus (→058). No Build.cs. C4458 clean. NIT: fold the 3 closest-point mirrors into SiegeCombatStatics later (qa/TASK-026 NIT-4). handoffs/TASK-055.md. Ready for TASK-068 batch.
 - blocked-by: TASK-053, TASK-054 (serialize — shares SummonedUnit files; needs USiegeDamageType_Siege)
 - parallel-safe: no (SummonedUnit serial hub; TASK-056 and TASK-058 depend on symbols added here)
 - spec: >
@@ -1078,7 +1209,7 @@ M4 = GDD §9-4 + §4 Set II (16 cards) + §3.0 keywords (Siege/Charge/Slayer/Swa
 
 ### TASK-056 — New towers: Bomb Tower (AoE) + Ballista Tower (min-range blind spot) (files)
 - assignee: gameplay-programmer
-- status: qa-passed (qa/TASK-056-report.md — 0 blk/0 warn/2 nit). CONFIRMED: single-target/ArrowTower byte-unchanged (trailing default InAoERadius=0, sole 4-arg Archer caller binds, AoE branch gated AoERadius>0, ArrowTower MinRangeSq==0 inert); Bomb AoE 25-in-250 via ApplyRadialDamage (7-arg sig matches, closest-point catches primary); Ballista MinRangeSq skip ring [300,1400] max-gate intact; NO friendly fire (Bomb carries tower Team). Row-driven ATower (both BPs parent ATower, TASK-063). No Build.cs. C4458 clean. handoffs/TASK-056.md. Ready for TASK-068 batch.
+- status: done (committed 65861ce via TASK-068, not pushed). qa-passed (qa/TASK-056-report.md — 0 blk/0 warn/2 nit). CONFIRMED: single-target/ArrowTower byte-unchanged (trailing default InAoERadius=0, sole 4-arg Archer caller binds, AoE branch gated AoERadius>0, ArrowTower MinRangeSq==0 inert); Bomb AoE 25-in-250 via ApplyRadialDamage (7-arg sig matches, closest-point catches primary); Ballista MinRangeSq skip ring [300,1400] max-gate intact; NO friendly fire (Bomb carries tower Team). Row-driven ATower (both BPs parent ATower, TASK-063). No Build.cs. C4458 clean. handoffs/TASK-056.md. Ready for TASK-068 batch.
 - blocked-by: TASK-053, TASK-055 (reuses ApplyRadialDamage; AProjectile AoE)
 - parallel-safe: yes (parallel with TASK-057/058 — different files, once 055 lands)
 - spec: >
@@ -1104,7 +1235,7 @@ M4 = GDD §9-4 + §4 Set II (16 cards) + §3.0 keywords (Siege/Charge/Slayer/Swa
 
 ### TASK-057 — New buildings: Barracks spawner + Deep Mine economy (files)
 - assignee: gameplay-programmer
-- status: qa-passed (qa/TASK-057-report.md — 0 blk/1 warn/3 nit). M2/M3 miner economy BYTE-PRESERVED (symbol-traced: FlatIncomePerTick isolated, GetGoldRate base+miner unchanged, flat not overtime-doubled, ResetEconomy zeroes it, miner cap never gates DeepMines). Freeze step-2b CLEAN (additive, no double-handle, synchronous). WARN: mis-teamed DeepMine idle retry timer (bounded, never in designed flows). C4458 clean. CARRY→TASK-059: route Economy-typed DeepMine down building spawn path. handoffs/TASK-057-programmer.md. Ready for TASK-068 batch.
+- status: done (committed 65861ce via TASK-068, not pushed). qa-passed (qa/TASK-057-report.md — 0 blk/1 warn/3 nit). M2/M3 miner economy BYTE-PRESERVED (symbol-traced: FlatIncomePerTick isolated, GetGoldRate base+miner unchanged, flat not overtime-doubled, ResetEconomy zeroes it, miner cap never gates DeepMines). Freeze step-2b CLEAN (additive, no double-handle, synchronous). WARN: mis-teamed DeepMine idle retry timer (bounded, never in designed flows). C4458 clean. CARRY→TASK-059: route Economy-typed DeepMine down building spawn path. handoffs/TASK-057-programmer.md. Ready for TASK-068 batch.
 - blocked-by: TASK-053
 - parallel-safe: yes (parallel with TASK-054/055 — different files; new class pairs + a PlayerState income addition)
 - spec: >
@@ -1131,7 +1262,7 @@ M4 = GDD §9-4 + §4 Set II (16 cards) + §3.0 keywords (Siege/Charge/Slayer/Swa
 
 ### TASK-058 — Hero upgrade system + War Banner aura (files)
 - assignee: gameplay-programmer
-- status: qa-passed (qa/TASK-058-report.md — 0 blk/0 warn/1 nit). Hero non-regression byte-preserved @ 0 stacks: sprint 500/750 (ApplyMovementSpeed single live-writer + bSprinting; SwiftBoots composes 625/937.5), melee 20 (getter not hardcoded, TASK-016/017 feedback intact), HP 200+regen (all clamps route through GetEffectiveMaxHP, PlateArmor heals 100 clean), Rally untouched. 4 upgrades work, DRIFT-FREE (only 4 int32 stacks mutate), refund contract clean, caps from MaxCopies. WarBanner aura signature matches TASK-055. PlayAgain-reset gap VERIFIED clean 059 carry (ResetHero is shared respawn+PlayAgain path). NIT: 2 direct MaxWalkSpeed writes (HandleDeath/ctor) provably consistent. handoffs/TASK-058-programmer.md. Ready for TASK-068 batch. ⚠️CARRY→TASK-059: add Hero->ResetUpgrades() in SiegeGameMode::PlayAgain.
+- status: done (committed 65861ce via TASK-068, not pushed). qa-passed (qa/TASK-058-report.md — 0 blk/0 warn/1 nit). Hero non-regression byte-preserved @ 0 stacks: sprint 500/750 (ApplyMovementSpeed single live-writer + bSprinting; SwiftBoots composes 625/937.5), melee 20 (getter not hardcoded, TASK-016/017 feedback intact), HP 200+regen (all clamps route through GetEffectiveMaxHP, PlateArmor heals 100 clean), Rally untouched. 4 upgrades work, DRIFT-FREE (only 4 int32 stacks mutate), refund contract clean, caps from MaxCopies. WarBanner aura signature matches TASK-055. PlayAgain-reset gap VERIFIED clean 059 carry (ResetHero is shared respawn+PlayAgain path). NIT: 2 direct MaxWalkSpeed writes (HandleDeath/ctor) provably consistent. handoffs/TASK-058-programmer.md. Ready for TASK-068 batch. ⚠️CARRY→TASK-059: add Hero->ResetUpgrades() in SiegeGameMode::PlayAgain.
 - blocked-by: TASK-053, TASK-055 (uses the SetAuraDamageBonus unit hook)
 - parallel-safe: yes (edits HeroCharacter + a new component — no other M4 task edits HeroCharacter)
 - spec: >
@@ -1161,7 +1292,7 @@ M4 = GDD §9-4 + §4 Set II (16 cards) + §3.0 keywords (Siege/Charge/Slayer/Swa
 
 ### TASK-059 — Play v3: Instant/upgrade routing + Masons castle-heal + Swarm multi-spawn + stack-cap refund (files)
 - assignee: gameplay-programmer
-- status: qa-passed (qa/TASK-059-report.md — 0 blk/2 warn/2 nit; both flagged items ACCEPTED). CONFIRMED: melee-suppression intact all exit paths; net-zero refund all branches (Swarm unwinds copies on fail); existing Unit/Building/Miner/placement-v2 byte-preserved; apply-then-spend SAFE (CanAfford pre-check, ApplyUpgrade first, SpendGold only on Applied); SpawnUnitSwarm clean static (TASK-060 consumes as-is); IsBuildingCard routes DeepMine→building path (not miner-capped), Miner still unit; Masons 300/10 clamp+cancel clean. WARNs benign (post-match Masons tick on winner castle out-of-scope; off-navmesh ring fallback). C4458 clean. handoffs/TASK-059.md. Ready for TASK-068 batch.
+- status: done (committed 65861ce via TASK-068, not pushed). qa-passed (qa/TASK-059-report.md — 0 blk/2 warn/2 nit; both flagged items ACCEPTED). CONFIRMED: melee-suppression intact all exit paths; net-zero refund all branches (Swarm unwinds copies on fail); existing Unit/Building/Miner/placement-v2 byte-preserved; apply-then-spend SAFE (CanAfford pre-check, ApplyUpgrade first, SpendGold only on Applied); SpawnUnitSwarm clean static (TASK-060 consumes as-is); IsBuildingCard routes DeepMine→building path (not miner-capped), Miner still unit; Masons 300/10 clamp+cancel clean. WARNs benign (post-match Masons tick on winner castle out-of-scope; off-navmesh ring fallback). C4458 clean. handoffs/TASK-059.md. Ready for TASK-068 batch.
 - blocked-by: TASK-053, TASK-055 (SwarmCount), TASK-058 (ApplyUpgrade)
 - parallel-safe: yes (edits SiegePlayerController + a Castle heal-over-time; serialize after TASK-058 only for the symbol)
 - spec: >
@@ -1187,7 +1318,7 @@ M4 = GDD §9-4 + §4 Set II (16 cards) + §3.0 keywords (Siege/Charge/Slayer/Swa
 
 ### TASK-060 — Bot v2: play Set II + treat upgrades/instants as discard + rule-4 discard hardening (files)
 - assignee: gameplay-programmer
-- status: qa-passed (qa/TASK-060-report.md — 0 blk/1 warn/1 nit). Invariants CONFIRMED (never unaffordable, never Blue-half center); M3-core byte-preserved; rule-4 fix GENUINE (closes TASK-046 WARN-2 — no double/0 charge); SwarmCount via SpawnUnitSwarm (4 Red copies, unwind on fail). Type-unplayable-only discard RULED ACCEPTABLE (no deadlock — 50g start, income accrues; excluding banked units preserves "growing Ogre waves"). WARN: swarm-fan never-Blue-half contingent on Center.X≥radius (holds in L_Arena centerline 350; same shared-helper property as player/TASK-059; hard-clamp optional). handoffs/TASK-060.md. Ready for TASK-068 batch.
+- status: done (committed 65861ce via TASK-068, not pushed). qa-passed (qa/TASK-060-report.md — 0 blk/1 warn/1 nit). Invariants CONFIRMED (never unaffordable, never Blue-half center); M3-core byte-preserved; rule-4 fix GENUINE (closes TASK-046 WARN-2 — no double/0 charge); SwarmCount via SpawnUnitSwarm (4 Red copies, unwind on fail). Type-unplayable-only discard RULED ACCEPTABLE (no deadlock — 50g start, income accrues; excluding banked units preserves "growing Ogre waves"). WARN: swarm-fan never-Blue-half contingent on Center.X≥radius (holds in L_Arena centerline 350; same shared-helper property as player/TASK-059; hard-clamp optional). handoffs/TASK-060.md. Ready for TASK-068 batch.
 - blocked-by: TASK-054, TASK-055, TASK-056, TASK-057, TASK-059 (needs every card behavior + the play/spawn paths)
 - parallel-safe: yes (bot-internal — only edits SiegeBotController)
 - spec: >
@@ -1214,7 +1345,7 @@ M4 = GDD §9-4 + §4 Set II (16 cards) + §3.0 keywords (Siege/Charge/Slayer/Swa
 
 ### TASK-061 — DT_Cards reimport: 22-row Set II + M4 test deck (editor)
 - assignee: gameplay-programmer
-- status: backlog
+- status: done (committed e586699 via TASK-069, not pushed). Integrated 2026-07-04 (editor UP PID 6172). DT_Cards rebuilt to 22 rows (reference-safe add/set_rows from cards.csv, GUID+linkage preserved). VERIFIED: 22 rows no legacy/dupes, DeckCount sum=50, keyword cols set only where §4 (swarmCount 4 MilitiaMob; aoERadius 250 Sapper+BombTower; minRange 300 Ballista; bSlayer Pikeman/bCharge Cavalry/bSuicide Sapper; Barracks spawn triple; profiles Siege Sapper/Ogre, Support Cleric). BOOT NOTE: hung on stale Saved/Autosaves PackageRestoreData modal — declined restore + relaunched clean (~13min, no git residue). WATCH: live CSV auto-reimport → TASK-069 re-confirm 22 rows + save-clean before commit. handoffs/TASK-061.md.
 - blocked-by: TASK-053; TASK-068 (FCardRow columns compiled)
 - parallel-safe: no (editor)
 - spec: >
@@ -1232,7 +1363,7 @@ M4 = GDD §9-4 + §4 Set II (16 cards) + §3.0 keywords (Siege/Charge/Slayer/Swa
 
 ### TASK-062 — BP_Unit_* for the 7 Set II units (editor)
 - assignee: gameplay-programmer
-- status: backlog
+- status: done (committed e586699 via TASK-069, not pushed). Integrated 2026-07-04 (editor UP PID 6172). 7 BPs in /Game/Blueprints/Units/ (MilitiaMob/Pikeman/Sapper/Cavalry/Longbowman/Cleric/Ogre), all ASummonedUnit, Footman recipe (-90 yaw, slot0 MI_TeamColor_Blue, no stats on BP), compiled clean. SIE stat verify PASS vs cards.csv: Ogre 500/250 Siege, Cavalry 140/600 bCharge, Pikeman 100/350 bSlayer, Sapper 60/500 Siege bSuicide, Longbowman 70/300 bRanged, Cleric 90/350 Support, MilitiaMob 25/400. Custom SM_MilitiaMob + SM_Longbowman confirmed wired (not fallbacks). Deferred to TASK-069: Siege/heal/Charge/Slayer/Swarm combat behavior. handoffs/TASK-062.md.
 - blocked-by: TASK-061; TASK-065, TASK-066 (unit meshes); TASK-068 (unit code compiled)
 - parallel-safe: no (editor)
 - spec: >
@@ -1255,7 +1386,7 @@ M4 = GDD §9-4 + §4 Set II (16 cards) + §3.0 keywords (Siege/Charge/Slayer/Swa
 
 ### TASK-063 — BP_Building_* for the 4 Set II buildings (editor)
 - assignee: gameplay-programmer
-- status: backlog
+- status: done (committed e586699 via TASK-069, not pushed). Integrated 2026-07-04 (editor UP PID 6172). 4 BPs in /Game/Blueprints/Buildings/: BombTower+BallistaTower (parent ATower, row-driven), Barracks (ABarracks), DeepMine (ADeepMine); Team-default, slot0 MI_TeamColor_Blue, BlockAll + bCanEverAffectNavigation=true pinned (§3.7). Compiled clean. SIE verify: stats bind from DT_Cards (BombTower 180/25/800/2.5/AoE250, Ballista 120/45/1400/3.0/MinRange300, Barracks 250+spawn-triple, DeepMine 200/income2); bonus — match-end freeze log "1 barracks frozen, 2 towers silenced" confirms 056/057 freeze hooks. Deferred to TASK-069: AoE splash/blind-spot/Barracks spawn+self-destruct/DeepMine rate. MCP stable. handoffs/TASK-063.md.
 - blocked-by: TASK-061; TASK-067 (building meshes); TASK-068 (building code compiled)
 - parallel-safe: no (editor)
 - spec: >
@@ -1275,7 +1406,7 @@ M4 = GDD §9-4 + §4 Set II (16 cards) + §3.0 keywords (Siege/Charge/Slayer/Swa
 
 ### TASK-064 — HUD v4: hero-upgrade icon row + stack pips (editor)
 - assignee: gameplay-programmer
-- status: backlog
+- status: done (committed e586699 via TASK-069, not pushed). Integrated 2026-07-04 (editor UP PID 6172). Additive to WBP_HUD: 4 TextBlocks (Blade/Plate/Boots/Banner) + UpdateUpgradeEntry/UpdateUpgradeRow/SetupUpgradeRow fns; renders "Label cur/cap", collapses at 0; caps from GetUpgradeStackCap (not guessed); seed-then-bind FOnHeroUpgradesChanged on Tick do-once. VERIFIED: M1 gold Construct byte-INTACT + Rally indicator untouched (read_graph_dsl, zero EventGraph write); compile clean; full-match PIE zero errors, row attached. Live upgrade-pip → TASK-069/Jonathan (no MCP play-inject). MCP survived ~60 calls (1 ICE cascade handled). handoffs/TASK-064.md.
 - blocked-by: TASK-058 (FOnHeroUpgradesChanged); TASK-068 (delegate compiled)
 - parallel-safe: no (editor; shares WBP_HUD with the open M2 TASK-041 — do TASK-041 first or fold, per the M3 TASK-050 lesson)
 - spec: >
@@ -1292,7 +1423,7 @@ M4 = GDD §9-4 + §4 Set II (16 cards) + §3.0 keywords (Siege/Charge/Slayer/Swa
 
 ### TASK-065 — Unit blockout meshes wave 1: SM_Cavalry, SM_Pikeman, SM_Sapper, SM_MilitiaMob (art)
 - assignee: art-director
-- status: ready-for-integration — done 2026-07-04. 4 meshes in /Game/Meshes/ (Cavalry 804tris/208u, Pikeman 532/190, Sapper 620/169, MilitiaMob 452/149), feet-center, slot0 MI_TeamColor_Blue, ≤8k tris, distinct silhouettes, ZERO import warnings. MilitiaMob = CUSTOM (not reused Footman) → TASK-062 BP_Unit_MilitiaMob VisualMesh = /Game/Meshes/SM_MilitiaMob. Editor was free (no PIE) — no playtest disruption. FBX in Content/RawAssets/. Left untracked for TASK-069 commit. handoffs/TASK-065.md.
+- status: done (committed e586699 via TASK-069, not pushed). Integrated 2026-07-04. 4 meshes in /Game/Meshes/ (Cavalry 804tris/208u, Pikeman 532/190, Sapper 620/169, MilitiaMob 452/149), feet-center, slot0 MI_TeamColor_Blue, ≤8k tris, distinct silhouettes, ZERO import warnings. MilitiaMob = CUSTOM (not reused Footman) → TASK-062 BP_Unit_MilitiaMob VisualMesh = /Game/Meshes/SM_MilitiaMob. Editor was free (no PIE) — no playtest disruption. FBX in Content/RawAssets/. Left untracked for TASK-069 commit. handoffs/TASK-065.md.
 - blocked-by: none (Blender MCP required — confirm UP before dispatch, per the M2 protocol)
 - parallel-safe: yes (Blender modeling parallel with code; the editor-IMPORT step serializes with other editor-mutating tasks — one editor instance)
 - spec: >
@@ -1312,7 +1443,7 @@ M4 = GDD §9-4 + §4 Set II (16 cards) + §3.0 keywords (Siege/Charge/Slayer/Swa
 
 ### TASK-066 — Unit blockout meshes wave 2: SM_Ogre, SM_Cleric, SM_Longbowman (art)
 - assignee: art-director
-- status: ready-for-integration — done 2026-07-04. SM_Ogre (1572tris, 290 tall — ROSTER's LARGEST), SM_Cleric (920, 182), SM_Longbowman (1984, 184). Feet-center, slot0 MI_TeamColor_Blue, ≤8k tris, ZERO import warnings, editor free (no disruption). Longbowman = CUSTOM (not reused Archer) → TASK-062 BP_Unit_Longbowman VisualMesh = /Game/Meshes/SM_Longbowman. FBX in Content/RawAssets/. Left untracked for TASK-069. handoffs/TASK-066.md.
+- status: done (committed e586699 via TASK-069, not pushed). Integrated 2026-07-04. SM_Ogre (1572tris, 290 tall — ROSTER's LARGEST), SM_Cleric (920, 182), SM_Longbowman (1984, 184). Feet-center, slot0 MI_TeamColor_Blue, ≤8k tris, ZERO import warnings, editor free (no disruption). Longbowman = CUSTOM (not reused Archer) → TASK-062 BP_Unit_Longbowman VisualMesh = /Game/Meshes/SM_Longbowman. FBX in Content/RawAssets/. Left untracked for TASK-069. handoffs/TASK-066.md.
 - blocked-by: none (Blender MCP required)
 - parallel-safe: yes (see TASK-065 note)
 - spec: >
@@ -1331,7 +1462,7 @@ M4 = GDD §9-4 + §4 Set II (16 cards) + §3.0 keywords (Siege/Charge/Slayer/Swa
 
 ### TASK-067 — Building blockout meshes: SM_BombTower, SM_BallistaTower, SM_Barracks, SM_DeepMine (art)
 - assignee: art-director
-- status: ready-for-integration — done 2026-07-04. SM_BombTower (580tris/250×250×451), SM_BallistaTower (512/250×270×500), SM_Barracks (312/400×419×349), SM_DeepMine (1064/300×305×300). Ground-center, slot0 MI_TeamColor_Blue, ≤15k tris, TIGHT authored UCX = base footprint (overhangs outside hull, plinth-lesson honored), distinct silhouettes (DeepMine headframe ≠ GoldNode crystal), ZERO import warnings, editor free. ALL M4 ART DONE (065/066/067 = 11 meshes). FBX in Content/RawAssets/. Left untracked for TASK-069. handoffs/TASK-067.md.
+- status: done (committed e586699 via TASK-069, not pushed). Integrated 2026-07-04. SM_BombTower (580tris/250×250×451), SM_BallistaTower (512/250×270×500), SM_Barracks (312/400×419×349), SM_DeepMine (1064/300×305×300). Ground-center, slot0 MI_TeamColor_Blue, ≤15k tris, TIGHT authored UCX = base footprint (overhangs outside hull, plinth-lesson honored), distinct silhouettes (DeepMine headframe ≠ GoldNode crystal), ZERO import warnings, editor free. ALL M4 ART DONE (065/066/067 = 11 meshes). FBX in Content/RawAssets/. Left untracked for TASK-069. handoffs/TASK-067.md.
 - blocked-by: none (Blender MCP required)
 - parallel-safe: yes (see TASK-065 note)
 - spec: >
@@ -1350,7 +1481,7 @@ M4 = GDD §9-4 + §4 Set II (16 cards) + §3.0 keywords (Siege/Charge/Slayer/Swa
 
 ### TASK-068 — M4 code batch: compile + residue adjudication + commit (build)
 - assignee: build-master
-- status: in-progress (2026-07-04; all TASK-053..060 qa-passed; M4 batch compile on main)
+- status: done (commit 65861ce on main, parent 56247c9, NOT pushed; 47 files +4825/-257). Clean compile+LINK FIRST TRY (~16.6s, zero C4456/57/58/59 + zero C4244, 14 TUs incl. 3 new pairs SiegeCombatStatics/Barracks/DeepMine). No donor re-saves; 11 M4 art meshes+FBX unstaged→untracked for TASK-069. Editor left DOWN on 65861ce DLL (TASK-061 boots it — path tracing already disabled → fast boot). TASK-053..060 code committed here (→done; manager wraps at M4 finish). handoffs/TASK-068.md. FOLLOW-UPS (manager): optional swarm own-half hard-clamp; off-navmesh swarm fallback.
 - blocked-by: TASK-053, TASK-054, TASK-055, TASK-056, TASK-057, TASK-058, TASK-059, TASK-060 (all qa-passed)
 - parallel-safe: no
 - spec: >
@@ -1367,7 +1498,8 @@ M4 = GDD §9-4 + §4 Set II (16 cards) + §3.0 keywords (Siege/Charge/Slayer/Swa
 
 ### TASK-069 — M4 final assembly: expanded-roster PIE verification + commit (build)
 - assignee: build-master
-- status: backlog
+- status: done (commit e586699 on main, parent 65861ce, NOT pushed; 44 files editor/art). ZERO M4-feature FAILs. LIVE bot Set II verified (repeated Ogre push; discards upgrades/Instants; never unaffordable/never-Blue-half; Siege army killed Blue castle 2000→0 ~41s; deck 50/6). DT_Cards 22-row reconfirmed warm+cold (DeckCount=50, save-clean). Keywords/upgrades/new-buildings DEFERRED-to-playtest (MCP no card-play inject), each backed by code QA PASS. BONUS: real-PIE Defeat screen fired → CLOSES M2 "no PlayerController end-screen" watch. Editor UP PID 10932 (cold-booted, clean). handoffs/TASK-069.md.
+  - **FOLLOW-UP FOUND → TASK-070:** 3 stray verification actors (BP_Unit_Footman_C_1, BP_Unit_Miner_C_2, BP_Building_ArrowTower_C_1) are COMMITTED in L_Arena.umap since M2 (5bb9507/40b69ef) — present on ALL branches. Cause the "stray Blue unit at match start" + bot t=0 defend. Cleanup = remove 3 actors, re-save L_Arena, PIE-verify clean start.
 - blocked-by: TASK-061, TASK-062, TASK-063, TASK-064 (done); TASK-068 (committed)
 - parallel-safe: no
 - spec: >
