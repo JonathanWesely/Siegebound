@@ -103,6 +103,16 @@ Owned by the **manager** agent. All agents MUST follow these. If a needed patter
 - Pattern: `U<Name>Widget` (UUserWidget subclass) in Source/GitClaudeUnrealTest/Siegebound/, files `<Name>Widget.h/.cpp`; the UMG asset `WBP_<Name>` in Content/UI/ is reparented to it. Widget-facing events are BlueprintImplementableEvents with float/int/bool/byte/FString params only (never enums). Examples: `UCastleHealthBarWidget` ↔ `/Game/UI/WBP_CastleHealthBar`, `UCardHandWidget` ↔ `/Game/UI/WBP_CardHand`
 - UWidgetComponents on actors are named `<Purpose>Widget` (e.g., `HPBarWidget` on `ACastle`)
 
+## Dev / test tooling (non-gameplay affordances)
+Names for developer/test-bench features that are NOT GDD content and NOT part of any milestone. They must not disturb the shipping flow; every one is additive.
+- **Sandbox (No Bot) mode** (added 2026-07-05, TASK-071/072) — opens `L_Arena` with the full card roster but **no enemy AI**, as a calm test bench for the 22-card roster. Mechanism is a **level-open URL option**, deliberately NOT a GameInstance (no `USiegeGameInstance`, no `GameInstanceClass` config change):
+  - **Option token:** `Sandbox=1`, parsed with `UGameplayStatics::HasOption(OptionsString, TEXT("Sandbox"))`. The token string is `Sandbox` — code and any future consumer must use it character-for-character.
+  - **Game-mode latch:** `ASiegeGameMode` reads the option in `InitGame` into a `bool bSandboxMatch` (persists for the life of the `L_Arena` world, so `PlayAgain` stays sandbox).
+  - **Bot gate:** `ASiegeGameMode::SpawnBot()` early-returns when `bSandboxMatch` is true — no `ASiegeBotController` is spawned and no Red bot `ASiegePlayerState` is created. The Red `ACastle` (`Castle_Red`) remains as a static target dummy; Blue units/buildings still march on it.
+  - **Menu entry:** `static void ASiegeGameMode::StartSandboxMatch(const UObject* WorldContextObject)` — mirrors `StartMatch` but appends the `Sandbox=1` option to `OpenLevelBySoftObjectPtr`. `StartMatch` (Play vs Bot) keeps its exact signature and behavior — untouched.
+  - **Generous economy:** `UPROPERTY(EditDefaultsOnly) int32 SandboxStartingGold` on `ASiegeGameMode`, default `9999` (`// dev sandbox — full roster freely playable`), granted to the Blue player once at match start when `bSandboxMatch` is true, via the existing player-state gold API (never hardcode a gold mutation that bypasses it). Normal gold rate otherwise.
+  - **Menu button:** `Btn_Sandbox` on `/Game/UI/WBP_MainMenu`, label text `"Sandbox (No Bot)"`, `OnClicked → ASiegeGameMode::StartSandboxMatch`. Placed as an additive sibling next to the existing Play-vs-Bot button (which calls `StartMatch`); the existing button and its binding are not disturbed.
+
 ## Numbering
 Variants use two digits: `SM_Rock_01`, `SM_Rock_02`
 
