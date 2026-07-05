@@ -82,6 +82,25 @@ void ASiegePlayerState::ResetGold()
 	StartIncomeTimer();
 }
 
+void ASiegePlayerState::AddGold(int32 Amount)
+{
+	if (Amount <= 0)
+	{
+		// Grants must be positive — use SpendGold to deduct. A 0/negative amount
+		// is a caller bug (TASK-071 Sandbox grant passes a large positive pile).
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("[%s] AddGold(%d) refused — grants must be positive (use SpendGold to deduct)."),
+			*GetNameSafe(this), Amount);
+		return;
+	}
+
+	// Route through SetGold so the [0, MaxGold] clamp and the OnGoldChanged
+	// broadcast always apply — never a raw Gold write. MaxGold (999) caps the
+	// result. The composed gold rate is untouched (no AddIncome), so a lump grant
+	// never perturbs +N/s accrual (TASK-071: keep the normal rate).
+	SetGold(Gold + Amount);
+}
+
 void ASiegePlayerState::SetGold(int32 NewGold)
 {
 	// Single choke point for ALL gold writes: clamp first so no caller can

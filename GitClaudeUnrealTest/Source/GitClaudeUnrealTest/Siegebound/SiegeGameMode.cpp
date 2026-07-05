@@ -52,6 +52,28 @@ ASiegeGameMode::ASiegeGameMode()
 	ArenaLevel = TSoftObjectPtr<UWorld>(FSoftObjectPath(TEXT("/Game/Maps/L_Arena.L_Arena")));
 }
 
+void ASiegeGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
+{
+	Super::InitGame(MapName, Options, ErrorMessage);
+
+	// Dev/test Sandbox latch (CONVENTIONS "Dev / test tooling", TASK-071): the
+	// menu's "Sandbox (No Bot)" button opens L_Arena with ?Sandbox=1 via
+	// StartSandboxMatch. InitGame runs once, at the very start of the world's life
+	// and BEFORE BeginPlay/SpawnBot, so latching here makes the flag authoritative
+	// for the whole match — and it survives Play Again (an in-place reset that
+	// never re-runs InitGame), so a sandbox match stays sandbox. The token string
+	// is exactly "Sandbox" (CONVENTIONS — code and any future consumer must match
+	// it character-for-character).
+	bSandboxMatch = UGameplayStatics::HasOption(Options, TEXT("Sandbox"));
+
+	if (bSandboxMatch)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("[%s] Sandbox match (?Sandbox=1, TASK-071): no bot opponent will spawn; the Blue player will start with %d gold (dev test bench)."),
+			*GetNameSafe(this), SandboxStartingGold);
+	}
+}
+
 void ASiegeGameMode::BeginPlay()
 {
 	Super::BeginPlay();
@@ -76,7 +98,19 @@ void ASiegeGameMode::BeginPlay()
 	// Spawn the single Red bot opponent (GDD §4, TASK-045). GameState exists by
 	// BeginPlay and the local player has already logged in (InitNewPlayer tagged
 	// its PS Blue), so PlayerStateClass is set for the bot's auto-created PS.
+	// In a Sandbox match SpawnBot early-returns — no bot, no Red PlayerState.
 	SpawnBot();
+
+	// Sandbox test bench (TASK-071): grant the Blue player the generous starting
+	// pile. Deferred one tick so the Blue ASiegePlayerState's own BeginPlay (which
+	// seeds gold to StartingGold = 50 via ResetGold) has already run — granting
+	// synchronously here could be clobbered by a later player-state seed. Fires
+	// exactly once (BeginPlay runs once per world begin); Play Again re-grants on
+	// its own path. No-op when not a sandbox match.
+	if (bSandboxMatch)
+	{
+		GetWorldTimerManager().SetTimerForNextTick(this, &ASiegeGameMode::GrantSandboxStartingGold);
+	}
 }
 
 void ASiegeGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -586,6 +620,18 @@ void ASiegeGameMode::PlayAgain()
 		BotController->ResetBot();
 	}
 
+	// 4c) Sandbox re-grant (TASK-071): the match stays sandbox across Play Again
+	//     (bSandboxMatch persists — InitGame never re-runs), so restore the
+	//     generous starting pile the same way match start did. Step 4 just
+	//     ResetGold'd every player state back to 50; top the Blue player back up
+	//     through the gold API. Synchronous here (unlike match start's deferred
+	//     grant) because the Blue player state already exists and was reset
+	//     synchronously in step 4 — no seeding race. No-op when not a sandbox match.
+	if (bSandboxMatch)
+	{
+		GrantSandboxStartingGold();
+	}
+
 	// 5) Re-arm the win condition, then the hero back at its start: full HP,
 	//    repossessed, input restored (works for a dead OR alive hero).
 	bMatchEnded = false;
@@ -650,6 +696,42 @@ void ASiegeGameMode::StartMatch(const UObject* WorldContextObject)
 	UGameplayStatics::OpenLevelBySoftObjectPtr(WorldContextObject, Arena);
 }
 
+void ASiegeGameMode::StartSandboxMatch(const UObject* WorldContextObject)
+{
+	// Dev/test Sandbox entry (CONVENTIONS "Dev / test tooling", TASK-071):
+	// deliberately mirrors StartMatch verbatim, then appends the ?Sandbox=1 option
+	// so the fresh L_Arena world's InitGame latches bSandboxMatch — SpawnBot then
+	// early-returns (no AI opponent) and the Blue player starts with the generous
+	// SandboxStartingGold. StartMatch (Play vs Bot) is left byte-identical; this is
+	// a SEPARATE static entry point (WBP_MainMenu's "Sandbox (No Bot)" button,
+	// TASK-072). Same STATIC + WorldContext contract as StartMatch — L_MainMenu
+	// runs its own menu game mode, so no ASiegeGameMode instance is required.
+	if (!WorldContextObject)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("[ASiegeGameMode::StartSandboxMatch] No world context object — cannot open the arena (Sandbox test bench, TASK-071)."));
+		return;
+	}
+
+	const ASiegeGameMode* Defaults = GetDefault<ASiegeGameMode>();
+	const TSoftObjectPtr<UWorld> Arena = Defaults ? Defaults->ArenaLevel : TSoftObjectPtr<UWorld>();
+	if (Arena.IsNull())
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("[ASiegeGameMode::StartSandboxMatch] ArenaLevel is unset on the CDO — cannot start a sandbox match (expected /Game/Maps/L_Arena)."));
+		return;
+	}
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("[ASiegeGameMode::StartSandboxMatch] Main menu -> opening arena '%s' into a fresh SANDBOX match (no bot, ?Sandbox=1, TASK-071)."),
+		*Arena.ToString());
+
+	// Same OpenLevelBySoftObjectPtr travel as StartMatch, plus the "Sandbox=1"
+	// option string that InitGame parses. bAbsolute = true is passed explicitly to
+	// match StartMatch's implicit default while carrying the option token.
+	UGameplayStatics::OpenLevelBySoftObjectPtr(WorldContextObject, Arena, /*bAbsolute*/ true, TEXT("Sandbox=1"));
+}
+
 ASiegePlayerController* ASiegeGameMode::FindLocalSiegeController() const
 {
 	UWorld* World = GetWorld();
@@ -675,6 +757,26 @@ ASiegePlayerController* ASiegeGameMode::FindLocalSiegeController() const
 
 void ASiegeGameMode::SpawnBot()
 {
+	// Sandbox test bench (CONVENTIONS "Dev / test tooling", TASK-071): NO AI
+	// opponent. Early-return before any ASiegeBotController is spawned and before
+	// any Red bot ASiegePlayerState is created (bWantsPlayerState), so at BeginPlay
+	// ZERO bot exists and no bot decision ever fires. The Red ACastle (Castle_Red)
+	// is level-placed and still present, so Blue units/buildings march on it as a
+	// static target dummy and the win condition still fires — OnCastleDestroyedHandler
+	// reads the destroyed castle's TEAM, never a Red player state. Every downstream
+	// reader of the (now-absent) Red ASiegePlayerState is already null-safe: this
+	// reproduces the M2 no-bot world, where GetPlayerStateForTeam(Red) returning
+	// nullptr is the documented normal case (see SiegeGameState.cpp) — the freeze /
+	// Play Again bot hooks are IsValid(BotController)-guarded, and the only Red-PS
+	// readers (AMinerUnit / ADeepMine) resolve their OWN team and null-check the result.
+	if (bSandboxMatch)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("[%s] SpawnBot skipped — Sandbox match (no AI opponent, no Red PlayerState, TASK-071)."),
+			*GetNameSafe(this));
+		return;
+	}
+
 	// Exactly one bot per match (GDD §4). BeginPlay runs once per world begin, and
 	// PlayAgain is an in-place reset that never re-runs BeginPlay, so this is
 	// normally the only call — the guard covers a defensive re-entry only.
@@ -733,4 +835,41 @@ void ASiegeGameMode::SpawnBot()
 			TEXT("[%s] Bot '%s' has no ASiegePlayerState to tag Team=Red (bWantsPlayerState should have created one of PlayerStateClass=ASiegePlayerState) — its Red economy will not resolve via GetPlayerStateForTeam."),
 			*GetNameSafe(this), *GetNameSafe(BotController));
 	}
+}
+
+void ASiegeGameMode::GrantSandboxStartingGold()
+{
+	// Guard: only a sandbox match ever grants (BeginPlay/PlayAgain gate on the
+	// same flag, but this stays self-guarding for the deferred-timer entry).
+	if (!bSandboxMatch)
+	{
+		return;
+	}
+
+	// Resolve the Blue economy through the public ASiegeGameState accessor
+	// (GetPlayerStateForTeam, TASK-043) rather than assuming the first player
+	// state — and it is the ONLY player state in a sandbox match (no Red bot PS).
+	// A local named SiegeGameState (never GameState) avoids shadowing the
+	// inherited AGameModeBase::GameState reflected UPROPERTY (CONVENTIONS C4458).
+	ASiegeGameState* SiegeGameState = Cast<ASiegeGameState>(GameState);
+	ASiegePlayerState* BlueState = SiegeGameState ? SiegeGameState->GetPlayerStateForTeam(ETeamId::Blue) : nullptr;
+	if (!BlueState)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("[%s] Sandbox gold grant skipped — no Blue ASiegePlayerState resolved yet (TASK-071)."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	// Grant through the gold API: AddGold routes through the player state's single
+	// SetGold() choke point, so the [0, MaxGold] clamp and OnGoldChanged broadcast
+	// both apply — NEVER a raw Gold field write. The BASE gold rate is untouched
+	// (no AddIncome), so the normal +2/s economy stands (spec: keep the normal
+	// rate). NOTE: MaxGold (999) clamps SandboxStartingGold (9999) to 999 — still a
+	// full generous pile for the 22-card roster (flagged for QA).
+	BlueState->AddGold(SandboxStartingGold);
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("[%s] Sandbox: granted the Blue player %d starting gold (now %d after the MaxGold clamp, TASK-071)."),
+		*GetNameSafe(this), SandboxStartingGold, BlueState->GetGold());
 }

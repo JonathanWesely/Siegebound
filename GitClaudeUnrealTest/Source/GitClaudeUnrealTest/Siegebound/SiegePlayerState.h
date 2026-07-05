@@ -111,6 +111,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Gold")
 	void ResetGold();
 
+	/**
+	 *  Adds Amount to gold, routed through the SAME private SetGold() choke point as
+	 *  every other mutation — so the [0, MaxGold] clamp and the OnGoldChanged
+	 *  broadcast are always honored (NOT a raw Gold field write). The additive
+	 *  sibling of SpendGold. A non-positive Amount is refused + logged (grants must
+	 *  be positive; use SpendGold to deduct). Does NOT touch the composed gold rate
+	 *  (no AddIncome), so a lump grant never perturbs +N/s accrual.
+	 *
+	 *  Sole caller: the dev/test Sandbox starting-gold grant
+	 *  (ASiegeGameMode::SandboxStartingGold, TASK-071) — the normal match never
+	 *  raises gold this way (accrual is the income tick; reset is ResetGold).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Gold")
+	void AddGold(int32 Amount);
+
 	// --- Economy v2 (GDD §3.2/§3.3, TASK-024): rate-composed income ---
 
 	/**

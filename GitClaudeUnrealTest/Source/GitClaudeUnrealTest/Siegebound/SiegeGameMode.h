@@ -136,6 +136,20 @@ public:
 	static void StartMatch(const UObject* WorldContextObject);
 
 	/**
+	 *  Dev/test main-menu entry (CONVENTIONS "Dev / test tooling", TASK-071):
+	 *  identical to StartMatch, but opens the arena with the ?Sandbox=1 URL option
+	 *  so the fresh L_Arena world's InitGame latches bSandboxMatch — no AI opponent
+	 *  spawns (SpawnBot early-returns) and the Blue player starts with the generous
+	 *  SandboxStartingGold. A calm test bench for the full 22-card roster against a
+	 *  static Castle_Red target dummy. STATIC + WorldContext for the same reason as
+	 *  StartMatch (L_MainMenu runs its own menu game mode, no ASiegeGameMode
+	 *  instance to find). This is a SEPARATE entry point; StartMatch (Play vs Bot)
+	 *  keeps its exact signature and behaviour — untouched.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Match", meta = (WorldContext = "WorldContextObject"))
+	static void StartSandboxMatch(const UObject* WorldContextObject);
+
+	/**
 	 *  True from the first castle destruction until PlayAgain(). Native override
 	 *  of AGameModeBase::HasMatchEnded — the base declares it as a UFUNCTION
 	 *  (BlueprintCallable, Category=Game), and UHT forbids a new UFUNCTION macro
@@ -154,6 +168,18 @@ protected:
 
 	/** Lazy, null-safe hero pawn class: BP_HeroCharacter when it exists, else AHeroCharacter (see class comment). */
 	virtual UClass* GetDefaultPawnClassForController_Implementation(AController* InController) override;
+
+	/**
+	 *  Latches the dev Sandbox flag from the level-open URL (CONVENTIONS "Dev /
+	 *  test tooling", TASK-071). InitGame runs exactly once, at the very start of
+	 *  the world's life and BEFORE BeginPlay/SpawnBot, so bSandboxMatch is
+	 *  authoritative for the whole match. It reads UGameplayStatics::HasOption(
+	 *  Options, TEXT("Sandbox")) — set true only when the arena was opened via
+	 *  StartSandboxMatch (?Sandbox=1). The flag persists for the life of the
+	 *  L_Arena world (PlayAgain is an in-place reset that never re-runs InitGame),
+	 *  so a sandbox match stays sandbox across Play Again.
+	 */
+	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
 
 	/**
 	 *  Player-creation hook (TASK-043 multi-team economy): tags the local
@@ -233,6 +259,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Hero")
 	FVector HeroSpawnCastleOffset = FVector(600.0f, 0.0f, 100.0f);
 
+	/**
+	 *  Starting gold granted to the Blue player in a Sandbox match (TASK-071 —
+	 *  dev/test tooling only; the normal Play-vs-Bot match ignores this). Granted
+	 *  once at match start and again on each sandbox Play Again, through the
+	 *  ASiegePlayerState gold API (never a raw field write). // dev sandbox — full
+	 *  roster freely playable. NOTE: ASiegePlayerState::MaxGold (999) is the hard
+	 *  cap, so this is clamped to 999 in practice — still a full generous pile.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Sandbox", meta = (ClampMin = "0"))
+	int32 SandboxStartingGold = 9999;
+
 private:
 
 	/**
@@ -296,6 +333,18 @@ private:
 	 */
 	void SpawnBot();
 
+	/**
+	 *  Grants SandboxStartingGold to the Blue player (TASK-071), null-safe: resolves
+	 *  the Blue ASiegePlayerState via ASiegeGameState::GetPlayerStateForTeam(Blue)
+	 *  and tops its gold up through the gold API (routes through the player state's
+	 *  gold choke point — clamp + broadcast honored, never a raw field write). The
+	 *  BASE gold rate is untouched (normal +2/s economy stands). No-op + log when
+	 *  not a sandbox match or the Blue player state is not yet resolvable.
+	 *  Called deferred-next-tick from BeginPlay (after the Blue PS has seeded its
+	 *  own gold) and synchronously from PlayAgain (the PS already exists there).
+	 */
+	void GrantSandboxStartingGold();
+
 	/** Resolved hero pawn class (BP_HeroCharacter once loaded). Never a failed resolve. */
 	UPROPERTY(Transient)
 	TSubclassOf<APawn> ResolvedHeroPawnClass;
@@ -310,6 +359,15 @@ private:
 
 	/** Double match-end guard: latched by the first castle destruction, cleared only by PlayAgain(). */
 	bool bMatchEnded = false;
+
+	/**
+	 *  Dev Sandbox latch (CONVENTIONS "Dev / test tooling", TASK-071): true when
+	 *  L_Arena was opened with ?Sandbox=1 (via StartSandboxMatch). Set once in
+	 *  InitGame and never cleared for the life of the world — gates SpawnBot
+	 *  (no AI opponent) and the SandboxStartingGold grant. PlayAgain never re-runs
+	 *  InitGame, so a sandbox match stays sandbox across Play Again.
+	 */
+	bool bSandboxMatch = false;
 
 	/** Re-entrancy guard for PlayAgain (e.g. a double-clicked button dispatching twice). */
 	bool bPlayAgainInProgress = false;
