@@ -103,6 +103,12 @@ Owned by the **manager** agent. All agents MUST follow these. If a needed patter
 - Pattern: `U<Name>Widget` (UUserWidget subclass) in Source/GitClaudeUnrealTest/Siegebound/, files `<Name>Widget.h/.cpp`; the UMG asset `WBP_<Name>` in Content/UI/ is reparented to it. Widget-facing events are BlueprintImplementableEvents with float/int/bool/byte/FString params only (never enums). Examples: `UCastleHealthBarWidget` ↔ `/Game/UI/WBP_CastleHealthBar`, `UCardHandWidget` ↔ `/Game/UI/WBP_CardHand`
 - UWidgetComponents on actors are named `<Purpose>Widget` (e.g., `HPBarWidget` on `ACastle`)
 
+## Input-mode ownership (level-travel law)
+Added 2026-07-07 (TASK-074 bugfix chain). Input-routing state set via `APlayerController::SetInputMode` lives partly on the persistent `UGameViewportClient` and can SURVIVE `UGameplayStatics::OpenLevel*` travel — **a level must never trust the input posture it inherits from whoever traveled it in.** Each level's controller establishes its own posture at startup:
+- **L_Arena / `ASiegePlayerController`:** match posture is GameOnly free-look + hidden cursor (M2 TASK-023 ruling), composed by `ApplyCursorInputState()` — the only cursor owners are placement mode, the Alt-held `IA_UICursor`, and `HandleMatchEnd`'s UIOnly end screen. The controller normalizes to this posture at `BeginPlay` (TASK-074) instead of assuming engine defaults.
+- **L_MainMenu / `BP_MenuGameMode`:** menu posture is UIOnly + visible cursor (TASK-049) so `WBP_MainMenu` buttons stay clickable.
+- The static travel entries (`ASiegeGameMode::StartMatch` / `::StartSandboxMatch`) stay posture-agnostic — they only open the level and never set input modes.
+
 ## Dev / test tooling (non-gameplay affordances)
 Names for developer/test-bench features that are NOT GDD content and NOT part of any milestone. They must not disturb the shipping flow; every one is additive.
 - **Sandbox (No Bot) mode** (added 2026-07-05, TASK-071/072) — opens `L_Arena` with the full card roster but **no enemy AI**, as a calm test bench for the 22-card roster. Mechanism is a **level-open URL option**, deliberately NOT a GameInstance (no `USiegeGameInstance`, no `GameInstanceClass` config change):

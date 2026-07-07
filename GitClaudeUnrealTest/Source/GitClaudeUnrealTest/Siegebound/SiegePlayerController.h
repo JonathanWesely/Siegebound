@@ -228,7 +228,16 @@ public:
 
 protected:
 
-	/** Builds the deck at match start (GDD §3.4, TASK-022 timing contract), then creates and adds the HUD widget (soft class, null-safe — TASK-011 builds it). */
+	/**
+	 *  Normalizes the input posture FIRST (TASK-074, CONVENTIONS "Input-mode
+	 *  ownership (level-travel law)"): SetInputMode state persists on the
+	 *  UGameViewportClient across OpenLevel travel, so the controller applies
+	 *  its own GameOnly free-look + hidden cursor via ApplyCursorInputState()
+	 *  instead of trusting whatever posture the traveling level (e.g.
+	 *  L_MainMenu's UIOnly) left behind. Then builds the deck at match start
+	 *  (GDD §3.4, TASK-022 timing contract) and creates and adds the HUD widget
+	 *  (soft class, null-safe — TASK-011 builds it).
+	 */
 	virtual void BeginPlay() override;
 
 	/** Defensive placement-mode exit on teardown (releases melee suppression, destroys the ghost, ends any IA_UICursor hold). */

@@ -57,6 +57,24 @@ void ASiegePlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// Input-posture normalization FIRST (TASK-074; CONVENTIONS "Input-mode
+	// ownership (level-travel law)"): input-routing state set via SetInputMode
+	// lives partly on the persistent UGameViewportClient, which SURVIVES
+	// UGameplayStatics::OpenLevel* travel. Arriving from L_MainMenu,
+	// BP_MenuGameMode's FInputModeUIOnly (SetInputMode_UIOnlyEx, TASK-049) left
+	// the viewport with bIgnoreInput=true + EMouseCaptureMode::NoCapture, so a
+	// fresh arena controller booted input-dead — UGameViewportClient::InputKey/
+	// InputAxis swallowed WASD, the 1–6 hotkeys, and every click (Jonathan's
+	// 2026-07-07 bug, both menu buttons). Establish OUR match posture instead of
+	// trusting the traveler's: on a fresh controller bInPlacementMode /
+	// bUICursorHeld / bMatchEnded are all false, so ApplyCursorInputState()
+	// applies exactly FInputModeGameOnly — whose ApplyInputMode clears the
+	// viewport's ignore-input latch and restores capture-on-click/lock-on-capture
+	// — with the cursor hidden and click events off (the M1/TASK-023 free-look
+	// posture). On a direct-PIE L_Arena boot every value written already matches
+	// the fresh-viewport/fresh-controller defaults, so this is a no-op there.
+	ApplyCursorInputState();
+
 	// Deck build at match start (GDD §3.4). This controller owns the timing —
 	// the component never self-builds (TASK-022 flagged decision 12). Built
 	// BEFORE any widget below so a hand HUD created at BeginPlay (TASK-033)

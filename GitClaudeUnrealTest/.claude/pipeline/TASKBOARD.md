@@ -111,6 +111,134 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 **Current state (2026-07-05):** on `main` @ **5c1fcb7**, clean tree, NOT pushed. **TASK-070** (L_Arena stray-actor cleanup, a745799) and **TASK-041** (visual hand UI, 5c1fcb7) are BOTH `done` + committed — the one known M2 gap (visual hand) is CLOSED and the M3 transient-Blue-unit WATCH is CLOSED. Branches m2/m3/m4-testable preserved. Old carry-forwards resolved: (a) M2 TASK-041 visual hand UI — DONE (5c1fcb7); (b) M3 transient-Blue-unit WATCH — CLOSED by TASK-070; (c) TASK-046 WARN-2 bot discard hardening — CLOSED in TASK-060.
 
+**2026-07-07 (BUG — read first):** Jonathan's M4 playtest is BLOCKED — joining a match from L_MainMenu via EITHER menu button gives ZERO input in L_Arena. Bugfix chain **TASK-074..076** below. This is a bugfix chain like TASK-071..073, NOT M5 content — **M5 remains NOT authorized.**
+
+### Menu→arena input-loss bugfix (TASK-074..076) — Jonathan bug report 2026-07-07
+**Blocks the M4 playtest.** Verbatim symptom: from L_MainMenu, clicking "Play vs Bot" OR "Sandbox (No Bot)" joins the match, but then **WASD does nothing and no cards can be used — no user input at all**. Hitting Play directly in L_Arena still works with full input.
+
+**Manager triage rulings (binding for this chain):**
+1. **BOTH buttons affected ⇒ the fault is the menu→arena travel path generally, NOT the TASK-071 sandbox gate** ("Play vs Bot" → static `ASiegeGameMode::StartMatch`, "Sandbox (No Bot)" → static `::StartSandboxMatch`; both travel via `UGameplayStatics::OpenLevelBySoftObjectPtr` → `/Game/Maps/L_Arena`). TASK-071's gate is NOT reopened. Direct-L_Arena PIE working means the M2 arena input plumbing (TASK-023) is healthy.
+2. **Prime suspect — AUDIT-FIRST, not assumed:** `BP_MenuGameMode` puts the menu in UIOnly + visible cursor (handoffs/TASK-049.md, TASK-052.md) so buttons are clickable; input-routing state survives `OpenLevel` travel on the persistent `UGameViewportClient`, so L_Arena boots input-swallowed. `ASiegePlayerController::BeginPlay` currently sets NO input mode.
+3. **Fix direction:** the ARENA side normalizes its OWN input posture at startup rather than trusting the traveler — new law in CONVENTIONS.md "Input-mode ownership (level-travel law)" (added 2026-07-07, before task issue). The C++ normalization ships regardless; a menu-side editor edit (TASK-075) happens ONLY if TASK-074's audit proves it is required.
+4. **Must-not-break contract:** Alt-held UI cursor (M2), placement-mode cursor, menu buttons clickable on L_MainMenu, HandleMatchEnd UIOnly + PlayAgain restore, M1 WARN-4 clickability posture, direct-L_Arena feel byte-identical.
+5. **Verification constraint (binding, TASK-073 precedent):** MCP cannot click menu buttons or pass level-open URL options in PIE — the menu→arena path is NOT machine-drivable. Pre-compile QA as usual; build-master machine-verifies only the direct-L_Arena input regression; the live bug-fix confirmation is Jonathan's ONE menu click (WATCH below).
+
+Chain runs strictly in sequence: **TASK-074 (C++ audit+fix, file-only) → TASK-075 (CONDITIONAL editor fix) → TASK-076 (build-master compile + regression PIE + commit, NOT pushed).** Editor state: TASK-073 left it UP (PID 16916, 2026-07-05) but it may be closed — build-master bounces it regardless for the compile.
+
+#### TASK-074 — Menu→arena travel input loss: audit + arena-side input normalization (C++)
+- assignee: gameplay-programmer
+- status: qa-passed (QA PASS 2026-07-07 — 0 blocker/0 warn/1 nit; all 6 flagged decisions ruled, all 6 regression-contract items PASS, shadow-clean; root cause independently re-verified in BP_MenuGameMode.uasset; qa/TASK-074-report.md. Byte-identical/two-files-only claims close via git diff at TASK-076.) (2026-07-07. Root cause CONFIRMED = prime suspect: BP_MenuGameMode EventBeginPlay calls SetInputMode_UIOnlyEx → SetIgnoreInput(true) + NoCapture on the PERSISTENT UGameViewportClient, surviving OpenLevelBySoftObjectPtr travel; fresh arena PC set no input mode → viewport swallowed all input. Menu uses engine-default APlayerController (escalation clause not triggered; fix arena-scoped by construction). Fix: ASiegePlayerController::BeginPlay first statement = ApplyCursorInputState() → exact FInputModeGameOnly on fresh controller, clears the viewport ignore-input latch; no-op by value on direct PIE. Editor change needed: NO → TASK-075 cancel condition met. Files: SiegePlayerController.cpp (+ .h doc comment only). handoffs/TASK-074.md)
+- blocked-by: none
+- parallel-safe: yes (file-only C++; touches SiegePlayerController.h/.cpp only — within this chain strictly serial 074→[075]→076, but 074 shares no files with any other open work)
+- spec: >
+    Files only, no editor, no compile. Bug (Jonathan 2026-07-07, blocks the M4 playtest): entering a match from
+    L_MainMenu via EITHER menu button ("Play vs Bot" → static ASiegeGameMode::StartMatch; "Sandbox (No Bot)" →
+    static ASiegeGameMode::StartSandboxMatch, TASK-071) yields NO user input in L_Arena — WASD dead, hotkeys 1–6
+    dead, no cards playable. Direct-PIE on L_Arena works with full input, so the M2 arena input plumbing
+    (TASK-023: GameOnly free-look, hotkeys 1–6, Alt-held GameAndUI cursor) is healthy; BOTH buttons broken means
+    the fault is the menu→arena travel path generally, NOT the sandbox gate.
+    (0) AUDIT FIRST — confirm the root cause before editing; do NOT assume. Prime suspect (unproven):
+    BP_MenuGameMode (handoffs/TASK-049.md; TASK-052.md line "cursor + CreateWidget WBP_MainMenu + UIOnly") puts
+    the menu in FInputModeUIOnly + visible cursor; both Start* statics travel via
+    UGameplayStatics::OpenLevelBySoftObjectPtr (SiegeGameMode.cpp ~669 / ~706); input-routing state set by
+    SetInputMode lives partly on the persistent UGameViewportClient and can survive that travel, so the fresh
+    ASiegePlayerController in L_Arena boots with UI-only routing swallowing game input. Evidence base already
+    verified by the manager: ASiegePlayerController::BeginPlay (SiegePlayerController.cpp ~56) sets NO input
+    mode — the only SetInputMode sites are HandleMatchEnd's UIOnly end screen (~729) and ApplyCursorInputState()
+    (~1562). Engine-source / documented-behavior reasoning is acceptable audit evidence (no editor access).
+    Also confirm which PlayerController class L_MainMenu uses — expected: the engine default via BP_MenuGameMode
+    (parent GameModeBase), NOT ASiegePlayerController; record the answer in the handoff.
+    (1) FIX — arena-side self-normalization (ships regardless of audit fine detail, per CONVENTIONS
+    "Input-mode ownership (level-travel law)"): ASiegePlayerController establishes its own match posture at
+    BeginPlay — GameOnly free-look + hidden cursor — instead of trusting inherited state. Preferred
+    implementation: call the existing ApplyCursorInputState() from BeginPlay (on a fresh controller
+    bInPlacementMode/bUICursorHeld/bMatchEnded are all false, so it applies exactly FInputModeGameOnly, hides
+    the cursor, and clears bEnableClickEvents). If the audit shows that is insufficient (e.g. residual viewport
+    state needing FlushPressedKeys or ignore-input clearing), extend minimally and document why in the handoff.
+    (2) MUST NOT BREAK (regression contract, ruling 4): (a) Alt-held IA_UICursor GameAndUI cursor; (b)
+    placement-mode cursor + click-confirm; (c) HandleMatchEnd's UIOnly victory-screen state and the
+    PlayAgain/HandleMatchReset restore path; (d) L_MainMenu buttons staying clickable — the fix must be
+    arena-scoped; if the audit finds the menu DOES use ASiegePlayerController, STOP and escalate in the handoff
+    instead of shipping a normalization that would kill menu clicks; (e) the M1 WARN-4 clickability posture;
+    (f) direct-PIE L_Arena feel byte-identical (normalization is a no-op when state is already GameOnly).
+    (3) Do NOT change StartMatch / StartSandboxMatch signatures or behavior unless the audit PROVES the travel
+    call itself must change — default expectation is SiegePlayerController.h/.cpp only.
+    (4) Conditional editor follow-up: if the audit shows the root cause ALSO requires an editor-asset change
+    (BP_MenuGameMode graph / WBP_MainMenu / L_MainMenu settings), the C++ normalization still ships as the
+    robustness layer; write the EXACT prescribed editor change into handoffs/TASK-074.md so TASK-075 executes it
+    verbatim. If no editor change is needed, say so explicitly — TASK-075 is then cancelled by the manager.
+    (5) CONVENTIONS shadow law (C4457/58/59): no local/param may shadow an inherited reflected UPROPERTY. QA
+    MUST scan this task for shadow vars pre-compile.
+    Acceptance: root cause documented with evidence in handoffs/TASK-074.md; after the fix, a fresh
+    ASiegePlayerController beginning play in L_Arena applies GameOnly + hidden cursor REGARDLESS of prior
+    viewport/input state; all six regression-contract behaviors preserved by inspection; handoff notes that the
+    live menu-click confirmation is Jonathan's (menu path not machine-drivable, TASK-073 precedent).
+- names: >
+    ASiegePlayerController (Source/GitClaudeUnrealTest/Siegebound/SiegePlayerController.h/.cpp) — BeginPlay
+    (~line 56), ApplyCursorInputState (~line 1562), HandleMatchEnd UIOnly block (~line 728), HandleMatchReset
+    (~line 744), flags bInPlacementMode / bUICursorHeld / bMatchEnded. Travel entries (read-only, behavior
+    unchanged): ASiegeGameMode::StartMatch / ::StartSandboxMatch (Siegebound/SiegeGameMode.cpp ~669 / ~706),
+    UGameplayStatics::OpenLevelBySoftObjectPtr → /Game/Maps/L_Arena. Menu side (READ-ONLY this task):
+    /Game/Blueprints/BP_MenuGameMode, /Game/UI/WBP_MainMenu (Btn_Sandbox per CONVENTIONS "Dev / test tooling"),
+    /Game/Maps/L_MainMenu. Law: CONVENTIONS.md "Input-mode ownership (level-travel law)".
+
+#### TASK-075 — CONDITIONAL menu-side editor fix (only if TASK-074's audit demands it)
+- assignee: gameplay-programmer
+- status: cancelled (2026-07-07, orchestrator applying the manager's pre-authorized condition: handoffs/TASK-074.md verdict "editor change needed: NO" — menu UIOnly posture is correct per the level-travel law; the arena-side C++ normalization is the complete fix. TASK-076 skips the wait per its blocked-by line)
+- blocked-by: TASK-074 (needs its audit verdict + exact prescription; if the prescribed change binds new C++ symbols, ALSO wait for TASK-076's phase-1 compile per the TASK-072/073 editor-bounce pattern)
+- parallel-safe: no (editor-mutating — single editor instance)
+- spec: >
+    Execute EXACTLY the editor-asset change prescribed in handoffs/TASK-074.md — candidates are the
+    BP_MenuGameMode event graph (its UIOnly/cursor setup), WBP_MainMenu, or L_MainMenu settings. Nothing beyond
+    the prescription; additive/minimal. MUST NOT break: menu buttons remaining mouse-clickable on L_MainMenu
+    (the menu keeps its UIOnly-or-equivalent cursor posture per CONVENTIONS "Input-mode ownership"), the
+    Play-vs-Bot binding (→ StartMatch, byte-identical, TASK-049), the Btn_Sandbox binding (→ StartSandboxMatch,
+    TASK-072). Save and report the exact edit in the handoff.
+    Acceptance: prescribed change applied verbatim; both menu buttons still present + bound; menu still fully
+    mouse-operable in PIE.
+- names: >
+    Candidates (whichever handoffs/TASK-074.md prescribes): /Game/Blueprints/BP_MenuGameMode,
+    /Game/UI/WBP_MainMenu (existing Play-vs-Bot button + Btn_Sandbox), /Game/Maps/L_MainMenu. Bindings:
+    ASiegeGameMode::StartMatch / ::StartSandboxMatch. Laws: CONVENTIONS.md "Input-mode ownership
+    (level-travel law)" + "Dev / test tooling".
+
+#### TASK-076 — Menu-travel bugfix integration: compile, regression PIE, commit (build-master)
+- assignee: build-master
+- status: done (2026-07-07, committed on main, NOT pushed — hash in the build-master report/Slack 🔧 thread. Compile PASS clean ~25s (only SiegePlayerController.cpp rebuilt). DIFF AUDIT closes QA rulings 4/5: git diff showed ONLY SiegePlayerController.cpp (+18: comment block + one ApplyCursorInputState() call after Super::BeginPlay) and .h (+11/-1: doc-comment only, BeginPlay declaration byte-identical); SiegeGameMode.cpp absent from diff → StartMatch/StartSandboxMatch untouched. Regression PIE on direct-boot L_Arena (2 sessions): fresh-BeginPlay posture read LIVE = bShowMouseCursor:false + bEnableClickEvents:false (normalized GameOnly); full match loop ran to completion under the new BeginPlay (bot spawned + played, economy exactly +2/s, castle destroyed, match-end freeze fired); HandleMatchEnd UIOnly flip read LIVE post-match = cursor:true + clicks:true (contract item c live-verified); zero new log lines from the change as QA predicted. CONSTRAINT: live WASD/hotkey/Alt keystroke injection was IMPOSSIBLE this session — Jonathan's desktop was LOCKED (SendInput blocked by Winlogon; Slate drops unfocused PostMessage keys) — so the felt-input check folds into Jonathan's existing WATCH click, which exercises WASD+hotkeys+cards anyway. Structural: WBP_MainMenu readback = Play (vs Bot)→StartMatch and Btn_Sandbox (BuildSandboxButton)→StartSandboxMatch both bound. No boot-resave .uasset noise; .claude/settings.json + hooks/ left uncommitted per orchestrator. Editor left UP on L_Arena on the committed DLL. Pre-existing follow-ups (NOT from this change): (1) 'InputMode:UIOnly - Attempting to focus Non-Focusable widget' engine error at every match end (HandleMatchEnd's victory widget not focusable — cosmetic, untouched code); (2) DeepMine CardType-2 warning (TASK-035 watch) fired both matches; (3) balance: undefended bot rush kills Blue castle in ~48s.)
+- blocked-by: TASK-074 (qa-passed), TASK-075 (only if dispatched — skip if cancelled by the audit)
+- parallel-safe: no (owns the single editor + the compile + the Git commit)
+- spec: >
+    Integration for the menu→arena input-loss bugfix. (1) Editor: TASK-073 left it UP (PID 16916, 2026-07-05)
+    but it may be closed by now — bounce/relaunch regardless and compile TASK-074's C++ via the standard
+    editor-bounce/Build.bat. Compile failure → append errors to qa/TASK-074-report.md and route back to
+    gameplay-programmer (counts as a QA loop). If TASK-075 was prescribed, sequence like TASK-073: compile
+    first, hand back to the orchestrator so TASK-075 runs against the live module, then finish here.
+    (2) Regression PIE — machine-drivable part ONLY (binding constraint, TASK-073 precedent: MCP cannot click
+    menu buttons or pass level-open URL options in PIE, so the menu→arena path is NOT machine-verifiable):
+    PIE directly on L_Arena and verify input is UNREGRESSED — WASD free-look moves the hero; hotkeys 1–6 reach
+    PlayHandSlot; Alt-held cursor appears, clicks land, release restores free-look; placement mode shows its
+    cursor; match-end → UIOnly victory screen → PlayAgain restores play. Structural checks: WBP_MainMenu still
+    has BOTH buttons bound (readback: Play-vs-Bot → StartMatch, Btn_Sandbox → StartSandboxMatch).
+    (3) HUMAN-VERIFY acceptance (record in commit message + handoff + Slack 🔧 Build & Git): the actual bug-fix
+    confirmation needs Jonathan's ONE click — from L_MainMenu press either button and confirm WASD + hotkeys +
+    cards all work in the match, cursor hidden, Alt-cursor still works. Post the ask and point at the WATCH
+    below.
+    (4) Commit to `main` with TASK-074/075/076 in the message. **NOT pushed** (no remote push without
+    Jonathan's explicit instruction).
+    Acceptance: clean compile; direct-L_Arena input regression PASS; menu buttons structurally intact;
+    committed to main, not pushed; Jonathan's click recorded as the outstanding WATCH.
+- names: >
+    Build target GitClaudeUnrealTestEditor (Build.bat per CLAUDE.md). Maps: /Game/Maps/L_MainMenu,
+    /Game/Maps/L_Arena. Verify: ASiegePlayerController posture at BeginPlay (GameOnly + hidden cursor),
+    ApplyCursorInputState behaviors, WBP_MainMenu bindings (StartMatch / StartSandboxMatch). Commit to main
+    only, not pushed.
+
+#### WATCH — menu→arena input fix live confirm (not a task; close at Jonathan's click)
+- After TASK-076 commits, Jonathan clicks "Play vs Bot" or "Sandbox (No Bot)" from L_MainMenu once and
+  confirms full input in the match (WASD + hotkeys + cards, cursor hidden, Alt-cursor OK). MCP cannot drive
+  the menu path (TASK-073 precedent) — this click is the only way to close the bug. If it FAILS, the finding
+  returns to the manager as a new task in this chain.
+
 ### Sandbox / test-tooling feature (TASK-071..073) — Jonathan-approved 2026-07-05
 **This is a developer/test affordance, NOT M5 content — building it does NOT break the "M5 not authorized" hold.** Jonathan wants a calm "Sandbox (No Bot)" test bench to exercise the full 22-card roster on `main` without the enemy AI's chaos. Not a milestone; it lives in Active tasks and integrates as a small chain. Mechanism = a level-open URL option `Sandbox=1` (NOT a GameInstance) — full naming law in CONVENTIONS.md "Dev / test tooling". Chain runs strictly in sequence: **TASK-071 (C++ gate) → TASK-072 (menu button, editor) → TASK-073 (build-master integrate + commit).** The editor is CLOSED now; build-master relaunches it (and compiles TASK-071) before the editor/UMG task. Note: `WBP_MainMenu` already EXISTS at `/Game/UI/WBP_MainMenu` (TASK-049) — the menu is a real widget, not a level-BP.
 
