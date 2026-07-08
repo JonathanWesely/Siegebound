@@ -4,7 +4,10 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataTable.h"
+#include "UObject/SoftObjectPtr.h"
 #include "CardRow.generated.h"
+
+class UTexture2D;
 
 /**
  *  Card category (GDD section 4). M1 uses Unit only; the rest are defined
@@ -133,4 +136,17 @@ struct GITCLAUDEUNREALTEST_API FCardRow : public FTableRowBase
 	/** Spawner building: self-destruct after this many seconds (GDD 4). Barracks = 60. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spawner")
 	float Lifetime = 0.0f;
+
+	// --- Card artwork (TASK-079). Column appended at the END of cards.csv; the CSV importer maps by header name, not order. ---
+
+	/**
+	 *  Hand-UI card illustration (CONVENTIONS "Card artwork (hand UI)"):
+	 *  full object path /Game/UI/CardArt/T_CardArt_<CardID>.T_CardArt_<CardID>.
+	 *  Unset or unresolvable = graceful text-only card face (today's
+	 *  presentation), logged once, never a crash. Resolved null-safe by
+	 *  UCardHandWidget's art resolvers; LoadSynchronous is accepted for these
+	 *  512x512 UI textures (TASK-079 ruling 4).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Card")
+	TSoftObjectPtr<UTexture2D> CardArt;
 };

@@ -3,6 +3,7 @@
 #include "Siegebound/CardHandWidget.h"
 
 #include "Engine/DataTable.h"
+#include "Engine/Texture2D.h"
 #include "GitClaudeUnrealTest.h"
 #include "Siegebound/CardRow.h"
 #include "Siegebound/DeckComponent.h"
@@ -205,6 +206,13 @@ void UCardHandWidget::PushHandSlot(int32 SlotIndex)
 
 void UCardHandWidget::PushNextCardPreview(FName NextCardID)
 {
+	// cache for GetNextCardArtTexture BEFORE the BIE fires (TASK-079):
+	// OnNextCardUpdated carries no CardID (byte-identical BIE law), so the
+	// BP's handler pulls the preview art through that getter — which must
+	// already see the card being pushed. NAME_None is cached too, so the
+	// getter goes null (and the BP hides the art) in the empty-deck window.
+	LastNextCardID = NextCardID;
+
 	if (NextCardID.IsNone())
 	{
 		// no next card anywhere (empty-deck window) — empty DisplayName tells
@@ -246,6 +254,88 @@ void UCardHandWidget::UnbindObservedSources()
 	ObservedDeck = nullptr;
 	ObservedPlayerState = nullptr;
 	ObservedController = nullptr;
+}
+
+UTexture2D* UCardHandWidget::GetCardArtTexture(const FString& CardID)
+{
+	if (CardID.IsEmpty())
+	{
+		// empty slot — the NORMAL state (mirrors PushHandSlot's empty-CardID
+		// contract): no art, no log. The BP hides the art image and keeps the
+		// text-only face hidden with the rest of the empty frame.
+		return nullptr;
+	}
+
+	const FName CardName(*CardID);
+	if (CardName.IsNone())
+	{
+		// defensive: a literal "None" string can never be a real CardID (the
+		// empty-slot signal is the EMPTY string, TASK-029 contract) — treat it
+		// as empty, silently, rather than warming the missing-row warning
+		return nullptr;
+	}
+
+	return ResolveCardArtTexture(CardName);
+}
+
+UTexture2D* UCardHandWidget::GetNextCardArtTexture()
+{
+	if (LastNextCardID.IsNone())
+	{
+		// nothing pushed yet, or the empty-deck window (PushNextCardPreview
+		// cached NAME_None) — hide the preview art
+		return nullptr;
+	}
+
+	return ResolveCardArtTexture(LastNextCardID);
+}
+
+UTexture2D* UCardHandWidget::ResolveCardArtTexture(FName CardID)
+{
+	const FCardRow* Row = ResolveCardRow(CardID);
+	if (!Row)
+	{
+		// missing table/row — already logged once by ResolveCardRow; the face
+		// stays text-only (graceful fallback, CONVENTIONS "Card artwork
+		// (hand UI)")
+		return nullptr;
+	}
+
+	if (Row->CardArt.IsNull())
+	{
+		// unset CardArt cell — graceful text-only fallback, logged once per
+		// CardID (same spam rationale as the row warnings: slots re-pull art
+		// on every hand/gold refresh)
+		if (!WarnedCardArtIDs.Contains(CardID))
+		{
+			WarnedCardArtIDs.Add(CardID);
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("UCardHandWidget: DT_Cards row '%s' has no CardArt set — card face stays text-only (logged once per CardID)."),
+				*CardID.ToString());
+		}
+		return nullptr;
+	}
+
+	// LoadSynchronous is ACCEPTED for this feature (TASK-079 ruling 4):
+	// 512x512 UI textures, at most 7 visible (6 hand slots + preview), loaded
+	// on hand refresh — no async streaming machinery.
+	UTexture2D* ArtTexture = Row->CardArt.LoadSynchronous();
+	if (!ArtTexture)
+	{
+		// unresolvable path (e.g. T_CardArt_* not imported yet — normal until
+		// TASK-078 lands) — text-only fallback, logged once per CardID, never
+		// a crash
+		if (!WarnedCardArtIDs.Contains(CardID))
+		{
+			WarnedCardArtIDs.Add(CardID);
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("UCardHandWidget: CardArt '%s' for CardID '%s' failed to load — card face stays text-only (logged once per CardID)."),
+				*Row->CardArt.ToString(), *CardID.ToString());
+		}
+		return nullptr;
+	}
+
+	return ArtTexture;
 }
 
 const FCardRow* UCardHandWidget::ResolveCardRow(FName CardID)

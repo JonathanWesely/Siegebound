@@ -11,6 +11,7 @@ class ASiegePlayerController;
 class ASiegePlayerState;
 class UDataTable;
 class UDeckComponent;
+class UTexture2D;
 struct FCardRow;
 
 /**
@@ -140,6 +141,36 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Siegebound|UI")
 	void OnCardRefusedMessage(const FString& Reason);
 
+	/**
+	 *  Null-safe card-art resolver (TASK-079; CONVENTIONS "Card artwork (hand
+	 *  UI)"). CardID — the exact string OnHandSlotUpdated delivered — →
+	 *  DT_Cards row → CardArt soft path → loaded UTexture2D. The three hand
+	 *  BIEs keep byte-identical signatures (ruling 3): art rides this PULL
+	 *  seam, never new BIE params. WBP_CardHand (TASK-080) calls this inside
+	 *  its OnHandSlotUpdated handler; a null return means "no art" → hide the
+	 *  art image (text-only face fallback = today's presentation).
+	 *
+	 *  Returns nullptr — never crashes — on: empty CardID (empty slot, silent
+	 *  by design), missing table/row (ResolveCardRow logs once), unset CardArt
+	 *  cell or unresolvable path (logged once per CardID). Uses
+	 *  LoadSynchronous — ACCEPTED for this feature (ruling 4: 512x512 UI
+	 *  textures, at most 7 visible, loaded on hand refresh).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|UI")
+	UTexture2D* GetCardArtTexture(const FString& CardID);
+
+	/**
+	 *  Preview-slot equivalent of GetCardArtTexture. OnNextCardUpdated
+	 *  deliberately carries no CardID (byte-identical BIE law), so this widget
+	 *  caches the last CardID pushed through PushNextCardPreview
+	 *  (LastNextCardID — set BEFORE the BIE fires, so calling this inside the
+	 *  OnNextCardUpdated handler always resolves the card being pushed).
+	 *  Returns nullptr when there is no next card (empty-deck window — hide
+	 *  the preview art) or per GetCardArtTexture's fallback rules.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|UI")
+	UTexture2D* GetNextCardArtTexture();
+
 protected:
 
 	/** FOnDeckHandChanged handler — payload-less coarse refresh: re-pulls ALL hand slots (TASK-022 contract). */
@@ -191,8 +222,17 @@ private:
 	/** DT_Cards row lookup (soft load, null-safe). Missing table/row logs ONCE (slots re-push every gold tick — per-lookup logs would spam) and returns nullptr. */
 	const FCardRow* ResolveCardRow(FName CardID);
 
+	/** Shared art resolution (TASK-079): CardID → DT_Cards row → CardArt.LoadSynchronous(). Nullptr on any fault; unset/unresolvable art warns once per CardID (WarnedCardArtIDs). */
+	UTexture2D* ResolveCardArtTexture(FName CardID);
+
 	/** CardIDs whose missing DT_Cards row was already logged (once-per-CardID spam guard). */
 	TSet<FName> WarnedMissingRowIDs;
+
+	/** CardIDs whose unset/unresolvable CardArt was already logged (once-per-CardID spam guard, mirrors WarnedMissingRowIDs). */
+	TSet<FName> WarnedCardArtIDs;
+
+	/** Last CardID pushed through PushNextCardPreview — GetNextCardArtTexture's source (OnNextCardUpdated carries no CardID by BIE law). NAME_None = no next card. */
+	FName LastNextCardID;
 
 	/** True after the missing-table warning was logged (once-per-widget spam guard). */
 	bool bWarnedMissingTable = false;
