@@ -12,6 +12,7 @@
 #include "Materials/MaterialInterface.h"
 #include "Siegebound/CardRow.h"
 #include "Siegebound/DamageTypes.h"
+#include "TimerManager.h"
 
 ABuilding::ABuilding()
 {
@@ -59,6 +60,56 @@ void ABuilding::BeginPlay()
 	ApplyTeamMaterial();
 
 	LoadStats();
+}
+
+void ABuilding::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// TASK-099: no dangling spell-freeze expiry on a destroyed building
+	// (belt-and-braces — the timer manager drops object-bound timers on destroy;
+	// this keeps the family's explicit-clear discipline). ATower::EndPlay clears
+	// its own fire timer first and chains here via Super::EndPlay.
+	GetWorldTimerManager().ClearTimer(SpellFreezeTimerHandle);
+
+	Super::EndPlay(EndPlayReason);
+}
+
+void ABuilding::ApplyFreeze(float Seconds)
+{
+	// STATE ONLY (TASK-099, M5 ruling 14): latch bSpellFrozen for the duration —
+	// the tower fire-gate consuming it is TASK-101's, and the castle can never
+	// arrive here (ACastle is not an ABuilding; ruling 5 gives it NO freeze API).
+	// A dying building takes no state; non-positive Seconds is a defensive no-op
+	// (FrostNova's EffectDuration is 4).
+	if (bDestroyed || Seconds <= 0.f)
+	{
+		return;
+	}
+
+	// refresh-not-stack (ruling 5): the single expiry timer re-arms at
+	// max(remaining, new) — a shorter re-freeze never trims a longer one, and
+	// nothing ever adds. GetTimerRemaining is only read while the timer is live
+	// (it returns -1 otherwise).
+	float RemainingFreeze = 0.f;
+	if (GetWorldTimerManager().IsTimerActive(SpellFreezeTimerHandle))
+	{
+		RemainingFreeze = GetWorldTimerManager().GetTimerRemaining(SpellFreezeTimerHandle);
+	}
+
+	bSpellFrozen = true;
+	GetWorldTimerManager().SetTimer(SpellFreezeTimerHandle, this, &ABuilding::EndSpellFreeze,
+		FMath::Max(RemainingFreeze, Seconds), /*bLoop=*/ false);
+}
+
+void ABuilding::EndSpellFreeze()
+{
+	// state-only inverse: drop the latch, nothing to resume (TASK-101's fire path
+	// re-checks IsFrozen() every shot). MATCH-END PRECEDENCE (ruling 5) needs no
+	// gate here: on towers the match-end ClearAllTimersForObject sweep already
+	// cleared this expiry (a match-end-frozen tower stays IsFrozen() until Play
+	// Again destroys it), and on non-tower buildings flipping the flag resumes
+	// nothing by construction.
+	GetWorldTimerManager().ClearTimer(SpellFreezeTimerHandle);
+	bSpellFrozen = false;
 }
 
 void ABuilding::ApplyTeamMaterial()

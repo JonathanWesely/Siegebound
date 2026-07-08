@@ -5,7 +5,10 @@
 #include "CoreMinimal.h"
 #include "Engine/TimerHandle.h"
 #include "Siegebound/Building.h"
+#include "UObject/SoftObjectPtr.h"
 #include "Tower.generated.h"
+
+class UNiagaraSystem;
 
 /**
  *  Siegebound auto-firing tower (GDD §3.7, TASK-027): an ABuilding that fires
@@ -46,11 +49,35 @@
  *    ignored and the loop re-scans next cadence. Both stay plain ATower, so
  *    BP_Building_BombTower/BallistaTower parent ATower directly (TASK-063).
  *    ArrowTower (AoERadius 0, MinRange 0) is behavior-unchanged.
+ *  - Chain zap (TASK-101, M5 ruling 9 — CrystalTower, still NO new class): a
+ *    row with ChainTargets > 0 (CrystalTower — 150 HP, 15 damage, 800 range,
+ *    1.5 s, ChainTargets 3, ChainFalloff 5) fires an INSTANT chain zap instead
+ *    of a projectile. Primary = the same nearest-enemy acquisition as every
+ *    other tower; the zap then bounces to up to ChainTargets−1 further enemies,
+ *    each the nearest not-yet-hit enemy within ChainBounceRadius of the
+ *    PREVIOUS target (measured target-to-target, never tower-to-target); hit n
+ *    (0-indexed) takes Damage − n×ChainFalloff, floored at 0 (15/10/5 with the
+ *    CrystalTower row); no friendly fire, no target hit twice per zap; damage
+ *    tagged USiegeDamageType_Projectile (tower attack family). Fewer enemies
+ *    in bounce reach = a shorter chain — never a re-search from the tower.
+ *    /Game/VFX/NS_ChainZap spawns at every chain hit (soft path, null-safe,
+ *    log-once; art lands in TASK-108). Arrow/Bomb/Ballista rows author
+ *    ChainTargets 0, so their fire path is byte-for-byte unchanged.
+ *  - Freeze gate (TASK-101, M5 ruling 14): ALL firing — projectile AND chain —
+ *    gates on !IsFrozen() (TASK-099's ABuilding spell-freeze API, FrostNova).
+ *    The cadence timer keeps looping while frozen; the tower just skips its
+ *    shots and resumes on the first cadence tick after the freeze expires
+ *    (freeze pauses the attack cadence, it never tears down the loop).
  */
 UCLASS()
 class GITCLAUDEUNREALTEST_API ATower : public ABuilding
 {
 	GENERATED_BODY()
+
+public:
+
+	/** Sets the NS_ChainZap soft path default (only chain rows ever load it). */
+	ATower();
 
 protected:
 
@@ -75,9 +102,30 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Siegebound|Tower")
 	FVector MuzzleOffset = FVector(0.f, 0.f, 200.f);
 
+	/**
+	 *  Chain bounce search radius: each bounce acquires the nearest not-yet-hit
+	 *  enemy within this distance of the PREVIOUS target (M5 ruling 9 —
+	 *  target-to-target, never tower-to-target). Mechanic RULE, not a card stat
+	 *  (GDD §4 Chain leaves it unspecified; manager-defined = 350), so it lives
+	 *  here as a UPROPERTY default per the Rally/Charge-magnitude precedent and
+	 *  never enters cards.csv. Only read when the row's ChainTargets > 0.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Siegebound|Tower", meta = (ClampMin = "0"))
+	float ChainBounceRadius = 350.f; // GDD §4 Chain, manager-defined (M5 ruling 9)
+
+	/**
+	 *  Per-hit chain zap burst (TASK-101 names block): /Game/VFX/NS_ChainZap,
+	 *  authored by art TASK-108. Soft path set in the constructor, resolved and
+	 *  cached ONCE in OnStatsLoaded — and only for chain rows (ChainTargets > 0);
+	 *  Arrow/Bomb/Ballista towers never touch it. Missing/unbuilt asset = one
+	 *  warning, zaps still deal damage with no visual, never a crash.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Siegebound|Tower")
+	TSoftObjectPtr<UNiagaraSystem> ChainZapEffect;
+
 private:
 
-	/** Cadence callback: acquire the nearest valid enemy and fire — or idle and let the loop re-scan next cadence. */
+	/** Cadence callback: freeze-gate, then acquire the nearest valid enemy and fire (chain zap when the row chains, projectile otherwise) — or idle and let the loop re-scan next cadence. */
 	void ScanAndFire();
 
 	/**
@@ -90,8 +138,34 @@ private:
 	 */
 	AActor* AcquireTarget() const;
 
+	/**
+	 *  The tower targeting gate, factored out of AcquireTarget so the chain
+	 *  bounce search (TASK-101) shares it instead of hand-mirroring (the
+	 *  qa/TASK-026 NIT-4 "no more mirrors" discipline): valid + alive + the §3.7
+	 *  POSITIVE class gate (ASummonedUnit incl. subclasses, AHeroCharacter —
+	 *  castles, buildings, and future ITeamAgent types can never qualify) +
+	 *  enemy-team only (§3.0 no friendly fire). Distance is deliberately NOT in
+	 *  here — the primary ring gate and the bounce radius gate differ per call
+	 *  site.
+	 */
+	bool IsAcquirableEnemy(const AActor* Candidate) const;
+
 	/** Spawns one AProjectile at the muzzle and arms it via InitProjectile (TASK-026 contract, non-pawn shooter form). */
 	void FireProjectileAt(AActor* Target);
+
+	/**
+	 *  TASK-101 (M5 ruling 9): resolves one INSTANT chain zap — no projectile
+	 *  actor. Selects the whole chain from a single fire-time snapshot of live
+	 *  enemies (PrimaryTarget, then up to AttackChainTargets−1 bounces, each the
+	 *  nearest not-yet-hit enemy within ChainBounceRadius of the PREVIOUS
+	 *  target; no candidates in reach = the chain just ends short), THEN applies
+	 *  hit n = AttackDamage − n×AttackChainFalloff (floored at 0) to each in
+	 *  bounce order, tagged USiegeDamageType_Projectile, with this tower as
+	 *  DamageCauser (an ITeamAgent — receivers resolve the tower's team, so
+	 *  their same-team gate backstops the enemy-only selection). NS_ChainZap
+	 *  spawns at every chain hit (null-safe).
+	 */
+	void FireChainZapAt(AActor* PrimaryTarget);
 
 	/** Damage per shot, from the card row (ArrowTower: 15). Carried by the projectile; this actor never re-reads DT_Cards. */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Tower", meta = (AllowPrivateAccess = "true"))
@@ -123,6 +197,32 @@ private:
 	 */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Tower", meta = (AllowPrivateAccess = "true"))
 	float AttackMinRange = 0.f;
+
+	/**
+	 *  Total targets hit per attack, from the card row (TASK-101 / M5 ruling 9;
+	 *  CrystalTower 3, 0 = not a chain tower). > 0 swaps FireProjectileAt for
+	 *  the instant FireChainZapAt on every shot; 0 (Arrow/Bomb/Ballista) leaves
+	 *  the projectile path byte-for-byte unchanged.
+	 */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Tower", meta = (AllowPrivateAccess = "true"))
+	int32 AttackChainTargets = 0;
+
+	/**
+	 *  Flat damage lost per bounce, from the card row (TASK-101 / M5 ruling 9;
+	 *  CrystalTower 5 ⇒ 15/10/5 with Damage 15). Hit n (0-indexed) takes
+	 *  AttackDamage − n×AttackChainFalloff, floored at 0. Only read when
+	 *  AttackChainTargets > 0.
+	 */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Tower", meta = (AllowPrivateAccess = "true"))
+	int32 AttackChainFalloff = 0;
+
+	/**
+	 *  Hard cache of ChainZapEffect, resolved ONCE in OnStatsLoaded and only for
+	 *  chain rows (the AProjectile::CachedImpactEffect / TASK-020 pattern) —
+	 *  keeps the Niagara system alive against GC and avoids per-zap sync loads.
+	 */
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraSystem> CachedChainZapEffect;
 
 	/** Drives ScanAndFire every AttackCadence seconds, armed once in OnStatsLoaded (Cadence > 0 rows only). */
 	FTimerHandle FireTimerHandle;

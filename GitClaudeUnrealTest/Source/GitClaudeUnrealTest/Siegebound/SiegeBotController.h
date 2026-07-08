@@ -132,23 +132,40 @@ protected:
 
 	/**
 	 *  The §4 bot decision loop, fired every DecisionIntervalSeconds. Plays the FIRST
-	 *  ordered rule whose conditions hold, then returns (one rule owns the tick):
+	 *  ordered rule whose conditions hold, then returns (one rule owns the tick).
+	 *  Rule order per M5 ruling 10 (defend=1, miners=2, SPELLS=3, big unit=4,
+	 *  discard=5 — TASK-102 inserted rule 3 and renumbered the trace labels):
 	 *    1. DEFEND  — enemy intruder on the bot half + an affordable defensive Unit/
 	 *                 Building (incl. the Set II towers) → cheapest at the centerline
 	 *                 (unit) or between the intruder and Castle_Red (building).
 	 *    2. ECONOMY — half clear → a Miner (under the target + §3.3 cap) or a Deep
 	 *                 Mine (building-routed economy, no cap; §4 M4).
-	 *    3. ATTACK  — banked to AttackBankThreshold → the most-expensive affordable
+	 *    3. SPELLS  — §4 M5 extension (TASK-102): 3a Fireball at a cluster of >=
+	 *                 FireballClusterMinUnits player units (cluster radius = the
+	 *                 Fireball row's AoERadius), cast at the cluster centroid; else
+	 *                 3b Lightning at a player tower with >= LightningTowerMinUnits
+	 *                 player units within the Lightning row's AoERadius, cast at the
+	 *                 tower. Hand + affordability checks PRECEDE the world scans;
+	 *                 casts resolve DIRECTLY through USpellLibrary::ResolveSpell
+	 *                 (targeting mode is a human affordance — ruling 10).
+	 *                 FrostNova/BattleCry/Pickpocket have NO cast rule (GDD silent)
+	 *                 and fall through to rule-5 discard economics.
+	 *    4. ATTACK  — banked to AttackBankThreshold → the most-expensive affordable
 	 *                 UNIT (now reaching Ogre/Cavalry/Pikeman/…; Militia Mob spawns
 	 *                 SwarmCount copies via the shared swarm path, TASK-059).
-	 *    4. CYCLE   — a card the bot can NEVER play (HeroUpgrade/Utility/Spell — the
-	 *                 bot has no hero; §4 M4) + gold >= the fee → discard the most-
-	 *                 expensive such card (hardened: discard-first, charge-on-success).
+	 *    5. CYCLE   — a card the bot can NEVER play (HeroUpgrade/Utility/non-castable
+	 *                 Spell — the bot has no hero; §4 M4/M5) + gold >= the fee →
+	 *                 discard the most-expensive such card (hardened: discard-first,
+	 *                 charge-on-success). Fireball/Lightning are PLAYABLE for this
+	 *                 bot and are NEVER cycled — it holds them awaiting a target
+	 *                 (the rule-4 bank-toward-it precedent).
 	 *  Plays route through GetDeckComponent() (ConfirmPlayFromHand / DiscardFromHand)
 	 *  + SpendGold on GetBotPlayerState(), spawning the composed BP_Unit_/BP_Building_
 	 *  by CardID (Team=Red, team material via TASK-044) on a navmesh-projected, own-
-	 *  half (X>=0), clearance-valid point. NEVER plays an unaffordable card; NEVER
-	 *  spawns on the Blue half; exactly one LogSiegeBot line per fired rule.
+	 *  half (X>=0), clearance-valid point; spell casts resolve at a scanned world
+	 *  point instead (§3.5 — spells land anywhere, no placement rules). NEVER plays
+	 *  an unaffordable card; NEVER spawns on the Blue half; exactly one LogSiegeBot
+	 *  line per fired rule.
 	 */
 	void EvaluateDecisions();
 
@@ -184,11 +201,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot", meta = (ClampMin = "0"))
 	int32 TargetMinerCount = 3;
 
-	/** Rule 3 attack gate: the bot banks to at least this much gold before committing an offensive unit — this is what makes waves GROW as income scales. // GDD §4 */
+	/** Rule 4 attack gate: the bot banks to at least this much gold before committing an offensive unit — this is what makes waves GROW as income scales. // GDD §4 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot", meta = (ClampMin = "0"))
 	int32 AttackBankThreshold = 12;
 
-	/** Rule 4 discard fee (mirrors the player's §3.6 1-gold charge); rule 4 needs at least this much gold. // GDD §3.6 */
+	/** Rule 5 discard fee (mirrors the player's §3.6 1-gold charge); rule 5 needs at least this much gold. // GDD §3.6 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot", meta = (ClampMin = "0"))
 	int32 BotDiscardCost = 1;
 
@@ -206,6 +223,29 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot")
 	TArray<FName> BuildingEconomyCardIDs = { FName(TEXT("DeepMine")) };
+
+	// --- Rule 3 (SPELLS, §4 M5 extension — TASK-102) tuning. The minimum-unit gates are
+	//     mechanic rules (UPROPERTY defaults, not CSV columns — CONVENTIONS). The cluster /
+	//     tower-adjacency SEARCH RADII are deliberately NOT declared here: they are the
+	//     spells' own AoERadius column (Fireball 300, Lightning 400 — GDD §4 Set III), read
+	//     from DT_Cards at decision time per the data-driven law, so the bot only casts when
+	//     the found targets actually fit inside the real blast. ---
+
+	/** CardID of the rule-3a spell. Matches the DT_Cards Set III row (CONVENTIONS "Spells & Set III (M5)"). // GDD §4 M5 — "bot casts Fireball at 3+ clustered player units" */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot")
+	FName FireballCardID = FName(TEXT("Fireball"));
+
+	/** CardID of the rule-3b spell. Matches the DT_Cards Set III row (CONVENTIONS "Spells & Set III (M5)"). // GDD §4 M5 — "Lightning at a tower adjacent to 2+ units" */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot")
+	FName LightningCardID = FName(TEXT("Lightning"));
+
+	/** Rule 3a gate: minimum player-team units in one Fireball-radius cluster before the bot casts. // GDD §4 M5 — Fireball at 3+ clustered player units */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot", meta = (ClampMin = "1"))
+	int32 FireballClusterMinUnits = 3;
+
+	/** Rule 3b gate: minimum player-team units within the Lightning radius of a player tower before the bot casts. // GDD §4 M5 — Lightning at a tower adjacent to 2+ units */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot", meta = (ClampMin = "1"))
+	int32 LightningTowerMinUnits = 2;
 
 	/** Card stat table (GDD §3.0) — the bot reads Cost/CardType per hand card to select a rule; NEVER hardcodes a stat. Soft, resolved null-safe each decision. Matches /Game/Data/DT_Cards. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot")
@@ -290,6 +330,36 @@ private:
 	 *  player advances with units or their own hero (flagged decision, handoff).
 	 */
 	AActor* FindNearestEnemyIntruderOnBotHalf() const;
+
+	/**
+	 *  Rule 3a (§4 M5, TASK-102) target search — the densest cluster of alive
+	 *  PLAYER-team summoned units, anywhere on the map (§3.5 — spells have no half
+	 *  restriction). Algorithm (documented per the task spec): a cluster exists when
+	 *  ANY unit (the anchor) has >= MinUnits total player units (itself included,
+	 *  i.e. >= MinUnits-1 OTHERS) within ClusterRadius, 2D distance (M4.5 hills must
+	 *  not break grouping). Winner = the anchor with the MOST members; ties broken
+	 *  by anchor distance to Castle_Red (nearest = biggest threat — deterministic).
+	 *  OutCentroid = the mean of the winning cluster's member locations (the blast
+	 *  centers on the group, not the anchor); OutClusterSize = its member count.
+	 *  Units only — the enemy HERO is not a "player unit" and is not counted
+	 *  (flagged decision; the resolver may still damage it if inside the blast).
+	 *  Called ONLY from EvaluateDecisions, after hand+affordability pass (no scans
+	 *  outside the 2 s cadence). False when no qualifying cluster exists.
+	 */
+	bool FindFireballClusterTarget(float ClusterRadius, int32 MinUnits, FVector& OutCentroid, int32& OutClusterSize) const;
+
+	/**
+	 *  Rule 3b (§4 M5, TASK-102) target search — a live PLAYER-team ATower with
+	 *  >= MinUnits alive player-team summoned units within SearchRadius of it (2D).
+	 *  "Tower" is the ATower family ONLY (Arrow/Bomb/Ballista/Crystal); walls,
+	 *  Barracks and Deep Mines are ABuildings but deliberately do not qualify.
+	 *  Winner = the qualifying tower with the MOST nearby units; ties broken by
+	 *  tower distance to Castle_Red (nearest = biggest threat — deterministic).
+	 *  OutNearbyUnitCount reports the winner's count (0 when none). Called ONLY
+	 *  from EvaluateDecisions after hand+affordability pass. nullptr when no tower
+	 *  qualifies.
+	 */
+	AActor* FindLightningTowerTarget(float SearchRadius, int32 MinUnits, int32& OutNearbyUnitCount) const;
 
 	/** Live Castle_Red world location (nearest same-team ACastle), else CastleRedFallbackLocation. */
 	FVector GetCastleRedLocation() const;

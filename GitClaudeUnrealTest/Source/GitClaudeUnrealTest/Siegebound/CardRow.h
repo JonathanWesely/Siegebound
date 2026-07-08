@@ -37,6 +37,23 @@ enum class ECardProfile : uint8
 };
 
 /**
+ *  Spell resolution dispatch token (GDD section 3.11 / section 4 Set III; M5,
+ *  CONVENTIONS "Spells & Set III (M5)"). None for non-spell cards.
+ *  USpellLibrary::ResolveSpell (TASK-098) dispatches on this column; CSV cells
+ *  use these value names character-for-character.
+ */
+UENUM(BlueprintType)
+enum class ESpellEffect : uint8
+{
+	None,
+	AoEDamage,        // Fireball: Damage over AoERadius at the reticle
+	Freeze,           // FrostNova: freezes enemy units/towers for EffectDuration
+	TopTargetsDamage, // Lightning: Damage to the MaxTargets highest-current-HP enemies in AoERadius
+	AllyBuff,         // BattleCry: friendly units in AoERadius buffed for EffectDuration
+	GoldSteal         // Pickpocket: steals GoldSteal gold, instant resolve (M5 ruling 7)
+};
+
+/**
  *  One row of /Game/Data/DT_Cards, imported from Docs/Data/cards.csv (GDD section 3.0).
  *  Row name = CardID in PascalCase (e.g. Footman).
  *  Property names MUST match the CSV header columns 1:1 - do not rename
@@ -149,4 +166,33 @@ struct GITCLAUDEUNREALTEST_API FCardRow : public FTableRowBase
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Card")
 	TSoftObjectPtr<UTexture2D> CardArt;
+
+	// --- M5 Set III spell columns (GDD section 3.11 / section 4; CONVENTIONS "Spells & Set III (M5)", TASK-097).
+	//     Sparse: defaults leave every non-spell card unchanged. Spells REUSE Damage
+	//     (Fireball 100, Lightning 200) and AoERadius (Fireball 300, FrostNova 350,
+	//     Lightning 400, BattleCry 400) — no duplicate damage/radius columns. ---
+
+	/** Spell dispatch token consumed by USpellLibrary::ResolveSpell (M5); None = not a spell effect. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spell")
+	ESpellEffect SpellEffect = ESpellEffect::None;
+
+	/** Timed-effect duration in seconds (GDD 4: FrostNova 4, BattleCry 8). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spell")
+	float EffectDuration = 0.0f;
+
+	/** Top-N target count for TopTargetsDamage (GDD 4: Lightning 3). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spell")
+	int32 MaxTargets = 0;
+
+	/** Gold stolen from the opponent, capped at what they have (GDD 4: Pickpocket 10). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spell")
+	int32 GoldSteal = 0;
+
+	/** Chain keyword: total targets hit per attack (GDD 4: CrystalTower 3). Typed column per the M4 keyword-deferral note. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Keywords")
+	int32 ChainTargets = 0;
+
+	/** Chain keyword: flat damage reduction per bounce (GDD 4: CrystalTower 5 => 15/10/5 with Damage 15). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Keywords")
+	int32 ChainFalloff = 0;
 };

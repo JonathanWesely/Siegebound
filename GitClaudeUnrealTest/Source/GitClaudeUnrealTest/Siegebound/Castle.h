@@ -77,7 +77,7 @@ public:
 	 *  the castle, TASK-054), USiegeDamageType_Projectile (and subclasses) = 50% (the
 	 *  anti-sniping rule), melee/default/untyped = 100%. Units and the hero always take
 	 *  listed damage (no scaling). Returns the SCALED amount the castle actually took.
-	 *  TODO(Spell 50% — M5): spell damage types = 50% vs castle (GDD §3.0).
+	 *  USiegeDamageType_Spell (and subclasses) = 50% (spells vs the castle, GDD §3.0/§3.11 — TASK-098).
 	 */
 	virtual float TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
 

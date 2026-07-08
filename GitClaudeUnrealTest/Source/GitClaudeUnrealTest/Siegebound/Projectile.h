@@ -27,10 +27,21 @@ class UStaticMeshComponent;
  *    target's collision (the house pattern from hero melee / unit attacks,
  *    TASK-003/004) — within max(ImpactRadius, this tick's travel step). There
  *    is NO physics collision: the visual mesh is NoCollision, so the projectile
- *    can never collide with friendlies (§3.0) — or anything else — and only its
- *    intended target can be hit. Large targets (the castle's ~800x800 base)
+ *    can never collide with friendlies (§3.0), and its intended target is the
+ *    ONLY actor it can damage. Large targets (the castle's ~800x800 base)
  *    impact at their walls, and the closest point doubles as the impact-VFX
  *    point (TASK-020 pattern).
+ *  - Terrain law (M4.5, TASK-094 / ruling 8): every tick the FULL travel
+ *    segment is line-traced (multi, object types WorldStatic + WorldDynamic,
+ *    SIMPLE collision) and the projectile is DESTROYED — zero damage, no AoE,
+ *    no attribution — at the nearest hit whose actor carries tag "Terrain"
+ *    (walkable ground + hills) or "Obstacle" (tree trunks + rocks — Fab
+ *    amendment; exact strings, set by TASK-095). Untagged blockers (walls,
+ *    buildings, castles) never match, so projectiles keep flying through them
+ *    exactly as shipped (archer-behind-own-wall comp, §3.0 castle scaling).
+ *    A homing projectile whose target moves behind a hill legitimately dies
+ *    on the hillside — that IS the physical high-ground value (ruling 2);
+ *    target ACQUISITION stays range-only (no LOS checks anywhere).
  *  - On impact: applies Damage via ApplyDamage with the damage-type class given
  *    at InitProjectile (USiegeDamageType_Projectile from ranged attackers — the
  *    castle scales it to 50% on ITS side, TASK-026/M2 ruling), then destroys
@@ -180,6 +191,21 @@ private:
 	 *  origin when no usable collision exists.
 	 */
 	static float GetDistanceToTarget(const FVector& From, const AActor* InTarget, FVector& OutClosestPoint);
+
+	/**
+	 *  M4.5 terrain law (TASK-094, ruling 8): multi line trace over one tick's
+	 *  travel segment (object types WorldStatic + WorldDynamic, SIMPLE collision
+	 *  — tree canopies have no simple hulls and stay pass-through per ruling 6,
+	 *  while Complex-As-Simple terrain still resolves per ruling 3), keeping
+	 *  only the NEAREST hit whose actor carries tag "Terrain" or "Obstacle"
+	 *  (exact strings — CONVENTIONS "Arena terrain & environment (M4.5)"
+	 *  contract, set by TASK-095). Untagged blockers (walls, buildings,
+	 *  castles) never match — shipped fly-through behavior preserved. Cost:
+	 *  one trace + an O(hit-result) tag scan per tick; never a world scan.
+	 *  Returns true with the tagged hit in OutHit; false otherwise (no world,
+	 *  no hits, no tagged hits — null-safe throughout).
+	 */
+	bool FindEnvironmentImpact(const FVector& TraceStart, const FVector& TraceEnd, FHitResult& OutHit) const;
 
 	/** Firing team, set by InitProjectile. Runtime-only — projectiles are never level-placed. */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Projectile", meta = (AllowPrivateAccess = "true"))

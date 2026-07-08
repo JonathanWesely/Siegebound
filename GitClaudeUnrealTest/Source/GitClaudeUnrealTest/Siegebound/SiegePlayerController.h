@@ -10,6 +10,7 @@
 #include "SiegePlayerController.generated.h"
 
 class ACastle;
+class ADecalActor;
 class AHeroCharacter;
 class AStaticMeshActor;
 class ASiegePlayerState;
@@ -83,10 +84,53 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCardRefused, const FString&, Reas
  *    ConfirmPlayFromHand(PendingHandSlot). An invalid click refuses, spends
  *    nothing, and STAYS in mode.
  *  - Cancel = IA_CancelPlace (RMB/Esc): exit with no cost.
- *  - HandleMatchEnd(Winner): exits placement mode, shows
+ *
+ *  Placement v3 (GDD §5 M4.5 terrain, TASK-093): BUILDING cards gain two
+ *  terrain gates, evaluated per-frame with the ghost and consumed by the
+ *  confirm click — both pre-checked BEFORE any gold moves (§3.0 net-zero
+ *  refusal law):
+ *  - Slope: a straight-down line trace at the candidate point (±500 Z,
+ *    ECC_Visibility — the cursor-trace channel) must hit, and the angle
+ *    between its ImpactNormal and +Z must be <= MaxPlacementSlopeDegrees
+ *    (20°), else refuse "Too steep"; a trace miss refuses (fail-closed).
+ *  - Obstacle clearance: no actor carrying tag "Obstacle" (trees AND rocks —
+ *    Fab amendment; tags set by TASK-095) within ObstaclePlacementClearance
+ *    (150, 2D) of the candidate, else refuse "Too close to obstacles".
+ *  Units/miners are exempt from both (a navmesh-valid point suffices — M4.5
+ *  ruling 7). The ghost projects to the traced SURFACE height under the
+ *  cursor (hill crowns and flanks included — the terrain blocks Visibility)
+ *  and stays upright: yaw-only rotation, NO normal alignment.
+ *
+ *  Targeting mode (GDD §3.5/§3.11/§7, M5 ruling 8, TASK-100) — the SIBLING of
+ *  placement mode for Spell cards; the two modes are mutually exclusive (each
+ *  Enter* silently ignores while the other is live):
+ *  - PlayHandSlot routes CardType Spell: SpellEffect GoldSteal resolves
+ *    INSTANTLY on play (ruling 7 — no reticle for a global effect;
+ *    deduct-then-resolve, refusal-safe); every other SpellEffect enters
+ *    targeting mode.
+ *  - Cursor posture mirrors placement mode exactly (M2 TASK-023 + TASK-074
+ *    normalization; NO new input assets): visible cursor + GameAndUI via
+ *    ApplyCursorInputState (targeting is the third cursor owner), hero melee
+ *    suppressed while the mode owns the LMB, RMB/Esc cancel through the same
+ *    IA_CancelPlace binding AND the same PlayerTick key poll.
+ *  - The reticle point is TraceCursorToGround's ImpactPoint — the SURFACE
+ *    under the cursor (M4.5 terrain carry-in LAW: never the Z=0 plane; hill
+ *    crowns and flanks included). NO half restriction, NO navmesh projection,
+ *    NO slope/obstacle/clearance gates: spells land ANYWHERE a surface
+ *    answers the trace, enemy half included (§3.5). Reticle visual = a
+ *    transient decal (soft-referenced /Game/Materials/M_SpellReticle,
+ *    null-safe: missing material ⇒ targeting still works, log once) sized to
+ *    the spell's own AoERadius.
+ *  - LMB confirm = deduct Cost THEN USpellLibrary::ResolveSpell (the pinned
+ *    M5 resolver; card-leaves-hand-at-CONFIRM law). Resolver false ⇒ FULL
+ *    refund (§3.0 net-zero), HUD reason on the existing refusal path, card
+ *    kept, mode exited (resolver refusals are position-independent — the
+ *    missing-BP-class placement precedent). A trace-miss click refuses free
+ *    and STAYS in mode. RMB/Esc cancel is free.
+ *  - HandleMatchEnd(Winner): exits placement AND targeting mode, shows
  *    /Game/UI/WBP_VictoryScreen (soft class, null-safe) and switches to
  *    UI-only input. HandleMatchReset() restores play (TASK-006 PlayAgain)
- *    and defensively exits placement mode FIRST (qa/TASK-023-report.md WARN).
+ *    and defensively exits both modes FIRST (qa/TASK-023-report.md WARN).
  *
  *  QA-BINDING (qa/TASK-003-report.md warning 2): AHeroCharacter::ResetHero
  *  deliberately preserves bMeleeSuppressed, so this controller calls
@@ -129,8 +173,12 @@ public:
 	 *  CONFIRM (M2 ruling), so cancel costs nothing. HeroUpgrade/Utility → resolve
 	 *  IMMEDIATELY with NO placement step (TASK-059): the effect lands, the Cost is
 	 *  spent, and a replacement is drawn — an over-cap upgrade or an unrepairable
-	 *  Masons is refused with NO gold moved (§3.0/§3.10 full refund). Spell → M5
-	 *  (GDD §3.11). Post-match and mid-placement presses are ignored (no broadcast),
+	 *  Masons is refused with NO gold moved (§3.0/§3.10 full refund). Spell (GDD
+	 *  §3.11, M5 TASK-100) → SpellEffect GoldSteal resolves INSTANTLY on play
+	 *  (ruling 7: deduct-then-resolve, refusal-safe — a resolver refusal fully
+	 *  refunds); every other SpellEffect enters TARGETING mode, where the card
+	 *  leaves the hand only at LMB CONFIRM (cancel costs nothing). Post-match,
+	 *  mid-placement, and mid-targeting presses are ignored (no broadcast),
 	 *  mirroring the M1 EnterPlacementMode early-outs.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Cards")
@@ -174,6 +222,32 @@ public:
 	void ExitPlacementMode();
 
 	/**
+	 *  Starts targeting mode for the given SPELL card (M5 ruling 8, TASK-100)
+	 *  — placement mode's sibling. Reads the card's row from /Game/Data/
+	 *  DT_Cards (GDD §3.0 — never hardcoded) and refuses (log + both refusal
+	 *  delegates) when the data is missing, the CardType is not Spell, the
+	 *  player can't afford it, or the hero is dead; a GoldSteal card never
+	 *  targets and reroutes to the ruling-7 instant resolve instead (hand-less
+	 *  on this direct path — PlayHandSlot owns hand plays). Post-match /
+	 *  already-placing / already-targeting calls are silent ignores (the M1
+	 *  early-out pattern). Gold moves ONLY at LMB confirm.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Cards")
+	void EnterTargetingMode(FName CardID);
+
+	/**
+	 *  Leaves targeting mode: destroys the reticle decal, restores game-only
+	 *  input, and ALWAYS releases the hero melee suppression BEFORE any
+	 *  early-out (the ExitPlacementMode law, qa/TASK-003-report.md warning 2)
+	 *  — every exit path (confirm, resolver-false confirm exit, cancel via
+	 *  action or polled RMB/Esc, match end, hero death, unpossess, match
+	 *  reset, EndPlay) funnels through here. Cancel is FREE: no gold has
+	 *  moved before confirm (M5 ruling 8).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Cards")
+	void ExitTargetingMode();
+
+	/**
 	 *  Match over (GDD §3.9) — called by ASiegeGameMode (TASK-006) with the
 	 *  winning team. Exits placement mode FIRST, then shows WBP_VictoryScreen
 	 *  (soft class, null-safe) and switches to UI-only input.
@@ -204,6 +278,10 @@ public:
 	/** True while the placement ghost owns the cursor/LMB. */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Cards")
 	bool IsInPlacementMode() const { return bInPlacementMode; }
+
+	/** True while the spell reticle owns the cursor/LMB (M5 targeting mode, TASK-100). Mutually exclusive with placement mode. */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Cards")
+	bool IsInTargetingMode() const { return bInTargetingMode; }
 
 	/** True from HandleMatchEnd until HandleMatchReset. */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Match")
@@ -358,6 +436,24 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement")
 	TSoftObjectPtr<UMaterialInterface> GhostMaterialAsset;
 
+	/**
+	 *  Spell reticle decal material, /Game/Materials/M_SpellReticle
+	 *  (DeferredDecal domain, built in TASK-108). Null-safe per M5 ruling 8:
+	 *  missing material ⇒ NO reticle visual, targeting still works, logged
+	 *  once (bWarnedNoReticleMaterial).
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Targeting")
+	TSoftObjectPtr<UMaterialInterface> SpellReticleMaterialAsset;
+
+	/**
+	 *  Reticle footprint radius used when the spell row has no AoERadius
+	 *  (the reticle is normally sized to the spell's OWN AoERadius so the
+	 *  ring shows the true blast area — data-driven, GDD §3.0). Visual-only
+	 *  fallback, not a CSV column.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Targeting", meta = (ClampMin = "0"))
+	float SpellReticleDefaultRadius = 150.f;
+
 	/** IA_Card1 slot. Left unset, it soft-resolves from Card1ActionAsset (no BP controller exists in M1). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> Card1Action;
@@ -460,6 +556,35 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement", meta = (ClampMin = "0"))
 	float CastlePlinthClearance = 420.f;
 
+	/**
+	 *  Maximum ground slope, in degrees from horizontal, a BUILDING card may
+	 *  be placed on (M4.5 ruling 7) — steeper candidate points show the red
+	 *  ghost and refuse the confirm click ("Too steep") with no gold spent.
+	 *  Slope is measured by a straight-down line trace at the candidate point
+	 *  (±500 Z, ECC_Visibility — the same channel as the cursor trace, so the
+	 *  measured surface IS the surface the ghost stands on); slope = angle
+	 *  between the hit's ImpactNormal and +Z; a trace miss refuses
+	 *  (fail-closed). Units/miners are exempt — a navmesh-valid point
+	 *  suffices, unchanged. Mechanic rule, not a CSV column (CONVENTIONS
+	 *  registry). // GDD §5 (M4.5) — buildings refused on ground steeper
+	 *  than 20°; hill crowns (<=10°) stay legally placeable
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement", meta = (ClampMin = "0", ClampMax = "90"))
+	float MaxPlacementSlopeDegrees = 20.f; // GDD §5 (M4.5)
+
+	/**
+	 *  Minimum 2D distance from any actor carrying tag "Obstacle" (trees AND
+	 *  rocks — Fab amendment; tags set by TASK-095) for a BUILDING placement
+	 *  (M4.5 ruling 7) — closer shows the red ghost and refuses the confirm
+	 *  click ("Too close to obstacles") with no gold spent. The check is
+	 *  tag-driven, so new obstacle types never require code changes.
+	 *  Units/miners are exempt. Mechanic rule, not a CSV column (CONVENTIONS
+	 *  registry). // GDD §5 (M4.5) — buildings need 150 units of clearance
+	 *  from obstacles
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement", meta = (ClampMin = "0"))
+	float ObstaclePlacementClearance = 150.f; // GDD §5 (M4.5)
+
 	/** Ghost tint for a valid point (M_Ghost "GhostColor", TASK-012). */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement")
 	FLinearColor ValidGhostColor = FLinearColor(0.f, 1.f, 0.f);
@@ -478,11 +603,13 @@ protected:
 
 private:
 
-	/** Why the latest traced cursor point is invalid — drives the confirm-refusal message (the §3.5 clearance rule gets its own reason). */
+	/** Why the latest traced cursor point is invalid — drives the confirm-refusal message (each building-only rule gets its own reason). */
 	enum class EPlacementInvalidReason : uint8
 	{
 		None,      // point is valid
 		Point,     // no ground hit / enemy half / off the navmesh / castle plinth
+		Slope,     // building on ground steeper than MaxPlacementSlopeDegrees ("Too steep", M4.5)
+		Obstacle,  // building within ObstaclePlacementClearance of an "Obstacle"-tagged actor ("Too close to obstacles", M4.5)
 		Clearance  // building within BuildingClearance of another building
 	};
 
@@ -496,7 +623,7 @@ private:
 	 */
 	void TryConfirmPlacement();
 
-	/** Per-frame: cursor-to-ground trace, validity v2 (ground, own half, navmesh projection, plinth keep-out, building clearance), ghost position + color. */
+	/** Per-frame: cursor-to-ground trace, validity v3 (ground, own half, navmesh projection, plinth keep-out; buildings add slope, obstacle clearance, building clearance — TASK-093), ghost position + color. */
 	void UpdatePlacementGhost();
 
 	/** Spawns the ghost actor (movable, collision off, per-card SM_<CardID> or the fallback sphere + M_Ghost MID) — every asset null-safe. */
@@ -504,6 +631,43 @@ private:
 
 	/** Destroys the ghost actor and drops the dynamic material instance. */
 	void DestroyPlacementGhost();
+
+	/**
+	 *  Confirm click (LMB in targeting mode, M5 ruling 8 / TASK-100): a
+	 *  trace-miss point refuses free and STAYS in mode (a different point can
+	 *  succeed); otherwise deduct Cost THEN USpellLibrary::ResolveSpell at
+	 *  the reticle point (card-leaves-hand-at-CONFIRM law). Resolver false ⇒
+	 *  FULL refund (§3.0 net-zero), HUD reason, card kept, mode EXITED —
+	 *  resolver refusals are position-independent by the SpellLibrary
+	 *  contract (the missing-BP-class placement precedent). On success the
+	 *  hand slot is consumed (ConfirmPlayFromHand) and the mode exits.
+	 */
+	void TryConfirmSpellTarget();
+
+	/**
+	 *  Per-frame targeting work: cursor-to-surface trace (REUSING
+	 *  TraceCursorToGround — the M4.5 carry-in LAW: the reticle Z comes from
+	 *  the traced surface, never the Z=0 plane) + reticle position/visibility.
+	 *  Deliberately NO half restriction, NO navmesh projection, NO
+	 *  slope/obstacle gates: spells land anywhere a surface answers (§3.5).
+	 */
+	void UpdateSpellReticle();
+
+	/** Spawns the transient reticle decal actor (soft M_SpellReticle, null-safe — missing material means no visual, targeting continues; sized to the spell's AoERadius). */
+	void SpawnSpellReticle();
+
+	/** Destroys the reticle decal actor. */
+	void DestroySpellReticle();
+
+	/**
+	 *  Instant spell resolution (M5 ruling 7 — GoldSteal/Pickpocket): NO
+	 *  reticle for a global effect. Deduct Cost THEN ResolveSpell,
+	 *  refusal-safe: resolver false ⇒ FULL refund + HUD reason with the card
+	 *  kept (§3.0 net-zero). Slot INDEX_NONE = hand-less direct entry (no
+	 *  draw step). SiegeState is the already-resolved player state
+	 *  (affordability pre-checked by the caller in the same call stack).
+	 */
+	void ResolveSpellInstant(int32 Slot, FName CardID, const FCardRow& Row, ASiegePlayerState& SiegeState);
 
 	/** Cursor-to-world trace on the Visibility channel. True on a blocking hit ("ground hit"). */
 	bool TraceCursorToGround(FHitResult& OutHit) const;
@@ -563,6 +727,27 @@ private:
 
 	/** True when Point is >= BuildingClearance (2D) from every live ABuilding (§3.5 building rule; dying buildings skipped via IsBuildingDestroyed). */
 	bool HasBuildingClearance(const FVector& Point) const;
+
+	/**
+	 *  True when the ground at Point is flat enough for a BUILDING (M4.5
+	 *  ruling 7, TASK-093): a straight-down line trace (Point ± 500 Z,
+	 *  ECC_Visibility — the cursor-trace channel, documented flagged decision)
+	 *  must produce a blocking hit whose ImpactNormal is within
+	 *  MaxPlacementSlopeDegrees of +Z. A trace miss returns false (fail-closed,
+	 *  Verbose log) — a point the world cannot answer for is not placeable.
+	 *  // GDD §5 (M4.5)
+	 */
+	bool IsGroundSlopePlaceable(const FVector& Point) const;
+
+	/**
+	 *  True when Point is >= ObstaclePlacementClearance (2D) from every actor
+	 *  carrying tag "Obstacle" (exact FName — trees AND rocks per the Fab
+	 *  amendment; tags set by TASK-095). Plain world-actor iteration, no
+	 *  caching: obstacle counts are ~20 (M4.5 ruling 6) and the check only
+	 *  runs during placement mode (documented flagged decision).
+	 *  // GDD §5 (M4.5)
+	 */
+	bool HasObstacleClearance(const FVector& Point) const;
 
 	/** True when Point lies inside any ACastle's plinth keep-out box (CastlePlinthClearance 2D half-extents) — refused for all cards, castle HP irrelevant. */
 	bool IsPointInsideCastlePlinth(const FVector& Point) const;
@@ -634,9 +819,56 @@ private:
 	 */
 	int32 PendingHandSlot = INDEX_NONE;
 
+	// --- M5 targeting-mode state (TASK-100). Deliberately DISJOINT from the
+	//     Pending*/placement members above so the two sibling modes can never
+	//     cross-contaminate; ExitTargetingMode resets every one of these. ---
+
+	/** True while targeting mode is active (mutually exclusive with bInPlacementMode — each Enter* ignores while the other is live). */
+	bool bInTargetingMode = false;
+
+	/** Result of the latest targeting cursor trace: some surface answered under the cursor (the ONLY positional gate — M5 ruling 8). */
+	bool bTargetingSurfaceValid = false;
+
+	/** Surface point of the latest targeting cursor trace (the resolver TargetPoint on confirm). Z comes from the trace — never assumed 0 (M4.5 carry-in LAW). */
+	FVector TargetingLocation = FVector::ZeroVector;
+
+	/** Spell being targeted (set on EnterTargetingMode). */
+	FName TargetingCardID;
+
+	/** Cost read from DT_Cards on EnterTargetingMode — deducted only at LMB confirm (ruling 8). */
+	int32 TargetingCost = 0;
+
+	/**
+	 *  Row SNAPSHOT taken on EnterTargetingMode for the confirm-time
+	 *  USpellLibrary::ResolveSpell call — the placement scalar-snapshot
+	 *  pattern (PendingCost/PendingCardType) generalized, because the pinned
+	 *  resolver consumes the whole row. Plain value member (FCardRow holds no
+	 *  hard UObject pointers — soft paths only — so no UPROPERTY needed).
+	 */
+	FCardRow TargetingRow;
+
+	/**
+	 *  Hand slot the active targeting came from (set by PlayHandSlot just
+	 *  before EnterTargetingMode — the PendingHandSlot pattern), or
+	 *  INDEX_NONE on direct hand-less entries. Consumed at CONFIRM via
+	 *  ConfirmPlayFromHand; every targeting exit clears it.
+	 */
+	int32 TargetingHandSlot = INDEX_NONE;
+
+	/** One-shot latch for the missing-M_SpellReticle warning (SpawnSpellReticle — "log once" per M5 ruling 8). */
+	bool bWarnedNoReticleMaterial = false;
+
 	/** Hero whose melee we suppressed — un-suppressed on EVERY exit path (QA TASK-003 warning 2). */
 	UPROPERTY(Transient)
 	TObjectPtr<AHeroCharacter> PlacementHero;
+
+	/** Hero whose melee TARGETING mode suppressed — released on every targeting exit path (the PlacementHero pattern; kept separate so a defensive ExitPlacementMode call can never strand a live targeting suppression). */
+	UPROPERTY(Transient)
+	TObjectPtr<AHeroCharacter> TargetingHero;
+
+	/** Spell reticle decal actor (transient; decals carry no collision, so it can never block the cursor trace). Null when M_SpellReticle is missing — targeting works without it. */
+	UPROPERTY(Transient)
+	TObjectPtr<ADecalActor> SpellReticleActor;
 
 	/** Ghost preview actor (transient, collision off — never blocks the cursor trace). */
 	UPROPERTY(Transient)

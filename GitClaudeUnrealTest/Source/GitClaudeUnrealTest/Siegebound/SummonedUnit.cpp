@@ -160,6 +160,8 @@ void ASummonedUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	GetWorldTimerManager().ClearTimer(MoveSpeedBuffTimerHandle); // TASK-042: no dangling buff-restore on a destroyed unit
 	GetWorldTimerManager().ClearTimer(HealTimerHandle); // TASK-054: no dangling Support heal on a destroyed unit
 	GetWorldTimerManager().ClearTimer(AuraDamageBuffTimerHandle); // TASK-055: no dangling aura-restore on a destroyed unit
+	GetWorldTimerManager().ClearTimer(CombatBuffTimerHandle); // TASK-099: no dangling combat-buff restore on a destroyed unit
+	GetWorldTimerManager().ClearTimer(SpellFreezeTimerHandle); // TASK-099: no dangling spell-freeze expiry on a destroyed unit
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -228,6 +230,19 @@ void ASummonedUnit::FreezeAI()
 	// Damage (zero residual buff). Same drift-free discipline as the move-speed buff.
 	EndAuraDamageBuff();
 
+	// end any active Battle Cry combat buff (TASK-099): clear its timer and restore the
+	// walk speed and attack cadence EXACTLY (its attack-timer re-arm is a no-op here —
+	// the attack timer was already cleared above). Zero residual at match end.
+	EndCombatBuff();
+
+	// spell-freeze precedence handoff (TASK-099, M5 ruling 5): the match-end freeze
+	// WINS. Wipe the spell-freeze state and its expiry timer so no expiry can ever
+	// fire post-match — and EndSpellFreeze additionally refuses to resume a
+	// bAIFrozen unit even if it were somehow invoked (triple guard with the
+	// ApplyFreeze no-op on frozen units).
+	GetWorldTimerManager().ClearTimer(SpellFreezeTimerHandle);
+	bSpellFrozen = false;
+
 	// stop Support healing (TASK-054): clear the heal timer and drop the heal
 	// target, so a match-end-frozen Cleric mends no one. (Siege pathing decisions
 	// and Support follow decisions already stopped with the StateTimerHandle clear
@@ -265,19 +280,23 @@ void ASummonedUnit::ApplyMoveSpeedBuff(float Multiplier, float Duration)
 		return;
 	}
 
-	// Capture the resting base speed ONCE per buff episode. A refresh while the buff
-	// is already active must NOT recapture the already-buffed speed — that is exactly
-	// the drift the TASK-020 lunge lesson warns against. The base is only ever taken
-	// from the resting (unbuffed) MaxWalkSpeed and restored EXACTLY on end.
-	if (!bMoveSpeedBuffActive)
+	// Capture the resting base speed ONCE per speed-buff EPISODE. TASK-099 widened the
+	// episode to cover BOTH speed buffs (Rally and Battle Cry): the base is captured
+	// only while NEITHER is active, so neither buff can ever capture the other's
+	// already-buffed speed — that is exactly the drift the TASK-020 lunge lesson warns
+	// against. The base is only ever a resting MaxWalkSpeed and is restored EXACTLY
+	// when the LAST active speed buff ends (RefreshComposedMoveSpeed).
+	if (!bMoveSpeedBuffActive && !bCombatBuffActive)
 	{
 		MoveSpeedBuffBaseSpeed = Movement->MaxWalkSpeed;
-		bMoveSpeedBuffActive = true;
 	}
+	bMoveSpeedBuffActive = true;
 
-	// No stacking: the buffed speed is always Base × Multiplier from the stored base,
-	// so re-applying only REFRESHES (never compounds) the same-magnitude boost.
-	Movement->MaxWalkSpeed = MoveSpeedBuffBaseSpeed * Multiplier;
+	// No self-stacking: Rally's multiplier is written directly from the arg (never
+	// compounded), so re-applying only REFRESHES the same-magnitude boost. The walk
+	// speed composes with the Battle Cry combat buff (TASK-099): Base × Rally × Combat.
+	MoveSpeedBuffMultiplier = Multiplier;
+	RefreshComposedMoveSpeed();
 
 	// (Re)arm the restore timer with a fresh Duration — this is the refresh (never a
 	// stack, since a single one-shot handle is reused). A non-positive Duration is a
@@ -294,7 +313,7 @@ void ASummonedUnit::ApplyMoveSpeedBuff(float Multiplier, float Duration)
 
 void ASummonedUnit::EndMoveSpeedBuff()
 {
-	// idempotent: clear the timer either way, restore only when a buff is live so the
+	// idempotent: clear the timer either way, recompose only when a buff is live so the
 	// base speed is written back EXACTLY once (zero residual drift, TASK-020 contract)
 	GetWorldTimerManager().ClearTimer(MoveSpeedBuffTimerHandle);
 
@@ -303,11 +322,12 @@ void ASummonedUnit::EndMoveSpeedBuff()
 		return;
 	}
 	bMoveSpeedBuffActive = false;
+	MoveSpeedBuffMultiplier = 1.f;
 
-	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
-	{
-		Movement->MaxWalkSpeed = MoveSpeedBuffBaseSpeed;
-	}
+	// TASK-099 composition: restores EXACTLY the shared episode base when the Battle
+	// Cry combat buff is also inactive; otherwise drops to Base × CombatMoveMult so
+	// ending Rally never clobbers a still-running Battle Cry (and vice versa).
+	RefreshComposedMoveSpeed();
 }
 
 void ASummonedUnit::SetAuraDamageBonus(float Bonus, float Duration)
@@ -360,6 +380,249 @@ void ASummonedUnit::EndAuraDamageBuff()
 	}
 	bAuraDamageBuffActive = false;
 	AuraDamageMultiplier = 1.f;
+}
+
+void ASummonedUnit::ApplyFreeze(float Seconds)
+{
+	// MATCH-END PRECEDENCE (M5 ruling 5): a match-end-frozen unit stays parked — a
+	// spell freeze on top would be meaningless and its expiry a resume hazard, so
+	// refuse outright. Dead/never-bound units have no AI to pause (a pre-bind unit's
+	// state machine starts at LoadStatsAndStart — freezing "nothing" and then
+	// resuming into a started machine would be incoherent). Non-positive Seconds is
+	// a defensive no-op (FrostNova's EffectDuration is 4).
+	if (bDead || bAIFrozen || !bStatsLoaded || Seconds <= 0.f)
+	{
+		return;
+	}
+
+	// refresh-not-stack (ruling 5): the single expiry timer is re-armed at
+	// max(remaining, new) — a shorter re-freeze never TRIMS a longer one, and
+	// nothing ever adds. GetTimerRemaining is only read while the timer is live
+	// (it returns -1 otherwise).
+	float RemainingFreeze = 0.f;
+	if (GetWorldTimerManager().IsTimerActive(SpellFreezeTimerHandle))
+	{
+		RemainingFreeze = GetWorldTimerManager().GetTimerRemaining(SpellFreezeTimerHandle);
+	}
+	const float FreezeSeconds = FMath::Max(RemainingFreeze, Seconds);
+
+	bSpellFrozen = true;
+
+	// pause the brain and the cadence — the FreezeAI body, minus permanence: the
+	// state (acquire) and attack timers stop, any in-flight lunge cancels to the
+	// EXACT cached rest pose (TASK-020 zero-drift contract), and Support healing
+	// stops (a frozen Cleric mends no one; the next post-freeze state check
+	// re-acquires a heal target from scratch).
+	GetWorldTimerManager().ClearTimer(StateTimerHandle);
+	GetWorldTimerManager().ClearTimer(AttackTimerHandle);
+	StopAttackLunge();
+	StopHealing();
+	SupportHealTarget = nullptr;
+
+	// stop the walk AND disable the movement component: StopMovement aborts the
+	// in-flight path request, and MOVE_None makes the pause hold even against a
+	// subclass drive that re-issues a move on its own timer (AMinerUnit's arrival
+	// poll re-paths via EnsureWalkingToNode — its file is outside this task's set,
+	// so the pause is enforced at the component the walk cannot bypass).
+	if (AAIController* AI = GetAIController())
+	{
+		AI->StopMovement();
+	}
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->DisableMovement();
+	}
+
+	// park Idle for the duration; the post-freeze state loop reacquires from
+	// scratch (CurrentMoveGoal cleared so the resume re-paths cleanly). Note the
+	// Idle park also drops CHARGE momentum on the first post-freeze state check
+	// (TrackChargeMovement's Idle branch) — a frozen Cavalry rebuilds from zero.
+	State = ESummonedUnitState::Idle;
+	CurrentTarget = nullptr;
+	CurrentMoveGoal = nullptr;
+
+	GetWorldTimerManager().SetTimer(SpellFreezeTimerHandle, this, &ASummonedUnit::EndSpellFreeze, FreezeSeconds, /*bLoop=*/ false);
+}
+
+void ASummonedUnit::EndSpellFreeze()
+{
+	// idempotent: clear the timer either way, resume only from a live spell freeze
+	GetWorldTimerManager().ClearTimer(SpellFreezeTimerHandle);
+
+	if (!bSpellFrozen)
+	{
+		return;
+	}
+	bSpellFrozen = false;
+
+	// MATCH-END PRECEDENCE (M5 ruling 5): NEVER resume a match-end-frozen (or dead,
+	// or somehow unbound) unit. FreezeAI already wipes this timer and flag, so this
+	// gate is defense-in-depth — the ruling's "a spell-freeze expiry must never
+	// resume a match-end-frozen actor", enforced even against a stray invocation.
+	if (bDead || bAIFrozen || !bStatsLoaded)
+	{
+		return;
+	}
+
+	// resume: movement mode back to the class default (walking — the exact inverse
+	// of ApplyFreeze's DisableMovement), then re-arm the state loop. Deliberately
+	// NO synchronous UpdateState here (unlike LoadStatsAndStart): the first
+	// post-freeze decision lands on the next timer tick (<= StateCheckInterval),
+	// which (a) keeps AMinerUnit's seals intact — its StateCheckInterval is 0, so
+	// this SetTimer CLEARS rather than schedules (the documented seal #1
+	// mechanism) and no stray castle-bound Advance is ever issued to a miner,
+	// whose own arrival poll re-issues the gold-node walk instead — and (b) never
+	// applies damage synchronously from inside this expiry callback. Combat units
+	// reacquire from scratch within a quarter second; a pre-freeze attack
+	// cooldown resumes through EnterAttack's LastAttackTime gate (the freeze
+	// wall-clock already covered it).
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->SetDefaultMovementMode();
+	}
+
+	GetWorldTimerManager().SetTimer(StateTimerHandle, this, &ASummonedUnit::UpdateState, StateCheckInterval, /*bLoop=*/ true);
+}
+
+void ASummonedUnit::ApplyCombatBuff(float MoveSpeedMult, float AttackSpeedMult, float Seconds)
+{
+	// dead units are being destroyed and match-end-frozen units stay parked (the
+	// ApplyMoveSpeedBuff guard); never-bound units would capture a pre-row walk
+	// speed as the episode base and buff a cadence that is not bound yet — refuse
+	// (the resolver only ever targets live, spawned units). A spell-FROZEN unit IS
+	// buffable: freeze and buff are independent effects from opposite casters and
+	// the buff's duration burns down in wall-clock time either way (ruling 6).
+	if (bDead || bAIFrozen || !bStatsLoaded)
+	{
+		return;
+	}
+
+	// a non-positive duration is "end any active buff now" (defensive — Battle Cry
+	// always passes EffectDuration = 8)
+	if (Seconds <= 0.f)
+	{
+		EndCombatBuff();
+		return;
+	}
+
+	// shared speed-buff EPISODE base (TASK-042/099 composition): capture the resting
+	// walk speed only while NEITHER speed buff is active — see ApplyMoveSpeedBuff.
+	if (!bMoveSpeedBuffActive && !bCombatBuffActive)
+	{
+		if (const UCharacterMovementComponent* Movement = GetCharacterMovement())
+		{
+			MoveSpeedBuffBaseSpeed = Movement->MaxWalkSpeed;
+		}
+	}
+
+	// Self-refresh non-stacking (ruling 6): both multipliers are written DIRECTLY
+	// from the args (never compounded off an already-buffed value) — a re-apply only
+	// refreshes the same magnitudes and the window. Non-positive multipliers
+	// sanitize to exactly 1 (a defensive no-op factor, never a zeroed speed).
+	bCombatBuffActive = true;
+	CombatBuffMoveSpeedMult = (MoveSpeedMult > 0.f) ? MoveSpeedMult : 1.f;
+	CombatBuffAttackSpeedMult = (AttackSpeedMult > 0.f) ? AttackSpeedMult : 1.f;
+
+	// take effect NOW: recompose the walk speed (Base × Rally × Combat) and re-arm a
+	// live attack loop at the new effective cadence — a unit mid-Attack speeds up
+	// immediately instead of waiting for its next Attack entry.
+	RefreshComposedMoveSpeed();
+	RearmAttackTimerAtEffectiveCadence();
+
+	// (re)arm the single one-shot expiry with a fresh window — refresh, never stack
+	GetWorldTimerManager().SetTimer(CombatBuffTimerHandle, this, &ASummonedUnit::EndCombatBuff, Seconds, /*bLoop=*/ false);
+}
+
+void ASummonedUnit::EndCombatBuff()
+{
+	// idempotent: clear the timer either way, restore only when a buff is live so
+	// the recompose/re-arm run EXACTLY once per episode (zero residual drift)
+	GetWorldTimerManager().ClearTimer(CombatBuffTimerHandle);
+
+	if (!bCombatBuffActive)
+	{
+		return;
+	}
+	bCombatBuffActive = false;
+	CombatBuffMoveSpeedMult = 1.f;
+	CombatBuffAttackSpeedMult = 1.f;
+
+	// restore both halves EXACTLY: the walk speed recomposes (back to the shared
+	// episode base when Rally is also inactive, else Base × RallyMult), and a live
+	// attack loop re-arms at the plain row cadence — expiry never leaves a fast
+	// loop running (both calls are no-ops when nothing is live to restore).
+	RefreshComposedMoveSpeed();
+	RearmAttackTimerAtEffectiveCadence();
+}
+
+void ASummonedUnit::RefreshComposedMoveSpeed()
+{
+	// The ONE walk-speed writer for the buff system (TASK-042/099): every write is
+	// SharedBase × RallyMult × CombatMoveMult, or EXACTLY the shared base when no
+	// speed buff is active — so no apply/refresh/expiry ordering of Rally and
+	// Battle Cry can ever drift the resting speed (TASK-020 discipline). Only ever
+	// called from the buff Apply/End paths, which guarantee the base was captured.
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (!Movement)
+	{
+		return;
+	}
+
+	if (!bMoveSpeedBuffActive && !bCombatBuffActive)
+	{
+		Movement->MaxWalkSpeed = MoveSpeedBuffBaseSpeed;
+		return;
+	}
+
+	float ComposedSpeed = MoveSpeedBuffBaseSpeed;
+	if (bMoveSpeedBuffActive)
+	{
+		ComposedSpeed *= MoveSpeedBuffMultiplier;
+	}
+	if (bCombatBuffActive)
+	{
+		ComposedSpeed *= CombatBuffMoveSpeedMult;
+	}
+	Movement->MaxWalkSpeed = ComposedSpeed;
+}
+
+float ASummonedUnit::GetEffectiveAttackCadence() const
+{
+	// Battle Cry (TASK-099): +X% attack speed = row Cadence ÷ (1 + X). Floored at
+	// MinAttackCadence — a looping timer needs a strictly positive rate, and
+	// AttackCadence itself was already floored at bind time. Multiplier is
+	// sanitized strictly positive at apply time.
+	if (bCombatBuffActive)
+	{
+		return FMath::Max(AttackCadence / CombatBuffAttackSpeedMult, MinAttackCadence);
+	}
+	return AttackCadence;
+}
+
+void ASummonedUnit::RearmAttackTimerAtEffectiveCadence()
+{
+	// only a LIVE attack loop is re-armed — outside Attack there is nothing to
+	// re-rate, and EnterAttack composes the effective cadence itself on entry.
+	if (!GetWorldTimerManager().IsTimerActive(AttackTimerHandle))
+	{
+		return;
+	}
+
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// honor the cooldown from the last landed hit under the NEW cadence (the
+	// EnterAttack gate, re-run): an already-elapsed cooldown fires on the next
+	// timer tick — deliberately never synchronously, so a buff API call can never
+	// re-enter combat code mid-resolve. 0.01 s is the "now" floor.
+	const float EffectiveCadence = GetEffectiveAttackCadence();
+	const double Now = World->GetTimeSeconds();
+	float FirstDelay = static_cast<float>(static_cast<double>(EffectiveCadence) - (Now - LastAttackTime));
+	FirstDelay = FMath::Max(FirstDelay, 0.01f);
+	GetWorldTimerManager().SetTimer(AttackTimerHandle, this, &ASummonedUnit::PerformAttack, EffectiveCadence, /*bLoop=*/ true, FirstDelay);
 }
 
 void ASummonedUnit::LoadStatsAndStart()
@@ -445,7 +708,8 @@ void ASummonedUnit::UpdateState()
 {
 	// bAIFrozen is defense-in-depth (TASK-028): FreezeAI clears this timer, but a
 	// frozen unit must make no decisions even if something ever re-armed it.
-	if (bDead || !bStatsLoaded || bAIFrozen)
+	// bSpellFrozen mirrors it for the resumable FrostNova freeze (TASK-099).
+	if (bDead || !bStatsLoaded || bAIFrozen || bSpellFrozen)
 	{
 		return;
 	}
@@ -844,8 +1108,9 @@ void ASummonedUnit::StopHealing()
 
 void ASummonedUnit::PerformHeal()
 {
-	// defense-in-depth (the PerformAttack gate): FreezeAI/HandleDeath clear this timer
-	if (bDead || !bStatsLoaded || bAIFrozen)
+	// defense-in-depth (the PerformAttack gate): FreezeAI/HandleDeath clear this
+	// timer; ApplyFreeze clears it too (TASK-099 — a frozen Cleric mends no one)
+	if (bDead || !bStatsLoaded || bAIFrozen || bSpellFrozen)
 	{
 		return;
 	}
@@ -906,14 +1171,17 @@ void ASummonedUnit::EnterAttack()
 
 		// honor the cadence across target swaps / range flapping: if the cooldown from the
 		// last landed hit has already elapsed, hit now; otherwise wait out the remainder.
+		// TASK-099: the cadence is the EFFECTIVE one (row Cadence ÷ Battle Cry attack-speed
+		// multiplier — plain row cadence with no buff, so M1..M4 units are byte-unchanged).
 		const double Now = World->GetTimeSeconds();
-		float FirstDelay = static_cast<float>(static_cast<double>(AttackCadence) - (Now - LastAttackTime));
+		const float EffectiveCadence = GetEffectiveAttackCadence();
+		float FirstDelay = static_cast<float>(static_cast<double>(EffectiveCadence) - (Now - LastAttackTime));
 		if (FirstDelay <= 0.f)
 		{
 			PerformAttack();
-			FirstDelay = AttackCadence;
+			FirstDelay = EffectiveCadence;
 		}
-		GetWorldTimerManager().SetTimer(AttackTimerHandle, this, &ASummonedUnit::PerformAttack, AttackCadence, /*bLoop=*/ true, FirstDelay);
+		GetWorldTimerManager().SetTimer(AttackTimerHandle, this, &ASummonedUnit::PerformAttack, EffectiveCadence, /*bLoop=*/ true, FirstDelay);
 	}
 }
 
@@ -988,8 +1256,10 @@ void ASummonedUnit::EnterIdle()
 
 void ASummonedUnit::PerformAttack()
 {
-	// bAIFrozen is defense-in-depth (TASK-028): FreezeAI clears the attack timer
-	if (bDead || !bStatsLoaded || bAIFrozen)
+	// bAIFrozen is defense-in-depth (TASK-028): FreezeAI clears the attack timer;
+	// bSpellFrozen mirrors it for the resumable FrostNova freeze (TASK-099 —
+	// ApplyFreeze also clears the timer, so this is a belt-and-braces gate)
+	if (bDead || !bStatsLoaded || bAIFrozen || bSpellFrozen)
 	{
 		return;
 	}
@@ -1226,9 +1496,11 @@ void ASummonedUnit::StartAttackLunge()
 
 	// one cycle per cadence hit, never longer than 0.8 × Cadence, so the mesh is
 	// guaranteed back at rest before the next hit (hits are >= Cadence apart via
-	// the LastAttackTime gate in EnterAttack). AttackCadence >= MinAttackCadence,
-	// so the clamp can never produce a zero-length cycle on its own.
-	const float CycleDuration = FMath::Min(AttackLungeDuration, 0.8f * AttackCadence);
+	// the LastAttackTime gate in EnterAttack). TASK-099: clamps against the
+	// EFFECTIVE cadence, so a Battle Cry-hastened unit's lunge still completes
+	// before its faster next hit (>= MinAttackCadence either way, so the clamp
+	// can never produce a zero-length cycle on its own).
+	const float CycleDuration = FMath::Min(AttackLungeDuration, 0.8f * GetEffectiveAttackCadence());
 	if (CycleDuration <= UE_KINDA_SMALL_NUMBER || FMath::IsNearlyZero(AttackLungeDistance))
 	{
 		return; // degenerate cycle — designer disabled the lunge

@@ -18,7 +18,9 @@
 #include "Siegebound/SiegeGameMode.h"
 #include "Siegebound/SiegePlayerController.h"
 #include "Siegebound/SiegePlayerState.h"
+#include "Siegebound/SpellLibrary.h" // TASK-098 (same M5 parallel file wave) — pinned ResolveSpell signature per CONVENTIONS "Spells & Set III (M5)"; compiles at the TASK-103 batch
 #include "Siegebound/SummonedUnit.h"
+#include "Siegebound/Tower.h"
 
 DEFINE_LOG_CATEGORY(LogSiegeBot);
 
@@ -39,15 +41,22 @@ namespace
 	}
 
 	/**
-	 *  Card types the bot can NEVER play (GDD §4 M4 extension — the rule-4 discard
-	 *  set): the bot controls no hero (HeroUpgrade), and neither spells (M5) nor
+	 *  Card types the bot can NEVER play (GDD §4 M4 extension — the rule-5 discard
+	 *  set): the bot controls no hero (HeroUpgrade), and neither spells nor
 	 *  Instants (Utility/Masons) are actionable by an AI with no hero. These are the
-	 *  ONLY cards rule 4 cycles. Unit/Building/Economy are playable TYPES and are never
+	 *  ONLY cards rule 5 cycles. Unit/Building/Economy are playable TYPES and are never
 	 *  discarded here — an UNAFFORDABLE Unit/Building/Economy is classified "unplayable
-	 *  THIS tick" by the PLAY rules (rules 1-3 only ever select an affordable card — the
+	 *  THIS tick" by the PLAY rules (rules 1-4 only ever select an affordable card — the
 	 *  never-play-unaffordable invariant), but it is deliberately NOT a discard
 	 *  candidate: the bot BANKS toward it (e.g. an Ogre needs 12 gold, §4), so cycling
 	 *  it away would break the "growing Set II waves incl. Ogres" acceptance.
+	 *
+	 *  M5 (TASK-102): Spell stays in this TYPE-level set, but the bot's two CASTABLE
+	 *  spells (Fireball/Lightning — rule 3, M5 ruling 10) are exempted BY CARDID in
+	 *  FindMostExpensiveUnplayableCard: the bot HOLDS them awaiting a target (the same
+	 *  bank-toward-it precedent as an unaffordable Ogre), while FrostNova/BattleCry/
+	 *  Pickpocket — for which the GDD gives the bot NO cast rule — still fall through
+	 *  to rule-5 discard economics (TASK-102 spec point 3).
 	 */
 	bool IsUnplayableByBot(ECardType Type)
 	{
@@ -91,7 +100,7 @@ namespace
 		return BestIndex;
 	}
 
-	/** Most-expensive AFFORDABLE Unit card (rule 3 — units only, not buildings). Index into HandCards, or INDEX_NONE. */
+	/** Most-expensive AFFORDABLE Unit card (rule 4 — units only, not buildings). Index into HandCards, or INDEX_NONE. */
 	int32 FindMostExpensiveUnitCard(const TArray<FBotHandCard>& HandCards, int32 Gold)
 	{
 		int32 BestIndex = INDEX_NONE;
@@ -110,12 +119,17 @@ namespace
 		return BestIndex;
 	}
 
-	/** First AFFORDABLE Miner card in hand (rule 2). Index into HandCards, or INDEX_NONE. */
-	int32 FindAffordableMinerCard(const TArray<FBotHandCard>& HandCards, int32 Gold, FName MinerRowID)
+	/**
+	 *  First AFFORDABLE card in hand with the given row ID. Shared by rule 2 (Miner)
+	 *  and rule 3a/3b (Fireball/Lightning — TASK-102 generalized the former
+	 *  FindAffordableMinerCard, behavior byte-for-byte for rule 2). Index into
+	 *  HandCards, or INDEX_NONE.
+	 */
+	int32 FindAffordableCardByID(const TArray<FBotHandCard>& HandCards, int32 Gold, FName RowID)
 	{
 		for (int32 Index = 0; Index < HandCards.Num(); ++Index)
 		{
-			if (HandCards[Index].CardID == MinerRowID && HandCards[Index].Row->Cost <= Gold)
+			if (HandCards[Index].CardID == RowID && HandCards[Index].Row->Cost <= Gold)
 			{
 				return Index;
 			}
@@ -141,17 +155,27 @@ namespace
 		return INDEX_NONE;
 	}
 
-	/** Most-expensive UNPLAYABLE card (rule 4). Index into HandCards, or INDEX_NONE. */
-	int32 FindMostExpensiveUnplayableCard(const TArray<FBotHandCard>& HandCards)
+	/**
+	 *  Most-expensive card in the rule-5 discard set: an unplayable TYPE
+	 *  (IsUnplayableByBot) that is NOT one of the bot's two castable spell CardIDs
+	 *  (Fireball/Lightning — those are rule-3 PLAYS, held awaiting a target, never
+	 *  cycled; M5 ruling 10 / TASK-102). Index into HandCards, or INDEX_NONE.
+	 */
+	int32 FindMostExpensiveUnplayableCard(const TArray<FBotHandCard>& HandCards, FName CastableFireballID, FName CastableLightningID)
 	{
 		int32 BestIndex = INDEX_NONE;
 		for (int32 Index = 0; Index < HandCards.Num(); ++Index)
 		{
-			if (!IsUnplayableByBot(HandCards[Index].Row->CardType))
+			const FBotHandCard& Card = HandCards[Index];
+			if (!IsUnplayableByBot(Card.Row->CardType))
 			{
 				continue;
 			}
-			if (BestIndex == INDEX_NONE || HandCards[Index].Row->Cost > HandCards[BestIndex].Row->Cost)
+			if (Card.CardID == CastableFireballID || Card.CardID == CastableLightningID)
+			{
+				continue; // castable by rule 3 — hold it for a target, never discard
+			}
+			if (BestIndex == INDEX_NONE || Card.Row->Cost > HandCards[BestIndex].Row->Cost)
 			{
 				BestIndex = Index;
 			}
@@ -367,7 +391,7 @@ void ASiegeBotController::EvaluateDecisions()
 		//     the target AND the §3.3 hard cap (CanAddMiner) still allows one more.
 		if (BotState->GetAliveMinerCount() < TargetMinerCount && BotState->CanAddMiner())
 		{
-			const int32 CardIndex = FindAffordableMinerCard(HandCards, Gold, MinerCardID);
+			const int32 CardIndex = FindAffordableCardByID(HandCards, Gold, MinerCardID);
 			if (CardIndex != INDEX_NONE)
 			{
 				const FBotHandCard& Chosen = HandCards[CardIndex];
@@ -437,7 +461,105 @@ void ASiegeBotController::EvaluateDecisions()
 		}
 	}
 
-	// ---- Rule 3: ATTACK — banked to the threshold, most-expensive affordable UNIT at the centerline ----
+	// ---- Rule 3: SPELLS (§4 M5 extension, TASK-102) — 3a Fireball at a clustered push, else 3b Lightning at a defended player tower ----
+	// M5 ruling 10: the bot resolves DIRECTLY through USpellLibrary::ResolveSpell —
+	// targeting mode is a human affordance; the resolver owns no-friendly-fire, castle
+	// scaling and the VFX contract (TASK-098). Hand + affordability checks come FIRST
+	// so the world scans below only run when a cast is actually possible, and all
+	// scanning stays inside this 2 s cadence (spec point 5). Gold + discard-pile
+	// accounting mirror unit plays: resolve first (the spell's "spawn"), gold as the
+	// LAST gate, then ConfirmPlayFromHand moves the card to the discard pile.
+	if (UWorld* World = GetWorld())
+	{
+		// 3a) FIREBALL at >= FireballClusterMinUnits clustered player units. The cluster
+		//     radius is the Fireball ROW's own AoERadius (300 — GDD §4; data-driven law,
+		//     never hardcoded), so the bot only casts when the cluster fits the blast.
+		{
+			const int32 CardIndex = FindAffordableCardByID(HandCards, Gold, FireballCardID);
+			if (CardIndex != INDEX_NONE)
+			{
+				const FBotHandCard& Chosen = HandCards[CardIndex];
+				FVector ClusterCentroid = FVector::ZeroVector;
+				int32 ClusterSize = 0;
+				if (FindFireballClusterTarget(Chosen.Row->AoERadius, FireballClusterMinUnits, ClusterCentroid, ClusterSize))
+				{
+					const int32 GoldBefore = Gold;
+					if (USpellLibrary::ResolveSpell(World, Chosen.CardID, *Chosen.Row, BotTeam, ClusterCentroid))
+					{
+						// Same this-tick invariant as rule 5's fee: affordability held above
+						// and income only ADDS between checks, so SpendGold cannot fail; a
+						// false return is a hard-invariant tripwire (the spell already
+						// resolved — at worst one free cast, never a double-charge).
+						if (!BotState->SpendGold(Chosen.Row->Cost))
+						{
+							UE_LOG(LogGitClaudeUnrealTest, Warning,
+								TEXT("ASiegeBotController '%s': Rule 3a resolved '%s' but SpendGold(%d) refused at gold %d — should be unreachable (affordability held this tick)."),
+								*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost, GoldBefore);
+						}
+						Deck->ConfirmPlayFromHand(Chosen.Slot);
+						UE_LOG(LogSiegeBot, Log,
+							TEXT("[Bot %s] Rule 3a (Spell-Fireball): cast '%s' (cost %d) at cluster centroid (%.0f, %.0f, %.0f) — %d player units within %.0f, gold %d->%d."),
+							*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost,
+							ClusterCentroid.X, ClusterCentroid.Y, ClusterCentroid.Z,
+							ClusterSize, Chosen.Row->AoERadius, GoldBefore, BotState->GetGold());
+					}
+					else
+					{
+						// Resolver refusal (bad row/degenerate state — TASK-098 semantics):
+						// no gold moved, the card stays in hand; NOT a decision-trace line.
+						UE_LOG(LogGitClaudeUnrealTest, Verbose,
+							TEXT("ASiegeBotController '%s': Rule 3a found a %d-unit cluster but ResolveSpell('%s') refused — no gold spent, card retained; retrying next tick."),
+							*GetNameSafe(this), ClusterSize, *Chosen.CardID.ToString());
+					}
+					return; // rule 3 fired: a FOUND target owns this tick (a refused resolve simply retries)
+				}
+				// no qualifying cluster → 3a did not fire; consider 3b
+			}
+		}
+
+		// 3b) LIGHTNING at a player tower with >= LightningTowerMinUnits player units
+		//     within the Lightning ROW's own AoERadius (400 — GDD §4; data-driven law):
+		//     tower + defenders die to one bolt — the §4 "tower-killer" played as the
+		//     GDD prescribes ("Lightning at a tower adjacent to 2+ units").
+		{
+			const int32 CardIndex = FindAffordableCardByID(HandCards, Gold, LightningCardID);
+			if (CardIndex != INDEX_NONE)
+			{
+				const FBotHandCard& Chosen = HandCards[CardIndex];
+				int32 NearbyUnitCount = 0;
+				if (AActor* TowerTarget = FindLightningTowerTarget(Chosen.Row->AoERadius, LightningTowerMinUnits, NearbyUnitCount))
+				{
+					const FVector TargetPoint = TowerTarget->GetActorLocation();
+					const int32 GoldBefore = Gold;
+					if (USpellLibrary::ResolveSpell(World, Chosen.CardID, *Chosen.Row, BotTeam, TargetPoint))
+					{
+						if (!BotState->SpendGold(Chosen.Row->Cost))
+						{
+							UE_LOG(LogGitClaudeUnrealTest, Warning,
+								TEXT("ASiegeBotController '%s': Rule 3b resolved '%s' but SpendGold(%d) refused at gold %d — should be unreachable (affordability held this tick)."),
+								*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost, GoldBefore);
+						}
+						Deck->ConfirmPlayFromHand(Chosen.Slot);
+						UE_LOG(LogSiegeBot, Log,
+							TEXT("[Bot %s] Rule 3b (Spell-Lightning): cast '%s' (cost %d) at player tower '%s' (%.0f, %.0f, %.0f) — %d player units within %.0f, gold %d->%d."),
+							*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost,
+							*GetNameSafe(TowerTarget), TargetPoint.X, TargetPoint.Y, TargetPoint.Z,
+							NearbyUnitCount, Chosen.Row->AoERadius, GoldBefore, BotState->GetGold());
+					}
+					else
+					{
+						UE_LOG(LogGitClaudeUnrealTest, Verbose,
+							TEXT("ASiegeBotController '%s': Rule 3b found defended tower '%s' but ResolveSpell('%s') refused — no gold spent, card retained; retrying next tick."),
+							*GetNameSafe(this), *GetNameSafe(TowerTarget), *Chosen.CardID.ToString());
+					}
+					return; // rule 3 fired (see 3a note)
+				}
+				// no qualifying tower → 3b did not fire; fall through to rule 4
+			}
+		}
+	}
+
+	// ---- Rule 4: ATTACK — banked to the threshold, most-expensive affordable UNIT at the centerline ----
 	if (Gold >= AttackBankThreshold)
 	{
 		const int32 CardIndex = FindMostExpensiveUnitCard(HandCards, Gold);
@@ -454,7 +576,7 @@ void ASiegeBotController::EvaluateDecisions()
 				{
 					Deck->ConfirmPlayFromHand(Chosen.Slot);
 					UE_LOG(LogSiegeBot, Log,
-						TEXT("[Bot %s] Rule 3 (Attack): played unit '%s' (cost %d) at centerline (%.0f, %.0f, %.0f) — gold %d->%d."),
+						TEXT("[Bot %s] Rule 4 (Attack): played unit '%s' (cost %d) at centerline (%.0f, %.0f, %.0f) — gold %d->%d."),
 						*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost,
 						SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z, GoldBefore, BotState->GetGold());
 				}
@@ -462,22 +584,24 @@ void ASiegeBotController::EvaluateDecisions()
 			else
 			{
 				UE_LOG(LogGitClaudeUnrealTest, Verbose,
-					TEXT("ASiegeBotController '%s': Rule 3 wanted '%s' but found no valid spawn point this tick."),
+					TEXT("ASiegeBotController '%s': Rule 4 wanted '%s' but found no valid spawn point this tick."),
 					*GetNameSafe(this), *Chosen.CardID.ToString());
 			}
-			return; // rule 3 fired
+			return; // rule 4 fired
 		}
 	}
 
-	// ---- Rule 4: CYCLE — a card the bot can NEVER play in hand AND the discard fee available ----
+	// ---- Rule 5: CYCLE — a card the bot can NEVER play in hand AND the discard fee available ----
 	// HARDENED (folds the M3 TASK-046 WARN-2, now LIVE — Set II adds HeroUpgrade/
 	// Utility/Instant cards the bot cannot play): (a) the fee is charged ONLY when
 	// gold >= BotDiscardCost (guarded in the condition below — never at 0 gold), and
 	// (b) the card is DISCARDED FIRST and the fee charged ONLY if the discard actually
 	// happened (DiscardFromHand return-checked), so a no-op discard never bleeds a
-	// gold charge. Rule 4 charges at most once then returns → no double-charge.
+	// gold charge. Rule 5 charges at most once then returns → no double-charge.
+	// M5 (TASK-102): the bot's castable spells (Fireball/Lightning) are exempted from
+	// the discard set — held for a rule-3 target, never cycled.
 	{
-		const int32 CardIndex = FindMostExpensiveUnplayableCard(HandCards);
+		const int32 CardIndex = FindMostExpensiveUnplayableCard(HandCards, FireballCardID, LightningCardID);
 		if (CardIndex != INDEX_NONE && Gold >= BotDiscardCost)
 		{
 			const FBotHandCard& Chosen = HandCards[CardIndex];
@@ -491,14 +615,14 @@ void ASiegeBotController::EvaluateDecisions()
 				if (!BotState->SpendGold(BotDiscardCost))
 				{
 					UE_LOG(LogGitClaudeUnrealTest, Warning,
-						TEXT("ASiegeBotController '%s': Rule 4 discarded '%s' but SpendGold(%d) refused at gold %d — should be unreachable (gold >= fee held this tick)."),
+						TEXT("ASiegeBotController '%s': Rule 5 discarded '%s' but SpendGold(%d) refused at gold %d — should be unreachable (gold >= fee held this tick)."),
 						*GetNameSafe(this), *Chosen.CardID.ToString(), BotDiscardCost, GoldBefore);
 				}
 				UE_LOG(LogSiegeBot, Log,
-					TEXT("[Bot %s] Rule 4 (Cycle): discarded unplayable '%s' (cost %d) for %d gold — gold %d->%d."),
+					TEXT("[Bot %s] Rule 5 (Cycle): discarded unplayable '%s' (cost %d) for %d gold — gold %d->%d."),
 					*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost, BotDiscardCost, GoldBefore, BotState->GetGold());
 			}
-			return; // rule 4 fired (a no-op discard still owns the tick; retry next tick)
+			return; // rule 5 fired (a no-op discard still owns the tick; retry next tick)
 		}
 	}
 
@@ -584,6 +708,161 @@ AActor* ASiegeBotController::FindNearestEnemyIntruderOnBotHalf() const
 	}
 
 	return Nearest;
+}
+
+bool ASiegeBotController::FindFireballClusterTarget(float ClusterRadius, int32 MinUnits, FVector& OutCentroid, int32& OutClusterSize) const
+{
+	OutClusterSize = 0;
+
+	UWorld* World = GetWorld();
+	if (!World || ClusterRadius <= 0.f)
+	{
+		// A zero/negative radius row can never cluster >1 unit — bad data, no cast
+		// (null-safe: never a crash, the rule just does not fire).
+		return false;
+	}
+
+	// Snapshot alive PLAYER-team (enemy) summoned unit locations ONCE; the pairwise
+	// pass below is O(N^2) on this small snapshot only, runs solely inside the 2 s
+	// cadence, and only after the caller's hand + affordability checks passed.
+	// Units ONLY — the enemy hero is not a "player unit" (GDD §4 M5: "3+ clustered
+	// player units"); miners ARE summoned units and deliberately count (a mining
+	// cluster is a legitimate Fireball target — flagged decision).
+	const ETeamId EnemyTeam = (BotTeam == ETeamId::Red) ? ETeamId::Blue : ETeamId::Red;
+	TArray<FVector> EnemyLocations;
+	for (TActorIterator<ASummonedUnit> It(World); It; ++It)
+	{
+		const ASummonedUnit* Unit = *It;
+		if (IsValid(Unit) && !Unit->IsUnitDead() && Unit->GetTeamId() == EnemyTeam)
+		{
+			EnemyLocations.Add(Unit->GetActorLocation());
+		}
+	}
+	if (EnemyLocations.Num() < MinUnits)
+	{
+		return false; // not enough player units alive anywhere — no cluster possible
+	}
+
+	// Cluster algorithm (TASK-102 spec: "cluster = any unit having >=2 other player
+	// units within 300 — document"): every unit anchors a candidate cluster = all
+	// player units (itself included) within ClusterRadius of it, 2D (M4.5 hills must
+	// not break grouping). A candidate qualifies at MemberCount >= MinUnits (anchor +
+	// MinUnits-1 others). Winner = the qualifying anchor with the MOST members; ties
+	// broken by anchor distance to Castle_Red (nearest = biggest threat) — fully
+	// deterministic for a given world state. The cast point is the winning cluster's
+	// member CENTROID (the blast centers on the group, not on the anchor).
+	const FVector CastleRed = GetCastleRedLocation();
+	const double RadiusSq = FMath::Square(static_cast<double>(ClusterRadius));
+	int32 BestCount = 0;
+	double BestAnchorDistSq = TNumericLimits<double>::Max();
+	FVector BestCentroid = FVector::ZeroVector;
+
+	for (const FVector& Anchor : EnemyLocations)
+	{
+		int32 MemberCount = 0;
+		FVector MemberSum = FVector::ZeroVector;
+		for (const FVector& Candidate : EnemyLocations) // includes the anchor itself (DistSq 0)
+		{
+			if (FVector::DistSquared2D(Anchor, Candidate) <= RadiusSq)
+			{
+				++MemberCount;
+				MemberSum += Candidate;
+			}
+		}
+		if (MemberCount < MinUnits)
+		{
+			continue;
+		}
+		const double AnchorDistSq = FVector::DistSquared2D(Anchor, CastleRed);
+		if (MemberCount > BestCount || (MemberCount == BestCount && AnchorDistSq < BestAnchorDistSq))
+		{
+			BestCount = MemberCount;
+			BestAnchorDistSq = AnchorDistSq;
+			BestCentroid = MemberSum / static_cast<double>(MemberCount);
+		}
+	}
+
+	if (BestCount < MinUnits)
+	{
+		return false;
+	}
+	OutCentroid = BestCentroid;
+	OutClusterSize = BestCount;
+	return true;
+}
+
+AActor* ASiegeBotController::FindLightningTowerTarget(float SearchRadius, int32 MinUnits, int32& OutNearbyUnitCount) const
+{
+	OutNearbyUnitCount = 0;
+
+	UWorld* World = GetWorld();
+	if (!World || SearchRadius <= 0.f)
+	{
+		return nullptr; // bad radius row = no cast (null-safe, never a crash)
+	}
+
+	// Snapshot alive PLAYER-team unit locations once (shared across the tower loop;
+	// same unit semantics as the Fireball scan — summoned units only, hero excluded).
+	const ETeamId EnemyTeam = (BotTeam == ETeamId::Red) ? ETeamId::Blue : ETeamId::Red;
+	TArray<FVector> EnemyLocations;
+	for (TActorIterator<ASummonedUnit> It(World); It; ++It)
+	{
+		const ASummonedUnit* Unit = *It;
+		if (IsValid(Unit) && !Unit->IsUnitDead() && Unit->GetTeamId() == EnemyTeam)
+		{
+			EnemyLocations.Add(Unit->GetActorLocation());
+		}
+	}
+	if (EnemyLocations.Num() < MinUnits)
+	{
+		return nullptr; // not enough player units alive — no tower can qualify
+	}
+
+	// "A player tower" (GDD §4 M5: "Lightning at a tower adjacent to 2+ units") = a
+	// live enemy ATower (the Arrow/Bomb/Ballista/Crystal family TASK-101 owns); walls,
+	// Barracks and Deep Mines are ABuildings but NOT towers and do not qualify.
+	// Winner = the qualifying tower with the MOST player units within SearchRadius
+	// (2D); ties broken by tower distance to Castle_Red (nearest = biggest threat) —
+	// deterministic. Lightning then resolves AT the tower: the tower itself sits at
+	// distance 0 from the reticle, so the resolver's ruling-4 top-current-HP pick
+	// includes it — 200 spell damage kills a 150 HP Arrow Tower (the "tower-killer").
+	const FVector CastleRed = GetCastleRedLocation();
+	const double RadiusSq = FMath::Square(static_cast<double>(SearchRadius));
+	AActor* BestTower = nullptr;
+	int32 BestCount = 0;
+	double BestTowerDistSq = TNumericLimits<double>::Max();
+
+	for (TActorIterator<ATower> It(World); It; ++It)
+	{
+		ATower* Tower = *It;
+		if (!IsValid(Tower) || Tower->IsBuildingDestroyed() || Tower->GetTeamId() != EnemyTeam)
+		{
+			continue;
+		}
+		const FVector TowerLocation = Tower->GetActorLocation();
+		int32 NearbyCount = 0;
+		for (const FVector& UnitLocation : EnemyLocations)
+		{
+			if (FVector::DistSquared2D(TowerLocation, UnitLocation) <= RadiusSq)
+			{
+				++NearbyCount;
+			}
+		}
+		if (NearbyCount < MinUnits)
+		{
+			continue;
+		}
+		const double TowerDistSq = FVector::DistSquared2D(TowerLocation, CastleRed);
+		if (NearbyCount > BestCount || (NearbyCount == BestCount && TowerDistSq < BestTowerDistSq))
+		{
+			BestCount = NearbyCount;
+			BestTowerDistSq = TowerDistSq;
+			BestTower = Tower;
+		}
+	}
+
+	OutNearbyUnitCount = BestCount;
+	return BestTower;
 }
 
 FVector ASiegeBotController::GetCastleRedLocation() const

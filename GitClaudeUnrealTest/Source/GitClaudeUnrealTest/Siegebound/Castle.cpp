@@ -150,12 +150,15 @@ float ACastle::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, A
 	// Damage-vs-fortification scaling (GDD §3.0), read from the damage TYPE.
 	// USiegeDamageType_Siege — and any subclass — applies at 200% (Siege units,
 	// Ogre/Sapper, batter the castle, TASK-054); USiegeDamageType_Projectile at
-	// 50% (the anti-sniping rule); melee/default/untyped at 100% (melee needs no
-	// tag, CONVENTIONS damage-type registry — M1 attackers pass base UDamageType
-	// and stay byte-identical). Siege and Projectile are disjoint types, so the
-	// branch order is irrelevant. Units and the hero take listed damage from
-	// everything (scaling is castle/building-only).
-	// TODO(Spell 50% — M5): spell damage types = 50% vs castle (GDD §3.0).
+	// 50% (the anti-sniping rule); USiegeDamageType_Spell at 50% (GDD §3.11 /
+	// M5 ruling 3, TASK-098 — CASTLE ONLY: it mirrors the M2 Projectile
+	// precedent, NOT the M4 Siege both-rule, so ABuilding takes FULL spell
+	// damage and Lightning at 200 kills an Arrow Tower at 150);
+	// melee/default/untyped at 100% (melee needs no tag, CONVENTIONS
+	// damage-type registry — M1 attackers pass base UDamageType and stay
+	// byte-identical). Siege, Projectile, and Spell are mutually disjoint
+	// types, so the branch order is irrelevant. Units and the hero take listed
+	// damage from everything (scaling is castle/building-only).
 	float ScaledDamage = ActualDamage;
 	const UClass* IncomingDamageType = DamageEvent.DamageTypeClass.Get();
 	if (IncomingDamageType && IncomingDamageType->IsChildOf(USiegeDamageType_Siege::StaticClass()))
@@ -163,6 +166,10 @@ float ACastle::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, A
 		ScaledDamage *= 2.0f;
 	}
 	else if (IncomingDamageType && IncomingDamageType->IsChildOf(USiegeDamageType_Projectile::StaticClass()))
+	{
+		ScaledDamage *= 0.5f;
+	}
+	else if (IncomingDamageType && IncomingDamageType->IsChildOf(USiegeDamageType_Spell::StaticClass()))
 	{
 		ScaledDamage *= 0.5f;
 	}

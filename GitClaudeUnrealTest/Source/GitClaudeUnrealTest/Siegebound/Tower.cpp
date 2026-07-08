@@ -5,6 +5,8 @@
 #include "Engine/World.h"
 #include "GitClaudeUnrealTest.h"
 #include "Kismet/GameplayStatics.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 #include "Siegebound/CardRow.h"
 #include "Siegebound/DamageTypes.h"
 #include "Siegebound/HeroCharacter.h"
@@ -22,6 +24,17 @@ namespace
 	 *  (qa/TASK-021-report.md WARN-1).
 	 */
 	constexpr float MinTowerCadence = 0.05f;
+}
+
+ATower::ATower()
+{
+	// TASK-101 names block: the chain-hit burst authored by art TASK-108
+	// (CONVENTIONS "Spells & Set III (M5)": Crystal Tower's chain visual is
+	// /Game/VFX/NS_ChainZap). Soft path only — resolved in OnStatsLoaded, and
+	// ONLY for chain rows, so the three projectile towers never load it. The
+	// asset may not exist yet (art runs in parallel to the same spec):
+	// missing = one warning + no visual, never a crash.
+	ChainZapEffect = TSoftObjectPtr<UNiagaraSystem>(FSoftObjectPath(TEXT("/Game/VFX/NS_ChainZap.NS_ChainZap")));
 }
 
 void ATower::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -47,6 +60,33 @@ void ATower::OnStatsLoaded(const FCardRow& Row)
 	// from DT_Cards (GDD §3.0), never hardcoded.
 	AttackAoERadius = Row.AoERadius;
 	AttackMinRange = Row.MinRange;
+
+	// TASK-101 chain columns (M5 ruling 9, same row-driven-variant discipline as
+	// TASK-056 — still no new class): ChainTargets > 0 (CrystalTower 3) swaps the
+	// projectile for an instant chain zap; ChainFalloff (CrystalTower 5) is the
+	// flat damage lost per bounce (15/10/5 with Damage 15). Both default 0 for
+	// Arrow/Bomb/Ballista, leaving their fire path byte-for-byte unchanged.
+	// Columns land in FCardRow via TASK-097 (pinned names, same compile batch).
+	AttackChainTargets = Row.ChainTargets;
+	AttackChainFalloff = Row.ChainFalloff;
+
+	// data smells, surfaced loudly and never fudged (the LoadStats/§3.0
+	// discipline — stats are data; code never silently "repairs" them):
+	// a negative falloff would GROW damage per bounce (CrystalTower authors 5);
+	// chain + AoERadius on one row is contradictory — the chain path wins and
+	// the splash cell is ignored (no CrystalTower cell authors both).
+	if (AttackChainTargets > 0 && AttackChainFalloff < 0)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ATower '%s': row '%s' has ChainFalloff %d < 0 — each bounce would deal MORE damage (CrystalTower authors 5). Check Docs/Data/cards.csv."),
+			*GetNameSafe(this), *CardID.ToString(), AttackChainFalloff);
+	}
+	if (AttackChainTargets > 0 && AttackAoERadius > 0.f)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ATower '%s': row '%s' authors BOTH ChainTargets %d and AoERadius %.1f — a chain tower fires no projectile, so the splash cell is ignored (chain wins). Check Docs/Data/cards.csv."),
+			*GetNameSafe(this), *CardID.ToString(), AttackChainTargets, AttackAoERadius);
+	}
 
 	// a blind spot that swallows the whole range means the tower can never acquire
 	// anything — surface it (don't clamp: stats are data, never fudged in code —
@@ -80,6 +120,24 @@ void ATower::OnStatsLoaded(const FCardRow& Row)
 
 	AttackCadence = FMath::Max(Row.Cadence, MinTowerCadence);
 
+	// chain rows resolve their zap visual ONCE, here (the AProjectile
+	// BeginPlay/TASK-020 cache pattern) — never per zap. Placed after the
+	// cadence guard on purpose: a tower that can never fire needs no VFX. The
+	// three projectile towers (ChainTargets 0) never load it. Missing asset
+	// (TASK-108 authors it in parallel) = this ONE warning; zaps still deal
+	// full damage with no visual, never a crash. Cleared-in-BP (IsNull) is a
+	// silent designer opt-out.
+	if (AttackChainTargets > 0 && !ChainZapEffect.IsNull())
+	{
+		CachedChainZapEffect = ChainZapEffect.LoadSynchronous();
+		if (!CachedChainZapEffect)
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("ATower '%s': chain zap effect '%s' failed to load — chain hits will show no VFX (art TASK-108 authors /Game/VFX/NS_ChainZap)."),
+				*GetNameSafe(this), *ChainZapEffect.ToString());
+		}
+	}
+
 	// §3.7 "every 1.5 s": ONE looping timer, armed once, never stopped while
 	// the tower lives — the callback scans and simply idles when nothing is in
 	// range ("no target in range = idle, re-scan next cadence", TASK-027 spec).
@@ -98,6 +156,20 @@ void ATower::ScanAndFire()
 		return;
 	}
 
+	// TASK-101 freeze gate (M5 ruling 14): ALL tower firing — projectile AND
+	// chain — sits behind this single choke point, gated on TASK-099's
+	// ABuilding spell-freeze API (FrostNova; the API task stays out of this
+	// file per ruling 14, this task consumes it). The cadence loop keeps
+	// ticking while frozen — a frozen tower skips its shots (it doesn't even
+	// scan) and resumes on the first cadence tick after the freeze expires:
+	// freeze pauses the attack cadence, it never tears down the timer. A tower
+	// that is never frozen sees a constant false here — Arrow/Bomb/Ballista
+	// behavior is unchanged (task acceptance item 4).
+	if (IsFrozen())
+	{
+		return;
+	}
+
 	AActor* Target = AcquireTarget();
 	if (!Target)
 	{
@@ -105,7 +177,18 @@ void ATower::ScanAndFire()
 		return;
 	}
 
-	FireProjectileAt(Target);
+	// TASK-101 (M5 ruling 9): a chain row (CrystalTower, ChainTargets 3) zaps
+	// instantly instead of firing a projectile — same acquisition, same
+	// cadence, different delivery. ChainTargets 0 (Arrow/Bomb/Ballista) keeps
+	// the projectile path byte-for-byte unchanged.
+	if (AttackChainTargets > 0)
+	{
+		FireChainZapAt(Target);
+	}
+	else
+	{
+		FireProjectileAt(Target);
+	}
 }
 
 AActor* ATower::AcquireTarget() const
@@ -134,42 +217,10 @@ AActor* ATower::AcquireTarget() const
 
 	for (AActor* Candidate : TeamAgents)
 	{
-		if (!IsValid(Candidate))
-		{
-			continue;
-		}
-
-		// §3.7 "targets units/hero" — POSITIVE class gate: only summoned units
-		// (subclasses included: TASK-025 miners are raidable investments, §3.3)
-		// and the hero qualify; castles, buildings (self included), and any
-		// future ITeamAgent type are excluded by default. Liveness per type is
-		// a partial mirror of ASummonedUnit::IsTargetAlive restricted to the
-		// two classes a tower may target: a dead hero is HIDDEN, not destroyed
-		// (TASK-003), and dying units flag bDead before their Destroy lands
-		// (TASK-004 same-frame window).
-		if (const ASummonedUnit* Unit = Cast<ASummonedUnit>(Candidate))
-		{
-			if (Unit->IsUnitDead())
-			{
-				continue;
-			}
-		}
-		else if (const AHeroCharacter* Hero = Cast<AHeroCharacter>(Candidate))
-		{
-			if (Hero->IsDead())
-			{
-				continue;
-			}
-		}
-		else
-		{
-			continue;
-		}
-
-		// no friendly fire (GDD §3.0): enemies only. Native cast is valid —
-		// UTeamAgent is NotBlueprintable (TASK-001 ruling).
-		const ITeamAgent* Agent = Cast<ITeamAgent>(Candidate);
-		if (!Agent || Agent->GetTeamId() == Team)
+		// valid + alive + §3.7 class gate + enemy-only — the shared tower
+		// targeting gate (factored out for the TASK-101 chain bounce search;
+		// the checks are the exact ones that used to live inline here).
+		if (!IsAcquirableEnemy(Candidate))
 		{
 			continue;
 		}
@@ -195,6 +246,48 @@ AActor* ATower::AcquireTarget() const
 	}
 
 	return Best;
+}
+
+bool ATower::IsAcquirableEnemy(const AActor* Candidate) const
+{
+	if (!IsValid(Candidate))
+	{
+		return false;
+	}
+
+	// §3.7 "targets units/hero" — POSITIVE class gate: only summoned units
+	// (subclasses included: TASK-025 miners are raidable investments, §3.3)
+	// and the hero qualify; castles, buildings (self included), and any
+	// future ITeamAgent type are excluded by default. Liveness per type is
+	// a partial mirror of ASummonedUnit::IsTargetAlive restricted to the
+	// two classes a tower may target: a dead hero is HIDDEN, not destroyed
+	// (TASK-003), and dying units flag bDead before their Destroy lands
+	// (TASK-004 same-frame window). The chain bounce search (TASK-101) shares
+	// this gate — the zap bounces to exactly what the tower may target (§3.7),
+	// so a chain can never reach a castle or a building either.
+	if (const ASummonedUnit* Unit = Cast<ASummonedUnit>(Candidate))
+	{
+		if (Unit->IsUnitDead())
+		{
+			return false;
+		}
+	}
+	else if (const AHeroCharacter* Hero = Cast<AHeroCharacter>(Candidate))
+	{
+		if (Hero->IsDead())
+		{
+			return false;
+		}
+	}
+	else
+	{
+		return false;
+	}
+
+	// no friendly fire (GDD §3.0): enemies only. Native cast is valid —
+	// UTeamAgent is NotBlueprintable (TASK-001 ruling).
+	const ITeamAgent* Agent = Cast<ITeamAgent>(Candidate);
+	return Agent && Agent->GetTeamId() != Team;
 }
 
 void ATower::FireProjectileAt(AActor* Target)
@@ -244,4 +337,130 @@ void ATower::FireProjectileAt(AActor* Target)
 	// AcquireTarget only returns alive, hostile, in-range (and, for Ballista,
 	// outside-MinRange) candidates.
 	Projectile->InitProjectile(Team, Target, AttackDamage, USiegeDamageType_Projectile::StaticClass(), AttackAoERadius);
+}
+
+void ATower::FireChainZapAt(AActor* PrimaryTarget)
+{
+	UWorld* World = GetWorld();
+	if (!World || !PrimaryTarget)
+	{
+		return;
+	}
+
+	// ---- phase 1: select the WHOLE chain from one fire-time snapshot --------
+	// The zap is INSTANT (M5 ruling 9 — no projectile actor), so target
+	// selection reads the world exactly once, at fire time. Damage lands in
+	// phase 2, AFTER selection is complete: a mid-chain cascade death (hit 1
+	// kills a Sapper whose suicide blast kills the would-be hit 2) can never
+	// re-shape a zap that conceptually already happened — the receiver's own
+	// dead-gate zeroes that hit instead (dying units flag bDead, TASK-004).
+	// Deterministic by construction: nearest-first with FVector::DistSquared,
+	// same gather-then-filter pattern as AcquireTarget (a handful of bounces
+	// over a dozen agents on a 1.5 s cadence — trivially cheap).
+	TArray<AActor*> TeamAgents;
+	UGameplayStatics::GetAllActorsWithInterface(World, UTeamAgent::StaticClass(), TeamAgents);
+
+	// bounce candidates: everything the tower may target (§3.7 class gate +
+	// liveness + enemy-only — the SAME IsAcquirableEnemy gate as the primary
+	// acquisition, shared not mirrored), minus the primary itself ("no target
+	// hit twice per zap"). Range from the TOWER is deliberately not checked
+	// here: only the primary is range-gated (AcquireTarget); bounces are gated
+	// by ChainBounceRadius from the PREVIOUS target (ruling 9), so a chain may
+	// legally step outside the tower's own 800 ring.
+	TArray<AActor*> Candidates;
+	Candidates.Reserve(TeamAgents.Num());
+	for (AActor* Candidate : TeamAgents)
+	{
+		if (Candidate != PrimaryTarget && IsAcquirableEnemy(Candidate))
+		{
+			Candidates.Add(Candidate);
+		}
+	}
+
+	TArray<AActor*> ChainHits;
+	ChainHits.Reserve(AttackChainTargets);
+	ChainHits.Add(PrimaryTarget);
+
+	const double BounceRadiusSq = FMath::Square(static_cast<double>(ChainBounceRadius));
+	// the bounce search origin walks the chain: ALWAYS the previous target's
+	// position, never the tower's (acceptance item: "bounce measured from the
+	// previous target, not the tower").
+	FVector PreviousLocation = PrimaryTarget->GetActorLocation();
+
+	while (ChainHits.Num() < AttackChainTargets)
+	{
+		AActor* NextTarget = nullptr;
+		double NextDistSq = TNumericLimits<double>::Max();
+		int32 NextIndex = INDEX_NONE;
+
+		for (int32 CandidateIndex = 0; CandidateIndex < Candidates.Num(); ++CandidateIndex)
+		{
+			// origin-to-origin, matching the primary acquisition's metric (the
+			// qa/TASK-026 NIT-4 "no fourth closest-point mirror" ruling holds
+			// here too: every legal chain target is a pawn whose ~35 uu capsule
+			// is noise against a 350-unit bounce radius).
+			const double DistSq = FVector::DistSquared(PreviousLocation, Candidates[CandidateIndex]->GetActorLocation());
+			if (DistSq <= BounceRadiusSq && DistSq < NextDistSq)
+			{
+				NextTarget = Candidates[CandidateIndex];
+				NextDistSq = DistSq;
+				NextIndex = CandidateIndex;
+			}
+		}
+
+		if (!NextTarget)
+		{
+			// nothing unhit within ChainBounceRadius of the previous target —
+			// the chain ends short (ruling 9: fewer enemies = a shorter chain;
+			// never a re-search from the tower, never a wasted re-scan).
+			break;
+		}
+
+		ChainHits.Add(NextTarget);
+		// "no target hit twice per zap": a selected target leaves the pool.
+		Candidates.RemoveAtSwap(NextIndex);
+		PreviousLocation = NextTarget->GetActorLocation();
+	}
+
+	// ---- phase 2: apply, in bounce order -------------------------------------
+	for (int32 HitIndex = 0; HitIndex < ChainHits.Num(); ++HitIndex)
+	{
+		AActor* HitActor = ChainHits[HitIndex];
+		// a cascade death between phase 2 hits (see above) can tear an actor
+		// down mid-loop — a torn-down actor gets neither damage nor VFX.
+		if (!IsValid(HitActor))
+		{
+			continue;
+		}
+
+		// ruling 9 falloff: hit n (0-indexed) takes Dmg − n×ChainFalloff,
+		// floored at 0 — CrystalTower's 15/5 row lands 15/10/5. AttackDamage and
+		// AttackChainFalloff are row cells (GDD §3.0: never hardcoded).
+		const float HitDamage = FMath::Max(AttackDamage - static_cast<float>(HitIndex) * static_cast<float>(AttackChainFalloff), 0.f);
+
+		// tagged USiegeDamageType_Projectile — the tower attack family (ruling
+		// 9), so the castle-side §3.0 50% rule stays honest even though a chain
+		// can never reach a castle (§3.7 class gate). EventInstigator is a
+		// tower's usual null (non-pawn, no controller — the TASK-026/027
+		// non-pawn shooter form); DamageCauser is the TOWER itself, an
+		// ITeamAgent — receivers resolve the attacking team from it (their
+		// documented step-2 chain), so their same-team gate actively backstops
+		// the enemy-only selection above (STRONGER attribution than the
+		// projectile path's unattributable-and-apply; flagged in the handoff).
+		if (HitDamage > 0.f)
+		{
+			UGameplayStatics::ApplyDamage(HitActor, HitDamage, GetInstigatorController(), this, USiegeDamageType_Projectile::StaticClass());
+		}
+
+		// the zap burst at EVERY chain hit (spec item 2): with no projectile to
+		// watch, NS_ChainZap is the attack's only read (§6 one-frame
+		// readability) — so it spawns per hit regardless of what the receiver
+		// did with the damage (unlike the projectile puff's damage-landed gate;
+		// flagged in the handoff). Null cache (asset missing or floor-zeroed
+		// row) = no visual, never a crash.
+		if (CachedChainZapEffect)
+		{
+			UNiagaraFunctionLibrary::SpawnSystemAtLocation(World, CachedChainZapEffect, HitActor->GetActorLocation());
+		}
+	}
 }

@@ -88,6 +88,31 @@ public:
 	 */
 	virtual float TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
 
+	/**
+	 *  FrostNova spell freeze (TASK-099, M5 ruling 5; called by USpellLibrary on
+	 *  enemy buildings in the reticle radius — the castle is NOT an ABuilding and
+	 *  deliberately carries NO freeze API). STATE ONLY here (ruling 14): this
+	 *  latches IsFrozen() for Seconds and nothing else — the tower fire-gate that
+	 *  consumes it lands in TASK-101 (ATower checks !IsFrozen() on both its
+	 *  projectile and chain paths). Refresh-not-stack (ruling 5): re-applying
+	 *  arms the single expiry timer for max(remaining, Seconds) — never additive.
+	 *
+	 *  MATCH-END PRECEDENCE (ruling 5): the match-end freeze silences towers by
+	 *  clearing ALL their timers (ASiegeGameMode::FreezeWorldAtMatchEnd), which
+	 *  also clears this expiry — a spell-frozen tower stays IsFrozen() until Play
+	 *  Again destroys it, and no expiry can fire post-match. On non-tower
+	 *  buildings an expiry after match end only flips this state flag — it
+	 *  resumes NOTHING (state-only), so precedence holds there too. No-op on
+	 *  destroyed buildings and non-positive Seconds. Virtual so a subclass with
+	 *  its own drives (e.g. a future Barracks spawn-pause) can extend it.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Building")
+	virtual void ApplyFreeze(float Seconds);
+
+	/** True while a FrostNova spell freeze is active (TASK-099). TASK-101 gates ALL tower firing on !IsFrozen(). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Building")
+	bool IsFrozen() const { return bSpellFrozen; }
+
 	/** Current hit points, in [0, MaxHP]. PIE verification hook (TASK-010/018 precedent). */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Building")
 	float GetCurrentHP() const { return CurrentHP; }
@@ -108,6 +133,9 @@ protected:
 
 	/** Binds the card stats from DT_Cards (HP; subclasses hook OnStatsLoaded for more). */
 	virtual void BeginPlay() override;
+
+	/** Clears the spell-freeze expiry timer (TASK-099) — no dangling expiry on a destroyed building (belt-and-braces; ATower::EndPlay chains here via Super). */
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/**
 	 *  Subclass stat hook, called exactly once, right after the base bound HP
@@ -165,6 +193,14 @@ private:
 	void HandleDestroyed();
 
 	/**
+	 *  Spell-freeze expiry (TASK-099): drops the spell-frozen state — nothing
+	 *  more (the building freeze is STATE ONLY; the tower fire path re-checks
+	 *  IsFrozen() every shot in TASK-101, so there is nothing to resume here).
+	 *  Idempotent timer callback for ApplyFreeze.
+	 */
+	void EndSpellFreeze();
+
+	/**
 	 *  Resolves the attacking team from a damage event — same chain as
 	 *  ACastle::TryGetInstigatorTeam / ASummonedUnit::TryGetDamageTeam
 	 *  (TASK-002/004): instigating controller's pawn, then the damage causer,
@@ -184,6 +220,19 @@ private:
 	/** True from HP hitting 0; destruction side effects run exactly once. */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Building", meta = (AllowPrivateAccess = "true"))
 	bool bDestroyed = false;
+
+	/** True while a FrostNova spell freeze is active (TASK-099) — the state TASK-101's tower fire-gate reads through IsFrozen(). */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Building", meta = (AllowPrivateAccess = "true"))
+	bool bSpellFrozen = false;
+
+	/**
+	 *  Drives EndSpellFreeze once the freeze elapses; re-armed at
+	 *  max(remaining, new) on re-apply (refresh-not-stack, M5 ruling 5, TASK-099).
+	 *  Cleared by EndPlay — and, on towers, by the match-end freeze's
+	 *  ClearAllTimersForObject sweep (precedence: a match-end-silenced tower's
+	 *  spell freeze never expires).
+	 */
+	FTimerHandle SpellFreezeTimerHandle;
 
 	/** True once the card stats were bound from DT_Cards. */
 	bool bStatsLoaded = false;

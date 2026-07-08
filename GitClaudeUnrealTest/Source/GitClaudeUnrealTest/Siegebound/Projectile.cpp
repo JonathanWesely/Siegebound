@@ -2,9 +2,11 @@
 
 #include "Siegebound/Projectile.h"
 
+#include "CollisionQueryParams.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/CollisionProfile.h"
+#include "Engine/HitResult.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/DamageType.h"
@@ -35,7 +37,9 @@ AProjectile::AProjectile()
 	// visual-only sphere: NoCollision + no overlaps + no nav (same setup as the
 	// unit VisualMesh, TASK-004). Impacts are the distance-based reach test in
 	// Tick, never physics — which is the §3.0 "no collision with friendlies"
-	// guarantee: this actor cannot collide with ANYTHING.
+	// guarantee: this actor cannot PHYSICS-collide with anything. (Terrain/
+	// obstacle death, TASK-094, is a tag-filtered segment TRACE in Tick — it
+	// needs no collision on this actor either.)
 	VisualMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("VisualMesh"));
 	VisualMesh->SetupAttachment(SceneRoot);
 	VisualMesh->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
@@ -221,8 +225,6 @@ void AProjectile::Tick(float DeltaSeconds)
 	}
 
 	// straight homing step at Speed (1500 u/s, §3.0) toward the aim point.
-	// No sweep: the projectile collides with nothing (impacts are the reach test
-	// above) — blockout tier; arcing over walls is an M7 feel call.
 	const FVector Direction = (LastKnownAimPoint - MyLocation).GetSafeNormal();
 	if (Direction.IsNearlyZero())
 	{
@@ -230,7 +232,47 @@ void AProjectile::Tick(float DeltaSeconds)
 		return;
 	}
 
-	SetActorLocation(MyLocation + Direction * Step, /*bSweep=*/ false);
+	const FVector ProposedLocation = MyLocation + Direction * Step;
+
+	// M4.5 terrain law (TASK-094, ruling 8): trace the FULL travel segment for
+	// walkable terrain (tag "Terrain") and obstacle footprints (tag "Obstacle" —
+	// Fab amendment: trees AND rocks). Covering the whole segment means no
+	// tunneling through a trunk at 1500 u/s at any frame rate. On a tagged hit
+	// the projectile is simply DESTROYED: zero damage, no AoE, no attribution or
+	// friendly-fire side effects — an arrow dying on the hillside when its target
+	// moved behind a hill IS the high-ground value (ruling 2). Untagged blockers
+	// (walls, buildings, castles, the legacy ArenaGround slab) never match, so
+	// every shipped interaction — archer-behind-own-wall fly-through, homing,
+	// target-overlap damage, §3.0 castle scaling — stays behavior-equivalent.
+	// ORDER matters and is deliberate: the target reach test above already ran,
+	// so a projectile that REACHES its target this tick impacts it exactly as
+	// shipped even when that target hugs a hill flank.
+	FHitResult EnvironmentHit;
+	if (FindEnvironmentImpact(MyLocation, ProposedLocation, EnvironmentHit))
+	{
+		UE_LOG(LogGitClaudeUnrealTest, VeryVerbose,
+			TEXT("AProjectile '%s': flight blocked by terrain/obstacle '%s' — destroyed with zero damage (M4.5 ruling 8)."),
+			*GetNameSafe(this), *GetNameSafe(EnvironmentHit.GetActor()));
+
+		// one-line reuse of the existing cached impact puff (the spec-allowed VFX
+		// option) so the player can SEE arrows dying on hills and trunks — a
+		// deliberate, flagged deviation from the damage-landed puff gate below
+		// (handoffs/TASK-094.md). Missing/cleared effect = no VFX, never a crash.
+		if (CachedImpactEffect)
+		{
+			UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), CachedImpactEffect, EnvironmentHit.ImpactPoint);
+		}
+
+		// zero damage, no AoE: neither HandleImpact branch runs — the projectile
+		// just stops existing (§3.0 destroyed-on-impact, harmless flavor).
+		Destroy();
+		return;
+	}
+
+	// bSweep stays false: physics never moves this actor — environment death is
+	// the tag-filtered segment trace above, target impact is the reach test.
+	// Blockout tier; arcing over walls is an M7 feel call.
+	SetActorLocation(ProposedLocation, /*bSweep=*/ false);
 	// cosmetic on a sphere; correct heading for the future M7 arrow-mesh swap
 	SetActorRotation(Direction.Rotation());
 }
@@ -325,4 +367,72 @@ float AProjectile::GetDistanceToTarget(const FVector& From, const AActor* InTarg
 		return static_cast<float>(FVector::Dist(From, OutClosestPoint));
 	}
 	return Distance;
+}
+
+bool AProjectile::FindEnvironmentImpact(const FVector& TraceStart, const FVector& TraceEnd, FHitResult& OutHit) const
+{
+	OutHit = FHitResult();
+
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	// exact tag contract (CONVENTIONS "Arena terrain & environment (M4.5)", set
+	// by TASK-095): "Terrain" = ALL walkable ground + hills; "Obstacle" = ALL
+	// trees + rocks (Fab amendment — one tag covers every obstacle type, so new
+	// obstacle kinds never require code changes here).
+	static const FName TerrainTagName(TEXT("Terrain"));
+	static const FName ObstacleTagName(TEXT("Obstacle"));
+
+	// MULTI object-type trace: unlike a channel trace it does NOT stop at the
+	// first blocking primitive, so an untagged wall standing just in front of a
+	// tagged hill can never mask that hill inside one tick's segment. Terrain,
+	// trees, rocks, walls, buildings and castles are all static-mesh geometry
+	// (object type WorldStatic; WorldDynamic added defensively for any movable-
+	// mobility conform). Pawn/Vehicle object types are NOT queried — units and
+	// the hero never even appear in the hit list, preserving §3.0.
+	FCollisionObjectQueryParams ObjectParams;
+	ObjectParams.AddObjectTypesToQuery(ECC_WorldStatic);
+	ObjectParams.AddObjectTypesToQuery(ECC_WorldDynamic);
+
+	// SIMPLE collision (bTraceComplex = false) is load-bearing twice over:
+	// tree/rock conforms carry footprint-only simple hulls (the canopy has NO
+	// simple collision, so shots through the canopy PASS — ruling 6), while the
+	// walkable terrain is Use-Complex-Collision-As-Simple, which answers simple
+	// queries with its tri-mesh anyway (ruling 3). Self is ignored on principle
+	// (the visual mesh is NoCollision and untraceable regardless).
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(SiegeProjectileTerrain), /*bTraceComplex=*/ false, this);
+
+	TArray<FHitResult> Hits;
+	if (!World->LineTraceMultiByObjectType(Hits, TraceStart, TraceEnd, ObjectParams, QueryParams))
+	{
+		return false;
+	}
+
+	// nearest tagged hit wins — an explicit min-scan rather than trusting the
+	// engine's hit ordering. O(hit-result): one tick's segment (~25-50 units at
+	// 1500 u/s) crosses a handful of primitives at most, never the whole world.
+	const FHitResult* NearestTaggedHit = nullptr;
+	for (const FHitResult& Hit : Hits)
+	{
+		// null-safe tag lookup: a component's owner can be dying mid-frame
+		const AActor* HitActor = Hit.GetActor();
+		if (!HitActor || !(HitActor->ActorHasTag(TerrainTagName) || HitActor->ActorHasTag(ObstacleTagName)))
+		{
+			continue;
+		}
+		if (!NearestTaggedHit || Hit.Time < NearestTaggedHit->Time)
+		{
+			NearestTaggedHit = &Hit;
+		}
+	}
+
+	if (NearestTaggedHit)
+	{
+		OutHit = *NearestTaggedHit;
+		return true;
+	}
+	return false;
 }

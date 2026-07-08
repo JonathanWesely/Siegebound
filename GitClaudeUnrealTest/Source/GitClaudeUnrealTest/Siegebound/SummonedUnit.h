@@ -141,6 +141,9 @@ public:
 	 *  cache-once, restore-exactly lesson). No-op on dead or match-end-frozen units;
 	 *  null-safe without a movement component. Non-positive Duration restores now;
 	 *  FreezeAI cancels an active buff and restores the base with zero residual.
+	 *  TASK-099: the walk speed now composes with the Battle Cry combat buff
+	 *  through RefreshComposedMoveSpeed (shared episode base) — Rally's OWN
+	 *  behavior (magnitude, refresh, exact restore) is unchanged.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Unit")
 	void ApplyMoveSpeedBuff(float Multiplier, float Duration);
@@ -174,6 +177,72 @@ public:
 	void SetAuraDamageBonus(float Bonus, float Duration);
 
 	/**
+	 *  FrostNova spell freeze (TASK-099, M5 ruling 5; called by USpellLibrary on
+	 *  enemy units in the reticle radius — the hero and castle are excluded
+	 *  CALLER-side and carry no freeze API). PAUSES the unit for Seconds: state/
+	 *  attack timers cleared, any in-flight lunge cancelled to the exact rest
+	 *  pose, Support healing stopped, movement halted AND the movement component
+	 *  disabled (so a subclass drive — e.g. the miner's arrival poll — cannot
+	 *  re-issue a walk mid-freeze), unit parked Idle. UNLIKE FreezeAI this is
+	 *  RESUMABLE: expiry restores the default movement mode and re-arms the state
+	 *  loop, which reacquires from scratch on its next tick (never a synchronous
+	 *  decision — that also keeps AMinerUnit's StateCheckInterval-0 seal intact).
+	 *
+	 *  Refresh-not-stack (ruling 5): re-applying arms the single expiry timer for
+	 *  max(remaining, Seconds) — never additive. MATCH-END PRECEDENCE (ruling 5):
+	 *  the match-end FreezeAI WINS — ApplyFreeze no-ops on a match-end-frozen
+	 *  unit, FreezeAI wipes the spell-freeze state and its expiry timer, and
+	 *  EndSpellFreeze refuses to resume a bAIFrozen unit (triple guard). No-op on
+	 *  dead / never-bound units and non-positive Seconds. Virtual so subclasses
+	 *  with extra drives can extend it (the FreezeAI precedent).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Unit")
+	virtual void ApplyFreeze(float Seconds);
+
+	/**
+	 *  True while a FrostNova spell freeze is active (TASK-099). The match-end
+	 *  freeze is the SEPARATE, permanent IsAIFrozen() latch — this reports only
+	 *  the resumable spell state (false again once the freeze expires).
+	 */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Unit")
+	bool IsFrozen() const { return bSpellFrozen; }
+
+	/**
+	 *  Battle Cry combat buff (TASK-099, M5 ruling 6; called by USpellLibrary on
+	 *  FRIENDLY units in the reticle radius). Applies a temporary walk-speed
+	 *  multiplier AND an attack-speed multiplier (effective cadence = row Cadence
+	 *  ÷ AttackSpeedMult — attacks per second scale UP) for Seconds, then
+	 *  restores both EXACTLY. A live attack loop is re-armed at the new cadence
+	 *  immediately (honoring the LastAttackTime cooldown) — the buff never waits
+	 *  for the next Attack entry, and expiry never leaves a fast loop running.
+	 *
+	 *  Self-refresh non-stacking (ruling 6): re-applying OVERWRITES the
+	 *  multipliers from the args (never compounds) and re-arms the single expiry
+	 *  timer. STACKS WITH Rally and War Banner (independent systems, ruling 6):
+	 *  the walk speed is composed as SharedBase × RallyMult × CombatMoveMult —
+	 *  the resting base is captured once per speed-buff EPISODE (only while
+	 *  NEITHER speed buff is active) and restored exactly when the LAST one ends,
+	 *  so no ordering of Rally/BattleCry applies or expiries can drift the base
+	 *  (the TASK-020 cache-once/restore-exactly lesson). BattleCry magnitudes
+	 *  live in the BattleCry* mechanic UPROPERTYs below (Rally precedent) — the
+	 *  resolver composes the call as ApplyCombatBuff(
+	 *  GetBattleCryMoveSpeedMultiplier(), GetBattleCryAttackSpeedMultiplier(),
+	 *  Row.EffectDuration). Non-positive multipliers sanitize to 1 (defensive);
+	 *  non-positive Seconds ends any active buff now. No-op on dead /
+	 *  match-end-frozen / never-bound units.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Unit")
+	void ApplyCombatBuff(float MoveSpeedMult, float AttackSpeedMult, float Seconds);
+
+	/** Battle Cry walk-speed multiplier for ApplyCombatBuff: 1 + BattleCryMoveSpeedBonus (GDD §4 +25% ⇒ 1.25). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Unit")
+	float GetBattleCryMoveSpeedMultiplier() const { return 1.f + BattleCryMoveSpeedBonus; }
+
+	/** Battle Cry attack-speed multiplier for ApplyCombatBuff: 1 + BattleCryAttackSpeedBonus (GDD §4 +50% ⇒ 1.5; effective cadence = row Cadence ÷ 1.5). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Unit")
+	float GetBattleCryAttackSpeedMultiplier() const { return 1.f + BattleCryAttackSpeedBonus; }
+
+	/**
 	 *  Match-end freeze (TASK-028; called by the game mode at match end per the
 	 *  TASK-024 contract, and inherited by AMinerUnit — the base StopMovement
 	 *  also halts its gold-node walk, TASK-025). Permanently stops the unit's
@@ -187,7 +256,9 @@ public:
 	 *  state-timer clear and StopMovement). Idempotent; safe on dead or never-bound
 	 *  units. A frozen unit can never restart: stat binding and the state/attack/
 	 *  heal timer callbacks are all gated on the frozen flag. Virtual so subclasses
-	 *  with extra drives can extend it.
+	 *  with extra drives can extend it. TASK-099: also ends any Battle Cry combat
+	 *  buff and WIPES any active spell freeze (state + expiry timer) — the
+	 *  match-end freeze has PRECEDENCE over a spell freeze (M5 ruling 5).
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Unit")
 	virtual void FreezeAI();
@@ -298,6 +369,19 @@ protected:
 	/** SLAYER applies to any target whose MaxHP is >= this (GDD §3.0: 150). Pikeman. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Keywords", meta = (ClampMin = "0"))
 	float SlayerHPThreshold = 150.f; // GDD §3.0
+
+	/**
+	 *  BATTLE CRY attack-speed bonus (TASK-099, M5 ruling 6 — mechanic RULE, not
+	 *  a card stat; the per-card EffectDuration is the CSV column). 0.5 = +50%
+	 *  attack speed. Consumed via GetBattleCryAttackSpeedMultiplier by the spell
+	 *  resolver (Rally-precedent placement: magnitudes live with the API owner).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Keywords", meta = (ClampMin = "0"))
+	float BattleCryAttackSpeedBonus = 0.5f; // GDD §4
+
+	/** BATTLE CRY move-speed bonus (TASK-099, M5 ruling 6). 0.25 = +25% move speed; consumed via GetBattleCryMoveSpeedMultiplier. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Keywords", meta = (ClampMin = "0"))
+	float BattleCryMoveSpeedBonus = 0.25f; // GDD §4
 
 	/**
 	 *  Blockout "attack animation" (TASK-020): how far VisualMesh lunges along the
@@ -463,6 +547,49 @@ private:
 	 *  leaves zero residual damage buff (mirrors EndMoveSpeedBuff).
 	 */
 	void EndAuraDamageBuff();
+
+	/**
+	 *  Spell-freeze expiry (TASK-099): drops the spell-frozen state, restores the
+	 *  default movement mode, and re-arms the state loop (first decision on its
+	 *  next tick — never synchronous, preserving AMinerUnit's seal #1) — ONLY
+	 *  when the unit is alive, bound, and NOT match-end frozen (M5 ruling 5
+	 *  precedence: a spell-freeze expiry must never resume a match-end-frozen
+	 *  actor). Timer callback for ApplyFreeze; FreezeAI and EndPlay clear its
+	 *  timer.
+	 */
+	void EndSpellFreeze();
+
+	/**
+	 *  Ends the Battle Cry combat buff (TASK-099): clears its timer, resets both
+	 *  multipliers to EXACTLY 1, recomposes the walk speed (restoring the shared
+	 *  episode base when Rally is also inactive), and re-arms a live attack loop
+	 *  at the base cadence. Idempotent — a no-op when no buff is active. Timer
+	 *  callback for ApplyCombatBuff; also called by FreezeAI for zero residual.
+	 */
+	void EndCombatBuff();
+
+	/**
+	 *  The ONE walk-speed writer for the buff system (TASK-042/099 composition):
+	 *  writes MaxWalkSpeed = SharedBase × RallyMult × CombatMoveMult while any
+	 *  speed buff is active, or EXACTLY the shared episode base when none is.
+	 *  Only ever called from the Apply/End buff paths, so the base is always a
+	 *  captured resting value — zero drift by construction. Null-safe without a
+	 *  movement component.
+	 */
+	void RefreshComposedMoveSpeed();
+
+	/** Attack cadence after the combat buff (TASK-099): AttackCadence ÷ CombatBuffAttackSpeedMult, floored at MinAttackCadence; the plain row cadence when no buff is active. */
+	float GetEffectiveAttackCadence() const;
+
+	/**
+	 *  Re-arms a LIVE attack loop at the current effective cadence, honoring the
+	 *  LastAttackTime cooldown (an already-elapsed cooldown fires on the next
+	 *  timer tick, never synchronously from a buff call). No-op when the attack
+	 *  timer is not running. Called on combat-buff apply AND expiry so a cadence
+	 *  change takes effect mid-Attack instead of waiting for the next re-entry
+	 *  (TASK-099).
+	 */
+	void RearmAttackTimerAtEffectiveCadence();
 
 	/**
 	 *  Centralized damage OUTPUT (TASK-055): row Damage × Charge × Slayer × Aura, composed in
@@ -656,6 +783,41 @@ private:
 
 	/** Drives EndMoveSpeedBuff once the buff Duration elapses; re-armed (refreshed) on re-apply, never stacked. */
 	FTimerHandle MoveSpeedBuffTimerHandle;
+
+	/**
+	 *  Rally's active walk-speed multiplier (TASK-042; exactly 1 while inactive).
+	 *  Composed with the combat buff by RefreshComposedMoveSpeed (TASK-099) —
+	 *  never written to MaxWalkSpeed directly anymore, so Rally and Battle Cry
+	 *  stack without either restore clobbering the other.
+	 */
+	float MoveSpeedBuffMultiplier = 1.f;
+
+	/** True while a Battle Cry combat buff is active (TASK-099). */
+	bool bCombatBuffActive = false;
+
+	/** Battle Cry walk-speed multiplier (exactly 1 while inactive); composed with Rally's by RefreshComposedMoveSpeed (TASK-099). */
+	float CombatBuffMoveSpeedMult = 1.f;
+
+	/** Battle Cry attack-speed multiplier (exactly 1 while inactive); effective cadence = AttackCadence ÷ this (TASK-099). */
+	float CombatBuffAttackSpeedMult = 1.f;
+
+	/** Drives EndCombatBuff once the buff Seconds elapse; re-armed (refreshed) on re-apply, never stacked (TASK-099). */
+	FTimerHandle CombatBuffTimerHandle;
+
+	/**
+	 *  True while a FrostNova spell freeze is active (TASK-099) — RESUMABLE,
+	 *  unlike the permanent match-end bAIFrozen latch. Gates UpdateState /
+	 *  PerformAttack / PerformHeal as defense-in-depth (the bAIFrozen pattern).
+	 */
+	bool bSpellFrozen = false;
+
+	/**
+	 *  Drives EndSpellFreeze once the freeze elapses; re-armed at
+	 *  max(remaining, new) on re-apply (refresh-not-stack, M5 ruling 5). Cleared
+	 *  by FreezeAI (match-end precedence — no expiry may fire post-match) and
+	 *  EndPlay.
+	 */
+	FTimerHandle SpellFreezeTimerHandle;
 
 	/** Accumulated uninterrupted-advance time for CHARGE (TASK-055); reset on stall / stop / consume. */
 	float ChargeMoveElapsed = 0.f;

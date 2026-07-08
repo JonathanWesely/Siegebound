@@ -3,11 +3,14 @@
 #include "Siegebound/SiegePlayerController.h"
 
 #include "Blueprint/UserWidget.h"
+#include "CollisionQueryParams.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/DecalComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "EnhancedInputComponent.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/DataTable.h"
+#include "Engine/DecalActor.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
@@ -25,6 +28,7 @@
 #include "Siegebound/HeroCharacter.h"
 #include "Siegebound/SiegePlayerState.h"
 #include "Siegebound/SiegeSpawnConstants.h"
+#include "Siegebound/SpellLibrary.h"
 #include "Siegebound/SummonedUnit.h"
 
 ASiegePlayerController::ASiegePlayerController()
@@ -43,6 +47,7 @@ ASiegePlayerController::ASiegePlayerController()
 	VictoryScreenClass = TSoftClassPtr<UUserWidget>(FSoftObjectPath(TEXT("/Game/UI/WBP_VictoryScreen.WBP_VictoryScreen_C")));            // TASK-011
 	GhostFallbackMeshAsset = TSoftObjectPtr<UStaticMesh>(FSoftObjectPath(TEXT("/Engine/BasicShapes/Sphere.Sphere")));                    // engine asset, read-only (TASK-030 ghost fallback)
 	GhostMaterialAsset = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Materials/M_Ghost.M_Ghost")));                   // TASK-012
+	SpellReticleMaterialAsset = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Materials/M_SpellReticle.M_SpellReticle"))); // TASK-108 (M5 reticle decal)
 	Card1ActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_Card1.IA_Card1")));                     // TASK-009
 	Card2ActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_Card2.IA_Card2")));                     // TASK-032
 	Card3ActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_Card3.IA_Card3")));                     // TASK-032
@@ -67,9 +72,10 @@ void ASiegePlayerController::BeginPlay()
 	// InputAxis swallowed WASD, the 1–6 hotkeys, and every click (Jonathan's
 	// 2026-07-07 bug, both menu buttons). Establish OUR match posture instead of
 	// trusting the traveler's: on a fresh controller bInPlacementMode /
-	// bUICursorHeld / bMatchEnded are all false, so ApplyCursorInputState()
-	// applies exactly FInputModeGameOnly — whose ApplyInputMode clears the
-	// viewport's ignore-input latch and restores capture-on-click/lock-on-capture
+	// bInTargetingMode / bUICursorHeld / bMatchEnded are all false, so
+	// ApplyCursorInputState() applies exactly FInputModeGameOnly — whose
+	// ApplyInputMode clears the viewport's ignore-input latch and restores
+	// capture-on-click/lock-on-capture
 	// — with the cursor hidden and click events off (the M1/TASK-023 free-look
 	// posture). On a direct-PIE L_Arena boot every value written already matches
 	// the fresh-viewport/fresh-controller defaults, so this is a no-op there.
@@ -119,6 +125,10 @@ void ASiegePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	// defensive exit path (QA TASK-003 warning 2): teardown mid-placement still
 	// releases the melee suppression and destroys the ghost
 	ExitPlacementMode();
+
+	// same law for M5 targeting mode (TASK-100): teardown mid-targeting releases
+	// the melee suppression and destroys the reticle decal
+	ExitTargetingMode();
 
 	// symmetric teardown for the IA_UICursor hold (keeps the ignore-look counter balanced)
 	ClearUICursorHold();
@@ -192,6 +202,34 @@ void ASiegePlayerController::PlayerTick(float DeltaTime)
 {
 	Super::PlayerTick(DeltaTime);
 
+	// M5 TARGETING mode (TASK-100) — the sibling of placement mode below, on the
+	// SAME input surface (M5 ruling 8: cursor posture mirrors placement; no new
+	// input assets): polled RMB/Esc cancel (works even without the IA_CancelPlace
+	// asset — the placement double-cover pattern), per-frame cursor-to-surface
+	// trace, polled LMB confirm. The two modes are mutually exclusive (each
+	// Enter* ignores while the other is live), so at most one branch runs.
+	if (bInTargetingMode)
+	{
+		// cancel is FREE (ruling 8): no gold has moved before confirm
+		if (WasInputKeyJustPressed(EKeys::RightMouseButton) || WasInputKeyJustPressed(EKeys::Escape))
+		{
+			ExitTargetingMode();
+			return;
+		}
+
+		// reticle = TRACE to the surface under the cursor (M4.5 carry-in LAW)
+		UpdateSpellReticle();
+
+		// confirm: LMB polled while in mode — same double-duty note as placement:
+		// the physical click also reaches the hero's IA_Attack binding, where
+		// SetMeleeSuppressed(true) makes DoMeleeAttack a cooldown-free no-op.
+		if (WasInputKeyJustPressed(EKeys::LeftMouseButton))
+		{
+			TryConfirmSpellTarget();
+		}
+		return;
+	}
+
 	if (!bInPlacementMode)
 	{
 		return;
@@ -241,6 +279,9 @@ void ASiegePlayerController::OnUnPossess()
 	// defensive exit path: losing the pawn mid-placement releases the melee
 	// suppression (on the recorded PlacementHero) and destroys the ghost
 	ExitPlacementMode();
+
+	// same law for M5 targeting mode (on the recorded TargetingHero)
+	ExitTargetingMode();
 
 	Super::OnUnPossess();
 }
@@ -326,6 +367,16 @@ void ASiegePlayerController::PlayHandSlot(int32 Slot)
 		return;
 	}
 
+	// mid-targeting presses are silent ignores too (M5 TASK-100 — the same
+	// mode-exclusivity rule as placement above)
+	if (bInTargetingMode)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegePlayerController '%s': PlayHandSlot(%d) ignored — already targeting '%s'."),
+			*GetNameSafe(this), Slot, *TargetingCardID.ToString());
+		return;
+	}
+
 	if (!DeckComponent)
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Error,
@@ -398,11 +449,28 @@ void ASiegePlayerController::PlayHandSlot(int32 Slot)
 		break;
 
 	case ECardType::Spell:
-		// targeting mode arrives with the spell system (GDD §3.11, M5)
-		UE_LOG(LogGitClaudeUnrealTest, Log,
-			TEXT("ASiegePlayerController '%s': hand slot %d ('%s') refused — Spell cards arrive in M5 (GDD §3.11)."),
-			*GetNameSafe(this), Slot, *CardID.ToString());
-		RefuseCardPlay(CardID, NSLOCTEXT("Siegebound", "CardRefused_SpellsM5", "Spells are not available yet"));
+		// M5 spell routing (GDD §3.11, TASK-100): GoldSteal resolves INSTANTLY on
+		// play — no reticle for a global effect (manager ruling 7; recorded §3.5
+		// deviation, CardType stays Spell). Every other SpellEffect enters
+		// TARGETING mode, placement mode's sibling: the card leaves the hand only
+		// at LMB CONFIRM (M2 law), so cancel costs nothing. Affordability was
+		// pre-checked above; SiegeState is non-null here (checked above).
+		if (Row->SpellEffect == ESpellEffect::GoldSteal)
+		{
+			ResolveSpellInstant(Slot, CardID, *Row, *SiegeState);
+		}
+		else
+		{
+			// the PendingHandSlot pattern: record the slot BEFORE entry, roll it
+			// back if the entry refused internally (dead hero — already
+			// logged/broadcast inside EnterTargetingMode)
+			TargetingHandSlot = Slot;
+			EnterTargetingMode(CardID);
+			if (!bInTargetingMode)
+			{
+				TargetingHandSlot = INDEX_NONE;
+			}
+		}
 		break;
 
 	case ECardType::HeroUpgrade:
@@ -444,6 +512,18 @@ void ASiegePlayerController::DiscardHandSlot(int32 Slot)
 			TEXT("ASiegePlayerController '%s': DiscardHandSlot(%d) refused — placement mode active for '%s'."),
 			*GetNameSafe(this), Slot, *PendingCardID.ToString());
 		BroadcastRefusal(NSLOCTEXT("Siegebound", "DiscardRefused_Placing", "Cannot discard while placing a card"));
+		return;
+	}
+
+	// same desync rule for M5 targeting mode (TASK-100): discarding the slot
+	// being targeted would hand TargetingHandSlot a DIFFERENT card at confirm
+	// (the §3.4 redraw refills the slot immediately). Cancel first, then discard.
+	if (bInTargetingMode)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': DiscardHandSlot(%d) refused — targeting mode active for '%s'."),
+			*GetNameSafe(this), Slot, *TargetingCardID.ToString());
+		BroadcastRefusal(NSLOCTEXT("Siegebound", "DiscardRefused_Targeting", "Cannot discard while targeting a spell"));
 		return;
 	}
 
@@ -511,6 +591,15 @@ void ASiegePlayerController::OnCancelPlacePressed()
 	if (bInPlacementMode)
 	{
 		ExitPlacementMode();
+		return;
+	}
+
+	// M5 (TASK-100): the SAME cancel action leaves targeting mode at no cost
+	// (ruling 8 — no new input assets; the modes are mutually exclusive, so the
+	// early return above is ordering hygiene, not a behavior choice)
+	if (bInTargetingMode)
+	{
+		ExitTargetingMode();
 	}
 }
 
@@ -525,6 +614,17 @@ void ASiegePlayerController::HandleHeroDied(AHeroCharacter* DeadHero)
 			*GetNameSafe(this));
 	}
 	ExitPlacementMode();
+
+	// same law for M5 targeting mode (TASK-100): death while targeting cancels
+	// the spell free (no gold has moved before confirm) and releases the
+	// suppression on the recorded TargetingHero
+	if (bInTargetingMode)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': hero died during targeting mode — cancelling spell targeting."),
+			*GetNameSafe(this));
+	}
+	ExitTargetingMode();
 }
 
 void ASiegePlayerController::EnterPlacementMode(FName CardID)
@@ -542,6 +642,16 @@ void ASiegePlayerController::EnterPlacementMode(FName CardID)
 		UE_LOG(LogGitClaudeUnrealTest, Verbose,
 			TEXT("ASiegePlayerController '%s': EnterPlacementMode('%s') ignored — already placing '%s'."),
 			*GetNameSafe(this), *CardID.ToString(), *PendingCardID.ToString());
+		return;
+	}
+
+	// sibling-mode mutual exclusion (M5 TASK-100): a live targeting mode owns
+	// the cursor/LMB — mirror of the already-placing silent ignore above
+	if (bInTargetingMode)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegePlayerController '%s': EnterPlacementMode('%s') ignored — already targeting '%s'."),
+			*GetNameSafe(this), *CardID.ToString(), *TargetingCardID.ToString());
 		return;
 	}
 
@@ -677,9 +787,12 @@ void ASiegePlayerController::ExitPlacementMode()
 
 void ASiegePlayerController::HandleMatchEnd(ETeamId Winner)
 {
-	// exit placement FIRST (spec + qa-note): destroys the ghost and releases the
-	// melee suppression before the input mode switches to UI-only
+	// exit placement AND targeting FIRST (spec + qa-note): destroys the
+	// ghost/reticle and releases the melee suppression before the input mode
+	// switches to UI-only (the modes are mutually exclusive — both calls are
+	// no-op-safe)
 	ExitPlacementMode();
+	ExitTargetingMode();
 
 	// end any IA_UICursor hold too: UI-only input can swallow the action's
 	// release event, which would leave the ignore-look counter stuck across
@@ -769,6 +882,10 @@ void ASiegePlayerController::HandleMatchReset()
 	// "reset restores play" either way.
 	ExitPlacementMode();
 
+	// same WARN rationale for M5 targeting mode (TASK-100): the deck rebuild
+	// below must never happen under a live TargetingHandSlot
+	ExitTargetingMode();
+
 	bMatchEnded = false;
 
 	// idempotent with WBP_VictoryScreen's own RemoveFromParent (TASK-011)
@@ -806,22 +923,40 @@ void ASiegePlayerController::TryConfirmPlacement()
 	// invalid click: refuse, spend NOTHING, STAY in placement mode (GDD §3.5) —
 	// a different point can succeed, so the mode survives the refusal. The
 	// reason recorded by UpdatePlacementGhost picks the player-facing message
-	// (the §3.5 building-clearance rule gets its own).
+	// (each building-only rule gets its own — §3.5 clearance plus the M4.5
+	// slope and obstacle gates, TASK-093). Every branch runs BEFORE any gold
+	// moves (§3.0 net-zero refusal law).
 	if (!bPlacementValid)
 	{
-		if (PlacementInvalidReason == EPlacementInvalidReason::Clearance)
+		switch (PlacementInvalidReason)
 		{
+		case EPlacementInvalidReason::Slope:
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("ASiegePlayerController '%s': placement click refused for '%s' — ground steeper than %.0f degrees (GDD §5 M4.5 slope rule, TASK-093)."),
+				*GetNameSafe(this), *PendingCardID.ToString(), MaxPlacementSlopeDegrees);
+			RefuseCardPlay(PendingCardID, NSLOCTEXT("Siegebound", "CardRefused_TooSteep", "Too steep"));
+			break;
+
+		case EPlacementInvalidReason::Obstacle:
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("ASiegePlayerController '%s': placement click refused for '%s' — within %.0f units of an Obstacle-tagged actor (GDD §5 M4.5 obstacle rule, TASK-093)."),
+				*GetNameSafe(this), *PendingCardID.ToString(), ObstaclePlacementClearance);
+			RefuseCardPlay(PendingCardID, NSLOCTEXT("Siegebound", "CardRefused_ObstacleClearance", "Too close to obstacles"));
+			break;
+
+		case EPlacementInvalidReason::Clearance:
 			UE_LOG(LogGitClaudeUnrealTest, Log,
 				TEXT("ASiegePlayerController '%s': placement click refused for '%s' — within %.0f units of another building (GDD §3.5 clearance)."),
 				*GetNameSafe(this), *PendingCardID.ToString(), BuildingClearance);
 			RefuseCardPlay(PendingCardID, NSLOCTEXT("Siegebound", "CardRefused_BuildingClearance", "Too close to another building"));
-		}
-		else
-		{
+			break;
+
+		default:
 			UE_LOG(LogGitClaudeUnrealTest, Log,
 				TEXT("ASiegePlayerController '%s': placement click refused for '%s' — no ground hit, enemy half (X > %.0f), off the navmesh, or on a castle plinth (GDD §3.5, TASK-030)."),
 				*GetNameSafe(this), *PendingCardID.ToString(), PlacementMaxX);
 			RefuseCardPlay(PendingCardID, NSLOCTEXT("Siegebound", "CardRefused_InvalidPoint", "Invalid placement location"));
+			break;
 		}
 		return;
 	}
@@ -1001,7 +1136,8 @@ void ASiegePlayerController::UpdatePlacementGhost()
 		PlacementLocation = Hit.ImpactPoint;
 	}
 
-	// Placement validity v2 (GDD §3.5, TASK-030), evaluated in cost order:
+	// Placement validity v3 (GDD §3.5 TASK-030 + GDD §5 M4.5 TASK-093),
+	// evaluated in cost order:
 	// (1) ground hit on the owner's half (X <= 0; centerline per CONVENTIONS —
 	//     the M1 rule, unchanged);
 	// (2) the point projects onto the navmesh within NavProjectionExtent —
@@ -1010,14 +1146,31 @@ void ASiegePlayerController::UpdatePlacementGhost()
 	// (3) outside every castle's plinth keep-out box — belt-and-braces so a
 	//     walkable navmesh island on the plinth rim can never validate a point
 	//     nothing can path to;
-	// (4) Building cards only: >= BuildingClearance from the nearest other
+	// (4) Building cards only (M4.5 ruling 7): ground slope at the candidate
+	//     <= MaxPlacementSlopeDegrees, measured by a straight-down trace
+	//     (fail-closed on a miss) — hill flanks refuse, crowns (<=10°) pass;
+	// (5) Building cards only (M4.5 ruling 7, Fab amendment): >=
+	//     ObstaclePlacementClearance (2D) from every "Obstacle"-tagged actor
+	//     (trees AND rocks);
+	// (6) Building cards only: >= BuildingClearance from the nearest other
 	//     ABuilding (§3.5; castles are NOT buildings for this rule).
-	// The failing rule is recorded so the confirm click can name its reason.
+	// The FIRST failing rule is recorded so the confirm click can name its
+	// reason ("Too steep" / "Too close to obstacles" get their own messages).
 	PlacementInvalidReason = EPlacementInvalidReason::Point;
 	bool bValid = bGroundHit && Hit.ImpactPoint.X <= PlacementMaxX;
 	if (bValid)
 	{
 		bValid = IsPointOnNavmesh(PlacementLocation) && !IsPointInsideCastlePlinth(PlacementLocation);
+	}
+	if (bValid && bPendingIsBuilding && !IsGroundSlopePlaceable(PlacementLocation))
+	{
+		bValid = false;
+		PlacementInvalidReason = EPlacementInvalidReason::Slope;
+	}
+	if (bValid && bPendingIsBuilding && !HasObstacleClearance(PlacementLocation))
+	{
+		bValid = false;
+		PlacementInvalidReason = EPlacementInvalidReason::Obstacle;
 	}
 	if (bValid && bPendingIsBuilding && !HasBuildingClearance(PlacementLocation))
 	{
@@ -1035,7 +1188,15 @@ void ASiegePlayerController::UpdatePlacementGhost()
 		GhostActor->SetActorHiddenInGame(!bGroundHit);
 		if (bGroundHit)
 		{
-			// SM_Footman's origin is feet-center (TASK-014), so the ghost sits on the ground point
+			// M4.5 ghost-projection law (TASK-093): PlacementLocation IS the
+			// cursor trace's ImpactPoint, so the ghost's Z is the traced SURFACE
+			// height under the cursor — on the flat floor, a 250-high hill crown,
+			// or a flank alike (the terrain's Use-Complex-As-Simple collision
+			// answers the Visibility trace with the real surface). Rotation is
+			// deliberately untouched here: the ghost keeps its spawn-time
+			// yaw-only rotation (GhostYawOffset) and stays upright — NO
+			// alignment to the surface normal. SM_Footman-family origins are
+			// feet-center (TASK-014), so the ghost sits on the ground point.
 			GhostActor->SetActorLocation(PlacementLocation);
 		}
 	}
@@ -1122,6 +1283,456 @@ void ASiegePlayerController::DestroyPlacementGhost()
 		GhostActor = nullptr;
 	}
 	GhostMID = nullptr;
+}
+
+void ASiegePlayerController::EnterTargetingMode(FName CardID)
+{
+	// the EnterPlacementMode early-out pattern: post-match and mid-mode calls
+	// are silent ignores (no broadcast), not player-facing refusals
+	if (bMatchEnded)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegePlayerController '%s': EnterTargetingMode('%s') ignored — match has ended."),
+			*GetNameSafe(this), *CardID.ToString());
+		return;
+	}
+
+	if (bInPlacementMode)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegePlayerController '%s': EnterTargetingMode('%s') ignored — already placing '%s' (mode mutual exclusion)."),
+			*GetNameSafe(this), *CardID.ToString(), *PendingCardID.ToString());
+		return;
+	}
+
+	if (bInTargetingMode)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegePlayerController '%s': EnterTargetingMode('%s') ignored — already targeting '%s'."),
+			*GetNameSafe(this), *CardID.ToString(), *TargetingCardID.ToString());
+		return;
+	}
+
+	if (CardID.IsNone())
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASiegePlayerController '%s': EnterTargetingMode called with no CardID."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	// stats come from the data table, NEVER from code (GDD §3.0)
+	FString RowError;
+	const FCardRow* Row = ResolveCardRow(CardID, RowError);
+	if (!Row)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Error,
+			TEXT("ASiegePlayerController '%s': cannot target spell '%s' — %s"),
+			*GetNameSafe(this), *CardID.ToString(), *RowError);
+		RefuseCardPlay(CardID, NSLOCTEXT("Siegebound", "CardRefused_NoData", "Card data unavailable"));
+		return;
+	}
+
+	// defensive type gate: PlayHandSlot routes only Spell cards here — a direct
+	// (BlueprintCallable) call with anything else is a caller regression,
+	// refused with no state moved
+	if (Row->CardType != ECardType::Spell)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASiegePlayerController '%s': EnterTargetingMode('%s') refused — CardType %d is not Spell (route plays through PlayHandSlot)."),
+			*GetNameSafe(this), *CardID.ToString(), static_cast<int32>(Row->CardType));
+		RefuseCardPlay(CardID, NSLOCTEXT("Siegebound", "CardRefused_Unsupported", "Card not available"));
+		return;
+	}
+
+	ASiegePlayerState* SiegeState = GetPlayerState<ASiegePlayerState>();
+	if (!SiegeState)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Error,
+			TEXT("ASiegePlayerController '%s': PlayerState is not an ASiegePlayerState (set on ASiegeGameMode, TASK-006) — cannot gate the spell cost."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	// affordability gate (same call stack as PlayHandSlot's pre-check, so the
+	// two can never disagree); gold is DEDUCTED only at LMB confirm (ruling 8)
+	if (!SiegeState->CanAfford(Row->Cost))
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': spell '%s' refused — cost %d, gold %d."),
+			*GetNameSafe(this), *CardID.ToString(), Row->Cost, SiegeState->GetGold());
+		RefuseCardPlay(CardID, NSLOCTEXT("Siegebound", "CardRefused_CantAfford", "Not enough gold"));
+		return;
+	}
+
+	// GoldSteal never targets (ruling 7): a direct call with a GoldSteal card
+	// reroutes to the instant resolve — hand-less on this path (INDEX_NONE skips
+	// the draw step; PlayHandSlot routes hand plays before ever reaching here).
+	// Placed BEFORE the hero-dead gate so BOTH GoldSteal entries behave alike:
+	// instants are not hero-gated (the Masons/instant-play precedent).
+	if (Row->SpellEffect == ESpellEffect::GoldSteal)
+	{
+		ResolveSpellInstant(INDEX_NONE, CardID, *Row, *SiegeState);
+		return;
+	}
+
+	// hero-dead refusal (flagged decision): the spec is silent, mirrored from
+	// EnterPlacementMode — targeting owns the LMB exactly like placement, and
+	// the card-play-while-dead rule should not differ between the sibling modes
+	AHeroCharacter* Hero = Cast<AHeroCharacter>(GetPawn());
+	if (Hero && Hero->IsDead())
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': spell '%s' refused — hero is dead (respawn pending, TASK-006)."),
+			*GetNameSafe(this), *CardID.ToString());
+		RefuseCardPlay(CardID, NSLOCTEXT("Siegebound", "CardRefused_HeroDead", "Hero is down"));
+		return;
+	}
+
+	bInTargetingMode = true;
+	bTargetingSurfaceValid = false;
+	TargetingLocation = FVector::ZeroVector;
+	TargetingCardID = CardID;
+	TargetingCost = Row->Cost;
+	// row SNAPSHOT for the confirm-time resolver call — the placement
+	// scalar-snapshot pattern (PendingCost/PendingCardType) generalized, because
+	// USpellLibrary::ResolveSpell consumes the whole row (and must not chase a
+	// table pointer across a mid-mode reimport)
+	TargetingRow = *Row;
+	// TargetingHandSlot deliberately NOT written here: PlayHandSlot records it
+	// just before this call (the PendingHandSlot pattern); direct entries leave
+	// it INDEX_NONE — no hand interaction (the M1 hand-less placement mirror)
+
+	// suppress hero melee while targeting owns the LMB (TASK-003 API) — the
+	// confirm click must not also swing; released on EVERY exit path
+	TargetingHero = Hero;
+	if (Hero)
+	{
+		Hero->SetMeleeSuppressed(true);
+	}
+	else
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': entering targeting mode without an AHeroCharacter pawn — no melee to suppress."),
+			*GetNameSafe(this));
+	}
+
+	ApplyCursorInputState();
+	SpawnSpellReticle();
+	UpdateSpellReticle();
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASiegePlayerController '%s': targeting mode entered for spell '%s' (cost %d, GDD §3.11)."),
+		*GetNameSafe(this), *CardID.ToString(), TargetingCost);
+}
+
+void ASiegePlayerController::ExitTargetingMode()
+{
+	// the ExitPlacementMode law (qa/TASK-003-report.md warning 2): release the
+	// melee suppression BEFORE any early-out. Every exit path — confirm,
+	// resolver-false confirm exit, cancel (action or polled RMB/Esc), match end,
+	// hero death, unpossess, match reset, EndPlay — funnels through here.
+	// TargetingHero is a SEPARATE record from PlacementHero, so a defensive
+	// ExitPlacementMode call can never strand a live targeting suppression
+	// (and SetMeleeSuppressed(false) is an idempotent flag write).
+	if (IsValid(TargetingHero))
+	{
+		TargetingHero->SetMeleeSuppressed(false);
+	}
+	TargetingHero = nullptr;
+
+	if (!bInTargetingMode)
+	{
+		return;
+	}
+
+	bInTargetingMode = false;
+	bTargetingSurfaceValid = false;
+	TargetingLocation = FVector::ZeroVector;
+	TargetingCardID = NAME_None;
+	TargetingCost = 0;
+	TargetingRow = FCardRow();
+	TargetingHandSlot = INDEX_NONE; // hand plays consume it in TryConfirmSpellTarget BEFORE this exit
+
+	DestroySpellReticle();
+
+	// restores game-only free-look — unless IA_UICursor is still held, in which
+	// case the cursor stays up for the HUD (the cursor owners compose)
+	ApplyCursorInputState();
+}
+
+void ASiegePlayerController::TryConfirmSpellTarget()
+{
+	// no surface under the cursor (sky / outside the world): refuse, spend
+	// NOTHING, STAY in mode — a different point can succeed (the placement
+	// invalid-click law). This is the ONLY positional refusal in targeting
+	// mode: spells land ANYWHERE a surface answers the trace — enemy half
+	// included, no navmesh requirement (M5 ruling 8, §3.5).
+	if (!bTargetingSurfaceValid)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': spell confirm refused for '%s' — no surface under the cursor."),
+			*GetNameSafe(this), *TargetingCardID.ToString());
+		RefuseCardPlay(TargetingCardID, NSLOCTEXT("Siegebound", "CardRefused_NoTarget", "No target under cursor"));
+		return;
+	}
+
+	ASiegePlayerState* SiegeState = GetPlayerState<ASiegePlayerState>();
+	if (!SiegeState)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Error,
+			TEXT("ASiegePlayerController '%s': no ASiegePlayerState at spell confirm — cannot spend gold, staying in targeting mode."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// caster team mirrors the placement confirm resolution: the local player is
+	// always Blue (CONVENTIONS team contract), taken from the hero when we have
+	// one so the two can never disagree
+	const ETeamId CasterTeam = IsValid(TargetingHero) ? TargetingHero->GetTeamId() : ETeamId::Blue;
+
+	// M5 confirm law (ruling 8): DEDUCT THEN RESOLVE. SpendGold cannot actually
+	// fail after the entry-time CanAfford (in-mode plays/discards are refused;
+	// income only adds) — the branch is the same defensive net-zero guard the
+	// placement confirm carries.
+	if (!SiegeState->SpendGold(TargetingCost))
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': SpendGold(%d) refused at spell confirm for '%s' — staying in targeting mode."),
+			*GetNameSafe(this), TargetingCost, *TargetingCardID.ToString());
+		RefuseCardPlay(TargetingCardID, NSLOCTEXT("Siegebound", "CardRefused_CantAfford", "Not enough gold"));
+		return;
+	}
+
+	// THE resolver (M5 ruling 1 — pinned entry, TASK-098; shared with the bot).
+	// False means the spell did NOT resolve and no world state changed: a bad
+	// row/world/state, NEVER a positional miss — a zero-target cast is a
+	// SUCCESSFUL resolve per the SpellLibrary contract (spent like a wasted
+	// Fireball), so no refund path exists for "hit nothing".
+	if (!USpellLibrary::ResolveSpell(World, TargetingCardID, TargetingRow, CasterTeam, TargetingLocation))
+	{
+		// FULL refund (§3.0 net-zero law) through the choke-pointed gold API,
+		// then EXIT with the card still in hand: resolver refusals are
+		// position-independent by contract, so nothing a different click could
+		// fix — the missing-BP-class placement precedent (flagged decision).
+		// The >0 guard only skips the no-op refund of a 0-cost card (AddGold
+		// refuses non-positive grants with a log) — net-zero holds either way.
+		if (TargetingCost > 0)
+		{
+			SiegeState->AddGold(TargetingCost);
+		}
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASiegePlayerController '%s': ResolveSpell('%s') refused at (%.0f, %.0f, %.0f) — %d gold refunded, card kept, exiting targeting mode (the SpellLibrary log names the cause)."),
+			*GetNameSafe(this), *TargetingCardID.ToString(), TargetingLocation.X, TargetingLocation.Y, TargetingLocation.Z, TargetingCost);
+		RefuseCardPlay(TargetingCardID, NSLOCTEXT("Siegebound", "CardRefused_SpellFizzled", "Spell fizzled"));
+		ExitTargetingMode();
+		return;
+	}
+
+	// M2 law: the card leaves the hand at CONFIRM — only now, with gold spent
+	// and the spell resolved, does the slot move to discard and redraw (§3.4).
+	// INDEX_NONE = a direct hand-less entry. The false return is the same
+	// regression tripwire as placement: in-mode plays/discards are refused, so
+	// the hand cannot mutate mid-targeting.
+	if (TargetingHandSlot != INDEX_NONE && DeckComponent)
+	{
+		if (!DeckComponent->ConfirmPlayFromHand(TargetingHandSlot))
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Error,
+				TEXT("ASiegePlayerController '%s': ConfirmPlayFromHand(%d) refused at spell confirm for '%s' — hand mutated mid-targeting (should be impossible)."),
+				*GetNameSafe(this), TargetingHandSlot, *TargetingCardID.ToString());
+		}
+	}
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASiegePlayerController '%s': cast spell '%s' for %d gold at (%.0f, %.0f, %.0f) (GDD §3.11)."),
+		*GetNameSafe(this), *TargetingCardID.ToString(), TargetingCost,
+		TargetingLocation.X, TargetingLocation.Y, TargetingLocation.Z);
+
+	// confirm exit path — also releases the melee suppression (qa-note)
+	ExitTargetingMode();
+}
+
+void ASiegePlayerController::UpdateSpellReticle()
+{
+	// REUSED cursor trace (TASK-093 / its QA report: the enemy-half restriction
+	// lives in UpdatePlacementGhost, NOT in this helper — targeting inherits
+	// nothing it must undo). The reticle point is the trace's ImpactPoint: the
+	// SURFACE under the cursor — flat floor, hill crown, or flank alike (M4.5
+	// terrain carry-in LAW: never the Z=0 plane). Deliberately NO half check,
+	// NO navmesh projection, NO slope/obstacle/clearance gates: spells land
+	// anywhere (M5 ruling 8, §3.5).
+	FHitResult Hit;
+	const bool bSurfaceHit = TraceCursorToGround(Hit);
+	if (bSurfaceHit)
+	{
+		TargetingLocation = Hit.ImpactPoint;
+	}
+	bTargetingSurfaceValid = bSurfaceHit;
+
+	if (SpellReticleActor)
+	{
+		// hidden while the cursor is off every surface (sky) — the confirm click
+		// refuses on the same flag, so what the player sees is what the click does
+		SpellReticleActor->SetActorHiddenInGame(!bSurfaceHit);
+		if (bSurfaceHit)
+		{
+			// position only: the decal projects straight down (spawn-time
+			// rotation) and drapes whatever surface it reaches — no normal
+			// alignment, no rotation updates
+			SpellReticleActor->SetActorLocation(TargetingLocation);
+		}
+	}
+}
+
+void ASiegePlayerController::SpawnSpellReticle()
+{
+	UWorld* World = GetWorld();
+	if (!World || SpellReticleActor)
+	{
+		return;
+	}
+
+	// null-safe reticle material (M5 ruling 8): missing ⇒ NO reticle actor at
+	// all — targeting still works on the OS cursor alone (the invisible-ghost
+	// degradation precedent), logged ONCE per controller (the latch)
+	UMaterialInterface* ReticleMaterial = SpellReticleMaterialAsset.LoadSynchronous();
+	if (!ReticleMaterial)
+	{
+		if (!bWarnedNoReticleMaterial)
+		{
+			bWarnedNoReticleMaterial = true;
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("ASiegePlayerController '%s': spell reticle material '%s' not found (built in TASK-108) — targeting continues without a reticle visual."),
+				*GetNameSafe(this), *SpellReticleMaterialAsset.ToString());
+		}
+		return;
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParams.ObjectFlags |= RF_Transient;
+
+	// Spawn at IDENTITY rotation: ADecalActor's constructor already gives its
+	// root decal component relative pitch -90 (DecalActor.cpp:30), and UE 5.8's
+	// PostSpawnInitialize COMPOSES root ∘ spawn transform (MultiplyWithRoot
+	// default, Actor.cpp:4310-4324) — it does NOT stomp it. Spawning with -90
+	// here would compose to -180 and lay the projection axis horizontal
+	// (qa/TASK-100 BLOCKER-1). Identity composes to the CDO's own -90.
+	SpellReticleActor = World->SpawnActor<ADecalActor>(FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+	if (!SpellReticleActor)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASiegePlayerController '%s': failed to spawn the spell reticle decal — targeting continues without a reticle visual."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	// pitch -90° points the decal's local X (its projection axis) straight DOWN.
+	// SetActorRotation is ABSOLUTE world rotation — immune to CDO/spawn transform
+	// composition — so the downward projection is explicit and composition-proof.
+	// The decal drapes whatever surface lies under the reticle point (hill crowns
+	// and flanks included): the M4.5 surface-projection law in visual form.
+	// Decals carry NO collision, so the reticle can never block the cursor trace.
+	SpellReticleActor->SetActorRotation(FRotator(-90.f, 0.f, 0.f));
+	SpellReticleActor->SetActorHiddenInGame(true); // shown on the first surface hit
+
+	if (UDecalComponent* ReticleDecal = SpellReticleActor->GetDecal())
+	{
+		ReticleDecal->SetDecalMaterial(ReticleMaterial);
+
+		// footprint = the spell's OWN AoERadius (data-driven, GDD §3.0 —
+		// Fireball 300 / FrostNova 350 / Lightning 400 / BattleCry 400) so the
+		// ring shows the true blast area; a radius-less spell falls back to
+		// SpellReticleDefaultRadius. X (the projection half-depth) is 500 —
+		// bracketing the M4.5 max terrain height (250) exactly like the ±500
+		// slope-trace window, so the decal reaches the surface on every hill.
+		const float ReticleRadius = (TargetingRow.AoERadius > 0.f) ? TargetingRow.AoERadius : SpellReticleDefaultRadius;
+		ReticleDecal->DecalSize = FVector(500.f, ReticleRadius, ReticleRadius);
+		ReticleDecal->MarkRenderStateDirty();
+	}
+}
+
+void ASiegePlayerController::DestroySpellReticle()
+{
+	if (SpellReticleActor)
+	{
+		SpellReticleActor->Destroy();
+		SpellReticleActor = nullptr;
+	}
+}
+
+void ASiegePlayerController::ResolveSpellInstant(int32 Slot, FName CardID, const FCardRow& Row, ASiegePlayerState& SiegeState)
+{
+	// GoldSteal resolves INSTANTLY on play (M5 ruling 7 — no reticle for a
+	// global effect; recorded §3.5 deviation, CardType stays Spell). The
+	// ruling-8 confirm shape applied at PLAY time: deduct THEN resolve,
+	// refusal-safe — a resolver false FULLY refunds (§3.0 net-zero) and keeps
+	// the card in hand.
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Error,
+			TEXT("ASiegePlayerController '%s': ResolveSpellInstant('%s') with no world — nothing resolved, no gold moved."),
+			*GetNameSafe(this), *CardID.ToString());
+		return;
+	}
+
+	// deduct FIRST (deduct-then-resolve, ruling 7). CanAfford held in the SAME
+	// synchronous call stack (PlayHandSlot / EnterTargetingMode), so a false
+	// here is the instant-play hard-invariant tripwire, not a live path.
+	if (!SiegeState.SpendGold(Row.Cost))
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Error,
+			TEXT("ASiegePlayerController '%s': SpendGold(%d) failed for instant spell '%s' AFTER the CanAfford pre-check (should be unreachable) — no resolve, no draw."),
+			*GetNameSafe(this), Row.Cost, *CardID.ToString());
+		RefuseCardPlay(CardID, NSLOCTEXT("Siegebound", "CardRefused_CantAfford", "Not enough gold"));
+		return;
+	}
+
+	// caster team mirrors the confirm-path resolution (local player = Blue)
+	const AHeroCharacter* Hero = Cast<AHeroCharacter>(GetPawn());
+	const ETeamId CasterTeam = IsValid(Hero) ? Hero->GetTeamId() : ETeamId::Blue;
+
+	// TargetPoint is only the VFX anchor for a global GoldSteal (SpellLibrary
+	// contract) — the hero's feet when we have one, world origin otherwise
+	const FVector AnchorPoint = IsValid(Hero) ? Hero->GetActorLocation() : FVector::ZeroVector;
+
+	if (!USpellLibrary::ResolveSpell(World, CardID, Row, CasterTeam, AnchorPoint))
+	{
+		// FULL refund (§3.0) — refusal-safe by construction: e.g. Sandbox mode
+		// has no Red economy to steal from, so the play refuses net-zero with
+		// the card still in hand. (A 0-gold victim, by contrast, RESOLVES for
+		// min(GoldSteal, 0) = 0 — the spell is spent, per the resolver contract.)
+		// The >0 guard only skips the no-op refund of a 0-cost card (AddGold
+		// refuses non-positive grants with a log) — net-zero holds either way.
+		if (Row.Cost > 0)
+		{
+			SiegeState.AddGold(Row.Cost);
+		}
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASiegePlayerController '%s': ResolveSpell('%s') refused (instant, M5 ruling 7) — %d gold refunded, card kept (the SpellLibrary log names the cause)."),
+			*GetNameSafe(this), *CardID.ToString(), Row.Cost);
+		RefuseCardPlay(CardID, NSLOCTEXT("Siegebound", "CardRefused_SpellFizzled", "Spell fizzled"));
+		return;
+	}
+
+	// hand step (§3.4): resolution IS the confirm for an instant — discard +
+	// redraw. INDEX_NONE = a direct hand-less EnterTargetingMode(GoldSteal) call.
+	if (Slot != INDEX_NONE)
+	{
+		ConfirmInstantDraw(Slot, CardID);
+	}
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASiegePlayerController '%s': played instant spell '%s' for %d gold (M5 ruling 7, GDD §3.11)."),
+		*GetNameSafe(this), *CardID.ToString(), Row.Cost);
 }
 
 bool ASiegePlayerController::TraceCursorToGround(FHitResult& OutHit) const
@@ -1514,6 +2125,89 @@ bool ASiegePlayerController::HasBuildingClearance(const FVector& Point) const
 	return true;
 }
 
+bool ASiegePlayerController::IsGroundSlopePlaceable(const FVector& Point) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		// no world = nothing to measure against — fail closed like a trace miss
+		return false;
+	}
+
+	// M4.5 ruling 7 slope gate (TASK-093): straight-down line trace bracketing
+	// the candidate point by ±500 Z (the spec's window; max terrain height is
+	// 250, so the surface is always inside it). Channel choice (flagged
+	// decision): ECC_Visibility — the SAME channel as the cursor trace
+	// (TraceCursorToGround), so the surface that positioned the ghost is the
+	// surface whose slope is measured; walkable terrain must block Visibility
+	// to be cursor-placeable at all, and SM_ArenaTerrain's
+	// Use-Complex-As-Simple collision answers simple traces with real
+	// per-triangle normals (bTraceComplex stays false, matching the cursor
+	// trace). Pawn capsules ignore Visibility and the ghost's collision is
+	// fully disabled (ignored anyway, belt-and-braces below).
+	const FVector TraceStart = Point + FVector(0.f, 0.f, 500.f);
+	const FVector TraceEnd = Point - FVector(0.f, 0.f, 500.f);
+	FCollisionQueryParams SlopeQueryParams(SCENE_QUERY_STAT(SiegeboundPlacementSlope), /*bInTraceComplex=*/ false);
+	if (GhostActor)
+	{
+		SlopeQueryParams.AddIgnoredActor(GhostActor);
+	}
+
+	FHitResult SlopeHit;
+	if (!World->LineTraceSingleByChannel(SlopeHit, TraceStart, TraceEnd, ECC_Visibility, SlopeQueryParams) || !SlopeHit.bBlockingHit)
+	{
+		// fail-closed (spec): a point the world cannot answer for is not
+		// placeable. Verbose per the task block — the per-frame ghost update
+		// would otherwise spam the log from empty space.
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegePlayerController '%s': placement slope trace missed at (%.0f, %.0f, %.0f) — refusing (fail-closed, GDD §5 M4.5)."),
+			*GetNameSafe(this), Point.X, Point.Y, Point.Z);
+		return false;
+	}
+
+	// slope = angle between the surface normal and world up (+Z). ImpactNormal
+	// is unit-length, so the angle is acos of its Z component (clamped for
+	// float safety); a sideways or downward-facing normal reads >= 90° and
+	// refuses naturally.
+	const double SlopeDegrees = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(SlopeHit.ImpactNormal.Z, -1.0, 1.0)));
+	return SlopeDegrees <= MaxPlacementSlopeDegrees;
+}
+
+bool ASiegePlayerController::HasObstacleClearance(const FVector& Point) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return true;
+	}
+
+	// M4.5 ruling 7 obstacle gate (TASK-093, Fab amendment): every tree AND
+	// rock instance carries actor tag "Obstacle" (exact FName — set by
+	// TASK-095; tag-driven so new obstacle types never need code changes).
+	// Planar (2D) distance from the actor's location (trunk-base/rock-base
+	// origin per CONVENTIONS), matching the §3.5 building-clearance math.
+	// Flagged decision — NO caching: a plain world-actor iteration over the
+	// ~20 obstacles (plus the rest of the arena's few-hundred actors) runs
+	// only during placement mode, mirroring HasBuildingClearance /
+	// IsPointInsideCastlePlinth; a cache would add mid-match staleness risk
+	// for no measurable win at this N.
+	static const FName ObstacleTagName(TEXT("Obstacle"));
+	const double ObstacleClearanceSq = FMath::Square(static_cast<double>(ObstaclePlacementClearance));
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		const AActor* Candidate = *It;
+		if (!IsValid(Candidate) || !Candidate->ActorHasTag(ObstacleTagName))
+		{
+			continue;
+		}
+		if (FVector::DistSquared2D(Candidate->GetActorLocation(), Point) < ObstacleClearanceSq)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
 bool ASiegePlayerController::IsPointInsideCastlePlinth(const FVector& Point) const
 {
 	UWorld* World = GetWorld();
@@ -1586,9 +2280,12 @@ void ASiegePlayerController::ApplyCursorInputState()
 		return;
 	}
 
-	// two cursor owners compose: placement mode (M1, unchanged) and the held
-	// IA_UICursor (M2 input ruling) — either one keeps the cursor up
-	const bool bWantCursor = bInPlacementMode || bUICursorHeld;
+	// three cursor owners compose: placement mode (M1, unchanged), targeting
+	// mode (M5 TASK-100 — ruling 8: "cursor posture mirrors placement mode", so
+	// it joins the composition rather than inventing a new posture), and the
+	// held IA_UICursor (M2 input ruling) — any one keeps the cursor up. The two
+	// card modes are mutually exclusive, so at most two owners are ever live.
+	const bool bWantCursor = bInPlacementMode || bInTargetingMode || bUICursorHeld;
 	bShowMouseCursor = bWantCursor;
 	bEnableClickEvents = bWantCursor;
 
