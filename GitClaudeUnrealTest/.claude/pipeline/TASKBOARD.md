@@ -113,7 +113,134 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 **2026-07-07 (BUG — read first):** Jonathan's M4 playtest is BLOCKED — joining a match from L_MainMenu via EITHER menu button gives ZERO input in L_Arena. Bugfix chain **TASK-074..076** below. This is a bugfix chain like TASK-071..073, NOT M5 content — **M5 remains NOT authorized.** → **RESOLVED same day:** TASK-074..076 done + committed **218b4c9**; Jonathan live-confirmed the fix ("that problem is resolved"); both menu-path WATCHes closed.
 
-**2026-07-07 (FEATURES — read first):** TWO Jonathan-approved chains issued below — **TASK-077..081 (card artwork on the hand UI)** and **TASK-082..088 (TRELLIS.2 → Blender → UE5 automated art pipeline + Fab lane)**. Both are Jonathan-authorized UI/art/tooling work like TASK-071..073, NOT M5 content — **M5 remains NOT authorized.** State at issue: main @ **218b4c9** clean, NOT pushed; editor UP (PID 18480, MCP healthy); Blender MCP verified LIVE — both art gates OPEN. Dispatch frontier: **TASK-077 ∥ TASK-079 ∥ TASK-082 ∥ TASK-083** (all file-side, mutually parallel-safe).
+**2026-07-07 (FEATURES — read first):** TWO Jonathan-approved chains issued below — **TASK-077..081 (card artwork on the hand UI)** and **TASK-082..088 (TRELLIS.2 → Blender → UE5 automated art pipeline + Fab lane)**. Both are Jonathan-authorized UI/art/tooling work like TASK-071..073, NOT M5 content — **M5 remains NOT authorized.** State at issue: main @ **218b4c9** clean, NOT pushed; editor UP (PID 18480, MCP healthy); Blender MCP verified LIVE — both art gates OPEN. Dispatch frontier: **TASK-077 ∥ TASK-079 ∥ TASK-082 ∥ TASK-083** (all file-side, mutually parallel-safe). → **BOTH CHAINS COMPLETE:** card-art committed **61bd457** (TASK-077..081 done 2026-07-08); Trellis pilot committed **cb29882** (2026-07-08, TASK-082..088 all done — SM_Footman/SM_Archer/SM_Castle are now textured pipeline meshes at unchanged paths; same-path swap mechanism = one human Content-Browser Reimport click per mesh until an MCP console-exec/reimport tool exists). Jonathan's visual sign-off received 2026-07-08 ("the trellis pilot was successful", zero findings) — WATCH CLOSED; the pipeline IS the M7 template for the remaining 16 meshes. **M5 remains NOT authorized.**
+
+**2026-07-08 (BALANCE — read first):** Jonathan URGENT balance directive, chain **TASK-089..090** below. This is a Jonathan-directed standalone balance chain like TASK-074..076, NOT M5 content — **M5 remains NOT authorized.** State at issue: main @ cb29882; known worktree residue (WBP_MainMenu + BP_Unit_Footman + BP_Unit_Archer .uassets) is adjudicated inside TASK-090's bounce window per the TASK-088 residue note.
+
+### Gold economy balance chain (TASK-089..090) — Jonathan directive 2026-07-08
+**Verbatim intent (URGENT):** "I need to implement a balancing change right now. The default passive gold accumulation is way too high, lower it to about 1 gold every 2 seconds, and have the players start the game with only 10 gold."
+
+**Manager rulings (binding for this chain):**
+1. **Mechanic-rule territory CONFIRMED, not card data:** base income + starting gold are ASiegePlayerState UPROPERTY defaults with GDD § comments (M2 ruling) — no cards.csv/DT_Cards column is touched, so NO DT_Cards reimport this chain. Nothing here belongs in the table; nothing table-owned gets hardcoded.
+2. **"1 gold per 2 s" implementation ruling — every-Nth-tick base grant; the 1.0 s tick stays:** gold stays int32 throughout (no float gold — HUD integer display assumptions hold). `GoldTickInterval` stays 1.0f (SiegePlayerState.h:267) so miner + DeepMine per-second income is LITERALLY untouched. `GoldPerTick` 2 → 1 (h:263), redefined as "base gold per base-income grant"; NEW UPROPERTY `int32 BaseIncomeTickPeriod = 2` (EditDefaultsOnly, Category "Siegebound|Gold", ClampMin "1"; 1 = legacy every-tick behavior) = number of income ticks between base grants. `HandleGoldTick` (SiegePlayerState.cpp:120-134) decomposes: miner + flat income granted EVERY tick; base (× overtime multiplier, read live) granted on every BaseIncomeTickPeriod-th tick via a transient non-reflected tick counter; still exactly ONE SetGold call per tick (one OnGoldChanged max, choke-point law intact). REJECTED alternative (recorded): GoldTickInterval → 2.0 s — it halves miner/DeepMine per-second income unless their per-tick values double (MinerGoldPerTick 1→2, DeepMineIncome 2→4), contradicts the GDD §3.3/§8 "+N/s" comments, and turns the HUD "+N/s" into a 2× lie once miners exist.
+3. **Overtime knock-on:** the doubling IS a multiplier, not a hardcoded sum — verified at SiegePlayerState.cpp:152 (`GoldPerTick * OvertimeIncomeMultiplier`); `OvertimeIncomeMultiplier` stays 2 (h:279). Post-change overtime base = 2 per 2 ticks = **1 gold/s** — exactly double the new 0.5/s base. Multiply-per-grant, applied on the grant tick.
+4. **HUD rate display law:** FOnGoldRateChanged stays `int32` — BIE contract byte-identical, NO UMG change in this chain. `GetGoldRate()` (cpp:146-158) is REDEFINED as the DISPLAY rate: miners + flat + `FMath::DivideAndRoundUp(EffectiveBase, BaseIncomeTickPeriod)` — the per-second average with the base rounded UP. Pre-overtime it shows "+1/s" while the true base is 0.5/s (max error 0.5, exact from overtime on); RULED acceptable — "+0/s" over a visibly rising counter reads as broken, and round-up is stable (no alternating values spamming RefreshGoldRate change detection). Consequence: HandleGoldTick NO LONGER calls GetGoldRate() for accrual (doc comments must say so). The 7:00 signal stays on the overtime HUD indicator (display base is 1 both sides of the flip — OnGoldRateChanged correctly stays silent for a miner-less economy).
+5. **Starting gold:** `StartingGold` 50 → 10 (h:259) AND the private `Gold` field initializer 50 → 10 (h:313) — they were in sync at 50; keep them in sync (pre-BeginPlay seed value), with a keep-in-sync comment. Play Again is automatically correct: ResetGold() → SetGold(StartingGold) (cpp:78). The tick-parity counter resets on the reset path (ResetEconomy() preferred — Play Again runs ResetEconomy + ResetGold + ResumeIncome) so the post-reset base cadence is deterministic; programmer picks the exact spot and documents it in the handoff.
+6. **Explicitly UNCHANGED (Jonathan didn't ask):** `MinerGoldPerTick` = 1 (h:283), `DeepMineIncome` = 2 (DeepMine.h:66 — file untouched), `GoldTickInterval` = 1.0f (h:267), `OvertimeIncomeMultiplier` = 2 (h:279), `MaxGold` = 999 (h:271), `SandboxStartingGold` = 9999 (SiegeGameMode.h:271 — dev bench, AddGold grant ON TOP of StartingGold, clamps at MaxGold; the sandbox stays generous by design, TASK-071). SpendGold/AddGold/AddIncome/RemoveIncome APIs and both gold delegates (FOnGoldChanged/FOnGoldRateChanged) byte-identical.
+7. **Bot symmetry is automatic and intentional** — the bot economy is the same ASiegePlayerState, so its opening slows with the player's (softens the measured bot rush). TASK-090 MUST re-measure the undefended-Blue-castle kill time in PIE for the balance ledger (prior marks: ~48 s TASK-076, ~33 s TASK-088 post-Trellis).
+8. **GDD divergence note:** GDD §3.2 (gold 50, base +2/s) now diverges from the shipped defaults — Jonathan's directive supersedes. The GDD § comments IN CODE are corrected by TASK-089; the GDD document itself is Jonathan's to revise (no doc task issued).
+9. **Bounce-window chores FOLD IN to TASK-090** — this chain's compile is the first editor bounce since they were queued, and a running editor holds streaming locks, so ALL residue work happens while the editor is DOWN for the compile: (a) **WBP_MainMenu.uasset resave delta** (standing since TASK-081 phase 1; TASK-085 resume note = restore at next bounce window) → `git restore Content/UI/WBP_MainMenu.uasset` while the editor is down, then structural readback (both menu buttons bound) after relaunch; if the next editor session re-dirties it, STOP chasing — commit it knowingly at the next opportunity and close the loop; record which branch was taken. (b) **BP_Unit_Footman + BP_Unit_Archer resave deltas** (TASK-088 residue note: mesh-reimport component re-registration, verified benign, saved by Jonathan 2026-07-08) → COMMIT knowingly as a chore line in this chain's commit — they serialize the settled state of the shipped Trellis meshes; restoring would only re-dirty them.
+
+Dispatch shape: **TASK-089 (C++, file-only — can start immediately) → QA (standard status-flow gate on TASK-089; shadow-scan mandatory) → TASK-090 (build-master: editor-down residue chores + compile + PIE economy verification + bot-rush re-measure + ONE commit, NOT pushed).**
+
+#### TASK-089 — Economy balance: StartingGold 10 + base income 1 gold per 2 s (C++)
+- assignee: gameplay-programmer
+- status: qa-passed (QA PASS 2026-07-08 — 0 blocker/1 warn/3 nit; all 10 spec points verified incl. Play Again order-of-operations proof (ResetClock L583→ResetEconomy L605→ResetGold L606→ResumeIncome L607, first grant exactly tick 2 boot AND reset); F1–F5 all ACCEPT; shadow scan clean; WARN-1 = 3 now-false "back to 50" comments at SiegeGameMode.cpp:596/613/627 — fold into next programmer touch; NITs logged (stale comments in untouched files + optional Max(1,divisor) hardening). CF-1..8 carry-forwards to TASK-090 in qa/TASK-089-report.md. Orchestrator reconciled CF residue question: git status confirms BOTH BP_Unit deltas + WBP_MainMenu present — QA snapshot staleness again, ruling 9 stands as written.) (2026-07-08: StartingGold+Gold init 50→10 w/ keep-in-sync comments; GoldPerTick 2→1 + NEW BaseIncomeTickPeriod=2 (ClampMin 1) + non-reflected BaseIncomeTickCounter; HandleGoldTick decomposed — miner/flat every 1s tick, base grant every Nth tick, ONE SetGold/tick, no GetGoldRate in accrual; GetGoldRate = display rate (DivideAndRoundUp); counter reset in ResetEconomy (Play Again path deterministic); SiegeGameMode.cpp comment-only ×3 hunks verified; delegates + income APIs byte-identical; 5 flagged decisions (F1 >= threshold, F2 delegate doc prose, F3 extra stale comments, F4 shadow self-scan clean, F5 residue untouched). handoffs/TASK-089.md)
+- blocked-by: none
+- parallel-safe: yes (file-only: SiegePlayerState.h/.cpp + comment-only touch-ups in SiegeGameMode.cpp; no other chain currently open)
+- spec: >
+    Files only, no editor, no compile. Jonathan balance directive (URGENT, 2026-07-08): passive base gold
+    accumulation → ~1 gold per 2 seconds; starting gold → 10. All in ASiegePlayerState
+    (Source/GitClaudeUnrealTest/Siegebound/SiegePlayerState.h/.cpp); current values verified by the manager
+    2026-07-08 and cited below (line numbers pre-change, cited ~).
+    (1) StartingGold 50 → 10 (h:259) AND the private Gold field initializer 50 → 10 (h:313); add/keep a
+    keep-in-sync comment tying the two (ruling 5). Play Again needs no code change — ResetGold() already
+    seeds from StartingGold (cpp:78).
+    (2) GoldPerTick 2 → 1 (h:263); redefine its doc comment: base gold added per BASE-INCOME GRANT (one
+    grant every BaseIncomeTickPeriod income ticks), doubled by OvertimeIncomeMultiplier while overtime is
+    active. Keep the GDD §3.2 tag and note the 2026-07-08 balance directive.
+    (3) NEW UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Gold", meta = (ClampMin = "1"))
+    int32 BaseIncomeTickPeriod = 2; — number of GoldTickInterval income ticks between base-income grants
+    (2 ⇒ base lands every 2 s; 1 = legacy every-tick). GoldTickInterval itself stays 1.0f (h:267) so miner
+    and DeepMine per-second income is untouched (ruling 2).
+    (4) HandleGoldTick (cpp:120-134) decomposition: keep the bIncomePaused gate; advance a transient
+    non-reflected tick counter (plain int32 member, CachedGoldRate pattern — NOT a UPROPERTY); per tick
+    grant = MinerIncomeCount*MinerGoldPerTick + FlatIncomePerTick, PLUS (GoldPerTick ×
+    OvertimeIncomeMultiplier if overtime, read live as today) on every BaseIncomeTickPeriod-th tick; exactly
+    ONE SetGold(Gold + Grant) per tick (SetGold stays the only Gold writer; a zero-grant tick is a harmless
+    SetGold no-op). HandleGoldTick MUST NOT call GetGoldRate() for accrual anymore — say so in comments.
+    (5) Counter reset for determinism: reset the tick counter on the reset path (ResetEconomy() preferred;
+    Play Again = ResetEconomy + ResetGold + ResumeIncome) so the first post-reset base grant lands exactly
+    on the BaseIncomeTickPeriod-th tick. Document the chosen spot + rationale in the handoff.
+    (6) GetGoldRate() (cpp:146-158) redefined as the DISPLAY rate (ruling 4): MinerIncomeCount*
+    MinerGoldPerTick + FlatIncomePerTick + FMath::DivideAndRoundUp(EffectiveBase, BaseIncomeTickPeriod)
+    where EffectiveBase = GoldPerTick × (overtime ? OvertimeIncomeMultiplier : 1). Doc comment MUST state:
+    per-second average with the base rounded UP for display; no longer the exact per-tick accrual. With
+    defaults this shows +1/s pre-overtime (true 0.5/s) and +1/s in overtime (exact) — ruled acceptable;
+    RefreshGoldRate change detection is unaffected (value is stable, never alternates).
+    (7) BIE/DELEGATE CONTRACT BYTE-IDENTICAL: FOnGoldChanged + FOnGoldRateChanged signatures untouched
+    (int32); no UMG/widget change in this chain. SpendGold/AddGold/AddIncome/RemoveIncome/PauseIncome/
+    ResumeIncome behavior unchanged.
+    (8) EXPLICITLY UNCHANGED (ruling 6 — verify you did not touch them): GoldTickInterval 1.0f,
+    OvertimeIncomeMultiplier 2, MinerGoldPerTick 1, MaxGold 999, DeepMine.h DeepMineIncome 2 (file
+    untouched), SiegeGameMode.h SandboxStartingGold 9999.
+    (9) Comment hygiene: update the ASiegePlayerState class doc block (h:42-45 "Gold starts at 50 ...
+    base GoldPerTick (2/s)") and the stale cpp comments (~148 "base 2/s, doubling to 4/s", ~308 "lands on
+    the base 2/s"). COMMENT-ONLY corrections in SiegeGameMode.cpp for now-false lines (~106 "StartingGold =
+    50", ~579 "base 2/s", ~867 "+2/s economy") — zero code changes in that file.
+    (10) CONVENTIONS shadow law (C4457/58/59): no local/param may shadow an inherited reflected UPROPERTY
+    (the new tick counter especially). QA MUST scan pre-compile.
+    Acceptance (by inspection, pre-compile): base drip = exactly +1 per 2 ticks pre-overtime and +2 per
+    2 ticks (1/s) in overtime; miner/DeepMine accrual still every 1 s tick at unchanged values; starting
+    gold 10 at boot AND after Play Again; one SetGold per tick; delegates byte-identical; GetGoldRate
+    display semantics documented; nothing DT_Cards-owned hardcoded (nothing here is table territory —
+    ruling 1). handoffs/TASK-089.md MUST document the implementation choice (every-Nth-tick vs interval
+    change, per ruling 2), the counter-reset placement, and the display-rounding rule for the HUD. Post in
+    ⚙️ Dev & QA.
+- names: >
+    ASiegePlayerState (Source/GitClaudeUnrealTest/Siegebound/SiegePlayerState.h/.cpp) — UPROPERTYs:
+    StartingGold (50→10, h:259), Gold (50→10, h:313), GoldPerTick (2→1, h:263), NEW BaseIncomeTickPeriod
+    (int32 = 2), unchanged GoldTickInterval (1.0f, h:267) / OvertimeIncomeMultiplier (2, h:279) /
+    MinerGoldPerTick (1, h:283) / MaxGold (999, h:271). Functions: HandleGoldTick, GetGoldRate,
+    RefreshGoldRate, ResetEconomy, ResetGold, SetGold. Delegates (BYTE-IDENTICAL): FOnGoldChanged,
+    FOnGoldRateChanged. Comment-only: SiegeGameMode.cpp (~106/~579/~867). READ-ONLY context: DeepMine.h
+    (DeepMineIncome 2), SiegeGameMode.h (SandboxStartingGold 9999). Law: M2 ruling "mechanic rules =
+    UPROPERTY defaults with GDD § comments" + CONVENTIONS shadow law.
+
+#### TASK-090 — Balance integration: bounce-window residue chores, compile, PIE economy verify + bot re-measure, commit (build-master)
+- assignee: build-master
+- status: done (2026-07-08: committed on main — hash in build-master report + 🔧 Build & Git — NOT pushed. Compile PASS clean 17.4s; CDO live-verified (10/1/2/1.0/2/999). Residue per ruling 9: WBP_MainMenu restored editor-down + both menu buttons readback-bound + restore HELD on disk through 3 PIE sessions (9a fallback NOT triggered; in-memory dirty flag only — do not save-all on this editor session); BP_Unit_Footman/Archer committed knowingly (9b chore). CF-7 proofs: SiegeGameMode.cpp diff comment-only ×3 hunks, delegate DECLAREs absent from diff. PIE economy: seed EXACTLY 10 (gold=10+floor((clock−0.5)/2) fits every sample, 3 sessions); base +1 per exactly 2.000s, zero drift over a full 758s match (end gold 557 = predicted 557 incl. OT segment); HUD +1/s pre-OT recorded as EXPECTED (ruling 4); OT flip 420.1s log fired once, first post-flip grant +2 at 420.5s (live latch on grant tick), 1 gold/s exact double; match-end income freeze proven twice; log sweep zero NEW lines (victory-focus ×3, nav known, lifted-castle MoveToActor burst all expected; DeepMine CardType-2 notably ABSENT this session). BALANCE LEDGER: undefended Blue castle dies ~56.5s / ~71.3s (2 runs; bot draw variance) vs ~33s TASK-088 — survival ≈ doubled; bot played ZERO early Miners both rush matches (played 2 late in the long match) — bot spend-mix note for next balance pass. FINDING (pre-existing, NOT this chain): HUD OVERTIME indicator never shows — WBP_HUD:ShowOvertime calls UpdateOvertimeDisplay(false) hardcoded-false pin (bound via SetupStatTexts CreateEvent; UpdateOvertimeDisplay itself correct) → manager: 1-pin UMG fix + shortened-threshold verify. WATCH (human, one PIE session, folded per TASK-076 doctrine — desktop was in active human use all session, injection suspended; Slack ask unanswered in time box): Play Again reset (gold→10, first grant ~2s), Miner rate text +2/s, + TASK-081 grey-tint leftover. handoffs/TASK-090.md)
+- blocked-by: TASK-089 (qa-passed)
+- parallel-safe: no (owns the single editor + the compile + the Git commit)
+- spec: >
+    Integration for the gold-balance chain, TASK-076 pattern, plus the standing bounce-window chores
+    (ruling 9 — this is the first editor bounce since they were queued; do ALL residue work while the
+    editor is DOWN, it holds streaming locks when up).
+    (1) EDITOR DOWN — residue chores first: (a) `git restore Content/UI/WBP_MainMenu.uasset` (standing
+    TASK-081/085 adjudication: benign phase-1 boot-resave, restore at bounce window); (b) leave the
+    BP_Unit_Footman + BP_Unit_Archer .uasset deltas IN PLACE — they are committed knowingly in step 5
+    (TASK-088 residue note: benign reimport re-registration, saved by Jonathan 2026-07-08).
+    (2) Compile TASK-089's C++ via the standard Build.bat (CLAUDE.md). Failure → append errors to
+    qa/TASK-089-report.md and route back to gameplay-programmer (counts as a QA loop).
+    (3) Relaunch the editor; structural check: WBP_MainMenu still loads with BOTH buttons bound post-restore
+    (readback: Play-vs-Bot → StartMatch, Btn_Sandbox → StartSandboxMatch). If the fresh session re-dirties
+    WBP_MainMenu, record it and apply ruling 9a's fallback (commit knowingly next window — stop chasing).
+    (4) PIE economy verification on direct-boot L_Arena (real match path — the SandboxStartingGold grant
+    fires only via StartSandboxMatch, TASK-071): (a) gold seeds at 10 (HUD + readback); (b) base drip:
+    +1 gold exactly every 2 s over a ≥10 s observation window, no drift, one OnGoldChanged per grant tick;
+    (c) HUD rate text reads "+1/s" pre-overtime — EXPECTED per the ruling-4 display law (round-up average),
+    record it, do NOT flag as a bug; (d) play a Miner: after arrival, accrual gains +1 per 1 s tick and the
+    rate shows +2/s (miner income unchanged); (e) overtime at 7:00: base becomes +2 per 2 s (= 1/s) and the
+    overtime indicator fires — use the TASK-081 lifted-castle harness to keep the match alive to 7:00 if
+    the bot ends it sooner; (f) Play Again: gold resets to 10, base cadence restarts deterministically,
+    match-end income freeze unregressed; (g) no new log errors/warnings (knowns: DeepMine CardType-2,
+    victory-focus error, RecastNavMesh boot warning).
+    (5) BALANCE LEDGER (ruling 7): re-measure the undefended-Blue-castle kill time vs the bot under the new
+    economy (prior marks ~48 s TASK-076, ~33 s TASK-088); record the number in handoffs/TASK-090.md and in
+    the 🔧 Build & Git post — Jonathan reads it for the next balance pass.
+    (6) ONE commit to main with TASK-089/090 in the message: SiegePlayerState.h/.cpp, SiegeGameMode.cpp
+    (comment-only), Content/Blueprints/Units BP_Unit_Footman + BP_Unit_Archer .uassets (chore line, ruling
+    9b), pipeline docs (board/handoffs/qa). WBP_MainMenu.uasset stays OUT (restored in step 1) unless the
+    ruling-9a fallback triggered. **NOT pushed** (no remote push without Jonathan's explicit instruction).
+    Post compile result + ledger number + commit hash in 🔧 Build & Git.
+    Acceptance: clean compile; residue adjudicated per ruling 9 (restore/commit branches recorded); PIE
+    economy checks (a)-(g) PASS; bot-rush re-measure recorded; ONE commit on main, not pushed.
+- names: >
+    Build target GitClaudeUnrealTestEditor (Build.bat per CLAUDE.md). Verify: ASiegePlayerState
+    StartingGold=10 / GoldPerTick=1 / BaseIncomeTickPeriod=2 live in PIE; map /Game/Maps/L_Arena. Residue:
+    Content/UI/WBP_MainMenu.uasset (restore), Content/Blueprints/Units/BP_Unit_Footman.uasset +
+    BP_Unit_Archer.uasset (commit knowingly). Ledger: undefended-castle kill time. Commit to main only,
+    not pushed.
 
 ### Card artwork on the hand UI (TASK-077..081) — Jonathan feature request 2026-07-07
 Verbatim intent: "have the art agent generate artwork for all the cards and have it get displayed instead of just having the text you have for it." Scope = all 22 roster CardIDs (cards.csv rows): Footman, Archer, Knight, Miner, ArrowTower, Wall, MilitiaMob, Pikeman, Sapper, Cavalry, Longbowman, Cleric, Ogre, BombTower, BallistaTower, Barracks, DeepMine, Masons, SharpenedBlade, PlateArmor, SwiftBoots, WarBanner. Naming law added to CONVENTIONS.md "Card artwork (hand UI)" 2026-07-07 BEFORE task issue.
@@ -468,7 +595,7 @@ Dispatch shape: **[TASK-082 ∥ TASK-083] (files → QA) → TASK-084 (smoke + c
 
 #### TASK-088 — Trellis pilot integration: PIE verification + commit (build-master)
 - assignee: build-master
-- status: in-progress (dispatched 2026-07-08 immediately on TASK-087 done; no compile needed — chain has no C++; editor UP PID 34120; commit scope = TASK-087's manifest + the QA-passed TASK-082 loop-2 trellis_generate.py fix + pipeline docs; WBP_MainMenu.uasset residue stays EXCLUDED per TASK-081 ruling)
+- status: done (2026-07-08: committed **cb29882** on main, NOT pushed — 39 files (3 FBX, 12 PNGs, 3 SMs, 10 textures, M_AssetPBR+3 MIs, tuned manifest, trellis_generate.py loop-2 fix, pipeline docs); WBP_MainMenu.uasset excluded per TASK-081 ruling, still the only residue; staged LFS oids verified vs worktree. STRUCTURAL all PASS incl. hull-count readback — GAP CLOSED: ObjectTools.get_properties on BodySetup_0.AggGeom reads hull counts (Footman/Archer exactly 4 hulls; Castle exactly 11, all bIsGenerated:false, 1:1 to manifest UCX list). PIE PASS: SendInput hotkey→ghost→LMB-click-confirm played Archer/Footman/Miner through the REAL placement path (in-PIE clicks now PROVEN, extending TASK-081 doctrine; new law: Alt-tap on refocus arms the Windows menu accelerator and eats the next number key — follow refocus with a viewport click; Alt = IA_UICursor); two-slot contract live-proven BOTH directions (Blue player + Red bot recolor slot 0 only, PBR slot untouched); ghost/refusal correct net-zero; both castles textured w/ team roofs; HP bar Z+1050 vs roof 897.65; bot miner reached GoldNode (clearance no-regress); texture delta ~17 MB (<100 budget), zero streaming warnings; no new log entries (all knowns). stat overlays NOT machine-drivable (no console-exec surface) → 1-keystroke human WATCH. FINDINGS→manager: (1) bot rush measured — undefended Blue castle dies ~33 s, will dominate the next playtest (pre-existing balance, not art); (2) M7 tooling asks: console-exec MCP tool would close reimport-click + stat + test-harness gaps; (3) AggGeom readback = M7 standard collision check. Harness anomalies (lifted-castle-only, non-reproducible in human play) logged in the final report. WATCH posted 🔧 ts 1783495651.317409. POST-COMMIT RESIDUE NOTE (2026-07-08): after cb29882, Jonathan saved 2 editor-dirty packages at the orchestrator's confirmation — BP_Unit_Footman + BP_Unit_Archer .uassets, dirtied by the mesh reimports re-registering components (verified benign; nothing else was dirty in a 24-asset sweep). These two modified .uassets + the standing WBP_MainMenu.uasset delta are the known worktree residue — next build-master commits or restores them KNOWINGLY (reimport-re-registration chore, not feature work).)
 - blocked-by: TASK-086, TASK-087
 - parallel-safe: no (owns the single editor + the Git commit)
 - spec: >
@@ -494,10 +621,14 @@ Dispatch shape: **[TASK-082 ∥ TASK-083] (files → QA) → TASK-084 (smoke + c
     M_AssetPBR; /Game/Maps/L_Arena PIE. Budget refs: Tools/ArtPipeline/pipeline_manifest.json. Commit to
     main only, not pushed.
 
-#### WATCH — Trellis pilot visual sign-off (Jonathan, after TASK-088)
-- Jonathan eyeballs the three textured meshes in a live match: style cohesion next to the remaining
-  blockouts, silhouette readability at the gameplay camera, Blue/Red team read at distance. Sign-off makes
-  the pipeline the M7 template for the remaining 16 meshes; findings become new tasks in this chain.
+#### WATCH — Trellis pilot visual sign-off (Jonathan, after TASK-088) — CLOSED ✅
+- **SIGNED OFF 2026-07-08 by Jonathan, verbatim "the trellis pilot was successful" — ZERO findings.**
+  The TRELLIS.2 → Blender → UE5 pipeline is now the validated **M7 template** for the remaining 16 blockout
+  meshes. Chain TASK-082..088 fully closed (commits 1e923d4 tooling + cb29882 art batch, NOT pushed).
+  Proven economics for M7 planning: ~1.5–2 min/generation on HF PRO, seed-0 first-try 3/3, one selector
+  tune loop per asset, one human Content-Browser Reimport click per mesh (until an MCP console-exec tool
+  lands). Original WATCH scope for reference: style cohesion vs remaining blockouts, silhouette at gameplay
+  camera, Blue/Red team read at distance.
 
 ### Menu→arena input-loss bugfix (TASK-074..076) — Jonathan bug report 2026-07-07
 **Blocks the M4 playtest.** Verbatim symptom: from L_MainMenu, clicking "Play vs Bot" OR "Sandbox (No Bot)" joins the match, but then **WASD does nothing and no cards can be used — no user input at all**. Hitting Play directly in L_Arena still works with full input.

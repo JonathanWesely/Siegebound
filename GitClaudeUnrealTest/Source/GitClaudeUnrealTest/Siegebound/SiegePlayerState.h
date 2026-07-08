@@ -17,11 +17,14 @@ class ASiegeGameState;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnGoldChanged, int32, NewGold);
 
 /**
- *  Broadcast whenever the composed gold rate actually changes (overtime
- *  doubling at 7:00, a miner arriving at its node, an arrived miner dying)
- *  and unconditionally on ResetEconomy (reset-path broadcast, CONVENTIONS
- *  delegate law). NewRate is the gold added per income tick — with the
- *  default 1.0 s tick, gold per second (the HUD's "+N/s" text, TASK-033).
+ *  Broadcast whenever the composed DISPLAY gold rate actually changes (a miner
+ *  arriving at its node, an arrived miner dying, flat income add/remove, or an
+ *  overtime flip that moves the rounded display base — with default tuning it
+ *  does NOT: the display base is 1 on both sides of 7:00, so the overtime
+ *  signal is the HUD's overtime indicator, TASK-089 ruling) and unconditionally
+ *  on ResetEconomy (reset-path broadcast, CONVENTIONS delegate law). NewRate is
+ *  GetGoldRate()'s per-second AVERAGE with the base rounded UP (TASK-089) —
+ *  the HUD's "+N/s" text (TASK-033), no longer the exact per-tick accrual.
  *  UI consumers seed from GetGoldRate() first, THEN bind (seed-then-bind law).
  */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnGoldRateChanged, int32, NewRate);
@@ -39,10 +42,13 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMinerCountChanged, int32, AliveCo
  *  Siegebound player state — owns the gold economy (GDD §3.2/§3.3, M2 scope,
  *  TASK-005 base + TASK-024 rate composition).
  *
- *  - Gold starts at 50; every income tick (1.0 s) adds the COMPOSED rate:
- *    base GoldPerTick (2/s), doubled while the shared ASiegeGameState overtime
- *    latch is active (§3.2, 7:00 — read LIVE, so accrual can never desync from
- *    the clock), plus MinerGoldPerTick (1/s) per ARRIVED miner (§3.3).
+ *  - Gold starts at 10 (TASK-089 2026-07-08 balance directive; was 50); every
+ *    income tick (1.0 s) adds MinerGoldPerTick (1/s) per ARRIVED miner (§3.3)
+ *    plus the flat non-miner income (§8), and every BaseIncomeTickPeriod-th
+ *    tick (2 ⇒ every 2 s) additionally grants the base GoldPerTick (1 — so
+ *    base income is 1 gold per 2 s; was 2/s), doubled while the shared
+ *    ASiegeGameState overtime latch is active (§3.2, 7:00 — read LIVE on the
+ *    grant tick, so accrual can never desync from the clock).
  *  - Miner bookkeeping is two separate counts (TASK-025 drives both): ALIVE
  *    miners (RegisterMinerAlive/UnregisterMinerAlive — the MaxActiveMiners = 6
  *    cap basis, checked at play time via CanAddMiner, TASK-030) vs ARRIVED
@@ -129,13 +135,19 @@ public:
 	// --- Economy v2 (GDD §3.2/§3.3, TASK-024): rate-composed income ---
 
 	/**
-	 *  Gold added per income tick: base GoldPerTick (2), doubled while the
-	 *  ASiegeGameState overtime latch is active (§3.2 — the latch is read LIVE
-	 *  every call, never cached, so the rate cannot desync from the shared
-	 *  clock), plus MinerGoldPerTick (1) per ARRIVED miner (§3.3), plus the flat
-	 *  non-miner income (§8 Deep Mine, TASK-057). With the default 1.0 s tick
-	 *  this is gold per second. This is exactly what the next income tick will
-	 *  add — HandleGoldTick calls this same function.
+	 *  DISPLAY rate for the HUD's "+N/s" text (TASK-089 2026-07-08): the
+	 *  per-second AVERAGE of the composed income — NO LONGER the exact per-tick
+	 *  accrual, and HandleGoldTick no longer calls it. Base contribution =
+	 *  GoldPerTick, doubled while the ASiegeGameState overtime latch is active
+	 *  (§3.2 — read LIVE every call, never cached), averaged over
+	 *  BaseIncomeTickPeriod and rounded UP for display: with defaults it shows
+	 *  +1/s pre-overtime while the true base is 0.5/s (max error 0.5, ruled
+	 *  acceptable — "+0/s" over a visibly rising counter would read as broken),
+	 *  and an exact +1/s in overtime. Round-up is STABLE (never alternates), so
+	 *  RefreshGoldRate change detection is unaffected. Miner income
+	 *  (MinerGoldPerTick per ARRIVED miner, §3.3) and flat income (§8 Deep
+	 *  Mine, TASK-057) still land every 1.0 s tick, so their contribution here
+	 *  is exact per-second.
 	 */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Gold")
 	int32 GetGoldRate() const;
@@ -228,9 +240,12 @@ public:
 
 	/**
 	 *  Play Again (§3.9): alive-miner and arrived-miner-income counts back to
-	 *  0 and the composed rate re-derived. The game mode calls
+	 *  0, the base-income tick-parity counter back to 0 (TASK-089 — the first
+	 *  post-reset base grant lands exactly on the BaseIncomeTickPeriod-th
+	 *  tick), and the composed display rate re-derived. The game mode calls
 	 *  ASiegeGameState::ResetClock() FIRST, so the overtime latch is already
-	 *  cleared and the rate lands on the base 2/s. Broadcasts
+	 *  cleared and the rate lands on the pre-overtime base display value
+	 *  (+1/s round-up with defaults, TASK-089). Broadcasts
 	 *  OnMinerCountChanged and OnGoldRateChanged unconditionally (reset-path
 	 *  broadcast, CONVENTIONS delegate law). Gold itself is ResetGold()'s job.
 	 */
@@ -254,13 +269,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Team")
 	ETeamId Team = ETeamId::Blue;
 
-	/** Gold at match start and after a Play Again reset (GDD §3.2). */
+	/** Gold at match start and after a Play Again reset (10 per the 2026-07-08 balance directive, TASK-089; was 50). KEEP IN SYNC with the private Gold field initializer below — it is the pre-BeginPlay seed value. // GDD §3.2 (amended) */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Gold", meta = (ClampMin = "0"))
-	int32 StartingGold = 50;
+	int32 StartingGold = 10;
 
-	/** BASE passive income added on each timer tick — doubled by OvertimeIncomeMultiplier while overtime is active; arrived miners add MinerGoldPerTick each on top (TASK-024 rate composition). // GDD §3.2 */
+	/** BASE gold added per BASE-INCOME GRANT — one grant every BaseIncomeTickPeriod income ticks (defaults: 1 gold per 2 s; TASK-089 2026-07-08 balance directive, was 2 every tick) — doubled by OvertimeIncomeMultiplier while overtime is active; arrived miners add MinerGoldPerTick each EVERY tick on top (TASK-024 rate composition). // GDD §3.2 (amended) */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Gold", meta = (ClampMin = "0"))
-	int32 GoldPerTick = 2;
+	int32 GoldPerTick = 1;
+
+	/** Number of GoldTickInterval income ticks between base-income grants: 2 ⇒ the base lands every 2 s; 1 = legacy every-tick behavior. Miner and flat (Deep Mine) income are NOT affected — they land every tick. // TASK-089 2026-07-08 balance directive */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Gold", meta = (ClampMin = "1"))
+	int32 BaseIncomeTickPeriod = 2;
 
 	/** Seconds between passive income ticks. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Gold", meta = (ClampMin = "0.05"))
@@ -274,7 +293,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Miners", meta = (ClampMin = "0"))
 	int32 MaxActiveMiners = 6;
 
-	/** Base-income multiplier while the ASiegeGameState overtime latch is active: 2 -> 4 gold/tick (miner bonuses unchanged). // GDD §3.2 — at 7:00 base accrual doubles */
+	/** Base-income multiplier while the ASiegeGameState overtime latch is active: base grant 1 -> 2 per BaseIncomeTickPeriod ticks = 1 gold/s with defaults (miner/flat bonuses unchanged). Applied per grant, on the grant tick (TASK-089). // GDD §3.2 — at 7:00 base accrual doubles */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Gold", meta = (ClampMin = "1"))
 	int32 OvertimeIncomeMultiplier = 2;
 
@@ -292,7 +311,16 @@ private:
 	 */
 	void SetGold(int32 NewGold);
 
-	/** Passive income timer callback: adds the composed GetGoldRate() (TASK-024), clamped at MaxGold. Gated on bIncomePaused (match-end freeze). */
+	/**
+	 *  Passive income timer callback (TASK-089 decomposition): miner + flat
+	 *  income accrue EVERY tick; the base (GoldPerTick, × overtime multiplier
+	 *  read live) lands only on every BaseIncomeTickPeriod-th tick, driven by
+	 *  the transient BaseIncomeTickCounter. Exactly ONE SetGold per tick
+	 *  (choke-point law; a zero-grant tick is a harmless no-op), clamped at
+	 *  MaxGold. Does NOT call GetGoldRate() — that is now the HUD's rounded-up
+	 *  display average, not the exact accrual. Gated on bIncomePaused
+	 *  (match-end freeze).
+	 */
 	void HandleGoldTick();
 
 	/** (Re)starts the repeating passive income timer. */
@@ -308,9 +336,9 @@ private:
 	/** The world's ASiegeGameState, resolved live each call (never cached — Play Again / PIE safe), or nullptr (BeginPlay warns once when missing). */
 	ASiegeGameState* GetSiegeGameState() const;
 
-	/** Current gold. Mutate ONLY via SetGold(). */
+	/** Current gold. Mutate ONLY via SetGold(). Initializer KEPT IN SYNC with StartingGold (the pre-BeginPlay seed value; both 10 per TASK-089). */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Gold", meta = (AllowPrivateAccess = "true"))
-	int32 Gold = 50;
+	int32 Gold = 10;
 
 	/** Miners alive for this player, en route + arrived (§3.3 cap basis). Mutated only by Register/UnregisterMinerAlive and ResetEconomy. */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Miners", meta = (AllowPrivateAccess = "true"))
@@ -333,6 +361,16 @@ private:
 
 	/** Last composed rate broadcast through OnGoldRateChanged (change detection; seeded in BeginPlay). */
 	int32 CachedGoldRate = 0;
+
+	/**
+	 *  Transient tick-parity counter for the base-income cadence (TASK-089):
+	 *  counts income ticks since the last base grant; HandleGoldTick grants the
+	 *  base when it reaches BaseIncomeTickPeriod, then zeroes it. Deliberately
+	 *  NON-REFLECTED (plain member, the CachedGoldRate pattern — runtime
+	 *  bookkeeping, not tunable state). Reset by ResetEconomy so the Play Again
+	 *  base cadence is deterministic.
+	 */
+	int32 BaseIncomeTickCounter = 0;
 
 	/** True between PauseIncome() (match end) and ResumeIncome() (Play Again): HandleGoldTick refuses to accrue even if something restarts the timer (ResetGold does — M1 law). */
 	bool bIncomePaused = false;

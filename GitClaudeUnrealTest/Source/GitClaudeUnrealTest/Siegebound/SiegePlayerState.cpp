@@ -17,8 +17,9 @@ void ASiegePlayerState::BeginPlay()
 
 	// Overtime (GDD §3.2): the shared ASiegeGameState clock latches at 7:00 —
 	// bind so rate listeners hear about the doubling the moment it happens.
-	// The doubling itself is read LIVE in GetGoldRate(), so ACCRUAL stays
-	// correct even without this bind; only the HUD notification depends on it.
+	// The doubling itself is read LIVE on each base grant in HandleGoldTick
+	// (and in GetGoldRate for display, TASK-089), so ACCRUAL stays correct
+	// even without this bind; only the HUD notification depends on it.
 	if (ASiegeGameState* SiegeGameState = GetSiegeGameState())
 	{
 		SiegeGameState->OnOvertimeStarted.AddUniqueDynamic(this, &ASiegePlayerState::HandleOvertimeStarted);
@@ -127,10 +128,36 @@ void ASiegePlayerState::HandleGoldTick()
 		return;
 	}
 
-	// Rate-composed accrual (GDD §3.2/§3.3, TASK-024): base (doubled in
-	// overtime) + 1 per arrived miner — the same GetGoldRate() the HUD reads,
-	// so the displayed rate always equals the observed accrual.
-	SetGold(Gold + GetGoldRate());
+	// Decomposed accrual (TASK-089 2026-07-08 balance directive): miner + flat
+	// income land EVERY 1.0 s tick — their per-second values are untouched by
+	// this change (GDD §3.3 / §8) — while the BASE income lands only on every
+	// BaseIncomeTickPeriod-th tick (default 2 ⇒ 1 gold per 2 s, §3.2 amended).
+	// This function deliberately does NOT call GetGoldRate() anymore: that is
+	// now the HUD's rounded-up DISPLAY average, not the exact accrual.
+	int32 TickGrant = (MinerIncomeCount * MinerGoldPerTick) + FlatIncomePerTick;
+
+	// Base-income cadence: transient tick-parity counter (non-reflected,
+	// CachedGoldRate pattern), zeroed by ResetEconomy so the first post-reset
+	// base grant lands exactly on the BaseIncomeTickPeriod-th tick. >= (not ==)
+	// so an editor-tuned period shrink can never strand the counter above the
+	// threshold and stall base income forever.
+	++BaseIncomeTickCounter;
+	if (BaseIncomeTickCounter >= BaseIncomeTickPeriod)
+	{
+		BaseIncomeTickCounter = 0;
+
+		// Overtime doubling (GDD §3.2): the shared latch is read LIVE on the
+		// grant tick — multiply-per-grant, never cached — so base accrual can
+		// never desync from the match clock.
+		const ASiegeGameState* SiegeGameState = GetSiegeGameState();
+		const bool bOvertime = SiegeGameState && SiegeGameState->IsOvertimeActive();
+		TickGrant += bOvertime ? (GoldPerTick * OvertimeIncomeMultiplier) : GoldPerTick;
+	}
+
+	// Exactly ONE SetGold per tick (SetGold stays the single Gold writer, so at
+	// most one OnGoldChanged per tick). A zero-grant tick — no miners, no flat
+	// income, off-cadence — is a harmless SetGold no-op (no change, no broadcast).
+	SetGold(Gold + TickGrant);
 }
 
 void ASiegePlayerState::StartIncomeTimer()
@@ -145,16 +172,28 @@ void ASiegePlayerState::StartIncomeTimer()
 
 int32 ASiegePlayerState::GetGoldRate() const
 {
-	// GDD §3.2: base 2/s, doubling to 4/s at 7:00 — read the shared overtime
-	// latch LIVE so the rate can never desync from the match clock.
+	// DISPLAY rate (TASK-089 2026-07-08): the per-second AVERAGE behind the
+	// HUD's "+N/s" text — NO LONGER the exact per-tick accrual, and
+	// HandleGoldTick no longer calls this. GDD §3.2 (amended): base
+	// GoldPerTick (1) per BaseIncomeTickPeriod (2) ticks, doubled at 7:00 —
+	// the shared overtime latch is read LIVE so the display can never desync
+	// from the match clock.
 	const ASiegeGameState* SiegeGameState = GetSiegeGameState();
 	const bool bOvertime = SiegeGameState && SiegeGameState->IsOvertimeActive();
-	const int32 BaseRate = bOvertime ? (GoldPerTick * OvertimeIncomeMultiplier) : GoldPerTick;
+	const int32 EffectiveBase = bOvertime ? (GoldPerTick * OvertimeIncomeMultiplier) : GoldPerTick;
+
+	// Base averaged over the grant period and rounded UP for display: defaults
+	// show +1/s pre-overtime (true 0.5/s — ruled acceptable, "+0/s" over a
+	// visibly rising counter reads as broken) and an exact +1/s in overtime.
+	// Round-up is STABLE (never alternates), so RefreshGoldRate change
+	// detection is unaffected. BaseIncomeTickPeriod is ClampMin 1 — no /0.
+	const int32 BaseRate = FMath::DivideAndRoundUp(EffectiveBase, BaseIncomeTickPeriod);
 
 	// GDD §3.3: +1 per miner that ARRIVED at its node; en-route miners add nothing.
 	// GDD §8: plus the flat non-miner income (Deep Mines, TASK-057) — additive
 	// and separate from the miner count/cap; not doubled by overtime (only the
-	// base doubled above), mirroring miner income.
+	// base doubled above), mirroring miner income. Both land EVERY 1.0 s tick,
+	// so their display contribution is exact.
 	return BaseRate + (MinerIncomeCount * MinerGoldPerTick) + FlatIncomePerTick;
 }
 
@@ -302,18 +341,32 @@ void ASiegePlayerState::ResetEconomy()
 	// reset where a mine slipped the destroy sweep.
 	FlatIncomePerTick = 0;
 
+	// Base-income tick-parity counter back to 0 (TASK-089): the first
+	// post-reset base grant lands exactly on the BaseIncomeTickPeriod-th tick,
+	// so Play Again's cadence is deterministic — never inherited from the prior
+	// match's parity. Lives HERE (not ResetGold) because the counter is economy
+	// STATE exactly like the miner/flat counts above, and Play Again always
+	// runs ResetEconomy (game mode order: ResetClock → ResetEconomy →
+	// ResetGold → ResumeIncome).
+	BaseIncomeTickCounter = 0;
+
 	// Reset-path broadcasts (CONVENTIONS delegate law): unconditional, so HUD
 	// listeners re-seed even when the values were already at base. The game
 	// mode ran ASiegeGameState::ResetClock() before this, so the rate below
-	// re-derives against a cleared overtime latch and lands on the base 2/s.
+	// re-derives against a cleared overtime latch and lands on the pre-overtime
+	// base display value (+1/s round-up with defaults, TASK-089).
 	OnMinerCountChanged.Broadcast(AliveMinerCount);
 	RefreshGoldRate(/*bForceBroadcast*/ true);
 }
 
 void ASiegePlayerState::HandleOvertimeStarted()
 {
-	// The base rate just doubled (GDD §3.2). GetGoldRate() reads the latch
-	// live — this handler exists purely to notify rate listeners of the change.
+	// The base accrual just doubled (GDD §3.2). Accrual reads the latch live in
+	// HandleGoldTick — this handler exists purely to notify rate listeners of a
+	// DISPLAY change. NOTE (TASK-089): with default tuning the rounded display
+	// base is 1 on both sides of the flip, so change detection correctly
+	// broadcasts nothing — the 7:00 signal is the overtime HUD indicator,
+	// not the rate text (ruling 4).
 	RefreshGoldRate(/*bForceBroadcast*/ false);
 }
 

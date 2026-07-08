@@ -103,7 +103,7 @@ void ASiegeGameMode::BeginPlay()
 
 	// Sandbox test bench (TASK-071): grant the Blue player the generous starting
 	// pile. Deferred one tick so the Blue ASiegePlayerState's own BeginPlay (which
-	// seeds gold to StartingGold = 50 via ResetGold) has already run — granting
+	// seeds gold to StartingGold = 10, TASK-089, via ResetGold) has already run — granting
 	// synchronously here could be clobbered by a later player-state seed. Fires
 	// exactly once (BeginPlay runs once per world begin); Play Again re-grants on
 	// its own path. No-op when not a sandbox match.
@@ -576,7 +576,8 @@ void ASiegeGameMode::PlayAgain()
 	//     (§3.9 "match clock"; the §3.2 doubling re-arms for the new match).
 	//     MUST precede step 4: ResetEconomy() re-derives each player's gold
 	//     rate by reading this latch live — clearing it first lands the rate
-	//     on the base 2/s.
+	//     on the pre-overtime base (display +1/s round-up, true 1 gold per
+	//     2 s, TASK-089).
 	if (ASiegeGameState* SiegeGameState = Cast<ASiegeGameState>(GameState))
 	{
 		SiegeGameState->ResetClock();
@@ -864,9 +865,10 @@ void ASiegeGameMode::GrantSandboxStartingGold()
 	// Grant through the gold API: AddGold routes through the player state's single
 	// SetGold() choke point, so the [0, MaxGold] clamp and OnGoldChanged broadcast
 	// both apply — NEVER a raw Gold field write. The BASE gold rate is untouched
-	// (no AddIncome), so the normal +2/s economy stands (spec: keep the normal
-	// rate). NOTE: MaxGold (999) clamps SandboxStartingGold (9999) to 999 — still a
-	// full generous pile for the 22-card roster (flagged for QA).
+	// (no AddIncome), so the normal base economy stands (1 gold per 2 s, TASK-089;
+	// spec: keep the normal rate). NOTE: MaxGold (999) clamps SandboxStartingGold
+	// (9999) to 999 — still a full generous pile for the 22-card roster (flagged
+	// for QA).
 	BlueState->AddGold(SandboxStartingGold);
 
 	UE_LOG(LogGitClaudeUnrealTest, Log,
