@@ -111,7 +111,393 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 **Current state (2026-07-05):** on `main` @ **5c1fcb7**, clean tree, NOT pushed. **TASK-070** (L_Arena stray-actor cleanup, a745799) and **TASK-041** (visual hand UI, 5c1fcb7) are BOTH `done` + committed — the one known M2 gap (visual hand) is CLOSED and the M3 transient-Blue-unit WATCH is CLOSED. Branches m2/m3/m4-testable preserved. Old carry-forwards resolved: (a) M2 TASK-041 visual hand UI — DONE (5c1fcb7); (b) M3 transient-Blue-unit WATCH — CLOSED by TASK-070; (c) TASK-046 WARN-2 bot discard hardening — CLOSED in TASK-060.
 
-**2026-07-07 (BUG — read first):** Jonathan's M4 playtest is BLOCKED — joining a match from L_MainMenu via EITHER menu button gives ZERO input in L_Arena. Bugfix chain **TASK-074..076** below. This is a bugfix chain like TASK-071..073, NOT M5 content — **M5 remains NOT authorized.**
+**2026-07-07 (BUG — read first):** Jonathan's M4 playtest is BLOCKED — joining a match from L_MainMenu via EITHER menu button gives ZERO input in L_Arena. Bugfix chain **TASK-074..076** below. This is a bugfix chain like TASK-071..073, NOT M5 content — **M5 remains NOT authorized.** → **RESOLVED same day:** TASK-074..076 done + committed **218b4c9**; Jonathan live-confirmed the fix ("that problem is resolved"); both menu-path WATCHes closed.
+
+**2026-07-07 (FEATURES — read first):** TWO Jonathan-approved chains issued below — **TASK-077..081 (card artwork on the hand UI)** and **TASK-082..088 (TRELLIS.2 → Blender → UE5 automated art pipeline + Fab lane)**. Both are Jonathan-authorized UI/art/tooling work like TASK-071..073, NOT M5 content — **M5 remains NOT authorized.** State at issue: main @ **218b4c9** clean, NOT pushed; editor UP (PID 18480, MCP healthy); Blender MCP verified LIVE — both art gates OPEN. Dispatch frontier: **TASK-077 ∥ TASK-079 ∥ TASK-082 ∥ TASK-083** (all file-side, mutually parallel-safe).
+
+### Card artwork on the hand UI (TASK-077..081) — Jonathan feature request 2026-07-07
+Verbatim intent: "have the art agent generate artwork for all the cards and have it get displayed instead of just having the text you have for it." Scope = all 22 roster CardIDs (cards.csv rows): Footman, Archer, Knight, Miner, ArrowTower, Wall, MilitiaMob, Pikeman, Sapper, Cavalry, Longbowman, Cleric, Ogre, BombTower, BallistaTower, Barracks, DeepMine, Masons, SharpenedBlade, PlateArmor, SwiftBoots, WarBanner. Naming law added to CONVENTIONS.md "Card artwork (hand UI)" 2026-07-07 BEFORE task issue.
+
+**Manager rulings (binding for this chain):**
+1. **Face composition:** art + overlaid text, NOT art-instead-of-text — the art is the background layer of each card face; DisplayName + cost stay overlaid and legible (contrast strip/shadow allowed). Artwork contains NO baked-in text. Art images HitTestInvisible (clicks belong to the play/discard buttons, M1 WARN-4 posture).
+2. **Data law:** the art reference is DT_Cards data — new FCardRow column `CardArt` (TSoftObjectPtr<UTexture2D>) + cards.csv column carrying the full object path. Unset/unresolvable ⇒ graceful text-only fallback (today's face), log once, never a crash. No widget-side CardID→texture mapping.
+3. **BIE contract stays byte-identical:** OnHandSlotUpdated / OnNextCardUpdated / OnCardRefusedMessage signatures unchanged (backward compatible). Art is delivered via new null-safe BlueprintCallable resolver(s) on UCardHandWidget — BIE params stay float/int/bool/byte/FString; UObject RETURNS on BlueprintCallable are fine. Programmer's audit picks the exact seam; a versioned BIE is allowed ONLY if the audit proves it strictly cleaner, documented, with every UMG call-site updated in TASK-080.
+4. **Sync load ruling:** 512² UI textures, ≤7 visible (6 slots + preview), loaded on hand refresh — LoadSynchronous is acceptable; no async streaming machinery for this feature.
+5. **Art tier:** blockout-tier stylized acceptable (premium art = M7) but must read at ~150 px — one dominant subject, strong silhouette, distinct per-card color key, team-agnostic palette.
+6. **Reimport law:** the new CSV column requires a DT_Cards reimport in the editor IMMEDIATELY after the TASK-079 compile and before ANY PIE (TASK-031 WARN-2 precedent). Owned by TASK-081 phase 1.
+7. **Batching:** all 22 renders in ONE art task (internal batching, one handoff); the Unreal import is its own editor task so render work stays parallel-safe with C++ file work.
+8. **WBP_CardHand ownership:** the widget edit is gameplay-programmer (TASK-041/072 precedent — the hand widget is BIE-contract-heavy); art-director owns textures only.
+9. Pre-existing follow-ups (victory-widget focus error, DeepMine CardType-2 warning, bot-rush balance) are NOT folded in — logged, left for later.
+
+Dispatch shape: **[TASK-077 art renders ∥ TASK-079 C++/CSV] → TASK-079 QA → TASK-081 phase 1 (compile + DT_Cards reimport) → TASK-078 import (editor-free slot any time after 077; may run before or after the phase-1 bounce) → TASK-080 UMG → TASK-081 phase 2 (PIE + commit).**
+
+#### TASK-077 — Card artwork: render all 22 card illustrations to PNG (Blender)
+- assignee: art-director
+- status: done (2026-07-07: 22/22 PNGs at Content/RawAssets/CardArt/<CardID>.png, all 512×512 readback-verified, casing char-for-char vs cards.csv; single shared EEVEE studio rig, style-family consistent, 8 cards reworked for ~150px readability; donor-less cards (Masons + 4 upgrades) as iconographic props. handoffs/TASK-077-artist.md. Import = TASK-078; commit rides TASK-081 phase 2.)
+- blocked-by: none (Blender MCP verified LIVE 2026-07-07)
+- parallel-safe: yes (file-side only — Blender scene work + PNG writes to Content/RawAssets/; NO Unreal editor, NO Content/ .uasset mutation)
+- spec: >
+    Blender MCP work (repo bridge Tools/blender_mcp_bridge.py — execute_blender_code / get_scene_info /
+    get_object_info). Produce ONE square card illustration per CardID, rendered to PNG at exactly 512×512,
+    saved as Content/RawAssets/CardArt/<CardID>.png (CardID casing character-for-character), for ALL 22
+    roster CardIDs: Footman, Archer, Knight, Miner, ArrowTower, Wall, MilitiaMob, Pikeman, Sapper, Cavalry,
+    Longbowman, Cleric, Ogre, BombTower, BallistaTower, Barracks, DeepMine, Masons, SharpenedBlade,
+    PlateArmor, SwiftBoots, WarBanner.
+    Style law (CONVENTIONS "Card artwork (hand UI)"): blockout-tier stylized is acceptable (premium art is
+    M7) but every card MUST read at hand-slot size (~150 px) — one dominant subject filling the frame, strong
+    silhouette, high subject/background contrast, a DISTINCT color key per card so all 22 are tellable apart
+    at a glance; team-agnostic palette (cards are player-neutral — avoid reading as Blue/Red team colors).
+    NO text baked into the artwork (name/cost are overlaid by the widget, TASK-080).
+    Subject guide (from cards.csv DisplayName/Notes): units = the unit figure (the project blockout FBX
+    donors in Content/RawAssets/*.fbx MAY be imported into Blender scenes as staging donors — READ-ONLY,
+    never modify or re-export them); buildings = the structure; Miner/DeepMine = gold/economy motifs;
+    Masons = repair motif (trowel/wall); Barracks = the spawner building; hero upgrades = the item itself
+    (sword blade / plate chest / boots / war banner).
+    Internal batching at your discretion (reuse one camera + light rig, stage per card); ONE handoff for all
+    22. Acceptance: 22 PNGs on disk under Content/RawAssets/CardArt/, exactly 512×512 each, named exactly
+    <CardID>.png, each readable at 150 px; handoffs/TASK-077.md lists all 22 with a one-line content
+    description each. Post progress/completion in 🎨 Art.
+- names: >
+    PNGs: Content/RawAssets/CardArt/<CardID>.png — the 22 CardIDs character-for-character from
+    Docs/Data/cards.csv row names (list above). Future import targets (TASK-078, not this task):
+    /Game/UI/CardArt/T_CardArt_<CardID>. Law: CONVENTIONS.md "Card artwork (hand UI)".
+
+#### TASK-078 — Card artwork: import the 22 PNGs as UTexture2D (editor)
+- assignee: art-director
+- status: done (2026-07-07: 22/22 imported to /Game/UI/CardArt/T_CardArt_<CardID> + saved; TEXTUREGROUP_UI, sRGB on, 512×512 double-verified (transient 32×32 readings = async-texture-compile placeholder, settled pre-save); DT_Cards CardArt cells cross-checked 22/22 match; zero import warnings — the 22 LogCSVImportFactory 'Expected String, got Object' lines are TASK-081 phase-1 TSoftObjectPtr noise pre-dating these imports. Editor auto-staged the 22 .uassets; the 22 source PNGs remain untracked → BOTH belong to TASK-081 phase 2's selective commit. handoffs/TASK-078-artist.md)
+- blocked-by: TASK-077
+- parallel-safe: no (editor-mutating — single editor instance)
+- spec: >
+    Unreal MCP import work. Import each Content/RawAssets/CardArt/<CardID>.png as a UTexture2D at
+    /Game/UI/CardArt/T_CardArt_<CardID> — all 22. Settings per CONVENTIONS "Card artwork (hand UI)":
+    Texture Group = UI, sRGB on, default compression. Verify by readback that all 22 assets exist and are
+    512×512; save all. NO other Content/ mutation (do not touch WBP_CardHand — that is TASK-080).
+    Editor sequencing note for the orchestrator: this task only needs the editor UP; it may run before or
+    after TASK-081's phase-1 compile bounce (imported .uassets survive the bounce), but never concurrently
+    with another editor-mutating task. Acceptance: 22 T_CardArt_* assets under /Game/UI/CardArt/, each
+    512×512, all saved; handoffs/TASK-078.md lists the 22 asset paths. Post in 🎨 Art.
+- names: >
+    /Game/UI/CardArt/T_CardArt_<CardID> (Content/UI/CardArt/) for the 22 CardIDs. Sources:
+    Content/RawAssets/CardArt/<CardID>.png (TASK-077). Law: CONVENTIONS.md "Card artwork (hand UI)".
+
+#### TASK-079 — Card-art data path: FCardRow.CardArt + cards.csv column + UCardHandWidget resolvers (C++)
+- assignee: gameplay-programmer
+- status: qa-passed (QA PASS 2026-07-07 — 0 blocker/1 warn(doc-only: handoff column arithmetic, corrected in report)/1 nit; all 8 flagged decisions ACCEPTED; BIEs byte-identical vs TASK-029 contract; CSV 23 data columns verified char-for-char, DeckCount still 50. qa/TASK-079-report.md. Carry-forwards recorded for TASK-080 wiring + TASK-081 reimport.) (2026-07-07. FCardRow.CardArt TSoftObjectPtr + 22 CSV rows + GetCardArtTexture/GetNextCardArtTexture via shared ResolveCardArtTexture; BIE signatures byte-identical; 8 flagged decisions; shadow-scan clean. handoffs/TASK-079.md)
+- blocked-by: none
+- parallel-safe: yes (file-only: CardRow.h, CardHandWidget.h/.cpp, Docs/Data/cards.csv — no file overlap with TASK-077/082/083)
+- spec: >
+    Files only, no editor, no compile.
+    (1) FCardRow (CardRow.h): add UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Card")
+    TSoftObjectPtr<UTexture2D> CardArt; doc comment: hand-UI card illustration (CONVENTIONS "Card artwork
+    (hand UI)"); unset = text-only face. Property name MUST match the CSV header exactly (reimport law).
+    (2) Docs/Data/cards.csv: append a CardArt column to the header and ALL 22 rows; each cell = the FULL
+    object path /Game/UI/CardArt/T_CardArt_<CardID>.T_CardArt_<CardID> (e.g. Footman →
+    /Game/UI/CardArt/T_CardArt_Footman.T_CardArt_Footman). No blank cells — the 22 textures are being
+    produced in TASK-077/078.
+    (3) UCardHandWidget (CardHandWidget.h/.cpp): expose card art to the runtime-built UMG tree WITHOUT
+    breaking the BIE contract — the three BIEs (OnHandSlotUpdated / OnNextCardUpdated / OnCardRefusedMessage)
+    keep byte-identical signatures (ruling 3). Preferred seam (audit may refine): a null-safe
+    UFUNCTION(BlueprintCallable) UTexture2D* GetCardArtTexture(const FString& CardID) — CardID → DT_Cards
+    row (soft table resolved null-safe at use time, as the existing pushes do) → CardArt.LoadSynchronous();
+    returns nullptr on empty CardID / missing row / unset or unresolvable path (log once, never crash).
+    ALSO provide preview art access (OnNextCardUpdated carries no CardID): preferred = cache the last pushed
+    next CardID and expose UTexture2D* GetNextCardArtTexture(); audit picks the exact shape, document in the
+    handoff. If the audit PROVES a versioned BIE is strictly cleaner, it is a deliberate version bump —
+    documented, with TASK-080 updating every UMG call-site; default expectation is NO BIE change.
+    (4) LoadSynchronous is ACCEPTED for this feature (ruling 4) — note it in a comment.
+    (5) CONVENTIONS shadow law (C4457/58/59): no local/param may shadow an inherited reflected UPROPERTY.
+    QA MUST scan pre-compile.
+    Acceptance: CSV header ↔ UPROPERTY 1:1 (TASK-081's DT_Cards reimport must add zero NEW warnings — the
+    known DeepMine CardType-2 warning is pre-existing/watched); exactly 22 CardArt cells with exact paths;
+    resolvers null-safe by inspection; BIE signatures untouched (or deliberately versioned per audit);
+    nothing hardcoded that belongs in DT_Cards. handoffs/TASK-079.md documents the chosen seam for TASK-080.
+    Post in ⚙️ Dev & QA.
+- names: >
+    FCardRow::CardArt (TSoftObjectPtr<UTexture2D>) — Source/GitClaudeUnrealTest/Siegebound/CardRow.h.
+    Docs/Data/cards.csv column CardArt; cells /Game/UI/CardArt/T_CardArt_<CardID>.T_CardArt_<CardID>.
+    UCardHandWidget::GetCardArtTexture / ::GetNextCardArtTexture —
+    Source/GitClaudeUnrealTest/Siegebound/CardHandWidget.h/.cpp. Table: /Game/Data/DT_Cards. BIEs
+    (unchanged): OnHandSlotUpdated, OnNextCardUpdated, OnCardRefusedMessage. Law: CONVENTIONS.md
+    "Card artwork (hand UI)" + FCardRow column registry.
+
+#### TASK-080 — WBP_CardHand: art on the 6 card faces + next-card preview (editor/UMG)
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: TASK-078 (textures in Content), TASK-079 (qa-passed AND compiled via TASK-081 phase 1 — the resolvers must be callable in the live module; the phase-1 DT_Cards reimport must also be done so rows carry CardArt before PIE verification)
+- parallel-safe: no (editor-mutating — edits WBP_CardHand; single editor instance)
+- spec: >
+    Additive MCP UMG in /Game/UI/WBP_CardHand (parent UCardHandWidget). Extend the TASK-041 runtime
+    BuildHandTree construction: per hand slot add a UImage named Img_CardArt (runtime-created per slot)
+    layered UNDER the DisplayName + cost texts — art is the face background; text stays overlaid and
+    legible (add a translucent dark strip/shadow behind the text if contrast needs it). Add Img_NextCardArt
+    to the preview slot. All art images HitTestInvisible (clicks must still land on play/discard buttons —
+    WARN-4 posture).
+    Wiring: in the OnHandSlotUpdated handler path call GetCardArtTexture(CardID) — non-null →
+    SetBrushFromTexture + show; null or empty CardID → hide the image (text-only fallback = today's face).
+    Affordability: when bAffordable is false, tint the art grey (SetColorAndOpacity ≈ (0.35,0.35,0.35))
+    alongside the existing SetIsEnabled greying; restore white when affordable. Preview: in the
+    OnNextCardUpdated handler call GetNextCardArtTexture(); empty DisplayName → hide preview art too.
+    (Use the exact resolver names/seam from handoffs/TASK-079.md.)
+    PRESERVE (readback + PIE): never round-trip the protected M1 gold Construct (TASK-033/041 law); refusal
+    message ~2 s show/hide; play/discard buttons + hotkeys; root SelfHitTestInvisible posture; Rally + M4
+    upgrade rows; InitForController path. Verify in PIE (after the phase-1 DT_Cards reimport): all 6 faces
+    show art matching their CardID, preview shows art, grey-tint tracks affordability, empty slots hide art,
+    play/discard/refusal unregressed, no new log errors. Acceptance as above; handoffs/TASK-080.md records
+    the widget names + wiring. Post in ⚙️ Dev & QA.
+- names: >
+    /Game/UI/WBP_CardHand (parent UCardHandWidget). New runtime-created widgets: Img_CardArt (one per hand
+    slot), Img_NextCardArt (preview). Calls: UCardHandWidget::GetCardArtTexture /
+    ::GetNextCardArtTexture (TASK-079 handoff is authoritative on exact names). Textures:
+    /Game/UI/CardArt/T_CardArt_<CardID> (TASK-078). BIEs unchanged: OnHandSlotUpdated / OnNextCardUpdated /
+    OnCardRefusedMessage. Law: CONVENTIONS.md "Card artwork (hand UI)".
+
+#### TASK-081 — Card-art integration: compile, DT_Cards reimport, editor wave, PIE, commit (build-master)
+- assignee: build-master
+- status: phase-1-complete (2026-07-07: compile PASS clean 20.4s, editor bounced → UP PID 34120 on the new DLL, MCP live. DT_Cards: MCP import_file refuses overwrite (TASK-031 precedent) → reference-safe in-place set_rows from cards.csv; 22 rows, CardArt fully populated + verified char-for-char, other columns spot-checked undisturbed, DeckCount=50, zero NEW warnings. TOOLING LAW learned: DataTableTools set_rows silently nulls soft-object cells passed as {"refPath":...} objects — use plain string paths + readback-verify. Phase 2 awaits TASK-077/078/080; working tree accumulates for the single phase-2 commit.)
+- blocked-by: TASK-079 (qa-passed) for phase 1; TASK-077 + TASK-078 + TASK-080 for phase 2
+- parallel-safe: no (owns the single editor + the compile + the Git commit)
+- spec: >
+    Two-phase integration (TASK-073/076 pattern).
+    PHASE 1 — after TASK-079 qa-passed: editor bounce + Build.bat compile of the TASK-079 C++ (failure →
+    append errors to qa/TASK-079-report.md, route back to gameplay-programmer; counts as a QA loop).
+    IMMEDIATELY after the compiled editor is up: reimport /Game/Data/DT_Cards from Docs/Data/cards.csv
+    BEFORE any PIE (TASK-031 WARN-2 law). Expect zero NEW warnings; the known DeepMine CardType-2 warning is
+    pre-existing (TASK-035 watch) — record if it fires, do not treat as new. Then hand back to the
+    orchestrator so TASK-078 (if not already done) and TASK-080 run against the live module.
+    PHASE 2 — after TASK-080: full PIE regression on direct-boot L_Arena (menu path not machine-drivable,
+    TASK-073 precedent): 6 hand faces show art matching their CardIDs + preview art (spot-check ≥4 distinct
+    cards across plays/discards/redraws — the M4 test deck surfaces variety); grey-tint on unaffordable;
+    empty slot hides art; text overlays legible; play/discard/refusal/Alt-cursor/hotkeys 1–6 and the M1
+    gold counter unregressed; no new log errors (a failed soft-load would log).
+    COMMIT — everything in ONE commit to main with TASK-077..081 in the message: CardRow.h,
+    CardHandWidget.h/.cpp, Docs/Data/cards.csv, Content/RawAssets/CardArt/*.png (22),
+    Content/UI/CardArt/*.uasset (22), WBP_CardHand.uasset, DT_Cards.uasset, pipeline docs. NOT pushed (no
+    remote push without Jonathan's explicit instruction). Post compile result + commit hash in 🔧 Build & Git.
+    Acceptance: clean compile; reimport clean (no new warnings); PIE regression PASS with art live on the
+    hand; committed to main, not pushed.
+- names: >
+    Build target GitClaudeUnrealTestEditor (Build.bat per CLAUDE.md). Reimport: /Game/Data/DT_Cards ←
+    Docs/Data/cards.csv. Verify: /Game/UI/CardArt/T_CardArt_<CardID> (22), /Game/UI/WBP_CardHand faces,
+    UCardHandWidget resolvers. Map: /Game/Maps/L_Arena. Commit to main only, not pushed.
+
+### TRELLIS.2 → Blender → UE5 art pipeline + Fab lane (TASK-082..088) — Jonathan-approved plan 2026-07-07
+Approved plan: C:\Users\wesel\.claude\plans\swirling-plotting-globe.md (Jonathan's Obsidian pipeline note, operationalized + plan-mode approved). Goal: automated generate→refine→import pipeline producing game-ready textured meshes. Pilot scope = **SM_Footman first, then SM_Archer + SM_Castle** (Jonathan's 2026-07-04 fidelity request, pulled forward from M7); the remaining 16 blockout meshes reuse this pipeline as the M7 template. Tooling + art fidelity only — NOT GDD content; **M5 remains NOT authorized.** Naming law added to CONVENTIONS.md "Textured mesh law (TRELLIS.2 art pipeline)" 2026-07-07 BEFORE task issue. Fab protocol file: .claude/pipeline/fab/FAB-REQUESTS.md.
+
+**Manager rulings (binding for this chain):**
+1. **HF_TOKEN is ENV-ONLY** — read from the environment at runtime; NEVER written to any file, never passed on argv, never echoed/logged. trellis_generate.py exits code 2 with a clean message if unset. guard-secrets hook gains the `hf_` pattern (TASK-083). QA audits every leakage path.
+2. **Tools/**/*.py is CODE** — the full pre-commit QA gate applies (agent definitions updated 2026-07-07: qa-reviewer checklist adds secret handling, network timeouts, write confinement, headless-bpy context pitfalls).
+3. **Heavy Blender work runs HEADLESS** via Bash (`blender.exe --background --python refine_trellis_glb.py`) — the live Blender MCP bridge has a 30 s socket cap; MCP is for <30 s inspection/preview only.
+4. **Lane isolation:** the card-art chain (TASK-077..081) owns Content/RawAssets/CardArt/ + /Game/UI/CardArt/ — this chain NEVER writes there. This chain owns Tools/ArtPipeline/**, Content/RawAssets/<AssetName>.fbx + RawAssets/Textures/ + RawAssets/Concepts/, /Game/Textures/T_<AssetName>_*, /Game/Materials/M_AssetPBR + MI_<AssetName>_PBR.
+5. **Two-slot material contract requires ZERO C++ changes** (slot-0 TeamRegion recolor keeps working — SummonedUnit.cpp:146 / Building.cpp:80 / Castle.cpp:125; placement ghost tints all slots). Any discovered need for a C++ change = STOP + escalate, not improvise.
+6. **Nanite OFF** on pipeline meshes.
+7. **Same-path SM overwrite** is the swap mechanism (non-breaking; validated FIRST on SM_Footman). Contingencies in order: console `Obj Reimport` → Jonathan one-click import (escalate via 🚨 Blockers). NEVER delete+recreate the SM asset.
+8. **ZeroGPU quota is an expected pause, not a blocker:** free tier ≈ 5 GPU-min/day ≈ 1–2 assets/day. If quota blocks a generate, record the reset time in the handoff and resume next window (recommend HF PRO to Jonathan before the M7 batch); escalate only if stuck >48 h.
+9. **Editor-mutating imports serialize** as always (single editor). Stage 1 (generate) + Stage 2 (headless refine) are file-side and may overlap other file work.
+10. **Fab lane is request-only:** art-director AUTHORS FAB-### entries in .claude/pipeline/fab/FAB-REQUESTS.md; Jonathan approves/fulfills via the Epic Launcher (human-only); Content/Fab/<Pack>/ is read-only donor quarantine. No Fab task is issued in this chain — the lane is standing infrastructure.
+
+Dispatch shape: **[TASK-082 ∥ TASK-083] (files → QA) → TASK-084 (smoke + commit tooling) → TASK-085 (EXTERNAL GATE: Jonathan) → TASK-086 (Footman pilot end-to-end) → TASK-087 (Archer + Castle; Stage-1/2 may pre-run after 084+085) → TASK-088 (PIE + commit) → Jonathan visual sign-off (WATCH).**
+
+#### TASK-082 — Trellis Stage-1 tooling: Tools/ArtPipeline scaffold + trellis_generate.py (files)
+- assignee: gameplay-programmer
+- status: qa-passed (QA PASS 2026-07-07 — 0 blocker/2 warn/5 nit; security audit CLEAN (token redaction, write confinement); all 11 flags approved. qa/TASK-082-report.md. WARN-1 + WARN-2 hardening APPLIED + verified 2026-07-07 (usage-error path redacts — proven with fake-token argv, exit 64 shows [hf-token-redacted]; failures now write state_failed.json, state.json = last success only; py_compile/--help/exit-2 re-verified; "Post-QA hardening" section in handoffs/TASK-082.md) — 082 clear for the tooling commit; TASK-084 MUST gitignore Tools/ArtPipeline/.venv/ BEFORE the tooling commit — 700+ untracked files, orchestrator-flagged URGENT.) (2026-07-07. uv env on managed CPython 3.12.13, gradio-client 2.5.0; trellis_generate.py with token redactor, atomic Client session, view_api assert + schema snapshot, quota exit 3 / token-unset exit 2 / usage exit 64; --check deferred to TASK-084 network smoke per spec. handoffs/TASK-082.md)
+- blocked-by: none
+- parallel-safe: yes (new files only, under Tools/ArtPipeline/ — no overlap with TASK-077/079/083)
+- spec: >
+    Files only — author, do not run (network/GPU smoke tests are TASK-084's). This is dev tooling
+    (CONVENTIONS "Textured mesh law", tooling law), not gameplay code.
+    (1) uv project scaffold at Tools/ArtPipeline/: pyproject.toml pinned to Python 3.12 (gradio_client is
+    NOT validated on 3.14), .python-version, uv.lock, README.md (the three stage commands, concept-image
+    guidance for Jonathan, fallback procedures — incl. the manual fallback: Jonathan browser-runs the HF
+    Space and drops the GLB at Cache/<AssetName>/trellis_raw.glb; the pipeline resumes at Stage 2).
+    Deps: gradio_client, pillow.
+    (2) trellis_generate.py CLI (Stage 1): HF_TOKEN from env ONLY (ruling 1 — exit code 2 + clean message
+    if unset; the token must never appear in files, argv, logs, or exception text); gradio_client against
+    the official HF Space microsoft/TRELLIS.2; view_api() discovery + assert of the three endpoints
+    (/preprocess_image → /image_to_3d → /extract_glb), writing an api_schema.json snapshot beside the
+    output; the preprocess→generate→extract sequence runs atomically on ONE Client (gr.State is
+    per-Client-session — never split across runs); timeouts ≥20 min per GPU call; surface ZeroGPU
+    quota-exceeded messages verbatim incl. reset time (ruling 8); writes Cache/<AssetName>/trellis_raw.glb
+    + state.json; a --check flag = TOKENLESS smoke test (Space reachability + endpoint schema assert only,
+    no GPU call, no token needed).
+    (3) Create Tools/ArtPipeline/Inbox/ + Cache/ as working dirs (e.g. .gitkeep) — the .gitignore entries
+    land in TASK-084.
+    Acceptance: files as specified; by inspection the token cannot reach disk/argv/logs; --check runs
+    tokenless; QA gate per ruling 2. handoffs/TASK-082.md. Post in ⚙️ Dev & QA.
+- names: >
+    Tools/ArtPipeline/pyproject.toml, .python-version, uv.lock, README.md, trellis_generate.py, Inbox/,
+    Cache/. HF Space: microsoft/TRELLIS.2 (gradio_client). Env var: HF_TOKEN (env-only law). Outputs:
+    Tools/ArtPipeline/Cache/<AssetName>/trellis_raw.glb + state.json + api_schema.json. Law: CONVENTIONS.md
+    "Textured mesh law (TRELLIS.2 art pipeline)".
+
+#### TASK-083 — Trellis Stage-2 tooling: refine_trellis_glb.py + pipeline_manifest.json + guard-secrets hf_ pattern (files)
+- assignee: gameplay-programmer
+- status: qa-passed (QA PASS 2026-07-07 — 0 blocker/4 warn/4 nit; all 14 flags ACCEPTED; axis contract verbatim, castle UCX geometry-checked wall-footprint-exact, write confinement real code, hf_ pattern correctly placed. qa/TASK-083-report.md. WARNs are runtime-verifiable → TASK-084 carry-forward checklist: Footman smoke MUST assert exactly-2-materials-in-order in the smoke FBX (WARN-3), Castle UCX smoke recommended, guard-secrets pipe-test with fake hf_ token.) (2026-07-07. Headless refine with write-confinement guard, native fallback, --smoke/--quick; manifest pilot rows Footman/Archer/Castle incl. 9-hull wall-footprint UCX. handoffs/TASK-083.md)
+- blocked-by: none
+- parallel-safe: yes (disjoint files from TASK-082: refine_trellis_glb.py, pipeline_manifest.json, .claude/hooks/guard-secrets.sh — no overlap with TASK-077/079)
+- spec: >
+    Files only — author, do not run (headless round-trip smoke is TASK-084's).
+    (1) refine_trellis_glb.py — HEADLESS bpy script (ruling 3: runs via blender.exe --background --python;
+    must never require UI context — QA checks for context-dependent bpy calls). Pipeline per asset manifest:
+    import Cache/<AssetName>/trellis_raw.glb → cleanup (loose geo, doubles) → voxel-remesh + decimate to
+    the manifest tri budget → Smart-UV project into a UV layer named exactly "UVMap" → Cycles CPU bake
+    D/N/ORM (mind the metallic-via-EMIT-rewire gotcha for the metallic pass) → two-slot split per
+    CONVENTIONS (slot 0 TeamRegion minority face-set from manifest selectors, slot 1 <AssetName>PBR) →
+    UCX collision authoring for buildings (UCX_SM_Castle wall-footprint-exact — plinth dead-zone lesson;
+    bounds within ±10% of the blockout) → FBX export to Content/RawAssets/<AssetName>.fbx with the axis
+    contract (axis_forward='-Z', axis_up='Y', apply_unit_scale, FACE smoothing; units feet-center origin,
+    buildings ground-center) → texture PNGs to Content/RawAssets/Textures/<AssetName>/T_<AssetName>_D|_N|
+    _ORM.png → Workbench/Cycles preview renders + refine_report.json (tris/bounds/UV-layer/PNG inventory)
+    to Cache/<AssetName>/. Modes: "bake" (standard) and "native" fallback (keep TRELLIS's own
+    mesh/UVs/textures — the escape hatch for bake artifacts).
+    (2) pipeline_manifest.json — per-asset entries for Footman, Archer, Castle: tri budgets (units ≤15k,
+    castle ≤40k), target dims from the blockout handoffs, team-region selectors, bake sizes (1024² units,
+    2048² buildings), mode.
+    (3) guard-secrets: add the hf_[A-Za-z0-9]{20,} token pattern to .claude/hooks/guard-secrets.sh
+    (micro-edit; do not disturb existing patterns).
+    Acceptance: script headless-safe by inspection; ALL writes confined to Tools/ArtPipeline/Cache/ +
+    Content/RawAssets/ (QA verifies write confinement — and NEVER Content/RawAssets/CardArt/, ruling 4);
+    refine_report.json complete; manifest carries the three pilot assets; hook pattern added. QA gate per
+    ruling 2. handoffs/TASK-083.md. Post in ⚙️ Dev & QA.
+- names: >
+    Tools/ArtPipeline/refine_trellis_glb.py, Tools/ArtPipeline/pipeline_manifest.json,
+    .claude/hooks/guard-secrets.sh (pattern hf_[A-Za-z0-9]{20,}). Outputs: Content/RawAssets/<AssetName>.fbx
+    (existing blockout paths: Footman.fbx, Archer.fbx, Castle.fbx),
+    Content/RawAssets/Textures/<AssetName>/T_<AssetName>_D|_N|_ORM.png, Cache/<AssetName>/refine_report.json
+    + previews. UV layer: "UVMap". Slot names: TeamRegion / <AssetName>PBR. Collision: UCX_SM_Castle.
+    Law: CONVENTIONS.md "Textured mesh law (TRELLIS.2 art pipeline)".
+
+#### TASK-084 — Trellis tooling integration: smoke tests, .gitignore, commit (build-master)
+- assignee: build-master
+- status: done (2026-07-07: ALL smokes PASS. (a) `--check` exit 0 — 3 endpoints schema-OK, snapshot to gitignored Cache/api_schema.json; NOTE required an environmental TLS workaround: Norton AV MITMs HTTPS (cert issuer "Norton Web/Mail Shield Root", in Windows store but NOT certifi) → ran with SSL_CERT_FILE=certifi+Norton bundle. CARRY-FORWARD TASK-085/086: Stage-1 live runs need the same SSL_CERT_FILE bundle OR a Norton exclusion for huggingface.co/*.hf.space — raw exit-1 "CERTIFICATE_VERIFY_FAILED" otherwise; not a code bug, not API drift. (b) Footman round-trip exit 0 in 2.8s — 15000 tris on budget, bounds/min-Z/UVMap OK, report complete, zero warnings; WARN-3 CLOSED: re-imported smoke FBX carries exactly 2 slots in order [TeamRegion, FootmanPBR] (donor exercised a 21.2% live selector match, not the zero-face branch); D/N/ORM are real PNGs. (c) Castle round-trip exit 0 — 40000 tris, 9 UCX hulls UCX_SM_Castle_00..08 in the FBX, side-wall hull exactly 100×820×300 UE (create_cube full-edge semantics confirmed), no slab; donor FBX checksums unchanged (write confinement proven). (d) guard-secrets pipe tests: fake hf_+27-alnum → deny JSON; benign → silence; line-12 hf_ pattern visually confirmed (file untracked pre-commit, no diff possible). .gitignore hardened BEFORE any git add: Tools/ArtPipeline/.venv/ + Inbox/* + Cache/* ignored, .gitkeeps kept via negations. Tooling committed to main (hash in orchestrator report + 🔧 Build & Git), NOT pushed; card-art-chain files excluded per lane isolation — they ride TASK-081 phase 2.)
+- blocked-by: TASK-082 (qa-passed), TASK-083 (qa-passed)
+- parallel-safe: no (owns Git; runs Bash smoke tests; serialize with any other build-master work — no UE compile needed, this chain has no C++)
+- spec: >
+    (1) `uv sync` in Tools/ArtPipeline (creates the pinned 3.12 env). (2) Run `uv run trellis_generate.py
+    --check` — TOKENLESS smoke: HF Space reachable + the three endpoints match the schema assert. An assert
+    failure = API drift: append to qa/TASK-082-report.md and route back (counts as a QA loop). Do NOT run a
+    real generation (no token, no GPU quota spend). (3) Headless Blender round-trip smoke: run
+    refine_trellis_glb.py via blender.exe --background against an EXISTING blockout FBX/GLB in a smoke mode
+    that writes ONLY to Cache/ (must NOT overwrite any shipping Content/RawAssets FBX) — validates the
+    headless bpy environment, write confinement, and refine_report.json generation. (4) Add
+    Tools/ArtPipeline/Inbox/ + Tools/ArtPipeline/Cache/ to .gitignore. (5) Commit the tooling to main
+    (Tools/ArtPipeline/**, guard-secrets.sh, .gitignore, pipeline docs incl. FAB-REQUESTS.md + CONVENTIONS +
+    agent-def updates + this board update) with TASK-082..084 in the message. NOT pushed. Post smoke results
+    + commit hash in 🔧 Build & Git.
+    Acceptance: --check PASS; headless round-trip PASS with a complete report and zero writes outside
+    Cache/; working dirs gitignored; committed to main, not pushed.
+- names: >
+    Tools/ArtPipeline/** (TASK-082/083 files), .gitignore (Inbox/ + Cache/ entries),
+    .claude/pipeline/fab/FAB-REQUESTS.md. Smoke donor: any existing Content/RawAssets/*.fbx (read-only).
+    Commit to main only, not pushed.
+
+#### TASK-085 — EXTERNAL GATE: HF_TOKEN + pilot concept images (Jonathan — not an agent task)
+- assignee: Jonathan (external gate — board-recorded; orchestrator posts the ask in 🚨 Blockers and flips this when satisfied)
+- status: backlog
+- blocked-by: none (may be satisfied any time; TASK-086 requires BOTH this and TASK-084)
+- parallel-safe: yes (human action, no repo mutation by agents)
+- spec: >
+    Jonathan: (1) set the user environment variable HF_TOKEN to your Hugging Face token (env-only law —
+    agents never read it aloud, never store it; new shells/sessions pick it up). Free ZeroGPU ≈ 5 GPU-min/day
+    ≈ 1–2 assets/day; HF PRO ($9/mo, 40 min/day) recommended before the M7 16-mesh batch, optional for the
+    3-asset pilot. (2) Drop three concept PNGs in Tools/ArtPipeline/Inbox/: Footman.png, Archer.png,
+    Castle.png (guidance in Tools/ArtPipeline/README.md — single subject, neutral background, ¾ view works
+    best). Gate is satisfied when the orchestrator confirms the env var EXISTS (existence check only — never
+    echo the value) and the three PNGs are present. Record satisfaction here + in 🚨 Blockers.
+- names: >
+    Env var: HF_TOKEN (user-level). Files: Tools/ArtPipeline/Inbox/Footman.png, Archer.png, Castle.png.
+
+#### TASK-086 — Pilot asset: SM_Footman end-to-end + M_AssetPBR master authoring (art)
+- assignee: art-director
+- status: backlog
+- blocked-by: TASK-084 (tooling committed + smoke-tested), TASK-085 (token + concepts)
+- parallel-safe: no for Stage 3 (editor-mutating); Stages 1–2 are file-side/Bash
+- spec: >
+    Full pipeline on the Footman, plus one-time material infrastructure.
+    STAGE 1 (Bash): uv run trellis_generate.py for Footman (HF_TOKEN from env; if quota blocks, ruling 8 —
+    record reset time, resume next window). Eyeball Cache/Footman/trellis_raw.glb (quick MCP inspection ok,
+    <30 s calls). Bad generation → reroll seed (quota permitting) before refining.
+    STAGE 2 (Bash, headless): refine_trellis_glb.py per manifest (≤15k tris, 1024² bakes, feet-center,
+    UVMap, TeamRegion/FootmanPBR two-slot split). PRE-IMPORT GATE: read refine_report.json + eyeball the
+    Cache previews — nothing enters the editor unseen. Copy the accepted concept
+    Tools/ArtPipeline/Inbox/Footman.png → Content/RawAssets/Concepts/Footman.png (committed at TASK-088).
+    STAGE 3 (editor, serialized): (a) one-time: author master material /Game/Materials/M_AssetPBR with
+    texture params named exactly BaseColor, Normal, ORM (ORM wired as linear packed AO/Rough/Metal);
+    (b) import textures → /Game/Textures/T_Footman_D (sRGB), T_Footman_N (normal), T_Footman_ORM (LINEAR,
+    sRGB off); (c) create /Game/Materials/Instances/MI_Footman_PBR from M_AssetPBR; (d) import the FBX
+    OVERWRITING /Game/Meshes/SM_Footman at the same path (ruling 7 — this task VALIDATES the same-path
+    overwrite; contingencies in order: console `Obj Reimport`, then escalate to Jonathan one-click via 🚨
+    Blockers; NEVER delete+recreate); (e) slots exactly [TeamRegion → MI_TeamColor_Blue (design-time
+    placeholder), FootmanPBR → MI_Footman_PBR]; (f) Nanite OFF; simple collision ≤4 hulls; (g) verify zero
+    import/MikkTSpace warnings, tris/bounds vs manifest, UVMap present.
+    Acceptance: SM_Footman IS the textured mesh at the unchanged path; two slots named/ordered per law;
+    M_AssetPBR + MI_Footman_PBR exist; report + overwrite-validation verdict in handoffs/TASK-086.md
+    (TASK-087 depends on it). Post in 🎨 Art.
+- names: >
+    Inputs: Tools/ArtPipeline/Inbox/Footman.png, Cache/Footman/*. Assets: /Game/Meshes/SM_Footman
+    (same-path overwrite), /Game/Textures/T_Footman_D | T_Footman_N | T_Footman_ORM,
+    /Game/Materials/M_AssetPBR (params BaseColor/Normal/ORM), /Game/Materials/Instances/MI_Footman_PBR.
+    Slots: [TeamRegion, FootmanPBR]. Concept: Content/RawAssets/Concepts/Footman.png. FBX:
+    Content/RawAssets/Footman.fbx. Law: CONVENTIONS.md "Textured mesh law (TRELLIS.2 art pipeline)".
+
+#### TASK-087 — Pilot batch 2: SM_Archer + SM_Castle via the validated pipeline (art)
+- assignee: art-director
+- status: backlog
+- blocked-by: TASK-086 (needs M_AssetPBR + the same-path-overwrite verdict). EXCEPTION per ruling 9: Stage-1 generation + Stage-2 refine for Archer/Castle are file-side and MAY pre-run any time after TASK-084 + TASK-085 (quota permitting); only the Stage-3 imports wait on TASK-086.
+- parallel-safe: no for Stage 3 (editor-mutating; serialize imports); Stages 1–2 file-side
+- spec: >
+    Repeat the TASK-086 pipeline for the two remaining pilot assets, using handoffs/TASK-086.md as the
+    import playbook.
+    ARCHER (unit path): ≤15k tris, 1024² bakes, feet-center, slots [TeamRegion, ArcherPBR] →
+    MI_Archer_PBR; simple collision ≤4 hulls; same-path overwrite /Game/Meshes/SM_Archer.
+    CASTLE (building path): ≤40k tris, 2048² bakes, ground-center, slots [TeamRegion, CastlePBR] →
+    MI_Castle_PBR; explicit UCX_SM_Castle collision, wall-footprint-exact with bounds ±10% of the blockout
+    (the M1 plinth ~410-unit dead-zone must NOT regress — gold-node/miner clearance depends on it); same-path
+    overwrite /Game/Meshes/SM_Castle. Castle bounds sanity: CastleAnchor placement, HP-bar clearance above
+    the roof, and the L_Arena silhouette must stay sane (±10% rule).
+    Both: textures T_<AssetName>_D/_N/_ORM per law; concepts copied to Content/RawAssets/Concepts/;
+    pre-import gate (refine_report.json + preview eyeball) per asset; zero import warnings; Nanite OFF.
+    Quota ruling 8 applies — one asset per day is an acceptable pace; record windows in the handoff.
+    Acceptance: both SMs are textured meshes at unchanged paths with law-conformant slots/collision;
+    handoffs/TASK-087.md complete. Post in 🎨 Art.
+- names: >
+    /Game/Meshes/SM_Archer + /Game/Meshes/SM_Castle (same-path overwrites). Textures:
+    /Game/Textures/T_Archer_D|_N|_ORM, T_Castle_D|_N|_ORM. MIs: /Game/Materials/Instances/MI_Archer_PBR,
+    MI_Castle_PBR (from M_AssetPBR). Slots: [TeamRegion, ArcherPBR] / [TeamRegion, CastlePBR]. Collision:
+    UCX_SM_Castle. Concepts: Content/RawAssets/Concepts/Archer.png, Castle.png. FBX:
+    Content/RawAssets/Archer.fbx, Castle.fbx. Law: CONVENTIONS.md "Textured mesh law".
+
+#### TASK-088 — Trellis pilot integration: PIE verification + commit (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: TASK-086, TASK-087
+- parallel-safe: no (owns the single editor + the Git commit)
+- spec: >
+    (1) Structural checks on the three swapped meshes: slots == [TeamRegion, <AssetName>PBR] with the right
+    MIs; Nanite false; collision present (≤4 hulls units, UCX castle); tris/bounds vs pipeline_manifest.json;
+    zero pending import warnings.
+    (2) PIE on direct-boot L_Arena (menu/sandbox not machine-drivable — TASK-073 precedent) vs the bot:
+    play Footman + Archer via hotkeys — textured meshes render with blue TeamRegion accents; the bot's Red
+    spawns recolor slot 0 (two-slot contract live-proof); placement mode still resolves
+    /Game/Meshes/SM_<CardID> ghosts and tints them fully; both castles render textured, HP bars clear the
+    roofs, castle plinth clearance unchanged (miners reach GoldNodes; placement near castles behaves as
+    before); `stat unit` + `stat streaming` sanity — texture memory delta <100 MB; no new log
+    warnings/errors.
+    (3) Commit the art batch to main with TASK-086..088 (+085 gate note) in the message: Content/RawAssets/
+    {Footman,Archer,Castle}.fbx, RawAssets/Textures/**, RawAssets/Concepts/**, /Game/Meshes SM uassets,
+    /Game/Textures/**, M_AssetPBR + MIs. NOT pushed.
+    (4) Record the WATCH: Jonathan's visual sign-off (style cohesion vs the remaining blockouts, silhouette
+    at gameplay camera, team read at distance). On sign-off the remaining 16 meshes become the M7 template.
+    Post results + hash in 🔧 Build & Git.
+    Acceptance: structural + PIE checks PASS; committed to main, not pushed; WATCH posted.
+- names: >
+    Verify: SM_Footman/SM_Archer/SM_Castle slots + collision + Nanite; MI_Footman/Archer/Castle_PBR;
+    M_AssetPBR; /Game/Maps/L_Arena PIE. Budget refs: Tools/ArtPipeline/pipeline_manifest.json. Commit to
+    main only, not pushed.
+
+#### WATCH — Trellis pilot visual sign-off (Jonathan, after TASK-088)
+- Jonathan eyeballs the three textured meshes in a live match: style cohesion next to the remaining
+  blockouts, silhouette readability at the gameplay camera, Blue/Red team read at distance. Sign-off makes
+  the pipeline the M7 template for the remaining 16 meshes; findings become new tasks in this chain.
 
 ### Menu→arena input-loss bugfix (TASK-074..076) — Jonathan bug report 2026-07-07
 **Blocks the M4 playtest.** Verbatim symptom: from L_MainMenu, clicking "Play vs Bot" OR "Sandbox (No Bot)" joins the match, but then **WASD does nothing and no cards can be used — no user input at all**. Hitting Play directly in L_Arena still works with full input.
@@ -127,7 +513,7 @@ Chain runs strictly in sequence: **TASK-074 (C++ audit+fix, file-only) → TASK-
 
 #### TASK-074 — Menu→arena travel input loss: audit + arena-side input normalization (C++)
 - assignee: gameplay-programmer
-- status: qa-passed (QA PASS 2026-07-07 — 0 blocker/0 warn/1 nit; all 6 flagged decisions ruled, all 6 regression-contract items PASS, shadow-clean; root cause independently re-verified in BP_MenuGameMode.uasset; qa/TASK-074-report.md. Byte-identical/two-files-only claims close via git diff at TASK-076.) (2026-07-07. Root cause CONFIRMED = prime suspect: BP_MenuGameMode EventBeginPlay calls SetInputMode_UIOnlyEx → SetIgnoreInput(true) + NoCapture on the PERSISTENT UGameViewportClient, surviving OpenLevelBySoftObjectPtr travel; fresh arena PC set no input mode → viewport swallowed all input. Menu uses engine-default APlayerController (escalation clause not triggered; fix arena-scoped by construction). Fix: ASiegePlayerController::BeginPlay first statement = ApplyCursorInputState() → exact FInputModeGameOnly on fresh controller, clears the viewport ignore-input latch; no-op by value on direct PIE. Editor change needed: NO → TASK-075 cancel condition met. Files: SiegePlayerController.cpp (+ .h doc comment only). handoffs/TASK-074.md)
+- status: done (committed 218b4c9 via TASK-076, NOT pushed; git diff-audit closed rulings 4/5 — exactly SiegePlayerController.h/.cpp. QA PASS 2026-07-07 — 0 blocker/0 warn/1 nit; all 6 flagged decisions ruled, all 6 regression-contract items PASS, shadow-clean; root cause independently re-verified in BP_MenuGameMode.uasset; qa/TASK-074-report.md. WATCH open: Jonathan's one menu click confirms the fix live.) (2026-07-07. Root cause CONFIRMED = prime suspect: BP_MenuGameMode EventBeginPlay calls SetInputMode_UIOnlyEx → SetIgnoreInput(true) + NoCapture on the PERSISTENT UGameViewportClient, surviving OpenLevelBySoftObjectPtr travel; fresh arena PC set no input mode → viewport swallowed all input. Menu uses engine-default APlayerController (escalation clause not triggered; fix arena-scoped by construction). Fix: ASiegePlayerController::BeginPlay first statement = ApplyCursorInputState() → exact FInputModeGameOnly on fresh controller, clears the viewport ignore-input latch; no-op by value on direct PIE. Editor change needed: NO → TASK-075 cancel condition met. Files: SiegePlayerController.cpp (+ .h doc comment only). handoffs/TASK-074.md)
 - blocked-by: none
 - parallel-safe: yes (file-only C++; touches SiegePlayerController.h/.cpp only — within this chain strictly serial 074→[075]→076, but 074 shares no files with any other open work)
 - spec: >
@@ -233,11 +619,11 @@ Chain runs strictly in sequence: **TASK-074 (C++ audit+fix, file-only) → TASK-
     ApplyCursorInputState behaviors, WBP_MainMenu bindings (StartMatch / StartSandboxMatch). Commit to main
     only, not pushed.
 
-#### WATCH — menu→arena input fix live confirm (not a task; close at Jonathan's click)
-- After TASK-076 commits, Jonathan clicks "Play vs Bot" or "Sandbox (No Bot)" from L_MainMenu once and
-  confirms full input in the match (WASD + hotkeys + cards, cursor hidden, Alt-cursor OK). MCP cannot drive
-  the menu path (TASK-073 precedent) — this click is the only way to close the bug. If it FAILS, the finding
-  returns to the manager as a new task in this chain.
+#### WATCH — menu→arena input fix live confirm — **CLOSED 2026-07-07**
+- Jonathan confirmed live in Claude Code ("that problem is resolved") after 218b4c9: joining from L_MainMenu
+  now gives full input. The TASK-074..076 chain is fully closed; the Sandbox TASK-073 menu-click WATCH
+  (expect "Sandbox match"/"SpawnBot skipped" logs) is implicitly satisfied by the same confirmation path
+  being exercised — manager may treat both menu-path WATCHes as done.
 
 ### Sandbox / test-tooling feature (TASK-071..073) — Jonathan-approved 2026-07-05
 **This is a developer/test affordance, NOT M5 content — building it does NOT break the "M5 not authorized" hold.** Jonathan wants a calm "Sandbox (No Bot)" test bench to exercise the full 22-card roster on `main` without the enemy AI's chaos. Not a milestone; it lives in Active tasks and integrates as a small chain. Mechanism = a level-open URL option `Sandbox=1` (NOT a GameInstance) — full naming law in CONVENTIONS.md "Dev / test tooling". Chain runs strictly in sequence: **TASK-071 (C++ gate) → TASK-072 (menu button, editor) → TASK-073 (build-master integrate + commit).** The editor is CLOSED now; build-master relaunches it (and compiles TASK-071) before the editor/UMG task. Note: `WBP_MainMenu` already EXISTS at `/Game/UI/WBP_MainMenu` (TASK-049) — the menu is a real widget, not a level-BP.

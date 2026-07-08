@@ -21,7 +21,7 @@ Owned by the **manager** agent. All agents MUST follow these. If a needed patter
 | IMC_   | Input mapping context | Content/Input/ |
 
 ## Texture suffixes
-`T_<Name>_D` base color · `T_<Name>_N` normal · `T_<Name>_R` roughness · `T_<Name>_M` metallic · `T_<Name>_E` emissive
+`T_<Name>_D` base color · `T_<Name>_N` normal · `T_<Name>_R` roughness · `T_<Name>_M` metallic · `T_<Name>_E` emissive · `T_<Name>_ORM` packed Occlusion/Roughness/Metallic (LINEAR — sRGB off; added 2026-07-07, TRELLIS pipeline)
 
 ## C++ (Source/GitClaudeUnrealTest/)
 - Classes: `A` actors, `U` UObjects/components, `F` structs, `E` enums, `I` interfaces
@@ -46,6 +46,14 @@ Owned by the **manager** agent. All agents MUST follow these. If a needed patter
 - A card actor's visual mesh asset is `SM_<CardID>` in Content/Meshes/ (e.g., `SM_Footman`, `SM_ArrowTower`). This is a code contract: placement-ghost previews resolve `/Game/Meshes/SM_<CardID>` by string.
 - The mesh component on card actors (ASummonedUnit, ABuilding) is named exactly `VisualMesh`.
 
+## Card artwork (hand UI)
+Added 2026-07-07 (TASK-077..081, Jonathan feature request: real card art on the hand-UI card faces). Every CardID in the roster gets exactly ONE illustration texture.
+- **Texture asset:** `T_CardArt_<CardID>` in Content/UI/CardArt/ (`/Game/UI/CardArt/T_CardArt_<CardID>`), one per CardID, exactly **512×512** (square power-of-two — plenty for a hand-slot face). Deliberate exception to the prefix table's `T_` → Content/Textures/ row: card art is UI-owned and lives with the UI. Import settings: Texture Group = UI, sRGB on, default compression.
+- **Source render:** PNG at `Content/RawAssets/CardArt/<CardID>.png`, checked into Git alongside the imported .uasset (mirrors the FBX raw-asset rule). `<CardID>` casing character-for-character from cards.csv row names.
+- **Data path (§3.0 law):** the art reference is DT_Cards data, never hardcoded — FCardRow column `CardArt` (`TSoftObjectPtr<UTexture2D>`); CSV cell = the FULL object path `/Game/UI/CardArt/T_CardArt_<CardID>.T_CardArt_<CardID>`. Unset/unresolvable path ⇒ graceful text-only card face (today's presentation), log once, never a crash. Widgets never hardcode a CardID→texture mapping.
+- **Resolution seam:** `UCardHandWidget` exposes null-safe `UFUNCTION(BlueprintCallable)` resolver(s) — `GetCardArtTexture(CardID)` + a preview-art equivalent (TASK-079). The three hand BIEs (`OnHandSlotUpdated` / `OnNextCardUpdated` / `OnCardRefusedMessage`) keep their signatures: BIE PARAMS stay float/int/bool/byte/FString only; UObject returns are allowed on BlueprintCallable functions, which is why the resolver pattern is the law here.
+- **Face composition:** art is the BACKGROUND layer of the card face; DisplayName + cost text overlay on top and must stay legible (translucent contrast strip / shadow behind text is allowed). The artwork itself contains NO baked-in text. Art images are HitTestInvisible — clicks belong to the play/discard buttons (M1 WARN-4 posture). Style may be blockout-tier stylized (premium art = M7) but each card must read at ~150 px: one dominant subject, strong silhouette, distinct per-card color key, team-agnostic palette (cards are player-neutral).
+
 ## Data-driven card stats (GDD §3.0)
 - Source of truth: `Docs/Data/cards.csv` (checked into Git), imported as `/Game/Data/DT_Cards` with row struct `FCardRow`
 - Row name = CardID in PascalCase, no spaces (e.g., `Footman`, `ArrowTower`); code and blueprints reference cards by CardID FName; `DisplayName` carries the spaced human name ("Arrow Tower")
@@ -53,6 +61,7 @@ Owned by the **manager** agent. All agents MUST follow these. If a needed patter
 - FCardRow columns beyond the GDD §4 stat columns (registry — CSV header must match UPROPERTY names 1:1):
   - `DeckCount` (int32) — copies of this card in the default 50-card deck (GDD §3.4); all DeckCount values must sum to exactly 50; 0 = not in the default deck. **M4 note:** the M4 test deck (TASK-053) repurposes DeckCount as an expanded 22-card 50-count deck so Set II is reachable until the M6 deck-builder — still sums to 50, each ≤ MaxCopies.
   - `bRanged` (bool) — true if the card's attack is delivered by a homing projectile (GDD §3.0) instead of melee contact
+  - `CardArt` (TSoftObjectPtr<UTexture2D>) — hand-UI card illustration; CSV cell = full object path `/Game/UI/CardArt/T_CardArt_<CardID>.T_CardArt_<CardID>`; unset = text-only face fallback (added 2026-07-07, TASK-079; law in "Card artwork (hand UI)")
   - **M4 keyword/behavior columns (Set II, TASK-053):** typed one-per-concept, sparse (defaults shown):
     - `bCharge` (bool, false) — Charge keyword: first attack after ≥2 s uninterrupted movement deals 2× (GDD §3.0). (Cavalry)
     - `bSlayer` (bool, false) — Slayer keyword: 2× damage vs targets with MaxHP ≥ 150 (GDD §3.0). (Pikeman)
@@ -84,6 +93,17 @@ Owned by the **manager** agent. All agents MUST follow these. If a needed patter
 
 ## Raw asset sources
 - Blender FBX exports live in `Content/RawAssets/<AssetNameWithoutPrefix>.fbx` (e.g., `Castle.fbx` → `SM_Castle`); the FBX is checked into Git alongside the imported .uasset
+
+## Textured mesh law (TRELLIS.2 art pipeline)
+Added 2026-07-07 (TASK-082..088, Jonathan-approved plan: automated TRELLIS.2 → Blender → UE5 pipeline). Governs game-ready textured meshes produced by `Tools/ArtPipeline/` (pilot scope: Footman, Archer, Castle; the remaining 16 blockouts follow this template at M7). `<AssetName>` = CardID for card actors, `Castle` for the castle.
+- **Concepts:** the ACCEPTED concept image for each produced asset is committed at `Content/RawAssets/Concepts/<AssetName>.png`. Working inputs live in `Tools/ArtPipeline/Inbox/<AssetName>.png` and intermediates in `Tools/ArtPipeline/Cache/<AssetName>/` — both gitignored.
+- **Mesh swap:** the refined FBX exports to the EXISTING blockout path `Content/RawAssets/<AssetName>.fbx` and imports OVERWRITING `/Game/Meshes/SM_<AssetName>` in place — same-path swaps keep every code/BP soft reference (including the placement-ghost `/Game/Meshes/SM_<CardID>` string contract) intact. NEVER delete+recreate the SM asset.
+- **Textures:** `/Game/Textures/T_<AssetName>_D` (sRGB) · `T_<AssetName>_N` (normal) · `T_<AssetName>_ORM` (packed Occlusion/Roughness/Metallic, LINEAR — sRGB off). PNG sources checked in at `Content/RawAssets/Textures/<AssetName>/`. Bake sizes: 1024² units / 2048² buildings.
+- **Two-slot material contract (requires ZERO C++ changes):** every pipeline mesh has EXACTLY two material slots, in order — **slot 0 named `TeamRegion`** (a minority face-set: trim/banners/accents; the BeginPlay team recolor hardcodes `MI_TeamColor_<Team>` onto slot 0 — SummonedUnit.cpp:146 / Building.cpp:80 / Castle.cpp:125 — and keeps working unchanged; author `MI_TeamColor_Blue` as the design-time placeholder), **slot 1 named `<AssetName>PBR`** assigned `MI_<AssetName>_PBR` (Content/Materials/Instances/), an instance of the master **`/Game/Materials/M_AssetPBR`** whose texture parameters are named exactly `BaseColor`, `Normal`, `ORM`. The placement ghost tints ALL slots (already true today).
+- **Mesh settings:** **Nanite OFF** on pipeline meshes (ruling). UV layer named exactly `UVMap`. Tri budgets: units ≤15k, castle ≤40k (per `pipeline_manifest.json`). Origins: units feet-center, buildings ground-center. Export axis contract: `axis_forward='-Z'`, `axis_up='Y'`, `apply_unit_scale`, FACE smoothing. Collision: units ≤4 simple hulls; buildings author explicit `UCX_SM_<AssetName>` geometry — the castle UCX must be wall-footprint-exact (M1 plinth ~410-unit dead-zone lesson) with bounds within ±10% of the blockout.
+- **Tooling law:** `Tools/**/*.py` is CODE — the full QA gate applies before commit. **`HF_TOKEN` is ENV-ONLY**: read from the environment at runtime; never written to any file, never passed on argv, never echoed/logged (guard-secrets hook carries the `hf_` pattern). Heavy Blender refine runs HEADLESS via `blender.exe --background --python` through Bash — the live Blender MCP bridge has a 30 s socket cap and is for <30 s inspection/preview only.
+- **Fab quarantine:** marketplace packs land in `Content/Fab/<Pack>/` and are READ-ONLY donors (the Variant_* rule applies: soft-reference or duplicate-into-/Game/, never edit in place). Acquisition is HUMAN-ONLY via `.claude/pipeline/fab/FAB-REQUESTS.md` (FAB-### entries: requested → approved → fulfilled → integrated; Jonathan fulfills via the Epic Launcher). Agents never browse/buy/download Fab.
+- **Lane isolation:** this pipeline NEVER writes `Content/RawAssets/CardArt/` or `/Game/UI/CardArt/` — those belong to the card-art chain (TASK-077..081, "Card artwork (hand UI)" law).
 
 ## Delegates (C++)
 - Pattern: `FOn<Owner><Event>`, declared in the owner's header; the UPROPERTY(BlueprintAssignable) member is named `On<Owner><Event>`. Existing: `FOnCastleDestroyed`, `FOnGoldChanged`, `FOnCastleHPChanged(float CurrentHP, float MaxHP)`

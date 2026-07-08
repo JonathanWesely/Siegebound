@@ -15,6 +15,18 @@
 # approved commands/paths. Kept out of the repo so it can't be pushed public.
 .claude/settings.local.json
 
+# Art-pipeline working dirs (TASK-084). The uv-managed virtualenv is a vendored
+# site-packages tree (700+ files) — never committed; `uv sync` recreates it.
+# Inbox/ holds Jonathan's concept PNGs, Cache/ holds generate/refine outputs —
+# both are local working data. The .gitkeep placeholders stay tracked via the
+# negations (git only honors `!` if the parent dir itself is not ignored, hence
+# the `/*` form).
+Tools/ArtPipeline/.venv/
+Tools/ArtPipeline/Inbox/*
+!Tools/ArtPipeline/Inbox/.gitkeep
+Tools/ArtPipeline/Cache/*
+!Tools/ArtPipeline/Cache/.gitkeep
+
 # --- IDE / editor -----------------------------------------------------------
 .vs/
 .vscode/

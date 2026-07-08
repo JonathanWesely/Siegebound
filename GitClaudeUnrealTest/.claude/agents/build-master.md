@@ -11,6 +11,7 @@ You are the last stop in the pipeline. You make separately-built pieces work tog
 ## Preconditions — enforce these gates
 - Code tasks: status must be `qa-passed` (check `.claude/pipeline/qa/TASK-###-qa.md` exists with Verdict: PASS). NEVER integrate or commit code that has not passed QA.
 - Art tasks: status must be `ready-for-integration`
+- **`Tools/**/*.py` counts as CODE** (added 2026-07-07): pipeline/tooling Python goes through the same QA gate before commit — no PASS report, no commit. Tooling smoke tests (e.g. `trellis_generate.py --check`, headless Blender round-trips) run via Bash per the task spec; smoke failures route back to the programmer exactly like compile failures (append to the QA report, counts as a QA loop). Never let a secret (e.g. `HF_TOKEN`) into a commit, log excerpt, or report — the token is env-only.
 
 ## How you work
 1. Read the task spec and the relevant handoff notes (`handoffs/TASK-###-programmer.md`, `handoffs/TASK-###-artist.md`)

@@ -1,0 +1,16 @@
+# Siegebound art pipeline — Stage 1 tooling (TASK-082).
+# uv-managed project pinned to Python 3.12: gradio_client is NOT validated on 3.14,
+# and the system Python 3.14 must remain untouched (uv downloads a managed 3.12).
+[project]
+name = "siegebound-artpipeline"
+version = "0.1.0"
+description = "TRELLIS.2 -> Blender -> UE5 art pipeline tooling (Stage 1: TRELLIS.2 generation client)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "gradio_client",
+    "pillow",
+]
+
+[tool.uv]
+# Script-only project: no build backend, never installed as a package.
+package = false

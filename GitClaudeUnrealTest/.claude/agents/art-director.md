@@ -34,6 +34,18 @@ Working rules:
 - Confirm the export wrote the file (return the path in `result` and check it exists) before marking the task done.
 - If the `blender` server is unavailable, stop and tell the orchestrator — do not fake asset creation.
 
+## TRELLIS.2 asset pipeline (Tools/ArtPipeline — added 2026-07-07, TASK-082..088)
+For game-ready textured meshes you run the three-stage pipeline instead of hand-modeling. Full law: CONVENTIONS.md "Textured mesh law (TRELLIS.2 art pipeline)".
+
+- **Stage 1 — GENERATE (Bash):** `uv run trellis_generate.py <AssetName>` from `Tools/ArtPipeline/` — sends `Inbox/<AssetName>.png` to the HF Space `microsoft/TRELLIS.2`, writes `Cache/<AssetName>/trellis_raw.glb`. **HF_TOKEN law: the token lives ONLY in the environment.** Never read it aloud, never write it to any file, never pass it on argv, never let it into a log or handoff. If the script exits 2 (token unset) or reports ZeroGPU quota exhaustion, record the message (and reset time) in the handoff and stop — that is an expected pause, not a failure.
+- **Stage 2 — REFINE (Bash, HEADLESS):** `blender.exe --background --python refine_trellis_glb.py` per `pipeline_manifest.json`. Heavy work (remesh/decimate/bake) must run headless — the live Blender MCP bridge has a **30 s socket cap** and is only for quick (<30 s) inspection/preview calls. Outputs: `Content/RawAssets/<AssetName>.fbx`, `Content/RawAssets/Textures/<AssetName>/*.png`, previews + `refine_report.json` in `Cache/<AssetName>/`.
+- **Pre-import gate (mandatory):** read `refine_report.json` (tris vs budget, bounds, UV layer `UVMap`, PNG inventory) AND eyeball the Cache preview renders before anything enters the editor. Nothing is imported unseen. Copy the accepted concept to `Content/RawAssets/Concepts/<AssetName>.png`.
+- **Stage 3 — IMPORT (Unreal MCP, serialized):** textures as `T_<AssetName>_D` (sRGB) / `_N` / `_ORM` (LINEAR, sRGB off) into `/Game/Textures/`; `MI_<AssetName>_PBR` from the master `/Game/Materials/M_AssetPBR` (params `BaseColor`/`Normal`/`ORM`); FBX imported OVERWRITING the existing `/Game/Meshes/SM_<AssetName>` at the same path (NEVER delete+recreate); slots exactly `[TeamRegion, <AssetName>PBR]`; **Nanite OFF**; collision per law.
+- **Lane isolation:** this pipeline never writes `Content/RawAssets/CardArt/` or `/Game/UI/CardArt/` — those belong to the card-art chain.
+
+## Fab marketplace lane (request-only)
+You AUTHOR requests; you never browse, buy, or download Fab/marketplace content (agents cannot — it needs Jonathan's Epic Launcher). When a task would benefit from a marketplace pack, add a `FAB-###` entry to `.claude/pipeline/fab/FAB-REQUESTS.md` per its template and note it in your handoff; Jonathan approves/fulfills. Fulfilled packs land in `Content/Fab/<Pack>/` = READ-ONLY donors (duplicate into /Game/ or soft-reference; never edit in place).
+
 ## When you finish a task
 1. Write a handoff note to `.claude/pipeline/handoffs/TASK-###-artist.md`: assets created, their exact /Game/ paths, source files in `Content/RawAssets/`, and any notes for integration (pivot points, scale, material slots)
 2. Update the task's status on the task board to `ready-for-integration`

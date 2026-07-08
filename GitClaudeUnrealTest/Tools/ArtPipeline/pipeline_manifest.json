@@ -1,0 +1,112 @@
+{
+  "_doc": {
+    "what": "Per-asset parameters for refine_trellis_glb.py (Stage 2 of the TRELLIS.2 art pipeline, TASK-083). Law: CONVENTIONS.md 'Textured mesh law (TRELLIS.2 art pipeline)'.",
+    "merging": "'defaults' apply to every asset; per-asset keys override (dict values merge one level deep).",
+    "units": "All *_ue values are Unreal units (= cm). The script works in Blender meters internally (1 m = 100 UE) and exports with apply_unit_scale=True, matching the blockout FBX convention.",
+    "mode": "'bake' = full remesh/decimate + Cycles CPU bake to D/N/ORM (standard). 'native' = keep TRELLIS's own mesh/UVs/textures, WebP->PNG convert only (escape hatch for bake artifacts). CLI --mode overrides.",
+    "fit_mode": "'height' = uniform scale so Z matches target (units — silhouette-preserving; X/Y deviation is warn-only in the report). 'box' = exact per-axis scale to the target box (buildings — guarantees the ±10% blockout-bounds ruling).",
+    "origin": "Documentation of the origin rule; 'feet-center' (units) and 'ground-center' (buildings) are both implemented as XY-bbox-center at (0,0) with min Z = 0, per the TASK-014/037/038 blockout definitions.",
+    "pre_rotate_z_deg": "Rotation applied before scaling so the model's FRONT faces Blender -Y (blockout facing contract). TRELLIS output orientation is unknown until the first live generation — tune per asset at the TASK-086/087 eyeball gate.",
+    "team_region": "Selectors choose the minority face-set for material slot 0 'TeamRegion' (remainder = slot 1 '<CardID>PBR'). Each selector may carry 'box' (normalized conformed-bounds coords: x 0=-X..1=+X, y 0=front(-Y)..1=back(+Y), z 0=ground..1=top; face selected when its center lies inside) and/or 'normal' ({direction, min_dot}: face normal dot >= min_dot). Conditions within a selector AND together; selectors OR together. Selection over max_fraction of surface area (or zero faces) is a report WARNING, not a failure — the pre-import eyeball gate rules. All selector values below are STARTING GUESSES against not-yet-generated meshes.",
+    "ucx": "Buildings only: authored UCX_SM_<CardID>_00.. box hulls exported inside the FBX. 'boxes' entries are {center:[x,y,z], size:[x,y,z]} in UE units in conformed space. Castle law: wall-footprint-exact, NEVER a full base slab (M1 ~410-unit placement dead-zone lesson). Units carry ucx:null — their <=4 simple hulls are generated at Stage-3 import (TASK-037 recipe), not authored here.",
+    "bake": "cage_extrusion_ue / max_ray_distance_ue feed Cycles selected-to-active baking; ao_samples applies to the AO pass only (spec: 64 spp), 'samples' to all other passes."
+  },
+  "version": 1,
+  "defaults": {
+    "mode": "bake",
+    "weld_distance_rel": 0.0002,
+    "island_min_face_fraction": 0.01,
+    "hole_fill_max_sides": 16,
+    "dims_tolerance": 0.1,
+    "uv": { "angle_limit_deg": 66.0, "island_margin": 0.02 },
+    "bake": {
+      "margin_px": 16,
+      "samples": 8,
+      "ao_samples": 64,
+      "cage_extrusion_ue": 3.0,
+      "max_ray_distance_ue": 8.0
+    },
+    "team_region": { "max_fraction": 0.4, "selectors": [] },
+    "preview": { "workbench_px": 768, "cycles_px": 640, "cycles_samples": 32 }
+  },
+  "assets": {
+    "Footman": {
+      "category": "unit",
+      "mode": "bake",
+      "tri_budget": 15000,
+      "bake_resolution": 1024,
+      "origin": "feet-center",
+      "fit_mode": "height",
+      "target_dims_ue": [147.0, 80.0, 180.0],
+      "_dims_source": "TASK-014 blockout: 147.1 x 80.0 x 180.0, feet-center, sword +X / shield -X, front -Y",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 1.5,
+      "team_region": {
+        "max_fraction": 0.35,
+        "selectors": [
+          { "name": "helm_crest", "box": { "min": [0.0, 0.0, 0.86], "max": [1.0, 1.0, 1.0] } },
+          { "name": "shield_band", "box": { "min": [0.0, 0.2, 0.3], "max": [0.25, 0.8, 0.78] } }
+        ]
+      },
+      "ucx": null
+    },
+    "Archer": {
+      "category": "unit",
+      "mode": "bake",
+      "tri_budget": 15000,
+      "bake_resolution": 1024,
+      "origin": "feet-center",
+      "fit_mode": "height",
+      "target_dims_ue": [125.0, 67.3, 180.0],
+      "_dims_source": "TASK-037 blockout: 125.0 x 67.3 x 180.0, feet-center, bow -X, quiver on back (+Y), front -Y",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 1.5,
+      "team_region": {
+        "max_fraction": 0.35,
+        "selectors": [
+          { "name": "cap", "box": { "min": [0.0, 0.0, 0.85], "max": [1.0, 1.0, 1.0] } },
+          { "name": "quiver", "box": { "min": [0.25, 0.75, 0.45], "max": [0.8, 1.0, 0.85] } }
+        ]
+      },
+      "ucx": null
+    },
+    "Castle": {
+      "category": "building",
+      "mode": "bake",
+      "tri_budget": 40000,
+      "bake_resolution": 2048,
+      "origin": "ground-center",
+      "fit_mode": "box",
+      "target_dims_ue": [814.5, 820.0, 900.0],
+      "_dims_source": "TASK-013 blockout: 814.5 x 820.0 x 900.0, ground-center; box fit keeps bounds well inside the ±10% ruling",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 4.0,
+      "bake": { "cage_extrusion_ue": 8.0, "max_ray_distance_ue": 24.0 },
+      "team_region": {
+        "max_fraction": 0.4,
+        "selectors": [
+          {
+            "name": "roofs",
+            "box": { "min": [0.0, 0.0, 0.55], "max": [1.0, 1.0, 1.0] },
+            "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.3 },
+            "_comment": "upward-sloped faces in the top ~45% = tower cones + keep roof; classic RTS team read"
+          }
+        ]
+      },
+      "ucx": {
+        "_comment": "Wall-footprint-exact (M1 plinth dead-zone lesson): 4 perimeter wall boxes + 4 corner towers + central keep. NO full-base slab. Derived from the TASK-013 blockout description (wall ring at the perimeter, ~100-thick walls, corner towers, central keep); tune at TASK-087 against the generated mesh.",
+        "boxes": [
+          { "name": "wall_west", "center": [-357.0, 0.0, 150.0], "size": [100.0, 820.0, 300.0] },
+          { "name": "wall_east", "center": [357.0, 0.0, 150.0], "size": [100.0, 820.0, 300.0] },
+          { "name": "wall_front", "center": [0.0, -360.0, 150.0], "size": [614.0, 100.0, 300.0] },
+          { "name": "wall_back", "center": [0.0, 360.0, 150.0], "size": [614.0, 100.0, 300.0] },
+          { "name": "tower_front_west", "center": [-307.0, -310.0, 250.0], "size": [200.0, 200.0, 500.0] },
+          { "name": "tower_front_east", "center": [307.0, -310.0, 250.0], "size": [200.0, 200.0, 500.0] },
+          { "name": "tower_back_west", "center": [-307.0, 310.0, 250.0], "size": [200.0, 200.0, 500.0] },
+          { "name": "tower_back_east", "center": [307.0, 310.0, 250.0], "size": [200.0, 200.0, 500.0] },
+          { "name": "keep", "center": [0.0, 0.0, 300.0], "size": [360.0, 360.0, 600.0] }
+        ]
+      }
+    }
+  }
+}
