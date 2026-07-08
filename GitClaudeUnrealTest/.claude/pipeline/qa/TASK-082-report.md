@@ -52,3 +52,45 @@ Verdict: token cannot reach disk, files, or logs through any path the script con
 2. `.gitkeep` adjudication: if you blanket-ignore `Inbox/` + `Cache/`, either negate the `.gitkeep`s (`!Tools/ArtPipeline/Inbox/.gitkeep` etc.) or delete them — the script mkdirs both on demand, so they are not load-bearing.
 3. `--check` smoke contract: expect **exit 0** + three endpoints listed + snapshot at `Cache/api_schema.json` (top-level when run without an asset arg — expected, gitignored artifact). **Exit 4** = API drift → append the live `api_schema.json` findings to this report and route back (counts as a QA loop). **Exit 1** = Space unreachable (network problem, NOT drift — do not route back for a transient outage).
 4. WARN-1 and WARN-2 are non-blocking; if the programmer picks them up before your commit, they are one-line and small respectively — no re-QA needed beyond confirming the redact() wrap on WARN-1.
+
+---
+
+# QA-loop 2 verdict (2026-07-07)
+Verdict: **PASS** — 0 BLOCKER / 1 WARN / 2 NIT
+
+Scope: re-QA of the two-hunk fix to `Tools/ArtPipeline/trellis_generate.py` (now 677 lines, full re-read) after the live gradio_client 2.5.0 kwarg drift caught at TASK-086 Stage 1. Inputs: "QA-loop 2" section of handoffs/TASK-082.md, handoffs/TASK-086.md (art-director diagnosis + 2.5.0 introspection sweep), TASKBOARD TASK-082 block (status `qa-loop-2 in-progress`). Reviewed under the full ruling-2 tooling gate; only findings NEW to this loop are listed below (loop-1 findings above stand as ruled).
+
+## Hunk verification
+
+1. **Kwarg fix — CORRECT.** `run_generate()` line 460: `client = Client(SPACE_ID, token=token)`, with a two-line comment (458-459) recording the 2.5.0 rename and pointing at the `--check` guard. Matches the installed gradio_client 2.5.0 `Client.__init__` signature per TWO independent live introspections (art-director in TASK-086; programmer re-sweep in the handoff — params include `token`, no `hf_token`). Repo-wide grep: **zero remaining `hf_token=` call sites** — remaining `hf_token` hits are the explanatory comments (lines 362, 458), and `Cache/Footman/state_failed.json` (the runtime evidence of the original failure — gitignored artifact, not code; its stored error text is the redacted TypeError, no secret).
+2. **Offline signature assert — CORRECT.** `run_check()` lines 356-374: `import inspect` (stdlib, function-local, consistent with the lazy-import style) + `inspect.signature(Client.__init__).parameters`; missing `token` → `fail(...)` with a clear drift message that names the exact call site to update (`run_generate()`'s `Client()` construction) and lists the live param names, then `return 1`. Ordering verified: the assert sits BEFORE `Client(SPACE_ID)` construction (line 378) — module import is the only thing preceding it, and importing gradio_client performs no network I/O; Client CONSTRUCTION (the network point) is guarded. Tokenless by construction: `run_check()` never reads `HF_TOKEN`; the failure message contains only parameter identifiers (cannot carry a token) and goes through `fail()` → `redact()` regardless. On pass it prints the assert-OK line then proceeds to the unchanged reachability check. No new dependencies; zero behavior change outside `--check`.
+
+## Invariants re-audit (all intact)
+
+- **Secret handling UNCHANGED:** env-only read at line 401 (sole consumer = the fixed construction site); exit-2 block (402-409) still fires before any network call or dir creation; `_register_secret` at 410 precedes all network activity; redactor (72-100) byte-identical in behavior; WARN-1 `redact(message)` in `_Parser.error` (592) intact; all three failure handlers still redact before print and storage.
+- **Exit codes:** 2 (409), 3 (560), 4 (382/567), 5 (423/426), 64 (592) untouched. New `return 1` at 373 is the deliberate drift path — ruled below.
+- **WARN-2 scheme intact:** success → `state.json` (546); quota/drift/generic failures → `state_failed.json` (558/565/572); the "/extract_glb returned no .glb" message still names `state_failed.json`.
+- **Regression sanity by inspection:** atomic one-Client session (452-528, all three endpoints on the same instance, retries reuse it), `discover_api` view_api assert unchanged, `api_schema.json` snapshots unchanged (463 per-asset, 390-393 in --check), timeout clamp at main() (661-664) unchanged, quota guidance unchanged, write confinement unchanged (all writes still under SCRIPT_DIR/Inbox + SCRIPT_DIR/Cache).
+- **Scope:** `refine_trellis_glb.py`, `pipeline_manifest.json`, hooks, README, card-art lane, TASKBOARD — untouched per handoff and consistent with everything I can inspect. File remains ASCII-clean by inspection (byte-scan claim is the programmer's; nothing non-ASCII visible in the full read).
+
+## Rulings on flagged decisions
+
+- **Exit 1 (not 4) for the offline kwarg-drift assert — APPROVED.** Exit 4 is contractually **Space-side** API drift (board spec: "API drift: required endpoints/schema not found on the Space"; docstring line 27; README), and it carries a specific TASK-084 runbook — "append the live api_schema.json findings to the QA report and route back" — which is meaningless for client-library drift (there are no Space schema findings; the fix is a local call-site edit). Overloading 4 would trigger the wrong procedure; minting a new code would expand the exit contract with no consumer. Exit 1 + a self-diagnosing message is the right shape. **Consequence for the smoke contract (supersedes the letter of loop-1 note 3):** exit 1 from `--check` now has two meanings, disambiguated by stderr — `"gradio_client kwarg drift: ..."` = real code drift, DO route back (counts as a QA loop); `"Space unreachable: ..."` = transient network, do NOT route back.
+- **Assert mechanism (explicit-parameter presence check) — APPROVED.** Correct membership test on `signature().parameters`; fails in the conservative direction (see NIT-L2-B).
+
+## Loop-2 findings
+
+- **[WARN-L2-A]** (verification, not code) — I cannot statically confirm the working-tree diff scope: my session's git snapshot does not list `Tools/ArtPipeline/trellis_generate.py` as modified, while the handoff states it is the only modified file under `Tools/ArtPipeline/` (likely snapshot staleness — the fix IS verifiably present on disk, and the committed 1e923d4 version demonstrably had the bug per the TASK-086 crash). **Build-master:** before the loop-2 commit, confirm `git status`/`git diff Tools/ArtPipeline/` shows exactly this one file with exactly these two hunks (construction-site comment+kwarg; run_check assert block), and that the `__pycache__/` byproduct stays out.
+- **[NIT-L2-B]** `trellis_generate.py:365-366` — if a future gradio_client moves auth into `**kwargs`, the explicit-param check false-FAILS `--check` even though `token=` might still work. Conservative failure (costs one investigation cycle; spends no token/quota, crashes nothing) — acceptable as-is. If it ever fires against a signature showing a VAR_KEYWORD param, check for that before routing back as code drift.
+- **[NIT-L2-C]** docstring line 24 / README exit-code table still describe exit 1 only as generic failure; the new `--check` client-drift meaning is documented in the code comment and the runtime message but not in README (README was correctly out of scope this loop). Fold into the next README touch; the stderr message is self-explanatory meanwhile.
+
+## Verification-evidence adequacy (handoff)
+
+Adequate for a tokenless/offline loop: `py_compile` clean; `--help` OK; usage-error path re-proven (exit 64, `[hf-token-redacted]` echo — WARN-1 regression-checked with a dummy-shaped token); **negative test** = monkeypatched `Client` lacking `token` whose body raises if constructed → `run_check()` returned 1 on the assert alone, proving pre-network firing; **positive** = live `--check` exit 0 with the assert-OK line printed before the reachability check, three endpoints present, snapshot rewritten. No GPU/quota spent; no token used anywhere in testing. First-hand 2.5.0 sweep matches TASK-086's independent sweep (submit/result(timeout)/cancel/view_api/handle_file all confirmed) — no further signature drift expected.
+
+## Notes for build-master (loop-2 carry-forwards)
+
+1. WARN-L2-A diff-scope confirmation before the commit (one file, two hunks).
+2. Re-run `uv run trellis_generate.py --check` as the integration smoke — expect exit 0 with the NEW first line `--check: offline signature assert OK - Client.__init__ accepts 'token'.` before the reachability output.
+3. Amended exit-1 disambiguation for `--check` (see ruling above): kwarg-drift message = route back; unreachable message = transient, don't.
+4. The authenticated GPU path remains runtime-unproven until TASK-086's live Footman resume — signature-correct is not run-proven; first live run still validates TLS/auth (Norton exclusions untested on the authenticated path per TASK-086).

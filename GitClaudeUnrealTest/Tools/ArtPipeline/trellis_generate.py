@@ -353,7 +353,25 @@ def run_check(asset: str | None) -> int:
     the build-master smoke test and must work on a machine with no HF_TOKEN set.
     No GPU call is made and no quota is spent.
     """
+    import inspect
+
     from gradio_client import Client  # local import: keeps --help dependency-free
+
+    # OFFLINE kwarg-drift guard (TASK-082 QA-loop 2): the authenticated path in
+    # run_generate() passes token=<HF_TOKEN> to Client(). gradio_client 2.5.0
+    # renamed that kwarg (hf_token -> token) and the old tokenless --check could
+    # not see it - the first live run exploded instead. Assert the kwarg exists
+    # BEFORE any network I/O so future renames fail --check tokenless + offline.
+    client_params = inspect.signature(Client.__init__).parameters
+    if "token" not in client_params:
+        fail(
+            "gradio_client kwarg drift: Client.__init__ no longer accepts 'token' "
+            f"(live params: {', '.join(client_params)}). run_generate() passes "
+            "token=<HF_TOKEN>, so real generation WOULD fail. Update the Client() "
+            "construction in run_generate() to the new auth kwarg name."
+        )
+        return 1
+    say("--check: offline signature assert OK - Client.__init__ accepts 'token'.")
 
     say(f"--check: connecting to {SPACE_ID} (tokenless; no GPU call, no quota spend)")
     try:
@@ -437,7 +455,9 @@ def run_generate(args: argparse.Namespace) -> int:
         # preprocess/generate/extract across Clients or script runs loses the
         # model between calls - never do it.
         say(f"Connecting to {SPACE_ID} (authenticated via HF_TOKEN from env)")
-        client = Client(SPACE_ID, hf_token=token)
+        # gradio_client 2.5.0 renamed the auth kwarg hf_token -> token
+        # (TASK-082 QA-loop 2); --check's offline signature assert guards this.
+        client = Client(SPACE_ID, token=token)
 
         api = discover_api(client)
         snapshot_schema(api, asset_dir / "api_schema.json")

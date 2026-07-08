@@ -66,3 +66,35 @@ QA verdict was PASS (0 blockers); the orchestrator asked for both WARNs closed b
 2. **WARN-2 (provenance) — failure never clobbers a success record.** `write_state()` gained a `filename` parameter (default `"state.json"`); all three failure handlers (quota-blocked / api-drift / failed) now write **`state_failed.json`**, and only the success path writes `state.json`. Scheme: `state.json` always describes the LAST SUCCESSFUL run — the provenance of the `trellis_raw.glb` beside it — so a failed seed re-roll (TASK-086 flow) can no longer overwrite a good run's record while its GLB survives. Successive failures overwrite `state_failed.json` (latest failure evidence); a stale `state_failed.json` beside a newer success is history, not an error. One error-message string that always routes to a failure handler ("/extract_glb returned no .glb file path") was corrected to name `state_failed.json`. **README unchanged** — Stage 2 reads only the GLB, so nothing downstream reads differently (the coordinator's README condition was not met). Call-site audit: `write_state` at line 526 (success, `state.json`) and 538/545/552 (failures, `state_failed.json`).
 
 **Regression re-verification:** `py_compile` clean; `uv run python trellis_generate.py --help` OK; `env -u HF_TOKEN ... Footman` → exit 2 (offline, before any network/dir activity); usage error → exit 64 with redacted echo. NIT-3/4/5/7 deliberately NOT picked up (out of the "exactly these two fixes" scope; NIT-5's version bounds earmarked for M7 batch time per QA).
+
+## QA-loop 2 (2026-07-07): gradio_client 2.5.0 kwarg drift
+
+Live failure found by TASK-086's first real generation (art-director diagnosis in `handoffs/TASK-086.md`); fix loop dispatched to me. Only `trellis_generate.py` touched.
+
+**Root cause:** the authenticated construction site used `Client(SPACE_ID, hf_token=token)`, but the locked **gradio_client 2.5.0** names the auth kwarg **`token`**. Result: `TypeError: Client.__init__() got an unexpected keyword argument 'hf_token'`, exit 1 in seconds, before any network I/O. TASK-084's `--check` smoke could not catch it because the tokenless path constructs `Client(SPACE_ID)` with no auth kwarg at all — the authenticated construction path was never exercised tokenless.
+
+**Fix (one line, one call site — `run_generate()`, was l.440):**
+
+```
+- client = Client(SPACE_ID, hf_token=token)
++ client = Client(SPACE_ID, token=token)
+```
+
+(+ a two-line comment above it noting the rename and the new guard). `grep -n hf_token` post-fix: comment mentions only, zero call sites. Note: the "Flagged decisions" item 1 above says `Client(..., hf_token=token)` — read that as `token=token` now.
+
+**Hardening — offline signature assert in `--check` (`run_check()`):** before any network I/O, `--check` now introspects `inspect.signature(Client.__init__).parameters` and fails with a clear drift message + **exit 1** if `token` is absent, naming the exact call site to update. So the next auth-kwarg rename is caught tokenless AND network-free by the standard TASK-084 smoke instead of exploding the first live GPU run. On pass it prints `--check: offline signature assert OK - Client.__init__ accepts 'token'.` then proceeds to the normal reachability check. No new dependencies (`inspect` is stdlib, imported locally in `run_check`); zero behavior change outside `--check`. Exit 1 (generic failure) chosen deliberately: exit 4 is contractually "Space API drift" (server-side endpoints/schema) and this is client-library drift; the 2/3/64 codes are untouched.
+
+**2.5.0 API sweep re-verified first-hand** (live introspection of `Tools/ArtPipeline/.venv` via `uv run`, no token involved): `Client.__init__` params `['self','src','token','max_workers','verbose','auth','httpx_kwargs','headers','download_files','ssl_verify','_skip_components','analytics_enabled']`; `view_api(all_endpoints, print_info, return_format)` OK; `submit(*args, api_name=, ...)` OK; `Job.result(timeout=)` OK; `Job.cancel()` OK; `handle_file` present. Confirms the art-director's sweep — **no other drift**.
+
+**Verification evidence (all offline / tokenless — no generation run, no GPU quota spent):**
+
+- `uv run python -m py_compile trellis_generate.py` → exit 0.
+- `uv run trellis_generate.py --help` → exit 0.
+- Usage-error path: bogus flag with a dummy `hf_`+21-char argv value → exit **64**, stderr shows `unrecognized arguments: --bogus-flag [hf-token-redacted]` (WARN-1 redactor intact).
+- **Negative test of the new assert:** scratchpad harness monkeypatched `gradio_client.Client` with a fake whose `__init__` lacks `token` (its body raises if ever reached) → `run_check()` returned 1 with the drift message, proving the assert fires before any network construction.
+- **Positive:** `uv run trellis_generate.py --check` → exit **0**: assert-OK line printed first, then Space reachable, all three endpoints present, snapshot rewritten at `Cache/api_schema.json`. Environmental note: TLS handshake SUCCEEDED tokenless with no `SSL_CERT_FILE` set — the TASK-085 Norton exclusions appear live, a good omen for the Footman resume (still unproven for the authenticated path).
+- File still pure ASCII (byte scan: 0 bytes >127); `git status` for `Tools/ArtPipeline/` shows only `trellis_generate.py` modified (my `py_compile` `__pycache__/` byproduct deleted — it is not gitignored).
+
+**Invariants audit:** HF_TOKEN remains ENV-ONLY (the fix site is the sole consumer; no token in files/argv/logs/this handoff — all test tokens were dummy-shaped); redactor untouched; exit codes 2/3/64 untouched; write confinement unchanged; `refine_trellis_glb.py`, manifest, and card-art lane untouched; TASKBOARD.md untouched; no Git operations.
+
+**For the TASK-086 resume:** the authenticated GPU path is now signature-correct but remains runtime-unproven until the next live `uv run trellis_generate.py Footman`.
