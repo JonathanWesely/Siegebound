@@ -30,11 +30,16 @@ Source: `Docs/GDD.md` §9. Only the current milestone is decomposed into tasks; 
 1. **M1 — Core loop, local, one card** — `done (playtested + signed off by Jonathan 2026-07-03 evening; round-1 combat-legibility findings all fixed and confirmed)`
 2. **M2 — Economy + deck/hand + core set + defenses** — `done-pending-playtest (functionally complete, committed aafd968+5bb9507 not pushed; 1 known gap = visual hand UI manual pass [TASK-041]; awaiting Jonathan's round-1 M2 playtest)` (TASK-021..040; M2a/M2b exit criteria in "M2 manager decisions" below)
 3. **M3 — Bot opponent = real 1v1 match** — `done (committed 2f6a8fc + c8a40b2 + 56247c9, not pushed; m3-testable @ 56247c9; slice verified, interactive items pending Jonathan's playtest)`
-4. **M4 — Card Set II (16 cards, keywords, hero upgrades)** — `done (committed 65861ce + e586699, not pushed; m4-testable @ e586699; slice verified, interactive items pending Jonathan's playtest)` (TASK-053..069; branches m2-testable @ f903cf0 + m3-testable @ 56247c9 + m4-testable @ e586699 preserve the milestone slices; see "## M4 tasks")
-5. M5 — Spell system + Set III — `not-started`
+4. **M4 — Card Set II (16 cards, keywords, hero upgrades)** — `done (playtested + signed off by Jonathan 2026-07-08; committed 65861ce + e586699, not pushed; m4-testable @ e586699)` (TASK-053..069; branches m2-testable @ f903cf0 + m3-testable @ 56247c9 + m4-testable @ e586699 preserve the milestone slices; see "## M4 tasks") — sign-off note: "we will have to make some balancing changes later, but it is fine" → see Standing backlog
+4.5. **M4.5 — Gameplay terrain pass (grass, hills, trees + rocks)** — `parked — awaiting Jonathan's Fab asset drop (plan + folders ready; resume on his return)` — Jonathan directive 2026-07-08: the arena is "a boring white board"; wants "a nice large grass area with trees and hills". REAL GAMEPLAY TERRAIN — mirror-symmetric hills (physical high ground) + trees/rocks (navmesh/placement obstacles) INSIDE the playfield; amends GDD §5 (rulings in "M4.5 manager decisions" under Active tasks, incl. the same-day Fab amendment). **Fab pivot (Jonathan, same day):** he supplies premade Fab assets for FOUR slots — tree, rock, grass, hill (FAB-001..004 approved in .claude/pipeline/fab/FAB-REQUESTS.md; drop zone Content/Fab/README_DROP_ZONE.md). TASK-091/092 are now Fab conform+integration tasks blocked on his drop; TASK-093/094 (C++) remain valid and dispatchable. **ORDERING INVERSION (Jonathan's ruling): M5 proceeds AHEAD of this milestone — nobody blocks M5 work on M4.5.** M4.5 resumes the moment the Fab assets land.
+5. **M5 — Spell system + Set III** — `current (decomposed 2026-07-08, TASK-097..109; runs AHEAD of parked M4.5 per Jonathan's directive)` — targeting mode, 5 spells + Crystal Tower, spell Niagara VFX at the §6 bar, bot M5 spell rules. Carry-in baked into the specs (not a follow-up): the targeting reticle ground-projects via TRACE so M4.5's hills need no rework when they land. Slice: spell VFX showcase reel.
 6. M6 — Deck-builder meta — `not-started`
 7. M7 — Premium art & feel pass — `not-started` · **Jonathan request (2026-07-04):** raise fidelity on SM_Castle + SM_Footman + SM_Archer (higher detail than the current blockouts); wants the game to look nicer. Decision: DEFERRED here (mesh swaps are non-breaking; roster still growing through M4-M6). Two integration paths to scope at M7: (a) art-director custom higher-detail Blender models, and/or (b) **Fab/UE-marketplace assets — Jonathan must download packs into the project via the Epic Launcher first (agents can't browse/buy/download Fab autonomously); art-director then swaps meshes/materials.** Could be pulled forward as a standalone art pass after M3/M4 if Jonathan wants it sooner.
 8. M8 — Networked 1v1 multiplayer — `not-started`
+
+### Standing backlog (manager notes — NOT tasks, no IDs yet)
+- **Balance pass** — Jonathan flagged balancing changes wanted post-M4 (M4 playtest sign-off 2026-07-08: "we will have to make some balancing changes later, but it is fine"); awaiting his specific notes before task-izing. Feed-ins already on file for when the notes arrive: TASK-090 balance ledger (undefended-castle kill time ~56.5 s / ~71.3 s post-economy-change vs ~33 s prior; bot played ZERO early Miners in both rush matches — bot spend-mix), TASK-070 tuning note (bot opens with attack, not economy).
+- **HUD overtime indicator never shows** (pre-existing bug found at TASK-090, routed to manager): WBP_HUD ShowOvertime calls UpdateOvertimeDisplay with a hardcoded-false pin (bound via SetupStatTexts CreateEvent; UpdateOvertimeDisplay itself is correct). One-pin UMG fix + shortened-threshold verify — fold into the next UMG-touching chain or the balance pass; do not lose it.
 
 ### M1 CHECKPOINT — 2026-07-03 (read this first on resume)
 **M1 exit criteria are PIE-verified** (all 8 checks passed; commits df4bcd9 → 4d30efb → 8a87400 → 5029403 → 7011b7b → 4255c1d, none pushed). **Current state: playtest round-1 feedback received 2026-07-03 → M1 reopened as `feedback-in-progress`.** Next actions in order:
@@ -116,6 +121,531 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 **2026-07-07 (FEATURES — read first):** TWO Jonathan-approved chains issued below — **TASK-077..081 (card artwork on the hand UI)** and **TASK-082..088 (TRELLIS.2 → Blender → UE5 automated art pipeline + Fab lane)**. Both are Jonathan-authorized UI/art/tooling work like TASK-071..073, NOT M5 content — **M5 remains NOT authorized.** State at issue: main @ **218b4c9** clean, NOT pushed; editor UP (PID 18480, MCP healthy); Blender MCP verified LIVE — both art gates OPEN. Dispatch frontier: **TASK-077 ∥ TASK-079 ∥ TASK-082 ∥ TASK-083** (all file-side, mutually parallel-safe). → **BOTH CHAINS COMPLETE:** card-art committed **61bd457** (TASK-077..081 done 2026-07-08); Trellis pilot committed **cb29882** (2026-07-08, TASK-082..088 all done — SM_Footman/SM_Archer/SM_Castle are now textured pipeline meshes at unchanged paths; same-path swap mechanism = one human Content-Browser Reimport click per mesh until an MCP console-exec/reimport tool exists). Jonathan's visual sign-off received 2026-07-08 ("the trellis pilot was successful", zero findings) — WATCH CLOSED; the pipeline IS the M7 template for the remaining 16 meshes. **M5 remains NOT authorized.**
 
 **2026-07-08 (BALANCE — read first):** Jonathan URGENT balance directive, chain **TASK-089..090** below. This is a Jonathan-directed standalone balance chain like TASK-074..076, NOT M5 content — **M5 remains NOT authorized.** State at issue: main @ cb29882; known worktree residue (WBP_MainMenu + BP_Unit_Footman + BP_Unit_Archer .uassets) is adjudicated inside TASK-090's bounce window per the TASK-088 residue note.
+
+**2026-07-08 LATER (FAB PIVOT + M5 AUTHORIZED — read first, supersedes the paragraph below):** Right after the M4.5 decomposition landed, Jonathan directed (verbatim): "create a folder that expects a tree asset, rock asset, grass asset, and hill asset. I am going to use some premade assets from Fab and insert them where you need them. After that, have the agents move on to M5." Consequences, all live below: (1) **M4.5 is PARKED** awaiting his Fab drop — FAB-001..004 pre-approved in .claude/pipeline/fab/FAB-REQUESTS.md, drop zone Content/Fab/README_DROP_ZONE.md; TASK-091/092 are now Fab CONFORM tasks blocked on the drop; **rock is added M4.5 scope** (same law as trees); the code contracts now read tag `Obstacle` (trees + rocks). (2) **M4.5's TASK-093/094 (C++) stay dispatchable NOW** — they read tags, not meshes; they ride M5's compile batch (TASK-103). (3) **M5 IS AUTHORIZED and decomposed — TASK-097..109 below; M5 runs AHEAD of parked M4.5 (ordering inversion is Jonathan's explicit ruling — nobody blocks M5 on M4.5).** Jonathan is away for a few hours and pre-authorized everything, editor work included; the editor-MCP-up hard gate still applies.
+
+**2026-07-08 (M4 SIGN-OFF + M4.5 MILESTONE):** Jonathan playtested M4 and SIGNED OFF ("it is fine"; balance changes wanted later → Standing backlog, no notes yet). He then directed a NEW MILESTONE inserted before M5: **M4.5 — Gameplay terrain pass** (TASK-091..096 below, own rulings block) — real gameplay terrain (symmetric hills = physical high ground, trees = obstacles) replacing the flat white board; amends GDD §5. State at issue: main @ HEAD post-TASK-090, clean-ish tree (bounce-window residue adjudicated in TASK-090), NOT pushed. ~~M5 remains NOT authorized~~ → SUPERSEDED same day by the Fab-pivot paragraph above: M5 authorized + decomposed.
+
+### M5 — Spell system + Set III (TASK-097..109) — decomposed 2026-07-08
+
+**Authorization:** Jonathan's 2026-07-08 directive ("After that, have the agents move on to M5") — pre-authorized while he is away, editor/MCP work included. Hard gate stands: if the editor MCP (127.0.0.1:8000) is unreachable, park the task and tell the orchestrator — never fake results. Naming law added to CONVENTIONS.md "Spells & Set III (M5)" BEFORE task issue.
+
+**M5 manager decisions (binding for all M5 tasks):**
+1. **Resolver home:** `USpellLibrary` (UBlueprintFunctionLibrary, SpellLibrary.h/.cpp) — the ONE spell-resolution path, shared by player controller (targeting mode) and bot. Pinned entry: `static bool ResolveSpell(UWorld* World, FName CardID, const FCardRow& Row, ETeamId CasterTeam, const FVector& TargetPoint)`. Effects dispatch on the `ESpellEffect` column.
+2. **Data columns** per CONVENTIONS "Spells & Set III (M5)": SpellEffect / EffectDuration / MaxTargets / GoldSteal / ChainTargets / ChainFalloff; spells REUSE Damage + AoERadius. ECardType gains `Spell` if absent (TASK-097 flags the current enum shape + every downstream switch it touches).
+3. **Spell castle scaling:** `USiegeDamageType_Spell` = 50% in `ACastle::TakeDamage` ONLY; buildings take FULL spell damage — Lightning (200) must kill an Arrow Tower (150 HP), it is the §4 "tower-killer". Mirrors the M2 Projectile precedent, NOT the M4 Siege both-rule. QA watch item.
+4. **Lightning selection:** the MaxTargets highest **CURRENT-HP** enemy actors (units, hero, buildings/towers — **castle EXCLUDED**, anti-sniping intent) within AoERadius of the reticle; ties broken by distance to the reticle (deterministic). Flagged: current HP, not MaxHP (Slayer uses MaxHP — different concept).
+5. **Freeze (FrostNova):** pinned API `ApplyFreeze(float Seconds)` on ASummonedUnit and ABuilding (+ `IsFrozen()`); freeze pauses movement/AI/attack cadence; refresh-not-stack (max of remaining vs new); castle never freezable; **hero NOT freezable in M5** (GDD §4 says "enemy units and towers" — flagged); **match-end FreezeAI has PRECEDENCE** — a spell-freeze expiry must never resume a match-end-frozen actor.
+6. **Battle Cry (AllyBuff):** friendly units in AoERadius get +50% attack speed +25% move speed for EffectDuration (8 s); magnitudes = mechanic-rule UPROPERTYs (Rally precedent, GDD §4 comments). Self-refresh non-stacking; DOES stack with Rally and War Banner (independent systems) — QA watch.
+7. **Pickpocket (GoldSteal):** resolves INSTANTLY on play — no reticle for a global effect (recorded deviation from §3.5; CardType stays Spell). Steal = min(GoldSteal, victim's gold), moved ONLY via existing ASiegePlayerState gold APIs (SetGold choke-point law; TASK-098 documents the exact API composition).
+8. **Targeting mode (§3.5/§7):** reticle ANYWHERE on the map — no half restriction, no navmesh requirement; reticle TRACE-projected onto the surface under the cursor (**M4.5 terrain carry-in baked as LAW** — never assume the Z=0 plane); LMB confirm = deduct-then-resolve (card-leaves-hand-at-CONFIRM law; resolver false ⇒ full refund + HUD reason); RMB/Esc cancel free; reticle visual = decal w/ soft-referenced M_SpellReticle, null-safe. Cursor posture mirrors placement mode.
+9. **Chain (Crystal Tower):** INSTANT-hit, no projectile actor. Primary = nearest valid enemy in Range (800); bounces to ChainTargets−1 more enemies, each within `ChainBounceRadius` = 350 (mechanic UPROPERTY — GDD unspecified, manager-defined) of the PREVIOUS target; damage Dmg − n×ChainFalloff (15/10/5); no friendly fire; no double-hit per zap; tagged USiegeDamageType_Projectile (tower attack family). Visual NS_ChainZap, null-safe.
+10. **Bot spell rules** insert as rule 3 in the 2 s ordered loop (defend=1, miners=2, **SPELLS=3**, big unit=4, discard=5): 3a Fireball at ≥3 clustered player units (300-radius cluster); 3b Lightning at a player tower with ≥2 player units within 400. Affordability + card-in-hand checks as always; resolve directly through USpellLibrary (targeting mode is a human affordance); one LogSiegeBot line per fired rule (law). FrostNova/BattleCry/Pickpocket get NO bot cast rule (GDD is silent) — they fall through to rule-5 discard economics; flagged.
+11. **VFX contract:** every resolve spawns `/Game/VFX/NS_Spell_<CardID>` (soft path composed from CardID, null-safe, log-once). Donor-duplicate authoring from Variant_Combat Niagara is acceptable (template-donor law); the M5 bar is §6 one-frame readability + showcase-able — fully custom premium sims may roll to M7 (flag anything below bar).
+12. **Card art** for the 6 new CardIDs follows the existing law (T_CardArt_<CardID>, 512², /Game/UI/CardArt/): paths are deterministic, so TASK-097 writes the CardArt CSV cells UP FRONT; missing textures fall back gracefully (text-only face) until TASK-106 lands.
+13. **M5 test deck:** DeckCount rebalances so every Set III card is reachable — suggested Fireball 2 / FrostNova 1 / Lightning 2 / BattleCry 1 / Pickpocket 1 / CrystalTower 1 (= 8 slots carved from the M4 22-card spread); sum EXACTLY 50, each ≤ MaxCopies; programmer documents the cuts, QA re-sums.
+14. **File-conflict serialization:** TASK-100 (targeting mode) shares SiegePlayerController.h/.cpp with M4.5's TASK-093 (placement v3, dispatchable now) — 093 goes FIRST, 100 is `blocked-by: TASK-093` (file serialization, not logic). Tower.cpp: the tower freeze-gate is implemented in TASK-101 against 099's pinned IsFrozen() API so 099 stays OUT of Tower.cpp — 099 ∥ 101 parallel-safe.
+
+**M5 exit criteria (playable slice):** all 5 spells playable end-to-end with visible VFX; Fireball meets §3.11 acceptance (kills 3 clustered 80-HP Footmen, adjacent friendly untouched, 50 not 100 vs castle); FrostNova freezes enemy units + a tower 4 s (castle unaffected), they resume cleanly; Lightning kills an Arrow Tower picking the 3 highest-current-HP enemies in 400; BattleCry visibly speeds attack + movement 8 s; Pickpocket moves exactly min(10, victim gold); Crystal Tower chains 15/10/5 within 800; reticle projects onto the ground surface, LMB confirms (gold at confirm), RMB/Esc cancels free; bot casts Fireball + Lightning per its rules with LogSiegeBot traces; deck = 50 with Set III reachable; Play Again clears all spell state (freeze/buff timers). Recordable: spell VFX showcase reel.
+
+Dispatch shape: **FILE WAVE NOW (parallel): TASK-097 ∥ 098 ∥ 099 ∥ 101 ∥ 102, alongside M4.5's TASK-093 ∥ 094** (seven file tasks, distinct file sets); TASK-100 after 093 (ruling 14). ART when Blender/editor free: TASK-105 ∥ 106 (serialize imports); TASK-108 when the editor is free. QA gates every code task (shadow-scan mandatory). Then TASK-103 (batch compile + commit, folds in 093/094) → TASK-104 + TASK-107 (editor wave) → TASK-109 (final assembly + PIE + commit + m5-testable).
+
+#### TASK-097 — Card data Set III: ESpellEffect + M5 columns + cards.csv 28 rows + M5 test deck (files)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-08; qa/TASK-097-report.md — PASS, 0 blockers / 1 warn / 2 nits, all 7 flagged decisions ACCEPTED. WARN = CrystalTower dead-card window between TASK-104 reimport and TASK-107 BP — orchestrator ruling: covered, no PIE runs between 104 and 107 [109 is the only PIE task and sits behind both]. Awaits TASK-103 batch compile)
+- blocked-by: none
+- parallel-safe: yes (CardRow.h/.cpp + Docs/Data/cards.csv only)
+- spec: >
+    Files only. (1) CardRow.h: UENUM ESpellEffect { None, AoEDamage, Freeze, TopTargetsDamage, AllyBuff,
+    GoldSteal }; NEW FCardRow UPROPERTY columns per the CONVENTIONS registry (CSV headers 1:1):
+    SpellEffect (ESpellEffect, None), EffectDuration (float, 0), MaxTargets (int32, 0), GoldSteal
+    (int32, 0), ChainTargets (int32, 0), ChainFalloff (int32, 0). Add Spell to ECardType if absent —
+    flag the current enum shape and EVERY downstream switch touched (ruling 2). (2) cards.csv: 6 Set III
+    rows per GDD §4 (row names character-for-character: Fireball, FrostNova, Lightning, BattleCry,
+    Pickpocket, CrystalTower): costs 7/6/8/5/6/9, MaxCopies 3/3/2/3/2/3; Fireball Damage 100 AoERadius
+    300 SpellEffect AoEDamage; FrostNova AoERadius 350 EffectDuration 4 SpellEffect Freeze; Lightning
+    Damage 200 AoERadius 400 MaxTargets 3 SpellEffect TopTargetsDamage; BattleCry AoERadius 400
+    EffectDuration 8 SpellEffect AllyBuff; Pickpocket GoldSteal 10 SpellEffect GoldSteal; CrystalTower =
+    Building row: HP 150, Dmg 15, Range 800, Cadence 1.5, ChainTargets 3, ChainFalloff 5, bRanged FALSE
+    (chain is instant-hit, ruling 9). (3) CardArt cells for all 6 with the deterministic
+    /Game/UI/CardArt/T_CardArt_<CardID>.T_CardArt_<CardID> paths (ruling 12 — graceful fallback until
+    TASK-106). (4) M5 test deck per ruling 13: DeckCount sum EXACTLY 50, each ≤ MaxCopies, Set III all
+    ≥1; document the cuts from the M4 spread in the handoff. (5) Stats live in the table — nothing
+    hardcoded; shadow law. Acceptance (by inspection): header/UPROPERTY 1:1; 28 rows; sums verified.
+    handoffs/TASK-097.md. Post in ⚙️ Dev & QA.
+- names: >
+    FCardRow + ESpellEffect (Source/GitClaudeUnrealTest/Siegebound/CardRow.h/.cpp); Docs/Data/cards.csv;
+    CardIDs Fireball, FrostNova, Lightning, BattleCry, Pickpocket, CrystalTower; columns SpellEffect,
+    EffectDuration, MaxTargets, GoldSteal, ChainTargets, ChainFalloff (+ reused Damage, AoERadius,
+    DeckCount, CardArt). Law: CONVENTIONS "Spells & Set III (M5)" + "Data-driven card stats".
+
+#### TASK-098 — USpellLibrary resolver + USiegeDamageType_Spell + castle 50% spell scaling (files)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-08; qa/TASK-098-report.md — fix loop 1 verified PASS, 0 blockers remaining, 0 new findings. BattleCry seam closed [per-unit accessor composition char-identical to the SummonedUnit.h pin; editor tunables live]. TASK-100's in-tree ResolveSpell call sites noted — covered by TASK-100's own QA pass, already dispatched. Awaits TASK-103 batch compile)
+- blocked-by: none
+- parallel-safe: yes (NEW SpellLibrary.h/.cpp + DamageTypes.h/.cpp + Castle.cpp; TASK-099's APIs are pinned by spec — file-independent, compile happens at TASK-103 anyway)
+- spec: >
+    Files only. (1) NEW USpellLibrary (UBlueprintFunctionLibrary) in SpellLibrary.h/.cpp; pinned entry:
+    static bool ResolveSpell(UWorld* World, FName CardID, const FCardRow& Row, ETeamId CasterTeam,
+    const FVector& TargetPoint). Dispatch on Row.SpellEffect: AoEDamage = radial Damage in AoERadius at
+    TargetPoint via the TASK-055 AoE radial helper (REUSE it; no friendly fire; castle hits flow through
+    TakeDamage with the Spell type); Freeze = ApplyFreeze(EffectDuration) on enemy units + buildings in
+    radius (TASK-099 pinned API; castle + hero excluded, ruling 5); TopTargetsDamage = ruling-4
+    selection (MaxTargets highest CURRENT HP, castle excluded, tie = nearest reticle), Damage each;
+    AllyBuff = TASK-099's combat-buff API on friendly units in radius (ruling 6); GoldSteal = ruling 7
+    via ASiegePlayerState gold APIs + GetPlayerStateForTeam (TASK-043). (2) EVERY resolve spawns
+    /Game/VFX/NS_Spell_<CardID> — soft path composed from CardID, null-safe, log-once (ruling 11).
+    (3) NEW USiegeDamageType_Spell in DamageTypes.h/.cpp; ACastle::TakeDamage gains the Spell = 50%
+    branch (ruling 3 — Castle ONLY; ABuilding.cpp NOT touched). (4) All spell damage tagged Spell;
+    no friendly fire; null-safe everywhere (bad row/world/state = return false + log, never crash).
+    (5) Shadow law. Acceptance (by inspection): five effects per rulings 3-7; VFX contract; bool
+    refusal semantics documented (false ⇒ caller refunds). handoffs/TASK-098.md with flagged decisions
+    (gold-steal API composition, AoE helper reuse shape). Post in ⚙️ Dev & QA.
+- names: >
+    USpellLibrary::ResolveSpell (Source/.../SpellLibrary.h/.cpp NEW); USiegeDamageType_Spell
+    (DamageTypes.h/.cpp); ACastle::TakeDamage (Castle.cpp). Pinned externals (TASK-099):
+    ASummonedUnit::ApplyFreeze/IsFrozen/ApplyCombatBuff, ABuilding::ApplyFreeze/IsFrozen. VFX soft path
+    /Game/VFX/NS_Spell_<CardID>. Law: M5 rulings 1-7, 11.
+
+#### TASK-099 — Freeze + combat-buff APIs on units & buildings (files)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-08; qa/TASK-099-report.md — PASS, 0 blockers / 2 warns / 3 nits, all 10 flagged decisions ACCEPTED. Match-end precedence triple guard verified, no hole. Seam ruling concurs with qa/TASK-098: 098 moves [fix loop 1 in flight implements the exact specified composition]. Carries: TASK-100 QA must verify targeting refuses casts at match end; stale comments SiegeGameMode.cpp:273 + Building.cpp:279 owed to next owners; Rally !bStatsLoaded gate on next touch. Awaits TASK-103 batch compile)
+- blocked-by: none
+- parallel-safe: yes (SummonedUnit.h/.cpp + Building.h/.cpp ONLY — stays OUT of Tower.cpp per ruling 14)
+- spec: >
+    Files only. (1) ASummonedUnit::ApplyFreeze(float Seconds) + IsFrozen(): pause movement/AI/attack
+    cadence reusing the M2 FreezeAI infrastructure WITHOUT breaking match-end precedence (ruling 5 —
+    a spell-freeze expiry must never resume a match-end-frozen actor; document the mechanism, e.g.
+    separate spell-freeze state vs the match-end flag); refresh = max(remaining, new). Frozen visual =
+    optional flagged decision (minimal tint acceptable; the NS burst is the primary read).
+    (2) ABuilding::ApplyFreeze(float Seconds) + IsFrozen() — STATE ONLY here; the tower fire-gate lands
+    in TASK-101 against this API (ruling 14). Castle gets NO freeze API. (3) ASummonedUnit combat buff:
+    extend the TASK-042 Rally move-speed buff API (align names with handoffs/TASK-042.md) with an
+    attack-cadence multiplier; pinned resolver entry: ApplyCombatBuff(float MoveSpeedMult, float
+    AttackSpeedMult, float Seconds); BattleCry magnitudes (+50% attack / +25% move — mechanic
+    UPROPERTYs, GDD §4 comments) live with the API owner per Rally precedent (flag exact placement);
+    self-refresh non-stacking; stacks WITH Rally/War Banner (ruling 6). (4) All freeze/buff timers
+    cleared on match-end + Play Again reset paths. (5) Shadow law (new timer members especially).
+    Acceptance (by inspection): freeze pause/resume + precedence correct; buff applies and restores
+    exactly; reset paths clean. handoffs/TASK-099.md. Post in ⚙️ Dev & QA.
+- names: >
+    ASummonedUnit::ApplyFreeze / IsFrozen / ApplyCombatBuff (SummonedUnit.h/.cpp);
+    ABuilding::ApplyFreeze / IsFrozen (Building.h/.cpp). Mechanic UPROPERTYs: BattleCry +50% attack /
+    +25% move (GDD §4). DO NOT touch Tower.cpp (TASK-101 owns it). Law: M5 rulings 5, 6, 14.
+
+#### TASK-100 — Targeting mode: reticle-anywhere spell play on ASiegePlayerController (files)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-08; qa/TASK-100-report.md — fix loop 1 verified PASS, 0 blockers remaining; rotation write proven single [file-wide grep], UpdateSpellReticle location-only, no-drift anchor audit clean [+8 line shift confined to SpawnSpellReticle]. Cleared for TASK-103 batch compile. WARN carry → TASK-109 PIE: elevated-anchor ring readability)
+- blocked-by: TASK-093 (same-file serialization on SiegePlayerController.h/.cpp — ruling 14; logic-independent)
+- parallel-safe: yes once unblocked (file-only)
+- spec: >
+    Files only. (1) RequestPlaySlot routing: CardType Spell + SpellEffect != GoldSteal → enter TARGETING
+    mode (sibling of placement mode); GoldSteal → instant resolve on play (ruling 7; deduct-then-resolve,
+    refusal-safe). (2) Targeting mode: cursor visible (placement-mode posture, M2 TASK-023 + TASK-074
+    normalization laws — no new input assets); reticle position = TRACE to the surface under the cursor
+    (M4.5 terrain carry-in LAW — never assume Z=0; reuse/extend the placement projection trace); reticle
+    visual = decal component with soft-referenced /Game/Materials/M_SpellReticle (null-safe — missing
+    material ⇒ targeting still works, log once). NO half restriction, NO navmesh requirement (§3.5 —
+    spells land anywhere incl. the enemy half). (3) LMB confirm: deduct cost THEN
+    USpellLibrary::ResolveSpell (card-leaves-hand-at-CONFIRM law; resolver false ⇒ FULL refund + HUD
+    reason per §3.0). RMB/Esc cancel: exit free. (4) No BIE signature changes (refusal text rides the
+    existing FString path); no UMG edits this task. (5) Shadow law. Acceptance (by inspection): mode
+    transitions clean (placement/targeting/Alt-cursor interplay flagged for QA); surface-based
+    projection; gold flow per confirm law. handoffs/TASK-100.md. Post in ⚙️ Dev & QA.
+- names: >
+    ASiegePlayerController (Source/.../SiegePlayerController.h/.cpp); USpellLibrary::ResolveSpell;
+    M_SpellReticle soft path /Game/Materials/M_SpellReticle; existing OnCardRefusedMessage path
+    (signature UNCHANGED). Law: M5 rulings 7, 8 + CONVENTIONS "Spells & Set III (M5)".
+
+#### TASK-101 — Crystal Tower Chain attack + tower freeze-gate (files)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-08; qa/TASK-101-report.md — PASS, 0 blockers / 1 warn / 3 nits, all 10 flagged decisions ACCEPTED. Chain = units+hero only [manager carry: chains-hit-buildings would be a rule change]; bounces may exceed Range [balance carry: worst-case 1500 uu]. 099's IsFrozen confirmed on disk. WARN carry: stale SiegeGameMode.cpp:268 timer-invariant comment — one-line doc touch when that file next legally opens. Awaits TASK-103 batch compile)
+- blocked-by: none
+- parallel-safe: yes (Tower.h/.cpp only; TASK-099's IsFrozen pinned by spec)
+- spec: >
+    Files only. (1) ATower fire path: when Row.ChainTargets > 0, fire an INSTANT chain zap instead of a
+    projectile (ruling 9): primary = nearest valid enemy in Range; bounce to ChainTargets−1 additional
+    enemies, each within ChainBounceRadius (NEW UPROPERTY float = 350, // GDD §4 Chain,
+    manager-defined) of the PREVIOUS target; per-hit damage = Dmg − n×ChainFalloff, floored at 0
+    (15/10/5 with the CrystalTower row); no friendly fire; no target hit twice per zap; damage tagged
+    USiegeDamageType_Projectile. (2) Chain visual: spawn /Game/VFX/NS_ChainZap at each hit — soft path,
+    null-safe, log-once. (3) Freeze gate (ruling 14): ALL tower firing (projectile AND chain) gates on
+    !IsFrozen() (TASK-099's ABuilding API). (4) Existing towers (Arrow/Bomb/Ballista — AoERadius +
+    MinRange paths) behaviorally unchanged. (5) Shadow law. Acceptance (by inspection): falloff math;
+    bounce measured from the previous target, not the tower; cadence respected; freeze-gate on both
+    paths. handoffs/TASK-101.md. Post in ⚙️ Dev & QA.
+- names: >
+    ATower (Source/.../Tower.h/.cpp) — NEW UPROPERTY ChainBounceRadius (float, 350); consumes FCardRow
+    ChainTargets/ChainFalloff (TASK-097); IsFrozen() (TASK-099); VFX /Game/VFX/NS_ChainZap;
+    USiegeDamageType_Projectile. Law: M5 rulings 9, 14.
+
+#### TASK-102 — Bot v4: M5 spell rules — Fireball at clusters, Lightning at defended towers (files)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-08; qa/TASK-102-report.md — PASS, 0 blockers / 2 warns / 3 nits, all 9 flagged decisions ACCEPTED. Pinned ResolveSpell signature verified char-for-char at both call sites. WARN carries → TASK-109 playtest: spell hand-clog watch [future hardening: exempt only first copy], centroid-outlier coverage watch. Awaits TASK-103 batch compile)
+- blocked-by: none
+- parallel-safe: yes (SiegeBotController.h/.cpp only)
+- spec: >
+    Files only. (1) Insert spell evaluation as rule 3 in the 2 s ordered loop (ruling 10; defend=1,
+    miners=2, SPELLS=3, big-unit attack=4, discard=5 — keep trace labels consistent after renumbering):
+    3a if Fireball in hand + affordable + ≥3 player-team units within a 300-radius cluster (cluster =
+    any unit having ≥2 other player units within 300 — document the algorithm) → ResolveSpell at the
+    cluster centroid; 3b if Lightning in hand + affordable + a player tower with ≥2 player units within
+    400 → ResolveSpell at that tower's location. (2) Plays go through the bot's normal card-play/deck
+    path (gold + discard-pile accounting identical to unit plays; the bot resolves directly through
+    USpellLibrary — targeting mode is a human affordance, ruling 10). (3) FrostNova/BattleCry/Pickpocket:
+    NO cast rule (GDD silent) — they fall through to rule-5 discard economics; document. (4) LogSiegeBot:
+    exactly one line per fired spell rule (law). (5) No scans outside the 2 s cadence; shadow law.
+    Acceptance (by inspection): rule order per ruling 10; affordability/hand checks precede target
+    searches; decision trace grep-able. handoffs/TASK-102.md. Post in ⚙️ Dev & QA.
+- names: >
+    ASiegeBotController (Source/.../SiegeBotController.h/.cpp); USpellLibrary::ResolveSpell;
+    LogSiegeBot. Law: M5 ruling 10 + GDD §4 M5 extension.
+
+#### TASK-103 — M5 code batch: compile + residue adjudication + commit (build)
+- assignee: build-master
+- status: done (2026-07-08; handoffs/TASK-103.md — compile SUCCESS 18.84 s ZERO warnings [zero C4458], TASK-094 confinement check PASS, reset-and-restage doctrine applied [index arrived stale with 15 auto-staged art .uassets — left for TASK-109]. Commit 2c65164 on main, 20 files, NOT pushed. Editor relaunched, MCP live. DEVIATION: desktop LOCKED — SendInput blocked; "Don't Import" + "re-open asset editors" prompts pending [answer Don't Import / No when unlocked]; TASK-109 SendInput checks → WATCH list per TASK-076 doctrine)
+- blocked-by: TASK-097..102 qa-passed (100 after its 093 serialization) + M4.5's TASK-093/094 qa-passed (fold them into THIS batch — their code ships regardless of the parked art; batching law)
+- parallel-safe: no (owns the editor bounce + compile + commit)
+- spec: >
+    Editor-down batch compile (Build.bat per CLAUDE.md) of ALL qa-passed file tasks: M5 TASK-097..102 +
+    M4.5 TASK-093/094. Failures → append errors to the offending task's qa report and route back to
+    gameplay-programmer (counts as a QA loop). Adjudicate boot-resave residue per standing doctrine.
+    ONE code commit on main listing every task ID, NOT pushed. Post compile result + hash in
+    🔧 Build & Git.
+- names: >
+    Build target GitClaudeUnrealTestEditor (Build.bat per CLAUDE.md); commit to main only, NOT pushed.
+
+#### TASK-104 — DT_Cards reimport: 28-row Set III + M5 test deck (editor)
+- assignee: gameplay-programmer
+- status: done (2026-07-08; handoffs/TASK-104.md — set_rows in-place, 28 rows column-complete, full-cell readback 0 mismatches, deck sum 50, CardArt plain-string paths verified resolving, saved not-dirty. Dead-card window open until TASK-107 — no PIE until then)
+- blocked-by: TASK-103 (FCardRow columns must be compiled first; qa/TASK-021 WARN-2 law — reimport IMMEDIATELY after the compile, before any PIE)
+- parallel-safe: no (editor-mutating)
+- spec: >
+    Editor/MCP. In-place set_rows update of /Game/Data/DT_Cards from Docs/Data/cards.csv (import_file
+    refuses DataTable overwrite — learnings): all 28 rows, the six M5 columns, CardArt soft-object cells
+    as PLAIN STRING paths, then READBACK-VERIFY every cell (DataTableTools NULL-storage trap — learnings
+    law). Readback-verify DeckCount sum = 50 and each ≤ MaxCopies. Save clean. handoffs/TASK-104.md.
+    Post in ⚙️ Dev & QA.
+- names: >
+    /Game/Data/DT_Cards (row struct FCardRow); Docs/Data/cards.csv. Law: M5 rulings 2, 12, 13.
+
+#### TASK-105 — SM_CrystalTower blockout mesh (art)
+- assignee: art-director
+- status: ready-for-integration (2026-07-08; handoffs/TASK-105.md — SM_CrystalTower 1212 tris + M_CrystalGlow imported, authored UCX readback-verified [1 convex, footprint-exact], render confirmed, zero import warnings. Slot contract for TASK-107: slot 0 MI_TeamColor_Blue recolor, slot 1 M_CrystalGlow do-NOT-override. Integration check + commit ride TASK-107/109)
+- blocked-by: none
+- parallel-safe: yes (Blender + own new asset; serialize the editor-import step)
+- spec: >
+    Blockout-tier crystal spire tower per §6 (M4 TASK-067 pattern): crystal cluster atop a stone base,
+    silhouette reads at 15 m, beveled edges, emissive crystal accent, NO flat single color; ≤8k tris;
+    origin ground-center; UV layer UVMap; authored footprint-exact UCX base hull(s); Nanite OFF. Export
+    Content/RawAssets/CrystalTower.fbx (axis contract); import NEW /Game/Meshes/SM_CrystalTower; verify
+    hulls via ObjectTools BodySetup readback (TASK-088 technique). Slot 0 = MI_TeamColor_Blue
+    design-time placeholder (team recolor law). Acceptance: imported, budgets/collision verified,
+    silhouette capture in the handoff. handoffs/TASK-105.md. Post in 🎨 Art.
+- names: >
+    SM_CrystalTower (/Game/Meshes/SM_CrystalTower), FBX Content/RawAssets/CrystalTower.fbx,
+    UCX_SM_CrystalTower*; slot 0 placeholder MI_TeamColor_Blue. Law: per-card visual assets + team
+    contract + §6.
+
+#### TASK-106 — Set III card art: 6 illustrations + import (art)
+- assignee: art-director
+- status: ready-for-integration (2026-07-08; handoffs/TASK-106.md — 6/6 T_CardArt_* imported + readback-verified [512², UI group, sRGB], /Game/UI/CardArt/ = 28 assets char-exact vs cards.csv; CrystalTower card rendered from the live SM_CrystalTower geometry. DT_Cards row readback deferred to TASK-109 [104 not yet run]. Integration check + commit ride TASK-109)
+- blocked-by: none (TASK-097 writes the deterministic CSV paths up front; graceful text-only fallback until these land)
+- parallel-safe: yes (Blender renders; serialize the editor-import step)
+- spec: >
+    TASK-077 pipeline: six illustrations — Fireball, FrostNova, Lightning, BattleCry, Pickpocket,
+    CrystalTower — per the card-art law: 512², NO baked text, one dominant subject, strong silhouette,
+    distinct per-card color key, team-agnostic, reads at ~150 px. PNG sources
+    Content/RawAssets/CardArt/<CardID>.png; import as T_CardArt_<CardID> to /Game/UI/CardArt/ (Texture
+    Group UI, sRGB on). After TASK-104 lands, readback one DT_Cards row to confirm a CardArt path
+    resolves (else record for TASK-109). handoffs/TASK-106.md. Post in 🎨 Art.
+- names: >
+    T_CardArt_Fireball / T_CardArt_FrostNova / T_CardArt_Lightning / T_CardArt_BattleCry /
+    T_CardArt_Pickpocket / T_CardArt_CrystalTower (/Game/UI/CardArt/); PNGs Content/RawAssets/CardArt/.
+    Law: CONVENTIONS "Card artwork (hand UI)".
+
+#### TASK-107 — BP_Building_CrystalTower (editor)
+- assignee: gameplay-programmer
+- status: done (2026-07-08; handoffs/TASK-107.md — data-only BP at the composed soft-class path, parent ATower verified by readback, zero graph edits/zero stat literals, slot-1 do-not-override contract honored, compiled clean warnings-as-errors, disk-backed CDO re-read post-save. Dead-card window CLOSED. M2 editor-wave precedent: live verification rides TASK-109's PIE suite [bot plays CrystalTower])
+- blocked-by: TASK-103 (standard post-compile editor wave), TASK-105 (mesh)
+- parallel-safe: no (editor-mutating)
+- spec: >
+    Editor/MCP. BP_Building_CrystalTower in Content/Blueprints/Buildings/ per the composed
+    soft-class-path law (M2 TASK-035 pattern; same parent lineage as BP_Building_ArrowTower):
+    VisualMesh = SM_CrystalTower, slot 0 MI_TeamColor_Blue placeholder, stats arrive from the DT_Cards
+    CrystalTower row (nothing typed into the BP). Verify the placement ghost resolves
+    /Game/Meshes/SM_CrystalTower. Save clean. handoffs/TASK-107.md. Post in ⚙️ Dev & QA.
+- names: >
+    BP_Building_CrystalTower (/Game/Blueprints/Buildings/BP_Building_CrystalTower); VisualMesh;
+    SM_CrystalTower; MI_TeamColor_Blue. Law: Blueprint subclasses + per-card visual assets.
+
+#### TASK-108 — Spell Niagara VFX set: NS_Spell_* ×5 + NS_ChainZap + M_SpellReticle (art)
+- assignee: art-director
+- status: ready-for-integration (2026-07-08; handoffs/TASK-108.md — 7/7 assets at exact paths, readback sweep verified, donor NS_Damage untouched [sole Variant_Combat Niagara donor — plural-spec deviation recorded]. §6 one-frame eyeball rides TASK-109 PIE [MCP can't replay one-shot previews]. M7 flags: Lightning ribbon bolt, Pickpocket coin meshes, reticle pulse. NOTE for next editor owner: dismiss the "7 source content changes" popup with DON'T IMPORT. Integration check + commit ride TASK-109)
+- blocked-by: none (donor duplication; the code soft-references are null-safe in either landing order)
+- parallel-safe: no (editor-mutating)
+- spec: >
+    Editor/MCP. (1) Duplicate Variant_Combat Niagara donors into /Game/VFX/ (template-donor law — never
+    edit donors) and restyle per spell: NS_Spell_Fireball (orange burst, ~300-radius read),
+    NS_Spell_FrostNova (blue-white ground ring, ~350), NS_Spell_Lightning (white-violet strikes),
+    NS_Spell_BattleCry (gold rally ring, ~400), NS_Spell_Pickpocket (small coin flourish), NS_ChainZap
+    (cyan zap impact for Crystal Tower hits). §6 bar: readable in ONE frame; visual radius should
+    roughly match the gameplay radius (§3.11 legibility). Flag anything below bar for M7 (ruling 11).
+    (2) M_SpellReticle (Content/Materials/, DeferredDecal domain, emissive ring — M_CenterlineStripe
+    recipe; spell-blue, visually distinct from the centerline gold). Names character-exact — code
+    COMPOSES /Game/VFX/NS_Spell_<CardID> (null-safe). handoffs/TASK-108.md. Post in 🎨 Art.
+- names: >
+    NS_Spell_Fireball, NS_Spell_FrostNova, NS_Spell_Lightning, NS_Spell_BattleCry, NS_Spell_Pickpocket,
+    NS_ChainZap (/Game/VFX/); M_SpellReticle (/Game/Materials/M_SpellReticle). Law: CONVENTIONS
+    "Spells & Set III (M5)" + template-donor rule.
+
+#### TASK-109 — M5 final assembly: exit-criteria PIE verification + commit + m5-testable branch (build)
+- assignee: build-master
+- status: in-progress (dispatched 2026-07-08; all blockers done [104, 106, 107, 108]. Constraint: desktop LOCKED — SendInput items → WATCH list per TASK-076 doctrine)
+- blocked-by: TASK-104, TASK-106, TASK-107, TASK-108
+- parallel-safe: no (owns the single editor + the Git commit)
+- spec: >
+    Full M5 exit-criteria PIE run against the "M5 exit criteria" block above, check by check (SendInput
+    injection drives hotkey plays + LMB reticle confirm — TASK-088 laws; mind the Alt-tap trap). Verify
+    bot spell rules via LogSiegeBot grep; Play Again spell-state reset; log sweep vs knowns (DeepMine
+    CardType-2, victory-focus, RecastNavMesh boot, CrowdFollowing teardown). Anything requiring a human
+    hand → WATCH list per TASK-076 doctrine. ONE commit on main (editor/art batch + docs, all task IDs
+    in the message), NOT pushed; cut branch m5-testable at the commit (milestone-preservation workflow;
+    branch not pushed). Post verification summary + hash + branch in 🔧 Build & Git. Acceptance: exit
+    criteria PASS or findings routed; ONE commit; m5-testable cut; nothing pushed.
+- names: >
+    /Game/Maps/L_Arena PIE; DT_Cards 28 rows live; branch m5-testable; commit to main only, NOT pushed.
+
+### M4.5 — Gameplay terrain pass (TASK-091..096) — decomposed 2026-07-08 — **PARKED (Fab pivot, see amendment)**
+
+**Verbatim intent (Jonathan):** the arena is "a boring white board"; he wants "a nice large grass area with trees and hills." Scoping ruled by Jonathan: (1) NOW, as a standalone milestone before M5 (the pulled-forward art pass noted on the M7 line); (2) REAL GAMEPLAY TERRAIN — hills act as high ground and trees act as obstacles INSIDE the playable arena. Deliberately amends GDD §5's "mostly open battlefield". Naming law added to CONVENTIONS.md "Arena terrain & environment (M4.5)" BEFORE task issue.
+
+**AMENDMENT 2026-07-08 (same day — Jonathan Fab directive; supersedes the art-production path below):**
+- **Assets come from Fab, not Blender production.** Jonathan supplies premade packs for FOUR slots — tree, rock, grass, hill — via the Epic Launcher into Content/Fab/<Pack>/ (READ-ONLY donor quarantine). Ledger: FAB-001 (tree) / FAB-002 (rock) / FAB-003 (grass) / FAB-004 (hill), all `approved` in .claude/pipeline/fab/FAB-REQUESTS.md; drop instructions in Content/Fab/README_DROP_ZONE.md. Donors are CONFORMED to the CONVENTIONS target names (SM_Tree_01/02, SM_Rock_01+, M_ArenaGround/T_ArenaGrass_*, SM_ArenaTerrain or base+SM_Hill_##) — target names stay the law.
+- **ROCK is added scope** under the SAME law as trees (recommendation accepted): mirror-symmetric pairs, base-footprint-only collision, blocks navmesh/movement/placement/projectiles. Rock instances Rock_<NN>_<Side>.
+- **TAG CONTRACT CHANGE (binding over the original rulings below):** the placement-clearance and projectile code contracts now read actor tag **`Obstacle`** (carried by ALL trees AND rocks) instead of `Tree`; walkable ground AND hill instances carry tag **`Terrain`**. The UPROPERTY is renamed **`ObstaclePlacementClearance`** (=150) and the refusal string is **"Too close to obstacles"**. Wherever a ruling or task block below says tag "Tree" for a CODE contract, read `Obstacle` — instance NAMES (Tree_*/Rock_*) are unaffected. New obstacle types never require code changes.
+- **Hills may be placed instances:** if the Fab hill pack suits mounds-on-flat-ground better than one sculpted floor, TASK-091 may take the composite path (flat base + Hill_<NN>_<Side> mirror-pair instances, tag Terrain) — all original laws (flat pads, slope ≤35°, placeable crowns, mirror symmetry, complex-as-simple collision) bind either way.
+- **Status: PARKED.** TASK-091/092 (now Fab-conform tasks) + TASK-095/096 wait on Jonathan's drop. TASK-093/094 (C++) remain valid + dispatchable NOW and ride M5's TASK-103 compile batch. **M5 runs AHEAD of this milestone (Jonathan's explicit ordering inversion — never block M5 on M4.5).** Resume trigger: Jonathan says the assets are in (Slack or Claude Code).
+- Amended dispatch shape: 093 ∥ 094 now (with the M5 file wave) → QA → ship via TASK-103. On Fab drop: 091 ∥ 092 (serialize Blender/editor) → 095 → 096 (096's compile step is likely a no-op if 093/094 already shipped via TASK-103 — then it is verify + level/art commit + m4.5-testable only).
+
+**M4.5 manager decisions (binding for all M4.5 tasks; amends GDD §5; read WITH the amendment above):**
+1. **Symmetry REMAINS law.** The arena stays fair by geometry: the terrain heightfield mirrors exactly across the X=0 centerline plane (H(x,y) = H(−x,y)) and every tree at (x, y) has an exact twin at (−x, y). The centerline/placement-halves rule and the gold-node positions (±1200, 0) stay functional and unchanged.
+2. **High ground is PHYSICAL ONLY** (orchestrator-relayed recommendation ACCEPTED): elevation grants NO stat bonuses — no damage/range/armor/vision modifiers, nothing enters cards.csv. Its value is physical: climbing costs pathing time, hills and tree trunks BLOCK projectiles in flight, and hill crowns are legal building ground (a tower on a hill is defended by geometry, not stats). Target ACQUISITION stays range-only this milestone — a tower may waste shots into a hillside at a target behind it; **WATCH:** if Jonathan's playtest reads that as broken, a LOS-at-acquisition check becomes a follow-up task (do NOT build it now).
+3. **Terrain is a Blender-sculpted static mesh, NOT a Landscape actor.** MCP has no Landscape create/sculpt route (no editor Python, no console exec — orchestration learnings), while Blender FBX → MCP import is the proven pipeline. `SM_ArenaTerrain` replaces the `ArenaGround` engine-cube slab at the identical 6400×3200 footprint with the base walk surface at Z=0, so EVERY existing actor transform stays valid. Use Complex Collision As Simple (hulls cannot carry hills); Nanite OFF; ≤60k tris. This is a NEW asset (import_file works; no reimport-click problem).
+4. **Flat-pad law (Z=0, near-zero slope):** castle pads r700 at (±2000,0); gold-node pads r400 at (±1200,0); main lane |Y| ≤ 300 between the castle pads (the §3.3 ~10 s miner walk stays flat); centerline strip |X| ≤ 300 (decal + fair mid). Hills/trees never intrude into pads or flat lanes.
+5. **Hills: 4, mirrored** — centers (+700, +900), (+700, −900), (−700, +900), (−700, −900); height 250; near-flat crown r200 (≤10° — placeable per ruling 7); base radius ~600; walkable faces ≤ 35° (navmesh default 44° with margin). Max terrain height 250 ≪ the 1800-unit ArenaBoundary walls — no escape ramps (verified at integration). X-mirror is LAW; the Y-mirror here is composition, not law.
+6. **Trees: 16 (8 mirrored pairs)** at (±400, 600), (±400, −600), (±900, 1300), (±900, −1300), (±1500, 900), (±1500, −900), (±2600, 450), (±2600, −450); Z snapped to the terrain surface (pairs 1–4 deliberately sit on hill flanks). Art may nudge a pair ≤150 units for composition ONLY if all pad/lane/crown clearances hold and the twin moves identically. Collision is TRUNK-ONLY (authored UCX; canopy has NO collision): the trunk carves the navmesh, blocks movement, building placement, and projectiles. **Instancing (HISM/foliage) DEFERRED** — 16 individual StaticMeshActors are trivially within budget and keep per-instance naming/tagging simple; revisit at M7 if counts grow.
+7. **Placement on terrain (mechanic rules → UPROPERTY defaults with GDD § comments, NOT CSV):** buildings refused on ground steeper than `MaxPlacementSlopeDegrees` = 20 (HUD "Too steep") and within `ObstaclePlacementClearance` = 150 (2D) of any `Obstacle`-tagged actor (trees AND rocks — Fab amendment) (HUD "Too close to obstacles"); both pre-checked BEFORE gold moves (net-zero refusal law). Units/miners need only a navmesh-valid point (unchanged). The ghost projects to the terrain SURFACE height and stays upright (no normal tilt). Castle-roof refusal (navmesh projection law), enemy-half refusal, and the 200-unit building-vs-building clearance are unchanged.
+8. **Projectile terrain law:** homing projectiles are DESTROYED (zero damage, no AoE) on impact with walkable terrain or obstacle footprints (actor tags `Terrain` / `Obstacle` — Fab amendment) — and deliberately do NOT collide with walls/buildings/castles beyond shipped behavior (the archer-behind-own-wall comp and §3.0 castle scaling stay exactly as shipped).
+9. **Grass = material tier this milestone:** stylized grass MATERIAL per §6 (no flat single color — macro variation; slope-darkened dirt on hill flanks allowed); grass-blade foliage is M7 polish. **Perf gate:** §6 60 fps @1440p (RTX 3060 class, 60+ units) — no machine console/stat route exists (learnings), so integration records best-effort timings and the formal gate is a human WATCH at Jonathan's M4.5 playtest.
+10. **Bot: verify, don't rewrite.** Its placement is navmesh-based; M4.5 changes zero bot code. Preserved in place: KillZ −2000, the 4 ArenaBoundary walls, PlayerStart (−1400,0,100), CenterlineMarker decal, NavMeshBounds_Arena, castles, gold nodes, anchors, lighting stack.
+11. **M5 forward-flag (inherit at M5 decomposition):** the spell-targeting reticle must project onto UNEVEN terrain — trace to the terrain surface, never assume the Z=0 plane.
+
+Dispatch shape (SUPERSEDED by the amendment above — kept for the audit trail): ~~TASK-091 ∥ TASK-093 ∥ TASK-094 immediately; TASK-092 behind 091~~. Current shape: 093 ∥ 094 now (ride M5's TASK-103 compile); 091 ∥ 092 on Jonathan's Fab drop → 095 → 096.
+
+#### TASK-091 — Fab conform: hill/grass donors → arena terrain + M_ArenaGround (art)
+- assignee: art-director
+- status: backlog
+- blocked-by: FAB-003 + FAB-004 fulfilled (Jonathan's Fab drop — external gate; not an agent dependency)
+- parallel-safe: yes vs code tasks (serialize Blender-socket work with TASK-092 and the editor-import step with any other editor-mutating work)
+- spec: >
+    Fab CONFORM + integration (amendment path; FAB-REQUESTS.md protocol step 4). Donors: Jonathan's hill
+    pack (FAB-004) + grass pack (FAB-003) under Content/Fab/<Pack>/ — READ-ONLY; duplicate into /Game/
+    or route through Blender (bridge <30 s ops; headless blender.exe --background for heavy work) to
+    conform. (1) TERRAIN — pick and record the path: (a) UNIFIED: build/adapt the donor into ONE
+    SM_ArenaTerrain per the original rulings 3-5 (6400×3200, walk surface at origin Z, ≥100 skirt, 4
+    hills at (±700,±900) h250 crown r200 base ~600, flat pads/lanes per ruling 4, exact X-mirror, ≤60k
+    tris); or (b) COMPOSITE: a flat base ground (SM_ArenaTerrain as the flat slab replacement, grass
+    material applied) + donor hill meshes conformed to SM_Hill_01(+variants) for placement as mirror-pair
+    instances by TASK-095 — hills must be WALKABLE (faces ≤35°, near-flat placeable crown, no pad/lane
+    intrusion at the ruling-5 positions). Either path: Use Complex Collision As Simple on all walkable
+    terrain (CollisionTraceFlag readback — TASK-088 technique), Nanite OFF, UV layer UVMap. Report
+    measured face angles (walkable band + crowns) and the mirror-verification method. (2) GRASS —
+    conform the FAB-003 donor material/textures into M_ArenaGround (/Game/Materials/): §6 stylized, NO
+    flat single color, macro variation; donor textures duplicated into /Game/Textures/ as
+    T_ArenaGrass_*; apply to the ground (and hill meshes if composite). Grass-blade foliage from the
+    pack: only if trivially within the §6 perf budget — flag the call. (3) Do NOT touch L_Arena
+    (TASK-095 places everything). (4) Record conform notes + chosen path in FAB-REQUESTS.md
+    (integration lines FAB-003/004) and handoffs/TASK-091.md. Acceptance: conformed assets imported at
+    the CONVENTIONS target names with collision/budgets/slope laws verified by readback; material §6-
+    compliant; donor packs untouched. 🎨 Art post.
+- names: >
+    Targets: SM_ArenaTerrain (/Game/Meshes/), SM_Hill_01+ (/Game/Meshes/, composite path only),
+    M_ArenaGround (/Game/Materials/), T_ArenaGrass_* (/Game/Textures/). Donors: Content/Fab/<Pack>/
+    (FAB-003, FAB-004 — READ-ONLY). UV layer UVMap. Law: CONVENTIONS "Arena terrain & environment
+    (M4.5)" incl. Fab amendment + rulings 3-5.
+
+#### TASK-092 — Fab conform: tree + rock donors → SM_Tree_01/02 + SM_Rock_01 obstacles (art)
+- assignee: art-director
+- status: backlog
+- blocked-by: FAB-001 + FAB-002 fulfilled (Jonathan's Fab drop — external gate; not an agent dependency)
+- parallel-safe: yes vs code tasks (serialize Blender-socket work with TASK-091 and the editor-import step with any other editor-mutating work)
+- spec: >
+    Fab CONFORM + integration (amendment path). Donors: Jonathan's tree pack (FAB-001) + rock pack
+    (FAB-002) under Content/Fab/<Pack>/ — READ-ONLY. Select two visually distinct trees and one-or-more
+    rocks; conform each (duplicate into /Game/ or via Blender) to: SM_Tree_01, SM_Tree_02, SM_Rock_01
+    (+ SM_Rock_02.. if variants are worth it). Per-asset conform law (CONVENTIONS obstacles bullet):
+    ≤4k tris (decimate donors if over), Nanite OFF, origin at trunk-base/rock-base ground-center, UV
+    layer UVMap, §6 silhouette/material bar (donor materials conformed under M_Tree / M_Rock; MI hue
+    variants allowed). COLLISION: FOOTPRINT-ONLY — strip donor canopy/full-mesh collision; keep/author
+    ≤2 simple hulls hugging the trunk (r~50-70) or rock base; verify hull count + type via ObjectTools
+    BodySetup_0.AggGeom readback (nothing auto-generated, no canopy hulls). Do NOT place anything in
+    L_Arena (TASK-095). Record conform notes in FAB-REQUESTS.md (integration lines FAB-001/002) +
+    handoffs/TASK-092.md with viewport captures. Acceptance: all obstacle meshes imported at target
+    names, footprint-only hulls verified by readback, budgets met, donors untouched. 🎨 Art post.
+- names: >
+    Targets: SM_Tree_01, SM_Tree_02, SM_Rock_01(+) (/Game/Meshes/); materials M_Tree, M_Rock
+    (/Game/Materials/; MI variants in /Game/Materials/Instances/). Donors: Content/Fab/<Pack>/ (FAB-001,
+    FAB-002 — READ-ONLY). UV layer UVMap. Law: CONVENTIONS "Arena terrain & environment (M4.5)" incl.
+    Fab amendment + ruling 6.
+
+#### TASK-093 — Placement v3: building slope limit + tree clearance + ghost on sloped ground (C++)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-08; qa/TASK-093-report.md — PASS, 0 blockers / 1 warn / 3 nits, all 8 flagged decisions ACCEPTED. WARN: transient-actor one-frame "Too steep" flash, fail-safe, PIE-check at 096/103. QA confirmed TraceCursorToGround safely reusable for TASK-100's reticle. Manager carry-forward: names blocks should pin OnCardPlayRefused/OnCardRefused explicitly. Single-writer hold lifted → TASK-100 dispatched. Awaits TASK-103 batch compile)
+- blocked-by: none
+- parallel-safe: yes (file-only: SiegePlayerController.h/.cpp; no overlap with TASK-094's Projectile files; serialize around compiles per standing law)
+- spec: >
+    Files only, no editor, no compile. Extend the TASK-030/059 placement path in ASiegePlayerController
+    for the M4.5 terrain (rulings 4, 7). (1) NEW UPROPERTYs (EditDefaultsOnly, Category
+    "Siegebound|Placement", // GDD §5 (M4.5) comments — mechanic rules, NOT CSV): float
+    MaxPlacementSlopeDegrees = 20.f; float ObstaclePlacementClearance = 150.f. (2) Slope check, BUILDINGS
+    only: at the navmesh-projected candidate point, line-trace straight down (candidate +Z500 →
+    −Z500, WorldStatic/Visibility — programmer picks + documents); slope = angle between ImpactNormal
+    and +Z; slope > MaxPlacementSlopeDegrees ⇒ refuse with HUD reason "Too steep" through the existing
+    refusal path, pre-checked BEFORE gold moves (net-zero law). Trace miss ⇒ refuse (fail-closed, log
+    verbose). (3) Obstacle clearance, BUILDINGS only (Fab amendment — covers trees AND rocks): any actor
+    carrying tag "Obstacle" (exact FName) whose location is within ObstaclePlacementClearance 2D of the
+    candidate ⇒ refuse "Too close to obstacles" (small N — TActorIterator acceptable; caching optional,
+    document the choice). (4) Ghost projection:
+    the ghost actor's Z must come from the projected/traced SURFACE height at the cursor point (works on
+    the 250-high crowns and on flanks); rotation stays upright — NO normal alignment; the new refusals
+    show the red ghost exactly like existing invalid placements. (5) UNCHANGED: unit/miner placement
+    (navmesh-valid point suffices), castle-roof refusal, enemy-half refusal, 200 building clearance,
+    miner cap, card leaves hand at CONFIRM. (6) No cards.csv/DT_Cards change; no BIE signature change
+    (refusal text rides the existing FString path). (7) CONVENTIONS shadow law (C4457/58/59) — QA MUST
+    scan pre-compile. Acceptance (by inspection, pre-compile): both refusals route pre-gold with the
+    exact HUD strings; slope math correct at the 20° threshold; tag string "Obstacle"
+    character-for-character; ghost Z from surface + upright; nothing unchanged-listed touched.
+    handoffs/TASK-093.md with flagged decisions (trace channel, caching, where the slope check sits in
+    the validation order). Post in ⚙️ Dev & QA.
+- names: >
+    ASiegePlayerController (Source/GitClaudeUnrealTest/Siegebound/SiegePlayerController.h/.cpp) — NEW
+    UPROPERTYs MaxPlacementSlopeDegrees (float, 20), ObstaclePlacementClearance (float, 150); actor tag
+    "Obstacle" (exact — trees AND rocks, set by TASK-095); HUD refusal strings "Too steep" / "Too close
+    to obstacles"; existing
+    refusal path OnCardRefusedMessage (signature UNCHANGED). Law: CONVENTIONS "Arena terrain &
+    environment (M4.5)" + rulings 4, 7.
+
+#### TASK-094 — Projectile terrain/tree collision: arrows die on hills and trunks (C++)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-08; qa/TASK-094-report.md — PASS, 0 blockers / 2 warns / 2 nits, all 5 flagged decisions PASS/ACCEPTED. BINDING CARRIES: [1] TASK-096 must treat a missing TASK-091/092 collision readback as a projectile-law failure [bTraceComplex=false makes those readbacks load-bearing]; [2] TASK-103 runs a git-diff confinement check on Projectile.h/.cpp lineage. WATCHes: crown-lip downhill shots, final-approach sliver. Awaits TASK-103 batch compile)
+- blocked-by: none
+- parallel-safe: yes (file-only: Projectile.h/.cpp; no overlap with TASK-093; serialize around compiles per standing law)
+- spec: >
+    Files only, no editor, no compile. Implement ruling 8 on AProjectile (TASK-026 lineage). (1) In
+    flight, detect impact with walkable terrain (tag "Terrain") or obstacle footprints (tag "Obstacle" —
+    Fab amendment: trees AND rocks): mechanism
+    is the programmer's choice (per-tick sweep from last position, or blocking-hit filtering by owner
+    tag) but MUST be robust at 1500 u/s (no tunneling through a trunk) and O(hit-result) per tick — no
+    world scans. On impact: Destroy(), ZERO damage, no AoE, no friendly-fire side effects; impact VFX
+    optional only if a one-line reuse of the existing impact effect, else silent despawn with a
+    VeryVerbose log. (2) MUST NOT change behavior vs walls, buildings, castles, or units — homing,
+    target-overlap damage, §3.0 castle scaling (Projectile 50%), and despawn-on-target stay byte-level
+    equivalent in behavior. (3) Homing note: when the target moves behind a hill the projectile may
+    legitimately impact the hillside — that IS the high-ground value (ruling 2). NO acquisition/LOS
+    changes anywhere (towers/units keep range-only targeting) — restate the ruling-2 WATCH in the
+    handoff. (4) Null-safe on tag lookups; CONVENTIONS shadow law — QA scans pre-compile. Acceptance
+    (by inspection, pre-compile): terrain/obstacle impact destroys without damage; tag strings "Terrain" /
+    "Obstacle" character-for-character; no change to any shipped projectile interaction; flagged decisions
+    (detection mechanism, VFX choice) in handoffs/TASK-094.md. Post in ⚙️ Dev & QA.
+- names: >
+    AProjectile (Source/GitClaudeUnrealTest/Siegebound/Projectile.h/.cpp); actor tags "Terrain" / "Obstacle"
+    (exact, set by TASK-095). UNCHANGED: USiegeDamageType_* (DamageTypes.h/.cpp), castle 50% projectile
+    scaling, homing + target overlap, MinRange/AoERadius consumers. Law: rulings 2, 8 + Fab amendment.
+
+#### TASK-095 — L_Arena v3: terrain swap + mirrored trees & rocks + navmesh over hills (editor)
+- assignee: art-director
+- status: backlog
+- blocked-by: TASK-091, TASK-092 (⇒ transitively on Jonathan's Fab drop)
+- parallel-safe: no (editor-mutating — one editor instance; touches L_Arena.umap)
+- spec: >
+    Editor/MCP work in /Game/Maps/L_Arena. NO C++ dependency — runs before/parallel to the code compile.
+    (1) DELETE the ArenaGround engine-cube slab (StaticMeshActor at (0,0,-50), scale (64,32,1) —
+    confirm by class + transform before deleting; handoffs/TASK-015.md). PRESERVE everything else
+    (ruling 10): Castle_Blue/Red, CastleAnchor_Blue/Red, GoldNode_Blue/Red, PlayerStart (−1400,0,100),
+    CenterlineMarker decal, NavMeshBounds_Arena, ArenaBoundary_East/West/North/South (tag ArenaBoundary),
+    WorldSettings KillZ −2000, template lighting stack. (2) Place StaticMeshActor "ArenaTerrain" =
+    SM_ArenaTerrain at (0,0,0) rot (0,0,0) scale 1; add actor tag "Terrain" (exact). If TASK-091 took
+    the COMPOSITE path (Fab amendment): additionally place the hill meshes as Hill_<NN>_<Side> mirror
+    pairs at the ruling-5 positions (±700,±900), each with tag "Terrain". Trace-verify the walk surface:
+    Z≈0 at (0,±800), (±1200,0), (±2000,0), (−1400,0); Z≈250 at the four crowns (±700,±900); spot slope
+    checks on flanks ≤35°. (3) Place obstacles per ruling 6 + Fab amendment: 16 trees
+    Tree_01_Blue..Tree_08_Blue (X<0) / Tree_01_Red..Tree_08_Red (X>0) at the ruling-6 coordinates
+    (odd NN → SM_Tree_01, even NN → SM_Tree_02 by default — art may swap variants per pair, twins ALWAYS
+    identical), PLUS rocks Rock_01_<Side>.. as mirror pairs (art places 2-4 rock pairs for composition —
+    same clearance laws: never in pads/lanes/crowns, |X| ≥ 400, twins exact). Z snapped to the traced
+    surface; EVERY obstacle instance (tree AND rock) gets actor tag "Obstacle" (exact); per-instance yaw
+    free. Nudges ≤150 allowed (twin moves identically). READBACK-VERIFY: for every pair, Location(Red) ==
+    Location(Blue) × (−1,+1,+1) within 1 unit; every obstacle carries the Obstacle tag. (4) Navmesh:
+    verify RecastNavMesh regenerates over the hills (crowns covered — NavMeshBounds_Arena spans Z±500 so
+    250 fits; raise the volume ONLY if coverage fails, record it) and carves around every obstacle
+    footprint; the Y=0 lane is navmesh-continuous castle-to-castle. (5) CenterlineMarker still renders
+    on the terrain at the flat centerline strip; boundary traces at all 4 edges still block (walls start
+    at ±3200/±1600). (6) Save L_Arena clean (is_dirty=false). NO PIE gameplay suite here (TASK-096 owns
+    it); a PIE boot smoke test is fine. Acceptance: slab gone; terrain (and hills, composite path)
+    placed + tagged Terrain; all obstacles mirror-exact + tagged Obstacle; navmesh covers hills and
+    carves footprints; every preserved actor untouched (readback); level saved. handoffs/TASK-095.md
+    MUST include the final obstacle coordinate table (the reference for TASK-096 and future passes).
+    🎨 Art post.
+- names: >
+    /Game/Maps/L_Arena. DELETE: ArenaGround. ADD: ArenaTerrain (SM_ArenaTerrain, tag "Terrain", at
+    origin) [+ Hill_<NN>_<Side> (SM_Hill_##, tag "Terrain") if composite]; Tree_01..08_<Side>
+    (SM_Tree_01/02) + Rock_01..NN_<Side> (SM_Rock_01+), ALL tagged "Obstacle", at ruling-6 coordinates
+    + mirrored rock picks. PRESERVE: Castle_Blue/Red, CastleAnchor_*, GoldNode_Blue/Red, PlayerStart,
+    CenterlineMarker, NavMeshBounds_Arena, ArenaBoundary_*, KillZ −2000, lighting. Law: rulings 1, 4-6,
+    10 + Fab amendment + CONVENTIONS "Arena terrain & environment (M4.5)".
+
+#### TASK-096 — M4.5 integration: compile, terrain-gameplay PIE suite, commit + m4.5-testable branch (build)
+- assignee: build-master
+- status: backlog
+- blocked-by: TASK-093 (qa-passed), TASK-094 (qa-passed), TASK-095
+- parallel-safe: no (owns the single editor + the compile + the Git commit)
+- spec: >
+    Integration for the M4.5 terrain milestone (TASK-090 pattern). (1) EDITOR DOWN → compile the
+    TASK-093/094 batch via the standard Build.bat (CLAUDE.md) — NOTE (Fab amendment): if 093/094 already
+    shipped via M5's TASK-103 batch, this step is a no-op; this task is then verify + level/art commit
+    only. Failure → append errors to the offending task's qa report and route back to gameplay-programmer
+    (counts as a QA loop). Adjudicate any editor-bounce boot-resave residue per standing doctrine (never
+    blind-commit; record decisions).
+    (2) Relaunch; PIE suite on direct-boot L_Arena:
+    (a) PATHING: a Blue Footman placed on a south flank paths over/around hills to the Red castle; a
+    Miner reaches GoldNode_Blue in ~10 s (flat-lane law); a Siege unit (Sapper or Ogre) crosses the
+    field; a Wall placed mid-lane carves the navmesh and units reroute (dynamic obstruction unregressed).
+    (b) PLACEMENT: ghost sits ON the slope surface and upright; a building on a hill FLANK refused
+    "Too steep" with net-zero gold; a building on a hill CROWN ACCEPTED — place an ArrowTower on a crown
+    (the high-ground payoff); a building within 150 of a trunk refused "Too close to obstacles"; a unit
+    placed on a slope spawns fine; castle-roof refusal, enemy-half refusal, and 200 building clearance
+    unregressed. (c) PROJECTILES: an archer/tower shot at a target behind a hill impacts the terrain and
+    despawns with ZERO damage (HP readback); a tree trunk blocks a shot; arrows still fly from behind
+    the player's own wall (comp preserved); castle 50% projectile scaling unchanged. (d) HERO: climbs a
+    crown at sprint; perimeter escape check — hills must not ramp over the ArenaBoundary walls; forced
+    KillZ fall → respawn at own castle in 5-6 s. (e) BOT SANITY (verify, don't rewrite): a ≥3-minute
+    (or full) match vs the bot — bot placements land navmesh-valid on the terrain, its waves path, no
+    t=0 Rule-1 false trigger (TASK-070 law), match end still fires if reached. (f) PERF (ruling 9):
+    best-effort machine-readable timings only (no console/stat route — learnings); record terrain/tree
+    tri + actor counts; the formal §6 60 fps gate is a human WATCH for Jonathan's M4.5 playtest — write
+    the WATCH into the handoff. (g) LOG SWEEP vs knowns (DeepMine CardType-2, victory-focus,
+    RecastNavMesh boot warning, CrowdFollowing teardown). (3) ONE commit on main, message
+    "TASK-091..096: M4.5 gameplay terrain pass — ..." covering code + L_Arena + meshes/materials/
+    textures + FBX/PNG raws + pipeline docs; **NOT pushed**. Then cut branch m4.5-testable at that
+    commit (milestone-preservation workflow; branch not pushed either). (4) Post compile result +
+    verification summary + commit hash + branch in 🔧 Build & Git. Acceptance: clean compile; PIE checks
+    (a)-(g) PASS (or findings routed); ONE commit on main + m4.5-testable cut; nothing pushed.
+- names: >
+    Build target GitClaudeUnrealTestEditor (Build.bat per CLAUDE.md). Verify live: ASiegePlayerController
+    MaxPlacementSlopeDegrees=20 / ObstaclePlacementClearance=150; map /Game/Maps/L_Arena; actors ArenaTerrain
+    [+ Hill_* if composite] (tag Terrain) + Tree_*/Rock_* (tag Obstacle); walkable terrain
+    complex-as-simple. Branch m4.5-testable; commit to main only, NOT pushed.
 
 ### Gold economy balance chain (TASK-089..090) — Jonathan directive 2026-07-08
 **Verbatim intent (URGENT):** "I need to implement a balancing change right now. The default passive gold accumulation is way too high, lower it to about 1 gold every 2 seconds, and have the players start the game with only 10 gold."
