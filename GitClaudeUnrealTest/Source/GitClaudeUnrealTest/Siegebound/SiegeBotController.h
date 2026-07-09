@@ -6,6 +6,7 @@
 #include "AIController.h"
 #include "UObject/SoftObjectPtr.h"
 #include "Siegebound/TeamId.h"
+#include "Siegebound/DeckTypes.h" // FDeckList — complete type for the TArray<FDeckList> BotDecks UPROPERTY (M6 TASK-114)
 #include "SiegeBotController.generated.h"
 
 class ASiegePlayerState;
@@ -181,6 +182,21 @@ protected:
 	 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Deck")
 	TObjectPtr<UDeckComponent> DeckComponent;
+
+	/**
+	 *  The bot's two DISTINCT curated decks (M6 ruling 4, TASK-114). EditDefaultsOnly
+	 *  C++ constructor defaults — a deck composition is CONTENT, not a per-card stat,
+	 *  so it is a UPROPERTY default and NOT a CSV column (mirrors the mechanic-rule-
+	 *  as-UPROPERTY precedent; a BP can retune them). At BeginPlay the bot RANDOMLY
+	 *  picks one (FMath::RandRange), validates it via UDeckLibrary::IsDeckLegal, and
+	 *  pushes it through UDeckComponent::SetPendingDeckList BEFORE BuildAndShuffle; a
+	 *  missing entry OR an illegal pick ⇒ the curated DeckCount fallback (null-safe).
+	 *  Both defaults are legal (sum 50, each Count <= that card's MaxCopies) and
+	 *  deliberately distinct — [0] aggro-rush, [1] defensive-economy fortress — and
+	 *  differ from the player's TASK-115 curated DeckCount default.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot")
+	TArray<FDeckList> BotDecks;
 
 	/**
 	 *  Team the bot plays for — Red (CONVENTIONS team contract; §4 "the bot").

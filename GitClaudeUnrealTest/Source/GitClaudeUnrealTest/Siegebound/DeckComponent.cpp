@@ -5,6 +5,7 @@
 #include "Engine/DataTable.h"
 #include "GitClaudeUnrealTest.h"
 #include "Siegebound/CardRow.h"
+#include "Siegebound/DeckLibrary.h" // UDeckLibrary::IsDeckLegal — the ONE validator gating the M6 override deck (TASK-114)
 
 UDeckComponent::UDeckComponent()
 {
@@ -25,60 +26,104 @@ void UDeckComponent::BuildAndShuffle()
 	DiscardPile.Reset();
 	Hand.Reset();
 
-	// --- build: DeckCount copies of every row's CardID (GDD §3.4). Copy
-	// counts live in DT_Cards, never hardcoded (GDD §3.0) ---
-	if (const UDataTable* CardTable = CardTableAsset.LoadSynchronous())
+	// Load the card table ONCE — needed both to validate any pending override deck
+	// (UDeckLibrary::IsDeckLegal) and to build the DeckCount fallback below.
+	const UDataTable* CardTable = CardTableAsset.LoadSynchronous();
+
+	// --- M6 override path (TASK-114, additive / backward-compatible): when a
+	// pending deck has been set AND it is legal against DT_Cards, build the draw
+	// pile from IT (Count copies of each CardID) instead of the DeckCount column.
+	// An unset OR illegal pending list (and a missing table — IsDeckLegal needs
+	// one) falls through to the UNCHANGED DeckCount build in the else, so the
+	// no-override case is byte-for-byte today's path. The pending list is NEVER
+	// cleared here, so it persists across ResetDeck / Play Again (same match keeps
+	// the same deck — SetPendingDeckList is the only writer). ---
+	FString PendingLegalityReason;
+	if (bHasPendingDeckList && UDeckLibrary::IsDeckLegal(CardTable, PendingDeckList, PendingLegalityReason))
 	{
-		int32 RowsContributing = 0;
-		CardTable->ForeachRow<FCardRow>(TEXT("UDeckComponent::BuildAndShuffle"),
-			[this, &RowsContributing](const FName& CardID, const FCardRow& Row)
+		for (const FDeckCardEntry& Entry : PendingDeckList.Cards)
+		{
+			// IsDeckLegal guarantees every Count is in [0..MaxCopies] and
+			// TotalCount()==SiegeLegalDeckSize (50) over resolvable CardIDs, so this
+			// always yields exactly a legal 50-card draw pile.
+			for (int32 Copy = 0; Copy < Entry.Count; ++Copy)
 			{
-				if (Row.DeckCount < 0)
-				{
-					// defensive only — TASK-021's data has no negative counts
-					UE_LOG(LogGitClaudeUnrealTest, Warning,
-						TEXT("UDeckComponent on '%s': row '%s' has negative DeckCount %d — treated as 0."),
-						*GetNameSafe(GetOwner()), *CardID.ToString(), Row.DeckCount);
-					return;
-				}
-
-				if (Row.DeckCount > 0)
-				{
-					++RowsContributing;
-					for (int32 Copy = 0; Copy < Row.DeckCount; ++Copy)
-					{
-						DrawPile.Add(CardID);
-					}
-				}
-			});
-
-		if (DrawPile.Num() != ExpectedDeckSize)
-		{
-			// spec: log an error but still proceed with what the table gives.
-			// The 0-card case is the known pre-reimport window: the saved
-			// DT_Cards carries DeckCount=0 on every row until TASK-031 reimports
-			// Docs/Data/cards.csv (qa/TASK-021-report.md WARN-2).
-			UE_LOG(LogGitClaudeUnrealTest, Error,
-				TEXT("UDeckComponent on '%s': DT_Cards DeckCounts built a %d-card deck, expected %d (GDD §3.4) — proceeding with what the table gives.%s"),
-				*GetNameSafe(GetOwner()), DrawPile.Num(), ExpectedDeckSize,
-				DrawPile.Num() == 0
-					? TEXT(" Deck is EMPTY — every hand slot deals NAME_None (expected until the TASK-031 reimport, qa/TASK-021-report.md WARN-2).")
-					: TEXT(""));
+				DrawPile.Add(Entry.CardID);
+			}
 		}
-		else
-		{
-			UE_LOG(LogGitClaudeUnrealTest, Log,
-				TEXT("UDeckComponent on '%s': built a %d-card draw pile from %d card rows (GDD §3.4)."),
-				*GetNameSafe(GetOwner()), DrawPile.Num(), RowsContributing);
-		}
+
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("UDeckComponent on '%s': built a %d-card draw pile from the pending OVERRIDE deck '%s' (%d entries) — DeckCount column bypassed (M6 TASK-114)."),
+			*GetNameSafe(GetOwner()), DrawPile.Num(), *PendingDeckList.DeckName, PendingDeckList.Cards.Num());
 	}
 	else
 	{
-		// spec: log-and-empty if missing — the hand still deals (all NAME_None)
-		// and every play/discard refuses gracefully
-		UE_LOG(LogGitClaudeUnrealTest, Error,
-			TEXT("UDeckComponent on '%s': card table '%s' not found — deck is EMPTY; the hand deals %d empty slots and every play/discard refuses gracefully."),
-			*GetNameSafe(GetOwner()), *CardTableAsset.ToString(), HandSize);
+		if (bHasPendingDeckList)
+		{
+			// a set-but-illegal pending list must degrade to the curated default,
+			// never brick the deck (house null-safety law) — surface the validator's reason
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("UDeckComponent on '%s': pending override deck '%s' is not legal (%s) — falling back to the DeckCount default (M6 TASK-114)."),
+				*GetNameSafe(GetOwner()), *PendingDeckList.DeckName,
+				PendingLegalityReason.IsEmpty() ? TEXT("no reason") : *PendingLegalityReason);
+		}
+
+		// --- build: DeckCount copies of every row's CardID (GDD §3.4). Copy
+		// counts live in DT_Cards, never hardcoded (GDD §3.0). UNCHANGED from the
+		// pre-M6 path — this is the exact fallback for no/illegal override ---
+		if (CardTable)
+		{
+			int32 RowsContributing = 0;
+			CardTable->ForeachRow<FCardRow>(TEXT("UDeckComponent::BuildAndShuffle"),
+				[this, &RowsContributing](const FName& CardID, const FCardRow& Row)
+				{
+					if (Row.DeckCount < 0)
+					{
+						// defensive only — TASK-021's data has no negative counts
+						UE_LOG(LogGitClaudeUnrealTest, Warning,
+							TEXT("UDeckComponent on '%s': row '%s' has negative DeckCount %d — treated as 0."),
+							*GetNameSafe(GetOwner()), *CardID.ToString(), Row.DeckCount);
+						return;
+					}
+
+					if (Row.DeckCount > 0)
+					{
+						++RowsContributing;
+						for (int32 Copy = 0; Copy < Row.DeckCount; ++Copy)
+						{
+							DrawPile.Add(CardID);
+						}
+					}
+				});
+
+			if (DrawPile.Num() != ExpectedDeckSize)
+			{
+				// spec: log an error but still proceed with what the table gives.
+				// The 0-card case is the known pre-reimport window: the saved
+				// DT_Cards carries DeckCount=0 on every row until TASK-031 reimports
+				// Docs/Data/cards.csv (qa/TASK-021-report.md WARN-2).
+				UE_LOG(LogGitClaudeUnrealTest, Error,
+					TEXT("UDeckComponent on '%s': DT_Cards DeckCounts built a %d-card deck, expected %d (GDD §3.4) — proceeding with what the table gives.%s"),
+					*GetNameSafe(GetOwner()), DrawPile.Num(), ExpectedDeckSize,
+					DrawPile.Num() == 0
+						? TEXT(" Deck is EMPTY — every hand slot deals NAME_None (expected until the TASK-031 reimport, qa/TASK-021-report.md WARN-2).")
+						: TEXT(""));
+			}
+			else
+			{
+				UE_LOG(LogGitClaudeUnrealTest, Log,
+					TEXT("UDeckComponent on '%s': built a %d-card draw pile from %d card rows (GDD §3.4)."),
+					*GetNameSafe(GetOwner()), DrawPile.Num(), RowsContributing);
+			}
+		}
+		else
+		{
+			// spec: log-and-empty if missing — the hand still deals (all NAME_None)
+			// and every play/discard refuses gracefully
+			UE_LOG(LogGitClaudeUnrealTest, Error,
+				TEXT("UDeckComponent on '%s': card table '%s' not found — deck is EMPTY; the hand deals %d empty slots and every play/discard refuses gracefully."),
+				*GetNameSafe(GetOwner()), *CardTableAsset.ToString(), HandSize);
+		}
 	}
 
 	// --- shuffle ---
@@ -138,7 +183,23 @@ void UDeckComponent::ResetDeck()
 {
 	// Play Again (§3.9): full rebuild + reshuffle + redeal. Re-reads DT_Cards
 	// so a reimported table (TASK-031) takes effect without restarting PIE.
+	// bHasPendingDeckList / PendingDeckList are deliberately NOT touched here, so
+	// an override deck survives Play Again (M6 TASK-114 — same match, same deck).
 	BuildAndShuffle();
+}
+
+void UDeckComponent::SetPendingDeckList(const FDeckList& Deck)
+{
+	// M6 (TASK-114): store a guarded override deck. It is VALIDATED (and either
+	// consumed or ignored) at the NEXT BuildAndShuffle — this setter never touches
+	// the live piles. Persists across ResetDeck (BuildAndShuffle never clears it),
+	// so Play Again keeps the same deck for the whole match.
+	PendingDeckList = Deck;
+	bHasPendingDeckList = true;
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("UDeckComponent on '%s': pending override deck '%s' set (%d entries, %d cards) — validated at the next BuildAndShuffle (M6 TASK-114)."),
+		*GetNameSafe(GetOwner()), *Deck.DeckName, Deck.Cards.Num(), Deck.TotalCount());
 }
 
 bool UDeckComponent::MoveHandCardToDiscardAndRedraw(int32 Slot, const TCHAR* Verb)

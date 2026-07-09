@@ -13,6 +13,7 @@
 #include "Siegebound/CardRow.h"
 #include "Siegebound/Castle.h"
 #include "Siegebound/DeckComponent.h"
+#include "Siegebound/DeckLibrary.h" // UDeckLibrary::IsDeckLegal / GetDeckAverageCost — validate + log the chosen curated bot deck (M6 TASK-114)
 #include "Siegebound/GoldNode.h"
 #include "Siegebound/HeroCharacter.h"
 #include "Siegebound/SiegeGameMode.h"
@@ -207,6 +208,60 @@ ASiegeBotController::ASiegeBotController()
 	// SAME table (GDD §3.0 — never hardcodes a stat). Soft, resolved null-safe per
 	// decision; matches ASiegePlayerController's CardTableAsset path (TASK-008).
 	CardTableAsset = TSoftObjectPtr<UDataTable>(FSoftObjectPath(TEXT("/Game/Data/DT_Cards.DT_Cards")));
+
+	// --- M6 (TASK-114 / ruling 4): TWO distinct legal curated bot decks as
+	// EditDefaultsOnly defaults. Each is legal against DT_Cards — sum(Count)==50 and
+	// every Count <= that card's MaxCopies (Footman 12, MilitiaMob/Pikeman/Knight 6,
+	// Archer 10, Cavalry/Sapper/Miner/BombTower/BallistaTower 4, Ogre/DeepMine 2,
+	// Barracks/CrystalTower/Cleric 3, Wall 10, ArrowTower 8, Longbowman 4). Both are
+	// composed ONLY of bot-PLAYABLE types (Unit/Building/Economy) so the bot never
+	// wastes a decision cycling an unplayable card, and both differ from the player's
+	// TASK-115 curated DeckCount default. Legality is re-checked at pick time
+	// (IsDeckLegal) — an edited-illegal BP entry degrades to the DeckCount fallback. ---
+	auto Entry = [](const TCHAR* InCardID, int32 InCount)
+	{
+		FDeckCardEntry Result;
+		Result.CardID = FName(InCardID);
+		Result.Count = InCount;
+		return Result;
+	};
+
+	// [0] AGGRO RUSH — cheap, fast, unit-heavy pressure (avg cost ~4.72). Sum 50.
+	FDeckList AggroDeck;
+	AggroDeck.DeckName = TEXT("Bot Aggro Rush");
+	AggroDeck.Cards =
+	{
+		Entry(TEXT("Footman"),    12), // 3 x12 = 36
+		Entry(TEXT("MilitiaMob"),  6), // 5 x6  = 30 (swarm: 4 bodies per copy)
+		Entry(TEXT("Pikeman"),     6), // 5 x6  = 30
+		Entry(TEXT("Knight"),      6), // 6 x6  = 36
+		Entry(TEXT("Archer"),      6), // 4 x6  = 24
+		Entry(TEXT("Cavalry"),     4), // 7 x4  = 28 (charge)
+		Entry(TEXT("Sapper"),      4), // 5 x4  = 20 (siege suicide)
+		Entry(TEXT("Wall"),        4), // 4 x4  = 16
+		Entry(TEXT("Miner"),       2), // 8 x2  = 16 (minimal economy)
+	};
+
+	// [1] DEFENSIVE ECONOMY — towers, walls, full economy, heavy finishers (avg cost ~6.86). Sum 50.
+	FDeckList FortressDeck;
+	FortressDeck.DeckName = TEXT("Bot Defensive Economy");
+	FortressDeck.Cards =
+	{
+		Entry(TEXT("Wall"),          10), // 4 x10 = 40
+		Entry(TEXT("ArrowTower"),     8), // 5 x8  = 40
+		Entry(TEXT("Knight"),         6), // 6 x6  = 36
+		Entry(TEXT("BombTower"),      4), // 8 x4  = 32
+		Entry(TEXT("BallistaTower"),  4), // 7 x4  = 28
+		Entry(TEXT("Miner"),          4), // 8 x4  = 32 (full economy)
+		Entry(TEXT("Barracks"),       3), // 10 x3 = 30 (Footman spawner)
+		Entry(TEXT("CrystalTower"),   3), // 9 x3  = 27 (chain tower)
+		Entry(TEXT("Cleric"),         3), // 6 x3  = 18 (heals)
+		Entry(TEXT("Ogre"),           2), // 12 x2 = 24 (siege finisher)
+		Entry(TEXT("DeepMine"),       2), // 15 x2 = 30 (raidable economy)
+		Entry(TEXT("Longbowman"),     1), // 6 x1  = 6
+	};
+
+	BotDecks = { AggroDeck, FortressDeck };
 }
 
 void ASiegeBotController::BeginPlay()
@@ -218,6 +273,42 @@ void ASiegeBotController::BeginPlay()
 	// owns the timing, exactly as ASiegePlayerController does for the player.
 	if (DeckComponent)
 	{
+		// M6 (TASK-114 / ruling 4): pick ONE curated bot deck at RANDOM and push it
+		// as the pending override BEFORE the build. Data-driven legality gate
+		// (UDeckLibrary::IsDeckLegal against DT_Cards); a missing/illegal pick leaves
+		// the component unset so BuildAndShuffle uses the curated DeckCount default
+		// (null-safe). RandRange over [0..Num-1] (not a literal 0..1) so a BP that
+		// edits BotDecks to any size can never index out of range. Exactly ONE
+		// grep-able LogSiegeBot line records the choice (like the §4 decision trace).
+		if (BotDecks.Num() > 0)
+		{
+			const int32 DeckIndex = FMath::RandRange(0, BotDecks.Num() - 1);
+			const FDeckList& ChosenDeck = BotDecks[DeckIndex];
+			const UDataTable* CardTable = CardTableAsset.LoadSynchronous();
+			FString LegalityReason;
+			if (UDeckLibrary::IsDeckLegal(CardTable, ChosenDeck, LegalityReason))
+			{
+				DeckComponent->SetPendingDeckList(ChosenDeck);
+				UE_LOG(LogSiegeBot, Log,
+					TEXT("[Bot %s] Deck select: chose curated deck %d of %d '%s' (%d cards, avg cost %.2f) — pushed as pending override."),
+					*GetNameSafe(this), DeckIndex, BotDecks.Num(), *ChosenDeck.DeckName,
+					ChosenDeck.TotalCount(), UDeckLibrary::GetDeckAverageCost(CardTable, ChosenDeck));
+			}
+			else
+			{
+				UE_LOG(LogSiegeBot, Log,
+					TEXT("[Bot %s] Deck select: curated deck %d '%s' is illegal (%s) — falling back to the DeckCount default."),
+					*GetNameSafe(this), DeckIndex, *ChosenDeck.DeckName,
+					LegalityReason.IsEmpty() ? TEXT("no reason") : *LegalityReason);
+			}
+		}
+		else
+		{
+			UE_LOG(LogSiegeBot, Log,
+				TEXT("[Bot %s] Deck select: no BotDecks configured — using the curated DeckCount default."),
+				*GetNameSafe(this));
+		}
+
 		DeckComponent->BuildAndShuffle();
 	}
 	else

@@ -18,6 +18,7 @@
 #include "GitClaudeUnrealTest.h"
 #include "InputAction.h"
 #include "InputCoreTypes.h"
+#include "Kismet/GameplayStatics.h" // UGameplayStatics::LoadGameFromSlot — active saved deck load (M6 TASK-114)
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "NavigationSystem.h"
@@ -25,7 +26,10 @@
 #include "Siegebound/CardRow.h"
 #include "Siegebound/Castle.h"
 #include "Siegebound/DeckComponent.h"
+#include "Siegebound/DeckLibrary.h" // UDeckLibrary::IsDeckLegal — gate the active saved deck before SetPendingDeckList (M6 TASK-114)
 #include "Siegebound/HeroCharacter.h"
+#include "Siegebound/SiegeCheatManager.h" // TASK-121 — CheatClass complete-type (constructor assignment below)
+#include "Siegebound/SiegeDeckSaveGame.h" // USiegeDeckSaveGame — active saved deck source (M6 TASK-114)
 #include "Siegebound/SiegePlayerState.h"
 #include "Siegebound/SiegeSpawnConstants.h"
 #include "Siegebound/SpellLibrary.h"
@@ -39,6 +43,11 @@ ASiegePlayerController::ASiegePlayerController()
 
 	// deck & hand model (GDD §3.4, TASK-022) — subobject name is a spec contract
 	DeckComponent = CreateDefaultSubobject<UDeckComponent>(TEXT("DeckComponent"));
+
+	// debug-exec cheats for headless verification (TASK-121). The engine only
+	// instantiates a UCheatManager in non-shipping builds with cheats enabled, so
+	// this can never leak into Shipping — additive, zero behavior change to play.
+	CheatClass = USiegeCheatManager::StaticClass();
 
 	// content contract (TASK-007/023 names blocks) — everything soft, resolved
 	// null-safe at runtime; the assets are built by parallel tasks
@@ -87,6 +96,50 @@ void ASiegePlayerController::BeginPlay()
 	// seeds from an already-dealt hand (CONVENTIONS seed-then-bind law).
 	if (DeckComponent)
 	{
+		// M6 (TASK-114): load the player's ACTIVE saved deck and, when it is legal
+		// against DT_Cards, push it as the DeckComponent's pending override BEFORE
+		// the build below. Null-safe fallback chain — no save file / empty
+		// ActiveDeckName / name-not-found / illegal deck all leave the component
+		// unset, so BuildAndShuffle uses the curated DeckCount default exactly as
+		// before (backward-compatible). The SaveGame is the menu->match handoff
+		// (M6 ruling 1); the active deck is NOT passed through the level-open URL.
+		if (USiegeDeckSaveGame* DeckSave = Cast<USiegeDeckSaveGame>(
+				UGameplayStatics::LoadGameFromSlot(USiegeDeckSaveGame::SlotName, USiegeDeckSaveGame::UserIndex)))
+		{
+			const FString& ActiveName = DeckSave->ActiveDeckName;
+			if (!ActiveName.IsEmpty())
+			{
+				const FDeckList* ActiveDeck = DeckSave->SavedDecks.FindByPredicate(
+					[&ActiveName](const FDeckList& Candidate) { return Candidate.DeckName == ActiveName; });
+				if (ActiveDeck)
+				{
+					const UDataTable* CardTable = CardTableAsset.LoadSynchronous();
+					FString LegalityReason;
+					if (UDeckLibrary::IsDeckLegal(CardTable, *ActiveDeck, LegalityReason))
+					{
+						DeckComponent->SetPendingDeckList(*ActiveDeck);
+						UE_LOG(LogGitClaudeUnrealTest, Log,
+							TEXT("ASiegePlayerController '%s': active saved deck '%s' is legal (%d cards) — using it this match (M6 TASK-114)."),
+							*GetNameSafe(this), *ActiveName, ActiveDeck->TotalCount());
+					}
+					else
+					{
+						UE_LOG(LogGitClaudeUnrealTest, Warning,
+							TEXT("ASiegePlayerController '%s': active saved deck '%s' is not legal (%s) — falling back to the curated DeckCount default (M6 TASK-114)."),
+							*GetNameSafe(this), *ActiveName, LegalityReason.IsEmpty() ? TEXT("no reason") : *LegalityReason);
+					}
+				}
+				else
+				{
+					UE_LOG(LogGitClaudeUnrealTest, Warning,
+						TEXT("ASiegePlayerController '%s': active deck name '%s' not found in SavedDecks — falling back to the curated DeckCount default (M6 TASK-114)."),
+						*GetNameSafe(this), *ActiveName);
+				}
+			}
+			// empty ActiveDeckName => no active deck => curated DeckCount fallback (silent — the default state)
+		}
+		// no save file (first run) => curated DeckCount fallback (silent — the common case)
+
 		DeckComponent->BuildAndShuffle();
 	}
 	else

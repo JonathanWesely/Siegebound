@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "UObject/SoftObjectPtr.h"
+#include "Siegebound/DeckTypes.h" // FDeckList/FDeckCardEntry — complete type for the FDeckList PendingDeckList member (M6 TASK-114)
 #include "DeckComponent.generated.h"
 
 class UDataTable;
@@ -156,6 +157,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Deck")
 	void ResetDeck();
 
+	/**
+	 *  Sets a guarded PENDING override deck (M6, TASK-114 — additive, backward-
+	 *  compatible). The NEXT BuildAndShuffle (and every later ResetDeck / Play
+	 *  Again) builds the draw pile from THIS list (Count copies of each CardID)
+	 *  INSTEAD of the DeckCount column — but ONLY when the list passes
+	 *  UDeckLibrary::IsDeckLegal against DT_Cards. An unset OR illegal pending list
+	 *  falls back to the existing DeckCount build UNCHANGED (empty/unset/illegal =
+	 *  today's exact path, so nothing breaks). The pending list PERSISTS across
+	 *  ResetDeck (never cleared on reset), so the same match keeps the same deck.
+	 *  Call BEFORE BuildAndShuffle — the player controller (from the active saved
+	 *  deck) and the bot (from a random curated BotDecks entry) both do so.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Deck")
+	void SetPendingDeckList(const FDeckList& Deck);
+
 protected:
 
 	/** Card stat table (GDD §3.0/§3.4) — the DeckCount column drives the build. Soft, resolved null-safe at build time (TASK-008 import; TASK-031 reimports with DeckCount populated). */
@@ -201,4 +217,10 @@ private:
 
 	/** Last preview value pushed through OnDeckNextCardChanged (the value filter). */
 	FName LastPreviewCardID;
+
+	/** True once SetPendingDeckList has provided an override deck (M6 TASK-114); until then BuildAndShuffle uses the DeckCount default. Persists across ResetDeck (never cleared on reset) so Play Again keeps the same deck. */
+	bool bHasPendingDeckList = false;
+
+	/** The pending override deck (M6 TASK-114). Consumed by BuildAndShuffle ONLY when bHasPendingDeckList AND UDeckLibrary::IsDeckLegal passes; otherwise the DeckCount build runs unchanged. Not a UPROPERTY — pure runtime state with no UObject refs (FName/FString/int32 only). */
+	FDeckList PendingDeckList;
 };

@@ -32,8 +32,18 @@ Source: `Docs/GDD.md` §9. Only the current milestone is decomposed into tasks; 
 3. **M3 — Bot opponent = real 1v1 match** — `done (committed 2f6a8fc + c8a40b2 + 56247c9, not pushed; m3-testable @ 56247c9; slice verified, interactive items pending Jonathan's playtest)`
 4. **M4 — Card Set II (16 cards, keywords, hero upgrades)** — `done (playtested + signed off by Jonathan 2026-07-08; committed 65861ce + e586699, not pushed; m4-testable @ e586699)` (TASK-053..069; branches m2-testable @ f903cf0 + m3-testable @ 56247c9 + m4-testable @ e586699 preserve the milestone slices; see "## M4 tasks") — sign-off note: "we will have to make some balancing changes later, but it is fine" → see Standing backlog
 4.5. **M4.5 — Gameplay terrain pass (grass, hills, trees + rocks)** — `parked — awaiting Jonathan's Fab asset drop (plan + folders ready; resume on his return)` — Jonathan directive 2026-07-08: the arena is "a boring white board"; wants "a nice large grass area with trees and hills". REAL GAMEPLAY TERRAIN — mirror-symmetric hills (physical high ground) + trees/rocks (navmesh/placement obstacles) INSIDE the playfield; amends GDD §5 (rulings in "M4.5 manager decisions" under Active tasks, incl. the same-day Fab amendment). **Fab pivot (Jonathan, same day):** he supplies premade Fab assets for FOUR slots — tree, rock, grass, hill (FAB-001..004 approved in .claude/pipeline/fab/FAB-REQUESTS.md; drop zone Content/Fab/README_DROP_ZONE.md). TASK-091/092 are now Fab conform+integration tasks blocked on his drop; TASK-093/094 (C++) remain valid and dispatchable. **ORDERING INVERSION (Jonathan's ruling): M5 proceeds AHEAD of this milestone — nobody blocks M5 work on M4.5.** M4.5 resumes the moment the Fab assets land.
-5. **M5 — Spell system + Set III** — `current (decomposed 2026-07-08, TASK-097..109; runs AHEAD of parked M4.5 per Jonathan's directive)` — targeting mode, 5 spells + Crystal Tower, spell Niagara VFX at the §6 bar, bot M5 spell rules. Carry-in baked into the specs (not a follow-up): the targeting reticle ground-projects via TRACE so M4.5's hills need no rework when they land. Slice: spell VFX showcase reel.
-6. M6 — Deck-builder meta — `not-started`
+5. **M5 — Spell system + Set III** — `done-pending-playtest (functionally complete 2026-07-08, TASK-097..109 all done; code commit 2c65164 + editor/art/docs commit 979f552 on main, NOT pushed; m5-testable @ 979f552; machine-verified, live spell/reticle/bot-cast items on the WATCH list below — need one unlocked-desktop human playtest to close the slice)` — targeting mode, 5 spells + Crystal Tower, spell Niagara VFX at the §6 bar, bot M5 spell rules. Carry-in baked into the specs (not a follow-up): the targeting reticle ground-projects via TRACE so M4.5's hills need no rework when they land. Slice: spell VFX showcase reel. **QA: 2 fail→fix→pass loops, both one-shot (TASK-098 BattleCry-magnitude seam ruled to the unit side; TASK-100 reticle decal double-rotation).**
+
+### M5 CHECKPOINT — 2026-07-08 (playtest WATCH list — read before the human playtest)
+M5 shipped machine-verified with the desktop LOCKED (SendInput blocked → no simulated input, TASK-076 doctrine). A single **unlocked-desktop human playtest** closes every item below. How to play: hotkeys 1–6 play hand slots, hold Left-Alt for the cursor; spells now enter TARGETING mode (reticle anywhere on the map, LMB confirm / RMB-Esc cancel); Play vs Bot from the menu, or open /Game/Maps/L_Arena. On boot, dismiss the two passive prompts: "source content changes — import?" → **Don't Import**; "re-open asset editors?" → **No**.
+- ☐ Cast each of the 5 spells (Fireball AoE, FrostNova freeze, Lightning top-3-HP, BattleCry ally buff, Pickpocket instant gold-steal): reticle projects onto the ground, cost deducts at confirm, resolver-false fully refunds, 50% vs castle, no friendly fire, NS_Spell_* VFX reads in one frame at the §6 bar.
+- ☐ Crystal Tower: place it, confirm the chain zap bounces (15/10/5 falloff, NS_ChainZap cyan) and the tower freeze-gate.
+- ☐ Reticle readability on elevated anchors (TASK-100 WARN carry) + targeting/placement/Alt-cursor interplay feels clean.
+- ☐ Bot casts spells: push 3+ units into a cluster (Fireball rule 3a) and put 2+ units by a player tower (Lightning rule 3b) — grep LogSiegeBot for "Rule 3a/3b". Also watch the spell hand-clog + centroid-outlier carries (TASK-102 WARNs).
+- ☐ Play Again resets all spell state (freezes, buffs, reticle) alongside the existing reset.
+- Benign (no action, informational): stale LogCSVImportFactory "missing CardType" warnings on load — cards.csv + live DT_Cards verified correct; it's the import-factory enum quirk that set_rows sidesteps.
+5.5. **M5.5 — Overhead health bars** — `done-pending-playtest (2026-07-09, TASK-110..112 all done; commit 9a8a75f on main, NOT pushed [no branch — batch, not a milestone; m5-testable already preserves M5]. Functionally verified via PIE property readback; live on-screen bar appearance owed to Jonathan's playtest — see WATCH in TASK-112)` — Jonathan directive 2026-07-09 (direct in Claude Code): "add a health bar to every tower and character." A small standalone batch inserted between M5 and M6 (M4.5 shape), NOT a GDD milestone. Broadens GDD §7's enemy-only-when-damaged line to a floating overhead HP bar on EVERY combat actor, both teams — units (incl. miners), all buildings (towers, Wall, Barracks, Deep Mine), and the hero. Castles keep their existing M1 bar. Rulings + tasks in "M5.5 manager decisions" under Active tasks; naming law in CONVENTIONS "Overhead unit health bars (M5.5)". Jonathan's M6 go-ahead is given but M6 is decomposed AFTER this batch ships (separate step).
+6. **M6 — Deck-builder meta** — `current (decomposed 2026-07-09, TASK-113..121; Jonathan's direct M6 go-ahead after the M5.5 batch). Runs INDEPENDENT of parked M4.5 (Jonathan's ordering ruling — nobody blocks on the Fab drop). Rulings + tasks in "M6 manager decisions" under Active tasks; naming law in CONVENTIONS "Deck-builder & saved decks (M6)".` — Deck-builder screen (§7): browse the 28-card collection, add/remove copies with per-card MaxCopies enforced, live x/50 counter + average-cost guide (§8), save/load named decks (USaveGame, cross-session), a deck playable only at exactly 50; the active saved deck feeds the player's match, the bot gets 2 distinct curated decks; the `DeckCount` column is re-authored into a legal curated default that supersedes the M4/M5 test spread. **State preserved (undisturbed by M6):** M5 + M5.5 stay `done-pending-playtest` (m5-testable @ 979f552; M5.5 commit 9a8a75f; human WATCH lists still owed); M4.5 stays `parked` on Jonathan's Fab drop. Slice: UI/UX + save-load systems clip.
 7. M7 — Premium art & feel pass — `not-started` · **Jonathan request (2026-07-04):** raise fidelity on SM_Castle + SM_Footman + SM_Archer (higher detail than the current blockouts); wants the game to look nicer. Decision: DEFERRED here (mesh swaps are non-breaking; roster still growing through M4-M6). Two integration paths to scope at M7: (a) art-director custom higher-detail Blender models, and/or (b) **Fab/UE-marketplace assets — Jonathan must download packs into the project via the Epic Launcher first (agents can't browse/buy/download Fab autonomously); art-director then swaps meshes/materials.** Could be pulled forward as a standalone art pass after M3/M4 if Jonathan wants it sooner.
 8. M8 — Networked 1v1 multiplayer — `not-started`
 
@@ -149,6 +159,381 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 **M5 exit criteria (playable slice):** all 5 spells playable end-to-end with visible VFX; Fireball meets §3.11 acceptance (kills 3 clustered 80-HP Footmen, adjacent friendly untouched, 50 not 100 vs castle); FrostNova freezes enemy units + a tower 4 s (castle unaffected), they resume cleanly; Lightning kills an Arrow Tower picking the 3 highest-current-HP enemies in 400; BattleCry visibly speeds attack + movement 8 s; Pickpocket moves exactly min(10, victim gold); Crystal Tower chains 15/10/5 within 800; reticle projects onto the ground surface, LMB confirms (gold at confirm), RMB/Esc cancels free; bot casts Fireball + Lightning per its rules with LogSiegeBot traces; deck = 50 with Set III reachable; Play Again clears all spell state (freeze/buff timers). Recordable: spell VFX showcase reel.
 
 Dispatch shape: **FILE WAVE NOW (parallel): TASK-097 ∥ 098 ∥ 099 ∥ 101 ∥ 102, alongside M4.5's TASK-093 ∥ 094** (seven file tasks, distinct file sets); TASK-100 after 093 (ruling 14). ART when Blender/editor free: TASK-105 ∥ 106 (serialize imports); TASK-108 when the editor is free. QA gates every code task (shadow-scan mandatory). Then TASK-103 (batch compile + commit, folds in 093/094) → TASK-104 + TASK-107 (editor wave) → TASK-109 (final assembly + PIE + commit + m5-testable).
+
+---
+
+### M6 — Deck-builder meta (TASK-113..121) — decomposed 2026-07-09
+
+**Authorization:** Jonathan's 2026-07-09 direct Claude Code M6 go-ahead ("move on to M6") after the M5.5 health-bar batch shipped. GDD mode: only M6 is decomposed. Naming law added to CONVENTIONS "Deck-builder & saved decks (M6)" BEFORE task issue; the two M5.5 process follow-ups are folded in (see "Follow-ups" below). Hard gates stand: editor/MCP work needs the editor MCP (127.0.0.1:8000) up — park + tell the orchestrator if unreachable (never fake results); nothing pushed. This batch does NOT touch M5's, M5.5's, or M4.5's state (all preserved on the board); M6 runs INDEPENDENT of parked M4.5.
+
+**THE CRUX — build on the existing deck system, do not reinvent it (infra audited 2026-07-09):** `UDeckComponent::BuildAndShuffle()` (DeckComponent.h/.cpp) builds the draw pile from the `DeckCount` column of `/Game/Data/DT_Cards` and deals a 6-card hand; draw/discard/reshuffle/preview all exist and are frozen contracts. BOTH `ASiegePlayerController` (BeginPlay) and `ASiegeBotController` (OnPossess) own a `DeckComponent` subobject named `DeckComponent` and call `BuildAndShuffle()` at match start / `ResetDeck()` on Play Again — so TODAY every controller gets the SAME deck (the DeckCount column). `FCardRow` already carries `MaxCopies` (per-card cap) and `Cost` (average-cost math). M6 ADDS a per-controller override (a settable pending `FDeckList`) that `BuildAndShuffle` prefers when set-and-legal, else falls back to DeckCount — a purely additive seam, zero behavior change to the empty/unset path.
+
+**M6 manager decisions (binding for all M6 tasks; each judgment call FLAGGED for QA + Jonathan):**
+1. **Where saved decks live — FLAG 1 (RECOMMEND: SaveGame).** Player-authored named decks persist in a `USiegeDeckSaveGame` (`USaveGame` subclass) written to the fixed slot `"SiegeDecks"` (user index 0) → `Saved/SaveGames/SiegeDecks.sav`. Chosen over a DataAsset (NOT runtime-writable in a packaged build — can't save the player's edits) and a hand-rolled `.json` in `Saved/` (SaveGame is the idiomatic runtime-writable, cross-session, package-safe store). The SaveGame doubles as the menu→match handoff — the active deck is NOT passed through the level-open URL (50 CardIDs would bloat it; and the URL wouldn't persist across sessions anyway). Recommend SaveGame — ACCEPT unless Jonathan wants human-readable deck files.
+2. **"Named decks" keyed by name — FLAG 2.** A deck is keyed by its `DeckName` (FString, player-entered). `SavedDecks` is a `TArray<FDeckList>`; `SaveDeckAs(Name)` overwrites a same-named entry (no silent duplicates); `ActiveDeckName` (FString) records which deck the next match uses. Reserved/empty name handling and a max-deck-count cap are left to the widget (flag any limit at TASK-118). Recommend name-keyed with overwrite-on-collision — ACCEPT.
+3. **"Replace default deck with a legal curated one" — FLAG 3 (concrete meaning + M5-test-deck reconciliation).** The current `DeckCount` column is the M4/M5 TEST spread (22 cards spread to 50 so Set II/III were reachable pre-deck-builder — CONVENTIONS DeckCount registry note). TASK-115 RE-AUTHORS that column into a legal, intentional 50-card STARTER deck (a good curated deck, still `sum==50`, each `DeckCount<=MaxCopies`), superseding the test spread. This single cards.csv edit IS the "replace default deck" deliverable. The re-authored DeckCount is BOTH the deck-builder's "reset to default" template AND the match fallback when no legal saved active deck exists. cards.csv stays the single source of truth (§3.0). Recommend re-authoring DeckCount (not a parallel new asset) — ACCEPT; Jonathan may tweak the exact 50 at playtest (it's a CSV edit).
+4. **Bot's "2 distinct decks" — definition + selection — FLAG 4.** `TArray<FDeckList> BotDecks` (EditDefaultsOnly) on `ASiegeBotController`, exactly TWO distinct legal curated decks as C++ constructor defaults (tunable per-BP; a deck composition is content, not a per-card stat → NOT a CSV column, mirroring the mechanic-rule-as-UPROPERTY precedent). At spawn the bot RANDOMLY picks one (`FMath::RandRange(0,1)`), logs it on `LogSiegeBot` (grep-able), and pushes it via `SetPendingDeckList`; missing/illegal entry ⇒ DeckCount fallback. Recommend random-of-2-at-spawn (variety across matches) over fixed/alternating — ACCEPT; Jonathan may prefer a fixed pairing at playtest.
+5. **Copy-cap + exactly-50 enforcement — FLAG 5 (data-driven).** Both enforced from cards.csv: per-card `MaxCopies` caps `AddCopy` (the widget greys the "+" at the cap and refuses over-cap adds); the deck is legal (and "Play with this deck" enabled) ONLY at `TotalCount()==50`. The ONE legality function `UDeckLibrary::IsDeckLegal(CardTable, Deck, OutReason)` is shared by the widget, the DeckComponent build path, and the bot — no duplicated rules. Recommend the single shared data-driven validator — ACCEPT.
+6. **Average-cost display (§8) — FLAG 6.** `UDeckLibrary::GetDeckAverageCost` = sum(Cost×Count)/TotalCount, shown as a soft guide (§8: <4 spams, >7 bricks; NO hard rule — it never blocks saving/playing). Data-driven from cards.csv Cost. Recommend display-only guide — ACCEPT.
+7. **Tech reality — heavy UMG, editor-MCP-dependent — FLAG 7 (WATCH).** `WBP_DeckBuilder` is a heavy screen (28-card browser grid + per-card counters + x/50 + avg-cost + save/load list + play/back buttons). MCP CAN author full widget trees (PROVEN: TASK-041 built the complete interactive 6-slot hand; TASK-111 the health-bar widget) by duplicating a donor and rewiring incrementally — the working technique. It is EDITOR-MCP-dependent: if the MCP is down, TASK-118 parks and tells the orchestrator. The C++ base (`UDeckBuilderWidget`) owns ALL model/logic so the WBP is layout + BlueprintCallable calls + float/int/bool/FString BIEs (never enum/struct BP params — widget rule). The main-menu already has a greyed Deck Builder button (TASK-049) — the screen wires to it (`Btn_DeckBuilder`, enable + open as a viewport overlay on L_MainMenu; no new level/game mode).
+8. **Verification reality — FLAG 8 (WATCH + the follow-up that fixes it).** Save/load and the exactly-50 gate are largely MACHINE-verifiable (SaveGame readback + DeckComponent deck-content readback in PIE — no human input needed). The LIVE click-through of the 28-card grid (add/remove feel, greyed caps, the counters updating) is a human WATCH on Jonathan's unlocked desktop (locked-desktop = no SendInput, TASK-076/112 doctrine). TASK-121 (the debug-exec cheat, follow-up 2) is issued IN this milestone so build-master can drive combat-side verification (health bars, castle HP, spawns) headlessly starting with M6's own TASK-120 — it does not help the grid click-through, which stays a human WATCH.
+
+**Follow-ups from the M5.5 build (how handled):**
+- **(1) CONVENTIONS include-rule** — handled as a CONVENTIONS coding-law note ("Complete-type include law", C++ section), NOT a task: a `.cpp` upcasting/dereferencing a forward-declared component (e.g. `GetCapsuleComponent()`) must `#include` that type's header; QA now scans every code task for it. This is what broke TASK-110's first compile.
+- **(2) Debug-exec cheat** — task-ized as **TASK-121** (parallel-safe, folds into the M6 compile so build-master gains `SummonTestUnit`/`ApplyTestDamage`/`AddTestGold` for TASK-120 and every future headless verification). Placed in M6 because the follow-up notes it "would pay off starting with M6's own verification."
+
+**M6 exit criteria (playable slice):** from the main menu, the (now-enabled) Deck Builder button opens `WBP_DeckBuilder`; the screen browses all 28 cards, adds/removes copies with each card's `MaxCopies` enforced (the "+" refuses/greys at the cap), shows a live "x/50" counter and an average-cost readout (§8); "Play with this deck" is enabled only at exactly 50; the player saves and loads NAMED decks that survive quitting and relaunching the game (SaveGame); the active saved deck FEEDS the next match (the player's in-match hand is dealt from it, verified by DeckComponent readback) and, with no legal saved deck, the match falls back to the curated 50-card DeckCount default; the bot plays with one of its 2 distinct curated decks (random pick logged on LogSiegeBot). Recordable: UI/UX + save-load systems clip.
+
+Dispatch shape: **WAVE 1 — FILE tasks, parallel-safe NOW: TASK-113 ∥ TASK-115 ∥ TASK-121** (distinct file sets: deck-model/save/lib vs cards.csv vs cheat-manager). **WAVE 2 (after TASK-113 qa-passed): TASK-114 ∥ TASK-116** — 116 is parallel-safe (new DeckBuilderWidget files); 114 is `parallel-safe: no` because it shares `SiegePlayerController.cpp` with TASK-121, so 114 waits on 121 too. QA gates every code task (shadow-scan + the new complete-type-include scan mandatory). Then **TASK-117** (build: compile the C++ batch 113/114/116/121 + reimport DT_Cards for the TASK-115 curated DeckCount; editor-bounce so `UDeckBuilderWidget` exists) → **TASK-118** (art: WBP_DeckBuilder screen) → **TASK-119** (programmer editor: enable + wire the WBP_MainMenu Deck Builder button — single editor at a time, after 118) → **TASK-120** (build: final assembly + PIE verification + commit + cut m6-testable). Nothing after WAVE 2 is parallel-safe (single editor / serial integration).
+
+#### TASK-113 — Deck data model + SaveGame + legality/avg-cost library (C++ files)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-09; qa/TASK-113-report.md — PASS, 0 blockers / 0 warns / 2 nits, all flagged decisions ACCEPTED [aggregate cap is a valid strengthening]. Both scans CLEAN; cap boundary correct [==MaxCopies passes]; avg-cost div0 guarded; SaveGame persistence verified vs UE 5.8 engine source [SlotName/UserIndex shared consts, no silent data loss]. Carry-forwards for TASK-114/116: use USiegeDeckSaveGame::SlotName/::UserIndex not re-literals, null-check LoadGameFromSlot cast, .cpp calling UGameplayStatics must include Kismet/GameplayStatics.h. Rides TASK-117 compile)
+- blocked-by: none
+- parallel-safe: yes (all-new files: DeckTypes.h, DeckLibrary.h/.cpp, SiegeDeckSaveGame.h/.cpp — no overlap with TASK-115/121)
+- spec: >
+    Files only — NO editor/MCP. Deliver the deck data/persistence/rules core per CONVENTIONS "Deck-builder
+    & saved decks (M6)". (1) NEW header-only `DeckTypes.h`: `FDeckCardEntry` (USTRUCT BlueprintType — FName
+    CardID, int32 Count), `FDeckList` (USTRUCT BlueprintType — FString DeckName, TArray<FDeckCardEntry>
+    Cards, with `int32 TotalCount() const`), and `static constexpr int32 SiegeLegalDeckSize = 50` (GDD §3.4).
+    (2) NEW `UDeckLibrary` (UBlueprintFunctionLibrary, DeckLibrary.h/.cpp): `static bool IsDeckLegal(const
+    UDataTable* CardTable, const FDeckList& Deck, FString& OutReason)` — data-driven from DT_Cards: every
+    entry CardID must exist as a row, every Count in [0..that row's MaxCopies], and TotalCount()==
+    SiegeLegalDeckSize; OutReason = first violation (HUD/log); null table ⇒ false+reason. `static float
+    GetDeckAverageCost(const UDataTable* CardTable, const FDeckList& Deck)` — sum(Cost×Count)/TotalCount
+    (§8 guide), 0 for empty. Never hardcode a stat that lives in DT_Cards (§3.0). (3) NEW
+    `USiegeDeckSaveGame` (USaveGame subclass, SiegeDeckSaveGame.h/.cpp): `TArray<FDeckList> SavedDecks`,
+    `FString ActiveDeckName`; expose the fixed slot name `"SiegeDecks"` as a const the readers share.
+    ACCEPTANCE: compiles warnings-as-errors; IsDeckLegal returns true only for a 50-card cap-respecting
+    deck and false with a reason otherwise; GetDeckAverageCost matches sum(Cost×Count)/50 on the curated
+    default; no hardcoded card stats. → qa-reviewer (MANDATORY: inherited-reflected-member shadow scan AND
+    the new complete-type-include scan — CONVENTIONS coding laws). Post in ⚙️ Dev & QA
+    (`⚙️ GAMEPLAY-PROGRAMMER: … TASK-113`).
+- names: >
+    `DeckTypes.h` (FDeckCardEntry{FName CardID; int32 Count}, FDeckList{FString DeckName; TArray<FDeckCardEntry> Cards; int32 TotalCount() const}, constexpr int32 SiegeLegalDeckSize=50) in Source/GitClaudeUnrealTest/Siegebound/.
+    `UDeckLibrary` (UBlueprintFunctionLibrary), DeckLibrary.h/.cpp — IsDeckLegal(const UDataTable*, const FDeckList&, FString& OutReason), GetDeckAverageCost(const UDataTable*, const FDeckList&).
+    `USiegeDeckSaveGame` (USaveGame), SiegeDeckSaveGame.h/.cpp — TArray<FDeckList> SavedDecks, FString ActiveDeckName, slot const "SiegeDecks", user index 0.
+    Reuse only (do NOT redefine): FCardRow.MaxCopies / .Cost / .DisplayName from CardRow.h; /Game/Data/DT_Cards.
+
+#### TASK-114 — Wire decks into matches: DeckComponent override path + player loads active deck + bot 2 decks (C++ files)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-09; qa/TASK-114-report.md — PASS, 0 blockers / 1 warn / 2 nits, all 5 flagged decisions ACCEPTED. Backward-compat traced BYTE-IDENTICAL [&&-short-circuit; unset/illegal → exact pre-M6 DeckCount build]; TASK-121 lines CONFIRMED intact [SiegePlayerController.cpp:31 include + :50 CheatClass]; both bot decks re-summed 50 + caps ok + distinct; case-insensitive lookup safe [FString== is IgnoreCase]; both scans clean. Rides TASK-117 compile.
+  **JONATHAN CHECKPOINT ITEM (design, non-blocking): bot decks are spell-free → shipped M5 bot rule-3 Fireball/Lightning never fires in M6, and with a spell-free bot deck TASK-120 CANNOT verify the bot-spell feature at all. QA recommends adding Lightning ×2 to Defensive Economy [drop Longbowman ×1 + Wall ×1 → still legal 50]. Reversible constructor-default edit. Orchestrator ruling: NOT applied unilaterally [bot design = Jonathan's domain]; surfaced at the M6 checkpoint.**)
+- blocked-by: TASK-113 (uses FDeckList / UDeckLibrary / USiegeDeckSaveGame); TASK-121 (shares SiegePlayerController.cpp)
+- parallel-safe: no (edits SiegePlayerController.cpp — shared with TASK-121; and DeckComponent + SiegeBotController)
+- spec: >
+    Files only — NO editor/MCP. Make the existing deck system consume chosen decks, additively (backward-
+    compatible), per CONVENTIONS "Deck-builder & saved decks (M6)". (1) `UDeckComponent`: add
+    `void SetPendingDeckList(const FDeckList& Deck)` storing a guarded pending list; in `BuildAndShuffle()`,
+    when the pending list is SET AND `UDeckLibrary::IsDeckLegal` passes, build the draw pile from it
+    (Count copies of each CardID) INSTEAD OF the DeckCount column — else fall back to the EXISTING
+    DeckCount build UNCHANGED (empty/unset/illegal = today's exact path, nothing breaks). The pending list
+    PERSISTS across ResetDeck()/Play Again (same match keeps the same deck). Log which source built the
+    deck. (2) `ASiegePlayerController` BeginPlay (the existing DeckComponent->BuildAndShuffle call site):
+    BEFORE building, load `USiegeDeckSaveGame` from slot "SiegeDecks"; if it has an ActiveDeckName whose
+    FDeckList IsDeckLegal, `SetPendingDeckList` it (else leave unset → curated DeckCount fallback).
+    Null-safe: no save file ⇒ fallback. (3) `ASiegeBotController`: add `UPROPERTY(EditDefaultsOnly,
+    Category="Siegebound|Bot") TArray<FDeckList> BotDecks` with TWO distinct legal curated decks as
+    constructor defaults; at spawn (before its BuildAndShuffle) pick one via FMath::RandRange(0,1),
+    `SetPendingDeckList` it, and LOG the choice on `LogSiegeBot` (one grep-able line); missing/illegal ⇒
+    fallback. Do NOT alter draw/discard/reshuffle/preview. ACCEPTANCE: compiles warnings-as-errors; a
+    legal pending list drives the built deck (verified by GetDrawPileCount + card composition); no pending
+    / illegal falls back to DeckCount exactly as today; bot logs its chosen deck index. → qa-reviewer
+    (MANDATORY shadow scan + complete-type-include scan). Post in ⚙️ Dev & QA (`⚙️ GAMEPLAY-PROGRAMMER: … TASK-114`).
+- names: >
+    `UDeckComponent::SetPendingDeckList(const FDeckList&)` + guarded pending member, in DeckComponent.h/.cpp (BuildAndShuffle prefers pending-if-legal, else DeckCount; persists across ResetDeck).
+    `ASiegePlayerController` BeginPlay: load USiegeDeckSaveGame slot "SiegeDecks" → active FDeckList → SetPendingDeckList if IsDeckLegal.
+    `ASiegeBotController`: TArray<FDeckList> BotDecks (EditDefaultsOnly, 2 curated defaults), random pick at spawn → SetPendingDeckList, LogSiegeBot line.
+    Reuse only: UDeckLibrary::IsDeckLegal (TASK-113), existing DeckComponent subobject name `DeckComponent`, existing BuildAndShuffle/ResetDeck.
+
+#### TASK-115 — Curated legal 50-card default deck: re-author the cards.csv DeckCount column (data)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-09; qa/TASK-115-report.md — PASS, 0 blockers, sum 50 + caps + avg 5.08 independently recomputed. WARN carry → TASK-117 (already in its spec, do NOT skip): QA had no git/shell, so build-master MUST run the git-diff byte-check [DeckCount-only, frozen columns intact] + live DT_Cards re-verify before the M6 commit. NITs (playtest visibility only): Footman 24% of deck, Miner sole econ. Rides TASK-117 compile+reimport)
+- blocked-by: none
+- parallel-safe: yes (edits Docs/Data/cards.csv only)
+- spec: >
+    Files only — NO editor/MCP (the DT_Cards reimport rides TASK-117). Re-author the `DeckCount` column of
+    `Docs/Data/cards.csv` from the M4/M5 test spread into a legal, intentional 50-card STARTER deck (GDD
+    §9-6 "replace default deck with a legal curated one"), per CONVENTIONS "Deck-builder & saved decks (M6)"
+    ruling 3. Constraints (HARD, data-driven from the same file): the DeckCount values must sum to EXACTLY
+    50, and each row's DeckCount must be <= that row's MaxCopies; only real CardIDs. Design it as a sane
+    playable curated deck (a frontline + ranged + a tower/wall + an economy + a finisher spread), average
+    cost in the §8 healthy band (~4–6). Change ONLY the DeckCount column — do NOT touch any other column
+    (Cost/MaxCopies/stats/CardArt/spell columns are frozen). Leave a one-line Notes/comment trail of the
+    intended deck if the CSV supports it (else record it in the handoff). ACCEPTANCE: sum(DeckCount)==50;
+    every DeckCount<=MaxCopies; no other column changed; the deck is a coherent starter. → qa-reviewer
+    (verify the sum + per-card caps + no collateral column edits — data legality). Post in ⚙️ Dev & QA
+    (`⚙️ GAMEPLAY-PROGRAMMER: … TASK-115`).
+- names: >
+    `Docs/Data/cards.csv` — DeckCount column only. Legality: sum==50, each DeckCount<=MaxCopies (same row).
+    Reimports as /Game/Data/DT_Cards at TASK-117. Single source of truth (§3.0) — no hardcoded deck elsewhere.
+
+#### TASK-116 — Deck-builder widget C++ base UDeckBuilderWidget (C++ files)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-09; qa/TASK-116-report.md — PASS, 0 blockers / 0 warns / 2 nits, all 9 flagged decisions ACCEPTED. Both scans CLEAN; 3 TASK-113 carry-forwards verified IN CODE; AddCopy cap data-driven, RemoveCopy floors 0, library-delegated legality/avg-cost, strict SetActiveDeck. Carry → TASK-118: the 4 additive card resolvers [GetCardDisplayName/Cost/MaxCopies/ArtTexture] are the ONLY card-data path [keep WBP out of DT_Cards]; grey "+" at count≥MaxCopies; Play = SaveDeckAs→SetActiveDeck→StartMatch. Carry → TASK-114 QA: confirm its ActiveDeckName→FDeckList lookup uses ESearchCase::IgnoreCase [safe either way — 116 stores canonical name]. Rides TASK-117 compile)
+- blocked-by: TASK-113 (uses FDeckList / UDeckLibrary / USiegeDeckSaveGame)
+- parallel-safe: yes (all-new files DeckBuilderWidget.h/.cpp — no overlap with TASK-114's file set)
+- spec: >
+    Files only — NO editor/MCP (WBP_DeckBuilder authoring is TASK-118). Deliver the deck-builder MODEL as a
+    `UDeckBuilderWidget` (UUserWidget subclass) per CONVENTIONS "Deck-builder & saved decks (M6)". The C++
+    base owns ALL logic; the WBP will be layout + calls. BlueprintCallable/Pure API (UObject/struct returns
+    allowed here): `AddCopy(FName CardID)` (refuse over that card's MaxCopies — data-driven), `RemoveCopy(
+    FName CardID)`, `GetCountOf(FName CardID) const`, `GetTotalCount() const`, `GetAverageCost() const`
+    (via UDeckLibrary), `IsCurrentDeckLegal() const` (via UDeckLibrary::IsDeckLegal), `LoadDefaultDeck()`
+    (seed the working FDeckList from the DeckCount curated default in DT_Cards), `SaveDeckAs(const FString&
+    Name)` + `LoadDeck(const FString& Name)` + `GetSavedDeckNames() const` + `SetActiveDeck(const FString&
+    Name)` (all through USiegeDeckSaveGame slot "SiegeDecks", null-safe). Also a Pure getter over the 28-card
+    collection (row names of DT_Cards) so the WBP can build the browser grid. BIEs are float/int/bool/FString
+    params ONLY (widget rule): `OnDeckModelChanged()` (widget re-reads getters — seed-then-bind law) and
+    `OnDeckSlotCountChanged(FString CardID, int32 Count)`. Everywhere null-safe (missing DT_Cards / missing
+    SaveGame ⇒ graceful, log once, never crash). NO gameplay/combat coupling — this only edits/persists
+    FDeckLists. ACCEPTANCE: compiles warnings-as-errors; AddCopy respects MaxCopies; GetTotalCount/
+    GetAverageCost/IsCurrentDeckLegal match UDeckLibrary; save/load round-trips a named deck through the
+    SaveGame; BIE params are float/int/bool/FString only. → qa-reviewer (MANDATORY shadow scan — watch
+    `Slot` on UWidget — + complete-type-include scan). Post in ⚙️ Dev & QA (`⚙️ GAMEPLAY-PROGRAMMER: … TASK-116`).
+- names: >
+    `UDeckBuilderWidget` (UUserWidget subclass), DeckBuilderWidget.h/.cpp in Source/GitClaudeUnrealTest/Siegebound/.
+    BlueprintCallable/Pure: AddCopy(FName)/RemoveCopy(FName)/GetCountOf(FName)const/GetTotalCount()const/GetAverageCost()const/IsCurrentDeckLegal()const/LoadDefaultDeck()/SaveDeckAs(FString)/LoadDeck(FString)/GetSavedDeckNames()const/SetActiveDeck(FString)/ + a collection-CardIDs getter.
+    BIEs (float/int/bool/FString ONLY): OnDeckModelChanged(), OnDeckSlotCountChanged(FString CardID, int32 Count).
+    UMG asset (TASK-118): `WBP_DeckBuilder` at /Game/UI/WBP_DeckBuilder. Reuse: UDeckLibrary, USiegeDeckSaveGame, FDeckList (TASK-113), /Game/Data/DT_Cards.
+
+#### TASK-121 — Debug exec cheats for headless verification: USiegeCheatManager (C++ files)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-09; qa/TASK-121-report.md — PASS, 0 blockers / 1 warn / 3 nits, all 5 flagged decisions ACCEPTED. Shipping-safety confirmed byte-for-byte [footprint = 1 ctor line + its include; grep found no other instantiation]; all 3 cheats verified vs real reused paths. WARN → TASK-114 (shares SiegePlayerController.cpp): programmer added 3 comment lines + inline comment beyond the strict 2 — non-functional, no landmine, but TASK-114 must READ THE FILE FRESH [ctor line numbers shifted] and PRESERVE the SiegeCheatManager.h include + CheatClass assignment. Rides TASK-117 compile)
+- blocked-by: none
+- parallel-safe: yes vs TASK-113/115 (new SiegeCheatManager.h/.cpp); note it also touches SiegePlayerController (CheatClass) — TASK-114 is sequenced AFTER it to avoid a shared-file race
+- spec: >
+    Files only — NO editor/MCP. Add a non-shipping debug-exec affordance so build-master can drive PIE
+    verification on a locked desktop (no SendInput — TASK-076/112 doctrine), per CONVENTIONS "Dev / test
+    tooling" (TASK-121 entry). (1) NEW `USiegeCheatManager` (UCheatManager subclass, SiegeCheatManager.h/.cpp)
+    with `UFUNCTION(exec)` commands, each null-safe and routed through EXISTING shipping code paths (never a
+    raw field write, never a bespoke spawn): `SummonTestUnit(FString CardID, bool bRed)` — spawn a card actor
+    for the given team via the same spawn path the controller/bot uses; `ApplyTestDamage(float Amount)` —
+    apply damage to the actor under the crosshair / nearest enemy through the normal TakeDamage path (induces
+    health-bar + castle-HP changes); `AddTestGold(int32 Amount)` — top up the Blue player through the
+    ASiegePlayerState gold API. (2) Set `CheatClass = USiegeCheatManager` in the `ASiegePlayerController`
+    constructor. The engine only instantiates a CheatManager in non-shipping builds with cheats enabled, so
+    this cannot leak into Shipping — additive by construction. ACCEPTANCE: compiles warnings-as-errors; the
+    three exec commands exist, are null-safe, and reuse shipping paths; zero behavior change to normal play;
+    Shipping unaffected. → qa-reviewer (shadow scan + complete-type-include scan; confirm no shipping-path
+    behavior change and no raw field writes). Post in ⚙️ Dev & QA (`⚙️ GAMEPLAY-PROGRAMMER: … TASK-121`).
+- names: >
+    `USiegeCheatManager` (UCheatManager subclass), SiegeCheatManager.h/.cpp in Source/GitClaudeUnrealTest/Siegebound/.
+    exec: SummonTestUnit(FString CardID, bool bRed), ApplyTestDamage(float Amount), AddTestGold(int32 Amount).
+    Wire: ASiegePlayerController::CheatClass = USiegeCheatManager (constructor). Reuse existing spawn path, TakeDamage, ASiegePlayerState gold API.
+
+#### TASK-117 — M6 C++ batch compile + DT_Cards reimport (build)
+- assignee: build-master
+- status: done (2026-07-09; handoffs/TASK-117.md — 4 gates PASS: cards.csv byte-diff DeckCount-ONLY confirmed [closes TASK-115 QA WARN], compile SUCCESS 0 warn/0 C4458, DT_Cards reimport via set_rows [live readback sum 50 + 0 cap violations], all 4 classes live [DeckBuilderWidget/DeckLibrary/SiegeDeckSaveGame/SiegeCheatManager]. NO commit [rides TASK-120]. TASK-120 commit must include Docs/Data/cards.csv + Content/Data/DT_Cards.uasset [now dirty from in-editor save]. TASK-118 unblocked, editor up PID 4948)
+- blocked-by: TASK-113, TASK-114, TASK-115, TASK-116, TASK-121 (all qa-passed)
+- parallel-safe: no
+- spec: >
+    Build-master. PHASE-A compile for M6 (mirrors the M5.5 TASK-112 phase-A pattern — compile early so the
+    art task has the class). (1) Compile the accumulated M6 C++ batch (TASK-113/114/116/121) with the
+    standard Build.bat command; editor-bounce protocol (editor releases the DLL). Pre-compile: scan the
+    batch for inherited-reflected-member shadows AND the new complete-type-include law (CONVENTIONS coding
+    laws). Any error → append to the failing task's QA report, set qa-failed, stop (counts as a QA loop;
+    build-master never edits code). (2) Reimport `/Game/Data/DT_Cards` from the TASK-115 re-authored
+    `Docs/Data/cards.csv` (the curated DeckCount) via the editor, and verify `sum(DeckCount)==50` and each
+    `DeckCount<=MaxCopies` on the live table. (3) Confirm `UDeckBuilderWidget`, `UDeckLibrary`,
+    `USiegeDeckSaveGame`, `USiegeCheatManager` exist live in the editor via reflection (so TASK-118 can
+    reparent). Do NOT commit here — the commit rides TASK-120 (single M6 commit). If the editor MCP is
+    down, compile via Build.bat and report the reimport/reflection checks as owed (never fake). Post the
+    compile result in 🔧 Build & Git (`🔧 BUILD-MASTER: … TASK-117`).
+- names: >
+    Build command per CLAUDE.md. Reimport /Game/Data/DT_Cards from Docs/Data/cards.csv. Verify classes:
+    UDeckBuilderWidget, UDeckLibrary, USiegeDeckSaveGame, USiegeCheatManager. No commit (rides TASK-120).
+
+#### TASK-118 — WBP_DeckBuilder screen: 28-card browser + counters + save/load list + play/back (art/editor)
+- assignee: art-director
+- status: ready-for-integration (2026-07-09; handoffs/TASK-118.md — WBP_DeckBuilder [donor WBP_MainMenu] + NEW WBP_DeckCardTile sub-widget [TASK-120 MUST commit BOTH], reparent to UDeckBuilderWidget readback-confirmed, 28-card WrapBox grid + counters + avg + save/load/reset + legal-gated Play + Back all wired to the C++ API, both BIEs bIsImplemented=true, compile clean. TASK-120 must PIE-verify [not done, no PIE per constraint]: grid renders 28, +/− change counts, "+" greys at cap, counters/avg track, Play gates at 50, Save/Load/Reset/Back work. M7-polish flags: saved-deck is text readout not clickable rows; no ScrollBox [check 28-tile overflow])
+- blocked-by: TASK-117 (reparents to UDeckBuilderWidget — needs the class compiled + live in the editor)
+- parallel-safe: no (editor-mutating — single editor instance)
+- spec: >
+    Editor/MCP only — needs the editor MCP up (else park + tell the orchestrator). Author the heavy deck-
+    builder screen per CONVENTIONS "Deck-builder & saved decks (M6)". (1) DUPLICATE a multi-element donor
+    (`/Game/UI/WBP_CardHand` or `/Game/UI/WBP_MainMenu`) to `/Game/UI/WBP_DeckBuilder`; never author the
+    tree from scratch (template-donor rule). (2) REPARENT it to `UDeckBuilderWidget` (compiled in TASK-113/
+    117). (3) Build the screen, driving EVERYTHING through the C++ base's BlueprintCallable/Pure API + BIEs
+    (no logic in the WBP graph beyond calling them): a browser GRID of all 28 collection cards (use the
+    collection-CardIDs getter; reuse the card-art resolver pattern / `T_CardArt_<CardID>` if convenient,
+    else text tiles) each with a "+"/"−" (AddCopy/RemoveCopy) and its current count (GetCountOf); the "+"
+    greys/refuses at the card's MaxCopies; a live "x/50" counter (GetTotalCount); an average-cost readout
+    (GetAverageCost, §8 guide); a saved-deck LIST with load (GetSavedDeckNames/LoadDeck), a name field +
+    Save (SaveDeckAs), and a "reset to default" (LoadDefaultDeck); `Btn_PlayWithDeck` enabled ONLY when
+    IsCurrentDeckLegal() (sets the active deck via SetActiveDeck then ASiegeGameMode::StartMatch); `Btn_Back`
+    returns to WBP_MainMenu. Seed the widget from the getters, THEN bind the BIEs (seed-then-bind law).
+    Art skips QA → build-master integration check (TASK-120). ACCEPTANCE: /Game/UI/WBP_DeckBuilder exists,
+    parent=UDeckBuilderWidget, the grid/counter/avg-cost/save-load/play/back elements are wired to the C++
+    API, the "+" respects MaxCopies, Play is legal-gated. Post the handoff in 🎨 Art (`🎨 ART-DIRECTOR: …
+    TASK-118`) with the asset path.
+- names: >
+    `WBP_DeckBuilder` at /Game/UI/WBP_DeckBuilder, parent class `UDeckBuilderWidget`. Donor: /Game/UI/WBP_CardHand or /Game/UI/WBP_MainMenu.
+    Buttons: per-card +/− (AddCopy/RemoveCopy), Btn_PlayWithDeck (legal-gated → SetActiveDeck + StartMatch), Btn_Back (→ WBP_MainMenu), Save/Load/reset-to-default.
+    Drive via UDeckBuilderWidget API: AddCopy/RemoveCopy/GetCountOf/GetTotalCount/GetAverageCost/IsCurrentDeckLegal/LoadDefaultDeck/SaveDeckAs/LoadDeck/GetSavedDeckNames/SetActiveDeck + collection getter; BIEs OnDeckModelChanged()/OnDeckSlotCountChanged(FString,int32).
+
+#### TASK-119 — WBP_MainMenu: enable + wire the Deck Builder button to open WBP_DeckBuilder (editor)
+- assignee: gameplay-programmer
+- status: ready-for-integration (2026-07-09; handoffs/TASK-119.md — additive granular MCP edit, compiled clean. Button is runtime-constructed [no designer Btn_DeckBuilder — it's the "Deck Builder" construct node from TASK-049]; enabled + relabeled + OnClicked → RemoveFromParent + CreateWidget WBP_DeckBuilder_C + AddToViewport. Play/Sandbox/Quit bindings byte-unchanged [full-graph readback]. TASK-120 flag: CreateWidget.OwningPlayer left null [mirrors Back] — wire GetOwningPlayer if PIE shows focus issue. Integration + commit ride TASK-120)
+- blocked-by: TASK-118 (opens WBP_DeckBuilder — it must exist)
+- parallel-safe: no (editor-mutating — single editor instance; edits WBP_MainMenu)
+- spec: >
+    Editor/MCP only — needs the editor MCP up (else park + tell the orchestrator). ADDITIVE edit to the
+    EXISTING `/Game/UI/WBP_MainMenu` (TASK-049/072). (1) Find the existing greyed "Deck Builder" button
+    (authored disabled in TASK-049; name it `Btn_DeckBuilder` — reconcile with its actual authored name and
+    record it). (2) ENABLE it and wire `OnClicked` to remove WBP_MainMenu from the viewport and add a fresh
+    `WBP_DeckBuilder` (overlay navigation on L_MainMenu — no new level/game mode; WBP_DeckBuilder's Btn_Back
+    reverses it). Do NOT disturb the Play-vs-Bot / Btn_Sandbox bindings (TASK-072 additive-only caution).
+    ACCEPTANCE (PIE from L_MainMenu): the Deck Builder button is enabled and clicking it opens the deck-
+    builder screen; Back returns to the menu; Play-vs-Bot and Sandbox still work. Editor task → build-master
+    integration check (TASK-120). Post the handoff in ⚙️ Dev & QA (`⚙️ GAMEPLAY-PROGRAMMER: … TASK-119`)
+    with the button name.
+- names: >
+    /Game/UI/WBP_MainMenu — button `Btn_DeckBuilder` (reconcile with the TASK-049 authored name), enable + OnClicked → RemoveFromParent + CreateWidget/AddToViewport `WBP_DeckBuilder`. Do NOT touch the Play-vs-Bot or Btn_Sandbox bindings.
+
+#### TASK-120 — M6 final assembly: deck-builder PIE verification + commit + m6-testable (build)
+- assignee: build-master
+- status: in-progress (dispatched 2026-07-09; TASK-118 + TASK-119 ready-for-integration, all M6 code qa-passed + compiled at TASK-117)
+- blocked-by: TASK-118 (ready-for-integration) + TASK-119 (ready-for-integration)
+- parallel-safe: no
+- spec: >
+    Build-master final assembly for M6 (TASK-109/112 pattern). (1) Re-verify the build compiles clean
+    warnings-as-errors and DT_Cards carries the curated 50-card DeckCount (TASK-117 reimport). (2) Run the
+    M6 exit-criteria PIE suite: from L_MainMenu open the deck-builder (TASK-119 button); browse the 28-card
+    grid; add copies to a card past its MaxCopies and confirm the "+" refuses/greys; watch the "x/50"
+    counter and average-cost readout update; confirm "Play with this deck" is enabled only at exactly 50;
+    SaveDeckAs a named deck, then verify the SaveGame persists across an editor/PIE restart (LoadGameFromSlot
+    "SiegeDecks" readback); set it active, Play, and confirm the player's in-match hand is dealt from that
+    deck (DeckComponent deck-composition readback) and that with no legal saved deck the match falls back to
+    the curated DeckCount default; confirm the bot logs one of its 2 curated decks on LogSiegeBot. Use the
+    TASK-121 cheats (SummonTestUnit/ApplyTestDamage/AddTestGold) to drive any combat-side checks headlessly.
+    Machine-verify save/load + the 50-gate + deck-feed; the live 28-card grid CLICK-THROUGH (add/remove feel,
+    greyed caps) is a human WATCH (locked desktop = no SendInput) — record it as owed to Jonathan. If the
+    editor MCP is down, compile via Build.bat and report PIE items as owed (never fake). (3) On PASS: commit
+    the whole M6 batch (code + WBP_DeckBuilder + WBP_MainMenu + cards.csv/DT_Cards + pipeline docs) with a
+    task-ID message; cut the `m6-testable` branch at that commit (milestone-branch-preservation workflow).
+    Do NOT push. Build failure → append errors to the offending task's QA report and route back to
+    gameplay-programmer (counts as a QA loop). Post compile result + commit hash + branch in 🔧 Build & Git
+    (`🔧 BUILD-MASTER: … TASK-120`).
+- names: >
+    Assets/classes exactly as TASK-113..119 names blocks. Commit on `main`, message pattern "TASK-113..121:
+    M6 deck-builder meta — WBP_DeckBuilder, USaveGame named decks, curated default + 2 bot decks, debug cheats".
+    Cut branch `m6-testable` at the commit. No push.
+
+---
+
+### M5.5 — Overhead health bars (TASK-110..112) — decomposed 2026-07-09
+
+**Authorization:** Jonathan's 2026-07-09 direct Claude Code directive — "add a health bar to every tower and character." A small standalone batch (M4.5 shape), NOT a GDD milestone. Naming law added to CONVENTIONS "Overhead unit health bars (M5.5)" BEFORE task issue. Hard gate stands: engine/MCP work needs the editor MCP (127.0.0.1:8000) up — if unreachable, park the editor task and tell the orchestrator (never fake results). This batch does NOT touch M5's or M4.5's parked work; M6 decomposition is a SEPARATE step after this ships.
+
+**DESIGN RECONCILIATION — GDD §7 amendment (manager ruling, binding for this batch; the actual GDD-file edit is Jonathan's call, mirroring how M4.5 "amends GDD §5" via a board ruling):**
+GDD §7 today reads "…both castles' HP bars (top). Enemy hero/units show floating health bars when damaged." Jonathan's directive broadens this. Recommended §7 wording: *"Every combat actor — friendly and enemy alike — shows a floating overhead health bar: the hero(es), all summoned units (including miners), and all buildings (towers, walls, Barracks, Deep Mine). The bar is hidden at full HP and appears once the actor has taken damage (damage-triggered, hide-at-full), tinted by team (blue friendly / red enemy). Castles keep their existing top-of-mesh bars (§3.9)."*
+
+**M5.5 manager decisions (binding for all M5.5 tasks; each call FLAGGED for QA + Jonathan):**
+1. **Scope — FLAG 1.** In: ALL `ASummonedUnit` (incl. `AMinerUnit`), ALL `ABuilding` (Arrow/Bomb/Ballista/Crystal Tower + Wall + Barracks + Deep Mine), and `AHeroCharacter` — BOTH teams. Non-combat buildings (Wall/Barracks/Deep Mine) ARE included: they all have HP and are destroyable, the system attaches at the `ABuilding` base so they come for free, and hide-at-full keeps an untouched building clutter-free; excluding them would need a per-subclass opt-out for less consistency. A per-actor `bShowHealthBar` opt-out (EditDefaultsOnly, default true) is provided so a playtest can suppress a specific type (e.g. miners) with zero code. OUT: `ACastle` (keeps its M1 delegate bar — do NOT duplicate) and `AGoldNode` (not damageable, no HP). **Enemy hero:** the code is team-agnostic and covers ALL `AHeroCharacter` instances; TODAY exactly one hero exists (the Blue player's — the Red bot is card-only, no hero pawn: `ASiegeGameMode::SpawnBot` spawns only an `ASiegeBotController` + Red PlayerState), so §7's "enemy hero" is auto-covered if/when one is ever spawned (M8). Recommendation: widen §7 to friendly+enemy, towers+buildings included — ACCEPT.
+2. **Persistent vs damage-triggered — FLAG 2.** Rule: **hide-at-full** — the bar is visible only while the actor is alive AND `CurrentHP < MaxHP − epsilon`; hidden at full HP and on death/destruction. Rationale: §7 says "when damaged," and always-on bars on 60+ actors (§6 perf budget) clutter the screen and add overdraw; hide-at-full shows a bar exactly when it carries information. Recommend over always-on — ACCEPT.
+3. **Reuse — do NOT reinvent (existing infra audited).** Castle bar EXISTS: `ACastle::HPBarWidget` (`UWidgetComponent`) + `UCastleHealthBarWidget`/`WBP_CastleHealthBar`, driven by the `FOnCastleHPChanged` delegate (seed-then-bind, M1 TASK-018/019) — LEFT UNTOUCHED. Hero's OWN HP already shows on `WBP_HUD` (M1) — that stays; the new overhead bar is additive. **Key reuse fact:** units/buildings/hero already expose BlueprintPure `GetCurrentHP()`/`GetMaxHP()` and `ITeamAgent::GetTeamId()` — the new code binds to those getters, adds NO new HP fields. **Key non-reuse fact:** units/buildings/hero carry NO HP-changed delegate (only ACastle does — ASummonedUnit::ApplyHealing comment), so the new bar POLLS the getters (~0.15 s timer) rather than the castle's bind pattern. Donor for the new widget: duplicate `WBP_CastleHealthBar` (already a `UI_LifeBar` duplicate with the ProgressBar+OnHPChanged wiring) — never author a tree from scratch (template-donor rule).
+4. **Team color — FLAG 4.** Rule: tint the bar FILL by team (blue friendly / red enemy) from the §6 palette / `MI_TeamColor` linear values, pushed as data through `SetTeamColor(float R,float G,float B)` — never hardcoded in logic, tunable via the component's `BlueBarColor`/`RedBarColor`. Fixed regardless of HP (bar communicates team by color, damage by length; no green→red recolor, which would fight the team signal). Recommend team-colored fill over a fixed fill + colored border (fill reads at a glance on 60 units) — ACCEPT.
+5. **Tech approach — FLAG 5.** WidgetComponent-per-actor (the proven `ACastle` pattern), Screen-space. ONE reusable `UHealthBarComponent` (`UWidgetComponent` subclass) added in-constructor to the three base classes (named `HPBarWidget`), polling HP through the shared `IHealthBarTarget` interface and driving `WBP_UnitHealthBar` (`UUnitHealthBarWidget` base) via float-only BIEs. Chosen over a HUD-drawn pooled approach: reuses shipped infra (castle WidgetComponent), attaches once per base class (miners/towers inherit free), and MCP can author the UMG tree (proven TASK-041 CardHand; TASK-019 WBP_CastleHealthBar from UI_LifeBar). Recommend WidgetComponent path — ACCEPT. Full names in CONVENTIONS "Overhead unit health bars (M5.5)".
+6. **Optional rider (NOT forced):** the Standing-backlog HUD overtime-indicator one-pin fix lives in `WBP_HUD`; this batch touches `WBP_UnitHealthBar` (a DIFFERENT widget), so it does NOT naturally fold in — leave it in the backlog for the balance/HUD pass. Do not add it to this chain.
+7. **Perf (§6) — WATCH.** No machine fps route exists (learnings); hide-at-full + the `bShowHealthBar` opt-out cap the live-bar count. TASK-112 records best-effort observations; the formal 60 fps @1440p / 60+ units gate is a human WATCH at Jonathan's playtest.
+
+**M5.5 exit criteria (playable slice):** damage any friendly unit, tower, wall, Barracks, Deep Mine, miner, and the hero, and each shows a floating overhead bar that (a) is HIDDEN at full HP, appears on first damage, and tracks HP down live; (b) is tinted by team (blue for friendly, and — via the Red bot's units/towers — red for enemy); (c) hides again on death/destruction; (d) never appears on castles as a duplicate (castle keeps its own bar) or on gold nodes. Both teams verified in one Play-vs-Bot session. Recordable: overhead-bar clip across unit + tower + hero on both teams.
+
+Dispatch shape: **SERIAL chain** (the WBP reparents to the new C++ base, so it can't precede the compile) — only TASK-110 starts immediately. TASK-110 (C++) → qa-reviewer (shadow-scan mandatory) → build-master compiles TASK-110 so `UUnitHealthBarWidget` exists in the editor → TASK-111 (art authors WBP_UnitHealthBar against the compiled base) → TASK-112 (final assemble + PIE-verify the exit criteria + commit). Nothing here is parallel-safe within the batch.
+
+#### TASK-110 — Overhead health-bar system: interface + UHealthBarComponent + UUnitHealthBarWidget base, wired onto units/buildings/hero (C++)
+- assignee: gameplay-programmer
+- status: qa-passed + compiled-clean (2026-07-09; logic PASS + build-fix loop 1 [CapsuleComponent.h include] compiled clean at TASK-112 phase-A re-run — 0 err/0 warn/0 C4458, UHealthBarComponent + UUnitHealthBarWidget verified live in editor via reflection. Code commit rides TASK-112 phase B)
+- blocked-by: none
+- parallel-safe: no (edits shared base headers ASummonedUnit/ABuilding/HeroCharacter; nothing else in this batch runs until it compiles)
+- spec: >
+    Files only — NO editor/MCP, NO new HP fields (bind the existing getters). Deliver the overhead
+    health-bar system for units, buildings, and the hero per CONVENTIONS "Overhead unit health bars
+    (M5.5)" and the M5.5 rulings. (1) NEW header-only `HealthBarTarget.h`: `IHealthBarTarget`
+    (`UHealthBarTarget` UINTERFACE, NotBlueprintable) — three pure-virtual const methods (the
+    ITeamAgent C++-interface shape, NOT BlueprintNativeEvent): `float GetHealthCurrent() const`,
+    `float GetHealthMax() const`, `bool IsHealthBarActorAlive() const`. (2) Implement `IHealthBarTarget`
+    on `ASummonedUnit` (→ GetCurrentHP / GetMaxHP / !IsUnitDead), `ABuilding` (→ GetCurrentHP /
+    GetMaxHP / !IsBuildingDestroyed), `AHeroCharacter` (→ GetCurrentHP / GetMaxHP / !IsDead) — add
+    NOTHING to ACastle or AGoldNode. (3) NEW `UHealthBarComponent` (`UWidgetComponent` subclass,
+    HealthBarComponent.h/.cpp): a poll-driven overhead bar. On BeginPlay/register: soft-resolve
+    `HealthBarWidgetClass` (default /Game/UI/WBP_UnitHealthBar, null-safe — missing = silent no bar,
+    log once, never crash), set widget space = Screen + DrawSize ~90×12 + relative Z = BarHeightZ,
+    read the owner as `IHealthBarTarget` (+ `ITeamAgent` for team), push `SetTeamColor` ONCE from
+    BlueBarColor/RedBarColor, and start a repeating `PollInterval` timer. Each poll: if `!bShowHealthBar`
+    or actor not alive or Current >= Max−epsilon → HIDE the widget; else SHOW it and call
+    `OnHPChanged(Current, Max)`. EditDefaultsOnly tunables exactly per CONVENTIONS (HealthBarWidgetClass,
+    PollInterval=0.15, bShowHealthBar=true, BarHeightZ=120, BlueBarColor/RedBarColor = palette linear
+    values). (4) NEW `UUnitHealthBarWidget` (`UUserWidget` subclass, UnitHealthBarWidget.h/.cpp): two
+    BlueprintImplementableEvents, FLOAT PARAMS ONLY — `OnHPChanged(float CurrentHP, float MaxHP)` and
+    `SetTeamColor(float R, float G, float B)`. (5) Add exactly one `UHealthBarComponent` named
+    `HPBarWidget` in the CONSTRUCTOR of ASummonedUnit, ABuilding, and AHeroCharacter (subclasses inherit
+    it). Do NOT touch ACastle's existing HPBarWidget. Everywhere null-safe; zero behavior change to
+    combat/stats. ACCEPTANCE: compiles warnings-as-errors; the three base classes each own one
+    HPBarWidget; poll show/hide + team-tint logic present; no new HP field introduced. → qa-reviewer
+    (MANDATORY shadow-scan: no inherited-reflected-member shadow — CONVENTIONS coding law; watch
+    `Owner`/`Instigator`/`Slot`). Post progress/handoff in ⚙️ Dev & QA (`⚙️ GAMEPLAY-PROGRAMMER: … TASK-110`).
+- names: >
+    Interface `IHealthBarTarget` / `UHealthBarTarget` in Source/GitClaudeUnrealTest/Siegebound/HealthBarTarget.h;
+    methods GetHealthCurrent() / GetHealthMax() / IsHealthBarActorAlive().
+    Component `UHealthBarComponent` (UWidgetComponent subclass), HealthBarComponent.h/.cpp; instance name `HPBarWidget`.
+    Component props: HealthBarWidgetClass (TSoftClassPtr<UUserWidget>, default /Game/UI/WBP_UnitHealthBar),
+    PollInterval (0.15), bShowHealthBar (true), BarHeightZ (120), BlueBarColor (0.05,0.30,1.00), RedBarColor (1.00,0.10,0.05).
+    Widget base `UUnitHealthBarWidget` (UUserWidget subclass), UnitHealthBarWidget.h/.cpp; BIEs
+    OnHPChanged(float CurrentHP, float MaxHP) and SetTeamColor(float R, float G, float B).
+    UMG asset (TASK-111): `WBP_UnitHealthBar` at /Game/UI/WBP_UnitHealthBar.
+    Reuse only (do NOT redefine): ASummonedUnit/ABuilding/AHeroCharacter GetCurrentHP()/GetMaxHP(),
+    IsUnitDead()/IsBuildingDestroyed()/IsDead(), ITeamAgent::GetTeamId().
+
+#### TASK-111 — WBP_UnitHealthBar UMG asset: duplicate donor, reparent to UUnitHealthBarWidget, wire fill + tint (art)
+- assignee: art-director
+- status: ready-for-integration (2026-07-09; handoffs/TASK-111.md — /Game/UI/WBP_UnitHealthBar duplicated from WBP_CastleHealthBar, reparent to UUnitHealthBarWidget READBACK-CONFIRMED [the crux WARN — closed], both float BIEs bIsImplemented=true [OnHPChanged→SetPercent guard Max>0; SetTeamColor→fill tint], compact HitTestInvisible overhead bar sized to the 90×12 DrawSize, no baked text. Integration check + commit ride TASK-112 phase B)
+- blocked-by: TASK-110 (reparents to UUnitHealthBarWidget — needs the class compiled; the orchestrator has build-master compile TASK-110 before dispatching this, the M1 TASK-018→019 order)
+- parallel-safe: no
+- spec: >
+    Editor/MCP only — needs the editor MCP up (else park + tell the orchestrator). Author the
+    `WBP_UnitHealthBar` UMG widget per CONVENTIONS "Overhead unit health bars (M5.5)". (1) DUPLICATE
+    `/Game/UI/WBP_CastleHealthBar` (the approved health-bar donor — itself a UI_LifeBar duplicate,
+    already carrying a ProgressBar + an OnHPChanged handler) to `/Game/UI/WBP_UnitHealthBar`; never
+    author the tree from scratch (template-donor rule). (2) REPARENT it to `UUnitHealthBarWidget`
+    (compiled in TASK-110). (3) Implement the `OnHPChanged(float CurrentHP, float MaxHP)` BIE as
+    ProgressBar `SetPercent(CurrentHP / MaxHP)` guarding MaxHP > 0 (same as the castle donor — keep it).
+    (4) Implement `SetTeamColor(float R, float G, float B)` to tint the ProgressBar FILL brush from the
+    pushed RGB (make a small compact bar — thin, dark/translucent background track, so it reads at ~150
+    px; no baked text). Keep it HitTestInvisible. ACCEPTANCE: /Game/UI/WBP_UnitHealthBar exists,
+    parent = UUnitHealthBarWidget, both BIEs implemented (fill percent + team tint), compact overhead
+    size. Art skips QA → build-master integration check (TASK-112). Post the handoff in 🎨 Art
+    (`🎨 ART-DIRECTOR: … TASK-111`) with the asset path.
+- names: >
+    `WBP_UnitHealthBar` at /Game/UI/WBP_UnitHealthBar, parent class `UUnitHealthBarWidget`.
+    Donor: /Game/UI/WBP_CastleHealthBar (fallback /Game/Variant_Combat/UI/UI_LifeBar).
+    BIEs to implement: OnHPChanged(float CurrentHP, float MaxHP) → ProgressBar SetPercent(guard Max>0);
+    SetTeamColor(float R, float G, float B) → fill brush tint.
+
+#### TASK-112 — M5.5 integration: compile, overhead-bar PIE verification, commit (build)
+- assignee: build-master
+- status: done (2026-07-09; handoffs/TASK-112.md — phase A compile clean [0 err/warn/C4458]; phase B PIE property-verification in live Play-vs-Bot: hide-at-full ✅, appears-on-damage+fill ✅ [hero 44%], blue tint ✅, red wiring ✅, castle own-bar-only ✅, gold node none ✅; QA WARN closed functionally [live WidgetClass=WBP_UnitHealthBar_C resolved, reparent cast non-null → fill fills + tint applies]. Commit 9a8a75f on main [12 files, code + WBP], NOT pushed, no branch. Desktop LOCKED → WATCH [Jonathan playtest]: literal on-screen bar pixels [Slate widgets uncapturable headless], live show-on-damage for Blue units + all buildings [no card input on locked box], §6 60fps. Follow-up to manager: a debug-exec cheat [ApplyTestDamage/summon-Blue] would make headless verification complete)
+- blocked-by: TASK-110 (qa-passed) + TASK-111 (ready-for-integration)
+- parallel-safe: no
+- spec: >
+    Integration for the health-bar batch (TASK-090/109 pattern). TWO-PHASE, single owner: (phase A —
+    already done to unblock TASK-111) compile TASK-110 (editor-bounce) so `UUnitHealthBarWidget`
+    /`UHealthBarComponent` exist; (phase B — this task) after TASK-111's WBP lands: re-verify the build
+    compiles clean warnings-as-errors, then run the M5.5 exit-criteria PIE suite in L_Arena via a
+    Play-vs-Bot session — damage a friendly unit, a tower, a Wall, Barracks, Deep Mine, a miner, and the
+    hero and confirm each shows a floating overhead bar that is HIDDEN at full, appears on first damage,
+    tracks HP down, is team-tinted (BLUE friendly; and via the Red bot's units/towers RED enemy), and
+    hides on death/destruction; confirm castles still show ONLY their own bar (no duplicate) and gold
+    nodes show none. Record best-effort perf observations (§6 WATCH — no machine fps route). If the
+    editor MCP is down, compile via Build.bat and report the PIE items as owed-to-Jonathan (never fake).
+    On PASS: commit code + WBP_UnitHealthBar with message "TASK-110..112: overhead health bars on units/
+    towers/hero — hide-at-full, team-tinted; §7 widened". Do NOT push. Build failure → append errors to
+    the offending task's qa report and route back to gameplay-programmer (counts as a QA loop). Post
+    compile result + commit hash in 🔧 Build & Git (`🔧 BUILD-MASTER: … TASK-112`).
+- names: >
+    Assets/classes exactly as TASK-110/111 names blocks. Commit on `main`, no push. No new branch
+    (this is a batch, not a milestone slice — m5-testable already preserves M5).
 
 #### TASK-097 — Card data Set III: ESpellEffect + M5 columns + cards.csv 28 rows + M5 test deck (files)
 - assignee: gameplay-programmer
@@ -401,7 +786,7 @@ Dispatch shape: **FILE WAVE NOW (parallel): TASK-097 ∥ 098 ∥ 099 ∥ 101 ∥
 
 #### TASK-109 — M5 final assembly: exit-criteria PIE verification + commit + m5-testable branch (build)
 - assignee: build-master
-- status: in-progress (dispatched 2026-07-08; all blockers done [104, 106, 107, 108]. Constraint: desktop LOCKED — SendInput items → WATCH list per TASK-076 doctrine)
+- status: done (2026-07-08; handoffs/TASK-109.md — desktop LOCKED so machine-only verification. Commit 979f552 on main [53 files, TASK-104..109], branch m5-testable cut at it, NOTHING pushed [main ahead 2: 2c65164 + 979f552]. VERIFIED machine: DT_Cards 28 rows + deferred CardArt check closed, 8/8 Set III assets at exact paths, CrystalTower BP loads as ATower subclass, PIE booted L_Arena, bot rules 4/5 fired with renumbered labels + economy/waves unregressed, StopPIE clean, log sweep = knowns only, staged==worktree (L_Arena correctly excluded). WATCH [locked desktop, needs human playtest]: all 5 live spell casts + acceptance, Crystal Tower chain, reticle project/confirm/cancel, "bot casts spells" [3a/3b need player-side targets an idle player never made; MCP can't inject into live GWorld w/o polluting L_Arena], Play Again spell reset. Match self-ended ~71s [bot razed undefended Blue castle]. Benign finding: stale LogCSVImportFactory CardType warnings [exactly why 104 uses set_rows] — CONVENTIONS one-liner to manager)
 - blocked-by: TASK-104, TASK-106, TASK-107, TASK-108
 - parallel-safe: no (owns the single editor + the Git commit)
 - spec: >
