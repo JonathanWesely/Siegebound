@@ -4,6 +4,7 @@
 
 #include "Animation/AnimMontage.h"
 #include "Camera/CameraShakeBase.h"
+#include "Components/CapsuleComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/DataTable.h"
@@ -19,6 +20,7 @@
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "Siegebound/CardRow.h"
+#include "Siegebound/HealthBarComponent.h"
 #include "Siegebound/SummonedUnit.h"
 #include "TimerManager.h"
 
@@ -41,6 +43,14 @@ AHeroCharacter::AHeroCharacter()
 
 	// GDD §3.1 base walk speed (BeginPlay re-applies in case a blueprint tweaks WalkSpeed)
 	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
+
+	// Overhead health bar (M5.5, TASK-110): one poll-driven, screen-space,
+	// hide-at-full, team-tinted bar. ADDITIVE to the hero's own WBP_HUD HP (M1) —
+	// the poll reads this hero's IHealthBarTarget getters (GetMaxHP() is already the
+	// EFFECTIVE Plate-Armor max), and the widget class soft-resolves null-safe at the
+	// component's own BeginPlay (WBP_UnitHealthBar, TASK-111). Attached to the capsule root.
+	HPBarWidget = CreateDefaultSubobject<UHealthBarComponent>(TEXT("HPBarWidget"));
+	HPBarWidget->SetupAttachment(GetCapsuleComponent());
 
 	// data contract (TASK-058 names block): stack caps resolve from MaxCopies in this table
 	// at ApplyUpgrade time, never from code (GDD §3.0). Mirrors ASummonedUnit's CardTableAsset.

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GitClaudeUnrealTestCharacter.h"
+#include "Siegebound/HealthBarTarget.h"
 #include "Siegebound/TeamId.h"
 #include "Templates/SubclassOf.h"
 #include "UObject/SoftObjectPtr.h"
@@ -12,6 +13,7 @@
 class UAnimMontage;
 class UCameraShakeBase;
 class UDataTable;
+class UHealthBarComponent;
 class UInputAction;
 class UInputMappingContext;
 class UNiagaraSystem;
@@ -94,7 +96,7 @@ enum class EHeroUpgradeResult : uint8
  *  so the raw C++ class also runs (game mode fallback pawn, TASK-006).
  */
 UCLASS()
-class GITCLAUDEUNREALTEST_API AHeroCharacter : public AGitClaudeUnrealTestCharacter, public ITeamAgent
+class GITCLAUDEUNREALTEST_API AHeroCharacter : public AGitClaudeUnrealTestCharacter, public ITeamAgent, public IHealthBarTarget
 {
 	GENERATED_BODY()
 
@@ -117,6 +119,12 @@ public:
 	//~ Begin ITeamAgent Interface
 	virtual ETeamId GetTeamId() const override { return Team; }
 	//~ End ITeamAgent Interface
+
+	//~ Begin IHealthBarTarget Interface (M5.5, TASK-110) — forwards to the EXISTING getters; adds NO HP state. GetMaxHP() already returns the EFFECTIVE max (Plate Armor composed).
+	virtual float GetHealthCurrent() const override { return GetCurrentHP(); }
+	virtual float GetHealthMax() const override { return GetMaxHP(); }
+	virtual bool IsHealthBarActorAlive() const override { return !IsDead(); }
+	//~ End IHealthBarTarget Interface
 
 	/** Applies incoming damage (no friendly fire), tracks combat time for regen, and triggers death at 0 HP. */
 	virtual float TakeDamage(float Damage, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
@@ -312,6 +320,10 @@ protected:
 	/** Team this hero fights for. The local player is always Blue (CONVENTIONS team contract). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Team")
 	ETeamId Team = ETeamId::Blue;
+
+	/** Overhead poll-driven health bar (M5.5, TASK-110): hide-at-full, team-tinted. ADDITIVE to the hero's own WBP_HUD HP readout (M1) — that stays. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Hero")
+	TObjectPtr<UHealthBarComponent> HPBarWidget;
 
 	/** Mapping context slot for /Game/Input/IMC_Hero — assigned on BP_HeroCharacter in TASK-009. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")

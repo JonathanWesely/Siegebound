@@ -12,6 +12,7 @@
 #include "Materials/MaterialInterface.h"
 #include "Siegebound/CardRow.h"
 #include "Siegebound/DamageTypes.h"
+#include "Siegebound/HealthBarComponent.h"
 #include "TimerManager.h"
 
 ABuilding::ABuilding()
@@ -43,6 +44,15 @@ ABuilding::ABuilding()
 	// component default, but the spec pins it EXPLICITLY so a BP child or
 	// template change can never silently break §3.7.
 	VisualMesh->SetCanEverAffectNavigation(true);
+
+	// Overhead health bar (M5.5, TASK-110): one poll-driven, screen-space,
+	// hide-at-full, team-tinted bar per building. Added at the ABuilding base so
+	// every subclass (ATower, ABarracks, ADeepMine) and the Wall get it for free;
+	// the component owns all show/hide + poll + tint logic (reads this building's
+	// IHealthBarTarget getters) and soft-resolves WBP_UnitHealthBar (TASK-111)
+	// null-safe at its own BeginPlay. Attached to VisualMesh (the root).
+	HPBarWidget = CreateDefaultSubobject<UHealthBarComponent>(TEXT("HPBarWidget"));
+	HPBarWidget->SetupAttachment(VisualMesh);
 
 	// Data contract (GDD §3.0): stats resolve from DT_Cards at BeginPlay, never
 	// from code. Same soft path as ASummonedUnit (TASK-004).

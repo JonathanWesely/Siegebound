@@ -23,6 +23,7 @@
 #include "Siegebound/CardRow.h"
 #include "Siegebound/Castle.h"
 #include "Siegebound/DamageTypes.h"
+#include "Siegebound/HealthBarComponent.h"
 #include "Siegebound/HeroCharacter.h"
 #include "Siegebound/Projectile.h"
 #include "Siegebound/SiegeCombatStatics.h"
@@ -73,6 +74,14 @@ ASummonedUnit::ASummonedUnit()
 	VisualMesh->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
 	VisualMesh->SetGenerateOverlapEvents(false);
 	VisualMesh->SetCanEverAffectNavigation(false);
+
+	// Overhead health bar (M5.5, TASK-110): one poll-driven, screen-space,
+	// hide-at-full, team-tinted bar per unit. The component owns ALL show/hide +
+	// poll + tint logic (it reads this unit's IHealthBarTarget getters); the widget
+	// class is soft-resolved null-safe at its own BeginPlay (WBP_UnitHealthBar,
+	// TASK-111). AMinerUnit inherits this instance.
+	HPBarWidget = CreateDefaultSubobject<UHealthBarComponent>(TEXT("HPBarWidget"));
+	HPBarWidget->SetupAttachment(GetCapsuleComponent());
 
 	// data contract (TASK-004 names block): stats resolve from this table at BeginPlay,
 	// never from code (GDD §3.0). The table is imported in TASK-008 and may not exist yet.

@@ -6,11 +6,13 @@
 #include "GameFramework/Character.h"
 #include "UObject/SoftObjectPtr.h"
 #include "Siegebound/CardRow.h"
+#include "Siegebound/HealthBarTarget.h"
 #include "Siegebound/TeamId.h"
 #include "SummonedUnit.generated.h"
 
 class AAIController;
 class UDataTable;
+class UHealthBarComponent;
 class UNiagaraSystem;
 class UStaticMeshComponent;
 
@@ -99,7 +101,7 @@ enum class ESummonedUnitState : uint8
  *  after a plain SpawnActor (it late-binds the stats if BeginPlay found no CardID).
  */
 UCLASS()
-class GITCLAUDEUNREALTEST_API ASummonedUnit : public ACharacter, public ITeamAgent
+class GITCLAUDEUNREALTEST_API ASummonedUnit : public ACharacter, public ITeamAgent, public IHealthBarTarget
 {
 	GENERATED_BODY()
 
@@ -110,6 +112,12 @@ public:
 	//~ Begin ITeamAgent Interface
 	virtual ETeamId GetTeamId() const override { return Team; }
 	//~ End ITeamAgent Interface
+
+	//~ Begin IHealthBarTarget Interface (M5.5, TASK-110) — forwards to the EXISTING getters; adds NO HP state.
+	virtual float GetHealthCurrent() const override { return GetCurrentHP(); }
+	virtual float GetHealthMax() const override { return GetMaxHP(); }
+	virtual bool IsHealthBarActorAlive() const override { return !IsUnitDead(); }
+	//~ End IHealthBarTarget Interface
 
 	/** Applies incoming damage (no friendly fire, GDD §3.0) and destroys the unit at 0 HP. */
 	virtual float TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
@@ -302,6 +310,10 @@ protected:
 	 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Unit")
 	TObjectPtr<UStaticMeshComponent> VisualMesh;
+
+	/** Overhead poll-driven health bar (M5.5, TASK-110): hide-at-full, team-tinted. Added once here; AMinerUnit inherits it. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Unit")
+	TObjectPtr<UHealthBarComponent> HPBarWidget;
 
 	/** DT_Cards row name whose stats drive this unit (BP_Unit_Footman sets Footman, TASK-010). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Unit")

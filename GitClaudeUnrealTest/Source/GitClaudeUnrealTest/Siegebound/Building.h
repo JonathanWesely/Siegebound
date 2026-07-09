@@ -5,10 +5,12 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "UObject/SoftObjectPtr.h"
+#include "Siegebound/HealthBarTarget.h"
 #include "Siegebound/TeamId.h"
 #include "Building.generated.h"
 
 class UDataTable;
+class UHealthBarComponent;
 class UStaticMeshComponent;
 struct FCardRow;
 
@@ -54,7 +56,7 @@ struct FCardRow;
  *  instances bind with no call at all.
  */
 UCLASS()
-class GITCLAUDEUNREALTEST_API ABuilding : public AActor, public ITeamAgent
+class GITCLAUDEUNREALTEST_API ABuilding : public AActor, public ITeamAgent, public IHealthBarTarget
 {
 	GENERATED_BODY()
 
@@ -65,6 +67,12 @@ public:
 	//~ Begin ITeamAgent interface
 	virtual ETeamId GetTeamId() const override { return Team; }
 	//~ End ITeamAgent interface
+
+	//~ Begin IHealthBarTarget Interface (M5.5, TASK-110) — forwards to the EXISTING getters; adds NO HP state.
+	virtual float GetHealthCurrent() const override { return GetCurrentHP(); }
+	virtual float GetHealthMax() const override { return GetMaxHP(); }
+	virtual bool IsHealthBarActorAlive() const override { return !IsBuildingDestroyed(); }
+	//~ End IHealthBarTarget Interface
 
 	/**
 	 *  Spawner hook (TASK-030, mirroring the TASK-007/ASummonedUnit::InitUnit
@@ -154,6 +162,10 @@ protected:
 	 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Building")
 	TObjectPtr<UStaticMeshComponent> VisualMesh;
+
+	/** Overhead poll-driven health bar (M5.5, TASK-110): hide-at-full, team-tinted. Added at the base so ATower/ABarracks/ADeepMine/Wall inherit it. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Building")
+	TObjectPtr<UHealthBarComponent> HPBarWidget;
 
 	/** DT_Cards row name whose stats drive this building (BP children preset it: ArrowTower / Wall, TASK-035). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Building")
