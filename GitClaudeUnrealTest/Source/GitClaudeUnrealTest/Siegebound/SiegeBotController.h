@@ -273,7 +273,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement")
 	float BotHalfBoundaryX = 0.f;
 
-	/** Just inside the bot half where offensive/defensive UNITS spawn before advancing on Castle_Blue (mirrors the player summoning near the centerline). */
+	/**
+	 *  Just inside the bot half where offensive/defensive UNITS spawn before advancing on Castle_Blue (mirrors the player summoning near the centerline).
+	 *  M6.5 ruling (TASK-133): the arena widened 4× (castles ±2000 → ±8000) but this value is CENTERLINE-relative and the centerline did NOT move (still X=0), so it STAYS 350. A playtest may revisit whether the bot over-commits units so close to the centerline across the now-wider field.
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
 	float BotCenterlineSpawnX = 350.f;
 
@@ -311,13 +314,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement")
 	FVector NavProjectionExtent = FVector(200.f, 200.f, 1000.f);
 
-	/** Fallback Castle_Red world location when no Red ACastle is found (CONVENTIONS world axes: +2000,0). Live actor lookup is preferred. */
+	/** Fallback Castle_Red world location when no Red ACastle is found (CONVENTIONS world axes, M6.5 4× widening: +8000,0). Live actor lookup is preferred. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement")
-	FVector CastleRedFallbackLocation = FVector(2000.f, 0.f, 0.f);
+	FVector CastleRedFallbackLocation = FVector(8000.f, 0.f, 0.f);
 
-	/** Fallback GoldNode_Red world location when no Red AGoldNode is found (CONVENTIONS world axes: +1200,0). Live actor lookup is preferred. */
+	/** Fallback GoldNode_Red world location when no Red AGoldNode is found (CONVENTIONS world axes, M6.5: +7200,0 — the node stays 800 units in front of Castle_Red, so it moved WITH the castle to preserve the miner economy). Live actor lookup is preferred. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement")
-	FVector GoldNodeRedFallbackLocation = FVector(1200.f, 0.f, 0.f);
+	FVector GoldNodeRedFallbackLocation = FVector(7200.f, 0.f, 0.f);
 
 private:
 

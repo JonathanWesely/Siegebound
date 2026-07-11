@@ -17,8 +17,10 @@ class UStaticMeshComponent;
  *  own; miners walk to the SAME-team node and activate their +1 gold/s there.
  *
  *  Arena contract (CONVENTIONS.md / GDD §5): one per team, 800 units in front
- *  of each castle — placed in TASK-036 as GoldNode_Blue, Team = Blue, at
- *  (-1200, 0, 0) and GoldNode_Red, Team = Red, at (+1200, 0, 0).
+ *  of each castle — placed as GoldNode_Blue, Team = Blue, at (-7200, 0, 0) and
+ *  GoldNode_Red, Team = Red, at (+7200, 0, 0). (M6.5 4× widening, TASK-133/136:
+ *  the nodes moved WITH the castles from ∓1200 → ±7200 so they stay 800 units in
+ *  front of the ±8000 castles, preserving the miner economy geometry.)
  *
  *  - NOT a combatant: deliberately does NOT implement ITeamAgent — unit
  *    acquisition scans ITeamAgent actors (TASK-004), so implementing it would
@@ -75,7 +77,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|GoldNode")
 	TObjectPtr<UStaticMeshComponent> NodeMesh;
 
-	/** Owning team, set per placed instance (TASK-036: GoldNode_Blue = Blue at -1200, GoldNode_Red = Red at +1200). */
+	/** Owning team, set per placed instance (GoldNode_Blue = Blue at -7200, GoldNode_Red = Red at +7200 — M6.5 4× widening, TASK-133/136). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Team")
 	ETeamId Team = ETeamId::Blue;
 

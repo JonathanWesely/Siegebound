@@ -9,6 +9,7 @@
 #include "GitClaudeUnrealTest.h"
 #include "Kismet/GameplayStatics.h"
 #include "Siegebound/Barracks.h"
+#include "Siegebound/BattlefieldScatter.h"
 #include "Siegebound/Building.h"
 #include "Siegebound/Castle.h"
 #include "Siegebound/HeroCharacter.h"
@@ -454,10 +455,11 @@ void ASiegeGameMode::RestoreHeroAtStart()
 
 void ASiegeGameMode::GetHeroStartTransform(AController* Player, ETeamId HeroTeam, FVector& OutLocation, FRotator& OutRotation)
 {
-	// 1) The level's PlayerStart (L_Arena: (-1700, 0, 100) yaw 0 on the Blue
-	//    side — TASK-015). FindPlayerStart falls back to WorldSettings when the
-	//    level has no PlayerStart; that is not a spawn point, so only a real
-	//    APlayerStart is accepted here.
+	// 1) The level's PlayerStart (L_Arena: ≈(-6800, 0, 100) yaw 0 on the Blue
+	//    side — moved outward with the ±8000 castle in the M6.5 4× widening,
+	//    TASK-136; was (-1700, 0, 100) pre-M6.5). FindPlayerStart falls back to
+	//    WorldSettings when the level has no PlayerStart; that is not a spawn
+	//    point, so only a real APlayerStart is accepted here.
 	if (AActor* Start = FindPlayerStart(Player))
 	{
 		if (Start->IsA<APlayerStart>())
@@ -660,6 +662,23 @@ void ASiegeGameMode::PlayAgain()
 		if (ASiegePlayerController* SiegePC = Cast<ASiegePlayerController>(It->Get()))
 		{
 			SiegePC->HandleMatchReset();
+		}
+	}
+
+	// 7) Re-scatter the procedural battlefield (M6.5, TASK-134): Play Again gets a
+	//    FRESH random layout when bReRandomizeOnMatchReset is true (the actor owns
+	//    that decision + the new seed). Found via TActorIterator; null-safe — no
+	//    ASiegeBattlefieldScatter in the level = a clean no-op, nothing breaks.
+	//    (The INITIAL scatter is the actor's own BeginPlay; this is reset-only.)
+	if (UWorld* World = GetWorld())
+	{
+		for (TActorIterator<ASiegeBattlefieldScatter> It(World); It; ++It)
+		{
+			if (ASiegeBattlefieldScatter* Scatter = *It)
+			{
+				Scatter->ClearScatter();
+				Scatter->GenerateScatter();
+			}
 		}
 	}
 }

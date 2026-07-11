@@ -314,7 +314,8 @@ private:
 
 	/**
 	 *  Spawn point resolution, in order: the level's PlayerStart (L_Arena:
-	 *  (-1700, 0, 100) yaw 0, TASK-015); else next to the hero's own-team castle
+	 *  ≈(-6800, 0, 100) yaw 0 — moved outward with the ±8000 castle in the M6.5
+	 *  4× widening, TASK-136; was (-1700, 0, 100) pre-M6.5); else next to the hero's own-team castle
 	 *  offset toward the centerline; else the arena origin (logged).
 	 *  FindPlayerStart's WorldSettings fallback is rejected — it is not a spawn point.
 	 */
