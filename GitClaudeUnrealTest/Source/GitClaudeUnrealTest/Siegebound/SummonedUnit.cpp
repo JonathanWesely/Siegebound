@@ -23,7 +23,7 @@
 #include "Siegebound/CardRow.h"
 #include "Siegebound/Castle.h"
 #include "Siegebound/DamageTypes.h"
-#include "Siegebound/HealthBarComponent.h"
+#include "Siegebound/CombatantHealthBarComponent.h"
 #include "Siegebound/HeroCharacter.h"
 #include "Siegebound/Projectile.h"
 #include "Siegebound/SiegeCombatStatics.h"
@@ -75,12 +75,12 @@ ASummonedUnit::ASummonedUnit()
 	VisualMesh->SetGenerateOverlapEvents(false);
 	VisualMesh->SetCanEverAffectNavigation(false);
 
-	// Overhead health bar (M5.5, TASK-110): one poll-driven, screen-space,
-	// hide-at-full, team-tinted bar per unit. The component owns ALL show/hide +
-	// poll + tint logic (it reads this unit's IHealthBarTarget getters); the widget
-	// class is soft-resolved null-safe at its own BeginPlay (WBP_UnitHealthBar,
-	// TASK-111). AMinerUnit inherits this instance.
-	HPBarWidget = CreateDefaultSubobject<UHealthBarComponent>(TEXT("HPBarWidget"));
+	// Overhead health bar (TASK-130 castle-parity REBUILD): one screen-space, team-tinted
+	// PUSH bar per unit. The component binds this unit's OnHPChanged delegate (seed-then-bind)
+	// and pushes the team tint; the widget class is soft-resolved null-safe at its own BeginPlay
+	// (WBP_CombatantHealthBar, TASK-131). AMinerUnit inherits this instance. NO poll timer —
+	// updates arrive when the unit broadcasts OnHPChanged.
+	HPBarWidget = CreateDefaultSubobject<UCombatantHealthBarComponent>(TEXT("HPBarWidget"));
 	HPBarWidget->SetupAttachment(GetCapsuleComponent());
 
 	// data contract (TASK-004 names block): stats resolve from this table at BeginPlay,
@@ -675,6 +675,10 @@ void ASummonedUnit::LoadStatsAndStart()
 	// applied as authored (§3.0).
 	MaxHP = Row->HP;
 	CurrentHP = MaxHP;
+	// Push spawn-init HP to the overhead bar (TASK-130 push model). The bar's component may
+	// bind before stats load (component BeginPlay runs during Super::BeginPlay); this broadcast
+	// fills it to full in that case, and its InitForCombatant seed covers the reverse order.
+	OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
 	AttackDamage = Row->Damage;
 	AttackRange = Row->Range;
 	AttackCadence = FMath::Max(Row->Cadence, MinAttackCadence);
@@ -1146,14 +1150,15 @@ void ASummonedUnit::PerformHeal()
 void ASummonedUnit::ApplyHealing(float Amount)
 {
 	// no reviving the dead, no healing a match-end-frozen or never-bound unit, no
-	// negative "heals". Units carry no HP-changed delegate (only ACastle does), so
-	// there is nothing to broadcast — just clamp to MaxHP (no overheal).
+	// negative "heals". Clamp to MaxHP (no overheal), then push the change to the overhead
+	// bar (TASK-130 push model — units NOW carry an OnHPChanged delegate).
 	if (bDead || bAIFrozen || !bStatsLoaded || Amount <= 0.f)
 	{
 		return;
 	}
 
 	CurrentHP = FMath::Min(CurrentHP + Amount, MaxHP);
+	OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
 }
 
 void ASummonedUnit::EnterAttack()
@@ -1590,6 +1595,10 @@ float ASummonedUnit::TakeDamage(float DamageAmount, const FDamageEvent& DamageEv
 
 	CurrentHP = FMath::Max(CurrentHP - ActualDamage, 0.f);
 
+	// Push the damage to the overhead bar BEFORE any death handling (ACastle::TakeDamage
+	// parity — listeners see the 0-HP value before HandleDeath tears the actor down).
+	OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
+
 	if (CurrentHP <= 0.f)
 	{
 		HandleDeath();
@@ -1688,6 +1697,11 @@ void ASummonedUnit::HandleDeath()
 
 	bDead = true;
 	CurrentHP = 0.f;
+
+	// Push the final 0-HP to the overhead bar (TASK-130 push model — covers death paths that
+	// do not route through TakeDamage, e.g. Sapper suicide). The actor is destroyed below,
+	// taking the bar with it, so no explicit hide is needed.
+	OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
 
 	GetWorldTimerManager().ClearTimer(StateTimerHandle);
 	GetWorldTimerManager().ClearTimer(AttackTimerHandle);

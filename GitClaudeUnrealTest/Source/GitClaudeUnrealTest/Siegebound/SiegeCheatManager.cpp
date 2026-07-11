@@ -11,7 +11,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "UObject/SoftObjectPtr.h"
 #include "Siegebound/Castle.h"
-#include "Siegebound/HealthBarTarget.h"
+#include "Siegebound/HealthBarProvider.h"
 #include "Siegebound/SiegePlayerController.h"
 #include "Siegebound/SiegePlayerState.h"
 #include "Siegebound/SummonedUnit.h"
@@ -23,13 +23,13 @@ namespace
 	constexpr float SiegeCheatTraceDistance = 100000.f;
 
 	/**
-	 *  Alive across the combat types: units/buildings/hero answer IHealthBarTarget;
-	 *  ACastle keeps its own destroyed latch (it does NOT implement IHealthBarTarget,
-	 *  CONVENTIONS M5.5 note). Unknown ITeamAgent types are treated as alive.
+	 *  Alive across the combat types: units/buildings/hero answer IHealthBarProvider;
+	 *  ACastle keeps its own destroyed latch (it does NOT implement IHealthBarProvider,
+	 *  CONVENTIONS note). Unknown ITeamAgent types are treated as alive.
 	 */
 	bool IsCombatActorAlive(const AActor* Actor)
 	{
-		if (const IHealthBarTarget* Bar = Cast<IHealthBarTarget>(Actor))
+		if (const IHealthBarProvider* Bar = Cast<IHealthBarProvider>(Actor))
 		{
 			return Bar->IsHealthBarActorAlive();
 		}

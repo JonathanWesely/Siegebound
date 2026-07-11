@@ -20,7 +20,7 @@
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "Siegebound/CardRow.h"
-#include "Siegebound/HealthBarComponent.h"
+#include "Siegebound/CombatantHealthBarComponent.h"
 #include "Siegebound/SummonedUnit.h"
 #include "TimerManager.h"
 
@@ -44,12 +44,12 @@ AHeroCharacter::AHeroCharacter()
 	// GDD §3.1 base walk speed (BeginPlay re-applies in case a blueprint tweaks WalkSpeed)
 	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
 
-	// Overhead health bar (M5.5, TASK-110): one poll-driven, screen-space,
-	// hide-at-full, team-tinted bar. ADDITIVE to the hero's own WBP_HUD HP (M1) —
-	// the poll reads this hero's IHealthBarTarget getters (GetMaxHP() is already the
-	// EFFECTIVE Plate-Armor max), and the widget class soft-resolves null-safe at the
-	// component's own BeginPlay (WBP_UnitHealthBar, TASK-111). Attached to the capsule root.
-	HPBarWidget = CreateDefaultSubobject<UHealthBarComponent>(TEXT("HPBarWidget"));
+	// Overhead health bar (TASK-130 castle-parity REBUILD): one screen-space, team-tinted PUSH
+	// bar. ADDITIVE to the hero's own WBP_HUD HP (M1) — the component binds this hero's OnHPChanged
+	// delegate (GetMaxHP() is already the EFFECTIVE Plate-Armor max), and the widget class
+	// soft-resolves null-safe at the component's own BeginPlay (WBP_CombatantHealthBar, TASK-131).
+	// Attached to the capsule root. No poll timer.
+	HPBarWidget = CreateDefaultSubobject<UCombatantHealthBarComponent>(TEXT("HPBarWidget"));
 	HPBarWidget->SetupAttachment(GetCapsuleComponent());
 
 	// data contract (TASK-058 names block): stack caps resolve from MaxCopies in this table
@@ -76,6 +76,9 @@ void AHeroCharacter::BeginPlay()
 	// anyway so the initial state is identical to a respawn re-apply (single code path).
 	bSprinting = false;
 	CurrentHP = GetEffectiveMaxHP();
+	// Push init HP to the overhead bar (TASK-130 push model); reconciles the component's
+	// InitForCombatant seed (run during Super::BeginPlay above) to the effective max.
+	OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
 	ApplyMovementSpeed();
 
 	// far in the past: the first swing is never cooldown-blocked and a below-max hero regens immediately
@@ -96,6 +99,9 @@ void AHeroCharacter::Tick(float DeltaSeconds)
 		if (World && (World->GetTimeSeconds() - LastCombatTime) >= RegenDelay)
 		{
 			CurrentHP = FMath::Min(CurrentHP + (RegenRate * DeltaSeconds), EffectiveMaxHP);
+			// Push the regen to the overhead bar each frame it ticks (TASK-130 push model — the
+			// outer guard ensures CurrentHP actually rose). Mirrors ACastle::HandleHealTick.
+			OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
 		}
 	}
 }
@@ -406,6 +412,10 @@ float AHeroCharacter::TakeDamage(float Damage, const FDamageEvent& DamageEvent, 
 
 	CurrentHP = FMath::Clamp(CurrentHP - ActualDamage, 0.f, GetEffectiveMaxHP());
 
+	// Push the damage to the overhead bar BEFORE any death handling below (ACastle::TakeDamage
+	// parity — listeners see the value, and HandleDeath re-broadcasts 0 + hides).
+	OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
+
 	// taking damage re-arms the out-of-combat regen delay (GDD §3.1)
 	if (const UWorld* World = GetWorld())
 	{
@@ -476,6 +486,15 @@ void AHeroCharacter::HandleDeath()
 	bDead = true;
 	CurrentHP = 0.f;
 
+	// Push the 0-HP to the overhead bar, then HIDE it (TASK-130 push model): a screen-space
+	// widget component does NOT follow SetActorHiddenInGame (ACastle::HandleDestroyed parity),
+	// so hide explicitly. ResetHero re-shows it on respawn.
+	OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
+	if (HPBarWidget)
+	{
+		HPBarWidget->HideBar();
+	}
+
 	// stop and freeze movement (also clears a held sprint). Upgrades PERSIST through death
 	// (stacks are untouched here); the effective resting speed still composes Swift Boots.
 	bSprinting = false;
@@ -508,6 +527,14 @@ void AHeroCharacter::ResetHero()
 	// this is the death→respawn persistence hook. Full HP is the EFFECTIVE max (base + Plate
 	// Armor), so a Plate-Armored hero respawns at, e.g., 300/300.
 	CurrentHP = GetEffectiveMaxHP();
+
+	// Refill the overhead bar to full and re-show it (TASK-130 push model — counterpart of
+	// HandleDeath's hide; ACastle::ResetCastle parity).
+	OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
+	if (HPBarWidget)
+	{
+		HPBarWidget->ShowBarIfEnabled();
+	}
 
 	// restore visibility and collision
 	SetActorHiddenInGame(false);
@@ -588,6 +615,9 @@ EHeroUpgradeResult AHeroCharacter::ApplyUpgrade(FName UpgradeCardID)
 		if (!bDead)
 		{
 			CurrentHP = FMath::Min(CurrentHP + MaxHPBonus, GetEffectiveMaxHP());
+			// Plate Armor raised BOTH CurrentHP and the effective max — push so the overhead
+			// bar's denominator and fill both update (TASK-130 push model).
+			OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
 		}
 	}
 	else if (UpgradeCardID == UpgradeCardID_SwiftBoots)
@@ -618,6 +648,9 @@ void AHeroCharacter::ResetUpgrades()
 	StopWarBannerAura();
 	ApplyMovementSpeed();
 	CurrentHP = FMath::Min(CurrentHP, GetEffectiveMaxHP());
+	// Resetting upgrades lowered the effective max — push so the overhead bar's denominator
+	// (and any clamped-down current) update (TASK-130 push model).
+	OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
 
 	BroadcastUpgradesChanged();
 }

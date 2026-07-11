@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GitClaudeUnrealTestCharacter.h"
-#include "Siegebound/HealthBarTarget.h"
+#include "Siegebound/HealthBarProvider.h"
 #include "Siegebound/TeamId.h"
 #include "Templates/SubclassOf.h"
 #include "UObject/SoftObjectPtr.h"
@@ -13,7 +13,7 @@
 class UAnimMontage;
 class UCameraShakeBase;
 class UDataTable;
-class UHealthBarComponent;
+class UCombatantHealthBarComponent;
 class UInputAction;
 class UInputMappingContext;
 class UNiagaraSystem;
@@ -96,7 +96,7 @@ enum class EHeroUpgradeResult : uint8
  *  so the raw C++ class also runs (game mode fallback pawn, TASK-006).
  */
 UCLASS()
-class GITCLAUDEUNREALTEST_API AHeroCharacter : public AGitClaudeUnrealTestCharacter, public ITeamAgent, public IHealthBarTarget
+class GITCLAUDEUNREALTEST_API AHeroCharacter : public AGitClaudeUnrealTestCharacter, public ITeamAgent, public IHealthBarProvider
 {
 	GENERATED_BODY()
 
@@ -120,11 +120,16 @@ public:
 	virtual ETeamId GetTeamId() const override { return Team; }
 	//~ End ITeamAgent Interface
 
-	//~ Begin IHealthBarTarget Interface (M5.5, TASK-110) — forwards to the EXISTING getters; adds NO HP state. GetMaxHP() already returns the EFFECTIVE max (Plate Armor composed).
+	/** Fired on every ACTUAL HP change (spawn-init, regen, damage, death, respawn, Plate-Armor upgrade/reset) — drives the overhead bar (UCombatantHealthBarWidget) via the castle-parity PUSH model (TASK-130, mirrors FOnCastleHPChanged). Additive to the M1 WBP_HUD HP. */
+	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Hero")
+	FOnCombatantHPChanged OnHPChanged;
+
+	//~ Begin IHealthBarProvider Interface (TASK-130 push model) — forwards to the EXISTING getters + the OnHPChanged delegate; adds NO HP state. GetMaxHP() already returns the EFFECTIVE max (Plate Armor composed).
+	virtual FOnCombatantHPChanged& GetHPChangedDelegate() override { return OnHPChanged; }
 	virtual float GetHealthCurrent() const override { return GetCurrentHP(); }
 	virtual float GetHealthMax() const override { return GetMaxHP(); }
 	virtual bool IsHealthBarActorAlive() const override { return !IsDead(); }
-	//~ End IHealthBarTarget Interface
+	//~ End IHealthBarProvider Interface
 
 	/** Applies incoming damage (no friendly fire), tracks combat time for regen, and triggers death at 0 HP. */
 	virtual float TakeDamage(float Damage, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
@@ -323,7 +328,7 @@ protected:
 
 	/** Overhead poll-driven health bar (M5.5, TASK-110): hide-at-full, team-tinted. ADDITIVE to the hero's own WBP_HUD HP readout (M1) — that stays. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Hero")
-	TObjectPtr<UHealthBarComponent> HPBarWidget;
+	TObjectPtr<UCombatantHealthBarComponent> HPBarWidget;
 
 	/** Mapping context slot for /Game/Input/IMC_Hero — assigned on BP_HeroCharacter in TASK-009. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")

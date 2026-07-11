@@ -5,12 +5,12 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "UObject/SoftObjectPtr.h"
-#include "Siegebound/HealthBarTarget.h"
+#include "Siegebound/HealthBarProvider.h"
 #include "Siegebound/TeamId.h"
 #include "Building.generated.h"
 
 class UDataTable;
-class UHealthBarComponent;
+class UCombatantHealthBarComponent;
 class UStaticMeshComponent;
 struct FCardRow;
 
@@ -56,7 +56,7 @@ struct FCardRow;
  *  instances bind with no call at all.
  */
 UCLASS()
-class GITCLAUDEUNREALTEST_API ABuilding : public AActor, public ITeamAgent, public IHealthBarTarget
+class GITCLAUDEUNREALTEST_API ABuilding : public AActor, public ITeamAgent, public IHealthBarProvider
 {
 	GENERATED_BODY()
 
@@ -68,11 +68,16 @@ public:
 	virtual ETeamId GetTeamId() const override { return Team; }
 	//~ End ITeamAgent interface
 
-	//~ Begin IHealthBarTarget Interface (M5.5, TASK-110) — forwards to the EXISTING getters; adds NO HP state.
+	/** Fired on every ACTUAL HP change (spawn-init, damage, destruction) — drives the overhead bar (UCombatantHealthBarWidget) via the castle-parity PUSH model (TASK-130, mirrors FOnCastleHPChanged). */
+	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Building")
+	FOnCombatantHPChanged OnHPChanged;
+
+	//~ Begin IHealthBarProvider Interface (TASK-130 push model) — forwards to the EXISTING getters + the OnHPChanged delegate; adds NO HP state.
+	virtual FOnCombatantHPChanged& GetHPChangedDelegate() override { return OnHPChanged; }
 	virtual float GetHealthCurrent() const override { return GetCurrentHP(); }
 	virtual float GetHealthMax() const override { return GetMaxHP(); }
 	virtual bool IsHealthBarActorAlive() const override { return !IsBuildingDestroyed(); }
-	//~ End IHealthBarTarget Interface
+	//~ End IHealthBarProvider Interface
 
 	/**
 	 *  Spawner hook (TASK-030, mirroring the TASK-007/ASummonedUnit::InitUnit
@@ -165,7 +170,7 @@ protected:
 
 	/** Overhead poll-driven health bar (M5.5, TASK-110): hide-at-full, team-tinted. Added at the base so ATower/ABarracks/ADeepMine/Wall inherit it. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Building")
-	TObjectPtr<UHealthBarComponent> HPBarWidget;
+	TObjectPtr<UCombatantHealthBarComponent> HPBarWidget;
 
 	/** DT_Cards row name whose stats drive this building (BP children preset it: ArrowTower / Wall, TASK-035). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Building")

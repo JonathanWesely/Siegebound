@@ -12,7 +12,7 @@
 #include "Materials/MaterialInterface.h"
 #include "Siegebound/CardRow.h"
 #include "Siegebound/DamageTypes.h"
-#include "Siegebound/HealthBarComponent.h"
+#include "Siegebound/CombatantHealthBarComponent.h"
 #include "TimerManager.h"
 
 ABuilding::ABuilding()
@@ -45,13 +45,12 @@ ABuilding::ABuilding()
 	// template change can never silently break §3.7.
 	VisualMesh->SetCanEverAffectNavigation(true);
 
-	// Overhead health bar (M5.5, TASK-110): one poll-driven, screen-space,
-	// hide-at-full, team-tinted bar per building. Added at the ABuilding base so
-	// every subclass (ATower, ABarracks, ADeepMine) and the Wall get it for free;
-	// the component owns all show/hide + poll + tint logic (reads this building's
-	// IHealthBarTarget getters) and soft-resolves WBP_UnitHealthBar (TASK-111)
-	// null-safe at its own BeginPlay. Attached to VisualMesh (the root).
-	HPBarWidget = CreateDefaultSubobject<UHealthBarComponent>(TEXT("HPBarWidget"));
+	// Overhead health bar (TASK-130 castle-parity REBUILD): one screen-space, team-tinted PUSH
+	// bar per building. Added at the ABuilding base so every subclass (ATower, ABarracks,
+	// ADeepMine) and the Wall get it for free; the component binds this building's OnHPChanged
+	// delegate (seed-then-bind) and soft-resolves WBP_CombatantHealthBar (TASK-131) null-safe at
+	// its own BeginPlay. Attached to VisualMesh (the root). No poll timer.
+	HPBarWidget = CreateDefaultSubobject<UCombatantHealthBarComponent>(TEXT("HPBarWidget"));
 	HPBarWidget->SetupAttachment(VisualMesh);
 
 	// Data contract (GDD §3.0): stats resolve from DT_Cards at BeginPlay, never
@@ -225,6 +224,9 @@ void ABuilding::LoadStats()
 	// Wall 300). Values are applied as authored (§3.0).
 	MaxHP = Row->HP;
 	CurrentHP = MaxHP;
+	// Push spawn-init HP to the overhead bar (TASK-130 push model); pairs with the component's
+	// InitForCombatant seed so the bar is correct regardless of stats-load vs bind order.
+	OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
 
 	if (Row->HP <= 0.f)
 	{
@@ -296,6 +298,10 @@ float ABuilding::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent,
 
 	CurrentHP = FMath::Max(CurrentHP - ScaledDamage, 0.f);
 
+	// Push the damage to the overhead bar BEFORE any destruction handling (ACastle::TakeDamage
+	// parity — listeners see the 0-HP value before HandleDestroyed tears the actor down).
+	OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
+
 	if (CurrentHP <= 0.f)
 	{
 		HandleDestroyed();
@@ -315,6 +321,10 @@ void ABuilding::HandleDestroyed()
 	}
 	bDestroyed = true;
 	CurrentHP = 0.f;
+
+	// Push the final 0-HP to the overhead bar (TASK-130 push model — covers destruction paths
+	// that do not route through TakeDamage). The actor is destroyed below, taking the bar with it.
+	OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
 
 	// §3.7 destructible: the actor simply goes away (crumble FX is M7).
 	// Destroy() tears down ATower's fire timer synchronously via EndPlay and

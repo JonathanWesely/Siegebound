@@ -6,13 +6,13 @@
 #include "GameFramework/Character.h"
 #include "UObject/SoftObjectPtr.h"
 #include "Siegebound/CardRow.h"
-#include "Siegebound/HealthBarTarget.h"
+#include "Siegebound/HealthBarProvider.h"
 #include "Siegebound/TeamId.h"
 #include "SummonedUnit.generated.h"
 
 class AAIController;
 class UDataTable;
-class UHealthBarComponent;
+class UCombatantHealthBarComponent;
 class UNiagaraSystem;
 class UStaticMeshComponent;
 
@@ -101,7 +101,7 @@ enum class ESummonedUnitState : uint8
  *  after a plain SpawnActor (it late-binds the stats if BeginPlay found no CardID).
  */
 UCLASS()
-class GITCLAUDEUNREALTEST_API ASummonedUnit : public ACharacter, public ITeamAgent, public IHealthBarTarget
+class GITCLAUDEUNREALTEST_API ASummonedUnit : public ACharacter, public ITeamAgent, public IHealthBarProvider
 {
 	GENERATED_BODY()
 
@@ -113,11 +113,16 @@ public:
 	virtual ETeamId GetTeamId() const override { return Team; }
 	//~ End ITeamAgent Interface
 
-	//~ Begin IHealthBarTarget Interface (M5.5, TASK-110) — forwards to the EXISTING getters; adds NO HP state.
+	/** Fired on every ACTUAL HP change (spawn-init, damage, heal, death) — drives the overhead bar (UCombatantHealthBarWidget) via the castle-parity PUSH model (TASK-130, mirrors FOnCastleHPChanged). */
+	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Unit")
+	FOnCombatantHPChanged OnHPChanged;
+
+	//~ Begin IHealthBarProvider Interface (TASK-130 push model) — forwards to the EXISTING getters + the OnHPChanged delegate; adds NO HP state.
+	virtual FOnCombatantHPChanged& GetHPChangedDelegate() override { return OnHPChanged; }
 	virtual float GetHealthCurrent() const override { return GetCurrentHP(); }
 	virtual float GetHealthMax() const override { return GetMaxHP(); }
 	virtual bool IsHealthBarActorAlive() const override { return !IsUnitDead(); }
-	//~ End IHealthBarTarget Interface
+	//~ End IHealthBarProvider Interface
 
 	/** Applies incoming damage (no friendly fire, GDD §3.0) and destroys the unit at 0 HP. */
 	virtual float TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
@@ -313,7 +318,7 @@ protected:
 
 	/** Overhead poll-driven health bar (M5.5, TASK-110): hide-at-full, team-tinted. Added once here; AMinerUnit inherits it. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Unit")
-	TObjectPtr<UHealthBarComponent> HPBarWidget;
+	TObjectPtr<UCombatantHealthBarComponent> HPBarWidget;
 
 	/** DT_Cards row name whose stats drive this unit (BP_Unit_Footman sets Footman, TASK-010). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Unit")

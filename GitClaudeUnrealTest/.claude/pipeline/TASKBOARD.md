@@ -42,8 +42,8 @@ M5 shipped machine-verified with the desktop LOCKED (SendInput blocked → no si
 - ☐ Bot casts spells: push 3+ units into a cluster (Fireball rule 3a) and put 2+ units by a player tower (Lightning rule 3b) — grep LogSiegeBot for "Rule 3a/3b". Also watch the spell hand-clog + centroid-outlier carries (TASK-102 WARNs).
 - ☐ Play Again resets all spell state (freezes, buffs, reticle) alongside the existing reset.
 - Benign (no action, informational): stale LogCSVImportFactory "missing CardType" warnings on load — cards.csv + live DT_Cards verified correct; it's the import-factory enum quirk that set_rows sidesteps.
-5.5. **M5.5 — Overhead health bars** — `done-pending-playtest (2026-07-09, TASK-110..112 all done; commit 9a8a75f on main, NOT pushed [no branch — batch, not a milestone; m5-testable already preserves M5]. Functionally verified via PIE property readback; live on-screen bar appearance owed to Jonathan's playtest — see WATCH in TASK-112)` — Jonathan directive 2026-07-09 (direct in Claude Code): "add a health bar to every tower and character." A small standalone batch inserted between M5 and M6 (M4.5 shape), NOT a GDD milestone. Broadens GDD §7's enemy-only-when-damaged line to a floating overhead HP bar on EVERY combat actor, both teams — units (incl. miners), all buildings (towers, Wall, Barracks, Deep Mine), and the hero. Castles keep their existing M1 bar. Rulings + tasks in "M5.5 manager decisions" under Active tasks; naming law in CONVENTIONS "Overhead unit health bars (M5.5)". Jonathan's M6 go-ahead is given but M6 is decomposed AFTER this batch ships (separate step).
-6. **M6 — Deck-builder meta** — `current (decomposed 2026-07-09, TASK-113..121; Jonathan's direct M6 go-ahead after the M5.5 batch). Runs INDEPENDENT of parked M4.5 (Jonathan's ordering ruling — nobody blocks on the Fab drop). Rulings + tasks in "M6 manager decisions" under Active tasks; naming law in CONVENTIONS "Deck-builder & saved decks (M6)".` — Deck-builder screen (§7): browse the 28-card collection, add/remove copies with per-card MaxCopies enforced, live x/50 counter + average-cost guide (§8), save/load named decks (USaveGame, cross-session), a deck playable only at exactly 50; the active saved deck feeds the player's match, the bot gets 2 distinct curated decks; the `DeckCount` column is re-authored into a legal curated default that supersedes the M4/M5 test spread. **State preserved (undisturbed by M6):** M5 + M5.5 stay `done-pending-playtest` (m5-testable @ 979f552; M5.5 commit 9a8a75f; human WATCH lists still owed); M4.5 stays `parked` on Jonathan's Fab drop. Slice: UI/UX + save-load systems clip.
+5.5. **M5.5 — Overhead health bars** — `done-pending-playtest (2026-07-09, TASK-110..112 all done; commit 9a8a75f on main, NOT pushed [no branch — batch, not a milestone; m5-testable already preserves M5]. Functionally verified via PIE property readback; live on-screen bar appearance owed to Jonathan's playtest — see WATCH in TASK-112)` — Jonathan directive 2026-07-09 (direct in Claude Code): "add a health bar to every tower and character." A small standalone batch inserted between M5 and M6 (M4.5 shape), NOT a GDD milestone. Broadens GDD §7's enemy-only-when-damaged line to a floating overhead HP bar on EVERY combat actor, both teams — units (incl. miners), all buildings (towers, Wall, Barracks, Deep Mine), and the hero. Castles keep their existing M1 bar. Rulings + tasks in "M5.5 manager decisions" under Active tasks; naming law in CONVENTIONS "Overhead unit health bars (M5.5)". Jonathan's M6 go-ahead is given but M6 is decomposed AFTER this batch ships (separate step). **REOPENED 2026-07-09 by post-M6 playtest feedback (Item 1):** the hide-at-full behavior law is REVERSED to ALWAYS-VISIBLE (bar visible the entire time, fill drops as HP drops) + a fill bug fixed → TASK-122..124 in "M6 playtest feedback" under Active tasks; CONVENTIONS law updated.
+6. **M6 — Deck-builder meta** — `done-pending-playtest (2026-07-09, TASK-113..121 all done; ONE M6 commit 975ee90 on main, NOT pushed; m6-testable @ 975ee90 [4 ahead of origin]). Machine + live-PIE verified [deck-feed + fallback + bot-deck pick]; SaveGame save→relaunch persistence + live 28-tile grid click-through + cheat execs owed to Jonathan's playtest (locked desktop — see WATCH in TASK-120). 5 code tasks, 1 build-fix loop total [TASK-110-class was M5.5]; M6 had ZERO QA fail loops. OPEN CHECKPOINT ITEM: bot decks spell-free — QA recommends Lightning ×2 in Defensive Economy so the M5 bot-spell feature is exercised; Jonathan's call.` — Deck-builder screen (§7): browse the 28-card collection, add/remove copies with per-card MaxCopies enforced, live x/50 counter + average-cost guide (§8), save/load named decks (USaveGame, cross-session), a deck playable only at exactly 50; the active saved deck feeds the player's match, the bot gets 2 distinct curated decks; the `DeckCount` column is re-authored into a legal curated default that supersedes the M4/M5 test spread. **State preserved (undisturbed by M6):** M5 + M5.5 stay `done-pending-playtest` (m5-testable @ 979f552; M5.5 commit 9a8a75f; human WATCH lists still owed); M4.5 stays `parked` on Jonathan's Fab drop. Slice: UI/UX + save-load systems clip. **POST-M6 PLAYTEST FEEDBACK (2026-07-09) → TASK-122..126 in the current milestone** ("M6 playtest feedback" block under Active tasks): Item 1 = overhead health bars now always-visible + fill-drops fix (TASK-122..124); Item 2 = deck-builder tiles render as physical cards (TASK-125..126, blocked-by Item 1 per Jonathan's ordering).
 7. M7 — Premium art & feel pass — `not-started` · **Jonathan request (2026-07-04):** raise fidelity on SM_Castle + SM_Footman + SM_Archer (higher detail than the current blockouts); wants the game to look nicer. Decision: DEFERRED here (mesh swaps are non-breaking; roster still growing through M4-M6). Two integration paths to scope at M7: (a) art-director custom higher-detail Blender models, and/or (b) **Fab/UE-marketplace assets — Jonathan must download packs into the project via the Epic Launcher first (agents can't browse/buy/download Fab autonomously); art-director then swaps meshes/materials.** Could be pulled forward as a standalone art pass after M3/M4 if Jonathan wants it sooner.
 8. M8 — Networked 1v1 multiplayer — `not-started`
 
@@ -393,7 +393,7 @@ Dispatch shape: **WAVE 1 — FILE tasks, parallel-safe NOW: TASK-113 ∥ TASK-11
 
 #### TASK-120 — M6 final assembly: deck-builder PIE verification + commit + m6-testable (build)
 - assignee: build-master
-- status: in-progress (dispatched 2026-07-09; TASK-118 + TASK-119 ready-for-integration, all M6 code qa-passed + compiled at TASK-117)
+- status: done (2026-07-09; handoffs/TASK-120.md — commit 975ee90 on main [41 files], branch m6-testable cut at it, NOTHING pushed [main ahead 4]. Desktop LOCKED → machine-only. VERIFIED: compile clean, DT_Cards sum 50/0 cap violations, WBP_DeckBuilder parent=UDeckBuilderWidget, 2 bot decks via CDO, menu button opens deck-builder + Play/Sandbox/Quit intact, CheatClass wired; LIVE PIE: no-saved-deck → curated DeckCount fallback [byte-identical to TASK-114], bot builds 50 from OVERRIDE deck + logs 1-of-2 pick [override path = same code player active deck uses]. WATCH [owed to Jonathan, locked desktop — MCP has no UFUNCTION-invoke/console/Python to author a .sav headless]: SaveGame save→relaunch persistence, player active-deck feed, live 28-tile grid click-through, TASK-121 cheat execs. Residue: TASK-120.md handoff [post-commit hash insert] + WBP_CastleHealthBar boot-resave [not staged, reverts on editor close] — both safe)
 - blocked-by: TASK-118 (ready-for-integration) + TASK-119 (ready-for-integration)
 - parallel-safe: no
 - spec: >
@@ -419,6 +419,403 @@ Dispatch shape: **WAVE 1 — FILE tasks, parallel-safe NOW: TASK-113 ∥ TASK-11
     Assets/classes exactly as TASK-113..119 names blocks. Commit on `main`, message pattern "TASK-113..121:
     M6 deck-builder meta — WBP_DeckBuilder, USaveGame named decks, curated default + 2 bot decks, debug cheats".
     Cut branch `m6-testable` at the commit. No push.
+
+---
+
+### M6 playtest feedback (2026-07-09) — TASK-122..126 — decomposed 2026-07-09
+
+**Source:** Jonathan's post-M6 playtest, TWO items, direct to the orchestrator (current-milestone change requests — GDD-mode feedback flow: playtest notes become tasks in the CURRENT milestone, M6). **Item 1** = overhead health bars don't drop when hit + a DESIGN REVERSAL (bars visible the entire time). **Item 2** = the deck builder needs physical card displays. Jonathan's ordering: *"after that gets fixed"* → **Item 1 (TASK-122..124) lands BEFORE Item 2 (TASK-125..126).** This batch does NOT touch M5/M4.5 parked state; M6 stays `done-pending-playtest` with these fixes folded into its slice.
+
+**Ordering / parallel-safety ruling (for the orchestrator):** Item 1 and Item 2 touch DISJOINT files/assets — Item 1: `HealthBarComponent.cpp/.h` + `WBP_UnitHealthBar`; Item 2: `WBP_DeckCardTile` — so they are file-conflict-free. **BUT NOT dispatched concurrently:** (a) Jonathan explicitly sequenced Item 1 first, and (b) BOTH chains' editor/MCP tasks (TASK-123, TASK-125) and both build tasks need the SINGLE editor instance (CONVENTIONS: one editor-mutating task at a time). Ruling: **Item 2's TASK-125 is `blocked-by: TASK-124`.** The one thing that starts IMMEDIATELY (no blockers) is **TASK-122** (head of Item 1). Within Item 1 the chain is SERIAL — TASK-122 (code+diagnosis) → TASK-124 phase-A compile → TASK-123 (WBP repair) → TASK-124 phase-B (PIE+commit) — mirroring the M5.5 TASK-110→111→112 shape.
+
+**Decision block (each judgment call FLAGGED for QA + Jonathan):**
+1. **Item 1 is TWO changes, specced separately (do not conflate) — FLAG 1.** *1a* = the DESIGN REVERSAL: kill hide-at-full, bar visible the entire time the actor is alive (full HP included) — a deliberate override of the shipped M5.5 law (commit `9a8a75f`). CONVENTIONS "Overhead unit health bars (M5.5)" behavior law is UPDATED to always-visible, attributed to Jonathan + dated 2026-07-09. *1b* = the BUG: the fill never reflects HP. The programmer must NOT assume 1a fixes 1b — they may be independent (the fill is only driven while shown, and the WBP/reparent may be broken). Both live in TASK-122's scope; the WBP-side repair is TASK-123.
+2. **1b root-cause is UNVERIFIED — diagnose read-only FIRST — FLAG 2.** Highest-value first action (TASK-122 STEP 1, read-only MCP): (a) does `WBP_UnitHealthBar`'s `OnHPChanged` actually drive `SetPercent` in its GRAPH (an FName in the name table does NOT prove the graph is wired); (b) is `WBP_UnitHealthBar` actually reparented to `UUnitHealthBarWidget` — **a null `BarWidget` cast at `HealthBarComponent.cpp:80` is the PRIME SUSPECT: the component shows/hides the bar via its own `SetVisibility` regardless of `BarWidget`, so a null cast produces EXACTLY the "bar appears but never drops" symptom** (`OnHPChanged` at `:152-154` is guard-skipped when `BarWidget` is null); (c) is `HPBarWidget` constructed on all three families with the soft class resolving to `/Game/UI/WBP_UnitHealthBar`. Why the castle is unaffected: it is a PUSH-model delegate bar (`FOnCastleHPChanged`) — a wholly separate system from this POLL-model component. Do NOT touch the castle.
+3. **`bShowHealthBar` opt-out — OPEN QUESTION, flagged for Jonathan, NOT silently decided — FLAG 3.** Manager recommendation: **KEEP** the per-BP EditDefaultsOnly opt-out (default `true`). It is orthogonal to hide-at-full (it gates whether a TYPE carries a bar at all — e.g. suppress miner clutter — not WHEN a bar shows), and always-visible bars make it MORE useful, not less. TASK-122 keeps it. If Jonathan wants EVERY actor's bar always-on with zero exceptions, the opt-out can be dropped — his call (non-blocking; the recommended path ships either way).
+4. **Item 2 needs ZERO new C++ — art re-skin only — FLAG 4.** `UDeckBuilderWidget` ALREADY exposes every card-data resolver a card face needs (`GetCardArtTexture` / `GetCardDisplayName` / `GetCardCost` / `GetCardMaxCopies` / `GetCountOf`, DeckBuilderWidget.h:83-128). The hand's card face is INLINED in `WBP_CardHand` — NO shared card-face sub-widget exists to extract. Per Jonathan's explicit "for now" stopgap, TASK-125 REPRODUCES the hand's card-face composition in the EXISTING `WBP_DeckCardTile` (additive re-skin), rather than factoring out a shared widget (extraction deferred — the shape that reuse-over-authoring + additive-only-to-working-widgets both favor). No programmer task, no QA (art skips QA).
+5. **No new naming pattern needed — FLAG 5.** `WBP_DeckCardTile` and the card-face composition law already exist (M6 + "Card artwork (hand UI)"). CONVENTIONS got two RECORDING edits (not new asset types): the M5.5 hide-at-full REVERSAL, and an M6 note that `WBP_DeckCardTile` adopts the hand's card-face composition via the existing resolvers.
+
+**Exit criteria (feedback batch):** *(Item 1)* every unit / tower / wall / Barracks / Deep Mine / miner / hero overhead bar is VISIBLE at full HP and DROPS live as the actor takes damage, team-tinted, hidden only on death; castle unchanged (own bar, no duplicate); gold nodes none. *(Item 2)* the deck-builder's 28-card grid renders each tile as a physical card (art + name + cost, matching the hand), with +/−, counter, cap-grey, and legal-gated Play all still working. Recordable: overhead-bar drop clip + deck-builder physical-cards clip.
+
+**Dispatch shape:** **TASK-122 starts immediately** (head of Item 1, no blockers). Then SERIAL: TASK-124 phase-A compile → TASK-123 (WBP repair) → TASK-124 phase-B (PIE + commit). Then Item 2 SERIAL after Item 1: TASK-125 (tile re-skin) → TASK-126 (integration + commit). QA gates TASK-122 (shadow-scan + complete-type-include scan MANDATORY). Nothing here is dispatched concurrently across the two items (single editor + Jonathan's ordering).
+
+**LOOP-1 PLAYTEST FEEDBACK (2026-07-10) — ITEMs A/B/C added to the Item-1 chain (TASK-127/128 + a TASK-122 QA mandate):** Jonathan PIE'd the loop-1 DLL and confirmed *"the health bars are working, however … make the part of the bar that shows the health red if they are enemies and blue if they are friendly, and the background of the bar grey."* The `[TASK122DIAG]` runtime log (40 polls) confirms the fill now DRAINS on 23 actors. Three items: **A** — a QA RE-REVIEW MANDATE on TASK-122 (the fix WORKS but its stated root cause is REFUTED by that log; qa-reviewer must adjudicate LOAD-BEARING vs HARMLESS HARDENING and NOT close as "works, ship it" — full mandate in TASK-122's status; **NO new task ID, it rides TASK-122's already-pending QA loop-1**). **B** — the bar color scheme → **TASK-127** (art-director, WBP_UnitHealthBar): team-tinted fill + grey track + contrast; CONVENTIONS "Bar colors (ITEM B)" added, and the grey-as-authored-WBP-brush-vs-C++-data call is the manager's (ruling: authored WBP brush, canonical value recorded in CONVENTIONS — a static style, not per-actor data). **C** — strip the temporary `[TASK122DIAG]` logs → **TASK-128** (gameplay-programmer), gated between TASK-127 and the TASK-124 phase-B commit. **REVISED Item-1 chain (serial):** TASK-122 QA loop-1 (ITEM A verdict) → TASK-127 (ITEM B color) → TASK-128 (ITEM C strip, code→QA) → TASK-124 phase-B (recompile stripped + final PIE incl. the color/contrast hard gate + SINGLE Item-1 commit). Item-2 (TASK-125/126 deck-builder physical cards) stays queued behind the whole Item-1 chain (Jonathan's original "after that gets fixed"). **CLOSURE INSIGHT (from ITEM A's leading hypothesis):** if the loop-1 C++ is only harmless hardening, ITEM B (TASK-127) IS the real user-visible fix — 1b (the bar not dropping *visibly*) is NOT truly closed until TASK-127 lands. **What starts NOW:** qa-reviewer on TASK-122 with the ITEM A mandate (it is `ready-for-qa`).
+
+#### TASK-122 — Overhead health bars: reverse hide-at-full (always-visible) + fix the fill never dropping (C++ + read-only MCP diagnosis)
+- assignee: gameplay-programmer
+- status: **ready-for-qa (QA LOOP 2 — gameplay-programmer, 2026-07-10)** — Delivered: `LogDiag()` instrumentation of the ONLY unproven hop (`Percent` UPROPERTY → pixels) — captures widget Slate cached, the `Bar` ProgressBar's Slate cached + live `GetPercent`, `GetWidget()==BarWidget` identity, `IsInViewport`/`IsVisible`/`ownerHidden`/`tickEnabled`, `Space`/`DrawSize`; PLUS a labeled low-risk castle-aligned candidate fix (removed constructor `SetVisibility(false)`; BeginPlay seeds visibility from `bShowHealthBar`, killing the hide→show toggle the castle never does). **Castle diff MEASURED:** the InitWidget-order hypothesis is REFUTED (castle uses the identical `Super::BeginPlay`→`InitWidget(null)`→`SetWidgetClass` order); CDO read shows our `TickMode=Enabled` (component ticks continuously → weakens the visibility-toggle theory). **Root cause HONESTLY UNDETERMINED from static analysis** — leading candidates the log discriminates: `BarSlate=0` (the `Bar` SMyProgressBar not live when `SetPercent` runs — `GetPercent` reads the UPROPERTY so it can't tell) or `identity=0` (on-screen widget ≠ the `BarWidget` I push). **NEEDS TASK-124 phase-A compile + ONE PIE pass to read `[TASK122DIAG] LogDiag`;** final "fill visibly drains" is a human WATCH (screen-space Slate uncapturable, OVERNIGHT-AUTH §3). If loop 3 doesn't close it, escalate (§5). Details: `qa/TASK-122-report.md` "QA LOOP 2" + handoff "QA LOOP 2". Prior ITEM-A / loop-1 record retained below. — PRIOR: **qa-passed (ITEM A)** — orchestrator-proxied 2026-07-10 (qa-reviewer has no partial-edit tool). **RULING: the loop-1 C++ is HARMLESS HARDENING, NOT load-bearing.** Hypothesis H1 confirmed; H2 and H3 refuted. Evidence: (i) all three loop-1 deltas are non-visual (never-taken `CreateWidget` fallback, `ApplyTeamTint()` refactor with identical call/values/guard, `[TASK122DIAG]` logs) — the always-visible gate, the re-resolve, and the every-poll `OnHPChanged` push are byte-identical to round-1; (ii) `[TASK122DIAG]` shows `side-effect-created=YES` + cast `VALID` on 23/23 actors, so the programmer's "SetWidgetClass side-effect never fired" root cause is refuted by his own instrumentation and the fallback is dead code; (iii) UE 5.8 engine source (`WidgetComponent.cpp:2359` `SetWidgetClass`, `:1746` `InitWidget`) — our ctor sets only the SOFT `HealthBarWidgetClass`, so base `WidgetClass` starts null and BeginPlay's `SetWidgetClass` deterministically constructs the widget once `HasBegunPlay()`; no run-to-run null path exists in a PIE client world; (iv) TASK-123 was a no-op (WBP byte-identical across both PIE runs), so the fill rendered IDENTICALLY in both — round-1 was already draining and already pushing the tint. ~~The real defect was a WHITE fill on a white/near-white track~~ → **CORRECTION (orchestrator, 2026-07-10, post-TASK-127): THIS PREMISE IS FALSE; H1'S MECHANISM IS UNSUPPORTED AND THE ROOT CAUSE IS UNEXPLAINED.** TASK-127's readback found the track's `backgroundImage.tintColor` was **black `{0,0,0,0.5}`**, not white — only the FILL was white. A white/blue/red fill draining across a translucent black track would have been plainly visible AND plainly tinted, so "invisible due to low contrast" cannot explain round-1's report. The white-on-white story was an ORCHESTRATOR INFERENCE from a partial reading of the TASK-123 audit (which reported only `FillColorAndOpacity` and `fillImage.tintColor` as white, and never characterized the track); manager concurred and QA built ITEM A's ruling on top of it. It does not survive contact with the authored asset. **Standing state of knowledge:** round-1 = visible + frozen + untinted; loop-1 = draining; `WBP_UnitHealthBar` byte-identical across both PIE runs; the only loop-1 C++ delta the DIAG log proves executed is a functionally-identical `ApplyTeamTint()` refactor (fallback never ran — `side-effect-created=YES` 23/23). **RESOLVED 2026-07-10 — THE ANOMALY WAS A PHANTOM. Jonathan retracted the "bars are working" report:** *"I may have given you some bad information, the health bar does not seem to drop at all when the unit takes damage, for characters, hero, and towers, so that was never fixed."* **There was never a round-1 → loop-1 behavior flip.** The bar has not dropped in ANY build. Everything is now consistent and no mechanism needs inventing: the C++ demonstrably pushes correct falling values to a VALID widget every poll (`[TASK122DIAG]`: `BarWidget=VALID -> OnHPChanged PUSHED`, Knight 200→6, wall 300→152, hero 200→46.8), and the widget ignores them — in every build. **QA's ITEM A CONCLUSION STANDS AND IS CORRECT (loop-1 C++ = harmless hardening, KEEP it); only its supporting mechanism (H1 contrast) was wrong, and both it and the "unexplained flip" were artifacts of a mistaken playtest report.** No experiment needed. **The defect is inside `WBP_UnitHealthBar` — TASK-123 REOPENED.** Prime suspect: `OnHPChanged` / `SetTeamColor` authored as `K2Node_CustomEvent`s rather than true `bOverrideFunction=true` overrides of the C++ BlueprintImplementableEvents — indistinguishable in a DSL dump, wired identically, never called by C++, no "Accessed None". One structural cause for BOTH the frozen fill AND the missing tint. Standing lesson: a graph can be perfectly wired and never execute — prove execution, not structure. **VERDICT: KEEP the C++ (no churn revert) — the fallback is legitimate null-safe hardening and `ApplyTeamTint()` closes round-1 WARN-1. 1b IS NOT CLOSED BY TASK-122; the real user-visible fix is TASK-127.** Ship gates: TASK-128 must strip every `[TASK122DIAG]` line AND the orphaned `DiagPollCount` member before TASK-124 phase-B recompiles/commits (they log at Warning, per-actor per-poll). Dormant NIT: `bTeamTintApplied` keys on "tinted once ever", so a destroyed/recreated widget would re-resolve but early-out untinted — cannot occur today (Screen-space widget persists for the actor's life); fix by resetting the latch when `BarWidget` is reassigned, if ever needed. Report: `qa/TASK-122-report.md` "QA LOOP 1 — ITEM A adjudication" (0 BLOCKER / 2 WARN / 2 NIT). Prior loop context retained below for the record. Loop context: Jonathan PIE'd the new DLL (editor started 23:45:25 > DLL 23:42:34, and bars ARE always-visible, so he IS on the new code): *"the health bars are now always visible, but they still do not drop when the characters and tower take damage."* **1a shipped; 1b NOT fixed.** Two prior verdicts are now EMPIRICALLY REFUTED: (i) the programmer's "1b was merely a symptom of 1a", and (ii) art-director's TASK-123 elimination of `BarWidget == nullptr` (it proved only that `WidgetClass` was set, not that `GetWidget()` returned a castable widget). **Decisive new evidence from Jonathan: overhead bars are NOT team-tinted on EITHER team, and the hero DOES have a bar** (so art-director's "hero bar hidden" was an editor-time artifact, not PIE behavior). `SetTeamColor` (`HealthBarComponent.cpp:86`) and `OnHPChanged` (`:162`) sit behind the SAME `if (BarWidget)` guard, while `SetVisibility` (`:144`) runs AHEAD of it — a persistently-null `BarWidget` explains visible + frozen + untinted in one stroke. The self-healing re-resolve (`:153-156`) is NOT rescuing it: had it ever succeeded, the fill would work and only the tint would be missing (WARN-1's exact signature) — we observe neither. Suspect site: `SetWidgetClass(LoadedWidgetClass)` → `Cast<UUnitHealthBarWidget>(GetWidget())` at `:75-76`. WARN-1's `ApplyTeamTint()` fix is PRE-AUTHORIZED into this loop. Prior verdict retained for the record: (qa-passed, orchestrator-proxied 2026-07-09 — qa-reviewer has no partial-edit tool. Report: `qa/TASK-122-report.md` — 0 BLOCKER / 1 WARN / 3 NIT. WARN-1: the self-healing BarWidget re-resolve heals the fill but NOT the team tint (SetTeamColor runs only in BeginPlay), so a late-resolved widget renders untinted; dead code in the common path, becomes ship-blocking only if TASK-124 phase-B PIE shows the deferred-widget path is live. QA ruling on the orchestrator's doubt: an edge-gated OnHPChanged push (a hidden second bug) is REFUTED — the old code pushed every poll, guarded only by `if (BarWidget)`. Truth is most likely imprecise observation compounded by hide-at-full, BUT a WBP-render defect (graph wires SetPercent; the ProgressBar fill *brush* may not reflect percent) and a runtime-null BarWidget remain OPEN — neither is statically provable. The always-visible C++ fix is necessary but NOT proven sufficient. TASK-123/124 PIE must therefore be a hard gate: "fill visibly moves AND is team-tinted, both teams" — no rubber-stamp.) **MANAGER AMENDMENT 2026-07-10 (ITEM A — QA RE-REVIEW MANDATE, binding on this loop; supersedes the "still do not drop" note above with the latest PIE result):** the loop-1 DLL was PIE'd and the `[TASK122DIAG]` log is now IN HAND — 40 polls show the fill DRAINS (Current<Max: hero 200→160→60→128 w/regen, archer 45→25, cavalry 140→80; each `BarWidget=VALID -> OnHPChanged PUSHED` across 23 actors). Jonathan's loop-1 verdict: *"the health bars are working, however … make the fill red for enemies / blue for friendly and the background grey"* → 1b (drain) now WORKS; the remaining ask is ITEM B color (TASK-127). **THE ANOMALY QA MUST ADJUDICATE (do NOT close as "works, ship it"):** the programmer's stated root cause — "SetWidgetClass construction side-effect never fired → GetWidget() null" — is REFUTED by the very log that proves the fix: all 23 actors logged `side-effect-created=YES` + cast `VALID`, and the explicit CreateWidget fallback NEVER executed. `git diff` shows the loop-1 change is functionally NEAR-IDENTICAL to the round-1 code that FAILED (same SetWidgetClass→GetWidget→Cast→`if (BarWidget)` shape); the only real deltas are the never-taken fallback, the `ApplyTeamTint()`/`bTeamTintApplied` refactor, and the `[TASK122DIAG]` logs — none of which plausibly explains why round-1 read visible+frozen+untinted and loop-1 reads draining. **qa-reviewer MUST state PLAINLY whether the loop-1 C++ change is LOAD-BEARING or merely HARMLESS HARDENING**, adjudicating against the diff + log. Leading hypothesis (manager + orchestrator concur): the C++ was never the bug — round-1 was draining too, but a WHITE fill on a white/near-white track (TASK-123 audit) made it imperceptible and "untinted" was the SAME contrast miss → the real user-visible fix is ITEM B (TASK-127), so the bug is NOT truly closed until TASK-127 lands; QA states whether closure depends on it. A PASS may KEEP the C++ as harmless defensive hardening — the deliverable is the recorded KNOWLEDGE (qa/TASK-122-report.md), not a further code change. The `[TASK122DIAG]` logs are stripped by TASK-128 before the TASK-124 phase-B commit.
+- blocked-by: none
+- parallel-safe: yes file-wise vs Item 2 (touches HealthBarComponent.cpp/.h only — disjoint from WBP_DeckCardTile); but it is the HEAD of a serial Item-1 chain and its read-only diagnosis uses the single editor
+- spec: >
+    Files + a READ-ONLY MCP diagnosis pass (NO editor mutation) — the fix for Jonathan's playtest report:
+    "the overhead bars on the characters and towers do not drop when they get hit; the castle health bar is
+    still working fine, all others are not." TWO changes, per the REVERSED CONVENTIONS "Overhead unit health
+    bars (M5.5)" behavior law. Do NOT assume 1a fixes 1b — spec treats them as possibly independent.
+    STEP 1 — DIAGNOSE FIRST (read-only, via Unreal MCP BlueprintTools; the editor is up). Verify and RECORD
+    in the handoff BEFORE touching code: (a) does `/Game/UI/WBP_UnitHealthBar`'s `OnHPChanged` BIE actually
+    drive the ProgressBar `SetPercent(Current/Max)` in its GRAPH (an FName in the name table does NOT prove
+    the graph is wired); (b) is `WBP_UnitHealthBar` actually REPARENTED to `UUnitHealthBarWidget` so the
+    `Cast<UUnitHealthBarWidget>(GetWidget())` at HealthBarComponent.cpp:80 returns NON-NULL — a null BarWidget
+    is the PRIME SUSPECT: the component's own SetVisibility show/hide runs regardless of BarWidget, so the bar
+    would APPEAR on damage yet the fill would never update (OnHPChanged at :152-154 is guard-skipped), matching
+    the symptom exactly; (c) is a `UHealthBarComponent` named `HPBarWidget` actually constructed on all three
+    families (ASummonedUnit, ABuilding, AHeroCharacter) and does `HealthBarWidgetClass` soft-resolve to
+    `/Game/UI/WBP_UnitHealthBar`. Context (do NOT re-derive — hand to the fix): the castle works because it is
+    a PUSH-model delegate bar (FOnCastleHPChanged, Castle.h), everything else is this POLL-model component
+    (~0.15 s timer) — TWO independent systems. Do NOT touch ACastle.
+    STEP 2 — 1a DESIGN REVERSAL (C++, HealthBarComponent.cpp PollHealth ~:130): make the bar VISIBLE the whole
+    time the actor is alive + opted-in, at FULL HP included. Change the show-gate from
+    `bShowHealthBar && bAlive && (Current < Max - HealthBarFullEpsilon)` to `bShowHealthBar && bAlive` (retire
+    the hide-at-full epsilon term from the show/hide decision). Hide ONLY on !alive/destruction and when
+    `bShowHealthBar` is false. KEEP the per-BP `bShowHealthBar` opt-out (default true) — see the CONVENTIONS
+    OPEN QUESTION (FLAG 3); do NOT remove it (Jonathan's call).
+    STEP 3 — 1b FILL BUG: ensure `OnHPChanged(Current, Max)` is pushed to a NON-NULL BarWidget every poll while
+    shown, so the fill reflects HP live INCLUDING at full (SetPercent 1.0). After 1a "shown" == "alive", so the
+    push is driven every poll — BUT if STEP 1 finds BarWidget null / the WBP graph unwired, the C++ change alone
+    will NOT move the fill; that repair belongs to TASK-123. Land the C++ side here and HAND the WBP finding to
+    TASK-123 in the handoff. NO new HP fields (bind the existing getters); everywhere null-safe; ZERO combat/
+    stat behavior change. ACCEPTANCE: compiles warnings-as-errors; the bar shows whenever alive+opted-in (full
+    HP included); OnHPChanged is driven every poll while shown; the (a)(b)(c) diagnosis is recorded in the
+    handoff. → qa-reviewer (MANDATORY inherited-reflected-member shadow scan AND complete-type-include scan —
+    CONVENTIONS coding laws). Post progress/handoff in ⚙️ Dev & QA (`⚙️ GAMEPLAY-PROGRAMMER: … TASK-122`).
+- names: >
+    `HealthBarComponent.cpp/.h` (Source/GitClaudeUnrealTest/Siegebound/) — PollHealth show-gate + fill drive.
+    Keep EditDefaultsOnly `bShowHealthBar` (default true). Reuse only (do NOT redefine): IHealthBarTarget
+    GetHealthCurrent()/GetHealthMax()/IsHealthBarActorAlive(); UUnitHealthBarWidget::OnHPChanged(float,float)/
+    SetTeamColor(float,float,float); /Game/UI/WBP_UnitHealthBar. Diagnose (read-only): WBP_UnitHealthBar graph
+    wiring + reparent to UUnitHealthBarWidget + HPBarWidget construction on ASummonedUnit/ABuilding/AHeroCharacter.
+    Law: CONVENTIONS "Overhead unit health bars (M5.5)" (reversed 2026-07-09). Do NOT touch ACastle / its HPBarWidget.
+
+#### TASK-123 — WBP_UnitHealthBar: repair/verify OnHPChanged→SetPercent + reparent + full-bar render (editor)
+- assignee: art-director
+- status: REOPENED round-3 CLOSED — widget EXONERATED by execution-level proof → needs-orchestrator-routing (art-director 2026-07-10; handoff `handoffs/TASK-123.md` REOPENED section). Prime hypothesis (BIEs authored as Custom Events) REFUTED: both OnHPChanged & SetTeamColor are genuine `K2Node_Event` overrides (same class + type_id as the working WBP_CastleHealthBar control), NOT K2Node_CustomEvent. Temporary PrintString diagnostics PROVED both events FIRE at runtime (OHC every poll, STC once/widget). DECISIVE `GetPercent` live readback PROVED the ProgressBar's actual Percent DROPS and HOLDS: hero bar 0.85→0.775→0.7 as it took combat damage; full units read 1.0 → SetPercent sticks, no reset/binding, fill fraction genuinely drops. All fallbacks refuted: divide=Current/Max (castle-identical); BarFillStyle=Scale (castle-identical); single ProgressBar (CDO exposes one `bar`); guard MaxHP>0 taken. The whole chain C++(falling values)→OnHPChanged(fires)→SetPercent(Bar.Percent drops & holds) is proven working; only Percent→pixels is unobservable headless (works for castle w/ identical config). ⇒ NO widget-asset defect; nothing to fix in WBP_UnitHealthBar. Diagnostics fully removed, graph restored to clean TASK-127 state (11 nodes, DSL matches), compiled clean, SAVED (is_dirty=false), TASK-127 grey track kept. ROUTING: either (a) fill drops now & report is stale (Jonathan retracted a prior report; TASK-127 fixed the black-on-black contrast) — Jonathan visual re-verify; or (b) screen-space UWidgetComponent (UHealthBarComponent, C++) presentation/refresh — route to gameplay-programmer, diff its render/redraw settings vs ACastle::HPBarWidget. NO Source/ edit, NO Git, castle/menu untouched, [TASK122DIAG] C++ logs left for TASK-128.
+- blocked-by: TASK-122 (needs its recorded diagnosis + the phase-A compile from TASK-124 to PIE-verify the always-visible behavior)
+- parallel-safe: no (editor-mutating — single editor instance; the fix depends on TASK-122's diagnosis)
+- spec: >
+    Editor/MCP only — needs the editor MCP up (else park + tell the orchestrator). Close the 1b fill bug on
+    the WIDGET side and confirm the 1a always-visible rendering, per the REVERSED CONVENTIONS "Overhead unit
+    health bars (M5.5)" law and TASK-122's recorded diagnosis. On `/Game/UI/WBP_UnitHealthBar`: (1) CONFIRM it
+    is REPARENTED to `UUnitHealthBarWidget` (readback the parent class — if not, reparent it; a wrong/missing
+    parent makes HealthBarComponent.cpp:80 Cast<UUnitHealthBarWidget> null → OnHPChanged never fires → the fill
+    never moves). (2) VERIFY/REPAIR the graph so the `OnHPChanged(float CurrentHP, float MaxHP)` BIE actually
+    drives the ProgressBar `SetPercent(CurrentHP / MaxHP)` guarding MaxHP > 0 (the WBP_CastleHealthBar
+    contract); check the ProgressBar has NO competing Percent binding/override that ignores SetPercent. (3)
+    Confirm `SetTeamColor(float R,float G,float B)` still tints the FILL brush. (4) Confirm a FULL bar renders
+    VISIBLY FULL (SetPercent 1.0) now that the bar is shown at full HP — hide-at-full meant a full bar was
+    NEVER displayed before, so this render path is newly exercised; the track + fill must read cleanly at full.
+    Keep it HitTestInvisible, compact (90×12 DrawSize), no baked text. ADDITIVE to WBP_UnitHealthBar ONLY — do
+    NOT touch WBP_CastleHealthBar (castle keeps its own working delegate bar) or any other widget. If TASK-122's
+    diagnosis proved the graph + reparent already correct, this is a verify-and-confirm pass (record it) — do
+    NOT re-author a working graph. Art skips QA → build-master integration check (TASK-124). Post the handoff in
+    🎨 Art (`🎨 ART-DIRECTOR: … TASK-123`) with the parent-class + OnHPChanged→SetPercent wiring readback.
+- names: >
+    `WBP_UnitHealthBar` at /Game/UI/WBP_UnitHealthBar, parent class `UUnitHealthBarWidget`. BIEs:
+    OnHPChanged(float CurrentHP, float MaxHP) → ProgressBar SetPercent(guard Max>0); SetTeamColor(float R,
+    float G, float B) → fill brush tint. Donor (if a rebuild is ever needed): /Game/UI/WBP_CastleHealthBar.
+    Do NOT touch WBP_CastleHealthBar.
+
+#### TASK-124 — Health-bar fix integration: compile + always-visible/fill-drop PIE verify + commit (build)
+- assignee: build-master
+- status: phase-A DONE (2026-07-10; loop-1 DLL compiled clean 00:51:28 — unblocked the WBP/color work). phase-B PENDING the ITEM A qa verdict + TASK-127 (ITEM B color) + TASK-128 (diagnostics stripped). **MANAGER AMENDMENT 2026-07-10:** phase-B PIE now ALSO hard-gates Jonathan's ITEM B color scheme — fill BLUE friendly / RED enemy, unfilled track GREY, unmistakable contrast, both teams (the "fill visibly moves AND is team-tinted" gate from TASK-122) — and REQUIRES the `[TASK122DIAG]` logs removed (TASK-128) before it recompiles + commits. Keep the diagnostics ON through the color PIE check; TASK-128 strips them LAST, immediately before this commit. One Item-1 commit covers TASK-122/124 + 127 + 128 (TASK-123 was a no-op diagnosis).
+- blocked-by: TASK-127 (ready-for-integration, ITEM B color) + TASK-128 (qa-passed, diagnostics stripped); TASK-122 ITEM-A qa verdict recorded; TASK-123 closed not-asset-side
+- parallel-safe: no
+- spec: >
+    Build-master integration for the health-bar fix (TASK-112 two-phase pattern). SINGLE owner, TWO PHASES:
+    (PHASE A) compile the TASK-122 C++ change via the standard Build.bat command (editor-bounce protocol — the
+    editor releases the DLL) so the reversed always-visible component behavior is live and
+    `UUnitHealthBarWidget`/`UHealthBarComponent` are present — this UNBLOCKS TASK-123 (the WBP repair needs the
+    compiled behavior to PIE-verify against). Pre-compile: scan the change for inherited-reflected-member
+    shadows + the complete-type-include law (CONVENTIONS). Any error → append to TASK-122's QA report, set
+    qa-failed, stop (counts as a QA loop; build-master never edits code).
+    (PHASE B — after TASK-123's WBP lands) re-verify the build compiles clean warnings-as-errors, then run the
+    PIE suite in a Play-vs-Bot session in L_Arena: every friendly unit, tower, wall, Barracks, Deep Mine, miner,
+    and the hero shows an overhead bar that (a) is VISIBLE at FULL HP (the reversal — no longer hidden at full),
+    (b) DROPS live as the actor takes damage (the fill reflects Current/Max — the bug), (c) is team-tinted (blue
+    friendly; red via the bot's units/towers), (d) hides only on death/destruction, and (e) the castle still
+    shows ONLY its own delegate bar (no duplicate) and gold nodes show none. Drive damage headlessly with the
+    TASK-121 cheats (`ApplyTestDamage`, `SummonTestUnit`) to sidestep the locked-desktop no-input debt; record
+    any residual on-screen-pixel confirmation as owed to Jonathan's playtest (Slate widgets are uncapturable
+    headless — the TASK-112 WATCH). If the editor MCP is down, compile via Build.bat and report the PIE items as
+    owed (never fake). On PASS: commit code + WBP_UnitHealthBar with the task-ID message. Do NOT push, NO new
+    branch (a fix batch, not a milestone slice — m6-testable already preserves M6). Build failure → append
+    errors to the offending task's QA report and route back to gameplay-programmer (counts as a QA loop). Post
+    compile result + commit hash in 🔧 Build & Git (`🔧 BUILD-MASTER: … TASK-124`).
+- names: >
+    Assets/classes exactly as the TASK-122/123/127/128 names blocks. Commit on `main`, message pattern
+    "TASK-122..124/127/128: overhead health bars — always-visible, fill tracks HP, blue/red team fill + grey
+    track (hide-at-full reversed per Jonathan; diagnostics stripped)". No push, no branch.
+
+#### TASK-125 — WBP_DeckCardTile: render as a physical card (same in-game card art) + above-card in-deck copy count (editor)
+- assignee: art-director
+- status: ready-for-integration (art-director 2026-07-10; handoff `handoffs/TASK-125.md`). WBP_DeckCardTile re-skinned, compiled clean, SAVED (is_dirty=false). NO C++, NO Git; WBP_CardHand/WBP_DeckBuilder/WBP_UnitHealthBar/WBP_CastleHealthBar/WBP_MainMenu untouched. (1) CARD ART: new CardArtBorder (fill, SelfHitTestInvisible) brush = GetCardArtTexture(CardID) — the SAME T_CardArt_<CardID> the hand uses — applied once in SetupCell. (2) ABOVE-CARD COUNT: new CopyCountText (font22) in a top-right dark plate (black@0.65), plain GetCountOf (in-progress WorkingDeck); /max DROPPED (cap-grey still signals cap). (3) Name/Cost in a bottom dark caption plate (black@0.55) = legibility guard. +/− + cap-grey KEPT. NODE-CLASS CHECK (anti-custom-event): WBP_DeckBuilder OnDeckModelChanged + OnDeckSlotCountChanged = genuine K2Node_Event overrides (AddEvent|Siegebound|Deck|...) → RefreshAll → RefreshCell WILL fire. [TASK125DIAG] PrintString LEFT LIVE in RefreshCell (fires on Jonathan's +/−); TASK-126 must STRIP it (mirror TASK-128). Could NOT machine-run the +/− click (deck builder opens only via a menu click; locked desktop, no SendInput, no MCP UFUNCTION/exec to trigger AddCopy) → count-updates-on-click + legibility-over-art + art-renders = HUMAN WATCH owed to Jonathan (TASK-126 carries). AssignOnClicked MCP quirk recurred (buttons auto-bound to empty OnClicked_Event_13/14) → FIXED by authoring RemoveCopy/AddCopy bodies into those bound events (verified wired, single instances); OnAddPressed/OnRemovePressed now orphaned dupes + donor cruft = M7 sweep. Card is content-sized (fixed card size lives in WBP_DeckBuilder WrapBox slot, not touched) = sizing polish follow-up.
+- blocked-by: TASK-124 (Jonathan's ordering — Item 1 lands first; and the single-editor rule serializes it after the Item-1 editor/build work)
+- parallel-safe: no (editor-mutating — single editor instance; sequenced after Item 1)
+- spec: >
+    Editor/MCP only — needs the editor MCP up (else park + tell the orchestrator). Jonathan playtest request:
+    the deck builder "needs to have physical cards displayed so I can test properly — just use the same displays
+    you did for the card displays … for the actual match … for now." Re-skin the EXISTING per-card tile
+    `/Game/UI/WBP_DeckCardTile` (created in TASK-118) so each browser-grid cell RENDERS AS AN ACTUAL CARD using
+    the SAME card-face treatment as the in-match hand (`WBP_CardHand`), per CONVENTIONS "Deck-builder & saved
+    decks (M6)" (the WBP_DeckCardTile card-face note) + "Card artwork (hand UI)" Face composition law. NO new
+    C++ and NO new asset: reproduce the card-face composition — the `T_CardArt_<CardID>` texture as the
+    BACKGROUND layer, DisplayName + Cost overlaid legibly on top (translucent contrast strip / shadow behind
+    text allowed), art HitTestInvisible. Drive EVERYTHING from the EXISTING `UDeckBuilderWidget` resolvers the
+    tile already reaches (the same reference its +/− buttons use to call AddCopy/RemoveCopy): `GetCardArtTexture
+    (CardID)` (background art; null → text-only face fallback = today's look), `GetCardDisplayName(CardID)`,
+    `GetCardCost(CardID)`, plus the existing `GetCountOf(CardID)` / `GetCardMaxCopies(CardID)` for the copy
+    counter + cap-grey. KEEP the tile's existing +/− buttons (AddCopy/RemoveCopy) and count wiring from TASK-118
+    fully INTACT — this is a VISUAL re-skin, additive only. Do NOT touch `WBP_CardHand` (the hand's face is
+    inlined there — no shared card-face sub-widget exists to extract; extraction is explicitly deferred per
+    Jonathan's "for now") and do NOT touch `WBP_DeckBuilder`'s grid / counter / legality logic. ACCEPTANCE: each
+    grid tile shows the card art + name + cost like a hand card; the +/−, count, and cap-grey still work;
+    WBP_CardHand and WBP_DeckBuilder grid logic unchanged. Art skips QA → build-master integration check
+    (TASK-126). Post the handoff in 🎨 Art (`🎨 ART-DIRECTOR: … TASK-125`) with the asset path.
+- names: >
+    `WBP_DeckCardTile` at /Game/UI/WBP_DeckCardTile (existing, TASK-118). Card-face = T_CardArt_<CardID> art
+    background + DisplayName + Cost overlay (CONVENTIONS Face composition). Drive via existing UDeckBuilderWidget
+    resolvers: GetCardArtTexture(FName)/GetCardDisplayName(FName)/GetCardCost(FName)/GetCountOf(FName)/
+    GetCardMaxCopies(FName). Do NOT touch WBP_CardHand or WBP_DeckBuilder grid logic; keep the tile's AddCopy/
+    RemoveCopy +/− wiring.
+- **MANAGER AMENDMENT 2026-07-10 (Jonathan sharpened requirements — two parts):** verbatim: *"add the card visuals … just use the same images that were generated for the in-game cards … Also, add a number above each card that shows how many you have of it in the current deck build."*
+    (1) **Card visuals = the SAME in-game images (CONFIRMED against the header, ZERO new C++).** `UDeckBuilderWidget` (DeckBuilderWidget.h:83-128) already exposes `GetCardArtTexture`/`GetCardDisplayName`/`GetCardCost`/`GetCardMaxCopies`/`GetCountOf`; `GetCardArtTexture` resolves the SAME `T_CardArt_<CardID>` textures the hand uses (CONVENTIONS "Card artwork (hand UI)"). No resolver is missing → NO programmer task. If art-director finds a resolver actually absent at author time, STOP and tell the orchestrator — do NOT add C++ yourself.
+    (2) **Above-card copy count — RULING: (b) reposition/restyle an EXISTING element, NOT new C++, WITH a (c) legibility guard.** Evidence (handoffs/TASK-118.md:17-22): the tile ALREADY has a `CountText` TextBlock driven by `GetCountOf`, today rendered as "count/max" in the BOTTOM `HBox[− CountText +]`. `GetCountOf` is CONFIRMED to return the IN-PROGRESS working deck's copies (DeckBuilderWidget.cpp:134-137 reads `WorkingDeck.Cards[Index].Count`), NOT the saved deck — correct data source. Deliverable: PRESENT that count as a PROMINENT NUMBER ABOVE the card face (the copies-in-current-build count — a "×2"/"2" badge at the top of the tile) — repositioning + restyling the existing count, NO new data path. Drop the "/max" ratio above the card (the "+"-greys-at-cap already signals the cap); show the plain in-deck count. **(c) GUARD — the health-bar failure mode in miniature:** once the card ART becomes the tile background, the count number AND the name/cost overlay can go invisible/illegible against the art (exactly the white-fill-on-white-track bug this session burned three root causes on). The count + text MUST be verified LEGIBLE on top of the art (contrast strip / outline / drop shadow), not merely present in the widget tree.
+    (3) **RUNTIME-EXECUTION CONSTRAINT (hard-won this session — bake it in, do NOT skip):** the tile's on-screen count updates through a C++→BP path — `AddCopy`/`RemoveCopy` fire `OnDeckModelChanged()` / `OnDeckSlotCountChanged()` (BIE overrides on WBP_DeckBuilder) → `RefreshAll()` → each tile's `RefreshCell()`. Graph structure ("the nodes are wired", `bIsImplemented:true`) does NOT prove execution: a BIE authored as a `K2Node_CustomEvent` instead of a true `bOverrideFunction=true` override is DSL-INDISTINGUISHABLE and is NEVER called from C++ (the exact defect class that hid behind TASK-122's graph readbacks). VERIFY the refresh path EXECUTES at runtime — a `Print String` / `[TASK125DIAG]` log inside `RefreshCell` (or the BIE) proving the above-card number ACTUALLY changes on a +/− click — not merely that the graph exists. Strip that diag before handing to TASK-126, or flag it for TASK-126 to strip (mirror TASK-128).
+    (4) **On-screen truth = human WATCH.** If art-director cannot see rendered pixels (screen-space Slate is uncapturable headless; locked desktop = no input), NAME the "count visible + legible over art + updates on +/−" check as a human WATCH owed to Jonathan — never infer it from tree structure. TASK-126 carries it. names addition: above-card count element (reposition the existing `CountText`, or a new `CopyCountText`) driven by `GetCountOf`, styled legibly over the art, ABOVE the card face.
+    Sequencing UNCHANGED: TASK-125 stays blocked-by the whole Item-1 health-bar chain (reopened TASK-123 → TASK-128 → TASK-124 phase-B); Jonathan reconfirmed "after that finishes"; TASK-125 is editor-mutating so it serializes against TASK-123 on the single editor. Do NOT dispatch early.
+
+#### TASK-126 — Deck-builder physical-cards integration: PIE verify + commit (build)
+- assignee: build-master
+- status: done (commit 274c160, 2026-07-10 — WBP_DeckCardTile.uasset only, LFS pointer; not pushed)
+- blocked-by: TASK-129 (strip [TASK125DIAG] first) — TASK-125 APPROVED by Jonathan 2026-07-10 (*"the deck builder fixes are fine"*; human WATCH satisfied)
+- parallel-safe: no
+- spec: >
+    Build-master integration for the deck-builder physical-cards re-skin (art-only chain — no new C++). Re-verify
+    the build compiles clean warnings-as-errors (the editor bounce may have touched the DLL). PIE from L_MainMenu
+    → Deck Builder: confirm the 28-card grid now renders each tile as a PHYSICAL CARD (art background + name +
+    cost, matching the in-match hand look); the +/− still add/remove copies; the x/50 counter, average-cost
+    readout, cap-grey, and the legal-gated "Play with this deck" all still work (TASK-120 behavior preserved);
+    WBP_CardHand and the rest of WBP_DeckBuilder are visually/functionally unchanged. Live click-through of the
+    grid is a human WATCH on the locked desktop (no SendInput — TASK-076/112 doctrine): machine-verify the tile
+    renders the art + text and record the click-feel as owed to Jonathan. If the editor MCP is down, report the
+    PIE items as owed (never fake). On PASS: commit `WBP_DeckCardTile` (+ any WBP_DeckBuilder tile-instance
+    deltas) with the task-ID message. Do NOT push, no new branch. Post compile/verify result + commit hash in
+    🔧 Build & Git (`🔧 BUILD-MASTER: … TASK-126`).
+- names: >
+    `WBP_DeckCardTile` per the TASK-125 names block. Commit on `main`, message pattern "TASK-125..126: deck-
+    builder tiles render as physical cards (same in-game card art) + above-card in-deck copy count". No push, no branch.
+- **MANAGER AMENDMENT 2026-07-10 (verify Jonathan's sharpened requirements):** the PIE suite ALSO hard-gates — (a) each tile renders the SAME in-game card art (`T_CardArt_<CardID>` via `GetCardArtTexture`) as the hand; (b) a PROMINENT copy-count number ABOVE each card face shows the IN-PROGRESS deck count (`GetCountOf`) AND it ACTUALLY UPDATES on a +/− click at RUNTIME (execution-proven via the TASK-125 `[TASK125DIAG]` / Print String — NOT graph readback; watch for a BIE authored as a CustomEvent that never fires); (c) the count + name + cost are LEGIBLE over the art (the white-on-white failure mode). If any `[TASK125DIAG]` diag survives, STRIP it before commit (mirror TASK-128). Live click-through on the locked desktop is a human WATCH owed to Jonathan — record it explicitly; never infer on-screen legibility / count-update from the widget tree.
+- **MANAGER AMENDMENT 2026-07-10 #2 (Directive 1 — APPROVED, SCOPED COMMIT):** Jonathan approved the deck-builder (*"the deck builder fixes are fine"* — the human WATCH is satisfied; card art + above-card count both accepted). Commit it NOW, but **SCOPE THE COMMIT TO `Content/UI/WBP_DeckCardTile.uasset` ONLY.** It must NOT sweep in any health-bar work (`HealthBarComponent.cpp/.h`, `WBP_UnitHealthBar.uasset`, or any Source/ rebuild files) — those are being TORN DOWN + rebuilt (TASK-130..132) and must not ride this commit. NO compile needed (TASK-129 removed a Blueprint node, not C++; verify the build is still clean but expect no code delta). Do NOT revert the WBP_CastleHealthBar / WBP_MainMenu churn here — that folds into the rebuild commit (TASK-132). Commit message: "TASK-125/126/129: deck-builder tiles render as physical cards + above-card in-deck copy count". No push, no branch.
+
+#### TASK-127 — WBP_UnitHealthBar bar colors: team-tinted fill (blue friendly / red enemy) + grey track + contrast (editor)
+- assignee: art-director
+- status: **SUPERSEDED 2026-07-10 by the health-bar REBUILD (TASK-130..132)** — Jonathan: the bars STILL do not visibly drop, directed a rebuild from scratch; this task's target `WBP_UnitHealthBar` is DELETED by TASK-132. NOTE FOR THE RECORD: this task's machine-level "fill drive PROVEN via [TASK122DIAG]" is EXACTLY the trap the rebuild's screenshot gate exists to catch — `OnHPChanged` PUSHED + HP decreasing does NOT prove the rendered pixels moved; the on-screen result stayed a frozen bar. Prior status retained below. ~~ready-for-integration (art-director 2026-07-10; handoff `handoffs/TASK-127.md`). WBP_UnitHealthBar `Bar` track authored to canonical grey `backgroundImage.tintColor=(0.03,0.03,0.03)@0.7` (was black (0,0,0)@0.5); fill `fillImage.tintColor` verified white (identity) so the C++-pushed `SetTeamColor` blue/red shows undimmed; fill color stays C++ data (NOT hardcoded); grid fill material KEPT (parity with the known-good WBP_CastleHealthBar, which uses the identical brush legibly). Compiled clean + saved (is_dirty=false) → also supersedes the churn-only WBP_UnitHealthBar residue. PIE(L_Arena, real combat) `[TASK122DIAG]` PROVES fill-drive + tint path end-to-end: BarWidget=VALID + OnHPChanged PUSHED with live DECREASING HP on units (Knight 200→6, Cavalry 140→20, Longbowman 70→25, Ogre 500→386), TOWERS/walls (Wall 300→152; ArrowTower×3), and the hero (200→46.8→200; TASK-123 hero bVisible anomaly did NOT reproduce) — both teams (hero=Blue, bot units+towers=Red). Zero LogBlueprint errors. RESIDUAL HUMAN WATCH (does not block commit): on-screen pixel colors/contrast — screen-space Slate uncapturable + live widget FillColorAndOpacity unserializable (TASK-112 WATCH). No Git, no Source/ edit, WBP_CastleHealthBar/WBP_MainMenu untouched, [TASK122DIAG] logs left for TASK-128.
+- blocked-by: TASK-122 (ITEM A qa verdict — B may BE the original bug's fix, so it lands after QA adjudicates; TASK-123's WBP audit is the input evidence)
+- parallel-safe: no (editor-mutating — single editor instance; WBP_UnitHealthBar)
+- spec: >
+    Editor/MCP only — needs the editor MCP up (else park + tell the orchestrator). Jonathan loop-1 playtest
+    request: *"make the part of the bar that shows the health RED if they are enemies and BLUE if they are
+    friendly, and the background of the bar GREY."* Per CONVENTIONS "Overhead unit health bars (M5.5)" → the
+    "Bar colors (ITEM B)" note. On `/Game/UI/WBP_UnitHealthBar` (additive, NO C++): (1) VERIFY the team tint
+    actually RENDERS on the FILL — trace `SetTeamColor(float R,float G,float B)` → `SetFillColorAndOpacity(Bar,…)`
+    and confirm the pushed color LANDS and is NOT swamped: set the fill `fillImage.tintColor` to neutral white
+    (1,1,1 = identity multiply) so the pushed blue (0.05,0.30,1.00) / red (1.00,0.10,0.05) shows undimmed;
+    confirm nothing (authored `FillColorAndOpacity`, a Percent binding, or `SetPercent`) overwrites the tint each
+    frame. The fill COLOR stays DATA-driven from C++ (`BlueBarColor`/`RedBarColor` via `SetTeamColor`) — do NOT
+    hardcode blue/red in the WBP. (2) Set the BACKGROUND / unfilled TRACK brush to a fixed neutral GREY
+    (canonical ~ linear (0.03,0.03,0.03) @ ~0.7 alpha — a static widget style authored HERE, NOT a runtime
+    param) that CONTRASTS clearly with BOTH the blue and red fill — this closes the round-1 white-fill-on-white-
+    track contrast miss (TASK-123 audit found `Bar` `FillColorAndOpacity` + `fillImage.tintColor` both authored
+    WHITE). (3) Confirm a full bar (SetPercent 1.0) reads as a clearly-full team-colored fill on the grey track,
+    and the drain is unmistakable. Keep it HitTestInvisible, compact (90×12 DrawSize), no baked text. ADDITIVE to
+    WBP_UnitHealthBar ONLY — do NOT touch WBP_CastleHealthBar or any other widget (this also SUPERSEDES the
+    churn-only WBP_UnitHealthBar dirty-uasset residue). Art skips QA → build-master integration check (TASK-124
+    phase-B). Post the handoff in 🎨 Art (`🎨 ART-DIRECTOR: … TASK-127`) with the fill-tint + track-brush readback.
+- names: >
+    `WBP_UnitHealthBar` at /Game/UI/WBP_UnitHealthBar. Fill: `SetTeamColor(float R,float G,float B)` →
+    `SetFillColorAndOpacity(Bar,…)`; `fillImage.tintColor` = white (1,1,1). Track/background brush: fixed grey
+    ~(0.03,0.03,0.03)@~0.7α (CONVENTIONS "Bar colors (ITEM B)"). Fill color stays C++ data
+    (`UHealthBarComponent::BlueBarColor`/`RedBarColor`). Do NOT touch WBP_CastleHealthBar.
+
+#### TASK-128 — Strip the temporary [TASK122DIAG] diagnostics from HealthBarComponent.cpp (C++)
+- assignee: gameplay-programmer
+- status: **SUPERSEDED / MOOT 2026-07-10 by the rebuild** — `HealthBarComponent.cpp` (this task's target) is DELETED by TASK-130 (the poll system is retired), so there is nothing to strip. Any leftover `[TASK122DIAG]` dies with the file. (Prior: backlog.)
+- blocked-by: TASK-127 (keep the diagnostics ON through the ITEM B color PIE check; strip them LAST, right before the TASK-124 phase-B commit)
+- parallel-safe: no (edits HealthBarComponent.cpp — same file as TASK-122; sequenced after the color verification)
+- spec: >
+    Files only — NO editor/MCP. The `[TASK122DIAG]` logs the programmer added to `HealthBarComponent.cpp`
+    (currently at WARNING level, firing per-actor per-poll) are TEMPORARY diagnostics and MUST NOT ship.
+    REMOVE them entirely (default), or — if a single line is worth keeping as a permanent trace — demote it to
+    Verbose. Change NOTHING else: the always-visible show-gate (TASK-122), the fill push, `ApplyTeamTint()` /
+    `bTeamTintApplied`, and every null-safe guard stay byte-for-byte. This is a PURE log removal — zero behavior
+    change. Do it AFTER TASK-127's color scheme is PIE-verified (the diagnostics are useful signal through that
+    check) and BEFORE TASK-124 phase-B recompiles + commits. ACCEPTANCE: compiles warnings-as-errors; no
+    `[TASK122DIAG]` (nor any Warning-level per-poll log) remains; the diff is log-lines-ONLY — no collateral
+    change to the show-gate / fill / tint. → qa-reviewer (confirm the diff is diagnostics-removal ONLY; the
+    shadow + complete-type-include scans are trivially clean on a log removal but run them). Post in ⚙️ Dev & QA
+    (`⚙️ GAMEPLAY-PROGRAMMER: … TASK-128`).
+- names: >
+    `HealthBarComponent.cpp` (Source/GitClaudeUnrealTest/Siegebound/) — remove the `[TASK122DIAG]` UE_LOG lines
+    (or demote to Verbose). No other change. Rides the TASK-124 phase-B compile + commit.
+
+---
+
+### Health-bar REBUILD from castle parity + deck-builder finalize (2026-07-10) — TASK-129..132
+
+**Source:** Jonathan back at the machine (desktop UNLOCKED — real GDI screenshots now possible, the capability missing for all 5 failed attempts). TWO directives. **Directive 1 — deck-builder APPROVED** (*"the deck builder fixes are fine"*): finalize via TASK-129 (strip the [TASK125DIAG] BP node) + TASK-126 (scoped commit, WBP_DeckCardTile.uasset ONLY). **Directive 2 — health bars FULL REBUILD FROM SCRATCH** (*"there is still the same issue with all the unit health bars … rebuild the entire feature from scratch, make sure to make enemy health bars red and friendly health bars blue"*). The castle bar is left UNTOUCHED (it works).
+
+**SUPERSEDES the old Item-1 health-bar chain:** TASK-127 (color the old WBP_UnitHealthBar) and TASK-128 (strip [TASK122DIAG]) are RETIRED — their target files are DELETED by the rebuild; TASK-124's phase-B is replaced by TASK-132. TASK-122/123 stay as the orchestrator's correction-chain record (untouched here).
+
+**ARCHITECTURE RULING (manager, castle-parity ADOPTED) — PUSH / delegate model, NOT poll.** The castle bar is the ONLY screen-space widget-component HP bar in this project that demonstrably renders + updates; it uses a PUSH model (`ACastle` owns `FOnCastleHPChanged`, broadcasts on damage, `UCastleHealthBarWidget::InitForCastle` seed-then-binds). The failed unit bars POLL `IHealthBarTarget` on a timer. On the broken build EVERY machine check passes (widget valid, Cast valid, `OnHPChanged` PUSHED, `BarPercent==Cur/Max`) yet the pixels never move — so the defect is in the render link no machine check saw. **Copy the one thing that works** (widget + data model); if a faithful castle-mirror STILL fails, the cause is environmental, not architectural. Weighed the counter-argument (the poll data path is machine-proven to deliver floats) and rejected it: 5 failures + "from scratch" + the mandate to start from the working castle ⇒ full parity (removes the poll timer as a variable) is the lower-risk bet.
+
+**REPLACE-IN-PLACE vs FRESH — RULING: FRESH assets + FRESH classes, RETIRE the old.** "From scratch" per Jonathan; the old `WBP_UnitHealthBar` is tainted across 5 failures. RETIRE `IHealthBarTarget`/`UHealthBarComponent`/`UUnitHealthBarWidget`/`WBP_UnitHealthBar`. The old component was added in the 3 base-class CONSTRUCTORS (not per-BP), so swapping it for the new component needs NO per-BP rewiring — the reason FRESH is cheap here.
+
+**PRIME SUSPECT to hand the programmer (do NOT re-derive):** the old WBP_UnitHealthBar's fill brush is the `DefaultWhiteGrid_Low` MATERIAL; a material fill brush may not visually respond to `SetPercent`/`FillColorAndOpacity` the way a plain image does — and TASK-127 KEPT that material brush claiming castle-parity. The rebuild's widget is a FRESH DUPLICATE of the WORKING `WBP_CastleHealthBar`, preserving the castle's exact fill-brush setup (diff against the castle; do NOT diverge). IF TASK-132's screenshot STILL shows a frozen fill, switching the fill to a PLAIN IMAGE brush is the first change to try — but do not pre-emptively diverge from the working castle.
+
+**BINDING LAWS from tonight (on the rebuild):** (1) prove EXECUTION not structure — a BIE authored as `K2Node_CustomEvent` vs a true `bOverrideFunction=true` override is DSL-indistinguishable and NEVER fires from C++ (verify the node class). (2) prove RENDERED PIXELS not UPROPERTY values — `GetPercent()` reads the UPROPERTY, not what Slate paints; this gap hid the bug for 5 attempts. (3) report the OBSERVATION, not the conclusion. (4) RED = ENEMY, BLUE = FRIENDLY (recorded law); ALWAYS-VISIBLE while alive; HIDDEN on death; BOTH teams; castle bar untouched; gold nodes none.
+
+**HARD EXIT CRITERION (the unlocked-desktop capability):** the feature is NOT fixed until a REAL GDI SCREENSHOT from a REAL-COMBAT PIE (units actually taking damage — NOT economy-only) shows, and an agent VISUALLY CONFIRMS in the pixels: the fill VISIBLY LOWER after damage AND correctly team-tinted (blue friendly / red enemy), on a unit + the hero + a tower, BOTH teams. NO "machine checks pass, ship it."
+
+**Dispatch shape — WHAT STARTS NOW (parallel):** **TASK-129 (art, strip diag — editor) ∥ TASK-130 (programmer, rebuild C++ — files)** — file/resource-disjoint. Then Directive 1 finalizes: **TASK-126** (build, commit WBP_DeckCardTile.uasset ONLY). Directive 2 serial: TASK-130 → qa-reviewer (shadow + complete-type-include scans; verify EVERY HP-mutation path broadcasts) → **TASK-132 phase-A** compile (retire old assets) → **TASK-131** (art, WBP_CombatantHealthBar from the WORKING castle widget) → **TASK-132 phase-B** (real-combat PIE + the SCREENSHOT visual gate + churn revert + commit). Single editor + git serialize the two build tasks (TASK-126 first — small + approved).
+
+#### TASK-129 — Strip [TASK125DIAG] from WBP_DeckCardTile RefreshCell (editor)
+- assignee: art-director
+- status: ready-for-integration (art-director 2026-07-10; handoff `handoffs/TASK-129.md`). [TASK125DIAG] PrintString REMOVED from WBP_DeckCardTile RefreshCell; compiled clean, SAVED (is_dirty=false). Readback confirms production path INTACT: CopyCountText←GetCountOf (plain count), NameText←GetCardDisplayName, CostText←GetCardCost, SetIsEnabled(AddBtn, GetCountOf<GetCardMaxCopies) (cap-grey) — no PrintString remains. Only WBP_DeckCardTile.uasset touched; NO C++, NO Git, no health-bar assets touched, editor not terminated. build-master (TASK-126) can now commit the clean tile.
+- blocked-by: none (TASK-125 APPROVED by Jonathan 2026-07-10 — human WATCH satisfied)
+- parallel-safe: yes (editor-only on WBP_DeckCardTile; file/resource-disjoint from TASK-130's C++ files — the two run alongside each other)
+- spec: >
+    Editor/MCP only — needs the editor MCP up (else park + tell the orchestrator). The `[TASK125DIAG]` node the
+    tile carried to PROVE the count updates at runtime (TASK-125) is a BLUEPRINT node (Print String / log) inside
+    `WBP_DeckCardTile`'s `RefreshCell` — REMOVE it. It is a BP node, NOT C++, so NO compile is needed. Change
+    NOTHING else: the card-face art, the above-card copy count, the +/− wiring, and the
+    `GetCountOf`/`GetCardArtTexture`/`GetCardDisplayName`/`GetCardCost` calls all stay intact. ACCEPTANCE: no
+    `[TASK125DIAG]` node remains in WBP_DeckCardTile; the tile still renders art + count + name + cost. Art skips
+    QA → build-master commit (TASK-126). Post the handoff in 🎨 Art (`🎨 ART-DIRECTOR: … TASK-129`) with a
+    readback confirming the diag node is gone.
+- names: >
+    `/Game/UI/WBP_DeckCardTile` — remove the `[TASK125DIAG]` Print String / log node from `RefreshCell`. No other
+    change. No compile (BP node). Commit rides TASK-126 (scoped to WBP_DeckCardTile.uasset only).
+
+#### TASK-130 — Health-bar REBUILD (castle-parity push/delegate): retire poll, new delegate + component + widget base on units/hero/buildings (C++ files)
+- assignee: gameplay-programmer
+- status: **ready-for-qa (RENDER-SIDE follow-up)** — added 2026-07-10, `CombatantHealthBarComponent.h/.cpp` ONLY. The C++/data layer already qa-passed and runtime logs prove `OnHPChanged`/`SetTeamColor` receive correct DROPPING values on the real `Bar`, yet pixels stay frozen → the failure is the LAST hop (the widget-component doesn't repaint). **Hosting diff CONFIRMED:** castle & unit bars use the IDENTICAL Screen-space `UWidgetComponent` + delegate + LIVE Slate (`TakeWidget`, `WidgetComponent.cpp:87`); there is NO castle HUD (the top-center castle bar IS the overhead component on the distant enemy castle). So `RequestRedraw` is World-space-only (engine-verified) and by static analysis mine SHOULD repaint like the castle — I could NOT find the config difference; it's runtime-only. **Fix covers the component-side modes + instruments the rest:** the COMPONENT now also binds the delegate → drives the CURRENT `GetWidget()` (identity-proof) + `RequestRedraw()` (World-space) + `SetTickMode(Enabled)` (screen-layer) + `[TASK130DIAG]` probes logging `space`/`same`(identity)/`tick`. If the log shows `space=Screen`+`same=1`+`tick=1` and pixels STILL frozen → widget-asset Slate invalidation → bounces to art-director (TASK-131), not the component. **NEEDS RECOMPILE + PIE RE-VERIFY** (NOT machine-closable — Jonathan must SEE the drop; OVERNIGHT-AUTH §3). Handoff: `handoffs/TASK-130.md` "render-side fix". — PRIOR: **qa-passed (C++/data layer)** — orchestrator-proxied 2026-07-10 (qa-reviewer has no partial-edit tool). Broadcast completeness VERIFIED 14/14 (QA grepped every `CurrentHP =` across all of Siegebound, matched each to `OnHPChanged.Broadcast`) + denominator/Max paths covered (hero effective-max via PlateArmor both broadcast); damage broadcasts fire BEFORE death handling on all 3 (castle parity). Zero dangling refs to the 5 deleted types (files gone from disk; SiegeCheatManager was the only external consumer, swapped). Team map correct — RED=enemy / BLUE=friendly, not inverted; null TeamAgent → Blue. Seed-then-bind + AddUniqueDynamic + UFUNCTION HandleHPChanged sound; hero hide/show correct on death/respawn/KillZ; scans CLEAN; castle/GoldNode untouched. **DATA-LAYER PASS ONLY — does NOT prove rendered pixels.** The five prior attempts all passed data-layer review while pixels stayed frozen; the TRUE-OVERRIDE WBP (TASK-131) + real-combat GDI screenshot gate (TASK-132) remain the actual proof of fix. 0 BLOCKER / 0 WARN / 3 NIT. **FLAG for manager (non-blocking): miners now SHOW a bar** — the new component doesn't carry the old per-BP `bShowHealthBar=false` miner opt-out (spec-accepted "no per-BP rewiring" trade-off; arguably more consistent with "all unit health bars"). Report: `qa/TASK-130-report.md`. (Prior: ready-for-qa —) REBUILT on the castle PUSH/delegate model 2026-07-10. Retired the 5 poll-system files; added `FOnCombatantHPChanged`/`IHealthBarProvider` (HealthBarProvider.h), `UCombatantHealthBarWidget` (seed-then-bind, float BIEs), `UCombatantHealthBarComponent` (in-ctor HPBarWidget, NO poll, SetTeamColor RED enemy/BLUE friendly). `OnHPChanged` broadcasts on ALL 14 HP-mutation sites (SummonedUnit ×4, Building ×3, Hero ×7 — grep-verified 1:1); hero hides/shows the bar on death/respawn (castle parity). Swapped SiegeCheatManager's `IHealthBarTarget`→`IHealthBarProvider` (only external consumer; no dangling refs). Shadow + complete-type-include scans CLEAN. Handoff: `handoffs/TASK-130.md` (delegate sig, every broadcast site, TASK-131 art spec). Do NOT compile/Git (build-master TASK-132). (Prior: backlog.)
+- blocked-by: none (files only — starts NOW)
+- parallel-safe: yes (C++ files; disjoint from TASK-129's editor work on WBP_DeckCardTile — the two run in parallel)
+- spec: >
+    Files only — NO editor/MCP. REBUILD the overhead unit/hero/building health bar FROM SCRATCH on the WORKING
+    CASTLE's push/delegate model (`ACastle` + `UCastleHealthBarWidget` + `FOnCastleHPChanged` — read them as the
+    template), per CONVENTIONS "Overhead combatant health bars — REBUILT (2026-07-10)". Jonathan: the bars still
+    do not visibly drop after 5 attempts — rebuild it.
+    (1) RETIRE the failed POLL system: DELETE `HealthBarTarget.h` (IHealthBarTarget), `HealthBarComponent.h/.cpp`
+    (UHealthBarComponent), `UnitHealthBarWidget.h/.cpp` (UUnitHealthBarWidget), and remove the old in-constructor
+    `HPBarWidget` add from ASummonedUnit / ABuilding / AHeroCharacter. (Deleting the `WBP_UnitHealthBar` ASSET is
+    TASK-132.)
+    (2) NEW delegate `FOnCombatantHPChanged(float CurrentHP, float MaxHP)` (mirror FOnCastleHPChanged) — a
+    `UPROPERTY(BlueprintAssignable)` member named `OnHPChanged` on ASummonedUnit, ABuilding, and AHeroCharacter,
+    BROADCAST on EVERY HP mutation (TakeDamage, ApplyHealing / regen, reset / respawn) — MISS NONE, or the bar goes
+    stale (qa/TASK-005 major-2 seed-then-bind trap). Broadcast on reset too (like ACastle).
+    (3) NEW provider interface (replaces IHealthBarTarget) so ONE widget/component binds across the 3 unrelated
+    classes: `IHealthBarProvider` (`UHealthBarProvider`, HealthBarProvider.h) — `FOnCombatantHPChanged&
+    GetHPChangedDelegate()`, `float GetHealthCurrent() const`, `float GetHealthMax() const`, `bool
+    IsHealthBarActorAlive() const`; team via the EXISTING ITeamAgent (do NOT duplicate team).
+    (4) NEW widget base `UCombatantHealthBarWidget` (CombatantHealthBarWidget.h/.cpp) — MIRROR
+    UCastleHealthBarWidget EXACTLY: `InitForCombatant(TScriptInterface<IHealthBarProvider> Provider)` that SEEDS
+    `OnHPChanged` immediately from the current HP THEN binds the delegate (seed-then-bind); float-only BIEs
+    `OnHPChanged(float,float)` and `SetTeamColor(float,float,float)`; an internal `UFUNCTION` handler bound to the
+    delegate (the `HandleCastleHPChanged` shape).
+    (5) NEW widget component `UCombatantHealthBarComponent` (CombatantHealthBarComponent.h/.cpp, UWidgetComponent
+    subclass), added in-constructor as `HPBarWidget` on the 3 base classes (subclasses inherit): BeginPlay sets
+    WidgetClass to `/Game/UI/WBP_CombatantHealthBar` (soft, null-safe — missing = silent no bar, log once), Screen
+    space, DrawSize ~90×12, relative Z = BarHeightZ (default 120), reads its owner as IHealthBarProvider +
+    ITeamAgent, calls `InitForCombatant` (seed-then-bind), pushes `SetTeamColor` ONCE from
+    BlueBarColor(0.05,0.30,1.00)/RedBarColor(1.00,0.10,0.05); ALWAYS VISIBLE while alive (NO hide-at-full — the
+    reversed law), HIDDEN on death/destruction; per-BP `bShowHealthBar` opt-out kept (EditDefaultsOnly, default
+    true). NO poll timer anywhere.
+    Everywhere null-safe; ZERO combat/stat behavior change; castle/GoldNode untouched. LAW: the widget BIEs must be
+    TRUE overrides (a K2Node_CustomEvent never fires from C++) — that is TASK-131's concern but write the C++ so a
+    correctly-overridden WBP works. ACCEPTANCE: compiles warnings-as-errors; the 4 poll-system source files are
+    gone; the delegate broadcasts on ALL HP paths on all 3 classes; the 3 bases own one HPBarWidget (new
+    component); no dangling refs to the deleted classes; ACastle/AGoldNode not touched. → qa-reviewer (MANDATORY
+    shadow scan + complete-type-include scan; VERIFY every HP-mutation path on all 3 classes broadcasts OnHPChanged
+    — the stale-bar trap; VERIFY no lingering include/reference to the deleted classes). Post in ⚙️ Dev & QA
+    (`⚙️ GAMEPLAY-PROGRAMMER: … TASK-130`).
+- names: >
+    RETIRE (delete): IHealthBarTarget/HealthBarTarget.h, UHealthBarComponent/HealthBarComponent.h+.cpp,
+    UUnitHealthBarWidget/UnitHealthBarWidget.h+.cpp; asset /Game/UI/WBP_UnitHealthBar (asset delete = TASK-132).
+    NEW (Source/GitClaudeUnrealTest/Siegebound/): delegate `FOnCombatantHPChanged(float CurrentHP, float MaxHP)`;
+    `UPROPERTY(BlueprintAssignable) OnHPChanged` on ASummonedUnit/ABuilding/AHeroCharacter (broadcast every HP
+    change + reset); interface `IHealthBarProvider`/`UHealthBarProvider` (HealthBarProvider.h) —
+    GetHPChangedDelegate()/GetHealthCurrent()/GetHealthMax()/IsHealthBarActorAlive(); widget base
+    `UCombatantHealthBarWidget` (CombatantHealthBarWidget.h/.cpp) — InitForCombatant(TScriptInterface<IHealthBarProvider>)
+    + BIEs OnHPChanged(float,float)/SetTeamColor(float,float,float); component `UCombatantHealthBarComponent`
+    (CombatantHealthBarComponent.h/.cpp), instance `HPBarWidget`, props HealthBarWidgetClass
+    (=/Game/UI/WBP_CombatantHealthBar), BarHeightZ(120), bShowHealthBar(true), BlueBarColor(0.05,0.30,1.00)/
+    RedBarColor(1.00,0.10,0.05). Mirror ACastle / UCastleHealthBarWidget / FOnCastleHPChanged. Reuse:
+    ITeamAgent::GetTeamId. Do NOT touch ACastle / AGoldNode. UMG asset (TASK-131): /Game/UI/WBP_CombatantHealthBar.
+
+#### TASK-131 — WBP_CombatantHealthBar from the WORKING castle widget: duplicate, reparent, preserve castle fill brush, team tint (editor)
+- assignee: art-director
+- status: ready-for-integration (art-director 2026-07-10; handoff `handoffs/TASK-131.md`). `/Game/UI/WBP_CombatantHealthBar` DUPLICATED from the working WBP_CastleHealthBar, REPARENTED to UCombatantHealthBarWidget (get_parent readback=/Script/GitClaudeUnrealTest.CombatantHealthBarWidget). Compiled clean, SAVED (is_dirty=false). BOTH BIEs verified TRUE OVERRIDES via get_node_infos (class K2Node_Event, NOT K2Node_CustomEvent): OnHPChanged (AddEvent|Siegebound|UI|EventOnHPChanged, survived reparent) → SetPercent(GetBar, Cur/Max) guard Max>0; SetTeamColor (AddEvent|Siegebound|UI|EventSetTeamColor, added via add_event) → SetFillColorAndOpacity(GetBar, MakeLinearColor(R,G,B,1)). FILL BRUSH: preserved the castle's EXACT setup = /Engine/EngineMaterials/DefaultWhiteGrid_Low MATERIAL (per board 'do not pre-emptively diverge'; BarFillStyle=Scale so fill scales w/ Percent; tint WHITE so pushed team color shows undimmed). FLAG: coordinator #2 assumed castle=plain-image but castle=this material — it's a RED HERRING (castle drains w/ identical material; real 5x defect was the C++ screen-space registration, fixed by TASK-130). Plain-image swap = 1-edit, available on request / phase-B fallback per board. TRACK = grey (0.03,0.03,0.03)@0.7. Bar HitTestInvisible, no self-hide, no baked text. DESIGNER SHRINK TEST at Percent=0.35 NOT visually runnable headless (CaptureAssetImage unsupported for WBPs; locked desktop=black GDI) — set 0.35 (readback 0.35) then reset 1.0; structural proof = BarFillStyle=Scale + byte-identical to the draining castle fill; visual shrink + red/blue combat proof OWED to TASK-132 phase-B GDI screenshot. NO Git, NO C++, WBP_CastleHealthBar/WBP_MainMenu untouched, editor not terminated.
+- blocked-by: TASK-130 (reparents to UCombatantHealthBarWidget — needs it compiled) + TASK-132 phase-A compile
+- parallel-safe: no (editor-mutating — single editor instance)
+- spec: >
+    Editor/MCP only — needs the editor MCP up (else park + tell the orchestrator). Author
+    `/Game/UI/WBP_CombatantHealthBar` per CONVENTIONS "Overhead combatant health bars — REBUILT (2026-07-10)".
+    (1) DUPLICATE the WORKING `/Game/UI/WBP_CastleHealthBar` (the ONE bar that demonstrably renders + updates) —
+    NOT the retired WBP_UnitHealthBar (tainted across 5 failures). (2) REPARENT the duplicate to
+    `UCombatantHealthBarWidget` (TASK-130); READBACK-confirm the parent took (a silent reparent failure = a dead
+    bar — the TASK-111 crux). (3) Implement the float BIEs as TRUE OVERRIDES — after authoring, READBACK-verify
+    each is a real override (`bOverrideFunction=true`), NOT a `K2Node_CustomEvent` (a custom event is
+    DSL-indistinguishable and NEVER fires from C++ — the defect class that hid the bug across 5 attempts):
+    `OnHPChanged(float CurrentHP, float MaxHP)` → ProgressBar `SetPercent(CurrentHP/MaxHP)` guard Max>0;
+    `SetTeamColor(float R,float G,float B)` → fill tint. (4) PRESERVE the castle bar's EXACT fill-brush setup —
+    diff against WBP_CastleHealthBar and do NOT diverge (the rebuild premise: the old WBP_UnitHealthBar diverged
+    from the castle somewhere). The unfilled TRACK = neutral GREY (~0.03,0.03,0.03 @ ~0.7α), contrasting both blue
+    and red fills; fill `tintColor` neutral so the C++-pushed team color shows undimmed. (5) Compact (90×12),
+    HitTestInvisible, no baked text, no self-hide logic (the component owns show/hide). Do NOT touch
+    WBP_CastleHealthBar. **If TASK-132's screenshot still shows a frozen fill, the FALLBACK is to switch the fill
+    to a PLAIN IMAGE brush (the DefaultWhiteGrid_Low material is the prime suspect) — but do not pre-emptively
+    diverge from the working castle.** Art skips QA → build-master integration + the SCREENSHOT gate (TASK-132
+    phase-B). Post the handoff in 🎨 Art (`🎨 ART-DIRECTOR: … TASK-131`) with the parent-class readback + an
+    explicit statement that each BIE is a TRUE override (node class read back) and the fill-brush setup matches
+    the castle.
+- names: >
+    `/Game/UI/WBP_CombatantHealthBar`, parent `UCombatantHealthBarWidget`. Donor: WORKING /Game/UI/WBP_CastleHealthBar.
+    BIEs (TRUE overrides, node class verified): OnHPChanged(float,float)→SetPercent(guard Max>0);
+    SetTeamColor(float,float,float)→fill tint. Fill brush = the castle's exact setup (fallback: plain image, NOT
+    the DefaultWhiteGrid_Low material); track = grey ~(0.03,0.03,0.03)@~0.7α. Do NOT touch WBP_CastleHealthBar.
+
+#### TASK-132 — Health-bar rebuild integration: compile, delete old assets, REAL-COMBAT PIE + GDI-screenshot visual gate, churn revert, commit (build)
+- assignee: build-master
+- status: backlog
+- blocked-by: TASK-130 (qa-passed) for phase-A; TASK-131 (ready-for-integration) for phase-B
+- parallel-safe: no
+- spec: >
+    Build-master integration for the health-bar REBUILD. TWO PHASES, single owner.
+    (PHASE A — after TASK-130 qa-passed) compile TASK-130 via the standard Build.bat (editor-bounce) so
+    `UCombatantHealthBarWidget` / `UCombatantHealthBarComponent` exist and the retired classes are gone — this
+    UNBLOCKS TASK-131. Pre-compile: shadow + complete-type-include scans. DELETE the retired asset
+    `/Game/UI/WBP_UnitHealthBar` (its C++ base is gone → it would orphan). Any compile error → append to TASK-130's
+    QA report, qa-failed, stop (counts as a QA loop; build-master never edits code).
+    (PHASE B — after TASK-131) re-verify clean compile, then the MANDATORY VISUAL GATE on the now-UNLOCKED desktop
+    (the capability missing for all 5 failed attempts): run a REAL-COMBAT PIE in L_Arena where units ACTUALLY take
+    damage — drive it with the TASK-121 cheats (`SummonTestUnit` + `ApplyTestDamage`) and/or a real Play-vs-Bot
+    with combat; NOT an economy-only run that never damages anything. Take a REAL GDI SCREENSHOT at full HP and
+    again AFTER damage, and VISUALLY INSPECT THE PIXELS (Read the PNG). HARD EXIT CRITERION — declare the feature
+    fixed ONLY when the screenshots show, and you CONFIRM in the pixels: the fill VISIBLY LOWER after damage AND
+    correctly team-tinted — BLUE friendly, RED enemy — on a unit + the hero + a tower, BOTH teams; bar hidden on
+    death; castle still shows only its own bar; gold nodes none. Report the OBSERVATION (what the pixels show),
+    not the conclusion. NO "machine checks pass, ship it" — a green machine check without a confirming screenshot
+    is NOT a pass. If the screenshot still shows a frozen/untinted bar → append to TASK-130's QA report + route
+    back to gameplay-programmer (counts as a QA loop; note the plain-image-brush fallback for TASK-131). Also
+    REVERT the two churn .uassets (WBP_CastleHealthBar, WBP_MainMenu — close-resave residue) in this bounce. On
+    PASS: commit the rebuild (new Source/ + WBP_CombatantHealthBar + the deletions) with the task-ID message and
+    reference the confirming screenshot in the handoff. Do NOT push, no new branch. Post compile + the SCREENSHOT
+    OBSERVATION + commit hash in 🔧 Build & Git (`🔧 BUILD-MASTER: … TASK-132`).
+- names: >
+    Build per CLAUDE.md. Delete /Game/UI/WBP_UnitHealthBar. Revert WBP_CastleHealthBar + WBP_MainMenu churn.
+    Commit on `main`, message "TASK-130..132: health-bar rebuild (castle push/delegate parity) —
+    WBP_CombatantHealthBar, per-actor FOnCombatantHPChanged, red-enemy/blue-friendly, screenshot-verified; retired
+    the poll system". No push, no branch.
 
 ---
 

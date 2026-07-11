@@ -3,8 +3,8 @@
 **Agent:** build-master
 **Date:** 2026-07-09
 **HEAD at start:** 9a8a75f
-**Commit:** `<M6 batch commit — see "The commit" below / Slack 🔧 thread / orchestrator report>`
-**Branch cut:** `m6-testable` at that commit (no push)
+**Commit:** `975ee90` (975ee90d1120b27073da9f5e7dd4432700cd7222) on `main` — 41 files, +3802/−74. (This hash line is a disclosed post-commit edit to the handoff, so TASK-120.md as committed carried a placeholder; the doc now reads the true hash and sits as a 1-line trailing delta for the orchestrator's done-status sweep.)
+**Branch cut:** `m6-testable` at `975ee90` (verified resolves to the same SHA; **no push** — neither main nor the branch)
 **Result:** PASS — M6 committed. Machine-verified the whole non-interactive slice; the click-only + savegame-author items are WATCH (owed to Jonathan on an unlocked desktop), never faked.
 
 ---
