@@ -46,7 +46,7 @@ M5 shipped machine-verified with the desktop LOCKED (SendInput blocked → no si
 6. **M6 — Deck-builder meta** — `done-pending-playtest (2026-07-09, TASK-113..121 all done; ONE M6 commit 975ee90 on main, NOT pushed; m6-testable @ 975ee90 [4 ahead of origin]). Machine + live-PIE verified [deck-feed + fallback + bot-deck pick]; SaveGame save→relaunch persistence + live 28-tile grid click-through + cheat execs owed to Jonathan's playtest (locked desktop — see WATCH in TASK-120). 5 code tasks, 1 build-fix loop total [TASK-110-class was M5.5]; M6 had ZERO QA fail loops. OPEN CHECKPOINT ITEM: bot decks spell-free — QA recommends Lightning ×2 in Defensive Economy so the M5 bot-spell feature is exercised; Jonathan's call.` — Deck-builder screen (§7): browse the 28-card collection, add/remove copies with per-card MaxCopies enforced, live x/50 counter + average-cost guide (§8), save/load named decks (USaveGame, cross-session), a deck playable only at exactly 50; the active saved deck feeds the player's match, the bot gets 2 distinct curated decks; the `DeckCount` column is re-authored into a legal curated default that supersedes the M4/M5 test spread. **State preserved (undisturbed by M6):** M5 + M5.5 stay `done-pending-playtest` (m5-testable @ 979f552; M5.5 commit 9a8a75f; human WATCH lists still owed); M4.5 stays `parked` on Jonathan's Fab drop. Slice: UI/UX + save-load systems clip. **POST-M6 PLAYTEST FEEDBACK (2026-07-09) → TASK-122..126 in the current milestone** ("M6 playtest feedback" block under Active tasks): Item 1 = overhead health bars now always-visible + fill-drops fix (TASK-122..124); Item 2 = deck-builder tiles render as physical cards (TASK-125..126, blocked-by Item 1 per Jonathan's ordering). **UPDATE 2026-07-10: both post-M6 feedback chains SHIPPED — deck-builder physical-card tiles (TASK-125/126/129) committed @ `274c160`; the health-bar effort was ultimately delivered by the TASK-130..132 REBUILD @ `61a1e72` (which retired the failed first-attempt TASK-122/123/124/127/128). Current HEAD `61a1e72`, not pushed. All M6 + feedback tasks `done`.**
 6.5. **M6.5 — Battlefield & procedural terrain** — `done (2026-07-14 — Jonathan committed the assembled battlefield HIMSELF as `6a4c17d "battlefield created"` and PUSHED it; this SATISFIES the TASK-136/137 held-commit gate — no separate build-master M6.5 commit. GATE 0 for M6.6 is thereby satisfied. NOTE: an `m6.5-testable` branch was never cut at the self-commit — TASK-145 cut it retroactively at 6a4c17d alongside m6.6-testable @ 057ca9f (DONE 2026-07-14).)` (decomposed 2026-07-10, TASK-133..137; Jonathan directive verbatim: *"start creating the terrain/battlefield the characters fight on … space out the castles … 4 times larger … a grassy terrain filled with rocks, trees, and hills … randomly generated at the start of each match … choose what you think will look best … use as many assets as possible … for variety"*). Standalone milestone after M6 (M4.5/M5.5 sub-milestone shape); SUPERSEDES the parked M4.5. **PART 1** = 4× castle spacing (±2000 → ±8000, gold nodes ∓1200 → ±7200, PlayerStart + navmesh + ground + boundary walls widened — CONVENTIONS "World axes" updated). **PART 2** = a RUNTIME procedural scatter (`ASiegeBattlefieldScatter` + `USiegeScatterConfig`/`DA_BattlefieldScatter` + `M_BattlefieldGround`) of trees/rocks/hills/grass soft-referenced from Jonathan's imported Fab packs, re-seeded each match. **Decisions ANSWERED by Jonathan 2026-07-10:** (1) obstacles **BLOCK** unit movement + carve the navmesh (Dynamic RecastNavMesh + a NON-NEGOTIABLE castle-to-castle traversability guarantee); (2) grass **material** (not a Landscape); (3) keep-clear zones **YES**; (4) 4× pacing **PROCEED**. Placement is **ASYMMETRIC organic random** (Jonathan ruling, flagged — can switch to mirror-symmetric at playtest if unfair). Details in the "M6.5 tasks" block under Active tasks. Naming law in CONVENTIONS "Battlefield & procedural terrain (M6.5)" + "World axes (arena contract)".
 6.6. **M6.6 — Climbable terrain** — `done (2026-07-14 — playtested + signed off by Jonathan: hero climbs the hill flanks + anti-exploit gate passes [enemy melee reaches a crowned hero] + camera/tower/escape/perf all good. Committed by Jonathan HIMSELF as `057ca9f "walkable terrain"` and PUSHED [self-commit, same pattern as M6.5]; TASK-138..145 all done. m6.6-testable @ 057ca9f + m6.5-testable @ 6a4c17d cut. Committed L_Arena carries the STALE serialized nav bake [umap byte-identical to pre-widen 6a4c17d] but non-breaking — runtime-Dynamic RecastNavMesh regenerates at PIE. Non-blocking follow-ups for manager: (i) manual Build>Navigation is required after any arena-bounds change [MCP has no nav-build tool]; (ii) scatter density reads thin on the wider ±4000 field — Trees ~15/55, Grass ~1450/2500 — optional tuning pass.)` (decomposed 2026-07-14, TASK-138..145; **UNPARKS the M4.5 "Gameplay terrain pass" intent**). Jonathan wants the battlefield hills/rocks CLIMBABLE by the hero — root-cause investigation established this is currently BY-DESIGN (M6.5's scatter built every rock/hill/tree as a route-around blocker) and that the parked M4.5 TASK-091..096 already specified exactly this feature, so M6.6 delivers the parked M4.5 intent on top of the M6.5 procedural scatter. **ROOT CAUSE (corrects the earlier jump-height hypothesis):** the scatter applies UNIFORM scale (`BattlefieldScatter.cpp:247`, `FVector(Scale)`) → face angles are SCALE-INVARIANT; the squashed `stone_hill` dome goes near-vertical at the rim → unclimbable regardless of jump. FIX = purpose-built CONVEX hill meshes (`SM_Hill_01/02/03`) with ≤30° faces + flat crowns, under BOTH the character's 44.76° WalkableFloorAngle AND Recast's 44° AgentMaxSlope, so hero AND units climb with essentially no movement retune. **FOUR DECISIONS LOCKED (Jonathan, 2026-07-14):** (1) M6.5 already committed by Jonathan @ `6a4c17d` (pushed) — GATE 0 satisfied, NO build-master M6.5 commit; (2) widen arena Y ±2400 → ±4000; (3) terrain BLOCKS projectiles (arrows die on rocks/hills/tree-trunks — accepted balance change); (4) units climb too (navmesh generates over hills — closes the melee-can't-reach-a-crowned-hero exploit). Authoritative plan on disk: `C:\Users\wesel\.claude\plans\we-last-left-off-partitioned-puppy.md`. Naming law in CONVENTIONS "Climbable terrain (M6.6)". Details in "M6.6 tasks" under Active tasks.
-7. M7 — Premium art & feel pass — `not-started` · **Jonathan request (2026-07-04):** raise fidelity on SM_Castle + SM_Footman + SM_Archer (higher detail than the current blockouts); wants the game to look nicer. Decision: DEFERRED here (mesh swaps are non-breaking; roster still growing through M4-M6). Two integration paths to scope at M7: (a) art-director custom higher-detail Blender models, and/or (b) **Fab/UE-marketplace assets — Jonathan must download packs into the project via the Epic Launcher first (agents can't browse/buy/download Fab autonomously); art-director then swaps meshes/materials.** Could be pulled forward as a standalone art pass after M3/M4 if Jonathan wants it sooner.
+7. M7 — Premium art & feel pass — `not-started (1 asset pulled forward)` · **OGRE PULLED FORWARD 2026-07-14 (TASK-147..152):** Jonathan dropped an ogre concept (`Tools/ArtPipeline/Inbox/ogre.png`) and directed the validated TRELLIS.2 pipeline be run NOW to replace the `SM_Ogre` blockout with a game-ready textured mesh — one of the 16 M7 blockouts pulled ahead on his directive (chain in "M7 pull-forward — Ogre textured mesh" under Active tasks). The rest of the M7 batch (15 blockouts + the premium/feel pass) stays deferred. · **Jonathan request (2026-07-04):** raise fidelity on SM_Castle + SM_Footman + SM_Archer (higher detail than the current blockouts); wants the game to look nicer. Decision: DEFERRED here (mesh swaps are non-breaking; roster still growing through M4-M6). Two integration paths to scope at M7: (a) art-director custom higher-detail Blender models, and/or (b) **Fab/UE-marketplace assets — Jonathan must download packs into the project via the Epic Launcher first (agents can't browse/buy/download Fab autonomously); art-director then swaps meshes/materials.** Could be pulled forward as a standalone art pass after M3/M4 if Jonathan wants it sooner.
 8. M8 — Networked 1v1 multiplayer — `not-started`
 
 ### Standing backlog (manager notes — NOT tasks, no IDs yet)
@@ -124,7 +124,9 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ## Active tasks
 
-**2026-07-14 M6.6 KICKOFF (READ FIRST — CURRENT milestone):** **M6.5 is DONE** — Jonathan committed the assembled battlefield HIMSELF as `6a4c17d "battlefield created"` and PUSHED it (this satisfies the held TASK-136/137 commit gate; no separate build-master M6.5 commit — GATE 0 for M6.6 is satisfied). **M6.6 "Climbable terrain" (TASK-138..145) is now the CURRENT milestone** — it UNPARKS the M4.5 gameplay-terrain intent (make hills/rocks climbable). Root cause of the un-climbable hills = the scatter's UNIFORM scale makes face angles scale-invariant, so the squashed `stone_hill` dome is un-climbable at any scale; fix = purpose-built CONVEX hill meshes `SM_Hill_01/02/03` (≤30° faces, flat crowns) + a 4000-wide arena + terrain-blocks-projectiles + units-climb. Four decisions locked (see the "M6.6 tasks" block). Naming law: CONVENTIONS "Climbable terrain (M6.6)". Authoritative plan: `C:\Users\wesel\.claude\plans\we-last-left-off-partitioned-puppy.md`. Repo base = `6a4c17d` on `main`, pushed. TASK-138 (this CONVENTIONS block) is DONE; dispatch frontier = **TASK-139 ∥ TASK-140 ∥ TASK-141** (all parallel-safe, blocked only by TASK-138).
+**2026-07-14 OGRE PULL-FORWARD (READ FIRST — CURRENT active work):** M6.6 is DONE + signed off (Jonathan self-committed + pushed `057ca9f "walkable terrain"`). Jonathan then dropped an ogre concept (`Tools/ArtPipeline/Inbox/ogre.png`) and directed the **TRELLIS.2 art pipeline** be run to REPLACE the existing `/Game/Meshes/SM_Ogre` blockout with a game-ready textured mesh — one of the 16 M7 blockouts pulled forward on his directive. Same validated pipeline as the Footman/Archer/Castle pilots (TASK-082..088). Chain **TASK-147..152** below ("### M7 pull-forward — Ogre textured mesh"). CONVENTIONS "Textured mesh law" updated (Ogre = active pipeline asset; no new pattern). NOT in scope: the 2D card art `T_CardArt_Ogre` (separate lane, unchanged). **Two Jonathan touchpoints:** (1) **HF generation** — if Stage-1 `--check`/generate surfaces a token/quota/API-drift/image issue, surface the exit code VERBATIM + escalate 🚨 Blockers, never fake (2=token unset · 3=quota, expected pause · 4=API drift · 5=image missing); HF_TOKEN + HF PRO already live (TASK-085). (2) **EYEBALL GATE (TASK-150)** between Stage 2 and Stage 3 — a NEW asset's TRELLIS orientation + team-region are unknown until first generation, so `pre_rotate_z_deg`/`team_region` are starting guesses that need Jonathan's eye before import (exactly the TASK-086/087 gate). **Dispatch frontier = TASK-147 ONLY** (serial single-asset chain — each stage blocks the next; art-director does 147/148/149/151, Jonathan gates 150, build-master integrates 152). Repo base = `057ca9f` on `main`, pushed.
+
+**2026-07-14 M6.6 KICKOFF (done milestone — history):** **M6.5 is DONE** — Jonathan committed the assembled battlefield HIMSELF as `6a4c17d "battlefield created"` and PUSHED it (this satisfies the held TASK-136/137 commit gate; no separate build-master M6.5 commit — GATE 0 for M6.6 is satisfied). **M6.6 "Climbable terrain" (TASK-138..145) is now the CURRENT milestone** — it UNPARKS the M4.5 gameplay-terrain intent (make hills/rocks climbable). Root cause of the un-climbable hills = the scatter's UNIFORM scale makes face angles scale-invariant, so the squashed `stone_hill` dome is un-climbable at any scale; fix = purpose-built CONVEX hill meshes `SM_Hill_01/02/03` (≤30° faces, flat crowns) + a 4000-wide arena + terrain-blocks-projectiles + units-climb. Four decisions locked (see the "M6.6 tasks" block). Naming law: CONVENTIONS "Climbable terrain (M6.6)". Authoritative plan: `C:\Users\wesel\.claude\plans\we-last-left-off-partitioned-puppy.md`. Repo base = `6a4c17d` on `main`, pushed. TASK-138 (this CONVENTIONS block) is DONE; dispatch frontier = **TASK-139 ∥ TASK-140 ∥ TASK-141** (all parallel-safe, blocked only by TASK-138).
 
 **2026-07-10 BOARD RECONCILIATION (repo state for M6.5 integration — READ FIRST):** current HEAD on `main` = **61a1e72** (NOT pushed). Two post-M6 chains shipped after the M6 commit (975ee90): (1) **deck-builder physical-card tiles** — TASK-125/129 authored, integrated + committed by TASK-126 @ **274c160**; (2) **overhead health-bar REBUILD** (castle push/delegate parity, RED enemy / BLUE friendly) — TASK-130/131/132 @ **61a1e72**, which RETIRED the failed first-attempt chain TASK-122/123/124/127/128 (their poll-system code + `WBP_UnitHealthBar` were DELETED by the rebuild — those five are SUPERSEDED, not shipped-as-authored). All `done`, nothing pushed. **M6.5 (Battlefield & procedural terrain) is now the CURRENT milestone** (TASK-133..137). The individual TASK-122..124 status lines retain their forensic QA-loop history below their new done/superseded marker. (Reconciliation note: the coordinator's hand-typed buckets had TASK-126/129 under 61a1e72 and omitted 124/128 — corrected here by task type: deck tiles → 274c160, health-bar rebuild → 61a1e72, first-attempt health-bar → superseded.)
 
@@ -825,6 +827,205 @@ Dispatch shape: **WAVE 1 — FILE tasks, parallel-safe NOW: TASK-113 ∥ TASK-11
 
 ---
 
+### M7 pull-forward — Ogre textured mesh (TASK-147..152) — issued 2026-07-14 — ✅ COMPLETE 2026-07-15 (integrated + bundled-committed to main with the M6.6 scatter tune; NOT pushed — see handoffs/TASK-152.md)
+
+**Authorization:** Jonathan's 2026-07-14 directive — he dropped an ogre concept image and wants the TRELLIS.2 art pipeline run to replace the `SM_Ogre` blockout with a game-ready textured mesh, pulling ONE of the 16 M7 blockouts forward. NOT a new milestone (M7 stays deferred) — a single-asset pull-forward run on the validated pipeline. Naming law: the Ogre follows CONVENTIONS "Textured mesh law (TRELLIS.2 art pipeline)" verbatim (updated 2026-07-14 to list Ogre as an active pipeline asset — NO new pattern needed). Hard gates stand: HF_TOKEN is ENV-ONLY (never echoed/logged/argv); heavy Blender runs HEADLESS; editor/MCP work needs 127.0.0.1:8000 up (park + tell the orchestrator if unreachable — never fake results). Repo base `057ca9f` on `main` (pushed). Does NOT touch any prior milestone's state.
+
+**Scope pins (recon, do not re-investigate):**
+- **Replace target** `/Game/Meshes/SM_Ogre` — Stage 3 OVERWRITES at this SAME path (never delete+recreate) so soft refs survive: `Content/Blueprints/Units/BP_Unit_Ogre` and the Ogre row in `Docs/Data/cards.csv:14` (Ogre, Unit/Siege, cost 12) both resolve to it.
+- **Concept** `Tools/ArtPipeline/Inbox/ogre.png` arrived LOWERCASE — AssetName is PascalCase `Ogre` (matches `SM_Ogre`); TASK-147 renames it so Stage-1 `trellis_generate.py Ogre` and all downstream names are consistent.
+- **Blockout** `Content/RawAssets/Ogre.fbx` — its bounds are the `target_dims_ue` source; MEASURE it in TASK-147 BEFORE Stage 2 (TASK-149) overwrites it.
+- **Manifest gap** — `pipeline_manifest.json` has NO "Ogre" entry (only Footman/Archer/Castle); TASK-147 authors the UNIT-path entry.
+- **NOT in scope:** the 2D card art `T_CardArt_Ogre` / `Content/RawAssets/CardArt/Ogre.png` (separate card-art lane — this pipeline never writes CardArt). Only the 3D mesh is replaced.
+
+**Two Jonathan touchpoints:** (1) HF generation quota/token at Stage 1 (TASK-148 — surface exit codes verbatim, escalate 🚨 Blockers, never fake); (2) the EYEBALL GATE (TASK-150) between Stage 2 and Stage 3 — orientation + team-region are unknown for a new asset and need his eye before import.
+
+Dispatch shape: **strictly SERIAL single-asset chain** (one art-director, one asset, one editor). **TASK-147** (prep: casing + manifest) → **TASK-148** (Stage 1 generate) → **TASK-149** (Stage 2 refine) → **TASK-150** (Jonathan eyeball gate; TUNE loops back to 149, no HF cost) → **TASK-151** (Stage 3 import, editor) → **TASK-152** (build-master integration + commit). Only TASK-147 can start immediately.
+
+#### TASK-147 — Ogre pipeline prep: concept casing reconcile + manifest entry (measure blockout) (art)
+- assignee: art-director
+- status: done
+- blocked-by: none
+- parallel-safe: yes (file-only — renames Inbox/ogre.png, edits pipeline_manifest.json, reads Content/RawAssets/Ogre.fbx; DISJOINT from all other work)
+- spec: >
+    File-side prep — NO editor/MCP, NO HF quota. Get the Ogre pipeline inputs consistent BEFORE Stage 1/2.
+    (1) CASING RECONCILE: rename `Tools/ArtPipeline/Inbox/ogre.png` → `Tools/ArtPipeline/Inbox/Ogre.png`
+    (PascalCase AssetName = Ogre, matching SM_Ogre + the cards.csv row). `trellis_generate.py Ogre` reads the
+    exact-cased file and every downstream name derives from `Ogre`, so this MUST happen before Stage 1. Do NOT
+    alter the image content.
+    (2) MEASURE THE BLOCKOUT (BEFORE Stage 2 overwrites it): read the bounds of the EXISTING
+    `Content/RawAssets/Ogre.fbx` blockout (Blender headless or MCP <30 s inspection) — X/Y/Z extents in UE
+    units, feet-center convention. These are the `target_dims_ue` source.
+    (3) AUTHOR THE MANIFEST ENTRY: add an `"Ogre"` object under `assets` in
+    `Tools/ArtPipeline/pipeline_manifest.json`, modeled on the existing "Footman"/"Archer" UNIT entries:
+    `category:"unit"`, `mode:"bake"`, `tri_budget:15000`, `bake_resolution:1024`, `origin:"feet-center"`,
+    `fit_mode:"height"`, `target_dims_ue:[X,Y,Z]` from the measured blockout + a `_dims_source` note
+    ("TASK-147 blockout: <X> x <Y> x <Z>, feet-center, front -Y"), `pre_rotate_z_deg:0.0` (STARTING GUESS —
+    tuned at the TASK-150 eyeball gate), `voxel_size_ue:1.5`, `team_region` with `max_fraction:0.35` and a
+    STARTING-GUESS upward-facing shoulder / upper-body selector modeled on the Footman recipe (the minority
+    slot-0 `TeamRegion` face-set; tuned at the eyeball gate), and `ucx:null` (units generate ≤4 simple hulls
+    at Stage-3 import — NOT authored here). Keep VALID JSON (the manifest is CODE — rides the QA/commit gate at
+    TASK-152). Do NOT touch the Footman/Archer/Castle entries or `defaults`.
+    ACCEPTANCE: `Inbox/Ogre.png` exists (lowercase gone); `pipeline_manifest.json` parses and has a complete
+    `Ogre` UNIT entry with a MEASURED `target_dims_ue`; no other asset entries changed. Post in 🎨 Art
+    (`🎨 ART-DIRECTOR: 🟦/✅ TASK-147 …`).
+- names: >
+    Rename `Tools/ArtPipeline/Inbox/ogre.png` → `Tools/ArtPipeline/Inbox/Ogre.png`. AssetName = `Ogre`.
+    Edit `Tools/ArtPipeline/pipeline_manifest.json` → add `assets.Ogre` (unit path per above). Read-only
+    measure `Content/RawAssets/Ogre.fbx`. Law: CONVENTIONS "Textured mesh law (TRELLIS.2 art pipeline)".
+
+#### TASK-148 — Ogre Stage 1: generate (trellis_generate.py Ogre) (art)
+- assignee: art-director
+- status: done
+- blocked-by: TASK-147 (needs Inbox/Ogre.png renamed)
+- parallel-safe: yes (Bash only — writes Cache/Ogre/*; SERIAL in the pipeline)
+- spec: >
+    Bash — NO editor/MCP. Stage 1 of the TRELLIS.2 pipeline on the Ogre (README + the TASK-086 playbook
+    handoffs/TASK-086.md). From `Tools/ArtPipeline`:
+    (1) HEALTH PROBE FIRST: `uv run trellis_generate.py --check` (tokenless — surfaces HF_TOKEN/env/TLS/Space
+    issues with NO GPU/quota cost). HF_TOKEN is already set + HF PRO active (TASK-085); Norton HF exclusions
+    proven → run bare (no SSL_CERT_FILE). `--check` exit 4 (API drift) → file `api_schema.json`, escalate
+    🚨 Blockers, use the README manual-browser fallback (resume Stage 2 from a hand-delivered GLB); never fake.
+    (2) GENERATE: `uv run trellis_generate.py Ogre` → writes `Cache/Ogre/trellis_raw.glb` + `state.json` +
+    `api_schema.json`. The whole preprocess→generate→extract runs atomically in ONE session — never split it.
+    Exit codes surfaced VERBATIM, never faked: 0 ok · 2 HF_TOKEN unset (→ Jonathan, 🚨 Blockers) · 3 quota
+    exhausted (EXPECTED pause — record the reset time, resume next window; HF PRO ≈ 40 GPU-min/day) · 4 API
+    drift (file schema, manual fallback) · 5 concept image missing (check the TASK-147 rename).
+    (3) EYEBALL the raw GLB (quick MCP inspection, <30 s calls): if the mesh is mangled/wrong, reroll with
+    `--seed <n>` (quota permitting) BEFORE Stage 2. Record the seed/params in the handoff.
+    ACCEPTANCE: `Cache/Ogre/trellis_raw.glb` + `state.json` exist and the raw mesh reads as a plausible ogre
+    (not mangled). Report seed + generation time + any reroll in the handoff. Post in 🎨 Art (flag any
+    non-zero exit + the reset time in 🚨 Blockers).
+- names: >
+    `uv run trellis_generate.py --check` then `uv run trellis_generate.py Ogre` (from Tools/ArtPipeline).
+    Outputs: `Cache/Ogre/{trellis_raw.glb, state.json, api_schema.json}`. HF_TOKEN ENV-ONLY (never
+    echoed/logged/argv). Law: CONVENTIONS "Textured mesh law", README Stage 1.
+
+#### TASK-149 — Ogre Stage 2: refine (refine_trellis_glb.py --asset Ogre) (art)
+- assignee: art-director
+- status: done
+- blocked-by: TASK-148 (needs Cache/Ogre/trellis_raw.glb), TASK-147 (needs the Ogre manifest entry)
+- parallel-safe: yes (headless Blender via Bash — writes Content/RawAssets/Ogre.fbx + Textures/Ogre/*; SERIAL in the pipeline)
+- spec: >
+    Bash headless Blender — NO editor/MCP. Stage 2 refine on the Ogre per its manifest entry (UNIT path).
+    Run `& "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" --background --python
+    refine_trellis_glb.py -- --asset Ogre` from `Tools/ArtPipeline` (heavy Blender ALWAYS headless — the live
+    MCP bridge has a 30 s socket cap). The script does cleanup → remesh/decimate to ≤15k tris → Smart-UV
+    (`UVMap`) → Cycles CPU bake D/N/ORM (1024²) → two-slot split (slot 0 `TeamRegion` / slot 1 `OgrePBR`) →
+    FBX + texture PNGs + previews + `refine_report.json`.
+    OUTPUTS (OVERWRITE the blockout in place — why TASK-147 measured it first):
+    `Content/RawAssets/Ogre.fbx` + `Content/RawAssets/Textures/Ogre/*.png`.
+    PRE-GATE READ: read `Cache/Ogre/refine_report.json` + eyeball the Cache previews — nothing proceeds unseen.
+    Copy the accepted concept `Tools/ArtPipeline/Inbox/Ogre.png` → `Content/RawAssets/Concepts/Ogre.png`
+    (committed at TASK-152).
+    NOTE — NEW asset: `pre_rotate_z_deg` + the `team_region` selectors are STARTING GUESSES. Do NOT
+    tune-and-loop blindly here — produce the refine + previews and hand to the TASK-150 EYEBALL GATE. If the
+    previews are OBVIOUSLY wrong (facing backwards, team-region striping the wrong faces), record the finding
+    FOR the gate — the manifest tune + Stage-2 re-run happens as the gate's OUTCOME, not silently.
+    ACCEPTANCE: `Ogre.fbx` exists with EXACTLY two slots ordered [TeamRegion, OgrePBR], ≤15k tris, UVMap,
+    feet-center (minZ≈0); `refine_report.json` written; D/N/ORM PNGs present. Report tris/bounds vs manifest +
+    the selector-area % in the handoff. Post in 🎨 Art.
+- names: >
+    `refine_trellis_glb.py --asset Ogre` (headless Blender). Outputs `Content/RawAssets/Ogre.fbx` (slots
+    [TeamRegion, OgrePBR]), `Content/RawAssets/Textures/Ogre/*.png` (D/N/ORM), `Cache/Ogre/refine_report.json`
+    + previews. Concept → `Content/RawAssets/Concepts/Ogre.png`. Law: CONVENTIONS "Textured mesh law", README
+    Stage 2.
+
+#### TASK-150 — EYEBALL GATE: Ogre orientation + team-region sign-off (Jonathan — external gate)
+- assignee: Jonathan (external gate — board-recorded; the orchestrator posts the ask in 🚨 Blockers with the Cache/Ogre previews + refine_report, and flips this when satisfied)
+- status: done (Jonathan accepted the eyeball gate as-is 2026-07-14 — dark texture approved, no reroll/re-tune; unblocked Stage-3 import TASK-151 — see handoffs/TASK-151.md)
+- blocked-by: TASK-149
+- parallel-safe: yes (human review — no repo mutation by agents)
+- spec: >
+    Jonathan checkpoint BETWEEN Stage 2 and Stage 3 (exactly the TASK-086/087 eyeball-gate pattern, made
+    EXPLICIT because the Ogre is a NEW asset whose TRELLIS output orientation + team-region face-set are
+    UNKNOWN until first generation — `pre_rotate_z_deg` and the `team_region` selectors in the manifest are
+    STARTING GUESSES). Jonathan reviews the Stage-2 previews (`Cache/Ogre/*preview*` + `refine_report.json`)
+    and confirms: (a) FACING — the ogre's front faces the blockout contract (Blender -Y); (b) TEAM REGION —
+    the slot-0 `TeamRegion` face-set is a sensible minority accent (shoulders / upper-body trim), NOT striping
+    the whole body or a bare face. OUTCOME:
+      - APPROVE → unblocks Stage 3 import (TASK-151).
+      - TUNE → adjust the manifest (`pre_rotate_z_deg` and/or `team_region.selectors`, add a `_tuned` note like
+        the Footman/Archer entries) and RE-RUN Stage 2 (TASK-149 loops), then re-review. Loop until APPROVE —
+        each Stage-2 re-run is HEADLESS and costs NO HF quota (only Stage 1 costs quota).
+    Gate is satisfied when Jonathan (or the orchestrator on his verbatim go) records APPROVE here + in
+    🚨 Blockers. NEVER import an un-eyeballed NEW-asset generation.
+- names: >
+    Review `Cache/Ogre/` previews + `refine_report.json`. Tune targets (if needed):
+    `pipeline_manifest.json` → `assets.Ogre.pre_rotate_z_deg` / `.team_region.selectors` → re-run TASK-149.
+    Law: CONVENTIONS "Textured mesh law" (pre_rotate_z_deg / team_region = per-asset eyeball-tuned guesses).
+
+#### TASK-151 — Ogre Stage 3: import — overwrite SM_Ogre + T_Ogre_* + MI_Ogre_PBR (art, Unreal MCP)
+- assignee: art-director
+- status: done
+- blocked-by: TASK-149 (needs Ogre.fbx + textures), TASK-150 (eyeball gate APPROVED — never import an un-eyeballed new asset)
+- parallel-safe: no (editor-mutating — single editor, serialize)
+- spec: >
+    Unreal MCP editor import (serialized) — editor UP with MCP at 127.0.0.1:8000 (if unreachable, park + tell
+    the orchestrator, never fake). Use handoffs/TASK-086.md as the import playbook. `M_AssetPBR` ALREADY EXISTS
+    (TASK-086, committed cb29882) — do NOT re-author the master.
+    (a) Import textures → `/Game/Textures/T_Ogre_D` (sRGB ON), `T_Ogre_N` (normal), `T_Ogre_ORM` (LINEAR —
+    sRGB OFF; the ORM needs the manual sRGB→false flip, per the TASK-086/087 note).
+    (b) Create `/Game/Materials/Instances/MI_Ogre_PBR` from `/Game/Materials/M_AssetPBR`; wire params
+    BaseColor→T_Ogre_D, Normal→T_Ogre_N, ORM→T_Ogre_ORM.
+    (c) Import `Content/RawAssets/Ogre.fbx` OVERWRITING `/Game/Meshes/SM_Ogre` at the SAME PATH (NEVER
+    delete+recreate — the soft refs from BP_Unit_Ogre + the cards.csv Ogre row + the placement-ghost
+    `/Game/Meshes/SM_Ogre` string contract MUST survive). KNOWN MECHANISM (TASK-086/088): MCP import_file
+    REFUSES a same-path overwrite and no console `Obj Reimport` surfaced — the validated route is a human
+    Content-Browser Reimport click (Stage-2's same-path FBX overwrite makes reimport-in-place resolve). Do all
+    pre-click setup (textures, MI, pre-navigate the Content Browser to /Game/Meshes with SM_Ogre selected) and,
+    if no MCP reimport/console-exec route exists, flag the ONE reimport click to Jonathan (🚨 Blockers) — the
+    TASK-086 contingency. If an MCP reimport tool has since landed, use it.
+    (d) Slots EXACTLY ordered [0] `TeamRegion` → `MI_TeamColor_Blue` (design-time placeholder; the BeginPlay
+    team recolor drives slot 0), [1] `OgrePBR` → `MI_Ogre_PBR`. (e) Nanite OFF. (f) Simple collision ≤4 hulls
+    (units generate hulls at import — ucx:null). (g) Verify zero import/MikkTSpace warnings; tris/bounds vs the
+    manifest; UVMap present.
+    ACCEPTANCE: `SM_Ogre` IS the textured mesh at the UNCHANGED path; slots named/ordered per law with the
+    right MIs; T_Ogre_D/_N/_ORM + MI_Ogre_PBR exist; Nanite off; ≤4-hull collision. Report readbacks + the
+    overwrite mechanism used in handoffs/TASK-151.md (TASK-152 depends on it). Post in 🎨 Art.
+- names: >
+    `/Game/Meshes/SM_Ogre` (SAME-PATH overwrite). Textures `/Game/Textures/T_Ogre_D | T_Ogre_N | T_Ogre_ORM`.
+    `/Game/Materials/Instances/MI_Ogre_PBR` (from `/Game/Materials/M_AssetPBR`, params BaseColor/Normal/ORM).
+    Slots [TeamRegion → MI_TeamColor_Blue, OgrePBR → MI_Ogre_PBR]. FBX `Content/RawAssets/Ogre.fbx`. Reuse
+    EXISTING `/Game/Blueprints/Units/BP_Unit_Ogre` + the cards.csv Ogre row (do NOT touch). Law: CONVENTIONS
+    "Textured mesh law".
+
+#### TASK-152 — Ogre integration: verify BP_Unit_Ogre resolves + PIE-spawn + commit (build-master)
+- assignee: build-master
+- status: done
+- blocked-by: TASK-151
+- parallel-safe: no (single editor + the Git commit)
+- spec: >
+    Integration + commit for the Ogre mesh swap. Editor UP with MCP (park + tell the orchestrator if down).
+    (1) STRUCTURAL on the swapped mesh: SM_Ogre slots == [TeamRegion, OgrePBR] with MI_TeamColor_Blue +
+    MI_Ogre_PBR; Nanite false; collision present (≤4 hulls — AggGeom readback per the TASK-088 standard);
+    tris/bounds vs the `pipeline_manifest.json` Ogre entry; zero pending import warnings.
+    (2) SOFT-REF SURVIVAL: confirm `/Game/Blueprints/Units/BP_Unit_Ogre` still resolves SM_Ogre (VisualMesh)
+    and the placement-ghost `/Game/Meshes/SM_Ogre` string still resolves — the same-path overwrite must have
+    preserved every reference (the whole point of never delete+recreate).
+    (3) PIE on direct-boot L_Arena: spawn the Ogre card (hotkey/placement, or the cheat
+    `SummonTestUnit("Ogre", false)` Blue / `("Ogre", true)` Red) and confirm the NEW textured mesh RENDERS
+    in-match with blue TeamRegion accents, and the bot's Red Ogre recolors slot 0 ONLY (two-slot contract
+    live-proof); the Siege damage profile is unchanged (mesh swap doesn't touch combat — still tags
+    USiegeDamageType_Siege). No new log warnings/errors; texture-memory delta sane.
+    (4) COMMIT the Ogre art to main (NOT pushed) with TASK-147..152 in the message:
+    `Content/RawAssets/Ogre.fbx` (refined, overwriting the blockout), `Content/RawAssets/Textures/Ogre/**`,
+    `Content/RawAssets/Concepts/Ogre.png`, `/Game/Meshes/SM_Ogre`, `/Game/Textures/T_Ogre_*`, `MI_Ogre_PBR`,
+    and the `pipeline_manifest.json` Ogre entry. `Cache/Ogre/*` is gitignored — do NOT commit it. VERIFY GIT
+    STATE FIRST — Jonathan often self-commits; if he has already committed some of these, RECONCILE (commit
+    only the residue) rather than duplicating.
+    (5) Record the WATCH: Jonathan's visual sign-off (Ogre silhouette at the gameplay camera, style cohesion vs
+    the pilot meshes + remaining blockouts, blue/red team read at distance).
+    ACCEPTANCE: structural + soft-ref + PIE checks PASS; committed to main (not pushed) OR reconciled with
+    Jonathan's self-commit; WATCH posted. Post results + hash in 🔧 Build & Git.
+- names: >
+    Verify `/Game/Meshes/SM_Ogre` slots + collision + Nanite; `MI_Ogre_PBR`; `BP_Unit_Ogre` +
+    `/Game/Meshes/SM_Ogre` ghost resolve; `/Game/Maps/L_Arena` PIE (`SummonTestUnit "Ogre"`). Budget ref:
+    `Tools/ArtPipeline/pipeline_manifest.json` (Ogre). Commit to main only, not pushed. Law: CONVENTIONS
+    "Textured mesh law".
+
+---
+
 ### M6.6 — Climbable terrain (TASK-138..145) — decomposed 2026-07-14 — UNPARKS M4.5
 
 **Authorization:** Jonathan's 2026-07-14 decision to make the battlefield hills/rocks CLIMBABLE by the hero. Root-cause investigation established this is currently BY-DESIGN — M6.5's scatter built every rock/hill/tree as a route-around blocker — and that the parked M4.5 "Gameplay terrain pass" (TASK-091..096) already specified exactly this feature, so M6.6 UNPARKS the M4.5 intent as a fresh milestone (delivered on top of the M6.5 procedural scatter, NOT the retired M4.5 hand-placed approach). A full design pass is approved; the authoritative spec of record is on disk at `C:\Users\wesel\.claude\plans\we-last-left-off-partitioned-puppy.md`. Naming law added to CONVENTIONS "Climbable terrain (M6.6)" BEFORE task issue (TASK-138, done). Hard gate stands: editor/MCP + Blender work needs the tools up (127.0.0.1:8000) — park + tell the orchestrator if unreachable (never fake). Nothing pushed beyond Jonathan's own `6a4c17d`. Does NOT touch prior milestones' state.
@@ -1090,6 +1291,45 @@ Dispatch shape: **TASK-138 (manager — CONVENTIONS law) lands FIRST (done).** T
     terrain — convex SM_Hill_01/02/03 + ±4000 arena + terrain-blocks-projectiles + units-climb + tree
     collision-proxies + hero tuning", NOT pushed. Branches: `m6.6-testable` @ the commit + `m6.5-testable` @
     `6a4c17d`. Law: CONVENTIONS "Climbable terrain (M6.6)".
+
+---
+
+### M6.6 follow-ups (playtest feedback — post-`057ca9f`)
+
+**Source:** Jonathan's M6.6 playtest (2026-07-14). The milestone shipped and is signed off (`057ca9f`, pushed); this is a
+data-only refinement noted at TASK-145 (density observation) and in the M6.6 milestone entry (follow-up ii). NOT a reopen —
+M6.6 stays `done`; these tune the shipped base. No CONVENTIONS change (no new asset names; the DataAsset + FScatterLayer
+fields already exist per "Climbable terrain (M6.6)" / "Battlefield & procedural terrain (M6.5)").
+
+#### TASK-146 — Scatter density tuning for the widened ±4000 field (build — data-only, no QA gate)
+- assignee: build-master
+- status: done (build-master 2026-07-14 — data-only tune of DA_BattlefieldScatter via MCP set_properties; SAVED + UNCOMMITTED per spec, awaiting Jonathan's live-Play eyeball). Editor was on L_MainMenu (stale PIE running); loaded L_Arena to run the scatter. Values (before→after): Trees minSpacing 600→300, footprintRadius 0→150 (explicit trunk-scale override — decouples placement from the auto-derived ~canopy bounds, the starvation cause; collision proxy unchanged so unit routing/"70cm-from-trunk" is unaffected), InstanceCount 55→70. Grass minSpacing 120→50 (InstanceCount 2500 kept). Blocking layers (Rocks/Boulders/Hill/Slabs) + all config (ArenaHalfExtent, CorridorHalfWidth 800, keep-clear) UNTOUCHED; read-back verified no clobber. 3 fresh seeds 944795841/513883457/400437185 → Trees 70/70·70/70·70/70 (100% ×3), Grass 2306/2313/2282 of 2500 (91–93% ×3) — up from ~12–18/55 trees & ~1435/2500 grass. Traversability CONFIRMED Blue→Red on all 3 with 0 culls (M6.6 baseline 0–3). Instance total ~2920/match ≈ original M6.5 budget (no new perf ceiling). DA saved (is_dirty=false); NO commit/branch/push.
+- blocked-by: none (tunes the committed `057ca9f` base; single-editor serialize only)
+- parallel-safe: no (single editor + the `DA_BattlefieldScatter` DataAsset edit; NO C++, NO new art, NO qa-reviewer gate — pure data tune via Unreal MCP)
+- spec: >
+    Data-only tune of `DA_BattlefieldScatter` (`/Game/Data/DA_BattlefieldScatter`) via Unreal MCP — NO C++, NO new art,
+    NO qa-reviewer gate. PROBLEM (Jonathan M6.6 playtest): the ±2400 → ±4000 arena widen (TASK-143, ~60% more area) spread
+    the decorative scatter out without a matching density bump, so the field reads THIN — only ~15 of 55 Trees and ~1450 of
+    2500 Grass instances actually place on the wider field (`LogSiegeTerrain` "placed N (target M)"). GOAL: refill the field
+    so it reads FULL. LEVERS (build-master iterates on the DECORATIVE Trees + Grass layers only): (a) lower the Trees/Grass
+    `MinSpacing`; and/or (b) set/reduce an explicit small Trees `FootprintRadius`; and/or (c) raise the Trees/Grass
+    `InstanceCount`. GROUND TRUTH is the `LogSiegeTerrain` "placed N (target M)" line read across a few FRESH seeds — tune
+    until Trees and Grass place near their targets and the field reads full. HARD CONSTRAINTS: (1) do NOT break the
+    traversability guarantee — the Blue→Red path must still confirm ("Traversability CONFIRMED"); (2) do NOT re-introduce
+    corridor culls (the decorative fill must not wall the lane); (3) keep the BLOCKING layers (Hill / Slab / Rock / Boulder)
+    placement essentially AS-IS — this task is about the decorative fill (Trees + Grass), not the blockers. Save
+    `DA_BattlefieldScatter` when done. Report the BEFORE/AFTER placement counts (placed/target for Trees + Grass) in the
+    handoff. Editor/MCP must be up (127.0.0.1:8000) — if unreachable, park + tell the orchestrator (never fake counts).
+- acceptance: >
+    Trees and Grass each place NEAR target on ≥2 of 3 fresh seeds (placed/target from `LogSiegeTerrain`); traversability
+    still CONFIRMED (Blue→Red path holds, no new corridor culls); blocking-layer placement unchanged; `DA_BattlefieldScatter`
+    saved. Final density is Jonathan's eyeball (HISM scatter is PIE-runtime-only). No commit unless Jonathan directs — report
+    the tuned values + before/after counts to the orchestrator.
+- names: >
+    Edit `/Game/Data/DA_BattlefieldScatter` (`Content/Data/DA_BattlefieldScatter.uasset`) ONLY. FScatterLayer fields on the
+    Trees + Grass layers: `MinSpacing`, `FootprintRadius`, `InstanceCount` (per CONVENTIONS "Battlefield & procedural terrain
+    (M6.5)" / "Climbable terrain (M6.6)"). Leave Hill/Slab/Rock/Boulder layers as-is. Verify via `LogSiegeTerrain` "placed N
+    (target M)". Law: CONVENTIONS "Climbable terrain (M6.6)" + "Battlefield & procedural terrain (M6.5)".
 
 ---
 

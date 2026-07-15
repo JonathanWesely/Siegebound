@@ -72,6 +72,26 @@
       },
       "ucx": null
     },
+    "Ogre": {
+      "category": "unit",
+      "mode": "bake",
+      "tri_budget": 15000,
+      "bake_resolution": 1024,
+      "origin": "feet-center",
+      "fit_mode": "height",
+      "target_dims_ue": [226.72, 98.8, 290.0],
+      "_dims_source": "TASK-147 blockout: 226.72 x 98.8 x 290.0, feet-center, front -Y. Roster's TALLEST unit (Z 290). X width includes the overhead club (weapon overhang) so it is warn-only under fit_mode height (Z 290 is matched exactly). Measured headless from Content/RawAssets/Ogre.fbx (object SM_Ogre, 1572 tris).",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 1.5,
+      "team_region": {
+        "max_fraction": 0.35,
+        "_guess": "TASK-147 STARTING GUESS against a not-yet-generated mesh (tuned at the TASK-150 eyeball gate). Concept: bare GREEN-skinned horned brute in tattered hide + spiked shoulder pauldron armor, chest straps, wide belt, stone maul in one fist. Follows the Footman/Archer shoulder-cap recipe but DELIBERATELY OMITS a helm_dome selector: the ogre has NO helmet (bare horned head) so any full-width top-z dome would paint his face/head/horns (the Archer bare-head lesson, TASK-087). Single upward-facing shoulder-cap band kept BELOW the head to target the pauldron/shoulder armor only. Expect a gate tune once the live mesh's shoulder/head z-bands are probe-measured.",
+        "selectors": [
+          { "name": "shoulder_caps", "box": { "min": [0.10, 0.10, 0.66], "max": [0.90, 0.90, 0.84] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
+        ]
+      },
+      "ucx": null
+    },
     "Castle": {
       "category": "building",
       "mode": "bake",
