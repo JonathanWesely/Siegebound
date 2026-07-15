@@ -305,6 +305,14 @@ protected:
 	/** Pushes the correct effective speed (sprint vs walk per bSprinting) into the movement component. Null-safe. */
 	void ApplyMovementSpeed();
 
+	/**
+	 *  Applies the M6.6 climbable-terrain tunables (HeroMaxStepHeight / HeroWalkableFloorAngle /
+	 *  HeroJumpZVelocity) onto the CharacterMovementComponent (WalkableFloorAngle via the
+	 *  SetWalkableFloorAngle setter so the cached WalkableFloorZ recomputes). Null-safe. Called from
+	 *  BOTH the constructor and BeginPlay (mirrors ApplyMovementSpeed) so a BP_HeroCharacter tweak survives.
+	 */
+	void ApplyTerrainMovementTuning();
+
 	/** Stack cap (MaxCopies) for an upgrade CardID read from DT_Cards; 0 when the table/row is unavailable (caller refuses — never guesses). */
 	int32 GetStackCapForUpgrade(FName UpgradeCardID) const;
 
@@ -353,6 +361,25 @@ protected:
 	/** Movement speed in u/s while IA_Sprint is held (GDD §3.1: 750). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Movement", meta = (ClampMin = "0"))
 	float SprintSpeed = 750.f;
+
+	//~ Climbable-terrain movement tuning (M6.6, TASK-141) — pushed onto the CharacterMovementComponent
+	//~ by ApplyTerrainMovementTuning() from BOTH the ctor and BeginPlay (mirrors ApplyMovementSpeed).
+	//~ The `Hero` prefix is MANDATORY and load-bearing: an un-prefixed name would SHADOW the identically
+	//~ named UCharacterMovementComponent field it drives (MaxStepHeight / WalkableFloorAngle /
+	//~ JumpZVelocity), which UHT compiles as the C4457/58/59 shadow HARD ERROR (CONVENTIONS shadow law).
+	//~ Retune is comfort/margin only — the ≤30° hill faces are already climbable without it.
+
+	/** Max vertical step the hero walks up without jumping, in units. Drives CharacterMovement MaxStepHeight (M6.6: 50, was 45). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Movement", meta = (ClampMin = "0"))
+	float HeroMaxStepHeight = 50.f;
+
+	/** Steepest floor the hero can stand/walk on, in degrees. Drives CharacterMovement WalkableFloorAngle via SetWalkableFloorAngle (M6.6: 50, was 44.76). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Movement", meta = (ClampMin = "0", ClampMax = "90"))
+	float HeroWalkableFloorAngle = 50.f;
+
+	/** Upward launch speed of a jump, in u/s. Drives CharacterMovement JumpZVelocity (M6.6: 600 ⇒ ~184 cm apex, was 500). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Movement", meta = (ClampMin = "0"))
+	float HeroJumpZVelocity = 600.f;
 
 	/** Damage per melee swing (GDD §3.1: 20). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Combat", meta = (ClampMin = "0"))

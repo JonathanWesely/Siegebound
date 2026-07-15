@@ -50,6 +50,16 @@ ASiegeBattlefieldScatter::ASiegeBattlefieldScatter()
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	RootComponent = SceneRoot;
+
+	// Projectile-terrain contract (CONVENTIONS "Climbable terrain (M6.6)", decision
+	// #3): AProjectile::FindEnvironmentImpact already object-traces the scatter HISMs
+	// (WorldStatic/WorldDynamic) and keeps only impacts whose owner actor is tagged,
+	// so this SINGLE tag makes arrows die on the scattered rocks/hills/tree-trunks.
+	// Exact string "Terrain" — NOT "Obstacle": the Obstacle tag is read as an
+	// actor-location clearance test, and this actor is a single point at the origin,
+	// so Obstacle would place the whole clearance zone at (0,0,0). "Terrain" is the
+	// walkable/cover tag the projectile pass wants.
+	Tags.Add(FName(TEXT("Terrain")));
 }
 
 void ASiegeBattlefieldScatter::BeginPlay()
@@ -192,12 +202,14 @@ void ASiegeBattlefieldScatter::ScatterLayer(const FScatterLayer& Layer, FRandomS
 	const float HalfX = FMath::Max(ScatterConfig->ArenaHalfExtent.X, 1.f);
 	const float HalfY = FMath::Max(ScatterConfig->ArenaHalfExtent.Y, 1.f);
 	const bool bMirror = ScatterConfig->bMirrorSymmetric;
-	const float MinSpacingSq = Layer.MinSpacing * Layer.MinSpacing;
+	const bool bUsesProxy = !Layer.CollisionProxyMesh.IsNull();
 	const float ScaleLo = FMath::Min(Layer.ScaleRange.X, Layer.ScaleRange.Y);
 	const float ScaleHi = FMath::Max(Layer.ScaleRange.X, Layer.ScaleRange.Y);
 
-	// MinSpacing is per-layer, so only this layer's placed points matter.
-	TArray<FVector2D> PlacedPoints;
+	// Placed points carry (2D center, footprint radius) so MinSpacing is radius-aware:
+	// two instances are rejected when their centers are closer than MinSpacing + both
+	// radii, so wide hills stop interpenetrating (was center-only TArray<FVector2D>).
+	TArray<TPair<FVector2D, float>> PlacedPoints;
 	PlacedPoints.Reserve(Layer.InstanceCount * (bMirror ? 2 : 1));
 
 	int32 Placed = 0;
@@ -210,22 +222,61 @@ void ASiegeBattlefieldScatter::ScatterLayer(const FScatterLayer& Layer, FRandomS
 			const float Y = SampleBiasedY(Stream, HalfY, Layer.RegionBias);
 			const FVector2D Candidate(X, Y);
 
-			// Blocking obstacles honor keep-clear + the reserved corridor; grass ignores it.
-			if (Layer.bBlocking && IsInKeepClear(Candidate))
+			// ⚠️ SEED-ORDER CHANGE (M6.6 TASK-140, INTENTIONAL — NOT a regression):
+			// the mesh + scale rolls were previously drawn AFTER the keep-clear/spacing
+			// tests (only on a candidate that passed). They now roll HERE, BEFORE those
+			// tests, because the radius-aware guards (keep-clear inflation, field-edge
+			// clamp, radius-aware MinSpacing) need the instance's footprint radius,
+			// which derives from the chosen mesh's bounds × the rolled scale. Drawing
+			// them earlier changes the FRandomStream draw sequence, so EXISTING seeds
+			// now produce DIFFERENT (still-valid) layouts. A fixed OverrideSeed stays
+			// fully deterministic. (Documented in the TASK-140 handoff for build-master.)
+			UStaticMesh* Mesh = Resolved[Stream.RandRange(0, Resolved.Num() - 1)];
+			UHierarchicalInstancedStaticMeshComponent* Comp = ResolveComponentForMesh(Mesh, Layer);
+			if (!Comp)
+			{
+				continue;
+			}
+			const float Scale = Stream.FRandRange(ScaleLo, ScaleHi);
+
+			// Footprint radius: explicit override (absolute cm) else auto-derive from
+			// the mesh's XY half-diagonal × the rolled scale.
+			float FootprintR;
+			if (Layer.FootprintRadius > 0.f)
+			{
+				FootprintR = Layer.FootprintRadius;
+			}
+			else
+			{
+				const FBoxSphereBounds MeshBounds = Mesh->GetBounds();
+				FootprintR = FVector2D(MeshBounds.BoxExtent.X, MeshBounds.BoxExtent.Y).Size() * Scale;
+			}
+
+			// FIELD-EDGE clamp: reject a candidate whose footprint would sprawl past
+			// the arena half-extents into the boundary walls.
+			if (FMath::Abs(X) + FootprintR > HalfX || FMath::Abs(Y) + FootprintR > HalfY)
 			{
 				continue;
 			}
 
-			bool bTooClose = false;
-			if (MinSpacingSq > 0.f)
+			// Blocking obstacles honor keep-clear + the reserved corridor, now inflated
+			// by the footprint radius so a wide instance centered off-lane no longer
+			// sprawls across the corridor; grass (non-blocking) ignores keep-clear.
+			if (Layer.bBlocking && IsInKeepClear(Candidate, FootprintR))
 			{
-				for (const FVector2D& P : PlacedPoints)
+				continue;
+			}
+
+			// Radius-aware MinSpacing: reject if the centers are closer than
+			// MinSpacing + this instance's radius + the other's radius.
+			bool bTooClose = false;
+			for (const TPair<FVector2D, float>& Other : PlacedPoints)
+			{
+				const float MinDist = Layer.MinSpacing + FootprintR + Other.Value;
+				if (MinDist > 0.f && FVector2D::DistSquared(Other.Key, Candidate) < MinDist * MinDist)
 				{
-					if (FVector2D::DistSquared(P, Candidate) < MinSpacingSq)
-					{
-						bTooClose = true;
-						break;
-					}
+					bTooClose = true;
+					break;
 				}
 			}
 			if (bTooClose)
@@ -233,36 +284,57 @@ void ASiegeBattlefieldScatter::ScatterLayer(const FScatterLayer& Layer, FRandomS
 				continue;
 			}
 
-			UStaticMesh* Mesh = Resolved[Stream.RandRange(0, Resolved.Num() - 1)];
-			UHierarchicalInstancedStaticMeshComponent* Comp = ResolveComponentForMesh(Mesh, Layer);
-			if (!Comp)
-			{
-				continue;
-			}
-
-			const float Scale = Stream.FRandRange(ScaleLo, ScaleHi);
 			const float Yaw = Layer.bRandomYaw ? Stream.FRandRange(0.f, 360.f) : 0.f;
 			const float Z = GroundZAt(X, Y) + Layer.ZOffset;
 
 			const FTransform InstanceXf(FRotator(0.f, Yaw, 0.f), FVector(X, Y, Z), FVector(Scale));
 			Comp->AddInstance(InstanceXf, /*bWorldSpace=*/true);
-			PlacedPoints.Add(Candidate);
+			PlacedPoints.Add(TPair<FVector2D, float>(Candidate, FootprintR));
 			++Placed;
 			bPlacedThis = true;
 
+			// Tree collision-proxy: add the paired proxy instance in LOCKSTEP with the
+			// visual (same index) so the visual/proxy pair stays parallel for the
+			// corridor cull. The proxy is scaled non-uniformly by CollisionProxyScale ×
+			// the instance scale, and lifted by CollisionProxyZOffset × scale so a
+			// centered-pivot cylinder grounds at the tree base.
+			if (bUsesProxy)
+			{
+				if (UHierarchicalInstancedStaticMeshComponent* Proxy = ResolveProxyForVisual(Comp, Layer))
+				{
+					const FVector ProxyScaleVec = Layer.CollisionProxyScale * Scale;
+					const float ProxyZ = Z + Layer.CollisionProxyZOffset * Scale;
+					const FTransform ProxyXf(FRotator(0.f, Yaw, 0.f), FVector(X, Y, ProxyZ), ProxyScaleVec);
+					Proxy->AddInstance(ProxyXf, /*bWorldSpace=*/true);
+				}
+			}
+
 			// Mirror-symmetric fallback mode: place the twin across X=0 (still
-			// keep-clear-checked for blocking layers).
+			// radius-aware keep-clear-checked for blocking layers). The twin's |X|,|Y|
+			// equal the primary's, so it is already inside the field-edge clamp.
 			if (bMirror)
 			{
 				const FVector2D MirrorPoint(-X, Y);
-				if (!(Layer.bBlocking && IsInKeepClear(MirrorPoint)))
+				if (!(Layer.bBlocking && IsInKeepClear(MirrorPoint, FootprintR)))
 				{
 					const float MirrorZ = GroundZAt(-X, Y) + Layer.ZOffset;
 					const float MirrorYaw = Layer.bRandomYaw ? FMath::Fmod(Yaw + 180.f, 360.f) : 0.f;
 					const FTransform MirrorXf(FRotator(0.f, MirrorYaw, 0.f), FVector(-X, Y, MirrorZ), FVector(Scale));
 					Comp->AddInstance(MirrorXf, /*bWorldSpace=*/true);
-					PlacedPoints.Add(MirrorPoint);
+					PlacedPoints.Add(TPair<FVector2D, float>(MirrorPoint, FootprintR));
 					++Placed;
+
+					// Mirror proxy in lockstep (keeps the visual/proxy indices parallel).
+					if (bUsesProxy)
+					{
+						if (UHierarchicalInstancedStaticMeshComponent* Proxy = ResolveProxyForVisual(Comp, Layer))
+						{
+							const FVector ProxyScaleVec = Layer.CollisionProxyScale * Scale;
+							const float ProxyZ = MirrorZ + Layer.CollisionProxyZOffset * Scale;
+							const FTransform ProxyXf(FRotator(0.f, MirrorYaw, 0.f), FVector(-X, Y, ProxyZ), ProxyScaleVec);
+							Proxy->AddInstance(ProxyXf, /*bWorldSpace=*/true);
+						}
+					}
 				}
 			}
 		}
@@ -302,25 +374,39 @@ UHierarchicalInstancedStaticMeshComponent* ASiegeBattlefieldScatter::ResolveComp
 	Comp->SetupAttachment(RootComponent);
 	Comp->SetStaticMesh(Mesh);
 
-	if (Layer.bBlocking)
+	// A layer with a CollisionProxyMesh (trees) delegates ALL blocking + nav to a
+	// separate invisible proxy HISM (ResolveProxyForVisual): the VISIBLE mesh here
+	// gets NO collision + no nav, so the canopy never carves an 8 m nav-blob.
+	const bool bUsesProxy = !Layer.CollisionProxyMesh.IsNull();
+
+	if (Layer.bBlocking && !bUsesProxy)
 	{
-		// BLOCKING obstacle: block ONLY the Pawn channel so units/hero physically
-		// block and route around; ignore every other channel so projectiles pass
-		// through cosmetically (accepted M6.5 gap — projectile self-destruct reads
-		// Obstacle-TAGGED actors, and HISM instances are not tagged actors).
-		// bCanEverAffectNavigation carves the (Dynamic) navmesh. QueryOnly (not
-		// QueryAndPhysics) — character movement is query/sweep-based and nav
-		// generation reads the collision geometry, so no physics state is needed;
-		// leaner for the many static instances (§6 perf budget).
+		// REAL-GEOMETRY blocker (rocks / slabs / hills): the HISM's own geometry is
+		// both the collider and the nav obstacle (CONVENTIONS "Climbable terrain
+		// (M6.6)" scatter-channel law). Block Pawn (units/hero route AND climb),
+		// Visibility + Camera (arrows die on the mound per decision #3, and the camera
+		// never clips inside a mound when the hero stands on a crown), and set
+		// bFillCollisionUnderneathForNavmesh so Recast fills the volume UNDER the hill
+		// — units climb OVER the hill rather than the navmesh tunnelling through it.
+		// ECC_WorldStatic RESPONSE stays IGNORE (from SetCollisionResponseToAllChannels
+		// below): GroundZAt line-traces ECC_WorldStatic for the placement-ghost floor
+		// height, so blocking WorldStatic would break placement. QueryOnly (not
+		// QueryAndPhysics) — movement is query/sweep-based and nav reads collision
+		// geometry, so no physics state is needed; leaner for the many statics (§6).
 		Comp->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 		Comp->SetCollisionObjectType(ECC_WorldStatic);
 		Comp->SetCollisionResponseToAllChannels(ECR_Ignore);
 		Comp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+		Comp->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+		Comp->SetCollisionResponseToChannel(ECC_Camera, ECR_Block);
+		Comp->bFillCollisionUnderneathForNavmesh = true;
 		Comp->SetCanEverAffectNavigation(true);
 	}
 	else
 	{
-		// Pure decoration (grass): no collision, no navmesh effect.
+		// Either the GRASS layer (pure decoration) OR the VISUAL mesh of a proxy
+		// layer (trees). No collision, no navmesh effect: for a proxy layer the
+		// blocking + nav are carried by the paired invisible proxy HISM.
 		Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Comp->SetCanEverAffectNavigation(false);
 	}
@@ -328,6 +414,78 @@ UHierarchicalInstancedStaticMeshComponent* ASiegeBattlefieldScatter::ResolveComp
 	Comp->RegisterComponent();
 	ScatterComponents.Add(Comp);
 	return Comp;
+}
+
+UHierarchicalInstancedStaticMeshComponent* ASiegeBattlefieldScatter::ResolveProxyForVisual(UHierarchicalInstancedStaticMeshComponent* VisualComp, const FScatterLayer& Layer)
+{
+	if (!VisualComp)
+	{
+		return nullptr;
+	}
+
+	// Exactly one proxy per visual HISM — reuse it so the visual/proxy instance
+	// indices stay parallel (the corridor cull removes matching indices from both).
+	if (UHierarchicalInstancedStaticMeshComponent** Existing = VisualToProxy.Find(VisualComp))
+	{
+		return *Existing;
+	}
+
+	UStaticMesh* ProxyMesh = Layer.CollisionProxyMesh.LoadSynchronous();
+	if (!ProxyMesh)
+	{
+		UE_LOG(LogSiegeTerrain, Warning,
+			TEXT("[BattlefieldScatter] Layer '%s' CollisionProxyMesh '%s' failed to resolve — this layer's visuals have NO collider (degraded, never a crash)."),
+			*Layer.LayerName.ToString(), *Layer.CollisionProxyMesh.ToString());
+		return nullptr;
+	}
+
+	UHierarchicalInstancedStaticMeshComponent* Proxy = NewObject<UHierarchicalInstancedStaticMeshComponent>(this);
+	if (!Proxy)
+	{
+		return nullptr;
+	}
+
+	// Mobility + attach + nav flags must be set BEFORE RegisterComponent so nav
+	// relevance is computed correctly at registration.
+	Proxy->SetMobility(EComponentMobility::Movable);
+	Proxy->SetupAttachment(RootComponent);
+	Proxy->SetStaticMesh(ProxyMesh);
+
+	// Invisible Pawn-block-only proxy (tree collision-proxy contract): it blocks ONLY
+	// the Pawn channel — deliberately NOT Visibility/Camera, or the building placement
+	// ghost (a Visibility/Camera trace) would snap to the invisible cylinder. Nav +
+	// fill-underneath so units route around the slim trunk footprint (not the canopy).
+	// Hidden + no shadow so the proxy never renders. WorldStatic RESPONSE stays Ignore,
+	// so GroundZAt's WorldStatic trace passes through the proxy (correct floor height).
+	Proxy->SetVisibility(false);
+	Proxy->SetCastShadow(false);
+	Proxy->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	Proxy->SetCollisionObjectType(ECC_WorldStatic);
+	Proxy->SetCollisionResponseToAllChannels(ECR_Ignore);
+	Proxy->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+	Proxy->bFillCollisionUnderneathForNavmesh = true;
+	Proxy->SetCanEverAffectNavigation(true);
+
+	Proxy->RegisterComponent();
+	ScatterComponents.Add(Proxy);        // rooted for GC + reached by ClearScatter
+	VisualToProxy.Add(VisualComp, Proxy);
+	return Proxy;
+}
+
+UHierarchicalInstancedStaticMeshComponent* ASiegeBattlefieldScatter::FindVisualForProxy(UHierarchicalInstancedStaticMeshComponent* ProxyComp) const
+{
+	if (!ProxyComp)
+	{
+		return nullptr;
+	}
+	for (const TPair<UHierarchicalInstancedStaticMeshComponent*, UHierarchicalInstancedStaticMeshComponent*>& Pair : VisualToProxy)
+	{
+		if (Pair.Value == ProxyComp)
+		{
+			return Pair.Key;
+		}
+	}
+	return nullptr;
 }
 
 void ASiegeBattlefieldScatter::RebuildKeepClearZones()
@@ -424,17 +582,22 @@ void ASiegeBattlefieldScatter::RebuildKeepClearZones()
 	}
 }
 
-bool ASiegeBattlefieldScatter::IsInKeepClear(const FVector2D& Point2D) const
+bool ASiegeBattlefieldScatter::IsInKeepClear(const FVector2D& Point2D, float InstanceRadius) const
 {
 	// The reserved central corridor: NO blocking obstacle inside |Y| <= half-width
 	// across the whole X span — the deterministically-always-walkable Blue→Red lane.
-	if (FMath::Abs(Point2D.Y) <= CorridorHalfWidthCached)
+	// Inflated by InstanceRadius so a WIDE instance's EDGE (not just its center) is
+	// what must clear the corridor — the headline M6.6 fix for hills sprawling in.
+	if (FMath::Abs(Point2D.Y) <= CorridorHalfWidthCached + InstanceRadius)
 	{
 		return true;
 	}
 	for (const FKeepClearZone& Zone : KeepClearZones)
 	{
-		if (FVector2D::DistSquared(Point2D, Zone.Center) <= Zone.RadiusSq)
+		// Inflate each keep-clear disc by the footprint radius: reject if the
+		// instance's edge would enter the zone, i.e. DistSq <= (sqrt(RadiusSq)+R)^2.
+		const float InflatedRadius = FMath::Sqrt(Zone.RadiusSq) + InstanceRadius;
+		if (FVector2D::DistSquared(Point2D, Zone.Center) <= InflatedRadius * InflatedRadius)
 		{
 			return true;
 		}
@@ -536,7 +699,10 @@ int32 ASiegeBattlefieldScatter::CullCorridorBlockers(float Band)
 	int32 TotalRemoved = 0;
 	for (UHierarchicalInstancedStaticMeshComponent* Comp : ScatterComponents)
 	{
-		// Only blocking obstacles carve nav; grass (no-nav) is irrelevant to pathing.
+		// Only nav-relevant comps carve nav: real-geometry blockers (rocks/hills/
+		// slabs) AND tree PROXY HISMs. A proxy-layer's VISUAL HISM has nav OFF, so it
+		// is skipped HERE and culled in lockstep via its proxy below; grass (no-nav)
+		// is irrelevant to pathing and also skipped by this same guard.
 		if (!Comp || !Comp->CanEverAffectNavigation())
 		{
 			continue;
@@ -557,6 +723,16 @@ int32 ASiegeBattlefieldScatter::CullCorridorBlockers(float Band)
 		}
 		if (ToRemove.Num() > 0)
 		{
+			// If Comp is a tree PROXY, remove the SAME instance indices from its paired
+			// VISUAL HISM in lockstep — otherwise this cull deletes the trunk collider
+			// (nav-relevant) but leaves the visible tree standing with no blocker (the
+			// visual/proxy desync flagged in the TASK-140 spec). Indices are parallel
+			// by construction (every proxy instance is added alongside its visual), and
+			// removing the same index set from both preserves that parallelism.
+			if (UHierarchicalInstancedStaticMeshComponent* Visual = FindVisualForProxy(Comp))
+			{
+				Visual->RemoveInstances(ToRemove);
+			}
 			Comp->RemoveInstances(ToRemove);
 			TotalRemoved += ToRemove.Num();
 		}

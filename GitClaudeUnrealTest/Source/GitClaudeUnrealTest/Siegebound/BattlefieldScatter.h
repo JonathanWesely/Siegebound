@@ -120,14 +120,45 @@ private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UHierarchicalInstancedStaticMeshComponent>> ScatterComponents;
 
-	/** Resolves-or-creates the HISM for a mesh, applying the layer's collision/nav profile. Returns nullptr if the mesh is unresolvable. */
+	/**
+	 *  Visual-HISM → paired proxy-HISM index (tree collision-proxy contract). For a
+	 *  layer with CollisionProxyMesh set, the visual HISM renders with NO collision
+	 *  and the invisible proxy HISM (Pawn-block-only) carries the blocking + nav.
+	 *  BOTH are also stored in ScatterComponents (a UPROPERTY), which is what roots
+	 *  them for GC and what ClearScatter iterates — this map is only a secondary
+	 *  index (raw pointers are safe: every key/value outlives the map, all torn down
+	 *  together on actor destroy). Its job: keep the pair matched so
+	 *  CullCorridorBlockers removes the SAME instance indices from BOTH in lockstep
+	 *  (else culling the nav-relevant proxy orphans a visible tree with no collider).
+	 */
+	TMap<UHierarchicalInstancedStaticMeshComponent*, UHierarchicalInstancedStaticMeshComponent*> VisualToProxy;
+
+	/** Resolves-or-creates the VISUAL HISM for a mesh, applying the layer's collision/nav profile. Returns nullptr if the mesh is unresolvable. */
 	UHierarchicalInstancedStaticMeshComponent* ResolveComponentForMesh(UStaticMesh* Mesh, const FScatterLayer& Layer);
+
+	/**
+	 *  Resolves-or-creates the invisible Pawn-block-only PROXY HISM paired to a
+	 *  visual HISM (tree collision-proxy contract, CONVENTIONS "Climbable terrain
+	 *  (M6.6)"). Exactly ONE proxy per visual HISM so the visual/proxy instance
+	 *  indices stay parallel (CullCorridorBlockers removes both in lockstep).
+	 *  Returns nullptr if the layer's CollisionProxyMesh is unset/unresolvable.
+	 */
+	UHierarchicalInstancedStaticMeshComponent* ResolveProxyForVisual(UHierarchicalInstancedStaticMeshComponent* VisualComp, const FScatterLayer& Layer);
+
+	/** Reverse lookup: the visual HISM paired to a proxy HISM (or nullptr for a real-geometry blocker). Lets CullCorridorBlockers cull the visual in lockstep with its proxy. */
+	UHierarchicalInstancedStaticMeshComponent* FindVisualForProxy(UHierarchicalInstancedStaticMeshComponent* ProxyComp) const;
 
 	/** Scatters a single layer's instances via the shared FRandomStream (asymmetric unless bMirrorSymmetric). */
 	void ScatterLayer(const FScatterLayer& Layer, FRandomStream& Stream);
 
-	/** True if a 2D point is inside any keep-clear zone (castle/node/PlayerStart radius) or the reserved corridor band. Built fresh each generate from the live level actors. */
-	bool IsInKeepClear(const FVector2D& Point2D) const;
+	/**
+	 *  True if a 2D point — inflated by InstanceRadius — is inside any keep-clear
+	 *  zone (castle/node/PlayerStart radius) or the reserved corridor band. The
+	 *  radius makes a WIDE instance's EDGE (not just its center) count, so a broad
+	 *  hill centered just off-lane no longer sprawls into the corridor. Built fresh
+	 *  each generate from the live level actors.
+	 */
+	bool IsInKeepClear(const FVector2D& Point2D, float InstanceRadius = 0.f) const;
 
 	/** Rebuilds KeepClearZones + corridor half-width from the live level (castles/nodes/PlayerStart) with CONVENTIONS-coordinate fallbacks. */
 	void RebuildKeepClearZones();
@@ -187,9 +218,9 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Terrain|Traversability", meta = (ClampMin = "0"))
 	float CorridorWidenStep = 250.f;
 
-	/** Max rejection-sampling attempts per instance before it is skipped (keeps GenerateScatter bounded on a crowded field). */
+	/** Max rejection-sampling attempts per instance before it is skipped (keeps GenerateScatter bounded on a crowded field). Raised 16→24 for M6.6: the radius-aware keep-clear / edge-clamp / spacing tests reject more candidates, so more attempts are needed to hit the target count. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Terrain|Traversability", meta = (ClampMin = "1"))
-	int32 MaxPlacementAttemptsPerInstance = 16;
+	int32 MaxPlacementAttemptsPerInstance = 24;
 
 	/**
 	 *  Inset (cm) applied to each castle location toward the centerline before the

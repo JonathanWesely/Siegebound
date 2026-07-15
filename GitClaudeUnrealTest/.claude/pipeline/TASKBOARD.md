@@ -31,7 +31,7 @@ Source: `Docs/GDD.md` §9. Only the current milestone is decomposed into tasks; 
 2. **M2 — Economy + deck/hand + core set + defenses** — `done-pending-playtest (functionally complete, committed aafd968+5bb9507 not pushed; 1 known gap = visual hand UI manual pass [TASK-041]; awaiting Jonathan's round-1 M2 playtest)` (TASK-021..040; M2a/M2b exit criteria in "M2 manager decisions" below)
 3. **M3 — Bot opponent = real 1v1 match** — `done (committed 2f6a8fc + c8a40b2 + 56247c9, not pushed; m3-testable @ 56247c9; slice verified, interactive items pending Jonathan's playtest)`
 4. **M4 — Card Set II (16 cards, keywords, hero upgrades)** — `done (playtested + signed off by Jonathan 2026-07-08; committed 65861ce + e586699, not pushed; m4-testable @ e586699)` (TASK-053..069; branches m2-testable @ f903cf0 + m3-testable @ 56247c9 + m4-testable @ e586699 preserve the milestone slices; see "## M4 tasks") — sign-off note: "we will have to make some balancing changes later, but it is fine" → see Standing backlog
-4.5. **M4.5 — Gameplay terrain pass (grass, hills, trees + rocks)** — `SUPERSEDED 2026-07-10 by M6.5` (Jonathan's 2026-07-10 battlefield directive changed the approach to RUNTIME PROCEDURAL RANDOMIZED scatter + 4× castle spacing; the M4.5 hand-placed mirror-symmetric plan is retired — its Terrain/Obstacle tag + placement-clearance [TASK-093] + projectile code contracts carry into M6.5, inert under the non-blocking default; see CONVENTIONS "Arena terrain & environment (M4.5)" supersede note). Original entry kept for history: — Jonathan directive 2026-07-08: the arena is "a boring white board"; wants "a nice large grass area with trees and hills". REAL GAMEPLAY TERRAIN — mirror-symmetric hills (physical high ground) + trees/rocks (navmesh/placement obstacles) INSIDE the playfield; amends GDD §5 (rulings in "M4.5 manager decisions" under Active tasks, incl. the same-day Fab amendment). **Fab pivot (Jonathan, same day):** he supplies premade Fab assets for FOUR slots — tree, rock, grass, hill (FAB-001..004 approved in .claude/pipeline/fab/FAB-REQUESTS.md; drop zone Content/Fab/README_DROP_ZONE.md). TASK-091/092 are now Fab conform+integration tasks blocked on his drop; TASK-093/094 (C++) remain valid and dispatchable. **ORDERING INVERSION (Jonathan's ruling): M5 proceeds AHEAD of this milestone — nobody blocks M5 work on M4.5.** M4.5 resumes the moment the Fab assets land.
+4.5. **M4.5 — Gameplay terrain pass (grass, hills, trees + rocks)** — `SUPERSEDED 2026-07-10 by M6.5 (approach); climbable-terrain INTENT UNPARKED 2026-07-14 as M6.6` (Jonathan's 2026-07-10 battlefield directive changed the approach to RUNTIME PROCEDURAL RANDOMIZED scatter + 4× castle spacing; the M4.5 hand-placed mirror-symmetric plan is retired — its Terrain/Obstacle tag + placement-clearance [TASK-093] + projectile code contracts carry into M6.5, inert under the non-blocking default; see CONVENTIONS "Arena terrain & environment (M4.5)" supersede note). Original entry kept for history: — Jonathan directive 2026-07-08: the arena is "a boring white board"; wants "a nice large grass area with trees and hills". REAL GAMEPLAY TERRAIN — mirror-symmetric hills (physical high ground) + trees/rocks (navmesh/placement obstacles) INSIDE the playfield; amends GDD §5 (rulings in "M4.5 manager decisions" under Active tasks, incl. the same-day Fab amendment). **Fab pivot (Jonathan, same day):** he supplies premade Fab assets for FOUR slots — tree, rock, grass, hill (FAB-001..004 approved in .claude/pipeline/fab/FAB-REQUESTS.md; drop zone Content/Fab/README_DROP_ZONE.md). TASK-091/092 are now Fab conform+integration tasks blocked on his drop; TASK-093/094 (C++) remain valid and dispatchable. **ORDERING INVERSION (Jonathan's ruling): M5 proceeds AHEAD of this milestone — nobody blocks M5 work on M4.5.** M4.5 resumes the moment the Fab assets land. **UPDATE 2026-07-14 — INTENT UNPARKED as M6.6 "Climbable terrain" (TASK-138..145):** M4.5's core gameplay intent — hills as CLIMBABLE physical high ground (walkable low-angle faces + flat crowns, TASK-091..096's design) — is now delivered on top of the M6.5 procedural scatter via purpose-built convex hill meshes (`SM_Hill_01/02/03`) that replace the unclimbable `stone_hill` dome. The M4.5 hand-placed mirror-symmetric APPROACH stays retired (M6.5's asymmetric runtime scatter is the live placement model); only the walkable-terrain INTENT carries into M6.6.
 5. **M5 — Spell system + Set III** — `done-pending-playtest (functionally complete 2026-07-08, TASK-097..109 all done; code commit 2c65164 + editor/art/docs commit 979f552 on main, NOT pushed; m5-testable @ 979f552; machine-verified, live spell/reticle/bot-cast items on the WATCH list below — need one unlocked-desktop human playtest to close the slice)` — targeting mode, 5 spells + Crystal Tower, spell Niagara VFX at the §6 bar, bot M5 spell rules. Carry-in baked into the specs (not a follow-up): the targeting reticle ground-projects via TRACE so M4.5's hills need no rework when they land. Slice: spell VFX showcase reel. **QA: 2 fail→fix→pass loops, both one-shot (TASK-098 BattleCry-magnitude seam ruled to the unit side; TASK-100 reticle decal double-rotation).**
 
 ### M5 CHECKPOINT — 2026-07-08 (playtest WATCH list — read before the human playtest)
@@ -44,7 +44,8 @@ M5 shipped machine-verified with the desktop LOCKED (SendInput blocked → no si
 - Benign (no action, informational): stale LogCSVImportFactory "missing CardType" warnings on load — cards.csv + live DT_Cards verified correct; it's the import-factory enum quirk that set_rows sidesteps.
 5.5. **M5.5 — Overhead health bars** — `done-pending-playtest (2026-07-09, TASK-110..112 all done; commit 9a8a75f on main, NOT pushed [no branch — batch, not a milestone; m5-testable already preserves M5]. Functionally verified via PIE property readback; live on-screen bar appearance owed to Jonathan's playtest — see WATCH in TASK-112)` — Jonathan directive 2026-07-09 (direct in Claude Code): "add a health bar to every tower and character." A small standalone batch inserted between M5 and M6 (M4.5 shape), NOT a GDD milestone. Broadens GDD §7's enemy-only-when-damaged line to a floating overhead HP bar on EVERY combat actor, both teams — units (incl. miners), all buildings (towers, Wall, Barracks, Deep Mine), and the hero. Castles keep their existing M1 bar. Rulings + tasks in "M5.5 manager decisions" under Active tasks; naming law in CONVENTIONS "Overhead unit health bars (M5.5)". Jonathan's M6 go-ahead is given but M6 is decomposed AFTER this batch ships (separate step). **REOPENED 2026-07-09 by post-M6 playtest feedback (Item 1):** the hide-at-full behavior law is REVERSED to ALWAYS-VISIBLE (bar visible the entire time, fill drops as HP drops) + a fill bug fixed → TASK-122..124 in "M6 playtest feedback" under Active tasks; CONVENTIONS law updated. **UPDATE 2026-07-10: the overhead-bar feature was RE-REBUILT from scratch (TASK-130..132, castle push/delegate parity, RED enemy / BLUE friendly) and SHIPPED @ `61a1e72` (not pushed) — this retired the poll system AND the failed first-attempt fix (TASK-122/123/124/127/128, now SUPERSEDED). The overhead bars are `done` as of the rebuild.**
 6. **M6 — Deck-builder meta** — `done-pending-playtest (2026-07-09, TASK-113..121 all done; ONE M6 commit 975ee90 on main, NOT pushed; m6-testable @ 975ee90 [4 ahead of origin]). Machine + live-PIE verified [deck-feed + fallback + bot-deck pick]; SaveGame save→relaunch persistence + live 28-tile grid click-through + cheat execs owed to Jonathan's playtest (locked desktop — see WATCH in TASK-120). 5 code tasks, 1 build-fix loop total [TASK-110-class was M5.5]; M6 had ZERO QA fail loops. OPEN CHECKPOINT ITEM: bot decks spell-free — QA recommends Lightning ×2 in Defensive Economy so the M5 bot-spell feature is exercised; Jonathan's call.` — Deck-builder screen (§7): browse the 28-card collection, add/remove copies with per-card MaxCopies enforced, live x/50 counter + average-cost guide (§8), save/load named decks (USaveGame, cross-session), a deck playable only at exactly 50; the active saved deck feeds the player's match, the bot gets 2 distinct curated decks; the `DeckCount` column is re-authored into a legal curated default that supersedes the M4/M5 test spread. **State preserved (undisturbed by M6):** M5 + M5.5 stay `done-pending-playtest` (m5-testable @ 979f552; M5.5 commit 9a8a75f; human WATCH lists still owed); M4.5 stays `parked` on Jonathan's Fab drop. Slice: UI/UX + save-load systems clip. **POST-M6 PLAYTEST FEEDBACK (2026-07-09) → TASK-122..126 in the current milestone** ("M6 playtest feedback" block under Active tasks): Item 1 = overhead health bars now always-visible + fill-drops fix (TASK-122..124); Item 2 = deck-builder tiles render as physical cards (TASK-125..126, blocked-by Item 1 per Jonathan's ordering). **UPDATE 2026-07-10: both post-M6 feedback chains SHIPPED — deck-builder physical-card tiles (TASK-125/126/129) committed @ `274c160`; the health-bar effort was ultimately delivered by the TASK-130..132 REBUILD @ `61a1e72` (which retired the failed first-attempt TASK-122/123/124/127/128). Current HEAD `61a1e72`, not pushed. All M6 + feedback tasks `done`.**
-6.5. **M6.5 — Battlefield & procedural terrain** — `current` (decomposed 2026-07-10, TASK-133..137; Jonathan directive verbatim: *"start creating the terrain/battlefield the characters fight on … space out the castles … 4 times larger … a grassy terrain filled with rocks, trees, and hills … randomly generated at the start of each match … choose what you think will look best … use as many assets as possible … for variety"*). Standalone milestone after M6 (M4.5/M5.5 sub-milestone shape); SUPERSEDES the parked M4.5. **PART 1** = 4× castle spacing (±2000 → ±8000, gold nodes ∓1200 → ±7200, PlayerStart + navmesh + ground + boundary walls widened — CONVENTIONS "World axes" updated). **PART 2** = a RUNTIME procedural scatter (`ASiegeBattlefieldScatter` + `USiegeScatterConfig`/`DA_BattlefieldScatter` + `M_BattlefieldGround`) of trees/rocks/hills/grass soft-referenced from Jonathan's imported Fab packs, re-seeded each match. **Decisions ANSWERED by Jonathan 2026-07-10:** (1) obstacles **BLOCK** unit movement + carve the navmesh (Dynamic RecastNavMesh + a NON-NEGOTIABLE castle-to-castle traversability guarantee); (2) grass **material** (not a Landscape); (3) keep-clear zones **YES**; (4) 4× pacing **PROCEED**. Placement is **ASYMMETRIC organic random** (Jonathan ruling, flagged — can switch to mirror-symmetric at playtest if unfair). Details in the "M6.5 tasks" block under Active tasks. Naming law in CONVENTIONS "Battlefield & procedural terrain (M6.5)" + "World axes (arena contract)".
+6.5. **M6.5 — Battlefield & procedural terrain** — `done (2026-07-14 — Jonathan committed the assembled battlefield HIMSELF as `6a4c17d "battlefield created"` and PUSHED it; this SATISFIES the TASK-136/137 held-commit gate — no separate build-master M6.5 commit. GATE 0 for M6.6 is thereby satisfied. NOTE: an `m6.5-testable` branch was never cut at the self-commit — TASK-145 cuts it retroactively at 6a4c17d alongside m6.6-testable.)` (decomposed 2026-07-10, TASK-133..137; Jonathan directive verbatim: *"start creating the terrain/battlefield the characters fight on … space out the castles … 4 times larger … a grassy terrain filled with rocks, trees, and hills … randomly generated at the start of each match … choose what you think will look best … use as many assets as possible … for variety"*). Standalone milestone after M6 (M4.5/M5.5 sub-milestone shape); SUPERSEDES the parked M4.5. **PART 1** = 4× castle spacing (±2000 → ±8000, gold nodes ∓1200 → ±7200, PlayerStart + navmesh + ground + boundary walls widened — CONVENTIONS "World axes" updated). **PART 2** = a RUNTIME procedural scatter (`ASiegeBattlefieldScatter` + `USiegeScatterConfig`/`DA_BattlefieldScatter` + `M_BattlefieldGround`) of trees/rocks/hills/grass soft-referenced from Jonathan's imported Fab packs, re-seeded each match. **Decisions ANSWERED by Jonathan 2026-07-10:** (1) obstacles **BLOCK** unit movement + carve the navmesh (Dynamic RecastNavMesh + a NON-NEGOTIABLE castle-to-castle traversability guarantee); (2) grass **material** (not a Landscape); (3) keep-clear zones **YES**; (4) 4× pacing **PROCEED**. Placement is **ASYMMETRIC organic random** (Jonathan ruling, flagged — can switch to mirror-symmetric at playtest if unfair). Details in the "M6.5 tasks" block under Active tasks. Naming law in CONVENTIONS "Battlefield & procedural terrain (M6.5)" + "World axes (arena contract)".
+6.6. **M6.6 — Climbable terrain** — `current` (decomposed 2026-07-14, TASK-138..145; **UNPARKS the M4.5 "Gameplay terrain pass" intent**). Jonathan wants the battlefield hills/rocks CLIMBABLE by the hero — root-cause investigation established this is currently BY-DESIGN (M6.5's scatter built every rock/hill/tree as a route-around blocker) and that the parked M4.5 TASK-091..096 already specified exactly this feature, so M6.6 delivers the parked M4.5 intent on top of the M6.5 procedural scatter. **ROOT CAUSE (corrects the earlier jump-height hypothesis):** the scatter applies UNIFORM scale (`BattlefieldScatter.cpp:247`, `FVector(Scale)`) → face angles are SCALE-INVARIANT; the squashed `stone_hill` dome goes near-vertical at the rim → unclimbable regardless of jump. FIX = purpose-built CONVEX hill meshes (`SM_Hill_01/02/03`) with ≤30° faces + flat crowns, under BOTH the character's 44.76° WalkableFloorAngle AND Recast's 44° AgentMaxSlope, so hero AND units climb with essentially no movement retune. **FOUR DECISIONS LOCKED (Jonathan, 2026-07-14):** (1) M6.5 already committed by Jonathan @ `6a4c17d` (pushed) — GATE 0 satisfied, NO build-master M6.5 commit; (2) widen arena Y ±2400 → ±4000; (3) terrain BLOCKS projectiles (arrows die on rocks/hills/tree-trunks — accepted balance change); (4) units climb too (navmesh generates over hills — closes the melee-can't-reach-a-crowned-hero exploit). Authoritative plan on disk: `C:\Users\wesel\.claude\plans\we-last-left-off-partitioned-puppy.md`. Naming law in CONVENTIONS "Climbable terrain (M6.6)". Details in "M6.6 tasks" under Active tasks.
 7. M7 — Premium art & feel pass — `not-started` · **Jonathan request (2026-07-04):** raise fidelity on SM_Castle + SM_Footman + SM_Archer (higher detail than the current blockouts); wants the game to look nicer. Decision: DEFERRED here (mesh swaps are non-breaking; roster still growing through M4-M6). Two integration paths to scope at M7: (a) art-director custom higher-detail Blender models, and/or (b) **Fab/UE-marketplace assets — Jonathan must download packs into the project via the Epic Launcher first (agents can't browse/buy/download Fab autonomously); art-director then swaps meshes/materials.** Could be pulled forward as a standalone art pass after M3/M4 if Jonathan wants it sooner.
 8. M8 — Networked 1v1 multiplayer — `not-started`
 
@@ -122,6 +123,8 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 ---
 
 ## Active tasks
+
+**2026-07-14 M6.6 KICKOFF (READ FIRST — CURRENT milestone):** **M6.5 is DONE** — Jonathan committed the assembled battlefield HIMSELF as `6a4c17d "battlefield created"` and PUSHED it (this satisfies the held TASK-136/137 commit gate; no separate build-master M6.5 commit — GATE 0 for M6.6 is satisfied). **M6.6 "Climbable terrain" (TASK-138..145) is now the CURRENT milestone** — it UNPARKS the M4.5 gameplay-terrain intent (make hills/rocks climbable). Root cause of the un-climbable hills = the scatter's UNIFORM scale makes face angles scale-invariant, so the squashed `stone_hill` dome is un-climbable at any scale; fix = purpose-built CONVEX hill meshes `SM_Hill_01/02/03` (≤30° faces, flat crowns) + a 4000-wide arena + terrain-blocks-projectiles + units-climb. Four decisions locked (see the "M6.6 tasks" block). Naming law: CONVENTIONS "Climbable terrain (M6.6)". Authoritative plan: `C:\Users\wesel\.claude\plans\we-last-left-off-partitioned-puppy.md`. Repo base = `6a4c17d` on `main`, pushed. TASK-138 (this CONVENTIONS block) is DONE; dispatch frontier = **TASK-139 ∥ TASK-140 ∥ TASK-141** (all parallel-safe, blocked only by TASK-138).
 
 **2026-07-10 BOARD RECONCILIATION (repo state for M6.5 integration — READ FIRST):** current HEAD on `main` = **61a1e72** (NOT pushed). Two post-M6 chains shipped after the M6 commit (975ee90): (1) **deck-builder physical-card tiles** — TASK-125/129 authored, integrated + committed by TASK-126 @ **274c160**; (2) **overhead health-bar REBUILD** (castle push/delegate parity, RED enemy / BLUE friendly) — TASK-130/131/132 @ **61a1e72**, which RETIRED the failed first-attempt chain TASK-122/123/124/127/128 (their poll-system code + `WBP_UnitHealthBar` were DELETED by the rebuild — those five are SUPERSEDED, not shipped-as-authored). All `done`, nothing pushed. **M6.5 (Battlefield & procedural terrain) is now the CURRENT milestone** (TASK-133..137). The individual TASK-122..124 status lines retain their forensic QA-loop history below their new done/superseded marker. (Reconciliation note: the coordinator's hand-typed buckets had TASK-126/129 under 61a1e72 and omitted 124/128 — corrected here by task type: deck tiles → 274c160, health-bar rebuild → 61a1e72, first-attempt health-bar → superseded.)
 
@@ -819,6 +822,274 @@ Dispatch shape: **WAVE 1 — FILE tasks, parallel-safe NOW: TASK-113 ∥ TASK-11
     Commit on `main`, message "TASK-130..132: health-bar rebuild (castle push/delegate parity) —
     WBP_CombatantHealthBar, per-actor FOnCombatantHPChanged, red-enemy/blue-friendly, screenshot-verified; retired
     the poll system". No push, no branch.
+
+---
+
+### M6.6 — Climbable terrain (TASK-138..145) — decomposed 2026-07-14 — UNPARKS M4.5
+
+**Authorization:** Jonathan's 2026-07-14 decision to make the battlefield hills/rocks CLIMBABLE by the hero. Root-cause investigation established this is currently BY-DESIGN — M6.5's scatter built every rock/hill/tree as a route-around blocker — and that the parked M4.5 "Gameplay terrain pass" (TASK-091..096) already specified exactly this feature, so M6.6 UNPARKS the M4.5 intent as a fresh milestone (delivered on top of the M6.5 procedural scatter, NOT the retired M4.5 hand-placed approach). A full design pass is approved; the authoritative spec of record is on disk at `C:\Users\wesel\.claude\plans\we-last-left-off-partitioned-puppy.md`. Naming law added to CONVENTIONS "Climbable terrain (M6.6)" BEFORE task issue (TASK-138, done). Hard gate stands: editor/MCP + Blender work needs the tools up (127.0.0.1:8000) — park + tell the orchestrator if unreachable (never fake). Nothing pushed beyond Jonathan's own `6a4c17d`. Does NOT touch prior milestones' state.
+
+**ROOT CAUSE (corrects the earlier jump-height hypothesis):** the scatter applies UNIFORM scale (`BattlefieldScatter.cpp:247`, `FVector(Scale)`), so face angles are SCALE-INVARIANT — scaling the squashed `stone_hill` dome 15× makes it taller AND wider, its flank still goes near-vertical at the rim (a ~4 m unclimbable skirt). No jump buff fixes a dome. FIX = purpose-built CONVEX hill meshes (`SM_Hill_01/02/03`) with ≤30° faces + flat crowns, under BOTH the character's 44.76° `WalkableFloorAngle` AND Recast's 44° `AgentMaxSlope` → hero AND units climb with essentially no movement retune (the hero tuning is comfort/margin only).
+
+**FOUR DECISIONS — LOCKED by Jonathan 2026-07-14 (binding rulings for all M6.6 tasks):**
+1. **M6.5 committed FIRST — already done.** Jonathan committed the assembled battlefield HIMSELF as `6a4c17d "battlefield created"` and PUSHED it. This satisfies the held TASK-136/137 commit gate → GATE 0 is satisfied; there is NO build-master M6.5 commit task in M6.6. M6.6 starts on this clean, pushed base. (An `m6.5-testable` branch was never cut at the self-commit — TASK-145 cuts it retroactively at `6a4c17d`.)
+2. **Widen arena Y ±2400 → ±4000.** The M6.5 ±2400 field read narrow (14–69 blocking instances culled/seed; center sparse); the wider field + the radius-aware keep-clear (TASK-140) drive culls toward ~0. Build-master widens ground Y, NavMeshBounds XY + **Z (mandatory)**, and the boundary walls (TASK-143).
+3. **Terrain BLOCKS projectiles** — arrows die on rocks/hills/tree-trunks. Accepted balance change. Delivered by the single `Tags.Add("Terrain")` on `ASiegeBattlefieldScatter` (TASK-140) — `AProjectile::FindEnvironmentImpact` already object-traces the HISMs and filters by owner tag, so one tag closes the gap. Regression to prove: a crown tower still shoots units below without its arrows dying on its own hill (PIE #7; fallback = drop the tag).
+4. **Units climb too** — the navmesh generates OVER hills (`bFillCollisionUnderneathForNavmesh` on real-geometry blockers + the mandatory NavMeshBounds Z raise, 5→12 / ±1200). Closes the "melee can't reach a hero standing on a crown" exploit.
+
+Plus a recorded manager ruling: **the loop-reorder that makes scatter placement radius-aware CHANGES existing seeds' layouts** (mesh+scale rolled BEFORE the keep-clear test → a different `FRandomStream` draw order). This is DOCUMENTED, NOT a regression — a fixed `OverrideSeed` produces a new-but-deterministic layout.
+
+**M6.6 exit criteria (playable slice):** the hero WALKS (not jumps) up a ≤30° hill flank to a flat crown, on all 3 meshes at min+max scale (repeat at sprint) and descends without launching/sliding; the camera does NOT clip inside the mound on a crown; a melee unit PATHS OVER a hill to its target and a unit on a crown paths down; an enemy Footman at a hill base REACHES and DAMAGES a hero on the crown (anti-exploit); the placement ghost projects onto the hill SURFACE — a tower on a crown is ACCEPTED, on a flank REFUSED "Too steep" (net-zero gold); a crown tower shoots units below without its arrows dying on its own hill; the hero stops ~70 cm from a tree trunk (not 8 m) and units don't detour around empty air; across 3 fresh seeds `LogSiegeTerrain` reports "Traversability CONFIRMED" with 0 culls on ≥2 of 3; a full match runs end-to-end with no "Failed to find path" spam; a sprint+jump off the highest crown at the field edge does NOT clear a boundary wall (KillZ → respawn). Recordable: hero + unit climbing a hill, the anti-exploit reach, and the high-ground tower payoff.
+
+Dispatch shape: **TASK-138 (manager — CONVENTIONS law) lands FIRST (done).** Then the FILE/ART WAVE (parallel): **TASK-139 (art hills) ∥ TASK-140 (scatter C++) ∥ TASK-141 (hero-movement C++)** — 140 and 141 edit DISJOINT files (BattlefieldScatter/ScatterConfig vs HeroCharacter), the art is independent. QA gates the two code tasks together: **TASK-142** (pre-compile review of 140+141). Then the BUILD chain (serial, single editor + Git): **TASK-143** (compile 140+141 editor-bounce + widen L_Arena + navmesh XY/Z) → **TASK-144** (repopulate DA_BattlefieldScatter — runs AFTER the 143 compile, since the CollisionProxy/FootprintRadius fields only exist then; also needs the 3 imported hills from 139) → **TASK-145** (final compile-verify, the 13-point PIE suite, ONE commit not pushed, cut `m6.6-testable` + the skipped `m6.5-testable` @ 6a4c17d).
+
+#### TASK-138 — CONVENTIONS "Climbable terrain (M6.6)" law block (manager)
+- assignee: manager
+- status: **done** (2026-07-14 — the CONVENTIONS "Climbable terrain (M6.6)" section is written + live; this decomposition is the deliverable. Must land before 139/140/141 — it does.)
+- blocked-by: none
+- parallel-safe: no (the naming law MUST exist before the code/art tasks reference it)
+- spec: >
+    Write the CONVENTIONS.md "Climbable terrain (M6.6)" section (the naming/geometry law the assignees follow
+    character-for-character). Pin: (1) the three hill mesh names `SM_Hill_01/02/03` at `/Game/Meshes/` + raw
+    FBX paths `Content/RawAssets/Hill_0N.fbx`; (2) the climbable-geometry law — ≤30° faces, ≤8° crowns, ≥120 cm
+    toe fillet, CONVEX geometry (no undercuts), ≤1200 tris, Nanite OFF, origin base-center, UV `UVMap`,
+    `generate_convex_collisions(hull_count=1)`, readback acceptance (convexElems==1 / hull ZMax==mesh ZMax /
+    measured max face angle), MI_BattlefieldGround on slot 0; (3) the hero UPROPERTY names
+    `HeroMaxStepHeight`/`HeroWalkableFloorAngle`/`HeroJumpZVelocity` with the C4457/58/59 shadow-avoidance
+    rationale (the `Hero` prefix disambiguates from the identically-named UCharacterMovementComponent fields);
+    (4) the `"Terrain"` actor tag on `ASiegeBattlefieldScatter`; (5) the scatter collision-channel law (real
+    geometry blocks Pawn+Visibility+Camera, WorldStatic stays Ignore) and the tree collision-proxy contract
+    (visual HISM = NoCollision + no-nav; paired proxy HISM = Pawn-block-only + nav + fill-underneath, VisualToProxy
+    cull-in-parallel); (6) the radius-aware `FootprintRadius` seed-reorder note. Respect existing CONVENTIONS
+    formatting; do NOT disturb prior sections (M6.5 stays live, M4.5 stays superseded-history). Post the milestone
+    kickoff (top-level, manager-allowed) + the full breakdown in 📢 Planning & Feedback.
+- names: >
+    New CONVENTIONS.md section "## Climbable terrain (M6.6)". Pins: `SM_Hill_01/02/03` (/Game/Meshes/,
+    raws Content/RawAssets/Hill_0N.fbx); `HeroMaxStepHeight`/`HeroWalkableFloorAngle`/`HeroJumpZVelocity`
+    (AHeroCharacter); `"Terrain"` tag on ASiegeBattlefieldScatter; FScatterLayer CollisionProxyMesh/
+    CollisionProxyScale/CollisionProxyZOffset + FootprintRadius; VisualToProxy proxy contract.
+
+#### TASK-139 — Author 3 convex climbable hill meshes SM_Hill_01/02/03 (art)
+- assignee: art-director
+- status: done (integrated by build-master at TASK-144, 2026-07-14 — SM_Hill_01/02/03 swapped into the DA_BattlefieldScatter Hill layer, stone_hill dropped; read-back confirmed)
+- blocked-by: TASK-138
+- parallel-safe: yes (Blender authoring + import; no code dependency — the naming law is fixed at TASK-138. The editor-import step serializes with any other single-editor-mutating task, but the file work is independent)
+- spec: >
+    Art content — Blender authoring → FBX → editor import; needs Blender + the editor MCP up (else park + tell
+    the orchestrator). Author THREE purpose-built CONVEX climbable hill meshes per CONVENTIONS "Climbable
+    terrain (M6.6)". These REPLACE the unclimbable `stone_hill` dome in the Hill scatter layer (build-master
+    swaps the layer at TASK-144). Dimensions (base / crown / height / target max face angle):
+    `SM_Hill_01` knoll = r700 / r220 / 250 / ~27.5°; `SM_Hill_02` hill = r1100 / r320 / 400 / ~27°;
+    `SM_Hill_03` ridge = 2200×1700 / 1400×350 / 350 / ~27.5°.
+    LAW (the gate): every face angle ≤ 30° (under both the 44.76° WalkableFloorAngle AND Recast's 44°
+    AgentMaxSlope); crown near-flat ≤ 8°; a toe fillet ≥ 120 cm where the flank meets ground (NO near-vertical
+    skirt — the stone_hill defect); CONVEX, NO undercuts (one hull can't represent concavity — the ridge is one
+    stretched dome, never a saddle); ≤ 1200 tris; Nanite OFF; origin at base-center (z_min=0); UV layer `UVMap`.
+    Export FBX to `Content/RawAssets/Hill_01/02/03.fbx` (checked into Git); import to `/Game/Meshes/SM_Hill_01/
+    02/03`. Collision via `generate_convex_collisions(hull_count=1)` — exactly ONE convex hull matching the
+    render mesh (a multi-hull / box hull re-introduces an unclimbable step). Material: assign the EXISTING
+    `/Game/Materials/Instances/MI_BattlefieldGround` to slot 0 — NO new material.
+    ACCEPTANCE = READBACK, not vibe (TASK-088/135 technique): for each mesh report `convexElems == 1`,
+    `hull ZMax == mesh ZMax` (proves the crown is not bulged, not domed), and the MEASURED max face-normal-vs-+Z
+    angle (that number is the gate — must read ≤ 30°). Deliver the three readbacks in handoffs/TASK-139.md.
+    Do NOT touch code, the DataAsset, or L_Arena. Art skips QA → build-master integration (TASK-144). Post the
+    handoff in 🎨 Art (`🎨 ART-DIRECTOR: … TASK-139`) with the three readback triplets.
+- names: >
+    `SM_Hill_01` (knoll) / `SM_Hill_02` (hill) / `SM_Hill_03` (ridge) at `/Game/Meshes/SM_Hill_0N`;
+    raws `Content/RawAssets/Hill_01/02/03.fbx`. Collision `generate_convex_collisions(hull_count=1)`
+    (convexElems==1, hull ZMax==mesh ZMax). Material slot 0 = `/Game/Materials/Instances/MI_BattlefieldGround`
+    (no new material). ≤1200 tris, Nanite OFF, origin base-center, UV `UVMap`. Law: CONVENTIONS "Climbable
+    terrain (M6.6)".
+
+#### TASK-140 — Scatter C++: Terrain tag, blocking-channel + nav-fill, radius-aware keep-clear/spacing/edge-clamp, FootprintRadius, tree collision-proxy (C++ files)
+- assignee: gameplay-programmer
+- status: qa-passed
+- blocked-by: TASK-138
+- parallel-safe: yes (edits ScatterConfig.h + BattlefieldScatter.h/.cpp ONLY — DISJOINT from TASK-141's HeroCharacter.h/.cpp; no compile in this task)
+- spec: >
+    Files only — NO editor/MCP, NO compile (build-master compiles at TASK-143). Per CONVENTIONS "Climbable
+    terrain (M6.6)". Edit `Siegebound/ScatterConfig.h` + `Siegebound/BattlefieldScatter.h/.cpp`:
+    (1) Constructor: `Tags.Add(FName(TEXT("Terrain")))` — exact string `Terrain` (NOT `Obstacle`); closes
+    projectile pass-through (decision #3).
+    (2) Real-geometry blocking branch (rocks/slabs/hills) in the mesh-resolve path: `SetCollisionResponseToChannel
+    (ECC_Visibility, ECR_Block)` + `(ECC_Camera, ECR_Block)` + `bFillCollisionUnderneathForNavmesh = true` (units
+    climb OVER, camera doesn't clip a crowned hero, arrows die on the mound). Leave `ECC_WorldStatic` on Ignore
+    (`GroundZAt` `:459` traces it for the placement ghost).
+    (3) RADIUS-AWARE keep-clear (the headline fix): `IsInKeepClear` (`:427`) today tests instance CENTER only, so
+    a wide hill off-lane still sprawls across the corridor (the 14–69-culls/seed cause). Add an `InstanceRadius`
+    param; inflate the corridor test to `|Y| <= CorridorHalfWidth + R` and each zone to `DistSq <= (sqrt(RadiusSq)+R)^2`.
+    Apply on the mirror path (`:258`) too.
+    (4) FIELD-EDGE clamp: reject candidates where `|X|+R > HalfX` or `|Y|+R > HalfY` (big instances stop sprawling
+    into the boundary walls).
+    (5) Radius derivation: new `FScatterLayer::FootprintRadius` (0 = auto = `FVector2D(Bounds.BoxExtent.X,.Y).Size()*Scale`).
+    ⚠️ FORCES A LOOP REORDER — mesh+scale rolled at `:236/:243` must move BEFORE the keep-clear test at `:214`; this
+    changes the `FRandomStream` draw order so EXISTING seeds produce NEW layouts (NOT a regression — DOCUMENT loudly
+    in a comment + the handoff).
+    (6) Radius-aware `MinSpacing`: store `TArray<TPair<FVector2D,float>>`, test `DistSq < (MinSpacing+Ri+Rj)^2`
+    (hills stop interpenetrating).
+    (7) TREE COLLISION-PROXY: new `FScatterLayer` fields `TSoftObjectPtr<UStaticMesh> CollisionProxyMesh`,
+    `FVector CollisionProxyScale=(1,1,1)`, `float CollisionProxyZOffset=0`. When set: the VISUAL HISM → NoCollision +
+    `bCanEverAffectNavigation=false`; ONE paired PROXY HISM per visual mesh (`SetVisibility(false)`,
+    `SetCastShadow(false)`) carrying QueryOnly + **Pawn block ONLY** + `bCanEverAffectNavigation=true` +
+    `bFillCollisionUnderneathForNavmesh=true`. ⚠️ `CullCorridorBlockers` (`:534`) removes from nav-relevant comps
+    (= the proxy) and will ORPHAN the visible tree — keep `TMap<UHISM*,UHISM*> VisualToProxy`, cull BOTH in
+    parallel, and register both proxies in `ScatterComponents` so `ClearScatter` reaches them.
+    (8) Channel rule: real-geometry blockers block Pawn+Visibility+Camera; tree proxies block Pawn ONLY (else the
+    placement ghost snaps to the invisible cylinder). Everywhere null-safe; ZERO combat/stat behavior change; do
+    NOT touch HeroCharacter (TASK-141), cards.csv, or DT_Cards. ACCEPTANCE: compiles warnings-as-errors (verified
+    at TASK-143); Terrain tag present; blocking channels + nav-fill on real geometry; radius-aware keep-clear/edge/
+    spacing; FootprintRadius + the reorder documented; tree proxy system + VisualToProxy parallel cull. → qa-reviewer
+    (MANDATORY inherited-reflected-member shadow scan + complete-type-include scan — the HISM/UStaticMesh/collision-
+    channel/NavigationSystem includes are the trap; ALSO trace the visual/proxy cull-desync item 7 explicitly). Post
+    in ⚙️ Dev & QA (`⚙️ GAMEPLAY-PROGRAMMER: … TASK-140`).
+- names: >
+    `Siegebound/ScatterConfig.h` — `FScatterLayer` gains `FootprintRadius` (float, 0=auto), `CollisionProxyMesh`
+    (TSoftObjectPtr<UStaticMesh>), `CollisionProxyScale` (FVector=(1,1,1)), `CollisionProxyZOffset` (float=0).
+    `Siegebound/BattlefieldScatter.h/.cpp` — ctor `Tags.Add(FName(TEXT("Terrain")))`; real-geometry blockers
+    block ECC_Pawn+ECC_Visibility+ECC_Camera + bFillCollisionUnderneathForNavmesh; WorldStatic stays Ignore;
+    `IsInKeepClear` gains InstanceRadius (corridor + zones radius-inflated, mirror path too); field-edge clamp;
+    radius-aware MinSpacing; `TMap<UHISM*,UHISM*> VisualToProxy` (cull visual+proxy in parallel; both registered
+    in ScatterComponents). Tree proxy = Pawn-block-only + nav. Law: CONVENTIONS "Climbable terrain (M6.6)".
+
+#### TASK-141 — Hero movement tuning: HeroMaxStepHeight/HeroWalkableFloorAngle/HeroJumpZVelocity via ApplyTerrainMovementTuning() (C++ files)
+- assignee: gameplay-programmer
+- status: qa-passed
+- blocked-by: TASK-138
+- parallel-safe: yes (edits `HeroCharacter.h/.cpp` ONLY — DISJOINT from TASK-140's scatter files; no compile in this task)
+- spec: >
+    Files only — NO editor/MCP, NO compile (build-master compiles at TASK-143). Per CONVENTIONS "Climbable
+    terrain (M6.6)". Edit `Siegebound/HeroCharacter.h/.cpp` ONLY — NEVER touch the template base
+    `GitClaudeUnrealTestCharacter.*` (CONVENTIONS template law; it is the base for the Variant_* maps).
+    Expose THREE `UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Siegebound|Movement")` tunables and apply
+    them via a helper `ApplyTerrainMovementTuning()` called from BOTH the constructor AND `BeginPlay` (mirror the
+    existing `ApplyMovementSpeed()` at `HeroCharacter.cpp:45,82`):
+    `HeroMaxStepHeight` = 50 (was 45) → `GetCharacterMovement()->MaxStepHeight`;
+    `HeroWalkableFloorAngle` = 50 (was 44.76) → `SetWalkableFloorAngle(HeroWalkableFloorAngle)`;
+    `HeroJumpZVelocity` = 600 (was 500) → `GetCharacterMovement()->JumpZVelocity`.
+    The `Hero` prefix is MANDATORY — it avoids SHADOWING the identically-named UCharacterMovementComponent fields
+    (MaxStepHeight/WalkableFloorAngle/JumpZVelocity), which compiles as the C4457/58/59 shadow HARD ERROR (the
+    CONVENTIONS shadow law). The retune is comfort/margin only (the ≤30° hills are already climbable without it);
+    `GravityScale`/`AirControl` UNCHANGED. `CharacterMovementComponent.h` is already included at `HeroCharacter.cpp:13`
+    (complete-type law satisfied — but QA re-verifies). ACCEPTANCE: compiles warnings-as-errors (verified at
+    TASK-143); the three UPROPERTYs read 50/50/600; `ApplyTerrainMovementTuning()` called from ctor + BeginPlay;
+    no template-base file touched; no shadow. → qa-reviewer (MANDATORY shadow scan — the three names are the whole
+    point + complete-type-include scan). Post in ⚙️ Dev & QA (`⚙️ GAMEPLAY-PROGRAMMER: … TASK-141`).
+- names: >
+    `Siegebound/HeroCharacter.h/.cpp` ONLY. UPROPERTYs (EditAnywhere, BlueprintReadOnly, Category=
+    "Siegebound|Movement"): `HeroMaxStepHeight`=50, `HeroWalkableFloorAngle`=50, `HeroJumpZVelocity`=600, applied
+    by `ApplyTerrainMovementTuning()` from ctor + BeginPlay. NEVER edit `GitClaudeUnrealTestCharacter.*`. Law:
+    CONVENTIONS "Climbable terrain (M6.6)".
+
+#### TASK-142 — QA pre-compile review of TASK-140 + TASK-141 (qa)
+- assignee: qa-reviewer
+- status: backlog
+- blocked-by: TASK-140, TASK-141
+- parallel-safe: no (reviews both code tasks together before the compile)
+- spec: >
+    Pre-compile review of TASK-140 (scatter C++) + TASK-141 (hero movement) against CONVENTIONS + the M6.6 law.
+    Mandated scans (CONVENTIONS coding laws): (a) inherited-reflected-member SHADOW law — the three hero tunables
+    MUST be `Hero`-prefixed (an un-prefixed `MaxStepHeight`/`WalkableFloorAngle`/`JumpZVelocity` is the C4457/58/59
+    hard error); watch scatter locals too (`Owner`/`Instigator`/`Slot`). (b) complete-type-include law — every
+    member/`Cast<>`/method on a forward-declared type needs the full header `#include`d in that .cpp (HISM,
+    UStaticMesh, NavigationSystem, collision channels for TASK-140; CharacterMovementComponent for TASK-141 — the
+    latter already included at HeroCharacter.cpp:13, confirm it survived). (c) every `IsInKeepClear` caller updated
+    for the new `InstanceRadius` param. (d) THE ONE THAT WILL BITE — the visual/proxy cull-desync (TASK-140 item 7):
+    trace that `CullCorridorBlockers` culls BOTH the visual and proxy HISMs in parallel and both are registered in
+    `ScatterComponents`, else the visible tree orphans. Write a PASS/FAIL report to qa/TASK-142-report.md and post
+    the verdict + report path in ⚙️ Dev & QA (`🔍 QA: … TASK-142`). PASS → TASK-143; FAIL → back to
+    gameplay-programmer (max 3 loops then escalate).
+- names: >
+    Report qa/TASK-142-report.md. Scans: shadow (CONVENTIONS §C++), complete-type-include (§coding law),
+    IsInKeepClear caller sweep, visual/proxy cull-desync (TASK-140 item 7). Law: CONVENTIONS "Climbable terrain
+    (M6.6)".
+
+#### TASK-143 — PART A integration: compile 140+141, widen L_Arena Y→±4000 + navmesh XY/Z, rebuild nav, save (build)
+- assignee: build-master
+- status: done (build-master 2026-07-14, RESUME 2). GATE A compile PASSED (Build.bat editor target, Result: Succeeded, 0 warnings-as-errors, UHT+link clean — ScatterConfig/BattlefieldScatter/HeroCharacter). Editor relaunched detached, MCP healthy. L_Arena widened via set_actor_transform + read-back verified: ArenaGround scale.Y 48→80; NavMeshBounds_Arena scale.Y 24→40 + scale.Z 5→12 (±1200 mandatory raise); ArenaBoundary_North/South loc.Y ±2400→±4000; East/West scale.Y 48→80 (corner-leak catch). KillZ −2000 unchanged. save_assets(['/Game/Maps/L_Arena'])=true. Nav is runtime-Dynamic → regenerates at PIE (validated at TASK-145 traversability); no MCP Build>Navigation tool exists (would only matter for a static bake, which this level is not).
+- blocked-by: TASK-142 (qa-passed); AND env-blocked on Smart App Control enforcement (see status)
+- parallel-safe: no (single editor + the compile that unblocks TASK-144's DataAsset edit)
+- spec: >
+    Build-master integration, PART A. Needs the editor MCP up (else park + tell the orchestrator). Per CONVENTIONS
+    "Climbable terrain (M6.6)" + "World axes (arena contract)".
+    (0) COMPILE TASK-140 + TASK-141 C++ via the standard Build.bat editor-bounce (both scans first); any error →
+    append to the offending task's QA report, qa-failed, stop (counts as a QA loop; NEVER edit code). This compile
+    makes the new `FScatterLayer` CollisionProxy/FootprintRadius fields exist in the editor — REQUIRED for TASK-144's
+    DataAsset edit (the M6.5 TASK-136 precedent: compile-in-the-first-build-task).
+    (1) WIDEN L_Arena Y ±2400 → ±4000 (decision #2), via MCP `set_actor_transform` (proven TASK-136): the ArenaGround
+    slab Y scale 48 → 80 (±2400 → ±4000); `ArenaBoundary_North/South` → ±4000 (hero still can't leave).
+    (2) NAVMESH: `NavMeshBounds_Arena` XY to match the widened field AND **Z scale 5 → 12 (±500 → ±1200) — NOT
+    OPTIONAL**: a ~520 cm crown + 144 headroom = 664 > 500, so without the Z raise the nav never generates on crowns
+    and the whole feature silently fails (units can't climb, decision #4 breaks). REBUILD the navmesh.
+    (3) SAVE via `save_assets(['/Game/Maps/L_Arena'])` (`save_actor` errors on this non-WP level). Do NOT change
+    KillZ (−2000, vertical). If the nav volume needs a brush REBUILD (not just a scale) or a manual `Build >
+    Navigation` click, that is a possible Jonathan-only step — flag it (do not fake).
+    Do NOT commit here (TASK-145 owns the single commit). Post the compile result + widen + nav-rebuild + save in
+    🔧 Build & Git (`🔧 BUILD-MASTER: … TASK-143`).
+- names: >
+    Compile TASK-140+141 (Build.bat editor-bounce). ArenaGround Y scale 48→80 (±4000); ArenaBoundary_North/South
+    →±4000; NavMeshBounds_Arena XY match + **Z scale 5→12 (±1200)** + rebuild nav; `save_assets(['/Game/Maps/
+    L_Arena'])`. KillZ −2000 UNCHANGED. NO commit (TASK-145). Law: CONVENTIONS "Climbable terrain (M6.6)" + "World
+    axes (arena contract)".
+
+#### TASK-144 — PART B integration: repopulate DA_BattlefieldScatter (3 new hills, tree collision-proxies, ±4000 extent) (build)
+- assignee: build-master
+- status: done (build-master 2026-07-14). DA_BattlefieldScatter repopulated + read-back verified: Hill=[SM_Hill_01/02/03] (stone_hill dropped), count 6, scale 0.9–1.3, spacing 2000, WholeField; Slabs scale 3–5×; Trees CollisionProxyMesh=/Engine/BasicShapes/Cylinder, CollisionProxyScale (1.4,1.4,17), CollisionProxyZOffset +850 (derived from live 100³ centered-pivot bounds); ArenaHalfExtent.Y=4000, CorridorHalfWidth=800, bMirrorSymmetric=false. Cylinder-not-a-visual-mesh invariant holds. save_assets(DA)=true.
+- blocked-by: TASK-143 (compiled config fields + widened arena), TASK-139 (SM_Hill_01/02/03 imported)
+- parallel-safe: no (single editor + Git; the CollisionProxy fields only exist after the TASK-143 compile)
+- spec: >
+    Build-master integration, PART B. Needs the editor MCP up (else park + tell the orchestrator). Edit
+    `/Game/Data/DA_BattlefieldScatter` (a USiegeScatterConfig instance — editing FScatterLayer via MCP proven
+    TASK-137). Ground truth is the `LogSiegeTerrain` scatter log, NOT `get_properties` (shallow-reads nested struct
+    fields as null — TASK-137 caveat). Per CONVENTIONS "Climbable terrain (M6.6)".
+    - **Hill layer:** Meshes → `[SM_Hill_01, SM_Hill_02, SM_Hill_03]`, DROP `stone_hill`; scale range 0.9–1.3 (the
+    new meshes are authored at real size — no more 10–15×); bias → WholeField (safe now the radius test guards the
+    lane).
+    - **Slabs/Rocks:** scale 3–5× (stays a blocking obstacle, not a hill).
+    - **Trees:** set `CollisionProxyMesh = /Engine/BasicShapes/Cylinder`; READ BACK the engine Cylinder's actual
+    bounds (100³, centered pivot) to derive `CollisionProxyScale` ≈ (1.4, 1.4, 17) + `CollisionProxyZOffset` ≈ +850
+    (do the math from the real readback — don't hardcode blind). Result: hero stops ~70 cm from the trunk, not 8 m.
+    - **Config:** `ArenaHalfExtent.Y` 2400 → 4000; `CorridorHalfWidth` stays 800 (now genuinely honored by the
+    radius test). `bMirrorSymmetric=false` (asymmetric — unchanged M6.5 ruling).
+    Apply any per-mesh origin offsets. Do NOT commit here (TASK-145 owns the commit). Post the layer changes + the
+    Cylinder-proxy readback math + the scatter-log confirmation in 🔧 Build & Git (`🔧 BUILD-MASTER: … TASK-144`).
+- names: >
+    `/Game/Data/DA_BattlefieldScatter`: Hill layer Meshes=[SM_Hill_01,02,03] (drop stone_hill), scale 0.9–1.3,
+    WholeField; Slabs scale 3–5×; Trees CollisionProxyMesh=`/Engine/BasicShapes/Cylinder`, CollisionProxyScale
+    ≈(1.4,1.4,17), CollisionProxyZOffset≈+850 (from readback); ArenaHalfExtent.Y=4000; CorridorHalfWidth=800;
+    bMirrorSymmetric=false. NO commit (TASK-145). Law: CONVENTIONS "Climbable terrain (M6.6)".
+
+#### TASK-145 — Final integration: compile-verify, 13-point PIE suite, ONE commit (not pushed), cut m6.6-testable + m6.5-testable (build)
+- assignee: build-master
+- status: HELD — NO COMMIT (build-master 2026-07-14). GATE A compile PASS; TASK-143 widen + TASK-144 DA both done/verified/saved. Machine gates run headlessly: #10 CLEAN (no unit "Failed to find path" in a live full match, both teams spawning+marching); #13 benign-only; #9 traversability CONFIRMED on 3 fresh seeds (781344065/1316789505/364718977 — the Blue→Red guarantee holds) BUT not clean 0-cull (instances culled 3/6/1). Root cause: L_Arena's BAKED navmesh is stale after the ±4000 widen — serialized 285 tiles/9-bit (old ±2400) vs 513/10-bit required → RecastNavMesh recreated at every PIE start → nav-settle latency → defensive corridor culls (seed-3 attempt-2 culled 0 yet path still pending = proves latency, NOT a corridor breach). HELD on two Jonathan-only items: (a) manual `Build > Navigation` + save L_Arena (MCP exposes no nav-build tool; also clears the #9 culls); (b) machine gates #5 (anti-exploit, SummonTestUnit) + #4 (unit-climb) are not runnable via MCP (no console-exec / UFunction-call; ProgrammaticToolset sandbox excludes `unreal`) — they overlap Jonathan's manual PIE list #1/2/3/7/11/12. Single commit + m6.6-testable/m6.5-testable branches DEFERRED until the nav bake + human/console gates pass. Feature otherwise healthy: terrain tag live (projectile block #3), hills place (4/6/6 across seeds, all 3 SM_Hill variants resolve). Density notes (Jonathan visual #12): Trees 14–18/55, Grass ~1450/2500 on the wider field (radius-aware spacing).
+- blocked-by: TASK-144
+- parallel-safe: no (single editor + Git; the closing task)
+- spec: >
+    Build-master final integration. Needs the editor MCP up (else park + tell the orchestrator). Build.bat per
+    CLAUDE.md. (1) RE-VERIFY a clean compile of TASK-140+141 (shadow + complete-type-include scans). (2) Run the
+    13-POINT PIE CHECKLIST from the authoritative plan (`C:\Users\wesel\.claude\plans\we-last-left-off-partitioned-
+    puppy.md`), GDI screenshots + LogSiegeTerrain: #1 hero WALKS (no jump) up a flank to a crown, all 3 meshes,
+    min+max scale, repeat at sprint; #2 descends without launching/sliding; #3 camera doesn't clip inside the mound
+    on a crown; #4 a unit climbs a hill + a unit on a crown paths down (proves nav on crown → NavBounds Z landed);
+    #5 ANTI-EXPLOIT — hero on crown, enemy Footman at base REACHES + damages him; #6 ghost projects onto the hill
+    surface, tower on crown ACCEPTED / on flank REFUSED "Too steep" (net-zero), unit placement on flank still works;
+    #7 REGRESSION — crown tower shoots a unit below, arrows NOT destroyed by its own hill; #8 hero stops ~70 cm from
+    a trunk (not 8 m), units don't detour around empty air; #9 TRAVERSABILITY — 3 fresh seeds, "Traversability
+    CONFIRMED" with 0 culls on ≥2 of 3 (>5 = radius keep-clear didn't land → route back to gameplay-programmer,
+    counts as a QA loop); #10 full match end-to-end, no "Failed to find path" spam; #11 sprint+jump off the highest
+    crown at the field edge does NOT clear a boundary wall (KillZ → respawn); #12 perf/visual = JONATHAN's eyeball
+    (foreground PIE) — record best-effort FPS + instance counts; #13 log sweep vs the known-benign set (DeepMine
+    CardType-2, victory-focus, RecastNavMesh boot, CrowdFollowing teardown). Checks 1/2/3/12 are Jonathan's to
+    eyeball (HISM scatter is PIE-runtime-only — un-capturable in the editor viewport); confirm the rest in the
+    pixels/logs. Any HARD-gate failure → route back per the routing rules (never fake a pass). (3) COMMIT ONE
+    commit on `main` (task-ID message, TASK-138..145), NOT pushed; cut `m6.6-testable` at the commit AND
+    `m6.5-testable` at `6a4c17d` (the skipped M6.5 branch — milestone-preservation workflow; neither pushed). Post
+    the PIE results per check + FPS + the commit hash + both branches in 🔧 Build & Git (`🔧 BUILD-MASTER: …
+    TASK-145`).
+- names: >
+    Compile-verify (Build.bat). 13-point PIE suite (plan file). ONE commit on `main` "TASK-138..145: climbable
+    terrain — convex SM_Hill_01/02/03 + ±4000 arena + terrain-blocks-projectiles + units-climb + tree
+    collision-proxies + hero tuning", NOT pushed. Branches: `m6.6-testable` @ the commit + `m6.5-testable` @
+    `6a4c17d`. Law: CONVENTIONS "Climbable terrain (M6.6)".
 
 ---
 

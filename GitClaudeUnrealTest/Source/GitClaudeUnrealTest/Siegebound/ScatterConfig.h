@@ -100,6 +100,56 @@ struct FScatterLayer
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter")
 	float ZOffset = 0.f;
+
+	// --- Radius-aware placement (CONVENTIONS "Climbable terrain (M6.6)", TASK-140) ---
+
+	/**
+	 *  2D footprint radius (cm) fed to the radius-aware placement guards — the
+	 *  keep-clear inflation, the field-edge clamp, and the radius-aware MinSpacing —
+	 *  so a WIDE instance centered off-lane no longer sprawls across the reserved
+	 *  corridor or interpenetrates a neighbour (the M6.5 14–69-culls/seed root
+	 *  cause). 0 (default) = AUTO-derive per instance from the chosen mesh's XY
+	 *  bounds × the rolled uniform scale (`FVector2D(Bounds.BoxExtent.X, .Y).Size()
+	 *  * Scale`). A value > 0 is an ABSOLUTE override (NOT multiplied by the
+	 *  instance scale) for a designer who wants a fixed clearance regardless of the
+	 *  scale-range variation.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter", meta = (ClampMin = "0"))
+	float FootprintRadius = 0.f;
+
+	// --- Tree collision-proxy (CONVENTIONS "Climbable terrain (M6.6)", TASK-140) ---
+
+	/**
+	 *  Optional invisible collision-proxy mesh. When SET, this layer's VISUAL HISM
+	 *  carries NO collision + no navigation, and blocking is delegated to a PAIRED
+	 *  proxy HISM (exactly one per visual mesh) that renders invisibly and blocks
+	 *  the Pawn channel ONLY. Used for trees: the canopy/trunk still render, while a
+	 *  slim engine `Cylinder` proxy blocks JUST the trunk footprint — so units route
+	 *  around the trunk, not an 8 m canopy nav-blob (the defect that killed TASK-137).
+	 *  Null (default) = the layer uses its own geometry for collision/nav per
+	 *  bBlocking (rocks / slabs / hills / grass).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter")
+	TSoftObjectPtr<UStaticMesh> CollisionProxyMesh;
+
+	/**
+	 *  Non-uniform scale for the collision proxy, MULTIPLIED by the instance's
+	 *  rolled uniform scale (so a tall thin trunk cylinder wraps a scaled tree).
+	 *  Only used when CollisionProxyMesh is set. Default (1,1,1) = the proxy mesh's
+	 *  authored size × the instance scale.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter")
+	FVector CollisionProxyScale = FVector(1.f, 1.f, 1.f);
+
+	/**
+	 *  Vertical offset (cm) for the collision proxy, added to the placed instance Z
+	 *  and scaled by the instance's uniform scale — raises a centered-pivot proxy
+	 *  (e.g. the engine `Cylinder`, whose pivot is at its middle) so its base sits
+	 *  at the tree base instead of half-sunk into the ground. Only used when
+	 *  CollisionProxyMesh is set. Default 0.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter")
+	float CollisionProxyZOffset = 0.f;
 };
 
 /**

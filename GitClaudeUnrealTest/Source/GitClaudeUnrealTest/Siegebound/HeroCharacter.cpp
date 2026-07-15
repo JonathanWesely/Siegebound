@@ -44,6 +44,11 @@ AHeroCharacter::AHeroCharacter()
 	// GDD §3.1 base walk speed (BeginPlay re-applies in case a blueprint tweaks WalkSpeed)
 	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
 
+	// M6.6 climbable-terrain tuning (TASK-141): raise step height / walkable-floor angle / jump so the
+	// hero comfortably WALKS (not jumps) up the ≤30° hill flanks to a flat crown. BeginPlay re-applies
+	// so a BP_HeroCharacter tweak survives — mirrors the WalkSpeed pattern above / ApplyMovementSpeed.
+	ApplyTerrainMovementTuning();
+
 	// Overhead health bar (TASK-130 castle-parity REBUILD): one screen-space, team-tinted PUSH
 	// bar. ADDITIVE to the hero's own WBP_HUD HP (M1) — the component binds this hero's OnHPChanged
 	// delegate (GetMaxHP() is already the EFFECTIVE Plate-Armor max), and the widget class
@@ -80,6 +85,10 @@ void AHeroCharacter::BeginPlay()
 	// InitForCombatant seed (run during Super::BeginPlay above) to the effective max.
 	OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
 	ApplyMovementSpeed();
+
+	// M6.6 (TASK-141): re-apply the climbable-terrain tunables so a BP_HeroCharacter tweak survives
+	// (mirrors ApplyMovementSpeed's ctor->BeginPlay re-apply pattern directly above).
+	ApplyTerrainMovementTuning();
 
 	// far in the past: the first swing is never cooldown-blocked and a below-max hero regens immediately
 	LastMeleeTime = -1.0e9;
@@ -662,6 +671,22 @@ void AHeroCharacter::ApplyMovementSpeed()
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		Movement->MaxWalkSpeed = bSprinting ? GetEffectiveSprintSpeed() : GetEffectiveWalkSpeed();
+	}
+}
+
+void AHeroCharacter::ApplyTerrainMovementTuning()
+{
+	// M6.6 climbable-terrain margins (TASK-141): push the step-up, walkable-floor angle, and jump
+	// apex onto the movement component so the hero comfortably walks up the ≤30° hill flanks to a
+	// flat crown (the ≤30° faces are already climbable — this is comfort/margin only; GravityScale
+	// and AirControl are deliberately untouched). Hero-prefixed members avoid shadowing the
+	// component's identically-named fields. WalkableFloorAngle goes through SetWalkableFloorAngle so
+	// the cached WalkableFloorZ (the value used at runtime) recomputes — never write the field raw.
+	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+	{
+		MoveComp->MaxStepHeight = HeroMaxStepHeight;
+		MoveComp->SetWalkableFloorAngle(HeroWalkableFloorAngle);
+		MoveComp->JumpZVelocity = HeroJumpZVelocity;
 	}
 }
 
