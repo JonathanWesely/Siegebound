@@ -132,6 +132,372 @@
           { "name": "gatehouse", "center": [4.0, -254.0, 210.0], "size": [160.0, 150.0, 420.0] }
         ]
       }
+    },
+    "Knight": {
+      "category": "unit",
+      "mode": "bake",
+      "tri_budget": 15000,
+      "bake_resolution": 1024,
+      "origin": "feet-center",
+      "fit_mode": "height",
+      "target_dims_ue": [162.0, 62.74, 190.0],
+      "_dims_source": "TASK-166 measured headless from Content/RawAssets/Knight.fbx (blockout SM_Knight, 1244 tris, min_z 0, feet-center): 162.0 x 62.74 x 190.0. Z=190 is the height-fit target; X width includes the sword/shield overhang (warn-only under fit_mode height).",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 1.5,
+      "team_region": {
+        "max_fraction": 0.35,
+        "_guess": "TASK-166 STARTING GUESS (mesh not yet generated) — heavily-armored helmeted soldier: Footman recipe = helm_dome (x-constrained to skip a raised weapon) + upward-facing shoulder caps. Tuned at the TASK-168 per-wave eyeball gate.",
+        "selectors": [
+          { "name": "helm_dome", "box": { "min": [0.18, 0.0, 0.86], "max": [0.82, 1.0, 1.0] } },
+          { "name": "shoulder_caps", "box": { "min": [0.14, 0.12, 0.70], "max": [0.90, 0.88, 0.85] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
+        ]
+      },
+      "ucx": null
+    },
+    "Miner": {
+      "category": "unit",
+      "mode": "bake",
+      "tri_budget": 15000,
+      "bake_resolution": 1024,
+      "origin": "feet-center",
+      "fit_mode": "height",
+      "target_dims_ue": [129.45, 62.0, 173.0],
+      "_dims_source": "TASK-166 measured headless from Content/RawAssets/Miner.fbx (blockout SM_Miner, 1124 tris, min_z 0): 129.45 x 62.0 x 173.0. Z=173 height-fit target. Economy unit (§3.3); its 'attack' is the mining swing (TASK-164/179).",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 1.5,
+      "team_region": {
+        "max_fraction": 0.35,
+        "_guess": "TASK-166 STARTING GUESS — worker with soft cap/hardhat, NOT a full helm: NO helm_dome (avoids painting the face/cap, Archer TASK-087 lesson); single upward shoulder-cap band below the head. Tuned at the TASK-169 gate.",
+        "selectors": [
+          { "name": "shoulder_caps", "box": { "min": [0.10, 0.10, 0.66], "max": [0.90, 0.90, 0.84] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
+        ]
+      },
+      "ucx": null
+    },
+    "Cavalry": {
+      "category": "unit",
+      "mode": "bake",
+      "tri_budget": 15000,
+      "bake_resolution": 1024,
+      "origin": "feet-center",
+      "fit_mode": "height",
+      "target_dims_ue": [75.5, 254.6, 208.0],
+      "_dims_source": "TASK-166 measured headless from Content/RawAssets/Cavalry.fbx (blockout SM_Cavalry, 804 tris, min_z 0): 75.5 x 254.6 x 208.0. MOUNTED unit — the large Y (254.6) is the HORSE body depth (front -Y); only Z=208 is matched under fit_mode height, so the deep footprint is warn-only (expected, like the Ogre maul). WATCH capsule sizing at integration.",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 1.5,
+      "team_region": {
+        "max_fraction": 0.35,
+        "_guess": "TASK-166 STARTING GUESS — mounted rider: shoulder-cap band targets the RIDER'S torso/shoulders (z 0.66-0.84 of a 208-tall mesh ~= rider seat height). NO helm_dome (the top-z band on a cavalry mesh risks horse ears/head). A saddle-cloth/caparison box on the horse flank is a likely gate add. Tuned at the TASK-168 gate.",
+        "selectors": [
+          { "name": "shoulder_caps", "box": { "min": [0.10, 0.10, 0.66], "max": [0.90, 0.90, 0.84] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
+        ]
+      },
+      "ucx": null
+    },
+    "Cleric": {
+      "category": "unit",
+      "mode": "bake",
+      "tri_budget": 15000,
+      "bake_resolution": 1024,
+      "origin": "feet-center",
+      "fit_mode": "height",
+      "target_dims_ue": [83.49, 78.96, 182.0],
+      "_dims_source": "TASK-166 measured headless from Content/RawAssets/Cleric.fbx (blockout SM_Cleric, 920 tris, min_z 0): 83.49 x 78.96 x 182.0. Z=182 height-fit target.",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 1.5,
+      "team_region": {
+        "max_fraction": 0.35,
+        "_guess": "TASK-166 STARTING GUESS — HOODED/robed figure: NO helm_dome (a hood is not a helmet — would paint the face/hood, Archer lesson); single upward shoulder-cap band. A robe-mantle box may read better than shoulder caps for a cleric — a likely gate tune. Tuned at the TASK-169 gate.",
+        "selectors": [
+          { "name": "shoulder_caps", "box": { "min": [0.10, 0.10, 0.66], "max": [0.90, 0.90, 0.84] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
+        ]
+      },
+      "ucx": null
+    },
+    "Longbowman": {
+      "category": "unit",
+      "mode": "bake",
+      "tri_budget": 15000,
+      "bake_resolution": 1024,
+      "origin": "feet-center",
+      "fit_mode": "height",
+      "target_dims_ue": [81.78, 57.38, 184.0],
+      "_dims_source": "TASK-166 measured headless from Content/RawAssets/Longbowman.fbx (blockout SM_Longbowman, 1984 tris, min_z 0): 81.78 x 57.38 x 184.0. Z=184 height-fit target. Ranged (bRanged) — the tall bow is part of the X/Z silhouette.",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 1.5,
+      "team_region": {
+        "max_fraction": 0.35,
+        "_guess": "TASK-166 STARTING GUESS — soft-cap/hooded archer (mirror the Archer TASK-087 tune): NO helm_dome; upward shoulder-cap band + a likely quiver box at the gate. Tuned at the TASK-169 gate.",
+        "selectors": [
+          { "name": "shoulder_caps", "box": { "min": [0.10, 0.12, 0.70], "max": [0.90, 0.88, 0.86] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
+        ]
+      },
+      "ucx": null
+    },
+    "MilitiaMob": {
+      "category": "unit",
+      "mode": "bake",
+      "tri_budget": 15000,
+      "bake_resolution": 1024,
+      "origin": "feet-center",
+      "fit_mode": "height",
+      "target_dims_ue": [74.52, 34.32, 149.0],
+      "_dims_source": "TASK-166 measured headless from Content/RawAssets/MilitiaMob.fbx (blockout SM_MilitiaMob, 452 tris, min_z 0): 74.52 x 34.32 x 149.0. SINGLE militia figure (SwarmCount=4 spawns 4 copies of this one mesh); shortest unit (Z 149). Z=149 height-fit target.",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 1.5,
+      "team_region": {
+        "max_fraction": 0.35,
+        "_guess": "TASK-166 STARTING GUESS — peasant levy, minimal armor: NO helm_dome (bare/cap head); single upward shoulder-cap band. Team read may be weak on a lightly-clad peasant — a tabard/armband box is a likely gate add. Tuned at the TASK-168 gate.",
+        "selectors": [
+          { "name": "shoulder_caps", "box": { "min": [0.10, 0.10, 0.66], "max": [0.90, 0.90, 0.84] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
+        ]
+      },
+      "ucx": null
+    },
+    "Pikeman": {
+      "category": "unit",
+      "mode": "bake",
+      "tri_budget": 15000,
+      "bake_resolution": 1024,
+      "origin": "feet-center",
+      "fit_mode": "height",
+      "target_dims_ue": [76.84, 60.34, 190.0],
+      "_dims_source": "TASK-166 measured headless from Content/RawAssets/Pikeman.fbx (blockout SM_Pikeman, 532 tris, min_z 0): 76.84 x 60.34 x 190.0. Z=190 height-fit target. Slayer keyword (bSlayer). The long pike is part of the silhouette.",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 1.5,
+      "team_region": {
+        "max_fraction": 0.35,
+        "_guess": "TASK-166 STARTING GUESS — helmeted (kettle-helm) soldier: Footman recipe = helm_dome (x-constrained to skip the raised pike) + upward shoulder caps. Tuned at the TASK-168 gate.",
+        "selectors": [
+          { "name": "helm_dome", "box": { "min": [0.18, 0.0, 0.86], "max": [0.82, 1.0, 1.0] } },
+          { "name": "shoulder_caps", "box": { "min": [0.14, 0.12, 0.70], "max": [0.90, 0.88, 0.85] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
+        ]
+      },
+      "ucx": null
+    },
+    "Sapper": {
+      "category": "unit",
+      "mode": "bake",
+      "tri_budget": 15000,
+      "bake_resolution": 1024,
+      "origin": "feet-center",
+      "fit_mode": "height",
+      "target_dims_ue": [73.94, 98.0, 169.0],
+      "_dims_source": "TASK-166 measured headless from Content/RawAssets/Sapper.fbx (blockout SM_Sapper, 620 tris, min_z 0): 73.94 x 98.0 x 169.0. Z=169 height-fit target. Siege profile (bSuicide, USiegeDamageType_Siege) — carries a bomb/charge (the Y depth 98).",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 1.5,
+      "team_region": {
+        "max_fraction": 0.35,
+        "_guess": "TASK-166 STARTING GUESS — demolitions engineer, uncertain headgear: NO helm_dome (safe default — avoids painting the face if bare/hooded); single upward shoulder-cap band. Promote to the helmeted (helm_dome) recipe at the gate IF the generated mesh has a clear helmet. Tuned at the TASK-169 gate.",
+        "selectors": [
+          { "name": "shoulder_caps", "box": { "min": [0.10, 0.10, 0.66], "max": [0.90, 0.90, 0.84] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
+        ]
+      },
+      "ucx": null
+    },
+    "ArrowTower": {
+      "category": "building",
+      "mode": "bake",
+      "tri_budget": 20000,
+      "bake_resolution": 2048,
+      "origin": "ground-center",
+      "fit_mode": "box",
+      "target_dims_ue": [250.0, 250.0, 497.42],
+      "_dims_source": "TASK-166 measured headless from Content/RawAssets/ArrowTower.fbx (blockout SM_ArrowTower, 512 tris, min_z 0, ground-center): 250 x 250 x 497.42. Box-fit keeps bounds within the ±10% ruling. Building tri budget 20000 (art-director-set: between the unit 15k and castle 40k anchors; flagged for build-master perf review).",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 3.0,
+      "bake": { "cage_extrusion_ue": 6.0, "max_ray_distance_ue": 16.0 },
+      "team_region": {
+        "max_fraction": 0.4,
+        "_guess": "TASK-166 STARTING GUESS — tower team accent = upward-facing roof/cap faces in the upper structure (Castle TASK-087 'roofs' recipe; classic RTS top-down read). Tuned at the import-wave (TASK-170) gate.",
+        "selectors": [
+          { "name": "roof", "box": { "min": [0.0, 0.0, 0.55], "max": [1.0, 1.0, 1.0] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.15 } }
+        ]
+      },
+      "ucx": {
+        "_ucx_source": "TASK-166 STARTING-GUESS single full-height footprint hull sized to the box-fit footprint. Re-derive wall-footprint-exact hulls against the GENERATED mesh at the import wave (Castle TASK-087 precedent). A solid tower footprint box is an acceptable start; any hollow structure MUST be re-hulled to avoid an interior placement dead-zone (M1 plinth lesson).",
+        "boxes": [
+          { "name": "footprint", "center": [0.0, 0.0, 248.71], "size": [250.0, 250.0, 497.42] }
+        ]
+      }
+    },
+    "Wall": {
+      "category": "building",
+      "mode": "bake",
+      "tri_budget": 20000,
+      "bake_resolution": 2048,
+      "origin": "ground-center",
+      "fit_mode": "box",
+      "target_dims_ue": [400.0, 100.0, 250.0],
+      "_dims_source": "TASK-166 measured headless from Content/RawAssets/Wall.fbx (blockout SM_Wall, 264 tris, min_z 0, ground-center): 400 x 100 x 250. Box-fit. Simple structure — the 20000 cap is generous; the remesh/decimate settles well under it.",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 3.0,
+      "bake": { "cage_extrusion_ue": 6.0, "max_ray_distance_ue": 16.0 },
+      "team_region": {
+        "max_fraction": 0.4,
+        "_guess": "TASK-166 STARTING GUESS — wall team accent = the crenellated TOP band (upward faces, z 0.70-1.0). Tuned at the TASK-170 gate.",
+        "selectors": [
+          { "name": "crenellations", "box": { "min": [0.0, 0.0, 0.70], "max": [1.0, 1.0, 1.0] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.15 } }
+        ]
+      },
+      "ucx": {
+        "_ucx_source": "TASK-166 STARTING-GUESS single full-height footprint hull. A wall is a solid barrier so a footprint box is a good fit; verify against the generated mesh at TASK-170.",
+        "boxes": [
+          { "name": "footprint", "center": [0.0, 0.0, 125.0], "size": [400.0, 100.0, 250.0] }
+        ]
+      }
+    },
+    "BombTower": {
+      "category": "building",
+      "mode": "bake",
+      "tri_budget": 20000,
+      "bake_resolution": 2048,
+      "origin": "ground-center",
+      "fit_mode": "box",
+      "target_dims_ue": [250.0, 250.0, 451.0],
+      "_dims_source": "TASK-166 measured headless from Content/RawAssets/BombTower.fbx (blockout SM_BombTower, 580 tris, min_z 0, ground-center): 250 x 250 x 451. Box-fit. AoE tower (AoERadius 250).",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 3.0,
+      "bake": { "cage_extrusion_ue": 6.0, "max_ray_distance_ue": 16.0 },
+      "team_region": {
+        "max_fraction": 0.4,
+        "_guess": "TASK-166 STARTING GUESS — tower roof/cap upward faces (Castle roofs recipe). Tuned at the TASK-170 gate.",
+        "selectors": [
+          { "name": "roof", "box": { "min": [0.0, 0.0, 0.55], "max": [1.0, 1.0, 1.0] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.15 } }
+        ]
+      },
+      "ucx": {
+        "_ucx_source": "TASK-166 STARTING-GUESS single full-height footprint hull. Re-derive against the generated mesh at TASK-170.",
+        "boxes": [
+          { "name": "footprint", "center": [0.0, 0.0, 225.5], "size": [250.0, 250.0, 451.0] }
+        ]
+      }
+    },
+    "BallistaTower": {
+      "category": "building",
+      "mode": "bake",
+      "tri_budget": 20000,
+      "bake_resolution": 2048,
+      "origin": "ground-center",
+      "fit_mode": "box",
+      "target_dims_ue": [250.0, 270.0, 500.0],
+      "_dims_source": "TASK-166 measured headless from Content/RawAssets/BallistaTower.fbx (blockout SM_BallistaTower, 512 tris, min_z 0, ground-center): 250 x 270 x 500. Box-fit. Has MinRange 300 (inner blind spot) — the ballista arm juts (Y 270).",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 3.0,
+      "bake": { "cage_extrusion_ue": 6.0, "max_ray_distance_ue": 16.0 },
+      "team_region": {
+        "max_fraction": 0.4,
+        "_guess": "TASK-166 STARTING GUESS — tower roof/cap upward faces. The ballista arm may need excluding at the gate. Tuned at TASK-170.",
+        "selectors": [
+          { "name": "roof", "box": { "min": [0.0, 0.0, 0.55], "max": [1.0, 1.0, 1.0] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.15 } }
+        ]
+      },
+      "ucx": {
+        "_ucx_source": "TASK-166 STARTING-GUESS single full-height footprint hull. Re-derive against the generated mesh at TASK-170.",
+        "boxes": [
+          { "name": "footprint", "center": [0.0, 0.0, 250.0], "size": [250.0, 270.0, 500.0] }
+        ]
+      }
+    },
+    "Barracks": {
+      "category": "building",
+      "mode": "bake",
+      "tri_budget": 20000,
+      "bake_resolution": 2048,
+      "origin": "ground-center",
+      "fit_mode": "box",
+      "target_dims_ue": [400.0, 419.0, 348.91],
+      "_dims_source": "TASK-166 measured headless from Content/RawAssets/Barracks.fbx (blockout SM_Barracks, 312 tris, min_z 0, ground-center): 400 x 419 x 348.91. Box-fit. Spawner (SpawnCardID Footman / 8s / 60s).",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 3.0,
+      "bake": { "cage_extrusion_ue": 6.0, "max_ray_distance_ue": 16.0 },
+      "team_region": {
+        "max_fraction": 0.4,
+        "_guess": "TASK-166 STARTING GUESS — building roof upward faces (z 0.5-1.0). A wide-roofed barracks reads team well off the roof. Tuned at TASK-170.",
+        "selectors": [
+          { "name": "roof", "box": { "min": [0.0, 0.0, 0.50], "max": [1.0, 1.0, 1.0] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.15 } }
+        ]
+      },
+      "ucx": {
+        "_ucx_source": "TASK-166 STARTING-GUESS single full-height footprint hull. Barracks may have an open doorway/porch — re-hull wall-footprint-exact at TASK-170 if hollow.",
+        "boxes": [
+          { "name": "footprint", "center": [0.0, 0.0, 174.46], "size": [400.0, 419.0, 348.91] }
+        ]
+      }
+    },
+    "DeepMine": {
+      "category": "building",
+      "mode": "bake",
+      "tri_budget": 20000,
+      "bake_resolution": 2048,
+      "origin": "ground-center",
+      "fit_mode": "box",
+      "target_dims_ue": [300.0, 305.0, 300.0],
+      "_dims_source": "TASK-166 measured headless from Content/RawAssets/DeepMine.fbx (blockout SM_DeepMine, 1064 tris, min_z 0, ground-center): 300 x 305 x 300. Box-fit. Economy building (Deep Mine +2 gold/s).",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 3.0,
+      "bake": { "cage_extrusion_ue": 6.0, "max_ray_distance_ue": 16.0 },
+      "team_region": {
+        "max_fraction": 0.4,
+        "_guess": "TASK-166 STARTING GUESS — mine headframe/roof upward faces (z 0.5-1.0). The mine shaft opening may need excluding at the gate. Tuned at TASK-170.",
+        "selectors": [
+          { "name": "roof", "box": { "min": [0.0, 0.0, 0.50], "max": [1.0, 1.0, 1.0] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.15 } }
+        ]
+      },
+      "ucx": {
+        "_ucx_source": "TASK-166 STARTING-GUESS single full-height footprint hull. Re-derive against the generated mesh at TASK-170 (a mine entrance may want a carve).",
+        "boxes": [
+          { "name": "footprint", "center": [0.0, 0.0, 150.0], "size": [300.0, 305.0, 300.0] }
+        ]
+      }
+    },
+    "CrystalTower": {
+      "category": "building",
+      "mode": "bake",
+      "tri_budget": 20000,
+      "bake_resolution": 2048,
+      "origin": "ground-center",
+      "fit_mode": "box",
+      "target_dims_ue": [250.0, 250.0, 487.81],
+      "_dims_source": "TASK-166 measured headless from Content/RawAssets/CrystalTower.fbx (blockout SM_CrystalTower, 1212 tris, min_z 0, ground-center): 250 x 250 x 487.81. Box-fit. Set III chain-attack tower (ChainTargets 3 / ChainFalloff 5). The blockout carries an M_CrystalGlow emissive slot.",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 3.0,
+      "bake": { "cage_extrusion_ue": 6.0, "max_ray_distance_ue": 16.0 },
+      "_emissive_note": "TASK-166: the CrystalTower blockout has an emissive crystal slot (M_CrystalGlow). Under the standard two-slot [TeamRegion, CrystalTowerPBR] contract the crystal glow is NOT preserved by a plain PBR bake. TASK-170 production wave must decide: bake a T_CrystalTower_E emissive into MI_CrystalTower_PBR (M_AssetPBR emissive param) OR keep a dedicated glow slot. Flagged, NOT resolved here (file-only prep). CrystalTower stays a normal building card = two-slot (unlike GoldNode's single-slot variant).",
+      "team_region": {
+        "max_fraction": 0.4,
+        "_guess": "TASK-166 STARTING GUESS — tower roof/cap upward faces. Crystals are the PBR feature, team accent stays on the stone roof/cap. Tuned at TASK-170.",
+        "selectors": [
+          { "name": "roof", "box": { "min": [0.0, 0.0, 0.55], "max": [1.0, 1.0, 1.0] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.15 } }
+        ]
+      },
+      "ucx": {
+        "_ucx_source": "TASK-166 STARTING-GUESS single full-height footprint hull. Re-derive against the generated mesh at TASK-170.",
+        "boxes": [
+          { "name": "footprint", "center": [0.0, 0.0, 243.9], "size": [250.0, 250.0, 487.81] }
+        ]
+      }
+    },
+    "GoldNode": {
+      "category": "building",
+      "mode": "bake",
+      "tri_budget": 12000,
+      "bake_resolution": 2048,
+      "origin": "ground-center",
+      "fit_mode": "box",
+      "target_dims_ue": [190.21, 200.0, 249.44],
+      "_dims_source": "TASK-166 measured headless from Content/RawAssets/GoldNode.fbx (blockout SM_GoldNode, 222 tris, min_z 0, ground-center): 190.21 x 200.0 x 249.44. Box-fit. Small economy prop — 12000 tri cap (smaller than the 20000 building budget).",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 2.0,
+      "bake": { "cage_extrusion_ue": 6.0, "max_ray_distance_ue": 16.0 },
+      "team_region": null,
+      "_variant": "EMISSIVE ECONOMY-PROP VARIANT (M7 manager decision 1 / CONVENTIONS 'GoldNode emissive economy-prop VARIANT'). team_region:null => SINGLE PBR+emissive slot 'GoldNodePBR' (MI_GoldNode_PBR from M_AssetPBR), NO TeamRegion slot: AGoldNode is a team-agnostic level prop that never runs the BeginPlay slot-0 recolor. Preserve the warm-yellow emissive (§6 'gold glows warm yellow') — keep M_GoldGlow on a dedicated slot OR bake a T_GoldNode_E wired into MI_GoldNode_PBR (art-director's call at TASK-171). WARNING: single-slot/emissive handling is a TASK-171 production concern — the current refine_trellis_glb.py build_final_materials still emits two slots when team_region is null; extend it at TASK-171 before running GoldNode.",
+      "ucx": {
+        "_ucx_source": "TASK-166 STARTING-GUESS single full-height footprint hull for the gold-crystal cluster so miners collide/stand adjacent. Re-tune against the generated mesh at TASK-171.",
+        "boxes": [
+          { "name": "footprint", "center": [0.0, 0.0, 124.72], "size": [190.21, 200.0, 249.44] }
+        ]
+      }
     }
   }
 }

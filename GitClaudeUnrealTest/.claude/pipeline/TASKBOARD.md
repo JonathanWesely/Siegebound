@@ -46,7 +46,7 @@ M5 shipped machine-verified with the desktop LOCKED (SendInput blocked → no si
 6. **M6 — Deck-builder meta** — `done-pending-playtest (2026-07-09, TASK-113..121 all done; ONE M6 commit 975ee90 on main, NOT pushed; m6-testable @ 975ee90 [4 ahead of origin]). Machine + live-PIE verified [deck-feed + fallback + bot-deck pick]; SaveGame save→relaunch persistence + live 28-tile grid click-through + cheat execs owed to Jonathan's playtest (locked desktop — see WATCH in TASK-120). 5 code tasks, 1 build-fix loop total [TASK-110-class was M5.5]; M6 had ZERO QA fail loops. OPEN CHECKPOINT ITEM: bot decks spell-free — QA recommends Lightning ×2 in Defensive Economy so the M5 bot-spell feature is exercised; Jonathan's call.` — Deck-builder screen (§7): browse the 28-card collection, add/remove copies with per-card MaxCopies enforced, live x/50 counter + average-cost guide (§8), save/load named decks (USaveGame, cross-session), a deck playable only at exactly 50; the active saved deck feeds the player's match, the bot gets 2 distinct curated decks; the `DeckCount` column is re-authored into a legal curated default that supersedes the M4/M5 test spread. **State preserved (undisturbed by M6):** M5 + M5.5 stay `done-pending-playtest` (m5-testable @ 979f552; M5.5 commit 9a8a75f; human WATCH lists still owed); M4.5 stays `parked` on Jonathan's Fab drop. Slice: UI/UX + save-load systems clip. **POST-M6 PLAYTEST FEEDBACK (2026-07-09) → TASK-122..126 in the current milestone** ("M6 playtest feedback" block under Active tasks): Item 1 = overhead health bars now always-visible + fill-drops fix (TASK-122..124); Item 2 = deck-builder tiles render as physical cards (TASK-125..126, blocked-by Item 1 per Jonathan's ordering). **UPDATE 2026-07-10: both post-M6 feedback chains SHIPPED — deck-builder physical-card tiles (TASK-125/126/129) committed @ `274c160`; the health-bar effort was ultimately delivered by the TASK-130..132 REBUILD @ `61a1e72` (which retired the failed first-attempt TASK-122/123/124/127/128). Current HEAD `61a1e72`, not pushed. All M6 + feedback tasks `done`.**
 6.5. **M6.5 — Battlefield & procedural terrain** — `done (2026-07-14 — Jonathan committed the assembled battlefield HIMSELF as `6a4c17d "battlefield created"` and PUSHED it; this SATISFIES the TASK-136/137 held-commit gate — no separate build-master M6.5 commit. GATE 0 for M6.6 is thereby satisfied. NOTE: an `m6.5-testable` branch was never cut at the self-commit — TASK-145 cut it retroactively at 6a4c17d alongside m6.6-testable @ 057ca9f (DONE 2026-07-14).)` (decomposed 2026-07-10, TASK-133..137; Jonathan directive verbatim: *"start creating the terrain/battlefield the characters fight on … space out the castles … 4 times larger … a grassy terrain filled with rocks, trees, and hills … randomly generated at the start of each match … choose what you think will look best … use as many assets as possible … for variety"*). Standalone milestone after M6 (M4.5/M5.5 sub-milestone shape); SUPERSEDES the parked M4.5. **PART 1** = 4× castle spacing (±2000 → ±8000, gold nodes ∓1200 → ±7200, PlayerStart + navmesh + ground + boundary walls widened — CONVENTIONS "World axes" updated). **PART 2** = a RUNTIME procedural scatter (`ASiegeBattlefieldScatter` + `USiegeScatterConfig`/`DA_BattlefieldScatter` + `M_BattlefieldGround`) of trees/rocks/hills/grass soft-referenced from Jonathan's imported Fab packs, re-seeded each match. **Decisions ANSWERED by Jonathan 2026-07-10:** (1) obstacles **BLOCK** unit movement + carve the navmesh (Dynamic RecastNavMesh + a NON-NEGOTIABLE castle-to-castle traversability guarantee); (2) grass **material** (not a Landscape); (3) keep-clear zones **YES**; (4) 4× pacing **PROCEED**. Placement is **ASYMMETRIC organic random** (Jonathan ruling, flagged — can switch to mirror-symmetric at playtest if unfair). Details in the "M6.5 tasks" block under Active tasks. Naming law in CONVENTIONS "Battlefield & procedural terrain (M6.5)" + "World axes (arena contract)".
 6.6. **M6.6 — Climbable terrain** — `done (2026-07-14 — playtested + signed off by Jonathan: hero climbs the hill flanks + anti-exploit gate passes [enemy melee reaches a crowned hero] + camera/tower/escape/perf all good. Committed by Jonathan HIMSELF as `057ca9f "walkable terrain"` and PUSHED [self-commit, same pattern as M6.5]; TASK-138..145 all done. m6.6-testable @ 057ca9f + m6.5-testable @ 6a4c17d cut. Committed L_Arena carries the STALE serialized nav bake [umap byte-identical to pre-widen 6a4c17d] but non-breaking — runtime-Dynamic RecastNavMesh regenerates at PIE. Non-blocking follow-ups for manager: (i) manual Build>Navigation is required after any arena-bounds change [MCP has no nav-build tool]; (ii) scatter density reads thin on the wider ±4000 field — Trees ~15/55, Grass ~1450/2500 — optional tuning pass.)` (decomposed 2026-07-14, TASK-138..145; **UNPARKS the M4.5 "Gameplay terrain pass" intent**). Jonathan wants the battlefield hills/rocks CLIMBABLE by the hero — root-cause investigation established this is currently BY-DESIGN (M6.5's scatter built every rock/hill/tree as a route-around blocker) and that the parked M4.5 TASK-091..096 already specified exactly this feature, so M6.6 delivers the parked M4.5 intent on top of the M6.5 procedural scatter. **ROOT CAUSE (corrects the earlier jump-height hypothesis):** the scatter applies UNIFORM scale (`BattlefieldScatter.cpp:247`, `FVector(Scale)`) → face angles are SCALE-INVARIANT; the squashed `stone_hill` dome goes near-vertical at the rim → unclimbable regardless of jump. FIX = purpose-built CONVEX hill meshes (`SM_Hill_01/02/03`) with ≤30° faces + flat crowns, under BOTH the character's 44.76° WalkableFloorAngle AND Recast's 44° AgentMaxSlope, so hero AND units climb with essentially no movement retune. **FOUR DECISIONS LOCKED (Jonathan, 2026-07-14):** (1) M6.5 already committed by Jonathan @ `6a4c17d` (pushed) — GATE 0 satisfied, NO build-master M6.5 commit; (2) widen arena Y ±2400 → ±4000; (3) terrain BLOCKS projectiles (arrows die on rocks/hills/tree-trunks — accepted balance change); (4) units climb too (navmesh generates over hills — closes the melee-can't-reach-a-crowned-hero exploit). Authoritative plan on disk: `C:\Users\wesel\.claude\plans\we-last-left-off-partitioned-puppy.md`. Naming law in CONVENTIONS "Climbable terrain (M6.6)". Details in "M6.6 tasks" under Active tasks.
-7. M7 — Premium art & feel pass — `not-started (1 asset pulled forward)` · **OGRE PULLED FORWARD 2026-07-14 (TASK-147..152):** Jonathan dropped an ogre concept (`Tools/ArtPipeline/Inbox/ogre.png`) and directed the validated TRELLIS.2 pipeline be run NOW to replace the `SM_Ogre` blockout with a game-ready textured mesh — one of the 16 M7 blockouts pulled ahead on his directive (chain in "M7 pull-forward — Ogre textured mesh" under Active tasks). The rest of the M7 batch (15 blockouts + the premium/feel pass) stays deferred. · **Jonathan request (2026-07-04):** raise fidelity on SM_Castle + SM_Footman + SM_Archer (higher detail than the current blockouts); wants the game to look nicer. Decision: DEFERRED here (mesh swaps are non-breaking; roster still growing through M4-M6). Two integration paths to scope at M7: (a) art-director custom higher-detail Blender models, and/or (b) **Fab/UE-marketplace assets — Jonathan must download packs into the project via the Epic Launcher first (agents can't browse/buy/download Fab autonomously); art-director then swaps meshes/materials.** Could be pulled forward as a standalone art pass after M3/M4 if Jonathan wants it sooner.
+7. M7 — Premium art & feel pass — `in-progress (decomposed 2026-07-15 — TASK-153..188 in "## M7 tasks" under Active tasks; 1 asset [Ogre] already SHIPPED via the pull-forward below; CONVENTIONS "Skeletal rig & animation workstream (M7)" + the M7 batch/GoldNode-variant clauses added FIRST)` · **OGRE PULLED FORWARD 2026-07-14 (TASK-147..152):** Jonathan dropped an ogre concept (`Tools/ArtPipeline/Inbox/ogre.png`) and directed the validated TRELLIS.2 pipeline be run NOW to replace the `SM_Ogre` blockout with a game-ready textured mesh — one of the 16 M7 blockouts pulled ahead on his directive (chain in "M7 pull-forward — Ogre textured mesh" under Active tasks). The rest of the M7 batch (15 blockouts + the premium/feel pass) stays deferred. · **Jonathan request (2026-07-04):** raise fidelity on SM_Castle + SM_Footman + SM_Archer (higher detail than the current blockouts); wants the game to look nicer. Decision: DEFERRED here (mesh swaps are non-breaking; roster still growing through M4-M6). Two integration paths to scope at M7: (a) art-director custom higher-detail Blender models, and/or (b) **Fab/UE-marketplace assets — Jonathan must download packs into the project via the Epic Launcher first (agents can't browse/buy/download Fab autonomously); art-director then swaps meshes/materials.** Could be pulled forward as a standalone art pass after M3/M4 if Jonathan wants it sooner.
 8. M8 — Networked 1v1 multiplayer — `not-started`
 
 ### Standing backlog (manager notes — NOT tasks, no IDs yet)
@@ -124,7 +124,689 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ## Active tasks
 
-**2026-07-14 OGRE PULL-FORWARD (READ FIRST — CURRENT active work):** M6.6 is DONE + signed off (Jonathan self-committed + pushed `057ca9f "walkable terrain"`). Jonathan then dropped an ogre concept (`Tools/ArtPipeline/Inbox/ogre.png`) and directed the **TRELLIS.2 art pipeline** be run to REPLACE the existing `/Game/Meshes/SM_Ogre` blockout with a game-ready textured mesh — one of the 16 M7 blockouts pulled forward on his directive. Same validated pipeline as the Footman/Archer/Castle pilots (TASK-082..088). Chain **TASK-147..152** below ("### M7 pull-forward — Ogre textured mesh"). CONVENTIONS "Textured mesh law" updated (Ogre = active pipeline asset; no new pattern). NOT in scope: the 2D card art `T_CardArt_Ogre` (separate lane, unchanged). **Two Jonathan touchpoints:** (1) **HF generation** — if Stage-1 `--check`/generate surfaces a token/quota/API-drift/image issue, surface the exit code VERBATIM + escalate 🚨 Blockers, never fake (2=token unset · 3=quota, expected pause · 4=API drift · 5=image missing); HF_TOKEN + HF PRO already live (TASK-085). (2) **EYEBALL GATE (TASK-150)** between Stage 2 and Stage 3 — a NEW asset's TRELLIS orientation + team-region are unknown until first generation, so `pre_rotate_z_deg`/`team_region` are starting guesses that need Jonathan's eye before import (exactly the TASK-086/087 gate). **Dispatch frontier = TASK-147 ONLY** (serial single-asset chain — each stage blocks the next; art-director does 147/148/149/151, Jonathan gates 150, build-master integrates 152). Repo base = `057ca9f` on `main`, pushed.
+**2026-07-15 M7 KICKOFF (READ FIRST — CURRENT milestone) — Premium art & feel pass (TASK-153..188):** Jonathan authorized M7 in full. This is the whole §6 premium bar: (A) §6 juice C++ checklist; (B) a NEW skeletal rig + animation workstream stood up from scratch (spike-proven before batch); (C) the 16 remaining blockouts upgraded to textured meshes via the proven TRELLIS.2 pipeline; (D) Niagara VFX on every ability/impact/spawn/death/spell; (E) Lumen lighting + post stack + gradient skybox + arena set dressing (no collision change, §5); (F) full audio set; (G) the Sequencer cinematic flythrough + gameplay b-roll portfolio slice. CONVENTIONS updated FIRST (TASK-153, done): the "Skeletal rig & animation workstream (M7)" section + the M7-batch and GoldNode-emissive-variant clauses under "Textured mesh law". Full decomposition + rulings in **"## M7 tasks"** below. **Dispatch frontier (parallel-safe, headless, NOW): TASK-154, 155, 156, 157, 158 (juice C++) ∥ TASK-159 (skeletal swap path C++) ∥ TASK-179 (audio hooks C++) ∥ TASK-160 (rig spike, Blender) ∥ TASK-166 (mesh-batch prep, file-only) ∥ TASK-174/175 (VFX art, editor-queued).** **2026-07-16 DIRECTIVE AMENDMENTS (TASK-184..188 — see "M7 DIRECTIVES ADDENDUM" below) opened more NOW lanes and closed two gates:** additionally dispatchable NOW: **TASK-184** (concept-gen tool, C++/tooling) ∥ **TASK-180** (4 covered audio cues, art) ∥ **TASK-186** (best-effort audio from imported packs, art) ∥ **TASK-187** (fire/ice VFX re-skin, art/editor). The concept gate is RESOLVED by the concept-gen step (TASK-184 build → TASK-185 run → 16 Inbox PNGs; **TASK-167 is now OPTIONAL/non-blocking** review). The audio gate is PARTIALLY resolved (MedievalWeaponsSFX pack) — the ONLY remaining external Jonathan gate is **TASK-188** (7 genuinely-missing cues: mining loop, 2 UI clicks, castle-destroy, 2 music, overtime sting — NON-blocking, M7 ships silent+logged if ungated). Repo base `057ca9f` on `main` (pushed); the Ogre pull-forward already committed to `main` bundled with the M6.6 scatter tune (see TASK-152, not pushed).
+
+---
+
+## M7 tasks (decomposed 2026-07-15) — Premium art & feel pass
+
+**Authorization:** Jonathan's 2026-07-15 M7 go-ahead (the "most ambitious path"). Milestone GDD §9-7 + the full §6 "premium stylized" bar + §3.9 castle crumble + §3.8 skeletal-animation replacement of the procedural lunge + §5 non-collision set dressing. Hard gates stand: code rides the QA gate (qa-reviewer, shadow-law + complete-type-include scans) before compile; nothing commits without a PASS QA report (code) / completed integration (art); editor/MCP work needs 127.0.0.1:8000 up and Blender+Lab addon on 9876 (park + tell the orchestrator if unreachable — never fake); `HF_TOKEN` is ENV-ONLY; heavy Blender runs HEADLESS. Nothing pushed unless Jonathan says so.
+
+### M7 manager decisions (binding rulings for all M7 tasks)
+1. **SM_GoldNode is IN-SCOPE** (all 16 blockouts upgraded — the most ambitious path) BUT under the EMISSIVE ECONOMY-PROP VARIANT, NOT the standard two-slot TeamRegion conform: it is the §"Team contract" team-color EXCEPTION (emissive regardless of team; `AGoldNode` is a level prop that never runs the slot-0 recolor), so it gets a SINGLE-slot PBR + preserved warm-yellow emissive (`MI_GoldNode_PBR`, keep `M_GoldGlow` OR bake `T_GoldNode_E`), `team_region:null`, building path. Recorded in CONVENTIONS "Textured mesh law" → "GoldNode emissive economy-prop VARIANT". Rationale: forcing GoldNode through the TeamRegion contract would fake a team accent on a team-agnostic prop and lose §6's "gold glows warm yellow (emissive)".
+2. **Concept-image source = AUTOMATED concept-gen step (Jonathan AUTHORIZED 2026-07-16 — directive 3; SUPERSEDES the hand-drop gate).** The 16 concepts are now GENERATED by `Tools/ArtPipeline/concept_generate.py` (BUILT in TASK-184, RUN in TASK-185) into `Tools/ArtPipeline/Inbox/<CardID>.png` — a text→image tool mirroring `trellis_generate.py` (HF PRO, ENV-only token). The Stage-1 blocker on TASK-168..171 is now **TASK-185 (concepts generated)**, NOT a Jonathan drop. TASK-167 becomes Jonathan's OPTIONAL, NON-blocking review (he may replace any PNG before its wave runs; silence = accept). Still does NOT block the juice C++ (154..158), the skeletal swap path (159), the rig spike (160), the audio hooks (179), or the file-only mesh prep (166). Casing is a non-issue — the tool writes PascalCase `<CardID>.png` directly. Law: CONVENTIONS "Textured mesh law" → "Stage 0 — concept generation".
+3. **Rig-spike-BEFORE-batch is MANDATORY (mirrors the Ogre static proof).** TASK-160 stands up rig/anim tooling and rigs+animates ONE character (Footman — already textured) end-to-end; TASK-161 is a JONATHAN EYEBALL GATE on the animated result; NO batch rigging (163/164) starts until the spike is APPROVED. The SkeletalMeshComponent swap path (159) is separate headless C++ and ships independently so the spike has a code path to integrate into (162).
+4. **Audio-source = PARTIALLY RESOLVED by the imported "MedievalWeaponsSFX" pack (2026-07-16 — directive 1).** The pack (`Content/MedievalWeaponsSFX/`) is a WEAPON-IMPACT/WHOOSH pack ONLY. It covers 4 of the 14 §6 cues → **TASK-180 (rewritten) authors those 4 SoundCues at `/Game/Audio/S_<Event>` NOW** (no gate). 3 more are sourceable from OTHER imported packs / a weak in-pack placeholder → **TASK-186 (S_SpellCast, S_UnitSpawn, weak S_CastleHit)**, dispatchable now. The remaining 7 (mining LOOP, 2 UI clicks, castle-destroy, 2 music, overtime sting) exist in NO current pack → **TASK-188 = external gate on Jonathan** (supply/approve a source). The audio TRIGGER HOOKS (TASK-179, C++) are dispatchable NOW and null-safe, so covered cues light up as they land and the gaps stay silent+logged. Full coverage map: CONVENTIONS "Audio event cues (M7)". Gap list recorded in the M7 directives decisions note below.
+5. **QA is implied per code task (no separate IDs — board precedent).** Every gameplay-programmer task (154..159, 179) routes `ready-for-qa` → qa-reviewer → `qa/TASK-###-report.md`; the shadow-law (C4457/58/59) + complete-type-include-law scans are mandatory. The M7 code compiles in ONE build-master batch (TASK-182) after those pass; the milestone ends in the build-master final-assembly integration (TASK-183). All juice/crumble/gold-burst/audio C++ references its art (materials/VFX/sounds) by SOFT path, null-safe, so it compiles and ships before the art lands.
+
+### M7 DIRECTIVES ADDENDUM — Jonathan's 4 directives, 2026-07-16 (folded into the board; new IDs TASK-184..188)
+
+Jonathan gave four M7 directives on 2026-07-16, resolving two of the milestone's external gates (concepts + audio) and adding two content re-skins. A content inventory established ground truth (paths trusted, spot-verified: FrostNova DeckCount 0 / Fireball DeckCount 2 in cards.csv; `trellis_generate.py` present as the tool model; Content/ is gitignored so pack contents are taken from the inventory).
+
+- **Directive 1 — Audio (MedievalWeaponsSFX pack) → resolves PART of the TASK-180 gate.** The pack covers 4 of 14 cues (authored now, TASK-180); 3 sourceable from other imported packs / a weak in-pack placeholder (TASK-186); 7 genuinely missing (TASK-188, Jonathan gate). Coverage map: CONVENTIONS "Audio event cues (M7)". Decision #4 rewritten above.
+- **Directive 2 — Fire/Ice VFX RE-SKIN (NOT new cards).** Fireball (cards.csv row 24) + Frost Nova (row 25) ALREADY exist from M5. `USpellLibrary::ResolveSpell` (SpellLibrary.cpp:77-78) spawns the CardID-COMPOSED path `/Game/VFX/NS_Spell_<CardID>`, so the re-skin MUST land IN PLACE at `/Game/VFX/NS_Spell_Fireball` (← Fire_Magic explosion/AoE) + `/Game/VFX/NS_Spell_FrostNova` (← Ice_Magic shockwave/frozen/snowstorm) — **TASK-187**. TASK-175 (spell VFX polish) hands Fireball+FrostNova to TASK-187 to avoid double-work. Law: CONVENTIONS "Spells & Set III (M5)" → "Spell VFX element re-skin (M7)".
+- **Directive 3 — Concept-gen step (Jonathan AUTHORIZED) → resolves the TASK-167 gate.** BUILD `concept_generate.py` (TASK-184) + RUN it → 16 Inbox PNGs (TASK-185); TASK-167 becomes Jonathan's OPTIONAL review. Decision #2 rewritten above. Law: CONVENTIONS "Textured mesh law" → "Stage 0 — concept generation".
+- **Directive 4 — Imported-content REUSE ledger (Jonathan: "use anything useful").** Annotated onto the relevant tasks; consolidated here:
+
+  | Imported pack | Reuse | Task(s) annotated |
+  |---|---|---|
+  | `Content/MedievalCastleEnvironmentAndSiegeWeaponProps/` | castle meshes → `SM_Castle_Crumble01/02/03` crumble stages; siege props → arena set dressing | TASK-157, TASK-178 |
+  | `Content/Prickly_Knight/` | RIGGED knight (Anim/Mesh/skins) → potential skeletal DONOR (Knight/Footman) — art-director evaluates vs. `rig_character.py` | TASK-163 |
+  | `Content/sA_ArcheryVfxPack/` | arrow trails/impact → projectile juice VFX | TASK-174 |
+  | `Content/Realistic_Rocks/` | rock chunks → castle-debris meshes paired with `NS_CastleDebris` | TASK-157, TASK-174, TASK-178 |
+  | `Content/sA_StylizedWizardSet/` | wizard cast/muzzle VFX → spell-cast VFX + possibly `S_SpellCast` source | TASK-175, TASK-186 |
+  | `Content/Fab/Stone_Hills_FREE/` + Megascans | scenic backdrop for §6 lighting | TASK-176, TASK-177 |
+  | **GAP — no dedicated skybox pack** | TASK-177 authors the stylized gradient sky FROM SCRATCH (`M_Skybox` / Sky Atmosphere) — flagged | TASK-177 |
+
+**DECISIONS NEEDING JONATHAN (consolidated — orchestrator surfaces in 🚨 Blockers):**
+- **D-AUDIO-GAP (→ TASK-188):** 7 §6 cues exist in NO imported pack — `S_MinerClink` (mining LOOP), `S_CardPlay` + `S_CardDiscard` (UI clicks), `S_CastleDestroyed` (destruction stinger), `S_VictoryMusic` + `S_DefeatMusic` (music), `S_OvertimeSting` (7:00 stinger). Jonathan supplies/approves a royalty-free source, OR we ship these silent+logged (null-safe — no crash). Separately, 3 cues (`S_SpellCast`, `S_UnitSpawn`, weak `S_CastleHit`) are art-director best-effort from imported packs (TASK-186) — flag if none prove usable.
+- **D-FROSTNOVA-DECK:** Frost Nova is `DeckCount 0` (VERIFIED — cards.csv row 25) → NOT in the default curated deck, so the new ice VFX is NEVER SEEN in normal play. Recommend bumping FrostNova DeckCount (e.g. +1, re-balanced to keep sum==50, each ≤ MaxCopies) and/or adding it to a bot deck so the effect shows. Small balance/deck call — Jonathan's. (Fireball is `DeckCount 2` — its fire VFX WILL show; no action.)
+- **D-FIREICE-SCOPE:** Default M7 scope = VFX RE-SKIN of the two EXISTING spells (TASK-187). If Jonathan actually wants NEW dedicated hero fire/ice ABILITIES (beyond the existing Fireball/FrostNova cards), that is a separate feature (new C++ + cards + data) — flagged as an OPEN decision, NOT assumed. Default proceeds as re-skin only.
+
+Dispatch shape: **TASK-153 (manager CONVENTIONS) lands FIRST (done).** Then, in parallel: the HEADLESS CODE WAVE (154..159, 179 — juice + skeletal path + audio hooks, all null-safe, QA'd, compiled together at 182); the RIG SPIKE (160→161 gate→162 integ); the MESH PREP (166) + concept gate (167) → PRODUCTION waves (168..171, headless, quota-paced) → per-wave eyeball → IMPORT waves (172/173, editor-serial); the VFX art (174/175) and LIGHTING/POST/SKYBOX/DRESSING (176..178, editor-serial). BATCH RIGGING (163/164) gates on the spike-approve + the relevant textured meshes; its integration is 165. AUDIO assets (180) gate on the audio source. The SEQUENCER slice (181) is the capstone — blocked on the full visual pass. Build-master compiles the code batch (182) and does the final assembly + §6-checklist PIE + 60 fps@1440p perf watch + commit + `m7-testable` branch (183).
+
+#### TASK-153 — CONVENTIONS: skeletal/animation law + M7 batch + GoldNode variant (manager)
+- assignee: manager
+- status: **done** (2026-07-15 — CONVENTIONS "Skeletal rig & animation workstream (M7)" section written + live, plus the "M7 batch scope" and "GoldNode emissive economy-prop VARIANT" clauses under "Textured mesh law". Must land before 159/160/166 — it does. This decomposition is the deliverable.)
+- blocked-by: none
+- parallel-safe: yes
+- spec: >
+    Add the naming law for the NEW skeletal/animation workstream BEFORE any task issues it: `SK_<CardID>` → Content/Characters/;
+    `A_<CardID>_<Action>` anim sequences (Idle/Walk/Attack/Death); `AM_<CardID>_Attack` montage; `ABP_<CardID>` AnimBlueprint;
+    shared `SKEL_SiegeBiped`; and the `SkeletalVisualMesh` swap contract (soft-ref parity with the static `SM_<CardID>` ghost path).
+    Add the M7 16-blockout batch scope + the GoldNode emissive-prop variant to the "Textured mesh law" section.
+- names: >
+    CONVENTIONS.md "Skeletal rig & animation workstream (M7)" + "Textured mesh law" additions.
+
+#### TASK-154 — Juice: hit-flash on damage (0.1 s white material swap) (C++)
+- assignee: gameplay-programmer
+- status: done/integrated (TASK-182 build PASS 2026-07-16, local commit f313253, no push) ← was: qa-passed (loop-3 fix 2026-07-16 gameplay-programmer: removed embedded */ in SiegeFeedbackLibrary.h:39 comment — reworded "raw UWorld*/context" → "raw UWorld pointer / context" so the /** */ class doc comment (opened L20) now closes only at L41; UCLASS(L42)/GENERATED_BODY(L45) are back at file scope, no longer "in a skipped block". PLUS full UHT-hazard sweep of all 10 batch headers + their .cpp — all 4 hazard classes CLEAN: (1) no other embedded */ / stray /*; (2) UPROPERTY/UFUNCTION specifiers legal incl. MinerUnit.h:155 AllowPrivateAccess; (3) all UCLASS/UENUM/GENERATED_BODY at correct scope, no macro-in-comment/#if; (4) no deprecated APIs, includes complete (Engine/World.h present). Ready for TASK-182 recompile, NOT committed.) [prior BUILD loop-3/TASK-182: the L39 */ closed the doc comment early → UHT fatal under -WarningsAsErrors; MinerUnit.h:155 loop-2 fix CONFIRMED. loop-1: added #include "Engine/World.h" to SiegeHitFlashComponent.cpp, batch include self-audit CLEAN]
+- blocked-by: none
+- parallel-safe: yes
+- spec: >
+    §6 juice — every damage event flashes the hit actor white for 0.1 s then restores. Add a shared hit-flash on the combatant
+    base classes (`ASummonedUnit`, `ABuilding`, `AHeroCharacter`, `ACastle`) driven from their EXISTING TakeDamage / HP-mutation
+    paths (reuse the M5.5-rebuild `OnHPChanged` broadcast points — do NOT re-plumb damage). On a damage event, swap every material
+    slot to a soft-referenced flash material `/Game/Materials/M_HitFlash` (null-safe — missing ⇒ no flash, log once, never a crash)
+    for 0.1 s, then restore the prior materials (cache slot MIDs at BeginPlay; restore includes the team-recolored slot 0). Skip
+    heals/regen and refused/friendly-fire mutations (flash on ACTUAL damage only). Timer-driven, no per-tick cost. Works on both the
+    static `VisualMesh` and (M7) the `SkeletalVisualMesh` when active. Duration is a `UPROPERTY(EditDefaultsOnly) HitFlashSeconds`
+    = 0.10 (`// GDD §6`). ACCEPTANCE: an actor taking damage flashes white ~0.1 s and returns to its exact prior look incl. team
+    tint; heal does not flash; no crash with M_HitFlash absent. QA implied (shadow + include scans). Post in ⚙️ Dev & QA.
+- names: >
+    Soft ref `/Game/Materials/M_HitFlash` (art TASK-174 provides; null-safe). Hook the existing `OnHPChanged` broadcast points on
+    `ASummonedUnit`/`ABuilding`/`AHeroCharacter`/`ACastle`. Law: CONVENTIONS "Overhead combatant health bars — REBUILT" (delegate
+    points), "Textured mesh law" (slot 0 team recolor).
+
+#### TASK-155 — Juice: spawn squash-and-stretch (0.15 s) + tower recoil on fire (C++)
+- assignee: gameplay-programmer
+- status: done/integrated (TASK-182 build PASS 2026-07-16, local commit f313253, no push) ← was: ready-for-qa (QA loop 1 2026-07-16: qa-failed → fixed missing #include "Engine/World.h" in SiegeHitFlashComponent.cpp; batch include self-audit CLEAN → back to ready-for-qa) → qa-passed (loop-1 re-review PASS 2026-07-16)
+- blocked-by: none
+- parallel-safe: yes
+- spec: >
+    Two procedural mesh-transform juice items, NO new assets (pure C++). (1) SPAWN SQUASH-AND-STRETCH: on spawn, units and buildings
+    play a 0.15 s squash→overshoot→settle scale animation on their visual mesh (`UPROPERTY SpawnSquashSeconds` = 0.15 `// GDD §6`);
+    driven by a timeline/curve or timer-lerp on RelativeScale3D, restoring to the authored scale exactly. (2) TOWER RECOIL: `ATower`
+    kicks its `VisualMesh` back a short distance opposite its fire direction on each shot and eases back before the next shot
+    (`UPROPERTY TowerRecoilDistance` + `TowerRecoilSeconds`, sane defaults, `// GDD §6`), hooked into the EXISTING fire cadence — do
+    NOT alter targeting/damage. Both null-safe and frame-rate-independent; both operate on whichever visual mesh is active. ACCEPTANCE:
+    a spawned Footman/tower visibly squash-stretches and settles at correct scale; a firing Arrow Tower recoils and returns each shot
+    with unchanged fire timing/damage. QA implied. Post in ⚙️ Dev & QA.
+- names: >
+    `ASummonedUnit`/`ABuilding` spawn hook; `ATower` fire hook. No new assets. Law: CONVENTIONS "Per-card visual assets" (`VisualMesh`).
+
+#### TASK-156 — Juice: floating damage numbers (C++ spawner) (C++)
+- assignee: gameplay-programmer
+- status: done/integrated (TASK-182 build PASS 2026-07-16, local commit f313253, no push) ← was: qa-passed (loop-4 fix: brace-init soft-ptr decls (vexing-parse) + full .cpp-body sweep — DamageNumberActor.cpp:78 now `WidgetClass{ FSoftObjectPath(...) }`, breaking the C2228 most-vexing-parse. Full 14-file .cpp compile-stage sweep done, no other hazards. See qa/TASK-154-159-179-qa.md loop-4 + handoffs/TASK-154-159-179-programmer.md.)
+- blocked-by: none
+- parallel-safe: yes
+- spec: >
+    §6 floating damage numbers. On every ACTUAL damage event, spawn a short-lived world-space number that rises + fades over the hit
+    actor showing the damage dealt. C++ owns the spawn/lifetime/animation and drives a soft-referenced widget `/Game/UI/WBP_DamageNumber`
+    (created in the editor wiring task, TASK-176-adjacent — soft, null-safe: missing ⇒ no number, log once). Reuse the existing damage
+    magnitude at the TakeDamage seam; a `UFUNCTION(BlueprintCallable) ShowDamageNumber(float Amount, FVector WorldLocation)`-style seam
+    or a pooled `UWidgetComponent`/`UDamageNumberComponent` — programmer's call, keep it cheap (pool or cap concurrent numbers for the
+    60-units §6 perf budget). BIE params to the widget are float/int only (MCP BP-param rule). Optional team/crit tint via float RGB.
+    ACCEPTANCE: damaging an actor spawns a rising, fading "-N" over it matching the dealt amount; no leak/uncapped growth under 60 units;
+    no crash with the widget absent. QA implied. Post in ⚙️ Dev & QA.
+- names: >
+    Soft ref `/Game/UI/WBP_DamageNumber` (editor-wired later; null-safe). Optional `UDamageNumberComponent`
+    (`Source/GitClaudeUnrealTest/Siegebound/`). Law: CONVENTIONS "Widgets with C++ bases" (float-only BIE params).
+
+#### TASK-157 — Juice: castle crumble stages 75/50/25 % (C++ threshold + swap + debris trigger) (C++)
+- assignee: gameplay-programmer
+- status: done/integrated (TASK-182 build PASS 2026-07-16, local commit f313253, no push) ← was: ready-for-qa (QA loop 1 2026-07-16: qa-failed → fixed missing #include "Engine/World.h" in SiegeHitFlashComponent.cpp; batch include self-audit CLEAN → back to ready-for-qa) → qa-passed (loop-1 re-review PASS 2026-07-16)
+- blocked-by: none
+- parallel-safe: yes
+- spec: >
+    GDD §3.9 castle crumble. In `ACastle`, detect the 75 % / 50 % / 25 % max-HP thresholds ON THE WAY DOWN (fire each stage once, in
+    order, off the existing `FOnCastleHPChanged` path — never on heal-back-up or reset; Play Again restores stage 0 and re-arms all
+    thresholds). At each stage: swap the castle mesh AND/OR material to the damaged variant (soft refs `/Game/Meshes/SM_Castle_Crumble0N`
+    and/or `/Game/Materials/MI_Castle_Crumble0N`, N=1..3; null-safe — missing ⇒ keep current look, log once) and trigger a debris burst
+    Niagara `/Game/VFX/NS_CastleDebris` at the castle (soft, null-safe). Thresholds are `UPROPERTY` defaults (`// GDD §3.9`). The
+    collision/UCX footprint is UNCHANGED by a crumble swap (visual only — do not alter placement/pathing). ACCEPTANCE: driving a castle
+    through 75/50/25 % fires each stage exactly once in order with the mesh/material change + debris FX; Play Again resets to full and
+    re-arms; no double-fire on chip damage across a threshold; no crash with crumble assets absent. QA implied. Post in ⚙️ Dev & QA.
+- names: >
+    `ACastle` thresholds off `FOnCastleHPChanged`. Soft refs `/Game/Meshes/SM_Castle_Crumble01..03`,
+    `/Game/Materials/MI_Castle_Crumble01..03`, `/Game/VFX/NS_CastleDebris` (art TASK-171-adjacent + TASK-174; null-safe). REUSE (directive 4):
+    crumble-stage castle meshes/materials source from `Content/MedievalCastleEnvironmentAndSiegeWeaponProps/` (damaged castle variants); the
+    `NS_CastleDebris` burst pairs `Content/Realistic_Rocks/` rock chunks as debris meshes. Law:
+    CONVENTIONS "Delegates (C++)".
+
+#### TASK-158 — Juice: gold-coin burst on unit kills + screen shake on castle hits (C++)
+- assignee: gameplay-programmer
+- status: done/integrated (TASK-182 build PASS 2026-07-16, local commit f313253, no push) ← was: ready-for-qa (QA loop 1 2026-07-16: qa-failed → fixed missing #include "Engine/World.h" in SiegeHitFlashComponent.cpp; batch include self-audit CLEAN → back to ready-for-qa) → qa-passed (loop-1 re-review PASS 2026-07-16)
+- blocked-by: none
+- parallel-safe: yes
+- spec: >
+    Two event-driven cosmetics. (1) GOLD-COIN BURST: when a summoned unit dies, spawn a coin-burst Niagara `/Game/VFX/NS_GoldBurst` at
+    its location (soft, null-safe), hooked into the EXISTING unit-death path — cosmetic only, no gold mutation. (2) SCREEN SHAKE ≤0.2 s
+    ON CASTLE HITS: when a castle takes ACTUAL damage, play a brief client camera shake (reuse the `/Game/Variant_Combat/...
+    BP_CameraShake_Hit_Enemy` donor OR a new `BP_CameraShake_CastleHit`, ≤0.2 s, `// GDD §6`) via the local `APlayerController`
+    (`ClientStartCameraShake`), null-safe. Skip heals/reset/friendly-fire. ACCEPTANCE: a dying unit emits a coin burst (no gold change);
+    a castle-damage event kicks a short camera shake ≤0.2 s and none on heal/reset; no crash with the VFX/shake absent. QA implied.
+    Post in ⚙️ Dev & QA.
+- names: >
+    Soft refs `/Game/VFX/NS_GoldBurst` (art TASK-174). Camera shake donor `/Game/Variant_Combat/.../BP_CameraShake_Hit_Enemy` or new
+    `BP_CameraShake_CastleHit`. Hook `ASummonedUnit` death + `ACastle` damage. Law: CONVENTIONS "Template-donor rule" (shake donor).
+
+#### TASK-159 — Skeletal swap path: SkeletalVisualMesh on ASummonedUnit (C++)
+- assignee: gameplay-programmer
+- status: done/integrated (TASK-182 build PASS 2026-07-16, local commit f313253, no push) ← was: qa-passed (loop-4 fix: brace-init soft-ptr decls (vexing-parse) + full .cpp-body sweep — SummonedUnit.cpp:236 now `SkSoft{ FSoftObjectPath(...) }` AND the previously-hidden identical hazard at SummonedUnit.cpp:252 `AbpSoft{ FSoftObjectPath(...) }` (would have been the next C2228 once :236 compiled). Full 14-file .cpp compile-stage sweep done, no other hazards. See qa/TASK-154-159-179-qa.md loop-4 + handoffs/TASK-154-159-179-programmer.md.)
+- blocked-by: none
+- parallel-safe: yes
+- spec: >
+    The code path that lets a `SK_<CardID>` skeletal mesh replace the static `SM_<CardID>` `VisualMesh` at runtime WITHOUT breaking the
+    placement-ghost soft-ref contract (units resolve `/Game/Meshes/SM_<CardID>` by string today). Add an OPTIONAL `USkeletalMeshComponent`
+    named `SkeletalVisualMesh` to `ASummonedUnit` alongside `VisualMesh`. At BeginPlay compose the soft path `/Game/Characters/SK_<CardID>`
+    from the CardID; if it RESOLVES: set it on `SkeletalVisualMesh`, set `AnimClass` = `/Game/Characters/ABP_<CardID>` (soft, null-safe),
+    HIDE the static `VisualMesh`, and route the BeginPlay team recolor (`MI_TeamColor_<Team>` on slot 0) to `SkeletalVisualMesh`; if it
+    does NOT resolve, keep the static `VisualMesh` exactly as today (purely additive, null-safe). The PLACEMENT GHOST is UNCHANGED — it
+    still resolves the static `/Game/Meshes/SM_<CardID>` (ghosts don't animate). No CSV column (path composed from CardID). Include the
+    complete `SkeletalMeshComponent.h` / `AnimInstance` headers (complete-type-include law). ACCEPTANCE: a unit with a valid `SK_<CardID>`
+    +`ABP_<CardID>` shows the skeletal mesh (team-recolored slot 0) and the ghost still previews the static mesh; a unit with no SK asset
+    is byte-for-byte today's behavior; enemy Red unit recolors slot 0 only. QA implied (shadow + include scans — this is exactly the
+    class of task that tripped TASK-110). Post in ⚙️ Dev & QA.
+- names: >
+    `ASummonedUnit::SkeletalVisualMesh` (`USkeletalMeshComponent`). Soft refs `/Game/Characters/SK_<CardID>`,
+    `/Game/Characters/ABP_<CardID>`. Slot-0 recolor `MI_TeamColor_<Team>`. Ghost path `/Game/Meshes/SM_<CardID>` UNCHANGED. Law:
+    CONVENTIONS "Skeletal rig & animation workstream (M7)".
+
+#### TASK-160 — Rig SPIKE: stand up rig/anim tooling + rig+animate ONE character (Footman) end-to-end (art)
+- assignee: art-director
+- status: ready-for-integration (2026-07-15 — SPIKE COMPLETE, GATED at TASK-161. New tooling Tools/ArtPipeline/rig_character.py + rig_manifest.json (shared SiegeBiped 21-bone skeleton, bone-heat skin w/ envelope fallback, Idle/Walk/Attack/Death). Footman: SK_Footman rigged FBX + 4 anim FBXs → Content/RawAssets/Characters/[Anims/]; two-slot [TeamRegion,FootmanPBR]+UVMap preserved; skin 0.0% unweighted; all round-trip-verified. Eyeball-gate packet (bind stills + turntable strip + 4 contact strips + seq frames + report) in Cache/Footman/rig/previews/. NO editor import (TASK-162, after the gate + TASK-159 compiled). Handoff: handoffs/TASK-160-artist.md.)
+- blocked-by: none
+- parallel-safe: yes (Blender headless — Footman is already textured; disjoint from all code)
+- spec: >
+    Prove the skeletal pipeline on ONE character before any batch, exactly as the Ogre proved static. Stand up rig/anim tooling from
+    scratch (there is none today) and rig+animate the FOOTMAN (already textured `SM_Footman`, simplest humanoid). Deliver: a skeleton
+    (prefer shared `SKEL_SiegeBiped`), the rigged `SK_Footman` (from the textured `SM_Footman`, two-slot `[TeamRegion, FootmanPBR]`
+    material contract preserved, ≤15k tris, feet-center, `UVMap`), the four anim sequences `A_Footman_Idle/Walk/Attack/Death`, and an
+    attack montage `AM_Footman_Attack`. Raw rigged FBX → `Content/RawAssets/Characters/Footman.fbx`. Heavy Blender runs HEADLESS
+    (`blender.exe --background --python`; the live MCP bridge is <30 s inspection only). Produce Blender-rendered PREVIEW clips of each
+    anim for the TASK-161 eyeball gate. Record the tooling/approach (auto-rig vs manual, retarget strategy) + chosen skeleton in the
+    handoff so it generalizes to the batch. DO NOT import to the editor here (that + the ABP is TASK-162, after the gate). ACCEPTANCE:
+    `SK_Footman` rigged FBX + the 4 anims + montage exist; preview clips render; two-slot material contract intact; approach documented.
+    Post in 🎨 Art.
+- names: >
+    `Content/RawAssets/Characters/Footman.fbx` (rigged). Skeleton `SKEL_SiegeBiped` (or `SK_Footman_Skeleton`). Anims
+    `A_Footman_Idle/Walk/Attack/Death`, montage `AM_Footman_Attack`. Preview clips for the gate. Law: CONVENTIONS "Skeletal rig &
+    animation workstream (M7)".
+
+#### TASK-161 — EYEBALL GATE: rigged Footman animation sign-off (Jonathan — external gate)
+- assignee: Jonathan (external gate — orchestrator posts the preview clips + rig report in 🚨 Blockers and flips this on his verbatim go)
+- status: approved (Jonathan approved the Footman rig — unblocks TASK-162 integration + TASK-163/164 batch rigging)
+- blocked-by: TASK-160
+- parallel-safe: yes (human review — no repo mutation by agents)
+- spec: >
+    Jonathan reviews the Footman rig/anim PREVIEW clips (idle/walk/attack/death + the attack montage) BEFORE any editor import or batch
+    rigging — the spike-before-batch gate (decision 3). Confirms the animation quality + silhouette read at the §6 bar and that the
+    approach is worth generalizing. OUTCOME: APPROVE → unblocks the spike integration (TASK-162) AND the batch rigging (TASK-163/164);
+    TUNE → art-director iterates the rig/anims (TASK-160 loops) and re-review. NEVER batch-rig on an un-approved spike.
+- names: >
+    Review TASK-160 preview clips + handoff. Approve/Tune. Law: CONVENTIONS "Skeletal rig & animation workstream (M7)".
+
+#### TASK-162 — Rig spike integration: import SK_Footman + ABP_Footman, wire BP_Unit_Footman, PIE-prove real attack anim (art, editor)
+- assignee: art-director
+- status: integrated / done (build-master, commit b33dbc9 — LOCAL only, no push, 2026-07-16). Committed: SK_Footman + SK_Footman_Skeleton + SK_Footman_PhysicsAsset + A_Footman_{Idle,Walk,Attack,Death} + ABP_Footman + BP_Unit_Footman (SkeletalVisualMesh transform). Idle/Walk DONE + PIE-proven skeletal render. Attack/Death anims imported but NOT wired → follow-up W3 (gameplay-programmer montage hook: Montage_Play(AM_Footman_Attack) on attack tick + death-anim window before Destroy; art: AM montage + ABP Slot node). See handoffs/TASK-162-artist.md)
+- blocked-by: TASK-160, TASK-161 (approved), TASK-159 (compiled — the SkeletalVisualMesh path must exist; via TASK-182)
+- parallel-safe: no (editor-mutating — single editor, serialize)
+- spec: >
+    Editor import + wiring of the approved Footman rig, on the TASK-159 swap path. Import `SK_Footman` → `/Game/Characters/SK_Footman`
+    (two slots `[TeamRegion → MI_TeamColor_Blue, FootmanPBR → MI_Footman_PBR]`, Nanite off), the four `A_Footman_*` sequences +
+    `AM_Footman_Attack` → `/Game/Characters/Anims/`, and author `ABP_Footman` → `/Game/Characters/ABP_Footman` (Idle/Walk by velocity →
+    Attack montage slot → Death). Confirm `BP_Unit_Footman` picks up the skeletal runtime via the TASK-159 CardID-composed path (no per-BP
+    hardcoding needed) and the static `/Game/Meshes/SM_Footman` STILL backs the placement ghost. PIE-prove: a spawned Footman plays the
+    real `AM_Footman_Attack` on its attack tick (replacing the TASK-020 procedural lunge), walks with locomotion, recolors slot 0 by team
+    (Red enemy), and the ghost preview is the static mesh. ACCEPTANCE: Footman animates from real skeletal anims in-match; ghost unchanged;
+    team recolor correct; procedural-lunge fallback still fires if the montage is absent. Post in 🎨 Art; hand to build-master.
+- names: >
+    `/Game/Characters/SK_Footman` (slots [TeamRegion, FootmanPBR]), `/Game/Characters/Anims/A_Footman_*`, `AM_Footman_Attack`,
+    `/Game/Characters/ABP_Footman`. Reuse `BP_Unit_Footman` + `MI_Footman_PBR` + `MI_TeamColor_Blue`. Ghost `/Game/Meshes/SM_Footman`
+    UNCHANGED. Law: CONVENTIONS "Skeletal rig & animation workstream (M7)".
+
+#### TASK-163 — Batch rig wave 1: rig+animate 5 units (art)
+- assignee: art-director
+- status: backlog
+- blocked-by: TASK-161 (spike approved), TASK-172 (wave-1 textured meshes imported — rig the final mesh)
+- parallel-safe: yes (Blender headless, per-asset disjoint; quota-free — rigging is local Blender)
+- spec: >
+    Rig+animate 5 summoned units on the TASK-160 approach, each FROM its textured `SM_<CardID>` (two-slot material contract preserved):
+    `Knight`, `Archer`, `Cavalry`, `Pikeman`, `MilitiaMob`. Per unit deliver `SK_<CardID>` (rigged FBX → `Content/RawAssets/Characters/<CardID>.fbx`),
+    `A_<CardID>_Idle/Walk/Attack/Death` (retarget shared `SKEL_SiegeBiped` locomotion where humanoid; per-card attack/death silhouettes),
+    `AM_<CardID>_Attack`, and preview clips. Headless Blender. DO NOT import (editor wiring is TASK-165). Record skeleton choice per asset.
+    (Archer is already textured from the pilot; the other 4 come from TASK-172.) ACCEPTANCE: 5 rigged FBX + anims + montages exist,
+    two-slot contracts intact, previews render. Post in 🎨 Art.
+- names: >
+    `SK_Knight/Archer/Cavalry/Pikeman/MilitiaMob` + `A_<CardID>_*` + `AM_<CardID>_Attack` + `Content/RawAssets/Characters/<CardID>.fbx`.
+    Skeleton `SKEL_SiegeBiped`. REUSE (directive 4): art-director EVALUATES `Content/Prickly_Knight/` (a RIGGED knight — Anim/Mesh/skins) as a
+    skeletal DONOR for `Knight` (and possibly the shared biped) vs. building from `rig_character.py`; use whichever hits the §6 bar faster, record
+    the choice in the handoff. Law: CONVENTIONS "Skeletal rig & animation workstream (M7)".
+
+#### TASK-164 — Batch rig wave 2: rig+animate remaining units (art)
+- assignee: art-director
+- status: backlog
+- blocked-by: TASK-161 (spike approved), TASK-172 (unit textured meshes imported)
+- parallel-safe: yes (Blender headless, per-asset disjoint)
+- spec: >
+    Rig+animate the remaining summoned units: `Sapper`, `Cleric`, `Longbowman`, `Miner`, `Ogre`. Same deliverables as TASK-163
+    (`SK_<CardID>` + `A_<CardID>_Idle/Walk/Attack/Death` + `AM_<CardID>_Attack` + rigged FBX + previews; retarget where humanoid). The
+    OGRE is non-humanoid/large — it may carry its own `SK_Ogre_Skeleton` and bespoke anims (record it). Miner's "attack" is the mining
+    animation (§3.3 clink loop pairs with TASK-179 audio). Ogre is already textured; the others come from TASK-172. Headless Blender; no
+    import (TASK-165 wires). ACCEPTANCE: 5 rigged FBX + anims + montages exist, contracts intact, previews render. Post in 🎨 Art.
+- names: >
+    `SK_Sapper/Cleric/Longbowman/Miner/Ogre` + `A_<CardID>_*` + `AM_<CardID>_Attack` + `Content/RawAssets/Characters/<CardID>.fbx`.
+    Skeleton `SKEL_SiegeBiped` (Ogre may be bespoke). Law: CONVENTIONS "Skeletal rig & animation workstream (M7)".
+
+#### TASK-165 — Batch rig integration: import + ABP + BP wiring for all rigged units, PIE-verify (art, editor)
+- assignee: art-director
+- status: in-progress (PARKED 2026-07-16 — editor modal-blocked; needs Jonathan). Scope this pass = 8 units (Knight, Cavalry, Pikeman, MilitiaMob, Sapper, Cleric, Longbowman, Miner); Archer/Ogre separate. Pre-import gate PASSED for all 8 (rig_reports clean, deform bones == Footman, shared skeleton valid). DONE: SK_Knight imported+materialed on shared SK_Footman_Skeleton + A_Knight_{Idle,Walk,Attack,Death} clean AnimSequences. BLOCKER: `BlueprintTools.create` for an AnimBlueprint opened a modal skeleton-picker that froze the editor game thread (all MCP calls time out) — Jonathan must dismiss the "Create Anim Blueprint" dialog. TOOLING SNAG: `AssetTools.duplicate` STRIPS an AnimBlueprint's TargetSkeleton (verified) + no MCP tool can set it back (ObjectTools redirects to CDO) → no unattended path to per-unit ABPs. Junk to delete on resume: ABP_ZTest, ABP_ZTest2(?), ABP_Knight (skeleton-less). Full detail + resume plan: handoffs/TASK-165-artist.md.
+- blocked-by: TASK-163, TASK-164, TASK-159 (compiled), TASK-162 (spike integ pattern proven)
+- parallel-safe: no (editor-mutating — single editor, serialize)
+- spec: >
+    Import every rigged unit from waves 1+2 → `/Game/Characters/SK_<CardID>` (two slots `[TeamRegion → MI_TeamColor_Blue, <CardID>PBR →
+    MI_<CardID>_PBR]`, Nanite off), the `A_<CardID>_*` sequences + `AM_<CardID>_Attack` → `/Game/Characters/Anims/`, and author
+    `ABP_<CardID>` (or reuse a shared `ABP_SiegeBiped` retargeted). Each `BP_Unit_<CardID>` picks up its skeletal runtime via the TASK-159
+    CardID path; the static `SM_<CardID>` still backs each ghost. PIE-verify a representative spread (a humanoid, the Ogre, the Miner):
+    real attack montage on the attack tick, locomotion on walk, team recolor slot 0, ghost = static mesh, procedural-lunge fallback intact
+    where a montage is missing. ACCEPTANCE: all rigged units animate in-match from real skeletal anims; ghosts unchanged; team recolor
+    correct; no per-BP hardcoding. Post in 🎨 Art; hand to build-master (TASK-183).
+- names: >
+    `/Game/Characters/SK_<CardID>` (all rigged units) + `/Game/Characters/Anims/A_<CardID>_*` + `AM_<CardID>_Attack` + `ABP_<CardID>`
+    (or `ABP_SiegeBiped`). Reuse each `BP_Unit_<CardID>` + `MI_<CardID>_PBR`. Law: CONVENTIONS "Skeletal rig & animation workstream (M7)".
+
+#### TASK-166 — Mesh batch prep: 16 manifest entries + blockout measure + concept casing (art)
+- assignee: art-director
+- status: ready-for-integration (2026-07-15 — 16 manifest entries authored with HEADLESS-MEASURED blockout dims; GoldNode team_region:null; JSON parses; existing Footman/Archer/Ogre/Castle + defaults untouched. Building tri budget set to 20000 (GoldNode 12000). Concept casing reconcile is a no-op until TASK-167 drops land. Handoff: handoffs/TASK-166-artist.md. Rides the TASK-183 commit.)
+- blocked-by: none
+- parallel-safe: yes (file-only — edits pipeline_manifest.json, reads Content/RawAssets/*.fbx; disjoint)
+- spec: >
+    File-side prep for the 16-mesh batch (mirrors the Ogre TASK-147, batched). NO editor/MCP, NO HF quota. For each of the 16 CardIDs
+    (`Knight, Miner, Cavalry, Cleric, Longbowman, MilitiaMob, Pikeman, Sapper` UNIT; `ArrowTower, Wall, BombTower, BallistaTower, Barracks,
+    DeepMine, CrystalTower` BUILDING; `GoldNode` PROP): (1) MEASURE the existing blockout `Content/RawAssets/<CardID>.fbx` bounds (Blender
+    headless / MCP <30 s) BEFORE any Stage-2 overwrites it → the `target_dims_ue` source. (2) AUTHOR the `pipeline_manifest.json` entry —
+    UNIT path (feet-center, tri 15000, bake 1024, two-slot team_region ~0.35 upper-body guess) / BUILDING path (ground-center, tri per
+    building budget, bake 2048, `ucx` authored at import, two-slot team_region) / GoldNode PROP (`team_region:null`, single PBR+emissive
+    variant per CONVENTIONS, building path, bake 2048) — each with a measured `target_dims_ue`, `pre_rotate_z_deg:0.0` STARTING GUESS, and
+    a `_dims_source` note. (3) Concept casing is now a NO-OP: `concept_generate.py` (TASK-184/185) writes PascalCase `Inbox/<CardID>.png` directly; only reconcile if Jonathan HAND-replaces a concept with a lowercase filename (TASK-167 optional review).
+    Keep VALID JSON (manifest is CODE — rides the TASK-183 commit). Do NOT touch Footman/Archer/Castle/Ogre entries or `defaults`.
+    ACCEPTANCE: 16 complete manifest entries with MEASURED dims; GoldNode entry has `team_region:null`; JSON parses; no other entries changed.
+    Post in 🎨 Art.
+- names: >
+    Edit `Tools/ArtPipeline/pipeline_manifest.json` (+16 entries). Read `Content/RawAssets/<CardID>.fbx` (16). AssetName = CardID
+    (PascalCase). Law: CONVENTIONS "Textured mesh law" ("M7 batch scope" + "GoldNode emissive economy-prop VARIANT").
+
+#### TASK-167 — CONCEPT REVIEW (OPTIONAL, non-blocking): Jonathan reviews/replaces the generated concepts (Jonathan — external, optional)
+- assignee: Jonathan (OPTIONAL external review — orchestrator posts the generated concept thumbnails in 🚨 Blockers; NON-blocking — silence = accept)
+- status: backlog
+- blocked-by: TASK-185 (concepts generated into Inbox/)
+- parallel-safe: yes (external — no agent repo mutation)
+- spec: >
+    REWRITTEN 2026-07-16 (Jonathan AUTHORIZED the automated concept-gen step — directive 3). The 16 concepts are NO LONGER hand-dropped:
+    they are GENERATED by `concept_generate.py` (built in TASK-184, run in TASK-185) into `Tools/ArtPipeline/Inbox/<CardID>.png`. This task
+    is now Jonathan's OPTIONAL review — he may inspect the generated PNGs and REPLACE any before its TRELLIS production wave consumes it, but
+    the mesh batch does NOT wait on his review (silence = accept). The Stage-1 blocker on TASK-168..171 is now TASK-185 (concepts EXIST), not
+    this review. Per-wave: replacing a concept before its wave runs is honored; after a wave has run, dropping a replacement re-triggers that
+    asset only. Casing is a non-issue — the tool writes PascalCase `<CardID>.png` directly. Naming character-for-character = the CardID.
+- names: >
+    Review/replace `Tools/ArtPipeline/Inbox/<CardID>.png` × 16 (Knight, Miner, Cavalry, Cleric, Longbowman, MilitiaMob, Pikeman, Sapper,
+    ArrowTower, Wall, BombTower, BallistaTower, Barracks, DeepMine, CrystalTower, GoldNode). Law: CONVENTIONS "Textured mesh law" (Concepts,
+    "Stage 0 — concept generation").
+
+#### TASK-168 — Production wave U1 (Stage 1+2): Knight, Cavalry, Pikeman, MilitiaMob (art)
+- assignee: art-director
+- status: ready-for-integration (2026-07-16 — Stage 1+2 COMPLETE, all 4 clean. Knight/Cavalry/Pikeman/MilitiaMob: 15000 tris (budget 15000), slots [TeamRegion, <CardID>PBR], UVMap ✓, feet-center (min_z≈0), team-region 2.8-9.1% (cap 35%), D/N/ORM 1024² + refine_report + 5 previews each; concepts copied → Concepts/. Warn-only X/Y dim deviation (height fit keeps Z exact; Pikeman pike widens X, Cavalry horse deepens Y — flag at eyeball gate). FBX at Content/RawAssets/<CardID>.fbx. STAGE 3 IMPORT = TASK-172 (editor, separate). NOT imported, NOT committed.)
+- blocked-by: TASK-166 (manifest), TASK-185 (generated concepts for these 4; Jonathan may pre-replace via TASK-167)
+- parallel-safe: yes (Bash + headless Blender; HF quota serializes Stage-1 in practice — orchestrator paces, exit 3 = quota pause/resume)
+- spec: >
+    Run the TRELLIS.2 pipeline Stage 1 (`uv run trellis_generate.py --check` then `trellis_generate.py <CardID>`) → Stage 2
+    (`blender.exe --background --python refine_trellis_glb.py -- --asset <CardID>`) for the 4 units, per the Ogre playbook
+    (handoffs/TASK-086.md / TASK-148/149). Outputs per asset OVERWRITE the blockout: `Content/RawAssets/<CardID>.fbx` (two slots
+    `[TeamRegion, <CardID>PBR]`, ≤15k tris, feet-center, `UVMap`) + `Content/RawAssets/Textures/<CardID>/*.png` (D/N/ORM 1024²) +
+    `Cache/<CardID>/refine_report.json` + previews. Copy each accepted concept → `Content/RawAssets/Concepts/<CardID>.png`. HF_TOKEN
+    ENV-ONLY; surface non-zero exit codes VERBATIM in 🚨 Blockers (2 token · 3 quota-pause · 4 API-drift/manual-fallback · 5 image-missing),
+    never fake. `pre_rotate_z_deg`/`team_region` are STARTING GUESSES — produce previews for the per-wave eyeball checkpoint (decision 3
+    pattern); if obviously wrong, record the finding for the checkpoint, don't loop blindly. ACCEPTANCE: 4 FBX (two slots, budgets, UVMap,
+    feet-center) + D/N/ORM + refine_reports + previews; report tris/bounds vs manifest. Post in 🎨 Art. DO NOT import (TASK-172).
+- names: >
+    Stage 1/2 for `Knight, Cavalry, Pikeman, MilitiaMob`. Outputs `Content/RawAssets/<CardID>.fbx` + `.../Textures/<CardID>/*` +
+    `Cache/<CardID>/*` + `Content/RawAssets/Concepts/<CardID>.png`. Law: CONVENTIONS "Textured mesh law".
+
+#### TASK-169 — Production wave U2 (Stage 1+2): Sapper, Cleric, Longbowman, Miner (art)
+- assignee: art-director
+- status: in-progress (2026-07-16 — TRELLIS mesh batch running headless (combined driver, after U1 completed). Stage 1+2 for Sapper, Cleric, Longbowman, Miner. Quota-paced, halts on exit 3.)
+- blocked-by: TASK-166, TASK-185 (generated concepts for these 4; Jonathan may pre-replace via TASK-167)
+- parallel-safe: yes (Bash + headless Blender; quota-paced)
+- spec: >
+    As TASK-168 for the 4 units `Sapper, Cleric, Longbowman, Miner` (UNIT path). Same Stage-1+2 flow, outputs, exit-code discipline, and
+    per-wave eyeball previews. ACCEPTANCE: 4 FBX (two slots, ≤15k tris, UVMap, feet-center) + D/N/ORM + refine_reports + previews + concepts
+    copied. Post in 🎨 Art. DO NOT import (TASK-172).
+- names: >
+    Stage 1/2 for `Sapper, Cleric, Longbowman, Miner`. Outputs as TASK-168. Law: CONVENTIONS "Textured mesh law".
+
+#### TASK-170 — Production wave B1 (Stage 1+2): ArrowTower, Wall, BombTower, BallistaTower (art)
+- assignee: art-director
+- status: in-progress (2026-07-16 — queued in the combined mesh-batch driver after U2. BUILDING path (ground-center, 2048² bakes, tri_budget 20000). Quota-paced.)
+- blocked-by: TASK-166, TASK-185 (generated concepts for these 4; Jonathan may pre-replace via TASK-167)
+- parallel-safe: yes (Bash + headless Blender; quota-paced)
+- spec: >
+    As TASK-168 for the 4 BUILDINGS `ArrowTower, Wall, BombTower, BallistaTower` (BUILDING path: ground-center, 2048² bakes, two-slot
+    `[TeamRegion, <CardID>PBR]`; the authored `UCX_SM_<CardID>` wall-footprint-exact hulls are done at import, TASK-172-analog TASK-173,
+    NOT here). Same Stage-1+2 flow + exit-code discipline + per-wave eyeball previews. ACCEPTANCE: 4 FBX (two slots, building budget, UVMap,
+    ground-center) + D/N/ORM 2048² + refine_reports + previews + concepts copied. Post in 🎨 Art. DO NOT import (TASK-173).
+- names: >
+    Stage 1/2 for `ArrowTower, Wall, BombTower, BallistaTower`. Outputs as TASK-168 (2048² textures, ground-center). Law: CONVENTIONS
+    "Textured mesh law".
+
+#### TASK-171 — Production wave B2 (Stage 1+2): Barracks, DeepMine, CrystalTower, GoldNode (emissive variant) (art)
+- assignee: art-director
+- status: in-progress (2026-07-16 — queued in the combined mesh-batch driver after B1. BUILDING path. GoldNode single-slot flag WILL be checked at its refine (script may still emit 2 slots on team_region:null per TASK-171 note — will flag if so). Quota-paced.)
+- blocked-by: TASK-166, TASK-185 (generated concepts for these 4; Jonathan may pre-replace via TASK-167)
+- parallel-safe: yes (Bash + headless Blender; quota-paced)
+- spec: >
+    As TASK-170 for `Barracks, DeepMine, CrystalTower` (BUILDING path, two-slot) PLUS `GoldNode` under the EMISSIVE ECONOMY-PROP VARIANT
+    (decision 1 / CONVENTIONS): GoldNode gets a SINGLE PBR slot `GoldNodePBR` (NO TeamRegion) with the warm-yellow emissive preserved
+    (keep `M_GoldGlow` OR produce a `T_GoldNode_E` emissive PNG for `MI_GoldNode_PBR`), `team_region:null`. Same Stage-1+2 flow + exit-code
+    discipline + per-wave eyeball previews. ACCEPTANCE: 3 building FBX (two slots) + GoldNode FBX (single PBR slot + emissive) + textures
+    + refine_reports + previews + concepts copied; GoldNode has NO TeamRegion slot. Post in 🎨 Art. DO NOT import (TASK-173).
+- names: >
+    Stage 1/2 for `Barracks, DeepMine, CrystalTower` (two-slot) + `GoldNode` (single `GoldNodePBR` slot + emissive, `team_region:null`).
+    Emissive `T_GoldNode_E` or keep `M_GoldGlow`. Law: CONVENTIONS "GoldNode emissive economy-prop VARIANT".
+
+#### TASK-172 — Import wave: 8 UNIT meshes (Stage 3, overwrite SM_<CardID> in place) (art, editor)
+- assignee: art-director
+- status: done (INTEGRATED 2026-07-16 @ commit 2dc8031, build-master — 8 unit SM_ meshes + T_/MI_PBR committed as LFS pointers, LOCAL-ONLY per Jonathan, NO push; reimport Tools/ scripts are CODE and remain pending separate QA before any push. Prior import note: ALL 8 UNIT MESHES NOW TEXTURED + AUTOMATED (gameplay-programmer, TASK-172/173 combined reimport wave). U1 (Knight/Cavalry/Pikeman/MilitiaMob) verified UNCHANGED via MCP readback (15000 tris, [TeamRegion→MI_TeamColor_Blue, <CardID>PBR→MI_<CardID>_PBR], Nanite off, ← BP_Unit_<CardID>). U2 (Sapper/Cleric/Longbowman/Miner) NEWLY reimported via the EXTENDED Tools/reimport_meshes.py: per-CardID textures T_<CardID>_{D,N,ORM} imported (D sRGB / N normal-map / ORM linear-Masks) + MI_<CardID>_PBR created from M_AssetPBR (BaseColor/Normal/ORM wired) + same-path SM overwrite + Nanite OFF + ≤4 convex hulls; slots [TeamRegion→MI_TeamColor_Blue, <CardID>PBR→MI_<CardID>_PBR]. MCP readback: all 8 units 15000 tris (U2 up from 452–1984 blockout), correct slots/MIs, Nanite off, HARD REF survived (each SM ← BP_Unit_<CardID>, object path unchanged so ghost/cards.csv string refs resolve). Editor-bounce (authorized): MCP save-all → graceful CloseMainWindow → headless commandlet on unlocked project → relaunch → MCP material finalize + verify. Reimport SCRIPTS extended = CODE → QA (Tools/reimport_meshes.py + Tools/reimport_finalize_materials_mcp.py). handoffs/TASK-173-programmer.md.)
+- blocked-by: TASK-168, TASK-169 (unit FBX + textures + per-wave eyeball APPROVED)
+- parallel-safe: no (editor-mutating — single editor, serialize; per-wave Jonathan eyeball precedes import)
+- spec: >
+    Unreal MCP editor import (serialized) for the 8 units (Knight, Cavalry, Pikeman, MilitiaMob, Sapper, Cleric, Longbowman, Miner), per
+    the Ogre import playbook (handoffs/TASK-151.md). `M_AssetPBR` already exists — do NOT re-author. Per asset: import textures →
+    `/Game/Textures/T_<CardID>_D` (sRGB), `_N` (normal), `_ORM` (LINEAR — sRGB OFF, the manual flip); create
+    `/Game/Materials/Instances/MI_<CardID>_PBR` from `M_AssetPBR` (BaseColor/Normal/ORM); import `Content/RawAssets/<CardID>.fbx`
+    OVERWRITING `/Game/Meshes/SM_<CardID>` at the SAME PATH (never delete+recreate — the BP_Unit_<CardID> + cards.csv + placement-ghost
+    soft refs MUST survive; the same-path overwrite is the human Content-Browser Reimport click per the TASK-086/151 mechanism unless an
+    MCP reimport route exists — flag the click in 🚨 Blockers if needed); slots EXACTLY `[0] TeamRegion → MI_TeamColor_Blue, [1]
+    <CardID>PBR → MI_<CardID>_PBR`; Nanite OFF; ≤4-hull collision; zero import/MikkTSpace warnings; UVMap present. ACCEPTANCE: each
+    `SM_<CardID>` IS the textured mesh at its UNCHANGED path with correct slots/MIs/collision; readbacks reported. Post in 🎨 Art;
+    hand to build-master (TASK-183).
+- names: >
+    `/Game/Meshes/SM_<CardID>` (8 units, same-path overwrite) + `/Game/Textures/T_<CardID>_{D,N,ORM}` + `/Game/Materials/Instances/MI_<CardID>_PBR`
+    (from `/Game/Materials/M_AssetPBR`). Slots [TeamRegion → MI_TeamColor_Blue, <CardID>PBR → MI_<CardID>_PBR]. Reuse each BP_Unit_<CardID>
+    + cards.csv row. Law: CONVENTIONS "Textured mesh law".
+
+#### TASK-173 — Import wave: 7 BUILDINGS + GoldNode (Stage 3, overwrite SM_<CardID>; UCX + emissive) (art, editor)
+- assignee: art-director
+- status: in-progress (6/8 INTEGRATED 2026-07-16 @ commit 2dc8031, build-master — 5 buildings + GoldNode SM_ meshes + T_/MI_PBR committed as LFS pointers, LOCAL-ONLY NO push; Wall + DeepMine PENDING (not refine-ready — await TRELLIS quota for their textured FBX); reimport Tools/ scripts are CODE pending separate QA before any push. Prior import note: 5 BUILDINGS + GoldNode REIMPORTED + AUTOMATED (6/8, gameplay-programmer). ArrowTower/BallistaTower/Barracks/BombTower/CrystalTower + GoldNode swapped to their refined textured meshes via the EXTENDED Tools/reimport_meshes.py (per-CardID collision mode, editor-bounce authorized). Buildings = 2-slot [TeamRegion→MI_TeamColor_Blue, <CardID>PBR→MI_<CardID>_PBR] + textures T_<CardID>_{D,N,ORM} + explicit UCX-analog BOX hull authored from pipeline_manifest.json ucx.boxes (wall-footprint, 1 box each — NOT unit auto-hulls). GoldNode = the emissive VARIANT: single slot GoldNodePBR→M_GoldGlow (warm-yellow emissive PRESERVED, NO TeamRegion/TeamColor) + box hull. Nanite OFF all. MCP readback: buildings 20000 tris / GoldNode 12000 tris (all UP from 222–1212 blockout), correct slots/mats, refs intact (BP_Building_<CardID> / GoldNode←L_Arena). Thumbnails confirm textured stone tower + blue team roof + warm-yellow glowing GoldNode (Saved/Screenshots/M7_ReimportWave/). FLAG (non-blocking, textured mesh shipped): CrystalTower crystal-glow (M_CrystalGlow) NOT preserved — M_AssetPBR has NO emissive param + the refined FBX authored only 2 slots + no T_CrystalTower_E baked; crystal reads blue via PBR albedo but does not emit. Needs an art-director emissive pass (T_CrystalTower_E + emissive-capable master, OR a dedicated glow slot authored into the FBX) — matches manifest _emissive_note. PENDING (2/8): Wall + DeepMine are NOT refine-ready (no baked D/N/ORM textures) — reimport via the same automation once their textured FBX land. Reimport SCRIPTS = CODE → QA. handoffs/TASK-173-programmer.md.)
+- blocked-by: TASK-170, TASK-171 (building/prop FBX + textures + per-wave eyeball APPROVED)
+- parallel-safe: no (editor-mutating — single editor, serialize)
+- spec: >
+    As TASK-172 for the 7 buildings (ArrowTower, Wall, BombTower, BallistaTower, Barracks, DeepMine, CrystalTower) — BUILDING path: 2048²
+    textures, slots `[TeamRegion → MI_TeamColor_Blue, <CardID>PBR → MI_<CardID>_PBR]`, AUTHOR explicit `UCX_SM_<CardID>` wall-footprint-exact
+    collision (bounds within ±10 % of the blockout — the M1 castle-plinth dead-zone lesson), Nanite OFF — PLUS `GoldNode` under the EMISSIVE
+    VARIANT: single slot `GoldNodePBR → MI_GoldNode_PBR` (from `M_AssetPBR`, warm-yellow emissive via kept `M_GoldGlow` or `T_GoldNode_E`),
+    NO TeamRegion slot, `SM_GoldNode` same-path overwrite. Each same-path overwrite preserves BP/csv/ghost soft refs (Reimport-click
+    mechanism, flag if needed). ACCEPTANCE: each building `SM_<CardID>` textured at its path with two slots + authored UCX; `SM_GoldNode`
+    textured with a single PBR+emissive slot (no TeamRegion) glowing warm-yellow; Nanite off; readbacks reported. Post in 🎨 Art; hand to
+    build-master (TASK-183).
+- names: >
+    `/Game/Meshes/SM_<CardID>` (7 buildings + GoldNode, same-path overwrite) + `/Game/Textures/T_<CardID>_{D,N,ORM}` (+ `T_GoldNode_E`)
+    + `MI_<CardID>_PBR` / `MI_GoldNode_PBR` (from `M_AssetPBR`) + authored `UCX_SM_<CardID>` (buildings). GoldNode `team_region:null`
+    single slot. Law: CONVENTIONS "Textured mesh law" (+ GoldNode variant).
+
+#### TASK-174 — Core combat VFX: impact / spawn / death + gold-burst + castle-debris Niagara (art, editor)
+- assignee: art-director
+- status: backlog
+- blocked-by: none
+- parallel-safe: no (editor-mutating Niagara authoring — single editor; but no logical blocker, editor-queued)
+- spec: >
+    §6 "every ability, impact, spawn, death, and spell gets a Niagara effect." Author the core combat VFX set at the §6 one-frame-readable
+    bar (template-donor Niagara acceptable — Variant_Combat `NS_Damage` etc.): `NS_Impact` (per damage/projectile-impact), `NS_Spawn`
+    (unit/building spawn), `NS_Death` (unit death) → Content/VFX/, PLUS the juice-referenced `NS_GoldBurst` (coin burst, TASK-158) and
+    `NS_CastleDebris` (crumble debris, TASK-157). These are the systems the juice C++ soft-references null-safe. Palette per §6 (cool-blue
+    friendly / warm-red enemy where team-relevant; gold warm-yellow). ACCEPTANCE: the 5 NS_ systems exist at `/Game/VFX/`, read in one
+    frame, respect the perf budget. Post in 🎨 Art.
+- names: >
+    `/Game/VFX/NS_Impact`, `NS_Spawn`, `NS_Death`, `NS_GoldBurst`, `NS_CastleDebris`. Donors under `/Game/Variant_Combat/`. REUSE (directive 4):
+    `NS_Impact` (projectile/arrow impacts + trails) draws on `Content/sA_ArcheryVfxPack/`; `NS_CastleDebris` pairs `Content/Realistic_Rocks/` rock
+    chunks. Law: CONVENTIONS prefix table (`NS_` → Content/VFX/), "Template-donor rule".
+
+#### TASK-175 — Ability/spell VFX polish to the §6 bar (art, editor)
+- assignee: art-director
+- status: backlog
+- blocked-by: none
+- parallel-safe: no (editor-mutating Niagara — single editor, editor-queued)
+- spec: >
+    Raise the EXISTING ability/spell VFX to the §6 premium bar: the M5 spell systems `/Game/VFX/NS_Spell_<CardID>` (Lightning/BattleCry/Pickpocket
+    — Fireball + FrostNova are RE-SKINNED separately from the Fire_Magic/Ice_Magic packs in TASK-187, do NOT double-work them here) + `NS_ChainZap`,
+    the hero Rally, and the hero swing/hit `NS_Damage` reuse. Upgrade readability/palette/intensity (keep the code contracts — same asset paths, same
+    soft-ref names; this is a look pass, NOT a rename). REUSE (directive 4): the spell-cast/muzzle look may draw on `Content/sA_StylizedWizardSet/`
+    wizard VFX. ACCEPTANCE: each spell/ability effect (excluding the two TASK-187 owns) reads in one frame at the §6 bar with the correct
+    team/element palette; no path/name changes that would break the M5 resolver soft refs. Post in 🎨 Art.
+- names: >
+    Polish in place `/Game/VFX/NS_Spell_Lightning|BattleCry|Pickpocket`, `/Game/VFX/NS_ChainZap`, Rally/`NS_Damage` reuse (Fireball + FrostNova →
+    TASK-187). REUSE: `Content/sA_StylizedWizardSet/` wizard cast/muzzle VFX. NO renames. Law: CONVENTIONS "Spells & Set III (M5)" (VFX soft-ref
+    contract), "Template-donor rule".
+
+#### TASK-176 — Lumen key+GI lighting + post-process stack (bloom/vignette/color-grade LUT) in L_Arena (art, editor)
+- assignee: art-director
+- status: done (integrated 2026-07-16 build-master — commit 86324b5, local only no push. 2026-07-16 art-director — DONE. L_Arena: key DirectionalLight re-angled+warmed (11 lux, 5400K temp, pitch -38/yaw 145, softer LightSourceAngle 1.5); Lumen GI+reflections confirmed active (r.DynamicGlobalIlluminationMethod=1, r.ReflectionMethod=1) and pinned in the PPV. SkyLight cooled ((0.80,0.87,1.0) @1.0, real-time capture). Warm-vs-cool team framing = 2 shadow-OFF RectLights: TeamFill_Cool_Blue @(-4000,0,1600) cool over Blue/-X half, TeamFill_Warm_Red @(+4000,0,1600) warm over Red/+X half, attenuation 6500 so they blend neutral at centerline. Unbound global PostProcessVolume PP_Arena_Global: bloom 0.6/thr 0.85, vignette 0.4, ColorSaturation 0.9 (mild env desat = Ori-rule approximation), ColorContrast 1.05, manual-locked exposure (bias 0.4) for deterministic stylized grade. NO LUT ASSET authored — MCP toolset has no LUT texture-import/assign path; grade approximated via PPV color-grading controls (FLAGGED for a later in-editor LUT pass). Gameplay collision/navmesh/actor transforms UNCHANGED (Castle ±8000, GoldNode ±7200 verified). New actors in outliner folder M7_SceneLighting. Perf note for TASK-183: +2 dynamic RectLights (shadow-off) + Lumen GI on white-walled arena. Handoff: handoffs/TASK-176-177-artist.md. Before/after PNGs: Saved/Screenshots/M7_SceneLighting/. → build-master.)
+- blocked-by: none
+- parallel-safe: no (editor-mutating L_Arena — single editor, serialize)
+- spec: >
+    §6 scene standards in `/Game/Maps/L_Arena`: one strong KEY light + Lumen GI (warm-vs-cool team framing — cool over the Blue half, warm
+    over the Red), and a Post-Process Volume with bloom + subtle vignette + a color-grade LUT (saturated characters over a slightly
+    desaturated environment — the Ori rule). Do NOT alter gameplay collision, navmesh, or actor transforms — lighting/PP only. Keep the §6
+    60 fps@1440p budget in mind (Lumen cost is a human WATCH at Jonathan's playtest). ACCEPTANCE: L_Arena renders with Lumen key+GI, warm/cool
+    team framing, and the bloom/vignette/LUT post stack; no gameplay geometry/transform change. Post in 🎨 Art; hand to build-master.
+- names: >
+    `/Game/Maps/L_Arena` DirectionalLight (key) + SkyLight + PostProcessVolume (bloom/vignette + color-grade LUT `/Game/Textures/T_ColorGrade_LUT`
+    if authored). REUSE (directive 4): `Content/Fab/Stone_Hills_FREE/` + Megascans as scenic distant backdrop that the key/GI reads against.
+    Law: CONVENTIONS "World axes (arena contract)" (do NOT move actors), GDD §6 scene standards.
+
+#### TASK-177 — Stylized gradient skybox + skylight (art, editor)
+- assignee: art-director
+- status: done (integrated 2026-07-16 build-master — commit 86324b5, local only no push. 2026-07-16 art-director — DONE. Authored `/Game/Materials/M_Skybox` FROM SCRATCH: Unlit + TwoSided gradient (WorldPosition.Z → mask/scale/saturate → Lerp), warm horizon (0.70,0.38,0.17) → cool zenith (0.09,0.15,0.32) matching §6 palette. On a sky-dome sphere actor SkyDome_Gradient (/Engine/BasicShapes/Sphere, scale 900 = ~45000 radius, centered origin) — CastShadow OFF, bAffectDynamicIndirectLighting OFF (does NOT flood Lumen), NoCollision profile + bCanEverAffectNavigation=false (shell far outside ±8000 play area — cannot touch gameplay collision/nav). Default VolumetricCloud_0 HIDDEN (bVisible=false) so the sky reads stylized not default-HDRI; SkyAtmosphere_0 kept (feeds cool SkyLight real-time capture behind the dome). SkyLight cooled + feeds Lumen GI (see TASK-176). Character legibility preserved (units still read cool-blue/warm-red vs desaturated field). No geometry/transform change. Handoff: handoffs/TASK-176-177-artist.md. → build-master.)
+- blocked-by: none
+- parallel-safe: no (editor-mutating L_Arena — single editor, serialize)
+- spec: >
+    §6 "stylized gradient skybox." Author a stylized gradient sky (sky material `M_Skybox` on a sky sphere/dome, or a Sky Atmosphere tuned to
+    a stylized gradient) + a matching SkyLight feeding Lumen GI, in `/Game/Maps/L_Arena`. Neutral-to-cool horizon per the §6 palette; must not
+    wash out the saturated characters (coordinate with TASK-176's LUT). No gameplay collision/transform change. ACCEPTANCE: a stylized gradient
+    sky is visible over the arena and feeds the skylight; character legibility preserved; no geometry change. Post in 🎨 Art; hand to build-master.
+- names: >
+    `/Game/Materials/M_Skybox` (or Sky Atmosphere) + sky mesh + SkyLight in `/Game/Maps/L_Arena`. GAP (directive 4): NO dedicated skybox pack was
+    imported — author the gradient sky FROM SCRATCH; `Content/Fab/Stone_Hills_FREE/` + Megascans may sit as a distant scenic silhouette under it.
+    Law: CONVENTIONS prefix table (`M_` → Content/Materials/), GDD §6 scene standards.
+
+#### TASK-178 — Arena set dressing: banners / braziers / siege debris (NO collision change) (art, editor)
+- assignee: art-director
+- status: backlog
+- blocked-by: none
+- parallel-safe: no (editor-mutating L_Arena — single editor, serialize)
+- spec: >
+    §6 + §5 set dressing: place decorative banners (team-colored, cool-blue Blue side / warm-red Red side), braziers (warm emissive point
+    lights — pairs with the §6 juice), and siege debris in the arena silhouette room (§5 "leave silhouette room for set dressing"). SOURCE:
+    authored simple meshes and/or the approved Fab siege props (`Content/MedievalCastleEnvironmentAndSiegeWeaponProps/` castle + siege meshes,
+    template-donor rule — flag if used) and `Content/Realistic_Rocks/` chunks as scattered siege-debris dressing (directive 4). HARD CONSTRAINT
+    (§5): set dressing MUST NOT alter gameplay collision, navmesh, placement halves, or the traversability guarantee —
+    decorative actors are NoCollision / `bCanEverAffectNavigation=false`, kept OUT of the castle pads, gold-node pads, spawn, and the central
+    corridor (the keep-clear zones). ACCEPTANCE: the arena reads as a dressed battlefield with team banners + braziers + debris; a match's
+    navmesh/pathing/placement is UNCHANGED vs before dressing (units still reach both castles; no new "Too close"/path failures). Post in 🎨
+    Art; hand to build-master (must PIE-confirm no collision regression).
+- names: >
+    Decorative actors in `/Game/Maps/L_Arena` (banners/braziers/debris), NoCollision + no-nav. Fab donors under `Content/Fab/` (soft-ref/
+    duplicate-into-/Game/ only). Law: CONVENTIONS "Fab quarantine", "Battlefield & procedural terrain (M6.5)" keep-clear/traversability, GDD §5.
+
+#### TASK-179 — Audio trigger hooks: play S_<event> on all §6 events (C++)
+- assignee: gameplay-programmer
+- status: done/integrated (TASK-182 build PASS 2026-07-16, local commit f313253, no push) ← was: ready-for-qa (QA loop 2 2026-07-16: fixed BlueprintReadOnly-on-private (MinerUnit.h:155) + swept batch. Prior loop-2: TASK-182 compile UHT error MinerUnit.h:155 — `BlueprintReadOnly should not be used on private members` on `ClinkAudio`; batch build blocked → back to gameplay-programmer. Other 6 tasks stay qa-passed but held: single-module batch cannot integrate until this compiles.)
+- blocked-by: none
+- parallel-safe: yes
+- spec: >
+    Wire the §6 audio list to gameplay events in C++, each playing a SOFT-referenced sound null-safe (missing ⇒ silent, log once): hero
+    swing + hit, unit spawn, projectile fire + impact, miner "clink" loop (§3.3), card play + discard clicks, spell cast, castle-hit +
+    castle-destroyed stingers, victory/defeat music, overtime sting (§3.2, 7:00). Reuse EXISTING event seams (the same TakeDamage / spawn /
+    fire / play-card / match-clock / match-end points the juice + M2..M5 code already own — do NOT re-plumb). Sounds referenced by composed
+    soft path `/Game/Audio/S_<Event>` (null-safe). 2D UI/stinger sounds via `PlaySound2D`; world SFX via `SpawnSoundAtLocation`; the miner
+    clink is a looping component started on mining/arrival and stopped on death. ACCEPTANCE: each listed event triggers its `S_<Event>` when
+    present and is silent+logged when absent (no crash); the miner clink loops only while mining and stops on death; overtime sting fires once
+    at 7:00. QA implied (shadow + include scans). Post in ⚙️ Dev & QA.
+- names: >
+    Soft refs `/Game/Audio/S_HeroSwing, S_HeroHit, S_UnitSpawn, S_ProjectileFire, S_ProjectileImpact, S_MinerClink, S_CardPlay, S_CardDiscard,
+    S_SpellCast, S_CastleHit, S_CastleDestroyed, S_VictoryMusic, S_DefeatMusic, S_OvertimeSting` (art TASK-180; null-safe). Law: CONVENTIONS
+    prefix table (`S_` → Content/Audio/), GDD §6 audio list.
+
+#### TASK-180 — Audio: author the 4 COVERED SoundCues from MedievalWeaponsSFX (art)
+- assignee: art-director
+- status: done (integrated 2026-07-16 build-master — commit 86324b5, local only no push. 2026-07-16 — all 4 covered cues authored + verified at /Game/Audio/ as valid SoundCues [class=SoundCue, valid FirstNode, non-zero duration, non-looping, mono/3D-spatializable]: S_HeroSwing←S_Sword_Whoosh_1, S_HeroHit←S_Hit_Body_Mono_1, S_ProjectileFire←S_Bow_Mono_1, S_ProjectileImpact←S_Arrow_Hit_Body_Mono_1. Each is a duplicate-into-place of the donor cue [law-sanctioned; donor left untouched]. NOTE: Random-node/variety enhancement was NOT achievable via the MCP toolset [no unreal-py / console-exec route; SoundNode subobject construction is rejected by set_properties] — single-variant per cue, flagged for a future in-editor pass. Handoff: handoffs/TASK-180-186-artist.md. Build-master: PIE audio confirm at TASK-183.)
+- blocked-by: none (REWRITTEN 2026-07-16 — the MedievalWeaponsSFX pack IS imported; the old audio-source gate no longer blocks these 4)
+- parallel-safe: yes (editor import/cue-authoring; disjoint `/Game/Audio/` folder)
+- spec: >
+    REWRITTEN 2026-07-16 (directive 1). Author the 4 §6 event cues COVERED by the imported weapon-impact/whoosh pack `Content/MedievalWeaponsSFX/`
+    (donor, READ-ONLY — duplicate-into-place or wrap the donor SoundWaves in a new cue; NEVER edit the donor). Each cue lands at the EXACT
+    CardID-composed path TASK-179 references (character-for-character — the cross-discipline contract): `S_HeroSwing` ← `WeaponsSFXCue/WhooshCue/
+    S_Sword_Whoosh_*`; `S_HeroHit` ← `SwordCue/S_Sword_Mono_*` OR `HitCue/S_Hit_Body_*`; `S_ProjectileFire` ← `BowCue/S_Bow_Mono_*`;
+    `S_ProjectileImpact` ← `BowCue/S_Arrow_Hit_Body_*`. Prefer a random-selector over the `*_1/_2/…` variants for variety. All 4 are WORLD SFX
+    (TASK-179 plays them via `SpawnSoundAtLocation`) — sensible 3D attenuation, NOT looping. DO NOT block these on the audio gaps (the other 10
+    cues are TASK-186/188). ACCEPTANCE: the 4 `S_<Event>` cues exist at `/Game/Audio/`, import clean, and play on their event in PIE. Post in
+    🎨 Art; hand to build-master.
+- names: >
+    `/Game/Audio/S_HeroSwing, S_HeroHit, S_ProjectileFire, S_ProjectileImpact` (match TASK-179 exactly). Donor `Content/MedievalWeaponsSFX/`
+    (READ-ONLY). Law: CONVENTIONS "Audio event cues (M7)" (coverage map), prefix table (`S_` → Content/Audio/), "Cross-discipline rule",
+    "Template-donor rule".
+
+#### TASK-181 — Sequencer slice: cinematic flythrough + gameplay b-roll (art, editor)
+- assignee: art-director
+- status: backlog
+- blocked-by: TASK-172, TASK-173 (textured meshes), TASK-165 (rigged units), TASK-174, TASK-175, TASK-187 (VFX + fire/ice re-skin), TASK-176, TASK-177, TASK-178 (lighting/skybox/dressing)
+- parallel-safe: no (editor-mutating — single editor; capstone, after the full visual pass)
+- spec: >
+    The M7 portfolio slice (§9-7). Author a Level Sequence `LS_M7_Flythrough` (`/Game/Cinematics/`) — an archviz-style cinematic flythrough of
+    the dressed, lit arena showcasing the premium art + skybox + Lumen + VFX — plus a gameplay b-roll capture plan (a real match with the full
+    juice/crumble/animation/VFX running, for the "game-feel before/after" reel). Camera cuts that read the environment silhouette + the
+    saturated-character / desaturated-environment framing. ACCEPTANCE: `LS_M7_Flythrough` plays a clean flythrough of the finished arena;
+    a gameplay b-roll shot list is recorded for build-master's capture at TASK-183. Post in 🎨 Art; hand to build-master.
+- names: >
+    `/Game/Cinematics/LS_M7_Flythrough` (Level Sequence). Law: CONVENTIONS prefix table (add `LS_` cinematics if needed — manager to confirm),
+    GDD §9-7 slice.
+
+#### TASK-182 — M7 code batch: compile + residue adjudication + commit (build-master)
+- assignee: build-master
+- status: build-fail-escalated (loop-3 2026-07-16: batch does NOT compile. Loop-2 MinerUnit.h:155 fix CONFIRMED working/gone. New fatal: SiegeFeedbackLibrary.h:39 stray "*/" in comment prose "raw UWorld*/context" closes the /** */ doc comment early → UHT "block being skipped" on UCLASS/GENERATED_BODY, fatal under -WarningsAsErrors (was mislabeled a "cascade" at loop-2). NOT committed; git HEAD 71a985e unchanged. Fix = 1-line comment reword in SiegeFeedbackLibrary.h:39. Escalated to orchestrator/Jonathan; build-master did NOT auto-loop. See qa/TASK-154-159-179-qa.md loop-3.)
+- blocked-by: TASK-154, 155, 156, 157, 158, 159, 179 (all qa-passed)
+- parallel-safe: no (single editor + Git)
+- spec: >
+    Compile the M7 headless C++ batch (juice 154..158 + skeletal swap path 159 + audio hooks 179) after ALL are qa-passed. Editor-bounce
+    compile per the learnings (close editor if it blocks the build, rebuild, reopen); resolve any residue; confirm the SkeletalVisualMesh path,
+    hit-flash, squash/recoil, damage numbers, crumble thresholds, gold-burst/shake, and audio hooks are present and null-safe with their soft
+    art absent (nothing hard-depends on unshipped art/VFX/sounds). Build command per CLAUDE.md. COMMIT the code batch to `main` (NOT pushed)
+    with TASK-154..159 + 179 in the message; VERIFY GIT STATE FIRST (Jonathan self-commits) and reconcile rather than duplicate. A build
+    failure appends to the QA report and routes back to gameplay-programmer (counts as a QA loop). ACCEPTANCE: clean compile; code present +
+    null-safe; committed to main (not pushed) or reconciled. Post results + hash in 🔧 Build & Git.
+- names: >
+    Compile `GitClaudeUnrealTestEditor` (CLAUDE.md build cmd). Commit `Source/GitClaudeUnrealTest/Siegebound/**` (juice + SkeletalVisualMesh +
+    audio hooks). Law: CLAUDE.md hard gates, CONVENTIONS "C++" laws.
+
+#### TASK-183 — M7 final assembly: §6-checklist PIE + 60 fps perf watch + commit + m7-testable branch (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: TASK-162, 165 (rig integ), 172, 173 (mesh imports), 174, 175, 187 (VFX + fire/ice re-skin), 176, 177, 178 (lighting/skybox/dressing), 180, 186 (audio — covered + best-effort; TASK-188 gap is NON-blocking, ships silent+logged if ungated), 181 (sequencer), 182 (code committed)
+- parallel-safe: no (single editor + Git)
+- spec: >
+    Final M7 integration + verification + commit. (1) STRUCTURAL: all 16 SM_<CardID> textured at unchanged paths (slots/MIs/Nanite/collision
+    per law; GoldNode single-slot emissive); all rigged units carry SK_<CardID>+ABP_<CardID> and animate; the 5 core NS_ + polished spell VFX
+    resolve; L_Arena has Lumen key+GI + post stack + gradient skybox + set dressing with UNCHANGED collision/navmesh. (2) §6 JUICE-CHECKLIST
+    PIE (use `SummonTestUnit`/`ApplyTestDamage`/`AddTestGold` cheats to drive headless): hit-flash on damage, spawn squash-stretch, floating
+    damage numbers, tower recoil on fire, castle crumble at 75/50/25 % with debris, gold-coin burst on kills, screen shake ≤0.2 s on castle
+    hits, real skeletal attack animations replacing the procedural lunge, audio on each event. (3) TRAVERSABILITY regression: a match runs
+    end-to-end, units reach both castles, no new "Failed to find path"/"Too close" spam (set dressing didn't break nav). (4) PERF WATCH: record
+    best-effort FPS at 1440p with 60+ units (the §6 60 fps target — human WATCH at Jonathan's playtest per learnings; flag if Lumen/VFX/anim
+    counts must drop). (5) Capture the TASK-181 flythrough + gameplay b-roll for the slice. (6) COMMIT M7 art+editor to `main` (NOT pushed;
+    verify git state, reconcile Jonathan self-commits) and cut the `m7-testable` branch (milestone branch-preservation workflow). ACCEPTANCE:
+    structural + §6-checklist + traversability PASS; perf recorded + flagged; committed (not pushed) + `m7-testable` cut; WATCH list posted for
+    Jonathan's premium-art playtest. Post results + hash in 🔧 Build & Git.
+- names: >
+    Verify all `/Game/Meshes/SM_<CardID>` + `/Game/Characters/SK_<CardID>`/`ABP_<CardID>` + `/Game/VFX/NS_*` + `/Game/Maps/L_Arena` lighting/
+    skybox/dressing + `/Game/Audio/S_*` + `/Game/Cinematics/LS_M7_Flythrough`. PIE via `SummonTestUnit`/`ApplyTestDamage`/`AddTestGold`. Commit
+    to main only, not pushed; cut `m7-testable`. Law: CLAUDE.md hard gates + GDD mode checkpoint, CONVENTIONS all M7 laws.
+
+---
+
+### M7 directive tasks (added 2026-07-16 — Jonathan's 4 directives, TASK-184..188)
+
+#### TASK-184 — Concept-gen tool: build concept_generate.py (text→image) (tooling/C++)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-16 — QA PASS, 0 blockers, 2 non-blocking WARNs + 2 NITs; report qa/TASK-184-qa.md. Flipped by art-director at TASK-185 start per QA verdict.)
+- blocked-by: none
+- parallel-safe: yes (headless Python tooling; disjoint from all gameplay code + editor)
+- spec: >
+    Jonathan AUTHORIZED an automated concept-art step (directive 3). BUILD `Tools/ArtPipeline/concept_generate.py` — a text→image generator that
+    turns a per-CardID art-direction PROMPT into `Tools/ArtPipeline/Inbox/<CardID>.png`, driving an HF text-to-image Space/model via the EXISTING
+    HF PRO token. MIRROR `trellis_generate.py` in structure + secret-handling + CLI/exit-code discipline: `HF_TOKEN` is ENV-ONLY (read at runtime,
+    never argv/file/log; same redactor + `hf_` guard), the Space call runs atomically on one Client, exit codes reuse the trellis map (0 ok/`--check`;
+    2 token unset; 3 quota; 4 API drift; 5 input missing; 64 usage). CLI: `concept_generate.py --check` (probe token + endpoints) and
+    `concept_generate.py <CardID>` (reads the prompt for that CardID from `Tools/ArtPipeline/concept_prompts.json` — prompts authored in TASK-185 —
+    and writes `Inbox/<CardID>.png`, PascalCase). The tool is PROMPT-AGNOSTIC (does not hardcode any card design). `Tools/**/*.py` is CODE → the
+    tooling QA gate applies. ACCEPTANCE: `--check` passes with the token set and fails cleanly (exit 2) without it; a single `<CardID>` run writes a
+    valid PNG to Inbox/; no secret leak; exit codes correct. QA implied (tooling QA — secret-handling + exit-code review). Post in ⚙️ Dev & QA.
+- names: >
+    `Tools/ArtPipeline/concept_generate.py` (+ reads `Tools/ArtPipeline/concept_prompts.json`). Output `Tools/ArtPipeline/Inbox/<CardID>.png`.
+    Mirrors `Tools/ArtPipeline/trellis_generate.py`. Law: CONVENTIONS "Textured mesh law" ("Stage 0 — concept generation", tooling law).
+
+#### TASK-185 — Concept-gen run: author prompts + produce 16 concept PNGs (art)
+- assignee: art-director
+- status: done (2026-07-16 — ALL 16 concept PNGs present in Inbox/ (produced by a detached `concept_generate.py --all` run, 03:33-03:35; the earlier HF-router 504 outage cleared). Verified via `ls Inbox/`: ArrowTower, BallistaTower, Barracks, BombTower, Cavalry, Cleric, CrystalTower, DeepMine, GoldNode, Knight, Longbowman, MilitiaMob, Miner, Pikeman, Sapper, Wall — all 16 PascalCase, each 500KB-1.1MB. Prompts committed in concept_prompts.json. This UNBLOCKS the TRELLIS mesh batch (TASK-168..171), now running. Prior handoff: handoffs/TASK-185-artist.md.)
+- blocked-by: TASK-184 (tool built + QA-passed), HF-INFERENCE-OUTAGE (router.huggingface.co 504 — transient upstream; resume when it clears)
+- parallel-safe: yes (Bash + HF; HF quota serializes in practice — orchestrator paces, exit 3 = quota pause/resume)
+- spec: >
+    Author the per-CardID art-direction PROMPTS in `Tools/ArtPipeline/concept_prompts.json` (one dominant subject, strong silhouette, team-agnostic,
+    §6 stylized bar — the read-at-150px discipline) and RUN `concept_generate.py <CardID>` for the 16 M7 CardIDs → `Tools/ArtPipeline/Inbox/<CardID>.png`
+    (PascalCase). Surface non-zero exit codes VERBATIM in 🚨 Blockers (2 token · 3 quota-pause · 4 API-drift · 5 input). This RESOLVES the concept
+    source for the mesh batch (unblocks TASK-168..171); Jonathan may OPTIONALLY replace any PNG before its wave runs (TASK-167). Partial completion
+    unblocks the matching production wave (e.g. the 4 unit-wave-1 concepts → TASK-168). ACCEPTANCE: 16 PascalCase concept PNGs exist in `Inbox/`;
+    each reads as a usable TRELLIS input at the §6 bar; prompts committed. Post in 🎨 Art.
+- names: >
+    `Tools/ArtPipeline/concept_prompts.json` (16 prompts) + `Tools/ArtPipeline/Inbox/<CardID>.png` × 16 (Knight, Miner, Cavalry, Cleric,
+    Longbowman, MilitiaMob, Pikeman, Sapper, ArrowTower, Wall, BombTower, BallistaTower, Barracks, DeepMine, CrystalTower, GoldNode). Law:
+    CONVENTIONS "Textured mesh law" ("Stage 0 — concept generation").
+
+#### TASK-186 — Audio: best-effort cues from OTHER imported packs (S_SpellCast, S_UnitSpawn, weak S_CastleHit) (art)
+- assignee: art-director
+- status: done (integrated 2026-07-16 build-master — commit 86324b5, local only no push. 2026-07-16 — 2 of 3 filled, 1 rolled to TASK-188 per spec. FILLED (valid SoundCues at /Game/Audio/, mono/3D, non-looping): S_UnitSpawn←MedievalWeaponsSFX WhooshCue/S_Whoosh_Mono_1 (generic deploy whoosh, distinct from HeroSwing's sword whoosh); S_CastleHit (WEAK placeholder)←MedievalWeaponsSFX HitCue/S_Hitting_Wall_Mono_1 — DEVIATION FROM the convention-named 'S_Hit_Wood_*/S_Axe_Wood_Hit_*': used 'Hitting Wall' instead as a strictly-better masonry/structural stand-in (the pack DOES have a wall-impact; still weak, upgrade at TASK-188; orchestrator/manager may veto). LEFT SILENT: S_SpellCast — sA_StylizedWizardSet ships NO audio (only Blueprints/Fx/Materials/Models); no fitting cast SFX in any imported pack, so per 'do not force it' it rolls into the TASK-188 Jonathan gate. Handoff: handoffs/TASK-180-186-artist.md. Build-master: PIE audio confirm at TASK-183.)
+- blocked-by: none (the candidate source packs are all imported)
+- parallel-safe: yes (editor cue-authoring; disjoint `/Game/Audio/` folder)
+- spec: >
+    Author up to 3 more §6 cues from ALREADY-imported content (directive 1, the "sourceable-elsewhere" tier): `S_SpellCast` ← evaluate
+    `Content/sA_StylizedWizardSet/` cast/muzzle SFX (if the pack ships audio); `S_UnitSpawn` ← evaluate a usable whoosh/muzzle from an imported pack
+    (e.g. MedievalWeaponsSFX `WhooshCue`, or the wizard set); `S_CastleHit` ← WEAK placeholder from MedievalWeaponsSFX `S_Hit_Wood_*` /
+    `S_Axe_Wood_Hit_*` (the pack has NO stone/masonry impact — mark it a placeholder to upgrade later). Author each at its exact `/Game/Audio/
+    S_<Event>` path (donor READ-ONLY, duplicate/wrap). All 3 are WORLD SFX (`SpawnSoundAtLocation`), not looping. Any of the 3 with NO usable imported
+    source ROLLS INTO the TASK-188 Jonathan gate (do not fake). ACCEPTANCE: each cue with a usable imported source exists at `/Game/Audio/` + plays
+    in PIE; S_CastleHit flagged as a weak placeholder; unusable ones escalated to TASK-188. Post in 🎨 Art; hand to build-master.
+- names: >
+    `/Game/Audio/S_SpellCast, S_UnitSpawn, S_CastleHit`. Donors `Content/sA_StylizedWizardSet/`, `Content/MedievalWeaponsSFX/` (READ-ONLY). Law:
+    CONVENTIONS "Audio event cues (M7)" (coverage map), "Template-donor rule".
+
+#### TASK-187 — Fire/Ice VFX re-skin: Fire_Magic → NS_Spell_Fireball, Ice_Magic → NS_Spell_FrostNova (art, editor)
+- assignee: art-director
+- status: done/integrated (2026-07-16 — build-master LOCAL commit `5b6bc82`, NO push. NS_Spell_Fireball + NS_Spell_FrostNova re-skin committed IN PLACE with their hard-ref Fire_Magic/Ice_Magic pack deps [Materials/Mesh/Textures/VFX_Niagara]; Demo/BluePrints/Maps excluded. 192 files / ~351 MB LFS. Dep chain verified from the .uasset import tables: NS_Spell_* resolve from Materials+Mesh+Textures only (never touch the pack VFX_Niagara/). RESIDUAL FLAG for Jonathan: the included Ice_Magic/VFX_Niagara/NS_Ice_Magic_Frozen.uasset (a non-shipping pack DEMO effect, NOT on the FrostNova chain) hard-refs SKM_Quinn_Simple in the excluded Demo/ → cosmetic missing-ref warning on that demo asset only; the shipping spells are clean. NOTE: this board line flipped in working tree only — NOT committed (avoids dragging the uncommitted M7 decomposition into a TASK-187 asset commit).)
+- blocked-by: none (the Fire_Magic + Ice_Magic packs are imported)
+- parallel-safe: no (editor-mutating Niagara — single editor, serialize with the other VFX tasks)
+- spec: >
+    Directive 2 — a VFX RE-SKIN of the two EXISTING M5 spells (NOT new cards; Fireball cards.csv row 24 + FrostNova row 25 already exist). Retarget
+    the fire/ice look to the imported `Content/Fire_Magic/` + `Content/Ice_Magic/` Niagara packs, authored IN PLACE at the CardID-composed code-
+    contract paths so `USpellLibrary::ResolveSpell` (SpellLibrary.cpp:77-78) still resolves them: `/Game/VFX/NS_Spell_Fireball` ←
+    `Fire_Magic/VFX_Niagara/NS_Fire_Magic_Explosion` or `_AOE` (Fireball = 100 dmg / 300-radius AoE burst); `/Game/VFX/NS_Spell_FrostNova` ←
+    `Ice_Magic/VFX_Niagara/NS_Ice_Magic_Shockwave` / `_Frozen` / `_Snowstorm` (FrostNova = freeze, 350 radius). NO rename, NO new data column, NO
+    C++ change — the path is COMPOSED from the CardID (a data column cannot point at a Fire_Magic asset). Scale/time the effect to the spell radius;
+    keep it §6 one-frame-readable. SUPERSEDES TASK-175's Fireball+FrostNova polish (avoid double-work). FLAG: FrostNova is DeckCount 0 (not in the
+    default deck) → the ice effect won't be seen in normal play until Jonathan bumps its DeckCount (D-FROSTNOVA-DECK). ACCEPTANCE: casting Fireball
+    shows the Fire_Magic burst + casting FrostNova shows the Ice_Magic effect, both at `/Game/VFX/NS_Spell_<CardID>`, resolver soft-refs intact,
+    one-frame readable. Post in 🎨 Art; hand to build-master.
+- names: >
+    Re-skin IN PLACE `/Game/VFX/NS_Spell_Fireball` (← `Content/Fire_Magic/VFX_Niagara/`) + `/Game/VFX/NS_Spell_FrostNova` (← `Content/Ice_Magic/
+    VFX_Niagara/`). NO renames. Law: CONVENTIONS "Spells & Set III (M5)" → "Spell VFX element re-skin (M7)", "Template-donor rule".
+
+#### TASK-188 — Audio GATE: source the 7 genuinely-missing cues (Jonathan — external gate)
+- assignee: Jonathan (external gate — orchestrator posts the missing-cue list in 🚨 Blockers; art-director imports once a source lands)
+- status: backlog
+- blocked-by: audio-source gate (Jonathan supplies/approves a source — these 7 exist in NO imported pack; decision D-AUDIO-GAP). NON-blocking for the M7 commit: TASK-179 keeps them silent+logged.
+- parallel-safe: yes (external — no agent repo mutation until a source lands)
+- spec: >
+    The 7 §6 cues with NO source in any imported pack (directive 1 gap list): `S_MinerClink` (mining LOOP), `S_CardPlay` (UI click), `S_CardDiscard`
+    (UI click), `S_CastleDestroyed` (destruction stinger), `S_VictoryMusic` (music), `S_DefeatMusic` (music), `S_OvertimeSting` (7:00 stinger).
+    Jonathan supplies loose files or approves a royalty-free/Fab SFX+music pack; the art-director then imports each at its exact `/Game/Audio/
+    S_<Event>` path (raw under `Content/RawAssets/Audio/`), loop/2D flags per the TASK-179 contract (S_MinerClink LOOPS; the UI/music/sting cues are
+    2D). Until then TASK-179's hooks keep these silent+logged (null-safe — no crash), so M7 SHIPS without them. ACCEPTANCE: once a source lands, all
+    7 exist at `/Game/Audio/`, import clean, correct loop/2D flags, play on their event in PIE. Post the ask in 🚨 Blockers; import work in 🎨 Art.
+- names: >
+    `/Game/Audio/S_MinerClink (LOOP), S_CardPlay, S_CardDiscard, S_CastleDestroyed, S_VictoryMusic, S_DefeatMusic, S_OvertimeSting` (match TASK-179).
+    Raw under `Content/RawAssets/Audio/`. Law: CONVENTIONS "Audio event cues (M7)", "Cross-discipline rule".
+
+---
+
+**2026-07-14 OGRE PULL-FORWARD (COMPLETE — history; the first M7 asset, superseded by the M7 KICKOFF above):** M6.6 is DONE + signed off (Jonathan self-committed + pushed `057ca9f "walkable terrain"`). Jonathan then dropped an ogre concept (`Tools/ArtPipeline/Inbox/ogre.png`) and directed the **TRELLIS.2 art pipeline** be run to REPLACE the existing `/Game/Meshes/SM_Ogre` blockout with a game-ready textured mesh — one of the 16 M7 blockouts pulled forward on his directive. Same validated pipeline as the Footman/Archer/Castle pilots (TASK-082..088). Chain **TASK-147..152** below ("### M7 pull-forward — Ogre textured mesh"). CONVENTIONS "Textured mesh law" updated (Ogre = active pipeline asset; no new pattern). NOT in scope: the 2D card art `T_CardArt_Ogre` (separate lane, unchanged). **Two Jonathan touchpoints:** (1) **HF generation** — if Stage-1 `--check`/generate surfaces a token/quota/API-drift/image issue, surface the exit code VERBATIM + escalate 🚨 Blockers, never fake (2=token unset · 3=quota, expected pause · 4=API drift · 5=image missing); HF_TOKEN + HF PRO already live (TASK-085). (2) **EYEBALL GATE (TASK-150)** between Stage 2 and Stage 3 — a NEW asset's TRELLIS orientation + team-region are unknown until first generation, so `pre_rotate_z_deg`/`team_region` are starting guesses that need Jonathan's eye before import (exactly the TASK-086/087 gate). **Dispatch frontier = TASK-147 ONLY** (serial single-asset chain — each stage blocks the next; art-director does 147/148/149/151, Jonathan gates 150, build-master integrates 152). Repo base = `057ca9f` on `main`, pushed.
 
 **2026-07-14 M6.6 KICKOFF (done milestone — history):** **M6.5 is DONE** — Jonathan committed the assembled battlefield HIMSELF as `6a4c17d "battlefield created"` and PUSHED it (this satisfies the held TASK-136/137 commit gate; no separate build-master M6.5 commit — GATE 0 for M6.6 is satisfied). **M6.6 "Climbable terrain" (TASK-138..145) is now the CURRENT milestone** — it UNPARKS the M4.5 gameplay-terrain intent (make hills/rocks climbable). Root cause of the un-climbable hills = the scatter's UNIFORM scale makes face angles scale-invariant, so the squashed `stone_hill` dome is un-climbable at any scale; fix = purpose-built CONVEX hill meshes `SM_Hill_01/02/03` (≤30° faces, flat crowns) + a 4000-wide arena + terrain-blocks-projectiles + units-climb. Four decisions locked (see the "M6.6 tasks" block). Naming law: CONVENTIONS "Climbable terrain (M6.6)". Authoritative plan: `C:\Users\wesel\.claude\plans\we-last-left-off-partitioned-puppy.md`. Repo base = `6a4c17d` on `main`, pushed. TASK-138 (this CONVENTIONS block) is DONE; dispatch frontier = **TASK-139 ∥ TASK-140 ∥ TASK-141** (all parallel-safe, blocked only by TASK-138).
 

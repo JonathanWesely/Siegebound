@@ -1,0 +1,94 @@
+{
+  "_doc": {
+    "what": "Per-CardID art-direction prompts for concept_generate.py (Stage 0 of the Siegebound art pipeline, TASK-184 tool / TASK-185 run). Law: CONVENTIONS.md 'Textured mesh law' -> 'Stage 0 - concept generation'.",
+    "schema": "The 'prompts' object maps CardID (PascalCase, character-for-character = cards.csv row name = Inbox/<CardID>.png filename) -> an entry: { 'prompt': <required non-empty string, the subject description ONLY>, 'negative_prompt': <optional string>, 'seed': <optional integer for reproducibility> }.",
+    "framing": "DO NOT write framing/background/camera words in 'prompt' - concept_generate.py APPENDS a shared PROMPT_SUFFIX (single centered subject, full body, orthographic front three-quarter, plain flat neutral grey background, even lighting, no ground shadow, clean silhouette) to every prompt. Authors describe only the subject so TRELLIS image-to-3D gets a clean single-subject reference.",
+    "negative_prompt": "OPTIONAL and only forwarded when the active model supports classifier-free guidance (MODEL_SUPPORTS_NEGATIVE_PROMPT at the top of concept_generate.py). The default model FLUX.1-schnell is guidance-distilled and IGNORES negatives, so negative_prompt is recorded but not sent to it; entries are authored anyway so a later model swap (e.g. SDXL) picks them up. The tool already bakes a shared NEGATIVE_SUFFIX (multiple subjects, crowd, background scenery, props, text, watermark, extra limbs, blurry, low quality); per-entry negatives here are SUBJECT-SPECIFIC only.",
+    "seed": "OPTIONAL. Fixes the generation for reproducibility; the CLI --seed overrides it. Every M7 entry carries a distinct seed so a concept is exactly reproducible and a bad roll can be re-rolled deterministically (concept_generate.py <CardID> --force --seed N).",
+    "model_note": "The image model/endpoint is a swappable constant (MODEL_ID / PROVIDER) at the top of concept_generate.py - this file is model-agnostic.",
+    "art_direction": "GDD §6 'premium stylized' bar: polished stylized low-poly, Warcraft Rumble / Fortnite quality tier. Units ~2.5-3 heads tall with oversized hands/weapons; silhouette readable at 15 m; beveled chunky forms; hand-painted-style textures with gradient shading (darker feet -> lighter shoulders) + rim light; NO flat single-color materials. TEAM-AGNOSTIC palette (cards are player-neutral): base colors stay muted stone / leather / wood / steel, and each unit/building carries ONE small neutral cream cloth accent (tabard/sash/pennant/banner) left uncolored so the runtime team-color slot can recolor it - NO dominant baked red or blue. GoldNode is the exception: an emissive warm-gold economy prop with NO team accent."
+  },
+  "version": 1,
+  "prompts": {
+    "Knight": {
+      "prompt": "a heroic heavily armored medieval knight foot soldier standing at attention in full plate armor with a closed-visor helmet, a sturdy longsword held upright in one oversized gauntlet and a large heater shield in the other, a plain surcoat tabard over the breastplate; muted brushed-steel plate with worn leather straps and stone-grey cloth, one small neutral cream cloth tabard panel left uncolored as a team accent; rendered as a polished stylized low-poly game hero in the Warcraft Rumble and Fortnite quality tier, chunky exaggerated proportions about 2.5 heads tall, oversized hands and weapon, beveled simplified armor forms, hand-painted-style textures with soft gradient shading and a crisp rim light, bold readable silhouette",
+      "negative_prompt": "horse, mount, cavalry, rider, bow, gun, red armor, blue armor",
+      "seed": 71001
+    },
+    "Miner": {
+      "prompt": "a stout hardworking dwarf-like medieval gold miner, a non-combat worker gripping a big oversized pickaxe over one shoulder and a small ore sack in the other hand, a leather cap with a tiny miner's lamp, rolled-sleeve work tunic, thick gloves and heavy boots, a soot-smudged determined face; muted earthy palette of brown leather, dusty grey stone and worn canvas, one small neutral cream bandana scarf left uncolored as a team accent; rendered as a polished stylized low-poly game character in the Warcraft Rumble and Fortnite quality tier, chunky exaggerated proportions about 2.5 heads tall, oversized hands and tool, beveled simplified forms, hand-painted-style textures with soft gradient shading and rim light, bold readable silhouette",
+      "negative_prompt": "sword, shield, plate armor, soldier, weapon of war, red, blue",
+      "seed": 71002
+    },
+    "Cavalry": {
+      "prompt": "a heroic armored medieval cavalry lancer mounted on a sturdy chunky warhorse, the rider in plate-and-mail leaning forward couching a long oversized cavalry lance, a plumed helmet, the horse wearing simple leather-and-cloth barding and a caparison; muted brushed steel, brown leather tack and a chestnut horse, one small neutral cream pennant on the lance tip and a cream caparison panel left uncolored as team accents; rendered as a single polished stylized low-poly game unit with the horse and rider as one subject in the Warcraft Rumble and Fortnite quality tier, chunky exaggerated heroic proportions, oversized hands hooves and lance, beveled simplified forms, hand-painted-style textures with soft gradient shading and rim light, bold readable silhouette",
+      "negative_prompt": "dismounted, foot soldier, no horse, gun, red, blue",
+      "seed": 71003
+    },
+    "Cleric": {
+      "prompt": "a gentle robed medieval cleric battlefield healer, a kindly hooded priest holding aloft a glowing holy staff topped with a soft warm-white radiant symbol and cradling a small prayer tome, hands open in a benevolent healing gesture, no weapon; muted off-white and warm-grey wool robes with a rope belt and simple sandals, one small neutral cream stole sash draped over the shoulders left uncolored as a team accent, a faint gentle glow around the staff; rendered as a polished stylized low-poly game character in the Warcraft Rumble and Fortnite quality tier, chunky exaggerated proportions about 2.5 heads tall, oversized hands, beveled simplified cloth folds, hand-painted-style textures with soft gradient shading and rim light, serene readable silhouette",
+      "negative_prompt": "sword, axe, bow, gun, aggressive pose, armor, red robe, blue robe",
+      "seed": 71004
+    },
+    "Longbowman": {
+      "prompt": "a tall lean medieval longbowman archer drawing a very large oversized wooden longbow with an arrow nocked, a full quiver of arrows on his back, a leather bracer on the forearm, light padded leather armor and a soft feathered hood, focused aim; muted forest-green and tan leather with worn wood, one small neutral cream cloth arm-band accent left uncolored for team recoloring; rendered as a polished stylized low-poly game character in the Warcraft Rumble and Fortnite quality tier, chunky exaggerated proportions about 2.5 to 3 heads tall, oversized hands and bow, beveled simplified forms, hand-painted-style textures with soft gradient shading and rim light, bold readable silhouette",
+      "negative_prompt": "crossbow, gun, plate armor, shield, sword, mounted, red, blue",
+      "seed": 71005
+    },
+    "MilitiaMob": {
+      "prompt": "a single scrappy ragged medieval peasant militiaman, a common levy fighter in a simple patched tunic and a dented pot helmet, clutching a crude makeshift weapon such as a sharpened wooden pitchfork or a farm billhook plus a small round wooden buckler, rolled sleeves and worn boots, a rough determined expression; cheap muddy earthy palette of undyed homespun cloth, brown leather and rusty iron, one small neutral cream cloth armband accent left uncolored for team recoloring; rendered as a polished stylized low-poly game character in the Warcraft Rumble and Fortnite quality tier, chunky exaggerated proportions about 2.5 heads tall, oversized hands and makeshift weapon, beveled simplified forms, hand-painted-style textures with soft gradient shading and rim light, bold readable silhouette",
+      "negative_prompt": "plate armor, knight, professional soldier, multiple people, group, crowd, gun, red, blue",
+      "seed": 71006
+    },
+    "Pikeman": {
+      "prompt": "a disciplined medieval pikeman anti-cavalry soldier bracing an extra-long oversized pike with both hands in a planted forward stance, wearing a wide-brimmed kettle helmet and light brigandine-and-leather armor with a simple surcoat, feet set wide; muted steel, brown leather and grey cloth, one small neutral cream surcoat panel left uncolored as a team accent; rendered as a polished stylized low-poly game character in the Warcraft Rumble and Fortnite quality tier, chunky exaggerated proportions about 2.5 heads tall, oversized hands and very long pike, beveled simplified forms, hand-painted-style textures with soft gradient shading and rim light, bold readable silhouette",
+      "negative_prompt": "bow, gun, mounted, horse, short spear, red, blue",
+      "seed": 71007
+    },
+    "Sapper": {
+      "prompt": "a reckless grinning medieval demolitions sapper hugging a huge round black iron bomb with a lit sparking fuse to his chest, wearing a soot-stained leather apron, cracked goggles pushed up on his forehead, singed gloves and heavy boots, a mischievous expression; muted grimy palette of scorched brown leather and ash-grey cloth with the dark iron bomb, a bright orange fuse spark as the one warm pop of color, one small neutral cream cloth rag accent left uncolored for team recoloring; rendered as a polished stylized low-poly game character in the Warcraft Rumble and Fortnite quality tier, chunky exaggerated proportions about 2.5 heads tall, oversized hands and oversized bomb, beveled simplified forms, hand-painted-style textures with soft gradient shading and rim light, bold readable silhouette",
+      "negative_prompt": "sword, bow, gun, cannon, mounted, red, blue",
+      "seed": 71008
+    },
+    "ArrowTower": {
+      "prompt": "a compact freestanding medieval stone defensive arrow tower, a single stout round watchtower with narrow arrow-slit windows, crenellated battlements at the top and a small conical wooden shingle roof, a timber hoarding gallery near the crown, weathered grey stonework blocks on a wide reinforced base; muted grey stone, aged brown timber and dark iron, one small neutral cream pennant flag at the very top left uncolored for team recoloring; rendered as a polished stylized low-poly game building in the Warcraft Rumble and Fortnite quality tier, chunky exaggerated proportions, beveled blocky stone forms, hand-painted-style textures with soft gradient shading and rim light, strong readable silhouette",
+      "negative_prompt": "cannon, ballista, crystal, character, person, multiple towers, castle, red, blue",
+      "seed": 71009
+    },
+    "Wall": {
+      "prompt": "a single freestanding medieval stone fortress wall segment with crenellated battlements along the top, a solid defensive rampart of weathered grey stonework blocks with a walkway, a buttressed reinforced base, no gate and no towers; muted grey stone with mossy weathering and a few timber support beams, one small neutral cream banner draped over the parapet left uncolored for team recoloring; rendered as a polished stylized low-poly game building in the Warcraft Rumble and Fortnite quality tier, chunky exaggerated proportions, beveled blocky stone forms, hand-painted-style textures with soft gradient shading and rim light, strong readable silhouette",
+      "negative_prompt": "gate, door, tower, castle, whole fortress, character, person, red, blue",
+      "seed": 71010
+    },
+    "BombTower": {
+      "prompt": "a squat heavy medieval stone bomb tower topped with a wide iron mortar cannon angled to lob explosive shells, a stack of round black cannonballs beside it, a broad reinforced stone base with iron banding; muted grey stone, dark iron and aged timber, one small neutral cream pennant flag left uncolored for team recoloring; rendered as a polished stylized low-poly game building in the Warcraft Rumble and Fortnite quality tier, chunky stubby exaggerated proportions, beveled blocky forms, hand-painted-style textures with soft gradient shading and rim light, strong readable silhouette",
+      "negative_prompt": "ballista, crystal, character, person, tall thin tower, red, blue",
+      "seed": 71011
+    },
+    "BallistaTower": {
+      "prompt": "a tall medieval siege ballista tower, a timber-and-stone platform tower mounting a giant oversized ballista crossbow with thick twisted torsion cords and a huge bolt loaded, an open wooden fighting deck at the top on a stone base; muted aged brown timber, grey stone and dark iron fittings, one small neutral cream pennant flag left uncolored for team recoloring; rendered as a polished stylized low-poly game building in the Warcraft Rumble and Fortnite quality tier, chunky exaggerated proportions with an oversized ballista, beveled blocky forms, hand-painted-style textures with soft gradient shading and rim light, strong readable silhouette",
+      "negative_prompt": "cannon, mortar, crystal, arrow slits, character, person, red, blue",
+      "seed": 71012
+    },
+    "Barracks": {
+      "prompt": "a sturdy medieval military barracks building, a stout timber-framed and stone structure with a large arched reinforced doorway, a peaked wooden shingle roof, wooden training dummies and a weapon rack against the wall, small shuttered windows and hanging plain shields; muted grey stone, warm brown timber beams and thatch, one small neutral cream banner hung above the doorway left uncolored for team recoloring; rendered as a polished stylized low-poly game building in the Warcraft Rumble and Fortnite quality tier, chunky exaggerated proportions, beveled blocky forms, hand-painted-style textures with soft gradient shading and rim light, strong readable silhouette",
+      "negative_prompt": "tower, cannon, ballista, crystal, character, person, castle, red banner, blue banner",
+      "seed": 71013
+    },
+    "DeepMine": {
+      "prompt": "a fortified medieval deep gold mine entrance built into a rocky hillside mound, a timber-framed mine shaft opening with a wooden headframe and a rope winch, a small ore minecart on rails at the mouth, faint glints of gold ore veins in the dark rock, sturdy support beams; muted grey rock, aged brown timber and a dark shaft opening with only tiny warm-gold ore sparkles, one small neutral cream cloth marker flag left uncolored for team recoloring; rendered as a polished stylized low-poly game building in the Warcraft Rumble and Fortnite quality tier, chunky exaggerated proportions, beveled blocky rock and timber forms, hand-painted-style textures with soft gradient shading and rim light, strong readable silhouette",
+      "negative_prompt": "giant glowing gold pile, tower, character, person, cannon, crystal, red, blue",
+      "seed": 71014
+    },
+    "CrystalTower": {
+      "prompt": "a slender arcane medieval crystal tower, a tapering stone spire wrapped with glowing engraved runes and topped with a large faceted floating magical crystal cluster radiating soft violet-cyan arcane energy, thin arcane arcs crackling between smaller crystal shards, a carved stone base; muted grey enchanted stone with luminous violet and cyan crystal as the color key, one small neutral cream pennant at the base left uncolored for team recoloring; rendered as a polished stylized low-poly game building in the Warcraft Rumble and Fortnite quality tier, chunky exaggerated proportions, beveled blocky stone and crisp faceted crystal forms, hand-painted-style textures with soft gradient shading and rim light, strong readable silhouette",
+      "negative_prompt": "cannon, ballista, arrow slits, character, person, red glow, plain blue glow",
+      "seed": 71015
+    },
+    "GoldNode": {
+      "prompt": "a glowing emissive fantasy gold ore deposit economy prop, a cluster of large chunky raw gold nuggets and faceted golden crystal shards erupting from a craggy grey rock base, a radiant warm golden-yellow emissive glow with sparkling highlights and a few loose gold coins around the base, a treasure resource node; grey stone base contrasting the luminous warm-yellow gold, no cloth and no banners and no team accent; rendered as a polished stylized low-poly game prop in the Warcraft Rumble and Fortnite quality tier, chunky exaggerated proportions, beveled blocky rock and faceted gold forms, hand-painted-style textures with soft gradient shading, a bright emissive glow and rim light, strong readable silhouette",
+      "negative_prompt": "character, person, miner, building, tower, weapon, red, blue, team color, banner, flag",
+      "seed": 71016
+    }
+  }
+}

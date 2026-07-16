@@ -1,0 +1,111 @@
+{
+  "_doc": {
+    "what": "Per-asset parameters for rig_character.py (Stage 3b of the Siegebound art pipeline — the SKELETAL rig/anim tooling, TASK-160). Sibling of pipeline_manifest.json (the static TRELLIS.2 pipeline). Law: CONVENTIONS.md 'Skeletal rig & animation workstream (M7)'.",
+    "why_separate_manifest": "The mesh pipeline (pipeline_manifest.json) and the rig pipeline are COMPLEMENTARY but disjoint stages (SM_<CardID> backs the ghost + fallback; SK_<CardID> is the animated runtime). Keeping rig params here avoids perturbing the carefully-authored mesh manifest and keeps the rig tooling self-contained.",
+    "merging": "'defaults' apply to every asset; per-asset keys override (dict values merge one level deep) — identical to pipeline_manifest.json.",
+    "skeleton": "The SHARED humanoid skeleton is 'SiegeBiped' (-> UE 'SKEL_SiegeBiped'). Bone NAMES + hierarchy are the retarget contract: every humanoid unit rigged on 'SiegeBiped' gets identical bone names so UE can share/retarget one skeleton + author locomotion once. Bone POSITIONS are computed per-asset in rig_character.py from the MEASURED game-ready mesh (adaptive fit) x the normalized 'proportions' below, so the same skeleton spec fits a 149-tall militiaman and a 208-tall cavalry rider. Non-humanoid assets (e.g. Ogre) may set skeleton:'bespoke' to get their own auto-skeleton later.",
+    "proportions": "Normalized humanoid anchors. *_z are fractions of measured mesh HEIGHT (0=feet, 1=head-top). *_x_frac multiply the MEASURED half-width at that region (shoulder_half / hip_half) so limb roots sit inside the silhouette. foot_forward_frac is a fraction of height (foot points -Y = front). A-pose arms (nearly straight down) maximize skin quality for TRELLIS meshes whose arms rest at the sides.",
+    "skinning": "'auto_then_envelope' = try Blender bone-heat automatic weights first; if it errors or leaves > unweighted_fallback_fraction of verts empty, fall back to deterministic segment-distance envelope weighting (never fails, generalizes to the batch). Recorded in rig_report.json.",
+    "anims": "Frame LENGTHS at 'fps'. Required actions Idle/Walk/Attack/Death (CONVENTIONS). 'weapon_side' picks which arm drives Attack (r bones sit at -X = the character's right, matching the Footman spear at -X). 'attack_style' selects the Attack pose set in rig_character.py (thrust|swing|overhead|cast|mine).",
+    "outputs": "rig_character.py writes the rigged mesh FBX to Content/RawAssets/Characters/<CardID>.fbx and one anim FBX per action to Content/RawAssets/Characters/Anims/<CardID>_<Action>.fbx (raw-asset rule). Previews (turntable + per-anim mp4 + bind stills + contact sheets) + rig_report.json go to Cache/<CardID>/rig/. The AM_<CardID>_Attack MONTAGE is authored in-editor at TASK-162 from A_<CardID>_Attack (a montage wraps a sequence — not a Blender export)."
+  },
+  "version": 1,
+  "defaults": {
+    "skeleton": "SiegeBiped",
+    "fps": 30,
+    "weapon_side": "r",
+    "attack_style": "thrust",
+    "skinning": {
+      "method": "auto_then_envelope",
+      "envelope_power": 2.5,
+      "max_bones_per_vert": 4,
+      "unweighted_fallback_fraction": 0.02
+    },
+    "anims": {
+      "Idle":   { "length": 60, "loop": true },
+      "Walk":   { "length": 30, "loop": true },
+      "Attack": { "length": 40, "loop": false },
+      "Death":  { "length": 48, "loop": false }
+    },
+    "preview": { "px": 480, "turntable_frames": 60, "contact_px": 360 }
+  },
+  "skeletons": {
+    "SiegeBiped": {
+      "_desc": "21-bone humanoid: root(non-deform) + pelvis + spine_01/02/03 + neck_01 + head + [clavicle/upperarm/lowerarm/hand]_l|r + [thigh/calf/foot]_l|r. UE-mannequin-style names for future Manny retarget potential. _l bones sit at +X (character's LEFT), _r at -X (character's RIGHT — the -X weapon side).",
+      "proportions": {
+        "foot_z": 0.03, "ankle_z": 0.065, "knee_z": 0.27, "hip_z": 0.50,
+        "pelvis_z": 0.515, "spine1_top_z": 0.60, "spine2_top_z": 0.70, "spine3_top_z": 0.805,
+        "neck_top_z": 0.865, "head_top_z": 1.0,
+        "shoulder_z": 0.80, "elbow_z": 0.60, "wrist_z": 0.44, "hand_z": 0.39,
+        "hip_x_frac": 0.52, "foot_x_frac": 0.50, "clavicle_root_x_frac": 0.12,
+        "shoulder_x_frac": 0.86, "elbow_x_frac": 0.94, "wrist_x_frac": 0.92,
+        "foot_forward_frac": 0.11
+      }
+    }
+  },
+  "assets": {
+    "Footman": {
+      "input_fbx": "Content/RawAssets/Footman.fbx",
+      "skeleton": "SiegeBiped",
+      "weapon_side": "r",
+      "attack_style": "thrust",
+      "_note": "Pilot rig spike (TASK-160). Simplest humanoid, already textured (SM_Footman, 15000 tris, [TeamRegion, FootmanPBR], UVMap, feet-center ~180 UE). Spear at -X per pipeline_manifest.json => weapon_side 'r' + 'thrust'. Proves the shared SiegeBiped humanoid rig for the batch (TASK-163/164)."
+    },
+    "Knight": {
+      "input_fbx": "Content/RawAssets/Knight.fbx",
+      "skeleton": "SiegeBiped",
+      "weapon_side": "r",
+      "attack_style": "swing",
+      "_note": "TASK-163 wave 1. GDD S4: Unit, 200 HP, dmg 15, range 120 (melee), Tank. Sword melee => 'swing' (overhead arc). Two-slot [TeamRegion, KnightPBR]+UVMap from SM_Knight."
+    },
+    "Cavalry": {
+      "input_fbx": "Content/RawAssets/Cavalry.fbx",
+      "skeleton": "SiegeBiped",
+      "weapon_side": "r",
+      "attack_style": "thrust",
+      "_note": "TASK-163 wave 1. GDD S4: Unit, 140 HP, range 120, Charge (first hit 2x). Charge/lance => 'thrust' (forward-drive lunge reads as a couched-lance charge). Two-slot [TeamRegion, CavalryPBR]+UVMap."
+    },
+    "Pikeman": {
+      "input_fbx": "Content/RawAssets/Pikeman.fbx",
+      "skeleton": "SiegeBiped",
+      "weapon_side": "r",
+      "attack_style": "thrust",
+      "_note": "TASK-163 wave 1. GDD S4: Unit, 100 HP, dmg 30, range 120, Slayer (2x vs 150+ HP), anti-tank pike. Pike => 'thrust' (straight forward drive). Two-slot [TeamRegion, PikemanPBR]+UVMap."
+    },
+    "MilitiaMob": {
+      "input_fbx": "Content/RawAssets/MilitiaMob.fbx",
+      "skeleton": "SiegeBiped",
+      "weapon_side": "r",
+      "attack_style": "swing",
+      "_note": "TASK-163 wave 1. GDD S4: Unit, 25 HP x4, dmg 6, range 120, Swarm (spawns 4). Rig the SINGLE mesh (swarm is a spawn-count, not a mesh). Basic strike => 'swing'. Two-slot [TeamRegion, MilitiaMobPBR]+UVMap."
+    },
+    "Sapper": {
+      "input_fbx": "Content/RawAssets/Sapper.fbx",
+      "skeleton": "SiegeBiped",
+      "weapon_side": "r",
+      "attack_style": "thrust",
+      "_note": "TASK-164 wave 2. GDD S4: Unit, 60 HP, dmg 80 AoE, range contact, Siege (explodes on contact/death). Lunge into target => 'thrust' (forward-drive lunge). Two-slot [TeamRegion, SapperPBR]+UVMap."
+    },
+    "Cleric": {
+      "input_fbx": "Content/RawAssets/Cleric.fbx",
+      "skeleton": "SiegeBiped",
+      "weapon_side": "r",
+      "attack_style": "cast",
+      "_note": "TASK-164 wave 2. GDD S4: Unit, 90 HP, heals 8/s, range 400, Support, NO ATTACK. 'cast' (script else-branch = raised-arm gesture) authored as a heal/support pose stand-in for the required 4th action; the montage is not expected to fire in-match (Support never attacks). FLAG: not a real bespoke heal cast — tunable follow-up. Two-slot [TeamRegion, ClericPBR]+UVMap."
+    },
+    "Longbowman": {
+      "input_fbx": "Content/RawAssets/Longbowman.fbx",
+      "skeleton": "SiegeBiped",
+      "weapon_side": "r",
+      "attack_style": "thrust",
+      "_note": "TASK-164 wave 2. GDD S4: Unit, 70 HP, dmg 18, range 1200 (ranged, outranges towers). Bow draw/release: current tooling has no dedicated bow-draw pose, so 'thrust' (arm windup pull-back then forward-drive) is the closest read. FLAG: a true nock->draw->release pose is a tuning follow-up. Two-slot [TeamRegion, LongbowmanPBR]+UVMap."
+    },
+    "Miner": {
+      "input_fbx": "Content/RawAssets/Miner.fbx",
+      "skeleton": "SiegeBiped",
+      "weapon_side": "r",
+      "attack_style": "mine",
+      "_note": "TASK-164 wave 2. GDD S3.3/S4: Economy, 30 HP, non-combat; +1 gold/s on arrival. 'mine' (thrust-family forward/down pick drive) is the mining swing (pairs with TASK-179 clink audio); serves as the 'Attack' action slot. Two-slot [TeamRegion, MinerPBR]+UVMap."
+    }
+  }
+}

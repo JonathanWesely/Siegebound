@@ -1,0 +1,21 @@
+# M7 building/GoldNode + U2 unit reimport wave (TASK-172/173).
+# One CardID per line. This sidecar WINS over DEFAULT_CARD_IDS in reimport_meshes.py.
+# The 4 U1 units (Knight/Cavalry/Pikeman/MilitiaMob) are already done+verified and
+# are intentionally NOT listed (verify-only over MCP); add them here for an
+# idempotent re-run if ever needed.
+
+# --- U2 units (2-slot [TeamRegion, <CardID>PBR], <=4 convex hulls) ---
+Sapper
+Cleric
+Longbowman
+Miner
+
+# --- Buildings (2-slot [TeamRegion, <CardID>PBR], authored UCX box hulls) ---
+ArrowTower
+BallistaTower
+Barracks
+BombTower
+CrystalTower
+
+# --- Emissive economy prop (single M_GoldGlow slot, NO TeamRegion, box hull) ---
+GoldNode

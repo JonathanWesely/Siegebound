@@ -211,12 +211,14 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "gradio-client" },
+    { name = "huggingface-hub" },
     { name = "pillow" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "gradio-client" },
+    { name = "huggingface-hub" },
     { name = "pillow" },
 ]
 

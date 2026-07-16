@@ -8,6 +8,7 @@ description = "TRELLIS.2 -> Blender -> UE5 art pipeline tooling (Stage 1: TRELLI
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "gradio_client",
+    "huggingface_hub",
     "pillow",
 ]
 
