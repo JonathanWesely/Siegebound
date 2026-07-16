@@ -3,11 +3,15 @@
 #include "Siegebound/SummonedUnit.h"
 
 #include "AIController.h"
+#include "Animation/AnimInstance.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/MeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/DamageEvents.h"
 #include "Engine/DataTable.h"
+#include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -27,7 +31,22 @@
 #include "Siegebound/HeroCharacter.h"
 #include "Siegebound/Projectile.h"
 #include "Siegebound/SiegeCombatStatics.h"
+#include "Siegebound/SiegeFeedbackLibrary.h"
+#include "Siegebound/SiegeHitFlashComponent.h"
+#include "Siegebound/SiegeMeshJuiceComponent.h"
 #include "TimerManager.h"
+
+namespace
+{
+	//~ M7 §6 juice/feel soft-ref paths (TASK-158/179) — null-safe, resolved through
+	//~ USiegeFeedbackLibrary; the assets arrive later (TASK-174/180) and no-op until then.
+	const TCHAR* GoldBurstVFXPath = TEXT("/Game/VFX/NS_GoldBurst");   // TASK-158: coin burst on unit death
+	const TCHAR* UnitSpawnSoundPath = TEXT("/Game/Audio/S_UnitSpawn");        // TASK-179
+	const TCHAR* ProjectileFireSoundPath = TEXT("/Game/Audio/S_ProjectileFire"); // TASK-179
+
+	/** Height above a unit's origin for its floating damage number (roughly over the head). */
+	constexpr float UnitDamageNumberHeightZ = 110.f;
+}
 
 namespace
 {
@@ -82,6 +101,25 @@ ASummonedUnit::ASummonedUnit()
 	// updates arrive when the unit broadcasts OnHPChanged.
 	HPBarWidget = CreateDefaultSubobject<UCombatantHealthBarComponent>(TEXT("HPBarWidget"));
 	HPBarWidget->SetupAttachment(GetCapsuleComponent());
+
+	// M7 skeletal runtime visual (TASK-159): OPTIONAL, empty + hidden by default.
+	// The capsule owns all collision — like the static VisualMesh, this must neither
+	// collide nor carve the navmesh; it only becomes visible if SK_<CardID> resolves
+	// (ResolveSkeletalVisual). The static VisualMesh backs the ghost + the null-safe
+	// fallback; this backs the animated runtime (CONVENTIONS SkeletalVisualMesh contract).
+	SkeletalVisualMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("SkeletalVisualMesh"));
+	SkeletalVisualMesh->SetupAttachment(GetCapsuleComponent());
+	SkeletalVisualMesh->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+	SkeletalVisualMesh->SetGenerateOverlapEvents(false);
+	SkeletalVisualMesh->SetCanEverAffectNavigation(false);
+	SkeletalVisualMesh->SetVisibility(false);
+
+	// §6 juice components (TASK-154/155): the shared hit-flash + transform-juice, added
+	// once here so AMinerUnit inherits them. The flash gathers meshes at its BeginPlay and
+	// is driven from TakeDamage; the juice is pointed at the active visual mesh + squashed
+	// once at LoadStatsAndStart. Both null-safe and inert until triggered.
+	HitFlashComponent = CreateDefaultSubobject<USiegeHitFlashComponent>(TEXT("HitFlashComponent"));
+	MeshJuiceComponent = CreateDefaultSubobject<USiegeMeshJuiceComponent>(TEXT("MeshJuiceComponent"));
 
 	// data contract (TASK-004 names block): stats resolve from this table at BeginPlay,
 	// never from code (GDD §3.0). The table is imported in TASK-008 and may not exist yet.
@@ -141,7 +179,12 @@ void ASummonedUnit::ApplyTeamMaterial()
 	// assets (authored with the Blue placeholder material); this overrides slot 0 by
 	// the ACTUAL Team so a Red-spawned unit reads red with no Red BP duplicate. Blue
 	// re-applies the identical MI_TeamColor_Blue, so Blue-side visuals are unchanged.
-	if (!VisualMesh)
+	// TASK-159: slot 0 is written on the ACTIVE visual — the skeletal mesh once the M7
+	// swap took, else the static VisualMesh (the swap contract's "recolor targets
+	// SkeletalVisualMesh slot 0"). The SK mesh keeps the same [TeamRegion, <CardID>PBR]
+	// two-slot contract as its SM source, so slot-0 recolor is identical on either path.
+	UMeshComponent* ActiveMesh = GetActiveVisualMesh();
+	if (!ActiveMesh)
 	{
 		return;
 	}
@@ -158,8 +201,72 @@ void ASummonedUnit::ApplyTeamMaterial()
 	const TSoftObjectPtr<UMaterialInterface>& TeamMat = (Team == ETeamId::Red) ? RedTeamMaterial : BlueTeamMaterial;
 	if (UMaterialInterface* ResolvedTeamMat = TeamMat.LoadSynchronous())
 	{
-		VisualMesh->SetMaterial(0, ResolvedTeamMat);
+		ActiveMesh->SetMaterial(0, ResolvedTeamMat);
 	}
+}
+
+UMeshComponent* ASummonedUnit::GetActiveVisualMesh() const
+{
+	// The skeletal runtime once the M7 swap took (TASK-159), else the static VisualMesh
+	// — both are UMeshComponent, so team recolor (SetMaterial) and the spawn-squash
+	// target (a USceneComponent) work uniformly on either.
+	if (bUsingSkeletalVisual && SkeletalVisualMesh)
+	{
+		return SkeletalVisualMesh;
+	}
+	return VisualMesh;
+}
+
+void ASummonedUnit::ResolveSkeletalVisual()
+{
+	// M7 skeletal swap (TASK-159), the class of change that tripped TASK-110 — so:
+	// complete-type includes for USkeletalMeshComponent / USkeletalMesh / UAnimInstance
+	// are pulled in at the top of this TU, and every step is null-guarded.
+	if (bUsingSkeletalVisual || !SkeletalVisualMesh || CardID.IsNone())
+	{
+		return; // already swapped, no component, or no CardID to compose from — keep the static VisualMesh
+	}
+
+	// Compose /Game/Characters/SK_<CardID> from the CardID (mirrors the static
+	// /Game/Meshes/SM_<CardID> string law). A unit with no rig yet (the normal
+	// pre-batch case) resolves nullptr here and silently keeps the static mesh —
+	// deliberately NOT logged (60+ un-rigged units must not spam).
+	const FString CardIdString = CardID.ToString();
+	const FString SkPath = FString::Printf(TEXT("/Game/Characters/SK_%s.SK_%s"), *CardIdString, *CardIdString);
+	const TSoftObjectPtr<USkeletalMesh> SkSoft{ FSoftObjectPath(SkPath) };
+	USkeletalMesh* SkeletalAsset = SkSoft.LoadSynchronous();
+	if (!SkeletalAsset)
+	{
+		return; // no SK_<CardID> — byte-for-byte today's static-mesh behavior
+	}
+
+	// Skeletal runtime IS available: swap it in. SetSkeletalMeshAsset is the current
+	// (non-deprecated) setter in UE5. The mesh carries its own [TeamRegion, <CardID>PBR]
+	// materials; the team recolor below (via the LoadStatsAndStart re-apply) overrides slot 0.
+	SkeletalVisualMesh->SetSkeletalMeshAsset(SkeletalAsset);
+
+	// AnimClass /Game/Characters/ABP_<CardID> (the _C generated-class path). A present SK
+	// with a MISSING ABP still shows the skeletal mesh in its ref pose (null-safe — the
+	// component's AnimClass simply stays unset), so a rig can land before its anim BP.
+	const FString AbpPath = FString::Printf(TEXT("/Game/Characters/ABP_%s.ABP_%s_C"), *CardIdString, *CardIdString);
+	const TSoftClassPtr<UAnimInstance> AbpSoft{ FSoftObjectPath(AbpPath) };
+	if (UClass* AbpClass = AbpSoft.LoadSynchronous())
+	{
+		SkeletalVisualMesh->SetAnimInstanceClass(AbpClass);
+	}
+
+	// Make the skeletal the runtime visual, hide the static (the ghost still resolves
+	// the static SM_<CardID> — CONVENTIONS parity rule, unchanged).
+	SkeletalVisualMesh->SetVisibility(true);
+	if (VisualMesh)
+	{
+		VisualMesh->SetVisibility(false);
+	}
+	bUsingSkeletalVisual = true;
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASummonedUnit '%s': skeletal runtime SK_%s active (M7 TASK-159) — static VisualMesh hidden; the placement ghost still uses SM_%s."),
+		*GetNameSafe(this), *CardIdString, *CardIdString);
 }
 
 void ASummonedUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -709,6 +816,28 @@ void ASummonedUnit::LoadStatsAndStart()
 	// (TASK-054: Standard, Siege, and Support are all implemented now — the old
 	// "only Standard implemented" warning is gone. Profile bound above; None runs
 	// the Standard body, which is inert for the Miner subclass by construction.)
+
+	// M7 skeletal swap (TASK-159): CardID is guaranteed bound here (both the deferred
+	// and the late-InitUnit paths reach LoadStatsAndStart with a CardID), so this is the
+	// one correct place to try SK_<CardID>. If it takes, re-apply the team recolor so
+	// slot 0 lands on the now-active SKELETAL mesh (ApplyTeamMaterial in BeginPlay ran
+	// before this and colored the static mesh; this second apply targets the skeletal).
+	ResolveSkeletalVisual();
+	if (bUsingSkeletalVisual)
+	{
+		ApplyTeamMaterial();
+	}
+
+	// §6 spawn squash-and-stretch (TASK-155): point the juice at the ACTIVE visual mesh
+	// (static or skeletal) and pop it once. Null-safe (no target = no-op).
+	if (MeshJuiceComponent)
+	{
+		MeshJuiceComponent->SetTargetMesh(GetActiveVisualMesh());
+		MeshJuiceComponent->PlaySpawnSquash();
+	}
+
+	// §6 unit-spawn audio (TASK-179): world one-shot at the unit, null-safe until S_UnitSpawn lands.
+	USiegeFeedbackLibrary::PlayWorldSound(this, UnitSpawnSoundPath, GetActorLocation());
 
 	bStatsLoaded = true;
 
@@ -1490,6 +1619,9 @@ void ASummonedUnit::FireProjectileAt(AActor* Target, float DamageAmount)
 		// etc. — for a plain Archer this is exactly the row Damage), projectile-typed — ACastle
 		// applies the §3.0 50% on ITS side (TASK-026); units/hero take the listed damage.
 		Projectile->InitProjectile(Team, Target, DamageAmount, USiegeDamageType_Projectile::StaticClass());
+
+		// §6 projectile-fire audio (TASK-179): world one-shot at the muzzle, null-safe.
+		USiegeFeedbackLibrary::PlayWorldSound(this, ProjectileFireSoundPath, MuzzleLocation);
 	}
 }
 
@@ -1599,6 +1731,17 @@ float ASummonedUnit::TakeDamage(float DamageAmount, const FDamageEvent& DamageEv
 	// parity — listeners see the 0-HP value before HandleDeath tears the actor down).
 	OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
 
+	// §6 damage feedback (TASK-154/156) — only on ACTUAL damage (friendly fire + heals
+	// never reach here). Flash the active visual white ~0.1 s; float the dealt amount
+	// over the unit, tinted by team. Both null-safe (no art = no-op) and run before
+	// HandleDeath so the killing blow still flashes/pops.
+	if (HitFlashComponent)
+	{
+		HitFlashComponent->TriggerFlash();
+	}
+	USiegeFeedbackLibrary::ShowDamageNumber(this, ActualDamage,
+		GetActorLocation() + FVector(0.f, 0.f, UnitDamageNumberHeightZ), USiegeFeedbackLibrary::TeamTint(Team));
+
 	if (CurrentHP <= 0.f)
 	{
 		HandleDeath();
@@ -1702,6 +1845,12 @@ void ASummonedUnit::HandleDeath()
 	// do not route through TakeDamage, e.g. Sapper suicide). The actor is destroyed below,
 	// taking the bar with it, so no explicit hide is needed.
 	OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
+
+	// §6 gold-coin burst on unit death (TASK-158): cosmetic only, NO gold mutation.
+	// Hooked into THIS single death choke (covers combat death, Sapper suicide, the
+	// PlayAgain sweep, KillZ). Null-safe until NS_GoldBurst lands (TASK-174). Spawned
+	// BEFORE Destroy() so the world + location are valid.
+	USiegeFeedbackLibrary::SpawnNiagara(this, GoldBurstVFXPath, GetActorLocation());
 
 	GetWorldTimerManager().ClearTimer(StateTimerHandle);
 	GetWorldTimerManager().ClearTimer(AttackTimerHandle);

@@ -17,6 +17,7 @@ class UCombatantHealthBarComponent;
 class UInputAction;
 class UInputMappingContext;
 class UNiagaraSystem;
+class USiegeHitFlashComponent;
 class AHeroCharacter;
 
 /**
@@ -337,6 +338,10 @@ protected:
 	/** Overhead poll-driven health bar (M5.5, TASK-110): hide-at-full, team-tinted. ADDITIVE to the hero's own WBP_HUD HP readout (M1) — that stays. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Hero")
 	TObjectPtr<UCombatantHealthBarComponent> HPBarWidget;
+
+	/** §6 white hit-flash on every actual damage event (M7, TASK-154). Driven from TakeDamage; overlay-based (flashes the template skeletal GetMesh()), null-safe. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Feedback")
+	TObjectPtr<USiegeHitFlashComponent> HitFlashComponent;
 
 	/** Mapping context slot for /Game/Input/IMC_Hero — assigned on BP_HeroCharacter in TASK-009. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")

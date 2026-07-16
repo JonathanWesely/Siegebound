@@ -13,7 +13,11 @@
 class AAIController;
 class UDataTable;
 class UCombatantHealthBarComponent;
+class UMeshComponent;
 class UNiagaraSystem;
+class USiegeHitFlashComponent;
+class USiegeMeshJuiceComponent;
+class USkeletalMeshComponent;
 class UStaticMeshComponent;
 
 /**
@@ -320,6 +324,27 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Unit")
 	TObjectPtr<UCombatantHealthBarComponent> HPBarWidget;
 
+	/**
+	 *  OPTIONAL skeletal runtime visual (M7 skeletal-animation workstream, TASK-159).
+	 *  Empty + hidden by default. At BeginPlay the unit composes /Game/Characters/SK_<CardID>
+	 *  from its CardID (mirrors the static /Game/Meshes/SM_<CardID> string law); if it
+	 *  RESOLVES this becomes the runtime visual (mesh + AnimClass /Game/Characters/ABP_<CardID>,
+	 *  the static VisualMesh hidden, the team recolor routed here) — else it stays empty and
+	 *  the static VisualMesh drives exactly as today. Purely ADDITIVE + null-safe; the
+	 *  placement GHOST is UNCHANGED (it always resolves the static SM_<CardID> — ghosts don't
+	 *  animate), so SM_<CardID> must remain at its path even after a unit gains a rig.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Unit")
+	TObjectPtr<USkeletalMeshComponent> SkeletalVisualMesh;
+
+	/** §6 white hit-flash on every actual damage event (M7, TASK-154). Driven from TakeDamage; overlay-based, null-safe. AMinerUnit inherits it. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Feedback")
+	TObjectPtr<USiegeHitFlashComponent> HitFlashComponent;
+
+	/** §6 procedural transform juice (M7, TASK-155): spawn squash-and-stretch on the active visual mesh. AMinerUnit inherits it. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Feedback")
+	TObjectPtr<USiegeMeshJuiceComponent> MeshJuiceComponent;
+
 	/** DT_Cards row name whose stats drive this unit (BP_Unit_Footman sets Footman, TASK-010). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Unit")
 	FName CardID = NAME_None;
@@ -449,6 +474,20 @@ private:
 	 *  apply covers miners too. Cosmetic only: slot 0 material, nothing else.
 	 */
 	void ApplyTeamMaterial();
+
+	/**
+	 *  Skeletal swap (M7, TASK-159): composes /Game/Characters/SK_<CardID> from the
+	 *  bound CardID and, if it resolves, makes SkeletalVisualMesh the runtime visual
+	 *  (SetSkeletalMeshAsset + SetAnimInstanceClass from /Game/Characters/ABP_<CardID>,
+	 *  the static VisualMesh hidden, bUsingSkeletalVisual latched). Missing SK asset =
+	 *  keeps the static VisualMesh exactly as today (silent — the normal pre-rig path).
+	 *  Missing ABP with a present SK = the skeletal mesh shows its ref pose (null-safe).
+	 *  Called once from LoadStatsAndStart, where the CardID is guaranteed bound.
+	 */
+	void ResolveSkeletalVisual();
+
+	/** The active runtime visual mesh — SkeletalVisualMesh when the skeletal swap took, else the static VisualMesh (team recolor + spawn squash target). */
+	UMeshComponent* GetActiveVisualMesh() const;
 
 	/** Periodic state check (every StateCheckInterval): leash/Reacquire, Acquire, then Attack or Advance. */
 	void UpdateState();
@@ -762,6 +801,9 @@ private:
 
 	/** True once the card stats were bound from DT_Cards; the state machine only runs afterwards. */
 	bool bStatsLoaded = false;
+
+	/** True once the M7 skeletal swap took (TASK-159): SkeletalVisualMesh is the runtime visual and the team recolor / spawn squash target it, not the static VisualMesh. */
+	bool bUsingSkeletalVisual = false;
 
 	/** True from HP hitting 0; death side effects run exactly once. */
 	bool bDead = false;

@@ -30,10 +30,21 @@
 #include "Siegebound/HeroCharacter.h"
 #include "Siegebound/SiegeCheatManager.h" // TASK-121 — CheatClass complete-type (constructor assignment below)
 #include "Siegebound/SiegeDeckSaveGame.h" // USiegeDeckSaveGame — active saved deck source (M6 TASK-114)
+#include "Siegebound/SiegeFeedbackLibrary.h" // M7 §6 audio hooks (TASK-179): card play/discard/spell/end-of-match
 #include "Siegebound/SiegePlayerState.h"
 #include "Siegebound/SiegeSpawnConstants.h"
 #include "Siegebound/SpellLibrary.h"
 #include "Siegebound/SummonedUnit.h"
+
+namespace
+{
+	//~ §6 UI/stinger audio soft-ref paths (TASK-179) — 2D one-shots, null-safe (sounds arrive in TASK-180).
+	const TCHAR* CardPlaySoundPath = TEXT("/Game/Audio/S_CardPlay");
+	const TCHAR* CardDiscardSoundPath = TEXT("/Game/Audio/S_CardDiscard");
+	const TCHAR* SpellCastSoundPath = TEXT("/Game/Audio/S_SpellCast");
+	const TCHAR* VictoryMusicSoundPath = TEXT("/Game/Audio/S_VictoryMusic");
+	const TCHAR* DefeatMusicSoundPath = TEXT("/Game/Audio/S_DefeatMusic");
+}
 
 ASiegePlayerController::ASiegePlayerController()
 {
@@ -483,6 +494,10 @@ void ASiegePlayerController::PlayHandSlot(int32 Slot)
 		return;
 	}
 
+	// §6 card-play click (TASK-179): the play is ACCEPTED past every refusal gate above
+	// (it now proceeds to placement/targeting/instant resolution) — a 2D click, null-safe.
+	USiegeFeedbackLibrary::PlaySound2D(this, CardPlaySoundPath);
+
 	switch (Row->CardType)
 	{
 	case ECardType::Unit:
@@ -633,6 +648,9 @@ void ASiegePlayerController::DiscardHandSlot(int32 Slot)
 			*GetNameSafe(this), Slot, DiscardCost, DiscardCost);
 		return;
 	}
+
+	// §6 card-discard click (TASK-179): the discard succeeded (gold spent, pile moved) — a 2D click, null-safe.
+	USiegeFeedbackLibrary::PlaySound2D(this, CardDiscardSoundPath);
 
 	UE_LOG(LogGitClaudeUnrealTest, Log,
 		TEXT("ASiegePlayerController '%s': discarded hand slot %d ('%s') for %d gold — replacement drawn (GDD §3.6)."),
@@ -860,6 +878,11 @@ void ASiegePlayerController::HandleMatchEnd(ETeamId Winner)
 		return;
 	}
 	bMatchEnded = true;
+
+	// §6 victory/defeat music (TASK-179): a 2D one-shot at the match-end moment. The local
+	// player is always Blue (CONVENTIONS team contract), so Winner == Blue is Victory.
+	// Null-safe until S_VictoryMusic / S_DefeatMusic land (TASK-180).
+	USiegeFeedbackLibrary::PlaySound2D(this, (Winner == ETeamId::Blue) ? VictoryMusicSoundPath : DefeatMusicSoundPath);
 
 	// end screen (TASK-011). Missing widget = log and continue — the match still
 	// ends (input drops to UI-only; TASK-006's PlayAgain path recovers).
@@ -1588,6 +1611,10 @@ void ASiegePlayerController::TryConfirmSpellTarget()
 		return;
 	}
 
+	// §6 spell-cast audio (TASK-179): the spell RESOLVED (past the refusal above) — a
+	// world one-shot at the reticle point, null-safe until S_SpellCast lands (TASK-180).
+	USiegeFeedbackLibrary::PlayWorldSound(this, SpellCastSoundPath, TargetingLocation);
+
 	// M2 law: the card leaves the hand at CONFIRM — only now, with gold spent
 	// and the spell resolved, does the slot move to discard and redraw (§3.4).
 	// INDEX_NONE = a direct hand-less entry. The false return is the same
@@ -1775,6 +1802,10 @@ void ASiegePlayerController::ResolveSpellInstant(int32 Slot, FName CardID, const
 		RefuseCardPlay(CardID, NSLOCTEXT("Siegebound", "CardRefused_SpellFizzled", "Spell fizzled"));
 		return;
 	}
+
+	// §6 spell-cast audio (TASK-179): the instant spell RESOLVED — a world one-shot at
+	// the anchor (the hero's feet), null-safe until S_SpellCast lands (TASK-180).
+	USiegeFeedbackLibrary::PlayWorldSound(this, SpellCastSoundPath, AnchorPoint);
 
 	// hand step (§3.4): resolution IS the confirm for an instant — discard +
 	// redraw. INDEX_NONE = a direct hand-less EnterTargetingMode(GoldSteal) call.

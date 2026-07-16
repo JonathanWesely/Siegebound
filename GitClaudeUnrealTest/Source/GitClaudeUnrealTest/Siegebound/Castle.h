@@ -10,7 +10,9 @@
 #include "Castle.generated.h"
 
 class ACastle;
+class UCameraShakeBase;
 class UMaterialInterface;
+class USiegeHitFlashComponent;
 class UStaticMesh;
 class UStaticMeshComponent;
 class UUserWidget;
@@ -129,6 +131,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Castle")
 	TObjectPtr<UWidgetComponent> HPBarWidget;
 
+	/** §6 white hit-flash on every actual damage event (M7, TASK-154). Driven from TakeDamage; overlay-based (composes cleanly with the crumble MI swap), null-safe. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Feedback")
+	TObjectPtr<USiegeHitFlashComponent> HitFlashComponent;
+
 	/** Which team owns this castle. Set per level instance (Castle_Blue = Blue, Castle_Red = Red). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Castle")
 	ETeamId Team = ETeamId::Blue;
@@ -157,6 +163,31 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Visuals")
 	TSoftClassPtr<UUserWidget> HPBarWidgetClass;
 
+	/**
+	 *  §6 screen shake on castle hits (TASK-158): a brief camera shake on the LOCAL
+	 *  player controller each time the castle takes ACTUAL damage. Default is the
+	 *  READ-ONLY Variant_Combat donor BP_CameraShake_Hit_Enemy (CONVENTIONS
+	 *  template-donor rule) — a BP may retarget it to a dedicated BP_CameraShake_CastleHit.
+	 *  Soft, null-safe: a missing class = no shake, never a crash.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Visuals")
+	TSoftClassPtr<UCameraShakeBase> CastleHitCameraShake;
+
+	//~ §3.9 castle crumble stage thresholds (TASK-157) — fractions of MaxHP, fired ONCE each
+	//~ on the way DOWN, in order. Play Again re-arms them (ResetCastle). // GDD §3.9 (75/50/25%)
+
+	/** Crumble stage 1 threshold (fraction of MaxHP). // GDD §3.9 — 75% */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Castle|Crumble", meta = (ClampMin = "0", ClampMax = "1"))
+	float CrumbleFraction1 = 0.75f; // GDD §3.9
+
+	/** Crumble stage 2 threshold (fraction of MaxHP). // GDD §3.9 — 50% */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Castle|Crumble", meta = (ClampMin = "0", ClampMax = "1"))
+	float CrumbleFraction2 = 0.50f; // GDD §3.9
+
+	/** Crumble stage 3 threshold (fraction of MaxHP). // GDD §3.9 — 25% */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Castle|Crumble", meta = (ClampMin = "0", ClampMax = "1"))
+	float CrumbleFraction3 = 0.25f; // GDD §3.9
+
 private:
 
 	/** Loads (if available) and applies the castle mesh and the Team-appropriate material. Never crashes on missing assets. */
@@ -167,6 +198,24 @@ private:
 
 	/** Single-fire destruction: guards on bDestroyed, hides the actor, disables collision, broadcasts OnCastleDestroyed. */
 	void HandleDestroyed();
+
+	/**
+	 *  §3.9 castle crumble (TASK-157): advances CrumbleStage while CurrentHP has crossed
+	 *  the next 75/50/25% threshold ON THE WAY DOWN — firing each stage EXACTLY once, in
+	 *  order (a single big hit that crosses two thresholds fires both). Never retreats, so
+	 *  a heal-back-up never un-crumbles or re-arms a passed stage (only ResetCastle re-arms).
+	 *  Called from TakeDamage after CurrentHP is lowered.
+	 */
+	void UpdateCrumbleStages();
+
+	/**
+	 *  Applies one crumble stage (1..3): swaps the castle mesh AND/OR material to the
+	 *  damaged variant (soft /Game/Meshes/SM_Castle_Crumble0N + /Game/Materials/MI_Castle_Crumble0N,
+	 *  whichever resolves — null-safe, missing keeps the current look) and bursts NS_CastleDebris
+	 *  at the castle. VISUAL ONLY — the crumble mesh variants must preserve the UCX footprint
+	 *  (art contract) so placement/pathing are untouched.
+	 */
+	void ApplyCrumbleStage(int32 Stage);
 
 	/** Masons heal-over-time tick (TASK-059): delivers HealPerTick clamped to MaxHP, broadcasts OnCastleHPChanged on change, self-stops at MaxHP or when the pool empties. */
 	void HandleHealTick();
@@ -189,6 +238,10 @@ private:
 	/** True after OnCastleDestroyed has fired; re-armed only by ResetCastle(). Guarantees the event fires exactly once. */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Castle", meta = (AllowPrivateAccess = "true"))
 	bool bDestroyed = false;
+
+	/** Highest crumble stage fired so far (0 = pristine, 1/2/3 = 75/50/25% crossed). Monotonic; reset to 0 by ResetCastle. (TASK-157) */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Castle", meta = (AllowPrivateAccess = "true"))
+	int32 CrumbleStage = 0;
 
 	/** HP still to be delivered by the running Masons heal-over-time (0 = none). Mutated only by HealOverTime / HandleHealTick / StopHealOverTime. */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Castle", meta = (AllowPrivateAccess = "true"))

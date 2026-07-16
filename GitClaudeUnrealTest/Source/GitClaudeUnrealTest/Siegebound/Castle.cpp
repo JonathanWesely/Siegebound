@@ -15,6 +15,19 @@
 #include "TimerManager.h"
 #include "Siegebound/CastleHealthBarWidget.h"
 #include "Siegebound/DamageTypes.h"
+#include "Siegebound/SiegeFeedbackLibrary.h"
+#include "Siegebound/SiegeHitFlashComponent.h"
+
+namespace
+{
+	//~ M7 §6 juice/feel soft-ref paths (TASK-157/158/179) — null-safe (art arrives in TASK-171-adjacent/174/180).
+	const TCHAR* CastleHitSoundPath = TEXT("/Game/Audio/S_CastleHit");             // TASK-179
+	const TCHAR* CastleDestroyedSoundPath = TEXT("/Game/Audio/S_CastleDestroyed"); // TASK-179
+	const TCHAR* CastleDebrisVFXPath = TEXT("/Game/VFX/NS_CastleDebris");          // TASK-157 debris burst
+
+	/** Height above the castle origin for its floating damage number (clears the ~900-tall mesh, HP-bar Z parity). */
+	constexpr float CastleDamageNumberHeightZ = 1050.f;
+}
 
 ACastle::ACastle()
 {
@@ -39,6 +52,16 @@ ACastle::ACastle()
 	// UI-only component: never collides, never blocks traces (placement cursor
 	// trace TASK-007, unit acquisition TASK-004).
 	HPBarWidget->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	// §6 hit-flash (TASK-154): overlay-based white flash on every actual damage event,
+	// driven from TakeDamage. Overlay (not slot-swap) so it composes cleanly with the
+	// TASK-157 crumble MI swap on this same mesh. Null-safe.
+	HitFlashComponent = CreateDefaultSubobject<USiegeHitFlashComponent>(TEXT("HitFlashComponent"));
+
+	// §6 castle-hit screen shake donor (TASK-158): the READ-ONLY Variant_Combat
+	// BP_CameraShake_Hit_Enemy (CONVENTIONS template-donor rule). Soft, null-safe; a BP
+	// may retarget it to a dedicated BP_CameraShake_CastleHit.
+	CastleHitCameraShake = TSoftClassPtr<UCameraShakeBase>(FSoftObjectPath(TEXT("/Game/Variant_Combat/Blueprints/BP_CameraShake_Hit_Enemy.BP_CameraShake_Hit_Enemy_C")));
 
 	// Content contract (TASKBOARD TASK-002 names block / CONVENTIONS.md). These assets are
 	// produced in parallel (TASK-013 mesh, TASK-012 materials) and are resolved null-safe
@@ -184,6 +207,27 @@ float ACastle::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, A
 	// event hides the bar.
 	OnCastleHPChanged.Broadcast(CurrentHP, MaxHP);
 
+	// §3.9 crumble (TASK-157): advance the 75/50/25% stages on the way down (each once,
+	// in order). Runs before the §6 feedback below; the overlay hit-flash sits on TOP of
+	// whatever crumble material is now on the mesh, so the two never fight.
+	UpdateCrumbleStages();
+
+	// §6 castle damage feedback (TASK-154/156/158/179) — ACTUAL damage only (friendly
+	// fire + destroyed-castle hits returned above). All null-safe until the art/audio land.
+	if (HitFlashComponent)
+	{
+		HitFlashComponent->TriggerFlash();
+	}
+	USiegeFeedbackLibrary::ShowDamageNumber(this, ScaledDamage,
+		GetActorLocation() + FVector(0.0f, 0.0f, CastleDamageNumberHeightZ), USiegeFeedbackLibrary::TeamTint(Team));
+	USiegeFeedbackLibrary::PlayWorldSound(this, CastleHitSoundPath, GetActorLocation());
+	// screen shake <= 0.2 s on the LOCAL player controller (TASK-158): resolve the soft
+	// shake class null-safe, then the library kicks the index-0 controller.
+	if (UClass* ShakeClass = CastleHitCameraShake.LoadSynchronous())
+	{
+		USiegeFeedbackLibrary::PlayLocalCameraShake(this, ShakeClass);
+	}
+
 	if (CurrentHP <= 0.0f)
 	{
 		HandleDestroyed();
@@ -222,7 +266,72 @@ void ACastle::HandleDestroyed()
 		HPBarWidget->SetVisibility(false, /*bPropagateToChildren=*/true);
 	}
 
+	// §6 castle-destroyed stinger (TASK-179): a 2D one-shot (the win/loss moment).
+	// Null-safe until S_CastleDestroyed lands (TASK-180).
+	USiegeFeedbackLibrary::PlaySound2D(this, CastleDestroyedSoundPath);
+
 	OnCastleDestroyed.Broadcast(this, Team);
+}
+
+void ACastle::UpdateCrumbleStages()
+{
+	// §3.9 crumble (TASK-157): advance while the current HP fraction has crossed the NEXT
+	// stage's threshold, firing each stage exactly once IN ORDER. A single big hit that
+	// crosses 75% and 50% in one blow fires stage 1 then stage 2 this call. CrumbleStage is
+	// monotonic (never retreats), so a Masons heal-back-up never un-crumbles or re-arms a
+	// passed stage — only ResetCastle re-arms (CrumbleStage = 0). No-op with a zero MaxHP.
+	if (MaxHP <= 0.0f || CrumbleStage >= 3)
+	{
+		return;
+	}
+
+	const float Fraction = CurrentHP / MaxHP;
+	while (CrumbleStage < 3)
+	{
+		const int32 NextStage = CrumbleStage + 1;
+		const float NextThreshold = (NextStage == 1) ? CrumbleFraction1 : (NextStage == 2) ? CrumbleFraction2 : CrumbleFraction3;
+		if (Fraction <= NextThreshold)
+		{
+			CrumbleStage = NextStage;
+			ApplyCrumbleStage(NextStage);
+		}
+		else
+		{
+			break;
+		}
+	}
+}
+
+void ACastle::ApplyCrumbleStage(int32 Stage)
+{
+	if (Stage < 1 || Stage > 3 || !CastleMesh)
+	{
+		return;
+	}
+
+	// Soft, null-safe (composed per stage, resolved via the feedback library's cached
+	// log-once resolvers). A missing mesh/material keeps the current look — the debris
+	// still bursts so the stage always READS even before the swap art lands (TASK-171/174).
+	const FString CrumbleMeshPath = FString::Printf(TEXT("/Game/Meshes/SM_Castle_Crumble0%d"), Stage);
+	const FString CrumbleMaterialPath = FString::Printf(TEXT("/Game/Materials/MI_Castle_Crumble0%d"), Stage);
+
+	if (UStaticMesh* CrumbleMesh = USiegeFeedbackLibrary::ResolveStaticMesh(CrumbleMeshPath))
+	{
+		// VISUAL swap only — the crumble mesh variants must preserve the castle's UCX
+		// footprint (art contract, handoff), so collision/placement/pathing are untouched.
+		CastleMesh->SetStaticMesh(CrumbleMesh);
+	}
+	if (UMaterialInterface* CrumbleMaterial = USiegeFeedbackLibrary::ResolveMaterial(CrumbleMaterialPath))
+	{
+		CastleMesh->SetMaterial(0, CrumbleMaterial);
+	}
+
+	// debris burst at the castle (soft, null-safe until NS_CastleDebris lands).
+	USiegeFeedbackLibrary::SpawnNiagara(this, CastleDebrisVFXPath, GetActorLocation());
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ACastle '%s': crumble stage %d (%.0f%% HP threshold, GDD §3.9) — mesh/material swap + debris (visual only; footprint unchanged)."),
+		*GetNameSafe(this), Stage, ((Stage == 1) ? CrumbleFraction1 : (Stage == 2) ? CrumbleFraction2 : CrumbleFraction3) * 100.0f);
 }
 
 void ACastle::ResetCastle()
@@ -234,6 +343,11 @@ void ACastle::ResetCastle()
 	CurrentHP = MaxHP;
 	SetActorHiddenInGame(false);
 	SetActorEnableCollision(true);
+
+	// §3.9 crumble reset (TASK-157): back to stage 0 and restore the pristine SM_Castle +
+	// team material (undo any crumble mesh/material swap), re-arming all thresholds.
+	CrumbleStage = 0;
+	ApplyTeamVisuals();
 
 	// Counterpart of the HandleDestroyed hide — the bar returns with the castle (TASK-018).
 	if (HPBarWidget)

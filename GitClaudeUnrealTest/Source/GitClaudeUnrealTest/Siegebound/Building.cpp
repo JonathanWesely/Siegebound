@@ -13,7 +13,16 @@
 #include "Siegebound/CardRow.h"
 #include "Siegebound/DamageTypes.h"
 #include "Siegebound/CombatantHealthBarComponent.h"
+#include "Siegebound/SiegeFeedbackLibrary.h"
+#include "Siegebound/SiegeHitFlashComponent.h"
+#include "Siegebound/SiegeMeshJuiceComponent.h"
 #include "TimerManager.h"
+
+namespace
+{
+	/** Height above a building's origin for its floating damage number. */
+	constexpr float BuildingDamageNumberHeightZ = 160.f;
+}
 
 ABuilding::ABuilding()
 {
@@ -53,6 +62,15 @@ ABuilding::ABuilding()
 	HPBarWidget = CreateDefaultSubobject<UCombatantHealthBarComponent>(TEXT("HPBarWidget"));
 	HPBarWidget->SetupAttachment(VisualMesh);
 
+	// §6 juice components (TASK-154/155): shared hit-flash (driven from TakeDamage) +
+	// transform juice (spawn squash for every building; ATower additionally drives
+	// PlayRecoil on fire). Added at the base so ATower/ABarracks/ADeepMine/Wall inherit
+	// them. Both null-safe and inert until triggered. NOTE: VisualMesh is the collision
+	// ROOT, so the squash/recoil momentarily move/scale it — tiny + brief, and always
+	// restored exactly; a BP can zero the durations/distance to disable.
+	HitFlashComponent = CreateDefaultSubobject<USiegeHitFlashComponent>(TEXT("HitFlashComponent"));
+	MeshJuiceComponent = CreateDefaultSubobject<USiegeMeshJuiceComponent>(TEXT("MeshJuiceComponent"));
+
 	// Data contract (GDD §3.0): stats resolve from DT_Cards at BeginPlay, never
 	// from code. Same soft path as ASummonedUnit (TASK-004).
 	CardTableAsset = TSoftObjectPtr<UDataTable>(FSoftObjectPath(TEXT("/Game/Data/DT_Cards.DT_Cards")));
@@ -67,6 +85,14 @@ void ABuilding::BeginPlay()
 	// TASK-030/046), so the correct team material lands here. Cosmetic only — the
 	// BlockAll collision, nav relevance, and stat binding are untouched (slot 0 only).
 	ApplyTeamMaterial();
+
+	// §6 spawn squash-and-stretch (TASK-155): pop the building once at spawn. The juice
+	// captures the authored scale and restores it EXACTLY. Null-safe (no mesh = no-op).
+	if (MeshJuiceComponent)
+	{
+		MeshJuiceComponent->SetTargetMesh(VisualMesh);
+		MeshJuiceComponent->PlaySpawnSquash();
+	}
 
 	LoadStats();
 }
@@ -301,6 +327,16 @@ float ABuilding::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent,
 	// Push the damage to the overhead bar BEFORE any destruction handling (ACastle::TakeDamage
 	// parity — listeners see the 0-HP value before HandleDestroyed tears the actor down).
 	OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
+
+	// §6 damage feedback (TASK-154/156) — ACTUAL damage only (friendly fire returned above).
+	// Flash white ~0.1 s; float the SCALED amount actually applied (a Siege 2× hit shows 2×),
+	// tinted by team. Both null-safe; run before HandleDestroyed so the killing blow flashes.
+	if (HitFlashComponent)
+	{
+		HitFlashComponent->TriggerFlash();
+	}
+	USiegeFeedbackLibrary::ShowDamageNumber(this, ScaledDamage,
+		GetActorLocation() + FVector(0.f, 0.f, BuildingDamageNumberHeightZ), USiegeFeedbackLibrary::TeamTint(Team));
 
 	if (CurrentHP <= 0.f)
 	{

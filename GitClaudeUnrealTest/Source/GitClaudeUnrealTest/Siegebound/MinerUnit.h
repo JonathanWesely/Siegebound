@@ -8,6 +8,7 @@
 
 class AGoldNode;
 class ASiegePlayerState;
+class UAudioComponent;
 
 /**
  *  Siegebound miner — the §3.3 economy unit (card row Miner, TASK-025).
@@ -143,6 +144,16 @@ private:
 
 	/** Resolves the owning player state and calls RegisterMinerAlive exactly once (latched); safe to call repeatedly. */
 	void TryRegisterWithOwnerState();
+
+	/** Starts the §6 "clink" mining loop on arrival (TASK-179): resolves S_MinerClink null-safe onto ClinkAudio and Play()s it (idempotent). No-op if the sound is absent. */
+	void StartMiningClink();
+
+	/** Stops the mining clink loop (death/freeze). Idempotent + null-safe. */
+	void StopMiningClink();
+
+	/** Looping "clink" mining SFX (TASK-179), attached at the node height. Sound soft-resolved at arrival (S_MinerClink); the loop flag is authored on the asset (TASK-180). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Miner", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAudioComponent> ClinkAudio;
 
 	/**
 	 *  The owning team's ASiegePlayerState, resolved through

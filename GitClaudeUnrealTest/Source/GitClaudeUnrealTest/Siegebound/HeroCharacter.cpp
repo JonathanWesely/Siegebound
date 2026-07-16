@@ -21,6 +21,8 @@
 #include "NiagaraSystem.h"
 #include "Siegebound/CardRow.h"
 #include "Siegebound/CombatantHealthBarComponent.h"
+#include "Siegebound/SiegeFeedbackLibrary.h"
+#include "Siegebound/SiegeHitFlashComponent.h"
 #include "Siegebound/SummonedUnit.h"
 #include "TimerManager.h"
 
@@ -28,6 +30,13 @@ namespace
 {
 	/** Priority of IMC_Hero on the input subsystem — above any template context (which the template controllers add at 0). */
 	constexpr int32 HeroMappingContextPriority = 1;
+
+	//~ §6 hero audio soft-ref paths (TASK-179) — null-safe; the sounds arrive in TASK-180.
+	const TCHAR* HeroSwingSoundPath = TEXT("/Game/Audio/S_HeroSwing"); // every swing past cooldown
+	const TCHAR* HeroHitSoundPath = TEXT("/Game/Audio/S_HeroHit");     // a swing that damaged >= 1 enemy
+
+	/** Height above the hero origin for its floating damage number. */
+	constexpr float HeroDamageNumberHeightZ = 110.f;
 
 	//~ Instant hero-upgrade CardIDs (TASK-058) — must match the DT_Cards row names (CONVENTIONS: CardID = row name).
 	const FName UpgradeCardID_SharpenedBlade(TEXT("SharpenedBlade"));
@@ -56,6 +65,10 @@ AHeroCharacter::AHeroCharacter()
 	// Attached to the capsule root. No poll timer.
 	HPBarWidget = CreateDefaultSubobject<UCombatantHealthBarComponent>(TEXT("HPBarWidget"));
 	HPBarWidget->SetupAttachment(GetCapsuleComponent());
+
+	// §6 hit-flash (TASK-154): flashes the template skeletal GetMesh() white on every
+	// actual damage event (driven from TakeDamage). Overlay-based, null-safe.
+	HitFlashComponent = CreateDefaultSubobject<USiegeHitFlashComponent>(TEXT("HitFlashComponent"));
 
 	// data contract (TASK-058 names block): stack caps resolve from MaxCopies in this table
 	// at ApplyUpgrade time, never from code (GDD §3.0). Mirrors ASummonedUnit's CardTableAsset.
@@ -230,6 +243,10 @@ void AHeroCharacter::DoMeleeAttack()
 
 	const FVector MyLocation = GetActorLocation();
 
+	// §6 hero-swing audio (TASK-179): the whoosh on EVERY swing past the cooldown (hit or
+	// whiff), matching the montage. Null-safe until S_HeroSwing lands (TASK-180).
+	USiegeFeedbackLibrary::PlayWorldSound(this, HeroSwingSoundPath, MyLocation);
+
 	// facing in the horizontal plane (character yaw; bOrientRotationToMovement keeps pitch/roll at 0)
 	FVector Facing = GetActorForwardVector();
 	Facing.Z = 0.f;
@@ -330,6 +347,13 @@ void AHeroCharacter::DoMeleeAttack()
 			PC->ClientStartCameraShake(HitCameraShake);
 		}
 	}
+
+	// §6 hero-hit audio (TASK-179): the meaty impact when the swing damaged >= 1 enemy
+	// (separate from the always-on swing whoosh above). Null-safe until S_HeroHit lands.
+	if (bAnyEnemyDamaged)
+	{
+		USiegeFeedbackLibrary::PlayWorldSound(this, HeroHitSoundPath, MyLocation);
+	}
 }
 
 void AHeroCharacter::Rally()
@@ -424,6 +448,16 @@ float AHeroCharacter::TakeDamage(float Damage, const FDamageEvent& DamageEvent, 
 	// Push the damage to the overhead bar BEFORE any death handling below (ACastle::TakeDamage
 	// parity — listeners see the value, and HandleDeath re-broadcasts 0 + hides).
 	OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
+
+	// §6 damage feedback (TASK-154/156) — ACTUAL damage only (friendly fire returned above;
+	// regen never routes here). Flash the hero white ~0.1 s and float the dealt amount over
+	// the hero, tinted by team. Both null-safe; run before HandleDeath so the death still flashes.
+	if (HitFlashComponent)
+	{
+		HitFlashComponent->TriggerFlash();
+	}
+	USiegeFeedbackLibrary::ShowDamageNumber(this, ActualDamage,
+		GetActorLocation() + FVector(0.f, 0.f, HeroDamageNumberHeightZ), USiegeFeedbackLibrary::TeamTint(Team));
 
 	// taking damage re-arms the out-of-combat regen delay (GDD §3.1)
 	if (const UWorld* World = GetWorld())

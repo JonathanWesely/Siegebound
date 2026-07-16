@@ -3,6 +3,7 @@
 #include "Siegebound/MinerUnit.h"
 
 #include "AIController.h"
+#include "Components/AudioComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/GameStateBase.h"
@@ -10,9 +11,17 @@
 #include "GitClaudeUnrealTest.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "Siegebound/GoldNode.h"
+#include "Siegebound/SiegeFeedbackLibrary.h"
 #include "Siegebound/SiegeGameState.h"
 #include "Siegebound/SiegePlayerState.h"
+#include "Sound/SoundBase.h"
 #include "TimerManager.h"
+
+namespace
+{
+	/** §6 miner "clink" mining loop (TASK-179) — null-safe soft path; the loop flag is authored on the asset (TASK-180). */
+	const TCHAR* MinerClinkSoundPath = TEXT("/Game/Audio/S_MinerClink");
+}
 
 AMinerUnit::AMinerUnit()
 {
@@ -48,6 +57,13 @@ AMinerUnit::AMinerUnit()
 	// Super::BeginPlay: the miner is constitutionally incapable of targeting
 	// (§3.3 non-combat; the row's Profile is None, not Standard).
 	AggroRadius = 0.f;
+
+	// §6 mining "clink" loop (TASK-179): inactive until arrival (StartMiningClink);
+	// the sound is soft-resolved then, so the component just exists here. Attached to
+	// the capsule (root) — spatialized at the miner. Auto-destroyed with the actor.
+	ClinkAudio = CreateDefaultSubobject<UAudioComponent>(TEXT("ClinkAudio"));
+	ClinkAudio->SetupAttachment(GetRootComponent());
+	ClinkAudio->bAutoActivate = false;
 
 	// (Seal #3 — the post-Super timer sweep — lives in BeginPlay.)
 	//
@@ -116,6 +132,10 @@ void AMinerUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(MiningPollTimerHandle);
 
+	// §6 (TASK-179): silence the clink on death/removal (explicit — the component also
+	// auto-stops with the actor). Covers combat death, the PlayAgain sweep, and KillZ.
+	StopMiningClink();
+
 	// §3.3 death bookkeeping at the single removal-from-play choke point:
 	// combat death (base HandleDeath → Destroy), the PlayAgain unit sweep, and
 	// a KillZ fall all arrive here with reason == Destroyed. World teardown
@@ -168,6 +188,37 @@ void AMinerUnit::FreezeAI()
 	// is stopped by TASK-024's PauseIncome, not by a rate change (its flagged
 	// decision 5), and PlayAgain's destroy sweep runs the death bookkeeping.
 	GetWorldTimerManager().ClearTimer(MiningPollTimerHandle);
+
+	// §6 (TASK-179): a frozen miner mines no more — silence the clink loop.
+	StopMiningClink();
+}
+
+void AMinerUnit::StartMiningClink()
+{
+	if (!ClinkAudio)
+	{
+		return;
+	}
+
+	// Resolve S_MinerClink null-safe (cached, logged once). Missing = no clink,
+	// never a crash. Idempotent: don't restart an already-playing loop.
+	if (ClinkAudio->IsPlaying())
+	{
+		return;
+	}
+	if (USoundBase* ClinkSound = USiegeFeedbackLibrary::ResolveSound(MinerClinkSoundPath))
+	{
+		ClinkAudio->SetSound(ClinkSound);
+		ClinkAudio->Play();
+	}
+}
+
+void AMinerUnit::StopMiningClink()
+{
+	if (ClinkAudio && ClinkAudio->IsPlaying())
+	{
+		ClinkAudio->Stop();
+	}
 }
 
 void AMinerUnit::UpdateMining()
@@ -218,13 +269,17 @@ void AMinerUnit::UpdateMining()
 			// one-way latch: arrival happens exactly once per miner
 			bArrivedAtNode = true;
 
-			// stand at the node — idle mining (the "clink" audio loop is M7).
-			// The poll can observe arrival before path-following finishes
-			// (arrival ring 150 > walk acceptance 120), so stop explicitly.
+			// stand at the node — idle mining. The poll can observe arrival before
+			// path-following finishes (arrival ring 150 > walk acceptance 120), so
+			// stop explicitly.
 			if (AAIController* AI = Cast<AAIController>(GetController()))
 			{
 				AI->StopMovement();
 			}
+
+			// §6 mining "clink" loop (TASK-179): starts ON ARRIVAL (§3.3), stops on
+			// death/freeze. Null-safe until S_MinerClink lands (TASK-180).
+			StartMiningClink();
 
 			// +1 gold/s activates ONLY on arrival (GDD §3.3): AddMinerIncome
 			// exactly once, on the SAME player state we registered with

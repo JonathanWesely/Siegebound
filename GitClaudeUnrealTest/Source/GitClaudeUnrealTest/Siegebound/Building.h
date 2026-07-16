@@ -11,6 +11,8 @@
 
 class UDataTable;
 class UCombatantHealthBarComponent;
+class USiegeHitFlashComponent;
+class USiegeMeshJuiceComponent;
 class UStaticMeshComponent;
 struct FCardRow;
 
@@ -171,6 +173,14 @@ protected:
 	/** Overhead poll-driven health bar (M5.5, TASK-110): hide-at-full, team-tinted. Added at the base so ATower/ABarracks/ADeepMine/Wall inherit it. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Building")
 	TObjectPtr<UCombatantHealthBarComponent> HPBarWidget;
+
+	/** §6 white hit-flash on every actual damage event (M7, TASK-154). Driven from TakeDamage; overlay-based, null-safe. Inherited by ATower/ABarracks/ADeepMine/Wall. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Feedback")
+	TObjectPtr<USiegeHitFlashComponent> HitFlashComponent;
+
+	/** §6 procedural transform juice (M7, TASK-155): spawn squash-and-stretch (all buildings) + tower recoil (ATower calls PlayRecoil). Protected so ATower reaches it. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Feedback")
+	TObjectPtr<USiegeMeshJuiceComponent> MeshJuiceComponent;
 
 	/** DT_Cards row name whose stats drive this building (BP children preset it: ArrowTower / Wall, TASK-035). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Building")

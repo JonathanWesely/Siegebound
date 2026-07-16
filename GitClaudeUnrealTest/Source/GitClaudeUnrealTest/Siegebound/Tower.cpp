@@ -11,11 +11,16 @@
 #include "Siegebound/DamageTypes.h"
 #include "Siegebound/HeroCharacter.h"
 #include "Siegebound/Projectile.h"
+#include "Siegebound/SiegeFeedbackLibrary.h"
+#include "Siegebound/SiegeMeshJuiceComponent.h"
 #include "Siegebound/SummonedUnit.h"
 #include "TimerManager.h"
 
 namespace
 {
+	/** §6 projectile-fire audio (TASK-179) — null-safe soft path; the sound arrives in TASK-180. */
+	const TCHAR* TowerProjectileFireSoundPath = TEXT("/Game/Audio/S_ProjectileFire");
+
 	/**
 	 *  Floor for POSITIVE cadence cells only (mirror of ASummonedUnit's
 	 *  MinAttackCadence, TASK-004): a 0.001 s row would be a 1000 shots/s
@@ -175,6 +180,15 @@ void ATower::ScanAndFire()
 	{
 		// idle — the loop re-scans next cadence (TASK-027 spec)
 		return;
+	}
+
+	// §6 tower recoil on fire (TASK-155): kick the VisualMesh back opposite the fire
+	// direction and ease it home before the next cadence. Applied HERE (before the
+	// delivery branch) so BOTH projectile and chain shots recoil, using the tower→target
+	// direction. Cosmetic — targeting/damage below are untouched; null-safe.
+	if (MeshJuiceComponent)
+	{
+		MeshJuiceComponent->PlayRecoil(Target->GetActorLocation() - GetActorLocation());
 	}
 
 	// TASK-101 (M5 ruling 9): a chain row (CrystalTower, ChainTargets 3) zaps
@@ -337,6 +351,9 @@ void ATower::FireProjectileAt(AActor* Target)
 	// AcquireTarget only returns alive, hostile, in-range (and, for Ballista,
 	// outside-MinRange) candidates.
 	Projectile->InitProjectile(Team, Target, AttackDamage, USiegeDamageType_Projectile::StaticClass(), AttackAoERadius);
+
+	// §6 projectile-fire audio (TASK-179): world one-shot at the muzzle, null-safe.
+	USiegeFeedbackLibrary::PlayWorldSound(this, TowerProjectileFireSoundPath, MuzzleLocation);
 }
 
 void ATower::FireChainZapAt(AActor* PrimaryTarget)

@@ -16,6 +16,13 @@
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "Siegebound/SiegeCombatStatics.h"
+#include "Siegebound/SiegeFeedbackLibrary.h"
+
+namespace
+{
+	/** §6 projectile-impact audio (TASK-179) — null-safe soft path; the sound arrives in TASK-180. */
+	const TCHAR* ProjectileImpactSoundPath = TEXT("/Game/Audio/S_ProjectileImpact");
+}
 
 AProjectile::AProjectile()
 {
@@ -263,6 +270,10 @@ void AProjectile::Tick(float DeltaSeconds)
 			UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), CachedImpactEffect, EnvironmentHit.ImpactPoint);
 		}
 
+		// §6 projectile-impact audio (TASK-179): the projectile struck terrain — play the
+		// impact one-shot (independent of the VFX guard above). Null-safe.
+		USiegeFeedbackLibrary::PlayWorldSound(this, ProjectileImpactSoundPath, EnvironmentHit.ImpactPoint);
+
 		// zero damage, no AoE: neither HandleImpact branch runs — the projectile
 		// just stops existing (§3.0 destroyed-on-impact, harmless flavor).
 		Destroy();
@@ -302,6 +313,9 @@ void AProjectile::HandleImpact(const FVector& ImpactPoint)
 			UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), CachedImpactEffect, ImpactPoint);
 		}
 
+		// §6 projectile-impact audio (TASK-179): the blast landed — play the impact one-shot. Null-safe.
+		USiegeFeedbackLibrary::PlayWorldSound(this, ProjectileImpactSoundPath, ImpactPoint);
+
 		// §3.0: destroyed on impact, same as the single-target path.
 		Destroy();
 		return;
@@ -339,6 +353,11 @@ void AProjectile::HandleImpact(const FVector& ImpactPoint)
 	{
 		UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), CachedImpactEffect, ImpactPoint);
 	}
+
+	// §6 projectile-impact audio (TASK-179): the projectile reached and struck its target
+	// — play the impact one-shot (independent of the damage-gated VFX above; a zeroed hit
+	// on a destroyed castle still physically impacts). Null-safe.
+	USiegeFeedbackLibrary::PlayWorldSound(this, ProjectileImpactSoundPath, ImpactPoint);
 
 	// §3.0: destroyed on impact — landed or zeroed alike.
 	Destroy();

@@ -4,7 +4,14 @@
 
 #include "GameFramework/PlayerState.h"
 #include "GitClaudeUnrealTest.h"
+#include "Siegebound/SiegeFeedbackLibrary.h"
 #include "Siegebound/SiegePlayerState.h"
+
+namespace
+{
+	/** §6 overtime sting (TASK-179) — a 2D one-shot fired once at 7:00; null-safe until S_OvertimeSting lands (TASK-180). */
+	const TCHAR* OvertimeStingSoundPath = TEXT("/Game/Audio/S_OvertimeSting");
+}
 
 ASiegeGameState::ASiegeGameState()
 {
@@ -48,6 +55,9 @@ void ASiegeGameState::Tick(float DeltaSeconds)
 		UE_LOG(LogGitClaudeUnrealTest, Log,
 			TEXT("[%s] Overtime started at %.1f s (threshold %.1f s, GDD §3.2) — base income doubles."),
 			*GetNameSafe(this), MatchClockSeconds, OvertimeStartSeconds);
+
+		// §6 overtime sting (TASK-179): fires exactly once at 7:00 (this branch is latched). 2D, null-safe.
+		USiegeFeedbackLibrary::PlaySound2D(this, OvertimeStingSoundPath);
 
 		OnOvertimeStarted.Broadcast();
 	}
