@@ -4,6 +4,7 @@
 
 #include "AIController.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimSequence.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/MeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -274,6 +275,13 @@ void ASummonedUnit::ResolveSkeletalVisual()
 	{
 		SkeletalVisualMesh->SetAnimInstanceClass(AnimClass);
 	}
+	// TASK-165: remember the locomotion ABP so RestoreLocomotionAnim can swap it back after a
+	// single-node attack clip. Null when neither ABP resolved (ref-pose case) — the attack
+	// trigger is gated on this being set so it can always cleanly return to locomotion.
+	LocomotionAnimClass = AnimClass;
+
+	// TASK-165: resolve A_<CardID>_{Attack,Death} now that the rig took (mirrors the SK/SM path).
+	CacheActionAnimations();
 
 	// Make the skeletal the runtime visual, hide the static (the ghost still resolves
 	// the static SM_<CardID> — CONVENTIONS parity rule, unchanged).
@@ -289,6 +297,96 @@ void ASummonedUnit::ResolveSkeletalVisual()
 		*GetNameSafe(this), *CardIdString, *CardIdString);
 }
 
+void ASummonedUnit::CacheActionAnimations()
+{
+	// TASK-165 attack/death anim trigger (CODE-ONLY — no ABP/montage asset edit, avoiding the
+	// AnimBlueprint MCP minefield): resolve A_<CardID>_{Attack,Death} by null-safe soft path
+	// composed from the CardID (mirrors the SK_<CardID> / SM_<CardID> string law in
+	// ResolveSkeletalVisual). Called only after the skeletal swap took, so un-rigged units never
+	// run this. Brace-init the TSoftObjectPtr locals (the vexing-parse guard, CONVENTIONS).
+	// A missing clip caches nullptr and the matching trigger no-ops — never a crash.
+	if (CardID.IsNone())
+	{
+		return; // no CardID to compose from — leave both clips null (trigger no-ops)
+	}
+
+	const FString CardIdString = CardID.ToString();
+
+	const FString AttackPath = FString::Printf(TEXT("/Game/Characters/Anims/A_%s_Attack.A_%s_Attack"), *CardIdString, *CardIdString);
+	const TSoftObjectPtr<UAnimSequence> AttackSoft{ FSoftObjectPath(AttackPath) };
+	CachedAttackAnim = AttackSoft.LoadSynchronous();
+
+	const FString DeathPath = FString::Printf(TEXT("/Game/Characters/Anims/A_%s_Death.A_%s_Death"), *CardIdString, *CardIdString);
+	const TSoftObjectPtr<UAnimSequence> DeathSoft{ FSoftObjectPath(DeathPath) };
+	CachedDeathAnim = DeathSoft.LoadSynchronous();
+}
+
+void ASummonedUnit::PlaySkeletalAttackAnim()
+{
+	// TASK-165: single-node PlayAnimation of A_<CardID>_Attack over the locomotion ABP for the
+	// clip's length, restored to locomotion by RestoreLocomotionAnim (timer / leaving Attack).
+	// Null-safe / no-op unless the skeletal runtime, the resolved attack clip, AND a locomotion
+	// ABP to return to are all present — the last guard guarantees we can always cleanly restore
+	// (a rig with NO ABP at all keeps its ref pose rather than freezing on the attack frame).
+	if (bDead || !bUsingSkeletalVisual || !SkeletalVisualMesh || !CachedAttackAnim || !LocomotionAnimClass)
+	{
+		return;
+	}
+
+	// PlayAnimation puts the component in single-node mode and plays the clip directly,
+	// overriding the ABP for the duration (the code-only path — no montage slot needed).
+	SkeletalVisualMesh->PlayAnimation(CachedAttackAnim, /*bLooping=*/ false);
+
+	// restore locomotion when the clip ends. A faster next attack (before this fires) re-arms
+	// the SAME timer and simply restarts the clip — reading as continuous swings — so the ABP
+	// only returns once attacks actually stop. Floor at MinAttackCadence so a ~0-length clip
+	// still yields a valid one-shot timer.
+	const float RestoreDelay = FMath::Max(CachedAttackAnim->GetPlayLength(), MinAttackCadence);
+	GetWorldTimerManager().SetTimer(AttackAnimRestoreTimerHandle, this, &ASummonedUnit::RestoreLocomotionAnim, RestoreDelay, /*bLoop=*/ false);
+}
+
+void ASummonedUnit::RestoreLocomotionAnim()
+{
+	// TASK-165: swap the locomotion ABP back onto SkeletalVisualMesh after a single-node attack
+	// clip so velocity-driven idle/walk resume. Called by the restore timer AND on leaving Attack
+	// (EnterAdvance/EnterIdle/FreezeAI). A dead unit is skipped — death HOLDS its final pose.
+	GetWorldTimerManager().ClearTimer(AttackAnimRestoreTimerHandle);
+	if (bDead || !bUsingSkeletalVisual || !SkeletalVisualMesh || !LocomotionAnimClass)
+	{
+		return;
+	}
+
+	// SetAnimInstanceClass reinitializes the ABP when coming OUT of single-node mode, and the
+	// engine cheaply early-outs when the same ABP is already running in blueprint mode — so this
+	// is safe to call on every Attack exit, not only after a clip actually played.
+	SkeletalVisualMesh->SetAnimInstanceClass(LocomotionAnimClass);
+}
+
+float ASummonedUnit::PlaySkeletalDeathAnim()
+{
+	// TASK-165: play A_<CardID>_Death once (single-node, non-looping) — it freezes on the final
+	// frame, the held death pose — and deliberately does NOT restore locomotion. Returns the
+	// capped destroy-defer seconds; 0 means no skeletal death clip (caller destroys immediately).
+	if (!bUsingSkeletalVisual || !SkeletalVisualMesh || !CachedDeathAnim)
+	{
+		return 0.f;
+	}
+
+	// death overrides any in-flight attack clip and its restore — it must HOLD, not return to walk
+	GetWorldTimerManager().ClearTimer(AttackAnimRestoreTimerHandle);
+	SkeletalVisualMesh->PlayAnimation(CachedDeathAnim, /*bLooping=*/ false);
+
+	// small + capped (spec) so a long or mis-authored clip can never linger a corpse indefinitely
+	return FMath::Min(CachedDeathAnim->GetPlayLength(), DeathAnimMaxHoldSeconds);
+}
+
+void ASummonedUnit::FinishDeathDestroy()
+{
+	// TASK-165: the death-anim hold elapsed — complete the deferred removal. The unit has been
+	// logically dead (bDead) and non-colliding throughout the hold, so nothing targeted it.
+	Destroy();
+}
+
 void ASummonedUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(StateTimerHandle);
@@ -298,6 +396,8 @@ void ASummonedUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	GetWorldTimerManager().ClearTimer(AuraDamageBuffTimerHandle); // TASK-055: no dangling aura-restore on a destroyed unit
 	GetWorldTimerManager().ClearTimer(CombatBuffTimerHandle); // TASK-099: no dangling combat-buff restore on a destroyed unit
 	GetWorldTimerManager().ClearTimer(SpellFreezeTimerHandle); // TASK-099: no dangling spell-freeze expiry on a destroyed unit
+	GetWorldTimerManager().ClearTimer(AttackAnimRestoreTimerHandle); // TASK-165: no dangling anim restore on a destroyed unit
+	GetWorldTimerManager().ClearTimer(DeathDestroyTimerHandle); // TASK-165: no dangling deferred death-destroy
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -356,6 +456,11 @@ void ASummonedUnit::FreezeAI()
 	// cancel any in-flight lunge: VisualMesh back to EXACTLY the cached rest pose
 	// and tick off (TASK-020 zero-drift contract — zero residual offset)
 	StopAttackLunge();
+
+	// TASK-165 (rigged): end any in-flight attack clip and return to idle locomotion (velocity 0),
+	// clearing the restore timer so a match-end-frozen unit never holds a mid-swing pose. No-op for
+	// static-mesh units. Death is separate — a frozen unit is parked alive, not dead.
+	RestoreLocomotionAnim();
 
 	// end any active move-speed buff (TASK-042): clear its timer and restore the
 	// base speed EXACTLY, so a match-end freeze leaves zero residual walk speed
@@ -1354,6 +1459,7 @@ void ASummonedUnit::EnterAdvance(AActor* Goal)
 	{
 		GetWorldTimerManager().ClearTimer(AttackTimerHandle);
 		StopAttackLunge(); // leaving Attack: mesh back to EXACTLY the rest pose (TASK-020)
+		RestoreLocomotionAnim(); // TASK-165 (rigged): end any attack clip so walk resumes; no-op for static units
 	}
 	State = ESummonedUnitState::Advance;
 
@@ -1411,6 +1517,7 @@ void ASummonedUnit::EnterIdle()
 
 	GetWorldTimerManager().ClearTimer(AttackTimerHandle);
 	StopAttackLunge(); // leaving Attack (or defensive from Advance): exact rest pose (TASK-020)
+	RestoreLocomotionAnim(); // TASK-165 (rigged): back to idle locomotion; no-op for static units
 	if (AAIController* AI = GetAIController())
 	{
 		AI->StopMovement();
@@ -1461,6 +1568,11 @@ void ASummonedUnit::PerformAttack()
 		// impact VFX are the telegraph (GDD §3.8 / TASK-028 spec). The projectile
 		// carries the composed OutputDamage (aura buffs a Longbowman's shot too).
 		FireProjectileAt(Target, OutputDamage);
+
+		// TASK-165: a rigged ranged unit still animates its attack (e.g. bow draw) — the
+		// single-node clip is the feedback. Null-safe no-op for a non-rigged Archer (there was
+		// never a lunge for ranged, so nothing regresses). No lunge/puff either way (TASK-028).
+		PlaySkeletalAttackAnim();
 	}
 	else
 	{
@@ -1476,11 +1588,21 @@ void ASummonedUnit::PerformAttack()
 			: TSubclassOf<UDamageType>(UDamageType::StaticClass());
 		const float DamageApplied = UGameplayStatics::ApplyDamage(Target, OutputDamage, GetController(), this, MeleeDamageType);
 
-		// attack feedback (TASK-020): the swing (lunge) plays on every executed cadence hit;
-		// the impact puff only when damage actually landed — a receiver that zeroed the hit
-		// (e.g. a castle destroyed this same tick) gets no puff. Same return-value reading
-		// as the hero's TASK-016 flagged decision 1.
-		StartAttackLunge();
+		// attack feedback: the swing plays on every executed cadence hit; the impact puff only
+		// when damage actually landed — a receiver that zeroed the hit (e.g. a castle destroyed
+		// this same tick) gets no puff. Same return-value reading as the hero's TASK-016 dec. 1.
+		// TASK-165: RIGGED units (skeletal visual active) play A_<CardID>_Attack — the TASK-020
+		// procedural lunge would move the HIDDEN static mesh (invisible), so it is SKIPPED for
+		// them and the anim is the feedback. Non-rigged / static-mesh units keep the lunge as the
+		// fallback (a rigged unit whose attack clip didn't resolve just plays no swing — null-safe).
+		if (bUsingSkeletalVisual)
+		{
+			PlaySkeletalAttackAnim();
+		}
+		else
+		{
+			StartAttackLunge();
+		}
 		if (DamageApplied > 0.f && CachedAttackImpactEffect)
 		{
 			UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), CachedAttackImpactEffect, ImpactPoint);
@@ -1874,6 +1996,7 @@ void ASummonedUnit::HandleDeath()
 
 	GetWorldTimerManager().ClearTimer(StateTimerHandle);
 	GetWorldTimerManager().ClearTimer(AttackTimerHandle);
+	GetWorldTimerManager().ClearTimer(AttackAnimRestoreTimerHandle); // TASK-165: no attack-anim restore during the death hold
 	StopHealing(); // TASK-054: a dying Cleric heals no one
 
 	// death restores the exact rest pose before the actor goes away (TASK-020 contract)
@@ -1882,6 +2005,37 @@ void ASummonedUnit::HandleDeath()
 	if (AAIController* AI = GetAIController())
 	{
 		AI->StopMovement();
+	}
+
+	// TASK-165 skeletal death anim: a rigged unit plays A_<CardID>_Death (single-node, non-looping)
+	// and HOLDS its final pose; the Destroy is deferred a small capped moment so the anim reads.
+	// A non-rigged unit — or a rigged unit with no resolved death clip — returns 0 and is destroyed
+	// immediately, byte-for-byte the M1..M6 behavior. ShouldHoldDeathAnim() lets AMinerUnit opt out
+	// entirely so its §3.3 economy bookkeeping (EndPlay) stays prompt (no hold-window delay).
+	const float DeathHoldSeconds = ShouldHoldDeathAnim() ? PlaySkeletalDeathAnim() : 0.f;
+	if (DeathHoldSeconds > 0.f)
+	{
+		// The corpse lingers ONLY to finish its death anim. Freeze it in place first: DisableMovement
+		// (MOVE_None) so the character does NOT fall — disabling capsule collision below removes the
+		// floor the CharacterMovementComponent stands on, which would otherwise drop the body under
+		// gravity through the hold. Then disable actor collision so the corpse never blocks a living
+		// unit's path (a dead unit is already skipped by IsTargetAlive) and hide the now-0-HP overhead
+		// bar. The skeletal mesh keeps animating (its own component tick is independent of the capsule
+		// and actor tick). EndPlay clears the timer if something removes the actor first (match reset /
+		// KillZ Destroy). The §6 gold-burst already fired above, so the death still reads on immediate
+		// removal too.
+		if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+		{
+			Movement->StopMovementImmediately();
+			Movement->DisableMovement();
+		}
+		SetActorEnableCollision(false);
+		if (HPBarWidget)
+		{
+			HPBarWidget->SetVisibility(false);
+		}
+		GetWorldTimerManager().SetTimer(DeathDestroyTimerHandle, this, &ASummonedUnit::FinishDeathDestroy, DeathHoldSeconds, /*bLoop=*/ false);
+		return;
 	}
 
 	// units don't respawn (GDD §3.8 / TASK-004 spec): remove the actor. The default

@@ -111,6 +111,14 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/**
+	 *  TASK-165: a miner NEVER holds a skeletal death anim (returns false, so the base HandleDeath
+	 *  destroys it immediately). The §3.3 economy bookkeeping runs in EndPlay on Destroy — deferring
+	 *  the destroy for a death-anim hold would keep a dead miner accruing income and holding its
+	 *  cap-6 slot for the hold window. The §6 gold-burst on death is the miner's death feedback.
+	 */
+	virtual bool ShouldHoldDeathAnim() const override { return false; }
+
+	/**
 	 *  Standing this close to the gold node (2D) counts as arrived: income
 	 *  activates exactly once and the miner stands. The walk's acceptance
 	 *  radius is 0.8 × this, so the natural stop always lands inside the ring.

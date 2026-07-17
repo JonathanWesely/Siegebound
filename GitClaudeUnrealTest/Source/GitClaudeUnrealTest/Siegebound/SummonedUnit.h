@@ -11,6 +11,8 @@
 #include "SummonedUnit.generated.h"
 
 class AAIController;
+class UAnimInstance;
+class UAnimSequence;
 class UDataTable;
 class UCombatantHealthBarComponent;
 class UMeshComponent;
@@ -452,6 +454,26 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Combat|Feedback")
 	TSoftObjectPtr<UNiagaraSystem> AttackImpactEffect;
 
+	/**
+	 *  Skeletal death-anim hold cap (TASK-165). When a rigged unit dies it plays
+	 *  A_<CardID>_Death (single-node, non-looping) and HOLDS the final pose; the
+	 *  actor's Destroy is deferred by min(clip length, this) so the anim reads.
+	 *  Small + capped (spec) so a corpse never lingers indefinitely; non-rigged units
+	 *  (no resolved death clip) are destroyed immediately as before (0-length defer).
+	 */
+	UPROPERTY(EditAnywhere, Category = "Combat|Feedback", meta = (ClampMin = "0"))
+	float DeathAnimMaxHoldSeconds = 2.f;
+
+	/**
+	 *  Whether this unit HOLDS its skeletal death anim before Destroy (TASK-165), deferring the
+	 *  actor removal by up to DeathAnimMaxHoldSeconds so the clip reads. Base = true. AMinerUnit
+	 *  overrides to FALSE: a miner's removal-from-play runs the §3.3 economy bookkeeping in
+	 *  EndPlay (RemoveMinerIncome / UnregisterMinerAlive), which must stay PROMPT — a dead miner
+	 *  must not keep accruing income or hold its cap-6 slot for the hold window. Miners show the
+	 *  §6 gold-burst on death (HandleDeath) as their death feedback instead of a held pose.
+	 */
+	virtual bool ShouldHoldDeathAnim() const { return true; }
+
 private:
 
 	/**
@@ -587,6 +609,48 @@ private:
 
 	/** Kills the unit exactly once: clears timers, stops movement, destroys the actor (units don't respawn). */
 	void HandleDeath();
+
+	/**
+	 *  Resolves the attack/death anim sequences (TASK-165): composes the null-safe soft paths
+	 *  /Game/Characters/Anims/A_<CardID>_{Attack,Death} from the bound CardID (mirrors the
+	 *  SK_<CardID> / SM_<CardID> string law) and caches whatever resolves. Called from
+	 *  ResolveSkeletalVisual only once the skeletal swap took, so un-rigged units never touch it.
+	 *  A missing clip caches nullptr and its trigger no-ops — robust across the roster + future units.
+	 */
+	void CacheActionAnimations();
+
+	/**
+	 *  Attack-anim trigger (TASK-165, CODE-ONLY — no ABP/montage asset edit): plays
+	 *  A_<CardID>_Attack via USkeletalMeshComponent::PlayAnimation (single-node, non-looping),
+	 *  overriding the locomotion ABP for the clip's length, then re-arms RestoreLocomotionAnim so
+	 *  idle/walk resume. Null-safe / no-op unless the skeletal runtime, the attack clip, AND a
+	 *  locomotion ABP to return to are all present. A faster next attack re-arms the same restore
+	 *  timer and simply restarts the clip (continuous swings). Called from PerformAttack for rigged
+	 *  units in place of the (now-invisible) procedural lunge.
+	 */
+	void PlaySkeletalAttackAnim();
+
+	/**
+	 *  Swaps the locomotion ABP back onto SkeletalVisualMesh after an attack clip (TASK-165).
+	 *  Timer callback for PlaySkeletalAttackAnim AND called on leaving Attack
+	 *  (EnterAdvance/EnterIdle/FreezeAI) so a rigged unit returns to walk/idle immediately. No-op
+	 *  on a dead unit — death HOLDS its final pose (PlaySkeletalDeathAnim) — or without a skeletal
+	 *  runtime / cached locomotion ABP. SetAnimInstanceClass reinitializes out of single-node mode
+	 *  and cheaply no-ops when the ABP is already running, so it is safe on every Attack exit.
+	 */
+	void RestoreLocomotionAnim();
+
+	/**
+	 *  Death-anim trigger (TASK-165, CODE-ONLY): plays A_<CardID>_Death (single-node, non-looping)
+	 *  which freezes on its final frame — the held death pose — and deliberately does NOT restore
+	 *  locomotion. Returns the capped destroy-defer seconds min(clip length, DeathAnimMaxHoldSeconds),
+	 *  or 0 when there is no skeletal death clip (caller destroys immediately, unchanged). Called
+	 *  from HandleDeath before the (now deferred) Destroy.
+	 */
+	float PlaySkeletalDeathAnim();
+
+	/** Completes the deferred death removal once the death-anim hold elapses (TASK-165 timer callback). */
+	void FinishDeathDestroy();
 
 	/**
 	 *  Ends the move-speed buff (TASK-042): clears the buff timer and restores the
@@ -784,6 +848,26 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UNiagaraSystem> CachedAttackImpactEffect;
 
+	/**
+	 *  Locomotion ABP resolved by ResolveSkeletalVisual (TASK-165 / -159 fallback): the class
+	 *  SkeletalVisualMesh runs for idle/walk. Cached so RestoreLocomotionAnim can swap it back
+	 *  after a single-node attack clip. Null when no ABP resolved (the ref-pose case) — the
+	 *  attack trigger is gated on this being set so it can always cleanly return.
+	 */
+	UPROPERTY(Transient)
+	TSubclassOf<UAnimInstance> LocomotionAnimClass;
+
+	/**
+	 *  Attack/death anim sequences resolved ONCE by CacheActionAnimations from the CardID
+	 *  (TASK-165). UPROPERTY(Transient) keeps them alive against GC between attacks (mirrors
+	 *  CachedAttackImpactEffect); nullptr = no clip at that path, the trigger no-ops (null-safe).
+	 */
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimSequence> CachedAttackAnim;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimSequence> CachedDeathAnim;
+
 	/** BP-authored VisualMesh rest pose (RELATIVE location), cached once at BeginPlay — the lunge only ever writes Base + f(elapsed) or exactly Base. */
 	FVector VisualMeshBaseRelativeLocation = FVector::ZeroVector;
 
@@ -877,6 +961,12 @@ private:
 	 *  EndPlay.
 	 */
 	FTimerHandle SpellFreezeTimerHandle;
+
+	/** Restores the locomotion ABP after a single-node attack clip (TASK-165); re-armed on each attack, cleared on death/leaving-Attack. */
+	FTimerHandle AttackAnimRestoreTimerHandle;
+
+	/** Defers Destroy while a rigged unit's death anim holds its final pose (TASK-165); a hard cap so a corpse never lingers. */
+	FTimerHandle DeathDestroyTimerHandle;
 
 	/** Accumulated uninterrupted-advance time for CHARGE (TASK-055); reset on stall / stop / consume. */
 	float ChargeMoveElapsed = 0.f;
