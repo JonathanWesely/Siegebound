@@ -44,6 +44,14 @@ namespace
 	const TCHAR* UnitSpawnSoundPath = TEXT("/Game/Audio/S_UnitSpawn");        // TASK-179
 	const TCHAR* ProjectileFireSoundPath = TEXT("/Game/Audio/S_ProjectileFire"); // TASK-179
 
+	//~ TASK-159/165: M7 shared-locomotion fallback AnimBP. MCP can't author per-unit
+	//~ AnimBlueprints without freezing the editor, so any rigged unit that lacks its own
+	//~ /Game/Characters/ABP_<CardID> falls back to this ONE shared ABP. Every rigged unit
+	//~ shares the SK_Footman_Skeleton / SiegeBiped rig, so ABP_Footman's velocity-driven
+	//~ idle/walk locomotion drives any of them. Points at the _C generated-class path.
+	//~ Swap this single constant to a dedicated ABP_SiegeUnit once one is authored.
+	const TCHAR* SharedLocomotionAbpPath = TEXT("/Game/Characters/ABP_Footman.ABP_Footman_C");
+
 	/** Height above a unit's origin for its floating damage number (roughly over the head). */
 	constexpr float UnitDamageNumberHeightZ = 110.f;
 }
@@ -245,14 +253,26 @@ void ASummonedUnit::ResolveSkeletalVisual()
 	// materials; the team recolor below (via the LoadStatsAndStart re-apply) overrides slot 0.
 	SkeletalVisualMesh->SetSkeletalMeshAsset(SkeletalAsset);
 
-	// AnimClass /Game/Characters/ABP_<CardID> (the _C generated-class path). A present SK
-	// with a MISSING ABP still shows the skeletal mesh in its ref pose (null-safe — the
-	// component's AnimClass simply stays unset), so a rig can land before its anim BP.
+	// AnimClass resolution (TASK-159 + shared-ABP fallback, TASK-165 rig-import chain):
+	//   1. Prefer a per-unit /Game/Characters/ABP_<CardID> (the _C generated-class path) —
+	//      future dedicated ABPs still take priority the moment they're authored.
+	//   2. ELSE fall back to the ONE shared SharedLocomotionAbpPath (ABP_Footman). MCP can't
+	//      create per-unit AnimBlueprints without freezing the editor, so this M7 shared
+	//      locomotion drives every rigged unit off the common SiegeBiped rig until per-unit
+	//      ABPs exist (all units share SK_Footman_Skeleton, so its idle/walk applies).
+	//   3. ELSE (NEITHER resolves) leave the skeletal mesh with no anim instance — it shows
+	//      in its ref pose, null-safe, never a crash (matches the soft-ref discipline above).
 	const FString AbpPath = FString::Printf(TEXT("/Game/Characters/ABP_%s.ABP_%s_C"), *CardIdString, *CardIdString);
-	const TSoftClassPtr<UAnimInstance> AbpSoft{ FSoftObjectPath(AbpPath) };
-	if (UClass* AbpClass = AbpSoft.LoadSynchronous())
+	const TSoftClassPtr<UAnimInstance> PerUnitAbpSoft{ FSoftObjectPath(AbpPath) };
+	UClass* AnimClass = PerUnitAbpSoft.LoadSynchronous();
+	if (!AnimClass)
 	{
-		SkeletalVisualMesh->SetAnimInstanceClass(AbpClass);
+		const TSoftClassPtr<UAnimInstance> SharedAbpSoft{ FSoftObjectPath(FString(SharedLocomotionAbpPath)) };
+		AnimClass = SharedAbpSoft.LoadSynchronous();
+	}
+	if (AnimClass)
+	{
+		SkeletalVisualMesh->SetAnimInstanceClass(AnimClass);
 	}
 
 	// Make the skeletal the runtime visual, hide the static (the ghost still resolves
