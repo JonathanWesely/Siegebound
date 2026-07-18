@@ -7,9 +7,11 @@
     "fit_mode": "'height' = uniform scale so Z matches target (units — silhouette-preserving; X/Y deviation is warn-only in the report). 'box' = exact per-axis scale to the target box (buildings — guarantees the ±10% blockout-bounds ruling).",
     "origin": "Documentation of the origin rule; 'feet-center' (units) and 'ground-center' (buildings) are both implemented as XY-bbox-center at (0,0) with min Z = 0, per the TASK-014/037/038 blockout definitions.",
     "pre_rotate_z_deg": "Rotation applied before scaling so the model's FRONT faces Blender -Y (blockout facing contract). TRELLIS output orientation is unknown until the first live generation — tune per asset at the TASK-086/087 eyeball gate.",
-    "team_region": "Selectors choose the minority face-set for material slot 0 'TeamRegion' (remainder = slot 1 '<CardID>PBR'). Each selector may carry 'box' (normalized conformed-bounds coords: x 0=-X..1=+X, y 0=front(-Y)..1=back(+Y), z 0=ground..1=top; face selected when its center lies inside) and/or 'normal' ({direction, min_dot}: face normal dot >= min_dot). Conditions within a selector AND together; selectors OR together. Selection over max_fraction of surface area (or zero faces) is a report WARNING, not a failure — the pre-import eyeball gate rules. All selector values below are STARTING GUESSES against not-yet-generated meshes.",
+    "team_region": "Selectors choose the minority face-set for material slot 0 'TeamRegion' (remainder = slot 1 '<CardID>PBR'). Each selector may carry 'box' (normalized conformed-bounds coords: x 0=-X..1=+X, y 0=front(-Y)..1=back(+Y), z 0=ground..1=top; face selected when its center lies inside) and/or 'normal' ({direction, min_dot}: face normal dot >= min_dot). Conditions within a selector AND together; selectors OR together. Selection over max_fraction of surface area (or zero faces) is a report WARNING, not a failure — the pre-import eyeball gate rules. Note markers (TASK-194 2026-07-18 adjudication): '_tuned' = values changed against the live generated mesh at an eyeball gate; '_verified' = original values confirmed correct against the SHIPPED Stage-2 refine_report + Cache preview renders; '_pending' = still a pre-generation guess (no mesh generated yet — quota-blocked).",
     "ucx": "Buildings only: authored UCX_SM_<CardID>_00.. box hulls exported inside the FBX. 'boxes' entries are {center:[x,y,z], size:[x,y,z]} in UE units in conformed space. Castle law: wall-footprint-exact, NEVER a full base slab (M1 ~410-unit placement dead-zone lesson). Units carry ucx:null — their <=4 simple hulls are generated at Stage-3 import (TASK-037 recipe), not authored here.",
-    "bake": "cage_extrusion_ue / max_ray_distance_ue feed Cycles selected-to-active baking; ao_samples applies to the AO pass only (spec: 64 spp), 'samples' to all other passes."
+    "bake": "cage_extrusion_ue / max_ray_distance_ue feed Cycles selected-to-active baking; ao_samples applies to the AO pass only (spec: 64 spp), 'samples' to all other passes.",
+    "trellis_resolution": "OPTIONAL per-asset Stage-1 image_to_3d resolution pin, as a STRING (the Space expects the choice as a string; absent = trellis_generate.py's default '1024'). TASK-194 (2026-07-18) pins '1536' on the HERO assets (Castle, CrystalTower, ArrowTower, BombTower, BallistaTower) per the M7.5 quality directive. Applies to FUTURE re-gens ONLY — pinning re-runs nothing. trellis_generate.py currently takes --resolution on the CLI (script changes belong to the tooling lane, TASK-192/193): until the script reads this key, the operator passes --resolution per this pin on any re-gen; this key is the pin of record. Law: CONVENTIONS 'Meshy second engine (M7.5)' (hero assets are the 1536-class candidates).",
+    "albedo_delight": "RESERVED optional per-asset override for the Stage-2 albedo de-light/brighten pass (TASK-193; conservative-ON default lives in-script; refine_trellis_glb.py READS this key if present). Schema is defined by TASK-193's implementation — NO per-asset overrides are pinned at TASK-194; set per-asset strengths only after the TASK-195 Ogre rebake verdict."
   },
   "version": 1,
   "defaults": {
@@ -85,7 +87,7 @@
       "voxel_size_ue": 1.5,
       "team_region": {
         "max_fraction": 0.35,
-        "_guess": "TASK-147 STARTING GUESS against a not-yet-generated mesh (tuned at the TASK-150 eyeball gate). Concept: bare GREEN-skinned horned brute in tattered hide + spiked shoulder pauldron armor, chest straps, wide belt, stone maul in one fist. Follows the Footman/Archer shoulder-cap recipe but DELIBERATELY OMITS a helm_dome selector: the ogre has NO helmet (bare horned head) so any full-width top-z dome would paint his face/head/horns (the Archer bare-head lesson, TASK-087). Single upward-facing shoulder-cap band kept BELOW the head to target the pauldron/shoulder armor only. Expect a gate tune once the live mesh's shoulder/head z-bands are probe-measured.",
+        "_verified": "TASK-147 STARTING GUESS against a not-yet-generated mesh (tuned at the TASK-150 eyeball gate). Concept: bare GREEN-skinned horned brute in tattered hide + spiked shoulder pauldron armor, chest straps, wide belt, stone maul in one fist. Follows the Footman/Archer shoulder-cap recipe but DELIBERATELY OMITS a helm_dome selector: the ogre has NO helmet (bare horned head) so any full-width top-z dome would paint his face/head/horns (the Archer bare-head lesson, TASK-087). Single upward-facing shoulder-cap band kept BELOW the head to target the pauldron/shoulder armor only. — TASK-194 VERIFIED 2026-07-18: shipped refine_report 2.1% area / 353 faces; Cache/Ogre/teamregion_check renders show the band riding the pauldron/shoulder line with zero head/horn/face paint. Selector kept as-is.",
         "selectors": [
           { "name": "shoulder_caps", "box": { "min": [0.10, 0.10, 0.66], "max": [0.90, 0.90, 0.84] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
         ]
@@ -95,6 +97,7 @@
     "Castle": {
       "category": "building",
       "mode": "bake",
+      "trellis_resolution": "1536",
       "tri_budget": 40000,
       "bake_resolution": 2048,
       "origin": "ground-center",
@@ -146,7 +149,7 @@
       "voxel_size_ue": 1.5,
       "team_region": {
         "max_fraction": 0.35,
-        "_guess": "TASK-166 STARTING GUESS (mesh not yet generated) — heavily-armored helmeted soldier: Footman recipe = helm_dome (x-constrained to skip a raised weapon) + upward-facing shoulder caps. Tuned at the TASK-168 per-wave eyeball gate.",
+        "_verified": "TASK-166 STARTING GUESS (mesh not yet generated) — heavily-armored helmeted soldier: Footman recipe = helm_dome (x-constrained to skip a raised weapon) + upward-facing shoulder caps. — TASK-194 VERIFIED 2026-07-18: shipped refine_report 3.5% area / 453 faces / both selectors live; previews show the helm crown + pauldron caps selected, visor/face untouched — the Footman recipe transferred cleanly. Selectors kept as-is.",
         "selectors": [
           { "name": "helm_dome", "box": { "min": [0.18, 0.0, 0.86], "max": [0.82, 1.0, 1.0] } },
           { "name": "shoulder_caps", "box": { "min": [0.14, 0.12, 0.70], "max": [0.90, 0.88, 0.85] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
@@ -167,7 +170,7 @@
       "voxel_size_ue": 1.5,
       "team_region": {
         "max_fraction": 0.35,
-        "_guess": "TASK-166 STARTING GUESS — worker with soft cap/hardhat, NOT a full helm: NO helm_dome (avoids painting the face/cap, Archer TASK-087 lesson); single upward shoulder-cap band below the head. Tuned at the TASK-169 gate.",
+        "_verified": "TASK-166 STARTING GUESS — worker with soft cap/hardhat, NOT a full helm: NO helm_dome (avoids painting the face/cap, Archer TASK-087 lesson); single upward shoulder-cap band below the head. — TASK-194 VERIFIED 2026-07-18: shipped refine_report 4.1% area / 572 faces; previews show shoulder/upper-chest strap caps selected, bare face + hat crown spared (no Archer-style head misfire). Selector kept as-is.",
         "selectors": [
           { "name": "shoulder_caps", "box": { "min": [0.10, 0.10, 0.66], "max": [0.90, 0.90, 0.84] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
         ]
@@ -187,7 +190,7 @@
       "voxel_size_ue": 1.5,
       "team_region": {
         "max_fraction": 0.35,
-        "_guess": "TASK-166 STARTING GUESS — mounted rider: shoulder-cap band targets the RIDER'S torso/shoulders (z 0.66-0.84 of a 208-tall mesh ~= rider seat height). NO helm_dome (the top-z band on a cavalry mesh risks horse ears/head). A saddle-cloth/caparison box on the horse flank is a likely gate add. Tuned at the TASK-168 gate.",
+        "_verified": "TASK-166 STARTING GUESS — mounted rider: shoulder-cap band targets the RIDER'S torso/shoulders (z 0.66-0.84 of a 208-tall mesh ~= rider seat height). NO helm_dome (the top-z band on a cavalry mesh risks horse ears/head). A saddle-cloth/caparison box on the horse flank is a likely gate add. — TASK-194 VERIFIED 2026-07-18: shipped refine_report 4.3% area / 700 faces; previews show upward flecks on the rider's armor plates + saddle line, zero horse head/ear paint (the feared misfire). The caparison-box add proved unnecessary. Selector kept as-is.",
         "selectors": [
           { "name": "shoulder_caps", "box": { "min": [0.10, 0.10, 0.66], "max": [0.90, 0.90, 0.84] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
         ]
@@ -207,7 +210,7 @@
       "voxel_size_ue": 1.5,
       "team_region": {
         "max_fraction": 0.35,
-        "_guess": "TASK-166 STARTING GUESS — HOODED/robed figure: NO helm_dome (a hood is not a helmet — would paint the face/hood, Archer lesson); single upward shoulder-cap band. A robe-mantle box may read better than shoulder caps for a cleric — a likely gate tune. Tuned at the TASK-169 gate.",
+        "_verified": "TASK-166 STARTING GUESS — HOODED/robed figure: NO helm_dome (a hood is not a helmet — would paint the face/hood, Archer lesson); single upward shoulder-cap band. A robe-mantle box may read better than shoulder caps for a cleric — a likely gate tune. — TASK-194 VERIFIED 2026-07-18: shipped refine_report 2.2% area / 433 faces; previews show the band caught the mantle/collar shelf below the hood naturally — hood + face spared, the anticipated robe-mantle box tune unnecessary. Low-but-clean read, accepted at the wave gate. Selector kept as-is.",
         "selectors": [
           { "name": "shoulder_caps", "box": { "min": [0.10, 0.10, 0.66], "max": [0.90, 0.90, 0.84] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
         ]
@@ -227,7 +230,7 @@
       "voxel_size_ue": 1.5,
       "team_region": {
         "max_fraction": 0.35,
-        "_guess": "TASK-166 STARTING GUESS — soft-cap/hooded archer (mirror the Archer TASK-087 tune): NO helm_dome; upward shoulder-cap band + a likely quiver box at the gate. Tuned at the TASK-169 gate.",
+        "_verified": "TASK-166 STARTING GUESS — soft-cap/hooded archer (mirror the Archer TASK-087 tune): NO helm_dome; upward shoulder-cap band + a likely quiver box at the gate. — TASK-194 VERIFIED 2026-07-18: shipped refine_report 3.8% area / 558 faces; previews show hood crown + shoulder band + small bracer flecks selected — bare face spared (paint sits on the hood GARMENT, not skin — within the Archer bare-HEAD lesson). The quiver-box add proved unnecessary. Selector kept as-is.",
         "selectors": [
           { "name": "shoulder_caps", "box": { "min": [0.10, 0.12, 0.70], "max": [0.90, 0.88, 0.86] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
         ]
@@ -247,7 +250,7 @@
       "voxel_size_ue": 1.5,
       "team_region": {
         "max_fraction": 0.35,
-        "_guess": "TASK-166 STARTING GUESS — peasant levy, minimal armor: NO helm_dome (bare/cap head); single upward shoulder-cap band. Team read may be weak on a lightly-clad peasant — a tabard/armband box is a likely gate add. Tuned at the TASK-168 gate.",
+        "_verified": "TASK-166 STARTING GUESS — peasant levy, minimal armor: NO helm_dome (bare/cap head); single upward shoulder-cap band. Team read may be weak on a lightly-clad peasant — a tabard/armband box is a likely gate add. — TASK-194 VERIFIED 2026-07-18: shipped refine_report 2.8% area / 413 faces; previews show a clean shoulder-mantle band, helmet + bearded face untouched. Read is on the light side but was accepted at the wave gate (SwarmCount 4 also multiplies the on-field read). Tabard/armband add not taken. Selector kept as-is.",
         "selectors": [
           { "name": "shoulder_caps", "box": { "min": [0.10, 0.10, 0.66], "max": [0.90, 0.90, 0.84] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
         ]
@@ -267,7 +270,7 @@
       "voxel_size_ue": 1.5,
       "team_region": {
         "max_fraction": 0.35,
-        "_guess": "TASK-166 STARTING GUESS — helmeted (kettle-helm) soldier: Footman recipe = helm_dome (x-constrained to skip the raised pike) + upward shoulder caps. Tuned at the TASK-168 gate.",
+        "_verified": "TASK-166 STARTING GUESS — helmeted (kettle-helm) soldier: Footman recipe = helm_dome (x-constrained to skip the raised pike) + upward shoulder caps. — TASK-194 VERIFIED 2026-07-18: shipped refine_report 9.1% area / 1318 faces / both selectors live — the roster's largest unit read but well under the 0.35 cap. Previews: hood/helm crown + shoulder + upper-chest plate caps selected, face mask spared, NO pike-shaft striping (the Footman TASK-086 misfire). Note the z-bands sit slightly LOW on the body because the raised pike tip defines mesh height (silhouette-inclusive Z, see _dims_source) — the shipped landing is correct, so this is recorded, not fixed. Selectors kept as-is.",
         "selectors": [
           { "name": "helm_dome", "box": { "min": [0.18, 0.0, 0.86], "max": [0.82, 1.0, 1.0] } },
           { "name": "shoulder_caps", "box": { "min": [0.14, 0.12, 0.70], "max": [0.90, 0.88, 0.85] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
@@ -288,7 +291,7 @@
       "voxel_size_ue": 1.5,
       "team_region": {
         "max_fraction": 0.35,
-        "_guess": "TASK-166 STARTING GUESS — demolitions engineer, uncertain headgear: NO helm_dome (safe default — avoids painting the face if bare/hooded); single upward shoulder-cap band. Promote to the helmeted (helm_dome) recipe at the gate IF the generated mesh has a clear helmet. Tuned at the TASK-169 gate.",
+        "_verified": "TASK-166 STARTING GUESS — demolitions engineer, uncertain headgear: NO helm_dome (safe default — avoids painting the face if bare/hooded); single upward shoulder-cap band. Promote to the helmeted (helm_dome) recipe at the gate IF the generated mesh has a clear helmet. — TASK-194 VERIFIED 2026-07-18: shipped refine_report 3.3% area / 449 faces; generated mesh has NO helmet (dark hair/bandana) so the no-helm_dome call was right; previews show the collar/mantle band selected with minor flecks toward the upper chest, head + face spared. Accepted at the wave gate. Selector kept as-is.",
         "selectors": [
           { "name": "shoulder_caps", "box": { "min": [0.10, 0.10, 0.66], "max": [0.90, 0.90, 0.84] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
         ]
@@ -298,6 +301,7 @@
     "ArrowTower": {
       "category": "building",
       "mode": "bake",
+      "trellis_resolution": "1536",
       "tri_budget": 20000,
       "bake_resolution": 2048,
       "origin": "ground-center",
@@ -309,7 +313,7 @@
       "bake": { "cage_extrusion_ue": 6.0, "max_ray_distance_ue": 16.0 },
       "team_region": {
         "max_fraction": 0.4,
-        "_guess": "TASK-166 STARTING GUESS — tower team accent = upward-facing roof/cap faces in the upper structure (Castle TASK-087 'roofs' recipe; classic RTS top-down read). Tuned at the import-wave (TASK-170) gate.",
+        "_verified": "TASK-166 STARTING GUESS — tower team accent = upward-facing roof/cap faces in the upper structure (Castle TASK-087 'roofs' recipe; classic RTS top-down read). — TASK-194 VERIFIED 2026-07-18: shipped refine_report 9.6% area / 2309 faces; top preview shows the full cone roof + parapet walkway ring selected — textbook RTS top-down team read, well under the 0.4 cap. Selector kept as-is.",
         "selectors": [
           { "name": "roof", "box": { "min": [0.0, 0.0, 0.55], "max": [1.0, 1.0, 1.0] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.15 } }
         ]
@@ -335,7 +339,7 @@
       "bake": { "cage_extrusion_ue": 6.0, "max_ray_distance_ue": 16.0 },
       "team_region": {
         "max_fraction": 0.4,
-        "_guess": "TASK-166 STARTING GUESS — wall team accent = the crenellated TOP band (upward faces, z 0.70-1.0). Tuned at the TASK-170 gate.",
+        "_pending": "TASK-166 STARTING GUESS — wall team accent = the crenellated TOP band (upward faces, z 0.70-1.0). — TASK-194 ADJUDICATED 2026-07-18: STILL A PRE-GENERATION GUESS — Wall has no generated mesh (Stage-1 quota-blocked 2026-07-17, see handoffs/TASK-170-171-artist.md; carried into M7.5 under TASK-170). Values re-checked against the SHIPPED building outcomes: the upward top-band recipe produced clean 5.8-15.3% reads on all four shipped towers/Barracks, so these priors are sound. Final adjudication happens at the TASK-170 eyeball gate after the quota-window rerun (which now waits on the TASK-193 albedo de-light per M7.5 decision 3).",
         "selectors": [
           { "name": "crenellations", "box": { "min": [0.0, 0.0, 0.70], "max": [1.0, 1.0, 1.0] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.15 } }
         ]
@@ -350,6 +354,7 @@
     "BombTower": {
       "category": "building",
       "mode": "bake",
+      "trellis_resolution": "1536",
       "tri_budget": 20000,
       "bake_resolution": 2048,
       "origin": "ground-center",
@@ -361,7 +366,7 @@
       "bake": { "cage_extrusion_ue": 6.0, "max_ray_distance_ue": 16.0 },
       "team_region": {
         "max_fraction": 0.4,
-        "_guess": "TASK-166 STARTING GUESS — tower roof/cap upward faces (Castle roofs recipe). Tuned at the TASK-170 gate.",
+        "_verified": "TASK-166 STARTING GUESS — tower roof/cap upward faces (Castle roofs recipe). — TASK-194 VERIFIED 2026-07-18: shipped refine_report 10.7% area / 2661 faces; top preview shows the central mortar barrel + inner platform deck selected — a strong painted-war-machine read from above, under the 0.4 cap. Selector kept as-is.",
         "selectors": [
           { "name": "roof", "box": { "min": [0.0, 0.0, 0.55], "max": [1.0, 1.0, 1.0] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.15 } }
         ]
@@ -376,6 +381,7 @@
     "BallistaTower": {
       "category": "building",
       "mode": "bake",
+      "trellis_resolution": "1536",
       "tri_budget": 20000,
       "bake_resolution": 2048,
       "origin": "ground-center",
@@ -387,7 +393,7 @@
       "bake": { "cage_extrusion_ue": 6.0, "max_ray_distance_ue": 16.0 },
       "team_region": {
         "max_fraction": 0.4,
-        "_guess": "TASK-166 STARTING GUESS — tower roof/cap upward faces. The ballista arm may need excluding at the gate. Tuned at TASK-170.",
+        "_verified": "TASK-166 STARTING GUESS — tower roof/cap upward faces. The ballista arm may need excluding at the gate. — TASK-194 VERIFIED 2026-07-18: shipped refine_report 5.8% area / 1349 faces; top preview shows the ballista mount platform, mast and railing tops selected — the feared arm exclusion proved UNNECESSARY (team-painted war machine reads well and stays under cap). Selector kept as-is.",
         "selectors": [
           { "name": "roof", "box": { "min": [0.0, 0.0, 0.55], "max": [1.0, 1.0, 1.0] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.15 } }
         ]
@@ -413,7 +419,7 @@
       "bake": { "cage_extrusion_ue": 6.0, "max_ray_distance_ue": 16.0 },
       "team_region": {
         "max_fraction": 0.4,
-        "_guess": "TASK-166 STARTING GUESS — building roof upward faces (z 0.5-1.0). A wide-roofed barracks reads team well off the roof. Tuned at TASK-170.",
+        "_verified": "TASK-166 STARTING GUESS — building roof upward faces (z 0.5-1.0). A wide-roofed barracks reads team well off the roof. — TASK-194 VERIFIED 2026-07-18: shipped refine_report 15.3% area / 3078 faces — the roster's largest team region, still comfortably under the 0.4 cap; top preview shows the full gabled roof selected exactly as intended. Selector kept as-is.",
         "selectors": [
           { "name": "roof", "box": { "min": [0.0, 0.0, 0.50], "max": [1.0, 1.0, 1.0] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.15 } }
         ]
@@ -439,7 +445,7 @@
       "bake": { "cage_extrusion_ue": 6.0, "max_ray_distance_ue": 16.0 },
       "team_region": {
         "max_fraction": 0.4,
-        "_guess": "TASK-166 STARTING GUESS — mine headframe/roof upward faces (z 0.5-1.0). The mine shaft opening may need excluding at the gate. Tuned at TASK-170.",
+        "_pending": "TASK-166 STARTING GUESS — mine headframe/roof upward faces (z 0.5-1.0). The mine shaft opening may need excluding at the gate. — TASK-194 ADJUDICATED 2026-07-18: STILL A PRE-GENERATION GUESS — DeepMine has no generated mesh (Stage-1 quota-blocked 2026-07-17, see handoffs/TASK-170-171-artist.md; carried into M7.5 under TASK-171). The z 0.5-1.0 roof band mirrors the shipped Barracks recipe (15.3%, clean full-roof read) — sound prior; keep the shaft-opening watch item. Final adjudication at the TASK-171 eyeball gate after the quota-window rerun (Stage 2 waits on the TASK-193 albedo de-light per M7.5 decision 3).",
         "selectors": [
           { "name": "roof", "box": { "min": [0.0, 0.0, 0.50], "max": [1.0, 1.0, 1.0] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.15 } }
         ]
@@ -454,6 +460,7 @@
     "CrystalTower": {
       "category": "building",
       "mode": "bake",
+      "trellis_resolution": "1536",
       "tri_budget": 20000,
       "bake_resolution": 2048,
       "origin": "ground-center",
@@ -466,7 +473,7 @@
       "_emissive_note": "TASK-166: the CrystalTower blockout has an emissive crystal slot (M_CrystalGlow). Under the standard two-slot [TeamRegion, CrystalTowerPBR] contract the crystal glow is NOT preserved by a plain PBR bake. TASK-170 production wave must decide: bake a T_CrystalTower_E emissive into MI_CrystalTower_PBR (M_AssetPBR emissive param) OR keep a dedicated glow slot. Flagged, NOT resolved here (file-only prep). CrystalTower stays a normal building card = two-slot (unlike GoldNode's single-slot variant).",
       "team_region": {
         "max_fraction": 0.4,
-        "_guess": "TASK-166 STARTING GUESS — tower roof/cap upward faces. Crystals are the PBR feature, team accent stays on the stone roof/cap. Tuned at TASK-170.",
+        "_verified": "TASK-166 STARTING GUESS — tower roof/cap upward faces. Crystals are the PBR feature, team accent stays on the stone roof/cap. — TASK-194 VERIFIED 2026-07-18 (with deviation recorded): shipped refine_report 8.3% area / 1952 faces, but the selection landed on the upward CRYSTAL-TOP facets (+ a few wall-ledge flecks), NOT the stone roofline the guess intended — the crystal cluster dominates the upward area above z 0.55. ACCEPTED AS SHIPPED: the import wave passed it, and TASK-190 (commit 7ec9916) kept the slot-0 team recolor while pointing slot 1 at the height-masked MI_CrystalGlow, so team-tinted crystal tops + glowing steep facets coexist in-engine — a strong, distinctive read. Kept as-is. Future re-gen note: if the glow should own the ENTIRE crystal, shrink this box's XY to exclude the central crystal footprint (and re-check TASK-190's emissive contract).",
         "selectors": [
           { "name": "roof", "box": { "min": [0.0, 0.0, 0.55], "max": [1.0, 1.0, 1.0] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.15 } }
         ]

@@ -67,3 +67,25 @@ Statuses flow strictly `requested → approved → fulfilled → integrated` (or
 - license-note: Jonathan to confirm game-use license at download
 - fulfilled-note: (pending Jonathan)
 - integration: TASK-091 (amended 2026-07-08 to Fab-conform)
+
+### FAB-005 — Stylized RTS Buildings & Props Pack (M7.5 building-fleet upgrade)
+- status: requested
+- requested-by: art-director (TASK-206)
+- for: Building-fleet quality upgrade via the Stage-2 conform + same-path `SM_` swap lane (TASK-208 first wave). Research-identified roster mapping — near-exact Siegebound coverage: **Town Center / Fortress → SM_Castle tier** (Fortress also a castle-crumble stage-mesh candidate, TASK-157 chain), **Barracks → SM_Barracks**, **Watch Tower → SM_ArrowTower tier** (donor-adapt candidates for SM_BombTower / SM_BallistaTower), **wall segments → SM_Wall** (closes the Wall gap — the TRELLIS retry-listed asset), **Blacksmith + props → arena/base dressing** (TASK-178-style), **construction meshes → build-up/placement states**. Roster-replacing conforms KEEP the two-slot `[TeamRegion, <AssetName>PBR]` law; pure environment props are exempt (M6.5 precedent, M7.5 manager decision 6).
+- fab-link: https://www.fab.com/listings/a4b43ae5-e442-4d51-93f2-fea8d77e9f37
+- license-note: MUST permit game use — expected Fab Standard License (royalty-free use in shipped interactive products). Jonathan verifies the EXACT license tier shown on the listing AND the price at checkout in the Epic Launcher — agents cannot browse Fab (it blocks bots), so tier/price are unverifiable agent-side. Budget context: ~$100–200 total approved across FAB-005 + FAB-006.
+- fulfilled-note: (pending Jonathan — TASK-207: Epic Launcher → drop at `Content/Fab/StylizedRTSBuildings/`, READ-ONLY donor quarantine)
+- integration: TASK-208 (planned — inventory + conform plan + first-wave swaps)
+
+### FAB-006 — Rigged stylized medieval unit pack (M7.5 humanoid-unit upgrade — ONE pack, Jonathan picks in the launcher)
+- status: requested
+- requested-by: art-director (TASK-206)
+- for: Humanoid unit quality — AI mesh generation's weakest area. Donor skeletal meshes for the unit roster (Footman/Knight tier first), conformed via Stage-2 + retarget into the existing `SK_<CardID>` / `A_<CardID>_<Action>` same-path contract (TASK-209; IK_/RTG_ law, CONVENTIONS "Meshy second engine (M7.5)"). Researched candidates — Jonathan chooses ONE in the launcher (exact listings there; agents cannot browse Fab):
+  1. **TAB Medieval Knights** — RECOMMENDED PICK. Justification: rigged to the **Epic skeleton** — the cleanest UE 5.8 retarget path of the four (near-zero IK Retargeter friction into our SiegeBiped chain), solid stylized-medieval fit vs the §6 bar; tradeoff: knights-focused, narrower roster coverage than a full RTS unit set.
+  2. **Toon RTS Units** — customizable low-poly fantasy units; BEST roster breadth (multiple unit archetypes) and strong stylized fit; tradeoff: custom rig → full retarget-chain setup per the TASK-203 spike pattern.
+  3. **Animated Stylized Knight** — 74 animations included (richest clip library — useful donor clips for the TASK-205 fleet lane); tradeoff: single-character coverage.
+  4. **Stylized Warrior Pack** (modular parts) — mix-and-match parts could cover several roster units from one purchase; tradeoff: rig/skeleton type unverified agent-side — Jonathan checks rigging claims on the listing before buying.
+- fab-link: exact search terms in the Epic Launcher / fab.com: "TAB Medieval Knights", "Toon RTS Units", "Animated Stylized Knight", "Stylized Warrior Pack" (stylized + rigged + medieval/fantasy filters)
+- license-note: MUST permit game use — expected Fab Standard License (royalty-free in shipped interactive products). Jonathan verifies the EXACT license tier AND price on the chosen listing at checkout (agents cannot browse Fab / prices unverifiable agent-side). Shared budget with FAB-005: ~$100–200 total approved.
+- fulfilled-note: (pending Jonathan — TASK-207: Epic Launcher → drop at `Content/Fab/<UnitPack>/` (name per chosen pack, e.g. `Content/Fab/TABMedievalKnights/`), READ-ONLY donor quarantine)
+- integration: TASK-209 (planned — unit conform + retarget wave)

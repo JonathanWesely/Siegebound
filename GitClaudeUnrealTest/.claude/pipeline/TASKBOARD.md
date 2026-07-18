@@ -47,6 +47,7 @@ M5 shipped machine-verified with the desktop LOCKED (SendInput blocked → no si
 6.5. **M6.5 — Battlefield & procedural terrain** — `done (2026-07-14 — Jonathan committed the assembled battlefield HIMSELF as `6a4c17d "battlefield created"` and PUSHED it; this SATISFIES the TASK-136/137 held-commit gate — no separate build-master M6.5 commit. GATE 0 for M6.6 is thereby satisfied. NOTE: an `m6.5-testable` branch was never cut at the self-commit — TASK-145 cut it retroactively at 6a4c17d alongside m6.6-testable @ 057ca9f (DONE 2026-07-14).)` (decomposed 2026-07-10, TASK-133..137; Jonathan directive verbatim: *"start creating the terrain/battlefield the characters fight on … space out the castles … 4 times larger … a grassy terrain filled with rocks, trees, and hills … randomly generated at the start of each match … choose what you think will look best … use as many assets as possible … for variety"*). Standalone milestone after M6 (M4.5/M5.5 sub-milestone shape); SUPERSEDES the parked M4.5. **PART 1** = 4× castle spacing (±2000 → ±8000, gold nodes ∓1200 → ±7200, PlayerStart + navmesh + ground + boundary walls widened — CONVENTIONS "World axes" updated). **PART 2** = a RUNTIME procedural scatter (`ASiegeBattlefieldScatter` + `USiegeScatterConfig`/`DA_BattlefieldScatter` + `M_BattlefieldGround`) of trees/rocks/hills/grass soft-referenced from Jonathan's imported Fab packs, re-seeded each match. **Decisions ANSWERED by Jonathan 2026-07-10:** (1) obstacles **BLOCK** unit movement + carve the navmesh (Dynamic RecastNavMesh + a NON-NEGOTIABLE castle-to-castle traversability guarantee); (2) grass **material** (not a Landscape); (3) keep-clear zones **YES**; (4) 4× pacing **PROCEED**. Placement is **ASYMMETRIC organic random** (Jonathan ruling, flagged — can switch to mirror-symmetric at playtest if unfair). Details in the "M6.5 tasks" block under Active tasks. Naming law in CONVENTIONS "Battlefield & procedural terrain (M6.5)" + "World axes (arena contract)".
 6.6. **M6.6 — Climbable terrain** — `done (2026-07-14 — playtested + signed off by Jonathan: hero climbs the hill flanks + anti-exploit gate passes [enemy melee reaches a crowned hero] + camera/tower/escape/perf all good. Committed by Jonathan HIMSELF as `057ca9f "walkable terrain"` and PUSHED [self-commit, same pattern as M6.5]; TASK-138..145 all done. m6.6-testable @ 057ca9f + m6.5-testable @ 6a4c17d cut. Committed L_Arena carries the STALE serialized nav bake [umap byte-identical to pre-widen 6a4c17d] but non-breaking — runtime-Dynamic RecastNavMesh regenerates at PIE. Non-blocking follow-ups for manager: (i) manual Build>Navigation is required after any arena-bounds change [MCP has no nav-build tool]; (ii) scatter density reads thin on the wider ±4000 field — Trees ~15/55, Grass ~1450/2500 — optional tuning pass.)` (decomposed 2026-07-14, TASK-138..145; **UNPARKS the M4.5 "Gameplay terrain pass" intent**). Jonathan wants the battlefield hills/rocks CLIMBABLE by the hero — root-cause investigation established this is currently BY-DESIGN (M6.5's scatter built every rock/hill/tree as a route-around blocker) and that the parked M4.5 TASK-091..096 already specified exactly this feature, so M6.6 delivers the parked M4.5 intent on top of the M6.5 procedural scatter. **ROOT CAUSE (corrects the earlier jump-height hypothesis):** the scatter applies UNIFORM scale (`BattlefieldScatter.cpp:247`, `FVector(Scale)`) → face angles are SCALE-INVARIANT; the squashed `stone_hill` dome goes near-vertical at the rim → unclimbable regardless of jump. FIX = purpose-built CONVEX hill meshes (`SM_Hill_01/02/03`) with ≤30° faces + flat crowns, under BOTH the character's 44.76° WalkableFloorAngle AND Recast's 44° AgentMaxSlope, so hero AND units climb with essentially no movement retune. **FOUR DECISIONS LOCKED (Jonathan, 2026-07-14):** (1) M6.5 already committed by Jonathan @ `6a4c17d` (pushed) — GATE 0 satisfied, NO build-master M6.5 commit; (2) widen arena Y ±2400 → ±4000; (3) terrain BLOCKS projectiles (arrows die on rocks/hills/tree-trunks — accepted balance change); (4) units climb too (navmesh generates over hills — closes the melee-can't-reach-a-crowned-hero exploit). Authoritative plan on disk: `C:\Users\wesel\.claude\plans\we-last-left-off-partitioned-puppy.md`. Naming law in CONVENTIONS "Climbable terrain (M6.6)". Details in "M6.6 tasks" under Active tasks.
 7. M7 — Premium art & feel pass — `in-progress (decomposed 2026-07-15 — TASK-153..188 in "## M7 tasks" under Active tasks; 1 asset [Ogre] already SHIPPED via the pull-forward below; CONVENTIONS "Skeletal rig & animation workstream (M7)" + the M7 batch/GoldNode-variant clauses added FIRST)` · **OGRE PULLED FORWARD 2026-07-14 (TASK-147..152):** Jonathan dropped an ogre concept (`Tools/ArtPipeline/Inbox/ogre.png`) and directed the validated TRELLIS.2 pipeline be run NOW to replace the `SM_Ogre` blockout with a game-ready textured mesh — one of the 16 M7 blockouts pulled ahead on his directive (chain in "M7 pull-forward — Ogre textured mesh" under Active tasks). The rest of the M7 batch (15 blockouts + the premium/feel pass) stays deferred. · **Jonathan request (2026-07-04):** raise fidelity on SM_Castle + SM_Footman + SM_Archer (higher detail than the current blockouts); wants the game to look nicer. Decision: DEFERRED here (mesh swaps are non-breaking; roster still growing through M4-M6). Two integration paths to scope at M7: (a) art-director custom higher-detail Blender models, and/or (b) **Fab/UE-marketplace assets — Jonathan must download packs into the project via the Epic Launcher first (agents can't browse/buy/download Fab autonomously); art-director then swaps meshes/materials.** Could be pulled forward as a standalone art pass after M3/M4 if Jonathan wants it sooner.
+7.5. **M7.5 — Art Quality Upgrade (Meshy Pro second engine + FAB packs + free pipeline upgrades)** — `current (decomposed 2026-07-18 — TASK-191..210 in "## M7.5 tasks" under Active tasks; Jonathan-approved directive, plan C:\Users\wesel\.claude\plans\i-am-a-bit-sunny-bird.md: Meshy Pro $20/mo APPROVED, FAB ~$100–200 APPROVED, all four art areas prioritized, quality first)`. **MILESTONE RULING: a STANDALONE batch/sub-milestone in the M4.5/M5.5/M6.5 shape, NOT folded into M7.** M7 stays `in-progress` at its paused 2026-07-18 checkpoint with its remaining capstones (TASK-174/175/178 VFX + dressing, TASK-181 Sequencer flythrough, TASK-183 final assembly + 60 fps perf watch) and all checkpoint decisions PENDING and UNTOUCHED — this batch has its own external gates (Meshy account, FAB purchases) and must not hold the M7 playtest hostage, nor vice versa. **FLAGGED sequencing recommendation (Jonathan's call at the M7 checkpoint, NOT enacted):** run the M7 Sequencer/perf capstones AFTER the M7.5 A/B ruling (and fleet retexture, if approved) so the flythrough captures the final art. Three tracks: **(A)** Meshy Pro as a second engine in the TRELLIS.2 pipeline — Stage-1.5 RETEXTURE to kill the recorded accepted-not-fixed "dark TRELLIS look" (TASK-150/151/172 handoffs), per-asset image-to-3D alternative, auto-rig + preset-clip animation upgrade via the UE5 IK Retargeter; **(B)** FAB purchases via the FAB-REQUESTS protocol — FAB-005 "Stylized RTS Buildings & Props Pack" (listing a4b43ae5-e442-4d51-93f2-fea8d77e9f37) + FAB-006 one rigged stylized unit pack (art-director authors the entries; Jonathan purchases); **(C)** free pipeline upgrades — FLUX.1-schnell→FLUX.1-dev concepts, Stage-2 albedo de-light/brighten, 1536³ TRELLIS res pinned for hero assets, `_guess` team-region selector tuning — plus the **Wall + DeepMine quota retry CARRIED IN under their existing IDs (TASK-170/171/173)**, Stage-2 gated on the albedo-lift so the last 2 meshes bake bright (flagged resequencing, decision 3). **Track D (self-hosting TRELLIS.2/Hunyuan3D; Tripo/Rodin subscriptions) EVALUATED AND REJECTED 2026-07-18** — ops burden > benefit while HF PRO + Meshy cover throughput; Hunyuan 2.5 has no public weights; Meshy uniquely covers the actual gaps (retexture existing meshes + rig + anim clips) in one sub. Recorded; NO tasks. CrystalTower-emissive debt ALREADY CLEARED (TASK-190 @ 7ec9916 — no new task). **JONATHAN'S TWO MANUAL STEPS: TASK-197 (create Meshy Pro account + set MESHY_API_KEY env var + possible Norton meshy.ai exclusion) and TASK-207 (approve + purchase the FAB packs → drop into Content/Fab/<Pack>/).** Naming law: CONVENTIONS "Meshy second engine — Stage-1.5 retexture & image-to-3D alternative (M7.5)" + IK_/RTG_ prefix rows (added FIRST, TASK-191).
 8. M8 — Networked 1v1 multiplayer — `not-started`
 
 ### Standing backlog (manager notes — NOT tasks, no IDs yet)
@@ -125,6 +126,361 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 ## Active tasks
 
 **2026-07-15 M7 KICKOFF (READ FIRST — CURRENT milestone) — Premium art & feel pass (TASK-153..188):** Jonathan authorized M7 in full. This is the whole §6 premium bar: (A) §6 juice C++ checklist; (B) a NEW skeletal rig + animation workstream stood up from scratch (spike-proven before batch); (C) the 16 remaining blockouts upgraded to textured meshes via the proven TRELLIS.2 pipeline; (D) Niagara VFX on every ability/impact/spawn/death/spell; (E) Lumen lighting + post stack + gradient skybox + arena set dressing (no collision change, §5); (F) full audio set; (G) the Sequencer cinematic flythrough + gameplay b-roll portfolio slice. CONVENTIONS updated FIRST (TASK-153, done): the "Skeletal rig & animation workstream (M7)" section + the M7-batch and GoldNode-emissive-variant clauses under "Textured mesh law". Full decomposition + rulings in **"## M7 tasks"** below. **Dispatch frontier (parallel-safe, headless, NOW): TASK-154, 155, 156, 157, 158 (juice C++) ∥ TASK-159 (skeletal swap path C++) ∥ TASK-179 (audio hooks C++) ∥ TASK-160 (rig spike, Blender) ∥ TASK-166 (mesh-batch prep, file-only) ∥ TASK-174/175 (VFX art, editor-queued).** **2026-07-16 DIRECTIVE AMENDMENTS (TASK-184..188 — see "M7 DIRECTIVES ADDENDUM" below) opened more NOW lanes and closed two gates:** additionally dispatchable NOW: **TASK-184** (concept-gen tool, C++/tooling) ∥ **TASK-180** (4 covered audio cues, art) ∥ **TASK-186** (best-effort audio from imported packs, art) ∥ **TASK-187** (fire/ice VFX re-skin, art/editor). The concept gate is RESOLVED by the concept-gen step (TASK-184 build → TASK-185 run → 16 Inbox PNGs; **TASK-167 is now OPTIONAL/non-blocking** review). The audio gate is PARTIALLY resolved (MedievalWeaponsSFX pack) — the ONLY remaining external Jonathan gate is **TASK-188** (7 genuinely-missing cues: mining loop, 2 UI clicks, castle-destroy, 2 music, overtime sting — NON-blocking, M7 ships silent+logged if ungated). Repo base `057ca9f` on `main` (pushed); the Ogre pull-forward already committed to `main` bundled with the M6.6 scatter tune (see TASK-152, not pushed).
+
+---
+
+## M7.5 tasks (decomposed 2026-07-18) — Art Quality Upgrade (Meshy Pro + FAB + free pipeline upgrades)
+
+**Authorization:** Jonathan's 2026-07-18 ART QUALITY UPGRADE directive (plan on disk: `C:\Users\wesel\.claude\plans\i-am-a-bit-sunny-bird.md` — READ IT; Meshy Pro $20/mo approved, FAB ~$100–200 approved, all four art areas, quality first). Standalone batch per the milestone ruling above — M7's paused checkpoint + capstones (TASK-174/175/178/181/183) are UNTOUCHED. Hard gates stand: QA on every script change (`Tools/**/*.py` is CODE), nothing committed without PASS QA (code) / completed integration (art), editor/MCP work needs 127.0.0.1:8000 up (park + tell the orchestrator if unreachable — never fake), `HF_TOKEN` + `MESHY_API_KEY` ENV-ONLY, heavy Blender runs headless, NOTHING PUSHED. Git note: HEAD `a16df32 "polishingUp"` is a Jonathan self-commit — build-master VERIFIES git state before any commit (reconcile, don't duplicate).
+
+### M7.5 manager decisions (binding for all M7.5 tasks)
+1. **Textured-mesh law INVARIANT (load-bearing):** Meshy changes the mesh/texture SOURCE only. Stage 2 + Stage 3 are UNTOUCHED regardless of engine — two-slot `[TeamRegion, <CardID>PBR]` (GoldNode variant excepted), tri budgets, `UVMap`, Nanite OFF, same-path `SM_<CardID>` reimport, UCX rules. Meshy output NEVER lands directly in Content/; everything re-enters through Stage 2. Law: CONVENTIONS "Meshy second engine (M7.5)".
+2. **A/B eyeball gate BEFORE any fleet rollout (mirrors the Ogre/rig-spike precedent):** ONE recorded-dark asset (Ogre — THE accepted-dark asset from TASK-150; Knight optional second sample) goes through Meshy retexture (TASK-199) and Jonathan rules on a 3-arm board — (A) shipped dark vs (B) Track-C albedo-lift only vs (C) Meshy retexture — at TASK-200 before ANY fleet work (TASK-201). Same pattern for animation: spike (TASK-203) → gate (TASK-204) → fleet (TASK-205).
+3. **Wall + DeepMine retry CARRIED IN under their EXISTING IDs (TASK-170/171/173 — no duplicate tasks).** FLAGGED RESEQUENCING (they were only quota-blocked before): Stage-1 generation reruns AS-IS at the next ZeroGPU quota window (idempotent resume, handoffs/TASK-170-171-artist.md); Stage-2 refine now WAITS for TASK-193 (albedo de-light) so the last 2 meshes bake bright instead of joining the dark fleet. If quota and the script race, Stage 1 runs anyway (quota is the scarcer resource). If Jonathan objects, revert to immediate Stage-2. His TASK-200 ruling MAY additionally re-route them (Meshy retexture/i23d, or the FAB buildings pack closes them instead — decision recorded there).
+4. **Secrets:** `MESHY_API_KEY` is ENV-ONLY, exactly the `HF_TOKEN` discipline (never file/argv/log; guard-secrets extended at TASK-198). Norton exclusion for `meshy.ai`/`*.meshy.ai` only if TLS interception surfaces — the proven HF playbook; never disable verification.
+5. **QA implied per code task (board precedent — no separate IDs):** TASK-192/193/198 route `ready-for-qa` → qa-reviewer (tooling QA: secret-handling + exit-code discipline + no behavior change to untouched stages) before any commit.
+6. **FAB protocol:** the art-director AUTHORS FAB-005/006 entries (TASK-206) with license notes; Jonathan approves + purchases (TASK-207 — agents never browse/buy/download Fab; prices unverifiable by agents, FAB blocks bots). Packs land in `Content/Fab/<Pack>/` quarantine, READ-ONLY donors. Roster-replacing conforms KEEP the two-slot TeamRegion law; pure environment props are exempt (M6.5 precedent).
+7. **Animation same-path law:** retargeted Meshy clips OVERWRITE `A_<CardID>_<Action>` at their existing `/Game/Characters/Anims/` paths — preserves the TASK-189 composed-soft-path triggers + ABP wiring. Spike output stays on SCRATCH paths until the TASK-204 gate approves.
+8. **No push. Ever.** All commits local; `m7-testable`/milestone-branch handling stays with M7's TASK-183 — M7.5's integration (TASK-210) commits to `main` only and does NOT cut branches.
+
+**JONATHAN'S TWO MANUAL STEPS (the batch's only external gates besides eyeballs):**
+- **STEP 1 → TASK-197:** create the Meshy account + subscribe Pro ($20/mo, approved) at meshy.ai → generate an API key → set it as user env var `MESHY_API_KEY` (HKCU, like HF_TOKEN — note: a Windows rollback wipes HKCU env, uv/HF precedent) → if TLS/cert errors appear when the tool first runs, add Norton exclusions for `meshy.ai` / `*.meshy.ai` (same playbook as the proven HF exclusions).
+- **STEP 2 → TASK-207:** review + approve FAB-005/FAB-006 in `.claude/pipeline/fab/FAB-REQUESTS.md`, purchase (~$100–200 approved) via the Epic Launcher, drop each pack into `Content/Fab/<Pack>/`, and say so in Slack/Claude Code.
+
+Dispatch shape: **TASK-191 (manager CONVENTIONS) lands FIRST (done — this decomposition).** Then the NOW frontier, all parallel: **TASK-192 ∥ TASK-193 ∥ TASK-194 (Track C files) ∥ TASK-206 (FAB entries)**, plus the carried-in **TASK-170/171 Stage-1 rerun at the next quota window**. Track C converges: 192+193+194 → TASK-195 (validation renders) → TASK-196 (build-master commit). Track A gates on Jonathan's STEP 1: TASK-197 → TASK-198 (tool, QA'd) → TASK-199 (A/B run, also needs 195) → TASK-200 (EYEBALL GATE) → TASK-201 (fleet Stage-1.5/2) → TASK-202 (Stage-3 reimport, editor-serial); anim lane TASK-197 → 203 (spike) → 204 (EYEBALL GATE) → 205 (fleet retarget). Track B gates on STEP 2: TASK-206 → TASK-207 → TASK-208 (buildings conform) ∥ TASK-209 (unit-pack eval; editor tasks serialize in practice). Everything ends in TASK-210 (build-master integration + commit, coordinates with M7's TASK-183 without replacing it).
+
+#### TASK-191 — CONVENTIONS: Meshy second-engine law + IK_/RTG_ prefixes + Track-D rejection record (manager)
+- assignee: manager
+- status: **done** (2026-07-18 — CONVENTIONS "Meshy second engine — Stage-1.5 retexture & image-to-3D alternative (M7.5)" section written + live; IK_/RTG_ prefix rows added; Track-D rejection + milestone ruling recorded in the Milestones entry. Must land before 192/193/198 — it does. This decomposition is the deliverable.)
+- blocked-by: none
+- parallel-safe: yes
+- spec: >
+    Add the naming/contract law for the Meshy second engine BEFORE any task issues it: MESHY_API_KEY env-only law, meshy_generate.py
+    tool contract + exit codes, Stage-1.5 cache paths (Cache/<CardID>/meshy_retex.glb, meshy_raw.glb), state.json/refine_report.json
+    engine-provenance fields, manifest engine/albedo_delight keys, the Stage-2/3 INVARIANT, the A/B fleet-gate law, and the IK
+    Retargeter naming (IK_/RTG_ prefixes; retargeted clips same-path-overwrite A_<CardID>_<Action>). Record the Track-D rejection.
+- names: >
+    CONVENTIONS.md "Meshy second engine — Stage-1.5 retexture & image-to-3D alternative (M7.5)" + prefix-table IK_/RTG_ rows.
+
+#### TASK-192 — Stage-0 upgrade: FLUX.1-schnell → FLUX.1-dev in concept_generate.py (tooling)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-18 — qa/TASK-192-193-qa.md: PASS, 0 blockers; 1 handoff-doc WARN noted for TASK-195's prober. Awaits TASK-196 commit)
+- blocked-by: none
+- parallel-safe: yes (single file Tools/ArtPipeline/concept_generate.py; disjoint from TASK-193's file)
+- spec: >
+    Track C-1. Swap the concept model FLUX.1-schnell (4-step distilled) → FLUX.1-dev in `Tools/ArtPipeline/concept_generate.py`:
+    the model constant + appropriate inference params (dev wants real step counts ~28–50 + guidance ~3.5 vs schnell's 4-step/no-CFG
+    — expose as constants with comments). EVERYTHING ELSE UNCHANGED: CLI shape, `--check`, HF_TOKEN env-only secret law, exit-code
+    map (0/2/3/4/5/64), PascalCase Inbox output, prompt source concept_prompts.json. Validation MUST NOT clobber accepted roster
+    concepts: verify with a scratch/test prompt id (e.g. `_FluxDevProbe`) or back up the target PNG first. ACCEPTANCE: `--check`
+    passes; one dev-model run writes a valid PNG; measurably richer detail vs a schnell output on the same prompt (attach both);
+    no secret leak; exit codes intact. QA implied (tooling QA). Post in ⚙️ Dev & QA.
+- names: >
+    `Tools/ArtPipeline/concept_generate.py` (model constant + steps/CFG). Law: CONVENTIONS "Textured mesh law" → "Stage 0 —
+    concept generation" (tool contract unchanged), tooling law.
+
+#### TASK-193 — Stage-2 upgrade: albedo de-light/brighten in refine_trellis_glb.py (tooling)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-18 loop-1 re-review PASS — qa/TASK-192-193-qa.md: blocker cleared via sanitized_number warn+default, strict-bool enabled, alpha-mirror nit; 1 residual cosmetic nit recorded. Awaits TASK-196 commit)
+- blocked-by: none
+- parallel-safe: yes (single file Tools/ArtPipeline/refine_trellis_glb.py; disjoint from TASK-192's file)
+- spec: >
+    Track C-2 — the direct counter to the recorded "dark TRELLIS look" (shading baked into albedo; TASK-150/151/172 handoffs).
+    In `refine_trellis_glb.py`'s EXISTING numpy post-bake step, add an albedo de-light/brighten pass applied to the baked D BEFORE
+    its PNG write: AO-divide (D / max(AO, floor) using the already-baked ORM.R occlusion) and/or a levels/gamma lift — programmer
+    picks the visually safest combination, both strength-tunable. Defaults: conservative-ON in-script; optional per-asset override
+    read from `pipeline_manifest.json` key `albedo_delight` if present (READ only — this task does NOT edit the manifest; TASK-194
+    owns manifest writes). Clamp to avoid highlight clipping; N/ORM outputs byte-untouched; two-slot split, budgets, FBX export
+    untouched. ACCEPTANCE: a Stage-2-only rerun on a cached dark donor produces a visibly brighter/de-shadowed D + refine_report
+    renders, no blowouts; all untouched stages byte-identical in behavior; QA implied (tooling QA). Post in ⚙️ Dev & QA.
+- names: >
+    `Tools/ArtPipeline/refine_trellis_glb.py` (numpy step). Optional manifest key `albedo_delight` (read-only here). Law:
+    CONVENTIONS "Meshy second engine (M7.5)" (albedo_delight key), "Textured mesh law" (Stage-2 invariants).
+
+#### TASK-194 — pipeline_manifest.json quality pass: 1536³ hero res + `_guess` team-region selector tuning (art, data-only)
+- assignee: art-director
+- status: **done** (2026-07-18 — hero 1536 pins on Castle/CrystalTower/ArrowTower/BombTower/BallistaTower; all 16 `_guess` selectors adjudicated: 14 verified vs shipped refine_reports+previews, 2 pending-generation (Wall/DeepMine); zero value changes needed; JSON valid; handoff handoffs/TASK-194.md; commit rides TASK-196)
+- blocked-by: none
+- parallel-safe: yes (single data file; no editor, no Blender; TASK-193 only READS the manifest)
+- spec: >
+    Track C-3/4, data-only. (1) Pin TRELLIS resolution 1536 for the HERO assets — Castle, CrystalTower, ArrowTower, BombTower,
+    BallistaTower — in `Tools/ArtPipeline/pipeline_manifest.json` (applies to FUTURE re-gens only; this task re-runs NOTHING).
+    (2) Clear the recorded `_guess` debt: audit every team_region selector still marked `_guess`, tune each against the SHIPPED
+    Stage-2 preview renders/refine_reports (the accepted meshes are ground truth for where team accents actually landed), and
+    either fix the selector or mark it verified-correct with a dated note. ACCEPTANCE: manifest is valid JSON; hero res pinned;
+    zero remaining un-adjudicated `_guess` markers; a short evidence list (per asset: tuned vs verified) in the handoff. Post in
+    🎨 Art.
+- names: >
+    `Tools/ArtPipeline/pipeline_manifest.json` (trellis resolution + team_region selectors; optional albedo_delight overrides
+    where an asset needs non-default strength). Law: CONVENTIONS "Textured mesh law", "Meshy second engine (M7.5)".
+
+#### TASK-195 — Track-C validation renders: FLUX-dev concept probe + albedo-lift rebake A/B (art)
+- assignee: art-director
+- status: **done** (2026-07-18 — both A/B image sets exist: concept pair Cache/Knight/AB_concept/AB_Knight_schnell_vs_fluxdev.png (FLUX-dev probe SUCCEEDED, no license gate; router TLS via proven SSL_CERT_FILE bundle) + delight pairs Cache/Ogre/AB_delight/ & Cache/Knight/AB_delight/ incl. 3-panel dark/defaults/tuned; VERDICT: lift works, zero clipping, but defaults too weak on recorded-dark donors — tuned values proven (aoDiv 1.0/floor .25/gamma .55/gain 1.2), ruling at TASK-200; shipped assets sha256-verified bit-identical, prompts file restored bit-identical; handoff handoffs/TASK-195.md)
+- blocked-by: TASK-192, TASK-193 (scripts QA-passed + on disk), TASK-194 (manifest current)
+- parallel-safe: yes (headless Bash + Blender; no editor, no import)
+- spec: >
+    Prove Track C before anything ships. (a) CONCEPT PROBE: generate ONE roster concept with FLUX.1-dev to a SCRATCH path (do NOT
+    clobber the accepted Inbox PNG) and lay it beside the schnell original. (b) ALBEDO-LIFT REBAKE: Stage-2-ONLY rerun from the
+    CACHED raw GLB of the recorded-dark accepted asset (Ogre; Knight too if its cache survives) with the TASK-193 lift active —
+    quota-FREE (no Stage-1) — and assemble side-by-side refine_report renders: shipped-dark vs lifted. NO import, NO editor, NO
+    commit. These renders are ALSO arm (B) of the TASK-199/200 Meshy A/B board. ACCEPTANCE: both comparisons exist as image pairs
+    at recorded paths; the lift verdict (better / needs strength tuning) posted. Post renders + verdict in 🎨 Art.
+- names: >
+    Inputs `Tools/ArtPipeline/Cache/Ogre/` (cached trellis_raw.glb) + `Inbox/` (read-only). Outputs under Cache/<CardID>/ scratch
+    + refine_report renders. Law: CONVENTIONS "Textured mesh law" (Stage 2), "Meshy second engine (M7.5)" (A/B gate).
+
+#### TASK-196 — Track-C batch commit: tooling + manifest + validation evidence (build)
+- assignee: build-master
+- status: backlog
+- blocked-by: TASK-192, TASK-193 (qa-passed), TASK-194, TASK-195
+- parallel-safe: no (Git)
+- spec: >
+    Commit Track C to `main` (NOT pushed): `concept_generate.py` + `refine_trellis_glb.py` (both with PASS QA reports on file) +
+    `pipeline_manifest.json` + accepted validation-evidence paths in the message. VERIFY GIT STATE FIRST — HEAD `a16df32
+    "polishingUp"` is a Jonathan self-commit; reconcile, never duplicate/amend. Explicit pathspecs, zero leakage (no Content/, no
+    board files unless deliberately included). If the carried-in Wall+DeepMine (TASK-170/171/173) have landed by then, fold their
+    LFS asset commit here OR leave it to TASK-210 — reconcile, don't double-commit. ACCEPTANCE: one clean local commit, hash
+    posted; QA reports referenced. Post hash in 🔧 Build & Git.
+- names: >
+    Commit `Tools/ArtPipeline/concept_generate.py`, `Tools/ArtPipeline/refine_trellis_glb.py`, `Tools/ArtPipeline/pipeline_manifest.json`.
+    Law: CLAUDE.md hard gates (PASS QA before commit; no push).
+
+#### TASK-197 — MANUAL STEP 1: Meshy Pro account + MESHY_API_KEY env var (+ Norton exclusion if needed) (Jonathan — external gate)
+- assignee: Jonathan (external gate — orchestrator surfaces in 🚨 Blockers + 📢; nothing in Track A proceeds without it)
+- status: done (2026-07-18 — Jonathan in Claude Code: account created, premium sub active, key set as USER env var **`MESHY_TOKEN`** (HKCU; DEVIATION from specced MESHY_API_KEY — actual name is law, CONVENTIONS amendment routed to manager). No Norton exclusion yet — run bare first per playbook; TASK-198 first live call adjudicates)
+- blocked-by: none (Jonathan-only; $20/mo Pro already approved by his own directive)
+- parallel-safe: yes (external; no repo mutation)
+- spec: >
+    Jonathan: (1) create the Meshy account + subscribe PRO at meshy.ai; (2) generate an API key and set it as USER env var
+    `MESHY_API_KEY` (HKCU — same as HF_TOKEN; note a Windows rollback wipes HKCU env, the uv/HF machine-config precedent);
+    (3) ONLY IF the first tool run hits TLS/cert errors (Norton MITM), add exclusions for `meshy.ai` / `*.meshy.ai` — the same
+    playbook as the proven huggingface.co exclusions. Say "done" in Slack or Claude Code. ACCEPTANCE: TASK-198's `--check` exits 0
+    with the key present. The key value is NEVER pasted into chat, files, or logs.
+- names: >
+    Env var `MESHY_API_KEY` (HKCU). Norton exclusions `meshy.ai`/`*.meshy.ai` (conditional). Law: CONVENTIONS "Meshy second
+    engine (M7.5)" secret law.
+
+#### TASK-198 — Meshy client tool: meshy_generate.py (retexture + image-to-3D modes) (tooling)
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: TASK-197 (key present — `--check` + live verification impossible without it)
+- parallel-safe: yes (new file; headless)
+- spec: >
+    Build `Tools/ArtPipeline/meshy_generate.py` per CONVENTIONS "Meshy second engine (M7.5)": MIRROR `trellis_generate.py` in
+    structure, CLI, secret-handling, and exit codes (0 ok/`--check` · 2 key unset · 3 quota/credits, expected pause · 4 API drift
+    · 5 input missing · 64 usage). `MESHY_API_KEY` ENV-ONLY (never argv/file/log; extend the guard-secrets hook with the observed
+    Meshy key prefix). Two modes: `--mode retexture <CardID>` — upload the dense donor `Cache/<CardID>/trellis_raw.glb` (or
+    `meshy_raw.glb`) + style ref `Inbox/<CardID>.png` to the Meshy Retexture API → download `Cache/<CardID>/meshy_retex.glb`;
+    `--mode image3d <CardID>` — the concept PNG → image-to-3D → `Cache/<CardID>/meshy_raw.glb`. Write engine provenance into
+    `Cache/<CardID>/state.json` (engine, Meshy task ids, input sha). Poll-with-timeout on Meshy's async tasks; surface API errors
+    VERBATIM. ACCEPTANCE: `--check` passes with key / exits 2 without; one retexture run on a cached donor completes end-to-end
+    writing meshy_retex.glb + provenance; no secret leak; QA implied (tooling QA — secret + exit-code review). Post in ⚙️ Dev & QA.
+- names: >
+    `Tools/ArtPipeline/meshy_generate.py`. Outputs `Tools/ArtPipeline/Cache/<CardID>/meshy_retex.glb` / `meshy_raw.glb` +
+    `state.json` provenance. Law: CONVENTIONS "Meshy second engine (M7.5)".
+
+#### TASK-199 — Meshy A/B retexture run: Ogre (recorded-dark) through Stage-1.5 + Stage-2 → 3-arm board (art)
+- assignee: art-director
+- status: backlog
+- blocked-by: TASK-198 (tool QA-passed), TASK-195 (arm-B renders exist)
+- parallel-safe: yes (headless Bash + Blender; no editor, no import)
+- spec: >
+    The fleet gate's evidence. Run `meshy_generate.py --mode retexture Ogre` (the recorded ACCEPTED-DARK asset, TASK-150) against
+    its cached dense donor with `Inbox/Ogre.png` as style ref → Stage-2 rebake (WITH the TASK-193 lift, per manifest defaults) →
+    refine_report renders. Assemble the 3-arm A/B board: (A) shipped dark (current Content), (B) Track-C albedo-lift only
+    (TASK-195), (C) Meshy retexture + lift. Knight as an optional second sample if credits are comfortable. DO NOT import; DO NOT
+    overwrite the shipped FBX/textures — Stage-2 output goes to a SCRATCH/AB path, not Content/RawAssets/ (this run is evidence,
+    not production). Surface exit 3 (credit exhaustion) verbatim — expected pause, never fake. ACCEPTANCE: the 3-arm board exists
+    as images at recorded paths; tris/slots/UVMap law verified identical across arms (the INVARIANT holds); posted for the gate.
+    Post board + paths in 🎨 Art; the gate ask goes to 📢 Planning & Feedback.
+- names: >
+    Input `Cache/Ogre/trellis_raw.glb` + `Inbox/Ogre.png`. Outputs `Cache/Ogre/meshy_retex.glb` + scratch Stage-2 renders.
+    Law: CONVENTIONS "Meshy second engine (M7.5)" (Stage 1.5 + A/B gate + INVARIANT).
+
+#### TASK-200 — EYEBALL GATE: A/B ruling — fleet retexture + engine-per-class + Wall/DeepMine routing (Jonathan — external gate)
+- assignee: Jonathan (external gate)
+- status: backlog
+- blocked-by: TASK-199 (3-arm board posted)
+- parallel-safe: yes (external)
+- spec: >
+    Jonathan eyeballs the 3-arm board and RULES: (1) fleet Meshy retexture GO/NO-GO + the asset list (all 20 pipeline meshes /
+    units only / buildings only / named subset / none — arm B free-fix only); (2) engine per asset class going forward (TRELLIS
+    default vs Meshy image-to-3D for hero assets; whether heroes re-gen at the now-pinned 1536³ TRELLIS res); (3) Wall + DeepMine
+    routing IF still pending (TRELLIS retry as planned / Meshy / wait for the FAB buildings pack). Explicit approval required —
+    silence is NOT consent for fleet spend (Meshy credits + eyeball debt). Ruling recorded here + in 📢 Planning & Feedback.
+- names: >
+    Ruling recorded on this task. Law: CONVENTIONS "Meshy second engine (M7.5)" A/B fleet-gate law.
+
+#### TASK-201 — Fleet retexture/upgrade waves (Stage 1.5/1 + Stage 2) per the TASK-200 ruling (art)
+- assignee: art-director
+- status: backlog
+- blocked-by: TASK-200 (ruling defines the include list — possibly empty; if NO-GO this task closes as cancelled-by-ruling)
+- parallel-safe: yes (headless; Meshy-credit + ZeroGPU quota-paced — orchestrator paces waves)
+- spec: >
+    Execute the approved fleet: per asset in the ruling's list, run the ruled engine (Stage-1.5 retexture on the cached donor /
+    Meshy image-to-3D / TRELLIS 1536³ re-gen for heroes) → Stage-2 rebake (lift active) → production outputs OVERWRITING
+    `Content/RawAssets/<CardID>.fbx` + `Textures/<CardID>/*` per the Textured-mesh law (two-slot [TeamRegion, <CardID>PBR],
+    budgets, UVMap, feet/ground-center; GoldNode variant if in list). Wave in batches of ~4 (the M7 wave shape), previews per
+    wave for a per-wave eyeball; surface exit 3 verbatim (credits/quota — pause, don't fake). Provenance in state.json per asset.
+    ACCEPTANCE: per approved asset — FBX + D/N/ORM + refine_report + previews, law-conformant; report tris/bounds vs manifest.
+    DO NOT import (TASK-202). Post per-wave in 🎨 Art.
+- names: >
+    Outputs `Content/RawAssets/<CardID>.fbx` + `.../Textures/<CardID>/*` + `Cache/<CardID>/*` per the ruled list. Law:
+    CONVENTIONS "Textured mesh law" + "Meshy second engine (M7.5)" (INVARIANT).
+
+#### TASK-202 — Fleet Stage-3 reimport: same-path SM_ overwrite of the retextured meshes (art, editor)
+- assignee: art-director
+- status: backlog
+- blocked-by: TASK-201 (production FBX + per-wave eyeball), editor+MCP up
+- parallel-safe: no (editor-mutating — single editor, serialize)
+- spec: >
+    Import the approved fleet via the PROVEN automation (Tools/reimport_meshes.py commandlet + reimport_finalize_materials_mcp.py;
+    editor-bounce authorized per the same-path-reimport memory — but Jonathan closes the editor himself when present): per asset,
+    same-path OVERWRITE `/Game/Meshes/SM_<CardID>` + refresh `T_<CardID>_{D,N,ORM}` + `MI_<CardID>_PBR`; slots EXACTLY
+    [TeamRegion → MI_TeamColor_Blue, <CardID>PBR → MI_<CardID>_PBR] (GoldNode single-slot variant); Nanite OFF; unit hulls /
+    building box-UCX per category; refs MUST survive (BP_Unit/Building_<CardID>, cards.csv, placement ghost). MCP readback per
+    asset. ACCEPTANCE: each approved SM_<CardID> is the retextured mesh at its unchanged path, readbacks reported; NOT committed
+    (TASK-210). Post in 🎨 Art.
+- names: >
+    `/Game/Meshes/SM_<CardID>` (same-path) + `/Game/Textures/T_<CardID>_*` + `/Game/Materials/Instances/MI_<CardID>_PBR`.
+    Tools: `Tools/reimport_meshes.py`, `Tools/reimport_finalize_materials_mcp.py`. Law: CONVENTIONS "Textured mesh law".
+
+#### TASK-203 — Meshy animation SPIKE: auto-rig + preset clips on Footman → IK Retargeter → scratch A/B (art, editor)
+- assignee: art-director
+- status: backlog
+- blocked-by: TASK-197 (key), editor+MCP up (retarget step)
+- parallel-safe: no (editor-mutating retarget/import — single editor; the Meshy/API half is headless)
+- spec: >
+    Prove the anim upgrade on ONE unit before any fleet work (rig-spike precedent). Footman (already rigged + textured — cleanest
+    A/B vs the procedural clips): run Meshy auto-rig on the game-ready mesh + pull preset clips (idle/walk/attack/death — the
+    credit-free library), export FBX to `Content/RawAssets/Characters/Meshy/Footman/`; in-editor, build the IK Rig pair +
+    Retargeter (`IK_MeshyBiped`, `IK_SiegeBiped` if absent, `RTG_MeshyBiped_to_SiegeBiped`) and retarget the 4 clips onto the
+    EXISTING SK_Footman/SKEL skeleton → SCRATCH paths (e.g. `/Game/Characters/Anims/AB_Test/`) — DO NOT overwrite the live
+    A_Footman_* before the gate. Capture side-by-side clips (Meshy vs current procedural: idle sway, walk cycle, attack swing,
+    death). FLAG any bone-mapping/proportion issues verbatim. ACCEPTANCE: 4 retargeted clips play on SK_Footman in-editor;
+    comparison captures posted; live assets untouched. Post in 🎨 Art.
+- names: >
+    `Content/RawAssets/Characters/Meshy/Footman/*.fbx`; `/Game/Characters/IK_*`, `RTG_MeshyBiped_to_SiegeBiped`; scratch clips
+    under `/Game/Characters/Anims/AB_Test/`. Law: CONVENTIONS "Meshy second engine (M7.5)" (animation clause), "Skeletal rig &
+    animation workstream (M7)".
+
+#### TASK-204 — EYEBALL GATE: Meshy animation spike sign-off + fleet-anim ruling (Jonathan — external gate)
+- assignee: Jonathan (external gate)
+- status: backlog
+- blocked-by: TASK-203 (comparison captures posted)
+- parallel-safe: yes (external)
+- spec: >
+    Jonathan eyeballs Meshy-retargeted vs current procedural animation on the Footman and RULES: (1) fleet rollout GO/NO-GO;
+    (2) scope — all 4 actions or locomotion only (keep the authored Attack/Death where they read better); (3) the unit list
+    (humanoids on SKEL_SiegeBiped vs odd-proportion units like Ogre needing per-unit rigs). Explicit approval before TASK-205.
+- names: >
+    Ruling recorded on this task. Law: CONVENTIONS "Meshy second engine (M7.5)" (A/B gate pattern).
+
+#### TASK-205 — Fleet animation retarget rollout per the TASK-204 ruling (art, editor)
+- assignee: art-director
+- status: backlog
+- blocked-by: TASK-204 (ruling — possibly cancelled-by-ruling)
+- parallel-safe: no (editor-mutating — single editor, serialize)
+- spec: >
+    Roll the approved clips across the ruled unit list: retarget via the TASK-203 RTG_ asset, then OVERWRITE `A_<CardID>_<Action>`
+    AT THEIR EXISTING `/Game/Characters/Anims/` paths (same-path law — preserves the TASK-189 composed-soft-path Attack/Death
+    triggers + the shared ABP locomotion wiring; the ABP-rebind lesson from commit 7ec9916/81230db applies: verify skeleton
+    bindings after import). Per unit: PIE-verify via `SummonTestUnit` that it walks/idles/attacks/dies with the new clips; the
+    miner death-promptness invariant (TASK-189) holds. Delete the AB_Test scratch folder at the end. ACCEPTANCE: every ruled unit
+    animates with retargeted clips at unchanged asset paths; PIE spot-checks reported; scratch cleaned; NOT committed (TASK-210).
+    Post in 🎨 Art.
+- names: >
+    Overwrite `/Game/Characters/Anims/A_<CardID>_{Idle,Walk,Attack,Death}` per ruling (same-path). `RTG_MeshyBiped_to_SiegeBiped`
+    reused. Law: CONVENTIONS "Meshy second engine (M7.5)" animation clause + "Skeletal rig & animation workstream (M7)".
+
+#### TASK-206 — FAB-005 + FAB-006: author the purchase-request entries with license notes (art, files)
+- assignee: art-director
+- status: **done** (2026-07-18 — FAB-005/006 authored at status `requested` in fab/FAB-REQUESTS.md; handoff handoffs/TASK-206.md; awaiting Jonathan's TASK-207 approve+purchase gate)
+- blocked-by: none
+- parallel-safe: yes (file-only — .claude/pipeline/fab/FAB-REQUESTS.md; no editor)
+- spec: >
+    Track B per the FAB-REQUESTS protocol (existing FAB-001..004 records UNTOUCHED). Author TWO entries at status `requested`:
+    **FAB-005** — "Stylized RTS Buildings & Props Pack" (fab.com listing `a4b43ae5-e442-4d51-93f2-fea8d77e9f37`): roster mapping
+    (Town Center/Fortress→Castle-tier, Barracks, Watch Tower→ArrowTower-tier, wall segments→Wall, construction meshes, props),
+    intended drop `Content/Fab/StylizedRTSBuildings/`, license note (Fab standard license — record the exact license tier shown on
+    the listing; agents cannot verify PRICE, FAB blocks bots — Jonathan verifies at checkout). **FAB-006** — ONE rigged stylized
+    unit pack: evaluate the candidates (Toon RTS Units; TAB Medieval Knights — Epic-skeleton rigged, retargets cleanly in UE 5.8;
+    Stylized Warrior packs), PICK one with a written justification (rig/skeleton type, roster coverage, style fit vs the §6 bar),
+    intended drop `Content/Fab/<Pack>/`, same license discipline. ACCEPTANCE: both entries complete per protocol with license
+    notes + drop paths + roster maps; awaiting Jonathan. Post in 🎨 Art + one-liner in 🚨 Blockers (purchase needed).
+- names: >
+    `.claude/pipeline/fab/FAB-REQUESTS.md` entries FAB-005, FAB-006 (status requested). Law: CONVENTIONS "Fab quarantine",
+    fab/FAB-REQUESTS.md protocol.
+
+#### TASK-207 — MANUAL STEP 2: approve + purchase FAB-005/006 → drop into Content/Fab/<Pack>/ (Jonathan — external gate)
+- assignee: Jonathan (external gate — ~$100–200 approved by his own directive)
+- status: backlog
+- blocked-by: TASK-206 (entries authored)
+- parallel-safe: yes (external)
+- spec: >
+    Jonathan: review FAB-005/FAB-006, approve (or substitute a different pack — art-director updates the entry), purchase via the
+    Epic Launcher, add to the UE 5.8 project so each lands in `Content/Fab/<Pack>/` (quarantine — READ-ONLY donor), then flip the
+    entries to `fulfilled` (or say so in Slack/Claude Code and the art-director flips them). ACCEPTANCE: both packs on disk under
+    Content/Fab/, entries fulfilled.
+- names: >
+    Drops `Content/Fab/StylizedRTSBuildings/` + `Content/Fab/<UnitPack>/`. Law: CONVENTIONS "Fab quarantine" (acquisition is
+    HUMAN-ONLY).
+
+#### TASK-208 — FAB buildings pack: inventory + conform plan + first-wave swaps (art, editor)
+- assignee: art-director
+- status: backlog
+- blocked-by: TASK-207 (pack on disk), editor+MCP up
+- parallel-safe: no (editor-mutating — single editor, serialize)
+- spec: >
+    Session-sized FIRST WAVE, not the whole pack. (1) INVENTORY: catalog the pack's meshes vs the roster (Castle, ArrowTower,
+    BombTower, BallistaTower, Barracks, Wall, DeepMine, CrystalTower + castle-crumble stage candidates + construction meshes +
+    props for TASK-178-style dressing); record a per-building swap recommendation with tri counts/materials. (2) CONFORM PLAN:
+    for each recommended swap, the Stage-2-conform route (Blender conform to blockout dims → two-slot TeamRegion for ROSTER
+    buildings [env-only props exempt] → tri budget → UCX → same-path SM_ overwrite). (3) EXECUTE the TWO highest-value swaps
+    end-to-end (default: Wall + DeepMine IF still blockouts when this runs — closes the 16/16 gap instantly; else Jonathan's top
+    picks from the inventory). Donor stays READ-ONLY (duplicate/conform into /Game/). Manager decomposes further waves from the
+    inventory as follow-up tasks. ACCEPTANCE: inventory + plan in the handoff; 2 swaps live at unchanged SM_ paths with law-
+    conformant slots/UCX/Nanite-off + readbacks; NOT committed (TASK-210). Post in 🎨 Art.
+- names: >
+    Donor `Content/Fab/StylizedRTSBuildings/` (READ-ONLY). Swaps overwrite `/Game/Meshes/SM_<CardID>` same-path (two-slot law).
+    Handoff `handoffs/TASK-208-artist.md`. Law: CONVENTIONS "Fab quarantine", "Textured mesh law".
+
+#### TASK-209 — FAB rigged unit pack: inventory + ONE retarget trial + rollout recommendation (art, editor)
+- assignee: art-director
+- status: backlog
+- blocked-by: TASK-207 (pack on disk), editor+MCP up
+- parallel-safe: no (editor-mutating — single editor; serialize with TASK-208)
+- spec: >
+    Session-sized evaluation, NOT a fleet swap. (1) INVENTORY: the unit pack's characters/skeletons/anim sets vs the humanoid
+    roster (Footman, Knight, Archer, Pikeman, Cavalry rider, Sapper, Cleric, Longbowman, MilitiaMob, Miner). (2) TRIAL: bring ONE
+    pack character in for ONE roster unit — either (a) retarget the pack's anims onto our SK_<CardID> via IK Retargeter, or (b)
+    the pack mesh AS the unit visual (then it must enter the SK_<CardID> path with the two-slot TeamRegion material contract —
+    flag if the pack's materials can't express a team region without re-authoring). Scratch paths, live assets untouched. (3)
+    RECOMMENDATION: pack-mesh route vs Meshy-retexture route vs keep-TRELLIS per unit, fed to the TASK-200/204 rulings context;
+    manager decomposes any approved fleet as follow-ups. ACCEPTANCE: inventory + trial captures + a written per-unit
+    recommendation in the handoff; nothing overwritten. Post in 🎨 Art.
+- names: >
+    Donor `Content/Fab/<UnitPack>/` (READ-ONLY). Trial under `/Game/Characters/AB_Test/`. Handoff `handoffs/TASK-209-artist.md`.
+    Law: CONVENTIONS "Fab quarantine", "Skeletal rig & animation workstream (M7)", "Meshy second engine (M7.5)".
+
+#### TASK-210 — M7.5 integration: verify + PIE + commit the completed chains (build)
+- assignee: build-master
+- status: backlog
+- blocked-by: TASK-196 (Track C committed) + whichever of TASK-202, 205, 208, 209 actually ran per the rulings (gates may cancel lanes — integrate what shipped; carried-in TASK-170/171/173 folded if landed)
+- parallel-safe: no (single editor + Git)
+- spec: >
+    Close the batch for everything that shipped: (1) STRUCTURAL — every touched SM_<CardID>/A_<CardID>_* at its UNCHANGED path,
+    slots/MIs/Nanite/collision per law (readback), refs intact (BP_*, cards.csv, ghost); (2) PIE — traversability regression
+    (units reach both castles), SummonTestUnit spot-check on re-animated units, castle/tower visual sanity, brief perf note
+    (Lumen + new textures at 1440p — the §6 60 fps target stays a human WATCH); (3) COMMIT art/editor batches to `main` with
+    explicit pathspecs, LFS-aware, NOT pushed — VERIFY GIT STATE FIRST (Jonathan self-commits, HEAD was a16df32); reconcile the
+    Wall/DeepMine commit if TASK-196 already folded it. (4) Do NOT cut a milestone branch and do NOT touch M7's TASK-183 scope —
+    M7.5 results flow INTO the M7 checkpoint; post the coordination note. ACCEPTANCE: verifications reported, commit hash(es)
+    posted, board statuses flipped, checkpoint summary for Jonathan. Post in 🔧 Build & Git.
+- names: >
+    Verify `/Game/Meshes/SM_*`, `/Game/Characters/Anims/A_*`, `Content/Fab/*` quarantine intact. Commit to main only, no push,
+    no branch. Law: CLAUDE.md hard gates, CONVENTIONS all M7.5 laws.
 
 ---
 
@@ -468,7 +824,7 @@ Dispatch shape: **TASK-153 (manager CONVENTIONS) lands FIRST (done).** Then, in 
 
 #### TASK-170 — Production wave B1 (Stage 1+2): ArrowTower, Wall, BombTower, BallistaTower (art)
 - assignee: art-director
-- status: in-progress — quota-blocked (3/4 DONE: ArrowTower/BombTower/BallistaTower refined+integrated via TASK-173 @ 2dc8031. WALL = last remaining, blocked at STAGE 1: TRELLIS ZeroGPU PRO quota EXHAUSTED. Fresh run 2026-07-17T07:16:54Z exit 3, Space verbatim: "You have exceeded your Pro ZeroGPU quota (120s requested vs. 145s left). Try again in 3:24:44." → shared-account-pool reset ~10:41 UTC 2026-07-17. EXPECTED PAUSE per exit-code discipline, NOT a failure. Cache/Wall/state_failed.json refreshed; concept Inbox/Wall.png intact (sha 6d6a9a97); blockout Content/RawAssets/Wall.fbx UNTOUCHED (Stage 2 never fired — no raw glb). Resume-idempotent: after reset rerun `uv run trellis_generate.py Wall` then headless refine `--card-id Wall`. handoffs/TASK-170-171-artist.md.)
+- status: in-progress — quota-blocked (3/4 DONE: ArrowTower/BombTower/BallistaTower refined+integrated via TASK-173 @ 2dc8031. WALL = last remaining, blocked at STAGE 1: TRELLIS ZeroGPU PRO quota EXHAUSTED. Fresh run 2026-07-17T07:16:54Z exit 3, Space verbatim: "You have exceeded your Pro ZeroGPU quota (120s requested vs. 145s left). Try again in 3:24:44." → shared-account-pool reset ~10:41 UTC 2026-07-17. EXPECTED PAUSE per exit-code discipline, NOT a failure. Cache/Wall/state_failed.json refreshed; concept Inbox/Wall.png intact (sha 6d6a9a97); blockout Content/RawAssets/Wall.fbx UNTOUCHED (Stage 2 never fired — no raw glb). Resume-idempotent: after reset rerun `uv run trellis_generate.py Wall` then headless refine `--card-id Wall`. handoffs/TASK-170-171-artist.md.) **[M7.5 CARRY-IN 2026-07-18 (manager, decision 3 — FLAGGED resequencing): retry folds into the M7.5 batch. Stage-1 rerun AS-IS at the next quota window (idempotent); Stage-2 refine now WAITS for TASK-193 (albedo de-light) so Wall bakes bright. Jonathan's TASK-200 ruling may re-route (Meshy / FAB pack via TASK-208).]** **[2026-07-18 19:05–19:11 UTC art-director Stage-1 RERUN — quota window OPEN but BLOCKED by a NEW failure mode: TRELLIS.2 Space-side malfunction. Wall generation SUCCEEDED (/image_to_3d 229.6s) but /extract_glb failed 3/3 attempts with "AppError: RuntimeError" — identical on TWO independent runs (05:20 + 19:05 UTC 2026-07-18): persistent, not transient. NOT quota (no exit-3 message), NOT API drift (--check PASSED 19:23 UTC: all 3 endpoints present, params unchanged). Exit 1; Cache/Wall/state_failed.json refreshed; NO trellis_raw.glb. Options: retry a later window (idempotent), or README manual-browser fallback (Jonathan drops the GLB at Tools/ArtPipeline/Cache/Wall/trellis_raw.glb; Stage 2 resumes from it, still gated on TASK-193), or the TASK-200 re-route. handoffs/TASK-170-171-artist.md addendum.]**
 - blocked-by: TASK-166, TASK-185 (generated concepts for these 4; Jonathan may pre-replace via TASK-167)
 - parallel-safe: yes (Bash + headless Blender; quota-paced)
 - spec: >
@@ -482,7 +838,7 @@ Dispatch shape: **TASK-153 (manager CONVENTIONS) lands FIRST (done).** Then, in 
 
 #### TASK-171 — Production wave B2 (Stage 1+2): Barracks, DeepMine, CrystalTower, GoldNode (emissive variant) (art)
 - assignee: art-director
-- status: in-progress — quota-blocked (3/4 DONE: Barracks/CrystalTower/GoldNode refined+integrated via TASK-173 @ 2dc8031. DEEPMINE = last remaining, blocked at STAGE 1: TRELLIS ZeroGPU PRO quota EXHAUSTED. Fresh run 2026-07-17T07:17:38Z exit 3, Space verbatim: "You have exceeded your Pro ZeroGPU quota (120s requested vs. 142s left). Try again in 3:23:36." → shared-account-pool reset ~10:41 UTC 2026-07-17 (same window as Wall/TASK-170). EXPECTED PAUSE per exit-code discipline, NOT a failure. Cache/DeepMine/state_failed.json refreshed; concept Inbox/DeepMine.png intact (sha 4ead7cbe); blockout Content/RawAssets/DeepMine.fbx UNTOUCHED (Stage 2 never fired — no raw glb). Resume-idempotent: after reset rerun `uv run trellis_generate.py DeepMine` then headless refine `--card-id DeepMine`. handoffs/TASK-170-171-artist.md.)
+- status: in-progress — quota-blocked (3/4 DONE: Barracks/CrystalTower/GoldNode refined+integrated via TASK-173 @ 2dc8031. DEEPMINE = last remaining, blocked at STAGE 1: TRELLIS ZeroGPU PRO quota EXHAUSTED. Fresh run 2026-07-17T07:17:38Z exit 3, Space verbatim: "You have exceeded your Pro ZeroGPU quota (120s requested vs. 142s left). Try again in 3:23:36." → shared-account-pool reset ~10:41 UTC 2026-07-17 (same window as Wall/TASK-170). EXPECTED PAUSE per exit-code discipline, NOT a failure. Cache/DeepMine/state_failed.json refreshed; concept Inbox/DeepMine.png intact (sha 4ead7cbe); blockout Content/RawAssets/DeepMine.fbx UNTOUCHED (Stage 2 never fired — no raw glb). Resume-idempotent: after reset rerun `uv run trellis_generate.py DeepMine` then headless refine `--card-id DeepMine`. handoffs/TASK-170-171-artist.md.) **[M7.5 CARRY-IN 2026-07-18 (manager, decision 3 — FLAGGED resequencing): retry folds into the M7.5 batch. Stage-1 rerun AS-IS at the next quota window (idempotent); Stage-2 refine now WAITS for TASK-193 (albedo de-light) so DeepMine bakes bright. Jonathan's TASK-200 ruling may re-route (Meshy / FAB pack via TASK-208).]** **[2026-07-18 19:12–19:21 UTC art-director Stage-1 RERUN — quota window OPEN but BLOCKED by a NEW failure mode: TRELLIS.2 Space-side malfunction. DeepMine /image_to_3d itself failed 3/3 attempts with "AppError: RuntimeError" (generation never ran; Wall failing in parallel at /extract_glb confirms Space-wide GPU-endpoint breakage). NOT quota (no exit-3 message), NOT API drift (--check PASSED 19:23 UTC). Exit 1; Cache/DeepMine/state_failed.json refreshed; NO trellis_raw.glb. Options: retry a later window (idempotent), or README manual-browser fallback (GLB → Tools/ArtPipeline/Cache/DeepMine/trellis_raw.glb; Stage 2 still gated on TASK-193), or the TASK-200 re-route. handoffs/TASK-170-171-artist.md addendum.]**
 - blocked-by: TASK-166, TASK-185 (generated concepts for these 4; Jonathan may pre-replace via TASK-167)
 - parallel-safe: yes (Bash + headless Blender; quota-paced)
 - spec: >
@@ -518,7 +874,7 @@ Dispatch shape: **TASK-153 (manager CONVENTIONS) lands FIRST (done).** Then, in 
 
 #### TASK-173 — Import wave: 7 BUILDINGS + GoldNode (Stage 3, overwrite SM_<CardID>; UCX + emissive) (art, editor)
 - assignee: art-director
-- status: in-progress (6/8 INTEGRATED 2026-07-16 @ commit 2dc8031, build-master — 5 buildings + GoldNode SM_ meshes + T_/MI_PBR committed as LFS pointers, LOCAL-ONLY NO push; Wall + DeepMine PENDING (not refine-ready — await TRELLIS quota for their textured FBX); reimport Tools/ scripts are CODE pending separate QA before any push. Prior import note: 5 BUILDINGS + GoldNode REIMPORTED + AUTOMATED (6/8, gameplay-programmer). ArrowTower/BallistaTower/Barracks/BombTower/CrystalTower + GoldNode swapped to their refined textured meshes via the EXTENDED Tools/reimport_meshes.py (per-CardID collision mode, editor-bounce authorized). Buildings = 2-slot [TeamRegion→MI_TeamColor_Blue, <CardID>PBR→MI_<CardID>_PBR] + textures T_<CardID>_{D,N,ORM} + explicit UCX-analog BOX hull authored from pipeline_manifest.json ucx.boxes (wall-footprint, 1 box each — NOT unit auto-hulls). GoldNode = the emissive VARIANT: single slot GoldNodePBR→M_GoldGlow (warm-yellow emissive PRESERVED, NO TeamRegion/TeamColor) + box hull. Nanite OFF all. MCP readback: buildings 20000 tris / GoldNode 12000 tris (all UP from 222–1212 blockout), correct slots/mats, refs intact (BP_Building_<CardID> / GoldNode←L_Arena). Thumbnails confirm textured stone tower + blue team roof + warm-yellow glowing GoldNode (Saved/Screenshots/M7_ReimportWave/). FLAG (non-blocking, textured mesh shipped): CrystalTower crystal-glow (M_CrystalGlow) NOT preserved — M_AssetPBR has NO emissive param + the refined FBX authored only 2 slots + no T_CrystalTower_E baked; crystal reads blue via PBR albedo but does not emit. Needs an art-director emissive pass (T_CrystalTower_E + emissive-capable master, OR a dedicated glow slot authored into the FBX) — matches manifest _emissive_note. PENDING (2/8): Wall + DeepMine are NOT refine-ready (no baked D/N/ORM textures) — reimport via the same automation once their textured FBX land. Reimport SCRIPTS = CODE → QA. handoffs/TASK-173-programmer.md. [2026-07-17 art-director: Wall+DeepMine STILL Stage-1 quota-blocked — fresh HF runs 07:16–07:18 UTC both exit 3, shared ZeroGPU PRO pool reset ~10:41 UTC 2026-07-17. Import stays PENDING (2/8) until their textured FBX land; then reimport via the proven box-UCX branch. handoffs/TASK-170-171-artist.md.])
+- status: in-progress (6/8 INTEGRATED 2026-07-16 @ commit 2dc8031, build-master — 5 buildings + GoldNode SM_ meshes + T_/MI_PBR committed as LFS pointers, LOCAL-ONLY NO push; Wall + DeepMine PENDING (not refine-ready — await TRELLIS quota for their textured FBX); reimport Tools/ scripts are CODE pending separate QA before any push. Prior import note: 5 BUILDINGS + GoldNode REIMPORTED + AUTOMATED (6/8, gameplay-programmer). ArrowTower/BallistaTower/Barracks/BombTower/CrystalTower + GoldNode swapped to their refined textured meshes via the EXTENDED Tools/reimport_meshes.py (per-CardID collision mode, editor-bounce authorized). Buildings = 2-slot [TeamRegion→MI_TeamColor_Blue, <CardID>PBR→MI_<CardID>_PBR] + textures T_<CardID>_{D,N,ORM} + explicit UCX-analog BOX hull authored from pipeline_manifest.json ucx.boxes (wall-footprint, 1 box each — NOT unit auto-hulls). GoldNode = the emissive VARIANT: single slot GoldNodePBR→M_GoldGlow (warm-yellow emissive PRESERVED, NO TeamRegion/TeamColor) + box hull. Nanite OFF all. MCP readback: buildings 20000 tris / GoldNode 12000 tris (all UP from 222–1212 blockout), correct slots/mats, refs intact (BP_Building_<CardID> / GoldNode←L_Arena). Thumbnails confirm textured stone tower + blue team roof + warm-yellow glowing GoldNode (Saved/Screenshots/M7_ReimportWave/). FLAG (non-blocking, textured mesh shipped): CrystalTower crystal-glow (M_CrystalGlow) NOT preserved — M_AssetPBR has NO emissive param + the refined FBX authored only 2 slots + no T_CrystalTower_E baked; crystal reads blue via PBR albedo but does not emit. Needs an art-director emissive pass (T_CrystalTower_E + emissive-capable master, OR a dedicated glow slot authored into the FBX) — matches manifest _emissive_note. PENDING (2/8): Wall + DeepMine are NOT refine-ready (no baked D/N/ORM textures) — reimport via the same automation once their textured FBX land. Reimport SCRIPTS = CODE → QA. handoffs/TASK-173-programmer.md. [2026-07-17 art-director: Wall+DeepMine STILL Stage-1 quota-blocked — fresh HF runs 07:16–07:18 UTC both exit 3, shared ZeroGPU PRO pool reset ~10:41 UTC 2026-07-17. Import stays PENDING (2/8) until their textured FBX land; then reimport via the proven box-UCX branch. handoffs/TASK-170-171-artist.md.]) **[M7.5 CARRY-IN 2026-07-18: the final 2/8 import unblocks once Wall+DeepMine refine with the TASK-193 albedo-lift (decision 3); their commit folds into TASK-196 or TASK-210 — reconcile, don't double-commit.]**
 - blocked-by: TASK-170, TASK-171 (building/prop FBX + textures + per-wave eyeball APPROVED)
 - parallel-safe: no (editor-mutating — single editor, serialize)
 - spec: >

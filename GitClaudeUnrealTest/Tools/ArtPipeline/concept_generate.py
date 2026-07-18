@@ -49,18 +49,26 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Model / endpoint (SWAPPABLE - top-of-file constants).
 # ---------------------------------------------------------------------------
-# The image model driven through the HF Inference API. FLUX.1-schnell is a fast,
-# Apache-2.0, single-subject-friendly text->image model that serves cleanly through
-# the HF PRO token. To swap the endpoint (e.g. to SDXL, or a different provider):
+# The image model driven through the HF Inference API. FLUX.1-dev (TASK-192, M7.5
+# art-quality upgrade) replaces FLUX.1-schnell: dev is the full guidance-distilled
+# base model (richer detail, better prompt adherence) where schnell was the 4-step
+# timestep-distilled turbo variant. LICENSE NOTE: dev is a GATED repo under the
+# "FLUX.1 [dev] Non-Commercial License" (schnell was Apache-2.0) - the HF account
+# behind HF_TOKEN must have accepted the license once on the model page, or
+# token-authed generation can 403. To swap the endpoint (e.g. to SDXL, or a
+# different provider):
 #   - change MODEL_ID to the new repo id;
 #   - set PROVIDER (HF Inference "auto" routing by default; can pin "hf-inference",
 #     "fal-ai", "replicate", "together", "nebius", ...);
-#   - flip MODEL_SUPPORTS_NEGATIVE_PROMPT True for CFG models (SDXL) - schnell is
-#     guidance-distilled and ignores negatives, so we do NOT forward them to it;
-#   - retune DEFAULT_STEPS / DEFAULT_GUIDANCE (schnell wants ~4 steps / no CFG;
-#     SDXL wants ~30 steps / guidance ~7.5).
+#   - flip MODEL_SUPPORTS_NEGATIVE_PROMPT True for true-CFG models (SDXL). BOTH
+#     FLUX variants are guidance-distilled and ignore negatives (dev's
+#     guidance_scale drives an embedded/distilled guidance vector, NOT
+#     classifier-free guidance over a negative prompt), so we do NOT forward
+#     negatives to them;
+#   - retune DEFAULT_STEPS / DEFAULT_GUIDANCE (dev wants ~28-50 steps / guidance
+#     ~3.5; schnell wanted ~4 steps / guidance omitted; SDXL ~30 steps / ~7.5).
 # No other code needs to change - the CLI, schema, and exit codes are model-agnostic.
-MODEL_ID = "black-forest-labs/FLUX.1-schnell"
+MODEL_ID = "black-forest-labs/FLUX.1-dev"
 PROVIDER = "auto"
 MODEL_SUPPORTS_NEGATIVE_PROMPT = False
 
@@ -83,8 +91,16 @@ NEGATIVE_SUFFIX = (
 # Generation parameters (SWAPPABLE with the model - see the swap note above).
 DEFAULT_WIDTH = 1024
 DEFAULT_HEIGHT = 1024
-DEFAULT_STEPS = 4               # FLUX.1-schnell: ~4 steps
-DEFAULT_GUIDANCE: float | None = None  # None => omit (schnell is guidance-distilled)
+# FLUX.1-dev sampling (TASK-192). Dev is NOT the 4-step turbo - it needs a real
+# step count. Board-spec window is ~28-50; 40 is the quality-leaning midpoint
+# (detail gains flatten past ~30-40; 50 mostly costs more compute/quota). A run
+# may still override per-call with --steps for faster/cheaper draft probes.
+DEFAULT_STEPS = 40
+# Distilled-guidance strength for FLUX.1-dev (model-card recommended value 3.5).
+# This drives dev's embedded guidance vector - it is NOT classifier-free guidance,
+# so no negative prompt accompanies it. None => omit the kwarg entirely (the old
+# schnell posture, which took no guidance at all).
+DEFAULT_GUIDANCE: float | None = 3.5
 
 # ---------------------------------------------------------------------------
 # Paths / retry / timeout constants
@@ -274,7 +290,8 @@ def build_positive_prompt(entry: dict) -> str:
 
 
 def build_negative_prompt(entry: dict) -> str | None:
-    """Only meaningful for a CFG model; None otherwise (schnell ignores negatives)."""
+    """Only meaningful for a true-CFG model; None otherwise (FLUX dev+schnell are
+    guidance-distilled and ignore negatives - see MODEL_SUPPORTS_NEGATIVE_PROMPT)."""
     if not MODEL_SUPPORTS_NEGATIVE_PROMPT:
         return None
     parts = [NEGATIVE_SUFFIX]
@@ -657,7 +674,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--steps", type=int, default=DEFAULT_STEPS,
-        help=f"num_inference_steps (default {DEFAULT_STEPS}; FLUX.1-schnell wants ~4).",
+        help=f"num_inference_steps (default {DEFAULT_STEPS}; FLUX.1-dev wants ~28-50).",
     )
     parser.add_argument(
         "--timeout-minutes", type=float, default=DEFAULT_TIMEOUT_MINUTES,

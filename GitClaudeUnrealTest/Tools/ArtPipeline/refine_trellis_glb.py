@@ -44,6 +44,18 @@ Stages (mode "bake", the standard path):
                 baked as EMIT — done LAST because it destroys the dense materials).
     8. ORM      numpy-pack R=AO, G=Roughness, B=Metallic -> T_<CardID>_ORM (linear).
                 Per-pass debug PNGs also land in Cache/<CardID>/bake_debug/.
+    8b. DELIGHT albedo de-light/brighten (TASK-193) — counters the recorded "dark
+                TRELLIS look" (shading baked into the albedo; TASK-150/151/172
+                accepted-dark precedents). numpy, applied to the D ONLY, right
+                before its PNG write: linear-space AO-divide against the packed
+                ORM.R occlusion (strength-blended, divisor floored) + a mild
+                gamma/gain levels lift, then a C1-continuous soft-shoulder clamp so
+                highlights COMPRESS instead of clipping. N/ORM stay byte-untouched.
+                Conservative-ON by default (ALBEDO_DELIGHT_DEFAULTS below);
+                per-asset override via optional manifest key "albedo_delight"
+                (bool, or a partial object over the defaults; READ-only here —
+                TASK-194 owns manifest edits). Runs in BOTH modes (a native-mode
+                flat AO=1 degrades it gracefully to the levels lift alone).
     9. SLOTS    two-slot contract (CONVENTIONS "Textured mesh law"): slot 0 material
                 named exactly "TeamRegion" (minority face-set from manifest selectors),
                 slot 1 "<CardID>PBR" wired to the baked textures.
@@ -60,7 +72,8 @@ Stages (mode "bake", the standard path):
 Mode "native" (escape hatch for bake artifacts): skips CLEANUP-destructive ops,
 REMESH and BAKE entirely — keeps TRELLIS's own mesh, UVs and textures. Textures are
 extracted from the imported GLB materials and converted WebP->PNG (the ORM is
-numpy-recomposed to guarantee R=AO/G=Rough/B=Metal regardless of the source packing).
+numpy-recomposed to guarantee R=AO/G=Rough/B=Metal regardless of the source packing;
+the D still passes through the stage-8b albedo de-light unless disabled).
 Conform, slot split, UCX, export, previews and report all still run. Over-budget tri
 counts WARN instead of failing.
 
@@ -629,6 +642,181 @@ def pack_orm(card_id, ao_grid, rough_grid, metal_grid, resolution):
     return image
 
 
+# --------------------------------------------------------------------------- stage: albedo de-light (TASK-193)
+
+ALBEDO_DELIGHT_DEFAULTS = {
+    # Conservative-ON in-script (TASK-193 ruling); per-asset manifest key
+    # "albedo_delight" (bool or partial object) overrides — READ-only here.
+    "enabled": True,
+    "ao_divide_strength": 0.6,   # 0 = no divide, 1 = full D/max(AO, floor) blend weight
+    "ao_floor": 0.35,            # divisor floor: max(AO, floor) caps crevice gain at ~1/0.35
+    "gamma": 0.85,               # linear-space levels lift (out = in^gamma); <1 brightens
+    "gain": 1.0,                 # linear multiplier applied after the gamma lift
+    "shoulder": 0.80,            # soft-clamp knee (linear); identity below this value
+    "max_out": 0.98,             # soft-clamp asymptote — output approaches, never reaches it
+}
+
+
+def _srgb_to_linear(rgb):
+    """Piecewise IEC 61966-2-1 decode (byte D images expose pixels sRGB-ENCODED)."""
+    return np.where(rgb <= 0.04045, rgb / 12.92,
+                    np.power((rgb + 0.055) / 1.055, 2.4))
+
+
+def _linear_to_srgb(rgb):
+    return np.where(rgb <= 0.0031308, rgb * 12.92,
+                    1.055 * np.power(np.maximum(rgb, 0.0), 1.0 / 2.4) - 0.055)
+
+
+def resolve_delight_config(params, report):
+    """In-script defaults <- optional manifest key 'albedo_delight' (bool = on/off
+    switch; object = partial override). Unknown keys warn; values are sanitized to
+    safe ranges (the divisor floor also guards divide-by-zero). PER-KEY bad values
+    (null / string / list / bool-for-numeric / NaN) NEVER raise — each falls back
+    to that key's ALBEDO_DELIGHT_DEFAULTS value with a report warning (QA loop-1
+    blocker: an uncaught TypeError/ValueError here would land AFTER the full
+    Cycles bake and destroy a complete multi-minute Stage-2 run)."""
+    cfg = dict(ALBEDO_DELIGHT_DEFAULTS)
+    raw = params.get("albedo_delight")
+    if isinstance(raw, bool):
+        cfg["enabled"] = raw
+    elif isinstance(raw, dict):
+        for key, value in raw.items():
+            if key.startswith("_"):          # manifest comment keys (_comment, _tuned, ...)
+                continue
+            if key in cfg:
+                cfg[key] = value
+            else:
+                report["warnings"].append(
+                    f"albedo_delight: unknown manifest key '{key}' ignored "
+                    f"(known: {sorted(ALBEDO_DELIGHT_DEFAULTS)})")
+    elif raw is not None:
+        report["warnings"].append(
+            f"albedo_delight: manifest value must be bool or object, got "
+            f"{type(raw).__name__} — in-script defaults used")
+
+    # 'enabled' is STRICT bool: a JSON string like "false" is truthy and would
+    # silently keep the step ON (QA loop-1 warn) — warn + default instead.
+    if not isinstance(cfg["enabled"], bool):
+        report["warnings"].append(
+            f"albedo_delight: 'enabled' must be true/false, got "
+            f"{cfg['enabled']!r} — default {ALBEDO_DELIGHT_DEFAULTS['enabled']} used")
+        cfg["enabled"] = ALBEDO_DELIGHT_DEFAULTS["enabled"]
+
+    def sanitized_number(key, lo, hi):
+        """float-coerce cfg[key] with warn+default on ANY bad value — never raises."""
+        default = float(ALBEDO_DELIGHT_DEFAULTS[key])
+        value = cfg[key]
+        if isinstance(value, bool):          # float(True)=1.0 would coerce silently
+            report["warnings"].append(
+                f"albedo_delight: '{key}' must be a number, got {value!r} — "
+                f"default {default} used")
+            value = default
+        else:
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                report["warnings"].append(
+                    f"albedo_delight: '{key}' must be a number, got {value!r} — "
+                    f"default {default} used")
+                value = default
+        if not math.isfinite(value):         # json.load admits NaN/Infinity literals
+            report["warnings"].append(
+                f"albedo_delight: '{key}' is not finite ({value!r}) — "
+                f"default {default} used")
+            value = default
+        return float(min(max(value, lo), hi))
+
+    cfg["ao_divide_strength"] = sanitized_number("ao_divide_strength", 0.0, 1.0)
+    cfg["ao_floor"] = sanitized_number("ao_floor", 0.05, 1.0)
+    cfg["gamma"] = sanitized_number("gamma", 0.2, 2.0)
+    cfg["gain"] = sanitized_number("gain", 0.25, 4.0)
+    cfg["max_out"] = sanitized_number("max_out", 0.5, 1.0)
+    cfg["shoulder"] = sanitized_number("shoulder", 0.1, cfg["max_out"] - 0.01)
+    return cfg
+
+
+def apply_albedo_delight(img_d, img_orm, params, report):
+    """TASK-193: de-light/brighten the baked albedo BEFORE its PNG write. TRELLIS
+    bakes shading into the albedo (the recorded dark look — TASK-150/151/172); this
+    un-bakes it in LINEAR space: (1) AO-divide against the already-packed ORM.R
+    occlusion, strength-blended and divisor-floored, (2) a mild gamma/gain levels
+    lift, (3) a C1-continuous rational soft-shoulder clamp so highlights compress
+    toward max_out instead of hard-clipping. Returns the image to write/wire as
+    T_<CardID>_D — a NEW generated image; the input D and the N/ORM images are
+    never mutated (N/ORM byte-untouched law). Blender pixel-space note: byte images
+    expose .pixels in their STORED encoding (sRGB for D), float buffers are already
+    scene-linear — is_float selects the decode/encode path."""
+    cfg = resolve_delight_config(params, report)
+    report["albedo_delight"] = dict(cfg)
+    if not cfg["enabled"]:
+        report["albedo_delight"]["applied"] = False
+        log("DELIGHT: disabled (manifest albedo_delight) — D passes through untouched")
+        return img_d
+    width, height = img_d.size
+    if width == 0 or height == 0:
+        report["albedo_delight"]["applied"] = False
+        report["warnings"].append("albedo_delight: D image has no pixels — step skipped")
+        return img_d
+
+    buffer = np.empty(width * height * 4, dtype=np.float32)
+    img_d.pixels.foreach_get(buffer)
+    rgba = buffer.reshape(height, width, 4)
+    is_float = bool(img_d.is_float)
+    rgb = np.clip(rgba[:, :, :3].astype(np.float64), 0.0, 1.0)
+    linear = rgb if is_float else _srgb_to_linear(rgb)
+    mean_before = float(linear.mean())
+
+    # (1) AO-divide: albedo ~= baked_D / occlusion. ORM.R is the baked AO (bake mode)
+    # or TRELLIS's own occlusion (native; flat 1.0 fallback = divide is a no-op).
+    strength = cfg["ao_divide_strength"]
+    if strength > 0.0:
+        ao = _resize_nearest(_image_channel(img_orm, 0), width, height)
+        ao = np.maximum(ao.astype(np.float64), cfg["ao_floor"])[:, :, None]
+        linear = linear + (linear / ao - linear) * strength
+
+    # (2) Levels lift: gamma <1 brightens midtones/shadows; gain is a plain multiplier.
+    linear = cfg["gain"] * np.power(np.maximum(linear, 0.0), cfg["gamma"])
+
+    # (3) Highlight-safe soft clamp: identity below `shoulder`; above it a rational
+    # shoulder with slope 1 at the knee, asymptotic to `max_out` — no hard clip.
+    knee, ceiling = cfg["shoulder"], cfg["max_out"]
+    over = np.maximum(linear - knee, 0.0)
+    linear = np.where(linear <= knee, linear,
+                      knee + (ceiling - knee) * over / ((ceiling - knee) + over))
+    linear = np.clip(linear, 0.0, 1.0)
+
+    mean_after = float(linear.mean())
+    p99_after = float(np.percentile(linear, 99.0))
+    shoulder_fraction = float(np.mean(linear > knee))
+
+    out_rgba = rgba.copy()
+    out_rgba[:, :, :3] = (linear if is_float else _linear_to_srgb(linear)).astype(np.float32)
+    card_id = params["_card_id"]
+    # Mirror the SOURCE's channel layout (QA loop-1 nit): a native-mode D carrying
+    # alpha keeps it in the written PNG; bake-mode D (RGB, depth 24) stays RGB.
+    # Image.depth is bits/pixel — RGBA is 32 (byte) / 64 (16-bit) / 128 (float).
+    has_alpha = int(getattr(img_d, "depth", 0)) in (32, 64, 128)
+    out_img = bpy.data.images.new(f"T_{card_id}_D_delight", width=width, height=height,
+                                  alpha=has_alpha, float_buffer=is_float)
+    out_img.colorspace_settings.name = img_d.colorspace_settings.name
+    out_img.pixels.foreach_set(out_rgba.ravel())
+
+    report["albedo_delight"].update({
+        "applied": True,
+        "source_is_float_buffer": is_float,
+        "mean_linear_before": round(mean_before, 4),
+        "mean_linear_after": round(mean_after, 4),
+        "p99_linear_after": round(p99_after, 4),
+        "shoulder_compressed_fraction": round(shoulder_fraction, 4),
+    })
+    log(f"DELIGHT: AO-divide strength {strength} (floor {cfg['ao_floor']}) + gamma "
+        f"{cfg['gamma']} gain {cfg['gain']}; mean(linear) {mean_before:.3f} -> "
+        f"{mean_after:.3f}, p99 {p99_after:.3f}, soft-clamped <= {ceiling} "
+        f"({shoulder_fraction:.1%} of pixels in the shoulder)")
+    return out_img
+
+
 # --------------------------------------------------------------------------- stage: native textures
 
 def _find_upstream_image(socket):
@@ -1039,6 +1227,11 @@ def main():
             report["warnings"].append(f"native mesh {tris} tris exceeds budget {budget} "
                                       f"(native mode never decimates — consider bake mode)")
         img_d, img_n, img_orm = extract_native_textures(low, params, report)
+
+    # Albedo de-light/brighten (TASK-193) — BEFORE the D PNG write; both modes.
+    # Returns a new image (or the untouched original when disabled); the delighted
+    # D is what gets saved AND wired into the preview materials below.
+    img_d = apply_albedo_delight(img_d, img_orm, params, report)
 
     # Texture PNGs (WebP sources become PNG here in native mode).
     textures = {}

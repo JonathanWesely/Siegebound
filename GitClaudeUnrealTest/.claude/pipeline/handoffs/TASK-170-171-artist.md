@@ -65,3 +65,36 @@ The dispatch named "TASK-169/173". On the board, **TASK-169 is the already-done+
 wave** (Sapper/Cleric/Longbowman/Miner). Wall's Stage-1+2 tracker is **TASK-170** and DeepMine's is
 **TASK-171**; the import is **TASK-173**. I edited 170/171/173 (the tasks that actually track these
 two meshes) and left the completed 169 record intact. Flag for orchestrator reconciliation.
+
+---
+
+## ADDENDUM 2026-07-18 — Stage-1 rerun (M7.5 carry-in, decision 3): NEW BLOCKER — Space-side malfunction (NOT quota)
+
+**Author:** art-director. **Scope run:** Stage 1 ONLY (Stage-2 refine gated on TASK-193 albedo de-light per the M7.5 board annotation; no scripts or manifest touched).
+
+The ZeroGPU quota window was open (last block 07-17 07:18 UTC; these reruns 07-18 ~19:05 UTC). Both
+assets FAILED with **exit 1** — a Space-side `AppError: RuntimeError` from the GPU endpoints. This is
+a DIFFERENT failure mode from the 07-17 quota pause:
+
+| Asset | Run (UTC) | Failing endpoint | Detail |
+|---|---|---|---|
+| Wall | 19:05:51–19:11:46 | `/extract_glb` (3/3 attempts) | Generation SUCCEEDED (`/image_to_3d` 229.6s) but extraction errored. Identical failure on an earlier 05:20–05:34 UTC run found on resume — persistent, not transient. |
+| DeepMine | 19:12:08–19:21:28 | `/image_to_3d` (3/3 attempts) | Generation itself errored; never reached extract. |
+
+**Diagnosis:** NOT quota (no exit-3 quota message anywhere), NOT API drift (`--check` PASSED
+19:23 UTC — Space reachable, all three endpoints present, params unchanged), NOT our pipeline (zero
+script changes; same params as the 14 successful meshes). The `microsoft/TRELLIS.2` Space's GPU
+endpoints are currently throwing server-side RuntimeError. Note: ~2 × ~230 s of PRO GPU time was
+consumed by Wall's successful-but-unextractable generations.
+
+**State on disk:** `Cache/Wall/state_failed.json` + `Cache/DeepMine/state_failed.json` refreshed
+(status `failed`); NO `trellis_raw.glb` for either; concepts intact (same sha256s as above); blockout
+FBX untouched; no editor, no Git; HF_TOKEN env-only, never logged.
+
+**Paths forward (orchestrator/Jonathan pick one):**
+1. **Retry Stage 1 at a later window** — idempotent as before; the Space may be fixed upstream.
+2. **README manual-browser fallback** — Jonathan generates in the Space UI and drops the GLB at
+   `Tools/ArtPipeline/Cache/<CardID>/trellis_raw.glb` (~500k decimation / 2048 texture). Stage 2
+   resumes from a hand-delivered GLB — and is gated on TASK-193 anyway, so no time is lost waiting.
+3. **TASK-200 re-route** — Jonathan's A/B ruling may close these two via Meshy image-to-3D or the
+   FAB buildings pack instead (recorded on the board carry-in).
