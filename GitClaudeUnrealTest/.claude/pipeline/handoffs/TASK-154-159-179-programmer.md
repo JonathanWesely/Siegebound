@@ -203,3 +203,33 @@ SummonedUnit.cpp(237,40): error C2228: left of '.LoadSynchronous' must have clas
 4. **Deprecated/renamed API in a `.cpp` body — CLEAN.** Grepped the batch for `SetSkeletalMesh(` (non-Asset), `ClientPlayCameraShake`, `PlayCameraShake`, `GetComponentsByClass`, `GetComponentByClass(` → ZERO hits. Confirmed current UE5.8 forms in the new code: `SetSkeletalMeshAsset`, `SetAnimInstanceClass`, `SetOverlayMaterial`, `ClientStartCameraShake`, `SetStaticMesh`/`SetMaterial`, `UAudioComponent::IsPlaying/SetSound/Play/Stop`, `PlaySound2D`/`SpawnSoundAtLocation`/`SpawnSystemAtLocation`.
 
 **Loop-4 scope:** three brace-init edits in TWO `.cpp` (`DamageNumberActor.cpp:78`, `SummonedUnit.cpp:236` + `:252`). No header, no include, no logic, no API change. Board: TASK-156 + TASK-159 → `qa-passed` (loop-4 note); 154/155/157/158 stay `qa-passed`; 179 stays `ready-for-qa`. **Batch is compile-ready for the TASK-182 recompile — the `.cpp`-body layer is now swept, the last structural blind spot (UHT can't see `.cpp` bodies) is closed.**
+
+---
+
+## SHARED-ABP FALLBACK addendum (2026-07-17) — TASK-159 swap path, Phase-B / TASK-165 rig-import chain
+
+**Why:** MCP can't author per-unit AnimBlueprints without freezing the editor, so we can't ship an `ABP_<CardID>` per rigged unit for M7. But every rigged unit shares the `SK_Footman_Skeleton` / SiegeBiped rig, so ONE shared velocity-driven locomotion ABP (`ABP_Footman`) can drive any of them (idle/walk). This addendum makes the SkeletalVisualMesh AnimClass resolve fall back to that shared ABP when a per-unit one is absent, so the whole rigged roster ANIMATES today instead of standing in ref pose.
+
+**The change (C++, ONE file — `Siegebound/SummonedUnit.cpp`, in `ResolveSkeletalVisual()`):**
+1. **New named constant** in the top anonymous-namespace soft-ref block (next to `GoldBurstVFXPath` etc.):
+   ```cpp
+   const TCHAR* SharedLocomotionAbpPath = TEXT("/Game/Characters/ABP_Footman.ABP_Footman_C");
+   ```
+   Isolated to one line so a future dedicated `ABP_SiegeUnit` is a single-constant swap.
+2. **AnimClass resolution now three-tier** (was: per-unit only, else nothing):
+   - **Per-unit** `/Game/Characters/ABP_<CardID>.ABP_<CardID>_C` resolves → use it (future per-unit ABPs still take priority the instant they're authored — unchanged for them).
+   - **ELSE shared** `SharedLocomotionAbpPath` (`ABP_Footman`) resolves → use it (the M7 shared-locomotion fallback).
+   - **ELSE neither** resolves → leave the skeletal mesh with NO anim instance (ref pose, null-safe, never a crash — same soft-ref discipline as the rest of the swap path).
+   Implemented as: resolve per-unit into `UClass* AnimClass`; if null, resolve the shared into the same var; call `SetAnimInstanceClass(AnimClass)` only if non-null. Both `TSoftClassPtr<UAnimInstance>` locals use **brace-init** (`{ FSoftObjectPath(...) }`) — same most-vexing-parse guard as the loop-4 fix, so no C2228.
+
+**Behavior guarantees (nothing else changed):**
+- A unit with NO `SK_<CardID>` is still byte-for-byte the static-mesh path (early-returns before this block).
+- A unit with `SK_<CardID>` present now animates via `ABP_Footman` even without its own ABP — the roster is live.
+- `ABP_Footman` absent AND per-unit ABP absent = ref pose, no crash (unchanged null-safe contract).
+- No new include (uses the existing `Animation/AnimInstance.h` + `TSoftClassPtr`), no header change, no `.Build.cs` change, no logic touched outside the AnimClass resolve.
+
+**QA should scrutinize:** (1) the `.ABP_Footman_C` generated-class suffix on the shared path (must be the `_C` class, matching the per-unit `ABP_%s_C` form) — correct here; (2) brace-init on both soft-class locals (MVP guard) — present; (3) fallback ordering (per-unit wins) — correct; (4) still null-safe when neither resolves — yes, `SetAnimInstanceClass` is guarded by `if (AnimClass)`.
+
+**Ready for build-master to recompile** (TASK-182-style editor-bounce build). No art dependency to ship the code: `ABP_Footman` is the TASK-162 spike asset (may already exist in Content/Characters); if absent at runtime the fallback simply no-ops to ref pose. All rigged units will animate with the shared locomotion until per-unit ABPs are authored.
+
+**Scope:** one constant + one resolve-block rewrite in `SummonedUnit.cpp`. No `.h`, no other file. Board: TASK-159 → `ready-for-qa` (shared-ABP fallback addendum).
