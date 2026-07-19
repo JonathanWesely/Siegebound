@@ -193,24 +193,25 @@ public:
 
 	/**
 	 *  Half-extent (cm) of the rectangular scatter region on X (across the
-	 *  castles) and Y (field width). Default X=8600 places a little past the
-	 *  ±8000 castles; Y=3200 matches the arena floor half-width. The actor clamps
-	 *  to this if the level bounds cannot be resolved.
+	 *  castles) and Y (field width). M7.6 10× scale-up: default X=26,000 places a
+	 *  little past the ±25,000 castles; Y=12,000 sits just inside the ±12,500
+	 *  arena floor/walls. The actor clamps to this if the level bounds cannot be
+	 *  resolved.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Bounds")
-	FVector2D ArenaHalfExtent = FVector2D(8600.f, 3200.f);
+	FVector2D ArenaHalfExtent = FVector2D(26000.f, 12000.f);
 
-	/** Keep-clear radius (cm) around EACH castle (±8000) — no blocking obstacle lands inside, so a castle's mouth is never walled. Part of the traversability guarantee. */
+	/** Keep-clear radius (cm) around EACH castle (±25000, M7.6) — no blocking obstacle lands inside, so a castle's mouth is never walled. Part of the traversability guarantee. MESH-RELATIVE (sized to the castle footprint, NOT ×3.125-scaled — M7.6 keep-list). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|KeepClear", meta = (ClampMin = "0"))
-	float CastleKeepClearRadius = 900.f;
+	float CastleKeepClearRadius = 1500.f;
 
-	/** Keep-clear radius (cm) around EACH gold node (±7200) — miners must always reach their node. */
+	/** Keep-clear radius (cm) around EACH gold node (±24200, M7.6) — miners must always reach their node. Mesh-relative, not scaled. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|KeepClear", meta = (ClampMin = "0"))
-	float GoldNodeKeepClearRadius = 500.f;
+	float GoldNodeKeepClearRadius = 600.f;
 
-	/** Keep-clear radius (cm) around the PlayerStart / hero spawn (≈-6800,0) — the hero never spawns inside an obstacle. */
+	/** Keep-clear radius (cm) around the PlayerStart / hero spawn (≈-23800,0, M7.6) — the hero never spawns inside an obstacle. Mesh-relative, not scaled. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|KeepClear", meta = (ClampMin = "0"))
-	float PlayerStartKeepClearRadius = 700.f;
+	float PlayerStartKeepClearRadius = 800.f;
 
 	/**
 	 *  Half-width (cm) of the reserved central combat corridor: NO blocking
@@ -218,7 +219,10 @@ public:
 	 *  the straight Y≈0 lane between the two castles permanently walkable — the
 	 *  deterministic core of the traversability guarantee (the nav reachability
 	 *  check is the belt-and-suspenders confirmation on top). Grass ignores it.
+	 *  M7.6 ruling #2 (Jonathan, 2026-07-18): 1,000 — a tight canyon on the 10×
+	 *  field; this default and DA_BattlefieldScatter now AGREE (the old C++ 400 /
+	 *  DA disagreement ends here).
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|KeepClear", meta = (ClampMin = "0"))
-	float CorridorHalfWidth = 400.f;
+	float CorridorHalfWidth = 1000.f;
 };

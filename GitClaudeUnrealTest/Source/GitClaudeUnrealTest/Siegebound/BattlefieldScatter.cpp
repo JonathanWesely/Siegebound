@@ -139,12 +139,13 @@ void ASiegeBattlefieldScatter::GenerateScatter()
 		ScatterLayer(Layer, Stream);
 	}
 
-	// Defer the reachability confirmation so the async Dynamic navmesh update has
-	// time to carve the newly-added obstacle instances before we path-test.
+	// Defer the reachability confirmation until the async Dynamic navmesh has
+	// actually finished carving the newly-added obstacle instances: poll
+	// IsNavigationBeingBuilt until the nav system reports idle (M7.6 — a fixed
+	// delay guessed wrong at the ~9.8× field), capped by MaxNavSettleWait.
+	// StartNavSettlePoll clears any pending timer itself.
 	ReachabilityAttempt = 0;
-	World->GetTimerManager().ClearTimer(TraversabilityTimerHandle);
-	World->GetTimerManager().SetTimer(TraversabilityTimerHandle, this,
-		&ASiegeBattlefieldScatter::ValidateTraversability, FMath::Max(NavSettleDelay, 0.01f), false);
+	StartNavSettlePoll();
 }
 
 void ASiegeBattlefieldScatter::ClearScatter()
@@ -491,7 +492,8 @@ UHierarchicalInstancedStaticMeshComponent* ASiegeBattlefieldScatter::FindVisualF
 void ASiegeBattlefieldScatter::RebuildKeepClearZones()
 {
 	KeepClearZones.Reset();
-	CorridorHalfWidthCached = ScatterConfig ? FMath::Max(ScatterConfig->CorridorHalfWidth, 0.f) : 400.f;
+	// No-config fallback mirrors the USiegeScatterConfig default (M7.6 ruling #2: corridor half-width 1000).
+	CorridorHalfWidthCached = ScatterConfig ? FMath::Max(ScatterConfig->CorridorHalfWidth, 0.f) : 1000.f;
 
 	UWorld* World = GetWorld();
 	if (!World || !ScatterConfig)
@@ -503,7 +505,7 @@ void ASiegeBattlefieldScatter::RebuildKeepClearZones()
 	const float NodeR = ScatterConfig->GoldNodeKeepClearRadius;
 	const float StartR = ScatterConfig->PlayerStartKeepClearRadius;
 
-	// Castles (live) — else CONVENTIONS ±8000 fallbacks.
+	// Castles (live) — else the ±25000 fallbacks (M7.6 10× scale-up).
 	bool bFoundBlueCastle = false;
 	bool bFoundRedCastle = false;
 	for (TActorIterator<ACastle> It(World); It; ++It)
@@ -526,14 +528,14 @@ void ASiegeBattlefieldScatter::RebuildKeepClearZones()
 	}
 	if (!bFoundBlueCastle)
 	{
-		KeepClearZones.Add({ FVector2D(-8000.f, 0.f), CastleR * CastleR });
+		KeepClearZones.Add({ FVector2D(-25000.f, 0.f), CastleR * CastleR });
 	}
 	if (!bFoundRedCastle)
 	{
-		KeepClearZones.Add({ FVector2D(8000.f, 0.f), CastleR * CastleR });
+		KeepClearZones.Add({ FVector2D(25000.f, 0.f), CastleR * CastleR });
 	}
 
-	// Gold nodes (live) — else CONVENTIONS ±7200 fallbacks.
+	// Gold nodes (live) — else the ±24200 fallbacks (M7.6: nodes stay 800 in front of the ±25000 castles).
 	bool bFoundBlueNode = false;
 	bool bFoundRedNode = false;
 	for (TActorIterator<AGoldNode> It(World); It; ++It)
@@ -556,14 +558,14 @@ void ASiegeBattlefieldScatter::RebuildKeepClearZones()
 	}
 	if (!bFoundBlueNode)
 	{
-		KeepClearZones.Add({ FVector2D(-7200.f, 0.f), NodeR * NodeR });
+		KeepClearZones.Add({ FVector2D(-24200.f, 0.f), NodeR * NodeR });
 	}
 	if (!bFoundRedNode)
 	{
-		KeepClearZones.Add({ FVector2D(7200.f, 0.f), NodeR * NodeR });
+		KeepClearZones.Add({ FVector2D(24200.f, 0.f), NodeR * NodeR });
 	}
 
-	// PlayerStart(s) (live) — else CONVENTIONS ≈(-6800,0) fallback.
+	// PlayerStart(s) (live) — else the ≈(-23800,0) fallback (M7.6: 1200 in front of Castle_Blue).
 	bool bFoundStart = false;
 	for (TActorIterator<APlayerStart> It(World); It; ++It)
 	{
@@ -578,7 +580,7 @@ void ASiegeBattlefieldScatter::RebuildKeepClearZones()
 	}
 	if (!bFoundStart)
 	{
-		KeepClearZones.Add({ FVector2D(-6800.f, 0.f), StartR * StartR });
+		KeepClearZones.Add({ FVector2D(-23800.f, 0.f), StartR * StartR });
 	}
 }
 
@@ -624,6 +626,68 @@ float ASiegeBattlefieldScatter::GroundZAt(float X, float Y) const
 		return Hit.ImpactPoint.Z;
 	}
 	return 0.f;
+}
+
+void ASiegeBattlefieldScatter::StartNavSettlePoll()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	NavSettleElapsed = 0.f;
+	World->GetTimerManager().ClearTimer(TraversabilityTimerHandle);
+
+	// No nav system ⇒ nothing to poll: a single fixed fallback wait, then run the
+	// validation (which itself skips the nav confirmation gracefully — the
+	// reserved corridor stays the deterministic traversability guarantee).
+	if (!UNavigationSystemV1::GetCurrent(World))
+	{
+		World->GetTimerManager().SetTimer(TraversabilityTimerHandle, this,
+			&ASiegeBattlefieldScatter::ValidateTraversability, FMath::Max(NavSettleFallbackDelay, 0.01f), false);
+		return;
+	}
+
+	// First poll fires one interval from now (never same-frame), by which time the
+	// dirty-area rebuild for the just-added/culled instances has registered — so an
+	// early "idle" reading is a real idle, not a not-yet-started rebuild.
+	World->GetTimerManager().SetTimer(TraversabilityTimerHandle, this,
+		&ASiegeBattlefieldScatter::PollNavSettle, FMath::Max(NavPollInterval, 0.05f), false);
+}
+
+void ASiegeBattlefieldScatter::PollNavSettle()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const float Interval = FMath::Max(NavPollInterval, 0.05f);
+	NavSettleElapsed += Interval;
+
+	// Still building? Re-arm until idle or the cap. (The static helper is null-safe:
+	// a nav system torn down mid-poll reads as "not building" and falls through to
+	// the validation, whose own no-nav path degrades gracefully.)
+	if (UNavigationSystemV1::IsNavigationBeingBuilt(World))
+	{
+		if (NavSettleElapsed < MaxNavSettleWait)
+		{
+			World->GetTimerManager().SetTimer(TraversabilityTimerHandle, this,
+				&ASiegeBattlefieldScatter::PollNavSettle, Interval, false);
+			return;
+		}
+
+		// Cap hit: proceed-with-warning — a pathologically slow rebuild must never
+		// strand the reachability confirmation (worst case the check fails and the
+		// widening-cull retry path polls again).
+		UE_LOG(LogSiegeTerrain, Warning,
+			TEXT("[BattlefieldScatter '%s'] Navigation still building after %.1f s (MaxNavSettleWait cap) — proceeding with the reachability validation anyway."),
+			*GetNameSafe(this), NavSettleElapsed);
+	}
+
+	ValidateTraversability();
 }
 
 void ASiegeBattlefieldScatter::ValidateTraversability()
@@ -680,8 +744,8 @@ void ASiegeBattlefieldScatter::ValidateTraversability()
 
 	if (ReachabilityAttempt < MaxReachabilityAttempts)
 	{
-		World->GetTimerManager().SetTimer(TraversabilityTimerHandle, this,
-			&ASiegeBattlefieldScatter::ValidateTraversability, FMath::Max(NavSettleDelay, 0.01f), false);
+		// Wait for the post-cull nav re-carve to settle (poll to idle again), then re-check.
+		StartNavSettlePoll();
 	}
 	else
 	{
@@ -753,6 +817,6 @@ FVector ASiegeBattlefieldScatter::ResolveCastleLocation(ETeamId Team) const
 			}
 		}
 	}
-	// CONVENTIONS world axes (M6.5 4× widening): Blue -8000, Red +8000.
-	return FVector((Team == ETeamId::Blue) ? -8000.f : 8000.f, 0.f, 0.f);
+	// World axes, M7.6 10× scale-up (branch supersedes main's ±8000 law at merge): Blue -25000, Red +25000.
+	return FVector((Team == ETeamId::Blue) ? -25000.f : 25000.f, 0.f, 0.f);
 }

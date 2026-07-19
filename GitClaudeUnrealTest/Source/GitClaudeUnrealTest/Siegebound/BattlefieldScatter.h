@@ -23,7 +23,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogSiegeTerrain, Log, All);
  *  procedural terrain (M6.5)", TASK-134). ONE instance is placed in L_Arena
  *  (named `BattlefieldScatter`, TASK-137). At match start it reads
  *  ScatterConfig (a USiegeScatterConfig DataAsset) and fills the widened arena
- *  (±8000 castles) with trees / rocks / hills / grass, re-seeded each match so
+ *  (±25000 castles — M7.6 10× scale-up) with trees / rocks / hills / grass, re-seeded each match so
  *  every match differs (Jonathan: "randomly generated at the start of each
  *  match … use as many assets as possible for variety").
  *
@@ -46,7 +46,8 @@ DECLARE_LOG_CATEGORY_EXTERN(LogSiegeTerrain, Log, All);
  *        castles is ALWAYS walkable — this alone guarantees a path and does not
  *        depend on any async nav state.
  *    (2) CONFIRMATORY — a deferred post-placement reachability validation (once
- *        the async Dynamic nav has settled) that path-queries Blue-anchor →
+ *        the async Dynamic nav reports IDLE — polled via UNavigationSystemV1::
+ *        IsNavigationBeingBuilt, M7.6) that path-queries Blue-anchor →
  *        Red-anchor; if (defensively) no path is found it culls the blocking
  *        instances nearest the lane in a widening Y band and re-checks, until a
  *        path is confirmed. Never leaves a match unwinnable.
@@ -169,10 +170,24 @@ private:
 	/** Deferred (async-nav-settled) reachability confirmation — path-queries Blue→Red and culls corridor blockers if (defensively) needed. */
 	void ValidateTraversability();
 
+	/**
+	 *  Starts the nav-settle wait for the deferred reachability validation (M7.6 —
+	 *  replaces the old fixed NavSettleDelay 0.75 s guess): arms PollNavSettle on
+	 *  the shared TraversabilityTimerHandle every NavPollInterval until the async
+	 *  Dynamic nav reports idle. When NO nav system exists to poll, falls back to
+	 *  a single fixed NavSettleFallbackDelay wait (ValidateTraversability itself
+	 *  degrades gracefully without nav). Shared by GenerateScatter and the
+	 *  widening-cull retry path.
+	 */
+	void StartNavSettlePoll();
+
+	/** One poll step: nav still building (and under MaxNavSettleWait) ⇒ re-arm; idle or capped ⇒ run ValidateTraversability (a hit cap logs a proceed-with-warning, never strands the guarantee). */
+	void PollNavSettle();
+
 	/** Culls blocking instances whose |Y| <= Band across the X span (widening re-roll used only if a path is somehow not found). Returns the number removed. */
 	int32 CullCorridorBlockers(float Band);
 
-	/** Resolves a team's castle world location from the live ACastle actors, falling back to the CONVENTIONS ±8000 constants. */
+	/** Resolves a team's castle world location from the live ACastle actors, falling back to the ±25000 constants (M7.6 10× scale-up). */
 	FVector ResolveCastleLocation(ETeamId Team) const;
 
 	/** A single keep-clear disc (center XY + radius²). */
@@ -194,11 +209,14 @@ private:
 	/** True once a seed has been chosen at least once (so a non-re-randomizing reset re-uses LastSeed). */
 	bool bHasSeed = false;
 
-	/** Pending deferred-validation timer. */
+	/** Pending deferred-validation timer — shared by the nav-settle poll (PollNavSettle) and the validation itself (one timer at a time; EndPlay clears it). */
 	FTimerHandle TraversabilityTimerHandle;
 
 	/** Widening-cull attempt counter for the deferred validation. */
 	int32 ReachabilityAttempt = 0;
+
+	/** Seconds accumulated by the CURRENT nav-settle poll (reset by StartNavSettlePoll, compared against MaxNavSettleWait). Runtime state, not a tunable. */
+	float NavSettleElapsed = 0.f;
 
 	/** One-shot guards for the graceful-degradation warnings (spam-free). */
 	bool bWarnedNoConfig = false;
@@ -206,17 +224,32 @@ private:
 
 	// --- Tunables the traversability validation uses (mechanic rules → UPROPERTY defaults, CONVENTIONS §3.0 law) ---
 
-	/** Delay (s) after GenerateScatter before the reachability check runs, so the async Dynamic navmesh update can settle. */
+	/**
+	 *  Interval (s) between UNavigationSystemV1::IsNavigationBeingBuilt polls after
+	 *  a generate/cull (M7.6 — replaces the fixed NavSettleDelay 0.75 s: a guessed
+	 *  delay under-waits the ~9.8× field's async rebuild and over-waits a small
+	 *  one, so the reachability validation now waits for NAV IDLE instead). The
+	 *  first poll fires one interval AFTER the scatter, by which time the dirty-
+	 *  area rebuild has registered — never a same-frame false-idle.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Terrain|Traversability", meta = (ClampMin = "0.05"))
+	float NavPollInterval = 0.25f;
+
+	/** Cap (s) on the nav-idle wait: if the async rebuild is STILL running after this, ValidateTraversability proceeds anyway with a warning — a pathologically slow build must never strand the traversability confirmation. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Terrain|Traversability", meta = (ClampMin = "0"))
-	float NavSettleDelay = 0.75f;
+	float MaxNavSettleWait = 10.f;
+
+	/** Fixed fallback wait (s) used only when NO nav system exists to poll — ValidateTraversability then skips the nav confirmation gracefully (the reserved corridor stays the deterministic guarantee). */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Terrain|Traversability", meta = (ClampMin = "0"))
+	float NavSettleFallbackDelay = 2.f;
 
 	/** Max widening-cull re-checks before the corridor is force-cleared (each re-check widens the culled Y band by CorridorWidenStep). */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Terrain|Traversability", meta = (ClampMin = "1"))
 	int32 MaxReachabilityAttempts = 5;
 
-	/** How much (cm) the culled corridor band widens per failed re-check. */
+	/** How much (cm) the culled corridor band widens per failed re-check. M7.6: 250 → 400, scaled with the corridor (half-width now 1,000) so each widening attempt still clears a meaningful band of the 10× field. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Terrain|Traversability", meta = (ClampMin = "0"))
-	float CorridorWidenStep = 250.f;
+	float CorridorWidenStep = 400.f;
 
 	/** Max rejection-sampling attempts per instance before it is skipped (keeps GenerateScatter bounded on a crowded field). Raised 16→24 for M6.6: the radius-aware keep-clear / edge-clamp / spacing tests reject more candidates, so more attempts are needed to hit the target count. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Terrain|Traversability", meta = (ClampMin = "1"))

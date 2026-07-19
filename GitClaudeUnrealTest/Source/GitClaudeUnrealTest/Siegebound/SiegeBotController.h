@@ -137,8 +137,9 @@ protected:
 	 *  Rule order per M5 ruling 10 (defend=1, miners=2, SPELLS=3, big unit=4,
 	 *  discard=5 — TASK-102 inserted rule 3 and renumbered the trace labels):
 	 *    1. DEFEND  — enemy intruder on the bot half + an affordable defensive Unit/
-	 *                 Building (incl. the Set II towers) → cheapest at the centerline
-	 *                 (unit) or between the intruder and Castle_Red (building).
+	 *                 Building (incl. the Set II towers) → cheapest castle-front
+	 *                 (unit — BotCastleSpawnOffset in front of Castle_Red, M7.6
+	 *                 ruling #1) or between the intruder and Castle_Red (building).
 	 *    2. ECONOMY — half clear → a Miner (under the target + §3.3 cap) or a Deep
 	 *                 Mine (building-routed economy, no cap; §4 M4).
 	 *    3. SPELLS  — §4 M5 extension (TASK-102): 3a Fireball at a cluster of >=
@@ -274,11 +275,24 @@ protected:
 	float BotHalfBoundaryX = 0.f;
 
 	/**
-	 *  Just inside the bot half where offensive/defensive UNITS spawn before advancing on Castle_Blue (mirrors the player summoning near the centerline).
-	 *  M6.5 ruling (TASK-133): the arena widened 4× (castles ±2000 → ±8000) but this value is CENTERLINE-relative and the centerline did NOT move (still X=0), so it STAYS 350. A playtest may revisit whether the bot over-commits units so close to the centerline across the now-wider field.
+	 *  How far in FRONT of Castle_Red (toward the centerline) the bot's UNITS
+	 *  materialize before MARCHING out (Y fanned across ±BotSpawnLaneSpread).
+	 *  M7.6 ruling #1 (Jonathan, 2026-07-18): at the 10× arena (castles ±25,000)
+	 *  the old mid-field BotCenterlineSpawnX=350 materialize is REPLACED — the bot
+	 *  spawns CASTLE-RELATIVE (spec band ~1,500–2,000; default 1,750) and marches
+	 *  the field like the player's units do, so an attack wave's first contact is
+	 *  a real march (~9 min accepted "for now"; the W1 watch sanity-checks that
+	 *  pacing live). Resolved against the LIVE castle location every play
+	 *  (GetCastleRedLocation — the same live-resolve the defense path uses), so a
+	 *  moved castle moves the spawn with it. Applies to rule-4 attack waves AND
+	 *  rule-1 defensive units (both formerly shared the mid-field knob; castle-
+	 *  front is strictly more defensive, and no mid-field materialize path
+	 *  remains). FLAGGED follow-up (Standing backlog, NOT designed): "adaptive
+	 *  bot spawn positioning by strategy" — a later pass may choose spawn/stage
+	 *  points per strategy (defend vs push vs flank).
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
-	float BotCenterlineSpawnX = 350.f;
+	float BotCastleSpawnOffset = 1750.f;
 
 	/** Half-width of the Y band units spawn across so waves fan out instead of stacking on one point. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
@@ -286,10 +300,11 @@ protected:
 
 	/**
 	 *  Swarm fan radius — a SwarmCount card (Militia Mob = 4) spawns its copies on a
-	 *  circle of this radius around the validated centerline point, via the shared
+	 *  circle of this radius around the validated spawn point, via the shared
 	 *  ASiegePlayerController::SpawnUnitSwarm (TASK-059) so the bot's Militia Mob
-	 *  matches the player's. Kept < BotCenterlineSpawnX (350) so a centered fan never
-	 *  crosses onto the Blue half (min copy X = 350 - 300 = 50 >= 0). // GDD §3.0
+	 *  matches the player's. M7.6: with the castle-relative spawn (~23,250 from the
+	 *  centerline) a 300-radius fan can never cross onto the Blue half; value kept
+	 *  at 300 (spawn rings are on the M7.6 keep-list). // GDD §3.0
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
 	float SwarmSpawnRadius = 300.f; // GDD §3.0
@@ -314,13 +329,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement")
 	FVector NavProjectionExtent = FVector(200.f, 200.f, 1000.f);
 
-	/** Fallback Castle_Red world location when no Red ACastle is found (CONVENTIONS world axes, M6.5 4× widening: +8000,0). Live actor lookup is preferred. */
+	/** Fallback Castle_Red world location when no Red ACastle is found (world axes, M7.6 10× scale-up: +25000,0). Live actor lookup is preferred. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement")
-	FVector CastleRedFallbackLocation = FVector(8000.f, 0.f, 0.f);
+	FVector CastleRedFallbackLocation = FVector(25000.f, 0.f, 0.f);
 
-	/** Fallback GoldNode_Red world location when no Red AGoldNode is found (CONVENTIONS world axes, M6.5: +7200,0 — the node stays 800 units in front of Castle_Red, so it moved WITH the castle to preserve the miner economy). Live actor lookup is preferred. */
+	/** Fallback GoldNode_Red world location when no Red AGoldNode is found (world axes, M7.6: +24200,0 — the node stays 800 units in front of Castle_Red, so it moved WITH the castle to preserve the miner economy). Live actor lookup is preferred. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement")
-	FVector GoldNodeRedFallbackLocation = FVector(7200.f, 0.f, 0.f);
+	FVector GoldNodeRedFallbackLocation = FVector(24200.f, 0.f, 0.f);
 
 private:
 

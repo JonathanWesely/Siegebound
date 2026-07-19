@@ -66,7 +66,7 @@ namespace
 
 	/**
 	 *  Cheapest AFFORDABLE Unit/Building card; ties prefer a Unit (always
-	 *  placeable at the centerline, no clearance constraint). Returns the index
+	 *  placeable castle-front, no clearance constraint). Returns the index
 	 *  INTO HandCards (not the deck slot), or INDEX_NONE. bOutIsBuilding reports
 	 *  the winner's family for the caller's spawn geometry.
 	 */
@@ -427,12 +427,15 @@ void ASiegeBotController::EvaluateDecisions()
 		{
 			const FBotHandCard& Chosen = HandCards[CardIndex];
 
-			// A tower goes BETWEEN the nearest intruder and Castle_Red; a unit goes
-			// to the bot centerline (§4). Both clamp to the bot half + navmesh below.
+			// A tower goes BETWEEN the nearest intruder and Castle_Red; a unit
+			// materializes CASTLE-FRONT (BotCastleSpawnOffset in front of Castle_Red
+			// toward the centerline) and marches to meet the intruder — M7.6 ruling
+			// #1 (no mid-field materialize; the old centerline spawn is gone). Both
+			// clamp to the bot half + navmesh below.
+			const FVector CastleRed = GetCastleRedLocation();
 			FVector Desired;
 			if (bChosenIsBuilding)
 			{
-				const FVector CastleRed = GetCastleRedLocation();
 				const FVector IntruderLocation = NearestIntruder->GetActorLocation();
 				const FVector ToIntruder2D = FVector(IntruderLocation.X - CastleRed.X, IntruderLocation.Y - CastleRed.Y, 0.f);
 				const FVector Dir2D = ToIntruder2D.GetSafeNormal();
@@ -446,7 +449,12 @@ void ASiegeBotController::EvaluateDecisions()
 			}
 			else
 			{
-				Desired = FVector(BotCenterlineSpawnX, FMath::FRandRange(-BotSpawnLaneSpread, BotSpawnLaneSpread), GetCastleRedLocation().Z);
+				// Toward the centerline (X=0) whichever half the castle sits on — the
+				// same sign convention the miner approach uses.
+				const float TowardCenterSign = (CastleRed.X >= 0.f) ? -1.f : 1.f;
+				Desired = CastleRed + FVector(TowardCenterSign * BotCastleSpawnOffset,
+					FMath::FRandRange(-BotSpawnLaneSpread, BotSpawnLaneSpread), 0.f);
+				Desired.Z = CastleRed.Z;
 			}
 
 			FVector SpawnPoint;
@@ -650,14 +658,26 @@ void ASiegeBotController::EvaluateDecisions()
 		}
 	}
 
-	// ---- Rule 4: ATTACK — banked to the threshold, most-expensive affordable UNIT at the centerline ----
+	// ---- Rule 4: ATTACK — banked to the threshold, most-expensive affordable UNIT, castle-front ----
 	if (Gold >= AttackBankThreshold)
 	{
 		const int32 CardIndex = FindMostExpensiveUnitCard(HandCards, Gold);
 		if (CardIndex != INDEX_NONE)
 		{
 			const FBotHandCard& Chosen = HandCards[CardIndex];
-			const FVector Desired = FVector(BotCenterlineSpawnX, FMath::FRandRange(-BotSpawnLaneSpread, BotSpawnLaneSpread), GetCastleRedLocation().Z);
+
+			// M7.6 ruling #1 (Jonathan, 2026-07-18): attack waves materialize
+			// CASTLE-RELATIVE — BotCastleSpawnOffset in front of Castle_Red toward
+			// the centerline, Y fanned across ±BotSpawnLaneSpread — and MARCH the
+			// 10× field (replaces the old BotCenterlineSpawnX=350 mid-field commit;
+			// resolved from the LIVE castle location like the defense path).
+			// Flagged follow-up (Standing backlog): "adaptive bot spawn positioning
+			// by strategy" — not designed.
+			const FVector CastleRed = GetCastleRedLocation();
+			const float TowardCenterSign = (CastleRed.X >= 0.f) ? -1.f : 1.f;
+			FVector Desired = CastleRed + FVector(TowardCenterSign * BotCastleSpawnOffset,
+				FMath::FRandRange(-BotSpawnLaneSpread, BotSpawnLaneSpread), 0.f);
+			Desired.Z = CastleRed.Z;
 
 			FVector SpawnPoint;
 			if (ComputeValidBotSpawnPoint(Desired, /*bIsBuilding=*/ false, SpawnPoint))
@@ -667,7 +687,7 @@ void ASiegeBotController::EvaluateDecisions()
 				{
 					Deck->ConfirmPlayFromHand(Chosen.Slot);
 					UE_LOG(LogSiegeBot, Log,
-						TEXT("[Bot %s] Rule 4 (Attack): played unit '%s' (cost %d) at centerline (%.0f, %.0f, %.0f) — gold %d->%d."),
+						TEXT("[Bot %s] Rule 4 (Attack): played unit '%s' (cost %d) castle-front (%.0f, %.0f, %.0f) — marching (M7.6 ruling #1) — gold %d->%d."),
 						*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost,
 						SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z, GoldBefore, BotState->GetGold());
 				}
