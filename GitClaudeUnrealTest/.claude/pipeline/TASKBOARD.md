@@ -48,11 +48,16 @@ M5 shipped machine-verified with the desktop LOCKED (SendInput blocked → no si
 6.6. **M6.6 — Climbable terrain** — `done (2026-07-14 — playtested + signed off by Jonathan: hero climbs the hill flanks + anti-exploit gate passes [enemy melee reaches a crowned hero] + camera/tower/escape/perf all good. Committed by Jonathan HIMSELF as `057ca9f "walkable terrain"` and PUSHED [self-commit, same pattern as M6.5]; TASK-138..145 all done. m6.6-testable @ 057ca9f + m6.5-testable @ 6a4c17d cut. Committed L_Arena carries the STALE serialized nav bake [umap byte-identical to pre-widen 6a4c17d] but non-breaking — runtime-Dynamic RecastNavMesh regenerates at PIE. Non-blocking follow-ups for manager: (i) manual Build>Navigation is required after any arena-bounds change [MCP has no nav-build tool]; (ii) scatter density reads thin on the wider ±4000 field — Trees ~15/55, Grass ~1450/2500 — optional tuning pass.)` (decomposed 2026-07-14, TASK-138..145; **UNPARKS the M4.5 "Gameplay terrain pass" intent**). Jonathan wants the battlefield hills/rocks CLIMBABLE by the hero — root-cause investigation established this is currently BY-DESIGN (M6.5's scatter built every rock/hill/tree as a route-around blocker) and that the parked M4.5 TASK-091..096 already specified exactly this feature, so M6.6 delivers the parked M4.5 intent on top of the M6.5 procedural scatter. **ROOT CAUSE (corrects the earlier jump-height hypothesis):** the scatter applies UNIFORM scale (`BattlefieldScatter.cpp:247`, `FVector(Scale)`) → face angles are SCALE-INVARIANT; the squashed `stone_hill` dome goes near-vertical at the rim → unclimbable regardless of jump. FIX = purpose-built CONVEX hill meshes (`SM_Hill_01/02/03`) with ≤30° faces + flat crowns, under BOTH the character's 44.76° WalkableFloorAngle AND Recast's 44° AgentMaxSlope, so hero AND units climb with essentially no movement retune. **FOUR DECISIONS LOCKED (Jonathan, 2026-07-14):** (1) M6.5 already committed by Jonathan @ `6a4c17d` (pushed) — GATE 0 satisfied, NO build-master M6.5 commit; (2) widen arena Y ±2400 → ±4000; (3) terrain BLOCKS projectiles (arrows die on rocks/hills/tree-trunks — accepted balance change); (4) units climb too (navmesh generates over hills — closes the melee-can't-reach-a-crowned-hero exploit). Authoritative plan on disk: `C:\Users\wesel\.claude\plans\we-last-left-off-partitioned-puppy.md`. Naming law in CONVENTIONS "Climbable terrain (M6.6)". Details in "M6.6 tasks" under Active tasks.
 7. M7 — Premium art & feel pass — `in-progress (decomposed 2026-07-15 — TASK-153..188 in "## M7 tasks" under Active tasks; 1 asset [Ogre] already SHIPPED via the pull-forward below; CONVENTIONS "Skeletal rig & animation workstream (M7)" + the M7 batch/GoldNode-variant clauses added FIRST)` · **OGRE PULLED FORWARD 2026-07-14 (TASK-147..152):** Jonathan dropped an ogre concept (`Tools/ArtPipeline/Inbox/ogre.png`) and directed the validated TRELLIS.2 pipeline be run NOW to replace the `SM_Ogre` blockout with a game-ready textured mesh — one of the 16 M7 blockouts pulled ahead on his directive (chain in "M7 pull-forward — Ogre textured mesh" under Active tasks). The rest of the M7 batch (15 blockouts + the premium/feel pass) stays deferred. · **Jonathan request (2026-07-04):** raise fidelity on SM_Castle + SM_Footman + SM_Archer (higher detail than the current blockouts); wants the game to look nicer. Decision: DEFERRED here (mesh swaps are non-breaking; roster still growing through M4-M6). Two integration paths to scope at M7: (a) art-director custom higher-detail Blender models, and/or (b) **Fab/UE-marketplace assets — Jonathan must download packs into the project via the Epic Launcher first (agents can't browse/buy/download Fab autonomously); art-director then swaps meshes/materials.** Could be pulled forward as a standalone art pass after M3/M4 if Jonathan wants it sooner.
 7.5. **M7.5 — Art Quality Upgrade (Meshy Pro second engine + FAB packs + free pipeline upgrades)** — `current (decomposed 2026-07-18 — TASK-191..210 in "## M7.5 tasks" under Active tasks; Jonathan-approved directive, plan C:\Users\wesel\.claude\plans\i-am-a-bit-sunny-bird.md: Meshy Pro $20/mo APPROVED, FAB ~$100–200 APPROVED, all four art areas prioritized, quality first)`. **MILESTONE RULING: a STANDALONE batch/sub-milestone in the M4.5/M5.5/M6.5 shape, NOT folded into M7.** M7 stays `in-progress` at its paused 2026-07-18 checkpoint with its remaining capstones (TASK-174/175/178 VFX + dressing, TASK-181 Sequencer flythrough, TASK-183 final assembly + 60 fps perf watch) and all checkpoint decisions PENDING and UNTOUCHED — this batch has its own external gates (Meshy account, FAB purchases) and must not hold the M7 playtest hostage, nor vice versa. **FLAGGED sequencing recommendation (Jonathan's call at the M7 checkpoint, NOT enacted):** run the M7 Sequencer/perf capstones AFTER the M7.5 A/B ruling (and fleet retexture, if approved) so the flythrough captures the final art. Three tracks: **(A)** Meshy Pro as a second engine in the TRELLIS.2 pipeline — Stage-1.5 RETEXTURE to kill the recorded accepted-not-fixed "dark TRELLIS look" (TASK-150/151/172 handoffs), per-asset image-to-3D alternative, auto-rig + preset-clip animation upgrade via the UE5 IK Retargeter; **(B)** FAB purchases via the FAB-REQUESTS protocol — FAB-005 "Stylized RTS Buildings & Props Pack" (listing a4b43ae5-e442-4d51-93f2-fea8d77e9f37) + FAB-006 one rigged stylized unit pack (art-director authors the entries; Jonathan purchases); **(C)** free pipeline upgrades — FLUX.1-schnell→FLUX.1-dev concepts, Stage-2 albedo de-light/brighten, 1536³ TRELLIS res pinned for hero assets, `_guess` team-region selector tuning — plus the **Wall + DeepMine quota retry CARRIED IN under their existing IDs (TASK-170/171/173)**, Stage-2 gated on the albedo-lift so the last 2 meshes bake bright (flagged resequencing, decision 3). **Track D (self-hosting TRELLIS.2/Hunyuan3D; Tripo/Rodin subscriptions) EVALUATED AND REJECTED 2026-07-18** — ops burden > benefit while HF PRO + Meshy cover throughput; Hunyuan 2.5 has no public weights; Meshy uniquely covers the actual gaps (retexture existing meshes + rig + anim clips) in one sub. Recorded; NO tasks. CrystalTower-emissive debt ALREADY CLEARED (TASK-190 @ 7ec9916 — no new task). **JONATHAN'S TWO MANUAL STEPS: TASK-197 (create Meshy Pro account + set MESHY_API_KEY env var + possible Norton meshy.ai exclusion) and TASK-207 (approve + purchase the FAB packs → drop into Content/Fab/<Pack>/).** Naming law: CONVENTIONS "Meshy second engine — Stage-1.5 retexture & image-to-3D alternative (M7.5)" + IK_/RTG_ prefix rows (added FIRST, TASK-191).
+7.6. **M7.6 — Arena 10× scale-up + LOD/perf structure** — `current (decomposed 2026-07-18 — Phase 0 = TASK-214..220 in "## M7.6 tasks" under Active tasks; later phases one-liners until the W1 gate clears, milestone-decomposition style; Jonathan-approved directive, plan C:\Users\wesel\.claude\plans\i-am-a-bit-sunny-bird.md — OVERWRITTEN since the art-quality version, it is the numeric source of truth)`. **LABEL RULING: the batch is M7.6 and the branch is `m7.6-arena10x`** — the plan's `m8-arena10x` name collides with GDD M8 (networked 1v1); relabeled, recorded, branch renamed accordingly. Scope locked by Jonathan: TRUE 10× area (×3.125 linear; castles ±25,000 = 50k apart), speeds/ranges/aggro UNCHANGED (slow epic marches accepted; forward structures gain importance), new space = denser scatter (§3 table, ≈4.9× instances made affordable by cull bands) + POIs + vista ring. **Jonathan's four design rulings (2026-07-18):** (1) bot MARCHES from its castle — no mid-field materialize ("adaptive bot spawn positioning by strategy" = flagged backlog follow-up); (2) corridor half-width 1,000; (3) pre-seed 2 neutral gold-node props mid-field (visual-only; capture-point mechanic NOT designed — backlog hook); (4) Nanite AMENDED for vista-class Megascans cliffs only, gameplay fleet stays OFF with classic LODs (CONVENTIONS "Arena 10× scale-up & LOD/perf (M7.6)" amendment live). **HARD-GATED PHASE LADDER:** Phase 0 scale spike → **W1 Jonathan perf/feel watch (TASK-219) GATES EVERYTHING** → Phases 1∥2 (C++: scatter culls + grid-hash ∥ unit URO) → 3 (density → W2) → 4 (LOD pipeline → W3) → 5 (POI/vista) → 6 (capstone playtest → MERGE GATE to main). Branch-first law: build-master cuts the branch off main BEFORE any file change (TASK-214); ownership law: the branch exclusively owns L_Arena.umap + DA_BattlefieldScatter — M7.5 waves never touch them. **SEQUENCING LAW (cross-batch): the reimport_meshes.py LOD-group line lands on MAIN, QA'd (TASK-220, pulled forward from Phase 4), BEFORE M7.5's TASK-201/202 retexture reimport wave — that wave then applies LODs for free (TASK-202 blocker added).** M7.5 stays OPEN in parallel (Jonathan gates TASK-200/204/207 independent). Flagged follow-ups recorded in Standing backlog: adaptive bot spawn positioning, spawn-forward/waypoint mechanic, RTS overview camera, neutral-node capture mechanic. No FPS baseline exists (M7's TASK-183 never ran) — W1 is the first real number.
 8. M8 — Networked 1v1 multiplayer — `not-started`
 
 ### Standing backlog (manager notes — NOT tasks, no IDs yet)
 - **Balance pass** — Jonathan flagged balancing changes wanted post-M4 (M4 playtest sign-off 2026-07-08: "we will have to make some balancing changes later, but it is fine"); awaiting his specific notes before task-izing. Feed-ins already on file for when the notes arrive: TASK-090 balance ledger (undefended-castle kill time ~56.5 s / ~71.3 s post-economy-change vs ~33 s prior; bot played ZERO early Miners in both rush matches — bot spend-mix), TASK-070 tuning note (bot opens with attack, not economy).
 - **HUD overtime indicator never shows** (pre-existing bug found at TASK-090, routed to manager): WBP_HUD ShowOvertime calls UpdateOvertimeDisplay with a hardcoded-false pin (bound via SetupStatTexts CreateEvent; UpdateOvertimeDisplay itself is correct). One-pin UMG fix + shortened-threshold verify — fold into the next UMG-touching chain or the balance pass; do not lose it.
+- **Adaptive bot spawn positioning by strategy** (M7.6 ruling #1 flag, 2026-07-18): TASK-216 makes bot attack waves spawn castle-relative and march; a future pass may choose spawn/stage positions by strategy (defend vs push vs flank). NOT designed — awaiting W1 pacing verdicts + Jonathan's appetite.
+- **Spawn-forward / waypoint mechanic** (M7.6 march-pacing lever, 2026-07-18): counter to the 45k-march conga line (Barracks 8 s interval / 60 s lifetime / speed 400 strings out — intended "forward structures" pressure but WATCH at W1). NOT designed; pulls forward if W1 says the pacing hurts.
+- **RTS overview camera** (M7.6 optional follow-up, 2026-07-18): hero boom 400/FOV 90 kept at 10× scale; an overview/tactical camera is flagged, not designed.
+- **Neutral gold-node capture-point mechanic** (M7.6 ruling #3 hook, 2026-07-18): Phase 5 pre-seeds 2 neutral gold-node props mid-field VISUAL-ONLY; the capture mechanic is explicitly NOT designed — Jonathan's future call.
 
 ### M1 CHECKPOINT — 2026-07-03 (read this first on resume)
 **M1 exit criteria are PIE-verified** (all 8 checks passed; commits df4bcd9 → 4d30efb → 8a87400 → 5029403 → 7011b7b → 4255c1d, none pushed). **Current state: playtest round-1 feedback received 2026-07-03 → M1 reopened as `feedback-in-progress`.** Next actions in order:
@@ -126,6 +131,255 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 ## Active tasks
 
 **2026-07-15 M7 KICKOFF (READ FIRST — CURRENT milestone) — Premium art & feel pass (TASK-153..188):** Jonathan authorized M7 in full. This is the whole §6 premium bar: (A) §6 juice C++ checklist; (B) a NEW skeletal rig + animation workstream stood up from scratch (spike-proven before batch); (C) the 16 remaining blockouts upgraded to textured meshes via the proven TRELLIS.2 pipeline; (D) Niagara VFX on every ability/impact/spawn/death/spell; (E) Lumen lighting + post stack + gradient skybox + arena set dressing (no collision change, §5); (F) full audio set; (G) the Sequencer cinematic flythrough + gameplay b-roll portfolio slice. CONVENTIONS updated FIRST (TASK-153, done): the "Skeletal rig & animation workstream (M7)" section + the M7-batch and GoldNode-emissive-variant clauses under "Textured mesh law". Full decomposition + rulings in **"## M7 tasks"** below. **Dispatch frontier (parallel-safe, headless, NOW): TASK-154, 155, 156, 157, 158 (juice C++) ∥ TASK-159 (skeletal swap path C++) ∥ TASK-179 (audio hooks C++) ∥ TASK-160 (rig spike, Blender) ∥ TASK-166 (mesh-batch prep, file-only) ∥ TASK-174/175 (VFX art, editor-queued).** **2026-07-16 DIRECTIVE AMENDMENTS (TASK-184..188 — see "M7 DIRECTIVES ADDENDUM" below) opened more NOW lanes and closed two gates:** additionally dispatchable NOW: **TASK-184** (concept-gen tool, C++/tooling) ∥ **TASK-180** (4 covered audio cues, art) ∥ **TASK-186** (best-effort audio from imported packs, art) ∥ **TASK-187** (fire/ice VFX re-skin, art/editor). The concept gate is RESOLVED by the concept-gen step (TASK-184 build → TASK-185 run → 16 Inbox PNGs; **TASK-167 is now OPTIONAL/non-blocking** review). The audio gate is PARTIALLY resolved (MedievalWeaponsSFX pack) — the ONLY remaining external Jonathan gate is **TASK-188** (7 genuinely-missing cues: mining loop, 2 UI clicks, castle-destroy, 2 music, overtime sting — NON-blocking, M7 ships silent+logged if ungated). Repo base `057ca9f` on `main` (pushed); the Ogre pull-forward already committed to `main` bundled with the M6.6 scatter tune (see TASK-152, not pushed).
+
+---
+
+## OVERNIGHT batch (2026-07-19 00:01, Jonathan directive — HARD DEADLINE: pencils-down 02:10, commits by 02:30, PC sleeps ~03:00) — TASK-221..228
+
+**Directive (verbatim intent):** check/improve artwork detail; add animations that bring characters + environment to life — named example: Footman attack must move LEGS+ARMS, not slide. Editor tasks serialize behind TASK-218 then each other; Jonathan's close/reopen grant extends overnight (graceful ops only; editor RUNNING + saved at end). M7.5-lane work on MAIN; M7.6 branch + L_Arena.umap + DA_BattlefieldScatter UNTOUCHABLE on main (ownership law).
+
+### Manager rulings (flagged decisions, binding tonight)
+- **RULING A (TASK-204 anim gate): SATISFIED-IN-SUBSTANCE for units.** Jonathan's named example IS the deficiency the Meshy clips fix — the directive is the say-so for the preset-clip rollout. Formal eyeball happens at his morning review; per-unit acceptance still applies (any unit whose retarget reads badly gets HELD BACK, conservative rollout). Technical gate first: the headless retarget export drops FK limb rotation — SPIKE the in-editor editor-python IKRetargetBatchOperation path (TASK-221) before any wiring; if it ALSO drops FK, the anim lane is BLOCKED on Jonathan's manual UI click — record on TASK-204/205, pivot the clock to the art lane.
+- **RULING B (fleet retexture): NO.** "Detail changes" does not authorize the Meshy FLEET texture-source swap — TASK-200 stays OPEN, its eyeball gate exists for exactly this. APPROVED middle lane: per-asset `albedo_delight` tuning + Stage-2 rebake + same-path reimport of the RECORDED-DARK assets only (Ogre, Knight + the other TASK-172-recorded dark units, worst first) — brightening EXISTING textures with TASK-195-proven values is squarely "detail changes"; backups exist.
+- **RULING C (environment life): material-level only.** WPO wind sway is APPROVED ONLY where a lawful edit path exists — Fab donors are READ-ONLY and DA_BattlefieldScatter is branch-owned, so NO donor edits, NO DA repoints on main; if no lawful path, SKIP + record. Set dressing (banners/flags) is SKIPPED tonight — it requires L_Arena edits on main (ownership law); deferred to M7.6 Phase 5 / post-merge. Safe approved wins: emissive life (subtle sine pulse) on OUR M_GoldGlow + MI_CrystalGlow; subtle polish on OUR /Game materials only. Nothing touching perf bar, nav, collision.
+- **QA tonight:** no C++ planned; transient editor-python is an art-lane operation (not checked-in code). Any script worth keeping is NOT committed tonight unless reviewed — it waits for morning QA. Art/asset changes = art lane, no QA (board law).
+- **TASK-205 reconcile:** TASK-221/222/224 EXECUTE TASK-205's scope incrementally under Ruling A — no duplicate ownership; 205 closes (or carries the remainder) at morning reconcile.
+
+**Dispatch order + timeboxes:** NOW headless (during TASK-218): TASK-223 (Meshy rig+clip gen) ∥ TASK-225 part A (albedo rebakes). Editor frees → TASK-221 spike (25 min) → TASK-222 Footman (30 min) → TASK-225 part B reimport (editor-bounce, ~15 min) → TASK-224 unit loop (until 02:00) → TASK-226 (~15 min) → TASK-227 only if clock allows. 02:10 pencils down → TASK-228 commit + safe-state by 02:30. Spike fails ⇒ skip 222/224, pull 225B/226/227 earlier.
+
+#### TASK-221 — SPIKE: in-editor IKRetargetBatchOperation export — does FK limb rotation survive? (art, editor) [P1, 25 min]
+- assignee: art-director
+- status: done 2026-07-19 01:15 — **SPIKE VERDICT: FAIL.** In-editor `IKRetargetBatchOperation.run_batch_retarget` (via UE python remote-execution INSIDE the live editor, on Src_Walk per dispatch) produces the IDENTICAL root-only output as the headless commandlet: retargeted foot_l/foot_r amplitude **7.07 uu** vs source foot **56.97 uu** (pelvis 7.16 vs 7.1 transfers fine; hands 7.2 = root-only too). Repair attempts all no-effect: per-op `run_op_initial_setup`, `assign_ik_rig_to_all_ops` (both rigs), `auto_map_chains(EXACT, force)` global AND per-op. Config verified correct at EVERY layer incl. new checks: FK op source-chain map LeftLeg←LeftLeg…(9/9), chain start/end bones resolve on both real skeletons, retarget roots Hips/pelvis valid. Conclusion: the batch-op FK transfer is broken PROCESS-INDEPENDENTLY in UE 5.8 — NOT a commandlet-environment defect. Anim lane BLOCKED on Jonathan's manual UI check/Export (note: the UI Export lane itself is still UNTESTED — TASK-203 §5's one-click preview check will reveal whether even that works). Evidence asset `/Game/Characters/Anims/AB_Test/Src_Walk_LiveSpike` (saved). Handoff: handoffs/TASK-221-222.md
+- blocked-by: TASK-218 (editor frees)
+- parallel-safe: no (editor)
+- spec: >
+    Via editor-python INSIDE the live editor (NOT the proven-broken commandlet path): run IKRetargetBatchOperation/export on ONE
+    clip (Footman Attack, RTG_MeshyBiped_to_SiegeBiped) to a scratch path; verify FK limb rotation SURVIVES (visual + bone-curve
+    check vs the TASK-203 in-editor preview). PASS ⇒ unblocks 222/224. FAIL ⇒ anim lane blocked on Jonathan's manual click —
+    record verbatim on TASK-204/205, post 🚨, pivot clock. Post in 🎨 Art.
+- names: >
+    Scratch `/Game/Characters/Anims/AB_Test/`. Law: M7.5 anim same-path law (NOT yet — scratch only), Ruling A.
+
+#### TASK-222 — Footman live wiring: 4 Meshy clips same-path (Jonathan's named example) (art, editor) [P1, 30 min]
+- assignee: art-director
+- status: BLOCKED 2026-07-19 01:15 — SKIPPED tonight per spike-FAIL branch (TASK-221 verdict FAIL: batch export drops FK in-editor too). Blocked on Jonathan's manual UI Export click (or an engine-side fix). Live A_Footman_* untouched; ABP clean.
+- blocked-by: TASK-221 (spike PASS) — **spike returned FAIL 2026-07-19**
+- parallel-safe: no (editor)
+- spec: >
+    Retarget + export A_Footman_{Idle,Walk,Attack,Death} and OVERWRITE at their existing /Game/Characters/Anims/ paths (same-path
+    law — preserves TASK-189 triggers + ABP). PIE-verify via SummonTestUnit: attack moves LEGS+ARMS (the named example), walk/idle
+    clean, death holds, miner-promptness unaffected. Capture before/after clips for the morning report. Post in 🎨 Art.
+- names: >
+    `/Game/Characters/Anims/A_Footman_{Idle,Walk,Attack,Death}` (same-path). Law: CONVENTIONS M7.5 animation clause; Ruling A.
+
+#### TASK-223 — Meshy rig+clip generation for the remaining rigged units (art, HEADLESS — start NOW) [P2]
+- assignee: art-director
+- status: ready-for-integration (2026-07-19 — 8/8 units rigged + 4 clips each, 40 FBXs at Content/RawAssets/Characters/Meshy/, 136 credits (3273→3137); Cavalry rider-fit hold-back flag + skeleton identical to Footman (RTG reusable); handoffs/TASK-223.md)
+- blocked-by: none (Meshy API; ~17 credits/unit, balance ~3273 — cost unconstrained, TIME is)
+- parallel-safe: yes
+- spec: >
+    Queue Meshy auto-rig + preset clips (idle/walk/attack/death) for the other 8 rigged units (Knight, Cavalry, Pikeman,
+    MilitiaMob, Sapper, Cleric, Longbowman, Miner), FBX downloads to Content/RawAssets/Characters/Meshy/<Unit>/. Provenance in
+    state.json. Order by roster visibility (Knight/Cavalry/Pikeman first). Surface API errors verbatim. Post in 🎨 Art.
+- names: >
+    `Content/RawAssets/Characters/Meshy/<Unit>/*.fbx` + `Tools/ArtPipeline/meshy_generate.py` (existing tool). Law: CONVENTIONS
+    "Meshy second engine (M7.5)".
+
+#### TASK-224 — Unit-loop: retarget + same-path wire as many units as the clock allows (art, editor) [P2, until 02:00 HARD]
+- assignee: art-director
+- status: backlog
+- blocked-by: TASK-222 (Footman proven live), TASK-223 (per-unit FBX ready) — **BLOCKED 2026-07-19: TASK-221 spike FAIL ⇒ 222 skipped ⇒ this task does not run tonight (Ruling A FAIL branch; clock pivots to art lane)**
+- parallel-safe: no (editor)
+- spec: >
+    Per unit (visibility order): retarget the 4 clips via the RTG_ pair, same-path overwrite A_<Unit>_*, quick PIE/preview
+    acceptance (limbs move, no skew) — HOLD BACK any unit that reads badly (Ruling A conservative rollout; record holds). STOP at
+    02:00 regardless of remaining units; record the done/held/undone split for morning. Post per-unit one-liners in 🎨 Art.
+- names: >
+    `/Game/Characters/Anims/A_<Unit>_{Idle,Walk,Attack,Death}` (same-path, per unit). Law: M7.5 animation clause; Ruling A.
+
+#### TASK-225 — Recorded-dark albedo fix: per-asset albedo_delight rebake (A, headless NOW) + same-path reimport (B, editor) (art) [P2]
+- assignee: art-director
+- status: done 2026-07-19 01:21 — part-A rebakes + part-B editor same-path reimport BOTH COMPLETE. 5/5 D textures live in-engine via in-place AssetImportTask over the TASK-221 remote-exec lane (asset identity/refs preserved; sRGB+TC_DEFAULT preserved; AssetRegistry FileMD5 == on-disk PNG MD5 on all 5). N/ORM skipped (bit-identical), FBX skipped (D-only contract). In-engine before/after: units + statics visibly lift (identical cam/light/exposure) — strip at Tools/ArtPipeline/Cache/_TASK225_report/AB_TASK225B_inengine_dark_vs_delight.png. Saved ONLY the 5 textures; L_Arena reloaded clean (zero dirty readback); no material/shader errors, MapCheck 0/0. Cavalry residual-darkness note stands (part-A §residual). handoffs/TASK-225.md §Part B
+- blocked-by: part A none; part B TASK-218 (editor; slot after TASK-222, editor-bounce authorized overnight)
+- parallel-safe: part A yes / part B no
+- spec: >
+    Ruling B middle lane. PART A (headless, NOW): Stage-2 rebake with tuned per-asset `albedo_delight` (TASK-195-proven values)
+    for the recorded-dark assets — Ogre + Knight first, then the other TASK-172-recorded dark units as time allows; outputs
+    overwrite Content/RawAssets/<CardID> textures (backups verified first). PART B (editor): same-path reimport via the proven
+    commandlet (bounce authorized; editor RUNNING at end), MCP readback slots/Nanite/refs. NO fleet retexture — TASK-200 stays
+    open. Before/after renders for morning. Post in 🎨 Art.
+- names: >
+    `Tools/ArtPipeline/refine_trellis_glb.py` (run only), `Content/RawAssets/Textures/<CardID>/*`, same-path `/Game/Meshes/
+    SM_<CardID>` + `T_<CardID>_*`. Law: "Textured mesh law"; Ruling B.
+
+#### TASK-226 — Environment life: emissive pulse on OUR glow materials + lawful-path WPO sway check (art, editor) [P3, 15 min]
+- assignee: art-director
+- status: done 2026-07-19 01:26 — sine emissive pulse LIVE on M_GoldGlow + M_CrystalGlow (Time→Sine 0.1 Hz→±12%→Multiply spliced ahead of EmissiveColor; original chains intact; desc-tagged "TASK226 pulse mult"; no MI changes needed). Verified: recompiles clean, no shader errors, timed captures of GoldNode_Blue rank exactly per predicted sine (0.889/0.924/0.942/1.116 → 174.6/175.1/175.3/177.2 glow means), CrystalTower crystal-top pixels breathe, glow integrity intact. Evidence: Tools/ArtPipeline/Cache/_TASK226_report/AB_TASK226_pulse_min_vs_max.png. Saved ONLY the 2 materials; L_Arena reloaded clean (zero dirty). **WPO sway SKIPPED per Ruling C — no lawful path (Fab donors read-only, DA branch-owned); recorded in handoff.** handoffs/TASK-226.md
+- blocked-by: TASK-218 (editor; slots after the anim loop)
+- parallel-safe: no (editor)
+- spec: >
+    Ruling C. (1) Subtle sine emissive pulse (slow, ±10–15%) on `M_GoldGlow` + `MI_CrystalGlow`/M_CrystalGlow (OUR assets).
+    (2) WPO wind sway ONLY if a lawful path exists (materials already under /Game; NO Fab-donor edits, NO DA repoints) — else
+    SKIP + record. No collision/nav/perf-risk changes; no L_Arena edits. Post in 🎨 Art.
+- names: >
+    `/Game/Materials/M_GoldGlow`, `M_CrystalGlow` + `MI_CrystalGlow`. Law: Ruling C; "Fab quarantine"; M7.6 branch-ownership.
+
+#### TASK-227 — Artwork detail sweep: roster screenshot review + micro-fixes on OUR assets (art, editor) [P3, only if clock allows]
+- assignee: art-director
+- status: skipped (2026-07-19 01:38 — orchestrator ruling: residual 25-min window not worth pre-commit dirty-state risk; detail sweep → morning backlog)
+- blocked-by: TASK-226 (clock permitting)
+- parallel-safe: no (editor)
+- spec: >
+    Sweep asset previews of the 20 pipeline meshes + card art; apply only SMALL, safe fixes on OUR /Game assets (material params,
+    obvious seams); LOG everything else as findings for the morning report (no risky edits at 02:00). Post findings in 🎨 Art.
+- names: >
+    `/Game/Meshes/SM_*`, `/Game/Materials/**` (ours only). Law: Ruling C conservatism.
+
+#### TASK-228 — Overnight close: commit all completed lanes + editor safe-state by 02:30 (build) [HARD 02:15]
+- assignee: build-master
+- status: done (2026-07-19 — overnight batch committed on main via git-worktree lane [primary tree stayed on m7.6-arena10x, editor never disturbed]; scope = TASK-223 40 Meshy FBXs + TASK-225 A/B lifted albedo set [5 raw D PNGs + 5 FBX + 5 T_*_D.uasset + manifest] + TASK-226 pulse materials + overnight handoffs + board/CONVENTIONS docs snapshot; M7.5 pending pile [SKs, rig FBXs, tooling py, TASK-203 Footman Meshy FBXs, IK_/RTG_ uassets] deliberately left for TASK-210; editor-SCC strays Src_Walk_LiveSpike/RTG unstaged; not pushed; commit hash in 🔧 Build & Git)
+- blocked-by: pencils-down 02:10 (whatever of 222/224/225/226/227 completed)
+- parallel-safe: no (Git + editor)
+- spec: >
+    Commit completed lanes on MAIN with explicit pathspecs (anim assets; reimported textures/meshes; material edits; Meshy raw
+    FBX + provenance) — M7.6 branch UNTOUCHED, L_Arena/DA untouched, no push, verify git state first. Editor left RUNNING and
+    saved (graceful only). Flip board statuses; evidence paths + done/held/blocked splits into the handoff for the orchestrator's
+    morning 📢 report. Post hash(es) in 🔧 Build & Git.
+- names: >
+    Commits on `main` only. Law: CLAUDE.md hard gates; overnight grant (graceful, editor running at end).
+
+---
+
+## M7.6 tasks (decomposed 2026-07-18) — Arena 10× scale-up + LOD/perf (Phase 0 + W1; later phases one-liners)
+
+**Authorization:** Jonathan's 2026-07-18 10× MAP SCALE-UP + LOD/PERF approval — plan `C:\Users\wesel\.claude\plans\i-am-a-bit-sunny-bird.md` (READ IT — it carries the exact target-number tables §1, LOD architecture §2, scatter budgets §3, POI/vista §4, risks §6; the board does not duplicate every number). Hard gates stand: QA on every C++/tooling/config change; nothing committed without PASS QA (code) / completed integration; editor work needs MCP up (park + report, never fake); NOTHING PUSHED; merge to main ONLY at the Phase-6 merge gate with Jonathan's sign-off.
+
+### M7.6 manager decisions (binding)
+1. **Label ruling:** batch = **M7.6**, branch = **`m7.6-arena10x`** (the plan's `m8-arena10x` collides with GDD M8 = networked 1v1 — relabeled).
+2. **Branch-first + ownership law:** TASK-214 cuts the branch off main BEFORE any batch file change. The branch EXCLUSIVELY owns `L_Arena.umap` + `DA_BattlefieldScatter`; M7.5 waves never touch either. Branch = rollback (don't merge = revert). Main's World-axes ±8,000 law is rewritten only AT MERGE.
+3. **Hard-gated ladder:** W1 (TASK-219) gates ALL later phases — nothing post-W1 is decomposed or dispatched before its sign-off (W-gate law, CONVENTIONS M7.6). Phase 0 only is fully decomposed here; P1–P6 stay one-liners below.
+4. **Scope locks (keep-list):** cards.csv speeds/ranges, aggro 600/leash 900, projectile 5 s, rally 600, KillZ, PP volume, hero camera — UNTOUCHED. Keep-clears are mesh-relative (1,500/600/800), not scaled.
+5. **Bot ruling #1:** attack waves spawn CASTLE-RELATIVE (~1,500–2,000 in front of Castle_Red, lane spread ±900 kept) and MARCH; the knob stays EditDefaultsOnly. First contact ~9 min accepted "for now" — W1 sanity-checks his pacing acceptance LIVE. "Adaptive bot spawn positioning by strategy" = Standing-backlog flag, not designed.
+6. **Sequencing law (cross-batch):** TASK-220 (reimport LOD line) lands on MAIN, QA'd, before M7.5's retexture reimport wave — TASK-202's blocked-by now carries TASK-220. Its commit rides TASK-196 if timing aligns, else a standalone build-master micro-commit (orchestrator's call); cherry-pick/merge into the branch for Phase 4.
+7. **Nav-at-scale:** the Recast coarsening (TASK-217 ini + TASK-218 actor mirror — the two MUST match) plus the fallback ladder recorded in plan §1 (CellSize→40/Tile→2500 → nav X ±26,500 → nuclear DynamicModifiersOnly, listed not planned). Manual Build > Navigation + resave is OWED at Phase 0 (MCP has no nav-build tool — editor-python route first, else flag Jonathan's one click in 🚨).
+8. **Nanite amendment** (ruling #4) is LAW in CONVENTIONS "Arena 10× scale-up & LOD/perf (M7.6)" — vista-class only; gameplay fleet stays OFF.
+
+**Phase ladder (one-liners until W1 clears — manager decomposes each on its gate):** P1 scatter cull fields + grid-hash MinSpacing guard (C++, QA'd) ∥ P2 unit URO/anim-tick block (C++, SummonedUnit.cpp:119) → P3 §3 density fill (editor, DA data) → **W2 watch** (levers: grass count, culls, RT-off units) → P4 LOD batch: reimport wave with the TASK-220 line (ride/coordinate M7.5 TASK-201/202), SK LOD script, donor LOD audit, rig_character.py LOD step → **W3 watch** (expect strict improvement) → P5 vista ring + 6–10 POIs + 2 neutral gold-node props + fog/light polish (editor-python, seeded one-shot; FAB-005 watchtowers slot in post-TASK-207) → P6 capstone playtest (TASK-183 successor, human WATCH) → **MERGE GATE**.
+
+#### TASK-214 — BRANCH FIRST: cut m7.6-arena10x off main before any batch file change (build)
+- assignee: build-master
+- status: **done** (2026-07-18 — branch `m7.6-arena10x` cut at main HEAD `a33aba6` via pure ref creation, no checkout; working tree verified untouched; lane strategy in handoffs/TASK-214.md)
+- blocked-by: none
+- parallel-safe: no (Git)
+- spec: >
+    Cut branch `m7.6-arena10x` off current `main` HEAD (VERIFY git state first — Jonathan self-commits; record the base hash).
+    NO file changes in this task. Record in the handoff: branch base hash + the ownership law (branch exclusively owns
+    L_Arena.umap + DA_BattlefieldScatter; M7.5 never touches them; branch = rollback). Do NOT push. ACCEPTANCE: branch exists
+    locally at the recorded base; main untouched. Post base hash in 🔧 Build & Git.
+- names: >
+    Branch `m7.6-arena10x` (manager relabel of the plan's `m8-arena10x`). Law: CONVENTIONS "Arena 10× scale-up & LOD/perf
+    (M7.6)" (branch ownership), milestone-branch workflow memory.
+
+#### TASK-215 — CONVENTIONS: M7.6 law block (Nanite amendment, LOD law, cull-field naming, W-gate + branch ownership) (manager)
+- assignee: manager
+- status: **done** (2026-07-18 — CONVENTIONS "Arena 10× scale-up & LOD/perf (M7.6)" section written + live: Nanite vista-only amendment (ruling #4), classic-LOD law, TASK-220 sequencing law, FScatterLayer CullStartDistance/CullEndDistance/bCastShadows naming, branch-ownership + W-gate laws. This decomposition is the deliverable.)
+- blocked-by: none
+- parallel-safe: yes
+- spec: >
+    Write the M7.6 law before task issue (done): scoped Nanite exception, lod_group/castle-reduction/SK-LOD/URO law, scatter
+    cull-field names, branch ownership, W-gate law, cross-batch sequencing law.
+- names: >
+    CONVENTIONS.md "Arena 10× scale-up & LOD/perf (M7.6)".
+
+#### TASK-216 — Phase-0 C++: constants sweep + bot castle-relative attack spawn + NavSettleDelay→poll (C++, on branch)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-18 — qa/TASK-216-217-220-qa.md PASS 0 blockers; constants exact vs plan, both beyond-plan mirrors adjudicated correct, defend-unit scope call APPROVED [W1 owns the feel], nav poll verified incl. 5.8 API check. Feeds TASK-218)
+- blocked-by: TASK-214 (branch exists — this work happens ON m7.6-arena10x)
+- parallel-safe: yes (files; disjoint from TASK-217's ini)
+- spec: >
+    On `m7.6-arena10x`, apply the plan §1 C++ sweep EXACTLY (plan is numeric truth): `ScatterConfig.h` ArenaHalfExtent
+    (26,000, 12,000), keep-clears 1,500/600/800 (mesh-relative), CorridorHalfWidth 1,000 (ruling #2 — ends the C++/DA
+    disagreement); `BattlefieldScatter.cpp` castle refs ±25,000 (:529/:533), node refs ±24,200 (:559/:563), PlayerStart
+    −23,800 (:581); `BattlefieldScatter.h` CorridorWidenStep 400, NavSettleDelay 0.75 → POLL `UNavigationSystemV1::
+    IsNavigationBeingBuilt()` with a 2.0 s fallback timeout, CastleQueryInset keep; `SiegeBotController.h` fallbacks
+    (25,000,0,0)/(24,200,0,0) PLUS ruling #1 — REPLACE the BotCenterlineSpawnX=350 mid-field spawn: attack waves spawn
+    castle-relative ~1,500–2,000 in front of Castle_Red (lane spread ±900 kept) and MARCH; knob stays EditDefaultsOnly.
+    Keep-list untouched (decision 4). ACCEPTANCE: sweep matches the plan tables line-for-line; bot spawn is castle-relative
+    with no mid-field materialize path left; compiles deferred to TASK-218. QA implied (shadow + include scans). Post in
+    ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/ScatterConfig.h`, `BattlefieldScatter.{h,cpp}`, `SiegeBotController.h` (branch
+    only). Law: CONVENTIONS "M7.6" + "Battlefield & procedural terrain (M6.5)" (contracts stay, numbers scale).
+
+#### TASK-217 — Phase-0 Recast ini coarsening for ~9.8× area (config, on branch)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-18 — qa/TASK-216-217-220-qa.md PASS clean; [1]=Default independently confirmed vs engine source; actor-mirror caveat recorded. Feeds TASK-218)
+- blocked-by: TASK-214 (branch)
+- parallel-safe: yes (single file Config/DefaultEngine.ini; disjoint from TASK-216's files)
+- spec: >
+    On the branch, coarsen `[/Script/NavigationSystem.RecastNavMesh]` in `Config/DefaultEngine.ini` per plan §1: TileSizeUU
+    2000 (~350 tiles), CellSize 32 / CellHeight 20 (UE5: via the NavMeshResolutionParams Default entry), bFixedTilePoolSize=
+    True + TilePoolSize=1024, bDoFullyAsyncNavDataGathering=True; RuntimeGeneration=Dynamic KEPT (buildings must carve).
+    Deliver the exact param table in the handoff for TASK-218 to MIRROR onto the L_Arena RecastNavMesh actor — ini and actor
+    MUST match (decision 7). Record the fallback ladder reference (plan §1). ACCEPTANCE: single clean section, params exact,
+    handoff table present. QA implied (config review — single-section/no-drift precedent). Post in ⚙️ Dev & QA.
+- names: >
+    `Config/DefaultEngine.ini` `[/Script/NavigationSystem.RecastNavMesh]`. Law: CONVENTIONS "M7.6", plan §1 RecastNavMesh
+    table (numeric truth).
+
+#### TASK-218 — Phase-0 integration: compile + L_Arena 10× actor pass + nav rebuild + DA extents + PIE sanity + branch commit (build)
+- assignee: build-master
+- status: **done** (2026-07-19 — commit `42011de` on `m7.6-arena10x`; compile clean 20.3s; §1b actor pass exact w/ readback; Recast actor==ini verified; FULL nav rebuild baked into L_Arena (umap 122KB→292KB) after fixing the MCP transform/PostEditChange nav-bounds gotcha (see handoffs/TASK-218.md §3); DA (26k,12k)/1000/1500-600-800, densities untouched; PIE: Traversability CONFIRMED ×2 (0 culls), bot waves castle-front X=23,250 marching + miner loop, full A→B march proven via castle kill; editor closed/reopened under Jonathan's explicit grant, left RUNNING with L_Arena for W1. W1 checklist in handoffs/TASK-218.md. Follow-ups for manager: ground-tiling polish, TeamFill footprint, ISM material usage-flag resaves, first-contact ≈2.5 min (not ~9) pacing flag)
+- blocked-by: TASK-216 (qa-passed), TASK-217 (qa-passed), editor+MCP up
+- parallel-safe: no (single editor + Git; coordinate with Jonathan if he is active — editor-close is HIS choice)
+- spec: >
+    On the branch: (1) COMPILE the Phase-0 C++ (editor-bounce per learnings). (2) EDITOR PASS per plan §1 table (numeric
+    truth): castles/anchors ±25,000, GoldNodes ±24,200, PlayerStart (−23,800,0,100), ArenaGround scale (560,250,1) top Z=0
+    (VERIFY ground-material UVs world-aligned, else ×3.125 tiling), walls E/W ±27,500 Y-scale 250 / N/S ±12,500 X-scale 560,
+    NavMeshBoundsVolume (280,125,12), SkyDome scale 3,000, TeamFill RectLights ±12,500 atten 20,000 (fallback if Lumen
+    spikes: delete + tint ground by X-sign), ExponentialHeightFog 0.008/10,000/~0.85; KillZ/PP/camera KEEP. (3) MIRROR the
+    TASK-217 param table onto the RecastNavMesh actor (ini/actor match check), then Build > Navigation + resave (editor-
+    python route; else flag Jonathan's one click in 🚨) — kills the stale serialized bake. (4) DA_BattlefieldScatter:
+    extents (26,000,12,000), corridor 1,000, keep-clears — DENSITIES UNCHANGED at Phase 0. (5) PIE SANITY: full A→B march
+    completes (units + hero reach both castles), bot marches FROM its castle, Play Again ×3 clean, miner loop intact,
+    Message Log clean. (6) COMMIT ON THE BRANCH (explicit pathspecs, no push). ACCEPTANCE: all six recorded + hash; W1
+    WATCH checklist posted for Jonathan. Post in 🔧 Build & Git.
+- names: >
+    `/Game/Maps/L_Arena` actors per plan §1; `DA_BattlefieldScatter`; RecastNavMesh actor. Branch commits only. Law:
+    CONVENTIONS "M7.6" (ownership, W-gate), "World axes" (main's law untouched until merge).
+
+#### TASK-219 — W1 GATE: Jonathan perf/feel watch on the 10× field (Jonathan — external gate; GATES ALL LATER PHASES)
+- assignee: Jonathan (external gate)
+- status: backlog
+- blocked-by: TASK-218 (Phase 0 integrated on branch)
+- parallel-safe: yes (external)
+- spec: >
+    Jonathan plays the Phase-0 10× arena (densities still old — this is the SCALE gate, not the density gate) and rules:
+    fps/feel at several field positions (first real number — no baseline exists), nav feel (spawn/path latency at the
+    coarsened tiles), FULL-MARCH pacing sanity — ruling #1 makes first contact ~9 min, confirm his "accepted for now" LIVE,
+    bot behavior (marches from castle, defends, mines), Play Again ×3, miner loop. Outcomes may invoke: nav fallback ladder,
+    TeamFill delete, fog iterate, pacing revisit (spawn-forward/waypoint backlog item pulls forward if the conga-line hurts).
+    NOTHING in P1–P6 dispatches before this sign-off (W-gate law). Ruling recorded here; manager then decomposes P1∥P2.
+- names: >
+    Ruling on this task. Law: CONVENTIONS "M7.6" W-gate law; plan §6 risks (march-pacing compound WATCH).
+
+#### TASK-220 — Reimport LOD-group line ON MAIN (pulled forward from Phase 4 — sequencing law) (tooling)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-18 loop-1 re-review PASS — qa/TASK-216-217-220-qa.md: 5.8 API blocker cleared engine-header-verified, dead fallback dropped, LOD_STEP_FAILED hardening + state-neutral failure verified; collision-helper fallbacks confirmed out-of-scope. COMMIT ROUTING [orchestrator]: rides TASK-210's consolidated main commit — tree is mid-TASK-218 on the branch, no interleaved main commit. Unblocks TASK-202 QA-side + Phase-4 cherry-pick)
+- blocked-by: none
+- parallel-safe: yes (single file Tools/reimport_meshes.py, on MAIN)
+- spec: >
+    Plan §2-A, pulled forward so M7.5's retexture wave applies LODs for free (SEQUENCING LAW, decision 6). In
+    `Tools/reimport_meshes.py::_reimport_one()`, immediately after the Nanite-OFF block (~line 396): assign
+    `lod_group='LargeProp'` (auto 4-LOD chain) to every reimported SM — EXCEPT the castle path, which gets explicit
+    reduction LOD1 50% @ screen 0.4 / LOD2 25% @ 0.15 (landmark silhouette). Idempotent; NO other behavior change (same-path
+    overwrite, slots, Nanite-OFF, collision untouched). ACCEPTANCE: dry-run/readback shows the LOD group (or castle explicit
+    LODs) set on a test reimport, everything else byte-identical in behavior; QA implied (tooling QA). COMMIT: rides
+    TASK-196 if timing aligns, else a standalone build-master micro-commit (orchestrator's call); cherry-pick/merge into
+    m7.6-arena10x at Phase 4. Cross-link: TASK-202 is blocked on this landing QA-passed on main. Post in ⚙️ Dev & QA.
+- names: >
+    `Tools/reimport_meshes.py` (`_reimport_one()`, after the Nanite-OFF block). Law: CONVENTIONS "M7.6" classic-LOD +
+    sequencing laws, "Textured mesh law" (reimport invariants).
 
 ---
 
@@ -232,7 +486,7 @@ Dispatch shape: **TASK-191 (manager CONVENTIONS) lands FIRST (done — this deco
 
 #### TASK-196 — Track-C batch commit: tooling + manifest + validation evidence (build)
 - assignee: build-master
-- status: backlog
+- status: **done** (2026-07-18 — commit `a33aba6` on main, LOCAL-ONLY not pushed; 13 files via explicit pathspecs: 3 Tools/ArtPipeline files (192/193/194) + M7.5 pipeline docs deliberately included (TASKBOARD/CONVENTIONS/FAB-REQUESTS, handoffs 192–195+206+170-171 addendum, qa/TASK-192-193-qa.md PASS). Cache/Inbox evidence cited by path in the message, NOT committed; no Content/, __pycache__ left untracked. Wall/DeepMine NOT folded (Space-side malfunction, still blockouts). Note: origin/main was found at a16df32 — Jonathan pushed his M7 stack; a33aba6 is the only unpushed commit.)
 - blocked-by: TASK-192, TASK-193 (qa-passed), TASK-194, TASK-195
 - parallel-safe: no (Git)
 - spec: >
@@ -263,7 +517,7 @@ Dispatch shape: **TASK-191 (manager CONVENTIONS) lands FIRST (done — this deco
 
 #### TASK-198 — Meshy client tool: meshy_generate.py (retexture + image-to-3D modes) (tooling)
 - assignee: gameplay-programmer
-- status: backlog
+- status: qa-passed (2026-07-18 — qa/TASK-198-qa.md PASS 0 blockers; secret law leak-free, exit codes verified, live evidence consistent. 2 warns (413-no-retry advisory; inherited CARD_ID_RE gap in BOTH generate tools — follow-up candidate) + 4 nits. TASK-199 clear)
 - blocked-by: TASK-197 (key present — `--check` + live verification impossible without it)
 - parallel-safe: yes (new file; headless)
 - spec: >
@@ -282,7 +536,7 @@ Dispatch shape: **TASK-191 (manager CONVENTIONS) lands FIRST (done — this deco
 
 #### TASK-199 — Meshy A/B retexture run: Ogre (recorded-dark) through Stage-1.5 + Stage-2 → 3-arm board (art)
 - assignee: art-director
-- status: backlog
+- status: done (2026-07-18 — 4-col board at Cache/Ogre/AB_meshy/BOARD_Ogre_{front,threequarter,beauty_cycles,Dtexture}_dark_lift_tuned_meshy.png; arm C from EXISTING meshy_retex.glb, 0 credits; INVARIANT held [15000 tris, [TeamRegion, OgrePBR] 351f/2.1%, UVMap]; shipped assets sha-verified bit-identical; verdict C > B2 > B1 > A, fleet rec = Meshy retex + lift defaults, units-first 110 cr of 3273; handoffs/TASK-199.md → TASK-200 gate package complete)
 - blocked-by: TASK-198 (tool QA-passed), TASK-195 (arm-B renders exist)
 - parallel-safe: yes (headless Bash + Blender; no editor, no import)
 - spec: >
@@ -332,7 +586,7 @@ Dispatch shape: **TASK-191 (manager CONVENTIONS) lands FIRST (done — this deco
 #### TASK-202 — Fleet Stage-3 reimport: same-path SM_ overwrite of the retextured meshes (art, editor)
 - assignee: art-director
 - status: backlog
-- blocked-by: TASK-201 (production FBX + per-wave eyeball), editor+MCP up
+- blocked-by: TASK-201 (production FBX + per-wave eyeball), TASK-220 (reimport LOD-group line QA-passed on MAIN — M7.6 sequencing law: this wave then applies LODs for free), editor+MCP up
 - parallel-safe: no (editor-mutating — single editor, serialize)
 - spec: >
     Import the approved fleet via the PROVEN automation (Tools/reimport_meshes.py commandlet + reimport_finalize_materials_mcp.py;
@@ -348,7 +602,7 @@ Dispatch shape: **TASK-191 (manager CONVENTIONS) lands FIRST (done — this deco
 
 #### TASK-203 — Meshy animation SPIKE: auto-rig + preset clips on Footman → IK Retargeter → scratch A/B (art, editor)
 - assignee: art-director
-- status: backlog
+- status: **needs-review** (2026-07-18 — spike evidence complete: Meshy rig+4 clips landed, IK_MeshyBiped/IK_SiegeBiped/RTG built, 4 clips retargeted to scratch, A/B boards + captures posted, live assets proven untouched; FLAG: headless IK-batch export transfers pelvis-only motion — one-click UI check ruled at TASK-204; clips cost 3 credits each, NOT free — handoffs/TASK-203.md)
 - blocked-by: TASK-197 (key), editor+MCP up (retarget step)
 - parallel-safe: no (editor-mutating retarget/import — single editor; the Meshy/API half is headless)
 - spec: >
@@ -367,7 +621,7 @@ Dispatch shape: **TASK-191 (manager CONVENTIONS) lands FIRST (done — this deco
 
 #### TASK-204 — EYEBALL GATE: Meshy animation spike sign-off + fleet-anim ruling (Jonathan — external gate)
 - assignee: Jonathan (external gate)
-- status: backlog
+- status: backlog → **SATISFIED-IN-SUBSTANCE for units (manager Ruling A, overnight batch 2026-07-19)** — Jonathan's overnight directive names the exact deficiency the Meshy clips fix (Footman attack must move legs+arms); the preset-clip rollout proceeds tonight (TASK-221..224) with per-unit conservative acceptance; his formal eyeball = the morning review. If the TASK-221 in-editor export spike ALSO drops FK rotation, the lane is blocked on his manual click — finding recorded here. **FINDING (TASK-221, 2026-07-19): it DOES also drop FK in-editor — retargeted foot 7.07 uu vs source 57 uu, byte-identical numbers to the headless run, with rig/chain/bone-resolution config verified correct at every layer and in-session re-init/remap attempted. The batch op is broken process-independently in UE 5.8. NEXT (Jonathan, one click, ~2 min): open `RTG_MeshyBiped_to_SiegeBiped`, set Src_Walk as source preview — if the target follows with full limb motion, use the retarget editor's own "Export Selected Animations" for the 4 Footman clips (the RTG asset + IK rigs are proven good); if the preview is ALSO root-only, the RTG chain data itself is suspect despite all readbacks passing. Scripted amplitude-verification + wiring can then resume via the remote-exec lane (see handoffs/TASK-221-222.md — re-enable = one MCP set_properties call).**
 - blocked-by: TASK-203 (comparison captures posted)
 - parallel-safe: yes (external)
 - spec: >
@@ -380,7 +634,7 @@ Dispatch shape: **TASK-191 (manager CONVENTIONS) lands FIRST (done — this deco
 #### TASK-205 — Fleet animation retarget rollout per the TASK-204 ruling (art, editor)
 - assignee: art-director
 - status: backlog
-- blocked-by: TASK-204 (ruling — possibly cancelled-by-ruling)
+- blocked-by: TASK-204 (ruling — possibly cancelled-by-ruling) **[overnight batch note 2026-07-19: TASK-221/222/224 execute this task's scope incrementally under Ruling A — no duplicate ownership; TASK-205 closes or carries the remainder at morning reconcile]** **[TASK-221 spike FAIL 2026-07-19: batch export drops FK in-editor too (foot 7.07 vs 57 uu, identical to headless) — export lane needs Jonathan's manual UI Export or an engine fix; see TASK-204 finding + handoffs/TASK-221-222.md]**
 - parallel-safe: no (editor-mutating — single editor, serialize)
 - spec: >
     Roll the approved clips across the ruled unit list: retarget via the TASK-203 RTG_ asset, then OVERWRITE `A_<CardID>_<Action>`
@@ -481,6 +735,72 @@ Dispatch shape: **TASK-191 (manager CONVENTIONS) lands FIRST (done — this deco
 - names: >
     Verify `/Game/Meshes/SM_*`, `/Game/Characters/Anims/A_*`, `Content/Fab/*` quarantine intact. Commit to main only, no push,
     no branch. Law: CLAUDE.md hard gates, CONVENTIONS all M7.5 laws.
+
+#### TASK-211 — HOTFIX: clear Jonathan's 3 recurring editor Load Errors (stale Meshy-spike ref + unsaved skeleton bone merge) (art, editor)
+- assignee: art-director
+- status: **done (escalation resolved by manager ruling 2026-07-18)** ← was: escalated (2026-07-18 art-director: error 1 RESOLVED+verified, no Jonathan click needed; errors 2+3 STRUCTURAL — every unit mesh roots at `<Unit>_Rig` vs skeleton root `Footman_Rig` so the bone merge fails silently on every load and the spec'd load+save is a proven no-op; fleet-wide all 8 non-Footman units; fix lanes + evidence in handoffs/TASK-211.md — needs manager re-scope; ABP_Footman verified bound+clean, zero mutations made). **MANAGER RULING: FIX LANE (handoff option 1)** — Jonathan explicitly asked for these errors FIXED; accept-as-benign contradicts the user directive, and the fix is cheap, permanent, and hardens the rig pipeline against recurrence. → follow-ups **TASK-212 (tooling: armature-object rename in rig_character.py + batch-rename the 8 existing rig FBXs) → TASK-213 (editor: 8× same-path SK_<Unit> reimport + skeleton/ABP/Message-Log verify)**. NOT folded into TASK-205 (it gates on the TASK-204 eyeball — too slow for a live-editor annoyance, and it touches A_ clips, not SK meshes); TASK-213 sequences BEFORE any TASK-205 fleet wave so retargets land on a clean skeleton. TASK-209 FAB interaction noted: hardening + near-term fix stay valuable regardless of eventual pack replacements. This task itself made zero mutations; nothing to commit.
+- blocked-by: none (MCP up; Jonathan ACTIVE in the editor — coordinate-safe ops ONLY, no editor close/restart, no save-all)
+- parallel-safe: no (editor-mutating — single editor)
+- spec: >
+    Fix the 3 recurring Message Log Load Errors in Jonathan's live editor. DIAGNOSIS (done, orchestrator-verified — do not re-derive):
+    (1) "/Game/A_Footman_Meshy_Idle → dependent /Game/Characters/Anims/AB_Test/SK_Footman_Meshy_Skeleton ... Skipped package" — the
+    TASK-203 incident's root-level strays ARE deleted on disk (Content root clean; AB_Test/ holds the 11 intended scratch assets);
+    the recurring load is a STALE REFERENCE in the live editor, most likely the spike-era anim-editor tab (the one that wedged the
+    Walk delete, handoffs/TASK-203.md) being restored, or a lingering asset-registry/referencer entry. (2)+(3) "SK_Footman_Skeleton
+    is missing bones that SK_Cavalry / SK_Knight needs" — PRE-EXISTING M7 debt, NOT spike damage: unit imports merged bones
+    transiently but the shared skeleton was never re-saved, so it re-fires every load. WORK: (a) verify via asset-registry that
+    NOTHING on disk references /Game/A_Footman_Meshy_Idle; close/clear the stale anim tab(s) programmatically if possible, else
+    hand Jonathan the one-click instruction; (b) load SK_Cavalry + SK_Knight to force the bone merge, then SAVE SK_Footman_Skeleton
+    plus ONLY the specific dirtied assets (NEVER save-all — the L_Arena law) and VERIFY ABP_Footman stays skeleton-bound + compiles
+    (LogsToolset; the a7a77f6 rebind precedent is the recovery path if not) and the roster still animates. ACCEPTANCE: Message Log
+    clean of all 3 errors on a fresh check; live assets otherwise untouched; every action coordinate-safe with Jonathan active.
+    Post in 🎨 Art; NOT committed (rides TASK-210 or its own build-master flow — reconcile).
+- names: >
+    `/Game/Characters/Anims/AB_Test/*` (scratch, intact), `SK_Footman_Skeleton` + `ABP_Footman` (`/Game/Characters/`), SK_Cavalry/
+    SK_Knight. No renames, no deletes outside verified strays. Law: CONVENTIONS "Skeletal rig & animation workstream (M7)",
+    "Meshy second engine (M7.5)" (scratch-path clause); editor-close-is-Jonathan's-choice memory.
+
+#### TASK-212 — Rig-FBX armature-root fix: rig_character.py hardening + batch-rename the 8 existing rig FBXs (tooling)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-18 — qa/TASK-212-qa.md PASS 0 blockers; use_connect safety claim CONFIRMED (flag not FBX-serializable), 8-unit list verified complete, atomic-replace ordering verified. 2 warns/3 nits recorded. TASK-213 clear to dispatch)
+- blocked-by: none
+- parallel-safe: yes (headless Blender + Tools/; no editor, no Content/*.uasset)
+- spec: >
+    Root cause (handoffs/TASK-211.md, evidence-verified — do not re-derive): the 8 non-Footman rig FBXs export the Blender armature
+    OBJECT named `<Unit>_Rig`; UE's FBX importer converts that node into an extra ROOT bone, so every SK_<Unit> roots at `<Unit>_Rig`
+    ≠ the shared skeleton's root `Footman_Rig` and MergeAllBonesToBoneTree silently fails on every load (the recurring missing-bones
+    warnings). TWO deliverables, one lane: (1) HARDEN `Tools/ArtPipeline/rig_character.py` — the exported armature object is named
+    exactly `Footman_Rig` (the shared-skeleton root) for EVERY unit, constant, not `<Unit>_Rig`; bone hierarchy untouched (root →
+    pelvis → …, 21 bones). (2) BATCH-RENAME the 8 existing rig FBXs in place at `Content/RawAssets/Characters/<Unit>.fbx` (Pikeman,
+    Cleric, Longbowman, MilitiaMob, Miner, Sapper, Cavalry, Knight) via a small headless Blender script (or a rig_character.py mode):
+    import → rename armature object to `Footman_Rig` → re-export with the law's axis contract; NOTHING else changes (verify bone
+    count/hierarchy + mesh/materials byte-comparable in the Blender report). Footman.fbx untouched (already roots the skeleton).
+    ACCEPTANCE: all 8 FBXs show armature object `Footman_Rig` with unchanged 21-bone hierarchy on Blender re-inspection;
+    rig_character.py future exports emit the constant root; QA implied (tooling QA). Post in ⚙️ Dev & QA.
+- names: >
+    `Tools/ArtPipeline/rig_character.py` (+ optional `Tools/ArtPipeline/fix_rig_root.py` batch script). In-place FBX rewrites
+    `Content/RawAssets/Characters/{Pikeman,Cleric,Longbowman,MilitiaMob,Miner,Sapper,Cavalry,Knight}.fbx`. Law: CONVENTIONS
+    "Skeletal rig & animation workstream (M7)" (SKEL_SiegeBiped shared-skeleton contract, raw-asset rule), tooling law.
+
+#### TASK-213 — SK fleet root-fix reimport: 8× same-path SK_<Unit> + skeleton save-once + Message-Log clean verify (art, editor)
+- assignee: art-director
+- status: done (2026-07-18 art-director — all 8 SK_<Unit> reimported same-path from the TASK-212 FBXs [MCP import_file refuses overwrite → Jonathan's one bulk Reimport click on my pre-selected 8, coordinated in 🎨 Art]; disk truth: `<Unit>_Rig` purged / `Footman_Rig` ×3 in every uasset; skeleton 22→22 bones NEVER dirtied (roots now match — no merge needed; not saved, per only-what-dirties); slots [TeamRegion,<Unit>PBR] + MIs survived un-reset; verts identical; ABP bound + zero compile errors; A_Knight_Walk/A_Cavalry_Attack animate spot-check PASS; load-all-8 fired ZERO new missing-bones (only the 2 pre-wave 20:38 residue lines remain, clear on next session). Saved exactly the 8 SK uassets. handoffs/TASK-213.md; rides TASK-210)
+- blocked-by: TASK-212 (renamed FBXs, QA-passed), editor+MCP up
+- parallel-safe: no (editor-mutating — single editor; Jonathan is ACTIVE — coordinate the wave with him or run at a quiet moment, no close/restart without his say, NEVER save-all)
+- spec: >
+    Same-path REIMPORT of the 8 SK_<Unit> meshes from the TASK-212-renamed FBXs against the EXISTING shared skeleton
+    `/Game/Characters/SK_Footman_Skeleton` (M7 rigged-import lane precedent, TASK-165): unchanged asset paths so ABP/BP/soft-ref
+    wiring survives; slots keep the two-slot [TeamRegion, <UnitID>PBR] contract. Then VERIFY: loading each SK_<Unit> (incl.
+    SK_Cavalry + SK_Knight, the two live offenders) fires NO missing-bones warning (mesh root `Footman_Rig` now matches the
+    skeleton root); save SK_Footman_Skeleton ONCE IF it dirties plus ONLY the specific dirtied assets (only-what-dirties law);
+    ABP_Footman stays skeleton-bound + compiles clean (a7a77f6 rebind is the recovery path); roster spot-check animates
+    (A_<Unit>_Walk preview or SummonTestUnit on 2–3 units). ACCEPTANCE: fresh Message Log clean of the missing-bones errors with
+    all 8 loaded; ABP bound + roster animates; nothing saved beyond what dirtied; NOT committed (rides TASK-210 — reconcile).
+    Post in 🎨 Art.
+- names: >
+    Same-path `/Game/Characters/SK_{Pikeman,Cleric,Longbowman,MilitiaMob,Miner,Sapper,Cavalry,Knight}` from
+    `Content/RawAssets/Characters/<Unit>.fbx`; `SK_Footman_Skeleton` + `ABP_Footman` verify. Law: CONVENTIONS "Skeletal rig &
+    animation workstream (M7)" (shared skeleton, two-slot SK contract); editor-close-is-Jonathan's-choice memory.
 
 ---
 
