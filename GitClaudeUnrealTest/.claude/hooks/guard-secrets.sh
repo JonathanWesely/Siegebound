@@ -8,8 +8,9 @@ deny() {
   exit 0
 }
 
-# High-confidence token formats (AWS, GitHub, Slack, Anthropic/OpenAI, Google, JWT, PEM keys)
-if printf '%s' "$input" | grep -qE 'AKIA[0-9A-Z]{16}|gh[oprsu]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|hf_[A-Za-z0-9]{20,}|xox[abprs]-[0-9A-Za-z-]{10,}|sk-(ant-|proj-)?[A-Za-z0-9_-]{24,}|AIza[0-9A-Za-z_-]{35}|eyJ[A-Za-z0-9_-]{8,}\.eyJ|-----BEGIN [A-Z ]*PRIVATE KEY-----'; then
+# High-confidence token formats (AWS, GitHub, Slack, Anthropic/OpenAI, Google, JWT, PEM keys,
+# Meshy msy_ — observed prefix, TASK-198)
+if printf '%s' "$input" | grep -qE 'AKIA[0-9A-Z]{16}|gh[oprsu]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|hf_[A-Za-z0-9]{20,}|msy_[A-Za-z0-9]{20,}|xox[abprs]-[0-9A-Za-z-]{10,}|sk-(ant-|proj-)?[A-Za-z0-9_-]{24,}|AIza[0-9A-Za-z_-]{35}|eyJ[A-Za-z0-9_-]{8,}\.eyJ|-----BEGIN [A-Z ]*PRIVATE KEY-----'; then
   deny "content matches a known API-token format"
 fi
 

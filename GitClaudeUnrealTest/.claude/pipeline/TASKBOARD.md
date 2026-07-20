@@ -149,7 +149,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 #### TASK-221 — SPIKE: in-editor IKRetargetBatchOperation export — does FK limb rotation survive? (art, editor) [P1, 25 min]
 - assignee: art-director
-- status: done 2026-07-19 01:15 — **SPIKE VERDICT: FAIL.** In-editor `IKRetargetBatchOperation.run_batch_retarget` (via UE python remote-execution INSIDE the live editor, on Src_Walk per dispatch) produces the IDENTICAL root-only output as the headless commandlet: retargeted foot_l/foot_r amplitude **7.07 uu** vs source foot **56.97 uu** (pelvis 7.16 vs 7.1 transfers fine; hands 7.2 = root-only too). Repair attempts all no-effect: per-op `run_op_initial_setup`, `assign_ik_rig_to_all_ops` (both rigs), `auto_map_chains(EXACT, force)` global AND per-op. Config verified correct at EVERY layer incl. new checks: FK op source-chain map LeftLeg←LeftLeg…(9/9), chain start/end bones resolve on both real skeletons, retarget roots Hips/pelvis valid. Conclusion: the batch-op FK transfer is broken PROCESS-INDEPENDENTLY in UE 5.8 — NOT a commandlet-environment defect. Anim lane BLOCKED on Jonathan's manual UI check/Export (note: the UI Export lane itself is still UNTESTED — TASK-203 §5's one-click preview check will reveal whether even that works). Evidence asset `/Game/Characters/Anims/AB_Test/Src_Walk_LiveSpike` (saved). Handoff: handoffs/TASK-221-222.md
+- status: done 2026-07-19 01:15 — **SPIKE VERDICT: FAIL.** In-editor `IKRetargetBatchOperation.run_batch_retarget` (via UE python remote-execution INSIDE the live editor, on Src_Walk per dispatch) produces the IDENTICAL root-only output as the headless commandlet: retargeted foot_l/foot_r amplitude **7.07 uu** vs source foot **56.97 uu** (pelvis 7.16 vs 7.1 transfers fine; hands 7.2 = root-only too). Repair attempts all no-effect: per-op `run_op_initial_setup`, `assign_ik_rig_to_all_ops` (both rigs), `auto_map_chains(EXACT, force)` global AND per-op. Config verified correct at EVERY layer incl. new checks: FK op source-chain map LeftLeg←LeftLeg…(9/9), chain start/end bones resolve on both real skeletons, retarget roots Hips/pelvis valid. Conclusion: the batch-op FK transfer is broken PROCESS-INDEPENDENTLY in UE 5.8 — NOT a commandlet-environment defect. Anim lane BLOCKED on Jonathan's manual UI check/Export (note: the UI Export lane itself is still UNTESTED — TASK-203 §5's one-click preview check will reveal whether even that works). Evidence asset `/Game/Characters/Anims/AB_Test/Src_Walk_LiveSpike` (saved). Handoff: handoffs/TASK-221-222.md **[2026-07-19 day update: UI Export lane now TESTED — ALSO FAIL. Jonathan's live "Export Selected Animations" produced root-only clips (Walk foot 7.07 uu, identical to batch); output log shows the UI button calls the same Duplicate-and-Retarget batch op. Preview processor confirmed GOOD by eyewitness. Spike conclusion upgraded: the defect is in the one shared exporter, not any invocation environment. See TASK-204 FINDING 2.]**
 - blocked-by: TASK-218 (editor frees)
 - parallel-safe: no (editor)
 - spec: >
@@ -162,8 +162,8 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 #### TASK-222 — Footman live wiring: 4 Meshy clips same-path (Jonathan's named example) (art, editor) [P1, 30 min]
 - assignee: art-director
-- status: BLOCKED 2026-07-19 01:15 — SKIPPED tonight per spike-FAIL branch (TASK-221 verdict FAIL: batch export drops FK in-editor too). Blocked on Jonathan's manual UI Export click (or an engine-side fix). Live A_Footman_* untouched; ABP clean.
-- blocked-by: TASK-221 (spike PASS) — **spike returned FAIL 2026-07-19**
+- status: BLOCKED-ESCALATED 2026-07-19 (day) — GO attempt run after Jonathan's live UI export: exports located (`AB_Test/Src_{Idle,Walk,Attack,Death}1`, saved), objective amplitude check FAILED (Walk foot 7.07 uu vs source ~57/50, bar ≥40; all limbs ≈ pelvis on all 4 clips) — the UI Export lane is root-only too (same batch-op code path, log-proven). STOPPED per dispatch FAIL branch: NOTHING WIRED, no backups made (nothing to back up for), live A_Footman_* + ABP untouched, zero dirty assets. Export lane has NO working variant in UE 5.8; unblock options recorded on TASK-204 FINDING 2 (Blender-side retarget fallback / engine-source read / hotfix check). handoffs/TASK-221-222.md §7
+- blocked-by: TASK-221 (spike PASS) — **spike returned FAIL 2026-07-19; UI-export lane also FAIL 2026-07-19 (day)**
 - parallel-safe: no (editor)
 - spec: >
     Retarget + export A_Footman_{Idle,Walk,Attack,Death} and OVERWRITE at their existing /Game/Characters/Anims/ paths (same-path
@@ -188,7 +188,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 #### TASK-224 — Unit-loop: retarget + same-path wire as many units as the clock allows (art, editor) [P2, until 02:00 HARD]
 - assignee: art-director
 - status: backlog
-- blocked-by: TASK-222 (Footman proven live), TASK-223 (per-unit FBX ready) — **BLOCKED 2026-07-19: TASK-221 spike FAIL ⇒ 222 skipped ⇒ this task does not run tonight (Ruling A FAIL branch; clock pivots to art lane)**
+- blocked-by: TASK-222 (Footman proven live), TASK-223 (per-unit FBX ready) — **BLOCKED 2026-07-19: TASK-221 spike FAIL ⇒ 222 skipped ⇒ this task does not run tonight (Ruling A FAIL branch; clock pivots to art lane)** **[2026-07-19 day: fleet Src_ staging for a Jonathan export click NOT performed — the UI Export lane was disproven at the TASK-222 GO attempt (root-only, same batch-op path), so there is no export click to stage for. The 40 unit FBXs remain on disk ready to import the moment any working export/retarget lane exists (Blender-side fallback is the leading option, TASK-204 FINDING 2).]**
 - parallel-safe: no (editor)
 - spec: >
     Per unit (visibility order): retarget the 4 clips via the RTG_ pair, same-path overwrite A_<Unit>_*, quick PIE/preview
@@ -247,6 +247,134 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
     morning 📢 report. Post hash(es) in 🔧 Build & Git.
 - names: >
     Commits on `main` only. Law: CLAUDE.md hard gates; overnight grant (graceful, editor running at end).
+
+### 2026-07-19 morning — anim-export saga RESOLUTION lane (TASK-229..231; manager ruling)
+
+**Finding (Jonathan-eyewitnessed + evidence handoffs/TASK-221-222.md §7):** the IK-Retargeter PREVIEW is correct (full limb motion — RTG/rigs proven right), but ALL THREE export doors (commandlet, `IKRetargetBatchOperation` editor-python, UI "Export Selected Animations") route into the same `FIKRetargetBatchOperation`, which exports ROOT-ONLY in UE 5.8 (foot 7.07 uu = the broken-baseline signature; hypothesis: batch op reads the legacy empty chain-settings array while preview uses the op-based mapping). **MANAGER RULING: adopt OPTION 1 — Blender-side retarget** (bypasses UE's exporter entirely, zero Jonathan clicks, covers all 9 units off the 40 Meshy FBXs already on disk from TASK-223). Options 2 (engine-source read of the batch op) + 3 (UE hotfix/issue-tracker check) are recorded FALLBACKS — task-ized only if TASK-229 fails its amplitude gate. Cavalry rider-fit hold-back stands regardless of lane. Law: CONVENTIONS "Meshy second engine (M7.5)" → "UE-5.8 retarget-export defect + SANCTIONED export path" (added first). TASK-222 (blocked-escalated) is REVIVED AS TASK-230; the fleet loop TASK-224 is REVISED AS TASK-231. Ruling A (TASK-204 satisfied-in-substance) unchanged.
+
+#### TASK-229 — Blender-side retarget tool: retarget_meshy_to_siegebiped.py (tooling)
+- assignee: gameplay-programmer
+- status: qa-passed (2026-07-19 — qa/TASK-229-qa.md PASS 0 blockers, symbolic-trace verification of the transfer chain; gate proven method-identical to the UE baseline, false-pass structurally excluded; 1 adjudicated warn [no handedness check — TASK-230 eyeball owns visual correctness] + optional TASK-231 L/R-asymmetry assert + 4 nits. TASK-230 clear)
+- blocked-by: none
+- parallel-safe: yes (new file beside rig_character.py; headless Blender)
+- spec: >
+    Build `Tools/ArtPipeline/retarget_meshy_to_siegebiped.py` — headless Blender tool mapping the Meshy 24-bone Mixamo-style
+    clips onto our 21-bone SiegeBiped rig and exporting per-anim FBXs for DIRECT import onto SK_Footman_Skeleton (bypasses
+    UE's broken FIKRetargetBatchOperation entirely). Chain map is DOCUMENTED: IK_MeshyBiped's 9 verified chains + the
+    spine-reversal quirk (handoffs/TASK-221-222.md §7); reuse rig_character.py's SiegeBiped authoring patterns + the law's
+    FBX axis contract. Inputs `Content/RawAssets/Characters/Meshy/<Unit>/*.fbx` (40 on disk, TASK-223); outputs per-anim
+    retargeted FBX (scratch/output dir per unit, recorded in the handoff). CLI + exit-code discipline per the ArtPipeline
+    house style. ACCEPTANCE (hard gate): Footman Walk retargeted with FOOT AMPLITUDE ≥40 uu verified BOTH in Blender AND
+    after a UE test import onto SK_Footman_Skeleton (the 7.07 uu root-only signature = fail); bone names/count match the
+    21-bone hierarchy; no skew on Attack. QA implied (tooling QA). Post in ⚙️ Dev & QA.
+- names: >
+    `Tools/ArtPipeline/retarget_meshy_to_siegebiped.py` (beside rig_character.py). Law: CONVENTIONS "Meshy second engine
+    (M7.5)" sanctioned-export-path clause; "Skeletal rig & animation workstream (M7)".
+
+#### TASK-230 — Footman live wiring via the Blender lane (revives the TASK-222 spec) (art, editor)
+- assignee: art-director
+- status: **done** (2026-07-19 — 4 Meshy clips LIVE at unchanged `/Game/Characters/Anims/A_Footman_*` paths via same-path reimport-over; UE amplitude gate PASS Walk feet 61.59/52.79 ≥40; PIE-verified full-body attack + stride walk + believable death + idle sway, handedness correct/not mirrored, zero slide (root-lock); Attack RateScale 1.8, Death 1.5 (fits the 2.0 s destroy hold); backups saved at `Backup_Procedural/`; AB_Test Src_*1 + LiveSpike evidence deleted; handoffs/TASK-230.md — captures for Jonathan in Tools/ArtPipeline/Cache/Footman/retarget/ue_previews/, hero shot pie_41.png)
+- blocked-by: TASK-229 (qa-passed + amplitude gate proven), editor+MCP up
+- parallel-safe: no (editor)
+- spec: >
+    Revive TASK-222 with the sanctioned lane: run TASK-229's tool on Footman's 4 clips → import the retargeted FBXs onto
+    SK_Footman_Skeleton → BACKUPS of the live clips first → root-motion OFF, RateScale tuned to the existing cadence →
+    same-path OVERWRITE `/Game/Characters/Anims/A_Footman_{Idle,Walk,Attack,Death}` (preserves TASK-189 triggers + ABP law;
+    verify skeleton binding after import — the a7a77f6 lesson). PIE via SummonTestUnit: attack moves LEGS+ARMS (Jonathan's
+    named example), walk/idle clean, death holds, miner promptness intact. Before/after captures for Jonathan. ACCEPTANCE:
+    Footman animates with the Meshy clips live at unchanged paths; amplitude visibly correct in PIE. Post in 🎨 Art.
+- names: >
+    Same-path `/Game/Characters/Anims/A_Footman_{Idle,Walk,Attack,Death}`; SK_Footman_Skeleton; ABP_Footman verify. Law:
+    CONVENTIONS M7.5 animation clause (same-path), sanctioned-export-path clause; Ruling A.
+
+#### TASK-231 — Fleet loop via the Blender lane: 8 remaining units, Cavalry preview-gated (revises TASK-224) (art, editor)
+- assignee: art-director
+- status: **done** (2026-07-19, RECOVERY RUN — prior agent's stall reconstructed from evidence: its 5-unit wire was COMPLETE and law-compliant, nothing half-wired, no rollback. LIVE on Meshy clips at unchanged paths: Knight, Pikeman, Cleric, Longbowman, Miner (UE Walk gates 52.2/56.6, 55.8/45.1, 57.0/59.4, 59.4/41.3, 51.9/47.0 ≥40; rm=off rl=on; Attack rates 1.25/2.0/1.6/2.5/2.0 — Knight+Pikeman cadence-exact; Death 1.5 fleet-wide → 1.98s ≤ 2.0 hold; PIE-verified: Longbowman draws left-hand-bow correctly + death collapse, Cleric staff idle, Miner chops at GoldNode, Knight/Pikeman confirmed from live captures). HELD: Cavalry (gate FAIL 37.9/36.2 + preview shows horse deformed by rider-bone Walk — NEVER wire, needs quadruped source), Sapper (gate FAIL 5.4/11.8 — hunched rig breaks aim transfer; preview confirms lump-shuffle), MilitiaMob (borderline FAIL 39.4/34.2, short-unit stride; height-scaled floor ≈34 would pass — manager adjudication flagged). QA WARN-1 asymmetry assert applied: flips only on near-equal pairs, adjudicated non-mirror via PIE handedness. T231_Stage scratch deleted, zero dirty packages, ABP intact. handoffs/TASK-231.md; captures in Cache/<Unit>/retarget/ue_previews/)
+- blocked-by: TASK-230 (Footman proven live)
+- parallel-safe: no (editor; the Blender/tool half is headless and may pre-run)
+- spec: >
+    Run the tool across the remaining 8 rigged units (Knight, Cavalry, Pikeman, MilitiaMob, Sapper, Cleric, Longbowman,
+    Miner — 36 FBXs on disk) and wire per unit exactly as TASK-230 (backups, root-motion off, RateScale, same-path A_<Unit>_*
+    overwrite, binding verify, PIE spot-check). CONSERVATIVE per-unit acceptance (Ruling A): any unit that reads badly is
+    HELD BACK with the finding recorded. CAVALRY is PREVIEW-GATED — the rider-fit hold-back stands: retarget + preview
+    captures only, NO live overwrite without an explicit pass. Record the done/held split; TASK-205 closes at the reconcile
+    that follows this task. Commit rides the next build-master window. ACCEPTANCE: each accepted unit animates with Meshy
+    clips at unchanged paths; holds documented; Cavalry gated. Post per-unit one-liners in 🎨 Art.
+- names: >
+    Same-path `/Game/Characters/Anims/A_<Unit>_{Idle,Walk,Attack,Death}` per accepted unit; Cavalry = captures only until
+    passed. Law: CONVENTIONS M7.5 animation clause, sanctioned-export-path clause; Rulings A + conservative rollout.
+
+### 2026-07-19 — TASK-231 close-out rulings + consolidated commit window (TASK-232..235; manager)
+
+**State (handoffs/TASK-231.md):** 6/9 units LIVE on Meshy full-body anims (Footman + Knight/Pikeman/Cleric/Longbowman/Miner — cadence-exact rates, all procedural clips backed up); HELD: Cavalry (biped clips deform the horse — quadruped source needed), Sapper (hunched rig breaks aim transfer), MilitiaMob (39.43/34.25 vs the flat 40 floor — borderline, visually plausible short-unit stride). TASK-205 closed-by-reconcile.
+
+**Rulings:**
+1. **MilitiaMob: RULED IN** via the HEIGHT-NORMALIZED amplitude floor, now law (CONVENTIONS sanctioned-path clause amended: floor = 40 uu × height/1.75 m; MilitiaMob @ 1.49 m ⇒ ≈34, its 39.43/34.25 passes; the ~7 uu root-only signature stays an absolute fail; borderline passes still take a PIE visual verdict). Wire = TASK-232. Closes the biped fleet at 7/9.
+2. **Cavalry + Sapper retries: BACKLOG tasks** (TASK-233/234, not urgent — procedural anims remain live and law-compliant on both). Cavalry's quadruped need is FLAGGED INTO Jonathan's FAB-006 purchase decision (TAB Medieval Knights may include mounted units — weigh at TASK-207).
+3. **Longbowman draw overshoot (2.0 s draw vs 1.5 s cadence): PLAYTEST WATCH, not a task.** Stills read clean; the loop restarts ~75% through on continuous fire. Lever on record: RateScale 3.35 syncs exactly at the cost of a hasty draw. Jonathan's call at the next playtest — fold into the M7.5 checkpoint WATCH list.
+4. **COMMIT WINDOW AUTHORIZED — and it FOLDS the standing TASK-210 pile (TASK-210 RETIRED).** The pile is all qa-passed/verified work accumulating uncommitted risk for a day; one consolidated M7.5 commit matches TASK-210's original intent. Future M7.5 chain completions (TASK-200-gated fleet retexture, TASK-207-gated FAB conforms) get FRESH integration tasks when they happen.
+
+#### TASK-232 — MilitiaMob wire under the height-normalized floor (art, editor) [~15 min]
+- assignee: art-director
+- status: ready-for-integration (art DONE 2026-07-19 — LIVE at unchanged paths, saved not-dirty; gate PASS 39.43/34.25 vs 34.06, PIE verdict PASS all 4 clips; handoffs/TASK-232.md; commit rides TASK-235 per its (e) clause — fleet closes 7/9)
+- blocked-by: none (ruling 1 is the authorization; editor+MCP up)
+- parallel-safe: no (editor)
+- spec: >
+    Wire MilitiaMob exactly per the proven TASK-230/231 mechanics: backup /Game/Characters/Anims/Backup_Procedural/A_MilitiaMob_*,
+    same-path reimport-over A_MilitiaMob_{Idle,Walk,Attack,Death} onto SK_Footman_Skeleton, enable_root_motion=False +
+    force_root_lock=True, RateScale to cadence, in-editor amplitude re-gate at the HEIGHT-NORMALIZED floor (≈34 uu @ 1.49 m),
+    PIE visual verdict (short-stride plausible = pass; conservative law). ACCEPTANCE: MilitiaMob animates full-body at unchanged
+    paths, saved not-dirty; captures for Jonathan. Commit rides TASK-235. Post in 🎨 Art.
+- names: >
+    Same-path `/Game/Characters/Anims/A_MilitiaMob_{Idle,Walk,Attack,Death}` + Backup_Procedural. Law: CONVENTIONS
+    sanctioned-path clause (height-normalized floor), M7.5 animation clause.
+
+#### TASK-233 — BACKLOG: Cavalry quadruped anim source (art)
+- assignee: art-director
+- status: backlog (not urgent — procedural anims live; NEVER wire biped clips onto Cavalry, explicit-pass gate stands)
+- blocked-by: source decision (Meshy has NO quadruped clips — lanes: external quadruped/horse rig+clip source, OR FAB-006
+  mounted units [flagged into Jonathan's TASK-207 purchase decision], OR per-unit chain corrections in the TASK-229 tool)
+- parallel-safe: yes (headless until a wire)
+- spec: >
+    Solve the Cavalry hold (rider-fit rig: biped Walk drives rider hip/leg bones the horse is skinned to — saddle-line Hips
+    z-frac 0.688, deforms grotesquely; evidence stage_Cavalry_Walk_s10/Attack_s12). Evaluate lanes in the blocked-by line;
+    recommend + execute the chosen one via the sanctioned Blender lane with the amplitude + PIE gates. ACCEPTANCE: Cavalry
+    animates full-body without horse deformation, or the hold is re-affirmed with the lane verdicts recorded. Post in 🎨 Art.
+- names: >
+    `/Game/Characters/Anims/A_Cavalry_*` (same-path, only on explicit pass). Law: sanctioned-path clause; Ruling A conservative
+    rollout.
+
+#### TASK-234 — BACKLOG: Sapper re-rig + retarget retry (~17 Meshy credits) (art)
+- assignee: art-director
+- status: backlog (not urgent — procedural anims live)
+- blocked-by: none (credits ample)
+- parallel-safe: yes (headless Meshy + Blender; wire step editor-serial)
+- spec: >
+    Retry the Sapper hold (hunched rig, Hips z-frac 0.308, breaks the aim-transfer rest-pose premise; Attack preset was pure
+    root travel): Meshy re-rig with a corrected UPRIGHT pose and/or a different attack preset (~17 credits), re-run
+    retarget_meshy_to_siegebiped.py, amplitude + PIE gates, wire per the proven mechanics only on pass. ACCEPTANCE: Sapper
+    full-body at unchanged paths or hold re-affirmed with findings. Post in 🎨 Art.
+- names: >
+    `Content/RawAssets/Characters/Meshy/Sapper/` (new rig FBXs) → `MeshyRetargeted/Sapper/` → same-path `/Game/Characters/
+    Anims/A_Sapper_*` on pass. Law: sanctioned-path clause.
+
+#### TASK-235 — CONSOLIDATED M7.5 commit: anim batch + the retired TASK-210 pile (build) [AUTHORIZED]
+- assignee: build-master
+- status: backlog (dispatch after TASK-232 lands, or immediately if 232 slips — do not hold the pile longer than today)
+- blocked-by: TASK-232 (fold if landed; else commit without it and note)
+- parallel-safe: no (Git; worktree pattern — checkout is on m7.6-arena10x with the editor LIVE: commit to MAIN via the proven
+  TASK-228 worktree route, never touch the branch checkout or the live editor)
+- spec: >
+    ONE consolidated M7.5-lane commit to `main` (VERIFY git state first — Jonathan self-commits; explicit pathspecs; LFS-aware;
+    NO push). SCOPE: (a) handoffs/TASK-231.md §7 — 20 modified A_<Unit>_* + 20 Backup_Procedural + 32 MeshyRetargeted raw FBXs;
+    (b) TASK-230's Footman A_* + backups + its raw FBXs; (c) TASK-229 tool retarget_meshy_to_siegebiped.py + qa/TASK-229-qa.md;
+    (d) the RETIRED TASK-210 pile: 8 SK_<Unit> uassets, rig FBXs, reimport_meshes.py + meshy_generate.py (+ their QA reports),
+    guard-secrets.sh, IK_/RTG_ assets, Footman Meshy FBXs; (e) TASK-232's MilitiaMob assets if landed; (f) the TASK-230/231
+    handoffs + board/CONVENTIONS deltas per repo convention. Leakage scan (no L_Arena, no DA, no M7.6-branch files). Flip board
+    lines; mark TASK-210 retired-superseded. ACCEPTANCE: clean consolidated commit(s), hash posted, tree risk cleared. Post in
+    🔧 Build & Git.
+- names: >
+    Commit on `main` via worktree. Law: CLAUDE.md hard gates (QA-passed only, no push), M7.6 branch-ownership law.
 
 ---
 
@@ -621,7 +749,7 @@ Dispatch shape: **TASK-191 (manager CONVENTIONS) lands FIRST (done — this deco
 
 #### TASK-204 — EYEBALL GATE: Meshy animation spike sign-off + fleet-anim ruling (Jonathan — external gate)
 - assignee: Jonathan (external gate)
-- status: backlog → **SATISFIED-IN-SUBSTANCE for units (manager Ruling A, overnight batch 2026-07-19)** — Jonathan's overnight directive names the exact deficiency the Meshy clips fix (Footman attack must move legs+arms); the preset-clip rollout proceeds tonight (TASK-221..224) with per-unit conservative acceptance; his formal eyeball = the morning review. If the TASK-221 in-editor export spike ALSO drops FK rotation, the lane is blocked on his manual click — finding recorded here. **FINDING (TASK-221, 2026-07-19): it DOES also drop FK in-editor — retargeted foot 7.07 uu vs source 57 uu, byte-identical numbers to the headless run, with rig/chain/bone-resolution config verified correct at every layer and in-session re-init/remap attempted. The batch op is broken process-independently in UE 5.8. NEXT (Jonathan, one click, ~2 min): open `RTG_MeshyBiped_to_SiegeBiped`, set Src_Walk as source preview — if the target follows with full limb motion, use the retarget editor's own "Export Selected Animations" for the 4 Footman clips (the RTG asset + IK rigs are proven good); if the preview is ALSO root-only, the RTG chain data itself is suspect despite all readbacks passing. Scripted amplitude-verification + wiring can then resume via the remote-exec lane (see handoffs/TASK-221-222.md — re-enable = one MCP set_properties call).**
+- status: backlog → **SATISFIED-IN-SUBSTANCE for units (manager Ruling A, overnight batch 2026-07-19)** — Jonathan's overnight directive names the exact deficiency the Meshy clips fix (Footman attack must move legs+arms); the preset-clip rollout proceeds tonight (TASK-221..224) with per-unit conservative acceptance; his formal eyeball = the morning review. If the TASK-221 in-editor export spike ALSO drops FK rotation, the lane is blocked on his manual click — finding recorded here. **FINDING (TASK-221, 2026-07-19): it DOES also drop FK in-editor — retargeted foot 7.07 uu vs source 57 uu, byte-identical numbers to the headless run, with rig/chain/bone-resolution config verified correct at every layer and in-session re-init/remap attempted. The batch op is broken process-independently in UE 5.8. NEXT (Jonathan, one click, ~2 min): open `RTG_MeshyBiped_to_SiegeBiped`, set Src_Walk as source preview — if the target follows with full limb motion, use the retarget editor's own "Export Selected Animations" for the 4 Footman clips (the RTG asset + IK rigs are proven good); if the preview is ALSO root-only, the RTG chain data itself is suspect despite all readbacks passing. Scripted amplitude-verification + wiring can then resume via the remote-exec lane (see handoffs/TASK-221-222.md — re-enable = one MCP set_properties call).** **FINDING 2 (2026-07-19 day, TASK-222 GO attempt): Jonathan ran the one-click check — RTG preview shows FULL leg+arm motion (RTG asset + IK rigs PROVEN GOOD, eyewitness). He then ran "Export Selected Animations" on all 4 clips → exports landed as `/Game/Characters/Anims/AB_Test/Src_{Idle,Walk,Attack,Death}1` (saved). OBJECTIVE amplitude check (AnimPose, 9-sample max-axis): Walk1 foot_l/foot_r = 7.07/7.07 uu vs source 56.97/50.34 (bar ≥40) — ROOT-ONLY, byte-identical numbers to the broken batch export; all 4 clips show every limb ≈ pelvis amplitude. Output log proves WHY: the UI button logs `Duplicate and Retarget - New Asset Created: Src_*1` — it routes into the SAME FIKRetargetBatchOperation code path. There is NO working export lane in UE 5.8 (headless commandlet = in-editor batch API = interactive UI button = one shared broken exporter); only the live preview processor carries FK. Nothing wired; live A_Footman_* untouched. Root-cause hypothesis for engine-side follow-up: spike readback showed legacy `get_all_chain_settings()` count = 0 — the 5.8 batch exporter may read the LEGACY chain-settings array while the preview uses the op-based mapping. Options: (a) Blender-side retarget of the Meshy clips onto the SiegeBiped rig + direct FBX anim import (bypasses the UE retarget exporter entirely, agent-executable), (b) engine-source read of FIKRetargetBatchOperation for a scriptable fix, (c) check UE 5.8 hotfix/known-issue tracker. See handoffs/TASK-221-222.md §7.**
 - blocked-by: TASK-203 (comparison captures posted)
 - parallel-safe: yes (external)
 - spec: >
@@ -633,8 +761,8 @@ Dispatch shape: **TASK-191 (manager CONVENTIONS) lands FIRST (done — this deco
 
 #### TASK-205 — Fleet animation retarget rollout per the TASK-204 ruling (art, editor)
 - assignee: art-director
-- status: backlog
-- blocked-by: TASK-204 (ruling — possibly cancelled-by-ruling) **[overnight batch note 2026-07-19: TASK-221/222/224 execute this task's scope incrementally under Ruling A — no duplicate ownership; TASK-205 closes or carries the remainder at morning reconcile]** **[TASK-221 spike FAIL 2026-07-19: batch export drops FK in-editor too (foot 7.07 vs 57 uu, identical to headless) — export lane needs Jonathan's manual UI Export or an engine fix; see TASK-204 finding + handoffs/TASK-221-222.md]**
+- status: **closed-by-reconcile** (2026-07-19 — scope executed incrementally by TASK-230 + TASK-231 under Ruling A via the sanctioned Blender lane [CONVENTIONS M7.5 export-defect clause]: 6/9 rigged units live on Meshy clips at unchanged paths, AB_Test evidence scrubbed at TASK-230. Remainder = 3 documented holds (Cavalry quadruped problem, Sapper re-rig, MilitiaMob floor adjudication) recorded in handoffs/TASK-231.md §2/§8 — new tasks if the manager rules them worth pursuing)
+- blocked-by: TASK-204 (ruling — possibly cancelled-by-ruling) **[overnight batch note 2026-07-19: TASK-221/222/224 execute this task's scope incrementally under Ruling A — no duplicate ownership; TASK-205 closes or carries the remainder at morning reconcile]** **[TASK-221 spike FAIL 2026-07-19: batch export drops FK in-editor too (foot 7.07 vs 57 uu, identical to headless) — export lane needs Jonathan's manual UI Export or an engine fix; see TASK-204 finding + handoffs/TASK-221-222.md]** **[2026-07-19 day: Jonathan's manual UI Export ALSO produces root-only clips (same batch-op code path, log-proven) — NO working export lane in UE 5.8. Preview processor proven good. Fleet rollout now depends on an alternate retarget lane: Blender-side retarget + direct FBX anim import (agent-executable) is the leading candidate; see TASK-204 FINDING 2.]**
 - parallel-safe: no (editor-mutating — single editor, serialize)
 - spec: >
     Roll the approved clips across the ruled unit list: retarget via the TASK-203 RTG_ asset, then OVERWRITE `A_<CardID>_<Action>`
@@ -721,6 +849,7 @@ Dispatch shape: **TASK-191 (manager CONVENTIONS) lands FIRST (done — this deco
 #### TASK-210 — M7.5 integration: verify + PIE + commit the completed chains (build)
 - assignee: build-master
 - status: backlog
+- **RETIRED 2026-07-19 — superseded by TASK-235** (manager ruling at the TASK-231 close-out): the accumulated qa-passed pile commits in ONE consolidated M7.5 commit (TASK-235); future M7.5 chain completions (TASK-200-gated fleet retexture, TASK-207-gated FAB conforms) get FRESH integration tasks at their time. Original blocked-by kept for history below.
 - blocked-by: TASK-196 (Track C committed) + whichever of TASK-202, 205, 208, 209 actually ran per the rulings (gates may cancel lanes — integrate what shipped; carried-in TASK-170/171/173 folded if landed)
 - parallel-safe: no (single editor + Git)
 - spec: >

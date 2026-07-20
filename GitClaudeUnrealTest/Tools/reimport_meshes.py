@@ -27,7 +27,13 @@
 #      via unreal.AssetImportTask(replace_existing=True, automated=True) so the
 #      asset object identity (and thus refs) is preserved.
 #   3. Nanite OFF.
-#   4. COLLISION (per-CardID mode -- the M7 building extension):
+#   4. LODs (M7.6 classic-LOD law, TASK-220): assign lod_group='LargeProp' (the
+#      engine auto-generates that group's 4-LOD reduction chain on build) --
+#      EXCEPT castle-class meshes (CASTLE_CLASS_CARD_IDS), which instead get the
+#      explicit CASTLE_LOD_CHAIN reduction: LOD1 50% @ screenSize 0.4, LOD2 25%
+#      @ 0.15, NO LOD3 (landmark-silhouette law, CONVENTIONS "Arena 10x
+#      scale-up & LOD/perf (M7.6)").
+#   5. COLLISION (per-CardID mode -- the M7 building extension):
 #        - unit               : <=4 convex decomposition hulls (TASK-037 recipe).
 #        - building / GoldNode : explicit UCX-analog BOX hull(s) authored from the
 #          manifest `ucx.boxes` (wall-footprint-exact, ground-center space). The
@@ -36,8 +42,9 @@
 #          collision (the M1 castle-plinth placement dead-zone lesson). NO convex
 #          decomposition on buildings (a single auto-hull on a hollow tower
 #          re-introduces the interior dead-zone).
-#   5. Save the package.
-#   6. Best-effort readback (slots / nanite / hull|box count / refs) to the log.
+#   6. Save the package.
+#   7. Best-effort readback (slots / nanite / hull|box count / LOD count+group /
+#      refs) to the log.
 #
 # KNOWN COMMANDLET LIMITATION (mesh material slots):
 #   In a headless -run=pythonscript commandlet the post-reimport mesh BUILD
@@ -97,6 +104,23 @@ PBR_MI_FMT = "/Game/Materials/Instances/MI_%s_PBR"
 HULL_COUNT = 4          # units: <= 4 convex hulls
 HULL_MAX_VERTS = 16
 HULL_PRECISION = 100000
+
+# M7.6 classic-LOD law (TASK-220; CONVENTIONS "Arena 10x scale-up & LOD/perf
+# (M7.6)"): every reimported SM gets DEFAULT_LOD_GROUP (the engine auto-builds
+# that group's 4-LOD reduction chain) -- EXCEPT castle-class meshes, which keep
+# their landmark silhouette via the explicit CASTLE_LOD_CHAIN reduction (NO
+# LOD3). Data-driven like the card list: add a CardID to CASTLE_CLASS_CARD_IDS
+# to opt it out of the group default; no code-path edit needed.
+DEFAULT_LOD_GROUP = "LargeProp"
+CASTLE_CLASS_CARD_IDS = [
+    "Castle", "Castle_Crumble01", "Castle_Crumble02", "Castle_Crumble03",
+]
+# (percent_triangles, screen_size) pairs, LOD0 first -- the set_lods contract.
+CASTLE_LOD_CHAIN = [
+    (1.00, 1.00),   # LOD0: full-detail landmark mesh
+    (0.50, 0.40),   # LOD1: 50% tris @ screenSize 0.4
+    (0.25, 0.15),   # LOD2: 25% tris @ screenSize 0.15 (NO LOD3 -- silhouette law)
+]
 
 MANIFEST_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "ArtPipeline", "pipeline_manifest.json")
@@ -323,6 +347,57 @@ def _apply_box_collision(sm, boxes, result):
         return False
 
 
+# --- LODs (M7.6 classic-LOD law, TASK-220) ---------------------------------
+
+def _apply_lods(sm, card_id, result):
+    """Default: lod_group=DEFAULT_LOD_GROUP ('LargeProp' -- the engine
+    auto-generates that group's 4-LOD reduction chain). Castle-class meshes
+    (CASTLE_CLASS_CARD_IDS) instead get the explicit CASTLE_LOD_CHAIN reduction
+    via StaticMeshEditorSubsystem.set_lods (LOD1 50% @ 0.4 / LOD2 25% @ 0.15,
+    NO LOD3 -- landmark silhouette). UE 5.8 API (QA-verified vs the installed
+    engine, qa/TASK-216-217-220-qa.md): unreal.StaticMeshReductionOptions /
+    unreal.StaticMeshReductionSettings (StaticMeshEditorSubsystemHelpers.h:18-53)
+    + the always-loaded StaticMeshEditorSubsystem (StaticMeshEditorSubsystem.h:51)
+    -- NOT the pre-5.0 EditorScripting* names, and no EditorStaticMeshLibrary
+    fallback (its SetLods is a C++-only deprecated shim, not python-callable).
+    NON-FATAL: a LOD hiccup is flagged but never blocks the reimport
+    (collision-helper precedent); result['lod_ok'] + the LOD_STEP_FAILED token
+    keep failures loud in the batch summary."""
+    try:
+        if card_id in CASTLE_CLASS_CARD_IDS:
+            options = unreal.StaticMeshReductionOptions()
+            options.set_editor_property("auto_compute_lod_screen_size", False)
+            settings = []
+            for pct, screen in CASTLE_LOD_CHAIN:
+                s = unreal.StaticMeshReductionSettings()
+                s.set_editor_property("percent_triangles", float(pct))
+                s.set_editor_property("screen_size", float(screen))
+                settings.append(s)
+            options.set_editor_property("reduction_settings", settings)
+            subsys = unreal.get_editor_subsystem(unreal.StaticMeshEditorSubsystem)
+            if subsys is None:
+                raise RuntimeError("StaticMeshEditorSubsystem unavailable")
+            # Explicit per-mesh reduction only applies when NO LOD group is
+            # set; clear it (only now that the options built -- keeps the
+            # failure path state-neutral) so a re-run stays idempotent even
+            # after a mistaken group assignment.
+            sm.set_editor_property("lod_group", "None")
+            lod_count = subsys.set_lods(sm, options)
+            if int(lod_count) < 0:
+                raise RuntimeError("set_lods returned %s" % lod_count)
+            result["steps"].append("lods_castle(%d)" % int(lod_count))
+        else:
+            sm.set_editor_property("lod_group", DEFAULT_LOD_GROUP)
+            result["steps"].append("lod_group(%s)" % DEFAULT_LOD_GROUP)
+        result["lod_ok"] = True
+        return True
+    except Exception as ex:
+        result["lod_ok"] = False
+        result["notes"].append("LOD_STEP_FAILED (%s); mesh keeps prior LODs." % ex)
+        _warn("%s: LOD_STEP_FAILED (%s); mesh keeps prior LODs." % (card_id, ex))
+        return False
+
+
 # --- Per-card ---------------------------------------------------------------
 
 def _reimport_one(card_id, manifest):
@@ -395,18 +470,21 @@ def _reimport_one(card_id, manifest):
     sm.set_editor_property("nanite_settings", nanite)
     result["steps"].append("nanite_off")
 
-    # 4. Collision per category ------------------------------------------
+    # 4. LODs (M7.6 classic-LOD law, TASK-220) ---------------------------
+    _apply_lods(sm, card_id, result)
+
+    # 5. Collision per category ------------------------------------------
     if category == "unit":
         _apply_unit_hulls(sm, result)
     else:  # building or goldnode -> manifest box hulls
         boxes = (manifest.get(card_id, {}).get("ucx") or {}).get("boxes", [])
         _apply_box_collision(sm, boxes, result)
 
-    # 5. Save -------------------------------------------------------------
+    # 6. Save -------------------------------------------------------------
     unreal.EditorAssetLibrary.save_loaded_asset(sm, False)
     result["steps"].append("save")
 
-    # 6. Best-effort readback --------------------------------------------
+    # 7. Best-effort readback --------------------------------------------
     try:
         body = sm.get_editor_property("body_setup")
         agg = body.get_editor_property("agg_geom")
@@ -415,14 +493,21 @@ def _reimport_one(card_id, manifest):
     except Exception as ex:
         result["convex_hull_count"] = "unknown (%s)" % ex
         result["box_count"] = "unknown"
+    try:
+        result["lod_count"] = int(sm.get_num_lods())
+        result["lod_group"] = str(sm.get_editor_property("lod_group"))
+    except Exception as ex:
+        result["lod_count"] = "unknown (%s)" % ex
+        result["lod_group"] = "unknown"
     result["nanite_enabled"] = bool(
         sm.get_editor_property("nanite_settings").get_editor_property("enabled"))
     result["referencers_after"] = list(
         unreal.EditorAssetLibrary.find_package_referencers_for_asset(pkg, False))
     result["ok"] = True
-    _log("%s: DONE cat=%s slots=%s nanite=%s hulls=%s boxes=%s refs=%s"
+    _log("%s: DONE cat=%s slots=%s nanite=%s hulls=%s boxes=%s lods=%s lod_group=%s refs=%s"
          % (card_id, category, slot_names, result["nanite_enabled"],
             result.get("convex_hull_count"), result.get("box_count"),
+            result.get("lod_count"), result.get("lod_group"),
             result["referencers_after"]))
     return result
 
@@ -442,6 +527,10 @@ def main():
     ok = [r["card_id"] for r in results if r.get("ok")]
     bad = [r["card_id"] for r in results if not r.get("ok")]
     _log("Batch complete. OK=%s  NOT_OK=%s" % (ok, bad))
+    lod_bad = [r["card_id"] for r in results if r.get("lod_ok") is False]
+    if lod_bad:
+        _warn("LOD_STEP_FAILED on %d asset(s): %s -- LODs NOT applied there "
+              "(meshes keep their prior chain; grep LOD_STEP_FAILED above)." % (len(lod_bad), lod_bad))
     _log("SUMMARY_JSON " + json.dumps(results))
     return results
 
