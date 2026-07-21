@@ -127,6 +127,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCardRefused, const FString&, Reas
  *    kept, mode exited (resolver refusals are position-independent — the
  *    missing-BP-class placement precedent). A trace-miss click refuses free
  *    and STAYS in mode. RMB/Esc cancel is free.
+ *  - Spell delivery overhaul (TASK-236, 2026-07-21): HeroLine spells
+ *    (Fireball/FrostNova) fire FROM the hero toward the reticle — the reticle
+ *    is their AIM indicator and the confirm needs only a DIRECTION (see
+ *    TryConfirmSpellTarget's aim pass). The reticle visuals are kept as-is
+ *    for now (TASK-238/239 may restyle). GroundCircle spells (Lightning,
+ *    BattleCry) are byte-untouched.
  *  - HandleMatchEnd(Winner): exits placement AND targeting mode, shows
  *    /Game/UI/WBP_VictoryScreen (soft class, null-safe) and switches to
  *    UI-only input. HandleMatchReset() restores play (TASK-006 PlayAgain)
@@ -641,6 +647,16 @@ private:
 	 *  resolver refusals are position-independent by the SpellLibrary
 	 *  contract (the missing-BP-class placement precedent). On success the
 	 *  hand slot is consumed (ConfirmPlayFromHand) and the mode exits.
+	 *
+	 *  AIM PASS (TASK-236, CONVENTIONS "Spell delivery overhaul 2026-07-21"):
+	 *  for HeroLine spells (Fireball/FrostNova — USpellLibrary::
+	 *  IsLineDeliverySpell) the reticle point is the AIM-POINT, not an impact
+	 *  center, and a surface hit is NOT required — a trace-miss confirm
+	 *  synthesizes the aim-point from the deprojected cursor ray (flattened
+	 *  horizontal, hero-anchored). The free stay-in-mode refusals generalize
+	 *  to "no aim direction": failed deproject, vertical ray, or a reticle
+	 *  with zero horizontal offset from the hero. GroundCircle spells keep
+	 *  the M5 confirm gate byte-for-byte.
 	 */
 	void TryConfirmSpellTarget();
 

@@ -54,6 +54,36 @@ enum class ESpellEffect : uint8
 };
 
 /**
+ *  Spell delivery selector (CONVENTIONS "Spell delivery overhaul (2026-07-21)",
+ *  TASK-236). Chooses HOW a spell's effect reaches its targets; the effect
+ *  itself (SpellEffect) and every magnitude are unchanged by delivery.
+ *
+ *  Auto is the sparse default and resolves PER-EFFECT in
+ *  USpellLibrary::GetEffectiveDelivery: AoEDamage and Freeze — today exactly
+ *  Fireball and FrostNova, the two cards Jonathan's directive names — deliver
+ *  as a HERO-ORIGIN LINE; every other effect keeps the reticle-placed ground
+ *  circle. The explicit values exist as the per-card DATA override lever: a
+ *  future card can pin GroundCircle or HeroLine in its cards.csv cell
+ *  regardless of its effect.
+ *
+ *  CSV note (flagged, TASK-236): cards.csv is FROZEN this wave outside
+ *  TASK-237's single Lightning cell (git-diff confinement at TASK-240), so the
+ *  SpellDelivery column header is NOT yet appended to the CSV — every row
+ *  deserializes/imports to Auto (the C++ struct default), which reproduces the
+ *  directive with zero cell edits. The header append + CONVENTIONS registry
+ *  entry ride the next cards.csv wave (manager flagged in
+ *  handoffs/TASK-236.md); until then a DT_Cards reimport may log a
+ *  missing-column notice for this property — benign, rows keep Auto.
+ */
+UENUM(BlueprintType)
+enum class ESpellDelivery : uint8
+{
+	Auto,         // per-effect default: AoEDamage/Freeze -> HeroLine (2026-07-21 directive), everything else -> GroundCircle
+	GroundCircle, // reticle-placed ground-circle AoE at the confirm point (the M5 delivery)
+	HeroLine      // hero-origin line in the air toward the aim point (bot: castle-origin — flagged design default)
+};
+
+/**
  *  One row of /Game/Data/DT_Cards, imported from Docs/Data/cards.csv (GDD section 3.0).
  *  Row name = CardID in PascalCase (e.g. Footman).
  *  Property names MUST match the CSV header columns 1:1 - do not rename
@@ -175,6 +205,17 @@ struct GITCLAUDEUNREALTEST_API FCardRow : public FTableRowBase
 	/** Spell dispatch token consumed by USpellLibrary::ResolveSpell (M5); None = not a spell effect. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spell")
 	ESpellEffect SpellEffect = ESpellEffect::None;
+
+	/**
+	 *  HOW the spell effect is delivered (TASK-236, CONVENTIONS "Spell delivery
+	 *  overhaul (2026-07-21)"). Auto (the sparse default — see the enum doc)
+	 *  resolves per-effect: AoEDamage/Freeze -> HeroLine, others ->
+	 *  GroundCircle; the explicit values are the per-card data override. Column
+	 *  header not yet in cards.csv (frozen this wave — flagged); rows default
+	 *  to Auto.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spell")
+	ESpellDelivery SpellDelivery = ESpellDelivery::Auto;
 
 	/** Timed-effect duration in seconds (GDD 4: FrostNova 4, BattleCry 8). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spell")

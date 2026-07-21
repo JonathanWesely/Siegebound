@@ -18,17 +18,39 @@ class UWorld;
  *  resolves through ResolveSpell, dispatched on the row's SpellEffect column
  *  (TASK-097).
  *
+ *  DELIVERY (spell delivery overhaul, 2026-07-21 — TASK-236, CONVENTIONS
+ *  "Spell delivery overhaul (2026-07-21)"): GetEffectiveDelivery(Row) selects
+ *  HOW an effect reaches its targets. HeroLine spells (AoEDamage + Freeze
+ *  under the Auto default — Fireball and FrostNova, the two directive cards)
+ *  fire FROM the caster along a horizontal line in the air: origin = the
+ *  caster team's living hero (capsule center ≈ chest), or — the bot, which
+ *  has no hero (flagged design default) — its own castle at
+ *  ASpellLineSweep::CastleMuzzleHeight; direction = origin → TargetPoint,
+ *  FLATTENED horizontal. For these spells TargetPoint is the AIM-POINT, not
+ *  an impact center — the pinned signature is unchanged, the semantics shift
+ *  is flagged at every call site. Delivery = a spawned ASpellLineSweep
+ *  (fast-travel front, per-segment exactly-once application — its class
+ *  comment records the design); line length/width/travel are that actor's
+ *  UPROPERTY tunables. Effect magnitudes, costs, castle-50%, and
+ *  friendly-fire semantics are UNCHANGED by delivery. GroundCircle spells
+ *  (Lightning/BattleCry/everything else) are byte-untouched below.
+ *
  *  Effects (per the M5 manager rulings):
- *  - AoEDamage (Fireball): row Damage to every ENEMY within row AoERadius of
- *    TargetPoint, via the shared TASK-055 radial helper
- *    (FSiegeCombatStatics::ApplyRadialDamage) — closest-point distance, no
- *    friendly fire, each hit routed through the receiver's TakeDamage. Castle
- *    hits therefore flow through ACastle::TakeDamage tagged
- *    USiegeDamageType_Spell and take 50% (§3.11 acceptance: 50, not 100).
- *  - Freeze (FrostNova): ApplyFreeze(row EffectDuration) on every enemy
- *    ASummonedUnit and ABuilding within row AoERadius (TASK-099 pinned API).
- *    The castle is NEVER freezable and the hero is NOT freezable in M5
- *    (ruling 5) — neither type is touched here.
+ *  - AoEDamage (Fireball) — GroundCircle path (data-overridable): row Damage
+ *    to every ENEMY within row AoERadius of TargetPoint, via the shared
+ *    TASK-055 radial helper (FSiegeCombatStatics::ApplyRadialDamage) —
+ *    closest-point distance, no friendly fire, each hit routed through the
+ *    receiver's TakeDamage. Castle hits therefore flow through
+ *    ACastle::TakeDamage tagged USiegeDamageType_Spell and take 50% (§3.11
+ *    acceptance: 50, not 100). HeroLine path (the Auto default since
+ *    2026-07-21): the same per-hit semantics applied along the line by
+ *    ASpellLineSweep instead of inside a circle.
+ *  - Freeze (FrostNova) — GroundCircle path (data-overridable): ApplyFreeze
+ *    (row EffectDuration) on every enemy ASummonedUnit and ABuilding within
+ *    row AoERadius (TASK-099 pinned API). The castle is NEVER freezable and
+ *    the hero is NOT freezable in M5 (ruling 5) — neither type is touched.
+ *    HeroLine path (the Auto default since 2026-07-21): the same ruling-5
+ *    type filter applied along the line by ASpellLineSweep.
  *  - TopTargetsDamage (Lightning): the row MaxTargets HIGHEST-CURRENT-HP enemy
  *    actors (units, hero, buildings/towers — castle EXCLUDED, anti-sniping)
  *    within row AoERadius of TargetPoint each take row Damage; ties broken by
@@ -57,10 +79,17 @@ class UWorld;
  *  changed — null World, NAME_None CardID, SpellEffect None/unknown, a
  *  malformed row (non-positive Damage/AoERadius/EffectDuration/MaxTargets/
  *  GoldSteal where the effect needs them), or GoldSteal with an unresolvable
- *  game state / player state (e.g. Sandbox mode has no Red economy). A
- *  well-formed cast that merely catches ZERO targets (Fireball on empty
- *  ground, FrostNova nobody in radius, Pickpocket on a 0-gold victim) is a
- *  SUCCESSFUL resolve — the spell is spent, exactly like a wasted Fireball.
+ *  game state / player state (e.g. Sandbox mode has no Red economy).
+ *  HeroLine additions (TASK-236, all position-independent for the PLAYER —
+ *  the controller pre-checks the one aim-dependent case free-of-charge):
+ *  no resolvable line origin (no living caster-team hero AND no standing
+ *  caster-team castle), a degenerate flattened aim direction (aim-point
+ *  directly above/below the origin), a non-positive LineRange/LineHalfWidth
+ *  config, or a failed sweep spawn. A well-formed cast that merely catches
+ *  ZERO targets (Fireball on empty ground, a line through empty air,
+ *  FrostNova nobody in reach, Pickpocket on a 0-gold victim) is a SUCCESSFUL
+ *  resolve — the spell is spent, exactly like a wasted Fireball. THERE IS NO
+ *  REFUND FOR A LINE THAT HITS NOTHING (the recorded no-hit rule).
  *
  *  Never crashes on bad input: every failure path logs and returns false.
  */
@@ -82,6 +111,30 @@ public:
 	 *  stat (nothing hardcoded, GDD §3.0). C++-only entry, deliberately NOT
 	 *  BlueprintCallable (qa/TASK-098 NIT): both pinned callers are C++, and a
 	 *  raw UWorld* pin on a static library node invites BP misuse.
+	 *
+	 *  TargetPoint semantics (TASK-236 overhaul — signature unchanged): for
+	 *  GroundCircle spells it stays the impact center; for HeroLine spells
+	 *  (IsLineDeliverySpell) it is the AIM-POINT — the resolver derives the
+	 *  origin (caster hero / bot castle) and fires the line origin→TargetPoint,
+	 *  flattened horizontal. Every call site carries the flag comment.
 	 */
 	static bool ResolveSpell(UWorld* World, FName CardID, const FCardRow& Row, ETeamId CasterTeam, const FVector& TargetPoint);
+
+	/**
+	 *  The row's EFFECTIVE delivery (TASK-236): an explicit SpellDelivery cell
+	 *  wins; Auto (the sparse default — cards.csv carries no cells this wave)
+	 *  resolves per-effect: AoEDamage/Freeze → HeroLine (the 2026-07-21
+	 *  directive — today exactly Fireball + FrostNova), everything else →
+	 *  GroundCircle. Pure row math — safe on any row, spell or not.
+	 */
+	static ESpellDelivery GetEffectiveDelivery(const FCardRow& Row);
+
+	/**
+	 *  True when the row delivers as a hero-origin line (TASK-236). The
+	 *  targeting-mode aim pass gates on this: line spells need only an AIM
+	 *  DIRECTION at confirm — the surface-under-cursor requirement is relaxed
+	 *  for them (a deprojected cursor ray suffices), while GroundCircle spells
+	 *  keep the M5 confirm gate byte-for-byte.
+	 */
+	static bool IsLineDeliverySpell(const FCardRow& Row);
 };
