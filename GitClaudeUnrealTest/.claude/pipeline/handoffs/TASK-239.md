@@ -117,3 +117,42 @@ PIPELINE LESSON (monitor trigger gap)
 
 EDITOR STATE AT HANDBACK
 - PID 37984 healthy, L_Arena loaded and clean, zero dirty packages, no background compiles, no pending dialogs, remote exec ON (in-memory). Editor handed back to Jonathan (Slack Blockers note replaced accordingly).
+
+
+## FINAL SESSION (2026-07-22, TASK-245 — art-director) — SAGA CLOSED: stock-node rework SHIPPED, canonical swap DONE, PIE-verified
+
+Status: **done via TASK-245** · editor PID 27884 (Jonathan's launch, reused — never restarted) · zero dirty packages at handback · NO Git touched by me (note: the editor session runs a live git SC provider that auto-stages editor file ops — the working-tree A/AM/D states under Content/ are its doing, on branch m7.6-arena10x).
+
+### Approach chosen (recorded per dispatch)
+FRESH BUILD, not in-place repair: the broken custom-HLSL `M_Spell_LightningStrike` was DELETED first (referencer-checked: only NS_Spell_Lightning_NEW) — editing it in place would have required exactly the `recompile_material` lane that wedged 0-for-2. Rebuilt from zero with STOCK NODES ONLY (~120 expressions, zero Custom nodes); every look value is a scalar/vector PARAMETER surfaced through `MI_Spell_LightningStrike` (no-recompile iteration; each full stock build compiled in SECONDS — confirming the Custom node was the bomb). Detail comes from a generated 1024² branching-bolt atlas (headless Blender numpy, midpoint-displacement bolts + honest ring + flash tiles) instead of procedural HLSL.
+
+### What shipped (exact /Game/ paths; all saved, editor not-dirty)
+| Asset | Path | Notes |
+|---|---|---|
+| Strike system (CANONICAL) | `/Game/VFX/NS_Spell_Lightning` | donor duplicate of `Ice_Magic/VFX_Niagara/NS_Ice_Magic_FrontSpike` (MESH-emitter donor — see discoveries); renderers re-pointed via MCP ObjectTools; fixed bounds ±3500 symmetric; placeholder deleted (0 refs) + rename into place; opened-once/compiled/"System successfully compiled" |
+| Band master material | `/Game/VFX/M_Spell_LightningStrike` | stock-node only; 3 ParticleRandom bands: flash (R<BandFlashMax .45, camera-facing quad, R=0-degenerate-safe), ring (<BandRingMax .66, flat 1600-uu ground quad, texture ring at 0.875 ⇒ honest 700), bolt (rest, WPO ribbon 3400 uu, 2 texture variants, bend/spread/height-var per particle); per-band intensities + age-fade exponents + flicker all parameters; built as `M_Spell_LightningStrike2` then renamed to canonical (SC curse blocked direct reuse of the deleted path; rename later succeeded, no redirectors left) |
+| Iteration surface | `/Game/VFX/MI_Spell_LightningStrike` | what the renderers reference; ALL look tuning happens here — never recompile the base |
+| Bolt/ring/flash atlas | `/Game/Textures/T_Spell_LightningStrike_E` | linear (sRGB off); R=core G=glow B=fill; 2×2 tiles (boltA/boltB/ring/flash); raw PNG at `Content/RawAssets/T_Spell_LightningStrike_E.png`; generator script `t245_gen_atlas.py` in the 764973cf scratchpad |
+| Sprite flash material (DORMANT) | `/Game/VFX/M_Spell_LightningFlash` + `MI_Spell_LightningFlash` | pixel-only flash-tile material for the donor's 2 sprite emitters (Smoke_8/Sparks_0) — those renderers are bIsEnabled=FALSE (they'd betray the donor's +X cone); referenced by the saved NS, so KEEP; one bIsEnabled flip re-adds mist/sparks if wanted |
+
+### Pipeline discoveries (LOAD-BEARING for any future VFX material work)
+1. **Niagara SPRITE vertex factory: TexCoord is GARBAGE in the vertex shader** (UE 5.8). Bisect-proven (DBG_wpo_const/rand/uv captures): WPO works, ParticleRandom works, UV-driven WPO explodes geometry. UV-based sprite-geometry rebuild — the whole TASK-239 session-1 design — was never viable; the old custom-HLSL material would have failed the same way even if it compiled. **Mesh renderers have real UVs in the VS** — that is why the donor pivoted to FrontSpike (mesh emitters) with `/Engine/BasicShapes/Plane` overridden into `meshes[0].mesh` (clean 0-1 UV canvas per particle).
+2. **ObjectPositionWS on Niagara mesh particles = PER-INSTANCE origin (particle position), not the component origin.** Ring/bolt anchoring rides each particle.
+3. **Renderer materialParameters attributeBindings (Engine.Owner.Position → material param) does NOT deliver** — scalarParameters through the same MID lane DO apply (proven), but the attribute binding stayed at default with both type indices 107/Position and 105/Vector. Dead lane in 5.8 via reflection; recorded, do not re-hunt.
+4. **Renderer surface extension of the TASK-238 lever:** `meshes[].mesh`, `overrideMaterials[].explicitMat`, `bIsEnabled`, `materialParameters.scalarParameters` all writable via MCP ObjectTools. Renderer bIsEnabled/mesh edits need the open-once system recompile before solo-sim renders again.
+5. **Editor git SC provider curse:** with the provider connected, `create_asset` at a path whose tracked file was deleted this session returns None (git pathspec fatal). Workarounds that worked: fresh name then rename-into-place later; or reuse-in-place via `delete_all_material_expressions`.
+
+### Known limitations (accepted, flagged)
+- **Cone drift:** all particles inherit the donor's +X drift (~100 uu at t0.25 → ~200 at t0.9). Ring RADIUS is exact (honest 700, witness-cube verified overhead); ring CENTER wanders ≤~100 uu during its bright phase (RingFadeExp 2.4 confines the bright read to ~first 300 ms). Fix requires module-lane access (none) or the dead binding lane. Visual result reads as stacked energy rings — stylistically good.
+- **First-cast warmup:** the very first PIE spawn rendered nothing for ~0.3 s (async first-use); second cast full. Standard UE behavior.
+- **Bot rule-3b UNREACHABLE in curated-deck play: NEITHER bot deck (Aggro Rush / Defensive Economy) contains a Lightning card** — the rule-3b code path can never fire in a normal match. End-to-end bot-cast observation therefore impossible tonight (precedent: TASK-238 rule-3a note). MANAGER FLAG: add Lightning to a bot deck or accept 3b as dead code. PIE verification instead used the exact resolver spawn signature (SpawnSystemAtLocation, ground point, ZeroRotator) live in a real L_Arena match with the bot active — visual PASS (PIE245_f10.png).
+- **Stray file:** `Content/VFX/M_T245_WpoTest.uasset` — diagnostic test material, zero referencers, saved clean, but delete_asset refused (lingering in-memory proxy hold). BUILD-MASTER: exclude from the commit and delete the file once the editor is closed.
+- CONVENTIONS.md does not actually contain the "Custom-HLSL law" text the batch spec cites — manager should codify it (NEVER a Custom node in materials; stock nodes + parameters only; parameter changes don't recompile).
+
+### Verification + captures (`Tools/ArtPipeline/Cache/TASK-239/`)
+- BEFORE: session-1 `SHEET_BEFORE_*` / WIP1_*. AFTER (final look = AFTER5/PIE): `AFTER5_tall_t*.png` (6 frames, sky framing), `AFTER5_game_t*.png` (6 frames, RTS framing), `AFTER4_top_*` / `AFTER3_top_*` (overhead honesty vs ±700 witness cubes), `PIE245_f10.png` (live PIE, real arena). Iteration history AFTER1-4 + DBG_* bisect frames all preserved.
+- Look verdict vs the directive: PASS — much more detailed (branching channels, dashed ring, spokes), from higher (3400 uu, exits both framings), a lot bigger circle (honest 700 vs old 400).
+- PIE: begin-play → live match (bot deck-select + rules firing) → resolver-signature cast rendered → slomo frames → cleanup (slomo 1, EndPlay, zero dirty, L_MainMenu preview stage discarded unsaved by the L_Arena load).
+
+### Editor state at handback
+PID 27884 alive and healthy, L_Arena loaded clean, zero dirty packages, no PIE, no asset editors open, remote exec ON (in-memory). Jonathan's editor — left running.

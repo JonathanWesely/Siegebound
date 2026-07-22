@@ -625,7 +625,7 @@ void ASiegeBotController::EvaluateDecisions()
 		}
 
 		// 3b) LIGHTNING at a player tower with >= LightningTowerMinUnits player units
-		//     within the Lightning ROW's own AoERadius (400 — GDD §4; data-driven law):
+		//     within the Lightning ROW's own AoERadius (700 — GDD §4; data-driven law):
 		//     tower + defenders die to one bolt — the §4 "tower-killer" played as the
 		//     GDD prescribes ("Lightning at a tower adjacent to 2+ units").
 		{

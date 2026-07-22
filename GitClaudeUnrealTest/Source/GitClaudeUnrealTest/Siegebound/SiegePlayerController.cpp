@@ -1793,7 +1793,7 @@ void ASiegePlayerController::SpawnSpellReticle()
 		ReticleDecal->SetDecalMaterial(ReticleMaterial);
 
 		// footprint = the spell's OWN AoERadius (data-driven, GDD §3.0 —
-		// Fireball 300 / FrostNova 350 / Lightning 400 / BattleCry 400) so the
+		// Fireball 300 / FrostNova 350 / Lightning 700 / BattleCry 400) so the
 		// ring shows the true blast area; a radius-less spell falls back to
 		// SpellReticleDefaultRadius. X (the projection half-depth) is 500 —
 		// bracketing the M4.5 max terrain height (250) exactly like the ±500
