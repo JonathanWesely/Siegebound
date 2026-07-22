@@ -10,6 +10,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerStart.h"
+#include "Materials/MaterialInterface.h"
 #include "NavigationPath.h"
 #include "NavigationSystem.h"
 #include "TimerManager.h"
@@ -134,9 +135,30 @@ void ASiegeBattlefieldScatter::GenerateScatter()
 		*GetNameSafe(this), Seed, ScatterConfig->bMirrorSymmetric ? TEXT("true") : TEXT("false"),
 		ScatterConfig->Layers.Num(), CorridorHalfWidthCached);
 
+	// W1-PREP hill-surface placement (CONVENTIONS "W1-PREP additions", TASK-250):
+	// TWO passes so hill surfaces EXIST before anything traces onto them. Pass 1
+	// places every bAllowOnHills=false layer (the hills themselves included — a
+	// hill never places on a hill) and registers the real-geometry blocker HISMs
+	// as hill surfaces; pass 2 places the bAllowOnHills=true layers, whose ground
+	// resolve then accepts the elevated hill-surface Z (ResolveHillAwareGroundZ).
+	// ⚠️ Seed-order note (the TASK-140 precedent): with NO layer opted in, the
+	// pass split preserves the config order exactly, so existing seeds reproduce
+	// unchanged; opting a layer in moves it to pass 2 and (intentionally) changes
+	// the FRandomStream draw sequence — a fixed OverrideSeed stays deterministic.
+	HillSurfaceComponents.Reset();
 	for (const FScatterLayer& Layer : ScatterConfig->Layers)
 	{
-		ScatterLayer(Layer, Stream);
+		if (!Layer.bAllowOnHills)
+		{
+			ScatterLayer(Layer, Stream);
+		}
+	}
+	for (const FScatterLayer& Layer : ScatterConfig->Layers)
+	{
+		if (Layer.bAllowOnHills)
+		{
+			ScatterLayer(Layer, Stream);
+		}
 	}
 
 	// Defer the reachability confirmation until the async Dynamic navmesh has
@@ -195,9 +217,20 @@ void ASiegeBattlefieldScatter::ScatterLayer(const FScatterLayer& Layer, FRandomS
 	}
 
 	// One HISM per unique mesh, wired with this layer's collision/nav profile.
+	// W1-PREP (TASK-250): a pass-1 REAL-GEOMETRY blocker layer (bBlocking, no
+	// collision proxy, not itself hill-allowed) registers its HISMs as HILL
+	// SURFACES — what pass-2 bAllowOnHills layers ground-trace against. In the
+	// shipped DA that is the HILLS layer; tree layers are excluded by their proxy
+	// (a canopy top is not ground), grass by bBlocking=false, and any opted-in
+	// blocker (e.g. rocks on hills) by its own bAllowOnHills=true.
+	const bool bHillSurfaceProvider = Layer.bBlocking && Layer.CollisionProxyMesh.IsNull() && !Layer.bAllowOnHills;
 	for (UStaticMesh* Mesh : Resolved)
 	{
-		ResolveComponentForMesh(Mesh, Layer);
+		UHierarchicalInstancedStaticMeshComponent* Comp = ResolveComponentForMesh(Mesh, Layer);
+		if (Comp && bHillSurfaceProvider)
+		{
+			HillSurfaceComponents.AddUnique(Comp);
+		}
 	}
 
 	const float HalfX = FMath::Max(ScatterConfig->ArenaHalfExtent.X, 1.f);
@@ -286,7 +319,19 @@ void ASiegeBattlefieldScatter::ScatterLayer(const FScatterLayer& Layer, FRandomS
 			}
 
 			const float Yaw = Layer.bRandomYaw ? Stream.FRandRange(0.f, 360.f) : 0.f;
-			const float Z = GroundZAt(X, Y) + Layer.ZOffset;
+
+			// W1-PREP ground resolve (TASK-250): flat-floor trace first, then — for
+			// a bAllowOnHills layer — the hill-surface upgrade: when a pass-1 hill
+			// stands at this XY the instance grounds on the HILL surface (elevated
+			// Z, slope within the layer's MaxPlacementSlopeDeg), and the candidate
+			// is REJECTED outright over a steeper face (grounding at floor Z would
+			// bury it inside the hill — the pre-W1-PREP bare-hills defect).
+			float GroundZ = GroundZAt(X, Y);
+			if (Layer.bAllowOnHills && !ResolveHillAwareGroundZ(X, Y, GroundZ, Layer.MaxPlacementSlopeDeg, GroundZ))
+			{
+				continue;
+			}
+			const float Z = GroundZ + Layer.ZOffset;
 
 			const FTransform InstanceXf(FRotator(0.f, Yaw, 0.f), FVector(X, Y, Z), FVector(Scale));
 			Comp->AddInstance(InstanceXf, /*bWorldSpace=*/true);
@@ -316,9 +361,24 @@ void ASiegeBattlefieldScatter::ScatterLayer(const FScatterLayer& Layer, FRandomS
 			if (bMirror)
 			{
 				const FVector2D MirrorPoint(-X, Y);
-				if (!(Layer.bBlocking && IsInKeepClear(MirrorPoint, FootprintR)))
+				bool bPlaceMirror = !(Layer.bBlocking && IsInKeepClear(MirrorPoint, FootprintR));
+				float MirrorGroundZ = 0.f;
+				if (bPlaceMirror)
 				{
-					const float MirrorZ = GroundZAt(-X, Y) + Layer.ZOffset;
+					// The twin grounds INDEPENDENTLY (hills are placed asymmetrically
+					// even in mirror mode, so the twin's XY may sit on a different — or
+					// no — hill): same floor trace + hill-surface upgrade as the
+					// primary; an over-slope face at the twin's XY skips JUST the twin,
+					// exactly like the keep-clear guard above.
+					MirrorGroundZ = GroundZAt(-X, Y);
+					if (Layer.bAllowOnHills && !ResolveHillAwareGroundZ(-X, Y, MirrorGroundZ, Layer.MaxPlacementSlopeDeg, MirrorGroundZ))
+					{
+						bPlaceMirror = false;
+					}
+				}
+				if (bPlaceMirror)
+				{
+					const float MirrorZ = MirrorGroundZ + Layer.ZOffset;
 					const float MirrorYaw = Layer.bRandomYaw ? FMath::Fmod(Yaw + 180.f, 360.f) : 0.f;
 					const FTransform MirrorXf(FRotator(0.f, MirrorYaw, 0.f), FVector(-X, Y, MirrorZ), FVector(Scale));
 					Comp->AddInstance(MirrorXf, /*bWorldSpace=*/true);
@@ -374,6 +434,35 @@ UHierarchicalInstancedStaticMeshComponent* ASiegeBattlefieldScatter::ResolveComp
 	Comp->SetMobility(EComponentMobility::Movable);
 	Comp->SetupAttachment(RootComponent);
 	Comp->SetStaticMesh(Mesh);
+
+	// W1-PREP OverrideMaterial (CONVENTIONS "W1-PREP additions", TASK-250): a SET
+	// override replaces the donor materials on EVERY slot via SetMaterial — the
+	// SM_ asset itself is never touched (lane-clean: main-lane donors stay
+	// pristine). ALL slots, not slot 0 only: the hill donors SM_Hill_01–03 are
+	// single-slot ("HillGround"), where all-slots ≡ slot 0, and multi-slot donors
+	// on other layers never strand a stray extra slot. Null (default) = donor
+	// materials; a failed resolve degrades to the donor look with a warning —
+	// never a crash. Applied ONCE at HISM creation (the reuse path above returns
+	// early): a mesh SHARED by two layers keeps the FIRST layer's override
+	// (one-HISM-per-mesh perf law — conflicting overrides on a shared mesh are a
+	// DA config smell). TASK-249's M_HillGrass rides this on the HILLS layer.
+	if (!Layer.OverrideMaterial.IsNull())
+	{
+		if (UMaterialInterface* OverrideMat = Layer.OverrideMaterial.LoadSynchronous())
+		{
+			const int32 NumSlots = FMath::Max(Comp->GetNumMaterials(), 1);
+			for (int32 SlotIdx = 0; SlotIdx < NumSlots; ++SlotIdx)
+			{
+				Comp->SetMaterial(SlotIdx, OverrideMat);
+			}
+		}
+		else
+		{
+			UE_LOG(LogSiegeTerrain, Warning,
+				TEXT("[BattlefieldScatter] Layer '%s' OverrideMaterial '%s' failed to resolve — donor materials kept (degraded, never a crash)."),
+				*Layer.LayerName.ToString(), *Layer.OverrideMaterial.ToString());
+		}
+	}
 
 	// A layer with a CollisionProxyMesh (trees) delegates ALL blocking + nav to a
 	// separate invisible proxy HISM (ResolveProxyForVisual): the VISIBLE mesh here
@@ -451,6 +540,23 @@ UHierarchicalInstancedStaticMeshComponent* ASiegeBattlefieldScatter::ResolveProx
 	Proxy->SetMobility(EComponentMobility::Movable);
 	Proxy->SetupAttachment(RootComponent);
 	Proxy->SetStaticMesh(ProxyMesh);
+
+	// W1-PREP (TASK-250): the layer's OverrideMaterial applies to the PROXY too
+	// (CONVENTIONS law: applied to "the layer's HISM + proxy components").
+	// Cosmetically moot — the proxy never renders (SetVisibility(false) below) —
+	// but it keeps the pair uniform if a proxy is ever un-hidden for debugging.
+	// Null/failed resolve = silent no-op here (the visual path already warned).
+	if (!Layer.OverrideMaterial.IsNull())
+	{
+		if (UMaterialInterface* OverrideMat = Layer.OverrideMaterial.LoadSynchronous())
+		{
+			const int32 NumSlots = FMath::Max(Proxy->GetNumMaterials(), 1);
+			for (int32 SlotIdx = 0; SlotIdx < NumSlots; ++SlotIdx)
+			{
+				Proxy->SetMaterial(SlotIdx, OverrideMat);
+			}
+		}
+	}
 
 	// Invisible Pawn-block-only proxy (tree collision-proxy contract): it blocks ONLY
 	// the Pawn channel — deliberately NOT Visibility/Camera, or the building placement
@@ -626,6 +732,71 @@ float ASiegeBattlefieldScatter::GroundZAt(float X, float Y) const
 		return Hit.ImpactPoint.Z;
 	}
 	return 0.f;
+}
+
+bool ASiegeBattlefieldScatter::ResolveHillAwareGroundZ(float X, float Y, float FloorZ, float MaxSlopeDeg, float& OutZ) const
+{
+	OutZ = FloorZ;
+
+	// No hill surfaces registered this generate ⇒ the flat floor stands.
+	if (HillSurfaceComponents.Num() == 0)
+	{
+		return true;
+	}
+
+	// COMPONENT-scoped down-traces, NOT a world channel trace (the bare-hills root
+	// cause, TASK-250 diagnosis): no world trace can see a hill surface, because
+	// (a) the hill HISMs IGNORE the ECC_WorldStatic trace channel (scatter-channel
+	// law — GroundZAt must pass through them for the floor height), and (b) they
+	// belong to THIS actor, which GroundZAt's query params ignore wholesale.
+	// LineTraceComponent tests the instance bodies of exactly the registered
+	// hill-surface HISMs — nothing else (rocks, invisible tree proxies, castles)
+	// can fool the ground resolve, and the placement-ghost / projectile channel
+	// contracts stay untouched.
+	const FVector TraceStart(X, Y, 50000.f);
+	const FVector TraceEnd(X, Y, -50000.f);
+	FCollisionQueryParams Params(TEXT("BattlefieldScatterHillTrace"), /*bTraceComplex=*/false);
+
+	bool bOnHill = false;
+	FVector BestNormal = FVector::UpVector;
+	float BestZ = FloorZ;
+	for (UHierarchicalInstancedStaticMeshComponent* SurfaceComp : HillSurfaceComponents)
+	{
+		if (!SurfaceComp)
+		{
+			continue;
+		}
+		FHitResult Hit;
+		// Highest hit wins: a hit at-or-below the floor means the trace clipped a
+		// buried skirt, not a standable surface — the floor stands for those.
+		if (SurfaceComp->LineTraceComponent(Hit, TraceStart, TraceEnd, Params) && Hit.ImpactPoint.Z > BestZ)
+		{
+			bOnHill = true;
+			BestZ = static_cast<float>(Hit.ImpactPoint.Z); // explicit LWC double → float (placement grid precision is ample)
+			BestNormal = Hit.ImpactNormal;
+		}
+	}
+
+	if (!bOnHill)
+	{
+		return true; // not over a hill — the flat floor Z stands
+	}
+
+	// Slope gate: the face's angle from horizontal via the up-ness of its normal.
+	// Steeper than the layer's MaxPlacementSlopeDeg ⇒ REJECT the candidate — the
+	// caller must not fall back to FloorZ (that grounds the prop UNDER the hill,
+	// buried inside the mound: the exact defect this resolve exists to fix).
+	// Double all the way down: FVector is double-precision (LWC), and mixing a
+	// double .Z with float literals inside the Clamp template would fail
+	// deduction; the final compare promotes the float limit safely.
+	const double SlopeDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(BestNormal.Z, -1.0, 1.0)));
+	if (SlopeDeg > FMath::Max(MaxSlopeDeg, 0.f))
+	{
+		return false;
+	}
+
+	OutZ = BestZ;
+	return true;
 }
 
 void ASiegeBattlefieldScatter::StartNavSettlePoll()

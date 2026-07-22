@@ -71,6 +71,10 @@ public:
 	 *  every layer honoring keep-clear + spacing + the reserved corridor, wires
 	 *  blocking/nav on obstacle layers, then schedules the deferred
 	 *  reachability validation. Graceful no-op when ScatterConfig is unset.
+	 *  W1-PREP (TASK-250): layers place in TWO passes — bAllowOnHills=false
+	 *  first (hills included, registering the hill-surface HISMs), then the
+	 *  hill-allowed layers, whose ground resolve accepts elevated hill Z within
+	 *  each layer's MaxPlacementSlopeDeg.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Terrain")
 	void GenerateScatter();
@@ -134,6 +138,17 @@ private:
 	 */
 	TMap<UHierarchicalInstancedStaticMeshComponent*, UHierarchicalInstancedStaticMeshComponent*> VisualToProxy;
 
+	/**
+	 *  HISMs that count as HILL SURFACE for bAllowOnHills layers (W1-PREP,
+	 *  TASK-250): the real-geometry blocker HISMs (bBlocking, no collision proxy,
+	 *  not themselves hill-allowed) registered by pass 1 of GenerateScatter —
+	 *  in the shipped DA, the HILLS layer. Reset + rebuilt every generate. Like
+	 *  VisualToProxy, this is a secondary index over comps already rooted via
+	 *  ScatterComponents (a UPROPERTY), so raw pointers are safe: every entry
+	 *  outlives the array and all are torn down together on actor destroy.
+	 */
+	TArray<UHierarchicalInstancedStaticMeshComponent*> HillSurfaceComponents;
+
 	/** Resolves-or-creates the VISUAL HISM for a mesh, applying the layer's collision/nav profile. Returns nullptr if the mesh is unresolvable. */
 	UHierarchicalInstancedStaticMeshComponent* ResolveComponentForMesh(UStaticMesh* Mesh, const FScatterLayer& Layer);
 
@@ -166,6 +181,20 @@ private:
 
 	/** Traces down to the arena floor at (X,Y); returns the floor Z (or 0 if no hit). Ignores this actor so already-placed instances never fool the trace. */
 	float GroundZAt(float X, float Y) const;
+
+	/**
+	 *  Hill-aware ground resolve for bAllowOnHills layers (W1-PREP, TASK-250).
+	 *  Component-scoped down-traces against ONLY the registered hill-surface
+	 *  HISMs (world channel traces can never see them: the hill HISMs ignore the
+	 *  ECC_WorldStatic trace channel by the scatter-channel law AND belong to this
+	 *  actor, which GroundZAt ignores wholesale — the bare-hills root cause).
+	 *  Returns true with OutZ = the hill-surface Z when the candidate sits over a
+	 *  hill face within MaxSlopeDeg, true with OutZ = FloorZ when it is not over
+	 *  a hill at all, and FALSE when the face is steeper than MaxSlopeDeg — the
+	 *  caller must REJECT that candidate (grounding at FloorZ would bury it
+	 *  inside the hill).
+	 */
+	bool ResolveHillAwareGroundZ(float X, float Y, float FloorZ, float MaxSlopeDeg, float& OutZ) const;
 
 	/** Deferred (async-nav-settled) reachability confirmation — path-queries Blue→Red and culls corridor blockers if (defensively) needed. */
 	void ValidateTraversability();

@@ -7,6 +7,7 @@
 #include "UObject/SoftObjectPtr.h"
 #include "ScatterConfig.generated.h"
 
+class UMaterialInterface;
 class UStaticMesh;
 
 /**
@@ -150,6 +151,53 @@ struct FScatterLayer
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter")
 	float CollisionProxyZOffset = 0.f;
+
+	// --- W1-PREP: hill-surface placement + material override (CONVENTIONS "Arena
+	// --- 10× scale-up & LOD/perf (M7.6)" → "W1-PREP additions", TASK-250) ---
+
+	/**
+	 *  Opt-IN: this layer's instances may place ON hill surfaces. Default FALSE —
+	 *  a non-opted layer keeps the flat-floor ground trace exactly as before (and
+	 *  the hill layer itself must stay false: hills never stack on hills; a
+	 *  false-layer also serves as a placement SURFACE for the opted-in layers when
+	 *  it is a real-geometry blocker). When TRUE the layer is placed in a SECOND
+	 *  pass (after every non-opted layer, so the hills exist to be traced), its
+	 *  ground resolve accepts the elevated hill-surface Z, and candidates over a
+	 *  hill face steeper than MaxPlacementSlopeDeg are rejected (never buried at
+	 *  floor Z inside the hill — the W1-PREP bare-hills defect).
+	 *  RECOMMENDED OPT-INS (DA wiring is TASK-249/251's side, not code): GRASS +
+	 *  PLANTS first (non-blocking decoration — zero nav/corridor interaction, the
+	 *  safe defaults); ROCKS + TREES also legal (blocking laws are UNCHANGED —
+	 *  keep-clear/corridor tests still run on their 2D footprint, and their
+	 *  nav-relevant HISMs still participate in the reachability validation +
+	 *  corridor cull).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter")
+	bool bAllowOnHills = false;
+
+	/**
+	 *  Max hill-face slope (degrees from horizontal) this layer tolerates when
+	 *  bAllowOnHills is true: a candidate over a steeper face is rejected and
+	 *  re-rolled. Default 35° — just past the ≤30° climbable-face law
+	 *  (CONVENTIONS "Climbable terrain (M6.6)"), so props reach every walkable
+	 *  face plus a small margin, while near-vertical flanks stay clean. Ignored
+	 *  when bAllowOnHills is false.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter", meta = (ClampMin = "0", ClampMax = "89", EditCondition = "bAllowOnHills"))
+	float MaxPlacementSlopeDeg = 35.f;
+
+	/**
+	 *  Optional material override for this layer's HISMs (CONVENTIONS "W1-PREP
+	 *  additions"): when SET, it replaces the donor materials on EVERY slot of the
+	 *  layer's visual HISMs (+ the paired collision-proxy HISMs, per the law) via
+	 *  SetMaterial at component creation — the SM_ assets themselves are NEVER
+	 *  touched (the lane-clean route: main-lane donors stay pristine). Null
+	 *  (default) = donor materials, a failed resolve degrades to the donor look
+	 *  with a warning — never a crash. TASK-249's tri-planar M_HillGrass rides
+	 *  this on the HILLS layer.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter")
+	TSoftObjectPtr<UMaterialInterface> OverrideMaterial;
 };
 
 /**
