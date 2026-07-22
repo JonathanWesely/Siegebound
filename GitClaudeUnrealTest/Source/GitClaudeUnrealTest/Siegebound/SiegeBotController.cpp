@@ -213,11 +213,14 @@ ASiegeBotController::ASiegeBotController()
 	// EditDefaultsOnly defaults. Each is legal against DT_Cards — sum(Count)==50 and
 	// every Count <= that card's MaxCopies (Footman 12, MilitiaMob/Pikeman/Knight 6,
 	// Archer 10, Cavalry/Sapper/Miner/BombTower/BallistaTower 4, Ogre/DeepMine 2,
-	// Barracks/CrystalTower/Cleric 3, Wall 10, ArrowTower 8, Longbowman 4). Both are
-	// composed ONLY of bot-PLAYABLE types (Unit/Building/Economy) so the bot never
-	// wastes a decision cycling an unplayable card, and both differ from the player's
-	// TASK-115 curated DeckCount default. Legality is re-checked at pick time
-	// (IsDeckLegal) — an edited-illegal BP entry degrades to the DeckCount fallback. ---
+	// Barracks/CrystalTower/Cleric 3, Wall 10, ArrowTower 8, Longbowman 4,
+	// Lightning 2). Both are composed ONLY of bot-PLAYABLE types — Unit/Building/
+	// Economy plus the decision loop's rule-3 castable Spells (TASK-252 added
+	// Lightning ×2 to [1] per the M6 QA recommendation, making rule 3b reachable
+	// in curated play) — so the bot never wastes a decision cycling an unplayable
+	// card, and both differ from the player's TASK-115 curated DeckCount default.
+	// Legality is re-checked at pick time (IsDeckLegal) — an edited-illegal BP
+	// entry degrades to the DeckCount fallback. ---
 	auto Entry = [](const TCHAR* InCardID, int32 InCount)
 	{
 		FDeckCardEntry Result;
@@ -242,12 +245,12 @@ ASiegeBotController::ASiegeBotController()
 		Entry(TEXT("Miner"),       2), // 8 x2  = 16 (minimal economy)
 	};
 
-	// [1] DEFENSIVE ECONOMY — towers, walls, full economy, heavy finishers (avg cost ~6.86). Sum 50.
+	// [1] DEFENSIVE ECONOMY — towers, walls, full economy, heavy finishers (avg cost ~7.02). Sum 50.
 	FDeckList FortressDeck;
 	FortressDeck.DeckName = TEXT("Bot Defensive Economy");
 	FortressDeck.Cards =
 	{
-		Entry(TEXT("Wall"),          10), // 4 x10 = 40
+		Entry(TEXT("Wall"),           8), // 4 x8  = 32 (TASK-252: 10 → 8, donor for Lightning ×2)
 		Entry(TEXT("ArrowTower"),     8), // 5 x8  = 40
 		Entry(TEXT("Knight"),         6), // 6 x6  = 36
 		Entry(TEXT("BombTower"),      4), // 8 x4  = 32
@@ -258,6 +261,7 @@ ASiegeBotController::ASiegeBotController()
 		Entry(TEXT("Cleric"),         3), // 6 x3  = 18 (heals)
 		Entry(TEXT("Ogre"),           2), // 12 x2 = 24 (siege finisher)
 		Entry(TEXT("DeepMine"),       2), // 15 x2 = 30 (raidable economy)
+		Entry(TEXT("Lightning"),      2), // 8 x2  = 16 (spell — rule-3b tower-killer; TASK-252 per the M6 QA rec)
 		Entry(TEXT("Longbowman"),     1), // 6 x1  = 6
 	};
 
