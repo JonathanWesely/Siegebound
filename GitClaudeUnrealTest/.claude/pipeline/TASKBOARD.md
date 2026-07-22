@@ -346,7 +346,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 #### TASK-234 â€” BACKLOG: Sapper re-rig + retarget retry (~17 Meshy credits) (art)
 - assignee: art-director
-- status: **headless-done-pending-wire** (2026-07-21 â€” re-rig attempt 1 PASS: root cause was the bomb+gloves frontal mass defeating Meshy's limb fit (leg chain zigzagged through the bomb), NOT hips-low/hunch; bomb-carve upload copy fixed it. WALK GATE PASS 42.94/39.81 uu vs the 38.4 height-normalized floor (was 5.36/11.81); Attack now Charged_Ground_Slam (127) full-body slam replacing the root-only 510; 17 credits, single attempt. Wire step editor-serial â€” needs list in handoffs/TASK-234.md Â§7 incl. the 38.4-floor re-gate + mandatory PIE verdict on the borderline foot_r) â† was: pulled-forward 2026-07-21
+- status: **done** (2026-07-21 evening -- WIRED + PIE VISUAL PASS. Wire ran post-relaunch (editor PID 41012, after the wedge-kill of PID 24104 on Jonathan's explicit instruction): t234_backup [4 procedural clips -> Backup_Procedural/, saved] -> t234_wire [same-path reimport of 4 MeshyRetargeted FBXs onto SK_Footman_Skeleton; UE-side WALK GATE PASS 42.94/39.81 vs the 38.4 height-normalized floor; root-lock on, root-motion off; RateScale Idle/Walk 1.0, Attack 2.0 -> 1.50s eff, Death 1.5 -> 1.98s eff <= 2.0s destroy hold; ABP target skeleton intact; all 4 SAVED]. Cadence adjudication: cards.csv Sapper Cadence=1.0 bSuicide=true -- at rate 2.0 the slam-impact frames (raw ~2.0s) land exactly on the 1.0s explosion tick; kept 2.0. MANDATORY PIE verdict (borderline foot_r +1.4): PASS -- upright alternating stride across 3+ frames (no skew/skating); full suicide sequence captured in a 0.05-dilation duel (wind-up crouch -> lunge -> explosion at 1.0s -> collapse -> prone -> destroy ~2.0s post-contact, verified numerically t=158.7->160.7); captures Tools/ArtPipeline/Cache/Sapper/retarget/ue_previews/live_Sapper_00..44.png (key: 00-02 walk, 13/20/24 slam, 30/38 collapse). Gameplay quirk recorded (programmer-domain, not an anim defect): Sapper unit-kills resolve within one cadence tick and the exploder survives unit contacts, marching on. NOT committed (build-master lane). Details: handoffs/TASK-234.md sec 7c) (re-rig attempt 1 recap: bomb-carve fixed the Meshy limb fit; WALK GATE 42.94/39.81 vs 38.4, was 5.36/11.81; Attack = Charged_Ground_Slam 127; 17 credits) <- was: headless-done-pending-wire
 - blocked-by: none (credits ample)
 - parallel-safe: yes (headless Meshy + Blender; wire step editor-serial)
 - spec: >
@@ -440,7 +440,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 #### TASK-239 â€” VFX v2: NS_Spell_Lightning â€” bigger, taller, more detailed sky strike (art, editor)
 - assignee: art-director
-- status: in-progress ~70%, UNBLOCKED (2026-07-21 â€” the deadlocked editor [PID 4088] was grant-killed by build-master in the combined integration window [taskkill /F, graceful close impossible: game thread frozen mid-GC, MCP+remote-exec dead; kill logged in handoffs/TASK-240-241.md]; the L_MainMenu auto-save restore prompt on relaunch was DECLINED per this task's ledger [PackageRestoreData.json parked as .bak-2026-07-21-forcekill â€” only the transient VFXPREVIEW stage was in it]. Editor relaunched clean. Work SAVED on disk: NS_Spell_Lightning_NEW + M_Spell_LightningStrike (NOT committed â€” WIP excluded from the TASK-240/241 commits by design); resume ledger in handoffs/TASK-239.md step 2 onward [material one-line fix with NO Niagara editor windows open]. NOTE: relaunched editor shows a "re-open 3 asset editors?" toast â€” answer NO per the resume caution)
+- status: **blocked-rework** (2026-07-21 20:44 -- round-2 recompile ALSO wedged the editor: dispatched 17:44 with every mitigation honored (zero asset editors open, no dialogs involved, fresh editor), 8 workers spawned then decayed to 3 idle, but the game thread NEVER returned from FinishCompilation -- frame counter frozen at [702] from ~17:44 to 20:44 (~3h; only background threads logging: DDC maintenance 18:21/19:21/20:21 all frame [702]), no FIX line, material mtime stayed 13:53. 0-for-2, ~4h editor time lost across the two rounds. PID 41012 killed 20:44:27 (Jonathan's standing kill instruction; he was actively waiting on the editor); relaunched clean PID 37984 -- init 13.36s, MCP + remote exec verified, frame counter advancing [47]->[84], zero dirty packages, L_Arena clean. REWORK REQUIRED: re-author M_Spell_LightningStrike's look with STOCK material nodes/parameters -- NO Custom HLSL node (the custom-node WPO master detonates the shader permutation space; in-editor recompile_material on it wedges the editor) -- or adapt the donor material via parameters only. The saved NS_Spell_Lightning_NEW system (renderer repointed, subImage 1x1, tall fixed bounds) and the staged swap/capture scripts REMAIN VALID -- only the material needs the rework. Canonical /Game/VFX/NS_Spell_Lightning placeholder still live in-game (clean, just the old look). MANAGER: cut the rework task next session. Round-2 post-mortem + the monitor trigger-gap lesson in handoffs/TASK-239.md. <- was: in-progress ~80%, round-2 recompile in flight
 - blocked-by: TASK-237 (radius landed as data), editor+MCP up
 - parallel-safe: no (editor Niagara â€” serialize with TASK-238)
 - spec: >
@@ -473,7 +473,7 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 #### TASK-241 â€” Retexture-fleet integration: per-wave verify + worktree commit (build)
 - assignee: build-master
-- status: done (2026-07-21 â€” BOTH waves in one window (single commit on main via worktree, hash in ðŸ”§ Build & Git + handoffs/TASK-240-241.md). 19/19 structural readback green: same paths, slots [TeamRegionâ†’MI_TeamColor_Blue, <CardID>PBRâ†’MI_<CardID>_PBR], Nanite OFF, units 4 hulls / buildings 1 manifest box, lods=4 @ LargeProp all (TASK-220 line applied for free, zero LOD_STEP_FAILED), refs held (BP_Unit_*/BP_Building_*/L_Arena). CrystalTower slot-1 MI_CrystalGlow preserved + emissive visually confirmed glowing over the refreshed mesh; GoldNode all-slots M_GoldGlow variant. Wall+DeepMine FIRST TextURED import over the blockout SM_ paths (box-UCX branch, refs survived) â†’ **16/16 card roster textured; TASK-173 lineage closed 8/8**. Color-fidelity evidence = TASK-201 triptychs (Cache/_TASK201_report/) + in-world captures Cache/TASK-202/. PIE sanity rode TASK-240's suite (units marching, matches clean). NOT pushed)
+- status: done (2026-07-21 â€” BOTH waves in one window (commit `b9a756d` on main via worktree, 160 files; also in ðŸ”§ Build & Git + handoffs/TASK-240-241.md). 19/19 structural readback green: same paths, slots [TeamRegionâ†’MI_TeamColor_Blue, <CardID>PBRâ†’MI_<CardID>_PBR], Nanite OFF, units 4 hulls / buildings 1 manifest box, lods=4 @ LargeProp all (TASK-220 line applied for free, zero LOD_STEP_FAILED), refs held (BP_Unit_*/BP_Building_*/L_Arena). CrystalTower slot-1 MI_CrystalGlow preserved + emissive visually confirmed glowing over the refreshed mesh; GoldNode all-slots M_GoldGlow variant. Wall+DeepMine FIRST TextURED import over the blockout SM_ paths (box-UCX branch, refs survived) â†’ **16/16 card roster textured; TASK-173 lineage closed 8/8**. Color-fidelity evidence = TASK-201 triptychs (Cache/_TASK201_report/) + in-world captures Cache/TASK-202/. PIE sanity rode TASK-240's suite (units marching, matches clean). NOT pushed)
 - blocked-by: TASK-202 (fleet reimports landed per wave)
 - parallel-safe: no (Git; may run per wave â€” units commit first, buildings+Wall/DeepMine after)
 - spec: >
@@ -486,6 +486,76 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 - names: >
     Commits on `main` via worktree. Law: CLAUDE.md hard gates, "Textured mesh law", "Color-fidelity acceptance bar", M7.6
     branch-ownership.
+
+---
+
+### 2026-07-21 evening — Archer + Ogre rigging batch (TASK-242..244; Jonathan playtest finding, session IN PROGRESS)
+
+**Finding (Jonathan, live):** "the archer doesnt seem to have a walking animation" — correct: ARCHER and OGRE were never rigged (no SK_, no anims — static meshes gliding; TASK-212 QA roster audit). With the rest of the fleet animating, they are the most visible debt in the game. Authorization = his standing improve-the-meshes directive + this direct flag. **His playtest session is IN PROGRESS — more findings may arrive; this batch stays OPEN-ENDED (new findings get appended here as tasks).**
+
+**WATCH (playtest record 2026-07-21, NOT a task — Jonathan's ruling: move on, he'll document if it recurs):** Ogre stopped moving mid-map (before the midline) ×1 during the 10×-map playtest; unreproduced on retest, no captures (game closed first). Suspects: nav partial-path under the coarsened Recast + scatter carve, or a scatter-collision wedge. Expected behavior was confirmed to Jonathan (Siege profile: ignores units, only stops for structures/castle — a mid-field stop with neither in reach is NOT expected). IF IT RECURS with details → register a gameplay-programmer diagnosis task (session movement logs + repro steps). Cross-ref: M7.6 W1 nav-feel watch (TASK-219) should keep an eye out for the same signature.
+
+**Lane ruling (manager):** SK skinning and clips are SEPARATE halves of the proven lane — (a) the SK mesh is skinned to the 21-bone SiegeBiped by `rig_character.py` (the tool that built the original SK fleet; post-TASK-212 it exports the `Footman_Rig` armature root, satisfying the shared-skeleton bind law); (b) the CLIPS come from Meshy auto-rig + presets retargeted through `retarget_meshy_to_siegebiped.py` (proportion-correct, the fleet lane). NEVER import a Meshy-skeleton SK (shared-skeleton law). If either half fails on the Ogre's nonstandard proportions, ESCALATE — a tool edit is a gameplay-programmer QA'd task, not an art-side patch.
+
+**GDD AS-BUILT UPDATE PASS (manager, 2026-07-21 — Jonathan's explicit directive; first agent edit of Docs/GDD.md): DONE — APPROVED BY JONATHAN + COMMITTED `59a994a`.** `Docs/GDD.md` amended in place to v3 — consistent `*[as-built YYYY-MM-DD]*` tags; corrections: arena scale/pacing + corridor/vista/POI (§5), spell-delivery overhaul with recorded tunables 900/100/~3000 + Lightning 700 (§3.11/§4), economy rebalance 10 / +1-per-2s (§3.2/§8), §6 art reality (concept-first → TRELLIS.2+Meshy dual engine, concept-fidelity color law, two-slot team color, enforced tri budgets 15k/20k/40k, LOD/cull structure, Nanite vista exception, SiegeBiped animation system + Cavalry-quadruped/Lightning-material open items), always-visible team-tinted health bars + input model + deck-builder (§7), §9 milestone statuses (M1–M7.5 SHIPPED one-liners, M7 Sequencer+perf capstones OPEN, M7.6 in-progress, M8 future) + inserted-milestones note, §10 future-hooks ledger, and a NEW "Design Change Log" appendix (14 dated pivots). Nothing aspirational deleted; §-numbering untouched; engineering law referenced to CONVENTIONS, not inlined. **Review sheet for Jonathan: `Docs/GDD-UPDATE-2026-07-21.md`** (every amendment: section / what / why + 3 surfaced open questions incl. the standing D-FROSTNOVA-DECK flag). His review was the acceptance gate — **APPROVED by Jonathan 2026-07-21; committed to main as `59a994a`** (dedicated build-master worktree commit: Docs/GDD.md v3 + the review sheet, explicit pathspecs, text-only/no-LFS, secret-scan clean, NOT pushed; primary tree untouched on m7.6-arena10x). Pulled from TASK-244's fold list.
+
+#### TASK-242 — Archer + Ogre: rig_character.py skinning + Meshy clips + retarget (art, HEADLESS) [dispatch NOW]
+- assignee: art-director
+- status: **done** (reconciled 2026-07-22 by TASK-243 from on-disk evidence — the 242 agent died at wrap-up but its work was complete: FBXs + handoff + gates all verified; TASK-243 consumed the outputs. Prior status note kept: 2026-07-21 evening — BOTH units complete, all gates PASS on rig attempt 1 each. SiegeBiped rigs (Footman_Rig root, 21 bones, two-slot carried) at Content/RawAssets/Characters/{Archer,Ogre}.fbx; 4 Meshy clips each (Archer Archery_Shot_1 224; Ogre Heavy_Hammer_Swing 128 — browsed two-hand smash, stills-verified); retarget WALK GATE PASS at height-normalized floors Archer 41.1 (62.07/54.18) + Ogre 65.8 (84.17/81.17), not borderline. 34 cr (17/unit), balance 2866. Evidence + wire notes in handoffs/TASK-242.md. NO editor/MCP/Git touched — TASK-243 owns the SK first-import.)
+- blocked-by: none
+- parallel-safe: yes
+- spec: >
+    (1) SKIN: run rig_character.py on the game-ready SM_Archer + SM_Ogre meshes → SiegeBiped-hierarchy rigged FBX per unit
+    (Footman_Rig armature root, 21 bones, two-slot materials carried). (2) CLIPS: Meshy auto-rig each unit + 4 presets —
+    Archer: Idle / Walk / **Archery_Shot_1 (preset 224, the proven Longbowman pick)** / Death; Ogre: Idle / Walk / a heavy
+    TWO-HAND SMASH preset / Death (~17–23 cr per unit; budget 2 rig attempts each — WATCH prop-confusion on the Archer's bow
+    and the Ogre's huge/nonstandard proportions; the Sapper rest-pose lesson applies: inspect Hips z-frac/pose BEFORE
+    spending clip credits). (3) RETARGET via retarget_meshy_to_siegebiped.py with HEIGHT-NORMALIZED floors (heights from
+    pipeline_manifest: Archer ≈ standard ⇒ ~40 uu; Ogre is TALL ⇒ floor ABOVE 40, compute 40 × height/1.75). ACCEPTANCE:
+    per unit — rigged SiegeBiped FBX + 4 retargeted clips passing the height-normalized amplitude gate in Blender; Meshy
+    provenance recorded; escalate (don't patch tools) on rig failure. Post in 🎨 Art.
+- names: >
+    `Content/RawAssets/Characters/{Archer,Ogre}.fbx` (rigged, raw-asset rule) + `Content/RawAssets/Characters/Meshy/
+    {Archer,Ogre}/` + `MeshyRetargeted/{Archer,Ogre}/`. Tools RUN-only: rig_character.py, meshy_generate.py,
+    retarget_meshy_to_siegebiped.py. Law: "Skeletal rig & animation workstream (M7)" (SiegeBiped, Footman_Rig root),
+    sanctioned-export-path clause (height-normalized floor).
+
+#### TASK-243 — SK_Archer + SK_Ogre FIRST import: shared-skeleton bind + anim wire + runtime light-up (art, editor)
+- assignee: art-director
+- status: **ready-for-integration** (DONE 2026-07-22 late-evening, no holds — SK_Archer + SK_Ogre live at /Game/Characters/ bound to the shared SK_Footman_Skeleton (clean bind, skeleton not dirtied), two-slot law, Nanite off, fleet-mirror (LOD0, no PhysAsset); 8 first-authored A_* clips wired (root-lock law; UE re-gate PASS Archer 62.07/54.18 vs 41.1, Ogre 84.17/81.17 vs 65.8; rates Archer Attack 2.5 [release beat 0.87s < 1.2 cadence, probe-verified], Ogre Attack 1.2 [1.53s ≈ 1.5 tick], Deaths 1.5 → 1.98s ≤ 2.0 hold). PIE verdicts ALL PASS: Archer WALKS (Jonathan's finding closed), left-hand bow draw + projectiles, death collapse + prompt destroy, red recolor; Ogre marches past enemy units per Siege, smashes tower+castle, heavy death collapse; ABP intact, SM_ fallbacks intact, Message Log clean for both. Captures in Cache/{Archer,Ogre}/retarget/ue_previews/live_*_t243_*.png. Handoff: handoffs/TASK-243.md. Commit rides TASK-244; note MI_{Archer,Ogre}_PBR left dirty (pre-existing, see handoff §4).)
+- blocked-by: TASK-242 (rigged FBX + gated clips), editor+MCP up (queue behind TASK-174 and any live-playtest priority)
+- parallel-safe: no (editor)
+- spec: >
+    FIRST-import lane (differs from the prior wire tasks — these units have NO SK yet; TASK-160-era precedent): import each
+    rigged FBX as a NEW `/Game/Characters/SK_<CardID>` BOUND TO THE SHARED `SK_Footman_Skeleton` (Footman_Rig root law — the
+    bind must succeed with NO missing-bones warning); slots carried from the SM_ MIs: [0] TeamRegion → MI_TeamColor_Blue,
+    [1] <CardID>PBR → MI_<CardID>_PBR (two-slot SK law; Nanite off, ≤15k tris). Import the 4 clips per unit at
+    `/Game/Characters/Anims/A_<CardID>_{Idle,Walk,Attack,Death}` (FIRST authoring — no backups exist; root-motion OFF +
+    force_root_lock + RateScale to cadence per the proven wire mechanics; in-editor amplitude re-gate at the height-
+    normalized floors). VERIFY the runtime path LIGHTS UP for both: ASummonedUnit auto-resolves `/Game/Characters/
+    SK_<CardID>` at BeginPlay (composed-soft-path law) + ABP sharing on the shared skeleton (NO ABP edits via MCP — the
+    AnimBP minefield; a7a77f6 rebind is the recovery). PIE visual verdicts: ARCHER WALKS (Jonathan's finding closed),
+    bow-shot reads, Ogre walks + heavy smash, deaths hold, placement ghost + static SM_ fallback intact at their paths.
+    ACCEPTANCE: both units fully animated in PIE at law paths, saved not-dirty; captures for Jonathan. Commit rides
+    TASK-244. Post in 🎨 Art.
+- names: >
+    NEW `/Game/Characters/SK_Archer`, `SK_Ogre` (bound to SK_Footman_Skeleton) + `/Game/Characters/Anims/A_{Archer,Ogre}_*`.
+    Law: "Skeletal rig & animation workstream (M7)" (SkeletalVisualMesh swap contract, two-slot SK law), sanctioned-path
+    clause, M7.5 animation clause.
+
+#### TASK-244 — Next build-master window: Archer/Ogre SK batch + tonight's owed items (build)
+- assignee: build-master
+- status: backlog
+- blocked-by: TASK-243 (+ fold whatever owed items are verified by then: Sapper anim wire output [TASK-234], MI_Castle_PBR; the GDD as-built pass is NO LONGER in this fold — approved + committed separately as `59a994a`, 2026-07-21)
+- parallel-safe: no (Git; worktree route — checkout on m7.6-arena10x, editor live)
+- spec: >
+    Consolidated next-window commit to MAIN via the worktree route (verify git state — Jonathan self-commits; explicit
+    pathspecs; LFS-aware; NO push; no branch files, no L_Arena/DA): SK_Archer/SK_Ogre + their A_* clips + rigged/Meshy raw
+    FBXs (TASK-242/243) + the owed Sapper anims (TASK-234 output) + MI_Castle_PBR + handoffs/QA reports per convention.
+    Structural readback before commit (SK bind, slots, anim paths, SM_ fallback intact). Flip board lines. ACCEPTANCE:
+    clean commit(s) + hash posted; owed-items ledger cleared or carried with reasons. Post in 🔧 Build & Git.
+- names: >
+    Commits on `main` via worktree. Law: CLAUDE.md hard gates, M7.6 branch-ownership.
 
 ---
 
