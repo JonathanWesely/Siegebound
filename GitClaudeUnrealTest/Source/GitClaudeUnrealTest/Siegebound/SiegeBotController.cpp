@@ -583,6 +583,14 @@ void ASiegeBotController::EvaluateDecisions()
 				if (FindFireballClusterTarget(Chosen.Row->AoERadius, FireballClusterMinUnits, ClusterCentroid, ClusterSize))
 				{
 					const int32 GoldBefore = Gold;
+					// TASK-236 call-site flag (CONVENTIONS "Spell delivery overhaul
+					// 2026-07-21"): Fireball is now a HeroLine spell — the centroid is
+					// passed as the AIM-POINT and the resolver fires a line FROM THIS
+					// BOT'S CASTLE toward it (the bot has no hero — flagged design
+					// default). A cluster beyond ASpellLineSweep::LineRange of the
+					// castle therefore WHIFFS (spent, no hits — the whiffed-Fireball
+					// rule); recorded on the TASK-240 playtest WATCH list ("bot-origin
+					// feel"). Decision logic deliberately unchanged this wave.
 					if (USpellLibrary::ResolveSpell(World, Chosen.CardID, *Chosen.Row, BotTeam, ClusterCentroid))
 					{
 						// Same this-tick invariant as rule 5's fee: affordability held above
@@ -630,6 +638,9 @@ void ASiegeBotController::EvaluateDecisions()
 				{
 					const FVector TargetPoint = TowerTarget->GetActorLocation();
 					const int32 GoldBefore = Gold;
+					// TASK-236 call-site flag: Lightning stays GroundCircle — TargetPoint
+					// remains the impact center, byte-untouched by the delivery overhaul
+					// (its radius change is TASK-237, data-only).
 					if (USpellLibrary::ResolveSpell(World, Chosen.CardID, *Chosen.Row, BotTeam, TargetPoint))
 					{
 						if (!BotState->SpendGold(Chosen.Row->Cost))

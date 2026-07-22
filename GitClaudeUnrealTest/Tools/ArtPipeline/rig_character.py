@@ -27,7 +27,10 @@ Pipeline (takes a GAME-READY textured mesh -> UE-importable skeletal mesh + anim
     2. MEASURE  adaptive anchors from the mesh (height, per-region half-widths) so one
                 normalized skeleton spec fits any humanoid silhouette.
     3. ARMATURE build the shared 'SiegeBiped' skeleton (21 bones, UE-style names) fitted
-                to the measured anchors x normalized proportions.
+                to the measured anchors x normalized proportions. The armature OBJECT is
+                always named 'Footman_Rig' (SHARED_SKELETON_ROOT) — UE turns that node
+                into the SK root bone, which must match the shared skeleton's root for
+                every unit (TASK-212; root cause handoffs/TASK-211.md).
     4. SKIN     parent mesh->armature; bone-heat automatic weights, with a deterministic
                 segment-distance ENVELOPE fallback (never fails — generalizes to the batch).
     5. ANIMATE  author Idle / Walk / Attack / Death actions (pose-bone keyframes computed
@@ -87,6 +90,14 @@ CHARACTERS_RAW = CONTENT_RAW / "Characters"
 
 UE = 100.0  # 1 Blender meter = 100 UE units
 X_AXIS, Y_AXIS, Z_AXIS = Vector((1, 0, 0)), Vector((0, 1, 0)), Vector((0, 0, 1))
+
+# TASK-212: UE's FBX importer converts the exported armature OBJECT node into an
+# extra ROOT bone above 'root'. The shared skeleton (created by the Footman import)
+# therefore roots at 'Footman_Rig' — so EVERY unit must export its armature object
+# under this exact constant name, or SK_<Unit> roots at '<Unit>_Rig' and
+# USkeleton::MergeAllBonesToBoneTree silently fails on every load (the recurring
+# missing-bones warnings; root cause in handoffs/TASK-211.md). NEVER per-unit.
+SHARED_SKELETON_ROOT = "Footman_Rig"
 
 
 def log(msg):
@@ -335,7 +346,8 @@ def build_armature(anchors, spec, card_id, report):
         ]
 
     arm_data = bpy.data.armatures.new(f"{card_id}_Armature")
-    arm_obj = bpy.data.objects.new(f"{card_id}_Rig", arm_data)
+    # Armature OBJECT name is the CONSTANT shared-skeleton root — see SHARED_SKELETON_ROOT.
+    arm_obj = bpy.data.objects.new(SHARED_SKELETON_ROOT, arm_data)
     bpy.context.scene.collection.objects.link(arm_obj)
     select_only([arm_obj], active=arm_obj)
     bpy.ops.object.mode_set(mode="EDIT")

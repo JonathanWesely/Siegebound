@@ -1,21 +1,31 @@
-# M7 building/GoldNode + U2 unit reimport wave (TASK-172/173).
+# TASK-202 fleet retexture reimport — BOTH WAVES (TASK-201 units wave + buildings wave 2).
 # One CardID per line. This sidecar WINS over DEFAULT_CARD_IDS in reimport_meshes.py.
-# The 4 U1 units (Knight/Cavalry/Pikeman/MilitiaMob) are already done+verified and
-# are intentionally NOT listed (verify-only over MCP); add them here for an
-# idempotent re-run if ever needed.
+# 19 assets: 11 units + 6 building refreshes + Wall/DeepMine (FIRST textured import
+# over the blockout SM_ paths via the building box-UCX branch — authored manifest boxes).
+# CrystalTower: slot-1 stays MI_CrystalGlow (TASK-190 law) — finalized over MCP post-relaunch.
+# GoldNode: all slots M_GoldGlow variant law — finalized over MCP post-relaunch.
 
-# --- U2 units (2-slot [TeamRegion, <CardID>PBR], <=4 convex hulls) ---
-Sapper
+# --- Units wave (11) — 2-slot [TeamRegion, <CardID>PBR], <=4 convex hulls ---
+Ogre
+Footman
+Archer
+Knight
+Miner
+Cavalry
 Cleric
 Longbowman
-Miner
+MilitiaMob
+Pikeman
+Sapper
 
-# --- Buildings (2-slot [TeamRegion, <CardID>PBR], authored UCX box hulls) ---
+# --- Buildings wave 2 refreshes (6) — 2-slot, manifest UCX boxes ---
 ArrowTower
+BombTower
 BallistaTower
 Barracks
-BombTower
 CrystalTower
-
-# --- Emissive economy prop (single M_GoldGlow slot, NO TeamRegion, box hull) ---
 GoldNode
+
+# --- Roster closers (first textured import over blockout SM_, box-UCX branch) ---
+Wall
+DeepMine

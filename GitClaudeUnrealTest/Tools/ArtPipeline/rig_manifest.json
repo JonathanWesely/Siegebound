@@ -106,6 +106,20 @@
       "weapon_side": "r",
       "attack_style": "mine",
       "_note": "TASK-164 wave 2. GDD S3.3/S4: Economy, 30 HP, non-combat; +1 gold/s on arrival. 'mine' (thrust-family forward/down pick drive) is the mining swing (pairs with TASK-179 clink audio); serves as the 'Attack' action slot. Two-slot [TeamRegion, MinerPBR]+UVMap."
+    },
+    "Archer": {
+      "input_fbx": "Content/RawAssets/Archer.fbx",
+      "skeleton": "SiegeBiped",
+      "weapon_side": "r",
+      "attack_style": "thrust",
+      "_note": "TASK-242 evening batch. GDD S4: Unit, 45 HP, dmg 10, range 700 (ranged line unit, bRanged). Bow at -X per pipeline_manifest (TASK-037 blockout: bow -X, quiver on back +Y), height 180 UE = 1.80 m. Bow draw: same tooling gap as Longbowman - 'thrust' (windup pull-back then forward drive) is the closest read; the REAL bow-shot ships via the Meshy clip lane (Archery_Shot_1, preset 224). Two-slot [TeamRegion, ArcherPBR]+UVMap."
+    },
+    "Ogre": {
+      "input_fbx": "Content/RawAssets/Ogre.fbx",
+      "skeleton": "SiegeBiped",
+      "weapon_side": "r",
+      "attack_style": "overhead",
+      "_note": "TASK-242 evening batch. GDD S4/S3.8: Unit, 500 HP, dmg 35, range 120, Siege tank (ignores units, targets buildings then castle). ROSTER'S TALLEST (Z 290 UE = 2.90 m; X 226.72 includes the stone-maul overhang). MANAGER LANE RULING (TASK-242): rigged on the SHARED SiegeBiped (Footman_Rig root) like every humanoid, NOT the _doc's 'bespoke' option - the adaptive height/half-width fit absorbs the bulk; Meshy skeleton is CLIPS ONLY. 'overhead' (else-branch overhead swing) = the two-hand maul smash read. Two-slot [TeamRegion, OgrePBR]+UVMap."
     }
   }
 }

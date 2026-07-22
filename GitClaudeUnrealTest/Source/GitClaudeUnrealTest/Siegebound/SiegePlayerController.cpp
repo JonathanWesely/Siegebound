@@ -1539,18 +1539,73 @@ void ASiegePlayerController::ExitTargetingMode()
 
 void ASiegePlayerController::TryConfirmSpellTarget()
 {
-	// no surface under the cursor (sky / outside the world): refuse, spend
-	// NOTHING, STAY in mode — a different point can succeed (the placement
-	// invalid-click law). This is the ONLY positional refusal in targeting
-	// mode: spells land ANYWHERE a surface answers the trace — enemy half
-	// included, no navmesh requirement (M5 ruling 8, §3.5).
+	// AIM PASS (TASK-236, CONVENTIONS "Spell delivery overhaul (2026-07-21)"):
+	// HeroLine spells (Fireball/FrostNova) need only an AIM DIRECTION at
+	// confirm — the reticle stays as the aim indicator, but a surface under
+	// the cursor is no longer REQUIRED for them. GroundCircle spells keep the
+	// M5 confirm gate byte-for-byte.
+	const bool bLineSpell = USpellLibrary::IsLineDeliverySpell(TargetingRow);
+
 	if (!bTargetingSurfaceValid)
 	{
-		UE_LOG(LogGitClaudeUnrealTest, Log,
-			TEXT("ASiegePlayerController '%s': spell confirm refused for '%s' — no surface under the cursor."),
-			*GetNameSafe(this), *TargetingCardID.ToString());
-		RefuseCardPlay(TargetingCardID, NSLOCTEXT("Siegebound", "CardRefused_NoTarget", "No target under cursor"));
-		return;
+		if (!bLineSpell)
+		{
+			// no surface under the cursor (sky / outside the world): refuse, spend
+			// NOTHING, STAY in mode — a different point can succeed (the placement
+			// invalid-click law). This is the ONLY positional refusal in targeting
+			// mode: circle spells land ANYWHERE a surface answers the trace — enemy
+			// half included, no navmesh requirement (M5 ruling 8, §3.5).
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("ASiegePlayerController '%s': spell confirm refused for '%s' — no surface under the cursor."),
+				*GetNameSafe(this), *TargetingCardID.ToString());
+			RefuseCardPlay(TargetingCardID, NSLOCTEXT("Siegebound", "CardRefused_NoTarget", "No target under cursor"));
+			return;
+		}
+
+		// line spell with the cursor off every surface (sky): synthesize the
+		// AIM-POINT from the deprojected cursor ray, FLATTENED horizontal and
+		// anchored at the hero — the resolver only reads the DIRECTION
+		// origin→aim-point, so the 1000 uu reach of the synthetic point is
+		// arbitrary. A failed deproject / absent hero / near-vertical ray
+		// (no horizontal component) refuses FREE and STAYS in mode — the
+		// trace-miss law generalized to "no aim direction".
+		FVector RayOrigin = FVector::ZeroVector;
+		FVector RayDirection = FVector::ZeroVector;
+		if (!IsValid(TargetingHero) || !DeprojectMousePositionToWorld(RayOrigin, RayDirection))
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("ASiegePlayerController '%s': line-spell confirm refused for '%s' — no hero/deproject to derive an aim direction from."),
+				*GetNameSafe(this), *TargetingCardID.ToString());
+			RefuseCardPlay(TargetingCardID, NSLOCTEXT("Siegebound", "CardRefused_NoAim", "No aim direction"));
+			return;
+		}
+		const FVector FlatAimDirection = RayDirection.GetSafeNormal2D();
+		if (FlatAimDirection.IsNearlyZero())
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("ASiegePlayerController '%s': line-spell confirm refused for '%s' — cursor ray is vertical (no horizontal aim)."),
+				*GetNameSafe(this), *TargetingCardID.ToString());
+			RefuseCardPlay(TargetingCardID, NSLOCTEXT("Siegebound", "CardRefused_NoAim", "No aim direction"));
+			return;
+		}
+		TargetingLocation = TargetingHero->GetActorLocation() + FlatAimDirection * 1000.f;
+	}
+	else if (bLineSpell && IsValid(TargetingHero))
+	{
+		// degenerate-aim pre-check (TASK-236): a reticle sitting ON the hero
+		// (zero horizontal offset) cannot make a direction. Refused FREE,
+		// STAYING in mode — a position-DEPENDENT miss belongs here, not in the
+		// resolver (whose refusals are position-independent by contract and
+		// exit the mode with a refund).
+		const FVector ToAim = TargetingLocation - TargetingHero->GetActorLocation();
+		if (ToAim.SizeSquared2D() < 1.f)
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("ASiegePlayerController '%s': line-spell confirm refused for '%s' — reticle has no horizontal offset from the hero."),
+				*GetNameSafe(this), *TargetingCardID.ToString());
+			RefuseCardPlay(TargetingCardID, NSLOCTEXT("Siegebound", "CardRefused_NoAim", "No aim direction"));
+			return;
+		}
 	}
 
 	ASiegePlayerState* SiegeState = GetPlayerState<ASiegePlayerState>();
@@ -1591,6 +1646,10 @@ void ASiegePlayerController::TryConfirmSpellTarget()
 	// row/world/state, NEVER a positional miss — a zero-target cast is a
 	// SUCCESSFUL resolve per the SpellLibrary contract (spent like a wasted
 	// Fireball), so no refund path exists for "hit nothing".
+	// TASK-236 call-site flag: for HeroLine spells (Fireball/FrostNova),
+	// TargetingLocation is the AIM-POINT — the resolver derives the origin
+	// (this player's hero) and fires the line origin→aim-point, flattened
+	// horizontal. GroundCircle spells keep it as the impact center.
 	if (!USpellLibrary::ResolveSpell(World, TargetingCardID, TargetingRow, CasterTeam, TargetingLocation))
 	{
 		// FULL refund (§3.0 net-zero law) through the choke-pointed gold API,
@@ -1612,8 +1671,14 @@ void ASiegePlayerController::TryConfirmSpellTarget()
 	}
 
 	// §6 spell-cast audio (TASK-179): the spell RESOLVED (past the refusal above) — a
-	// world one-shot at the reticle point, null-safe until S_SpellCast lands (TASK-180).
-	USiegeFeedbackLibrary::PlayWorldSound(this, SpellCastSoundPath, TargetingLocation);
+	// world one-shot, null-safe until S_SpellCast lands (TASK-180). TASK-236: a LINE
+	// spell's cast sound plays at the HERO (the muzzle — the aim-point can be
+	// anywhere on the map and would be inaudible); circle spells keep the reticle
+	// point byte-for-byte.
+	const FVector CastSoundPoint = (bLineSpell && IsValid(TargetingHero))
+		? TargetingHero->GetActorLocation()
+		: TargetingLocation;
+	USiegeFeedbackLibrary::PlayWorldSound(this, SpellCastSoundPath, CastSoundPoint);
 
 	// M2 law: the card leaves the hand at CONFIRM — only now, with gold spent
 	// and the spell resolved, does the slot move to discard and redraw (§3.4).
@@ -1781,7 +1846,10 @@ void ASiegePlayerController::ResolveSpellInstant(int32 Slot, FName CardID, const
 	const ETeamId CasterTeam = IsValid(Hero) ? Hero->GetTeamId() : ETeamId::Blue;
 
 	// TargetPoint is only the VFX anchor for a global GoldSteal (SpellLibrary
-	// contract) — the hero's feet when we have one, world origin otherwise
+	// contract) — the hero's feet when we have one, world origin otherwise.
+	// TASK-236 call-site flag: only GoldSteal reaches this instant path (its
+	// delivery is neither GroundCircle nor HeroLine — the aim-point semantics
+	// shift does not apply here).
 	const FVector AnchorPoint = IsValid(Hero) ? Hero->GetActorLocation() : FVector::ZeroVector;
 
 	if (!USpellLibrary::ResolveSpell(World, CardID, Row, CasterTeam, AnchorPoint))

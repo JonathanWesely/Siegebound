@@ -11,7 +11,7 @@
     "ucx": "Buildings only: authored UCX_SM_<CardID>_00.. box hulls exported inside the FBX. 'boxes' entries are {center:[x,y,z], size:[x,y,z]} in UE units in conformed space. Castle law: wall-footprint-exact, NEVER a full base slab (M1 ~410-unit placement dead-zone lesson). Units carry ucx:null — their <=4 simple hulls are generated at Stage-3 import (TASK-037 recipe), not authored here.",
     "bake": "cage_extrusion_ue / max_ray_distance_ue feed Cycles selected-to-active baking; ao_samples applies to the AO pass only (spec: 64 spp), 'samples' to all other passes.",
     "trellis_resolution": "OPTIONAL per-asset Stage-1 image_to_3d resolution pin, as a STRING (the Space expects the choice as a string; absent = trellis_generate.py's default '1024'). TASK-194 (2026-07-18) pins '1536' on the HERO assets (Castle, CrystalTower, ArrowTower, BombTower, BallistaTower) per the M7.5 quality directive. Applies to FUTURE re-gens ONLY — pinning re-runs nothing. trellis_generate.py currently takes --resolution on the CLI (script changes belong to the tooling lane, TASK-192/193): until the script reads this key, the operator passes --resolution per this pin on any re-gen; this key is the pin of record. Law: CONVENTIONS 'Meshy second engine (M7.5)' (hero assets are the 1536-class candidates).",
-    "albedo_delight": "RESERVED optional per-asset override for the Stage-2 albedo de-light/brighten pass (TASK-193; conservative-ON default lives in-script; refine_trellis_glb.py READS this key if present). Schema is defined by TASK-193's implementation — NO per-asset overrides are pinned at TASK-194; set per-asset strengths only after the TASK-195 Ogre rebake verdict."
+    "albedo_delight": "Optional per-asset override for the Stage-2 albedo de-light/brighten pass (TASK-193; conservative-ON default lives in-script; refine_trellis_glb.py READS this key if present). Schema per TASK-193's implementation. TASK-225 (2026-07-19, Ruling B): overrides PINNED for the recorded-dark set (Ogre, Knight, Cavalry, Pikeman, MilitiaMob) at the TASK-195-proven tuned values {ao_divide_strength 1.0, ao_floor 0.25, gamma 0.55, gain 1.2}, tempered per asset where the rebake preview warranted (recorded in each asset's _note). All other assets keep the in-script conservative defaults."
   },
   "version": 1,
   "defaults": {
@@ -85,6 +85,13 @@
       "_dims_source": "TASK-147 blockout: 226.72 x 98.8 x 290.0, feet-center, front -Y. Roster's TALLEST unit (Z 290). X width includes the overhead club (weapon overhang) so it is warn-only under fit_mode height (Z 290 is matched exactly). Measured headless from Content/RawAssets/Ogre.fbx (object SM_Ogre, 1572 tris).",
       "pre_rotate_z_deg": 0.0,
       "voxel_size_ue": 1.5,
+      "albedo_delight": {
+        "_note": "TASK-225 pin (2026-07-19): THE recorded-dark asset (TASK-150/151). Values = TASK-195 tuned A/B winner, proven zero-clip (shoulder 0.0%, mean 0.004->0.059).",
+        "ao_divide_strength": 1.0,
+        "ao_floor": 0.25,
+        "gamma": 0.55,
+        "gain": 1.2
+      },
       "team_region": {
         "max_fraction": 0.35,
         "_verified": "TASK-147 STARTING GUESS against a not-yet-generated mesh (tuned at the TASK-150 eyeball gate). Concept: bare GREEN-skinned horned brute in tattered hide + spiked shoulder pauldron armor, chest straps, wide belt, stone maul in one fist. Follows the Footman/Archer shoulder-cap recipe but DELIBERATELY OMITS a helm_dome selector: the ogre has NO helmet (bare horned head) so any full-width top-z dome would paint his face/head/horns (the Archer bare-head lesson, TASK-087). Single upward-facing shoulder-cap band kept BELOW the head to target the pauldron/shoulder armor only. — TASK-194 VERIFIED 2026-07-18: shipped refine_report 2.1% area / 353 faces; Cache/Ogre/teamregion_check renders show the band riding the pauldron/shoulder line with zero head/horn/face paint. Selector kept as-is.",
@@ -147,6 +154,13 @@
       "_dims_source": "TASK-166 measured headless from Content/RawAssets/Knight.fbx (blockout SM_Knight, 1244 tris, min_z 0, feet-center): 162.0 x 62.74 x 190.0. Z=190 is the height-fit target; X width includes the sword/shield overhang (warn-only under fit_mode height).",
       "pre_rotate_z_deg": 0.0,
       "voxel_size_ue": 1.5,
+      "albedo_delight": {
+        "_note": "TASK-225 pin (2026-07-19): recorded-dark (TASK-172 'dark shading known'). TASK-195 defaults-arm confirmed the same dark story as Ogre; starting at the Ogre-proven tuned values.",
+        "ao_divide_strength": 1.0,
+        "ao_floor": 0.25,
+        "gamma": 0.55,
+        "gain": 1.2
+      },
       "team_region": {
         "max_fraction": 0.35,
         "_verified": "TASK-166 STARTING GUESS (mesh not yet generated) — heavily-armored helmeted soldier: Footman recipe = helm_dome (x-constrained to skip a raised weapon) + upward-facing shoulder caps. — TASK-194 VERIFIED 2026-07-18: shipped refine_report 3.5% area / 453 faces / both selectors live; previews show the helm crown + pauldron caps selected, visor/face untouched — the Footman recipe transferred cleanly. Selectors kept as-is.",
@@ -188,6 +202,13 @@
       "_dims_source": "TASK-166 measured headless from Content/RawAssets/Cavalry.fbx (blockout SM_Cavalry, 804 tris, min_z 0): 75.5 x 254.6 x 208.0. MOUNTED unit — the large Y (254.6) is the HORSE body depth (front -Y); only Z=208 is matched under fit_mode height, so the deep footprint is warn-only (expected, like the Ogre maul). WATCH capsule sizing at integration.",
       "pre_rotate_z_deg": 0.0,
       "voxel_size_ue": 1.5,
+      "albedo_delight": {
+        "_note": "TASK-225 pin (2026-07-19): recorded-dark (TASK-172). Starting at the TASK-195 tuned values; temper gamma toward 0.65 if the rebake preview over-lifts.",
+        "ao_divide_strength": 1.0,
+        "ao_floor": 0.25,
+        "gamma": 0.55,
+        "gain": 1.2
+      },
       "team_region": {
         "max_fraction": 0.35,
         "_verified": "TASK-166 STARTING GUESS — mounted rider: shoulder-cap band targets the RIDER'S torso/shoulders (z 0.66-0.84 of a 208-tall mesh ~= rider seat height). NO helm_dome (the top-z band on a cavalry mesh risks horse ears/head). A saddle-cloth/caparison box on the horse flank is a likely gate add. — TASK-194 VERIFIED 2026-07-18: shipped refine_report 4.3% area / 700 faces; previews show upward flecks on the rider's armor plates + saddle line, zero horse head/ear paint (the feared misfire). The caparison-box add proved unnecessary. Selector kept as-is.",
@@ -248,6 +269,13 @@
       "_dims_source": "TASK-166 measured headless from Content/RawAssets/MilitiaMob.fbx (blockout SM_MilitiaMob, 452 tris, min_z 0): 74.52 x 34.32 x 149.0. SINGLE militia figure (SwarmCount=4 spawns 4 copies of this one mesh); shortest unit (Z 149). Z=149 height-fit target.",
       "pre_rotate_z_deg": 0.0,
       "voxel_size_ue": 1.5,
+      "albedo_delight": {
+        "_note": "TASK-225 pin (2026-07-19): recorded-dark (TASK-172). Starting at the TASK-195 tuned values; temper gamma toward 0.65 if the rebake preview over-lifts.",
+        "ao_divide_strength": 1.0,
+        "ao_floor": 0.25,
+        "gamma": 0.55,
+        "gain": 1.2
+      },
       "team_region": {
         "max_fraction": 0.35,
         "_verified": "TASK-166 STARTING GUESS — peasant levy, minimal armor: NO helm_dome (bare/cap head); single upward shoulder-cap band. Team read may be weak on a lightly-clad peasant — a tabard/armband box is a likely gate add. — TASK-194 VERIFIED 2026-07-18: shipped refine_report 2.8% area / 413 faces; previews show a clean shoulder-mantle band, helmet + bearded face untouched. Read is on the light side but was accepted at the wave gate (SwarmCount 4 also multiplies the on-field read). Tabard/armband add not taken. Selector kept as-is.",
@@ -268,6 +296,13 @@
       "_dims_source": "TASK-166 measured headless from Content/RawAssets/Pikeman.fbx (blockout SM_Pikeman, 532 tris, min_z 0): 76.84 x 60.34 x 190.0. Z=190 height-fit target. Slayer keyword (bSlayer). The long pike is part of the silhouette.",
       "pre_rotate_z_deg": 0.0,
       "voxel_size_ue": 1.5,
+      "albedo_delight": {
+        "_note": "TASK-225 pin (2026-07-19): recorded-dark (TASK-172). Starting at the TASK-195 tuned values; temper gamma toward 0.65 if the rebake preview over-lifts.",
+        "ao_divide_strength": 1.0,
+        "ao_floor": 0.25,
+        "gamma": 0.55,
+        "gain": 1.2
+      },
       "team_region": {
         "max_fraction": 0.35,
         "_verified": "TASK-166 STARTING GUESS — helmeted (kettle-helm) soldier: Footman recipe = helm_dome (x-constrained to skip the raised pike) + upward shoulder caps. — TASK-194 VERIFIED 2026-07-18: shipped refine_report 9.1% area / 1318 faces / both selectors live — the roster's largest unit read but well under the 0.35 cap. Previews: hood/helm crown + shoulder + upper-chest plate caps selected, face mask spared, NO pike-shaft striping (the Footman TASK-086 misfire). Note the z-bands sit slightly LOW on the body because the raised pike tip defines mesh height (silhouette-inclusive Z, see _dims_source) — the shipped landing is correct, so this is recorded, not fixed. Selectors kept as-is.",
@@ -339,7 +374,7 @@
       "bake": { "cage_extrusion_ue": 6.0, "max_ray_distance_ue": 16.0 },
       "team_region": {
         "max_fraction": 0.4,
-        "_pending": "TASK-166 STARTING GUESS — wall team accent = the crenellated TOP band (upward faces, z 0.70-1.0). — TASK-194 ADJUDICATED 2026-07-18: STILL A PRE-GENERATION GUESS — Wall has no generated mesh (Stage-1 quota-blocked 2026-07-17, see handoffs/TASK-170-171-artist.md; carried into M7.5 under TASK-170). Values re-checked against the SHIPPED building outcomes: the upward top-band recipe produced clean 5.8-15.3% reads on all four shipped towers/Barracks, so these priors are sound. Final adjudication happens at the TASK-170 eyeball gate after the quota-window rerun (which now waits on the TASK-193 albedo de-light per M7.5 decision 3).",
+        "_tuned": "TASK-201 wave-2 ADJUDICATED 2026-07-21 against the FIRST generated mesh (engine=meshy-i23d, Stage-1 via meshy_generate --mode image3d per the TASK-200 ruling; TRELLIS lane still Space-broken): the crenellation top-band guess fired CLEAN — 2.1% area / 479 faces, merlon tops + wall-walk deck selected, no facade striping (previews Cache/Wall/previews + TRIPTYCH_Wall). Low-but-clean read, same band as the accepted Ogre/Cleric/Wall-walk precedents. Selector kept as-guessed; values now mesh-verified. NOTE: the Meshy raw mesh is near-cubic (concept drawn deep) — box-fit compresses Y ~4:1; front/back faces (the wall's dominant in-game read) are undistorted, end-cap bricks compress (accepted at the wave-2 eyeball, ends abut walls/terrain in play).",
         "selectors": [
           { "name": "crenellations", "box": { "min": [0.0, 0.0, 0.70], "max": [1.0, 1.0, 1.0] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.15 } }
         ]
@@ -445,9 +480,9 @@
       "bake": { "cage_extrusion_ue": 6.0, "max_ray_distance_ue": 16.0 },
       "team_region": {
         "max_fraction": 0.4,
-        "_pending": "TASK-166 STARTING GUESS — mine headframe/roof upward faces (z 0.5-1.0). The mine shaft opening may need excluding at the gate. — TASK-194 ADJUDICATED 2026-07-18: STILL A PRE-GENERATION GUESS — DeepMine has no generated mesh (Stage-1 quota-blocked 2026-07-17, see handoffs/TASK-170-171-artist.md; carried into M7.5 under TASK-171). The z 0.5-1.0 roof band mirrors the shipped Barracks recipe (15.3%, clean full-roof read) — sound prior; keep the shaft-opening watch item. Final adjudication at the TASK-171 eyeball gate after the quota-window rerun (Stage 2 waits on the TASK-193 albedo de-light per M7.5 decision 3).",
+        "_tuned": "TASK-201 wave-2 ADJUDICATED 2026-07-21 against the FIRST generated mesh (engine=meshy-i23d per the TASK-200 ruling): the Barracks-style z 0.5-1.0 roof-band guess MISFIRED — the generated DeepMine has NO constructed headframe roof; the band selected the entire NATURAL ROCK dome crown (18.8% area / 3471 faces, probe-measured), which would flat-paint bare rock team color (the Archer bare-head lesson's building analog: paint constructions, not nature). REPLACED with a portal_beams selector targeting the upward faces of the TIMBER entrance portal (lintel + crossbeam tops, front y-band): probe-measured 2.25% / 640 faces — the accepted subtle-read band (Ogre 2.1%, Cleric 2.2%, Wall 2.1%); an economy building carries a quiet team accent (GoldNode precedent carries none). Dome-crown alternative (z 0.85, dot 0.3, 6.1%) probed and REJECTED as painted-rock. Shaft-opening watch item: no shaft faces selected (probe + previews).",
         "selectors": [
-          { "name": "roof", "box": { "min": [0.0, 0.0, 0.50], "max": [1.0, 1.0, 1.0] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.15 } }
+          { "name": "portal_beams", "box": { "min": [0.10, 0.0, 0.35], "max": [0.90, 0.35, 0.72] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.3 } }
         ]
       },
       "ucx": {
