@@ -328,7 +328,7 @@ namespace
 
 	/**
 	 *  TopTargetsDamage — Lightning (GDD §4: 200 damage to the 3 highest-HP
-	 *  enemies in a 400 radius; "the tower-killer"). Ruling 4 selection: the
+	 *  enemies in a 700 radius; "the tower-killer"). Ruling 4 selection: the
 	 *  row MaxTargets highest CURRENT-HP enemy actors — units, hero,
 	 *  buildings/towers; castle EXCLUDED (anti-sniping) — within row AoERadius
 	 *  of the reticle, ties broken by distance to the reticle (deterministic:
