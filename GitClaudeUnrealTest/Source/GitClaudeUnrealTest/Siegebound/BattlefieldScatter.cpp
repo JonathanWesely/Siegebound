@@ -161,6 +161,14 @@ void ASiegeBattlefieldScatter::GenerateScatter()
 		}
 	}
 
+	// W1-PREP mirrored depleting mines (TASK-255): AFTER pass 2 — the hill
+	// surfaces + hill-riding props exist, so mine grounding and the parity hill
+	// clones trace real state — and BEFORE StartNavSettlePoll, so the injected
+	// twin hills and the clearance-disc culls are part of the nav rebuild the
+	// reachability validation waits on. Uses its own dedicated stream (seed-order
+	// law) — the layer Stream above is untouched by this call.
+	PlaceMines(Seed);
+
 	// Defer the reachability confirmation until the async Dynamic navmesh has
 	// actually finished carving the newly-added obstacle instances: poll
 	// IsNavigationBeingBuilt until the nav system reports idle (M7.6 — a fixed
@@ -179,6 +187,22 @@ void ASiegeBattlefieldScatter::ClearScatter()
 			Comp->ClearInstances();
 		}
 	}
+
+	// Play-Again mine lifecycle (TASK-255): the spawned pair actors are DESTROYED,
+	// not pooled — every re-scatter gets exactly-fresh mines (fresh reserve, no
+	// depletion latch, no stale claims). PlayAgain kills all miners in its step 2
+	// BEFORE this step-7 re-scatter (plan-of-record law), so no live registries
+	// dangle; AGoldNode::EndPlay clears its own drain timer and deliberately
+	// skips miner notification (TASK-253).
+	for (const TObjectPtr<AGoldNode>& Mine : SpawnedMines)
+	{
+		AGoldNode* MinePtr = Mine.Get();
+		if (IsValid(MinePtr))
+		{
+			MinePtr->Destroy();
+		}
+	}
+	SpawnedMines.Reset();
 }
 
 void ASiegeBattlefieldScatter::ScatterLayer(const FScatterLayer& Layer, FRandomStream& Stream)
@@ -608,7 +632,6 @@ void ASiegeBattlefieldScatter::RebuildKeepClearZones()
 	}
 
 	const float CastleR = ScatterConfig->CastleKeepClearRadius;
-	const float NodeR = ScatterConfig->GoldNodeKeepClearRadius;
 	const float StartR = ScatterConfig->PlayerStartKeepClearRadius;
 
 	// Castles (live) — else the ±25000 fallbacks (M7.6 10× scale-up).
@@ -641,35 +664,12 @@ void ASiegeBattlefieldScatter::RebuildKeepClearZones()
 		KeepClearZones.Add({ FVector2D(25000.f, 0.f), CastleR * CastleR });
 	}
 
-	// Gold nodes (live) — else the ±24200 fallbacks (M7.6: nodes stay 800 in front of the ±25000 castles).
-	bool bFoundBlueNode = false;
-	bool bFoundRedNode = false;
-	for (TActorIterator<AGoldNode> It(World); It; ++It)
-	{
-		AGoldNode* Node = *It;
-		if (!IsValid(Node))
-		{
-			continue;
-		}
-		const FVector L = Node->GetActorLocation();
-		KeepClearZones.Add({ FVector2D(L.X, L.Y), NodeR * NodeR });
-		if (Node->GetTeam() == ETeamId::Blue)
-		{
-			bFoundBlueNode = true;
-		}
-		else
-		{
-			bFoundRedNode = true;
-		}
-	}
-	if (!bFoundBlueNode)
-	{
-		KeepClearZones.Add({ FVector2D(-24200.f, 0.f), NodeR * NodeR });
-	}
-	if (!bFoundRedNode)
-	{
-		KeepClearZones.Add({ FVector2D(24200.f, 0.f), NodeR * NodeR });
-	}
+	// NO gold-node zones (W1-PREP mines redesign, TASK-255): the old live
+	// AGoldNode sweep AND its hardcoded ±24,200 fallback discs are DELETED —
+	// this actor now SPAWNS the mines itself (PlaceMines, after this rebuild
+	// runs), so a live sweep would find nothing at generate time and the
+	// fallback discs would keep-clear two PHANTOM points no mine occupies (the
+	// phantom-disc trap). Mines are NoCollision and clear their own aprons.
 
 	// PlayerStart(s) (live) — else the ≈(-23800,0) fallback (M7.6: 1200 in front of Castle_Blue).
 	bool bFoundStart = false;
@@ -700,6 +700,14 @@ bool ASiegeBattlefieldScatter::IsInKeepClear(const FVector2D& Point2D, float Ins
 	{
 		return true;
 	}
+	return IsInKeepClearDiscs(Point2D, InstanceRadius);
+}
+
+bool ASiegeBattlefieldScatter::IsInKeepClearDiscs(const FVector2D& Point2D, float InstanceRadius) const
+{
+	// Disc test WITHOUT the corridor band (TASK-255 split): the mines pass calls
+	// this directly because corridor mines are ALLOWED by ruling; the layer
+	// passes keep the corridor via IsInKeepClear above (behavior unchanged).
 	for (const FKeepClearZone& Zone : KeepClearZones)
 	{
 		// Inflate each keep-clear disc by the footprint radius: reject if the
@@ -736,7 +744,22 @@ float ASiegeBattlefieldScatter::GroundZAt(float X, float Y) const
 
 bool ASiegeBattlefieldScatter::ResolveHillAwareGroundZ(float X, float Y, float FloorZ, float MaxSlopeDeg, float& OutZ) const
 {
+	// Thin wrapper since TASK-255: FindHillSurfaceAt is the SAME TASK-250 trace +
+	// slope gate, extended to also surface the hit component + instance index
+	// (the mines pass needs the surface IDENTITY for hill parity). The layer
+	// passes only need the Z, so the identity outs are discarded here — layer
+	// placement behavior is unchanged.
+	UHierarchicalInstancedStaticMeshComponent* SurfaceComp = nullptr;
+	int32 InstanceIndex = INDEX_NONE;
+	return FindHillSurfaceAt(X, Y, FloorZ, MaxSlopeDeg, OutZ, SurfaceComp, InstanceIndex);
+}
+
+bool ASiegeBattlefieldScatter::FindHillSurfaceAt(float X, float Y, float FloorZ, float MaxSlopeDeg,
+	float& OutZ, UHierarchicalInstancedStaticMeshComponent*& OutSurfaceComp, int32& OutInstanceIndex) const
+{
 	OutZ = FloorZ;
+	OutSurfaceComp = nullptr;
+	OutInstanceIndex = INDEX_NONE;
 
 	// No hill surfaces registered this generate ⇒ the flat floor stands.
 	if (HillSurfaceComponents.Num() == 0)
@@ -752,7 +775,8 @@ bool ASiegeBattlefieldScatter::ResolveHillAwareGroundZ(float X, float Y, float F
 	// LineTraceComponent tests the instance bodies of exactly the registered
 	// hill-surface HISMs — nothing else (rocks, invisible tree proxies, castles)
 	// can fool the ground resolve, and the placement-ghost / projectile channel
-	// contracts stay untouched.
+	// contracts stay untouched. ZERO FRandomStream draws anywhere in here — the
+	// TASK-255 determinism law for the hill/trace paths.
 	const FVector TraceStart(X, Y, 50000.f);
 	const FVector TraceEnd(X, Y, -50000.f);
 	FCollisionQueryParams Params(TEXT("BattlefieldScatterHillTrace"), /*bTraceComplex=*/false);
@@ -760,6 +784,8 @@ bool ASiegeBattlefieldScatter::ResolveHillAwareGroundZ(float X, float Y, float F
 	bool bOnHill = false;
 	FVector BestNormal = FVector::UpVector;
 	float BestZ = FloorZ;
+	UHierarchicalInstancedStaticMeshComponent* BestComp = nullptr;
+	int32 BestItem = INDEX_NONE;
 	for (UHierarchicalInstancedStaticMeshComponent* SurfaceComp : HillSurfaceComponents)
 	{
 		if (!SurfaceComp)
@@ -774,12 +800,14 @@ bool ASiegeBattlefieldScatter::ResolveHillAwareGroundZ(float X, float Y, float F
 			bOnHill = true;
 			BestZ = static_cast<float>(Hit.ImpactPoint.Z); // explicit LWC double → float (placement grid precision is ample)
 			BestNormal = Hit.ImpactNormal;
+			BestComp = SurfaceComp;
+			BestItem = Hit.Item; // per-instance body index — for an (H)ISM this IS the instance index (GetInstanceTransform-compatible), the parity clone source (TASK-255)
 		}
 	}
 
 	if (!bOnHill)
 	{
-		return true; // not over a hill — the flat floor Z stands
+		return true; // not over a hill — the flat floor Z stands (identity outs stay null/INDEX_NONE)
 	}
 
 	// Slope gate: the face's angle from horizontal via the up-ness of its normal.
@@ -796,7 +824,372 @@ bool ASiegeBattlefieldScatter::ResolveHillAwareGroundZ(float X, float Y, float F
 	}
 
 	OutZ = BestZ;
+	OutSurfaceComp = BestComp;
+	OutInstanceIndex = BestItem;
 	return true;
+}
+
+void ASiegeBattlefieldScatter::PlaceMines(int32 Seed)
+{
+	// ClearScatter already destroyed the previous match's pair actors; this reset
+	// only drops stale entries so the pass always starts from an empty ledger.
+	SpawnedMines.Reset();
+
+	UWorld* World = GetWorld();
+	if (!World || !ScatterConfig)
+	{
+		return;
+	}
+
+	const int32 CountPerSide = ScatterConfig->MineCountPerSide;
+	if (CountPerSide <= 0)
+	{
+		UE_LOG(LogSiegeTerrain, Log,
+			TEXT("[BattlefieldScatter '%s'] MinesPass skipped (MineCountPerSide=%d)."),
+			*GetNameSafe(this), CountPerSide);
+		return;
+	}
+
+	// DEDICATED mine stream (seed-order law, CONVENTIONS "Mirrored depleting
+	// mines"): XOR tag 0x4D494E45 = ASCII "MINE". The layer stream is a separate
+	// FRandomStream that this pass never touches, so every existing scatter seed
+	// keeps its exact layer layout, and the mines are reproducible in isolation
+	// from the same match seed. ALL mine draws come from THIS stream, in the
+	// fixed order documented at the draw site below — the determinism contract
+	// the TASK-258 same-seed⇒identical-log PIE test rides on.
+	FRandomStream MineStream(Seed ^ 0x4D494E45);
+
+	const float HalfX = FMath::Max(ScatterConfig->ArenaHalfExtent.X, 1.f);
+	const float HalfY = FMath::Max(ScatterConfig->ArenaHalfExtent.Y, 1.f);
+	const float ClearR = FMath::Max(ScatterConfig->MineClearanceRadius, 0.f);
+	const float Spacing = FMath::Max(ScatterConfig->MineMinSpacing, 0.f);
+	const float EdgeMargin = FMath::Max(ScatterConfig->MineEdgeMargin, 0.f);
+	const float SlopeGateDeg = FMath::Clamp(ScatterConfig->MineMaxSlopeDeg, 0.f, 89.f);
+	const int32 Reserve = FMath::Max(ScatterConfig->MineGoldReserve, 0);
+
+	// Half-draw band. The |X| floor max(ClearR, Spacing/2) buys TWO spacing
+	// guarantees for free, which is why the explicit test below only needs the
+	// prior PRIMARIES:
+	//  - own twin: dist(P, P′) = 2|X| ≥ 2·max(ClearR, Spacing/2) ≥ Spacing, and
+	//    the pair's two clearance discs can never overlap across X=0
+	//    (2|X| ≥ 2·ClearR);
+	//  - cross-pair vs another pair's MIRROR: both primaries sit on the SAME
+	//    (Blue) half, so the mirrored X's ADD — dist(Pi, Pj′) ≥ |Xi| + |Xj| ≥
+	//    2·(Spacing/2) = Spacing.
+	// (The dispatch's "|X| ≥ max(600, spacing/2)": the 600 is MineClearanceRadius
+	// — the floor that keeps a pair's own discs from overlapping the centerline —
+	// not MineEdgeMargin, which only insets the OUTER band below.)
+	const float MinAbsX = FMath::Max(ClearR, Spacing * 0.5f);
+	const float MaxAbsX = HalfX - EdgeMargin;
+	const float MaxAbsY = HalfY - EdgeMargin;
+	const bool bDrawBandValid = (MaxAbsX > MinAbsX) && (MaxAbsY > 0.f);
+	if (!bDrawBandValid)
+	{
+		UE_LOG(LogSiegeTerrain, Warning,
+			TEXT("[BattlefieldScatter '%s'] MinesPass draw band degenerate (|X| in [%.0f, %.0f], |Y| <= %.0f) — every mine takes its deterministic fallback slot."),
+			*GetNameSafe(this), MinAbsX, MaxAbsX, MaxAbsY);
+	}
+
+	// MineClass null ⇒ AGoldNode (CONVENTIONS default; TSubclassOf guarantees an
+	// AGoldNode-compatible class either way, so InitMine below is always valid).
+	UClass* ResolvedMineClass = ScatterConfig->MineClass ? ScatterConfig->MineClass.Get() : AGoldNode::StaticClass();
+
+	// Accepted primary centers (fallback slots included) — the spacing law's memory.
+	TArray<FVector2D> PrimaryPoints;
+	PrimaryPoints.Reserve(CountPerSide);
+
+	// Mines carry TWO placement points + slope gates + a possible parity
+	// injection per candidate — double the standard rejection budget before the
+	// deterministic fallback (spec: ≤ 2× MaxPlacementAttemptsPerInstance).
+	const int32 MaxMineAttempts = 2 * FMath::Max(MaxPlacementAttemptsPerInstance, 1);
+
+	// Resolves a candidate PAIR (P on the Blue half, P′ its mirror): floor + hill
+	// grounding at both points, the slope gate, and the hill-parity injection.
+	// Returns false with the FIELD STATE UNTOUCHED when either face is over-slope
+	// or the injected clone cannot seat the mirrored point (any injected clone is
+	// rolled back). ZERO stream draws inside — pure trace/geometry, so a variable
+	// number of internal rejections can never desync the draw sequence.
+	auto TryResolveMinePair = [&](const FVector2D& Pt, float GateDeg,
+		float& OutZP, float& OutZM, bool& bOutOnHill, int32& OutInjectedSide, int32& OutFootprintCulls) -> bool
+	{
+		OutInjectedSide = 0;
+		OutFootprintCulls = 0;
+
+		const FVector2D Pm(-Pt.X, Pt.Y);
+		const float FloorZP = GroundZAt(Pt.X, Pt.Y);
+		const float FloorZM = GroundZAt(Pm.X, Pm.Y);
+
+		UHierarchicalInstancedStaticMeshComponent* CompP = nullptr;
+		UHierarchicalInstancedStaticMeshComponent* CompM = nullptr;
+		int32 ItemP = INDEX_NONE;
+		int32 ItemM = INDEX_NONE;
+		if (!FindHillSurfaceAt(Pt.X, Pt.Y, FloorZP, GateDeg, OutZP, CompP, ItemP) ||
+			!FindHillSurfaceAt(Pm.X, Pm.Y, FloorZM, GateDeg, OutZM, CompM, ItemM))
+		{
+			return false; // over-slope hill face at P or P′ — reject the candidate (never ground at floor inside a mound)
+		}
+
+		const bool bHillP = (CompP != nullptr);
+		const bool bHillM = (CompM != nullptr);
+		bOutOnHill = bHillP || bHillM;
+		if (bHillP == bHillM)
+		{
+			// Parity already holds: both flat, or both on (their own, independently
+			// slope-gated) hills — "either-side-has ⇒ both-have" is satisfied.
+			return true;
+		}
+
+		// HILL PARITY (Jonathan ruling: either-side-has ⇒ both-have). Clone the
+		// supporting hill INSTANCE onto the bare side, mirrored by the house
+		// mirror law (−X, Y, yaw+180 — the same law ScatterLayer's
+		// bMirrorSymmetric twin uses; a TRUE reflection would need negative
+		// scale, which flips HISM normals/winding). Cloning onto the SAME
+		// component means the clone is ALREADY a registered hill surface — this
+		// mine's re-trace, later mines, and RegroundMines all see it with no
+		// extra bookkeeping — and it blocks/carves nav exactly like a pass-1
+		// hill, because a HISM's collision/nav profile is shared by all its
+		// instances. The arena floor is a flat slab, so the mirrored Z is
+		// already correct.
+		UHierarchicalInstancedStaticMeshComponent* SrcComp = bHillP ? CompP : CompM;
+		const int32 SrcItem = bHillP ? ItemP : ItemM;
+		FTransform SrcXf;
+		if (!SrcComp->GetInstanceTransform(SrcItem, SrcXf, /*bWorldSpace=*/true))
+		{
+			return false; // defensive: unreadable source instance — reject, nothing mutated
+		}
+		FVector CloneLoc = SrcXf.GetLocation();
+		CloneLoc.X = -CloneLoc.X;
+		FRotator CloneRot = SrcXf.Rotator();
+		CloneRot.Yaw = FRotator::NormalizeAxis(CloneRot.Yaw + 180.0);
+		const FTransform CloneXf(CloneRot, CloneLoc, SrcXf.GetScale3D());
+		const int32 CloneIdx = SrcComp->AddInstance(CloneXf, /*bWorldSpace=*/true);
+
+		// Re-trace the bare point on the just-injected clone, slope-gated. NOTE:
+		// the spec order is footprint-delete → re-trace; the swap here is
+		// deliberate and behavior-EQUIVALENT on the accept path, because
+		// FindHillSurfaceAt reads ONLY the registered hill-surface comps and the
+		// footprint delete touches ONLY non-hill blockers (and GroundZAt's floor
+		// trace ignores scatter blockers by the channel law) — deleting first
+		// cannot change this trace. Tracing first makes a REJECT side-effect-free:
+		// the clone is rolled back below and no blocker was deleted for a
+		// candidate that never ships.
+		const FVector2D BarePt = bHillP ? Pm : Pt;
+		const float BareFloorZ = bHillP ? FloorZM : FloorZP;
+		float& BareZ = bHillP ? OutZM : OutZP;
+		UHierarchicalInstancedStaticMeshComponent* ReComp = nullptr;
+		int32 ReItem = INDEX_NONE;
+		if (!FindHillSurfaceAt(BarePt.X, BarePt.Y, BareFloorZ, GateDeg, BareZ, ReComp, ReItem) || !ReComp)
+		{
+			// No fit: the clone's face under the mirrored point is over-slope — or
+			// the point misses the clone's surface entirely (yaw+180 mirrors the
+			// mesh's LOCAL Y, so an edge-of-hill primary can mirror off the clone's
+			// footprint; grounding the twin at floor beside an injected hill would
+			// be a parity lie). Roll the clone back (it was the last instance
+			// added) and reject the candidate.
+			SrcComp->RemoveInstance(CloneIdx);
+			return false;
+		}
+
+		// Clone accepted — un-bury it: clearance-delete the nav-relevant blockers
+		// inside the clone's WHOLE footprint (they were placed on flat ground that
+		// is now inside/under a hill; Jonathan conflict rule — the hill wins,
+		// trees/rocks in its way are deleted; grass stays, harmlessly inside the
+		// mound). Radius = the hill mesh's XY half-diagonal × the instance scale
+		// (the FScatterLayer::FootprintRadius auto-derive rule).
+		float CloneFootprintR = 0.f;
+		if (const UStaticMesh* HillMesh = SrcComp->GetStaticMesh())
+		{
+			const FBoxSphereBounds HillBounds = HillMesh->GetBounds();
+			const FVector CloneScale = SrcXf.GetScale3D();
+			CloneFootprintR = FVector2D(HillBounds.BoxExtent.X * CloneScale.X, HillBounds.BoxExtent.Y * CloneScale.Y).Size();
+		}
+		OutFootprintCulls = RemoveBlockingInstancesInDisc(FVector2D(CloneLoc.X, CloneLoc.Y), CloneFootprintR);
+		bOutOnHill = true;
+		OutInjectedSide = bHillP ? 2 : 1; // the BARE side received the clone: 1 = under P (primary), 2 = under P′ (mirror)
+		return true;
+	};
+
+	FString PairsLog;
+
+	for (int32 MineIndex = 0; MineIndex < CountPerSide; ++MineIndex)
+	{
+		FVector2D P = FVector2D::ZeroVector;
+		float ZP = 0.f;
+		float ZM = 0.f;
+		bool bOnHill = false;
+		int32 InjectedSide = 0;
+		int32 FootprintCulls = 0;
+		bool bAccepted = false;
+
+		for (int32 Attempt = 0; bDrawBandValid && Attempt < MaxMineAttempts && !bAccepted; ++Attempt)
+		{
+			// THE ONLY STREAM DRAWS IN THE MINES PASS — exactly two per attempt, in
+			// fixed X-then-Y order (the auditable draw sequence: total draws =
+			// 2 × attempts-consumed, and everything after this pair — spacing,
+			// keep-clear, traces, parity, clearance — is draw-free by design, so
+			// no rejection path can ever desync the sequence).
+			const float X = -MineStream.FRandRange(MinAbsX, MaxAbsX); // draw 1: |X|, negated → Blue half (X < 0)
+			const float Y = MineStream.FRandRange(-MaxAbsY, MaxAbsY); // draw 2: Y across the inset field width
+			const FVector2D Candidate(X, Y);
+
+			// Spacing vs prior PRIMARIES only — the twin + cross-pair distances
+			// hold by the MinAbsX construction (see the band comment above).
+			bool bTooClose = false;
+			for (const FVector2D& Prior : PrimaryPoints)
+			{
+				if (FVector2D::DistSquared(Prior, Candidate) < Spacing * Spacing)
+				{
+					bTooClose = true;
+					break;
+				}
+			}
+			if (bTooClose)
+			{
+				continue;
+			}
+
+			// Keep-clear DISCS at BOTH P and P′, inflated by the clearance radius —
+			// the zone set is NOT symmetric (the PlayerStart sits on the Blue side
+			// only, and castles are live-swept), so testing the mirror is NOT
+			// redundant. NO corridor test BY RULING: corridor mines are ALLOWED
+			// (high-risk gold) — AGoldNode is NoCollision/no-nav, so a lane mine
+			// cannot break the traversability guarantee.
+			if (IsInKeepClearDiscs(Candidate, ClearR) || IsInKeepClearDiscs(FVector2D(-X, Y), ClearR))
+			{
+				continue;
+			}
+
+			// Grounding + slope gate (≤ MineMaxSlopeDeg at BOTH points — miners
+			// must walk onto both ends of the pair) + hill parity.
+			if (!TryResolveMinePair(Candidate, SlopeGateDeg, ZP, ZM, bOnHill, InjectedSide, FootprintCulls))
+			{
+				continue;
+			}
+
+			P = Candidate;
+			bAccepted = true;
+		}
+
+		bool bFallback = false;
+		if (!bAccepted)
+		{
+			// DETERMINISTIC FALLBACK SLOT (Jonathan ruling: the economy NEVER ships
+			// short — 6 mines exist every match, whatever the field looks like).
+			// Slot i: X = −clamp(HalfX/2 into the draw band), Y fanned around the
+			// centerline in max(Spacing, 2·ClearR) steps ⇒ defaults (−13,000,
+			// {−3,000, 0, +3,000}) — mid-half, clear of the castle (±25,000,
+			// r 1,500) and PlayerStart (−23,800, r 800) discs by construction,
+			// corridor-legal by ruling. ZERO draws — same coordinates every time
+			// this mine index falls back (the determinism contract). NOT re-tested
+			// against spacing/keep-clear (there is nothing left to try); the Error
+			// line flags the layout for QA/PIE scrutiny.
+			bFallback = true;
+			const float FallbackAbsX = FMath::Clamp(HalfX * 0.5f, MinAbsX, FMath::Max(MaxAbsX, MinAbsX));
+			const float FallbackMaxY = (MaxAbsY > 0.f) ? MaxAbsY : FMath::Max(HalfY - ClearR, 0.f);
+			const float FallbackStep = FMath::Max(Spacing, 2.f * ClearR);
+			const float FallbackY = FMath::Clamp((MineIndex - (CountPerSide - 1) * 0.5f) * FallbackStep, -FallbackMaxY, FallbackMaxY);
+			P = FVector2D(-FallbackAbsX, FallbackY);
+
+			UE_LOG(LogSiegeTerrain, Error,
+				TEXT("[BattlefieldScatter '%s'] Mine %d found no valid draw in %d attempts — deterministic fallback slot (%.0f, %.0f) used (the economy never ships short)."),
+				*GetNameSafe(this), MineIndex, MaxMineAttempts, P.X, P.Y);
+
+			// The slope gate opens to 90° at the fallback: the slot MUST seat, so it
+			// takes whatever surface stands there (a steep face ⇒ the mine sits on
+			// the slope — cosmetic, never buried, because FindHillSurfaceAt still
+			// returns the TOP surface Z). A defensive pair-resolve failure (source
+			// hill unreadable / clone missed) grounds both ends at the floor.
+			if (!TryResolveMinePair(P, 90.f, ZP, ZM, bOnHill, InjectedSide, FootprintCulls))
+			{
+				ZP = GroundZAt(P.X, P.Y);
+				ZM = GroundZAt(-P.X, P.Y);
+				bOnHill = false;
+				InjectedSide = 0;
+				FootprintCulls = 0;
+			}
+		}
+
+		// Clearance-delete at BOTH points (r = MineClearanceRadius): the apron +
+		// miner walk-in ring is guaranteed blocker-free at each end of the pair.
+		// Hills inside the disc survive (exempt — the parity clone must not be
+		// eaten by its own mine's disc); grass is untouched by the nav guard.
+		const int32 CullsP = RemoveBlockingInstancesInDisc(P, ClearR);
+		const int32 CullsM = RemoveBlockingInstancesInDisc(FVector2D(-P.X, P.Y), ClearR);
+
+		// Spawn the tracked pair + InitMine (the TASK-253 API — safe before or
+		// after BeginPlay). Primary yaw 0 / twin yaw 180 per the mirror law — NO
+		// yaw draw (the specced draw sequence is X,Y only; a cosmetic yaw roll
+		// would silently shift every later draw). AlwaysSpawn because the mine is
+		// NoCollision by law — collision adjustment must never bend the mirrored
+		// math (a nudged twin breaks the equal-distance fairness proof).
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		SpawnParams.Owner = this;
+
+		AGoldNode* Primary = World->SpawnActor<AGoldNode>(ResolvedMineClass, FVector(P.X, P.Y, ZP), FRotator::ZeroRotator, SpawnParams);
+		if (Primary)
+		{
+			Primary->InitMine(Reserve);
+			SpawnedMines.Add(Primary);
+		}
+		AGoldNode* Twin = World->SpawnActor<AGoldNode>(ResolvedMineClass, FVector(-P.X, P.Y, ZM), FRotator(0.f, 180.f, 0.f), SpawnParams);
+		if (Twin)
+		{
+			Twin->InitMine(Reserve);
+			SpawnedMines.Add(Twin);
+		}
+		if (!Primary || !Twin)
+		{
+			UE_LOG(LogSiegeTerrain, Warning,
+				TEXT("[BattlefieldScatter '%s'] Mine %d SpawnActor failed (P=%s M=%s) — pair incomplete (mine class unresolvable/aborted spawn; never a crash)."),
+				*GetNameSafe(this), MineIndex, Primary ? TEXT("ok") : TEXT("FAIL"), Twin ? TEXT("ok") : TEXT("FAIL"));
+		}
+
+		PrimaryPoints.Add(P);
+
+		PairsLog += FString::Printf(TEXT(" [%d] P=(%.0f,%.0f,%.0f) M=(%.0f,%.0f,%.0f) hill=%s inj=%s fb=%s culls=%d"),
+			MineIndex, P.X, P.Y, ZP, -P.X, P.Y, ZM,
+			bOnHill ? TEXT("yes") : TEXT("no"),
+			InjectedSide == 0 ? TEXT("none") : (InjectedSide == 1 ? TEXT("P") : TEXT("M")),
+			bFallback ? TEXT("yes") : TEXT("no"),
+			FootprintCulls + CullsP + CullsM);
+	}
+
+	// The one grep-able MinesPass reproducibility line (CONVENTIONS "Logging" +
+	// the TASK-258 determinism criterion: same seed ⇒ this line is IDENTICAL).
+	UE_LOG(LogSiegeTerrain, Log,
+		TEXT("[BattlefieldScatter '%s'] MinesPass seed=%d mineStream=%d pairsPlanned=%d minesSpawned=%d reserve=%d:%s"),
+		*GetNameSafe(this), Seed, Seed ^ 0x4D494E45, CountPerSide, SpawnedMines.Num(), Reserve, *PairsLog);
+}
+
+void ASiegeBattlefieldScatter::RegroundMines()
+{
+	// After EVERY defensive cull (TASK-255 law): a widening cull can delete a
+	// mine's supporting hill (CullCorridorBlockers does NOT exempt hill comps —
+	// pre-existing corridor semantics kept), which would leave the mine floating
+	// at its old hill-surface Z. Re-seat each mine on whatever stands there NOW:
+	// hill else floor, ANY slope (90° gate — an already-placed mine must never
+	// strand mid-air because a face reads steep). Draw-free.
+	for (const TObjectPtr<AGoldNode>& Mine : SpawnedMines)
+	{
+		AGoldNode* MinePtr = Mine.Get();
+		if (!IsValid(MinePtr))
+		{
+			continue;
+		}
+		const FVector L = MinePtr->GetActorLocation();
+		const float MineX = static_cast<float>(L.X);
+		const float MineY = static_cast<float>(L.Y);
+		const float FloorZ = GroundZAt(MineX, MineY);
+		float NewZ = FloorZ;
+		UHierarchicalInstancedStaticMeshComponent* SurfaceComp = nullptr;
+		int32 InstanceIndex = INDEX_NONE;
+		FindHillSurfaceAt(MineX, MineY, FloorZ, 90.f, NewZ, SurfaceComp, InstanceIndex);
+		if (!FMath::IsNearlyEqual(NewZ, static_cast<float>(L.Z), 0.5f))
+		{
+			MinePtr->SetActorLocation(FVector(L.X, L.Y, NewZ));
+		}
+	}
 }
 
 void ASiegeBattlefieldScatter::StartNavSettlePoll()
@@ -894,38 +1287,105 @@ void ASiegeBattlefieldScatter::ValidateTraversability()
 	}
 
 	UNavigationPath* Path = UNavigationSystemV1::FindPathToLocationSynchronously(World, BlueLoc, RedLoc);
-	const bool bReachable = Path && Path->IsValid() && !Path->IsPartial();
-	if (bReachable)
+	const bool bCastleReachable = Path && Path->IsValid() && !Path->IsPartial();
+
+	// TASK-255: the ECONOMY guarantee rides the same confirmation — every spawned
+	// mine must be path-reachable from the Blue anchor (a walled-in mine = economy
+	// failure). Checked only once the castle lane is confirmed: on an unpathable
+	// field the corridor cull below is the prerequisite repair, and every mine
+	// query would false-fail against the same break anyway. Blue anchor only:
+	// the pairs are exact mirrors, so Blue's distances equal Red's by
+	// construction — what this catches is an ASYMMETRIC blocker wall, and the
+	// per-mine disc cull below repairs it on whichever side it stands.
+	TArray<AGoldNode*> UnreachableMines;
+	if (bCastleReachable)
+	{
+		for (const TObjectPtr<AGoldNode>& Mine : SpawnedMines)
+		{
+			AGoldNode* MinePtr = Mine.Get();
+			if (!IsValid(MinePtr))
+			{
+				continue;
+			}
+			UNavigationPath* MinePath = UNavigationSystemV1::FindPathToLocationSynchronously(World, BlueLoc, MinePtr->GetActorLocation());
+			if (!(MinePath && MinePath->IsValid() && !MinePath->IsPartial()))
+			{
+				UnreachableMines.Add(MinePtr);
+			}
+		}
+	}
+
+	if (bCastleReachable && UnreachableMines.Num() == 0)
 	{
 		UE_LOG(LogSiegeTerrain, Log,
-			TEXT("[BattlefieldScatter '%s'] Traversability CONFIRMED — Blue→Red castle path exists (after %d cull(s))."),
-			*GetNameSafe(this), ReachabilityAttempt);
+			TEXT("[BattlefieldScatter '%s'] Traversability CONFIRMED — Blue→Red castle path + %d mine path(s) exist (after %d cull(s))."),
+			*GetNameSafe(this), SpawnedMines.Num(), ReachabilityAttempt);
 		return;
 	}
 
-	// Defensive re-roll: the reserved corridor should make this impossible, but if
-	// a config edit shrank the corridor/radii, cull blocking instances in a
-	// widening Y band around the lane, then re-check after the nav settles again.
+	// Defensive re-roll — SHARED attempts machinery (one counter, one widen step,
+	// one re-poll loop) for both failure kinds, castle lane first:
 	++ReachabilityAttempt;
-	const float Band = CorridorHalfWidthCached + ReachabilityAttempt * CorridorWidenStep;
-	const int32 Removed = CullCorridorBlockers(Band);
-	UE_LOG(LogSiegeTerrain, Warning,
-		TEXT("[BattlefieldScatter '%s'] Blue→Red path NOT found (attempt %d) — culled %d blocking instance(s) within |Y|<=%.0f; re-checking after nav settles."),
-		*GetNameSafe(this), ReachabilityAttempt, Removed, Band);
+	if (!bCastleReachable)
+	{
+		// The reserved corridor should make this impossible, but if a config edit
+		// shrank the corridor/radii, cull blocking instances in a widening Y band
+		// around the lane, then re-check after the nav settles again.
+		const float Band = CorridorHalfWidthCached + ReachabilityAttempt * CorridorWidenStep;
+		const int32 Removed = CullCorridorBlockers(Band);
+		UE_LOG(LogSiegeTerrain, Warning,
+			TEXT("[BattlefieldScatter '%s'] Blue→Red path NOT found (attempt %d) — culled %d blocking instance(s) within |Y|<=%.0f; re-checking after nav settles."),
+			*GetNameSafe(this), ReachabilityAttempt, Removed, Band);
+	}
+	else
+	{
+		// Mine-approach repair (TASK-255): widen a clearance-cull disc around each
+		// unreachable mine — same widen step as the corridor path, base radius =
+		// the mine clearance law. RemoveBlockingInstancesInDisc keeps hills exempt
+		// even here (hills are never deleted; a hill-ringed mine resolves by the
+		// discs eating the non-hill blockers plugging the gaps — and the ≤30°
+		// placement gate means the mine's own hill is always climbable).
+		const float BaseClearR = ScatterConfig ? FMath::Max(ScatterConfig->MineClearanceRadius, 0.f) : 600.f;
+		const float CullRadius = BaseClearR + ReachabilityAttempt * CorridorWidenStep;
+		int32 Removed = 0;
+		for (AGoldNode* MinePtr : UnreachableMines)
+		{
+			const FVector L = MinePtr->GetActorLocation();
+			Removed += RemoveBlockingInstancesInDisc(FVector2D(L.X, L.Y), CullRadius);
+		}
+		UE_LOG(LogSiegeTerrain, Warning,
+			TEXT("[BattlefieldScatter '%s'] %d mine(s) NOT path-reachable from the Blue anchor (attempt %d) — culled %d blocking instance(s) within r<=%.0f of each; re-checking after nav settles."),
+			*GetNameSafe(this), UnreachableMines.Num(), ReachabilityAttempt, Removed, CullRadius);
+	}
+
+	// TASK-255 law: RegroundMines after EVERY defensive cull — the corridor cull
+	// can delete a mine's supporting hill (it does not exempt hill comps), and a
+	// mine must never float at a dead hill's Z.
+	RegroundMines();
 
 	if (ReachabilityAttempt < MaxReachabilityAttempts)
 	{
 		// Wait for the post-cull nav re-carve to settle (poll to idle again), then re-check.
 		StartNavSettlePoll();
 	}
-	else
+	else if (!bCastleReachable)
 	{
 		// Final guarantee: the corridor band has been cleared of blockers, so the
 		// straight Y≈0 lane is now obstacle-free even if the async nav has not yet
 		// reported a path. Never leave a match unwinnable.
 		UE_LOG(LogSiegeTerrain, Error,
 			TEXT("[BattlefieldScatter '%s'] Reachability unconfirmed after %d culls; corridor force-cleared to |Y|<=%.0f as the final traversability guarantee (straight lane is obstacle-free)."),
-			*GetNameSafe(this), ReachabilityAttempt, Band);
+			*GetNameSafe(this), ReachabilityAttempt, CorridorHalfWidthCached + ReachabilityAttempt * CorridorWidenStep);
+	}
+	else
+	{
+		// Final economy stance: every unreachable mine's approach disc has been
+		// force-cleared of non-hill blockers at the widest radius — best-effort;
+		// the match is still winnable (castle lane confirmed above) even if a
+		// pathological layout leaves a mine contested-by-terrain.
+		UE_LOG(LogSiegeTerrain, Error,
+			TEXT("[BattlefieldScatter '%s'] Mine reachability unconfirmed after %d culls; unreachable-mine approach discs force-cleared (best-effort economy guarantee — castle lane itself is CONFIRMED)."),
+			*GetNameSafe(this), ReachabilityAttempt);
 	}
 }
 
@@ -964,6 +1424,69 @@ int32 ASiegeBattlefieldScatter::CullCorridorBlockers(float Band)
 			// visual/proxy desync flagged in the TASK-140 spec). Indices are parallel
 			// by construction (every proxy instance is added alongside its visual), and
 			// removing the same index set from both preserves that parallelism.
+			if (UHierarchicalInstancedStaticMeshComponent* Visual = FindVisualForProxy(Comp))
+			{
+				Visual->RemoveInstances(ToRemove);
+			}
+			Comp->RemoveInstances(ToRemove);
+			TotalRemoved += ToRemove.Num();
+		}
+	}
+	return TotalRemoved;
+}
+
+int32 ASiegeBattlefieldScatter::RemoveBlockingInstancesInDisc(const FVector2D& Center, float Radius)
+{
+	if (Radius <= 0.f)
+	{
+		return 0;
+	}
+	const float RadiusSq = Radius * Radius;
+
+	int32 TotalRemoved = 0;
+	for (UHierarchicalInstancedStaticMeshComponent* Comp : ScatterComponents)
+	{
+		// Same nav-relevance guard as CullCorridorBlockers (this is its DISC
+		// sibling): only nav-relevant comps matter — real-geometry blockers and
+		// tree PROXY HISMs. Grass (no-nav decoration) is untouched by law, and a
+		// proxy-layer's VISUAL HISM is skipped here and culled in LOCKSTEP via
+		// its proxy below.
+		if (!Comp || !Comp->CanEverAffectNavigation())
+		{
+			continue;
+		}
+		// HILLS ARE NEVER DELETED (Jonathan conflict rule — the one guard the
+		// corridor cull does NOT have): hill-surface comps are nav-relevant
+		// real-geometry blockers, but a mine sits ON a hill rather than deleting
+		// it, and the parity clone the mines pass injects must never be eaten by
+		// the very clearance disc that follows it.
+		if (HillSurfaceComponents.Contains(Comp))
+		{
+			continue;
+		}
+
+		TArray<int32> ToRemove;
+		const int32 Count = Comp->GetInstanceCount();
+		for (int32 Idx = 0; Idx < Count; ++Idx)
+		{
+			FTransform InstanceXf;
+			if (Comp->GetInstanceTransform(Idx, InstanceXf, /*bWorldSpace=*/true))
+			{
+				const FVector Loc = InstanceXf.GetLocation();
+				// Center-in-disc semantics, matching the corridor cull's
+				// center-in-band (the clearance radius is sized to cover the apron).
+				if (FVector2D::DistSquared(FVector2D(Loc.X, Loc.Y), Center) <= RadiusSq)
+				{
+					ToRemove.Add(Idx);
+				}
+			}
+		}
+		if (ToRemove.Num() > 0)
+		{
+			// Visual+proxy lockstep — the same law as the corridor cull: a culled
+			// trunk proxy must take its visible tree with it, or the tree stands
+			// unblocked (the visual/proxy desync defect). Indices are parallel by
+			// construction; removing the same set from both preserves that.
 			if (UHierarchicalInstancedStaticMeshComponent* Visual = FindVisualForProxy(Comp))
 			{
 				Visual->RemoveInstances(ToRemove);

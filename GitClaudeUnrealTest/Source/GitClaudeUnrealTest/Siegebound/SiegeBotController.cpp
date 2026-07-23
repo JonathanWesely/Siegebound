@@ -213,11 +213,14 @@ ASiegeBotController::ASiegeBotController()
 	// EditDefaultsOnly defaults. Each is legal against DT_Cards — sum(Count)==50 and
 	// every Count <= that card's MaxCopies (Footman 12, MilitiaMob/Pikeman/Knight 6,
 	// Archer 10, Cavalry/Sapper/Miner/BombTower/BallistaTower 4, Ogre/DeepMine 2,
-	// Barracks/CrystalTower/Cleric 3, Wall 10, ArrowTower 8, Longbowman 4). Both are
-	// composed ONLY of bot-PLAYABLE types (Unit/Building/Economy) so the bot never
-	// wastes a decision cycling an unplayable card, and both differ from the player's
-	// TASK-115 curated DeckCount default. Legality is re-checked at pick time
-	// (IsDeckLegal) — an edited-illegal BP entry degrades to the DeckCount fallback. ---
+	// Barracks/CrystalTower/Cleric 3, Wall 10, ArrowTower 8, Longbowman 4,
+	// Lightning 2). Both are composed ONLY of bot-PLAYABLE types — Unit/Building/
+	// Economy plus the decision loop's rule-3 castable Spells (TASK-252 added
+	// Lightning ×2 to [1] per the M6 QA recommendation, making rule 3b reachable
+	// in curated play) — so the bot never wastes a decision cycling an unplayable
+	// card, and both differ from the player's TASK-115 curated DeckCount default.
+	// Legality is re-checked at pick time (IsDeckLegal) — an edited-illegal BP
+	// entry degrades to the DeckCount fallback. ---
 	auto Entry = [](const TCHAR* InCardID, int32 InCount)
 	{
 		FDeckCardEntry Result;
@@ -242,12 +245,12 @@ ASiegeBotController::ASiegeBotController()
 		Entry(TEXT("Miner"),       2), // 8 x2  = 16 (minimal economy)
 	};
 
-	// [1] DEFENSIVE ECONOMY — towers, walls, full economy, heavy finishers (avg cost ~6.86). Sum 50.
+	// [1] DEFENSIVE ECONOMY — towers, walls, full economy, heavy finishers (avg cost ~7.02). Sum 50.
 	FDeckList FortressDeck;
 	FortressDeck.DeckName = TEXT("Bot Defensive Economy");
 	FortressDeck.Cards =
 	{
-		Entry(TEXT("Wall"),          10), // 4 x10 = 40
+		Entry(TEXT("Wall"),           8), // 4 x8  = 32 (TASK-252: 10 → 8, donor for Lightning ×2)
 		Entry(TEXT("ArrowTower"),     8), // 5 x8  = 40
 		Entry(TEXT("Knight"),         6), // 6 x6  = 36
 		Entry(TEXT("BombTower"),      4), // 8 x4  = 32
@@ -258,6 +261,7 @@ ASiegeBotController::ASiegeBotController()
 		Entry(TEXT("Cleric"),         3), // 6 x3  = 18 (heals)
 		Entry(TEXT("Ogre"),           2), // 12 x2 = 24 (siege finisher)
 		Entry(TEXT("DeepMine"),       2), // 15 x2 = 30 (raidable economy)
+		Entry(TEXT("Lightning"),      2), // 8 x2  = 16 (spell — rule-3b tower-killer; TASK-252 per the M6 QA rec)
 		Entry(TEXT("Longbowman"),     1), // 6 x1  = 6
 	};
 
@@ -483,79 +487,154 @@ void ASiegeBotController::EvaluateDecisions()
 		// no AFFORDABLE defensive card → rule 1 did NOT fire; fall through
 	}
 
-	// ---- Rule 2: ECONOMY — half is clear; a Miner (under the target + cap) or a Deep Mine ----
+	// ---- Rule 2: ECONOMY — half is clear; a Miner toward the best available mine, or a Deep Mine ----
+	// W1-PREP mirrored mines (TASK-256): the two castle-adjacent per-team nodes are
+	// GONE (deleted in TASK-257) — 6 neutral depleting mines (3/side, TASK-255)
+	// replace them, and BOTH economy sub-rules anchor on AGoldNode::FindBestMineFor,
+	// THE single finder the miners themselves retarget through (TASK-253/254):
+	// tier-1 = nearest mine the bot's team can mine NOW, tier-2 = nearest enemy-
+	// occupied non-depleted mine (a WAIT target — the spawned miner queues at the
+	// ring and auto-claims when it frees), null = every mine depleted or none exist.
 	if (!NearestIntruder)
 	{
-		// 2a) MINER — byte-for-byte with TASK-046: only while ALIVE miners are under
-		//     the target AND the §3.3 hard cap (CanAddMiner) still allows one more.
-		if (BotState->GetAliveMinerCount() < TargetMinerCount && BotState->CanAddMiner())
+		if (UWorld* World = GetWorld())
 		{
-			const int32 CardIndex = FindAffordableCardByID(HandCards, Gold, MinerCardID);
-			if (CardIndex != INDEX_NONE)
+			const FVector CastleRed = GetCastleRedLocation();
+			AGoldNode* BestMine = AGoldNode::FindBestMineFor(World, BotTeam, CastleRed);
+
+			// Mine-lockout trace — ONCE PER STATE CHANGE, never per 2 s tick (the
+			// bLoggedMineLockout latch). A skip is a non-decision diagnostic, so both
+			// lines stay OFF LogSiegeBot (one-line-per-FIRED-rule law).
+			if (!BestMine && !bLoggedMineLockout)
 			{
-				const FBotHandCard& Chosen = HandCards[CardIndex];
-
-				// Spawn just in FRONT of GoldNode_Red (toward the centerline) so the
-				// miner walks the last stretch, then activates its +1/s at the node.
-				const float ApproachSign = (BotTeam == ETeamId::Red) ? -1.f : 1.f;
-				const FVector Desired = GetGoldNodeRedLocation() + FVector(ApproachSign * MinerNodeApproachOffset, 0.f, 0.f);
-
-				FVector SpawnPoint;
-				if (ComputeValidBotSpawnPoint(Desired, /*bIsBuilding=*/ false, SpawnPoint))
-				{
-					const int32 GoldBefore = Gold;
-					if (SpawnBotCardActor(Chosen.CardID, /*bIsBuilding=*/ false, SpawnPoint, *BotState, Chosen.Row->Cost, /*SwarmCount=*/ 0))
-					{
-						Deck->ConfirmPlayFromHand(Chosen.Slot);
-						UE_LOG(LogSiegeBot, Log,
-							TEXT("[Bot %s] Rule 2 (Economy): played Miner '%s' (cost %d) toward GoldNode_Red at (%.0f, %.0f, %.0f) — miners now %d/%d, gold %d->%d."),
-							*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost,
-							SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z,
-							BotState->GetAliveMinerCount(), TargetMinerCount, GoldBefore, BotState->GetGold());
-					}
-				}
-				else
-				{
-					UE_LOG(LogGitClaudeUnrealTest, Verbose,
-						TEXT("ASiegeBotController '%s': Rule 2 wanted a Miner but found no valid spawn point this tick."),
-						*GetNameSafe(this));
-				}
-				return; // rule 2 fired (Miner)
+				bLoggedMineLockout = true;
+				UE_LOG(LogGitClaudeUnrealTest, Log,
+					TEXT("ASiegeBotController '%s': FindBestMineFor returned null (every mine depleted or none exist) — rule 2a (Miner) SKIPPED until a mine is available again (never buy a doomed miner; all-depleted endgame = base income + Deep Mine)."),
+					*GetNameSafe(this));
 			}
-		}
-
-		// 2b) DEEP MINE — a building-routed economy play (§4 M4). No miner-cap
-		//     interaction (Deep Mine is not a miner): it just needs the half clear
-		//     (guaranteed by the enclosing !NearestIntruder) and an affordable Deep
-		//     Mine in hand. Spawned near GoldNode_Red, deep in the bot half, honoring
-		//     the §3.5 building clearance via ComputeValidBotSpawnPoint(bIsBuilding).
-		{
-			const int32 CardIndex = FindAffordableEconomyBuildingCard(HandCards, Gold, BuildingEconomyCardIDs);
-			if (CardIndex != INDEX_NONE)
+			else if (BestMine && bLoggedMineLockout)
 			{
-				const FBotHandCard& Chosen = HandCards[CardIndex];
-				const FVector Desired = GetGoldNodeRedLocation();
+				bLoggedMineLockout = false;
+				UE_LOG(LogGitClaudeUnrealTest, Log,
+					TEXT("ASiegeBotController '%s': mine '%s' is available again — rule 2a (Miner) re-enabled."),
+					*GetNameSafe(this), *GetNameSafe(BestMine));
+			}
 
-				FVector SpawnPoint;
-				if (ComputeValidBotSpawnPoint(Desired, /*bIsBuilding=*/ true, SpawnPoint))
+			// 2a) MINER — the TASK-046 gates byte-for-byte (ALIVE miners under the
+			//     target AND the §3.3 hard cap allows one more) PLUS the TASK-256 mine
+			//     gate: finder null ⇒ 2a is skipped ENTIRELY — a miner with no mine to
+			//     walk to is a doomed purchase (it would idle forever on dead income).
+			if (BestMine && BotState->GetAliveMinerCount() < TargetMinerCount && BotState->CanAddMiner())
+			{
+				const int32 CardIndex = FindAffordableCardByID(HandCards, Gold, MinerCardID);
+				if (CardIndex != INDEX_NONE)
 				{
-					const int32 GoldBefore = Gold;
-					if (SpawnBotCardActor(Chosen.CardID, /*bIsBuilding=*/ true, SpawnPoint, *BotState, Chosen.Row->Cost, /*SwarmCount=*/ 0))
+					const FBotHandCard& Chosen = HandCards[CardIndex];
+
+					// Materialize MinerNodeApproachOffset SHORT of the mine on its
+					// own-castle side (2D) so the miner walks the last stretch in, then
+					// clamp the desired point to the bot's own half (spawn law: the bot
+					// NEVER spawns on the Blue half — ComputeValidBotSpawnPoint REJECTS
+					// off-half points rather than clamping, and its widening ring tops
+					// out at 1,100 uu, so an unclamped Blue-half desired point would
+					// stall rule 2a forever instead of walking). For a Blue-half mine
+					// the clamp lands the spawn at the centerline and the miner WALKS
+					// the field to the mine — cross-field walks are CORRECT behavior
+					// (plan-of-record; TASK-258 watch list, not a bug).
+					const FVector MineLocation = BestMine->GetActorLocation();
+					const FVector ApproachDir = FVector(CastleRed.X - MineLocation.X, CastleRed.Y - MineLocation.Y, 0.f).GetSafeNormal();
+					FVector Desired = ApproachDir.IsNearlyZero()
+						? MineLocation // degenerate (mine at the castle point): the ring search walks it clear
+						: MineLocation + ApproachDir * MinerNodeApproachOffset;
+					Desired.Z = MineLocation.Z;
+					if (!IsOnOwnHalf(Desired.X))
 					{
-						Deck->ConfirmPlayFromHand(Chosen.Slot);
-						UE_LOG(LogSiegeBot, Log,
-							TEXT("[Bot %s] Rule 2 (Economy): played Deep Mine '%s' (cost %d) near GoldNode_Red at (%.0f, %.0f, %.0f) — gold %d->%d."),
-							*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost,
-							SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z, GoldBefore, BotState->GetGold());
+						Desired.X = BotHalfBoundaryX;
 					}
+
+					FVector SpawnPoint;
+					if (ComputeValidBotSpawnPoint(Desired, /*bIsBuilding=*/ false, SpawnPoint))
+					{
+						const int32 GoldBefore = Gold;
+						if (SpawnBotCardActor(Chosen.CardID, /*bIsBuilding=*/ false, SpawnPoint, *BotState, Chosen.Row->Cost, /*SwarmCount=*/ 0))
+						{
+							Deck->ConfirmPlayFromHand(Chosen.Slot);
+							UE_LOG(LogSiegeBot, Log,
+								TEXT("[Bot %s] Rule 2 (Economy): played Miner '%s' (cost %d) toward mine '%s' at (%.0f, %.0f, %.0f) — miners now %d/%d, gold %d->%d."),
+								*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost,
+								*GetNameSafe(BestMine),
+								SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z,
+								BotState->GetAliveMinerCount(), TargetMinerCount, GoldBefore, BotState->GetGold());
+						}
+					}
+					else
+					{
+						UE_LOG(LogGitClaudeUnrealTest, Verbose,
+							TEXT("ASiegeBotController '%s': Rule 2 wanted a Miner but found no valid spawn point this tick."),
+							*GetNameSafe(this));
+					}
+					return; // rule 2 fired (Miner)
 				}
-				else
+			}
+
+			// 2b) DEEP MINE — a building-routed economy play (§4 M4). No miner-cap
+			//     interaction (Deep Mine is not a miner) and deliberately NO finder-
+			//     null skip: a Deep Mine needs no gold mine to produce, so it stays
+			//     the bot's all-depleted endgame economy (plan §T-F(7): base income +
+			//     overtime + Deep Mine keep the endgame winnable). Anchored at the
+			//     SAME finder result when one exists (the economy clusters where the
+			//     miners work), else castle-front (BotCastleSpawnOffset toward the
+			//     centerline); honors the §3.5 building clearance via
+			//     ComputeValidBotSpawnPoint(bIsBuilding).
+			{
+				const int32 CardIndex = FindAffordableEconomyBuildingCard(HandCards, Gold, BuildingEconomyCardIDs);
+				if (CardIndex != INDEX_NONE)
 				{
-					UE_LOG(LogGitClaudeUnrealTest, Verbose,
-						TEXT("ASiegeBotController '%s': Rule 2 wanted a Deep Mine but found no valid spawn point this tick."),
-						*GetNameSafe(this));
+					const FBotHandCard& Chosen = HandCards[CardIndex];
+
+					FVector Desired;
+					if (BestMine)
+					{
+						// Same own-half clamp as 2a — a Blue-half best mine anchors the
+						// building at the centerline, never across it.
+						Desired = BestMine->GetActorLocation();
+						if (!IsOnOwnHalf(Desired.X))
+						{
+							Desired.X = BotHalfBoundaryX;
+						}
+					}
+					else
+					{
+						const float TowardCenterSign = (CastleRed.X >= 0.f) ? -1.f : 1.f;
+						Desired = CastleRed + FVector(TowardCenterSign * BotCastleSpawnOffset, 0.f, 0.f);
+						Desired.Z = CastleRed.Z;
+					}
+
+					FVector SpawnPoint;
+					if (ComputeValidBotSpawnPoint(Desired, /*bIsBuilding=*/ true, SpawnPoint))
+					{
+						const int32 GoldBefore = Gold;
+						if (SpawnBotCardActor(Chosen.CardID, /*bIsBuilding=*/ true, SpawnPoint, *BotState, Chosen.Row->Cost, /*SwarmCount=*/ 0))
+						{
+							Deck->ConfirmPlayFromHand(Chosen.Slot);
+							const FString AnchorDesc = BestMine
+								? FString::Printf(TEXT("near mine '%s'"), *GetNameSafe(BestMine))
+								: FString(TEXT("castle-front (no available mine)"));
+							UE_LOG(LogSiegeBot, Log,
+								TEXT("[Bot %s] Rule 2 (Economy): played Deep Mine '%s' (cost %d) %s at (%.0f, %.0f, %.0f) — gold %d->%d."),
+								*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost,
+								*AnchorDesc,
+								SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z, GoldBefore, BotState->GetGold());
+						}
+					}
+					else
+					{
+						UE_LOG(LogGitClaudeUnrealTest, Verbose,
+							TEXT("ASiegeBotController '%s': Rule 2 wanted a Deep Mine but found no valid spawn point this tick."),
+							*GetNameSafe(this));
+					}
+					return; // rule 2 fired (Deep Mine)
 				}
-				return; // rule 2 fired (Deep Mine)
 			}
 		}
 	}
@@ -625,7 +704,7 @@ void ASiegeBotController::EvaluateDecisions()
 		}
 
 		// 3b) LIGHTNING at a player tower with >= LightningTowerMinUnits player units
-		//     within the Lightning ROW's own AoERadius (400 — GDD §4; data-driven law):
+		//     within the Lightning ROW's own AoERadius (700 — GDD §4; data-driven law):
 		//     tower + defenders die to one bolt — the §4 "tower-killer" played as the
 		//     GDD prescribes ("Lightning at a tower adjacent to 2+ units").
 		{
@@ -1001,22 +1080,6 @@ FVector ASiegeBotController::GetCastleRedLocation() const
 		}
 	}
 	return CastleRedFallbackLocation;
-}
-
-FVector ASiegeBotController::GetGoldNodeRedLocation() const
-{
-	if (UWorld* World = GetWorld())
-	{
-		for (TActorIterator<AGoldNode> It(World); It; ++It)
-		{
-			const AGoldNode* Node = *It;
-			if (IsValid(Node) && Node->GetTeam() == BotTeam)
-			{
-				return Node->GetActorLocation();
-			}
-		}
-	}
-	return GoldNodeRedFallbackLocation;
 }
 
 bool ASiegeBotController::ComputeValidBotSpawnPoint(const FVector& Desired, bool bIsBuilding, FVector& OutPoint)

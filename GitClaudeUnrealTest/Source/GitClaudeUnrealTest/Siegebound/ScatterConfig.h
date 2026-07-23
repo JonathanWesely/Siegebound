@@ -4,9 +4,11 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Templates/SubclassOf.h"
 #include "UObject/SoftObjectPtr.h"
 #include "ScatterConfig.generated.h"
 
+class AGoldNode;
 class UMaterialInterface;
 class UStaticMesh;
 
@@ -214,9 +216,12 @@ struct FScatterLayer
  *
  *  The keep-clear radii + corridor half-width below are the DATA half of the
  *  NON-NEGOTIABLE traversability guarantee: blocking obstacles are excluded from
- *  the castle pads, gold-node pads, the PlayerStart, and the reserved central
- *  lane, so a navigable Blue→Red path always exists. Jonathan can make the field
- *  denser/riskier at playtest by shrinking these.
+ *  the castle pads, the PlayerStart, and the reserved central lane, so a
+ *  navigable Blue→Red path always exists. Jonathan can make the field
+ *  denser/riskier at playtest by shrinking these. (The old per-team gold-node
+ *  pads died with the W1-PREP mirrored-mines redesign, TASK-255 — mines are
+ *  spawned BY the scatter itself, NoCollision, and clear their own aprons via
+ *  the Scatter|Mines block below.)
  */
 UCLASS(BlueprintType)
 class GITCLAUDEUNREALTEST_API USiegeScatterConfig : public UDataAsset
@@ -253,10 +258,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|KeepClear", meta = (ClampMin = "0"))
 	float CastleKeepClearRadius = 1500.f;
 
-	/** Keep-clear radius (cm) around EACH gold node (±24200, M7.6) — miners must always reach their node. Mesh-relative, not scaled. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|KeepClear", meta = (ClampMin = "0"))
-	float GoldNodeKeepClearRadius = 600.f;
-
 	/** Keep-clear radius (cm) around the PlayerStart / hero spawn (≈-23800,0, M7.6) — the hero never spawns inside an obstacle. Mesh-relative, not scaled. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|KeepClear", meta = (ClampMin = "0"))
 	float PlayerStartKeepClearRadius = 800.f;
@@ -273,4 +274,70 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|KeepClear", meta = (ClampMin = "0"))
 	float CorridorHalfWidth = 1000.f;
+
+	// --- Mirrored depleting mines (W1-PREP, TASK-255 — CONVENTIONS "Mirrored
+	// --- depleting mines": these numbers are LAW there; tune bands recorded) ---
+
+	/**
+	 *  Neutral depleting mines spawned per SIDE each generate (total mines =
+	 *  2 × this): each mine is drawn ONCE on the Blue half then exactly mirrored
+	 *  across X=0 (−X, Y — equal castle-distance sums by construction, the
+	 *  fairness law). 0 disables the mines pass (debug fields only — the shipped
+	 *  default is 3 per Jonathan's locked ruling).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Mines", meta = (ClampMin = "0"))
+	int32 MineCountPerSide = 3;
+
+	/**
+	 *  Minimum 2D center distance (cm) between mine PRIMARIES. The twin and
+	 *  cross-pair distances are guaranteed ≥ this FOR FREE by the half-draw
+	 *  construction (|X| ≥ max(MineClearanceRadius, this/2) — see PlaceMines),
+	 *  so primaries are the only explicit spacing test. Default 3,000 — larger
+	 *  than the biggest hill diameter, so two mine sites never share a mound.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Mines", meta = (ClampMin = "0"))
+	float MineMinSpacing = 3000.f;
+
+	/**
+	 *  Clearance disc radius (cm) enforced around EACH mine of a pair: candidate
+	 *  points must keep this disc out of the castle/PlayerStart keep-clear zones,
+	 *  and every nav-relevant blocker inside it is DELETED at placement (the
+	 *  apron + miner walk-in guarantee — the old GoldNodeKeepClearRadius reborn
+	 *  as an ACTIVE clearance; hills exempt by the never-delete-hills rule, grass
+	 *  untouched). Also the base radius of the per-mine widening reachability
+	 *  cull in ValidateTraversability.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Mines", meta = (ClampMin = "0"))
+	float MineClearanceRadius = 600.f;
+
+	/**
+	 *  Gold reserve each spawned mine is InitMine()'d with. CONVENTIONS default
+	 *  300 (3 miners dry a mine in ~100 s); tune band 250–450 — raise to 450
+	 *  FIRST if playtest says matches stall (the all-depleted pacing lever).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Mines", meta = (ClampMin = "0"))
+	int32 MineGoldReserve = 300;
+
+	/** Margin (cm) inset from the arena half-extents when drawing mine centers, so a mine's clearance disc never pokes past the field edge into the boundary walls. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Mines", meta = (ClampMin = "0"))
+	float MineEdgeMargin = 600.f;
+
+	/**
+	 *  Max hill-face slope (degrees from horizontal) a mine candidate tolerates
+	 *  at EITHER point of its pair — a steeper face at P or P′ re-rolls the
+	 *  candidate. 30° = the climbable-face law (CONVENTIONS "Climbable terrain
+	 *  (M6.6)"): miners must be able to WALK onto every mine. The deterministic
+	 *  fallback slot ignores this gate (it must always seat — economy law).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Mines", meta = (ClampMin = "0", ClampMax = "89"))
+	float MineMaxSlopeDeg = 30.f;
+
+	/**
+	 *  Mine actor class PlaceMines spawns; null (default) ⇒ AGoldNode (the
+	 *  neutral depleting claimable mine, TASK-253). A subclass hook for a future
+	 *  BP/child variant — never a different archetype (the pass calls InitMine
+	 *  on it, so it must BE an AGoldNode).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Mines")
+	TSubclassOf<AGoldNode> MineClass;
 };

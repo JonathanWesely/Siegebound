@@ -9,6 +9,7 @@
 #include "Siegebound/TeamId.h"
 #include "BattlefieldScatter.generated.h"
 
+class AGoldNode;
 class USceneComponent;
 class USiegeScatterConfig;
 class UHierarchicalInstancedStaticMeshComponent;
@@ -41,16 +42,35 @@ DECLARE_LOG_CATEGORY_EXTERN(LogSiegeTerrain, Log, All);
  *  Blue→Red castle path EVERY match via two layers of defense:
  *    (1) DETERMINISTIC — a reserved clear central corridor (|Y| <=
  *        CorridorHalfWidth across the whole X span) plus keep-clear radii around
- *        both castles, both gold nodes, and the PlayerStart. Because no blocking
- *        obstacle ever lands in the corridor, the straight Y≈0 lane between the
- *        castles is ALWAYS walkable — this alone guarantees a path and does not
- *        depend on any async nav state.
+ *        both castles and the PlayerStart (the per-team gold-node discs died
+ *        with the W1-PREP mirrored-mines redesign — mines are spawned BY this
+ *        actor, are NoCollision, and clear their own aprons). Because no
+ *        blocking obstacle ever lands in the corridor, the straight Y≈0 lane
+ *        between the castles is ALWAYS walkable — this alone guarantees a path
+ *        and does not depend on any async nav state.
  *    (2) CONFIRMATORY — a deferred post-placement reachability validation (once
  *        the async Dynamic nav reports IDLE — polled via UNavigationSystemV1::
  *        IsNavigationBeingBuilt, M7.6) that path-queries Blue-anchor →
- *        Red-anchor; if (defensively) no path is found it culls the blocking
- *        instances nearest the lane in a widening Y band and re-checks, until a
- *        path is confirmed. Never leaves a match unwinnable.
+ *        Red-anchor PLUS Blue-anchor → every spawned mine (TASK-255: a
+ *        walled-in mine = economy failure); a missing castle path culls the
+ *        blocking instances nearest the lane in a widening Y band, a missing
+ *        mine path culls a widening clearance disc around that mine, and every
+ *        defensive cull is followed by RegroundMines (a cull can delete a
+ *        mine's supporting hill). Re-checks until confirmed. Never leaves a
+ *        match unwinnable.
+ *
+ *  MIRRORED DEPLETING MINES (W1-PREP, TASK-255 — CONVENTIONS "Mirrored
+ *  depleting mines"): after the two layer passes, PlaceMines spawns
+ *  MineCountPerSide AGoldNode PAIRS — each drawn once on the Blue half then
+ *  exactly mirrored across X=0 (−X, Y, yaw+180), so castle-distance sums are
+ *  equal by construction. The pass draws from a DEDICATED
+ *  FRandomStream(Seed XOR 0x4D494E45), leaving the layer stream (and every
+ *  existing seed's layout) byte-stable. Mines are corridor-legal by Jonathan
+ *  ruling (AGoldNode is NoCollision — the traversability guarantee is
+ *  untouched), delete the nav-relevant blockers in their clearance discs
+ *  (hills EXEMPT — hills are never deleted), and a mine over a hill gets its
+ *  twin an injected mirrored hill instance (parity ruling: either-side-has ⇒
+ *  both-have).
  *
  *  Everything is null-safe: no config, no meshes, or no nav system each degrade
  *  to a logged no-op / geometric-only guarantee — never a crash, never a
@@ -74,12 +94,14 @@ public:
 	 *  W1-PREP (TASK-250): layers place in TWO passes — bAllowOnHills=false
 	 *  first (hills included, registering the hill-surface HISMs), then the
 	 *  hill-allowed layers, whose ground resolve accepts elevated hill Z within
-	 *  each layer's MaxPlacementSlopeDeg.
+	 *  each layer's MaxPlacementSlopeDeg. W1-PREP (TASK-255): PlaceMines runs
+	 *  after pass 2 and before the nav-settle poll (injected twin hills +
+	 *  clearance culls must carve nav ahead of the reachability validation).
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Terrain")
 	void GenerateScatter();
 
-	/** Removes every scattered instance from every HISM (the components persist for reuse). */
+	/** Removes every scattered instance from every HISM (the components persist for reuse) and DESTROYS the spawned mine pair actors (Play-Again lifecycle, TASK-255 — fresh mines every re-scatter). */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Terrain")
 	void ClearScatter();
 
@@ -149,6 +171,18 @@ private:
 	 */
 	TArray<UHierarchicalInstancedStaticMeshComponent*> HillSurfaceComponents;
 
+	/**
+	 *  The mine pair actors spawned by PlaceMines this generate (W1-PREP,
+	 *  TASK-255) — primaries and twins interleaved [P0, M0, P1, M1, ...].
+	 *  GC-rooted via UPROPERTY; ClearScatter DESTROYS them (Play-Again
+	 *  lifecycle: exactly-fresh mines every re-scatter; PlayAgain kills miners
+	 *  in its step 2 BEFORE the step-7 re-scatter per the plan-of-record, so no
+	 *  dangling miner registries — AGoldNode::EndPlay clears its own drain
+	 *  timer and deliberately skips miner notification, TASK-253).
+	 */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<AGoldNode>> SpawnedMines;
+
 	/** Resolves-or-creates the VISUAL HISM for a mesh, applying the layer's collision/nav profile. Returns nullptr if the mesh is unresolvable. */
 	UHierarchicalInstancedStaticMeshComponent* ResolveComponentForMesh(UStaticMesh* Mesh, const FScatterLayer& Layer);
 
@@ -169,14 +203,23 @@ private:
 
 	/**
 	 *  True if a 2D point — inflated by InstanceRadius — is inside any keep-clear
-	 *  zone (castle/node/PlayerStart radius) or the reserved corridor band. The
+	 *  zone (castle/PlayerStart radius) or the reserved corridor band. The
 	 *  radius makes a WIDE instance's EDGE (not just its center) count, so a broad
 	 *  hill centered just off-lane no longer sprawls into the corridor. Built fresh
 	 *  each generate from the live level actors.
 	 */
 	bool IsInKeepClear(const FVector2D& Point2D, float InstanceRadius = 0.f) const;
 
-	/** Rebuilds KeepClearZones + corridor half-width from the live level (castles/nodes/PlayerStart) with CONVENTIONS-coordinate fallbacks. */
+	/**
+	 *  Keep-clear DISC test ONLY — no corridor band (TASK-255): the mines pass
+	 *  uses this because corridor mines are ALLOWED by Jonathan ruling
+	 *  (high-risk gold; AGoldNode is NoCollision, so a lane mine cannot break
+	 *  the traversability guarantee). IsInKeepClear layers the corridor test on
+	 *  top of this for the blocking layer passes.
+	 */
+	bool IsInKeepClearDiscs(const FVector2D& Point2D, float InstanceRadius) const;
+
+	/** Rebuilds KeepClearZones + corridor half-width from the live level (castles/PlayerStart — the gold-node discs died with the W1-PREP mines redesign, TASK-255) with CONVENTIONS-coordinate fallbacks. */
 	void RebuildKeepClearZones();
 
 	/** Traces down to the arena floor at (X,Y); returns the floor Z (or 0 if no hit). Ignores this actor so already-placed instances never fool the trace. */
@@ -196,7 +239,54 @@ private:
 	 */
 	bool ResolveHillAwareGroundZ(float X, float Y, float FloorZ, float MaxSlopeDeg, float& OutZ) const;
 
-	/** Deferred (async-nav-settled) reachability confirmation — path-queries Blue→Red and culls corridor blockers if (defensively) needed. */
+	/**
+	 *  TASK-255 extension of the TASK-250 hill resolve: the SAME component-scoped
+	 *  down-trace + slope gate as ResolveHillAwareGroundZ (which now delegates
+	 *  here — behavior for the layer passes is unchanged), additionally surfacing
+	 *  the hit hill-surface COMPONENT + INSTANCE index — the surface identity the
+	 *  mines pass clones for hill parity. OutSurfaceComp/OutInstanceIndex are set
+	 *  only when the point is over a hill face within MaxSlopeDeg (else nullptr /
+	 *  INDEX_NONE with OutZ = FloorZ); returns FALSE when the face is steeper —
+	 *  the caller must reject that candidate. Draw-free (the determinism law:
+	 *  zero FRandomStream draws anywhere in the hill/trace/clearance paths).
+	 */
+	bool FindHillSurfaceAt(float X, float Y, float FloorZ, float MaxSlopeDeg, float& OutZ,
+		UHierarchicalInstancedStaticMeshComponent*& OutSurfaceComp, int32& OutInstanceIndex) const;
+
+	/**
+	 *  W1-PREP mirrored depleting mines pass (TASK-255 — CONVENTIONS "Mirrored
+	 *  depleting mines"; Jonathan's locked rulings). Called by GenerateScatter
+	 *  AFTER the two layer passes and BEFORE StartNavSettlePoll. Draws
+	 *  EXCLUSIVELY from a dedicated FRandomStream(Seed XOR 0x4D494E45) — the
+	 *  seed-order law: the layer stream gains ZERO draws, existing seeds stay
+	 *  stable — exactly two draws per attempt in fixed X-then-Y order; every
+	 *  trace / parity / clearance step downstream is draw-free. Per mine:
+	 *  half-draw on the Blue half (|X| ≥ max(MineClearanceRadius,
+	 *  MineMinSpacing/2)), spacing vs prior primaries, keep-clear discs tested
+	 *  at BOTH P and P′ (the zone set is asymmetric — PlayerStart is Blue-side),
+	 *  NO corridor test (ruling), slope-gated grounding at both points
+	 *  (≤ MineMaxSlopeDeg), hill-parity injection (either-side-has ⇒ both-have:
+	 *  mirrored same-component hill clone + footprint un-bury + re-trace,
+	 *  reject-if-no-fit), clearance-delete at both points, then the tracked
+	 *  AGoldNode pair spawn + InitMine(MineGoldReserve). ≤ 2 ×
+	 *  MaxPlacementAttemptsPerInstance attempts, then the DETERMINISTIC fallback
+	 *  slot with an Error log — the economy never ships short. Ends with the one
+	 *  grep-able MinesPass reproducibility line (seed + pairs + hill/inj/fb
+	 *  flags): same seed ⇒ identical line, the TASK-258 determinism criterion.
+	 */
+	void PlaceMines(int32 Seed);
+
+	/**
+	 *  Re-seats every spawned mine on the CURRENT surface under it — hill else
+	 *  floor, ANY slope (90° gate: a placed mine must re-seat on whatever
+	 *  remains, never float mid-air because a face reads steep). Called after
+	 *  EVERY defensive cull (TASK-255 law): a widening cull can delete a mine's
+	 *  supporting hill — CullCorridorBlockers does not exempt hill comps.
+	 *  Draw-free.
+	 */
+	void RegroundMines();
+
+	/** Deferred (async-nav-settled) reachability confirmation — path-queries Blue→Red AND Blue→each mine (TASK-255 economy guarantee); defensively culls corridor blockers / per-mine clearance discs and regrounds mines after every cull. */
 	void ValidateTraversability();
 
 	/**
@@ -216,6 +306,19 @@ private:
 	/** Culls blocking instances whose |Y| <= Band across the X span (widening re-roll used only if a path is somehow not found). Returns the number removed. */
 	int32 CullCorridorBlockers(float Band);
 
+	/**
+	 *  DISC sibling of CullCorridorBlockers (TASK-255): removes every
+	 *  NAV-RELEVANT blocking instance whose center lies within Radius of Center
+	 *  — real-geometry blockers and tree PROXY comps, with the paired visual
+	 *  HISM culled in LOCKSTEP via VisualToProxy (same law as the corridor
+	 *  cull). Grass is untouched (not nav-relevant, excluded by the same guard)
+	 *  and HILL-SURFACE comps are EXEMPT (hills are never deleted — Jonathan
+	 *  conflict rule; the parity clone the mines pass injects must never be
+	 *  eaten by the clearance disc that follows it). Center-in-disc semantics,
+	 *  matching the corridor cull's center-in-band. Returns the number removed.
+	 */
+	int32 RemoveBlockingInstancesInDisc(const FVector2D& Center, float Radius);
+
 	/** Resolves a team's castle world location from the live ACastle actors, falling back to the ±25000 constants (M7.6 10× scale-up). */
 	FVector ResolveCastleLocation(ETeamId Team) const;
 
@@ -226,7 +329,7 @@ private:
 		float RadiusSq = 0.f;
 	};
 
-	/** Keep-clear discs for THIS generate (castles/nodes/PlayerStart); rebuilt each GenerateScatter. */
+	/** Keep-clear discs for THIS generate (castles/PlayerStart — gold-node discs removed with the W1-PREP mines redesign, TASK-255); rebuilt each GenerateScatter. */
 	TArray<FKeepClearZone> KeepClearZones;
 
 	/** Cached corridor half-width for this generate (from the config). */

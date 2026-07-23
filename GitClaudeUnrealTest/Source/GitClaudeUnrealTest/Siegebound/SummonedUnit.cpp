@@ -254,6 +254,26 @@ void ASummonedUnit::ResolveSkeletalVisual()
 	// materials; the team recolor below (via the LoadStatsAndStart re-apply) overrides slot 0.
 	SkeletalVisualMesh->SetSkeletalMeshAsset(SkeletalAsset);
 
+	// FLOAT-FIX (DIAG-floating-units SESSION-2): ground the skeletal mesh to the SAME
+	// authored offset the static VisualMesh already carries. The SK feet sit at the mesh
+	// pivot (Z=0), so with the component left at capsule-center the whole body renders one
+	// capsule-half-height ABOVE the grounded capsule. TASK-159 hand-authored the −HalfHeight
+	// Z into every unit BP that existed then; the late first-imports (Archer/Ogre, TASK-242/243,
+	// "zero BP changes") never got it, so their SkeletalVisualMesh kept the C++ default Z=0 and
+	// floated (+90 / +145). Pin the component from code here instead of trusting each BP: this
+	// corrects Archer (0→−90) and Ogre (0→−145), is a byte-identical no-op for the units whose
+	// BP already authored SkeletalVisualMesh.Z == VisualMesh.Z (the other 9 — measured
+	// −90/−90/−145 in the DIAG table), AND permanently closes the "next first-import forgets the
+	// BP offset" trap. VisualMeshBaseRelativeLocation is the static VisualMesh's authored
+	// RelativeLocation, cached in BeginPlay (SummonedUnit.cpp:154-157) BEFORE
+	// LoadStatsAndStart→ResolveSkeletalVisual runs — the ONLY call path — so it is always valid
+	// here; SkeletalVisualMesh is already non-null (the early-return at the top of this function).
+	// The bVisualMeshBaseCached guard is defense-in-depth: never pin a garbage ZeroVector offset.
+	if (bVisualMeshBaseCached)
+	{
+		SkeletalVisualMesh->SetRelativeLocation(VisualMeshBaseRelativeLocation);
+	}
+
 	// AnimClass resolution (TASK-159 + shared-ABP fallback, TASK-165 rig-import chain):
 	//   1. Prefer a per-unit /Game/Characters/ABP_<CardID> (the _C generated-class path) —
 	//      future dedicated ABPs still take priority the moment they're authored.

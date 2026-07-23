@@ -5,7 +5,6 @@
 #include "AIController.h"
 #include "Components/AudioComponent.h"
 #include "Engine/World.h"
-#include "EngineUtils.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
 #include "GitClaudeUnrealTest.h"
@@ -104,20 +103,14 @@ void AMinerUnit::BeginPlay()
 	// is not resolvable yet (PlayerArray timing), the poll below retries.
 	TryRegisterWithOwnerState();
 
-	// walk to the SAME-team gold node (actor iteration per spec; placed as
-	// GoldNode_Blue / GoldNode_Red in TASK-036). None in the level: log and
-	// idle — the poll still runs (early-outs on the missing node) so a
-	// deferred registration can complete.
-	if (AGoldNode* Node = FindNearestSameTeamGoldNode())
+	// walk to the best NEUTRAL mine (W1-PREP TASK-254): FindBestMineFor is
+	// THE finder (TASK-253) — tier-1 nearest minable-now, tier-2 nearest
+	// enemy-occupied wait target. Null (every mine depleted, or none exist)
+	// is a NORMAL state now, logged at Log inside SeekBestMine (demoted from
+	// the M2 Error per the plan): the miner idles and the poll re-seeks.
+	if (AGoldNode* Node = SeekBestMine())
 	{
-		TargetGoldNode = Node;
 		EnsureWalkingToNode(Node);
-	}
-	else
-	{
-		UE_LOG(LogGitClaudeUnrealTest, Error,
-			TEXT("AMinerUnit '%s': no same-team AGoldNode in the level (GoldNode_Blue/GoldNode_Red are placed in TASK-036) — miner idles."),
-			*GetNameSafe(this));
 	}
 
 	// arrival/upkeep poll — the miner's replacement for the sealed combat
@@ -143,6 +136,21 @@ void AMinerUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	// counts die with the player state.
 	if (EndPlayReason == EEndPlayReason::Destroyed)
 	{
+		// Mine-side bookkeeping FIRST (TASK-254): drop out of the mine's
+		// arrived registry BEFORE the player-state counts move, so the mine
+		// never keeps draining for a miner whose income is being removed
+		// (releases the claim + stops the drain when this was the last
+		// occupant). UnregisterArrivedMiner is null-safe + idempotent: a
+		// never-arrived, WAITING, or already-EVICTED miner (Deplete() emptied
+		// the registry before NotifyMineDepleted cleared our latches, and
+		// eviction nulls the target anyway) is a clean no-op — never a
+		// double-unregister. World teardown deliberately skips this with the
+		// rest of the Destroyed block (the mine tears down its own registry).
+		if (AGoldNode* Mine = TargetGoldNode.Get())
+		{
+			Mine->UnregisterArrivedMiner(this);
+		}
+
 		if (ASiegePlayerState* OwnerState = CachedOwnerState.Get())
 		{
 			// income first, then alive: MinerIncomeCount ⊆ AliveMinerCount
@@ -240,20 +248,58 @@ void AMinerUnit::UpdateMining()
 		TryRegisterWithOwnerState();
 	}
 
+	// ---- retarget gate (TASK-254) ----------------------------------------
 	AGoldNode* Node = TargetGoldNode.Get();
-	if (!Node)
+
+	// ONE dead-target predicate for both steps below (they MUST agree: a
+	// re-seek may only run on a tenure that was already ended, or the
+	// arrival/income flags would carry over to the new target). Short-
+	// circuits: reserve is only read on a valid node.
+	const bool bTargetDead = !Node || Node->IsDepleted() || Node->GetGoldReserve() <= 0;
+
+	// Defensive tenure break: ARRIVED at a mine that vanished, or that reads
+	// depleted/empty without having evicted us. No designed flow reaches
+	// this — ClearScatter only destroys mines after the PlayAgain sweep
+	// killed every miner, and Deplete() evicts synchronously
+	// (NotifyMineDepleted clears bArrivedAtNode) before any poll can observe
+	// its latch. Kept so the arrival/income flags can never outlive their
+	// mine: un-arrive locally (the registry side is moot — gone or already
+	// emptied), then fall through to the re-seek. Silent by design (a normal
+	// state now, not the M2 level-authoring diagnostic).
+	if (bArrivedAtNode && bTargetDead)
 	{
-		// never found (already logged at BeginPlay): stay idle, silently.
-		// found-then-removed (stale weak): warn once — nothing in M2 destroys
-		// gold nodes, so this is a level-authoring diagnostic.
-		if (!TargetGoldNode.IsExplicitlyNull() && !bWarnedNodeLost)
+		EndMineTenure();
+	}
+
+	if (bTargetDead)
+	{
+		// null (fresh miss, eviction, stale weak) or dead target → re-seek
+		// via THE finder. Null result = the all-depleted endgame: idle in
+		// place (logged once, Log level, inside SeekBestMine) and keep
+		// polling — the intended income death.
+		Node = SeekBestMine();
+		if (!Node)
 		{
-			bWarnedNodeLost = true;
-			UE_LOG(LogGitClaudeUnrealTest, Warning,
-				TEXT("AMinerUnit '%s': gold node disappeared mid-match — miner idles."),
-				*GetNameSafe(this));
+			return;
 		}
-		return;
+	}
+	else if (!bArrivedAtNode && !Node->CanTeamMine(Team))
+	{
+		// Un-arrived and pointed at an enemy-claimed mine (walking to it, or
+		// queued at its ring): consult the finder for an UPGRADE. Switch ONLY
+		// when it returns a minable-now (tier-1) mine; a tier-2 result — even
+		// a nearer queue — keeps the current target. The no-churn rule: never
+		// flip between wait targets or equal options (the finder's strict-<
+		// tiebreak already pins exact ties). ARRIVED miners never retarget.
+		if (AGoldNode* Upgrade = AGoldNode::FindBestMineFor(GetWorld(), Team, GetActorLocation()))
+		{
+			if (Upgrade != Node && Upgrade->CanTeamMine(Team))
+			{
+				Node = Upgrade;
+				TargetGoldNode = Upgrade;
+				bLoggedWaitingAtMine = false; // new target — the next queue is a new episode
+			}
+		}
 	}
 
 	// Arrival test in 2D: the arena is flat and the node's origin sits at
@@ -266,46 +312,76 @@ void AMinerUnit::UpdateMining()
 	{
 		if (!bArrivedAtNode)
 		{
-			// one-way latch: arrival happens exactly once per miner
-			bArrivedAtNode = true;
-
-			// stand at the node — idle mining. The poll can observe arrival before
-			// path-following finishes (arrival ring 150 > walk acceptance 120), so
-			// stop explicitly.
-			if (AAIController* AI = Cast<AAIController>(GetController()))
+			// At the ring: registration is the atomic claim point (TASK-253
+			// TryRegisterArrivedMiner — claims the mine on the 0 -> 1
+			// registry transition). Success runs the M2 arrival block below
+			// unchanged (TASK-024/179 contract); refusal is WAIT MODE.
+			if (Node->TryRegisterArrivedMiner(this))
 			{
-				AI->StopMovement();
+				bLoggedWaitingAtMine = false; // tenure starts — re-arm for any later queue
+
+				// per-tenure latch (TASK-254; was one-way per lifetime in
+				// M2): arrival happens exactly once per TENURE — cleared only
+				// by eviction, never by displacement
+				bArrivedAtNode = true;
+
+				// stand at the node — idle mining. The poll can observe arrival before
+				// path-following finishes (arrival ring 150 > walk acceptance 120), so
+				// stop explicitly.
+				if (AAIController* AI = Cast<AAIController>(GetController()))
+				{
+					AI->StopMovement();
+				}
+
+				// §6 mining "clink" loop (TASK-179): starts ON ARRIVAL (§3.3), stops on
+				// death/freeze/eviction. Null-safe until S_MinerClink lands (TASK-180).
+				StartMiningClink();
+
+				// +1 gold/s activates ONLY on registered arrival (GDD §3.3):
+				// AddMinerIncome exactly once per tenure, on the SAME player
+				// state we registered with (handoffs/TASK-024.md contract).
+				ASiegePlayerState* OwnerState = CachedOwnerState.Get();
+				if (bRegisteredAlive && OwnerState)
+				{
+					OwnerState->AddMinerIncome();
+					bIncomeActive = true;
+				}
+				else if (!bWarnedIncomeSkipped)
+				{
+					bWarnedIncomeSkipped = true;
+					UE_LOG(LogGitClaudeUnrealTest, Warning,
+						TEXT("AMinerUnit '%s': arrived at '%s' with no registered owner player state — mining activates no income (its team's ASiegePlayerState was never resolvable; TASK-043 resolves both Blue and Red)."),
+						*GetNameSafe(this), *GetNameSafe(Node));
+				}
 			}
-
-			// §6 mining "clink" loop (TASK-179): starts ON ARRIVAL (§3.3), stops on
-			// death/freeze. Null-safe until S_MinerClink lands (TASK-180).
-			StartMiningClink();
-
-			// +1 gold/s activates ONLY on arrival (GDD §3.3): AddMinerIncome
-			// exactly once, on the SAME player state we registered with
-			// (handoffs/TASK-024.md contract).
-			ASiegePlayerState* OwnerState = CachedOwnerState.Get();
-			if (bRegisteredAlive && OwnerState)
+			else
 			{
-				OwnerState->AddMinerIncome();
-				bIncomeActive = true;
-			}
-			else if (!bWarnedIncomeSkipped)
-			{
-				bWarnedIncomeSkipped = true;
-				UE_LOG(LogGitClaudeUnrealTest, Warning,
-					TEXT("AMinerUnit '%s': arrived at '%s' with no registered owner player state — mining activates no income (its team's ASiegePlayerState was never resolvable; TASK-043 resolves both Blue and Red)."),
-					*GetNameSafe(this), *GetNameSafe(Node));
+				// WAIT MODE (TASK-254): the mine refused us — enemy-claimed
+				// (or it depleted this very tick; the next poll's retarget
+				// gate catches that case). Stand at the ring — the in-flight
+				// move finishes at its 0.8 × acceptance on its own, and the
+				// outside-ring branch walks a displaced waiter back — and
+				// retry every poll: the instant the last enemy occupant
+				// leaves or dies, UnregisterArrivedMiner releases the claim
+				// and this TryRegister succeeds (auto-claim).
+				if (!bLoggedWaitingAtMine)
+				{
+					bLoggedWaitingAtMine = true;
+					UE_LOG(LogGitClaudeUnrealTest, Log,
+						TEXT("AMinerUnit '%s': waiting at enemy-claimed mine '%s' — standing at the ring until it frees."),
+						*GetNameSafe(this), *GetNameSafe(Node));
+				}
 			}
 		}
-		// arrived and inside the ring: stand (a walk-back finishes on its own
-		// at the 0.8 × ArrivalRadius acceptance)
+		// arrived (or waiting) and inside the ring: stand (a walk-back
+		// finishes on its own at the 0.8 × ArrivalRadius acceptance)
 		return;
 	}
 
 	// outside the ring: still walking (heal a failed/finished-short/hijacked
-	// move), or displaced after arrival (walk back and stand again — income is
-	// arrival-latched and unaffected by displacement, §3.3)
+	// move), or displaced after arrival / while waiting (walk back and stand
+	// again — an arrived tenure's income is arrival-latched and unaffected by
+	// displacement, §3.3)
 	EnsureWalkingToNode(Node);
 }
 
@@ -430,37 +506,97 @@ ASiegePlayerState* AMinerUnit::ResolveOwningPlayerState()
 	return OwnerState;
 }
 
-AGoldNode* AMinerUnit::FindNearestSameTeamGoldNode() const
+AGoldNode* AMinerUnit::SeekBestMine()
 {
-	UWorld* World = GetWorld();
-	if (!World)
+	// THE single finder (TASK-253, shared with the bot): tier-1 nearest (2D)
+	// mine this team can mine NOW, tier-2 nearest enemy-occupied non-depleted
+	// mine (a wait target), null = everything depleted or none exist. The
+	// old FindNearestSameTeamGoldNode died here (TASK-254): the team filter
+	// is gone — occupancy replaces it.
+	AGoldNode* Best = AGoldNode::FindBestMineFor(GetWorld(), Team, GetActorLocation());
+	TargetGoldNode = Best;
+
+	if (Best)
 	{
-		return nullptr;
+		// re-arm the endgame log (defensive: depletion is one-way, so a null
+		// finder normally never turns non-null again within one match)
+		bLoggedNoMineAvailable = false;
+	}
+	else if (!bLoggedNoMineAvailable)
+	{
+		// the all-depleted endgame — the INTENDED income death (plan-of-
+		// record). Log, not Error/Warning (demoted per the plan: this is a
+		// normal state now); the miner idles in place, the poll re-seeks.
+		bLoggedNoMineAvailable = true;
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("AMinerUnit '%s': no minable or waitable mine (all depleted, or none placed) — idling in place; the poll keeps re-seeking."),
+			*GetNameSafe(this));
 	}
 
-	const FVector MyLocation = GetActorLocation();
+	return Best;
+}
 
-	AGoldNode* BestNode = nullptr;
-	float BestDistance = TNumericLimits<float>::Max();
-
-	// actor iteration per spec — two nodes in L_Arena, trivially cheap once at
-	// BeginPlay. 2D distance for consistency with the arrival metric (flat
-	// arena; the node has no collision for a closest-point measure anyway).
-	for (TActorIterator<AGoldNode> It(World); It; ++It)
+void AMinerUnit::EndMineTenure()
+{
+	// Un-arrive (idempotent — every flag write below is a no-op the second
+	// time): shared by the NotifyMineDepleted eviction seam and the poll's
+	// defensive stale-mine path. NEVER touches the mine registry — callers
+	// own that side (Deplete() already emptied it; EndPlay unregisters
+	// explicitly; the stale path has no mine left to talk to).
+	if (bIncomeActive)
 	{
-		AGoldNode* Node = *It;
-		if (!IsValid(Node) || Node->GetTeam() != Team)
+		if (ASiegePlayerState* OwnerState = CachedOwnerState.Get())
 		{
-			continue;
+			// the SAME state we registered with (TASK-024 contract). Income ⊆
+			// alive holds at every step: the alive count is untouched here —
+			// only death (EndPlay) unregisters it.
+			OwnerState->RemoveMinerIncome();
 		}
-
-		const float Distance = static_cast<float>(FVector::Dist2D(MyLocation, Node->GetActorLocation()));
-		if (Distance < BestDistance)
-		{
-			BestNode = Node;
-			BestDistance = Distance;
-		}
+		// else: the owning state vanished — its counters died with it. The
+		// flag still clears so death bookkeeping can never double-Remove;
+		// EndPlay owns the vanished-state warning (no duplicate here).
+		bIncomeActive = false;
 	}
 
-	return BestNode;
+	// per-tenure latch OFF (TASK-254): the next registered arrival re-latches
+	// and re-adds income — the M2 one-way-per-lifetime semantics are gone
+	// (header doc)
+	bArrivedAtNode = false;
+
+	// §6 (TASK-179): an evicted miner mines no more — clink off until the
+	// next tenure's arrival restarts it
+	StopMiningClink();
+
+	// whatever queue comes next is a new wait episode
+	bLoggedWaitingAtMine = false;
+}
+
+void AMinerUnit::NotifyMineDepleted(AGoldNode* DepletedMine)
+{
+	// TASK-253's PINNED call-site contract (GoldNode.cpp Deplete()): when
+	// this fires, the mine has ALREADY latched bDepleted, emptied its
+	// registry and released its claim — so no UnregisterArrivedMiner call
+	// here (it would be a no-op), and the re-seek below can never re-pick
+	// this mine (FindBestMineFor skips depleted mines). Fired at most once
+	// per miner per depletion, only for still-valid miners.
+	//
+	// Runs on FROZEN miners too (the accepted post-match drain quirk: an
+	// occupied mine can deplete after the match-end freeze while frozen
+	// miners stand at its ring). The books stay balanced — EndPlay's death
+	// bookkeeping sees bIncomeActive == false afterward, so the PlayAgain
+	// sweep never double-Removes — and no movement follows: FreezeAI cleared
+	// the poll, so the re-seek never fires for a frozen miner.
+	EndMineTenure();
+
+	// Drop the dead target. It IS DepletedMine in every reachable flow (a
+	// miner only ever registers at TargetGoldNode, and an ARRIVED miner never
+	// retargets); nulled unconditionally so even a hypothetical mismatch
+	// forces a clean re-seek. The 0.25 s poll re-seeks via SeekBestMine —
+	// walk the next mine, queue at an enemy-claimed one, or idle out the
+	// all-depleted endgame.
+	TargetGoldNode = nullptr;
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("AMinerUnit '%s': evicted from depleted mine '%s' — re-seeking on the next poll."),
+		*GetNameSafe(this), *GetNameSafe(DepletedMine));
 }

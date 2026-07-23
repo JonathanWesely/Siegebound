@@ -140,8 +140,15 @@ protected:
 	 *                 Building (incl. the Set II towers) → cheapest castle-front
 	 *                 (unit — BotCastleSpawnOffset in front of Castle_Red, M7.6
 	 *                 ruling #1) or between the intruder and Castle_Red (building).
-	 *    2. ECONOMY — half clear → a Miner (under the target + §3.3 cap) or a Deep
-	 *                 Mine (building-routed economy, no cap; §4 M4).
+	 *    2. ECONOMY — half clear → 2a a Miner (under the target + §3.3 cap) toward
+	 *                 the BEST AVAILABLE MINE (AGoldNode::FindBestMineFor — THE
+	 *                 single finder miners retarget through; W1-PREP mirrored
+	 *                 mines, TASK-256). Finder null = every mine depleted or none
+	 *                 exist ⇒ 2a is SKIPPED entirely (never buy a doomed miner;
+	 *                 logged once per state change, not per tick). Else 2b a Deep
+	 *                 Mine (building-routed economy, no cap; §4 M4) anchored at
+	 *                 the SAME finder result, castle-front fallback when no mine
+	 *                 is available (the all-depleted endgame economy).
 	 *    3. SPELLS  — §4 M5 extension (TASK-102): 3a Fireball at a cluster of >=
 	 *                 FireballClusterMinUnits player units (cluster radius = the
 	 *                 Fireball row's AoERadius), cast at the cluster centroid; else
@@ -214,7 +221,7 @@ protected:
 
 	// --- §4 ordered-rule tuning (mechanic rules → UPROPERTY defaults, not CSV columns — CONVENTIONS) ---
 
-	/** Rule 2 target: while ALIVE miners are fewer than this AND the half is clear, the bot builds economy. Distinct from the §3.3 hard cap of 6 (CanAddMiner). // GDD §4 — reach ~3 miners while idle */
+	/** Rule 2a target: while ALIVE miners are fewer than this AND the half is clear AND a mine is available (FindBestMineFor non-null — TASK-256), the bot builds economy. Distinct from the §3.3 hard cap of 6 (CanAddMiner). // GDD §4 — reach ~3 miners while idle */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot", meta = (ClampMin = "0"))
 	int32 TargetMinerCount = 3;
 
@@ -309,7 +316,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
 	float SwarmSpawnRadius = 300.f; // GDD §3.0
 
-	/** How far in FRONT of GoldNode_Red (toward the centerline) a rule-2 miner spawns, so it walks the last stretch to the node like the player's miners. */
+	/**
+	 *  How far SHORT of the rule-2a target mine (2D, toward the bot's own castle)
+	 *  a miner materializes, so it walks the last stretch to the mine like the
+	 *  player's miners. W1-PREP mirrored mines (TASK-256): formerly GoldNode_Red-
+	 *  relative — the target is now whatever AGoldNode::FindBestMineFor returns,
+	 *  and the desired point then clamps to the bot's own half (spawn law: the
+	 *  bot NEVER spawns on the Blue half). For a Blue-half mine the clamp lands
+	 *  the spawn at the centerline and the miner WALKS the field to the mine —
+	 *  cross-field walks are CORRECT behavior (plan-of-record; TASK-258 watch
+	 *  list, not a bug).
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
 	float MinerNodeApproachOffset = 400.f;
 
@@ -332,10 +349,6 @@ protected:
 	/** Fallback Castle_Red world location when no Red ACastle is found (world axes, M7.6 10× scale-up: +25000,0). Live actor lookup is preferred. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement")
 	FVector CastleRedFallbackLocation = FVector(25000.f, 0.f, 0.f);
-
-	/** Fallback GoldNode_Red world location when no Red AGoldNode is found (world axes, M7.6: +24200,0 — the node stays 800 units in front of Castle_Red, so it moved WITH the castle to preserve the miner economy). Live actor lookup is preferred. */
-	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement")
-	FVector GoldNodeRedFallbackLocation = FVector(24200.f, 0.f, 0.f);
 
 private:
 
@@ -398,9 +411,6 @@ private:
 	/** Live Castle_Red world location (nearest same-team ACastle), else CastleRedFallbackLocation. */
 	FVector GetCastleRedLocation() const;
 
-	/** Live GoldNode_Red world location (nearest same-team AGoldNode), else GoldNodeRedFallbackLocation. */
-	FVector GetGoldNodeRedLocation() const;
-
 	/**
 	 *  Finds a placement-valid spawn point near Desired by snapping onto the
 	 *  navmesh (ProjectPointToNavigation) and honoring the mirrored §3.5 rules —
@@ -435,4 +445,16 @@ private:
 
 	/** One-shot latch for the no-navmesh degrade-open warning (ComputeValidBotSpawnPoint). */
 	bool bWarnedNoNavData = false;
+
+	/**
+	 *  Rule-2 mine-lockout log latch (W1-PREP mirrored mines, TASK-256): set
+	 *  after logging that AGoldNode::FindBestMineFor returned null (every mine
+	 *  depleted or none exist — rule 2a skipped), cleared (with one recovery
+	 *  line) when a mine is available again — so the lockout is logged ONCE PER
+	 *  STATE CHANGE, never per 2 s tick. Diagnostics only, so both lines stay on
+	 *  LogGitClaudeUnrealTest (LogSiegeBot's one-line-per-FIRED-rule law).
+	 *  Self-heals across Play Again: the first rule-2 tick of a fresh match
+	 *  observes the freshly scattered mines and clears it.
+	 */
+	bool bLoggedMineLockout = false;
 };
