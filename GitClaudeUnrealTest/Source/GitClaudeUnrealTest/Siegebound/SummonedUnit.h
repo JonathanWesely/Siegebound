@@ -383,24 +383,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Commands", meta = (ClampMin = "0"))
 	float DefendRadius = 2500.f;
 
-	/**
-	 *  Shield Wall ATTACK enemy-base engage radius (W1 TASK-280): under the player's ATTACK
-	 *  stance, a Blue Standard unit only prefers a spawn-box DEFENDER over the enemy castle
-	 *  once it is within this 2D closest-point distance of that castle; during the long
-	 *  mid-field approach it marches the STABLE enemy castle instead. This fixes the 10x-arena
-	 *  march-freeze: FindNearestEnemyInSpawnBox's nearest-to-self result flips as the bot's
-	 *  spawn box turns over each wave, and re-picking a box defender every 0.25 s state tick
-	 *  flipped Goal every tick — so EnterAdvance re-issued a ~full-field MoveToActor every tick
-	 *  and the unit never followed a path to completion. Gating by proximity makes the approach
-	 *  identical to the legacy/DEFEND stable-goal march (proven healthy full-field at runtime),
-	 *  while the box-defender-first intent is preserved close in (short remaining path ⇒ a
-	 *  shuffling goal re-paths cheaply). Default 3500 uu comfortably covers the (840,840) spawn
-	 *  box from the castle walls; FLAGGED tunable for the 10x arena (mirrors DefendRadius). Lives
-	 *  HERE per CONVENTIONS (the unit owns it). // Shield Wall — Attack engage radius
-	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Commands", meta = (ClampMin = "0"))
-	float EnemyBaseEngageRadius = 3500.f;
-
 	/** Seconds between state-machine checks (spec: ~0.25 s, never per-tick). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|AI", meta = (ClampMin = "0.05"))
 	float StateCheckInterval = 0.25f;
@@ -562,8 +544,8 @@ private:
 	 *  PC.HasIssuedCommand() — so the LEGACY body below is byte-for-byte unchanged whenever
 	 *  the gate is false (bot/Red units, miners, and player units pre-first-command). Never
 	 *  bypasses the freeze gating (UpdateState early-returns on frozen before this runs).
-	 *    • ATTACK — self-defense AcquireTarget UNCHANGED; only the no-in-aggro march goal
-	 *      changes: FindNearestEnemyInSpawnBox(enemy castle) ?? the enemy castle.
+	 *    • ATTACK — mirrors the legacy Standard body exactly (TASK-282): self-defense
+	 *      AcquireTarget AND the no-in-aggro march goal = the nearest enemy castle.
 	 *    • HOLD   — target = AcquireEnemyNearPoint(HoldLocation, HoldRadius); goal = that
 	 *      target ?? march to HoldLocation via EnterAdvanceToLocation (Idle on arrival).
 	 *    • DEFEND — target = AcquireEnemyNearPoint(own castle, DefendRadius); goal = that
@@ -579,14 +561,6 @@ private:
 	 *  rule are kept identical for behavior consistency. Null-safe (no world ⇒ nullptr).
 	 */
 	AActor* AcquireEnemyNearPoint(const FVector& Center, float Radius) const;
-
-	/**
-	 *  Shield Wall ATTACK spawn-box clear (W1 TASK-275): nearest alive enemy ITeamAgent
-	 *  (unit/building) whose location passes EnemyCastle->IsPointInSpawnBox — the enemy
-	 *  castle itself is excluded (we march it as the fallback goal). Returns nullptr when
-	 *  EnemyCastle is null or no enemy sits inside its spawn box.
-	 */
-	AActor* FindNearestEnemyInSpawnBox(const ACastle* EnemyCastle) const;
 
 	/** Nearest standing OWN-team castle (Team == ours, not destroyed) — the Shield Wall DEFEND fallback goal. Mirror of FindNearestEnemyCastle (W1 TASK-275). */
 	ACastle* FindOwnCastle() const;

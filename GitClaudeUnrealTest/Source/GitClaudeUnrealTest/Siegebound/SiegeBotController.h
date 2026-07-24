@@ -553,4 +553,19 @@ private:
 	 *  observes the freshly scattered mines and clears it.
 	 */
 	bool bLoggedMineLockout = false;
+
+	/**
+	 *  Rule-2 spawn-failure streak latch (TASK-267). The rule-2 ladder no longer
+	 *  ABANDONS the decision tick when a Miner (2a) / Deep Mine (2b) cannot find a
+	 *  valid spawn point — it FALLS THROUGH to rules 3/4/5 (manager ruling: the
+	 *  failure path spends no gold and confirms no card, so falling through strictly
+	 *  ADDS reachable behavior). The two failure lines are promoted from Verbose to
+	 *  Log so a persistent stall is visible at default verbosity, but this latch
+	 *  emits them at most ONCE per contiguous failure streak: set on the first rule-2
+	 *  spawn failure, cleared on the next SUCCESSFUL rule-2 spawn (2a or 2b) and on
+	 *  match reset (ResetBot) — so a re-failing rule 2 cannot spam the 2 s cadence.
+	 *  Diagnostics only (LogGitClaudeUnrealTest); NOT a UPROPERTY and not editor-
+	 *  exposed. Transient — reset state, never serialized.
+	 */
+	bool bRule2SpawnFailureLogged = false;
 };

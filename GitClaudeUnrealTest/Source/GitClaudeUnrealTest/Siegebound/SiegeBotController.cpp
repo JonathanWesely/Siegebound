@@ -478,15 +478,22 @@ void ASiegeBotController::EvaluateDecisions()
 						*Chosen.CardID.ToString(), Chosen.Row->Cost,
 						SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z,
 						*GetNameSafe(NearestIntruder), GoldBefore, BotState->GetGold());
+					return; // rule 1 fired: it owns this tick (TASK-267: return only on a CONFIRMED play)
 				}
 			}
 			else
 			{
+				// TASK-267 audit: rule 1 shares the IDENTICAL abandon-the-tick trap. With an intruder present and an
+				// affordable defensive card, a persistent spawn failure used to return and starve rules 3/4/5 (the
+				// Fireball/Lightning/attack the bot wants precisely when it CANNOT place a blocker). Fall through
+				// instead; no gold spent, no card confirmed. Verbose kept - the once-per-streak Log promotion is
+				// rule-2-specific per the TASK-267 spec.
 				UE_LOG(LogGitClaudeUnrealTest, Verbose,
-					TEXT("ASiegeBotController '%s': Rule 1 wanted '%s' but found no valid spawn point this tick — retrying next tick."),
+					TEXT("ASiegeBotController '%s': Rule 1 wanted '%s' but found no valid spawn point - falling through to the lower rules this tick (TASK-267)."),
 					*GetNameSafe(this), *Chosen.CardID.ToString());
 			}
-			return; // rule 1 fired: it owns this tick (a refused point simply retries next tick)
+			// TASK-267: no unconditional return - a rule-1 spawn FAILURE now falls through to rules 3/4/5 (rule 2
+			// is skipped below while the intruder stands). Only a CONFIRMED play returns (added in the branch above).
 		}
 		// no AFFORDABLE defensive card → rule 1 did NOT fire; fall through
 	}
@@ -570,15 +577,25 @@ void ASiegeBotController::EvaluateDecisions()
 								*GetNameSafe(BestMine),
 								SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z,
 								BotState->GetAliveMinerCount(), TargetMinerCount, GoldBefore, BotState->GetGold());
+							bRule2SpawnFailureLogged = false; // TASK-267: a successful rule-2 spawn clears the failure streak
+							return; // rule 2 fired (Miner) - it owns this tick
 						}
 					}
 					else
 					{
-						UE_LOG(LogGitClaudeUnrealTest, Verbose,
-							TEXT("ASiegeBotController '%s': Rule 2 wanted a Miner but found no valid spawn point this tick."),
-							*GetNameSafe(this));
+						// TASK-267: no valid spawn point. FALL THROUGH to rules 3/4/5 instead of ABANDONING the tick (the old
+						// return below permanently re-stalled the ladder: the Miner stayed in hand, AliveMinerCount stayed 0,
+						// rule 2's precondition stayed satisfied, and rules 3/4/5 never ran again). No gold spent, no card
+						// confirmed. Promoted Verbose -> Log, emitted at most once per contiguous failure streak (the latch).
+						if (!bRule2SpawnFailureLogged)
+						{
+							bRule2SpawnFailureLogged = true;
+							UE_LOG(LogGitClaudeUnrealTest, Log,
+								TEXT("ASiegeBotController '%s': Rule 2 wanted a Miner but found no valid spawn point - FALLING THROUGH to the lower rules this tick (TASK-267; logged once per failure streak)."),
+								*GetNameSafe(this));
+						}
 					}
-					return; // rule 2 fired (Miner)
+					// no return: a failed rule-2a spawn falls through to 2b / rules 3-5 (TASK-267)
 				}
 			}
 
@@ -631,15 +648,24 @@ void ASiegeBotController::EvaluateDecisions()
 								*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost,
 								*AnchorDesc,
 								SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z, GoldBefore, BotState->GetGold());
+							bRule2SpawnFailureLogged = false; // TASK-267: a successful rule-2 spawn clears the failure streak
+							return; // rule 2 fired (Deep Mine) - it owns this tick
 						}
 					}
 					else
 					{
-						UE_LOG(LogGitClaudeUnrealTest, Verbose,
-							TEXT("ASiegeBotController '%s': Rule 2 wanted a Deep Mine but found no valid spawn point this tick."),
-							*GetNameSafe(this));
+						// TASK-267: no valid spawn point. FALL THROUGH to rules 3/4/5 instead of ABANDONING the tick (same
+						// permanent re-stall trap as 2a). No gold spent, no card confirmed. Promoted Verbose -> Log; shares
+						// the bRule2SpawnFailureLogged streak latch with 2a (one line per streak covers both sub-rules).
+						if (!bRule2SpawnFailureLogged)
+						{
+							bRule2SpawnFailureLogged = true;
+							UE_LOG(LogGitClaudeUnrealTest, Log,
+								TEXT("ASiegeBotController '%s': Rule 2 wanted a Deep Mine but found no valid spawn point - FALLING THROUGH to the lower rules this tick (TASK-267; logged once per failure streak)."),
+								*GetNameSafe(this));
+						}
 					}
-					return; // rule 2 fired (Deep Mine)
+					// no return: a failed rule-2b spawn falls through to rules 3-5 (TASK-267)
 				}
 			}
 		}
@@ -786,15 +812,20 @@ void ASiegeBotController::EvaluateDecisions()
 						TEXT("[Bot %s] Rule 4 (Attack): played unit '%s' (cost %d) castle-front (%.0f, %.0f, %.0f) — marching (M7.6 ruling #1) — gold %d->%d."),
 						*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost,
 						SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z, GoldBefore, BotState->GetGold());
+					return; // rule 4 fired - it owns this tick
 				}
 			}
 			else
 			{
+				// TASK-267 audit: rule 4 shares the IDENTICAL abandon-the-tick trap. With gold >= AttackBankThreshold
+				// (gold only accrues, so the gate stays satisfied) a persistent attack-spawn failure used to return
+				// and starve rule 5 (Cycle) for the rest of the match. Fall through instead; no gold spent, no card
+				// confirmed. Verbose kept - the once-per-streak Log promotion is rule-2-specific per the TASK-267 spec.
 				UE_LOG(LogGitClaudeUnrealTest, Verbose,
-					TEXT("ASiegeBotController '%s': Rule 4 wanted '%s' but found no valid spawn point this tick."),
+					TEXT("ASiegeBotController '%s': Rule 4 wanted '%s' but found no valid spawn point - falling through to rule 5 this tick (TASK-267)."),
 					*GetNameSafe(this), *Chosen.CardID.ToString());
 			}
-			return; // rule 4 fired
+			// no return: a failed rule-4 spawn falls through to rule 5 (TASK-267)
 		}
 	}
 
@@ -1545,6 +1576,10 @@ void ASiegeBotController::ResetBot()
 	{
 		BotPS->ResetEconomy();
 	}
+
+	// TASK-267: clear the rule-2 spawn-failure streak latch so the first spawn failure of the fresh
+	// match logs once (the bLoggedMineLockout latch self-heals on the first rule-2 tick of the match).
+	bRule2SpawnFailureLogged = false;
 
 	// 3) A clean decision cadence for the new match (clears any running/stale handle
 	//    first). TASK-047 stops the timer at match end; Play Again restarts it here.

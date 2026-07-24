@@ -1279,11 +1279,21 @@ void ASummonedUnit::UpdateStateStandardCommanded(const ASiegePlayerController& P
 	case ESiegeUnitCommand::Attack:
 	default:
 	{
-		// ATTACK: local self-defense is UNCHANGED — the leash/reacquire + AcquireTarget +
-		// the in-aggro attack/advance below mirror the legacy body exactly. The ONLY change
-		// is the march GOAL when nothing is in aggro: clear any enemy unit/building sitting
-		// inside the enemy castle's spawn box FIRST, then the castle itself. On arrival the
-		// normal aggro (AcquireTarget) picks up those defenders as they enter range.
+		// ATTACK: mirrors the legacy Standard body EXACTLY — the leash/reacquire + AcquireTarget
+		// + the in-aggro attack/advance below, AND the no-in-aggro march goal (the stable enemy
+		// castle). TASK-282 (arena final-approach halt fix): the prior box-defender-FIRST goal
+		// substitution (FindNearestEnemyInSpawnBox, gated within EnemyBaseEngageRadius by TASK-280)
+		// is REMOVED. That box turns over every bot wave, so its nearest-to-self result FLIPPED
+		// every 0.25 s state tick — EnterAdvance re-pathed each tick and the unit milled near the
+		// radius ("stopped just short"); and while ANY box defender remained the castle was never
+		// the sustained goal/CurrentTarget, so EnterAttack on the castle never fired (the bot
+		// endlessly repopulates its box, so the castle was never reached). Marching the stable
+		// castle instead makes the WHOLE ATTACK approach the proven-good legacy castle-kill
+		// (runtime-verified on this build: a full-field marcher drove the enemy castle to 0 HP /
+		// destroyed): AcquireTarget still engages any defender that enters AggroRadius on the way,
+		// and at the wall the castle is acquired as CurrentTarget and attacked. This also SUBSUMES
+		// the TASK-280 anti-freeze — the goal is now the stable castle across the entire approach,
+		// not just mid-field. A null/destroyed enemy castle leaves Goal null ⇒ EnterIdle (match over).
 		if (CurrentTarget && (!IsTargetAlive(CurrentTarget) || GetDistanceToTarget(MyLocation, CurrentTarget) > LeashRange))
 		{
 			CurrentTarget = nullptr;
@@ -1297,26 +1307,7 @@ void ASummonedUnit::UpdateStateStandardCommanded(const ASiegePlayerController& P
 		AActor* Goal = CurrentTarget;
 		if (!Goal)
 		{
-			AActor* EnemyCastleActor = FindNearestEnemyCastle();
-			const ACastle* EnemyCastle = Cast<ACastle>(EnemyCastleActor); // FindNearestEnemyCastle only ever returns an ACastle
-			// TASK-280 (arena march-freeze fix): only PREFER a spawn-box defender once we are
-			// actually NEAR the enemy base. On the 10x field the box defenders sit a full
-			// base-approach (~a half-field) away, and FindNearestEnemyInSpawnBox's nearest-to-self
-			// result FLIPS as the bot's spawn box turns over every wave — re-picking it on every
-			// 0.25 s state tick flips Goal every tick, so EnterAdvance's bGoalChanged re-issues a
-			// ~full-field MoveToActor every tick and the unit never follows one path to completion
-			// (the freeze). Marching the STABLE enemy castle until within EnemyBaseEngageRadius
-			// makes the long approach byte-identical to the legacy / DEFEND stable-goal march (one
-			// path, followed through — the path proven healthy full-field at runtime, TASK-280);
-			// the box-defender-FIRST intent is preserved close in, where the remaining path is
-			// short so a shuffling goal re-paths cheaply. A null/destroyed enemy castle leaves
-			// Goal null ⇒ EnterIdle below, exactly as before (match over).
-			AActor* BoxDefender = nullptr;
-			if (EnemyCastle && GetDistanceToTarget(MyLocation, EnemyCastleActor) <= EnemyBaseEngageRadius)
-			{
-				BoxDefender = FindNearestEnemyInSpawnBox(EnemyCastle);
-			}
-			Goal = BoxDefender ? BoxDefender : EnemyCastleActor;
+			Goal = FindNearestEnemyCastle();
 		}
 
 		if (!Goal)
@@ -1412,58 +1403,6 @@ AActor* ASummonedUnit::AcquireEnemyNearPoint(const FVector& Center, float Radius
 
 	const float PairDistance = GetDistanceToTarget(BestPawn->GetActorLocation(), BestOther);
 	return (PairDistance <= TieBreakDistance) ? BestPawn : BestOther;
-}
-
-AActor* ASummonedUnit::FindNearestEnemyInSpawnBox(const ACastle* EnemyCastle) const
-{
-	if (!EnemyCastle)
-	{
-		return nullptr;
-	}
-
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return nullptr;
-	}
-
-	TArray<AActor*> TeamAgents;
-	UGameplayStatics::GetAllActorsWithInterface(World, UTeamAgent::StaticClass(), TeamAgents);
-
-	const FVector MyLocation = GetActorLocation();
-
-	AActor* Best = nullptr;
-	float BestDistance = TNumericLimits<float>::Max();
-
-	for (AActor* Candidate : TeamAgents)
-	{
-		if (Candidate == this || Candidate == EnemyCastle || !IsTargetAlive(Candidate))
-		{
-			// exclude the enemy castle itself — its own center trivially passes its box test,
-			// and it is the ATTACK fallback goal anyway; we want the DEFENDERS in the box.
-			continue;
-		}
-
-		const ITeamAgent* Agent = Cast<ITeamAgent>(Candidate);
-		if (!Agent || Agent->GetTeamId() == Team)
-		{
-			continue;
-		}
-
-		if (!EnemyCastle->IsPointInSpawnBox(Candidate->GetActorLocation()))
-		{
-			continue;
-		}
-
-		const float Distance = GetDistanceToTarget(MyLocation, Candidate);
-		if (Distance < BestDistance)
-		{
-			Best = Candidate;
-			BestDistance = Distance;
-		}
-	}
-
-	return Best;
 }
 
 ACastle* ASummonedUnit::FindOwnCastle() const
