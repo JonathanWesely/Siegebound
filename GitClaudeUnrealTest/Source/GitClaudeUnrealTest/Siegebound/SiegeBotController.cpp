@@ -10,6 +10,7 @@
 #include "TimerManager.h"
 #include "UObject/SoftObjectPtr.h"
 #include "Siegebound/Building.h"
+#include "Siegebound/CaptureZone.h" // TASK-262: Red-owned mid zone spawn gate (CanTeamSpawnHere) — complete type, methods dereferenced
 #include "Siegebound/CardRow.h"
 #include "Siegebound/Castle.h"
 #include "Siegebound/DeckComponent.h"
@@ -1141,9 +1142,16 @@ bool ASiegeBotController::ComputeValidBotSpawnPoint(const FVector& Desired, bool
 
 bool ASiegeBotController::IsBotHalfPointClear(const FVector& Point, bool bIsBuilding) const
 {
-	if (!IsOnOwnHalf(Point.X))
+	// W1-PREP additions 3 (TASK-262 — the bot mirror of TASK-261): the spawn gate is
+	// no longer the whole own-half. A point is spawn-eligible ONLY if it lies inside
+	// the Red spawn box around Castle_Red OR inside a Red-owned capture zone. This
+	// REPLACES the old `!IsOnOwnHalf(Point.X)` early-out; everything below (plinth
+	// keep-out, building clearance) is UNCHANGED and still applies. (IsOnOwnHalf's
+	// OTHER callers — miner-approach clamp, own-half unit/hero iteration — are
+	// TARGET/APPROACH logic and stay half-based; only THIS spawn gate moves.)
+	if (!IsPointInBotSpawnBox(Point) && !IsPointInCapturedZone(Point))
 	{
-		return false; // NEVER the enemy (Blue) half
+		return false; // outside both the Red castle box and any Red-owned mid zone
 	}
 
 	UWorld* World = GetWorld();
@@ -1188,6 +1196,37 @@ bool ASiegeBotController::IsBotHalfPointClear(const FVector& Point, bool bIsBuil
 		}
 	}
 	return true;
+}
+
+bool ASiegeBotController::IsPointInBotSpawnBox(const FVector& Point) const
+{
+	// Red spawn box: a 2D square centered on Castle_Red, half-extent SpawnBoxHalfExtent.
+	// GetCastleRedLocation() is the SAME live team-filtered TActorIterator<ACastle> the
+	// controller already uses and returns CastleRedFallbackLocation (+25000,0) when no
+	// Red castle is found — so the existing +25000 fallback is preserved here. This box
+	// replaces the old whole-own-half spawn gate (W1-PREP additions 3, TASK-262).
+	const FVector CastleRed = GetCastleRedLocation();
+	return FMath::Abs(Point.X - CastleRed.X) <= SpawnBoxHalfExtent.X &&
+		FMath::Abs(Point.Y - CastleRed.Y) <= SpawnBoxHalfExtent.Y;
+}
+
+bool ASiegeBotController::IsPointInCapturedZone(const FVector& Point) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	// The single mid capture zone (TASK-260); null-safe if absent = pre-capture
+	// behavior (mid unspawnable). CanTeamSpawnHere folds the box test AND the
+	// Red-ownership match into one call (Neutral/Blue owner => false).
+	for (TActorIterator<ACaptureZone> It(World); It; ++It)
+	{
+		const ACaptureZone* Zone = *It;
+		return Zone && Zone->CanTeamSpawnHere(ETeamId::Red, Point);
+	}
+	return false;
 }
 
 UClass* ASiegeBotController::ResolveBotCardActorClass(FName CardID, bool bIsBuilding) const

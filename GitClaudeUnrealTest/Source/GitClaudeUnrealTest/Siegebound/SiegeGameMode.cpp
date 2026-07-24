@@ -11,6 +11,7 @@
 #include "Siegebound/Barracks.h"
 #include "Siegebound/BattlefieldScatter.h"
 #include "Siegebound/Building.h"
+#include "Siegebound/CaptureZone.h"
 #include "Siegebound/Castle.h"
 #include "Siegebound/HeroCharacter.h"
 #include "Siegebound/Projectile.h"
@@ -572,6 +573,18 @@ void ASiegeGameMode::PlayAgain()
 	for (TActorIterator<ACastle> It(GetWorld()); It; ++It)
 	{
 		It->ResetCastle();
+	}
+
+	// 3a2) Capture zone back to Neutral (W1-PREP additions 3, TASK-260 — §3.9
+	//      reset path). Play Again destroys every unit (step 2), so the next
+	//      capture eval would see an empty zone and LATCH the pre-reset owner
+	//      (empty = unchanged) — a Blue/Red mid zone would carry over. Force it
+	//      Neutral here, the same collect-free TActorIterator pattern as the
+	//      ResetCastle loop above. Null-safe: no CaptureZone in the level = a
+	//      clean no-op (pre-capture-feature behavior).
+	for (TActorIterator<ACaptureZone> It(GetWorld()); It; ++It)
+	{
+		It->ResetCaptureZone();
 	}
 
 	// 3b) Match clock back to 0:00, overtime latch cleared, clock running again

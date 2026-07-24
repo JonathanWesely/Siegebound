@@ -871,6 +871,120 @@ Plan-of-record: `C:\Users\wesel\.claude\plans\i-am-a-bit-sunny-bird.md` (mines v
 
 **WATCH (recorded 2026-07-22, follow-up to TASK-259 — separate item, NOT fixed by the mesh Z fix):** the SECONDARY Ogre-near-hill spawn-lift (DIAG-floating-units.md SESSION-1 Rank-2) — nav-projection/collision-adjust raising the big Ogre CAPSULE (not the mesh) when it spawns near a hill. The TASK-259 mesh fix removes the dominant +145 mesh offset; this residual capsule lift is a smaller, separate item. If it reads badly at W1 → register a gameplay-programmer task (spawn nav-projection extent / collision-adjust tuning for tall capsules); until then it's a watch, not a task.
 
+### W1-PREP appendix 3 (2026-07-23) — SPAWN-BOX SHRINK + CENTERLINE REMOVAL + CAPTURABLE MID ZONE (TASK-260..264; Jonathan-approved directive)
+
+**Jonathan's directive (verbatim, 2026-07-23 — a W1-gate condition, "before I approve of the W1 playtest"):** *"You have a white line down the middle that splits the arena in half, on one half only enemy units can spawn, on the other only your units. Shrink this spawnable area to a small square around your castle, about twice the length and twice the width of the castle (4× the area), centered on the castle. Get rid of the white line in the middle since it no longer serves a purpose. Add a small square region in the middle, same size as the spawnable region on either side, except this one is capturable — when captured, you can spawn units there. You capture it by having 1 or more units in the region when there are no enemy units in the region; if it's not captured by either side then no units can spawn there."* Four deliverables → 5 tasks (3 C++ each QA'd, 1 art, 1 build-integration = the updated W1 build). **Law added FIRST:** CONVENTIONS "Arena 10× scale-up & LOD/perf (M7.6)" → "W1-PREP additions 3" (ACaptureZone / ECaptureState / SpawnBoxHalfExtent / capture rule / M_CaptureZone / centerline deletion / branch-ownership extension to SiegePlayerController). **Lane:** ALL branch-lane; branch ownership extends to `SiegePlayerController.{h,cpp}` (SiegeBotController already frozen by the mines feature) + new `CaptureZone.{h,cpp}` + `M_CaptureZone` + the `CaptureZone_Center` L_Arena instance + the centerline-actor deletion — frozen on main until the Phase-6 merge. **Integration:** TASK-264 (compile + centerline delete + place CaptureZone_Center + PIE capture-suite + branch commit) is the NEW pre-W1 build folded in AHEAD of Jonathan's W1 look (TASK-219 is the acceptance gate for this too). **FLAGGED for Jonathan (do not block — sane defaults chosen, see the "manager decisions" flags below):** exact box size (default 840 half-extent = 2× castle footprint); sticky vs neutralize-on-enemy-entry ownership (default STICKY); does the hero count as a "unit" for capture (default YES); does the mid zone need a visible owner-tint (default YES, subtle decal); what happens to a unit/building the shrink strands outside the new box (default: existing placed actors are untouched — only NEW placement is gated).
+
+#### TASK-260 — [S-A] ACaptureZone actor: ownership state + interval unit-count capture eval + spawn API (C++, branch) [DISPATCH FIRST]
+- assignee: gameplay-programmer
+- status: qa-passed
+- blocked-by: none
+- JONATHAN RULING (2026-07-23, overrides the board's STICKY default): CONTESTED (both teams ≥1 inside) ⇒ NEUTRALIZE, NOT sticky ("live tug-of-war, must be held"). SHIPPED behavior = Contested→Neutral. The `bNeutralizeWhenContested` UPROPERTY toggle is KEPT (sticky survives as the off-state option) but now DEFAULTS **TRUE**. Empty (both 0) still latches the last owner (unchanged).
+- parallel-safe: yes (new files CaptureZone.{h,cpp} only; disjoint from every existing file)
+- spec: >
+    NEW actor `ACaptureZone` (`CaptureZone.h/.cpp`, AActor subclass, gameplay-actor plain-name law). Members: `ECaptureState`
+    enum `{ Neutral, Blue, Red }` (declared in the header); `ECaptureState CaptureOwner` (init Neutral — NOT named `Owner`,
+    shadow law); `FVector2D ZoneHalfExtent` (EditDefaultsOnly, default (840,840) — Jonathan's "same size as the spawn box");
+    `float CaptureEvalInterval` (EditDefaultsOnly, default 0.5). A `DecalComponent` (root or attached) that soft-loads
+    `/Game/Materials/M_CaptureZone` at BeginPlay and drives a color param `ZoneColor` by owner via a MID (Neutral gray /
+    Blue (0.05,0.30,1.00) / Red (1.00,0.10,0.05)); null-safe (missing material ⇒ no visual, mechanic still runs, log once).
+    API: `bool IsPointInZone(const FVector&) const` (2D box test on ZoneHalfExtent about the actor origin); `ECaptureState
+    GetCaptureOwner() const`. EVALUATION: a repeating timer (CaptureEvalInterval) counts friendly vs enemy UNITS inside the
+    box — "unit" = any `ASummonedUnit` (incl. miners) OR `AHeroCharacter` via `ITeamAgent::GetTeamId` (buildings/castles/
+    gold-nodes EXCLUDED); CAPTURE (CaptureOwner ← team + broadcast) when one team has ≥1 inside AND the enemy has 0 inside;
+    contested (both ≥1) OR empty (both 0) ⇒ NO change (STICKY — flagged default; add `bool bNeutralizeWhenContested`
+    EditDefaultsOnly default false if cheap, so the toggle exists). Delegate `FOnCaptureZoneOwnerChanged` → BlueprintAssignable
+    `OnCaptureOwnerChanged` (nothing binds this pass — HUD/VFX hook). Play-Again resets CaptureOwner→Neutral (expose a public
+    reset the reset path can call; match how ACastle/AGoldNode reset). Null-safe everywhere; compiles at TASK-264 (batch).
+    QA implied (shadow/include scans + LAWS review — the capture rule is symmetric, the eval never crashes on empty world).
+    Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/CaptureZone.{h,cpp}` (branch); `ECaptureState`, `CaptureOwner`, `ZoneHalfExtent`,
+    `CaptureEvalInterval`, `IsPointInZone`, `GetCaptureOwner`, `OnCaptureOwnerChanged`/`FOnCaptureZoneOwnerChanged`,
+    `ZoneColor` param, soft path `/Game/Materials/M_CaptureZone`. Law: CONVENTIONS "W1-PREP additions 3", gameplay-actor +
+    enum + delegate + shadow laws, M7.6 ownership extension.
+
+#### TASK-261 — [S-B] Player placement: shrink to castle box + capture-zone spawn (C++, branch)
+- assignee: gameplay-programmer
+- status: qa-passed
+- blocked-by: TASK-260 (reads the ACaptureZone API for the capture-spawn clause)
+- parallel-safe: yes (SiegePlayerController.{h,cpp}; disjoint from TASK-262's SiegeBotController files)
+- spec: >
+    Edit `SiegePlayerController.{h,cpp}`. REPLACE the `Hit.ImpactPoint.X <= PlacementMaxX` half-test (UpdatePlacementGhost,
+    ~:1236; also the log at ~:1033) with: valid iff (point ∈ own Blue spawn box) OR (point ∈ CaptureZone AND
+    GetCaptureOwner()==Blue). Own Blue spawn box = a 2D square centered on the owned Castle_Blue (team-filtered
+    `TActorIterator<ACastle>`, the existing pattern), half-extent `SpawnBoxHalfExtent` (FVector2D EditDefaultsOnly, default
+    (840,840)). Add helpers `IsPointInOwnSpawnBox` + `IsPointInCapturedZone` (the latter finds the single
+    `TActorIterator<ACaptureZone>`, null-safe if absent). KEEP the whole downstream composition UNCHANGED (navmesh
+    projection, IsPointInsideCastlePlinth, slope, obstacle & building clearance) — this task changes ONLY the first
+    ground/region gate. Retire `PlacementMaxX`. Do NOT touch anything else. ACCEPTANCE: player can place only inside the
+    castle box (minus the plinth) OR inside a Blue-owned mid zone; the whole-half is no longer placeable. QA implied
+    (shadow/include scans — note ACaptureZone + ACastle headers needed complete). Compile rides TASK-264. Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SiegePlayerController.{h,cpp}` (branch — JOINS the branch touched-files set);
+    `SpawnBoxHalfExtent`, `IsPointInOwnSpawnBox`, `IsPointInCapturedZone`. Law: CONVENTIONS "W1-PREP additions 3",
+    M7.6 ownership extension.
+
+#### TASK-262 — [S-C] Bot placement: shrink to castle box + capture-zone spawn (C++, branch)
+- assignee: gameplay-programmer
+- status: qa-passed
+- blocked-by: TASK-260 (reads the ACaptureZone API)
+- parallel-safe: yes (SiegeBotController.{h,cpp}; disjoint from TASK-261's SiegePlayerController files)
+- spec: >
+    Edit `SiegeBotController.{h,cpp}` — the MIRROR of TASK-261. In `IsBotHalfPointClear` (~:1142) REPLACE the
+    `if (!IsOnOwnHalf(Point.X)) return false` spawn gate with: allowed iff (point ∈ Red spawn box around Castle_Red) OR
+    (point ∈ CaptureZone AND GetCaptureOwner()==Red); everything else in that function (plinth keep-out, clearance) UNCHANGED.
+    Red spawn box = square centered on Castle_Red, half-extent `SpawnBoxHalfExtent` (FVector2D EditDefaultsOnly, default
+    (840,840)) — via the live `TActorIterator<ACastle>` (Red) with the existing +25000 fallback. Add `IsPointInBotSpawnBox`
+    + `IsPointInCapturedZone` (single `TActorIterator<ACaptureZone>`, null-safe). ⚠ SURGICAL: `IsOnOwnHalf` has OTHER callers
+    (miner-approach clamp ~:550/601, own-half unit/hero iteration ~:876/899) — those are TARGET/APPROACH logic, LEAVE THEM
+    UNTOUCHED; only the SPAWN gate in IsBotHalfPointClear (and ComputeValidBotSpawnPoint's use of it) changes. ACCEPTANCE:
+    bot places only inside the Red castle box OR a Red-owned mid zone; the ring-search still walks to a clear spot; the bot
+    can stage in mid once it captures. QA implied (shadow/include scans; confirm the IsOnOwnHalf non-spawn callers are
+    intact). Compile rides TASK-264. Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SiegeBotController.{h,cpp}` (branch — already in the branch set from the mines
+    feature); `SpawnBoxHalfExtent`, `IsPointInBotSpawnBox`, `IsPointInCapturedZone`. Law: CONVENTIONS "W1-PREP additions 3",
+    M3 bot ordered-rules law (do not disturb the LogSiegeBot decision trace).
+
+#### TASK-263 — [S-D] M_CaptureZone owner-tint decal material (art, editor, branch)
+- assignee: art-director
+- status: ready-for-integration
+- blocked-by: none (authored independently; ACaptureZone soft-loads it null-safe, so ordering vs TASK-260 is free)
+- parallel-safe: yes (new material asset; no shared file)
+- spec: >
+    Author `/Game/Materials/M_CaptureZone`: a DeferredDecal-domain material (STOCK NODES ONLY — Custom-HLSL ban; reuse the
+    `M_CenterlineStripe` / `M_SpellReticle` recipe) that renders a subtle ground-region fill/boundary for the mid capturable
+    zone and exposes a Vector parameter named exactly `ZoneColor` (the ACaptureZone MID drives it by owner: Neutral gray,
+    Blue (0.05,0.30,1.00), Red (1.00,0.10,0.05)). Translucent/low-intensity so it reads as "this square is capturable / who
+    holds it" without obscuring gameplay — a boundary ring or a soft tint fill, art-director's call at the §6 legibility bar.
+    Do NOT edit the doomed centerline material; this is a NEW asset. ACCEPTANCE: material compiles (seconds), `ZoneColor`
+    param present and drivable, previews cleanly as a floor decal. Post in 🎨 Art.
+- names: >
+    `/Game/Materials/M_CaptureZone` (DeferredDecal), vector param `ZoneColor`. Law: CONVENTIONS "W1-PREP additions 3",
+    Custom-HLSL ban, Material prefix table, M7.6 branch ownership (branch-born).
+
+#### TASK-264 — [S-E] Integration: compile batch + DELETE centerline actor + place CaptureZone_Center + PIE capture-suite + branch commit (build)
+- assignee: build-master
+- status: **done** (2026-07-23, build-master — compile GREEN (13.46 s, editor bounce cleared the Live Coding lock); `CenterlineMarker` (DecalActor_0, M_CenterlineStripe) DELETED from L_Arena — 0 DecalActors remain; `CaptureZone_Center` placed @ (0,0,0), ZoneHalfExtent (840,840), decal MID resolves M_CaptureZone gray (0.5,0.5,0.5). PIE suite: (c) Blue-alone→Blue + decal (0.05,0.30,1.00) PASS; (d) contested→**Neutral** + gray PASS (confirms the 2026-07-23 neutralize ruling); (f) Red-alone→Red + decal (1.00,0.10,0.05) PASS, and the bot demonstrably staged 2 units mid-field only while Red held the zone; (b) bot SpawnBoxHalfExtent 840 live, new spawns cluster X 24032–24448 inside the Castle_Red box PASS; (a) player SpawnBoxHalfExtent 840 live + PlacementMaxX fully retired, ring = 420-uu-wide flat band at Z=0 (non-empty, off-plinth, ~2.12 M uu²) — live click-refusal is a W1 WATCH (locked desktop, no SendInput); (e) Neutral state observed twice, gate is `IsPointInZone && CaptureOwner==TeamToState(Team)` which never matches Neutral (structural); (g) 3× fresh match starts all read Neutral + gray (no leak) — the in-place PlayAgain button press is a W1 WATCH (no MCP console/exec route). L_Arena saved not-dirty. FOLLOW-UPS RAISED: bot units stacking/floating ~215–232 uu above ground at the Red spawn edge (TASK-216's 1,500–2,000 castle-relative attack spawn vs TASK-262's 840 box — the wave gets clamped to the box edge and piles up).)
+- blocked-by: TASK-260, TASK-261, TASK-262 (all qa-passed), TASK-263 (done)
+- parallel-safe: no (single editor + Git; branch direct-commit lane)
+- spec: >
+    On m7.6-arena10x: (1) COMPILE the spawn-box/capture batch (editor-bounce). (2) WHITE-LINE REMOVAL — locate the L_Arena
+    level actor whose material is `M_CenterlineStripe` (a decal/plane; grep of Content confirms it is NOT C++) via
+    find_actors / material reference, and DELETE it; verify the centerline is gone in a PIE frame and L_Arena saves
+    not-dirty. (3) PLACE the `ACaptureZone` instance `CaptureZone_Center` at (0,0,0) in L_Arena (default ZoneHalfExtent);
+    confirm its decal reads at origin. (4) PIE CAPTURE-SUITE (all must pass): (a) player spawn shrunk — can place inside the
+    Blue castle box, REFUSED outside it and on the plinth, the old whole-half is gone; (b) bot spawn shrunk — mirror around
+    Castle_Red; (c) capture — send ONE Blue unit into the mid zone with zero Red units ⇒ CaptureOwner→Blue, decal turns
+    blue, player can now place in mid; (d) contested — Blue+Red units both inside ⇒ CaptureOwner→Neutral, decal turns gray, nobody can place in mid until re-captured (per Jonathan's 2026-07-23 ruling; the old "sticky/unchanged" assertion is retired); (e) neutral
+    ⇒ nobody can place in mid; (f) Red mirror — bot captures + stages in mid; (g) Play-Again ×3 ⇒ CaptureOwner resets to
+    Neutral, no leaks. COMMIT on the branch (push-pending — Jonathan decides; DO NOT push). This build folds into the
+    pre-W1 bounce ahead of Jonathan's W1 look (TASK-219 = acceptance gate). Post results + hash in 🔧 Build & Git.
+- names: >
+    Branch `m7.6-arena10x` compile + commit; `L_Arena` (centerline actor DELETE + `CaptureZone_Center` place). Law:
+    CLAUDE.md hard gates, CONVENTIONS "W1-PREP additions 3", W-gate law (TASK-219 = the acceptance gate).
+
 ### M7.6 manager decisions (binding)
 1. **Label ruling:** batch = **M7.6**, branch = **`m7.6-arena10x`** (the plan's `m8-arena10x` collides with GDD M8 = networked 1v1 — relabeled).
 2. **Branch-first + ownership law:** TASK-214 cuts the branch off main BEFORE any batch file change. The branch EXCLUSIVELY owns `L_Arena.umap` + `DA_BattlefieldScatter`; M7.5 waves never touch either. Branch = rollback (don't merge = revert). Main's World-axes ±8,000 law is rewritten only AT MERGE.

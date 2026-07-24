@@ -23,6 +23,7 @@
 #include "Materials/MaterialInterface.h"
 #include "NavigationSystem.h"
 #include "Siegebound/Building.h"
+#include "Siegebound/CaptureZone.h" // ACaptureZone — capture-spawn clause (complete type: CanTeamSpawnHere call, TASK-261)
 #include "Siegebound/CardRow.h"
 #include "Siegebound/Castle.h"
 #include "Siegebound/DeckComponent.h"
@@ -1029,8 +1030,8 @@ void ASiegePlayerController::TryConfirmPlacement()
 
 		default:
 			UE_LOG(LogGitClaudeUnrealTest, Log,
-				TEXT("ASiegePlayerController '%s': placement click refused for '%s' — no ground hit, enemy half (X > %.0f), off the navmesh, or on a castle plinth (GDD §3.5, TASK-030)."),
-				*GetNameSafe(this), *PendingCardID.ToString(), PlacementMaxX);
+				TEXT("ASiegePlayerController '%s': placement click refused for '%s' — no ground hit, outside the Blue spawn box and any Blue-owned capture zone, off the navmesh, or on a castle plinth (W1-PREP additions 3, TASK-261; GDD §3.5, TASK-030)."),
+				*GetNameSafe(this), *PendingCardID.ToString());
 			RefuseCardPlay(PendingCardID, NSLOCTEXT("Siegebound", "CardRefused_InvalidPoint", "Invalid placement location"));
 			break;
 		}
@@ -1212,10 +1213,12 @@ void ASiegePlayerController::UpdatePlacementGhost()
 		PlacementLocation = Hit.ImpactPoint;
 	}
 
-	// Placement validity v3 (GDD §3.5 TASK-030 + GDD §5 M4.5 TASK-093),
-	// evaluated in cost order:
-	// (1) ground hit on the owner's half (X <= 0; centerline per CONVENTIONS —
-	//     the M1 rule, unchanged);
+	// Placement validity v3 (GDD §3.5 TASK-030 + GDD §5 M4.5 TASK-093 +
+	// W1-PREP additions 3 TASK-261), evaluated in cost order:
+	// (1) ground hit inside the player's spawn box — a 2D square around the owned
+	//     Castle_Blue with half-extent SpawnBoxHalfExtent — OR inside a
+	//     Blue-owned capture zone (TASK-261; REPLACES the retired X<=PlacementMaxX
+	//     half-gate. Neutral/Red mid zone => not placeable there);
 	// (2) the point projects onto the navmesh within NavProjectionExtent —
 	//     closes the M1 "castle roof is placeable" carry-over (roof and
 	//     plinth-top hits sit far above any navmesh);
@@ -1233,7 +1236,7 @@ void ASiegePlayerController::UpdatePlacementGhost()
 	// The FIRST failing rule is recorded so the confirm click can name its
 	// reason ("Too steep" / "Too close to obstacles" get their own messages).
 	PlacementInvalidReason = EPlacementInvalidReason::Point;
-	bool bValid = bGroundHit && Hit.ImpactPoint.X <= PlacementMaxX;
+	bool bValid = bGroundHit && (IsPointInOwnSpawnBox(Hit.ImpactPoint) || IsPointInCapturedZone(Hit.ImpactPoint));
 	if (bValid)
 	{
 		bValid = IsPointOnNavmesh(PlacementLocation) && !IsPointInsideCastlePlinth(PlacementLocation);
@@ -2385,6 +2388,72 @@ bool ASiegePlayerController::IsPointInsideCastlePlinth(const FVector& Point) con
 			FMath::Abs(Point.Y - CastleLocation.Y) <= CastlePlinthClearance)
 		{
 			return true;
+		}
+	}
+	return false;
+}
+
+bool ASiegePlayerController::IsPointInOwnSpawnBox(const FVector& Point)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	// W1-PREP additions 3 (TASK-261): the player's spawn region is a 2D (XY)
+	// square centered on the owned Castle_Blue with half-extent SpawnBoxHalfExtent
+	// — this REPLACES the retired X<=PlacementMaxX half-line gate. The local
+	// player is always ETeamId::Blue (team contract). The castle is found with the
+	// same team-filtered TActorIterator<ACastle> pattern IsPointInsideCastlePlinth
+	// uses to read a castle location; the box is centered on the castle regardless
+	// of its HP (the plinth stands as long as the actor does, and if Blue's castle
+	// is destroyed the match has already ended and placement is disabled).
+	for (TActorIterator<ACastle> It(World); It; ++It)
+	{
+		const ACastle* Castle = *It;
+		if (!IsValid(Castle) || Castle->GetTeamId() != ETeamId::Blue)
+		{
+			continue;
+		}
+		const FVector CastleLocation = Castle->GetActorLocation();
+		return FMath::Abs(Point.X - CastleLocation.X) <= SpawnBoxHalfExtent.X &&
+			FMath::Abs(Point.Y - CastleLocation.Y) <= SpawnBoxHalfExtent.Y;
+	}
+
+	// Null-safe fallback (house null-safety law): no Blue castle in the world =>
+	// the box cannot be centered, so refuse rather than crash. Warn ONCE —
+	// UpdatePlacementGhost polls this per tick during placement mode, so an
+	// unlatched log would spam (mirrors IsPointOnNavmesh's warn-once latch).
+	if (!bWarnedMissingSpawnCastle)
+	{
+		bWarnedMissingSpawnCastle = true;
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASiegePlayerController '%s': no Blue ACastle found — the spawn box cannot be centered, so placement is refused (W1-PREP additions 3, TASK-261)."),
+			*GetNameSafe(this));
+	}
+	return false;
+}
+
+bool ASiegePlayerController::IsPointInCapturedZone(const FVector& Point) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	// W1-PREP additions 3 (TASK-261): the mid capture zone is spawnable for the
+	// player only while Blue OWNS it. Find the single CaptureZone_Center via
+	// TActorIterator<ACaptureZone> — null-safe if absent (pre-capture-feature
+	// behavior: no zone => mid unspawnable). CanTeamSpawnHere folds the box test
+	// AND the Blue-owner match (TASK-260 API), so it is the whole capture clause.
+	for (TActorIterator<ACaptureZone> It(World); It; ++It)
+	{
+		const ACaptureZone* Zone = *It;
+		if (IsValid(Zone))
+		{
+			return Zone->CanTeamSpawnHere(ETeamId::Blue, Point);
 		}
 	}
 	return false;

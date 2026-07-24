@@ -524,9 +524,18 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TSoftObjectPtr<UInputAction> CancelPlaceActionAsset;
 
-	/** Placement is valid only at X <= this (Blue half; centerline X=0 per CONVENTIONS). */
+	/**
+	 *  Half-extent (XY) of the player's spawn box — a 2D square centered on the
+	 *  owned Castle_Blue that REPLACES the retired X<=0 half-line spawn gate
+	 *  (W1-PREP additions 3, TASK-261). Default (840,840) = "same size as the
+	 *  spawnable region on either side" (Jonathan) = 2x the castle footprint
+	 *  (2x CastlePlinthClearance). Placement is valid inside this box (minus the
+	 *  plinth) OR inside a Blue-owned capture zone; the downstream navmesh /
+	 *  plinth / slope / clearance checks are unchanged and still apply. FLAGGED
+	 *  tunable (matches ACaptureZone::ZoneHalfExtent, same default).
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement")
-	float PlacementMaxX = 0.f;
+	FVector2D SpawnBoxHalfExtent = FVector2D(840.f, 840.f);
 
 	/**
 	 *  Minimum 2D distance from the nearest other ABuilding for a
@@ -768,6 +777,28 @@ private:
 	/** True when Point lies inside any ACastle's plinth keep-out box (CastlePlinthClearance 2D half-extents) — refused for all cards, castle HP irrelevant. */
 	bool IsPointInsideCastlePlinth(const FVector& Point) const;
 
+	/**
+	 *  True when Point lies inside the player's spawn box — a 2D (XY) square
+	 *  centered on the owned Castle_Blue (found via the team-filtered
+	 *  TActorIterator<ACastle> pattern, same as IsPointInsideCastlePlinth) with
+	 *  half-extent SpawnBoxHalfExtent. This is the first spawn/region gate that
+	 *  REPLACES the retired X<=PlacementMaxX half-test (W1-PREP additions 3,
+	 *  TASK-261). Null-safe: no Blue castle in the world => refuse (warn once —
+	 *  polled per tick during placement mode). Non-const only for the warn-once
+	 *  latch (mirrors IsPointOnNavmesh).
+	 */
+	bool IsPointInOwnSpawnBox(const FVector& Point);
+
+	/**
+	 *  True when Point lies inside the single ACaptureZone AND Blue currently
+	 *  owns it — the capture-spawn clause (W1-PREP additions 3, TASK-261). Finds
+	 *  the one CaptureZone_Center via TActorIterator<ACaptureZone> (null-safe if
+	 *  absent = pre-capture behavior, mid unspawnable) and defers the whole test
+	 *  to ACaptureZone::CanTeamSpawnHere(ETeamId::Blue, Point) (TASK-260 API),
+	 *  which folds the box test AND the Blue-owner match.
+	 */
+	bool IsPointInCapturedZone(const FVector& Point) const;
+
 	/** Broadcasts a play refusal on BOTH delegates: OnCardPlayRefused (M1 card context) and OnCardRefused (M2 reason string). */
 	void RefuseCardPlay(FName CardID, const FText& Reason);
 
@@ -824,6 +855,9 @@ private:
 
 	/** One-shot latch for the no-navmesh degrade-open warning (IsPointOnNavmesh). */
 	bool bWarnedNoNavData = false;
+
+	/** One-shot latch for the missing-Blue-castle spawn-box warning (IsPointInOwnSpawnBox, TASK-261). */
+	bool bWarnedMissingSpawnCastle = false;
 
 	/**
 	 *  Hand slot the active placement came from (set by PlayHandSlot just

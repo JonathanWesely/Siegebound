@@ -350,6 +350,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement")
 	FVector CastleRedFallbackLocation = FVector(25000.f, 0.f, 0.f);
 
+	/** 2D half-extent of the Red spawn box centered on Castle_Red (W1-PREP additions 3, TASK-262 — the bot mirror of the player box). The spawn gate is this box (or a Red-owned capture zone) instead of the whole own-half. Default (840,840) = 2× CastlePlinthClearance; FLAGGED tunable. // CONVENTIONS "W1-PREP additions 3" */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
+	FVector2D SpawnBoxHalfExtent = FVector2D(840.f, 840.f);
+
 private:
 
 	/** Handle for the repeating decision timer. The only timer this class owns. */
@@ -421,8 +425,14 @@ private:
 	 */
 	bool ComputeValidBotSpawnPoint(const FVector& Desired, bool bIsBuilding, FVector& OutPoint);
 
-	/** Own-half + plinth keep-out (+ building clearance when bIsBuilding) test on an already-on-navmesh point. */
+	/** Spawn-box + plinth keep-out (+ building clearance when bIsBuilding) test on an already-on-navmesh point. The old whole-own-half gate is now the Red spawn box OR a Red-owned capture zone (W1-PREP additions 3, TASK-262); the composed keep-out/clearance checks are unchanged. */
 	bool IsBotHalfPointClear(const FVector& Point, bool bIsBuilding) const;
+
+	/** True if Point lies inside the Red spawn box — a 2D square centered on Castle_Red (live team-filtered ACastle lookup via GetCastleRedLocation, else the +25000 fallback), half-extent SpawnBoxHalfExtent. Replaces the old own-half spawn gate (W1-PREP additions 3, TASK-262). */
+	bool IsPointInBotSpawnBox(const FVector& Point) const;
+
+	/** True if Point lies inside a Red-OWNED mid capture zone — single TActorIterator<ACaptureZone> (null-safe if absent = pre-capture behavior); CanTeamSpawnHere(Red, Point) folds the box test AND the Red-ownership match (TASK-260 API). */
+	bool IsPointInCapturedZone(const FVector& Point) const;
 
 	/**
 	 *  Resolves + spawns the composed BP for CardID with Team = BotTeam (TASK-044
