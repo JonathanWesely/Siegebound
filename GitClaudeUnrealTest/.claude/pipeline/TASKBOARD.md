@@ -758,7 +758,7 @@ Four non-gated items. State: editor CLOSED; tree checked out on `m7.6-arena10x` 
 
 #### TASK-270 — [DB-C] `WBP_DeckBuilder`: non-modal card-details side panel + `OnCardDetailsRequested` (art, editor)
 - assignee: art-director
-- status: backlog
+- status: blocked (bounded-stop 2026-07-24 — art-director built the full panel scaffolding as isolated, compile-clean functions/vars, then STOPPED before splicing the protected 25-node runtime EventConstruct; corruption-signature seen + overnight-unverifiable regression risk to shipping M6. Remainder is a small, well-defined splice for a Jonathan-supervised/pixel-verified session. See handoffs/TASK-270-271.md)
 - blocked-by: TASK-269 (the C++ nodes must exist before they can be bound)
 - parallel-safe: no (single editor; and TASK-271 edits a widget this one instantiates)
 - spec: >
@@ -797,7 +797,7 @@ Four non-gated items. State: editor CLOSED; tree checked out on `m7.6-arena10x` 
 
 #### TASK-271 — [DB-D] `WBP_DeckCardTile`: `Btn_CardFace` click target → `SelectCardForDetails` (art, editor)
 - assignee: art-director
-- status: backlog
+- status: blocked (NOT started; bounded-stop with TASK-270 on 2026-07-24 — WBP_DeckCardTile is byte-untouched. Btn_CardFace requires the same protected-runtime-construct front-insert risk class, and the click is worthless until TASK-270's panel is wired. See handoffs/TASK-270-271.md)
 - blocked-by: TASK-270 (single editor, and the panel must exist for the click to be observable end-to-end)
 - parallel-safe: no (single editor)
 - spec: >
@@ -1289,7 +1289,7 @@ Four non-gated items. State: editor CLOSED; tree checked out on `m7.6-arena10x` 
 
 #### TASK-283 — Integration: compile + PIE ATTACK reach-and-attack verify (with/without enemy) + branch commit (build)
 - assignee: build-master
-- status: done (BUILD-MASTER 2026-07-24 — BATCHED integration of TASK-282 + TASK-267 on m7.6-arena10x, commit hash in the message + 🔧 Build & Git. Overnight autonomous (Jonathan asleep): Step-0 PIE idle; SAVE-ALL (`save_assets([])`=true) THEN graceful close → editor exited cleanly, NO Save-Content dialog wedge, NO force-kill needed. Recompiled GREEN (~16s); relaunched on L_Arena. PIE: clean load (no errors/ensures/Accessed-None). TASK-267: bot reached + fired Rule 4 (Knight, gold 36→18) — rules 1/2a/2b/3 fell THROUGH, no ladder stall (Rule 2 Economy did not fire in the ~30 s window — attack-bank priority + ×3 economy costs, NOT a stall). TASK-282: ATTACK now = stable-castle march (byte-identical to legacy castle-kill); the live full-field march + EnterAttack on Castle_Red = Jonathan WATCH (QA equivalence proof). CONVENTIONS box-first/`EnemyBaseEngageRadius` wording folded out. Committed: `SummonedUnit.{h,cpp}`, `SiegeBotController.{h,cpp}`, `CONVENTIONS.md`, board + `handoffs/qa` for TASK-267+282. DeckBuilderWidget (TASK-268) stayed parked/unstaged. No push. ⚠ TASK-282 retires the TASK-275 box-first spec — flagged for Jonathan's morning design call. Was: backlog.)
+- status: done (BUILD-MASTER 2026-07-24 — BATCHED integration of TASK-282 + TASK-267 on m7.6-arena10x, commit `5fb8058` (no push). Overnight autonomous (Jonathan asleep): Step-0 PIE idle; SAVE-ALL (`save_assets([])`=true) THEN graceful close → editor exited cleanly, NO Save-Content dialog wedge, NO force-kill needed. Recompiled GREEN (~16s); relaunched on L_Arena. PIE: clean load (no errors/ensures/Accessed-None). TASK-267: bot reached + fired Rule 4 (Knight, gold 36→18) — rules 1/2a/2b/3 fell THROUGH, no ladder stall (Rule 2 Economy did not fire in the ~30 s window — attack-bank priority + ×3 economy costs, NOT a stall). TASK-282: ATTACK now = stable-castle march (byte-identical to legacy castle-kill); the live full-field march + EnterAttack on Castle_Red = Jonathan WATCH (QA equivalence proof). CONVENTIONS box-first/`EnemyBaseEngageRadius` wording folded out. Committed: `SummonedUnit.{h,cpp}`, `SiegeBotController.{h,cpp}`, `CONVENTIONS.md`, board + `handoffs/qa` for TASK-267+282. DeckBuilderWidget (TASK-268) stayed parked/unstaged. No push. ⚠ TASK-282 retires the TASK-275 box-first spec — flagged for Jonathan's morning design call. Was: backlog.)
 - blocked-by: TASK-282 (qa-passed)
 - parallel-safe: no (single editor + compiler + Git)
 - spec: >
