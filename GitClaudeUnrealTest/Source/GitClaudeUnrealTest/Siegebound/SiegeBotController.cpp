@@ -2,7 +2,10 @@
 
 #include "Siegebound/SiegeBotController.h"
 
+#include "CollisionQueryParams.h" // TASK-265 spawn-Z diagnostic ground trace (FCollisionQueryParams) — BattlefieldScatter::GroundZAt precedent
+#include "Components/CapsuleComponent.h" // TASK-265: GetScaledCapsuleHalfHeight on the spawned unit — complete type required
 #include "Engine/DataTable.h"
+#include "Engine/HitResult.h" // TASK-265 spawn-Z diagnostic (FHitResult) — same precedent
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GitClaudeUnrealTest.h"
@@ -548,6 +551,7 @@ void ASiegeBotController::EvaluateDecisions()
 						? MineLocation // degenerate (mine at the castle point): the ring search walks it clear
 						: MineLocation + ApproachDir * MinerNodeApproachOffset;
 					Desired.Z = MineLocation.Z;
+					// KEPT AS AUTHORED (TASK-265): ComputeValidBotSpawnPoint's box clamp now dominates this half clamp at an 840 box; it re-activates untouched if the box ever grows.
 					if (!IsOnOwnHalf(Desired.X))
 					{
 						Desired.X = BotHalfBoundaryX;
@@ -599,6 +603,7 @@ void ASiegeBotController::EvaluateDecisions()
 						// Same own-half clamp as 2a — a Blue-half best mine anchors the
 						// building at the centerline, never across it.
 						Desired = BestMine->GetActorLocation();
+						// KEPT AS AUTHORED (TASK-265): the box clamp in ComputeValidBotSpawnPoint dominates this half clamp at an 840 box (a Deep Mine needs no mine adjacency, so building it inside the castle box is mechanically identical).
 						if (!IsOnOwnHalf(Desired.X))
 						{
 							Desired.X = BotHalfBoundaryX;
@@ -1083,6 +1088,92 @@ FVector ASiegeBotController::GetCastleRedLocation() const
 	return CastleRedFallbackLocation;
 }
 
+FVector ASiegeBotController::ClampAnchorToBotSpawnRegion(const FVector& Desired) const
+{
+	// ⚠ PASS-THROUGH CARVE-OUT — LOAD-BEARING, never make this unconditional.
+	// An anchor that is ALREADY spawn-eligible (inside the Red spawn box, or inside
+	// a RED-OWNED CaptureZone_Center) is returned untouched. That is precisely what
+	// keeps the TASK-264-verified behavior alive: while Red holds the mid zone the
+	// bot may stage there, and an unconditional clamp would drag those anchors back
+	// to the castle box and delete the spawn-forward play the capture zone exists
+	// for. The eligibility test is the SAME pair the spawn gate itself uses
+	// (IsBotHalfPointClear), so "clamped" and "eligible" can never disagree.
+	if (IsPointInBotSpawnBox(Desired) || IsPointInCapturedZone(Desired))
+	{
+		return Desired;
+	}
+
+	// Ineligible anchor ⇒ pull it into the spawn region (W1-PREP appendix 3a
+	// anchor-clamp law, TASK-265). Per-axis clamp of the castle-relative delta into
+	// ±(SpawnBoxHalfExtent - SpawnBoxAnchorInset): the inset parks the anchor just
+	// inside the edge so the widening ring below has room on BOTH sides of it
+	// (an anchor pinned exactly on the boundary throws half its candidate ring out
+	// of the box — the one-sliver pile-up this task exists to remove). The Z is
+	// preserved as authored; ProjectPointToNavigation owns the final Z. The plinth
+	// is deliberately NOT special-cased here — the ring walk-out already owns it.
+	const FVector CastleRed = GetCastleRedLocation();
+	const double BoxLimitX = FMath::Max(0.0, static_cast<double>(SpawnBoxHalfExtent.X) - static_cast<double>(SpawnBoxAnchorInset));
+	const double BoxLimitY = FMath::Max(0.0, static_cast<double>(SpawnBoxHalfExtent.Y) - static_cast<double>(SpawnBoxAnchorInset));
+
+	FVector BoxClamped = Desired;
+	BoxClamped.X = CastleRed.X + FMath::Clamp(Desired.X - CastleRed.X, -BoxLimitX, BoxLimitX);
+	BoxClamped.Y = CastleRed.Y + FMath::Clamp(Desired.Y - CastleRed.Y, -BoxLimitY, BoxLimitY);
+
+	// --- FLAGGED DEVIATION (documented in handoffs/TASK-265.md — manager/QA ruling
+	// welcome; deleting this block reverts to the board's castle-box-only clamp) ---
+	// The bot's spawn REGION is "castle box OR Red-owned capture zone" (that is the
+	// gate IsBotHalfPointClear enforces, and this helper is named for the REGION,
+	// not the box). Clamping every ineligible anchor to the castle box would make
+	// the bot STRUCTURALLY unable to ever spawn in a zone it owns: no anchor in this
+	// class is computed inside the mid zone, so the pass-through above can never
+	// fire on its own. TASK-264 PIE result (f) — "the bot demonstrably staged 2
+	// units mid-field only while Red held the zone" — was produced by the rule-2
+	// mine anchors' ring-search REACHING the zone, and a box-only clamp deletes it,
+	// which fails TASK-266 acceptance (e) and denies the bot the very ability
+	// Jonathan's directive grants ("when captured, you can spawn units there").
+	// So: clamp to whichever eligible region is NEARER to the desired anchor.
+	// Castle-relative anchors (rule-1 unit, rule-4 attack waves) are always nearer
+	// the castle box, so M7.6 ruling #1 "spawn castle-front and MARCH" is untouched
+	// and the bot never gets a free forward spawn for its army; only the far-flung
+	// rule-2 economy anchors can prefer a mid zone, and only while Red holds it.
+	// With no zone placed, a Neutral zone, or a Blue-owned zone this block is inert
+	// and the castle-box clamp above stands — byte-identical to the board's spec.
+	const ACaptureZone* MidZone = nullptr;
+	if (UWorld* World = GetWorld())
+	{
+		// The single level-placed CaptureZone_Center (TASK-260) — same first-instance
+		// idiom as IsPointInCapturedZone, and null-safe when none is placed.
+		TActorIterator<ACaptureZone> ZoneIt(World);
+		if (ZoneIt)
+		{
+			MidZone = *ZoneIt;
+		}
+	}
+
+	if (MidZone)
+	{
+		const FVector ZoneOrigin = MidZone->GetActorLocation();
+		const FVector2D ZoneHalf = MidZone->GetZoneHalfExtent();
+		const double ZoneLimitX = FMath::Max(0.0, static_cast<double>(ZoneHalf.X) - static_cast<double>(SpawnBoxAnchorInset));
+		const double ZoneLimitY = FMath::Max(0.0, static_cast<double>(ZoneHalf.Y) - static_cast<double>(SpawnBoxAnchorInset));
+
+		FVector ZoneClamped = Desired;
+		ZoneClamped.X = ZoneOrigin.X + FMath::Clamp(Desired.X - ZoneOrigin.X, -ZoneLimitX, ZoneLimitX);
+		ZoneClamped.Y = ZoneOrigin.Y + FMath::Clamp(Desired.Y - ZoneOrigin.Y, -ZoneLimitY, ZoneLimitY);
+
+		// CanTeamSpawnHere is the TASK-260 seam and folds BOTH tests in one call —
+		// "inside the zone" AND "Red owns it". A Neutral or Blue-owned zone returns
+		// false here, so ownership is never duplicated or second-guessed locally.
+		if (MidZone->CanTeamSpawnHere(ETeamId::Red, ZoneClamped) &&
+			FVector::DistSquared2D(ZoneClamped, Desired) < FVector::DistSquared2D(BoxClamped, Desired))
+		{
+			return ZoneClamped;
+		}
+	}
+
+	return BoxClamped;
+}
+
 bool ASiegeBotController::ComputeValidBotSpawnPoint(const FVector& Desired, bool bIsBuilding, FVector& OutPoint)
 {
 	UWorld* World = GetWorld();
@@ -1090,6 +1181,18 @@ bool ASiegeBotController::ComputeValidBotSpawnPoint(const FVector& Desired, bool
 	{
 		return false;
 	}
+
+	// W1-PREP appendix 3a (TASK-265) — THE single application point of the anchor
+	// clamp. Every caller (rule-1 unit/tower, rule-2a miner, rule-2b Deep Mine,
+	// rule-4 attack wave) funnels its desired point through here, so one edit
+	// covers all five sites and NO call site does anchor math. Anchors that are
+	// already eligible pass through byte-unchanged (see the carve-out above);
+	// ineligible ones (castle-front at BotCastleSpawnOffset 1,750 ⇒ ~910 uu outside
+	// an 840 box, and the rule-2 mine anchors thousands of uu away) land in the
+	// box's centerline-facing front band and MARCH out from there — M7.6 ruling
+	// #1's intent survives, the wave simply starts inside its own box like the
+	// player's units do.
+	const FVector Anchor = ClampAnchorToBotSpawnRegion(Desired);
 
 	UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(World);
 	if (!NavSys || !NavSys->GetDefaultNavDataInstance())
@@ -1104,17 +1207,20 @@ bool ASiegeBotController::ComputeValidBotSpawnPoint(const FVector& Desired, bool
 				TEXT("ASiegeBotController '%s': no navigation data — bot spawn navmesh projection (GDD §3.5) skipped, using the half/plinth rule only."),
 				*GetNameSafe(this));
 		}
-		if (IsBotHalfPointClear(Desired, bIsBuilding))
+		if (IsBotHalfPointClear(Anchor, bIsBuilding))
 		{
-			OutPoint = Desired;
+			OutPoint = Anchor;
 			return true;
 		}
 		return false;
 	}
 
-	// Deterministic candidate ring: the desired point first, then widening rings —
-	// so a plinth / clearance / half failure walks outward to the nearest clear,
-	// on-navmesh spot instead of stalling forever on one refused point.
+	// Deterministic candidate ring: the clamped anchor first, then widening rings —
+	// so a plinth / clearance / box failure walks outward to the nearest clear,
+	// on-navmesh spot instead of stalling forever on one refused point. With the
+	// UnitSpawnClearance rule live (appendix 3a) this walk is also what spreads a
+	// wave: unit N takes the anchor, unit N+1 is refused there and steps to the
+	// next free ring sample, so successive spawns no longer share one point.
 	static const float RingRadii[] = { 0.f, 250.f, 500.f, 800.f, 1100.f };
 	static const int32 RingDirections = 8;
 	for (float Radius : RingRadii)
@@ -1123,7 +1229,7 @@ bool ASiegeBotController::ComputeValidBotSpawnPoint(const FVector& Desired, bool
 		for (int32 SampleIndex = 0; SampleIndex < NumSamples; ++SampleIndex)
 		{
 			const double Angle = (2.0 * PI * SampleIndex) / RingDirections;
-			const FVector Candidate = Desired + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
+			const FVector Candidate = Anchor + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
 
 			FNavLocation Projected;
 			if (!NavSys->ProjectPointToNavigation(Candidate, Projected, NavProjectionExtent))
@@ -1174,6 +1280,32 @@ bool ASiegeBotController::IsBotHalfPointClear(const FVector& Point, bool bIsBuil
 			FMath::Abs(Point.Y - CastleLocation.Y) <= CastlePlinthClearance)
 		{
 			return false;
+		}
+	}
+
+	// Unit spawn clearance (NON-buildings only — W1-PREP appendix 3a, TASK-265):
+	// >= UnitSpawnClearance (2D) from every live ASummonedUnit of EITHER team. This
+	// is the anti-stacking rule: without it the ring-search happily re-served the
+	// SAME point to every unit of a wave (the observed identical-XY pile-up), and
+	// the capsules then collision-adjusted upward off each other. With it, the
+	// deterministic ring in ComputeValidBotSpawnPoint walks to a genuinely FREE
+	// slot. Buildings deliberately keep the BuildingClearance rule below and are
+	// NOT subject to this one (a tower may sit next to friendly bodies). 0 disables.
+	// Mirrors the BuildingClearance loop's shape exactly (precomputed square, 2D).
+	if (!bIsBuilding && UnitSpawnClearance > 0.f)
+	{
+		const double UnitClearanceSq = FMath::Square(static_cast<double>(UnitSpawnClearance));
+		for (TActorIterator<ASummonedUnit> It(World); It; ++It)
+		{
+			const ASummonedUnit* Unit = *It;
+			if (!IsValid(Unit) || Unit->IsUnitDead())
+			{
+				continue;
+			}
+			if (FVector::DistSquared2D(Unit->GetActorLocation(), Point) < UnitClearanceSq)
+			{
+				return false;
+			}
 		}
 	}
 
@@ -1334,6 +1466,54 @@ AActor* ASiegeBotController::SpawnBotCardActor(FName CardID, bool bIsBuilding, c
 			TEXT("ASiegeBotController '%s': SpendGold(%d) refused at spawn for '%s' (the CanAfford pre-check should prevent this) — %d unit(s) unwound, no gold spent."),
 			*GetNameSafe(this), Cost, *CardID.ToString(), SwarmUnits.Num());
 		return nullptr;
+	}
+
+	// --- W1-PREP appendix 3a spawn-Z DIAGNOSTIC (TASK-265) — confirm before fixing ---
+	// The ~215-232 uu float observed at the TASK-264 PIE is very likely a SYMPTOM of
+	// units spawning inside each other (capsule collision-adjust lifting encroaching
+	// spawns), which the UnitSpawnClearance rule above removes at the cause. So this
+	// pass MEASURES instead of guessing: one line per bot unit spawn with the chosen
+	// point Z, a traced ground Z, their delta, and the spawned actor's Z minus its
+	// capsule half-height (= the real float above ground; a grounded capsule sits
+	// exactly half-height above the floor, so ~0 here means NO float). TASK-266's PIE
+	// reads these values and only a surviving >~50 uu residual justifies adding the
+	// capped SnapPointToGround. Deliberately on LogGitClaudeUnrealTest, NEVER on
+	// LogSiegeBot (one-line-per-FIRED-rule decision-trace law is inviolate).
+	if (bLogSpawnZDiagnostic)
+	{
+		// Downward ECC_WorldStatic trace (the BattlefieldScatter::GroundZAt recipe),
+		// bounded around the chosen point and ignoring the units we just spawned so a
+		// freshly placed capsule cannot be mistaken for the floor. NOTE: scatter hills
+		// IGNORE ECC_WorldStatic by the scatter-channel law, so on a hill this reports
+		// the FLOOR under the hill, not the hill surface — which is exactly why any
+		// future ground snap must stay capped (MaxGroundSnapDrop) and why a hill-side
+		// residual belongs on the Ogre-near-hill spawn-lift WATCH, not here.
+		const FVector TraceStart(SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z + 1000.0);
+		const FVector TraceEnd(SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z - 5000.0);
+		FCollisionQueryParams GroundParams(TEXT("BotSpawnZDiagnostic"), /*bTraceComplex=*/ false, this);
+		for (const ASummonedUnit* SpawnedUnit : SwarmUnits)
+		{
+			if (IsValid(SpawnedUnit))
+			{
+				GroundParams.AddIgnoredActor(SpawnedUnit);
+			}
+		}
+
+		FHitResult GroundHit;
+		const bool bHitGround = World->LineTraceSingleByChannel(GroundHit, TraceStart, TraceEnd, ECC_WorldStatic, GroundParams);
+		const double GroundZ = bHitGround ? GroundHit.ImpactPoint.Z : SpawnPoint.Z;
+
+		const ASummonedUnit* Representative = SwarmUnits[0];
+		const UCapsuleComponent* Capsule = IsValid(Representative) ? Representative->GetCapsuleComponent() : nullptr;
+		const double ActorZ = IsValid(Representative) ? Representative->GetActorLocation().Z : SpawnPoint.Z;
+		const double CapsuleHalfHeight = Capsule ? static_cast<double>(Capsule->GetScaledCapsuleHalfHeight()) : 0.0;
+
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegeBotController '%s': [SpawnZ] unit '%s' x%d — chosen Z %.1f, ground Z %.1f (%s), chosen-vs-ground delta %.1f; actor Z %.1f, capsule half-height %.1f, FLOAT above ground %.1f (TASK-265 diagnostic — bLogSpawnZDiagnostic)."),
+			*GetNameSafe(this), *CardID.ToString(), SwarmUnits.Num(),
+			SpawnPoint.Z, GroundZ, bHitGround ? TEXT("trace hit") : TEXT("TRACE MISS — chosen Z assumed"),
+			SpawnPoint.Z - GroundZ,
+			ActorZ, CapsuleHalfHeight, ActorZ - CapsuleHalfHeight - GroundZ);
 	}
 
 	// Representative actor — all copies are one play (one LogSiegeBot line at the rule).

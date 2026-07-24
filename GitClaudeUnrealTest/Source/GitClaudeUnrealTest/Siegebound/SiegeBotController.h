@@ -297,6 +297,12 @@ protected:
 	 *  remains). FLAGGED follow-up (Standing backlog, NOT designed): "adaptive
 	 *  bot spawn positioning by strategy" — a later pass may choose spawn/stage
 	 *  points per strategy (defend vs push vs flank).
+	 *
+	 *  W1-PREP appendix 3a (TASK-265): while SpawnBoxHalfExtent is 840, this 1,750
+	 *  offset lands OUTSIDE the spawn box and ClampAnchorToBotSpawnRegion pulls the
+	 *  anchor back to the box's centerline-facing front band — i.e. the knob is
+	 *  INERT at today's box size. It is KEPT AS AUTHORED on purpose: it is ruling
+	 *  #1's knob and re-activates untouched the moment the box grows. Do not delete.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
 	float BotCastleSpawnOffset = 1750.f;
@@ -353,6 +359,45 @@ protected:
 	/** 2D half-extent of the Red spawn box centered on Castle_Red (W1-PREP additions 3, TASK-262 — the bot mirror of the player box). The spawn gate is this box (or a Red-owned capture zone) instead of the whole own-half. Default (840,840) = 2× CastlePlinthClearance; FLAGGED tunable. // CONVENTIONS "W1-PREP additions 3" */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
 	FVector2D SpawnBoxHalfExtent = FVector2D(840.f, 840.f);
+
+	/**
+	 *  How far INSIDE the box edge an INELIGIBLE spawn anchor is parked when
+	 *  ClampAnchorToBotSpawnRegion pulls it in (W1-PREP appendix 3a, TASK-265):
+	 *  the per-axis clamp limit is (SpawnBoxHalfExtent - this). Keeping the
+	 *  clamped anchor off the exact box edge leaves the ComputeValidBotSpawnPoint
+	 *  ring-search room on BOTH sides of it — an anchor pinned exactly on the
+	 *  boundary would have half its candidate ring outside the box, which is what
+	 *  produced the observed one-sliver pile-up in the first place.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
+	float SpawnBoxAnchorInset = 40.f;
+
+	/**
+	 *  Anti-stacking 2D spacing the bot honors between a NON-BUILDING spawn point
+	 *  and every live ASummonedUnit of EITHER team (W1-PREP appendix 3a, TASK-265).
+	 *  Checked in IsBotHalfPointClear next to the BuildingClearance rule (units get
+	 *  the unit rule, buildings keep the building rule), so the deterministic
+	 *  widening ring in ComputeValidBotSpawnPoint WALKS to a genuinely free slot
+	 *  instead of re-serving one already-occupied point to every unit in a wave
+	 *  (the observed identical-XY stack). 0 disables the rule entirely.
+	 *  NOTE: this is deliberately BOT-ONLY this pass — the player's placement path
+	 *  (ASiegePlayerController) is untouched by design.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
+	float UnitSpawnClearance = 150.f;
+
+	/**
+	 *  W1 spawn-Z diagnostic (W1-PREP appendix 3a, TASK-265 — diagnose BEFORE
+	 *  fixing). When true, every bot UNIT spawn emits ONE LogGitClaudeUnrealTest
+	 *  Log line with the chosen point Z, a traced ground Z, their delta, and the
+	 *  spawned actor's Z / capsule half-height so the residual float above ground
+	 *  is directly readable. Deliberately NOT on LogSiegeBot — that category is
+	 *  exactly one line per FIRED decision rule (M3 decision-trace law) and must
+	 *  stay grep-clean. Default true for the W1 build; flip off once the float
+	 *  question is closed.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement")
+	bool bLogSpawnZDiagnostic = true;
 
 private:
 
@@ -418,14 +463,55 @@ private:
 	/**
 	 *  Finds a placement-valid spawn point near Desired by snapping onto the
 	 *  navmesh (ProjectPointToNavigation) and honoring the mirrored §3.5 rules —
-	 *  own half (X >= 0), castle plinth keep-out, and, for buildings, 200-unit
-	 *  clearance. Searches Desired plus a deterministic widening ring; the first
-	 *  valid snapped point wins. False (retry next tick) when nothing qualifies.
-	 *  Non-const for the warn-once no-navmesh latch.
+	 *  the Red spawn box / Red-owned capture zone (TASK-262), castle plinth
+	 *  keep-out, unit spawn clearance (units) and 200-unit building clearance
+	 *  (buildings). Searches the CLAMPED anchor (ClampAnchorToBotSpawnRegion —
+	 *  W1-PREP appendix 3a, TASK-265: every caller's Desired point is funnelled
+	 *  through the clamp HERE, in one place, so no call site does anchor math)
+	 *  plus a deterministic widening ring; the first valid snapped point wins.
+	 *  False (retry next tick) when nothing qualifies. Non-const for the warn-once
+	 *  no-navmesh latch.
 	 */
 	bool ComputeValidBotSpawnPoint(const FVector& Desired, bool bIsBuilding, FVector& OutPoint);
 
-	/** Spawn-box + plinth keep-out (+ building clearance when bIsBuilding) test on an already-on-navmesh point. The old whole-own-half gate is now the Red spawn box OR a Red-owned capture zone (W1-PREP additions 3, TASK-262); the composed keep-out/clearance checks are unchanged. */
+	/**
+	 *  W1-PREP appendix 3a (TASK-265) — the ANCHOR-CLAMP law. Returns a desired
+	 *  spawn anchor moved INTO the bot's spawn region when (and ONLY when) it is
+	 *  not already spawn-eligible.
+	 *
+	 *  ⚠ PASS-THROUGH CARVE-OUT (load-bearing, do NOT make this unconditional):
+	 *  an anchor already inside the Red spawn box OR inside a Red-OWNED capture
+	 *  zone is returned UNCHANGED. That is what preserves the TASK-264-verified
+	 *  behavior where the bot stages mid-field while Red holds CaptureZone_Center
+	 *  — an unconditional clamp would yank those anchors back to the castle and
+	 *  destroy the emergent spawn-forward play the capture zone exists for.
+	 *
+	 *  Otherwise: per-axis clamp of (Desired - Castle_Red) into
+	 *  ±(SpawnBoxHalfExtent - SpawnBoxAnchorInset), Z preserved (the navmesh
+	 *  projection owns Z). The plinth is deliberately NOT special-cased — the
+	 *  existing ring walk-out in ComputeValidBotSpawnPoint owns that.
+	 *
+	 *  FLAGGED DEVIATION from the board's literal wording (see handoffs/TASK-265.md):
+	 *  the clamp targets the NEARER of the two eligible regions — the castle box, or
+	 *  a RED-OWNED capture zone — rather than always the castle box. A box-only
+	 *  clamp would make the bot structurally unable to ever spawn in a zone it owns
+	 *  (no anchor in this class is computed inside the mid zone, so the pass-through
+	 *  above could never fire), which deletes TASK-264 PIE result (f) and denies the
+	 *  bot Jonathan's "when captured, you can spawn units there". Castle-relative
+	 *  anchors are always nearer the box, so rule-1/rule-4 waves are unaffected and
+	 *  M7.6 ruling #1 stands; with no zone / a Neutral zone / a Blue-owned zone the
+	 *  behavior is byte-identical to the board's spec.
+	 *
+	 *  Why it is needed: TASK-262 shrank the spawn GATE to the 840 box but the
+	 *  anchors stayed pre-shrink (castle-front at BotCastleSpawnOffset = 1,750 in
+	 *  front of Castle_Red, and the rule-2 mine anchors thousands of uu away),
+	 *  while the ring search tops out at 1,100 uu — so those anchors either piled
+	 *  every wave onto the single ring sample that cleared the box edge, or failed
+	 *  outright and stalled the rule-2 economy ladder.
+	 */
+	FVector ClampAnchorToBotSpawnRegion(const FVector& Desired) const;
+
+	/** Spawn-box + plinth keep-out (+ unit spawn clearance for units / building clearance for buildings) test on an already-on-navmesh point. The old whole-own-half gate is now the Red spawn box OR a Red-owned capture zone (W1-PREP additions 3, TASK-262); the UnitSpawnClearance anti-stack rule is appendix 3a (TASK-265). */
 	bool IsBotHalfPointClear(const FVector& Point, bool bIsBuilding) const;
 
 	/** True if Point lies inside the Red spawn box — a 2D square centered on Castle_Red (live team-filtered ACastle lookup via GetCastleRedLocation, else the +25000 fallback), half-extent SpawnBoxHalfExtent. Replaces the old own-half spawn gate (W1-PREP additions 3, TASK-262). */
