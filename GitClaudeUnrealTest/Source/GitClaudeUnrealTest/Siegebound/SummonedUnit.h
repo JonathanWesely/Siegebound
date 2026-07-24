@@ -383,6 +383,24 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Commands", meta = (ClampMin = "0"))
 	float DefendRadius = 2500.f;
 
+	/**
+	 *  Shield Wall ATTACK enemy-base engage radius (W1 TASK-280): under the player's ATTACK
+	 *  stance, a Blue Standard unit only prefers a spawn-box DEFENDER over the enemy castle
+	 *  once it is within this 2D closest-point distance of that castle; during the long
+	 *  mid-field approach it marches the STABLE enemy castle instead. This fixes the 10x-arena
+	 *  march-freeze: FindNearestEnemyInSpawnBox's nearest-to-self result flips as the bot's
+	 *  spawn box turns over each wave, and re-picking a box defender every 0.25 s state tick
+	 *  flipped Goal every tick — so EnterAdvance re-issued a ~full-field MoveToActor every tick
+	 *  and the unit never followed a path to completion. Gating by proximity makes the approach
+	 *  identical to the legacy/DEFEND stable-goal march (proven healthy full-field at runtime),
+	 *  while the box-defender-first intent is preserved close in (short remaining path ⇒ a
+	 *  shuffling goal re-paths cheaply). Default 3500 uu comfortably covers the (840,840) spawn
+	 *  box from the castle walls; FLAGGED tunable for the 10x arena (mirrors DefendRadius). Lives
+	 *  HERE per CONVENTIONS (the unit owns it). // Shield Wall — Attack engage radius
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Commands", meta = (ClampMin = "0"))
+	float EnemyBaseEngageRadius = 3500.f;
+
 	/** Seconds between state-machine checks (spec: ~0.25 s, never per-tick). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|AI", meta = (ClampMin = "0.05"))
 	float StateCheckInterval = 0.25f;

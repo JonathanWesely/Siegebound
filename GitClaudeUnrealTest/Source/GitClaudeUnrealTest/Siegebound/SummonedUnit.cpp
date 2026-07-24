@@ -1299,7 +1299,23 @@ void ASummonedUnit::UpdateStateStandardCommanded(const ASiegePlayerController& P
 		{
 			AActor* EnemyCastleActor = FindNearestEnemyCastle();
 			const ACastle* EnemyCastle = Cast<ACastle>(EnemyCastleActor); // FindNearestEnemyCastle only ever returns an ACastle
-			AActor* BoxDefender = FindNearestEnemyInSpawnBox(EnemyCastle);
+			// TASK-280 (arena march-freeze fix): only PREFER a spawn-box defender once we are
+			// actually NEAR the enemy base. On the 10x field the box defenders sit a full
+			// base-approach (~a half-field) away, and FindNearestEnemyInSpawnBox's nearest-to-self
+			// result FLIPS as the bot's spawn box turns over every wave — re-picking it on every
+			// 0.25 s state tick flips Goal every tick, so EnterAdvance's bGoalChanged re-issues a
+			// ~full-field MoveToActor every tick and the unit never follows one path to completion
+			// (the freeze). Marching the STABLE enemy castle until within EnemyBaseEngageRadius
+			// makes the long approach byte-identical to the legacy / DEFEND stable-goal march (one
+			// path, followed through — the path proven healthy full-field at runtime, TASK-280);
+			// the box-defender-FIRST intent is preserved close in, where the remaining path is
+			// short so a shuffling goal re-paths cheaply. A null/destroyed enemy castle leaves
+			// Goal null ⇒ EnterIdle below, exactly as before (match over).
+			AActor* BoxDefender = nullptr;
+			if (EnemyCastle && GetDistanceToTarget(MyLocation, EnemyCastleActor) <= EnemyBaseEngageRadius)
+			{
+				BoxDefender = FindNearestEnemyInSpawnBox(EnemyCastle);
+			}
 			Goal = BoxDefender ? BoxDefender : EnemyCastleActor;
 		}
 
