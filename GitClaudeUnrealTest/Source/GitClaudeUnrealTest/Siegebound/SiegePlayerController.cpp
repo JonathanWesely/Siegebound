@@ -77,6 +77,9 @@ ASiegePlayerController::ASiegePlayerController()
 	Card6ActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_Card6.IA_Card6")));                     // TASK-032
 	UICursorActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_UICursor.IA_UICursor")));            // TASK-032
 	CancelPlaceActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_CancelPlace.IA_CancelPlace")));   // TASK-009
+	CmdAttackActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_CmdAttack.IA_CmdAttack")));         // TASK-273 (Shield Wall — T)
+	CmdHoldActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_CmdHold.IA_CmdHold")));               // TASK-273 (Shield Wall — R)
+	CmdDefendActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_CmdDefend.IA_CmdDefend")));         // TASK-273 (Shield Wall — E)
 }
 
 void ASiegePlayerController::BeginPlay()
@@ -195,6 +198,10 @@ void ASiegePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	// the melee suppression and destroys the reticle decal
 	ExitTargetingMode();
 
+	// same law for the W1 HOLD-command pick (TASK-274): teardown mid-pick releases
+	// the HoldHero melee suppression and destroys the shared reticle decal
+	CancelHoldTarget();
+
 	// symmetric teardown for the IA_UICursor hold (keeps the ignore-look counter balanced)
 	ClearUICursorHold();
 
@@ -216,6 +223,14 @@ void ASiegePlayerController::SetupInputComponent()
 	Card6Action = ResolveInputAction(Card6Action, Card6ActionAsset, TEXT("IA_Card6"), TEXT("TASK-032"));
 	UICursorAction = ResolveInputAction(UICursorAction, UICursorActionAsset, TEXT("IA_UICursor"), TEXT("TASK-032"));
 	CancelPlaceAction = ResolveInputAction(CancelPlaceAction, CancelPlaceActionAsset, TEXT("IA_CancelPlace"), TEXT("TASK-009"));
+
+	// Shield Wall unit-command actions (W1 TASK-274; keys T/R/E via IMC_Hero,
+	// TASK-273). Same null-safe soft-resolve as the card actions — the TASK-273
+	// assets may not exist yet at compile-review time, so an unresolved action
+	// just skips its binding below (logged once by ResolveInputAction).
+	CmdAttackAction = ResolveInputAction(CmdAttackAction, CmdAttackActionAsset, TEXT("IA_CmdAttack"), TEXT("TASK-273"));
+	CmdHoldAction = ResolveInputAction(CmdHoldAction, CmdHoldActionAsset, TEXT("IA_CmdHold"), TEXT("TASK-273"));
+	CmdDefendAction = ResolveInputAction(CmdDefendAction, CmdDefendActionAsset, TEXT("IA_CmdDefend"), TEXT("TASK-273"));
 
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))
 	{
@@ -254,6 +269,23 @@ void ASiegePlayerController::SetupInputComponent()
 		{
 			EnhancedInputComponent->BindAction(CancelPlaceAction, ETriggerEvent::Started, this, &ASiegePlayerController::OnCancelPlacePressed);
 		}
+
+		// Shield Wall unit commands (W1 TASK-274): T = Attack, R = HOLD pick,
+		// E = Defend (mapped in IMC_Hero by TASK-273). Each binding is skipped
+		// null-safe until its IA_Cmd* asset exists — a missing asset just leaves
+		// that key inert (never a crash).
+		if (CmdAttackAction)
+		{
+			EnhancedInputComponent->BindAction(CmdAttackAction, ETriggerEvent::Started, this, &ASiegePlayerController::OnCmdAttackPressed);
+		}
+		if (CmdHoldAction)
+		{
+			EnhancedInputComponent->BindAction(CmdHoldAction, ETriggerEvent::Started, this, &ASiegePlayerController::OnCmdHoldPressed);
+		}
+		if (CmdDefendAction)
+		{
+			EnhancedInputComponent->BindAction(CmdDefendAction, ETriggerEvent::Started, this, &ASiegePlayerController::OnCmdDefendPressed);
+		}
 	}
 	else
 	{
@@ -266,6 +298,33 @@ void ASiegePlayerController::SetupInputComponent()
 void ASiegePlayerController::PlayerTick(float DeltaTime)
 {
 	Super::PlayerTick(DeltaTime);
+
+	// HOLD ground-target pick (W1 TASK-274) — a third cursor mode on the SAME
+	// input surface as placement/targeting (reticle machinery reused). Mutually
+	// exclusive with the other two, so at most one of the three branches runs.
+	// Polled RMB/Esc cancel (no stance change) + per-frame trace + polled LMB
+	// confirm — the targeting-branch shape.
+	if (bInHoldTargetMode)
+	{
+		// cancel is free and leaves the prior command unchanged (spec)
+		if (WasInputKeyJustPressed(EKeys::RightMouseButton) || WasInputKeyJustPressed(EKeys::Escape))
+		{
+			CancelHoldTarget();
+			return;
+		}
+
+		// reticle = TRACE to the surface under the cursor (surface-projection law)
+		UpdateHoldReticle();
+
+		// confirm: LMB polled while in mode — the physical click also reaches the
+		// hero's IA_Attack binding, where SetMeleeSuppressed(true) (via HoldHero)
+		// makes DoMeleeAttack a cooldown-free no-op (the placement/targeting note).
+		if (WasInputKeyJustPressed(EKeys::LeftMouseButton))
+		{
+			ConfirmHoldTarget();
+		}
+		return;
+	}
 
 	// M5 TARGETING mode (TASK-100) — the sibling of placement mode below, on the
 	// SAME input surface (M5 ruling 8: cursor posture mirrors placement; no new
@@ -347,6 +406,9 @@ void ASiegePlayerController::OnUnPossess()
 
 	// same law for M5 targeting mode (on the recorded TargetingHero)
 	ExitTargetingMode();
+
+	// same law for the W1 HOLD-command pick (on the recorded HoldHero, TASK-274)
+	CancelHoldTarget();
 
 	Super::OnUnPossess();
 }
@@ -672,7 +734,72 @@ void ASiegePlayerController::OnCancelPlacePressed()
 	if (bInTargetingMode)
 	{
 		ExitTargetingMode();
+		return;
 	}
+
+	// W1 (TASK-274): the SAME cancel action aborts a HOLD-command location pick
+	// at no cost and leaves the prior stance unchanged (the polled RMB/Esc in
+	// PlayerTick double-covers this so a missing IA_CancelPlace can't soft-lock it)
+	if (bInHoldTargetMode)
+	{
+		CancelHoldTarget();
+	}
+}
+
+void ASiegePlayerController::SetUnitCommand(ESiegeUnitCommand NewCommand)
+{
+	// Latch the stance (Shield Wall, W1 TASK-274): units read CurrentCommand +
+	// HasIssuedCommand() live each tick (TASK-275). bHasIssuedCommand flips true
+	// on the FIRST command and stays true for the match (until Play Again), so
+	// once the player commands, the legacy-body fallback never returns mid-match.
+	// Always broadcasts — re-issuing the same stance re-affirms the HUD (TASK-276).
+	CurrentCommand = NewCommand;
+	bHasIssuedCommand = true;
+
+	OnUnitCommandChanged.Broadcast(NewCommand);
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASiegePlayerController '%s': unit command set to %s (Shield Wall, TASK-274)."),
+		*GetNameSafe(this),
+		NewCommand == ESiegeUnitCommand::Attack ? TEXT("Attack") : (NewCommand == ESiegeUnitCommand::Hold ? TEXT("Hold") : TEXT("Defend")));
+}
+
+void ASiegePlayerController::OnCmdAttackPressed()
+{
+	// ATTACK (T) is immediate — no ground pick. Ignored after match end (the
+	// input-ignore pattern). If a HOLD pick is mid-flight, abandon it first (no
+	// stance change from the abort) so the reticle/cursor state is clean, THEN
+	// latch Attack.
+	if (bMatchEnded)
+	{
+		return;
+	}
+	if (bInHoldTargetMode)
+	{
+		CancelHoldTarget();
+	}
+	SetUnitCommand(ESiegeUnitCommand::Attack);
+}
+
+void ASiegePlayerController::OnCmdHoldPressed()
+{
+	// HOLD (R) enters the ground-target location pick — BeginHoldTarget owns all
+	// the guards (match-ended, and mutual exclusion with placement/targeting).
+	BeginHoldTarget();
+}
+
+void ASiegePlayerController::OnCmdDefendPressed()
+{
+	// DEFEND (E) is immediate — mirror of OnCmdAttackPressed.
+	if (bMatchEnded)
+	{
+		return;
+	}
+	if (bInHoldTargetMode)
+	{
+		CancelHoldTarget();
+	}
+	SetUnitCommand(ESiegeUnitCommand::Defend);
 }
 
 void ASiegePlayerController::HandleHeroDied(AHeroCharacter* DeadHero)
@@ -697,6 +824,16 @@ void ASiegePlayerController::HandleHeroDied(AHeroCharacter* DeadHero)
 			*GetNameSafe(this));
 	}
 	ExitTargetingMode();
+
+	// same law for the W1 HOLD-command pick (TASK-274): death mid-pick cancels
+	// it free (no stance change) and releases the HoldHero suppression
+	if (bInHoldTargetMode)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': hero died during a HOLD-command pick — cancelling the pick (stance unchanged)."),
+			*GetNameSafe(this));
+	}
+	CancelHoldTarget();
 }
 
 void ASiegePlayerController::EnterPlacementMode(FName CardID)
@@ -724,6 +861,16 @@ void ASiegePlayerController::EnterPlacementMode(FName CardID)
 		UE_LOG(LogGitClaudeUnrealTest, Verbose,
 			TEXT("ASiegePlayerController '%s': EnterPlacementMode('%s') ignored — already targeting '%s'."),
 			*GetNameSafe(this), *CardID.ToString(), *TargetingCardID.ToString());
+		return;
+	}
+
+	// third-mode mutual exclusion (W1 TASK-274): a live HOLD ground-target pick
+	// owns the cursor/LMB — the same mutual-ignore the two modes above use
+	if (bInHoldTargetMode)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegePlayerController '%s': EnterPlacementMode('%s') ignored — a HOLD-command location pick is active."),
+			*GetNameSafe(this), *CardID.ToString());
 		return;
 	}
 
@@ -866,6 +1013,10 @@ void ASiegePlayerController::HandleMatchEnd(ETeamId Winner)
 	ExitPlacementMode();
 	ExitTargetingMode();
 
+	// same for the W1 HOLD-command pick (TASK-274): tear down the shared reticle
+	// + HoldHero suppression before the UI-only switch (no-op-safe)
+	CancelHoldTarget();
+
 	// end any IA_UICursor hold too: UI-only input can swallow the action's
 	// release event, which would leave the ignore-look counter stuck across
 	// the end screen (the end screen owns the cursor from here anyway)
@@ -963,6 +1114,9 @@ void ASiegePlayerController::HandleMatchReset()
 	// below must never happen under a live TargetingHandSlot
 	ExitTargetingMode();
 
+	// same defensive teardown for the W1 HOLD-command pick (TASK-274)
+	CancelHoldTarget();
+
 	bMatchEnded = false;
 
 	// idempotent with WBP_VictoryScreen's own RemoveFromParent (TASK-011)
@@ -990,6 +1144,17 @@ void ASiegePlayerController::HandleMatchReset()
 	{
 		DeckComponent->ResetDeck();
 	}
+
+	// W1 unit-command reset (TASK-274 step 5): Play Again returns the stance to
+	// the default Attack, clears the issued-latch (units run the legacy body
+	// again until the player re-commands), and zeroes the picked HoldLocation.
+	// Broadcast the reset so the HUD indicator (TASK-276) clears — it re-checks
+	// HasIssuedCommand() (now false) and shows nothing. CancelHoldTarget above
+	// already tore down any in-progress pick.
+	CurrentCommand = ESiegeUnitCommand::Attack;
+	bHasIssuedCommand = false;
+	HoldLocation = FVector::ZeroVector;
+	OnUnitCommandChanged.Broadcast(CurrentCommand);
 
 	// back to M1 game-only free-look (both cursor owners are clear by now)
 	ApplyCursorInputState();
@@ -1389,6 +1554,16 @@ void ASiegePlayerController::EnterTargetingMode(FName CardID)
 		UE_LOG(LogGitClaudeUnrealTest, Verbose,
 			TEXT("ASiegePlayerController '%s': EnterTargetingMode('%s') ignored — already targeting '%s'."),
 			*GetNameSafe(this), *CardID.ToString(), *TargetingCardID.ToString());
+		return;
+	}
+
+	// third-mode mutual exclusion (W1 TASK-274): a live HOLD ground-target pick
+	// owns the cursor/LMB — mirror of the already-placing/targeting ignores
+	if (bInHoldTargetMode)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegePlayerController '%s': EnterTargetingMode('%s') ignored — a HOLD-command location pick is active."),
+			*GetNameSafe(this), *CardID.ToString());
 		return;
 	}
 
@@ -1814,6 +1989,181 @@ void ASiegePlayerController::DestroySpellReticle()
 		SpellReticleActor->Destroy();
 		SpellReticleActor = nullptr;
 	}
+}
+
+void ASiegePlayerController::BeginHoldTarget()
+{
+	// EnterPlacementMode / EnterTargetingMode early-out pattern: post-match and
+	// mid-mode calls are silent ignores (no broadcast), not player-facing refusals.
+	if (bMatchEnded)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegePlayerController '%s': BeginHoldTarget ignored — match has ended."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	if (bInPlacementMode)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegePlayerController '%s': BeginHoldTarget ignored — already placing '%s' (mode mutual exclusion)."),
+			*GetNameSafe(this), *PendingCardID.ToString());
+		return;
+	}
+
+	if (bInTargetingMode)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegePlayerController '%s': BeginHoldTarget ignored — already targeting '%s' (mode mutual exclusion)."),
+			*GetNameSafe(this), *TargetingCardID.ToString());
+		return;
+	}
+
+	if (bInHoldTargetMode)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegePlayerController '%s': BeginHoldTarget ignored — a HOLD-command pick is already active."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	bInHoldTargetMode = true;
+	bHoldSurfaceValid = false;
+	HoldPickLocation = FVector::ZeroVector;
+
+	// suppress hero melee while the pick owns the LMB (TASK-003 API) — the confirm
+	// click must not also swing; released on EVERY hold exit path (CancelHoldTarget).
+	// HoldHero records exactly whose suppression we must release (the
+	// PlacementHero/TargetingHero pattern; a separate record so a defensive
+	// ExitPlacement/ExitTargeting call can never strand this one).
+	AHeroCharacter* Hero = Cast<AHeroCharacter>(GetPawn());
+	HoldHero = Hero;
+	if (Hero)
+	{
+		Hero->SetMeleeSuppressed(true);
+	}
+	else
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': entering a HOLD-command pick without an AHeroCharacter pawn — no melee to suppress."),
+			*GetNameSafe(this));
+	}
+
+	ApplyCursorInputState();
+
+	// REUSE the spell reticle machinery (no new reticle system, TASK-274 spec):
+	// SpawnSpellReticle manages the shared SpellReticleActor and is null-safe if
+	// M_SpellReticle is missing (no visual — the pick still works off the trace).
+	SpawnSpellReticle();
+
+	// size the reticle ring to the actual HoldRadius so the player sees the disc
+	// their held units will fight inside (SpawnSpellReticle sizes to the spell's
+	// AoERadius; a HOLD pick has no spell row, so set the footprint here). X (the
+	// projection half-depth) matches the spell reticle's ±500 window so the decal
+	// reaches the surface on every hill. Null-safe: no reticle actor (missing
+	// material) ⇒ skip.
+	if (SpellReticleActor)
+	{
+		if (UDecalComponent* ReticleDecal = SpellReticleActor->GetDecal())
+		{
+			ReticleDecal->DecalSize = FVector(500.f, HoldRadius, HoldRadius);
+			ReticleDecal->MarkRenderStateDirty();
+		}
+	}
+
+	UpdateHoldReticle();
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASiegePlayerController '%s': HOLD-command location pick started (radius %.0f, Shield Wall TASK-274)."),
+		*GetNameSafe(this), HoldRadius);
+}
+
+void ASiegePlayerController::UpdateHoldReticle()
+{
+	// REUSED cursor trace (the UpdateSpellReticle shape): the pick point is the
+	// trace's ImpactPoint — the SURFACE under the cursor (flat floor, hill crown,
+	// or flank alike; never the Z=0 plane). Writes HOLD's OWN disjoint scratch so
+	// it can never touch the spell-targeting state.
+	FHitResult Hit;
+	const bool bSurfaceHit = TraceCursorToGround(Hit);
+	if (bSurfaceHit)
+	{
+		HoldPickLocation = Hit.ImpactPoint;
+	}
+	bHoldSurfaceValid = bSurfaceHit;
+
+	if (SpellReticleActor)
+	{
+		// hidden while the cursor is off every surface (sky) — the confirm click
+		// refuses on the same flag, so what the player sees is what the click does
+		SpellReticleActor->SetActorHiddenInGame(!bSurfaceHit);
+		if (bSurfaceHit)
+		{
+			SpellReticleActor->SetActorLocation(HoldPickLocation);
+		}
+	}
+}
+
+void ASiegePlayerController::ConfirmHoldTarget()
+{
+	// trace-miss (cursor on the sky): refuse free and STAY in mode — a different
+	// point can succeed (the placement/targeting trace-miss precedent). No stance
+	// moves; the reticle is already hidden this frame.
+	if (!bHoldSurfaceValid)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': HOLD-command confirm ignored — cursor is not over a surface (staying in the pick)."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	// capture the picked point BEFORE tearing the mode down (CancelHoldTarget
+	// zeroes the scratch)
+	const FVector ConfirmedHoldLocation = HoldPickLocation;
+
+	// exit the pick mode: releases the HoldHero melee suppression, destroys the
+	// shared reticle, restores the cursor input state (no stance change here)
+	CancelHoldTarget();
+
+	// commit the location, THEN latch the Hold stance + broadcast (TASK-275 reads
+	// GetHoldLocation() / GetHoldRadius() for the held-unit disc)
+	HoldLocation = ConfirmedHoldLocation;
+	SetUnitCommand(ESiegeUnitCommand::Hold);
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASiegePlayerController '%s': HOLD stance set at (%.0f, %.0f, %.0f), radius %.0f (Shield Wall TASK-274)."),
+		*GetNameSafe(this), HoldLocation.X, HoldLocation.Y, HoldLocation.Z, HoldRadius);
+}
+
+void ASiegePlayerController::CancelHoldTarget()
+{
+	// the ExitTargetingMode law (qa/TASK-003-report.md warning 2): release the
+	// melee suppression BEFORE any early-out. Every hold exit path — confirm,
+	// RMB/Esc cancel (binding or polled), match end, hero death, unpossess, match
+	// reset, EndPlay — funnels through here. HoldHero is a SEPARATE record from
+	// PlacementHero/TargetingHero, so a defensive ExitPlacement/ExitTargeting call
+	// can never strand a live hold suppression (and SetMeleeSuppressed(false) is
+	// an idempotent flag write).
+	if (IsValid(HoldHero))
+	{
+		HoldHero->SetMeleeSuppressed(false);
+	}
+	HoldHero = nullptr;
+
+	if (!bInHoldTargetMode)
+	{
+		return;
+	}
+
+	bInHoldTargetMode = false;
+	bHoldSurfaceValid = false;
+	HoldPickLocation = FVector::ZeroVector;
+
+	DestroySpellReticle();
+
+	// restores game-only free-look — unless IA_UICursor is still held, in which
+	// case the cursor stays up for the HUD (the cursor owners compose)
+	ApplyCursorInputState();
 }
 
 void ASiegePlayerController::ResolveSpellInstant(int32 Slot, FName CardID, const FCardRow& Row, ASiegePlayerState& SiegeState)
@@ -2501,12 +2851,13 @@ void ASiegePlayerController::ApplyCursorInputState()
 		return;
 	}
 
-	// three cursor owners compose: placement mode (M1, unchanged), targeting
-	// mode (M5 TASK-100 — ruling 8: "cursor posture mirrors placement mode", so
-	// it joins the composition rather than inventing a new posture), and the
-	// held IA_UICursor (M2 input ruling) — any one keeps the cursor up. The two
-	// card modes are mutually exclusive, so at most two owners are ever live.
-	const bool bWantCursor = bInPlacementMode || bInTargetingMode || bUICursorHeld;
+	// cursor owners compose: placement mode (M1, unchanged), spell targeting mode
+	// (M5 TASK-100 — ruling 8: "cursor posture mirrors placement mode"), the W1
+	// HOLD-command pick (TASK-274 — same reused posture), and the held IA_UICursor
+	// (M2 input ruling) — any one keeps the cursor up. The three card/command
+	// cursor modes are mutually exclusive, so at most two owners are ever live
+	// (one of them + IA_UICursor).
+	const bool bWantCursor = bInPlacementMode || bInTargetingMode || bInHoldTargetMode || bUICursorHeld;
 	bShowMouseCursor = bWantCursor;
 	bEnableClickEvents = bWantCursor;
 

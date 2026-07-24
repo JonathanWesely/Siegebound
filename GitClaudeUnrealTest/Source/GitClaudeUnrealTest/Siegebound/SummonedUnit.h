@@ -11,6 +11,8 @@
 #include "SummonedUnit.generated.h"
 
 class AAIController;
+class ACastle;
+class ASiegePlayerController;
 class UAnimInstance;
 class UAnimSequence;
 class UDataTable;
@@ -371,6 +373,16 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|AI", meta = (ClampMin = "0"))
 	float TieBreakDistance = 100.f;
 
+	/**
+	 *  Shield Wall DEFEND engagement radius (W1 TASK-275): under the player's DEFEND
+	 *  stance, a Blue Standard unit fights ONLY enemies within this 2D distance of its
+	 *  OWN castle, else falls back toward home. Default 2500 uu (Q6 default; FLAGGED
+	 *  tunable for the 10x arena). Lives HERE per CONVENTIONS (the unit owns it, NOT the
+	 *  controller — mirrors how HoldRadius lives on the controller). // Shield Wall — Defend radius
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Commands", meta = (ClampMin = "0"))
+	float DefendRadius = 2500.f;
+
 	/** Seconds between state-machine checks (spec: ~0.25 s, never per-tick). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|AI", meta = (ClampMin = "0.05"))
 	float StateCheckInterval = 0.25f;
@@ -526,6 +538,42 @@ private:
 	AActor* FindNearestEnemyCastle() const;
 
 	/**
+	 *  Shield Wall command reshaping (W1 TASK-275): re-targets THIS Standard body per the
+	 *  local player's latched stance (PC.GetCurrentCommand). Called from UpdateState ONLY
+	 *  when the gate holds — Profile==Standard AND Team==Blue (the player's team) AND
+	 *  PC.HasIssuedCommand() — so the LEGACY body below is byte-for-byte unchanged whenever
+	 *  the gate is false (bot/Red units, miners, and player units pre-first-command). Never
+	 *  bypasses the freeze gating (UpdateState early-returns on frozen before this runs).
+	 *    • ATTACK — self-defense AcquireTarget UNCHANGED; only the no-in-aggro march goal
+	 *      changes: FindNearestEnemyInSpawnBox(enemy castle) ?? the enemy castle.
+	 *    • HOLD   — target = AcquireEnemyNearPoint(HoldLocation, HoldRadius); goal = that
+	 *      target ?? march to HoldLocation via EnterAdvanceToLocation (Idle on arrival).
+	 *    • DEFEND — target = AcquireEnemyNearPoint(own castle, DefendRadius); goal = that
+	 *      target ?? fall back to the own castle (EnterAdvance).
+	 */
+	void UpdateStateStandardCommanded(const ASiegePlayerController& PC);
+
+	/**
+	 *  Shield Wall HOLD/DEFEND target search (W1 TASK-275): AcquireTarget's exact
+	 *  team-filtered ITeamAgent iteration + pawn/building tie-break, but the eligibility
+	 *  gate is a 2D disc — a candidate's LOCATION must lie within Radius of Center —
+	 *  instead of AggroRadius-from-self. Nearest-to-self selection + the TieBreakDistance
+	 *  rule are kept identical for behavior consistency. Null-safe (no world ⇒ nullptr).
+	 */
+	AActor* AcquireEnemyNearPoint(const FVector& Center, float Radius) const;
+
+	/**
+	 *  Shield Wall ATTACK spawn-box clear (W1 TASK-275): nearest alive enemy ITeamAgent
+	 *  (unit/building) whose location passes EnemyCastle->IsPointInSpawnBox — the enemy
+	 *  castle itself is excluded (we march it as the fallback goal). Returns nullptr when
+	 *  EnemyCastle is null or no enemy sits inside its spawn box.
+	 */
+	AActor* FindNearestEnemyInSpawnBox(const ACastle* EnemyCastle) const;
+
+	/** Nearest standing OWN-team castle (Team == ours, not destroyed) — the Shield Wall DEFEND fallback goal. Mirror of FindNearestEnemyCastle (W1 TASK-275). */
+	ACastle* FindOwnCastle() const;
+
+	/**
 	 *  Siege-profile state (TASK-054, GDD §3.8): IGNORE units and the hero;
 	 *  target the nearest enemy ABuilding, else the enemy castle, and advance/
 	 *  attack it (melee tagged USiegeDamageType_Siege via PerformAttack).
@@ -562,6 +610,16 @@ private:
 
 	/** Enters/keeps Advance toward Goal: issues MoveToActor when the goal changed or path following went idle. */
 	void EnterAdvance(AActor* Goal);
+
+	/**
+	 *  Point variant of EnterAdvance (W1 TASK-275, Shield Wall HOLD): marches toward a
+	 *  world LOCATION (not an actor) via AI->MoveToLocation(StructureMoveAcceptanceRadius,
+	 *  project-to-nav). (Re)paths only when the point moved meaningfully or path following
+	 *  went idle — the EnterAdvance re-path discipline for a point. Clears CurrentMoveGoal
+	 *  (so a later actor-advance always re-paths) and tracks the point in
+	 *  CurrentMoveGoalLocation. The actor EnterAdvance stays byte-for-byte unchanged.
+	 */
+	void EnterAdvanceToLocation(const FVector& Point);
 
 	/** Enters Idle: clears the attack timer and stops movement. */
 	void EnterIdle();
@@ -840,6 +898,12 @@ private:
 	/** Goal of the last MoveToActor request — avoids re-pathing every state check. */
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> CurrentMoveGoal;
+
+	/** Goal point of the last EnterAdvanceToLocation request (W1 TASK-275, HOLD) — avoids re-pathing to the same point every check. Meaningful only while bHasMoveGoalLocation. */
+	FVector CurrentMoveGoalLocation = FVector::ZeroVector;
+
+	/** True once a location move has been issued (W1 TASK-275); gates the CurrentMoveGoalLocation "changed?" comparison so the first point-move always paths. */
+	bool bHasMoveGoalLocation = false;
 
 	/**
 	 *  Hard cache of AttackImpactEffect, resolved ONCE at BeginPlay (TASK-020) —
