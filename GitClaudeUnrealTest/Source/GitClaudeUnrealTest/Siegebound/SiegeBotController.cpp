@@ -53,7 +53,7 @@ namespace
 	 *  discarded here — an UNAFFORDABLE Unit/Building/Economy is classified "unplayable
 	 *  THIS tick" by the PLAY rules (rules 1-4 only ever select an affordable card — the
 	 *  never-play-unaffordable invariant), but it is deliberately NOT a discard
-	 *  candidate: the bot BANKS toward it (e.g. an Ogre needs 12 gold, §4), so cycling
+	 *  candidate: the bot BANKS toward it (e.g. an Ogre needs 36 gold post-TASK-278 ×3, §4), so cycling
 	 *  it away would break the "growing Set II waves incl. Ogres" acceptance.
 	 *
 	 *  M5 (TASK-102): Spell stays in this TYPE-level set, but the bot's two CASTABLE

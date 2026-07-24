@@ -225,9 +225,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot", meta = (ClampMin = "0"))
 	int32 TargetMinerCount = 3;
 
-	/** Rule 4 attack gate: the bot banks to at least this much gold before committing an offensive unit — this is what makes waves GROW as income scales. // GDD §4 */
+	/** Rule 4 attack gate: the bot banks to at least this much gold before committing an offensive unit — this is what makes waves GROW as income scales. Scaled 12 -> 36 with the 2026-07-24 all-cards-×3 cost triple (TASK-278) = the new Ogre cost (12×3), preserving "bank toward the priciest bankable unit" so waves still grow toward Knight 18 / Cavalry 21 / Ogre 36 instead of dumping on the cheapest affordable unit. // GDD §4 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot", meta = (ClampMin = "0"))
-	int32 AttackBankThreshold = 12;
+	int32 AttackBankThreshold = 36;
 
 	/** Rule 5 discard fee (mirrors the player's §3.6 1-gold charge); rule 5 needs at least this much gold. // GDD §3.6 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot", meta = (ClampMin = "0"))

@@ -45,10 +45,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMinerCountChanged, int32, AliveCo
  *  - Gold starts at 10 (TASK-089 2026-07-08 balance directive; was 50); every
  *    income tick (1.0 s) adds MinerGoldPerTick (1/s) per ARRIVED miner (§3.3)
  *    plus the flat non-miner income (§8), and every BaseIncomeTickPeriod-th
- *    tick (2 ⇒ every 2 s) additionally grants the base GoldPerTick (1 — so
- *    base income is 1 gold per 2 s; was 2/s), doubled while the shared
- *    ASiegeGameState overtime latch is active (§3.2, 7:00 — read LIVE on the
- *    grant tick, so accrual can never desync from the clock).
+ *    tick (1 ⇒ every 1 s) additionally grants the base GoldPerTick (1 — so
+ *    base income is 1 gold per 1 s; TASK-278 2026-07-24 reverted the TASK-089
+ *    1-per-2s change), doubled while the shared ASiegeGameState overtime latch
+ *    is active (§3.2, 7:00 → 2 gold/s — read LIVE on the grant tick, so accrual
+ *    can never desync from the clock).
  *  - Miner bookkeeping is two separate counts (TASK-025 drives both): ALIVE
  *    miners (RegisterMinerAlive/UnregisterMinerAlive — the MaxActiveMiners = 6
  *    cap basis, checked at play time via CanAddMiner, TASK-030) vs ARRIVED
@@ -140,11 +141,13 @@ public:
 	 *  accrual, and HandleGoldTick no longer calls it. Base contribution =
 	 *  GoldPerTick, doubled while the ASiegeGameState overtime latch is active
 	 *  (§3.2 — read LIVE every call, never cached), averaged over
-	 *  BaseIncomeTickPeriod and rounded UP for display: with defaults it shows
-	 *  +1/s pre-overtime while the true base is 0.5/s (max error 0.5, ruled
-	 *  acceptable — "+0/s" over a visibly rising counter would read as broken),
-	 *  and an exact +1/s in overtime. Round-up is STABLE (never alternates), so
-	 *  RefreshGoldRate change detection is unaffected. Miner income
+	 *  BaseIncomeTickPeriod and rounded UP for display: with the 2026-07-24
+	 *  defaults (BaseIncomeTickPeriod=1, TASK-278) the average is EXACT — a
+	 *  truthful +1/s pre-overtime (true base is now 1/s, so the round-up is a
+	 *  no-op) and +2/s in overtime. (Pre-TASK-278 the period-2 base averaged
+	 *  0.5/s and the round-up still displayed +1/s over that 0.5/s true accrual;
+	 *  the accrual now matches the display.) Round-up is STABLE (never alternates),
+	 *  so RefreshGoldRate change detection is unaffected. Miner income
 	 *  (MinerGoldPerTick per ARRIVED miner, §3.3) and flat income (§8 Deep
 	 *  Mine, TASK-057) still land every 1.0 s tick, so their contribution here
 	 *  is exact per-second.
@@ -273,13 +276,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Gold", meta = (ClampMin = "0"))
 	int32 StartingGold = 10;
 
-	/** BASE gold added per BASE-INCOME GRANT — one grant every BaseIncomeTickPeriod income ticks (defaults: 1 gold per 2 s; TASK-089 2026-07-08 balance directive, was 2 every tick) — doubled by OvertimeIncomeMultiplier while overtime is active; arrived miners add MinerGoldPerTick each EVERY tick on top (TASK-024 rate composition). // GDD §3.2 (amended) */
+	/** BASE gold added per BASE-INCOME GRANT — one grant every BaseIncomeTickPeriod income ticks (defaults: 1 gold per 1 s — 2026-07-24 balance directive TASK-278, reverts the TASK-089 2026-07-08 1-per-2s income change; was 2 every tick pre-089) — doubled by OvertimeIncomeMultiplier while overtime is active (→ 2 gold/s in overtime); arrived miners add MinerGoldPerTick each EVERY tick on top (TASK-024 rate composition). // GDD §3.2 (amended) */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Gold", meta = (ClampMin = "0"))
 	int32 GoldPerTick = 1;
 
-	/** Number of GoldTickInterval income ticks between base-income grants: 2 ⇒ the base lands every 2 s; 1 = legacy every-tick behavior. Miner and flat (Deep Mine) income are NOT affected — they land every tick. // TASK-089 2026-07-08 balance directive */
+	/** Number of GoldTickInterval income ticks between base-income grants: 1 ⇒ the base lands every 1 s (2026-07-24 balance directive TASK-278 — reverts the TASK-089 2026-07-08 1-per-2s income change; was 2 ⇒ every 2 s). Miner and flat (Deep Mine) income are NOT affected — they land every tick. // GDD §3.2 (amended) */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Gold", meta = (ClampMin = "1"))
-	int32 BaseIncomeTickPeriod = 2;
+	int32 BaseIncomeTickPeriod = 1;
 
 	/** Seconds between passive income ticks. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Gold", meta = (ClampMin = "0.05"))
@@ -293,7 +296,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Miners", meta = (ClampMin = "0"))
 	int32 MaxActiveMiners = 6;
 
-	/** Base-income multiplier while the ASiegeGameState overtime latch is active: base grant 1 -> 2 per BaseIncomeTickPeriod ticks = 1 gold/s with defaults (miner/flat bonuses unchanged). Applied per grant, on the grant tick (TASK-089). // GDD §3.2 — at 7:00 base accrual doubles */
+	/** Base-income multiplier while the ASiegeGameState overtime latch is active: base grant 1 -> 2 per BaseIncomeTickPeriod ticks = 2 gold/s with the 2026-07-24 defaults (TASK-278 period=1; was 1 gold/s at the old 1-per-2s base) (miner/flat bonuses unchanged). Applied per grant, on the grant tick (TASK-089). // GDD §3.2 — at 7:00 base accrual doubles */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Gold", meta = (ClampMin = "1"))
 	int32 OvertimeIncomeMultiplier = 2;
 
