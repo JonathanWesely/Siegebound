@@ -134,6 +134,27 @@ ASummonedUnit::ASummonedUnit()
 	SkeletalVisualMesh->SetCanEverAffectNavigation(false);
 	SkeletalVisualMesh->SetVisibility(false);
 
+	// M7.6 Phase-2 URO / anim-tick perf (TASK-285, CONVENTIONS "Arena 10× scale-up &
+	// LOD/perf" SK-unit URO law): at 10× field scale most of the ~10× unit fleet is
+	// off-screen at any moment, so make an unrendered unit's animation cost near-zero.
+	// OnlyTickPoseWhenRendered stops evaluating the pose entirely while the mesh is not
+	// rendered (accepted off-screen anim pop at the gameplay cam), and URO throttles the
+	// pose-tick RATE for distant/rarely-rendered units that ARE visible.
+	//
+	// SAFE unconditionally: these flags touch ONLY this cosmetic SkeletalVisualMesh
+	// component's POSE tick. Every gameplay-critical path is decoupled from the pose —
+	// movement is CharacterMovementComponent + AAIController MoveTo (nav), never root
+	// motion (none in this TU); aggro/target acquisition is distance math on the
+	// StateTimerHandle→UpdateState loop; attack cadence + damage delivery are the
+	// AttackTimerHandle→PerformAttack timer (ApplyDamage / FireProjectileAt applied
+	// DIRECTLY, never via an AnimNotify — there are none). So an off-screen unit still
+	// marches, acquires, and hits on schedule; only its visible pose lags. This is a
+	// SEPARATE subobject from the Character's animation Mesh (unused here), which makes
+	// the decoupling structural. NOTE: SetVisibleInRayTracing(false) is the reserved
+	// W2/W3 EMERGENCY lever and is deliberately NOT applied here (TASK-285 scope).
+	SkeletalVisualMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
+	SkeletalVisualMesh->bEnableUpdateRateOptimizations = true;
+
 	// §6 juice components (TASK-154/155): the shared hit-flash + transform-juice, added
 	// once here so AMinerUnit inherits them. The flash gathers meshes at its BeginPlay and
 	// is driven from TakeDamage; the juice is pointed at the active visual mesh + squashed

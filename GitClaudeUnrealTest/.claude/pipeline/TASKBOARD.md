@@ -1940,7 +1940,7 @@ Plan-of-record: `C:\Users\wesel\.claude\plans\i-am-a-bit-sunny-bird.md` (mines v
 
 #### TASK-284 — [P1] Scatter cull bands + grid-hash MinSpacing accelerator (C++, branch)
 - assignee: gameplay-programmer
-- status: backlog — dispatchable NOW
+- status: done (INTEGRATED at TASK-286 batch, build-master 2026-07-24, commit on m7.6-arena10x — compile GREEN; PIE runtime proof: clean GenerateScatter (seed 774069313), all 7 layers placed EXACT target counts (Boulders 6 / Hill 8 / Slabs 8 / Trees 70 / Rocks 60 / Grass 2500 / Plants 400) + 6 mines / 0 culls + Traversability CONFIRMED ⇒ grid-hash accelerator equivalence holds at runtime, no count-change; unpopulated-DA cull default = full render (today's look). L_Arena/DA/BattlefieldScatter.h verified UNTOUCHED. --- Prior QA 2026-07-24 PASS, 0 blockers / 1 non-blocking NIT [negative-scale, out of scope], `qa/TASK-284.md`. Grid-hash equivalence SOUND — cell size MinSpacing+2×MaxLayerR provably covers max rejection dist ⇒ 3×3 block catches every conflict; same inequality, 0 FRandomStream draws, Add 1:1 incl. mirror twin, keep-clear O(1) untouched ⇒ byte-identical layout per fixed seed. Cull fields (CullStart/End int32, bCastShadows bool default true) added to FScatterLayer, applied at BOTH HISM sites pre-Register; unpopulated DA byte-identical to today. Proxy SetCastShadow(false)-hardcoded ACCEPTED (invisible-trunk floating-shadow guard). Runtime fixed-seed layout diff = TASK-286 PIE proof. Pairs w/ TASK-285 for TASK-286 build.)
 - blocked-by: none (W1 sign-off cleared the phase gate; owns BattlefieldScatter/ScatterConfig on the branch)
 - parallel-safe: yes (disjoint from TASK-285's `SummonedUnit`; disjoint from TASK-282's `SummonedUnit`; TASK-288's Tools/ file)
 - spec: >
@@ -1970,7 +1970,7 @@ Plan-of-record: `C:\Users\wesel\.claude\plans\i-am-a-bit-sunny-bird.md` (mines v
 
 #### TASK-285 — [P2] Unit URO / OnlyTickPoseWhenRendered block (C++, branch)
 - assignee: gameplay-programmer
-- status: backlog — dispatchable NOW
+- status: done (INTEGRATED at TASK-286 batch, build-master 2026-07-24, commit on m7.6-arena10x — compile GREEN; PIE clean load + short match runs (units march/attack — Rule 4 Cavalry marching; error scan clean, no ensures/Accessed-None); `SummonedUnit.h` verified UNTOUCHED (constructor-only); off-screen pose correctness QA-proven structural. --- Prior QA 2026-07-24 PASS, 0 blockers, `qa/TASK-285.md`. Both URO flags set on `SkeletalVisualMesh` (cosmetic subobject, not ACharacter Mesh); pose-independence VERIFIED — grep 0 AnimNotify/RootMotion, damage applied DIRECTLY on the cadence timer (ApplyDamage/FireProjectileAt w/ explicit damage, no socket/bone reads), movement CMC, aggro timer-driven; SetVisibleInRayTracing correctly absent; TASK-282/020 paths disjoint. Awaits TASK-286 build w/ TASK-284.)
 - blocked-by: none. ⚠ FILE-OVERLAP: shares `SummonedUnit.{h,cpp}` with the overnight ATTACK-bug fix TASK-282 — SERIALIZE on the file (do TASK-282 first, or whichever is in flight completes before the other opens the file). Not concurrent-safe with TASK-282.
 - parallel-safe: yes vs TASK-284 (disjoint files); NO vs TASK-282 (same file — serialize)
 - spec: >
@@ -1993,7 +1993,7 @@ Plan-of-record: `C:\Users\wesel\.claude\plans\i-am-a-bit-sunny-bird.md` (mines v
 
 #### TASK-286 — [P1∥2] Integration: compile + PIE + branch commit (build)
 - assignee: build-master
-- status: backlog
+- status: done (BUILD-MASTER 2026-07-24 — BATCHED M7.6 Phase 1 (TASK-284 scatter cull-bands + grid-hash) + Phase 2 (TASK-285 unit URO) integrated on m7.6-arena10x, commit hash in the message + 🔧 Build & Git. Jonathan awake: Step-0 PIE idle; save-all (`save_assets([])`=true) → graceful close (no dialog wedge, no force-kill); recompiled GREEN (~15s); relaunched on L_Arena. VERIFY — (TASK-284) clean GenerateScatter seed 774069313, all 7 layers placed EXACT target (6/8/8/70/60/2500/400) + 6 mines / 0 culls + Traversability CONFIRMED ⇒ grid-hash runtime-equivalent, no count-change; cull bands unpopulated-DA default = full render. (TASK-285) clean load + match runs (Rule 4 Cavalry marching), no ensures/Accessed-None; off-screen correctness QA-structural. `L_Arena`/`DA_BattlefieldScatter`/`BattlefieldScatter.h`/`SummonedUnit.h` all UNTOUCHED (verified). PERF: NOT machine-capturable (no console-exec/stat-read via MCP; detached-editor tick throttled while unfocused → the log's ~5 fps is that throttle, not gameplay; real fps = Jonathan gameplay-cam WATCH — this batch is perf INFRA pre-density for Phase 3/W2). Committed: `SummonedUnit.cpp`, `BattlefieldScatter.cpp`, `ScatterConfig.h`, board + `handoffs/qa` TASK-284/285. DeckBuilderWidget + WBP_DeckBuilder (parked TASK-268) stayed unstaged. No push. Was: backlog.)
 - blocked-by: TASK-284 (qa-passed) + TASK-285 (qa-passed)
 - parallel-safe: no (single editor + compiler + Git)
 - spec: >

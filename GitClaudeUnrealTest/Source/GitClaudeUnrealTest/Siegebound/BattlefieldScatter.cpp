@@ -43,6 +43,86 @@ namespace
 		const float Sign = (Stream.FRand() < 0.5f) ? -1.f : 1.f;
 		return Sign * Mag * HalfY;
 	}
+
+	/**
+	 *  Uniform spatial-hash grid that accelerates the per-layer radius-aware
+	 *  MinSpacing rejection in ScatterLayer (TASK-284) — it replaces the old O(n²)
+	 *  scan of EVERY placed instance with an O(1)-amortized scan of the 3×3 cell
+	 *  block around a query candidate, so the scatter density can scale (the ≈4.9×
+	 *  Phase-3 fill) without quadratic blowup.
+	 *
+	 *  EQUIVALENCE (the determinism law): the grid changes only HOW conflicting
+	 *  placed points are found, never the accept/reject outcome. Init() sizes the
+	 *  cell to `MinSpacing + 2 × (the layer's MAX possible footprint radius)`. The
+	 *  rejection distance between a candidate (radius Rc) and a placed point (radius
+	 *  Rp) is `MinSpacing + Rc + Rp`; since Rc,Rp are each ≤ MaxLayerR, any
+	 *  conflicting point is strictly closer than the cell size, which forces it into
+	 *  the 3×3 block (|Δcell| ≤ 1 per axis). AnyTooClose() then applies the SAME
+	 *  pairwise inequality as the old scan, so it returns true iff the full scan
+	 *  would have — byte-identical placement for a fixed seed, with zero change to
+	 *  the FRandomStream draw sequence (the grid draws nothing).
+	 */
+	struct FScatterSpacingGrid
+	{
+		float CellSize = 1.f;
+		float MinSpacing = 0.f; // the layer's base MinSpacing (added to both radii, exactly as the old scan)
+		// Cell key (packed CX|CY) → the (2D center, footprint radius) of every placed point whose center falls in that cell.
+		TMap<uint64, TArray<TPair<FVector2D, float>>> Cells;
+
+		void Init(float InCellSize, float InMinSpacing)
+		{
+			// Floor at 1 uu so a degenerate all-zero-radius / zero-spacing layer never
+			// divides by zero (in that case MinDist is always 0, so nothing is ever
+			// rejected — the grid result trivially matches the old scan either way).
+			CellSize = FMath::Max(InCellSize, 1.f);
+			MinSpacing = InMinSpacing;
+			Cells.Reset();
+		}
+
+		FORCEINLINE int32 CellCoord(float V) const
+		{
+			return FMath::FloorToInt(V / CellSize);
+		}
+
+		// Pack two int32 cell coords into one 64-bit key via their uint32 bit patterns
+		// (collision-free across the whole int32 × int32 range, negatives included).
+		FORCEINLINE static uint64 CellKey(int32 CX, int32 CY)
+		{
+			return (static_cast<uint64>(static_cast<uint32>(CX)) << 32) | static_cast<uint64>(static_cast<uint32>(CY));
+		}
+
+		void Add(const FVector2D& Center, float Radius)
+		{
+			Cells.FindOrAdd(CellKey(CellCoord(Center.X), CellCoord(Center.Y))).Add(TPair<FVector2D, float>(Center, Radius));
+		}
+
+		// Exact replica of the old rejection test, restricted to the 3×3 cell block:
+		// true iff some placed point P satisfies dist(P, Candidate) < MinSpacing +
+		// CandRadius + P.radius (with that bound > 0). Byte-identical to the full scan.
+		bool AnyTooClose(const FVector2D& Candidate, float CandRadius) const
+		{
+			const int32 CX = CellCoord(Candidate.X);
+			const int32 CY = CellCoord(Candidate.Y);
+			for (int32 DX = -1; DX <= 1; ++DX)
+			{
+				for (int32 DY = -1; DY <= 1; ++DY)
+				{
+					if (const TArray<TPair<FVector2D, float>>* Bucket = Cells.Find(CellKey(CX + DX, CY + DY)))
+					{
+						for (const TPair<FVector2D, float>& Other : *Bucket)
+						{
+							const float MinDist = MinSpacing + CandRadius + Other.Value;
+							if (MinDist > 0.f && FVector2D::DistSquared(Other.Key, Candidate) < MinDist * MinDist)
+							{
+								return true;
+							}
+						}
+					}
+				}
+			}
+			return false;
+		}
+	};
 }
 
 ASiegeBattlefieldScatter::ASiegeBattlefieldScatter()
@@ -264,11 +344,36 @@ void ASiegeBattlefieldScatter::ScatterLayer(const FScatterLayer& Layer, FRandomS
 	const float ScaleLo = FMath::Min(Layer.ScaleRange.X, Layer.ScaleRange.Y);
 	const float ScaleHi = FMath::Max(Layer.ScaleRange.X, Layer.ScaleRange.Y);
 
-	// Placed points carry (2D center, footprint radius) so MinSpacing is radius-aware:
-	// two instances are rejected when their centers are closer than MinSpacing + both
-	// radii, so wide hills stop interpenetrating (was center-only TArray<FVector2D>).
-	TArray<TPair<FVector2D, float>> PlacedPoints;
-	PlacedPoints.Reserve(Layer.InstanceCount * (bMirror ? 2 : 1));
+	// Radius-aware MinSpacing acceleration (TASK-284): a uniform spatial-hash grid
+	// replaces the old O(n²) scan of every placed point. Placed points are still
+	// (2D center, footprint radius) — a candidate is rejected when its center is
+	// closer than MinSpacing + both radii to a placed instance (wide hills stop
+	// interpenetrating) — but the grid restricts each query to a 3×3 cell block.
+	// The cell size is MinSpacing + 2 × the layer's MAX possible footprint radius,
+	// so every point the old full scan could reject on lands in that block; the
+	// accept/reject outcome is byte-identical and no FRandomStream draw moves (the
+	// grid draws nothing). MaxLayerR bounds every instance's radius:
+	//  - explicit FootprintRadius override ⇒ every instance shares that exact radius;
+	//  - auto-derive ⇒ meshHalfDiag × scale, bounded by maxHalfDiag × ScaleHi (the
+	//    SAME GetBounds()/half-diagonal formula the per-instance FootprintR uses).
+	float MaxLayerR;
+	if (Layer.FootprintRadius > 0.f)
+	{
+		MaxLayerR = Layer.FootprintRadius;
+	}
+	else
+	{
+		float MaxHalfDiag = 0.f;
+		for (UStaticMesh* Mesh : Resolved)
+		{
+			const FBoxSphereBounds MeshBounds = Mesh->GetBounds();
+			MaxHalfDiag = FMath::Max(MaxHalfDiag,
+				static_cast<float>(FVector2D(MeshBounds.BoxExtent.X, MeshBounds.BoxExtent.Y).Size()));
+		}
+		MaxLayerR = MaxHalfDiag * ScaleHi;
+	}
+	FScatterSpacingGrid SpacingGrid;
+	SpacingGrid.Init(Layer.MinSpacing + 2.f * MaxLayerR, Layer.MinSpacing);
 
 	int32 Placed = 0;
 	for (int32 InstanceIndex = 0; InstanceIndex < Layer.InstanceCount; ++InstanceIndex)
@@ -325,19 +430,13 @@ void ASiegeBattlefieldScatter::ScatterLayer(const FScatterLayer& Layer, FRandomS
 				continue;
 			}
 
-			// Radius-aware MinSpacing: reject if the centers are closer than
-			// MinSpacing + this instance's radius + the other's radius.
-			bool bTooClose = false;
-			for (const TPair<FVector2D, float>& Other : PlacedPoints)
-			{
-				const float MinDist = Layer.MinSpacing + FootprintR + Other.Value;
-				if (MinDist > 0.f && FVector2D::DistSquared(Other.Key, Candidate) < MinDist * MinDist)
-				{
-					bTooClose = true;
-					break;
-				}
-			}
-			if (bTooClose)
+			// Radius-aware MinSpacing (TASK-284 grid-hash accelerated): reject if any
+			// placed instance's center is closer than MinSpacing + this instance's
+			// radius + the other's radius. The spatial hash restricts the scan to the
+			// 3×3 cell block; because the cell size bounds the max interaction distance,
+			// that block contains EVERY point the old full O(n²) scan would have found —
+			// same accept/reject, no draw-sequence change (the grid draws nothing).
+			if (SpacingGrid.AnyTooClose(Candidate, FootprintR))
 			{
 				continue;
 			}
@@ -359,7 +458,7 @@ void ASiegeBattlefieldScatter::ScatterLayer(const FScatterLayer& Layer, FRandomS
 
 			const FTransform InstanceXf(FRotator(0.f, Yaw, 0.f), FVector(X, Y, Z), FVector(Scale));
 			Comp->AddInstance(InstanceXf, /*bWorldSpace=*/true);
-			PlacedPoints.Add(TPair<FVector2D, float>(Candidate, FootprintR));
+			SpacingGrid.Add(Candidate, FootprintR); // TASK-284: register in the spatial hash (same data the old PlacedPoints held)
 			++Placed;
 			bPlacedThis = true;
 
@@ -406,7 +505,7 @@ void ASiegeBattlefieldScatter::ScatterLayer(const FScatterLayer& Layer, FRandomS
 					const float MirrorYaw = Layer.bRandomYaw ? FMath::Fmod(Yaw + 180.f, 360.f) : 0.f;
 					const FTransform MirrorXf(FRotator(0.f, MirrorYaw, 0.f), FVector(-X, Y, MirrorZ), FVector(Scale));
 					Comp->AddInstance(MirrorXf, /*bWorldSpace=*/true);
-					PlacedPoints.Add(TPair<FVector2D, float>(MirrorPoint, FootprintR));
+					SpacingGrid.Add(MirrorPoint, FootprintR); // TASK-284: mirror twin registered exactly as the old PlacedPoints add
 					++Placed;
 
 					// Mirror proxy in lockstep (keeps the visual/proxy indices parallel).
@@ -525,6 +624,18 @@ UHierarchicalInstancedStaticMeshComponent* ASiegeBattlefieldScatter::ResolveComp
 		Comp->SetCanEverAffectNavigation(false);
 	}
 
+	// Cull bands + shadow casting (CONVENTIONS "Arena 10× scale-up & LOD/perf
+	// (M7.6)", TASK-284) — the per-layer LOD/perf knobs that make the Phase-3
+	// density fill affordable, set with the rest of the render profile before
+	// RegisterComponent. SetCullDistances(Start, End): End==0 = NEVER culled, and
+	// the DA defaults both to 0, so an unpopulated layer renders exactly as before
+	// (Phase 3 populates the real bands). SetCastShadow drives the VISIBLE
+	// instances' shadow casting from the layer flag (hills ON for the silhouette,
+	// grass/plants OFF once the DA sets it) — its default true matches today's
+	// implicit component default, so behavior is unchanged until Phase 3.
+	Comp->SetCullDistances(FMath::Max(Layer.CullStartDistance, 0), FMath::Max(Layer.CullEndDistance, 0));
+	Comp->SetCastShadow(Layer.bCastShadows);
+
 	Comp->RegisterComponent();
 	ScatterComponents.Add(Comp);
 	return Comp;
@@ -589,7 +700,15 @@ UHierarchicalInstancedStaticMeshComponent* ASiegeBattlefieldScatter::ResolveProx
 	// Hidden + no shadow so the proxy never renders. WorldStatic RESPONSE stays Ignore,
 	// so GroundZAt's WorldStatic trace passes through the proxy (correct floor height).
 	Proxy->SetVisibility(false);
-	Proxy->SetCastShadow(false);
+	Proxy->SetCastShadow(false); // proxy-contract INVARIANT — an invisible trunk cylinder must never cast a shadow; NOT driven by Layer.bCastShadows (that drives the VISIBLE tree HISM in ResolveComponentForMesh)
+	// Cull bands (CONVENTIONS "Arena 10× scale-up & LOD/perf (M7.6)", TASK-284):
+	// apply the layer's cull band to the proxy too for a uniform pair state. This is
+	// functionally moot — the proxy is SetVisibility(false), so it never renders or
+	// culls as geometry, and nav/collision are unaffected by cull distance — but it
+	// keeps the visual/proxy pair consistent if a proxy is ever un-hidden for debug.
+	// SetCastShadow stays false above (the proxy contract), so ONLY the cull band is
+	// mirrored from the layer here, never the shadow flag.
+	Proxy->SetCullDistances(FMath::Max(Layer.CullStartDistance, 0), FMath::Max(Layer.CullEndDistance, 0));
 	Proxy->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	Proxy->SetCollisionObjectType(ECC_WorldStatic);
 	Proxy->SetCollisionResponseToAllChannels(ECR_Ignore);

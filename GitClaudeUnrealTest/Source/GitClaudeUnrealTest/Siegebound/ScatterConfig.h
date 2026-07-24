@@ -200,6 +200,51 @@ struct FScatterLayer
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter")
 	TSoftObjectPtr<UMaterialInterface> OverrideMaterial;
+
+	// --- Cull bands + shadow casting (CONVENTIONS "Arena 10× scale-up & LOD/perf
+	// --- (M7.6)" → scatter cull-field naming, TASK-284) — the per-layer LOD/perf
+	// --- knobs that make the Phase-3 ≈4.9× density fill affordable. Applied at
+	// --- HISM creation via SetCullDistances / SetCastShadow in
+	// --- ResolveComponentForMesh() AND the tree collision-proxy path. These stay
+	// --- DATA populated on DA_BattlefieldScatter at Phase 3; the defaults here are
+	// --- the safe "no behavior change" fallbacks (never-cull + hill-style shadows),
+	// --- so an unpopulated DA renders exactly as before this task. ---
+
+	/**
+	 *  Distance (uu) at which this layer's instances BEGIN to fade/cull — the near
+	 *  edge of the cull band fed to UInstancedStaticMeshComponent::SetCullDistances
+	 *  (InstanceStartCullDistance). 0 (default), paired with CullEndDistance=0,
+	 *  means NEVER culled. Normally < CullEndDistance (the fade band); if it is
+	 *  >= CullEndDistance the engine treats the band as a hard pop at CullEndDistance.
+	 *  Phase 3 sets the real per-layer bands on the DA (plan §3 table).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Cull", meta = (ClampMin = "0"))
+	int32 CullStartDistance = 0;
+
+	/**
+	 *  Distance (uu) beyond which this layer's instances are fully culled (not
+	 *  drawn) — InstanceEndCullDistance. 0 (default) = NEVER culled (the safe
+	 *  no-change fallback; Phase 3 populates the real bands per the plan §3 table).
+	 *  Small/dense layers (grass, plants) take a short band so the far field is not
+	 *  paying for invisible blades; hills take 0 (CONVENTIONS: "Hills: no cull" —
+	 *  their silhouette must read across the 10× field).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Cull", meta = (ClampMin = "0"))
+	int32 CullEndDistance = 0;
+
+	/**
+	 *  Whether this layer's VISUAL instances cast dynamic shadows (SetCastShadow on
+	 *  the visual HISM in ResolveComponentForMesh). Defaults TRUE — the hill/obstacle
+	 *  case (CONVENTIONS: "Hills: ... shadows ON (silhouette)"), mirroring bBlocking's
+	 *  obstacle-default pattern, so an unpopulated DA keeps today's shadows. Set FALSE
+	 *  on the GRASS / PLANTS layers in the DA (CONVENTIONS: "Grass/plants: shadows
+	 *  OFF") — thousands of tiny casters are the costliest, least-visible shadows on
+	 *  the field. NOTE: the invisible tree collision PROXY never casts a shadow
+	 *  regardless of this flag — it is SetVisibility(false) + hard SetCastShadow(false)
+	 *  by the proxy contract; this flag drives the VISIBLE tree/rock/hill HISM only.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Cull")
+	bool bCastShadows = true;
 };
 
 /**
