@@ -43,6 +43,11 @@ Pipeline (takes a GAME-READY textured mesh -> UE-importable skeletal mesh + anim
                 bind stills (front/side/3-4) + a per-anim contact-sheet PNG, to Cache/<CardID>/rig/.
     8. REPORT   rig_report.json (bones, skinning method + unweighted %, per-action frame
                 ranges, material/UV readback, preview paths, warnings).
+    9. SK-LOD   (M7.6, TASK-288) emit a deterministic <CardID>.lod.json recipe BESIDE the
+                exported FBX — the SK-unit LOD chain (LOD1 50%@0.4 / LOD2 20%@0.15) + the
+                URO component flags — for the UE-side regenerate_lod / SK import step to
+                apply (this Blender script can't call UE APIs). A SEPARATE artifact; it
+                touches NO other stage (rig_report.json is left byte-identical).
 
 The AM_<CardID>_Attack MONTAGE is NOT exported here — it is authored in-editor at TASK-162
 from the imported A_<CardID>_Attack sequence (a montage wraps a sequence). Editor import of
@@ -98,6 +103,37 @@ X_AXIS, Y_AXIS, Z_AXIS = Vector((1, 0, 0)), Vector((0, 1, 0)), Vector((0, 0, 1))
 # USkeleton::MergeAllBonesToBoneTree silently fails on every load (the recurring
 # missing-bones warnings; root cause in handoffs/TASK-211.md). NEVER per-unit.
 SHARED_SKELETON_ROOT = "Footman_Rig"
+
+# --------------------------------------------------------------------------- SK-LOD law (M7.6, TASK-288)
+# CONVENTIONS "Arena 10x scale-up & LOD/perf (M7.6)" SK-unit LOD + URO law: FUTURE
+# rigs must import LOD-ready with the SAME chain the editor-python `regenerate_lod`
+# helper applies to EXISTING rigs (TASK-289) -- LOD1 50% @ screenSize 0.4 / LOD2 20%
+# @ 0.15 -- plus the two URO component flags TASK-285 sets on the unit at runtime,
+# baked into the rig-export tooling so every FUTURE unit carries them automatically.
+#
+# This script runs HEADLESS IN BLENDER (bpy only -- it NEVER touches the Unreal
+# editor), so it CANNOT itself call UE `regenerate_lod` or set the SkeletalMesh
+# component properties. It instead EMITS a deterministic, UE-consumable LOD RECIPE
+# sidecar beside the exported <CardID>.fbx (the project's "contract-by-path" pattern,
+# like SM_/NS_/S_ soft paths). The UE-side SK import (TASK-162) / `regenerate_lod`
+# helper (TASK-289) reads the recipe and applies it verbatim with the SAME reduction
+# contract as reimport_meshes.py::_apply_lods (a (percent_triangles, screen_size) list
+# fed to the editor subsystem), then sets the two URO flags. The recipe depends ONLY
+# on the CardID + the constants below -- no timestamps, no measured data -- so a
+# re-run re-writes BYTE-IDENTICAL content (idempotent, no double-apply, no drift).
+#
+# (percent_triangles, screen_size) pairs, LOD0 first -- SK mirror of
+# reimport_meshes.py CASTLE_LOD_CHAIN (the SM landmark chain).
+SK_LOD_CHAIN = [
+    (1.00, 1.00),   # LOD0: full-detail rig (base, unreduced)
+    (0.50, 0.40),   # LOD1: 50% tris @ screenSize 0.4
+    (0.20, 0.15),   # LOD2: 20% tris @ screenSize 0.15
+]
+# URO flags (mirror TASK-285's runtime SkeletalVisualMesh setting) for the imported
+# SkeletalMesh's default component -- UE python property names + enum value name.
+SK_URO_VISIBILITY_TICK = "OnlyTickPoseWhenRendered"   # EVisibilityBasedAnimTickOption
+SK_URO_ENABLE_UPDATE_RATE = True                       # bEnableUpdateRateOptimizations
+SK_LOD_RECIPE_SCHEMA = "siege_sk_lod_recipe_v1"
 
 
 def log(msg):
@@ -785,6 +821,63 @@ def export_anim_fbx(mesh, arm_obj, action_name, frame_end, out_path, guard):
     return out
 
 
+# --------------------------------------------------------------------------- stage: SK-LOD recipe (M7.6, TASK-288)
+def build_sk_lod_recipe(card_id):
+    """PURE, DETERMINISTIC SK-LOD recipe for <CardID> (CardID + module constants
+    ONLY -- no timestamps, no measured data -- so re-runs are byte-identical =
+    idempotent). Consumed UE-side by the `regenerate_lod` helper (TASK-289) / the SK
+    import (TASK-162): it applies the chain with the SAME reduction contract
+    reimport_meshes.py::_apply_lods uses for SMs, then sets the two URO component
+    flags. NEVER mutates the mesh / rig / report -- it only DESCRIBES the LOD target.
+    The chain is asserted well-formed so it cannot silently drift on a future edit."""
+    assert SK_LOD_CHAIN[0] == (1.00, 1.00), "SK_LOD_CHAIN LOD0 must be full detail (1.0, 1.0)"
+    for (p0, s0), (p1, s1) in zip(SK_LOD_CHAIN, SK_LOD_CHAIN[1:]):
+        assert 0.0 < p1 < p0 and 0.0 < s1 < s0, "SK_LOD_CHAIN percent/screen must strictly decrease"
+    return {
+        "schema": SK_LOD_RECIPE_SCHEMA,
+        "law": "CONVENTIONS 'Arena 10x scale-up & LOD/perf (M7.6)' SK-unit LOD + URO",
+        "card_id": card_id,
+        "mesh_fbx": f"{card_id}.fbx",
+        "skeletal_mesh_asset": f"SK_{card_id}",
+        "apply_with": ("UE editor-python: SkeletalMeshEditorSubsystem.regenerate_lod + per-LOD "
+                       "reduction (number_of_triangles_percentage, screen_size) -- mirror of "
+                       "reimport_meshes.py _apply_lods set_lods reduction contract"),
+        "lod_chain": [
+            {"lod": i, "percent_triangles": float(pct), "screen_size": float(screen)}
+            for i, (pct, screen) in enumerate(SK_LOD_CHAIN)
+        ],
+        "component_defaults": {
+            "visibility_based_anim_tick_option": SK_URO_VISIBILITY_TICK,
+            "enable_update_rate_optimizations": bool(SK_URO_ENABLE_UPDATE_RATE),
+        },
+    }
+
+
+def write_sk_lod_recipe(card_id, mesh_fbx_path, guard):
+    """Write the deterministic SK-LOD recipe sidecar BESIDE the exported mesh FBX
+    (<CardID>.lod.json). Guard-confined + smoke-routed exactly like the FBX -- the
+    sidecar inherits mesh_fbx_path's directory, so --smoke lands it under
+    Cache/<CardID>/rig/smoke/ and shipping runs land it in Content/RawAssets/Characters/.
+    NON-FATAL + REPORT-NEUTRAL: a recipe hiccup is logged to stdout and NEVER fails the
+    rig export nor mutates rig_report.json (the FBX/anims/report are already the
+    deliverables). Idempotent: json.dumps(sort_keys) over pure data => byte-identical
+    on every re-run (overwrite, never append)."""
+    try:
+        recipe = build_sk_lod_recipe(card_id)
+        out = guard.check(Path(mesh_fbx_path).with_name(f"{card_id}.lod.json"))
+        payload = json.dumps(recipe, indent=2, sort_keys=True)
+        with open(out, "w", encoding="utf-8") as fh:
+            fh.write(payload)
+        log(f"SK-LOD recipe: {out} "
+            f"(LOD1 {SK_LOD_CHAIN[1][0]*100:.0f}%@{SK_LOD_CHAIN[1][1]} / "
+            f"LOD2 {SK_LOD_CHAIN[2][0]*100:.0f}%@{SK_LOD_CHAIN[2][1]}, "
+            f"URO {SK_URO_VISIBILITY_TICK}+update-rate)")
+        return out
+    except Exception as exc:  # noqa -- never break a successful export over a sidecar
+        log(f"SK-LOD recipe SKIPPED (non-fatal): {exc!r}")
+        return None
+
+
 # --------------------------------------------------------------------------- stage: preview render
 def _setup_scene_render(px):
     scene = bpy.context.scene
@@ -1013,6 +1106,12 @@ def main():
     # exports
     report["outputs"] = {}
     report["outputs"]["mesh_fbx"] = str(export_skeletal_fbx(mesh, arm_obj, mesh_fbx, guard))
+    # SK-LOD recipe (M7.6 SK-unit LOD/URO law, TASK-288): emit the deterministic LOD
+    # chain + URO flags sidecar for the UE-side regenerate_lod / SK import step. A NEW
+    # stage -- it does NOT touch import/measure/armature/skin/animate/export/preview/
+    # report (rig_report.json stays byte-identical); the recipe is a SEPARATE file and
+    # its path is intentionally NOT recorded into `report` to keep the report untouched.
+    write_sk_lod_recipe(card_id, mesh_fbx, guard)
     if not args.no_anim_fbx:
         report["outputs"]["anim_fbx"] = {}
         for name, meta in anims.items():
