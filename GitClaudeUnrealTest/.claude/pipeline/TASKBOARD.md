@@ -2109,7 +2109,7 @@ Plan-of-record: `C:\Users\wesel\.claude\plans\i-am-a-bit-sunny-bird.md` (mines v
 
 #### TASK-291 — [P5] Place vista ring + POIs + gold-node props + fog/light polish into L_Arena (seeded one-shot) + branch commit (build)
 - assignee: build-master
-- status: done (BUILD-MASTER 2026-07-24 — Phase 5 dressing PLACED in L_Arena + fog polish + committed, commit hash in the message + 🔧 Build & Git. **⭐ M7.6 Phase 1–5 ENGINEERING COMPLETE.** Editor was on L_MainMenu (TASK-290 prep) → loaded L_Arena first. Live nav bounds ±28000/±12500 → vista ring safely outside. Placed 26 StaticMeshActors (0 fails): 16 vista (ring ±34000/±20000, peaks 12-14× / ridges 8×; per-instance `castShadow=false`/`bVisibleInRayTracing=false`/`bCanEverAffectNavigation=false` all SET ×16), 8 POI (off-lane |Y| 3.5-7k, ≥~7k from castles, scale 2.5-3.5×), 2 gold props at (0,±5000) (VISUAL-only StaticMeshActors, NOT AGoldNode/ACaptureZone). Fog polish: `ExponentialHeightFog` density 0.008→0.012 + maxOpacity 0.85→0.92 (startDistance 10k kept = vista depth); DirectionalLight left as-is. TRAVERSABILITY UNCHANGED — dressing NoCollision + bCanEverAffectNav=false; PIE CONFIRMED 0 culls across fresh seeds (2138636033 / 1633272449). ⚠ W-GATE FINDING: `LogUnrealMath InverseFast non-invertible→NaN` now fires at PIE first-frame (large-world precision family with the TASK-287 LWC ensure, EXACERBATED by the extreme vista coords — non-fatal, gameplay + traversability intact; the LWC ensure predates the vistas so a fully clean log needs an LWC project setting, not just dressing tweaks; mitigation = pull ring in / cap scale / LWC tile setting, Jonathan's call). Also a pre-existing `InputMode:UIOnly` HUD-focus error, unrelated to dressing. BRANCH-OWNED-ONLY diff verified: `L_Arena.umap` + 9 `SM_` dressing `.uasset` ONLY — no fleet code / DA / SummonedUnit / SiegeBotController / gameplay source touched. Committed: L_Arena.umap + 9 .uasset (LFS) + board + `handoffs/TASK-291.md`. DeckBuilderWidget/WBP_DeckBuilder + all M7.5 SK_/SM_ fleet untouched/unstaged. No push. ⚠ **Phase 6 (capstone playtest + MERGE-TO-MAIN) is Jonathan's gate — NOT started here.** Was: backlog.)
+- status: done (BUILD-MASTER 2026-07-24 — Phase 5 dressing PLACED in L_Arena + fog polish + committed, commit `10bb474` (no push). **⭐ M7.6 Phase 1–5 ENGINEERING COMPLETE.** Editor was on L_MainMenu (TASK-290 prep) → loaded L_Arena first. Live nav bounds ±28000/±12500 → vista ring safely outside. Placed 26 StaticMeshActors (0 fails): 16 vista (ring ±34000/±20000, peaks 12-14× / ridges 8×; per-instance `castShadow=false`/`bVisibleInRayTracing=false`/`bCanEverAffectNavigation=false` all SET ×16), 8 POI (off-lane |Y| 3.5-7k, ≥~7k from castles, scale 2.5-3.5×), 2 gold props at (0,±5000) (VISUAL-only StaticMeshActors, NOT AGoldNode/ACaptureZone). Fog polish: `ExponentialHeightFog` density 0.008→0.012 + maxOpacity 0.85→0.92 (startDistance 10k kept = vista depth); DirectionalLight left as-is. TRAVERSABILITY UNCHANGED — dressing NoCollision + bCanEverAffectNav=false; PIE CONFIRMED 0 culls across fresh seeds (2138636033 / 1633272449). ⚠ W-GATE FINDING: `LogUnrealMath InverseFast non-invertible→NaN` now fires at PIE first-frame (large-world precision family with the TASK-287 LWC ensure, EXACERBATED by the extreme vista coords — non-fatal, gameplay + traversability intact; the LWC ensure predates the vistas so a fully clean log needs an LWC project setting, not just dressing tweaks; mitigation = pull ring in / cap scale / LWC tile setting, Jonathan's call). Also a pre-existing `InputMode:UIOnly` HUD-focus error, unrelated to dressing. BRANCH-OWNED-ONLY diff verified: `L_Arena.umap` + 9 `SM_` dressing `.uasset` ONLY — no fleet code / DA / SummonedUnit / SiegeBotController / gameplay source touched. Committed: L_Arena.umap + 9 .uasset (LFS) + board + `handoffs/TASK-291.md`. DeckBuilderWidget/WBP_DeckBuilder + all M7.5 SK_/SM_ fleet untouched/unstaged. No push. ⚠ **Phase 6 (capstone playtest + MERGE-TO-MAIN) is Jonathan's gate — NOT started here.** Was: backlog.)
 - blocked-by: TASK-290 (assets prepared)
 - parallel-safe: no (single editor + Git; edits branch-owned L_Arena)
 - spec: >
@@ -2128,6 +2128,40 @@ Plan-of-record: `C:\Users\wesel\.claude\plans\i-am-a-bit-sunny-bird.md` (mines v
     Branch `m7.6-arena10x`; `/Game/Maps/L_Arena` (branch-owned). Law: CONVENTIONS "M7.6" (Nanite vista amendment, branch
     ownership, W-gate/merge law — merge is Phase 6, Jonathan's), "World axes (arena contract)" (main's law untouched until
     merge), milestone Standing backlog (neutral-node capture hook).
+
+#### TASK-292 — [M7.6 W-gate follow-up] DIAGNOSE + fix the LWC render-precision ensure + InverseFast NaN at PIE first-frame (gameplay-programmer diagnosis → build-master L_Arena fix)
+- assignee: gameplay-programmer (diagnosis) → build-master (applies the L_Arena property fix + verifies + commits)
+- status: done — VISTA FIX APPLIED + VERIFIED; ⚠ RESIDUAL scatter-DF NaN → follow-up (BUILD-MASTER 2026-07-24, commit hash in the message + 🔧 Build & Git). Set `bAffectDistanceFieldLighting=false` + `bAffectDynamicIndirectLighting=false` on ALL 26 dressing components (16 vista `StaticMeshActor_7..22` + 8 POI + 2 gold; readback-verified 26/26 off; used label `GoldProp` so NO gameplay `GoldNode` touched); saved L_Arena. FRESH-EDITOR RESTART verify (my PID 16232 had crashed → MCP reconnected to a live editor; I save-all'd + graceful-closed it, relaunched fresh PID 8644 on L_Arena, which loaded the saved flags): **PIE gen 1 (seed 1857084801) Message Log CLEAN — the OriginX ensure (`DoubleFloat.cpp:19`) + InverseFast NaN (`Matrix.h:468`) BOTH GONE**, traversability CONFIRMED 0 culls. **BUT gen 2 (seed 1529263745) the ensure + NaN RETURNED** (right after GenerateScatter) → the VISTA source is eliminated, but a RESIDUAL comes from the SCATTER layers' DF participation (the pre-existing TASK-287 source, diagnosis §6.3 predicted; seed-dependent = intermittent). ⚠ **FALLBACK (b) = drop DF flags on the scatter HISM layers = a `BattlefieldScatter.cpp` CODE change** (no `FScatterLayer` DF field exists) → **HANDED BACK to gameplay-programmer as follow-up (TASK-292c)**. Fallback (a) pull-vista-ring-in is INAPPLICABLE (vistas already out of DF). NO ini/project setting touched (diagnosis §2 ruled out). Committed: `L_Arena.umap` (LFS) + `handoffs/TASK-292.md` (diagnosis) + `handoffs/TASK-292b.md` (this result) + board — branch-owned-only (no code/DA/fleet); DeckBuilder/WBP parked untouched; no push. ⚠ **The ensure/NaN is NOT fully eliminated until the scatter-DF follow-up lands** (W-gate flag). --- Was: ready-for-integration (diagnosis, handoffs/TASK-292.md).
+- blocked-by: none (follow-up to TASK-291 `10bb474`)
+- parallel-safe: no (build-master edits branch-owned L_Arena + PIE-verifies)
+- spec: >
+    SYMPTOM (reproduced, `Saved/Logs/GitClaudeUnrealTest.log` ~L2645/L2704): at PIE first-frame on L_Arena the Message Log
+    shows `EnsureFailed: OriginX <= OriginMax … precision loss while converting matrix to GPU format` (`DoubleFloat.cpp:19`)
+    immediately followed by `TMatrix InverseFast … non-invertible matrix → NaN` (`Matrix.h:468`), the InverseFast then
+    repeating every frame. Non-fatal; gameplay + traversability intact.
+    ROOT CAUSE (EVIDENCE): (1) Engine source — `OriginMax = UE_DF_FLOAT_MAX_VALUE = (1<<23)*0.25 − 1 = 2,097,151 uu ≈ 21 km`;
+    the whole scene sits within ±37,000 uu (0.37 km) = **56× under the limit** → the ensure is NOT a magnitude/tile overflow;
+    `NaN <= 2097151` is `false`, so it can only fire on a NaN. `Matrix.h:468` is `ErrorEnsure`, called by `InverseFast` on a
+    non-invertible matrix — the exact NaN source. **The two errors are ONE bug.** (2) All 16 vista actor transforms are
+    UNIFORM invertible scales (8/12/13/14×), clean positions (≤±34k) + bounds → no degenerate actor transform. (3) The vista
+    components have `CastShadow=false`/`bVisibleInRayTracing=false`/`bCanEverAffectNavigation=false` SET, **but
+    `bAffectDistanceFieldLighting=true` + `bAffectDynamicIndirectLighting=true` were LEFT ON** (the TASK-290 Nanite-vista
+    amendment omitted them). The meshes are NON-Nanite (~320×270×504 local) scaled 8–14× → ~4000×3500×6500 world; with
+    `r.GenerateMeshDistanceFields=True`, Lumen GI (`r.DynamicGlobalIlluminationMethod=1`), and the DirectionalLight's
+    `DistanceFieldShadowDistance=30000`, these huge distant backdrop meshes feed the distance-field + Lumen-GI scene, whose
+    per-mesh capture/DF matrix goes singular → the NEW-since-vista InverseFast NaN. BOTH build-master hypotheses REFUTED:
+    an LWC/world-tile ini setting cannot change a hardcoded engine constant and does not address a NaN; the vista transforms
+    are not degenerate.
+    FIX (build-master, L_Arena, NO code/compile): on the 16 vista `StaticMeshActor_7..22` (and recommended on the 8 POI +
+    2 gold-node props — all pure dressing) set `bAffectDistanceFieldLighting=false` + `bAffectDynamicIndirectLighting=false`;
+    save L_Arena, restart editor, PIE, confirm the Message Log is clean (no `OriginX` ensure, no `InverseFast` NaN) and that
+    traversability/rendering/perf are unregressed. FALLBACK if either error persists (documented in the handoff): pull the ring
+    inside `DistanceFieldShadowDistance` (≤~28,000) and/or drop the DF flags on the scatter layers. Post in ⚙️ Dev & QA.
+- names: >
+    `L_Arena` vista/POI/gold-prop `StaticMeshComponent` props `bAffectDistanceFieldLighting` + `bAffectDynamicIndirectLighting`
+    (build-master lane). Diagnosis evidence: `Config/DefaultEngine.ini` (r.* render settings), UE_5.8 `DoubleFloat.cpp:10-25` /
+    `Matrix.h:465-469`. Law: CONVENTIONS "M7.6" Nanite vista amendment (this fix ADDS the two DF/GI-off flags to the
+    vista-dressing law), branch-ownership (L_Arena is branch-owned), W-gate.
 
 ---
 
