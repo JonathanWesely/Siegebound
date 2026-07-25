@@ -636,6 +636,20 @@ UHierarchicalInstancedStaticMeshComponent* ASiegeBattlefieldScatter::ResolveComp
 	Comp->SetCullDistances(FMath::Max(Layer.CullStartDistance, 0), FMath::Max(Layer.CullEndDistance, 0));
 	Comp->SetCastShadow(Layer.bCastShadows);
 
+	// LWC render-precision fix (TASK-292c): keep every scatter HISM OUT of the
+	// distance-field and Lumen dynamic-GI scenes. The scatter is decorative
+	// environment — at ≈15,000 instances on the 10× field, generating per-mesh
+	// distance fields is both a needless cost AND the residual singular-matrix
+	// source: a scattered instance's DF/Lumen-card transform can go non-invertible
+	// → InverseFast NaN → the OriginX<=OriginMax DoubleFloat ensure at PIE
+	// first-frame (seed-dependent, fires right after GenerateScatter — TASK-292b).
+	// This BLANKET off mirrors the TASK-292/292b vista treatment (the same two
+	// flags cleared on the 26 dressing components) onto the scatter. Set BEFORE
+	// RegisterComponent — exactly like the cull/shadow calls above — so the flags
+	// are live when the component is inserted into the DF/Lumen scene.
+	Comp->bAffectDistanceFieldLighting = false;
+	Comp->bAffectDynamicIndirectLighting = false;
+
 	Comp->RegisterComponent();
 	ScatterComponents.Add(Comp);
 	return Comp;
@@ -715,6 +729,16 @@ UHierarchicalInstancedStaticMeshComponent* ASiegeBattlefieldScatter::ResolveProx
 	Proxy->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
 	Proxy->bFillCollisionUnderneathForNavmesh = true;
 	Proxy->SetCanEverAffectNavigation(true);
+
+	// LWC render-precision fix (TASK-292c): keep the invisible collision proxy out
+	// of the distance-field / Lumen-GI scene too. The proxy never renders
+	// (SetVisibility(false) + SetCastShadow(false) above), but it is still a
+	// UPrimitiveComponent that WOULD be inserted into the DF/Lumen scene and
+	// generate a mesh distance field — another candidate singular-matrix / needless
+	// cost source at 10× scale. Same flag pair as the visual HISM, set BEFORE
+	// RegisterComponent (below), matching the pre-Register cull calls above.
+	Proxy->bAffectDistanceFieldLighting = false;
+	Proxy->bAffectDynamicIndirectLighting = false;
 
 	Proxy->RegisterComponent();
 	ScatterComponents.Add(Proxy);        // rooted for GC + reached by ClearScatter
