@@ -2186,6 +2186,24 @@ Plan-of-record: `C:\Users\wesel\.claude\plans\i-am-a-bit-sunny-bird.md` (mines v
     Law: CONVENTIONS "Arena 10× scale-up & LOD/perf (M7.6)" (this ADDS DF/GI-off to the scatter render profile alongside the
     TASK-284 cull/shadow knobs), branch-ownership, W-gate.
 
+#### TASK-293 — [M7.6 P5 polish] Fill the vista-ring sky-gaps in L_Arena (continuous layered backdrop) + branch commit (build)
+- assignee: build-master
+- status: done (BUILD-MASTER 2026-07-25 — commit `<HASH>` (no push). RE-DO of a stalled attempt that persisted nothing. ONE deterministic editor-python placement script (fixed LCG seed 20260725, rounded-rectangle ring projection so nothing lands inside the play box), run synchronously + SAVED L_Arena immediately (git-verified umap modified 122KB→521KB BEFORE screenshots/PIE). MCP client was wedged all task → drove everything via the raw-HTTP MCP fallback (dual-channel SSE). Placed **62 fill instances** (`VistaFill_01..62`, 0 spawn fails) across 3 radial depth bands, all OUTSIDE nav (X±28000/Y±12500) + boundary walls: FRONT tree-line/low-ridge (RX31000/RY17000, 20) · MID main ridge interleaving the existing 16 (RX34000/RY20500, 24) · BACK tall peaks behind gaps (RX36500/RY22500, 18). Composition (existing assets only): **34 rocks** (20 peak `SM_Vista_01/04` + 14 ridge `SM_Vista_02/03`, scale 9–15×) + **13 hills** (`SM_Hill_01/02/03`, 6–10×) + **15 trees** (`SM-Mobile_Tree_1..12`, 7–11×), varied yaw + radial jitter → layered ridgelines, silhouettes overlap. ⚠ FULL vista flag set (`CastShadow`/`bVisibleInRayTracing`/`bCanEverAffectNavigation`/`bAffectDistanceFieldLighting`/`bAffectDynamicIndirectLighting` all=false) SET + readback-verified on ALL 62 → **verified_off=62/62** (matches proven `Vista_01..16`). Gotcha: `set_properties` `values` is a JSON-encoded STRING not an object (object = silent no-op). SCREENSHOTS (sent, unstaged in handoffs/): top-down shows a CONTINUOUS 360° ring; two low/outward shots at former 66°/294° gaps show the horizon fully backed (no drop-off void). LWC CLEAN — ONE PIE (seed 901016449): `InverseFast` NaN + `OriginX<=OriginMax` ensure + `non-invertible` = 0 across whole session log (DF-off held with +62 instances); `Traversability CONFIRMED — Blue→Red + 6 mine path(s) (after 0 cull(s))` current run. Branch-owned diff = `L_Arena.umap` ONLY (+ board + handoff); NO code/DA/fleet; DeckBuilderWidget/WBP_DeckBuilder (parked) unstaged; LFS ok; no push. Existing 16 vistas + 8 POI + 2 gold props untouched. Follow-up (report-only): a thin sky saddle between two MID crests is visible ONLY from a 130 m oblique, NOT from gameplay-height low shots — a couple more BACK peaks close it later if a pixel-check flags it (existing assets suffice). Full detail in handoffs/TASK-293.md. Was: re-do/stalled.)
+- blocked-by: none (follow-up to TASK-291 `10bb474` / TASK-292c LWC closure)
+- parallel-safe: no (build-master edits branch-owned L_Arena + PIE-verifies + commits)
+- spec: >
+    Jonathan's screenshot: the TASK-291 16-instance vista ring is too SPARSE — ~48° angular sky-gaps on the long (±Y) sides,
+    and through the gaps the ground plane ends and drops to sky/void at the horizon. Fill the ring into a CONTINUOUS, varied,
+    layered backdrop (rocks + trees + hills) so no gap shows the world edge, from EXISTING assets only (no new art). ~40–80
+    instances, 2–3 radial depths, silhouettes touch/overlap, all OUTSIDE the play bounds. EVERY new instance gets the full
+    vista flag set (readback-verified). SAVE L_Arena immediately (crash-robust), then screenshots (top-down + low-at-gap) +
+    ONE PIE (LWC ensure/NaN gone, traversability 0 culls). Commit `L_Arena.umap` + docs, explicit pathspecs; DeckBuilder parked;
+    no push. Post in 🔧 Build & Git.
+- names: >
+    `L_Arena` `VistaFill_01..62` StaticMeshActors from `/Game/Meshes/SM_Vista_01..04`, `/Game/Meshes/SM_Hill_01..03`,
+    `/Game/Tree_Pack_1/Meches/Mobile_Tree_1/SM-Mobile_Tree_1..12`; component vista flags per TASK-290/292 law. Branch-owned
+    L_Arena (M7.6 branch-ownership). Law: CONVENTIONS "Arena 10× scale-up & LOD/perf (M7.6)" (vista dressing + flag set), W-gate.
+
 ---
 
 ## M7.5 tasks (decomposed 2026-07-18) — Art Quality Upgrade (Meshy Pro + FAB + free pipeline upgrades)
