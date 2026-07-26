@@ -43,6 +43,13 @@
       "_dims_source": "TASK-014 blockout: 147.1 x 80.0 x 180.0, feet-center, sword +X / shield -X, front -Y",
       "pre_rotate_z_deg": 0.0,
       "voxel_size_ue": 1.5,
+      "albedo_delight": {
+        "_note": "TASK-311 RE-PILOT pin (2026-07-26): the first Footman Meshy gen used the in-script conservative defaults (mean linear 0.022->0.050) and the in-engine verify read TOO DARK/muddy under L_Arena's warm low-angle sun (colour/heraldry vivid, wash-out gone — purely a value problem). Added to the recorded-dark override set at the Ogre/Knight-proven tuned values to re-bake brighter. This is the FLEET-REMASTER brightness profile — if it reads well in-engine it becomes the fan-out default for the other 10 units.",
+        "ao_divide_strength": 1.0,
+        "ao_floor": 0.25,
+        "gamma": 0.55,
+        "gain": 1.2
+      },
       "team_region": {
         "max_fraction": 0.35,
         "_tuned": "TASK-086 eyeball gate 2026-07-07: live TRELLIS mesh has spear = full-height column at -X (x_norm 0-0.12), shield = +X (heraldry kept OFF the team region), head at x_norm 0.28-0.55. Old shield_band guess striped the spear arm/shaft; replaced with helmet dome (x-constrained to exclude the spearhead) + upward-facing shoulder caps.",
