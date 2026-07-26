@@ -27,6 +27,13 @@ Tools/ArtPipeline/Inbox/*
 Tools/ArtPipeline/Cache/*
 !Tools/ArtPipeline/Cache/.gitkeep
 
+# Branch junk-strip guards (TASK-246): Python bytecode caches, FBX-import
+# texture-extraction dirs (UE writes <name>.fbm/ beside the source FBX), and
+# Jonathan's GDD homework PDF (kept on disk, untracked by ruling).
+__pycache__/
+*.fbm/
+Docs/GDD-Submission-*.pdf
+
 # --- IDE / editor -----------------------------------------------------------
 .vs/
 .vscode/

@@ -11,11 +11,15 @@ class ASiegePlayerState;
 class UAudioComponent;
 
 /**
- *  Siegebound miner — the §3.3 economy unit (card row Miner, TASK-025).
+ *  Siegebound miner — the §3.3 economy unit (card row Miner, TASK-025;
+ *  retarget/wait/evict rework for the W1-PREP mirrored depleting mines,
+ *  TASK-254 — law: CONVENTIONS "Mirrored depleting mines").
  *
- *  ASummonedUnit subclass that NEVER fights: it walks to the SAME-team
- *  AGoldNode, stands there, and activates +1 gold/s on the owning player
- *  state ON ARRIVAL only (~10 s walk from a mid-half placement, GDD §3.3).
+ *  ASummonedUnit subclass that NEVER fights: it walks to the best NEUTRAL
+ *  mine (AGoldNode::FindBestMineFor — THE single finder since TASK-253; the
+ *  old same-team filter is gone, exclusive occupancy replaces it), registers
+ *  at the ring (TryRegisterArrivedMiner, the atomic claim), stands there, and
+ *  activates +1 gold/s on the owning player state only once REGISTERED.
  *  It stays attackable by enemies through the base (ITeamAgent + TakeDamage —
  *  §3.3: economy is a raidable investment); killing it removes its income.
  *
@@ -45,28 +49,54 @@ class UAudioComponent;
  *  Stats still bind "as usual" (GDD §3.0): Super::BeginPlay reads the Miner
  *  row from /Game/Data/DT_Cards — 30 HP, 350 speed — never hardcoded.
  *
- *  Economy bookkeeping (exact TASK-024 / handoffs/TASK-024.md contract):
- *   - RegisterMinerAlive()   — BeginPlay, exactly once (retried by the poll if
- *                              the player state was not resolvable yet).
- *   - AddMinerIncome()       — exactly once, on ARRIVAL at the node (never on
- *                              spawn); latched by bArrivedAtNode/bIncomeActive.
- *   - RemoveMinerIncome()    — death, ONLY if income had activated; called
- *                              before Unregister so income ⊆ alive holds at
- *                              every intermediate step.
+ *  Economy bookkeeping (TASK-024 / handoffs/TASK-024.md contract, amended to
+ *  PER-TENURE semantics by TASK-254 — a tenure = one registered stay at one
+ *  mine, ended by eviction or death):
+ *   - RegisterMinerAlive()   — BeginPlay, exactly once per LIFETIME (retried
+ *                              by the poll if the state was not resolvable).
+ *   - AddMinerIncome()       — exactly once per TENURE, on registered arrival
+ *                              (never on spawn); latched by bArrivedAtNode/
+ *                              bIncomeActive, both cleared by eviction so the
+ *                              next mine's arrival re-adds income.
+ *   - RemoveMinerIncome()    — eviction (NotifyMineDepleted) OR death, iff
+ *                              income was active; whichever fires first clears
+ *                              bIncomeActive, so the pair can never double-
+ *                              Remove. Always called before Unregister so
+ *                              income ⊆ alive holds at every step.
  *   - UnregisterMinerAlive() — death, ALWAYS (arrived or not).
+ *  Mine-side bookkeeping (TASK-253 registry): TryRegisterArrivedMiner at the
+ *  ring; UnregisterArrivedMiner at death — EndPlay(Destroyed) runs it BEFORE
+ *  the player-state bookkeeping above, so the mine never drains for a miner
+ *  whose income is being removed. Deplete() empties the mine's registry
+ *  BEFORE NotifyMineDepleted fires, so death-after-evict never touches the
+ *  mine twice.
  *  "Death" is EndPlay with reason Destroyed — the single choke point for every
  *  removal-from-play path (combat death via the base's HandleDeath → Destroy,
  *  the PlayAgain unit sweep, a KillZ fall) — never at world teardown.
  *  CanAddMiner() is NOT called here: the §3.3 cap is enforced at play time by
  *  TASK-030, before any gold moves.
  *
- *  Movement/arrival: MoveToActor toward the nearest same-team AGoldNode
- *  (acceptance 0.8 × ArrivalRadius, the house fraction), then a ~0.25 s poll
- *  (never per-tick, TASK-004 law) detects arrival by 2D distance <=
- *  ArrivalRadius, stops movement ("stand at the node"; the mining "clink"
- *  audio is M7), and afterwards only heals the walk: a failed/hijacked/
- *  displaced move is re-issued toward the node. No same-team node in the
- *  level: log and idle (nodes are placed in TASK-036).
+ *  Movement/arrival (TASK-254 retarget/wait/evict): MoveToActor toward the
+ *  finder's mine (acceptance 0.8 × ArrivalRadius, the house fraction), then
+ *  the ~0.25 s poll (never per-tick, TASK-004 law) drives the loop:
+ *   - RETARGET GATE: a null/stale/depleted target is re-found via
+ *     FindBestMineFor; while UN-arrived and pointed at an enemy-claimed mine
+ *     the finder is re-consulted and the target switches ONLY to a
+ *     minable-now (tier-1) mine — never between wait targets and never
+ *     between equal options (the no-churn rule; the finder's strict-<
+ *     tiebreak pins exact ties). An ARRIVED miner never retargets.
+ *   - AT THE RING (2D distance <= ArrivalRadius): TryRegisterArrivedMiner.
+ *     Success runs the arrival block (stand + clink + income, once per
+ *     tenure); refusal is WAIT MODE — stand at the ring, retry every poll,
+ *     auto-claim the instant the last enemy occupant leaves or dies.
+ *   - OUTSIDE THE RING: heal the walk (failed/finished-short/hijacked moves
+ *     re-issued; a displaced ARRIVED miner walks back — income unaffected).
+ *   - FINDER NULL (every mine depleted, or none exist): idle in place and
+ *     keep polling — the intended all-depleted income death (a NORMAL state:
+ *     Log, demoted from the M2 Error per the plan-of-record).
+ *  Eviction (NotifyMineDepleted, called by the depleting mine): un-arrive —
+ *  income off, clink off, per-tenure latches cleared, target nulled; the
+ *  next poll re-seeks.
  *
  *  FreezeAI (TASK-028 contract): the base override stops the walk
  *  (StopMovement) and parks the unit; this class extends it to clear the
@@ -92,9 +122,22 @@ public:
 	 */
 	virtual void FreezeAI() override;
 
-	/** True once this miner reached its gold node (PIE verification hook — the IsAIFrozen/IsUnitDead house pattern). Income activated iff this AND an owner state was registered. */
+	/** True while this miner holds a registered tenure at its mine (PER-TENURE since TASK-254 — cleared by eviction; PIE verification hook, the IsAIFrozen/IsUnitDead house pattern). Income active iff this AND an owner state was registered at arrival. */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Miner")
 	bool HasArrivedAtNode() const { return bArrivedAtNode; }
+
+	/**
+	 *  Eviction seam (TASK-254 — the PINNED TASK-253 contract: called by
+	 *  AGoldNode::Deplete() on every still-registered miner AFTER the mine
+	 *  latched bDepleted, emptied its registry and released its claim). Ends
+	 *  this miner's tenure: RemoveMinerIncome iff income was active, clears
+	 *  the per-tenure arrival latch, stops the clink, nulls the target — the
+	 *  0.25 s poll then re-seeks (walk / wait / idle per the retarget gate).
+	 *  Never calls back into the mine (its registry is already empty). Safe
+	 *  on a FROZEN miner (the accepted post-match drain quirk): books still
+	 *  balance, and no movement follows because FreezeAI killed the poll.
+	 */
+	void NotifyMineDepleted(AGoldNode* DepletedMine);
 
 protected:
 
@@ -102,12 +145,12 @@ protected:
 	 *  Super binds the card stats (30 HP / 350 speed from DT_Cards row Miner)
 	 *  — with the state machine structurally sealed (see class doc). Then:
 	 *  timer sweep (seal #3), RegisterMinerAlive on the owning team's player
-	 *  state (TASK-024 contract), start the walk to the nearest same-team
-	 *  AGoldNode, and arm the arrival poll.
+	 *  state (TASK-024 contract), seek the best mine (SeekBestMine →
+	 *  AGoldNode::FindBestMineFor) and start the walk, and arm the poll.
 	 */
 	virtual void BeginPlay() override;
 
-	/** Clears the arrival poll and, for reason == Destroyed, runs the §3.3 death bookkeeping (RemoveMinerIncome if arrived; UnregisterMinerAlive always). */
+	/** Clears the arrival poll and, for reason == Destroyed, unregisters from the mine FIRST (UnregisterArrivedMiner — releases claim + drain when this was the last occupant; idempotent no-op after an eviction) and THEN runs the §3.3 death bookkeeping (RemoveMinerIncome iff income active; UnregisterMinerAlive always). */
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/**
@@ -119,9 +162,10 @@ protected:
 	virtual bool ShouldHoldDeathAnim() const override { return false; }
 
 	/**
-	 *  Standing this close to the gold node (2D) counts as arrived: income
-	 *  activates exactly once and the miner stands. The walk's acceptance
-	 *  radius is 0.8 × this, so the natural stop always lands inside the ring.
+	 *  Standing this close to the mine (2D) counts as at-the-ring: registration
+	 *  is attempted there (success = arrival + income once per tenure; refusal
+	 *  = wait mode standing at this ring). The walk's acceptance radius is
+	 *  0.8 × this, so the natural stop always lands inside the ring.
 	 *  // GDD §3.3 — ~10 s walk, then +1 gold/s activates only on arrival
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Miner", meta = (ClampMin = "0"))
@@ -140,10 +184,13 @@ private:
 
 	/**
 	 *  Poll body (every ArrivalCheckInterval): gate on dead/frozen, retry
-	 *  registration if needed, then arrival detection (2D distance <=
-	 *  ArrivalRadius → stand + AddMinerIncome exactly once) or walk healing
-	 *  (re-MoveToActor when the move failed, finished short, or was pointed at
-	 *  a different goal). Post-arrival it only walks a displaced miner back.
+	 *  registration if needed, then the TASK-254 loop — retarget gate
+	 *  (re-seek a null/stale/depleted target; tier-1 upgrade while un-arrived,
+	 *  the no-churn rule), at-ring registration (TryRegisterArrivedMiner:
+	 *  success = arrival block once per tenure, refusal = WAIT MODE standing
+	 *  at the ring with per-poll retries), or walk healing (re-MoveToActor
+	 *  when the move failed, finished short, or was pointed at a different
+	 *  goal). Post-arrival it only walks a displaced miner back.
 	 */
 	void UpdateMining();
 
@@ -174,22 +221,46 @@ private:
 	 */
 	ASiegePlayerState* ResolveOwningPlayerState();
 
-	/** Nearest AGoldNode whose GetTeam() matches ours (actor iteration per spec), or nullptr. */
-	AGoldNode* FindNearestSameTeamGoldNode() const;
+	/**
+	 *  Re-runs THE finder (AGoldNode::FindBestMineFor, TASK-253) from the
+	 *  miner's position and retargets TargetGoldNode to the result (tier-1
+	 *  minable-now, else tier-2 enemy-occupied wait target). Null — every
+	 *  mine depleted, or none exist — leaves the target null and logs ONCE at
+	 *  Log level (the intended all-depleted endgame, demoted from the M2
+	 *  Error): the caller idles and the poll keeps re-seeking.
+	 */
+	AGoldNode* SeekBestMine();
+
+	/**
+	 *  Ends the current mine tenure (shared by the NotifyMineDepleted eviction
+	 *  seam and the defensive stale-mine un-arrive): RemoveMinerIncome iff
+	 *  bIncomeActive (on the SAME cached state), clear the per-tenure
+	 *  bArrivedAtNode/bIncomeActive latches, stop the clink. Idempotent; NEVER
+	 *  touches the mine registry — callers own that side.
+	 */
+	void EndMineTenure();
 
 	/** Player state this miner registered with — death bookkeeping goes to the SAME state (weak: the world owns its lifetime). */
 	TWeakObjectPtr<ASiegePlayerState> CachedOwnerState;
 
-	/** The same-team gold node this miner walks to/stands at (weak: never retained; found once at BeginPlay). */
+	/** The mine this miner currently walks to / waits at / stands on (weak: never retained). Re-found by the poll whenever null/stale/depleted (SeekBestMine); nulled by eviction so the next poll re-seeks. */
 	TWeakObjectPtr<AGoldNode> TargetGoldNode;
 
 	/** True once RegisterMinerAlive ran (TASK-024: exactly once per miner) — Unregister fires at death iff this. */
 	bool bRegisteredAlive = false;
 
-	/** True once this miner reached the node (arrival is a one-way latch — displacement never re-triggers arrival). */
+	/**
+	 *  PER-TENURE arrival latch (TASK-254 rewrite — the M2 one-way-per-
+	 *  LIFETIME latch is gone): set when TryRegisterArrivedMiner accepts this
+	 *  miner at the ring, cleared ONLY by eviction (NotifyMineDepleted) or the
+	 *  defensive stale-mine un-arrive — so arrival (and AddMinerIncome) fires
+	 *  exactly once per tenure and again at the NEXT mine. Displacement never
+	 *  clears it: a displaced arrived miner walks back, income latched. While
+	 *  true, this miner sits in exactly one mine's ArrivedMiners registry.
+	 */
 	bool bArrivedAtNode = false;
 
-	/** True once AddMinerIncome ran (arrival while registered) — RemoveMinerIncome fires at death iff this, per the §3.3 killed-en-route rule. */
+	/** True while this tenure's AddMinerIncome is outstanding (registered arrival happened) — RemoveMinerIncome fires iff this, at eviction OR death, whichever comes first (each clears it: never a double-Remove). The §3.3 killed-en-route rule holds: never true before a registered arrival. Invariant: bIncomeActive ⇒ bArrivedAtNode. */
 	bool bIncomeActive = false;
 
 	/** One-shot guard: the ASiegeGameState is not available yet at resolve time (early-spawn edge). The "no player state for this team" case is logged by GetPlayerStateForTeam (TASK-043), not here. */
@@ -201,8 +272,11 @@ private:
 	/** One-shot guard: no AAIController possessing the miner (poll keeps retrying — possession can land a tick after spawn). Named distinctly from the base's private bWarnedNoAIController — no shadowing. */
 	bool bWarnedNoWalkController = false;
 
-	/** One-shot guard: the gold node found at BeginPlay disappeared mid-match. */
-	bool bWarnedNodeLost = false;
+	/** One-shot Log guard: the finder returned null — every mine depleted (or none exist). A NORMAL endgame state (demoted from the M2 Error per the plan-of-record): the miner idles in place and the poll keeps re-seeking. Re-armed if a mine is ever found again (defensive — depletion is one-way, so null is normally terminal). */
+	bool bLoggedNoMineAvailable = false;
+
+	/** One-shot Log guard per WAIT episode: standing at the ring of an enemy-claimed mine (TASK-254 wait mode). Re-armed by a successful registration, a retarget, or an eviction, so each new queue logs exactly once (PIE occupancy-suite visibility). */
+	bool bLoggedWaitingAtMine = false;
 
 	/** One-shot guard: arrived with no registered owner state — mining activates no income. */
 	bool bWarnedIncomeSkipped = false;

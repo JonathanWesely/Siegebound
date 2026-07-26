@@ -35,6 +35,7 @@
 #include "Siegebound/SiegeFeedbackLibrary.h"
 #include "Siegebound/SiegeHitFlashComponent.h"
 #include "Siegebound/SiegeMeshJuiceComponent.h"
+#include "Siegebound/SiegePlayerController.h" // W1 TASK-275: reads the latched Shield Wall command (GetCurrentCommand/HasIssuedCommand/GetHoldLocation/GetHoldRadius) — complete type needed for the const-getter calls
 #include "TimerManager.h"
 
 namespace
@@ -70,6 +71,16 @@ namespace
 
 	/** A looping timer needs a strictly positive rate; guards a zero/negative Cadence cell. */
 	constexpr float MinAttackCadence = 0.05f;
+
+	/**
+	 *  Shield Wall HOLD arrival tolerance (W1 TASK-275): a unit within this 2D distance of
+	 *  the hold point, with no enemy inside the hold disc, is considered "gathered" and
+	 *  holds (EnterIdle) instead of re-issuing a move. Comfortably above the
+	 *  StructureMoveAcceptanceRadius so a MoveToLocation that acceptance-stops reads as
+	 *  arrived, and generous enough that a loose swarm settles around the point. Impl
+	 *  detail (like StructureMoveAcceptanceRadius), not a GDD stat.
+	 */
+	constexpr float HoldArrivalTolerance = 150.f;
 }
 
 ASummonedUnit::ASummonedUnit()
@@ -122,6 +133,27 @@ ASummonedUnit::ASummonedUnit()
 	SkeletalVisualMesh->SetGenerateOverlapEvents(false);
 	SkeletalVisualMesh->SetCanEverAffectNavigation(false);
 	SkeletalVisualMesh->SetVisibility(false);
+
+	// M7.6 Phase-2 URO / anim-tick perf (TASK-285, CONVENTIONS "Arena 10× scale-up &
+	// LOD/perf" SK-unit URO law): at 10× field scale most of the ~10× unit fleet is
+	// off-screen at any moment, so make an unrendered unit's animation cost near-zero.
+	// OnlyTickPoseWhenRendered stops evaluating the pose entirely while the mesh is not
+	// rendered (accepted off-screen anim pop at the gameplay cam), and URO throttles the
+	// pose-tick RATE for distant/rarely-rendered units that ARE visible.
+	//
+	// SAFE unconditionally: these flags touch ONLY this cosmetic SkeletalVisualMesh
+	// component's POSE tick. Every gameplay-critical path is decoupled from the pose —
+	// movement is CharacterMovementComponent + AAIController MoveTo (nav), never root
+	// motion (none in this TU); aggro/target acquisition is distance math on the
+	// StateTimerHandle→UpdateState loop; attack cadence + damage delivery are the
+	// AttackTimerHandle→PerformAttack timer (ApplyDamage / FireProjectileAt applied
+	// DIRECTLY, never via an AnimNotify — there are none). So an off-screen unit still
+	// marches, acquires, and hits on schedule; only its visible pose lags. This is a
+	// SEPARATE subobject from the Character's animation Mesh (unused here), which makes
+	// the decoupling structural. NOTE: SetVisibleInRayTracing(false) is the reserved
+	// W2/W3 EMERGENCY lever and is deliberately NOT applied here (TASK-285 scope).
+	SkeletalVisualMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
+	SkeletalVisualMesh->bEnableUpdateRateOptimizations = true;
 
 	// §6 juice components (TASK-154/155): the shared hit-flash + transform-juice, added
 	// once here so AMinerUnit inherits them. The flash gathers meshes at its BeginPlay and
@@ -253,6 +285,26 @@ void ASummonedUnit::ResolveSkeletalVisual()
 	// (non-deprecated) setter in UE5. The mesh carries its own [TeamRegion, <CardID>PBR]
 	// materials; the team recolor below (via the LoadStatsAndStart re-apply) overrides slot 0.
 	SkeletalVisualMesh->SetSkeletalMeshAsset(SkeletalAsset);
+
+	// FLOAT-FIX (DIAG-floating-units SESSION-2): ground the skeletal mesh to the SAME
+	// authored offset the static VisualMesh already carries. The SK feet sit at the mesh
+	// pivot (Z=0), so with the component left at capsule-center the whole body renders one
+	// capsule-half-height ABOVE the grounded capsule. TASK-159 hand-authored the −HalfHeight
+	// Z into every unit BP that existed then; the late first-imports (Archer/Ogre, TASK-242/243,
+	// "zero BP changes") never got it, so their SkeletalVisualMesh kept the C++ default Z=0 and
+	// floated (+90 / +145). Pin the component from code here instead of trusting each BP: this
+	// corrects Archer (0→−90) and Ogre (0→−145), is a byte-identical no-op for the units whose
+	// BP already authored SkeletalVisualMesh.Z == VisualMesh.Z (the other 9 — measured
+	// −90/−90/−145 in the DIAG table), AND permanently closes the "next first-import forgets the
+	// BP offset" trap. VisualMeshBaseRelativeLocation is the static VisualMesh's authored
+	// RelativeLocation, cached in BeginPlay (SummonedUnit.cpp:154-157) BEFORE
+	// LoadStatsAndStart→ResolveSkeletalVisual runs — the ONLY call path — so it is always valid
+	// here; SkeletalVisualMesh is already non-null (the early-return at the top of this function).
+	// The bVisualMeshBaseCached guard is defense-in-depth: never pin a garbage ZeroVector offset.
+	if (bVisualMeshBaseCached)
+	{
+		SkeletalVisualMesh->SetRelativeLocation(VisualMeshBaseRelativeLocation);
+	}
 
 	// AnimClass resolution (TASK-159 + shared-ABP fallback, TASK-165 rig-import chain):
 	//   1. Prefer a per-unit /Game/Characters/ABP_<CardID> (the _C generated-class path) —
@@ -1003,6 +1055,33 @@ void ASummonedUnit::UpdateState()
 		return;
 	}
 
+	// ── Shield Wall unit commands (W1 TASK-275) ────────────────────────────────
+	// The local human player (Blue — CONVENTIONS team contract: "player is always
+	// ETeamId::Blue") may latch a stance (Attack/Hold/Defend) that reshapes THIS
+	// Standard body's target + march goal. The gate is deliberately NARROW so nothing
+	// else changes: ONLY the player's own Blue *Standard* units (miners are Profile
+	// None → excluded, so their body stays untouched), and ONLY after the player's
+	// first command (HasIssuedCommand). Bot/Red units NEVER read the command, and
+	// player units before the first press fall straight through to the LEGACY body
+	// below — which is therefore byte-for-byte unchanged whenever this gate is false.
+	// Re-evaluated every check, so a mid-flight stance change re-targets next tick (the
+	// stance is LIVE). Freeze gating is upstream (the early-out above), so a frozen unit
+	// never reaches here.
+	if (Profile == ECardProfile::Standard && Team == ETeamId::Blue)
+	{
+		if (const UWorld* CmdWorld = GetWorld())
+		{
+			if (const ASiegePlayerController* PC = Cast<ASiegePlayerController>(CmdWorld->GetFirstPlayerController()))
+			{
+				if (PC->HasIssuedCommand())
+				{
+					UpdateStateStandardCommanded(*PC);
+					return;
+				}
+			}
+		}
+	}
+
 	const FVector MyLocation = GetActorLocation();
 
 	// Reacquire/leash (GDD §3.8): drop a dead/destroyed target, or one beyond LeashRange
@@ -1128,6 +1207,237 @@ AActor* ASummonedUnit::FindNearestEnemyCastle() const
 	{
 		ACastle* Castle = *It;
 		if (!IsValid(Castle) || Castle->GetTeamId() == Team || Castle->IsCastleDestroyed())
+		{
+			continue;
+		}
+
+		const float Distance = GetDistanceToTarget(MyLocation, Castle);
+		if (Distance < BestDistance)
+		{
+			BestCastle = Castle;
+			BestDistance = Distance;
+		}
+	}
+
+	return BestCastle;
+}
+
+void ASummonedUnit::UpdateStateStandardCommanded(const ASiegePlayerController& PC)
+{
+	// Reached ONLY through the UpdateState gate (Profile==Standard, Team==Blue,
+	// PC.HasIssuedCommand()). Re-evaluates the stance every tick, so the unit adopts a
+	// mid-flight command change on its next state check (the stance is LIVE).
+	const FVector MyLocation = GetActorLocation();
+
+	switch (PC.GetCurrentCommand())
+	{
+	case ESiegeUnitCommand::Hold:
+	{
+		// HOLD: only enemies inside the hold disc are eligible. Re-picking each tick
+		// inherently DROPS a target that has left the disc (no in-disc enemy ⇒ nullptr),
+		// and ignores enemies outside it even if they would be in normal aggro range.
+		const FVector HoldLoc = PC.GetHoldLocation();
+		const float   HoldRad = PC.GetHoldRadius();
+
+		CurrentTarget = AcquireEnemyNearPoint(HoldLoc, HoldRad);
+
+		if (CurrentTarget)
+		{
+			if (GetDistanceToTarget(MyLocation, CurrentTarget) <= AttackRange)
+			{
+				EnterAttack();
+			}
+			else
+			{
+				EnterAdvance(CurrentTarget);
+			}
+		}
+		else if (FVector::DistSquared2D(MyLocation, HoldLoc) <= FMath::Square(HoldArrivalTolerance))
+		{
+			// gathered at the hold point with no in-disc enemy: hold position
+			EnterIdle();
+		}
+		else
+		{
+			// march to the hold POINT (not an actor) — the location variant of Advance
+			EnterAdvanceToLocation(HoldLoc);
+		}
+		break;
+	}
+	case ESiegeUnitCommand::Defend:
+	{
+		// DEFEND: fight only enemies within the defend disc of the OWN castle, else fall
+		// back toward home. No own castle (destroyed → the match is over): stand down.
+		ACastle* OwnCastle = FindOwnCastle();
+		if (!OwnCastle)
+		{
+			EnterIdle();
+			break;
+		}
+
+		CurrentTarget = AcquireEnemyNearPoint(OwnCastle->GetActorLocation(), DefendRadius);
+
+		if (CurrentTarget)
+		{
+			if (GetDistanceToTarget(MyLocation, CurrentTarget) <= AttackRange)
+			{
+				EnterAttack();
+			}
+			else
+			{
+				EnterAdvance(CurrentTarget);
+			}
+		}
+		else
+		{
+			// no attacker near home: the own castle is the fall-back goal (an actor →
+			// EnterAdvance stops flush at its walls; we never attack our own castle,
+			// since EnterAttack fires only on an enemy CurrentTarget).
+			EnterAdvance(OwnCastle);
+		}
+		break;
+	}
+	case ESiegeUnitCommand::Attack:
+	default:
+	{
+		// ATTACK: mirrors the legacy Standard body EXACTLY — the leash/reacquire + AcquireTarget
+		// + the in-aggro attack/advance below, AND the no-in-aggro march goal (the stable enemy
+		// castle). TASK-282 (arena final-approach halt fix): the prior box-defender-FIRST goal
+		// substitution (FindNearestEnemyInSpawnBox, gated within EnemyBaseEngageRadius by TASK-280)
+		// is REMOVED. That box turns over every bot wave, so its nearest-to-self result FLIPPED
+		// every 0.25 s state tick — EnterAdvance re-pathed each tick and the unit milled near the
+		// radius ("stopped just short"); and while ANY box defender remained the castle was never
+		// the sustained goal/CurrentTarget, so EnterAttack on the castle never fired (the bot
+		// endlessly repopulates its box, so the castle was never reached). Marching the stable
+		// castle instead makes the WHOLE ATTACK approach the proven-good legacy castle-kill
+		// (runtime-verified on this build: a full-field marcher drove the enemy castle to 0 HP /
+		// destroyed): AcquireTarget still engages any defender that enters AggroRadius on the way,
+		// and at the wall the castle is acquired as CurrentTarget and attacked. This also SUBSUMES
+		// the TASK-280 anti-freeze — the goal is now the stable castle across the entire approach,
+		// not just mid-field. A null/destroyed enemy castle leaves Goal null ⇒ EnterIdle (match over).
+		if (CurrentTarget && (!IsTargetAlive(CurrentTarget) || GetDistanceToTarget(MyLocation, CurrentTarget) > LeashRange))
+		{
+			CurrentTarget = nullptr;
+		}
+
+		if (AActor* Acquired = AcquireTarget())
+		{
+			CurrentTarget = Acquired;
+		}
+
+		AActor* Goal = CurrentTarget;
+		if (!Goal)
+		{
+			Goal = FindNearestEnemyCastle();
+		}
+
+		if (!Goal)
+		{
+			// no target and no standing enemy castle (destroyed → the match is over): stand down
+			EnterIdle();
+			break;
+		}
+
+		if (CurrentTarget && GetDistanceToTarget(MyLocation, CurrentTarget) <= AttackRange)
+		{
+			EnterAttack();
+		}
+		else
+		{
+			EnterAdvance(Goal);
+		}
+		break;
+	}
+	}
+}
+
+AActor* ASummonedUnit::AcquireEnemyNearPoint(const FVector& Center, float Radius) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	TArray<AActor*> TeamAgents;
+	UGameplayStatics::GetAllActorsWithInterface(World, UTeamAgent::StaticClass(), TeamAgents);
+
+	const FVector MyLocation = GetActorLocation();
+	const float RadiusSq = Radius * Radius;
+
+	// Identical bucketing/tie-break to AcquireTarget — the ONLY change is the eligibility
+	// gate (a 2D disc anchored on Center, not AggroRadius-from-self). Nearest-to-SELF is
+	// still the selection metric so the Standard tie-break behavior stays consistent.
+	AActor* BestPawn = nullptr;
+	float BestPawnDist = TNumericLimits<float>::Max();
+	AActor* BestOther = nullptr;
+	float BestOtherDist = TNumericLimits<float>::Max();
+
+	for (AActor* Candidate : TeamAgents)
+	{
+		if (Candidate == this || !IsTargetAlive(Candidate))
+		{
+			continue;
+		}
+
+		// no friendly targets (GDD §3.0). Native cast is valid: UTeamAgent is NotBlueprintable.
+		const ITeamAgent* Agent = Cast<ITeamAgent>(Candidate);
+		if (!Agent || Agent->GetTeamId() == Team)
+		{
+			continue;
+		}
+
+		// disc filter: the candidate's LOCATION must lie within Radius (2D) of Center
+		if (FVector::DistSquared2D(Candidate->GetActorLocation(), Center) > RadiusSq)
+		{
+			continue;
+		}
+
+		const float Distance = GetDistanceToTarget(MyLocation, Candidate);
+		if (Candidate->IsA<APawn>())
+		{
+			if (Distance < BestPawnDist)
+			{
+				BestPawn = Candidate;
+				BestPawnDist = Distance;
+			}
+		}
+		else if (Distance < BestOtherDist)
+		{
+			BestOther = Candidate;
+			BestOtherDist = Distance;
+		}
+	}
+
+	if (!BestOther)
+	{
+		return BestPawn;
+	}
+	if (!BestPawn)
+	{
+		return BestOther;
+	}
+	if (BestPawnDist <= BestOtherDist)
+	{
+		return BestPawn;
+	}
+
+	const float PairDistance = GetDistanceToTarget(BestPawn->GetActorLocation(), BestOther);
+	return (PairDistance <= TieBreakDistance) ? BestPawn : BestOther;
+}
+
+ACastle* ASummonedUnit::FindOwnCastle() const
+{
+	const FVector MyLocation = GetActorLocation();
+
+	ACastle* BestCastle = nullptr;
+	float BestDistance = TNumericLimits<float>::Max();
+
+	// mirror of FindNearestEnemyCastle but SAME-team (Team == ours), skipping destroyed
+	for (TActorIterator<ACastle> It(GetWorld()); It; ++It)
+	{
+		ACastle* Castle = *It;
+		if (!IsValid(Castle) || Castle->GetTeamId() != Team || Castle->IsCastleDestroyed())
 		{
 			continue;
 		}
@@ -1502,6 +1812,61 @@ void ASummonedUnit::EnterAdvance(AActor* Goal)
 			UE_LOG(LogGitClaudeUnrealTest, Warning,
 				TEXT("ASummonedUnit '%s': MoveToActor toward '%s' failed — is the NavMeshBoundsVolume covering L_Arena (TASK-015)?"),
 				*GetNameSafe(this), *GetNameSafe(Goal));
+		}
+	}
+}
+
+void ASummonedUnit::EnterAdvanceToLocation(const FVector& Point)
+{
+	// Point variant of EnterAdvance (W1 TASK-275, Shield Wall HOLD): marches to a world
+	// LOCATION rather than an actor. Attack-exit bookkeeping is identical to EnterAdvance.
+	if (State == ESummonedUnitState::Attack)
+	{
+		GetWorldTimerManager().ClearTimer(AttackTimerHandle);
+		StopAttackLunge(); // leaving Attack: mesh back to EXACTLY the rest pose (TASK-020)
+		RestoreLocomotionAnim(); // TASK-165 (rigged): end any attack clip so walk resumes; no-op for static units
+	}
+	State = ESummonedUnitState::Advance;
+
+	AAIController* AI = GetAIController();
+	if (!AI)
+	{
+		if (!bWarnedNoAIController)
+		{
+			bWarnedNoAIController = true;
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("ASummonedUnit '%s': no AAIController possessing the unit — cannot move. Check AutoPossessAI / world settings."),
+				*GetNameSafe(this));
+		}
+		return;
+	}
+	bWarnedNoAIController = false;
+
+	// Clear the ACTOR goal so a later EnterAdvance always re-paths (its goal-changed test
+	// reads CurrentMoveGoal). (Re)path only when the target point moved meaningfully or the
+	// last move finished/failed — the EnterAdvance re-path discipline, applied to a point.
+	// QA delta (TASK-275, HOLD kite-out fix): EnterAdvance(AActor*) does NOT invalidate
+	// bHasMoveGoalLocation/CurrentMoveGoalLocation, so a return to the SAME hold point right
+	// after an actor-move (in-disc enemy chased, then it left the disc while still Moving)
+	// would see bPointChanged==false and non-Idle status and SKIP re-issuing — leaving the
+	// stale MoveToActor(enemy) live and kiting the unit out of position. Force a re-path when
+	// the last move was an ACTOR move (captured BEFORE we null CurrentMoveGoal).
+	const bool bWasActorMove = (CurrentMoveGoal != nullptr);
+	CurrentMoveGoal = nullptr;
+	const bool bPointChanged = !bHasMoveGoalLocation || !CurrentMoveGoalLocation.Equals(Point, 1.f);
+	if (bWasActorMove || bPointChanged || AI->GetMoveStatus() == EPathFollowingStatus::Idle)
+	{
+		const EPathFollowingRequestResult::Type Result = AI->MoveToLocation(Point, StructureMoveAcceptanceRadius,
+			/*bStopOnOverlap=*/ false, /*bUsePathfinding=*/ true, /*bProjectDestinationToNavigation=*/ true,
+			/*bCanStrafe=*/ true, /*FilterClass=*/ nullptr, /*bAllowPartialPath=*/ true);
+		CurrentMoveGoalLocation = Point;
+		bHasMoveGoalLocation = true;
+
+		if (Result == EPathFollowingRequestResult::Failed && bPointChanged)
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("ASummonedUnit '%s': MoveToLocation toward %s failed — is the NavMeshBoundsVolume covering L_Arena (TASK-015)?"),
+				*GetNameSafe(this), *Point.ToString());
 		}
 	}
 }

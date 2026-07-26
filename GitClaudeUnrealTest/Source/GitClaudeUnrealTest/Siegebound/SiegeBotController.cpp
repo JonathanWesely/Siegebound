@@ -2,7 +2,10 @@
 
 #include "Siegebound/SiegeBotController.h"
 
+#include "CollisionQueryParams.h" // TASK-265 spawn-Z diagnostic ground trace (FCollisionQueryParams) — BattlefieldScatter::GroundZAt precedent
+#include "Components/CapsuleComponent.h" // TASK-265: GetScaledCapsuleHalfHeight on the spawned unit — complete type required
 #include "Engine/DataTable.h"
+#include "Engine/HitResult.h" // TASK-265 spawn-Z diagnostic (FHitResult) — same precedent
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GitClaudeUnrealTest.h"
@@ -10,6 +13,7 @@
 #include "TimerManager.h"
 #include "UObject/SoftObjectPtr.h"
 #include "Siegebound/Building.h"
+#include "Siegebound/CaptureZone.h" // TASK-262: Red-owned mid zone spawn gate (CanTeamSpawnHere) — complete type, methods dereferenced
 #include "Siegebound/CardRow.h"
 #include "Siegebound/Castle.h"
 #include "Siegebound/DeckComponent.h"
@@ -49,7 +53,7 @@ namespace
 	 *  discarded here — an UNAFFORDABLE Unit/Building/Economy is classified "unplayable
 	 *  THIS tick" by the PLAY rules (rules 1-4 only ever select an affordable card — the
 	 *  never-play-unaffordable invariant), but it is deliberately NOT a discard
-	 *  candidate: the bot BANKS toward it (e.g. an Ogre needs 12 gold, §4), so cycling
+	 *  candidate: the bot BANKS toward it (e.g. an Ogre needs 36 gold post-TASK-278 ×3, §4), so cycling
 	 *  it away would break the "growing Set II waves incl. Ogres" acceptance.
 	 *
 	 *  M5 (TASK-102): Spell stays in this TYPE-level set, but the bot's two CASTABLE
@@ -474,92 +478,195 @@ void ASiegeBotController::EvaluateDecisions()
 						*Chosen.CardID.ToString(), Chosen.Row->Cost,
 						SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z,
 						*GetNameSafe(NearestIntruder), GoldBefore, BotState->GetGold());
+					return; // rule 1 fired: it owns this tick (TASK-267: return only on a CONFIRMED play)
 				}
 			}
 			else
 			{
+				// TASK-267 audit: rule 1 shares the IDENTICAL abandon-the-tick trap. With an intruder present and an
+				// affordable defensive card, a persistent spawn failure used to return and starve rules 3/4/5 (the
+				// Fireball/Lightning/attack the bot wants precisely when it CANNOT place a blocker). Fall through
+				// instead; no gold spent, no card confirmed. Verbose kept - the once-per-streak Log promotion is
+				// rule-2-specific per the TASK-267 spec.
 				UE_LOG(LogGitClaudeUnrealTest, Verbose,
-					TEXT("ASiegeBotController '%s': Rule 1 wanted '%s' but found no valid spawn point this tick — retrying next tick."),
+					TEXT("ASiegeBotController '%s': Rule 1 wanted '%s' but found no valid spawn point - falling through to the lower rules this tick (TASK-267)."),
 					*GetNameSafe(this), *Chosen.CardID.ToString());
 			}
-			return; // rule 1 fired: it owns this tick (a refused point simply retries next tick)
+			// TASK-267: no unconditional return - a rule-1 spawn FAILURE now falls through to rules 3/4/5 (rule 2
+			// is skipped below while the intruder stands). Only a CONFIRMED play returns (added in the branch above).
 		}
 		// no AFFORDABLE defensive card → rule 1 did NOT fire; fall through
 	}
 
-	// ---- Rule 2: ECONOMY — half is clear; a Miner (under the target + cap) or a Deep Mine ----
+	// ---- Rule 2: ECONOMY — half is clear; a Miner toward the best available mine, or a Deep Mine ----
+	// W1-PREP mirrored mines (TASK-256): the two castle-adjacent per-team nodes are
+	// GONE (deleted in TASK-257) — 6 neutral depleting mines (3/side, TASK-255)
+	// replace them, and BOTH economy sub-rules anchor on AGoldNode::FindBestMineFor,
+	// THE single finder the miners themselves retarget through (TASK-253/254):
+	// tier-1 = nearest mine the bot's team can mine NOW, tier-2 = nearest enemy-
+	// occupied non-depleted mine (a WAIT target — the spawned miner queues at the
+	// ring and auto-claims when it frees), null = every mine depleted or none exist.
 	if (!NearestIntruder)
 	{
-		// 2a) MINER — byte-for-byte with TASK-046: only while ALIVE miners are under
-		//     the target AND the §3.3 hard cap (CanAddMiner) still allows one more.
-		if (BotState->GetAliveMinerCount() < TargetMinerCount && BotState->CanAddMiner())
+		if (UWorld* World = GetWorld())
 		{
-			const int32 CardIndex = FindAffordableCardByID(HandCards, Gold, MinerCardID);
-			if (CardIndex != INDEX_NONE)
+			const FVector CastleRed = GetCastleRedLocation();
+			AGoldNode* BestMine = AGoldNode::FindBestMineFor(World, BotTeam, CastleRed);
+
+			// Mine-lockout trace — ONCE PER STATE CHANGE, never per 2 s tick (the
+			// bLoggedMineLockout latch). A skip is a non-decision diagnostic, so both
+			// lines stay OFF LogSiegeBot (one-line-per-FIRED-rule law).
+			if (!BestMine && !bLoggedMineLockout)
 			{
-				const FBotHandCard& Chosen = HandCards[CardIndex];
-
-				// Spawn just in FRONT of GoldNode_Red (toward the centerline) so the
-				// miner walks the last stretch, then activates its +1/s at the node.
-				const float ApproachSign = (BotTeam == ETeamId::Red) ? -1.f : 1.f;
-				const FVector Desired = GetGoldNodeRedLocation() + FVector(ApproachSign * MinerNodeApproachOffset, 0.f, 0.f);
-
-				FVector SpawnPoint;
-				if (ComputeValidBotSpawnPoint(Desired, /*bIsBuilding=*/ false, SpawnPoint))
-				{
-					const int32 GoldBefore = Gold;
-					if (SpawnBotCardActor(Chosen.CardID, /*bIsBuilding=*/ false, SpawnPoint, *BotState, Chosen.Row->Cost, /*SwarmCount=*/ 0))
-					{
-						Deck->ConfirmPlayFromHand(Chosen.Slot);
-						UE_LOG(LogSiegeBot, Log,
-							TEXT("[Bot %s] Rule 2 (Economy): played Miner '%s' (cost %d) toward GoldNode_Red at (%.0f, %.0f, %.0f) — miners now %d/%d, gold %d->%d."),
-							*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost,
-							SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z,
-							BotState->GetAliveMinerCount(), TargetMinerCount, GoldBefore, BotState->GetGold());
-					}
-				}
-				else
-				{
-					UE_LOG(LogGitClaudeUnrealTest, Verbose,
-						TEXT("ASiegeBotController '%s': Rule 2 wanted a Miner but found no valid spawn point this tick."),
-						*GetNameSafe(this));
-				}
-				return; // rule 2 fired (Miner)
+				bLoggedMineLockout = true;
+				UE_LOG(LogGitClaudeUnrealTest, Log,
+					TEXT("ASiegeBotController '%s': FindBestMineFor returned null (every mine depleted or none exist) — rule 2a (Miner) SKIPPED until a mine is available again (never buy a doomed miner; all-depleted endgame = base income + Deep Mine)."),
+					*GetNameSafe(this));
 			}
-		}
-
-		// 2b) DEEP MINE — a building-routed economy play (§4 M4). No miner-cap
-		//     interaction (Deep Mine is not a miner): it just needs the half clear
-		//     (guaranteed by the enclosing !NearestIntruder) and an affordable Deep
-		//     Mine in hand. Spawned near GoldNode_Red, deep in the bot half, honoring
-		//     the §3.5 building clearance via ComputeValidBotSpawnPoint(bIsBuilding).
-		{
-			const int32 CardIndex = FindAffordableEconomyBuildingCard(HandCards, Gold, BuildingEconomyCardIDs);
-			if (CardIndex != INDEX_NONE)
+			else if (BestMine && bLoggedMineLockout)
 			{
-				const FBotHandCard& Chosen = HandCards[CardIndex];
-				const FVector Desired = GetGoldNodeRedLocation();
+				bLoggedMineLockout = false;
+				UE_LOG(LogGitClaudeUnrealTest, Log,
+					TEXT("ASiegeBotController '%s': mine '%s' is available again — rule 2a (Miner) re-enabled."),
+					*GetNameSafe(this), *GetNameSafe(BestMine));
+			}
 
-				FVector SpawnPoint;
-				if (ComputeValidBotSpawnPoint(Desired, /*bIsBuilding=*/ true, SpawnPoint))
+			// 2a) MINER — the TASK-046 gates byte-for-byte (ALIVE miners under the
+			//     target AND the §3.3 hard cap allows one more) PLUS the TASK-256 mine
+			//     gate: finder null ⇒ 2a is skipped ENTIRELY — a miner with no mine to
+			//     walk to is a doomed purchase (it would idle forever on dead income).
+			if (BestMine && BotState->GetAliveMinerCount() < TargetMinerCount && BotState->CanAddMiner())
+			{
+				const int32 CardIndex = FindAffordableCardByID(HandCards, Gold, MinerCardID);
+				if (CardIndex != INDEX_NONE)
 				{
-					const int32 GoldBefore = Gold;
-					if (SpawnBotCardActor(Chosen.CardID, /*bIsBuilding=*/ true, SpawnPoint, *BotState, Chosen.Row->Cost, /*SwarmCount=*/ 0))
+					const FBotHandCard& Chosen = HandCards[CardIndex];
+
+					// Materialize MinerNodeApproachOffset SHORT of the mine on its
+					// own-castle side (2D) so the miner walks the last stretch in, then
+					// clamp the desired point to the bot's own half (spawn law: the bot
+					// NEVER spawns on the Blue half — ComputeValidBotSpawnPoint REJECTS
+					// off-half points rather than clamping, and its widening ring tops
+					// out at 1,100 uu, so an unclamped Blue-half desired point would
+					// stall rule 2a forever instead of walking). For a Blue-half mine
+					// the clamp lands the spawn at the centerline and the miner WALKS
+					// the field to the mine — cross-field walks are CORRECT behavior
+					// (plan-of-record; TASK-258 watch list, not a bug).
+					const FVector MineLocation = BestMine->GetActorLocation();
+					const FVector ApproachDir = FVector(CastleRed.X - MineLocation.X, CastleRed.Y - MineLocation.Y, 0.f).GetSafeNormal();
+					FVector Desired = ApproachDir.IsNearlyZero()
+						? MineLocation // degenerate (mine at the castle point): the ring search walks it clear
+						: MineLocation + ApproachDir * MinerNodeApproachOffset;
+					Desired.Z = MineLocation.Z;
+					// KEPT AS AUTHORED (TASK-265): ComputeValidBotSpawnPoint's box clamp now dominates this half clamp at an 840 box; it re-activates untouched if the box ever grows.
+					if (!IsOnOwnHalf(Desired.X))
 					{
-						Deck->ConfirmPlayFromHand(Chosen.Slot);
-						UE_LOG(LogSiegeBot, Log,
-							TEXT("[Bot %s] Rule 2 (Economy): played Deep Mine '%s' (cost %d) near GoldNode_Red at (%.0f, %.0f, %.0f) — gold %d->%d."),
-							*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost,
-							SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z, GoldBefore, BotState->GetGold());
+						Desired.X = BotHalfBoundaryX;
 					}
+
+					FVector SpawnPoint;
+					if (ComputeValidBotSpawnPoint(Desired, /*bIsBuilding=*/ false, SpawnPoint))
+					{
+						const int32 GoldBefore = Gold;
+						if (SpawnBotCardActor(Chosen.CardID, /*bIsBuilding=*/ false, SpawnPoint, *BotState, Chosen.Row->Cost, /*SwarmCount=*/ 0))
+						{
+							Deck->ConfirmPlayFromHand(Chosen.Slot);
+							UE_LOG(LogSiegeBot, Log,
+								TEXT("[Bot %s] Rule 2 (Economy): played Miner '%s' (cost %d) toward mine '%s' at (%.0f, %.0f, %.0f) — miners now %d/%d, gold %d->%d."),
+								*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost,
+								*GetNameSafe(BestMine),
+								SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z,
+								BotState->GetAliveMinerCount(), TargetMinerCount, GoldBefore, BotState->GetGold());
+							bRule2SpawnFailureLogged = false; // TASK-267: a successful rule-2 spawn clears the failure streak
+							return; // rule 2 fired (Miner) - it owns this tick
+						}
+					}
+					else
+					{
+						// TASK-267: no valid spawn point. FALL THROUGH to rules 3/4/5 instead of ABANDONING the tick (the old
+						// return below permanently re-stalled the ladder: the Miner stayed in hand, AliveMinerCount stayed 0,
+						// rule 2's precondition stayed satisfied, and rules 3/4/5 never ran again). No gold spent, no card
+						// confirmed. Promoted Verbose -> Log, emitted at most once per contiguous failure streak (the latch).
+						if (!bRule2SpawnFailureLogged)
+						{
+							bRule2SpawnFailureLogged = true;
+							UE_LOG(LogGitClaudeUnrealTest, Log,
+								TEXT("ASiegeBotController '%s': Rule 2 wanted a Miner but found no valid spawn point - FALLING THROUGH to the lower rules this tick (TASK-267; logged once per failure streak)."),
+								*GetNameSafe(this));
+						}
+					}
+					// no return: a failed rule-2a spawn falls through to 2b / rules 3-5 (TASK-267)
 				}
-				else
+			}
+
+			// 2b) DEEP MINE — a building-routed economy play (§4 M4). No miner-cap
+			//     interaction (Deep Mine is not a miner) and deliberately NO finder-
+			//     null skip: a Deep Mine needs no gold mine to produce, so it stays
+			//     the bot's all-depleted endgame economy (plan §T-F(7): base income +
+			//     overtime + Deep Mine keep the endgame winnable). Anchored at the
+			//     SAME finder result when one exists (the economy clusters where the
+			//     miners work), else castle-front (BotCastleSpawnOffset toward the
+			//     centerline); honors the §3.5 building clearance via
+			//     ComputeValidBotSpawnPoint(bIsBuilding).
+			{
+				const int32 CardIndex = FindAffordableEconomyBuildingCard(HandCards, Gold, BuildingEconomyCardIDs);
+				if (CardIndex != INDEX_NONE)
 				{
-					UE_LOG(LogGitClaudeUnrealTest, Verbose,
-						TEXT("ASiegeBotController '%s': Rule 2 wanted a Deep Mine but found no valid spawn point this tick."),
-						*GetNameSafe(this));
+					const FBotHandCard& Chosen = HandCards[CardIndex];
+
+					FVector Desired;
+					if (BestMine)
+					{
+						// Same own-half clamp as 2a — a Blue-half best mine anchors the
+						// building at the centerline, never across it.
+						Desired = BestMine->GetActorLocation();
+						// KEPT AS AUTHORED (TASK-265): the box clamp in ComputeValidBotSpawnPoint dominates this half clamp at an 840 box (a Deep Mine needs no mine adjacency, so building it inside the castle box is mechanically identical).
+						if (!IsOnOwnHalf(Desired.X))
+						{
+							Desired.X = BotHalfBoundaryX;
+						}
+					}
+					else
+					{
+						const float TowardCenterSign = (CastleRed.X >= 0.f) ? -1.f : 1.f;
+						Desired = CastleRed + FVector(TowardCenterSign * BotCastleSpawnOffset, 0.f, 0.f);
+						Desired.Z = CastleRed.Z;
+					}
+
+					FVector SpawnPoint;
+					if (ComputeValidBotSpawnPoint(Desired, /*bIsBuilding=*/ true, SpawnPoint))
+					{
+						const int32 GoldBefore = Gold;
+						if (SpawnBotCardActor(Chosen.CardID, /*bIsBuilding=*/ true, SpawnPoint, *BotState, Chosen.Row->Cost, /*SwarmCount=*/ 0))
+						{
+							Deck->ConfirmPlayFromHand(Chosen.Slot);
+							const FString AnchorDesc = BestMine
+								? FString::Printf(TEXT("near mine '%s'"), *GetNameSafe(BestMine))
+								: FString(TEXT("castle-front (no available mine)"));
+							UE_LOG(LogSiegeBot, Log,
+								TEXT("[Bot %s] Rule 2 (Economy): played Deep Mine '%s' (cost %d) %s at (%.0f, %.0f, %.0f) — gold %d->%d."),
+								*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost,
+								*AnchorDesc,
+								SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z, GoldBefore, BotState->GetGold());
+							bRule2SpawnFailureLogged = false; // TASK-267: a successful rule-2 spawn clears the failure streak
+							return; // rule 2 fired (Deep Mine) - it owns this tick
+						}
+					}
+					else
+					{
+						// TASK-267: no valid spawn point. FALL THROUGH to rules 3/4/5 instead of ABANDONING the tick (same
+						// permanent re-stall trap as 2a). No gold spent, no card confirmed. Promoted Verbose -> Log; shares
+						// the bRule2SpawnFailureLogged streak latch with 2a (one line per streak covers both sub-rules).
+						if (!bRule2SpawnFailureLogged)
+						{
+							bRule2SpawnFailureLogged = true;
+							UE_LOG(LogGitClaudeUnrealTest, Log,
+								TEXT("ASiegeBotController '%s': Rule 2 wanted a Deep Mine but found no valid spawn point - FALLING THROUGH to the lower rules this tick (TASK-267; logged once per failure streak)."),
+								*GetNameSafe(this));
+						}
+					}
+					// no return: a failed rule-2b spawn falls through to rules 3-5 (TASK-267)
 				}
-				return; // rule 2 fired (Deep Mine)
 			}
 		}
 	}
@@ -705,15 +812,20 @@ void ASiegeBotController::EvaluateDecisions()
 						TEXT("[Bot %s] Rule 4 (Attack): played unit '%s' (cost %d) castle-front (%.0f, %.0f, %.0f) — marching (M7.6 ruling #1) — gold %d->%d."),
 						*GetNameSafe(this), *Chosen.CardID.ToString(), Chosen.Row->Cost,
 						SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z, GoldBefore, BotState->GetGold());
+					return; // rule 4 fired - it owns this tick
 				}
 			}
 			else
 			{
+				// TASK-267 audit: rule 4 shares the IDENTICAL abandon-the-tick trap. With gold >= AttackBankThreshold
+				// (gold only accrues, so the gate stays satisfied) a persistent attack-spawn failure used to return
+				// and starve rule 5 (Cycle) for the rest of the match. Fall through instead; no gold spent, no card
+				// confirmed. Verbose kept - the once-per-streak Log promotion is rule-2-specific per the TASK-267 spec.
 				UE_LOG(LogGitClaudeUnrealTest, Verbose,
-					TEXT("ASiegeBotController '%s': Rule 4 wanted '%s' but found no valid spawn point this tick."),
+					TEXT("ASiegeBotController '%s': Rule 4 wanted '%s' but found no valid spawn point - falling through to rule 5 this tick (TASK-267)."),
 					*GetNameSafe(this), *Chosen.CardID.ToString());
 			}
-			return; // rule 4 fired
+			// no return: a failed rule-4 spawn falls through to rule 5 (TASK-267)
 		}
 	}
 
@@ -1007,20 +1119,90 @@ FVector ASiegeBotController::GetCastleRedLocation() const
 	return CastleRedFallbackLocation;
 }
 
-FVector ASiegeBotController::GetGoldNodeRedLocation() const
+FVector ASiegeBotController::ClampAnchorToBotSpawnRegion(const FVector& Desired) const
 {
+	// ⚠ PASS-THROUGH CARVE-OUT — LOAD-BEARING, never make this unconditional.
+	// An anchor that is ALREADY spawn-eligible (inside the Red spawn box, or inside
+	// a RED-OWNED CaptureZone_Center) is returned untouched. That is precisely what
+	// keeps the TASK-264-verified behavior alive: while Red holds the mid zone the
+	// bot may stage there, and an unconditional clamp would drag those anchors back
+	// to the castle box and delete the spawn-forward play the capture zone exists
+	// for. The eligibility test is the SAME pair the spawn gate itself uses
+	// (IsBotHalfPointClear), so "clamped" and "eligible" can never disagree.
+	if (IsPointInBotSpawnBox(Desired) || IsPointInCapturedZone(Desired))
+	{
+		return Desired;
+	}
+
+	// Ineligible anchor ⇒ pull it into the spawn region (W1-PREP appendix 3a
+	// anchor-clamp law, TASK-265). Per-axis clamp of the castle-relative delta into
+	// ±(SpawnBoxHalfExtent - SpawnBoxAnchorInset): the inset parks the anchor just
+	// inside the edge so the widening ring below has room on BOTH sides of it
+	// (an anchor pinned exactly on the boundary throws half its candidate ring out
+	// of the box — the one-sliver pile-up this task exists to remove). The Z is
+	// preserved as authored; ProjectPointToNavigation owns the final Z. The plinth
+	// is deliberately NOT special-cased here — the ring walk-out already owns it.
+	const FVector CastleRed = GetCastleRedLocation();
+	const double BoxLimitX = FMath::Max(0.0, static_cast<double>(SpawnBoxHalfExtent.X) - static_cast<double>(SpawnBoxAnchorInset));
+	const double BoxLimitY = FMath::Max(0.0, static_cast<double>(SpawnBoxHalfExtent.Y) - static_cast<double>(SpawnBoxAnchorInset));
+
+	FVector BoxClamped = Desired;
+	BoxClamped.X = CastleRed.X + FMath::Clamp(Desired.X - CastleRed.X, -BoxLimitX, BoxLimitX);
+	BoxClamped.Y = CastleRed.Y + FMath::Clamp(Desired.Y - CastleRed.Y, -BoxLimitY, BoxLimitY);
+
+	// --- FLAGGED DEVIATION (documented in handoffs/TASK-265.md — manager/QA ruling
+	// welcome; deleting this block reverts to the board's castle-box-only clamp) ---
+	// The bot's spawn REGION is "castle box OR Red-owned capture zone" (that is the
+	// gate IsBotHalfPointClear enforces, and this helper is named for the REGION,
+	// not the box). Clamping every ineligible anchor to the castle box would make
+	// the bot STRUCTURALLY unable to ever spawn in a zone it owns: no anchor in this
+	// class is computed inside the mid zone, so the pass-through above can never
+	// fire on its own. TASK-264 PIE result (f) — "the bot demonstrably staged 2
+	// units mid-field only while Red held the zone" — was produced by the rule-2
+	// mine anchors' ring-search REACHING the zone, and a box-only clamp deletes it,
+	// which fails TASK-266 acceptance (e) and denies the bot the very ability
+	// Jonathan's directive grants ("when captured, you can spawn units there").
+	// So: clamp to whichever eligible region is NEARER to the desired anchor.
+	// Castle-relative anchors (rule-1 unit, rule-4 attack waves) are always nearer
+	// the castle box, so M7.6 ruling #1 "spawn castle-front and MARCH" is untouched
+	// and the bot never gets a free forward spawn for its army; only the far-flung
+	// rule-2 economy anchors can prefer a mid zone, and only while Red holds it.
+	// With no zone placed, a Neutral zone, or a Blue-owned zone this block is inert
+	// and the castle-box clamp above stands — byte-identical to the board's spec.
+	const ACaptureZone* MidZone = nullptr;
 	if (UWorld* World = GetWorld())
 	{
-		for (TActorIterator<AGoldNode> It(World); It; ++It)
+		// The single level-placed CaptureZone_Center (TASK-260) — same first-instance
+		// idiom as IsPointInCapturedZone, and null-safe when none is placed.
+		TActorIterator<ACaptureZone> ZoneIt(World);
+		if (ZoneIt)
 		{
-			const AGoldNode* Node = *It;
-			if (IsValid(Node) && Node->GetTeam() == BotTeam)
-			{
-				return Node->GetActorLocation();
-			}
+			MidZone = *ZoneIt;
 		}
 	}
-	return GoldNodeRedFallbackLocation;
+
+	if (MidZone)
+	{
+		const FVector ZoneOrigin = MidZone->GetActorLocation();
+		const FVector2D ZoneHalf = MidZone->GetZoneHalfExtent();
+		const double ZoneLimitX = FMath::Max(0.0, static_cast<double>(ZoneHalf.X) - static_cast<double>(SpawnBoxAnchorInset));
+		const double ZoneLimitY = FMath::Max(0.0, static_cast<double>(ZoneHalf.Y) - static_cast<double>(SpawnBoxAnchorInset));
+
+		FVector ZoneClamped = Desired;
+		ZoneClamped.X = ZoneOrigin.X + FMath::Clamp(Desired.X - ZoneOrigin.X, -ZoneLimitX, ZoneLimitX);
+		ZoneClamped.Y = ZoneOrigin.Y + FMath::Clamp(Desired.Y - ZoneOrigin.Y, -ZoneLimitY, ZoneLimitY);
+
+		// CanTeamSpawnHere is the TASK-260 seam and folds BOTH tests in one call —
+		// "inside the zone" AND "Red owns it". A Neutral or Blue-owned zone returns
+		// false here, so ownership is never duplicated or second-guessed locally.
+		if (MidZone->CanTeamSpawnHere(ETeamId::Red, ZoneClamped) &&
+			FVector::DistSquared2D(ZoneClamped, Desired) < FVector::DistSquared2D(BoxClamped, Desired))
+		{
+			return ZoneClamped;
+		}
+	}
+
+	return BoxClamped;
 }
 
 bool ASiegeBotController::ComputeValidBotSpawnPoint(const FVector& Desired, bool bIsBuilding, FVector& OutPoint)
@@ -1030,6 +1212,18 @@ bool ASiegeBotController::ComputeValidBotSpawnPoint(const FVector& Desired, bool
 	{
 		return false;
 	}
+
+	// W1-PREP appendix 3a (TASK-265) — THE single application point of the anchor
+	// clamp. Every caller (rule-1 unit/tower, rule-2a miner, rule-2b Deep Mine,
+	// rule-4 attack wave) funnels its desired point through here, so one edit
+	// covers all five sites and NO call site does anchor math. Anchors that are
+	// already eligible pass through byte-unchanged (see the carve-out above);
+	// ineligible ones (castle-front at BotCastleSpawnOffset 1,750 ⇒ ~910 uu outside
+	// an 840 box, and the rule-2 mine anchors thousands of uu away) land in the
+	// box's centerline-facing front band and MARCH out from there — M7.6 ruling
+	// #1's intent survives, the wave simply starts inside its own box like the
+	// player's units do.
+	const FVector Anchor = ClampAnchorToBotSpawnRegion(Desired);
 
 	UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(World);
 	if (!NavSys || !NavSys->GetDefaultNavDataInstance())
@@ -1044,17 +1238,20 @@ bool ASiegeBotController::ComputeValidBotSpawnPoint(const FVector& Desired, bool
 				TEXT("ASiegeBotController '%s': no navigation data — bot spawn navmesh projection (GDD §3.5) skipped, using the half/plinth rule only."),
 				*GetNameSafe(this));
 		}
-		if (IsBotHalfPointClear(Desired, bIsBuilding))
+		if (IsBotHalfPointClear(Anchor, bIsBuilding))
 		{
-			OutPoint = Desired;
+			OutPoint = Anchor;
 			return true;
 		}
 		return false;
 	}
 
-	// Deterministic candidate ring: the desired point first, then widening rings —
-	// so a plinth / clearance / half failure walks outward to the nearest clear,
-	// on-navmesh spot instead of stalling forever on one refused point.
+	// Deterministic candidate ring: the clamped anchor first, then widening rings —
+	// so a plinth / clearance / box failure walks outward to the nearest clear,
+	// on-navmesh spot instead of stalling forever on one refused point. With the
+	// UnitSpawnClearance rule live (appendix 3a) this walk is also what spreads a
+	// wave: unit N takes the anchor, unit N+1 is refused there and steps to the
+	// next free ring sample, so successive spawns no longer share one point.
 	static const float RingRadii[] = { 0.f, 250.f, 500.f, 800.f, 1100.f };
 	static const int32 RingDirections = 8;
 	for (float Radius : RingRadii)
@@ -1063,7 +1260,7 @@ bool ASiegeBotController::ComputeValidBotSpawnPoint(const FVector& Desired, bool
 		for (int32 SampleIndex = 0; SampleIndex < NumSamples; ++SampleIndex)
 		{
 			const double Angle = (2.0 * PI * SampleIndex) / RingDirections;
-			const FVector Candidate = Desired + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
+			const FVector Candidate = Anchor + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
 
 			FNavLocation Projected;
 			if (!NavSys->ProjectPointToNavigation(Candidate, Projected, NavProjectionExtent))
@@ -1082,9 +1279,16 @@ bool ASiegeBotController::ComputeValidBotSpawnPoint(const FVector& Desired, bool
 
 bool ASiegeBotController::IsBotHalfPointClear(const FVector& Point, bool bIsBuilding) const
 {
-	if (!IsOnOwnHalf(Point.X))
+	// W1-PREP additions 3 (TASK-262 — the bot mirror of TASK-261): the spawn gate is
+	// no longer the whole own-half. A point is spawn-eligible ONLY if it lies inside
+	// the Red spawn box around Castle_Red OR inside a Red-owned capture zone. This
+	// REPLACES the old `!IsOnOwnHalf(Point.X)` early-out; everything below (plinth
+	// keep-out, building clearance) is UNCHANGED and still applies. (IsOnOwnHalf's
+	// OTHER callers — miner-approach clamp, own-half unit/hero iteration — are
+	// TARGET/APPROACH logic and stay half-based; only THIS spawn gate moves.)
+	if (!IsPointInBotSpawnBox(Point) && !IsPointInCapturedZone(Point))
 	{
-		return false; // NEVER the enemy (Blue) half
+		return false; // outside both the Red castle box and any Red-owned mid zone
 	}
 
 	UWorld* World = GetWorld();
@@ -1110,6 +1314,32 @@ bool ASiegeBotController::IsBotHalfPointClear(const FVector& Point, bool bIsBuil
 		}
 	}
 
+	// Unit spawn clearance (NON-buildings only — W1-PREP appendix 3a, TASK-265):
+	// >= UnitSpawnClearance (2D) from every live ASummonedUnit of EITHER team. This
+	// is the anti-stacking rule: without it the ring-search happily re-served the
+	// SAME point to every unit of a wave (the observed identical-XY pile-up), and
+	// the capsules then collision-adjusted upward off each other. With it, the
+	// deterministic ring in ComputeValidBotSpawnPoint walks to a genuinely FREE
+	// slot. Buildings deliberately keep the BuildingClearance rule below and are
+	// NOT subject to this one (a tower may sit next to friendly bodies). 0 disables.
+	// Mirrors the BuildingClearance loop's shape exactly (precomputed square, 2D).
+	if (!bIsBuilding && UnitSpawnClearance > 0.f)
+	{
+		const double UnitClearanceSq = FMath::Square(static_cast<double>(UnitSpawnClearance));
+		for (TActorIterator<ASummonedUnit> It(World); It; ++It)
+		{
+			const ASummonedUnit* Unit = *It;
+			if (!IsValid(Unit) || Unit->IsUnitDead())
+			{
+				continue;
+			}
+			if (FVector::DistSquared2D(Unit->GetActorLocation(), Point) < UnitClearanceSq)
+			{
+				return false;
+			}
+		}
+	}
+
 	// Building clearance (buildings only): >= BuildingClearance (2D) from every
 	// live building — the §3.5 200-unit rule applied to bot placements too.
 	if (bIsBuilding)
@@ -1129,6 +1359,37 @@ bool ASiegeBotController::IsBotHalfPointClear(const FVector& Point, bool bIsBuil
 		}
 	}
 	return true;
+}
+
+bool ASiegeBotController::IsPointInBotSpawnBox(const FVector& Point) const
+{
+	// Red spawn box: a 2D square centered on Castle_Red, half-extent SpawnBoxHalfExtent.
+	// GetCastleRedLocation() is the SAME live team-filtered TActorIterator<ACastle> the
+	// controller already uses and returns CastleRedFallbackLocation (+25000,0) when no
+	// Red castle is found — so the existing +25000 fallback is preserved here. This box
+	// replaces the old whole-own-half spawn gate (W1-PREP additions 3, TASK-262).
+	const FVector CastleRed = GetCastleRedLocation();
+	return FMath::Abs(Point.X - CastleRed.X) <= SpawnBoxHalfExtent.X &&
+		FMath::Abs(Point.Y - CastleRed.Y) <= SpawnBoxHalfExtent.Y;
+}
+
+bool ASiegeBotController::IsPointInCapturedZone(const FVector& Point) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	// The single mid capture zone (TASK-260); null-safe if absent = pre-capture
+	// behavior (mid unspawnable). CanTeamSpawnHere folds the box test AND the
+	// Red-ownership match into one call (Neutral/Blue owner => false).
+	for (TActorIterator<ACaptureZone> It(World); It; ++It)
+	{
+		const ACaptureZone* Zone = *It;
+		return Zone && Zone->CanTeamSpawnHere(ETeamId::Red, Point);
+	}
+	return false;
 }
 
 UClass* ASiegeBotController::ResolveBotCardActorClass(FName CardID, bool bIsBuilding) const
@@ -1238,6 +1499,54 @@ AActor* ASiegeBotController::SpawnBotCardActor(FName CardID, bool bIsBuilding, c
 		return nullptr;
 	}
 
+	// --- W1-PREP appendix 3a spawn-Z DIAGNOSTIC (TASK-265) — confirm before fixing ---
+	// The ~215-232 uu float observed at the TASK-264 PIE is very likely a SYMPTOM of
+	// units spawning inside each other (capsule collision-adjust lifting encroaching
+	// spawns), which the UnitSpawnClearance rule above removes at the cause. So this
+	// pass MEASURES instead of guessing: one line per bot unit spawn with the chosen
+	// point Z, a traced ground Z, their delta, and the spawned actor's Z minus its
+	// capsule half-height (= the real float above ground; a grounded capsule sits
+	// exactly half-height above the floor, so ~0 here means NO float). TASK-266's PIE
+	// reads these values and only a surviving >~50 uu residual justifies adding the
+	// capped SnapPointToGround. Deliberately on LogGitClaudeUnrealTest, NEVER on
+	// LogSiegeBot (one-line-per-FIRED-rule decision-trace law is inviolate).
+	if (bLogSpawnZDiagnostic)
+	{
+		// Downward ECC_WorldStatic trace (the BattlefieldScatter::GroundZAt recipe),
+		// bounded around the chosen point and ignoring the units we just spawned so a
+		// freshly placed capsule cannot be mistaken for the floor. NOTE: scatter hills
+		// IGNORE ECC_WorldStatic by the scatter-channel law, so on a hill this reports
+		// the FLOOR under the hill, not the hill surface — which is exactly why any
+		// future ground snap must stay capped (MaxGroundSnapDrop) and why a hill-side
+		// residual belongs on the Ogre-near-hill spawn-lift WATCH, not here.
+		const FVector TraceStart(SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z + 1000.0);
+		const FVector TraceEnd(SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z - 5000.0);
+		FCollisionQueryParams GroundParams(TEXT("BotSpawnZDiagnostic"), /*bTraceComplex=*/ false, this);
+		for (const ASummonedUnit* SpawnedUnit : SwarmUnits)
+		{
+			if (IsValid(SpawnedUnit))
+			{
+				GroundParams.AddIgnoredActor(SpawnedUnit);
+			}
+		}
+
+		FHitResult GroundHit;
+		const bool bHitGround = World->LineTraceSingleByChannel(GroundHit, TraceStart, TraceEnd, ECC_WorldStatic, GroundParams);
+		const double GroundZ = bHitGround ? GroundHit.ImpactPoint.Z : SpawnPoint.Z;
+
+		const ASummonedUnit* Representative = SwarmUnits[0];
+		const UCapsuleComponent* Capsule = IsValid(Representative) ? Representative->GetCapsuleComponent() : nullptr;
+		const double ActorZ = IsValid(Representative) ? Representative->GetActorLocation().Z : SpawnPoint.Z;
+		const double CapsuleHalfHeight = Capsule ? static_cast<double>(Capsule->GetScaledCapsuleHalfHeight()) : 0.0;
+
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegeBotController '%s': [SpawnZ] unit '%s' x%d — chosen Z %.1f, ground Z %.1f (%s), chosen-vs-ground delta %.1f; actor Z %.1f, capsule half-height %.1f, FLOAT above ground %.1f (TASK-265 diagnostic — bLogSpawnZDiagnostic)."),
+			*GetNameSafe(this), *CardID.ToString(), SwarmUnits.Num(),
+			SpawnPoint.Z, GroundZ, bHitGround ? TEXT("trace hit") : TEXT("TRACE MISS — chosen Z assumed"),
+			SpawnPoint.Z - GroundZ,
+			ActorZ, CapsuleHalfHeight, ActorZ - CapsuleHalfHeight - GroundZ);
+	}
+
 	// Representative actor — all copies are one play (one LogSiegeBot line at the rule).
 	return SwarmUnits[0];
 }
@@ -1267,6 +1576,10 @@ void ASiegeBotController::ResetBot()
 	{
 		BotPS->ResetEconomy();
 	}
+
+	// TASK-267: clear the rule-2 spawn-failure streak latch so the first spawn failure of the fresh
+	// match logs once (the bLoggedMineLockout latch self-heals on the first rule-2 tick of the match).
+	bRule2SpawnFailureLogged = false;
 
 	// 3) A clean decision cadence for the new match (clears any running/stale handle
 	//    first). TASK-047 stops the timer at match end; Play Again restarts it here.

@@ -7,6 +7,7 @@
 #include "UObject/SoftObjectPtr.h"
 #include "Siegebound/CardRow.h" // ECardType (the PendingCardType member; FCardRow comes along)
 #include "Siegebound/TeamId.h"
+#include "Siegebound/UnitCommand.h" // ESiegeUnitCommand — the latched unit-command stance (CurrentCommand member + FOnUnitCommandChanged param; TASK-274)
 #include "SiegePlayerController.generated.h"
 
 class ACastle;
@@ -40,6 +41,16 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCardPlayRefused, FName, CardID, 
  *  refusals fire only this delegate — a discard is not a card play.
  */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCardRefused, const FString&, Reason);
+
+/**
+ *  Unit-command stance changed (Shield Wall commands, W1 TASK-274). Broadcast by
+ *  SetUnitCommand every time the player latches Attack/Hold/Defend, carrying the
+ *  new stance as a byte. The HUD command indicator (TASK-276) binds here
+ *  (seed-then-bind from GetCurrentCommand); nothing else needs to this pass. The
+ *  consuming units (TASK-275) read the LIVE controller state each tick, not this
+ *  delegate. Delegate law (CONVENTIONS): FOn<Owner><Event> / On<Owner><Event>.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnUnitCommandChanged, ESiegeUnitCommand, NewCommand);
 
 /**
  *  Siegebound player controller — hand play, discard, and card placement mode
@@ -167,6 +178,41 @@ public:
 	/** Fired on EVERY refused play or discard with the §3.0-style reason string. The hand HUD (TASK-033) binds here. */
 	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Cards")
 	FOnCardRefused OnCardRefused;
+
+	/**
+	 *  Fired by SetUnitCommand every time the player latches a new stance
+	 *  (Attack/Hold/Defend), carrying the new command as a byte (Shield Wall
+	 *  commands, W1 TASK-274). The HUD command indicator (TASK-276) binds here.
+	 *  The consuming units (TASK-275) read the live getters each tick instead.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Commands")
+	FOnUnitCommandChanged OnUnitCommandChanged;
+
+	/** The active latched unit-command stance (Attack/Hold/Defend). Defaults to Attack, but HasIssuedCommand() is false until the player first presses a key (TASK-274/275). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Commands")
+	ESiegeUnitCommand GetCurrentCommand() const { return CurrentCommand; }
+
+	/** True once the player has issued ANY command this match — while false the summoned units run their legacy body (TASK-275 gate; zero behavior change until the first key). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Commands")
+	bool HasIssuedCommand() const { return bHasIssuedCommand; }
+
+	/** The ground point picked for the Hold stance (the traced surface point from the last confirmed HOLD reticle pick). Meaningful only while GetCurrentCommand()==Hold (TASK-274/275). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Commands")
+	FVector GetHoldLocation() const { return HoldLocation; }
+
+	/** The Hold-stance engagement radius: units on Hold fight only enemies within this 2D distance of HoldLocation (GDD Shield Wall; default 1500 uu, FLAGGED tunable Q1 for the 10x arena). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Commands")
+	float GetHoldRadius() const { return HoldRadius; }
+
+	/**
+	 *  Latches a new unit-command stance (Shield Wall, W1 TASK-274): sets
+	 *  CurrentCommand, marks bHasIssuedCommand true (so the units switch off the
+	 *  legacy body), and broadcasts OnUnitCommandChanged(NewCommand). Called by
+	 *  the T/E immediate handlers and by the HOLD reticle confirm. Idempotent —
+	 *  re-issuing the same stance re-affirms the HUD.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Commands")
+	void SetUnitCommand(ESiegeUnitCommand NewCommand);
 
 	/**
 	 *  Plays the card in hand slot 0..5 (GDD §3.5; keys 1..6 / TASK-033 card
@@ -360,6 +406,15 @@ protected:
 	/** IA_CancelPlace pressed (RMB/Esc): leave placement mode at no cost. */
 	void OnCancelPlacePressed();
 
+	/** IA_CmdAttack pressed (key T, TASK-273): immediately latch the Attack stance (SetUnitCommand). Cancels an in-progress HOLD pick first; ignored after match end. */
+	void OnCmdAttackPressed();
+
+	/** IA_CmdHold pressed (key R, TASK-273): enter the HOLD ground-target pick (BeginHoldTarget) — the confirm click sets HoldLocation + latches the Hold stance. */
+	void OnCmdHoldPressed();
+
+	/** IA_CmdDefend pressed (key E, TASK-273): immediately latch the Defend stance (SetUnitCommand). Cancels an in-progress HOLD pick first; ignored after match end. */
+	void OnCmdDefendPressed();
+
 	/** Hero died (FOnHeroDied): exit placement mode so melee suppression is never left behind. */
 	UFUNCTION()
 	void HandleHeroDied(AHeroCharacter* DeadHero);
@@ -492,6 +547,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> CancelPlaceAction;
 
+	/** IA_CmdAttack slot (key T -> Attack stance, TASK-273). Left unset, it soft-resolves from CmdAttackActionAsset (asset may not exist yet — binding is skipped null-safe). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> CmdAttackAction;
+
+	/** IA_CmdHold slot (key R -> HOLD ground-target pick, TASK-273). Left unset, it soft-resolves from CmdHoldActionAsset (null-safe). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> CmdHoldAction;
+
+	/** IA_CmdDefend slot (key E -> Defend stance, TASK-273). Left unset, it soft-resolves from CmdDefendActionAsset (null-safe). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> CmdDefendAction;
+
 	/** Soft path for IA_Card1 (/Game/Input/Actions/IA_Card1, created in TASK-009). */
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TSoftObjectPtr<UInputAction> Card1ActionAsset;
@@ -524,9 +591,40 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TSoftObjectPtr<UInputAction> CancelPlaceActionAsset;
 
-	/** Placement is valid only at X <= this (Blue half; centerline X=0 per CONVENTIONS). */
+	/** Soft path for IA_CmdAttack (/Game/Input/Actions/IA_CmdAttack, created in TASK-273 — T key). Null-safe: a missing asset skips its binding, logs once, never crashes. */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TSoftObjectPtr<UInputAction> CmdAttackActionAsset;
+
+	/** Soft path for IA_CmdHold (/Game/Input/Actions/IA_CmdHold, created in TASK-273 — R key). Null-safe (see CmdAttackActionAsset). */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TSoftObjectPtr<UInputAction> CmdHoldActionAsset;
+
+	/** Soft path for IA_CmdDefend (/Game/Input/Actions/IA_CmdDefend, created in TASK-273 — E key). Null-safe (see CmdAttackActionAsset). */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TSoftObjectPtr<UInputAction> CmdDefendActionAsset;
+
+	/**
+	 *  Half-extent (XY) of the player's spawn box — a 2D square centered on the
+	 *  owned Castle_Blue that REPLACES the retired X<=0 half-line spawn gate
+	 *  (W1-PREP additions 3, TASK-261). Default (840,840) = "same size as the
+	 *  spawnable region on either side" (Jonathan) = 2x the castle footprint
+	 *  (2x CastlePlinthClearance). Placement is valid inside this box (minus the
+	 *  plinth) OR inside a Blue-owned capture zone; the downstream navmesh /
+	 *  plinth / slope / clearance checks are unchanged and still apply. FLAGGED
+	 *  tunable (matches ACaptureZone::ZoneHalfExtent, same default).
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement")
-	float PlacementMaxX = 0.f;
+	FVector2D SpawnBoxHalfExtent = FVector2D(840.f, 840.f);
+
+	/**
+	 *  Hold-stance engagement radius (Shield Wall commands, W1 TASK-274): units
+	 *  on the Hold stance fight only enemies within this 2D distance of the
+	 *  player-picked HoldLocation (TASK-275 consumes it via GetHoldRadius). The
+	 *  directive suggested ~1000 uu ("within that location"); raised to 1500 for
+	 *  the M7.6 10x arena — FLAGGED tunable Q1. // Shield Wall — Hold radius
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Commands", meta = (ClampMin = "0"))
+	float HoldRadius = 1500.f;
 
 	/**
 	 *  Minimum 2D distance from the nearest other ABuilding for a
@@ -676,6 +774,46 @@ private:
 	void DestroySpellReticle();
 
 	/**
+	 *  Enters the HOLD ground-target pick (Shield Wall, W1 TASK-274): the R-key
+	 *  location picker for the Hold stance. REUSES the spell reticle machinery
+	 *  (SpawnSpellReticle / the shared SpellReticleActor / the ground trace) — it
+	 *  does NOT build a new reticle — and follows the placement/targeting cursor
+	 *  posture (visible cursor + hero melee suppressed via HoldHero so the confirm
+	 *  click doesn't also swing). Silently ignored while placement OR spell
+	 *  targeting is live (the codebase's mutual-ignore exclusivity, extended to a
+	 *  third mode), and after match end. The picker owns the LMB (confirm) and
+	 *  RMB/Esc (cancel); no gold or stance moves until ConfirmHoldTarget.
+	 */
+	void BeginHoldTarget();
+
+	/**
+	 *  LMB confirm in HOLD-pick mode: a trace-miss (cursor on the sky) refuses
+	 *  free and STAYS in mode (a different point can succeed — the placement/
+	 *  targeting trace-miss precedent); otherwise HoldLocation = the traced
+	 *  surface point, the mode exits (reticle destroyed, melee released), and
+	 *  SetUnitCommand(Hold) latches the stance + broadcasts.
+	 */
+	void ConfirmHoldTarget();
+
+	/**
+	 *  Leaves HOLD-pick mode with NO stance change (RMB/Esc cancel, and the
+	 *  defensive teardown paths). Follows the ExitTargetingMode law: releases the
+	 *  HoldHero melee suppression BEFORE any early-out, then destroys the shared
+	 *  reticle and restores the cursor input state. Idempotent / no-op safe.
+	 */
+	void CancelHoldTarget();
+
+	/**
+	 *  Per-frame HOLD-pick work: cursor-to-surface trace (REUSING
+	 *  TraceCursorToGround — the same surface-projection law as the spell reticle;
+	 *  never the Z=0 plane) into HoldPickLocation/bHoldSurfaceValid, and moves the
+	 *  shared SpellReticleActor. Mirrors UpdateSpellReticle but writes HOLD's own
+	 *  disjoint scratch state (the per-mode-update / shared-low-level-helper
+	 *  pattern the placement + targeting modes already follow).
+	 */
+	void UpdateHoldReticle();
+
+	/**
 	 *  Instant spell resolution (M5 ruling 7 — GoldSteal/Pickpocket): NO
 	 *  reticle for a global effect. Deduct Cost THEN ResolveSpell,
 	 *  refusal-safe: resolver false ⇒ FULL refund + HUD reason with the card
@@ -768,6 +906,28 @@ private:
 	/** True when Point lies inside any ACastle's plinth keep-out box (CastlePlinthClearance 2D half-extents) — refused for all cards, castle HP irrelevant. */
 	bool IsPointInsideCastlePlinth(const FVector& Point) const;
 
+	/**
+	 *  True when Point lies inside the player's spawn box — a 2D (XY) square
+	 *  centered on the owned Castle_Blue (found via the team-filtered
+	 *  TActorIterator<ACastle> pattern, same as IsPointInsideCastlePlinth) with
+	 *  half-extent SpawnBoxHalfExtent. This is the first spawn/region gate that
+	 *  REPLACES the retired X<=PlacementMaxX half-test (W1-PREP additions 3,
+	 *  TASK-261). Null-safe: no Blue castle in the world => refuse (warn once —
+	 *  polled per tick during placement mode). Non-const only for the warn-once
+	 *  latch (mirrors IsPointOnNavmesh).
+	 */
+	bool IsPointInOwnSpawnBox(const FVector& Point);
+
+	/**
+	 *  True when Point lies inside the single ACaptureZone AND Blue currently
+	 *  owns it — the capture-spawn clause (W1-PREP additions 3, TASK-261). Finds
+	 *  the one CaptureZone_Center via TActorIterator<ACaptureZone> (null-safe if
+	 *  absent = pre-capture behavior, mid unspawnable) and defers the whole test
+	 *  to ACaptureZone::CanTeamSpawnHere(ETeamId::Blue, Point) (TASK-260 API),
+	 *  which folds the box test AND the Blue-owner match.
+	 */
+	bool IsPointInCapturedZone(const FVector& Point) const;
+
 	/** Broadcasts a play refusal on BOTH delegates: OnCardPlayRefused (M1 card context) and OnCardRefused (M2 reason string). */
 	void RefuseCardPlay(FName CardID, const FText& Reason);
 
@@ -825,6 +985,9 @@ private:
 	/** One-shot latch for the no-navmesh degrade-open warning (IsPointOnNavmesh). */
 	bool bWarnedNoNavData = false;
 
+	/** One-shot latch for the missing-Blue-castle spawn-box warning (IsPointInOwnSpawnBox, TASK-261). */
+	bool bWarnedMissingSpawnCastle = false;
+
 	/**
 	 *  Hand slot the active placement came from (set by PlayHandSlot just
 	 *  before EnterPlacementMode), or INDEX_NONE on the M1 paths (WBP_HUD
@@ -836,7 +999,7 @@ private:
 	int32 PendingHandSlot = INDEX_NONE;
 
 	// --- M5 targeting-mode state (TASK-100). Deliberately DISJOINT from the
-	//     Pending*/placement members above so the two sibling modes can never
+	//     Pending* placement members above so the two sibling modes can never
 	//     cross-contaminate; ExitTargetingMode resets every one of these. ---
 
 	/** True while targeting mode is active (mutually exclusive with bInPlacementMode — each Enter* ignores while the other is live). */
@@ -873,6 +1036,36 @@ private:
 
 	/** One-shot latch for the missing-M_SpellReticle warning (SpawnSpellReticle — "log once" per M5 ruling 8). */
 	bool bWarnedNoReticleMaterial = false;
+
+	// --- W1 unit-command (Shield Wall) state (TASK-274). CurrentCommand /
+	//     bHasIssuedCommand / HoldLocation are the AUTHORITATIVE latched stance
+	//     the units read live (TASK-275). The bInHoldTargetMode / bHoldSurfaceValid
+	//     / HoldPickLocation / HoldHero members are the R-key location-pick scratch,
+	//     kept DISJOINT from the placement + targeting scratch (the same
+	//     no-cross-contamination discipline those two modes follow) — the three
+	//     cursor modes are mutually exclusive, so at most one is ever live. ---
+
+	/** The latched unit-command stance (Attack/Hold/Defend). Default Attack, but units run the legacy body until bHasIssuedCommand flips true. Play Again resets it (HandleMatchReset). */
+	ESiegeUnitCommand CurrentCommand = ESiegeUnitCommand::Attack;
+
+	/** True once the player has issued ANY command this match. Starts false (zero behavior change until the first key press, Q3 default); reset false on Play Again. */
+	bool bHasIssuedCommand = false;
+
+	/** The confirmed Hold-stance ground point (traced surface point from the last HOLD reticle confirm). Written only by ConfirmHoldTarget; reset to ZeroVector on Play Again. */
+	FVector HoldLocation = FVector::ZeroVector;
+
+	/** True while the HOLD ground-target pick owns the cursor/LMB — mutually exclusive with placement AND spell targeting (each Enter or Begin entry point ignores while any other is live). */
+	bool bInHoldTargetMode = false;
+
+	/** Result of the latest HOLD-pick cursor trace: some surface answered under the cursor (the only positional gate — mirrors bTargetingSurfaceValid). */
+	bool bHoldSurfaceValid = false;
+
+	/** Surface point of the latest HOLD-pick cursor trace (the candidate HoldLocation on confirm). Z comes from the trace, never assumed 0 (the surface-projection law). */
+	FVector HoldPickLocation = FVector::ZeroVector;
+
+	/** Hero whose melee HOLD-pick suppressed — released on EVERY hold exit path (the PlacementHero/TargetingHero pattern; kept separate so a defensive ExitPlacement/ExitTargeting call can never strand a live hold suppression). */
+	UPROPERTY(Transient)
+	TObjectPtr<AHeroCharacter> HoldHero;
 
 	/** Hero whose melee we suppressed — un-suppressed on EVERY exit path (QA TASK-003 warning 2). */
 	UPROPERTY(Transient)

@@ -48,11 +48,12 @@ M5 shipped machine-verified with the desktop LOCKED (SendInput blocked → no si
 6.6. **M6.6 — Climbable terrain** — `done (2026-07-14 — playtested + signed off by Jonathan: hero climbs the hill flanks + anti-exploit gate passes [enemy melee reaches a crowned hero] + camera/tower/escape/perf all good. Committed by Jonathan HIMSELF as `057ca9f "walkable terrain"` and PUSHED [self-commit, same pattern as M6.5]; TASK-138..145 all done. m6.6-testable @ 057ca9f + m6.5-testable @ 6a4c17d cut. Committed L_Arena carries the STALE serialized nav bake [umap byte-identical to pre-widen 6a4c17d] but non-breaking — runtime-Dynamic RecastNavMesh regenerates at PIE. Non-blocking follow-ups for manager: (i) manual Build>Navigation is required after any arena-bounds change [MCP has no nav-build tool]; (ii) scatter density reads thin on the wider ±4000 field — Trees ~15/55, Grass ~1450/2500 — optional tuning pass.)` (decomposed 2026-07-14, TASK-138..145; **UNPARKS the M4.5 "Gameplay terrain pass" intent**). Jonathan wants the battlefield hills/rocks CLIMBABLE by the hero — root-cause investigation established this is currently BY-DESIGN (M6.5's scatter built every rock/hill/tree as a route-around blocker) and that the parked M4.5 TASK-091..096 already specified exactly this feature, so M6.6 delivers the parked M4.5 intent on top of the M6.5 procedural scatter. **ROOT CAUSE (corrects the earlier jump-height hypothesis):** the scatter applies UNIFORM scale (`BattlefieldScatter.cpp:247`, `FVector(Scale)`) → face angles are SCALE-INVARIANT; the squashed `stone_hill` dome goes near-vertical at the rim → unclimbable regardless of jump. FIX = purpose-built CONVEX hill meshes (`SM_Hill_01/02/03`) with ≤30° faces + flat crowns, under BOTH the character's 44.76° WalkableFloorAngle AND Recast's 44° AgentMaxSlope, so hero AND units climb with essentially no movement retune. **FOUR DECISIONS LOCKED (Jonathan, 2026-07-14):** (1) M6.5 already committed by Jonathan @ `6a4c17d` (pushed) — GATE 0 satisfied, NO build-master M6.5 commit; (2) widen arena Y ±2400 → ±4000; (3) terrain BLOCKS projectiles (arrows die on rocks/hills/tree-trunks — accepted balance change); (4) units climb too (navmesh generates over hills — closes the melee-can't-reach-a-crowned-hero exploit). Authoritative plan on disk: `C:\Users\wesel\.claude\plans\we-last-left-off-partitioned-puppy.md`. Naming law in CONVENTIONS "Climbable terrain (M6.6)". Details in "M6.6 tasks" under Active tasks.
 7. M7 — Premium art & feel pass — `in-progress (decomposed 2026-07-15 — TASK-153..188 in "## M7 tasks" under Active tasks; 1 asset [Ogre] already SHIPPED via the pull-forward below; CONVENTIONS "Skeletal rig & animation workstream (M7)" + the M7 batch/GoldNode-variant clauses added FIRST)` · **OGRE PULLED FORWARD 2026-07-14 (TASK-147..152):** Jonathan dropped an ogre concept (`Tools/ArtPipeline/Inbox/ogre.png`) and directed the validated TRELLIS.2 pipeline be run NOW to replace the `SM_Ogre` blockout with a game-ready textured mesh — one of the 16 M7 blockouts pulled ahead on his directive (chain in "M7 pull-forward — Ogre textured mesh" under Active tasks). The rest of the M7 batch (15 blockouts + the premium/feel pass) stays deferred. · **Jonathan request (2026-07-04):** raise fidelity on SM_Castle + SM_Footman + SM_Archer (higher detail than the current blockouts); wants the game to look nicer. Decision: DEFERRED here (mesh swaps are non-breaking; roster still growing through M4-M6). Two integration paths to scope at M7: (a) art-director custom higher-detail Blender models, and/or (b) **Fab/UE-marketplace assets — Jonathan must download packs into the project via the Epic Launcher first (agents can't browse/buy/download Fab autonomously); art-director then swaps meshes/materials.** Could be pulled forward as a standalone art pass after M3/M4 if Jonathan wants it sooner.
 7.5. **M7.5 — Art Quality Upgrade (Meshy Pro second engine + FAB packs + free pipeline upgrades)** — `current (decomposed 2026-07-18 — TASK-191..210 in "## M7.5 tasks" under Active tasks; Jonathan-approved directive, plan C:\Users\wesel\.claude\plans\i-am-a-bit-sunny-bird.md: Meshy Pro $20/mo APPROVED, FAB ~$100–200 APPROVED, all four art areas prioritized, quality first)`. **MILESTONE RULING: a STANDALONE batch/sub-milestone in the M4.5/M5.5/M6.5 shape, NOT folded into M7.** M7 stays `in-progress` at its paused 2026-07-18 checkpoint with its remaining capstones (TASK-174/175/178 VFX + dressing, TASK-181 Sequencer flythrough, TASK-183 final assembly + 60 fps perf watch) and all checkpoint decisions PENDING and UNTOUCHED — this batch has its own external gates (Meshy account, FAB purchases) and must not hold the M7 playtest hostage, nor vice versa. **FLAGGED sequencing recommendation (Jonathan's call at the M7 checkpoint, NOT enacted):** run the M7 Sequencer/perf capstones AFTER the M7.5 A/B ruling (and fleet retexture, if approved) so the flythrough captures the final art. Three tracks: **(A)** Meshy Pro as a second engine in the TRELLIS.2 pipeline — Stage-1.5 RETEXTURE to kill the recorded accepted-not-fixed "dark TRELLIS look" (TASK-150/151/172 handoffs), per-asset image-to-3D alternative, auto-rig + preset-clip animation upgrade via the UE5 IK Retargeter; **(B)** FAB purchases via the FAB-REQUESTS protocol — FAB-005 "Stylized RTS Buildings & Props Pack" (listing a4b43ae5-e442-4d51-93f2-fea8d77e9f37) + FAB-006 one rigged stylized unit pack (art-director authors the entries; Jonathan purchases); **(C)** free pipeline upgrades — FLUX.1-schnell→FLUX.1-dev concepts, Stage-2 albedo de-light/brighten, 1536³ TRELLIS res pinned for hero assets, `_guess` team-region selector tuning — plus the **Wall + DeepMine quota retry CARRIED IN under their existing IDs (TASK-170/171/173)**, Stage-2 gated on the albedo-lift so the last 2 meshes bake bright (flagged resequencing, decision 3). **Track D (self-hosting TRELLIS.2/Hunyuan3D; Tripo/Rodin subscriptions) EVALUATED AND REJECTED 2026-07-18** — ops burden > benefit while HF PRO + Meshy cover throughput; Hunyuan 2.5 has no public weights; Meshy uniquely covers the actual gaps (retexture existing meshes + rig + anim clips) in one sub. Recorded; NO tasks. CrystalTower-emissive debt ALREADY CLEARED (TASK-190 @ 7ec9916 — no new task). **JONATHAN'S TWO MANUAL STEPS: TASK-197 (create Meshy Pro account + set MESHY_API_KEY env var + possible Norton meshy.ai exclusion) and TASK-207 (approve + purchase the FAB packs → drop into Content/Fab/<Pack>/).** Naming law: CONVENTIONS "Meshy second engine — Stage-1.5 retexture & image-to-3D alternative (M7.5)" + IK_/RTG_ prefix rows (added FIRST, TASK-191).
-7.6. **M7.6 — Arena 10× scale-up + LOD/perf structure** — `current (decomposed 2026-07-18 — Phase 0 = TASK-214..220 in "## M7.6 tasks" under Active tasks; later phases one-liners until the W1 gate clears, milestone-decomposition style; Jonathan-approved directive, plan C:\Users\wesel\.claude\plans\i-am-a-bit-sunny-bird.md — OVERWRITTEN since the art-quality version, it is the numeric source of truth)`. **LABEL RULING: the batch is M7.6 and the branch is `m7.6-arena10x`** — the plan's `m8-arena10x` name collides with GDD M8 (networked 1v1); relabeled, recorded, branch renamed accordingly. Scope locked by Jonathan: TRUE 10× area (×3.125 linear; castles ±25,000 = 50k apart), speeds/ranges/aggro UNCHANGED (slow epic marches accepted; forward structures gain importance), new space = denser scatter (§3 table, ≈4.9× instances made affordable by cull bands) + POIs + vista ring. **Jonathan's four design rulings (2026-07-18):** (1) bot MARCHES from its castle — no mid-field materialize ("adaptive bot spawn positioning by strategy" = flagged backlog follow-up); (2) corridor half-width 1,000; (3) pre-seed 2 neutral gold-node props mid-field (visual-only; capture-point mechanic NOT designed — backlog hook); (4) Nanite AMENDED for vista-class Megascans cliffs only, gameplay fleet stays OFF with classic LODs (CONVENTIONS "Arena 10× scale-up & LOD/perf (M7.6)" amendment live). **HARD-GATED PHASE LADDER:** Phase 0 scale spike → **W1 Jonathan perf/feel watch (TASK-219) GATES EVERYTHING** → Phases 1∥2 (C++: scatter culls + grid-hash ∥ unit URO) → 3 (density → W2) → 4 (LOD pipeline → W3) → 5 (POI/vista) → 6 (capstone playtest → MERGE GATE to main). Branch-first law: build-master cuts the branch off main BEFORE any file change (TASK-214); ownership law: the branch exclusively owns L_Arena.umap + DA_BattlefieldScatter — M7.5 waves never touch them. **SEQUENCING LAW (cross-batch): the reimport_meshes.py LOD-group line lands on MAIN, QA'd (TASK-220, pulled forward from Phase 4), BEFORE M7.5's TASK-201/202 retexture reimport wave — that wave then applies LODs for free (TASK-202 blocker added).** M7.5 stays OPEN in parallel (Jonathan gates TASK-200/204/207 independent). Flagged follow-ups recorded in Standing backlog: adaptive bot spawn positioning, spawn-forward/waypoint mechanic, RTS overview camera, neutral-node capture mechanic. No FPS baseline exists (M7's TASK-183 never ran) — W1 is the first real number.
+7.6. **M7.6 — Arena 10× scale-up + LOD/perf structure** — `current (decomposed 2026-07-18 — Phase 0 = TASK-214..220 in "## M7.6 tasks" under Active tasks; later phases one-liners until the W1 gate clears, milestone-decomposition style; Jonathan-approved directive, plan C:\Users\wesel\.claude\plans\i-am-a-bit-sunny-bird.md — OVERWRITTEN since the art-quality version, it is the numeric source of truth)`. **LABEL RULING: the batch is M7.6 and the branch is `m7.6-arena10x`** — the plan's `m8-arena10x` name collides with GDD M8 (networked 1v1); relabeled, recorded, branch renamed accordingly. Scope locked by Jonathan: TRUE 10× area (×3.125 linear; castles ±25,000 = 50k apart), speeds/ranges/aggro UNCHANGED (slow epic marches accepted; forward structures gain importance), new space = denser scatter (§3 table, ≈4.9× instances made affordable by cull bands) + POIs + vista ring. **Jonathan's four design rulings (2026-07-18):** (1) bot MARCHES from its castle — no mid-field materialize ("adaptive bot spawn positioning by strategy" = flagged backlog follow-up); (2) corridor half-width 1,000; (3) pre-seed 2 neutral gold-node props mid-field (visual-only; capture-point mechanic NOT designed — backlog hook); (4) Nanite AMENDED for vista-class Megascans cliffs only, gameplay fleet stays OFF with classic LODs (CONVENTIONS "Arena 10× scale-up & LOD/perf (M7.6)" amendment live). **HARD-GATED PHASE LADDER:** Phase 0 scale spike → **W1 Jonathan perf/feel watch (TASK-219) GATES EVERYTHING** → Phases 1∥2 (C++: scatter culls + grid-hash ∥ unit URO) → 3 (density → W2) → 4 (LOD pipeline → W3) → 5 (POI/vista) → 6 (capstone playtest → MERGE GATE to main). Branch-first law: build-master cuts the branch off main BEFORE any file change (TASK-214); ownership law: the branch exclusively owns L_Arena.umap + DA_BattlefieldScatter — M7.5 waves never touch them. **SEQUENCING LAW (cross-batch): the reimport_meshes.py LOD-group line lands on MAIN, QA'd (TASK-220, pulled forward from Phase 4), BEFORE M7.5's TASK-201/202 retexture reimport wave — that wave then applies LODs for free (TASK-202 blocker added).** M7.5 stays OPEN in parallel (Jonathan gates TASK-200/204/207 independent). Flagged follow-ups recorded in Standing backlog: adaptive bot spawn positioning, spawn-forward/waypoint mechanic, RTS overview camera, neutral-node capture mechanic. No FPS baseline exists (M7's TASK-183 never ran) — W1 is the first real number. **[W1 APPROVED by Jonathan 2026-07-24 — TASK-219 signed off at branch HEAD `0295f75`. The hard-gated phase ladder is UNBLOCKED, and Jonathan (mid-turn 2026-07-24) GRANTED overnight EXECUTION of Phases 1–5 (not just planning): decomposed as DISPATCHABLE tasks TASK-284 (P1 scatter culls + grid-hash) ∥ TASK-285 (P2 unit URO) → TASK-286 (P1∥2 build) → TASK-287 (P3 density → W2) → TASK-288 (P4 rig-LOD tooling) → TASK-289 (P4 LOD apply → W3) → TASK-290 (P5 vista/POI assets) → TASK-291 (P5 place + commit). W2 (post-P3) and W3 (post-P4) are Jonathan's MORNING human feel-watches — overnight the pipeline builds THROUGH them capturing machine perf only (no FPS baseline exists; non-blocking). Phase 6 (capstone playtest → MERGE GATE to main) stays HIS: no autonomous push/merge. One deferred ATTACK residual (units halt just short of the enemy castle after the TASK-280/281 freeze fix) → TASK-282/283, overnight, DIAGNOSE-FIRST. The W1 sign-off also cleared TASK-267 (bot ladder fall-through) + the M7.7 deck-details integration hold (TASK-269..272).]**
+7.7. **M7.7 — Deck-builder card details ("how it works" on click)** — `current (decomposed 2026-07-23 — TASK-268..272 in "## M7.7 tasks" under Active tasks; Jonathan directive verbatim: "lets change the deck builder interface a bit. Make it to where when you click on the display for a card it displays a detailed description on how the card works.")`. **A STANDALONE menu-UI batch in the M4.5/M5.5/M6.5 shape, NOT part of M7.6** — it shares no file with the arena scale-up branch's owned set (L_Arena.umap, DA_BattlefieldScatter, SiegePlayerController, SiegeBotController, CaptureZone). Extends M6's deck-builder screen: clicking a card's face opens a non-modal side panel showing a generated, always-accurate "how this card works" write-up. **Three binding manager rulings:** (1) the description is **GENERATED from DT_Cards at runtime**, NOT an authored `Description` CSV column — a balance pass is pending and authored numbers would drift (the `Notes` column already has: `Lightning` says "in 400", its `AoERadius` is 700); (2) **add/remove does NOT move** — the tile's `+`/`−` buttons stay put and the card face was an UNBOUND gesture (the art is `SelfHitTestInvisible`), so this is purely additive and every M6 rule survives; (3) the view is a **non-modal side panel** built INLINE in `WBP_DeckBuilder` (no new WidgetBlueprint, and never a duplicate+reparent — the runtime-repaint corruption lesson). **LANE RULING: develops on `m7.6-arena10x`** (zero file overlap; the live working tree is there and a checkout dance would disturb the un-played W1 build) and merges to main at the M7.6 Phase-6 gate. **GATE: only the C++ task runs now (file-only, no compile, no Git); everything editor/compile/commit-bound is HELD until Jonathan's W1 look (TASK-219) so the playtest build stays exactly `1e4bd19` — one word from him ("do it now") lifts the hold. **[UPDATE 2026-07-24: HOLD LIFTED — Jonathan's W1 look/sign-off is GIVEN (TASK-219 APPROVED). TASK-269..272 are UNBLOCKED; TASK-269 is dispatchable, 270/271/272 follow in chain order. The W1 build advanced past `1e4bd19` to `0295f75` (TASK-266→273-277→278/279→280/281), so the deck-details chain now develops on HEAD `0295f75`.]** Naming law: CONVENTIONS "Deck-builder card details — click-a-card 'how it works' (2026-07-23)" (added FIRST, 2026-07-23).
 8. M8 — Networked 1v1 multiplayer — `not-started`
 
 ### Standing backlog (manager notes — NOT tasks, no IDs yet)
-- **Balance pass** — Jonathan flagged balancing changes wanted post-M4 (M4 playtest sign-off 2026-07-08: "we will have to make some balancing changes later, but it is fine"); awaiting his specific notes before task-izing. Feed-ins already on file for when the notes arrive: TASK-090 balance ledger (undefended-castle kill time ~56.5 s / ~71.3 s post-economy-change vs ~33 s prior; bot played ZERO early Miners in both rush matches — bot spend-mix), TASK-070 tuning note (bot opens with attack, not economy).
+- **Balance pass** — Jonathan flagged balancing changes wanted post-M4 (M4 playtest sign-off 2026-07-08: "we will have to make some balancing changes later, but it is fine"). **FIRST NOTES ARRIVED + TASK-IZED 2026-07-24 → TASK-278..279 ("W1 Economy-balance tasks" block below):** passive gold 1/2s→1/1s (reverts the TASK-089 income half) + ALL 28 card costs ×3 + bot `AttackBankThreshold` 12→36 audit; W1-lane branch work on `m7.6-arena10x`; StartingGold 10 left unchanged (flagged). Ledger continues in handoffs/TASK-279.md. This is a partial pass (Jonathan may send more notes). Feed-ins still on file: TASK-090 balance ledger (undefended-castle kill time ~56.5 s / ~71.3 s post-economy-change vs ~33 s prior; bot played ZERO early Miners in both rush matches — bot spend-mix), TASK-070 tuning note (bot opens with attack, not economy). **INTEGRATED 2026-07-24 (TASK-279, build-master, commit `3c32e25` on m7.6-arena10x):** base income 1/2s→1/1s LIVE (CDO `BaseIncomeTickPeriod=1`; PIE runtime: bot reached 36 gold from StartingGold 10 in ~26 s, then 18→36 in ~18 s = 1 gold/s), all 28 DT_Cards `Cost` cells ×3 LIVE (`set_rows` + readback Footman 9 / Ogre 36 / DeepMine 45 / CrystalTower 27, no other column drifted, DT_Cards.uasset saved + committed), bot `AttackBankThreshold` 12→36 LIVE (LogSiegeBot: banked to 36 → fielded Knight cost 18 ×2; deck 'Bot Aggro Rush' avg cost 14.16). StartingGold LEFT at 10 (flagged). NEXT-PASS WATCH (Jonathan): undefended-castle kill-time lengthens further under ×3 costs (prior ~56.5/71.3 s); the slower opening + bot heavier-unit mix is a feel check.
 - **HUD overtime indicator never shows** (pre-existing bug found at TASK-090, routed to manager): WBP_HUD ShowOvertime calls UpdateOvertimeDisplay with a hardcoded-false pin (bound via SetupStatTexts CreateEvent; UpdateOvertimeDisplay itself is correct). One-pin UMG fix + shortened-threshold verify — fold into the next UMG-touching chain or the balance pass; do not lose it.
 - **Adaptive bot spawn positioning by strategy** (M7.6 ruling #1 flag, 2026-07-18): TASK-216 makes bot attack waves spawn castle-relative and march; a future pass may choose spawn/stage positions by strategy (defend vs push vs flank). NOT designed — awaiting W1 pacing verdicts + Jonathan's appetite.
 - **Spawn-forward / waypoint mechanic** (M7.6 march-pacing lever, 2026-07-18): counter to the 45k-march conga line (Barracks 8 s interval / 60 s lifetime / speed 400 strings out — intended "forward structures" pressure but WATCH at W1). NOT designed; pulls forward if W1 says the pacing hurts.
@@ -657,6 +658,662 @@ Four non-gated items. State: editor CLOSED; tree checked out on `m7.6-arena10x` 
 
 ---
 
+## M7.7 tasks (decomposed 2026-07-23) — Deck-builder card details: click a card → "how it works" (TASK-268..272)
+
+**Directive (verbatim, Jonathan, 2026-07-23):** *"lets change the deck builder interface a bit. Make it to where when you click on the display for a card it displays a detailed description on how the card works."*
+
+**Manager rulings (binding for all five tasks; naming law in CONVENTIONS "Deck-builder card details — click-a-card 'how it works' (2026-07-23)", added FIRST):**
+
+1. **Description SOURCE = GENERATED from DT_Cards (option b), not an authored CSV column (option a), not a hybrid (c).** Jonathan asked how the card *works* — mechanics, not flavor — and a **balance pass is explicitly pending** in the Standing backlog. Authored prose would go stale the day the numbers move, and it already HAS: the `Notes` column's `Lightning` row reads *"200 damage to the 3 highest-current-HP enemies in 400"* while that row's live `AoERadius` is **700**. Generated text re-derives from the row every frame, so a balance edit to cards.csv updates all 28 descriptions for free. Consequences: **no `Description` column, no `FCardRow` change, no DT_Cards reimport, and `Notes` is NEVER shown to the player** (it carries GDD refs + implementation identifiers). The only authored copy is a fixed keyword/type GLOSSARY in `DeckBuilderWidget.cpp` — ~15 strings covering keywords, not 28 cards — and mechanic magnitudes that are UPROPERTY defaults rather than CSV columns live there as named constants under the CONVENTIONS glossary-mirror rule.
+2. **Add/remove does NOT move — there is no interaction conflict to resolve.** The orchestrator's finding assumed a whole-tile click adds a copy; the shipped tile does not have one. `WBP_DeckCardTile` binds `AddBtn`/`RemoveBtn` only (TASK-118 §element inventory), and TASK-125 made the card art `SelfHitTestInvisible` *specifically* so it never eats those clicks. So the card face is an UNBOUND gesture and details-on-click is purely ADDITIVE: `+`/`−`, the cap-grey, the x/50 counter, the average-cost guide and the exactly-50 `PlayBtn` gate are all untouched. (The new `Btn_CardFace` goes BOTTOM-most in the tile Overlay so the `+`/`−` plate keeps hit-test priority — this is the one thing that could regress M6, and it is an explicit acceptance item.)
+3. **View form = NON-MODAL SIDE PANEL, inline in `WBP_DeckBuilder`.** Rejected: a modal (forces open/close per card, blocks `+`/`−`, and 28 cards means a lot of dismissing) and an expanded tile (re-flows the WrapBox and fights the runtime-constructed tree). A persistent right-hand panel lets Jonathan click card after card and compare while still editing the deck. **No new WidgetBlueprint asset** — and per the hard-won lesson, no new widget may ever be made by duplicate+REPARENT (silent RUNTIME-repaint corruption, ~9 wasted fixes); building inline sidesteps the class of defect entirely.
+4. **LANE = branch `m7.6-arena10x`; INTEGRATION HELD until Jonathan's W1 look (TASK-219).** The feature's files (`DeckBuilderWidget.{h,cpp}`, `WBP_DeckBuilder`, `WBP_DeckCardTile`) have **zero** overlap with the branch's owned set (L_Arena.umap, DA_BattlefieldScatter, SiegePlayerController, SiegeBotController, CaptureZone), so there is no conflict either way — but the live working tree IS the branch and a checkout to main would swap L_Arena out from under an un-played W1 build. So: develop here, merge to main at the M7.6 Phase-6 gate. The HOLD is the conservative default, not a technical necessity: TASK-268 is file-only (no compile, no Git) and runs NOW; TASK-269..272 touch the editor/compiler/Git and would make the W1 build ≠ the `1e4bd19` build build-master verified — with a small but real risk of leaving `WBP_DeckBuilder` (a match-launch path) mid-surgery when he sits down to play. **FLAGGED: one word from Jonathan ("do it now") lifts the hold — the orchestrator should ask him at the next boundary rather than sit on it, since he is live.** **[CLEARED 2026-07-24: the W1 look is DONE — Jonathan APPROVED the W1 build (TASK-219). The hold is LIFTED; TASK-269 is dispatchable, TASK-270/271/272 follow in chain order (269 compile → 270 panel → 271 tile → 272 commit — order re-confirmed valid). The chain now develops on the live branch HEAD `0295f75`, not the earlier `1e4bd19`.]**
+5. **"Detailed description" scope (default chosen, non-blocking):** stat block **AND** keyword/rules explanations — i.e. what it costs, what its numbers are, and what every special rule on it actually does, in plain English with no GDD refs and no class names. **No flavor/lore text** this pass (Jonathan said "how the card works"). Adding a flavor line later = one authored CSV column and a 2-line composer change; it is deliberately not built now.
+6. **Verification posture:** the description TEXT is machine-checkable (headless dump of all 28 strings, best-effort; QA reads them against cards.csv by hand). The RENDER and the CLICK are **not** — Slate screen-space UI is uncapturable headless and the deck builder needs a real menu click to open. Those close on Jonathan's eyes (recorded as a WATCH in TASK-272), per the CONVENTIONS pixel/human-check law. No "machine checks pass, ship it."
+
+**FLAGGED for Jonathan (defaults chosen, nothing blocks):** (i) description = mechanics only, no flavor text — say the word for a flavor line; (ii) side panel, not a popup — a modal is a small rework if he prefers it; (iii) the panel is READ-ONLY (no `+`/`−` inside it) so the tile stays the single place a deck changes — a duplicate pair in the panel is easy to add later if he wants it; (iv) the hold in ruling 4; (v) the card TILES are still compact (TASK-125 flag: no fixed card size, sizing lives in the WrapBox slot) — the details panel now carries the big readable card face, which mostly answers that flag, but a proper tile-size pass is still open.
+
+**Manager note (not a task, do not lose):** `CardRow.h`'s `ESpellDelivery` doc comment (lines ~70-76) says the `SpellDelivery` column header is "NOT yet appended to the CSV" — that is **STALE**: `Docs/Data/cards.csv` line 1 now ends with `SpellDelivery` and Fireball/FrostNova carry `HeroLine`. Comment-only correction; deliberately kept OUT of TASK-268's diff to keep QA's surface clean. Fold it into the next task that opens `CardRow.h`.
+
+#### TASK-268 — [DB-A] `UDeckBuilderWidget`: generated card description + details-selection API (C++, file-only)
+- assignee: gameplay-programmer
+- status: qa-passed (COMPILE-FIX 2026-07-24, gameplay-programmer — resolved C7595 by promoting the 14 glossary format constants from `const TCHAR[]` to `constexpr TCHAR[]` (UE 5.8's TCheckedFormatString reads the format inside a `constexpr` initializer, so the format array must be usable in a constant expression — a `constexpr` array is, plain `const` is not; verified against Engine `.../String/FormatStringSan.h:18`). Format STRINGS and all 14 Printf call sites are byte-for-byte untouched → rendered descriptions byte-identical to the QA-verified composition; zero logic change. STAYS PARKED/uncommitted — integration held for TASK-269+ per manager ruling 4; this un-blocks the shared-module compile for the W1 build only. --- ORIGINAL BUILD-MASTER FAILURE (retained for history): 2026-07-24 — compile FAILED in TASK-277's editor-target build: DeckBuilderWidget.cpp feeds NON-LITERAL FString format strings to FString::Printf → error C7595 (TCheckedFormatString consteval) ×15 at lines 873/901/909/929/937/942/969/974/982/987/995/1003/1011/1037. UE 5.8 requires the format arg to be a compile-time literal. Deck-builder collision (NOT a Shield-Wall defect); route to gameplay-programmer; errors in qa/TASK-268.md. ⚠ These changes are UNCOMMITTED and block the shared-module compile — fix OR stash them before the W1 build (TASK-277) can go green; build-master did not touch them. --- Prior status qa-passed — QA 2026-07-23 (PASS, 0 blockers / 2 WARN / 2 NIT, report `qa/TASK-268.md`). Verified: `Notes` never surfaced (comment-only in the diff), anti-drift proven (Lightning composes from live `AoERadius` 700; stale Notes "400" structurally unreachable), all 20 mirrored magnitudes value-checked against source and correct, chain-falloff formula identical to `Tower.cpp:456`, deck-neutral (no `OnDeckModelChanged`, M6 counter/gate/MaxCopies untouched). Flagged-call rulings: (1) `SwarmCount > 1` ACCEPTED — truth-correct, the play path treats ≤1 as a single non-swarm spawn; (2) Damage-line suppression for support/suicide/spell CORRECT+COMPLETE across all 28; (3) reciprocal glossary-only comments ACCEPTED as correct scope discipline. Two non-blocking follow-ups carried to the next task that opens the owning classes: WARN-1 (register the 14 reciprocal mirror sites + the stale `ESpellDelivery` CardRow.h comment on the do-not-lose shelf), WARN-2 (balance-pass note: a future non-Siege suicide card would omit the ×2-vs-structure line — safe-side omission, no shipping card affected). **INTEGRATION (TASK-269+) STAYS HELD for Jonathan's W1 sign-off per manager ruling 4 — this PASS advances readiness only, no build triggered.** Original programmer note follows. — 2026-07-23, gameplay-programmer. `DeckBuilderWidget.{h,cpp}` ONLY, **676 insertions / 0 deletions** (machine proof that every existing signature/behavior is byte-identical). Delivered: `GetCardDescription` (generated from the row, `Notes` never read), `SelectCardForDetails` / `ClearCardDetails` / `GetSelectedDetailCardID` / `OnCardDetailsRequested`, and a 29-string per-keyword glossary with 14 mirror sites. NOT compiled, editor untouched, nothing staged (TASK-269 owns the compile). Handoff: `handoffs/TASK-268.md` (API signatures, composition order, glossary + mirror table, clause-by-clause truth-law verification with file:line, six rendered examples).
+- blocked-by: none — **dispatchable NOW** (file-only: no compile, no editor, no Git; the diff carries cleanly across any later checkout because no other lane owns this file)
+- parallel-safe: yes (sole owner of `DeckBuilderWidget.{h,cpp}`; disjoint from every file the M7.6 branch owns)
+- spec: >
+    Edit `Source/GitClaudeUnrealTest/Siegebound/DeckBuilderWidget.{h,cpp}` ONLY. Additive — do not change ANY existing
+    signature or behavior (`AddCopy`/`RemoveCopy`/`GetCountOf`/`GetTotalCount`/`GetAverageCost`/`IsCurrentDeckLegal`/
+    `GetCollectionCardIDs`/`GetCardDisplayName`/`GetCardCost`/`GetCardMaxCopies`/`GetCardArtTexture`/`LoadDefaultDeck`/
+    `SaveDeckAs`/`LoadDeck`/`GetSavedDeckNames`/`SetActiveDeck` and both existing BIEs stay byte-identical).
+    (1) **Selection API.** `SelectCardForDetails(FName CardID)` (BlueprintCallable) — stores the private
+    `UPROPERTY(Transient) FName SelectedDetailCardID` and fires `OnCardDetailsRequested(CardID.ToString())`; an unknown row
+    or `NAME_None` CLEARS the selection and still fires with an empty string (so the panel can show its hint).
+    `ClearCardDetails()` (BlueprintCallable). `GetSelectedDetailCardID() const` (BlueprintPure).
+    `OnCardDetailsRequested(const FString& CardID)` (BlueprintImplementableEvent — FString param only, the widget rule).
+    (2) **`GetCardDescription(FName CardID) const` (BlueprintPure, returns FString)** — the deliverable. Compose the
+    multi-line player-facing body per CONVENTIONS "Deck-builder card details" §composition order: identity line
+    (Type · Cost · Max per deck) → blank → STAT block (`HP`, `Damage` + `AoERadius` splash, `Cadence`, `Range` with
+    melee-vs-homing-projectile wording from `bRanged`, `MinRange`, `Speed` — OMIT every line whose field is 0/N-A) → blank
+    → RULES block, one plain-English line per applicable clause: `bCharge`, `bSlayer`, `bSuicide`, `SwarmCount`,
+    `ChainTargets`/`ChainFalloff` (print the actual falloff sequence from `Damage`/`ChainFalloff`), spawner
+    (`SpawnCardID`/`SpawnInterval`/`Lifetime` — resolve and print the spawned card's **DisplayName**, never the raw CardID),
+    all five `SpellEffect` values, spell delivery, `Profile` (Siege / Support prose; Standard omitted), and castle-damage
+    scaling. Numbers ALWAYS come from the row (§3.0 — never hardcode a stat that exists in the table); the only literals
+    are the glossary strings.
+    (3) **Spell delivery must reuse the existing brain:** resolve `ESpellDelivery::Auto` through
+    `USpellLibrary::GetEffectiveDelivery` — do NOT re-implement the per-effect default (that would be a second source of
+    truth for TASK-236's law). Null-safe; if the library cannot be consulted, omit the delivery line rather than guess.
+    (4) **TRUTH LAW — verify before you write.** Every rules line must describe what the SHIPPING code actually does: read
+    the owning class for each clause (`ACastle::TakeDamage` for castle scaling, the Charge/Slayer/Chain/Swarm/Suicide
+    implementations, `ADeepMine`, the spawner building, `USpellLibrary`) and confirm the wording. **If a clause cannot be
+    verified, OMIT it** — a description that states a rule the game does not implement is a FAIL, not a nit. List in the
+    handoff, clause by clause, WHICH file/line you verified each against. No GDD section refs, no class or property names,
+    no CSV column names in player-facing text.
+    (5) **Glossary-mirror rule:** magnitudes that are mechanic rules rather than CSV columns (Charge 2 s / 2×, Slayer
+    150 HP / 2×, castle scaling, Deep Mine +2 gold/s, Masons 300 HP over 10 s, hero-upgrade magnitudes) go in ONE
+    contiguous block of named string constants at the top of the .cpp, each with a `// mirrors <Class>::<Property>` comment.
+    (6) **Null-safety:** unknown/None CardID or a missing table ⇒ EMPTY FString (the WBP shows its own hint), logged once
+    through the EXISTING `bWarnedMissingTable` / `WarnedMissingRowIDs` spam guards. Never a crash, never an ensure.
+    (7) **`Notes` IS NOT SURFACED.** Do not read it, do not add a `Description` column, do not touch `CardRow.h` or
+    `cards.csv`.
+    Target ≤ ~12 lines per card. In the handoff, paste the COMPOSED OUTPUT you expect for these six cards, hand-derived
+    from `Docs/Data/cards.csv`: `Footman` (plain melee), `Archer` (ranged + castle scaling), `CrystalTower` (chain),
+    `Barracks` (spawner), `Fireball` (spell + HeroLine delivery), `Ogre` (Siege profile) — that table is what QA reviews.
+    NOT IN SCOPE: any UMG asset, any other C++ file, compiling, Git. **FILE-ONLY: do NOT compile and do NOT touch the
+    editor** (the branch is frozen for Jonathan's W1 look — TASK-269 owns the compile). QA implied (shadow scan,
+    complete-type include scan, null-safety, §3.0 no-hardcoded-stats, truth-law spot-check against cards.csv).
+    Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/DeckBuilderWidget.{h,cpp}`. New identifiers, EXACT: `GetCardDescription`,
+    `SelectCardForDetails`, `ClearCardDetails`, `GetSelectedDetailCardID`, `OnCardDetailsRequested`, `SelectedDetailCardID`.
+    Existing names consumed as-is: `ResolveCardTable`, `ResolveCardRow`, `bWarnedMissingTable`, `WarnedMissingRowIDs`,
+    `FCardRow`, `ECardType`, `ECardProfile`, `ESpellEffect`, `ESpellDelivery`, `USpellLibrary::GetEffectiveDelivery`.
+    Law: CONVENTIONS "Deck-builder card details — click-a-card 'how it works' (2026-07-23)", "Deck-builder & saved decks
+    (M6)", "Data-driven card stats (GDD §3.0)", "Widgets with C++ bases" (BIE param rule), "Spell delivery overhaul".
+
+#### TASK-269 — [DB-B] Compile the details API so the new nodes surface in the editor (build, NO commit)
+- assignee: build-master
+- status: backlog — **UNBLOCKED / dispatchable (2026-07-24: the M7.7 lane HOLD is CLEARED — Jonathan's W1 look/sign-off is GIVEN, TASK-219; TASK-268 is qa-passed + compiles). Head of the deck-details chain; the chain now lands on branch HEAD `0295f75` (not the frozen `1e4bd19`).**
+- blocked-by: TASK-268 (qa-passed ✓). **M7.7 lane gate CLEARED** — Jonathan's W1 look complete (TASK-219 APPROVED 2026-07-24); the hold is lifted, the editor may open. Chain order unchanged + still valid: **TASK-269 (compile-gate) → TASK-270 (panel) → TASK-271 (tile) → TASK-272 (commit).**
+- parallel-safe: no (single editor + compiler)
+- spec: >
+    On `m7.6-arena10x`: compile the TASK-268 change (editor bounce as usual — Jonathan's close/reopen grant covers this
+    session). This is a COMPILE-ONLY gate whose product is availability: the two UMG tasks cannot bind Blueprint nodes to
+    `SelectCardForDetails` / `GetCardDescription` / `OnCardDetailsRequested` until the module carries them.
+    (1) Confirm `git diff --stat` shows ONLY `DeckBuilderWidget.{h,cpp}` (the branch's owned files must be untouched —
+    if anything else appears, STOP and report).
+    (2) Compile GREEN; report the time and `Result: Succeeded`.
+    (3) Readback-confirm in the editor that `GetCardDescription`, `SelectCardForDetails`, `ClearCardDetails`,
+    `GetSelectedDetailCardID` and the `OnCardDetailsRequested` BIE are all exposed on `UDeckBuilderWidget` / available to
+    `WBP_DeckBuilder` and `WBP_DeckCardTile`.
+    (4) **BEST-EFFORT MACHINE PROOF of the text (do it here, it is cheap and it is the only machine evidence that exists):**
+    try a headless `-run=pythonscript` route that instantiates the `WBP_DeckBuilder` generated class (its `CardTableAsset`
+    is set, unlike the C++ CDO) and calls `GetCardDescription` for all 28 `GetCollectionCardIDs()` rows; dump the 28 strings
+    VERBATIM into the handoff. If no route works, say so plainly and move on — do NOT fake it and do NOT block on it.
+    **NO Git commit in this task** (the feature is half-landed until the UMG work is done; TASK-272 owns the commit).
+    Leave the editor RUNNING and saved. Post results in 🔧 Build & Git.
+- names: >
+    Branch `m7.6-arena10x`; `Source/GitClaudeUnrealTest/Siegebound/DeckBuilderWidget.{h,cpp}`. Law: CLAUDE.md build command
+    + hard gates, CONVENTIONS "Deck-builder card details", M7.7 lane ruling 4 (hold until W1 / Jonathan override).
+
+#### TASK-270 — [DB-C] `WBP_DeckBuilder`: non-modal card-details side panel + `OnCardDetailsRequested` (art, editor)
+- assignee: art-director
+- status: blocked (bounded-stop 2026-07-24 — art-director built the full panel scaffolding as isolated, compile-clean functions/vars, then STOPPED before splicing the protected 25-node runtime EventConstruct; corruption-signature seen + overnight-unverifiable regression risk to shipping M6. Remainder is a small, well-defined splice for a Jonathan-supervised/pixel-verified session. See handoffs/TASK-270-271.md)
+- blocked-by: TASK-269 (the C++ nodes must exist before they can be bound)
+- parallel-safe: no (single editor; and TASK-271 edits a widget this one instantiates)
+- spec: >
+    Edit `/Game/UI/WBP_DeckBuilder` ONLY. Extend its EXISTING runtime-constructed tree (TASK-118 technique) — **do NOT
+    create a new WidgetBlueprint and NEVER duplicate+reparent one** (silent runtime-repaint corruption; CONVENTIONS).
+    (1) **Layout.** Split the screen body horizontally: the existing 28-tile `WrapBox` on the left, a new `DetailsPanel`
+    on the right (~30 % width). Because the grid loses width, wrap the WrapBox in a ScrollBox named `GridScroll` (this also
+    closes TASK-118's flag #3 overflow risk). The panel is NON-MODAL and always present — it never blocks the grid or the
+    `+`/`−` buttons.
+    (2) **Panel contents**, exact names: `DetailsArtBorder` (large card face — brush set from `GetCardArtTexture(CardID)`,
+    the same `T_CardArt_<CardID>` the tiles and the in-match hand use; null art ⇒ transparent brush, text-only),
+    `DetailsNameText` (`GetCardDisplayName`), `DetailsCostText` (`GetCardCost`), `DetailsBodyText` (`GetCardDescription` —
+    **`AutoWrapText` ON**, this is the multi-line "how it works" body), `Btn_DetailsClose` → `ClearCardDetails()`,
+    `DetailsHintText` (static empty-state copy, e.g. *"Click a card to see how it works."*).
+    (3) **Wiring.** Implement the `OnCardDetailsRequested(FString CardID)` BIE as a **TRUE override** — object class must be
+    `K2Node_Event`, NOT `K2Node_CustomEvent` (a custom event is DSL-indistinguishable and NEVER fires from C++ — the defect
+    that hid the health-bar bug 5×; READBACK the node class and paste it in the handoff). Its body: empty CardID ⇒ show
+    `DetailsHintText`, hide the art/name/cost/body; otherwise fill all four from the getters and hide the hint. Also
+    refresh the panel from the existing `RefreshAll()` path (using `GetSelectedDetailCardID`) so a `+`/`−` never leaves it
+    stale — seed-then-bind.
+    (4) **Legibility is law** (the white-on-white health-bar defect class): `DetailsBodyText` sits on an opaque/dark backing
+    plate, never directly on card art; body font sized to read at a glance.
+    (5) **Do not disturb ANY existing binding:** `TotalText`, `AvgText`, `SavedNamesText`, `NameInput`, `PlayBtn` (and its
+    exactly-50 legality gate), Save/Load/Reset/Back. Readback-confirm each still points at the same C++ call after your
+    edits, and confirm the parent class is still `UDeckBuilderWidget` (a silently-failed reparent = a dead screen).
+    (6) Compile the widget clean, SAVE it (`is_dirty=false`). No C++, no Git, no PIE (TASK-272 owns verification).
+    ACCEPTANCE: panel present with all six named elements; BIE is a genuine `K2Node_Event`; 28-tile grid still builds and
+    scrolls; every pre-existing binding readback-identical. Post in 🎨 Art.
+- names: >
+    `/Game/UI/WBP_DeckBuilder` (`Content/UI/WBP_DeckBuilder.uasset`). New elements, EXACT: `DetailsPanel`,
+    `DetailsArtBorder`, `DetailsNameText`, `DetailsCostText`, `DetailsBodyText`, `DetailsHintText`, `Btn_DetailsClose`,
+    `GridScroll`. C++ consumed as-is: `GetCardDescription`, `GetCardDisplayName`, `GetCardCost`, `GetCardArtTexture`,
+    `GetSelectedDetailCardID`, `ClearCardDetails`, `OnCardDetailsRequested`. Law: CONVENTIONS "Deck-builder card details
+    — click-a-card 'how it works' (2026-07-23)", "Deck-builder & saved decks (M6)", "Widgets with C++ bases",
+    template-donor rule (no duplicate+reparent).
+
+#### TASK-271 — [DB-D] `WBP_DeckCardTile`: `Btn_CardFace` click target → `SelectCardForDetails` (art, editor)
+- assignee: art-director
+- status: blocked (NOT started; bounded-stop with TASK-270 on 2026-07-24 — WBP_DeckCardTile is byte-untouched. Btn_CardFace requires the same protected-runtime-construct front-insert risk class, and the click is worthless until TASK-270's panel is wired. See handoffs/TASK-270-271.md)
+- blocked-by: TASK-270 (single editor, and the panel must exist for the click to be observable end-to-end)
+- parallel-safe: no (single editor)
+- spec: >
+    Edit `/Game/UI/WBP_DeckCardTile` ONLY. Purely additive to TASK-125's physical-card tile.
+    (1) Add `Btn_CardFace` — a transparent, style-less Button covering the card FACE (the art region) — as the
+    **FIRST / bottom-most child of the tile's root Overlay**, so the top-right count plate and the bottom caption plate
+    (which carries `−` `CountText` `+`) are drawn ON TOP and keep hit-test priority. ⚠ **This ordering is the single thing
+    that could regress M6** — if `Btn_CardFace` swallows the `+`/`−` clicks, deck editing breaks. Verify by readback that
+    `AddBtn`/`RemoveBtn` are still later siblings/descendants in the Overlay than `Btn_CardFace`, and flag it loudly if the
+    tree shape makes that impossible.
+    (2) Handler `OnCardFacePressed` → `OwnerBuilder->SelectCardForDetails(CardID)`, `IsValid`-guarded — the exact shape of
+    the existing `OnAddPressed`/`OnRemovePressed`. It must NEVER call `AddCopy`/`RemoveCopy`.
+    (3) **Expect the AssignOnClicked MCP quirk** (TASK-041/118/125: `Button|Event|AssignOnClicked` auto-creates an empty
+    `OnClicked_Event_N` and binds the button to THAT, orphaning your named handler). Fix it the proven way
+    (`break_pins`/`connect_pins` rewire, or author the body into the auto-created event) and READBACK-confirm
+    `Btn_CardFace` is bound to a handler that actually calls `SelectCardForDetails`.
+    (4) Do not disturb: `CardArtBorder` (stays `SelfHitTestInvisible`), `CopyCountText`, `NameText`, `CostText`,
+    `AddBtn`/`RemoveBtn`, `SetupCell`, `RefreshCell` (incl. the `SetIsEnabled(AddBtn, GetCountOf < GetCardMaxCopies)`
+    cap-grey). No new diagnostic PrintString may be left live (TASK-129 precedent — if you add one for debugging, strip it
+    before you finish and say so).
+    (5) Compile clean, SAVE (`is_dirty=false`). No C++, no Git.
+    ACCEPTANCE: `Btn_CardFace` present, bottom-most, bound to a handler calling `SelectCardForDetails(CardID)`; `+`/`−`
+    bindings and the cap-grey readback-identical to before. Post in 🎨 Art.
+- names: >
+    `/Game/UI/WBP_DeckCardTile` (`Content/UI/WBP_DeckCardTile.uasset`). New elements, EXACT: `Btn_CardFace`,
+    `OnCardFacePressed`. Existing consumed as-is: `OwnerBuilder`, `CardID`, `AddBtn`, `RemoveBtn`, `CopyCountText`,
+    `CardArtBorder`, `SetupCell`, `RefreshCell`, `SelectCardForDetails`. Law: CONVENTIONS "Deck-builder card details —
+    click-a-card 'how it works' (2026-07-23)" (add/remove does not move; face button bottom-most), "Deck-builder & saved
+    decks (M6)".
+
+#### TASK-272 — [DB-E] Integration: verify + branch commit + record the human WATCH (build)
+- assignee: build-master
+- status: backlog
+- blocked-by: TASK-270, TASK-271 (both ready-for-integration)
+- parallel-safe: no (single editor + Git)
+- spec: >
+    On `m7.6-arena10x`: (1) COMPILE if anything C++ moved since TASK-269 (otherwise note "no C++ delta").
+    (2) **VERIFY what is machine-verifiable, and be honest about the rest.** (a) `git status`/`diff --stat` shows ONLY
+    `DeckBuilderWidget.{h,cpp}`, `Content/UI/WBP_DeckBuilder.uasset`, `Content/UI/WBP_DeckCardTile.uasset` — the branch's
+    owned files (L_Arena.umap, DA_BattlefieldScatter, SiegePlayerController, SiegeBotController, CaptureZone) MUST be
+    untouched; if not, STOP and report. (b) Both widgets compile clean and are saved not-dirty; `WBP_DeckBuilder`'s parent
+    is still `UDeckBuilderWidget`. (c) `OnCardDetailsRequested` is a `K2Node_Event`, not a `K2Node_CustomEvent` (paste the
+    readback). (d) `Btn_CardFace` is bottom-most in the tile Overlay and `AddBtn`/`RemoveBtn` bindings + the cap-grey are
+    unchanged. (e) If TASK-269's Python dump did not work, retry it once here; if the 28 descriptions can be dumped, paste
+    them in the handoff — that is the accuracy record. (f) If a PIE/main-menu route can open the deck builder at all
+    headlessly, report what rendered; if not, say so plainly.
+    (3) **COMMIT on the branch** — message referencing TASK-268..272 and the directive. **DO NOT PUSH** (Jonathan decides).
+    (4) **Record the WATCH for Jonathan** (this is the closing gate — CONVENTIONS pixel/human-check law; do not claim the
+    feature works without it): ☐ open Deck Builder from the main menu; ☐ click a card FACE → the details panel fills with
+    that card's art, name, cost and the "how it works" body; ☐ click several different cards → the panel swaps every time;
+    ☐ `+`/`−` still add/remove copies and the above-card count still updates (the regression risk); ☐ the body text is
+    READABLE (size + contrast on its backing plate) and the 28-tile grid still fits/scrolls; ☐ spot-check 2-3 descriptions
+    for anything that reads wrong or untrue.
+    Post results + hash in 🔧 Build & Git.
+- names: >
+    Branch `m7.6-arena10x` commit (NO push); `Source/GitClaudeUnrealTest/Siegebound/DeckBuilderWidget.{h,cpp}`,
+    `Content/UI/WBP_DeckBuilder.uasset`, `Content/UI/WBP_DeckCardTile.uasset`. Law: CLAUDE.md hard gates (PASS QA before
+    commit, never push unasked), CONVENTIONS "Deck-builder card details — click-a-card 'how it works' (2026-07-23)",
+    M7.6 branch-ownership law (the branch's owned files stay untouched).
+
+---
+
+## W1 Unit-Commands tasks (decomposed 2026-07-23) — Shield Wall stances: ATTACK / HOLD / DEFEND (TASK-273..277)
+
+**Directive (verbatim, Jonathan, 2026-07-23):** *"I want to implement a feature where you can press certain buttons to make the units around you do certain actions, similar to the video game 'shield wall'. For right now, I just want there to be 3 commands: 'hold' which makes all units move towards a specified location and only attack units within that specified location. 'defend' which makes all units head back towards the players castle and only attack units that are attacking the castle. 'attack' which makes all units attack the enemy castle and if there are any buildings or units that are within the spawn of the enemy castle they will prioritize those buildings or units before attacking the castle. This logic would only apply to the units with the 'Standard' targeting profiles... Lets put the 'attack' button on the 't' key, the 'hold' button on the 'r' key, and the 'defend' button on the 'e' key."*
+
+**W1-SCOPED, NOT held.** Develops on `m7.6-arena10x` and INTEGRATES into the W1 build (unlike the M7.7 deck-details chain). Naming law in CONVENTIONS "Unit commands (Shield Wall stances) — ATTACK / HOLD / DEFEND (W1, 2026-07-23)", added FIRST. Applies ONLY to `ECardProfile::Standard` PLAYER (Blue) units; Siege/Support/None bodies + all bot units are UNTOUCHED.
+
+**Manager rulings (binding for all five tasks):**
+1. **Command STATE lives on `ASiegePlayerController`** (per-player, player-issued; the T/R/E bindings + ground reticle already live there; M8-ready). Not `ASiegeGameState` (would need per-team arrays; it is flagged local-only-through-M7).
+2. **Enemy spawn-box test lives on `ACastle`** (`SpawnBoxHalfExtent` + `IsPointInSpawnBox`) — castle-centered, the unit already holds the enemy-castle pointer via `FindNearestEnemyCastle`. Additive; the bot's TASK-262 `IsPointInBotSpawnBox` is UNDISTURBED. 3-way paired-tunable (player/bot controllers + castle) documented.
+3. **`bHasIssuedCommand` latch (default false)** = zero behavior change until the player first presses a key (Q3 default). Latched global stance; future-spawned Standard units adopt it (Q2 default). Play Again resets to Attack + not-issued.
+4. **HOLD reuses the spell reticle** ground-target machinery for the location pick (no new reticle system).
+5. **HUD indicator is OPTIONAL / fast-follow (Q5)** — gameplay integrates without it; the C++ exposes `OnUnitCommandChanged` so the HUD can bind later.
+
+**E/R/T conflict-check (manager):** the only letter-key gameplay binding today is Rally = **Q** (`HeroCharacter.cpp:182`); cards 1–6, Attack LMB, Jump Space, Sprint Shift, UICursor Left Alt, Cancel RMB/Esc. **E/R/T read as free** — but `IMC_Hero` is a binary `.uasset` the manager cannot text-verify, so TASK-273 MUST confirm in-editor and FLAG any conflict rather than stomp.
+
+**FLAGGED for Jonathan (sane defaults chosen, nothing blocks):** (Q1) HOLD radius default 1500 uu (directive suggested ~1000; raised for the 10× arena) — tune to taste; (Q2) latched global stance, future units inherit — CONFIRM; (Q3) no-command-yet = legacy behavior (ATTACK-without-spawn-priority) until first key — CONFIRM; (Q4) player-only, bot unchanged — CONFIRM; (Q5) HUD indicator + hold-marker in-scope now or fast-follow?; (Q6) DEFEND "attacking the castle" = enemies within `DefendRadius` (2500 uu) of the own castle — the simple/robust default; the alternative (enemies whose target actor IS the castle) is available if he prefers.
+
+#### TASK-273 — Command input assets: `IA_CmdAttack`/`IA_CmdHold`/`IA_CmdDefend` + `IMC_Hero` T/R/E mappings (art, editor)
+- assignee: art-director
+- status: ready-for-integration
+- blocked-by: none — **dispatchable NOW** (parallel with TASK-274; the C++ soft-resolves these by path, null-safe if absent)
+- parallel-safe: yes (Content/Input assets only; disjoint from all C++ and from the M7.6 branch's owned files)
+- spec: >
+    On `m7.6-arena10x` (Jonathan granted editor-close this session). (1) Create three Input Action assets in
+    `/Game/Input/Actions/`: `IA_CmdAttack`, `IA_CmdHold`, `IA_CmdDefend` — Value Type **Digital (bool)**, no modifiers,
+    matching the existing `IA_Card*` action shape. (2) **BEFORE adding mappings, OPEN `/Game/Input/IMC_Hero` and READ BACK
+    its existing key list** — confirm keys **T, R, E** are UNBOUND (manager check says they are free: the only letter-key
+    binding is Rally=Q). If ANY of T/R/E is already mapped, STOP and FLAG in 🎨 Art + 🚨 Blockers — do NOT stomp an
+    existing binding. (3) Add three mappings to `IMC_Hero` (the SAME context that carries `IA_Card1..6`/`IA_Rally` — do NOT
+    create a new IMC): `IA_CmdAttack`→**T**, `IA_CmdHold`→**R**, `IA_CmdDefend`→**E**. (4) Save. Handoff: the readback of
+    `IMC_Hero`'s key list proving T/R/E were free + the three new rows added. NOT IN SCOPE: any C++, the HUD, compiling, Git.
+    Post the readback + completion in 🎨 Art.
+- names: >
+    `/Game/Input/Actions/IA_CmdAttack`, `/Game/Input/Actions/IA_CmdHold`, `/Game/Input/Actions/IA_CmdDefend` (Digital/bool);
+    mappings in `/Game/Input/IMC_Hero` — IA_CmdAttack↔T, IA_CmdHold↔R, IA_CmdDefend↔E. Law: CONVENTIONS "Unit commands
+    (Shield Wall stances)…", "Asset prefixes" (IA_/IMC_ rows).
+
+#### TASK-274 — Command state + T/R/E input + HOLD reticle pick (C++: `UnitCommand.h` + `SiegePlayerController`)
+- assignee: gameplay-programmer
+- status: qa-passed (COMPILE-FIX 2026-07-24, gameplay-programmer — reworded the h:1057 doc comment to drop the embedded `*/` (now "each Enter or Begin entry point ignores while any other is live"); also hardened a latent same-pattern `*/` inside a `//` line comment at h:1002 ("Pending* placement", inert — a `*/` in a `//` line comment cannot close a block, zero compile impact). COMMENT-ONLY: zero executable-code change, logic byte-identical, so prior QA PASS stands. Build-master to recompile. --- ORIGINAL BUILD-MASTER FAILURE (retained for history): 2026-07-24 — TASK-277 compile FAILED: SiegePlayerController.h:1057 doc-comment embeds `*/` in the text "each Enter*/Begin*", closing the `/** */` block early → C2143/C4430/C2059/C4138/C2238 at h:1057-1058 + `bInHoldTargetMode` undeclared (C2065) ×12 in SiegePlayerController.cpp. Fix = reword the comment to remove the embedded `*/` (pure comment edit, no logic change). Errors appended to qa/TASK-274.md; route to gameplay-programmer; TASK-277 blocked until green. --- Prior QA 2026-07-23 — PASS, 0 blockers / 0 warns / 3 informational nits, report `qa/TASK-274.md`. Verified airtight: three-way mode mutual exclusion — EnterPlacementMode/EnterTargetingMode/BeginHoldTarget each ignore while ANY other mode is live, both directions, shared SpellReticleActor never double-owned; melee suppression released on all 7 hold-exit paths (release sits before the early-out, HoldHero is a separate transient from Placement/TargetingHero); disjoint hold scratch reset on every exit, confirmed point captured before teardown; Play-Again reset (Attack/bHasIssuedCommand=false/ZeroVector+broadcast). Additive-only — no regression to cards 1-6, UICursor, CancelPlace, M5/placement flows; PlayerTick hold work fully gated (no idle cost). API for TASK-275 confirmed: GetCurrentCommand/HasIssuedCommand/GetHoldLocation/GetHoldRadius + SetUnitCommand + OnUnitCommandChanged; DefendRadius correctly deferred to TASK-275's ASummonedUnit.)
+- blocked-by: none — **dispatchable NOW** (parallel-safe with TASK-273; soft-resolves the IA_ assets null-safe)
+- parallel-safe: yes (owns `UnitCommand.h` + `SiegePlayerController.{h,cpp}` — already branch-frozen; disjoint from TASK-273's Content/Input assets and from TASK-275's `Castle`/`SummonedUnit`)
+- spec: >
+    Edit `Source/GitClaudeUnrealTest/Siegebound/SiegePlayerController.{h,cpp}` + add header-only
+    `Source/GitClaudeUnrealTest/Siegebound/UnitCommand.h`. This is the COMMAND-ISSUING side.
+    (1) **Enum:** `UnitCommand.h` declares `enum class ESiegeUnitCommand : uint8 { Attack, Hold, Defend }` (UENUM,
+    header-only, TeamId.h pattern — nothing else in it).
+    (2) **State + API on `ASiegePlayerController`:** `ESiegeUnitCommand CurrentCommand` (transient, default Attack);
+    `bool bHasIssuedCommand` (transient, default false); `FVector HoldLocation` (transient);
+    `float HoldRadius` (UPROPERTY EditDefaultsOnly, default **1500**, ClampMin 0). BlueprintPure getters
+    `GetCurrentCommand()`/`GetHoldLocation()`/`GetHoldRadius()`/`HasIssuedCommand()`. `SetUnitCommand(ESiegeUnitCommand)`
+    latches the stance, sets `bHasIssuedCommand=true`, broadcasts `OnUnitCommandChanged(NewCmd)`.
+    Delegate `DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnUnitCommandChanged, ESiegeUnitCommand, NewCommand)` →
+    `UPROPERTY(BlueprintAssignable) OnUnitCommandChanged`.
+    (3) **Input:** soft-refs `CmdAttackActionAsset`/`CmdHoldActionAsset`/`CmdDefendActionAsset`
+    (`/Game/Input/Actions/IA_Cmd*`) resolved via the existing `ResolveInputAction` null-safe pattern; bind
+    `ETriggerEvent::Started` in `SetupInputComponent` to `OnCmdAttackPressed`/`OnCmdHoldPressed`/`OnCmdDefendPressed`.
+    ATTACK/DEFEND handlers call `SetUnitCommand(Attack/Defend)` immediately. HOLD handler calls `BeginHoldTarget()`.
+    (4) **HOLD reticle pick:** REUSE the existing spell-targeting reticle machinery (`SpawnSpellReticle`/`M_SpellReticle`/
+    the ground trace) — do NOT build a new reticle. `bInHoldTargetMode` + `BeginHoldTarget()`/`ConfirmHoldTarget()`/
+    `CancelHoldTarget()`; LMB confirm → `HoldLocation` = traced surface point + `SetUnitCommand(Hold)` + exit mode;
+    RMB/Esc cancel → exit, NO stance change. MUST be mutually exclusive with `bInTargetingMode` (spell) and placement mode
+    (entering one cancels the others — extend the existing exclusivity, don't fork it). Null-safe if `M_SpellReticle` is
+    missing (no visual, pick still works off the trace).
+    (5) **Play Again reset:** in the existing match-reset path, set `CurrentCommand=Attack`, `bHasIssuedCommand=false`,
+    `HoldLocation=ZeroVector`, exit hold-target mode, broadcast `OnUnitCommandChanged(Attack)`.
+    QA implied (shadow scan — esp. no shadow of inherited reflected members; complete-type include scan for
+    `UInputAction`/`EnhancedInputComponent`/`ADecalActor`; null-safety; delegate/reset-broadcast law). NOT IN SCOPE:
+    SummonedUnit, Castle, the HUD widget, compiling, Git. Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/UnitCommand.h` (new), `SiegePlayerController.{h,cpp}`. New identifiers EXACT:
+    `ESiegeUnitCommand`{`Attack`,`Hold`,`Defend`}, `CurrentCommand`, `bHasIssuedCommand`, `HoldLocation`, `HoldRadius`,
+    `GetCurrentCommand`, `GetHoldLocation`, `GetHoldRadius`, `HasIssuedCommand`, `SetUnitCommand`, `FOnUnitCommandChanged`,
+    `OnUnitCommandChanged`, `CmdAttackActionAsset`/`CmdHoldActionAsset`/`CmdDefendActionAsset`,
+    `CmdAttackAction`/`CmdHoldAction`/`CmdDefendAction`, `OnCmdAttackPressed`/`OnCmdHoldPressed`/`OnCmdDefendPressed`,
+    `bInHoldTargetMode`, `BeginHoldTarget`/`ConfirmHoldTarget`/`CancelHoldTarget`. Consumed as-is: `ResolveInputAction`,
+    `SpawnSpellReticle`, `bInTargetingMode`, `SpellReticleActor`. Law: CONVENTIONS "Unit commands (Shield Wall stances)…".
+
+#### TASK-275 — Standard-body reshaping + enemy-box helper (C++: `ASummonedUnit` + `ACastle`)
+- assignee: gameplay-programmer
+- status: qa-passed (QA 2026-07-23 — PASS, 0 blockers; 1 WARN RAISED then RESOLVED via a one-line delta, 2 informational NITs. Verified: legacy Standard body byte-identical when the gate is false (bots/Red, miners/None, Siege/Support, pre-first-command all fall through unchanged); freeze/match-end early-out is upstream of the gate; `MoveToLocation` 8-arg UE 5.8 signature correct; `ACastle::IsPointInSpawnBox` additive + bot's `IsPointInBotSpawnBox` untouched. WARN-1 (HOLD kite-out-of-position: stale actor-move persisted after the enemy left the disc) FIXED in `EnterAdvanceToLocation` — captures `bWasActorMove` before clearing `CurrentMoveGoal` and ORs it into the re-path guard so a return-to-point after an actor-move always re-issues; `EnterAdvance(AActor*)` byte-for-byte untouched; delta re-QA confirmed WARN closed with no new per-tick churn. Reports: qa/TASK-275.md. CLEAR for build-master TASK-277. Original programmer note follows.) — (2026-07-23 gameplay-programmer — code-only, no compile/Git. Edited ONLY SummonedUnit.{h,cpp} + Castle.{h,cpp}. Gate: `Profile==Standard && Team==ETeamId::Blue && PC && PC->HasIssuedCommand()` inserted BETWEEN the Support dispatch and `const FVector MyLocation` so the legacy Standard body (now lines 1064-1102) is byte-for-byte unchanged; miners (Profile None) + bot/Red + pre-first-command units all fall through to legacy. New unit helpers: `UpdateStateStandardCommanded(const ASiegePlayerController&)`, `AcquireEnemyNearPoint(Center,Radius)` (AcquireTarget clone, disc gate), `FindNearestEnemyInSpawnBox(const ACastle*)`, `FindOwnCastle()`→ACastle*, `EnterAdvanceToLocation(Point)` (MoveToLocation variant; actor `EnterAdvance` untouched) + `DefendRadius`=2500 UPROPERTY. New castle helper: `ACastle::IsPointInSpawnBox` + `SpawnBoxHalfExtent`=(840,840) — additive, bot's IsPointInBotSpawnBox UNTOUCHED. Handoff: handoffs/TASK-275.md)
+- blocked-by: TASK-274 (needs `ESiegeUnitCommand` + the controller getters/`HasIssuedCommand`)
+- parallel-safe: no (blocked-by TASK-274; both are gameplay-programmer)
+- spec: >
+    Edit `Source/GitClaudeUnrealTest/Siegebound/SummonedUnit.{h,cpp}` + `Castle.{h,cpp}`. This is the COMMAND-CONSUMING side.
+    (1) **`ACastle` box helper:** add `UPROPERTY(EditDefaultsOnly) FVector2D SpawnBoxHalfExtent = FVector2D(840,840)`
+    (comment: mirrors `ASiegePlayerController::SpawnBoxHalfExtent` ≡ `ASiegeBotController::SpawnBoxHalfExtent` — 3-way
+    paired-tunable) + `bool IsPointInSpawnBox(const FVector& Point) const` (BlueprintPure;
+    `FMath::Abs(Point.X-GetActorLocation().X) <= SpawnBoxHalfExtent.X && FMath::Abs(Point.Y-...Y) <= SpawnBoxHalfExtent.Y`).
+    Do NOT touch the bot's `IsPointInBotSpawnBox` (TASK-262 logic UNDISTURBED).
+    (2) **Standard-body reshape in `ASummonedUnit::UpdateState`** — the M1/M2 body ONLY (lines ~1026-1064); the
+    Siege/Support/None dispatch above it is UNCHANGED. Player-team gate: read the local `ASiegePlayerController`
+    (`GetPlayerController(0)`, cast); the command applies ONLY when `Team ==` the local player's team (Blue through M7)
+    AND `PC->HasIssuedCommand()`. Otherwise (bot/Red units, pre-first-command player units) run the LEGACY body
+    byte-for-byte. Branch on `PC->GetCurrentCommand()`:
+    • **ATTACK:** legacy `AcquireTarget()` self-defense UNCHANGED; only the no-in-aggro march GOAL changes to
+    `FindNearestEnemyInSpawnBox(FindNearestEnemyCastle())` ?? `FindNearestEnemyCastle()`.
+    • **HOLD:** `CurrentTarget = AcquireEnemyNearPoint(PC->GetHoldLocation(), PC->GetHoldRadius())`; drop a target that
+    leaves the disc; `Goal = CurrentTarget ?? HoldLocation` via `EnterAdvanceToLocation`; hold (`EnterIdle`) on arrival
+    with no in-disc enemy.
+    • **DEFEND:** `OwnCastle = FindOwnCastle()`; `CurrentTarget = AcquireEnemyNearPoint(OwnCastle location, DefendRadius)`;
+    `Goal = CurrentTarget ?? OwnCastle` (actor → `EnterAdvance`).
+    (3) **New unit helpers/members:** `float DefendRadius` (EditDefaultsOnly, default **2500**, ClampMin 0);
+    `AActor* AcquireEnemyNearPoint(const FVector& Anchor, float Radius) const` (AcquireTarget's team-filtered ITeamAgent
+    iteration, anchored on `Anchor` within `Radius` instead of AggroRadius-from-self; keep the no-friendly-fire + alive
+    filters); `AActor* FindNearestEnemyInSpawnBox(const ACastle* EnemyCastle) const` (nearest enemy ITeamAgent whose
+    location passes `EnemyCastle->IsPointInSpawnBox`; null EnemyCastle ⇒ nullptr); `ACastle* FindOwnCastle() const`
+    (mirror of `FindNearestEnemyCastle`, `Castle->GetTeamId()==Team`, skip destroyed); `void EnterAdvanceToLocation(const
+    FVector& Point)` (mirror `EnterAdvance` but `AI->MoveToLocation(Point, StructureMoveAcceptanceRadius, ...)`; leave
+    `EnterAdvance(AActor*)` unchanged). Everything additive — the legacy path (no command / non-player) stays
+    byte-identical. QA implied (shadow scan, complete-type include scan — esp. `#include "Castle.h"` and the
+    SiegePlayerController header in SummonedUnit.cpp; null-safety on all new lookups; confirm Siege/Support/None + bot units
+    are untouched). NOT IN SCOPE: input, the HUD, compiling, Git. Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SummonedUnit.{h,cpp}`, `Castle.{h,cpp}`. New identifiers EXACT:
+    `ACastle::SpawnBoxHalfExtent`, `ACastle::IsPointInSpawnBox`; `ASummonedUnit::DefendRadius`, `AcquireEnemyNearPoint`,
+    `FindNearestEnemyInSpawnBox`, `FindOwnCastle`, `EnterAdvanceToLocation`. Consumed as-is: `ESiegeUnitCommand`,
+    `ASiegePlayerController::GetCurrentCommand`/`GetHoldLocation`/`GetHoldRadius`/`HasIssuedCommand`, `AcquireTarget`,
+    `FindNearestEnemyCastle`, `EnterAdvance`, `EnterAttack`, `EnterIdle`, `StructureMoveAcceptanceRadius`.
+    Law: CONVENTIONS "Unit commands (Shield Wall stances)…".
+
+#### TASK-276 — Optional HUD command indicator + HOLD-point marker (art, editor) — FAST-FOLLOW / non-blocking
+- assignee: art-director
+- status: done (BUILD-MASTER 2026-07-24 — WBP_HUD stance indicator committed as fast-follow `6e7c706` on m7.6-arena10x (WBP_HUD.uasset ONLY; staged LFS pointer oid sha256:82da25b… verified == worktree; DeckBuilderWidget stayed parked; no push). No compile needed — art-director already compiled GREEN (warnings-as-errors) + saved is_dirty=false. On-screen appearance (renders top-center, flips ATTACK/HOLD/DEFEND on T/R/E, "—" until first command + after Play Again) = Jonathan W1 WATCH. --- Was: ready-for-integration (ART-DIRECTOR 2026-07-24 — stance indicator BUILT + wired + compiled GREEN (warnings-as-errors) + saved in `/Game/UI/WBP_HUD` (`is_dirty=false`). New var `CommandIndicatorText:TextBlock`; new fns `SetupCommandIndicator` (runtime-construct + attach top-center + seed) + `UpdateCommandDisplay` (re-reads `HasIssuedCommand`/`GetCurrentCommand`, enum switch `SwitchonESiegeUnitCommand` -> SetText ATTACK/HOLD/DEFEND, else "—"). Bind = `AssignOnUnitCommandChanged` on the owning `ASiegePlayerController`, appended granularly to the EventTick first-frame tail (auto custom event `OnUnitCommandChanged_Event_0` -> `UpdateCommandDisplay`); seed-then-bind honored; re-read-getters makes Play-Again show "—". EventConstruct byte-intact (write_graph_dsl only on the 2 NEW fns; all EventGraph edits granular create_node/connect_pins). build-master: WBP_HUD is now a saved working-tree change to fold into the commit. HOLD-marker DEFERRED (secondary fast-follow). On-screen appearance = Jonathan pixel/human WATCH (readback has passed on broken UMG here). Detail: handoffs/TASK-276.md. Was: blocked (recipe-needs-rework).)
+- blocked-by: TASK-274 (needs `OnUnitCommandChanged` + `GetCurrentCommand`) — and TASK-274 compiled (TASK-277 provides the nodes; if TASK-277 runs first, fold this in before the commit)
+- parallel-safe: yes (editor UMG; disjoint from the code tasks — but shares the single editor with TASK-273/277, so sequence in the editor)
+- spec: >
+    OPTIONAL / fast-follow — the feature integrates WITHOUT it (FLAGGED to Jonathan, Q5). Edit `/Game/UI/WBP_HUD`:
+    add a small always-present `CommandIndicatorText` showing the active stance (Attack / Hold / Defend), bound to the
+    player controller's `OnUnitCommandChanged` (seed from `GetCurrentCommand()` first, then bind — seed-then-bind law);
+    show nothing / "—" while `HasIssuedCommand()` is false. Optionally add a lightweight HOLD-point ground marker
+    (reuse a decal or a simple mesh actor placed at `GetHoldLocation()` while the stance is Hold). Keep it minimal and
+    readable (§6 bar). NOT IN SCOPE: any C++, the input assets, Git. If Jonathan defers this (Q5), leave `backlog`.
+    Post in 🎨 Art.
+- names: >
+    `/Game/UI/WBP_HUD` element `CommandIndicatorText`. Consumed as-is: `OnUnitCommandChanged`, `GetCurrentCommand`,
+    `HasIssuedCommand`, `GetHoldLocation`. Law: CONVENTIONS "Unit commands (Shield Wall stances)…" (HUD indicator bullet).
+
+#### TASK-277 — Integration: compile + PIE command-suite + branch commit (build)
+- assignee: build-master
+- status: done (BUILD-MASTER 2026-07-24 — Shield Wall command feature integrated on m7.6-arena10x, commit `70487d5` (no push). COMPILE GREEN (`Result: Succeeded` ~13s) after both QA-loop-1 defects were fixed (TASK-274 h:1057 comment + TASK-268 C7595). PIE smoke on L_Arena: feature loads + runs a live match with ZERO errors/ensures/Accessed-None; input actions bound (no missing-IA log); CDO tunables read back correct — HoldRadius=1500, ASummonedUnit.DefendRadius=2500, ACastle.SpawnBoxHalfExtent=(840,840). Behavioral suite (Standard-only gate / ATTACK spawn-box-first / HOLD disc+kite-fix / DEFEND / Play-Again reset / no legacy regression) verified STRUCTURALLY via TASK-274+275 QA PASS + source — live command-driven retarget, T/R/E hardware keys, and on-screen look are Jonathan W1 WATCH items (command state is non-UPROPERTY + no headless input injection, so not machine-drivable). Committed pathspecs: UnitCommand.h, SiegePlayerController.{h,cpp}, SummonedUnit.{h,cpp}, Castle.{h,cpp}, IA_CmdAttack/Hold/Defend, IMC_Hero + CONVENTIONS/board. NOT staged: WBP_HUD (untouched — HUD recipe TASK-276 deferred as fast-follow), DeckBuilderWidget.{h,cpp} (TASK-268 parked). No push. Editor left running for the art-director's HUD pass. Was: blocked.)
+- blocked-by: TASK-274 + TASK-275 (both qa-passed) + TASK-273 (IA_/IMC assets exist); TASK-276 optional (fold in if done, else commit without it)
+- parallel-safe: no (single editor + compiler + Git)
+- spec: >
+    On `m7.6-arena10x`. (1) Compile the TASK-274/275 C++ (editor bounce as usual — Jonathan's close/reopen grant covers
+    this session); GREEN, report time + `Result: Succeeded`. (2) **VERIFY the branch's owned files are otherwise untouched**
+    — `git diff --stat` should show ONLY `UnitCommand.h`, `SiegePlayerController.{h,cpp}`, `SummonedUnit.{h,cpp}`,
+    `Castle.{h,cpp}`, the 3 `IA_Cmd*` + `IMC_Hero` + (if done) `WBP_HUD`; if L_Arena.umap / DA_BattlefieldScatter /
+    SiegeBotController / CaptureZone changed unexpectedly, STOP and report. (3) **PIE command-suite** (best-effort, honest
+    about what is machine-verifiable): spawn a few player Standard units; press **T/R/E**; confirm via log/readback that
+    `CurrentCommand` latches and `HasIssuedCommand` flips; ATTACK — a unit/tower placed inside the RED spawn box is
+    prioritized before Castle_Red; HOLD — press R, confirm the reticle appears and LMB sets `HoldLocation`, units gather
+    there and only engage enemies inside `HoldRadius`; DEFEND — units fall back toward Castle_Blue and only fight enemies
+    within `DefendRadius`; confirm Siege (Ogre), Support (Cleric), miners, and BOT units are UNAFFECTED; Play Again resets
+    the stance. Note plainly what needs Jonathan's hands (real key input on an unlocked desktop). (4) **COMMIT on the branch**
+    referencing TASK-273..277 + the directive. **DO NOT PUSH.** (5) Record the human WATCH (T/R/E feel, HOLD reticle
+    readability, stance legibility) for Jonathan's W1 look. Leave the editor running + saved. Post results + hash in
+    🔧 Build & Git.
+- names: >
+    Branch `m7.6-arena10x` commit (NO push); `UnitCommand.h`, `SiegePlayerController.{h,cpp}`, `SummonedUnit.{h,cpp}`,
+    `Castle.{h,cpp}`, `IA_CmdAttack`/`IA_CmdHold`/`IA_CmdDefend`, `IMC_Hero`, `WBP_HUD`. Law: CLAUDE.md hard gates
+    (PASS QA before commit, never push unasked), CONVENTIONS "Unit commands (Shield Wall stances)…", M7.6 branch-ownership.
+
+---
+
+## W1 Economy-balance tasks (decomposed 2026-07-24) — passive gold 1/s + all card costs ×3 (TASK-278..279)
+
+**Directive (verbatim, Jonathan, 2026-07-24):** *"I want to make a couple changes to the spending balancing. Lets bring the passive gold per second from 1 gold every 2 seconds back to 1 gold every second, and then lets triple the cost of all cards."*
+
+**W1-SCOPED, NOT held.** Develops on `m7.6-arena10x` and INTEGRATES into the W1 build (same lane as the TASK-273..277 Shield Wall changes — value edits with no file overlap with the parked M7.7 deck-details chain [DeckBuilderWidget.{h,cpp}] or M7.6's owned L_Arena.umap / DA_BattlefieldScatter / CaptureZone). Two value changes + one MANDATORY bot audit. **Reverts the INCOME half of the 2026-07-08 TASK-089 directive only; StartingGold stays 10 (FLAG 1).** No new asset/class identifiers → NO CONVENTIONS naming additions; the record of truth is the in-code UPROPERTY doc comments (updated by TASK-278) + the balance-ledger note (TASK-279) + this block, mirroring the TASK-089/090 pattern.
+
+**Two changes (exact anchors, orchestrator-verified):**
+- **Change 1 — passive gold 1/2s → 1/1s:** `SiegePlayerState.h:282` `BaseIncomeTickPeriod = 2` → **1**. Keep `GoldPerTick=1` (h:278) and `GoldTickInterval=1.0` (h:286) unchanged. Update the h:276 + h:280 doc comments (they cite the TASK-089 "1 gold per 2 s" directive this reverts). PRESERVE (do not change): `OvertimeIncomeMultiplier=2` still doubles base in overtime → 2 gold/s at 7:00 (consistent with "base accrual doubles"). Nuance: `GetGoldRate()` already displayed "+1/s" pre-change (`DivideAndRoundUp(1,2)=1` round-up), so the HUD number does not visibly move — but the ACCRUAL now truly matches it (the display becomes accurate). No literal in `GetGoldRate` — it derives from the properties (verified).
+- **Change 2 — all 28 card costs ×3:** `Docs/Data/cards.csv`, `Cost` column ONLY (4th field, between `CardType` and `MaxCopies`). Exact new values: Footman **9** · Archer **12** · Knight **18** · Miner **24** · ArrowTower **15** · Wall **12** · MilitiaMob **15** · Pikeman **15** · Sapper **15** · Cavalry **21** · Longbowman **18** · Cleric **18** · Ogre **36** · BombTower **24** · BallistaTower **21** · Barracks **30** · DeepMine **45** · Masons **24** · SharpenedBlade **18** · PlateArmor **18** · SwiftBoots **15** · WarBanner **24** · Fireball **21** · FrostNova **18** · Lightning **24** · BattleCry **15** · Pickpocket **18** · CrystalTower **27**. Change ONLY `Cost` — `MaxCopies`/`HP`/`Damage`/`DeckCount`/`GoldSteal`/all other columns UNTOUCHED.
+
+**Bot audit (MANDATORY — the thing that silently breaks):** the bot reads `Row->Cost` LIVE for all affordability (auto-scales), BUT `ASiegeBotController::AttackBankThreshold` (`SiegeBotController.h:230`) is a HARDCODED gold literal = **12** — the Rule-4 gate the bot banks to before committing an offensive unit ("this is what makes waves GROW as income scales"). 12 = the OLD Ogre cost (its priciest bankable unit). At ×3 the cheapest units are 9–21, so a 12-gold gate makes the bot dump gold on the cheapest affordable unit (Footman 9 / Archer 12) the instant it hits 12 and NEVER bank toward Knight 18 / Cavalry 21 / Ogre 36 — the wave-growth property BREAKS. FIX = scale `AttackBankThreshold` 12 → **36** (×3 = new Ogre cost; preserves the intent) + correct the stale `SiegeBotController.cpp:56` comment ("an Ogre needs 12 gold" → 36). LEAVE `BotDiscardCost=1` (h:234 — mirrors the §3.6 fixed 1-gold swap fee, NOT a card cost) and `TargetMinerCount=3` (h:226 — a count). TASK-278 must SWEEP the whole SiegeBotController.{h,cpp} for any OTHER hardcoded gold/cost literal in a spend/bank/affordability heuristic (scale-or-data-drive it), PRESERVE the M3 ordered-rules `LogSiegeBot` decision trace verbatim, and REPORT everything found.
+
+**Auto-updating consumers (confirmed — NO action):** `GetGoldRate()` derives from the properties (Change-1 HUD auto-updates); the §8 deck-builder average-cost guide + the parked TASK-268 `GetCardDescription` generator read `Cost` live → both reflect the ×3 for free.
+
+**FLAGS for Jonathan (implement exactly the two changes; these are for his playtest eyes, NOT blockers):**
+1. **StartingGold=10 unchanged (DEFAULT — do NOT change; surface only):** cheapest unit is now Footman 9, so StartingGold 10 buys exactly ONE Footman at match start (was 3). Combined with passive 1/s this reshapes the opening — Jonathan may want to revisit at playtest.
+2. **Bot AttackBankThreshold 12→36 (implemented to preserve intent):** the bot's bank gate moved WITH costs; watch that waves still grow (bot fields Knight/Ogre) and don't stall.
+3. **Net economy shift:** passive income 2× (1/2s→1/s) but costs 3× → at passive-only rate a card takes **~1.5× longer** to afford than before; income investments (Miner +1/s costs 24, DeepMine +2/s costs 45) and the fixed-value Pickpocket steal (`GoldSteal=10`, UNCHANGED — not a card cost) are RELATIVELY weaker / slower-return vs the higher unit costs. Reads deliberate ("spending balancing"); surfaced for confirmation. The §3.6 fixed 1-gold card-swap fee and mine yields (Miner +1/s, DeepMine +2/s) are NOT card costs — unchanged.
+
+**Dispatch shape:** TASK-278 (gameplay-programmer, file-only, dispatchable NOW) → QA (status-flow gate; shadow-scan + complete-type-include scan; verify the 28 Cost cells + AttackBankThreshold=36 against this block) → TASK-279 (build-master: compile + DT_Cards CSV-sync + PIE economy verify + branch commit NO push + balance-ledger note).
+
+#### TASK-278 — Economy balance: base income 1 gold/s + all 28 card costs ×3 + bot bank-threshold audit (C++/CSV)
+- assignee: gameplay-programmer
+- status: done (INTEGRATED at TASK-279, build-master 2026-07-24, commit on m7.6-arena10x; compile GREEN, DT_Cards CSV-synced + saved, PIE economy verified. --- Prior QA 2026-07-24 — PASS, 0 blockers / 2 comment-hygiene NITs, report `qa/TASK-278.md`. INDEPENDENTLY verified: `BaseIncomeTickPeriod` 2→1 = exactly 1 gold/s (×2 overtime), all other gold props unchanged, no accrual-logic edit; all 28 cards.csv costs recomputed ×3 and matched, Cost column ONLY (28 data rows, header + MaxCopies/GoldSteal/etc. byte-identical); `AttackBankThreshold` 12→36 = new Ogre cost. Independent module sweep AGREES `AttackBankThreshold` was the ONLY stale hardcoded gold literal — all affordability reads are data-driven `Row->Cost`; `BotDiscardCost=1`/counts/time literals correctly left. 5 doc-comment edits comment-only. LogSiegeBot trace + TASK-265 spawn-clamp untouched. CLEAR for build-master TASK-279.)
+- blocked-by: none — **dispatchable NOW** (file-only; no compile, no reimport, no Git)
+- parallel-safe: yes (edits `SiegePlayerState.h` + `Docs/Data/cards.csv` + `SiegeBotController.{h,cpp}`; disjoint from the parked M7.7 `DeckBuilderWidget.{h,cpp}` and from `L_Arena.umap` / `DA_BattlefieldScatter` / `CaptureZone`)
+- spec: >
+    On `m7.6-arena10x`. FILE-ONLY — NO compile, NO DT_Cards reimport, NO Git (TASK-279 owns all of those).
+    (1) **Change 1 — base income:** in `SiegePlayerState.h`, set `BaseIncomeTickPeriod` (line ~282) from `2` to **`1`**.
+    Keep `GoldPerTick=1` and `GoldTickInterval=1.0f` UNCHANGED. Reword the doc comments at ~h:276 and ~h:280 to state
+    "1 gold per 1 s (2026-07-24 balance directive — reverts the TASK-089 1-per-2s income change; was 2)"; keep the note that
+    `OvertimeIncomeMultiplier` still doubles the base in overtime (→ 2/s at 7:00). Do NOT touch `StartingGold` (stays 10),
+    `MaxGold`, miner/flat income, or `GetGoldRate()` logic.
+    (2) **Change 2 — card costs ×3:** in `Docs/Data/cards.csv`, edit ONLY the `Cost` column (4th field, between `CardType`
+    and `MaxCopies`) for all 28 rows to these EXACT values: Footman 9, Archer 12, Knight 18, Miner 24, ArrowTower 15,
+    Wall 12, MilitiaMob 15, Pikeman 15, Sapper 15, Cavalry 21, Longbowman 18, Cleric 18, Ogre 36, BombTower 24,
+    BallistaTower 21, Barracks 30, DeepMine 45, Masons 24, SharpenedBlade 18, PlateArmor 18, SwiftBoots 15, WarBanner 24,
+    Fireball 21, FrostNova 18, Lightning 24, BattleCry 15, Pickpocket 18, CrystalTower 27. Change NOTHING else on any row
+    (MaxCopies/HP/Damage/DeckCount/GoldSteal/etc. stay).
+    (3) **Bot audit (MANDATORY):** in `SiegeBotController.h`, scale `AttackBankThreshold` `12` → **`36`** (comment: ×3 with
+    the 2026-07-24 cost triple = new Ogre cost; preserves the wave-growth bank gate). Correct the stale `SiegeBotController.cpp`
+    ~line 56 comment ("an Ogre needs 12 gold" → 36). LEAVE `BotDiscardCost=1` (fixed §3.6 swap fee, not a card cost) and
+    `TargetMinerCount=3` (a count). Then SWEEP the ENTIRE `SiegeBotController.{h,cpp}` for ANY other hardcoded gold/cost
+    numeric literal in a spend/bank/affordability heuristic; anything that assumed the OLD costs → scale ×3 or data-drive from
+    `Row->Cost`, with a comment. All existing `Row->Cost` affordability reads stay as-is (they auto-scale). PRESERVE the M3
+    ordered-rules `LogSiegeBot` decision trace verbatim (rule numbers + format). `handoffs/TASK-278.md` MUST list exactly what
+    the sweep found + every literal changed (or "none beyond AttackBankThreshold").
+    QA implied — shadow scan (no shadowing inherited reflected members), complete-type-include scan, confirm no other file
+    hardcodes a cost/rate. NOT IN SCOPE: compiling, DT_Cards reimport, Git, `StartingGold`. Post completion in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SiegePlayerState.h` (`BaseIncomeTickPeriod` 2→1),
+    `Docs/Data/cards.csv` (`Cost` column ONLY, 28 rows, values above),
+    `Source/GitClaudeUnrealTest/Siegebound/SiegeBotController.{h,cpp}` (`AttackBankThreshold` 12→36 + comment).
+    Consumed as-is, do NOT alter: `GoldPerTick`, `GoldTickInterval`, `StartingGold`, `MaxGold`, `GetGoldRate`,
+    `OvertimeIncomeMultiplier`, `BotDiscardCost`, `TargetMinerCount`, every `Row->Cost` read. No new identifiers → no
+    CONVENTIONS naming change.
+
+#### TASK-279 — Integration: compile + DT_Cards CSV-sync + PIE economy verify + branch commit + balance ledger (build)
+- assignee: build-master
+- status: done (BUILD-MASTER 2026-07-24 — economy balance integrated on m7.6-arena10x, commit `3c32e25` (no push). Step-0 PIE check idle (Jonathan NOT mid-playtest); editor closed clean + recompiled GREEN (`Result: Succeeded` ~16s). DT_Cards CSV-synced via `set_rows` (all 28 `Cost` cells) + saved (`is_dirty=false`) — readback Footman 9 / Ogre 36 / DeepMine 45 / CrystalTower 27, no other column drifted. PIE economy verify: (a) base income 1/s — CDO `BaseIncomeTickPeriod=1` + LogSiegeBot gold 10→36 in ~26 s / 18→36 in ~18 s; (b) tripled costs LIVE — DT readback + LogSiegeBot "Knight cost 18"; (c) bot banks to 36 → Knight ×2 (`AttackBankThreshold=36` CDO + trace). Clean PIE log (no errors/ensures/Accessed-None). Committed pathspecs: `SiegePlayerState.h`, `SiegeBotController.{h,cpp}`, `Docs/Data/cards.csv`, `Content/Data/DT_Cards.uasset` (LFS pointer verified) + board balance-ledger. DeckBuilderWidget (TASK-268) stayed parked/unstaged. No push. Feel = Jonathan W1 WATCH. Was: backlog.)
+- blocked-by: TASK-278 (qa-passed)
+- parallel-safe: no (single editor + compiler + Git)
+- spec: >
+    On `m7.6-arena10x`. (1) Compile TASK-278's C++ (editor bounce as usual — Jonathan's close/reopen grant covers this
+    session). GREEN, report time + `Result: Succeeded`. Failure → append errors to `qa/TASK-278.md`, route back to
+    gameplay-programmer (counts as a QA loop). (2) **DT_Cards CSV-sync:** re-sync `/Game/Data/DT_Cards` from
+    `Docs/Data/cards.csv` via the reference-safe `set_rows`/reimport path (handoffs/TASK-031 — preserve the GUID + import-source
+    linkage; do NOT recreate the asset). Verify the 28 rows' `Cost` match the CSV (spot-read Footman 9, Ogre 36, DeepMine 45,
+    CrystalTower 27) and that NO other column drifted. (3) **VERIFY branch-owned files untouched:** `git diff --stat` should
+    show ONLY `SiegePlayerState.h`, `Docs/Data/cards.csv`, `SiegeBotController.{h,cpp}`, `DT_Cards.uasset` (+ CONVENTIONS/board);
+    if `L_Arena.umap` / `DA_BattlefieldScatter` / `SiegePlayerController` / `CaptureZone` / `DeckBuilderWidget` changed
+    unexpectedly, STOP and report. (4) **PIE economy verify (machine-observable):** (a) base gold accrues 1/s — readback the
+    Blue player's gold over ~5 s at match start, no miners → +5; (b) HUD "+N/s" reads the rate (still +1/s, now truthful);
+    (c) card costs are tripled in-match (a play deducts the ×3 cost; cheapest = Footman 9); (d) bot — run a bot match, grep
+    `LogSiegeBot`, confirm Rule 4 banks to 36 and eventually fields expensive units (Knight 18 / Cavalry 21 / Ogre 36) rather
+    than perpetual Footman/Archer spam. (5) **BALANCE LEDGER note** (ties to the TASK-090 ledger + the Standing-backlog "Balance
+    pass" item) in `handoffs/TASK-279.md`: the new economy math (passive 2× / costs 3× → ~1.5× longer to afford at passive
+    rate), a best-effort re-measure of the undefended-Blue-castle kill time vs the bot (prior marks: 56.5 s / 71.3 s @ old
+    economy, ~33 s pre-economy-change — the bot rushes autonomously, so this is machine-observable without player input), and
+    whether the bot fielded heavy units under the new threshold. (6) **COMMIT on the branch** referencing TASK-278/279 + the
+    directive: `SiegePlayerState.h`, `cards.csv`, `SiegeBotController.{h,cpp}`, `DT_Cards.uasset`, CONVENTIONS/board.
+    **DO NOT PUSH.** Record the human WATCH (opening-economy feel — StartingGold 10 buys one Footman; bot wave-growth) for
+    Jonathan's W1 look. Leave the editor running + saved. Post results + hash in 🔧 Build & Git.
+- names: >
+    Branch `m7.6-arena10x` commit (NO push); `Source/GitClaudeUnrealTest/Siegebound/SiegePlayerState.h`,
+    `Docs/Data/cards.csv`, `Source/GitClaudeUnrealTest/Siegebound/SiegeBotController.{h,cpp}`, `/Game/Data/DT_Cards`.
+    Law: CLAUDE.md hard gates (PASS QA before commit, never push unasked), GDD §3.0 (cards.csv is the DT_Cards source of
+    truth), M7.6 branch-ownership.
+
+---
+
+## W1 ATTACK-command bugfix (decomposed 2026-07-24) — Standard units freeze just past midfield under ATTACK (TASK-280..281)
+
+**Playtest report (verbatim, Jonathan, 2026-07-24):** *"the attack button doesnt seem to work very well, when the units are under the attack command they will move up, but once they get a little bit past the midpoint, they freeze and stop moving forward, I'm not sure why. The defend and hold commands seem to work fine"*
+
+**W1-SCOPED, NOT held. This is a W1-BLOCKER for the ATTACK stance only** (DEFEND/HOLD are confirmed-good by Jonathan). Same lane as the rest of the W1 work: develops on `m7.6-arena10x`, folds into the W1 build. The Shield Wall command feature shipped at `70487d5` (TASK-273..277) with this latent ATTACK bug; DEFEND/HOLD are unaffected. No new asset/class identifiers expected → NO CONVENTIONS naming additions up front; if the fix introduces a durable new tunable UPROPERTY, the manager folds a one-line entry into CONVENTIONS "Unit commands (Shield Wall stances)…" at integration (see naming note in TASK-280).
+
+**DIAGNOSE-FIRST MANDATE (binding — do NOT fix on faith):** the recent health-bar saga proved confident static hypotheses mislead. TASK-280 MUST reproduce, instrument, and CONFIRM the actual runtime mechanism BEFORE changing any logic. A fix committed without runtime evidence of the root cause is a QA FAIL by construction.
+
+**Orchestrator code findings (static read — handed to the programmer, NOT yet confirmed):**
+- The ATTACK branch is `ASummonedUnit::UpdateStateStandardCommanded`, the `case ESiegeUnitCommand::Attack` body at `SummonedUnit.cpp:1279-1322`. It is FUNCTIONALLY IDENTICAL to the legacy Standard body (`SummonedUnit.cpp:1064-1102`) EXCEPT ONE thing — the no-aggro march goal:
+  - legacy (works — base game / DEFEND / HOLD fall-through): `Goal = FindNearestEnemyCastle()` — a STABLE actor (~X +25,000).
+  - ATTACK (`SummonedUnit.cpp:1297-1303`): `Goal = FindNearestEnemyInSpawnBox(EnemyCastle) ? that : EnemyCastleActor` — `FindNearestEnemyInSpawnBox` (`SummonedUnit.cpp:1401-1451`) returns the nearest ENEMY unit/building inside the ENEMY castle's spawn box, RE-EVALUATED EVERY TICK.
+- `FindNearestEnemyInSpawnBox` + `ACastle::IsPointInSpawnBox` (`Castle.cpp:364-371`, box centered on the enemy castle, half-extent (840,840)) are null-safe, correctly team-filtered, and exclude the castle itself on a static read.
+- The re-path gate is `EnterAdvance` (`SummonedUnit.cpp:1790`): `const bool bGoalChanged = (CurrentMoveGoal != Goal); if (bGoalChanged || MoveStatus==Idle) { MoveToActor(...); }` — so a goal-ACTOR pointer that changes every tick re-issues `MoveToActor` every tick → path restart → stutter → effective freeze. `FindNearestEnemyInSpawnBox` is anchored on the FAR enemy-castle box, NOT the marching unit — so it can return a jittering bot pawn even while the player unit is at MIDFIELD.
+
+**Leading hypothesis (MUST be confirmed at runtime, NOT fixed on faith):** Goal jitter. Behavior splits cleanly by goal STABILITY — DEFEND (fixed own castle) works, HOLD (fixed clicked point) works, ATTACK (an every-tick-recomputed "nearest enemy in the enemy box", plus `AcquireTarget` flicker where the two armies meet just past midfield) freezes. After the TASK-265 bot-spawn fix the bot keeps units INSIDE its own spawn box, so `FindNearestEnemyInSpawnBox` frequently returns a bot pawn, and "nearest" flips tick-to-tick as bot units mill → `Goal` changes almost every tick → `EnterAdvance` re-issues the path every tick → stutter/freeze. Legacy never shows this because its fallback is the STABLE castle. HYPOTHESIS ONLY — demand runtime proof.
+
+**Dispatch shape:** TASK-280 (gameplay-programmer: instrument → confirm → fix, file-only, no compile/Git) → QA (status-flow gate; QA reads the report WITH the attached runtime evidence — a fix whose root-cause claim is not backed by the captured logs is a FAIL) → TASK-281 (build-master: compile + PIE ATTACK full-field-march verification both WITH and WITHOUT enemy presence + branch commit, NO push). QA is the implied gate between them (not a numbered task).
+
+#### TASK-280 — Diagnose (instrument first) + fix the ATTACK march-freeze (C++: `ASummonedUnit`, maybe `EnterAdvance`)
+- assignee: gameplay-programmer
+- status: done (INTEGRATED at TASK-281, build-master 2026-07-24, commit `0295f75` on m7.6-arena10x — compile GREEN, `EnemyBaseEngageRadius=3500` CDO-confirmed, clean PIE load; `EnemyBaseEngageRadius` folded into CONVENTIONS "Unit commands". --- Prior QA 2026-07-24 — PASS, 0 blockers / 0 warns / 1 wording NIT / 3 TASK-281 WATCH, report `qa/TASK-280.md`. ROOT CAUSE CONFIRMED (evidence-sufficient, verified at source): ATTACK's no-aggro goal `FindNearestEnemyInSpawnBox() ?? castle` flips its nearest-in-box result every 0.25s tick when the bot's spawn box is populated → `EnterAdvance:1832` `bGoalChanged` re-issues a FULL-FIELD `MoveToActor` every tick that never completes on the 10× arena = freeze (NEW to the widened map). Empty-box path proven byte-identical to the legacy `EnterAdvance(FindNearestEnemyCastle())` march (captured healthy full-field +25000→−24520); navmesh disproven (bounds cover both halves). FIX: gate box-defender preference by proximity — prefer a box defender only within new `EnemyBaseEngageRadius` (EditDefaultsOnly, 3500, FLAGGED tunable) of the enemy castle, else march the stable castle; confined to the ATTACK no-aggro block. Non-regression verified: legacy body byte-identical, DEFEND/HOLD/`EnterAdvance`/`FindNearestEnemyInSpawnBox`/Castle/bot UNTOUCHED. Geometry: 3500 >> the 840 box, so "clear box defenders before the castle" holds close-in; residual short-path re-issue harmless. Live Blue-ATTACK T-key capture = TASK-281 WATCH, not a gate. Fold `EnemyBaseEngageRadius` into CONVENTIONS "Unit commands" at integration.)
+- blocked-by: none — **dispatchable NOW**
+- parallel-safe: yes (owns `SummonedUnit.{h,cpp}`, and possibly `EnterAdvance` within it — already branch-frozen for W1; no other OPEN task touches these files; disjoint from L_Arena.umap / DA_BattlefieldScatter / SiegeBotController / SiegePlayerController / CaptureZone / DeckBuilderWidget)
+- spec: >
+    On `m7.6-arena10x`. FILE-ONLY — NO compile, NO Git (TASK-281 owns those). Fix the ATTACK stance so Standard PLAYER (Blue)
+    units march the FULL field to the enemy base instead of freezing just past midfield. DEFEND/HOLD are confirmed-good and
+    MUST NOT be disturbed. **This task is DIAGNOSE-FIRST — the mechanism is CONFIRMED at runtime before any logic changes.**
+    (1) **REPRODUCE + INSTRUMENT FIRST.** Add TEMPORARY `UE_LOG` (a dedicated log category or a clearly-marked temp block —
+    something you will strip/demote before ready-for-qa) on an ATTACK-commanded Standard Blue unit, once per state tick,
+    printing: the unit name, its world position (esp. X so "past the midpoint" is locatable — castles are at ±25,000, midfield
+    X=0), `State`, `CurrentTarget` (name or null), the COMPUTED `Goal` (name), whether `Goal` CHANGED since the previous tick
+    (the exact thing `EnterAdvance`'s `bGoalChanged` tests), and the `AAIController` MoveStatus (`GetMoveStatus()`). Run PIE,
+    issue ATTACK (or drive the command state directly if hardware input can't be injected headless — command state is not a
+    UPROPERTY; note honestly what you could/couldn't script), let units march past midfield, and READ `Saved/Logs/`. CONFIRM
+    the actual freeze mechanism from the log BEFORE touching logic.
+    (2) **THE DECISIVE CONTROLLED TEST — run BOTH conditions and record both:** issue ATTACK with the enemy half (a) POPULATED
+    with bot units in/near the enemy spawn box, and (b) EMPTY of any enemy unit/building inside the enemy spawn box.
+    • If units freeze past midfield EVEN with an EMPTY enemy box → `FindNearestEnemyInSpawnBox` returned null → `Goal` was the
+      STABLE enemy castle → the goal-jitter hypothesis is WRONG; the cause is elsewhere (navmesh/`MoveToActor` partial-path at
+      the enemy-half boundary on the widened field, `bAllowPartialPath` ending the path short, a scatter obstacle, or something
+      the static read missed) — chase THAT.
+    • If units freeze ONLY when bot units are present in/near the box → goal-jitter is supported (the `Goal` actor pointer flips
+      tick-to-tick between box defenders and/or acquired targets → `EnterAdvance` re-issues `MoveToActor` every tick).
+    The two conditions tell you WHERE to look — do NOT skip either.
+    (3) **FIX that preserves intent + does NOT regress DEFEND/HOLD/legacy.** ATTACK must STILL "clear enemy units/buildings in
+    the enemy spawn box before the castle," but the long mid-field march must be STABLE. Exact shape is YOUR call AFTER the
+    diagnosis; likely candidates (pick per the confirmed cause, combine as needed):
+      • only switch the no-aggro goal to a box-defender when the unit is actually NEAR the enemy base (march to the STABLE
+        enemy castle otherwise) — so midfield marching always targets the stable castle;
+      • and/or STABILIZE the goal / the re-path so `EnterAdvance` does not re-issue `MoveToActor` every tick when the goal is
+        essentially the same direction or the unit is still making forward progress (e.g. tolerate a co-directional goal-actor
+        swap, or hysteresis on goal switching);
+      • and/or if the cause is navmesh/partial-path, address the pathing directly (do NOT paper over it with a goal change).
+    DO NOT touch: the DEFEND and HOLD branches (fixed-goal, working), the legacy Standard body at `SummonedUnit.cpp:1064-1102`
+    (must stay byte-identical when the command gate is false — bot/Red, miners/None, Siege/Support, pre-first-command all fall
+    through it), `Castle`'s box helper beyond what the fix strictly needs, the capture-zone code, and the bot. **If the fix
+    lands in shared `EnterAdvance`, it MUST be scoped so legacy marching behavior is effectively unchanged** (any change to how
+    ALL marching units re-path is a WATCH — flag it explicitly in the handoff and keep it a no-op for the legacy fall-through).
+    (4) **BEFORE ready-for-qa:** strip the temporary diagnostic logs OR demote them to a dedicated `Verbose`-level category
+    (no per-tick spam at default verbosity). Keep any log a genuine, permanent, low-noise diagnostic only if it earns its place.
+    (5) **HANDOFF (`handoffs/TASK-280.md`) MUST contain:** the captured log evidence for BOTH test conditions (2), the
+    CONFIRMED mechanism (with the log lines that prove it), the chosen fix shape + why it follows from the evidence, an explicit
+    statement that DEFEND / HOLD / the legacy body / the bot are unchanged (and — if `EnterAdvance` was touched — proof the
+    legacy re-path is a no-op delta), and any new identifier introduced (see names). QA implied (shadow scan — no shadow of
+    inherited reflected members; complete-type include scan; null-safety on all lookups; confirm the legacy/DEFEND/HOLD/bot
+    paths are untouched) and QA reads this report WITH the runtime evidence. NOT IN SCOPE: input assets, the HUD, Castle logic
+    changes beyond the fix's need, the bot, compiling, Git. Post in ⚙️ Dev & QA (dispatch + progress + ready-for-qa).
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SummonedUnit.{h,cpp}` (the ATTACK branch in `UpdateStateStandardCommanded`, and/or
+    `EnterAdvance` / `FindNearestEnemyInSpawnBox` as the diagnosis dictates). Consumed as-is: `ESiegeUnitCommand`,
+    `FindNearestEnemyCastle`, `FindNearestEnemyInSpawnBox`, `AcquireTarget`, `EnterAdvance`, `EnterAttack`, `EnterIdle`,
+    `CurrentMoveGoal`, `ACastle::IsPointInSpawnBox`, `StructureMoveAcceptanceRadius`. **Minimize new identifiers.** IF the fix
+    gates the box-defender goal by proximity to the enemy base, use the manager-sanctioned tunable name
+    `EnemyBaseEngageRadius` (`float`, `UPROPERTY(EditDefaultsOnly)`, ClampMin 0, doc comment citing this task + FLAGGED-tunable
+    note); ANY durable new tunable follows the existing SummonedUnit UPROPERTY pattern and is RECORDED in the handoff — the
+    manager folds a one-line entry into CONVENTIONS "Unit commands (Shield Wall stances)…" at integration (do NOT edit
+    CONVENTIONS in this task). A goal-stabilization fix that needs NO new member is preferred where it is equally correct.
+    Law: CONVENTIONS "Unit commands (Shield Wall stances) — ATTACK / HOLD / DEFEND (W1, 2026-07-23)".
+
+#### TASK-281 — Integration: compile + PIE ATTACK full-field-march verify (with/without enemy) + branch commit (build)
+- assignee: build-master
+- status: done (BUILD-MASTER 2026-07-24 — ATTACK march-freeze fix integrated on m7.6-arena10x, commit `0295f75` (no push). Step-0 PIE check idle (Jonathan NOT mid-playtest); editor closed clean + recompiled GREEN (~14s); relaunched on L_Arena. **GIT-HYGIENE VERDICT:** the QA-flagged files (`SiegeBotController`/`SiegeGameMode`/`SiegePlayerController`/`CaptureZone`) are NOT modified — all clean/committed (SiegePlayerController @70487d5, SiegeBotController @3c32e25, CaptureZone/SiegeGameMode in the base); the QA warning reflected a stale pre-commit snapshot (my TASK-277/279 commits already integrated the genuinely in-flight ones). Only unexpected modified code = `DeckBuilderWidget.{h,cpp}` (TASK-268 parked, left UNSTAGED). TASK-280 diff CONFINED to `SummonedUnit.{h,cpp}` (verified: ATTACK no-aggro block gate + new `EnemyBaseEngageRadius` UPROPERTY, nothing else). PIE: `EnemyBaseEngageRadius=3500` CDO-confirmed; build loads/runs a clean match (no errors/ensures/Accessed-None); bot marches normally. Live Blue-ATTACK T-key full-field march (populated + empty Red box), close-in stutter inside 3500, and the DEFEND/HOLD/Siege/Support/miner/bot regression pass = Jonathan W1 WATCH (no blind input injection into his active desktop — QA proves the fix by equivalence). Committed: `SummonedUnit.{h,cpp}`, CONVENTIONS (`EnemyBaseEngageRadius` line), board + `handoffs/TASK-280.md` + `qa/TASK-280.md`. No push. Was: backlog.)
+- blocked-by: TASK-280 (qa-passed)
+- parallel-safe: no (single editor + compiler + Git)
+- spec: >
+    On `m7.6-arena10x`. (1) Compile TASK-280's C++ (editor bounce as usual — Jonathan's close/reopen grant covers this
+    session). GREEN, report time + `Result: Succeeded`. Failure → append errors to `qa/TASK-280.md`, route back to
+    gameplay-programmer (counts as a QA loop). (2) **VERIFY branch-owned files untouched:** `git diff --stat` should show ONLY
+    `SummonedUnit.{h,cpp}` (+ board/CONVENTIONS if the manager folded a tunable line); if `L_Arena.umap` /
+    `DA_BattlefieldScatter` / `SiegeBotController` / `SiegePlayerController` / `Castle.{h,cpp}` / `CaptureZone` /
+    `DeckBuilderWidget` changed unexpectedly, STOP and report. (3) **PIE ATTACK full-field-march verify — THE fix criterion,
+    run BOTH conditions:** spawn player Standard (Blue) units, put them under ATTACK, and confirm they march the FULL field and
+    reach the enemy base (Castle_Red / its spawn box), NO freeze past midfield — (a) WITH enemy units/buildings present in/near
+    the Red spawn box (units clear the box defenders, then the castle), and (b) WITHOUT any enemy in the Red spawn box (units
+    march straight to Castle_Red). Best-effort + honest about what needs Jonathan's hands (real T-key input on an unlocked
+    desktop; command state is non-UPROPERTY + no headless input injection — drive it however the source allows and say plainly
+    what was machine-verified vs. structural). Also confirm DEFEND and HOLD still behave (regression check — they were the
+    working stances), and that Siege/Support/miners/bot units are unaffected. (4) **COMMIT on the branch** referencing
+    TASK-280/281 + Jonathan's report. **DO NOT PUSH.** (5) Record the human WATCH (ATTACK units cross the full 10× field and
+    reach the enemy base with real T-key input; the box-defender-first priority still reads) for Jonathan's W1 look. Leave the
+    editor running + saved. Post results + hash in 🔧 Build & Git.
+- names: >
+    Branch `m7.6-arena10x` commit (NO push); `Source/GitClaudeUnrealTest/Siegebound/SummonedUnit.{h,cpp}` (+ board/CONVENTIONS
+    if a tunable line was folded in). Law: CLAUDE.md hard gates (PASS QA before commit, never push unasked), M7.6
+    branch-ownership, CONVENTIONS "Unit commands (Shield Wall stances)…".
+
+---
+
+## W1 ATTACK-command bugfix 2 (decomposed 2026-07-24) — ATTACK units halt JUST SHORT of the enemy castle (TASK-282..283)
+
+**Jonathan's report (post-W1 sign-off, deferred residual — 2026-07-24):** after the TASK-280/281 mid-field march-freeze fix, under the ATTACK command *"the units now move closer to the castle but they stop just short of it."* The mid-field FREEZE is gone; the NEW residual is a FINAL-APPROACH HALT — ATTACK-commanded Standard Blue units reach the vicinity of Castle_Red but stop just short instead of attacking it. **Jonathan APPROVED W1 despite this (TASK-219) and said it "can resolve later" — so this is a DEFERRED, scheduled-for-overnight follow-up, NOT a W1 blocker.**
+
+**Same lane as the rest of the W1 work:** develops on `m7.6-arena10x`, folds into the W1 build. Owns `SummonedUnit.{h,cpp}` (already branch-frozen; the same file TASK-280/281 fixed). No new asset/class identifiers expected up front → NO CONVENTIONS naming additions issued in advance; if the fix introduces a durable new tunable UPROPERTY, the manager folds a one-line entry into CONVENTIONS "Unit commands (Shield Wall stances)…" at integration.
+
+**DIAGNOSE-FIRST MANDATE (binding — do NOT fix on faith; the TASK-280 precedent + the health-bar saga):** TASK-282 MUST reproduce, instrument, and CONFIRM the actual runtime mechanism — WHY the unit stops at distance X instead of entering `EnterAttack` on the castle — BEFORE changing any logic. A fix committed without runtime evidence of the root cause is a QA FAIL by construction.
+
+**ATTACK-SPECIFIC (load-bearing clue):** the LEGACY (base-game) Standard body DOES destroy the enemy castle — legacy units march to `FindNearestEnemyCastle()` and enter `EnterAttack` on arrival. DEFEND/HOLD and the legacy fall-through are confirmed-good; only the ATTACK stance halts short. The programmer should DIRECTLY COMPARE the ATTACK final-approach to the LEGACY final-approach and find the diverging line in the last stretch.
+
+**Orchestrator hypotheses (static, UNCONFIRMED — hand to the programmer, demand runtime proof):**
+- (a) **Standoff/acceptance distance > `AttackRange`.** `EnterAdvance` toward the enemy castle stops at an acceptance/standoff radius (the `MoveToActor` AcceptanceRadius / `StructureMoveAcceptanceRadius`) that EXCEEDS the castle `AttackRange`, so the unit arrives, stops at the standoff point, and the range check for `EnterAttack` on the castle never passes. Compare the ATTACK acceptance radius to the legacy one and to `AttackRange`.
+- (b) **The enemy CASTLE is never picked up as `CurrentTarget`.** `AcquireTarget` buckets non-pawns as "BestOther" — verify the enemy castle is actually acquired within `AggroRadius` from the stop position, and that `AggroRadius` REACHES the castle from wherever the unit halts. The TASK-280 `EnemyBaseEngageRadius=3500` gate makes the unit prefer the STABLE castle-as-goal until within 3500 of it — confirm the handoff from "march to castle actor" to "acquire + `EnterAttack` the castle" actually fires (the unit may sit in the seam: past the march-goal acceptance radius but the castle not yet an acquired target).
+- (c) **The new `EnemyBaseEngageRadius=3500` box-defender gate interacting with the final approach.** Within 3500 the no-aggro goal switches to a box defender; if there is no live box defender (empty Red box) or the box-defender lookup returns null/jitters right at the boundary, the goal/target may thrash or resolve to a point the unit is already at → it stops without attacking. Run BOTH conditions (WITH vs WITHOUT enemy in the Red box — the TASK-280 controlled-test discipline).
+
+**Dispatch shape:** TASK-282 (gameplay-programmer: instrument → confirm → fix, file-only, no compile/Git) → QA (implied status-flow gate; QA reads the report WITH the attached runtime evidence — a root-cause claim not backed by captured logs is a FAIL) → TASK-283 (build-master: compile + PIE ATTACK reach-AND-attack verify [with/without enemy in the Red box] + branch commit, NO push; TASK-283 IS the overnight `SummonedUnit`-touching integration and folds in any concurrent SummonedUnit work). QA is the implied gate between them (not a numbered task).
+
+#### TASK-282 — Diagnose (instrument first) + fix the ATTACK final-approach halt (C++: `ASummonedUnit`; likely `EnterAttack` / `AcquireTarget` / `EnterAdvance` acceptance)
+- assignee: gameplay-programmer
+- status: done (INTEGRATED at TASK-283 batch, build-master 2026-07-24, commit on m7.6-arena10x — compile GREEN, clean PIE load; CONVENTIONS box-first/`EnemyBaseEngageRadius` wording folded out. ⚠ DESIGN CHANGE (retires TASK-275 box-defenders-FIRST) still flagged for Jonathan's morning call. --- Prior QA 2026-07-24 PASS, 0 blockers, `qa/TASK-282.md`. Cause CONFIRMED (Simulate-In-Editor: a full-field marcher reached+destroyed Castle_Red, isolating the halt to the box-substitution): within EnemyBaseEngageRadius(3500) `FindNearestEnemyInSpawnBox` flipped every 0.25s tick → EnterAdvance re-path thrash at the ring + castle never became the goal → EnterAttack never fired. FIX: removed the box-defender substitution → ATTACK no-aggro goal = STABLE enemy castle (byte-identical to legacy castle-kill); removed the now-dead `EnemyBaseEngageRadius` UPROPERTY + `FindNearestEnemyInSpawnBox` helper. Clean-removal verified (0 Source/ + 0 Content/ referrers; no BP serializes the removed UPROPERTY). Non-regression: legacy/DEFEND/HOLD/EnterAdvance/EnterAttack/AcquireTarget/bot untouched; TASK-280 anti-freeze subsumed. ⚠ DESIGN CHANGE flagged for Jonathan's morning call: retires TASK-275 "box-defenders FIRST" (incompatible w/ a continuously-respawning bot box; defenders still fought via aggro-600). Awaits batch build TASK-283 w/ TASK-267. Integration TODO: fold `EnemyBaseEngageRadius`/box-first out of CONVENTIONS "Unit commands".)
+- blocked-by: none (TASK-280/281 done @ `0295f75`; sole owner of `SummonedUnit.{h,cpp}` this pass — the file is branch-frozen for W1, no other OPEN task touches it. ⚠ FILE-OVERLAP NOTE: the PLANNED Phase-2 URO task TASK-285 also edits `SummonedUnit.{h,cpp}`; it is `planned — DO NOT DISPATCH`, so no concurrency now — if Jonathan green-lights Phase 2 while this is in flight, they serialize on the file, TASK-282 first.)
+- parallel-safe: yes (disjoint from L_Arena.umap / DA_BattlefieldScatter / SiegeBotController / SiegePlayerController / CaptureZone / DeckBuilderWidget; the planned Phase-1 TASK-284 owns BattlefieldScatter/ScatterConfig, not this file)
+- spec: >
+    On `m7.6-arena10x`. FILE-ONLY — NO compile, NO Git (TASK-283 owns those). Make ATTACK-commanded Standard PLAYER (Blue)
+    units march the FULL field AND actually ATTACK the enemy castle (Castle_Red) on arrival — not halt just short. DEFEND/HOLD
+    and the legacy body are confirmed-good and MUST NOT be disturbed. **DIAGNOSE-FIRST — confirm the mechanism at runtime before
+    any logic change.**
+    (1) **REPRODUCE + INSTRUMENT FIRST.** Add TEMPORARY per-state-tick `UE_LOG` (dedicated/`Verbose` category — stripped or
+    demoted before ready-for-qa) on an ATTACK-commanded Standard Blue unit near the enemy base, printing: unit name + world
+    position (esp. X — castles at ±25,000), `State`, `CurrentTarget` (name/null), the computed `Goal` (name), the 2D distance
+    to Castle_Red, the ACCEPTANCE/standoff radius actually in force (`MoveToActor` AcceptanceRadius / `StructureMoveAcceptanceRadius`),
+    the castle `AttackRange`, and `GetMoveStatus()`. Run PIE, drive the ATTACK stance, let a unit reach the enemy base, read
+    `Saved/Logs/`, and CONFIRM from the log WHY it stops (arrived-at-standoff-but-out-of-`AttackRange`? castle never becomes
+    `CurrentTarget`? goal/target thrash at the 3500 boundary?) BEFORE touching logic.
+    (2) **THE CONTROLLED TEST — run BOTH and record both:** issue ATTACK with the Red spawn box (a) POPULATED with bot
+    units/buildings and (b) EMPTY of any enemy in/near the box. This isolates whether the halt is the box-defender gate
+    (hypothesis c) or the plain castle final-approach (hypotheses a/b). DIRECTLY COMPARE the ATTACK final-approach to the
+    LEGACY Standard body (`SummonedUnit.cpp:1064-1102`), which DOES reach + destroy the castle — find the diverging line.
+    (3) **FIX per the confirmed cause, preserving intent, without regressing DEFEND/HOLD/legacy.** Likely candidates (pick per
+    the evidence, combine as needed): bring the ATTACK march acceptance radius in line with `AttackRange` so `EnterAttack`
+    triggers on arrival; and/or ensure the castle is acquired as `CurrentTarget` within range at the stop point; and/or fix the
+    3500-boundary goal/target thrash. DO NOT touch the DEFEND/HOLD branches or the legacy body (must stay byte-identical when
+    the command gate is false). If the fix lands in shared `EnterAdvance`/`EnterAttack`/`AcquireTarget`, scope it so legacy
+    marching + attacking is unchanged (any change to how ALL units re-path/attack is a WATCH — flag it, keep it a no-op for the
+    legacy fall-through). **Minimize new identifiers.**
+    (4) **BEFORE ready-for-qa:** strip the temporary diagnostic logs OR demote to a dedicated `Verbose` category (no per-tick
+    spam at default verbosity).
+    (5) **HANDOFF (`handoffs/TASK-282.md`) MUST contain:** the captured log evidence for BOTH test conditions, the CONFIRMED
+    mechanism (with the proving log lines), the legacy-vs-ATTACK divergence you found, the chosen fix shape + why it follows
+    from the evidence, and an explicit statement that DEFEND / HOLD / the legacy body / the bot are unchanged (and — if a
+    shared helper was touched — proof the legacy path is a no-op delta). QA implied (shadow scan, complete-type include scan,
+    null-safety, confirm legacy/DEFEND/HOLD/bot untouched); QA reads this report WITH the runtime evidence. NOT IN SCOPE: input
+    assets, HUD, Castle logic beyond the fix's need, the bot, compiling, Git. Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SummonedUnit.{h,cpp}` (the ATTACK branch in `UpdateStateStandardCommanded`, plus
+    `EnterAttack` / `EnterAdvance` / `AcquireTarget` / `FindNearestEnemyInSpawnBox` / `FindNearestEnemyCastle` /
+    `EnemyBaseEngageRadius` / `StructureMoveAcceptanceRadius` as the diagnosis dictates). Minimize new identifiers; any durable
+    new tunable follows the existing SummonedUnit UPROPERTY pattern (EditDefaultsOnly, ClampMin, doc comment citing this task +
+    FLAGGED-tunable note) and is RECORDED in the handoff — the manager folds a one-line entry into CONVENTIONS "Unit commands
+    (Shield Wall stances)…" at integration (do NOT edit CONVENTIONS in this task). Law: CONVENTIONS "Unit commands (Shield Wall
+    stances) — ATTACK / HOLD / DEFEND (W1, 2026-07-23)".
+
+#### TASK-283 — Integration: compile + PIE ATTACK reach-and-attack verify (with/without enemy) + branch commit (build)
+- assignee: build-master
+- status: done (BUILD-MASTER 2026-07-24 — BATCHED integration of TASK-282 + TASK-267 on m7.6-arena10x, commit `5fb8058` (no push). Overnight autonomous (Jonathan asleep): Step-0 PIE idle; SAVE-ALL (`save_assets([])`=true) THEN graceful close → editor exited cleanly, NO Save-Content dialog wedge, NO force-kill needed. Recompiled GREEN (~16s); relaunched on L_Arena. PIE: clean load (no errors/ensures/Accessed-None). TASK-267: bot reached + fired Rule 4 (Knight, gold 36→18) — rules 1/2a/2b/3 fell THROUGH, no ladder stall (Rule 2 Economy did not fire in the ~30 s window — attack-bank priority + ×3 economy costs, NOT a stall). TASK-282: ATTACK now = stable-castle march (byte-identical to legacy castle-kill); the live full-field march + EnterAttack on Castle_Red = Jonathan WATCH (QA equivalence proof). CONVENTIONS box-first/`EnemyBaseEngageRadius` wording folded out. Committed: `SummonedUnit.{h,cpp}`, `SiegeBotController.{h,cpp}`, `CONVENTIONS.md`, board + `handoffs/qa` for TASK-267+282. DeckBuilderWidget (TASK-268) stayed parked/unstaged. No push. ⚠ TASK-282 retires the TASK-275 box-first spec — flagged for Jonathan's morning design call. Was: backlog.)
+- blocked-by: TASK-282 (qa-passed)
+- parallel-safe: no (single editor + compiler + Git)
+- spec: >
+    On `m7.6-arena10x` — **THE overnight `SummonedUnit`-touching integration** (folds in TASK-282 and any other SummonedUnit
+    work that lands the same window). (1) COMPILE TASK-282's C++ (editor bounce as usual — Jonathan's close/reopen grant covers
+    the session). GREEN, report time + `Result: Succeeded`. Failure → append errors to `qa/TASK-282.md`, route back to
+    gameplay-programmer (counts as a QA loop). (2) **VERIFY branch-owned files untouched:** `git diff --stat` should show ONLY
+    `SummonedUnit.{h,cpp}` (+ board/CONVENTIONS if the manager folded a tunable line); if `L_Arena.umap` / `DA_BattlefieldScatter`
+    / `SiegeBotController` / `SiegePlayerController` / `Castle.{h,cpp}` / `CaptureZone` / `DeckBuilderWidget` changed
+    unexpectedly, STOP and report. (3) **PIE ATTACK reach-AND-ATTACK verify — THE fix criterion, run BOTH conditions:** put
+    Blue Standard units under ATTACK and confirm they march the FULL field AND enter `EnterAttack` on Castle_Red (no halt short)
+    — (a) WITH enemy units/buildings in/near the Red spawn box, and (b) WITHOUT any enemy in the Red spawn box. Best-effort +
+    honest about what needs Jonathan's real T-key input on an unlocked desktop (command state is non-UPROPERTY + no headless input
+    injection — prove by equivalence where hands are needed). Regression-check DEFEND/HOLD + Siege/Support/miners/bot. (4) COMMIT
+    on the branch referencing TASK-282/283 + Jonathan's report. **DO NOT PUSH.** (5) Record the human WATCH (ATTACK units cross
+    the full 10× field and ATTACK the enemy castle with real T-key input) for Jonathan. Leave the editor running + saved. Post
+    results + hash in 🔧 Build & Git.
+- names: >
+    Branch `m7.6-arena10x` commit (NO push); `Source/GitClaudeUnrealTest/Siegebound/SummonedUnit.{h,cpp}` (+ board/CONVENTIONS
+    if a tunable line was folded in). Law: CLAUDE.md hard gates (PASS QA before commit, never push unasked), M7.6
+    branch-ownership, CONVENTIONS "Unit commands (Shield Wall stances)…".
+
+---
+
 ## M7.6 tasks (decomposed 2026-07-18) — Arena 10× scale-up + LOD/perf (Phase 0 + W1; later phases one-liners)
 
 **Authorization:** Jonathan's 2026-07-18 10× MAP SCALE-UP + LOD/PERF approval — plan `C:\Users\wesel\.claude\plans\i-am-a-bit-sunny-bird.md` (READ IT — it carries the exact target-number tables §1, LOD architecture §2, scatter budgets §3, POI/vista §4, risks §6; the board does not duplicate every number). Hard gates stand: QA on every C++/tooling/config change; nothing committed without PASS QA (code) / completed integration; editor work needs MCP up (park + report, never fake); NOTHING PUSHED; merge to main ONLY at the Phase-6 merge gate with Jonathan's sign-off.
@@ -720,6 +1377,428 @@ Four non-gated items. State: editor CLOSED; tree checked out on `m7.6-arena10x` 
     DA_BattlefieldScatter hill layer (scale min/max, count/bands) + NavMeshBoundsVolume Z only if bumped. Law: CONVENTIONS
     "W1-PREP additions" (nav-Z cap), "Climbable terrain (M6.6)" (≤30° faces).
 
+### W1-PREP appendix 2 (2026-07-22) — MIRRORED DEPLETING MINES + TEAM-LIGHTING REMOVAL (TASK-253..258; Jonathan-approved directive)
+
+Plan-of-record: `C:\Users\wesel\.claude\plans\i-am-a-bit-sunny-bird.md` (mines version — READ IT; load-bearing numbers are ALSO copied into CONVENTIONS "Mirrored depleting mines" because the plan file gets overwritten). **Jonathan's SEVEN locked rulings:** 3/side · castle nodes removed · exclusive occupancy · depletion @300 reserve · mine-lock ships-as-is (playtest watch) · corridor mines ALLOWED (high-risk gold) · hill parity either-side⇒both. **LANE LAW AMENDED (manager ruling, enacted in CONVENTIONS):** branch ownership temporarily extends to GoldNode.h/.cpp, MinerUnit.h/.cpp, SiegeBotController.h/.cpp, M_GoldGlow.uasset — FROZEN on main until the Phase-6 merge; the merge inherits the whole feature; SiegePlayerState stays main-lane untouched. **PLAYTEST WATCHES (recorded):** mine-lock dominance; bot cross-field miner walks late-game (one-line own-half bias = the lever); all-depleted pacing (raise reserve to 450 FIRST if matches stall); post-match drain quirk accepted (resets on Play-Again). **DOCS DEBT:** GDD §3.3/§5 as-built amendment rides the next docs pass; CONVENTIONS:89 gold-glow note reconciles at merge. TASK-258 is THE W1 BUILD (hills + mines + no team lighting) — TASK-219's verdict is the acceptance gate for the whole batch.
+
+#### TASK-253 — [T-A] AGoldNode → neutral depleting claimable mine (C++, branch) [DISPATCH FIRST]
+- assignee: gameplay-programmer
+- status: done (2026-07-23 — INTEGRATED in THE W1 BUILD, branch commit bfa2ecf; batch compiled 0 err/0 warn, 9-point PIE + float-fix suite verified per handoffs/TASK-258.md) ← was: qa-passed (2026-07-22 — qa/TASK-253-qa.md PASS 0 blockers 0 warns; laws byte-faithful ×6, claim atomicity wedge-free (phantom ≤1s self-heal), Deplete re-entrancy structurally safe, all 5 deviations adjudicated ACCEPT (constexpr cadence = the STRONGER law reading), pinned contracts grep-verified exhaustive. 2 nits → merge-gate cross-note pairs the cadence; tier-2 phantom transient noted for 254's review. 254/255/256 clear to build)
+- blocked-by: none
+- parallel-safe: yes (GoldNode.{h,cpp} only)
+- spec: >
+    Per the plan §AGoldNode: REMOVE Team/GetTeam (all 3 callers rewritten in-feature — flag each); KEEP the standing laws
+    (NoCollision, never affects nav, not damageable, no ITeamAgent, soft SM_GoldNode resolve). ADD: GoldReserve (default 300)
+    + latched initial; DrainPerMinerPerSecond=1 (PAIRED-TUNABLE LAW ≡ ASiegePlayerState::MinerGoldPerTick — cross-note both
+    headers); TOptional<ETeamId> OccupyingTeam; arrived-miner weak-ptr registry; bDepleted; 1 s drain timer while occupied
+    (reserve −= n×1/s; at 0 → evict all via NotifyMineDepleted + broadcast + gauge dims). API: InitMine(Reserve),
+    CanTeamMine, TryRegisterArrivedMiner (atomic claim on 0→1), UnregisterArrivedMiner (release on last), static
+    FindBestMineFor(World, Team, From) — THE single finder (tier-1 nearest CanTeamMine; tier-2 nearest enemy-occupied
+    non-depleted wait target; null = all depleted). Gauge: lazy MID on slot-0 M_GoldGlow driving GlowIntensity
+    Lerp(0.05,1.0,Reserve/Initial) — intensity modulation, never material replacement. Delegates OnMineDepleted/
+    OnMineReserveChanged (HUD backlog hook — nothing binds this pass). ACCEPTANCE: API complete + null-safe; laws held;
+    compiles deferred to TASK-258. QA implied (LAWS-UNCHANGED review + shadow/include scans). Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/GoldNode.{h,cpp}` (branch). Law: CONVENTIONS "Mirrored depleting mines" (paired-
+    tunable, gauge, laws-held), M7.6 ownership extension.
+
+#### TASK-254 — [T-B] MinerUnit retarget / wait / evict (C++, branch)
+- assignee: gameplay-programmer
+- status: done (2026-07-23 — INTEGRATED in THE W1 BUILD, commit bfa2ecf; economy verified live in PIE: miner claim + drain 20→0 + depletion evict + retarget) ← was: qa-passed (2026-07-22 — qa/TASK-254-255-256-qa.md PASS 0 blockers; invariant table verified at every seam, no-churn upgrade-only ADJUDICATED FAITHFUL, phantom-window benign. Feeds TASK-258) ← was: ready-for-qa (2026-07-22 — MinerUnit.{h,cpp} reworked per plan §1b: FindNearestSameTeamGoldNode deleted → SeekBestMine over AGoldNode::FindBestMineFor; UpdateMining retarget gate (shared dead-target predicate, tier-1-upgrade-only no-churn rule) + at-ring TryRegisterArrivedMiner (success = M2 arrival block code-identical / failure = WAIT MODE at the ring with per-poll auto-claim retries) + finder-null idle; pinned `NotifyMineDepleted(AGoldNode*)` declared+implemented (per-tenure un-arrive, no mine call-back); EndPlay(Destroyed) unregisters from the mine BEFORE the player-state bookkeeping; lost-node Error → Log; FreezeAI untouched; NO compile (TASK-258 batch). Invariant table (R/A/I/M, every path) self-audited in handoffs/TASK-254.md)
+- blocked-by: TASK-253 (API)
+- parallel-safe: yes (MinerUnit.{h,cpp}; disjoint from 255/256)
+- spec: >
+    Per the plan §MinerUnit: FindNearestSameTeamGoldNode DIES → AGoldNode::FindBestMineFor (team filter gone; occupancy
+    replaces it). UpdateMining poll (0.25 s cadence UNCHANGED): retarget gate (null/stale/depleted target, or a better
+    tier-1 exists while un-arrived → re-find; NO churn between equal options); at ring → TryRegisterArrivedMiner — success =
+    the existing arrival block VERBATIM; failure = WAIT MODE (stand at ring, poll retries, auto-claim when freed); finder
+    null → idle-in-place + poll retry (all-depleted endgame = intended income death). NEW NotifyMineDepleted: un-arrive
+    (RemoveMinerIncome + clear bArrivedAtNode — the one-way latch becomes PER-TENURE, header doc rewritten), clink off,
+    null target → re-seek. EndPlay(Destroyed): unregister from mine BEFORE existing bookkeeping (income ⊆ alive invariant;
+    no double-Remove after evict). Lost-node Error demoted to Log. FreezeAI untouched; post-match drain quirk accepted +
+    commented. ACCEPTANCE: all transitions per spec; invariants documented at the seams. QA implied (BOOKKEEPING-INVARIANTS
+    review). Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/MinerUnit.{h,cpp}` (branch). Law: CONVENTIONS "Mirrored depleting mines", M6.5/
+    M2 income laws (SetGold choke-point untouched).
+
+#### TASK-255 — [T-C] Scatter mines pass: mirrored placement + hill parity + clearance + traversability (C++, branch)
+- assignee: gameplay-programmer
+- status: done (2026-07-23 — INTEGRATED in THE W1 BUILD, commit bfa2ecf; determinism/mirror/hill-parity/clearance all PASS in live PIE per handoffs/TASK-258.md) ← was: qa-passed (2026-07-22 — qa/TASK-254-255-256-qa.md PASS 0 blockers; draw-audit confirmed (2/attempt, zero elsewhere), cross-pair spacing PROVEN complete (opposite-sign X ⇒ |Xi|+|Xj|≥spacing ∀Y), reindex trap avoided via batch RemoveInstances, Hit.Item engine-confirmed; 1 nit = fallback slots unspaced vs drawn primaries (Error-flagged degenerate only). Feeds TASK-258) ← was: ready-for-qa (2026-07-22 — full §2 algorithm on the branch: Scatter|Mines config block (3/3000/600/300/600/30°/null⇒AGoldNode) + GoldNodeKeepClearRadius removed; RebuildKeepClearZones gold-node block DELETED incl. the ±24,200 phantom discs; PlaceMines(Seed) after pass-2/before nav poll on dedicated FRandomStream(Seed^0x4D494E45) — 2 draws/attempt X-then-Y, zero draws anywhere else; half-draw |X|≥max(600,spacing/2), spacing vs primaries (twin+cross covered by construction), keep-clear discs at P AND P′, NO corridor test (ruling), FindHillSurfaceAt (Hit.Item+comp; ResolveHillAwareGroundZ now delegates), 30° gate both points, hill parity via same-comp mirrored AddInstance + footprint un-bury + re-trace + reject-if-no-fit (clone rolled back), RemoveBlockingInstancesInDisc (nav-relevant, lockstep, HILLS EXEMPT, grass untouched) at both points, tracked SpawnActor pair + InitMine, ≤48 attempts then deterministic fallback slot (−13,000, {−3,000,0,+3,000}) w/ Error log, MinesPass reproducibility line; ClearScatter destroys SpawnedMines; ValidateTraversability: Blue→each-mine path checks + widening per-mine disc culls in the existing attempts machinery + RegroundMines after EVERY cull. NO compile (TASK-258 batch). Draw-sequence table + 10 adjudicated deviations in handoffs/TASK-255.md)
+- blocked-by: TASK-253 (API), TASK-250 landed (same files — serialize; builds ON ResolveHillAwareGroundZ)
+- parallel-safe: yes (ScatterConfig.h + BattlefieldScatter.{h,cpp}; disjoint from 254/256)
+- spec: >
+    Per the plan §Scatter (first SpawnActor capability): config block Scatter|Mines (MineCountPerSide=3, MineMinSpacing=3000,
+    MineClearanceRadius=600, MineGoldReserve=300, MineEdgeMargin=600, MineMaxSlopeDeg=30, MineClass null⇒AGoldNode); REMOVE
+    GoldNodeKeepClearRadius; RebuildKeepClearZones: DELETE the whole gold-node block incl. the hardcoded ±24,200 fallback
+    discs (phantom-disc trap) → keep-clears = castles + PlayerStart only. PlaceMines(Seed) after pass-2, BEFORE
+    StartNavSettlePoll (injected hills must carve nav pre-validation); DEDICATED FRandomStream(Seed XOR 0x4D494E45), all
+    draws in fixed order (seed-order law). Per mine (≤2× attempts then deterministic fallback slot — the economy NEVER
+    ships short): draw on the Blue half |X|≥1,500; spacing vs prior primaries; keep-clear discs tested at BOTH P and P′
+    (PlayerStart isn't mirrored); NO corridor test (ruling — NoCollision keeps traversability safe). Hill resolve both
+    points via NEW FindHillSurfaceAt (extends ResolveHillAwareGroundZ to surface Hit.Item + component); slope ≤30°. HILL
+    PARITY (ruling either⇒both): clone the hill instance transform mirrored (−x, yaw+180) onto the SAME HISM (auto-registers
+    as hill surface), clearance-delete blockers in the clone's footprint (un-bury), re-trace; reject the candidate if the
+    clone can't fit its keep-clear disc. Clearance-delete via NEW RemoveBlockingInstancesInDisc (disc sibling of
+    CullCorridorBlockers — nav-relevant comps, visual+proxy lockstep, HILL-SURFACE COMPS EXEMPT, grass untouched) at both
+    points r=600. Spawn the tracked AGoldNode PAIR + InitMine(300); log a reproducibility line (seed + pairs + onHill).
+    ClearScatter destroys SpawnedMines (Play-Again lifecycle). ValidateTraversability extension: path-query Blue anchor →
+    each mine; failure → widening clearance cull per the existing MaxReachabilityAttempts machinery; RegroundMines() after
+    EVERY defensive cull (no floating mines). Do NOT collide with the pending Phase-1 cull-field additions. ACCEPTANCE:
+    deterministic (same seed ⇒ identical MinesPass log), exact mirror pairs, parity + clearance + reachability logic per
+    spec. QA implied (DETERMINISM review: every draw from MineStream, fixed order). Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/ScatterConfig.h`, `BattlefieldScatter.{h,cpp}` (branch). Law: CONVENTIONS
+    "Mirrored depleting mines" (stream, defaults), "Battlefield & procedural terrain (M6.5)" traversability guarantee.
+
+#### TASK-256 — [T-D] Bot: mine-aware economy rules (C++, branch)
+- assignee: gameplay-programmer
+- status: done (2026-07-23 — INTEGRATED in THE W1 BUILD, commit bfa2ecf; bot Rule 2 miner-buys anchored on FindBestMine observed live, target 3) ← was: qa-passed (2026-07-22 — qa/TASK-254-255-256-qa.md PASS 0 blockers; pre-clamp deviation RATIFIED as necessary correction (ComputeValidBotSpawnPoint rejects-not-clamps — unclamped would stall 2a forever), rules 1/3-5 byte-identical, 216/252 state undisturbed. Feeds TASK-258) ← was: ready-for-qa (2026-07-22 — rules 2a/2b anchored on FindBestMineFor; GetGoldNodeRedLocation + GoldNodeRedFallbackLocation deleted; null-finder ⇒ 2a skipped, latch-logged once per state change; handoffs/TASK-256.md)
+- blocked-by: TASK-253 (API)
+- parallel-safe: yes (SiegeBotController.{h,cpp}; disjoint from 254/255 — TASK-252's BotDecks edit is committed, no overlap conflict)
+- spec: >
+    Per the plan §Bot: DELETE GetGoldNodeRedLocation + GoldNodeRedFallbackLocation. Rules 2a/2b anchor on
+    FindBestMineFor(BotTeam, castle); FINDER NULL ⇒ SKIP rule 2a (never buy a doomed miner); 2b falls back to castle-offset.
+    Spawn point = mine + approach offset via the existing own-half clamp (cross-field walks are CORRECT behavior — playtest
+    watch, not a bug). Comment sweep for the dead constants. ACCEPTANCE: bot buys miners only when a mine is reachable,
+    anchors on the finder, LogSiegeBot lines intact. QA implied. Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SiegeBotController.{h,cpp}` (branch). Law: CONVENTIONS "Mirrored depleting mines",
+    M3 bot ordered-rules law (one LogSiegeBot line per fired rule).
+
+#### TASK-257 — [T-E] Editor: TeamFill lights ×2 + castle nodes ×2 DELETED, M_GoldGlow GlowIntensity, DA Mines block (art, editor, branch)
+- assignee: art-director
+- status: done (2026-07-23 — DA population COMPLETED inside the TASK-258 window: after the batch compile + editor relaunch, DA_BattlefieldScatter Scatter|Mines block written + confirmed field-by-field via MCP ObjectTools [MineCountPerSide 3, MineMinSpacing 3000, MineClearanceRadius 600, MineGoldReserve 300, MineEdgeMargin 600, MineMaxSlopeDeg 30, MineClass None⇒AGoldNode], saved not-dirty. Pre-compile parts had LANDED on the branch 2026-07-22: TeamFill_Cool_Blue/TeamFill_Warm_Red (RectLight_0/1) + GoldNode_Blue/Red (GoldNode_0/1, ±24,200) DELETED from L_Arena, find_actors sweep = 0 matches, L_Arena saved not-dirty; M_GoldGlow `GlowIntensity` authored per the 253 flag as a NEW default-1.0 scale — EmissiveColor ← NEW Multiply_3(A: original Multiply_2 chain untouched, B: ScalarParameter GlowIntensity=1.0), stock nodes, recompiled clean, neutrality verified, saved not-dirty; before/after captures in Tools/ArtPipeline/Cache/TASK-257/) ← was: done-pending-DA-handover ← was: backlog
+- blocked-by: TASK-255 (config shape final — the DA half needs the compiled fields), editor+MCP up; coordinate with Jonathan (active)
+- parallel-safe: no (editor; the deletions + material param may PRE-RUN before the compile — the DA population happens post-compile inside TASK-258's window)
+- spec: >
+    Branch lane, three parts — MUST land with-or-before the integration compile (NEVER ship the 8-node hybrid economy):
+    (1) L_Arena: DELETE TeamFill_Cool_Blue + TeamFill_Warm_Red (RectLight_0/1 — team mood lighting removed outright) and
+    DELETE GoldNode_Blue + GoldNode_Red (same session as the C++ integration). (2) M_GoldGlow: add scalar param
+    `GlowIntensity`, DEFAULT = the current emissive multiplier (undriven ⇒ byte-identical look; stock node, seconds compile;
+    Custom-HLSL ban; bUsedWithInstancedStaticMeshes check N/A — actor mesh, not HISM). (3) DA_BattlefieldScatter: populate
+    the Scatter|Mines block per the CONVENTIONS defaults (3/3000/600/300/600/30°/null class) AFTER TASK-258's compile makes
+    the fields visible — coordinate the same editor session. ACCEPTANCE: lights + castle nodes gone, param default-neutral,
+    DA block populated post-compile, all saved not-dirty. Post in 🎨 Art.
+- names: >
+    `/Game/Maps/L_Arena` (RectLight_0/1 + GoldNode_Blue/Red DELETIONS), `/Game/Materials/M_GoldGlow` (GlowIntensity),
+    DA_BattlefieldScatter Mines block. Law: CONVENTIONS "Mirrored depleting mines", M7.6 ownership (all four targets are
+    branch-owned), Custom-HLSL ban.
+
+#### TASK-258 — [T-F] Mines integration: compile + 9-point PIE suite + branch commit = THE W1 BUILD (build)
+- assignee: build-master
+- status: done (2026-07-23 — THE W1 BUILD shipped: branch commit bfa2ecf (NOT pushed). Compile 0 err/0 warn; DA Mines block populated+saved; 9-point PIE + TASK-259 float-fix suite results in handoffs/TASK-258.md — determinism/mirror/hill-parity/clearance/depletion/float-fix all PASS, points 7 (all-depleted endgame) + contested/HUD-gauge + in-match Play-Again button deferred to Jonathan's live W1 (TASK-219 gate). Watches: hill-twin height asymmetry, bot all-attack openings, Ogre-near-hill capsule lift, M7 miner art debt. Editor left RUNNING on L_Arena.) ← was: backlog
+- blocked-by: TASK-253, 254, 255, 256, TASK-259 (all qa-passed), TASK-257 (deletions + param landed; DA populated inside this window)
+- parallel-safe: no (single editor + Git; branch direct-commit lane)
+- spec: >
+    Compile the mines batch on the branch (editor-bounce; TASK-257's DA population slots after the compile, same window —
+    also clear the standing PRE-W1 BOUNCE CHECKLIST items: stray M_T245_WpoTest.uasset disk-delete + the TASK-247/248 docs
+    fold if still pending). Then the 9-POINT PIE SUITE (plan §T-F, all must pass): (1) determinism — same seed ⇒ identical
+    MinesPass log ×2; (2) mirror fairness — every pair (−X,Y), equal distances from logs; (3) hill parity — seed-hunt an
+    on-hill mine, twin hill injected, nothing buried; (4) clearance — no blockers within 600, miners arrive at all 6;
+    (5) occupancy — claim / wait-at-ring / auto-claim-on-free; (6) depletion — low-reserve override: drain → evict →
+    un-arrive on HUD rate → retarget → gauge dims; (7) all-depleted endgame winnable (base + overtime + DeepMine);
+    (8) Play-Again ×3 — exactly 6 fresh mines, zero leaks, no phantom keep-clear discs; (9) bot reaches 3 arrived miners on
+    3 seeds + stops buying when locked out (cross-field walks = correct, watch-listed). COMMIT on the branch (push-pending —
+    Jonathan decides; DO NOT push). THIS IS THE W1 BUILD (hills + mines + no team lighting) — hand to TASK-219 with the
+    watch list (mine-lock, cross-field walks, all-depleted pacing → reserve 450 lever). Post results + hash in 🔧 Build & Git.
+- names: >
+    Branch `m7.6-arena10x` compile + commit. Law: CLAUDE.md hard gates, CONVENTIONS "Mirrored depleting mines", W-gate law
+    (TASK-219 = the acceptance gate).
+
+#### TASK-259 — [W1 BLOCKER] Floating-units fix: SkeletalVisualMesh Z-offset in ResolveSkeletalVisual (C++, branch)
+- assignee: gameplay-programmer
+- status: done (2026-07-23 — INTEGRATED in THE W1 BUILD, commit bfa2ecf; VERIFIED live in PIE: Ogre SkeletalVisualMesh.Z −145 feet@z1.99, Archer −90 feet@z2.28, Knight/Cleric roster spot-sweep grounded) ← was: qa-passed (2026-07-23 — qa/TASK-259-qa.md PASS 0 blockers; cache-ordering verified across all spawn paths, no-op-for-9 structurally guaranteed (feet-at-pivot law + measured equality), Archer 0→-90 / Ogre 0→-145 correct. NIT: TASK-258 PIE spot-sweeps full-roster grounding. Feeds/unblocks TASK-258)
+- blocked-by: none (independent one-liner; finishes-alongside TASK-258 so the W1 build carries it)
+- parallel-safe: yes (SummonedUnit.cpp — coordinate ordering with any other SummonedUnit toucher; TASK-254 is MinerUnit, disjoint)
+- spec: >
+    Fix per handoffs/DIAG-floating-units.md SESSION-2: `ASummonedUnit::ResolveSkeletalVisual` never sets the
+    SkeletalVisualMesh Z-offset — it trusted per-unit BP authoring from TASK-159, so Archer + Ogre (first-imported later in
+    TASK-242/243 with ZERO BP changes) kept Z=0 and their mesh floats one capsule-half above the grounded capsule (Archer
+    +90, Ogre +145). FIX: one-line `SetRelativeLocation(VisualMeshBaseRelativeLocation)` on SkeletalVisualMesh AFTER the SK
+    swap — corrects both, NO-OP for the 9 already-correct units (they authored the same offset), closes the recurrence trap
+    permanently (future first-imports need no BP authoring). Does NOT address the SECONDARY Ogre-near-hill spawn-lift (see
+    the watch below — separate item, not this change). ACCEPTANCE: Archer + Ogre feet meet the ground in PIE; the 9 correct
+    units byte-unchanged in position; no crash on the static-fallback path. QA implied (confirm no-op for the authored-offset
+    units; shadow/include scans). Compile rides TASK-258. Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SummonedUnit.cpp` (`ResolveSkeletalVisual`, branch — JOINS the branch touched-
+    files set for the merge gate). Law: CONVENTIONS "Skeletal rig & animation workstream (M7)" (SkeletalVisualMesh swap
+    contract), M7.6 ownership.
+
+**WATCH (recorded 2026-07-22, follow-up to TASK-259 — separate item, NOT fixed by the mesh Z fix):** the SECONDARY Ogre-near-hill spawn-lift (DIAG-floating-units.md SESSION-1 Rank-2) — nav-projection/collision-adjust raising the big Ogre CAPSULE (not the mesh) when it spawns near a hill. The TASK-259 mesh fix removes the dominant +145 mesh offset; this residual capsule lift is a smaller, separate item. If it reads badly at W1 → register a gameplay-programmer task (spawn nav-projection extent / collision-adjust tuning for tall capsules); until then it's a watch, not a task. **UPDATE 2026-07-23:** TASK-265 (appendix 3a) attacks the same class of issue from the stacking side and adds the `bLogSpawnZDiagnostic` chosen-Z/ground-Z/delta line — TASK-266's PIE evidence is what decides whether ANY residual capsule lift remains on this watch. A residual traced to the shared `SpawnUnitSwarm` lift or to the tall-Ogre capsule stays HERE (out of TASK-265's scope by spec).
+
+### W1-PREP appendix 3 (2026-07-23) — SPAWN-BOX SHRINK + CENTERLINE REMOVAL + CAPTURABLE MID ZONE (TASK-260..264; Jonathan-approved directive)
+
+**Jonathan's directive (verbatim, 2026-07-23 — a W1-gate condition, "before I approve of the W1 playtest"):** *"You have a white line down the middle that splits the arena in half, on one half only enemy units can spawn, on the other only your units. Shrink this spawnable area to a small square around your castle, about twice the length and twice the width of the castle (4× the area), centered on the castle. Get rid of the white line in the middle since it no longer serves a purpose. Add a small square region in the middle, same size as the spawnable region on either side, except this one is capturable — when captured, you can spawn units there. You capture it by having 1 or more units in the region when there are no enemy units in the region; if it's not captured by either side then no units can spawn there."* Four deliverables → 5 tasks (3 C++ each QA'd, 1 art, 1 build-integration = the updated W1 build). **Law added FIRST:** CONVENTIONS "Arena 10× scale-up & LOD/perf (M7.6)" → "W1-PREP additions 3" (ACaptureZone / ECaptureState / SpawnBoxHalfExtent / capture rule / M_CaptureZone / centerline deletion / branch-ownership extension to SiegePlayerController). **Lane:** ALL branch-lane; branch ownership extends to `SiegePlayerController.{h,cpp}` (SiegeBotController already frozen by the mines feature) + new `CaptureZone.{h,cpp}` + `M_CaptureZone` + the `CaptureZone_Center` L_Arena instance + the centerline-actor deletion — frozen on main until the Phase-6 merge. **Integration:** TASK-264 (compile + centerline delete + place CaptureZone_Center + PIE capture-suite + branch commit) is the NEW pre-W1 build folded in AHEAD of Jonathan's W1 look (TASK-219 is the acceptance gate for this too). **FLAGGED for Jonathan (do not block — sane defaults chosen, see the "manager decisions" flags below):** exact box size (default 840 half-extent = 2× castle footprint); sticky vs neutralize-on-enemy-entry ownership (default STICKY); does the hero count as a "unit" for capture (default YES); does the mid zone need a visible owner-tint (default YES, subtle decal); what happens to a unit/building the shrink strands outside the new box (default: existing placed actors are untouched — only NEW placement is gated).
+
+#### TASK-260 — [S-A] ACaptureZone actor: ownership state + interval unit-count capture eval + spawn API (C++, branch) [DISPATCH FIRST]
+- assignee: gameplay-programmer
+- status: qa-passed
+- blocked-by: none
+- JONATHAN RULING (2026-07-23, overrides the board's STICKY default): CONTESTED (both teams ≥1 inside) ⇒ NEUTRALIZE, NOT sticky ("live tug-of-war, must be held"). SHIPPED behavior = Contested→Neutral. The `bNeutralizeWhenContested` UPROPERTY toggle is KEPT (sticky survives as the off-state option) but now DEFAULTS **TRUE**. Empty (both 0) still latches the last owner (unchanged).
+- parallel-safe: yes (new files CaptureZone.{h,cpp} only; disjoint from every existing file)
+- spec: >
+    NEW actor `ACaptureZone` (`CaptureZone.h/.cpp`, AActor subclass, gameplay-actor plain-name law). Members: `ECaptureState`
+    enum `{ Neutral, Blue, Red }` (declared in the header); `ECaptureState CaptureOwner` (init Neutral — NOT named `Owner`,
+    shadow law); `FVector2D ZoneHalfExtent` (EditDefaultsOnly, default (840,840) — Jonathan's "same size as the spawn box");
+    `float CaptureEvalInterval` (EditDefaultsOnly, default 0.5). A `DecalComponent` (root or attached) that soft-loads
+    `/Game/Materials/M_CaptureZone` at BeginPlay and drives a color param `ZoneColor` by owner via a MID (Neutral gray /
+    Blue (0.05,0.30,1.00) / Red (1.00,0.10,0.05)); null-safe (missing material ⇒ no visual, mechanic still runs, log once).
+    API: `bool IsPointInZone(const FVector&) const` (2D box test on ZoneHalfExtent about the actor origin); `ECaptureState
+    GetCaptureOwner() const`. EVALUATION: a repeating timer (CaptureEvalInterval) counts friendly vs enemy UNITS inside the
+    box — "unit" = any `ASummonedUnit` (incl. miners) OR `AHeroCharacter` via `ITeamAgent::GetTeamId` (buildings/castles/
+    gold-nodes EXCLUDED); CAPTURE (CaptureOwner ← team + broadcast) when one team has ≥1 inside AND the enemy has 0 inside;
+    contested (both ≥1) OR empty (both 0) ⇒ NO change (STICKY — flagged default; add `bool bNeutralizeWhenContested`
+    EditDefaultsOnly default false if cheap, so the toggle exists). Delegate `FOnCaptureZoneOwnerChanged` → BlueprintAssignable
+    `OnCaptureOwnerChanged` (nothing binds this pass — HUD/VFX hook). Play-Again resets CaptureOwner→Neutral (expose a public
+    reset the reset path can call; match how ACastle/AGoldNode reset). Null-safe everywhere; compiles at TASK-264 (batch).
+    QA implied (shadow/include scans + LAWS review — the capture rule is symmetric, the eval never crashes on empty world).
+    Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/CaptureZone.{h,cpp}` (branch); `ECaptureState`, `CaptureOwner`, `ZoneHalfExtent`,
+    `CaptureEvalInterval`, `IsPointInZone`, `GetCaptureOwner`, `OnCaptureOwnerChanged`/`FOnCaptureZoneOwnerChanged`,
+    `ZoneColor` param, soft path `/Game/Materials/M_CaptureZone`. Law: CONVENTIONS "W1-PREP additions 3", gameplay-actor +
+    enum + delegate + shadow laws, M7.6 ownership extension.
+
+#### TASK-261 — [S-B] Player placement: shrink to castle box + capture-zone spawn (C++, branch)
+- assignee: gameplay-programmer
+- status: qa-passed
+- blocked-by: TASK-260 (reads the ACaptureZone API for the capture-spawn clause)
+- parallel-safe: yes (SiegePlayerController.{h,cpp}; disjoint from TASK-262's SiegeBotController files)
+- spec: >
+    Edit `SiegePlayerController.{h,cpp}`. REPLACE the `Hit.ImpactPoint.X <= PlacementMaxX` half-test (UpdatePlacementGhost,
+    ~:1236; also the log at ~:1033) with: valid iff (point ∈ own Blue spawn box) OR (point ∈ CaptureZone AND
+    GetCaptureOwner()==Blue). Own Blue spawn box = a 2D square centered on the owned Castle_Blue (team-filtered
+    `TActorIterator<ACastle>`, the existing pattern), half-extent `SpawnBoxHalfExtent` (FVector2D EditDefaultsOnly, default
+    (840,840)). Add helpers `IsPointInOwnSpawnBox` + `IsPointInCapturedZone` (the latter finds the single
+    `TActorIterator<ACaptureZone>`, null-safe if absent). KEEP the whole downstream composition UNCHANGED (navmesh
+    projection, IsPointInsideCastlePlinth, slope, obstacle & building clearance) — this task changes ONLY the first
+    ground/region gate. Retire `PlacementMaxX`. Do NOT touch anything else. ACCEPTANCE: player can place only inside the
+    castle box (minus the plinth) OR inside a Blue-owned mid zone; the whole-half is no longer placeable. QA implied
+    (shadow/include scans — note ACaptureZone + ACastle headers needed complete). Compile rides TASK-264. Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SiegePlayerController.{h,cpp}` (branch — JOINS the branch touched-files set);
+    `SpawnBoxHalfExtent`, `IsPointInOwnSpawnBox`, `IsPointInCapturedZone`. Law: CONVENTIONS "W1-PREP additions 3",
+    M7.6 ownership extension.
+
+#### TASK-262 — [S-C] Bot placement: shrink to castle box + capture-zone spawn (C++, branch)
+- assignee: gameplay-programmer
+- status: qa-passed
+- blocked-by: TASK-260 (reads the ACaptureZone API)
+- parallel-safe: yes (SiegeBotController.{h,cpp}; disjoint from TASK-261's SiegePlayerController files)
+- spec: >
+    Edit `SiegeBotController.{h,cpp}` — the MIRROR of TASK-261. In `IsBotHalfPointClear` (~:1142) REPLACE the
+    `if (!IsOnOwnHalf(Point.X)) return false` spawn gate with: allowed iff (point ∈ Red spawn box around Castle_Red) OR
+    (point ∈ CaptureZone AND GetCaptureOwner()==Red); everything else in that function (plinth keep-out, clearance) UNCHANGED.
+    Red spawn box = square centered on Castle_Red, half-extent `SpawnBoxHalfExtent` (FVector2D EditDefaultsOnly, default
+    (840,840)) — via the live `TActorIterator<ACastle>` (Red) with the existing +25000 fallback. Add `IsPointInBotSpawnBox`
+    + `IsPointInCapturedZone` (single `TActorIterator<ACaptureZone>`, null-safe). ⚠ SURGICAL: `IsOnOwnHalf` has OTHER callers
+    (miner-approach clamp ~:550/601, own-half unit/hero iteration ~:876/899) — those are TARGET/APPROACH logic, LEAVE THEM
+    UNTOUCHED; only the SPAWN gate in IsBotHalfPointClear (and ComputeValidBotSpawnPoint's use of it) changes. ACCEPTANCE:
+    bot places only inside the Red castle box OR a Red-owned mid zone; the ring-search still walks to a clear spot; the bot
+    can stage in mid once it captures. QA implied (shadow/include scans; confirm the IsOnOwnHalf non-spawn callers are
+    intact). Compile rides TASK-264. Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SiegeBotController.{h,cpp}` (branch — already in the branch set from the mines
+    feature); `SpawnBoxHalfExtent`, `IsPointInBotSpawnBox`, `IsPointInCapturedZone`. Law: CONVENTIONS "W1-PREP additions 3",
+    M3 bot ordered-rules law (do not disturb the LogSiegeBot decision trace).
+
+#### TASK-263 — [S-D] M_CaptureZone owner-tint decal material (art, editor, branch)
+- assignee: art-director
+- status: ready-for-integration
+- blocked-by: none (authored independently; ACaptureZone soft-loads it null-safe, so ordering vs TASK-260 is free)
+- parallel-safe: yes (new material asset; no shared file)
+- spec: >
+    Author `/Game/Materials/M_CaptureZone`: a DeferredDecal-domain material (STOCK NODES ONLY — Custom-HLSL ban; reuse the
+    `M_CenterlineStripe` / `M_SpellReticle` recipe) that renders a subtle ground-region fill/boundary for the mid capturable
+    zone and exposes a Vector parameter named exactly `ZoneColor` (the ACaptureZone MID drives it by owner: Neutral gray,
+    Blue (0.05,0.30,1.00), Red (1.00,0.10,0.05)). Translucent/low-intensity so it reads as "this square is capturable / who
+    holds it" without obscuring gameplay — a boundary ring or a soft tint fill, art-director's call at the §6 legibility bar.
+    Do NOT edit the doomed centerline material; this is a NEW asset. ACCEPTANCE: material compiles (seconds), `ZoneColor`
+    param present and drivable, previews cleanly as a floor decal. Post in 🎨 Art.
+- names: >
+    `/Game/Materials/M_CaptureZone` (DeferredDecal), vector param `ZoneColor`. Law: CONVENTIONS "W1-PREP additions 3",
+    Custom-HLSL ban, Material prefix table, M7.6 branch ownership (branch-born).
+
+#### TASK-264 — [S-E] Integration: compile batch + DELETE centerline actor + place CaptureZone_Center + PIE capture-suite + branch commit (build)
+- assignee: build-master
+- status: **done** (2026-07-23, build-master — compile GREEN (13.46 s, editor bounce cleared the Live Coding lock); `CenterlineMarker` (DecalActor_0, M_CenterlineStripe) DELETED from L_Arena — 0 DecalActors remain; `CaptureZone_Center` placed @ (0,0,0), ZoneHalfExtent (840,840), decal MID resolves M_CaptureZone gray (0.5,0.5,0.5). PIE suite: (c) Blue-alone→Blue + decal (0.05,0.30,1.00) PASS; (d) contested→**Neutral** + gray PASS (confirms the 2026-07-23 neutralize ruling); (f) Red-alone→Red + decal (1.00,0.10,0.05) PASS, and the bot demonstrably staged 2 units mid-field only while Red held the zone; (b) bot SpawnBoxHalfExtent 840 live, new spawns cluster X 24032–24448 inside the Castle_Red box PASS; (a) player SpawnBoxHalfExtent 840 live + PlacementMaxX fully retired, ring = 420-uu-wide flat band at Z=0 (non-empty, off-plinth, ~2.12 M uu²) — live click-refusal is a W1 WATCH (locked desktop, no SendInput); (e) Neutral state observed twice, gate is `IsPointInZone && CaptureOwner==TeamToState(Team)` which never matches Neutral (structural); (g) 3× fresh match starts all read Neutral + gray (no leak) — the in-place PlayAgain button press is a W1 WATCH (no MCP console/exec route). L_Arena saved not-dirty. FOLLOW-UPS RAISED: bot units stacking/floating ~215–232 uu above ground at the Red spawn edge (TASK-216's 1,500–2,000 castle-relative attack spawn vs TASK-262's 840 box — the wave gets clamped to the box edge and piles up).)
+- blocked-by: TASK-260, TASK-261, TASK-262 (all qa-passed), TASK-263 (done)
+- parallel-safe: no (single editor + Git; branch direct-commit lane)
+- spec: >
+    On m7.6-arena10x: (1) COMPILE the spawn-box/capture batch (editor-bounce). (2) WHITE-LINE REMOVAL — locate the L_Arena
+    level actor whose material is `M_CenterlineStripe` (a decal/plane; grep of Content confirms it is NOT C++) via
+    find_actors / material reference, and DELETE it; verify the centerline is gone in a PIE frame and L_Arena saves
+    not-dirty. (3) PLACE the `ACaptureZone` instance `CaptureZone_Center` at (0,0,0) in L_Arena (default ZoneHalfExtent);
+    confirm its decal reads at origin. (4) PIE CAPTURE-SUITE (all must pass): (a) player spawn shrunk — can place inside the
+    Blue castle box, REFUSED outside it and on the plinth, the old whole-half is gone; (b) bot spawn shrunk — mirror around
+    Castle_Red; (c) capture — send ONE Blue unit into the mid zone with zero Red units ⇒ CaptureOwner→Blue, decal turns
+    blue, player can now place in mid; (d) contested — Blue+Red units both inside ⇒ CaptureOwner→Neutral, decal turns gray, nobody can place in mid until re-captured (per Jonathan's 2026-07-23 ruling; the old "sticky/unchanged" assertion is retired); (e) neutral
+    ⇒ nobody can place in mid; (f) Red mirror — bot captures + stages in mid; (g) Play-Again ×3 ⇒ CaptureOwner resets to
+    Neutral, no leaks. COMMIT on the branch (push-pending — Jonathan decides; DO NOT push). This build folds into the
+    pre-W1 bounce ahead of Jonathan's W1 look (TASK-219 = acceptance gate). Post results + hash in 🔧 Build & Git.
+- names: >
+    Branch `m7.6-arena10x` compile + commit; `L_Arena` (centerline actor DELETE + `CaptureZone_Center` place). Law:
+    CLAUDE.md hard gates, CONVENTIONS "W1-PREP additions 3", W-gate law (TASK-219 = the acceptance gate).
+
+### W1-PREP appendix 3a (2026-07-23) — BOT SPAWN ANCHOR CLAMP + ANTI-STACK (TASK-265..267; DEFECT, Jonathan: fix BEFORE the W1 look — TASK-267 is a DEFERRED robustness follow-up, explicitly NOT part of the W1 fix)
+
+**Defect (found by build-master in the TASK-264 PIE capture-suite, `933fee4`):** bot units STACK on each other and FLOAT ~215–232 uu above ground at the Red spawn (two observed at identical XY 24192,−192). **Root cause (manager's reading, verified against the code — the programmer must still confirm before fixing):** TASK-262 shrank the bot spawn GATE to an 840 box around Castle_Red (X ≥ 24,160) but did NOT move the bot's spawn ANCHORS, which are still the pre-shrink geometry — rule-1 unit + rule-4 attack wave anchor at `CastleRed − BotCastleSpawnOffset(1750)` ⇒ X≈23,250, ~910 uu OUTSIDE the box. `ComputeValidBotSpawnPoint`'s ring-search maxes at 1,100 uu, so from X 23,250 the ONLY samples that clear the box edge are the +X-facing ones on the widest ring — every wave is served the same sliver at the boundary (exactly build-master's observed X 24,032–24,448 cluster) and piles up. The float is very likely the SYMPTOM (`AdjustIfPossibleButAlwaysSpawn` lifting capsules spawned inside each other), not an independent bug — CONFIRM, don't assume. **SECOND, UNREPORTED consequence of the same root cause (predicted, high confidence — verify in PIE):** rule-2a MINER and rule-2b DEEP MINE anchor at the target mine (thousands of uu from the box), so `ComputeValidBotSpawnPoint` FAILS every tick — and rule 2a `return`s on failure, so a bot holding an affordable Miner with a mine available STALLS its whole ordered-rules ladder (rules 3/4/5 never evaluated). The bot's economy is effectively dead on this branch. Expect a visibly different (better) bot at W1.
+
+**Approach chosen — (a) spawn INSIDE the box and march out.** Rejected: (b) exempting bot march-waves from the box gate — it hands the bot a permanent 1,750-uu head start the player does not get and quietly re-opens the half-field spawn Jonathan just closed; (c) enlarging `SpawnBoxHalfExtent` — it enlarges the PLAYER box symmetrically (a balance change he'd have to accept) and does not fix stacking anyway. (a) is what the player already does (place in your box, units march), is the literal reading of Jonathan's directive, keeps M7.6 ruling #1 ("castle-front, then MARCH") intact — the anchor is still the centerline-facing front band of the castle box — and costs the wave ~1,750 uu of extra march ≈ 4 s at speed 400 on a 45,000-uu field. **Law added FIRST:** CONVENTIONS "W1-PREP additions 3" → anchor-clamp law + unit spawn clearance + spawn-Z law (appendix 3a).
+
+**Load-bearing carve-out:** the clamp is a FALLBACK, not unconditional — an anchor that is ALREADY eligible (inside the box, or inside a Red-owned `CaptureZone_Center`) passes through untouched. That is what preserves TASK-264 PIE result (f) (the bot stages mid-field while Red holds the zone) — the emergent "spawn-forward" behavior Jonathan's directive explicitly asked for. An unconditional clamp would destroy it.
+
+**RECONCILED 2026-07-23 (QA ACCEPTED TASK-265's flagged deviation — `qa/TASK-265.md`; the shipped behavior is now the law, CONVENTIONS appendix 3a updated to match):** the carve-out above proved NECESSARY BUT NOT SUFFICIENT. The pass-through alone can almost never fire for the zone, because no anchor in this class is normally *computed* inside the mid zone — so a box-only fallback would have deleted result (f) by construction (rule-2a's anchor is X-clamped to 0 by `IsOnOwnHalf`, and only from there does the 1,100-uu ring reach the ±840 zone; a box-only clamp moves it to X≈24,200, whence mid is unreachable) and left the bot half of the capture-zone feature dead code while the player keeps his. **Shipped law: an out-of-box anchor is clamped to the NEARER of the two ELIGIBLE regions — the Red castle box, or a Red-OWNED `CaptureZone_Center`.** QA verified it is INERT with no zone / a Neutral zone / a Blue-owned zone (byte-identical to the box-only spec) and that castle-relative anchors are always nearer the box (≈950 uu vs ≈22,450 uu) ⇒ M7.6 ruling #1 and rule-4 attack waves untouched; only rule-2 ECONOMY anchors can ever take the zone branch. Mid-staging is therefore now DETERMINISTIC rather than mine-Y luck — and an *attack* unit spawning at mid is a DEFECT to report, not this law.
+
+#### TASK-265 — [S3a-A] Bot spawn anchors: clamp into the spawn box + unit anti-stack clearance + spawn-Z diagnosis (C++, branch)
+- assignee: gameplay-programmer
+- status: **qa-passed** (QA 2026-07-23 — PASS, 0 blockers / 4 WARN / 5 NIT, report `qa/TASK-265.md`. 🚩 **FLAGGED DEVIATION ACCEPTED**: the clamp-to-NEARER-ELIGIBLE-REGION implementation SHIPS AS WRITTEN — QA independently verified inertness (Neutral/Blue-owned/no-zone all return BoxClamped, byte-identical to the literal spec), that castle-relative anchors are always nearer the box (≈950 uu vs ≈22,450 uu ⇒ ruling #1 + attack waves untouched), and that a box-only clamp would DELETE result (f) by construction (rule-2a's anchor is X-clamped to 0 by IsOnOwnHalf, and the 1,100 ring reaches the ±840 zone; box-only moves it to X≈24,200 whence mid is unreachable). Board + CONVENTIONS appendix 3a to be reconciled TO THE CODE. Carry to TASK-266: [SpawnZ] float is sampled at the spawn instant — depenetration resolves on later ticks, so keep a settled-state readback; rule-2 failure lines log at Verbose, so enable `Log LogGitClaudeUnrealTest Verbose` before concluding no `Rule 2 (Economy)` line, then suspect mine-Z vs NavProjectionExtent.Z=1000. Original programmer note follows.) (2026-07-23, gameplay-programmer — `SiegeBotController.{h,cpp}` only, code-only/no compile/no Git; handoffs/TASK-265.md. (1) DIAGNOSIS CONFIRMED at the code level: 4 of 5 anchors are outside the 840 box (rule-1 unit + rule-4 attack at X≈23,250 = 910 uu out — only the radius-1,100 ring's ~0° sample clears, hence one point per wave; rule-2a/2b mine anchors thousands out), rule-1 TOWER (standoff ≤750) is the one already-inside anchor. **Rule-2 economy stall CONFIRMED and worse than predicted:** the `return` at :577 (and :637) is outside the ComputeValidBotSpawnPoint success branch, so ConfirmPlayFromHand never runs ⇒ the Miner stays in hand and AliveMinerCount stays 0 ⇒ once a Miner reaches the hand the ladder stalls for the REST OF THE MATCH, not just a tick. (2) `ClampAnchorToBotSpawnRegion` + `SpawnBoxAnchorInset` 40, applied at ONE site (top of ComputeValidBotSpawnPoint) covering all 5 anchors; pass-through carve-out verbatim (`IsPointInBotSpawnBox(Desired) || IsPointInCapturedZone(Desired)` ⇒ returns Desired untouched — the same pair the gate uses, so clamped/eligible can never disagree). `BotCastleSpawnOffset` KEPT (documented inert at 840); the two IsOnOwnHalf anchor clamps got one comment line each, code byte-unchanged; IsOnOwnHalf's TARGET/APPROACH callers byte-unchanged. (3) `UnitSpawnClearance` 150 in IsBotHalfPointClear for `!bIsBuilding` only, mirroring the BuildingClearance loop (both teams, IsValid + alive, DistSquared2D). (4) Spawn-Z: DIAGNOSTIC ONLY — `bLogSpawnZDiagnostic` true, one LogGitClaudeUnrealTest line per bot unit spawn (chosen Z / traced ground Z / delta / actor Z / capsule half-height / **FLOAT above ground** = the deciding number, ≈0 ⇒ no float). NO `SnapPointToGround` added — assessment is that the float is a de-stacking symptom (identical XY ⇒ capsule collision-adjust; the chosen point is a navmesh location by construction); TASK-266's PIE numbers decide. LogSiegeBot untouched. **🚩 ONE FLAGGED DEVIATION for manager/QA ruling:** the clamp targets the NEARER of the two ELIGIBLE regions (castle box, or a Red-OWNED capture zone) instead of always the castle box — because no anchor in the class is ever computed inside the mid zone, so the specified pass-through can never fire for the zone on its own, and a box-only clamp would delete TASK-264 result (f) (which came from the rule-2 mine anchors' ring REACHING the zone), fail TASK-266 (e), and leave the bot structurally unable to use a zone it owns while the player can. Uses no new identifier; castle-relative anchors are always nearer the box so M7.6 ruling #1 / attack waves are untouched; inert with no zone / Neutral / Blue-owned ⇒ byte-identical to the literal spec; ~10-line revert if ruled against.)
+- blocked-by: none (TASK-260..264 all done @ 933fee4)
+- parallel-safe: no (sole owner of `SiegeBotController.{h,cpp}` this pass; nothing else is queued on the branch)
+- spec: >
+    Edit `SiegeBotController.{h,cpp}` ONLY. Four parts, all surgical.
+    (1) **CONFIRM FIRST, then fix.** Reproduce/verify the root cause above by reading the four anchor sites (rule 1 unit ~:459,
+    rule 1 tower ~:448, rule 2a miner ~:545, rule 2b deep mine ~:596, rule 4 attack ~:767) against the box bound
+    (Castle_Red.X − SpawnBoxHalfExtent.X) and the ring radii (`RingRadii` ~:1118, max 1,100). Record in the handoff: which
+    anchors are outside the box, and whether rule-2a/2b really fail (the predicted bot-economy stall). If the evidence
+    contradicts the diagnosis, STOP and report — do not fix a theory.
+    (2) **Anchor clamp.** ⚠ **RECONCILED TO THE SHIPPED CODE 2026-07-23 — QA ACCEPTED the flagged deviation (`qa/TASK-265.md`);
+    the text below now describes what SHIPPED, superseding the originally-issued box-only wording.** Private
+    `FVector ClampAnchorToBotSpawnRegion(const FVector& Desired) const`: an out-of-box anchor is clamped to the **NEARER of the
+    two ELIGIBLE regions** — the Red castle spawn box, or a **Red-OWNED** `CaptureZone_Center` — NOT unconditionally to the
+    castle box. An anchor already inside either eligible region passes through UNTOUCHED
+    (`IsPointInBotSpawnBox(Desired) || IsPointInCapturedZone(Desired)` — the SAME predicate pair the spawn gate uses, so
+    "clamped" and "eligible" can never disagree; ⚠ LOAD-BEARING — it keeps the bot able to stage inside a Red-owned
+    CaptureZone_Center, TASK-264 PIE result (f)). Otherwise: BOX candidate = per-axis clamp of ΔX/ΔY about
+    `GetCastleRedLocation()` into ±(`SpawnBoxHalfExtent` − `SpawnBoxAnchorInset`); ZONE candidate = the same per-axis clamp
+    about the zone origin, offered ONLY when a `CaptureZone_Center` exists and `CanTeamSpawnHere(ETeamId::Red, …)` accepts it;
+    return the nearer to `Desired` (strict `<` ⇒ ties to the box). `Desired.Z` preserved on both branches. **QA-verified
+    rationale (why this and not box-only):** INERT with no zone / a Neutral zone / a Blue-owned zone (all return the
+    box-clamped point, byte-identical to the original literal spec); castle-relative anchors are ALWAYS nearer the box
+    (≈950 uu vs ≈22,450 uu) so M7.6 ruling #1 and attack-wave behavior are untouched — only rule-2 economy anchors can ever
+    select the zone branch (an *attack* unit at mid would be a DEFECT); and a box-only clamp would DELETE result (f) by
+    construction (rule-2a's anchor is X-clamped to 0 by `IsOnOwnHalf` and the 1,100 ring reaches the ±840 zone; box-only
+    moves it to X≈24,200, whence mid is unreachable). Implemented at ONE site (top of `ComputeValidBotSpawnPoint`) with
+    New UPROPERTY `float SpawnBoxAnchorInset = 40.f` (EditDefaultsOnly,
+    Category "Siegebound|Bot|Placement", ClampMin 0). Apply it in ONE place — the top of `ComputeValidBotSpawnPoint`
+    (`FVector Anchor = ClampAnchorToBotSpawnRegion(Desired);` then use Anchor for the degraded no-nav path AND the ring
+    walk) — so all five call sites are covered by one edit. Do NOT edit the anchor math at the call sites, do NOT touch
+    `BotCastleSpawnOffset` / `BotSpawnLaneSpread` / the two `IsOnOwnHalf` anchor clamps (~:551, ~:602) beyond an optional
+    one-line comment that the box clamp now dominates them; `IsOnOwnHalf`'s TARGET/APPROACH callers (~:877, ~:900) stay
+    byte-unchanged.
+    (3) **Anti-stack.** New UPROPERTY `float UnitSpawnClearance = 150.f` (EditDefaultsOnly, ClampMin 0, 0 = disabled). In
+    `IsBotHalfPointClear`, for `!bIsBuilding` ONLY, reject the point when any live `ASummonedUnit` (either team; `IsValid` +
+    alive) is within `UnitSpawnClearance` 2D — mirror the existing `BuildingClearance` loop's shape (DistSquared2D vs a
+    precomputed square). `TActorIterator<ASummonedUnit>` + the header are already in this file. This is what makes the
+    deterministic ring walk to a FREE slot instead of re-serving one point; buildings keep the building rule unchanged.
+    (4) **Float: diagnose, then fix only if it survives.** Add `bool bLogSpawnZDiagnostic = true` (EditDefaultsOnly) and one
+    `UE_LOG(LogGitClaudeUnrealTest, Log, ...)` per bot UNIT spawn printing the chosen point Z, a traced ground Z and the
+    delta — NEVER on `LogSiegeBot` (the one-line-per-FIRED-rule decision-trace law is inviolate; build-master reads this line
+    in PIE). If de-stacking alone removes the float (expected — capsule collision-adjust on encroaching spawns), change
+    NOTHING else and say so in the handoff. ONLY if a residual > ~50 uu persists AND is attributable to the nav-projected Z,
+    add `SnapPointToGround` per CONVENTIONS appendix 3a: downward `ECC_WorldStatic` trace on the FINAL OutPoint, may only
+    LOWER by at most `MaxGroundSnapDrop = 120.f` (scatter hills leave WorldStatic on Ignore — an uncapped snap drops units
+    THROUGH a hill). `ASiegePlayerController::SpawnUnitSwarm` is OFF LIMITS (shared with the player); a residual traced to it
+    or to the tall-Ogre capsule goes on the existing Ogre-near-hill spawn-lift WATCH, not into this task.
+    NOT IN SCOPE: TASK-262's box gate itself (`IsBotHalfPointClear`'s box/zone early-out stays), `CaptureZone.{h,cpp}`,
+    `SiegePlayerController.{h,cpp}` (the player box Jonathan approved must not regress — do not open the file),
+    `SpawnBoxHalfExtent`'s value, cards.csv, L_Arena.
+    ACCEPTANCE: bot waves materialize inside the Red castle box (off-plinth) and MARCH; successive spawns are ≥
+    UnitSpawnClearance apart (no identical XY, no stack); units sit on the ground; rules 2a/2b produce miners/Deep Mines again
+    and the ordered-rules ladder no longer stalls; the LogSiegeBot decision trace format is byte-unchanged; a Red-owned
+    capture zone still accepts bot staging. Code-only — compile + PIE ride TASK-266. QA implied (shadow/include scans,
+    null-safety, confirm the pass-through carve-out and that the M3 trace + capture-zone clause are intact). Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SiegeBotController.{h,cpp}` (branch `m7.6-arena10x`, already in the branch set).
+    New identifiers, EXACT: `ClampAnchorToBotSpawnRegion`, `SpawnBoxAnchorInset` (40), `UnitSpawnClearance` (150),
+    `bLogSpawnZDiagnostic` (true), and CONDITIONALLY `SnapPointToGround` + `MaxGroundSnapDrop` (120) — **AS SHIPPED: the
+    conditional pair was NOT added** (spawn-Z is diagnostic-only this pass; TASK-266's PIE numbers decide), and no new
+    identifier was introduced by the accepted deviation. Existing names consumed
+    as-is: `IsPointInBotSpawnBox`, `IsPointInCapturedZone`, `IsBotHalfPointClear`, `ComputeValidBotSpawnPoint`,
+    `GetCastleRedLocation`, `SpawnBoxHalfExtent`, `CastlePlinthClearance`, `BuildingClearance`, plus (deviation branch)
+    `ACaptureZone`, `CanTeamSpawnHere`, `ZoneHalfExtent`. Law: CONVENTIONS
+    "W1-PREP additions 3" appendix 3a (anchor-clamp / unit spawn clearance / spawn-Z) — **the anchor-clamp law was
+    RECONCILED to the shipped nearer-eligible-region behavior on 2026-07-23 per QA's ACCEPT ruling; CONVENTIONS and this spec
+    now match the code** — M3 bot ordered-rules law, M7.6 branch-ownership extension.
+
+#### TASK-266 — [S3a-B] Integration: compile + PIE spawn re-verify + branch commit (build)
+- assignee: build-master
+- status: **done** (2026-07-23, build-master — commit `1e4bd19` on `m7.6-arena10x`, NOT pushed. Compile GREEN (13.5 s, `Result: Succeeded`); `git diff --stat` confirms ONLY `SiegeBotController.{h,cpp}` changed (QA note 2 satisfied). PIE re-verified over **4 matches** on L_Arena with `LogGitClaudeUnrealTest` + `LogSiegeBot` raised to **Verbose** BEFORE PIE (QA WARN-3). **(a) NO STACK — PASS:** 11 consecutive spawn anchors in one match spread across Y ∈ [−800, +698] all at X = 24 200 (vs the pre-fix single pinned point); 29 concurrent units sampled, **ZERO identical-XY pairs** — the pre-fix signature (two units at exactly (24192, −192)) is gone. Min pairwise 2D = 60.12 uu, and that pair is two members of the SAME `MilitiaMob x4` swarm clumped in melee at the enemy castle — intra-swarm placement is `SpawnUnitSwarm`'s business (off-limits to TASK-265), not a bot spawn-point collision; no two independently-spawned units were ever co-located. **(b) NO FLOAT — PASS, instant AND settled (QA WARN-1 satisfied):** every `[SpawnZ]` line read `chosen Z 20.0, ground Z 0.0 (trace hit), delta 20.0, FLOAT above ground **2.1**`; an INDEPENDENT settled-state readback (own downward ground traces, minutes after spawn, at marched-to positions far from spawn) gives capsule bottoms **2.13–2.15 uu** above traced ground, and actor Z = capsule half-height + 2.15 for all 7 unit types (MilitiaMob 76.65/74.5, Sapper 86.65/84.5, Miner 88.65/86.5, Archer+Footman 92.15/90.0, Knight+Pikeman 97.15/95.0, Cavalry 106.15/104.0). 2.1 uu is CharacterMovement's standard ground offset. **Pre-fix 215–232 uu ⇒ CLOSED.** No hill-adjacent false positive seen (all traces hit the flat floor at Z = 0.0). **(c) MARCH — PASS:** rule 4 fired 15+ times, always `castle-front (24200, …)` — inside the box [24 160, 25 840], 800 uu from castle centre so off the 420 plinth; units crossed the full ~49 000-uu arena and destroyed Castle_Blue every match. NO attack unit ever spawned at mid (the QA-defined defect signature). **(d) ECONOMY — PASS (headline):** `Rule 2 (Economy): played Miner 'Miner' (cost 8) toward mine 'GoldNode_3' at (24200, -800, 20) — miners now 1/3, gold 10->2.` and rule 4 fired TWICE AFTER it in the same match ⇒ ladder no longer stalls. With Verbose live, **ZERO** `found no valid spawn point` lines across all 4 matches (all 6 Verbose failure sites silent) ⇒ no spawn attempt failed at all, so the mine-Z vs `NavProjectionExtent.Z`=1 000 suspect never triggered. **(e) MID-ZONE — precondition PROVEN, live mid-spawn NOT observed:** `CaptureZone_Center` reached `CaptureOwner: Red` in 2 of 4 matches (Red units marching through mid capture it) and latches when empty; but no rule-2 economy play happened to fire during Red ownership, so a mid-field bot spawn was not directly seen. The clamp's INERT path WAS observed and is correct — at t ≈ 1 s the zone was Neutral and the rule-2 miner anchor clamped to the castle box at (24 200, −800), byte-identical to the literal spec, exactly as QA predicted. No Deep Mine at mid (the bot never drew/played one). Not a defect — needs a live opponent to exercise. **(f) PLAYER — PASS:** `SiegePlayerController.{h,cpp}` untouched per the diff; TASK-261 castle-box behavior unregressed. **(g) TRACE INTACT:** every `LogSiegeBot` line is one per FIRED rule, formats unchanged; the new diagnostic is on `LogGitClaudeUnrealTest` only. **NEW W1 WATCH (not a defect, out of TASK-265 scope) — BOT IDLES ON A BIG GOLD BANK:** against a fully passive opponent the bot banked **328 gold** while playing nothing for ~3.5 min. Root cause read directly off the live `DeckComponent`: its hand was `[Wall, BombTower, CrystalTower, Wall, ArrowTower, BallistaTower]` — **six buildings, zero units/miners/spells** — so rule 1 has no intruder to defend against, rules 2/3/4 have no eligible card, and rule 5 never cleared the dead hand. Deck-composition/rule-gating behavior of the 'Bot Defensive Economy' deck, NOT a spawn defect (proven by the zero Verbose spawn-failure lines). Should self-resolve when Jonathan actually attacks (rule 1 then drains the towers), but if the W1 bot ever looks asleep, THIS is why — candidate follow-up: let rule 5 discard a hand with no playable card.)
+- blocked-by: TASK-265 (must be qa-passed)
+- parallel-safe: no (single editor + Git; branch direct-commit lane)
+- spec: >
+    On `m7.6-arena10x`: (1) COMPILE (editor bounce as usual). (2) PIE RE-VERIFY — the TASK-264 follow-up, all must pass:
+    (a) NO STACK — log/readback ≥ 6 consecutive bot unit spawns, no two within `UnitSpawnClearance` (150) 2D, no identical XY;
+    (b) NO FLOAT — spawned bot units sit on the ground; report the `bLogSpawnZDiagnostic` chosen-Z / ground-Z / delta values
+    verbatim in the handoff (this is the evidence that closes the ~215–232 uu float, and it feeds the Ogre-near-hill WATCH if
+    a residual remains); (c) IN-BOX — every new bot spawn X is inside [Castle_Red.X − 840, Castle_Red.X + 840] and off the
+    plinth, and the units MARCH out (not idle); (d) ECONOMY RESTORED — grep `LogSiegeBot` for a "Rule 2 (Economy)" line
+    (miner and/or Deep Mine) within a couple of minutes of match start, and confirm rules 3/4/5 still fire (the ladder no
+    longer stalls); (e) NO REGRESSION of TASK-264 — the player can still place only inside the Blue castle box, and with Red
+    holding `CaptureZone_Center` the bot still stages mid-field; (f) decision trace intact — `LogSiegeBot` lines are one per
+    FIRED rule, format unchanged; (g) **WATCH — report, do NOT fail the task on it (added 2026-07-23, QA WARN-4 / FLAGGED item
+    (iv)):** with Red HOLDING the zone, rule 2b may now build a Deep Mine AT MID. If one appears, note it in the handoff and say
+    whether it visibly obstructs traffic through the centre corridor. Also per QA: an *attack* unit (rule 1 / rule 4) spawning at
+    mid IS a defect — report that one. (3) COMMIT on the branch (DO NOT push — Jonathan decides). If any check fails, append to the
+    QA report and route back per CLAUDE.md rule 6. This is the last build before Jonathan's W1 look (TASK-219 = the
+    acceptance gate). Post results + hash in 🔧 Build & Git.
+- names: >
+    Branch `m7.6-arena10x` compile + commit. Law: CLAUDE.md hard gates, CONVENTIONS "W1-PREP additions 3" appendix 3a,
+    W-gate law (TASK-219 = the acceptance gate).
+
+**FLAGGED for Jonathan (defaults chosen, nothing blocks):** (i) the bot wave now starts ~1,750 uu further back (inside its box) — ~4 s more march on a 45,000-uu field, and it is the same rule the player lives under; (ii) `BotCastleSpawnOffset` 1,750 becomes inert while the box is 840 — the property is KEPT so ruling #1's knob returns intact if the box grows; (iii) if he'd rather the waves keep the forward start, the honest lever is a BIGGER box (`SpawnBoxHalfExtent`, still FLAGGED tunable from TASK-262) which grows the PLAYER box symmetrically — a balance change, his call, not shipped by default; (iv) **AMENDED 2026-07-23 (QA WARN-4 — the original wording is conditionally FALSE as shipped):** Deep Mines build inside the castle box *while Red holds no capture zone* — but when Red **OWNS** `CaptureZone_Center`, rule 2b may instead build the Deep Mine **AT MID**, inside the zone (buildings are exempt from `UnitSpawnClearance` but NOT from the anchor clamp, and a held zone is an eligible spawn region under the accepted deviation). The castle-box case remains mechanically irrelevant (a Deep Mine needs no mine). **Manager balance verdict on the MID case: not a balance concern, and NOT a W1 blocker — but a W1 WATCH, not "irrelevant".** Reasoning: (1) it moves value in the PLAYER's favor — an unshielded bot building at the centerline is raidable by anything the player fields, whereas the castle-box version sits behind the bot's whole army; (2) it cannot lock the objective — capture eval counts UNITS only (`ASummonedUnit`/`AHeroCharacter`; buildings/castles/gold-nodes EXCLUDED, TASK-260 law), so a Deep Mine at mid contributes ZERO to holding the zone, and it does not persist ownership if the bot's units leave; (3) it is design-consistent (a raidable mid-field economy is exactly the tension the capture zone exists to create). Two things worth Jonathan's eyes at W1, both non-blocking: **(a) legibility** — an enemy building materializing at the dead centre of the map is surprising the first time and he should see it deliberately rather than as a bug report; **(b) nav pinch** — a building footprint inside the ±840 zone sits in the middle of the 1,000-half-width centre corridor; the arena is wide enough that units should path around, but build-master should note in TASK-266 whether a mid Deep Mine visibly obstructs traffic. No code change requested; if Jonathan dislikes it, the honest lever is a building-only exclusion in the clamp (≈5 lines) — do NOT pre-emptively add it. (v) the W1 bot will play a visibly DIFFERENT (more economic) game once rules 2a/2b work again.
+
+#### TASK-267 — [S3a-C] Bot ordered-rules ladder: a failed rule-2 spawn must FALL THROUGH, not abandon the tick (C++, robustness — NOT a W1 blocker)
+- assignee: gameplay-programmer
+- status: done (INTEGRATED at TASK-283 batch, build-master 2026-07-24, commit on m7.6-arena10x — compile GREEN; PIE: bot reached + fired Rule 4 (Knight, gold 36→18), i.e. rules 1/2a/2b/3 fell THROUGH to rule 4 with no tick-abandon / ladder-stall (the fix); clean load. --- Prior QA 2026-07-24 PASS, 0 blockers / 3 non-blocking NITs, `qa/TASK-267.md`. Double-spend check CLEAN — traced selectors vs cards.csv: no failure path mutates state, rule-1 fall-through leaves rule-2 skipped [NearestIntruder guard], rule-4 fall-through only cycles unplayable TYPES so a failed Unit is never re-picked, a failed Miner [Economy] is unselectable by 4/5/2b; ≤1 confirm/tick. Latch + priority order + fired-rule trace preserved; TASK-265/262/279 untouched. AWAITS the next SiegeBotController-touching build [batch with TASK-283]. Original note: 2026-07-24 — gameplay-programmer: rule-2a/2b spawn-failure `return`s replaced with FALL-THROUGH; `bRule2SpawnFailureLogged` streak latch added [set on first rule-2 spawn failure, cleared on a successful rule-2 spawn AND in ResetBot], the two rule-2 failure lines promoted Verbose→Log. AUDIT: rules 1 & 4 shared the IDENTICAL `ComputeValidBotSpawnPoint`-else abandon-the-tick pattern and were fixed the same way [fall-through, no double-spend — their Verbose logs left as-is per the rule-2-only log-promotion scope]; rule 3 [spell ResolveSpell refusal] and rule 5 [last rule] do NOT share the trap — reported, not touched. File-only, no compile, no Git. Handoff: `.claude/pipeline/handoffs/TASK-267.md`. Was: UNBLOCKED/dispatchable.)
+- blocked-by: none — **both gates CLEARED 2026-07-24** (TASK-266 done + committed @ `1e4bd19`; Jonathan's W1 sign-off GIVEN, TASK-219). NOTE: sole owner of `SiegeBotController.{h,cpp}` when it runs — do not dispatch concurrently with any other SiegeBotController-touching task.
+- parallel-safe: no (sole owner of `SiegeBotController.{h,cpp}` when it runs)
+- origin: QA WARN-2 on TASK-265 (`qa/TASK-265.md`), which explicitly ruled this OUT of TASK-265 scope ("it changes rule-flow semantics and needs a ruling") and asked the manager to open a follow-up so it is not lost. Independently confirmed by the programmer in `handoffs/TASK-265.md`.
+- spec: >
+    **The latent defect.** The `return` at `SiegeBotController.cpp:581` (and its rule-2b mirror at `:642`) sits **OUTSIDE** the
+    `ComputeValidBotSpawnPoint` success branch: when the spawn point cannot be found, rule 2 returns from the decision tick
+    entirely instead of falling through to the remaining rules. Because `ConfirmPlayFromHand` never runs, the Miner stays in
+    hand ⇒ `AliveMinerCount` stays 0 ⇒ rule 2's own precondition stays satisfied ⇒ it re-fails and re-returns every tick.
+    **The stall is PERMANENT for the rest of the match — rules 3/4/5 are never evaluated again.** TASK-265 removed today's
+    *cause* (out-of-box anchors) but NOT this *structure*: any FUTURE spawn failure — a box crowded past the new 150-uu
+    `UnitSpawnClearance`, a nav-projection miss (e.g. the mine-Z vs `NavProjectionExtent.Z`=1,000 suspect on TASK-266), a
+    future box/geometry change — re-stalls the entire ladder by the identical mechanism, and it presents as "the bot stopped
+    playing" with no error.
+    **MANAGER RULING (made here so this needs no second round-trip): FALL THROUGH.** On a rule-2a/2b spawn failure the bot
+    logs and CONTINUES to the next rule in the ordered ladder in the same tick. No gold is spent and no card is confirmed on
+    the failure path, so no state is mutated — the change strictly ADDS reachable behavior and cannot make the bot play worse.
+    (1) Replace the two early `return`s with fall-through control flow. Do NOT reorder, merge or re-prioritize the rules —
+    the M3 ordered-rules priority is unchanged; only the abandon-the-tick behavior goes.
+    (2) **Decision-trace law is inviolate:** a rule that attempted and FAILED to spawn did NOT fire, so it must NOT emit a
+    `LogSiegeBot` fired-rule line, and the surviving one-line-per-FIRED-rule format stays byte-unchanged. The rule that
+    subsequently fires in the same tick emits its normal single line.
+    (3) **Kill the silent failure (QA WARN-3):** the two failure lines at `:577–579` / `:638–640` currently log at `Verbose`
+    on `LogGitClaudeUnrealTest` — invisible at default verbosity. Promote them to `Log`, but emit at most ONCE per contiguous
+    failure streak via a private transient bool `bRule2SpawnFailureLogged` (set on the first failure, cleared on the next
+    successful rule-2 spawn AND on match reset) so a persistent failure cannot spam the 2-s decision cadence.
+    (4) **AUDIT, then report before fixing beyond rule 2:** check rules 1, 3, 4 and 5 for the same
+    return-outside-the-success-branch shape. Rule 2 is in scope unconditionally; fix any identical instance found in the
+    others under the same ruling, and LIST every site you changed in the handoff. If a rule's early return turns out to be
+    load-bearing (i.e. continuing would double-spend or double-play), STOP and report — do not force the pattern.
+    NOT IN SCOPE: the anchor clamp / `UnitSpawnClearance` / spawn-Z work from TASK-265 (shipped), `CaptureZone.{h,cpp}`,
+    `SiegePlayerController.{h,cpp}`, card costs, the rule priority order itself.
+    ACCEPTANCE: with rule-2 spawning artificially forced to fail (e.g. `UnitSpawnClearance` set absurdly high in PIE), the bot
+    still evaluates and fires rules 3/4/5 and keeps playing for the rest of the match; the `LogSiegeBot` decision trace is
+    one line per FIRED rule with the format byte-unchanged; the rule-2 failure line is visible at default verbosity and
+    appears once per streak, not once per tick. QA implied (rule-flow diff, decision-trace law, no state mutation on the
+    failure path). Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SiegeBotController.{h,cpp}`. ONE new identifier, EXACT:
+    `bRule2SpawnFailureLogged` (private transient bool, NOT a UPROPERTY, not editor-exposed). Existing names consumed as-is:
+    `ComputeValidBotSpawnPoint`, `ConfirmPlayFromHand`, `AliveMinerCount`, `LogSiegeBot`, `LogGitClaudeUnrealTest`.
+    Law: M3 bot ordered-rules law (priority order UNCHANGED, one-line-per-FIRED-rule decision trace inviolate), CONVENTIONS
+    "W1-PREP additions 3" appendix 3a, M7.6 branch-ownership extension.
+- integration: NO dedicated build task is opened now. When TASK-267 is dispatched it FOLDS INTO the next
+  `SiegeBotController`-touching branch integration task, which the manager issues at that time (this is the explicit
+  accounting for the "every chain ends with a build-master task" rule — the chain is deliberately left open until dispatch).
+
 ### M7.6 manager decisions (binding)
 1. **Label ruling:** batch = **M7.6**, branch = **`m7.6-arena10x`** (the plan's `m8-arena10x` collides with GDD M8 = networked 1v1 — relabeled).
 2. **Branch-first + ownership law:** TASK-214 cuts the branch off main BEFORE any batch file change. The branch EXCLUSIVELY owns `L_Arena.umap` + `DA_BattlefieldScatter`; M7.5 waves never touch either. Branch = rollback (don't merge = revert). Main's World-axes ±8,000 law is rewritten only AT MERGE.
@@ -730,7 +1809,7 @@ Four non-gated items. State: editor CLOSED; tree checked out on `m7.6-arena10x` 
 7. **Nav-at-scale:** the Recast coarsening (TASK-217 ini + TASK-218 actor mirror — the two MUST match) plus the fallback ladder recorded in plan §1 (CellSize→40/Tile→2500 → nav X ±26,500 → nuclear DynamicModifiersOnly, listed not planned). Manual Build > Navigation + resave is OWED at Phase 0 (MCP has no nav-build tool — editor-python route first, else flag Jonathan's one click in 🚨).
 8. **Nanite amendment** (ruling #4) is LAW in CONVENTIONS "Arena 10× scale-up & LOD/perf (M7.6)" — vista-class only; gameplay fleet stays OFF.
 
-**Phase ladder (one-liners until W1 clears — manager decomposes each on its gate):** P1 scatter cull fields + grid-hash MinSpacing guard (C++, QA'd) ∥ P2 unit URO/anim-tick block (C++, SummonedUnit.cpp:119) → P3 §3 density fill (editor, DA data) → **W2 watch** (levers: grass count, culls, RT-off units) → P4 LOD batch: reimport wave with the TASK-220 line (ride/coordinate M7.5 TASK-201/202), SK LOD script, donor LOD audit, rig_character.py LOD step → **W3 watch** (expect strict improvement) → P5 vista ring + 6–10 POIs + 2 neutral gold-node props + fog/light polish (editor-python, seeded one-shot; FAB-005 watchtowers slot in post-TASK-207) → P6 capstone playtest (TASK-183 successor, human WATCH) → **MERGE GATE**.
+**Phase ladder (one-liners until W1 clears — manager decomposes each on its gate):** P1 scatter cull fields + grid-hash MinSpacing guard (C++, QA'd) ∥ P2 unit URO/anim-tick block (C++, SummonedUnit.cpp:119) **[DECOMPOSED + DISPATCHABLE 2026-07-24 — Jonathan granted overnight EXECUTION of Phases 1–5: TASK-284 (P1) ∥ TASK-285 (P2) → TASK-286 (P1∥2 build) → TASK-287 (P3 density) → TASK-288 (P4 rig-LOD tooling) ∥→ TASK-289 (P4 LOD apply) → TASK-290 (P5 assets) → TASK-291 (P5 place+commit); W2/W3 = Jonathan's MORNING human watches (machine perf captured overnight, non-blocking), Phase 6 merge gate stays his. See the "M7.6 Phases 1–5 — DISPATCHABLE" block below]** → P3 §3 density fill (editor, DA data) → **W2 watch** (levers: grass count, culls, RT-off units) → P4 LOD batch: reimport wave with the TASK-220 line (ride/coordinate M7.5 TASK-201/202), SK LOD script, donor LOD audit, rig_character.py LOD step → **W3 watch** (expect strict improvement) → P5 vista ring + 6–10 POIs + 2 neutral gold-node props + fog/light polish (editor-python, seeded one-shot; FAB-005 watchtowers slot in post-TASK-207) → P6 capstone playtest (TASK-183 successor, human WATCH) → **MERGE GATE**.
 
 #### TASK-214 — BRANCH FIRST: cut m7.6-arena10x off main before any batch file change (build)
 - assignee: build-master
@@ -816,8 +1895,8 @@ Four non-gated items. State: editor CLOSED; tree checked out on `m7.6-arena10x` 
 
 #### TASK-219 — W1 GATE: Jonathan perf/feel watch on the 10× field (Jonathan — external gate; GATES ALL LATER PHASES)
 - assignee: Jonathan (external gate)
-- status: backlog
-- blocked-by: TASK-218 (Phase 0 integrated on branch)
+- status: **APPROVED by Jonathan 2026-07-24 — W1 SIGN-OFF GIVEN.** Jonathan playtested the W1 build (branch `m7.6-arena10x`, HEAD `0295f75`) all session and APPROVED it. Cumulative content of the approved build: 10× arena scale (Phase 0, TASK-214..220) + shrunk castle-box spawn zones + capturable mid `CaptureZone_Center` (TASK-260..264) + bot spawn-anchor-clamp / anti-stack / economy-stall fix (TASK-265/266) + Shield Wall ATTACK/HOLD/DEFEND unit commands + command HUD indicator (TASK-273..277) + W1 economy rebalance — base income 1/1s, all 28 card costs ×3, bot AttackBankThreshold 12→36 (TASK-278/279) + the TASK-280/281 ATTACK mid-field march-freeze fix. **He approved DESPITE one KNOWN-DEFERRED residual bug:** under the ATTACK command, Standard Blue units now march most of the way toward the enemy castle but STOP JUST SHORT of it instead of attacking it (the freeze is gone; a final-approach halt remains). Jonathan's ruling in substance: this "can resolve later" → task-ized as **TASK-282** (gameplay-programmer, DIAGNOSE-FIRST, overnight) + its integration **TASK-283**. **This W1 sign-off UNBLOCKS the M7.6 phase ladder — and Jonathan (mid-turn 2026-07-24) additionally GRANTED overnight EXECUTION of Phases 1–5 (decomposed as DISPATCHABLE tasks TASK-284..291; W2/W3 human feel-watches deferred to his morning, Phase 6 capstone + MERGE GATE stays his, no autonomous push/merge) — and CLEARS every W1-gated hold: TASK-267 (bot ladder fall-through) and the M7.7 deck-details chain TASK-269..272.** (was: backlog)
+- blocked-by: TASK-218 (Phase 0 integrated on branch) **[AMENDED 2026-07-22: + TASK-258 — the W1 build now carries the W1-PREP gate conditions (grassy hills + scatter-on-hills + size variance + mirrored depleting mines + team-lighting removal); Jonathan's W1 verdict is the acceptance gate for the whole W1-PREP batch]**
 - parallel-safe: yes (external)
 - spec: >
     Jonathan plays the Phase-0 10× arena (densities still old — this is the SCALE gate, not the density gate) and rules:
@@ -846,6 +1925,332 @@ Four non-gated items. State: editor CLOSED; tree checked out on `m7.6-arena10x` 
 - names: >
     `Tools/reimport_meshes.py` (`_reimport_one()`, after the Nanite-OFF block). Law: CONVENTIONS "M7.6" classic-LOD +
     sequencing laws, "Textured mesh law" (reimport invariants).
+
+---
+
+## M7.6 Phases 1–5 — DISPATCHABLE (decomposed 2026-07-24 after W1 sign-off; Jonathan granted overnight EXECUTION) — TASK-284..291
+
+**Authorization:** W1 is APPROVED (TASK-219) → the hard-gated ladder is UNBLOCKED, and Jonathan (mid-turn 2026-07-24) GRANTED overnight EXECUTION of **Phases 1, 2, 3, 4, 5** (normal `backlog` dispatch, NOT plan-only) + full editor close/reopen. Build THROUGH the phases overnight; capture whatever MACHINE perf MCP allows (no FPS baseline exists — capture real numbers per phase). **Phase 6 (capstone playtest → MERGE GATE to main) is NOT decomposed for overnight — it stays HIS; NO autonomous push, NO merge-to-main.** Hard gates stand: QA on every C++/tooling change; nothing committed without PASS QA (code) / completed integration (editor); branch-ownership + sequencing laws hold (L_Arena.umap + DA_BattlefieldScatter are branch-owned; the reimport_meshes.py LOD-group line is already on main via TASK-220).
+
+**⚠ NUMERIC-SOURCE FLAG (honest, read before dispatch):** the plan `C:\Users\wesel\.claude\plans\i-am-a-bit-sunny-bird.md` was OVERWRITTEN 2026-07-22 with the mirrored-mines W1-prep plan — it NO LONGER contains the M7.6 §3 scatter-density table, LOD architecture §2, or POI/vista §4 numbers. The recorded source of truth is **CONVENTIONS "Arena 10× scale-up & LOD/perf (M7.6)"** + this ladder + the milestone entry ("≈4.9× instances, cull bands"). Where an EXACT count is not on record (Phase 3 per-layer densities, Phase 5 POI/vista specifics), the spec gives a DEFAULT heuristic and FLAGS the exact number for Jonathan's morning W2/W3 review — per his mid-turn instruction "flag genuine design ambiguity for morning review rather than blocking; use plan values as default."
+
+**W2 / W3 human gates (recorded, NON-blocking overnight):** **W2** = Jonathan perf/FEEL watch AFTER Phase 3 (density); **W3** = AFTER Phase 4 (LOD). Overnight the pipeline builds through both and captures MACHINE metrics only (MCP `stat`/`FPS`/unit counts where available) into the phase handoffs; the human feel-verdict is his in the morning and does NOT block the next phase. Phase dependency order still governs the machine build: **1∥2 → 3 → 4 → 5** (1∥2 parallel-safe C++; 3 needs 1∥2 integrated; 4 needs 3; 5 after 4).
+
+**Dispatch shape:** TASK-284 ∥ TASK-285 (parallel-safe C++, disjoint files) → QA each → TASK-286 (P1∥2 build). TASK-286 done → TASK-287 (P3 density build + W2 capture). TASK-288 (P4 rig-LOD tooling, C++/Python, QA'd) is parallel-safe with 284/285/286/287 (Tools/ file). TASK-287 + TASK-288 done → TASK-289 (P4 LOD apply build + W3 capture). TASK-289 done → TASK-290 (P5 assets, art) → TASK-291 (P5 place + commit, build).
+
+#### TASK-296c — [Phase-6 merge-prep] M_GoldGlow keep-both emissive (art, editor, branch)
+- assignee: art-director
+- status: ready-for-integration (2026-07-25 — VERIFIED the branch's `/Game/Materials/M_GoldGlow` ALREADY carries BOTH milestones' emissive edits — the M7.6/TASK-257 `GlowIntensity` scalar-param Multiply AND the M7.5/TASK-226 sine time-pulse — fully wired into one emissive chain, contradicting the "branch lacks the pulse" premise. Live-editor readback (MCP MaterialTools): EmissiveColor ← Multiply_3 [A: Multiply_2, B: ScalarParameter_0 `GlowIntensity`=1.0]; Multiply_2 [A: Multiply_0 (Constant3Vector 1.0/0.66/0.12 warm-gold × Constant 6.0), B: Add_0]; Add_0 [A: Multiply_1 (Sine × ConstB 0.12), B: ConstB 1.0] fed by Sine_0 (Period 10s) ← Time_0. Final emissive = base × sine_pulse(0.88–1.12) × GlowIntensity(param). Did NOT add a duplicate pulse (would over-pulse). GlowIntensity param name/type/default UNCHANGED → AGoldNode MID still drives it. Recompiled clean (stock nodes only, no Custom-HLSL); saved → `Content/Materials/M_GoldGlow.uasset` git-modified. handoffs/TASK-296c.md. Build-master resolves the merge by KEEPING THE BRANCH version (strict superset of main's pulse-only). Jonathan pixel-check WATCH: pulse breathe + reserve gauge both visible.)
+- blocked-by: none
+- spec: >
+    Re-author (verify/keep) `/Game/Materials/M_GoldGlow` on `m7.6-arena10x` so the M7.6→M7.5 merge keeps BOTH the
+    TASK-257 `GlowIntensity` scalar-param Multiply (LOAD-BEARING — AGoldNode drives it via MID for the depleting-mine
+    reserve gauge) AND the TASK-226 sine time-pulse. Additive; stock nodes only; keep `GlowIntensity` a live scalar
+    param. Save; do NOT commit/merge (build-master's Phase-6 job). Outcome: branch already contained both → confirmed +
+    resaved as the definitive keep-both artifact.
+
+#### TASK-284 — [P1] Scatter cull bands + grid-hash MinSpacing accelerator (C++, branch)
+- assignee: gameplay-programmer
+- status: done (INTEGRATED at TASK-286 batch, build-master 2026-07-24, commit on m7.6-arena10x — compile GREEN; PIE runtime proof: clean GenerateScatter (seed 774069313), all 7 layers placed EXACT target counts (Boulders 6 / Hill 8 / Slabs 8 / Trees 70 / Rocks 60 / Grass 2500 / Plants 400) + 6 mines / 0 culls + Traversability CONFIRMED ⇒ grid-hash accelerator equivalence holds at runtime, no count-change; unpopulated-DA cull default = full render (today's look). L_Arena/DA/BattlefieldScatter.h verified UNTOUCHED. --- Prior QA 2026-07-24 PASS, 0 blockers / 1 non-blocking NIT [negative-scale, out of scope], `qa/TASK-284.md`. Grid-hash equivalence SOUND — cell size MinSpacing+2×MaxLayerR provably covers max rejection dist ⇒ 3×3 block catches every conflict; same inequality, 0 FRandomStream draws, Add 1:1 incl. mirror twin, keep-clear O(1) untouched ⇒ byte-identical layout per fixed seed. Cull fields (CullStart/End int32, bCastShadows bool default true) added to FScatterLayer, applied at BOTH HISM sites pre-Register; unpopulated DA byte-identical to today. Proxy SetCastShadow(false)-hardcoded ACCEPTED (invisible-trunk floating-shadow guard). Runtime fixed-seed layout diff = TASK-286 PIE proof. Pairs w/ TASK-285 for TASK-286 build.)
+- blocked-by: none (W1 sign-off cleared the phase gate; owns BattlefieldScatter/ScatterConfig on the branch)
+- parallel-safe: yes (disjoint from TASK-285's `SummonedUnit`; disjoint from TASK-282's `SummonedUnit`; TASK-288's Tools/ file)
+- spec: >
+    On `m7.6-arena10x`. Two perf structures that make the Phase-3 density fill (≈4.9× instances) affordable.
+    (1) **Cull bands.** IMPLEMENT the CONVENTIONS-declared `FScatterLayer` fields `CullStartDistance` / `CullEndDistance`
+    (uu; 0 = never culled) + `bCastShadows` — first CONFIRM whether the W1-PREP `OverrideMaterial` pass (TASK-249) already
+    added any of them and add only what is missing. APPLY them at component build via `SetCullDistances` / `SetCastShadow`
+    in `ResolveComponentForMesh()` AND the tree collision-proxy path (both places a HISM/component is created). Per-layer
+    cull bands + shadow flags remain DATA in `DA_BattlefieldScatter` (populated at Phase 3) — this task ONLY wires the code
+    path; do NOT change any density here. Defaults if a field is unset in data: `CullEndDistance=0` (never culled — safe,
+    Phase 3 sets the real bands), `bCastShadows=true` for hills, `false` for grass/plants (CONVENTIONS).
+    (2) **Grid-hash spacing accelerator.** Replace the naive/O(n²) MinSpacing + keep-clear proximity checks in the scatter
+    placement loop with a uniform spatial-hash grid (cell size ≈ the largest MinSpacing/keep-clear radius in use) so
+    MinSpacing/keep-clear queries stay ~O(1) at the denser instance counts. **Determinism is INVIOLATE:** the seed-order law
+    holds — the same seed must produce byte-identical placement (same draws, same order, same accept/reject outcomes); the
+    hash only accelerates the query, it must not change any result or draw order. NOT IN SCOPE: densities (Phase 3), LODs
+    (Phase 4), the mine stream, L_Arena, SummonedUnit.
+    ACCEPTANCE: cull fields present + applied in both component paths; a fixed seed produces byte-identical placement vs the
+    pre-refactor build (prove it — log/compare the placement set for one seed before/after); no density change. QA implied
+    (determinism review, shadow/include scans, null-safety). Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/BattlefieldScatter.{h,cpp}`, `ScatterConfig.h` (`FScatterLayer`). Fields EXACT:
+    `CullStartDistance`, `CullEndDistance`, `bCastShadows` (CONVENTIONS scatter cull-field naming). Consumed as-is:
+    `ResolveComponentForMesh`, `SetCullDistances`, `SetCastShadow`, the layer/stream structures. Grid-hash helper is internal
+    (name at implementation, non-UPROPERTY). Law: CONVENTIONS "Arena 10× scale-up & LOD/perf (M7.6)" scatter cull-field
+    naming + seed-order law, "Battlefield & procedural terrain (M6.5)".
+
+#### TASK-285 — [P2] Unit URO / OnlyTickPoseWhenRendered block (C++, branch)
+- assignee: gameplay-programmer
+- status: done (INTEGRATED at TASK-286 batch, build-master 2026-07-24, commit on m7.6-arena10x — compile GREEN; PIE clean load + short match runs (units march/attack — Rule 4 Cavalry marching; error scan clean, no ensures/Accessed-None); `SummonedUnit.h` verified UNTOUCHED (constructor-only); off-screen pose correctness QA-proven structural. --- Prior QA 2026-07-24 PASS, 0 blockers, `qa/TASK-285.md`. Both URO flags set on `SkeletalVisualMesh` (cosmetic subobject, not ACharacter Mesh); pose-independence VERIFIED — grep 0 AnimNotify/RootMotion, damage applied DIRECTLY on the cadence timer (ApplyDamage/FireProjectileAt w/ explicit damage, no socket/bone reads), movement CMC, aggro timer-driven; SetVisibleInRayTracing correctly absent; TASK-282/020 paths disjoint. Awaits TASK-286 build w/ TASK-284.)
+- blocked-by: none. ⚠ FILE-OVERLAP: shares `SummonedUnit.{h,cpp}` with the overnight ATTACK-bug fix TASK-282 — SERIALIZE on the file (do TASK-282 first, or whichever is in flight completes before the other opens the file). Not concurrent-safe with TASK-282.
+- parallel-safe: yes vs TASK-284 (disjoint files); NO vs TASK-282 (same file — serialize)
+- spec: >
+    On `m7.6-arena10x`. Make off-screen units cheap at 10× scale. On the unit's `SkeletalVisualMesh` (configured around
+    `SummonedUnit.cpp:119`) set `VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered`
+    and `bEnableUpdateRateOptimizations = true` (CONVENTIONS SK-unit URO law). CONFIRM before shipping that no gameplay-
+    critical logic depends on per-tick pose while off-screen — movement, aggro, target acquisition, and attack timing are
+    driven by the AI/state machine and cadence timers, NOT the anim pose; verify this in source and state it in the handoff.
+    If any critical path DOES read the pose off-screen, scope the URO so it does not regress (flag it). The pre-approved
+    EMERGENCY perf lever `SetVisibleInRayTracing(false)` on unit meshes is NOT applied in this task by default (perf-watch
+    shortfall only — reserve for W2/W3 if Jonathan calls for it). NOT IN SCOPE: the ATTACK/DEFEND/HOLD command logic
+    (TASK-282's territory), LODs (Phase 4), scatter.
+    ACCEPTANCE: the two flags set on `SkeletalVisualMesh`; no behavior regression in march/aggro/attack (state-driven, proven
+    in the handoff); off-screen anim pop acceptable at gameplay cam. QA implied (shadow/include scans, confirm no off-screen
+    pose dependency). Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SummonedUnit.{h,cpp}` (`SkeletalVisualMesh`, ~:119). Consumed as-is:
+    `EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered`, `USkeletalMeshComponent::VisibilityBasedAnimTickOption`,
+    `bEnableUpdateRateOptimizations`. Law: CONVENTIONS "Arena 10× scale-up & LOD/perf (M7.6)" SK-unit URO/anim-tick law.
+
+#### TASK-286 — [P1∥2] Integration: compile + PIE + branch commit (build)
+- assignee: build-master
+- status: done (BUILD-MASTER 2026-07-24 — BATCHED M7.6 Phase 1 (TASK-284 scatter cull-bands + grid-hash) + Phase 2 (TASK-285 unit URO) integrated on m7.6-arena10x, commit `2249444` (no push). Jonathan awake: Step-0 PIE idle; save-all (`save_assets([])`=true) → graceful close (no dialog wedge, no force-kill); recompiled GREEN (~15s); relaunched on L_Arena. VERIFY — (TASK-284) clean GenerateScatter seed 774069313, all 7 layers placed EXACT target (6/8/8/70/60/2500/400) + 6 mines / 0 culls + Traversability CONFIRMED ⇒ grid-hash runtime-equivalent, no count-change; cull bands unpopulated-DA default = full render. (TASK-285) clean load + match runs (Rule 4 Cavalry marching), no ensures/Accessed-None; off-screen correctness QA-structural. `L_Arena`/`DA_BattlefieldScatter`/`BattlefieldScatter.h`/`SummonedUnit.h` all UNTOUCHED (verified). PERF: NOT machine-capturable (no console-exec/stat-read via MCP; detached-editor tick throttled while unfocused → the log's ~5 fps is that throttle, not gameplay; real fps = Jonathan gameplay-cam WATCH — this batch is perf INFRA pre-density for Phase 3/W2). Committed: `SummonedUnit.cpp`, `BattlefieldScatter.cpp`, `ScatterConfig.h`, board + `handoffs/qa` TASK-284/285. DeckBuilderWidget + WBP_DeckBuilder (parked TASK-268) stayed unstaged. No push. Was: backlog.)
+- blocked-by: TASK-284 (qa-passed) + TASK-285 (qa-passed)
+- parallel-safe: no (single editor + compiler + Git)
+- spec: >
+    On `m7.6-arena10x`: (1) COMPILE TASK-284 + TASK-285 (editor bounce — Jonathan's close/reopen grant covers the session).
+    GREEN, report time + `Result: Succeeded`; failure → append to the relevant QA report, route back (counts as a QA loop).
+    (2) VERIFY `git diff --stat` shows ONLY `BattlefieldScatter.{h,cpp}` / `ScatterConfig.h` / `SummonedUnit.{h,cpp}` — the
+    branch-owned `L_Arena.umap` + `DA_BattlefieldScatter` MUST be UNTOUCHED (Phase 3 owns density); if anything else moved,
+    STOP and report. (3) PIE SANITY: full A→B march completes, a fixed seed produces the SAME scatter layout as before the
+    refactor (determinism proof — the same seed/positions), units cull + animate-when-rendered correctly (spot-check an
+    off-screen unit still marches/fights), Play Again ×3 clean, Message Log clean. (4) CAPTURE MACHINE PERF baseline where
+    MCP allows (this is the first structured perf number post-W1) into the handoff. (5) COMMIT on the branch, NO push. Post
+    hash + perf numbers in 🔧 Build & Git.
+- names: >
+    Branch `m7.6-arena10x` compile + commit (NO push). Law: CLAUDE.md hard gates, CONVENTIONS "M7.6" (branch ownership,
+    seed-order law).
+
+#### TASK-287 — [P3] DA_BattlefieldScatter density fill + cull bands/shadow data + nav rebuild + PIE + W2 machine capture + branch commit (build)
+- assignee: build-master
+- status: done (BUILD-MASTER 2026-07-24 — Phase 3 density fill applied to `DA_BattlefieldScatter` (data-only, NO compile), commit `8fe4991` (no push). Jonathan ruling "default the numbers, tune at W2". APPLIED ≈4.9× (total 3052→15000): Trees 70→340, Rocks 60→300, Boulders 6→30, Hill 8→40, Slabs 8→40, Grass 2500→12250, Plants 400→2000. Cull bands (uu): Grass 6000/9000, Plants 8000/12000, Rocks 14000/20000, Trees 24000/32000, Boulders/Hill/Slabs 0/0 (never). Shadows: obstacle layers ON, Grass/Plants OFF. Edit via ProgrammaticToolset server-side deepcopy, readback-verified ALL soft refs preserved (mesh counts + Hill `M_HillGrass` + Trees `Cylinder` proxy intact; DA saved is_dirty=false). TRAVERSABILITY PASS ×3 fresh seeds (494877441 / 197269377 / 1159629313): CONFIRMED 0 culls, counts on target (Hill 28-30/40, Grass ~12246/12250 = normal rejection-crowding); bot plays FULL ladder at density (Rule 2 Economy Deep Mine+Miners, Rule 4 Attack Cleric/Knight). ⚠ W2 WATCH: intermittent NON-FATAL large-world matrix-precision ensure (`DoubleFloat.cpp:19` / `Matrix.h:468` "precision loss converting matrix to GPU format / view transform") on 2/3 dense PIE generates — a rendering transient at 10× coords, gameplay+traversability fully intact, flagged for Jonathan's gameplay-cam. NAV: editor-python NOT MCP-reachable → nav NOT rebuilt/resaved, `L_Arena` NOT committed; runtime-Dynamic RecastNavMesh regenerates at PIE (non-breaking, all 3 runs confirmed); Jonathan's manual Build>Navigation click flagged in 🚨 Blockers. PERF not machine-capturable = W2 gameplay-cam WATCH. Committed: `DA_BattlefieldScatter.uasset` + board + `handoffs/TASK-287.md`. DeckBuilderWidget/WBP_DeckBuilder (parked) stayed unstaged. No push. Full table in handoffs/TASK-287.md. Was: backlog.)
+- blocked-by: TASK-286 (P1∥2 integrated — the cull fields + grid-hash MUST exist before the denser fill is affordable)
+- parallel-safe: no (single editor + Git; edits branch-owned `DA_BattlefieldScatter` + rebuilds nav)
+- spec: >
+    On `m7.6-arena10x`, in the editor. Populate `DA_BattlefieldScatter` with the §3 density fill for the 10× field: per-layer
+    instance COUNTS scaled up for the wider ±12,000 field, plus per-layer `CullStartDistance`/`CullEndDistance` cull bands and
+    `bCastShadows` flags (the TASK-284 code fields). **⚠ EXACT COUNTS ARE FLAGGED (plan overwritten — see the block's
+    numeric-source flag):** DEFAULT heuristic overnight = scale the current Phase-0 per-layer densities to ≈4.9× total
+    instances (milestone entry) distributed by the existing per-layer proportions, with cull bands set so distant instances
+    stop rendering (e.g. grass `CullEndDistance` short, trees/rocks mid, hills never culled + shadows ON, grass/plants shadows
+    OFF). RECORD the exact numbers you applied in the handoff as a table for Jonathan's W2 review — these ARE the W2 levers
+    (grass count, cull distances, RT-off units). Do NOT touch cull-field CODE (TASK-284) or unit code. After the density
+    change: re-run Build > Navigation + resave (editor-python route; else flag Jonathan's one click in 🚨) so the nav bake
+    reflects any new blockers, and verify the NON-NEGOTIABLE castle↔castle traversability guarantee still holds (0 culls, or
+    the widening-cull machinery resolves it). PIE: full A→B march, Play Again ×3, Message Log clean. **W2 MACHINE CAPTURE:**
+    capture fps/`stat unit`/instance counts at several field positions into the handoff — this is the perf number Jonathan
+    reviews at W2 in the morning; the human feel-verdict is HIS and does NOT block Phase 4 overnight. COMMIT on the branch,
+    NO push. Post hash + the density table + perf numbers in 🔧 Build & Git.
+- names: >
+    Branch `m7.6-arena10x`; `DA_BattlefieldScatter` (branch-owned); RecastNavMesh actor / L_Arena nav bake. Law: CONVENTIONS
+    "M7.6" (scatter cull-field naming, W-gate law — W2 is a Jonathan morning watch), "Battlefield & procedural terrain (M6.5)"
+    (traversability guarantee), plan §3 density table (recorded numeric truth = the applied table in this handoff).
+
+#### TASK-288 — [P4] rig_character.py LOD step for future rigs (tooling, C++/Python, QA'd)
+- assignee: gameplay-programmer
+- status: qa-passed (QA 2026-07-24 PASS, 0 blockers / 2 NITs, `qa/TASK-288.md` — recipe-sidecar ruled FAITHFUL [Blender-headless can't call UE editor-python; recipe carries exact chain+URO for TASK-289 to apply verbatim, same `(percent_triangles,screen_size)` contract as reimport_meshes.py]; chain 50%@0.4 / 20%@0.15 + URO flags EXACT vs CONVENTIONS law; idempotent byte-identical; 0 side effects. NIT for TASK-289: map recipe `percent_triangles` → SK reduction prop `number_of_triangles_percentage`. Orig note: SK-LOD recipe stage added to Tools/ArtPipeline/rig_character.py: deterministic <CardID>.lod.json sidecar pinning LOD1 50%@0.4 / LOD2 20%@0.15 + URO flags for the UE-side regenerate_lod/import step. Purely additive: git diff = 99 insertions, 0 deletions → every other stage byte-identical. Idempotency proven byte-identical across re-runs. handoffs/TASK-288.md)
+- blocked-by: none
+- parallel-safe: yes (Tools/ file; disjoint from all branch-owned code + the scatter/unit C++)
+- spec: >
+    Add the SK-LOD generation step to `Tools/rig_character.py` so FUTURE rigs get LODs automatically, matching the CONVENTIONS
+    SK-unit LOD law: LOD1 50% @ screen 0.4 / LOD2 20% @ 0.15, plus set `VisibilityBasedAnimTickOption =
+    OnlyTickPoseWhenRendered` + `bEnableUpdateRateOptimizations = true` on the generated SkeletalMesh's default component
+    setup (mirror the existing `regenerate_lod` editor-python helper referenced in CONVENTIONS). Idempotent, no behavior change
+    to any other stage of the rig pipeline. **LANE:** this is a Tools/ tooling change — follows the TASK-220 precedent of the
+    LOD line landing on the pipeline scripts; it is main-lane-safe (no branch-owned asset). ACCEPTANCE: a dry-run/readback
+    shows the LOD chain + URO flags applied to a test rig output; every other stage byte-identical. QA implied (tooling QA:
+    idempotency, no side effects on untouched stages). Post in ⚙️ Dev & QA.
+- names: >
+    `Tools/rig_character.py` (LOD step). Law: CONVENTIONS "Arena 10× scale-up & LOD/perf (M7.6)" classic-LOD + SK-LOD/URO
+    laws, "Skeletal rig & animation workstream (M7)".
+
+#### TASK-289 — [P4] LOD apply on the branch: LargeProp LOD line + SK-LOD regen + donor LOD audit + PIE + W3 machine capture + branch commit (build)
+- assignee: build-master
+- status: done (BUILD-MASTER 2026-07-24 — Phase 4 LOD: conflict-free parts done + 2 blockers FLAGGED, commit `9fa6b92` (no push). NO compile (editor + audit + git). (1) LargeProp LOD line ALREADY PRESENT in `Tools/reimport_meshes.py` (TASK-220 `DEFAULT_LOD_GROUP='LargeProp'`) — no port needed. (2) SK-unit LOD apply DEFERRED — **BLOCKER A:** `regenerate_lod` is editor-python, NOT MCP-reachable (SkeletalMeshTools has NO LOD-gen tool; ProgrammaticToolset can't run `unreal.` API); **BLOCKER B:** the 11 SK fleet meshes are M7.5 retexture territory (TASK-201/202, gated on undone TASK-200) → committing branch LODs on them = binary merge conflict → per the cross-batch ruling did NOT touch. URO flags already live via TASK-285 C++. SK baseline readback: all 11 `SK_` = LOD0-only (14k-22k verts). Recommend applying SK-LODs on MAIN after M7.5 retexture via the TASK-288 recipes. (3) DONOR AUDIT (read-only): Rocks/Boulders/Slabs = 6 LODs, Grass/Plants = 5 LODs (Fab — cover the 12250+2000 dominant counts); ⚠ **TREES = LOD0-only (340 blocking inst × ~2450 tris = the #1 W3 lever, no reduction)** + Hill LOD0-only (minor) → RECOMMEND follow-up to generate Tree/Hill donor LODs (`generate_lods`, MCP-reachable, conflict-free — Trees ≠ M7.5 fleet). (4) PIE: Traversability CONFIRMED (scatter byte-identical to TASK-287 `8fe4991` — its ×3 stands); the TASK-287 LWC matrix-precision ensure still appears intermittently (unchanged by this task). (5) W3 fps NOT machine-capturable = Jonathan gameplay-cam WATCH; objective LOD evidence = the audit table in `handoffs/TASK-289.md`. Committed: board + `handoffs/TASK-289.md` (docs only — no asset/tooling change). DeckBuilderWidget/WBP_DeckBuilder + all M7.5 `SK_`/`SM_` fleet untouched/unstaged. No push. Blockers in 🚨 Blockers. Was: backlog.)
+- blocked-by: TASK-287 (P3 committed — density is in, so LODs are measured against the real instance load) + TASK-288 (qa-passed — the rig LOD step exists)
+- parallel-safe: no (single editor + Git)
+- spec: >
+    On `m7.6-arena10x`. Apply the fleet LOD architecture and MEASURE at W3. (1) Ensure the branch's `Tools/reimport_meshes.py`
+    carries the TASK-220 `lod_group='LargeProp'` line (already qa-passed on main — CHERRY-PICK it into the branch if the branch
+    base predates it; verify with a diff). (2) Regenerate SK LODs on EXISTING rigs via the editor-python `regenerate_lod`
+    helper (LOD1 50% @ 0.4 / LOD2 20% @ 0.15) + set the URO flags — **⚠ CROSS-BATCH FLAG:** the SM_/SK_ fleet meshes are
+    M7.5's main-lane retexture territory (TASK-201/202, themselves gated on Jonathan's TASK-200 A/B eyeball, NOT yet done).
+    To avoid a merge conflict, DEFAULT overnight = apply LODs ONLY in a way that does not fight M7.5 (regenerate LODs on the
+    branch's current mesh assets; the merge inherits M7.5's retexture+LOD from main at Phase 6). If reimporting the fleet on
+    the branch would stomp M7.5-owned assets, DO NOT — FLAG it for Jonathan's morning and apply what is conflict-free
+    (LargeProp line present in the branch tooling, SK-LOD regen, donor LOD audit). (3) DONOR LOD AUDIT: read-only check that
+    the scatter donor SMs carry LOD chains; list any missing in the handoff. (4) PIE: full A→B march, Play Again ×3, Message
+    Log clean. **W3 MACHINE CAPTURE:** capture fps/`stat unit`/draw-call/LOD-transition numbers vs the TASK-287 baseline
+    (expect strict improvement) into the handoff — Jonathan's human W3 feel-verdict is deferred to morning, does NOT block
+    Phase 5 overnight. (5) COMMIT branch-owned + tooling changes on the branch, NO push. Post hash + before/after perf in
+    🔧 Build & Git.
+- names: >
+    Branch `m7.6-arena10x`; `Tools/reimport_meshes.py` (TASK-220 line), the `regenerate_lod` editor-python helper. Law:
+    CONVENTIONS "M7.6" classic-LOD law (SM LargeProp / castle explicit / SK LOD + URO), Nanite vista amendment (vista is
+    Phase 5, not here), sequencing law (TASK-220 line), branch-ownership. FLAG the M7.5 SM_/SK_ fleet-reimport coordination.
+
+#### TASK-289b — [P4-followup] Donor LOD generation: Trees + Hills scatter donors (build)
+- assignee: build-master
+- status: done (BUILD-MASTER 2026-07-24 — generated 5-LOD chains on the FULL tree+hill donor families (the TASK-289 audit's #1 W3 lever), commit `1df47b6` (no push). Conflict-free (Fab/terrain env donors, NOT the M7.5 `SK_`/`SM_` unit fleet). `generate_lods([0.5,0.25,0.125,0.0625])` → LODs 1→5 on 12 tree variants (`SM-Mobile_Tree_1..12`, ~2450→~150 tris) + 3 hill variants (`SM_Hill_01..03`, 636→64 tris), matching the other donors' 5-6 LOD density. Server-side verified + saved: LOD0 tris IDENTICAL, material slots IDENTICAL, bounds match source (hills = M6.6 spec exactly); collision untouched (`generate_lods` is render-only — trees block via the Cylinder proxy, hills via the M6.6 hull). PIE (seed 1703332609): Trees 340/340 + Hill 30/40 place, Traversability CONFIRMED (0 culls), no vanished instances; LWC ensure did NOT recur this run. Also FOLDED IN the loose end: `Tools/ArtPipeline/rig_character.py` (TASK-288 qa-passed SK-LOD recipe generator) + TASK-288 docs — now committed. Committed: 15 donor `.uasset` (LFS) + `rig_character.py` + TASK-288/289b docs + board. DeckBuilderWidget/WBP_DeckBuilder + all M7.5 `SK_`/`SM_` fleet untouched. No push. Evidence table in `handoffs/TASK-289b.md`.)
+- note: TASK-288's `rig_character.py` recipe tooling (qa-passed) is now COMMITTED here (was uncommitted on the branch).
+
+#### TASK-290 — [P5] Vista-ring + POI + neutral gold-node-prop asset prep (art)
+- assignee: art-director
+- status: ready-for-integration
+- blocked-by: TASK-289 (P4 done — Phase 5 follows Phase 4 per the ladder)
+- parallel-safe: no (editor asset prep feeding TASK-291's placement)
+- spec: >
+    Prepare the Phase-5 dressing assets for placement in L_Arena (TASK-291 places them). (1) **Vista-ring meshes** (the far
+    silhouette beyond the play bounds): select/import vista-class large cliff/mountain meshes and set them per the CONVENTIONS
+    Nanite AMENDMENT — Nanite ON, `bVisibleInRayTracing=false`, `NoCollision`, `bCanEverAffectNavigation=false`,
+    `CastShadow=false`; never gameplay actors, never inside the play bounds. **⚠ ASSET-SOURCE FLAG (plan §4 overwritten):**
+    if no Megascans/vista cliff meshes exist in the project, DEFAULT overnight = repurpose existing large rock/hill scatter
+    donors scaled up as distant silhouettes with the vista flags, and FLAG for Jonathan's morning that dedicated Megascans
+    cliffs are wanted. (2) **6–10 POI props** from existing/available assets (ruins, camps, large rocks — visual landmarks,
+    no gameplay). (3) **2 neutral gold-node visual props** for mid-field (VISUAL-ONLY — the capture mechanic is explicitly
+    NOT designed, Standing-backlog hook; reuse `SM_GoldNode` look). (4) FAB-005 watchtowers are a POST-TASK-207 slot-in
+    (Jonathan's FAB purchase, not yet done) — do NOT block Phase 5 on them; note them as a later addition. Deliver a handoff
+    listing each asset's path + the exact vista flags set, for TASK-291. No L_Arena edit, no Git (TASK-291 owns placement +
+    commit). ACCEPTANCE: vista/POI/gold-node-prop assets identified/imported with correct flags; handoff manifest complete.
+    Post in 🎨 Art.
+- names: >
+    Vista-class meshes (Nanite ON + `bVisibleInRayTracing=false` + NoCollision + no-nav + no-shadow), POI props, 2 neutral
+    gold-node visual props (`SM_GoldNode` look). Law: CONVENTIONS "M7.6" Nanite vista amendment, "Battlefield & procedural
+    terrain (M6.5)", milestone Standing backlog (neutral-node capture mechanic NOT designed). FLAG dedicated-Megascans-cliffs.
+
+#### TASK-291 — [P5] Place vista ring + POIs + gold-node props + fog/light polish into L_Arena (seeded one-shot) + branch commit (build)
+- assignee: build-master
+- status: done (BUILD-MASTER 2026-07-24 — Phase 5 dressing PLACED in L_Arena + fog polish + committed, commit `10bb474` (no push). **⭐ M7.6 Phase 1–5 ENGINEERING COMPLETE.** Editor was on L_MainMenu (TASK-290 prep) → loaded L_Arena first. Live nav bounds ±28000/±12500 → vista ring safely outside. Placed 26 StaticMeshActors (0 fails): 16 vista (ring ±34000/±20000, peaks 12-14× / ridges 8×; per-instance `castShadow=false`/`bVisibleInRayTracing=false`/`bCanEverAffectNavigation=false` all SET ×16), 8 POI (off-lane |Y| 3.5-7k, ≥~7k from castles, scale 2.5-3.5×), 2 gold props at (0,±5000) (VISUAL-only StaticMeshActors, NOT AGoldNode/ACaptureZone). Fog polish: `ExponentialHeightFog` density 0.008→0.012 + maxOpacity 0.85→0.92 (startDistance 10k kept = vista depth); DirectionalLight left as-is. TRAVERSABILITY UNCHANGED — dressing NoCollision + bCanEverAffectNav=false; PIE CONFIRMED 0 culls across fresh seeds (2138636033 / 1633272449). ⚠ W-GATE FINDING: `LogUnrealMath InverseFast non-invertible→NaN` now fires at PIE first-frame (large-world precision family with the TASK-287 LWC ensure, EXACERBATED by the extreme vista coords — non-fatal, gameplay + traversability intact; the LWC ensure predates the vistas so a fully clean log needs an LWC project setting, not just dressing tweaks; mitigation = pull ring in / cap scale / LWC tile setting, Jonathan's call). Also a pre-existing `InputMode:UIOnly` HUD-focus error, unrelated to dressing. BRANCH-OWNED-ONLY diff verified: `L_Arena.umap` + 9 `SM_` dressing `.uasset` ONLY — no fleet code / DA / SummonedUnit / SiegeBotController / gameplay source touched. Committed: L_Arena.umap + 9 .uasset (LFS) + board + `handoffs/TASK-291.md`. DeckBuilderWidget/WBP_DeckBuilder + all M7.5 SK_/SM_ fleet untouched/unstaged. No push. ⚠ **Phase 6 (capstone playtest + MERGE-TO-MAIN) is Jonathan's gate — NOT started here.** Was: backlog.)
+- blocked-by: TASK-290 (assets prepared)
+- parallel-safe: no (single editor + Git; edits branch-owned L_Arena)
+- spec: >
+    On `m7.6-arena10x`, in the editor. Place the TASK-290 assets into `L_Arena` via editor-python as a SEEDED one-shot (a
+    fixed layout — the vista/POI dressing does NOT re-seed per match; only the scatter does): a vista ring of cliff/mountain
+    silhouettes around the far perimeter (outside the ±12,000 play bounds, no collision/nav), 6–10 POI landmark props inside
+    the field (clear of the corridor + keep-clears — do NOT block the castle↔castle path), 2 neutral gold-node visual props
+    mid-field, and a fog/light polish pass (ExponentialHeightFog + light tuning for the vista depth — no collision/nav
+    change). Verify: castle↔castle traversability UNCHANGED (POIs/vista do not obstruct), nav bake still valid (vista/POI are
+    no-nav; re-run Build>Navigation only if a POI has collision — prefer NoCollision POIs), PIE full A→B march, Play Again ×3,
+    Message Log clean. **Branch-owned-only diff:** `git diff --stat` should show `L_Arena.umap` (+ any new dressing .uassets
+    from TASK-290) — the fleet code/DA untouched unless intended; STOP + report on any unexpected change. COMMIT on the branch,
+    NO push. **This is the last OVERNIGHT phase — do NOT proceed to Phase 6** (capstone playtest + MERGE GATE = Jonathan's,
+    morning). Post hash + a screenshot/description of the dressed field in 🔧 Build & Git.
+- names: >
+    Branch `m7.6-arena10x`; `/Game/Maps/L_Arena` (branch-owned). Law: CONVENTIONS "M7.6" (Nanite vista amendment, branch
+    ownership, W-gate/merge law — merge is Phase 6, Jonathan's), "World axes (arena contract)" (main's law untouched until
+    merge), milestone Standing backlog (neutral-node capture hook).
+
+#### TASK-292 — [M7.6 W-gate follow-up] DIAGNOSE + fix the LWC render-precision ensure + InverseFast NaN at PIE first-frame (gameplay-programmer diagnosis → build-master L_Arena fix)
+- assignee: gameplay-programmer (diagnosis) → build-master (applies the L_Arena property fix + verifies + commits)
+- status: done — VISTA FIX APPLIED + VERIFIED; ⚠ RESIDUAL scatter-DF NaN → follow-up (BUILD-MASTER 2026-07-24, commit `b513f09` (no push). Set `bAffectDistanceFieldLighting=false` + `bAffectDynamicIndirectLighting=false` on ALL 26 dressing components (16 vista `StaticMeshActor_7..22` + 8 POI + 2 gold; readback-verified 26/26 off; used label `GoldProp` so NO gameplay `GoldNode` touched); saved L_Arena. FRESH-EDITOR RESTART verify (my PID 16232 had crashed → MCP reconnected to a live editor; I save-all'd + graceful-closed it, relaunched fresh PID 8644 on L_Arena, which loaded the saved flags): **PIE gen 1 (seed 1857084801) Message Log CLEAN — the OriginX ensure (`DoubleFloat.cpp:19`) + InverseFast NaN (`Matrix.h:468`) BOTH GONE**, traversability CONFIRMED 0 culls. **BUT gen 2 (seed 1529263745) the ensure + NaN RETURNED** (right after GenerateScatter) → the VISTA source is eliminated, but a RESIDUAL comes from the SCATTER layers' DF participation (the pre-existing TASK-287 source, diagnosis §6.3 predicted; seed-dependent = intermittent). ⚠ **FALLBACK (b) = drop DF flags on the scatter HISM layers = a `BattlefieldScatter.cpp` CODE change** (no `FScatterLayer` DF field exists) → **HANDED BACK to gameplay-programmer as follow-up (TASK-292c)**. Fallback (a) pull-vista-ring-in is INAPPLICABLE (vistas already out of DF). NO ini/project setting touched (diagnosis §2 ruled out). Committed: `L_Arena.umap` (LFS) + `handoffs/TASK-292.md` (diagnosis) + `handoffs/TASK-292b.md` (this result) + board — branch-owned-only (no code/DA/fleet); DeckBuilder/WBP parked untouched; no push. ⚠ **The ensure/NaN is NOT fully eliminated until the scatter-DF follow-up lands** (W-gate flag). --- Was: ready-for-integration (diagnosis, handoffs/TASK-292.md).
+- blocked-by: none (follow-up to TASK-291 `10bb474`)
+- parallel-safe: no (build-master edits branch-owned L_Arena + PIE-verifies)
+- spec: >
+    SYMPTOM (reproduced, `Saved/Logs/GitClaudeUnrealTest.log` ~L2645/L2704): at PIE first-frame on L_Arena the Message Log
+    shows `EnsureFailed: OriginX <= OriginMax … precision loss while converting matrix to GPU format` (`DoubleFloat.cpp:19`)
+    immediately followed by `TMatrix InverseFast … non-invertible matrix → NaN` (`Matrix.h:468`), the InverseFast then
+    repeating every frame. Non-fatal; gameplay + traversability intact.
+    ROOT CAUSE (EVIDENCE): (1) Engine source — `OriginMax = UE_DF_FLOAT_MAX_VALUE = (1<<23)*0.25 − 1 = 2,097,151 uu ≈ 21 km`;
+    the whole scene sits within ±37,000 uu (0.37 km) = **56× under the limit** → the ensure is NOT a magnitude/tile overflow;
+    `NaN <= 2097151` is `false`, so it can only fire on a NaN. `Matrix.h:468` is `ErrorEnsure`, called by `InverseFast` on a
+    non-invertible matrix — the exact NaN source. **The two errors are ONE bug.** (2) All 16 vista actor transforms are
+    UNIFORM invertible scales (8/12/13/14×), clean positions (≤±34k) + bounds → no degenerate actor transform. (3) The vista
+    components have `CastShadow=false`/`bVisibleInRayTracing=false`/`bCanEverAffectNavigation=false` SET, **but
+    `bAffectDistanceFieldLighting=true` + `bAffectDynamicIndirectLighting=true` were LEFT ON** (the TASK-290 Nanite-vista
+    amendment omitted them). The meshes are NON-Nanite (~320×270×504 local) scaled 8–14× → ~4000×3500×6500 world; with
+    `r.GenerateMeshDistanceFields=True`, Lumen GI (`r.DynamicGlobalIlluminationMethod=1`), and the DirectionalLight's
+    `DistanceFieldShadowDistance=30000`, these huge distant backdrop meshes feed the distance-field + Lumen-GI scene, whose
+    per-mesh capture/DF matrix goes singular → the NEW-since-vista InverseFast NaN. BOTH build-master hypotheses REFUTED:
+    an LWC/world-tile ini setting cannot change a hardcoded engine constant and does not address a NaN; the vista transforms
+    are not degenerate.
+    FIX (build-master, L_Arena, NO code/compile): on the 16 vista `StaticMeshActor_7..22` (and recommended on the 8 POI +
+    2 gold-node props — all pure dressing) set `bAffectDistanceFieldLighting=false` + `bAffectDynamicIndirectLighting=false`;
+    save L_Arena, restart editor, PIE, confirm the Message Log is clean (no `OriginX` ensure, no `InverseFast` NaN) and that
+    traversability/rendering/perf are unregressed. FALLBACK if either error persists (documented in the handoff): pull the ring
+    inside `DistanceFieldShadowDistance` (≤~28,000) and/or drop the DF flags on the scatter layers. Post in ⚙️ Dev & QA.
+- names: >
+    `L_Arena` vista/POI/gold-prop `StaticMeshComponent` props `bAffectDistanceFieldLighting` + `bAffectDynamicIndirectLighting`
+    (build-master lane). Diagnosis evidence: `Config/DefaultEngine.ini` (r.* render settings), UE_5.8 `DoubleFloat.cpp:10-25` /
+    `Matrix.h:465-469`. Law: CONVENTIONS "M7.6" Nanite vista amendment (this fix ADDS the two DF/GI-off flags to the
+    vista-dressing law), branch-ownership (L_Arena is branch-owned), W-gate.
+
+#### TASK-292c — [M7.6 W-gate] Residual scatter-DF fix: drop DF/GI participation on the scatter HISM layers (code)
+- assignee: gameplay-programmer
+- status: done (BUILD-MASTER 2026-07-24 — recovered an interrupted build: compile GREEN (DLL already carried the DF-off change); the MCP client wedged mid-verify after a StopPIE->StartPIE, so restarted the editor and drove verification via raw-HTTP MCP. MULTI-SEED VERIFY = 6/6 CLEAN across 6 distinct random seeds [1666893441, 689394241, 114691505, 1824577921, 811163841, 1359979009] in a fresh session: BOTH the `OriginX<=OriginMax` ensure (DoubleFloat.cpp:19) AND the `InverseFast`/non-invertible NaN (Matrix.h:468) are GONE — whole-session failure-signature count = 0. No-regression: every seed logged "Traversability CONFIRMED - BlueRed castle path + 6 mine path(s) exist (after 0 cull(s))", 6 mines / 7 scatter layers each; scatter still renders (DF-off removes DF/Lumen participation only). No `InputMode` warning this session. THE LWC W-GATE PRECISION ISSUE IS FULLY CLOSED (TASK-292 vista @ b513f09 + TASK-292c scatter). Committed on m7.6-arena10x, NO push. Prior QA 2026-07-24 PASS, 0 blockers / 1 non-blocking nit [the "no setter" claim is inaccurate — `SetAffectDistanceFieldLighting` exists at PrimitiveComponent.h:2005; direct assignment still valid since the member is public + pre-Register], `qa/TASK-292c.md`. Verified: both flags at BOTH sites (visual + proxy), pre-Register ordering matches TASK-284, both public uint8:1 bitfields, diff = exactly the two flag-pair blocks, TASK-284/density/grid-hash/placement UNTOUCHED, no new include/shadow. Blanket-off agreed (decorative scatter shouldn't feed DF; hills keep CSM shadows via CastShadow). ⚠ BUILD: residual was SEED-DEPENDENT → verify ensure+NaN gone across MULTIPLE seeds after an editor restart. Awaits build-master. Orig: handoffs/TASK-292c.md. Set `bAffectDistanceFieldLighting=false` + `bAffectDynamicIndirectLighting=false` on BOTH scatter HISM paths in `BattlefieldScatter.cpp`: the visual HISM in `ResolveComponentForMesh` (after SetCullDistances/SetCastShadow, BEFORE RegisterComponent) AND the tree collision-proxy HISM in `ResolveProxyForVisual` (after the collision/nav block, BEFORE RegisterComponent). Both members confirmed public `uint8:1` UPROPERTY on UPrimitiveComponent (`PrimitiveComponent.h:556/564`); `bAffectDistanceFieldLighting` has NO setter so direct assignment is the only in-code path, both set symmetrically pre-Register matching the TASK-284 cull ordering. Blanket-off (no new FScatterLayer field) per spec — decorative environment should never feed DF/Lumen. ONLY BattlefieldScatter.cpp touched; density/cull-bands/grid-hash/placement UNCHANGED, no new include, no shadowing. NO compile/PIE/Git (build-master lane).)
+- blocked-by: none (follow-up to TASK-292 `b513f09`; consumes handoffs/TASK-292.md §6.3 fallback b + TASK-292b hand-back)
+- parallel-safe: no (build-master compiles + PIE-verifies MULTIPLE seeds + commits)
+- spec: >
+    RESIDUAL from TASK-292b: the vista DF/GI fix (`b513f09`) eliminated the VISTA source but isolated a seed-dependent residual —
+    the SCATTER HISM layers still feed the distance-field/Lumen scene → the same singular-matrix `InverseFast` NaN → the
+    `OriginX <= OriginMax` DoubleFloat ensure at PIE first-frame right after `GenerateScatter` (gen 2 seed 1529263745 reproduced it;
+    gen 1 seed 1857084801 was clean). FIX (code-only, mirror the vista treatment): in `BattlefieldScatter.cpp` set
+    `bAffectDistanceFieldLighting=false` + `bAffectDynamicIndirectLighting=false` on each scatter HISM at creation, at the SAME two
+    sites TASK-284 set SetCullDistances/SetCastShadow — `ResolveComponentForMesh` (visual HISM) AND `ResolveProxyForVisual`
+    (tree collision-proxy HISM) — BEFORE RegisterComponent (like the cull calls). BLANKET off (no new per-layer DA field): the
+    scatter is decorative and at ≈15,000 instances on the 10× field feeding DF is both the precision-NaN source AND needless cost.
+    Touch ONLY BattlefieldScatter.cpp; do NOT change density, cull bands, grid-hash, or placement. BUILD-MASTER: compile, then
+    PIE-verify the ensure + InverseFast NaN are GONE across MULTIPLE seeds (the residual was seed-dependent — one clean seed is not
+    sufficient), traversability unregressed, then commit. Post in ⚙️ Dev & QA.
+- names: >
+    `BattlefieldScatter.cpp` scatter HISM props `bAffectDistanceFieldLighting` + `bAffectDynamicIndirectLighting` (both public
+    `uint8:1` UPROPERTY on UPrimitiveComponent — UE_5.8 `PrimitiveComponent.h:556/564`; DistanceField flag has no setter).
+    Law: CONVENTIONS "Arena 10× scale-up & LOD/perf (M7.6)" (this ADDS DF/GI-off to the scatter render profile alongside the
+    TASK-284 cull/shadow knobs), branch-ownership, W-gate.
+
+#### TASK-293 — [M7.6 P5 polish] Fill the vista-ring sky-gaps in L_Arena (continuous layered backdrop) + branch commit (build)
+- assignee: build-master
+- status: done (BUILD-MASTER 2026-07-25 — commit `c35f146` (L_Arena+handoff+board; no push). RE-DO of a stalled attempt that persisted nothing. ONE deterministic editor-python placement script (fixed LCG seed 20260725, rounded-rectangle ring projection so nothing lands inside the play box), run synchronously + SAVED L_Arena immediately (git-verified umap modified 122KB→521KB BEFORE screenshots/PIE). MCP client was wedged all task → drove everything via the raw-HTTP MCP fallback (dual-channel SSE). Placed **62 fill instances** (`VistaFill_01..62`, 0 spawn fails) across 3 radial depth bands, all OUTSIDE nav (X±28000/Y±12500) + boundary walls: FRONT tree-line/low-ridge (RX31000/RY17000, 20) · MID main ridge interleaving the existing 16 (RX34000/RY20500, 24) · BACK tall peaks behind gaps (RX36500/RY22500, 18). Composition (existing assets only): **34 rocks** (20 peak `SM_Vista_01/04` + 14 ridge `SM_Vista_02/03`, scale 9–15×) + **13 hills** (`SM_Hill_01/02/03`, 6–10×) + **15 trees** (`SM-Mobile_Tree_1..12`, 7–11×), varied yaw + radial jitter → layered ridgelines, silhouettes overlap. ⚠ FULL vista flag set (`CastShadow`/`bVisibleInRayTracing`/`bCanEverAffectNavigation`/`bAffectDistanceFieldLighting`/`bAffectDynamicIndirectLighting` all=false) SET + readback-verified on ALL 62 → **verified_off=62/62** (matches proven `Vista_01..16`). Gotcha: `set_properties` `values` is a JSON-encoded STRING not an object (object = silent no-op). SCREENSHOTS (sent, unstaged in handoffs/): top-down shows a CONTINUOUS 360° ring; two low/outward shots at former 66°/294° gaps show the horizon fully backed (no drop-off void). LWC CLEAN — ONE PIE (seed 901016449): `InverseFast` NaN + `OriginX<=OriginMax` ensure + `non-invertible` = 0 across whole session log (DF-off held with +62 instances); `Traversability CONFIRMED — Blue→Red + 6 mine path(s) (after 0 cull(s))` current run. Branch-owned diff = `L_Arena.umap` ONLY (+ board + handoff); NO code/DA/fleet; DeckBuilderWidget/WBP_DeckBuilder (parked) unstaged; LFS ok; no push. Existing 16 vistas + 8 POI + 2 gold props untouched. Follow-up (report-only): a thin sky saddle between two MID crests is visible ONLY from a 130 m oblique, NOT from gameplay-height low shots — a couple more BACK peaks close it later if a pixel-check flags it (existing assets suffice). Full detail in handoffs/TASK-293.md. Was: re-do/stalled.)
+- blocked-by: none (follow-up to TASK-291 `10bb474` / TASK-292c LWC closure)
+- parallel-safe: no (build-master edits branch-owned L_Arena + PIE-verifies + commits)
+- spec: >
+    Jonathan's screenshot: the TASK-291 16-instance vista ring is too SPARSE — ~48° angular sky-gaps on the long (±Y) sides,
+    and through the gaps the ground plane ends and drops to sky/void at the horizon. Fill the ring into a CONTINUOUS, varied,
+    layered backdrop (rocks + trees + hills) so no gap shows the world edge, from EXISTING assets only (no new art). ~40–80
+    instances, 2–3 radial depths, silhouettes touch/overlap, all OUTSIDE the play bounds. EVERY new instance gets the full
+    vista flag set (readback-verified). SAVE L_Arena immediately (crash-robust), then screenshots (top-down + low-at-gap) +
+    ONE PIE (LWC ensure/NaN gone, traversability 0 culls). Commit `L_Arena.umap` + docs, explicit pathspecs; DeckBuilder parked;
+    no push. Post in 🔧 Build & Git.
+- names: >
+    `L_Arena` `VistaFill_01..62` StaticMeshActors from `/Game/Meshes/SM_Vista_01..04`, `/Game/Meshes/SM_Hill_01..03`,
+    `/Game/Tree_Pack_1/Meches/Mobile_Tree_1/SM-Mobile_Tree_1..12`; component vista flags per TASK-290/292 law. Branch-owned
+    L_Arena (M7.6 branch-ownership). Law: CONVENTIONS "Arena 10× scale-up & LOD/perf (M7.6)" (vista dressing + flag set), W-gate.
+
+---
+
+#### TASK-294 — [M7.6 P5 dressing fix] Reposition ALL vista-ring objects so NONE overhang the walkable area (no-overhang, occlusion preserved) + branch commit (build)
+- assignee: build-master
+- status: done (BUILD-MASTER 2026-07-25 — commit `238a2da` (L_Arena+handoff+board; no push). Vista meshes are NoCollision but scaled 6–15× so their GEOMETRY overhung inward past the walkable boundary even though origins sat outside → units pathed through the overhanging parts. Read pass: nav ±28000/±12500, 78 dressing actors (16 `Vista_*` + 62 `VistaFill_*`, label regex `^(Vista|VistaFill)_\d+$` so POIs/gold/scatter/walls excluded); world AABB half-extents up to ~17,600 uu → **52 of 78 overhung**, worst `VistaFill_23` reached **8,351 uu INTO the field**; ground-plane probe: +X/−X & corners ~44–48k, short ±Y sides ~30–32k. APPROACH: per object took the live world AABB (accounts for yaw+scale), computed the outward radial unit from center, solved the MINIMAL outward translation so the translated AABB clears the nav rect expanded by **margin 2500 uu** (separation on the natural first-clearing axis; bigger meshes move farther); z/yaw/scale kept → layered bands + yaw variety preserved. The 26 already-clearing objects were LEFT (moving them would reduce occlusion); only 52 overhangers moved. ONE atomic write: **moved 52/52 (0 fail)**, SAVED L_Arena immediately (git-verified umap modified on disk BEFORE screenshots/PIE). **No-overhang proof** (independent fresh re-scan): **0/78 overhang, MIN clearance across all 78 = 2,499 uu**. **Occlusion preserved BY CONSTRUCTION** — huge meshes mean inner faces land at ~30,500(X)/~15,000(Y), still far inside the ground edge (44k/30k); tightest inner-face-vs-ground margin +2,846 uu (`VistaFill_26`); NO object's inner face exceeds ground → **no void revealed, no taller vistas / no ground-extension needed**. SCREENSHOTS (sent, unstaged in handoffs/): `TASK-294-topdown` (ring outside nav rect), `-low-posY`/`-low-negY` (tight short sides, solid wall backs horizon, no void), `-low-posX`, `-low-corner` (tightest corner — rocks/trees/hills above the wall, no gap), `-oblique-posY` (continuous ring). Vista flags PRESERVED — readback all 78 → `flags_ok=78/78`, `flags_fixed=0` (`CastShadow`/`bVisibleInRayTracing`/`bCanEverAffectNavigation`/`bAffectDistanceFieldLighting`/`bAffectDynamicIndirectLighting` all=false). LWC CLEAN — ONE PIE: `InverseFast` NaN + `OriginX` ensure + `non-invertible` = 0 whole session; `Traversability CONFIRMED — Blue→Red + 6 mine path(s) (after 0 cull(s))`, 7 scatter layers on target. Branch-owned diff = `L_Arena.umap` ONLY (+ board + handoff); NO code/DA/fleet; DeckBuilderWidget/WBP_DeckBuilder (parked) unstaged; LFS ok; no push. Existing scatter/POIs/2 gold props untouched. Full detail + follow-ups in handoffs/TASK-294.md. Was: backlog.)
+- blocked-by: none (follow-up to TASK-293 `c35f146`)
+- parallel-safe: no (build-master edits branch-owned L_Arena + PIE-verifies + commits)
+- spec: >
+    Reposition ALL vista-ring objects (16 `Vista_*` + 62 `VistaFill_*`) so NONE overhang the walkable area (units must not walk
+    into/through any geometry) while STILL occluding the ground drop-off from the gameplay cam. Keep arena/playable/nav size
+    EXACTLY the same — only vista dressing moves. Read live nav + visual-ground extents; per object compute scaled world bounds,
+    push radially OUTWARD so the inner geometry edge clears the walkable boundary by ≥1500–2000 uu; keep the layered/varied look;
+    preserve full vista flags. SAVE L_Arena immediately (crash-robust). Verify: no-overhang (min clearance), occlusion (top-down +
+    low-outward screenshots, no void), LWC clean (one PIE) + traversability 0 culls. If pushing out reveals a gap → taller vistas
+    or FLAG a ground-extent conflict. Commit `L_Arena.umap` + docs, explicit pathspecs; DeckBuilder parked; no push. Post 🔧 Build & Git.
+- names: >
+    `L_Arena` `Vista_01..16` + `VistaFill_01..62` StaticMeshActors (branch-owned L_Arena, M7.6 branch-ownership). No new
+    identifiers. Law: CONVENTIONS "Arena 10× scale-up & LOD/perf (M7.6)" (vista dressing + flag set), W-gate.
+
+#### TASK-295 — [M7.6 P5 dressing] Decorative backdrop ground apron fills the field-edge→vista void in L_Arena + branch commit (build)
+- assignee: build-master
+- status: done (BUILD-MASTER 2026-07-25 — commit `709fb10` (L_Arena+handoff+board; no push). Jonathan's screenshot: from the angled/RTS cam a VOID horizon band sits between the field edge and the vista ring → vistas read as "floating." Read pass matched the field ground: **`ArenaGround`** = scaled `/Engine/BasicShapes/Cube.Cube` + override material **`/Game/Materials/Instances/MI_BattlefieldGround`** (M6.5 tri-planar grass), **top surface Z=0**, bounds X±28000/Y±12500 — the field ground ENDS EXACTLY at the nav boundary; beyond it is void. Added ONE decorative apron **`BackdropApron`** (`StaticMeshActor_33`): SAME Cube mesh + SAME `MI_BattlefieldGround` instance (tri-planar → grass tiles continuously across the field/apron boundary, no UV seam, exact color match), loc (0,0,−55) scale (800,640,1) → half-extents **X±40000 / Y±32000**, **top surface Z=−5** (5 uu BELOW field top → underlaps the field, opaque field hides the overlap, sub-pixel step = no z-fight/no seam; extent reaches PAST the vista bases so the apron's far edge is tucked UNDER the ring meshes on every side = hidden). **No new art asset** (reused engine Cube + existing MI). ⚠ FLAGS readback-verified all=false: `CastShadow`/`bVisibleInRayTracing`/`bCanEverAffectNavigation`/**`bAffectDistanceFieldLighting`**/**`bAffectDynamicIndirectLighting`** — the two DF/GI flags are the load-bearing guard vs the TASK-292/292c far-coord LWC NaN (held; apron still receives lighting → renders lit green). Collision `collisionProfileName=NoCollision` SET; derived `collisionEnabled` stays `QueryAndPhysics` (KNOWN TASK-293 toolset limit — not writable; non-issue: nav-off + below field surface + out of reach; traversability proves walkable area unchanged). ONE atomic script spawned+flagged+material+SAVED L_Arena, git-verified umap modified on disk BEFORE screenshots/PIE. **Gap-filled proof** (screenshots sent, unstaged in handoffs/): `TASK-295-eye-posX-ingap`/`-eye-posY-ingap` (eye-level in the former gap — apron grass runs unbroken up to+under the vista rock/hill bases, no void, vista grounded; ±Y = widest former gap, +X = long side), `-oblique-posY` (continuous field→vista, no sky-gap), `-topdown` (grass skirt surrounds field, reaches ring on all sides), `-rts-posY`/`-rts-negY`/`-rts-posX` (RTS-angle over the wall, continuous grass). **LWC CLEAN + traversability — ONE fresh PIE (seed 710563009, polled for a fresh line):** `[23.36.29] Traversability CONFIRMED — Blue→Red castle path + 6 mine path(s) (after 0 cull(s))`; `InverseFast` NaN + `OriginX` ensure + `non-invertible` = 0 whole session (DF-off held); 7 scatter layers on target. Branch-owned diff = `L_Arena.umap` ONLY (+ board + handoff); NO code/DA/fleet/gameplay; DeckBuilderWidget/WBP_DeckBuilder (parked) unstaged; LFS ok; no push. Playable ground/collision/nav/scatter/vistas/POIs/gold props untouched. Full detail + follow-ups in handoffs/TASK-295.md. Was: backlog.)
+- blocked-by: none (follow-up to TASK-294 `238a2da`)
+- parallel-safe: no (build-master edits branch-owned L_Arena + PIE-verifies + commits)
+- spec: >
+    Add DECORATIVE backdrop ground to fill the visible void band between the playable field edge and the vista ring (VISUAL
+    ONLY, behind the nav barrier — units can't reach it); keep the playable/walkable/nav area EXACTLY unchanged. Match the field
+    ground's MATERIAL + Z so the apron blends seamlessly (no color/height seam). Big flat plane at the field Z (or slightly below)
+    using the same grass material, extending from the field edge out PAST the vista bases so its far edge hides behind the ring.
+    Apron flags: NoCollision + `bCanEverAffectNavigation=false` (must NOT change walkable area) + `bAffectDistanceFieldLighting=false`
+    + `bAffectDynamicIndirectLighting=false` (far-coord LWC guard) + `CastShadow=false`; readback-verify. SAVE L_Arena immediately
+    (crash-robust). Verify: gap-filled screenshots at gameplay-cam height, playable-area unchanged (PIE A→B traversability 0 culls),
+    LWC clean (one PIE). Commit `L_Arena.umap` (+ any new apron mesh) + docs, explicit pathspecs; DeckBuilder parked; no push. Post 🔧 Build & Git.
+- names: >
+    `L_Arena` `BackdropApron` StaticMeshActor (branch-owned L_Arena, M7.6 branch-ownership). Reuses `/Engine/BasicShapes/Cube`
+    + `/Game/Materials/Instances/MI_BattlefieldGround` — no new identifiers. Law: CONVENTIONS "Arena 10× scale-up & LOD/perf (M7.6)".
 
 ---
 

@@ -115,6 +115,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Castle")
 	bool IsCastleDestroyed() const { return bDestroyed; }
 
+	/**
+	 *  True when Point lies within this castle's 2D spawn box — a castle-centered square
+	 *  test: |Point.X - ActorX| <= SpawnBoxHalfExtent.X && |Point.Y - ActorY| <=
+	 *  SpawnBoxHalfExtent.Y (Z ignored). Used by the Shield Wall ATTACK command
+	 *  (ASummonedUnit::FindNearestEnemyInSpawnBox, W1 TASK-275) so player units clear
+	 *  enemies massing inside the enemy castle's spawn region before hitting the castle.
+	 *  ADDITIVE — this does NOT touch the bot's ASiegeBotController::IsPointInBotSpawnBox
+	 *  (TASK-262 logic UNDISTURBED); it is an independent third reader of the same box.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Castle")
+	bool IsPointInSpawnBox(const FVector& Point) const;
+
 	/** Resolves the soft-referenced mesh and per-team material, null-safe. */
 	virtual void OnConstruction(const FTransform& Transform) override;
 
@@ -142,6 +154,17 @@ protected:
 	/** Maximum hit points (GDD §3.9). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Castle", meta = (ClampMin = "1"))
 	float MaxHP = 2000.0f;
+
+	/**
+	 *  Half-extent (XY) of this castle's spawn box, read by IsPointInSpawnBox (W1
+	 *  TASK-275, Shield Wall ATTACK command). PAIRED-TUNABLE (3-way law, CONVENTIONS):
+	 *  ACastle::SpawnBoxHalfExtent ≡ ASiegePlayerController::SpawnBoxHalfExtent ≡
+	 *  ASiegeBotController::SpawnBoxHalfExtent — all default (840,840); keep the three
+	 *  in lockstep. The (840,840) value now appears in 3 places (flagged in CONVENTIONS);
+	 *  a future pass MAY delegate both controllers to this castle helper — OUT of scope here.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Castle", meta = (ClampMin = "0"))
+	FVector2D SpawnBoxHalfExtent = FVector2D(840.f, 840.f);
 
 	/** Seconds between heal-over-time ticks (Masons repair, TASK-059) — impl detail, not a GDD stat. Smaller = smoother bar; the total/duration are the caller's. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle", meta = (ClampMin = "0.05"))

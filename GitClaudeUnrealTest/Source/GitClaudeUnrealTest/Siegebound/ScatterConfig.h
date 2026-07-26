@@ -4,9 +4,12 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Templates/SubclassOf.h"
 #include "UObject/SoftObjectPtr.h"
 #include "ScatterConfig.generated.h"
 
+class AGoldNode;
+class UMaterialInterface;
 class UStaticMesh;
 
 /**
@@ -150,6 +153,98 @@ struct FScatterLayer
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter")
 	float CollisionProxyZOffset = 0.f;
+
+	// --- W1-PREP: hill-surface placement + material override (CONVENTIONS "Arena
+	// --- 10× scale-up & LOD/perf (M7.6)" → "W1-PREP additions", TASK-250) ---
+
+	/**
+	 *  Opt-IN: this layer's instances may place ON hill surfaces. Default FALSE —
+	 *  a non-opted layer keeps the flat-floor ground trace exactly as before (and
+	 *  the hill layer itself must stay false: hills never stack on hills; a
+	 *  false-layer also serves as a placement SURFACE for the opted-in layers when
+	 *  it is a real-geometry blocker). When TRUE the layer is placed in a SECOND
+	 *  pass (after every non-opted layer, so the hills exist to be traced), its
+	 *  ground resolve accepts the elevated hill-surface Z, and candidates over a
+	 *  hill face steeper than MaxPlacementSlopeDeg are rejected (never buried at
+	 *  floor Z inside the hill — the W1-PREP bare-hills defect).
+	 *  RECOMMENDED OPT-INS (DA wiring is TASK-249/251's side, not code): GRASS +
+	 *  PLANTS first (non-blocking decoration — zero nav/corridor interaction, the
+	 *  safe defaults); ROCKS + TREES also legal (blocking laws are UNCHANGED —
+	 *  keep-clear/corridor tests still run on their 2D footprint, and their
+	 *  nav-relevant HISMs still participate in the reachability validation +
+	 *  corridor cull).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter")
+	bool bAllowOnHills = false;
+
+	/**
+	 *  Max hill-face slope (degrees from horizontal) this layer tolerates when
+	 *  bAllowOnHills is true: a candidate over a steeper face is rejected and
+	 *  re-rolled. Default 35° — just past the ≤30° climbable-face law
+	 *  (CONVENTIONS "Climbable terrain (M6.6)"), so props reach every walkable
+	 *  face plus a small margin, while near-vertical flanks stay clean. Ignored
+	 *  when bAllowOnHills is false.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter", meta = (ClampMin = "0", ClampMax = "89", EditCondition = "bAllowOnHills"))
+	float MaxPlacementSlopeDeg = 35.f;
+
+	/**
+	 *  Optional material override for this layer's HISMs (CONVENTIONS "W1-PREP
+	 *  additions"): when SET, it replaces the donor materials on EVERY slot of the
+	 *  layer's visual HISMs (+ the paired collision-proxy HISMs, per the law) via
+	 *  SetMaterial at component creation — the SM_ assets themselves are NEVER
+	 *  touched (the lane-clean route: main-lane donors stay pristine). Null
+	 *  (default) = donor materials, a failed resolve degrades to the donor look
+	 *  with a warning — never a crash. TASK-249's tri-planar M_HillGrass rides
+	 *  this on the HILLS layer.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter")
+	TSoftObjectPtr<UMaterialInterface> OverrideMaterial;
+
+	// --- Cull bands + shadow casting (CONVENTIONS "Arena 10× scale-up & LOD/perf
+	// --- (M7.6)" → scatter cull-field naming, TASK-284) — the per-layer LOD/perf
+	// --- knobs that make the Phase-3 ≈4.9× density fill affordable. Applied at
+	// --- HISM creation via SetCullDistances / SetCastShadow in
+	// --- ResolveComponentForMesh() AND the tree collision-proxy path. These stay
+	// --- DATA populated on DA_BattlefieldScatter at Phase 3; the defaults here are
+	// --- the safe "no behavior change" fallbacks (never-cull + hill-style shadows),
+	// --- so an unpopulated DA renders exactly as before this task. ---
+
+	/**
+	 *  Distance (uu) at which this layer's instances BEGIN to fade/cull — the near
+	 *  edge of the cull band fed to UInstancedStaticMeshComponent::SetCullDistances
+	 *  (InstanceStartCullDistance). 0 (default), paired with CullEndDistance=0,
+	 *  means NEVER culled. Normally < CullEndDistance (the fade band); if it is
+	 *  >= CullEndDistance the engine treats the band as a hard pop at CullEndDistance.
+	 *  Phase 3 sets the real per-layer bands on the DA (plan §3 table).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Cull", meta = (ClampMin = "0"))
+	int32 CullStartDistance = 0;
+
+	/**
+	 *  Distance (uu) beyond which this layer's instances are fully culled (not
+	 *  drawn) — InstanceEndCullDistance. 0 (default) = NEVER culled (the safe
+	 *  no-change fallback; Phase 3 populates the real bands per the plan §3 table).
+	 *  Small/dense layers (grass, plants) take a short band so the far field is not
+	 *  paying for invisible blades; hills take 0 (CONVENTIONS: "Hills: no cull" —
+	 *  their silhouette must read across the 10× field).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Cull", meta = (ClampMin = "0"))
+	int32 CullEndDistance = 0;
+
+	/**
+	 *  Whether this layer's VISUAL instances cast dynamic shadows (SetCastShadow on
+	 *  the visual HISM in ResolveComponentForMesh). Defaults TRUE — the hill/obstacle
+	 *  case (CONVENTIONS: "Hills: ... shadows ON (silhouette)"), mirroring bBlocking's
+	 *  obstacle-default pattern, so an unpopulated DA keeps today's shadows. Set FALSE
+	 *  on the GRASS / PLANTS layers in the DA (CONVENTIONS: "Grass/plants: shadows
+	 *  OFF") — thousands of tiny casters are the costliest, least-visible shadows on
+	 *  the field. NOTE: the invisible tree collision PROXY never casts a shadow
+	 *  regardless of this flag — it is SetVisibility(false) + hard SetCastShadow(false)
+	 *  by the proxy contract; this flag drives the VISIBLE tree/rock/hill HISM only.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Cull")
+	bool bCastShadows = true;
 };
 
 /**
@@ -166,9 +261,12 @@ struct FScatterLayer
  *
  *  The keep-clear radii + corridor half-width below are the DATA half of the
  *  NON-NEGOTIABLE traversability guarantee: blocking obstacles are excluded from
- *  the castle pads, gold-node pads, the PlayerStart, and the reserved central
- *  lane, so a navigable Blue→Red path always exists. Jonathan can make the field
- *  denser/riskier at playtest by shrinking these.
+ *  the castle pads, the PlayerStart, and the reserved central lane, so a
+ *  navigable Blue→Red path always exists. Jonathan can make the field
+ *  denser/riskier at playtest by shrinking these. (The old per-team gold-node
+ *  pads died with the W1-PREP mirrored-mines redesign, TASK-255 — mines are
+ *  spawned BY the scatter itself, NoCollision, and clear their own aprons via
+ *  the Scatter|Mines block below.)
  */
 UCLASS(BlueprintType)
 class GITCLAUDEUNREALTEST_API USiegeScatterConfig : public UDataAsset
@@ -193,24 +291,21 @@ public:
 
 	/**
 	 *  Half-extent (cm) of the rectangular scatter region on X (across the
-	 *  castles) and Y (field width). Default X=8600 places a little past the
-	 *  ±8000 castles; Y=3200 matches the arena floor half-width. The actor clamps
-	 *  to this if the level bounds cannot be resolved.
+	 *  castles) and Y (field width). M7.6 10× scale-up: default X=26,000 places a
+	 *  little past the ±25,000 castles; Y=12,000 sits just inside the ±12,500
+	 *  arena floor/walls. The actor clamps to this if the level bounds cannot be
+	 *  resolved.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Bounds")
-	FVector2D ArenaHalfExtent = FVector2D(8600.f, 3200.f);
+	FVector2D ArenaHalfExtent = FVector2D(26000.f, 12000.f);
 
-	/** Keep-clear radius (cm) around EACH castle (±8000) — no blocking obstacle lands inside, so a castle's mouth is never walled. Part of the traversability guarantee. */
+	/** Keep-clear radius (cm) around EACH castle (±25000, M7.6) — no blocking obstacle lands inside, so a castle's mouth is never walled. Part of the traversability guarantee. MESH-RELATIVE (sized to the castle footprint, NOT ×3.125-scaled — M7.6 keep-list). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|KeepClear", meta = (ClampMin = "0"))
-	float CastleKeepClearRadius = 900.f;
+	float CastleKeepClearRadius = 1500.f;
 
-	/** Keep-clear radius (cm) around EACH gold node (±7200) — miners must always reach their node. */
+	/** Keep-clear radius (cm) around the PlayerStart / hero spawn (≈-23800,0, M7.6) — the hero never spawns inside an obstacle. Mesh-relative, not scaled. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|KeepClear", meta = (ClampMin = "0"))
-	float GoldNodeKeepClearRadius = 500.f;
-
-	/** Keep-clear radius (cm) around the PlayerStart / hero spawn (≈-6800,0) — the hero never spawns inside an obstacle. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|KeepClear", meta = (ClampMin = "0"))
-	float PlayerStartKeepClearRadius = 700.f;
+	float PlayerStartKeepClearRadius = 800.f;
 
 	/**
 	 *  Half-width (cm) of the reserved central combat corridor: NO blocking
@@ -218,7 +313,76 @@ public:
 	 *  the straight Y≈0 lane between the two castles permanently walkable — the
 	 *  deterministic core of the traversability guarantee (the nav reachability
 	 *  check is the belt-and-suspenders confirmation on top). Grass ignores it.
+	 *  M7.6 ruling #2 (Jonathan, 2026-07-18): 1,000 — a tight canyon on the 10×
+	 *  field; this default and DA_BattlefieldScatter now AGREE (the old C++ 400 /
+	 *  DA disagreement ends here).
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|KeepClear", meta = (ClampMin = "0"))
-	float CorridorHalfWidth = 400.f;
+	float CorridorHalfWidth = 1000.f;
+
+	// --- Mirrored depleting mines (W1-PREP, TASK-255 — CONVENTIONS "Mirrored
+	// --- depleting mines": these numbers are LAW there; tune bands recorded) ---
+
+	/**
+	 *  Neutral depleting mines spawned per SIDE each generate (total mines =
+	 *  2 × this): each mine is drawn ONCE on the Blue half then exactly mirrored
+	 *  across X=0 (−X, Y — equal castle-distance sums by construction, the
+	 *  fairness law). 0 disables the mines pass (debug fields only — the shipped
+	 *  default is 3 per Jonathan's locked ruling).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Mines", meta = (ClampMin = "0"))
+	int32 MineCountPerSide = 3;
+
+	/**
+	 *  Minimum 2D center distance (cm) between mine PRIMARIES. The twin and
+	 *  cross-pair distances are guaranteed ≥ this FOR FREE by the half-draw
+	 *  construction (|X| ≥ max(MineClearanceRadius, this/2) — see PlaceMines),
+	 *  so primaries are the only explicit spacing test. Default 3,000 — larger
+	 *  than the biggest hill diameter, so two mine sites never share a mound.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Mines", meta = (ClampMin = "0"))
+	float MineMinSpacing = 3000.f;
+
+	/**
+	 *  Clearance disc radius (cm) enforced around EACH mine of a pair: candidate
+	 *  points must keep this disc out of the castle/PlayerStart keep-clear zones,
+	 *  and every nav-relevant blocker inside it is DELETED at placement (the
+	 *  apron + miner walk-in guarantee — the old GoldNodeKeepClearRadius reborn
+	 *  as an ACTIVE clearance; hills exempt by the never-delete-hills rule, grass
+	 *  untouched). Also the base radius of the per-mine widening reachability
+	 *  cull in ValidateTraversability.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Mines", meta = (ClampMin = "0"))
+	float MineClearanceRadius = 600.f;
+
+	/**
+	 *  Gold reserve each spawned mine is InitMine()'d with. CONVENTIONS default
+	 *  300 (3 miners dry a mine in ~100 s); tune band 250–450 — raise to 450
+	 *  FIRST if playtest says matches stall (the all-depleted pacing lever).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Mines", meta = (ClampMin = "0"))
+	int32 MineGoldReserve = 300;
+
+	/** Margin (cm) inset from the arena half-extents when drawing mine centers, so a mine's clearance disc never pokes past the field edge into the boundary walls. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Mines", meta = (ClampMin = "0"))
+	float MineEdgeMargin = 600.f;
+
+	/**
+	 *  Max hill-face slope (degrees from horizontal) a mine candidate tolerates
+	 *  at EITHER point of its pair — a steeper face at P or P′ re-rolls the
+	 *  candidate. 30° = the climbable-face law (CONVENTIONS "Climbable terrain
+	 *  (M6.6)"): miners must be able to WALK onto every mine. The deterministic
+	 *  fallback slot ignores this gate (it must always seat — economy law).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Mines", meta = (ClampMin = "0", ClampMax = "89"))
+	float MineMaxSlopeDeg = 30.f;
+
+	/**
+	 *  Mine actor class PlaceMines spawns; null (default) ⇒ AGoldNode (the
+	 *  neutral depleting claimable mine, TASK-253). A subclass hook for a future
+	 *  BP/child variant — never a different archetype (the pass calls InitMine
+	 *  on it, so it must BE an AGoldNode).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Mines")
+	TSubclassOf<AGoldNode> MineClass;
 };

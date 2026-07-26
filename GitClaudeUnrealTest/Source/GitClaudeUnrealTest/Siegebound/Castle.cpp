@@ -361,6 +361,15 @@ void ACastle::ResetCastle()
 	OnCastleHPChanged.Broadcast(CurrentHP, MaxHP);
 }
 
+bool ACastle::IsPointInSpawnBox(const FVector& Point) const
+{
+	// Castle-centered 2D square test (Z ignored). Additive third reader of the (840,840)
+	// paired-tunable — does NOT touch the bot's IsPointInBotSpawnBox (TASK-262). W1 TASK-275.
+	const FVector Origin = GetActorLocation();
+	return FMath::Abs(Point.X - Origin.X) <= SpawnBoxHalfExtent.X
+		&& FMath::Abs(Point.Y - Origin.Y) <= SpawnBoxHalfExtent.Y;
+}
+
 bool ACastle::TryGetInstigatorTeam(AController* EventInstigator, AActor* DamageCauser, ETeamId& OutTeam)
 {
 	// 1) The instigating controller's pawn (hero melee reports its controller).

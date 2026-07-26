@@ -137,10 +137,18 @@ protected:
 	 *  Rule order per M5 ruling 10 (defend=1, miners=2, SPELLS=3, big unit=4,
 	 *  discard=5 — TASK-102 inserted rule 3 and renumbered the trace labels):
 	 *    1. DEFEND  — enemy intruder on the bot half + an affordable defensive Unit/
-	 *                 Building (incl. the Set II towers) → cheapest at the centerline
-	 *                 (unit) or between the intruder and Castle_Red (building).
-	 *    2. ECONOMY — half clear → a Miner (under the target + §3.3 cap) or a Deep
-	 *                 Mine (building-routed economy, no cap; §4 M4).
+	 *                 Building (incl. the Set II towers) → cheapest castle-front
+	 *                 (unit — BotCastleSpawnOffset in front of Castle_Red, M7.6
+	 *                 ruling #1) or between the intruder and Castle_Red (building).
+	 *    2. ECONOMY — half clear → 2a a Miner (under the target + §3.3 cap) toward
+	 *                 the BEST AVAILABLE MINE (AGoldNode::FindBestMineFor — THE
+	 *                 single finder miners retarget through; W1-PREP mirrored
+	 *                 mines, TASK-256). Finder null = every mine depleted or none
+	 *                 exist ⇒ 2a is SKIPPED entirely (never buy a doomed miner;
+	 *                 logged once per state change, not per tick). Else 2b a Deep
+	 *                 Mine (building-routed economy, no cap; §4 M4) anchored at
+	 *                 the SAME finder result, castle-front fallback when no mine
+	 *                 is available (the all-depleted endgame economy).
 	 *    3. SPELLS  — §4 M5 extension (TASK-102): 3a Fireball at a cluster of >=
 	 *                 FireballClusterMinUnits player units (cluster radius = the
 	 *                 Fireball row's AoERadius), cast at the cluster centroid; else
@@ -213,13 +221,13 @@ protected:
 
 	// --- §4 ordered-rule tuning (mechanic rules → UPROPERTY defaults, not CSV columns — CONVENTIONS) ---
 
-	/** Rule 2 target: while ALIVE miners are fewer than this AND the half is clear, the bot builds economy. Distinct from the §3.3 hard cap of 6 (CanAddMiner). // GDD §4 — reach ~3 miners while idle */
+	/** Rule 2a target: while ALIVE miners are fewer than this AND the half is clear AND a mine is available (FindBestMineFor non-null — TASK-256), the bot builds economy. Distinct from the §3.3 hard cap of 6 (CanAddMiner). // GDD §4 — reach ~3 miners while idle */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot", meta = (ClampMin = "0"))
 	int32 TargetMinerCount = 3;
 
-	/** Rule 4 attack gate: the bot banks to at least this much gold before committing an offensive unit — this is what makes waves GROW as income scales. // GDD §4 */
+	/** Rule 4 attack gate: the bot banks to at least this much gold before committing an offensive unit — this is what makes waves GROW as income scales. Scaled 12 -> 36 with the 2026-07-24 all-cards-×3 cost triple (TASK-278) = the new Ogre cost (12×3), preserving "bank toward the priciest bankable unit" so waves still grow toward Knight 18 / Cavalry 21 / Ogre 36 instead of dumping on the cheapest affordable unit. // GDD §4 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot", meta = (ClampMin = "0"))
-	int32 AttackBankThreshold = 12;
+	int32 AttackBankThreshold = 36;
 
 	/** Rule 5 discard fee (mirrors the player's §3.6 1-gold charge); rule 5 needs at least this much gold. // GDD §3.6 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot", meta = (ClampMin = "0"))
@@ -274,11 +282,30 @@ protected:
 	float BotHalfBoundaryX = 0.f;
 
 	/**
-	 *  Just inside the bot half where offensive/defensive UNITS spawn before advancing on Castle_Blue (mirrors the player summoning near the centerline).
-	 *  M6.5 ruling (TASK-133): the arena widened 4× (castles ±2000 → ±8000) but this value is CENTERLINE-relative and the centerline did NOT move (still X=0), so it STAYS 350. A playtest may revisit whether the bot over-commits units so close to the centerline across the now-wider field.
+	 *  How far in FRONT of Castle_Red (toward the centerline) the bot's UNITS
+	 *  materialize before MARCHING out (Y fanned across ±BotSpawnLaneSpread).
+	 *  M7.6 ruling #1 (Jonathan, 2026-07-18): at the 10× arena (castles ±25,000)
+	 *  the old mid-field BotCenterlineSpawnX=350 materialize is REPLACED — the bot
+	 *  spawns CASTLE-RELATIVE (spec band ~1,500–2,000; default 1,750) and marches
+	 *  the field like the player's units do, so an attack wave's first contact is
+	 *  a real march (~9 min accepted "for now"; the W1 watch sanity-checks that
+	 *  pacing live). Resolved against the LIVE castle location every play
+	 *  (GetCastleRedLocation — the same live-resolve the defense path uses), so a
+	 *  moved castle moves the spawn with it. Applies to rule-4 attack waves AND
+	 *  rule-1 defensive units (both formerly shared the mid-field knob; castle-
+	 *  front is strictly more defensive, and no mid-field materialize path
+	 *  remains). FLAGGED follow-up (Standing backlog, NOT designed): "adaptive
+	 *  bot spawn positioning by strategy" — a later pass may choose spawn/stage
+	 *  points per strategy (defend vs push vs flank).
+	 *
+	 *  W1-PREP appendix 3a (TASK-265): while SpawnBoxHalfExtent is 840, this 1,750
+	 *  offset lands OUTSIDE the spawn box and ClampAnchorToBotSpawnRegion pulls the
+	 *  anchor back to the box's centerline-facing front band — i.e. the knob is
+	 *  INERT at today's box size. It is KEPT AS AUTHORED on purpose: it is ruling
+	 *  #1's knob and re-activates untouched the moment the box grows. Do not delete.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
-	float BotCenterlineSpawnX = 350.f;
+	float BotCastleSpawnOffset = 1750.f;
 
 	/** Half-width of the Y band units spawn across so waves fan out instead of stacking on one point. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
@@ -286,15 +313,26 @@ protected:
 
 	/**
 	 *  Swarm fan radius — a SwarmCount card (Militia Mob = 4) spawns its copies on a
-	 *  circle of this radius around the validated centerline point, via the shared
+	 *  circle of this radius around the validated spawn point, via the shared
 	 *  ASiegePlayerController::SpawnUnitSwarm (TASK-059) so the bot's Militia Mob
-	 *  matches the player's. Kept < BotCenterlineSpawnX (350) so a centered fan never
-	 *  crosses onto the Blue half (min copy X = 350 - 300 = 50 >= 0). // GDD §3.0
+	 *  matches the player's. M7.6: with the castle-relative spawn (~23,250 from the
+	 *  centerline) a 300-radius fan can never cross onto the Blue half; value kept
+	 *  at 300 (spawn rings are on the M7.6 keep-list). // GDD §3.0
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
 	float SwarmSpawnRadius = 300.f; // GDD §3.0
 
-	/** How far in FRONT of GoldNode_Red (toward the centerline) a rule-2 miner spawns, so it walks the last stretch to the node like the player's miners. */
+	/**
+	 *  How far SHORT of the rule-2a target mine (2D, toward the bot's own castle)
+	 *  a miner materializes, so it walks the last stretch to the mine like the
+	 *  player's miners. W1-PREP mirrored mines (TASK-256): formerly GoldNode_Red-
+	 *  relative — the target is now whatever AGoldNode::FindBestMineFor returns,
+	 *  and the desired point then clamps to the bot's own half (spawn law: the
+	 *  bot NEVER spawns on the Blue half). For a Blue-half mine the clamp lands
+	 *  the spawn at the centerline and the miner WALKS the field to the mine —
+	 *  cross-field walks are CORRECT behavior (plan-of-record; TASK-258 watch
+	 *  list, not a bug).
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
 	float MinerNodeApproachOffset = 400.f;
 
@@ -314,13 +352,52 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement")
 	FVector NavProjectionExtent = FVector(200.f, 200.f, 1000.f);
 
-	/** Fallback Castle_Red world location when no Red ACastle is found (CONVENTIONS world axes, M6.5 4× widening: +8000,0). Live actor lookup is preferred. */
+	/** Fallback Castle_Red world location when no Red ACastle is found (world axes, M7.6 10× scale-up: +25000,0). Live actor lookup is preferred. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement")
-	FVector CastleRedFallbackLocation = FVector(8000.f, 0.f, 0.f);
+	FVector CastleRedFallbackLocation = FVector(25000.f, 0.f, 0.f);
 
-	/** Fallback GoldNode_Red world location when no Red AGoldNode is found (CONVENTIONS world axes, M6.5: +7200,0 — the node stays 800 units in front of Castle_Red, so it moved WITH the castle to preserve the miner economy). Live actor lookup is preferred. */
+	/** 2D half-extent of the Red spawn box centered on Castle_Red (W1-PREP additions 3, TASK-262 — the bot mirror of the player box). The spawn gate is this box (or a Red-owned capture zone) instead of the whole own-half. Default (840,840) = 2× CastlePlinthClearance; FLAGGED tunable. // CONVENTIONS "W1-PREP additions 3" */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
+	FVector2D SpawnBoxHalfExtent = FVector2D(840.f, 840.f);
+
+	/**
+	 *  How far INSIDE the box edge an INELIGIBLE spawn anchor is parked when
+	 *  ClampAnchorToBotSpawnRegion pulls it in (W1-PREP appendix 3a, TASK-265):
+	 *  the per-axis clamp limit is (SpawnBoxHalfExtent - this). Keeping the
+	 *  clamped anchor off the exact box edge leaves the ComputeValidBotSpawnPoint
+	 *  ring-search room on BOTH sides of it — an anchor pinned exactly on the
+	 *  boundary would have half its candidate ring outside the box, which is what
+	 *  produced the observed one-sliver pile-up in the first place.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
+	float SpawnBoxAnchorInset = 40.f;
+
+	/**
+	 *  Anti-stacking 2D spacing the bot honors between a NON-BUILDING spawn point
+	 *  and every live ASummonedUnit of EITHER team (W1-PREP appendix 3a, TASK-265).
+	 *  Checked in IsBotHalfPointClear next to the BuildingClearance rule (units get
+	 *  the unit rule, buildings keep the building rule), so the deterministic
+	 *  widening ring in ComputeValidBotSpawnPoint WALKS to a genuinely free slot
+	 *  instead of re-serving one already-occupied point to every unit in a wave
+	 *  (the observed identical-XY stack). 0 disables the rule entirely.
+	 *  NOTE: this is deliberately BOT-ONLY this pass — the player's placement path
+	 *  (ASiegePlayerController) is untouched by design.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
+	float UnitSpawnClearance = 150.f;
+
+	/**
+	 *  W1 spawn-Z diagnostic (W1-PREP appendix 3a, TASK-265 — diagnose BEFORE
+	 *  fixing). When true, every bot UNIT spawn emits ONE LogGitClaudeUnrealTest
+	 *  Log line with the chosen point Z, a traced ground Z, their delta, and the
+	 *  spawned actor's Z / capsule half-height so the residual float above ground
+	 *  is directly readable. Deliberately NOT on LogSiegeBot — that category is
+	 *  exactly one line per FIRED decision rule (M3 decision-trace law) and must
+	 *  stay grep-clean. Default true for the W1 build; flip off once the float
+	 *  question is closed.
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement")
-	FVector GoldNodeRedFallbackLocation = FVector(7200.f, 0.f, 0.f);
+	bool bLogSpawnZDiagnostic = true;
 
 private:
 
@@ -383,21 +460,65 @@ private:
 	/** Live Castle_Red world location (nearest same-team ACastle), else CastleRedFallbackLocation. */
 	FVector GetCastleRedLocation() const;
 
-	/** Live GoldNode_Red world location (nearest same-team AGoldNode), else GoldNodeRedFallbackLocation. */
-	FVector GetGoldNodeRedLocation() const;
-
 	/**
 	 *  Finds a placement-valid spawn point near Desired by snapping onto the
 	 *  navmesh (ProjectPointToNavigation) and honoring the mirrored §3.5 rules —
-	 *  own half (X >= 0), castle plinth keep-out, and, for buildings, 200-unit
-	 *  clearance. Searches Desired plus a deterministic widening ring; the first
-	 *  valid snapped point wins. False (retry next tick) when nothing qualifies.
-	 *  Non-const for the warn-once no-navmesh latch.
+	 *  the Red spawn box / Red-owned capture zone (TASK-262), castle plinth
+	 *  keep-out, unit spawn clearance (units) and 200-unit building clearance
+	 *  (buildings). Searches the CLAMPED anchor (ClampAnchorToBotSpawnRegion —
+	 *  W1-PREP appendix 3a, TASK-265: every caller's Desired point is funnelled
+	 *  through the clamp HERE, in one place, so no call site does anchor math)
+	 *  plus a deterministic widening ring; the first valid snapped point wins.
+	 *  False (retry next tick) when nothing qualifies. Non-const for the warn-once
+	 *  no-navmesh latch.
 	 */
 	bool ComputeValidBotSpawnPoint(const FVector& Desired, bool bIsBuilding, FVector& OutPoint);
 
-	/** Own-half + plinth keep-out (+ building clearance when bIsBuilding) test on an already-on-navmesh point. */
+	/**
+	 *  W1-PREP appendix 3a (TASK-265) — the ANCHOR-CLAMP law. Returns a desired
+	 *  spawn anchor moved INTO the bot's spawn region when (and ONLY when) it is
+	 *  not already spawn-eligible.
+	 *
+	 *  ⚠ PASS-THROUGH CARVE-OUT (load-bearing, do NOT make this unconditional):
+	 *  an anchor already inside the Red spawn box OR inside a Red-OWNED capture
+	 *  zone is returned UNCHANGED. That is what preserves the TASK-264-verified
+	 *  behavior where the bot stages mid-field while Red holds CaptureZone_Center
+	 *  — an unconditional clamp would yank those anchors back to the castle and
+	 *  destroy the emergent spawn-forward play the capture zone exists for.
+	 *
+	 *  Otherwise: per-axis clamp of (Desired - Castle_Red) into
+	 *  ±(SpawnBoxHalfExtent - SpawnBoxAnchorInset), Z preserved (the navmesh
+	 *  projection owns Z). The plinth is deliberately NOT special-cased — the
+	 *  existing ring walk-out in ComputeValidBotSpawnPoint owns that.
+	 *
+	 *  FLAGGED DEVIATION from the board's literal wording (see handoffs/TASK-265.md):
+	 *  the clamp targets the NEARER of the two eligible regions — the castle box, or
+	 *  a RED-OWNED capture zone — rather than always the castle box. A box-only
+	 *  clamp would make the bot structurally unable to ever spawn in a zone it owns
+	 *  (no anchor in this class is computed inside the mid zone, so the pass-through
+	 *  above could never fire), which deletes TASK-264 PIE result (f) and denies the
+	 *  bot Jonathan's "when captured, you can spawn units there". Castle-relative
+	 *  anchors are always nearer the box, so rule-1/rule-4 waves are unaffected and
+	 *  M7.6 ruling #1 stands; with no zone / a Neutral zone / a Blue-owned zone the
+	 *  behavior is byte-identical to the board's spec.
+	 *
+	 *  Why it is needed: TASK-262 shrank the spawn GATE to the 840 box but the
+	 *  anchors stayed pre-shrink (castle-front at BotCastleSpawnOffset = 1,750 in
+	 *  front of Castle_Red, and the rule-2 mine anchors thousands of uu away),
+	 *  while the ring search tops out at 1,100 uu — so those anchors either piled
+	 *  every wave onto the single ring sample that cleared the box edge, or failed
+	 *  outright and stalled the rule-2 economy ladder.
+	 */
+	FVector ClampAnchorToBotSpawnRegion(const FVector& Desired) const;
+
+	/** Spawn-box + plinth keep-out (+ unit spawn clearance for units / building clearance for buildings) test on an already-on-navmesh point. The old whole-own-half gate is now the Red spawn box OR a Red-owned capture zone (W1-PREP additions 3, TASK-262); the UnitSpawnClearance anti-stack rule is appendix 3a (TASK-265). */
 	bool IsBotHalfPointClear(const FVector& Point, bool bIsBuilding) const;
+
+	/** True if Point lies inside the Red spawn box — a 2D square centered on Castle_Red (live team-filtered ACastle lookup via GetCastleRedLocation, else the +25000 fallback), half-extent SpawnBoxHalfExtent. Replaces the old own-half spawn gate (W1-PREP additions 3, TASK-262). */
+	bool IsPointInBotSpawnBox(const FVector& Point) const;
+
+	/** True if Point lies inside a Red-OWNED mid capture zone — single TActorIterator<ACaptureZone> (null-safe if absent = pre-capture behavior); CanTeamSpawnHere(Red, Point) folds the box test AND the Red-ownership match (TASK-260 API). */
+	bool IsPointInCapturedZone(const FVector& Point) const;
 
 	/**
 	 *  Resolves + spawns the composed BP for CardID with Team = BotTeam (TASK-044
@@ -420,4 +541,31 @@ private:
 
 	/** One-shot latch for the no-navmesh degrade-open warning (ComputeValidBotSpawnPoint). */
 	bool bWarnedNoNavData = false;
+
+	/**
+	 *  Rule-2 mine-lockout log latch (W1-PREP mirrored mines, TASK-256): set
+	 *  after logging that AGoldNode::FindBestMineFor returned null (every mine
+	 *  depleted or none exist — rule 2a skipped), cleared (with one recovery
+	 *  line) when a mine is available again — so the lockout is logged ONCE PER
+	 *  STATE CHANGE, never per 2 s tick. Diagnostics only, so both lines stay on
+	 *  LogGitClaudeUnrealTest (LogSiegeBot's one-line-per-FIRED-rule law).
+	 *  Self-heals across Play Again: the first rule-2 tick of a fresh match
+	 *  observes the freshly scattered mines and clears it.
+	 */
+	bool bLoggedMineLockout = false;
+
+	/**
+	 *  Rule-2 spawn-failure streak latch (TASK-267). The rule-2 ladder no longer
+	 *  ABANDONS the decision tick when a Miner (2a) / Deep Mine (2b) cannot find a
+	 *  valid spawn point — it FALLS THROUGH to rules 3/4/5 (manager ruling: the
+	 *  failure path spends no gold and confirms no card, so falling through strictly
+	 *  ADDS reachable behavior). The two failure lines are promoted from Verbose to
+	 *  Log so a persistent stall is visible at default verbosity, but this latch
+	 *  emits them at most ONCE per contiguous failure streak: set on the first rule-2
+	 *  spawn failure, cleared on the next SUCCESSFUL rule-2 spawn (2a or 2b) and on
+	 *  match reset (ResetBot) — so a re-failing rule 2 cannot spam the 2 s cadence.
+	 *  Diagnostics only (LogGitClaudeUnrealTest); NOT a UPROPERTY and not editor-
+	 *  exposed. Transient — reset state, never serialized.
+	 */
+	bool bRule2SpawnFailureLogged = false;
 };
