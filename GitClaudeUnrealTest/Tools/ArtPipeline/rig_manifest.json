@@ -120,6 +120,13 @@
       "weapon_side": "r",
       "attack_style": "overhead",
       "_note": "TASK-242 evening batch. GDD S4/S3.8: Unit, 500 HP, dmg 35, range 120, Siege tank (ignores units, targets buildings then castle). ROSTER'S TALLEST (Z 290 UE = 2.90 m; X 226.72 includes the stone-maul overhang). MANAGER LANE RULING (TASK-242): rigged on the SHARED SiegeBiped (Footman_Rig root) like every humanoid, NOT the _doc's 'bespoke' option - the adaptive height/half-width fit absorbs the bulk; Meshy skeleton is CLIPS ONLY. 'overhead' (else-branch overhead swing) = the two-hand maul smash read. Two-slot [TeamRegion, OgrePBR]+UVMap."
+    },
+    "Wizard": {
+      "input_fbx": "Content/RawAssets/Wizard.fbx",
+      "skeleton": "SiegeBiped",
+      "weapon_side": "r",
+      "attack_style": "cast",
+      "_note": "TASK-302 W-UNIT-1. CONVENTIONS 'Wizard unit — AoE fireball caster': ranged Standard-profile fireball caster, robed humanoid (the Cleric robed-caster precedent). Rigged on the SHARED SiegeBiped (Footman_Rig root) like every humanoid; the adaptive height/half-width fit absorbs the outstretched fireball arm + held staff (TASK-301: bounds [129.88,99.25,181.94] UE, Z height-fit to 182 = 1.82 m; footprint deeper than a stock humanoid per the Cavalry/Ogre weapon-overhang note). 'cast' (script else-branch = raise-arm-then-drive-forward) reads as a spellcast/HURL, deliberately NOT 'thrust' (the Archer/Longbowman bow-draw read the spec bars). weapon_side 'r' drives the STAFF arm (staff in the right hand; fireball cradled in the left palm per TASK-301) up-and-forward = iconic staff-cast silhouette at RTS camera. FLAG (Cleric/Archer flag class): a true two-hand fireball-hurl (left-hand throw) or a Meshy cast clip is a tuning follow-up, not required now. Two-slot [TeamRegion, WizardPBR]+UVMap."
     }
   }
 }

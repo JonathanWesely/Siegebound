@@ -238,6 +238,26 @@
       },
       "ucx": null
     },
+    "Wizard": {
+      "category": "unit",
+      "mode": "bake",
+      "tri_budget": 15000,
+      "bake_resolution": 1024,
+      "origin": "feet-center",
+      "fit_mode": "height",
+      "target_dims_ue": [130.29, 99.41, 182.0],
+      "_dims_source": "TASK-301 W-UNIT-1 (2026-07-26): NEW unit, NO blockout mesh exists — Z=182 is the height-fit target (roster humanoid band 180-190; the vertical staff / ember-crystal is part of the Z silhouette, Longbowman-tall-bow precedent). X/Y are MESH-MEASURED from the live Meshy Stage-2 conform (130.29 x 99.41), warn-only under fit_mode=height (only Z is enforced). _tuned 2026-07-26: the original Cleric-modeled guess [120, 82, 182] threw a warn-only Y deviation (the caster's outstretched fireball arm + held staff make the footprint deeper than the Cleric); replaced with the measured conformed dims so a re-gen conforms clean. Silhouette + palette verified at the eyeball gate against Concepts/Wizard.png.",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 1.5,
+      "team_region": {
+        "max_fraction": 0.35,
+        "_verified": "TASK-301 (2026-07-26) — cream shoulder-stole / hood-mantle = TeamRegion (TASK-300 concept: slot-0 = cream hood-mantle/stole cloth; dark robe + leather + staff + boots = WizardPBR). Reuses the Cleric shoulder_caps recipe. EYEBALL-GATE VERIFIED against the live Meshy mesh: 555 faces / 4.1% area — the cream shoulder-cape/collar mantle is isolated cleanly (front + back previews both show the cape as the sole region), hood + bare bearded face SPARED (Archer bare-HEAD lesson holds). NO helm_dome (a hood is not a helmet). Selector kept as-guessed; values now mesh-verified.",
+        "selectors": [
+          { "name": "shoulder_caps", "box": { "min": [0.10, 0.10, 0.66], "max": [0.90, 0.90, 0.84] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
+        ]
+      },
+      "ucx": null
+    },
     "Longbowman": {
       "category": "unit",
       "mode": "bake",

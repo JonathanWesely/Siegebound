@@ -153,3 +153,44 @@ Set `SkeletalVisualMesh.RelativeLocation.Z` = **−90** in BP_Unit_Archer and **
 - **Shared SK_Footman_Skeleton per-mesh offset inheritance** — no; the offset that's wrong lives on the BP component, and every unit shares the skeleton yet only the two late-imports float.
 - **SESSION-1 Rank-1 (hills/perception)** — refuted by unit-type specificity + `show Navigation`.
 
+---
+---
+
+# DIAG SESSION-3 — recurrence on the Wizard + the SYSTEMIC fix (APPLIED)
+
+**Agent:** gameplay-programmer · **Task:** TASK-306 (diagnose) → TASK-307 (fix, applied) · **Mode:** git/code read-only diagnosis, then a FILE-ONLY C++ edit (no compile/editor/Git/MCP) · **Date:** 2026-07-26 · **Branch:** m7.6-arena10x
+
+## Why SESSION-2's fix RECURRED on `BP_Unit_Wizard`
+
+SESSION-2's fix (TASK-259, shipped `bfa2ecf`, `SummonedUnit.cpp:304-307`) pinned the swapped skeletal mesh to `VisualMeshBaseRelativeLocation`, which `BeginPlay` (`:188`) caches from `VisualMesh->GetRelativeLocation()` — **the STATIC VisualMesh's BP-authored Z**. That did not make grounding systemic; it merely **relocated the "each BP must hand-author `Z = −CapsuleHalfHeight`" trap** from the *SkeletalVisualMesh* component onto the *static VisualMesh* component. Both are per-BP hand-authored values.
+
+`SM_Wizard`/`SK_Wizard` are **feet-origin** (min_z 0.065; TASK-301/302 handoffs), so they need the −HalfHeight offset like every other unit. But:
+- The **TASK-304** authoring spec for `BP_Unit_Wizard` says only "`VisualMesh = SM_Wizard`, `ProjectileClass = BP_Projectile_Fireball` (`SkeletalVisualMesh` auto-resolves — no manual assign)" — it **omits any static-VisualMesh.Z offset and any capsule resize**.
+- The **TASK-302** handoff (§5 "Float-fix is automatic", §6) explicitly told downstream the fix needed **NO per-BP Z offset**.
+
+Both statements were false about a copy-from-static-VisualMesh fix. `BP_Unit_Wizard`'s static VisualMesh.Z stayed at its default `0` → the v1 copy propagated `0` onto the SK component → the whole body renders one capsule-half-height (~90 uu) above the floored capsule. Same signature as the old Archer/Ogre. **The placement ghost is unaffected** (a separate `AStaticMeshActor` dropped at the ground point relying on the feet-origin mesh, `SiegePlayerController.cpp:1443`) — matching Jonathan's "ghost looks fine, the summoned unit floats." **Classification:** a per-unit-missing value *caused by a non-systemic fix* — it will recur on all 11 feet-origin Meshy rebuilds (FLEET-REMASTER) authored the same way.
+
+## The systemic fix (APPLIED — TASK-307)
+
+`ASummonedUnit::ResolveSkeletalVisual()` (`SummonedUnit.cpp`, ~:289-311), immediately after `SetSkeletalMeshAsset(SkeletalAsset)`. Replaced the fixed copy with a capsule + mesh-bounds derivation:
+
+```cpp
+if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+{
+    const float HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+    const FBoxSphereBounds SkBounds = SkeletalAsset->GetBounds(); // ref-pose local bounds
+    const float MeshMinZ = (SkBounds.Origin.Z - SkBounds.BoxExtent.Z) * SkeletalVisualMesh->GetRelativeScale3D().Z;
+    FVector GroundedLoc = SkeletalVisualMesh->GetRelativeLocation(); // keep authored X/Y
+    GroundedLoc.Z = -HalfHeight - MeshMinZ; // mesh's lowest point → capsule bottom (= floor)
+    SkeletalVisualMesh->SetRelativeLocation(GroundedLoc);
+}
+```
+
+**Mechanism:** CharacterMovement floors the capsule (bottom at actor-Z `−HalfHeight`), so grounding the mesh's lowest point there gives feet-on-floor: `GroundedLoc.Z + MeshMinZ = −HalfHeight`. No dependency on any BP-authored transform.
+
+**No-op for the current fleet** (all feet-origin, `MeshMinZ ≈ 0` ⇒ `GroundedLoc.Z = −HalfHeight`, deltas < 0.2 uu vs the existing authored −90/−90/−145 — SESSION-2 bounds table). **Closes the Wizard + all 11 rebuilds + future units automatically, with zero per-BP capsule/Z authoring**, robust to non-feet-origin meshes (uses real bounds) and per-BP scale (`RelativeScale3D.Z`). Includes already present (`CapsuleComponent.h` `:8`, `Engine/SkeletalMesh.h` `:15`). `.h` untouched; the lunge/static/ghost paths untouched.
+
+**Out of scope (unchanged):** the secondary Ogre-near-hill capsule-LIFT watch (SESSION-1 Rank-2 / TASK-259 WATCH) — a spawn-time nav-projection Z issue additive on top of the base offset, hardened separately (DIAG "Fix option D/E"). This fix removes the base float entirely.
+
+Full diff + full no-op table: `handoffs/TASK-307-programmer.md`. Status: TASK-307 ready-for-qa → TASK-307-QA → TASK-308 (build-master compile + PIE + commit).
+

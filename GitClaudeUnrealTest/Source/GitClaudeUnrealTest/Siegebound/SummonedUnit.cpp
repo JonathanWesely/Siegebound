@@ -286,24 +286,42 @@ void ASummonedUnit::ResolveSkeletalVisual()
 	// materials; the team recolor below (via the LoadStatsAndStart re-apply) overrides slot 0.
 	SkeletalVisualMesh->SetSkeletalMeshAsset(SkeletalAsset);
 
-	// FLOAT-FIX (DIAG-floating-units SESSION-2): ground the skeletal mesh to the SAME
-	// authored offset the static VisualMesh already carries. The SK feet sit at the mesh
-	// pivot (Z=0), so with the component left at capsule-center the whole body renders one
-	// capsule-half-height ABOVE the grounded capsule. TASK-159 hand-authored the −HalfHeight
-	// Z into every unit BP that existed then; the late first-imports (Archer/Ogre, TASK-242/243,
-	// "zero BP changes") never got it, so their SkeletalVisualMesh kept the C++ default Z=0 and
-	// floated (+90 / +145). Pin the component from code here instead of trusting each BP: this
-	// corrects Archer (0→−90) and Ogre (0→−145), is a byte-identical no-op for the units whose
-	// BP already authored SkeletalVisualMesh.Z == VisualMesh.Z (the other 9 — measured
-	// −90/−90/−145 in the DIAG table), AND permanently closes the "next first-import forgets the
-	// BP offset" trap. VisualMeshBaseRelativeLocation is the static VisualMesh's authored
-	// RelativeLocation, cached in BeginPlay (SummonedUnit.cpp:154-157) BEFORE
-	// LoadStatsAndStart→ResolveSkeletalVisual runs — the ONLY call path — so it is always valid
-	// here; SkeletalVisualMesh is already non-null (the early-return at the top of this function).
-	// The bVisualMeshBaseCached guard is defense-in-depth: never pin a garbage ZeroVector offset.
-	if (bVisualMeshBaseCached)
+	// FLOAT-FIX v2 (DIAG-floating-units SESSION-3, SYSTEMIC): ground the skeletal mesh by
+	// DERIVING its offset from the capsule + the mesh's OWN bounds — never from a per-BP
+	// hand-authored Z. The SK feet sit at the mesh pivot (feet-origin: local min-Z ≈ 0), so a
+	// component left at capsule-center renders the whole body one capsule-half-height ABOVE the
+	// grounded capsule (Archer +90 / Ogre +145 / Wizard +~90). CharacterMovement floors the
+	// CAPSULE, so its bottom (actor-relative Z = −HalfHeight) sits ON the ground; we want the
+	// mesh's LOWEST point to land there: componentZ + meshLocalMinZ == −HalfHeight, i.e.
+	// componentZ = −HalfHeight − meshLocalMinZ.
+	//
+	// WHY v1 (TASK-259) was not enough: it copied the STATIC VisualMesh's BP-authored Z
+	// (VisualMeshBaseRelativeLocation) onto this component — which merely RELOCATED the "each BP
+	// must hand-author −HalfHeight" trap from this component onto the static one. BP_Unit_Wizard's
+	// static VisualMesh.Z was never offset (TASK-302 §5/§6 + the TASK-304 authoring spec both
+	// assumed the fix was automatic), so the copy propagated 0 and the Wizard floated exactly like
+	// the old Archer/Ogre. Deriving from the CAPSULE closes the trap permanently: the Wizard, the
+	// 11 feet-origin Meshy rebuilds, AND any future unit ground with ZERO per-BP capsule/Z
+	// authoring — even if a BP never resizes the capsule (feet still land on the floored capsule
+	// bottom; capsule size then only affects collision, not the visual float).
+	//
+	// NO REGRESSION for the current fleet: every rigged unit is feet-origin (SK bounds bottom ≈ Z0
+	// — DIAG table: Footman origin.z 89.85 / extent.z 89.83, Archer 90.00 / 89.95, Ogre 143.93 /
+	// 144.09), so meshLocalMinZ ≈ 0 and GroundedLoc.Z resolves to −HalfHeight = their existing
+	// authored −90 / −90 / −145 (byte-equivalent within <0.2 uu, invisible). A NON-feet-origin
+	// future mesh is handled for free by using the actual bounds; RelativeScale3D.Z keeps it
+	// correct under any per-BP mesh scale. GetCapsuleComponent() is the ACharacter root (never
+	// null — the if is defense-in-depth). Only Z is touched; the authored X/Y is preserved. The
+	// static VisualMesh / lunge base (VisualMeshBaseRelativeLocation) / blockout-fallback paths
+	// are deliberately untouched (the static mesh is hidden once this SK swap takes).
+	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
 	{
-		SkeletalVisualMesh->SetRelativeLocation(VisualMeshBaseRelativeLocation);
+		const float HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+		const FBoxSphereBounds SkBounds = SkeletalAsset->GetBounds(); // ref-pose local bounds
+		const float MeshMinZ = (SkBounds.Origin.Z - SkBounds.BoxExtent.Z) * SkeletalVisualMesh->GetRelativeScale3D().Z;
+		FVector GroundedLoc = SkeletalVisualMesh->GetRelativeLocation(); // keep authored X/Y
+		GroundedLoc.Z = -HalfHeight - MeshMinZ; // mesh's lowest point → capsule bottom (= floor)
+		SkeletalVisualMesh->SetRelativeLocation(GroundedLoc);
 	}
 
 	// AnimClass resolution (TASK-159 + shared-ABP fallback, TASK-165 rig-import chain):
@@ -2120,12 +2138,20 @@ void ASummonedUnit::FireProjectileAt(AActor* Target, float DamageAmount)
 	const FVector ToTarget = Target->GetActorLocation() - MuzzleLocation;
 	const FRotator FireRotation = ToTarget.IsNearlyZero() ? GetActorRotation() : ToTarget.Rotation();
 
-	if (AProjectile* Projectile = World->SpawnActor<AProjectile>(AProjectile::StaticClass(), FTransform(FireRotation, MuzzleLocation), SpawnParameters))
+	// TASK-298: spawn the per-unit ProjectileClass override when authored (the Wizard's
+	// BP_Projectile_Fireball), else the base AProjectile — null-safe fallback keeps every
+	// existing ranged unit (ProjectileClass null) byte-for-byte identical to before.
+	const TSubclassOf<AProjectile> SpawnClass = ProjectileClass ? ProjectileClass.Get() : AProjectile::StaticClass();
+	if (AProjectile* Projectile = World->SpawnActor<AProjectile>(SpawnClass, FTransform(FireRotation, MuzzleLocation), SpawnParameters))
 	{
 		// own team, current target, the CENTRALIZED output damage (TASK-055: row Damage × aura,
 		// etc. — for a plain Archer this is exactly the row Damage), projectile-typed — ACastle
 		// applies the §3.0 50% on ITS side (TASK-026); units/hero take the listed damage.
-		Projectile->InitProjectile(Team, Target, DamageAmount, USiegeDamageType_Projectile::StaticClass());
+		// TASK-298: pass the row-bound AoERadius as the 5th arg. 0 (Archer/Longbowman/tower
+		// callers) takes the UNCHANGED single-target path; > 0 (Wizard 250) resolves the impact
+		// as FSiegeCombatStatics::ApplyRadialDamage in AProjectile::HandleImpact — the proven
+		// TASK-056 Bomb-Tower splash (enemies in radius only, no friendly fire, castle 50% kept).
+		Projectile->InitProjectile(Team, Target, DamageAmount, USiegeDamageType_Projectile::StaticClass(), AoERadius);
 
 		// §6 projectile-fire audio (TASK-179): world one-shot at the muzzle, null-safe.
 		USiegeFeedbackLibrary::PlayWorldSound(this, ProjectileFireSoundPath, MuzzleLocation);

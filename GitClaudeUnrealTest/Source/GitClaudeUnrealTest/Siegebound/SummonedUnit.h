@@ -12,6 +12,7 @@
 
 class AAIController;
 class ACastle;
+class AProjectile;
 class ASiegePlayerController;
 class UAnimInstance;
 class UAnimSequence;
@@ -360,6 +361,16 @@ protected:
 	/** Card stat table (GDD §3.0). May not be imported yet (TASK-008) — resolved null-safe at BeginPlay. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Unit")
 	TSoftObjectPtr<UDataTable> CardTableAsset;
+
+	/**
+	 *  Optional per-unit projectile class for FireProjectileAt (TASK-298 — the Wizard's
+	 *  BP_Projectile_Fireball fireball visual). Null (the default) falls back to the base
+	 *  AProjectile, so every existing ranged unit (Archer/Longbowman/towers, ProjectileClass
+	 *  null) is byte-for-byte unchanged. Purely cosmetic — the splash comes from the row
+	 *  AoERadius passed to InitProjectile, never from this class.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Unit")
+	TSubclassOf<AProjectile> ProjectileClass;
 
 	/** Acquisition radius in units (GDD §3.8 profile constant: 600 — not a card stat). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|AI", meta = (ClampMin = "0"))
