@@ -127,6 +127,72 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Deck")
 	UTexture2D* GetCardArtTexture(FName CardID);
 
+	// --- Card details ("how it works", TASK-268) --------------------------------
+	// CONVENTIONS "Deck-builder card details — click-a-card 'how it works'". Purely
+	// ADDITIVE: no existing getter, mutation or event changes. The tile's card face
+	// calls SelectCardForDetails; the details panel reads GetCardDescription plus the
+	// existing GetCardDisplayName / GetCardCost / GetCardArtTexture. The "+"/"−"
+	// buttons, the x/50 counter, the average-cost guide and the exactly-50 play gate
+	// are untouched by everything in this block.
+
+	/**
+	 *  The player-facing "how this card works" body for CardID, GENERATED from the
+	 *  DT_Cards row every call — never authored per card (the anti-drift ruling: a
+	 *  balance edit to cards.csv updates all 28 descriptions for free). The
+	 *  designer-only Notes column is NEVER surfaced.
+	 *
+	 *  Composition (any line whose source field is 0/None/not applicable is OMITTED):
+	 *    identity line "<Type> · Cost <n> gold · Max <n> per deck"
+	 *    (blank)
+	 *    stat block   — health, damage (+ splash), attack cadence, range (melee vs
+	 *                   homing shot vs instant hit), blind spot, move speed
+	 *    (blank)
+	 *    rules block  — one plain-English line per applicable clause: the card's role
+	 *                   (economy/repair/hero upgrade/structure/tower), Charge, Slayer,
+	 *                   Suicide, Swarm, Chain, spawner, spell effect, spell delivery,
+	 *                   targeting profile, and castle/building damage scaling.
+	 *
+	 *  Every magnitude that exists as a DT_Cards column is read from the row (§3.0 —
+	 *  never hardcoded); the only literals are the keyword glossary strings in the
+	 *  .cpp, and the few magnitudes that live as gameplay UPROPERTY defaults instead
+	 *  of CSV columns are mirrored there under the CONVENTIONS glossary-mirror rule.
+	 *
+	 *  Null-safe: an empty/unknown CardID or a missing table returns an EMPTY string
+	 *  (the panel shows its own hint), logged once through the same spam guards the
+	 *  rest of this widget uses. Never crashes, never ensures.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Deck")
+	FString GetCardDescription(FName CardID) const;
+
+	/**
+	 *  Select CardID as the card the details panel is showing and fire
+	 *  OnCardDetailsRequested with its string form. An unknown row or NAME_None
+	 *  CLEARS the selection instead and still fires (with an EMPTY string) so the
+	 *  panel can fall back to its empty-state hint. Deck-neutral: it adds/removes
+	 *  nothing and deliberately does NOT fire OnDeckModelChanged (the deck model did
+	 *  not change).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Deck")
+	void SelectCardForDetails(FName CardID);
+
+	/** Clear the details selection and fire OnCardDetailsRequested with an empty string (the panel shows its hint). Deck-neutral. */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Deck")
+	void ClearCardDetails();
+
+	/** The CardID the details panel is currently showing, or NAME_None when nothing is selected. */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Deck")
+	FName GetSelectedDetailCardID() const;
+
+	/**
+	 *  "Show the details for this card." CardID = the DT_Cards row name as a string,
+	 *  EMPTY when the selection was cleared (or the CardID could not be resolved).
+	 *  The WBP re-reads GetCardDescription / GetCardDisplayName / GetCardCost /
+	 *  GetCardArtTexture off the back of it — it never receives a struct (BIE params
+	 *  stay float/int/bool/FString only, the widget rule).
+	 */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Siegebound|Deck")
+	void OnCardDetailsRequested(const FString& CardID);
+
 	// --- Saved decks (SaveGame, null-safe) --------------------------------------
 
 	/**
@@ -204,8 +270,27 @@ private:
 	UPROPERTY(Transient)
 	FDeckList WorkingDeck;
 
+	/**
+	 *  The card the details panel is showing (TASK-268), or NAME_None for "nothing
+	 *  selected". Selection state ONLY — it never participates in the deck model,
+	 *  legality or persistence.
+	 */
+	UPROPERTY(Transient)
+	FName SelectedDetailCardID;
+
 	/** Index of CardID in WorkingDeck.Cards, or INDEX_NONE. */
 	int32 IndexOfCard(FName CardID) const;
+
+	// --- GetCardDescription composers (TASK-268; all row-driven, never per card) ---
+
+	/** Identity line: "<Type> · Cost <n> gold · Max <n> per deck". Always emits exactly one line. */
+	void AppendIdentityLines(const FCardRow& Row, TArray<FString>& OutLines) const;
+
+	/** Stat block: health / damage (+ splash) / cadence / range / blind spot / move speed — each line omitted when its field is 0 or does not apply to the card's kind. */
+	void AppendStatLines(const FCardRow& Row, TArray<FString>& OutLines) const;
+
+	/** Rules block: one glossary line per applicable clause, in the CONVENTIONS composition order. May emit nothing (a plain melee unit has no special rules). */
+	void AppendRuleLines(FName CardID, const FCardRow& Row, TArray<FString>& OutLines) const;
 
 	/** DT_Cards, loaded null-safe (missing ⇒ nullptr, logged once). */
 	const UDataTable* ResolveCardTable() const;
