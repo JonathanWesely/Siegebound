@@ -1272,7 +1272,7 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
 
 #### TASK-327 — [FACE-fix] Systemic facing normalisation in `ResolveSkeletalVisual` (gameplay-programmer, C++ file-only) — CONDITIONAL on TASK-326
 - assignee: gameplay-programmer
-- status: backlog
+- status: **done** (2026-07-27) — qa-passed (`qa/TASK-327.md`, PASS, 0 blockers); code landed on main in Jonathan's own commit `7bedf58`; integrated + PIE-verified at TASK-328
 - blocked-by: TASK-326 ✅ **done** (2026-07-27, defect CONFIRMED, fleet constant `-90`) **and** the manager's CONVENTIONS "Unit mesh facing" clause ✅ **RATIFIED** (2026-07-27) — **BOTH DEPENDENCIES CLEARED, unblocked**
 - parallel-safe: yes (file-only; no editor, no compile, no Git)
 - spec: >
@@ -1297,7 +1297,7 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
 
 #### TASK-328 — [FACE-int] Compile the facing fix + verify all 12 units in PIE + commit (build-master)
 - assignee: build-master
-- status: backlog
+- status: **done** (2026-07-27) — compile green (14.79 s); real-PIE verified on L_Arena: 16/16 live units (both teams) read `SkeletalVisualMesh (0,-90,0)`, Archer/Ogre/Wizard march/attack/die correctly, 9 controls unchanged, ensure/AccessedNone/Fatal = 0; shots `handoffs/TASK-328-verify-*.png`, report `handoffs/TASK-328-buildmaster.md`; code was already on main in `7bedf58` (Jonathan self-commit) — docs/shots committed at the TASK-328 commit (hash recorded at TASK-334's flip)
 - blocked-by: TASK-327-QA
 - parallel-safe: no (exclusive editor + Git)
 - spec: >
