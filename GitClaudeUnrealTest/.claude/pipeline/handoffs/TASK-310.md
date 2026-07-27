@@ -1,8 +1,16 @@
 # TASK-310 — [REM-close] M7.9 FLEET-REMASTER batch closeout
 
-**Agent:** build-master · **Date:** 2026-07-26 · **Branch:** `main` · **HEAD:** `6bd1cee`
-**Status:** audit + gallery COMPLETE · closeout **NOT committed** (see Incident / blocked on orchestrator)
-**Push:** none. `origin/main` = `ca5c127`, 15 commits behind. Nothing was pushed at any point.
+**Agent:** build-master · **Date:** 2026-07-26 · **Branch:** `main`
+**Status:** audit + gallery COMPLETE · **verify screenshots RE-CAPTURED and committed** (2026-07-26)
+**Push:** none. `origin/main` = `ca5c127`. Nothing was pushed at any point.
+
+> **Update — 2026-07-26, re-capture pass.** The in-engine verify screenshots destroyed by the
+> incident below have been **re-shot and committed**, which closes the only unrecoverable loss.
+> 11 units × 4 shots (`tight`, `threequarter`, `wide`, `feet`) = **44**, plus **2** extra evidence
+> shots for Jonathan's open questions (`TASK-318-verify-Pikeman-rank.png`,
+> `TASK-319-verify-Cavalry-gait.png`) = **46 PNGs**, all tracked in Git LFS. The gallery's "after"
+> render cells now show these real in-engine captures instead of the Blender/Cycles previews that
+> stood in for them. See §6.
 
 ---
 
@@ -35,8 +43,10 @@ The offending call executed, in `C:/GitProjects/GitHub/GitClaudeUnrealTesting`:
 
 - **All in-engine verify screenshots** — `.claude/pipeline/handoffs/TASK-3NN-verify-<Unit>-{tight,threequarter,wide,feet}.png`.
   Untracked and not gitignored, so `git clean -fd` deleted them. `git log --all -- '*verify*.png'` returns
-  nothing and `git ls-files` matches 0 — they were never committed, so there is no blob to restore.
-  **Consequence: the "after" columns in the gallery are pipeline renders, not in-engine shots.**
+  nothing and `git ls-files` matches 0 — they were never committed, so there was no blob to restore.
+  **RESOLVED 2026-07-26 — re-captured from scratch and committed (§6).** The originals are still
+  unrecoverable; these are new captures, not restorations. They are now tracked, so the same
+  working-tree command cannot delete them again.
 - **Unstaged edits to `.claude/pipeline/TASKBOARD.md` and `.claude/pipeline/CONVENTIONS.md`** —
   reverted to HEAD by `git reset --hard`. Unstaged edits leave no blob, so Git cannot restore them.
   Per the orchestrator, the board has not been committed since `e01bc2e`, so the Wizard / W-UNIT-1
@@ -104,16 +114,26 @@ was swept into any of them.
 
 Five cells per unit, all 11 on one page:
 
-| Column | Source | Genuine? |
-|--------|--------|----------|
-| Concept | `Content/RawAssets/Concepts/<Unit>.png` | approved target |
-| **Albedo BEFORE** | `git show <commit>^:…/T_<Unit>_D.png` via LFS | **real shipped pre-remaster texture** |
-| **Albedo AFTER** | `git show main:…/T_<Unit>_D.png` via LFS | **real shipped texture** |
-| Render AFTER (flat) | `Cache/<Unit>/previews/preview_threequarter.png` | today's remaster run |
-| Render AFTER (beauty) | `Cache/<Unit>/previews/preview_beauty_cycles.png` | today's remaster run |
+Each unit now shows **two rows**.
 
-Footman additionally has a **genuine pre-remaster render** (`Cache/Footman/previews_dark_before/`),
-shown as a sixth dashed cell. No other unit has one, and none was fabricated.
+| Row | Column | Source | Genuine? |
+|-----|--------|--------|----------|
+| 1 | Concept | `Content/RawAssets/Concepts/<Unit>.png` | approved target |
+| 1 | **Albedo BEFORE** | `git show <commit>^:…/T_<Unit>_D.png` via LFS | **real shipped pre-remaster texture** |
+| 1 | **Albedo AFTER** | `git show main:…/T_<Unit>_D.png` via LFS | **real shipped texture** |
+| 2 | **In-engine · tight** | `TASK-3NN-verify-<Unit>-tight.png` | **real editor capture, Simulate in `L_Arena`** |
+| 2 | **In-engine · 3/4** | `TASK-3NN-verify-<Unit>-threequarter.png` | **real editor capture** |
+| 2 | **In-engine · wide** | `TASK-3NN-verify-<Unit>-wide.png` | **real editor capture** |
+| 2 | **In-engine · feet** | `TASK-3NN-verify-<Unit>-feet.png` | **real editor capture** |
+
+The two albedo columns are unchanged from the original gallery — they are genuine LFS pulls and were
+left byte-for-byte identical (verified: 34 of the original 56 embedded images are preserved unchanged).
+The **22 Blender/Cycles preview cells were removed**, since they were only ever stand-ins for the
+in-engine shots.
+
+Footman additionally keeps its **genuine pre-remaster render** (`Cache/Footman/previews_dark_before/`)
+as a dashed cell, now labelled **"Cycles render BEFORE"** so it is not mistaken for an engine shot.
+It is the only Cycles image left on the page. No other unit has one, and none was fabricated.
 
 **Honesty note.** I verified against LFS OIDs that *none* of the cached `TASK201_shipped_backup/` or
 `TASK225_shipped_backup/` texture sets matches the true pre-remaster state — they are older pipeline
@@ -158,16 +178,20 @@ Every unit lifted between ×1.82 and ×3.73. These independently reproduce the b
 
 ## 4. Open items for Jonathan
 
-1. **In-engine verify screenshots must be re-captured — I deleted them.** The gallery substitutes pipeline
-   renders, which read colour faithfully but not under `L_Arena`'s sun at real game-camera distance.
-   Roughly 11 Simulate passes to redo.
+1. ~~**In-engine verify screenshots must be re-captured.**~~ **DONE 2026-07-26** — all 44 re-shot in
+   Simulate under `L_Arena`'s real sun, plus 2 extra evidence shots, and **committed** (§6). Grounding
+   measured at capture time: **2.15–2.40 cm** float on every unit, matching TASK-308.
 2. **`TASKBOARD.md` / `CONVENTIONS.md` recovery** — owned by the orchestrator. The Wizard / W-UNIT-1
    section (TASK-298..305) exists in no commit.
 3. **Ogre is the weakest colour read in the fleet** — 0.142 post albedo and a 1.33% team region against the
    2.1% that shipped. Wants a brightness bump or a larger team region.
-4. **Pikeman's pikes overhang the rank flanks** by ~1 unit-width, and the team-tinted shafts merge into a
-   continuous blue bar at ground-level camera angles.
-5. **Cavalry's gait is stiff and slides** (TASK-233) — needs a quadruped source; **FAB-005/006 do not
+4. **Pikeman's pikes overhang the rank flanks** — now evidenced by `TASK-318-verify-Pikeman-rank.png`
+   (4 Pikemen at the C++ capsule spacing, r40 → 80 cm, from the gameplay camera). The capture confirms
+   the pike tips project past both outer men. **Correction to the earlier claim:** the continuous blue
+   bar is formed by the **helmets and shoulder plates**, not the team-tinted shafts — the shafts read
+   as bare wood at that angle. Largest team region in the fleet at 10.31%.
+5. **Cavalry's gait is stiff and slides** (TASK-233) — a side-on frame mid-`*_Walk` is attached as
+   `TASK-319-verify-Cavalry-gait.png` for judging it. Needs a quadruped source; **FAB-005/006 do not
    provide one**, so it stays blocked. Plus team-colour bleed on the horse's forehead.
 6. **`SM_MilitiaMob` carries older geometry** — same-path reimport wedged its LOD chain, reverted in
    `6bd1cee`. Runtime unaffected (`SK_MilitiaMob` is the runtime visual); static preview stale pending
@@ -177,16 +201,67 @@ Every unit lifted between ×1.82 and ×3.73. These independently reproduce the b
 
 ---
 
-## 5. Closeout commit — NOT DONE
+## 5. Closeout commit
 
-The spec asked me to commit this handoff plus the gallery. **I did not**, because the orchestrator's
-standing instruction after the incident forbids index-mutating git commands (`git add` / `git commit`
-included) for the rest of this task. Both files are written and staged-ready on disk:
-
-- `.claude/pipeline/handoffs/TASK-310.md` (this file)
-- `.claude/pipeline/handoffs/TASK-310-gallery.html` (933 KB, currently untracked)
-
-Awaiting explicit go-ahead before any `git add`. Note the gallery is untracked — it must not be lost
-to another `git clean`.
+Committed on `main` (see §6). The gallery is no longer untracked, so another `git clean` cannot take it.
 
 **I did not modify any unit asset. This task was audit and presentation only.**
+
+---
+
+## 6. Re-capture pass — 2026-07-26
+
+### What was shot
+
+46 PNGs in `.claude/pipeline/handoffs/`, all LFS-tracked:
+
+| Set | Files | Naming |
+|-----|-------|--------|
+| 11 units × 4 shots | 44 | `TASK-3NN-verify-<Unit>-{tight,threequarter,wide,feet}.png` |
+| Pikeman rank | 1 | `TASK-318-verify-Pikeman-rank.png` |
+| Cavalry gait | 1 | `TASK-319-verify-Cavalry-gait.png` |
+
+Task IDs: Footman 311 · Archer 312 · Knight 313 · Miner 314 · Cleric 315 · Ogre 316 · Sapper 317 ·
+Pikeman 318 · Cavalry 319 · MilitiaMob 320 · Longbowman 321.
+
+### Method (reproducible)
+
+Captures were driven through the Unreal MCP `ProgrammaticToolset`, which runs server-side — the
+4 MB base64 of each frame was written straight to `Saved/VerifyCaps/*.txt` by `AssetTools.write_file`
+and decoded locally, so no image data passed through the agent context.
+
+1. The 11 `BP_Unit_<Unit>` blueprints were placed in the **editor** world, then **Simulate** was
+   started, so each duplicate runs `BeginPlay` → `ResolveSkeletalVisual` → the remastered `SK_` mesh
+   is the visual (this is why editor-world-only capture is wrong: it shows the static `SM_`).
+2. Each unit was frozen (`CharMoveComp.MaxWalkSpeed`/`MaxAcceleration` = 0) and teleported to one
+   shared hero mark at `(6000, −18000)`, ground Z = −5 — flat, open, sunlit, and ~18 000 cm off the
+   lane so the live match could not walk into frame. `HPBarWidget` hidden.
+3. Camera solved per unit from live actor bounds. Viewport is 2751×792 (H-FOV 90° → **V-FOV 32.1°**,
+   `tan = 0.28783`), so `distance = half_extent / 0.28783 × margin`.
+4. Sun (`DirectionalLight`, pitch −38 / yaw 145) sits at azimuth **−35°**, so every hero camera was
+   placed at −35° — directly between sun and subject — for a front-lit read.
+
+### Two findings worth a follow-up task
+
+- **Mesh forward is not consistent across the fleet.** Facing had to be determined empirically by
+  sweeping actor yaw 0/90/180/270 per unit. The required offsets are:
+  `Footman 270 · Archer 270 · Knight 180 · Miner 0 · Cleric 0 · Ogre 180 · Sapper 180 · Pikeman 270 ·
+  Cavalry 0 · MilitiaMob 0 · Longbowman 270`.
+  Related: at runtime `SkeletalVisualMesh.RelativeRotation.yaw` is **−90 on 9 units but 0 on Archer
+  and Ogre**. Worth confirming those two look correct while walking in real play.
+- **Grounding (TASK-308) verified systemically.** Capsule-bottom minus ground at capture time was
+  **2.15 cm** (Footman, Archer, Knight, Miner, Pikeman, Cavalry) or **2.40 cm** (Cleric, Ogre, Sapper,
+  MilitiaMob, Longbowman) — the whole fleet inside the expected 2.1–2.4 cm band. Note the per-unit
+  capsule half-heights differ (Ogre 145, Cavalry 104, MilitiaMob 74.5, …), so any float check that
+  assumes 90 will report a false result.
+
+### Post-processing
+
+Centre-crop and downscale only — **no colour grading**, full 24-bit RGB (deliberately not palettised,
+which would put false speckle into the textures the gallery exists to judge). Cropping is safe because
+every camera was aimed dead-on, so the subject is centred by construction.
+
+### Engine state left behind
+
+Simulate stopped; all 14 temporary `VERIFYCAP_*` actors deleted (actor count back to its original 118).
+**`L_Arena` was never saved.**
