@@ -1346,7 +1346,7 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
 
 ---
 
-## BUILDING-AUDIT rulings (decomposed 2026-07-27) — Castle Meshy rebuild + GoldNode glow dial-back (TASK-329..333)
+## BUILDING-AUDIT rulings (decomposed 2026-07-27) — Castle Meshy rebuild + GoldNode glow dial-back (TASK-329..333; extended same day: TASK-336 parked-UCX registry entry + TASK-337..339 crumble-stage chain, RE-ADJUDICATED: 339 sampler fix → 337 measure-first → 338)
 
 **Origin:** Jonathan's three rulings on the TASK-309 building/tower colour audit (`handoffs/TASK-309-artist.md`; results also on the board at TASK-309). Verbatim intent:
 1. *"Route the manager to decompose the building-variant task, and make sure to check the castle, it definitely needs a meshy rebuild."* → **APPROVED — Castle full Meshy rebuild, BUILDING pipeline variant** (TASK-329 → 330 → 331).
@@ -1374,6 +1374,8 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
 - **`T_Wizard_D` sits at mean linear albedo 0.0968**, the only *unit* below the 0.164 baseline (it shipped on the old conservative delight profile and was never in the fleet-11 list). **Jonathan approved that look at the time — INFORMATIONAL ONLY, no task, no action.** If he ever wants it lifted it is a cheap Stage-2-only re-bake from the cached GLB.
 
 **Dispatch map:** **TASK-329 (no-editor) and TASK-332 (editor) start immediately and in parallel with each other.** TASK-332 is editor-gated and SERIALIZES with every other editor task (TASK-310 / 323 / 325 / 326) and with Jonathan's PIE. Then TASK-330 (blocked-by 329) → TASK-331 (blocked-by 330; MAY share 330's editor session, separate commit). TASK-333 follows TASK-332. All commits on **main, NO push**.
+**Dispatch map UPDATE (2026-07-27, post TASK-330/331 landing):** the TASK-331 stage-differentiation flag is ADJUDICATED (ruling block below TASK-333) → **TASK-337 (art-director MI re-spread, editor-gated — no blocker, but SERIALIZES with TASK-332's live session; may run in the same editor tenancy after 332 completes) → TASK-338 (build-master verify + commit; blocked-by 337; MAY share TASK-333's editor session — own deliverable, own commit, per the TASK-330/331 precedent).** **TASK-336 (UCX drift) is PARKED — do NOT dispatch it** (awaits Jonathan's playtest verdict; block below exists so the CONVENTIONS-reserved ID cannot be reused).
+**Dispatch map UPDATE 2 (2026-07-27, TASK-337 BLOCKED return — RE-ADJUDICATION):** the retune premise is FALSIFIED — `M_CastleCrumble` FAILS shader compilation (ORM node samples the now-`TC_Masks` `T_Castle_ORM` as LinearColor at the NODE default) and **every crumble stage has rendered the engine Default Material since `fcb1ec0`** (see the banner on the adjudication block + `handoffs/TASK-337-artist.md`). New chain, STRICTLY SERIAL: **TASK-339 (art-director, one-enum sampler fix + master resave — dispatchable NOW, may run right after TASK-332 in the same art session) → TASK-337 re-run (art-director, MEASUREMENT-FIRST — retune ONLY if the band fails with real rendering; may share 339's session) → TASK-338 (build-master, verify + commit — now ALWAYS carries `Content/Materials/M_CastleCrumble.uasset`; may share TASK-333's session). TASK-338 must NOT run before 339 AND 337 are both complete.**
 
 #### TASK-329 — [CASTLE-model] Castle state re-verify + Meshy image-to-3D rebuild + Stage-2 refine + turnkey import recipe (art-director, NO editor)
 - assignee: art-director
@@ -1467,7 +1469,7 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
 
 #### TASK-331 — [CASTLE-crumble] Re-derive `SM_Castle_Crumble01/02/03` from the rebuilt castle + verify the 75/50/25 % states + commit (build-master)
 - assignee: build-master
-- status: **done** (2026-07-27, commit `a442ad6`) — all 3 re-derived same-path from the rebuilt castle (bounds bit-identical, LOD 3-chain, both slots `MI_Castle_Crumble0N`); 75/50/25 % fired once each in order + ResetCastle restores pristine+team accent; UV mapping clean (no scramble). **⚠️ MANAGER FLAG:** vs the new bright base, stage 1 no longer reads "battle-worn but standing" — pristine→stage1 wall luma 77.5→28.0 and stages 1/2/3 measure 28.0/28.9/29.2 (visually flat between stages; stage 3 still reads near-dead charred, PASS). MI params NOT touched per ruling — see `handoffs/TASK-331-buildmaster.md`.
+- status: **done** (2026-07-27, commit `a442ad6`) — all 3 re-derived same-path from the rebuilt castle (bounds bit-identical, LOD 3-chain, both slots `MI_Castle_Crumble0N`); 75/50/25 % fired once each in order + ResetCastle restores pristine+team accent; UV mapping clean (no scramble). **⚠️ MANAGER FLAG:** vs the new bright base, stage 1 no longer reads "battle-worn but standing" — pristine→stage1 wall luma 77.5→28.0 and stages 1/2/3 measure 28.0/28.9/29.2 (visually flat between stages; stage 3 still reads near-dead charred, PASS). MI params NOT touched per ruling — see `handoffs/TASK-331-buildmaster.md`. **FLAG ADJUDICATED 2026-07-27 (manager): RETUNE ORDERED — TASK-337 (art re-spread) → TASK-338 (verify + commit); ruling block + the STAGE-LEGIBILITY band below TASK-333.** **RECORD CORRECTED same day (TASK-337 first-run finding): the stage renders this task measured were the engine DEFAULT MATERIAL — `M_CastleCrumble` has failed SM6 compilation since TASK-330's `T_Castle_ORM`→`TC_Masks` reimport (CONVENTIONS SAMPLER-TYPE TRAP). THE COMMIT STANDS — the derivation is exonerated (TASK-337 cross-test: crumble mesh + `MI_Castle_PBR` renders 0.957×P; bounds/LOD/collision/slot/stage-drive/ResetCastle readbacks are object-level and all real) — but the render-level claims are re-scoped: "UV mapping clean / char-speckle follows the walls" and the flag's own "stage 3 PASSES" observed the Default Material's grey mottle, not the crumble materials, and are VOID as material evidence. Fix chain: TASK-339 → 337 (measure-first) → 338.**
 - blocked-by: TASK-330
 - parallel-safe: no (EXCLUSIVE editor + Git; **MAY run inside TASK-330's editor session** — but it is its own deliverable and its own commit)
 - **WHY THIS TASK EXISTS (manager ruling 4 — do not drop it):** `SM_Castle_Crumble01/02/03` are **byte-copy duplicates of the OLD
@@ -1503,7 +1505,7 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
 
 #### TASK-332 — [GOLD-glow] Dial back the GoldNode emissive on `M_GoldGlow` — ONE lever, no rebuild (art-director, editor)
 - assignee: art-director
-- status: backlog — **dispatchable NOW** (editor-gated: needs an exclusive editor + MCP; must not run during Jonathan's PIE)
+- status: **done** (2026-07-27, integrated + committed at the TASK-333 commit — the (b) ember watch CLOSED by TASK-333: depleted ember visible in-arena, no C++ remedy needed) ← was: **ready-for-integration** (2026-07-27 — base emissive Constant 6.0 → 0.45 inside `M_GoldGlow`; blown-past-0.85 86.0 % → **6.6 %** audit-comparable [CrystalTower band]; `GlowIntensity` param + TASK-226 pulse + TASK-296c superset verified intact by graph readback; handoff `handoffs/TASK-332-artist.md` + before/after PNGs. ⚠️ TASK-333(b) watch: depleted ember now 0.45×0.05 = 0.0225 effective — if invisible in-arena, sanctioned remedy = C++ `GlowIntensityDepleted` raise, NOT another material edit)
 - blocked-by: none
 - parallel-safe: **yes vs TASK-329** (different asset, different discipline) — **no vs any other EDITOR task** (serialize with TASK-310 / 323 / 325 / 326 / 330 / 331)
 - **JONATHAN'S GATE IS SATISFIED.** The TASK-309 audit said this needed "Jonathan's eye on the intended look before anyone changes it".
@@ -1544,7 +1546,7 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
 
 #### TASK-333 — [GOLD-glow-int] Verify the dialled-back glow at BOTH gauge extremes in `L_Arena` + commit (build-master)
 - assignee: build-master
-- status: backlog
+- status: **done** (2026-07-27, build-master — commit hash backfilled at the TASK-338 board update; this commit = `M_GoldGlow` + TASK-332/333 docs only). Two-point verify in Simulate on `L_Arena`, two sessions: **(a)** full-reserve blown-fraction independently re-measured **9.1 %** mean-RGB (method reproduces the 86.3 % audit anchor at 85.3 %; TASK-332's own 6.6 %; gate ≤15 %, CrystalTower 6.5 %) — in-arena warm-yellow glowing, rock/gold/crack separation legible, no cream blob; **(b)** depleted ember via the REAL `Deplete()` path: MID 0.0500 exactly, VISIBLE (mine-region luma 58.3 vs shadow-grass 16.7 — dimmer, not black) — the TASK-332 ember watch is CLOSED, no `GlowIntensityDepleted` C++ raise needed; **(c)** gauge continuity exact at 7 sampled reserve points both directions (MID readback == 0.05+0.95×R/300 to 4 dp at every point); **(d)** 6/6 mines identical `MID(parent=M_GoldGlow)`, both team sides glow identically (mirrored-pair captures), Message Log ensure/AccessedNone/Fatal/Error = 0. Captures + follow-up observations (miner walk-stall 713 uu short of a corner-rise mine, pre-freeze — gameplay-lane candidate) in `handoffs/TASK-333-buildmaster.md`. ← was: backlog
 - blocked-by: TASK-332
 - parallel-safe: no (exclusive editor + Git; EDITOR-GATED)
 - spec: >
@@ -1567,6 +1569,147 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
     `/Game/Materials/M_GoldGlow` · consumers `/Game/Meshes/SM_GoldNode` (6 mine instances in `L_Arena`, read-only) · gauge driver
     `AGoldNode::UpdateGlowGauge` (read-only). Commit on main, no push. Law: CONVENTIONS "GoldNode / CrystalTower glow materials",
     "Mirrored depleting mines" (gauge law), the hard gate (integration check before commit).
+
+### Manager adjudication — the TASK-331 stage-differentiation flag (2026-07-27): RETUNE ORDERED (TASK-337 → TASK-338)
+
+> **⚠️ RE-ADJUDICATED 2026-07-27, same day (TASK-337 BLOCKED return, `handoffs/TASK-337-artist.md`) — THE PREMISE BELOW IS FALSIFIED BY MEASUREMENT.** The 28.0/28.9/29.2 table measured the **engine Default Material**: `M_CastleCrumble` fails SM6 translation (its ORM node bakes `T_Castle_ORM` in as the NODE default under `SAMPLERTYPE_LinearColor`; TASK-330's reimport correctly made that texture `TC_Masks`, and node-default textures ARE validated at translation while MI overrides are NOT — which is why `M_AssetPBR` survived) — so the crumble stages have rendered NOTHING of their params since `fcb1ec0`. **VOID below:** rationale point 2 ("the root cause is arithmetic", "`ScorchAmount` dominates" — the Darken 1.0/Scorch 0.0 probe moved the wall <1 luma, ceiling 0.521×P: the band was UNREACHABLE by any MI value), rationale point 3 ("stage 3 PASSES as shipped"), and the numeric direction in TASK-337's original spec. The cross-test (crumble mesh + `MI_Castle_PBR` = 0.957×P) EXONERATES the meshes/UVs — TASK-331's derivation stays closed.
+> **WHAT SURVIVES:** the regression verdict (the damage telegraph is broken on screen — MORE broken than believed: it is a compile failure, not a flat tune), the **STAGE-LEGIBILITY BAND** below (ratio-based + protocol — unchanged as the standing gate), the two-tier authority ruling (band = shipping gate, Jonathan's playtest eye = final), and the art/build lane split. **WHAT CHANGES — the chain is now: TASK-339 (one-enum sampler fix + master resave, art-director) → TASK-337 re-run as MEASUREMENT-FIRST (the TASK-157 shipped values may pass the band once they actually render — real headroom is 0.957×P; retune ONLY on a real-render band FAIL) → TASK-338 (independent verify + commit, now ALWAYS carrying `M_CastleCrumble.uasset`).** Trap recorded as law: CONVENTIONS "Fleet Meshy remaster" → **SAMPLER-TYPE TRAP**.
+
+**The flag (build-master, TASK-331 — correctly NOT re-tuned, per the standing "flag it, don't re-tune unilaterally" ruling):** against the rebuilt bright base (pristine wall luma **77.5**), the three crumble stages measure **28.0 / 28.9 / 29.2** — visually FLAT between stages, and stage 1 (75 % HP) reads nearly as charred as stage 3 (25 %). A sunlit close-up confirms it is material-driven, not shadow. Evidence: `handoffs/TASK-331-buildmaster.md`.
+
+**RULING: this is a REGRESSION of an approved design, not a taste question — a stage-retune task is OPENED. Accept-as-is is REJECTED.** Binding rationale:
+1. **The 75/50/25 % crumble chain is a gameplay-state telegraph on the WIN-CONDITION actor** — its whole job is to let a player read the match state off the castle at a glance. Three stages inside 1.2 luma of each other convey ONE state ("almost dead") instead of three; worse, the measured order is inverted-within-noise (stage 1 darkest at 28.0). TASK-157's approved intent table is explicit — stage 1 = *"dimmed, dusty, scorch-tinged — battle-worn but standing"* — and the shipped state fails it.
+2. **The root cause is arithmetic, understood, and cheap.** The stage params were authored (TASK-157) against the OLD near-black albedo (0.0078); the base is now ~21× brighter, and against it the multiplicative spread collapses. The measurement proves **`ScorchAmount` dominates**: stage 1's `Darken 0.80` alone would predict ~62 wall luma; scorch 0.12 dragged it to 28.0. The fix is a scalar re-spread on two MIs — zero geometry, zero C++, zero texture work, NO re-derivation (TASK-331's meshes/slots/UVs are correct and CLOSED).
+3. **Stage 3 is PASS as shipped** (29.2 = 0.38× pristine, "near-dead charred") and ships UNTOUCHED by default.
+4. **Two tasks, not one, and not folded into TASK-333** — lane law: the retune is an art call (art-director), Git is build-master's, and mixing crumble MIs into TASK-333's `M_GoldGlow` pathspec would break its "nothing foreign" diff proof and the per-item revert model (the TASK-334 ruling, point 2, applies verbatim). Session-sharing keeps the real cost near one session each.
+
+**WHO RULES THE FINAL LOOK — two-tier, consistent with the albedo-floor doctrine:** the NUMERIC BAND below is the SHIPPING GATE (art-director tunes into it, build-master verifies it — the chain closes without waiting on Jonathan); **Jonathan's eye at his next playtest is the FINAL authority over any number** — his verdict is a recorded WATCH in TASK-338 and reopens the chain if the read still fails him. Exact param values inside the band are the art-director's call (the TASK-332 pattern: the direction is ruled, the number is the artist's).
+
+**THE STAGE-LEGIBILITY BAND (ratio-based so it survives future albedo/lighting changes — now law in CONVENTIONS "Castle remaster" → CRUMBLE STAGE-LEGIBILITY):** measure with the TASK-331 protocol — same lit wall region, identical camera pose, exposure-consistent scene (grass control ~11.4–11.6), **P = pristine wall luma measured in the SAME session** (77.5 at TASK-331):
+- **Stage 1 ∈ 0.55–0.80 × P** — "battle-worn but standing": clearly damaged (≤0.80) but clearly closer to alive than dead (≥0.55)
+- **Stage 2 ∈ 0.35–0.55 × P** — "blackened charcoal-grey, clearly worse"
+- **Stage 3 ≤ 0.40 × P** — near-dead charred silhouette (current 0.38× PASSES)
+- **Strict darkening order with real gaps: S1 − S2 ≥ 0.10 × P AND S2 − S3 ≥ 0.05 × P** (kills the 28.0→29.2 flat/inverted band)
+
+#### TASK-336 — [CASTLE-ucx] PARKED: Jonathan's playtest verdict on the west/back UCX hull drift (registry entry — ID reserved by CONVENTIONS)
+- assignee: art-director (manifest edit + free Stage-2 re-run — the ONLY sanctioned lane), then build-master (reimport + verify + commit)
+- status: **parked — NOT dispatchable** (awaits Jonathan's playtest verdict; materialized on the board 2026-07-27 because CONVENTIONS "UCX-DRIFT LAW" and `handoffs/TASK-330-buildmaster.md` already reserved this ID — recorded so the ID cannot be reused and the item cannot be lost to prose)
+- blocked-by: Jonathan's playtest verdict (no task dependency)
+- parallel-safe: n/a (parked)
+- spec: >
+    The rebuilt Castle's authored UCX hulls sit ~86–89 uu INSIDE the west/back curtain walls (units visually penetrate before colliding) —
+    **ACCEPTED as shipped** per the CONVENTIONS UCX-DRIFT LAW ruling: a GAMEPLAY trade (wider hulls enlarge the M1 placement dead-zone;
+    `CastlePlinthClearance` 420 derives from this footprint), not an art defect. If Jonathan rules the penetration bothers him in play:
+    art-director edits `Tools/ArtPipeline/pipeline_manifest.json` `ucx.boxes` + a free Stage-2 re-run (~23 s, NO Meshy credits) →
+    build-master same-path reimports, re-verifies the dead-zone/placement, and re-derives the crumble trio (they carry the same UCX by
+    byte-copy — the CRUMBLE-DERIVATION law fires on any `SM_Castle` change). **Hand-editing collision primitives in the editor is BANNED**
+    (silently lost on the next same-path reimport).
+- names: >
+    `Tools/ArtPipeline/pipeline_manifest.json` (`ucx.boxes`) → `/Game/Meshes/SM_Castle` (+ crumble re-derivation `SM_Castle_Crumble01|02|03`).
+    Law: CONVENTIONS "Castle remaster" → **UCX-DRIFT LAW**.
+
+#### TASK-337 — [CASTLE-crumble-tune] Re-spread the crumble stage params against the bright base — MI scalar VALUES only (art-director, editor)
+- assignee: art-director
+- status: **re-scoped 2026-07-27 — MEASUREMENT-FIRST re-run** (first run returned BLOCKED with the SAMPLER-TYPE finding, `handoffs/TASK-337-artist.md` — nothing saved, MI01 probe values restored bit-exact, no Git; that return was CORRECT per the flag-don't-fix doctrine). Editor-gated; MAY run in the SAME art-director session as TASK-339, immediately after it; serialize with every other editor task and with Jonathan's PIE.
+- blocked-by: TASK-339 (the master must COMPILE before any stage measurement means anything)
+- parallel-safe: no (EDITOR-GATED — the one-editor law; no Git)
+- spec: >
+    **⚠️ RE-ADJUDICATION (2026-07-27) — READ FIRST; supersedes the "THE DEFECT" framing and the numeric direction below.** The first
+    run proved the 28.0/28.9/29.2 table measured the engine Default Material (master compile failure — TASK-339 fixes it).
+    **STEP 0 (NEW, GATING): with TASK-339 landed, re-measure P + S1/S2/S3 against the FIRST REAL RENDER of the TASK-157 SHIPPED values**
+    (MIs untouched) using the protocol below. **IF the band PASSES as authored: STOP — NO retune.** Record the table + captures, close
+    this task as measurement-only, hand straight to TASK-338 (which still commits the TASK-339 master fix). **ONLY if the band FAILS
+    with real rendering does the re-spread below execute** — and IGNORE the old "ScorchAmount dominates / Darken up, Scorch down"
+    direction (it was derived from the broken render; the cross-test headroom 0.957×P suggests the authored values may land near
+    TASK-157's approved intent). Everything else below — the fence, the param-name law, the band, the protocol, no-Git — stands.
+    **THE DEFECT (measured, TASK-331 — HISTORICAL, see Step 0):** pristine wall luma 77.5 → stages 28.0 / 28.9 / 29.2. The TASK-157 stage spread
+    (01 `Darken 0.80 / ScorchAmount 0.12 / RoughBoost 0.30`, 02 `0.50 / 0.45 / 0.60`, 03 `0.30 / 0.80 / 0.85`) was authored against the
+    old 0.0078 albedo; against the ~21×-brighter rebuilt base all three stages collapse into one dark band and stage 1 no longer reads
+    "battle-worn but standing".
+    **THE LEVER: scalar parameter OVERRIDE VALUES on `/Game/Materials/MI_Castle_Crumble01` and `…02` ONLY.** Do NOT touch the
+    `M_CastleCrumble` master graph, `MI_Castle_Crumble03` (stage 3 PASSES as shipped — leave it unless the gap rule forces a nudge, and if
+    touched it stays ≤ 0.40×P), any `T_Castle_*`, any `SM_*`, `ACastle` C++, or `L_Arena`. **NO re-derivation** — TASK-331's meshes, slots
+    and UVs are correct and CLOSED.
+    **Direction (the numbers are YOUR call inside the band — the TASK-332 pattern):** the measurement proves `ScorchAmount` dominates
+    (stage 1's Darken 0.80 alone predicts ~62 luma; scorch 0.12 dragged it to 28.0). Expect stage 1 to need Darken UP toward ~0.85–0.90
+    AND ScorchAmount DOWN toward ~0.03–0.06; stage 2 mid, keeping its "blackened charcoal-grey, clearly damaged" read.
+    `RoughBoost`/`CharColor`/`EmberColor`/`EmberAmount` are NON-GATING — keep shipped values unless you have a reason.
+    **PARAM NAMES ARE LAW:** `Darken`, `ScorchAmount`, `CharColor`, `RoughBoost` (+ dormant `EmberColor`/`EmberAmount` at 0) — override
+    values only; never rename or delete a parameter.
+    **ACCEPTANCE (measure, don't eyeball — the TASK-331 protocol):** in **Simulate** on `L_Arena` (never PIE-in-viewport), drive ONE castle
+    75 → 50 → 25 % via world damage; same lit wall region, identical camera pose, exposure-consistent scene (grass control ~11.4–11.6);
+    measure **P (pristine) + S1/S2/S3 in the SAME session**. Gate = the STAGE-LEGIBILITY BAND (ruling block above): S1 ∈ 0.55–0.80×P ·
+    S2 ∈ 0.35–0.55×P · S3 ≤ 0.40×P · S1−S2 ≥ 0.10×P · S2−S3 ≥ 0.05×P — AND stage 1 visually reads TASK-157's intent
+    *"dimmed, dusty, scorch-tinged — battle-worn but standing"* at gameplay distance, AND stage 3 still reads near-dead charred.
+    **Simulate STOPPED before saving** (lane-knowledge 8). Save the touched MIs; **do NOT commit** (build-master owns Git — TASK-338).
+    `L_Arena` NEVER saved. Capture pristine + all three stages for the handoff. Write `handoffs/TASK-337-artist.md` (params before/after +
+    the luma table). Post before/after + the numbers in 🎨 Art.
+- names: >
+    `/Game/Materials/MI_Castle_Crumble01|02` (scalar override VALUES only; `…03` untouched by default). READ-ONLY: master
+    `/Game/Materials/M_CastleCrumble`, `/Game/Meshes/SM_Castle_Crumble01|02|03`, `/Game/Textures/T_Castle_*`,
+    `ACastle::ApplyCrumbleStage`/`ResetCastle`. Report `handoffs/TASK-337-artist.md`. Law: CONVENTIONS "Castle remaster" →
+    **CRUMBLE STAGE-LEGIBILITY law** (NEW 2026-07-27).
+
+#### TASK-338 — [CASTLE-crumble-tune-int] Independently verify the stage band in Simulate + commit the TASK-339 master fix (+ retuned MIs if any) (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: TASK-337 (full chain TASK-339 → 337 → 338 — do NOT run before BOTH land; the TASK-339 master fix is part of THIS task's commit)
+- parallel-safe: no (EXCLUSIVE editor + Git; **MAY share TASK-333's editor session** — own deliverable, own commit, per the TASK-330/331 precedent)
+- spec: >
+    On **main**, exclusive editor. Independently re-run the TASK-331 measurement (do not take TASK-337's numbers on trust): in **Simulate**
+    on `L_Arena`, drive one castle 75 → 50 → 25 %, confirm each stage fires ONCE in order, measure **P/S1/S2/S3** same-region /
+    same-pose / exposure-consistent, and gate on the **STAGE-LEGIBILITY BAND** (ruling block above). Confirm `ResetCastle` restores the
+    pristine rebuilt castle + per-team accent, the OTHER castle is unaffected, and the Message Log is clean (ensure / AccessedNone /
+    Fatal = 0) **PLUS the SAMPLER-TYPE TRAP sweep (law, added at re-adjudication): `Failed to compile Material` = 0 hits on a fresh
+    load — `M_CastleCrumble` AND all three MIs COMPILE (no Stats-panel error, no "recompiles every editor launch" warning). The
+    Default-Material fallback is a `LogMaterial: Warning`, NOT an Error — the standard sweep MISSES it; grep for it explicitly, and any
+    Default-Material fallback anywhere is an automatic FAIL.** Any save happens with Simulate STOPPED; `L_Arena` NEVER saved.
+    **WATCH (recorded, non-blocking): Jonathan's playtest eye is the FINAL authority on the damage read** — his next playtest verdict
+    closes this chain or reopens it as a new task; say so in the handoff.
+    **COMMIT** on main with explicit pathspecs (**`Content/Materials/M_CastleCrumble.uasset` ALWAYS — the TASK-339 sampler fix rides
+    in THIS commit** — plus `MI_Castle_Crumble01|02.uasset` ONLY if TASK-337's conditional retune ran, plus `…03` only if touched,
+    + board/handoffs), `git diff --stat` shows nothing foreign, **NO push**. **`git reset --hard` / `git clean -fd`
+    BANNED** (standing lesson 2). If the band FAILS: do NOT commit, append the measured table to `handoffs/TASK-337-artist.md`, route back
+    to art-director (counts as a loop; max 3 then escalate to Jonathan via 🚨 Blockers).
+    Post the luma table + before/after shots + commit hash in 🔧 Build & Git.
+- names: >
+    Commit set: `Content/Materials/M_CastleCrumble.uasset` (ALWAYS — the TASK-339 fix) + `MI_Castle_Crumble01|02.uasset` only if the
+    retune ran (+ `…03` only if touched) + docs. READ-ONLY: `SM_Castle_Crumble01|02|03`, `T_Castle_ORM` (stays `TC_Masks`),
+    `ACastle::ApplyCrumbleStage`/`ResetCastle`/`ApplyTeamVisuals`, `L_Arena`. Commit on main, no push. Law: CONVENTIONS "Castle
+    remaster" → CRUMBLE STAGE-LEGIBILITY law + "Fleet Meshy remaster" → SAMPLER-TYPE TRAP; the hard gate (integration check before commit).
+
+#### TASK-339 — [CASTLE-crumble-fix] ONE-ENUM master repair: `M_CastleCrumble` ORM sampler `LinearColor → Masks` + master resave (art-director, editor)
+- assignee: art-director
+- status: backlog — **dispatchable NOW** (editor-gated; serialize with every other editor task and Jonathan's PIE; MAY run right after TASK-332 in the same art session, with the TASK-337 re-run following in the same tenancy)
+- blocked-by: none (RUNS FIRST in the re-adjudicated chain 339 → 337 → 338)
+- parallel-safe: no (EDITOR-GATED; no Git)
+- spec: >
+    **THE DEFECT (proven, TASK-337 first run — `handoffs/TASK-337-artist.md` + `TASK-337-M_CastleCrumble-compile-error.png`):**
+    `M_CastleCrumble`'s ORM node (`TextureSampleParameter2D_2`, param `ORM`) samples as `SAMPLERTYPE_LinearColor` with `T_Castle_ORM`
+    baked in as the NODE default. TASK-330's same-path reimport correctly made that texture `TC_Masks` (the fleet import law — the
+    texture is RIGHT and stays), and UE validates node-default textures at translation ⇒ hard SM6 error
+    (`Sampler Type is Linear Color, should be Masks`) ⇒ the master AND all three `MI_Castle_Crumble0N` render the **engine Default
+    Material in game** — live on main since `fcb1ec0`. (`M_AssetPBR` survives the same texture because its node default is the
+    `TC_Default` NeutralORM and MI-level texture overrides are never re-validated — CONVENTIONS SAMPLER-TYPE TRAP.)
+    **THE FIX — exactly ONE enum:** on that ORM sampler node, `SamplerType: Linear Color → Masks`. NOTHING else: zero graph-topology
+    change, zero param change (`Darken`/`ScorchAmount`/`CharColor`/`RoughBoost`/`EmberColor`/`EmberAmount` names AND values untouched),
+    `.rgb` → O/R/M channel semantics preserved (Masks compression, linear channels — the combination `M_AssetPBR` effectively runs
+    fleet-wide). **The graph is STOCK NODES (TASK-157) and STAYS stock — the Custom-HLSL BAN is not in play, but the WEDGE-WATCH is:**
+    this triggers a shader recompile under the Substrate + HW-RT stack; a single-material stock recompile is bounded (the first run's
+    `RecompileShaders` round-tripped in 46 ms), but if the recompile cascades abnormally or the editor wedges, STOP and post 🚨 Blockers —
+    do not iterate.
+    **ACCEPTANCE:** (a) Stats panel CLEAN — the SM6 sampler error gone; (b) `RecompileShaders Material M_CastleCrumble` SUCCEEDS;
+    (c) zero `Failed to compile Material` / `Failed to compile Material Instance with Base M_CastleCrumble` lines on a fresh compile/load;
+    (d) in Simulate on `L_Arena`, ONE driven stage renders VISIBLY non-default (scorch-tinted castle, NOT the grey sparkle-mottle —
+    capture it); (e) **RESAVE the master** (Simulate STOPPED — this also clears the standing "recompiles every editor launch" warning;
+    say so in the handoff). **Save `M_CastleCrumble` ONLY** — no MI save (TASK-337 owns MI values; MI01 was restored bit-exact), no
+    `T_Castle_*` change (the texture is correct — never "fix" this by flipping it off `TC_Masks`), `L_Arena` NEVER saved, **no Git**
+    (TASK-338 commits the master). Write `handoffs/TASK-339-artist.md` (before/after Stats + the stage capture). Post in 🎨 Art.
+- names: >
+    `/Game/Materials/M_CastleCrumble` (ORM node `SamplerType` enum ONLY; then resave). READ-ONLY: `/Game/Textures/T_Castle_ORM`
+    (stays `TC_Masks`), `MI_Castle_Crumble01|02|03`, `SM_Castle_Crumble01|02|03`, `M_AssetPBR` (reference pattern only). Report
+    `handoffs/TASK-339-artist.md`. Law: CONVENTIONS "Fleet Meshy remaster" → **SAMPLER-TYPE TRAP** (NEW 2026-07-27) + "Material &
+    Niagara lane laws" (stock nodes); precedent `handoffs/TASK-157-artist.md` (the authored graph).
 
 ---
 
