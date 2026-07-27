@@ -131,6 +131,29 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ## Active tasks
 
+### 🚨 PIPELINE-FILE REVERT — 2026-07-26, DETECTED BY THE MANAGER MID-SESSION (READ BEFORE TOUCHING THESE FILES)
+
+**Both `TASKBOARD.md` and `CONVENTIONS.md` were reverted in the WORKING TREE to a pre-2026-07-26 state while the manager was reading them** — content vanished *between* a Read and an Edit minutes later (the Edit tool refused with "file has changed since last read", and a re-read showed whole sections gone). Cause is NOT known and was NOT the manager. Most likely a stale-buffer overwrite by a concurrent agent, or a `git restore`/`checkout` of `.claude/pipeline/`. **git HEAD is unaffected — the committed history is intact and is the recovery source.**
+
+**What was LOST from the working tree:**
+
+| File | Lost section | Recovered? |
+|---|---|---|
+| `TASKBOARD.md` | `## FLEET-REMASTER tasks` (TASK-306..321, ~222 lines) | ✅ **RESTORED** below from manager session context + corrections |
+| `TASKBOARD.md` | `## W-UNIT-1 tasks` — Wizard AoE fireball unit (TASK-298..305, ~190 lines) | ❌ **STILL MISSING — and NOT recoverable from git (see the correction below).** Must be RECONSTRUCTED from the surviving `handoffs/` + `qa/` files. |
+| `CONVENTIONS.md` | `## Wizard unit — AoE fireball caster (2026-07-26)` | ✅ **RESTORED** verbatim from manager session context |
+| `CONVENTIONS.md` | `## Fleet Meshy remaster — same-path overwrite (2026-07-26)` | ✅ **RESTORED** + corrected |
+
+**RECOVERY PROCEDURE (build-master, git lane — the manager may not touch Git):**
+1. `git diff -- .claude/pipeline/TASKBOARD.md .claude/pipeline/CONVENTIONS.md` against HEAD to see the true extent. Do NOT assume this notice is complete.
+2. ⚠️ **CORRECTION (orchestrator, verified 2026-07-26): git is NOT a recovery source for this board.** The last commit that touched `TASKBOARD.md` is **`e01bc2e`** (TASK-297, 2026-07-25) — `0d717c0` did NOT include it, and `git show 0d717c0:…/TASKBOARD.md` contains **zero** occurrences of `W-UNIT-1` (7,660 lines, same as HEAD). Every board edit made on 2026-07-26 — the Wizard W-UNIT-1 section, the whole FLEET-REMASTER section, and the orchestrator's session records — existed **only in the working tree**, which is exactly why the revert destroyed them. **The W-UNIT-1 section must be RECONSTRUCTED, not restored:** the surviving sources are `handoffs/TASK-{298,299}-programmer.md`, `handoffs/TASK-{300,301,302,303}-artist.md`, `handoffs/TASK-307-programmer.md`, and `qa/TASK-{298,299,307}.md`. Assign it to the manager.
+3. Re-apply the manager delta if any restore clobbers it. The delta is exactly: (a) FLEET-REMASTER ruling 3 — Ogre skeleton correction; (b) the Stage-B template — same correction; (c) TASK-310 — the colour-call amendment; (d) the new **TASK-322..325** follow-ups block; (e) in CONVENTIONS, the Ogre correction in BOTH the "Fleet Meshy remaster" shared-skeleton binding law AND the "Skeletal rig & animation workstream (M7)" Skeleton bullet; (f) `fab/FAB-REQUESTS.md` — the new **FAB-007** entry + the FAB-006 scope fence. A verbatim backup of the TASK-322..325 block is at `%TEMP%\claude\...\scratchpad\FLEET-REMASTER-followups-TASK-322-325.md` (path in the manager's return message).
+4. Until step 2 is done, **treat the Wizard/W-UNIT-1 board section as authoritative-in-git-only.** The Wizard itself is shipped and unaffected (`0d717c0`) — this is a documentation loss, not an asset loss.
+
+**Standing lesson (manager, binding):** agents must **re-read `TASKBOARD.md` / `CONVENTIONS.md` immediately before editing** and use partial edits, never a whole-file Write from an in-context copy. A whole-file Write of these two files is now PROHIBITED for every agent except the manager, and even the manager edits in place.
+
+---
+
 **2026-07-15 M7 KICKOFF (READ FIRST — CURRENT milestone) — Premium art & feel pass (TASK-153..188):** Jonathan authorized M7 in full. This is the whole §6 premium bar: (A) §6 juice C++ checklist; (B) a NEW skeletal rig + animation workstream stood up from scratch (spike-proven before batch); (C) the 16 remaining blockouts upgraded to textured meshes via the proven TRELLIS.2 pipeline; (D) Niagara VFX on every ability/impact/spawn/death/spell; (E) Lumen lighting + post stack + gradient skybox + arena set dressing (no collision change, §5); (F) full audio set; (G) the Sequencer cinematic flythrough + gameplay b-roll portfolio slice. CONVENTIONS updated FIRST (TASK-153, done): the "Skeletal rig & animation workstream (M7)" section + the M7-batch and GoldNode-emissive-variant clauses under "Textured mesh law". Full decomposition + rulings in **"## M7 tasks"** below. **Dispatch frontier (parallel-safe, headless, NOW): TASK-154, 155, 156, 157, 158 (juice C++) ∥ TASK-159 (skeletal swap path C++) ∥ TASK-179 (audio hooks C++) ∥ TASK-160 (rig spike, Blender) ∥ TASK-166 (mesh-batch prep, file-only) ∥ TASK-174/175 (VFX art, editor-queued).** **2026-07-16 DIRECTIVE AMENDMENTS (TASK-184..188 — see "M7 DIRECTIVES ADDENDUM" below) opened more NOW lanes and closed two gates:** additionally dispatchable NOW: **TASK-184** (concept-gen tool, C++/tooling) ∥ **TASK-180** (4 covered audio cues, art) ∥ **TASK-186** (best-effort audio from imported packs, art) ∥ **TASK-187** (fire/ice VFX re-skin, art/editor). The concept gate is RESOLVED by the concept-gen step (TASK-184 build → TASK-185 run → 16 Inbox PNGs; **TASK-167 is now OPTIONAL/non-blocking** review). The audio gate is PARTIALLY resolved (MedievalWeaponsSFX pack) — the ONLY remaining external Jonathan gate is **TASK-188** (7 genuinely-missing cues: mining loop, 2 UI clicks, castle-destroy, 2 music, overtime sting — NON-blocking, M7 ships silent+logged if ungated). Repo base `057ca9f` on `main` (pushed); the Ogre pull-forward already committed to `main` bundled with the M6.6 scatter tune (see TASK-152, not pushed).
 
 ---
@@ -333,8 +356,20 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 #### TASK-233 — BACKLOG: Cavalry quadruped anim source (art)
 - assignee: art-director
 - status: backlog (not urgent — procedural anims live; NEVER wire biped clips onto Cavalry, explicit-pass gate stands)
-- blocked-by: source decision (Meshy has NO quadruped clips — lanes: external quadruped/horse rig+clip source, OR FAB-006
-  mounted units [flagged into Jonathan's TASK-207 purchase decision], OR per-unit chain corrections in the TASK-229 tool)
+- blocked-by: **FAB-007** (authored 2026-07-26 — `.claude/pipeline/fab/FAB-REQUESTS.md`: rigged horse/mount/QUADRUPED source, status
+  `requested`, awaiting Jonathan at the TASK-207 checkout). **The "source decision" that blocked this task is now RESOLVED into a named
+  request** — the lane survey concluded: Meshy has NO quadruped clips (dead end), and **FAB-006 is explicitly a HUMANOID pack, so it does
+  NOT cover Cavalry** — before 2026-07-26 FAB-REQUESTS.md had no horse/mount/quadruped entry AT ALL, i.e. this task was silently
+  unsourced. Residual lane if Jonathan declines FAB-007: per-unit chain corrections in the TASK-229 tool. Escape hatch: if the FAB-006
+  pack he picks turns out to ship a rigged mount (TAB Medieval Knights was flagged as a maybe), FAB-007 closes as
+  `rejected — covered by FAB-006` and this task unblocks from there instead.
+  **2026-07-26 EVIDENCE UPDATE from TASK-319-verify (`aa00826`, the Meshy remaster):** the ORIGINAL defect in this task's spec — the
+  rider-fit rig WARPING the horse — is **GONE** (rigged bind-pose bounds match the static mesh to the centimetre; the mesh imports and
+  displays correctly and reads bright/saturated). What REMAINS is purely the missing quadruped GAIT: under locomotion the body is
+  near-rigid while biped leg bones flail — head / `spine_02` / `upperarm_r` travel **4.2 / 4.2 / 5.5 cm** vs Pikeman's
+  **12.7 / 12.0 / 14.3**, while `foot_r` swings **75.1 vs 49.6**; `pelvis` + both `thigh` bones own **50.4%** of all weight (healthy units
+  ≈32%). So this task narrows from "re-rig + re-anim" to **"source a quadruped rig + clips and retarget"**. Non-blocking: Cavalry is
+  playable today and its procedural anims remain live.
 - parallel-safe: yes (headless until a wire)
 - spec: >
     Solve the Cavalry hold (rider-fit rig: biped Walk drives rider hip/leg bones the horse is skinned to — saddle-line Hips
@@ -657,6 +692,345 @@ Four non-gated items. State: editor CLOSED; tree checked out on `m7.6-arena10x` 
     single-source), "Deck-builder & saved decks (M6)" (IsDeckLegal single validator), M6 decision 4 (bot decks).
 
 ---
+
+## FLEET-REMASTER tasks (decomposed 2026-07-26) — Meshy colour rebuild of the 11 fleet units (TASK-306..325)
+
+> **⚠️ THIS SECTION WAS RESTORED FROM MANAGER SESSION CONTEXT 2026-07-26 after a working-tree revert wiped it (see "🚨 PIPELINE-FILE REVERT" in Active tasks at the top of this board). It is a faithful copy of what was on disk earlier this session, PLUS the four manager corrections dated 2026-07-26 that are called out inline. If it differs from git HEAD's copy, **GIT HEAD WINS for everything EXCEPT** (a) manager ruling 3's Ogre-skeleton correction, (b) the Stage-B template's Ogre-skeleton correction, (c) the TASK-310 colour-call amendment, and (d) the new TASK-322..325 follow-ups block — those four are NEW manager work and must be re-applied after any git restore.**
+
+**Directive (Jonathan, 2026-07-26):** the 11 fleet unit meshes render WASHED-OUT / almost colourless in-game and don't match their good, approved concept art — they were made with the OLD non-Meshy pipeline; the Meshy-built Wizard looks great by comparison. FULL Meshy rebuild of ALL 11: `Footman, Archer, Knight, Miner, Cleric, Ogre, Sapper, Pikeman, Cavalry, MilitiaMob, Longbowman`. Same pipeline the Wizard used (TASK-300..305), templated per unit. Plus a systemic float-bug fix and a building/tower colour audit.
+
+**Manager rulings (binding; naming law in CONVENTIONS "Fleet Meshy remaster — same-path overwrite (2026-07-26)", added FIRST):**
+1. **SAME-PATH OVERWRITE, no new names.** Each rebuild reimports OVER `/Game/Meshes/SM_<Unit>` · `/Game/Characters/SK_<Unit>` · `/Game/Materials/Instances/MI_<Unit>_PBR` · `/Game/Textures/T_<Unit>_{D,N,ORM}` · raw `Content/RawAssets/Characters/<Unit>.fbx`. NEVER delete+recreate. Preserves ALL refs (`BP_Unit_<Unit>`, `DT_Cards`, ghost soft-ref, CardID→SK resolve, ABP/anim bindings) ⇒ ZERO C++/BP/CSV/DT_Cards work per unit — pure art+build swap.
+2. **REUSE the approved concept, NO concept-gen, NO card-art.** Feed `Content/RawAssets/Concepts/<Unit>.png` (all 11 verified present) straight into `meshy_generate.py --mode image3d`. Card art + the Wizard + non-unit spell/upgrade cards are OUT of scope.
+3. **PRESERVE anims/ABP.** Rig the rebuilt `SK_<Unit>` onto the SHIPPED shared `SK_Footman_Skeleton` — **ALL ELEVEN units, Ogre INCLUDED** — so the existing `A_<Unit>_*` + ABP still bind. Do NOT reimport/overwrite the anim sequences or the ABP. **⚠️ CORRECTED 2026-07-26 (this ruling originally read "… / existing bespoke `SK_Ogre_Skeleton` (Ogre)"): `SK_Ogre_Skeleton` DOES NOT EXIST AND NEVER DID.** `SK_Footman_Skeleton` is the SOLE skeleton in `/Game/Characters`, confirmed twice — art-director's evidence chain at TASK-316 (`rig_manifest.json` `assets.Ogre.skeleton = "SiegeBiped"` carrying the TASK-242 manager lane ruling that rejects the bespoke option BY NAME; `rig_character.py:105` `SHARED_SKELETON_ROOT = "Footman_Rig"`; the 2026-07-22 Ogre rig report; the TASK-244 editor readback) and build-master's in-engine verify at TASK-316-verify (`42d2ab2`: sole skeleton, no stray, all four `A_Ogre_*` intact). **Root cause of the myth: `rig_character.py:406` writes `report["armature"]["skeleton"] = card_id`, so Ogre's rig report shows a cosmetic NESTED `"skeleton": "Ogre"` — that is the CARD ID, not an asset name; the authoritative field is the report's TOP-LEVEL `"skeleton"`.** Recorded in CONVENTIONS in BOTH places the myth lived ("Fleet Meshy remaster" → shared-skeleton binding law, and "Skeletal rig & animation workstream (M7)" → Skeleton bullet, whose "e.g. Ogre" example seeded it).
+4. **Systemic float-fix gates the verifies.** TASK-259's per-asset Z-offset recurred on the Wizard → make it capsule-relative + durable (TASK-306 diag → TASK-307 fix → QA → TASK-308 integrate). Every per-unit verify is `blocked-by: TASK-308`.
+5. **Per-unit commit on MAIN, NO push.** One commit per verified unit so Jonathan can revert any single one; before/after gallery at batch close (TASK-310). Lane = main (build-master confirms working tree on main; post-M7.6-merge resume-on-main pattern).
+6. **LOD reapplied post-import** (LOD1 50%@0.4 / LOD2 20%@0.15 + URO — the TASK-297 recipe), since a same-path SK reimport drops to LOD0-only.
+
+**Parallel vs editor-gated (dispatch map for the orchestrator):**
+- **No-editor, FULLY PARALLEL — dispatch now:** TASK-306 (diag), TASK-307 (C++ file-only), TASK-309 (audit eyeball), and the GEN portion of EVERY `-model` (Meshy i2m3d + Blender Stage-2) and `-rig` (Blender rig) across all 11 units. Meshy-gen + rig are no-editor + parallel-safe across units (gated only WITHIN a unit: model→rig).
+- **EDITOR-GATED, SERIALIZE (one editor/MCP at a time; also serialize with in-flight M7.7 TASK-269..272, TASK-297, and Wizard TASK-304/305):** every `-model` IMPORT, every `-rig` IMPORT, every `-verify`, and TASK-308's compile/PIE. Never during Jonathan's PIE.
+- **Gating chain:** per unit `-model` (gen, no blocker) → `-rig` (blocked-by `-model`) → `-verify` (blocked-by `-rig` AND TASK-308). Float chain: TASK-306 → TASK-307 → TASK-307-QA → TASK-308. Batch close: TASK-310 (blocked-by all 11 `-verify`).
+
+**FLAGGED for Jonathan (nothing blocks):** (i) full image-to-3D rebuild SUBSUMES M7.5 Track A's unit-retexture goal for these 11 — M7.5's FAB/buildings/free-pipeline tracks untouched; (ii) Meshy credits — 11 units × image-to-3D ≈ the Wizard's ~30 credits each; if `MESHY_TOKEN` quota exhausts mid-batch, art-director flags 🚨 Blockers (exit 3) and the batch pauses on remaining units, does NOT fake; (iii) building rebuild scope is decided by the TASK-309 audit (manager decomposes per-building tasks then); (iv) Ogre/Footman/Archer were the TRELLIS pilots — Jonathan's list explicitly includes them, so they are rebuilt via Meshy like the rest.
+
+### ✅ BATCH RESULT — ALL 11 UNITS REMASTERED, VERIFIED IN-ENGINE, COMMITTED ON `main` (NO push)
+
+| unit | commit | unit | commit |
+|---|---|---|---|
+| Footman (pilot) | `d7254da` | Ogre | `42d2ab2` |
+| Cleric | `0325d90` | MilitiaMob | `f14f325` + `6bd1cee` |
+| Archer | `e0dd73b` | Longbowman | `5177ae5` |
+| Knight | `38c172a` | Pikeman | `960b8c2` |
+| Miner | `dcc601a` | Cavalry | `aa00826` |
+| Sapper | `73e6cb9` | | |
+
+Wave 1 (Cleric/Archer/Knight/Miner/Sapper) and Wave 2 (Ogre/MilitiaMob/Longbowman/Pikeman/Cavalry) both passed the full gate: same-path import clean, SK `lod_count == 3` / SM LODs 4, feet grounded ~2.1–2.4 cm (TASK-308 live), preserved `A_<Unit>_*` clips still bound and TICKING (live bone-delta sample, not T-pose), correct 2-slot materials, `T_*_D` sRGB ON / `_N`+`_ORM` LINEAR, URO + `OnlyTickPoseWhenRendered`, Message Log clean. **`SK_Footman_Skeleton` UNCHANGED throughout (22 bones, still the sole skeleton in `/Game/Characters`).** Colour: Longbowman best of batch, Miner most colourful, Cleric brightest, Knight correctly dark (genuine metalness), Ogre weakest.
+
+#### Wave-1 / Wave-2 verification evidence — RE-INSERTED by the orchestrator 2026-07-26 after the revert (NOT available in git; this is the only copy besides `handoffs/`)
+
+| unit | wave | import | LOD readback | grounded | anims Δ (live bone sample) | colour | Msg Log | commit |
+|---|---|---|---|---|---|---|---|---|
+| Cleric | 1 | OK | 3 | 2.14 cm | Δ121 cm | PASS — vivid | clean | `0325d90` |
+| Archer | 1 | OK | 3 | 2.14 cm | Δ39.9 cm | PASS — vivid | clean | `e0dd73b` |
+| Knight | 1 | OK | 3 | 2.16 cm | Δ36.2 cm | PASS — dark metal CORRECT | clean | `38c172a` |
+| Miner | 1 | OK | 3 | 2.11 cm | Δ85.2 cm | PASS — most colourful | clean | `dcc601a` |
+| Sapper | 1 | OK | 3 | 2.13 cm | Δ36.2 cm | PASS — muted-brown by design | clean | `73e6cb9` |
+| Ogre | 2 | clean, skeleton gate PASS | 3 | 2.36 cm | 63.7 cm @ `foot_r` | weakest — pale under sun | clean | `42d2ab2` |
+| MilitiaMob | 2 | clean, skeleton gate PASS | 3 | 2.14 cm | 2.3 cm @ `foot_r` | clean, crisp team band | see defect | `f14f325`+`6bd1cee` |
+| Longbowman | 2 | clean, skeleton gate PASS | 3 | 2.15 cm | 6.4 cm @ `foot_r` | **best of batch** | clean | `5177ae5` |
+| Pikeman | 2 | clean, skeleton gate PASS | 3 | 2.21 cm | 38.6 cm @ `hand_r` | good | clean | `960b8c2` |
+| Cavalry | 2 | clean, skeleton gate PASS | 3 | 2.17 cm | 49.2 cm @ `foot_r` | **bright, NOT dark** | clean | `aa00826` |
+
+Δ = max relative bone-position change between two LIVE samples — proof the ABP TICKS rather than sitting in T-pose. Gallery "after" shots (4 angles/unit): `handoffs/TASK-3NN-verify-<Unit>-{tight,threequarter,wide,feet}.png`.
+
+**RULINGS RETURNED (both requested at dispatch, both avoided spend):**
+- **Pikeman width — ACCEPTABLE, do NOT re-gen (30 credits NOT spent).** Conformed X is 191 UE vs a 77 blockout target (~2.5×) because this generation holds BOTH pikes crossed horizontally; Z matched 190 exactly and the capsule is C++-authored so movement/nav are unaffected. Four spawned at real capsule spacing (r40 → 80 cm) stay individually legible from the gameplay camera and read as a deliberate levelled pike hedge. Residual for Jonathan: pikes overhang the rank flanks ~1 unit-width, and at ground-level angles the team-tinted shafts merge into one continuous blue bar.
+- **Cavalry — darkness ABSENT (no re-bake), gait stiff as expected.** Chestnut coat, flaxen mane, cream caparison, red bridle all read bright; only the rider's plate is gunmetal ⇒ the `gamma 0.50 / gain 1.3` temper is NOT warranted. Gait quantified vs Pikeman over `*_Walk`: head/`spine_02`/`upperarm_r` travel **4.2 / 4.2 / 5.5 cm vs 12.7 / 12.0 / 14.3** while `foot_r` swings **75.1 vs 49.6** — near-rigid body, flailing biped legs = the known TASK-233 quadruped limitation (see FAB-007), NOT an import defect. Collision: 4 hulls, capsule r45/hh104 (Footman r40/hh90) ⇒ nav unaffected, but the 205-deep horse overhangs ~57 cm fore and aft. Horse-forehead team bleed confirmed (cosmetic).
+
+**🐞 `SM_MilitiaMob` LOD DEFECT (found, corrected, root-cause open → TASK-322):** `f14f325` shipped LOD1–3 at **0 triangles**; `6bd1cee` corrected it by restoring the last-known-good mesh. Not the source FBX and not the recipe — a fresh import to a SCRATCH path yields a correct 15000/7500/3750/1874 chain (13,736 welded verts), but a SAME-PATH reimport over `/Game/Meshes/SM_MilitiaMob` returns LOD0 **unwelded at 45,000 verts** (15000 × 3, zero sharing) with `Bad MeshDescription at lod index 1/2/3`, after which the reducer yields 0 tris below LOD0. Reproduced from a clean base, with and without `replace_existing_settings`, and after `remove_lods` + explicit `set_lods`. MilitiaMob-specific. **Runtime unaffected** — `SK_MilitiaMob` is the runtime visual and is fully remastered; the residue is the static preview mesh carrying older geometry.
+
+**CRASH-RECOVERY RECORD (PC auto-restart 2026-07-26 ~16:58):** a Windows auto-update restart killed the in-flight parallel art fan-out and closed the editor. **Nothing was lost and no Meshy credits were wasted** (each unit's `Cache/<Unit>/meshy_raw.glb` is cached; Stage-2 re-runs free). At the crash: 9 units had model output staged (Cleric 16:49 · Cavalry/MilitiaMob/Longbowman 16:53 · Ogre/Archer/Knight 16:54 · Miner 16:55 · Sapper 16:56), 4 were re-rigged (Cleric, Archer, Cavalry, Sapper 16:57), **Pikeman had never started**, and **zero UE imports had run**. Handoffs for 8 units and all board notes after 16:39 died with their agents and were reconstructed on resume. **Two stale-report traps were caught during that reconstruction:** Archer's and Cavalry's post-reboot `rig_report.json` were LOST and stale files describing DIFFERENT meshes were sitting at those paths (Jul-21 21:07 and Jul-16 06:01) — quarantined to `rig_report.STALE-PREREBOOT.json` and replaced with `_RECONSTRUCTED` reports built from direct measurement. Reading them would have driven imports on wrong data.
+
+**LANE ADDENDUM (Wave 2, binding):** **package saves are SILENTLY BLOCKED while Simulate is running** — MilitiaMob's first import landed in memory only, which is how the broken LOD chain reached a commit. Every import must run with Simulate STOPPED (stop/start gate now in the lane).
+
+**EDITOR-BOUNCE GRANT (2026-07-26 SESSION-4):** Jonathan explicitly authorized closing/reopening the editor for the remainder of that session — supersedes the standing "editor close is Jonathan's choice" law for that session ONLY. Conditions: never discard the shared skeleton at a save prompt (a "Don't Save" on `SK_Footman_Skeleton` silently breaks the ABP binding; recovery = manual Target Skeleton re-assign), and never save `L_Arena`. In the event, neither wave needed a bounce.
+
+### 🔬 LANE KNOWLEDGE — in-engine verification recipe (learned in Wave 1, binding on Wave 2 and future remasters)
+
+1. **MCP `CaptureViewport` renders the EDITOR world, not a PIE world** → verify in **Simulate**, never PIE-in-viewport.
+2. In Simulate there is a base `PlayerController` but **no pawn**, so `SummonTestUnit` is unavailable → use console `Summon /Game/Blueprints/Units/BP_Unit_<Unit>.BP_Unit_<Unit>_C`. `GameplayStatics.begin_deferred_actor_spawn_from_class` is **NOT** exposed to Python.
+3. **`unreal.Rotator()` positional args are `(roll, pitch, yaw)`** — passing yaw second silently PITCHES the actor. Use keywords.
+4. A unit's Tick re-orients it every frame → **rotate only after the world is paused**; the rigged mesh's visual front is **180° from actor-forward**.
+5. The level viewport is ~3.5:1 ⇒ vertical FOV only ~32° ⇒ camera distance ≈ `half_extent × 3.49 × 1.45` to frame a unit.
+6. `OnlyTickPoseWhenRendered` genuinely HALTS pose evaluation when the unit isn't in the persistent viewport view → point the real camera at it before sampling poses.
+7. Reimport leaves `BP_Unit_<Unit>` and `MI_<Unit>_PBR` **dirty in memory** (the `M_AssetPBR.used_with_skeletal_mesh=false` auto-heal — see TASK-325). Harmless — but at any editor-close prompt SAVE the `MI_`/`SM_`/`SK_`/`T_` assets and **DECLINE `L_Arena.umap`**.
+8. **Package saves are SILENTLY BLOCKED while Simulate is running** (Wave-2 addendum) — every import happens with Simulate STOPPED.
+9. **A same-path STATIC reimport can silently unweld LOD0 and zero out LOD1–3** (the TASK-320 defect) — read back LOD0 vert count AND per-LOD triangle counts before every commit. `lod_count` alone does NOT catch it. Root-cause + fix: TASK-322/323.
+
+---
+
+### PER-UNIT TEMPLATE (specified ONCE — bind `<Unit>` to a CardID from the table below; fan out over all 11)
+
+Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-3NN-verify` (base IDs in the table). The steps below are IDENTICAL for every unit — only `<Unit>` and the recorded skeleton change.
+
+**Stage A — `TASK-3NN-model` [REM-model] `SM_<Unit>` Meshy rebuild (art-director)**
+- blocked-by: none · parallel-safe: yes for the GEN portion (no-editor); the UE IMPORT is editor-gated (serialize)
+- spec: Meshy image-to-3D from `Content/RawAssets/Concepts/<Unit>.png` — `Tools/ArtPipeline/meshy_generate.py --mode image3d` (`MESHY_TOKEN` per TASK-197; quota/credit exhaustion ⇒ flag 🚨 Blockers exit 3, do NOT fake) → Stage 2 (cleanup → conform → remesh/decimate **≤15k tris** → UV `UVMap` → bake **D/N/ORM 1024²** → two-slot TeamRegion split → ≤4 hulls → FBX), **feet-centre origin, Nanite OFF**. Brightness profile `{ao_divide_strength 1.0, ao_floor 0.25, gamma 0.55, gain 1.2}` is the LOCKED fleet default (Footman-validated, target mean linear albedo ≈0.164+). Then (EDITOR-GATED) SAME-PATH import OVERWRITING `/Game/Meshes/SM_<Unit>` + `/Game/Textures/T_<Unit>_{D,N,ORM}` + `/Game/Materials/Instances/MI_<Unit>_PBR` (from `M_AssetPBR`, params `BaseColor`/`Normal`/`ORM`); two-slot `[0 TeamRegion → MI_TeamColor_<Team>, 1 <Unit>PBR → MI_<Unit>_PBR]`. NEVER delete+recreate. Raw FBX → `Content/RawAssets/Characters/<Unit>.fbx` (overwrite). ACCEPTANCE (eyeball, M7.5 colour-fidelity bar): baked result READS AS `Concepts/<Unit>.png` — VIVID, not washed-out; team-region tints cleanly. **Post-import LOD readback per lane-knowledge 9.** Post preview + import result in 🎨 Art; hand off to `-rig`.
+- names: `SM_<Unit>` / `T_<Unit>_{D,N,ORM}` / `MI_<Unit>_PBR` (all same-path) · master `M_AssetPBR` · raw `Content/RawAssets/Characters/<Unit>.fbx`. Law: CONVENTIONS "Fleet Meshy remaster", "Textured mesh law", "Meshy second engine (M7.5)".
+
+**Stage B — `TASK-3NN-rig` [REM-rig] `SK_<Unit>` re-rig + LODs, anims/ABP PRESERVED (art-director)**
+- blocked-by: `TASK-3NN-model` · parallel-safe: yes for the GEN portion (Blender rig, no-editor); UE IMPORT editor-gated (serialize)
+- spec: Blender rig the rebuilt `SM_<Unit>` via `Tools/ArtPipeline/rig_character.py` onto the SAME skeleton the CURRENT `SK_<Unit>` binds to — the SHIPPED shared **`SK_Footman_Skeleton`** for **ALL ELEVEN units** (record the actual skeleton in the handoff). **⚠️ CORRECTED 2026-07-26 (this line originally read "…, existing bespoke `SK_Ogre_Skeleton` for Ogre"): there is NO bespoke Ogre skeleton — see manager ruling 3. Creating a skeleton for ANY unit here would ORPHAN its `A_<Unit>_*` sequences; a bespoke per-unit skeleton is a NON-DEFAULT requiring an explicit manager ruling.** Same two-slot material as `SM_<Unit>`. Then (EDITOR-GATED) SAME-PATH import OVERWRITING `/Game/Characters/SK_<Unit>` ONLY — do NOT touch `/Game/Characters/Anims/A_<Unit>_*` or the ABP (they are PRESERVED and must keep binding). REGENERATE the LOD chain post-import (LOD1 50%@0.4 / LOD2 20%@0.15 + `OnlyTickPoseWhenRendered` + `bEnableUpdateRateOptimizations`; readback `lod_count==3`). Raw rigged FBX → `Content/RawAssets/Characters/<Unit>.fbx` (or `_rigged` sibling). ACCEPTANCE: `SK_<Unit>` imports on the preserved skeleton, existing anims still bind/play in a quick preview, LODs present. Post in 🎨 Art; hand off to `-verify`.
+- names: `SK_<Unit>` (same-path), skeleton `SK_Footman_Skeleton`, PRESERVED `A_<Unit>_*` + `ABP_<Unit>`/`ABP_SiegeBiped`. Tool `rig_character.py`. Law: CONVENTIONS "Fleet Meshy remaster" (shared-skeleton + preserve-anims clauses), "Skeletal rig & animation workstream (M7)", M7.6 SK-unit LOD law.
+
+**Stage C — `TASK-3NN-verify` [REM-verify] Verify colourful + grounded, per-unit commit (build-master)**
+- blocked-by: `TASK-3NN-rig`, **TASK-308** (float-fix integrated) · parallel-safe: no (exclusive editor + Git; EDITOR-GATED)
+- spec: EXCLUSIVE editor session on main, Simulate on `L_Arena` (lane-knowledge 1/2): (1) `SK_<Unit>` is the runtime visual, VIVID/colourful matching `Concepts/<Unit>.png` (the wash-out is GONE), team-recolours Red for the bot; (2) **FEET MEET THE GROUND** (TASK-308 must be live — the grounding gate); (3) the PRESERVED anims still play on the re-rigged SK (prove with a live bone-delta sample, not a screenshot); (4) SK + **SM** LOD chains read back correct (lane-knowledge 9 — per-LOD triangle counts, not just `lod_count`); (5) Message Log clean (ensure/AccessedNone/Fatal = 0). CAPTURE an "after" screenshot (feeds TASK-310). COMMIT this ONE unit's assets on main with explicit pathspecs (`SM_/SK_/MI_/T_<Unit>` uassets + raw FBX + board/CONVENTIONS/handoff) — verify `git diff --stat` shows nothing foreign; **NO push**. Post result + commit hash in 🔧 Build & Git.
+- names: per-unit commit on main, no push; verifies all `<Unit>` names above. Law: CONVENTIONS "Fleet Meshy remaster" + the hard gate (art integration check before commit).
+
+### Unit → task-ID map (fan-out targets) — ALL DONE
+
+| Unit | model | rig | verify | skeleton (bind target) | status |
+|---|---|---|---|---|---|
+| Footman | TASK-311-model | TASK-311-rig | TASK-311-verify | `SK_Footman_Skeleton` | **done** `d7254da` — PILOT; locked the `{ao_divide 1.0, ao_floor 0.25, gamma 0.55, gain 1.2}` fleet brightness profile (mean linear 0.050 → 0.164) |
+| Archer | TASK-312-model | TASK-312-rig | TASK-312-verify | `SK_Footman_Skeleton` | **done** `e0dd73b` — albedo 0.2919, team 3.29% |
+| Knight | TASK-313-model | TASK-313-rig | TASK-313-verify | `SK_Footman_Skeleton` | **done** `38c172a` — albedo 0.1639; dark steel is CORRECT (32.5%-metal ORM, speculars verified) |
+| Miner | TASK-314-model | TASK-314-rig | TASK-314-verify | `SK_Footman_Skeleton` | **done** `dcc601a` — albedo 0.2417, most colourful of batch |
+| Cleric | TASK-315-model | TASK-315-rig | TASK-315-verify | `SK_Footman_Skeleton` | **done** `0325d90` — albedo 0.361, brightest of batch (see TASK-310 colour call a) |
+| Ogre | TASK-316-model | TASK-316-rig | TASK-316-verify | **`SK_Footman_Skeleton` (shared) — CORRECTED 2026-07-26** (was wrongly listed as bespoke `SK_Ogre_Skeleton`; that asset does not exist — see ruling 3) | **done** `42d2ab2` — albedo 0.1416, weakest colour read; team 1.33% vs TASK-194's shipped 2.1% (see TASK-324, parked) |
+| Sapper | TASK-317-model | TASK-317-rig | TASK-317-verify | `SK_Footman_Skeleton` | **done** `73e6cb9` — albedo 0.2394; historical hunched-rig defect GONE; 13 influences/vert accepted by UE 5.8 with no clamp error |
+| Pikeman | TASK-318-model | TASK-318-rig | TASK-318-verify | `SK_Footman_Skeleton` | **done** `960b8c2` — full pipeline from scratch post-crash (30 credits); albedo 0.2107, best clamp headroom 4.56%. Width ruling: ACCEPTABLE, do NOT re-gen |
+| Cavalry | TASK-319-model | TASK-319-rig | TASK-319-verify | `SK_Footman_Skeleton` (root + the 20-bone SiegeBiped deform set) | **done** `aa00826` — bright, NOT dark; the "rider-fit rig warps the horse" defect is GONE. Gait stiff = the TASK-233 quadruped limitation → **FAB-007 authored 2026-07-26** |
+| MilitiaMob | TASK-320-model | TASK-320-rig | TASK-320-verify | `SK_Footman_Skeleton` | **done** `f14f325` + `6bd1cee` — SK fully remastered; `SM_MilitiaMob` LOD defect corrected by restore → **root-cause follow-up TASK-322/323** |
+| Longbowman | TASK-321-model | TASK-321-rig | TASK-321-verify | `SK_Footman_Skeleton` | **done** `5177ae5` — albedo 0.309, **best colour of batch**; M7 bow-draw overshoot did NOT reproduce |
+
+---
+
+### Batch-level tasks (float-fix + audit + closeout)
+
+#### TASK-306 — [REM-float-diag] DIAGNOSE the recurring floating-units bug — systemic root cause + fix spec (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: **done** (2026-07-26 — root cause: TASK-259 v1 copied the STATIC VisualMesh's BP-authored Z onto SkeletalVisualMesh, merely RELOCATING the per-BP hand-authored-offset trap; `BP_Unit_Wizard`'s static `VisualMesh.Z` was never offset ⇒ 0 propagated ⇒ float ≈ capsule half-height. Fix spec = derive Z from capsule half-height + SK bounds. `handoffs/DIAG-floating-units.md`.)
+- blocked-by: none · parallel-safe: yes
+- spec: > Diagnose WHY the TASK-259 floating-units fix RECURRED on the Wizard. Establish the SYSTEMIC root cause (capsule-half-height-relative offset rather than a per-class constant) and output the fix SPEC into `handoffs/DIAG-floating-units.md`. No code edit, no editor, no Git. Post in ⚙️ Dev & QA; hand off to TASK-307.
+- names: > `Source/GitClaudeUnrealTest/Siegebound/SummonedUnit.cpp` (`ResolveSkeletalVisual`, read-only) · `handoffs/DIAG-floating-units.md`.
+
+#### TASK-307 — [REM-float-fix] Systemic feet-grounding: capsule-relative SkeletalVisualMesh Z-offset (gameplay-programmer, C++ file-only)
+- assignee: gameplay-programmer
+- status: **done** (2026-07-26 — `ResolveSkeletalVisual()` now derives `L.Z = -ScaledCapsuleHalfHeight - (SK bounds min-Z × RelativeScale3D.Z)`; NO-OP for the already-grounded fleet. Shipped in `0d717c0`.)
+- blocked-by: TASK-306 · parallel-safe: yes
+- spec: > Replace the fixed `VisualMeshBaseRelativeLocation` Z-offset with a SYSTEMIC capsule-relative one. MUST be a NO-OP for correctly-grounded units and close the recurrence permanently. File-only — no compile/editor/Git; write `handoffs/TASK-307-programmer.md`.
+- names: > `Source/GitClaudeUnrealTest/Siegebound/SummonedUnit.{h,cpp}` (`ResolveSkeletalVisual`).
+
+#### TASK-307-QA — [REM-float-fix QA] Review TASK-307
+- assignee: qa-reviewer
+- status: **done — qa-passed** (`qa/TASK-307.md`)
+- blocked-by: TASK-307 · parallel-safe: no
+- spec: > Pre-compile review: offset is genuinely systemic; genuine NO-OP for already-grounded units; static-fallback path untouched and null-safe; shadow + complete-type-include laws.
+- names: Report `qa/TASK-307.md`.
+
+#### TASK-308 — [REM-float-int] Compile the float-fix + verify grounding + commit (build-master)
+- assignee: build-master
+- status: **done** (2026-07-26 — compiled, grounding verified, committed `0d717c0` on main, NO push. UNBLOCKED all 11 per-unit verifies.)
+- blocked-by: TASK-307-QA · parallel-safe: no
+- spec: > Compile TASK-307 (code hard-gate), spot-check that a currently-grounded unit stays grounded AND the Wizard's feet now meet the ground, Message Log clean, commit on main with explicit pathspecs, NO push.
+- names: > Commit on main, no push. `Source/GitClaudeUnrealTest/Siegebound/SummonedUnit.{h,cpp}`.
+
+#### TASK-309 — [REM-audit] Building/tower colour audit — flag the washed-out ones (art-director)
+- assignee: art-director
+- status: backlog
+- blocked-by: none
+- parallel-safe: yes (eyeball inspection of committed assets vs concepts; read-only)
+- spec: >
+    Audit EVERY building/tower/economy mesh for the same washed-out / colourless defect the fleet units have. For each of
+    `ArrowTower, Wall, BombTower, BallistaTower, Barracks, DeepMine, CrystalTower, GoldNode, Castle`, eyeball the current in-editor mesh
+    (thumbnail/preview render, read-only — no mutation) against its approved concept `Content/RawAssets/Concepts/<Building>.png` and the
+    §6 colour bar (GoldNode: does the warm-yellow emissive still read; Castle: the big one). Jonathan thinks the buildings look fine —
+    CONFIRM or REFUTE per mesh. Output a FLAGGED LIST (per building: OK / REBUILD, with a one-line reason) into
+    `handoffs/TASK-309-artist.md`; post the verdict in 🎨 Art and route the list to the manager. Do NOT rebuild anything here — the
+    manager decomposes per-building rebuild tasks (BUILDING pipeline variant) ONLY for the flagged-bad ones.
+- names: >
+    Read-only over `/Game/Meshes/SM_{ArrowTower,Wall,BombTower,BallistaTower,Barracks,DeepMine,CrystalTower,GoldNode,Castle}` vs
+    `Content/RawAssets/Concepts/<Building>.png`. Report `handoffs/TASK-309-artist.md`. Law: CONVENTIONS "Fleet Meshy remaster"
+    (audit clause) + "Textured mesh law" (BUILDING path + GoldNode emissive variant) for the follow-up rebuilds.
+
+#### TASK-310 — [REM-close] Batch closeout: confirm 11 commits + assemble the before/after gallery (build-master)
+- assignee: build-master
+- status: backlog (all 11 `-verify` blockers now CLEARED — dispatchable)
+- blocked-by: TASK-311-verify … TASK-321-verify (**all done**)
+- parallel-safe: no (editor + Git read; EDITOR-GATED)
+- spec: >
+    Batch integration checkpoint (the chain-closing build-master task). Confirm all 11 fleet units committed on main as SEPARATE commits
+    (one per unit — so any single unit is independently revertible), `git log --oneline` shows them, working tree clean of foreign
+    changes, main NOT pushed. Assemble a BEFORE/AFTER gallery for Jonathan: for each unit, the "after" screenshot (from its `-verify`)
+    beside its `Content/RawAssets/Concepts/<Unit>.png` (and the old washed-out look if recoverable), so the colour improvement is
+    reviewable at a glance; drop the gallery paths + the commit hashes into `handoffs/TASK-310.md`. Post the batch summary + commit-hash
+    list in 🔧 Build & Git and flag the manager for Jonathan's review. No push (Jonathan's push after review).
+    **AMENDED 2026-07-26 (manager) — CARRY THE THREE COLOUR CALLS TO JONATHAN IN THE GALLERY.** The gallery is the decision point for
+    every non-blocking colour judgement returned by build-master; put each one in front of Jonathan explicitly as a yes/no, with the
+    lever named, so he answers once instead of the team guessing:
+      (a) **Cleric — brightest of the batch** (mean linear albedo 0.361 vs the 0.164 Footman pilot baseline), reads HIGH-KEY under sun.
+          Manager ruling: FAITHFUL to its pale-cream concept — no action. Lever if Jonathan disagrees: `gamma 0.65 / gain 1.0` re-bake.
+      (b) **Knight — steel darker than the concept's mid-grey.** Manager ruling: CORRECT — a deliberate consequence of a 32.5%-metal ORM,
+          verified as genuine metalness with speculars, not a wash-out. Lever if Jonathan disagrees: roughness/metallic **in the bake,
+          NEVER albedo** (brightening the albedo of a metal is the wrong fix and would reintroduce the wash-out).
+      (c) **Ogre — weakest colour read of the batch, pale under sun; team region 1.33% vs the 2.1% that shipped in TASK-194.**
+          Manager ruling: JONATHAN-EYEBALL ITEM, no work pre-authorised — pre-specced and PARKED as **TASK-324**, which is dispatchable
+          the moment he says go. Lever = wider team-region z-band + a Stage-2-only re-bake from the CACHED GLB, **NO Meshy credits**.
+    Record his answer per item in `handoffs/TASK-310.md`; a "change it" on (a) or (b) comes back to the manager for a new task.
+- names: >
+    Read/commit-audit on main, no push. Gallery + hashes in `handoffs/TASK-310.md`. Law: CONVENTIONS "Fleet Meshy remaster"
+    (per-unit commit + before/after-gallery clause).
+
+---
+
+### FLEET-REMASTER follow-ups (decomposed 2026-07-26, post-batch) — TASK-322..325
+
+**Nothing in this block blocks anything.** The 11-unit remaster is COMPLETE and shipped; these are the residues build-master returned at batch close. Dispatch order is the orchestrator's call — all four are low priority relative to Jonathan's gallery review (TASK-310).
+
+#### TASK-322 — [REM-lodfix] Root-cause the `SM_MilitiaMob` same-path static reimport UNWELD + land a durable fix (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: none (needs the editor + MCP up)
+- parallel-safe: no (editor/MCP-gated — SERIALIZE with every other editor task; but it mutates **SCRATCH paths ONLY**, never a shipped asset)
+- priority: **LOW / non-blocking** — runtime is unaffected (`SK_MilitiaMob` is the runtime visual and is fully remastered; the residue is that the static preview/ghost mesh renders remastered textures on older geometry). It gets a REAL root-cause rather than the shipped workaround because it is a **latent trap for every future same-path static reimport** — and same-path overwrite is the law of this whole lane.
+- **LANE RULING (manager):** this is a **gameplay-programmer** task, not art-director. The failure is not in the source art or the Blender recipe — a fresh import of the SAME FBX to a scratch path is correct. It is in the UE **reimport code path / persisted per-asset build state**, investigated through editor-Python + Unreal MCP, which is the programmer's tool set. The art-director owns no lever here. The FIX is applied to the shipped asset and committed by build-master (TASK-323), preserving the "programmer never touches Git, build-master never authors" split.
+- spec: >
+    **THE DEFECT (already reproduced by build-master from a clean base — do NOT spend a session re-establishing it, spend it on the CAUSE):**
+    a fresh import of `Content/RawAssets/MilitiaMob.fbx` to a SCRATCH path yields a CORRECT chain — `15000 / 7500 / 3750 / 1874` triangles
+    with **13,736 welded** LOD0 verts. A SAME-PATH reimport over the existing `/Game/Meshes/SM_MilitiaMob` instead returns LOD0
+    **UNWELDED at 45,000 verts** (= 15000 × 3, i.e. ZERO vertex sharing — every triangle gets its own three verts) and logs
+    `Bad MeshDescription at lod index 1/2/3`, after which the reducer produces **0 triangles at LOD1–3**. Reproduced with AND without
+    `replace_existing_settings`, and again after `remove_lods` + an explicit `set_lods` auto chain. **It is MilitiaMob-SPECIFIC — the other
+    ten fleet units reimport cleanly through the identical recipe.** Commit `f14f325` shipped the broken chain; `6bd1cee` corrected it by
+    restoring the last-known-good static mesh (the workaround — this task replaces it with a cause).
+    **METHOD (hard constraint: SCRATCH ONLY).** Do NOT mutate `/Game/Meshes/SM_MilitiaMob` — duplicate it to a scratch path (e.g.
+    `/Game/Scratch/SM_MilitiaMob_LODRepro`) and work there; build-master applies the landed fix to the live asset at TASK-323. The single
+    highest-value experiment is a **full property DIFF between the KNOWN-GOOD scratch fresh-import and the LIVE asset** — the delta is
+    almost certainly the answer. Compare at minimum: `AssetImportData` (the `FbxStaticMeshImportData` settings persisted from the ORIGINAL
+    pre-remaster non-Meshy import), `BuildSettings` per source model (the overlapping/weld thresholds `ThresholdPosition` /
+    `ThresholdTangentNormal` / `ThresholdUV`, `bRemoveDegenerates`, `bComputeWeightedNormals`, `bUseFullPrecisionUVs`,
+    `bRecomputeNormals`/`bRecomputeTangents`), the per-LOD `ReductionSettings`, `LODGroup`, `bAutoComputeLODScreenSize`, and — the leading
+    hypothesis — **whether LOD slots 1–3 persist as IMPORTED (source-model) LODs on the live asset**, in which case a single-mesh FBX
+    reimport leaves those slots holding invalid MeshDescriptions, which is EXACTLY the `Bad MeshDescription at lod index 1/2/3` signature,
+    and the reducer then has nothing to reduce. Secondary hypotheses if the diff is clean: a `bCombineMeshes` / multi-mesh-FBX interaction
+    unique to MilitiaMob (the swarm unit), or a stale cached RenderData / build-settings mismatch on the reimport path only. State which
+    hypothesis the evidence supports and which it kills — a negative result is a real result here.
+    **DELIVERABLE — TWO parts, both required:**
+    (1) the ROOT CAUSE, evidenced (the diff, the log lines, the vert/tri readbacks); and
+    (2) a DURABLE FIX that lands via **SAME-PATH reimport** — a corrected reimport recipe (e.g. an explicit reset of the offending
+    persisted state before the import call) added to the editor-Python remote-exec lane the fleet used, expressed as a repo tool/script
+    change so it is REUSABLE, not a one-off click. **NEVER delete+recreate `SM_MilitiaMob`** — that breaks every reference
+    (`BP_Unit_MilitiaMob`, the placement-ghost `/Game/Meshes/SM_MilitiaMob` string contract, `DT_Cards`) and violates the same-path law
+    this entire batch is built on.
+    (3) ALSO generalise the guard: the recipe must **read back LOD0 welded vert count AND per-LOD triangle counts after EVERY same-path
+    static reimport** and fail loudly on a 0-triangle LOD or a `verts == tris × 3` unweld, so this can never ship silently again
+    (lane-knowledge 9 — `lod_count` alone did NOT catch it).
+    No editor mutation of any shipped asset, no compile, no Git. Write `handoffs/TASK-322-programmer.md` (root cause + the diff evidence +
+    the exact fix + the guard). Then ready-for-qa. Post the root cause in ⚙️ Dev & QA.
+- names: >
+    Investigation target `/Game/Meshes/SM_MilitiaMob` (READ-ONLY) vs a scratch duplicate `/Game/Scratch/SM_MilitiaMob_LODRepro`
+    (scratch is disposable, never committed). Source `Content/RawAssets/MilitiaMob.fbx`. Expected-correct chain
+    `15000 / 7500 / 3750 / 1874` @ 13,736 welded LOD0 verts. Fix lands in the repo's editor-Python same-path reimport tooling under
+    `Tools/` (name the exact file in the handoff; the existing same-path lane precedent is `Tools/reimport_meshes.py` /
+    `Tools/reimport_apply_materials_mcp.py`). Report `handoffs/TASK-322-programmer.md`.
+    Law: CONVENTIONS "Fleet Meshy remaster" → same-path overwrite law + the **SAME-PATH STATIC REIMPORT — KNOWN TRAP** clause
+    (added 2026-07-26), "Textured mesh law". Never delete+recreate.
+
+#### TASK-322-QA — [REM-lodfix QA] Review TASK-322 (implied by the code task)
+- assignee: qa-reviewer
+- status: backlog
+- blocked-by: TASK-322
+- parallel-safe: no (follows TASK-322 ready-for-qa)
+- spec: >
+    Review TASK-322 before it touches a shipped asset. Verify: (1) the ROOT CAUSE is evidenced, not asserted — the property diff / log
+    lines / readbacks actually support the claimed cause, and the killed hypotheses are recorded; (2) the fix is a genuine **SAME-PATH**
+    reimport correction — **no delete+recreate anywhere in the path**, and every reference-preserving guarantee of the same-path law still
+    holds; (3) the fix is REUSABLE tooling (a script/recipe change), not a one-off manual sequence, and is safe/no-op for the other ten
+    units that already reimport cleanly — a fix that regresses a working unit is a FAIL; (4) the LOD readback GUARD is present and
+    actually fails loudly on both failure signatures (0-triangle LOD, and `verts == tris × 3` unweld); (5) nothing in it mutates a shipped
+    asset (scratch-only) or touches Git. Write `qa/TASK-322.md` (pass/fail). qa-passed ⇒ TASK-323 may apply it; qa-failed ⇒ back to
+    gameplay-programmer (max 3 loops, then escalate). Post the verdict in ⚙️ Dev & QA.
+- names: Report `qa/TASK-322.md`. Same files/law as TASK-322.
+
+#### TASK-323 — [REM-lodfix-int] Apply the fix same-path to `SM_MilitiaMob`, verify the chain, commit (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: TASK-322-QA (qa-passed)
+- parallel-safe: no (exclusive editor + Git; EDITOR-GATED)
+- spec: >
+    On main, EXCLUSIVE editor session, **Simulate STOPPED before any import** (lane-knowledge 8 — package saves are silently blocked
+    while Simulate runs; that is how the broken chain shipped in the first place). Apply the TASK-322 fix to the LIVE
+    `/Game/Meshes/SM_MilitiaMob` via **SAME-PATH reimport** of `Content/RawAssets/MilitiaMob.fbx` — never delete+recreate.
+    ACCEPTANCE, all read back and quoted in the handoff: (1) triangle chain **15000 / 7500 / 3750 / 1874**; (2) LOD0 **welded** at
+    **13,736** verts (NOT 45,000 — the unweld signature is `verts == tris × 3`); (3) zero `Bad MeshDescription` lines in the log;
+    (4) Nanite OFF; (5) two-slot materials intact `[0 TeamRegion → MI_TeamColor_<Team>, 1 MilitiaMobPBR → MI_MilitiaMob_PBR]` with the
+    REMASTERED `T_MilitiaMob_{D,N,ORM}` still bound (`_D` sRGB ON, `_N`/`_ORM` LINEAR) — the point of this task is to keep the remastered
+    look AND get correct geometry; (6) `BP_Unit_MilitiaMob` still resolves the ghost at `/Game/Meshes/SM_MilitiaMob`, and
+    **`SK_MilitiaMob` is UNTOUCHED** (it is the runtime visual and is already correct — do not reimport it); (7) Message Log clean.
+    Then COMMIT on main with explicit pathspecs (`SM_MilitiaMob` uasset + the TASK-322 tooling change + board/CONVENTIONS/handoff/qa),
+    `git diff --stat` shows nothing foreign, **NO push**. If the fix does NOT reproduce the correct chain in-engine, do NOT ship a second
+    broken mesh — restore the last-known-good state, append the failure to `qa/TASK-322.md` and route back to gameplay-programmer
+    (counts as a QA loop). Post the readbacks + commit hash in 🔧 Build & Git.
+- names: >
+    Same-path reimport of `/Game/Meshes/SM_MilitiaMob` from `Content/RawAssets/MilitiaMob.fbx`. Untouched: `/Game/Characters/SK_MilitiaMob`.
+    Commit on main, no push. Law: CONVENTIONS "Fleet Meshy remaster" → same-path overwrite + the SAME-PATH STATIC REIMPORT trap clause;
+    the hard gate (PASS QA before commit).
+
+#### TASK-324 — [REM-ogre-team] PARKED: Ogre team-region widen + colour lift (Stage-2-only, NO Meshy credits) (art-director)
+- assignee: art-director
+- status: **parked — NOT DISPATCHABLE.** Requires Jonathan's explicit go at the TASK-310 gallery review.
+- blocked-by: **Jonathan's verdict on TASK-310 colour call (c)** — and, if he says go, TASK-310 itself (the gallery is where he sees it)
+- parallel-safe: yes (the Stage-2 re-bake + re-rig are headless; only the UE import is editor-gated)
+- **MANAGER RULING — why this is PARKED and not dispatched.** Three reasons, recorded so nobody re-litigates it: (1) it is a purely
+  COSMETIC, SUBJECTIVE call on a unit that PASSED its gate and is committed (`42d2ab2`) — "weakest of the batch" is still a pass, and the
+  batch's whole review model is per-unit commits so Jonathan can judge each one himself; (2) it is NOT the cheap re-bake it first looks
+  like — the team region is a FACE-selection → material-slot assignment, so widening the z-band changes MESH data, which means Stage-2
+  re-export **plus** a re-rig **plus** a same-path SM+SK reimport, LOD regen, verify and commit: effectively a fresh 3-stage per-unit chain
+  (free of Meshy credits, but a full editor cycle); (3) pre-empting Jonathan's eyeball on a subjective colour call is exactly the kind of
+  guessing the gallery exists to stop. It is specced in full HERE so that the moment he says go it is zero-latency — the manager expands it
+  into the standard `TASK-324-model` / `-rig` / `-verify` chain against the PER-UNIT TEMPLATE above.
+- spec: >
+    ONLY on Jonathan's explicit go. Two levers on the Ogre, both cheap and both **REUSING THE CACHED `Cache/Ogre/meshy_raw.glb`** —
+    **NO Meshy generation, NO credits, NO re-concept**: (1) **team region** — widen the team-region selector z-band so coverage returns to
+    roughly the **2.1%** that shipped in TASK-194 (current rebuild is **1.33%**, the weakest read of the pair); the band must still land on
+    deliberate armour/cloth geography, not stripe the silhouette (the TASK-086 striping defect is the failure mode to avoid);
+    (2) **colour** — the Ogre bakes at mean linear albedo **0.1416**, the lowest of the eleven and pale under the `L_Arena` sun; if
+    Jonathan wants it lifted, temper the locked fleet profile toward more gain (the Footman-validated baseline is 0.164; do NOT exceed the
+    p99/clamp headroom — the Ogre currently clamps only 0.22%, so there IS room) and re-bake `T_Ogre_{D,N,ORM}` **same-path**.
+    Then the standard chain: re-rig onto the SHARED `SK_Footman_Skeleton` (ruling 3 — there is NO bespoke Ogre skeleton), same-path
+    reimport of `SM_Ogre` / `SK_Ogre` / `T_Ogre_*` / `MI_Ogre_PBR`, regenerate LODs, PRESERVE all four `A_Ogre_*` sequences and the ABP
+    (do NOT reimport them), then build-master verify + a single commit on main, NO push.
+    ACCEPTANCE: team coverage ≈2.1% on deliberate geography, colour reads at or above the 0.164 baseline under sun, anims still bind and
+    play, LOD readback correct (SK `lod_count==3`; SM per-LOD triangle counts per lane-knowledge 9), feet grounded, Message Log clean.
+    If Jonathan says "leave it", CLOSE this task as `wont-do` and record his call — that is a legitimate, expected outcome.
+- names: >
+    Same-path: `/Game/Meshes/SM_Ogre`, `/Game/Characters/SK_Ogre`, `/Game/Textures/T_Ogre_{D,N,ORM}`,
+    `/Game/Materials/Instances/MI_Ogre_PBR`, raw `Content/RawAssets/Characters/Ogre.fbx`. Skeleton **`SK_Footman_Skeleton`** (shared).
+    PRESERVED: `/Game/Characters/Anims/A_Ogre_{Idle,Walk,Attack,Death}` + the ABP. Cached input `Cache/Ogre/meshy_raw.glb` (NO new Meshy
+    generation). Law: CONVENTIONS "Fleet Meshy remaster" (same-path overwrite, preserve-anims, shared-skeleton binding law as corrected
+    2026-07-26), "Textured mesh law" (two-slot TeamRegion).
+
+#### TASK-325 — [REM-matflag] CARRIED: bake `bUsedWithSkeletalMesh` into the `M_AssetPBR` master (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: none (editor-gated; **may be executed inside the SAME editor session as TASK-323** — separate commit)
+- parallel-safe: no (editor + Git)
+- **CARRIED ITEM — manager-initiated, NOT part of the four items routed at batch close.** Build-master flagged it "fleet-wide, non-blocking, → manager" at the TASK-311 Footman pilot verify (`d7254da`) and it was never taskified; recording it here so it does not get lost. Drop or defer it freely if the orchestrator would rather not spend the session.
+- spec: >
+    The master material `M_AssetPBR` has `used_with_skeletal_mesh = false`, so EVERY `SK_<Unit>` in the fleet logs a "missing usage flag"
+    warning and the editor AUTO-HEALS it at load/PIE (which is also why a reimport leaves `MI_<Unit>_PBR` dirty in memory —
+    lane-knowledge 7). Auto-heal is an EDITOR affordance; a COOKED build has no editor to heal it, so the flag belongs baked into the
+    master. Set `bUsedWithSkeletalMesh = true` on `/Game/Materials/M_AssetPBR`, save it, and verify: (1) the "missing usage flag" warning
+    no longer appears for a skeletal unit on a clean load; (2) the material still compiles and the fleet still renders correctly on BOTH
+    paths — a static `SM_<Unit>` ghost AND a skeletal `SK_<Unit>` runtime visual (spot-check at least one of each; the flag adds a shader
+    permutation and must not disturb the static path); (3) no `MI_<Unit>_PBR` instance is left dirty by the change. Commit on main with
+    explicit pathspecs (`M_AssetPBR` uasset + board/handoff), `git diff --stat` shows nothing foreign, **NO push**. This is a one-property
+    config fix on an EXISTING master — it authors no new art. Post the before/after warning state + commit hash in 🔧 Build & Git.
+- names: >
+    `/Game/Materials/M_AssetPBR` (`bUsedWithSkeletalMesh` → true). Consumers unchanged: `MI_<Unit>_PBR` instances, every `SM_<Unit>` /
+    `SK_<Unit>`. Commit on main, no push. Law: CONVENTIONS "Textured mesh law" (master-material contract) + "Fleet Meshy remaster".
 
 ## Post-M7.6-merge main-lane follow-ups (decomposed 2026-07-25) — TASK-297 + the deck-builder resume
 
@@ -2964,7 +3338,10 @@ Dispatch shape: **TASK-153 (manager CONVENTIONS) lands FIRST (done).** Then, in 
 - spec: >
     Rig+animate the remaining summoned units: `Sapper`, `Cleric`, `Longbowman`, `Miner`, `Ogre`. Same deliverables as TASK-163
     (`SK_<CardID>` + `A_<CardID>_Idle/Walk/Attack/Death` + `AM_<CardID>_Attack` + rigged FBX + previews; retarget where humanoid). The
-    OGRE is non-humanoid/large — it may carry its own `SK_Ogre_Skeleton` and bespoke anims (record it). Miner's "attack" is the mining
+    OGRE is non-humanoid/large — it may carry its own `SK_Ogre_Skeleton` and bespoke anims (record it). **[HISTORICAL — SUPERSEDED. This
+    speculative line is the ORIGIN of the "bespoke Ogre skeleton" myth. It never happened: the Ogre rigged onto the SHARED
+    `SK_Footman_Skeleton` (TASK-242 manager ruling rejected the bespoke option by name; confirmed in-engine at TASK-316-verify `42d2ab2` —
+    sole skeleton in `/Game/Characters`, no strays). `SK_Ogre_Skeleton` DOES NOT EXIST. See FLEET-REMASTER ruling 3.]** Miner's "attack" is the mining
     animation (§3.3 clink loop pairs with TASK-179 audio). Ogre is already textured; the others come from TASK-172. Headless Blender; no
     import (TASK-165 wires). ACCEPTANCE: 5 rigged FBX + anims + montages exist, contracts intact, previews render. Post in 🎨 Art.
 - names: >
