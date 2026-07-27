@@ -342,6 +342,30 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Unit")
 	TObjectPtr<USkeletalMeshComponent> SkeletalVisualMesh;
 
+	/**
+	 *  Relative YAW the skeletal visual carries so the mesh's baked forward faces ACTOR-FORWARD (+X)
+	 *  (TASK-326/327 — the yaw half of the per-BP authoring trap TASK-306/307 closed for Z).
+	 *  The whole fleet is rigged through ONE pipeline (Tools/ArtPipeline/rig_character.py, character
+	 *  front authored on Blender -Y) onto ONE shared skeleton (SK_Footman_Skeleton), so every
+	 *  SK_<CardID> bakes its forward on UE-local +Y — measured in-engine across all 12 units
+	 *  (12/12 on the shared skeleton; raw SkeletalMeshActors at actor yaw 0 all present their front
+	 *  to a +Y camera). Rot(θ)·(0,1,0) = (1,0,0) ⇒ θ = -90, so -90 is correct for EVERY unit — the
+	 *  same constant, for the same reason, as ASiegePlayerController::GhostYawOffset, which has
+	 *  solved the identical problem for the placement ghost since TASK-014/037/038.
+	 *
+	 *  This is the ABSOLUTE component yaw, NOT a delta: ResolveSkeletalVisual OVERWRITES the
+	 *  component's yaw with it (an additive offset would rotate the already-authored -90 units to
+	 *  -180 and is FORBIDDEN). Pitch and roll are preserved exactly, as the grounding fix preserves
+	 *  the authored X/Y. A BP_Unit_<Unit> MUST NOT hand-author SkeletalVisualMesh rotation — that is
+	 *  what left Archer/Ogre/Wizard at the constructor default 0 and made them walk sideways.
+	 *
+	 *  EXCEPTION HATCH: a genuinely differently-baked mesh may override this on its own BP. That is
+	 *  a NON-DEFAULT requiring an explicit manager ruling (same doctrine as a bespoke skeleton) —
+	 *  no current unit triggers it.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Unit")
+	float SkeletalVisualYawOffset = -90.f;
+
 	/** §6 white hit-flash on every actual damage event (M7, TASK-154). Driven from TakeDamage; overlay-based, null-safe. AMinerUnit inherits it. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Feedback")
 	TObjectPtr<USiegeHitFlashComponent> HitFlashComponent;

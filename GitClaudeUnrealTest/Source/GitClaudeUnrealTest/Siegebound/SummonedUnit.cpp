@@ -324,6 +324,34 @@ void ASummonedUnit::ResolveSkeletalVisual()
 		SkeletalVisualMesh->SetRelativeLocation(GroundedLoc);
 	}
 
+	// FACING-FIX (TASK-326/327, SYSTEMIC): the OTHER HALF of the same authoring trap the grounding
+	// block above closes. Z was derived in C++ so no BP has to hand-author it; YAW was left to the
+	// BP — and the three units whose SkeletalVisualMesh was never authored at all (Archer, Ogre,
+	// Wizard) sat at the constructor default (0,0,0) on BOTH. Yaw 0 leaves the mesh's baked forward
+	// on the actor's RIGHT, i.e. the unit walks SIDEWAYS — and because facing comes from
+	// bOrientRotationToMovement and attack aim is the same actor rotation, the 90° error is rigid
+	// across marching, attacking and death alike.
+	//
+	// The fleet bakes ONE forward: all 12 units are rigged through Tools/ArtPipeline/rig_character.py
+	// (front on Blender -Y) onto the ONE shared SK_Footman_Skeleton, which arrives as UE-local +Y
+	// (measured in-engine, TASK-326: 12/12 on the shared skeleton; raw SkeletalMeshActors at actor
+	// yaw 0 all face a +Y camera). Actor forward is +X and Rot(θ)·(0,1,0) = (-sinθ, cosθ) = (1,0,0)
+	// ⇒ θ = -90 — the same constant, for the same reason, as ASiegePlayerController::GhostYawOffset,
+	// which is why the placement ghost has never mis-faced even for units whose BP yaw is 0.
+	//
+	// ABSOLUTE assignment, NEVER additive: `+=` would take the 9 correctly-authored units from -90
+	// to -180 and regress the whole fleet. Overwriting is the ONLY formulation that is a no-op for
+	// the 9 (they measure exactly (0,-90,0), so this writes back a component-wise identical rotator
+	// — no transform delta, no render/bounds/attachment change) AND the fix for the 3. Only .Yaw is
+	// touched; authored pitch/roll are read and written back untouched, exactly as the grounding
+	// block preserves authored X/Y. Un-rigged units returned at the guards above (:266 / :279) and
+	// never reach here; SkeletalVisualMesh is non-null by construction past the :266 guard. The
+	// static VisualMesh, the lunge base (VisualMeshBaseRelativeLocation), the juice/flash paths and
+	// the placement ghost are all deliberately untouched.
+	FRotator FacingRot = SkeletalVisualMesh->GetRelativeRotation(); // keep authored pitch/roll
+	FacingRot.Yaw = SkeletalVisualYawOffset;                        // fleet forward: mesh +Y → actor +X
+	SkeletalVisualMesh->SetRelativeRotation(FacingRot);
+
 	// AnimClass resolution (TASK-159 + shared-ABP fallback, TASK-165 rig-import chain):
 	//   1. Prefer a per-unit /Game/Characters/ABP_<CardID> (the _C generated-class path) —
 	//      future dedicated ABPs still take priority the moment they're authored.

@@ -133,24 +133,30 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
 
 ### 🚨 PIPELINE-FILE REVERT — 2026-07-26, DETECTED BY THE MANAGER MID-SESSION (READ BEFORE TOUCHING THESE FILES)
 
-**Both `TASKBOARD.md` and `CONVENTIONS.md` were reverted in the WORKING TREE to a pre-2026-07-26 state while the manager was reading them** — content vanished *between* a Read and an Edit minutes later (the Edit tool refused with "file has changed since last read", and a re-read showed whole sections gone). Cause is NOT known and was NOT the manager. Most likely a stale-buffer overwrite by a concurrent agent, or a `git restore`/`checkout` of `.claude/pipeline/`. **git HEAD is unaffected — the committed history is intact and is the recovery source.**
+**Both `TASKBOARD.md` and `CONVENTIONS.md` were reverted in the WORKING TREE to a pre-2026-07-26 state while the manager was reading them** — content vanished *between* a Read and an Edit minutes later (the Edit tool refused with "file has changed since last read", and a re-read showed whole sections gone). **CAUSE ESTABLISHED (2026-07-26, later in the session): a stray `git reset --hard` + `git clean -fd` run by a build-master agent**, which destroyed ALL uncommitted working-tree content — not a stale-buffer overwrite, not the manager.
+
+⚠️ **CORRECTION — GIT WAS NOT A RECOVERY SOURCE FOR THIS BOARD.** The line that used to stand here ("git HEAD is unaffected — the committed history is intact and is the recovery source") was WRONG and is struck. `TASKBOARD.md` had not been committed since **`e01bc2e`** (TASK-297, 2026-07-25); `0d717c0` did NOT include it, and `git show 0d717c0:…/TASKBOARD.md` contains **zero** occurrences of `W-UNIT-1` (verified directly, orchestrator + manager). Every board edit made on 2026-07-26 lived ONLY in the working tree, which is exactly why `reset --hard` + `clean -fd` erased it. Anything lost this way must be **RECONSTRUCTED from committed artifacts** (`handoffs/`, `qa/`, CONVENTIONS, commit messages) — never "restored from git". **Board + CONVENTIONS are now COMMITTED (`1a04971`), so from this point forward git IS a real fallback for them — commit the board at every batch boundary, not at milestone boundaries.**
 
 **What was LOST from the working tree:**
 
 | File | Lost section | Recovered? |
 |---|---|---|
 | `TASKBOARD.md` | `## FLEET-REMASTER tasks` (TASK-306..321, ~222 lines) | ✅ **RESTORED** below from manager session context + corrections |
-| `TASKBOARD.md` | `## W-UNIT-1 tasks` — Wizard AoE fireball unit (TASK-298..305, ~190 lines) | ❌ **STILL MISSING — and NOT recoverable from git (see the correction below).** Must be RECONSTRUCTED from the surviving `handoffs/` + `qa/` files. |
+| `TASKBOARD.md` | `## W-UNIT-1 tasks` — Wizard AoE fireball unit (TASK-298..305, ~190 lines) | ✅ **RECONSTRUCTED 2026-07-26 (manager)** from the committed `handoffs/` + `qa/` artifacts + commit `0d717c0` + CONVENTIONS — see "## W-UNIT-1 tasks" below. NOT the original text; per-task fidelity is marked EVIDENCED / ⚠️ INFERRED / ⚠️ NOT RECOVERED inline. |
 | `CONVENTIONS.md` | `## Wizard unit — AoE fireball caster (2026-07-26)` | ✅ **RESTORED** verbatim from manager session context |
 | `CONVENTIONS.md` | `## Fleet Meshy remaster — same-path overwrite (2026-07-26)` | ✅ **RESTORED** + corrected |
 
-**RECOVERY PROCEDURE (build-master, git lane — the manager may not touch Git):**
-1. `git diff -- .claude/pipeline/TASKBOARD.md .claude/pipeline/CONVENTIONS.md` against HEAD to see the true extent. Do NOT assume this notice is complete.
-2. ⚠️ **CORRECTION (orchestrator, verified 2026-07-26): git is NOT a recovery source for this board.** The last commit that touched `TASKBOARD.md` is **`e01bc2e`** (TASK-297, 2026-07-25) — `0d717c0` did NOT include it, and `git show 0d717c0:…/TASKBOARD.md` contains **zero** occurrences of `W-UNIT-1` (7,660 lines, same as HEAD). Every board edit made on 2026-07-26 — the Wizard W-UNIT-1 section, the whole FLEET-REMASTER section, and the orchestrator's session records — existed **only in the working tree**, which is exactly why the revert destroyed them. **The W-UNIT-1 section must be RECONSTRUCTED, not restored:** the surviving sources are `handoffs/TASK-{298,299}-programmer.md`, `handoffs/TASK-{300,301,302,303}-artist.md`, `handoffs/TASK-307-programmer.md`, and `qa/TASK-{298,299,307}.md`. Assign it to the manager.
-3. Re-apply the manager delta if any restore clobbers it. The delta is exactly: (a) FLEET-REMASTER ruling 3 — Ogre skeleton correction; (b) the Stage-B template — same correction; (c) TASK-310 — the colour-call amendment; (d) the new **TASK-322..325** follow-ups block; (e) in CONVENTIONS, the Ogre correction in BOTH the "Fleet Meshy remaster" shared-skeleton binding law AND the "Skeletal rig & animation workstream (M7)" Skeleton bullet; (f) `fab/FAB-REQUESTS.md` — the new **FAB-007** entry + the FAB-006 scope fence. A verbatim backup of the TASK-322..325 block is at `%TEMP%\claude\...\scratchpad\FLEET-REMASTER-followups-TASK-322-325.md` (path in the manager's return message).
-4. Until step 2 is done, **treat the Wizard/W-UNIT-1 board section as authoritative-in-git-only.** The Wizard itself is shipped and unaffected (`0d717c0`) — this is a documentation loss, not an asset loss.
+**RECOVERY STATUS — CLOSED 2026-07-26. The steps below are HISTORY; do not re-run them.**
+1. ~~`git diff` against HEAD to see the true extent~~ — moot: the pre-revert board was never in git (see the correction above). A diff shows only what has been written SINCE.
+2. ✅ **DONE — W-UNIT-1 RECONSTRUCTED by the manager 2026-07-26** from the committed artifacts (`handoffs/TASK-{298,299,307}-programmer.md`, `handoffs/TASK-{300,301,302,303}-artist.md`, `qa/TASK-{298,299,307}.md`, commit `0d717c0`, CONVENTIONS "Wizard unit — AoE fireball caster"). See "## W-UNIT-1 tasks" below, which carries its own RECONSTRUCTED banner + a "could NOT be recovered" list. ~~"Restore it from git"~~ — **NEVER instruct this again for these two files; there was nothing there to restore.**
+3. ✅ **DONE — manager delta re-applied + committed (`1a04971`)**: (a) FLEET-REMASTER ruling 3 Ogre-skeleton correction; (b) Stage-B template, same correction; (c) TASK-310 colour-call amendment; (d) the TASK-322..325 follow-ups block; (e) both CONVENTIONS Ogre corrections; (f) `fab/FAB-REQUESTS.md` FAB-007 + the FAB-006 scope fence. The scratchpad backup of the TASK-322..325 block is now redundant.
+4. ✅ **The Wizard is SHIPPED and was never at risk** (`0d717c0` on main, not pushed; Jonathan-approved look; grounded post-TASK-307). This was a documentation loss only. The reconstructed section is the board's record of it — **cite the `handoffs/` files, not the reconstruction, when the exact original spec wording matters.**
 
-**Standing lesson (manager, binding):** agents must **re-read `TASKBOARD.md` / `CONVENTIONS.md` immediately before editing** and use partial edits, never a whole-file Write from an in-context copy. A whole-file Write of these two files is now PROHIBITED for every agent except the manager, and even the manager edits in place.
+**Standing lesson 1 (manager, binding):** agents must **re-read `TASKBOARD.md` / `CONVENTIONS.md` immediately before editing** and use partial edits, never a whole-file Write from an in-context copy. A whole-file Write of these two files is now PROHIBITED for every agent except the manager, and even the manager edits in place.
+
+**Standing lesson 2 (manager, binding — added 2026-07-26 once the cause was established): `git reset --hard` and `git clean -fd` are BANNED for every agent.** They are what destroyed this session's board work. The pipeline's live state is normally UNCOMMITTED (board edits, staged art, handoffs written but not yet committed), so a working-tree wipe is unrecoverable by definition. If a build-master believes a tree wipe is genuinely required, it **STOPS and escalates to Jonathan in 🚨 Blockers** — it does not run it. Recovery lever if a destructive command is ever run again: reconstruct from `handoffs/` + `qa/` + commit messages, and label the result RECONSTRUCTED (see "## W-UNIT-1 tasks").
+
+**Standing lesson 3 (manager, binding):** **commit `TASKBOARD.md` + `CONVENTIONS.md` at every BATCH boundary**, not at milestone boundaries. Both files went 24 h uncommitted while two whole batches were decomposed into them; that gap, not the destructive command alone, is what made the loss total.
 
 ---
 
@@ -353,10 +359,15 @@ Walk the arena as the hero; gold ticks +2/s from 50 on the HUD; play the Footman
     Same-path `/Game/Characters/Anims/A_MilitiaMob_{Idle,Walk,Attack,Death}` + Backup_Procedural. Law: CONVENTIONS
     sanctioned-path clause (height-normalized floor), M7.5 animation clause.
 
-#### TASK-233 — BACKLOG: Cavalry quadruped anim source (art)
+#### TASK-233 — 🛑 PARKED: Cavalry quadruped anim source (art)
 - assignee: art-director
-- status: backlog (not urgent — procedural anims live; NEVER wire biped clips onto Cavalry, explicit-pass gate stands)
-- blocked-by: **FAB-007** (authored 2026-07-26 — `.claude/pipeline/fab/FAB-REQUESTS.md`: rigged horse/mount/QUADRUPED source, status
+- status: **🛑 PARKED — NOT DISPATCHABLE. Jonathan's explicit hold, 2026-07-27: *"Hold off on Cavalry's quadruped source for now."*** Do NOT
+  decompose this into sub-tasks, do NOT dispatch it, do NOT spend Meshy credits or a Blender session on it, and do NOT act on FAB-007.
+  **The hold is on the SOURCING DECISION, not on a defect** — Cavalry is playable and shipped (`aa00826`), its mesh reads bright and
+  correct, and its procedural anims remain live and law-compliant. Nothing is blocked by this. Unparks ONLY on Jonathan's word.
+  ← was: backlog (not urgent — procedural anims live; NEVER wire biped clips onto Cavalry, explicit-pass gate stands)
+- blocked-by: **FAB-007 — itself now 🛑 PARKED by Jonathan (2026-07-27), so this task is parked behind a parked request** (authored
+  2026-07-26 — `.claude/pipeline/fab/FAB-REQUESTS.md`: rigged horse/mount/QUADRUPED source, was status
   `requested`, awaiting Jonathan at the TASK-207 checkout). **The "source decision" that blocked this task is now RESOLVED into a named
   request** — the lane survey concluded: Meshy has NO quadruped clips (dead end), and **FAB-006 is explicitly a HUMANOID pack, so it does
   NOT cover Cavalry** — before 2026-07-26 FAB-REQUESTS.md had no horse/mount/quadruped entry AT ALL, i.e. this task was silently
@@ -693,6 +704,151 @@ Four non-gated items. State: editor CLOSED; tree checked out on `m7.6-arena10x` 
 
 ---
 
+## W-UNIT-1 tasks (decomposed 2026-07-26) — Wizard AoE fireball unit (TASK-298..305) — ⚠️ RECONSTRUCTED-FROM-HANDOFFS
+
+> # ⚠️ RECONSTRUCTED-FROM-HANDOFFS — 2026-07-26 (manager). THIS IS NOT THE ORIGINAL SECTION.
+>
+> **What happened:** on the morning of 2026-07-26 a stray `git reset --hard` + `git clean -fd` run by a build-master agent destroyed every uncommitted working-tree file. `TASKBOARD.md` had not been committed since **`e01bc2e`** (TASK-297, 2026-07-25), so the original `## W-UNIT-1 tasks` section (~190 lines, authored earlier that same morning) existed ONLY in the working tree and is **permanently gone**.
+>
+> **Git is NOT a recovery source for it** — verified directly: `git show 0d717c0:.claude/pipeline/TASKBOARD.md` contains **zero** occurrences of `W-UNIT-1`. Any instruction to "restore this section from git" is wrong; see the corrected 🚨 PIPELINE-FILE REVERT block under Active tasks.
+>
+> **This section was REBUILT from the surviving COMMITTED artifacts:** `handoffs/TASK-{298,299,307}-programmer.md` · `handoffs/TASK-{300,301,302,303}-artist.md` · `qa/TASK-{298,299,307}.md` · the shipped commit **`0d717c0`** · CONVENTIONS "Wizard unit — AoE fireball caster (2026-07-26)" (itself restored from manager session context, committed in `1a04971`).
+>
+> **Fidelity contract — read before citing this section.** Every entry below is marked either **EVIDENCED** (traceable to a named artifact) or **⚠️ INFERRED** / **⚠️ NOT RECOVERED**. The original spec wording, the original dispatch order, the original per-task `parallel-safe` flags, and the original `blocked-by` graph are **NOT recoverable verbatim** — what is recorded is the chain the artifacts prove actually ran. **When exact original spec text matters, cite the `handoffs/` file, never this reconstruction.**
+>
+> **The Wizard itself is SHIPPED and was never at risk:** commit **`0d717c0`** on `main` (NOT pushed) — "Wizard AoE fireball unit (SM/SK/BP/card/anims/LODs, splash via existing AoE path) + systemic feet-grounding fix … Jonathan-approved look; grounded post-fix." This was a documentation loss, not an asset loss.
+
+**Directive (Jonathan, 2026-07-26 — EVIDENCED, quoted in CONVENTIONS):** a new ranged unit *"similar to the Archer but instead of arrows it shoots fireballs that deal Area-of-Effect (splash) damage — the fireball hits a target and damages everything within a radius."* A STANDALONE unit-add batch (label **W-UNIT-1**), NOT part of M7.6/M7.7. The Wizard is the ARCHER behavioural template — a `Standard`-profile ranged `ASummonedUnit` (so it obeys the Shield-Wall ATTACK/HOLD/DEFEND commands exactly like the Archer) — whose homing projectile deals RADIAL splash on impact by REUSING the shipped AoE path, never a new one.
+
+**Manager rulings (recovered from CONVENTIONS "Wizard unit — AoE fireball caster (2026-07-26)", which is the surviving authority for this batch's law):**
+1. **AoE = REUSE, not reinvent (LOAD-BEARING).** The splash is the EXISTING TASK-056 projectile-AoE path (`AProjectile::InitProjectile(..., InAoERadius)` → `FSiegeCombatStatics::ApplyRadialDamage`). The ONLY gameplay code change is that `ASummonedUnit::FireProjectileAt` PASSES the row-bound `AoERadius` into `InitProjectile`. Every existing ranged shot has `AoERadius == 0` ⇒ byte-for-byte unchanged.
+2. **No new CSV column.** The splash rides the EXISTING `FCardRow.AoERadius`; Wizard default `250` (FLAGGED tunable).
+3. **The look is a BP subclass, the gameplay is data.** `ASummonedUnit` gains one optional `TSubclassOf<AProjectile> ProjectileClass` (default null, null-safe fallback to base `AProjectile`); `BP_Unit_Wizard` sets it to `BP_Projectile_Fireball`. The Fire_Magic pack is a READ-ONLY donor (template-donor rule).
+4. **Stats are Jonathan-default + FLAGGED** ("tune at a later playtest"): Cost 24 / MaxCopies 4 / HP 45 / Damage 15 / Range 700 / Cadence 1.6 / Speed 350 / Profile Standard / bRanged true / AoERadius 250 / **DeckCount 0** (preserves the `sum(DeckCount)==50` invariant).
+5. **Deck-builder description is AUTO-GENERATED** from the row by M7.7's `UDeckBuilderWidget::GetCardDescription` — no authored `Notes`/`Description`. **TRUTH LAW:** the splash line is truthful only once ruling 1 ships, so the batch ships together; QA on the code task confirms the path actually splashes.
+6. **⚠️ NOT RECOVERED:** any *additional* rulings the original section carried beyond what CONVENTIONS records (e.g. the original dispatch-map paragraph, the parallel/editor-gated split for this batch, any flagged-for-Jonathan list). The FLEET-REMASTER dispatch map does record one fact about this batch: **"Wizard TASK-304/305"** were EDITOR-GATED and had to serialize with M7.7 TASK-269..272 and TASK-297.
+
+### ✅ BATCH RESULT — WIZARD SHIPPED (EVIDENCED by commit `0d717c0`, main, NO push)
+
+| Deliverable | Path | Evidence |
+|---|---|---|
+| AoE pass-through + `ProjectileClass` hook | `Source/…/Siegebound/SummonedUnit.{h,cpp}` | `handoffs/TASK-298-programmer.md`, `qa/TASK-298.md` (PASS, loop 2) |
+| Card row | `Docs/Data/cards.csv` → `/Game/Data/DT_Cards` | `handoffs/TASK-299-programmer.md`, `qa/TASK-299.md` (PASS) |
+| Concept | `Content/RawAssets/Concepts/Wizard.png` + `Tools/ArtPipeline/Inbox/Wizard.png` | `handoffs/TASK-300-artist.md` |
+| Static mesh + textures + MI | `/Game/Meshes/SM_Wizard`, `/Game/Textures/T_Wizard_{D,N,ORM}`, `MI_Wizard_PBR` | `handoffs/TASK-301-artist.md` |
+| Skeletal runtime + 4 anims + LOD recipe | `/Game/Characters/SK_Wizard`, `/Game/Characters/Anims/A_Wizard_{Idle,Walk,Attack,Death}` | `handoffs/TASK-302-artist.md` |
+| Card art | `/Game/UI/CardArt/T_CardArt_Wizard` | `handoffs/TASK-303-artist.md` |
+| Blueprints | `BP_Unit_Wizard`, `BP_Projectile_Fireball` | commit `0d717c0` message (⚠️ no build-master handoff survives) |
+| Systemic feet-grounding fix (born from this batch's float) | `ResolveSkeletalVisual` | TASK-306/307/307-QA/308 — recorded in **## FLEET-REMASTER tasks** below, shipped in the SAME commit |
+
+---
+
+#### TASK-298 — [W-code] Wizard fireball AoE pass-through + optional per-unit `ProjectileClass` (gameplay-programmer, C++ file-only) — EVIDENCED
+- assignee: gameplay-programmer
+- status: **done** — qa-passed on loop 2, shipped in `0d717c0`. (Loop 1 FAILED on one blocker: the `SpawnClass` ternary mixed `TSubclassOf<AProjectile>` and `UClass*` ⇒ MSVC **C2445** under UE 5.8 `/permissive-`; fixed with `.Get()` per the `BattlefieldScatter.cpp:1038` precedent. Loop 2 PASS, diff-checked as the only delta.)
+- blocked-by: none · parallel-safe: yes (file-only; disjoint from every art task)
+- spec: >
+    Two surgical, additive, backward-compatible changes to `ASummonedUnit`, nothing else in either file:
+    (1) `FireProjectileAt` passes the EXISTING row-bound `AoERadius` as the 5th arg of `InitProjectile` (it was omitted ⇒ defaulted 0 ⇒ every ranged unit single-target). Reuses the shipped TASK-056 `HandleImpact`→`ApplyRadialDamage` path — NO new AoE routine, no friendly fire, castle-side 50% projectile scaling preserved.
+    (2) Add `UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Siegebound|Unit") TSubclassOf<AProjectile> ProjectileClass` (default null) + forward-decl; spawn `ProjectileClass.Get()` when set, else `AProjectile::StaticClass()` — the null-safe fallback IS today's behaviour for every existing unit.
+    File-only: no compile, no editor, no Git, no MCP. Write `handoffs/TASK-298-programmer.md`. Post in ⚙️ Dev & QA.
+- names: > `Source/GitClaudeUnrealTest/Siegebound/SummonedUnit.{h,cpp}` · `AProjectile::InitProjectile` · `ProjectileClass` · law: CONVENTIONS "Wizard unit — AoE fireball caster (2026-07-26)".
+- ⚠️ RECONSTRUCTION NOTE: spec text above is the manager's re-statement of what the handoff proves was built. Original spec wording NOT recovered.
+
+#### TASK-298-QA — [W-code QA] Review TASK-298 — EVIDENCED (report), ⚠️ INFERRED (the `-QA` ID form)
+- assignee: qa-reviewer
+- status: **done — qa-passed** (`qa/TASK-298.md`; loop 1 FAIL → loop 2 PASS, 1 QA loop consumed)
+- blocked-by: TASK-298 · parallel-safe: no
+- spec: > Pre-compile review. Confirm: no existing `ASummonedUnit` ranged caller has `AoERadius > 0` (⇒ single-target unchanged); the radial path is the EXISTING one, not a re-implementation, with no friendly-fire hole; `ProjectileClass` null-safe fallback; and the TRUTH gate — a `bRanged` row with `AoERadius > 0` genuinely splashes, so M7.7's auto-description is not claiming a rule the code lacks.
+- names: > Report `qa/TASK-298.md`.
+- ⚠️ The board's original entry may have been titled differently (the FLEET-REMASTER precedent is `TASK-307-QA`, which is why that form is used here). The REPORT PATH is certain.
+
+#### TASK-299 — [W-data] Wizard row in `cards.csv` (gameplay-programmer, data file-only) — EVIDENCED
+- assignee: gameplay-programmer
+- status: **done** — qa-passed, shipped in `0d717c0` (DT_Cards reimport happened in the build-master step)
+- blocked-by: none · parallel-safe: yes
+- spec: >
+    Append ONE row to `Docs/Data/cards.csv` — 31 columns, no header change, no reorder, no other row touched. Values per the CONVENTIONS Wizard defaults (Cost 24 / MaxCopies 4 / HP 45 / Damage 15 / Range 700 / Cadence 1.6 / Speed 350 / Profile Standard / bRanged true / AoERadius 250 / **DeckCount 0** so `sum(DeckCount)` stays **50**). `CardArt` cell = the full object path. `Notes` must contain NO comma (unquoted-field style). `Docs/Data/cards.csv` is the source of truth; the `/Game/Data/DT_Cards` reimport is the build-master's.
+- names: > `Docs/Data/cards.csv` row `Wizard` · `CardArt` = `/Game/UI/CardArt/T_CardArt_Wizard.T_CardArt_Wizard` · law: CONVENTIONS "Data-driven card stats" + "Wizard unit".
+
+#### TASK-299-QA — [W-data QA] Review TASK-299 — EVIDENCED (report), ⚠️ INFERRED (ID form)
+- assignee: qa-reviewer
+- status: **done — qa-passed** (`qa/TASK-299.md`, zero findings)
+- blocked-by: TASK-299 · parallel-safe: no
+- spec: > Data review: 31-column schema match + no reorder; values match the CONVENTIONS defaults exactly; `AoERadius 250` present (drives TASK-298's splash + the truthful auto-description); DeckCount sum still 50; CSV integrity (no comma in `Notes`, trailing empty `SpellDelivery`).
+- names: > Report `qa/TASK-299.md`.
+
+#### TASK-300 — [W-concept] Wizard concept art (art-director, no-editor) — EVIDENCED
+- assignee: art-director
+- status: **done** (2026-07-26 — FLUX.1-dev via `concept_generate.py`, seed **71017**, 1024², prompt entry added to `concept_prompts.json`)
+- blocked-by: none · parallel-safe: yes (no editor, no MCP, no Git)
+- spec: >
+    Generate the Wizard concept to the CURRENT roster house style (`concept_prompts.json` `_doc.art_direction`: polished stylized low-poly, Warcraft-Rumble/Fortnite tier), mirroring the **Cleric** robed-caster grammar re-themed holy → offensive fire. **Team-agnostic** — no baked blue/red; the neutral cream hood-mantle/stole is the intended TeamRegion; the warm-orange fireball is an ability colour key, distinct from team-red. Meshy-ready: single centred full-body subject, arms separated from the torso, plain grey background, even light. Write the SAME final image to BOTH the pipeline pickup and the archived acceptance concept.
+- names: > `Tools/ArtPipeline/Inbox/Wizard.png` (gitignored pickup) · `Content/RawAssets/Concepts/Wizard.png` (committed acceptance concept) · `Tools/ArtPipeline/concept_prompts.json` (new `Wizard` entry, seed 71017).
+- NOTE (carried, still live): Norton TLS interception broke `provider=auto` SSL; fixed with the combined CA bundle at `Tools/ArtPipeline/Cache/_certs/win-ca-bundle.pem` via `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE`/`CURL_CA_BUNDLE`. Reusable; rebuild after a Windows rollback.
+
+#### TASK-301 — [W-model] `SM_Wizard` game-ready textured static mesh (art-director) — EVIDENCED
+- assignee: art-director
+- status: **done** — GEN + Stage-2 complete no-editor; the UE import was deliberately DEFERRED to the editor-gated build step (turnkey recipe in the handoff). Shipped in `0d717c0`.
+- blocked-by: TASK-300 · parallel-safe: yes for the GEN portion; the UE import is editor-gated (serialize)
+- spec: >
+    Meshy image-to-3D from `Inbox/Wizard.png` (`meshy_generate.py --mode image3d`; task `019f9fcc-…`, 30 credits) → headless Blender Stage-2 refine → **15,000 tris**, `UVMap`, feet-centre origin (min_z 0.065), two-slot `[0 TeamRegion, 1 WizardPBR]`, D/N/ORM 1024² with the albedo de-light applied. Pre-import eyeball gate against `Concepts/Wizard.png` (M7.5 colour-fidelity bar). Then (EDITOR-GATED) import textures + `MI_Wizard_PBR` from master `M_AssetPBR` + the mesh at `/Game/Meshes/SM_Wizard`, **Nanite OFF**, ≤4 simple hulls, slots assigned in order.
+- names: > `/Game/Meshes/SM_Wizard` · `/Game/Textures/T_Wizard_{D,N,ORM}` (D sRGB ON; N/ORM LINEAR) · `MI_Wizard_PBR` ← `M_AssetPBR` · raw `Content/RawAssets/Wizard.fbx`. Law: CONVENTIONS "Wizard unit" + "Textured mesh law" + "Meshy second engine (M7.5)".
+- **PATH RECONCILIATION (recorded by the artist, binding):** the naming block says the raw FBX lives at `Content/RawAssets/Characters/Wizard.fbx`; the LIVE two-tier convention (matching every roster unit) puts the **STATIC** FBX at `Content/RawAssets/Wizard.fbx` and reserves `Characters/` for the **RIGGED** variant. The live convention was followed.
+- Flagged, non-blocking: the held fireball's flame has thin spiky protrusions (Meshy's read of a 2D flame) — cosmetic caster prop only; the gameplay projectile is the Niagara fireball on `BP_Projectile_Fireball`. WATCH: the caster's footprint (outstretched arm + staff) is wider than a stock humanoid — same class as the Cavalry/Ogre weapon overhang.
+
+#### TASK-302 — [W-rig] `SK_Wizard` skeletal rig + 4 anim clips + SK-LOD recipe (art-director) — EVIDENCED
+- assignee: art-director
+- status: **done** — headless Blender rig complete; UE import DEFERRED to the editor-gated build step (turnkey recipe in the handoff). Shipped in `0d717c0`.
+- blocked-by: TASK-301 · parallel-safe: yes for the GEN portion; the UE import is editor-gated (serialize)
+- spec: >
+    Rig the TASK-301 mesh via `rig_character.py --card-id Wizard` onto the **SHARED SiegeBiped** (21 bones, armature root exported as the constant `Footman_Rig` per the TASK-212 law) so UE binds to the EXISTING `/Game/Characters/SK_Footman_Skeleton` with no missing-bones warning — **NOT a bespoke skeleton**. Author the 4 per-unit clips; the attack style is **`cast`/hurl** (staff-raise then forward drive), deliberately NOT the Archer bow-draw. Emit the SK-LOD recipe sidecar. Then (EDITOR-GATED) import `SK_Wizard` + the 4 sequences against that same skeleton (root-motion OFF + force_root_lock), apply LOD1 50%@0.4 / LOD2 20%@0.15 (`lod_count == 3`).
+    **No `ABP_Wizard` is authored** — `ResolveSkeletalVisual` falls back to the shared `ABP_Footman` for every fleet unit; the Wizard shares the skeleton so the shared locomotion drives it with ZERO new asset.
+- names: > `/Game/Characters/SK_Wizard` · skeleton `/Game/Characters/SK_Footman_Skeleton` (shared) · `/Game/Characters/Anims/A_Wizard_{Idle,Walk,Attack,Death}` · shared `ABP_Footman` (no `ABP_Wizard`) · raw `Content/RawAssets/Characters/Wizard.fbx` + `Wizard.lod.json` + `Characters/Anims/Wizard_*.fbx`. Law: CONVENTIONS "Skeletal rig & animation workstream (M7)" + "Wizard unit" + the M7.6 SK-unit LOD law.
+- Flagged, non-blocking: a true two-handed fireball hurl (left-hand throw) or a higher-fidelity Meshy cast clip is an optional later tuning pass; the procedural `cast` reads correctly at the baseline. Cadence check: `A_Wizard_Attack` 40f@30fps ≈ 1.33 s fits inside the 1.6 s cadence with no rate scaling.
+- **HISTORICAL NOTE (superseded):** this handoff's §5 stated the float-fix was automatic via the v1 `VisualMeshBaseRelativeLocation` copy. That assumption is exactly what FAILED on the Wizard and triggered TASK-306→308's systemic fix. Read §5 as superseded by TASK-307.
+
+#### TASK-303 — [W-cardart] `T_CardArt_Wizard` card art (art-director) — EVIDENCED
+- assignee: art-director
+- status: **done** — PNG staged + verified 512×512; the UE import was editor-gated and ran in the build step. Shipped in `0d717c0`.
+- blocked-by: TASK-300 · parallel-safe: yes (independent of TASK-301/302)
+- spec: >
+    Match the ROSTER card-art recipe (the 28 existing `T_CardArt_*` are Blender EEVEE renders of low-poly "board-game token" figures on a colour-keyed studio backdrop — TASK-077 recipe), NOT a crop of the full-body concept. 512×512 RGB, no alpha, **no baked text** (runtime overlays DisplayName/cost), team-agnostic palette, one dominant subject with headroom top + floor strip bottom. Token-tier translation of the concept identity: hooded robe, bushy beard, glowing amber eyes, red-orb staff, bright fireball in the raised casting hand; arcane-plum key colour chosen distinct from every key already in use.
+- names: > source `Content/RawAssets/CardArt/Wizard.png` → `/Game/UI/CardArt/T_CardArt_Wizard` (Texture Group **UI**, sRGB ON, TC_Default). CSV cell already points at `/Game/UI/CardArt/T_CardArt_Wizard.T_CardArt_Wizard`. Law: CONVENTIONS "Card artwork (hand UI)".
+
+#### TASK-304 — [W-int-1] Compile + editor-gated imports + Blueprint authoring + `DT_Cards` reimport (build-master) — ⚠️ SCOPE INFERRED
+- assignee: build-master
+- status: **done** — shipped in `0d717c0` (main, NO push)
+- blocked-by: TASK-298-QA, TASK-299-QA, TASK-301, TASK-303 · parallel-safe: no (exclusive editor + Git)
+- spec: >
+    ⚠️ **INFERRED, NOT RECOVERED — no build-master handoff for this task survives.** Reconstructed scope, from three independent artifact statements: `handoffs/TASK-298-programmer.md` ("TASK-304 (build-master) owns the compile + `BP_Unit_Wizard` authoring — `ProjectileClass = BP_Projectile_Fireball`, `VisualMesh = SM_Wizard`"), `qa/TASK-298.md` ("Ready for the TASK-304 compile … pair with the TASK-299 `DT_Cards` reimport"), and `handoffs/TASK-302-artist.md` ("Feeds TASK-304 (build-master assemble); this import serializes behind TASK-301's static-mesh import — `MI_Wizard_PBR` must exist first"):
+    compile the TASK-298 code (hard gate); run the deferred editor-gated Stage-3 imports (textures → `MI_Wizard_PBR` → `SM_Wizard`; card art `T_CardArt_Wizard`); reimport `/Game/Data/DT_Cards` same-path from `cards.csv` and read the Wizard row back; author `BP_Unit_Wizard` (`ASummonedUnit` subclass — CardID `Wizard`, `VisualMesh = SM_Wizard`, `ProjectileClass = BP_Projectile_Fireball`) and `BP_Projectile_Fireball` (`AProjectile` subclass, VISUALS ONLY — Fire_Magic Niagara systems soft-referenced, donor never edited).
+- names: > `BP_Unit_Wizard` at `/Game/Blueprints/Units/BP_Unit_Wizard` (spawn path `…BP_Unit_Wizard.BP_Unit_Wizard_C`) · `BP_Projectile_Fireball` at `/Game/Blueprints/BP_Projectile_Fireball` · `NS_Fire_Magic_{Projectile,Explosion,Muzzle}` (READ-ONLY donors) · `/Game/Data/DT_Cards`. Commit on main, no push.
+- ⚠️ **The exact TASK-304 / TASK-305 split is INFERRED.** What is CERTAIN: both IDs existed, both were editor-gated and had to serialize with M7.7 TASK-269..272 + TASK-297 (recorded in the FLEET-REMASTER dispatch map), and the work landed in `0d717c0`.
+
+#### TASK-305 — [W-int-2] `SK_Wizard` + anims import, LOD apply, in-engine verify, commit (build-master) — ⚠️ SCOPE INFERRED
+- assignee: build-master
+- status: **done** — shipped in `0d717c0` (main, NO push). **Jonathan-approved look** (commit message), and the Wizard verified GROUNDED only after TASK-307/308 landed in the same commit.
+- blocked-by: TASK-302, TASK-304 · parallel-safe: no (exclusive editor + Git)
+- spec: >
+    ⚠️ **INFERRED, NOT RECOVERED — no build-master handoff survives.** Reconstructed scope: import `SK_Wizard` + the 4 `A_Wizard_*` sequences against `SK_Footman_Skeleton`, apply the SK-LOD chain (`lod_count == 3`) + confirm URO is live from C++, verify in-engine (skeletal visual resolves from CardID, anims bind and play, slot-0 team recolour tints the mantle, splash actually damages a group), and commit on main with explicit pathspecs, NO push.
+    **Independent corroboration that a TASK-305 verify happened:** CONVENTIONS' shared-skeleton clause cites "confirmed at TASK-297/305" as the evidence that `SK_Footman_Skeleton` is the shipped shared skeleton.
+- names: > `/Game/Characters/SK_Wizard` · `/Game/Characters/Anims/A_Wizard_{Idle,Walk,Attack,Death}` · skeleton `SK_Footman_Skeleton` · commit on main, no push.
+
+---
+
+### ⚠️ WHAT COULD **NOT** BE RECOVERED (do not fill these in from memory — they are gone)
+
+1. **The original spec/`names` prose for every task.** Each entry above is the manager's re-statement built from what the handoffs prove was BUILT. Acceptance criteria that were specced but never mentioned in a handoff are lost.
+2. **The original `blocked-by` graph and `parallel-safe` flags.** The dependencies shown are re-derived from artifact statements ("Downstream: TASK-304…", "serializes behind TASK-301's import…"). They are correct in substance, not necessarily in original form.
+3. **TASK-304 and TASK-305 — the exact scope split.** No build-master handoff exists for either (they wrote none, or theirs died with the wipe). The two-way split above is INFERRED; the union of the two is certain (it is what `0d717c0` contains).
+4. **Whether a QA task ID existed for TASK-298/299, and in what form.** The QA REPORTS are certain (`qa/TASK-298.md`, `qa/TASK-299.md`); the board entry IDs `TASK-298-QA` / `TASK-299-QA` follow the `TASK-307-QA` precedent and are INFERRED.
+5. **This batch's dispatch-map paragraph and any flagged-for-Jonathan list.** FLEET-REMASTER preserved one line about it ("Wizard TASK-304/305" = editor-gated, serialize); nothing else survived.
+6. **Any status history / timestamps** — the "was: ready-for-qa … was: backlog" trail that board entries normally carry. Only the FINAL state is recoverable, and it is `done` for all eight tasks.
+7. **Slack thread ts values** for this batch's posts (they exist in Slack, not in the files — recoverable by reading `#siegeboundue5agentteam` if ever needed).
+
+---
+
 ## FLEET-REMASTER tasks (decomposed 2026-07-26) — Meshy colour rebuild of the 11 fleet units (TASK-306..325)
 
 > **⚠️ THIS SECTION WAS RESTORED FROM MANAGER SESSION CONTEXT 2026-07-26 after a working-tree revert wiped it (see "🚨 PIPELINE-FILE REVERT" in Active tasks at the top of this board). It is a faithful copy of what was on disk earlier this session, PLUS the four manager corrections dated 2026-07-26 that are called out inline. If it differs from git HEAD's copy, **GIT HEAD WINS for everything EXCEPT** (a) manager ruling 3's Ogre-skeleton correction, (b) the Stage-B template's Ogre-skeleton correction, (c) the TASK-310 colour-call amendment, and (d) the new TASK-322..325 follow-ups block — those four are NEW manager work and must be re-applied after any git restore.**
@@ -839,7 +995,36 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
 
 #### TASK-309 — [REM-audit] Building/tower colour audit — flag the washed-out ones (art-director)
 - assignee: art-director
-- status: backlog
+- status: **done — 2026-07-27, JONATHAN RULED AND THE FINDINGS ARE DECOMPOSED.** ← was: ready-for-integration — AUDIT COMPLETE 2026-07-26 SESSION-4 (audit only, nothing rebuilt, ZERO Meshy credits). Handoff: `handoffs/TASK-309-artist.md`; decisive evidence `handoffs/TASK-309-audit-Castle-in-arena.png` + `-concept-vs-shipped-{A,B,C}.png`. **VERDICT: Jonathan's "the buildings look fine" HOLDS for 8 of 9 — Castle refutes it, severely.**
+    **➡️ DISPOSITION (2026-07-27, all three of Jonathan's rulings — full specs in "## BUILDING-AUDIT rulings … TASK-329..333"):**
+    (1) **Castle → APPROVED REBUILD**, BUILDING pipeline variant, with an explicit independent RE-VERIFY of the Castle's state before any
+    Meshy spend (Jonathan: don't take the audit on trust) → **TASK-329 → TASK-330 → TASK-331** (331 re-derives the crumble meshes — a trap
+    this audit did not surface: `SM_Castle_Crumble0N` are byte-copies of the OLD `SM_Castle` and `M_CastleCrumble` samples the same
+    `T_Castle_*`, so new UVs scramble the 75/50/25 % states).
+    (2) **GoldNode glow → APPROVED DIAL-BACK**, one material lever → **TASK-332 → TASK-333**. The audit's "needs Jonathan's eye first" gate
+    is SATISFIED by his ruling. Note the lever is NOT the obvious one — see manager ruling 9.
+    (3) **The other EIGHT buildings are CLOSED** — no tasks, do not re-open without new evidence.
+    **The two waste-preventing findings and the Wizard incidental are recorded in CONVENTIONS and in the TASK-329..333 block header
+    (TeamRegion-not-washout · GoldNode+CrystalTower textures orphaned · `T_Wizard_D` 0.0968 informational-only).** Nothing further is owed
+    by this task.
+
+    | # | Building | Verdict | mean linear albedo (raw / UV-normalised) | reason |
+    |---|---|---|---|---|
+    | 1 | **Castle** | **🚩 REBUILD** | **0.0078 / 0.0653** | Never de-lit at all; renders near-black under real `L_Arena` sun vs a warm sandstone concept |
+    | 2 | ArrowTower | OK | 0.0408 / 0.1996 | Grey stone faithful; retention 0.31× at the accepted-unit floor |
+    | 3 | Wall | OK | 0.0810 / 0.2451 | **Best of set** — 1.02× chroma retention (zero loss), albedo at baseline |
+    | 4 | BombTower | OK | 0.0523 / 0.2314 | Lowest absolute chroma but its concept is too; retention 0.51×, 3rd best |
+    | 5 | BallistaTower | OK | 0.0314 / 0.1531 | Warm timber reads best in engine; low albedo is genuine dark wood |
+    | 6 | Barracks | OK | 0.0576 / 0.2724 | Above baseline; timber + gold banner read |
+    | 7 | DeepMine | OK (watch) | 0.0368 / 0.1596 | Faithful dark rock; retention 0.35× = exactly Knight's accepted value |
+    | 8 | CrystalTower | OK | n/a — textures UNUSED | Ships on `MI_CrystalGlow`; cyan glow reads (emissive `0.05/0.6/1.0` @ 12) |
+    | 9 | GoldNode | OK (separate flag) | n/a — textures UNUSED | Ships on `M_GoldGlow`; warm-yellow emissive reads but OVER-reads |
+
+    **CASTLE — the one rebuild (→ manager to decompose, BUILDING pipeline variant):** albedo **21× below** the 0.164 Footman baseline (3.9× on the fair UV-normalised number) — **the lowest of every asset in the project, units included, before or after the remaster.** Its `refine_report.json` predates TASK-193 and has **NO `albedo_delight` block at all — the de-light stage never ran on it.** Chroma retention 0.20× is below the worst unit already signed off (Cleric 0.28×). Under real arena lighting it is a black mass darker than the grass. Structural debt on the same asset: `lod_count == 1` (all others 4) and 40k tris.
+    **TWO FINDINGS THAT CHANGE HOW THE DATA READS:** (1) **the bleached roofs on ArrowTower/Barracks are the TeamRegion slot painted `MI_TeamColor_Blue`, NOT wash-out** — do NOT commission a rebuild to "restore the red roof"; (2) **CrystalTower and GoldNode never use their baked textures** (orphaned `T_*` sets; both ship on hand-authored glow materials with no BaseColor/Normal/ORM) — a texture rebuild for either would change NOTHING on screen.
+    **SEPARATE FLAG (one scalar, not a rebuild) → Jonathan's eye:** GoldNode's `GlowIntensity` blows **86.3% of the mesh past luma 0.85** — a featureless cream blob losing the rock/gold/orange-crack separation; CrystalTower's comparable glow is 6.5% blown and still reads.
+    **INCIDENTAL:** `T_Wizard_D` is still on the old conservative delight profile at **0.0968** — the only unit below the 0.164 baseline (Jonathan approved that look at the time; informational).
+    **METHOD CONFOUND (carry forward):** building UV coverage is 12–33% vs units' 59–73%, so raw all-pixel albedo is NOT comparable across the two groups — hence the UV-normalised column. The measurement script reproduces the pipeline's own `mean_linear_after` to 4 decimals on every unit, so the metric is validated, not assumed.
 - blocked-by: none
 - parallel-safe: yes (eyeball inspection of committed assets vs concepts; read-only)
 - spec: >
@@ -1031,6 +1216,359 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
 - names: >
     `/Game/Materials/M_AssetPBR` (`bUsedWithSkeletalMesh` → true). Consumers unchanged: `MI_<Unit>_PBR` instances, every `SM_<Unit>` /
     `SK_<Unit>`. Commit on main, no push. Law: CONVENTIONS "Textured mesh law" (master-material contract) + "Fleet Meshy remaster".
+
+## FLEET-FACING tasks (decomposed 2026-07-26) — mesh-facing inconsistency across the fleet, **CONFIRMED LIVE GAMEPLAY BUG** (TASK-326..328, + TASK-334 / TASK-335 from the diagnosis)
+
+**Finding (build-master, 2026-07-26, while re-capturing the FLEET-REMASTER in-engine verification shots):** **mesh forward is NOT consistent across the fleet.** The correct camera yaw offset had to be found EMPIRICALLY per unit — **0 / 180 / 270 all occur**. Concretely, at runtime `SkeletalVisualMesh.RelativeRotation.Yaw` is **−90 on 9 units but 0 on Archer and Ogre**.
+
+> **⚠️ THIS FINDING IS PARTLY SUPERSEDED BY MEASUREMENT (TASK-326, 2026-07-27).** The BUG IS REAL and Jonathan confirmed it in live play — but the finding under-counted and mis-described it. **(1) It is THREE units, not two: Archer, Ogre AND Wizard** (the Wizard surfaced only because the diagnosis swept all 12 rather than checking the two accused). **(2) "0 / 180 / 270 all occur" is DEBUNKED** — a camera-side artifact of hunting a per-unit offset against a mixed −90/0 population; the data has exactly TWO component values (−90 and 0) and exactly ONE baked forward (local **+Y**, all 12). **(3) The three bad units are at yaw 0 AND Z 0 — never authored at all**, sitting at the C++ constructor default, which makes this the **YAW HALF of the TASK-306/307 bug**, not a new one. Live law: CONVENTIONS → "Unit mesh facing".
+
+**Why this is a bug candidate and not a screenshot nuisance:** a wrong facing offset on those two units is **visible in play** — the unit walks sideways or backwards relative to its march direction, and faces the wrong way while attacking. That is a gameplay-legibility defect on the two units, in the ONE batch (FLEET-REMASTER) that just rebuilt every fleet mesh. It must be checked in real play before anyone calls it cosmetic.
+
+**Manager's own code read (evidence for the rulings below, verified 2026-07-26, read-only):** `SummonedUnit.cpp` contains **no `SetRelativeRotation` call anywhere** — the constructor (`:129-156`) sets `SkeletalVisualMesh`'s mesh/collision/overlap/nav/visibility/URO and nothing else, and `ResolveSkeletalVisual` sets only the skeletal asset, the grounded **location** (`:317-325`, the TASK-307 fix) and the anim class. **Therefore the −90 / 0 yaw is PER-BP AUTHORED on each `BP_Unit_<Unit>` component template.** That is precisely the per-BP hand-authored-offset trap TASK-306/307 just eliminated for grounding — one class of bug, two properties, and only the Z half was fixed.
+
+### Manager rulings (binding for TASK-326..328)
+
+1. **DIAGNOSE-FIRST.** No fix ships before a real-play observation (the TASK-282/283 and TASK-306 pattern). TASK-326 changes nothing; it measures and recommends.
+2. **Verify in real PIE, not Simulate, not the editor viewport.** FLEET-REMASTER lane-knowledge 1/2/3/4 (`CaptureViewport` renders the EDITOR world; Simulate has no pawn; a unit's Tick re-orients it every frame so the world must be paused to rotate it; "the rigged mesh's visual front is 180° from actor-forward") describes exactly the artificial environment that produced the empirical per-unit yaw hunt. **A verification harness quirk is not a gameplay verdict** — the gate is: does the unit LOOK right while marching, attacking, and dying in a real match.
+3. **Prefer the SYSTEMIC fix over per-unit patches.** All 11 fleet units were just rebuilt through ONE pipeline (`meshy_generate.py` → `refine_trellis_glb.py` → `rig_character.py`) onto ONE shared skeleton (`SK_Footman_Skeleton`, armature root `Footman_Rig`), so their baked mesh-forward should be IDENTICAL. A per-unit hand-authored yaw is the same authoring trap TASK-306/307 closed for grounding; re-opening it per unit is regression by construction. **Per-unit patching is authorized ONLY if TASK-326 proves the baked forwards genuinely differ per unit** — which would contradict the one-pipeline/one-skeleton rebuild and would itself be a pipeline finding worth recording.
+4. **BANNED ASSUMPTION — "capsule half-height == 90".** Capsule half-heights differ per unit: **Ogre 145, Cavalry 104, Knight 95, MilitiaMob 74.5**, Footman 90, etc. Any float/grounding/offset check that hardcodes 90 reports FALSE RESULTS — that exact assumption is what briefly made the Ogre look like a 57 cm float. **Grounding itself is CLOSED and verified fleet-wide at 2.15–2.40 cm** (TASK-308 live + all 11 `-verify` rows). Read the real capsule via `GetScaledCapsuleHalfHeight()`; never a literal.
+5. **The facing LAW goes into CONVENTIONS by the MANAGER, after TASK-326 returns measured truth** — a "Unit mesh facing" clause under the "SkeletalMeshComponent swap contract". TASK-327 implements; it does not author convention text. (No new asset type ⇒ no new naming pattern is owed up front.) **✅ SATISFIED 2026-07-27 — the law is RATIFIED and live** in CONVENTIONS → "Skeletal rig & animation workstream (M7)" → the **"Unit mesh facing"** bullet (immediately after the SkeletalMeshComponent swap contract). It encodes: baked forward = local `+Y` on all 12 (three independent derivations) ⇒ the one correct `SkeletalVisualMesh` yaw is **−90**; the defect was **three** units (Archer/Ogre/Wizard, never-authored constructor default); this is the **yaw half of TASK-306/307**, with the reusable per-BP-offset-is-a-latent-trap lesson; `GhostYawOffset = -90.f` as shipping precedent; **ABSOLUTE assignment, `+=` FORBIDDEN** (additive would drive the 9 correct units to −180 — an automatic QA FAIL); the "0/180/270" observation **DEBUNKED**; and the static-`VisualMesh` carve-out (TASK-334/335). **TASK-327's blocking dependency on this clause is CLEARED.**
+6. **Scope fence.** This batch touches facing only. It does NOT re-open grounding, does NOT re-bake art, does NOT re-import any mesh, and does NOT touch `L_Arena` or `DA_BattlefieldScatter`. The Wizard is IN scope for verification (same `ResolveSkeletalVisual` path, 12 units total).
+
+**Dispatch:** TASK-326 first and alone (editor-gated — serialize with TASK-310 / TASK-323 / TASK-325 and any of Jonathan's PIE; never concurrent). TASK-327 is file-only and parallel-safe once 326 returns. TASK-328 is the closing integration.
+**Dispatch (UPDATED 2026-07-27):** TASK-326 ✅ **done** · TASK-327 **in flight** (file-only; both blockers cleared — 326 done + the CONVENTIONS clause ratified) → TASK-327-QA → TASK-328 (exclusive editor + Git) → **TASK-334** (BP data, may share TASK-328's editor session, own commit). **TASK-335 is PARKED — do NOT dispatch it.** Chain order: **327 → 327-QA → 328 → 334**; nothing in this batch is parallel-safe past TASK-327.
+
+#### TASK-326 — [FACE-diag] Verify Archer + Ogre facing in REAL play + measure the fleet yaw table (gameplay-programmer, editor/PIE, DIAGNOSE-ONLY)
+- assignee: gameplay-programmer
+- status: **done** (2026-07-27) — diagnose-only, NOTHING edited (no C++, no BP, no asset, no Git, no `L_Arena` save); handoff `handoffs/TASK-326-programmer.md`
+- blocked-by: none
+- parallel-safe: no (exclusive editor/MCP; serialize with TASK-310/323/325)
+- outcome: >
+    **VERDICT: CONFIRMED REAL DEFECT — and it is THREE units, not the two the board suspected: Archer, Ogre AND Wizard.**
+    Jonathan independently confirmed the sideways-walk in live play. **The Wizard was caught ONLY because the diagnosis swept all
+    12 units instead of checking the two named in the finding** — the board premise ("0 on Archer and Ogre") was incomplete, and a
+    two-unit-only investigation would have shipped a fix that left the newest unit broken. Sweep-the-population, don't spot-check the accused.
+    **Measured truth:** all 12 `SK_<CardID>` bake forward on UE-local **+Y** (one skeleton `SK_Footman_Skeleton` 12/12; bounds put the
+    lateral axis on X with Cavalry decisive at 2.16× on Y; `rig_character.py:337` authors front on Blender −Y; raw `SkeletalMeshActor`s
+    from BOTH pipeline generations face a +Y camera). ⇒ the ONE correct `SkeletalVisualMesh` yaw is **−90** for every unit. Nine units
+    measure exactly `(0,−90,0)`; Archer/Ogre/Wizard measure yaw **0 AND Z 0** — i.e. their component was **never authored at all** and
+    sits at the C++ constructor default. **This is the YAW half of the TASK-306/307 bug, not a new one** (Z half closed, yaw half left open).
+    Ruling 3's per-unit escape hatch is **NOT triggered** ⇒ **SYSTEMIC fix confirmed; TASK-327 proceeds** with the constant `-90.f`.
+    The 2026-07-26 "0/180/270 all occur" observation is **DEBUNKED** — camera-side artifact; the data has two values and one baked forward.
+    **Incidental finding (out of TASK-327's scope, ruled by the manager):** `BP_Unit_Wizard`'s STATIC `VisualMesh` is yaw 0 / Z 0 while all
+    11 others are −90 / −CapsuleHalfHeight ⇒ **TASK-334** (BP-data restore) + **TASK-335** (parked C++ derivation debt).
+    Evidence: `handoffs/TASK-326-bakedforward-from-plusY.png`, `handoffs/TASK-326-shipping-geometry-from-travel-axis.png`.
+- spec: >
+    **DIAGNOSE ONLY — no code edit, no asset edit, no Blueprint edit, no Git.** Answer three questions with evidence, then recommend.
+    (1) **REAL-PLAY CHECK (the verdict that matters).** In a real PIE match on `L_Arena`, field **Archer** and **Ogre** on BOTH teams alongside a known-good control unit (Footman, yaw −90) in the same shot, and observe all three states: **MARCHING** (does the body face its direction of travel, or is it walking sideways/backwards?), **ATTACKING** (does it face its target when it fires/strikes?), and **DEATH** (does the death animation play in a sane orientation?). Report the OBSERVATION, not the conclusion; capture screenshots and state plainly for each unit: correct / sideways / backwards / other. Do the same for the **Wizard** (same code path, 12 units in the fleet).
+    (2) **MEASURE the table.** For all 11 fleet units + Wizard, record: `SkeletalVisualMesh` `RelativeRotation.Yaw` at runtime, the actor's forward vs the mesh's apparent visual front, and the mesh's own baked forward axis as it comes off the rig pipeline. Establish whether the 11 rebuilt SKs share ONE baked forward (they came off one pipeline + one shared skeleton — if they do, the divergent component yaw is pure per-BP authoring drift).
+    (3) **ROOT-CAUSE the divergence.** Confirm or refute the manager's read: C++ never sets this rotation (no `SetRelativeRotation` in `SummonedUnit.cpp`), so the value is per-BP authored on each `BP_Unit_<Unit>` component template. If confirmed, name the ONE value the fleet should carry.
+    **Recommend: SYSTEMIC vs PER-UNIT**, with the reasoning and the exact constant if systemic. If real play shows Archer/Ogre look CORRECT as-is, say so — "their SK bakes a different forward that yaw 0 compensates" is a legitimate and expected possible answer, and it retires TASK-327/328 rather than shipping a cosmetic churn.
+    **CARRY THIS CONTEXT (ruling 4):** capsule half-heights differ per unit (Ogre 145 / Cavalry 104 / Knight 95 / MilitiaMob 74.5 / Footman 90) — any check assuming 90 lies; grounding is already CLOSED at 2.15–2.40 cm fleet-wide and is NOT re-opened here.
+    Write `handoffs/TASK-326-programmer.md` (per-unit table + the three answers + the recommendation). Post the verdict in ⚙️ Dev & QA; a confirmed visible bug also gets a one-liner in 🚨 Blockers.
+- names: >
+    Read-only: `Source/GitClaudeUnrealTest/Siegebound/SummonedUnit.cpp` (`ResolveSkeletalVisual` :266-360, constructor :129-156) · `SkeletalVisualMesh` component on every `/Game/Blueprints/Units/BP_Unit_<Unit>` (Footman, Archer, Knight, Miner, Cleric, Ogre, Sapper, Pikeman, Cavalry, MilitiaMob, Longbowman, Wizard) · `/Game/Characters/SK_<Unit>` · skeleton `SK_Footman_Skeleton`. Report `handoffs/TASK-326-programmer.md`. Law: CONVENTIONS "Skeletal rig & animation workstream (M7)" (SkeletalMeshComponent swap contract), "Fleet Meshy remaster".
+
+#### TASK-327 — [FACE-fix] Systemic facing normalisation in `ResolveSkeletalVisual` (gameplay-programmer, C++ file-only) — CONDITIONAL on TASK-326
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: TASK-326 ✅ **done** (2026-07-27, defect CONFIRMED, fleet constant `-90`) **and** the manager's CONVENTIONS "Unit mesh facing" clause ✅ **RATIFIED** (2026-07-27) — **BOTH DEPENDENCIES CLEARED, unblocked**
+- parallel-safe: yes (file-only; no editor, no compile, no Git)
+- spec: >
+    **Runs ONLY if TASK-326 confirms a real facing defect.** If 326 finds Archer/Ogre look correct in play, this task closes `wont-do` and the manager records the measured per-unit facing table in CONVENTIONS instead — **do NOT normalise a fleet that already looks right.**
+    If confirmed: normalise the facing in C++ at the SAME single site the grounding fix already owns — `ASummonedUnit::ResolveSkeletalVisual`, immediately after the grounding block (`SummonedUnit.cpp` ~:317-325) — so no Blueprint can drift again:
+      • add `UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Siegebound|Unit") float SkeletalVisualYawOffset` defaulted to the fleet constant TASK-326 measured (expected `-90.f`);
+      • apply it as the component's relative yaw at swap time, preserving authored pitch/roll exactly as the grounding fix preserves authored X/Y;
+      • keep the UPROPERTY as the documented **exception hatch**: a genuinely differently-baked mesh may override it on its own BP, and that is a NON-DEFAULT requiring an explicit manager ruling (same doctrine as a bespoke skeleton).
+    **NO-REGRESSION IS THE LOAD-BEARING CLAIM** (mirror TASK-307's argument shape): the change must be a provable NO-OP for the 9 units already at −90, and must be null-safe on the static-fallback path (un-rigged units early-return before this block). Do not touch the grounding math, the lunge (`VisualMeshBaseRelativeLocation`), the static `VisualMesh` path, or the placement ghost.
+    File-only: no compile, no editor, no Git, no MCP. Write `handoffs/TASK-327-programmer.md` with the before/after and the no-op table. Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SummonedUnit.{h,cpp}` (`ResolveSkeletalVisual`, new `SkeletalVisualYawOffset`). Law: CONVENTIONS "Skeletal rig & animation workstream (M7)" (swap contract) + the new "Unit mesh facing" clause.
+
+#### TASK-327-QA — [FACE-fix QA] Review TASK-327 (implied by the code task)
+- assignee: qa-reviewer
+- status: backlog
+- blocked-by: TASK-327
+- parallel-safe: no
+- spec: >
+    Pre-compile review. Confirm: (1) the offset is applied at the ONE swap site and cannot be silently overridden by per-BP drift; (2) genuine **NO-OP** for the 9 units already at −90 (check the arithmetic and the component's authored pitch/roll preservation, exactly as TASK-307's Z no-op was checked); (3) the static-fallback / un-rigged path, the lunge, and the placement ghost are untouched and null-safe; (4) coding law — no shadowing, complete-type includes present, no deprecated UE 5.8 API; (5) the exception hatch is a real EditDefaultsOnly property with a sane default, not a magic literal.
+- names: > Report `qa/TASK-327.md`.
+
+#### TASK-328 — [FACE-int] Compile the facing fix + verify all 12 units in PIE + commit (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: TASK-327-QA
+- parallel-safe: no (exclusive editor + Git)
+- spec: >
+    Compile TASK-327 (code hard gate — a build failure appends to `qa/TASK-327.md` and routes back to gameplay-programmer, counting as a QA loop). Then verify in **real PIE** on `L_Arena`, not Simulate: (a) **Archer, Ogre and Wizard** now face their direction of travel while marching, face their target while attacking, and die in a sane orientation; (b) the **9 previously-correct units are visually UNCHANGED** — this is the regression gate, and it fails the task if any of them shifts; (c) Message Log clean (ensure / AccessedNone / Fatal = 0). Capture before/after shots for Jonathan. Commit on main with explicit pathspecs (`SummonedUnit.{h,cpp}` + board + CONVENTIONS + handoff/QA), `git diff --stat` shows nothing foreign, **NO push**.
+    **Ruling 4 applies to any measurement taken here:** read the real capsule half-height per unit (Ogre 145 / Cavalry 104 / Knight 95 / MilitiaMob 74.5 …); never assume 90. Grounding is already closed at 2.15–2.40 cm — do not re-litigate it. **`git reset --hard` / `git clean -fd` are BANNED** (standing lesson 2).
+    Post the result + commit hash in 🔧 Build & Git.
+- names: > `Source/GitClaudeUnrealTest/Siegebound/SummonedUnit.{h,cpp}` · commit on main, no push. Law: the hard gate (PASS QA report before commit).
+
+### Manager ruling — `BP_Unit_Wizard`'s STATIC `VisualMesh` (2026-07-27, on TASK-326 §7 finding 1)
+
+**Finding:** `BP_Unit_Wizard`'s static `VisualMesh` is yaw `0` / Z `0`; all 11 other units carry yaw `-90` / Z `-CapsuleHalfHeight`. Latent only today (the static component is hidden the moment `SK_Wizard` resolves, and the placement ghost uses the controller's own `GhostYawOffset` actor), but if `SK_Wizard` ever failed to load the Wizard would render **mis-faced AND floating 88 cm** — the runtime Z derivation is on the SK path only. It is authored BP data, so **TASK-327's C++ fix does not cover it.**
+
+**RULING: option (a) — a small, separate BP-data task (TASK-334). NOT folded into TASK-328, NOT accepted as latent risk.**
+1. **Not (c) "accept it."** A fallback path that is broken only when something else breaks is the worst failure mode there is: it fires exactly when the game is already degraded, on the newest unit, in front of Jonathan. The cost to close it is ~2 minutes.
+2. **Not (b) "fold into TASK-328."** TASK-328's value is its **regression gate** — "the 9 previously-correct units are visually UNCHANGED" — proven against a diff whose pathspec is `SummonedUnit.{h,cpp}` and nothing else. Dropping a `BP_Unit_Wizard.uasset` into that commit makes `git diff --stat shows nothing foreign` untrue by construction, mixes a BP-data change into a C++ regression proof, and forfeits the batch's per-item revert model. One task = one owner = one deliverable.
+3. **On the tension with my own systemic principle** — this is the honest part. Hand-authoring a per-BP offset IS the trap this batch is closing. But the static `VisualMesh` transform is **already hand-authored on 11/12 units with no C++ owner at all**; TASK-334 therefore **RESTORES the existing shipped convention on the one unit that missed it** — it does not invent a twelfth hand-authored value or add a new ritual. Consistency-with-the-fleet now, trap-closure as its own task.
+4. **YES — the static path deserves the same C++ derivation treatment, as a FOLLOW-UP (TASK-335), and it is PARKED, not dispatched.** Reasons it is not opened now: (i) **TASK-327 is in flight** — widening a dispatched task's scope mid-session invalidates the no-op argument QA is already framed around; (ii) the static path has **no single swap site** (un-rigged units early-return before `ResolveSkeletalVisual`'s body) and its Z is **entangled with the lunge's `VisualMeshBaseRelativeLocation` caching order at BeginPlay** (`SummonedUnit.cpp:186-190`) — changing it blind risks the shipped procedural-lunge path, so ruling 1 (**diagnose-first**) applies; (iii) it is **dormant on all 12 units today** (every unit resolves its SK), so it is zero-user-visible-value work competing with the Castle batch. Recorded as a first-class board item so it cannot be lost to prose.
+
+#### TASK-334 — [FACE-wizstatic] Bring `BP_Unit_Wizard`'s static `VisualMesh` in line with the fleet (build-master, BP data only)
+- assignee: build-master
+- status: backlog
+- blocked-by: TASK-328
+- parallel-safe: no (exclusive editor + Git; **MAY run inside TASK-328's editor session** after 328's commit lands — but it is its own deliverable and its own commit, per the TASK-330/331 precedent)
+- spec: >
+    **BP DATA ONLY — one component, two values, on ONE Blueprint.** On `/Game/Blueprints/Units/BP_Unit_Wizard`, set the **static `VisualMesh`** component's relative transform to match every other unit: **`RelativeRotation = (Pitch 0, Yaw -90, Roll 0)`** and **`RelativeLocation.Z = -CapsuleHalfHeight`**. **Ruling 4 applies — READ the real half-height** off the Wizard's `CollisionCylinder` (`CapsuleHalfHeight`, measured **88** at TASK-326, so Z = **-88**); **never assume 90**, and if the readback disagrees with 88, the READBACK WINS. Leave X and Y as authored.
+    **DO NOT TOUCH `SkeletalVisualMesh` on this or any BP.** Its yaw and Z are C++-owned as of TASK-327 (CONVENTIONS "Unit mesh facing"); re-authoring it per-BP is the exact trap that batch closed, and on the Wizard it would also mask the fix. Leave `BP_Unit_{Archer,Ogre,Wizard}`'s `SkeletalVisualMesh` at 0 — C++ overwrites it at swap time.
+    **Verify** by readback (both values on the CDO component template) **and** visually: temporarily confirm the static fallback reads correctly — either in the BP viewport or by a scratch spawn — feet on the ground and facing +X. **Then confirm the live path is unaffected:** in PIE the Wizard still resolves `SK_Wizard`, so its on-screen appearance must be **byte-identical to post-TASK-328** — this task changes only the dormant fallback. Message Log clean.
+    Commit on **main, NO push**, explicit pathspec (`Content/Blueprints/Units/BP_Unit_Wizard.uasset` + board), `git diff --stat` shows nothing foreign. **No C++, no asset re-import, no `L_Arena` save, no `git reset --hard` / `git clean -fd`** (standing lesson 2). Post before/after values + commit hash in 🔧 Build & Git.
+- names: >
+    `/Game/Blueprints/Units/BP_Unit_Wizard` → component `VisualMesh` (static) → `RelativeRotation (0,-90,0)`, `RelativeLocation.Z = -88` (verify vs live `CollisionCylinder.CapsuleHalfHeight`). Law: CONVENTIONS "Skeletal rig & animation workstream (M7)" → **"Unit mesh facing"** → the STATIC `VisualMesh` clause.
+
+#### TASK-335 — [FACE-staticpath] PARKED: give the static `VisualMesh` the same C++ derivation as the skeletal path (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: **parked — NOT dispatchable** (recorded debt; needs a Jonathan/manager go-ahead, and TASK-327/328 must be landed first)
+- blocked-by: TASK-328, TASK-334
+- parallel-safe: n/a (parked)
+- spec: >
+    **Recorded debt, deliberately not opened now** (see the manager ruling above, point 4). The static `VisualMesh` transform — yaw `-90` + Z `-CapsuleHalfHeight` — is hand-authored on 11/12 `BP_Unit_<Unit>` with **no C++ owner**, which is the same latent trap CONVENTIONS "Unit mesh facing" names: unit #13 falls in on day one. The durable close is to DERIVE both in C++ (capsule-relative Z, constant yaw, `EditDefaultsOnly` exception hatch) exactly as `ResolveSkeletalVisual` does for the skeletal component.
+    **When unparked, it is DIAGNOSE-FIRST (ruling 1)** — this is not a straight port of TASK-307/327:
+      • there is **no single swap site** on the static path (un-rigged units early-return before `ResolveSkeletalVisual`'s body), so the correct site must be established, not assumed;
+      • the static component's relative LOCATION is **cached at BeginPlay as `VisualMeshBaseRelativeLocation`** (`SummonedUnit.cpp:186-190`) and drives the shipped **procedural lunge** (TASK-020) — any runtime Z write must be ordered against that cache or the lunge base drifts;
+      • the payoff is currently **dormant** (all 12 units resolve their SK, so the static path never renders) — this is durability work, not a visible fix.
+    Implies a QA review and a build-master integration when it runs.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SummonedUnit.{h,cpp}` (static `VisualMesh` path, `VisualMeshBaseRelativeLocation` ordering). Law: CONVENTIONS "Unit mesh facing" → STATIC `VisualMesh` clause ("RECORDED DEBT").
+
+---
+
+## BUILDING-AUDIT rulings (decomposed 2026-07-27) — Castle Meshy rebuild + GoldNode glow dial-back (TASK-329..333)
+
+**Origin:** Jonathan's three rulings on the TASK-309 building/tower colour audit (`handoffs/TASK-309-artist.md`; results also on the board at TASK-309). Verbatim intent:
+1. *"Route the manager to decompose the building-variant task, and make sure to check the castle, it definitely needs a meshy rebuild."* → **APPROVED — Castle full Meshy rebuild, BUILDING pipeline variant** (TASK-329 → 330 → 331).
+2. *"Dial back the goldnode glow."* → **APPROVED — one material lever, no rebuild** (TASK-332 → 333).
+3. *"Hold off on Cavalry's quadruped source for now."* → **PARKED.** FAB-007 stays authored but is NOT purchased and TASK-233 is NOT decomposed. Both carry the hold in-place (`fab/FAB-REQUESTS.md` FAB-007 · TASK-233 above). **Nobody picks either up until Jonathan lifts it.**
+
+### Manager rulings (binding for TASK-329..333)
+
+1. **RE-VERIFY, DON'T TRUST THE AUDIT (Jonathan's explicit instruction).** TASK-329 opens with an independent re-measurement of the Castle's shipped state — albedo on both metrics, the missing `albedo_delight` block, chroma retention, `lod_count`, tri count, the material/slot wiring. **If the re-verify CONTRADICTS the audit** (e.g. the albedo measures fine), the task STOPS before spending a single Meshy credit and reports to the manager. A confirmed re-verify is also the "before" half of the before/after evidence.
+2. **The Castle is the BUILDING variant, NOT the unit path.** No rig, no `SK_`, no skeleton, no `A_*` clips, no ABP — nothing in the "Skeletal rig & animation workstream" applies. What DOES apply and is unique to the Castle: the two team-coloured level instances, `ACastle` C++ refs, the `CastleAnchor_*` anchors, the plinth dead-zone, and the 75/50/25 % crumble chain.
+3. **SAME-PATH OVERWRITE IS MANDATORY — never delete+recreate.** `/Game/Meshes/SM_Castle` + `/Game/Textures/T_Castle_{D,N,ORM}` + `/Game/Materials/Instances/MI_Castle_PBR` + raw `Content/RawAssets/Castle.fbx`. The two castles are the WIN-CONDITION actors; a broken ref is a broken game.
+4. **THE CRUMBLE MESHES MUST BE RE-DERIVED — this is the trap nobody flagged and it gets its own task (TASK-331).** `SM_Castle_Crumble01/02/03` are **byte-copy duplicates of the OLD `SM_Castle`** (TASK-157) and `M_CastleCrumble` samples the SAME `T_Castle_{D,N,ORM}`. Same-path new textures + old UVs = **scrambled damage states at 75/50/25 % HP**. Shipping TASK-330 without TASK-331 ships a visible regression on the game's most important actor. TASK-331 is NOT optional and NOT "nice to have".
+5. **Castle LOD target is 3, not 4.** The M7.6 Classic-LOD law exempts castles from `lod_group='LargeProp'`: explicit **LOD1 50 % @ 0.4 / LOD2 25 % @ 0.15**, readback `lod_count == 3`. The audit's "every other building is 4" is the LargeProp group and is NOT this asset's target. Do not apply `LargeProp` to the Castle.
+6. **LOD READBACK IS A HARD GATE (the `SM_MilitiaMob` lesson).** Same-path STATIC reimport is the exact operation that wedged `SM_MilitiaMob` (TASK-322 open, root cause unknown). TASK-330 MUST read back **LOD0 welded vert count AND per-LOD triangle counts** — `lod_count` alone does NOT catch it. **A 0-triangle LOD or a `verts == tris × 3` unweld is a HARD FAILURE: restore the last-known-good `SM_Castle`, do NOT commit, report to the manager.** Never "fix" it by delete+recreate.
+7. **Verify in SIMULATE, never PIE-in-viewport, and never import while Simulate runs.** FLEET-REMASTER lane-knowledge 1 (`CaptureViewport` renders the EDITOR world) and 8 (**package saves are SILENTLY BLOCKED while Simulate runs** — that is how a broken chain reached a commit). Every import happens with Simulate STOPPED; verification happens in Simulate.
+8. **`L_Arena` is NEVER saved.** The Castle instances are read-only for this batch — no move, no rename, no re-save. Locate castles by `TActorIterator<ACastle>` / class filter, **never by actor label**: the convention names are `Castle_Blue`/`Castle_Red` but the audit observed the level labels as `Castle_0`/`Castle_1`, and `Castle_Red` carries yaw 180. Label-matching will silently find nothing.
+9. **The GoldNode fix is ONE lever and it is NOT the one it looks like.** `GlowIntensity` is driven at runtime by `AGoldNode`'s reserve-gauge MID (`Lerp(0.05, 1.0, Reserve/Initial)`), so **lowering the material's default `GlowIntensity` is a NO-OP in play.** The lever is the BASE EMISSIVE STRENGTH inside `M_GoldGlow` that `GlowIntensity` multiplies. Zero C++ change; the gauge keeps its semantics. Full law in CONVENTIONS "GoldNode / CrystalTower glow materials".
+10. **NO texture work on GoldNode or CrystalTower — ever, until this is re-ruled.** Both ship on hand-authored glow materials and never sample their baked `T_*` sets. A re-bake would change nothing on screen and would burn a session. Recorded in CONVENTIONS so it cannot be re-litigated.
+11. **Scope fence.** This batch touches the Castle and `M_GoldGlow` only. It does NOT re-open the other eight buildings (audit-closed), does NOT touch any unit, does NOT touch `L_Arena` / `DA_BattlefieldScatter` / any C++ / any Blueprint / `cards.csv` / `DT_Cards`, and does NOT re-open grounding or facing (TASK-326..328's lane).
+12. **No QA-reviewer task is owed** — there is no code task in this batch (art + build only). The gate is the build-master integration check, per the hard gate.
+
+**ALSO RECORDED, NO TASK OWED (audit findings that PREVENT waste — all three now in CONVENTIONS):**
+- **ArrowTower / Barracks bleached roofs = the `TeamRegion` slot painted `MI_TeamColor_Blue`, NOT wash-out.** The concepts' terracotta was deliberately traded for the team-colour identifier. **NEVER commission a "restore the red roof" rebuild.**
+- **CrystalTower never uses its baked textures either** (ships on `MI_CrystalGlow`; `T_CrystalTower_*` orphaned) — same waste-prevention as GoldNode.
+- **`T_Wizard_D` sits at mean linear albedo 0.0968**, the only *unit* below the 0.164 baseline (it shipped on the old conservative delight profile and was never in the fleet-11 list). **Jonathan approved that look at the time — INFORMATIONAL ONLY, no task, no action.** If he ever wants it lifted it is a cheap Stage-2-only re-bake from the cached GLB.
+
+**Dispatch map:** **TASK-329 (no-editor) and TASK-332 (editor) start immediately and in parallel with each other.** TASK-332 is editor-gated and SERIALIZES with every other editor task (TASK-310 / 323 / 325 / 326) and with Jonathan's PIE. Then TASK-330 (blocked-by 329) → TASK-331 (blocked-by 330; MAY share 330's editor session, separate commit). TASK-333 follows TASK-332. All commits on **main, NO push**.
+
+#### TASK-329 — [CASTLE-model] Castle state re-verify + Meshy image-to-3D rebuild + Stage-2 refine + turnkey import recipe (art-director, NO editor)
+- assignee: art-director
+- status: backlog — **dispatchable NOW** (headless; no editor, no MCP, no Git)
+- blocked-by: none
+- parallel-safe: **yes** (fully headless — Meshy + Blender; runs concurrently with any editor task including TASK-332)
+- spec: >
+    **STEP 0 — RE-VERIFY THE CASTLE'S STATE FIRST (Jonathan's explicit instruction — do NOT take the TASK-309 audit on trust).**
+    Independently re-measure, and quote every number in the handoff: (a) mean linear albedo of the SHIPPED `T_Castle_D.png` on BOTH
+    metrics — raw all-pixel (audit: **0.0078**) and UV-normalised over covered texels only (audit: **0.0653**), using the pipeline's own
+    formula from `Tools/ArtPipeline/refine_trellis_glb.py` (`linear = srgb_to_linear(rgb); metric = linear.mean()`); (b) that
+    `Tools/ArtPipeline/Cache/Castle/refine_report.json` genuinely has **NO `albedo_delight` block** (the claimed mechanical root cause —
+    the de-light stage never ran on this asset because the report predates TASK-193); (c) chroma retention vs
+    `Content/RawAssets/Concepts/Castle.png` (audit: **0.20×**, below the accepted floor of Cleric 0.28×); (d) the structural debt —
+    `lod_count` (audit: **1**) and triangle count (audit: **~40k**); (e) the shipped material wiring — `MI_Castle_PBR` → `T_Castle_D/N/ORM`,
+    slots `[TeamRegion, CastlePBR]`. **IF THE RE-VERIFY CONTRADICTS THE AUDIT ON (a) OR (b) — STOP.** Spend ZERO Meshy credits, post the
+    contradiction in 🎨 Art + a one-liner in 🚨 Blockers, and route to the manager. A confirmed re-verify IS the "before" evidence.
+    **STEP 1 — MESHY REBUILD (BUILDING variant).** `Tools/ArtPipeline/meshy_generate.py --mode image3d` from the approved concept
+    `Content/RawAssets/Concepts/Castle.png` (`MESHY_TOKEN` per TASK-197; **quota/credit exhaustion ⇒ exit 3 ⇒ flag 🚨 Blockers and PAUSE —
+    never fake, never silently substitute**). Cost ≈ the Wizard's ~30 credits. Note `Cache/Castle/` currently holds only `trellis_raw.glb`,
+    so this is a genuine fresh generation, not a cached re-run.
+    **STEP 2 — Stage-2 refine, BUILDING path:** cleanup → conform → remesh/decimate → UV `UVMap` → bake **D/N/ORM at 2048²** →
+    two-slot TeamRegion split → authored `UCX_SM_Castle` wall-footprint-exact hulls → FBX. **PIN the locked fleet brightness profile in
+    `pipeline_manifest.json`: `albedo_delight {ao_divide_strength 1.0, ao_floor 0.25, gamma 0.55, gain 1.2}`** — the exact values that took
+    the Footman pilot 0.0498 → 0.1639 (`d7254da`) and the fan-out default for all 11 units. **Ground-centre origin** (bottom of mesh at the
+    origin plane; the shipped min-Z ≈ 0.44 uu is the reference), **Nanite OFF**, bounds preserved within **±10 %** of
+    **~814 × 819 × 898 uu** (the plinth dead-zone / `CastlePlinthClearance` 420 are computed off these), tri **target ≤20k** with the
+    manifest **40k hard cap** (say so in the handoff if silhouette quality forces you above 20k). Slots EXACTLY and in order
+    **`[0 TeamRegion, 1 CastlePBR]`** — `ACastle` hardcodes the team recolor onto slot 0; losing or reordering `TeamRegion` breaks team
+    identification on BOTH castles.
+    **ACCEPTANCE (measure, don't eyeball):** re-measured albedo **≥ 0.164 raw AND ≥ 0.2536 UV-normalised**; chroma retention **≥ 0.28×**
+    (the Cleric floor); the baked result READS AS the warm tan sandstone of `Concepts/Castle.png` under a flat-lit preview — vivid, not the
+    black mass it ships as today. Deliver the FBX to `Content/RawAssets/Castle.fbx` (overwrite) and the PNGs to
+    `Content/RawAssets/Textures/Castle/T_Castle_{D,N,ORM}.png` (overwrite).
+    **STEP 3 — WRITE THE TURNKEY IMPORT RECIPE.** `handoffs/TASK-329-artist.md` carries everything build-master needs to run TASK-330
+    without judgement calls: exact source paths, exact same-path destinations, the slot order, texture sRGB flags (`_D` sRGB **ON**,
+    `_N` + `_ORM` **LINEAR**), the castle LOD chain (LOD1 50 % @ 0.4 / LOD2 25 % @ 0.15 — **NOT `LargeProp`**), Nanite OFF, the expected
+    per-LOD triangle counts to read back, and the before/after measurement table.
+    **NO editor, NO MCP, NO Unreal import, NO Git** — build-master owns all of those (TASK-330). Post the before/after numbers +
+    the flat-lit preview in 🎨 Art.
+    **NON-BLOCKING FALLBACK, RECORDED BUT NOT AUTHORISED:** if Meshy quota is exhausted, a Stage-2-only re-delight from the cached
+    `Cache/Castle/trellis_raw.glb` would fix the albedo alone at ZERO credits. **Do NOT silently substitute it** — Jonathan asked for a
+    Meshy rebuild by name; surface it as an option and let him choose.
+- names: >
+    Same-path targets (art produces the SOURCES, build-master imports): `Content/RawAssets/Castle.fbx`,
+    `Content/RawAssets/Textures/Castle/T_Castle_{D,N,ORM}.png` → `/Game/Meshes/SM_Castle`, `/Game/Textures/T_Castle_{D,N,ORM}`,
+    `/Game/Materials/Instances/MI_Castle_PBR` (from master `/Game/Materials/M_AssetPBR`, params `BaseColor`/`Normal`/`ORM`).
+    Slots `[0 TeamRegion → MI_TeamColor_Blue (design-time), 1 CastlePBR → MI_Castle_PBR]`. Collision `UCX_SM_Castle`.
+    Concept `Content/RawAssets/Concepts/Castle.png`. Cache `Tools/ArtPipeline/Cache/Castle/`. Manifest
+    `Tools/ArtPipeline/pipeline_manifest.json` (`engine: meshy-i23d` + the `albedo_delight` override). Report
+    `handoffs/TASK-329-artist.md`. Law: CONVENTIONS **"Castle remaster — the BUILDING same-path variant + the CRUMBLE-DERIVATION law"**
+    (NEW 2026-07-27), "Textured mesh law" (BUILDING path), "Meshy second engine (M7.5)", "Fleet Meshy remaster" (same-path overwrite).
+
+#### TASK-330 — [CASTLE-int] Same-path `SM_Castle` import + LOD chain + hard LOD readback + Simulate verify + commit (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: TASK-329
+- parallel-safe: no (EXCLUSIVE editor + Git; EDITOR-GATED — serialize with every other editor task and never during Jonathan's PIE)
+- spec: >
+    Exclusive editor session on **main**, **Simulate STOPPED before any import** (lane-knowledge 8 — package saves are silently blocked
+    while Simulate runs; that is exactly how the broken `SM_MilitiaMob` chain reached a commit). Execute the turnkey recipe in
+    `handoffs/TASK-329-artist.md`.
+    **(1) SAME-PATH IMPORT — never delete+recreate:** overwrite `/Game/Meshes/SM_Castle` from `Content/RawAssets/Castle.fbx`, and
+    `/Game/Textures/T_Castle_{D,N,ORM}` from `Content/RawAssets/Textures/Castle/`; point/refresh `/Game/Materials/Instances/MI_Castle_PBR`
+    at them. `_D` sRGB **ON**, `_N` + `_ORM` **LINEAR**. Nanite **OFF**.
+    **(2) LOD CHAIN — the CASTLE LANDMARK EXCEPTION, NOT `LargeProp`:** explicit reduction **LOD1 50 % @ screen 0.4 / LOD2 25 % @ 0.15**
+    ⇒ readback **`lod_count == 3`**. Do NOT apply `lod_group='LargeProp'` to this asset (manager ruling 5).
+    **(3) HARD LOD GATE (manager ruling 6 — the `SM_MilitiaMob` lesson):** read back **LOD0 welded vertex count AND per-LOD triangle
+    counts** and quote them in the handoff. **A 0-triangle LOD, or LOD0 verts == tris × 3 (the unweld signature), is a HARD FAILURE:**
+    restore the last-known-good `SM_Castle`, **do NOT commit**, append the evidence to the handoff and route back to the manager.
+    `lod_count` alone does NOT catch this. Never "fix" it by delete+recreate.
+    **(4) VERIFY IN SIMULATE on `L_Arena` (never PIE-in-viewport — lane-knowledge 1):** (a) both castles render the new VIVID warm
+    sandstone under the real arena sun and are **no longer darker than the grass** — capture the same framing as
+    `handoffs/TASK-309-audit-Castle-in-arena.png` so the before/after is directly comparable; (b) **team colour still reads on BOTH** —
+    Blue castle blue, Red castle red (slot 0 `TeamRegion` intact and first); (c) bounds/footprint unchanged within ±10 % and the castle
+    still sits on the ground at its anchor; (d) placement still refuses inside the plinth dead-zone (`CastlePlinthClearance`); (e) Message
+    Log clean (ensure / AccessedNone / Fatal = 0). **Locate the castles by `TActorIterator<ACastle>` / class filter, NEVER by actor label**
+    (convention says `Castle_Blue`/`Castle_Red`, the audit observed `Castle_0`/`Castle_1`; `Castle_Red` carries yaw 180) — manager ruling 8.
+    **`L_Arena` IS NEVER SAVED.** At any editor-close save prompt: SAVE the `SM_`/`T_`/`MI_` Castle assets, **DECLINE `L_Arena.umap`**.
+    **(5) COMMIT** on main with explicit pathspecs (`Content/Meshes/SM_Castle.uasset`, `Content/Textures/T_Castle_*.uasset`,
+    `Content/Materials/Instances/MI_Castle_PBR.uasset`, `Content/RawAssets/Castle.fbx`, `Content/RawAssets/Textures/Castle/*`,
+    + board/CONVENTIONS/handoff). `git diff --stat` must show nothing foreign. **NO push.** **`git reset --hard` / `git clean -fd` are
+    BANNED** (standing lesson 2 — this board was destroyed once today by exactly that).
+    Post the readbacks + before/after shots + commit hash in 🔧 Build & Git. **TASK-331 is REQUIRED to follow — the castle is not
+    considered shipped until the crumble stages are re-derived; say so in the handoff.**
+- names: >
+    Same-path: `/Game/Meshes/SM_Castle` ← `Content/RawAssets/Castle.fbx`; `/Game/Textures/T_Castle_{D,N,ORM}` ←
+    `Content/RawAssets/Textures/Castle/`; `/Game/Materials/Instances/MI_Castle_PBR`. UNTOUCHED: `L_Arena`, `ACastle` C++, every Blueprint,
+    `SM_Castle_Crumble0N` (TASK-331 owns those). Commit on main, no push. Law: CONVENTIONS "Castle remaster — the BUILDING same-path
+    variant" (LOD + bounds + slot order), "Fleet Meshy remaster" → **SAME-PATH STATIC REIMPORT — KNOWN TRAP**, the hard gate.
+
+#### TASK-331 — [CASTLE-crumble] Re-derive `SM_Castle_Crumble01/02/03` from the rebuilt castle + verify the 75/50/25 % states + commit (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: TASK-330
+- parallel-safe: no (EXCLUSIVE editor + Git; **MAY run inside TASK-330's editor session** — but it is its own deliverable and its own commit)
+- **WHY THIS TASK EXISTS (manager ruling 4 — do not drop it):** `SM_Castle_Crumble01/02/03` are **byte-copy duplicates of the OLD
+  `SM_Castle`** (TASK-157 recipe) and `M_CastleCrumble` samples the SAME `T_Castle_{D,N,ORM}` that TASK-330 just overwrote. Old geometry +
+  old UVs + NEW textures = **scrambled texture mapping on every damage state**. Without this task the castle looks great at full HP and
+  falls apart visually the instant it takes damage — on the game's win-condition actor. Nobody flagged this; it is not optional.
+- spec: >
+    Same exclusive editor session is fine (Simulate STOPPED). Re-run the TASK-157 derivation against the REBUILT castle:
+    **(1)** Duplicate the rebuilt `/Game/Meshes/SM_Castle` **over** `/Game/Meshes/SM_Castle_Crumble01`, `…02`, `…03` — **same paths, never
+    delete+recreate** (`ACastle` soft-references these strings character-for-character; `Castle.cpp:315-316,26`). A duplicate is a byte-copy,
+    so UCX/simple collision + footprint come across IDENTICAL by construction — verify crumble bounds == pristine bounds exactly, and
+    Nanite OFF inherited.
+    **(2)** Re-assign `/Game/Materials/MI_Castle_Crumble01|02|03` to **BOTH slots** of its matching stage mesh (that is what makes the WHOLE
+    castle read damaged rather than only the accent). **The MIs live at `/Game/Materials/`, NOT `Instances/`** — the code path is the
+    contract and wins over the prefix-table folder row. **Do NOT re-author `M_CastleCrumble` or the three MIs** — they sample the same-path
+    `T_Castle_*` and pick the new brighter albedo up for free. Keep the shipped stage tuning
+    (01 `Darken 0.80 / Scorch 0.12 / RoughBoost 0.30`, 02 `0.50 / 0.45 / 0.60`, 03 `0.30 / 0.80 / 0.85`).
+    **(3) VERIFY in Simulate on `L_Arena`:** drive one castle down through **75 % → 50 % → 25 %** and confirm each stage fires ONCE, in
+    order, with a monotonic darken/char progression on the NEW geometry (textures mapped correctly — no scrambling, no UV smear), debris
+    pops, and the progression still reads as the same granite. Then confirm **`ResetCastle` / Play Again restores the pristine rebuilt
+    `SM_Castle` + the per-team accent** via `ApplyTeamVisuals`. Message Log clean.
+    **(4)** Recheck the darkest stage against the new brighter base: stage 03 must still read as a near-dead charred silhouette, and stage
+    01 must still read as clearly damaged rather than pristine. If the new brighter albedo makes a stage read wrong, **flag it to the
+    manager with the observation — do NOT re-tune the MI parameters unilaterally** (that is an art call).
+    **(5) COMMIT** on main, explicit pathspecs (`Content/Meshes/SM_Castle_Crumble01|02|03.uasset` + board/handoff), `git diff --stat` clean
+    of anything foreign, **NO push**. `L_Arena` NEVER saved; `git reset --hard` / `git clean -fd` BANNED.
+    Post the stage-progression shots + commit hash in 🔧 Build & Git.
+- names: >
+    Same-path duplicates: `/Game/Meshes/SM_Castle_Crumble01|02|03` ← the rebuilt `/Game/Meshes/SM_Castle`. Re-assigned (not re-authored):
+    `/Game/Materials/MI_Castle_Crumble01|02|03` (master `/Game/Materials/M_CastleCrumble`, debris `/Game/VFX/NS_CastleDebris`).
+    Code refs (read-only): `ACastle::ApplyCrumbleStage` / `ResetCastle` / `ApplyTeamVisuals`. Commit on main, no push.
+    Law: CONVENTIONS "Castle remaster — the BUILDING same-path variant" → **CRUMBLE-DERIVATION LAW**; precedent `handoffs/TASK-157-artist.md`.
+
+#### TASK-332 — [GOLD-glow] Dial back the GoldNode emissive on `M_GoldGlow` — ONE lever, no rebuild (art-director, editor)
+- assignee: art-director
+- status: backlog — **dispatchable NOW** (editor-gated: needs an exclusive editor + MCP; must not run during Jonathan's PIE)
+- blocked-by: none
+- parallel-safe: **yes vs TASK-329** (different asset, different discipline) — **no vs any other EDITOR task** (serialize with TASK-310 / 323 / 325 / 326 / 330 / 331)
+- **JONATHAN'S GATE IS SATISFIED.** The TASK-309 audit said this needed "Jonathan's eye on the intended look before anyone changes it".
+  His ruling *"dial back the goldnode glow"* IS that eye. Approved — but the DIRECTION is approved, not a specific number; the number is the
+  art-director's call inside the acceptance band below.
+- spec: >
+    **THE DEFECT (measured, TASK-309):** `M_GoldGlow` drives the emissive so hard that **86.3 % of `SM_GoldNode` renders past luma 0.85** —
+    a featureless cream blob that destroys the grey-rock / gold-crystal / orange-crack separation the concept has. Reference point that
+    WORKS: CrystalTower's comparable glow blows only **6.5 %** and still reads as a crystal.
+    **⚠️ THE OBVIOUS LEVER IS THE WRONG ONE — READ THIS BEFORE TOUCHING THE MATERIAL.** `GlowIntensity` is a **runtime-driven** scalar:
+    `AGoldNode::UpdateGlowGauge()` creates a lazy MID on slot 0 and writes
+    `GlowIntensity = Lerp(GlowIntensityDepleted 0.05, GlowIntensityFull 1.0, Reserve/InitialReserve)` every gauge tick (the depleting-mine
+    reserve gauge, TASK-253/257). **Lowering the material's DEFAULT `GlowIntensity` is therefore a NO-OP in play — the MID overwrites it
+    with 1.0 at full reserve.** **THE CORRECT LEVER: reduce the BASE EMISSIVE STRENGTH authored INSIDE `M_GoldGlow` — the value that the
+    `GlowIntensity` parameter multiplies.** Zero C++ change, the gauge keeps its exact semantics (`GlowIntensityFull = 1.0` still means
+    "the authored look", which is simply dimmer), and the depleted-ember floor scales down proportionally.
+    **MUST NOT REGRESS (the regression set):** (a) `GlowIntensity` stays a **live scalar parameter with that exact name** — renaming or
+    deleting it silently kills the reserve gauge with no error (`AGoldNode::GlowIntensityParamName`); (b) the **TASK-226 0.1 Hz ±12 % sine
+    emissive pulse** stays; (c) the **TASK-296c "keep-both" superset** (the `GlowIntensity` Multiply AND the sine pulse merged together)
+    stays intact; (d) **STOCK NODES AND PARAMETERS ONLY — the Custom-HLSL BAN applies** (CONVENTIONS "Material & Niagara lane laws":
+    a Custom HLSL node detonates shader permutations and wedges the editor under this Substrate + HW-RT stack); (e) gold nodes still glow
+    **regardless of team** (the Team-contract exception) — intensity MODULATION, never material replacement.
+    **DO NOT TOUCH THE TEXTURES.** `T_GoldNode_{D,N,ORM}` are **ORPHANED** — `SM_GoldNode` slot 0 carries `M_GoldGlow` directly and never
+    samples them. A texture re-bake changes NOTHING on screen and burns a session (CONVENTIONS "GoldNode / CrystalTower glow materials").
+    **ACCEPTANCE (measure it the same way the audit did, so the numbers are comparable):** `CaptureAssetImage` on `SM_GoldNode` with its
+    real material → blown-past-luma-0.85 fraction **≤ 15 %** (target the CrystalTower band, ~5–10 %), **AND** the rock / gold / orange-crack
+    separation is legible again, **AND** the node still reads as unmistakably warm-yellow **glowing** at gameplay camera distance — the
+    failure mode on the other side is a dull rock nobody notices. Capture before/after and quote both blown-% numbers.
+    Save the material; **do NOT commit** (build-master owns Git — TASK-333). **No C++, no Blueprint, no `L_Arena` save, no Git.**
+    Post before/after + both numbers in 🎨 Art; hand off to TASK-333.
+- names: >
+    `/Game/Materials/M_GoldGlow` (base emissive strength ↓; scalar param **`GlowIntensity` PRESERVED by name**; TASK-226 sine pulse +
+    TASK-296c superset preserved). Consumer: `/Game/Meshes/SM_GoldNode` slot 0. Runtime driver (read-only):
+    `Source/GitClaudeUnrealTest/Siegebound/GoldNode.{h,cpp}` — `UpdateGlowGauge`, `GlowIntensityParamName`, `GlowIntensityFull 1.0`,
+    `GlowIntensityDepleted 0.05`. **Orphaned, DO NOT TOUCH:** `/Game/Textures/T_GoldNode_*`. Report `handoffs/TASK-332-artist.md`.
+    Law: CONVENTIONS **"GoldNode / CrystalTower glow materials — as-shipped truth + the emissive brightness lever"** (NEW 2026-07-27),
+    "Material & Niagara lane laws" (Custom-HLSL BAN), "Team contract" (gold-node exception), "Mirrored depleting mines" (the gauge).
+
+#### TASK-333 — [GOLD-glow-int] Verify the dialled-back glow at BOTH gauge extremes in `L_Arena` + commit (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: TASK-332
+- parallel-safe: no (exclusive editor + Git; EDITOR-GATED)
+- spec: >
+    On **main**, exclusive editor, **Simulate STOPPED for any save**, verify in **Simulate** on `L_Arena` (never PIE-in-viewport —
+    lane-knowledge 1). The point of this task is that the reserve gauge makes this a TWO-POINT check, not one:
+    **(a) FULL RESERVE (MID writes `GlowIntensity` 1.0 = the authored look):** the mine reads warm-yellow and clearly glowing under the real
+    arena sun, but the rock / gold / orange-crack separation is now legible — no cream blob. Quote the blown-past-luma-0.85 fraction and
+    compare it to the 86.3 % before / the ≤15 % target / CrystalTower's 6.5 % reference.
+    **(b) DEPLETED (MID writes 0.05):** the depleted ember is **still visible as an ember** — dimmer, not black. A dial-back that makes a
+    depleted mine invisible has broken the zero-UI reserve signal and is a FAIL; report it rather than shipping it.
+    **(c) The gauge still FUNCTIONS:** drive a mine's reserve down (miners or a direct reserve set) and confirm the glow dims
+    **continuously** with it — proof the `GlowIntensity` param is still wired and the MID still finds it by name.
+    **(d)** All six mines behave identically and gold nodes still glow **regardless of team**; Message Log clean (ensure / AccessedNone /
+    Fatal = 0). Capture before/after for Jonathan.
+    **COMMIT** on main with explicit pathspecs (`Content/Materials/M_GoldGlow.uasset` + board/CONVENTIONS/handoff), `git diff --stat` shows
+    nothing foreign, **NO push**. `L_Arena` NEVER saved. **`git reset --hard` / `git clean -fd` BANNED.**
+    If (b) or (c) fails, restore the last-known-good `M_GoldGlow`, do NOT commit, and route back to art-director with the observation.
+    Post the readbacks + commit hash in 🔧 Build & Git.
+- names: >
+    `/Game/Materials/M_GoldGlow` · consumers `/Game/Meshes/SM_GoldNode` (6 mine instances in `L_Arena`, read-only) · gauge driver
+    `AGoldNode::UpdateGlowGauge` (read-only). Commit on main, no push. Law: CONVENTIONS "GoldNode / CrystalTower glow materials",
+    "Mirrored depleting mines" (gauge law), the hard gate (integration check before commit).
+
+---
 
 ## Post-M7.6-merge main-lane follow-ups (decomposed 2026-07-25) — TASK-297 + the deck-builder resume
 

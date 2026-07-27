@@ -111,11 +111,20 @@
     "Castle": {
       "category": "building",
       "mode": "bake",
+      "engine": "meshy-i23d",
       "trellis_resolution": "1536",
-      "tri_budget": 40000,
+      "tri_budget": 20000,
+      "_tri_budget_note": "TASK-329 (2026-07-27): lowered 40000 -> 20000 per the Castle remaster law's 'target <=20k, manifest hard cap 40k'. The shipped 40k was recorded structural debt; the LOD chain (LOD1 50% @ 0.4 / LOD2 25% @ 0.15 — NOT LargeProp) is the primary perf fix, not a silhouette sacrifice. Raise toward 40k ONLY if the preview gate shows the landmark gate/wall/tower read degrading.",
       "bake_resolution": 2048,
       "origin": "ground-center",
       "fit_mode": "box",
+      "albedo_delight": {
+        "_note": "TASK-329 pin (2026-07-27): THE mechanical root cause of the Castle's 0.0078 raw / 0.0653 UV-normalised albedo — the shipped bake (2026-07-08) PREDATES TASK-193 and carries NO albedo_delight block at all, i.e. the de-light stage never ran on this asset. These are the LOCKED fleet values (Footman-validated, d7254da) that took the Footman pilot 0.0224 -> 0.1639 and were fanned out to all 11 units. Acceptance floor is DUAL: >=0.164 raw AND >=0.2536 UV-normalised (buildings carry 12-33% UV coverage vs units' 59-73%, so raw alone under-reports a building).",
+        "ao_divide_strength": 1.0,
+        "ao_floor": 0.25,
+        "gamma": 0.55,
+        "gain": 1.2
+      },
       "target_dims_ue": [814.5, 820.0, 900.0],
       "_dims_source": "TASK-013 blockout: 814.5 x 820.0 x 900.0, ground-center; box fit keeps bounds well inside the ±10% ruling",
       "pre_rotate_z_deg": 0.0,
