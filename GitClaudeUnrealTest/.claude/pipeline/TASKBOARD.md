@@ -1429,7 +1429,7 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
 
 #### TASK-330 — [CASTLE-int] Same-path `SM_Castle` import + LOD chain + hard LOD readback + Simulate verify + commit (build-master)
 - assignee: build-master
-- status: backlog
+- status: **done** (2026-07-27, commit `fcb1ec0`) — same-path import + explicit textures; hard LOD gate PASS (lod_count 3, tris 20000/10000/5000, LOD0 24,333 verts ≠ tris×3, bounds 814.52×820.56×894.87); Simulate verify (a)–(e) PASS both castles; handoff `handoffs/TASK-330-buildmaster.md`. Raw sources were already committed in `7bedf58`.
 - blocked-by: TASK-329
 - parallel-safe: no (EXCLUSIVE editor + Git; EDITOR-GATED — serialize with every other editor task and never during Jonathan's PIE)
 - spec: >
@@ -1467,7 +1467,7 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
 
 #### TASK-331 — [CASTLE-crumble] Re-derive `SM_Castle_Crumble01/02/03` from the rebuilt castle + verify the 75/50/25 % states + commit (build-master)
 - assignee: build-master
-- status: backlog
+- status: **done** (2026-07-27, commit `a442ad6`) — all 3 re-derived same-path from the rebuilt castle (bounds bit-identical, LOD 3-chain, both slots `MI_Castle_Crumble0N`); 75/50/25 % fired once each in order + ResetCastle restores pristine+team accent; UV mapping clean (no scramble). **⚠️ MANAGER FLAG:** vs the new bright base, stage 1 no longer reads "battle-worn but standing" — pristine→stage1 wall luma 77.5→28.0 and stages 1/2/3 measure 28.0/28.9/29.2 (visually flat between stages; stage 3 still reads near-dead charred, PASS). MI params NOT touched per ruling — see `handoffs/TASK-331-buildmaster.md`.
 - blocked-by: TASK-330
 - parallel-safe: no (EXCLUSIVE editor + Git; **MAY run inside TASK-330's editor session** — but it is its own deliverable and its own commit)
 - **WHY THIS TASK EXISTS (manager ruling 4 — do not drop it):** `SM_Castle_Crumble01/02/03` are **byte-copy duplicates of the OLD
