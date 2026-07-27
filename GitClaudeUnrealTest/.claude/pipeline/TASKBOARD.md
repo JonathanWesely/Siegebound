@@ -1297,7 +1297,7 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
 
 #### TASK-328 — [FACE-int] Compile the facing fix + verify all 12 units in PIE + commit (build-master)
 - assignee: build-master
-- status: **done** (2026-07-27) — compile green (14.79 s); real-PIE verified on L_Arena: 16/16 live units (both teams) read `SkeletalVisualMesh (0,-90,0)`, Archer/Ogre/Wizard march/attack/die correctly, 9 controls unchanged, ensure/AccessedNone/Fatal = 0; shots `handoffs/TASK-328-verify-*.png`, report `handoffs/TASK-328-buildmaster.md`; code was already on main in `7bedf58` (Jonathan self-commit) — docs/shots committed at the TASK-328 commit (hash recorded at TASK-334's flip)
+- status: **done** (2026-07-27) — compile green (14.79 s); real-PIE verified on L_Arena: 16/16 live units (both teams) read `SkeletalVisualMesh (0,-90,0)`, Archer/Ogre/Wizard march/attack/die correctly, 9 controls unchanged, ensure/AccessedNone/Fatal = 0; shots `handoffs/TASK-328-verify-*.png`, report `handoffs/TASK-328-buildmaster.md`; code was already on main in `7bedf58` (Jonathan self-commit) — docs/shots committed at `aad4b08`
 - blocked-by: TASK-327-QA
 - parallel-safe: no (exclusive editor + Git)
 - spec: >
@@ -1318,7 +1318,7 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
 
 #### TASK-334 — [FACE-wizstatic] Bring `BP_Unit_Wizard`'s static `VisualMesh` in line with the fleet (build-master, BP data only)
 - assignee: build-master
-- status: backlog
+- status: **done** (2026-07-27) — static `VisualMesh` template set to `(0,-90,0)` / `Z = -88` (live `CollisionCylinder.CapsuleHalfHeight` readback = 88, agrees with TASK-326); `SkeletalVisualMesh` untouched at constructor default (C++-owned); live PIE Wizard unchanged — still resolves `SK_Wizard` (SK visible at C++-derived −90/−88.07, static hidden), ensure/AccessedNone/Fatal = 0; own commit on main (hash in 🔧 Build & Git post)
 - blocked-by: TASK-328
 - parallel-safe: no (exclusive editor + Git; **MAY run inside TASK-328's editor session** after 328's commit lands — but it is its own deliverable and its own commit, per the TASK-330/331 precedent)
 - spec: >
