@@ -93,17 +93,17 @@
       "pre_rotate_z_deg": 0.0,
       "voxel_size_ue": 1.5,
       "albedo_delight": {
-        "_note": "TASK-225 pin (2026-07-19): THE recorded-dark asset (TASK-150/151). Values = TASK-195 tuned A/B winner, proven zero-clip (shoulder 0.0%, mean 0.004->0.059).",
+        "_note": "TASK-340 PER-ASSET OVERRIDE (2026-07-27, pre-authorized by manager ruling 5 / CONVENTIONS 'PER-ASSET albedo_delight OVERRIDE' law): gamma 0.55 -> 0.53, gain 1.2 -> 1.26 on the fresh meshy-i23d donor (task 019fa629-462f-7d44-87c2-e544b2d54d70). Method note: concept-retention is measured flat-lit-preview vs concept with the VALIDATED bg-distance>0.06 foreground mask (reproduces the recorded Castle 1.0133 retention to 0.2%; a stricter 0.12 mask FAILS that validation by 11% and briefly mis-steered a gain-1.14 temper trial -- reverted). Under the validated method the LOCKED profile on this donor measured UV-norm 0.2707 (floor PASS) but retention 0.8549 -- only 0.6% above the 0.85 anti-dark edge, and Jonathan's complaint IS darkness. gamma 0.53/gain 1.26 lifts mossy mids/darks more than highlights, targeting retention ~0.90-0.95 (band target ~1.0) with UV-norm ~0.29. Anti-bleach guard intact (bleach flag needs >1.25x AND >0.60 UV-norm). Prior _note (TASK-225 pin) superseded for this asset only.",
         "ao_divide_strength": 1.0,
         "ao_floor": 0.25,
-        "gamma": 0.55,
-        "gain": 1.2
+        "gamma": 0.53,
+        "gain": 1.26
       },
       "team_region": {
         "max_fraction": 0.35,
-        "_verified": "TASK-147 STARTING GUESS against a not-yet-generated mesh (tuned at the TASK-150 eyeball gate). Concept: bare GREEN-skinned horned brute in tattered hide + spiked shoulder pauldron armor, chest straps, wide belt, stone maul in one fist. Follows the Footman/Archer shoulder-cap recipe but DELIBERATELY OMITS a helm_dome selector: the ogre has NO helmet (bare horned head) so any full-width top-z dome would paint his face/head/horns (the Archer bare-head lesson, TASK-087). Single upward-facing shoulder-cap band kept BELOW the head to target the pauldron/shoulder armor only. — TASK-194 VERIFIED 2026-07-18: shipped refine_report 2.1% area / 353 faces; Cache/Ogre/teamregion_check renders show the band riding the pauldron/shoulder line with zero head/horn/face paint. Selector kept as-is.",
+        "_verified": "TASK-147 STARTING GUESS against a not-yet-generated mesh (tuned at the TASK-150 eyeball gate). Concept: bare GREEN-skinned horned brute in tattered hide + spiked shoulder pauldron armor, chest straps, wide belt, stone maul in one fist. Follows the Footman/Archer shoulder-cap recipe but DELIBERATELY OMITS a helm_dome selector: the ogre has NO helmet (bare horned head) so any full-width top-z dome would paint his face/head/horns (the Archer bare-head lesson, TASK-087). Single upward-facing shoulder-cap band kept BELOW the head to target the pauldron/shoulder armor only. — TASK-194 VERIFIED 2026-07-18: shipped refine_report 2.1% area / 353 faces; Cache/Ogre/teamregion_check renders show the band riding the pauldron/shoulder line with zero head/horn/face paint. Selector kept as-is. — TASK-340 TUNE 2026-07-27: z-band 0.66-0.84 -> 0.62-0.86 (min_dot kept 0.55) — the exact lever the TASK-316 handoff recorded for its 1.33% weak team read (folded TASK-324 lever; acceptance band 1.7-2.5%, target ~2.1%; a min_dot 0.50 trial measured 2.8% = over-ceiling, reverted). Still ONE upward-facing shoulder-cap band BELOW the head (no helm_dome — bare-horned head), so no face/horn paint and no silhouette striping.",
         "selectors": [
-          { "name": "shoulder_caps", "box": { "min": [0.10, 0.10, 0.66], "max": [0.90, 0.90, 0.84] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
+          { "name": "shoulder_caps", "box": { "min": [0.10, 0.10, 0.62], "max": [0.90, 0.90, 0.86] }, "normal": { "direction": [0.0, 0.0, 1.0], "min_dot": 0.55 } }
         ]
       },
       "ucx": null
