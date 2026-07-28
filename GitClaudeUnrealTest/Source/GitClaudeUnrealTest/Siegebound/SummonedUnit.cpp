@@ -35,7 +35,8 @@
 #include "Siegebound/SiegeFeedbackLibrary.h"
 #include "Siegebound/SiegeHitFlashComponent.h"
 #include "Siegebound/SiegeMeshJuiceComponent.h"
-#include "Siegebound/SiegePlayerController.h" // W1 TASK-275: reads the latched Shield Wall command (GetCurrentCommand/HasIssuedCommand/GetHoldLocation/GetHoldRadius) — complete type needed for the const-getter calls
+#include "Siegebound/SiegePlayerController.h" // W1 TASK-275: reads the latched Shield Wall command (GetCurrentCommand/HasIssuedCommand); TASK-344: resolves the live group (FindUnitGroup) — complete type needed for the const calls
+#include "Siegebound/UnitCommand.h" // TASK-344: FSiegeUnitGroup complete type (UpdateStateGrouped reads its zones/type) — explicit include, not just via the controller header
 #include "TimerManager.h"
 
 namespace
@@ -1101,6 +1102,30 @@ void ASummonedUnit::UpdateState()
 		return;
 	}
 
+	// ── Group orders (TASK-344) ────────────────────────────────────────────────
+	// Per-unit HOLD/AMBUSH assignments dispatch ABOVE the stance gate below —
+	// grouped behavior is per-unit and cannot live in the team-stance body. Only
+	// the controller's eligibility-gated AssignCommandGroup ever sets the id
+	// (Standard + Blue only), so this never fires for Siege/Support/miners or
+	// bot/Red units — their paths above and below are byte-unchanged. A DEAD id
+	// (group released by T/E, all-dead pruned, steal-emptied, or Play-Again
+	// reset) SELF-HEALS: clear it and fall through to the stance gate THIS same
+	// tick — never a stall.
+	if (CommandGroupId != INDEX_NONE)
+	{
+		const UWorld* GroupWorld = GetWorld();
+		const ASiegePlayerController* GroupPC = GroupWorld
+			? Cast<ASiegePlayerController>(GroupWorld->GetFirstPlayerController())
+			: nullptr;
+		const FSiegeUnitGroup* Group = GroupPC ? GroupPC->FindUnitGroup(CommandGroupId) : nullptr;
+		if (Group)
+		{
+			UpdateStateGrouped(*Group);
+			return;
+		}
+		ClearCommandGroup();
+	}
+
 	// ── Shield Wall unit commands (W1 TASK-275) ────────────────────────────────
 	// The local human player (Blue — CONVENTIONS team contract: "player is always
 	// ETeamId::Blue") may latch a stance (Attack/Hold/Defend) that reshapes THIS
@@ -1277,39 +1302,6 @@ void ASummonedUnit::UpdateStateStandardCommanded(const ASiegePlayerController& P
 
 	switch (PC.GetCurrentCommand())
 	{
-	case ESiegeUnitCommand::Hold:
-	{
-		// HOLD: only enemies inside the hold disc are eligible. Re-picking each tick
-		// inherently DROPS a target that has left the disc (no in-disc enemy ⇒ nullptr),
-		// and ignores enemies outside it even if they would be in normal aggro range.
-		const FVector HoldLoc = PC.GetHoldLocation();
-		const float   HoldRad = PC.GetHoldRadius();
-
-		CurrentTarget = AcquireEnemyNearPoint(HoldLoc, HoldRad);
-
-		if (CurrentTarget)
-		{
-			if (GetDistanceToTarget(MyLocation, CurrentTarget) <= AttackRange)
-			{
-				EnterAttack();
-			}
-			else
-			{
-				EnterAdvance(CurrentTarget);
-			}
-		}
-		else if (FVector::DistSquared2D(MyLocation, HoldLoc) <= FMath::Square(HoldArrivalTolerance))
-		{
-			// gathered at the hold point with no in-disc enemy: hold position
-			EnterIdle();
-		}
-		else
-		{
-			// march to the hold POINT (not an actor) — the location variant of Advance
-			EnterAdvanceToLocation(HoldLoc);
-		}
-		break;
-	}
 	case ESiegeUnitCommand::Defend:
 	{
 		// DEFEND: fight only enemies within the defend disc of the OWN castle, else fall
@@ -1343,6 +1335,13 @@ void ASummonedUnit::UpdateStateStandardCommanded(const ASiegePlayerController& P
 		}
 		break;
 	}
+	case ESiegeUnitCommand::Hold:
+		// DEFENSIVE fall-through (TASK-344): the team-wide HOLD stance is
+		// SUPERSEDED by the per-unit group orders (UpdateStateGrouped) and nothing
+		// latches it any more — SetUnitCommand(Hold) has no remaining caller. The
+		// enum member stays declared (WBP_HUD's stance switch pins depend on the
+		// byte layout), so a stale/out-of-contract Hold value simply behaves as
+		// ATTACK instead of dereferencing the deleted hold-point state.
 	case ESiegeUnitCommand::Attack:
 	default:
 	{
@@ -1395,6 +1394,132 @@ void ASummonedUnit::UpdateStateStandardCommanded(const ASiegePlayerController& P
 		break;
 	}
 	}
+}
+
+void ASummonedUnit::UpdateStateGrouped(const FSiegeUnitGroup& Group)
+{
+	// Reached ONLY through the UpdateState group dispatch (CommandGroupId resolved
+	// to a live group on the local controller). Priority ladder (CONVENTIONS
+	// "Group orders" behavior law): enemies in the ATTACK zone → else enemies in
+	// the POSITION zone → else walk to the per-unit station and wait. Anti-thrash
+	// STICKINESS (the TASK-280/282 freeze lesson): the current target is KEPT
+	// while alive and zone-valid — acquisition runs ONLY when target-less, so the
+	// goal can never flip every 0.25 s tick the way the retired box-first search
+	// did. There is deliberately NO LeashRange here: the zones ARE the leash for
+	// HOLD, and AMBUSH's whole point is the unbounded chase.
+	const FVector MyLocation = GetActorLocation();
+
+	// a dead/destroyed target is dropped for BOTH types
+	if (CurrentTarget && !IsTargetAlive(CurrentTarget))
+	{
+		CurrentTarget = nullptr;
+	}
+
+	// zone validity of a surviving target (2D disc tests, matching
+	// AcquireEnemyNearPoint's candidate-location disc filter)
+	if (CurrentTarget && Group.Type == ESiegeGroupCommandType::Hold)
+	{
+		const FVector TargetLocation = CurrentTarget->GetActorLocation();
+		const bool bTargetInAttackZone =
+			FVector::DistSquared2D(TargetLocation, Group.AttackCenter) <= FMath::Square(Group.AttackRadius);
+		const bool bTargetInPositionZone =
+			FVector::DistSquared2D(TargetLocation, Group.PositionCenter) <= FMath::Square(Group.PositionRadius);
+
+		if (!bTargetInAttackZone && !bTargetInPositionZone)
+		{
+			// HOLD leash: the tick the target exits BOTH zones it is dropped —
+			// disengage; target-less below, the unit returns toward its station.
+			// AMBUSH deliberately skips this whole block while a live target
+			// exists (the chase-to-the-kill leash-exemption): it keeps the
+			// target until the kill, then the ladder resumes.
+			CurrentTarget = nullptr;
+		}
+		else if (!bTargetInAttackZone)
+		{
+			// single MONOTONE upgrade (HOLD only): a position-tier target yields
+			// to an attack-zone enemy the moment one exists. The step only ever
+			// goes position→attack — an attack-tier target is never downgraded —
+			// so the tiers cannot oscillate (the anti-ping-pong guarantee).
+			if (AActor* UpgradeTarget = AcquireEnemyNearPoint(Group.AttackCenter, Group.AttackRadius))
+			{
+				CurrentTarget = UpgradeTarget;
+			}
+		}
+	}
+
+	// acquisition ONLY when target-less (stickiness): tier 1 = the attack zone,
+	// tier 2 = the position zone. AMBUSH acquires through the same tiers — its
+	// exemption above only governs when an already-held target is RELEASED.
+	if (!CurrentTarget)
+	{
+		CurrentTarget = AcquireEnemyNearPoint(Group.AttackCenter, Group.AttackRadius);
+	}
+	if (!CurrentTarget)
+	{
+		CurrentTarget = AcquireEnemyNearPoint(Group.PositionCenter, Group.PositionRadius);
+	}
+
+	if (CurrentTarget)
+	{
+		if (GetDistanceToTarget(MyLocation, CurrentTarget) <= AttackRange)
+		{
+			EnterAttack();
+		}
+		else
+		{
+			EnterAdvance(CurrentTarget);
+		}
+		return;
+	}
+
+	// tier 3 — no eligible enemy in either zone: advance to the per-unit station
+	// (PositionCenter + the confirm-time sunflower offset — the spread that kills
+	// mill-at-one-point) and wait. The existing 150 uu HoldArrivalTolerance reads
+	// "gathered"; EnterAdvanceToLocation carries the TASK-275 kite-fix, so a
+	// stale actor-chase can never strand the return leg.
+	const FVector Station = Group.PositionCenter + GroupStationOffset;
+	if (FVector::DistSquared2D(MyLocation, Station) <= FMath::Square(HoldArrivalTolerance))
+	{
+		EnterIdle();
+	}
+	else
+	{
+		EnterAdvanceToLocation(Station);
+	}
+}
+
+void ASummonedUnit::AssignCommandGroup(int32 GroupId, const FVector& StationOffset)
+{
+	// controller-pushed at the stage-3 confirm (TASK-344). The offset arrives
+	// precomputed and nav-projected — this unit never recomputes it.
+	CommandGroupId = GroupId;
+	GroupStationOffset = StationOffset;
+
+	// a NEW order replaces the old behavior (the release law): drop any current
+	// target so the next state tick (≤0.25 s) re-targets from the NEW zones —
+	// without this, an AMBUSH group inheriting a stale far-away chase target
+	// would pursue something the player never circled.
+	CurrentTarget = nullptr;
+}
+
+void ASummonedUnit::ClearCommandGroup()
+{
+	CommandGroupId = INDEX_NONE;
+	GroupStationOffset = FVector::ZeroVector;
+}
+
+bool ASummonedUnit::IsGroupCommandEligible() const
+{
+	// the recorded exclusion law (CONVENTIONS "Group orders"): ONLY the player's
+	// (Blue) living, non-match-end-frozen STANDARD units take group orders —
+	// Siege (Ogre/Sapper), Support (Cleric) and None (miners) keep their own
+	// bodies, and bot/Red units never participate. The resumable spell freeze
+	// does NOT exclude: a frozen-but-thawing unit may be circled and obeys once
+	// it wakes (its UpdateState early-out covers the frozen window).
+	return Profile == ECardProfile::Standard
+		&& Team == ETeamId::Blue
+		&& !bDead
+		&& !bAIFrozen;
 }
 
 AActor* ASummonedUnit::AcquireEnemyNearPoint(const FVector& Center, float Radius) const

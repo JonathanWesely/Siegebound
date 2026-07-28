@@ -53,6 +53,18 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCardRefused, const FString&, Reas
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnUnitCommandChanged, ESiegeUnitCommand, NewCommand);
 
 /**
+ *  Group-order pick prompt (TASK-344, CONVENTIONS "Group orders — 3-zone HOLD +
+ *  AMBUSH"): broadcast on every 3-stage pick transition with a short
+ *  player-facing stage prompt ("HOLD: circle your units — scroll to resize",
+ *  ..., "HOLD set: 5 units"), and with an EMPTY string when the pick ends or a
+ *  release clears the groups. The WBP_HUD bind (TASK-345) is ADDITIVE: it shows
+ *  a non-empty prompt and falls back to the existing stance display on empty.
+ *  Every prompt is ALSO logged, so the feature ships without the BP edit.
+ *  Delegate law (CONVENTIONS): FOn<Owner><Event> / On<Owner><Event>.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCommandPromptChanged, const FString&, Prompt);
+
+/**
  *  Siegebound player controller — hand play, discard, and card placement mode
  *  (GDD §3.4/§3.5/§3.6; M1 placement subset + TASK-023 hand v2 + TASK-030
  *  placement v2).
@@ -188,6 +200,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Commands")
 	FOnUnitCommandChanged OnUnitCommandChanged;
 
+	/** Fired with each group-pick stage prompt; empty = pick over / groups released — the HUD falls back to its stance display (TASK-344; WBP_HUD binds additively in TASK-345). */
+	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Commands")
+	FOnCommandPromptChanged OnCommandPromptChanged;
+
 	/** The active latched unit-command stance (Attack/Hold/Defend). Defaults to Attack, but HasIssuedCommand() is false until the player first presses a key (TASK-274/275). */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Commands")
 	ESiegeUnitCommand GetCurrentCommand() const { return CurrentCommand; }
@@ -196,20 +212,24 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Commands")
 	bool HasIssuedCommand() const { return bHasIssuedCommand; }
 
-	/** The ground point picked for the Hold stance (the traced surface point from the last confirmed HOLD reticle pick). Meaningful only while GetCurrentCommand()==Hold (TASK-274/275). */
-	UFUNCTION(BlueprintPure, Category = "Siegebound|Commands")
-	FVector GetHoldLocation() const { return HoldLocation; }
-
-	/** The Hold-stance engagement radius: units on Hold fight only enemies within this 2D distance of HoldLocation (GDD Shield Wall; default 1500 uu, FLAGGED tunable Q1 for the 10x arena). */
-	UFUNCTION(BlueprintPure, Category = "Siegebound|Commands")
-	float GetHoldRadius() const { return HoldRadius; }
+	/**
+	 *  Live view of a group order (TASK-344): the group with the given id, or
+	 *  nullptr when no such group exists any more (T/E release, all-dead prune,
+	 *  steal-emptied, Play Again) — the unit-side null result SELF-HEALS the
+	 *  unit back to the legacy stance gate. The pointer aliases into UnitGroups:
+	 *  read it within the current call stack only, NEVER cache it (the array
+	 *  mutates on confirm/steal/prune).
+	 */
+	const FSiegeUnitGroup* FindUnitGroup(int32 GroupId) const;
 
 	/**
 	 *  Latches a new unit-command stance (Shield Wall, W1 TASK-274): sets
 	 *  CurrentCommand, marks bHasIssuedCommand true (so the units switch off the
 	 *  legacy body), and broadcasts OnUnitCommandChanged(NewCommand). Called by
-	 *  the T/E immediate handlers and by the HOLD reticle confirm. Idempotent —
-	 *  re-issuing the same stance re-affirms the HUD.
+	 *  the T/E immediate handlers (the HOLD stance is SUPERSEDED by group orders
+	 *  — TASK-344 — and no longer latched by anything; the enum member survives
+	 *  for WBP_HUD's switch pins). Idempotent — re-issuing the same stance
+	 *  re-affirms the HUD.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Commands")
 	void SetUnitCommand(ESiegeUnitCommand NewCommand);
@@ -406,13 +426,16 @@ protected:
 	/** IA_CancelPlace pressed (RMB/Esc): leave placement mode at no cost. */
 	void OnCancelPlacePressed();
 
-	/** IA_CmdAttack pressed (key T, TASK-273): immediately latch the Attack stance (SetUnitCommand). Cancels an in-progress HOLD pick first; ignored after match end. */
+	/** IA_CmdAttack pressed (key T, TASK-273): immediately latch the Attack stance (SetUnitCommand). Cancels an in-progress group pick AND clears every group order first (the TASK-344 release law); ignored after match end. */
 	void OnCmdAttackPressed();
 
-	/** IA_CmdHold pressed (key R, TASK-273): enter the HOLD ground-target pick (BeginHoldTarget) — the confirm click sets HoldLocation + latches the Hold stance. */
+	/** IA_CmdHold pressed (key R, TASK-273): enter the 3-stage HOLD group pick (BeginGroupPick — TASK-344 replaces the old one-circle stance pick). */
 	void OnCmdHoldPressed();
 
-	/** IA_CmdDefend pressed (key E, TASK-273): immediately latch the Defend stance (SetUnitCommand). Cancels an in-progress HOLD pick first; ignored after match end. */
+	/** IA_CmdAmbush pressed (key F, asset lands in TASK-345): enter the 3-stage AMBUSH group pick (BeginGroupPick). F stays INERT until IA_CmdAmbush exists — the binding is skipped null-safe. */
+	void OnCmdAmbushPressed();
+
+	/** IA_CmdDefend pressed (key E, TASK-273): immediately latch the Defend stance (SetUnitCommand). Cancels an in-progress group pick AND clears every group order first (the TASK-344 release law); ignored after match end. */
 	void OnCmdDefendPressed();
 
 	/** Hero died (FOnHeroDied): exit placement mode so melee suppression is never left behind. */
@@ -551,13 +574,17 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> CmdAttackAction;
 
-	/** IA_CmdHold slot (key R -> HOLD ground-target pick, TASK-273). Left unset, it soft-resolves from CmdHoldActionAsset (null-safe). */
+	/** IA_CmdHold slot (key R -> 3-stage HOLD group pick, TASK-273/344). Left unset, it soft-resolves from CmdHoldActionAsset (null-safe). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> CmdHoldAction;
 
 	/** IA_CmdDefend slot (key E -> Defend stance, TASK-273). Left unset, it soft-resolves from CmdDefendActionAsset (null-safe). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> CmdDefendAction;
+
+	/** IA_CmdAmbush slot (key F -> AMBUSH group pick, TASK-344; asset created in TASK-345). Left unset, it soft-resolves from CmdAmbushActionAsset — a missing asset skips the binding and leaves F inert (never a crash). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> CmdAmbushAction;
 
 	/** Soft path for IA_Card1 (/Game/Input/Actions/IA_Card1, created in TASK-009). */
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
@@ -603,6 +630,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TSoftObjectPtr<UInputAction> CmdDefendActionAsset;
 
+	/** Soft path for IA_CmdAmbush (/Game/Input/Actions/IA_CmdAmbush, created in TASK-345 — F key). Null-safe (see CmdAttackActionAsset): until the asset lands, F is simply inert. */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TSoftObjectPtr<UInputAction> CmdAmbushActionAsset;
+
 	/**
 	 *  Half-extent (XY) of the player's spawn box — a 2D square centered on the
 	 *  owned Castle_Blue that REPLACES the retired X<=0 half-line spawn gate
@@ -617,14 +648,34 @@ protected:
 	FVector2D SpawnBoxHalfExtent = FVector2D(840.f, 840.f);
 
 	/**
-	 *  Hold-stance engagement radius (Shield Wall commands, W1 TASK-274): units
-	 *  on the Hold stance fight only enemies within this 2D distance of the
-	 *  player-picked HoldLocation (TASK-275 consumes it via GetHoldRadius). The
-	 *  directive suggested ~1000 uu ("within that location"); raised to 1500 for
-	 *  the M7.6 10x arena — FLAGGED tunable Q1. // Shield Wall — Hold radius
+	 *  Group-order pick tunables (TASK-344, CONVENTIONS "Group orders — 3-zone
+	 *  HOLD + AMBUSH"): ALL SIX are flagged for Jonathan's feel-pass. The wheel
+	 *  steps the ACTIVE pick circle's radius by GroupRadiusWheelStep per scroll
+	 *  notch, clamped to [GroupRadiusMin, GroupRadiusMax]; each stage opens at
+	 *  its own default radius.
 	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Commands", meta = (ClampMin = "1"))
+	float GroupRadiusWheelStep = 100.f;
+
+	/** Smallest radius the wheel can shrink any pick circle to (TASK-344). FLAGGED tunable. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Commands", meta = (ClampMin = "0"))
-	float HoldRadius = 1500.f;
+	float GroupRadiusMin = 200.f;
+
+	/** Largest radius the wheel can grow any pick circle to (TASK-344). FLAGGED tunable. */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Commands", meta = (ClampMin = "0"))
+	float GroupRadiusMax = 5000.f;
+
+	/** Stage-1 SELECT circle default radius: eligible units inside it (2D) at confirm join the group (TASK-344). FLAGGED tunable. */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Commands", meta = (ClampMin = "0"))
+	float GroupSelectRadiusDefault = 1200.f;
+
+	/** Stage-2 POSITION zone default radius: the station zone the group sunflower-spreads inside, and the tier-2 engage disc (TASK-344). FLAGGED tunable. */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Commands", meta = (ClampMin = "0"))
+	float GroupPositionRadiusDefault = 700.f;
+
+	/** Stage-3 ATTACK zone default radius: the tier-1 engage trigger (TASK-344). FLAGGED tunable. */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Commands", meta = (ClampMin = "0"))
+	float GroupAttackRadiusDefault = 1500.f;
 
 	/**
 	 *  Minimum 2D distance from the nearest other ABuilding for a
@@ -718,6 +769,20 @@ private:
 	};
 
 	/**
+	 *  Stage of the 3-stage group-order pick (TASK-344): None = no pick live
+	 *  (the wheel poll and the pick branch of PlayerTick are inert). Select →
+	 *  Position → AttackZone, each stage a wheel-resizable cursor circle; LMB
+	 *  confirms a stage, RMB/Esc cancels the WHOLE flow at any stage.
+	 */
+	enum class EGroupPickStage : uint8
+	{
+		None,
+		Select,
+		Position,
+		AttackZone
+	};
+
+	/**
 	 *  Confirm click (LMB in mode): reason-mapped refusal on an invalid point
 	 *  (stay in mode); miner-cap re-gate and BP-class resolve refusals exit the
 	 *  mode with no gold spent (nothing a different click could fix); otherwise
@@ -774,44 +839,91 @@ private:
 	void DestroySpellReticle();
 
 	/**
-	 *  Enters the HOLD ground-target pick (Shield Wall, W1 TASK-274): the R-key
-	 *  location picker for the Hold stance. REUSES the spell reticle machinery
-	 *  (SpawnSpellReticle / the shared SpellReticleActor / the ground trace) — it
-	 *  does NOT build a new reticle — and follows the placement/targeting cursor
-	 *  posture (visible cursor + hero melee suppressed via HoldHero so the confirm
-	 *  click doesn't also swing). Silently ignored while placement OR spell
-	 *  targeting is live (the codebase's mutual-ignore exclusivity, extended to a
-	 *  third mode), and after match end. The picker owns the LMB (confirm) and
-	 *  RMB/Esc (cancel); no gold or stance moves until ConfirmHoldTarget.
+	 *  Enters the 3-stage group-order pick (TASK-344): the R (Hold) / F (Ambush)
+	 *  entry into SELECT → POSITION → ATTACK zone. Follows the placement /
+	 *  targeting cursor posture (visible cursor + hero melee suppressed via
+	 *  GroupPickHero so the confirm clicks don't also swing). Silently ignored
+	 *  while placement OR spell targeting is live (the codebase's mutual-ignore
+	 *  exclusivity — both directions), while a pick is already live, and after
+	 *  match end. The pick owns the LMB (stage confirm), the WHEEL (polled
+	 *  resize) and RMB/Esc (full-flow cancel); no stance or group state moves
+	 *  until the stage-3 confirm.
 	 */
-	void BeginHoldTarget();
+	void BeginGroupPick(ESiegeGroupCommandType Type);
 
 	/**
-	 *  LMB confirm in HOLD-pick mode: a trace-miss (cursor on the sky) refuses
-	 *  free and STAYS in mode (a different point can succeed — the placement/
-	 *  targeting trace-miss precedent); otherwise HoldLocation = the traced
-	 *  surface point, the mode exits (reticle destroyed, melee released), and
-	 *  SetUnitCommand(Hold) latches the stance + broadcasts.
+	 *  Per-frame pick work: cursor-to-surface trace (REUSING TraceCursorToGround
+	 *  — the surface-projection law; never the Z=0 plane) into GroupPickLocation
+	 *  / bGroupPickSurfaceValid, and moves the ACTIVE stage circle (hidden while
+	 *  the cursor is on the sky — the confirm refuses on the same flag).
 	 */
-	void ConfirmHoldTarget();
+	void UpdateGroupPickReticle();
 
 	/**
-	 *  Leaves HOLD-pick mode with NO stance change (RMB/Esc cancel, and the
-	 *  defensive teardown paths). Follows the ExitTargetingMode law: releases the
-	 *  HoldHero melee suppression BEFORE any early-out, then destroys the shared
-	 *  reticle and restores the cursor input state. Idempotent / no-op safe.
+	 *  POLLED wheel resize (CONVENTIONS wheel law: NO new InputAction — the
+	 *  wheel is globally unbound and must stay INERT outside the pick). Runs
+	 *  ONLY from the pick branch of PlayerTick: each MouseScrollUp/Down notch
+	 *  steps the ACTIVE circle's radius by GroupRadiusWheelStep, clamped to
+	 *  [GroupRadiusMin, GroupRadiusMax], and resizes its decal in place.
 	 */
-	void CancelHoldTarget();
+	void ApplyGroupPickWheel();
 
 	/**
-	 *  Per-frame HOLD-pick work: cursor-to-surface trace (REUSING
-	 *  TraceCursorToGround — the same surface-projection law as the spell reticle;
-	 *  never the Z=0 plane) into HoldPickLocation/bHoldSurfaceValid, and moves the
-	 *  shared SpellReticleActor. Mirrors UpdateSpellReticle but writes HOLD's own
-	 *  disjoint scratch state (the per-mode-update / shared-low-level-helper
-	 *  pattern the placement + targeting modes already follow).
+	 *  LMB confirm for the CURRENT stage (TASK-344). A trace-miss (cursor on the
+	 *  sky) refuses free and STAYS in the stage (the placement/targeting
+	 *  trace-miss precedent). Select: sweeps IsGroupCommandEligible units inside
+	 *  the circle (2D) — an EMPTY sweep refuses-and-stays with a HUD reason;
+	 *  otherwise the circle is dropped in place and stage 2 opens. Position:
+	 *  records the station zone, drops its circle, opens stage 3. AttackZone
+	 *  (final): builds the FSiegeUnitGroup, STEALS re-selected units from older
+	 *  groups (steal-emptied groups die immediately, markers included), computes
+	 *  + nav-projects the golden-angle sunflower stations ONCE and pushes them
+	 *  to the units, transfers the Position + Attack circles to the group as
+	 *  persistent markers, and tears the pick down (the Select circle dies).
 	 */
-	void UpdateHoldReticle();
+	void ConfirmGroupPickStage();
+
+	/**
+	 *  Leaves the pick flow with NO group/stance change (RMB/Esc at any stage,
+	 *  and the defensive teardown paths). Follows the ExitTargetingMode law:
+	 *  releases the GroupPickHero melee suppression BEFORE any early-out, then
+	 *  destroys every pick circle this flow still owns, broadcasts an EMPTY
+	 *  prompt (HUD falls back to the stance display) and restores the cursor
+	 *  input state. Idempotent / no-op safe. The stage-3 confirm funnels through
+	 *  here too — it nulls the transferred marker refs first, so only the Select
+	 *  circle dies on a completed flow.
+	 */
+	void CancelGroupPick();
+
+	/**
+	 *  Spawns ONE wheel-resizable ground circle for the pick (TASK-344) — the
+	 *  SpawnSpellReticle recipe, cloned: null-safe M_SpellReticle (missing ⇒ no
+	 *  visual, the pick still works off the trace; the shared warn-once latch),
+	 *  IDENTITY spawn then ABSOLUTE -90 pitch (the TASK-100 composition lesson),
+	 *  DecalSize=(500,R,R). Applies the optional per-stage tint through an MID
+	 *  ("StageTint" — a silent no-op until TASK-345 adds the parameter). Returns
+	 *  nullptr on any degrade; callers stay null-safe.
+	 */
+	ADecalActor* SpawnGroupCircleDecal(float Radius);
+
+	/**
+	 *  1 s maintenance reaper (TASK-344, the ≤1 s marker-removal law): compacts
+	 *  stale/dead Members out of every group and destroys any group with none
+	 *  left — its markers die with it. Also invoked synchronously by the stage-3
+	 *  steal so a steal-emptied group never outlives the confirm that emptied it.
+	 */
+	void PruneUnitGroups();
+
+	/**
+	 *  The RELEASE law (TASK-344): destroys EVERY group order — members cleared
+	 *  explicitly (immediate, no self-heal wait), markers destroyed, prompt
+	 *  emptied. Called by T/E (before SetUnitCommand) and by HandleMatchReset
+	 *  (Play Again).
+	 */
+	void ClearAllUnitGroups();
+
+	/** Broadcasts OnCommandPromptChanged AND logs the prompt (the ships-without-the-BP-bind law). Empty prompts broadcast silently (Verbose log). */
+	void BroadcastCommandPrompt(const FString& Prompt);
 
 	/**
 	 *  Instant spell resolution (M5 ruling 7 — GoldSteal/Pickpocket): NO
@@ -1037,35 +1149,73 @@ private:
 	/** One-shot latch for the missing-M_SpellReticle warning (SpawnSpellReticle — "log once" per M5 ruling 8). */
 	bool bWarnedNoReticleMaterial = false;
 
-	// --- W1 unit-command (Shield Wall) state (TASK-274). CurrentCommand /
-	//     bHasIssuedCommand / HoldLocation are the AUTHORITATIVE latched stance
-	//     the units read live (TASK-275). The bInHoldTargetMode / bHoldSurfaceValid
-	//     / HoldPickLocation / HoldHero members are the R-key location-pick scratch,
-	//     kept DISJOINT from the placement + targeting scratch (the same
-	//     no-cross-contamination discipline those two modes follow) — the three
-	//     cursor modes are mutually exclusive, so at most one is ever live. ---
+	// --- W1 unit-command (Shield Wall) stance state (TASK-274): CurrentCommand /
+	//     bHasIssuedCommand are the AUTHORITATIVE latched stance the units read
+	//     live (TASK-275). The one-circle HOLD pick scratch that used to live here
+	//     is SUPERSEDED by the group-order pick below (TASK-344). ---
 
-	/** The latched unit-command stance (Attack/Hold/Defend). Default Attack, but units run the legacy body until bHasIssuedCommand flips true. Play Again resets it (HandleMatchReset). */
+	/** The latched unit-command stance (Attack/Hold/Defend). Default Attack, but units run the legacy body until bHasIssuedCommand flips true. Play Again resets it (HandleMatchReset). Hold survives as a declared member only (WBP_HUD pins) — nothing latches it since TASK-344. */
 	ESiegeUnitCommand CurrentCommand = ESiegeUnitCommand::Attack;
 
 	/** True once the player has issued ANY command this match. Starts false (zero behavior change until the first key press, Q3 default); reset false on Play Again. */
 	bool bHasIssuedCommand = false;
 
-	/** The confirmed Hold-stance ground point (traced surface point from the last HOLD reticle confirm). Written only by ConfirmHoldTarget; reset to ZeroVector on Play Again. */
-	FVector HoldLocation = FVector::ZeroVector;
+	// --- Group-order state (TASK-344, CONVENTIONS "Group orders — 3-zone HOLD +
+	//     AMBUSH"). UnitGroups is the AUTHORITATIVE live-group store the units
+	//     resolve each state tick (FindUnitGroup). The GroupPick* members are the
+	//     3-stage pick scratch, kept DISJOINT from the placement + targeting
+	//     scratch (the same no-cross-contamination discipline) — the three cursor
+	//     modes stay mutually exclusive, so at most one is ever live. ---
 
-	/** True while the HOLD ground-target pick owns the cursor/LMB — mutually exclusive with placement AND spell targeting (each Enter or Begin entry point ignores while any other is live). */
-	bool bInHoldTargetMode = false;
-
-	/** Result of the latest HOLD-pick cursor trace: some surface answered under the cursor (the only positional gate — mirrors bTargetingSurfaceValid). */
-	bool bHoldSurfaceValid = false;
-
-	/** Surface point of the latest HOLD-pick cursor trace (the candidate HoldLocation on confirm). Z comes from the trace, never assumed 0 (the surface-projection law). */
-	FVector HoldPickLocation = FVector::ZeroVector;
-
-	/** Hero whose melee HOLD-pick suppressed — released on EVERY hold exit path (the PlacementHero/TargetingHero pattern; kept separate so a defensive ExitPlacement/ExitTargeting call can never strand a live hold suppression). */
+	/** Every live group order. Multiple concurrent groups; re-selected units are STOLEN from older groups; emptied groups + their markers are destroyed (stage-3 steal synchronously, all-dead within ≤1 s by PruneUnitGroups). UPROPERTY so the marker TObjectPtrs stay GC-visible. */
 	UPROPERTY(Transient)
-	TObjectPtr<AHeroCharacter> HoldHero;
+	TArray<FSiegeUnitGroup> UnitGroups;
+
+	/** Next group id handed out by the stage-3 confirm — never reused within this controller's lifetime, so a stale unit-side id can never alias a NEW group. */
+	int32 NextUnitGroupId = 1;
+
+	/** Drives PruneUnitGroups every second (armed once at BeginPlay; trivially cheap while no groups exist). */
+	FTimerHandle UnitGroupPruneTimerHandle;
+
+	/** Current pick stage — None = no pick live (the PlayerTick pick branch and the wheel poll are inert). */
+	EGroupPickStage GroupPickStage = EGroupPickStage::None;
+
+	/** Command type this pick will create (Hold via R, Ambush via F). Meaningful only while GroupPickStage != None. */
+	ESiegeGroupCommandType GroupPickType = ESiegeGroupCommandType::Hold;
+
+	/** Radius of the ACTIVE stage circle — seeded per stage from the Group*RadiusDefault tunables, wheel-stepped by ApplyGroupPickWheel. */
+	float GroupPickRadius = 0.f;
+
+	/** Result of the latest pick cursor trace: some surface answered under the cursor (the only positional gate — mirrors bTargetingSurfaceValid). */
+	bool bGroupPickSurfaceValid = false;
+
+	/** Surface point of the latest pick cursor trace (the stage's center on confirm). Z comes from the trace, never assumed 0 (the surface-projection law). */
+	FVector GroupPickLocation = FVector::ZeroVector;
+
+	/** Units captured by the stage-1 SELECT confirm (weak — they may die mid-flow; the stage-3 confirm re-filters). */
+	TArray<TWeakObjectPtr<ASummonedUnit>> GroupPickSelectedMembers;
+
+	/** POSITION zone recorded by the stage-2 confirm (center + radius) — consumed by the stage-3 group build. */
+	FVector GroupPickPositionCenter = FVector::ZeroVector;
+
+	/** Radius half of the stage-2 record. */
+	float GroupPickPositionRadius = 0.f;
+
+	/** The ACTIVE cursor-following stage circle. Dropped in place on each stage confirm; the stage-3 circle transfers to the group as its attack marker. */
+	UPROPERTY(Transient)
+	TObjectPtr<ADecalActor> GroupPickActiveDecal;
+
+	/** The dropped stage-1 SELECT circle (stays visible through the flow; destroyed at the final confirm/cancel — it never becomes a marker). */
+	UPROPERTY(Transient)
+	TObjectPtr<ADecalActor> GroupPickSelectDecal;
+
+	/** The dropped stage-2 POSITION circle (transfers to the group as its position marker at the final confirm). */
+	UPROPERTY(Transient)
+	TObjectPtr<ADecalActor> GroupPickPositionDecal;
+
+	/** Hero whose melee the group pick suppressed — released on EVERY pick exit path BEFORE any early-out (the PlacementHero/TargetingHero pattern; its OWN record so a defensive ExitPlacement/ExitTargeting call can never strand a live pick suppression — the QA TASK-003 warning-2 law). */
+	UPROPERTY(Transient)
+	TObjectPtr<AHeroCharacter> GroupPickHero;
 
 	/** Hero whose melee we suppressed — un-suppressed on EVERY exit path (QA TASK-003 warning 2). */
 	UPROPERTY(Transient)

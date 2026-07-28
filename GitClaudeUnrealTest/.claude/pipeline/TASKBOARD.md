@@ -1823,6 +1823,198 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
 
 ---
 
+## TWO-LANE PLAN (decomposed 2026-07-27) — Lane A: Archer+Pikeman concept-fidelity rework · Lane B: 3-zone HOLD + AMBUSH (TASK-342..346)
+
+**Authority:** Jonathan's approved plan `C:\Users\wesel\.claude\plans\groovy-bouncing-manatee.md` (verified exploration with file:line citations + his locked answers) — **the plan file wins over any summary.** Two lanes, ZERO shared files; only the single editor serializes their integration steps. All commits on **main, NO push**.
+
+### Manager rulings — Lane A (TASK-342/343)
+
+1. **The target is CONCEPT-COLOUR FIDELITY (saturation/hue), NOT brightening — Jonathan confirmed.** Both units PASS the albedo floor (Archer UV-norm 0.3980 = 1.57×, Pikeman 0.3313 = 1.31×) yet read chalky/desaturated (forest-green → grey-teal; olive → bleached cream). Raw brightening is BANNED as a lever; **Pikeman sits at the bleach edge (1.13–1.24×) and must NOT breach the 1.25× luma line.** Neither failure is ORM-side (measured: AO mid-fleet/high, metallic ≈0).
+2. **The gate is the NEW CONVENTIONS "CHROMA-FIDELITY GATE + ALPHA-MASK METHOD LAW"** (Fleet Meshy remaster — added FIRST, this stroke): chroma retention ≥ 0.60× (target ≈1.0×) · >1.35× = oversaturation flag · top-2-cluster hue shift ≤ 20° · luma retention held 0.85–1.25× · UV-norm floor maintained · **all vs the ALPHA-MASKED concept** · escape valve to the manager on first-data surprises. These are the first-ever chroma numbers for these units — the gate is v1 and honest about it.
+3. **TWO BINDING PRE-FLIGHTS (exploration-found traps, in order, before ANY Stage-2 run):** (1) **`pipeline_manifest.json` has NO `assets.Archer.albedo_delight` pin** — TASK-312's post-crash write was LOST; a re-run today silently bakes the dark script defaults `{0.6, 0.35, 0.85, 1.0}` and REGRESSES Archer darker. **PIN Archer's block (locked profile values) FIRST**; verify Pikeman's existing pin while there. (2) **Archer's luma retention must be RE-MEASURED with the alpha mask** before steering anything (the ~0.75 reading is contaminated by its concept's grey studio backdrop).
+4. **Zero-credit first; escalation is NOT self-service.** Stage-2 iteration from the cached fresh 2026-07-26 donors (`Cache/{Archer,Pikeman}/meshy_raw.glb`, ~10 s/iter, 0 credits). If the gate is unreachable by Stage-2, STOP and flag the manager: per-unit escalation to fresh image3d (~30 cr; balance authoritative **2446**) needs my go — and **Pikeman fresh-gen ADDITIONALLY needs Jonathan's answer first**, because a re-generation re-rolls the pose and reopens the ACCEPTED wide-pike-stance ruling (TASK-318). Surface, never spend blind.
+5. **The Ogre team-band ruling does NOT inherit:** Pikeman's 10.31% TeamRegion is deliberate and accepted (largest team read in the roster) — do not "normalize" it toward the Ogre's 2.1% band.
+6. **Delivery form is measured, not assumed:** if the re-baked UV layout is IDENTICAL to shipped (verify, e.g. hash/compare), deliver TEXTURE-SET-ONLY (`T_<Unit>_{D,N,ORM}` same-path — no SM/SK reimport, no LOD churn, anims trivially safe); if the UVs shifted, the full Stage-B re-rig + SM+SK chain applies. The turnkey recipe states which, per unit.
+7. **MANIFEST WRITE-SERIALIZATION (new operational rule):** TASK-342 must NOT run concurrently with TASK-340 — both write `pipeline_manifest.json` and share the ArtPipeline workspace, and **the lost Archer pin (ruling 3) is exactly what a manifest write race produces.** One art-pipeline task at a time; order is the orchestrator's call. Both remain fully parallel to the editor lane and to TASK-344.
+8. **Standing fleet law carries:** same-path overwrite; `A_{Archer,Pikeman}_*` + ABP byte-untouched; texture-skip trap (explicit texture imports + landed-readback); SAMPLER-TYPE sweep (`Failed to compile Material` grep = 0); full per-LOD readbacks where meshes move (SM ≈15000/7500/3750/1874 + welded verts, SK `lod_count==3` + URO); capsule half-heights **Archer 90 / Pikeman 95** (READ, never assume); facing/grounding C++-owned — author NO component transforms. **WATCH: Jonathan's eye final.** No QA task owed (no code); TASK-343 is the gate.
+
+### Manager rulings — Lane B (TASK-344..346)
+
+9. **CONVENTIONS supersession recorded FIRST (this stroke):** the old "Unit commands (Shield Wall stances)" HOLD flow is superseded; the full replacement law + naming (types, tunables, wheel-polling, behavior, byte-identical set) lives in CONVENTIONS **"Group orders — 3-zone HOLD + AMBUSH (2026-07-27)"**. `ESiegeUnitCommand` stays BYTE-IDENTICAL (WBP_HUD switch pins); the latched-stance law now scopes to stances only; TASK-344 implements, it does not author convention text.
+10. **One C++ task, five files, fully functional via R with zero editor assets** (F inert-null-safe until the IA lands; prompts log even without the HUD bind). QA is implied (TASK-344-QA); the editor task is deliberately SMALL (one IA + one mapping + one additive WBP bind) because the wheel is polled, not action-mapped.
+11. **TASK-345 needs the TASK-344 module COMPILED in the live editor** (the `FOnCommandPromptChanged` bind cannot see an uncompiled delegate) ⇒ it runs INSIDE TASK-346's session, after 346's compile step — the TASK-330/331 shared-session precedent, each task its own deliverable. **ONE feature commit at TASK-346** (C++ + IA + IMC + WBP + docs — the TASK-272 backend+WBP-together precedent; the editor assets are meaningless without the code, so per-item revert buys nothing here).
+12. **AMBUSH-vs-building default ships** (valid targets; "finish the kill" = besiege until destroyed) — flagged for Jonathan's feel-pass, alongside wheel sensitivity, circle readability, spread feel, and every tunable in the law.
+
+**Dispatch map:** **NOW, in parallel: TASK-344 (C++ file-only) + the art-pipeline queue (TASK-342 and TASK-340 — one at a time per ruling 7, order = orchestrator's call).** Then TASK-344 → TASK-344-QA → TASK-346 (compile) hosting TASK-345 in-session → TASK-346 (PIE matrix + commit). TASK-343 follows TASK-342 in the exclusive-editor queue (may batch both units in one session, SEPARATE commits). Editor queue overall (serialize, never during Jonathan's PIE): 332 → 339 → 337 → 338/333 → 341/343 → 345+346 — interleaving is the orchestrator's call.
+
+#### TASK-342 — [FID-archer-pikeman] Archer + Pikeman chroma-fidelity rework: pin the manifest → alpha-mask re-measure → Stage-2 iterate vs the CHROMA gate (art-director, NO editor, ZERO credits)
+- assignee: art-director
+- status: **ready-for-integration** (2026-07-27 late — BOTH UNITS PASS the chroma gate at ZERO credits: Archer chroma 0.7594→**0.9682** / luma 1.5597→**1.0141** [bleach breach healed]; Pikeman chroma 0.5685→**0.7805** [donor-capped ≈0.8, recorded] / luma 1.1315; hue shifts ≤6°; floors held. Overrides pinned: Archer γ1.0/g1.7, Pikeman γ1.0/g2.3 — root cause = γ0.55 per-channel compresses RGB ratios. **Delivery = TEXTURE-SET-ONLY, both units: only `T_<U>_D.png` changed; FBX/N/ORM byte-identical → no re-rig, no LOD churn.** Turnkey recipe `handoffs/TASK-342-artist.md`; galleries `Tools/ArtPipeline/Cache/_task342/`. 4 informational manager flags in the handoff incl. Pikeman's donor ceiling + a v2 gate-basis suggestion. TASK-343 queued behind TASK-346's editor session)
+- blocked-by: none — **but SERIALIZE with TASK-340 (ruling 7: shared `pipeline_manifest.json` — never concurrent)** ✅ cleared (340 done)
+- parallel-safe: yes vs everything EXCEPT TASK-340 (manifest write race)
+- spec: >
+    **STEP 0a — PIN THE MANIFEST (FIRST ACTION, blocking — ruling 3):** write `assets.Archer.albedo_delight = {ao_divide_strength 1.0,
+    ao_floor 0.25, gamma 0.55, gain 1.2}` (the locked profile) into `Tools/ArtPipeline/pipeline_manifest.json` — TASK-312's pin was LOST
+    post-crash and a bare Stage-2 re-run bakes the dark script defaults `{0.6, 0.35, 0.85, 1.0}`, regressing Archer DARKER. Verify
+    Pikeman's existing pin while there. Quote both blocks in the handoff.
+    **STEP 0b — MEASURE (alpha-masked, method validated to 4 dp vs recorded fleet values):** re-measure Archer luma retention with the
+    concept ALPHA-MASKED (the ~0.75 corner-sample reading is backdrop-contaminated — ruling 3.2); then the first-ever chroma numbers for
+    BOTH units: chroma retention (name the metric — CIELAB C*ab preferred), top-2 dominant-cluster hue shift, luma retention, UV-norm
+    albedo. These are the "before" table and they steer the iteration.
+    **STEP 1 — STAGE-2 ITERATE, 0 credits:** re-run Stage 2 from the CACHED fresh donors `Tools/ArtPipeline/Cache/{Archer,Pikeman}/
+    meshy_raw.glb` (2026-07-26 batch; ~10 s/iteration), tuning for SATURATION/HUE fidelity vs the alpha-masked concept.
+    **GATE (CONVENTIONS "CHROMA-FIDELITY GATE", in full):** chroma retention ≥ 0.60× (target ≈1.0×) · >1.35× = oversaturation FLAG ·
+    hue shift ≤ 20° · luma retention 0.85–1.25× (**Pikeman MUST NOT breach 1.25×** — it starts at 1.13–1.24; Archer's band anchors on its
+    RE-MEASURED value) · UV-norm ≥ 0.2536 maintained. A bake failing the gate is not a deliverable — iterate (free) or invoke the escape
+    valve: **if the gate is unreachable, or a unit already measures ≥ 0.60× yet still reads chalky, STOP and route the numbers to the
+    manager. Do NOT escalate to fresh image3d yourself** (ruling 4 — manager go required; Pikeman fresh-gen also needs Jonathan's
+    pose-reroll answer BEFORE any spend; balance 2446).
+    **STEP 2 — DELIVERY FORM (ruling 6):** verify whether the re-baked UV layout is IDENTICAL to shipped. Identical ⇒ deliver
+    TEXTURE-SET-ONLY (`T_<Unit>_{D,N,ORM}` same-path sources). Shifted ⇒ full Stage-B re-rig onto the shared `SK_Footman_Skeleton`
+    (anims byte-untouched) + SM+SK sources per the fleet template. State which, PER UNIT, in the turnkey recipe.
+    **STEP 3 — TURNKEY RECIPE** in `handoffs/TASK-342-artist.md`: per-unit sources → same-path destinations, sRGB flags, the delivery
+    form, expected readbacks (incl. LOD chains if meshes move), the before/after measurement table (all gate metrics), the manifest
+    diffs. **NO editor, NO MCP, NO Git, NO Meshy generation.** Post before/after previews + the numbers in 🎨 Art.
+- names: >
+    Same-path targets: `/Game/Textures/T_{Archer,Pikeman}_{D,N,ORM}` (always) + `/Game/Meshes/SM_{Archer,Pikeman}` /
+    `/Game/Characters/SK_{Archer,Pikeman}` / `/Game/Materials/Instances/MI_{Archer,Pikeman}_PBR` / raw
+    `Content/RawAssets/Characters/{Archer,Pikeman}.fbx` (only if UVs shift). Concepts `Content/RawAssets/Concepts/{Archer,Pikeman}.png`
+    (approved as-is; ALPHA-MASK for measurement). Donors `Tools/ArtPipeline/Cache/{Archer,Pikeman}/meshy_raw.glb`. Manifest
+    `Tools/ArtPipeline/pipeline_manifest.json` (Archer pin = ruling 3). PRESERVED: `A_{Archer,Pikeman}_*` + ABP, `SK_Footman_Skeleton`.
+    Report `handoffs/TASK-342-artist.md`. Law: CONVENTIONS "Fleet Meshy remaster" → **CHROMA-FIDELITY GATE + ALPHA-MASK METHOD LAW**
+    (NEW 2026-07-27) + per-asset `albedo_delight` override + same-path/preserve-anims.
+#### TASK-343 — [FID-int] Import + verify the fidelity rework in Simulate + per-unit commits (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: TASK-342
+- parallel-safe: no (EXCLUSIVE editor + Git; EDITOR-GATED — serialize with the whole editor queue, never during Jonathan's PIE; may batch BOTH units in one session, SEPARATE commits)
+- spec: >
+    Exclusive editor on **main**, Simulate STOPPED for every import/save. Execute the TASK-342 turnkey recipe PER UNIT:
+    **(1)** Same-path import per the recipe's delivery form — texture-set-only (EXPLICIT `T_<Unit>_{D,N,ORM}` imports + landed-readback:
+    dimensions/size/timestamp, the TEXTURE-SKIP TRAP law) or the full SM+SK chain (then: shared-skeleton gate — `SK_Footman_Skeleton`
+    sole, stray = HARD FAIL; LOD reapply + FULL readbacks — SM ≈15000/7500/3750/1874 + welded verts (unweld/0-tri = HARD FAIL, restore,
+    don't commit), SK `lod_count==3` + URO; anims still bound).
+    **(2) SAMPLER-TYPE TRAP sweep:** all material referencers of the touched `T_*` compile; `Failed to compile Material` grep = 0 on a
+    fresh load.
+    **(3) VERIFY in Simulate on `L_Arena`:** each unit reads SATURATED and matches its ALPHA-MASKED concept (side-by-side capture,
+    gallery framing for direct before/after — the chalky grey-teal/bleached-cream read is GONE); team recolour intact both teams
+    (Pikeman's 10.31% band is DELIBERATE — ruling 5, do not flag it); anims TICK (live bone-delta); facing/grounding OBSERVED only
+    (capsules Archer 90 / Pikeman 95 — READ them); Message Log clean (ensure/AccessedNone/Fatal = 0 + the (2) grep).
+    **(4) COMMIT PER UNIT — two separate commits** (per-unit revert model), explicit pathspecs per the delivery form + manifest +
+    board/handoff; `git diff --stat` clean of anything foreign; **NO push**. `L_Arena` NEVER saved; `git reset --hard`/`git clean -fd`
+    BANNED. **WATCH: Jonathan's eye final** — say so in the handoff. Post readbacks + before/afters + both hashes in 🔧 Build & Git.
+- names: >
+    Per-unit commit sets per the TASK-342 recipe (`T_`/`SM_`/`SK_`/`MI_` + raw FBX as applicable + `pipeline_manifest.json` + docs).
+    READ-ONLY: `BP_Unit_{Archer,Pikeman}`, `DT_Cards`, `L_Arena`, `A_*` anims + ABP. Law: CONVENTIONS "Fleet Meshy remaster"
+    (CHROMA-FIDELITY GATE · texture-skip trap · SAMPLER-TYPE TRAP · same-path), the hard gate.
+#### TASK-344 — [CMD-3zone] Group orders: 3-stage HOLD flow + AMBUSH + wheel resize + spread + leashes — full C++ (gameplay-programmer, file-only)
+- assignee: gameplay-programmer
+- status: **done** (2026-07-27 night — INTEGRATED at TASK-346's feature commit: compile GREEN 16 s 0 warn, full PIE matrix PASS on L_Arena [flow/tiers/leashes/escalation/release/steal/all-dead-prune/cancels/teardowns/no-regression all observed, logs clean — `handoffs/TASK-346-buildmaster.md` row-by-row]. ← was qa-passed 2026-07-27 evening — `qa/TASK-344.md` PASS, 0 BLOCKER / 1 WARN / 3 NIT, all 11 flagged decisions ACCEPTED; WARN = manager doc-sync of the CONVENTIONS "unfrozen" wording [spell-frozen units ARE select-eligible] — STILL OPEN for the manager)
+- parallel-safe: yes (sole owner of the five files this pass; disjoint from both art lanes)
+- blocked-by: none
+- spec: >
+    **DESIGN AUTHORITY — implement, don't re-design:** the plan file `C:\Users\wesel\.claude\plans\groovy-bouncing-manatee.md`
+    ("Lane B", verified file:line citations) + CONVENTIONS **"Group orders — 3-zone HOLD + AMBUSH"** (types, tunables, wheel-polling,
+    behavior + byte-identical laws — all names are LAW). Files: `Source/GitClaudeUnrealTest/Siegebound/SiegePlayerController.{h,cpp}`,
+    `SummonedUnit.{h,cpp}`, `UnitCommand.h`. In brief (the law has the full detail):
+    controller-owned `TArray<FSiegeUnitGroup> UnitGroups` + `ESiegeGroupCommandType {Hold, Ambush}` + private
+    `EGroupPickStage {None, Select, Position, AttackZone}`; R (existing) and F (new, soft-ref `IA_CmdAmbush`, **inert-null-safe until
+    the asset exists**) enter the 3-stage pick; POLLED wheel resize (`WasInputKeyJustPressed(EKeys::MouseScrollUp/Down)` in the pick
+    branch of PlayerTick; step 100, clamp 200–5000; stage defaults 1200/700/1500); `SpawnGroupCircleDecal` reticle-recipe clone
+    (identity spawn → absolute −90 pitch; `DecalSize=(500,R,R)`; `M_SpellReticle` null-safe); active circle follows the cursor, each
+    confirm drops it + spawns the next; final confirm transfers the Position+Attack circles to the group as PERSISTENT markers;
+    RMB/Esc = full-flow cancel at any stage; empty stage-1 selection = refuse-and-stay + prompt; sky-trace refusal as today; the ONE
+    teardown `CancelGroupPick()` (melee-release-before-early-out) swapped into ALL 8 teardown sites; the OLD `HoldRadius`/`HoldLocation`
+    + four `*HoldTarget` functions DELETED (`ESiegeUnitCommand` byte-identical — the Hold member stays declared). Unit side:
+    `CommandGroupId` + `GroupStationOffset` (golden-angle sunflower, computed once at confirm, nav-projected), `UpdateStateGrouped`
+    ABOVE the stance gate, priority ladder + anti-thrash stickiness (single monotone position→attack upgrade), HOLD both-zones leash vs
+    AMBUSH chase-to-kill leash-exemption, null-group SELF-HEAL to the legacy stance gate, new public `IsGroupCommandEligible()`
+    (Standard + Blue + alive + unfrozen), 150 uu arrival vs station, **TASK-275 kite-fix untouched**. `FOnCommandPromptChanged`
+    (FString) with stage prompts, ALSO logged (feature ships without the BP bind). T/E clears all groups; death clears; Play-Again
+    resets; ≤1 s all-dead prune.
+    **MUST HOLD:** the CONVENTIONS byte-identical set (legacy post-gate body, AcquireTarget, Siege/Support/miner paths, bot/Red,
+    ATTACK/DEFEND, placement + spell targeting, SetUnitCommand/HUD stance display, combat/economy/match-flow) — and the feature is
+    FULLY FUNCTIONAL for HOLD via R with ZERO editor assets. **Compile traps:** no literal `*/` in doc comments; Printf formats
+    literal/`constexpr` (TCheckedFormatString).
+    File-only: no compile, no editor, no MCP, no Git. Write `handoffs/TASK-344-programmer.md` (per-file delta map, the 8 teardown-site
+    swaps enumerated, the stickiness/leash truth table, the byte-identical argument). Post in ⚙️ Dev & QA; then ready-for-qa.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SiegePlayerController.{h,cpp}` · `SummonedUnit.{h,cpp}` · `UnitCommand.h`. New names per
+    CONVENTIONS "Group orders" (ESiegeGroupCommandType · FSiegeUnitGroup · EGroupPickStage · UnitGroups · FindUnitGroup ·
+    CancelGroupPick · SpawnGroupCircleDecal · CommandGroupId · GroupStationOffset · UpdateStateGrouped · IsGroupCommandEligible ·
+    FOnCommandPromptChanged · the six tunables). Soft-ref `IA_CmdAmbush` (asset lands at TASK-345). Report
+    `handoffs/TASK-344-programmer.md`.
+#### TASK-344-QA — [CMD-3zone QA] Review TASK-344 (implied by the code task)
+- assignee: qa-reviewer
+- status: backlog
+- blocked-by: TASK-344
+- parallel-safe: no
+- spec: >
+    Pre-compile review vs the plan file + CONVENTIONS "Group orders". Confirm: (1) **melee-release-before-early-out on EVERY cancel
+    path** and all **8 teardown sites** actually swapped to `CancelGroupPick()` (enumerate them); (2) mutual exclusion intact — pick
+    flow vs spell targeting vs placement (entering one cancels the others), wheel INERT outside the pick branch; (3) the stickiness /
+    monotone-upgrade logic cannot oscillate (reason it through — the TASK-280/282 thrash-freeze is the failure being designed against),
+    HOLD both-zones leash vs AMBUSH exemption correct, null-group self-heal safe; (4) **TASK-275 kite-fix byte-untouched** + the full
+    CONVENTIONS byte-identical set (bot/Red, Siege/Support/miners, stances, placement, spells); (5) `ESiegeUnitCommand` byte-identity
+    (WBP_HUD pins); (6) soft-ref null-safety (missing `IA_CmdAmbush`/`M_SpellReticle` degrade, never crash); (7) coding law — no
+    shadowing, complete-type includes, no deprecated 5.8 API, **no `*/` in doc comments, Printf formats literal/constexpr**;
+    (8) sunflower offsets deterministic + nav-projected once at confirm (no per-tick recompute). Report `qa/TASK-344.md` (pass/fail;
+    max 3 loops then escalate). Post the verdict in ⚙️ Dev & QA.
+- names: > Report `qa/TASK-344.md`. Same files/law as TASK-344.
+#### TASK-345 — [CMD-editor] `IA_CmdAmbush` + F mapping + WBP_HUD additive prompt bind (art-director, editor)
+- assignee: art-director
+- status: **done** (2026-07-27 night — all three deliverables + the optional StageTint DONE inside TASK-346's session (`handoffs/TASK-345-artist.md`); PIE-verified by TASK-346: F opens the AMBUSH pick (IA+IMC live), prompts broadcast+logged, StageTint MID params read back white/green/red per stage; committed in TASK-346's ONE feature commit) ← was backlog
+- blocked-by: TASK-344-QA (qa-passed) — **and the TASK-344 module must be COMPILED in the live editor: runs INSIDE TASK-346's session,
+  immediately after 346's compile step** (ruling 11; TASK-330/331 shared-session precedent — own deliverable, no Git)
+- parallel-safe: no (EDITOR-GATED; serialize with the whole editor queue)
+- spec: >
+    Three small editor deliverables, NOTHING else:
+    **(1)** Create `/Game/Input/Actions/IA_CmdAmbush` (Digital/bool — the exact `IA_Cmd*` pattern).
+    **(2)** Map it to **F** in `/Game/Input/IMC_Hero` — **FIRST confirm F is unmapped in-editor** (exploration says free, but IMC_Hero
+    is binary); any existing F mapping ⇒ FLAG to the manager, never stomp (the E/R/T precedent).
+    **(3)** `WBP_HUD`: bind `OnCommandPromptChanged` ADDITIVELY — a prompt text block that shows the pushed FString and, when EMPTY,
+    falls back to the existing stance display. Do NOT touch the stance switch/pins (`ESiegeUnitCommand` byte-identity), do NOT
+    duplicate+reparent anything (the corruption lesson — this is an edit to the EXISTING widget's graph only).
+    **OPTIONAL, NON-BLOCKING (flag if done):** add a stage-tint colour param to `M_SpellReticle` (STOCK NODES ONLY — Custom-HLSL ban);
+    the C++ hook is a silent no-op until the param exists, so skipping it costs nothing.
+    Save the three assets (Simulate stopped); **no Git** (TASK-346 commits), no `L_Arena` save, no C++ edits. Readback-verify the F
+    mapping + the bind; hand the editor back to build-master for the PIE matrix. Write `handoffs/TASK-345-artist.md`; post in 🎨 Art.
+- names: >
+    NEW `/Game/Input/Actions/IA_CmdAmbush` · edit `/Game/Input/IMC_Hero` (F mapping) · edit `/Game/UI/WBP_HUD` (additive
+    `OnCommandPromptChanged` bind). Optional: `M_SpellReticle` colour param (stock nodes). Law: CONVENTIONS "Group orders" (input-asset
+    clause), "Material & Niagara lane laws", the widget rules. Report `handoffs/TASK-345-artist.md`.
+#### TASK-346 — [CMD-int] Compile + host TASK-345 + the full PIE matrix + ONE feature commit (build-master)
+- assignee: build-master
+- status: **done** (2026-07-28 — compile GREEN (16 s, 0 warn), TASK-345 hosted, FULL PIE matrix PASS (real PIE on L_Arena, bot playing; numeric readbacks + 5 verify shots; row-by-row in `handoffs/TASK-346-buildmaster.md` incl. the Esc-stops-PIE note, the stage-tint-subtlety feel item, and one non-reproduced T-idle WATCH), logs ensure/AccessedNone/Fatal/material-fail = 0; ONE feature commit on main (hash in 🔧 Build & Git), NO push, L_Arena never saved) ← was backlog
+- blocked-by: TASK-344-QA (qa-passed); TASK-345 INTERLEAVES (this task compiles → hands the editor to 345 → resumes for PIE + commit)
+- parallel-safe: no (EXCLUSIVE editor + Git; EDITOR-GATED — serialize with the whole queue, never during Jonathan's PIE)
+- spec: >
+    **(1) COMPILE** TASK-344 (code hard gate — a failure appends to `qa/TASK-344.md` and routes back to gameplay-programmer, counting
+    as a QA loop). Editor-bounce so the new classes/delegate are live.
+    **(2) HOST TASK-345** in this editor session (art-director's three assets), then resume.
+    **(3) PIE MATRIX on `L_Arena` (real PIE — this feature needs the player pawn; observe EVERY row, capture the interesting ones):**
+    (a) FLOW: R → three sequential cursor-following circles, each wheel-resizable with visible min/max clamps, earlier circles staying
+    visible; sky-cursor hides + refuses; empty stage-1 selection refuses with the prompt; after stage 3 the Position+Attack circles
+    PERSIST as group markers. (b) TIERS: attack-zone engage · position-zone engage · walk-spread-idle with NO re-path jitter over 30 s
+    (the sunflower spread visibly distributes — no point-milling). (c) LEASHES: HOLD — kite a target out of BOTH zones ⇒ disengage +
+    return to station; AMBUSH (F) — chase to the kill then return; tier escalation WITHOUT target ping-pong. (d) RELEASE: T/E clears
+    every group + markers; a new R/F STEALS already-grouped units; all-members-dead removes markers ≤ 1 s. (e) CANCELS at every stage
+    (RMB/Esc); match-end / Play-Again / hero-death teardown clean. (f) NO-REGRESSION sweep: stances T/E, legacy pre-command behavior,
+    bot/Red untouched, miners + Siege/Support unaffected, placement + spell targeting intact, wheel INERT outside the flow.
+    (g) Message Log clean (ensure / AccessedNone / Fatal = 0) + the `Failed to compile Material` grep (touched WBP/material assets).
+    **(4) ONE FEATURE COMMIT** on main (ruling 11): `SiegePlayerController.{h,cpp}` + `SummonedUnit.{h,cpp}` + `UnitCommand.h` +
+    `Content/Input/Actions/IA_CmdAmbush.uasset` + `Content/Input/IMC_Hero.uasset` + `Content/UI/WBP_HUD.uasset` (+ `M_SpellReticle` only
+    if 345 did the optional param) + board/CONVENTIONS/handoffs/qa. `git diff --stat` clean of anything foreign; **NO push**; `L_Arena`
+    NEVER saved; `git reset --hard`/`git clean -fd` BANNED.
+    **(5) FLAG FOR JONATHAN'S FEEL-PASS (record in the handoff + 🔧 post):** wheel sensitivity (step 100), circle readability, spread
+    feel, the six tunables, and AMBUSH-vs-building semantics (default shipped: besiege until destroyed). Post the matrix results +
+    commit hash in 🔧 Build & Git.
+- names: >
+    Commit set: the five source files + `IA_CmdAmbush` + `IMC_Hero` + `WBP_HUD` (+ optional `M_SpellReticle`) + docs, ONE commit on
+    main, no push. Law: CONVENTIONS "Group orders — 3-zone HOLD + AMBUSH", the hard gate (PASS QA before commit), the widget rules.
+
+---
+
 ## Post-M7.6-merge main-lane follow-ups (decomposed 2026-07-25) — TASK-297 + the deck-builder resume
 
 **Context:** M7.6 is MERGED to main LOCALLY (merge `4c680bb`, NOT pushed) and M7.5's retextured fleet is on main. Two follow-ups that were BLOCKED by that merge are now unblocked and develop on **main**: (1) the deferred unit SK-LODs (TASK-297, new), and (2) the parked deck-builder card-details chain (TASK-268..272, resumed on main — see the "## M7.7 tasks" section below, statuses refreshed 2026-07-25). **Both are EDITOR-MUTATING and need EXCLUSIVE editor access (no concurrent PIE) — they must NOT run while Jonathan is playtesting, and they SERIALIZE with each other (one editor session at a time). Dispatch order is the orchestrator's call; if they would fight the same editor session, run TASK-297 first, then the deck-builder chain (or vice-versa) — never concurrently.** No push in either lane (Jonathan's push).

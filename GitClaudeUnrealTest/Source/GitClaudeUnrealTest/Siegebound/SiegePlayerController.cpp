@@ -36,6 +36,7 @@
 #include "Siegebound/SiegeSpawnConstants.h"
 #include "Siegebound/SpellLibrary.h"
 #include "Siegebound/SummonedUnit.h"
+#include "TimerManager.h" // TASK-344: the 1 s group-order prune timer (SetTimer on the world timer manager)
 
 namespace
 {
@@ -45,6 +46,20 @@ namespace
 	const TCHAR* SpellCastSoundPath = TEXT("/Game/Audio/S_SpellCast");
 	const TCHAR* VictoryMusicSoundPath = TEXT("/Game/Audio/S_VictoryMusic");
 	const TCHAR* DefeatMusicSoundPath = TEXT("/Game/Audio/S_DefeatMusic");
+
+	//~ TASK-344 group orders — implementation constants (like StructureMoveAcceptanceRadius
+	//~ on the unit: impl details, NOT feel tunables; the six feel tunables are UPROPERTYs).
+
+	/** Cadence of the all-dead group reaper (the CONVENTIONS "≤1 s" marker-removal law). */
+	constexpr float UnitGroupPruneInterval = 1.f;
+
+	/**
+	 *  Golden angle in radians (2π · (1 − 1/φ) ≈ 2.399963): the deterministic
+	 *  sunflower spread — station i sits at radius R·√((i+0.5)/N), angle i·this —
+	 *  fills the position circle near-uniformly for ANY member count, so a group
+	 *  never mills at a single point (the TASK-280/282 lesson's spread half).
+	 */
+	constexpr float GoldenAngleRadians = 2.399963f;
 }
 
 ASiegePlayerController::ASiegePlayerController()
@@ -80,6 +95,7 @@ ASiegePlayerController::ASiegePlayerController()
 	CmdAttackActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_CmdAttack.IA_CmdAttack")));         // TASK-273 (Shield Wall — T)
 	CmdHoldActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_CmdHold.IA_CmdHold")));               // TASK-273 (Shield Wall — R)
 	CmdDefendActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_CmdDefend.IA_CmdDefend")));         // TASK-273 (Shield Wall — E)
+	CmdAmbushActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_CmdAmbush.IA_CmdAmbush")));         // TASK-345 (Group orders — F; inert-null-safe until the asset lands)
 }
 
 void ASiegePlayerController::BeginPlay()
@@ -186,6 +202,12 @@ void ASiegePlayerController::BeginPlay()
 			TEXT("ASiegePlayerController '%s': HUD widget class '%s' not found (built in TASK-011) — continuing without a HUD."),
 			*GetNameSafe(this), *HUDWidgetClass.ToString());
 	}
+
+	// Group-order maintenance (TASK-344): the 1 s reaper removes all-dead groups
+	// and their markers (the CONVENTIONS ≤1 s marker-removal law). Armed once for
+	// the controller's lifetime — trivially cheap at 1 Hz while no groups exist.
+	GetWorldTimerManager().SetTimer(UnitGroupPruneTimerHandle, this, &ASiegePlayerController::PruneUnitGroups,
+		UnitGroupPruneInterval, /*bLoop=*/ true);
 }
 
 void ASiegePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -198,9 +220,9 @@ void ASiegePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	// the melee suppression and destroys the reticle decal
 	ExitTargetingMode();
 
-	// same law for the W1 HOLD-command pick (TASK-274): teardown mid-pick releases
-	// the HoldHero melee suppression and destroys the shared reticle decal
-	CancelHoldTarget();
+	// same law for the group-order pick (TASK-344): teardown mid-pick releases
+	// the GroupPickHero melee suppression and destroys the pick circles
+	CancelGroupPick();
 
 	// symmetric teardown for the IA_UICursor hold (keeps the ignore-look counter balanced)
 	ClearUICursorHold();
@@ -231,6 +253,7 @@ void ASiegePlayerController::SetupInputComponent()
 	CmdAttackAction = ResolveInputAction(CmdAttackAction, CmdAttackActionAsset, TEXT("IA_CmdAttack"), TEXT("TASK-273"));
 	CmdHoldAction = ResolveInputAction(CmdHoldAction, CmdHoldActionAsset, TEXT("IA_CmdHold"), TEXT("TASK-273"));
 	CmdDefendAction = ResolveInputAction(CmdDefendAction, CmdDefendActionAsset, TEXT("IA_CmdDefend"), TEXT("TASK-273"));
+	CmdAmbushAction = ResolveInputAction(CmdAmbushAction, CmdAmbushActionAsset, TEXT("IA_CmdAmbush"), TEXT("TASK-345")); // group orders (TASK-344): F stays INERT until the asset lands
 
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))
 	{
@@ -286,6 +309,14 @@ void ASiegePlayerController::SetupInputComponent()
 		{
 			EnhancedInputComponent->BindAction(CmdDefendAction, ETriggerEvent::Started, this, &ASiegePlayerController::OnCmdDefendPressed);
 		}
+
+		// AMBUSH group order (TASK-344): F opens the same 3-stage pick as R, with
+		// the chase-to-the-kill leash. The IA_CmdAmbush asset arrives in TASK-345 —
+		// until then the resolve above returned null and F is simply inert.
+		if (CmdAmbushAction)
+		{
+			EnhancedInputComponent->BindAction(CmdAmbushAction, ETriggerEvent::Started, this, &ASiegePlayerController::OnCmdAmbushPressed);
+		}
 	}
 	else
 	{
@@ -299,29 +330,34 @@ void ASiegePlayerController::PlayerTick(float DeltaTime)
 {
 	Super::PlayerTick(DeltaTime);
 
-	// HOLD ground-target pick (W1 TASK-274) — a third cursor mode on the SAME
-	// input surface as placement/targeting (reticle machinery reused). Mutually
-	// exclusive with the other two, so at most one of the three branches runs.
-	// Polled RMB/Esc cancel (no stance change) + per-frame trace + polled LMB
-	// confirm — the targeting-branch shape.
-	if (bInHoldTargetMode)
+	// Group-order 3-stage pick (TASK-344) — the third cursor mode on the SAME
+	// input surface as placement/targeting. Mutually exclusive with the other
+	// two, so at most one of the three branches runs. Polled RMB/Esc full-flow
+	// cancel + POLLED wheel resize (the CONVENTIONS wheel law: the wheel is
+	// inert everywhere but inside this branch) + per-frame trace + polled LMB
+	// stage confirm — the targeting-branch shape.
+	if (GroupPickStage != EGroupPickStage::None)
 	{
-		// cancel is free and leaves the prior command unchanged (spec)
+		// cancel is free and leaves every existing group and stance unchanged
 		if (WasInputKeyJustPressed(EKeys::RightMouseButton) || WasInputKeyJustPressed(EKeys::Escape))
 		{
-			CancelHoldTarget();
+			CancelGroupPick();
 			return;
 		}
 
-		// reticle = TRACE to the surface under the cursor (surface-projection law)
-		UpdateHoldReticle();
+		// wheel resize on the ACTIVE stage circle (polled — NO new InputAction)
+		ApplyGroupPickWheel();
+
+		// active circle = TRACE to the surface under the cursor (surface-projection law)
+		UpdateGroupPickReticle();
 
 		// confirm: LMB polled while in mode — the physical click also reaches the
-		// hero's IA_Attack binding, where SetMeleeSuppressed(true) (via HoldHero)
-		// makes DoMeleeAttack a cooldown-free no-op (the placement/targeting note).
+		// hero's IA_Attack binding, where SetMeleeSuppressed(true) (via
+		// GroupPickHero) makes DoMeleeAttack a cooldown-free no-op (the
+		// placement/targeting note).
 		if (WasInputKeyJustPressed(EKeys::LeftMouseButton))
 		{
-			ConfirmHoldTarget();
+			ConfirmGroupPickStage();
 		}
 		return;
 	}
@@ -407,8 +443,8 @@ void ASiegePlayerController::OnUnPossess()
 	// same law for M5 targeting mode (on the recorded TargetingHero)
 	ExitTargetingMode();
 
-	// same law for the W1 HOLD-command pick (on the recorded HoldHero, TASK-274)
-	CancelHoldTarget();
+	// same law for the group-order pick (on the recorded GroupPickHero, TASK-344)
+	CancelGroupPick();
 
 	Super::OnUnPossess();
 }
@@ -737,12 +773,13 @@ void ASiegePlayerController::OnCancelPlacePressed()
 		return;
 	}
 
-	// W1 (TASK-274): the SAME cancel action aborts a HOLD-command location pick
-	// at no cost and leaves the prior stance unchanged (the polled RMB/Esc in
-	// PlayerTick double-covers this so a missing IA_CancelPlace can't soft-lock it)
-	if (bInHoldTargetMode)
+	// TASK-344: the SAME cancel action aborts a group-order pick at any stage at
+	// no cost, leaving every existing group and stance unchanged (the polled
+	// RMB/Esc in PlayerTick double-covers this so a missing IA_CancelPlace can't
+	// soft-lock it)
+	if (GroupPickStage != EGroupPickStage::None)
 	{
-		CancelHoldTarget();
+		CancelGroupPick();
 	}
 }
 
@@ -767,38 +804,43 @@ void ASiegePlayerController::SetUnitCommand(ESiegeUnitCommand NewCommand)
 void ASiegePlayerController::OnCmdAttackPressed()
 {
 	// ATTACK (T) is immediate — no ground pick. Ignored after match end (the
-	// input-ignore pattern). If a HOLD pick is mid-flight, abandon it first (no
-	// stance change from the abort) so the reticle/cursor state is clean, THEN
-	// latch Attack.
+	// input-ignore pattern). Abandon any mid-flight group pick first (no group
+	// forms from the abort — CancelGroupPick is no-op-safe), then apply the
+	// TASK-344 RELEASE law — a global stance replaces EVERY group order — and
+	// only then latch Attack.
 	if (bMatchEnded)
 	{
 		return;
 	}
-	if (bInHoldTargetMode)
-	{
-		CancelHoldTarget();
-	}
+	CancelGroupPick();
+	ClearAllUnitGroups();
 	SetUnitCommand(ESiegeUnitCommand::Attack);
 }
 
 void ASiegePlayerController::OnCmdHoldPressed()
 {
-	// HOLD (R) enters the ground-target location pick — BeginHoldTarget owns all
+	// HOLD (R) enters the 3-stage group pick (TASK-344) — BeginGroupPick owns all
 	// the guards (match-ended, and mutual exclusion with placement/targeting).
-	BeginHoldTarget();
+	BeginGroupPick(ESiegeGroupCommandType::Hold);
+}
+
+void ASiegePlayerController::OnCmdAmbushPressed()
+{
+	// AMBUSH (F, TASK-344) shares the 3-stage pick; only the leash differs
+	// (chase-to-the-kill). Reached only once TASK-345's IA_CmdAmbush exists.
+	BeginGroupPick(ESiegeGroupCommandType::Ambush);
 }
 
 void ASiegePlayerController::OnCmdDefendPressed()
 {
-	// DEFEND (E) is immediate — mirror of OnCmdAttackPressed.
+	// DEFEND (E) is immediate — mirror of OnCmdAttackPressed (pick abort +
+	// group release, then the stance latch).
 	if (bMatchEnded)
 	{
 		return;
 	}
-	if (bInHoldTargetMode)
-	{
-		CancelHoldTarget();
-	}
+	CancelGroupPick();
+	ClearAllUnitGroups();
 	SetUnitCommand(ESiegeUnitCommand::Defend);
 }
 
@@ -825,15 +867,16 @@ void ASiegePlayerController::HandleHeroDied(AHeroCharacter* DeadHero)
 	}
 	ExitTargetingMode();
 
-	// same law for the W1 HOLD-command pick (TASK-274): death mid-pick cancels
-	// it free (no stance change) and releases the HoldHero suppression
-	if (bInHoldTargetMode)
+	// same law for the group-order pick (TASK-344): death mid-pick cancels it
+	// free (no group forms, stance unchanged) and releases the GroupPickHero
+	// suppression
+	if (GroupPickStage != EGroupPickStage::None)
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Log,
-			TEXT("ASiegePlayerController '%s': hero died during a HOLD-command pick — cancelling the pick (stance unchanged)."),
+			TEXT("ASiegePlayerController '%s': hero died during a group-order pick — cancelling the pick (groups/stance unchanged)."),
 			*GetNameSafe(this));
 	}
-	CancelHoldTarget();
+	CancelGroupPick();
 }
 
 void ASiegePlayerController::EnterPlacementMode(FName CardID)
@@ -864,12 +907,12 @@ void ASiegePlayerController::EnterPlacementMode(FName CardID)
 		return;
 	}
 
-	// third-mode mutual exclusion (W1 TASK-274): a live HOLD ground-target pick
-	// owns the cursor/LMB — the same mutual-ignore the two modes above use
-	if (bInHoldTargetMode)
+	// third-mode mutual exclusion (TASK-344): a live group-order pick owns the
+	// cursor/LMB — the same mutual-ignore the two modes above use
+	if (GroupPickStage != EGroupPickStage::None)
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Verbose,
-			TEXT("ASiegePlayerController '%s': EnterPlacementMode('%s') ignored — a HOLD-command location pick is active."),
+			TEXT("ASiegePlayerController '%s': EnterPlacementMode('%s') ignored — a group-order pick is active."),
 			*GetNameSafe(this), *CardID.ToString());
 		return;
 	}
@@ -1013,9 +1056,11 @@ void ASiegePlayerController::HandleMatchEnd(ETeamId Winner)
 	ExitPlacementMode();
 	ExitTargetingMode();
 
-	// same for the W1 HOLD-command pick (TASK-274): tear down the shared reticle
-	// + HoldHero suppression before the UI-only switch (no-op-safe)
-	CancelHoldTarget();
+	// same for the group-order pick (TASK-344): tear down the pick circles +
+	// GroupPickHero suppression before the UI-only switch (no-op-safe). Formed
+	// groups deliberately SURVIVE match end (their units are match-end frozen
+	// anyway) — HandleMatchReset clears them for the next match.
+	CancelGroupPick();
 
 	// end any IA_UICursor hold too: UI-only input can swallow the action's
 	// release event, which would leave the ignore-look counter stuck across
@@ -1114,8 +1159,8 @@ void ASiegePlayerController::HandleMatchReset()
 	// below must never happen under a live TargetingHandSlot
 	ExitTargetingMode();
 
-	// same defensive teardown for the W1 HOLD-command pick (TASK-274)
-	CancelHoldTarget();
+	// same defensive teardown for the group-order pick (TASK-344)
+	CancelGroupPick();
 
 	bMatchEnded = false;
 
@@ -1146,15 +1191,16 @@ void ASiegePlayerController::HandleMatchReset()
 	}
 
 	// W1 unit-command reset (TASK-274 step 5): Play Again returns the stance to
-	// the default Attack, clears the issued-latch (units run the legacy body
-	// again until the player re-commands), and zeroes the picked HoldLocation.
-	// Broadcast the reset so the HUD indicator (TASK-276) clears — it re-checks
-	// HasIssuedCommand() (now false) and shows nothing. CancelHoldTarget above
-	// already tore down any in-progress pick.
+	// the default Attack and clears the issued-latch (units run the legacy body
+	// again until the player re-commands). Broadcast the reset so the HUD
+	// indicator (TASK-276) clears — it re-checks HasIssuedCommand() (now false)
+	// and shows nothing. CancelGroupPick above already tore down any in-progress
+	// pick; ClearAllUnitGroups below is the TASK-344 Play-Again release — every
+	// group order and its markers die, members explicitly cleared.
 	CurrentCommand = ESiegeUnitCommand::Attack;
 	bHasIssuedCommand = false;
-	HoldLocation = FVector::ZeroVector;
 	OnUnitCommandChanged.Broadcast(CurrentCommand);
+	ClearAllUnitGroups();
 
 	// back to M1 game-only free-look (both cursor owners are clear by now)
 	ApplyCursorInputState();
@@ -1557,12 +1603,12 @@ void ASiegePlayerController::EnterTargetingMode(FName CardID)
 		return;
 	}
 
-	// third-mode mutual exclusion (W1 TASK-274): a live HOLD ground-target pick
-	// owns the cursor/LMB — mirror of the already-placing/targeting ignores
-	if (bInHoldTargetMode)
+	// third-mode mutual exclusion (TASK-344): a live group-order pick owns the
+	// cursor/LMB — mirror of the already-placing/targeting ignores
+	if (GroupPickStage != EGroupPickStage::None)
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Verbose,
-			TEXT("ASiegePlayerController '%s': EnterTargetingMode('%s') ignored — a HOLD-command location pick is active."),
+			TEXT("ASiegePlayerController '%s': EnterTargetingMode('%s') ignored — a group-order pick is active."),
 			*GetNameSafe(this), *CardID.ToString());
 		return;
 	}
@@ -1991,14 +2037,14 @@ void ASiegePlayerController::DestroySpellReticle()
 	}
 }
 
-void ASiegePlayerController::BeginHoldTarget()
+void ASiegePlayerController::BeginGroupPick(ESiegeGroupCommandType Type)
 {
 	// EnterPlacementMode / EnterTargetingMode early-out pattern: post-match and
 	// mid-mode calls are silent ignores (no broadcast), not player-facing refusals.
 	if (bMatchEnded)
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Verbose,
-			TEXT("ASiegePlayerController '%s': BeginHoldTarget ignored — match has ended."),
+			TEXT("ASiegePlayerController '%s': BeginGroupPick ignored — match has ended."),
 			*GetNameSafe(this));
 		return;
 	}
@@ -2006,7 +2052,7 @@ void ASiegePlayerController::BeginHoldTarget()
 	if (bInPlacementMode)
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Verbose,
-			TEXT("ASiegePlayerController '%s': BeginHoldTarget ignored — already placing '%s' (mode mutual exclusion)."),
+			TEXT("ASiegePlayerController '%s': BeginGroupPick ignored — already placing '%s' (mode mutual exclusion)."),
 			*GetNameSafe(this), *PendingCardID.ToString());
 		return;
 	}
@@ -2014,30 +2060,37 @@ void ASiegePlayerController::BeginHoldTarget()
 	if (bInTargetingMode)
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Verbose,
-			TEXT("ASiegePlayerController '%s': BeginHoldTarget ignored — already targeting '%s' (mode mutual exclusion)."),
+			TEXT("ASiegePlayerController '%s': BeginGroupPick ignored — already targeting '%s' (mode mutual exclusion)."),
 			*GetNameSafe(this), *TargetingCardID.ToString());
 		return;
 	}
 
-	if (bInHoldTargetMode)
+	if (GroupPickStage != EGroupPickStage::None)
 	{
+		// re-pressing R/F mid-flow is a silent ignore — RMB/Esc is the cancel surface
 		UE_LOG(LogGitClaudeUnrealTest, Verbose,
-			TEXT("ASiegePlayerController '%s': BeginHoldTarget ignored — a HOLD-command pick is already active."),
+			TEXT("ASiegePlayerController '%s': BeginGroupPick ignored — a group-order pick is already active."),
 			*GetNameSafe(this));
 		return;
 	}
 
-	bInHoldTargetMode = true;
-	bHoldSurfaceValid = false;
-	HoldPickLocation = FVector::ZeroVector;
+	GroupPickStage = EGroupPickStage::Select;
+	GroupPickType = Type;
+	GroupPickRadius = GroupSelectRadiusDefault;
+	bGroupPickSurfaceValid = false;
+	GroupPickLocation = FVector::ZeroVector;
+	GroupPickSelectedMembers.Reset();
+	GroupPickPositionCenter = FVector::ZeroVector;
+	GroupPickPositionRadius = 0.f;
 
-	// suppress hero melee while the pick owns the LMB (TASK-003 API) — the confirm
-	// click must not also swing; released on EVERY hold exit path (CancelHoldTarget).
-	// HoldHero records exactly whose suppression we must release (the
-	// PlacementHero/TargetingHero pattern; a separate record so a defensive
-	// ExitPlacement/ExitTargeting call can never strand this one).
+	// suppress hero melee while the pick owns the LMB (TASK-003 API) — the stage
+	// confirm clicks must not also swing; released on EVERY pick exit path
+	// (CancelGroupPick, melee-release-before-early-out). GroupPickHero records
+	// exactly whose suppression we must release (the PlacementHero/TargetingHero
+	// pattern; its OWN record so a defensive ExitPlacement/ExitTargeting call can
+	// never strand this one).
 	AHeroCharacter* Hero = Cast<AHeroCharacter>(GetPawn());
-	HoldHero = Hero;
+	GroupPickHero = Hero;
 	if (Hero)
 	{
 		Hero->SetMeleeSuppressed(true);
@@ -2045,125 +2098,545 @@ void ASiegePlayerController::BeginHoldTarget()
 	else
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Log,
-			TEXT("ASiegePlayerController '%s': entering a HOLD-command pick without an AHeroCharacter pawn — no melee to suppress."),
+			TEXT("ASiegePlayerController '%s': entering a group-order pick without an AHeroCharacter pawn — no melee to suppress."),
 			*GetNameSafe(this));
 	}
 
 	ApplyCursorInputState();
 
-	// REUSE the spell reticle machinery (no new reticle system, TASK-274 spec):
-	// SpawnSpellReticle manages the shared SpellReticleActor and is null-safe if
-	// M_SpellReticle is missing (no visual — the pick still works off the trace).
-	SpawnSpellReticle();
+	// stage-1 circle follows the cursor. Null-safe: missing M_SpellReticle ⇒ no
+	// circle visuals at all — the whole pick still works off the trace (the
+	// invisible-ghost degradation precedent).
+	GroupPickActiveDecal = SpawnGroupCircleDecal(GroupPickRadius);
+	UpdateGroupPickReticle();
 
-	// size the reticle ring to the actual HoldRadius so the player sees the disc
-	// their held units will fight inside (SpawnSpellReticle sizes to the spell's
-	// AoERadius; a HOLD pick has no spell row, so set the footprint here). X (the
-	// projection half-depth) matches the spell reticle's ±500 window so the decal
-	// reaches the surface on every hill. Null-safe: no reticle actor (missing
-	// material) ⇒ skip.
-	if (SpellReticleActor)
-	{
-		if (UDecalComponent* ReticleDecal = SpellReticleActor->GetDecal())
-		{
-			ReticleDecal->DecalSize = FVector(500.f, HoldRadius, HoldRadius);
-			ReticleDecal->MarkRenderStateDirty();
-		}
-	}
-
-	UpdateHoldReticle();
-
-	UE_LOG(LogGitClaudeUnrealTest, Log,
-		TEXT("ASiegePlayerController '%s': HOLD-command location pick started (radius %.0f, Shield Wall TASK-274)."),
-		*GetNameSafe(this), HoldRadius);
+	BroadcastCommandPrompt(FString::Printf(
+		TEXT("%s: circle your units — scroll to resize, LMB confirm, RMB/Esc cancel"),
+		Type == ESiegeGroupCommandType::Ambush ? TEXT("AMBUSH") : TEXT("HOLD")));
 }
 
-void ASiegePlayerController::UpdateHoldReticle()
+void ASiegePlayerController::UpdateGroupPickReticle()
 {
 	// REUSED cursor trace (the UpdateSpellReticle shape): the pick point is the
 	// trace's ImpactPoint — the SURFACE under the cursor (flat floor, hill crown,
-	// or flank alike; never the Z=0 plane). Writes HOLD's OWN disjoint scratch so
-	// it can never touch the spell-targeting state.
+	// or flank alike; never the Z=0 plane). Writes the pick's OWN disjoint
+	// scratch so it can never touch the placement/targeting state.
 	FHitResult Hit;
 	const bool bSurfaceHit = TraceCursorToGround(Hit);
 	if (bSurfaceHit)
 	{
-		HoldPickLocation = Hit.ImpactPoint;
+		GroupPickLocation = Hit.ImpactPoint;
 	}
-	bHoldSurfaceValid = bSurfaceHit;
+	bGroupPickSurfaceValid = bSurfaceHit;
 
-	if (SpellReticleActor)
+	if (GroupPickActiveDecal)
 	{
 		// hidden while the cursor is off every surface (sky) — the confirm click
 		// refuses on the same flag, so what the player sees is what the click does
-		SpellReticleActor->SetActorHiddenInGame(!bSurfaceHit);
+		GroupPickActiveDecal->SetActorHiddenInGame(!bSurfaceHit);
 		if (bSurfaceHit)
 		{
-			SpellReticleActor->SetActorLocation(HoldPickLocation);
+			GroupPickActiveDecal->SetActorLocation(GroupPickLocation);
 		}
 	}
 }
 
-void ASiegePlayerController::ConfirmHoldTarget()
+void ASiegePlayerController::ApplyGroupPickWheel()
 {
-	// trace-miss (cursor on the sky): refuse free and STAY in mode — a different
-	// point can succeed (the placement/targeting trace-miss precedent). No stance
-	// moves; the reticle is already hidden this frame.
-	if (!bHoldSurfaceValid)
+	// POLLED wheel resize (CONVENTIONS wheel law: NO new InputAction — the wheel
+	// is verified globally unbound and must stay INERT outside the pick; this is
+	// only ever called from the pick branch of PlayerTick). One scroll notch =
+	// one GroupRadiusWheelStep on the ACTIVE circle, clamped to
+	// [GroupRadiusMin, GroupRadiusMax].
+	float NewRadius = GroupPickRadius;
+	if (WasInputKeyJustPressed(EKeys::MouseScrollUp))
+	{
+		NewRadius += GroupRadiusWheelStep;
+	}
+	if (WasInputKeyJustPressed(EKeys::MouseScrollDown))
+	{
+		NewRadius -= GroupRadiusWheelStep;
+	}
+	NewRadius = FMath::Clamp(NewRadius, GroupRadiusMin, GroupRadiusMax);
+	if (NewRadius == GroupPickRadius)
+	{
+		return; // no notch this frame (or pinned at a clamp) — nothing to resize
+	}
+	GroupPickRadius = NewRadius;
+
+	// resize the active circle in place (null-safe — no decal when the material
+	// is missing; the radius still changes and the confirm uses it)
+	if (GroupPickActiveDecal)
+	{
+		if (UDecalComponent* CircleDecal = GroupPickActiveDecal->GetDecal())
+		{
+			CircleDecal->DecalSize = FVector(500.f, GroupPickRadius, GroupPickRadius);
+			CircleDecal->MarkRenderStateDirty();
+		}
+	}
+}
+
+void ASiegePlayerController::ConfirmGroupPickStage()
+{
+	// trace-miss (cursor on the sky): refuse free and STAY in the stage — a
+	// different point can succeed (the placement/targeting trace-miss precedent).
+	// No group or stance state moves; the circle is already hidden this frame.
+	if (!bGroupPickSurfaceValid)
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Log,
-			TEXT("ASiegePlayerController '%s': HOLD-command confirm ignored — cursor is not over a surface (staying in the pick)."),
+			TEXT("ASiegePlayerController '%s': group-pick confirm ignored — cursor is not over a surface (staying in the pick)."),
 			*GetNameSafe(this));
 		return;
 	}
 
-	// capture the picked point BEFORE tearing the mode down (CancelHoldTarget
-	// zeroes the scratch)
-	const FVector ConfirmedHoldLocation = HoldPickLocation;
+	const TCHAR* TypeLabel = (GroupPickType == ESiegeGroupCommandType::Ambush) ? TEXT("AMBUSH") : TEXT("HOLD");
 
-	// exit the pick mode: releases the HoldHero melee suppression, destroys the
-	// shared reticle, restores the cursor input state (no stance change here)
-	CancelHoldTarget();
+	switch (GroupPickStage)
+	{
+	case EGroupPickStage::Select:
+	{
+		// stage 1 — SELECT: every group-eligible unit (Standard + Blue + alive +
+		// unfrozen, IsGroupCommandEligible — the new public API; Profile is
+		// private) inside the circle (2D) at confirm joins. EMPTY = refuse-and-
+		// stay + HUD reason (the law): a different circle can succeed, so the
+		// stage survives the refusal.
+		GroupPickSelectedMembers.Reset();
+		if (UWorld* World = GetWorld())
+		{
+			const float SelectRadiusSq = FMath::Square(GroupPickRadius);
+			for (TActorIterator<ASummonedUnit> It(World); It; ++It)
+			{
+				ASummonedUnit* Unit = *It;
+				if (IsValid(Unit) && Unit->IsGroupCommandEligible()
+					&& FVector::DistSquared2D(Unit->GetActorLocation(), GroupPickLocation) <= SelectRadiusSq)
+				{
+					GroupPickSelectedMembers.Add(Unit);
+				}
+			}
+		}
 
-	// commit the location, THEN latch the Hold stance + broadcast (TASK-275 reads
-	// GetHoldLocation() / GetHoldRadius() for the held-unit disc)
-	HoldLocation = ConfirmedHoldLocation;
-	SetUnitCommand(ESiegeUnitCommand::Hold);
+		if (GroupPickSelectedMembers.Num() == 0)
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("ASiegePlayerController '%s': %s stage-1 select refused — no eligible unit inside the circle (radius %.0f; staying in the pick)."),
+				*GetNameSafe(this), TypeLabel, GroupPickRadius);
+			BroadcastRefusal(NSLOCTEXT("Siegebound", "GroupPickRefused_NoUnits", "No units in the circle"));
+			return;
+		}
 
-	UE_LOG(LogGitClaudeUnrealTest, Log,
-		TEXT("ASiegePlayerController '%s': HOLD stance set at (%.0f, %.0f, %.0f), radius %.0f (Shield Wall TASK-274)."),
-		*GetNameSafe(this), HoldLocation.X, HoldLocation.Y, HoldLocation.Z, HoldRadius);
+		// drop the SELECT circle in place (earlier circles stay visible through
+		// the flow; this one dies at the final confirm/cancel — it never becomes
+		// a marker), then open stage 2 with its own cursor-following circle.
+		GroupPickSelectDecal = GroupPickActiveDecal;
+		GroupPickActiveDecal = nullptr;
+		GroupPickStage = EGroupPickStage::Position;
+		GroupPickRadius = GroupPositionRadiusDefault;
+		GroupPickActiveDecal = SpawnGroupCircleDecal(GroupPickRadius);
+		UpdateGroupPickReticle();
+
+		BroadcastCommandPrompt(FString::Printf(
+			TEXT("%s: %d unit(s) selected — place the POSITION zone (scroll to resize)"),
+			TypeLabel, GroupPickSelectedMembers.Num()));
+		break;
+	}
+
+	case EGroupPickStage::Position:
+	{
+		// stage 2 — POSITION: record the station zone, drop its circle (it
+		// becomes the group's position marker at the final confirm), open stage 3.
+		GroupPickPositionCenter = GroupPickLocation;
+		GroupPickPositionRadius = GroupPickRadius;
+
+		GroupPickPositionDecal = GroupPickActiveDecal;
+		GroupPickActiveDecal = nullptr;
+		GroupPickStage = EGroupPickStage::AttackZone;
+		GroupPickRadius = GroupAttackRadiusDefault;
+		GroupPickActiveDecal = SpawnGroupCircleDecal(GroupPickRadius);
+		UpdateGroupPickReticle();
+
+		BroadcastCommandPrompt(FString::Printf(
+			TEXT("%s: place the ATTACK zone (scroll to resize)"), TypeLabel));
+		break;
+	}
+
+	case EGroupPickStage::AttackZone:
+	{
+		// stage 3 — FINAL confirm: build the group, steal re-selected units from
+		// older groups, compute + push the per-unit sunflower stations ONCE, and
+		// transfer the dropped Position + this Attack circle to the group as
+		// persistent markers (delivers the TASK-276-deferred hold marker).
+		FSiegeUnitGroup NewGroup;
+		NewGroup.GroupId = NextUnitGroupId++;
+		NewGroup.Type = GroupPickType;
+		NewGroup.PositionCenter = GroupPickPositionCenter;
+		NewGroup.PositionRadius = GroupPickPositionRadius;
+		NewGroup.AttackCenter = GroupPickLocation;
+		NewGroup.AttackRadius = GroupPickRadius;
+		NewGroup.PositionMarkerDecal = GroupPickPositionDecal;
+		NewGroup.AttackMarkerDecal = GroupPickActiveDecal;
+
+		// re-filter the stage-1 capture: members may have died during the flow
+		for (const TWeakObjectPtr<ASummonedUnit>& Member : GroupPickSelectedMembers)
+		{
+			const ASummonedUnit* Unit = Member.Get();
+			if (Unit && !Unit->IsUnitDead())
+			{
+				NewGroup.Members.Add(Member);
+			}
+		}
+
+		if (NewGroup.Members.Num() == 0)
+		{
+			// every selected unit died mid-flow: no group to form — refuse with a
+			// HUD reason and tear the whole pick down (nothing was transferred, so
+			// CancelGroupPick destroys all three circles).
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("ASiegePlayerController '%s': %s final confirm refused — every selected unit died during the pick."),
+				*GetNameSafe(this), TypeLabel);
+			BroadcastRefusal(NSLOCTEXT("Siegebound", "GroupPickRefused_UnitsDied", "Selected units are gone"));
+			CancelGroupPick();
+			return;
+		}
+
+		// STEAL (the re-selection law): a re-selected unit leaves its older group.
+		// PruneUnitGroups below reaps any group this empties — markers included —
+		// synchronously, so it never outlives the confirm that emptied it.
+		for (const TWeakObjectPtr<ASummonedUnit>& Member : NewGroup.Members)
+		{
+			for (FSiegeUnitGroup& OldGroup : UnitGroups)
+			{
+				OldGroup.Members.Remove(Member);
+			}
+		}
+
+		// Per-unit stations: deterministic golden-angle sunflower inside the
+		// position circle — station i at radius R·√((i+0.5)/N), angle i·golden —
+		// computed ONCE here and nav-projected (the SpawnUnitSwarm ring-projection
+		// pattern), then PUSHED to the unit as a scalar offset (no arrays on
+		// units). This kills the mill-at-one-point clustering (TASK-280/282).
+		UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(GetWorld());
+		const int32 MemberCount = NewGroup.Members.Num();
+		const float StationExtentXY = FMath::Max(NewGroup.PositionRadius * 0.5f, 100.f);
+		const FVector StationProjectExtent(StationExtentXY, StationExtentXY, 200.f);
+		for (int32 Index = 0; Index < MemberCount; ++Index)
+		{
+			ASummonedUnit* Unit = NewGroup.Members[Index].Get();
+			if (!Unit)
+			{
+				continue; // filtered alive above; belt-and-braces
+			}
+			const float RingFraction = (static_cast<float>(Index) + 0.5f) / static_cast<float>(MemberCount);
+			const float RingRadius = NewGroup.PositionRadius * FMath::Sqrt(RingFraction);
+			const float RingAngle = static_cast<float>(Index) * GoldenAngleRadians;
+			FVector Station = NewGroup.PositionCenter
+				+ FVector(RingRadius * FMath::Cos(RingAngle), RingRadius * FMath::Sin(RingAngle), 0.f);
+			if (NavSys)
+			{
+				FNavLocation Projected;
+				if (NavSys->ProjectPointToNavigation(Station, Projected, StationProjectExtent))
+				{
+					Station = Projected.Location;
+				}
+			}
+			Unit->AssignCommandGroup(NewGroup.GroupId, Station - NewGroup.PositionCenter);
+		}
+
+		const int32 NewGroupId = NewGroup.GroupId;
+		UnitGroups.Add(MoveTemp(NewGroup));
+
+		// reap any older group the steal emptied (its markers die with it)
+		PruneUnitGroups();
+
+		// the pick is DONE: the Position + Attack circles now belong to the group
+		// as its persistent markers — null the scratch refs FIRST so the shared
+		// CancelGroupPick teardown below leaves them standing and destroys only
+		// the SELECT circle.
+		GroupPickPositionDecal = nullptr;
+		GroupPickActiveDecal = nullptr;
+
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': %s group %d formed — %d unit(s), position (%.0f, %.0f) r=%.0f, attack (%.0f, %.0f) r=%.0f (TASK-344)."),
+			*GetNameSafe(this), TypeLabel, NewGroupId, MemberCount,
+			GroupPickPositionCenter.X, GroupPickPositionCenter.Y, GroupPickPositionRadius,
+			GroupPickLocation.X, GroupPickLocation.Y, GroupPickRadius);
+
+		CancelGroupPick();
+
+		// the completion prompt AFTER the teardown's empty broadcast, so "set"
+		// is what remains on the HUD
+		BroadcastCommandPrompt(FString::Printf(TEXT("%s set: %d unit(s)"), TypeLabel, MemberCount));
+		break;
+	}
+
+	case EGroupPickStage::None:
+	default:
+		// unreachable — the PlayerTick pick branch only runs while a stage is live
+		break;
+	}
 }
 
-void ASiegePlayerController::CancelHoldTarget()
+void ASiegePlayerController::CancelGroupPick()
 {
 	// the ExitTargetingMode law (qa/TASK-003-report.md warning 2): release the
-	// melee suppression BEFORE any early-out. Every hold exit path — confirm,
-	// RMB/Esc cancel (binding or polled), match end, hero death, unpossess, match
-	// reset, EndPlay — funnels through here. HoldHero is a SEPARATE record from
-	// PlacementHero/TargetingHero, so a defensive ExitPlacement/ExitTargeting call
-	// can never strand a live hold suppression (and SetMeleeSuppressed(false) is
-	// an idempotent flag write).
-	if (IsValid(HoldHero))
+	// melee suppression BEFORE any early-out. Every pick exit path — the final
+	// confirm, RMB/Esc cancel (binding or polled), T/E release, match end, hero
+	// death, unpossess, match reset, EndPlay — funnels through here.
+	// GroupPickHero is a SEPARATE record from PlacementHero/TargetingHero, so a
+	// defensive ExitPlacement/ExitTargeting call can never strand a live pick
+	// suppression (and SetMeleeSuppressed(false) is an idempotent flag write).
+	if (IsValid(GroupPickHero))
 	{
-		HoldHero->SetMeleeSuppressed(false);
+		GroupPickHero->SetMeleeSuppressed(false);
 	}
-	HoldHero = nullptr;
+	GroupPickHero = nullptr;
 
-	if (!bInHoldTargetMode)
+	if (GroupPickStage == EGroupPickStage::None)
 	{
 		return;
 	}
 
-	bInHoldTargetMode = false;
-	bHoldSurfaceValid = false;
-	HoldPickLocation = FVector::ZeroVector;
+	GroupPickStage = EGroupPickStage::None;
+	bGroupPickSurfaceValid = false;
+	GroupPickLocation = FVector::ZeroVector;
+	GroupPickRadius = 0.f;
+	GroupPickSelectedMembers.Reset();
+	GroupPickPositionCenter = FVector::ZeroVector;
+	GroupPickPositionRadius = 0.f;
 
-	DestroySpellReticle();
+	// destroy every pick circle this flow still OWNS. The stage-3 confirm nulls
+	// the Position + Attack refs first (they transferred to the group as its
+	// persistent markers), so a completed flow only loses its SELECT circle; a
+	// cancel at any stage destroys all live circles. Existing groups' markers
+	// are NEVER touched here — they die with their group (prune/release).
+	if (GroupPickActiveDecal)
+	{
+		GroupPickActiveDecal->Destroy();
+		GroupPickActiveDecal = nullptr;
+	}
+	if (GroupPickSelectDecal)
+	{
+		GroupPickSelectDecal->Destroy();
+		GroupPickSelectDecal = nullptr;
+	}
+	if (GroupPickPositionDecal)
+	{
+		GroupPickPositionDecal->Destroy();
+		GroupPickPositionDecal = nullptr;
+	}
+
+	// empty prompt ⇒ the HUD falls back to its stance display (the additive-bind
+	// contract). The stage-3 confirm re-broadcasts its completion prompt AFTER
+	// funneling through here.
+	BroadcastCommandPrompt(FString());
 
 	// restores game-only free-look — unless IA_UICursor is still held, in which
 	// case the cursor stays up for the HUD (the cursor owners compose)
 	ApplyCursorInputState();
+}
+
+ADecalActor* ASiegePlayerController::SpawnGroupCircleDecal(float Radius)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	// null-safe circle material (the SpawnSpellReticle recipe, cloned): missing
+	// M_SpellReticle ⇒ NO circle actor — the pick still works off the trace (the
+	// invisible-ghost degradation precedent), logged ONCE per controller (the
+	// shared bWarnedNoReticleMaterial latch).
+	UMaterialInterface* ReticleMaterial = SpellReticleMaterialAsset.LoadSynchronous();
+	if (!ReticleMaterial)
+	{
+		if (!bWarnedNoReticleMaterial)
+		{
+			bWarnedNoReticleMaterial = true;
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("ASiegePlayerController '%s': circle material '%s' not found (built in TASK-108) — the group pick continues without circle visuals."),
+				*GetNameSafe(this), *SpellReticleMaterialAsset.ToString());
+		}
+		return nullptr;
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParams.ObjectFlags |= RF_Transient;
+
+	// Spawn at IDENTITY rotation (the TASK-100 composition lesson, verbatim from
+	// SpawnSpellReticle): ADecalActor's constructor already gives its root decal
+	// component relative pitch -90, and UE 5.8's PostSpawnInitialize COMPOSES
+	// root ∘ spawn transform — spawning with -90 here would compose to -180 and
+	// lay the projection axis horizontal. Identity composes to the CDO's own -90.
+	ADecalActor* CircleActor = World->SpawnActor<ADecalActor>(FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+	if (!CircleActor)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASiegePlayerController '%s': failed to spawn a group-pick circle decal — the pick continues without this circle's visual."),
+			*GetNameSafe(this));
+		return nullptr;
+	}
+
+	// ABSOLUTE -90 pitch points the decal's projection axis straight DOWN —
+	// SetActorRotation is world-absolute, immune to CDO/spawn composition. The
+	// decal drapes whatever surface lies under it (hill crowns and flanks
+	// included). Decals carry NO collision, so a circle can never block the
+	// cursor trace.
+	CircleActor->SetActorRotation(FRotator(-90.f, 0.f, 0.f));
+	CircleActor->SetActorHiddenInGame(true); // shown on the first surface hit
+
+	if (UDecalComponent* CircleDecal = CircleActor->GetDecal())
+	{
+		// OPTIONAL stage tint (flagged to art, TASK-345): pushed through an MID at
+		// the "StageTint" vector parameter — M_SpellReticle does not carry it YET,
+		// and SetVectorParameterValue on an absent parameter is a silent no-op, so
+		// this costs nothing until the artist adds the param (stock nodes only).
+		UMaterialInstanceDynamic* CircleMID = UMaterialInstanceDynamic::Create(ReticleMaterial, CircleActor);
+		if (CircleMID)
+		{
+			static const FName StageTintParamName(TEXT("StageTint"));
+			FLinearColor StageTint = FLinearColor::White; // Select
+			if (GroupPickStage == EGroupPickStage::Position)
+			{
+				StageTint = FLinearColor(0.2f, 1.f, 0.3f); // position zone: green
+			}
+			else if (GroupPickStage == EGroupPickStage::AttackZone)
+			{
+				StageTint = FLinearColor(1.f, 0.35f, 0.2f); // attack zone: red
+			}
+			CircleMID->SetVectorParameterValue(StageTintParamName, StageTint);
+			CircleDecal->SetDecalMaterial(CircleMID);
+		}
+		else
+		{
+			CircleDecal->SetDecalMaterial(ReticleMaterial);
+		}
+
+		// footprint = this circle's radius; X (the projection half-depth) is 500 —
+		// bracketing the M4.5 max terrain height (250) exactly like the spell
+		// reticle's window, so the decal reaches the surface on every hill.
+		CircleDecal->DecalSize = FVector(500.f, Radius, Radius);
+		CircleDecal->MarkRenderStateDirty();
+	}
+
+	return CircleActor;
+}
+
+void ASiegePlayerController::PruneUnitGroups()
+{
+	// 1 s maintenance reaper (TASK-344; the CONVENTIONS ≤1 s marker-removal law):
+	// compact stale/dead members out of every group, then destroy any group with
+	// none left — its markers die with it. Also called synchronously by the
+	// stage-3 steal so a steal-emptied group never outlives the confirm. Reverse
+	// iteration keeps RemoveAt index-safe.
+	for (int32 GroupIndex = UnitGroups.Num() - 1; GroupIndex >= 0; --GroupIndex)
+	{
+		FSiegeUnitGroup& Group = UnitGroups[GroupIndex];
+		for (int32 MemberIndex = Group.Members.Num() - 1; MemberIndex >= 0; --MemberIndex)
+		{
+			const ASummonedUnit* Member = Group.Members[MemberIndex].Get();
+			if (!Member || Member->IsUnitDead())
+			{
+				Group.Members.RemoveAt(MemberIndex);
+			}
+		}
+		if (Group.Members.Num() == 0)
+		{
+			if (Group.PositionMarkerDecal)
+			{
+				Group.PositionMarkerDecal->Destroy();
+				Group.PositionMarkerDecal = nullptr;
+			}
+			if (Group.AttackMarkerDecal)
+			{
+				Group.AttackMarkerDecal->Destroy();
+				Group.AttackMarkerDecal = nullptr;
+			}
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("ASiegePlayerController '%s': unit group %d emptied — group and markers removed (TASK-344 prune)."),
+				*GetNameSafe(this), Group.GroupId);
+			UnitGroups.RemoveAt(GroupIndex);
+		}
+	}
+}
+
+void ASiegePlayerController::ClearAllUnitGroups()
+{
+	// the RELEASE law (TASK-344): T/E and Play Again replace EVERY group order.
+	// Members are cleared EXPLICITLY (immediate — no 0.25 s self-heal wait, the
+	// units adopt the new stance on their very next state tick), markers
+	// destroyed, prompt emptied so the HUD returns to its stance display.
+	if (UnitGroups.Num() == 0)
+	{
+		return;
+	}
+
+	for (FSiegeUnitGroup& Group : UnitGroups)
+	{
+		for (const TWeakObjectPtr<ASummonedUnit>& Member : Group.Members)
+		{
+			if (ASummonedUnit* Unit = Member.Get())
+			{
+				Unit->ClearCommandGroup();
+			}
+		}
+		if (Group.PositionMarkerDecal)
+		{
+			Group.PositionMarkerDecal->Destroy();
+			Group.PositionMarkerDecal = nullptr;
+		}
+		if (Group.AttackMarkerDecal)
+		{
+			Group.AttackMarkerDecal->Destroy();
+			Group.AttackMarkerDecal = nullptr;
+		}
+	}
+
+	const int32 ClearedCount = UnitGroups.Num();
+	UnitGroups.Reset();
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASiegePlayerController '%s': %d unit group(s) cleared (release law, TASK-344)."),
+		*GetNameSafe(this), ClearedCount);
+
+	BroadcastCommandPrompt(FString());
+}
+
+const FSiegeUnitGroup* ASiegePlayerController::FindUnitGroup(int32 GroupId) const
+{
+	if (GroupId == INDEX_NONE)
+	{
+		return nullptr;
+	}
+	for (const FSiegeUnitGroup& Group : UnitGroups)
+	{
+		if (Group.GroupId == GroupId)
+		{
+			return &Group;
+		}
+	}
+	// no such group (T/E release, all-dead prune, steal-emptied, Play Again):
+	// the unit-side caller SELF-HEALS to the legacy stance gate on this null
+	return nullptr;
+}
+
+void ASiegePlayerController::BroadcastCommandPrompt(const FString& Prompt)
+{
+	// stage prompts ALSO log (the law: the feature ships without the WBP bind).
+	// Empty prompts (pick over / groups released) broadcast quietly.
+	if (!Prompt.IsEmpty())
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': command prompt — %s"),
+			*GetNameSafe(this), *Prompt);
+	}
+	else
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegePlayerController '%s': command prompt cleared."),
+			*GetNameSafe(this));
+	}
+	OnCommandPromptChanged.Broadcast(Prompt);
 }
 
 void ASiegePlayerController::ResolveSpellInstant(int32 Slot, FName CardID, const FCardRow& Row, ASiegePlayerState& SiegeState)
@@ -2852,12 +3325,12 @@ void ASiegePlayerController::ApplyCursorInputState()
 	}
 
 	// cursor owners compose: placement mode (M1, unchanged), spell targeting mode
-	// (M5 TASK-100 — ruling 8: "cursor posture mirrors placement mode"), the W1
-	// HOLD-command pick (TASK-274 — same reused posture), and the held IA_UICursor
+	// (M5 TASK-100 — ruling 8: "cursor posture mirrors placement mode"), the
+	// group-order pick (TASK-344 — same reused posture), and the held IA_UICursor
 	// (M2 input ruling) — any one keeps the cursor up. The three card/command
 	// cursor modes are mutually exclusive, so at most two owners are ever live
 	// (one of them + IA_UICursor).
-	const bool bWantCursor = bInPlacementMode || bInTargetingMode || bInHoldTargetMode || bUICursorHeld;
+	const bool bWantCursor = bInPlacementMode || bInTargetingMode || (GroupPickStage != EGroupPickStage::None) || bUICursorHeld;
 	bShowMouseCursor = bWantCursor;
 	bEnableClickEvents = bWantCursor;
 

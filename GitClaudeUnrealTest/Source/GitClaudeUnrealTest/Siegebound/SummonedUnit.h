@@ -24,6 +24,7 @@ class USiegeHitFlashComponent;
 class USiegeMeshJuiceComponent;
 class USkeletalMeshComponent;
 class UStaticMeshComponent;
+struct FSiegeUnitGroup;
 
 /**
  *  Current step of the summoned-unit state machine (GDD §3.8:
@@ -309,6 +310,36 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Unit")
 	ESummonedUnitState GetUnitState() const { return State; }
 
+	/**
+	 *  Group-order assignment (TASK-344; pushed by ASiegePlayerController at the
+	 *  stage-3 pick confirm). Stores the group id plus THIS unit's precomputed
+	 *  station offset (PositionCenter + offset = the tier-3 station — the
+	 *  golden-angle sunflower slot, computed and nav-projected ONCE by the
+	 *  controller; per-unit scalars only, no arrays on units). Also DROPS any
+	 *  current target so the next state tick (≤0.25 s) re-targets from the NEW
+	 *  zones — a fresh order replaces the old behavior (the release law), and an
+	 *  AMBUSH group must never inherit a stale far-away chase target. The unit
+	 *  resolves the live group each state tick via FindUnitGroup; a null result
+	 *  self-heals back to the legacy stance gate.
+	 */
+	void AssignCommandGroup(int32 GroupId, const FVector& StationOffset);
+
+	/** Leaves the current group order (TASK-344): id back to INDEX_NONE, station offset zeroed. Called by the controller's release paths (T/E, Play Again) and by the null-group self-heal. */
+	void ClearCommandGroup();
+
+	/**
+	 *  True when this unit can join a group order (TASK-344): Standard profile +
+	 *  Blue team + alive + not match-end frozen. Profile is PRIVATE, so this is
+	 *  the ONE public eligibility API the controller's stage-1 select sweep uses
+	 *  (Siege/Support/miner exclusion stays recorded law; bot/Red never qualify).
+	 *  A resumable spell freeze does NOT exclude — a frozen-but-thawing unit may
+	 *  be circled and obeys once it wakes.
+	 */
+	bool IsGroupCommandEligible() const;
+
+	/** Group order this unit belongs to, or INDEX_NONE (TASK-344 debug/PIE hook). */
+	int32 GetCommandGroupId() const { return CommandGroupId; }
+
 protected:
 
 	/** Binds the card stats from DT_Cards and starts the state machine. */
@@ -412,8 +443,8 @@ protected:
 	 *  Shield Wall DEFEND engagement radius (W1 TASK-275): under the player's DEFEND
 	 *  stance, a Blue Standard unit fights ONLY enemies within this 2D distance of its
 	 *  OWN castle, else falls back toward home. Default 2500 uu (Q6 default; FLAGGED
-	 *  tunable for the 10x arena). Lives HERE per CONVENTIONS (the unit owns it, NOT the
-	 *  controller — mirrors how HoldRadius lives on the controller). // Shield Wall — Defend radius
+	 *  tunable for the 10x arena). Lives HERE per CONVENTIONS (the unit owns it, NOT
+	 *  the controller). // Shield Wall — Defend radius
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Commands", meta = (ClampMin = "0"))
 	float DefendRadius = 2500.f;
@@ -581,12 +612,34 @@ private:
 	 *  bypasses the freeze gating (UpdateState early-returns on frozen before this runs).
 	 *    • ATTACK — mirrors the legacy Standard body exactly (TASK-282): self-defense
 	 *      AcquireTarget AND the no-in-aggro march goal = the nearest enemy castle.
-	 *    • HOLD   — target = AcquireEnemyNearPoint(HoldLocation, HoldRadius); goal = that
-	 *      target ?? march to HoldLocation via EnterAdvanceToLocation (Idle on arrival).
+	 *    • HOLD   — SUPERSEDED (TASK-344): the team-wide Hold stance was replaced by the
+	 *      per-unit group orders (UpdateStateGrouped) and nothing latches it any more; a
+	 *      stale/out-of-contract Hold value defensively falls through to the ATTACK branch.
 	 *    • DEFEND — target = AcquireEnemyNearPoint(own castle, DefendRadius); goal = that
 	 *      target ?? fall back to the own castle (EnterAdvance).
 	 */
 	void UpdateStateStandardCommanded(const ASiegePlayerController& PC);
+
+	/**
+	 *  Group-order state body (TASK-344, CONVENTIONS "Group orders — 3-zone HOLD +
+	 *  AMBUSH"), dispatched from UpdateState ABOVE the stance gate (grouped behavior
+	 *  is per-unit and cannot live in the team-stance body) whenever CommandGroupId
+	 *  resolves to a live group. Priority ladder with anti-thrash STICKINESS (the
+	 *  TASK-280/282 freeze lesson):
+	 *    • the current target is KEPT while alive and zone-valid — acquisition runs
+	 *      ONLY when target-less (never a per-tick re-pick);
+	 *    • HOLD leash — the tick the target exits BOTH zones it is dropped
+	 *      (disengage + return); single MONOTONE exception: a position-tier target
+	 *      upgrades to an attack-zone enemy the moment one exists (position→attack
+	 *      only — it cannot oscillate);
+	 *    • AMBUSH leash-exemption — the zone drop-test is SKIPPED while a live
+	 *      target exists (finish the kill), then the ladder resumes;
+	 *    • tier 1 acquire = AcquireEnemyNearPoint(attack zone), tier 2 = the
+	 *      position zone, tier 3 = advance to the per-unit station (PositionCenter
+	 *      + GroupStationOffset) via EnterAdvanceToLocation (which carries the
+	 *      TASK-275 kite-fix), idling inside the 150 uu arrival tolerance.
+	 */
+	void UpdateStateGrouped(const FSiegeUnitGroup& Group);
 
 	/**
 	 *  Shield Wall HOLD/DEFEND target search (W1 TASK-275): AcquireTarget's exact
@@ -925,6 +978,14 @@ private:
 	/** Goal of the last MoveToActor request — avoids re-pathing every state check. */
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> CurrentMoveGoal;
+
+	/** Group order this unit belongs to (TASK-344), INDEX_NONE = none. Set by AssignCommandGroup (controller, eligibility-gated); cleared by ClearCommandGroup and the null-group self-heal in UpdateState. */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Unit", meta = (AllowPrivateAccess = "true"))
+	int32 CommandGroupId = INDEX_NONE;
+
+	/** Precomputed per-unit station offset from the group's PositionCenter (TASK-344): the golden-angle sunflower slot, computed + nav-projected ONCE by the controller at the stage-3 confirm — never recomputed per tick. */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Unit", meta = (AllowPrivateAccess = "true"))
+	FVector GroupStationOffset = FVector::ZeroVector;
 
 	/** Goal point of the last EnterAdvanceToLocation request (W1 TASK-275, HOLD) — avoids re-pathing to the same point every check. Meaningful only while bHasMoveGoalLocation. */
 	FVector CurrentMoveGoalLocation = FVector::ZeroVector;
