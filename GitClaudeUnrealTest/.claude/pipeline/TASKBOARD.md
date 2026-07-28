@@ -1885,7 +1885,7 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
     (NEW 2026-07-27) + per-asset `albedo_delight` override + same-path/preserve-anims.
 #### TASK-343 — [FID-int] Import + verify the fidelity rework in Simulate + per-unit commits (build-master)
 - assignee: build-master
-- status: backlog
+- status: **done** (2026-07-27 night — texture-only per the TASK-342 delivery form, `_D`-pair ONLY: same-path imports MD5-readback-proven [Archer `ea2e4b0a…` / Pikeman `269c7354…` = the new PNGs, sRGB ON, TC_Default], sampler sweep 0 hits, Simulate verify on L_Arena PASS [team recolor both teams, capsules READ 90/95, bone-delta anims tick, logs 0/0/0/0/0], TWO commits on main NO push: Archer **`3770bf6`** [+ manifest with BOTH pins + TASK-342 handoff], Pikeman = the commit carrying this line [+ TASK-343 handoff + galleries + 6 verify shots]. `L_Arena` never saved. WATCH: Jonathan's eye final — Archer deliberately darker than the old bleach; Pikeman donor-capped ≈0.8 chroma. `handoffs/TASK-343-buildmaster.md`)
 - blocked-by: TASK-342
 - parallel-safe: no (EXCLUSIVE editor + Git; EDITOR-GATED — serialize with the whole editor queue, never during Jonathan's PIE; may batch BOTH units in one session, SEPARATE commits)
 - spec: >
