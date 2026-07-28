@@ -71,6 +71,13 @@
       "_dims_source": "TASK-037 blockout: 125.0 x 67.3 x 180.0, feet-center, bow -X, quiver on back (+Y), front -Y",
       "pre_rotate_z_deg": 0.0,
       "voxel_size_ue": 1.5,
+      "albedo_delight": {
+        "_note": "TASK-342 CHROMA-FIDELITY override (2026-07-27, per the per-asset albedo_delight override law + CHROMA-FIDELITY GATE). History: the TASK-312 locked-profile pin {1.0, 0.25, g0.55, x1.2} was lost post-crash (re-pinned this task first), and its bake shipped chalky: alpha-masked re-measure showed preview-front luma retention 1.5597 (ABOVE the 1.25 bleach line — the recorded 0.7505 was backdrop-contaminated, denominator inflated 2x) with chroma retention 0.7594 and the dominant-cluster C* at 0.56x. MECHANISM: per-channel gamma 0.55 compresses channel ratios (the desaturator); gain is a pure linear scalar (chroma-raising). FIX: move the entire lift onto AO-divide + gain — gamma 1.0 kills the ratio compression, gain 1.7 holds the UV-norm floor. Measured on the final bake (validated method: albedo anchors 4dp x6, retention anchors Castle 1.0153/1.0155 + Ogre 0.9402/0.9399 + 0.8121/0.8124): UV-norm 0.2676 (floor 0.2536 PASS), preview-front luma retention 1.0141, chroma retention 0.9682, top-2 hue shifts 2.7/6.0 deg. Structural note: the 0.2536 floor itself binds against dark-palette concepts — gain below ~1.6 breaks the floor.",
+        "ao_divide_strength": 1.0,
+        "ao_floor": 0.25,
+        "gamma": 1.0,
+        "gain": 1.7
+      },
       "team_region": {
         "max_fraction": 0.35,
         "_tuned": "TASK-087 eyeball gate 2026-07-08: original cap selector painted the archer's bare HEAD (blue face) and the quiver box splattered the surcoat back - 27.1% selected. Probe-measured (probe_fbx): quiver+fletching at y>0.85 / x 0-0.45, hair back also above z 0.85, so the quiver box caps at z 0.85 (fletching stays natural). Replaced with Footman-recipe upward-facing pauldron caps + a tight quiver-body box.",
@@ -333,11 +340,11 @@
       "pre_rotate_z_deg": 0.0,
       "voxel_size_ue": 1.5,
       "albedo_delight": {
-        "_note": "TASK-225 pin (2026-07-19): recorded-dark (TASK-172). Starting at the TASK-195 tuned values; temper gamma toward 0.65 if the rebake preview over-lifts.",
+        "_note": "TASK-342 CHROMA-FIDELITY override (2026-07-27, per the per-asset albedo_delight override law + CHROMA-FIDELITY GATE; supersedes the TASK-225 pin for this asset only). The locked profile's bake shipped bleached-cream: alpha-masked measure = preview-front luma retention 1.2668 (at/over the recorded 1.13-1.24 edge) with chroma retention 0.5685 — BELOW the 0.60 gate floor; tabard cluster drifted 16.8 deg warm. MECHANISM as Archer: per-channel gamma 0.55 is the desaturator; the fix moves the lift onto AO-divide + scalar gain (gamma 1.0, gain 2.3 — higher than Archer because this donor bakes darker, mean_linear_before 0.0567). Measured on the final bake (validated method, see Archer _note): UV-norm 0.2659 (floor PASS), preview-front luma retention 1.1315 (under the 1.25 bleach line it must not breach), chroma retention 0.7805, top-2 hue shifts 2.2/5.8 deg. Chroma is DONOR-LIMITED: delight-off baseline measures 0.5843 — Stage-2 cannot exceed ~0.8 from this donor; shoulder-0.9 trial bought +0.007 chroma for +0.008 luma, rejected. gain 2.2 or lower breaks the UV-norm floor (the floor binds).",
         "ao_divide_strength": 1.0,
         "ao_floor": 0.25,
-        "gamma": 0.55,
-        "gain": 1.2
+        "gamma": 1.0,
+        "gain": 2.3
       },
       "team_region": {
         "max_fraction": 0.35,
