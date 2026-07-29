@@ -1910,8 +1910,8 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
     address validation + null-safety (bad IP degrades with a user-facing error, never a hang/crash); widget-law compliance
     (FString-only BIEs); no ini edit; coding law + compile traps. Report `qa/TASK-354.md`. Post in ⚙️ Dev & QA.
 #### TASK-355 — [M8-menu] `WBP_SessionMenu` + main-menu Host/Join entry (art-director, editor)
-- assignee: art-director · status: backlog
-- blocked-by: TASK-354-QA (qa-passed) — and the compiled module: **runs INSIDE TASK-357's session after its compile step** (the TASK-345/346 precedent; own deliverable, no Git)
+- assignee: art-director · status: **BLOCKED — tooling wall (2026-07-29, `handoffs/TASK-355-artist.md`)**. `UWidgetTree.RootWidget` is UNWRITABLE from every available lane (UE-Python `set_editor_property`, MCP `ObjectTools.set_properties`, the `WidgetBlueprintFactory` CDO's `RootWidgetClass`), and NEITHER creation path (`AssetToolsHelpers.create_asset` / MCP `BlueprintTools.create`) emits a root — so a from-scratch WBP renders nothing and `BindWidgetOptional` (which binds by DESIGN-TIME name) cannot be satisfied. Every shipped WBP has designer-authored panels; duplicate+reparent is forbidden by the corruption law. **Contract itself is SOUND** — `USessionMenuWidget` resolves and all six auto-wire properties bind on the CDO. `/Game/UI/WBP_SessionMenu` EXISTS fresh + correctly parented but EMPTY. **Unblock = ~2-min human step (Jonathan drops a root panel + the 6 exactly-named widgets in the UMG designer), or a C++ self-building tree, or an MCP UMG toolset.** §9.6 + main-menu entry deliberately NOT done (would park a change from a non-landing task / ship a dead-end button). ⚠️ `Content/UI/WBP_SessionMenu.uasset` was AUTO-STAGED by the editor's source control — unstage if 355 isn't landing. ← was: backlog
+- blocked-by: TASK-354-QA (qa-passed) — and the compiled module: **runs INSIDE TASK-357's session after its compile step** (the TASK-345/346 precedent; own deliverable, no Git) · **NOW ALSO: the design-time WidgetTree gate above**
 - parallel-safe: no (EDITOR-GATED)
 - spec: >
     (1) Build `/Game/UI/WBP_SessionMenu` FRESH (never duplicate+reparent — the corruption law), reparented to `USessionMenuWidget`:
@@ -1928,10 +1928,17 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
     `handoffs/TASK-355-artist.md`; post in 🎨 Art.
 - names: > NEW `/Game/UI/WBP_SessionMenu` ↔ `USessionMenuWidget`; additive edits to the existing main-menu WBP + `WBP_VictoryScreen` (the ruling-§9.6 one-node rewire). Law: CONVENTIONS M8 (net class naming) + widget laws.
 #### TASK-356 — [M8-rep1] Core-state replication pass 1: GameState/PlayerState/Castle/economy/match-flow (gameplay-programmer)
-- assignee: gameplay-programmer · status: backlog
+- assignee: gameplay-programmer · status: **qa-failed — LOOP 1 of 3 (TASK-357 live two-client gate, 2026-07-29; findings appended to `qa/TASK-356.md`)**. Compile GREEN; pre-compile QA's file-level review held (zero compile defects). The LIVE gate found **3 blockers + 1 flagged, all in 356's files**: **(B1)** `ASiegeBattlefieldScatter` is never net-relevant to the client — point actor at the origin, `bAlwaysRelevant=False`, default 150 m cull radius vs spawns at 250 m in the 10× arena ⇒ `OnRep_GenerationIndex` NEVER fires ⇒ client has ZERO scatter + 0 gold nodes (host: 7 layers + 6) — the audit's mismatched-battlefield hazard, live, and in the SUBSET (rubber-band) direction. **(B2)** same relevancy cause kills the ENEMY castle's HP/crumble/destroyed rep: measured host 500 / client 2000 on the far castle (488 m) while the NEAR castle replicated 500/500 — proving the OnRep code itself is correct. **(B3)** `GetHeroStartTransform` runs `FindPlayerStart` BEFORE consulting `HeroTeam`, so L_Arena's single (Blue) PlayerStart always wins and the castle-relative Red branch is dead code — both heroes spawn stacked at the Blue spawn `(-23800, 0/84, 98)`. **(F4, flagged)** client `ServerRequestPlayAgain` executed LOCALLY and never reached the host; client's own PC uniquely reads `bReplicates=False` (client→server RPCs otherwise proven alive by a server-corrected hero teleport) — needs one confirm via the real widget once 355 lands. **Standalone/practice regression FULL PASS** (bot, economy, 28 units, match end, Play Again reset, hero yaw-0 at PlayerStart — the §10/F7 route). Likely fix shape for B1+B2: `bAlwaysRelevant`/arena-sized `NetCullDistanceSquared` on `ACastle` + `ASiegeBattlefieldScatter`, then re-audit every M8-replicated actor against the 10× arena. ← was: ready-for-qa → qa-passed
 - blocked-by: TASK-353 (manager-signed) **AND TASK-350's CODE COMMIT LANDED** (this task edits the shared files CASTLE-3X owns until then: `Castle.{h,cpp}`, `SiegePlayerController.{h,cpp}`, GameMode/GameState/`SiegePlayerState`) — plus single-owner-per-file vs any other in-flight M8 task
 - parallel-safe: no (shared-file surgery)
 - spec: >
+    **STEP 0 [ADDED at the CASTLE-3X closure ruling, 2026-07-29 — YOU write the owed addendum]:** author
+    `handoffs/TASK-353-architecture-addendum.md` from the SHIPPED CASTLE-3X diff (code commit `949c252` + the landed
+    `Castle/SiegePlayerController/SiegeBotController/SummonedUnit/HeroCharacter/SiegeNavAreas/DefaultEngine.ini`), resolving the
+    TASK-353 §7 hazards against REAL code: (a) client-proxy Team-at-BeginPlay ordering vs the landed channel-stamping sites (is an
+    `OnRep_Team` re-stamp hook needed?); (b) client-side gate-collision truth for the hero (blocker config not authority-gated?
+    hero stamp timing vs Team replication?); (c) pin the exact crumble stage member/apply names for the §3.1 table. Evidence-based
+    (file:line), not asserted — TASK-356-QA checks it. THEN:
     Implement the P1 slice of the signed design ONLY (the increment, not the game): (1) `ACastle` replicates — `bReplicates`, HP
     (`DOREPLIFETIME` + `OnRep_CurrentHP` driving the existing bar/delegate path), crumble stage as replicated visual state; (2) gold
     server-authoritative on PlayerState — server tick mutates, client HUD reads replicated value (owner-only condition), all
@@ -1947,19 +1954,21 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
     TASK-353 sign-off, ruling §9.1 — PossessedBy team assign + `Team` rep/OnRep + the melee authority gate; 349-lane, its .cpp is
     349-touched)** + `BattlefieldScatter.{h,cpp}` + `SiegeFeedbackLibrary.cpp`, per the SIGNED TASK-353 §6 file map. **AMENDMENTS
     (sign-off, binding): (a) the clean-file carve is DECLINED — this is ONE task, dispatched only after TASK-350's code commit
-    (the parked-uncommitted-C++/TASK-277 trap); (b) before touching any 349-lane file, READ `handoffs/TASK-353-architecture-addendum.md`
-    (the post-350 delta re-verify the doc's §7 owes — it pins the crumble member names and the gating-stamp timing); (c) implement
+    (the parked-uncommitted-C++/TASK-277 trap); (b) [AMENDED 2026-07-29] the addendum `handoffs/TASK-353-architecture-addendum.md` is WRITTEN BY THIS TASK as STEP 0
+    (closure ruling — the doc's §7 delta re-verify, evidence-based against `949c252`) BEFORE any 349-lane edit; (c) implement
     the SIGNED doc, not the board summary — on any conflict the doc wins.** Law: CONVENTIONS "Networked 1v1 (M8)"
     (RPC/replication/team laws). Report `handoffs/TASK-356-programmer.md`.
 #### TASK-356-QA — [M8-rep1 QA] Review TASK-356
 - assignee: qa-reviewer · status: backlog · blocked-by: TASK-356 · parallel-safe: no
 - spec: >
-    Confirm: every mutation `HasAuthority()`-guarded; `DOREPLIFETIME`/`OnRep_*` naming + registration complete; owner-only
-    conditions where designed; the single-player byte-identity argument holds per site; the P1 scope fence (no unit/combat/spell
+    **FIRST [added 2026-07-29]: the STEP-0 addendum** — `handoffs/TASK-353-architecture-addendum.md` EXISTS, is evidence-based
+    against the shipped `949c252` code (file:line, not assertion), resolves all three §7 items (Team-stamp ordering / hero gate
+    truth / crumble member names), and 356's 349-lane edits COMPLY with it. Then confirm: every mutation `HasAuthority()`-guarded;
+    `DOREPLIFETIME`/`OnRep_*` naming + registration complete; owner-only conditions where designed; the single-player byte-identity argument holds per site; the P1 scope fence (no unit/combat/spell
     replication crept in); no `GetFirstPlayerController` remains in the P1-scoped sites; CASTLE-3X's landed team-gating code
     undisturbed except per the signed design; coding law + compile traps. Report `qa/TASK-356.md`. Post in ⚙️ Dev & QA.
 #### TASK-357 — [M8-P1-int] Compile + host TASK-355 + the TWO-CLIENT gate + commit (build-master)
-- assignee: build-master · status: backlog
+- assignee: build-master · status: **phase A ✅ + phase B RUN, gate ❌ — HELD OPEN pending TASK-356 loop 1 (`handoffs/TASK-357-buildmaster.md`)**. Phase A: joint 356+354 compile GREEN, editor bounced no-save, git-status new-files belt PASS. Phase B (run menu-free — TASK-355 blocked): the two-client gate ran via **twin `-game` processes** (`?listen` host + `127.0.0.1:7777` client) driven over **UE python remote execution** (per-process multicast port; the desktop was LOCKED all session, which blocks SendInput ⇒ no console/keyboard lane). **PASSED:** D2 latch + SpawnBot gate, D3 seats (Blue/Red), gold `COND_OwnerOnly` (enemy gold never crosses), replicated clock ±1 s, D7 match end on both (~70 ms), D14 own-team music (host Victory / client Defeat), hero Team rep + capsule re-stamp, D5 lockouts (exact refusals, zero units), host Play Again, zero non-authority warns / ensures / AccessedNone / Fatal, **standalone regression FULL PASS**, and TASK-354's deferred **11/11 parser reject sweep**. **FAILED:** 3 blockers + 1 flagged, all TASK-356's (see its board entry + `qa/TASK-356.md`). **NO COMMIT of the code lane** (M8 P1 lands as one unit); docs committed separately to end the untracked exposure; `Content/UI/WBP_SessionMenu.uasset` UNSTAGED (auto-staged by the editor's SCC, incomplete, left on disk for Jonathan's UMG step); `WBP_VictoryScreen` confirmed NOT dirty. Re-run phase B after the 356 fix — the twin-process + remote-python recipe is written down for cheap repeat. ← was: backlog
 - blocked-by: TASK-354-QA + TASK-356-QA (both qa-passed); hosts TASK-355 in-session; editor queue serializes behind the CASTLE-3X integration (TASK-350/351)
 - parallel-safe: no (EXCLUSIVE editor + Git)
 - spec: >
@@ -1983,7 +1992,7 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
 
 ---
 
-## CASTLE-3X (decomposed 2026-07-28) — 27× hollow castle with a team-gated walkable interior (TASK-347..351)
+## CASTLE-3X (decomposed 2026-07-28) — 27× hollow castle with a team-gated walkable interior (TASK-347..351) — **✅ COMPLETE 2026-07-29** (TASK-350 done: assets `ea2a70f` / code `949c252` / the one-time nav-save `bf5e562`, exception SPENT per procedure and the never-save law back in force; TASK-351 done `08c4a24`, stage band FULL PASS on first measure — no re-spread; 5-point closure list closed, B2/B3/B4 dead, win condition proven at 3×. One open item — the R2(a) far-castle re-mark window — RULED accept-with-containment in the "Closure rulings (2026-07-29)" block below.)
 
 **Directive (Jonathan, verbatim, 2026-07-28):** *"I want to change the castle a little bit. I want to make the castle model about 27 times larger (3 times larger for each of the 3 dimensions), and the inside will be hollow and allow our units to walk into it and spawn in it, but enemy units cannot walk into the inside of it. Regenerate new concept art for the castle, and use our meshy pipeline to generate it."*
 
@@ -2005,7 +2014,7 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
 
 #### TASK-347 — [C3X-concept] Regenerate the Castle concept (FLUX) with an OPEN GATE + back up the old concept (art-director, headless)
 - assignee: art-director
-- status: **done** (2026-07-28 — winner seed 73007 v3: open round-arch gateway + paved approach, warm-tan sandstone match, plain maskable backdrop; 8 candidates preserved in `Cache/Castle/concept3x_candidates/`; old concept backed up as `Concepts/Castle_pre3x.png` [sha-verified]; seed pinned in `concept_prompts.json` = reproducible; handoff `handoffs/TASK-347-artist.md`. Lane gotcha recorded: FLUX `provider=auto` route needs the `_certs/win-ca-bundle.pem` CA bundle — Norton HF exclusions don't cover it)
+- status: **qa-passed** (2026-07-29 — `qa/TASK-356.md` PASS 0/0/3-NIT; addendum verified evidence-based + complied-with; byte-equivalence HOLDS per-site; ONE-RPC law exact; ban = zero remaining sites; all F1–F10 ACCEPTED. NITs for the P2 pile: SetTeam unguarded-latent, F1 name exception, F3 fallback deviation on record. TASK-357 unblocked both sides)
 - blocked-by: none (art-pipeline queue head)
 - parallel-safe: yes vs everything except the art-pipeline queue rule
 - spec: >
@@ -2171,6 +2180,14 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
 **Pointers placed on the TASK-349/350 blocks; the loop-4 dispatch must carry:** Jonathan's authorization citation, the BeginPlay-refresh fix per the QA append, the N2 fresh-boot save procedure + diff gate above, the R2 transient band (still applies to the post-fix measurement), and the remote-exec lane lesson below.
 
 **TOOLING LANE LESSON (from the crash forensics in the QA append — now recorded in the FLEET-REMASTER lane knowledge):** never `load_map` from a long-lived remote-exec session — close-without-saving and boot fresh instead.
+
+### Closure rulings (2026-07-29) — CASTLE-3X complete; the R2(a) window, the deviations ledger, the addendum owner
+
+**R2(a) FAR-CASTLE RE-MARK WINDOW — RULED: ACCEPT-WITH-CONTAINMENT; the band is RE-RULED; NO fix task; TASK-356 DISPATCHES IMMEDIATELY.** The facts: on fresh boot the FAR castle's hall stays bake-Blue-marked until T≈178 s, deterministic (178.28/178.07 across two boots, different disk baselines); mechanism = boot re-scatter dirties tiles map-wide + Recast rebuilds distance-sorted from the blue-side seed. The ruling's logic: **the band was a PROXY for correctness, and correctness is guaranteed by the other lane** — the physical blocker is armed throughout (this is precisely the load the belt-AND-braces design was built to carry; nothing wrong can ENTER). The failure mode inside the window is enemy AI *marching toward a door it cannot enter* — wasted marching + a possible pile-at-the-far-gate for up to ~3 minutes, ONCE PER BOOT (not per match; the (c) no-reset-recurrence leg PASSED). That is a feel item, not a defect. **The band's (a) leg is RE-RULED for bake-marked interiors:** the re-mark window may extend to the full distance-sorted rebuild PROVIDED (i) the physical blocker is verified armed throughout, (ii) no wrong-interior ENTRY occurs (entry, not approach — still binding), (iii) boot-only, never at match reset. **Sequencing is the decider I refuse to hide:** TASK-356 [M8-rep1] is unblocked NOW and edits the same four files — a nav-purity fix task would collide with the M8 milestone lane for days over a first-match-after-boot AI inefficiency. The four levers stay NAMED on the record (castle-side nav seed/invoker priority · deterministic nav-quiet boot re-scatter · synchronous castle-bounds build at BeginPlay · this acceptance) — **WATCH: if Jonathan's playtest reads the first-minutes far-gate pile as bad, the nav-seed lever is commissioned POST-M8-P1** (no file conflict by then). Decided on containment, not fear.
+
+**DEVIATIONS LEDGER — all four RATIFIED clean (2026-07-29):** (i) TASK-347's handoff riding the assets commit `ea2a70f` — correct grouping; (ii) CONVENTIONS riding the code commit `949c252` — docs-with-cause, fine; (iii) boot #3 run as required by the procedure — compliance, not deviation; (iv) the TASK-351 band measured in real PIE with a fixed debug camera — the protocol's INTENT (same region/pose/exposure-consistent) preserved; ratified as a valid protocol variant for in-PIE measurement. Nothing objectionable; the record is clean.
+
+**ADDENDUM OWNER — RULED: the TASK-356 programmer writes `handoffs/TASK-353-architecture-addendum.md` as STEP 0 of TASK-356**, from the SHIPPED diff (`949c252` + the landed files), covering the TASK-353 §7 hazards (client-proxy Team-at-BeginPlay ordering vs the landed stamping sites; client-side gate-collision truth for the hero; the pinned crumble member names) — **manager-checked at TASK-356-QA** (its mandate now includes verifying the addendum exists, is evidence-based against the shipped code, and that 356's 349-lane edits comply with it). Rationale: the same brain that implements should read the delta; a separate addendum task costs a round-trip for a reading exercise. TASK-356's spec and names are amended accordingly.
 
 ---
 
