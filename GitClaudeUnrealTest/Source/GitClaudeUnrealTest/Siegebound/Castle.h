@@ -10,8 +10,10 @@
 #include "Castle.generated.h"
 
 class ACastle;
+class UBoxComponent;
 class UCameraShakeBase;
 class UMaterialInterface;
+class UNavModifierComponent;
 class USiegeHitFlashComponent;
 class UStaticMesh;
 class UStaticMeshComponent;
@@ -132,6 +134,20 @@ public:
 
 protected:
 
+	/**
+	 *  TASK-349 loop-2 B3 Leg 2: selects the TEAM's interior nav area on
+	 *  InteriorNavModifier here — after the serialized Team is authoritative,
+	 *  BEFORE the first navmesh generation pass — so FRESHLY GENERATED interior
+	 *  tiles build correct-first-time (never ctor-Blue-then-flip). This is the
+	 *  GENERATION-TIME half only: pre-built/saved tiles see no area CHANGE here
+	 *  and are re-marked by the loop-4 unconditional BeginPlay refresh in
+	 *  ConfigureTeamGating (B4 — the two hooks cover different lanes and both
+	 *  must stay; see the InteriorNavModifier doc). BeginPlay's SetAreaClass
+	 *  re-assert early-outs on the unchanged value (free no-op, kept for
+	 *  spawned-castle paths).
+	 */
+	virtual void PostInitializeComponents() override;
+
 	/** Seeds CurrentHP from MaxHP, fires the OnCastleHPChanged seed broadcast, and initializes the HP bar widget (null-safe). */
 	virtual void BeginPlay() override;
 
@@ -139,13 +155,74 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Castle")
 	TObjectPtr<UStaticMeshComponent> CastleMesh;
 
-	/** Screen-space overhead HP bar (DrawSize 256x32 at Z+1050 — the castle mesh is 900 tall). Widget class resolved null-safe at BeginPlay from HPBarWidgetClass. */
+	/** Screen-space overhead HP bar (DrawSize 256x32 at Z+3150 — the 3× castle is ~2694 tall; re-derived ×3 from the old 1050/900 pair by TASK-349). Widget class resolved null-safe at BeginPlay from HPBarWidgetClass. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Castle")
 	TObjectPtr<UWidgetComponent> HPBarWidget;
 
 	/** §6 white hit-flash on every actual damage event (M7, TASK-154). Driven from TakeDamage; overlay-based (composes cleanly with the crumble MI swap), null-safe. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Feedback")
 	TObjectPtr<USiegeHitFlashComponent> HitFlashComponent;
+
+	/**
+	 *  Team gate blocker (TASK-349, CONVENTIONS "Castle 3× HOLLOW" team-gating law,
+	 *  PHYSICAL lane): an invisible box spanning the gate opening, configured at
+	 *  BeginPlay (ConfigureTeamGating) from THIS castle's Team — object type = the
+	 *  OWN team channel, responses = Ignore everything, Block ONLY the enemy team's
+	 *  channel. So enemy combatants (units AND the player-driven hero — hero
+	 *  ruling) are physically stopped at the gate while the own team walks through
+	 *  untouched. An ACTOR component: the crumble mesh swap (ApplyCrumbleStage
+	 *  SetStaticMesh) can never strip it. Never affects navigation (the nav lane is
+	 *  InteriorNavModifier's job) and is invisible to every trace/overlap path
+	 *  (ignore-all base: cursor ECC_Visibility, projectile WorldStatic terrain
+	 *  query by OBJECT type, ECC_Pawn distance math all pass through). Sized and
+	 *  positioned by the two Gating tunables below, whose defaults are the
+	 *  TASK-350 PIE-VERIFIED gate values for the 3× hollow SM_Castle (loop-2
+	 *  ride-along — see GateBlockerRelativeLocation for the co-commit reasoning
+	 *  and the honest mesh-only-revert residue).
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Castle|Gating")
+	TObjectPtr<UBoxComponent> GateBlockerVolume;
+
+	/**
+	 *  Team interior nav marker (TASK-349, PATHING lane): stamps this castle's
+	 *  collision bounds with UNavArea_BlueCastleInterior or
+	 *  UNavArea_RedCastleInterior (ctor default is the Blue area, NEVER
+	 *  UNavArea_Null, so navmesh GENERATION is untouched in every state). The
+	 *  areas cost 1 (normal walk) — the OWN team and un-filtered queries
+	 *  (placement projection) treat the interior floor as plain navmesh, while the
+	 *  ENEMY team's UNavFilter_Team* EXCLUDES it, so enemy AI never paths inside
+	 *  (no door pile-up). Actor component — crumble-swap-proof, like the blocker.
+	 *
+	 *  Nav-area determinism hardening (loop-2 B3 legs 1–3 + loop-4 B4, all four
+	 *  deliberately coexisting):
+	 *  (1) the ctor calls ForceNavigationRelevancy(true) so this component owns
+	 *  its OWN nav-octree element instead of riding the root CastleMesh's GEOMETRY
+	 *  element (UNavRelevantComponent attaches to the owner's root by default —
+	 *  which routed our per-hull area list through the engine's raw-geometry
+	 *  GetCollisionAreaClass, the `Areas.Num() <= 1` ensure site, and coupled the
+	 *  area marking to every mesh-swap/collision-toggle rebuild of the geometry
+	 *  element; decoupled, the areas apply through the dynamic-area marking path —
+	 *  the NavModifierVolume shape — which supports them properly and survives
+	 *  geometry churn). FINAL-RUN-confirmed (ensure absent).
+	 *  (2) the TEAM area is selected in PostInitializeComponents, BEFORE the first
+	 *  navmesh generation pass — GENERATION-TIME correctness: freshly generated
+	 *  tiles build team-correct-first-time (no ctor-Blue → Red flip window).
+	 *  (3) ResetCastle and ApplyCrumbleStage re-assert the modifier's octree entry
+	 *  in the SAME frame as their mesh swap (RefreshNavigationModifiers), so every
+	 *  tile rebuilt by the swap gathers the team area — no Play-Again enemy-open
+	 *  window. FINAL-RUN-confirmed (the crumble fence re-marked the red hall).
+	 *  (4) loop-4 B4 (Jonathan-authorized): ConfigureTeamGating at BeginPlay runs
+	 *  an UNCONDITIONAL RefreshNavigationModifiers — the PRE-BUILT-TILE re-mark.
+	 *  Leg 2 removed the only post-registration area CHANGE, so editor-built and
+	 *  SAVED tiles (every real boot lane; the editor world never runs the runtime
+	 *  hooks, its tiles are always ctor-Blue) were never dirtied and stayed stale
+	 *  UNBOUNDED (the 626-sample/211 s FINAL-RUN probe). The startup refresh
+	 *  forces those tiles to rebuild once against the already-correct team area;
+	 *  on the fresh-build lane it is at most one redundant re-mark. Legs 2 and 4
+	 *  answer DIFFERENT lanes — do not fold either into the other.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Castle|Gating")
+	TObjectPtr<UNavModifierComponent> InteriorNavModifier;
 
 	/** Which team owns this castle. Set per level instance (Castle_Blue = Blue, Castle_Red = Red). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Castle")
@@ -159,12 +236,56 @@ protected:
 	 *  Half-extent (XY) of this castle's spawn box, read by IsPointInSpawnBox (W1
 	 *  TASK-275, Shield Wall ATTACK command). PAIRED-TUNABLE (3-way law, CONVENTIONS):
 	 *  ACastle::SpawnBoxHalfExtent ≡ ASiegePlayerController::SpawnBoxHalfExtent ≡
-	 *  ASiegeBotController::SpawnBoxHalfExtent — all default (840,840); keep the three
-	 *  in lockstep. The (840,840) value now appears in 3 places (flagged in CONVENTIONS);
-	 *  a future pass MAY delegate both controllers to this castle helper — OUT of scope here.
+	 *  ASiegeBotController::SpawnBoxHalfExtent — all default (2460,2460); keep the three
+	 *  in lockstep. Re-derived 840 → 2460 by TASK-349 (CONVENTIONS "Castle 3× HOLLOW"
+	 *  paired-tunable law: half-extent ≈ the 3× castle's full 2460 width, preserving the
+	 *  original intent), which makes the box span the castle's now-walkable INTERIOR —
+	 *  spawn-inside works by construction. The value appears in 3 places (flagged in
+	 *  CONVENTIONS); a future pass MAY delegate both controllers to this castle helper —
+	 *  OUT of scope here. The mid ACaptureZone::ZoneHalfExtent deliberately STAYS (840,840).
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Castle", meta = (ClampMin = "0"))
-	FVector2D SpawnBoxHalfExtent = FVector2D(840.f, 840.f);
+	FVector2D SpawnBoxHalfExtent = FVector2D(2460.f, 2460.f);
+
+	/**
+	 *  GateBlockerVolume center, relative to the castle root (TASK-349 Gating
+	 *  tunable — component data, so neither the 3× mesh import nor a crumble swap
+	 *  can strip it). Default (6, −525, 284) is the TASK-350 PIE-VERIFIED gate
+	 *  position for the AUTHORED 3× hollow SM_Castle (the gate corridor mouth on
+	 *  the local −Y side; hero blocked at the enemy gate / passing his own proven
+	 *  in-engine on both instances), baked as the C++ default in loop 2 on the
+	 *  build-master's flag.
+	 *
+	 *  WHY baking the 3×-derived value is now SAFE where loop-0's was not
+	 *  (co-commit reasoning, QA re-check point): TASK-350 commits this code and
+	 *  the 3× mesh IN THE SAME SESSION — the defaults and the mesh they were
+	 *  measured against land together, so no committed world pairs these values
+	 *  with the old solid mesh the way loop-0's uncoordinated (1221, 0, 300)
+	 *  default did.
+	 *
+	 *  HONEST RESIDUE (the failure path's known, accepted cost): a future
+	 *  MESH-ONLY revert to the old solid 814.5×820.6×894.9 castle would re-create
+	 *  a mis-placed blocker — this box spans Y [−660, −390] against that mesh's
+	 *  ±410 half-width, i.e. ~250 uu proud of its −Y face: a 520-wide × 250-deep ×
+	 *  452-tall enemy-only bump flush against that wall, holding enemy melee on
+	 *  that one strip ~250 uu out of range (localized stall, not match-breaking;
+	 *  every other face unaffected). Any such revert must retune these two
+	 *  tunables with the mesh. EditAnywhere stays — per-instance facing/offset
+	 *  corrections remain TASK-350's lever.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Siegebound|Castle|Gating")
+	FVector GateBlockerRelativeLocation = FVector(6.f, -525.f, 284.f);
+
+	/**
+	 *  GateBlockerVolume half-extents (TASK-349 Gating tunable). Default
+	 *  (260, 135, 226) is the TASK-350 PIE-VERIFIED gate-opening cover for the
+	 *  authored 3× castle (X 520 span across the corridor mouth, Y 270 through the
+	 *  wall — no capsule tunneling, Z covering floor≈58 up to ≈510, past the
+	 *  ≥450 clear height), baked with GateBlockerRelativeLocation in loop 2 (same
+	 *  co-commit reasoning and mesh-only-revert residue — see that doc).
+	 */
+	UPROPERTY(EditAnywhere, Category = "Siegebound|Castle|Gating", meta = (ClampMin = "0"))
+	FVector GateBlockerExtent = FVector(260.f, 135.f, 226.f);
 
 	/** Seconds between heal-over-time ticks (Masons repair, TASK-059) — impl detail, not a GDD stat. Smaller = smoother bar; the total/duration are the caller's. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle", meta = (ClampMin = "0.05"))
@@ -218,6 +339,17 @@ private:
 
 	/** Resolves HPBarWidgetClass null-safe (missing = silent no-op), assigns it to HPBarWidget, and calls InitForCastle on the created UCastleHealthBarWidget. */
 	void InitHPBarWidget();
+
+	/**
+	 *  TASK-349 team gating, both lanes, configured from THIS castle's Team at
+	 *  BeginPlay (never hardcoded Blue/Red — symmetric for both castles):
+	 *  GateBlockerVolume gets its tunable size/position plus the team response
+	 *  matrix (object type = own channel; Ignore all, Block ONLY the enemy
+	 *  channel), and InteriorNavModifier adopts the team's interior nav area.
+	 *  Null-safe on both components — a missing subobject degrades to pre-feature
+	 *  behavior, never a crash.
+	 */
+	void ConfigureTeamGating();
 
 	/** Single-fire destruction: guards on bDestroyed, hides the actor, disables collision, broadcasts OnCastleDestroyed. */
 	void HandleDestroyed();

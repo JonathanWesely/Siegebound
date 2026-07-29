@@ -93,11 +93,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCommandPromptChanged, const FStri
  *    M_Ghost, "GhostColor" green/red) follows a per-frame cursor trace.
  *  - Valid placement (ALL cards) = ground hit AND X <= 0 (Blue half per
  *    CONVENTIONS) AND the point projects onto the navmesh within
- *    NavProjectionExtent (refuses castle-roof and plinth-top hits — the M1
- *    carry-over) AND outside every castle's plinth keep-out box
- *    (CastlePlinthClearance). Building cards additionally require
- *    >= BuildingClearance from the nearest other ABuilding (§3.5; castles
- *    are NOT buildings for that rule). Violations show the red ghost.
+ *    NavProjectionExtent (refuses castle-roof hits — the M1 carry-over; the
+ *    plinth keep-out was RETIRED by TASK-349, spawn-inside is the feature).
+ *    Building cards additionally require >= BuildingClearance from the
+ *    nearest other ABuilding (§3.5; castles are NOT buildings for that
+ *    rule). Violations show the red ghost.
  *  - Confirm = LMB while in mode: re-gate the miner cap, resolve the card's
  *    BP class by CardType (Unit/Economy →
  *    /Game/Blueprints/Units/BP_Unit_<CardID>; Building →
@@ -637,15 +637,22 @@ protected:
 	/**
 	 *  Half-extent (XY) of the player's spawn box — a 2D square centered on the
 	 *  owned Castle_Blue that REPLACES the retired X<=0 half-line spawn gate
-	 *  (W1-PREP additions 3, TASK-261). Default (840,840) = "same size as the
-	 *  spawnable region on either side" (Jonathan) = 2x the castle footprint
-	 *  (2x CastlePlinthClearance). Placement is valid inside this box (minus the
-	 *  plinth) OR inside a Blue-owned capture zone; the downstream navmesh /
-	 *  plinth / slope / clearance checks are unchanged and still apply. FLAGGED
-	 *  tunable (matches ACaptureZone::ZoneHalfExtent, same default).
+	 *  (W1-PREP additions 3, TASK-261). Default (2460,2460) — re-derived 840 → 2460
+	 *  by TASK-349 (CONVENTIONS "Castle 3× HOLLOW" paired-tunable law: half-extent
+	 *  ≈ the 3× castle's full 2460 width, preserving the original "box ≈ castle
+	 *  width" intent), so the box now COVERS the castle's walkable interior and
+	 *  card placement inside works by construction (placement truth = nav
+	 *  projection + collision + existing clearances; the plinth dead-zone is
+	 *  RETIRED). Placement is valid inside this box OR inside a Blue-owned capture
+	 *  zone; the downstream navmesh / slope / clearance checks are unchanged and
+	 *  still apply. PAIRED-TUNABLE (3-way law): ≡ ACastle::SpawnBoxHalfExtent ≡
+	 *  ASiegeBotController::SpawnBoxHalfExtent — keep the three in lockstep. The
+	 *  mid ACaptureZone::ZoneHalfExtent deliberately STAYS (840,840): its "same
+	 *  size as the spawn box" origin was descriptive, never a pairing law (FLAGGED
+	 *  to Jonathan).
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement")
-	FVector2D SpawnBoxHalfExtent = FVector2D(840.f, 840.f);
+	FVector2D SpawnBoxHalfExtent = FVector2D(2460.f, 2460.f);
 
 	/**
 	 *  Group-order pick tunables (TASK-344, CONVENTIONS "Group orders — 3-zone
@@ -681,9 +688,12 @@ protected:
 	 *  Minimum 2D distance from the nearest other ABuilding for a
 	 *  Building-card placement — closer shows the red ghost and refuses the
 	 *  click with no gold spent. Castles are NOT buildings for this rule
-	 *  (class-disjoint; the plinth keep-out covers them). Mechanic rule, not a
-	 *  CSV column (CONVENTIONS registry). // GDD §3.5 — buildings require 200
-	 *  units of clearance from any other building
+	 *  (class-disjoint) and since TASK-349 carry NO placement clearance of their
+	 *  own at all — the plinth keep-out that once covered them is RETIRED
+	 *  (spawn-inside the own castle is the feature; the ENEMY side is fenced by
+	 *  the team gating, not by placement rules). Mechanic rule, not a CSV column
+	 *  (CONVENTIONS registry). // GDD §3.5 — buildings require 200 units of
+	 *  clearance from any other building
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement", meta = (ClampMin = "0"))
 	float BuildingClearance = 200.f;
@@ -691,25 +701,26 @@ protected:
 	/**
 	 *  Box half-extent for the placement navmesh projection (GDD §3.5 via
 	 *  TASK-030): a point is placeable only if it projects onto the navmesh
-	 *  within this extent — refusing castle-roof and plinth-top cursor hits
-	 *  (the M1 carry-over). The vertical half-extent MUST stay well below the
-	 *  ~90-unit SM_Castle plinth height, or a plinth-top point could project
-	 *  down to the ground navmesh and read as valid.
+	 *  within this extent — refusing castle-roof and other far-above-navmesh
+	 *  cursor hits (the M1 carry-over; since TASK-349 this projection IS the
+	 *  placement truth — the plinth keep-out is retired). Keep the vertical
+	 *  half-extent tight (50): a hit on elevated non-walkable geometry must NOT
+	 *  project down to ground navmesh and read as valid, while ground-level
+	 *  interior-floor hits (the hollow castle's spawn-inside surface) project
+	 *  within it by construction.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement")
 	FVector NavProjectionExtent = FVector(50.f, 50.f, 50.f);
 
-	/**
-	 *  Castle plinth keep-out, applied as a 2D box half-extent around every
-	 *  ACastle: points inside are refused for ALL cards. M1 carry-over —
-	 *  SM_Castle's plinth collision spans ~814x820 units (~90 high, half-extent
-	 *  ~410); the box guarantees plinth points always read invalid even where
-	 *  the navmesh leaves walkable islands on the plinth rim that
-	 *  ProjectPointToNavigation alone would accept. 420 = half-extent + margin
-	 *  (the margin band is already navmesh-eroded by agent radius).
-	 */
-	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement", meta = (ClampMin = "0"))
-	float CastlePlinthClearance = 420.f;
+	//~ CastlePlinthClearance (420, M1 carry-over) RETIRED by TASK-349 (CONVENTIONS
+	//~ "Castle 3× HOLLOW" plinth-retirement law): interior spawn/placement is now
+	//~ the FEATURE, so the own-castle keep-out would refuse exactly what the
+	//~ directive asks for. Placement truth = navmesh projection + collision +
+	//~ existing clearances (the hollow castle's interior floor is navmesh'd; the
+	//~ solid plinth that spawned walkable rim islands no longer exists). The
+	//~ ENEMY interior is unreachable via the team gating (GateBlockerVolume +
+	//~ UNavFilter_Team*), never via a dead zone. IsPointInsideCastlePlinth is
+	//~ retired with it.
 
 	/**
 	 *  Maximum ground slope, in degrees from horizontal, a BUILDING card may
@@ -762,7 +773,7 @@ private:
 	enum class EPlacementInvalidReason : uint8
 	{
 		None,      // point is valid
-		Point,     // no ground hit / enemy half / off the navmesh / castle plinth
+		Point,     // no ground hit / outside the spawn box+zone / off the navmesh (plinth keep-out retired, TASK-349)
 		Slope,     // building on ground steeper than MaxPlacementSlopeDegrees ("Too steep", M4.5)
 		Obstacle,  // building within ObstaclePlacementClearance of an "Obstacle"-tagged actor ("Too close to obstacles", M4.5)
 		Clearance  // building within BuildingClearance of another building
@@ -792,7 +803,7 @@ private:
 	 */
 	void TryConfirmPlacement();
 
-	/** Per-frame: cursor-to-ground trace, validity v3 (ground, own half, navmesh projection, plinth keep-out; buildings add slope, obstacle clearance, building clearance — TASK-093), ghost position + color. */
+	/** Per-frame: cursor-to-ground trace, validity v4 (ground, spawn box / captured zone, navmesh projection — plinth keep-out retired, TASK-349; buildings add slope, obstacle clearance, building clearance — TASK-093), ghost position + color. */
 	void UpdatePlacementGhost();
 
 	/** Spawns the ghost actor (movable, collision off, per-card SM_<CardID> or the fallback sphere + M_Ghost MID) — every asset null-safe. */
@@ -1015,18 +1026,19 @@ private:
 	 */
 	bool HasObstacleClearance(const FVector& Point) const;
 
-	/** True when Point lies inside any ACastle's plinth keep-out box (CastlePlinthClearance 2D half-extents) — refused for all cards, castle HP irrelevant. */
-	bool IsPointInsideCastlePlinth(const FVector& Point) const;
+	//~ IsPointInsideCastlePlinth RETIRED by TASK-349 (plinth-retirement law — see
+	//~ the CastlePlinthClearance retirement note above; no placement path may
+	//~ refuse the own castle's interior).
 
 	/**
 	 *  True when Point lies inside the player's spawn box — a 2D (XY) square
 	 *  centered on the owned Castle_Blue (found via the team-filtered
-	 *  TActorIterator<ACastle> pattern, same as IsPointInsideCastlePlinth) with
-	 *  half-extent SpawnBoxHalfExtent. This is the first spawn/region gate that
-	 *  REPLACES the retired X<=PlacementMaxX half-test (W1-PREP additions 3,
-	 *  TASK-261). Null-safe: no Blue castle in the world => refuse (warn once —
-	 *  polled per tick during placement mode). Non-const only for the warn-once
-	 *  latch (mirrors IsPointOnNavmesh).
+	 *  TActorIterator<ACastle> pattern) with half-extent SpawnBoxHalfExtent.
+	 *  This is the first spawn/region gate that REPLACES the retired
+	 *  X<=PlacementMaxX half-test (W1-PREP additions 3, TASK-261). Null-safe: no
+	 *  Blue castle in the world => refuse (warn once — polled per tick during
+	 *  placement mode). Non-const only for the warn-once latch (mirrors
+	 *  IsPointOnNavmesh).
 	 */
 	bool IsPointInOwnSpawnBox(const FVector& Point);
 

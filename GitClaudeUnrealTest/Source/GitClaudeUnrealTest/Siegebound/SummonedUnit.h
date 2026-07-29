@@ -49,8 +49,11 @@ enum class ESummonedUnitState : uint8
  *  dispatches on it: Standard is the M1/M2 body below (unchanged), Siege and
  *  Support are the M4 additions (TASK-054).
  *
- *  ACharacter driven by a plain AAIController (AutoPossessAI
- *  PlacedInWorldOrSpawned) walking the navmesh via MoveToActor.
+ *  ACharacter driven by an ASiegeUnitAIController (AutoPossessAI
+ *  PlacedInWorldOrSpawned) walking the navmesh via MoveToActor. The controller
+ *  is behaviorally a plain AAIController — its sole addition is the TASK-349
+ *  team nav-filter setter (SiegeNavAreas.h one-home), pushed from
+ *  ApplyTeamGatingProfile at this unit's team-set sites.
  *
  *  - Stats (HP/Damage/Range/Cadence/Speed) are bound at BeginPlay from the
  *    /Game/Data/DT_Cards row named CardID — NEVER hardcoded (GDD §3.0). A
@@ -349,6 +352,17 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/**
+	 *  TASK-349 (CONVENTIONS "Castle 3× HOLLOW" team-gating): AutoPossessAI
+	 *  possession can land AFTER BeginPlay (the miner's controller poll exists for
+	 *  exactly this reason), so the team nav-filter push in ApplyTeamGatingProfile
+	 *  would miss the controller if it only ran at BeginPlay. This override
+	 *  re-applies the profile at every possession — idempotent, and Team is always
+	 *  authoritative by then (deferred spawns set it via InitUnit before
+	 *  FinishSpawning; a post-possession InitUnit team update re-applies again).
+	 */
+	virtual void PossessedBy(AController* NewController) override;
+
+	/**
 	 *  Visual slot for the blueprint child (TASK-010: BP_Unit_Footman assigns
 	 *  /Game/Meshes/SM_Footman). No mesh is set in C++. The capsule owns all
 	 *  collision; this component never collides or affects navigation.
@@ -452,6 +466,21 @@ protected:
 	/** Seconds between state-machine checks (spec: ~0.25 s, never per-tick). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|AI", meta = (ClampMin = "0.05"))
 	float StateCheckInterval = 0.25f;
+
+	/**
+	 *  TASK-349 loop-2 B2 (march-freeze fix): box half-extent of the filter-aware
+	 *  navmesh projection ResolveStructureMarchPoint runs around a structure goal's
+	 *  nearest-collision point. Must comfortably cover the gap between a castle
+	 *  wall face and the nearest navmesh poly the mover's team filter ALLOWS
+	 *  (agent-radius erosion ~34 uu + the interior-area hull-box margin; 800
+	 *  horizontal is generous for every wall/gate face of the 2437×2461 castle).
+	 *  Deliberately NOT castle-half-diagonal-sized: a goal buried DEEP inside the
+	 *  enemy interior (e.g. an enemy building at the hall center) is
+	 *  unreachable-by-design and should FAIL projection (legacy-fallback, unit
+	 *  holds) rather than resolve to a wall point it cannot attack from.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|AI")
+	FVector StructureGoalProjectionExtent = FVector(800.f, 800.f, 600.f);
 
 	/**
 	 *  Support profile (Cleric) heal-tick cadence (TASK-054). The heal RATE is the
@@ -576,6 +605,27 @@ private:
 	void ApplyTeamMaterial();
 
 	/**
+	 *  TASK-349 (CONVENTIONS "Castle 3× HOLLOW" team-gating law) — the ONE unit-side
+	 *  stamping site, both lanes, driven by the ACTUAL Team like ApplyTeamMaterial:
+	 *  (1) PHYSICAL: re-types the capsule's collision OBJECT channel to
+	 *      ECC_SiegeTeamBlue/Red (SiegeNavAreas.h) so the ENEMY castle's
+	 *      GateBlockerVolume blocks this body at the gate. Object type ONLY — the
+	 *      capsule's response matrix is untouched, so every response-based query
+	 *      (ECC_Pawn distance math in melee/projectiles/spells/attack range,
+	 *      pawn-vs-pawn and pawn-vs-world blocking) is byte-identical.
+	 *  (2) PATHING: pushes the team's UNavFilter_Team* onto the possessing
+	 *      ASiegeUnitAIController as its default pathfinding filter, so this unit
+	 *      never PATHS into the enemy castle's interior area.
+	 *  Called from BeginPlay (next to ApplyTeamMaterial), PossessedBy (AutoPossessAI
+	 *  can possess after BeginPlay), and InitUnit's post-BeginPlay team update.
+	 *  Null-safe/idempotent: no capsule = no stamp; a controller that is not an
+	 *  ASiegeUnitAIController (e.g. a BP override pinning plain AAIController) gets
+	 *  no filter and keeps pre-feature pathing — the physical lane still gates it.
+	 *  AMinerUnit inherits all of it.
+	 */
+	void ApplyTeamGatingProfile();
+
+	/**
 	 *  Skeletal swap (M7, TASK-159): composes /Game/Characters/SK_<CardID> from the
 	 *  bound CardID and, if it resolves, makes SkeletalVisualMesh the runtime visual
 	 *  (SetSkeletalMeshAsset + SetAnimInstanceClass from /Game/Characters/ABP_<CardID>,
@@ -688,8 +738,30 @@ private:
 	/** Enters/keeps Attack: stops moving and runs the attack timer at Cadence (first hit respects the elapsed cooldown). */
 	void EnterAttack();
 
-	/** Enters/keeps Advance toward Goal: issues MoveToActor when the goal changed or path following went idle. */
+	/** Enters/keeps Advance toward Goal: issues the move when the goal changed or path following went idle. Pawn goals chase via MoveToActor; structure goals march to a ResolveStructureMarchPoint location (TASK-349 loop-2 B2). */
 	void EnterAdvance(AActor* Goal);
+
+	/**
+	 *  TASK-349 loop-2 B2 (march-freeze fix): resolves a STRUCTURE goal (castle /
+	 *  building) to a marchable point under the mover's OWN team nav filter. The
+	 *  hollow 3× castle put the castle actor's ORIGIN on enemy-interior navmesh,
+	 *  which the team filter EXCLUDES — a MoveToActor toward it fails goal-poly
+	 *  resolution outright (bAllowPartialPath cannot rescue a goal that never
+	 *  resolves to a poly; 123/123 units froze, the TASK-350 re-run's B2). Fix:
+	 *  (1) take the nearest point on the goal's ECC_Pawn-blocking collision to
+	 *  THIS unit (per-unit — preserves the pre-3× partial-path-to-the-NEAR-wall
+	 *  spread; no single-point pile-up), falling back to the actor origin when the
+	 *  goal has no blocking collision (shared convention); (2) project it to the
+	 *  nearest allowed poly under the possessing controller's
+	 *  DefaultNavigationFilterClass (StructureGoalProjectionExtent box) — for an
+	 *  enemy castle that lands on the wall-base ring / gate apron OUTSIDE the
+	 *  excluded interior, for the OWN castle the interior itself stays allowed.
+	 *  Returns false (caller degrades to the legacy MoveToActor — pre-feature
+	 *  behavior) when there is no nav system/data or nothing allowed lies within
+	 *  the extent. Const, no state; called ONLY from EnterAdvance's existing
+	 *  goal-changed/idle re-path gate — never per tick (TASK-280/282 thrash law).
+	 */
+	bool ResolveStructureMarchPoint(const AActor& Goal, FVector& OutMarchPoint) const;
 
 	/**
 	 *  Point variant of EnterAdvance (W1 TASK-275, Shield Wall HOLD): marches toward a

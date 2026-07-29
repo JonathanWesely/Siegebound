@@ -3,6 +3,7 @@
 #include "Siegebound/Castle.h"
 
 #include "Blueprint/UserWidget.h"
+#include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "Engine/CollisionProfile.h"
@@ -12,11 +13,13 @@
 #include "GameFramework/Pawn.h"
 #include "GitClaudeUnrealTest.h"
 #include "Materials/MaterialInterface.h"
+#include "NavModifierComponent.h"
 #include "TimerManager.h"
 #include "Siegebound/CastleHealthBarWidget.h"
 #include "Siegebound/DamageTypes.h"
 #include "Siegebound/SiegeFeedbackLibrary.h"
 #include "Siegebound/SiegeHitFlashComponent.h"
+#include "Siegebound/SiegeNavAreas.h"
 
 namespace
 {
@@ -25,8 +28,8 @@ namespace
 	const TCHAR* CastleDestroyedSoundPath = TEXT("/Game/Audio/S_CastleDestroyed"); // TASK-179
 	const TCHAR* CastleDebrisVFXPath = TEXT("/Game/VFX/NS_CastleDebris");          // TASK-157 debris burst
 
-	/** Height above the castle origin for its floating damage number (clears the ~900-tall mesh, HP-bar Z parity). */
-	constexpr float CastleDamageNumberHeightZ = 1050.f;
+	/** Height above the castle origin for its floating damage number (clears the ~2694-tall 3× mesh, HP-bar Z parity — re-derived ×3 with the bar by TASK-349). */
+	constexpr float CastleDamageNumberHeightZ = 3150.f;
 }
 
 ACastle::ACastle()
@@ -41,17 +44,56 @@ ACastle::ACastle()
 	CastleMesh->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
 
 	// Overhead HP bar (playtest R1 finding 2, TASK-018). Screen space so it reads at
-	// any camera angle/distance; relative Z +1050 clears the 900-tall castle mesh
-	// (TASK-013). The widget CLASS is soft-resolved at BeginPlay (WBP_CastleHealthBar
-	// arrives in TASK-019); the bare component always exists and draws nothing.
+	// any camera angle/distance; relative Z +3150 clears the ~2694-tall 3× castle
+	// (TASK-349 re-derivation ×3 of the original 1050-over-900 pair; TASK-350
+	// verifies the read at the gameplay camera). The widget CLASS is soft-resolved
+	// at BeginPlay (WBP_CastleHealthBar, TASK-019); the bare component always
+	// exists and draws nothing.
 	HPBarWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("HPBarWidget"));
 	HPBarWidget->SetupAttachment(CastleMesh);
 	HPBarWidget->SetWidgetSpace(EWidgetSpace::Screen);
 	HPBarWidget->SetDrawSize(FVector2D(256.0f, 32.0f));
-	HPBarWidget->SetRelativeLocation(FVector(0.0f, 0.0f, 1050.0f));
+	HPBarWidget->SetRelativeLocation(FVector(0.0f, 0.0f, 3150.0f));
 	// UI-only component: never collides, never blocks traces (placement cursor
 	// trace TASK-007, unit acquisition TASK-004).
 	HPBarWidget->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	// TASK-349 team gating (CONVENTIONS "Castle 3× HOLLOW"), BOTH lanes as ACTOR
+	// components so the crumble mesh swap (ApplyCrumbleStage) can never strip them.
+	// Constructor: create + make inert. ALL live configuration (size, position,
+	// object type, responses, nav area) happens in ConfigureTeamGating at BeginPlay,
+	// when Team is authoritative — so an editor-placed castle blocks nothing and
+	// marks nothing until play.
+	GateBlockerVolume = CreateDefaultSubobject<UBoxComponent>(TEXT("GateBlockerVolume"));
+	GateBlockerVolume->SetupAttachment(CastleMesh);
+	// Inert until BeginPlay; the physical lane must NEVER touch navigation (the
+	// nav lane is InteriorNavModifier's) and never raises overlap events.
+	GateBlockerVolume->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	GateBlockerVolume->SetGenerateOverlapEvents(false);
+	GateBlockerVolume->SetCanEverAffectNavigation(false);
+
+	// Nav lane: ctor default = the BLUE interior area (Team defaults Blue), NEVER
+	// UNavArea_Null — these areas are normal-cost walkable, so navmesh GENERATION
+	// is untouched in every state; only the enemy's query filter excludes them.
+	// PostInitializeComponents selects the actual Team's area BEFORE the first
+	// generation pass (loop-2 Leg 2, the fresh-build lane); BeginPlay re-asserts
+	// (free no-op) then unconditionally refreshes the octree entry (loop-4 B4,
+	// the pre-built/saved-tile lane — see ConfigureTeamGating).
+	InteriorNavModifier = CreateDefaultSubobject<UNavModifierComponent>(TEXT("InteriorNavModifier"));
+	InteriorNavModifier->AreaClass = UNavArea_BlueCastleInterior::StaticClass();
+	// Loop-2 B3: give the modifier its OWN nav-octree element (the
+	// NavModifierVolume shape) instead of the default attach-to-owner's-root —
+	// riding the CastleMesh GEOMETRY element routed our per-hull area list through
+	// the engine's raw-geometry GetCollisionAreaClass (the `Areas.Num() <= 1`
+	// ensure at RecastNavMeshGenerator.cpp:305, which then honors ONLY Areas[0])
+	// and coupled area marking to every mesh-swap/collision-toggle rebuild of
+	// that element — the Play-Again enemy-open window's mechanism. Decoupled, the
+	// areas apply through dynamic-area marking (multi-area-correct) and the
+	// element survives geometry churn. Ctor-safe: pre-registration the internal
+	// RefreshNavigationModifiers is a guarded no-op (bRegistered false); the flag
+	// lands before OnRegister ever caches a nav parent, so the very first
+	// registration is already decoupled.
+	InteriorNavModifier->ForceNavigationRelevancy(true);
 
 	// §6 hit-flash (TASK-154): overlay-based white flash on every actual damage event,
 	// driven from TakeDamage. Overlay (not slot-swap) so it composes cleanly with the
@@ -80,6 +122,24 @@ void ACastle::OnConstruction(const FTransform& Transform)
 	ApplyTeamVisuals();
 }
 
+void ACastle::PostInitializeComponents()
+{
+	Super::PostInitializeComponents();
+
+	// TASK-349 loop-2 B3(a): the TEAM's interior area must be on the modifier
+	// BEFORE the first navmesh generation pass (Dynamic Recast builds after world
+	// init) — the serialized/deferred-set Team is authoritative here, so the Red
+	// castle's interior tiles build Red-first-time instead of building Blue (the
+	// ctor default) and rebuilding after a BeginPlay flip — that flip was the
+	// measured 9.8–11.6 s initial stale window. Null-safe; ConfigureTeamGating at
+	// BeginPlay re-asserts the same class (SetAreaClass early-outs on an
+	// unchanged value — a free no-op).
+	if (InteriorNavModifier)
+	{
+		InteriorNavModifier->SetAreaClass(SiegeTeamInteriorAreaClass(Team));
+	}
+}
+
 void ACastle::BeginPlay()
 {
 	Super::BeginPlay();
@@ -92,6 +152,81 @@ void ACastle::BeginPlay()
 	OnCastleHPChanged.Broadcast(CurrentHP, MaxHP);
 
 	InitHPBarWidget();
+
+	// TASK-349: arm both team-gating lanes from the now-authoritative Team.
+	ConfigureTeamGating();
+}
+
+void ACastle::ConfigureTeamGating()
+{
+	// CONVENTIONS "Castle 3× HOLLOW" team-gating law — symmetric by construction:
+	// everything below derives from THIS castle's Team, so Castle_Blue and
+	// Castle_Red configure mirror-image gates with no hardcoded team branches.
+	const ECollisionChannel OwnChannel = SiegeTeamObjectChannel(Team);
+	const ECollisionChannel EnemyChannel = SiegeEnemyTeamObjectChannel(Team);
+
+	// PHYSICAL lane — the gate blocker. Object type = the OWN team channel:
+	// deliberately NOT WorldStatic/WorldDynamic, so the projectile terrain-impact
+	// OBJECT query (AProjectile, WorldStatic+WorldDynamic list) and every other
+	// object-type query pass through the gate untouched (spells/projectiles
+	// unaffected — body channels only). Response base = Ignore ALL (invisible to
+	// cursor/camera/pawn-distance traces); the single Block on the enemy channel
+	// is the whole gate: enemy capsules (stamped by ASummonedUnit/AHeroCharacter
+	// at BeginPlay) block pairwise, own-team capsules pass on the Ignore.
+	if (GateBlockerVolume)
+	{
+		GateBlockerVolume->SetBoxExtent(GateBlockerExtent);
+		GateBlockerVolume->SetRelativeLocation(GateBlockerRelativeLocation);
+		GateBlockerVolume->SetCollisionObjectType(OwnChannel);
+		GateBlockerVolume->SetCollisionResponseToAllChannels(ECR_Ignore);
+		GateBlockerVolume->SetCollisionResponseToChannel(EnemyChannel, ECR_Block);
+		// QueryAndPhysics AFTER the matrix is authored: CharacterMovement stops at
+		// blocking geometry via query sweeps, so this is the moment the gate arms.
+		// HandleDestroyed's SetActorEnableCollision(false) drops it with the castle
+		// (a fallen castle gates nothing) and ResetCastle restores it — the response
+		// matrix persists across both.
+		GateBlockerVolume->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	}
+
+	// PATHING lane — re-assert the team interior area. The class SELECTION
+	// happened in PostInitializeComponents (loop-2 Leg 2: before the first
+	// generation pass), so this SetAreaClass early-outs unchanged (a free no-op)
+	// on the level-load path; it is kept for any spawned-castle path where
+	// BeginPlay is the first team-authoritative hook. Cost-1 area: own-team
+	// pathing and un-filtered queries (placement nav projection) are
+	// byte-identical to plain navmesh; only the ENEMY's UNavFilter_Team* excludes
+	// it (SiegeNavAreas one-home).
+	if (InteriorNavModifier)
+	{
+		InteriorNavModifier->SetAreaClass(SiegeTeamInteriorAreaClass(Team));
+
+		// TASK-349 loop-4 B4 (Jonathan-authorized): UNCONDITIONAL octree
+		// re-assert + bounds-dirty — the Leg-3 fence applied once at startup.
+		// WHY Leg 2 alone was not enough (the FINAL-RUN's 626-sample / 211 s
+		// proof): Leg 2 makes the area class correct BEFORE the component's first
+		// registration, which is exactly right for FRESHLY GENERATED tiles — but
+		// it thereby removed the only POST-registration area CHANGE, so
+		// PRE-BUILT tiles (editor-built and SAVED — every real boot lane; the
+		// editor world never runs PostInitializeComponents/BeginPlay on level
+		// actors, so its tiles are always ctor-Blue on BOTH interiors) were
+		// never dirtied and never re-marked: the red hall stayed Blue-open/
+		// Red-closed until melee crumble happened to trip the ApplyCrumbleStage
+		// fence. The two legs deliberately COEXIST: Leg 2 = generation-time
+		// correctness (fresh tiles build team-correct-first-time, no flip
+		// window); this refresh = the pre-built-tile re-mark (forces the
+		// castle-bounds tiles to rebuild once, gathering the already-correct
+		// team area). It runs at BeginPlay ONLY — never at Play-Again
+		// (ResetCastle keeps its own proven Leg-3 fence; actors do not re-run
+		// BeginPlay at reset), so the reset path is byte-identical to the
+		// FINAL-RUN-verified behavior. On the fresh-build lane it costs at most
+		// one redundant re-mark of just-built-correct tiles; at no point after
+		// PostInitializeComponents can any tile be marked with the WRONG team's
+		// area (the class never differs from the team class again). The stale
+		// window on the pre-built lane is thereby bounded by the castle-bounds
+		// tile-rebuild latency (seconds — the FINAL-RUN's fence-triggered
+		// rebuild), which the r5 probe measures against the R2 ≤10 s band.
+		InteriorNavModifier->RefreshNavigationModifiers();
+	}
 }
 
 void ACastle::InitHPBarWidget()
@@ -320,6 +455,16 @@ void ACastle::ApplyCrumbleStage(int32 Stage)
 		// VISUAL swap only — the crumble mesh variants must preserve the castle's UCX
 		// footprint (art contract, handoff), so collision/placement/pathing are untouched.
 		CastleMesh->SetStaticMesh(CrumbleMesh);
+
+		// TASK-349 loop-2 B3(c): the mesh swap dirties this castle's nav tiles —
+		// re-assert the interior modifier's octree entry in the SAME frame, so
+		// every tile the swap rebuilds gathers the team area (never a window where
+		// interior navmesh exists without its area). Belt to the ctor decoupling's
+		// braces; null-safe and cheap (a registered-component octree update).
+		if (InteriorNavModifier)
+		{
+			InteriorNavModifier->RefreshNavigationModifiers();
+		}
 	}
 	if (UMaterialInterface* CrumbleMaterial = USiegeFeedbackLibrary::ResolveMaterial(CrumbleMaterialPath))
 	{
@@ -349,6 +494,21 @@ void ACastle::ResetCastle()
 	CrumbleStage = 0;
 	ApplyTeamVisuals();
 
+	// TASK-349 loop-2 B3(c) — the Play-Again determinism fence: the reset just
+	// re-enabled the actor's collision AND swapped the crumbled mesh back to the
+	// pristine SM_Castle, both of which dirty this castle's nav tiles for an
+	// async rebuild. Re-assert the interior modifier's octree entry in the SAME
+	// frame, so the area data is guaranteed present when ANY of those tiles
+	// rebuilds — closing the measured +8.5→+29.7 s window where the hall was
+	// nav-open to BOTH filters (the enemy-open direction; R2 non-negotiable).
+	// With the ctor decoupling the entry also no longer rides the churned
+	// geometry element at all; this same-frame refresh makes the ordering
+	// explicit rather than incidental. Null-safe.
+	if (InteriorNavModifier)
+	{
+		InteriorNavModifier->RefreshNavigationModifiers();
+	}
+
 	// Counterpart of the HandleDestroyed hide — the bar returns with the castle (TASK-018).
 	if (HPBarWidget)
 	{
@@ -363,8 +523,9 @@ void ACastle::ResetCastle()
 
 bool ACastle::IsPointInSpawnBox(const FVector& Point) const
 {
-	// Castle-centered 2D square test (Z ignored). Additive third reader of the (840,840)
-	// paired-tunable — does NOT touch the bot's IsPointInBotSpawnBox (TASK-262). W1 TASK-275.
+	// Castle-centered 2D square test (Z ignored). Additive third reader of the (2460,2460)
+	// paired-tunable (TASK-349 re-derivation) — does NOT touch the bot's
+	// IsPointInBotSpawnBox (TASK-262). W1 TASK-275.
 	const FVector Origin = GetActorLocation();
 	return FMath::Abs(Point.X - Origin.X) <= SpawnBoxHalfExtent.X
 		&& FMath::Abs(Point.Y - Origin.Y) <= SpawnBoxHalfExtent.Y;

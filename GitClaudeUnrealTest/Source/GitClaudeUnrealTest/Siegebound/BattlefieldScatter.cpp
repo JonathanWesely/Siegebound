@@ -17,6 +17,7 @@
 #include "Siegebound/Castle.h"
 #include "Siegebound/GoldNode.h"
 #include "Siegebound/ScatterConfig.h"
+#include "Siegebound/SiegeNavAreas.h" // TASK-349: team object channels — re-typed combatant capsules must keep blocking scatter
 
 DEFINE_LOG_CATEGORY(LogSiegeTerrain);
 
@@ -610,6 +611,12 @@ UHierarchicalInstancedStaticMeshComponent* ASiegeBattlefieldScatter::ResolveComp
 		Comp->SetCollisionObjectType(ECC_WorldStatic);
 		Comp->SetCollisionResponseToAllChannels(ECR_Ignore);
 		Comp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+		// TASK-349 (team gating, consequential): combatant capsules are re-typed
+		// from ECC_Pawn to ECC_SiegeTeamBlue/Red at BeginPlay — this ignore-all
+		// body must Block those channels too, or re-typed units/hero would walk
+		// (and fall) THROUGH rocks and hills the shipped game has them climb.
+		Comp->SetCollisionResponseToChannel(ECC_SiegeTeamBlue, ECR_Block);
+		Comp->SetCollisionResponseToChannel(ECC_SiegeTeamRed, ECR_Block);
 		Comp->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
 		Comp->SetCollisionResponseToChannel(ECC_Camera, ECR_Block);
 		Comp->bFillCollisionUnderneathForNavmesh = true;
@@ -727,6 +734,11 @@ UHierarchicalInstancedStaticMeshComponent* ASiegeBattlefieldScatter::ResolveProx
 	Proxy->SetCollisionObjectType(ECC_WorldStatic);
 	Proxy->SetCollisionResponseToAllChannels(ECR_Ignore);
 	Proxy->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+	// TASK-349 (team gating, consequential): re-typed combatant capsules
+	// (ECC_SiegeTeamBlue/Red) must still be stopped by the invisible trunk
+	// cylinder — mirror of the real-geometry blocker's addition above.
+	Proxy->SetCollisionResponseToChannel(ECC_SiegeTeamBlue, ECR_Block);
+	Proxy->SetCollisionResponseToChannel(ECC_SiegeTeamRed, ECR_Block);
 	Proxy->bFillCollisionUnderneathForNavmesh = true;
 	Proxy->SetCanEverAffectNavigation(true);
 

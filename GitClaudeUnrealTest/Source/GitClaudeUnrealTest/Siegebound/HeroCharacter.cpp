@@ -23,6 +23,7 @@
 #include "Siegebound/CombatantHealthBarComponent.h"
 #include "Siegebound/SiegeFeedbackLibrary.h"
 #include "Siegebound/SiegeHitFlashComponent.h"
+#include "Siegebound/SiegeNavAreas.h" // TASK-349: team object channel for the capsule stamp
 #include "Siegebound/SummonedUnit.h"
 #include "TimerManager.h"
 
@@ -78,6 +79,20 @@ AHeroCharacter::AHeroCharacter()
 void AHeroCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// TASK-349 (CONVENTIONS "Castle 3× HOLLOW" team-gating, hero ruling — default,
+	// FLAGGED to Jonathan): the hero is a team combatant, so his capsule is
+	// re-typed to the team object channel exactly like every ASummonedUnit — the
+	// ENEMY castle's GateBlockerVolume physically stops him at the gate while his
+	// OWN gate ignores him. Object type ONLY (response matrix untouched): melee
+	// distance math (ECC_Pawn), camera probes, and world blocking are
+	// byte-identical. No nav filter here — the hero is player-driven, never
+	// pathfinds (the nav lane is units-only). Null-safe; team read via the
+	// ITeamAgent contract. Reverting to hero-raids is this one line.
+	if (UCapsuleComponent* HeroCapsule = GetCapsuleComponent())
+	{
+		HeroCapsule->SetCollisionObjectType(SiegeTeamObjectChannel(GetTeamId()));
+	}
 
 	// hard-resolve DT_Cards once (TASK-058): ApplyUpgrade reads MaxCopies from it for the stack cap.
 	// DT_Cards is small and already resident by the time a hero exists (units hard-reference it);

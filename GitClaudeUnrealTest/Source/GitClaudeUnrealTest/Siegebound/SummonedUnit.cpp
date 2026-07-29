@@ -21,7 +21,9 @@
 #include "GitClaudeUnrealTest.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInterface.h"
+#include "NavFilters/NavigationQueryFilter.h" // TASK-349 loop-2 B2: GetQueryFilter for the filter-aware march-goal projection
 #include "Navigation/PathFollowingComponent.h"
+#include "NavigationSystem.h" // TASK-349 loop-2 B2: UNavigationSystemV1::ProjectPointToNavigation (filter overload)
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "Siegebound/Building.h"
@@ -35,6 +37,7 @@
 #include "Siegebound/SiegeFeedbackLibrary.h"
 #include "Siegebound/SiegeHitFlashComponent.h"
 #include "Siegebound/SiegeMeshJuiceComponent.h"
+#include "Siegebound/SiegeNavAreas.h" // TASK-349: team object channels + ASiegeUnitAIController (complete types for the gating stamp)
 #include "Siegebound/SiegePlayerController.h" // W1 TASK-275: reads the latched Shield Wall command (GetCurrentCommand/HasIssuedCommand); TASK-344: resolves the live group (FindUnitGroup) — complete type needed for the const calls
 #include "Siegebound/UnitCommand.h" // TASK-344: FSiegeUnitGroup complete type (UpdateStateGrouped reads its zones/type) — explicit include, not just via the controller header
 #include "TimerManager.h"
@@ -93,10 +96,14 @@ ASummonedUnit::ASummonedUnit()
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 
-	// AI-driven navmesh walker: the default AAIController possesses us whether
-	// the unit was placed in a level or spawned by the card play (TASK-007)
+	// AI-driven navmesh walker: the AI controller possesses us whether the unit
+	// was placed in a level or spawned by the card play (TASK-007). TASK-349:
+	// ASiegeUnitAIController — behaviorally a plain AAIController whose sole
+	// addition is the public team nav-filter setter (SiegeNavAreas.h), which
+	// ApplyTeamGatingProfile pushes so this unit never paths into the enemy
+	// castle's interior (CONVENTIONS "Castle 3× HOLLOW" team-gating law).
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
-	AIControllerClass = AAIController::StaticClass();
+	AIControllerClass = ASiegeUnitAIController::StaticClass();
 
 	// face where we walk, not where the controller looks
 	bUseControllerRotationYaw = false;
@@ -212,7 +219,51 @@ void ASummonedUnit::BeginPlay()
 	// TASK-020 lunge, and the melee/ranged attack paths are untouched (slot 0 only).
 	ApplyTeamMaterial();
 
+	// TASK-349 (CONVENTIONS "Castle 3× HOLLOW" team-gating): capsule object-type
+	// stamp + AI nav filter for the ACTUAL Team, same team-set discipline as the
+	// material apply above. PossessedBy re-applies for late AutoPossessAI
+	// possession; a post-BeginPlay InitUnit team update re-applies again.
+	ApplyTeamGatingProfile();
+
 	LoadStatsAndStart();
+}
+
+void ASummonedUnit::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+
+	// TASK-349: AutoPossessAI possession can land AFTER BeginPlay (the miner's
+	// controller poll exists for exactly that gap), and the nav-filter half of the
+	// gating profile needs the live controller — re-apply here. Idempotent; Team
+	// is authoritative by possession time on every spawn path (deferred spawns run
+	// InitUnit before FinishSpawning; placed units carry their instance value).
+	ApplyTeamGatingProfile();
+}
+
+void ASummonedUnit::ApplyTeamGatingProfile()
+{
+	// PHYSICAL lane: re-type the capsule's collision OBJECT channel by team.
+	// SetCollisionObjectType changes the object type ONLY — the capsule keeps its
+	// Pawn-profile response matrix, so every response-based query in the codebase
+	// (ActorGetDistanceToCollision on ECC_Pawn, pawn-vs-pawn blocking, floor
+	// sweeps) behaves byte-identically. What changes: the enemy castle's
+	// GateBlockerVolume (Block on this channel) now stops this body at the gate,
+	// and the own castle's blocker (Ignore) lets it through.
+	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+	{
+		Capsule->SetCollisionObjectType(SiegeTeamObjectChannel(Team));
+	}
+
+	// PATHING lane: the possessing controller adopts the team's query filter as
+	// its default, so every existing MoveToActor/MoveToLocation (FilterClass null,
+	// untouched call sites) excludes the ENEMY castle's interior area. Null-safe:
+	// no controller yet (pre-possession BeginPlay) or a non-Siege controller (a BP
+	// pinning plain AAIController) simply gets no filter — pre-feature pathing,
+	// with the physical gate still holding the line.
+	if (ASiegeUnitAIController* SiegeAI = Cast<ASiegeUnitAIController>(GetController()))
+	{
+		SiegeAI->ApplyTeamNavigationFilter(Team);
+	}
 }
 
 void ASummonedUnit::ApplyTeamMaterial()
@@ -510,9 +561,12 @@ void ASummonedUnit::InitUnit(ETeamId InTeam, FName InCardID)
 	// pre-BeginPlay (HasActorBegunPlay() false) and BeginPlay does the single apply; a
 	// plain SpawnActor + InitUnit (or a post-bind Team update) re-applies for the now-
 	// current Team. Idempotent and null-safe; runs even on the stats-already-bound path.
+	// TASK-349: the team gating profile (capsule channel + nav filter) tracks the
+	// same late-team rule — a re-teamed body must swap gate sides too.
 	if (HasActorBegunPlay())
 	{
 		ApplyTeamMaterial();
+		ApplyTeamGatingProfile();
 	}
 
 	if (bStatsLoaded)
@@ -1972,9 +2026,37 @@ void ASummonedUnit::EnterAdvance(AActor* Goal)
 		else
 		{
 			// castle/building: bStopOnOverlap would test against the bounding cylinder of a
-			// huge box and stop out of range — walk the partial path flush to its walls instead
-			Result = AI->MoveToActor(Goal, StructureMoveAcceptanceRadius, /*bStopOnOverlap=*/ false,
-				/*bUsePathfinding=*/ true, /*bCanStrafe=*/ true, /*FilterClass=*/ nullptr, /*bAllowPartialPath=*/ true);
+			// huge box and stop out of range — walk flush to its walls instead.
+			//
+			// TASK-349 loop-2 B2 (march-freeze fix): with the hollow 3× castle the goal
+			// ACTOR's origin sits on ENEMY-interior navmesh, which the mover's team
+			// default filter (null FilterClass below) EXCLUDES — MoveToActor's goal-poly
+			// resolution fails outright and bAllowPartialPath cannot rescue a goal that
+			// never resolves to a poly (the 123-unit freeze). So resolve the march goal
+			// ourselves: nearest point on the structure's blocking collision to THIS
+			// unit (per-unit near-wall spread, exactly the pre-3× partial-path
+			// behavior), projected to the nearest poly the mover's OWN filter allows
+			// (wall-base ring / gate apron for the enemy castle; the own interior for
+			// own-team goals). The MOVE still runs under the team default filter, so
+			// the no-enemy-pathing-inside guarantee is byte-untouched — only the GOAL
+			// changed from an unreachable poly to a reachable one. Structures are
+			// static, so losing MoveToActor's moving-goal tether costs nothing, and
+			// this whole branch still runs ONLY on goal change / idle (the enclosing
+			// gate) — never per tick (TASK-280/282 thrash law). Projection failure or
+			// a missing nav system degrades to the legacy MoveToActor (pre-feature
+			// behavior + the warn below; null-safety law).
+			FVector MarchPoint = FVector::ZeroVector;
+			if (ResolveStructureMarchPoint(*Goal, MarchPoint))
+			{
+				Result = AI->MoveToLocation(MarchPoint, StructureMoveAcceptanceRadius, /*bStopOnOverlap=*/ false,
+					/*bUsePathfinding=*/ true, /*bProjectDestinationToNavigation=*/ false, /*bCanStrafe=*/ true,
+					/*FilterClass=*/ nullptr, /*bAllowPartialPath=*/ true);
+			}
+			else
+			{
+				Result = AI->MoveToActor(Goal, StructureMoveAcceptanceRadius, /*bStopOnOverlap=*/ false,
+					/*bUsePathfinding=*/ true, /*bCanStrafe=*/ true, /*FilterClass=*/ nullptr, /*bAllowPartialPath=*/ true);
+			}
 		}
 		CurrentMoveGoal = Goal;
 
@@ -1985,6 +2067,57 @@ void ASummonedUnit::EnterAdvance(AActor* Goal)
 				*GetNameSafe(this), *GetNameSafe(Goal));
 		}
 	}
+}
+
+bool ASummonedUnit::ResolveStructureMarchPoint(const AActor& Goal, FVector& OutMarchPoint) const
+{
+	// TASK-349 loop-2 B2 — full rationale on the header decl. Null-safe ladder:
+	// any missing piece returns false and the caller degrades to the legacy
+	// MoveToActor (pre-feature behavior).
+	UWorld* World = GetWorld();
+	UNavigationSystemV1* NavSys = World ? UNavigationSystemV1::GetCurrent(World) : nullptr;
+	const ANavigationData* NavData = NavSys ? NavSys->GetDefaultNavDataInstance() : nullptr;
+	if (!NavData)
+	{
+		return false;
+	}
+
+	// (1) Nearest point on the goal's ECC_Pawn-blocking collision to THIS unit —
+	// the same closest-point convention every range check in this codebase uses,
+	// so the resolved march target is the very wall face the attack math will
+	// measure against. Per-unit: each attacker resolves ITS near wall (the pre-3×
+	// partial-path spread — no single-point pile-up). No blocking collision =>
+	// actor-origin fallback (shared convention; plain field buildings project
+	// trivially from either).
+	FVector NearPoint = FVector::ZeroVector;
+	if (Goal.ActorGetDistanceToCollision(GetActorLocation(), ECC_Pawn, NearPoint) < 0.f)
+	{
+		NearPoint = Goal.GetActorLocation();
+	}
+
+	// (2) Project under the mover's OWN team filter — the SAME filter the move
+	// request itself will use (null degrades to the navdata default filter, i.e.
+	// the pre-feature unfiltered projection). The projected poly is by
+	// construction a poly this unit is ALLOWED to path to, so goal resolution can
+	// never fail the way the raw castle origin does.
+	TSubclassOf<UNavigationQueryFilter> FilterClass = nullptr;
+	if (const AAIController* AI = GetAIController())
+	{
+		FilterClass = AI->GetDefaultNavigationFilterClass();
+	}
+	const FSharedConstNavQueryFilter QueryFilter = UNavigationQueryFilter::GetQueryFilter(*NavData, this, FilterClass);
+
+	FNavLocation Projected;
+	if (!NavSys->ProjectPointToNavigation(NearPoint, Projected, StructureGoalProjectionExtent, NavData, QueryFilter))
+	{
+		// nothing allowed within the extent (e.g. a goal buried deep inside the
+		// ENEMY interior — unreachable by design): let the caller take the legacy
+		// path rather than invent a far-away goal the unit cannot fight from.
+		return false;
+	}
+
+	OutMarchPoint = Projected.Location;
+	return true;
 }
 
 void ASummonedUnit::EnterAdvanceToLocation(const FVector& Point)

@@ -448,7 +448,12 @@ void ASiegeBotController::EvaluateDecisions()
 				const FVector ToIntruder2D = FVector(IntruderLocation.X - CastleRed.X, IntruderLocation.Y - CastleRed.Y, 0.f);
 				const FVector Dir2D = ToIntruder2D.GetSafeNormal();
 				const float IntruderDist = static_cast<float>(ToIntruder2D.Size());
-				const float MinStandoff = CastlePlinthClearance + 150.f; // clear of the plinth keep-out
+				// TASK-349 plinth retirement: was CastlePlinthClearance (420) + 150 —
+				// the literal 570 preserves the shipped tower-standoff floor
+				// byte-for-byte now that the plinth tunable is retired (this is a
+				// standoff heuristic, not a placement refusal; actual validity is
+				// ComputeValidBotSpawnPoint's nav projection + clearances).
+				const float MinStandoff = 570.f;
 				const float Standoff = FMath::Clamp(TowerDefenseStandoff, MinStandoff, FMath::Max(MinStandoff, IntruderDist - 100.f));
 				Desired = Dir2D.IsNearlyZero()
 					? CastleRed + FVector(-Standoff, 0.f, 0.f) // intruder atop the castle: fall back toward the centerline
@@ -1140,8 +1145,9 @@ FVector ASiegeBotController::ClampAnchorToBotSpawnRegion(const FVector& Desired)
 	// inside the edge so the widening ring below has room on BOTH sides of it
 	// (an anchor pinned exactly on the boundary throws half its candidate ring out
 	// of the box — the one-sliver pile-up this task exists to remove). The Z is
-	// preserved as authored; ProjectPointToNavigation owns the final Z. The plinth
-	// is deliberately NOT special-cased here — the ring walk-out already owns it.
+	// preserved as authored; ProjectPointToNavigation owns the final Z. Any
+	// refused sample (clearance/box/off-navmesh) is owned by the ring walk-out
+	// below (the plinth keep-out this note once covered is RETIRED — TASK-349).
 	const FVector CastleRed = GetCastleRedLocation();
 	const double BoxLimitX = FMath::Max(0.0, static_cast<double>(SpawnBoxHalfExtent.X) - static_cast<double>(SpawnBoxAnchorInset));
 	const double BoxLimitY = FMath::Max(0.0, static_cast<double>(SpawnBoxHalfExtent.Y) - static_cast<double>(SpawnBoxAnchorInset));
@@ -1228,14 +1234,14 @@ bool ASiegeBotController::ComputeValidBotSpawnPoint(const FVector& Desired, bool
 	UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(World);
 	if (!NavSys || !NavSys->GetDefaultNavDataInstance())
 	{
-		// No nav system / data: degrade OPEN to the half + plinth (+ clearance)
+		// No nav system / data: degrade OPEN to the box/zone gate (+ clearance)
 		// rule with one warning (house null-safety law — a missing system must
 		// never brick the bot). L_Arena always has nav data, so this never fires there.
 		if (!bWarnedNoNavData)
 		{
 			bWarnedNoNavData = true;
 			UE_LOG(LogGitClaudeUnrealTest, Warning,
-				TEXT("ASiegeBotController '%s': no navigation data — bot spawn navmesh projection (GDD §3.5) skipped, using the half/plinth rule only."),
+				TEXT("ASiegeBotController '%s': no navigation data — bot spawn navmesh projection (GDD §3.5) skipped, using the spawn box/zone + clearance rules only."),
 				*GetNameSafe(this));
 		}
 		if (IsBotHalfPointClear(Anchor, bIsBuilding))
@@ -1247,7 +1253,7 @@ bool ASiegeBotController::ComputeValidBotSpawnPoint(const FVector& Desired, bool
 	}
 
 	// Deterministic candidate ring: the clamped anchor first, then widening rings —
-	// so a plinth / clearance / box failure walks outward to the nearest clear,
+	// so a clearance / box failure walks outward to the nearest clear,
 	// on-navmesh spot instead of stalling forever on one refused point. With the
 	// UnitSpawnClearance rule live (appendix 3a) this walk is also what spreads a
 	// wave: unit N takes the anchor, unit N+1 is refused there and steps to the
@@ -1282,10 +1288,14 @@ bool ASiegeBotController::IsBotHalfPointClear(const FVector& Point, bool bIsBuil
 	// W1-PREP additions 3 (TASK-262 — the bot mirror of TASK-261): the spawn gate is
 	// no longer the whole own-half. A point is spawn-eligible ONLY if it lies inside
 	// the Red spawn box around Castle_Red OR inside a Red-owned capture zone. This
-	// REPLACES the old `!IsOnOwnHalf(Point.X)` early-out; everything below (plinth
-	// keep-out, building clearance) is UNCHANGED and still applies. (IsOnOwnHalf's
-	// OTHER callers — miner-approach clamp, own-half unit/hero iteration — are
-	// TARGET/APPROACH logic and stay half-based; only THIS spawn gate moves.)
+	// REPLACES the old `!IsOnOwnHalf(Point.X)` early-out; the unit/building
+	// clearances below are UNCHANGED and still apply. (IsOnOwnHalf's OTHER callers
+	// — miner-approach clamp, own-half unit/hero iteration — are TARGET/APPROACH
+	// logic and stay half-based; only THIS spawn gate moves.)
+	// TASK-349 (plinth-retirement law): the castle plinth keep-out loop that stood
+	// here — the bot mirror of the player's IsPointInsideCastlePlinth — is RETIRED.
+	// Spawn-inside the own hollow castle is now the feature; spawn truth = this box
+	// gate + ComputeValidBotSpawnPoint's nav projection + the clearances below.
 	if (!IsPointInBotSpawnBox(Point) && !IsPointInCapturedZone(Point))
 	{
 		return false; // outside both the Red castle box and any Red-owned mid zone
@@ -1295,23 +1305,6 @@ bool ASiegeBotController::IsBotHalfPointClear(const FVector& Point, bool bIsBuil
 	if (!World)
 	{
 		return false;
-	}
-
-	// Castle plinth keep-out (mirrors ASiegePlayerController): no spawn inside any
-	// castle's ~814x820 plinth footprint (2D box, CastlePlinthClearance half-extent).
-	for (TActorIterator<ACastle> It(World); It; ++It)
-	{
-		const ACastle* Castle = *It;
-		if (!IsValid(Castle))
-		{
-			continue;
-		}
-		const FVector CastleLocation = Castle->GetActorLocation();
-		if (FMath::Abs(Point.X - CastleLocation.X) <= CastlePlinthClearance &&
-			FMath::Abs(Point.Y - CastleLocation.Y) <= CastlePlinthClearance)
-		{
-			return false;
-		}
 	}
 
 	// Unit spawn clearance (NON-buildings only — W1-PREP appendix 3a, TASK-265):

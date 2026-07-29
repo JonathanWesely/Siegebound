@@ -50,7 +50,7 @@ M5 shipped machine-verified with the desktop LOCKED (SendInput blocked → no si
 7.5. **M7.5 — Art Quality Upgrade (Meshy Pro second engine + FAB packs + free pipeline upgrades)** — `current (decomposed 2026-07-18 — TASK-191..210 in "## M7.5 tasks" under Active tasks; Jonathan-approved directive, plan C:\Users\wesel\.claude\plans\i-am-a-bit-sunny-bird.md: Meshy Pro $20/mo APPROVED, FAB ~$100–200 APPROVED, all four art areas prioritized, quality first)`. **MILESTONE RULING: a STANDALONE batch/sub-milestone in the M4.5/M5.5/M6.5 shape, NOT folded into M7.** M7 stays `in-progress` at its paused 2026-07-18 checkpoint with its remaining capstones (TASK-174/175/178 VFX + dressing, TASK-181 Sequencer flythrough, TASK-183 final assembly + 60 fps perf watch) and all checkpoint decisions PENDING and UNTOUCHED — this batch has its own external gates (Meshy account, FAB purchases) and must not hold the M7 playtest hostage, nor vice versa. **FLAGGED sequencing recommendation (Jonathan's call at the M7 checkpoint, NOT enacted):** run the M7 Sequencer/perf capstones AFTER the M7.5 A/B ruling (and fleet retexture, if approved) so the flythrough captures the final art. Three tracks: **(A)** Meshy Pro as a second engine in the TRELLIS.2 pipeline — Stage-1.5 RETEXTURE to kill the recorded accepted-not-fixed "dark TRELLIS look" (TASK-150/151/172 handoffs), per-asset image-to-3D alternative, auto-rig + preset-clip animation upgrade via the UE5 IK Retargeter; **(B)** FAB purchases via the FAB-REQUESTS protocol — FAB-005 "Stylized RTS Buildings & Props Pack" (listing a4b43ae5-e442-4d51-93f2-fea8d77e9f37) + FAB-006 one rigged stylized unit pack (art-director authors the entries; Jonathan purchases); **(C)** free pipeline upgrades — FLUX.1-schnell→FLUX.1-dev concepts, Stage-2 albedo de-light/brighten, 1536³ TRELLIS res pinned for hero assets, `_guess` team-region selector tuning — plus the **Wall + DeepMine quota retry CARRIED IN under their existing IDs (TASK-170/171/173)**, Stage-2 gated on the albedo-lift so the last 2 meshes bake bright (flagged resequencing, decision 3). **Track D (self-hosting TRELLIS.2/Hunyuan3D; Tripo/Rodin subscriptions) EVALUATED AND REJECTED 2026-07-18** — ops burden > benefit while HF PRO + Meshy cover throughput; Hunyuan 2.5 has no public weights; Meshy uniquely covers the actual gaps (retexture existing meshes + rig + anim clips) in one sub. Recorded; NO tasks. CrystalTower-emissive debt ALREADY CLEARED (TASK-190 @ 7ec9916 — no new task). **JONATHAN'S TWO MANUAL STEPS: TASK-197 (create Meshy Pro account + set MESHY_API_KEY env var + possible Norton meshy.ai exclusion) and TASK-207 (approve + purchase the FAB packs → drop into Content/Fab/<Pack>/).** Naming law: CONVENTIONS "Meshy second engine — Stage-1.5 retexture & image-to-3D alternative (M7.5)" + IK_/RTG_ prefix rows (added FIRST, TASK-191).
 7.6. **M7.6 — Arena 10× scale-up + LOD/perf structure** — `✅ COMPLETE 2026-07-25 — MERGED to main LOCALLY (merge 4c680bb), NOT pushed; M7.5 integrated · was: current (decomposed 2026-07-18 — Phase 0 = TASK-214..220 in "## M7.6 tasks" under Active tasks; later phases one-liners until the W1 gate clears, milestone-decomposition style; Jonathan-approved directive, plan C:\Users\wesel\.claude\plans\i-am-a-bit-sunny-bird.md — OVERWRITTEN since the art-quality version, it is the numeric source of truth)`. **LABEL RULING: the batch is M7.6 and the branch is `m7.6-arena10x`** — the plan's `m8-arena10x` name collides with GDD M8 (networked 1v1); relabeled, recorded, branch renamed accordingly. Scope locked by Jonathan: TRUE 10× area (×3.125 linear; castles ±25,000 = 50k apart), speeds/ranges/aggro UNCHANGED (slow epic marches accepted; forward structures gain importance), new space = denser scatter (§3 table, ≈4.9× instances made affordable by cull bands) + POIs + vista ring. **Jonathan's four design rulings (2026-07-18):** (1) bot MARCHES from its castle — no mid-field materialize ("adaptive bot spawn positioning by strategy" = flagged backlog follow-up); (2) corridor half-width 1,000; (3) pre-seed 2 neutral gold-node props mid-field (visual-only; capture-point mechanic NOT designed — backlog hook); (4) Nanite AMENDED for vista-class Megascans cliffs only, gameplay fleet stays OFF with classic LODs (CONVENTIONS "Arena 10× scale-up & LOD/perf (M7.6)" amendment live). **HARD-GATED PHASE LADDER:** Phase 0 scale spike → **W1 Jonathan perf/feel watch (TASK-219) GATES EVERYTHING** → Phases 1∥2 (C++: scatter culls + grid-hash ∥ unit URO) → 3 (density → W2) → 4 (LOD pipeline → W3) → 5 (POI/vista) → 6 (capstone playtest → MERGE GATE to main). Branch-first law: build-master cuts the branch off main BEFORE any file change (TASK-214); ownership law: the branch exclusively owns L_Arena.umap + DA_BattlefieldScatter — M7.5 waves never touch them. **SEQUENCING LAW (cross-batch): the reimport_meshes.py LOD-group line lands on MAIN, QA'd (TASK-220, pulled forward from Phase 4), BEFORE M7.5's TASK-201/202 retexture reimport wave — that wave then applies LODs for free (TASK-202 blocker added).** M7.5 stays OPEN in parallel (Jonathan gates TASK-200/204/207 independent). Flagged follow-ups recorded in Standing backlog: adaptive bot spawn positioning, spawn-forward/waypoint mechanic, RTS overview camera, neutral-node capture mechanic. No FPS baseline exists (M7's TASK-183 never ran) — W1 is the first real number. **[W1 APPROVED by Jonathan 2026-07-24 — TASK-219 signed off at branch HEAD `0295f75`. The hard-gated phase ladder is UNBLOCKED, and Jonathan (mid-turn 2026-07-24) GRANTED overnight EXECUTION of Phases 1–5 (not just planning): decomposed as DISPATCHABLE tasks TASK-284 (P1 scatter culls + grid-hash) ∥ TASK-285 (P2 unit URO) → TASK-286 (P1∥2 build) → TASK-287 (P3 density → W2) → TASK-288 (P4 rig-LOD tooling) → TASK-289 (P4 LOD apply → W3) → TASK-290 (P5 vista/POI assets) → TASK-291 (P5 place + commit). W2 (post-P3) and W3 (post-P4) are Jonathan's MORNING human feel-watches — overnight the pipeline builds THROUGH them capturing machine perf only (no FPS baseline exists; non-blocking). Phase 6 (capstone playtest → MERGE GATE to main) stays HIS: no autonomous push/merge. One deferred ATTACK residual (units halt just short of the enemy castle after the TASK-280/281 freeze fix) → TASK-282/283, overnight, DIAGNOSE-FIRST. The W1 sign-off also cleared TASK-267 (bot ladder fall-through) + the M7.7 deck-details integration hold (TASK-269..272).]** **[✅ M7.6 COMPLETE — Phase-6 MERGE DONE (build-master TASK-296b, 2026-07-25). `git merge --no-ff m7.6-arena10x` → main merge commit `4c680bb` (2 parents: main-M7.5 `8f7bc79` + branch-M7.6 `58f501c`). Jonathan's keep-both ruling honored — W1 ×3 card costs AND M7.5 art. 6 conflicts resolved: cards.csv / rig_character.py / M_GoldGlow → BRANCH (verified supersets); CONVENTIONS.md + TASKBOARD.md → UNION (both lanes); DT_Cards → BRANCH (spot-check PASS: Ogre=36 / Footman=9 / Knight=18 / Archer=12 + M7.5 Lightning AoERadius=700 / FrostNova DeckCount=1 / Fireball+FrostNova SpellDelivery=HeroLine); C++ auto-merged. Post-merge VERIFY: compile GREEN (editor down, clean); PIE on L_Arena clean (Traversability CONFIRMED, 0 culls; LWC ensure/NaN/Fatal/OriginX/InverseFast = 0; bot marching Cavalry cost 21 gold 36→15); M_GoldGlow readback = BOTH sine-pulse nodes (Time/Sine/Add/Multiply) + drivable `GlowIntensity` scalar param (Default 1.0). Editor was closed by Jonathan for the lock-free branch switch, relaunched by build-master for verification. main ahead of origin/main by 38 — **NOT PUSHED (Jonathan's push).** Deck-builder trio (WBP_DeckBuilder + DeckBuilderWidget.{cpp,h}) returned UNCOMMITTED/parked. ONE remaining action: Jonathan's `git push`.]**
 7.7. **M7.7 — Deck-builder card details ("how it works" on click)** — `current (decomposed 2026-07-23 — TASK-268..272 in "## M7.7 tasks" under Active tasks; Jonathan directive verbatim: "lets change the deck builder interface a bit. Make it to where when you click on the display for a card it displays a detailed description on how the card works.")`. **A STANDALONE menu-UI batch in the M4.5/M5.5/M6.5 shape, NOT part of M7.6** — it shares no file with the arena scale-up branch's owned set (L_Arena.umap, DA_BattlefieldScatter, SiegePlayerController, SiegeBotController, CaptureZone). Extends M6's deck-builder screen: clicking a card's face opens a non-modal side panel showing a generated, always-accurate "how this card works" write-up. **Three binding manager rulings:** (1) the description is **GENERATED from DT_Cards at runtime**, NOT an authored `Description` CSV column — a balance pass is pending and authored numbers would drift (the `Notes` column already has: `Lightning` says "in 400", its `AoERadius` is 700); (2) **add/remove does NOT move** — the tile's `+`/`−` buttons stay put and the card face was an UNBOUND gesture (the art is `SelfHitTestInvisible`), so this is purely additive and every M6 rule survives; (3) the view is a **non-modal side panel** built INLINE in `WBP_DeckBuilder` (no new WidgetBlueprint, and never a duplicate+reparent — the runtime-repaint corruption lesson). **LANE RULING: develops on `m7.6-arena10x`** (zero file overlap; the live working tree is there and a checkout dance would disturb the un-played W1 build) and merges to main at the M7.6 Phase-6 gate. **GATE: only the C++ task runs now (file-only, no compile, no Git); everything editor/compile/commit-bound is HELD until Jonathan's W1 look (TASK-219) so the playtest build stays exactly `1e4bd19` — one word from him ("do it now") lifts the hold. **[UPDATE 2026-07-24: HOLD LIFTED — Jonathan's W1 look/sign-off is GIVEN (TASK-219 APPROVED). TASK-269..272 are UNBLOCKED; TASK-269 is dispatchable, 270/271/272 follow in chain order. The W1 build advanced past `1e4bd19` to `0295f75` (TASK-266→273-277→278/279→280/281), so the deck-details chain now develops on HEAD `0295f75`.]** **[UPDATE 2026-07-25 — RESUME ON MAIN: M7.6 is MERGED to main locally (merge `4c680bb`, not pushed) and build-master parked the deck-builder trio UNCOMMITTED on main during that merge (§7.6). The chain therefore RESUMES ON MAIN, not the branch (branch-ownership rationale now moot). TASK-268 qa-passed; TASK-270/271 bounded-STOPPED with the exact ~8-op completion recipe in handoffs/TASK-270-271.md + scaffolding (9 vars + 3 uncalled functions) already in the parked WBP; TASK-269..272 chain order + specs REFRESHED for main (269 now = compile-VERIFY against merged M7.5+M7.6, since TASK-268's .cpp/.h were stashed during the merge compile; 272 commits backend + both WBP together on main, no push). Editor-mutating → runs only when Jonathan is not in PIE; on-screen correctness = his pixel-check (UMG corruption-history law). SERIALIZES with TASK-297 (SK-LODs) on one exclusive editor session. Chain is RESUME-READY.]** Naming law: CONVENTIONS "Deck-builder card details — click-a-card 'how it works' (2026-07-23)" (added FIRST, 2026-07-23).
-8. M8 — Networked 1v1 multiplayer — `not-started`
+8. M8 — Networked 1v1 multiplayer — `current (decomposed 2026-07-28 — Jonathan's go-ahead verbatim: "If it is ok to run it in parallel, go ahead and get started on M8". Phase 0/1 = TASK-352..357 in "## M8 tasks"; Phases 2–4 stay one-liners until their gates, M7.6 ladder shape. RUNS PARALLEL to the in-flight CASTLE-3X batch under the M8 PARALLEL LAW: read-only/new-files-only until TASK-350's code commit lands; shared-file M8 work [TASK-356+] blocked on it. Authority model = listen server, LAN/direct-IP, bot stays as practice mode [flagged defaults]. Naming/authority law: CONVENTIONS "Networked 1v1 (M8)", added FIRST.)`
 
 ### Standing backlog (manager notes — NOT tasks, no IDs yet)
 - **Balance pass** — Jonathan flagged balancing changes wanted post-M4 (M4 playtest sign-off 2026-07-08: "we will have to make some balancing changes later, but it is fine"). **FIRST NOTES ARRIVED + TASK-IZED 2026-07-24 → TASK-278..279 ("W1 Economy-balance tasks" block below):** passive gold 1/2s→1/1s (reverts the TASK-089 income half) + ALL 28 card costs ×3 + bot `AttackBankThreshold` 12→36 audit; W1-lane branch work on `m7.6-arena10x`; StartingGold 10 left unchanged (flagged). Ledger continues in handoffs/TASK-279.md. This is a partial pass (Jonathan may send more notes). Feed-ins still on file: TASK-090 balance ledger (undefended-castle kill time ~56.5 s / ~71.3 s post-economy-change vs ~33 s prior; bot played ZERO early Miners in both rush matches — bot spend-mix), TASK-070 tuning note (bot opens with attack, not economy). **INTEGRATED 2026-07-24 (TASK-279, build-master, commit `3c32e25` on m7.6-arena10x):** base income 1/2s→1/1s LIVE (CDO `BaseIncomeTickPeriod=1`; PIE runtime: bot reached 36 gold from StartingGold 10 in ~26 s, then 18→36 in ~18 s = 1 gold/s), all 28 DT_Cards `Cost` cells ×3 LIVE (`set_rows` + readback Footman 9 / Ogre 36 / DeepMine 45 / CrystalTower 27, no other column drifted, DT_Cards.uasset saved + committed), bot `AttackBankThreshold` 12→36 LIVE (LogSiegeBot: banked to 36 → fielded Knight cost 18 ×2; deck 'Bot Aggro Rush' avg cost 14.16). StartingGold LEFT at 10 (flagged). NEXT-PASS WATCH (Jonathan): undefended-castle kill-time lengthens further under ×3 costs (prior ~56.5/71.3 s); the slower opening + bot heavier-unit mix is a feel check.
@@ -923,6 +923,7 @@ Wave 1 (Cleric/Archer/Knight/Miner/Sapper) and Wave 2 (Ogre/MilitiaMob/Longbowma
 7. Reimport leaves `BP_Unit_<Unit>` and `MI_<Unit>_PBR` **dirty in memory** (the `M_AssetPBR.used_with_skeletal_mesh=false` auto-heal — see TASK-325). Harmless — but at any editor-close prompt SAVE the `MI_`/`SM_`/`SK_`/`T_` assets and **DECLINE `L_Arena.umap`**.
 8. **Package saves are SILENTLY BLOCKED while Simulate is running** (Wave-2 addendum) — every import happens with Simulate STOPPED.
 9. **A same-path STATIC reimport can silently unweld LOD0 and zero out LOD1–3** (the TASK-320 defect) — read back LOD0 vert count AND per-LOD triangle counts before every commit. `lod_count` alone does NOT catch it. Root-cause + fix: TASK-322/323.
+10. **Never `load_map` from a long-lived remote-exec session** (added 2026-07-29, TASK-349/350 loop-3 crash forensics — `qa/TASK-349.md` FINAL-RUN append): a map load inside an aged editor-python session is crash-prone and can take accumulated dirty state with it. The lane is **close-without-saving + FRESH editor boot** for any map-context change.
 
 ---
 
@@ -1365,7 +1366,7 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
 5. **Castle LOD target is 3, not 4.** The M7.6 Classic-LOD law exempts castles from `lod_group='LargeProp'`: explicit **LOD1 50 % @ 0.4 / LOD2 25 % @ 0.15**, readback `lod_count == 3`. The audit's "every other building is 4" is the LargeProp group and is NOT this asset's target. Do not apply `LargeProp` to the Castle.
 6. **LOD READBACK IS A HARD GATE (the `SM_MilitiaMob` lesson).** Same-path STATIC reimport is the exact operation that wedged `SM_MilitiaMob` (TASK-322 open, root cause unknown). TASK-330 MUST read back **LOD0 welded vert count AND per-LOD triangle counts** — `lod_count` alone does NOT catch it. **A 0-triangle LOD or a `verts == tris × 3` unweld is a HARD FAILURE: restore the last-known-good `SM_Castle`, do NOT commit, report to the manager.** Never "fix" it by delete+recreate.
 7. **Verify in SIMULATE, never PIE-in-viewport, and never import while Simulate runs.** FLEET-REMASTER lane-knowledge 1 (`CaptureViewport` renders the EDITOR world) and 8 (**package saves are SILENTLY BLOCKED while Simulate runs** — that is how a broken chain reached a commit). Every import happens with Simulate STOPPED; verification happens in Simulate.
-8. **`L_Arena` is NEVER saved.** The Castle instances are read-only for this batch — no move, no rename, no re-save. Locate castles by `TActorIterator<ACastle>` / class filter, **never by actor label**: the convention names are `Castle_Blue`/`Castle_Red` but the audit observed the level labels as `Castle_0`/`Castle_1`, and `Castle_Red` carries yaw 180. Label-matching will silently find nothing.
+8. **`L_Arena` is NEVER saved.** The Castle instances are read-only for this batch — no move, no rename, no re-save. Locate castles by `TActorIterator<ACastle>` / class filter, **never by actor label**: the convention names are `Castle_Blue`/`Castle_Red` but the audit observed the level labels as `Castle_0`/`Castle_1`, and `Castle_Red` carries yaw 180. Label-matching will silently find nothing. **[CORRECTED 2026-07-28: the yaw-180 claim NEVER reproduced — TASK-330/331/350 all read BOTH castles at yaw 0.0; it was an early assembly-INTENT note carried as observation. The locate-by-class law stands; the yaw claim is dead — see the CASTLE-3X record correction.]**
 9. **The GoldNode fix is ONE lever and it is NOT the one it looks like.** `GlowIntensity` is driven at runtime by `AGoldNode`'s reserve-gauge MID (`Lerp(0.05, 1.0, Reserve/Initial)`), so **lowering the material's default `GlowIntensity` is a NO-OP in play.** The lever is the BASE EMISSIVE STRENGTH inside `M_GoldGlow` that `GlowIntensity` multiplies. Zero C++ change; the gauge keeps its semantics. Full law in CONVENTIONS "GoldNode / CrystalTower glow materials".
 10. **NO texture work on GoldNode or CrystalTower — ever, until this is re-ruled.** Both ship on hand-authored glow materials and never sample their baked `T_*` sets. A re-bake would change nothing on screen and would burn a session. Recorded in CONVENTIONS so it cannot be re-litigated.
 11. **Scope fence.** This batch touches the Castle and `M_GoldGlow` only. It does NOT re-open the other eight buildings (audit-closed), does NOT touch any unit, does NOT touch `L_Arena` / `DA_BattlefieldScatter` / any C++ / any Blueprint / `cards.csv` / `DT_Cards`, and does NOT re-open grounding or facing (TASK-326..328's lane).
@@ -1456,7 +1457,7 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
     Blue castle blue, Red castle red (slot 0 `TeamRegion` intact and first); (c) bounds/footprint unchanged within ±10 % and the castle
     still sits on the ground at its anchor; (d) placement still refuses inside the plinth dead-zone (`CastlePlinthClearance`); (e) Message
     Log clean (ensure / AccessedNone / Fatal = 0). **Locate the castles by `TActorIterator<ACastle>` / class filter, NEVER by actor label**
-    (convention says `Castle_Blue`/`Castle_Red`, the audit observed `Castle_0`/`Castle_1`; `Castle_Red` carries yaw 180) — manager ruling 8.
+    (convention says `Castle_Blue`/`Castle_Red`, the audit observed `Castle_0`/`Castle_1`; `Castle_Red` carries yaw 180 **[claim CORRECTED 2026-07-28: never reproduced, both castles yaw 0.0 — see the CASTLE-3X record correction]**) — manager ruling 8.
     **`L_Arena` IS NEVER SAVED.** At any editor-close save prompt: SAVE the `SM_`/`T_`/`MI_` Castle assets, **DECLINE `L_Arena.umap`**.
     **(5) COMMIT** on main with explicit pathspecs (`Content/Meshes/SM_Castle.uasset`, `Content/Textures/T_Castle_*.uasset`,
     `Content/Materials/Instances/MI_Castle_PBR.uasset`, `Content/RawAssets/Castle.fbx`, `Content/RawAssets/Textures/Castle/*`,
@@ -1820,6 +1821,356 @@ Each unit is a 3-stage chain with IDs `TASK-3NN-model` / `TASK-3NN-rig` / `TASK-
     PRESERVED: `A_Ogre_*` + ABP. READ-ONLY: `BP_Unit_Ogre`, `DT_Cards`, `L_Arena`. Commit on main, no push. Law: CONVENTIONS "Fleet
     Meshy remaster" (same-path + SAMPLER-TYPE TRAP + per-asset override), "Unit mesh facing" (fence), M7.6 SK-unit LOD law, the hard
     gate (integration check before commit).
+
+---
+
+## ✅ JONATHAN BLANKET APPROVAL — 2026-07-28 (verbatim: *"ok, I approve of everything. Lets move on"*)
+
+**Closes EVERY open WATCH / eyeball item from the 2026-07-27 stack.** Recorded here centrally by the manager; the per-block WATCH sentences ("Jonathan's eye final") are SATISFIED by this entry — do not re-open any of them without a new directive: castle rebuild look (TASK-329/330) · crumble stages incl. the sampler fix + band (TASK-337/338/339) · GoldNode glow (TASK-332/333) · Ogre attempt #3 (TASK-340/341) · facing fix + Wizard static (TASK-326..328/334) · the FLEET-REMASTER gallery verdict + its three colour calls (TASK-310 a/b/c — (c) was already answered via the Ogre remake) · Archer/Pikeman chroma (TASK-342/343) · the HOLD/AMBUSH feel-pass incl. the AMBUSH-vs-building default and all six group-order tunables (TASK-344..346). **Two-lane shipped:** group orders `3068286` · Archer `3770bf6` · Pikeman `8a903c7`; TASK-342..346 all done. Main is 11 ahead of origin, UNPUSHED — push NOT requested (Jonathan's push, standing law). **No re-tunes owed anywhere from that stack.**
+
+---
+
+## M8 tasks (decomposed 2026-07-28) — Networked 1v1 multiplayer (GDD §9.8) — Phase 0/1 = TASK-352..357; Phases 2–4 gated one-liners
+
+**Directive (Jonathan, verbatim, 2026-07-28):** *"If it is ok to run it in parallel, go ahead and get started on M8."* GDD §9.8 scope: *"Server-authoritative gold, spawns, combat, spells, upgrades; lobby/host-join; replicate units/heroes/economy for a real online 1v1. (Slice: multiplayer replication systems clip.)"* The GDD spec is thin — the manager rulings below + CONVENTIONS "Networked 1v1 (M8)" (added FIRST) fill the architecture. This is the LAST GDD milestone.
+
+**⚠️ THE M8 PARALLEL LAW (binding on EVERY M8 task — why this decomposition is shaped the way it is):** CASTLE-3X owns a LIVE uncommitted C++ lane — TASK-349 is editing `Castle.{h,cpp}`, `SiegePlayerController.{h,cpp}`, `SiegeBotController.{h,cpp}`, `SummonedUnit.{h,cpp}`, `HeroCharacter.{h,cpp}`, `Config/DefaultEngine.ini` RIGHT NOW, uncommitted until TASK-350 lands the code. UBT compiles the whole module (parked C++ breaks everyone's compile — standing lesson) and two agents in one file clobber each other. Therefore: (a) M8 tasks that are READ-ONLY or NEW-FILES-ONLY ⇒ `parallel-safe: yes`, dispatchable alongside CASTLE-3X; (b) any M8 task editing a CASTLE-3X-owned file ⇒ **`blocked-by: TASK-350 code commit landed`** minimum; (c) SINGLE OWNER PER FILE within M8 itself; (d) NO M8 task touches `DefaultEngine.ini` until 350 lands (TASK-349 owns it — any net config defers to TASK-357); (e) editor/compile/integration serialize on the one editor as always.
+
+### Manager rulings (binding for M8)
+
+1. **AUTHORITY MODEL (flagged default): LISTEN SERVER** — host = server + Blue player, joiner = Red client; strictly server-authoritative gameplay per GDD §9.8. Dedicated servers = out of scope this milestone.
+2. **JOIN SCOPE (flagged — genuine Jonathan call if he wants more): LAN/direct-IP only** (`open <ip>` / subsystem-wrapped travel). NO OnlineSubsystem/EOS/Steam sessions, no matchmaking, no accounts (all GDD §10 out-of-scope). Internet matchmaking would be a real scope adjudication — surfaced, not assumed.
+3. **THE BOT STAYS (flagged default):** "Play vs Bot" remains as the practice mode; M8 ADDS Host/Join 1v1 beside it. Single-player behavior must remain BYTE-IDENTICAL (standalone NetMode = authority everywhere).
+4. **TEAMS:** host = Blue, client = Red, derived from PlayerState/registration at PostLogin. "Blue = local" is retired; **`GetFirstPlayerController()` is BANNED in gameplay code** — the biggest shipped offender is the group-orders polling (`3068286`: units read the FIRST controller's `UnitGroups`); its replacement is the owning-team-controller resolve, designed at TASK-353.
+5. **FIRST PLAYABLE INCREMENT (the Phase-1 hard gate):** two clients, one `L_Arena` match, identical authoritative core state on both screens — castle HP both sides, own gold, match start/win/lose flow. Full unit/combat/spell replication is Phase 2: **the increment proves the pipe, not the whole game.**
+6. **PHASE LADDER (M7.6 shape; only P0+P1 task-decomposed now):** P0 audit + architecture → P1 first playable increment → **P2** gameplay replication + RPC surfaces (units/hero/combat/movement smoothing, placement, spells, group orders) → **P3** lobby polish + client-deck handoff (SaveGame decks are client-local) + practice-mode coexistence + disconnect/edge cases → **P4** hardening + capstone 2-client playtest + the GDD slice clip. P2–P4 get IDs only when their gate clears.
+7. **NEWEST SYSTEMS ARE NAMED AUDIT TARGETS (do not miss them):** group orders (per-controller `UnitGroups` + unit polling — ruling 4) and the CASTLE-3X team gating (BeginPlay capsule-channel stamping + gate blocker/nav filter config — all ORDER-SENSITIVE under networked spawn/possession; the audit covers its DESIGN from CONVENTIONS now and owes a code-delta addendum once TASK-350 lands).
+8. **No editor task in P0; TASK-355 is the only P1 editor task** and runs inside TASK-357's session (the 345/346 precedent). All commits main, NO push.
+
+**Dispatch map:** **TASK-352 dispatchable NOW** (read-only — safe alongside TASK-349's live edits and both art lanes) → TASK-353 (doc-only; **manager reviews the doc before P1 C++ dispatches**) → TASK-354 (new files only) → TASK-354-QA. **TASK-356 additionally waits on TASK-350's code commit.** TASK-357 closes P1 (hosting TASK-355), then a **Jonathan checkpoint** before P2 is decomposed.
+**Dispatch map UPDATE (2026-07-28, TASK-353 SIGNED):** 352 ✅ 353 ✅-signed ⇒ **TASK-354 is DISPATCHABLE NOW** (new files only; runs beside TASK-349's loop and both art lanes). **STASH CONTINGENCY (recorded, binding on TASK-350):** TASK-354's new uncommitted files WILL be in the module when TASK-350 compiles — if 350's compile fails on M8-new-file errors, build-master STASHES the M8 files (the TASK-277 precedent), lands 350 clean, restores them, and routes the error to gameplay-programmer as a TASK-354 QA loop; 350's own regression proof stays uncontaminated. TASK-356 remains post-350 + post-addendum (carve DECLINED — see the sign-off rulings on TASK-353). Chain after 354-QA: 356 (post-350) → 356-QA → 357 (hosting 355).
+
+<!-- ORCHESTRATOR 2026-07-28: TASK-352 DONE — audit complete at HEAD 8a903c7 via git-show (349's live lane untouched); handoff handoffs/TASK-352-audit.md. Headlines: ZERO replication surface module-wide; 5 first-player sites; 14 team hardcodes (worst: InitNewPlayer tags every human Blue, SpawnBot unconditional, hero Team never assigned); 15 client-authoritative mutation surfaces (the future Server* RPC table); 8 timer hazards (worst: client PS gold accrual forks, GameState free-runs its own clock, per-machine scatter seed = different battlefields); UI layer favorable (all push-model delegates — OnReps reuse them, zero widget changes for P1); P1 shortlist of 8 risk-ranked (team/PS-rep/SpawnBot-gate/gold-authority = clean-file now; Castle rep + first-player replacements + hero-team + match-end seam = blocked on TASK-350; scatter-seed rep recommended into P1). TASK-353 dispatched. -->
+#### TASK-352 — [M8-audit] Single-player-assumption + replication audit of the whole gameplay module (gameplay-programmer, READ-ONLY)
+- assignee: gameplay-programmer
+- status: **done** (2026-07-28 — audit delivered, `handoffs/TASK-352-audit.md`; read-only, nothing edited; the per-class matrix + the GetFirstPlayerController/team/mutation site enumerations fed TASK-353 directly. The CASTLE-3X code-delta addendum remains OWED post-TASK-350, per the doc's §7.) ← was: backlog — dispatchable NOW
+- blocked-by: none
+- parallel-safe: yes
+- spec: >
+    Audit the COMMITTED tree (HEAD) — do NOT read TASK-349's uncommitted working files. Deliver, with file:line evidence:
+    (1) **every `GetFirstPlayerController()` / first-local-player site** (ruling 4 — the group-orders polling `3068286` is the known
+    big one; find them ALL); (2) **every team assumption** (Blue = local player, Red = bot — spawn, HUD, placement, win/lose, team
+    visuals); (3) **every client-authoritative gameplay mutation** (economy tick, card play/discard, placement confirm, spell
+    targeting/resolution, upgrades, group-order confirm, Play-Again reset) — the future `Server*` RPC surface; (4) a **per-class
+    replication-needs matrix** (`ASummonedUnit`, `AHeroCharacter`, `ACastle`, `ABuilding`+subclasses, `AGoldNode`, `ACaptureZone`,
+    projectiles, GameMode/GameState/`SiegePlayerState`, both controllers, `ASiegeBattlefieldScatter` — note its per-match random seed
+    must replicate or be server-sent): what state, what OnReps, what stays server-only, what is client-cosmetic (MIDs, decals,
+    widgets, debris); (5) **SaveGame deck locality** (client deck → server handoff shape, for P3); (6) the two NAMED newest systems
+    (ruling 7): group-orders polling model + the CASTLE-3X team-gating DESIGN (from CONVENTIONS — BeginPlay ordering vs networked
+    spawn/possession; record that a code-delta addendum is OWED after TASK-350 lands); (7) timers/latency hazards (0.25 s polls,
+    match timer, overtime). NO fixes, NO edits. Write `handoffs/TASK-352-audit.md` (the matrix is the deliverable). Post in ⚙️ Dev & QA.
+- names: >
+    Read-only: everything under `Source/GitClaudeUnrealTest/Siegebound/` at HEAD + `Docs/GDD.md` §9.8/§10. Report
+    `handoffs/TASK-352-audit.md`. Law: CONVENTIONS "Networked 1v1 (M8)".
+#### TASK-353 — [M8-arch] Net architecture design: replication matrix + RPC table + migration plan (gameplay-programmer, doc-only)
+- assignee: gameplay-programmer
+- status: **done — SIGNED by the manager 2026-07-28** (`handoffs/TASK-353-architecture.md`; decision table D1–D14 ratified). **The §9 open questions, ruled one by one:** (1) `HeroCharacter.{h,cpp}` ADDED to TASK-356 (349-lane — its .cpp is 349-touched-uncommitted per `handoffs/TASK-349-programmer.md` §5, so single-owner puts it post-350 regardless; no micro-task). (2) Observer posture SIGNED; refusal wording `"Not available yet in online matches"` APPROVED as-is. (3) Scatter cull residual ACCEPTED for P1 (superset-never-rubber-bands argument holds; attempt counts logged; P2 upgrade only if felt). (4) Dual `bNetworkedMatch` latch SIGNED as-is. (5) **Clean-file carve-out DECLINED — and with a STRONGER reason than the doc's:** a 356a landing file-only would sit PARKED-UNCOMMITTED in the shared module exactly when TASK-350 compiles it — the TASK-268/TASK-277 collision trap verbatim (parked C7595 broke the W1 build). One task, whole byte-identity argument, one QA, entirely post-350. (6) VictoryScreen Play-Again rewire APPENDED to TASK-355 (host-only fallback recorded — TASK-357 records which way it landed). (7) Victory-widget relative text: SIGNED as recommended — music/flow correct in P1; consuming `SetLocalVictory` is an OPTIONAL TASK-355 item, else the widget's absolute branch is a recorded P2 flag, not gate-blocking. (8) Remote-controller server deck = curated DEFAULT deck (never the host's SaveGame) — RECORDED as a BINDING P2 item on the P2 one-liner. (9) `LogSiegeNet` cross-task reference ACCEPTED (both lanes compile together at 357); the category is now CONVENTIONS law (`LogSiege<Domain>`). **Also ratified: the OnRep bool-prefix reading (`bDestroyed` → `OnRep_Destroyed`) is now the written naming law.** ← was: backlog
+- blocked-by: TASK-352 ✅ · manager gate ✅ **SATISFIED 2026-07-28** — TASK-354 and TASK-356 may dispatch per their own blockers
+- parallel-safe: yes (doc-only)
+- spec: >
+    From the audit + rulings 1–5 + the CONVENTIONS M8 law, author the buildable design: (1) per-class replication plan (properties +
+    conditions, `OnRep_*` handlers, authority-only members, spawn/ownership); (2) the FULL RPC table (`Server*`/`Client*`/`Multicast*`
+    per command surface — card play, discard, placement, spell target, group-order stage confirms, upgrades — with validation notes);
+    (3) team assignment + PostLogin registration design (host=Blue/client=Red) and the `GetFirstPlayerController` REPLACEMENT pattern
+    (owning-team-controller resolve for group orders — must degrade byte-identical in standalone); (4) session flow (listen-server
+    travel `L_Arena?listen`, client `open <ip>`, leave/return-to-menu); (5) PHASE MAPPING — exactly which class/surface lands in P1
+    (the increment: GameState/PlayerState/Castle HP/gold/match flow) vs P2 vs P3, honoring the M8 PARALLEL LAW file constraints;
+    (6) the single-player byte-identity argument. Doc-only → `handoffs/TASK-353-architecture.md`. Post in ⚙️ Dev & QA.
+- names: > Report `handoffs/TASK-353-architecture.md`. Law: CONVENTIONS "Networked 1v1 (M8)" (all clauses).
+#### TASK-354 — [M8-session] `USiegeSessionSubsystem` + `USessionMenuWidget` — host/join plumbing, NEW FILES ONLY (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: **qa-passed** (2026-07-28 — qa/TASK-354.md PASS 0 BLOCKER / 2 WARN / 3 NIT, all 5 flags APPROVED. WARN-1 recorded for the manager residue pile: mid-session error broadcasts have no listening widget after a mid-match disconnect [blank menu; suggested LastSessionError cache pulled at NativeConstruct — P1-acceptable defer]. WARN-2: joiner-drop observable is log-only, TASK-357 verifies via log. new-files-only proven by reference-grep in QA; build-master runs the literal git-status belt at TASK-357. Chain: 356 [post-350] → 356-QA → 357 hosting 355)
+- blocked-by: TASK-353 (manager-signed)
+- parallel-safe: yes (**NEW FILES ONLY:** `SiegeSessionSubsystem.{h,cpp}`, `SessionMenuWidget.{h,cpp}` — zero edits to any existing file; if a hook into an existing file seems unavoidable, STOP and route to the manager — the file-ownership matrix decides, not the task)
+- spec: >
+    Per the signed TASK-353 design: `USiegeSessionSubsystem` (UGameInstanceSubsystem) — `HostListenMatch()` (travel
+    `L_Arena?listen`), `JoinMatch(const FString& Address)` (validated address, client travel), `LeaveMatch()` (clean return to menu);
+    null-safe, logs each transition. `USessionMenuWidget` (UUserWidget base) — BlueprintCallable wrappers + BIEs for status/error
+    text (FString-only params, widget law) so TASK-355 can build `WBP_SessionMenu` on it. **NO `DefaultEngine.ini` edit** (parallel
+    law d — net config, if any is genuinely required, lands at TASK-357 post-350). `Build.cs`: only if a module dependency is truly
+    needed; it is unowned — claim it single-owner in the handoff if touched. Compile traps apply. File-only; write
+    `handoffs/TASK-354-programmer.md`; post in ⚙️ Dev & QA; ready-for-qa.
+- names: >
+    NEW `Source/GitClaudeUnrealTest/Siegebound/SiegeSessionSubsystem.{h,cpp}` + `SessionMenuWidget.{h,cpp}` (names per CONVENTIONS
+    M8 law). WBP lands at TASK-355 (`/Game/UI/WBP_SessionMenu`). Report `handoffs/TASK-354-programmer.md`.
+#### TASK-354-QA — [M8-session QA] Review TASK-354
+- assignee: qa-reviewer · status: backlog · blocked-by: TASK-354 · parallel-safe: no
+- spec: >
+    Confirm: NEW files only (any existing-file edit = FAIL under the parallel law); travel/join flow matches the signed design;
+    address validation + null-safety (bad IP degrades with a user-facing error, never a hang/crash); widget-law compliance
+    (FString-only BIEs); no ini edit; coding law + compile traps. Report `qa/TASK-354.md`. Post in ⚙️ Dev & QA.
+#### TASK-355 — [M8-menu] `WBP_SessionMenu` + main-menu Host/Join entry (art-director, editor)
+- assignee: art-director · status: backlog
+- blocked-by: TASK-354-QA (qa-passed) — and the compiled module: **runs INSIDE TASK-357's session after its compile step** (the TASK-345/346 precedent; own deliverable, no Git)
+- parallel-safe: no (EDITOR-GATED)
+- spec: >
+    (1) Build `/Game/UI/WBP_SessionMenu` FRESH (never duplicate+reparent — the corruption law), reparented to `USessionMenuWidget`:
+    Host button, Join button + IP text box, status/error text (bind the BIEs), Back. (2) Add ONE "Multiplayer" entry to the EXISTING
+    main menu ADDITIVELY that opens it — "Play (vs Bot)", Deck Builder, Quit UNTOUCHED (ruling 3).
+    **(3) [APPENDED at the TASK-353 sign-off, ruling §9.6]** `WBP_VictoryScreen`: rewire the Play-Again button (ONE node) to call
+    **`RequestPlayAgain`** on the owning `ASiegePlayerController` (the C++ routes authority directly, clients via
+    `ServerRequestPlayAgain`). If the rewire misbehaves, leave the old wiring and RECORD it — host-only Play Again is the accepted
+    fallback (TASK-357 records which way it landed).
+    **(4) OPTIONAL, non-blocking [sign-off ruling §9.7]:** if trivial in the same session, have the victory widget consume the
+    null-safe by-name `SetLocalVictory(bool)` so a winning Red client reads "Victory"; otherwise skip — recorded P2 flag, NOT
+    gate-blocking.
+    Simulate stopped for saves; no `L_Arena` save; no Git (TASK-357 commits). Readback-verify the bindings; hand the editor back.
+    `handoffs/TASK-355-artist.md`; post in 🎨 Art.
+- names: > NEW `/Game/UI/WBP_SessionMenu` ↔ `USessionMenuWidget`; additive edits to the existing main-menu WBP + `WBP_VictoryScreen` (the ruling-§9.6 one-node rewire). Law: CONVENTIONS M8 (net class naming) + widget laws.
+#### TASK-356 — [M8-rep1] Core-state replication pass 1: GameState/PlayerState/Castle/economy/match-flow (gameplay-programmer)
+- assignee: gameplay-programmer · status: backlog
+- blocked-by: TASK-353 (manager-signed) **AND TASK-350's CODE COMMIT LANDED** (this task edits the shared files CASTLE-3X owns until then: `Castle.{h,cpp}`, `SiegePlayerController.{h,cpp}`, GameMode/GameState/`SiegePlayerState`) — plus single-owner-per-file vs any other in-flight M8 task
+- parallel-safe: no (shared-file surgery)
+- spec: >
+    Implement the P1 slice of the signed design ONLY (the increment, not the game): (1) `ACastle` replicates — `bReplicates`, HP
+    (`DOREPLIFETIME` + `OnRep_CurrentHP` driving the existing bar/delegate path), crumble stage as replicated visual state; (2) gold
+    server-authoritative on PlayerState — server tick mutates, client HUD reads replicated value (owner-only condition), all
+    mutation sites `HasAuthority()`-guarded; (3) match flow (start/win/lose/Play-Again) via GameState replication + multicast per
+    the design; (4) team assignment at PostLogin (host=Blue, client=Red); (5) the P1-SCOPED `GetFirstPlayerController` replacements
+    from the audit (at minimum the group-orders polling gets the owning-team-controller resolve — byte-identical in standalone);
+    (6) **single-player byte-identity is the load-bearing claim** — "Play vs Bot" behavior unchanged (argue it per site, the
+    TASK-307/327 no-op pattern). Unit/hero/combat/spell replication is P2 — do NOT start it. Compile traps. File-only; write
+    `handoffs/TASK-356-programmer.md`; ready-for-qa; post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/` — GameMode/GameState/`SiegePlayerState.{h,cpp}` + `Castle.{h,cpp}` +
+    `SiegePlayerController.{h,cpp}` + `SummonedUnit.{h,cpp}` (the polling resolve) + **`HeroCharacter.{h,cpp}` (ADDED at the
+    TASK-353 sign-off, ruling §9.1 — PossessedBy team assign + `Team` rep/OnRep + the melee authority gate; 349-lane, its .cpp is
+    349-touched)** + `BattlefieldScatter.{h,cpp}` + `SiegeFeedbackLibrary.cpp`, per the SIGNED TASK-353 §6 file map. **AMENDMENTS
+    (sign-off, binding): (a) the clean-file carve is DECLINED — this is ONE task, dispatched only after TASK-350's code commit
+    (the parked-uncommitted-C++/TASK-277 trap); (b) before touching any 349-lane file, READ `handoffs/TASK-353-architecture-addendum.md`
+    (the post-350 delta re-verify the doc's §7 owes — it pins the crumble member names and the gating-stamp timing); (c) implement
+    the SIGNED doc, not the board summary — on any conflict the doc wins.** Law: CONVENTIONS "Networked 1v1 (M8)"
+    (RPC/replication/team laws). Report `handoffs/TASK-356-programmer.md`.
+#### TASK-356-QA — [M8-rep1 QA] Review TASK-356
+- assignee: qa-reviewer · status: backlog · blocked-by: TASK-356 · parallel-safe: no
+- spec: >
+    Confirm: every mutation `HasAuthority()`-guarded; `DOREPLIFETIME`/`OnRep_*` naming + registration complete; owner-only
+    conditions where designed; the single-player byte-identity argument holds per site; the P1 scope fence (no unit/combat/spell
+    replication crept in); no `GetFirstPlayerController` remains in the P1-scoped sites; CASTLE-3X's landed team-gating code
+    undisturbed except per the signed design; coding law + compile traps. Report `qa/TASK-356.md`. Post in ⚙️ Dev & QA.
+#### TASK-357 — [M8-P1-int] Compile + host TASK-355 + the TWO-CLIENT gate + commit (build-master)
+- assignee: build-master · status: backlog
+- blocked-by: TASK-354-QA + TASK-356-QA (both qa-passed); hosts TASK-355 in-session; editor queue serializes behind the CASTLE-3X integration (TASK-350/351)
+- parallel-safe: no (EXCLUSIVE editor + Git)
+- spec: >
+    **(1) COMPILE** (hard gate; failure → the owning QA report, route back, counts as a loop). **(2) HOST TASK-355.** **(3) THE
+    PHASE-1 GATE — multi-client PIE on `L_Arena`** (Net Mode: Play As Listen Server, 2 players): (a) client joins, both load the
+    arena; (b) teams assigned host=Blue / client=Red (team visuals correct on both screens); (c) damage a castle on the server ⇒
+    **HP identical on BOTH screens** (bar + crumble stage); (d) gold ticks server-side and displays on the OWNING client only;
+    (e) win/lose fires on both screens; Play-Again resets both; (f) `WBP_SessionMenu` host/join/back flow works, bad-IP join fails
+    gracefully; (g) **"Play vs Bot" regression: standalone behavior byte-identical**; (h) Message Log + net warnings sweep
+    (ensure/AccessedNone/Fatal = 0; note any net-related warnings verbatim) + the `Failed to compile Material` grep. Any genuinely
+    required net ini config lands HERE (post-350, single-owner, documented). **(4) COMMIT(S)** on main (code+QA/docs; menu assets) —
+    explicit pathspecs, nothing foreign, **NO push**. **(5) CHECKPOINT:** report the gate result — **P2 is NOT decomposed until the
+    manager runs the Phase-1 checkpoint with Jonathan.** Post results + hashes in 🔧 Build & Git.
+- names: >
+    Commit sets per (4). Law: CONVENTIONS "Networked 1v1 (M8)" (phase-gate law), the hard gate. Report `handoffs/TASK-357-buildmaster.md`.
+
+**Phases 2–4 (one-liners — NO IDs until their gate clears):**
+- **M8-P2 — Gameplay replication + RPC surfaces:** units/hero replication + movement smoothing, combat/damage authority, placement + card-play + discard + spell `Server*` RPCs, group-orders flow networked (state migrates to the server-side owning controller), projectiles/VFX as replicated cosmetics. **BINDING P2 items recorded at the TASK-353 sign-off:** (a) the server-side deck for REMOTE controllers builds the curated DEFAULT deck, never the host's SaveGame (§4.3#14); (b) the victory widget's absolute Victory/Defeat branch goes own-team-relative (consume `SetLocalVictory`) if TASK-355 skipped the optional item; (c) the deferred team hardcodes (doc §2.4) land WITH their Server RPCs. Gate: full match playable 2-client.
+- **M8-P3 — Lobby + deck handoff + coexistence:** client SaveGame deck → server handoff, lobby/ready flow polish, practice-vs-bot coexistence audit, disconnect/leave/rejoin-to-menu edge cases.
+- **M8-P4 — Hardening + capstone:** latency/edge hardening, the capstone 2-client human playtest (Jonathan + guest), the GDD "multiplayer replication systems" slice clip.
+
+---
+
+## CASTLE-3X (decomposed 2026-07-28) — 27× hollow castle with a team-gated walkable interior (TASK-347..351)
+
+**Directive (Jonathan, verbatim, 2026-07-28):** *"I want to change the castle a little bit. I want to make the castle model about 27 times larger (3 times larger for each of the 3 dimensions), and the inside will be hollow and allow our units to walk into it and spawn in it, but enemy units cannot walk into the inside of it. Regenerate new concept art for the castle, and use our meshy pipeline to generate it."*
+
+**Law was written FIRST (per house rule): CONVENTIONS "Castle 3× HOLLOW (2026-07-28)"** — new bounds target (±10% of 2442×2460×2694), tri budget ≤30k/cap 40k, the SHELL law (Stage-2 authors the hollow + gate + floor; concept must depict an open gate), the numeric gate spec (≥500w × 450h clear, threshold ≤40 uu), the UCX DOOR-GAP law, the plinth-dead-zone RETIREMENT, the paired-tunable re-derivation (SpawnBoxHalfExtent → (2460,2460) ×3 sites; mid zone NOT scaled), the belt-AND-braces team gating (object channels + gate blocker for PHYSICAL truth, per-team NavAreas + query filters for PATHING truth — with the full naming law), the concept-backup law, and the automatic crumble + stage-band re-fire.
+
+### Manager rulings (binding for TASK-347..351)
+
+1. **Team-gating mechanism = BOTH lanes (CONVENTIONS option iii).** A channel blocker alone is invisible to Recast — enemy AI would path to the door and PILE UP (a visible defect); a nav filter alone does nothing to the player-controlled hero (not pathed). Physical: `ECC_SiegeTeamBlue`/`ECC_SiegeTeamRed` object channels + `ACastle::GateBlockerVolume` (BeginPlay-configured: Block enemy channel, Ignore own). Pathing: `UNavArea_{Blue,Red}CastleInterior` via `InteriorNavModifier` + `UNavFilter_Team{Blue,Red}` as unit AI default filters. The gating lives on ACTOR components — mesh/crumble swaps can never disable it.
+2. **HERO RULING (default chosen, FLAGGED to Jonathan, non-blocking):** the hero is a team combatant ⇒ **blocked at the enemy gate** like any unit. One-line change if he wants hero raids.
+3. **SPAWN-INSIDE mechanics:** the interior floor is navmesh'd + the spawn box re-derives to (2460,2460) around the own castle ⇒ player card placement inside works by construction (placement is navmesh-projected); the plinth dead-zone is RETIRED (it would refuse exactly what Jonathan asked for). Bot: box widens identically (pairing law); castle-front anchors + the anchor-clamp law are structurally untouched and may now legally resolve inside — fine. Mid `ZoneHalfExtent` stays 840 (FLAGGED). `DA_BattlefieldScatter` castle keep-clear radii re-derive ×3.
+4. **Gate sized by law, not vibes:** ≥500 uu clear width × ≥450 clear height, threshold ≤40 uu — derived from the largest shipped agents (Ogre hh145, Cavalry r45/205-deep) with two-abreast margin and Recast voxel headroom.
+5. **Concept: regenerate (FLUX, free), back up the old one first** (`Castle_pre3x.png` — it anchors existing retention records); no approval gate on the concept (Jonathan waived — post it in 🎨 Art for visibility, don't wait). Meshy spend ~30 cr (balance ~2446) at TASK-348, quota exit-3 ⇒ Blockers.
+6. **The crumble chain re-fires as its OWN task (TASK-351), not a footnote** — the BUILDING-AUDIT ruling-4 precedent stands; stage-band re-check is measurement-first (TASK-337 pattern): re-spread ONLY on a real-render band FAIL, routed to me. Crumble UCX must CARRY the door gap (a damage state may not seal the gate).
+7. **All prior lane law applies:** same-path overwrite everywhere; explicit texture imports + landed-readback (texture-skip trap); SAMPLER-TYPE sweep after any texture import; hard LOD gate (explicit 3-chain, NOT LargeProp; welded-verts + per-LOD tris); Simulate-stopped imports; locate castles by class never label; `L_Arena` never saved; per-deliverable commits on main, NO push; `reset --hard`/`clean -fd` banned.
+8. **Flagged to Jonathan (all defaults chosen, nothing blocks):** (i) hero blocked at enemy gate; (ii) SpawnBoxHalfExtent 840→2460 (tunable); (iii) mid capture zone NOT scaled; (iv) plinth dead-zone retired — units/buildings can now be placed right up to and inside the own castle; (v) the ≥500×450 gate dimensions.
+9. **No QA owed on art; TASK-349 (C++) gets TASK-349-QA.** The integration gates are TASK-350/351.
+
+**Dispatch map:** **NOW, in parallel: TASK-347 (art-pipeline queue head — the 340/342 manifest-serialization rule carries: one art-pipeline task at a time) + TASK-349 (C++ file-only, fully parallel).** Then 347 → 348 (art queue) and 349 → 349-QA. **TASK-350 (exclusive editor) blocked-by 348 AND 349-QA** → TASK-351 (may share 350's session, own commit). Editor queue serial as always; never during Jonathan's PIE.
+
+#### TASK-347 — [C3X-concept] Regenerate the Castle concept (FLUX) with an OPEN GATE + back up the old concept (art-director, headless)
+- assignee: art-director
+- status: **done** (2026-07-28 — winner seed 73007 v3: open round-arch gateway + paved approach, warm-tan sandstone match, plain maskable backdrop; 8 candidates preserved in `Cache/Castle/concept3x_candidates/`; old concept backed up as `Concepts/Castle_pre3x.png` [sha-verified]; seed pinned in `concept_prompts.json` = reproducible; handoff `handoffs/TASK-347-artist.md`. Lane gotcha recorded: FLUX `provider=auto` route needs the `_certs/win-ca-bundle.pem` CA bundle — Norton HF exclusions don't cover it)
+- blocked-by: none (art-pipeline queue head)
+- parallel-safe: yes vs everything except the art-pipeline queue rule
+- spec: >
+    **(1) BACK UP FIRST (concept-backup law):** copy `Content/RawAssets/Concepts/Castle.png` → `Content/RawAssets/Concepts/Castle_pre3x.png`
+    (it anchors the existing retention/chroma records — quote both file hashes in the handoff). **(2) GENERATE** the new concept via
+    `Tools/ArtPipeline/concept_generate.py` (FLUX.1-dev lane, free): a grander 3×-proportioned warm-sandstone castle in the SAME palette
+    family as the old concept (continuity — the arena look is approved), with **an OPEN FRONT GATE clearly depicted** (the SHELL law:
+    the generated exterior must match the Stage-2-authored opening) and readable interior darkness through the arch. Same-path write to
+    `Content/RawAssets/Concepts/Castle.png`. **(3) ACCEPTANCE (eyeball + record):** open gate unmistakable; palette continuity vs the
+    backed-up concept; resolution at the FLUX lane standard. Iterate freely (free lane) until it reads right. Post the winning concept +
+    the backup note in 🎨 Art (visibility only — NO approval gate, Jonathan waived; do not wait). Write `handoffs/TASK-347-artist.md`.
+    NO Meshy, NO editor, NO Git.
+- names: >
+    `Content/RawAssets/Concepts/Castle.png` (same-path, NEW) + `Content/RawAssets/Concepts/Castle_pre3x.png` (NEW backup — commit rides
+    TASK-350). Tool `Tools/ArtPipeline/concept_generate.py`. Law: CONVENTIONS "Castle 3× HOLLOW" (SHELL + concept-backup clauses).
+#### TASK-348 — [C3X-model] Meshy image3d from the new concept → Stage-2 AUTHORS the hollow + gate + floor + door-gapped UCX → turnkey recipe (art-director, headless)
+- assignee: art-director
+- status: **done** (2026-07-28 — 3× HOLLOW castle built + staged same-path: bounds 2437.9×2461.5×2694.2 [dev ≤0.17%], 28,702 tris, UV-norm albedo 0.6006, luma in-band vs the NEW concept; hollow = 600-wide arch → 500 corridor → 970×240 grand hall + annex, floor z=58, max step 38; UCX = 22 door-gapped hulls, gate the only entrance; 30 cr [balance 2416]. FLEET-WIDE CATCH: inside-out Meshy donor → permanent signed-volume orientation guard in refine_trellis_glb.py. Turnkey recipe handoffs/TASK-348-artist.md. FLAG w/ manager: gate clear COLLISION height 412 vs the law 450 [clears tallest agent by 122; 60-s re-run if 450 must hold])
+- blocked-by: TASK-347
+- **MANAGER RULING (2026-07-28, on the delivered gate-height deviation — `handoffs/TASK-348-artist.md`): OPTION (b) — RE-RUN ORDERED, the law's 450 stands.** Delivered gate clear COLLISION height 412 uu (floor slab z=58 → lintel 470) vs the law's ≥450. The 450 is not arbitrary: it covers the tallest walker (Ogre 290) AND a hero JUMP-THROUGH at the threshold (hero ~190 capsule + ~250 jump apex ≈ 440 head height — at 412 a jumping hero bangs the lintel mid-gate; at 450 he clears), plus future-taller-agent margin — rationale now written into the CONVENTIONS figure. The fix is the artist's own stated 2-number `ucx.boxes` edit + a free ~60 s Stage-2 re-run, PRE-import (zero downstream cost) — **amending a day-old numeric law to ratify an as-built miss when compliance costs 60 seconds is the wrong precedent.** Re-measure + quote the new clear height (≥450) in a handoff addendum; verify the raised lintel (z≈508) still sits inside the VISUAL arch (no capsule-through-stone) and flag if not. The three informational flags: keep-roof camera occlusion = already a TASK-350 PIE item (confirmed); interior area 0.66M uu² = accepted, extendable later; inside-out-donor orientation guard = accepted as permanent. **TASK-350 does NOT import until this re-run lands.**
+- parallel-safe: yes vs the editor lane and TASK-349; serializes in the art-pipeline queue (manifest law)
+- spec: >
+    **STEP 1 — MESHY (≈30 cr, approved; balance ~2446; exit 3 ⇒ 🚨 Blockers + PAUSE):** `meshy_generate.py --mode image3d` from the NEW
+    `Concepts/Castle.png`. **STEP 2 — STAGE-2, BUILDING path + THE HOLLOW (the SHELL law — Meshy gives you a closed shell; YOU author
+    the interior):** Boolean-hollow the keep/courtyard volume; cut the gate to match the concept's opening at **≥500 uu clear width ×
+    ≥450 clear height** with threshold step **≤40 uu**; author a FLAT interior floor at ground level with ≥450 uu clear height across the
+    walkable area; scale to the NEW bounds law (**±10% of 2442×2460×2694**); tri **target ≤30k, hard cap 40k** (handoff justifies >30k);
+    UV `UVMap`; bake **D/N/ORM 2048²**; two-slot `[0 TeamRegion, 1 CastlePBR]` EXACTLY (ACastle hardcodes slot 0); ground-centre origin;
+    Nanite OFF. Brightness: the locked profile pinned in the manifest (per-asset override authorized per standing law if the floor
+    misses). **STEP 3 — UCX DOOR-GAP SET (the critical deliverable):** author via `pipeline_manifest.json` `ucx.boxes` ONLY —
+    door-gapped perimeter walls (boxes flanking the gate + lintel above 450), interior floor slab, keep/towers (~16–24 hulls);
+    measure + report hull-outer-face vs visual-wall per side (UCX-DRIFT duty) AND the gate's clear collision opening vs the ≥500×450 law.
+    **ACCEPTANCE (measure):** bounds in-law; UV-norm albedo ≥ 0.2536; luma retention 0.85–1.25× vs the NEW **alpha-masked** concept
+    (anti-bleach guard applies); chroma retention reported vs the new concept; the flat-lit preview reads as the concept, gate open.
+    **STEP 4 — TURNKEY RECIPE** in `handoffs/TASK-348-artist.md`: same-path destinations, sRGB flags, LOD chain (explicit 3-chain, NOT
+    LargeProp), expected per-LOD counts + bounds + hull count, the gate/floor numbers, the measurement table, scatter keep-clear ×3
+    values for TASK-350. NO editor, NO Git. Post preview + numbers in 🎨 Art.
+- names: >
+    Sources → same-path: `Content/RawAssets/Castle.fbx`, `Content/RawAssets/Textures/Castle/T_Castle_{D,N,ORM}.png` →
+    `/Game/Meshes/SM_Castle`, `/Game/Textures/T_Castle_{D,N,ORM}`, `/Game/Materials/Instances/MI_Castle_PBR`. Collision `UCX_SM_Castle`
+    (door-gapped, manifest-authored). Manifest `Tools/ArtPipeline/pipeline_manifest.json`. Report `handoffs/TASK-348-artist.md`.
+    Law: CONVENTIONS "Castle 3× HOLLOW" (bounds/shell/gate/UCX clauses) + "Castle remaster" (everything not superseded) + the albedo
+    floor + alpha-mask method law.
+#### TASK-349 — [C3X-gating] Team-gated interior + spawn-inside + tunable re-derivations — C++/config (gameplay-programmer, file-only)
+> **⚖️ ESCALATION 2026-07-29: loop 4 AUTHORIZED by Jonathan** (B4 navmesh-tile re-mark residual; the BeginPlay-refresh fix per `qa/TASK-349.md` FINAL-RUN append). Max-3 satisfied by escalation, not breached — full ruling in the CASTLE-3X "Escalation ruling (2026-07-29)" block.
+- assignee: gameplay-programmer
+- status: **qa-passed** (2026-07-29, loop 4 — Jonathan-authorized via the escalation ruling. `qa/TASK-349.md` loop-4 PASS 0/0: B4 fix = ONE unconditional BeginPlay RefreshNavigationModifiers [Castle.cpp:228], all four B3 non-regression points ACCEPTED, enemy-open direction unreachable by construction. Empirical closure = the loop-4 TASK-350 run: 5-point list in the QA final verdict incl. the N2-vs-B4 probe disambiguation [healthy = polys ABSENT→rebuild→correct-first-appearance; recurrence = wrong-team plateau on EXISTING polys])
+- blocked-by: none (the design is RULED — CONVENTIONS "Castle 3× HOLLOW" team-gating law; implement, don't re-design)
+- parallel-safe: yes (disjoint from both art tasks; sole owner of its files this pass)
+- spec: >
+    Per CONVENTIONS "Castle 3× HOLLOW" (names are LAW): **(1) CHANNELS:** add `ECC_SiegeTeamBlue`/`ECC_SiegeTeamRed` object channels in
+    `Config/DefaultEngine.ini`; `ASummonedUnit` + `AHeroCharacter` set capsule ObjectType by team at BeginPlay (via `ITeamAgent`),
+    null-safe. **(2) GATE + NAV:** `ACastle` gains `GateBlockerVolume` (UBoxComponent spanning the gate opening, sized from the law;
+    BeginPlay: Block ENEMY channel / Ignore own) + `InteriorNavModifier` (UNavModifierComponent, `UNavArea_BlueCastleInterior` /
+    `UNavArea_RedCastleInterior` selected by team) — both on the ACTOR, indifferent to crumble mesh swaps. New NavAreas + query filters
+    `UNavFilter_TeamBlue`/`UNavFilter_TeamRed` (each excludes the enemy interior area); unit AI controllers get the team filter as
+    `DefaultNavigationFilterClass`. Projectiles/spells/damage UNAFFECTED (body channels only). **(3) TUNABLES:** `SpawnBoxHalfExtent`
+    (840,840) → **(2460,2460)** at ALL THREE paired sites + cross-notes (pairing law). **(4) PLINTH RETIREMENT:** diagnose every
+    `CastlePlinthClearance`/`IsPointInsideCastlePlinth` call site and RETIRE the own-castle placement refusal cleanly (document each
+    site in the handoff — never a silent violation); placement truth = nav projection + collision + existing clearances. Mid-zone
+    `ZoneHalfExtent` UNTOUCHED. **(5)** `HPBarWidget` height on ACastle: if C++-authored, scale ~3×; if BP data, note it for TASK-350.
+    **MUST HOLD:** win condition / HP / crumble thresholds / `ApplyCrumbleStage` / team visuals byte-untouched; bot anchor-clamp law
+    structurally untouched (it reads the tunables); group orders (TASK-344) untouched; null-safe everywhere (missing volume/area/filter
+    degrades to pre-feature behavior, never a crash). **Compile traps:** no `*/` in doc comments; Printf formats literal/constexpr.
+    File-only. Write `handoffs/TASK-349-programmer.md` (per-file delta map + the plinth call-site table + the channel/ini block).
+    Post in ⚙️ Dev & QA; then ready-for-qa.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/Castle.{h,cpp}` · `SummonedUnit.{h,cpp}` · `HeroCharacter.{h,cpp}` ·
+    `SiegePlayerController.{h,cpp}` · `SiegeBotController.{h,cpp}` · NEW `NavAreas/Filters` files (house style:
+    `SiegeNavAreas.{h,cpp}` one-home) · `Config/DefaultEngine.ini`. New names per CONVENTIONS "Castle 3× HOLLOW" team-gating law.
+    Report `handoffs/TASK-349-programmer.md`.
+#### TASK-349-QA — [C3X-gating QA] Review TASK-349 (implied by the code task)
+- assignee: qa-reviewer
+- status: backlog
+- blocked-by: TASK-349
+- parallel-safe: no
+- spec: >
+    Pre-compile review vs CONVENTIONS "Castle 3× HOLLOW". Confirm: (1) gating symmetry — BOTH castles, both teams, blocker+filter
+    configured from `ACastle`'s OWN team (no hardcoded Blue/Red asymmetry); (2) the gating lives on actor components (crumble-swap-proof)
+    and projectiles/spells/damage paths are untouched; (3) the plinth retirement is COMPLETE (every call site in the handoff table
+    actually addressed) and no placement path still refuses the own interior; (4) the 3-way `SpawnBoxHalfExtent` pairing is consistent
+    at all three sites + cross-notes; mid `ZoneHalfExtent` untouched; (5) null-safety (missing volume/area/filter/ini channel degrades,
+    never crashes); (6) byte-identical set (win condition, crumble driver, bot anchor-clamp structure, group orders); (7) coding law —
+    shadowing, complete-type includes, no deprecated 5.8 API, doc-comment/Printf traps; (8) the ini channel block is well-formed
+    (a malformed `DefaultEngine.ini` bricks the editor load — check it character-by-character). Report `qa/TASK-349.md`; max 3 loops.
+    Post the verdict in ⚙️ Dev & QA.
+- names: > Report `qa/TASK-349.md`. Same files/law as TASK-349.
+#### TASK-350 — [C3X-int] Compile + same-path import + nav + the full gating/spawn PIE matrix + scatter re-derive + commits (build-master)
+> **⚖️ 2026-07-29: the next run carries the ONE-TIME Jonathan-approved L_Arena NAVMESH-SAVE EXCEPTION** (N2: the saved bake predates the 3× castle) — FRESH editor boot, nav rebuild, save `L_Arena.umap` NAV DATA ONLY, tight diff gate (anything non-nav ⇒ stop, no commit), exception EXPIRES at that commit. Full scope in the CASTLE-3X "Escalation ruling (2026-07-29)" block; the never-save law resumes immediately after.
+- assignee: build-master
+- status: **qa-failed — FINAL RUN 2026-07-28 night (loop-3 handback): COMPILE GREEN 0/0 15.9 s (loop-2 code, editor-down); SM_Castle persistence exact (no re-import); PURE-DEFAULTS gate matrix proven (both instances == CDO (6,−525,284)/(260,135,226), blockers armed, zero instance edits); B2 CLOSED empirically; Leg 1 + Leg 3 confirmed; crumble driver + blocker-through-swap regression-clean; log sweep clean except the single known CDO tooling ensure — but NEW BLOCKER B4 (permanent pre-built-tile nav-area staleness, R2(a)+(b) violated) + finding N2 (saved L_Arena navmesh pre-3×-stale, session-independent) ⇒ NO COMMITS (hard gate), TASK-351 not started, route back to gameplay-programmer AS LOOP 3 OF 3 = ESCALATION (Jonathan decides). Predecessor-editor close tripped a world-leak fatal — TOOLING classified (FPyReferenceCollector holding L_Arena; zero saves; tree fingerprint unchanged; forensics in the QA append). Full record: handoff FINAL-RUN section + `qa/TASK-349.md` FINAL-RUN append. Editor left RUNNING (PID 29816) + MCP up. ← was:** qa-failed — RE-RUN 2026-07-29: the MIRROR FIX IS CONFIRMED IN-ENGINE (agreement traces match the addendum to the decimal, both castles; art side fully GREEN — LOD/bounds/hulls/sampler/scatter-numeric all pass; physical gate matrix + hero block/jump + spawn-inside all pass), but the FULL PIE matrix surfaced TWO TASK-349 RUNTIME BLOCKERS → `qa/TASK-349.md` loop-2 append (counts as loop 2 of 3), route to gameplay-programmer: (B2) MARCH FREEZE — every castle-advance MoveToActor fails because the castle-origin goal now sits on filter-EXCLUDED enemy-interior navmesh (SummonedUnit.cpp:2028 null-filter → team default; 123/123 combat units frozen all session, 318 log warnings, differential repro in the QA append; match-breaking, silent); (B3) R2 BAND VIOLATED — initial stale window ends 11.0–11.6 s (>10 s, marginal miss) AND the Play-Again recurrence is decisive (red interior nav-open to BOTH filters from reset until +8.5→+29.7 s; R2(c) non-negotiable); Recast `Areas.Num() <= 1` ensure re-observed. NO commits (hard gate); TASK-351 not started; retune re-verified then REVERTED in-memory; SM/T uassets on disk are now the FIXED-FBX import (kept — correct + orientation-proven); evidence `handoffs/TASK-350-RR-*.png`, full report in the handoff RE-RUN section. Standing flag: the verified retune values (6,−525,284)/(260,135,226) still have no durable home under the L_Arena-never-saved law (bake as C++ defaults at the loop, or a ruled level task); plus the bot walls its own gate approach (design observation). ← was:** integration-blocked — ART DEFECT (2026-07-28): the imported SM_Castle's VISUAL mesh is Y-MIRRORED against the manifest/UCX space (visual gate faces +Y north; UCX door gap + blocker face −Y south — incoherent INSIDE the asset, no actor transform can fix it; trace-proven both directions + arcade chirality probe = pure Y-mirror, not a 180° rotation; full evidence `handoffs/TASK-350-buildmaster.md`). **NO COMMITS made (hard gate); TASK-351 not started.** Everything else passed and stands for the re-run: compile GREEN 0/0 (incl. TASK-354's new files — no stash needed), explicit texture imports landed (byte-exact addendum sizes), sampler sweep 0, HARD LOD GATE pass (3 LODs, 28,702/14,350/7,176 tris, verts 35,184, no unweld), bounds 2437.86×2461.46×2694.20, 22 hulls, ini channels LIVE (ECC_SIEGE_TEAM_BLUE/RED surface in-engine), blocker retune applied+verified per-instance then REVERTED in-memory (L_Arena never saved), DA scatter keep-clear 1500→4500 SAVED (kept — orientation-independent), settled nav matrix fully correct+symmetric, A→B traversability holds under both filters. TWO findings for the re-run: (1) nav-area stamping transiently STALE at PIE start (red interior carries the Blue ctor-default area until the async tile rebuild catches up — measure the window in real PIE; + one Recast `Areas.Num() <= 1` ensure during generation, programmer-adjacent); (2) keep-roof occlusion confirmed: interior invisible top-down AND near-black inside, cursor placement inside will be roof-blocked — Jonathan ruling wanted. Route: manager → art-director (fix lanes in the handoff: pre-compensate the export flip [recipe numbers stand] vs mirror the manifest [numbers flip]); then re-run this task. ← was: backlog
+- blocked-by: TASK-348 AND TASK-349-QA (qa-passed) — **AMENDED 2026-07-28: also blocked on the TASK-348 gate-height RE-RUN (412 → ≥450, manager ruling on the 348 block above). Do not import the 412 build.**
+- parallel-safe: no (EXCLUSIVE editor + Git; EDITOR-GATED; never during Jonathan's PIE)
+- spec: >
+    Exclusive editor on **main**, Simulate STOPPED for every import/save. **(1) COMPILE** TASK-349 (hard gate; failure → `qa/TASK-349.md`,
+    route back, counts as a loop). Editor-bounce so channels/classes are live. **(2) IMPORT** per the TASK-348 recipe: same-path
+    `SM_Castle` + EXPLICIT `T_Castle_{D,N,ORM}` imports with landed-readback (texture-skip trap; `_D` sRGB ON, `_N`/`_ORM` LINEAR) +
+    `MI_Castle_PBR` refresh; **hard LOD gate** (explicit 3-chain, NOT LargeProp: `lod_count==3`, per-LOD tris, LOD0 welded verts —
+    unweld/0-tri = restore + don't commit); **bounds readback vs the NEW law** (±10% of 2442×2460×2694); slots `[TeamRegion, CastlePBR]`
+    in order; **SAMPLER-TYPE sweep** (`Failed to compile Material` grep = 0 — `M_CastleCrumble` samples these same textures).
+    **(3) SCATTER:** apply the ×3 castle keep-clear radii to `DA_BattlefieldScatter` per the TASK-348 recipe values; verify no scatter
+    intersects the new footprint. **(4) NAV + PIE MATRIX on `L_Arena`** (real PIE — Dynamic Recast regenerates at PIE; MCP has no
+    nav-build call; locate castles by `TActorIterator<ACastle>`, never label): (a) navmesh generates INSIDE both castles and through
+    both gates; (b) OWN units path in through the gate, and card placement succeeds ON the interior floor (spawn-inside proven both
+    teams — player placement + a bot wave anchored inside its box); (c) ENEMY units never path inside — observe an attack wave at the
+    enemy gate: they fight outside, NO door pile-up (the nav-filter proof); (d) the HERO is physically blocked at the ENEMY gate
+    (walk into it — ruling 2) and passes freely through his OWN; (e) the castle-to-castle traversability guarantee holds (0 culls,
+    full A→B march); (f) mid capture zone + bot waves + group orders + placement/spells regress nothing; (g) HP bar reads at the 3×
+    height, crumble thresholds fire (data-driven — spot-check one stage), team accents on both; (h) Message Log clean
+    (ensure/AccessedNone/Fatal = 0) + the material grep. **(5) COMMITS (two, per-deliverable):** commit A = C++ + `DefaultEngine.ini` +
+    QA/handoffs; commit B = castle assets (`SM_/T_/MI_` + raw FBX + both concept PNGs + manifest + `DA_BattlefieldScatter` + board/
+    CONVENTIONS). `git diff --stat` clean each; **NO push**; `L_Arena` NEVER saved; `reset --hard`/`clean -fd` BANNED. **TASK-351 is
+    REQUIRED next — the castle is NOT shipped until the crumble trio is re-derived; say so in the handoff.** Post readbacks + matrix
+    results + both hashes in 🔧 Build & Git.
+- names: >
+    Same-path: `/Game/Meshes/SM_Castle` · `/Game/Textures/T_Castle_{D,N,ORM}` · `/Game/Materials/Instances/MI_Castle_PBR` · raw
+    sources · `Config/DefaultEngine.ini` · `DA_BattlefieldScatter` (keep-clear ×3). UNTOUCHED: `L_Arena`, `SM_Castle_Crumble0N`
+    (TASK-351 owns), `M_CastleCrumble`/MIs (re-checked at 351). Law: CONVENTIONS "Castle 3× HOLLOW" + "Castle remaster" + the hard gate.
+#### TASK-351 — [C3X-crumble] Re-derive the crumble trio from the 3× castle + stage-band re-check (measurement-first) + commit (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: TASK-350
+- parallel-safe: no (EXCLUSIVE editor + Git; **MAY share TASK-350's session** — own deliverable, own commit; the TASK-330/331 precedent)
+- spec: >
+    The CRUMBLE-DERIVATION law fires (automatic on any `SM_Castle`/`T_Castle_*` change): **(1)** duplicate the 3× `SM_Castle` over
+    `SM_Castle_Crumble01|02|03` same-path (never delete+recreate); re-assign `MI_Castle_Crumble0N` to **BOTH slots** per stage (the
+    slot-1 trap — `ApplyCrumbleStage` writes slot 0 only); verify bounds bit-identical to the 3× pristine, LOD chain inherited/reapplied
+    (hard readback), Nanite OFF, and **the UCX door gap CARRIES** (a damage state must not seal the gate; the team gating lives on
+    ACTOR components and must remain live through every stage — verify the blocker still gates the enemy at stage 2). **(2) STAGE-BAND
+    RE-CHECK (base-relative law auto-reopens; MEASUREMENT-FIRST, the TASK-337 pattern):** in Simulate drive one castle 75→50→25%
+    (each stage ONCE, in order), measure P/S1/S2/S3 per the protocol (same lit wall region, identical pose, exposure-consistent) against
+    the STAGE-LEGIBILITY band. **Band PASSES ⇒ record + ship. Band FAILS ⇒ do NOT re-tune the MIs — route the numbers to the manager**
+    (art re-spread is an art call). Also confirm `ResetCastle` restores the 3× pristine + team accent, debris fires, Message Log +
+    `Failed to compile Material` grep clean. **(3) ONE COMMIT** (`SM_Castle_Crumble01|02|03.uasset` + board/handoff), nothing foreign,
+    **NO push**. Post the stage shots + band table + hash in 🔧 Build & Git.
+- names: >
+    `/Game/Meshes/SM_Castle_Crumble01|02|03` ← the 3× `/Game/Meshes/SM_Castle`. Re-assigned (not re-authored):
+    `/Game/Materials/MI_Castle_Crumble01|02|03` (master `M_CastleCrumble` — the TASK-339 Masks sampler is live; do not touch the graph).
+    Read-only: `ACastle::ApplyCrumbleStage`/`ResetCastle`, `GateBlockerVolume`/`InteriorNavModifier`. Law: CONVENTIONS "Castle 3×
+    HOLLOW" (crumble clause) + "Castle remaster" → CRUMBLE-DERIVATION + STAGE-LEGIBILITY laws.
+
+### Manager rulings (2026-07-28) — on the TASK-350 integration-block (Y-mirror defect; zero commits — the hard gate held)
+
+**R1 — FLEET-MIRROR SCOPE (pre-ruled framework; binds the moment the art assessment lands in the TASK-348 addendum):** exposure is **MECHANISM-DATED**. (a) If the mirror mechanism was introduced WITH the TASK-348 chain (the new orientation guard, or any path exercised only by the hollow build), the castle fix CLOSES it — **NO fleet audit task; recorded here so it cannot resurface as doubt.** (b) If the mechanism predates the fleet remaster (a shared Stage-2 export path), ONE headless fleet-audit task is owed — the chirality PROBE per shipped asset (build-master's probe method; no re-runs, no credits). Either way, **Jonathan's blanket approval keeps VISUAL acceptance closed** — only FUNCTIONAL asymmetries the probe finds (UCX vs visual, team-region side, socket/hand) warrant per-asset fixes, each its own task. The assessment must state the mechanism + its introduction date explicitly; I rule (a) vs (b) from that line.
+  **✅ R1 RESOLVED 2026-07-28 (assessment in — TASK-348 MIRROR-FIX ADDENDUM): branch (b) applies (the mechanism is the ORIGINAL Blender-RH→UE-LH handedness gap, live since the first blockout FBX — UE negates Y on import; NOT the orientation guard) — and the assessment's STRUCTURAL fleet verdict is ACCEPTED AS SATISFYING the (b) audit. NO probe task.** The argument covers the classes exhaustively: UNITS — collision is generated in-engine from the imported (mirrored) mesh ⇒ mirrors WITH the visual, self-consistent by construction; BUILDINGS — every shipped hull set is a Y-symmetric centered footprint box ⇒ mirror-invariant; guard-active exports = castle only. Cosmetic residue (units read left-handed vs authoring; DeepMine portal on the opposite Y side) stays CLOSED under Jonathan's blanket visual approval. A per-asset probe would confirm what construction already guarantees — declined. **The FORWARD TRAP the assessment names is now LAW** (CONVENTIONS "Fleet Meshy remaster" → HANDEDNESS/MIRROR TRAP): the next Stage-2 re-export of ANY building lands UN-mirrored vs its current in-engine look; `pre_rotate_z_deg: 180` is the manifest lever when a shipped facing must be kept. This closure is FINAL — the fleet-mirror question does not reopen without new in-engine evidence.
+
+**R2 — NAV-AREA TRANSIENT STALENESS ACCEPTANCE BAND (pre-ruled for the re-run measurement):** ACCEPT the PIE-start transient iff ALL THREE hold: (a) the stale window ends **≤ 10 s** after PIE start; (b) NO agent is observed pathing into the wrong interior during it; (c) it is **initial-load-only** — it does NOT recur at Play-Again/match reset. ANY of window > 10 s / observed wrong-interior pathing / reset-recurrence ⇒ **programmer loop** (TASK-349's owner). Rationale: at 10× scale the earliest possible enemy gate-arrival is >60 s of march, so a ≤10 s initial rebuild is unreachable by any agent — but a RESET recurrence would hit mid-match with units already at the gates, which is why (c) is non-negotiable.
+
+**R3 — KEEP-ROOF OCCLUSION POSTURE: the cheap path is RULED.** Accept as-is for the castle ship; NO interior-lighting or camera-handling commission now. TASK-350's re-run captures the shots; surfaced to Jonathan at his next playtest as a flagged item with the candidate levers NAMED, NOT DESIGNED (camera roof-fade/hide — the genre standard; interior fill light; cursor placement pass-through), plus the honest UX note: **interior card-placement from the top-down camera is roof-blocked today — practical interior placement means the hero/camera at or inside the gate.** His eye is final; one word commissions a lever.
+
+**RECORD CORRECTION — the "Castle_Red carries yaw 180" claim is DEAD.** Three independent in-engine readbacks (TASK-330, TASK-331, TASK-350) all measure BOTH castle actors at yaw **0.0**. Myth origin found: an early assembly note ("give Castle_Red yaw 180 so the gates face each other") recorded INTENT, not placement, and was later carried as observation. Both live board sites corrected + the origin note annotated. **The truth creates one NEW flag (now that the gate is functional):** at yaw 0/0 both gates face the SAME world direction — one castle's gate faces away from mid. Flagged to Jonathan with the re-run shots; any re-yaw is a deliberate level task under the L_Arena-never-saved law, never a drive-by.
+
+### Escalation ruling (2026-07-29) — TASK-349/350 loop-3 escalation: JONATHAN AUTHORIZED loop 4 + the ONE-TIME L_Arena navmesh-save exception
+
+**Outcome:** the 349/350 chain reached the max-3 QA-loop limit (residual B4: pre-built navmesh tiles never re-marked after loop-2's Leg 2 — evidence in `qa/TASK-349.md` FINAL-RUN append; B2 march fix proven dead, ensure absent, defaults correct — everything else empirically closed) and was ESCALATED per the routing law. **Jonathan ruled 2026-07-29: loop 4 AUTHORIZED — the documented BeginPlay-refresh fix — and finding N2's one-time navmesh rebuild + L_Arena SAVE approved.** The max-3 law is **satisfied by escalation, not breached** — loop 4 runs under his sign-off, recorded here.
+
+**THE ONE-TIME L_Arena NAVMESH-SAVE EXCEPTION (named, Jonathan-approved, tightly scoped — expires with its commit):** N2 truth: the saved `L_Arena` navmesh bake PREDATES the 3× castle — a fresh boot has NO interior navmesh, so runtime-Dynamic regeneration alone cannot be the shipped answer for a stale SAVED bake. TASK-350's next run therefore, ONCE:
+1. **FRESH editor boot** (mandatory — a long-lived session's accumulated dirty state must NOT ride into this save; the level has been left dirty by prior sessions more than once),
+2. deliberate navmesh rebuild, **SAVE `L_Arena.umap` — NAV DATA ONLY** (RecastNavMesh actor/tiles). **ZERO actor edits, ZERO property edits, ZERO additions/deletions.**
+3. **DIFF GATE:** the commit may contain the umap ONLY, and the change must be nav-attributable; if any actor transform/property delta or any unexpected dirty package appears — **STOP, do not save/commit, report.**
+4. The exception **EXPIRES at that commit** — the L_Arena-never-saved law resumes immediately and in full (this block is the only authority for the save; do not cite it twice).
+
+**Pointers placed on the TASK-349/350 blocks; the loop-4 dispatch must carry:** Jonathan's authorization citation, the BeginPlay-refresh fix per the QA append, the N2 fresh-boot save procedure + diff gate above, the R2 transient band (still applies to the post-fix measurement), and the remote-exec lane lesson below.
+
+**TOOLING LANE LESSON (from the crash forensics in the QA append — now recorded in the FLEET-REMASTER lane knowledge):** never `load_map` from a long-lived remote-exec session — close-without-saving and boot fresh instead.
 
 ---
 
@@ -8973,7 +9324,7 @@ M4 = GDD §9-4 + §4 Set II (16 cards) + §3.0 keywords (Siege/Charge/Slayer/Swa
 - status: done (commit 8a87400)
 - summary: /Game/Meshes/SM_Castle — 2414 tris, 814x820x900 units, 9 UCX hulls, slot 0 = MI_TeamColor_Blue.
     FBX source Content/RawAssets/Castle.fbx. Handoff: handoffs/TASK-013.md.
-    NOTE for final assembly: give Castle_Red yaw 180 so the gates face each other.
+    NOTE for final assembly: give Castle_Red yaw 180 so the gates face each other. **[2026-07-28: THIS NOTE IS THE ORIGIN of the board's recurring "Castle_Red carries yaw 180" myth — it recorded INTENT and was never executed (TASK-330/331/350 all read both castles yaw 0.0). Gate-facing is now a live Jonathan flag in the CASTLE-3X record correction.]**
 
 ### TASK-014 — Footman blockout mesh (art)
 - assignee: art-director

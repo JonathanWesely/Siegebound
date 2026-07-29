@@ -298,11 +298,13 @@ protected:
 	 *  bot spawn positioning by strategy" — a later pass may choose spawn/stage
 	 *  points per strategy (defend vs push vs flank).
 	 *
-	 *  W1-PREP appendix 3a (TASK-265): while SpawnBoxHalfExtent is 840, this 1,750
-	 *  offset lands OUTSIDE the spawn box and ClampAnchorToBotSpawnRegion pulls the
-	 *  anchor back to the box's centerline-facing front band — i.e. the knob is
-	 *  INERT at today's box size. It is KEPT AS AUTHORED on purpose: it is ruling
-	 *  #1's knob and re-activates untouched the moment the box grows. Do not delete.
+	 *  W1-PREP appendix 3a (TASK-265), cross-note refreshed by TASK-349: with
+	 *  SpawnBoxHalfExtent now (2460,2460) (Castle 3× HOLLOW re-derivation) this
+	 *  1,750 offset lands INSIDE the spawn box, so the knob is ACTIVE exactly as
+	 *  ruling #1 intended — castle-front materialize with no clamp pull. (At the
+	 *  old 840 box it was inert: ClampAnchorToBotSpawnRegion pulled the anchor to
+	 *  the box's front band.) The anchor-clamp law itself is structurally
+	 *  untouched — it reads the tunables.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
 	float BotCastleSpawnOffset = 1750.f;
@@ -336,7 +338,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
 	float MinerNodeApproachOffset = 400.f;
 
-	/** Standoff from Castle_Red toward the nearest intruder where a rule-1 defensive TOWER is dropped (clamped outside the plinth keep-out and short of the intruder). */
+	/** Standoff from Castle_Red toward the nearest intruder where a rule-1 defensive TOWER is dropped (clamped above the 570-uu standoff floor — the retired plinth keep-out's numeric legacy, TASK-349 — and short of the intruder). */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
 	float TowerDefenseStandoff = 750.f;
 
@@ -344,9 +346,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
 	float BuildingClearance = 200.f;
 
-	/** Castle plinth keep-out (2D half-extent) the bot avoids for EVERY spawn — mirrors the player's CastlePlinthClearance so bot units/buildings never land on a plinth (M1 carry-over). */
-	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
-	float CastlePlinthClearance = 420.f;
+	//~ CastlePlinthClearance (420, the bot mirror of the player's keep-out) RETIRED
+	//~ by TASK-349 (CONVENTIONS "Castle 3× HOLLOW" plinth-retirement law): the bot
+	//~ may now spawn units/buildings right up to and INSIDE its own castle — spawn
+	//~ truth = the spawn box gate + nav projection + collision + the existing
+	//~ clearances (IsBotHalfPointClear). The rule-1 tower-standoff floor it once
+	//~ derived (420 + 150) is preserved numerically as a literal at that call site
+	//~ so bot decision output is byte-identical.
 
 	/** Half-extent for snapping a SYNTHETIC spawn point onto the navmesh (generous vertical so a guessed ground Z still finds the floor; mirrors the §3.5 ProjectPointToNavigation rule). */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement")
@@ -356,9 +362,19 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement")
 	FVector CastleRedFallbackLocation = FVector(25000.f, 0.f, 0.f);
 
-	/** 2D half-extent of the Red spawn box centered on Castle_Red (W1-PREP additions 3, TASK-262 — the bot mirror of the player box). The spawn gate is this box (or a Red-owned capture zone) instead of the whole own-half. Default (840,840) = 2× CastlePlinthClearance; FLAGGED tunable. // CONVENTIONS "W1-PREP additions 3" */
+	/**
+	 *  2D half-extent of the Red spawn box centered on Castle_Red (W1-PREP
+	 *  additions 3, TASK-262 — the bot mirror of the player box). The spawn gate is
+	 *  this box (or a Red-owned capture zone) instead of the whole own-half.
+	 *  Default (2460,2460) — re-derived 840 → 2460 by TASK-349 (CONVENTIONS
+	 *  "Castle 3× HOLLOW" paired-tunable law: half-extent ≈ the 3× castle's full
+	 *  2460 width), so bot wave anchors may now legally resolve INSIDE the hollow
+	 *  castle (ruling 3 — fine). PAIRED-TUNABLE (3-way law): ≡
+	 *  ACastle::SpawnBoxHalfExtent ≡ ASiegePlayerController::SpawnBoxHalfExtent —
+	 *  keep the three in lockstep. // CONVENTIONS "Castle 3× HOLLOW"
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
-	FVector2D SpawnBoxHalfExtent = FVector2D(840.f, 840.f);
+	FVector2D SpawnBoxHalfExtent = FVector2D(2460.f, 2460.f);
 
 	/**
 	 *  How far INSIDE the box edge an INELIGIBLE spawn anchor is parked when
@@ -463,9 +479,10 @@ private:
 	/**
 	 *  Finds a placement-valid spawn point near Desired by snapping onto the
 	 *  navmesh (ProjectPointToNavigation) and honoring the mirrored §3.5 rules —
-	 *  the Red spawn box / Red-owned capture zone (TASK-262), castle plinth
-	 *  keep-out, unit spawn clearance (units) and 200-unit building clearance
-	 *  (buildings). Searches the CLAMPED anchor (ClampAnchorToBotSpawnRegion —
+	 *  the Red spawn box / Red-owned capture zone (TASK-262), unit spawn
+	 *  clearance (units) and 200-unit building clearance (buildings); the castle
+	 *  plinth keep-out was RETIRED by TASK-349 (spawn-inside is the feature).
+	 *  Searches the CLAMPED anchor (ClampAnchorToBotSpawnRegion —
 	 *  W1-PREP appendix 3a, TASK-265: every caller's Desired point is funnelled
 	 *  through the clamp HERE, in one place, so no call site does anchor math)
 	 *  plus a deterministic widening ring; the first valid snapped point wins.
@@ -488,8 +505,9 @@ private:
 	 *
 	 *  Otherwise: per-axis clamp of (Desired - Castle_Red) into
 	 *  ±(SpawnBoxHalfExtent - SpawnBoxAnchorInset), Z preserved (the navmesh
-	 *  projection owns Z). The plinth is deliberately NOT special-cased — the
-	 *  existing ring walk-out in ComputeValidBotSpawnPoint owns that.
+	 *  projection owns Z). Any refused sample is owned by the existing ring
+	 *  walk-out in ComputeValidBotSpawnPoint (the plinth special-case this note
+	 *  once disclaimed is RETIRED — TASK-349).
 	 *
 	 *  FLAGGED DEVIATION from the board's literal wording (see handoffs/TASK-265.md):
 	 *  the clamp targets the NEARER of the two eligible regions — the castle box, or
@@ -511,7 +529,7 @@ private:
 	 */
 	FVector ClampAnchorToBotSpawnRegion(const FVector& Desired) const;
 
-	/** Spawn-box + plinth keep-out (+ unit spawn clearance for units / building clearance for buildings) test on an already-on-navmesh point. The old whole-own-half gate is now the Red spawn box OR a Red-owned capture zone (W1-PREP additions 3, TASK-262); the UnitSpawnClearance anti-stack rule is appendix 3a (TASK-265). */
+	/** Spawn-region gate (+ unit spawn clearance for units / building clearance for buildings) test on an already-on-navmesh point. The old whole-own-half gate is now the Red spawn box OR a Red-owned capture zone (W1-PREP additions 3, TASK-262); the UnitSpawnClearance anti-stack rule is appendix 3a (TASK-265); the castle plinth keep-out was RETIRED by TASK-349. */
 	bool IsBotHalfPointClear(const FVector& Point, bool bIsBuilding) const;
 
 	/** True if Point lies inside the Red spawn box — a 2D square centered on Castle_Red (live team-filtered ACastle lookup via GetCastleRedLocation, else the +25000 fallback), half-extent SpawnBoxHalfExtent. Replaces the old own-half spawn gate (W1-PREP additions 3, TASK-262). */

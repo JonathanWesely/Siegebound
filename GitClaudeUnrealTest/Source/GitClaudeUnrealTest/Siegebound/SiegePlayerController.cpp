@@ -1241,7 +1241,7 @@ void ASiegePlayerController::TryConfirmPlacement()
 
 		default:
 			UE_LOG(LogGitClaudeUnrealTest, Log,
-				TEXT("ASiegePlayerController '%s': placement click refused for '%s' — no ground hit, outside the Blue spawn box and any Blue-owned capture zone, off the navmesh, or on a castle plinth (W1-PREP additions 3, TASK-261; GDD §3.5, TASK-030)."),
+				TEXT("ASiegePlayerController '%s': placement click refused for '%s' — no ground hit, outside the Blue spawn box and any Blue-owned capture zone, or off the navmesh (W1-PREP additions 3, TASK-261; GDD §3.5, TASK-030; plinth keep-out retired, TASK-349)."),
 				*GetNameSafe(this), *PendingCardID.ToString());
 			RefuseCardPlay(PendingCardID, NSLOCTEXT("Siegebound", "CardRefused_InvalidPoint", "Invalid placement location"));
 			break;
@@ -1424,18 +1424,21 @@ void ASiegePlayerController::UpdatePlacementGhost()
 		PlacementLocation = Hit.ImpactPoint;
 	}
 
-	// Placement validity v3 (GDD §3.5 TASK-030 + GDD §5 M4.5 TASK-093 +
-	// W1-PREP additions 3 TASK-261), evaluated in cost order:
+	// Placement validity v4 (GDD §3.5 TASK-030 + GDD §5 M4.5 TASK-093 +
+	// W1-PREP additions 3 TASK-261 + Castle 3× HOLLOW TASK-349), in cost order:
 	// (1) ground hit inside the player's spawn box — a 2D square around the owned
-	//     Castle_Blue with half-extent SpawnBoxHalfExtent — OR inside a
-	//     Blue-owned capture zone (TASK-261; REPLACES the retired X<=PlacementMaxX
-	//     half-gate. Neutral/Red mid zone => not placeable there);
+	//     Castle_Blue with half-extent SpawnBoxHalfExtent (2460: covers the
+	//     castle's walkable interior, TASK-349) — OR inside a Blue-owned capture
+	//     zone (TASK-261; REPLACES the retired X<=PlacementMaxX half-gate.
+	//     Neutral/Red mid zone => not placeable there);
 	// (2) the point projects onto the navmesh within NavProjectionExtent —
-	//     closes the M1 "castle roof is placeable" carry-over (roof and
-	//     plinth-top hits sit far above any navmesh);
-	// (3) outside every castle's plinth keep-out box — belt-and-braces so a
-	//     walkable navmesh island on the plinth rim can never validate a point
-	//     nothing can path to;
+	//     closes the M1 "castle roof is placeable" carry-over (roof hits sit far
+	//     above any navmesh) AND is the whole spawn-inside truth: the hollow
+	//     castle's interior floor is navmesh'd, so interior points validate by
+	//     construction. The old rule (3) — the castle plinth keep-out — was
+	//     RETIRED here by TASK-349 (plinth-retirement law): it would refuse
+	//     exactly the interior placement Jonathan asked for. Placement truth =
+	//     nav projection + collision + the existing clearances below;
 	// (4) Building cards only (M4.5 ruling 7): ground slope at the candidate
 	//     <= MaxPlacementSlopeDegrees, measured by a straight-down trace
 	//     (fail-closed on a miss) — hill flanks refuse, crowns (<=10°) pass;
@@ -1450,7 +1453,7 @@ void ASiegePlayerController::UpdatePlacementGhost()
 	bool bValid = bGroundHit && (IsPointInOwnSpawnBox(Hit.ImpactPoint) || IsPointInCapturedZone(Hit.ImpactPoint));
 	if (bValid)
 	{
-		bValid = IsPointOnNavmesh(PlacementLocation) && !IsPointInsideCastlePlinth(PlacementLocation);
+		bValid = IsPointOnNavmesh(PlacementLocation);
 	}
 	if (bValid && bPendingIsBuilding && !IsGroundSlopePlaceable(PlacementLocation))
 	{
@@ -3068,8 +3071,10 @@ bool ASiegePlayerController::IsPointOnNavmesh(const FVector& Point)
 	}
 
 	// GDD §3.5 via TASK-030: the point must project onto the navmesh within
-	// NavProjectionExtent. Castle-roof/plinth-top hits sit ~90+ units above
-	// the ground navmesh — beyond the small vertical extent — so they refuse.
+	// NavProjectionExtent. Elevated non-walkable hits (castle roof) sit far
+	// above the ground navmesh — beyond the small vertical extent — so they
+	// refuse; ground-level hits (incl. the hollow castle's navmesh'd interior
+	// floor, TASK-349 spawn-inside) project within it and validate.
 	FNavLocation Projected;
 	return NavSys->ProjectPointToNavigation(Point, Projected, NavProjectionExtent);
 }
@@ -3085,8 +3090,10 @@ bool ASiegePlayerController::HasBuildingClearance(const FVector& Point) const
 	// nearest-other-ABuilding rule (GDD §3.5): planar (2D) distance — every
 	// placement surface is the arena floor, so Z never contributes; castles
 	// are class-disjoint from ABuilding and deliberately NOT part of this rule
-	// (the plinth keep-out covers them, TASK-027 handoff); dying buildings no
-	// longer claim clearance (IsBuildingDestroyed flags before Destroy lands).
+	// (and since TASK-349 carry no placement clearance at all — the plinth
+	// keep-out that once covered them is retired, spawn-inside is the feature);
+	// dying buildings no longer claim clearance (IsBuildingDestroyed flags
+	// before Destroy lands).
 	const double ClearanceSq = FMath::Square(static_cast<double>(BuildingClearance));
 	for (TActorIterator<ABuilding> It(World); It; ++It)
 	{
@@ -3166,9 +3173,8 @@ bool ASiegePlayerController::HasObstacleClearance(const FVector& Point) const
 	// origin per CONVENTIONS), matching the §3.5 building-clearance math.
 	// Flagged decision — NO caching: a plain world-actor iteration over the
 	// ~20 obstacles (plus the rest of the arena's few-hundred actors) runs
-	// only during placement mode, mirroring HasBuildingClearance /
-	// IsPointInsideCastlePlinth; a cache would add mid-match staleness risk
-	// for no measurable win at this N.
+	// only during placement mode, mirroring HasBuildingClearance; a cache
+	// would add mid-match staleness risk for no measurable win at this N.
 	static const FName ObstacleTagName(TEXT("Obstacle"));
 	const double ObstacleClearanceSq = FMath::Square(static_cast<double>(ObstaclePlacementClearance));
 	for (TActorIterator<AActor> It(World); It; ++It)
@@ -3186,35 +3192,12 @@ bool ASiegePlayerController::HasObstacleClearance(const FVector& Point) const
 	return true;
 }
 
-bool ASiegePlayerController::IsPointInsideCastlePlinth(const FVector& Point) const
-{
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return false;
-	}
-
-	// M1 carry-over: SM_Castle's plinth collision (~814x820, ~90 high) blocks
-	// standing/pathing across its whole footprint, and navmesh generation can
-	// leave walkable islands on the exposed plinth rim — the 2D keep-out box
-	// guarantees plinth points always read invalid. Castle HP is irrelevant:
-	// the collision stands as long as the actor does (ResetCastle revives it).
-	for (TActorIterator<ACastle> It(World); It; ++It)
-	{
-		const ACastle* Castle = *It;
-		if (!IsValid(Castle))
-		{
-			continue;
-		}
-		const FVector CastleLocation = Castle->GetActorLocation();
-		if (FMath::Abs(Point.X - CastleLocation.X) <= CastlePlinthClearance &&
-			FMath::Abs(Point.Y - CastleLocation.Y) <= CastlePlinthClearance)
-		{
-			return true;
-		}
-	}
-	return false;
-}
+//~ IsPointInsideCastlePlinth RETIRED by TASK-349 (CONVENTIONS "Castle 3× HOLLOW"
+//~ plinth-retirement law): the M1 keep-out box existed because the SOLID castle's
+//~ plinth left walkable navmesh islands nothing could path to. The 3× castle is
+//~ hollow with a ground-level navmesh'd interior floor — interior placement is now
+//~ the FEATURE, and the keep-out would refuse it. Placement truth = nav projection
+//~ + collision + the existing clearances (see the placement-validity v4 comment).
 
 bool ASiegePlayerController::IsPointInOwnSpawnBox(const FVector& Point)
 {
@@ -3226,12 +3209,13 @@ bool ASiegePlayerController::IsPointInOwnSpawnBox(const FVector& Point)
 
 	// W1-PREP additions 3 (TASK-261): the player's spawn region is a 2D (XY)
 	// square centered on the owned Castle_Blue with half-extent SpawnBoxHalfExtent
-	// — this REPLACES the retired X<=PlacementMaxX half-line gate. The local
-	// player is always ETeamId::Blue (team contract). The castle is found with the
-	// same team-filtered TActorIterator<ACastle> pattern IsPointInsideCastlePlinth
-	// uses to read a castle location; the box is centered on the castle regardless
-	// of its HP (the plinth stands as long as the actor does, and if Blue's castle
-	// is destroyed the match has already ended and placement is disabled).
+	// (2460 since TASK-349 — the box covers the 3× castle's walkable interior, so
+	// spawn-inside passes this gate by construction) — this REPLACES the retired
+	// X<=PlacementMaxX half-line gate. The local player is always ETeamId::Blue
+	// (team contract). The castle is found with the house team-filtered
+	// TActorIterator<ACastle> pattern; the box is centered on the castle
+	// regardless of its HP (if Blue's castle is destroyed the match has already
+	// ended and placement is disabled).
 	for (TActorIterator<ACastle> It(World); It; ++It)
 	{
 		const ACastle* Castle = *It;
