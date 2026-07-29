@@ -64,8 +64,20 @@ Stages (mode "bake", the standard path):
                 the M1 ~410-unit dead-zone lesson).
    11. EXPORT   FBX -> Content/RawAssets/<CardID>.fbx with the axis contract
                 (axis_forward='-Z', axis_up='Y', apply_unit_scale=True,
-                mesh_smooth_type='FACE'); texture PNGs ->
-                Content/RawAssets/Textures/<CardID>/T_<CardID>_D|_N|_ORM.png.
+                mesh_smooth_type='FACE') PLUS the UE handedness pre-compensation
+                (TASK-348 MIRROR-FIX, 2026-07-28): Blender is right-handed, UE is
+                left-handed, and UE's FBX importer resolves that by negating Y on
+                every vertex (FFbxDataConverter::ConvertPos = (X,-Y,Z)) — a
+                rotation-only axis contract can NEVER avoid it, so every asset
+                used to land Y-MIRRORED against its conformed/manifest space
+                (trace-proven on the hollow castle, TASK-350). The exporter now
+                bakes a compensating Y-mirror + winding flip into the exported
+                mesh copies (render mesh AND UCX hulls) so engine-negation x
+                pre-mirror = identity: the asset lands in UE exactly in conformed
+                space and every manifest number (ucx.boxes, carve, blockers, nav)
+                is a valid UE-local coordinate verbatim. Bake/textures/previews
+                all run in conformed space BEFORE this and are unaffected.
+                Texture PNGs -> Content/RawAssets/Textures/<CardID>/T_<CardID>_D|_N|_ORM.png.
    12. REPORT   Workbench ortho previews (front/back/three-quarter/top, TEXTURE color)
                 + one small Cycles beauty + refine_report.json to Cache/<CardID>/.
 
@@ -313,6 +325,35 @@ def import_input(input_path):
         merged = bpy.context.view_layer.objects.active
     else:
         merged = meshes[0]
+
+    # Orientation guard (TASK-348): a source node with a NEGATIVE scale (mirror)
+    # bakes an inside-out winding into the mesh data when transforms are applied
+    # — the 2026-07-28 Meshy Castle GLB shipped exactly that (signed volume
+    # -1463 m^3). An inverted dense donor makes the Cycles AO bake read ~0
+    # everywhere (rays start "inside" the solid) and flips the baked tangent
+    # normals. Enforce outward winding by signed volume; the voxel-remeshed low
+    # self-heals either way, so this only corrects the BAKE DONOR truth.
+    mesh = merged.data
+    mesh.calc_loop_triangles()
+    coords = np.empty(len(mesh.vertices) * 3, dtype=np.float64)
+    mesh.vertices.foreach_get("co", coords)
+    coords = coords.reshape(-1, 3)
+    tri_idx = np.empty(len(mesh.loop_triangles) * 3, dtype=np.int64)
+    mesh.loop_triangles.foreach_get("vertices", tri_idx)
+    tri_idx = tri_idx.reshape(-1, 3)
+    volume6 = float(np.einsum("ij,ij->i", coords[tri_idx[:, 0]],
+                              np.cross(coords[tri_idx[:, 1]],
+                                       coords[tri_idx[:, 2]])).sum())
+    if volume6 < 0.0:
+        bm = bmesh.new()
+        bm.from_mesh(mesh)
+        bmesh.ops.reverse_faces(bm, faces=bm.faces)
+        bm.to_mesh(mesh)
+        bm.free()
+        mesh.update()
+        log(f"IMPORT: inverted winding detected (signed volume {volume6 / 6.0:.1f}) "
+            f"-> all faces flipped outward")
+
     log(f"IMPORT: {input_path.name} -> 1 mesh object "
         f"({len(merged.data.vertices)} verts, {tri_count(merged)} tris, "
         f"{len(merged.data.materials)} material slot(s))")
@@ -372,6 +413,31 @@ def cleanup(obj, params, report):
     bm.to_mesh(mesh)
     bm.free()
     mesh.update()
+
+    # Orientation guard, cleanup half (TASK-348): recalc_face_normals UNIFIES a
+    # mixed-winding source but can pick the INWARD side (the 2026-07-28 Meshy
+    # Castle: +0.5 m^3 at import -> -0.5 after recalc). An inward bake donor
+    # collapses the Cycles AO bake to ~0 (rays start "inside" the solid) and
+    # flips the baked tangent normals. Enforce outward by signed volume.
+    mesh.calc_loop_triangles()
+    coords = np.empty(len(mesh.vertices) * 3, dtype=np.float64)
+    mesh.vertices.foreach_get("co", coords)
+    coords = coords.reshape(-1, 3)
+    tri_idx = np.empty(len(mesh.loop_triangles) * 3, dtype=np.int64)
+    mesh.loop_triangles.foreach_get("vertices", tri_idx)
+    tri_idx = tri_idx.reshape(-1, 3)
+    volume6 = float(np.einsum("ij,ij->i", coords[tri_idx[:, 0]],
+                              np.cross(coords[tri_idx[:, 1]],
+                                       coords[tri_idx[:, 2]])).sum())
+    if volume6 < 0.0:
+        bm = bmesh.new()
+        bm.from_mesh(mesh)
+        bmesh.ops.reverse_faces(bm, faces=bm.faces)
+        bm.to_mesh(mesh)
+        bm.free()
+        mesh.update()
+        log(f"CLEANUP: recalc unified winding INWARD (signed volume "
+            f"{volume6 / 6.0:.2f}) -> all faces flipped outward")
 
     stats = {"verts_before": verts_before, "verts_after": len(mesh.vertices),
              "weld_distance": weld_dist, "islands_removed": islands_removed,
@@ -457,6 +523,163 @@ def remesh_and_decimate(low, params, quick, report):
         report["warnings"].append(f"low mesh {tris_final} tris still exceeds budget {budget}")
     log(f"REMESH: voxel {voxel_ue} UE -> {tris_dense} tris, decimated -> "
         f"{tris_final} tris (budget {budget})")
+
+
+# --------------------------------------------------------------------------- stage: carve (Castle 3x HOLLOW law, TASK-348)
+
+def _carve_profile_arch(width, z_floor, z_spring, segments):
+    """Closed 2D profile (x, z) for a round-arch passage: rectangle from z_floor
+    up to z_spring, capped by a semicircle of radius width/2 (apex at
+    z_spring + width/2). Counter-clockwise; units already in meters."""
+    half = width / 2.0
+    points = [(half, z_floor), (half, z_spring)]
+    for step in range(1, segments):
+        angle = math.pi * step / segments
+        points.append((half * math.cos(angle), z_spring + half * math.sin(angle)))
+    points.append((-half, z_spring))
+    points.append((-half, z_floor))
+    return points
+
+
+def build_carve_cutters(params, report):
+    """CONVENTIONS "Castle 3x HOLLOW (2026-07-28)" SHELL law: Meshy generates a
+    closed exterior shell; Stage-2 AUTHORS the hollow interior, the gate cut at
+    the concept's arch, and the flat walkable interior floor. Cutter geometry is
+    manifest-driven (per-asset key "carve", UE units in conformed space) - the
+    same single-edit-path law as ucx.boxes; in-editor/hand edits stay banned.
+    Cutter types: "box" {center,size} and "arch" {x_center,y_min,y_max,width,
+    z_floor,z_spring,[segments]} (round-arch prism extruded along Y).
+    New faces the boolean creates inherit the cutter's "InteriorStone" material
+    (flat warm-stone principled, manifest "interior_color_srgb"), so the D bake
+    gives the interior a plausible shadowed-masonry read instead of void black.
+    Returns the cutter object list (deleted by the caller after use)."""
+    carve_cfg = params.get("carve")
+    if not carve_cfg or not carve_cfg.get("cutters"):
+        return []
+    color = carve_cfg.get("interior_color_srgb", [0.52, 0.42, 0.30])
+    interior_mat = bpy.data.materials.new("InteriorStone")
+    interior_mat.use_nodes = True
+    principled = _find_principled(interior_mat.node_tree)
+    if principled is not None:
+        principled.inputs["Base Color"].default_value = (
+            float(color[0]), float(color[1]), float(color[2]), 1.0)
+        principled.inputs["Roughness"].default_value = 0.9
+        principled.inputs["Metallic"].default_value = 0.0
+
+    cutter_objects = []
+    for index, spec in enumerate(carve_cfg["cutters"]):
+        kind = spec.get("type", "box")
+        name = f"CARVE_{spec.get('name', kind)}_{index:02d}"
+        mesh = bpy.data.meshes.new(name)
+        if kind == "box":
+            center = np.asarray(spec["center"], dtype=np.float64) / UE_UNITS_PER_METER
+            size = np.asarray(spec["size"], dtype=np.float64) / UE_UNITS_PER_METER
+            bm = bmesh.new()
+            bmesh.ops.create_cube(bm, size=1.0)
+            for vert in bm.verts:
+                vert.co.x = vert.co.x * size[0] + center[0]
+                vert.co.y = vert.co.y * size[1] + center[1]
+                vert.co.z = vert.co.z * size[2] + center[2]
+            bm.to_mesh(mesh)
+            bm.free()
+        elif kind == "arch":
+            x_center = float(spec.get("x_center", 0.0)) / UE_UNITS_PER_METER
+            y_lo = float(spec["y_min"]) / UE_UNITS_PER_METER
+            y_hi = float(spec["y_max"]) / UE_UNITS_PER_METER
+            width = float(spec["width"]) / UE_UNITS_PER_METER
+            z_floor = float(spec["z_floor"]) / UE_UNITS_PER_METER
+            z_spring = float(spec["z_spring"]) / UE_UNITS_PER_METER
+            segments = max(4, int(spec.get("segments", 24)))
+            profile = _carve_profile_arch(width, z_floor, z_spring, segments)
+            count = len(profile)
+            verts = ([(x_center + x, y_lo, z) for x, z in profile]
+                     + [(x_center + x, y_hi, z) for x, z in profile])
+            faces = [list(range(count))[::-1], list(range(count, 2 * count))]
+            for i in range(count):
+                j = (i + 1) % count
+                faces.append([i, j, count + j, count + i])
+            mesh.from_pydata(verts, [], faces)
+            mesh.update()
+        else:
+            fail(f"carve cutter '{name}': unknown type '{kind}' (box|arch)", code=2)
+        # Consistent outward normals (boolean EXACT correctness).
+        bm = bmesh.new()
+        bm.from_mesh(mesh)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        bm.to_mesh(mesh)
+        bm.free()
+        mesh.materials.append(interior_mat)
+        obj = bpy.data.objects.new(name, mesh)
+        bpy.context.scene.collection.objects.link(obj)
+        obj.hide_render = True
+        cutter_objects.append(obj)
+    report.setdefault("carve", {})["cutters"] = [o.name for o in cutter_objects]
+    log(f"CARVE: built {len(cutter_objects)} manifest cutter volume(s)")
+    return cutter_objects
+
+
+def apply_carve(target, cutter_objects, report, key):
+    """Boolean-DIFFERENCE every cutter out of the target (EXACT solver,
+    hole-tolerant). Applied to BOTH the low target (crisp gate/floor planes,
+    post-decimate) and the dense bake donor (so selected-to-active bakes see
+    co-located interior surfaces carrying the InteriorStone color)."""
+    if not cutter_objects:
+        return
+    tris_before = tri_count(target)
+    ensure_object_mode()
+    for cutter in cutter_objects:
+        modifier = target.modifiers.new("PipelineCarve", "BOOLEAN")
+        modifier.operation = "DIFFERENCE"
+        modifier.solver = "EXACT"
+        if hasattr(modifier, "use_hole_tolerant"):
+            modifier.use_hole_tolerant = True
+        modifier.object = cutter
+        select_only([target], active=target)   # pitfall: active before modifier_apply
+        bpy.ops.object.modifier_apply(modifier=modifier.name)
+    tris_after = tri_count(target)
+    report.setdefault("carve", {})[key] = {"tris_before": tris_before,
+                                           "tris_after": tris_after}
+    log(f"CARVE[{key}]: tris {tris_before} -> {tris_after}")
+
+
+def probe_carve(target, params, report, key):
+    """Verification probes (measure, don't assume): for each arch cutter, cast a
+    ray INTO the gate at passage mid-height - it must clear the wall band (first
+    hit beyond y_max or none = open passage). For each box cutter, cast straight
+    down from just under the cavity ceiling - the hit is the as-built floor Z."""
+    carve_cfg = params.get("carve") or {}
+    probes = {}
+    for spec in carve_cfg.get("cutters", []):
+        name = spec.get("name", spec.get("type", "?"))
+        if spec.get("type") == "arch":
+            x_c = float(spec.get("x_center", 0.0)) / UE_UNITS_PER_METER
+            y_lo = min(float(spec["y_min"]), float(spec["y_max"])) / UE_UNITS_PER_METER
+            y_hi = max(float(spec["y_min"]), float(spec["y_max"])) / UE_UNITS_PER_METER
+            z_mid = ((float(spec["z_floor"]) + float(spec["z_spring"])) / 2.0
+                     / UE_UNITS_PER_METER)
+            origin = Vector((x_c, y_lo - 0.5, z_mid))
+            hit, location, _n, _i = target.ray_cast(origin, Vector((0.0, 1.0, 0.0)))
+            first_hit_y = round(location.y * UE_UNITS_PER_METER, 1) if hit else None
+            probes[name] = {
+                "ray": "through-gate +Y at passage mid-height",
+                "first_hit_y_ue": first_hit_y,
+                "open_through_wall": bool((not hit) or
+                                          location.y > y_hi - 1e-4),
+            }
+        elif spec.get("type") == "box":
+            center = spec["center"]
+            size = spec["size"]
+            origin = Vector((center[0] / UE_UNITS_PER_METER,
+                             center[1] / UE_UNITS_PER_METER,
+                             (center[2] + size[2] / 2.0 - 1.0) / UE_UNITS_PER_METER))
+            hit, location, _n, _i = target.ray_cast(origin, Vector((0.0, 0.0, -1.0)))
+            probes[name] = {
+                "ray": "cavity-ceiling straight down",
+                "floor_hit_z_ue": round(location.z * UE_UNITS_PER_METER, 1)
+                                  if hit else None,
+            }
+    report.setdefault("carve", {}).setdefault("probes", {})[key] = probes
+    log(f"CARVE probes[{key}]: {json.dumps(probes)}")
 
 
 # --------------------------------------------------------------------------- stage: UV
@@ -1024,28 +1247,82 @@ def generate_ucx(params, report):
 
 # --------------------------------------------------------------------------- stage: export
 
-def export_fbx(low, ucx_objects, fbx_path, guard):
+def _flip_winding(mesh):
+    """Reverse every face loop (normals flip side). Winding-only — never moves a
+    vertex; per-loop data (UVs) stays with its vertices; material indices and
+    smooth flags survive the bmesh round-trip."""
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    bmesh.ops.reverse_faces(bm, faces=bm.faces)
+    bm.to_mesh(mesh)
+    bm.free()
+
+
+def _ue_handedness_precomp(objs):
+    """UE handedness pre-compensation (TASK-348 MIRROR-FIX, 2026-07-28).
+
+    UE's FBX importer converts the right-handed FBX scene to UE's left-handed
+    space by negating Y on every position/direction (FFbxDataConverter::
+    ConvertPos/ConvertDir = (X,-Y,Z)) and re-flipping triangle winding. That is
+    an orientation-REVERSING map (det -1): no rotation-only axis_forward/axis_up
+    choice can cancel it, so an FBX exported straight from conformed space lands
+    in-engine Y-MIRRORED against the manifest space that authors UCX hulls,
+    carve cutters, gate blockers and nav volumes (the TASK-350 castle blocker:
+    visual gate +Y, collision door gap -Y).
+
+    Compensation: bake mirror_Y + winding flip into the mesh data here, at
+    export time only. UE's own negation+flip then restores conformed space
+    exactly, so in-engine geometry == bake-time geometry (tangent-space normal
+    maps stay valid) and manifest numbers are UE-local coordinates verbatim.
+
+    The transform is an involution — calling this a second time restores the
+    scene state (report bounds/previews run after export and must see conformed
+    space)."""
+    mirror = Matrix.Diagonal((1.0, -1.0, 1.0, 1.0))
+    for obj in objs:
+        obj.data.transform(mirror)
+        _flip_winding(obj.data)
+        obj.data.update()
+
+
+def export_fbx(low, ucx_objects, fbx_path, guard, report=None):
     """Axis contract (blockout-identical, TASK-014/037/038): axis_forward='-Z',
-    axis_up='Y', apply_unit_scale=True, mesh_smooth_type='FACE'."""
+    axis_up='Y', apply_unit_scale=True, mesh_smooth_type='FACE' — PLUS the UE
+    handedness pre-compensation (see _ue_handedness_precomp): the written FBX is
+    deliberately Y-mirrored so UE's import negation lands it in conformed space.
+    NOTE for offline probes: a Blender round-trip of the exported file shows
+    geometry at -Y of its conformed position — that is the pre-compensation, not
+    a defect; emulate UE by applying diag(1,-1,1) after import."""
     out = guard.check(fbx_path)
     ensure_object_mode()
-    select_only([low] + ucx_objects, active=low)
-    bpy.ops.export_scene.fbx(
-        filepath=str(out),
-        use_selection=True,
-        object_types={"MESH"},
-        apply_unit_scale=True,
-        apply_scale_options="FBX_SCALE_NONE",
-        axis_forward="-Z",
-        axis_up="Y",
-        mesh_smooth_type="FACE",
-        use_mesh_modifiers=True,
-        use_triangles=True,          # bake fidelity: UE sees the exact baked triangulation
-        bake_anim=False,
-        add_leaf_bones=False,
-        path_mode="STRIP",           # UE imports textures separately from the PNGs
-    )
-    log(f"EXPORT: {out}")
+    export_set = [low] + ucx_objects
+    _ue_handedness_precomp(export_set)          # mirror IN (export-time only)
+    try:
+        select_only(export_set, active=low)
+        bpy.ops.export_scene.fbx(
+            filepath=str(out),
+            use_selection=True,
+            object_types={"MESH"},
+            apply_unit_scale=True,
+            apply_scale_options="FBX_SCALE_NONE",
+            axis_forward="-Z",
+            axis_up="Y",
+            mesh_smooth_type="FACE",
+            use_mesh_modifiers=True,
+            use_triangles=True,      # bake fidelity: UE sees the exact baked triangulation
+            bake_anim=False,
+            add_leaf_bones=False,
+            path_mode="STRIP",       # UE imports textures separately from the PNGs
+        )
+    finally:
+        _ue_handedness_precomp(export_set)      # mirror OUT (restore conformed space)
+    if report is not None:
+        report["export"] = {
+            "ue_handedness_precompensation": True,
+            "note": "FBX baked with mirror_Y + winding flip so UE's RH->LH import "
+                    "negation restores conformed/manifest space (TASK-348 MIRROR-FIX)",
+        }
+    log(f"EXPORT: {out} (UE handedness pre-compensation: mirror_Y + winding flip)")
     return out
 
 
@@ -1195,11 +1472,24 @@ def main():
         low.data.name = f"SM_{card_id}"
 
         remesh_and_decimate(low, params, args.quick, report)
+        # Castle 3x HOLLOW SHELL law (TASK-348): author the hollow interior, the
+        # gate cut and the flat walkable floor AFTER decimate (crisp planes) and
+        # BEFORE UV/bake (interior faces need real UVs + baked texels). The dense
+        # donor is carved with the SAME cutters so the bake sees co-located,
+        # InteriorStone-colored interior surfaces.
+        carve_cutters = build_carve_cutters(params, report)
+        if carve_cutters:
+            apply_carve(low, carve_cutters, report, "low")
+            probe_carve(low, params, report, "low")
+            apply_carve(dense, carve_cutters, report, "dense")
+            for cutter in carve_cutters:
+                bpy.data.objects.remove(cutter, do_unlink=True)
         smart_uv(low, params, report)
         images = bake_all(dense, low, params, args.quick, report)
 
         # Debug intermediates -> Cache only (never Content).
         debug_dir = cache_dir / "bake_debug"
+        save_png(images["D"], debug_dir / f"T_{card_id}_D_predelight.png", guard)
         save_png(images["AO"], debug_dir / f"T_{card_id}_AO.png", guard)
         save_png(images["R"], debug_dir / f"T_{card_id}_R.png", guard)
         save_png(images["M"], debug_dir / f"T_{card_id}_M.png", guard)
@@ -1212,6 +1502,10 @@ def main():
         img_d, img_n = images["D"], images["N"]
         bpy.data.objects.remove(dense, do_unlink=True)   # donor no longer needed
     else:  # native
+        if params.get("carve"):
+            report["warnings"].append("carve spec present but mode is 'native' — the "
+                                      "hollow/gate/floor authoring runs in BAKE mode "
+                                      "only (native keeps source mesh/UVs untouched)")
         conform(obj, params, report)             # keep TRELLIS mesh/UVs — no destructive ops
         low = obj
         low.name = f"SM_{card_id}"
@@ -1247,7 +1541,7 @@ def main():
         report["warnings"].append("building has no manifest UCX spec — importer would "
                                   "auto-generate collision (check the manifest)")
 
-    export_fbx(low, ucx_objects, fbx_path, guard)
+    export_fbx(low, ucx_objects, fbx_path, guard, report)
 
     mn, mx = mesh_bounds(low)
     report["result"] = {

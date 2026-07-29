@@ -120,23 +120,26 @@
       "mode": "bake",
       "engine": "meshy-i23d",
       "trellis_resolution": "1536",
-      "tri_budget": 20000,
-      "_tri_budget_note": "TASK-329 (2026-07-27): lowered 40000 -> 20000 per the Castle remaster law's 'target <=20k, manifest hard cap 40k'. The shipped 40k was recorded structural debt; the LOD chain (LOD1 50% @ 0.4 / LOD2 25% @ 0.15 — NOT LargeProp) is the primary perf fix, not a silhouette sacrifice. Raise toward 40k ONLY if the preview gate shows the landmark gate/wall/tower read degrading.",
+      "tri_budget": 27500,
+      "_tri_budget_note": "TASK-348 (2026-07-28): raised 20000 -> 27500 per CONVENTIONS 'Castle 3x HOLLOW' (tri target <=30k, hard cap 40k — the authored hollow interior is not achievable at the solid castle's 20k). 27500 is the DECIMATE budget; the carve stage adds boolean faces on top, keeping the final count under the 30k target (report the final number). TASK-329 history: 40000 -> 20000 for the solid castle.",
       "bake_resolution": 2048,
       "origin": "ground-center",
       "fit_mode": "box",
       "albedo_delight": {
         "_note": "TASK-329 pin (2026-07-27): THE mechanical root cause of the Castle's 0.0078 raw / 0.0653 UV-normalised albedo — the shipped bake (2026-07-08) PREDATES TASK-193 and carries NO albedo_delight block at all, i.e. the de-light stage never ran on this asset. These are the LOCKED fleet values (Footman-validated, d7254da) that took the Footman pilot 0.0224 -> 0.1639 and were fanned out to all 11 units. Acceptance floor is DUAL: >=0.164 raw AND >=0.2536 UV-normalised (buildings carry 12-33% UV coverage vs units' 59-73%, so raw alone under-reports a building).",
+        "_override_348": "TASK-348 (2026-07-28) per-asset override, recorded per the albedo_delight override law (fleet default untouched). History: (1) the locked fleet profile (0.55/1.2) on the new Meshy donor tripped the BLEACH FLAG (UV-norm 0.7209 at front luma retention 1.2527x vs the new alpha-masked concept) -> temper lever 0.65/1.0; (2) the donor then turned out INSIDE-OUT (see the refine script's orientation guard) — with REAL AO restored, 0.65/1.0 measured UV-norm 0.5806, front retention 1.0436x, threequarter 0.8353x (1.7% under the 0.85 band floor), chroma retention 0.49-0.50x, hue +16.8 deg; (3) final: gain 1.0 -> 1.07 (chroma-neutral uniform lift) centers both views in-band. (The TASK-329 dual-floor note above is historical — the raw arm was RETIRED 2026-07-27; UV-normalised >= 0.2536 is the sole albedo gate.)",
         "ao_divide_strength": 1.0,
         "ao_floor": 0.25,
-        "gamma": 0.55,
-        "gain": 1.2
+        "gamma": 0.65,
+        "gain": 1.07
       },
-      "target_dims_ue": [814.5, 820.0, 900.0],
-      "_dims_source": "TASK-013 blockout: 814.5 x 820.0 x 900.0, ground-center; box fit keeps bounds well inside the ±10% ruling",
+      "target_dims_ue": [2442.0, 2460.0, 2694.0],
+      "_dims_source": "TASK-348 (2026-07-28), CONVENTIONS 'Castle 3x HOLLOW' NEW BOUNDS LAW: 3x the shipped 814.5 x 820.6 x 894.9 => bounds within ±10% of 2442 x 2460 x 2694, ground-center. Supersedes the TASK-013 blockout dims.",
       "pre_rotate_z_deg": 0.0,
-      "voxel_size_ue": 4.0,
-      "bake": { "cage_extrusion_ue": 8.0, "max_ray_distance_ue": 24.0 },
+      "voxel_size_ue": 6.0,
+      "_voxel_note": "TASK-348: 4.0 -> 6.0 for the 3x mesh — keeps the remesh ~3.4M tris (vs ~7.7M at 4.0) while DOUBLING relative detail vs the 1x castle (2442/6=407 voxels across vs 814/4=204).",
+      "bake": { "cage_extrusion_ue": 16.0, "max_ray_distance_ue": 48.0 },
+      "_bake_note": "TASK-348: cage 8->16 / ray 24->48 — decimate deviation scales with the 3x dims; walls are 200+ uu thick so 48 uu rays cannot jump to a wrong surface.",
       "team_region": {
         "max_fraction": 0.4,
         "_tuned": "TASK-087 eyeball gate 2026-07-08: box-fit Z-stretch (17.6 vs 8.2 Y-scale) steepened every roof, so min_dot 0.3 selected only 1.1% (a few inner keep roofs). Probe-measured upward-face area lives in dot 0.10-0.30; z floor lowered to 0.30 to include perimeter tower cones + wall-walk tops (strong top-down read). Measured 6.8% at dot 0.10 / z 0.30 - Footman-comparable.",
@@ -149,20 +152,41 @@
           }
         ]
       },
+      "carve": {
+        "_comment": "TASK-348 (2026-07-28), CONVENTIONS 'Castle 3x HOLLOW' SHELL law: Stage-2 AUTHORS the hollow interior + gate + flat floor (Meshy delivers a closed shell; its own meshed aperture is only ~180x540 uu). Geometry from the 2026-07-28 conformed-space raycast probe (Cache/Castle/raw_inspect/probe3x.json). Route: 600-wide round-arch gate through the front wall band (spring 470 / apex 770) -> 500-wide vaulted corridor through the barbican spine -> grand hall under the keep + east annex. One flat floor plane z=58 (exterior apron at the threshold measures 48-58 -> step <=10, law <=40). Clear heights: corridor 470 rect (law >=450), halls 520. All cavities connect to the outside ONLY via the gate.",
+        "interior_color_srgb": [0.55, 0.44, 0.30],
+        "cutters": [
+          { "name": "gate_arch", "type": "arch", "x_center": 6.0, "y_min": -700.0, "y_max": -340.0, "width": 600.0, "z_floor": 58.0, "z_spring": 470.0, "segments": 32 },
+          { "name": "gate_corridor", "type": "arch", "x_center": 6.0, "y_min": -380.0, "y_max": 170.0, "width": 500.0, "z_floor": 58.0, "z_spring": 470.0, "segments": 32 },
+          { "name": "hall_main", "type": "box", "center": [-155.0, 210.0, 318.0], "size": [970.0, 240.0, 520.0] },
+          { "name": "hall_east", "type": "box", "center": [420.0, 260.0, 318.0], "size": [280.0, 140.0, 520.0] }
+        ]
+      },
       "ucx": {
-        "_comment": "Wall-footprint-exact (M1 plinth dead-zone lesson): NO full-base slab. TASK-087 tune 2026-07-08: boxes re-derived from the GENERATED mesh via face-area probes (wall planes: front y_norm 0.17-0.28, back 0.79-0.87, west x 0.15-0.25, east 0.88-0.97; towers/keep measured; rock ramp + terrain shelf deliberately UNCOLLIDED). Two structures the blockout lacked get hulls: west annex chapel + forward gatehouse porch. Front-most collision now y=-328 vs blockout -410: the M1 dead-zone SHRINKS, gold-node/miner clearance improves.",
+        "_comment": "TASK-348 (2026-07-28), UCX DOOR-GAP law (supersedes the TASK-087 11-solid-box set which was tuned to the OLD 1x mesh): door-gapped perimeter walls (gate gap x -254..+266 = 520 clear, law >=500; lintel bottom z 510 -> gate clear COLLISION height 452 over the z=58 slab, law >=450 AS-WRITTEN per the 2026-07-28 manager RE-RUN ruling on TASK-348 [the as-built 470 lintel gave 412 and was rejected — jump-through case]; lintel top 810 unchanged; visual arch spring 470 / apex 770 untouched, soffit over the hull span 619.7..770 so the raised lintel stays inside the arch), interior floor slab top z=58 + stepped approach slabs (0 -> 20 -> 58, every step <=40 = nav step law), keep/tower hulls, and an 'arcade_seal' closing the meshed east arcade slot (y ~396-444) so the gate stays the ONLY opening. Hull faces match the NARROWEST visual extent per side (units never collide with air; small visual penetrations reported in the TASK-348 drift table). Walkable interior (gate/corridor/halls above z=58) is hull-free.",
         "boxes": [
-          { "name": "wall_west", "center": [-244.0, 16.0, 140.0], "size": [85.0, 440.0, 280.0] },
-          { "name": "wall_east", "center": [346.0, 4.0, 140.0], "size": [80.0, 440.0, 280.0] },
-          { "name": "wall_front", "center": [4.0, -225.0, 140.0], "size": [440.0, 90.0, 280.0] },
-          { "name": "wall_back", "center": [0.0, 271.0, 140.0], "size": [420.0, 70.0, 280.0] },
-          { "name": "tower_front_west", "center": [-257.0, -238.0, 215.0], "size": [130.0, 130.0, 430.0] },
-          { "name": "tower_front_east", "center": [306.0, -248.0, 215.0], "size": [160.0, 160.0, 430.0] },
-          { "name": "tower_back_west", "center": [-248.0, 266.0, 215.0], "size": [130.0, 130.0, 430.0] },
-          { "name": "tower_back_east", "center": [300.0, 291.0, 215.0], "size": [160.0, 160.0, 430.0] },
-          { "name": "keep", "center": [-16.0, 57.0, 375.0], "size": [490.0, 475.0, 750.0] },
-          { "name": "annex_west", "center": [-332.0, -57.0, 230.0], "size": [90.0, 400.0, 460.0] },
-          { "name": "gatehouse", "center": [4.0, -254.0, 210.0], "size": [160.0, 150.0, 420.0] }
+          { "name": "wall_front_west", "center": [-690.0, -460.5, 375.0], "size": [380.0, 141.0, 750.0] },
+          { "name": "wall_front_east", "center": [700.0, -460.0, 375.0], "size": [380.0, 140.0, 750.0] },
+          { "name": "tower_front_west", "center": [-990.0, -499.0, 405.0], "size": [220.0, 218.0, 810.0] },
+          { "name": "tower_front_east", "center": [990.0, -499.0, 405.0], "size": [220.0, 218.0, 810.0] },
+          { "name": "gatetower_west", "center": [-377.0, -516.5, 405.0], "size": [246.0, 253.0, 810.0] },
+          { "name": "gatetower_east", "center": [388.0, -516.5, 405.0], "size": [244.0, 253.0, 810.0] },
+          { "name": "gate_lintel", "center": [6.0, -520.0, 660.0], "size": [520.0, 260.0, 300.0] },
+          { "name": "spine_west", "center": [-287.0, -205.0, 405.0], "size": [86.0, 370.0, 810.0] },
+          { "name": "spine_east", "center": [293.0, -205.0, 405.0], "size": [74.0, 370.0, 810.0] },
+          { "name": "keep_front_west", "center": [-444.0, 35.0, 405.0], "size": [400.0, 110.0, 810.0] },
+          { "name": "keep_front_east", "center": [288.0, 50.0, 405.0], "size": [84.0, 140.0, 810.0] },
+          { "name": "keep_west", "center": [-726.0, 215.0, 405.0], "size": [164.0, 470.0, 810.0] },
+          { "name": "hall_east_front", "center": [447.0, 155.0, 405.0], "size": [234.0, 70.0, 810.0] },
+          { "name": "keep_east", "center": [632.0, 245.0, 405.0], "size": [136.0, 190.0, 810.0] },
+          { "name": "hall_back", "center": [-40.0, 360.0, 405.0], "size": [1208.0, 60.0, 810.0] },
+          { "name": "arcade_seal", "center": [725.0, 421.0, 380.0], "size": [790.0, 62.0, 760.0] },
+          { "name": "wall_back", "center": [0.0, 580.0, 380.0], "size": [2100.0, 240.0, 760.0] },
+          { "name": "tower_back_west", "center": [-1085.0, 550.0, 405.0], "size": [70.0, 180.0, 810.0] },
+          { "name": "tower_back_east", "center": [1085.0, 550.0, 405.0], "size": [70.0, 180.0, 810.0] },
+          { "name": "floor_slab_hall", "center": [-40.0, 5.0, 19.0], "size": [1320.0, 790.0, 78.0] },
+          { "name": "apron_step_hi", "center": [6.0, -545.0, 19.0], "size": [600.0, 310.0, 78.0] },
+          { "name": "apron_step_lo", "center": [5.0, -840.0, 0.0], "size": [650.0, 280.0, 40.0] }
         ]
       }
     },

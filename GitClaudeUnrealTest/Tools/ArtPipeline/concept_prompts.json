@@ -75,6 +75,11 @@
       "negative_prompt": "tower, cannon, ballista, crystal, character, person, castle, red banner, blue banner",
       "seed": 71013
     },
+    "Castle": {
+      "prompt": "a grand sprawling medieval fortress castle, warm tan honey sandstone masonry with blue-grey slate roofs, a gothic cathedral keep with tall bare spires, pointed arch windows and rose windows rising behind a crenellated sandstone curtain wall with round corner towers capped by conical slate roofs, the front wall dominated by a colossal fortified gatehouse with one enormous wide-open arched gateway nearly a quarter of the facade width, portcullis fully raised, no doors, a gaping dark shadowed hollow interior courtyard clearly visible through the huge open arch, the opening tall and wide enough for four mounted riders side by side, the entire castle sitting flush on flat level ground with a smooth level paved approach leading straight into the gate, no rocky outcrop and no moat, every spire topped with a plain stone finial, lightly weathered stonework with subtle moss accents at the wall base",
+      "negative_prompt": "closed gate, closed door, drawbridge, moat, water, rocky crag, cliff, hill, character, person, army, siege weapons, red banner, blue banner",
+      "seed": 73007
+    },
     "DeepMine": {
       "prompt": "a fortified medieval deep gold mine entrance built into a rocky hillside mound, a timber-framed mine shaft opening with a wooden headframe and a rope winch, a small ore minecart on rails at the mouth, faint glints of gold ore veins in the dark rock, sturdy support beams; muted grey rock, aged brown timber and a dark shaft opening with only tiny warm-gold ore sparkles, one small neutral cream cloth marker flag left uncolored for team recoloring; rendered as a polished stylized low-poly game building in the Warcraft Rumble and Fortnite quality tier, chunky exaggerated proportions, beveled blocky rock and timber forms, hand-painted-style textures with soft gradient shading and rim light, strong readable silhouette",
       "negative_prompt": "giant glowing gold pile, tower, character, person, cannon, crystal, red, blue",
