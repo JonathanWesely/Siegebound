@@ -51,8 +51,8 @@ class ASiegePlayerController;
  *  restored). After match end the hero stays down; PlayAgain() revives it.
  *
  *  Timer policy (QA-BINDING, TASKBOARD TASK-006 qa-note from qa/TASK-005-report.md):
- *  in PlayAgain() this class clears ONLY the specific FTimerHandle it owns
- *  (HeroRespawnTimerHandle), BEFORE ResetGold() (which restarts the income
+ *  in PlayAgain() this class clears ONLY the specific timer handles it owns
+ *  (M8: the per-controller HeroRespawnTimers map), BEFORE ResetGold() (which restarts the income
  *  timer) — never a world-wide clear, and never another system's timer:
  *  ASiegePlayerState's income timer and the units' AI timers belong to those
  *  objects (they clean themselves up in their EndPlay). ONE deliberate, narrow
@@ -182,17 +182,45 @@ protected:
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
 
 	/**
-	 *  Player-creation hook (TASK-043 multi-team economy): tags the local
-	 *  player's ASiegePlayerState Team=Blue at creation — the CONVENTIONS team
-	 *  contract, the identity ASiegeGameState::GetPlayerStateForTeam resolves.
-	 *  Runs once per real player login, after the PlayerState is created and
-	 *  assigned (the engine itself dereferences NewPlayerController->PlayerState
-	 *  here). The default is already Blue, so this is belt-and-braces for the
-	 *  player and the M2 economy is untouched. The bot's Red PS is NOT set here —
-	 *  this hook only runs for player logins; TASK-045 tags it where the bot is
-	 *  spawned.
+	 *  Player-creation hook (TASK-043 multi-team economy → M8 SEAT LATCH,
+	 *  TASK-356 doc §2.1/D3): assigns each real player login a team seat —
+	 *  first login Blue (the host: on a listen server the local player always
+	 *  logs in first), second Red (the joiner), third+ Red with a warning (P1
+	 *  has no kick logic). Logins serialize on the server game thread ⇒
+	 *  deterministic; PlayAgain is in-place (no re-login) ⇒ seats persist across
+	 *  resets. InitNewPlayer (not PostLogin) keeps the tag at its existing site
+	 *  and runs BEFORE RestartPlayer, so the team is settled before the hero
+	 *  spawns (PossessedBy and the spawn-transform resolve both read it).
+	 *  Standalone: exactly one login ⇒ Blue — byte-identical to the retired
+	 *  unconditional tag. The bot's Red PS is still tagged in SpawnBot (which a
+	 *  networked match gates OFF — doc §2.2).
 	 */
 	virtual FString InitNewPlayer(APlayerController* NewPlayerController, const FUniqueNetIdRepl& UniqueId, const FString& Options, const FString& Portal = TEXT("")) override;
+
+	/**
+	 *  M8 per-player spawn resolve (TASK-356 doc §3.4.4/D10): routes EVERY player
+	 *  (re)start through the team-keyed GetHeroStartTransform — the Blue/host path
+	 *  resolves the level PlayerStart exactly as the engine did (§10 byte-identity;
+	 *  QA-scrutinized site), the Red client resolves its castle-relative fallback
+	 *  (no Red PlayerStart exists in L_Arena — the fallback IS the design, no P1
+	 *  level edit). Null-safe: an unresolvable ASiegePlayerState defers to Super.
+	 */
+	virtual void RestartPlayer(AController* NewPlayer) override;
+
+	/**
+	 *  M8 spawn-failure safety net (TASK-356 loop-2, the BLOCKER-5 lesson): a
+	 *  player must NEVER end up pawnless. The engine's implementation
+	 *  (AGameModeBase::SpawnDefaultPawnAtTransform_Implementation) spawns with a
+	 *  bare FActorSpawnParameters, so the pawn class's own collision-handling
+	 *  method governs — and BP_HeroCharacter's refuses a colliding spawn, which
+	 *  is exactly how a mis-sized offset turned into `pawn=None` for the joining
+	 *  player. This override calls Super FIRST (so the succeeding path — every
+	 *  standalone spawn, byte-identity intact — is completely unchanged) and only
+	 *  on a NULL result retries the SAME transform with
+	 *  `AdjustIfPossibleButAlwaysSpawn`, logging loudly. A future geometry change
+	 *  then degrades to a nudged spawn instead of an unplayable seat.
+	 */
+	virtual APawn* SpawnDefaultPawnAtTransform_Implementation(AController* NewPlayer, const FTransform& SpawnTransform) override;
 
 	/**
 	 *  Runs for every pawn this mode hands to a player (initial spawn and any
@@ -211,9 +239,11 @@ protected:
 	void OnCastleDestroyedHandler(ACastle* DestroyedCastle, ETeamId CastleTeam);
 
 	/**
-	 *  FOnHeroDied handler (TASK-003 contract): schedules RespawnHero exactly
-	 *  HeroRespawnDelay seconds out (§3.1: back within 5-6 s). After match end
-	 *  no respawn is scheduled — the hero stays down until PlayAgain().
+	 *  FOnHeroDied handler (TASK-003 contract): schedules THAT hero's owning
+	 *  controller a respawn exactly HeroRespawnDelay seconds out (§3.1: back
+	 *  within 5-6 s; M8 doc §3.4.4 — per-controller timer map, the weak
+	 *  controller rides the delegate). After match end no respawn is scheduled —
+	 *  heroes stay down until PlayAgain().
 	 */
 	UFUNCTION()
 	void HandleHeroDied(AHeroCharacter* DeadHero);
@@ -252,12 +282,38 @@ protected:
 	float HeroRespawnDelay = 5.0f;
 
 	/**
-	 *  Respawn offset from the hero's own castle, used only when the level has no
-	 *  PlayerStart. X is applied toward the centerline (X=0, CONVENTIONS world
-	 *  axes) so the spawn clears the castle's ~810-unit footprint (TASK-013).
+	 *  Castle-relative hero spawn offset, used when no PlayerStart serves this
+	 *  hero's team (the Red client's path — doc §3.4.4). X is applied toward the
+	 *  centerline (X=0, CONVENTIONS world axes), Y/Z verbatim.
+	 *
+	 *  ⚠️ X IS A FLOOR, NOT THE DISTANCE (TASK-356 loop-2, BLOCKER-5 fix). The
+	 *  authored 600 was derived from the M1 castle's ~810-uu footprint and ROTTED
+	 *  when the 3× remaster tripled it: TASK-357 measured the live castle's
+	 *  colliding half-extent at **1,219 uu** (span 23,781…26,219), so a 600 offset
+	 *  put the Red spawn 819 uu INSIDE its own castle — `SpawnActor failed because
+	 *  of collision` and the joining player got NO pawn at all. The resolver now
+	 *  DERIVES the distance from the castle's live bounds
+	 *  (`HeroSpawnCastleClearance` past the measured half-extent) and uses this X
+	 *  only as the floor, so a future geometry change cannot rot it again.
+	 *  Raised 600 → 1,500 to match the derived value (and to be safe on its own if
+	 *  bounds are ever unresolvable): the level's own Blue PlayerStart sits 1,200
+	 *  uu out and spawns cleanly every time, so 1,200 is the empirical floor and
+	 *  1,500 is that with margin.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Hero")
-	FVector HeroSpawnCastleOffset = FVector(600.0f, 0.0f, 100.0f);
+	FVector HeroSpawnCastleOffset = FVector(1500.0f, 0.0f, 100.0f);
+
+	/**
+	 *  Clearance ADDED to the own-castle's measured colliding half-extent when
+	 *  resolving a castle-relative hero spawn (TASK-356 loop-2). 300 uu past the
+	 *  geometry: with the live 3× castle (half-extent 1,219) this derives 1,519 —
+	 *  just past the empirically validated 1,200 floor and at the recommended
+	 *  ~1,500 band, and it AUTO-FOLLOWS any future castle resize instead of
+	 *  rotting like the old hardcoded offset did. Comfortably clears the hero
+	 *  capsule (r≈42) plus the castle's real (tighter than box-bound) 22-hull UCX.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Hero", meta = (ClampMin = "0"))
+	float HeroSpawnCastleClearance = 300.0f;
 
 	/**
 	 *  Starting gold granted to the Blue player in a Sandbox match (TASK-071 —
@@ -298,31 +354,49 @@ private:
 	 */
 	void FreezeWorldAtMatchEnd();
 
-	/** Respawn-timer callback. */
-	void RespawnHero();
-
 	/**
-	 *  Shared by the 5 s respawn and PlayAgain: teleports the hero to its start
-	 *  (while still hidden, so the death spot never flashes), repossesses if
-	 *  needed (BEFORE ResetHero — its EnableInput mirrors death's DisableInput
-	 *  against the possessing controller, TASK-003 handoff), then ResetHero()
-	 *  for full HP + visibility + collision + movement + input. If the pawn was
-	 *  destroyed entirely (defensive; no M1 flow does), falls back to
-	 *  RestartPlayerAtPlayerStart, whose SetPlayerDefaults re-binds OnHeroDied.
+	 *  Respawn-timer callback (M8 per-player, TASK-356 doc §3.4.4): the weak
+	 *  controller captured at death time rides the timer delegate; a controller
+	 *  gone by fire time is a logged no-op. Cleans its own map entry.
 	 */
-	void RestoreHeroAtStart();
+	void HandleHeroRespawnTimer(TWeakObjectPtr<AController> WeakController);
 
 	/**
-	 *  Spawn point resolution, in order: the level's PlayerStart (L_Arena:
-	 *  ≈(-6800, 0, 100) yaw 0 — moved outward with the ±8000 castle in the M6.5
-	 *  4× widening, TASK-136; was (-1700, 0, 100) pre-M6.5); else next to the hero's own-team castle
-	 *  offset toward the centerline; else the arena origin (logged).
-	 *  FindPlayerStart's WorldSettings fallback is rejected — it is not a spawn point.
+	 *  Shared by the 5 s respawn and PlayAgain — M8 (TASK-356 doc §3.4.4):
+	 *  PARAMETERIZED on the owning controller (was: the single TrackedHero +
+	 *  first-controller resolve; both retired). Teleports that controller's hero
+	 *  to its team-keyed start (while still hidden, so the death spot never
+	 *  flashes), repossesses if needed (BEFORE ResetHero — its EnableInput
+	 *  mirrors death's DisableInput against the possessing controller, TASK-003
+	 *  handoff), then ResetHero() for full HP + visibility + collision +
+	 *  movement + input. If the pawn was destroyed entirely (defensive; no
+	 *  shipped flow does), falls back to RestartPlayer, whose override +
+	 *  SetPlayerDefaults re-bind OnHeroDied on the fresh pawn.
+	 */
+	void RestoreHeroAtStart(AController* Player);
+
+	/**
+	 *  Spawn point resolution — **TEAM-GOVERNED since TASK-356 loop-1** (the
+	 *  BLOCKER-3 fix: the old order consulted the PlayerStart BEFORE HeroTeam, so
+	 *  the castle-relative branch was dead code and BOTH heroes stacked on the
+	 *  Blue PlayerStart). In order: (1) resolve the hero's own-team castle — it
+	 *  defines this team's side of the centerline; (2) the level's PlayerStart
+	 *  (L_Arena: ≈(-23800, 0, 98) yaw 0 on the Blue side, M7.6 ±25000 widening)
+	 *  **only when it lies on that same side** (or when the level has no castle
+	 *  at all — the pre-M8 behavior); (3) else next to the own-team castle,
+	 *  offset toward the centerline, facing the enemy half; (4) else the arena
+	 *  origin (logged). The side test is data-driven (castle X sign), never a
+	 *  Blue/Red hardcode. FindPlayerStart's WorldSettings fallback is rejected —
+	 *  it is not a spawn point. Standalone (Blue, one Blue-side PlayerStart) is
+	 *  byte-identical to the pre-M8 result.
 	 */
 	void GetHeroStartTransform(AController* Player, ETeamId HeroTeam, FVector& OutLocation, FRotator& OutRotation);
 
-	/** First ASiegePlayerController in the world (M1 is single local player), or nullptr. */
-	ASiegePlayerController* FindLocalSiegeController() const;
+	//~ FindLocalSiegeController RETIRED by TASK-356 (M8 doc §3.4.4/§3.7): the
+	//~ "first ASiegePlayerController is THE player" helper was the ban-shaped
+	//~ single-player assumption (audit §1a#4). Hero restore is now parameterized
+	//~ per controller; team-keyed lookups go through
+	//~ ASiegePlayerController::FindControllerForTeam.
 
 	/**
 	 *  Spawns the single Red bot opponent (GDD §4, TASK-045) at match start and
@@ -350,9 +424,14 @@ private:
 	UPROPERTY(Transient)
 	TSubclassOf<APawn> ResolvedHeroPawnClass;
 
-	/** The hero pawn this mode last handed to a player — respawn target. TODO(M8): per-player hero/timer tracking for multiplayer (single-hero assumption holds through M7, qa/TASK-006-report.md finding 6). */
-	UPROPERTY(Transient)
-	TObjectPtr<AHeroCharacter> TrackedHero;
+	//~ TrackedHero + HeroRespawnTimerHandle RETIRED by TASK-356 (the TODO(M8) on
+	//~ this exact member, closed — doc §3.4.4/D10): a P1 session has TWO heroes
+	//~ (host + client), so death/respawn/Play-Again restore is now tracked
+	//~ per-controller in HeroRespawnTimers; the respawn timer delegate carries the
+	//~ weak owning controller. In standalone the map simply holds one entry.
+
+	/** Per-controller pending hero-respawn timers (M8 doc §3.4.4). The ONLY timers this class owns (timer policy unchanged — each entry cleared on fire/match-end/PlayAgain/EndPlay, never a world-wide clear). */
+	TMap<TWeakObjectPtr<AController>, FTimerHandle> HeroRespawnTimers;
 
 	/** The single Red bot opponent, spawned in SpawnBot and reset in PlayAgain (GDD §4, TASK-045). Null until spawned; one per match. */
 	UPROPERTY(Transient)
@@ -376,6 +455,23 @@ private:
 	/** One-shot guard for the missing-BP_HeroCharacter warning. */
 	bool bWarnedHeroClassMissing = false;
 
-	/** Pending 5 s hero respawn. The ONLY timer this class owns (see timer policy in the class comment). */
-	FTimerHandle HeroRespawnTimerHandle;
+	/**
+	 *  M8 networked-match latch (TASK-356 doc §1.3/D2 — dual latch, signed as-is
+	 *  at the TASK-353 sign-off §9.4): InitGame reads the `listen` URL option
+	 *  (the real `open L_Arena?listen` travel), BeginPlay ORs in the NetMode belt
+	 *  (`GetNetMode() != NM_Standalone` — catches PIE "Play As Listen Server",
+	 *  whose URL-option plumbing through InitGame is not guaranteed; the net
+	 *  driver exists by BeginPlay on every listen path). Consumers in P1: the
+	 *  SpawnBot gate (doc §2.2) and the sandbox refusal (a networked sandbox is
+	 *  forced OFF in InitGame, audit §9 flag 5 accepted). Transient by nature
+	 *  (plain member, the bMatchEnded pattern); standalone: false ⇒ every
+	 *  consumer byte-identical.
+	 */
+	bool bNetworkedMatch = false;
+
+	/** M8 seat latch (doc §2.1): true once the Blue seat (first login) is taken. */
+	bool bBlueSeatTaken = false;
+
+	/** M8 seat latch (doc §2.1): true once the Red seat (second login) is taken. Third+ logins warn and pile on Red (unsupported in P1). */
+	bool bRedSeatTaken = false;
 };

@@ -60,6 +60,19 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMinerCountChanged, int32, AliveCo
  *  - Gold is hard-capped at 999 and can never go negative.
  *  - ALL gold mutations route through the private SetGold() so no code path
  *    can skip the clamp or the OnGoldChanged broadcast.
+ *
+ *  M8 P1 (TASK-356, per the SIGNED TASK-353 doc §3.2): gold is SERVER-
+ *  AUTHORITATIVE. The whole accrual engine (BeginPlay seed + income timer) and
+ *  every public mutator are HasAuthority()-gated — the audit's worst timer
+ *  hazard (client copies accruing their own divergent gold) is dead. `Gold`
+ *  replicates COND_OwnerOnly; OnRep_Gold fires OnGoldChanged DIRECTLY (never
+ *  via the guarded SetGold choke — on the client the value already changed by
+ *  replication; re-routing through the authority choke would refuse it).
+ *  `Team` replicates PLAIN (deliberately NOT InitialOnly — the doc's §3.2
+ *  divergence: InitialOnly snapshots at first replication, and the bot's
+ *  spawn-then-SetTeam shape plus login-edge timing could freeze the wrong value
+ *  forever; Team never changes after assignment, so plain rep costs nothing).
+ *  Standalone: authority everywhere ⇒ every guard passes ⇒ byte-identical.
  */
 UCLASS()
 class GITCLAUDEUNREALTEST_API ASiegePlayerState : public APlayerState
@@ -67,6 +80,24 @@ class GITCLAUDEUNREALTEST_API ASiegePlayerState : public APlayerState
 	GENERATED_BODY()
 
 public:
+
+	/**
+	 *  ⚖️ NET RELEVANCY TIER: **A — inherited from the engine, VERIFIED not set
+	 *  here** (CONVENTIONS NET RELEVANCY LAW declaration duty + its explicit
+	 *  "verify and document, do NOT blind-set" clause). Evidence, read from the
+	 *  installed UE 5.8 source this pass: `APlayerState::APlayerState` sets
+	 *  `bReplicates = true` AND `bAlwaysRelevant = true`
+	 *  (Engine/Private/PlayerState.cpp:25-26). Corroborated by TASK-357: gold and
+	 *  team read correctly on both machines across the 500 m arena.
+	 *
+	 *  ⚠️ RELEVANCY ≠ CONDITION: `Gold`'s `COND_OwnerOnly` is UNAFFECTED by this
+	 *  tier and stays exactly as designed — always-relevant means the ACTOR
+	 *  reaches every connection; the owner-only CONDITION still restricts the
+	 *  Gold PROPERTY to its own client (each player sees only their own gold).
+	 */
+
+	/** Registers Team (plain) + Gold (COND_OwnerOnly) — the M8 P1 set (doc §3.2). */
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	/** Fired on every gold mutation with the new value. The HUD (WBP_HUD, TASK-011) binds here. */
 	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Gold")
@@ -266,10 +297,14 @@ protected:
 	/**
 	 *  Owning team (TASK-043). Default Blue so a single-player-state world (M2)
 	 *  resolves the local economy for Blue and behaves byte-for-byte as before;
-	 *  ASiegeGameMode sets it explicitly at creation and tags the bot PS Red
-	 *  (TASK-045). Mutate via SetTeam(). // GDD §4 — two coexisting economies
+	 *  ASiegeGameMode sets it explicitly at creation (M8: the seat latch — host
+	 *  Blue, client Red, doc §2.1) and tags the bot PS Red (TASK-045). Mutate via
+	 *  SetTeam() (server-side sites only). M8 (TASK-356): replicated PLAIN — see
+	 *  the class comment for the deliberate not-InitialOnly rationale — so
+	 *  client-side team resolves (GetPlayerStateForTeam, HUD tinting, the hero's
+	 *  PossessedBy read) work on every machine. // GDD §4 — two coexisting economies
 	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Team")
+	UPROPERTY(ReplicatedUsing = OnRep_Team, EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Team")
 	ETeamId Team = ETeamId::Blue;
 
 	/** Gold at match start and after a Play Again reset (10 per the 2026-07-08 balance directive, TASK-089; was 50). KEEP IN SYNC with the private Gold field initializer below — it is the pre-BeginPlay seed value. // GDD §3.2 (amended) */
@@ -339,9 +374,29 @@ private:
 	/** The world's ASiegeGameState, resolved live each call (never cached — Play Again / PIE safe), or nullptr (BeginPlay warns once when missing). */
 	ASiegeGameState* GetSiegeGameState() const;
 
-	/** Current gold. Mutate ONLY via SetGold(). Initializer KEPT IN SYNC with StartingGold (the pre-BeginPlay seed value; both 10 per TASK-089). */
-	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Gold", meta = (AllowPrivateAccess = "true"))
+	/**
+	 *  Current gold. Mutate ONLY via SetGold() (authority). M8 (TASK-356):
+	 *  replicated COND_OwnerOnly — each client sees only its OWN gold (doc §3.2;
+	 *  TASK-357 gate d). Initializer KEPT IN SYNC with StartingGold (the
+	 *  pre-BeginPlay seed value; both 10 per TASK-089) — on a client copy this
+	 *  initializer IS the pre-first-rep display value, and it matches.
+	 */
+	UPROPERTY(ReplicatedUsing = OnRep_Gold, VisibleInstanceOnly, Transient, Category = "Siegebound|Gold", meta = (AllowPrivateAccess = "true"))
 	int32 Gold = 10;
+
+	/**
+	 *  CLIENT gold arrival (doc §3.2): fires OnGoldChanged DIRECTLY with the
+	 *  replicated value — deliberately NOT via SetGold (the authority mutation
+	 *  choke would refuse/no-op on a client; the value has ALREADY changed via
+	 *  replication, this handler only tells the HUD). Owner-only condition means
+	 *  it fires solely on the owning client's machine.
+	 */
+	UFUNCTION()
+	void OnRep_Gold();
+
+	/** CLIENT team arrival (doc §3.2): log-only seam in P1 — no team delegate exists; P2 hangs recolor hooks here. */
+	UFUNCTION()
+	void OnRep_Team();
 
 	/** Miners alive for this player, en route + arrived (§3.3 cap basis). Mutated only by Register/UnregisterMinerAlive and ResetEconomy. */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Miners", meta = (AllowPrivateAccess = "true"))

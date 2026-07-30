@@ -32,7 +32,9 @@
 #include "Siegebound/SiegeCheatManager.h" // TASK-121 — CheatClass complete-type (constructor assignment below)
 #include "Siegebound/SiegeDeckSaveGame.h" // USiegeDeckSaveGame — active saved deck source (M6 TASK-114)
 #include "Siegebound/SiegeFeedbackLibrary.h" // M7 §6 audio hooks (TASK-179): card play/discard/spell/end-of-match
+#include "Siegebound/SiegeGameMode.h" // M8 (TASK-356): RequestPlayAgain resolves the server GameMode (doc §4.2)
 #include "Siegebound/SiegePlayerState.h"
+#include "Siegebound/SiegeSessionSubsystem.h" // LogSiegeNet (CONVENTIONS M8)
 #include "Siegebound/SiegeSpawnConstants.h"
 #include "Siegebound/SpellLibrary.h"
 #include "Siegebound/SummonedUnit.h"
@@ -46,6 +48,18 @@ namespace
 	const TCHAR* SpellCastSoundPath = TEXT("/Game/Audio/S_SpellCast");
 	const TCHAR* VictoryMusicSoundPath = TEXT("/Game/Audio/S_VictoryMusic");
 	const TCHAR* DefeatMusicSoundPath = TEXT("/Game/Audio/S_DefeatMusic");
+
+	//~ M8 (TASK-356) — the D5 observer posture + the HUD PS-retry bound.
+
+	/** The APPROVED refusal wording for the P1 client observer posture (doc §4.1, sign-off ruling §9.2 — character-for-character). Function-local static: FText must never construct at module static-init (localization may not be up yet). */
+	const FText& GetObserverLockoutText()
+	{
+		static const FText ObserverLockoutText = NSLOCTEXT("Siegebound", "Refused_OnlineObserver", "Not available yet in online matches");
+		return ObserverLockoutText;
+	}
+
+	/** Bounded next-tick retries while waiting for the client's PlayerState proxy before creating the HUD (doc §3.2). ~2 s at 60 fps; exhaustion logs and creates the HUD anyway. */
+	constexpr int32 MaxHUDInitAttempts = 120;
 
 	//~ TASK-344 group orders — implementation constants (like StructureMoveAcceptanceRadius
 	//~ on the unit: impl details, NOT feel tunables; the six feel tunables are UPROPERTYs).
@@ -67,6 +81,32 @@ ASiegePlayerController::ASiegePlayerController()
 	// the per-frame cursor-to-ground trace runs in PlayerTick, which early-outs
 	// whenever placement mode is inactive
 	PrimaryActorTick.bCanEverTick = true;
+
+	// ⚖️ M8 (TASK-356 loop-1, FINDING-4 hardening + the CONVENTIONS NET
+	// RELEVANCY LAW COROLLARY: "assert/verify bReplicates on any class whose
+	// authority branch matters"). This controller is dense with authority
+	// branches (the four D5 observer lockouts + the RequestPlayAgain routing),
+	// so its replication state must be unambiguous rather than inherited.
+	//
+	// WHAT THIS FIXES (and what it does not): `APlayerController`'s CDO leaves
+	// bReplicates FALSE — verified in the installed engine source, its ctor
+	// never sets it (the only `bReplicates = true` in PlayerController.cpp is
+	// ANoPawnPlayerController's at :6813) — and the SERVER turns it on per
+	// instance at login (UWorld::SpawnPlayActor → SetReplicates(true) +
+	// SetAutonomousProxy(true), World.cpp:4937-4938). Because bReplicates is not
+	// itself a replicated property, a CLIENT's locally-constructed copy keeps the
+	// CDO's false while the actor channel writes the real roles — which is
+	// EXACTLY the "client PC reads bReplicates=False" reading TASK-357 measured
+	// (normal engine behavior in every UE project, not a defect). Setting it here
+	// makes the flag consistent on both machines — the same pattern APawn
+	// (Pawn.cpp:86) and ANoPawnPlayerController use — so no future authority or
+	// RPC reasoning on this class rests on an inherited default.
+	//
+	// SAFE + INERT: on the server the engine's login-time SetReplicates(true)
+	// now early-outs (same value, same RemoteRole) and SetAutonomousProxy is
+	// unchanged; in STANDALONE there are no connections, so a replication flag
+	// on a controller changes nothing (doc §10 byte-identity holds).
+	bReplicates = true;
 
 	// deck & hand model (GDD §3.4, TASK-022) — subobject name is a spec contract
 	DeckComponent = CreateDefaultSubobject<UDeckComponent>(TEXT("DeckComponent"));
@@ -180,6 +220,50 @@ void ASiegePlayerController::BeginPlay()
 			*GetNameSafe(this));
 	}
 
+	// HUD (TASK-011) — M8 (TASK-356 doc §3.2): routed through the bounded
+	// PS-retry. On a CLIENT the ASiegePlayerState proxy can arrive a few frames
+	// after PC BeginPlay, and a HUD constructed before it would seed from
+	// nothing; TryInitHUD defers creation until the PS resolves (next-tick
+	// retries, capped). Standalone/host: the PS exists on the FIRST check, so the
+	// HUD is created synchronously right here — byte-identical order (deck built
+	// above, widgets after; doc §10).
+	TryInitHUD();
+
+	// Group-order maintenance (TASK-344): the 1 s reaper removes all-dead groups
+	// and their markers (the CONVENTIONS ≤1 s marker-removal law). Armed once for
+	// the controller's lifetime — trivially cheap at 1 Hz while no groups exist.
+	// M8 note (doc §4.3#8): on a client this prunes an ALWAYS-EMPTY array
+	// (BeginGroupPick is D5-locked) — a harmless 1 Hz no-op, argued in §10.
+	GetWorldTimerManager().SetTimer(UnitGroupPruneTimerHandle, this, &ASiegePlayerController::PruneUnitGroups,
+		UnitGroupPruneInterval, /*bLoop=*/ true);
+}
+
+void ASiegePlayerController::TryInitHUD()
+{
+	// M8 HUD PS-retry (TASK-356 doc §3.2). Only the OWNING machine builds a HUD:
+	// widgets are local-player UI (the doc §1 table) — a server-side copy of a
+	// REMOTE client's PC must never create one (mirrors the HandleMatchEnd/Reset
+	// local guards). Standalone/host: local ⇒ falls through.
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (!GetPlayerState<ASiegePlayerState>())
+	{
+		++HUDInitAttempts;
+		if (HUDInitAttempts < MaxHUDInitAttempts)
+		{
+			// PS proxy not here yet (client join edge) — retry next tick.
+			GetWorldTimerManager().SetTimerForNextTick(this, &ASiegePlayerController::TryInitHUD);
+			return;
+		}
+
+		UE_LOG(LogSiegeNet, Warning,
+			TEXT("ASiegePlayerController '%s': PlayerState still unresolved after %d HUD-init retries — creating the HUD anyway (its binds are null-safe; gold/rate will seed on the first delegate)."),
+			*GetNameSafe(this), MaxHUDInitAttempts);
+	}
+
 	// HUD (TASK-011). Missing widget = log once and keep playing — the IA_Card1
 	// key path into EnterPlacementMode works without any UI.
 	if (UClass* HUDClass = HUDWidgetClass.LoadSynchronous())
@@ -202,12 +286,6 @@ void ASiegePlayerController::BeginPlay()
 			TEXT("ASiegePlayerController '%s': HUD widget class '%s' not found (built in TASK-011) — continuing without a HUD."),
 			*GetNameSafe(this), *HUDWidgetClass.ToString());
 	}
-
-	// Group-order maintenance (TASK-344): the 1 s reaper removes all-dead groups
-	// and their markers (the CONVENTIONS ≤1 s marker-removal law). Armed once for
-	// the controller's lifetime — trivially cheap at 1 Hz while no groups exist.
-	GetWorldTimerManager().SetTimer(UnitGroupPruneTimerHandle, this, &ASiegePlayerController::PruneUnitGroups,
-		UnitGroupPruneInterval, /*bLoop=*/ true);
 }
 
 void ASiegePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -511,6 +589,21 @@ void ASiegePlayerController::ClearUICursorHold()
 
 void ASiegePlayerController::PlayHandSlot(int32 Slot)
 {
+	// M8 D5 observer lockout (TASK-356 doc §4.1): a P1 CLIENT cannot mutate
+	// gameplay — a client-side card play would fork local-only state (units the
+	// server can't see, gold writes the guards refuse mid-flow). Locking this
+	// ENTRY seals every downstream confirm (placement, spells, instants,
+	// upgrades, Masons) without touching them. Surfaces the approved refusal
+	// text on the existing message path. Standalone/host: authority ⇒ unreached.
+	if (!HasAuthority())
+	{
+		UE_LOG(LogSiegeNet, Log,
+			TEXT("ASiegePlayerController '%s': PlayHandSlot(%d) refused — P1 client observer posture (M8 doc §4.1)."),
+			*GetNameSafe(this), Slot);
+		BroadcastRefusal(GetObserverLockoutText());
+		return;
+	}
+
 	// mirrors the M1 EnterPlacementMode early-outs: post-match and mid-placement
 	// presses are IGNORED quietly (CONVENTIONS: no broadcast for ignored input),
 	// not player-facing refusals
@@ -662,6 +755,17 @@ void ASiegePlayerController::PlayHandSlot(int32 Slot)
 
 void ASiegePlayerController::DiscardHandSlot(int32 Slot)
 {
+	// M8 D5 observer lockout (TASK-356 doc §4.1) — the second card ENTRY; same
+	// rationale + approved refusal text as PlayHandSlot.
+	if (!HasAuthority())
+	{
+		UE_LOG(LogSiegeNet, Log,
+			TEXT("ASiegePlayerController '%s': DiscardHandSlot(%d) refused — P1 client observer posture (M8 doc §4.1)."),
+			*GetNameSafe(this), Slot);
+		BroadcastRefusal(GetObserverLockoutText());
+		return;
+	}
+
 	if (bMatchEnded)
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Verbose,
@@ -785,6 +889,18 @@ void ASiegePlayerController::OnCancelPlacePressed()
 
 void ASiegePlayerController::SetUnitCommand(ESiegeUnitCommand NewCommand)
 {
+	// M8 D5 observer lockout (TASK-356 doc §4.1): the stance is controller-local
+	// state SERVER units poll — a client-side latch would be invisible to the sim
+	// (dishonest UI). Log-only (the stance/group entries have no card refusal
+	// surface); ServerSetUnitCommand is the named P2 RPC (doc §4.3#9).
+	if (!HasAuthority())
+	{
+		UE_LOG(LogSiegeNet, Log,
+			TEXT("ASiegePlayerController '%s': SetUnitCommand refused — P1 client observer posture (M8 doc §4.1)."),
+			*GetNameSafe(this));
+		return;
+	}
+
 	// Latch the stance (Shield Wall, W1 TASK-274): units read CurrentCommand +
 	// HasIssuedCommand() live each tick (TASK-275). bHasIssuedCommand flips true
 	// on the FIRST command and stays true for the match (until Play Again), so
@@ -1076,10 +1192,25 @@ void ASiegePlayerController::HandleMatchEnd(ETeamId Winner)
 	}
 	bMatchEnded = true;
 
-	// §6 victory/defeat music (TASK-179): a 2D one-shot at the match-end moment. The local
-	// player is always Blue (CONVENTIONS team contract), so Winner == Blue is Victory.
+	// ── M8 local-UI guard (TASK-356 doc §3.4.2): everything below is LOCAL
+	// screen work — music, the end-screen widget, UI-only input. The SERVER-side
+	// copy of a REMOTE client's PC (still walked by the GameMode/GameState server
+	// paths for its state half — the bMatchEnded latch above feeds server-side
+	// input validation) must never build widgets for a non-local player.
+	// Standalone/host: local ⇒ the guard is a no-op (doc §10).
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	// §6 victory/defeat music (TASK-179) — M8 own-team-relative (TASK-356 doc
+	// §3.4.3/D14, retires the audit-§1b#8 "Blue won = Victory" hardcode): Victory
+	// is MY team winning. Own PS team, Blue fallback (a dead-PS edge reads Blue —
+	// the standalone identity, doc §10: MyTeam=Blue ⇒ identical branch).
 	// Null-safe until S_VictoryMusic / S_DefeatMusic land (TASK-180).
-	USiegeFeedbackLibrary::PlaySound2D(this, (Winner == ETeamId::Blue) ? VictoryMusicSoundPath : DefeatMusicSoundPath);
+	const ASiegePlayerState* MyPS = GetPlayerState<ASiegePlayerState>();
+	const ETeamId MyTeam = MyPS ? MyPS->GetTeam() : ETeamId::Blue;
+	USiegeFeedbackLibrary::PlaySound2D(this, (Winner == MyTeam) ? VictoryMusicSoundPath : DefeatMusicSoundPath);
 
 	// end screen (TASK-011). Missing widget = log and continue — the match still
 	// ends (input drops to UI-only; TASK-006's PlayAgain path recovers).
@@ -1091,6 +1222,7 @@ void ASiegePlayerController::HandleMatchEnd(ETeamId Winner)
 			// TASK-011 widget contract: an OPTIONAL BlueprintCallable function named
 			// exactly "SetWinner" with a single ETeamId parameter. Called by name,
 			// null-safe, BEFORE AddToViewport so Construct already sees the value.
+			// M8 (D14): the ABSOLUTE-winner contract is UNCHANGED.
 			static const FName SetWinnerName(TEXT("SetWinner"));
 			if (UFunction* SetWinnerFunction = VictoryWidget->FindFunction(SetWinnerName))
 			{
@@ -1111,6 +1243,27 @@ void ASiegePlayerController::HandleMatchEnd(ETeamId Winner)
 				UE_LOG(LogGitClaudeUnrealTest, Log,
 					TEXT("ASiegePlayerController '%s': WBP_VictoryScreen has no 'SetWinner' function — widget shows its defaults (contract in handoffs/TASK-007.md)."),
 					*GetNameSafe(this));
+			}
+
+			// M8 OPTIONAL widget seam (TASK-356 doc §3.4.3/D14, sign-off §9.7): a
+			// by-name, null-safe "SetLocalVictory" taking one bool — true when MY
+			// team won — so a winning Red client can read "Victory" once the art
+			// seam consumes it (TASK-355 optional item; absent = silent skip, the
+			// widget's absolute SetWinner branch stands as the recorded P2 flag).
+			static const FName SetLocalVictoryName(TEXT("SetLocalVictory"));
+			if (UFunction* SetLocalVictoryFunction = VictoryWidget->FindFunction(SetLocalVictoryName))
+			{
+				if (SetLocalVictoryFunction->ParmsSize == sizeof(bool))
+				{
+					bool bLocalVictory = (Winner == MyTeam);
+					VictoryWidget->ProcessEvent(SetLocalVictoryFunction, &bLocalVictory);
+				}
+				else
+				{
+					UE_LOG(LogGitClaudeUnrealTest, Warning,
+						TEXT("ASiegePlayerController '%s': WBP_VictoryScreen.SetLocalVictory has an unexpected signature (expected exactly one bool parameter) — not passed."),
+						*GetNameSafe(this));
+				}
 			}
 
 			VictoryWidget->AddToViewport(/*ZOrder=*/ 10); // above the HUD
@@ -1164,19 +1317,26 @@ void ASiegePlayerController::HandleMatchReset()
 
 	bMatchEnded = false;
 
-	// idempotent with WBP_VictoryScreen's own RemoveFromParent (TASK-011)
-	if (VictoryWidget)
+	// M8 local-UI guard (TASK-356 doc §3.4.2): widget/input work is LOCAL screen
+	// state — the server-side copy of a remote client's PC (walked by PlayAgain
+	// step 6 for its STATE half: the latch above, the deck + stance below) never
+	// created a widget and must not touch input modes. Standalone: local ⇒ no-op.
+	if (IsLocalController())
 	{
-		VictoryWidget->RemoveFromParent();
-		VictoryWidget = nullptr;
-	}
+		// idempotent with WBP_VictoryScreen's own RemoveFromParent (TASK-011)
+		if (VictoryWidget)
+		{
+			VictoryWidget->RemoveFromParent();
+			VictoryWidget = nullptr;
+		}
 
-	// belt-and-braces: any IA_UICursor hold that survived the end screen (its
-	// release is swallowed under UI-only input) is cleared before play resumes,
-	// so free-look can never come back permanently suspended. A physically
-	// still-held Alt re-arms on its next press (same rule as sprint,
-	// qa/TASK-003-report.md nit 5).
-	ClearUICursorHold();
+		// belt-and-braces: any IA_UICursor hold that survived the end screen (its
+		// release is swallowed under UI-only input) is cleared before play resumes,
+		// so free-look can never come back permanently suspended. A physically
+		// still-held Alt re-arms on its next press (same rule as sprint,
+		// qa/TASK-003-report.md nit 5).
+		ClearUICursorHold();
+	}
 
 	// fresh §3.4 deal for the new match — the ResetDeck half of the TASK-023
 	// deck-timing contract. ASiegeGameMode::PlayAgain already calls
@@ -1202,8 +1362,137 @@ void ASiegePlayerController::HandleMatchReset()
 	OnUnitCommandChanged.Broadcast(CurrentCommand);
 	ClearAllUnitGroups();
 
-	// back to M1 game-only free-look (both cursor owners are clear by now)
-	ApplyCursorInputState();
+	// back to M1 game-only free-look (both cursor owners are clear by now).
+	// M8: input posture is local-only (the doc §3.4.2 UI-half guard).
+	if (IsLocalController())
+	{
+		ApplyCursorInputState();
+	}
+}
+
+void ASiegePlayerController::PerformLocalMatchReset()
+{
+	// M8 (TASK-356 doc §3.4.2): the CLIENT-local mirror of PlayAgain step 6,
+	// driven by ASiegeGameState::OnRep_MatchEnded's false edge — the server-side
+	// controller walk cannot reach this machine's local PC. HandleMatchReset
+	// already carries the local deck ResetDeck() (the single controller-side
+	// §3.9 deck-reset entry point), so the whole local reset is one call. All
+	// other client state converges via the Castle/PS/GameState/scatter OnReps
+	// (each reaction independent and order-tolerant — cross-actor OnRep order is
+	// not guaranteed; noted for QA).
+	HandleMatchReset();
+}
+
+void ASiegePlayerController::RequestPlayAgain()
+{
+	// M8 Play-Again routing (TASK-356 doc §3.4.2/§4.2): authority (host or
+	// standalone) calls the GameMode directly — the exact call the widget made,
+	// byte-identical (doc §10); a client relays through the ONE P1 RPC (the
+	// GameMode does not exist on clients, D6).
+	if (HasAuthority())
+	{
+		if (ASiegeGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ASiegeGameMode>() : nullptr)
+		{
+			GameMode->PlayAgain();
+		}
+		else
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("ASiegePlayerController '%s': RequestPlayAgain — no ASiegeGameMode resolved (GameModeClass mis-config?)."),
+				*GetNameSafe(this));
+		}
+		return;
+	}
+
+	UE_LOG(LogSiegeNet, Log,
+		TEXT("ASiegePlayerController '%s': RequestPlayAgain — client relay via ServerRequestPlayAgain (M8 doc §4.2)."),
+		*GetNameSafe(this));
+	ServerRequestPlayAgain();
+}
+
+bool ASiegePlayerController::ServerRequestPlayAgain_Validate()
+{
+	// No input payload to validate (doc §4.2) — the implementation's
+	// HasMatchEnded() check is the intent validation.
+	return true;
+}
+
+void ASiegePlayerController::ServerRequestPlayAgain_Implementation()
+{
+	// ⚖️ M8 loop-1 FINDING-4 self-diagnosis (TASK-357 measured this body running
+	// ON THE CLIENT). A Server RPC's implementation must only ever execute on the
+	// authority; if it does not, the callspace resolved Local instead of Remote
+	// and the request never reached the host. Say so precisely — the old code
+	// fell through to "no ASiegeGameMode on the server (mis-config?)", which is
+	// what made the symptom ambiguous — and refuse to act, so a client can never
+	// locally reset a match. (Confirmed cause of the TASK-357 occurrence: the
+	// python remote-exec trigger runs inside FEditorScriptExecutionGuard, whose
+	// ctor sets GAllowActorScriptExecutionInEditor = true (ScriptCore.cpp:451-455),
+	// and AActor::GetFunctionCallspace returns FunctionCallspace::Local on that
+	// global as its VERY FIRST branch (Actor.cpp:5469-5474) — a tooling artifact
+	// of the invoke path, not a routing defect. This guard makes the real
+	// widget-button path self-reporting either way.)
+	if (!HasAuthority())
+	{
+		UE_LOG(LogSiegeNet, Error,
+			TEXT("ASiegePlayerController '%s': ServerRequestPlayAgain executed WITHOUT authority — the RPC resolved LOCAL instead of routing to the host (callspace/tooling issue); refusing. Play Again must be pressed on the host until this is resolved."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	// Runs ON THE SERVER for the owning client (Reliable). Only a genuinely
+	// ended match may reset — a mid-match spam press reaches nothing (doc §4.2).
+	ASiegeGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ASiegeGameMode>() : nullptr;
+	if (!GameMode)
+	{
+		UE_LOG(LogSiegeNet, Warning,
+			TEXT("ASiegePlayerController '%s': ServerRequestPlayAgain — no ASiegeGameMode on the server (mis-config?)."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	if (!GameMode->HasMatchEnded())
+	{
+		UE_LOG(LogSiegeNet, Log,
+			TEXT("ASiegePlayerController '%s': ServerRequestPlayAgain ignored — the match has not ended (intent validation, doc §4.2)."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	UE_LOG(LogSiegeNet, Log,
+		TEXT("ASiegePlayerController '%s': ServerRequestPlayAgain — client-initiated Play Again accepted (M8 gate e)."),
+		*GetNameSafe(this));
+	GameMode->PlayAgain();
+}
+
+ASiegePlayerController* ASiegePlayerController::FindControllerForTeam(UWorld* World, ETeamId Team)
+{
+	// M8 owning-team-controller resolve (TASK-356 doc §3.7 — the ruling-4
+	// replacement pattern). Null-safe: no world / no teamed PC ⇒ nullptr (the
+	// unit call sites already handle a null PC exactly as they handled a null
+	// first-controller). The bot is an AAIController — never in this iterator —
+	// so a Red resolve in standalone is null exactly as the old code's
+	// first-controller-then-team-gate produced.
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+	{
+		ASiegePlayerController* SiegePC = Cast<ASiegePlayerController>(It->Get());
+		if (!SiegePC)
+		{
+			continue;
+		}
+		const ASiegePlayerState* SiegePS = SiegePC->GetPlayerState<ASiegePlayerState>();
+		if (SiegePS && SiegePS->GetTeam() == Team)
+		{
+			return SiegePC;
+		}
+	}
+
+	return nullptr;
 }
 
 void ASiegePlayerController::TryConfirmPlacement()
@@ -2042,6 +2331,18 @@ void ASiegePlayerController::DestroySpellReticle()
 
 void ASiegePlayerController::BeginGroupPick(ESiegeGroupCommandType Type)
 {
+	// M8 D5 observer lockout (TASK-356 doc §4.1): group orders steal SERVER
+	// units into controller-local groups — a client-side pick would build state
+	// no unit can read. Locking the entry seals all three stages + the confirm
+	// (doc §4.3#8; the P2 migration moves the store server-side). Log-only.
+	if (!HasAuthority())
+	{
+		UE_LOG(LogSiegeNet, Log,
+			TEXT("ASiegePlayerController '%s': BeginGroupPick refused — P1 client observer posture (M8 doc §4.1)."),
+			*GetNameSafe(this));
+		return;
+	}
+
 	// EnterPlacementMode / EnterTargetingMode early-out pattern: post-match and
 	// mid-mode calls are silent ignores (no broadcast), not player-facing refusals.
 	if (bMatchEnded)

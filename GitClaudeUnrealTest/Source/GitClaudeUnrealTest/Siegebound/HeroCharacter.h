@@ -265,6 +265,48 @@ protected:
 
 	virtual void BeginPlay() override;
 
+	/**
+	 *  M8 hero team assignment (TASK-356 doc §2.3/D4 — closes audit §1b#4:
+	 *  Team was NEVER assigned): server-side by engine contract. Resolves the
+	 *  possessing controller's ASiegePlayerState → Team (warn + keep-default when
+	 *  unresolvable), then RE-STAMPS the capsule's CASTLE-3X team channel — the
+	 *  server-side BeginPlay stamp ran BEFORE possession (SpawnDefaultPawnFor
+	 *  begins play, then Possess) with the default Blue; idempotent for the host.
+	 *  Runs on every possession (respawn repossess + Play-Again included).
+	 *  SINGLE seam: SetPlayerDefaults does NOT also write Team (no double-writer).
+	 *  Standalone: the one PS is Blue ⇒ Team stays Blue, the re-stamp re-applies
+	 *  the identical channel (doc §10).
+	 */
+	virtual void PossessedBy(AController* NewController) override;
+
+	/**
+	 *  ⚖️ NET RELEVANCY TIER: **B — arena-scaled `SetNetCullDistanceSquared`
+	 *  from `SiegeNet::ArenaRelevancyDistanceSquared`** (declared per the
+	 *  CONVENTIONS NET RELEVANCY LAW declaration duty; set in the constructor,
+	 *  never a hand-typed literal). Rationale: the pawn replicates already
+	 *  (APawn ctor); a player's OWN hero is owner-relevant regardless, but the
+	 *  ENEMY hero must remain relevant across the full 500 m arena — both to be
+	 *  seen and so its replicated `Team` (the CASTLE-3X gate-channel truth)
+	 *  arrives. Tier B, not A: heroes are per-player and P2 adds the unit fleet
+	 *  to the same tier, where a blanket always-relevant would not scale.
+	 */
+
+	/** Registers Team (the one P1 hero property — doc §3.6; the rest of hero replication is P2). */
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	/**
+	 *  CLIENT team arrival (M8, TASK-356 — the addendum §1 resolution of the doc
+	 *  §7.1 reserved seam): log + CAPSULE RE-STAMP. The client proxy's BeginPlay
+	 *  stamps whatever Team it holds at that moment; the normal path carries the
+	 *  correct value in the initial bunch, but any ordering edge (PIE login
+	 *  timing, late correction) would leave the predicted hero on the WRONG
+	 *  CASTLE-3X channel — a live gate-truth defect. Re-stamping here closes the
+	 *  class unconditionally: whichever of {proxy BeginPlay, Team rep} lands
+	 *  second, the channel ends correct. Idempotent.
+	 */
+	UFUNCTION()
+	void OnRep_Team();
+
 	/** Out-of-combat regen (GDD §3.1): RegenRate HP/s once RegenDelay seconds have passed since last combat. */
 	virtual void Tick(float DeltaSeconds) override;
 
@@ -331,8 +373,8 @@ protected:
 
 protected:
 
-	/** Team this hero fights for. The local player is always Blue (CONVENTIONS team contract). */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Team")
+	/** Team this hero fights for. M8 (TASK-356, doc §2.3/D4 — retires "the local player is always Blue"): ASSIGNED from the owning ASiegePlayerState in PossessedBy (host=Blue / client=Red seat), replicated so every machine's proxy reads the truth (OnRep_Team re-stamps the CASTLE-3X capsule channel — addendum §1). Default Blue = the standalone identity. */
+	UPROPERTY(ReplicatedUsing = OnRep_Team, EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Team")
 	ETeamId Team = ETeamId::Blue;
 
 	/** Overhead poll-driven health bar (M5.5, TASK-110): hide-at-full, team-tinted. ADDITIVE to the hero's own WBP_HUD HP readout (M1) — that stays. */

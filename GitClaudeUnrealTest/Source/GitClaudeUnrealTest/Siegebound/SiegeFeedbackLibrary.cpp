@@ -151,11 +151,26 @@ void USiegeFeedbackLibrary::PlayLocalCameraShake(const UObject* WorldContextObje
 		return;
 	}
 
-	// Local (index-0) controller: M7 is single-player local, exactly like the
-	// hero's TASK-016 ClientStartCameraShake. No controller (AI/headless) = no shake.
-	if (APlayerController* PC = UGameplayStatics::GetPlayerController(WorldContextObject, 0))
+	// M8 local-viewer resolve (TASK-356 doc §3.7 — retires the audit-§1a#3
+	// index-0 site): shake every LOCAL controller on THIS machine — exactly one
+	// exists per machine (no splitscreen), and in standalone that one is the same
+	// controller index 0 returned (byte-identity, doc §10). Ban-compliant: the
+	// iteration carries local-viewer semantics, never "first = the player". In
+	// P1 the castle-hit call sites run server-side only, so the CLIENT gets no
+	// shake yet — P2's OnRep cosmetic wiring adds it (recorded gap, doc §3.7).
+	const UWorld* World = WorldContextObject->GetWorld();
+	if (!World)
 	{
-		PC->ClientStartCameraShake(ShakeClass);
+		return;
+	}
+
+	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+	{
+		APlayerController* PC = It->Get();
+		if (PC && PC->IsLocalController())
+		{
+			PC->ClientStartCameraShake(ShakeClass);
+		}
 	}
 }
 

@@ -17,6 +17,7 @@
 #include "GitClaudeUnrealTest.h"
 #include "InputMappingContext.h"
 #include "Kismet/GameplayStatics.h"
+#include "Net/UnrealNetwork.h" // M8 (TASK-356): Team replication registration
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "Siegebound/CardRow.h"
@@ -24,6 +25,9 @@
 #include "Siegebound/SiegeFeedbackLibrary.h"
 #include "Siegebound/SiegeHitFlashComponent.h"
 #include "Siegebound/SiegeNavAreas.h" // TASK-349: team object channel for the capsule stamp
+#include "Siegebound/SiegeNetLimits.h" // M8 (TASK-356 loop-1): the ONE arena relevancy constant (Tier B)
+#include "Siegebound/SiegePlayerState.h" // M8 (TASK-356): PossessedBy team resolve (doc §2.3)
+#include "Siegebound/SiegeSessionSubsystem.h" // LogSiegeNet (CONVENTIONS M8)
 #include "Siegebound/SummonedUnit.h"
 #include "TimerManager.h"
 
@@ -50,6 +54,19 @@ AHeroCharacter::AHeroCharacter()
 {
 	// needed for out-of-combat HP regen
 	PrimaryActorTick.bCanEverTick = true;
+
+	// ⚖️ NET RELEVANCY — TIER B (CONVENTIONS NET RELEVANCY LAW; TASK-356 loop-1).
+	// A hero already replicates (APawn's constructor sets bReplicates, engine
+	// Pawn.cpp:86). A player's OWN pawn is owner-relevant regardless of distance,
+	// but the ENEMY hero must read across the whole 500 m arena — under the
+	// engine's default 150 m cull it would pop in and out at range, and its
+	// replicated Team (the CASTLE-3X gate-channel truth) would arrive late.
+	// The distance comes from the ONE arena constant — NEVER a per-class literal
+	// (that drift trap is exactly why Tier B is defined this way): when the arena
+	// grows, SiegeNet::ArenaRelevancyDistance changes and this follows.
+	// UE 5.5+ API: the raw NetCullDistanceSquared field is deprecated for public
+	// access — the setter is the supported path.
+	SetNetCullDistanceSquared(SiegeNet::ArenaRelevancyDistanceSquared);
 
 	// GDD §3.1 base walk speed (BeginPlay re-applies in case a blueprint tweaks WalkSpeed)
 	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
@@ -141,6 +158,68 @@ void AHeroCharacter::Tick(float DeltaSeconds)
 			OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
 		}
 	}
+}
+
+void AHeroCharacter::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+
+	// M8 hero team (TASK-356 doc §2.3/D4 — the audit-§1b#4 fix: NOTHING ever
+	// assigned a hero team). Server-side by engine contract; the seat latch
+	// (InitNewPlayer) settled the PS team BEFORE RestartPlayer, so this read is
+	// authoritative. Ordering (addendum §1): possession precedes the pawn's
+	// FIRST net update (spawn + possess in one server frame; the NetDriver
+	// replicates at frame end), so the initial bunch already carries the correct
+	// Team to client proxies. Warn + keep-default when unresolvable (a
+	// non-player possession — defensive).
+	const ASiegePlayerState* SiegePS = NewController ? NewController->GetPlayerState<ASiegePlayerState>() : nullptr;
+	if (SiegePS)
+	{
+		Team = SiegePS->GetTeam();
+	}
+	else
+	{
+		UE_LOG(LogSiegeNet, Warning,
+			TEXT("AHeroCharacter '%s': PossessedBy could not resolve an ASiegePlayerState — Team stays %s (default; doc §2.3)."),
+			*GetNameSafe(this), Team == ETeamId::Blue ? TEXT("Blue") : TEXT("Red"));
+	}
+
+	// RE-STAMP the CASTLE-3X capsule channel (addendum §1): the server-side
+	// BeginPlay stamp ran BEFORE possession (SpawnDefaultPawnFor begins play,
+	// then Possess) with the pre-assign Team. Idempotent — the host re-applies
+	// Blue; the client's hero corrects to Red server-side in the same frame.
+	if (UCapsuleComponent* HeroCapsule = GetCapsuleComponent())
+	{
+		HeroCapsule->SetCollisionObjectType(SiegeTeamObjectChannel(GetTeamId()));
+	}
+}
+
+void AHeroCharacter::OnRep_Team()
+{
+	// M8 (TASK-356 — the addendum-§1 resolution of the doc's §7.1 reserved seam):
+	// the CLIENT proxy re-stamps its CASTLE-3X capsule channel with the
+	// replicated truth, closing the BeginPlay-vs-rep ordering class — the
+	// predicted hero's gate collision now always matches the server's
+	// (own gate passes, enemy gate blocks; no rubber-band). Idempotent.
+	if (UCapsuleComponent* HeroCapsule = GetCapsuleComponent())
+	{
+		HeroCapsule->SetCollisionObjectType(SiegeTeamObjectChannel(GetTeamId()));
+	}
+
+	UE_LOG(LogSiegeNet, Log,
+		TEXT("AHeroCharacter '%s': Team replicated: %s — capsule channel re-stamped (M8 addendum §1)."),
+		*GetNameSafe(this), Team == ETeamId::Blue ? TEXT("Blue") : TEXT("Red"));
+}
+
+void AHeroCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	// The ONE P1 hero property (doc §3.6): plain — assigned once at possession
+	// (before first rep on the normal path), and the OnRep re-stamp makes every
+	// ordering edge self-correcting. Full hero replication (HP/upgrades/melee
+	// RPC) is P2.
+	DOREPLIFETIME(AHeroCharacter, Team);
 }
 
 void AHeroCharacter::NotifyControllerChanged()
@@ -261,6 +340,19 @@ void AHeroCharacter::DoMeleeAttack()
 	// §6 hero-swing audio (TASK-179): the whoosh on EVERY swing past the cooldown (hit or
 	// whiff), matching the montage. Null-safe until S_HeroSwing lands (TASK-180).
 	USiegeFeedbackLibrary::PlayWorldSound(this, HeroSwingSoundPath, MyLocation);
+
+	// ── M8 combat-authority gate (TASK-356 doc §3.6/D4/§4.2): DAMAGE only ever
+	// applies on the authority. On a CLIENT hero the swing montage + whoosh above
+	// still play (local feedback), but the target sweep below never runs — a
+	// client-side ApplyDamage on the castle would write a local HP value under
+	// the replicated one (visible flicker-then-snap lie), and the honest melee
+	// relay (ServerMeleeAttack) is P2's combat-authority work. The P1 Red client
+	// therefore deals NO damage — the D5 observer posture. Standalone/host:
+	// authority ⇒ everything below byte-identical.
+	if (!HasAuthority())
+	{
+		return;
+	}
 
 	// facing in the horizontal plane (character yaw; bOrientRotationToMovement keeps pitch/roll at 0)
 	FVector Facing = GetActorForwardVector();

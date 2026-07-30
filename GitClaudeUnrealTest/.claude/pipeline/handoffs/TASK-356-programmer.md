@@ -123,3 +123,136 @@ Standalone facts: `HasAuthority()` true everywhere; `GetNetMode()==NM_Standalone
 7. **PC (D5):** client card/discard press ⇒ the exact refusal text on its HUD; T/E/R/F on the client ⇒ log-only refusals; NO group circles client-side.
 8. **Standalone regression (g):** full Play-vs-Bot pass — bot, economy, group orders + stances, camera shake, Play Again, sandbox — plus specifically: hero spawns at the PlayerStart with the same facing (the F7/§10 RestartPlayer route), and the end screen/music unchanged.
 9. **Logs (h):** ensure/AccessedNone/Fatal = 0; zero non-authority-mutation warns; the `LogSiegeNet` lines above recorded as evidence.
+
+---
+
+## Loop-1 fixes (TASK-357 two-client gate: 3 blockers + finding 4)
+
+Sources: `handoffs/TASK-357-buildmaster.md` + `qa/TASK-356.md` (measured evidence), the board's **"Manager ruling (2026-07-29) — NET RELEVANCY POLICY"**, and CONVENTIONS **NET RELEVANCY LAW**. Policy was ruled; this loop implements it. Every engine claim below was read from the installed UE 5.8 source this pass, not recalled.
+
+### BLOCKERS 1 + 2 — one cause: default 150 m relevancy inside a 500 m arena
+
+**Mechanism (confirmed against engine source + the measurements):** UE's default distance relevancy is ~150 m. The scatter is a POINT actor at the world origin while both players fight ~250 m away ⇒ permanently irrelevant ⇒ `OnRep_GenerationIndex` never fired ⇒ client ran with 0 obstacles / 0 gold nodes (host 6). The FAR castle sat 488 m from the client ⇒ HP/crumble/destroyed never arrived (host 500 / client 2000), while the NEAR castle (12 m) was perfect. **Corroboration that this is relevancy and not code:** GameState and PlayerState replicated correctly across the same 500 m in the same run — and they are the two classes the engine already marks always-relevant (verified below). My OnRep code is untouched by this fix.
+
+**Fix — the ruled tiered policy, implemented exactly:**
+- **NEW `Source/GitClaudeUnrealTest/Siegebound/SiegeNetLimits.h`** (one-concept header, the `TeamId.h` precedent; no UCLASS, no module dep): `namespace SiegeNet` with `ArenaRelevancyDistance = 60000.f` (the ruled arena-diagonal × 1.1) and `ArenaRelevancyDistanceSquared = ArenaRelevancyDistance * ArenaRelevancyDistance` — **derived by multiplication, never a typed 3.6e9**, so the square can never drift from the distance. Carries the three-tier definition, the measured defect it closes, and the P2 wave duty (unit fleet = Tier B, bandwidth-measured; levers are update-frequency/dormancy, never shrinking the band).
+- **`ACastle`** (Castle.cpp:57) `bAlwaysRelevant = true` — blocker 2.
+- **`ASiegeBattlefieldScatter`** (BattlefieldScatter.cpp:155) `bAlwaysRelevant = true` — blocker 1, with the D9 correction written into the code comment.
+- **`AHeroCharacter`** (HeroCharacter.cpp:69) `SetNetCullDistanceSquared(SiegeNet::ArenaRelevancyDistanceSquared)` — Tier B from the constant.
+- **⚠️ UE 5.5+ API trap avoided:** the raw `NetCullDistanceSquared` field is `UE_DEPRECATED(5.5, "Public access … Use SetNetCullDistanceSquared()")` (Actor.h:898-900). A direct assignment would have been a deprecation break at TASK-357's compile; the setter (Actor.h:4648) is used. `bAlwaysRelevant` remains a plain public non-deprecated UPROPERTY (Actor.h:332-333) — direct ctor assignment is correct there.
+
+**Tier A verify-only (the law's "VERIFY and document, do NOT blind-set" clause) — discharged with evidence, nothing set:**
+- `AGameStateBase::AGameStateBase` sets `bReplicates = true` **and** `bAlwaysRelevant = true` — Engine/Private/**GameStateBase.cpp:25-26**.
+- `APlayerState::APlayerState` sets `bReplicates = true` **and** `bAlwaysRelevant = true` (+ `SetNetUpdateFrequency(1)`) — Engine/Private/**PlayerState.cpp:25-26**.
+Both classes are therefore already Tier A; a redundant assignment in our subclasses would have hidden that fact. **Relevancy ≠ condition:** `Gold`'s `COND_OwnerOnly` is untouched and still restricts the property to its owner.
+
+**D9 CORRECTION (recorded in code — BattlefieldScatter.cpp ctor — and here):** the signed doc's "client obstacles are a SUPERSET of the server's ⇒ never rubber-bands" argument is **VOID unless the seed arrives**. Under default relevancy the client received a strict **SUBSET (zero)** — the exact inversion the design promised. **Tier-A membership is that argument's precondition**; the rest of §3.5's reasoning stands.
+
+### BLOCKER 3 — hero spawn: the team branch now governs
+
+**Mechanism:** `GetHeroStartTransform` ran `FindPlayerStart(Player)` and returned on ANY `APlayerStart` **before consulting `HeroTeam`**. L_Arena has exactly one PlayerStart (Blue side, ≈-23800), so the castle-relative branch was unreachable dead code and both heroes stacked there (Red at -23800, y=84 — the engine nudging a second pawn off an occupied spawn).
+
+**Fix (SiegeGameMode.cpp, `GetHeroStartTransform`):** reordered so the team governs — (1) resolve the hero's **own-team castle** first (it defines that team's side of the centerline); (2) accept a PlayerStart **only when it lies on the same side** (X-sign comparison against that castle) — or when the level has no castle at all (the pre-M8 behavior preserved for defensive/test maps); (3) else the castle-relative offset toward the centerline (now REACHABLE — this is the Red client's spawn); (4) else the arena origin. The side test is **data-driven from castle X sign — not a Blue/Red hardcode** (the M8 team law retires "Blue = local"), so a future Red-side PlayerStart is picked up automatically. Header doc rewritten to match.
+
+**Standalone byte-identity (load-bearing — gate g passed and must keep passing):** the single player is Blue; L_Arena's PlayerStart (≈-23800) and Castle_Blue (-25000) are both X < 0 ⇒ same side ⇒ the PlayerStart is accepted exactly as before, same location, same yaw-only rotation ⇒ the measured `(-23800, 0, 98)` rot `(0,0,0)` reproduces.
+
+### FINDING 4 — verdict: **the manager's hypothesised mechanism is NOT what happened; the real cause is a TOOLING ARTIFACT of the python-invoke trigger.** (The law stands regardless.)
+
+Investigated in engine source; three findings, each checkable:
+
+1. **`bReplicates = False` on the client's own PC is NORMAL ENGINE BEHAVIOR, not a defect and not evidence of anything.** `APlayerController`'s constructor never sets it (verified: the only `bReplicates = true` in PlayerController.cpp is **ANoPawnPlayerController's at :6813**; `AController`'s ctor sets `bOnlyRelevantToOwner` at Controller.cpp:67 and no replication flag). The SERVER enables it per instance at login — `UWorld::SpawnPlayActor` → `SetReplicates(true)` + `SetAutonomousProxy(true)` (**World.cpp:4937-4938**). `bReplicates` is **not itself a replicated property**, so a client's locally-constructed copy keeps the CDO's `false` while the actor channel writes the real roles. That is why every OTHER replicated actor read `true` on that client: their **class constructors** set it (our `ACastle`/`ASiegeBattlefieldScatter`; engine `APawn` Pawn.cpp:86, `APlayerState`, `AGameStateBase`). Nothing was wrong with the PC.
+2. **The hypothesised inversion did not occur, and could not have via this path.** `AActor::HasAuthority()` measured **False** on that PC (role `ROLE_AUTONOMOUS_PROXY`) — the guards behaved correctly, which is precisely why `RequestPlayAgain` took the client-relay branch and logged it. Moreover **`AActor::GetFunctionCallspace` never reads `bReplicates`** (read in full, Actor.cpp:5467-5665): for a client calling a `FUNC_NetServer` function it returns **Remote**, or **Absorbed** if `RemoteRole == ROLE_None` — and Absorbed *does not run the body* and *does* log `LogNet Warning: Client is absorbing remote function`. Neither was observed, so the callspace path cannot explain "body ran, no warning, host silent".
+3. **What DOES explain all three observations exactly:** `GetFunctionCallspace`'s **very first branch** returns `FunctionCallspace::Local` when the global `GAllowActorScriptExecutionInEditor` is true (**Actor.cpp:5469-5474**, comment: *"Call local, this global is only true when we know it's being called on an editor-placed object"*), and **`FEditorScriptExecutionGuard`'s constructor sets exactly that global** (`GAllowActorScriptExecutionInEditor = true`, **ScriptCore.cpp:451-455**; declared Script.h:554-562). Editor/python remote-exec invocation runs inside that guard — so **any RPC triggered from a python invoke resolves Local**: the body runs on the calling machine, nothing is sent, and no LogNet warning is emitted. Body ran client-side ✓, no engine warning ✓, host never saw it ✓. This also corrects one line in the QA report: the routing decision is *not* caller-agnostic — a python invoke differs from a Blueprint/C++ call by exactly this global, which is why QA rightly flagged the item "not asserted-proven" pending the real button.
+
+**Fixes shipped anyway (belt-and-braces — the law's instruction, and they make the re-run self-diagnosing):**
+- **`ASiegePlayerController` ctor: `bReplicates = true`** — the CONVENTIONS COROLLARY's explicit "assert/verify `bReplicates` on any class whose authority branch matters"; this class is dense with authority branches (4 D5 lockouts + the RPC routing). Same pattern APawn and ANoPawnPlayerController use. Safe + inert: the engine's login-time `SetReplicates(true)` now early-outs on the same value/RemoteRole and `SetAutonomousProxy` is unchanged; standalone has no connections, so nothing changes (byte-identity holds).
+- **`ServerRequestPlayAgain_Implementation` authority guard:** if the body ever executes without authority it now logs a precise `LogSiegeNet` **Error** naming the callspace-resolved-Local defect and **refuses** — instead of falling through to the misleading "no ASiegeGameMode on the server (mis-config?)" line QA saw. A client can never locally reset a match, and TASK-357's re-run gets an unambiguous signal either way.
+- Routing itself (`RequestPlayAgain`: authority → direct `PlayAgain()`; client → the RPC) is unchanged — it is correct per D6/§4.2.
+
+### Tier declarations table (declaration duty — all six replicated classes)
+
+| Class | Tier | Mechanism | Declared at | Set at |
+|---|---|---|---|---|
+| `ASiegeGameState` | A | engine default — **verified, not set** (GameStateBase.cpp:25-26) | SiegeGameState.h (above `GetLifetimeReplicatedProps`) | — |
+| `ASiegePlayerState` | A | engine default — **verified, not set** (PlayerState.cpp:25-26); `Gold` `COND_OwnerOnly` unaffected | SiegePlayerState.h | — |
+| `ACastle` | A | `bAlwaysRelevant = true` | Castle.h | Castle.cpp:57 |
+| `ASiegeBattlefieldScatter` | A | `bAlwaysRelevant = true` (+ D9 precondition note) | BattlefieldScatter.h | BattlefieldScatter.cpp:155 |
+| `AHeroCharacter` | B | `SetNetCullDistanceSquared(SiegeNet::ArenaRelevancyDistanceSquared)` — from the constant, no literal | HeroCharacter.h | HeroCharacter.cpp:69 |
+| `ASiegePlayerController` | A | engine-owned, OWNER-SCOPED (`bOnlyRelevantToOwner`, Controller.cpp:67); ctor `bReplicates = true` is the finding-4 hardening, not a tier change | SiegePlayerController.h | SiegePlayerController.cpp:109 |
+
+### Loop-1 files touched
+NEW `SiegeNetLimits.h`; `Castle.{h,cpp}`; `BattlefieldScatter.{h,cpp}`; `HeroCharacter.{h,cpp}`; `SiegeGameState.h`; `SiegePlayerState.h`; `SiegeGameMode.{h,cpp}`; `SiegePlayerController.{h,cpp}`; this handoff. **No `DefaultEngine.ini` edit** (D13 holds). No OnRep/replication-registration logic changed — the loop-1 delta is relevancy + spawn ordering + two hardening lines.
+
+### What TASK-357's re-run must observe
+1. **Blocker 1 dead:** client log shows `Client regen: replicated seed=<N>` and the client's `GenerateScatter seed=` matches the host's **exactly**; client gold-node count == host's (6, not 0); a corridor landmark matches on both screens.
+2. **Blocker 2 dead:** damage the FAR castle (the one ~488 m from the client) — HP + crumble stage identical on both screens; the near castle still correct; destroyed/reset states cross too.
+3. **Blocker 3 dead:** Red client hero spawns **castle-relative on the RED side** (≈ +25,000 X band, facing the centerline), NOT at -23800; heroes are not stacked; client hero death → respawns Red-side after 5 s.
+4. **Standalone regression (gate g) still exact:** single-player hero spawns at `(-23800, 0, 98)` rot `(0,0,0)` — the same numbers the passing run recorded.
+5. **Finding 4 decided by the real button** (owed once TASK-355 lands): press Play Again on the CLIENT's WBP_VictoryScreen. Expected: host log `ServerRequestPlayAgain — client-initiated Play Again accepted`. If instead the CLIENT logs the new `executed WITHOUT authority — the RPC resolved LOCAL` error, the routing defect is real and reproducible outside tooling — file it with that line as the evidence. A python-invoke trigger is NOT a valid test for this item (it forces Local by construction — see the verdict above).
+6. **Tier-A bandwidth sanity (cheap):** note net throughput at the gate; two castles + one scatter + the engine's own always-relevant actors should be unmeasurable. The P2 unit fleet is Tier B and must be measured then, per the law.
+
+---
+
+## Loop-2 fix (BLOCKER 5 — Red spawns inside its own castle ⇒ no pawn)
+
+Loop-1 landed: B1/B2 closed (client regenerates a byte-identical battlefield, 6 gold nodes where it had 0; far castle 500/500 with crumble+destroyed crossing), compile green, the UE 5.5 deprecation avoided, standalone FULL PASS. B5 is the one remaining defect, and it is **one distance** — the loop-1 reorder itself is correct and is NOT reverted.
+
+### Measurement (from `qa/TASK-356.md` B5 + `handoffs/TASK-357-buildmaster.md` §7)
+
+| quantity | value |
+|---|---|
+| `HeroSpawnCastleOffset` (authored) | `(600, 0, 100)` — sized for the **M1** castle's ~810-uu footprint |
+| Castle_Red centre | X = 25,000 |
+| Castle colliding-bounds X half-extent (measured live) | **1,219** ⇒ span 23,781 … 26,219 |
+| Red spawn produced by the 600 offset | X = **24,400** — inside the span (619 uu past the 23,781 near face; the report's table quotes ~819 — either arithmetic lands *inside*) |
+| Result | `SpawnActor failed because of collision` ⇒ `SiegePlayerController_1 pawn=None` |
+| Empirical clean-spawn reference | the level's own Blue PlayerStart at **1,200** uu out spawns cleanly every time |
+
+**Root cause class:** a hardcoded extent that ROTTED. 600 was correct for the M1 castle and silently wrong the moment the 3× remaster tripled the footprint — exactly the lesson CASTLE-3X already taught. So the fix is not "type a bigger number", it is "stop hardcoding the extent".
+
+### Chosen value + derivation (SiegeGameMode.cpp `GetHeroStartTransform`, castle-relative branch)
+
+The distance is now **DERIVED from the castle's live geometry**, with the authored constant demoted to a floor:
+
+```
+GetActorBounds(bOnlyCollidingComponents=true) -> CastleBoxExtent
+SpawnDistance = max( HeroSpawnCastleOffset.X , CastleBoxExtent.X + HeroSpawnCastleClearance )
+```
+
+- **`HeroSpawnCastleClearance` = 300** (new EditDefaultsOnly UPROPERTY) — the margin past the *measured* half-extent. Against the live castle: **1,219 + 300 = 1,519**.
+- **`HeroSpawnCastleOffset.X` 600 → 1,500** — now only the FLOOR (used if bounds are ever degenerate/unresolvable). 1,500 = the validated 1,200 clean-spawn reference with margin, and it matches the recommended ~1,500 band on its own.
+- **Resolved Red spawn: X = 25,000 − 1,519 = 23,481 — exactly 300 uu clear of the 23,781 colliding face**, Yaw 180 (branch logic unchanged). Comfortably past the 1,200 empirical floor; comfortably clear of the hero capsule (r≈42) and of the real 22-hull UCX (tighter than the box bound).
+- **Anti-rot property (the point of the exercise):** if the castle is ever resized again, `GetActorBounds` follows it and the spawn moves with it — no constant to remember. `bOnlyCollidingComponents=true` deliberately: only what can BLOCK a spawn counts, so the HP-bar widget component (3,150 uu up, NoCollision) cannot inflate it, and the gate blocker (X span ±266 about the castle) sits well inside and changes nothing.
+- **Standalone byte-equivalence (load-bearing):** Blue takes the **PlayerStart** branch (step 2), which this change does not touch — single-player still lands `(-23800, 0, 98)` rot `(0,0,0)`. The castle-relative branch is not on the standalone path at all in L_Arena.
+- **Compile-trap caught while re-reading my own edit:** `FVector` components are **double** in UE5 and `FMath::Max` is a single-type template — `FMath::Max(HeroSpawnCastleOffset.X, DerivedSpawnDistance)` (double vs float) would have failed template deduction. Both operands are now explicitly `static_cast<float>`.
+- A one-line `LogGitClaudeUnrealTest` line prints castle X, measured half-extent, clearance, resolved distance, floor and final location — so TASK-357 can read the derivation instead of inferring it.
+
+### Respawn-path coverage (verified by reading every caller — the scope warning was right)
+
+All four paths resolve through the same `GetHeroStartTransform`, so **all four** get the corrected distance:
+
+| # | Path | Route | Benefits how |
+|---|---|---|---|
+| 1 | Initial spawn / client login | `RestartPlayer` (:250) → resolver (:275) → `RestartPlayerAtTransform` → `SpawnDefaultPawnAtTransform` | derived distance **+ the new spawn fallback** |
+| 2 | 5 s hero respawn | `HandleHeroRespawnTimer` (:577) → `RestoreHeroAtStart` → resolver (:611) → `SetActorLocationAndRotation` | derived distance (a **teleport**, not a spawn — see note) |
+| 3 | PlayAgain step 5 | PlayAgain (:923) → `RestoreHeroAtStart` → resolver | same as #2 |
+| 4 | Defensive pawn-lost | `RestoreHeroAtStart` (:605) → `RestartPlayer` | folds into #1 |
+
+**Note on #2/#3 (worth QA's attention):** those paths TELEPORT an existing pawn with `bSweep=false, TeleportPhysics` — they would NOT have logged a spawn failure; a bad location silently plants the hero *inside* the castle. They were only masked in the failed run because Red never had a pawn to teleport. The derived clearance is what makes the existing in-code comment ("No sweep: the start point is clear by design") true for Red as well.
+
+### Fallback decision: **YES, implemented** — `ASiegeGameMode::SpawnDefaultPawnAtTransform_Implementation` override
+
+**Why:** the engine's implementation (`AGameModeBase::SpawnDefaultPawnAtTransform_Implementation`, GameModeBase.cpp:1225-1237 — read this pass) spawns with a **bare `FActorSpawnParameters`**, so the pawn class's own `SpawnCollisionHandlingMethod` governs — and BP_HeroCharacter's refuses a colliding spawn. That is precisely how a mis-sized offset became `pawn=None` instead of a nudged hero. A pawnless seat is unplayable and silent-ish; that outcome should not be reachable by any future geometry change.
+
+**Shape (deliberately minimal + byte-identity-preserving):** call `Super` FIRST and return immediately on success — so every succeeding spawn (all standalone spawns; the regression measured zero failures) is a pure pass-through with **no behavior change**. Only on a NULL result retry the SAME transform with `ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn` (verified to exist, EngineTypes.h:4418) mirroring the engine's `SpawnInfo` (Instigator + `RF_Transient`), and log a `LogGitClaudeUnrealTest` **Error** naming `HeroSpawnCastleClearance` as the thing to re-check. Defense in depth, not the fix — with the derivation in place this path should never execute, and if it ever does the error line is the diagnosis.
+
+### Loop-2 files touched
+`SiegeGameMode.h` (offset doc + value 600→1500, new `HeroSpawnCastleClearance`, the `SpawnDefaultPawnAtTransform_Implementation` declaration), `SiegeGameMode.cpp` (derived distance + log in the castle-relative branch, the spawn-failure override), this handoff. Nothing else — no relevancy, replication, OnRep, or reorder logic touched.
+
+### What TASK-357's re-run must observe
+1. **B5 dead:** client login logs the castle-relative derivation line with `spawn distance 1519` and location ≈ `(23481, 0, 100)`; **`SiegePlayerController_1 pawn=<BP_HeroCharacter_C>`** (not `None`); TWO `BP_HeroCharacter_C` actors in the world; **zero** `SpawnActor failed because of collision` and zero `Couldn't spawn Pawn` lines.
+2. **The Red hero is where it should be:** ≈ +23,481 X, Yaw 180, standing OUTSIDE its castle (the loop-1 branch intent, now spawnable) — and it can move/be gate-blocked as the loop-1 gating checks expect.
+3. **Respawn paths:** kill the client hero → respawns Red-side after 5 s at the same derived spot (path #2); Play Again → both heroes restored to their own sides (path #3). Neither should place a hero inside geometry.
+4. **The fallback stayed asleep:** **no** `was refused for collision — retried with AdjustIfPossibleButAlwaysSpawn` line anywhere. If it DOES appear, the spawn still succeeded (that is the point) but the geometry moved — re-check `HeroSpawnCastleClearance`.
+5. **Standalone regression unchanged:** hero at `(-23800, 0, 98)` rot `(0,0,0)`, zero spawn failures — the same numbers as the passing run.
+6. Everything closed in loop 1 (B1/B2, seats, gold, clock, match end, D5 lockouts) stays closed — this loop touched none of it.

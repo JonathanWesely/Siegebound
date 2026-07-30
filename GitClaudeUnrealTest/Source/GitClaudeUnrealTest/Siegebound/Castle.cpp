@@ -14,6 +14,8 @@
 #include "GitClaudeUnrealTest.h"
 #include "Materials/MaterialInterface.h"
 #include "NavModifierComponent.h"
+#include "Net/UnrealNetwork.h" // M8 (TASK-356): DOREPLIFETIME registration
+#include "Siegebound/SiegeSessionSubsystem.h" // LogSiegeNet (CONVENTIONS M8)
 #include "TimerManager.h"
 #include "Siegebound/CastleHealthBarWidget.h"
 #include "Siegebound/DamageTypes.h"
@@ -36,6 +38,23 @@ ACastle::ACastle()
 {
 	// Pure event-driven objective — nothing to tick.
 	PrimaryActorTick.bCanEverTick = false;
+
+	// M8 (TASK-356 doc §3.1): the level-placed castle replicates its core state
+	// (HP / destroyed / crumble stage / Team belt) — the client's level instance
+	// matches by name and receives updates; no dormancy tuning in P1 (event-
+	// driven writes fit default frequencies, D13). Standalone: no connections ⇒
+	// registered-but-never-sent, zero behavior change (doc §10).
+	bReplicates = true;
+
+	// ⚖️ NET RELEVANCY — TIER A (CONVENTIONS NET RELEVANCY LAW; TASK-356 loop-1
+	// BLOCKER 2 fix). A castle is a match-critical near-singleton (exactly two
+	// per match) whose HP/crumble/destroyed truth MUST NOT depend on where a
+	// camera is: at the two-client gate the FAR castle sat 488 m from the client
+	// — outside UE's default 150 m distance relevancy — and read host 500 /
+	// client 2000 while the near castle (12 m) was perfect. Always-relevant is
+	// the only correct tier for the actor the WIN CONDITION runs on. Bandwidth
+	// is negligible: 2 actors, event-driven writes only (damage/crumble/reset).
+	bAlwaysRelevant = true;
 
 	CastleMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("CastleMesh"));
 	SetRootComponent(CastleMesh);
@@ -286,6 +305,18 @@ void ACastle::ApplyTeamVisuals()
 
 float ACastle::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
+	// M8 authority belt (TASK-356 doc §3.1): castle HP is server state. Client
+	// call sites are also locked at their sources (the D5 observer posture + the
+	// hero melee gate); this is the belt that makes the castle itself refuse.
+	// Standalone: authority ⇒ byte-identical.
+	if (!HasAuthority())
+	{
+		UE_LOG(LogSiegeNet, Warning,
+			TEXT("[%s] TakeDamage refused on a non-authority castle copy — castle HP is server-authoritative (M8 doc §3.1)."),
+			*GetNameSafe(this));
+		return 0.0f;
+	}
+
 	// A destroyed castle absorbs nothing further; the destroyed event can never re-fire.
 	if (bDestroyed || DamageAmount <= 0.0f)
 	{
@@ -388,24 +419,84 @@ void ACastle::HandleDestroyed()
 	// heals a destroyed objective, and the timer must not tick on a hidden actor.
 	StopHealOverTime();
 
-	// Hide the mesh and stop colliding (GDD §3.9) BEFORE broadcasting, so any
-	// listener querying this castle during the event already sees it destroyed.
-	SetActorHiddenInGame(true);
-	SetActorEnableCollision(false);
-
-	// Screen-space widget components do NOT follow actor hidden-in-game state
-	// (the viewport layer checks component visibility only) — hide explicitly
-	// (TASK-018: bar disappears with the castle).
-	if (HPBarWidget)
-	{
-		HPBarWidget->SetVisibility(false, /*bPropagateToChildren=*/true);
-	}
+	// Visual/collision half BEFORE broadcasting, so any listener querying this
+	// castle during the event already sees it destroyed (GDD §3.9). M8 refactor
+	// (doc §3.1): the shared half lives in ApplyDestroyedState — the SAME code
+	// OnRep_Destroyed runs on clients, so both machines change state identically.
+	ApplyDestroyedState(true);
 
 	// §6 castle-destroyed stinger (TASK-179): a 2D one-shot (the win/loss moment).
-	// Null-safe until S_CastleDestroyed lands (TASK-180).
+	// Null-safe until S_CastleDestroyed lands (TASK-180). Server-local in P1 —
+	// the client's end-moment audio is the victory/defeat music via the GameState
+	// rep; per-castle client cosmetics are P2 wiring (doc §3.1).
 	USiegeFeedbackLibrary::PlaySound2D(this, CastleDestroyedSoundPath);
 
 	OnCastleDestroyed.Broadcast(this, Team);
+}
+
+void ACastle::ApplyDestroyedState(bool bNowDestroyed)
+{
+	// The shared visual/collision half (M8, doc §3.1) — server destroy/reset AND
+	// client OnRep both run exactly this. Collision rides the actor state on both
+	// machines, which also drops/restores the CASTLE-3X gate blocker with the
+	// castle symmetrically (addendum §2 — a fallen castle gates nothing).
+	SetActorHiddenInGame(bNowDestroyed);
+	SetActorEnableCollision(!bNowDestroyed);
+
+	// Screen-space widget components do NOT follow actor hidden-in-game state
+	// (the viewport layer checks component visibility only) — toggle explicitly
+	// (TASK-018: the bar disappears/returns with the castle).
+	if (HPBarWidget)
+	{
+		HPBarWidget->SetVisibility(!bNowDestroyed, /*bPropagateToChildren=*/true);
+	}
+}
+
+void ACastle::OnRep_CurrentHP()
+{
+	// CLIENT HP display (M8, doc §3.1): the same broadcast every server-side
+	// mutation makes — the existing bar/HUD delegate path, zero widget changes.
+	// MaxHP is CDO/level-authored identically on both machines (not replicated).
+	OnCastleHPChanged.Broadcast(CurrentHP, MaxHP);
+}
+
+void ACastle::OnRep_Destroyed()
+{
+	// CLIENT destroyed-state (M8, doc §3.1): visual/collision only — NEVER the
+	// OnCastleDestroyed broadcast (server win-condition hook; the end screen
+	// reaches this machine via ASiegeGameState's match-result rep, doc §3.4).
+	ApplyDestroyedState(bDestroyed);
+}
+
+void ACastle::OnRep_CrumbleStage()
+{
+	// CLIENT crumble display (M8, doc §3.1 + addendum §3): ApplyCrumbleStage is
+	// ABSOLUTE (stage N applied directly — join-in-progress lands the final look
+	// in one call; its client-side side effects are cosmetic-only: debris burst,
+	// nav re-assert, log). Stage 0 is the Play-Again reset — ApplyCrumbleStage
+	// deliberately guards 1..3, so the pristine restore is ApplyTeamVisuals(),
+	// exactly what the server's ResetCastle runs.
+	if (CrumbleStage > 0)
+	{
+		ApplyCrumbleStage(CrumbleStage);
+	}
+	else
+	{
+		ApplyTeamVisuals();
+	}
+}
+
+void ACastle::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	// The M8 P1 castle set (TASK-356, doc §3.1). Team is COND_InitialOnly — a
+	// belt on a level-authored value that is already identical on both machines
+	// (and consumed by client-side team checks / the CASTLE-3X gating config).
+	DOREPLIFETIME(ACastle, CurrentHP);
+	DOREPLIFETIME(ACastle, bDestroyed);
+	DOREPLIFETIME(ACastle, CrumbleStage);
+	DOREPLIFETIME_CONDITION(ACastle, Team, COND_InitialOnly);
 }
 
 void ACastle::UpdateCrumbleStages()
@@ -481,13 +572,26 @@ void ACastle::ApplyCrumbleStage(int32 Stage)
 
 void ACastle::ResetCastle()
 {
+	// M8 authority guard (TASK-356 doc §3.1): the reset is server state; clients
+	// converge via the HP/destroyed/crumble OnReps. Standalone: authority ⇒
+	// byte-identical (its one caller is the server-only GameMode anyway).
+	if (!HasAuthority())
+	{
+		UE_LOG(LogSiegeNet, Warning,
+			TEXT("[%s] ResetCastle refused on a non-authority castle copy — the server drives resets (M8 doc §3.1)."),
+			*GetNameSafe(this));
+		return;
+	}
+
 	// Play Again (GDD §3.9): cancel any in-progress Masons repair (TASK-059) first,
-	// then back to full HP, visible, solid, and armed to fire again.
+	// then back to full HP, visible, solid, and armed to fire again. The visual/
+	// collision half is the shared ApplyDestroyedState (M8 refactor, doc §3.1) —
+	// the same code the client's OnRep_Destroyed runs on its false edge. (It also
+	// re-shows the HP bar, absorbing the explicit re-show this function carried.)
 	StopHealOverTime();
 	bDestroyed = false;
 	CurrentHP = MaxHP;
-	SetActorHiddenInGame(false);
-	SetActorEnableCollision(true);
+	ApplyDestroyedState(false);
 
 	// §3.9 crumble reset (TASK-157): back to stage 0 and restore the pristine SM_Castle +
 	// team material (undo any crumble mesh/material swap), re-arming all thresholds.
@@ -566,6 +670,16 @@ bool ACastle::TryGetInstigatorTeam(AController* EventInstigator, AActor* DamageC
 
 void ACastle::HealOverTime(float Total, float Duration)
 {
+	// M8 authority guard (TASK-356 doc §3.1): Masons repair mutates server HP; a
+	// client copy refuses (the Masons entry point is also D5-locked at the PC).
+	if (!HasAuthority())
+	{
+		UE_LOG(LogSiegeNet, Warning,
+			TEXT("[%s] HealOverTime refused on a non-authority castle copy — castle HP is server-authoritative (M8 doc §3.1)."),
+			*GetNameSafe(this));
+		return;
+	}
+
 	// A destroyed castle absorbs no repair; a non-positive amount/duration is a
 	// caller error (never scheduled — matches the §3.0 "no free effect" discipline).
 	if (bDestroyed)

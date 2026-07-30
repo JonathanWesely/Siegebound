@@ -1167,10 +1167,16 @@ void ASummonedUnit::UpdateState()
 	// tick — never a stall.
 	if (CommandGroupId != INDEX_NONE)
 	{
-		const UWorld* GroupWorld = GetWorld();
-		const ASiegePlayerController* GroupPC = GroupWorld
-			? Cast<ASiegePlayerController>(GroupWorld->GetFirstPlayerController())
-			: nullptr;
+		// M8 (TASK-356 doc §3.7 — the ruling-4 named offender #1, `3068286`):
+		// the FIRST-controller poll is replaced by the OWNING-TEAM resolve — this
+		// unit reads ITS OWN team's controller, never "controller 0". Standalone:
+		// one (local, Blue) PC and only Blue units carry a group id ⇒ the resolve
+		// returns exactly the controller the old call did (doc §10). A null
+		// resolve behaves exactly like the old null-first-controller (the
+		// self-heal below).
+		UWorld* const GroupWorld = GetWorld();
+		const ASiegePlayerController* GroupPC =
+			ASiegePlayerController::FindControllerForTeam(GroupWorld, Team);
 		const FSiegeUnitGroup* Group = GroupPC ? GroupPC->FindUnitGroup(CommandGroupId) : nullptr;
 		if (Group)
 		{
@@ -1194,9 +1200,14 @@ void ASummonedUnit::UpdateState()
 	// never reaches here.
 	if (Profile == ECardProfile::Standard && Team == ETeamId::Blue)
 	{
-		if (const UWorld* CmdWorld = GetWorld())
+		// M8 (TASK-356 doc §3.7 — ruling-4 named offender #2): the stance read
+		// resolves THIS unit's owning-team controller instead of controller 0.
+		// The `Team == Blue` gate above deliberately STAYS (P2 scope, doc §2.4 —
+		// the Red human's stance surface lands with its Server RPC). Standalone:
+		// same single Blue PC as before (doc §10).
+		if (UWorld* const CmdWorld = GetWorld())
 		{
-			if (const ASiegePlayerController* PC = Cast<ASiegePlayerController>(CmdWorld->GetFirstPlayerController()))
+			if (const ASiegePlayerController* PC = ASiegePlayerController::FindControllerForTeam(CmdWorld, Team))
 			{
 				if (PC->HasIssuedCommand())
 				{

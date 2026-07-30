@@ -4,16 +4,71 @@
 #include "Siegebound/SiegePlayerState.h"
 #include "Engine/World.h"
 #include "GitClaudeUnrealTest.h"
+#include "Net/UnrealNetwork.h"
 #include "Siegebound/SiegeGameState.h"
+#include "Siegebound/SiegeSessionSubsystem.h" // LogSiegeNet (CONVENTIONS M8)
 #include "TimerManager.h"
+
+namespace
+{
+	/** One shared shape for the M8 authority guards (doc §3.2): a client copy reaching a server-only economy mutator is a design violation worth a loud line, never a crash. */
+	void LogNonAuthorityEconomyCall(const ASiegePlayerState* PS, const TCHAR* FunctionName)
+	{
+		UE_LOG(LogSiegeNet, Warning,
+			TEXT("[%s] %s refused on a non-authority PlayerState copy — gold/economy is server-authoritative (M8 doc §3.2)."),
+			*GetNameSafe(PS), FunctionName);
+	}
+}
+
+void ASiegePlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	// Doc §3.2: Team PLAIN (deliberately not InitialOnly — snapshot hazard vs the
+	// bot's spawn-then-SetTeam and login-edge timing; the value never changes
+	// after assignment so steady-state cost is zero). Gold OWNER-ONLY: each
+	// machine sees its own economy only (TASK-357 gate d).
+	DOREPLIFETIME(ASiegePlayerState, Team);
+	DOREPLIFETIME_CONDITION(ASiegePlayerState, Gold, COND_OwnerOnly);
+}
+
+void ASiegePlayerState::OnRep_Gold()
+{
+	// CLIENT display path (doc §3.2): the value already changed via replication —
+	// broadcast the EXISTING delegate directly so the HUD updates with zero
+	// widget changes. Deliberately NOT SetGold (the authority choke would be a
+	// second writer/refuser here; documented in-code per the doc).
+	OnGoldChanged.Broadcast(Gold);
+}
+
+void ASiegePlayerState::OnRep_Team()
+{
+	// P1 log-only seam (doc §3.2): no team delegate exists to fire; P2 hangs
+	// recolor/team-HUD hooks here. The log proves the seat assignment reached
+	// this machine (TASK-357 gate b evidence).
+	UE_LOG(LogSiegeNet, Log, TEXT("[%s] Team replicated: %s (M8 seat assignment, doc §2)."),
+		*GetNameSafe(this), Team == ETeamId::Blue ? TEXT("Blue") : TEXT("Red"));
+}
 
 void ASiegePlayerState::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// Seed gold and start passive income. ResetGold is the single entry point
-	// for "fresh match" economy state, shared with Play Again (GDD §3.9).
-	ResetGold();
+	// ── M8 accrual-fork kill (TASK-356; the audit's WORST timer hazard, §3.1):
+	// PlayerStates replicate to every client and BeginPlay runs there too — only
+	// the AUTHORITY copy may seed gold and arm the income timer. A client copy
+	// takes no timer and no seed-write (the Gold initializer already equals
+	// StartingGold, so the pre-first-rep display is truthful); its gold arrives
+	// owner-only via OnRep_Gold. The overtime BIND below stays on ALL copies:
+	// it is read-only display logic (rate re-derive → HUD "+N/s"), and the
+	// client's 7:00 latch arrives via ASiegeGameState::OnRep_OvertimeActive
+	// firing the same delegate. Standalone: authority ⇒ byte-identical.
+	if (HasAuthority())
+	{
+		// Seed gold and start passive income. ResetGold is the single entry point
+		// for "fresh match" economy state, shared with Play Again (GDD §3.9).
+		ResetGold();
+	}
 
 	// Overtime (GDD §3.2): the shared ASiegeGameState clock latches at 7:00 —
 	// bind so rate listeners hear about the doubling the moment it happens.
@@ -62,6 +117,13 @@ bool ASiegePlayerState::CanAfford(int32 Cost) const
 
 bool ASiegePlayerState::SpendGold(int32 Cost)
 {
+	// M8 authority guard (doc §3.2): a client copy can never mutate gold.
+	if (!HasAuthority())
+	{
+		LogNonAuthorityEconomyCall(this, TEXT("SpendGold"));
+		return false;
+	}
+
 	if (!CanAfford(Cost))
 	{
 		// Refused: nothing changes, nothing broadcasts, gold never goes negative.
@@ -75,6 +137,13 @@ bool ASiegePlayerState::SpendGold(int32 Cost)
 
 void ASiegePlayerState::ResetGold()
 {
+	// M8 authority guard (doc §3.2).
+	if (!HasAuthority())
+	{
+		LogNonAuthorityEconomyCall(this, TEXT("ResetGold"));
+		return;
+	}
+
 	// Play Again (GDD §3.9): back to starting gold...
 	SetGold(StartingGold);
 
@@ -85,6 +154,13 @@ void ASiegePlayerState::ResetGold()
 
 void ASiegePlayerState::AddGold(int32 Amount)
 {
+	// M8 authority guard (doc §3.2).
+	if (!HasAuthority())
+	{
+		LogNonAuthorityEconomyCall(this, TEXT("AddGold"));
+		return;
+	}
+
 	if (Amount <= 0)
 	{
 		// Grants must be positive — use SpendGold to deduct. A 0/negative amount
@@ -162,6 +238,14 @@ void ASiegePlayerState::HandleGoldTick()
 
 void ASiegePlayerState::StartIncomeTimer()
 {
+	// M8 authority belt (doc §3.2): every caller is already guarded; the private
+	// arm-site refuses too so no future path can start a client-side accrual.
+	if (!HasAuthority())
+	{
+		LogNonAuthorityEconomyCall(this, TEXT("StartIncomeTimer"));
+		return;
+	}
+
 	if (UWorld* World = GetWorld())
 	{
 		// SetTimer on an existing handle replaces the previous timer, so calling
@@ -199,6 +283,13 @@ int32 ASiegePlayerState::GetGoldRate() const
 
 void ASiegePlayerState::AddIncome(int32 GoldPerTickDelta)
 {
+	// M8 authority guard (doc §3.2).
+	if (!HasAuthority())
+	{
+		LogNonAuthorityEconomyCall(this, TEXT("AddIncome"));
+		return;
+	}
+
 	if (GoldPerTickDelta <= 0)
 	{
 		// register/unregister must stay symmetric and positive (ADeepMine passes
@@ -220,6 +311,13 @@ void ASiegePlayerState::AddIncome(int32 GoldPerTickDelta)
 
 void ASiegePlayerState::RemoveIncome(int32 GoldPerTickDelta)
 {
+	// M8 authority guard (doc §3.2).
+	if (!HasAuthority())
+	{
+		LogNonAuthorityEconomyCall(this, TEXT("RemoveIncome"));
+		return;
+	}
+
 	if (GoldPerTickDelta <= 0)
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Warning,
@@ -248,6 +346,13 @@ void ASiegePlayerState::RemoveIncome(int32 GoldPerTickDelta)
 
 void ASiegePlayerState::AddMinerIncome()
 {
+	// M8 authority guard (doc §3.2).
+	if (!HasAuthority())
+	{
+		LogNonAuthorityEconomyCall(this, TEXT("AddMinerIncome"));
+		return;
+	}
+
 	++MinerIncomeCount;
 
 	if (MinerIncomeCount > AliveMinerCount)
@@ -266,6 +371,13 @@ void ASiegePlayerState::AddMinerIncome()
 
 void ASiegePlayerState::RemoveMinerIncome()
 {
+	// M8 authority guard (doc §3.2).
+	if (!HasAuthority())
+	{
+		LogNonAuthorityEconomyCall(this, TEXT("RemoveMinerIncome"));
+		return;
+	}
+
 	if (MinerIncomeCount <= 0)
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Error,
@@ -280,6 +392,13 @@ void ASiegePlayerState::RemoveMinerIncome()
 
 void ASiegePlayerState::RegisterMinerAlive()
 {
+	// M8 authority guard (doc §3.2).
+	if (!HasAuthority())
+	{
+		LogNonAuthorityEconomyCall(this, TEXT("RegisterMinerAlive"));
+		return;
+	}
+
 	++AliveMinerCount;
 
 	if (AliveMinerCount > MaxActiveMiners)
@@ -299,6 +418,13 @@ void ASiegePlayerState::RegisterMinerAlive()
 
 void ASiegePlayerState::UnregisterMinerAlive()
 {
+	// M8 authority guard (doc §3.2).
+	if (!HasAuthority())
+	{
+		LogNonAuthorityEconomyCall(this, TEXT("UnregisterMinerAlive"));
+		return;
+	}
+
 	if (AliveMinerCount <= 0)
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Error,
@@ -313,6 +439,13 @@ void ASiegePlayerState::UnregisterMinerAlive()
 
 void ASiegePlayerState::PauseIncome()
 {
+	// M8 authority guard (doc §3.2).
+	if (!HasAuthority())
+	{
+		LogNonAuthorityEconomyCall(this, TEXT("PauseIncome"));
+		return;
+	}
+
 	// Flag first, then clear: even if a paused-window tick were somehow already
 	// queued this frame, HandleGoldTick's gate refuses it (belt-and-braces).
 	bIncomePaused = true;
@@ -325,12 +458,26 @@ void ASiegePlayerState::PauseIncome()
 
 void ASiegePlayerState::ResumeIncome()
 {
+	// M8 authority guard (doc §3.2).
+	if (!HasAuthority())
+	{
+		LogNonAuthorityEconomyCall(this, TEXT("ResumeIncome"));
+		return;
+	}
+
 	bIncomePaused = false;
 	StartIncomeTimer();
 }
 
 void ASiegePlayerState::ResetEconomy()
 {
+	// M8 authority guard (doc §3.2).
+	if (!HasAuthority())
+	{
+		LogNonAuthorityEconomyCall(this, TEXT("ResetEconomy"));
+		return;
+	}
+
 	AliveMinerCount = 0;
 	MinerIncomeCount = 0;
 

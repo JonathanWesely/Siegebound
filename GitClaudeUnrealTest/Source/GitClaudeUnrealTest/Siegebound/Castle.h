@@ -66,9 +66,21 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Castle")
 	FOnCastleDestroyed OnCastleDestroyed;
 
-	/** Fired on every actual HP change, in ResetCastle, and once at BeginPlay (seed). Drives WBP_CastleHealthBar (TASK-018/019). */
+	/** Fired on every actual HP change, in ResetCastle, and once at BeginPlay (seed). Drives WBP_CastleHealthBar (TASK-018/019). M8: OnRep_CurrentHP fires this SAME delegate on clients — zero widget changes (doc §3.1). */
 	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Castle")
 	FOnCastleHPChanged OnCastleHPChanged;
+
+	/**
+	 *  ⚖️ NET RELEVANCY TIER: **A — `bAlwaysRelevant = true`** (declared per the
+	 *  CONVENTIONS NET RELEVANCY LAW declaration duty; set in the constructor).
+	 *  Rationale: match-critical near-singleton (two per match) carrying the WIN
+	 *  CONDITION's state — its HP/crumble/destroyed truth may never depend on
+	 *  camera distance. TASK-357 measured the far castle (488 m) failing under
+	 *  the engine's default 150 m relevancy; this is that blocker's fix.
+	 */
+
+	/** Registers the M8 P1 castle set — CurrentHP / bDestroyed / CrumbleStage (OnReps) + Team (InitialOnly belt) — doc §3.1 (TASK-356). */
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	//~ Begin ITeamAgent interface
 	virtual ETeamId GetTeamId() const override { return Team; }
@@ -224,8 +236,8 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Castle|Gating")
 	TObjectPtr<UNavModifierComponent> InteriorNavModifier;
 
-	/** Which team owns this castle. Set per level instance (Castle_Blue = Blue, Castle_Red = Red). */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Castle")
+	/** Which team owns this castle. Set per level instance (Castle_Blue = Blue, Castle_Red = Red). M8 (TASK-356, doc §3.1): replicated COND_InitialOnly as a belt — the value is level-authored identically on both machines already (the CASTLE-3X gating reads it client-side, addendum §2). */
+	UPROPERTY(Replicated, EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Castle")
 	ETeamId Team = ETeamId::Blue;
 
 	/** Maximum hit points (GDD §3.9). */
@@ -386,17 +398,57 @@ private:
 	 */
 	static bool TryGetInstigatorTeam(AController* EventInstigator, AActor* DamageCauser, ETeamId& OutTeam);
 
-	/** Current hit points. Mutated only by TakeDamage and ResetCastle. */
-	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Castle", meta = (AllowPrivateAccess = "true"))
+	/** Current hit points. Mutated only by TakeDamage and ResetCastle (authority — M8 guards, doc §3.1). Replicated; OnRep_CurrentHP drives the client bar via the existing delegate. */
+	UPROPERTY(ReplicatedUsing = OnRep_CurrentHP, VisibleInstanceOnly, Transient, Category = "Siegebound|Castle", meta = (AllowPrivateAccess = "true"))
 	float CurrentHP = 2000.0f;
 
-	/** True after OnCastleDestroyed has fired; re-armed only by ResetCastle(). Guarantees the event fires exactly once. */
-	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Castle", meta = (AllowPrivateAccess = "true"))
+	/** True after OnCastleDestroyed has fired; re-armed only by ResetCastle(). Guarantees the event fires exactly once (server). M8: replicated; OnRep_Destroyed applies the client's visual/collision state ONLY — never the win-condition broadcast (doc §3.1). */
+	UPROPERTY(ReplicatedUsing = OnRep_Destroyed, VisibleInstanceOnly, Transient, Category = "Siegebound|Castle", meta = (AllowPrivateAccess = "true"))
 	bool bDestroyed = false;
 
-	/** Highest crumble stage fired so far (0 = pristine, 1/2/3 = 75/50/25% crossed). Monotonic; reset to 0 by ResetCastle. (TASK-157) */
-	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Castle", meta = (AllowPrivateAccess = "true"))
+	/** Highest crumble stage fired so far (0 = pristine, 1/2/3 = 75/50/25% crossed). Monotonic; reset to 0 by ResetCastle. (TASK-157) M8: replicated; ApplyCrumbleStage is ABSOLUTE (addendum §3), so a join-in-progress client lands the final stage in one OnRep. */
+	UPROPERTY(ReplicatedUsing = OnRep_CrumbleStage, VisibleInstanceOnly, Transient, Category = "Siegebound|Castle", meta = (AllowPrivateAccess = "true"))
 	int32 CrumbleStage = 0;
+
+	/**
+	 *  CLIENT HP arrival (M8, doc §3.1): fires the EXISTING OnCastleHPChanged with
+	 *  the replicated value — the same broadcast every server-side mutation site
+	 *  makes, so the bar/HUD path is byte-identical (zero widget changes).
+	 */
+	UFUNCTION()
+	void OnRep_CurrentHP();
+
+	/**
+	 *  CLIENT destroyed-state arrival (M8, doc §3.1; name per the ratified bool
+	 *  law — `bDestroyed` → `OnRep_Destroyed`): applies the shared visual/
+	 *  collision half (ApplyDestroyedState) for BOTH edges (destroy + Play-Again
+	 *  restore). NEVER broadcasts OnCastleDestroyed — that is the server
+	 *  win-condition hook; match end reaches this machine via the GameState rep
+	 *  (doc §3.4).
+	 */
+	UFUNCTION()
+	void OnRep_Destroyed();
+
+	/**
+	 *  CLIENT crumble arrival (M8, doc §3.1 + addendum §3): stage > 0 →
+	 *  ApplyCrumbleStage(stage) — absolute, so intermediate stages may be skipped
+	 *  safely; stage == 0 (Play-Again reset) → ApplyTeamVisuals() restores the
+	 *  pristine mesh + team material (ApplyCrumbleStage guards 1..3 and can never
+	 *  un-crumble — the addendum-pinned branch).
+	 */
+	UFUNCTION()
+	void OnRep_CrumbleStage();
+
+	/**
+	 *  The shared visual/collision half of destruction (M8 refactor, doc §3.1):
+	 *  hide/show the actor, disable/enable collision (the gate blocker rides the
+	 *  actor state on both machines — addendum §2), hide/show the HP bar (screen-
+	 *  space widgets do not follow actor hidden state — TASK-018). Called by the
+	 *  server paths (HandleDestroyed / ResetCastle) AND by OnRep_Destroyed, so
+	 *  both machines run the identical state change; the server-only halves
+	 *  (heal-stop, sting, win broadcast, HP/crumble resets) stay in their owners.
+	 */
+	void ApplyDestroyedState(bool bNowDestroyed);
 
 	/** HP still to be delivered by the running Masons heal-over-time (0 = none). Mutated only by HealOverTime / HandleHealTick / StopHealOverTime. */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Castle", meta = (AllowPrivateAccess = "true"))

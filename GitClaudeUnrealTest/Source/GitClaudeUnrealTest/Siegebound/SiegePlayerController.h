@@ -183,6 +183,19 @@ public:
 
 	ASiegePlayerController();
 
+	/**
+	 *  ⚖️ NET RELEVANCY TIER: **A — engine-owned, OWNER-SCOPED** (declared per the
+	 *  CONVENTIONS NET RELEVANCY LAW declaration duty; nothing is set here beyond
+	 *  the explicit `bReplicates = true` the constructor now carries). A
+	 *  PlayerController replicates ONLY to its own connection —
+	 *  `AController::AController` sets `bOnlyRelevantToOwner = true` (engine
+	 *  Controller.cpp:67) and the engine treats a connection's own PC as always
+	 *  relevant to it — which is exactly right: this actor is one player's private
+	 *  command surface, never world state. No distance band applies or should.
+	 *  The ctor's `bReplicates` is the FINDING-4 / corollary hardening (see there),
+	 *  NOT a tier change.
+	 */
+
 	/** Fired on every player-facing card-play refusal (gold, invalid spot, missing data). HUD may bind (TASK-011). */
 	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Cards")
 	FOnCardPlayRefused OnCardPlayRefused;
@@ -346,6 +359,54 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Match")
 	void HandleMatchReset();
+
+	/**
+	 *  M8 Play-Again entry (TASK-356 doc §3.4.2/§4.2 — the WBP_VictoryScreen
+	 *  button rewires to THIS at TASK-355; host-only fallback recorded): on the
+	 *  authority (host/standalone) it resolves the GameMode and calls PlayAgain()
+	 *  directly — the same call the widget made, byte-identical (doc §10); on a
+	 *  CLIENT it routes through ServerRequestPlayAgain (the ONE P1 RPC — the
+	 *  GameMode does not exist on clients, D6).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Match")
+	void RequestPlayAgain();
+
+	/**
+	 *  THE one P1 server RPC (M8 doc §4.2/D6, CONVENTIONS RPC law —
+	 *  Server<Verb><Noun>, Reliable, WithValidation): relays the client's
+	 *  Play-Again press to the server GameMode. Validation returns true (no
+	 *  input payload); the implementation's HasMatchEnded() check IS the intent
+	 *  validation — a mid-match spam press reaches nothing. TASK-356 loop-1: the
+	 *  implementation additionally REFUSES (with a precise error) if it ever runs
+	 *  without authority — a Server RPC body executing on the caller means the
+	 *  callspace resolved Local and the host never heard it (FINDING-4).
+	 */
+	UFUNCTION(Server, Reliable, WithValidation)
+	void ServerRequestPlayAgain();
+
+	/**
+	 *  M8 client-local reset mirror (TASK-356 doc §3.4.2): the OnRep-driven
+	 *  counterpart of ASiegeGameMode::PlayAgain step 6, which walks SERVER-side
+	 *  controllers and can never reach a remote machine's local PC. Called by
+	 *  ASiegeGameState's match-reset notify on the false edge of bMatchEnded.
+	 *  Delegates to HandleMatchReset() — which already carries the local deck
+	 *  ResetDeck() as the single controller-side §3.9 deck-reset entry point, so
+	 *  the client's local display deck resets on the same path. Standalone:
+	 *  never called (no OnRep fires — doc §10).
+	 */
+	void PerformLocalMatchReset();
+
+	/**
+	 *  M8 owning-team-controller resolve (TASK-356 doc §3.7 — the ruling-4
+	 *  GetFirstPlayerController REPLACEMENT pattern): first ASiegePlayerController
+	 *  whose ASiegePlayerState carries Team. Server-side it sees both PCs (the
+	 *  host's and the server copy of the client's) and resolves either team;
+	 *  in standalone the one (local, Blue) PC is exactly what the old
+	 *  first-controller call returned (doc §10). Null-safe: no world / no match ⇒
+	 *  nullptr. Forward-compatible with P2's server-side group/stance migration
+	 *  (the resolve already reads the server copy).
+	 */
+	static ASiegePlayerController* FindControllerForTeam(UWorld* World, ETeamId Team);
 
 	/** True while the placement ghost owns the cursor/LMB. */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Cards")
@@ -1252,6 +1313,20 @@ private:
 	/** HUD widget instance (created at BeginPlay when WBP_HUD exists). */
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> HUDWidget;
+
+	/**
+	 *  M8 HUD PS-retry (TASK-356 doc §3.2): creates the HUD once the owning
+	 *  ASiegePlayerState is resolvable — on a CLIENT the PS proxy may arrive a
+	 *  few frames after PC BeginPlay, and a HUD constructed before it would seed
+	 *  from nothing. Bounded next-tick retries (HUDInitAttempts vs the cpp cap);
+	 *  exhaustion logs and creates the HUD anyway (its own binds are null-safe).
+	 *  Standalone: the PS exists on the first check ⇒ the HUD is created
+	 *  synchronously inside BeginPlay exactly as before (doc §10).
+	 */
+	void TryInitHUD();
+
+	/** Retry counter for TryInitHUD (client PS-proxy arrival wait). */
+	int32 HUDInitAttempts = 0;
 
 	/** Victory screen instance (created by HandleMatchEnd). */
 	UPROPERTY(Transient)

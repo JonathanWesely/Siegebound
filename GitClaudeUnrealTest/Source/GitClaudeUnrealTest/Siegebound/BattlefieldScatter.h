@@ -86,11 +86,29 @@ public:
 	ASiegeBattlefieldScatter();
 
 	/**
-	 *  Clears any existing instances, picks a seed (OverrideSeed>0 else a random
+	 *  ⚖️ NET RELEVANCY TIER: **A — `bAlwaysRelevant = true`** (declared per the
+	 *  CONVENTIONS NET RELEVANCY LAW declaration duty; set in the constructor).
+	 *  Rationale: a SINGLETON whose replicated seed DRIVES WORLD GENERATION on
+	 *  every machine, and a point actor at the world origin — under the engine's
+	 *  default 150 m relevancy it was permanently irrelevant to players ~250 m
+	 *  away, so the client generated NOTHING (TASK-357: 0 gold nodes vs 6).
+	 *  Tier A is also the PRECONDITION of the signed doc's D9 superset argument.
+	 */
+
+	/** Registers the M8 P1 seed set — ChosenSeed (plain) + GenerationIndex (OnRep) — doc D9/§3.5 (TASK-356). */
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	/**
+	 *  AUTHORITY entry (M8, TASK-356 doc §3.5): clears any existing instances,
+	 *  picks a seed (OverrideSeed>0 else a random
 	 *  seed, LOGGED on LogSiegeTerrain so the layout is reproducible), scatters
 	 *  every layer honoring keep-clear + spacing + the reserved corridor, wires
 	 *  blocking/nav on obstacle layers, then schedules the deferred
 	 *  reachability validation. Graceful no-op when ScatterConfig is unset.
+	 *  A CLIENT copy refuses (its per-machine random seed IS the audit's
+	 *  different-battlefields bug) and instead regenerates deterministically via
+	 *  OnRep_GenerationIndex with the replicated ChosenSeed. Standalone:
+	 *  authority ⇒ byte-identical.
 	 *  W1-PREP (TASK-250): layers place in TWO passes — bAllowOnHills=false
 	 *  first (hills included, registering the hill-surface HISMs), then the
 	 *  hill-allowed layers, whose ground resolve accepts elevated hill Z within
@@ -340,6 +358,46 @@ private:
 
 	/** True once a seed has been chosen at least once (so a non-re-randomizing reset re-uses LastSeed). */
 	bool bHasSeed = false;
+
+	/**
+	 *  M8 (TASK-356 doc D9/§3.5): the authority's FINAL chosen seed each generate
+	 *  (previously logged only). Plain replication — consumed by
+	 *  OnRep_GenerationIndex, which rides the same actor property bunch (applied
+	 *  before the OnRep fires: the pair is atomic).
+	 */
+	UPROPERTY(Replicated)
+	int32 ChosenSeed = 0;
+
+	/**
+	 *  M8 (doc D9/§3.5): incremented on EVERY authority GenerateScatter — the
+	 *  client regen TRIGGER. Fires even when bReRandomizeOnMatchReset=false
+	 *  repeats a seed (the index still changes), and a join-in-progress client
+	 *  sees index >= 1 vs its CDO 0 ⇒ regenerates off the initial rep.
+	 */
+	UPROPERTY(ReplicatedUsing = OnRep_GenerationIndex)
+	int32 GenerationIndex = 0;
+
+	/**
+	 *  CLIENT regen (doc §3.5): ClearScatter + the seed-deterministic passes with
+	 *  the replicated ChosenSeed. The nav-reachability validation and its
+	 *  defensive culls stay AUTHORITY-ONLY (live navmesh queries + an attempt
+	 *  counter — not client-reproducible); accepted residual D9: client obstacles
+	 *  are a SUPERSET of the server's in the rare defensively-culled match —
+	 *  provably never rubber-bands (movement corrections fire only when a client
+	 *  claims passage the server refuses, and a superset makes that impossible).
+	 */
+	UFUNCTION()
+	void OnRep_GenerationIndex();
+
+	/**
+	 *  The shared seed-deterministic generate body (M8 refactor, TASK-356): keep-
+	 *  clear rebuild + the reproducibility log + the two layer passes + PlaceMines
+	 *  — byte-identical sequence to the pre-M8 GenerateScatter tail. The AUTHORITY
+	 *  path (bAuthoritativeGenerate) then arms the deferred reachability
+	 *  validation; the CLIENT path skips it (authority-only, D9) and logs the
+	 *  attempt-count line for the TASK-357 comparison instead.
+	 */
+	void RunScatterPasses(int32 Seed, bool bAuthoritativeGenerate);
 
 	/** Pending deferred-validation timer — shared by the nav-settle poll (PollNavSettle) and the validation itself (one timer at a time; EndPlay clears it). */
 	FTimerHandle TraversabilityTimerHandle;

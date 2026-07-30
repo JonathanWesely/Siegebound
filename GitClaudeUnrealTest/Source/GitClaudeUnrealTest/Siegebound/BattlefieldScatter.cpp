@@ -13,6 +13,7 @@
 #include "Materials/MaterialInterface.h"
 #include "NavigationPath.h"
 #include "NavigationSystem.h"
+#include "Net/UnrealNetwork.h" // M8 (TASK-356): DOREPLIFETIME for the seed pair
 #include "TimerManager.h"
 #include "Siegebound/Castle.h"
 #include "Siegebound/GoldNode.h"
@@ -130,6 +131,29 @@ ASiegeBattlefieldScatter::ASiegeBattlefieldScatter()
 {
 	PrimaryActorTick.bCanEverTick = false;
 
+	// M8 (TASK-356 doc D9/§3.5): the level-placed scatter actor replicates so the
+	// authority's chosen seed + generation index reach clients — host and client
+	// generate IDENTICAL battlefields (per-machine random seeds were the audit's
+	// mismatched-collision bug). The instances themselves are never replicated;
+	// only the two ints are. Standalone: no connections ⇒ zero cost.
+	bReplicates = true;
+
+	// ⚖️ NET RELEVANCY — TIER A (CONVENTIONS NET RELEVANCY LAW; TASK-356 loop-1
+	// BLOCKER 1 fix). This actor is a SINGLETON whose two replicated ints DRIVE
+	// WORLD GENERATION on every machine — the textbook Tier-A case. It is also a
+	// POINT actor sitting at the world origin while both players fight ~250 m
+	// away, so UE's default 150 m distance relevancy made it permanently
+	// irrelevant: at the two-client gate `OnRep_GenerationIndex` never fired and
+	// the client ran with ZERO obstacles and ZERO gold nodes (host: 6).
+	//
+	// ⚠️ D9 CORRECTION (recorded in code so the signed doc is never misread):
+	// the "client obstacles are a SUPERSET of the server's ⇒ never rubber-bands"
+	// argument in TASK-353 §3.5 is VOID unless the seed actually ARRIVES. Under
+	// default relevancy the client got a strict SUBSET (zero) — the exact
+	// inversion the design promised to avoid. **Tier-A membership is that
+	// argument's precondition**; this line is what makes the doc's reasoning true.
+	bAlwaysRelevant = true;
+
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	RootComponent = SceneRoot;
 
@@ -144,12 +168,36 @@ ASiegeBattlefieldScatter::ASiegeBattlefieldScatter()
 	Tags.Add(FName(TEXT("Terrain")));
 }
 
+void ASiegeBattlefieldScatter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	// Doc D9/§3.5: the seed pair. Same-bunch atomicity — ChosenSeed is applied
+	// before OnRep_GenerationIndex fires, so the regen always reads a fresh seed.
+	DOREPLIFETIME(ASiegeBattlefieldScatter, ChosenSeed);
+	DOREPLIFETIME(ASiegeBattlefieldScatter, GenerationIndex);
+}
+
 void ASiegeBattlefieldScatter::BeginPlay()
 {
 	Super::BeginPlay();
 
 	// Match-start scatter (Jonathan: "randomly generated at the start of each match").
-	GenerateScatter();
+	// M8 (TASK-356 doc §3.5): AUTHORITY-gated — a client instance NEVER
+	// self-generates (its local random seed is the different-battlefields bug);
+	// it waits for OnRep_GenerationIndex, which arrives with the authority's
+	// ChosenSeed (join-in-progress included: index >= 1 vs the CDO's 0 fires the
+	// OnRep off the initial rep). Standalone: authority ⇒ byte-identical.
+	if (HasAuthority())
+	{
+		GenerateScatter();
+	}
+	else
+	{
+		UE_LOG(LogSiegeTerrain, Log,
+			TEXT("[BattlefieldScatter '%s'] Client copy — waiting for the replicated seed (OnRep_GenerationIndex; M8 doc D9)."),
+			*GetNameSafe(this));
+	}
 }
 
 void ASiegeBattlefieldScatter::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -163,6 +211,18 @@ void ASiegeBattlefieldScatter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void ASiegeBattlefieldScatter::GenerateScatter()
 {
+	// M8 authority guard (TASK-356 doc §3.5): a client's local random seed is the
+	// very bug D9 exists to kill — client regeneration ONLY ever happens through
+	// OnRep_GenerationIndex with the replicated seed. Standalone: authority ⇒
+	// this guard is a provable no-op (doc §10).
+	if (!HasAuthority())
+	{
+		UE_LOG(LogSiegeTerrain, Warning,
+			TEXT("[BattlefieldScatter '%s'] GenerateScatter refused on a non-authority copy — the client regenerates from the replicated seed (M8 doc D9)."),
+			*GetNameSafe(this));
+		return;
+	}
+
 	UWorld* World = GetWorld();
 	if (!World)
 	{
@@ -204,13 +264,58 @@ void ASiegeBattlefieldScatter::GenerateScatter()
 	LastSeed = Seed;
 	bHasSeed = true;
 
+	// M8 (doc D9/§3.5): publish the chosen seed + bump the regen trigger. The
+	// index bumps EVERY generate — a repeated seed (bReRandomizeOnMatchReset
+	// false) still fires the client OnRep, and a join-in-progress client sees
+	// index >= 1 and regenerates off its initial rep. Standalone: two int writes
+	// nothing reads.
+	ChosenSeed = Seed;
+	++GenerationIndex;
+
+	RunScatterPasses(Seed, /*bAuthoritativeGenerate=*/ true);
+}
+
+void ASiegeBattlefieldScatter::OnRep_GenerationIndex()
+{
+	// CLIENT regen (TASK-356 doc §3.5): ChosenSeed rode the same bunch (applied
+	// before this fires — atomic pair). Deterministic passes only; the nav
+	// validation stays authority-side (D9 residual accepted: client obstacles
+	// are a superset in the rare defensively-culled match — never rubber-bands).
+	if (!ScatterConfig)
+	{
+		if (!bWarnedNoConfig)
+		{
+			bWarnedNoConfig = true;
+			UE_LOG(LogSiegeTerrain, Warning,
+				TEXT("[BattlefieldScatter '%s'] No ScatterConfig assigned on the CLIENT copy — cannot mirror the server battlefield (DA_BattlefieldScatter unassigned)."),
+				*GetNameSafe(this));
+		}
+		return;
+	}
+
+	UE_LOG(LogSiegeTerrain, Log,
+		TEXT("[BattlefieldScatter '%s'] Client regen: replicated seed=%d generation=%d (M8 doc D9)."),
+		*GetNameSafe(this), ChosenSeed, GenerationIndex);
+
+	ClearScatter();
+	LastSeed = ChosenSeed;
+	bHasSeed = true;
+	RunScatterPasses(ChosenSeed, /*bAuthoritativeGenerate=*/ false);
+}
+
+void ASiegeBattlefieldScatter::RunScatterPasses(int32 Seed, bool bAuthoritativeGenerate)
+{
 	FRandomStream Stream(Seed);
 
 	// Build the keep-clear discs (castles/nodes/PlayerStart) + cache the corridor
-	// half-width for this generate.
+	// half-width for this generate. Deterministic inputs on both machines: the
+	// castles are level-placed at identical transforms and the config is the same
+	// asset — so the client's discs match the server's (M8 doc §3.5).
 	RebuildKeepClearZones();
 
 	// The one grep-able reproducibility line (CONVENTIONS "Logging": LogSiegeTerrain).
+	// M8: identical on both machines for the same seed — the TASK-357 layout
+	// comparison greps this line + the MinesPass line on both instances.
 	UE_LOG(LogSiegeTerrain, Log,
 		TEXT("[BattlefieldScatter '%s'] GenerateScatter seed=%d mirror=%s layers=%d corridorHalfY=%.0f"),
 		*GetNameSafe(this), Seed, ScatterConfig->bMirrorSymmetric ? TEXT("true") : TEXT("false"),
@@ -247,8 +352,22 @@ void ASiegeBattlefieldScatter::GenerateScatter()
 	// clones trace real state — and BEFORE StartNavSettlePoll, so the injected
 	// twin hills and the clearance-disc culls are part of the nav rebuild the
 	// reachability validation waits on. Uses its own dedicated stream (seed-order
-	// law) — the layer Stream above is untouched by this call.
+	// law) — the layer Stream above is untouched by this call. M8: the client
+	// spawns its own LOCAL mine pair actors at identical deterministic positions
+	// (AGoldNode state replication is P2 — accepted P1 gap, doc §3.5).
 	PlaceMines(Seed);
+
+	// AUTHORITY ONLY (M8 doc D9): the deferred reachability confirmation depends
+	// on live navmesh queries + the widening-cull attempt counter — not client-
+	// reproducible. The client's layout is the server's seed-deterministic
+	// superset; it never validates or culls.
+	if (!bAuthoritativeGenerate)
+	{
+		UE_LOG(LogSiegeTerrain, Log,
+			TEXT("[BattlefieldScatter '%s'] Client passes complete (seed=%d) — nav validation/culls are authority-only (M8 doc D9)."),
+			*GetNameSafe(this), Seed);
+		return;
+	}
 
 	// Defer the reachability confirmation until the async Dynamic navmesh has
 	// actually finished carving the newly-added obstacle instances: poll
