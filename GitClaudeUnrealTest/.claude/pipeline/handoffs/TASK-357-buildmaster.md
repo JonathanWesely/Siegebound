@@ -162,3 +162,100 @@ Editor **PID 6244 RUNNING**, freshly launched, MCP up on `http://127.0.0.1:8000/
 ## 6. Machine state left behind (RE-RUN #1 — historical)
 
 Editor **PID 37444 RUNNING**, MCP up, no PIE, `L_Arena` loaded and unsaved (the art-director's session; python remote execution still enabled in-memory, reverts on restart). All three test `-game` processes terminated. Test logs kept for the programmer: `Saved/Logs/M8_host.log`, `M8_client.log`, `M8_solo.log` (+ `M8_host.log.run1` / `M8_client.log.run1` from the first pass).
+
+---
+
+## 9. TASK-355 REWORK INTEGRATION (2026-07-30) — asset-only pass, §8.5 **CLOSED**
+
+Short verification-and-commit pass on art-director's REWORK of `WBP_SessionMenu`. **No C++ compile and no gate re-run** — correctly so: the code lane is already committed and green at `f0d7190`, and an asset-only layout change cannot regress replication.
+
+### 9.1 §8.5 is CLOSED, and §7's fallback is RETIRED
+
+The §8.5 blocker was closed the right way — by the exact evidence class that failed before. Real OS mouse clicks now produce the `[SessionMenu]` log lines my 200 gridded clicks could not, at **two** resolutions:
+
+```
+[SessionMenu] Host pressed.
+[SiegeSession] HostListenMatch: opening '/Game/Maps/L_Arena' as a LISTEN server
+[SiegeSession] Arrived in map 'L_Arena' (NetMode=2)
+[SessionMenu] Join pressed (address text '127.0.0.1:7777::1')
+[SessionMenu] Back pressed - no session active
+```
+
+**This retires the §7 subsystem-lane fallback for Host/Join.** §113 recorded that the one thing my gate left unproven was the *button → C++ handler* hop, because I had to invoke `HostListenMatch()` / `JoinMatch()` directly on the live `USiegeSessionSubsystem` instead of pressing a button. That hop is now **proven by real input**, and Host does not merely log — it travels to `L_Arena` as a listen server (`NetMode=2`).
+
+**This matters for P2 test planning:** the menu is now a usable entry point, so a P2 two-client gate no longer needs the subsystem-invoke harness to get a session started. The real-input path is available and the `uiauto.ps1` real-mouse harness is the tool that exercises it. The callspace-Local discriminator law from §8.4 / finding 4 still stands unchanged (a python-invoke trigger forces `FunctionCallspace::Local` by construction and is never a valid RPC-routing test).
+
+### 9.2 Tree delta — verified, not trusted
+
+`git status` before staging showed **exactly** what was claimed, nothing more:
+
+```
+ M GitClaudeUnrealTest/.claude/pipeline/TASKBOARD.md
+ M GitClaudeUnrealTest/.claude/pipeline/handoffs/TASK-355-artist.md
+ M GitClaudeUnrealTest/Content/UI/WBP_SessionMenu.uasset
+```
+
+- **Zero C++ touched** → no module rebuild needed or performed.
+- LFS pointer moved `oid 96e7de1d… size 30192` → `oid 7e6daead… size 49933`, and the on-disk `SHA256` of the working file is **`7E6DAEAD913142CA6C6500ADE2C0F21051607D310B3095AA20EA551F04DE6D3C`** — pointer and file agree exactly. `check-attr` confirms the path is `filter: lfs`.
+- **Residue check clean:** `git status` filtered to `Content/Maps/*`, `*__ExternalActors__*`, `*__ExternalObjects__*` returned **empty**.
+- `WBP_MainMenu` and `WBP_VictoryScreen` are **not** in the delta — already shipped in `f0d7190`, untouched by the rework.
+
+### 9.3 Widget-tree GUID persistence — PROVEN, and proven harder than asked
+
+The novel risk: design-time widgets made with `unreal.new_object` skip the designer's GUID registration, and the engine self-heals at `WidgetBlueprintCompiler.cpp:781` via an `ensureAlwaysMsgf` that then adds the GUID itself. Because it is `ensureAlways` (fires on **every** occurrence, not once per session), **silence on recompile is the proof.**
+
+I confirmed the artist's history in the editor log first: 5 ensures at `03:17:35–47` naming exactly `BackdropBorder`, `TitleText`, `HostLabelText`, `JoinLabelText`, `BackLabelText`, then silence at `03:26:20` (#2) and `03:32:35` (#3). Then I added two independent compiles of my own:
+
+| # | Where | Result |
+|---|---|---|
+| 4 | live editor PID 6244, `compile_blueprint(warnings_as_errors=true)` @ `03:41:03` | **SILENT** — only `Compiling Blueprint` + `Compacting FUObjectHashTables`, zero ensures, zero compiler result lines, tool returned without raising |
+| 5 | **FRESH `UnrealEditor-Cmd` process** (`-run=pythonscript`) @ `03:42:20` | **SILENT** — zero `did not get a GUID`, zero `Ensure condition failed`, zero `LogOutputDevice: Error` |
+
+**Compile #5 is the decisive one and it is stronger than a same-process recompile.** Rather than bounce Jonathan's editor (his call to close, per standing law — and there was no other reason to bounce), I loaded the asset **straight off disk in a brand-new process** with zero in-memory state from PID 6244. That process independently confirmed the on-disk asset carries everything:
+
+```
+CDO isinstance SessionMenuWidget = True
+HostButton/JoinButton/BackButton  -> Button           (prop readable) PASS
+AddressTextBox                    -> EditableTextBox  (prop readable) PASS
+StatusTextBlock/ErrorTextBlock    -> TextBlock        (prop readable) PASS
+SIX_CONTRACT_OK=True
+root CanvasPanel_52 from disk = CanvasPanel
+GUID map read = still protected (WidgetVariableNameToGuidMap)
+```
+
+So the repaired `WidgetVariableNameToGuidMap` **serialized into the `.uasset`** — a fresh process reading only the committed bytes compiles it in silence. The map remains protected/unreadable, which is why silence is the only available proof.
+
+Script kept at `…/scratchpad/T355_persist_check.py`; its output is in `Saved/Logs/GitClaudeUnrealTest_2.log` (a second UE process writes to the `_2` log — the primary is held by the editor). Both runs were **strictly read-only**: **zero** `Saving Package` in the commandlet log, and the asset's `SHA256`/size/mtime were byte-identical before and after both compiles. Commandlet exit code 1 is only `LogHttpListener: Error: HttpListener unable to bind to 127.0.0.1:8000` — the live editor holds that port. Benign and expected; the script itself reported success.
+
+### 9.4 Laws honored
+
+- **`L_Arena` never saved.** `Saving Package: /Game/Maps` count in the whole editor log = **0**. The only three `Saving Package` events all session are all `/Game/UI/WBP_SessionMenu` (`03:17:48`, `03:26:20`, `03:33:03`). My compile #4 dirtied that package in memory only; **I did not save it** — the disk bytes were already correct, so the dirty flag is discarded on close with no loss.
+- **No `reset --hard`, no `clean -fd`.** No `__ExternalActors__`/`__ExternalObjects__` residue.
+- **No push.** `main` was 7 ahead of `origin/main` on arrival (Jonathan's) and I only added to that count.
+- **No gate re-run**, per the dispatch.
+- **No editor close or kill.** PID 6244 handed back RUNNING with MCP up.
+
+### 9.5 ROUTED, NOT AUTHORED — a CONVENTIONS entry is owed (manager's document)
+
+art-director surfaced a genuine lane law. **CONVENTIONS is the manager's document and I did not write it.** Orchestrator: route this to manager.
+
+> **Design-time widgets created via `unreal.new_object` skip the UMG designer's GUID registration.** `UWidgetBlueprint::WidgetVariableNameToGuidMap` is **protected** — unreadable and unwritable from both Python and MCP (the same wall class as `UWidgetTree::RootWidget`), so it cannot be pre-populated. It does not need to be: the compiler repairs it at `WidgetBlueprintCompiler.cpp:781`, inside an `ensureAlwaysMsgf` whose failure branch adds the GUID itself.
+> **Recipe:** after authoring design-time widgets via `new_object`, **compile + save once, then compile again and confirm the second compile is silent.** First-compile ensures (one per new widget, naming it) are expected and self-healing. Ensures that survive into a second compile are a real defect.
+> **Corollary from this integration:** the strongest available persistence check is a compile in a **fresh process** (`UnrealEditor-Cmd -run=pythonscript`) reading the asset off disk — it costs ~5 s, needs no editor bounce, and unlike a same-process recompile it cannot be satisfied by in-memory state.
+
+Also worth manager's attention from the same handoff (art-director's own list): always pass a concrete `asset_type` to `BlueprintTools.create` (an ambiguous class raises a modal that deadlocks a headless editor); `Process.Responding` is not proof of UE life — check the log frame counter; verify a retargeted cast node by **pin type**, not `type_id`; and the `add_event`-first pattern that defeats the `AssignOnClicked` auto-rename trap.
+
+### 9.6 Commit
+
+`Content/UI/WBP_SessionMenu.uasset` + the two pipeline docs, on `main`, **not pushed**. TASK-355 flipped to `done`.
+
+### 9.7 Carried to Jonathan (reported, not fixed — all non-blocking)
+
+1. **The winning Red client reads "Defeat"** — the victory widget's absolute branch needs to become own-team-relative. Already the recorded M8-P2 `SetLocalVictory` item; music was correct, only the text is wrong.
+2. **Inert empty `OnClicked_Event_8` stub** in `WBP_MainMenu`'s graph — cosmetic sweep candidate (one task could sweep all stubs across both widgets).
+3. **Extreme aspect ratios:** the backdrop plate is a fixed 1080 units wide, so at very narrow viewports its left/right edges run off screen and it reads as a full-width band rather than a panel. Presentation-only — all six controls stay centred, visible and legible. art-director deliberately kept the verified fixed geometry rather than trading it for an unverified fractional anchor; I agree with that call for a blocker-closing pass.
+4. **Vertical balance:** in `V1_layout.png` the controls sit in the upper portion of the plate with noticeable empty space below. Purely aesthetic — Jonathan's call whether to tighten it.
+
+### 9.8 Machine state left behind
+
+Editor **PID 6244 still RUNNING**, MCP up on `http://127.0.0.1:8000/mcp`, `L_Arena` loaded and **never saved**. `/Game/UI/WBP_SessionMenu` is dirty in memory from my compile #4 and **must not be saved** — disk is already correct and a save would only re-serialize identical intent. No PIE started. The verification commandlet process exited. `main` = the two commits below, **nothing pushed**. Scratchpad artifacts kept: `T355_persist_check.py` (mine), plus art-director's `T355_*` scripts and the `V1`–`V5` acceptance screenshots.
