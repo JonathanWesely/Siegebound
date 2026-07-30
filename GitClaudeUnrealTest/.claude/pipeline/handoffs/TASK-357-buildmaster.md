@@ -247,7 +247,11 @@ Also worth manager's attention from the same handoff (art-director's own list): 
 
 ### 9.6 Commit
 
-`Content/UI/WBP_SessionMenu.uasset` + the two pipeline docs, on `main`, **not pushed**. TASK-355 flipped to `done`.
+**`9330a1b`** — `TASK-355: WBP_SessionMenu layout rework integrated — §8.5 BLOCKER CLOSED, real-input Host/Join PROVEN (asset-only; no C++ compile, no gate re-run)`
+
+4 files, 241 insertions / 3 deletions: `Content/UI/WBP_SessionMenu.uasset` + `TASKBOARD.md` + `handoffs/TASK-355-artist.md` + this file. On `main`, **not pushed** (`main` was 7 ahead of `origin/main` on arrival — Jonathan's — so it is now 8). TASK-355 flipped to `done`.
+
+A tiny follow-up doc commit fills the real hash into the board and this section, matching the `a726a46` precedent from RE-RUN #2 (the hash cannot exist inside the commit that creates it).
 
 ### 9.7 Carried to Jonathan (reported, not fixed — all non-blocking)
 
@@ -258,4 +262,4 @@ Also worth manager's attention from the same handoff (art-director's own list): 
 
 ### 9.8 Machine state left behind
 
-Editor **PID 6244 still RUNNING**, MCP up on `http://127.0.0.1:8000/mcp`, `L_Arena` loaded and **never saved**. `/Game/UI/WBP_SessionMenu` is dirty in memory from my compile #4 and **must not be saved** — disk is already correct and a save would only re-serialize identical intent. No PIE started. The verification commandlet process exited. `main` = the two commits below, **nothing pushed**. Scratchpad artifacts kept: `T355_persist_check.py` (mine), plus art-director's `T355_*` scripts and the `V1`–`V5` acceptance screenshots.
+Editor **PID 6244 still RUNNING**, MCP up on `http://127.0.0.1:8000/mcp`, `L_Arena` loaded and **never saved**. `/Game/UI/WBP_SessionMenu` is dirty in memory from my compile #4 and **must not be saved** — disk is already correct and a save would only re-serialize identical intent. No PIE started. The verification commandlet process exited. `main` is at the §9.6 commit (`9330a1b`) plus its hash-fill follow-up, i.e. **`origin/main`…`main` = `0 9` — 9 ahead, 0 behind, NOTHING PUSHED.** It was 7 ahead on arrival (Jonathan's) and I added exactly 2. Working tree **clean**; the asset's on-disk SHA256 still equals the committed LFS oid. Scratchpad artifacts kept: `T355_persist_check.py` (mine), plus art-director's `T355_*` scripts and the `V1`–`V5` acceptance screenshots.
