@@ -18,6 +18,22 @@
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCombatantHPChanged, float, CurrentHP, float, MaxHP);
 
 /**
+ *  Per-actor PERMANENT-DAMAGE-BOOST delegate (TASK-362, ancient grounds) — the same
+ *  PUSH model as FOnCombatantHPChanged above, one bar row up. BoostPercent is the
+ *  boost in PERCENT (0 = none, 100 = +100%, 400 = the cap), NOT a 0-1 fraction and
+ *  NOT a multiplier: the UI's whole job is telling EXACTLY 100/200/300% apart from
+ *  just past them, so the wire carries the human-readable percent and the banding
+ *  math happens once, in C++ (UCombatantHealthBarComponent).
+ *
+ *  The owner BROADCASTS on EVERY mutation of its stack count — grant, clear, death
+ *  reset — miss NONE or the row goes stale forever (the same qa/TASK-005 major-2 trap
+ *  the HP delegate documents). Owned and broadcast by ASummonedUnit (TASK-360);
+ *  actors with no boost concept simply never provide one (see the pointer accessor
+ *  on IHealthBarProvider below).
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCombatantDamageBoostChanged, float, BoostPercent);
+
+/**
  *  Read/subscribe surface the overhead combatant health bar (TASK-130) uses to
  *  drive WBP_CombatantHealthBar on the PUSH model. Implemented by every combat
  *  actor that shows a floating bar — ASummonedUnit (incl. AMinerUnit), ABuilding
@@ -57,4 +73,27 @@ public:
 
 	/** True while the actor is alive/standing. Forwards to !IsUnitDead / !IsBuildingDestroyed / !IsDead. */
 	virtual bool IsHealthBarActorAlive() const = 0;
+
+	//~ Begin permanent damage boost (TASK-362, ancient grounds) — DEFAULTED, NOT pure virtual.
+	//  Deliberately the only two non-pure methods on this interface: the defaults ARE the
+	//  contract for "this actor cannot be boosted", so ABuilding and AHeroCharacter need
+	//  ZERO changes (do not add overrides there). ASummonedUnit overrides both (TASK-360).
+
+	/**
+	 *  Current permanent damage boost in PERCENT (0 = none, 100 = +100%, 400 = the cap) —
+	 *  NOT a fraction, NOT a multiplier. Read once at BeginPlay to SEED the boost row before
+	 *  any broadcast can arrive; the component bands it into a fill fraction + band color.
+	 *  Default 0 ⇒ a non-boostable owner seeds its row to opacity 0 and it stays hidden.
+	 */
+	virtual float GetDamageBoostPercent() const { return 0.f; }
+
+	/**
+	 *  The actor's boost-changed delegate, or nullptr when the actor has no boost concept.
+	 *  A POINTER on purpose: "not boostable" must be expressible without every building and
+	 *  the hero carrying a dead delegate member just to return a reference. The bar SEEDS
+	 *  UNCONDITIONALLY from GetDamageBoostPercent() and only then binds, iff this is non-null.
+	 */
+	virtual FOnCombatantDamageBoostChanged* GetDamageBoostChangedDelegate() { return nullptr; }
+
+	//~ End permanent damage boost
 };

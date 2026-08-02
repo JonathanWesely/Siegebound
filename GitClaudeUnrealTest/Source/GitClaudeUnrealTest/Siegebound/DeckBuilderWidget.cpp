@@ -14,8 +14,8 @@
 // ---------------------------------------------------------------------------
 // Card-details glossary (TASK-268) — the ONLY authored player-facing copy in
 // this widget, and the only place it may live (CONVENTIONS "Deck-builder card
-// details"). One string per KEYWORD / MECHANIC, never one per card: all 28
-// descriptions are composed from these plus the card's OWN row numbers, so a
+// details"). One string per KEYWORD / MECHANIC, never one per card: EVERY card
+// description is composed from these plus the card's OWN row numbers, so a
 // balance edit to Docs/Data/cards.csv re-derives every description for free and
 // the designer-only Notes column is never surfaced.
 //
@@ -24,9 +24,14 @@
 // cards.csv column — each carries a "// mirrors <Class>::<Property>" comment and
 // MUST be updated whenever that gameplay value changes. Anything that IS a CSV
 // column is interpolated from the row at runtime and never appears here (§3.0).
+//   ⚠️ ONE DOCUMENTED EXCEPTION (TASK-364): the newer, more specific CONVENTIONS
+//   law "Ancient Grounds + Sorcerer" §8 forbids baking a mechanic magnitude that
+//   this widget cannot reach, so SorcererGroundBoost states its magnitudes
+//   QUALITATIVELY and carries the full reasoning at its own declaration.
 //
 // TRUTH LAW: every line states behavior the shipping code actually implements;
-// the verification site for each clause is recorded in handoffs/TASK-268.md.
+// the verification site for each clause is recorded in handoffs/TASK-268.md
+// (TASK-364 for the two Sorcerer clauses).
 // ---------------------------------------------------------------------------
 namespace SiegeboundCardGlossary
 {
@@ -40,6 +45,30 @@ namespace SiegeboundCardGlossary
 
 	/** Masons (Utility instant). // mirrors ASiegePlayerController::MasonsHealAmount (300) + ::MasonsHealDuration (10 s) */
 	const TCHAR MasonsRole[] = TEXT("Instant repair: heals your own castle 300 health over 10 seconds. With no castle left standing it is refused and costs you nothing.");
+
+	/** Sorcerer, half 1 of 2 - the never-attacks seal. // mirrors ASorcererUnit::CanEverAttack (false) + its ctor's AggroRadius/DefendRadius 0, enforced at ASummonedUnit::EnterAttack / ::UpdateStateGrouped / ::PerformAttack */
+	const TCHAR SorcererRole[] = TEXT("It never attacks - no order will make it strike, and an enemy walking into it is ignored - so it deals no damage of its own. It still takes your unit orders like anything else you play, which is how you walk it onto an ancient ground.");
+
+	/**
+	 *  Sorcerer, half 2 of 2 - the ancient-ground boost. // mirrors AAncientGround's 1 Hz boost tick (BoostTickInterval, friendly-only, sorcerers never self-boost) + ASummonedUnit::CanReceiveDamageBoost (attackers only) + ::ClearPermanentDamageStacks in HandleDeath
+	 *
+	 *  ⚠️ THE MAGNITUDES ARE QUALITATIVE ON PURPOSE — this clause is the ONE
+	 *  documented EXCEPTION to the glossary-mirror rule above, under the NEWER and
+	 *  more specific CONVENTIONS law ("Ancient Grounds + Sorcerer" §8): *"magnitudes
+	 *  that exist as UPROPERTY mechanic rules are interpolated from those properties
+	 *  or stated qualitatively — never a hardcoded number that can drift."*
+	 *  The two numbers are `ASummonedUnit::PermanentDamageBonusPerStack` (0.05 ⇒ +5%
+	 *  per second per sorcerer) and `::MaxPermanentDamageStacks` (80 ⇒ the +400%
+	 *  ceiling) — and this widget CANNOT reach either: both are declared inside that
+	 *  class's `protected:` block (SummonedUnit.h:652 / :662, block opens at :450,
+	 *  alongside every other EditAnywhere tunable it owns), so a
+	 *  `GetDefault<ASummonedUnit>()` read would not compile. Baking them instead
+	 *  would put a drift-prone number in front of the player, which is exactly what
+	 *  the law forbids; so the string states the SHAPE of the rule precisely and
+	 *  carries no number at all. INTERPOLATE THEM HERE the day they are publicly
+	 *  readable — this is the only line that would change.
+	 */
+	const TCHAR SorcererGroundBoost[] = TEXT("While it stands inside an ancient ground, every friendly unit that fights standing in that same ground hits harder for each second it spends there. The gain is permanent - kept in full when that unit walks back out, and lost only when it dies - and it stacks up second after second to a hard ceiling. A second sorcerer in the same ground builds it twice as fast. Units that never attack - miners, healers and sorcerers themselves - gain nothing.");
 
 	/** Sharpened Blade. // mirrors AHeroCharacter::MeleeDamageBonus (+10 per stack) */
 	const TCHAR UpgradeSharpenedBlade[] = TEXT("Instantly upgrades your hero: +10 damage on every melee swing.");
@@ -145,6 +174,7 @@ namespace
 	const FName GlossaryCardID_Miner(TEXT("Miner"));                     // mirrors ASiegePlayerController::MinerCardID
 	const FName GlossaryCardID_DeepMine(TEXT("DeepMine"));               // mirrors ASiegePlayerController::BuildingEconomyCardIDs
 	const FName GlossaryCardID_Masons(TEXT("Masons"));                   // mirrors ASiegePlayerController::MasonsCardID
+	const FName GlossaryCardID_Sorcerer(TEXT("Sorcerer"));               // mirrors the per-card spawn path BP_Unit_<CardID> ⇒ ASorcererUnit — the mechanic is CLASS identity (CanEverAttack / IsAncientGroundEmpowerer), and this row name is what resolves to that class
 	const FName GlossaryCardID_SharpenedBlade(TEXT("SharpenedBlade"));   // mirrors AHeroCharacter.cpp UpgradeCardID_SharpenedBlade
 	const FName GlossaryCardID_PlateArmor(TEXT("PlateArmor"));           // mirrors AHeroCharacter.cpp UpgradeCardID_PlateArmor
 	const FName GlossaryCardID_SwiftBoots(TEXT("SwiftBoots"));           // mirrors AHeroCharacter.cpp UpgradeCardID_SwiftBoots
@@ -842,6 +872,21 @@ void UDeckBuilderWidget::AppendRuleLines(FName CardID, const FCardRow& Row, TArr
 	else if (CardID == GlossaryCardID_Masons)
 	{
 		OutLines.Add(SiegeboundCardGlossary::MasonsRole);
+	}
+	else if (CardID == GlossaryCardID_Sorcerer)
+	{
+		// The ONE card whose row columns describe nothing: Damage/Range/Cadence are all
+		// 0, so AppendStatLines prints no attack block (correctly — it has no attack)
+		// and every keyword/spell/profile clause below is skipped. Without these two
+		// lines a 60-gold card reads as three stats and no rules, which fails the truth
+		// law in the OTHER direction from a false claim. Its mechanic lives entirely in
+		// ASorcererUnit + AAncientGround, so it is CardID-keyed exactly like the three
+		// role clauses above. TWO lines, the shipped multi-clause-role shape
+		// (StructureRole + TowerRole; UpgradeSharpenedBlade + UpgradeTailFmt): the seal
+		// is a permanent property of the unit, the boost is conditional on where it
+		// stands, and one run-on sentence would bury the second.
+		OutLines.Add(SiegeboundCardGlossary::SorcererRole);
+		OutLines.Add(SiegeboundCardGlossary::SorcererGroundBoost);
 	}
 	else if (Row.CardType == ECardType::HeroUpgrade)
 	{

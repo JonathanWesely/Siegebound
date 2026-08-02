@@ -776,6 +776,60 @@ void ASummonedUnit::EndAuraDamageBuff()
 	AuraDamageMultiplier = 1.f;
 }
 
+bool ASummonedUnit::CanReceiveDamageBoost() const
+{
+	// ANCIENT GROUNDS (TASK-360, CONVENTIONS §4) — the occupant predicate AAncientGround's
+	// boost tick reads. Deliberately excludes the three units whose damage routes through
+	// NEITHER compose point (ComputeOutputDamage / ApplyDetonation), so stacks on them would
+	// be a number that changes nothing AND a boost bar that lies:
+	//   • the Sorcerer — CanEverAttack() false (it also never self-boosts, but the ground
+	//     skips empowerers before it ever gets here; this is the second, independent reason);
+	//   • the Miner    — row Damage 0 (its combat machine is structurally sealed anyway);
+	//   • the Cleric   — Profile Support, whose row Damage is a HEAL RATE, not attack damage
+	//     (boosting it would silently buff healing through a damage mechanic).
+	// A Sapper IS eligible (Siege profile, Damage 80): dying is how it attacks, and
+	// ApplyDetonation composes the multiplier — see that function.
+	return !bDead
+		&& CanEverAttack()
+		&& AttackDamage > 0.f
+		&& Profile != ECardProfile::Support;
+}
+
+void ASummonedUnit::AddPermanentDamageStacks(int32 Stacks)
+{
+	// ANCIENT GROUNDS (TASK-360, CONVENTIONS §4). AUTHORITY IS BY CONSTRUCTION — the sole
+	// gameplay caller is AAncientGround's boost tick, which is already gated on its PUSHED
+	// bAuthoritativeBoost flag (the ground never reads HasAuthority(), because it is spawned
+	// LOCALLY on clients from the replicated seed and keeps ROLE_Authority there). Adding a
+	// HasAuthority() guard here would buy nothing in M8 P1, where units are server-only.
+	if (Stacks <= 0)
+	{
+		return; // a zero grant (no friendly sorcerer in the ground) must not touch the bar
+	}
+
+	const int32 NewStacks = FMath::Clamp(PermanentDamageStacks + Stacks, 0, MaxPermanentDamageStacks);
+	if (NewStacks == PermanentDamageStacks)
+	{
+		return; // already at the +400% cap: NO actual change, so NO broadcast (the OnHPChanged discipline)
+	}
+
+	PermanentDamageStacks = NewStacks;
+
+	// broadcast on EVERY actual mutation — miss one and the boost bar is stale forever
+	OnDamageBoostChanged.Broadcast(GetDamageBoostPercent());
+}
+
+void ASummonedUnit::ClearPermanentDamageStacks()
+{
+	// ANCIENT GROUNDS (TASK-360, CONVENTIONS §4) — the RESET path, so the broadcast is
+	// UNCONDITIONAL (mirroring HandleDeath's unconditional 0-HP push): the rigged-death path
+	// defers Destroy by up to DeathAnimMaxHoldSeconds, and without this push a boosted corpse
+	// would hold a full boost bar for those 2 s. Also keeps the widget honest if a caller
+	// clears an already-zero unit.
+	PermanentDamageStacks = 0;
+	OnDamageBoostChanged.Broadcast(GetDamageBoostPercent());
+}
+
 void ASummonedUnit::ApplyFreeze(float Seconds)
 {
 	// MATCH-END PRECEDENCE (M5 ruling 5): a match-end-frozen unit stays parked — a
@@ -1515,13 +1569,31 @@ void ASummonedUnit::UpdateStateGrouped(const FSiegeUnitGroup& Group)
 	// acquisition ONLY when target-less (stickiness): tier 1 = the attack zone,
 	// tier 2 = the position zone. AMBUSH acquires through the same tiers — its
 	// exemption above only governs when an already-held target is RELEASED.
-	if (!CurrentTarget)
+	//
+	// ══ ANCIENT GROUNDS ATTACK SEAL — GUARD 2 of 3 (TASK-360, CONVENTIONS §3) ══
+	// A unit that can never attack acquires NOTHING here: the target is FORCED null
+	// instead of running the two AcquireEnemyNearPoint tiers, so the ladder falls straight
+	// through to tier-3 station-keeping below. That is precisely the "commandable but never
+	// fights" behavior — WITHOUT this a grouped sorcerer would walk to an enemy and stand
+	// there (EnterAdvance on a live target), which reads as a bug even though guard 1 keeps
+	// it from ever swinging. Forcing null every tick also makes the stickiness/HOLD-upgrade
+	// blocks ABOVE unreachable for a sealed unit (they are all gated on a non-null
+	// CurrentTarget), so the single monotone-upgrade AcquireEnemyNearPoint call up there
+	// can never fire for one either.
+	if (!CanEverAttack())
 	{
-		CurrentTarget = AcquireEnemyNearPoint(Group.AttackCenter, Group.AttackRadius);
+		CurrentTarget = nullptr;
 	}
-	if (!CurrentTarget)
+	else
 	{
-		CurrentTarget = AcquireEnemyNearPoint(Group.PositionCenter, Group.PositionRadius);
+		if (!CurrentTarget)
+		{
+			CurrentTarget = AcquireEnemyNearPoint(Group.AttackCenter, Group.AttackRadius);
+		}
+		if (!CurrentTarget)
+		{
+			CurrentTarget = AcquireEnemyNearPoint(Group.PositionCenter, Group.PositionRadius);
+		}
 	}
 
 	if (CurrentTarget)
@@ -1963,6 +2035,24 @@ void ASummonedUnit::ApplyHealing(float Amount)
 
 void ASummonedUnit::EnterAttack()
 {
+	// ══ ANCIENT GROUNDS ATTACK SEAL — GUARD 1 of 3 (TASK-360, CONVENTIONS §3) ══
+	// The STRUCTURAL chokepoint: all four attack entries (the legacy Standard body, the
+	// Shield Wall commanded body, UpdateStateGrouped, UpdateStateSiege) funnel through here,
+	// so this is the guard that actually seals the machine. A unit that can never attack
+	// STANDS DOWN — EnterIdle() rather than a silent `return` — which keeps the state machine
+	// honest: it clears any attack timer, stops movement and parks State at Idle instead of
+	// leaving a sealed unit stuck in a stale Advance/Attack state that TrackChargeMovement
+	// and the bar/debug readbacks would then misreport. EnterIdle is early-out idempotent
+	// (it returns immediately when already Idle) and never calls back into EnterAttack, so
+	// there is no recursion and no per-tick churn.
+	// ⚠️ Without this a Cadence-0 Sorcerer row would arm a 0.05 s looping attack timer — 20
+	// hits/s (see CanEverAttack()'s header comment).
+	if (!CanEverAttack())
+	{
+		EnterIdle();
+		return;
+	}
+
 	if (State != ESummonedUnitState::Attack)
 	{
 		State = ESummonedUnitState::Attack;
@@ -2208,8 +2298,13 @@ void ASummonedUnit::PerformAttack()
 {
 	// bAIFrozen is defense-in-depth (TASK-028): FreezeAI clears the attack timer;
 	// bSpellFrozen mirrors it for the resumable FrostNova freeze (TASK-099 —
-	// ApplyFreeze also clears the timer, so this is a belt-and-braces gate)
-	if (bDead || !bStatsLoaded || bAIFrozen || bSpellFrozen)
+	// ApplyFreeze also clears the timer, so this is a belt-and-braces gate).
+	// ══ ANCIENT GROUNDS ATTACK SEAL — GUARD 3 of 3 (TASK-360, CONVENTIONS §3) ══
+	// !CanEverAttack() joins the same defense-in-depth gate: guard 1 means the timer that
+	// calls this can never be armed for a sealed unit, so this is the belt-and-braces layer
+	// that also covers any FUTURE caller of PerformAttack (a serialized BP value, a new
+	// state body) — the cost of missing it is a Cadence-0 unit landing 20 hits/s.
+	if (bDead || !bStatsLoaded || bAIFrozen || bSpellFrozen || !CanEverAttack())
 	{
 		return;
 	}
@@ -2364,6 +2459,16 @@ float ASummonedUnit::ComputeOutputDamage(const AActor* Target)
 	// WAR BANNER AURA: temporary additive output multiplier (1.0 = none). Stored separately from
 	// AttackDamage and reset to exactly 1.0 on expiry, so it can never drift the row-bound base.
 	Output *= AuraDamageMultiplier;
+
+	// ANCIENT GROUNDS (TASK-360, CONVENTIONS §4) — COMPOSE POINT 1 of 2. The permanent stacking
+	// boost is applied at STRIKE TIME exactly like the aura above and is likewise stored
+	// separately from AttackDamage, which is NEVER mutated in place (the house buff law). This
+	// ONE insertion covers BOTH delivery modes — melee (ApplyDamage below in PerformAttack) and
+	// ranged (the composed OutputDamage carried into FireProjectileAt) — and every keyword unit,
+	// because they all funnel through this function. Multiplicative and EXACTLY 1.0 at zero
+	// stacks, so an unboosted unit still returns AttackDamage bit-for-bit (the M1/M2
+	// non-regression this function's contract promises).
+	Output *= GetPermanentDamageMultiplier();
 
 	return Output;
 }
@@ -2642,13 +2747,23 @@ void ASummonedUnit::ApplyDetonation()
 		return;
 	}
 
+	// ANCIENT GROUNDS (TASK-360, CONVENTIONS §4) — COMPOSE POINT 2 of 2, and a DELIBERATE
+	// behavior change to a shipped unit. This path passed RAW AttackDamage, bypassing the
+	// ComputeOutputDamage chokepoint entirely; dying IS how a Sapper attacks, so an unboosted
+	// blast from a fully-boosted Sapper would be a visible lie. AttackDamage itself is still
+	// never mutated — the multiplier composes into a LOCAL, exactly as everywhere else, and is
+	// exactly 1.0 for every unboosted Sapper (so the shipped 80-damage blast is unchanged).
+	// Charge/Slayer/Aura are deliberately NOT retro-applied here: that is a separate
+	// pre-existing gap, recorded in the handoff, not fixed by this task.
+	const float BlastDamage = AttackDamage * GetPermanentDamageMultiplier();
+
 	// AoE at our feet: row Damage (Sapper 80) over row AoERadius (250), Siege-typed so ACastle/
 	// ABuilding scale it to 200% (TASK-054); enemies only, no friendly fire. Nothing hardcoded —
 	// AttackDamage and AoERadius are bound from the DT_Cards row. Our controller is the instigator
 	// for attribution; the shared helper's Team filter is the friendly-fire authority (TASK-056
 	// reuses this same call for the Bomb Tower).
 	FSiegeCombatStatics::ApplyRadialDamage(World, GetController(), Team, GetActorLocation(),
-		AoERadius, AttackDamage, USiegeDamageType_Siege::StaticClass());
+		AoERadius, BlastDamage, USiegeDamageType_Siege::StaticClass());
 }
 
 void ASummonedUnit::HandleDeath()
@@ -2675,6 +2790,16 @@ void ASummonedUnit::HandleDeath()
 	// do not route through TakeDamage, e.g. Sapper suicide). The actor is destroyed below,
 	// taking the bar with it, so no explicit hide is needed.
 	OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
+
+	// ANCIENT GROUNDS (TASK-360, CONVENTIONS §4) — the boost is lost ON DEATH (Jonathan's
+	// directive: "stays with units even after they leave, until they die"), and this push is
+	// REQUIRED, not cosmetic: the rigged-death path below defers Destroy by up to
+	// DeathAnimMaxHoldSeconds (2 s), so without it a boosted corpse would hold a full boost bar
+	// through its whole death anim. Placed AFTER the bSuicide ApplyDetonation above on purpose —
+	// a boosted Sapper's death blast is still boosted (compose point 2), and only then does the
+	// unit lose its stacks. Play Again needs ZERO work (its step 2 destroys every unit); the
+	// match-end freeze deliberately does NOT reset (a permanent boost survives to the end screen).
+	ClearPermanentDamageStacks();
 
 	// §6 gold-coin burst on unit death (TASK-158): cosmetic only, NO gold mutation.
 	// Hooked into THIS single death choke (covers combat death, Sapper suicide, the

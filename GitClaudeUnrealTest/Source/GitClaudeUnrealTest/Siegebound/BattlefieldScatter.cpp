@@ -15,6 +15,7 @@
 #include "NavigationSystem.h"
 #include "Net/UnrealNetwork.h" // M8 (TASK-356): DOREPLIFETIME for the seed pair
 #include "TimerManager.h"
+#include "Siegebound/AncientGround.h" // TASK-361: the ancient-ground pair this actor spawns
 #include "Siegebound/Castle.h"
 #include "Siegebound/GoldNode.h"
 #include "Siegebound/ScatterConfig.h"
@@ -44,6 +45,24 @@ namespace
 		}
 		const float Sign = (Stream.FRand() < 0.5f) ? -1.f : 1.f;
 		return Sign * Mag * HalfY;
+	}
+
+	/**
+	 *  Value of the `mirror=` token in the ONE grep-able GenerateScatter
+	 *  reproducibility line (TASK-358). The KEY is deliberately KEPT — QA's
+	 *  existing grep for `GenerateScatter seed=… mirror=…` must keep matching —
+	 *  and only the VALUE changes, from the retired bMirrorSymmetric true/false
+	 *  to the symmetry-MODE name. Same seed + same binary ⇒ byte-identical line
+	 *  on host and client.
+	 */
+	const TCHAR* SymmetryModeToken(EScatterSymmetryMode Mode)
+	{
+		switch (Mode)
+		{
+		case EScatterSymmetryMode::Rotational180: return TEXT("rot180");
+		case EScatterSymmetryMode::Asymmetric:    return TEXT("asymmetric");
+		default:                                  return TEXT("unknown");
+		}
 	}
 
 	/**
@@ -316,9 +335,11 @@ void ASiegeBattlefieldScatter::RunScatterPasses(int32 Seed, bool bAuthoritativeG
 	// The one grep-able reproducibility line (CONVENTIONS "Logging": LogSiegeTerrain).
 	// M8: identical on both machines for the same seed — the TASK-357 layout
 	// comparison greps this line + the MinesPass line on both instances.
+	// TASK-358: the `mirror=` KEY is preserved on purpose (QA's grep) — its VALUE
+	// is now the symmetry-MODE name (`rot180` / `asymmetric`), not true/false.
 	UE_LOG(LogSiegeTerrain, Log,
 		TEXT("[BattlefieldScatter '%s'] GenerateScatter seed=%d mirror=%s layers=%d corridorHalfY=%.0f"),
-		*GetNameSafe(this), Seed, ScatterConfig->bMirrorSymmetric ? TEXT("true") : TEXT("false"),
+		*GetNameSafe(this), Seed, SymmetryModeToken(ScatterConfig->SymmetryMode),
 		ScatterConfig->Layers.Num(), CorridorHalfWidthCached);
 
 	// W1-PREP hill-surface placement (CONVENTIONS "W1-PREP additions", TASK-250):
@@ -347,15 +368,31 @@ void ASiegeBattlefieldScatter::RunScatterPasses(int32 Seed, bool bAuthoritativeG
 		}
 	}
 
-	// W1-PREP mirrored depleting mines (TASK-255): AFTER pass 2 — the hill
-	// surfaces + hill-riding props exist, so mine grounding and the parity hill
-	// clones trace real state — and BEFORE StartNavSettlePoll, so the injected
-	// twin hills and the clearance-disc culls are part of the nav rebuild the
-	// reachability validation waits on. Uses its own dedicated stream (seed-order
-	// law) — the layer Stream above is untouched by this call. M8: the client
+	// W1-PREP rotated depleting mines (TASK-255): AFTER pass 2 — the hill surfaces
+	// + hill-riding props exist AND (TASK-358) the hill field is already complete
+	// with its rotational twins, which is what makes the mine pair's two grounding
+	// traces provably agree — and BEFORE StartNavSettlePoll, so the clearance-disc
+	// culls are part of the nav rebuild the reachability validation waits on. Uses
+	// its own dedicated stream (seed-order law) — the layer Stream above is
+	// untouched by this call. M8: the client
 	// spawns its own LOCAL mine pair actors at identical deterministic positions
 	// (AGoldNode state replication is P2 — accepted P1 gap, doc §3.5).
 	PlaceMines(Seed);
+
+	// ANCIENT GROUNDS (TASK-361 — CONVENTIONS §2 "Placement"): IMMEDIATELY after
+	// the mines, and inside this shared seed-deterministic body so the client's
+	// OnRep_GenerationIndex path re-runs it identically. The order is load-bearing
+	// in one direction only: the pass keeps its distance from the SPAWNED mines,
+	// so the mine set must already exist. It uses its own dedicated stream (the
+	// seed-order law) — neither the layer Stream above nor the mine stream is
+	// touched, so every existing layout is preserved draw-for-draw.
+	//
+	// ⚠️ bAuthoritativeGenerate IS THREADED THROUGH, not re-derived. The grounds
+	// are spawned locally on the CLIENT too (they ride the replicated seed exactly
+	// like the mines) and therefore keep ROLE_Authority there — so the boost sim
+	// can only be disabled by PUSHING this machine's authority decision into
+	// InitAncientGround. See PlaceAncientGrounds' header comment.
+	PlaceAncientGrounds(Seed, bAuthoritativeGenerate);
 
 	// AUTHORITY ONLY (M8 doc D9): the deferred reachability confirmation depends
 	// on live navmesh queries + the widening-cull attempt counter — not client-
@@ -403,6 +440,22 @@ void ASiegeBattlefieldScatter::ClearScatter()
 		}
 	}
 	SpawnedMines.Reset();
+
+	// Ancient-ground lifecycle (TASK-361) — EXACTLY the mine lifecycle above:
+	// destroyed, never pooled, so every re-scatter places a fresh pair at a fresh
+	// location AND re-runs the authority push on the new actors (a pooled ground
+	// could carry a stale bAuthoritativeBoost across a Play Again). AAncientGround
+	// latches no state and clears its own boost timer in EndPlay, so there is
+	// nothing else to unwind — no SiegeGameMode edit is needed anywhere.
+	for (const TObjectPtr<AAncientGround>& Ground : SpawnedAncientGrounds)
+	{
+		AAncientGround* GroundPtr = Ground.Get();
+		if (IsValid(GroundPtr))
+		{
+			GroundPtr->Destroy();
+		}
+	}
+	SpawnedAncientGrounds.Reset();
 }
 
 void ASiegeBattlefieldScatter::ScatterLayer(const FScatterLayer& Layer, FRandomStream& Stream)
@@ -459,7 +512,18 @@ void ASiegeBattlefieldScatter::ScatterLayer(const FScatterLayer& Layer, FRandomS
 
 	const float HalfX = FMath::Max(ScatterConfig->ArenaHalfExtent.X, 1.f);
 	const float HalfY = FMath::Max(ScatterConfig->ArenaHalfExtent.Y, 1.f);
-	const bool bMirror = ScatterConfig->bMirrorSymmetric;
+
+	// 180°-ROTATIONAL SYMMETRY (TASK-358 — CONVENTIONS "Ancient Grounds +
+	// Sorcerer + 180° terrain symmetry" §1, the ONLY legal terrain symmetry on
+	// this project). Generate the BLUE half (X <= 0) and emit each instance's
+	// twin under a proper rigid rotation about the map center:
+	//     loc' = (-X, -Y, Z)   yaw' = Fmod(yaw + 180, 360)   scale' = scale
+	// On the yaw-only / uniform-scale transforms every scatter instance uses this
+	// is EXACT: no negative scale, no HISM winding flip, no approximation (the
+	// retired bMirrorSymmetric X-mirror was a FAKE reflection and is dead).
+	const bool bRotSym = (ScatterConfig->SymmetryMode == EScatterSymmetryMode::Rotational180);
+	const float DrawMaxX = bRotSym ? 0.f : HalfX;
+
 	const bool bUsesProxy = !Layer.CollisionProxyMesh.IsNull();
 	const float ScaleLo = FMath::Min(Layer.ScaleRange.X, Layer.ScaleRange.Y);
 	const float ScaleHi = FMath::Max(Layer.ScaleRange.X, Layer.ScaleRange.Y);
@@ -495,13 +559,39 @@ void ASiegeBattlefieldScatter::ScatterLayer(const FScatterLayer& Layer, FRandomS
 	FScatterSpacingGrid SpacingGrid;
 	SpacingGrid.Init(Layer.MinSpacing + 2.f * MaxLayerR, Layer.MinSpacing);
 
+	// TARGET-COUNT SEMANTICS (CONVENTIONS §1: "per-layer TargetCount already counts
+	// primary + twin, so a target of 340 becomes ~170 pairs"). Under the rotational
+	// law each outer iteration emits a PAIR, so the ITERATION budget halves while
+	// the layer still ships ~InstanceCount instances — the perf budget (~15,000
+	// AddInstance calls across the DA) is IDENTICAL to the old asymmetric field,
+	// and Jonathan's "generate one half" algorithm costs half the RNG draws and
+	// half the ground traces. DivideAndRoundUp so an ODD target never ships a pair
+	// short (341 ⇒ 171 pairs ⇒ 342 instances). Each iteration keeps the FULL
+	// MaxPlacementAttemptsPerInstance rejection budget — unchanged.
+	const int32 OuterTarget = bRotSym
+		? FMath::DivideAndRoundUp<int32>(Layer.InstanceCount, 2)
+		: Layer.InstanceCount;
+
 	int32 Placed = 0;
-	for (int32 InstanceIndex = 0; InstanceIndex < Layer.InstanceCount; ++InstanceIndex)
+	// Asymmetry-escape + free-assertion counters (reported on the layer log line).
+	// Both are PROVABLY 0 under the shipped level geometry — see the twin block —
+	// so a non-zero value is a real signal for QA, not noise.
+	int32 TwinSkipped = 0;
+	int32 TwinZMismatch = 0;
+	for (int32 InstanceIndex = 0; InstanceIndex < OuterTarget; ++InstanceIndex)
 	{
 		bool bPlacedThis = false;
 		for (int32 Attempt = 0; Attempt < MaxPlacementAttemptsPerInstance && !bPlacedThis; ++Attempt)
 		{
-			const float X = Stream.FRandRange(-HalfX, HalfX);
+			// ⚠️ BLUE HALF ONLY (CONVENTIONS §1 — NOT NEGOTIABLE, and not arbitrary):
+			// PlayerStart exists ONLY at (-23800, 0, 100); there is no Red-side
+			// PlayerStart, so generating the RED half would rotate a legally-placed
+			// prop straight ONTO the hero spawn. Generating Blue honors the real
+			// keep-clear disc and its rotated image over-clears a harmless empty
+			// patch at (+23800, 0). The mines pass already draws X < 0 — consistent,
+			// not new. Still EXACTLY ONE draw: only the RANGE narrows, so the draw
+			// sequence's SHAPE (and therefore the determinism contract) is untouched.
+			const float X = Stream.FRandRange(-HalfX, DrawMaxX);
 			const float Y = SampleBiasedY(Stream, HalfY, Layer.RegionBias);
 			const FVector2D Candidate(X, Y);
 
@@ -598,56 +688,128 @@ void ASiegeBattlefieldScatter::ScatterLayer(const FScatterLayer& Layer, FRandomS
 				}
 			}
 
-			// Mirror-symmetric fallback mode: place the twin across X=0 (still
-			// radius-aware keep-clear-checked for blocking layers). The twin's |X|,|Y|
-			// equal the primary's, so it is already inside the field-edge clamp.
-			if (bMirror)
+			// ═══ THE 180° ROTATIONAL TWIN (TASK-358) ═══════════════════════════════
+			// Emitted INLINE, inside the instance loop — NEVER as a bulk post-pass.
+			// A post-pass breaks three SHIPPED invariants:
+			//   (1) VisualToProxy index parallelism — the tree visual and its
+			//       collision proxy must be added in LOCKSTEP or CullCorridorBlockers /
+			//       RemoveBlockingInstancesInDisc orphan visible trees with no blocker;
+			//   (2) SpacingGrid registration of the twin, so LATER primaries in this
+			//       same layer respect it (a post-pass twin would be invisible to the
+			//       spacing law and could interpenetrate);
+			//   (3) HillSurfaceComponents registration for pass-1 blockers — the hill
+			//       field must be COMPLETE (primaries AND twins) before pass-2 layers
+			//       trace against it, which is exactly what makes the twin's ground Z
+			//       provably equal to the primary's (see the assertion below).
+			// ZERO FRandomStream DRAWS IN HERE — the twin is COMPUTED, never sampled.
+			// That is what preserves intra-build determinism and host==client agreement
+			// (the same discipline PlaceMines already enforces).
+			if (bRotSym)
 			{
-				const FVector2D MirrorPoint(-X, Y);
-				bool bPlaceMirror = !(Layer.bBlocking && IsInKeepClear(MirrorPoint, FootprintR));
-				float MirrorGroundZ = 0.f;
-				if (bPlaceMirror)
+				const FVector2D TwinPoint(-X, -Y);
+
+				// The twin's |X| and |Y| equal the primary's, so the field-edge clamp
+				// above already covers it (a rotation about the center preserves both
+				// magnitudes) — no re-test needed.
+				//
+				// Keep-clear IS re-tested, defensively. Under the shipped level it can
+				// never reject: the corridor test reads |−Y| = |Y| (identical answer),
+				// the two castle discs are an exact rotational pair at ±25000 sharing
+				// one CastleKeepClearRadius (so twin-vs-Red ≡ primary-vs-Blue), and the
+				// lone asymmetric disc — PlayerStart at (−23800, 0) — is unreachable by
+				// a twin, which always has X >= 0. The guard stays because it costs
+				// nothing and a future level edit (a moved castle, a second
+				// PlayerStart) would otherwise silently place into a keep-clear zone.
+				bool bPlaceTwin = !(Layer.bBlocking && IsInKeepClear(TwinPoint, FootprintR));
+				float TwinGroundZ = 0.f;
+				if (bPlaceTwin)
 				{
-					// The twin grounds INDEPENDENTLY (hills are placed asymmetrically
-					// even in mirror mode, so the twin's XY may sit on a different — or
-					// no — hill): same floor trace + hill-surface upgrade as the
-					// primary; an over-slope face at the twin's XY skips JUST the twin,
-					// exactly like the keep-clear guard above.
-					MirrorGroundZ = GroundZAt(-X, Y);
-					if (Layer.bAllowOnHills && !ResolveHillAwareGroundZ(-X, Y, MirrorGroundZ, Layer.MaxPlacementSlopeDeg, MirrorGroundZ))
+					// Z IS RE-TRACED, NEVER COPIED (CONVENTIONS §1). It keeps the
+					// null-safe code shape AND turns an assumption into a FREE QA
+					// ASSERTION: under an exact rotation this MUST return the primary's
+					// Z. Why it must — the hill field is itself rotationally symmetric
+					// (pass 1 emits every hill's twin before any pass-2 layer traces),
+					// the arena floor is a flat slab, and a Z-axis rotation leaves both
+					// the surface Z and the normal's Z component INVARIANT, so the
+					// slope gate acos(N.Z) returns the identical answer at both points.
+					TwinGroundZ = GroundZAt(-X, -Y);
+					if (Layer.bAllowOnHills && !ResolveHillAwareGroundZ(-X, -Y, TwinGroundZ, Layer.MaxPlacementSlopeDeg, TwinGroundZ))
 					{
-						bPlaceMirror = false;
+						bPlaceTwin = false;
+					}
+					else if (!FMath::IsNearlyEqual(TwinGroundZ, GroundZ, 1.f))
+					{
+						// The assertion FIRED: the field is not rotationally symmetric
+						// where it must be. Place anyway at the honest traced Z (never
+						// float an instance), but make it loud — this is a real defect
+						// signal, not cosmetic drift. Only the first few are printed
+						// (a systemic break would otherwise emit thousands of lines and
+						// bury the rest of the generate log); the TOTAL always reaches
+						// the layer's summary line as `zMismatch=`.
+						++TwinZMismatch;
+						if (TwinZMismatch <= 3)
+						{
+							UE_LOG(LogSiegeTerrain, Warning,
+								TEXT("[BattlefieldScatter] Layer '%s' SymmetryAssert: twin ground Z mismatch at P=(%.0f,%.0f) Z=%.1f vs P'=(%.0f,%.0f) Z=%.1f — the rotated field is NOT symmetric here."),
+								*Layer.LayerName.ToString(), X, Y, GroundZ, -X, -Y, TwinGroundZ);
+						}
 					}
 				}
-				if (bPlaceMirror)
+
+				if (bPlaceTwin)
 				{
-					const float MirrorZ = MirrorGroundZ + Layer.ZOffset;
-					const float MirrorYaw = Layer.bRandomYaw ? FMath::Fmod(Yaw + 180.f, 360.f) : 0.f;
-					const FTransform MirrorXf(FRotator(0.f, MirrorYaw, 0.f), FVector(-X, Y, MirrorZ), FVector(Scale));
-					Comp->AddInstance(MirrorXf, /*bWorldSpace=*/true);
-					SpacingGrid.Add(MirrorPoint, FootprintR); // TASK-284: mirror twin registered exactly as the old PlacedPoints add
+					const float TwinZ = TwinGroundZ + Layer.ZOffset;
+					// yaw + 180 UNCONDITIONALLY — a proper rigid rotation rotates the
+					// mesh too, so this is NOT gated on bRandomYaw (the retired mirror
+					// block zeroed it for fixed-yaw layers; that was a fake-reflection
+					// artifact and would leave every fixed-yaw twin facing the wrong way).
+					const float TwinYaw = FMath::Fmod(Yaw + 180.f, 360.f);
+					const FTransform TwinXf(FRotator(0.f, TwinYaw, 0.f), FVector(-X, -Y, TwinZ), FVector(Scale));
+					Comp->AddInstance(TwinXf, /*bWorldSpace=*/true);
+					SpacingGrid.Add(TwinPoint, FootprintR); // invariant (2): later primaries must see the twin
 					++Placed;
 
-					// Mirror proxy in lockstep (keeps the visual/proxy indices parallel).
+					// Invariant (1): twin proxy in LOCKSTEP with the twin visual.
 					if (bUsesProxy)
 					{
 						if (UHierarchicalInstancedStaticMeshComponent* Proxy = ResolveProxyForVisual(Comp, Layer))
 						{
 							const FVector ProxyScaleVec = Layer.CollisionProxyScale * Scale;
-							const float ProxyZ = MirrorZ + Layer.CollisionProxyZOffset * Scale;
-							const FTransform ProxyXf(FRotator(0.f, MirrorYaw, 0.f), FVector(-X, Y, ProxyZ), ProxyScaleVec);
+							const float ProxyZ = TwinZ + Layer.CollisionProxyZOffset * Scale;
+							const FTransform ProxyXf(FRotator(0.f, TwinYaw, 0.f), FVector(-X, -Y, ProxyZ), ProxyScaleVec);
 							Proxy->AddInstance(ProxyXf, /*bWorldSpace=*/true);
 						}
 					}
+				}
+				else
+				{
+					// ASYMMETRY ESCAPE — counted here and reported on the layer line
+					// (CONVENTIONS §1: every local symmetry break must be logged).
+					// Provably 0 under the shipped level; a non-zero count means the
+					// keep-clear set or the hill field stopped being rotationally
+					// symmetric and the layer ships one instance short of its target.
+					++TwinSkipped;
 				}
 			}
 		}
 	}
 
+	// TASK-358: `sym`/`pairs`/`twinSkipped`/`zMismatch` are additive tokens — the
+	// pre-existing `placed`/`target`/`blocking`/`meshVariants` keys are untouched
+	// so any existing QA grep still matches. Under the law `pairs` is the outer
+	// iteration budget and `placed` should land at ~2 × the pairs actually filled.
 	UE_LOG(LogSiegeTerrain, Log,
-		TEXT("[BattlefieldScatter] Layer '%s': placed %d instances (target %d, blocking=%s, meshVariants=%d)."),
+		TEXT("[BattlefieldScatter] Layer '%s': placed %d instances (target %d, sym=%s, pairs %d, twinSkipped=%d, zMismatch=%d, blocking=%s, meshVariants=%d)."),
 		*Layer.LayerName.ToString(), Placed, Layer.InstanceCount,
+		SymmetryModeToken(ScatterConfig->SymmetryMode), OuterTarget, TwinSkipped, TwinZMismatch,
 		Layer.bBlocking ? TEXT("true") : TEXT("false"), Resolved.Num());
+
+	if (TwinSkipped > 0)
+	{
+		UE_LOG(LogSiegeTerrain, Warning,
+			TEXT("[BattlefieldScatter] Layer '%s' SymmetryEscape: %d rotational twin(s) SKIPPED (keep-clear or slope rejected the twin point) — the field is locally asymmetric and the layer shipped %d short of its %d target."),
+			*Layer.LayerName.ToString(), TwinSkipped, FMath::Max(Layer.InstanceCount - Placed, 0), Layer.InstanceCount);
+	}
 }
 
 UHierarchicalInstancedStaticMeshComponent* ASiegeBattlefieldScatter::ResolveComponentForMesh(UStaticMesh* Mesh, const FScatterLayer& Layer)
@@ -1019,10 +1181,11 @@ float ASiegeBattlefieldScatter::GroundZAt(float X, float Y) const
 bool ASiegeBattlefieldScatter::ResolveHillAwareGroundZ(float X, float Y, float FloorZ, float MaxSlopeDeg, float& OutZ) const
 {
 	// Thin wrapper since TASK-255: FindHillSurfaceAt is the SAME TASK-250 trace +
-	// slope gate, extended to also surface the hit component + instance index
-	// (the mines pass needs the surface IDENTITY for hill parity). The layer
-	// passes only need the Z, so the identity outs are discarded here — layer
-	// placement behavior is unchanged.
+	// slope gate, extended to also surface the hit component + instance index (the
+	// mines pass reads the component as its on-a-hill predicate; TASK-361's
+	// ancient-ground pass will read it to REJECT hills outright). The layer passes
+	// only need the Z, so the identity outs are discarded here — layer placement
+	// behavior is unchanged.
 	UHierarchicalInstancedStaticMeshComponent* SurfaceComp = nullptr;
 	int32 InstanceIndex = INDEX_NONE;
 	return FindHillSurfaceAt(X, Y, FloorZ, MaxSlopeDeg, OutZ, SurfaceComp, InstanceIndex);
@@ -1075,7 +1238,7 @@ bool ASiegeBattlefieldScatter::FindHillSurfaceAt(float X, float Y, float FloorZ,
 			BestZ = static_cast<float>(Hit.ImpactPoint.Z); // explicit LWC double → float (placement grid precision is ample)
 			BestNormal = Hit.ImpactNormal;
 			BestComp = SurfaceComp;
-			BestItem = Hit.Item; // per-instance body index — for an (H)ISM this IS the instance index (GetInstanceTransform-compatible), the parity clone source (TASK-255)
+			BestItem = Hit.Item; // per-instance body index — for an (H)ISM this IS the instance index (GetInstanceTransform-compatible). TASK-358: informational since the parity clone was deleted; the COMPONENT is the live output.
 		}
 	}
 
@@ -1143,13 +1306,14 @@ void ASiegeBattlefieldScatter::PlaceMines(int32 Seed)
 
 	// Half-draw band. The |X| floor max(ClearR, Spacing/2) buys TWO spacing
 	// guarantees for free, which is why the explicit test below only needs the
-	// prior PRIMARIES:
-	//  - own twin: dist(P, P′) = 2|X| ≥ 2·max(ClearR, Spacing/2) ≥ Spacing, and
-	//    the pair's two clearance discs can never overlap across X=0
-	//    (2|X| ≥ 2·ClearR);
-	//  - cross-pair vs another pair's MIRROR: both primaries sit on the SAME
-	//    (Blue) half, so the mirrored X's ADD — dist(Pi, Pj′) ≥ |Xi| + |Xj| ≥
-	//    2·(Spacing/2) = Spacing.
+	// prior PRIMARIES. TASK-358 (twin now (−X, −Y) instead of (−X, Y)) only
+	// STRENGTHENS both — every distance below gains a non-negative Y term:
+	//  - own twin: dist(P, P′) = 2·|P| = 2·√(X² + Y²) ≥ 2|X| ≥
+	//    2·max(ClearR, Spacing/2) ≥ Spacing, and the pair's two clearance discs
+	//    can never overlap across the center (2|P| ≥ 2·ClearR);
+	//  - cross-pair vs another pair's ROTATED twin: both primaries sit on the SAME
+	//    (Blue) half, so the negated X's ADD — dist(Pi, Pj′) =
+	//    √((Xi + Xj)² + (Yi + Yj)²) ≥ |Xi| + |Xj| ≥ 2·(Spacing/2) = Spacing.
 	// (The dispatch's "|X| ≥ max(600, spacing/2)": the 600 is MineClearanceRadius
 	// — the floor that keeps a pair's own discs from overlapping the centerline —
 	// not MineEdgeMargin, which only insets the OUTER band below.)
@@ -1172,24 +1336,24 @@ void ASiegeBattlefieldScatter::PlaceMines(int32 Seed)
 	TArray<FVector2D> PrimaryPoints;
 	PrimaryPoints.Reserve(CountPerSide);
 
-	// Mines carry TWO placement points + slope gates + a possible parity
-	// injection per candidate — double the standard rejection budget before the
-	// deterministic fallback (spec: ≤ 2× MaxPlacementAttemptsPerInstance).
+	// Mines carry TWO placement points + slope gates per candidate — double the
+	// standard rejection budget before the deterministic fallback (spec: ≤ 2×
+	// MaxPlacementAttemptsPerInstance). Kept at 2× even though TASK-358 removed
+	// the parity-injection reject: the budget is a tunable, not a derived number,
+	// and shrinking it would change the fallback rate for no gain.
 	const int32 MaxMineAttempts = 2 * FMath::Max(MaxPlacementAttemptsPerInstance, 1);
 
-	// Resolves a candidate PAIR (P on the Blue half, P′ its mirror): floor + hill
-	// grounding at both points, the slope gate, and the hill-parity injection.
-	// Returns false with the FIELD STATE UNTOUCHED when either face is over-slope
-	// or the injected clone cannot seat the mirrored point (any injected clone is
-	// rolled back). ZERO stream draws inside — pure trace/geometry, so a variable
-	// number of internal rejections can never desync the draw sequence.
+	// Resolves a candidate PAIR (P on the Blue half, P′ its 180° ROTATION about the
+	// map center): floor + hill grounding at both points and the slope gate.
+	// Returns false with the FIELD STATE UNTOUCHED when either face is over-slope.
+	// ZERO stream draws inside — pure trace/geometry, so a variable number of
+	// internal rejections can never desync the draw sequence.
+	// TASK-358: the hill-parity clone / re-trace / ROLLBACK machinery this lambda
+	// used to carry is DELETED — see the unreachability argument below.
 	auto TryResolveMinePair = [&](const FVector2D& Pt, float GateDeg,
-		float& OutZP, float& OutZM, bool& bOutOnHill, int32& OutInjectedSide, int32& OutFootprintCulls) -> bool
+		float& OutZP, float& OutZM, bool& bOutOnHill) -> bool
 	{
-		OutInjectedSide = 0;
-		OutFootprintCulls = 0;
-
-		const FVector2D Pm(-Pt.X, Pt.Y);
+		const FVector2D Pm(-Pt.X, -Pt.Y);
 		const float FloorZP = GroundZAt(Pt.X, Pt.Y);
 		const float FloorZM = GroundZAt(Pm.X, Pm.Y);
 
@@ -1206,80 +1370,53 @@ void ASiegeBattlefieldScatter::PlaceMines(int32 Seed)
 		const bool bHillP = (CompP != nullptr);
 		const bool bHillM = (CompM != nullptr);
 		bOutOnHill = bHillP || bHillM;
-		if (bHillP == bHillM)
-		{
-			// Parity already holds: both flat, or both on (their own, independently
-			// slope-gated) hills — "either-side-has ⇒ both-have" is satisfied.
-			return true;
-		}
 
-		// HILL PARITY (Jonathan ruling: either-side-has ⇒ both-have). Clone the
-		// supporting hill INSTANCE onto the bare side, mirrored by the house
-		// mirror law (−X, Y, yaw+180 — the same law ScatterLayer's
-		// bMirrorSymmetric twin uses; a TRUE reflection would need negative
-		// scale, which flips HISM normals/winding). Cloning onto the SAME
-		// component means the clone is ALREADY a registered hill surface — this
-		// mine's re-trace, later mines, and RegroundMines all see it with no
-		// extra bookkeeping — and it blocks/carves nav exactly like a pass-1
-		// hill, because a HISM's collision/nav profile is shared by all its
-		// instances. The arena floor is a flat slab, so the mirrored Z is
-		// already correct.
-		UHierarchicalInstancedStaticMeshComponent* SrcComp = bHillP ? CompP : CompM;
-		const int32 SrcItem = bHillP ? ItemP : ItemM;
-		FTransform SrcXf;
-		if (!SrcComp->GetInstanceTransform(SrcItem, SrcXf, /*bWorldSpace=*/true))
+		// ═══ WHY THE HILL-PARITY CLONE / RE-TRACE / ROLLBACK IS DELETED ═══════════
+		// (TASK-358 — CONVENTIONS §1: "deleting it is part of the law, not an
+		// optional cleanup". The removed path was: clone the supporting hill
+		// instance onto the bare side, re-trace the bare point on the clone,
+		// roll the clone back and REJECT the candidate if the point missed it,
+		// else clearance-delete the clone's footprint.)
+		//
+		// THE ARGUMENT — it is now PROVABLY unreachable:
+		//  1. P′ = (−P.X, −P.Y) is the exact 180° rotation of P about the map
+		//     center, and the HILL FIELD IS ITSELF ROTATIONALLY SYMMETRIC:
+		//     ScatterLayer emits every hill instance's (−X, −Y, yaw+180) twin on
+		//     the SAME HISM, inline, during pass 1 — i.e. before this pass runs.
+		//  2. A 180° yaw rotation about the world Z axis through the origin is a
+		//     PROPER RIGID MOTION that maps each hill instance H exactly onto its
+		//     twin H′. So the down-trace at P′ strikes H′ at precisely the rotated
+		//     image of the point the trace at P strikes on H.
+		//  3. That rotation leaves Z INVARIANT, and it leaves the surface normal's
+		//     Z COMPONENT invariant — and N.Z is the ONLY quantity the slope gate
+		//     reads (acos(N.Z)). So FindHillSurfaceAt returns the SAME hit/miss
+		//     verdict and the SAME Z at both points: bHillP == bHillM and
+		//     OutZP == OutZM, ALWAYS. "Either-side-has ⇒ both-have" is satisfied
+		//     BY CONSTRUCTION; there is never a bare side to clone onto.
+		//  4. The deleted path existed ONLY as a workaround for the retired X-MIRROR,
+		//     which was a FAKE reflection: it mirrored the mesh's LOCAL Y, so an
+		//     edge-of-hill primary could land its twin OFF the cloned hill's
+		//     footprint — the old code said exactly that at its rollback site. A
+		//     true rotation cannot miss, so the rollback has nothing to roll back.
+		//
+		// The parity injection was also the ONLY producer of the old OutInjectedSide
+		// / OutFootprintCulls out-params, so those are deleted with it (and the
+		// MinesPass log's `inj=` token with them).
+		//
+		// DEFENSIVE RESIDUAL: if the invariant is somehow violated (a level edit
+		// that de-symmetrizes the keep-clear set could make ScatterLayer skip a hill
+		// twin — it counts and logs that as a SymmetryEscape), the pair is still
+		// SAFE and we do NOT reject: both ends already carry their own honestly
+		// traced Z (FindHillSurfaceAt yields the floor Z when a point is not over a
+		// hill), so nothing floats and nothing is buried — the pair just ships with
+		// one end on a mound. Loud, not fatal.
+		if (bHillP != bHillM)
 		{
-			return false; // defensive: unreadable source instance — reject, nothing mutated
+			UE_LOG(LogSiegeTerrain, Warning,
+				TEXT("[BattlefieldScatter '%s'] SymmetryAssert: mine hill parity broken at P=(%.0f,%.0f) hill=%s / P'=(%.0f,%.0f) hill=%s — the rotated hill field is NOT symmetric here (unreachable under the 180° law; pair still ships, each end on its own traced surface)."),
+				*GetNameSafe(this), Pt.X, Pt.Y, bHillP ? TEXT("yes") : TEXT("no"),
+				Pm.X, Pm.Y, bHillM ? TEXT("yes") : TEXT("no"));
 		}
-		FVector CloneLoc = SrcXf.GetLocation();
-		CloneLoc.X = -CloneLoc.X;
-		FRotator CloneRot = SrcXf.Rotator();
-		CloneRot.Yaw = FRotator::NormalizeAxis(CloneRot.Yaw + 180.0);
-		const FTransform CloneXf(CloneRot, CloneLoc, SrcXf.GetScale3D());
-		const int32 CloneIdx = SrcComp->AddInstance(CloneXf, /*bWorldSpace=*/true);
-
-		// Re-trace the bare point on the just-injected clone, slope-gated. NOTE:
-		// the spec order is footprint-delete → re-trace; the swap here is
-		// deliberate and behavior-EQUIVALENT on the accept path, because
-		// FindHillSurfaceAt reads ONLY the registered hill-surface comps and the
-		// footprint delete touches ONLY non-hill blockers (and GroundZAt's floor
-		// trace ignores scatter blockers by the channel law) — deleting first
-		// cannot change this trace. Tracing first makes a REJECT side-effect-free:
-		// the clone is rolled back below and no blocker was deleted for a
-		// candidate that never ships.
-		const FVector2D BarePt = bHillP ? Pm : Pt;
-		const float BareFloorZ = bHillP ? FloorZM : FloorZP;
-		float& BareZ = bHillP ? OutZM : OutZP;
-		UHierarchicalInstancedStaticMeshComponent* ReComp = nullptr;
-		int32 ReItem = INDEX_NONE;
-		if (!FindHillSurfaceAt(BarePt.X, BarePt.Y, BareFloorZ, GateDeg, BareZ, ReComp, ReItem) || !ReComp)
-		{
-			// No fit: the clone's face under the mirrored point is over-slope — or
-			// the point misses the clone's surface entirely (yaw+180 mirrors the
-			// mesh's LOCAL Y, so an edge-of-hill primary can mirror off the clone's
-			// footprint; grounding the twin at floor beside an injected hill would
-			// be a parity lie). Roll the clone back (it was the last instance
-			// added) and reject the candidate.
-			SrcComp->RemoveInstance(CloneIdx);
-			return false;
-		}
-
-		// Clone accepted — un-bury it: clearance-delete the nav-relevant blockers
-		// inside the clone's WHOLE footprint (they were placed on flat ground that
-		// is now inside/under a hill; Jonathan conflict rule — the hill wins,
-		// trees/rocks in its way are deleted; grass stays, harmlessly inside the
-		// mound). Radius = the hill mesh's XY half-diagonal × the instance scale
-		// (the FScatterLayer::FootprintRadius auto-derive rule).
-		float CloneFootprintR = 0.f;
-		if (const UStaticMesh* HillMesh = SrcComp->GetStaticMesh())
-		{
-			const FBoxSphereBounds HillBounds = HillMesh->GetBounds();
-			const FVector CloneScale = SrcXf.GetScale3D();
-			CloneFootprintR = FVector2D(HillBounds.BoxExtent.X * CloneScale.X, HillBounds.BoxExtent.Y * CloneScale.Y).Size();
-		}
-		OutFootprintCulls = RemoveBlockingInstancesInDisc(FVector2D(CloneLoc.X, CloneLoc.Y), CloneFootprintR);
-		bOutOnHill = true;
-		OutInjectedSide = bHillP ? 2 : 1; // the BARE side received the clone: 1 = under P (primary), 2 = under P′ (mirror)
 		return true;
 	};
 
@@ -1291,8 +1428,6 @@ void ASiegeBattlefieldScatter::PlaceMines(int32 Seed)
 		float ZP = 0.f;
 		float ZM = 0.f;
 		bool bOnHill = false;
-		int32 InjectedSide = 0;
-		int32 FootprintCulls = 0;
 		bool bAccepted = false;
 
 		for (int32 Attempt = 0; bDrawBandValid && Attempt < MaxMineAttempts && !bAccepted; ++Attempt)
@@ -1300,8 +1435,10 @@ void ASiegeBattlefieldScatter::PlaceMines(int32 Seed)
 			// THE ONLY STREAM DRAWS IN THE MINES PASS — exactly two per attempt, in
 			// fixed X-then-Y order (the auditable draw sequence: total draws =
 			// 2 × attempts-consumed, and everything after this pair — spacing,
-			// keep-clear, traces, parity, clearance — is draw-free by design, so
-			// no rejection path can ever desync the sequence).
+			// keep-clear, traces, rotation, clearance — is draw-free by design, so
+			// no rejection path can ever desync the sequence). TASK-358 changed
+			// WHERE the twin lands, never HOW MANY draws are taken: the rotation is
+			// pure arithmetic on the drawn point.
 			const float X = -MineStream.FRandRange(MinAbsX, MaxAbsX); // draw 1: |X|, negated → Blue half (X < 0)
 			const float Y = MineStream.FRandRange(-MaxAbsY, MaxAbsY); // draw 2: Y across the inset field width
 			const FVector2D Candidate(X, Y);
@@ -1322,20 +1459,21 @@ void ASiegeBattlefieldScatter::PlaceMines(int32 Seed)
 				continue;
 			}
 
-			// Keep-clear DISCS at BOTH P and P′, inflated by the clearance radius —
-			// the zone set is NOT symmetric (the PlayerStart sits on the Blue side
-			// only, and castles are live-swept), so testing the mirror is NOT
-			// redundant. NO corridor test BY RULING: corridor mines are ALLOWED
-			// (high-risk gold) — AGoldNode is NoCollision/no-nav, so a lane mine
-			// cannot break the traversability guarantee.
-			if (IsInKeepClearDiscs(Candidate, ClearR) || IsInKeepClearDiscs(FVector2D(-X, Y), ClearR))
+			// Keep-clear DISCS at BOTH P and P′ = (−X, −Y), inflated by the clearance
+			// radius — the zone SET is NOT symmetric (the PlayerStart sits on the
+			// Blue side only, and castles are live-swept), so testing the rotated
+			// twin is NOT redundant. NO corridor test BY RULING: corridor mines are
+			// ALLOWED (high-risk gold) — AGoldNode is NoCollision/no-nav, so a lane
+			// mine cannot break the traversability guarantee.
+			if (IsInKeepClearDiscs(Candidate, ClearR) || IsInKeepClearDiscs(FVector2D(-X, -Y), ClearR))
 			{
 				continue;
 			}
 
 			// Grounding + slope gate (≤ MineMaxSlopeDeg at BOTH points — miners
-			// must walk onto both ends of the pair) + hill parity.
-			if (!TryResolveMinePair(Candidate, SlopeGateDeg, ZP, ZM, bOnHill, InjectedSide, FootprintCulls))
+			// must walk onto both ends of the pair). Hill parity is now automatic
+			// under the 180° law (TASK-358) — no injection, no rollback.
+			if (!TryResolveMinePair(Candidate, SlopeGateDeg, ZP, ZM, bOnHill))
 			{
 				continue;
 			}
@@ -1371,31 +1509,35 @@ void ASiegeBattlefieldScatter::PlaceMines(int32 Seed)
 			// The slope gate opens to 90° at the fallback: the slot MUST seat, so it
 			// takes whatever surface stands there (a steep face ⇒ the mine sits on
 			// the slope — cosmetic, never buried, because FindHillSurfaceAt still
-			// returns the TOP surface Z). A defensive pair-resolve failure (source
-			// hill unreadable / clone missed) grounds both ends at the floor.
-			if (!TryResolveMinePair(P, 90.f, ZP, ZM, bOnHill, InjectedSide, FootprintCulls))
+			// returns the TOP surface Z). With a 90° gate the resolve can no longer
+			// fail on slope, so this branch is itself defensive-only; it grounds
+			// both ends at the flat floor.
+			if (!TryResolveMinePair(P, 90.f, ZP, ZM, bOnHill))
 			{
 				ZP = GroundZAt(P.X, P.Y);
-				ZM = GroundZAt(-P.X, P.Y);
+				ZM = GroundZAt(-P.X, -P.Y); // TASK-358: the twin is the 180° ROTATION, so Y negates too
 				bOnHill = false;
-				InjectedSide = 0;
-				FootprintCulls = 0;
 			}
 		}
 
 		// Clearance-delete at BOTH points (r = MineClearanceRadius): the apron +
 		// miner walk-in ring is guaranteed blocker-free at each end of the pair.
-		// Hills inside the disc survive (exempt — the parity clone must not be
-		// eaten by its own mine's disc); grass is untouched by the nav guard.
+		// Hills inside the disc survive (exempt — hills are never deleted); grass
+		// is untouched by the nav guard. TASK-358: because the two discs are
+		// centered at P and its exact rotation −P, and the scatter field is
+		// rotationally symmetric, this cull deletes ROTATIONAL PAIRS — it is
+		// symmetry-PRESERVING and is NOT one of the logged asymmetry escapes.
 		const int32 CullsP = RemoveBlockingInstancesInDisc(P, ClearR);
-		const int32 CullsM = RemoveBlockingInstancesInDisc(FVector2D(-P.X, P.Y), ClearR);
+		const int32 CullsM = RemoveBlockingInstancesInDisc(FVector2D(-P.X, -P.Y), ClearR);
 
 		// Spawn the tracked pair + InitMine (the TASK-253 API — safe before or
-		// after BeginPlay). Primary yaw 0 / twin yaw 180 per the mirror law — NO
-		// yaw draw (the specced draw sequence is X,Y only; a cosmetic yaw roll
-		// would silently shift every later draw). AlwaysSpawn because the mine is
-		// NoCollision by law — collision adjustment must never bend the mirrored
-		// math (a nudged twin breaks the equal-distance fairness proof).
+		// after BeginPlay). Primary yaw 0 / twin yaw 180 — ALREADY the 180° law's
+		// yaw (this is why the mine pass is the precedent the rotational law
+		// generalizes, and why TASK-358 changed no yaw here). NO yaw draw (the
+		// specced draw sequence is X,Y only; a cosmetic yaw roll would silently
+		// shift every later draw). AlwaysSpawn because the mine is NoCollision by
+		// law — collision adjustment must never bend the rotated math (a nudged
+		// twin breaks the equal-castle-distance fairness proof).
 		FActorSpawnParameters SpawnParams;
 		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 		SpawnParams.Owner = this;
@@ -1406,7 +1548,9 @@ void ASiegeBattlefieldScatter::PlaceMines(int32 Seed)
 			Primary->InitMine(Reserve);
 			SpawnedMines.Add(Primary);
 		}
-		AGoldNode* Twin = World->SpawnActor<AGoldNode>(ResolvedMineClass, FVector(-P.X, P.Y, ZM), FRotator(0.f, 180.f, 0.f), SpawnParams);
+		// TASK-358: THE twin transform — (−P.X, −P.Y, ZM) with yaw 180. The Y
+		// negation here is the one that actually moves the shipped mine actor.
+		AGoldNode* Twin = World->SpawnActor<AGoldNode>(ResolvedMineClass, FVector(-P.X, -P.Y, ZM), FRotator(0.f, 180.f, 0.f), SpawnParams);
 		if (Twin)
 		{
 			Twin->InitMine(Reserve);
@@ -1421,12 +1565,17 @@ void ASiegeBattlefieldScatter::PlaceMines(int32 Seed)
 
 		PrimaryPoints.Add(P);
 
-		PairsLog += FString::Printf(TEXT(" [%d] P=(%.0f,%.0f,%.0f) M=(%.0f,%.0f,%.0f) hill=%s inj=%s fb=%s culls=%d"),
-			MineIndex, P.X, P.Y, ZP, -P.X, P.Y, ZM,
+		// ⚠️ LOG-FORMAT CHANGE (TASK-358, called out for QA): the `inj=` token is
+		// GONE — the hill-parity injection it reported no longer exists (see the
+		// unreachability argument in TryResolveMinePair), so `culls=` is now
+		// exactly CullsP + CullsM. `M=` is still the twin, now the 180° rotation.
+		// Every other token and the whole `[i] P=… M=… hill=… fb=… culls=…` shape
+		// is unchanged, so the TASK-258 same-seed⇒identical-line criterion holds.
+		PairsLog += FString::Printf(TEXT(" [%d] P=(%.0f,%.0f,%.0f) M=(%.0f,%.0f,%.0f) hill=%s fb=%s culls=%d"),
+			MineIndex, P.X, P.Y, ZP, -P.X, -P.Y, ZM,
 			bOnHill ? TEXT("yes") : TEXT("no"),
-			InjectedSide == 0 ? TEXT("none") : (InjectedSide == 1 ? TEXT("P") : TEXT("M")),
 			bFallback ? TEXT("yes") : TEXT("no"),
-			FootprintCulls + CullsP + CullsM);
+			CullsP + CullsM);
 	}
 
 	// The one grep-able MinesPass reproducibility line (CONVENTIONS "Logging" +
@@ -1434,6 +1583,299 @@ void ASiegeBattlefieldScatter::PlaceMines(int32 Seed)
 	UE_LOG(LogSiegeTerrain, Log,
 		TEXT("[BattlefieldScatter '%s'] MinesPass seed=%d mineStream=%d pairsPlanned=%d minesSpawned=%d reserve=%d:%s"),
 		*GetNameSafe(this), Seed, Seed ^ 0x4D494E45, CountPerSide, SpawnedMines.Num(), Reserve, *PairsLog);
+}
+
+void ASiegeBattlefieldScatter::PlaceAncientGrounds(int32 Seed, bool bAuthoritativeGenerate)
+{
+	// ClearScatter already destroyed the previous match's pair actors; this reset
+	// only drops stale entries so the pass always starts from an empty ledger
+	// (the PlaceMines idiom, deliberately identical).
+	SpawnedAncientGrounds.Reset();
+
+	UWorld* World = GetWorld();
+	if (!World || !ScatterConfig)
+	{
+		return;
+	}
+
+	// DEDICATED ancient-ground stream (seed-order law, CONVENTIONS §2): XOR tag
+	// 0x41474E44 = ASCII "AGND" (the mines use 0x4D494E45 = "MINE"). The layer
+	// stream and the mine stream are separate FRandomStreams that this pass NEVER
+	// touches, so shipping this whole feature moves ZERO existing draws: every
+	// seed keeps its exact layer layout AND its exact mine layout, and the ground
+	// pair is reproducible in isolation from the same match seed. ALL ground draws
+	// come from THIS stream, in the fixed order documented at the draw site below.
+	FRandomStream GroundStream(Seed ^ 0x41474E44);
+
+	const float ArenaHalfX = FMath::Max(ScatterConfig->ArenaHalfExtent.X, 1.f);
+	const float ArenaHalfY = FMath::Max(ScatterConfig->ArenaHalfExtent.Y, 1.f);
+	// Explicit LWC double → float (FVector2D is double-precision in UE5; the
+	// placement grid's precision is ample in float, and the file already uses this
+	// cast idiom at the hill-trace Z).
+	const float HalfExtX = FMath::Max(static_cast<float>(ScatterConfig->AncientGroundHalfExtent.X), 0.f);
+	const float HalfExtY = FMath::Max(static_cast<float>(ScatterConfig->AncientGroundHalfExtent.Y), 0.f);
+	const float MineClear = FMath::Max(ScatterConfig->AncientGroundMineClear, 0.f);
+	const float ClearR = FMath::Max(ScatterConfig->AncientGroundClearRadius, 0.f);
+
+	// The half-draw band (CONVENTIONS §2 — these numbers ARE the law):
+	//  - |X| in [4000, 21000] — 2,320 uu clear of the mid capture zone at the near
+	//    end, 1,540 uu in FRONT of the |X| = 22,540 spawn boxes at the far end;
+	//  - |Y| <= 10,800 — ArenaHalfExtent.Y minus a 1,200 margin, so the 840-half
+	//    footprint edge lands at 11,640, inside the ±12,500 arena ground.
+	// The extra Min() against (arena half-extent − footprint half-extent) is a
+	// pure GUARD for a mis-tuned DataAsset — it is a NO-OP at the shipped defaults
+	// (26,000−840 = 25,160 > 21,000 and 12,000−840 = 11,160 > 10,800), so it
+	// cannot silently alter the specced band.
+	// ⚠️ NO CORRIDOR TEST and NO keep-clear DISC test, both deliberate: the ruling
+	// for the corridor is the mines' (AAncientGround has no collision primitive
+	// and no nav geometry, so it cannot break the traversability guarantee, and a
+	// lane objective is good contested design), and the |X| ceiling above is the
+	// castle/spawn-box exclusion in closed form — the band was derived FROM those
+	// geometries, so re-testing them would tighten the law rather than enforce it.
+	const float MinAbsX = FMath::Max(ScatterConfig->AncientGroundMinAbsX, 0.f);
+	const float MaxAbsX = FMath::Min(FMath::Max(ScatterConfig->AncientGroundMaxAbsX, 0.f), FMath::Max(ArenaHalfX - HalfExtX, 0.f));
+	const float MaxAbsY = FMath::Min(FMath::Max(ScatterConfig->AncientGroundMaxAbsY, 0.f), FMath::Max(ArenaHalfY - HalfExtY, 0.f));
+	const bool bDrawBandValid = (MaxAbsX > MinAbsX) && (MaxAbsY > 0.f);
+	if (!bDrawBandValid)
+	{
+		UE_LOG(LogSiegeTerrain, Warning,
+			TEXT("[BattlefieldScatter '%s'] AncientGroundsPass draw band degenerate (|X| in [%.0f, %.0f], |Y| <= %.0f) — the pair takes its deterministic fallback slot."),
+			*GetNameSafe(this), MinAbsX, MaxAbsX, MaxAbsY);
+	}
+
+	// Draw-free helper: the surface Z under (X,Y), and whether that surface is
+	// FLAT. The 90° gate means FindHillSurfaceAt never rejects on slope, so a
+	// non-null OutSurfaceComp is EXACTLY the predicate "this point is over a hill
+	// face" — which is what FLAT GROUND ONLY needs (CONVENTIONS §2: a 1,680²
+	// gathering box needs flat ground; the hill is REJECTED, never parity-cloned
+	// for it — deliberately keeping the machinery TASK-358 deleted from coming
+	// back). OutZ is honest on EVERY path: FindHillSurfaceAt seeds it with FloorZ
+	// and only raises it to a hill top, so the fallback below can reuse this to
+	// seat on whatever stands there. ZERO stream draws — as with the mines, a
+	// variable number of internal rejections can never desync the draw sequence.
+	auto ResolveSurfaceZ = [&](float X, float Y, float& OutZ) -> bool
+	{
+		const float FloorZ = GroundZAt(X, Y);
+		UHierarchicalInstancedStaticMeshComponent* SurfaceComp = nullptr;
+		int32 InstanceIndex = INDEX_NONE;
+		const bool bResolved = FindHillSurfaceAt(X, Y, FloorZ, 90.f, OutZ, SurfaceComp, InstanceIndex);
+		return bResolved && (SurfaceComp == nullptr);
+	};
+
+	// Draw-free: keep AncientGroundMineClear from every mine spawned by the pass
+	// that ran immediately before this one. Tested at BOTH ends of the pair — the
+	// mine field is itself rotationally symmetric, so the two tests AGREE in the
+	// healthy case, but a mine whose SpawnActor failed would leave the set
+	// asymmetric, and an honest test at both points costs nothing.
+	auto ClearsEveryMine = [&](const FVector2D& Q) -> bool
+	{
+		for (const TObjectPtr<AGoldNode>& Mine : SpawnedMines)
+		{
+			AGoldNode* MinePtr = Mine.Get();
+			if (!IsValid(MinePtr))
+			{
+				continue;
+			}
+			const FVector L = MinePtr->GetActorLocation();
+			if (FVector2D::DistSquared(FVector2D(L.X, L.Y), Q) < MineClear * MineClear)
+			{
+				return false;
+			}
+		}
+		return true;
+	};
+
+	// 48 attempts (CONVENTIONS §2 — stated as a LITERAL there, so it is a literal
+	// here rather than derived; it happens to equal the mines' 2 ×
+	// MaxPlacementAttemptsPerInstance at the shipped 24, and a ground carries the
+	// same two-point burden a mine pair does).
+	const int32 MaxGroundAttempts = 48;
+
+	FVector2D P = FVector2D::ZeroVector;
+	float ZP = 0.f;
+	float ZM = 0.f;
+	bool bAccepted = false;
+	// FREE ASSERTION (the TASK-358 idiom): under the 180° law the flat/hill verdict
+	// at P and at P′ must AGREE — the hill field is rotationally symmetric and a
+	// Z-axis rotation leaves both Z and the normal's Z component invariant. Counted
+	// rather than logged per attempt (48 attempts would spam), reported once below.
+	// PROVABLY 0 on a healthy field, so any non-zero value is a real signal.
+	int32 FlatParityBreaks = 0;
+
+	for (int32 Attempt = 0; bDrawBandValid && Attempt < MaxGroundAttempts && !bAccepted; ++Attempt)
+	{
+		// ⚠️ THE ONLY STREAM DRAWS IN THE ANCIENT-GROUNDS PASS — exactly two per
+		// attempt, in fixed X-then-Y order (the auditable sequence: total draws =
+		// 2 × attempts-consumed). EVERYTHING after this pair — mine clearance, the
+		// hill rejection, the ground traces, the rotation, the clearance culls, the
+		// fallback and the spawns — is DRAW-FREE by design, so no rejection path
+		// can desync the sequence and host/client agree bit-for-bit off the
+		// replicated seed. There is deliberately NO yaw draw: the primary is yaw 0
+		// and the twin is a fixed +180 (the §1 law), so a cosmetic yaw roll would
+		// buy nothing and silently shift every later draw.
+		const float X = -GroundStream.FRandRange(MinAbsX, MaxAbsX); // draw 1: |X|, negated → BLUE half (X < 0)
+		const float Y = GroundStream.FRandRange(-MaxAbsY, MaxAbsY); // draw 2: Y across the inset field width
+		const FVector2D Candidate(X, Y);
+		// THE TWIN: the exact 180° rotation about the map center (CONVENTIONS §1).
+		// BLUE half, never Red — the PlayerStart exists ONLY at (−23800, 0, 100),
+		// so generating Red would rotate this objective onto the hero spawn.
+		const FVector2D TwinPoint(-X, -Y);
+
+		if (!ClearsEveryMine(Candidate) || !ClearsEveryMine(TwinPoint))
+		{
+			continue;
+		}
+
+		float CandZP = 0.f;
+		float CandZM = 0.f;
+		const bool bFlatP = ResolveSurfaceZ(Candidate.X, Candidate.Y, CandZP);
+		const bool bFlatM = ResolveSurfaceZ(TwinPoint.X, TwinPoint.Y, CandZM);
+		if (bFlatP != bFlatM)
+		{
+			++FlatParityBreaks;
+		}
+		if (!bFlatP || !bFlatM)
+		{
+			continue; // over a hill at either end — REJECT OUTRIGHT (flat ground only)
+		}
+
+		P = Candidate;
+		ZP = CandZP;
+		ZM = CandZM;
+		bAccepted = true;
+	}
+
+	bool bFallback = false;
+	if (!bAccepted)
+	{
+		// DETERMINISTIC FALLBACK SLOT (the mines' "never ships short" discipline,
+		// applied to the objective: a match with no ancient ground has no Sorcerer
+		// mechanic at all, which is a worse failure than a ground on an awkward
+		// patch). CONVENTIONS §2 fixes the coordinates at (−12000, +6000) — a
+		// LITERAL, deliberately NOT clamped into the configured band: the one
+		// property the fallback must have is that it is the same point every time,
+		// and folding config into it would make the "deterministic" slot vary with
+		// a designer's tuning. ZERO draws. It is NOT re-tested against mine
+		// clearance or slope (there is nothing left to try) — the Error line is
+		// what flags the layout for QA/PIE scrutiny.
+		bFallback = true;
+		P = FVector2D(-12000.f, 6000.f);
+
+		UE_LOG(LogSiegeTerrain, Error,
+			TEXT("[BattlefieldScatter '%s'] AncientGrounds found no valid draw in %d attempts — deterministic fallback slot (%.0f, %.0f) used (the objective never ships short)."),
+			*GetNameSafe(this), MaxGroundAttempts, P.X, P.Y);
+
+		// Seat both ends on whatever surface stands there: ResolveSurfaceZ's 90°
+		// gate can no longer reject, so the returned Z is the TOP surface (hill
+		// crest or floor) and the pair is never buried. The flat/hill verdict is
+		// discarded here BY DESIGN — the slot must seat.
+		// (NO RegroundAncientGrounds counterpart to RegroundMines is needed, on the
+		// fallback path or any other: AAncientGround::IsPointInZone is a 2D XY box
+		// that IGNORES Z, and the decal projects DecalProjectionDepth both ways, so
+		// even if a later defensive cull deleted a hill out from under a fallback
+		// ground, neither the mechanic nor the visual would change. Z here is
+		// cosmetic-only — deliberately unlike a mine, which miners must walk onto.)
+		ResolveSurfaceZ(P.X, P.Y, ZP);
+		ResolveSurfaceZ(-P.X, -P.Y, ZM);
+	}
+
+	// FREE ASSERTION (CONVENTIONS §1: the twin Z is RE-TRACED, never copied, and
+	// under an exact rotation it MUST come back equal). Mismatch ⇒ each end still
+	// ships at its own honestly traced Z — nothing floats, nothing is buried — and
+	// the break is loud rather than fatal.
+	if (FMath::Abs(ZP - ZM) > 1.f)
+	{
+		UE_LOG(LogSiegeTerrain, Warning,
+			TEXT("[BattlefieldScatter '%s'] SymmetryAssert: ancient-ground twin Z mismatch — P=(%.0f,%.0f,%.1f) vs P'=(%.0f,%.0f,%.1f) (unreachable under the 180° law; both ends ship at their own traced Z)."),
+			*GetNameSafe(this), P.X, P.Y, ZP, -P.X, -P.Y, ZM);
+	}
+	if (FlatParityBreaks > 0)
+	{
+		UE_LOG(LogSiegeTerrain, Warning,
+			TEXT("[BattlefieldScatter '%s'] SymmetryAssert: ancient-ground hill parity broke on %d of %d candidate(s) — the rotated hill field is NOT symmetric there (unreachable under the 180° law; those candidates were simply rejected, so placement stayed correct)."),
+			*GetNameSafe(this), FlatParityBreaks, MaxGroundAttempts);
+	}
+
+	// Clearance-delete at BOTH ends (r = AncientGroundClearRadius): units must be
+	// able to GATHER on the runes, not fight a thicket for standing room. Hills
+	// inside the disc survive (exempt — hills are never deleted), which costs
+	// nothing here because a hill candidate was rejected outright; grass is
+	// untouched by the nav guard. Because the two discs are centered at P and its
+	// EXACT rotation −P over a rotationally symmetric field, this cull deletes
+	// rotational PAIRS — it is symmetry-PRESERVING and is NOT one of the logged
+	// asymmetry escapes (the same standing as the mines' aprons).
+	const int32 CullsP = RemoveBlockingInstancesInDisc(P, ClearR);
+	const int32 CullsM = RemoveBlockingInstancesInDisc(FVector2D(-P.X, -P.Y), ClearR);
+
+	// Spawn the tracked pair. Primary yaw 0 / twin yaw 180 — the §1 law's yaw,
+	// fixed, never rolled. AlwaysSpawn because AAncientGround has NO collision
+	// primitive at all (SceneRoot + UDecalComponent), so collision adjustment must
+	// never be allowed to nudge the rotated math: a displaced twin would break the
+	// "one per side, symmetric" fairness the objective exists to provide.
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParams.Owner = this;
+
+	AAncientGround* Primary = World->SpawnActor<AAncientGround>(AAncientGround::StaticClass(), FVector(P.X, P.Y, ZP), FRotator::ZeroRotator, SpawnParams);
+	if (Primary)
+	{
+		// ⚠️⚠️ THE AUTHORITY PUSH — THE SINGLE MOST DANGEROUS LINE IN THIS FEATURE
+		// (CONVENTIONS §2). The ground MUST NOT read HasAuthority() for itself: it
+		// is spawned locally on the CLIENT from the replicated seed and so keeps
+		// ROLE_Authority there, which would make a self-read return TRUE and run a
+		// ROGUE CLIENT-SIDE BOOST SIM diverging from the server's. We push THIS
+		// machine's decision — the very flag RunScatterPasses is running under.
+		// The ground logs `AncientGroundInit authoritativeBoost=…` on receipt: on a
+		// CLIENT both grounds MUST print false. A client printing true is a
+		// threading regression HERE, not in the actor.
+		Primary->InitAncientGround(bAuthoritativeGenerate);
+		SpawnedAncientGrounds.Add(Primary);
+	}
+	AAncientGround* Twin = World->SpawnActor<AAncientGround>(AAncientGround::StaticClass(), FVector(-P.X, -P.Y, ZM), FRotator(0.f, 180.f, 0.f), SpawnParams);
+	if (Twin)
+	{
+		// The SAME push on the twin — both grounds or neither. Missing it here
+		// would fail CLOSED (that ground silently never boosts) and would hand one
+		// team a boost the other cannot get, which is exactly the asymmetry the
+		// rotational law exists to prevent.
+		Twin->InitAncientGround(bAuthoritativeGenerate);
+		SpawnedAncientGrounds.Add(Twin);
+	}
+	if (!Primary || !Twin)
+	{
+		UE_LOG(LogSiegeTerrain, Warning,
+			TEXT("[BattlefieldScatter '%s'] AncientGround SpawnActor failed (P=%s M=%s) — pair incomplete (aborted spawn; never a crash, but ONE side would hold an objective the other cannot)."),
+			*GetNameSafe(this), Primary ? TEXT("ok") : TEXT("FAIL"), Twin ? TEXT("ok") : TEXT("FAIL"));
+	}
+
+	// PAIRED-TUNABLE DIVERGENCE GUARD: AncientGroundHalfExtent (this config, used
+	// for the placement margin) and AAncientGround::ZoneHalfExtent (the actor's
+	// mechanic box + decal size) are the same number stored twice, which is the
+	// price of the ACaptureZone 2-mirror. If they ever drift, the pass would inset
+	// the band for one footprint while the ground boosts over another — silently.
+	// Cheap, draw-free, once per generate.
+	if (Primary)
+	{
+		const FVector2D ActorHalfExtent = Primary->GetZoneHalfExtent();
+		const float ActorHalfX = static_cast<float>(ActorHalfExtent.X);
+		const float ActorHalfY = static_cast<float>(ActorHalfExtent.Y);
+		if (!FMath::IsNearlyEqual(ActorHalfX, HalfExtX, 1.f) || !FMath::IsNearlyEqual(ActorHalfY, HalfExtY, 1.f))
+		{
+			UE_LOG(LogSiegeTerrain, Warning,
+				TEXT("[BattlefieldScatter '%s'] AncientGround half-extent DIVERGENCE: config AncientGroundHalfExtent=(%.0f, %.0f) vs AAncientGround::ZoneHalfExtent=(%.0f, %.0f) — these are a PAIRED TUNABLE (CONVENTIONS §2); the placement margin and the boost box now disagree."),
+				*GetNameSafe(this), HalfExtX, HalfExtY, ActorHalfX, ActorHalfY);
+		}
+	}
+
+	// The one grep-able AncientGroundsPass reproducibility line (CONVENTIONS §2 —
+	// the token set is fixed there: seed / P / M / fb / culls). Same binary + same
+	// seed ⇒ this line is IDENTICAL, and identical on host and client, which is
+	// the determinism criterion QA reads. (The stream seed is Seed ^ 0x41474E44.)
+	UE_LOG(LogSiegeTerrain, Log,
+		TEXT("[BattlefieldScatter '%s'] AncientGroundsPass seed=%d P=(%.0f,%.0f,%.0f) M=(%.0f,%.0f,%.0f) fb=%s culls=%d"),
+		*GetNameSafe(this), Seed, P.X, P.Y, ZP, -P.X, -P.Y, ZM,
+		bFallback ? TEXT("yes") : TEXT("no"),
+		CullsP + CullsM);
 }
 
 void ASiegeBattlefieldScatter::RegroundMines()
@@ -1568,9 +2010,11 @@ void ASiegeBattlefieldScatter::ValidateTraversability()
 	// failure). Checked only once the castle lane is confirmed: on an unpathable
 	// field the corridor cull below is the prerequisite repair, and every mine
 	// query would false-fail against the same break anyway. Blue anchor only:
-	// the pairs are exact mirrors, so Blue's distances equal Red's by
-	// construction — what this catches is an ASYMMETRIC blocker wall, and the
-	// per-mine disc cull below repairs it on whichever side it stands.
+	// the pairs are exact 180° ROTATIONS of each other (TASK-358 — and the whole
+	// scatter field now is too), so Blue's distances equal Red's by construction —
+	// what this catches is an ASYMMETRIC blocker wall (one of the logged escapes,
+	// or a level edit), and the per-mine disc cull below repairs it on whichever
+	// side it stands.
 	TArray<AGoldNode*> UnreachableMines;
 	if (bCastleReachable)
 	{
@@ -1606,6 +2050,8 @@ void ASiegeBattlefieldScatter::ValidateTraversability()
 		// shrank the corridor/radii, cull blocking instances in a widening Y band
 		// around the lane, then re-check after the nav settles again.
 		const float Band = CorridorHalfWidthCached + ReachabilityAttempt * CorridorWidenStep;
+		// (TASK-358: CullCorridorBlockers logs its own SymmetryEscape line when it
+		// actually removes something — this line stays the reachability narrative.)
 		const int32 Removed = CullCorridorBlockers(Band);
 		UE_LOG(LogSiegeTerrain, Warning,
 			TEXT("[BattlefieldScatter '%s'] Blue→Red path NOT found (attempt %d) — culled %d blocking instance(s) within |Y|<=%.0f; re-checking after nav settles."),
@@ -1626,6 +2072,17 @@ void ASiegeBattlefieldScatter::ValidateTraversability()
 		{
 			const FVector L = MinePtr->GetActorLocation();
 			Removed += RemoveBlockingInstancesInDisc(FVector2D(L.X, L.Y), CullRadius);
+		}
+		// TASK-358 asymmetry escape (CONVENTIONS §1). UNLIKE the mines pass — which
+		// culls at P AND its exact rotation −P and is therefore symmetry-preserving —
+		// this repair culls around ONE unreachable mine only. It stays side-agnostic
+		// BY LAW (mirroring the cull would delete more geometry for zero
+		// traversability gain), so it locally breaks the 180° symmetry and must say so.
+		if (Removed > 0)
+		{
+			UE_LOG(LogSiegeTerrain, Warning,
+				TEXT("[BattlefieldScatter '%s'] SymmetryEscape: mine-approach repair culled %d instance(s) around %d unreachable mine(s) at ONE point each (r<=%.0f) — the rotated twin discs are deliberately NOT culled."),
+				*GetNameSafe(this), Removed, UnreachableMines.Num(), CullRadius);
 		}
 		UE_LOG(LogSiegeTerrain, Warning,
 			TEXT("[BattlefieldScatter '%s'] %d mine(s) NOT path-reachable from the Blue anchor (attempt %d) — culled %d blocking instance(s) within r<=%.0f of each; re-checking after nav settles."),
@@ -1706,6 +2163,21 @@ int32 ASiegeBattlefieldScatter::CullCorridorBlockers(float Band)
 			TotalRemoved += ToRemove.Num();
 		}
 	}
+
+	// TASK-358 asymmetry-escape log (CONVENTIONS §1: the destructive culls stay
+	// SIDE-AGNOSTIC by law — mirroring a cull would delete more geometry for zero
+	// traversability gain — but each MUST log when it fires). This one is called
+	// ONLY from ValidateTraversability's failure path, so any firing is already
+	// exceptional; shipped runs report 0 culls across every recorded PIE
+	// (TASK-287/291/295). Note the band |Y| <= B is itself a rotation-symmetric
+	// REGION, so in practice the rotational pairs fall together and symmetry
+	// survives — logged anyway, because "in practice" is not a guarantee.
+	if (TotalRemoved > 0)
+	{
+		UE_LOG(LogSiegeTerrain, Warning,
+			TEXT("[BattlefieldScatter '%s'] SymmetryEscape: CullCorridorBlockers removed %d nav-relevant instance(s) within |Y|<=%.0f — a destructive cull is side-agnostic by law and can locally break the 180° symmetry."),
+			*GetNameSafe(this), TotalRemoved, Band);
+	}
 	return TotalRemoved;
 }
 
@@ -1732,8 +2204,10 @@ int32 ASiegeBattlefieldScatter::RemoveBlockingInstancesInDisc(const FVector2D& C
 		// HILLS ARE NEVER DELETED (Jonathan conflict rule — the one guard the
 		// corridor cull does NOT have): hill-surface comps are nav-relevant
 		// real-geometry blockers, but a mine sits ON a hill rather than deleting
-		// it, and the parity clone the mines pass injects must never be eaten by
-		// the very clearance disc that follows it.
+		// it. TASK-358 adds a second reason: the hill field is the ROTATIONAL
+		// REFERENCE FRAME every later pass traces against (the mine pair's two
+		// grounding traces, and TASK-361's ancient-ground slope gate), so eating
+		// hills asymmetrically would break the symmetry proof, not just the look.
 		if (HillSurfaceComponents.Contains(Comp))
 		{
 			continue;
@@ -1768,6 +2242,20 @@ int32 ASiegeBattlefieldScatter::RemoveBlockingInstancesInDisc(const FVector2D& C
 			Comp->RemoveInstances(ToRemove);
 			TotalRemoved += ToRemove.Num();
 		}
+	}
+
+	// TASK-358: this cull fires from TWO kinds of caller and only ONE of them is
+	// an asymmetry escape, so the escape verdict is made by the CALLER, not here:
+	//  - PlaceMines calls it at P and at its exact rotation −P, so the two calls
+	//    delete ROTATIONAL PAIRS — symmetry-PRESERVING, and the expected every-match
+	//    case (which is why this line is Log, not Warning);
+	//  - ValidateTraversability calls it around ONE unreachable mine — a genuine
+	//    escape, and that call site logs its own Warning-level SymmetryEscape line.
+	if (TotalRemoved > 0)
+	{
+		UE_LOG(LogSiegeTerrain, Log,
+			TEXT("[BattlefieldScatter '%s'] DiscCull removed %d nav-relevant instance(s) within r<=%.0f of (%.0f, %.0f) (hills exempt)."),
+			*GetNameSafe(this), TotalRemoved, Radius, Center.X, Center.Y);
 	}
 	return TotalRemoved;
 }

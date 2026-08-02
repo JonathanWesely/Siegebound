@@ -205,7 +205,53 @@ def merged_params(manifest, card_id):
     skels = manifest.get("skeletons", {})
     if skel_name not in skels:
         fail(f"skeleton '{skel_name}' not in rig manifest 'skeletons'", code=2)
-    params["_skeleton_spec"] = skels[skel_name]
+    skel_spec = skels[skel_name]
+
+    # --- PER-ASSET PROPORTIONS OVERRIDE (TASK-372) -------------------------------
+    # An asset may carry a "proportions" dict that OVERLAYS the shared skeleton's
+    # normalized anchors. It is applied to a COPY, so the shared spec is never mutated
+    # and every asset WITHOUT an override keeps the SiegeBiped defaults byte-identically.
+    # WHY this exists: build_armature() places anchors as fractions of the MEASURED bbox
+    # height. When a mesh's bbox overshoots its BODY height (headgear/antlers/banner that
+    # rises above the skull), the SAME fraction resolves to a LARGER absolute height, so
+    # every anchor lands too HIGH on the body and the whole rig slides UP. Measured on the
+    # Sorcerer: neck_top_z 0.865 landed at 0.9121 of TRUE body height instead of 0.865, and
+    # head_top_z 1.0 landed on the ANTLER TIPS instead of the skull. The fix is a measured
+    # per-asset divide of every height-normalized fraction by that mesh's inflation factor
+    # (bbox height / true body height). ⚠️ MIND THE SIGN: it is UP, not down — an earlier
+    # board note said "slides the rig down" and that is backwards. Correcting from the wrong
+    # direction would double the error instead of removing it. Precedent for a per-asset
+    # deviation from the shared spec: the _doc "bespoke" skeleton option.
+    # NOTE: *_x_frac keys scale MEASURED HALF-WIDTHS, not height — they are NOT inflated
+    # by an overshooting crown and must not be "corrected" by the same factor.
+    if "proportions" in assets[card_id]:
+        # A PRESENT key must be a NON-EMPTY OBJECT. Anything else is a manifest typo that
+        # would otherwise be skipped in silence — shipping an UNCORRECTED rig while the
+        # manifest claims a correction, which is the exact defect this feature exists to
+        # prevent. So it fails loudly, exactly like an unknown key. An ABSENT key is the
+        # normal path for the other 12 assets and is left completely untouched.
+        override = assets[card_id]["proportions"]
+        if not isinstance(override, dict):
+            fail(f"asset '{card_id}' has a 'proportions' value of type "
+                 f"{type(override).__name__} ({override!r}) — it must be a JSON OBJECT of "
+                 f"anchor overrides. A malformed override would silently ship an UNCORRECTED "
+                 f"rig while the manifest claims otherwise; fix the value or remove the key.",
+                 code=2)
+        if not override:
+            fail(f"asset '{card_id}' has an EMPTY 'proportions' object — it claims an override "
+                 f"and applies none. Remove the key to use the '{skel_name}' defaults, or fill "
+                 f"in the corrected anchor fractions.", code=2)
+        base_props = dict(skel_spec.get("proportions", {}))
+        unknown = sorted(k for k in override if k not in base_props)
+        if unknown:
+            fail(f"asset '{card_id}' proportions override has unknown key(s) {unknown}; "
+                 f"valid keys for skeleton '{skel_name}': {sorted(base_props)}", code=2)
+        base_props.update(override)
+        skel_spec = dict(skel_spec)
+        skel_spec["proportions"] = base_props
+        skel_spec["_override_keys"] = sorted(override)
+
+    params["_skeleton_spec"] = skel_spec
     params["_skeleton_name"] = skel_name
     return params
 
@@ -352,6 +398,12 @@ def build_armature(anchors, spec, card_id, report):
     wri_x = sh * P["wrist_x_frac"]
     foot_fwd = P["foot_forward_frac"] * H  # -Y front
 
+    # neck_01 tail == head head. Was a bare 0.905 literal; now a proportions key with the
+    # SAME default, so a per-asset override can correct it too (an un-overridable literal
+    # would leave the head bone stranded when every other anchor moves). Assets without
+    # an override resolve to 0.905 exactly => byte-identical rigs. (TASK-372)
+    head_base_z = float(P.get("head_base_z", 0.905))
+
     # (name, parent, head, tail, deform, connected)
     spine_top = z(P["spine3_top_z"])
     bones = [
@@ -360,8 +412,8 @@ def build_armature(anchors, spec, card_id, report):
         ("spine_01", "pelvis",  (0, 0, z(P["spine1_top_z"])), (0, 0, z(P["spine2_top_z"])), True, True),
         ("spine_02", "spine_01",(0, 0, z(P["spine2_top_z"])), (0, 0, spine_top),         True, True),
         ("spine_03", "spine_02",(0, 0, spine_top),   (0, 0, z(P["neck_top_z"])),         True, True),
-        ("neck_01",  "spine_03",(0, 0, z(P["neck_top_z"])), (0, 0, z(0.905)),            True, True),
-        ("head",     "neck_01", (0, 0, z(0.905)),    (0, 0, z(P["head_top_z"])),         True, True),
+        ("neck_01",  "spine_03",(0, 0, z(P["neck_top_z"])), (0, 0, z(head_base_z)),      True, True),
+        ("head",     "neck_01", (0, 0, z(head_base_z)), (0, 0, z(P["head_top_z"])),      True, True),
     ]
     for side, sx in (("l", 1.0), ("r", -1.0)):
         bones += [
@@ -405,6 +457,16 @@ def build_armature(anchors, spec, card_id, report):
         "deform_bones": [n for n, d in deform.items() if d],
         "skeleton": card_id,
     }
+    # Only emitted when an override is actually present, so every asset WITHOUT one keeps
+    # a byte-identical rig_report.json shape. (TASK-372)
+    if spec.get("_override_keys"):
+        report["armature"]["proportions_override"] = {
+            "keys": spec["_override_keys"],
+            "resolved": {k: round(float(P[k]), 6) for k in spec["_override_keys"]},
+            "resolved_z_ue": {k: round(z(float(P[k])) * UE, 2)
+                              for k in spec["_override_keys"] if k.endswith("_z")},
+        }
+        log(f"ARMATURE: per-asset proportions override active -> {spec['_override_keys']}")
     log(f"ARMATURE: {len(bones)} bones ({sum(deform.values())} deform)")
     return arm_obj
 

@@ -32,6 +32,10 @@
  *                       castle-HP changes.
  *   - AddTestGold     → ASiegePlayerState::AddGold (the gold choke-point API —
  *                       clamp + OnGoldChanged broadcast preserved).
+ *   - SetTestDamageBoost → ASummonedUnit::ClearPermanentDamageStacks +
+ *                       AddPermanentDamageStacks (the ancient-ground grant path —
+ *                       integer stacks, the +400% cap and the
+ *                       OnDamageBoostChanged broadcast all preserved).
  */
 UCLASS()
 class GITCLAUDEUNREALTEST_API USiegeCheatManager : public UCheatManager
@@ -75,4 +79,36 @@ public:
 	 */
 	UFUNCTION(exec)
 	void AddTestGold(int32 Amount);
+
+	/**
+	 *  ANCIENT GROUNDS (CONVENTIONS §4 + §6) — sets the permanent damage boost of
+	 *  friendly ASummonedUnits to (at least) Percent, so the human PIE gate can
+	 *  land on EXACTLY 100 / 200 / 300 / 400% and on "just past" a band boundary
+	 *  on demand. Without this lever that gate degrades to "walk a unit onto an
+	 *  ancient ground and hope you hit exactly 100.0%", which is not a test.
+	 *
+	 *  ROUTED THROUGH THE SHIPPING GRANT PATH, never a raw field write:
+	 *  ClearPermanentDamageStacks() then AddPermanentDamageStacks(N). Clear-then-Add
+	 *  is mandatory, not stylistic — Add is additive and broadcasts only on an
+	 *  ACTUAL change, so without the Clear the command would stack on top of the
+	 *  current value, and a raw write to the same value would broadcast nothing and
+	 *  leave the overhead bar stale.
+	 *
+	 *  Percent → stacks uses each unit's OWN PermanentDamageBonusPerStack (never a
+	 *  hardcoded 0.05, which would silently drift the moment the mechanic rule is
+	 *  tuned) and rounds UP, so a value between two representable stack counts lands
+	 *  on the first boost STRICTLY ABOVE it: at the shipped 5%/stack, `101` gives 21
+	 *  stacks = 105% (band 2, nearly empty) rather than snapping back to 100%.
+	 *  Requests above the cap CLAMP inside AddPermanentDamageStacks, so `500` reads
+	 *  identically to `400`. `Percent <= 0` clears only.
+	 *
+	 *  bAllFriendly = true applies to every eligible friendly unit in the world;
+	 *  false applies to the unit under the crosshair (camera forward trace), falling
+	 *  back to the nearest eligible friendly — the same targeting shape as
+	 *  ApplyTestDamage. "Eligible" is the SHIPPING predicate CanReceiveDamageBoost(),
+	 *  so the cheat can never grant a stack the ancient-ground tick would not.
+	 *  Null-safe everywhere: an empty field logs and does nothing.
+	 */
+	UFUNCTION(exec)
+	void SetTestDamageBoost(float Percent, bool bAllFriendly);
 };

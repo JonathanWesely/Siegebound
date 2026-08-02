@@ -130,11 +130,30 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Unit")
 	FOnCombatantHPChanged OnHPChanged;
 
+	/**
+	 *  ANCIENT GROUNDS (TASK-360, CONVENTIONS §4) — fired on every ACTUAL change of the
+	 *  permanent damage boost, driving the boost ROW of the overhead bar on the exact same
+	 *  PUSH model as OnHPChanged. Payload is the boost PERCENT (0 .. 400), i.e.
+	 *  100 × PermanentDamageBonusPerStack × PermanentDamageStacks — NOT the multiplier, so
+	 *  the widget's banding math never has to un-shift a 1.0 base.
+	 *
+	 *  ⚠️ BROADCAST ON *EVERY* MUTATION — the same discipline as OnHPChanged's four sites.
+	 *  Miss one and the bar is stale forever (the qa/TASK-005 seed-then-bind trap). The two
+	 *  mutators (AddPermanentDamageStacks / ClearPermanentDamageStacks) are the ONLY writers
+	 *  of PermanentDamageStacks, which is what makes "every mutation" auditable.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Unit")
+	FOnCombatantDamageBoostChanged OnDamageBoostChanged;
+
 	//~ Begin IHealthBarProvider Interface (TASK-130 push model) — forwards to the EXISTING getters + the OnHPChanged delegate; adds NO HP state.
 	virtual FOnCombatantHPChanged& GetHPChangedDelegate() override { return OnHPChanged; }
 	virtual float GetHealthCurrent() const override { return GetCurrentHP(); }
 	virtual float GetHealthMax() const override { return GetMaxHP(); }
 	virtual bool IsHealthBarActorAlive() const override { return !IsUnitDead(); }
+	/** ANCIENT GROUNDS (TASK-360): the boost as a PERCENT (0 .. 400) — 100 × PerStack × Stacks. Exactly 0 for an unboosted unit, so the row hides itself. */
+	virtual float GetDamageBoostPercent() const override { return 100.f * PermanentDamageBonusPerStack * static_cast<float>(PermanentDamageStacks); }
+	/** ANCIENT GROUNDS (TASK-360): units ARE boostable, so this is never null (the interface default returns nullptr = "not boostable" — ABuilding and AHeroCharacter keep it). */
+	virtual FOnCombatantDamageBoostChanged* GetDamageBoostChangedDelegate() override { return &OnDamageBoostChanged; }
 	//~ End IHealthBarProvider Interface
 
 	/** Applies incoming damage (no friendly fire, GDD §3.0) and destroys the unit at 0 HP. */
@@ -343,6 +362,91 @@ public:
 	/** Group order this unit belongs to, or INDEX_NONE (TASK-344 debug/PIE hook). */
 	int32 GetCommandGroupId() const { return CommandGroupId; }
 
+	//~ ─── ANCIENT GROUNDS (TASK-360; CONVENTIONS §3 "ASorcererUnit" + §4 "the permanent stacking damage boost") ───
+	//~
+	//~ ⚠️ THIS WHOLE BLOCK IS `public:` ON PURPOSE (manager ruling 2, correcting the plan's
+	//~ "same shape as ShouldHoldDeathAnim" line). AAncientGround's boost tick calls
+	//~ CanEverAttack(), IsAncientGroundEmpowerer(), CanReceiveDamageBoost() and
+	//~ AddPermanentDamageStacks() from OUTSIDE this class; ShouldHoldDeathAnim() (below) is the
+	//~ right IDIOM but the WRONG access level (it is protected:) — protected here would not link.
+	//~ Every signature below is PINNED in CONVENTIONS §7 and must stay character-for-character:
+	//~ the whole ANCIENT-GROUNDS batch compiles as one UBT module against that list.
+
+	/**
+	 *  THE ATTACK SEAL (CONVENTIONS §3) — class identity, NOT a CSV flag (the
+	 *  mechanic-rules-aren't-card-stats law). Base units attack normally; a subclass that
+	 *  returns false can never enter the attack machine, enforced at THREE guard points
+	 *  (all required, all QA-verified): EnterAttack() stands the unit DOWN to Idle,
+	 *  UpdateStateGrouped() acquires nothing and falls through to station-keeping, and
+	 *  PerformAttack() refuses.
+	 *
+	 *  ⚠️ WHY THREE and not one: LoadStatsAndStart binds
+	 *  AttackCadence = FMath::Max(Row->Cadence, MinAttackCadence), and MinAttackCadence is
+	 *  0.05 s — so a Cadence-0 row (the Sorcerer's) that EVER reached Attack would fire
+	 *  20×/s. That is the exact trap the
+	 *  Miner's structural seal exists for (qa/TASK-021 WARN-1). The Miner's seal is
+	 *  unavailable here: a COMMANDABLE unit must keep its state timer.
+	 */
+	virtual bool CanEverAttack() const { return true; }
+
+	/**
+	 *  ANCIENT GROUNDS (CONVENTIONS §3): true only for ASorcererUnit — the unit whose
+	 *  presence inside an AAncientGround grants friendly occupants of that ground one
+	 *  permanent damage stack per boost tick. Class identity, not a CSV flag. The ground's
+	 *  tick COUNTS an empowerer and then SKIPS it as an occupant: a sorcerer never
+	 *  self-boosts, and the grant is FRIENDLY-ONLY (a Blue sorcerer boosts only Blue).
+	 *  Public for the same outside-caller reason as CanEverAttack().
+	 */
+	virtual bool IsAncientGroundEmpowerer() const { return false; }
+
+	/**
+	 *  ANCIENT GROUNDS (CONVENTIONS §4) — occupant eligibility, read by AAncientGround's
+	 *  tick: alive AND able to attack at all AND carrying a positive row Damage AND not a
+	 *  Support profile. That predicate excludes the Sorcerer, the Miner and the Cleric —
+	 *  units whose damage routes through NEITHER compose point (ComputeOutputDamage /
+	 *  ApplyDetonation), so stacks on them would be a number that does nothing — and it
+	 *  doubles as the boost row's hidden test (no stacks ⇒ 0% ⇒ the row is hidden).
+	 */
+	bool CanReceiveDamageBoost() const;
+
+	/**
+	 *  ANCIENT GROUNDS (CONVENTIONS §4) — grants Stacks permanent damage stacks, clamped to
+	 *  MaxPermanentDamageStacks (the +400% cap), and broadcasts OnDamageBoostChanged ONLY on
+	 *  an ACTUAL change: a fully-capped unit standing in a ground forever produces no
+	 *  spurious per-second bar traffic. Non-positive Stacks is a no-op. The boost is
+	 *  PERMANENT — there is no decay path, and it is lost only on death.
+	 *
+	 *  AUTHORITY IS BY CONSTRUCTION and deliberately NOT re-guarded here: the sole gameplay
+	 *  caller is AAncientGround's boost tick, which already gates on its PUSHED
+	 *  bAuthoritativeBoost flag (CONVENTIONS §2 — the ground never reads HasAuthority(),
+	 *  because it is spawned locally on clients from the replicated seed and keeps
+	 *  ROLE_Authority there). A HasAuthority() guard on this function would buy nothing in
+	 *  M8 P1, where the unit fleet is server-only.
+	 */
+	void AddPermanentDamageStacks(int32 Stacks);
+
+	/**
+	 *  ANCIENT GROUNDS (CONVENTIONS §4) — resets the boost to zero and broadcasts
+	 *  UNCONDITIONALLY (the reset-path discipline, mirroring HandleDeath's unconditional
+	 *  0-HP broadcast). Required because the rigged-death path defers Destroy by up to
+	 *  DeathAnimMaxHoldSeconds (2 s), during which a boosted corpse would otherwise hold a
+	 *  full boost bar. Play Again needs ZERO work (its step 2 destroys every unit), and the
+	 *  match-end freeze deliberately does NOT reset — a permanent boost survives to the end
+	 *  screen.
+	 */
+	void ClearPermanentDamageStacks();
+
+	/**
+	 *  ANCIENT GROUNDS (CONVENTIONS §4) — the composed output multiplier
+	 *  1 + PermanentDamageBonusPerStack × PermanentDamageStacks. EXACTLY 1.0 at zero stacks,
+	 *  so every unboosted unit stays bit-for-bit unchanged, and it is the ONLY route the
+	 *  boost takes into damage: AttackDamage is NEVER mutated in place (the house buff law —
+	 *  the War Banner / Rally cache-once, restore-exactly precedent). BlueprintPure: the QA
+	 *  readback hook.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Unit")
+	float GetPermanentDamageMultiplier() const { return 1.f + PermanentDamageBonusPerStack * static_cast<float>(PermanentDamageStacks); }
+
 protected:
 
 	/** Binds the card stats from DT_Cards and starts the state machine. */
@@ -533,6 +637,29 @@ protected:
 	/** BATTLE CRY move-speed bonus (TASK-099, M5 ruling 6). 0.25 = +25% move speed; consumed via GetBattleCryMoveSpeedMultiplier. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Keywords", meta = (ClampMin = "0"))
 	float BattleCryMoveSpeedBonus = 0.25f; // GDD §4
+
+	/**
+	 *  ANCIENT GROUNDS (TASK-360, CONVENTIONS §4) — output damage added per permanent stack.
+	 *  0.05 = +5% of BASE damage per stack, i.e. one stack per sorcerer per boost tick
+	 *  (Jonathan's ruling iv: two sorcerers in the same ground = two stacks per second).
+	 *  A mechanic RULE, so it lives here as a UPROPERTY default — it is NOT a cards.csv
+	 *  column (the mechanic-rules-aren't-card-stats law; the Charge/Slayer/BattleCry
+	 *  magnitudes above are the precedent). FLAGGED tunable: this and
+	 *  MaxPermanentDamageStacks are two of the three balance levers if the boost plays too
+	 *  hot (the third is AAncientGround::BoostTickInterval).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Keywords", meta = (ClampMin = "0"))
+	float PermanentDamageBonusPerStack = 0.05f; // GDD §x.x
+
+	/**
+	 *  ANCIENT GROUNDS (TASK-360, CONVENTIONS §4) — the hard stack cap: 80 × 5% = the
+	 *  **+400% ceiling** Jonathan specified ("400% is the max"), and the reason the boost
+	 *  bar's four 100%-wide bands cover the whole range exactly. AddPermanentDamageStacks
+	 *  clamps to this, so a unit parked in a ground forever tops out instead of growing
+	 *  without bound. Mechanic rule, FLAGGED tunable (see above).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Keywords", meta = (ClampMin = "0"))
+	int32 MaxPermanentDamageStacks = 80; // GDD §x.x
 
 	/**
 	 *  Blockout "attack animation" (TASK-020): how far VisualMesh lunges along the
@@ -1058,6 +1185,28 @@ private:
 	/** Precomputed per-unit station offset from the group's PositionCenter (TASK-344): the golden-angle sunflower slot, computed + nav-projected ONCE by the controller at the stage-3 confirm — never recomputed per tick. */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Unit", meta = (AllowPrivateAccess = "true"))
 	FVector GroupStationOffset = FVector::ZeroVector;
+
+	/**
+	 *  ANCIENT GROUNDS (TASK-360, CONVENTIONS §4) — accumulated permanent damage stacks,
+	 *  in [0, MaxPermanentDamageStacks]. Written ONLY by AddPermanentDamageStacks and
+	 *  ClearPermanentDamageStacks, each of which broadcasts OnDamageBoostChanged — that
+	 *  two-writer discipline is what makes "broadcast on every mutation" auditable.
+	 *
+	 *  ⚠️ INTEGER STACKS, NEVER A FLOAT (CONVENTIONS §4, and it is load-bearing for the UI):
+	 *  the boost bar's whole job is distinguishing EXACTLY 100/200/300% from just-past-them,
+	 *  and a float accumulated over 80 additions of 0.05 makes "exactly 100%" epsilon-
+	 *  dependent. Integers make the band boundaries exact by construction. Mirrors
+	 *  AHeroCharacter::SharpenedBladeStacks.
+	 *
+	 *  ⚖️ M8 P2 DUTY (recorded, not silently omitted — CONVENTIONS §4 + the NET RELEVANCY
+	 *  LAW's "P2 WAVE DUTY: the unit fleet is Tier B"): when the unit fleet replicates this
+	 *  becomes UPROPERTY(ReplicatedUsing = OnRep_PermanentDamageStacks), with the OnRep
+	 *  re-broadcasting OnDamageBoostChanged so the client's seed-then-bind path is identical
+	 *  to the server's. In M8 P1 units are server-only, so no remote client sees a boost bar
+	 *  at all — a KNOWN P1 state, not a defect of this task.
+	 */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Unit", meta = (AllowPrivateAccess = "true"))
+	int32 PermanentDamageStacks = 0;
 
 	/** Goal point of the last EnterAdvanceToLocation request (W1 TASK-275, HOLD) — avoids re-pathing to the same point every check. Meaningful only while bHasMoveGoalLocation. */
 	FVector CurrentMoveGoalLocation = FVector::ZeroVector;

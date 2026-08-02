@@ -77,6 +77,20 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCaptureZoneOwnerChanged, ACaptur
  *  Play Again resets CaptureOwner -> Neutral via ResetCaptureZone(), called by
  *  ASiegeGameMode::PlayAgain the same way ACastle::ResetCastle is (§3.9 reset
  *  path). Null-safe everywhere; the eval never crashes on an empty world.
+ *
+ *  🔧 KNOWN DEBT — 2-MIRROR WITH AAncientGround (recorded in BOTH headers per
+ *  CONVENTIONS §2 "Ancient Grounds + Sorcerer + 180° terrain symmetry",
+ *  TASK-359). AAncientGround DUPLICATES this class's decal-footprint /
+ *  soft-load / 2D-XY-box boilerplate (ApplyDecalFootprint, IsPointInZone, the
+ *  BeginPlay material load) rather than deriving from ACaptureZone. That is
+ *  DELIBERATE AND LOAD-BEARING, not an oversight: TActorIterator<ACaptureZone>
+ *  is a UNIT-SPAWN-ELIGIBILITY GATE (SiegePlayerController.cpp:3559,
+ *  SiegeBotController.cpp:1183/1380 — the bot takes the FIRST instance) plus
+ *  the play-again reset (SiegeGameMode.cpp:835), so a subclass would silently
+ *  become spawnable-in and could win the bot's first-instance race. ⚠️ DO NOT
+ *  "de-duplicate" by making one a base of the other. If a third zone-shaped
+ *  actor appears, lift the SHARED HALF into a component/static helper that both
+ *  actors compose.
  */
 UCLASS()
 class GITCLAUDEUNREALTEST_API ACaptureZone : public AActor
@@ -153,6 +167,9 @@ protected:
 	 *  Half-extent (XY) of the capturable box, centered on the actor origin.
 	 *  Default (840,840) = "same size as the spawnable region on either side"
 	 *  (Jonathan) = 2x the castle footprint. FLAGGED tunable.
+	 *  ⚠️ PAIRED TUNABLE with AAncientGround::ZoneHalfExtent (TASK-359): the
+	 *  ancient grounds are specified as "the size of the mid capture zone", so
+	 *  the two defaults are deliberately identical — change them TOGETHER.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Capture")
 	FVector2D ZoneHalfExtent = FVector2D(840.f, 840.f);

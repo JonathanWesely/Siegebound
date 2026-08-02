@@ -20,11 +20,15 @@
  *    current values — THEN binds FOnCombatantHPChanged (seed-then-bind,
  *    qa/TASK-005 major 2: a bind-only consumer created at a value that never changes
  *    again would stay stale forever).
- *  - OnHPChanged / SetTeamColor are BlueprintImplementableEvents with FLOAT PARAMS
- *    ONLY (MCP/CONVENTIONS widget rule). The WBP MUST implement them as TRUE
+ *  - OnHPChanged / SetTeamColor / SetDamageBoost are BlueprintImplementableEvents with
+ *    FLOAT PARAMS ONLY (MCP/CONVENTIONS widget rule). The WBP MUST implement them as TRUE
  *    overrides (bOverrideFunction=true); a K2Node_CustomEvent is DSL-indistinguishable
  *    and NEVER fires from C++ (the defect that hid the bug 5x — TASK-131 verifies the
  *    node class against the working castle widget).
+ *  - SetDamageBoost (TASK-362, the boost row) is driven ENTIRELY by
+ *    UCombatantHealthBarComponent: it owns the banding math and the seed-then-bind on the
+ *    owner's FOnCombatantDamageBoostChanged. This widget deliberately holds NO boost state
+ *    and does NOT bind that delegate — one push path, no second source of truth.
  */
 UCLASS()
 class GITCLAUDEUNREALTEST_API UCombatantHealthBarWidget : public UUserWidget
@@ -60,6 +64,36 @@ public:
 	 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Siegebound|UI")
 	void SetTeamColor(float R, float G, float B);
+
+	/**
+	 *  Implemented by WBP_CombatantHealthBar (TASK-368): drive the PERMANENT-DAMAGE-BOOST row
+	 *  that sits directly above the health bar (BarStack ▸ BoostOutline ▸ BoostBar).
+	 *
+	 *  ONE atomic event, NOT two — unlike SetTeamColor above, the COLOR CHANGES WITH THE VALUE
+	 *  (light blue 0-100% ▸ dark blue 100-200% ▸ purple 200-300% ▸ black 300-400%). Splitting
+	 *  fill from color would leave a frame where band-3 purple paints at a band-4 fill, i.e. a
+	 *  visibly WRONG boost level. Float params only (CONVENTIONS widget rule — no enums, no
+	 *  structs, no FLinearColor).
+	 *
+	 *  ALL banding math is C++ (UCombatantHealthBarComponent::PushDamageBoost) — the widget is a
+	 *  DUMB PIPE with ZERO conditionals. Required EventGraph, one linear exec chain, one
+	 *  MakeLinearColor(R, G, B, 1.0) fanned to both consumers (CONVENTIONS §5 / plan §5):
+	 *      SetPercent(BoostBar, FillFraction)
+	 *        -> SetFillColorAndOpacity(BoostBar, $C)
+	 *        -> SetBrushColor(BoostOutline, $C)
+	 *        -> SetRenderOpacity(BoostOutline, RowOpacity)
+	 *        -> SetRenderOpacity(BoostBar, RowOpacity)
+	 *  The alpha literal MUST be 1.0 (read it back). RowOpacity is a FLOAT hide (0 = row gone,
+	 *  1 = row shown) — never SetVisibility, so the health bar keeps a constant head offset for
+	 *  boosted and unboosted units alike.
+	 *
+	 *  ⚠️ Like OnHPChanged / SetTeamColor this MUST be authored as a TRUE override
+	 *  (bOverrideFunction = true). A K2Node_CustomEvent of the same name is DSL-indistinguishable,
+	 *  reports bIsImplemented = true, and NEVER fires from C++ — the exact defect that hid the
+	 *  health-bar bug five times (TASK-131). Assert the node's object CLASS via get_node_infos.
+	 */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Siegebound|UI")
+	void SetDamageBoost(float FillFraction, float R, float G, float B, float RowOpacity);
 
 protected:
 

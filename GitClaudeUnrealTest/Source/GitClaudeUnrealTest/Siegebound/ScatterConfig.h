@@ -34,6 +34,36 @@ enum class EScatterRegionBias : uint8
 };
 
 /**
+ *  GLOBAL terrain symmetry mode (CONVENTIONS "Ancient Grounds + Sorcerer + 180°
+ *  terrain symmetry (2026-08-01)" §1 — TASK-358). REPLACES the retired
+ *  `bool bMirrorSymmetric` X-mirror toggle, which was a FAKE reflection
+ *  (translate + yaw+180; a true reflection needs negative scale, which flips
+ *  HISM normals/winding) and is dead by law.
+ *
+ *   - Rotational180 (DEFAULT, and the ONLY legal terrain symmetry on this
+ *     project): every terrain pass generates on the BLUE half (X <= 0) and emits
+ *     each instance's twin under a proper 180° rigid rotation about the map
+ *     center — `loc' = (-X, -Y, Z)`, `yaw' = Fmod(yaw + 180, 360)`, `scale'
+ *     = scale` (UNCHANGED). No negative scale, no winding flip, no
+ *     approximation. Jonathan's 2026-08-01 directive.
+ *     ⚠️ BLUE, never Red: the PlayerStart exists ONLY at (-23800, 0, 100) — there
+ *     is no Red-side PlayerStart — so generating Red would rotate a legally
+ *     placed prop straight ONTO the hero spawn.
+ *   - Asymmetric: the RETIRED M6.5 fully-organic-random full-field placement,
+ *     kept ONLY as an explicit off-state. It is NO LONGER the default and
+ *     selecting it again needs a NEW Jonathan ruling — never silently restore it.
+ */
+UENUM(BlueprintType)
+enum class EScatterSymmetryMode : uint8
+{
+	/** 180° rotational symmetry about the map center — generate the Blue half, emit the rotated twin. THE LAW. */
+	Rotational180  UMETA(DisplayName = "180° Rotational (law)"),
+
+	/** Retired fully-asymmetric organic random. Needs a fresh Jonathan ruling to select. */
+	Asymmetric     UMETA(DisplayName = "Asymmetric (retired — needs a ruling)")
+};
+
+/**
  *  One layer of the procedural battlefield scatter (CONVENTIONS "Battlefield &
  *  procedural terrain (M6.5)"). A layer is one logical group — TREES / ROCKS /
  *  HILLS / GRASS — that shares placement rules and a candidate mesh set. The
@@ -255,9 +285,11 @@ struct FScatterLayer
  *  the art-director's curated Fab mesh list (TASK-135). ASiegeBattlefieldScatter
  *  reads it at match start; an unset/empty config is a graceful no-op.
  *
- *  Placement is ASYMMETRIC organic random by default (Jonathan ruling — this is
- *  PvE so organic variety beats strict fairness); bMirrorSymmetric is the
- *  playtest fallback toggle that mirrors placement across the X=0 centerline.
+ *  Placement is 180°-ROTATIONALLY SYMMETRIC (TASK-358, Jonathan's 2026-08-01
+ *  directive — SUPERSEDES the M6.5 asymmetric-organic ruling): every pass draws
+ *  on the BLUE half (X <= 0) and emits the twin at (-X, -Y) with yaw+180 and an
+ *  UNCHANGED scale. SymmetryMode below is the single global switch; the old
+ *  bMirrorSymmetric X-mirror bool is RETIRED (it was a fake reflection).
  *
  *  The keep-clear radii + corridor half-width below are the DATA half of the
  *  NON-NEGOTIABLE traversability guarantee: blocking obstacles are excluded from
@@ -267,6 +299,11 @@ struct FScatterLayer
  *  pads died with the W1-PREP mirrored-mines redesign, TASK-255 — mines are
  *  spawned BY the scatter itself, NoCollision, and clear their own aprons via
  *  the Scatter|Mines block below.)
+ *
+ *  The Scatter|AncientGrounds block (TASK-361) is the same idea one step further:
+ *  the ancient-ground PAIR is placed by a scatter pass too — random per match, no
+ *  L_Arena save, identical on host and client off the replicated seed — so those
+ *  bands are DATA here rather than a hand-placed level actor.
  */
 UCLASS(BlueprintType)
 class GITCLAUDEUNREALTEST_API USiegeScatterConfig : public UDataAsset
@@ -280,14 +317,27 @@ public:
 	TArray<FScatterLayer> Layers;
 
 	/**
-	 *  FALSE (default) = fully ASYMMETRIC organic random placement (Jonathan's
-	 *  M6.5 ruling — organic variety for PvE). TRUE = mirror every placement
-	 *  across the X=0 centerline for a symmetric, provably-fair field (the
-	 *  playtest fallback if asymmetric matches read as unfair). A FLAGGED
-	 *  decision — never silently imposed.
+	 *  THE global terrain symmetry switch (TASK-358 — CONVENTIONS "Ancient Grounds
+	 *  + Sorcerer + 180° terrain symmetry" §1). Default Rotational180 IS the law:
+	 *  every terrain pass (layers, mines, and — TASK-361 — ancient grounds) draws
+	 *  on the BLUE half (X <= 0) and emits the rotated twin at (-X, -Y), yaw+180,
+	 *  scale unchanged. ONE field for the WHOLE scatter so the grep-able
+	 *  `GenerateScatter seed=… mirror=…` reproducibility line can record it in a
+	 *  single token.
+	 *
+	 *  ⚠️ Setting this to Asymmetric restores the RETIRED M6.5 organic-random
+	 *  field. That is a FLAGGED decision that needs a NEW Jonathan ruling — his
+	 *  2026-08-01 directive replaced the old asymmetric default verbatim.
+	 *
+	 *  This REPLACES `bool bMirrorSymmetric` (retired X-mirror). Any
+	 *  DA_BattlefieldScatter that serialized that bool loses it silently on load
+	 *  and takes this field's default — which is the intended end state (the
+	 *  shipped DA had bMirrorSymmetric FALSE, i.e. the now-retired asymmetric
+	 *  mode, so the default flip TO Rotational180 is exactly the behavior change
+	 *  this task ships). Build-master: no DataAsset edit is required.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Placement")
-	bool bMirrorSymmetric = false;
+	EScatterSymmetryMode SymmetryMode = EScatterSymmetryMode::Rotational180;
 
 	/**
 	 *  Half-extent (cm) of the rectangular scatter region on X (across the
@@ -320,15 +370,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|KeepClear", meta = (ClampMin = "0"))
 	float CorridorHalfWidth = 1000.f;
 
-	// --- Mirrored depleting mines (W1-PREP, TASK-255 — CONVENTIONS "Mirrored
-	// --- depleting mines": these numbers are LAW there; tune bands recorded) ---
+	// --- Rotated depleting mines (W1-PREP, TASK-255 — CONVENTIONS "Mirrored
+	// --- depleting mines", AMENDED 2026-08-01 by the 180°-rotational law
+	// --- (TASK-358): these numbers are LAW there; tune bands recorded) ---
 
 	/**
 	 *  Neutral depleting mines spawned per SIDE each generate (total mines =
-	 *  2 × this): each mine is drawn ONCE on the Blue half then exactly mirrored
-	 *  across X=0 (−X, Y — equal castle-distance sums by construction, the
-	 *  fairness law). 0 disables the mines pass (debug fields only — the shipped
-	 *  default is 3 per Jonathan's locked ruling).
+	 *  2 × this): each mine is drawn ONCE on the Blue half then rotated 180°
+	 *  about the map center — (−X, −Y), yaw 180 (TASK-358; was the X-mirror
+	 *  (−X, Y)). Castle-distance sums stay equal by construction (the fairness
+	 *  law) because the castles are themselves an exact rotational pair. 0
+	 *  disables the mines pass (debug fields only — the shipped default is 3 per
+	 *  Jonathan's locked ruling).
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Mines", meta = (ClampMin = "0"))
 	int32 MineCountPerSide = 3;
@@ -337,7 +390,10 @@ public:
 	 *  Minimum 2D center distance (cm) between mine PRIMARIES. The twin and
 	 *  cross-pair distances are guaranteed ≥ this FOR FREE by the half-draw
 	 *  construction (|X| ≥ max(MineClearanceRadius, this/2) — see PlaceMines),
-	 *  so primaries are the only explicit spacing test. Default 3,000 — larger
+	 *  so primaries are the only explicit spacing test. TASK-358: the 180°
+	 *  rotation only STRENGTHENS both guarantees (dist(P,P′) = 2·|P| ≥ 2·|X|,
+	 *  and the cross-pair X terms still ADD because both primaries sit on the
+	 *  Blue half) — the proof in PlaceMines is unchanged. Default 3,000 — larger
 	 *  than the biggest hill diameter, so two mine sites never share a mound.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Mines", meta = (ClampMin = "0"))
@@ -385,4 +441,83 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Mines")
 	TSubclassOf<AGoldNode> MineClass;
+
+	// --- ANCIENT GROUNDS (batch ANCIENT-GROUNDS, TASK-361 — CONVENTIONS "Ancient
+	// --- Grounds + Sorcerer + 180° terrain symmetry (2026-08-01)" §2 "Placement",
+	// --- plan §2). The defaults below ARE the law (every one of them is also a
+	// --- FLAGGED tunable). PlaceAncientGrounds draws ONE ground on the Blue half
+	// --- from these bands and emits its 180° rotational twin at (−X, −Y) — the
+	// --- §1 law, so the pass needs no symmetry exception. ---
+
+	/**
+	 *  XY half-extent (cm) of an ancient ground's boost footprint — (840, 840) =
+	 *  "the size of the mid capture zone" (Jonathan's 2026-08-01 directive).
+	 *
+	 *  ⚠️ PAIRED TUNABLE, THREE WAYS: this value must equal BOTH
+	 *  AAncientGround::ZoneHalfExtent (the actor's own mechanic box + decal size)
+	 *  AND ACaptureZone::ZoneHalfExtent. The actor owns the MECHANIC copy; this
+	 *  one is the SCATTER's copy — it is what the placement pass uses to keep the
+	 *  whole footprint inside the arena (the MaxAbsX/MaxAbsY margin clamp), which
+	 *  is a placement concern the actor cannot answer. PlaceAncientGrounds
+	 *  compares the two after spawn and logs a Warning on divergence, so the
+	 *  duplication can never drift silently. Change all three together.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|AncientGrounds")
+	FVector2D AncientGroundHalfExtent = FVector2D(840.f, 840.f);
+
+	/**
+	 *  Minimum |X| (cm) of an ancient ground's center. 4,000 leaves 2,320 uu clear
+	 *  between the mid capture zone (half-extent 840 at the origin) and the
+	 *  nearest legal ground edge, so the two decals never touch and the ancient
+	 *  ground never reads as a second capture zone.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|AncientGrounds", meta = (ClampMin = "0"))
+	float AncientGroundMinAbsX = 4000.f;
+
+	/**
+	 *  Maximum |X| (cm) of an ancient ground's center. 21,000 keeps the objective
+	 *  out of the deep back-field: the castles sit at ±25,000 and the unit spawn
+	 *  boxes start at |X| = 22,540, so a ground is always at least 1,540 uu in
+	 *  FRONT of the spawn boxes — you fight over it, you do not spawn on it.
+	 *  (Additionally clamped down at runtime, if ever needed, so the 840-half
+	 *  footprint stays inside ArenaHalfExtent.X — a no-op at these defaults.)
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|AncientGrounds", meta = (ClampMin = "0"))
+	float AncientGroundMaxAbsX = 21000.f;
+
+	/**
+	 *  Maximum |Y| (cm) of an ancient ground's center: ArenaHalfExtent.Y (12,000)
+	 *  − a 1,200 margin. The footprint edge then lands at 11,640 — inside the
+	 *  ±12,500 arena ground and well inside the ±13,888 navmesh bounds, so the
+	 *  runes never bleed off the playfield onto the boundary walls.
+	 *  ⚠️ The RESERVED CORRIDOR (|Y| <= CorridorHalfWidth) is deliberately NOT
+	 *  excluded — the SAME ruling as the mines: AAncientGround has no collision
+	 *  primitive and no nav geometry, so it cannot touch the traversability
+	 *  guarantee, and a lane objective is good contested design. Do not "fix" it.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|AncientGrounds", meta = (ClampMin = "0"))
+	float AncientGroundMaxAbsY = 10800.f;
+
+	/**
+	 *  Minimum 2D center distance (cm) an ancient ground keeps from EVERY spawned
+	 *  mine, tested at BOTH ends of the pair (P and P′). 1,800 ≈ the ground's own
+	 *  1,188 half-diagonal plus the mine's 600 clearance disc, so a gathering box
+	 *  and a mining apron never overlap — the two objectives stay legible as
+	 *  separate things to fight over. (The mines pass runs FIRST, so the live
+	 *  mine set is exactly what this is tested against.)
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|AncientGrounds", meta = (ClampMin = "0"))
+	float AncientGroundMineClear = 1800.f;
+
+	/**
+	 *  Radius (cm) of the blocker-clearance disc deleted around EACH end of the
+	 *  ancient-ground pair (RemoveBlockingInstancesInDisc at P and at P′), so
+	 *  units can actually gather on the runes instead of standing in a thicket.
+	 *  1,200 circumscribes the 840×840 half-extent box (half-diagonal 1,188), so
+	 *  the whole footprint plus a hair is cleared. Hills are EXEMPT from that cull
+	 *  by the never-delete-hills rule — which costs nothing here, because a
+	 *  candidate over a hill is rejected outright (flat ground only).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|AncientGrounds", meta = (ClampMin = "0"))
+	float AncientGroundClearRadius = 1200.f;
 };

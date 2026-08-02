@@ -9,6 +9,7 @@
 #include "Siegebound/TeamId.h"
 #include "BattlefieldScatter.generated.h"
 
+class AAncientGround;
 class AGoldNode;
 class USceneComponent;
 class USiegeScatterConfig;
@@ -59,18 +60,56 @@ DECLARE_LOG_CATEGORY_EXTERN(LogSiegeTerrain, Log, All);
  *        mine's supporting hill). Re-checks until confirmed. Never leaves a
  *        match unwinnable.
  *
- *  MIRRORED DEPLETING MINES (W1-PREP, TASK-255 — CONVENTIONS "Mirrored
- *  depleting mines"): after the two layer passes, PlaceMines spawns
- *  MineCountPerSide AGoldNode PAIRS — each drawn once on the Blue half then
- *  exactly mirrored across X=0 (−X, Y, yaw+180), so castle-distance sums are
- *  equal by construction. The pass draws from a DEDICATED
- *  FRandomStream(Seed XOR 0x4D494E45), leaving the layer stream (and every
- *  existing seed's layout) byte-stable. Mines are corridor-legal by Jonathan
- *  ruling (AGoldNode is NoCollision — the traversability guarantee is
- *  untouched), delete the nav-relevant blockers in their clearance discs
- *  (hills EXEMPT — hills are never deleted), and a mine over a hill gets its
- *  twin an injected mirrored hill instance (parity ruling: either-side-has ⇒
- *  both-have).
+ *  ⚠️ 180°-ROTATIONAL SYMMETRY LAW (TASK-358 — CONVENTIONS "Ancient Grounds +
+ *  Sorcerer + 180° terrain symmetry" §1; SUPERSEDES the M6.5 asymmetric-organic
+ *  ruling AND the retired bMirrorSymmetric X-mirror). EVERY terrain pass in this
+ *  actor generates on the BLUE half (X <= 0) and emits each placement's twin
+ *  under a proper rigid rotation about the map center:
+ *        loc' = (−X, −Y, Z)   ·   yaw' = Fmod(yaw + 180, 360)   ·   scale' = scale
+ *  On yaw-only / uniform-scale transforms that is EXACT — no negative scale, no
+ *  HISM winding flip, no approximation. THREE rules bind every pass here and any
+ *  pass added later:
+ *    (1) BLUE, NEVER RED. PlayerStart exists ONLY at (−23800, 0, 100); there is
+ *        no Red-side PlayerStart, so generating Red would rotate a legally-placed
+ *        prop straight ONTO the hero spawn.
+ *    (2) ZERO RNG DRAWS IN THE ROTATION STEP. The twin is COMPUTED, never
+ *        sampled — this is what preserves intra-build determinism and host ==
+ *        client. Same binary + same seed ⇒ identical layout and identical logs.
+ *    (3) EMIT THE TWIN INLINE, never as a bulk post-pass (it would break
+ *        VisualToProxy index parallelism, SpacingGrid registration and
+ *        HillSurfaceComponents registration).
+ *  Cross-BUILD layout stability is explicitly NOT a contract: existing seeds
+ *  produce new layouts under this law, exactly as the TASK-140 draw-order change
+ *  did. Deliberate residual asymmetries (each LOGGED when it fires): the
+ *  ValidateTraversability destructive culls, and the one-real/one-rotated-over-
+ *  clear PlayerStart keep-clear disc.
+ *
+ *  ROTATED DEPLETING MINES (W1-PREP, TASK-255 — CONVENTIONS "Mirrored
+ *  depleting mines", AMENDED by the law above): after the two layer passes,
+ *  PlaceMines spawns MineCountPerSide AGoldNode PAIRS — each drawn once on the
+ *  Blue half then rotated 180° to (−X, −Y, yaw 180) (TASK-358; the twin yaw was
+ *  ALREADY 180, so only Y changed), so castle-distance sums are equal by
+ *  construction. The pass draws from a DEDICATED FRandomStream(Seed XOR
+ *  0x4D494E45), exactly two draws per attempt in fixed X-then-Y order. Mines are
+ *  corridor-legal by Jonathan ruling (AGoldNode is NoCollision — the
+ *  traversability guarantee is untouched) and delete the nav-relevant blockers in
+ *  their clearance discs at BOTH ends (hills EXEMPT — hills are never deleted).
+ *  The old hill-parity clone/rollback machinery is DELETED (TASK-358): under a
+ *  true rotation the twin lands on the geometrically identical point of the
+ *  rotated hill — same Z, same slope, always — so parity holds by construction.
+ *
+ *  ANCIENT GROUNDS (batch ANCIENT-GROUNDS, TASK-361 — CONVENTIONS §2
+ *  "Placement"): immediately after the mines, PlaceAncientGrounds spawns ONE
+ *  AAncientGround on the Blue half plus its 180° rotational twin — the objective
+ *  Jonathan asked for ("one per side placed symmetrically"), delivered as a
+ *  SCATTER PASS rather than a level actor so it is random per match with NO
+ *  L_Arena save, agrees on host and client via the replicated seed, re-places
+ *  itself for free on Play Again, and reuses the clearance-cull + hill-trace
+ *  machinery already here. It too draws from its OWN FRandomStream (Seed XOR
+ *  0x41474E44, "AGND"), exactly two draws per attempt in fixed X-then-Y order.
+ *  ⚠️ The pass THREADS bAuthoritativeGenerate into AAncientGround::
+ *  InitAncientGround — the ground is spawned locally on the CLIENT too and so
+ *  keeps ROLE_Authority there; it must never read authority for itself.
  *
  *  Everything is null-safe: no config, no meshes, or no nav system each degrade
  *  to a logged no-op / geometric-only guarantee — never a crash, never a
@@ -119,7 +158,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Terrain")
 	void GenerateScatter();
 
-	/** Removes every scattered instance from every HISM (the components persist for reuse) and DESTROYS the spawned mine pair actors (Play-Again lifecycle, TASK-255 — fresh mines every re-scatter). */
+	/** Removes every scattered instance from every HISM (the components persist for reuse) and DESTROYS the spawned mine pair actors (Play-Again lifecycle, TASK-255 — fresh mines every re-scatter) AND the spawned ancient-ground pair (TASK-361 — the identical lifecycle: destroyed, never pooled, so every re-scatter gets a fresh pair with a fresh authority push). */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Terrain")
 	void ClearScatter();
 
@@ -201,6 +240,18 @@ private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<AGoldNode>> SpawnedMines;
 
+	/**
+	 *  The ancient-ground pair spawned by PlaceAncientGrounds this generate
+	 *  (TASK-361) — [P, P′], primary first. GC-rooted via UPROPERTY; ClearScatter
+	 *  DESTROYS them, EXACTLY like SpawnedMines (Play-Again lifecycle: a fresh
+	 *  pair at a fresh location every re-scatter). Destroying rather than pooling
+	 *  also re-runs the authority push on the new pair, so a re-scatter can never
+	 *  leave a stale bAuthoritativeBoost behind. AAncientGround latches no state
+	 *  and clears its own boost timer in EndPlay, so nothing else needs resetting.
+	 */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<AAncientGround>> SpawnedAncientGrounds;
+
 	/** Resolves-or-creates the VISUAL HISM for a mesh, applying the layer's collision/nav profile. Returns nullptr if the mesh is unresolvable. */
 	UHierarchicalInstancedStaticMeshComponent* ResolveComponentForMesh(UStaticMesh* Mesh, const FScatterLayer& Layer);
 
@@ -216,7 +267,16 @@ private:
 	/** Reverse lookup: the visual HISM paired to a proxy HISM (or nullptr for a real-geometry blocker). Lets CullCorridorBlockers cull the visual in lockstep with its proxy. */
 	UHierarchicalInstancedStaticMeshComponent* FindVisualForProxy(UHierarchicalInstancedStaticMeshComponent* ProxyComp) const;
 
-	/** Scatters a single layer's instances via the shared FRandomStream (asymmetric unless bMirrorSymmetric). */
+	/**
+	 *  Scatters a single layer's instances via the shared FRandomStream, honoring
+	 *  the config's EScatterSymmetryMode (TASK-358). Under the default
+	 *  Rotational180 the primary X draw is narrowed to the BLUE half [−HalfX, 0]
+	 *  and every accepted instance emits its (−X, −Y, yaw+180) twin INLINE — same
+	 *  HISM, same scale, in lockstep with its collision proxy and registered in the
+	 *  SpacingGrid. The per-layer InstanceCount therefore counts primary + twin
+	 *  (target 340 ⇒ 170 pairs), so the AddInstance budget is unchanged. ZERO extra
+	 *  FRandomStream draws: only the primary X draw's RANGE moved.
+	 */
 	void ScatterLayer(const FScatterLayer& Layer, FRandomStream& Stream);
 
 	/**
@@ -261,38 +321,91 @@ private:
 	 *  TASK-255 extension of the TASK-250 hill resolve: the SAME component-scoped
 	 *  down-trace + slope gate as ResolveHillAwareGroundZ (which now delegates
 	 *  here — behavior for the layer passes is unchanged), additionally surfacing
-	 *  the hit hill-surface COMPONENT + INSTANCE index — the surface identity the
-	 *  mines pass clones for hill parity. OutSurfaceComp/OutInstanceIndex are set
-	 *  only when the point is over a hill face within MaxSlopeDeg (else nullptr /
-	 *  INDEX_NONE with OutZ = FloorZ); returns FALSE when the face is steeper —
-	 *  the caller must reject that candidate. Draw-free (the determinism law:
-	 *  zero FRandomStream draws anywhere in the hill/trace/clearance paths).
+	 *  the hit hill-surface COMPONENT + INSTANCE index. OutSurfaceComp/
+	 *  OutInstanceIndex are set only when the point is over a hill face within
+	 *  MaxSlopeDeg (else nullptr / INDEX_NONE with OutZ = FloorZ); returns FALSE
+	 *  when the face is steeper — the caller must reject that candidate. Draw-free
+	 *  (the determinism law: zero FRandomStream draws anywhere in the hill / trace
+	 *  / clearance paths).
+	 *  TASK-358 note: OutSurfaceComp is still LIVE (the mines pass reads it as the
+	 *  is-this-point-on-a-hill predicate, and TASK-361's ancient-ground pass uses
+	 *  it to REJECT hills outright). OutInstanceIndex is now INFORMATIONAL only —
+	 *  its one consumer was the deleted hill-parity clone — but it is kept in the
+	 *  signature deliberately: it costs nothing and is the natural hook for any
+	 *  future per-instance hill query.
 	 */
 	bool FindHillSurfaceAt(float X, float Y, float FloorZ, float MaxSlopeDeg, float& OutZ,
 		UHierarchicalInstancedStaticMeshComponent*& OutSurfaceComp, int32& OutInstanceIndex) const;
 
 	/**
-	 *  W1-PREP mirrored depleting mines pass (TASK-255 — CONVENTIONS "Mirrored
-	 *  depleting mines"; Jonathan's locked rulings). Called by GenerateScatter
-	 *  AFTER the two layer passes and BEFORE StartNavSettlePoll. Draws
-	 *  EXCLUSIVELY from a dedicated FRandomStream(Seed XOR 0x4D494E45) — the
-	 *  seed-order law: the layer stream gains ZERO draws, existing seeds stay
-	 *  stable — exactly two draws per attempt in fixed X-then-Y order; every
-	 *  trace / parity / clearance step downstream is draw-free. Per mine:
-	 *  half-draw on the Blue half (|X| ≥ max(MineClearanceRadius,
-	 *  MineMinSpacing/2)), spacing vs prior primaries, keep-clear discs tested
-	 *  at BOTH P and P′ (the zone set is asymmetric — PlayerStart is Blue-side),
-	 *  NO corridor test (ruling), slope-gated grounding at both points
-	 *  (≤ MineMaxSlopeDeg), hill-parity injection (either-side-has ⇒ both-have:
-	 *  mirrored same-component hill clone + footprint un-bury + re-trace,
-	 *  reject-if-no-fit), clearance-delete at both points, then the tracked
-	 *  AGoldNode pair spawn + InitMine(MineGoldReserve). ≤ 2 ×
-	 *  MaxPlacementAttemptsPerInstance attempts, then the DETERMINISTIC fallback
-	 *  slot with an Error log — the economy never ships short. Ends with the one
-	 *  grep-able MinesPass reproducibility line (seed + pairs + hill/inj/fb
-	 *  flags): same seed ⇒ identical line, the TASK-258 determinism criterion.
+	 *  W1-PREP depleting mines pass (TASK-255 — CONVENTIONS "Mirrored depleting
+	 *  mines"; Jonathan's locked rulings — AMENDED by the 180°-rotational law,
+	 *  TASK-358). Called by GenerateScatter AFTER the two layer passes and BEFORE
+	 *  StartNavSettlePoll. Draws EXCLUSIVELY from a dedicated FRandomStream(Seed
+	 *  XOR 0x4D494E45) — the seed-order law: the layer stream gains ZERO draws —
+	 *  exactly two draws per attempt in fixed X-then-Y order; every trace /
+	 *  rotation / clearance step downstream is draw-free. Per mine: half-draw on
+	 *  the Blue half (|X| ≥ max(MineClearanceRadius, MineMinSpacing/2)), spacing vs
+	 *  prior primaries, keep-clear discs tested at BOTH P and P′ = (−X, −Y) (the
+	 *  zone SET is asymmetric — PlayerStart is Blue-side — so testing the twin is
+	 *  not redundant), NO corridor test (ruling), slope-gated grounding at both
+	 *  points (≤ MineMaxSlopeDeg), clearance-delete at both points, then the
+	 *  tracked AGoldNode pair spawn + InitMine(MineGoldReserve) with the twin at
+	 *  (−X, −Y) yaw 180. ≤ 2 × MaxPlacementAttemptsPerInstance attempts, then the
+	 *  DETERMINISTIC fallback slot with an Error log — the economy never ships
+	 *  short. Ends with the one grep-able MinesPass reproducibility line (seed +
+	 *  pairs + hill/fb flags): same seed ⇒ identical line, the TASK-258
+	 *  determinism criterion.
+	 *  ⚠️ TASK-358: the hill-parity INJECTION (clone the supporting hill onto the
+	 *  bare side, re-trace, roll back + reject on no-fit) is DELETED as provably
+	 *  unreachable — under a true 180° rotation P′ lands on the geometrically
+	 *  identical point of the rotated hill (Z and the normal's Z component are both
+	 *  invariant under a Z-axis rotation), so parity holds by construction. The
+	 *  MinesPass log's `inj=` token went with it.
 	 */
 	void PlaceMines(int32 Seed);
+
+	/**
+	 *  ANCIENT GROUNDS pass (batch ANCIENT-GROUNDS, TASK-361 — CONVENTIONS
+	 *  "Ancient Grounds + Sorcerer + 180° terrain symmetry" §2 "Placement", plan
+	 *  §2). Called by RunScatterPasses IMMEDIATELY AFTER PlaceMines — after,
+	 *  because the mine set must exist to be kept clear of; and inside the shared
+	 *  seed-deterministic body, so OnRep_GenerationIndex re-runs it identically on
+	 *  the client. Places ONE AAncientGround on the BLUE half plus its 180°
+	 *  ROTATIONAL TWIN at (−X, −Y) yaw 180 — the §1 law, conformed to, not a new
+	 *  exception.
+	 *
+	 *  ⚠️ THE bAuthoritativeGenerate PARAMETER IS THE POINT OF THIS SIGNATURE.
+	 *  AAncientGround runs a boost simulation and MUST NOT read HasAuthority()
+	 *  itself: it is spawned LOCALLY ON THE CLIENT from the replicated seed and
+	 *  therefore keeps ROLE_Authority there, so a self-read would silently run a
+	 *  rogue client-side sim. This pass PUSHES RunScatterPasses' own flag into
+	 *  InitAncientGround(bool) on BOTH spawned grounds — the same threading shape
+	 *  as RunScatterPasses(Seed, bAuthoritativeGenerate) itself. (CONVENTIONS §2
+	 *  writes the pass as `PlaceAncientGrounds(int32 Seed)`; the second parameter
+	 *  is the only honest way to satisfy the authority-is-pushed law that the SAME
+	 *  clause states, and this is a private method no other task calls.)
+	 *
+	 *  Draws EXCLUSIVELY from a dedicated FRandomStream(Seed XOR 0x41474E44 =
+	 *  "AGND") — the seed-order law: the layer stream and the mine stream each
+	 *  gain ZERO draws — exactly two draws per attempt in fixed X-then-Y order,
+	 *  with every downstream step (mine clearance, hill rejection, ground traces,
+	 *  the rotation, the clearance culls, the fallback) DRAW-FREE, so no rejection
+	 *  path can desync the sequence. Per attempt: |X| in [AncientGroundMinAbsX,
+	 *  AncientGroundMaxAbsX] negated onto the Blue half, |Y| <=
+	 *  AncientGroundMaxAbsY, AncientGroundMineClear from every spawned mine tested
+	 *  at BOTH P and P′, and FLAT GROUND ONLY — a candidate over a hill face is
+	 *  REJECTED OUTRIGHT (a 1,680² gathering box needs flat ground; the hill is
+	 *  never parity-cloned for it). NO corridor test, by the same ruling as the
+	 *  mines: AAncientGround has no collision primitive and no nav geometry, so it
+	 *  cannot touch the traversability guarantee. 48 attempts, then a
+	 *  DETERMINISTIC fallback at (−12000, +6000) logged at Error — the mines'
+	 *  "never ships short" discipline, because a match with no ancient ground has
+	 *  no Sorcerer mechanic at all. Ends with the one grep-able AncientGroundsPass
+	 *  reproducibility line: same binary + same seed ⇒ identical line on host and
+	 *  client.
+	 */
+	void PlaceAncientGrounds(int32 Seed, bool bAuthoritativeGenerate);
 
 	/**
 	 *  Re-seats every spawned mine on the CURRENT surface under it — hill else
@@ -331,9 +444,13 @@ private:
 	 *  HISM culled in LOCKSTEP via VisualToProxy (same law as the corridor
 	 *  cull). Grass is untouched (not nav-relevant, excluded by the same guard)
 	 *  and HILL-SURFACE comps are EXEMPT (hills are never deleted — Jonathan
-	 *  conflict rule; the parity clone the mines pass injects must never be
-	 *  eaten by the clearance disc that follows it). Center-in-disc semantics,
-	 *  matching the corridor cull's center-in-band. Returns the number removed.
+	 *  conflict rule). Center-in-disc semantics, matching the corridor cull's
+	 *  center-in-band. Returns the number removed.
+	 *  TASK-358 SYMMETRY: this call is symmetry-neutral BY ITSELF — the verdict is
+	 *  the CALLER's. PlaceMines calls it at P AND at its exact rotation −P, so it
+	 *  deletes rotational PAIRS (symmetry-preserving, the every-match case);
+	 *  ValidateTraversability calls it around ONE unreachable mine, which is a
+	 *  genuine asymmetry escape and logs a Warning at that site.
 	 */
 	int32 RemoveBlockingInstancesInDisc(const FVector2D& Center, float Radius);
 
