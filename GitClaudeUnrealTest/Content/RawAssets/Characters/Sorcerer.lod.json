@@ -1,0 +1,29 @@
+{
+  "apply_with": "UE editor-python: SkeletalMeshEditorSubsystem.regenerate_lod + per-LOD reduction (number_of_triangles_percentage, screen_size) -- mirror of reimport_meshes.py _apply_lods set_lods reduction contract",
+  "card_id": "Sorcerer",
+  "component_defaults": {
+    "enable_update_rate_optimizations": true,
+    "visibility_based_anim_tick_option": "OnlyTickPoseWhenRendered"
+  },
+  "law": "CONVENTIONS 'Arena 10x scale-up & LOD/perf (M7.6)' SK-unit LOD + URO",
+  "lod_chain": [
+    {
+      "lod": 0,
+      "percent_triangles": 1.0,
+      "screen_size": 1.0
+    },
+    {
+      "lod": 1,
+      "percent_triangles": 0.5,
+      "screen_size": 0.4
+    },
+    {
+      "lod": 2,
+      "percent_triangles": 0.2,
+      "screen_size": 0.15
+    }
+  ],
+  "mesh_fbx": "Sorcerer.fbx",
+  "schema": "siege_sk_lod_recipe_v1",
+  "skeletal_mesh_asset": "SK_Sorcerer"
+}
