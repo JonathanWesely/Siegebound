@@ -10,7 +10,6 @@
 #include "GitClaudeUnrealTest.h"
 #include "Kismet/GameplayStatics.h"
 #include "UObject/SoftObjectPtr.h"
-#include "UObject/UnrealType.h"
 #include "Siegebound/Castle.h"
 #include "Siegebound/HealthBarProvider.h"
 #include "Siegebound/SiegePlayerController.h"
@@ -50,14 +49,6 @@ namespace
 	 *  gate makes is `100` vs `101` = 0.2 stacks apart, so 1e-4 is ~2000× below it.
 	 */
 	constexpr double SiegeCheatStackEpsilon = 1.e-4;
-
-	/**
-	 *  SetTestDamageBoost — the mechanic-rule UPROPERTY on ASummonedUnit that the
-	 *  percent→stacks conversion reads. Pinned verbatim by CONVENTIONS §4 and live
-	 *  in the shipped inline bodies at SummonedUnit.h GetDamageBoostPercent() /
-	 *  GetPermanentDamageMultiplier().
-	 */
-	const FName SiegeCheatPerStackPropertyName(TEXT("PermanentDamageBonusPerStack"));
 
 	/**
 	 *  Alive across the combat types: units/buildings/hero answer IHealthBarProvider;
@@ -469,9 +460,9 @@ void USiegeCheatManager::SetTestDamageBoost(float Percent, bool bAllFriendly)
 	}
 
 	// ---- Percent <= 0 ⇒ clear only ------------------------------------------
-	// Deliberately BEFORE the per-stack read, so `SetTestDamageBoost 0 true` — the
-	// "boost bar and frame vanish" row of the gate — still works even if the
-	// mechanic-rule property below cannot be resolved.
+	// Deliberately BEFORE the per-stack read: `SetTestDamageBoost 0 true` — the
+	// "boost bar and frame vanish" row of the gate — is a CLEAR, not a conversion,
+	// and the percent→stacks division below is undefined for it.
 	if (Percent <= 0.f)
 	{
 		for (ASummonedUnit* Unit : Targets)
@@ -489,23 +480,13 @@ void USiegeCheatManager::SetTestDamageBoost(float Percent, bool bAllFriendly)
 	// the moment PermanentDamageBonusPerStack is tuned, and this lever's entire
 	// value is that the number Jonathan types is the number the bar shows.
 	//
-	// WHY REFLECTION AND NOT `Unit->PermanentDamageBonusPerStack`: CONVENTIONS §7's
-	// signature registry pins FUNCTIONS only — the UPROPERTY's ACCESS LEVEL is not
-	// pinned, and every other card stat on ASummonedUnit (AttackDamage, Profile,
-	// bDead) is declared `private:`, so a direct member read is a coin-flip on
-	// compiling against a class being written in parallel by TASK-360. The
-	// reflection read is access-level agnostic, and it reads the INSTANCE value so
-	// a per-Blueprint override is honoured. The property NAME is pinned verbatim by
-	// CONVENTIONS §4. Resolved ONCE here, not per unit.
-	const FFloatProperty* PerStackProp = CastField<FFloatProperty>(
-		ASummonedUnit::StaticClass()->FindPropertyByName(SiegeCheatPerStackPropertyName));
-	if (!PerStackProp)
-	{
-		UE_LOG(LogGitClaudeUnrealTest, Error,
-			TEXT("USiegeCheatManager::SetTestDamageBoost — could not resolve ASummonedUnit's float UPROPERTY '%s'; refusing to guess a per-stack value. No boost changed."),
-			*SiegeCheatPerStackPropertyName.ToString());
-		return;
-	}
+	// TASK-379 retired the reflection read this used to perform
+	// (CastField<FFloatProperty> + FindPropertyByName + a "refusing to guess" Error
+	// path). It existed ONLY because the property sat in ASummonedUnit's `protected:`
+	// block, so a direct member read would not compile; the public BlueprintPure
+	// getter added there (qa/TASK-365-report.md "THE SIMPLIFICATION VERDICT") makes it
+	// dead weight. The read below is still PER-INSTANCE — a per-Blueprint override is
+	// honoured exactly as before — and it can no longer fail to resolve at all.
 
 	int32 AppliedCount = 0;
 	int32 SkippedCount = 0;
@@ -516,7 +497,7 @@ void USiegeCheatManager::SetTestDamageBoost(float Percent, bool bAllFriendly)
 
 	for (ASummonedUnit* Unit : Targets)
 	{
-		const float PerStack = PerStackProp->GetPropertyValue_InContainer(Unit);
+		const float PerStack = Unit->GetPermanentDamageBonusPerStack();
 		if (PerStack <= 0.f)
 		{
 			++SkippedCount;
@@ -566,8 +547,8 @@ void USiegeCheatManager::SetTestDamageBoost(float Percent, bool bAllFriendly)
 	if (SkippedCount > 0)
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Warning,
-			TEXT("USiegeCheatManager::SetTestDamageBoost — skipped %d unit(s) whose %s is <= 0 (percent-to-stacks is undefined there)."),
-			SkippedCount, *SiegeCheatPerStackPropertyName.ToString());
+			TEXT("USiegeCheatManager::SetTestDamageBoost — skipped %d unit(s) whose PermanentDamageBonusPerStack is <= 0 (percent-to-stacks is undefined there)."),
+			SkippedCount);
 	}
 	if (AppliedCount == 0)
 	{

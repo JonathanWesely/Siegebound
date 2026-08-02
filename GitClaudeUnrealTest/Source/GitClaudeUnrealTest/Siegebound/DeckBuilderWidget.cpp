@@ -10,6 +10,7 @@
 #include "Siegebound/DeckLibrary.h"
 #include "Siegebound/SiegeDeckSaveGame.h"
 #include "Siegebound/SpellLibrary.h"
+#include "Siegebound/SummonedUnit.h" // TASK-379: GetDefault<ASummonedUnit>() needs the COMPLETE type for the two Sorcerer boost getters
 
 // ---------------------------------------------------------------------------
 // Card-details glossary (TASK-268) — the ONLY authored player-facing copy in
@@ -24,10 +25,14 @@
 // cards.csv column — each carries a "// mirrors <Class>::<Property>" comment and
 // MUST be updated whenever that gameplay value changes. Anything that IS a CSV
 // column is interpolated from the row at runtime and never appears here (§3.0).
-//   ⚠️ ONE DOCUMENTED EXCEPTION (TASK-364): the newer, more specific CONVENTIONS
-//   law "Ancient Grounds + Sorcerer" §8 forbids baking a mechanic magnitude that
-//   this widget cannot reach, so SorcererGroundBoost states its magnitudes
-//   QUALITATIVELY and carries the full reasoning at its own declaration.
+//   ✅ THE EXCEPTION IS CLOSED (TASK-379). TASK-364 had to state the Sorcerer's two
+//   magnitudes QUALITATIVELY — the newer, more specific CONVENTIONS law "Ancient
+//   Grounds + Sorcerer" §8 forbids BAKING a mechanic magnitude, and this widget
+//   could not reach either value while both sat in ASummonedUnit's `protected:`
+//   block. The public getters added there put SorcererGroundBoostFmt on §8's
+//   PREFERRED branch: it INTERPOLATES both, so a retune of either lever re-derives
+//   the card text for free. Prefer this shape over a mirrors-comment for any future
+//   magnitude that is publicly readable.
 //
 // TRUTH LAW: every line states behavior the shipping code actually implements;
 // the verification site for each clause is recorded in handoffs/TASK-268.md
@@ -52,23 +57,29 @@ namespace SiegeboundCardGlossary
 	/**
 	 *  Sorcerer, half 2 of 2 - the ancient-ground boost. // mirrors AAncientGround's 1 Hz boost tick (BoostTickInterval, friendly-only, sorcerers never self-boost) + ASummonedUnit::CanReceiveDamageBoost (attackers only) + ::ClearPermanentDamageStacks in HandleDeath
 	 *
-	 *  ⚠️ THE MAGNITUDES ARE QUALITATIVE ON PURPOSE — this clause is the ONE
-	 *  documented EXCEPTION to the glossary-mirror rule above, under the NEWER and
-	 *  more specific CONVENTIONS law ("Ancient Grounds + Sorcerer" §8): *"magnitudes
-	 *  that exist as UPROPERTY mechanic rules are interpolated from those properties
-	 *  or stated qualitatively — never a hardcoded number that can drift."*
-	 *  The two numbers are `ASummonedUnit::PermanentDamageBonusPerStack` (0.05 ⇒ +5%
-	 *  per second per sorcerer) and `::MaxPermanentDamageStacks` (80 ⇒ the +400%
-	 *  ceiling) — and this widget CANNOT reach either: both are declared inside that
-	 *  class's `protected:` block (SummonedUnit.h:652 / :662, block opens at :450,
-	 *  alongside every other EditAnywhere tunable it owns), so a
-	 *  `GetDefault<ASummonedUnit>()` read would not compile. Baking them instead
-	 *  would put a drift-prone number in front of the player, which is exactly what
-	 *  the law forbids; so the string states the SHAPE of the rule precisely and
-	 *  carries no number at all. INTERPOLATE THEM HERE the day they are publicly
-	 *  readable — this is the only line that would change.
+	 *  ✅ THE MAGNITUDES ARE INTERPOLATED (TASK-379) — CONVENTIONS "Ancient Grounds +
+	 *  Sorcerer" §8's PREFERRED branch: *"magnitudes that exist as UPROPERTY mechanic
+	 *  rules are interpolated from those properties or stated qualitatively — never a
+	 *  hardcoded number that can drift."* TASK-364 shipped the qualitative FALLBACK
+	 *  only because both values sat in ASummonedUnit's `protected:` block and a
+	 *  `GetDefault<ASummonedUnit>()` read would not compile; the two public
+	 *  BlueprintPure getters added by TASK-379 removed that obstacle, and this is the
+	 *  line that changed.
+	 *
+	 *  %s #1 = the PER-SECOND gain, 100 x ASummonedUnit::GetPermanentDamageBonusPerStack()
+	 *          (0.05 ⇒ "5", one stack per sorcerer per 1 Hz boost tick).
+	 *  %s #2 = the CEILING, that same per-stack percent x ::GetMaxPermanentDamageStacks()
+	 *          (5 x 80 ⇒ "400").
+	 *
+	 *  ⚠️ NEVER re-bake these as literals: both are FLAGGED balance levers
+	 *  (CONVENTIONS §4) and retuning them is EXPECTED. The operand order
+	 *  (100.f FIRST) is the order ASummonedUnit::GetDamageBoostPercent() itself uses
+	 *  and is exact in single precision at the shipped values — qa/TASK-365-report.md
+	 *  "BOUNDARY EXACTNESS" proves 100.f x 0.05f == exactly 5.0f and 5.0f x 80 ==
+	 *  exactly 400.0f, so FormatStatValue prints "5" / "400" with no decimal tail.
+	 *  Literal `%%` is the player-facing percent sign (SpellAllyBuffFmt precedent).
 	 */
-	const TCHAR SorcererGroundBoost[] = TEXT("While it stands inside an ancient ground, every friendly unit that fights standing in that same ground hits harder for each second it spends there. The gain is permanent - kept in full when that unit walks back out, and lost only when it dies - and it stacks up second after second to a hard ceiling. A second sorcerer in the same ground builds it twice as fast. Units that never attack - miners, healers and sorcerers themselves - gain nothing.");
+	constexpr TCHAR SorcererGroundBoostFmt[] = TEXT("While it stands inside an ancient ground, every friendly unit that fights standing in that same ground hits +%s%% harder for each second it spends there. The gain is permanent - kept in full when that unit walks back out, and lost only when it dies - and it stacks up second after second to a hard ceiling of +%s%%. A second sorcerer in the same ground builds it twice as fast. Units that never attack - miners, healers and sorcerers themselves - gain nothing.");
 
 	/** Sharpened Blade. // mirrors AHeroCharacter::MeleeDamageBonus (+10 per stack) */
 	const TCHAR UpgradeSharpenedBlade[] = TEXT("Instantly upgrades your hero: +10 damage on every melee swing.");
@@ -885,8 +896,21 @@ void UDeckBuilderWidget::AppendRuleLines(FName CardID, const FCardRow& Row, TArr
 		// (StructureRole + TowerRole; UpgradeSharpenedBlade + UpgradeTailFmt): the seal
 		// is a permanent property of the unit, the boost is conditional on where it
 		// stands, and one run-on sentence would bury the second.
+		//
+		// TASK-379 — the boost line's two magnitudes are DERIVED, never baked
+		// (CONVENTIONS §8's preferred branch). CDO read: this is the deck-BUILDER, a
+		// menu screen with no unit in the world, so the class DEFAULT is exactly the
+		// right authority — it is the value every unit spawns with, and the one
+		// Jonathan edits when he retunes the lever. (The gameplay/cheat paths read the
+		// INSTANCE instead, so a per-Blueprint override is honoured there.)
+		// GetDefault<T>() on a statically-linked UCLASS never returns null.
+		const ASummonedUnit* UnitCDO = GetDefault<ASummonedUnit>();
+		const float PerStackPercent = 100.f * UnitCDO->GetPermanentDamageBonusPerStack();
+		const float CeilingPercent = PerStackPercent * static_cast<float>(UnitCDO->GetMaxPermanentDamageStacks());
+
 		OutLines.Add(SiegeboundCardGlossary::SorcererRole);
-		OutLines.Add(SiegeboundCardGlossary::SorcererGroundBoost);
+		OutLines.Add(FString::Printf(SiegeboundCardGlossary::SorcererGroundBoostFmt,
+			*FormatStatValue(PerStackPercent), *FormatStatValue(CeilingPercent)));
 	}
 	else if (Row.CardType == ECardType::HeroUpgrade)
 	{

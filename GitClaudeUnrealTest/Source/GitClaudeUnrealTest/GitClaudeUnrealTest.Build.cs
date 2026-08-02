@@ -20,7 +20,17 @@ public class GitClaudeUnrealTest : ModuleRules
 			"GameplayStateTreeModule",
 			"UMG",
 			"Slate",
-			"Niagara"
+			"Niagara",
+
+			// LLM-ASSISTANT batch (TASK-417): ParseSiegeAssistantCommand parses the
+			// model's constrained-decoding output in the game lane.
+			// ⚠️ NOT "HTTP" and NOT "Sockets" — llama.cpp runs IN-PROCESS. The
+			// sidecar llama-server.exe was considered and rejected, because a
+			// Windows Defender firewall prompt on first launch of a shipped game is
+			// unacceptable. Adding either module for this feature re-opens a closed
+			// decision (CONVENTIONS "In-match LLM command assistant" §6).
+			"Json",
+			"JsonUtilities"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

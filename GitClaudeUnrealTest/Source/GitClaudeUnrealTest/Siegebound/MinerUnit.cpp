@@ -9,10 +9,13 @@
 #include "GameFramework/PlayerState.h"
 #include "GitClaudeUnrealTest.h"
 #include "Navigation/PathFollowingComponent.h"
+#include "Siegebound/Castle.h" // TASK-398 Defend (E): FindNearestCastleForTeam / GetInteriorAnchorLocation
 #include "Siegebound/GoldNode.h"
 #include "Siegebound/SiegeFeedbackLibrary.h"
 #include "Siegebound/SiegeGameState.h"
+#include "Siegebound/SiegePlayerController.h" // TASK-397 command seam: FindControllerForTeam / FindUnitGroup / HasIssuedCommand
 #include "Siegebound/SiegePlayerState.h"
+#include "Siegebound/UnitCommand.h" // TASK-397 command seam: FSiegeUnitGroup (complete type at the FindUnitGroup call)
 #include "Sound/SoundBase.h"
 #include "TimerManager.h"
 
@@ -20,6 +23,15 @@ namespace
 {
 	/** §6 miner "clink" mining loop (TASK-179) — null-safe soft path; the loop flag is authored on the asset (TASK-180). */
 	const TCHAR* MinerClinkSoundPath = TEXT("/Game/Audio/S_MinerClink");
+
+	//~ TASK-398: NO formation constants live here. The golden-angle sunflower is
+	//~ NOT re-derived in this class — the miner reads the station the controller
+	//~ actually pushed into it (ASummonedUnit::GetGroupStationOffset, the public
+	//~ read TASK-396 added for this call site). One computation, one owner, zero
+	//~ drift: that is what makes "the miner uses Follow the same way as all other
+	//~ commandable units" true by CONSTRUCTION rather than by two implementations
+	//~ agreeing. GoldenAngleRadians / FollowFormationSlots stay private
+	//~ implementation details of SiegePlayerController.cpp, where they belong.
 }
 
 AMinerUnit::AMinerUnit()
@@ -64,12 +76,20 @@ AMinerUnit::AMinerUnit()
 	ClinkAudio->SetupAttachment(GetRootComponent());
 	ClinkAudio->bAutoActivate = false;
 
-	// (Seal #3 — the post-Super timer sweep — lives in BeginPlay.)
+	// (Seal #3 — the post-Super timer sweep — lives in BeginPlay.
+	//  Seal #4 — CanEverAttack() -> false — is a header one-liner, TASK-397.)
 	//
 	// NOTE: the base clamps row Cadence to a 0.05 s minimum, so the Miner
 	// row's Cadence 0 would NOT keep an attack timer unarmed by itself — if
 	// this unit ever reached EnterAttack it would swing 20×/s. These seals are
 	// load-bearing, not belt-and-braces.
+	//
+	// TASK-397 (CONVENTIONS §6 approach (B)): all three constructor/BeginPlay
+	// seals are DELIBERATELY UNCHANGED. The miner becomes commandable through
+	// its OWN poll (UpdateMining → ResolveMinerOrder), so it never needs the
+	// base state timer — which is what keeps the 20×/s trap shut, keeps the
+	// Profile-None fall-through to the castle-marching legacy body unreachable,
+	// and keeps ONE driver on the movement component. Seal #4 is added ON TOP.
 }
 
 void AMinerUnit::BeginPlay()
@@ -81,7 +101,44 @@ void AMinerUnit::BeginPlay()
 	// dead Advance toward the enemy castle — a discarded path request that
 	// EnsureWalkingToNode below replaces within this same call stack, before
 	// any movement tick consumes it.
+	//
+	// ⚠️ THIS CALL ALSO RUNS CONVENTIONS §2's FOLLOW AUTO-ENROLL, and that is the
+	// whole reason the next statement exists. See below.
 	Super::BeginPlay();
+
+	// ══ 🚩 THE §5 MINER SPAWN-DEFAULT RULING, ENFORCED (TASK-398, manager ruling 7,
+	//    item 1 on Jonathan's playtest gate) ══
+	//
+	// CONVENTIONS §2 makes Follow the spawn default for every follow-eligible Blue
+	// unit, enrolled from ASummonedUnit::BeginPlay — i.e. from the Super call one
+	// line above. Applied literally to a miner that means a 24-gold ECONOMY card
+	// that walks to the hero and earns NOTHING until personally micro'd. Ruling 7:
+	// a miner SPAWNS MINING.
+	//
+	// The lever is CanFollowHero(), which answers bFollowOnSpawn until this line
+	// runs: the enroll's IsFollowCommandEligible() gate refused, so this miner was
+	// never added to the follow group NOR to its Members array — which is the part
+	// that matters, because a stale Members entry would make
+	// EnrollInDefaultFollowGroup's Contains() early-out swallow every future C press
+	// (full reasoning in CanFollowHero()'s doc). The window is exactly one
+	// synchronous call stack wide and closes HERE, unconditionally and before any
+	// early-out below, so from this instant the miner is fully follow-eligible and
+	// pressing C over it enrolls it for real.
+	bSpawnFollowEnrollWindowClosed = true;
+
+	// TRIPWIRE (not a fix — a fix would have to reach into the controller's Members
+	// array, which this batch's file-ownership law forbids). If the auto-enroll ever
+	// moves off IsFollowCommandEligible(), or is deferred past this call stack, a
+	// miner will arrive here already carrying a group id. Clearing it keeps the
+	// SHIPPED ruling (it mines) instead of silently deleting the economy, and the
+	// Warning makes the regression loud at QA/PIE instead of invisible.
+	if (!bFollowOnSpawn && GetCommandGroupId() != INDEX_NONE)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("AMinerUnit '%s': spawned already enrolled in group %d — the §5 spawn-default window did not cover the follow auto-enroll (TASK-398). Cleared so the miner still MINES; the enroll site or CanFollowHero() needs re-checking."),
+			*GetNameSafe(this), GetCommandGroupId());
+		ClearCommandGroup();
+	}
 
 	// Seal #3: kill anything armed during Super::BeginPlay (defense in depth
 	// for a serialized StateCheckInterval; TASK-024 precedent — the
@@ -248,14 +305,70 @@ void AMinerUnit::UpdateMining()
 		TryRegisterWithOwnerState();
 	}
 
+	// ---- THE COMMAND SEAM (TASK-397 plumbing, TASK-398 semantics) ---------
+	// ONE read of the owning-team controller's live command state, producing
+	// this poll's destination decision. Placed AFTER the alive-registration
+	// retry (the §3.3 alive count is lifetime bookkeeping and must run under
+	// every order) and BEFORE the retarget gate (the first thing an order can
+	// legitimately change is WHICH destination this poll pursues).
+	const FMinerOrder Order = ResolveMinerOrder();
+
+	// ---- THE FIVE-COMMAND DISPATCH (TASK-398; CONVENTIONS §5's table) -----
+	// Exactly ONE movement driver runs per poll — that is approach (B)'s core
+	// promise and why the TASK-280/282 re-path mill cannot reappear here.
+	if (Order.Mode == EMinerOrderMode::Stand || Order.Mode == EMinerOrderMode::GoToPoint)
+	{
+		// Walking away from mining ENDS THE TENURE, in the EndPlay(Destroyed)
+		// order: mine-side release first (the exclusive claim + the drain), then
+		// income/latches, then drop the target. Without it a miner would earn
+		// +1 gold/s while hiding inside its own castle AND pin that mine's claim
+		// against every other miner on the map. Idempotent — free after the
+		// first poll of this order.
+		LeaveMining();
+
+		if (Order.Mode == EMinerOrderMode::Stand)
+		{
+			// The two RULED no-destination cases: a dead/unresolvable hero under
+			// Follow (CONVENTIONS §4 — HOLD POSITION, resume the instant a live
+			// pawn resolves) and a destroyed own castle under Defend (§5 — idle
+			// in place). Never a read failure: those answer Mine.
+			StandInPlace();
+		}
+		else
+		{
+			// Defend (the castle interior anchor) and Follow (the hero's live
+			// station). Same body, different point; the anti-repath band comes
+			// with the order because only Follow's anchor moves.
+			DriveToPoint(Order.Point, Order.RepathTolerance);
+		}
+		return;
+	}
+
+	// Mine (Attack / no command yet) and MineInDisc (Hold / Ambush) BOTH run the
+	// mining body below. They differ in exactly two places, both marked: which
+	// finder the retarget gate consults, and what happens when it comes back
+	// empty. Everything from the arrival test down is SHARED — which is what
+	// makes income, tenure and eviction identical under every mining order.
+
 	// ---- retarget gate (TASK-254) ----------------------------------------
 	AGoldNode* Node = TargetGoldNode.Get();
+
+	// ⚠️ DIFFERENCE 1a (TASK-398, MineInDisc only): a mine OUTSIDE the position
+	// circle is not a legal destination, so it is treated exactly like a depleted
+	// one. This is what re-homes a miner when the player draws a NEW Hold circle
+	// somewhere else — mines never move, but the circle does. Boundary inclusive,
+	// 2D, matching AGoldNode::FindBestMineInDisc's own gate (they MUST agree, or a
+	// mine could be legal to the finder and illegal to this test and the miner
+	// would oscillate).
+	const bool bOutOfOrderDisc = Node
+		&& Order.Mode == EMinerOrderMode::MineInDisc
+		&& static_cast<float>(FVector::DistSquared2D(Node->GetActorLocation(), Order.Point)) > FMath::Square(Order.Radius);
 
 	// ONE dead-target predicate for both steps below (they MUST agree: a
 	// re-seek may only run on a tenure that was already ended, or the
 	// arrival/income flags would carry over to the new target). Short-
 	// circuits: reserve is only read on a valid node.
-	const bool bTargetDead = !Node || Node->IsDepleted() || Node->GetGoldReserve() <= 0;
+	const bool bTargetDead = !Node || Node->IsDepleted() || Node->GetGoldReserve() <= 0 || bOutOfOrderDisc;
 
 	// Defensive tenure break: ARRIVED at a mine that vanished, or that reads
 	// depleted/empty without having evicted us. No designed flow reaches
@@ -263,23 +376,45 @@ void AMinerUnit::UpdateMining()
 	// killed every miner, and Deplete() evicts synchronously
 	// (NotifyMineDepleted clears bArrivedAtNode) before any poll can observe
 	// its latch. Kept so the arrival/income flags can never outlive their
-	// mine: un-arrive locally (the registry side is moot — gone or already
-	// emptied), then fall through to the re-seek. Silent by design (a normal
-	// state now, not the M2 level-authoring diagnostic).
+	// mine: un-arrive locally, then fall through to the re-seek. Silent by
+	// design (a normal state now, not the M2 level-authoring diagnostic).
+	//
+	// ⚠️ TASK-398 upgraded EndMineTenure() to LeaveMining() here — the SAME call
+	// plus the mine-side UnregisterArrivedMiner — because bOutOfOrderDisc adds a
+	// REACHABLE way to reach this line with a perfectly healthy, still-claimed
+	// mine (a new Hold circle drawn elsewhere), and that mine must be released or
+	// its exclusive claim leaks for the rest of the match. On the pre-existing
+	// paths the extra call is provably a no-op: the mine is either destroyed
+	// (weak pointer null) or depleted (Deplete() emptied its registry before
+	// NotifyMineDepleted ran), so UnregisterArrivedMiner has nothing to remove.
 	if (bArrivedAtNode && bTargetDead)
 	{
-		EndMineTenure();
+		LeaveMining();
+		Node = nullptr; // LeaveMining dropped the target; the re-seek below owns it
 	}
 
 	if (bTargetDead)
 	{
-		// null (fresh miss, eviction, stale weak) or dead target → re-seek
-		// via THE finder. Null result = the all-depleted endgame: idle in
-		// place (logged once, Log level, inside SeekBestMine) and keep
-		// polling — the intended income death.
-		Node = SeekBestMine();
+		// ⚠️ DIFFERENCE 1b (TASK-398): WHICH finder. Same call shape, same
+		// tier-1/tier-2 rules, same no-churn tiebreak — the disc variant just
+		// adds the in-circle gate.
+		Node = (Order.Mode == EMinerOrderMode::MineInDisc) ? SeekMineInDisc(Order) : SeekBestMine();
 		if (!Node)
 		{
+			// ⚠️ DIFFERENCE 2 (TASK-398): what an EMPTY finder means.
+			if (Order.Mode == EMinerOrderMode::MineInDisc)
+			{
+				// Hold/Ambush ladder rung 2 — no mine in the circle, so go stand
+				// at this miner's own slot inside it. Jonathan: "it only goes to
+				// the position circle and will mine a mine if there is one in the
+				// position circle." The poll keeps re-seeking, so a mine freed by
+				// an enemy miner leaving IS picked up without a new order.
+				// Tolerance 0: the station is a fixed point, so an in-flight move
+				// toward it is never re-issued.
+				DriveToPoint(Order.Station, 0.f);
+			}
+			// Mine: unchanged — the all-depleted endgame. Idle in place (logged
+			// once inside SeekBestMine) and keep polling: the intended income death.
 			return;
 		}
 	}
@@ -291,7 +426,13 @@ void AMinerUnit::UpdateMining()
 		// a nearer queue — keeps the current target. The no-churn rule: never
 		// flip between wait targets or equal options (the finder's strict-<
 		// tiebreak already pins exact ties). ARRIVED miners never retarget.
-		if (AGoldNode* Upgrade = AGoldNode::FindBestMineFor(GetWorld(), Team, GetActorLocation()))
+		// ⚠️ DIFFERENCE 1c (TASK-398): the upgrade is searched in the SAME space
+		// the order legalises, so a Hold miner can never be upgraded OUT of its
+		// circle (which would then fail bOutOfOrderDisc next poll and oscillate).
+		AGoldNode* const Upgrade = (Order.Mode == EMinerOrderMode::MineInDisc)
+			? AGoldNode::FindBestMineInDisc(GetWorld(), Team, Order.Point, Order.Radius, GetActorLocation())
+			: AGoldNode::FindBestMineFor(GetWorld(), Team, GetActorLocation());
+		if (Upgrade)
 		{
 			if (Upgrade != Node && Upgrade->CanTeamMine(Team))
 			{
@@ -385,8 +526,374 @@ void AMinerUnit::UpdateMining()
 	EnsureWalkingToNode(Node);
 }
 
+FMinerOrder AMinerUnit::ResolveMinerOrder()
+{
+	// ══ THE COMMAND SEAM (TASK-397 plumbing; CONVENTIONS "FOLLOW command …
+	//    (2026-08-02)" §5's table wired on by TASK-398, approach (B) — see the
+	//    class doc for why (A) was rejected) ══
+	//
+	// TASK-398 changed RETURNS ONLY: the branch structure, the precedence and the
+	// degrade rule are all TASK-397's, unmodified.
+	FMinerOrder Order; // EMinerOrderMode::Mine — today's loop, and the default answer
+
+	// The command surface is BLUE-ONLY today, by shipped law: both
+	// IsGroupCommandEligible() and UpdateStateStandardCommanded's gate carry
+	// `Team == ETeamId::Blue` (the Red human's stance surface is M8 P2 scope).
+	// The bot is an AAIController and is never in the player-controller
+	// iterator, so a Red resolve would return null anyway — this early-out just
+	// makes a RED BOT MINER's poll provably free of the seam entirely: one enum
+	// compare, no world query, no iteration.
+	if (Team != ETeamId::Blue)
+	{
+		return Order;
+	}
+
+	UWorld* const World = GetWorld();
+	const ASiegePlayerController* const PC =
+		World ? ASiegePlayerController::FindControllerForTeam(World, Team) : nullptr;
+	if (!PC)
+	{
+		// No owning-team controller resolvable (early spawn before possession,
+		// teardown). THE DEGRADE RULE: an unreadable order answers Mine — a
+		// miner that cannot hear its orders keeps EARNING. Never a stall, never
+		// a crash. FindControllerForTeam is silent and allocation-free, so this
+		// adds no log traffic on the retry path (unlike the resolver above it,
+		// which one-shots its warnings).
+		return Order;
+	}
+
+	// ── (1) THE PER-UNIT GROUP ORDER (Hold / Ambush / Follow) ──────────────
+	// Precedence mirrors the base deliberately: ASummonedUnit::UpdateState
+	// dispatches group orders ABOVE the team-wide stance gate, so a circled
+	// miner must not be overridden by a later T/E press it was never part of.
+	// GetCommandGroupId() is the public accessor (CommandGroupId is private on
+	// the base) — no base-class change needed to read it.
+	const int32 GroupId = GetCommandGroupId();
+	if (GroupId != INDEX_NONE)
+	{
+		// Live read, NEVER cached: the returned pointer aliases into the
+		// controller's UnitGroups array, which mutates on confirm/steal/prune.
+		if (const FSiegeUnitGroup* const Group = PC->FindUnitGroup(GroupId))
+		{
+			switch (Group->Type)
+			{
+			case ESiegeGroupCommandType::Hold:
+			case ESiegeGroupCommandType::Ambush:
+			{
+				// ⚠️ HOLD AND AMBUSH COLLAPSE FOR A MINER — Jonathan said so in as
+				// many words ("'Ambush' is the same thing as 'hold'"), and they
+				// share this one case label rather than a duplicated body:
+				// IMPLEMENTED ONCE, so they cannot drift. The leash-exemption that
+				// distinguishes them for a fighter is meaningless with no target.
+				//
+				// THE ATTACKING PORTION IS SKIPPED ENTIRELY: this returns a
+				// destination decision and nothing else — there is no tier-1
+				// attack-zone acquisition and no tier-2 position-zone acquisition
+				// anywhere in this class, and Group->AttackCenter/AttackRadius are
+				// deliberately never read.
+				Order.Mode = EMinerOrderMode::MineInDisc;
+				Order.Point = Group->PositionCenter;
+				Order.Radius = FMath::Max(Group->PositionRadius, 0.f);
+
+				// Ladder rung 2, precomputed here so the body never has to re-enter
+				// the group: PositionCenter + the station the CONTROLLER pushed into
+				// this unit at the stage-3 confirm — the identical expression the
+				// base's own tier-3 station keeping uses. Read, never re-derived
+				// (ASummonedUnit::GetGroupStationOffset, the public accessor TASK-396
+				// added for this line): a second sunflower implementation here could
+				// disagree with the controller's, and nothing would catch it.
+				Order.Station = Group->PositionCenter + GetGroupStationOffset();
+				return Order;
+			}
+
+			case ESiegeGroupCommandType::Follow:
+			{
+				// "The miner will use the 'follow' command the same way as all
+				// other commandable units follow it." (Jonathan, §5.)
+				//
+				// THE ANCHOR IS RESOLVED LIVE, EVERY POLL, AND NEVER CACHED
+				// (CONVENTIONS §4): the respawn path may hand back a DIFFERENT pawn
+				// actor, so a cached pointer would follow a corpse forever — and
+				// resolving live is exactly what makes respawn work for free.
+				const AActor* const Anchor = PC->GetFollowAnchor();
+				if (!Anchor)
+				{
+					// HERO-DEATH RULING (§4, manager ruling 8): hold position while
+					// the hero is down — no march, no target, no attack — and resume
+					// the instant a live pawn resolves. Deliberately NOT a fall
+					// through to mining: a following miner the player pulled off the
+					// mines must not silently go back to work because the hero died.
+					Order.Mode = EMinerOrderMode::Stand;
+					return Order;
+				}
+
+				// ⚠️ THE SAME EXPRESSION ASummonedUnit::UpdateStateFollow USES —
+				// `Anchor->GetActorLocation() + GroupStationOffset` — reached through
+				// the public getter because the miner runs in its OWN poll rather than
+				// in the base state machine. That identity is how "the miner will use
+				// the 'follow' command the same way as all other commandable units"
+				// (Jonathan) is guaranteed rather than merely intended: same anchor,
+				// same offset, same 150 uu arrival, same anti-repath band.
+				// FollowFormationRadius is deliberately NOT read here — the controller
+				// already scaled the offset by it at enroll.
+				Order.Mode = EMinerOrderMode::GoToPoint;
+				Order.Point = Anchor->GetActorLocation() + GetGroupStationOffset();
+
+				// ⚠️ THE ANTI-REPATH BAND, and the ONLY order that needs one: the
+				// hero MOVES, so the recomputed station moves every poll. Carried on
+				// the order so DriveToPoint stays a dumb mover. Read LIVE off the
+				// controller (one tunable drives every follower, §8).
+				Order.RepathTolerance = FMath::Max(PC->GetFollowRepathTolerance(), 0.f);
+				return Order;
+			}
+
+			default:
+				// An unrecognised group type (a future enum value reaching an old
+				// miner). THE DEGRADE RULE: answer Mine — keep earning, never stall.
+				return Order;
+			}
+		}
+
+		// Dead id — the group was released by T/E, emptied by a steal, pruned
+		// all-dead, or wiped by Play Again. SELF-HEAL and fall through to the
+		// stance read in this SAME poll (never a stall), exactly as
+		// ASummonedUnit::UpdateState's group dispatch does.
+		// ClearCommandGroup also ZEROES GroupStationOffset, so the station this class
+		// reads can never outlive the group it belonged to — no local cache to
+		// invalidate, which is the second reason for reading rather than deriving.
+		ClearCommandGroup();
+	}
+
+	// ── (2) THE TEAM-WIDE STANCE (T / E) ───────────────────────────────────
+	// HasIssuedCommand() is false until the player's first press, and the
+	// shipped law for that window is "run the legacy body" (TASK-275's
+	// zero-behavior-change gate). For a miner the legacy body IS the mining
+	// loop, so a pre-first-press miner mines — which is also what the flagged
+	// §5 MINER SPAWN-DEFAULT ruling wants.
+	if (PC->HasIssuedCommand())
+	{
+		switch (PC->GetCurrentCommand())
+		{
+		case ESiegeUnitCommand::Defend:
+		{
+			// "'Defend' means they come back to the castle and hide inside of it."
+			//
+			// ⚠️ THIS INVENTS NO MECHANIC — IT REUSES TASK-350 (§5, explicit). The
+			// 3× castle is hollow and walk-in and own-team units already enter
+			// through the shipped team gating; "inside" resolves to exactly one
+			// concrete thing, ACastle::GetInteriorAnchorLocation(), and the walk is
+			// an ordinary unfiltered MoveToLocation. No mining (LeaveMining runs on
+			// the way in), no attacking (this class cannot).
+			//
+			// ⚠️ ACastle::FindNearestCastleForTeam rather than the base's
+			// FindOwnCastle(): that one is PRIVATE on ASummonedUnit and its file is
+			// another task's this batch (the same private-surface wall that killed
+			// approach (A)). The new static is a faithful mirror living on ACastle —
+			// see its doc.
+			ACastle* const OwnCastle = ACastle::FindNearestCastleForTeam(World, Team, GetActorLocation());
+			if (!OwnCastle)
+			{
+				// §5: "Own castle destroyed ⇒ idle in place." (The finder skips
+				// destroyed castles, so this is that case — and also the
+				// no-castle-placed sandbox map.)
+				if (!bLoggedNoOwnCastle)
+				{
+					bLoggedNoOwnCastle = true;
+					UE_LOG(LogGitClaudeUnrealTest, Log,
+						TEXT("AMinerUnit '%s': DEFEND ordered but this team has no standing castle to hide in — idling in place (TASK-398, CONVENTIONS §5)."),
+						*GetNameSafe(this));
+				}
+				Order.Mode = EMinerOrderMode::Stand;
+				return Order;
+			}
+			bLoggedNoOwnCastle = false; // a castle resolved again (Play Again) — re-arm
+
+			Order.Mode = EMinerOrderMode::GoToPoint;
+			Order.Point = OwnCastle->GetInteriorAnchorLocation();
+			// RepathTolerance stays 0: a castle does not move, so an in-flight walk
+			// to it is never re-issued (drift 0 <= 0).
+
+			// THE §5 "MEASURE, DO NOT ASSUME" DUTY, discharged at runtime: ONE Log
+			// line per miner lifetime carrying the RESOLVED world point, so the PIE
+			// task can read the anchor back from the log without an editor probe.
+			// At the shipped ZeroVector default that reads (−25000, 0, 0) for
+			// Castle_Blue and (25000, 0, 0) for Castle_Red — the derivation is in
+			// handoffs/TASK-398-programmer.md; THIS LINE is what proves it.
+			if (!bLoggedInteriorAnchor)
+			{
+				bLoggedInteriorAnchor = true;
+				UE_LOG(LogGitClaudeUnrealTest, Log,
+					TEXT("AMinerUnit '%s': DEFEND — hiding inside '%s'; interior anchor resolves to %s (castle at %s) (TASK-398)."),
+					*GetNameSafe(this), *GetNameSafe(OwnCastle),
+					*Order.Point.ToCompactString(), *OwnCastle->GetActorLocation().ToCompactString());
+			}
+			return Order;
+		}
+
+		case ESiegeUnitCommand::Attack:
+			// "'Attack' means they find the nearest mine and start mining." — which
+			// IS today's shipped loop (SeekBestMine → AGoldNode::FindBestMineFor →
+			// walk → register → income), reached by returning the SAME
+			// EMinerOrderMode::Mine the un-commanded path returns. §5 calls that
+			// equivalence out as the cheapest regression proof in the batch, and it
+			// is an identity here rather than a copy: one mode, one body.
+			return Order;
+
+		case ESiegeUnitCommand::Hold:
+		default:
+			// NOTHING LATCHES THE HOLD STANCE since TASK-344 — the enum member
+			// survives only because WBP_HUD's switch pins the byte layout. R opens
+			// the group pick instead, so Hold reaches a miner as a GROUP order
+			// (above), never here. Degrade rule: keep earning.
+			return Order;
+		}
+	}
+
+	// No command issued yet this match. The shipped law for that window is "run
+	// the legacy body" (TASK-275's zero-behavior-change gate), and for a miner the
+	// legacy body IS the mining loop — which is also exactly what §5's flagged
+	// MINER SPAWN-DEFAULT ruling wants. The two agree, so nothing special is done
+	// here; the spawn-side half of that ruling lives in BeginPlay + bFollowOnSpawn.
+	return Order;
+}
+
+void AMinerUnit::LeaveMining()
+{
+	// THE ORDER IS LOAD-BEARING and is the same one EndPlay(Destroyed) uses.
+	//
+	// 1) MINE SIDE FIRST: release this miner's share of the exclusive claim (and,
+	//    when it was the last occupant, stop the drain). Null-safe + idempotent —
+	//    a never-arrived, WAITING or already-evicted miner is a clean no-op.
+	//    Skipping this would pin the mine against every other miner on the map for
+	//    as long as this one stands somewhere else.
+	if (AGoldNode* const Mine = TargetGoldNode.Get())
+	{
+		Mine->UnregisterArrivedMiner(this);
+	}
+
+	// 2) THEN the income/latch side: RemoveMinerIncome iff this tenure had income,
+	//    per-tenure latches cleared, clink stopped. Idempotent. Skipping it would
+	//    leave a miner earning +1 gold/s while hiding inside its own castle.
+	EndMineTenure();
+
+	// 3) THEN drop the target — on the way OUT of mining, never on the way back
+	//    in. Returning to a mining order is a FRESH tenure, and the retarget gate
+	//    re-seeks the moment it sees a null target.
+	TargetGoldNode = nullptr;
+
+	// Deliberately NOT touched here: bHasIssuedPointGoal. This runs on EVERY poll
+	// of a non-mining order, and clearing the anti-repath latch here would defeat
+	// the band entirely — a fresh MoveToLocation every 0.25 s at a moving hero is
+	// precisely the TASK-280/282 mill. StandInPlace and EnsureWalkingToNode are the
+	// two places that invalidate it, because those are the real mode changes.
+}
+
+void AMinerUnit::StandInPlace()
+{
+	if (AAIController* const AI = Cast<AAIController>(GetController()))
+	{
+		// Guarded so a standing miner does not spam StopMovement at 4 Hz.
+		if (AI->GetMoveStatus() != EPathFollowingStatus::Idle)
+		{
+			AI->StopMovement();
+		}
+	}
+
+	// No destination is currently intended, so the next GoToPoint must re-path
+	// from scratch rather than measure drift against a goal we abandoned.
+	bHasIssuedPointGoal = false;
+}
+
+void AMinerUnit::DriveToPoint(const FVector& Point, float RepathTolerance)
+{
+	AAIController* const AI = Cast<AAIController>(GetController());
+	if (!AI)
+	{
+		// AutoPossessAI possession can land after BeginPlay — the poll retries.
+		// Shares EnsureWalkingToNode's one-shot guard deliberately: it is the same
+		// condition on the same actor, and two latches would double the log line.
+		if (!bWarnedNoWalkController)
+		{
+			bWarnedNoWalkController = true;
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("AMinerUnit '%s': no AAIController possessing the miner (yet) — cannot walk to its ordered point; the poll keeps retrying."),
+				*GetNameSafe(this));
+		}
+		return;
+	}
+	bWarnedNoWalkController = false; // possession arrived — re-arm the warning (base pattern)
+
+	// ARRIVED: the shipped 150 uu tolerance, measured in 2D for the same reason the
+	// mine arrival test is (the arena is flat and a character's location is its
+	// capsule CENTRE ~90 uu up, so a 3D test would burn most of the budget
+	// vertically). Stop and stand — do NOT clear the goal latch: the miner is
+	// holding this exact point, and the hero drifting a few units must not
+	// re-trigger a walk.
+	if (static_cast<float>(FVector::Dist2D(GetActorLocation(), Point)) <= ArrivalRadius)
+	{
+		if (AI->GetMoveStatus() != EPathFollowingStatus::Idle)
+		{
+			AI->StopMovement();
+		}
+		return;
+	}
+
+	// ⚠️ THE ANTI-REPATH BAND (CONVENTIONS §4, manager ruling 10 — a QA criterion,
+	// not polish). While a move is IN FLIGHT, re-issue ONLY once the destination
+	// has drifted further than RepathTolerance from the goal we last issued.
+	// Measured goal-to-goal, never goal-to-miner: the miner is supposed to be far
+	// from its goal while walking, and testing that distance would re-path forever.
+	//
+	// Follow passes ASiegePlayerController::FollowRepathTolerance (250 uu shipped);
+	// the static orders pass 0, which still suppresses every re-issue while in
+	// flight because a fixed goal's drift is exactly 0.
+	const bool bMoveInFlight = AI->GetMoveStatus() != EPathFollowingStatus::Idle;
+	const bool bWithinBand = bHasIssuedPointGoal
+		&& static_cast<float>(FVector::DistSquared2D(Point, LastIssuedPointGoal)) <= FMath::Square(RepathTolerance);
+	if (bMoveInFlight && bWithinBand)
+	{
+		return;
+	}
+
+	// Acceptance 0.8 × ArrivalRadius (the house fraction, base EnterAdvance): the
+	// natural stop lands well inside the arrival ring above.
+	// bProjectDestinationToNavigation TRUE — the castle interior anchor is a raw
+	// ground point and a follow station is an offset from a walking pawn, so
+	// neither is guaranteed to sit on the navmesh. FilterClass null = an UNFILTERED
+	// query, which is exactly what lets the OWN team path across its castle's
+	// interior nav area (TASK-350's UNavFilter_Team* excludes only the ENEMY).
+	// Partial paths allowed: a blocked route walks as close as possible and the
+	// poll re-paths as the dynamic navmesh updates.
+	const EPathFollowingRequestResult::Type Result = AI->MoveToLocation(Point, ArrivalRadius * 0.8f,
+		/*bStopOnOverlap=*/ false, /*bUsePathfinding=*/ true, /*bProjectDestinationToNavigation=*/ true,
+		/*bCanStrafe=*/ true, /*FilterClass=*/ nullptr, /*bAllowPartialPath=*/ true);
+
+	LastIssuedPointGoal = Point;
+	bHasIssuedPointGoal = true;
+
+	if (Result == EPathFollowingRequestResult::Failed && !bWarnedPointMoveFailed)
+	{
+		// §5 rules a nav failure that strands the miner ACCEPTABLE — log once, keep
+		// polling. It must NEVER crash and must never fall back to attacking (this
+		// class structurally cannot attack at all).
+		bWarnedPointMoveFailed = true;
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("AMinerUnit '%s': MoveToLocation toward %s failed — no navmesh path (a castle-interior anchor outside the navmesh will strand the miner at the gate; that is accepted, TASK-398/§5). The poll keeps retrying."),
+			*GetNameSafe(this), *Point.ToCompactString());
+	}
+}
+
 void AMinerUnit::EnsureWalkingToNode(AGoldNode* Node)
 {
+	// TASK-398: this poll is NODE-bound, so any point goal DriveToPoint latched is
+	// stale. Invalidating it here is what keeps the anti-repath band from ever
+	// suppressing the FIRST move of a new point order — without this, switching
+	// mining → Follow while a node walk is in flight could leave the miner walking
+	// to the mine (the move status reads "in flight", and a hero standing near the
+	// abandoned goal would read "within band"). Cleared unconditionally, including
+	// on the early-outs below: the mode has changed either way.
+	bHasIssuedPointGoal = false;
+
 	AAIController* AI = Cast<AAIController>(GetController());
 	if (!AI)
 	{
@@ -531,6 +1038,36 @@ AGoldNode* AMinerUnit::SeekBestMine()
 		UE_LOG(LogGitClaudeUnrealTest, Log,
 			TEXT("AMinerUnit '%s': no minable or waitable mine (all depleted, or none placed) — idling in place; the poll keeps re-seeking."),
 			*GetNameSafe(this));
+	}
+
+	return Best;
+}
+
+AGoldNode* AMinerUnit::SeekMineInDisc(const FMinerOrder& Order)
+{
+	// SeekBestMine's in-circle twin (Hold/Ambush). Same shape on purpose — the two
+	// are read side by side — but SeekBestMine is left BYTE-IDENTICAL for the
+	// Attack/spawn-default path (CONVENTIONS §5's cheapest-regression-proof clause),
+	// so this is a sibling rather than a parameterisation.
+	AGoldNode* const Best = AGoldNode::FindBestMineInDisc(
+		GetWorld(), Team, Order.Point, Order.Radius, GetActorLocation());
+	TargetGoldNode = Best;
+
+	if (Best)
+	{
+		bLoggedNoMineInDisc = false; // re-arm: a mine is available in the circle again
+	}
+	else if (!bLoggedNoMineInDisc)
+	{
+		// ⚠️ A DIFFERENT NULL FROM SeekBestMine'S. That one means the all-depleted
+		// ENDGAME; this one means "the circle you drew has no mine in it", which is
+		// an ordinary, expected outcome of a Hold order placed on empty ground. The
+		// miner stations inside the circle (ladder rung 2) and keeps re-seeking, so
+		// a mine freed by an enemy occupant leaving is picked up with no new order.
+		bLoggedNoMineInDisc = true;
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("AMinerUnit '%s': no minable or waitable mine inside the ordered position circle (centre %s, radius %.0f) — stationing inside it and re-seeking (TASK-398)."),
+			*GetNameSafe(this), *Order.Point.ToCompactString(), Order.Radius);
 	}
 
 	return Best;

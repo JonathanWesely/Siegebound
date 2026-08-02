@@ -116,6 +116,34 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Siegebound|AncientGround")
 	FVector2D GetZoneHalfExtent() const { return ZoneHalfExtent; }
 
+	/**
+	 *  THE ancient-ground finder (TASK-418; signature PINNED character-for-character
+	 *  by CONVENTIONS "In-match LLM command assistant (v1, text-only) — 2026-08-02"
+	 *  §9). Faithful mirror of AGoldNode::FindBestMineFor (GoldNode.h:153) reduced to
+	 *  its single tier: IsValid, nearest wins on SQUARED 2D distance, strict < so the
+	 *  first-found ground keeps an exact tie. TActorIterator's order is stable for a
+	 *  fixed world, so the answer does not churn between calls.
+	 *
+	 *  ⚠️ NO TEAM PARAMETER, AND THAT IS DELIBERATE — DO NOT ADD ONE LATER. An ancient
+	 *  ground is TEAM-NEUTRAL: a contested ground empowers BOTH sides at once through
+	 *  their own sorcerers (the shipped FRIENDLY-ONLY boost law, class doc above), so
+	 *  there is no such thing as "our" ground to filter for. NEAR vs FAR is resolved
+	 *  entirely by the CALLER's From — under the 180°-rotational-symmetry law there are
+	 *  exactly two grounds and they are rotational twins, so passing the OWN castle
+	 *  location yields `ancient_ground_near` and the ENEMY castle location yields
+	 *  `ancient_ground_far`: the two distinct grounds, exactly, by construction and
+	 *  with zero extra state.
+	 *
+	 *  The pair is SCATTER-SPAWNED, never level-placed, so the positions change every
+	 *  match and on every Play Again — always ask, never cache the result.
+	 *
+	 *  A null World, or a world holding no grounds at all (a fallback scatter, a future
+	 *  map without them), answers nullptr and NEVER crashes — this class's standing
+	 *  "missing => pre-feature behavior, never a crash" discipline. Purely additive and
+	 *  read-only: it mutates nothing, arms nothing, and reads no authority.
+	 */
+	static AAncientGround* FindNearestAncientGround(UWorld* World, const FVector& From);
+
 	/** Keeps the editor decal footprint matched to ZoneHalfExtent while placed/previewed (null-safe). */
 	virtual void OnConstruction(const FTransform& Transform) override;
 

@@ -235,6 +235,85 @@ AGoldNode* AGoldNode::FindBestMineFor(UWorld* World, ETeamId Team, const FVector
 	return BestMinable ? BestMinable : BestWait;
 }
 
+AGoldNode* AGoldNode::FindBestMineInDisc(UWorld* World, ETeamId Team, const FVector& Center, float Radius, const FVector& From)
+{
+	// ⚠️ FindBestMineFor above is UNMODIFIED BY LAW (the bot shares it — CONVENTIONS
+	// §5 + the TASK-400 QA criterion), so this is a deliberate write-out of the same
+	// two-tier loop with ONE extra gate, not a refactor of it. Every selection rule
+	// below is IDENTICAL to that function's on purpose: change one, change both.
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	// An empty disc contains nothing. This is also the structural reason a FOLLOW
+	// group (PositionRadius == 0 by CONVENTIONS §1) can never be mistaken for a
+	// position circle if one ever reached this function.
+	if (Radius <= 0.f)
+	{
+		return nullptr;
+	}
+
+	const float RadiusSq = Radius * Radius;
+
+	AGoldNode* BestMinable = nullptr;
+	float BestMinableDistSq = TNumericLimits<float>::Max();
+	AGoldNode* BestWait = nullptr;
+	float BestWaitDistSq = TNumericLimits<float>::Max();
+
+	for (TActorIterator<AGoldNode> It(World); It; ++It)
+	{
+		AGoldNode* Mine = *It;
+		if (!IsValid(Mine) || Mine->bDepleted || Mine->GoldReserve <= 0)
+		{
+			continue;
+		}
+
+		// THE ONE EXTRA GATE (§5): the MINE's own location must lie inside the
+		// position circle. 2D, matching every other zone disc in the project (the
+		// group orders' PositionRadius/AttackRadius tests) and the miner's arrival
+		// metric — the arena is flat and mines may sit on hills, so height must
+		// never decide membership. Boundary INCLUSIVE (<=), the house convention
+		// for a radius test.
+		const float DiscDistSq = static_cast<float>(FVector::DistSquared2D(Mine->GetActorLocation(), Center));
+		if (DiscDistSq > RadiusSq)
+		{
+			continue;
+		}
+
+		// From here down: byte-for-byte the FindBestMineFor selection. 2D distance
+		// from the CALLER (not from the circle centre) so the miner still walks to
+		// the nearest legal mine; strict < keeps the first-found mine on exact ties,
+		// and iteration order is stable for a fixed world — that determinism is what
+		// the caller's no-churn retarget rule rests on.
+		const float DistSq = static_cast<float>(FVector::DistSquared2D(Mine->GetActorLocation(), From));
+
+		if (Mine->CanTeamMine(Team))
+		{
+			// tier-1: minable NOW (unclaimed, or already ours)
+			if (DistSq < BestMinableDistSq)
+			{
+				BestMinable = Mine;
+				BestMinableDistSq = DistSq;
+			}
+		}
+		else
+		{
+			// non-depleted but refused => enemy-occupied: tier-2 wait target
+			if (DistSq < BestWaitDistSq)
+			{
+				BestWait = Mine;
+				BestWaitDistSq = DistSq;
+			}
+		}
+	}
+
+	// tier-1 beats tier-2 at ANY distance INSIDE the circle. null = no mine in the
+	// circle at all: a NORMAL answer here (unlike FindBestMineFor's null, which is
+	// the all-depleted endgame) — the caller stations inside the circle instead.
+	return BestMinable ? BestMinable : BestWait;
+}
+
 void AGoldNode::HandleDrainTick()
 {
 	// stale sweep: occupants that died without unregistering drop here; if

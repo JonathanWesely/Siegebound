@@ -349,18 +349,108 @@ public:
 	/** Leaves the current group order (TASK-344): id back to INDEX_NONE, station offset zeroed. Called by the controller's release paths (T/E, Play Again) and by the null-group self-heal. */
 	void ClearCommandGroup();
 
-	/**
-	 *  True when this unit can join a group order (TASK-344): Standard profile +
-	 *  Blue team + alive + not match-end frozen. Profile is PRIVATE, so this is
-	 *  the ONE public eligibility API the controller's stage-1 select sweep uses
-	 *  (Siege/Support/miner exclusion stays recorded law; bot/Red never qualify).
-	 *  A resumable spell freeze does NOT exclude — a frozen-but-thawing unit may
-	 *  be circled and obeys once it wakes.
-	 */
-	bool IsGroupCommandEligible() const;
-
 	/** Group order this unit belongs to, or INDEX_NONE (TASK-344 debug/PIE hook). */
 	int32 GetCommandGroupId() const { return CommandGroupId; }
+
+	/**
+	 *  This unit's precomputed station offset inside its current group order
+	 *  (TASK-344; pushed by AssignCommandGroup, ZeroVector while ungrouped).
+	 *
+	 *  PUBLIC read added by TASK-396 for the reason GetCommandGroupId() already is:
+	 *  GroupStationOffset is private, and the MINER's command bodies (TASK-398) run in
+	 *  AMinerUnit's OWN poll rather than in this class's state machine.
+	 *
+	 *  ⚠️ CURRENTLY UNUSED, ON PURPOSE — it is the pre-placed half of a flagged fix,
+	 *  not speculative API. AMinerUnit::ResolveStationOffset RE-DERIVES its own
+	 *  sunflower slot because this getter did not exist when TASK-398 was written, and
+	 *  MinerUnit.h records the consequence (a miner's slot can differ from the one the
+	 *  controller recorded for it — cosmetic crowding, nothing else reads either value)
+	 *  together with the fix, quoted character-for-character as this signature. The
+	 *  file it had to be added to is this one, and this is the last task that owns it,
+	 *  so it lands now; the one-line consumption is a MinerUnit.cpp follow-up.
+	 */
+	FVector GetGroupStationOffset() const { return GroupStationOffset; }
+
+	//~ ─── COMMAND ELIGIBILITY — TWO PREDICATES, NOT ONE (TASK-396; CONVENTIONS
+	//~     "FOLLOW command + the DEFAULT-STANCE law + the MINER command rework
+	//~     (2026-08-02)" §3, signatures PINNED character-for-character by §7) ───
+	//~
+	//~ ⚠️ THIS BLOCK IS `public:` ON PURPOSE AND THE ACCESS LEVEL IS PART OF THE PIN,
+	//~ for exactly the reason the ANCIENT-GROUNDS block below is: Profile is PRIVATE,
+	//~ so these virtuals are the only sanctioned outside-callable eligibility surface.
+	//~ ASiegePlayerController's stage-1 select sweep and EnrollInDefaultFollowGroup
+	//~ call them from OUTSIDE this class, and AMinerUnit overrides them as `public`
+	//~ (TASK-397) — narrowing the access here would not link.
+	//~
+	//~ Jonathan widened FOLLOW to the Cleric and gave the Miner all five commands, but
+	//~ said nothing about giving the Cleric zone orders, so the ONE shipped predicate
+	//~ SPLITS IN TWO (CONVENTIONS §3 table):
+	//~
+	//~   Unit                                Profile   Follow (C)   Zone orders (R/F)
+	//~   Footman/Archer/.../Wizard/Sorcerer   Standard     yes              yes
+	//~   Cleric                               Support      yes              NO
+	//~   Miner (AMinerUnit overrides both)    None         yes              yes
+	//~   Ogre / Sapper                        Siege        NO               NO
+	//~   any Red / bot unit                   any          NO               NO
+
+	/**
+	 *  FOLLOW eligibility by CLASS IDENTITY (CONVENTIONS §3) — the shipped
+	 *  CanEverAttack() idiom: NOT a new cards.csv column and NOT a Profile change.
+	 *  Base: Standard (every combat unit) PLUS Support (the Cleric — Jonathan widened
+	 *  Follow to it). Siege is excluded here, and that exclusion is the whole reason
+	 *  the Ogre and the Sapper keep auto-marching exactly as they do today.
+	 *  AMinerUnit overrides to true (TASK-397).
+	 */
+	virtual bool CanFollowHero() const;
+
+	/**
+	 *  ZONE-ORDER eligibility by class identity (CONVENTIONS §3) — the R (Hold) / F
+	 *  (Ambush) 3-stage pick. Base: Standard ONLY. The Cleric is deliberately
+	 *  excluded (manager ruling: FOLLOW-ONLY this pass — zone orders would mean
+	 *  reshaping UpdateStateSupport's heal body, which Jonathan did not ask for).
+	 *  AMinerUnit overrides to true (TASK-397).
+	 */
+	virtual bool CanTakeZoneOrders() const;
+
+	/**
+	 *  True when this unit may join the FOLLOW group (CONVENTIONS §3): follow-eligible
+	 *  by class + Blue team + alive + not match-end frozen. Read by
+	 *  ASiegePlayerController::EnrollInDefaultFollowGroup, which BOTH the C-key confirm
+	 *  and the §2 spawn auto-enroll funnel through — so this is the ONE gate that keeps
+	 *  Siege units and every Red/bot unit out of Follow. A resumable spell freeze does
+	 *  NOT exclude: a frozen-but-thawing unit may be circled and obeys once it wakes.
+	 */
+	bool IsFollowCommandEligible() const;
+
+	//~ ⚠️ THE MINER SPAWN-DEFAULT CARVE-OUT IS **NOT** HERE, AND MUST NOT BE ADDED
+	//~ HERE (manager ruling 7 / CONVENTIONS §5 — a miner SPAWNS MINING). It is owned
+	//~ ENTIRELY by AMinerUnit (TASK-398): CanFollowHero() answers the EditDefaultsOnly
+	//~ bFollowOnSpawn switch for exactly as long as Super::BeginPlay() — which is where
+	//~ the §2 auto-enroll below lives — is on the stack, so the enroll's
+	//~ IsFollowCommandEligible() gate refuses and the miner joins no group and no
+	//~ Members array. A SECOND, base-side carve-out was drafted here and DELIBERATELY
+	//~ REMOVED: it would have silently defeated bFollowOnSpawn = true, which is the one
+	//~ line Jonathan flips at his playtest gate. One decision, one owner.
+	//~
+	//~ The contract TASK-398 depends on, restated so it is not broken by accident:
+	//~ TryAutoEnrollInFollowGroup() gates on IsFollowCommandEligible() and NOTHING
+	//~ ELSE, and it runs inside ASummonedUnit::BeginPlay's synchronous call stack.
+	//~ Moving it off that predicate, or deferring it past that stack, re-opens the
+	//~ ruling — AMinerUnit::BeginPlay carries a Warning tripwire for exactly that.
+
+	/**
+	 *  True when this unit can join a ZONE order — R (Hold) / F (Ambush) (TASK-344,
+	 *  NARROWED by TASK-396): CanTakeZoneOrders() + Blue team + alive + not match-end
+	 *  frozen. The controller's stage-1 select sweep calls this.
+	 *
+	 *  ⚠️ THE NAME NO LONGER COVERS FOLLOW. Name and signature are KEPT deliberately
+	 *  (the sweep and the §7 pinned registry both depend on them), but since
+	 *  CONVENTIONS §3 split the predicate this means ZONE ORDERS ONLY — the C-key
+	 *  surface is IsFollowCommandEligible() above. Siege stays excluded; the Cleric is
+	 *  excluded HERE but follow-eligible; the Miner is now eligible for both (its two
+	 *  overrides, TASK-397). A resumable spell freeze does NOT exclude, unchanged.
+	 */
+	bool IsGroupCommandEligible() const;
 
 	//~ ─── ANCIENT GROUNDS (TASK-360; CONVENTIONS §3 "ASorcererUnit" + §4 "the permanent stacking damage boost") ───
 	//~
@@ -446,6 +536,40 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Unit")
 	float GetPermanentDamageMultiplier() const { return 1.f + PermanentDamageBonusPerStack * static_cast<float>(PermanentDamageStacks); }
+
+	/**
+	 *  ANCIENT GROUNDS (CONVENTIONS §4 + §8, TASK-379) — the per-stack output-damage
+	 *  bonus as an INSTANCE read (0.05 = +5% of base damage per stack at the shipped
+	 *  default). PUBLIC deliberately: the property itself is a `protected:` EditAnywhere
+	 *  tunable, and that access level cost this batch TWO independent workarounds —
+	 *  USiegeCheatManager::SetTestDamageBoost resolved it by REFLECTION, and
+	 *  UDeckBuilderWidget's Sorcerer rule line had to state its magnitudes
+	 *  QUALITATIVELY because it could not reach the value (qa/TASK-365-report.md
+	 *  "THE SIMPLIFICATION VERDICT"). Both are retired by this getter.
+	 *
+	 *  ⚠️ FLAGGED BALANCE LEVER (CONVENTIONS §4): the day this is retuned, every
+	 *  consumer re-derives for free — that is the whole point of the getter, and it is
+	 *  why the card text must interpolate it rather than bake a number. Instance read,
+	 *  never a CDO read, at the two gameplay call sites: a per-Blueprint override is
+	 *  honoured. BlueprintPure, matching GetPermanentDamageMultiplier() one line above.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Unit")
+	float GetPermanentDamageBonusPerStack() const { return PermanentDamageBonusPerStack; }
+
+	/**
+	 *  ANCIENT GROUNDS (CONVENTIONS §4 + §8, TASK-379) — the hard stack cap
+	 *  (80 ⇒ 80 × 5% = the +400% ceiling Jonathan specified). PUBLIC for the same
+	 *  reason as GetPermanentDamageBonusPerStack() above: the player-facing ceiling
+	 *  is MaxPermanentDamageStacks × PermanentDamageBonusPerStack, and the deck
+	 *  builder must DERIVE it rather than bake "+400%" into a string that goes stale.
+	 *
+	 *  ⚠️ FLAGGED BALANCE LEVER (CONVENTIONS §4) — the second of the three levers if
+	 *  the boost plays too hot (the third is AAncientGround::BoostTickInterval).
+	 *  Pure read; the clamp itself stays inside AddPermanentDamageStacks, which
+	 *  remains the ONLY writer of the stack count (§6 — never a raw field write).
+	 */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Unit")
+	int32 GetMaxPermanentDamageStacks() const { return MaxPermanentDamageStacks; }
 
 protected:
 
@@ -708,6 +832,33 @@ protected:
 	 */
 	virtual bool ShouldHoldDeathAnim() const { return true; }
 
+	/**
+	 *  THE FOLLOW BODY (TASK-396; CONVENTIONS §4, pinned `protected` by §7).
+	 *  Dispatched from UpdateState's HOISTED follow branch — above the profile
+	 *  dispatch, so it runs whatever the profile (that hoist is the reason a
+	 *  Support Cleric can follow at all: Support returns out of the profile
+	 *  dispatch before the shipped group dispatch is ever reached).
+	 *
+	 *  - NEVER ATTACKS. CurrentTarget is FORCED null and none of AcquireTarget /
+	 *    AcquireEnemyNearPoint / EnterAttack is called on any path. This is a
+	 *    per-BODY seal and is deliberately NOT CanEverAttack(): that one is
+	 *    per-CLASS and permanent, and a following Footman must become a normal
+	 *    attacker the instant its group is released.
+	 *  - The hero anchor (ASiegePlayerController::GetFollowAnchor) is resolved
+	 *    LIVE every tick and NEVER cached, which is what makes a post-respawn
+	 *    replacement pawn work for free.
+	 *  - Anchor null (no hero / dead hero) ⇒ HOLD POSITION (EnterIdle), resuming
+	 *    the instant a live pawn resolves again — manager ruling 8.
+	 *  - Goal = anchor location + this unit's enroll-time GroupStationOffset, via
+	 *    EnterAdvanceToLocation, idling inside the shipped 150 uu arrival
+	 *    tolerance, and RE-ISSUED ONLY outside FollowRepathTolerance (manager
+	 *    ruling 10 — an unconditional re-path is the TASK-280/282 mill).
+	 *
+	 *  The Group parameter carries no zones (a follow group owns no ground); it is
+	 *  read only by the type tripwire that guards the dispatch contract.
+	 */
+	void UpdateStateFollow(const FSiegeUnitGroup& Group);
+
 private:
 
 	/**
@@ -717,6 +868,26 @@ private:
 	 *  unit Idle — stats are never hardcoded (GDD §3.0).
 	 */
 	void LoadStatsAndStart();
+
+	/**
+	 *  THE SPAWN AUTO-ENROLL (TASK-396; CONVENTIONS §2, the DEFAULT-STANCE law).
+	 *  Puts this unit in its owning-team controller's ONE default follow group so
+	 *  every follow-eligible Blue unit spawns FOLLOWING and nothing player-side
+	 *  auto-engages any more (Jonathan-confirmed: the player personally orders
+	 *  every fight; Siege units and the whole bot/Red side are unaffected).
+	 *
+	 *  Lives on the UNIT, not on a controller call site — that is what covers
+	 *  player placement (SpawnUnitSwarm), the ABarracks spawner and SummonTestUnit
+	 *  from ONE insertion point — and it is UNCONDITIONAL: a unit spawned after the
+	 *  player pressed T still spawns following (reinforcements do NOT inherit the
+	 *  last order; flagged, accepted ergonomic consequence).
+	 *
+	 *  Called from LoadStatsAndStart (see the comment at that call site for why it
+	 *  is there and not at the tail of BeginPlay). EVERY refusal is SILENT and
+	 *  degrades to today's behavior — a missed enroll must never be a crash and
+	 *  never a stall.
+	 */
+	void TryAutoEnrollInFollowGroup();
 
 	/**
 	 *  TASK-044 (CONVENTIONS Team contract): overrides VisualMesh slot 0 with the
@@ -827,7 +998,21 @@ private:
 	 */
 	AActor* AcquireEnemyNearPoint(const FVector& Center, float Radius) const;
 
-	/** Nearest standing OWN-team castle (Team == ours, not destroyed) — the Shield Wall DEFEND fallback goal. Mirror of FindNearestEnemyCastle (W1 TASK-275). */
+	/**
+	 *  Nearest standing OWN-team castle (Team == ours, not destroyed) — the Shield Wall
+	 *  DEFEND fallback goal. Mirror of FindNearestEnemyCastle (W1 TASK-275).
+	 *
+	 *  Deliberately still PRIVATE after TASK-396. It was briefly promoted to public so
+	 *  AMinerUnit's DEFEND body could reach it, then reverted: TASK-398 shipped
+	 *  ACastle::FindNearestCastleForTeam (the AGoldNode::FindBestMineFor idiom — a
+	 *  public static finder on the finder's own type) and no outside caller needs this
+	 *  one. FLAGGED, recorded, and NOT taken here: Castle.h notes this function could
+	 *  delegate to that finder in a later consolidation pass. It is a ONE-LINE change,
+	 *  but the two use a different metric (bounds-aware GetDistanceToTarget here vs
+	 *  squared 2D there), and UpdateStateStandardCommanded — this function's only
+	 *  caller — is in TASK-396's byte-identical regression set. Not a bugfix to slip
+	 *  into a Follow task.
+	 */
 	ACastle* FindOwnCastle() const;
 
 	/**
@@ -843,6 +1028,23 @@ private:
 	 *  one if any, else the nearest friendly combat unit; a lone Cleric idles).
 	 */
 	void UpdateStateSupport();
+
+	/**
+	 *  The heal-TARGETING half of UpdateStateSupport, extracted VERBATIM by TASK-396
+	 *  so the FOLLOW body can share it: a following Cleric STILL HEALS (manager
+	 *  ruling 9 — healing is not attacking, and an escorting medic is the obvious
+	 *  intent of a support unit told to follow). Re-picks SupportHealTarget and
+	 *  arms/clears the heal timer; returns the target so UpdateStateSupport can keep
+	 *  using it as its own follow goal.
+	 *
+	 *  Statement order is unchanged from the shipped code, so UpdateStateSupport is
+	 *  behaviorally byte-identical. The ONE thing that did not move is
+	 *  FaceTarget(HealTarget): it stayed at the UpdateStateSupport call site because
+	 *  it is wanted there (that Cleric is walking AT its patient) and NOT wanted in
+	 *  the follow body (a follower walks to its station, and snapping the yaw at a
+	 *  patient behind it every 0.25 s would fight the movement orientation).
+	 */
+	ASummonedUnit* UpdateSupportHealTargeting();
 
 	/** Nearest standing enemy ABuilding (Team != ours, not destroyed) — the Siege structure search; covers ATower and every ABuilding subclass. */
 	AActor* FindNearestEnemyBuilding() const;
@@ -1213,6 +1415,25 @@ private:
 
 	/** True once a location move has been issued (W1 TASK-275); gates the CurrentMoveGoalLocation "changed?" comparison so the first point-move always paths. */
 	bool bHasMoveGoalLocation = false;
+
+	/**
+	 *  THE ANTI-REPATH LATCH (TASK-396, manager ruling 10): the station
+	 *  UpdateStateFollow last ISSUED a move to. The follow body re-issues only once
+	 *  the recomputed station has drifted further than
+	 *  ASiegePlayerController::FollowRepathTolerance from THIS point.
+	 *
+	 *  ⚠️ A SEPARATE LATCH FROM CurrentMoveGoalLocation ABOVE, on purpose.
+	 *  EnterAdvanceToLocation's own guard is a 1 uu Equals test, which a station
+	 *  recomputed from a WALKING hero clears on every 0.25 s tick — that is precisely
+	 *  the mill behind TASK-280/282 — and CurrentMoveGoalLocation is also written by
+	 *  the HOLD/AMBUSH tier-3 body, so reusing it would compare against another
+	 *  order's point. Per-unit scalars only (no arrays on units); reset by
+	 *  AssignCommandGroup / ClearCommandGroup and whenever the body idles.
+	 */
+	FVector LastFollowGoalLocation = FVector::ZeroVector;
+
+	/** True once UpdateStateFollow has issued a move this order; gates the LastFollowGoalLocation drift test so the first follow move (and every resume) always paths. */
+	bool bHasFollowGoalLocation = false;
 
 	/**
 	 *  Hard cache of AttackImpactEffect, resolved ONCE at BeginPlay (TASK-020) —

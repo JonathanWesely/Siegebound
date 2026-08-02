@@ -46,6 +46,10 @@
 		{
 			"Name": "ProceduralVegetationEditor",
 			"Enabled": true
+		},
+		{
+			"Name": "SiegeLlama",
+			"Enabled": false
 		}
 	]
 }

@@ -150,6 +150,50 @@ bool AAncientGround::IsPointInZone(const FVector& Point) const
 		&& FMath::Abs(Point.Y - Center.Y) <= ZoneHalfExtent.Y;
 }
 
+AAncientGround* AAncientGround::FindNearestAncientGround(UWorld* World, const FVector& From)
+{
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	AAncientGround* BestGround = nullptr;
+	float BestDistSq = TNumericLimits<float>::Max();
+
+	// Faithful mirror of AGoldNode::FindBestMineFor (GoldNode.cpp:187-236) with its
+	// tier-2 wait-target branch removed: a ground carries no claim state and no team,
+	// so there is exactly ONE tier and the only skip is IsValid — a ground being torn
+	// down by ClearScatter / Play Again must never be handed back as a destination.
+	for (TActorIterator<AAncientGround> It(World); It; ++It)
+	{
+		AAncientGround* Ground = *It;
+		if (!IsValid(Ground))
+		{
+			continue;
+		}
+
+		// Squared 2D distance — the house arena metric (FindBestMineFor, the miner's
+		// arrival test, ACastle::FindNearestCastleForTeam) and the SAME Z-ignoring
+		// convention this class's own IsPointInZone uses: the grounds sit on the
+		// terrain's undulation and height must not skew "nearest". Strict < keeps the
+		// first-found ground on an exact tie, and TActorIterator's order is stable for
+		// a fixed world, so repeated calls inside one match return the SAME ground
+		// (no churn between two equidistant options — precisely what the rotational-
+		// twin pair produces for a From sitting on the centerline).
+		const float DistSq = static_cast<float>(FVector::DistSquared2D(Ground->GetActorLocation(), From));
+		if (DistSq < BestDistSq)
+		{
+			BestGround = Ground;
+			BestDistSq = DistSq;
+		}
+	}
+
+	// nullptr = this world holds no ancient ground (a fallback scatter, or a map that
+	// never places them). That is a NORMAL answer, not an error: callers fall back to
+	// pre-feature behavior and never crash.
+	return BestGround;
+}
+
 void AAncientGround::ApplyBoostTick()
 {
 	// ⚠️ THE ONLY AUTHORITY GATE IN THIS CLASS, and it reads the PUSHED flag —

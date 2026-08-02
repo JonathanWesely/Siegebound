@@ -74,6 +74,33 @@ namespace
 	 *  never mills at a single point (the TASK-280/282 lesson's spread half).
 	 */
 	constexpr float GoldenAngleRadians = 2.399963f;
+
+	//~ TASK-395 FOLLOW command — implementation constants (same class as the two
+	//~ above: impl details, NOT feel tunables; the two FOLLOW feel tunables,
+	//~ FollowFormationRadius and FollowRepathTolerance, are UPROPERTYs).
+
+	/**
+	 *  Nominal slot count the follow sunflower's RADIUS is scaled for. Station
+	 *  index i takes radius R·sqrt(((i mod this)+0.5)/this) and angle i·golden:
+	 *  the first 12 followers fill the ring near-uniformly exactly like the
+	 *  shipped stage-3 spread, and past 12 the radius wraps (staying inside
+	 *  FollowFormationRadius) while the golden angle keeps every angle distinct.
+	 *  12 ≈ a comfortable escort ring at the 900 uu default; changing it changes
+	 *  packing density only, never correctness.
+	 */
+	constexpr int32 FollowFormationSlots = 12;
+
+	/** Player-facing label for a group-order type — used by the pick prompts and the pick logs. */
+	const TCHAR* GroupCommandTypeLabel(ESiegeGroupCommandType Type)
+	{
+		switch (Type)
+		{
+		case ESiegeGroupCommandType::Ambush: return TEXT("AMBUSH");
+		case ESiegeGroupCommandType::Follow: return TEXT("FOLLOW");
+		case ESiegeGroupCommandType::Hold:
+		default:                             return TEXT("HOLD");
+		}
+	}
 }
 
 ASiegePlayerController::ASiegePlayerController()
@@ -136,6 +163,7 @@ ASiegePlayerController::ASiegePlayerController()
 	CmdHoldActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_CmdHold.IA_CmdHold")));               // TASK-273 (Shield Wall — R)
 	CmdDefendActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_CmdDefend.IA_CmdDefend")));         // TASK-273 (Shield Wall — E)
 	CmdAmbushActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_CmdAmbush.IA_CmdAmbush")));         // TASK-345 (Group orders — F; inert-null-safe until the asset lands)
+	CmdFollowActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_CmdFollow.IA_CmdFollow")));         // TASK-399 (FOLLOW — C; inert-null-safe until the asset lands)
 }
 
 void ASiegePlayerController::BeginPlay()
@@ -332,6 +360,7 @@ void ASiegePlayerController::SetupInputComponent()
 	CmdHoldAction = ResolveInputAction(CmdHoldAction, CmdHoldActionAsset, TEXT("IA_CmdHold"), TEXT("TASK-273"));
 	CmdDefendAction = ResolveInputAction(CmdDefendAction, CmdDefendActionAsset, TEXT("IA_CmdDefend"), TEXT("TASK-273"));
 	CmdAmbushAction = ResolveInputAction(CmdAmbushAction, CmdAmbushActionAsset, TEXT("IA_CmdAmbush"), TEXT("TASK-345")); // group orders (TASK-344): F stays INERT until the asset lands
+	CmdFollowAction = ResolveInputAction(CmdFollowAction, CmdFollowActionAsset, TEXT("IA_CmdFollow"), TEXT("TASK-399")); // FOLLOW (TASK-395): C stays INERT until TASK-399's asset lands — the DESIGNED compile-time state
 
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))
 	{
@@ -394,6 +423,15 @@ void ASiegePlayerController::SetupInputComponent()
 		if (CmdAmbushAction)
 		{
 			EnhancedInputComponent->BindAction(CmdAmbushAction, ETriggerEvent::Started, this, &ASiegePlayerController::OnCmdAmbushPressed);
+		}
+
+		// FOLLOW group order (TASK-395): C opens the ONE-STAGE pick — a single
+		// wheel-resizable select circle that confirms in place. The IA_CmdFollow
+		// asset arrives in TASK-399; until then the resolve above returned null and
+		// C is simply inert (one log line, no crash) — the designed state.
+		if (CmdFollowAction)
+		{
+			EnhancedInputComponent->BindAction(CmdFollowAction, ETriggerEvent::Started, this, &ASiegePlayerController::OnCmdFollowPressed);
 		}
 	}
 	else
@@ -945,6 +983,23 @@ void ASiegePlayerController::OnCmdAmbushPressed()
 	// AMBUSH (F, TASK-344) shares the 3-stage pick; only the leash differs
 	// (chase-to-the-kill). Reached only once TASK-345's IA_CmdAmbush exists.
 	BeginGroupPick(ESiegeGroupCommandType::Ambush);
+}
+
+void ASiegePlayerController::OnCmdFollowPressed()
+{
+	// FOLLOW (C, TASK-395) opens the ONE-STAGE pick: ONE wheel-resizable SELECT
+	// circle that CONFIRMS IN PLACE. Deliberately NOT the 3-stage flow with two
+	// stages disabled — ConfirmGroupPickStage's Select case terminates for Follow
+	// (ConfirmFollowPick), so Position/AttackZone are structurally unreachable.
+	//
+	// UNLIKE T/E this does NOT release the existing groups: Follow ADDS the
+	// circled units to the ONE default follow group, stealing them out of any
+	// Hold/Ambush group per the shipped re-selection law (CONVENTIONS §2). Units
+	// the player did not circle keep their current orders.
+	//
+	// BeginGroupPick owns every guard (match-ended, placement/targeting mutual
+	// exclusion, already-picking, and the M8 D5 client observer lockout).
+	BeginGroupPick(ESiegeGroupCommandType::Follow);
 }
 
 void ASiegePlayerController::OnCmdDefendPressed()
@@ -2414,9 +2469,19 @@ void ASiegePlayerController::BeginGroupPick(ESiegeGroupCommandType Type)
 	GroupPickActiveDecal = SpawnGroupCircleDecal(GroupPickRadius);
 	UpdateGroupPickReticle();
 
-	BroadcastCommandPrompt(FString::Printf(
-		TEXT("%s: circle your units — scroll to resize, LMB confirm, RMB/Esc cancel"),
-		Type == ESiegeGroupCommandType::Ambush ? TEXT("AMBUSH") : TEXT("HOLD")));
+	// FOLLOW gets its OWN stage-1 prompt: its circle is the whole command, so the
+	// wording must not promise a second stage the flow will never open (TASK-395).
+	if (Type == ESiegeGroupCommandType::Follow)
+	{
+		BroadcastCommandPrompt(FString(
+			TEXT("FOLLOW: circle the units to follow you — scroll to resize, LMB confirm, RMB/Esc cancel")));
+	}
+	else
+	{
+		BroadcastCommandPrompt(FString::Printf(
+			TEXT("%s: circle your units — scroll to resize, LMB confirm, RMB/Esc cancel"),
+			GroupCommandTypeLabel(Type)));
+	}
 }
 
 void ASiegePlayerController::UpdateGroupPickReticle()
@@ -2493,17 +2558,37 @@ void ASiegePlayerController::ConfirmGroupPickStage()
 		return;
 	}
 
-	const TCHAR* TypeLabel = (GroupPickType == ESiegeGroupCommandType::Ambush) ? TEXT("AMBUSH") : TEXT("HOLD");
+	const TCHAR* TypeLabel = GroupCommandTypeLabel(GroupPickType);
+
+	// FOLLOW is the ONE-STAGE type (TASK-395): it must confirm at Select and can
+	// never be here in any other stage. This is a TRIPWIRE, not a control path —
+	// the Select case below returns for Follow, so reaching either zone stage
+	// would mean the flow was corrupted. Fail loud and tear down rather than
+	// build a follow group carrying a bogus zone.
+	if (GroupPickType == ESiegeGroupCommandType::Follow && GroupPickStage != EGroupPickStage::Select)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Error,
+			TEXT("ASiegePlayerController '%s': FOLLOW pick reached a zone stage (%d) — impossible by construction (TASK-395 one-stage law). Cancelling the pick."),
+			*GetNameSafe(this), static_cast<int32>(GroupPickStage));
+		CancelGroupPick();
+		return;
+	}
 
 	switch (GroupPickStage)
 	{
 	case EGroupPickStage::Select:
 	{
-		// stage 1 — SELECT: every group-eligible unit (Standard + Blue + alive +
-		// unfrozen, IsGroupCommandEligible — the new public API; Profile is
-		// private) inside the circle (2D) at confirm joins. EMPTY = refuse-and-
-		// stay + HUD reason (the law): a different circle can succeed, so the
-		// stage survives the refusal.
+		// stage 1 — SELECT: every eligible unit inside the circle (2D) at confirm
+		// joins. EMPTY = refuse-and-stay + HUD reason (the law): a different circle
+		// can succeed, so the stage survives the refusal.
+		//
+		// ⚠️ THE PREDICATE SPLITS BY TYPE (CONVENTIONS §3, TASK-396): Hold/Ambush
+		// are ZONE orders and keep IsGroupCommandEligible() — whose meaning narrows
+		// to exactly that; FOLLOW uses IsFollowCommandEligible(), which is wider
+		// (it also admits the Support Cleric and the Miner) and still excludes
+		// Siege (Ogre/Sapper) and every Red/bot unit. Profile is private on the
+		// unit, so these two public predicates are the whole sanctioned surface.
+		const bool bFollowPick = (GroupPickType == ESiegeGroupCommandType::Follow);
 		GroupPickSelectedMembers.Reset();
 		if (UWorld* World = GetWorld())
 		{
@@ -2511,7 +2596,12 @@ void ASiegePlayerController::ConfirmGroupPickStage()
 			for (TActorIterator<ASummonedUnit> It(World); It; ++It)
 			{
 				ASummonedUnit* Unit = *It;
-				if (IsValid(Unit) && Unit->IsGroupCommandEligible()
+				if (!IsValid(Unit))
+				{
+					continue;
+				}
+				const bool bEligible = bFollowPick ? Unit->IsFollowCommandEligible() : Unit->IsGroupCommandEligible();
+				if (bEligible
 					&& FVector::DistSquared2D(Unit->GetActorLocation(), GroupPickLocation) <= SelectRadiusSq)
 				{
 					GroupPickSelectedMembers.Add(Unit);
@@ -2525,6 +2615,16 @@ void ASiegePlayerController::ConfirmGroupPickStage()
 				TEXT("ASiegePlayerController '%s': %s stage-1 select refused — no eligible unit inside the circle (radius %.0f; staying in the pick)."),
 				*GetNameSafe(this), TypeLabel, GroupPickRadius);
 			BroadcastRefusal(NSLOCTEXT("Siegebound", "GroupPickRefused_NoUnits", "No units in the circle"));
+			return;
+		}
+
+		// ⛔ THE ONE-STAGE FORK (TASK-395): FOLLOW terminates HERE. There is no
+		// position zone and no attack zone to place — the anchor is the hero, not
+		// a piece of ground — so the flow enrols and tears down instead of opening
+		// stage 2. Hold/Ambush fall through to the unchanged 3-stage path below.
+		if (bFollowPick)
+		{
+			ConfirmFollowPick();
 			return;
 		}
 
@@ -2826,6 +2926,249 @@ ADecalActor* ASiegePlayerController::SpawnGroupCircleDecal(float Radius)
 	return CircleActor;
 }
 
+void ASiegePlayerController::ConfirmFollowPick()
+{
+	// THE ONE-STAGE TERMINAL CONFIRM (TASK-395; CONVENTIONS §1). Reached ONLY from
+	// ConfirmGroupPickStage's Select case with GroupPickType == Follow, and only
+	// with a NON-EMPTY sweep (the caller refuses an empty circle and stays in the
+	// stage). Nothing here places a zone: a follow group's anchor is the live hero.
+	//
+	// ORDERING NOTE: everything that reads the pick scratch (GroupPickSelectedMembers,
+	// GroupPickRadius) must run BEFORE the CancelGroupPick teardown at the bottom,
+	// which resets all of it.
+
+	// enrol every circled unit into THE ONE follow group. EnrollInDefaultFollowGroup
+	// creates it lazily, steals the unit out of any Hold/Ambush group, stations it
+	// and drops its target — so C and the spawn default share one code path.
+	for (const TWeakObjectPtr<ASummonedUnit>& Member : GroupPickSelectedMembers)
+	{
+		if (ASummonedUnit* Unit = Member.Get())
+		{
+			EnrollInDefaultFollowGroup(Unit);
+		}
+	}
+
+	// Count what the player actually got: every circled unit whose group id now IS
+	// the follow group. That deliberately includes units that were ALREADY
+	// following (the idempotent enroll path) — "5 units are following you" is the
+	// honest readout of the command just issued — and excludes anything refused.
+	int32 FollowingCount = 0;
+	if (DefaultFollowGroupId != INDEX_NONE)
+	{
+		for (const TWeakObjectPtr<ASummonedUnit>& Member : GroupPickSelectedMembers)
+		{
+			const ASummonedUnit* Unit = Member.Get();
+			if (Unit && Unit->GetCommandGroupId() == DefaultFollowGroupId)
+			{
+				++FollowingCount;
+			}
+		}
+	}
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASiegePlayerController '%s': FOLLOW confirmed — %d unit(s) following (group %d, select radius %.0f, formation radius %.0f) (TASK-395)."),
+		*GetNameSafe(this), FollowingCount, DefaultFollowGroupId, GroupPickRadius, FollowFormationRadius);
+
+	// CancelGroupPick is the ONE teardown call (the melee-release-before-early-out
+	// law) and it destroys the SELECT circle — deliberately: unlike Hold/Ambush,
+	// which transfer their zone circles to the group as persistent ground markers,
+	// a follow group owns NO ground, so a leftover decal would sit at a stale spot
+	// forever. Nothing is nulled first, so the transient pick visual dies here.
+	CancelGroupPick();
+
+	// completion prompt AFTER the teardown's empty broadcast, so this is what
+	// remains on the HUD (the stage-3 confirm's ordering).
+	BroadcastCommandPrompt(FString::Printf(TEXT("FOLLOW set: %d unit(s)"), FollowingCount));
+}
+
+int32 ASiegePlayerController::EnsureDefaultFollowGroup()
+{
+	// M8 D5 observer posture (doc §4.1 — the BeginGroupPick / SetUnitCommand
+	// precedent): group state is host-side in P1, so a client-built follow group
+	// would be state no unit can read. Callers treat INDEX_NONE as "skip silently".
+	if (!HasAuthority())
+	{
+		UE_LOG(LogSiegeNet, Verbose,
+			TEXT("ASiegePlayerController '%s': EnsureDefaultFollowGroup refused — P1 client observer posture (M8 doc §4.1)."),
+			*GetNameSafe(this));
+		return INDEX_NONE;
+	}
+
+	// Re-validate the stored id against the LIVE array — the anti-leak SECOND line
+	// of defence. PruneUnitGroups and ClearAllUnitGroups both reset the id when
+	// they destroy the group, but validating here means even a missed reset
+	// self-heals into a fresh group instead of leaving the spawn default
+	// permanently pointed at a group that no longer exists (ids are never reused,
+	// so a stale id can never alias a different group — it only ever goes dead).
+	if (DefaultFollowGroupId != INDEX_NONE && FindUnitGroup(DefaultFollowGroupId) != nullptr)
+	{
+		return DefaultFollowGroupId;
+	}
+
+	// Create it: a NORMAL FSiegeUnitGroup with Type Follow and NO GROUND — zero
+	// radii, zero centers, null marker decals (CONVENTIONS §1 — the struct is
+	// unchanged, the defaults already are exactly that). The id comes from the
+	// SAME never-reused counter the pick-built groups use.
+	FSiegeUnitGroup FollowGroup;
+	FollowGroup.GroupId = NextUnitGroupId++;
+	FollowGroup.Type = ESiegeGroupCommandType::Follow;
+
+	const int32 NewFollowGroupId = FollowGroup.GroupId; // captured BEFORE the move
+	UnitGroups.Add(MoveTemp(FollowGroup));
+	DefaultFollowGroupId = NewFollowGroupId;
+	NextFollowStationIndex = 0; // fresh group ⇒ fresh sunflower, starting at the centre slot
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASiegePlayerController '%s': default FOLLOW group %d created (TASK-395 — one per controller, re-derived lazily after any release)."),
+		*GetNameSafe(this), NewFollowGroupId);
+
+	return NewFollowGroupId;
+}
+
+void ASiegePlayerController::EnrollInDefaultFollowGroup(ASummonedUnit* Unit)
+{
+	// NULL-SAFE AND SILENT ON EVERY REFUSAL (CONVENTIONS §2). This runs on EVERY
+	// unit spawn (the auto-enroll lives on ASummonedUnit::BeginPlay — TASK-396 —
+	// which is what covers player placement, the ABarracks spawner and
+	// SummonTestUnit from one insertion point), so a refusal must degrade to
+	// today's behavior: never a crash, never a stall.
+	if (!IsValid(Unit))
+	{
+		return;
+	}
+
+	// The eligibility gate is the UNIT's (TASK-396): CanFollowHero() && Blue &&
+	// alive && not match-end frozen. That is what keeps the Ogre and the Sapper
+	// auto-marching (Siege is not follow-eligible — Jonathan's explicit carve-out)
+	// and every Red / bot unit out of the group.
+	if (!Unit->IsFollowCommandEligible())
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegePlayerController '%s': follow enroll skipped for '%s' — not follow-eligible (TASK-395)."),
+			*GetNameSafe(this), *GetNameSafe(Unit));
+		return;
+	}
+
+	const int32 FollowGroupId = EnsureDefaultFollowGroup();
+	if (FollowGroupId == INDEX_NONE)
+	{
+		return; // non-authority (already logged) — the unit just runs its normal body
+	}
+
+	FSiegeUnitGroup* FollowGroup = FindUnitGroupMutable(FollowGroupId);
+	if (!FollowGroup)
+	{
+		// tripwire: EnsureDefaultFollowGroup either validated or created this id in
+		// the same call stack, so a miss means the array was mutated underneath us.
+		UE_LOG(LogGitClaudeUnrealTest, Error,
+			TEXT("ASiegePlayerController '%s': follow group %d vanished immediately after EnsureDefaultFollowGroup — '%s' not enrolled."),
+			*GetNameSafe(this), FollowGroupId, *GetNameSafe(Unit));
+		return;
+	}
+
+	const TWeakObjectPtr<ASummonedUnit> WeakUnit(Unit);
+
+	// IDEMPOTENT: an already-following unit KEEPS the station it was given at its
+	// own enroll. Re-stationing on every C press would shuffle a settled squad for
+	// no reason, and the spawn default means C is routinely pressed over units
+	// that are already in this group.
+	if (FollowGroup->Members.Contains(WeakUnit))
+	{
+		return;
+	}
+
+	// STEAL (the shipped re-selection law): joining Follow takes the unit out of
+	// any Hold/Ambush group. Removing from a group's Members never resizes
+	// UnitGroups, so the FollowGroup pointer stays valid across this loop.
+	for (FSiegeUnitGroup& OtherGroup : UnitGroups)
+	{
+		if (OtherGroup.GroupId != FollowGroupId)
+		{
+			OtherGroup.Members.Remove(WeakUnit);
+		}
+	}
+
+	FollowGroup->Members.Add(WeakUnit);
+
+	// The station is computed ONCE, here, from a never-reused ordinal, and pushed
+	// to the unit as a plain scalar offset (per-unit scalars only — no arrays on
+	// units). AssignCommandGroup also DROPS the unit's current target, which is
+	// exactly right on the way into a body that must never attack.
+	const int32 StationIndex = NextFollowStationIndex++;
+	Unit->AssignCommandGroup(FollowGroupId, ComputeFollowStationOffset(StationIndex));
+
+	UE_LOG(LogGitClaudeUnrealTest, Verbose,
+		TEXT("ASiegePlayerController '%s': '%s' enrolled in follow group %d at station %d (TASK-395)."),
+		*GetNameSafe(this), *GetNameSafe(Unit), FollowGroupId, StationIndex);
+
+	// Reap any group the steal emptied — markers included — synchronously, the
+	// stage-3 confirm's rule. ⚠️ This can RemoveAt on UnitGroups, so FollowGroup is
+	// DANGLING from here on and is deliberately never touched again. The follow
+	// group itself can never be the one reaped: it holds the unit just added.
+	PruneUnitGroups();
+}
+
+AActor* ASiegePlayerController::GetFollowAnchor() const
+{
+	// ⚠️ LIVE RESOLVE, NEVER CACHED (CONVENTIONS §4). GetPawn() is re-read on every
+	// call, so a post-respawn REPLACEMENT pawn actor is picked up for free — that
+	// is the entire reason the ruling forbids caching. Callers reach this
+	// controller through FindControllerForTeam(World, Team); GetFirstPlayerController
+	// is BANNED in gameplay code (M8 TEAM LAW).
+	APawn* HeroPawn = GetPawn();
+	if (!IsValid(HeroPawn))
+	{
+		return nullptr;
+	}
+
+	// HERO-DEATH RULING (manager, CONVENTIONS §4 flag): a DEAD hero is not an
+	// anchor. nullptr is the signal that turns the follow body into HOLD POSITION
+	// (EnterIdle — no target, no march, no attack); following resumes the instant a
+	// live pawn resolves again. Rejected and recorded: marching to the corpse, and
+	// falling back to Defend (which would make followers fight, breaking Jonathan's
+	// ruling that following units never attack).
+	if (const AHeroCharacter* Hero = Cast<AHeroCharacter>(HeroPawn))
+	{
+		if (Hero->IsDead())
+		{
+			return nullptr;
+		}
+	}
+
+	return HeroPawn;
+}
+
+FVector ASiegePlayerController::ComputeFollowStationOffset(int32 StationIndex) const
+{
+	// Deterministic golden-angle sunflower — the shipped stage-3 spread recipe
+	// re-anchored on a MOVING point instead of a fixed circle. The RADIUS wraps
+	// through FollowFormationSlots so any squad size stays inside
+	// FollowFormationRadius; the ANGLE does not wrap, so the golden angle keeps
+	// every live follower on its own bearing and the squad never mills at one
+	// point (the TASK-280/282 lesson's spread half).
+	//
+	// NOT nav-projected on purpose (the one deviation from the stage-3 recipe):
+	// this is an offset from a point that moves, so a projection taken at enroll
+	// against a stale hero position would be meaningless. The unit's
+	// EnterAdvanceToLocation already passes bProjectDestinationToNavigation.
+	const int32 SafeIndex = FMath::Max(StationIndex, 0);
+	const int32 Slot = SafeIndex % FollowFormationSlots;
+	const float RingFraction = (static_cast<float>(Slot) + 0.5f) / static_cast<float>(FollowFormationSlots);
+	const float RingRadius = FollowFormationRadius * FMath::Sqrt(RingFraction);
+	const float RingAngle = static_cast<float>(SafeIndex) * GoldenAngleRadians;
+	return FVector(RingRadius * FMath::Cos(RingAngle), RingRadius * FMath::Sin(RingAngle), 0.f);
+}
+
+FSiegeUnitGroup* ASiegePlayerController::FindUnitGroupMutable(int32 GroupId)
+{
+	// const_cast off the shipped const lookup so there is exactly ONE search
+	// implementation (and one place the INDEX_NONE early-out lives). The pointed-to
+	// group is not const — it aliases into this controller's own UnitGroups — so
+	// this is well defined. Same aliasing rule as FindUnitGroup: use it within the
+	// current call stack, NEVER cache it.
+	return const_cast<FSiegeUnitGroup*>(FindUnitGroup(GroupId));
+}
+
 void ASiegePlayerController::PruneUnitGroups()
 {
 	// 1 s maintenance reaper (TASK-344; the CONVENTIONS ≤1 s marker-removal law):
@@ -2856,9 +3199,23 @@ void ASiegePlayerController::PruneUnitGroups()
 				Group.AttackMarkerDecal->Destroy();
 				Group.AttackMarkerDecal = nullptr;
 			}
+
+			// ⚠️ ANTI-LEAK (TASK-395 spec item 6): an EMPTY default follow group is
+			// legitimately reaped here — every follower died, or C was pressed and the
+			// enrolments all failed. That is FINE, but the id must not be left
+			// dangling: ids are never reused, so a stale DefaultFollowGroupId would
+			// leave the spawn default permanently pointed at nothing. Reset it and let
+			// EnsureDefaultFollowGroup re-derive lazily on the next enroll or C press.
+			const bool bWasDefaultFollowGroup = (Group.GroupId == DefaultFollowGroupId);
+			if (bWasDefaultFollowGroup)
+			{
+				DefaultFollowGroupId = INDEX_NONE;
+			}
+
 			UE_LOG(LogGitClaudeUnrealTest, Log,
-				TEXT("ASiegePlayerController '%s': unit group %d emptied — group and markers removed (TASK-344 prune)."),
-				*GetNameSafe(this), Group.GroupId);
+				TEXT("ASiegePlayerController '%s': unit group %d emptied — group and markers removed (TASK-344 prune)%s"),
+				*GetNameSafe(this), Group.GroupId,
+				bWasDefaultFollowGroup ? TEXT("; it was the default FOLLOW group — id reset, re-derives lazily (TASK-395).") : TEXT("."));
 			UnitGroups.RemoveAt(GroupIndex);
 		}
 	}
@@ -2870,6 +3227,17 @@ void ASiegePlayerController::ClearAllUnitGroups()
 	// Members are cleared EXPLICITLY (immediate — no 0.25 s self-heal wait, the
 	// units adopt the new stance on their very next state tick), markers
 	// destroyed, prompt emptied so the HUD returns to its stance display.
+	//
+	// ⚠️ TASK-395: "EVERY group order" now INCLUDES the default FOLLOW group, and
+	// that is deliberate — T is therefore the "everyone attack" button (CONVENTIONS
+	// §2 release law, now load-bearing). The id is reset FIRST, above the
+	// empty-array early-out, so the anti-leak invariant holds on every path
+	// regardless of what the prune already did. The group re-creates lazily on the
+	// next unit spawn or C press; units still holding the dead id self-heal on
+	// their next state tick (FindUnitGroup returns null).
+	DefaultFollowGroupId = INDEX_NONE;
+	NextFollowStationIndex = 0;
+
 	if (UnitGroups.Num() == 0)
 	{
 		return;

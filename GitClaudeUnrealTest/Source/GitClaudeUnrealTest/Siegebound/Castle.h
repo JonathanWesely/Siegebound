@@ -141,6 +141,54 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Castle")
 	bool IsPointInSpawnBox(const FVector& Point) const;
 
+	/**
+	 *  THE INTERIOR ANCHOR (TASK-398; signature PINNED character-for-character by
+	 *  CONVENTIONS "FOLLOW command + the DEFAULT-STANCE law + the MINER command
+	 *  rework (2026-08-02)" §7). The world point inside this castle's shell that a
+	 *  unit told to "hide inside the castle" walks to — Jonathan's Defend (E)
+	 *  semantics for the Miner (§5's table).
+	 *
+	 *  ⚠️ THIS INVENTS NO MECHANIC — IT REUSES TASK-350. The 3× castle is HOLLOW
+	 *  and walk-in, and own-team units already enter through the shipped team
+	 *  gating: UNavArea_{Blue,Red}CastleInterior on InteriorNavModifier (the enemy's
+	 *  UNavFilter_Team* excludes it; an UNFILTERED query — which is what a miner's
+	 *  MoveToLocation issues — treats it as plain navmesh) plus the GateBlockerVolume
+	 *  that ignores the OWN team's channel. This function only names the destination.
+	 *
+	 *  = the ACTOR TRANSFORM applied to InteriorAnchorRelativeLocation, never
+	 *  ActorLocation + offset: Castle_Red is placed at yaw 180, so a non-zero
+	 *  relative anchor must rotate with the castle or it lands outside the wrong wall.
+	 *  At the shipped ZeroVector default the two are identical BY CONSTRUCTION, and
+	 *  this returns the actor's own location.
+	 *
+	 *  Callers own the "no castle" case: a DESTROYED castle is not a hiding place
+	 *  (FindNearestCastleForTeam already skips them, so the caller gets nullptr and
+	 *  idles in place — CONVENTIONS §5, "own castle destroyed ⇒ idle in place").
+	 */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Castle")
+	FVector GetInteriorAnchorLocation() const;
+
+	/**
+	 *  Nearest STANDING castle belonging to Team (TASK-398). Additive helper, the
+	 *  AGoldNode::FindBestMineFor idiom: one public static finder living on the
+	 *  finder's own type, so callers outside ASummonedUnit can resolve "my castle".
+	 *
+	 *  ⚠️ WHY THIS EXISTS RATHER THAN A CALL TO ASummonedUnit::FindOwnCastle():
+	 *  that function is PRIVATE (SummonedUnit.h, inside the private block) and
+	 *  SummonedUnit.{h,cpp} is another task's exclusive file this batch — so a
+	 *  promote-to-protected edit was not available. This is a faithful mirror of it:
+	 *  same-team, IsValid, skip destroyed, nearest wins, first-found on an exact tie.
+	 *  The ONE deliberate difference is the metric — squared 2D distance (the house
+	 *  arena metric, matching FindBestMineFor and the miner's own arrival test)
+	 *  instead of the base's bounds-aware GetDistanceToTarget. With exactly one own
+	 *  castle per match the two can never disagree about the winner.
+	 *
+	 *  Null-safe on World; returns nullptr when the team has no standing castle.
+	 *  FLAGGED for a later consolidation pass: ASummonedUnit::FindOwnCastle could
+	 *  delegate here once that file is free (one line, out of scope for TASK-398).
+	 */
+	static ACastle* FindNearestCastleForTeam(UWorld* World, ETeamId Team, const FVector& From);
+
 	/** Resolves the soft-referenced mesh and per-team material, null-safe. */
 	virtual void OnConstruction(const FTransform& Transform) override;
 
@@ -298,6 +346,31 @@ protected:
 	 */
 	UPROPERTY(EditAnywhere, Category = "Siegebound|Castle|Gating", meta = (ClampMin = "0"))
 	FVector GateBlockerExtent = FVector(260.f, 135.f, 226.f);
+
+	/**
+	 *  🚩 FLAGGED TUNABLE (TASK-398; CONVENTIONS "FOLLOW command … (2026-08-02)"
+	 *  §5 + §8). Where "inside the castle" IS, expressed in the castle's OWN
+	 *  local frame — read only through GetInteriorAnchorLocation(), which applies
+	 *  the actor transform (so Castle_Red's yaw 180 is handled for free).
+	 *
+	 *  Default ZeroVector per §8, and it is not an arbitrary zero: SM_Castle's
+	 *  origin is GROUND-CENTRE by law (CONVENTIONS "Castle 3× HOLLOW" — bounds
+	 *  2442×2460×2694, ground-centre origin), and the hollow interior's floor is
+	 *  authored FLAT AT GROUND LEVEL with a ≤40 uu threshold step, so local
+	 *  (0, 0, 0) is the interior floor's centre — and Z 0 is the FLOOR, which is
+	 *  exactly what a navmesh destination wants (a character's own location is its
+	 *  capsule centre ~90 uu higher; the mover projects).
+	 *
+	 *  ⚠️ WHAT TO CHANGE IT TO, AND WHEN: nudge it (never the code) if the PIE
+	 *  measurement shows local (0,0) sitting inside a keep/tower hull rather than
+	 *  the open hall — the symptom is a miner that stalls at the gate instead of
+	 *  walking in. The gate corridor mouth is on the local −Y side
+	 *  (GateBlockerRelativeLocation Y −525), so +Y is "deeper into the keep".
+	 *  EditDefaultsOnly, never replicated: it is design-time data, identical on
+	 *  both machines by construction — exactly like the two Gating tunables above.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Gating")
+	FVector InteriorAnchorRelativeLocation = FVector::ZeroVector;
 
 	/** Seconds between heal-over-time ticks (Masons repair, TASK-059) — impl detail, not a GDD stat. Smaller = smoother bar; the total/duration are the caller's. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle", meta = (ClampMin = "0.05"))

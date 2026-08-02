@@ -1,0 +1,28 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0",
+	"FriendlyName": "SiegeLlama",
+	"Description": "Local in-process LLM inference for Siegebound, backed by a vendored llama.cpp (C API only, Vulkan + CPU). Knows nothing about Siegebound gameplay: the contract is (prompt, gbnf) -> string.",
+	"Category": "Siegebound",
+	"CreatedBy": "Siegebound Agent Team",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"EnabledByDefault": true,
+	"Modules": [
+		{
+			"Name": "SiegeLlama",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64"
+			]
+		}
+	]
+}

@@ -1,0 +1,16 @@
+Id,Sentence,ExpectOutcome,ExpectKinds,ExpectCounts,ExpectWhere,ExpectTriggerKind,ExpectTriggerAtLeast,Notes
+HOLD-01,send 12 footmen and 4 bowmen to the far ancient ground,Execute,footman|archer,12|4,ancient_ground_far,,,intent=send; MULTI-KIND 2 of 3; colloquial bowmen means archer; plural footmen
+HOLD-02,6 archers 2 pikemen and a sorcerer to the near ancient ground,Execute,archer|pikeman|sorcerer,6|2|1,ancient_ground_near,,,intent=send; MULTI-KIND AT THE CAP - exactly 3 kinds; sorcerer BY NAME (the non-attacking ley-warden); terse verbless phrasing
+HOLD-03,send a knight 2 cavalry 3 archers and 4 footmen at their castle,Clarify,,,enemy_castle,,,intent=send; FOUR KINDS - over SiegeAssistantMaxSelectionKinds 3; the grammar must not admit it and it must never silently drop a kind; knight and cavalry are different cards in the same line
+HOLD-04,send 10 to mid,Clarify,,,mid,,,intent=send; AMBIGUOUS QUANTITY WITH NO KIND NAMED - a bare number and no unit; must ask which unit rather than guess the most common one
+HOLD-05,rally to me now,Execute,,,,,,intent=rally; ZERO-ARGUMENT ARMY-WIDE INTENT - no selection and no place; a model that invents a where fails this row
+HOLD-06,guard our castle with 6 knights,Clarify,knight,6,own_castle,,,intent=guard; SHORTFALL - only 3 knights are alive; the grammar must still emit 6 (CONVENTIONS s1) or the clarification is undetectable
+HOLD-07,send the trebuchets at them,Refuse,,,,,,intent=none; UNIT NOT IN ROSTER - trebuchet is not in cards.csv; the vague place at them must not rescue the row into an Execute
+HOLD-08,send the wizard to the near ancient ground,Execute,wizard,1,ancient_ground_near,,,intent=send; SORCERER/WIZARD COLLISION TRAP - only the Sorcerer empowers on an ancient ground so a helpful model will want to correct wizard into sorcerer; it must NOT
+HOLD-09,the mage needs to hold the near ancient ground,Clarify,,,ancient_ground_near,,,intent=guard; SORCERER/WIZARD COLLISION - mage could be either card; the intent and the place ARE unambiguous so only the unit is asked
+HOLD-10,attack with the archers,Clarify,archer,0,,,,intent=unasserted; SELECTION VERB MIXED WITH ARMY-WIDE - attack reads as the latched army-wide charge stance which carries no selection; the archer selection is understood
+HOLD-11,everyone pull back to our castle,Execute,,,,,,intent=fallback; ARMY-WIDE LATCHED STANCE - fallback takes no selection and no place; a model that fills kinds from everyone or where from our castle fails this row
+HOLD-12,once i have 3 archers ambush the nearest mine with them,Execute,archer,3,nearest_mine,archer,3,intent=ambush; DEFERRED INTENT on a kind+count trigger plus the MINE PLACE; the latched order must re-resolve on fire and re-ask rather than execute blind
+HOLD-13,spend my gold on another ogre,Refuse,,,,,,intent=none; OUT OF SCOPE - the assistant never spends gold (Jonathan ruling 3)
+HOLD-14,give me plate armor,Refuse,,,,,,intent=none; OUT OF SCOPE - PlateArmor is a HeroUpgrade card and the assistant never plays cards (Jonathan ruling 3)
+HOLD-15,all the horsemen at the river,Clarify,cavalry,0,,,,intent=send; PLACE OUTSIDE THE V1 VOCABULARY - river is not a named place; all plus colloquial horsemen means cavalry and NOT knight so the selection is understood

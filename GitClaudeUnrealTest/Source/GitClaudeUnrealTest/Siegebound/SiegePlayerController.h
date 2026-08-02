@@ -235,6 +235,124 @@ public:
 	 */
 	const FSiegeUnitGroup* FindUnitGroup(int32 GroupId) const;
 
+	//~ ─── FOLLOW command (TASK-395; CONVENTIONS "FOLLOW command + the
+	//~     DEFAULT-STANCE law + the MINER command rework (2026-08-02)" §1/§2/§4,
+	//~     signatures PINNED character-for-character by §7) ───
+	//~
+	//~ ⚠️ This block is `public:` ON PURPOSE and the access level is part of the
+	//~ pin: the UNIT side (TASK-396 ASummonedUnit::UpdateStateFollow + its
+	//~ BeginPlay auto-enroll) and the MINER side (TASK-397/398) call all three
+	//~ from OUTSIDE this class, having resolved this controller through
+	//~ FindControllerForTeam. The whole FOLLOW-COMMAND batch compiles as ONE UBT
+	//~ module against that list.
+
+	/**
+	 *  THE DEFAULT FOLLOW GROUP (CONVENTIONS §2) — lazily creates, and returns
+	 *  the id of, the ONE follow group this controller owns.
+	 *
+	 *  THERE IS EXACTLY ONE FOLLOW GROUP PER CONTROLLER. Pressing C never makes
+	 *  a second one: it ADDS the circled units to this same group (stealing them
+	 *  out of any Hold/Ambush group, per the shipped re-selection law). That is
+	 *  what makes "the spawn default" and "the C command" the same object, and
+	 *  it is why Jonathan's "there is only one circle used for this" is
+	 *  satisfiable. The group is a NORMAL FSiegeUnitGroup with Type == Follow,
+	 *  zero radii, zero centers and NULL marker decals — a follow group owns no
+	 *  ground, so it gets no persistent ground marker.
+	 *
+	 *  LIFECYCLE (spec item 6): destroyed with every other group by the T/E
+	 *  release law (ClearAllUnitGroups), by Play Again (HandleMatchReset), and
+	 *  by the ≤1 s PruneUnitGroups reaper once its last member dies. EVERY one
+	 *  of those paths resets DefaultFollowGroupId to INDEX_NONE, AND this
+	 *  function re-validates the stored id against the live array before
+	 *  returning it — belt-and-braces, so a stale id can never leak and the
+	 *  group simply RE-DERIVES LAZILY on the next enroll or C press.
+	 *
+	 *  Returns INDEX_NONE on a non-authority caller (the M8 D5 observer posture:
+	 *  group state is host-side in P1) — callers treat that as "skip silently".
+	 */
+	int32 EnsureDefaultFollowGroup();
+
+	/**
+	 *  Enrolls one unit in the default follow group (CONVENTIONS §2) — the SEAM
+	 *  the unit-side spawn auto-enroll (TASK-396, on ASummonedUnit::BeginPlay)
+	 *  and the C-key confirm both funnel through, so there is exactly one place
+	 *  that knows how a unit joins Follow.
+	 *
+	 *  Does, in order: eligibility gate (Unit->IsFollowCommandEligible() — the
+	 *  TASK-396 predicate: CanFollowHero() && Blue && alive && not frozen, which
+	 *  is what keeps the Ogre/Sapper and every Red unit out) · lazy group
+	 *  creation · STEAL out of any other group · append · assign a deterministic
+	 *  golden-angle sunflower GroupStationOffset inside FollowFormationRadius,
+	 *  computed ONCE here · AssignCommandGroup · reap any group the steal
+	 *  emptied.
+	 *
+	 *  IDEMPOTENT: a unit already in the follow group keeps its station and is
+	 *  not re-stationed (so a C press over already-following units is a no-op
+	 *  for them). NULL-SAFE AND SILENT on every refusal — a missed enroll must
+	 *  degrade to today's behavior, never to a crash or a stall.
+	 */
+	void EnrollInDefaultFollowGroup(ASummonedUnit* Unit);
+
+	/**
+	 *  THE HERO ANCHOR (CONVENTIONS §4) — this controller's live pawn, or
+	 *  nullptr when there is no live hero to follow.
+	 *
+	 *  ⚠️ RESOLVE LIVE, EVERY STATE TICK, AND NEVER CACHE THE RESULT. The
+	 *  respawn path may hand back a DIFFERENT pawn actor, and a cached pointer
+	 *  would follow a corpse forever; resolving live is exactly what makes hero
+	 *  respawn work for free. Callers reach this controller through
+	 *  FindControllerForTeam(World, Team) — GetFirstPlayerController() is BANNED
+	 *  in gameplay code (M8 TEAM LAW).
+	 *
+	 *  HERO-DEATH RULING (manager, CONVENTIONS §4 flag): a DEAD hero is NOT an
+	 *  anchor. This returns nullptr while the pawn is missing, pending-kill or
+	 *  AHeroCharacter::IsDead(), and the follow body's contract on nullptr is to
+	 *  HOLD POSITION (EnterIdle, no target, no march, no attack) and resume the
+	 *  instant a live pawn resolves again — including a brand-new post-respawn
+	 *  pawn. Rejected and recorded: marching to the corpse; falling back to
+	 *  Defend (that would make them fight, breaking "following units never
+	 *  attack").
+	 */
+	AActor* GetFollowAnchor() const;
+
+	/**
+	 *  ⚠️ THE ANTI-REPATH BAND (CONVENTIONS §4, manager ruling 10) — the follow
+	 *  body may re-issue EnterAdvanceToLocation ONLY when the recomputed station
+	 *  has drifted more than this from the goal it last issued.
+	 *
+	 *  THIS IS A HARD REQUIREMENT, NOT POLISH. The anchor MOVES, and
+	 *  EnterAdvanceToLocation's own re-path guard is a 1 uu Equals() test
+	 *  (SummonedUnit.cpp — "bPointChanged"), so a station recomputed from a
+	 *  walking hero clears it EVERY 0.25 s state tick. Re-pathing at a moving
+	 *  goal every tick is precisely the mill that produced TASK-280 ("units
+	 *  freeze just past midfield") and TASK-282 ("halt just short of the
+	 *  castle"): each request restarts path-following before the previous one
+	 *  produced motion. An unconditional re-path is a QA FAIL.
+	 *
+	 *  Read by the unit side off the resolved owning-team controller (the tunable
+	 *  is pinned as ASiegePlayerController::FollowRepathTolerance and lives here
+	 *  so one feel-pass value drives every follower). FLAGGED tunable.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Commands", meta = (ClampMin = "0"))
+	float FollowRepathTolerance = 250.f;
+
+	/**
+	 *  Radius of the ring the following squad spreads in around the hero
+	 *  (CONVENTIONS §8) — the sunflower stations computed at enroll all lie
+	 *  inside it. Public for the same cross-task reason as
+	 *  FollowRepathTolerance. FLAGGED tunable.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Commands", meta = (ClampMin = "0"))
+	float FollowFormationRadius = 900.f;
+
+	/** BlueprintPure mirror of FollowRepathTolerance (the member itself is the pinned C++ seam; this is the BP/getter-style read). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Commands")
+	float GetFollowRepathTolerance() const { return FollowRepathTolerance; }
+
+	/** BlueprintPure mirror of FollowFormationRadius (see GetFollowRepathTolerance). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Commands")
+	float GetFollowFormationRadius() const { return FollowFormationRadius; }
+
 	/**
 	 *  Latches a new unit-command stance (Shield Wall, W1 TASK-274): sets
 	 *  CurrentCommand, marks bHasIssuedCommand true (so the units switch off the
@@ -647,6 +765,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> CmdAmbushAction;
 
+	/** IA_CmdFollow slot (key C -> the ONE-STAGE FOLLOW pick, TASK-395; asset created in TASK-399). Left unset, it soft-resolves from CmdFollowActionAsset — a missing asset skips the binding and leaves C inert (never a crash). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> CmdFollowAction;
+
 	/** Soft path for IA_Card1 (/Game/Input/Actions/IA_Card1, created in TASK-009). */
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TSoftObjectPtr<UInputAction> Card1ActionAsset;
@@ -694,6 +816,17 @@ protected:
 	/** Soft path for IA_CmdAmbush (/Game/Input/Actions/IA_CmdAmbush, created in TASK-345 — F key). Null-safe (see CmdAttackActionAsset): until the asset lands, F is simply inert. */
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TSoftObjectPtr<UInputAction> CmdAmbushActionAsset;
+
+	/**
+	 *  Soft path for IA_CmdFollow (/Game/Input/Actions/IA_CmdFollow, created in
+	 *  TASK-399 — C key, mapped in /Game/Input/IMC_Hero by the same task). NULL-
+	 *  SAFE IS LAW HERE AND IT IS THE DESIGNED STATE AT COMPILE TIME (TASK-395
+	 *  ships before TASK-399): an unresolved asset skips the binding, logs ONE
+	 *  line through ResolveInputAction, and leaves C completely inert — never a
+	 *  crash, and every other key keeps working.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TSoftObjectPtr<UInputAction> CmdFollowActionAsset;
 
 	/**
 	 *  Half-extent (XY) of the player's spawn box — a 2D square centered on the
@@ -841,10 +974,15 @@ private:
 	};
 
 	/**
-	 *  Stage of the 3-stage group-order pick (TASK-344): None = no pick live
-	 *  (the wheel poll and the pick branch of PlayerTick are inert). Select →
-	 *  Position → AttackZone, each stage a wheel-resizable cursor circle; LMB
-	 *  confirms a stage, RMB/Esc cancels the WHOLE flow at any stage.
+	 *  Stage of the group-order pick (TASK-344): None = no pick live (the wheel
+	 *  poll and the pick branch of PlayerTick are inert). Select → Position →
+	 *  AttackZone, each stage a wheel-resizable cursor circle; LMB confirms a
+	 *  stage, RMB/Esc cancels the WHOLE flow at any stage.
+	 *
+	 *  FOLLOW (TASK-395) reuses this machinery for ONE stage only: it enters at
+	 *  Select and CONFIRMS THERE (ConfirmFollowPick), so Position and AttackZone
+	 *  are unreachable for it. The enum is unchanged — Follow is a shorter path
+	 *  through the same states, NOT a 3-stage flow with two stages disabled.
 	 */
 	enum class EGroupPickStage : uint8
 	{
@@ -911,8 +1049,10 @@ private:
 	void DestroySpellReticle();
 
 	/**
-	 *  Enters the 3-stage group-order pick (TASK-344): the R (Hold) / F (Ambush)
-	 *  entry into SELECT → POSITION → ATTACK zone. Follows the placement /
+	 *  Enters the group-order pick (TASK-344): the R (Hold) / F (Ambush) entry
+	 *  into the 3-stage SELECT → POSITION → ATTACK zone flow, and — since
+	 *  TASK-395 — the C (Follow) entry into the ONE-STAGE flow that confirms at
+	 *  SELECT and never opens a zone. Follows the placement /
 	 *  targeting cursor posture (visible cursor + hero melee suppressed via
 	 *  GroupPickHero so the confirm clicks don't also swing). Silently ignored
 	 *  while placement OR spell targeting is live (the codebase's mutual-ignore
@@ -943,9 +1083,12 @@ private:
 	/**
 	 *  LMB confirm for the CURRENT stage (TASK-344). A trace-miss (cursor on the
 	 *  sky) refuses free and STAYS in the stage (the placement/targeting
-	 *  trace-miss precedent). Select: sweeps IsGroupCommandEligible units inside
-	 *  the circle (2D) — an EMPTY sweep refuses-and-stays with a HUD reason;
-	 *  otherwise the circle is dropped in place and stage 2 opens. Position:
+	 *  trace-miss precedent). Select: sweeps the eligible units inside the circle
+	 *  (2D) — IsGroupCommandEligible for the ZONE types, IsFollowCommandEligible
+	 *  for Follow (CONVENTIONS §3's split predicate) — an EMPTY sweep
+	 *  refuses-and-stays with a HUD reason; for FOLLOW the flow then TERMINATES in
+	 *  ConfirmFollowPick (TASK-395, the one-stage law) and for Hold/Ambush the
+	 *  circle is dropped in place and stage 2 opens. Position:
 	 *  records the station zone, drops its circle, opens stage 3. AttackZone
 	 *  (final): builds the FSiegeUnitGroup, STEALS re-selected units from older
 	 *  groups (steal-emptied groups die immediately, markers included), computes
@@ -964,6 +1107,16 @@ private:
 	 *  input state. Idempotent / no-op safe. The stage-3 confirm funnels through
 	 *  here too — it nulls the transferred marker refs first, so only the Select
 	 *  circle dies on a completed flow.
+	 *
+	 *  STAGE-AGNOSTIC BY CONSTRUCTION, which is why FOLLOW (TASK-395) needed no
+	 *  new teardown site: this resets GroupPickStage to None whatever it held and
+	 *  destroys every circle the flow still owns, so all nine existing teardown
+	 *  callers (EndPlay · the PlayerTick polled RMB/Esc · OnUnPossess ·
+	 *  OnCancelPlacePressed · OnCmdAttackPressed · OnCmdDefendPressed ·
+	 *  HandleHeroDied · HandleMatchEnd · HandleMatchReset) already cover a Follow
+	 *  pick. ConfirmFollowPick funnels through here too and — unlike the stage-3
+	 *  confirm — nulls NOTHING first, so its transient select circle is destroyed
+	 *  (a follow group owns no ground and gets no persistent marker).
 	 */
 	void CancelGroupPick();
 
@@ -977,6 +1130,48 @@ private:
 	 *  nullptr on any degrade; callers stay null-safe.
 	 */
 	ADecalActor* SpawnGroupCircleDecal(float Radius);
+
+	/**
+	 *  IA_CmdFollow pressed (key C, TASK-395; asset lands in TASK-399): enters
+	 *  the ONE-STAGE FOLLOW pick via BeginGroupPick(Follow), which owns every
+	 *  guard (match-ended, placement/targeting mutual exclusion, already-picking,
+	 *  the M8 D5 client lockout). PRIVATE per the CONVENTIONS §7 pin — the
+	 *  binding is taken inside SetupInputComponent, so the access level costs
+	 *  nothing.
+	 */
+	void OnCmdFollowPressed();
+
+	/**
+	 *  THE ONE-STAGE TERMINAL CONFIRM (CONVENTIONS §1) — the whole difference
+	 *  from Hold/Ambush. Called from ConfirmGroupPickStage's Select case when
+	 *  GroupPickType == Follow, INSTEAD of opening stage 2: enrolls every swept
+	 *  unit in the default follow group, tears the pick down through the ONE
+	 *  teardown call (CancelGroupPick, which destroys the transient select
+	 *  circle — a follow group owns no ground, so it gets no persistent marker),
+	 *  and broadcasts the completion prompt afterwards so it is what remains on
+	 *  the HUD. The pick can therefore NEVER reach Position or AttackZone.
+	 */
+	void ConfirmFollowPick();
+
+	/**
+	 *  Deterministic golden-angle sunflower station offset for the StationIndex-th
+	 *  enrollment in the follow group — the shipped squad-spread recipe
+	 *  re-anchored on a MOVING point (hero) instead of a fixed circle. Radius
+	 *  R·sqrt((slot+0.5)/FollowFormationSlots), angle StationIndex·golden, with
+	 *  slot = StationIndex modulo the nominal slot count: the RADIUS wraps so an
+	 *  arbitrarily large squad always stays inside FollowFormationRadius, while
+	 *  the golden angle keeps every ANGLE distinct, so no two live followers
+	 *  share a station. Per-unit scalars only — no arrays on units (shipped law).
+	 *
+	 *  Deliberately NOT nav-projected (the one deviation from the stage-3 station
+	 *  recipe): this is an OFFSET from a point that moves, so a projection taken
+	 *  at enroll against a stale hero position would be meaningless. The unit's
+	 *  EnterAdvanceToLocation already passes bProjectDestinationToNavigation.
+	 */
+	FVector ComputeFollowStationOffset(int32 StationIndex) const;
+
+	/** Non-const FindUnitGroup for the enroll path (same aliasing rule: use within the call stack, never cache — the array mutates on confirm/steal/prune). */
+	FSiegeUnitGroup* FindUnitGroupMutable(int32 GroupId);
 
 	/**
 	 *  1 s maintenance reaper (TASK-344, the ≤1 s marker-removal law): compacts
@@ -1247,13 +1442,47 @@ private:
 	/** Next group id handed out by the stage-3 confirm — never reused within this controller's lifetime, so a stale unit-side id can never alias a NEW group. */
 	int32 NextUnitGroupId = 1;
 
+	/**
+	 *  Id of THE ONE default follow group (TASK-395), or INDEX_NONE when none
+	 *  exists yet. TRANSIENT scratch, never replicated — it is a plain index into
+	 *  UnitGroups' id space, re-derived lazily by EnsureDefaultFollowGroup.
+	 *
+	 *  ⚠️ ANTI-LEAK INVARIANT (spec item 6): this MUST be reset to INDEX_NONE
+	 *  wherever its group is destroyed — PruneUnitGroups (the ≤1 s reaper, which
+	 *  legitimately reaps an EMPTY follow group) and ClearAllUnitGroups (T/E
+	 *  release + Play Again) both do so explicitly, and EnsureDefaultFollowGroup
+	 *  re-validates the id against the live array as a second line of defence.
+	 *  Without that, a stale id would either alias nothing (silent dead group) or
+	 *  — since ids are never reused — leave the spawn default permanently broken.
+	 */
+	int32 DefaultFollowGroupId = INDEX_NONE;
+
+	/**
+	 *  Monotonic enrollment ordinal feeding ComputeFollowStationOffset, reset to
+	 *  0 each time the default follow group is (re)created.
+	 *
+	 *  WHY NOT the raw Members index: PruneUnitGroups COMPACTS the member array,
+	 *  so array indices are RECYCLED — and with Follow as the spawn default the
+	 *  group churns constantly (every unit spawns into it, fights, dies), which
+	 *  would make two living followers share one station the common case rather
+	 *  than an edge. A never-reused ordinal keeps every live follower's angle
+	 *  distinct for the group's whole lifetime at the cost of one int.
+	 */
+	int32 NextFollowStationIndex = 0;
+
 	/** Drives PruneUnitGroups every second (armed once at BeginPlay; trivially cheap while no groups exist). */
 	FTimerHandle UnitGroupPruneTimerHandle;
 
 	/** Current pick stage — None = no pick live (the PlayerTick pick branch and the wheel poll are inert). */
 	EGroupPickStage GroupPickStage = EGroupPickStage::None;
 
-	/** Command type this pick will create (Hold via R, Ambush via F). Meaningful only while GroupPickStage != None. */
+	/**
+	 *  Command type this pick will create (Hold via R, Ambush via F, Follow via
+	 *  C). Meaningful only while GroupPickStage != None. Follow is the ONE-STAGE
+	 *  type: it confirms at Select and never advances, so while this reads Follow
+	 *  the stage can only ever be None or Select (ConfirmGroupPickStage carries
+	 *  tripwires on the other two cases).
+	 */
 	ESiegeGroupCommandType GroupPickType = ESiegeGroupCommandType::Hold;
 
 	/** Radius of the ACTIVE stage circle — seeded per stage from the Group*RadiusDefault tunables, wheel-stepped by ApplyGroupPickWheel. */

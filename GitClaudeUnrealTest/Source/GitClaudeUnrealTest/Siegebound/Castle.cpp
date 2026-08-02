@@ -9,6 +9,7 @@
 #include "Engine/CollisionProfile.h"
 #include "Engine/DamageEvents.h"
 #include "Engine/StaticMesh.h"
+#include "EngineUtils.h" // TASK-398: TActorIterator for FindNearestCastleForTeam
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
 #include "GitClaudeUnrealTest.h"
@@ -633,6 +634,60 @@ bool ACastle::IsPointInSpawnBox(const FVector& Point) const
 	const FVector Origin = GetActorLocation();
 	return FMath::Abs(Point.X - Origin.X) <= SpawnBoxHalfExtent.X
 		&& FMath::Abs(Point.Y - Origin.Y) <= SpawnBoxHalfExtent.Y;
+}
+
+FVector ACastle::GetInteriorAnchorLocation() const
+{
+	// THE ACTOR TRANSFORM, never ActorLocation + offset (header doc): Castle_Red is
+	// placed at yaw 180, so a non-zero relative anchor has to ROTATE with the castle
+	// or the "deeper into the keep" direction inverts on one side of the map. At the
+	// shipped ZeroVector default this returns the actor's own location on both
+	// castles, which is the ground-centre origin = the interior floor's centre.
+	//
+	// RESOLVED WORLD POINTS at the shipped L_Arena placement (Castle_Blue
+	// (−25000, 0, 0) yaw 0, Castle_Red (+25000, 0, 0) yaw 180 — TASK-218):
+	// Blue (−25000, 0, 0), Red (+25000, 0, 0). Reported in handoffs/TASK-398-programmer.md;
+	// the live nav-projection readback belongs to the PIE task, and AMinerUnit logs
+	// the resolved point once per miner so that readback is free.
+	return GetActorTransform().TransformPosition(InteriorAnchorRelativeLocation);
+}
+
+ACastle* ACastle::FindNearestCastleForTeam(UWorld* World, ETeamId Team, const FVector& From)
+{
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	ACastle* BestCastle = nullptr;
+	float BestDistSq = TNumericLimits<float>::Max();
+
+	// Faithful mirror of the (private) ASummonedUnit::FindOwnCastle — same-team,
+	// IsValid, DESTROYED CASTLES SKIPPED (a rubble heap is not a hiding place, and
+	// that skip is what delivers CONVENTIONS §5's "own castle destroyed ⇒ idle in
+	// place" for free: the caller simply gets nullptr).
+	for (TActorIterator<ACastle> It(World); It; ++It)
+	{
+		ACastle* Castle = *It;
+		if (!IsValid(Castle) || Castle->GetTeamId() != Team || Castle->IsCastleDestroyed())
+		{
+			continue;
+		}
+
+		// squared 2D distance — the house arena metric (AGoldNode::FindBestMineFor,
+		// the miner's arrival test): the arena is flat and height must not skew
+		// "nearest". Strict < keeps the first-found castle on an exact tie, so the
+		// result is deterministic for a fixed world (there is exactly one standing
+		// own castle in every designed flow anyway).
+		const float DistSq = static_cast<float>(FVector::DistSquared2D(Castle->GetActorLocation(), From));
+		if (DistSq < BestDistSq)
+		{
+			BestCastle = Castle;
+			BestDistSq = DistSq;
+		}
+	}
+
+	return BestCastle;
 }
 
 bool ACastle::TryGetInstigatorTeam(AController* EventInstigator, AActor* DamageCauser, ETeamId& OutTeam)

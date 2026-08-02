@@ -1,0 +1,26 @@
+Id,Sentence,ExpectOutcome,ExpectKinds,ExpectCounts,ExpectWhere,ExpectTriggerKind,ExpectTriggerAtLeast,Notes
+DEV-01,send 10 footmen with a sorcerer to the nearest ancient ground,Execute,footman|sorcerer,10|1,ancient_ground_near,,,intent=send; FLAGSHIP MULTI-KIND 2 of 3; sorcerer BY NAME (the non-attacking ley-warden); plural colloquial footmen
+DEV-02,send some footmen to mid,Clarify,footman,,mid,,,intent=send; AMBIGUOUS QUANTITY - some is not a number; kind and place are clear so only the count is asked; ExpectCounts deliberately NOT asserted
+DEV-03,send 10 footmen at their castle,Clarify,footman,10,enemy_castle,,,intent=send; SHORTFALL - only 8 are alive; the grammar must still emit 10 and NOT 8 (CONVENTIONS s1) or the clarification is undetectable
+DEV-04,send the catapults at the enemy base,Refuse,,,,,,intent=none; UNIT NOT IN ROSTER - catapult is not in cards.csv; must refuse rather than snap to a lookalike card
+DEV-05,2 wizards to the far ancient ground,Execute,wizard,2,ancient_ground_far,,,intent=send; WIZARD BY NAME (the AoE fireball caster); terse verbless phrasing so send must be inferred
+DEV-06,send the mage to the ancient ground,Clarify,,,,,,intent=send; SORCERER/WIZARD COLLISION - mage could be either card AND the ancient ground is unqualified near/far; two independent ambiguities in one line
+DEV-07,charge with the footmen,Clarify,footman,0,,,,intent=unasserted; SELECTION VERB MIXED WITH ARMY-WIDE - charge is a latched army-wide stance with NO selection so this must never become a selective order; the footman selection is understood
+DEV-08,everyone fall back except the miners,Clarify,,,,,,intent=unasserted; ARMY-WIDE WITH AN EXCEPTION - fallback carries no selection so except the miners is inexpressible; must ask rather than silently drop the exception
+DEV-09,play a knight,Refuse,,,,,,intent=none; OUT OF SCOPE - the assistant never plays cards (Jonathan ruling 3); it commands only what already exists
+DEV-10,buy a miner,Refuse,,,,,,intent=none; OUT OF SCOPE - the assistant never spends gold (Jonathan ruling 3)
+DEV-11,wait until i have 2 more knights then send them mid,Execute,knight,2,mid,knight,2,intent=send; DEFERRED INTENT latched on a kind+count trigger; note the relative word more - TriggerAtLeast is absolute so the executor resolves it against the live roster and re-asks rather than firing blind
+DEV-12,send all the archers at their castle,Execute,archer,0,enemy_castle,,,intent=send; ALL - explicit all maps to Count 0; colloquial their castle maps to enemy_castle
+DEV-13,send everyone at their castle,Execute,,,enemy_castle,,,intent=send; ALL WITH NO KIND NAMED - kinds/counts deliberately NOT asserted because the schema has no all-kinds symbol; TASK-417 must declare what everyone emits (an empty selection is the natural reading)
+DEV-14,send 5 footmen 3 archers and a knight to the middle,Execute,footman|archer|knight,5|3|1,mid,,,intent=send; MULTI-KIND AT THE CAP - exactly 3 kinds; a leading a means 1; colloquial the middle means mid
+DEV-15,send 5 footmen 3 archers 2 pikemen and a knight to mid,Clarify,,,mid,,,intent=send; FOUR KINDS - over SiegeAssistantMaxSelectionKinds 3; the grammar must not admit it and it must never silently drop a kind
+DEV-16,infantry back to our castle now,Execute,footman,0,own_castle,,,intent=send; COLLOQUIAL infantry means footman - an alias that may not exist yet and the row is written anyway (CONVENTIONS s11 fitting direction); bare plural means all so Count 0
+DEV-17,horsemen go hit their castle,Execute,cavalry,0,enemy_castle,,,intent=send; COLLOQUIAL horsemen means cavalry and NOT knight - they are different cards; sloppy verbless phrasing
+DEV-18,guard the near ancient ground with 4 pikemen,Execute,pikeman,4,ancient_ground_near,,,intent=guard; selection-bearing verb with the selection stated AFTER the place
+DEV-19,ambush mid with 2 clerics,Clarify,cleric,2,mid,,,intent=ambush; INELIGIBLE PROFILE - the Cleric is Support so IsGroupCommandEligible is false (follow-only is shipped law); the parse is correct and the EXECUTOR is what must object
+DEV-20,clerics follow me,Execute,cleric,0,,,,intent=follow; THE OTHER HALF OF THE CLERIC SPLIT - IsFollowCommandEligible IS true for the Cleric; follow takes no place
+DEV-21,send the ogre at their castle,Clarify,ogre,1,enemy_castle,,,intent=send; INELIGIBLE PROFILE - Siege units (Ogre and Sapper) take no zone orders at all; the parse is correct and the executor must object
+DEV-22,send the knights to the river,Clarify,knight,0,,,,intent=send; PLACE OUTSIDE THE V1 VOCABULARY - river is not a named place; the selection is understood so only the destination is asked
+DEV-23,guard the nearest mine with 3 footmen,Execute,footman,3,nearest_mine,,,intent=guard; MINE PLACE - the dev row exercising the mine symbol
+DEV-24,send the sorcerer and the wizard to the far ancient ground,Execute,sorcerer|wizard,1|1,ancient_ground_far,,,intent=send; THE SHARPEST COLLISION ROW - both cards named in ONE sentence; a model with a shared alias will emit one kind twice or drop one
+DEV-25,rally on me,Execute,,,,,,intent=rally; ZERO-ARGUMENT ARMY-WIDE INTENT - no selection and no place; a model that invents a where fails this row

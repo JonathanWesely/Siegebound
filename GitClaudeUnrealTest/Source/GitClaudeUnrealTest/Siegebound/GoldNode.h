@@ -152,6 +152,34 @@ public:
 	 */
 	static AGoldNode* FindBestMineFor(UWorld* World, ETeamId Team, const FVector& From);
 
+	/**
+	 *  THE IN-CIRCLE FINDER (TASK-398; signature PINNED character-for-character by
+	 *  CONVENTIONS "FOLLOW command + the DEFAULT-STANCE law + the MINER command
+	 *  rework (2026-08-02)" §5/§7). FindBestMineFor restricted to a DISC: the same
+	 *  tier-1 (minable now) beats tier-2 (enemy-occupied wait target) selection, the
+	 *  same 2D nearest-to-From metric, the same strict-< first-found tiebreak that
+	 *  makes the no-churn rule work — plus ONE extra gate: the candidate mine's own
+	 *  LOCATION must lie within Radius of Center (2D, the metric every zone disc in
+	 *  this project uses).
+	 *
+	 *  This is what makes Jonathan's Hold/Ambush miner semantics legal-destination
+	 *  logic rather than a new mining mechanic: "it only goes to the position circle
+	 *  and will mine a mine if there is one in the position circle."
+	 *
+	 *  nullptr = NO MINE IN THE CIRCLE (or every mine in it is depleted). That is a
+	 *  NORMAL, expected answer — the caller stations inside the circle instead; it is
+	 *  NOT the all-depleted endgame FindBestMineFor's null means.
+	 *  Radius <= 0 always answers nullptr (an empty disc contains nothing) — which is
+	 *  also what keeps a zero-radius FOLLOW group from ever being mistaken for a
+	 *  position circle.
+	 *
+	 *  ⚠️ DELIBERATE DUPLICATE, NOT A REFACTOR: FindBestMineFor is shared with the
+	 *  bot (TASK-256) and is UNMODIFIED BY LAW (§5, restated in the TASK-398 spec and
+	 *  a TASK-400 QA criterion), so the two-tier loop is written out again here rather
+	 *  than factored into a common core that would have to touch it.
+	 */
+	static AGoldNode* FindBestMineInDisc(UWorld* World, ETeamId Team, const FVector& Center, float Radius, const FVector& From);
+
 	/** True once the reserve hit 0 (one-way latch for this mine's lifetime; fresh mines come from Play Again's re-scatter). */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Mine")
 	bool IsDepleted() const { return bDepleted; }

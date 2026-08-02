@@ -43,19 +43,41 @@ enum class ESiegeUnitCommand : uint8
 
 /**
  *  Group-order command type (TASK-344; CONVENTIONS "Group orders — 3-zone HOLD
- *  + AMBUSH"). Both types share the 3-stage circle pick (SELECT units →
- *  POSITION zone → ATTACK zone) and the priority ladder; they differ ONLY in
- *  the leash:
+ *  + AMBUSH", EXTENDED by "FOLLOW command + the DEFAULT-STANCE law …
+ *  (2026-08-02)" §1). Hold and Ambush share the 3-stage circle pick (SELECT
+ *  units → POSITION zone → ATTACK zone) and the priority ladder; they differ
+ *  ONLY in the leash:
  *  - Hold   (R): drop the target the tick it exits BOTH zones (disengage and
  *    return to the station).
  *  - Ambush (F): the zone drop-test is SKIPPED while a live target exists —
  *    finish the kill, then the ladder resumes.
+ *
+ *  FOLLOW (C, TASK-395) is the THIRD type and is deliberately NOT a variant of
+ *  the other two:
+ *  - ONE STAGE, ONE CIRCLE. The pick enters at EGroupPickStage::Select and
+ *    CONFIRMS THERE — there is no position zone and no attack zone, and the
+ *    pick may never advance past Select. Jonathan: "There is only one mouse
+ *    scroll circle used for this, and it is just the circle used to indicate
+ *    what units follow."
+ *  - The anchor is the HERO, not a piece of ground, so a follow group carries
+ *    zero radii, zero centers and NULL marker decals (see FSiegeUnitGroup); the
+ *    select circle is a transient pick visual destroyed at confirm.
+ *  - Following units NEVER attack (a per-BODY seal in UpdateStateFollow —
+ *    TASK-396 — not the per-CLASS CanEverAttack seal).
+ *  - Follow is also the SPAWN DEFAULT for every follow-eligible Blue unit
+ *    (CONVENTIONS §2), which is why exactly ONE follow group exists per
+ *    controller: ASiegePlayerController::EnsureDefaultFollowGroup.
+ *
+ *  ⚠️ Follow is APPENDED so Hold == 0 and Ambush == 1 stay byte-preserved.
+ *  ESiegeUnitCommand above (the STANCE enum, whose byte layout WBP_HUD's switch
+ *  pins depend on) is NOT touched — Follow is a group order, never a stance.
  */
 UENUM(BlueprintType)
 enum class ESiegeGroupCommandType : uint8
 {
 	Hold,
-	Ambush
+	Ambush,
+	Follow
 };
 
 /**
@@ -66,6 +88,16 @@ enum class ESiegeGroupCommandType : uint8
  *  station offset) and resolve this struct LIVE each state tick via
  *  ASiegePlayerController::FindUnitGroup — a null result self-heals them back
  *  to the legacy stance gate.
+ *
+ *  FOLLOW (TASK-395) reuses this struct UNCHANGED. A follow group carries
+ *  Type == Follow, PositionRadius == AttackRadius == 0, both centers
+ *  ZeroVector, and both marker decals null — its anchor is the live hero pawn
+ *  (ASiegePlayerController::GetFollowAnchor), never a piece of ground. Every
+ *  zone test in UpdateStateGrouped is unreachable for it because a follow group
+ *  NEVER ENTERS that function (the hoisted follow dispatch, TASK-396) — not
+ *  because a zero radius happens to fail a test. A follow group is also created
+ *  by ASiegePlayerController::EnsureDefaultFollowGroup rather than by a pick
+ *  confirm, since Follow is the spawn default.
  */
 USTRUCT()
 struct FSiegeUnitGroup

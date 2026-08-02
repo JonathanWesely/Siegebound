@@ -101,3 +101,17 @@ SourceArt/**/*.tga
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# --- SiegeLlama vendored third-party (LLM-ASSISTANT batch) ----------------
+# The global *.dll / *.lib rules above would silently swallow these.
+# Placed AFTER those rules on purpose: last matching pattern wins. The parent
+# directories are not themselves ignored (only Plugins/*/Binaries/ and
+# Plugins/*/Intermediate/ are, and the vendored tree lives under Source/), which
+# is what makes these negations effective -- git will not descend into an
+# ignored directory to honour a "!" inside it.
+!Plugins/SiegeLlama/Source/ThirdParty/LlamaCpp/lib/**/*.lib
+!Plugins/SiegeLlama/Source/ThirdParty/LlamaCpp/bin/**/*.dll
+# Model weights NEVER enter git (~2.5 GB). Tools/fetch_llm_model.py fetches
+# them into /Models, which is ignored wholesale.
+*.gguf
+/Models/
