@@ -56,6 +56,8 @@ M5 shipped machine-verified with the desktop LOCKED (SendInput blocked → no si
 
 **FOLLOW-COMMAND batch (2026-08-02, TASK-395..408)** — a STANDALONE feature batch in the ANCIENT-GROUNDS / CASTLE-3X shape, **not** a GDD milestone and **not** part of M8. Jonathan's directive: a **Follow** command on the **C** key (one mouse-wheel-resizable selection circle, no zones; following units never attack) that becomes **the SPAWN DEFAULT for every commandable unit** — ⚠️ **a deliberate, Jonathan-confirmed change to the core game loop: the player-side commandable fleet no longer auto-engages, and the player personally orders every fight** (Siege units and the entire bot side are unchanged). Plus the **Miner command rework** (miners receive all five commands with miner-specific semantics: Attack = mine nearest · Defend = hide inside the own castle · Hold/Ambush = position circle only, mine a mine in it, never attack · Follow = as everyone else) — which requires re-opening `AMinerUnit`'s **structural** non-combat seal without re-opening its ability to attack. Two smaller items ride along: the **`SM_Wizard` static-mesh LOD chain** (Jonathan asked directly; the decision CONVENTIONS was holding for is now GIVEN) and the **Sorcerer card-art re-render + the systemic card-gate hardening**. Develops on `main`, NO push. **⛔ SERIALIZES BEHIND THE STAGED ANCIENT-GROUNDS BATCH — the whole code lane is `blocked-by TASK-378` and `SummonedUnit.{h,cpp}` is additionally `blocked-by TASK-389`; only TASK-405 (a question for Jonathan) can start immediately.** Full decomposition + rulings + flagged items in **"## FOLLOW-COMMAND"** under Active tasks; law in CONVENTIONS "FOLLOW command + the DEFAULT-STANCE law + the MINER command rework (2026-08-02)" (written FIRST, 9 sub-sections incl. the pinned signature registry). **Does NOT consume the M8 Phase-1 checkpoint gate, and does NOT substitute for Jonathan's owed multiplayer + 3×-castle feedback.**
 
+**LLM-ASSISTANT batch (2026-08-02, WAVE 0 = TASK-409..426; Waves 1–2 are gated one-liners)** — a STANDALONE feature batch in the FOLLOW-COMMAND / ANCIENT-GROUNDS shape, **not** a GDD milestone and **not** part of M8. Jonathan approved an **in-match local-LLM command assistant**: the player types a natural-language order (*"send 10 footmen with a sorcerer to the nearest ancient ground"*) and a **local LLM shipped inside the game** translates it into the game's existing unit commands, surveying state first and asking a clarifying question when the request cannot be met. **His four rulings are DECIDED and are not re-litigated:** CPU fallback required (modal 8 GB Steam card, no vendor lock-in) · V1 = text-only vertical slice (no voice, no macro UI, no settings screen) · **command only** (the AI never plays cards and never spends gold) · prompt-engineer first, fine-tune only if measurement demands it. ⚠️ **WAVE 0 OPENS WITH A GO/NO-GO SPIKE (TASK-409..415) WHOSE SIX MEASUREMENTS CAN KILL THE FEATURE** — nothing in Wave 1 is written until it reports, and the verdict gate is Jonathan's (TASK-415). Wave 0 is otherwise **new-files-only** and touches nothing the FOLLOW batch owns, so it **starts immediately under the M8 PARALLEL LAW**; **Wave 1 is gated on the FOLLOW batch commit (TASK-403)** and stays one-liners until it lands. Develops on `main`, NO push. Full decomposition + rulings + flagged items in **"## LLM-ASSISTANT"** under Active tasks; law in CONVENTIONS **"In-match LLM command assistant (v1, text-only) — 2026-08-02"** (written FIRST, 10 sub-sections incl. the two manager rulings and the pinned cross-task signature registry). **Does NOT consume the M8 Phase-1 checkpoint gate, and does NOT substitute for Jonathan's owed multiplayer + 3×-castle feedback.**
+
 ### Standing backlog (manager notes — NOT tasks, no IDs yet)
 - **Balance pass** — Jonathan flagged balancing changes wanted post-M4 (M4 playtest sign-off 2026-07-08: "we will have to make some balancing changes later, but it is fine"). **FIRST NOTES ARRIVED + TASK-IZED 2026-07-24 → TASK-278..279 ("W1 Economy-balance tasks" block below):** passive gold 1/2s→1/1s (reverts the TASK-089 income half) + ALL 28 card costs ×3 + bot `AttackBankThreshold` 12→36 audit; W1-lane branch work on `m7.6-arena10x`; StartingGold 10 left unchanged (flagged). Ledger continues in handoffs/TASK-279.md. This is a partial pass (Jonathan may send more notes). Feed-ins still on file: TASK-090 balance ledger (undefended-castle kill time ~56.5 s / ~71.3 s post-economy-change vs ~33 s prior; bot played ZERO early Miners in both rush matches — bot spend-mix), TASK-070 tuning note (bot opens with attack, not economy). **INTEGRATED 2026-07-24 (TASK-279, build-master, commit `3c32e25` on m7.6-arena10x):** base income 1/2s→1/1s LIVE (CDO `BaseIncomeTickPeriod=1`; PIE runtime: bot reached 36 gold from StartingGold 10 in ~26 s, then 18→36 in ~18 s = 1 gold/s), all 28 DT_Cards `Cost` cells ×3 LIVE (`set_rows` + readback Footman 9 / Ogre 36 / DeepMine 45 / CrystalTower 27, no other column drifted, DT_Cards.uasset saved + committed), bot `AttackBankThreshold` 12→36 LIVE (LogSiegeBot: banked to 36 → fielded Knight cost 18 ×2; deck 'Bot Aggro Rush' avg cost 14.16). StartingGold LEFT at 10 (flagged). NEXT-PASS WATCH (Jonathan): undefended-castle kill-time lengthens further under ×3 costs (prior ~56.5/71.3 s); the slower opening + bot heavier-unit mix is a feel check.
 - **HUD overtime indicator never shows** (pre-existing bug found at TASK-090, routed to manager): WBP_HUD ShowOvertime calls UpdateOvertimeDisplay with a hardcoded-false pin (bound via SetupStatTexts CreateEvent; UpdateOvertimeDisplay itself is correct). One-pin UMG fix + shortened-threshold verify — fold into the next UMG-touching chain or the balance pass; do not lose it.
@@ -2980,8 +2982,9 @@ is whole; only the *tooling head start* was destroyed.
 
 #### TASK-379 — [AG-FU1] Two public getters on `ASummonedUnit` + delete the `SiegeCheatManager` reflection block + interpolate the Sorcerer rule line (gameplay-programmer)
 - assignee: gameplay-programmer
-- status: backlog
-- blocked-by: **TASK-378** (file ownership — ruling 12; `SummonedUnit.{h,cpp}` / `SiegeCheatManager.{h,cpp}` / `DeckBuilderWidget.{h,cpp}` are held by the batch until it commits)
+- status: **qa-passed** (2026-08-02 — `qa/TASK-380-report.md`: PASS, 0 BLOCKER / 2 WARN / 3 NIT. Both flagged spec problems RULED in the implementer's favour: the ACCEPTANCE "identical STRING" clause is a **SPEC DEFECT** (amended to "identical except the two derived magnitudes"), and the unlisted third constant reference was correctly baked to a literal. ⚠️ ORCHESTRATOR DEVIATION: TASK-396 was released WITHOUT waiting for the TASK-389 commit — 379's edits are qa-passed and stable on disk, and the commit was hygiene closing a double-hold, not a correctness gate; TASK-379 will ride in the Follow lane's commit (TASK-403) instead.)
+- handoff: `handoffs/TASK-379-programmer.md` (2026-08-02) — getters at `SummonedUnit.h:467`/`:482`, both PUBLIC (block `121`…`484`); `SiegeCheatManager.cpp` **−19 lines** net, per-instance read preserved, CEIL+1e-4 arithmetic untouched; `DeckBuilderWidget.cpp` Sorcerer line renders **`+5%`** / **`+400%`** derived. ⚠️ **QA: one spec tension flagged, not silently resolved** — the board's *"renders the identical STRING today"* cannot hold together with interpolating; the panel diff is exactly two insertions and the handoff argues the reading. Also: a third reference to the deleted constant existed at the `SkippedCount` warning (not in the spec's list) — baked to a literal, emitted string byte-identical. `SummonedUnit.h` property lines drifted **+34** (`:652`/`:662` → `:686`/`:696`).
+- blocked-by: **TASK-378** (file ownership — ruling 12; `SummonedUnit.{h,cpp}` / `SiegeCheatManager.{h,cpp}` / `DeckBuilderWidget.{h,cpp}` are held by the batch until it commits) — **CLEARED 2026-08-02**: ANCIENT-GROUNDS committed at `6e79a24` + `80c47e8` + `84be88c`
 - parallel-safe: yes vs TASK-381/382/383/385 (file-disjoint); no vs anything else touching these three files
 - spec: >
     **QA's own verdict at `qa/TASK-365-report.md` ("THE SIMPLIFICATION VERDICT") is the spec — read that section first; it is more precise
@@ -3020,7 +3023,7 @@ is whole; only the *tooling head start* was destroyed.
 
 #### TASK-380 — [AG-FU1-QA] QA review of TASK-379 (qa-reviewer)
 - assignee: qa-reviewer
-- status: backlog
+- status: **done** (2026-08-02 — VERDICT **PASS**. Report `qa/TASK-380-report.md` ⚠️ **NOTE THE FILENAME** — the spec says `qa/TASK-380.md`; the `-report` file is authoritative, append compile errors THERE. Criteria (a)-(e) all addressed by name; 2 spec problems ruled. ⚠️ **BUILD-MASTER DUTY carried from WARN-2:** `SummonedUnit.h`'s access specifiers are `121:public:` / `484:protected:` / `745:private:` and TASK-379's getters sit at `:467`/`:482` — **re-run the specifier grep after ANY later header edit and before compiling**; a specifier inserted above `:482` makes every call site fail to LINK. Manager follow-up: 1 CONVENTIONS §4 note — `DeckBuilderWidget.cpp:82`'s "for each second" still hardcodes `AAncientGround::BoostTickInterval`, the third §4 lever.)
 - blocked-by: TASK-379
 - parallel-safe: no (gates TASK-389)
 - spec: >
@@ -3424,6 +3427,7 @@ PRE-COMP" and → the SK-LOD "reapplied post-import" clause, which reserves the 
 3. **The two EDITOR tasks (TASK-399, TASK-404) are `blocked-by: TASK-378` too** — not for file ownership but because an agent dirtying `/Game/` assets during Jonathan's ship-gate PIE session is exactly the disturbance to avoid, and TASK-378's commit would sweep the new asset.
 4. **The card-art items ride the EXISTING chain** rather than opening a parallel one: TASK-406 (`cardart_accept.py`) is `blocked-by: TASK-385`, and TASK-408 (the Sorcerer re-render) feeds TASK-388's import + TASK-390's commit. Both of those staged tasks are AMENDED IN PLACE with a one-line note (the board's documented amendment pattern), not rewritten.
 5. **Only ONE task in this batch can start immediately: TASK-405** — and it is a question for Jonathan, not work.
+6. **⛔ ADDED 2026-08-02 — THE QUIET-MODULE LAW, AND THIS LANE IS THE ONE THAT GOT BURNED BY IT.** **TASK-401 came back `Result: Failed` on three diagnostics that belong to the LLM-ASSISTANT batch** (`SiegeAssistantCommand.cpp`, `SiegeAssistantSnapshot.cpp`) — files a live agent in that batch was writing while this lane's build ran. **This lane compiled COMPLETELY CLEAN: 7 lane TUs + 4 unity blobs, zero diagnostics, and a grep of every §7 pinned symbol ∩ `error|warning|unresolved` returned zero rows — the pinned registry HELD.** ⚠️ **Those three diagnostics are NOT TASK-401 findings, are NOT this lane's defects, and MUST NOT be counted against its QA loop budget** — they are routed to TASK-419 (the LLM batch's gate) as early information. **TASK-401 is RE-RUN once the module is quiet, not re-litigated.** Law: CONVENTIONS "⛔ THE QUIET-MODULE LAW — build-gate serialization (2026-08-02)". **TASK-401 and TASK-403 are mutually exclusive with TASK-420 / TASK-422 / TASK-425, and no game-module programmer task may be in flight during any of them.**
 
 ### Manager rulings (binding for TASK-395..408)
 
@@ -3454,7 +3458,8 @@ PRE-COMP" and → the SK-LOD "reapplied post-import" clause, which reserves the 
 
 #### TASK-395 — [FC-1] Follow command — controller plumbing: the enum value, the C binding, the ONE-stage pick, and THE default follow group (gameplay-programmer)
 - assignee: gameplay-programmer
-- status: backlog
+- status: **qa-passed** (2026-08-02 — `qa/TASK-400-report.md`: PASS, 0 BLOCKERS. Anti-repath composition verified **structurally** — no unit is driven by two of the three contributors, so the two-drivers-on-one-`UPathFollowingComponent` mill is impossible in this lane. RULING 1: the **monotonic enrollment ordinal is UPHELD, do NOT revert** — `PruneUnitGroups` compacts `Members` (`:3182-3189`), so with Follow as the spawn default the literal "by member index" reading would make two live followers sharing one station the COMMON case, i.e. it would ship a defect.)
+- handoff: `handoffs/TASK-395-programmer.md` (2026-08-02) — `UnitCommand.h` + `SiegePlayerController.{h,cpp}` only; **no compile / no Git / no editor**. ⚠️ **HARD LINK DEPENDENCY: calls `ASummonedUnit::IsFollowCommandEligible()` (TASK-396's, not written yet) — TASK-395 CANNOT COMPILE ALONE and must be built together with TASK-396** (§7 pinned registry, UBT compiles the module as one unit; not a defect, do not open a QA loop over it). M8 DECLARATION DUTY: **no new replicated property, no new replicated class, no new relevancy tier — stated explicitly in the handoff.** Anti-repath threshold = `FollowRepathTolerance` **250** uu, justified against four measured constraints in handoff §6. Deliberate spec deviation flagged for QA: stations use a **monotonic enrollment ordinal** instead of the recycled `Members` array index (one-line revert noted).
 - blocked-by: **TASK-378** (module-compile + parked-C++ law — see the SERIALIZATION block above)
 - parallel-safe: yes vs TASK-396 / TASK-397 / TASK-399 / TASK-404 (file-disjoint, signatures pinned); **EXCLUSIVE owner of `UnitCommand.h` + `SiegePlayerController.{h,cpp}`**
 - spec: >
@@ -3497,8 +3502,9 @@ PRE-COMP" and → the SK-LOD "reapplied post-import" clause, which reserves the 
 
 #### TASK-396 — [FC-2] Follow command — the unit-side body, the eligibility split, and the spawn auto-enroll (gameplay-programmer)
 - assignee: gameplay-programmer
-- status: backlog
-- blocked-by: **TASK-389** (file ownership: `SummonedUnit.{h,cpp}` is held by ANCIENT-GROUNDS until TASK-378 and then by TASK-379 until TASK-389 commits — see the SERIALIZATION block)
+- status: **qa-passed** (2026-08-02 — `qa/TASK-400-report.md`: PASS, 0 BLOCKERS. **Link surface CONFIRMED independently**: exactly three specifiers at 121/574/862, TASK-379's getters at 557/572 both inside `[121, 574)`; 13/13 §7 pins character-for-character including access levels. No-attack seal holds per-STANCE on entry AND exit; `HandleHeroDied` verified NOT to release groups, so ruling 8 genuinely holds. The Cleric hoist verified diff-by-branch — it returns ONLY for `Type == Follow`, so Hold/Ambush/Siege/Support/stance/legacy paths are all reached identically. Deleting its own `ShouldSpawnFollowing()` draft was the right call and is upheld.)
+- handoff: `handoffs/TASK-396-programmer.md` (2026-08-02) — `SummonedUnit.{h,cpp}` ONLY; **no compile / no Git / no editor / no MCP**. ⚠️ **THE KEYSTONE: this task supplies the virtuals TASK-395 and TASK-397 already call — the four-task batch compiles as ONE UBT module against §7 and must be built together, which is the designed state, not a defect.** ✅ **LINK-BREAKER VERIFIED: access specifiers are still exactly three (`public:` 121 / `protected:` 574 / `private:` 862) — NO new specifier was introduced, and TASK-379's getters moved only from `:467`/`:482` to `:557`/`:572`, still inside the SAME original `public:` block.** All five §7 pins landed character-for-character, `UpdateStateFollow` at the pinned `protected`. M8 DECLARATION DUTY: **no new replicated property, no new replicated class, no new `UPROPERTY` at all, no new relevancy tier — stated explicitly in the handoff.** Anti-repath CONSUMES `ASiegePlayerController::FollowRepathTolerance` (never re-declares 250) and compares against the last ISSUED goal via a NEW dedicated latch. 🚩 **MINER SPAWN-DEFAULT: a base-side carve-out was drafted and DELIBERATELY DELETED — it would have silently defeated TASK-398's `bFollowOnSpawn = true`, Jonathan's designated flip. The enroll gates on `IsFollowCommandEligible()` and NOTHING else, inside `Super::BeginPlay`'s stack, which is exactly the contract TASK-398's window depends on.** Deliberate deviations flagged for QA: the enroll lives in `LoadStatsAndStart` (not `BeginPlay`'s tail — `Profile`'s ctor default is `Standard`, so the literal placement would enroll an Ogre before its row said Siege), and the anti-repath band carries an extra "…and still walking" term that closes a stall.
+- blocked-by: **TASK-389** (CLEARED — `SummonedUnit.{h,cpp}` released; TASK-379's getters are on disk and untouched by this task)
 - parallel-safe: yes vs TASK-395 / TASK-397 / TASK-399 / TASK-404 (file-disjoint, signatures pinned); **EXCLUSIVE owner of `SummonedUnit.{h,cpp}`**
 - spec: >
     Implement CONVENTIONS §3, §4 and the unit half of §2. **§7's pinned registry is character-for-character binding — a task that "improves"
@@ -3545,8 +3551,10 @@ PRE-COMP" and → the SK-LOD "reapplied post-import" clause, which reserves the 
 
 #### TASK-397 — [FC-3] Miner command SEAM — DIAGNOSE-FIRST unseal decision, landed with PROVABLY ZERO behavior change (gameplay-programmer)
 - assignee: gameplay-programmer
-- status: backlog
-- blocked-by: **TASK-378**
+- status: **qa-passed** (2026-08-02 — `qa/TASK-400-report.md`: PASS, 0 BLOCKERS. Approach (B) upheld with zero base-class delta. ⚠️ **`LeaveMining` deliberately NOT clearing the goal latch (`MinerUnit.cpp:784-788`) is RULED CORRECT AND MUST NOT BE TIDIED** — it runs on every poll of a non-mining order, so clearing there would re-issue `MoveToLocation` at 4 Hz at a moving hero, which is the TASK-280/282 mill exactly. The invariant holds because `EnsureWalkingToNode` clears the latch unconditionally at entry, above its own early-outs (`:895`).)
+- blocked-by: **TASK-378** (CLEARED — ANCIENT-GROUNDS committed `6e79a24` + `80c47e8` + `84be88c`)
+- decision: **CONVENTIONS §6 approach (B)** — keep all three structural seals, read commands in the miner's own `UpdateMining` poll via the new `AMinerUnit::ResolveMinerOrder()`. **ZERO lines of `SummonedUnit.{h,cpp}` touched** (no collision with TASK-396). Handoff: `handoffs/TASK-397-programmer.md`.
+- ⚠️ **BUILD-ORDER DEPENDENCY:** `AMinerUnit::{CanFollowHero, CanTakeZoneOrders}` are `override`s of virtuals **TASK-396 has not landed yet** — the module does not compile until it does (the designed one-module-against-§7 batch state). `CanEverAttack()` carries no such dependency.
 - parallel-safe: yes vs TASK-395 / TASK-396 / TASK-399 / TASK-404 (file-disjoint); **no vs TASK-398** (same file, 398 serializes behind this)
 - spec: >
     **⛔ DIAGNOSE FIRST. This task lands the SEAM, not the behaviors — TASK-398 owns those. Its exit state is: the miner has a command seam,
@@ -3593,8 +3601,14 @@ PRE-COMP" and → the SK-LOD "reapplied post-import" clause, which reserves the 
 
 #### TASK-398 — [FC-4] Miner command SEMANTICS — the five-command table, the in-circle mine finder, the castle interior anchor (gameplay-programmer)
 - assignee: gameplay-programmer
-- status: backlog
-- blocked-by: **TASK-397** (same file, and this builds on its chosen architecture) · **TASK-395** (needs `ESiegeGroupCommandType::Follow` + `GetFollowAnchor`)
+- status: **qa-passed** (2026-08-02 — `qa/TASK-400-report.md`: PASS, 0 BLOCKERS. **The miner-enroll defect analysis is CONFIRMED independently**: `Members.Contains(WeakUnit)` early-return (`SiegePlayerController.cpp:3075`) sits ABOVE `AssignCommandGroup` (`:3098`), so a `ClearCommandGroup()` lever really would have made Follow permanently unreachable for miners while passing every "does a spawned miner mine" test. The two-gate refusal closes it, and **`bFollowOnSpawn = true` was traced end-to-end and genuinely works** as Jonathan's no-compile flip. RULING 6: the stance-inheritance flag (a miner played after **E** hides in the castle until **T**) is **ACCEPTABLE TO SHIP** — it is the pre-existing `bHasIssuedCommand` latch reaching a new unit type, and a miner-only carve-out would be a second silent lever on one decision, exactly what TASK-396 just deleted. Stays a named TASK-402 item; ⚠️ tell Jonathan plainly that **pressing E silently zeroes mining income until T.**)
+- handoff: `handoffs/TASK-398-programmer.md` (2026-08-02) — `MinerUnit.{h,cpp}` + `GoldNode.{h,cpp}` + `Castle.{h,cpp}` ONLY; **zero lines of `SummonedUnit.*` / `SiegePlayerController.*` / `UnitCommand.h`** (verified `git diff --numstat`). **No compile / no Git / no editor.** All five branches built on TASK-397's seam; Hold and Ambush share ONE `case` label (implemented once, cannot fork). **Four of six files are PURE ADDITIONS (0 deletions); `MinerUnit.cpp` removes 4 executable lines, each proven behaviour-preserving under `Mode == Mine` in handoff §5** — `FindBestMineFor` untouched, `SeekBestMine` byte-identical, income/tenure/eviction/death bookkeeping one shared block.
+- ⚠️ **THE §5 MINER SPAWN-DEFAULT RULING IS DELIVERED, AND *NOT* BY THE LEVER TASK-397 FLAGGED.** `ClearCommandGroup()` after the auto-enroll would have left the miner in the follow group's `Members` array, where `EnrollInDefaultFollowGroup`'s `Contains()` early-out swallows every future **C** press — **Follow would have been permanently unreachable for miners**. Shipped instead: `AMinerUnit::CanFollowHero()` answers the new `EditDefaultsOnly bFollowOnSpawn` for exactly as long as `Super::BeginPlay()` is on the stack, so the enroll is REFUSED at **two independent gates** and the miner joins no group and no `Members` array. Spawn→mining proven call-by-call against the **landed** TASK-396 code in handoff §2; TASK-396's own comments independently document the same contract. **FLIP LINE: `AMinerUnit::bFollowOnSpawn` (`MinerUnit.h`) — `false` = spawns MINING (shipped), `true` = the literal reading. `EditDefaultsOnly`, so Jonathan can flip it on `BP_Unit_Miner` with NO compile.**
+- 🚩 **NEW FLAG FOR TASK-402:** reinforcement miners inherit the **stance** (pre-existing Shield-Wall law, not a change here), so a miner played after **E** walks to the castle instead of mining until **T**. Distinct from flag (a), which is about group orders.
+- ⚠️ **NOT DISCHARGED HERE — belongs to TASK-401:** the castle interior anchor's LIVE nav-projection. Derived world points are **Blue (−25000, 0, 0) / Red (+25000, 0, 0)** (`ZeroVector` default; two independent doc sources, handoff §6), and the code LOGS the resolved point once per miner so the PIE task reads it back with no editor probe.
+- M8 DECLARATION DUTY: **no new replicated property, no new replicated class, no new relevancy tier — stated explicitly in the handoff.** `InteriorAnchorRelativeLocation` / `bFollowOnSpawn` are `EditDefaultsOnly` design-time data (the shipped `GateBlocker*` precedent).
+- deviation (flagged for QA): `ACastle::FindNearestCastleForTeam(UWorld*, ETeamId, const FVector&)` is a NEW public static NOT in the §7 registry — `ASummonedUnit::FindOwnCastle()` (named in `names:`) is **private** and its file is TASK-396's, so it was unreachable. Faithful mirror; one metric deviation documented. Also: `CanFollowHero()` returns a member rather than a literal `true` (signature still §7-pinned character-for-character; only the VALUE is data-driven — that IS the §5 semantic).
+- blocked-by: **TASK-397** (CLEARED — seam landed, approach (B)) · **TASK-395** (CLEARED — `ESiegeGroupCommandType::Follow` + `GetFollowAnchor` verified in the landed tree). TASK-396 also landed mid-task and supplied the public `ASummonedUnit::GetGroupStationOffset()`, which **removed** this task's planned derived-offset duplication: Follow now uses the identical `Anchor->GetActorLocation() + GroupStationOffset` expression the base's `UpdateStateFollow` uses.
 - parallel-safe: no vs TASK-397; yes vs TASK-399 / TASK-404; **EXCLUSIVE owner of `GoldNode.{h,cpp}` + `Castle.{h,cpp}`**
 - spec: >
     Wire CONVENTIONS **§5's table** onto TASK-397's seam. **Jonathan's words are the spec and are quoted in the batch header — read them.**
@@ -3635,7 +3649,7 @@ PRE-COMP" and → the SK-LOD "reapplied post-import" clause, which reserves the 
 
 #### TASK-399 — [FC-5] `IA_CmdFollow` input action + the `C` mapping in `IMC_Hero` (art-director, EXCLUSIVE editor)
 - assignee: art-director
-- status: backlog
+- status: ready-for-integration
 - blocked-by: **TASK-378** (no agent dirties `/Game/` during Jonathan's ship-gate PIE session, and TASK-378's commit would sweep the new asset)
 - parallel-safe: yes vs every code task (no C++); **no vs anything else needing the editor**
 - spec: >
@@ -3659,7 +3673,8 @@ PRE-COMP" and → the SK-LOD "reapplied post-import" clause, which reserves the 
 
 #### TASK-400 — [FC-QA1] QA gate covering TASK-395 · 396 · 397 · 398 (qa-reviewer)
 - assignee: qa-reviewer
-- status: backlog
+- status: **done** (2026-08-02 — VERDICT **PASS ×4, 0 BLOCKERS** · 3 WARN · 6 NIT. Nothing went back to a programmer.)
+- report: `qa/TASK-400-report.md` (2026-08-02) — all 11 named criteria met; **10 flagged decisions RULED, all upheld**. Anti-repath composition verified structurally sound (3 latches, 2 drivers, no unit driven by both). ⚠️ **TASK-401 inherits 4 named PIE watch items**, chiefly **WARN-1**: a follower crossing the 150 uu idle ring at a *moving* anchor produces a ~0.5–0.75 s stop-go hitch — not the mill (every request produces motion) and the 150 uu test is CONVENTIONS §4 law, so it was not failed, but it is the likeliest "stutter" report at the gate. **If it reads badly the fix is HYSTERESIS, NOT lowering `FollowRepathTolerance` — that value is the mill floor.** WARN-2: a stranded Defend miner re-queries pathfinding at 4 Hz behind a one-shot warning, so the retry storm is invisible in the log. TASK-401 also owns the castle interior anchor's live nav-projection check (correctly NOT claimed by TASK-398, which had no editor; the probe is built — `MinerUnit.cpp:722-729` logs the resolved point once per miner, expect Blue −25000,0,0 / Red +25000,0,0).
 - blocked-by: TASK-395 · TASK-396 · TASK-397 · TASK-398
 - parallel-safe: no (gates TASK-401)
 - spec: >
@@ -3693,9 +3708,131 @@ PRE-COMP" and → the SK-LOD "reapplied post-import" clause, which reserves the 
 
 #### TASK-401 — [FC-6] Compile GREEN + machine PIE verification of the Follow/Miner lane (build-master)
 - assignee: build-master
-- status: backlog
-- blocked-by: TASK-400 **PASS** · TASK-399
+- status: ✅ **done — COMPILE + LINK GREEN** (2026-08-02 RUN #3 @ 15:02, `Result: Succeeded`). **PIE checks (a)–(i) + the live nav-projection are formally DELEGATED to TASK-402** — desktop LOCKED, real input impossible, exactly as this spec directs. Handoff: `handoffs/TASK-401-buildmaster.md`
+- blocked-by: TASK-400 **PASS** · TASK-399 — ⛔ *(RUN #2's hard blocker on TASK-419/420 is CLEARED: TASK-417 fixed forward, so the module went green without the Follow lane having to wait)*
 - parallel-safe: no
+- result: >
+    ## ✅ RUN #3 (2026-08-02 15:02) — **GREEN. THE LANE COMPILES AND LINKS.**
+    ```
+    Result: Succeeded
+    Total execution time: 5.78 seconds
+    ```
+    **Zero errors, zero warnings, zero unresolved externals** — a grep of the whole log for
+    `error|warning|unresolved|LNK` returns exactly one line: `Result: Succeeded`.
+    ✅ **THE LINK WAS REACHED FOR THE FIRST TIME ⇒ QA's WARN-2 LINK SURFACE IS NOW PROVEN BY MACHINE.**
+    Runs #1/#2 both aborted at compile, so the link had NEVER executed. Run #3 ran
+    `[2/4] Link UnrealEditor-GitClaudeUnrealTest.lib` + `[3/4] Link UnrealEditor-GitClaudeUnrealTest.dll`,
+    **both succeeded with zero unresolved externals** — the only real proof that every §7 pinned symbol resolves across
+    TASK-395↔396↔397↔398↔**379** (incl. TASK-379's `GetPermanentDamageBonusPerStack`/`GetMaxPermanentDamageStacks`,
+    the access-specifier risk TASK-380 raised). **Static proof is not a link. This is a link.**
+    **Binary: `UnrealEditor-GitClaudeUnrealTest.dll` 2026-08-02 15:02:23, 3,281,920 B** (was 2,907,136 B @ 08-01 18:23) ⇒ it now
+    **postdates the lane source (12:23:51)**, so the shipped binary FINALLY CONTAINS THE LANE. The "no binary" PIE blocker is GONE.
+    **Lane compile proof is NOT stale:** run #3 ran only 4 actions (1 compile + 2 links + metadata); UBT legitimately reused the lane
+    objects (every lane `.obj` ~14:01 postdates its source ≤12:23, unchanged since). **The link consumed all of them**, so the green
+    link covers the whole lane, not just the one recompiled file.
+    ✅ **CAUSE OF RUNS #1/#2, CLOSED:** both were **100% FOREIGN** diagnostics (TASK-416/417), **never this lane** —
+    TASK-395/396/397/398 emitted **zero** diagnostics across all three runs and **no QA loop was ever consumed**. Run #1 = a **race**
+    (live agent writing mid-build ⇒ produced the QUIET-MODULE LAW). Run #2 = **structural**: module genuinely quiet, but foreign
+    `ready-for-qa` code had never compiled. 🚨 **RUN #2's FINDING IS CONFIRMED BY ITS OWN RESOLUTION — A QUIET MODULE IS NOT A GREEN
+    MODULE**; `ready-for-qa` = "finished writing", NOT "known to build". **Proposed amendment:** *a compile gate requires that every
+    other lane's code in the module has already passed its own compile gate, or is absent.*
+    ✅ **FIX VERIFIED AGAINST THE ARTIFACT, NOT THE RELAY** (RELAYED-DIAGNOSIS LAW): `FJsonObject::Values` is keyed by
+    **`UE::FSharedString`** (interned), not `FString` — **exactly why `TPair<FString, TSharedPtr<FJsonValue>>&` CONVERTED rather than
+    BOUND.** TASK-417 routed all 7 key uses through two helpers that never name the concrete type (`JsonKeyView`/`JsonKeyString`, using
+    only `operator*` and `Len()`), so it compiles under either `UE_JSONOBJECT_LEGACY_STRING_KEYS`. **I touched NO foreign file in any
+    run** — mtimes identical before/after each build.
+    ✅ **PLUGIN HELD OUT AGAIN AND RESTORED.** `SiegeLlama` backed up (sha `63058f3c…`), set `"Enabled": false`, built with **zero**
+    `SiegeLlama`/`llama` occurrences in the log (fully excluded), then **restored byte-identically** (same sha, 859 B, `"Enabled": true`).
+    ⚠️ **TASK-412/420 TRAP:** the `.uplugin` has **`"EnabledByDefault": true`** ⇒ **deleting the `.uproject` entry does NOT disable it**;
+    it must be explicitly `false`. **The plugin remains UNPROVEN through UBT/UHT — its gate is still TASK-412/420.**
+    ✅ **BONUS (NOT a PIE claim): headless `-run=pythonscript` CDO probe — `Success - 0 error(s)`**, proving the freshly-linked module
+    loads and initialises at runtime (which a link alone does not prove). All 5 lane classes **FOUND**;
+    **`FollowRepathTolerance = 250.0` — machine-confirmed UNTUNED**; `FollowFormationRadius = 900.0`;
+    **`Castle.InteriorAnchorRelativeLocation = (0,0,0)` read from the BUILT CDO** (upgrades the anchor argument from header-read to
+    binary-read ⇒ Blue −25000,0,0 / Red +25000,0,0 — still the VALUE, not its reachability); **`bFollowOnSpawn` IS reflected and
+    editable** (python name `follow_on_spawn`, default `False`) ⇒ Jonathan's no-compile flip genuinely exists.
+    ❌ **PIE NOT RUN, ZERO ITEMS CLAIMED — (a)–(i) ALL left OPEN for TASK-402.** One absolute blocker remains: the **desktop is LOCKED**
+    (`LogonUI` RUNNING, `GetForegroundWindow()`=0), so **real key presses are impossible** and check (a) requires one by shipped law.
+    **The castle interior anchor's LIVE nav-projection is STILL OWED and I do NOT claim it — it is Jonathan's at TASK-402.**
+    A resolved coordinate is not a reachable one.
+    **`L_Arena` NEVER saved — 535,522 B / 7/29 03:53:38, verified unchanged.** No `Content/` asset dirtied by the probe.
+    **No code changed, no value tuned. No commit, no push, nothing staged by me.** HEAD `5fa10eb`.
+    ⚠️ **CARRY-FORWARD TO TASK-403/414 — `.gitattributes` LFS ORDERING TRAP:** Jonathan ruled `*.dll`/`*.lib` get LFS rules at the
+    **repo root**; the pattern MUST land **BEFORE** those files are first committed or they stay **raw blobs in history permanently**
+    (only a history rewrite would undo it). **`Plugins/SiegeLlama/` is ~72 MB, untracked — the trap is LIVE and TASK-414 springs it.**
+    Order: (1) land patterns → (2) `git check-attr filter -- <path>` → (3) only then `git add`.
+
+    ## ⛔ RUN #2 (2026-08-02 ~14:50) — **QUIET WAS NOT ENOUGH. A QUIET MODULE IS NOT A GREEN MODULE.**
+    I enforced the QUIET-MODULE LAW's pre-flight and **the module was genuinely quiet** (416/417/418/409 all
+    `ready-for-qa` with handoffs written; 410/411/423 `backlog`; newest source write 14:15:32 vs build 14:49 = 33 min idle).
+    **It failed anyway**, on **4 NEW diagnostics in the same foreign file** — verbatim:
+    `SiegeAssistantCommand.cpp` **(72,18) · (96,18) · (116,19) `error C2039: 'Equals': is not a member of 'UE::TSharedString<TCHAR>'`**
+    and **(125,16) `error C2664` cannot convert `FJsonObjectSharedStringStorage::FStringType` → `const FString&`**.
+    ```
+    Result: Failed (OtherCompilationError)
+    Total execution time: 7.40 seconds
+    ```
+    🚨 **THE STRUCTURAL FINDING (proposed law amendment):** "quiet" = *every C++ task finished (handoff written)* stops the
+    **race**, but does **NOT** make foreign code **compile**. **`ready-for-qa` means "finished writing", NOT "known to build".**
+    TASK-416/417/418 are finished, quiet, and **RED**, and they share the one UBT module. ⇒ **TASK-401 CANNOT reach
+    `Result: Succeeded` until the LLM-ASSISTANT lane compiles.** Re-running achieves nothing.
+    🚨 **ORDERING INVERSION NEEDING A DECISION:** the board makes TASK-401/TASK-420 mutually exclusive but leaves the ORDER open.
+    It is now **forced: TASK-419 → TASK-420 green → then re-run TASK-401.** The **older, `qa-passed`, ready-to-commit Follow lane
+    is now gated behind the newer, pre-QA LLM lane.** Alt route (b): the **LLM batch's own owner** parks its own files — legitimate
+    only if done by that batch, never by me.
+    ✅ **VINDICATES the RELAYED-DIAGNOSIS entry #3 — the compiler named the type.** The C4172 diagnosis was **CORRECT**:
+    the key really is **`UE::TSharedString<TCHAR>`**, not `FString`, which is exactly why naming
+    `TPair<FString, TSharedPtr<FJsonValue>>&` **converted rather than bound**. The `auto&` fix correctly removed the temporary
+    **and thereby exposed the true key type at every use site** — a latent dangling-pointer bug traded for 4 loud compile errors
+    (a strict improvement, still red). Owner **TASK-417**, routed to **TASK-419** as EARLY INFORMATION. **Not TASK-401 findings.**
+    ✅ **PLUGIN HAZARD HANDLED AND NOT IMPLICATED.** `SiegeLlama` **was enabled**; I backed the `.uproject` up (sha `63058f3c…`),
+    set `"Enabled": false`, built (**zero** `SiegeLlama`/`llama` occurrences in the log ⇒ fully excluded), then **RESTORED
+    byte-identically** (same sha `63058f3c…`, 859 B, `"Enabled": true`; `git diff` shows only TASK-409's original 4-line insert).
+    ⚠️ **TRAP FOR TASK-412/420:** the `.uplugin` has **`"EnabledByDefault": true`**, so **deleting the `.uproject` entry does NOT
+    disable it** — it must be explicitly `"Enabled": false`. The plugin remains **unproven through UBT/UHT**; its gate is TASK-412/420.
+    ✅ **LANE COMPILE PROOF HOLDS, NOT STALE.** Run #2 ran only 8 actions (5 compiles, all `SiegeAssistant*`); UBT legitimately
+    skipped the lane TUs because **every lane `.obj` (~14:01) postdates its source (≤12:23) and no lane source changed since.**
+    ❌ **LINK STILL NEVER REACHED** in either run ⇒ WARN-2's link surface **remains unproven by machine**.
+    ✅ **I touched NO foreign file** — `SiegeAssistantCommand.cpp` 14:14:56 · `Snapshot.cpp` 14:14:34 · `Vocabulary.cpp` 14:15:32,
+    **identical before and after my build.** The fix was 4 small edits and visible to me; the law says a contaminated gate is
+    **RE-RUN, not re-litigated**, and fixing another batch's file is a single-owner violation stacked on a serialization violation.
+    ❌ **PIE NOT RUN, zero items claimed** — two independent blockers: the shipped
+    `UnrealEditor-GitClaudeUnrealTest.dll` is **2026-08-01 18:23:28**, a full day OLDER than the lane's newest source
+    (2026-08-02 12:23:51) ⇒ **no binary contains the lane**; and the **desktop is LOCKED** (`LogonUI` RUNNING,
+    `GetForegroundWindow()`=0). **The castle interior anchor's LIVE nav-projection is STILL OWED and I do NOT claim it —
+    left to Jonathan's TASK-402**, exactly as instructed. `L_Arena` re-verified **535,522 B / 7/29 03:53:38 — UNCHANGED**.
+    **No code changed, no value tuned** (`FollowRepathTolerance` still 250.f). No commit, no push, nothing staged.
+    ⚠️ **CARRY-FORWARD TO TASK-403/414 — `.gitattributes` LFS ORDERING TRAP:** Jonathan ruled `*.dll`/`*.lib` get LFS rules at the
+    **repo root**; the pattern MUST land **BEFORE** those files are first committed or they stay **raw blobs in history permanently**.
+    **`Plugins/SiegeLlama/` is ~72 MB, untracked — the trap is LIVE and TASK-414 is what springs it.**
+
+    ## RUN #1 (2026-08-02 ~14:03) — the original contamination that produced the QUIET-MODULE LAW
+    **`Result: Failed (OtherCompilationError)`** — and **all 3 diagnostics are FOREIGN to this lane**:
+    `SiegeAssistantCommand.cpp(58) C4172` + `SiegeAssistantSnapshot.cpp(338) C2228/C2737`. Those files are **untracked** and belong to the
+    **Assistant/Llama batch (TASK-416 · TASK-417)**, whose own gate **TASK-420 has not run**. A parallel agent was **actively writing them
+    during the build** (`SiegeAssistantSnapshot.cpp` 33,245→33,799 B at 14:02:36; marker `▶ NOW TASK-417`), so they were **left untouched** —
+    not parked, not renamed. They share the **one UBT module** with this lane, which is how they broke a gate they have nothing to do with.
+    ⇒ **TASK-395 · 396 · 397 · 398 STAY `qa-passed`. NOT set `qa-failed`. NO QA loop consumed** — they emitted **zero** diagnostics.
+    **THE LANE COMPILED CLEAN:** all 7 lane TUs + 4 unity blobs, no diagnostic; a grep of the log for every lane file **and** every §7 pinned
+    symbol ∩ `error|warning|unresolved` returns **zero rows** ⇒ **no registry mismatch, §7 held.**
+    ⚠️ **LINK NOT REACHED** (aborted at compile) ⇒ WARN-2's link surface still unproven. Its **static** half was re-run and **PASSES**:
+    `SummonedUnit.h` = exactly 3 specifiers (`public:` **121** · `protected:` **574** · `private:` **862**), TASK-379's getters at **:557**/**:572**,
+    both inside the original `public:` block.
+    **numstat (QA ruling 5): TASK-398's six owned files match its claimed table 6/6 exactly.** Honest limit: HEAD predates all four tasks, so
+    numstat cannot attribute per-task lines on shared base files — so the **decisive content check** was run instead: every miner-related
+    added/removed line in `SummonedUnit.*`/`SiegePlayerController.*`/`UnitCommand.h` is a **COMMENT**; **zero miner executable code**. Ruling 5 stands.
+    **PIE: NOT RUN, zero items claimed — (a)–(i) ALL left OPEN for TASK-402.** Three independent blockers: no binary contains the lane (compile
+    red); the **workstation is LOCKED** (idle 3d15:28, `GetForegroundWindow()`=0, capture black) so the **real key presses are impossible**; and
+    MCP has **no function-invoke tool**, so `SummonTestUnit` has no route. **Castle interior anchor:** the *resolved value* is proven statically
+    (`TransformPosition(ZeroVector)` ≡ actor location ⇒ Blue −25000,0,0 / Red +25000,0,0; yaw-180 moot at this default), but the **live
+    nav-projection is still OWED** — the probe fires only on a real **E** press.
+    **`L_Arena` NEVER saved — 535,522 B / 7/29/2026 3:53:38 AM, verified unchanged.** Editor deliberately **left CLOSED** (a stuck Slate
+    "Save Content" modal forced process termination; blind-clicking risked hitting "Save Selected" next to "Don't Save"). No commit, no push,
+    nothing staged by me. **No code changed, no value tuned** — `FollowRepathTolerance` untouched at 250.f.
+    🚨 **FOLLOW-UP FOR THE MANAGER — PIPELINE SERIALIZATION DEFECT:** `Source/GitClaudeUnrealTest/` is **one UBT module**, so any in-flight
+    `.cpp` breaks every other lane's compile gate. **File-disjointness is not build-disjointness** — the M8 PARALLEL LAW guards edit conflicts
+    but not compile-gate contamination. **TASK-401 and TASK-420 must be mutually exclusive**, and no programmer task in that module may be
+    `▶ NOW` while either runs.
 - spec: >
     **Compile first (hard gate, must be GREEN).** Compile failure ⇒ append the errors to `qa/TASK-400.md` and route back to
     gameplay-programmer (**counts as a QA loop**; max 3, then escalate). **NO COMMIT IN THIS TASK** — TASK-403 owns Git.
@@ -3728,6 +3865,13 @@ PRE-COMP" and → the SK-LOD "reapplied post-import" clause, which reserves the 
 - spec: >
     **WHY A HUMAN: this batch changes the core game loop, and no machine check can answer "does it feel right".** Nothing commits until this
     passes (TASK-403).
+    **⚠️ STATUS NOTE 2026-08-02 — ALL PIE ITEMS (a)–(i) REMAIN OPEN, AND BUILD-MASTER CORRECTLY CLAIMED NONE OF THEM.** Three independent
+    blockers, none of them a defect: **no binary contains this lane** (the compile gate has not produced one), **the workstation session was
+    locked** so real key presses were impossible (the standing no-`SendInput` doctrine), and **MCP has no function-invoke route to
+    `SummonTestUnit`**. ✅ **One item DID advance statically:** the castle interior anchor's resolved **value** is proven —
+    `TransformPosition(ZeroVector)` ≡ the actor location ⇒ Blue **(−25000, 0, 0)** / Red **(+25000, 0, 0)**. ⚠️ **The LIVE NAV-PROJECTION IS
+    STILL OWED and stays your duty**, because that probe only fires on a real **E** press — a resolved coordinate is not a reachable one, and
+    "the miner nav-projects into the interior instead of stranding at the gate" is exactly the claim a static check cannot make.
     **THE FIVE DECISIONS THAT ARE YOURS — please answer each, they are all flagged manager defaults that SHIPPED:**
     1. **🚩 DO MINERS SPAWN MINING, OR FOLLOWING?** Shipped default: **mining** (today's behavior; Follow only when you circle them with C).
        The literal reading of your directive is that they spawn following and **earn zero gold until you personally order each one to mine**.
@@ -3762,6 +3906,7 @@ PRE-COMP" and → the SK-LOD "reapplied post-import" clause, which reserves the 
 - assignee: build-master
 - status: backlog
 - blocked-by: TASK-402 **PASS** (+ TASK-404 for commit C — commit A/B may proceed without it; say so if C is deferred)
+- ⚖️ **CROSS-BATCH CONSEQUENCE (manager ruling 2026-08-02, WARN-3): THIS COMMIT NOW GATES THE LLM BATCH TOO.** `ACastle::FindNearestCastleForTeam` is **absent from HEAD** and lives only in this lane's uncommitted tree, while `SiegeAssistantSnapshot.cpp:234-235` calls it twice — so **TASK-422 commit A is `blocked-by` THIS task**, and folding `Castle.{h,cpp}` into the LLM batch's commit was **REJECTED** (it would commit un-gated FOLLOW code under another lane's ownership). **Both commits therefore queue behind Jonathan's TASK-402 gate.** ⚠️ **Commit A must include `Castle.{h,cpp}`** — if it ships without them, `main` is left **non-compiling the moment TASK-422 lands**, even though every working tree compiled green.
 - parallel-safe: no (EXCLUSIVE Git — serialize with TASK-389 / TASK-390 / TASK-394; order between them is the orchestrator's call)
 - spec: >
     Final compile (must be GREEN), then commit **on `main`, NO PUSH** (Jonathan's push, standing law).
@@ -3780,7 +3925,7 @@ PRE-COMP" and → the SK-LOD "reapplied post-import" clause, which reserves the 
 
 #### TASK-404 — [FC-8] `SM_Wizard` — apply the `LargeProp` STATIC-mesh LOD chain (art-director, EXCLUSIVE editor)
 - assignee: art-director
-- status: backlog
+- status: ready-for-integration
 - blocked-by: **TASK-378**
 - parallel-safe: yes vs every code task; **no vs anything else needing the editor**
 - spec: >
@@ -3912,6 +4057,979 @@ PRE-COMP" and → the SK-LOD "reapplied post-import" clause, which reserves the 
     Tools: `Tools/ArtPipeline/cardart_render.py` (TASK-385) + `Tools/ArtPipeline/cardart_accept.py` (TASK-406).
     Law: CONVENTIONS "Card artwork (hand UI)" → the M7-tier clause, the CYCLES correction, the two render-script traps, the measured
     key-colour bar. Evidence: `handoffs/SORCERER-DARKNESS-diagnosis.md` §4/§5a.
+
+---
+
+## LLM-ASSISTANT (decomposed 2026-08-02) — in-match local-LLM command assistant · **WAVE 0 ONLY** (TASK-409..426); Waves 1–2 are gated one-liners
+
+**The feature in one line:** the player types a natural-language order — *"send 10 footmen with a sorcerer to the nearest ancient ground"* — and a **local LLM shipped inside the game** translates it into the game's existing unit commands, surveying state first and asking a clarifying question when the request cannot be met.
+
+**Design authority = Jonathan's approved plan `C:\Users\wesel\.claude\plans\there-is-one-new-glittery-bentley.md`** — it carries the research findings, the architecture, the six spike bars and the Wave 0/1/2 breakdown. **The plan file wins over any board summary.** Read it before starting any task in this batch; these specs do not re-derive it.
+
+**Jonathan's four rulings (DECIDED — no assignee re-opens them):** (i) **CPU fallback required** — must run on the modal 8 GB Steam card AND CPU-only, no vendor lock-in (⇒ **Vulkan + CPU backend, never CUDA**); (ii) **V1 = text-only vertical slice** — in-match console, the order verbs + unit selection, the clarification loop; **no voice, no macro UI, no settings screen**; (iii) **command only** — the AI never plays cards and never spends gold; (iv) **prompt-engineer first**, fine-tune only if measurement demands it.
+
+**LAW WAS WRITTEN FIRST (house rule):** CONVENTIONS **"In-match LLM command assistant (v1, text-only) — 2026-08-02"** — 10 sub-sections: the central law · the strictly-additive law · symbols-only · the unit-registry rejection · naming/folder law · **the two manager rulings** · licensing + repo hygiene · prompt layout/threading/multiplayer posture · **the pinned cross-task signature registry** · tunables.
+
+### ⚠️ WAVE 0 OPENS WITH A GO/NO-GO SPIKE. THIS IS BOARDED AS A SPIKE, NOT AS A FIRST INSTALMENT.
+
+**TASK-409 → 410/411 → 412 → 413 exists to answer whether this feature ships at all.** Its six measurements can kill it. The bars, from the plan:
+
+| # | Measure | Bar |
+|---|---|---|
+| 1 | Frame-time delta during prefill/decode — hitch histogram, **worst + p99, never mean** — across full-offload / partial / CPU-only | **No frame > 33 ms** attributable to inference on the **partial** tier |
+| 2 | TTFT + wall-clock for ~60 constrained tokens, warm prefix | **≤ 2 s partial · ≤ 6 s CPU-only** |
+| 3 | KV-prefix reuse works — prefill tokens turn 1 vs turn 2 | **~70 % drop.** If not, the prompt layout is wrong and must be fixed *first* |
+| 4 | Peak VRAM + RSS with the game at *its* peak | Fits 8 GB with room |
+| 5 | Accuracy on **40 hand-written Siegebound sentences** (ours, not BFCL) — exact match on `{intent, kinds, counts, where}` | **≥ 85 %.** Below: better few-shots → tighter grammar → bigger model → *only then* fine-tune |
+| 6 | Does a focused `UEditableTextBox` starve Enhanced Input of WASD? | Binary; determines the console's input fallback |
+
+**⛔ NOTHING IN WAVE 1 IS WRITTEN UNTIL THE SPIKE REPORTS.** That is a hard gate, restated on every Wave 1 one-liner.
+**⚠️ RUN IT IN PIE ON `L_Arena` WITH UNITS ON THE FIELD — never an empty map.** The entire risk being measured is *contention*; an empty-map number is worse than no number because it looks like evidence.
+
+### ⛔ BUILD-GATE SERIALIZATION — READ BEFORE DISPATCHING ANYTHING IN THIS BATCH (added 2026-08-02, after a live defect)
+
+**TASK-401 (the FOLLOW lane's compile gate) FAILED on three diagnostics from THIS batch's `SiegeAssistantCommand.cpp` and `SiegeAssistantSnapshot.cpp`** — files a live agent was actively writing while that build ran. **The FOLLOW lane itself compiled completely clean.** A clean lane was failed by a lane it has nothing to do with. Law: CONVENTIONS **"⛔ THE QUIET-MODULE LAW — build-gate serialization (2026-08-02)"**.
+
+> **FILE-DISJOINTNESS IS NOT BUILD-DISJOINTNESS.** `Source/GitClaudeUnrealTest/` is ONE UBT module; any in-flight `.cpp` in it — **even a brand-new file owned by an unrelated batch** — is compiled by, and can fail, every other lane's compile gate. **A compile gate requires a QUIET MODULE, not merely non-overlapping files.**
+
+Concretely, for this batch:
+1. **TASK-416 · 417 · 418 · 411 are game-module programmer tasks. NONE may be in flight while ANY compile gate runs** — including **TASK-401** (FOLLOW) and **TASK-420 / TASK-422 / TASK-425** (this batch). Their `▶ NOW` marking means "no task blocker", **not** "safe beside a build".
+2. **TASK-420 and TASK-401 are MUTUALLY EXCLUSIVE.** So are TASK-420 / TASK-422 / TASK-425 with each other and with TASK-403.
+3. **✅ TASK-409 · 410 · 423 · 426 ARE GENUINELY PARALLEL-SAFE AGAINST A GAME-MODULE GATE** — 409/410/423 live in `Plugins/SiegeLlama/`, **a SEPARATE UBT module**, and 426 is a `Docs/Data/` CSV that compiles nothing. ⚠️ **This is a concrete, now-demonstrated payoff of ruling B's plugin split — when a game-module gate is imminent, prefer plugin-side work.**
+4. **DIAGNOSTIC ATTRIBUTION:** a failure is attributed to **the file the diagnostic names**, never to the lane that ran the build. Foreign diagnostics route to the owning batch's QA gate as **early information** and are **never** recorded as the running lane's findings or counted against its QA loop budget.
+5. **A CONTAMINATED GATE IS RE-RUN, NOT RE-LITIGATED.** Never "fix" another batch's in-flight file to make your own gate pass — that is a single-owner violation stacked on a serialization violation.
+
+### Manager rulings (binding for TASK-409..425)
+
+1. **🔨 RULING A — THE CONSOLE WIDGET'S TREE IS CODE-AUTHORED IN V1.** Explicit deviation from the `U<Name>Widget` ↔ `WBP_<Name>` law, granted as a **named, scoped, conditional exception** with five conditions (CONVENTIONS §6 ruling A). Short form: the law exists so an artist's asset name cannot drift from a programmer's code reference — **with no asset there is nothing to drift**, and a `WBP_` here would have to start life as a duplicate+reparent of a donor, which is this project's single most expensive UI failure mode (silent runtime-repaint breakage, ~9 wasted fixes; a `K2Node_CustomEvent` masquerading as a BIE hid the health-bar defect 5×). Conditions: scope is this widget ONLY · `BindWidgetOptional` members are still declared and a child is constructed **only if still null after `Super::RebuildWidget()`**, so a future WBP wins with zero C++ change · **`/Game/UI/WBP_AssistantConsole` is RESERVED now** · the `USessionMenuWidget` contract (FString/int32/bool/uint8-only BIEs) is unchanged · **verification is a human pixel check.** The fallback costs **one art task and zero C++ change** and may be taken at any time.
+2. **🔨 RULING B — `Plugins/SiegeLlama/Source/ThirdParty/LlamaCpp/` SATISFIES the third-party-location law.** It is not a deviation. The law is **`<ModuleRoot>/Source/ThirdParty/<LibName>/`** where `<ModuleRoot>` is the project root **or a plugin root** — it was always relative. It is Epic's own convention; putting llama.cpp in the GAME module's `Source/ThirdParty/` would leak include paths and `/MD`-vs-`/MT` link settings into the one UBT unit under per-file single-owner locks, **defeating the entire reason the plugin exists** (the spike must run with zero edits to any locked file); and a NO-GO verdict then deletes one directory instead of leaving residue in a file five tasks touch. Vendored layout is pinned in CONVENTIONS §6.
+3. **⚠️ A2 (THE SUBSYSTEM) IS GATED ON THE SPIKE VERDICT; A3/A4/A5 ARE NOT — and that line is deliberate.** `USiegeLlamaSubsystem`'s entire shape (offload tiering, KV reuse, timeouts, abort) is **determined by the spike's numbers**; writing it first is writing it twice. A3 (snapshot), A4 (grammar/schema/tests) and A5 (`FindNearestAncientGround`) are **model-agnostic and survive any re-scope** — including "ship a 1.7B" or even "replace the LLM with a keyword parser" — and A4's grammar is what the accuracy measurement is scored against. So they run now.
+4. **THE SPIKE HARNESS IS THROWAWAY BY CONSTRUCTION AND A2 DELETES IT.** TASK-423 must **remove** `SiegeLlamaSpike.cpp` so two model-load paths never coexist. Same clause for the input probe: **Wave 1's B3 deletes `SiegeAssistantInputProbe.{h,cpp}`.** Recorded so a "helpful" agent does not preserve either as a "useful dev tool".
+5. **CONSOLE COMMANDS REGISTER VIA `FAutoConsoleCommand` / `FAutoConsoleCommandWithWorld` IN NEW FILES — NEVER a `UFUNCTION(exec)` on a shipped class.** `USiegeCheatManager` and `ASiegePlayerController` are **NOT touched by this batch.** This is what makes the whole lane genuinely new-files-only under the M8 PARALLEL LAW. Namespaces: `Siege.Llama.*` (plugin) · `Siege.Assistant.*` (game lane).
+6. **SINGLE OWNER PER FILE.** `Plugins/SiegeLlama/**` + `.gitignore` + `GitClaudeUnrealTest.uproject` + `Docs/ThirdPartyNotices.md` + `Tools/fetch_llm_model.py` = **TASK-409 ONLY**. The spike harness = **TASK-410 ONLY**. `SiegeAssistantInputProbe.{h,cpp}` = **TASK-411 ONLY**. `SiegeAssistantSnapshot.{h,cpp}` = **TASK-416 ONLY**. `SiegeAssistantCommand.{h,cpp}` + `SiegeAssistantGrammar.{h,cpp}` + `SiegeAssistantVocabulary.{h,cpp}` + **`Source/GitClaudeUnrealTest/GitClaudeUnrealTest.Build.cs`** = **TASK-417 ONLY**. `AncientGround.{h,cpp}` = **TASK-418 ONLY**. `SiegeLlamaSubsystem.{h,cpp}` = **TASK-423 ONLY**.
+7. **⚠️ THREE TASKS EDIT A SHIPPED FILE AND EACH CARRIES THE SAME PRE-FLIGHT: `git status --porcelain <the file>` FIRST. If it is dirty, STOP and report — do not merge with someone else's parked work.** (409 → `.gitignore` + `.uproject`; 417 → the game `Build.cs`; 418 → `AncientGround.{h,cpp}`.) Everything else in Wave 0 is new files.
+8. **THE PINNED REGISTRY IS THE LINK CONTRACT AND SOME TASKS CANNOT COMPILE ALONE.** TASK-416 includes TASK-417's `SiegeAssistantCommand.h` (the `LogSiegeAssistant` category) and `SiegeAssistantVocabulary.h`. **That is designed** — they compile together at TASK-420, exactly like TASK-395/396 did. **Do not open a QA loop over "it doesn't build in isolation".** Conversely, the grammar was deliberately shaped to take **plain `TArray<FName>` inputs, not the snapshot object**, so A4 has *zero* dependency on A3 and is trivially unit-testable.
+9. **THE MODEL IS NOT CHOSEN BY AN AGENT'S SEARCH.** The spike defaults to **Qwen3.5-4B-Instruct, Q4_K_M** from the cleared permissive list, and the handoff records **repo id + exact filename + quant + the licence line quoted verbatim.** ⚠️ **Every purpose-built small function-calling model is non-commercial and is BANNED: xLAM-2, Hammer 2.1, Arch-Function.** These are exactly what a naive search recommends. If the exact quant's card is not verifiably permissive, take the next on the cleared list **and say so**.
+10. **THE VERDICT IS A THREE-WAY, AND THE THIRD OPTION IS THE POINT.** TASK-413 reports **GO** (all bars met) / **GO-WITH-RESCOPE** (a named bar missed, with the plan's own escalation ladder applied) / **NO-GO**. The **measurement** is build-master's, the **reading** is the manager's, and the **decision is Jonathan's (TASK-415)**. A build-master must never self-declare GO and roll into A2.
+11. **⚠️ IF THE BASELINE BUILD IS RED BEFORE THE PLUGIN IS ADDED, THAT IS NOT THIS BATCH'S DEFECT.** TASK-409's *first* act is a baseline `Build.bat` on the untouched tree. If it fails, **STOP and escalate** — do not debug foreign code and do not attribute it to the plugin. Two known non-code causes, both Jonathan-only: **Smart App Control enforced** (`0x800711C7`, fails in ~2 s, blocks UBT's unsigned `ModuleRules.dll` — Windows Security → Smart App Control → Off) and another lane's parked C++ in the game module.
+12. **LANE POSTURE:** develops on **main**, commits on **main**, **NO push** (Jonathan's push, standing law). `git reset --hard` / `clean -fd` remain **BANNED**. **`L_Arena` is NEVER saved** — nothing in Wave 0 needs a level change. Per-deliverable commits. Board + CONVENTIONS commit at the batch boundary (Standing lesson 3).
+13. **M8 DECLARATION DUTY — every header and every handoff in this batch states it verbatim: "adds no replicated property, no new replicated class, no new relevancy tier."** "Tier not declared" is a QA FAIL; "there is nothing to declare" only counts when stated. V1 is **host/standalone only, forced not chosen**, and the assistant **refuses on `!HasAuthority()` with the same approved wording as the keys** — it must never be more capable than the keys.
+14. **⚠️ THE ACCURACY BENCHMARK IS NOT SELF-GRADED (added 2026-08-02 at the orchestrator's direction — CONVENTIONS §11).** The manager escalated the risk that TASK-410's prompt author would also write the test set; the orchestrator ruled it **closed, not accepted.** So: **TASK-426 authors the corpus, a DIFFERENT owner and a DIFFERENT role, and it is SEALED BEFORE TASK-410 writes a prompt.** It is **split 25 DEV / 15 HOLDOUT in two files**, because the plan's own remediation ladder starts with *"better few-shots"* — which **is** tuning against the eval. Few-shot tuning uses DEV; **the HOLDOUT is opened exactly once, at TASK-413, and the HOLDOUT number is what is reported against the ≥ 85 % bar.** ⚠️ **Quoting a dev-set number as the bar is a QA FAIL.** This closes the same failure shape that produced `Build.bat` exit 0 on a failed build, `rig_character.py` silently ignoring a non-existent override, and MCP readback passing on visually-broken UMG — **three confident greens that were not real.**
+15. **⚠️ THE SELECTION IS MULTI-KIND — MY OWN §9 PIN WAS WRONG AND IS CORRECTED.** The first registry carried a singular `FName Kind`, which **could not express this feature's flagship sentence** (*"send 10 footmen **with a sorcerer** to the nearest ancient ground"*). The approved plan is internally inconsistent: its GBNF sketch shows `kind` as a *rule* (singular by nature) while its go/no-go bar #5 scores exact-match on `{intent, KINDS, COUNTS, where}` — **plural**. Plural is the intent; the sketch never drew the top-level object. **`FSiegeAssistantCommand` now carries index-aligned `TArray<FName> Kinds` + `TArray<int32> Counts`, hard cap `SiegeAssistantMaxSelectionKinds = 3`**, enforced in **both** the grammar and the parser (an unbounded repetition rule is exactly what a small model rambles into). Parallel arrays, never an array of structs — that is what preserves the `FName`/`int32`-only property and the M8 P2 "takes it as-is" claim (~30 bytes at the cap). **Found while specifying TASK-426's expected outputs, which is precisely what that task is for.**
+16. **⚖️ THREE POST-DELIVERY RULINGS ON THE SEALED CORPUS (2026-08-02, after TASK-426 landed).**
+    **(a) THE INTENT-IN-`Notes` ENCODING IS ACCEPTED.** The pinned header has no `ExpectIntent` column but bar #5 scores intent, and rows like `charge with the footmen` vs `send the footmen at their castle` differ in nothing else. TASK-426 **correctly refused to add a 10th column after the seal** — that would have silently broken the contract TASK-410's parser is written against — and prefixed every `Notes` cell instead. **The runner extracts it with `^intent=([a-z]+); `**; values are the 7 intents plus `none` (Refuse) and `unasserted`. Accepted because it costs a one-line regex, **zero corpus edit**, and the values predate any prompt, so the seal holds. Written into CONVENTIONS §11 and TASK-410's spec.
+    **(b) 🚩 AN EMPTY CELL IS OVERLOADED — v1-ACCEPTED, NON-BLOCKING.** It means *"not asserted"*, so a row whose correct answer is *"this field IS empty"* (`rally`, `fallback`) cannot be positively asserted; it lives in `Notes` prose. ⚠️ **Scored as SKIPPED, never as matched** — reading empty as a pass would manufacture free score on exactly the rows that assert least. A sentinel (`<none>`) is a **new** corpus, never an edit to the sealed one.
+    **(c) ⚠️ THE PLACE VOCABULARY IS PINNED (§9a) — AND I OVERRULED ONE ELEMENT OF THE PROPOSED PIN.** Nothing had pinned a mine symbol, so TASK-426 chose **`nearest_mine`** and flagged rather than assumed — adopted verbatim (`DEV-23`, `HOLD-12`). **`hero`** is added for completeness but **no corpus row asserts it.** ⛔ **A `my_castle` spelling was proposed and is OVERRULED: it is `own_castle`.** The sealed corpus asserts `own_castle` in both files including **`HOLD-06`, which scores the bar**, and under §11 the holdout is **frozen** — renaming would either void the accuracy number or fail the gate **for a naming reason rather than a model reason**, the precise outcome that pin was written to prevent. `own_castle` is also what §5/§8 said *before* the corpus existed, so the corpus conformed correctly and the later spelling is the drift.
+17. **⛔ `mage` STAYS UNALIASED, PERMANENTLY (CONVENTIONS §9b — a named prohibition, not a note).** `sorcerer` and `wizard` are different cards and share **no** alias; the sealed corpus carries `the mage` in both files (`DEV-06`, `HOLD-09`) as a **`Clarify`** row. **Aliasing it to either card turns an honest clarification into a confident wrong command** — the exact failure class this architecture exists to prevent. Written as a prohibition because *"add the obvious alias"* is what a well-meaning future task will do, and it would read as an improvement while silently deleting a gate row's meaning. **Automatic QA FAIL, in this batch and every later one.**
+
+### 🚩 FLAGGED — recorded, NOT tasked (each needs a Jonathan ruling or a later pass)
+
+- **(a) THE ASSISTANT IS STRICTLY ADDITIVE, AND THIS IS THE RISK THAT MATTERS MOST.** Default-follow means **the player now personally orders every fight**, so an unreliable assistant would make the game *worse*, not merely unhelpful. Law is in CONVENTIONS §2: every key still works byte-identically, the console is never a requirement, **no future task may route a key through it**, and a fault/timeout/missing-GGUF never blocks match start.
+- **(b) SHIPPING THE 2.5 GB GGUF IS A WAVE-2 PROBLEM AND IS DELIBERATELY UNSOLVED HERE.** Dev builds read it from a gitignored `/Models`. `RuntimeDependencies` + staging errors **surface only in a packaged build**, which is why Wave 2 requires a packaged Development build, not just an editor compile. Do not bolt a shipping path in early.
+- **(c) DISK/BANDWIDTH COST TO JONATHAN.** `Tools/fetch_llm_model.py` pulls ~2.5 GB per model evaluated. Norton HF exclusions are already live and proven (run bare, no `SSL_CERT_FILE` hack); `HF_TOKEN` lives in HKCU and a Windows rollback wipes it. If a chosen repo is gated, that is a Jonathan step, not an agent workaround.
+- **(d) `Enter` IS THE PROPOSED OPEN KEY** (the arena has no chat). `IMC_Hero` is a **binary `.uasset` the manager cannot text-verify** — Wave 1's B4 runs the same in-editor conflict check TASK-399 ran for `C`, and **FLAGS, never stomps**. Recorded now so the key is not assumed free.
+- **(h) 🔬 THE `MilitiaMob → militiamob` VERIFICATION IS PARTIAL, AND IS RECORDED AS PARTIAL RATHER THAN ROUNDED UP TO "CLOSED".** Build-master probed the shipped **CDO** against `DT_Cards`: all **12 Unit CardIDs round-trip**, `MilitiaMob → militiamob`, **`militia_mob` is gone**, `miner` correctly the only extra. ⚠️ **Two honest limits, both stated by build-master and preserved here:** (1) the check **derives the symbol in Python rather than EXECUTING the shipped function** (`CanonicalKind` is a private static in the `.cpp` — not reflected, so a commandlet cannot call it; CONVENTIONS "GIT HAZARD LAWS" (c1)); (2) it is **external to the test suite, so it is NOT a regression guard** — nothing re-runs it. **The live roster print is still OWED and belongs to whoever first gets PIE** (TASK-420 §(3) or TASK-413). This is exactly the distinction the relayed-diagnosis law exists to protect: a correct answer obtained by a different mechanism than the one that ships.
+- **(e) THE ARENA'S PLACE VOCABULARY IS SMALL BY DESIGN IN V1, AND IS NOW PINNED CHARACTER-FOR-CHARACTER IN CONVENTIONS §9a** — `enemy_castle` · `own_castle` · `mid` · `ancient_ground_near` · `ancient_ground_far` · `nearest_mine` · `hero`. No free-form map references, no "over there", no coordinates. **CLOSED for v1**: widening it silently changes Zone A and invalidates both the KV-prefix claim and the measured accuracy, so it is a later pass **with its own accuracy re-measurement.** (⚠️ `hero` is pinned but **unasserted by any corpus row** — vocabulary, not tested coverage.)
+- **(f) NO HUD WORK IS BOARDED.** The console owns its own transcript; `OnCommandPromptChanged` already surfaces prompts and prompts also LOG.
+- **(g) THE SPIKE MAY REPORT GO-WITH-RESCOPE AND THAT IS A NORMAL OUTCOME, NOT A FAILURE.** The plan's ladder for a missed accuracy bar is explicit — better few-shots → tighter grammar → bigger model → *only then* fine-tune. Jonathan ruled prompt-engineering first; a task proposing a fine-tune before that ladder is exhausted is out of scope.
+
+### Dependency order + dispatch frontier
+
+```
+▶ NOW  TASK-409 (bm plugin+vendor) ─┐
+▶ NOW  TASK-426 (art SEALED corpus) ┴─> TASK-410 (gp spike harness) ─┐
+▶ NOW  TASK-411 (gp WASD probe) ─────────────────────────────────────┼─> TASK-412 (QA1) ─> TASK-413 (bm RUN + VERDICT) ─┬─> TASK-414 (bm commit)
+                                                                     ┘                                                  └─> TASK-415 (🧑 GO/NO-GO)
+                                                                                                                              └─> TASK-423 (gp A2) ─> TASK-424 (QA3) ─> TASK-425 (bm)
+▶ NOW  TASK-416 (gp A3) ─┐
+▶ NOW  TASK-417 (gp A4) ─┼─> TASK-419 (QA2) ─> TASK-420 (bm compile+verify) ─┬─> TASK-421 (art A6 DA) ─┐
+▶ NOW  TASK-418 (gp A5) ─┘                                                    └────────────────────────┴─> TASK-422 (bm commit)
+```
+
+**START IMMEDIATELY, IN PARALLEL (6): TASK-409 · TASK-411 · TASK-416 · TASK-417 · TASK-418 · TASK-426.** All are new-files-only or single-owner edits to an unowned shipped file, all are file-lane work (TASK-426 is headless and needs no editor), none touches anything the FOLLOW batch owns.
+⚠️ **TASK-426 MUST LAND BEFORE TASK-410 STARTS** — that ordering *is* the seal (ruling 14). TASK-410 is `blocked-by` both TASK-409 and TASK-426.
+
+### Wave 1 — GATED ONE-LINERS (⛔ `blocked-by` the FOLLOW batch commit **TASK-403** AND the spike verdict **TASK-415 = GO**; IDs assigned at decomposition, NOT now)
+
+- **B1 — gameplay-programmer, EXCLUSIVE owner of `SiegePlayerController.{h,cpp}`. CRITICAL PATH.** Extract `ConfirmGroupPickStage`'s stage-3 body into a public `CreateUnitGroup(Type, PosCenter, PosRadius, AtkCenter, AtkRadius, Members, PosMarker=nullptr, AtkMarker=nullptr)` so the cursor pick calls it too and there is one implementation — **QA acceptance is "provably zero behavior change" by read-through (the TASK-397 idiom)** — plus the `USiegeAssistantComponent` default subobject, ONE `ApplyCursorInputState` term, and four mutual-exclusion guards against placement/targeting/group-pick. **Nothing else.**
+- **B2 — gameplay-programmer.** `USiegeAssistantComponent`: the `Idle → Composing → Thinking → {AwaitConfirm | Clarify | Failed}` + `Deferred` FSM, the executor, the selector, the deferred intent (latched, kind+count trigger, 120 s TTL, **1 Hz timer armed only while latched, re-resolves on fire and returns to AwaitConfirm — never executes blind**), reason codes and the player-facing template table. Includes the **~15-line short-circuit** that handles most clarification turns **with no model call at all**. **Confirm-before-execute with ghost circles via `SpawnGroupCircleDecal` is a HARD acceptance criterion** — constrained decoding guarantees syntax; the preview is what guarantees semantics.
+- **B3 — gameplay-programmer.** `USiegeAssistantConsoleWidget` (code-authored tree per ruling A) — **and DELETES `SiegeAssistantInputProbe.{h,cpp}`.** Input fallback chosen by spike measurement #6.
+- **B4 — art-director.** `IA_AssistantConsole` + the `IMC_Hero` binding + the **in-editor Enter-key conflict check (FLAG, never stomp)**.
+
+### Wave 2 — GATED ONE-LINERS (blocked-by Wave 1 complete)
+
+- **QA gate → compile → PACKAGED Development build** (⚠️ `RuntimeDependencies` / staging errors **never appear in-editor**) → **Jonathan's playtest gate:** type five orders of increasing ambiguity; confirm the ghost circles match intent before pressing Enter; force the shortfall case ("send 10 footmen" with 8 alive) and check the clarification reads naturally; arm a deferred intent, spawn the units, confirm it **re-asks rather than firing blind**; and **verify every keyboard command still works identically with the console closed.**
+- **Licensing check at content lock** — verify the exact GGUF quant's model card (not the family) and ship `Docs/ThirdPartyNotices.md` with the vendored LICENSE files.
+
+---
+
+#### TASK-409 — [LLM-0] `SiegeLlama` plugin scaffold + vendored llama.cpp (C API only) + build plumbing + repo hygiene + licences + the model fetch tool (build-master)
+- assignee: build-master
+- status: **ready-for-qa** (2026-08-02 — gate is TASK-412) · handoff `handoffs/TASK-409-buildmaster.md` · **NOT COMMITTED** (TASK-414 owns the commit)
+- blocked-by: **none — DISPATCHABLE NOW**
+- parallel-safe: yes (new files + 2 single-owner edits to unowned shipped files); **EXCLUSIVE owner of `Plugins/SiegeLlama/**`, `.gitignore`, `GitClaudeUnrealTest.uproject`, `Docs/ThirdPartyNotices.md`, `Tools/fetch_llm_model.py`**
+- delivered: >
+    Vendored llama.cpp **tag `b10235`** (commit `221f0f6356efe2260023208365705ec5d5a7c8f5`), **Vulkan+CPU, NOT CUDA**, Release `/MD`,
+    MSVC 14.38. **C API only — `common/` neither vendored nor linked, VERIFIED** (`llama.dll`'s import table does not reference
+    `llama-common.dll`). 29 files / ~72 MB at `Plugins/SiegeLlama/Source/ThirdParty/LlamaCpp/`; the 3 import libs were generated with
+    `lib /def:` because upstream ships none. Plugin skeleton + `Siege.Llama.Info` + `USiegeLlamaSettings` override chain + delay-load
+    degradation posture. `.gitignore` negations and `Docs/ThirdPartyNotices.md` + `Tools/fetch_llm_model.py` (`--check` PASS, run bare) done.
+    **Zero files under `Source/GitClaudeUnrealTest/` touched — the plugin-module exemption held.**
+- ⚠️ two build steps DEFERRED, NOT SKIPPED, and both need the orchestrator: >
+    **(0) the baseline `Build.bat` and (4) the in-engine `Siege.Llama.Info` output were NOT run** — 25 files under
+    `Source/GitClaudeUnrealTest/` were dirty on arrival (TASK-416/417/418 in flight) and the dispatch forbade a UBT build.
+    **Running one would have reproduced TASK-401's contaminated gate.** Substituted the strongest available proof: a standalone
+    MSVC harness compiled+linked against the vendored tree and **ran** — `LINKPROOF_VERDICT: PASS`, Vulkan driving BOTH an Intel Arc
+    iGPU and an RTX 5070 (7891 MiB ≈ the modal 8 GB card) plus CPU fallback. That proves headers/import-libs/backends; it does **NOT**
+    prove UBT/UHT integration. **Re-run both once the module is quiet, and apply the exit-code law (`Build.bat` exits 0 on failure).**
+- 🚩 flags for the manager (detail in the handoff): >
+    **(a)** `LogSiegeLlama` had to move to a new `SiegeLlamaLog.h` because §5 pins it to TASK-423's owned file — **TASK-423 must include,
+    never redefine it** (duplicate-symbol link error). **(b)** `Projects` + `DeveloperSettings` deps added beyond the spec's "only" list;
+    both are mandated by the spec's own requirements and neither is HTTP/Sockets. **(c) ⚠️ `.gitattributes` has NO LFS rule for
+    `*.dll`/`*.lib`, so ~72 MB would enter git as RAW BLOBS — needs a ruling BEFORE TASK-414 commits; that file is outside this task's
+    ownership and outside the project dir, so it was left untouched.** **(d)** three dispatch instructions were superseded by CONVENTIONS
+    (model dir, `Models/README.md`, GGUF staging deferred to Wave 2). **(e)** `libomp140.x86_64.dll` may need its own licence entry.
+- spec: >
+    **Read CONVENTIONS "In-match LLM command assistant (v1, text-only) — 2026-08-02" §5–§7 first — it is the spec.** This task makes
+    llama.cpp **link and load** inside UE 5.8. It produces **no gameplay code and no measurements**; that is TASK-410/413.
+    **(0) BASELINE FIRST, BEFORE ANY FILE CHANGE.** Run the project Build command on the untouched tree and record the result.
+    ⚠️ **If it is RED, STOP and escalate in 🚨 Blockers — that is NOT this batch's defect.** Two known Jonathan-only causes:
+    **Smart App Control enforced** (`0x800711C7`, fails in ~2 s — Windows Security → Smart App Control → Off) and another lane's parked C++.
+    Also run `git status --porcelain` on `.gitignore` and `GitClaudeUnrealTest.uproject`; **if either is dirty, STOP and report.**
+    **(1) PLUGIN SKELETON:** `Plugins/SiegeLlama/SiegeLlama.uplugin` (Runtime, `LoadingPhase: Default`) + `Source/SiegeLlama/{Public,Private}` +
+    `SiegeLlama.Build.cs` (deps `Core`, `CoreUObject`, `Engine` only — **NOT `HTTP`, NOT `Sockets`**; the sidecar `llama-server.exe` was
+    considered and REJECTED because a Windows Defender firewall prompt on first launch of a shipped game is unacceptable). Add an explicit
+    `{"Name": "SiegeLlama", "Enabled": true}` entry to the `.uproject` Plugins array (explicit beats auto-discovery).
+    **(2) VENDOR llama.cpp — C API ONLY.** `Source/ThirdParty/LlamaCpp/{include,lib/Win64,bin/Win64}` + `LICENSE` (MIT, verbatim) +
+    `VERSION.md` (upstream tag/commit + build flags + toolset, so the binaries are reproducible). **Build/obtain a Vulkan+CPU build — NEVER
+    CUDA** (Jonathan's no-lock-in ruling made concrete: one binary covers NVIDIA/AMD/Intel).
+    ⚠️ **DO NOT LINK `common/`** — it is C++ with STL in its signatures and is exactly where `/MD` vs `/MT` and toolset-mismatch link failures
+    come from. `llama.h` + `ggml.h` only; the ~60 lines of sampler setup we forgo are lines we want to own anyway.
+    **(3) THE DLL TRAP — name it, do not rediscover it.** `PublicAdditionalLibraries` for the `.lib`s, `PublicDelayLoadDLLs.Add("llama.dll")`
+    (and each ggml DLL), `RuntimeDependencies.Add("$(BinaryOutputDir)/<dll>", <vendored path>)`, and an explicit
+    `FPlatformProcess::GetDllHandle` in `StartupModule` with `FreeDllHandle` in `ShutdownModule`. A missing/unloadable DLL **logs once on
+    `LogSiegeLlama` and leaves the module inert — never a crash, never a blocked editor launch.**
+    **(4) LINK PROOF:** one console command **`Siege.Llama.Info`** (`FAutoConsoleCommand` — **never** a `UFUNCTION(exec)` on a shipped class)
+    printing `llama_print_system_info()`, the enumerated ggml backends, and the DLL handle status. Compile GREEN + the command's real output
+    pasted into the handoff **is** the deliverable.
+    **(5) REPO HYGIENE — the `.gitignore` block from CONVENTIONS §7, placed AFTER the global `*.dll`/`*.lib` rules** (last matching pattern
+    wins). **ACCEPTANCE IS `git check-ignore -v` OUTPUT PASTED INTO THE HANDOFF** for one vendored `.dll`, one vendored `.lib` and one
+    `.gguf` — "I added the lines" is not the criterion. The ~2.5 GB GGUF **never enters git and never enters `Content/`**.
+    **(6) `Docs/ThirdPartyNotices.md`** — new file, carrying llama.cpp's MIT text verbatim, with a **placeholder section for the model licence
+    that TASK-413 fills from the exact quant's card.**
+    **(7) `Tools/fetch_llm_model.py`** — downloads a named HF repo/file into `<ProjectRoot>/Models/` (gitignored), resumable, checksum-verified,
+    `--check` health probe, non-zero exit on failure. Run **bare** (Norton HF exclusions are live and proven — no `SSL_CERT_FILE` hack);
+    `HF_TOKEN` from the environment if the repo is gated. `Tools/**/*.py` is **CODE ⇒ QA-gated** (TASK-412).
+    **NO gameplay code. NO editor asset changes. NO Git commit** (TASK-414 owns it). **`L_Arena` never opened.**
+    Handoff `handoffs/TASK-409-buildmaster.md`: baseline result, upstream version/flags, the `Siege.Llama.Info` output, the
+    `git check-ignore -v` output, and the vendored file list with sizes. Post in 🔧 Build & Git.
+- names: >
+    `Plugins/SiegeLlama/SiegeLlama.uplugin` · `Plugins/SiegeLlama/Source/SiegeLlama/{Public,Private}` · `SiegeLlama.Build.cs` ·
+    `Plugins/SiegeLlama/Source/ThirdParty/LlamaCpp/{include,lib/Win64,bin/Win64,LICENSE,VERSION.md}` · `LogSiegeLlama` ·
+    console command `Siege.Llama.Info` · `Docs/ThirdPartyNotices.md` · `Tools/fetch_llm_model.py` · `<ProjectRoot>/Models/` (gitignored).
+    Law: CONVENTIONS "In-match LLM command assistant (v1, text-only) — 2026-08-02" §5 (naming), §6 **ruling B** (ThirdParty location), §7
+    (licensing + repo hygiene).
+
+#### TASK-410 — [LLM-1a] THE SPIKE HARNESS — model load, the 3-zone prompt, a static GBNF, the 40-sentence Siegebound corpus, and the instrumentation (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: **TASK-409** (needs the plugin + linked headers to compile against) · **TASK-426** (⚠️ **the corpus must be SEALED before you write a prompt** — ruling 14)
+- parallel-safe: yes vs every other task; **EXCLUSIVE owner of `Plugins/SiegeLlama/Source/SiegeLlama/Private/SiegeLlamaSpike.cpp`**. ⚠️ **You do NOT own the corpus — see (4).**
+- spec: >
+    **⚠️ THIS IS THROWAWAY CODE BY CONSTRUCTION AND TASK-423 DELETES IT.** Do not build the production subsystem here — no `UGameInstanceSubsystem`,
+    no `FRunnable`, no tiering policy. Its only job is to **produce the numbers that decide whether the subsystem gets written at all.**
+    Everything lives in ONE plugin-private file behind `FAutoConsoleCommandWithWorld` commands in the **`Siege.Llama.*`** namespace.
+    **(1) LOAD:** `llama_model_load_from_file` on the path from `<ProjectRoot>/Models/`, `use_mmap = true` (**load-bearing for the 8 GB claim** —
+    the weights are page-cache-backed, not resident), `n_ctx` 2048, small `n_ubatch`. Offload tier selectable from the command line
+    (`gpulayers=-1|N|0`) so ONE build measures **full-offload / partial / CPU-only**. A load failure logs on `LogSiegeLlama` and returns —
+    **never a crash, never a blocked editor.** Wrap the eval in SEH.
+    **(2) PROMPT:** the three-zone layout, **verbatim shape from CONVENTIONS §8** — `ZONE A` static (system prompt, schema, place vocabulary,
+    synonym table, 3 few-shots) · `ZONE B` slow (castle HP bands, mid owner, gold band) · `ZONE C` fast (roster, pending line, the utterance).
+    **Fixed key order, every key always emitted (empty prints `none`), everything quantized, NO timestamps and NO coordinates.** For the spike
+    the zones may be hand-written constants — but the **byte layout must match what TASK-416 will emit**, because measurement #3 is
+    meaningless otherwise. Implement `llama_kv_cache_seq_rm` prefix retention and **log prefill token counts for turn 1 and turn 2 separately.**
+    **(3) GRAMMAR:** a hand-written GBNF matching the plan's shape — `intent` (7 alternatives) · `kind` · `where` · `count ::= 1..30 | "all"` ·
+    `when`. ⚠️ **`count` is 1–30, NOT 1–live-max — deliberately** (CONVENTIONS §1: a capped grammar would silently emit 8 for a request of 10
+    and make the clarification undetectable). Use llama.cpp's C grammar/sampler API directly.
+    **(4) ⚠️ THE CORPUS IS AN INPUT YOU MAY NOT AUTHOR, EDIT OR NARROW — IT IS TASK-426'S SEALED DELIVERABLE (ruling 14, CONVENTIONS §11).**
+    You **write the runner, not the test set.** `Siege.Llama.SpikeEval dev=<path> holdout=<path>` **loads both CSVs BY PATH at runtime**
+    (⚠️ never `#include`d — baking Siegebound sentences into the plugin would give it a Siegebound dependency it is architecturally forbidden
+    to have), parses the pinned header, scores **exact-match on `{intent, kinds, counts, where}`** honouring `ExpectOutcome`
+    (`Execute`/`Clarify`/`Refuse`), and prints a per-row diff table plus a score **per split, reported separately.**
+    **⚠️ (4a) INTENT LIVES IN `Notes`, NOT IN A COLUMN — BUILD THE RUNNER FOR IT (CONVENTIONS §11, accepted ruling 2026-08-02).** The pinned
+    header has **no `ExpectIntent` column**, but bar #5 scores intent and rows like `charge with the footmen` vs `send the footmen at their
+    castle` differ in **nothing else.** TASK-426 correctly refused to add a 10th column after the seal (it would have silently broken the very
+    contract you parse against) and instead prefixed every `Notes` cell. **Extract intent with `^intent=([a-z]+); `** — values are the 7
+    intents plus **`none`** (Refuse rows) and **`unasserted`** (the verb itself is the ambiguity; skip the intent comparison for that row).
+    **This regex is part of the pinned contract: do not reformat the `Notes` prefix, and do not "clean up" the corpus into a 10th column.**
+    **⚠️ (4b) AN EMPTY CELL IS "NOT ASSERTED", NEVER "ASSERTED EMPTY".** Score it as **skipped**, not as matched — a row whose true answer is
+    an empty field (`rally`, `fallback`) cannot be positively asserted in v1 and is carried in `Notes` prose. Treating empty as a pass would
+    manufacture free score on exactly the rows that assert least.
+    **⚠️ (4c) THE PLACE VOCABULARY IS PINNED IN CONVENTIONS §9a — use those seven spellings verbatim** in your Zone-A place list:
+    `enemy_castle` · `own_castle` · `mid` · `ancient_ground_near` · `ancient_ground_far` · `nearest_mine` · `hero`. **It is `own_castle`, NOT
+    `my_castle`** (the sealed `HOLD-06` asserts it, and the holdout is frozen). A spelling drift here fails the gate **for a naming reason
+    rather than a model reason** — the worst way to fail it, because it reads as "the model is bad" when the model was fine.
+    **YOU MAY TUNE FEW-SHOTS AGAINST `assistant_eval_dev.csv` ONLY.** ⛔ **DO NOT OPEN `assistant_eval_holdout.csv`** — TASK-413 opens it
+    exactly once, and the holdout number is what is scored against the ≥ 85 % bar. **The plan's remediation ladder starts with "better
+    few-shots", which IS tuning against the eval; the split is what makes that ladder honest.**
+    **YOUR 3 ZONE-A FEW-SHOTS MUST BE DISJOINT FROM BOTH FILES** — no corpus sentence may appear as a few-shot. QA verifies this by literal
+    string comparison at TASK-412. If you add a few-shot *because* a dev row failed, **say so in the handoff** (legitimate work; the reader
+    must know the coverage was reactive).
+    ⚠️ **MULTI-KIND IS IN SCOPE (ruling 15):** the schema carries index-aligned `Kinds`/`Counts` with a hard cap of 3, so the GBNF in (3) emits
+    a **selection list of 1..3 `{kind, count}` pairs** — the cap lives in the grammar, not only in the parser.
+    **(5) INSTRUMENTATION — the numbers ARE the deliverable.** Emit, machine-readable and grep-able: per-frame delta-time samples around
+    prefill/decode with a **hitch histogram reporting WORST and p99, never mean**; TTFT; wall-clock for ~60 constrained tokens; turn-1 vs
+    turn-2 prefill token counts; peak VRAM (via the backend) and process RSS. Command `Siege.Llama.SpikeBench tier=<...> iters=<N>`.
+    **NO game-lane code, NO Siegebound types, NO `Content/` changes, NO Git.** The plugin must keep knowing nothing about Siegebound —
+    the spike's snapshot text is a hard-coded constant, not a `Capture()` call.
+    Handoff `handoffs/TASK-410-programmer.md` incl. the exact prompt bytes used and the GBNF, so TASK-416/417 can match them.
+- names: >
+    `SiegeLlamaSpike.cpp` (plugin private) · commands `Siege.Llama.Info` (exists) / `Siege.Llama.SpikeBench` /
+    `Siege.Llama.SpikeEval dev=<path> holdout=<path>` · `LogSiegeLlama` · corpus INPUTS (not yours):
+    `Docs/Data/assistant_eval_dev.csv` + `Docs/Data/assistant_eval_holdout.csv`.
+    Law: CONVENTIONS §1 (the central law + the count-1..30 clause), §3 (symbols only), §8 (prompt zones + threading), §9 (the multi-kind
+    `FSiegeAssistantCommand` + `SiegeAssistantMaxSelectionKinds` 3), §10 (tunables), **§11 (the sealed/split corpus law)**.
+    Plan: §"Do the spike" (the six bars).
+
+#### TASK-411 — [LLM-1b] SPIKE MEASUREMENT #6 — does a focused `UEditableTextBox` starve Enhanced Input of WASD? (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: **none — DISPATCHABLE NOW** (zero dependency on llama.cpp, the plugin, or a model)
+- parallel-safe: yes; **EXCLUSIVE owner of `Source/GitClaudeUnrealTest/Siegebound/SiegeAssistantInputProbe.{h,cpp}`**
+- spec: >
+    **⚠️ THE REAL HAZARD THIS ANSWERS:** the shipped match posture is `GameAndUI`, which **keeps WASD live — so typing "w" would walk the hero.**
+    The intended fix is `SetKeyboardFocus()` on a focusable `UEditableTextBox`, and it is **UNVERIFIED in UE 5.8 on this project.** This probe
+    is **binary and cheap and it de-risks Wave 1's B3 before B3 is written.** It is throwaway: **B3 DELETES these files.**
+    **(1) NEW FILES ONLY.** `USiegeAssistantInputProbeWidget : UUserWidget` with a **code-authored tree** (`RebuildWidget()` +
+    `WidgetTree->ConstructWidget<>`) holding one focusable `UEditableTextBox` named `InputBox` — this is also a deliberate **rehearsal of
+    manager ruling A**, so report anything surprising about the pattern. Register `FAutoConsoleCommandWithWorld`
+    **`Siege.Assistant.InputProbe`** (⚠️ **never** a `UFUNCTION(exec)` on a shipped class — `USiegeCheatManager` and `ASiegePlayerController`
+    are untouched by this batch).
+    **(2) MEASURE BOTH ANSWERS IN ONE RUN — that is the whole value.** Mode A: `FInputModeGameAndUI` + `SetKeyboardFocus()` on the box.
+    Mode B (the fallback): `FInputModeUIOnly` while focused. For each mode, log: the hero pawn's `GetActorLocation()` before and after a typing
+    window, the delta magnitude, and whether the move input action fired. Add `Siege.Assistant.InputProbeReport` to dump the comparison.
+    **(3) ACCEPTANCE CRITERION, EXACT: typing `wasd send footmen` into the focused box must not move the hero.** Report per mode:
+    PASS / FAIL + the measured location delta. Also report whether **Escape** and **Enter** reach the box, and whether RMB/Esc cancel paths
+    still fire (they are shipped teardown routes and must not be swallowed).
+    **(4) DO NOT EDIT `GitClaudeUnrealTest.Build.cs`** — `UMG`, `Slate`, `EnhancedInput` are already public deps and TASK-417 owns that file.
+    **If you believe you need a new module, STOP and report** rather than editing it.
+    **NO gameplay behavior change, NO `Content/` changes, NO Git, `L_Arena` never saved.** The probe widget is only ever created by the console
+    command — nothing auto-spawns it.
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-411-programmer.md` with the two-mode comparison table and a one-line recommendation for B3.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SiegeAssistantInputProbe.{h,cpp}` · `USiegeAssistantInputProbeWidget` · child `InputBox`
+    (`UEditableTextBox`) · commands `Siege.Assistant.InputProbe` / `Siege.Assistant.InputProbeReport` · `LogSiegeAssistant`
+    (⚠️ declared in TASK-417's `SiegeAssistantCommand.h` — pinned link, see manager ruling 8).
+    Law: CONVENTIONS §5 (the `FAutoConsoleCommand` clause), §6 ruling A (the code-authored-tree pattern), "Input-mode ownership (level-travel law)".
+
+#### TASK-412 — [LLM-QA1] QA gate covering TASK-409 · 410 · 411 · 426 (the spike lane) (qa-reviewer)
+- assignee: qa-reviewer
+- status: backlog
+- blocked-by: TASK-409, TASK-410, TASK-411, TASK-426
+- parallel-safe: no (single QA report)
+- spec: >
+    Pre-compile review of the spike lane. **Report `qa/TASK-412.md`, PASS/FAIL per task, blockers separated from warnings.**
+    **MANDATORY CHECKS, beyond the standing ones:**
+    (1) **The central law.** No multi-turn loop anywhere: nothing feeds a model's own output back to a model, nothing accumulates conversation
+    state. **A multi-turn model loop is an automatic FAIL** (CONVENTIONS §1).
+    (2) **`count` is 1–30, NOT the live max** in the GBNF (§1). A "helpfully tightened" range is a FAIL, not a nit.
+    (3) **Symbols only** (§3): no coordinates, no timestamps, no prose, no player-facing text anywhere in the prompt or the output schema.
+    (4) **No unit registry, no actor cache, no dirty-flag** for snapshot data (§4 — the rejection is law).
+    (5) **`common/` is NOT linked** (C API only); **`HTTP`/`Sockets` are NOT added**; **the backend is Vulkan+CPU, not CUDA** (§6).
+    (6) **The DLL trap**: `PublicDelayLoadDLLs` + `RuntimeDependencies` + explicit `GetDllHandle`/`FreeDllHandle`, and a missing DLL logs once
+    and leaves the module inert rather than crashing.
+    (7) **Repo hygiene**: the `.gitignore` negations sit AFTER the global `*.dll`/`*.lib` rules, and the handoff pastes real
+    `git check-ignore -v` output for a `.dll`, a `.lib` and a `.gguf`. **`*.gguf` and `/Models/` are ignored.** No GGUF path under `Content/`.
+    (8) **Licensing**: `Docs/ThirdPartyNotices.md` exists and carries llama.cpp MIT verbatim. **Confirm no BANNED model is referenced anywhere
+    in code, script defaults or docs — xLAM-2 / Hammer 2.1 / Arch-Function are non-commercial** (§7).
+    (9) **No `UFUNCTION(exec)` added to any shipped class**; `USiegeCheatManager` and `ASiegePlayerController` untouched (ruling 5).
+    (10) **Standing coding laws:** the no-shadowing law · the complete-type include law · no literal `*/` in doc comments ·
+    `FString::Printf` format strings literal/`constexpr` (UE 5.8 `TCheckedFormatString`) · SEH around the GGML eval.
+    (11) **M8 DECLARATION DUTY stated verbatim** in each handoff.
+    (12) `Tools/fetch_llm_model.py` is CODE: review it — resumable, checksum-verified, `--check`, non-zero exit on failure, no secrets in source.
+    (13) **⚠️ THE ANTI-SELF-GRADING CHECKS (CONVENTIONS §11 — this is the go/no-go number, treat these as blockers not nits):**
+    · **the corpus files are TASK-426's and TASK-410 did not edit them** — diff them against TASK-426's handoff;
+    · **the 3 Zone-A few-shots are DISJOINT from BOTH CSVs**, verified by **literal string comparison**, not by the author's assertion;
+    · **`assistant_eval_holdout.csv` is 15 rows, `assistant_eval_dev.csv` is 25**, identical pinned headers;
+    · **the runner scores and reports the two splits SEPARATELY** — a single blended number is a FAIL, because the ladder tunes on dev;
+    · **the corpus is loaded BY PATH, never `#include`d** into the plugin (the lane split);
+    · **TASK-426's adversarial coverage is actually present**: ambiguous quantities, non-existent units, the **Sorcerer/Wizard collision**,
+      selection-verb-mixed-with-army-wide-verb, multi-kind rows, and rows whose correct `ExpectOutcome` is `Clarify` or `Refuse`;
+    · **the runner extracts intent with `^intent=([a-z]+); ` from `Notes`** (there is no `ExpectIntent` column — CONVENTIONS §11) and handles
+      `none` / `unasserted`; **an EMPTY cell is scored SKIPPED, never matched** (scoring empty as a pass manufactures free score on exactly the
+      rows that assert least);
+    · **the seven place spellings match CONVENTIONS §9a character-for-character** — `own_castle` **not** `my_castle`, and `nearest_mine`.
+    (12b) **⚠️ THE ZONE-A ↔ GRAMMAR SEAM (CONVENTIONS §9c) — BLOCKER-LEVEL.** **Parse every Zone-A few-shot's JSON with the LANDED GBNF and show
+    it is accepted.** Check the four sketch-vs-landed traps by name: selection key **`who`** (not `select`) · per-pair count key **`n`**
+    (`count` is the GBNF rule name, not a JSON key) · army-wide ⇒ **`"who":"none"`**, not `[]` · the **`{"ask":ASK}`** branch must be taught.
+    A few-shot the grammar would reject makes constrained decoding fight the prompt on every token, and **bar #5 collapses for a reason no log
+    line names.** "It looks like the schema" is not evidence.
+    (14) **MULTI-KIND (ruling 15):** the GBNF emits a selection list **capped at 3 in the grammar itself**, and the parser enforces
+    `Kinds.Num() == Counts.Num()` — a mismatch must be a parse failure, **never a silent truncation.**
+    Post the verdict in ⚙️ Dev & QA.
+- names: >
+    Report `qa/TASK-412.md`. Corpus under review: `Docs/Data/assistant_eval_dev.csv` + `Docs/Data/assistant_eval_holdout.csv`.
+    Law: CONVENTIONS "In-match LLM command assistant (v1, text-only) — 2026-08-02" (all 11 sub-sections; **§9 multi-kind + §11 the sealed
+    corpus law are new as of 2026-08-02 and are the two easiest to miss**).
+
+#### TASK-413 — [LLM-1c] 🎯 RUN THE SPIKE — the six measurements on `L_Arena` with units on the field, and the three-way VERDICT (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: **TASK-412 PASS**
+- parallel-safe: no (EXCLUSIVE editor + compile)
+- spec: >
+    **THIS IS THE GO/NO-GO. Nothing in Wave 1 is written until this reports.**
+    **(0)** Compile GREEN. Fetch the model with `Tools/fetch_llm_model.py`. **DEFAULT MODEL: Qwen3.5-4B-Instruct, Q4_K_M** from the cleared
+    permissive list. ⚠️ **VERIFY THE EXACT QUANT'S MODEL CARD, NOT THE FAMILY** — a quantizer's re-upload is a *different* licence card.
+    Record **repo id + exact filename + quant + the licence line quoted verbatim**, and fill the model section of `Docs/ThirdPartyNotices.md`.
+    ⚠️ **xLAM-2 / Hammer 2.1 / Arch-Function are BANNED (non-commercial) and must never be selected** — they are exactly what a search suggests.
+    **(1) ⚠️ RUN IN PIE ON `L_Arena` WITH UNITS ON THE FIELD — NEVER AN EMPTY MAP.** The entire risk is *contention*; an empty-map number is
+    worse than no number because it looks like evidence. Use `SummonTestUnit` to field a realistic fleet on both sides first.
+    **(2) MEASURE ALL SIX BARS** (table at the top of this batch section), each across **full-offload / partial / CPU-only** where applicable:
+    frame-time hitch histogram (**worst + p99, never mean**) · TTFT + wall-clock for ~60 constrained tokens on a warm prefix · turn-1 vs
+    turn-2 prefill tokens (KV reuse, target **~70 % drop**) · peak VRAM + RSS **with the game at its own peak** · the 40-sentence exact-match
+    accuracy · and measurement **#6 from TASK-411's probe** (`Siege.Assistant.InputProbe`, both modes) run in the same session.
+    **Also record the REAL token count of the spike's snapshot text** so `MaxSnapshotChars` can be corrected from measurement instead of guessed
+    a second time.
+    **(2b) ⚠️ BAR #5 IS SCORED ON THE HOLDOUT, AND YOU OPEN IT EXACTLY ONCE (ruling 14, CONVENTIONS §11).** `assistant_eval_holdout.csv` has
+    been sealed since TASK-426 and TASK-410 was forbidden to read it. **Run dev and holdout, report BOTH, and state plainly that the number
+    measured against the ≥ 85 % bar is the HOLDOUT number.** ⚠️ **Quoting the dev score as the bar is a QA FAIL** — the plan's own remediation
+    ladder begins *"better few-shots"*, i.e. tuning against dev, so a dev score is a fitted number by construction.
+    ⚠️ **DO NOT tune anything after opening the holdout.** If the holdout misses and dev passes, that gap **is the finding** — report it as
+    GO-WITH-RESCOPE with the gap named, and any re-tune requires a **fresh** holdout, which is a new task, not an edit to this one.
+    **(3) THE VERDICT IS THREE-WAY and you REPORT it, you do NOT act on it:** **GO** (all bars met) · **GO-WITH-RESCOPE** (name the missed bar
+    and apply the plan's ladder — for accuracy: better few-shots → tighter grammar → bigger model → *only then* fine-tune) · **NO-GO**.
+    ⚠️ **DO NOT ROLL INTO TASK-423 ON YOUR OWN VERDICT.** The measurement is yours, the reading is the manager's, **the decision is Jonathan's
+    (TASK-415).**
+    **(4) NO Git** (TASK-414 owns the commit) · **`L_Arena` NEVER saved** · `reset --hard` / `clean -fd` BANNED.
+    Handoff `handoffs/TASK-413-buildmaster.md` — a numbers table with one row per bar per tier, the raw histograms, the per-row accuracy diff,
+    the model card evidence, and the verdict with its reasoning. Post the headline numbers + verdict in 🔧 Build & Git **and** a one-liner in
+    🚨 Blockers if the verdict is anything other than GO.
+- names: >
+    Model default `Qwen3.5-4B-Instruct` Q4_K_M → `<ProjectRoot>/Models/` · commands `Siege.Llama.SpikeBench` / `Siege.Llama.SpikeEval` /
+    `Siege.Assistant.InputProbe` · `Docs/ThirdPartyNotices.md`. Law: CONVENTIONS §7 (licensing + the banned list), §8 (prompt zones, the
+    ≤400-token cap), §10 (tunables). Plan: §"Do the spike".
+
+#### TASK-414 — [LLM-1d] Integration commit — the spike lane (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: **TASK-412 PASS** + **TASK-413** (commits the evidence **whatever the verdict** — a NO-GO is still a result worth keeping)
+- parallel-safe: no (EXCLUSIVE Git)
+- spec: >
+    **⛔ (0) BLOCKING PRE-FLIGHT — THE `.gitattributes` LFS RULE LANDS BEFORE OR WITH THE FIRST `Plugins/SiegeLlama/` COMMIT. THIS IS NOT A
+    FOLLOW-UP NOTE (CONVENTIONS "GIT HAZARD LAWS" (b); Jonathan ruled LFS).** `Plugins/` already holds **72 MB across 20 binaries with 0
+    tracked files**, headlined by **`ggml-vulkan.dll` at 49.9 MB**. ⚠️ **Git history is append-only — blobs committed raw stay raw FOREVER**,
+    and undoing it means a history rewrite on a repo Jonathan pushes. Add the `*.dll` / `*.lib` LFS rules, then **PROVE they bind BEFORE
+    committing**: paste `git check-attr filter -- <one vendored dll>` and `git lfs status`. **A `.gitattributes` that exists but does not match
+    the path is the same defect as no rule at all.** If LFS is unavailable on this machine, **STOP and escalate — do not commit the binaries raw.**
+    ⚠️ **(0a) VERIFY ANY HOLD-OUT RESTORE BY CHECKSUM, NEVER BY `git diff`** (same law, (a)). A `.uproject` toggle round-tripped through Python
+    came back **805 B instead of 859 B** — CRLF→LF on all 54 line endings — and **`git diff` showed it perfectly clean, because `autocrlf`
+    normalises exactly that away.** Record sha/size before, re-compare after.
+    Commit **on `main`, NO PUSH** (Jonathan's push, standing law). **PER-DELIVERABLE COMMITS** — the shipped house pattern; it is what lets
+    Jonathan revert one lane without losing the others:
+    **commit A** = the plugin + vendored `LlamaCpp` + `.uplugin` + both `Build.cs` + `.uproject` entry + `.gitignore` negations +
+    `Docs/ThirdPartyNotices.md` + `Tools/fetch_llm_model.py`;
+    **commit B** = the spike harness + `SiegeAssistantInputProbe.{h,cpp}` + **both corpus CSVs** (`Docs/Data/assistant_eval_dev.csv` +
+    `Docs/Data/assistant_eval_holdout.csv` — ⚠️ **the holdout is committed as authored and must never be edited afterwards**; a re-tune needs
+    a FRESH holdout in a new task, per ruling 14);
+    **commit C** = pipeline docs — `qa/TASK-412.md` + `handoffs/` + board + CONVENTIONS (docs-only commits are always permitted).
+    ⚠️ **VERIFY THE VENDORED BINARIES ACTUALLY LANDED**: after staging, `git ls-files Plugins/SiegeLlama/Source/ThirdParty` must list the
+    `.dll`/`.lib` files. **A silent `.gitignore` swallow is the specific failure this step exists to catch** — an empty result is a STOP.
+    ⚠️ `git ls-files` must show **no `.gguf` anywhere** and nothing under `/Models/`.
+    ⚠️ **The editor's Git provider auto-stages saved assets — stage by EXPLICIT PATHSPEC and re-check `git status --porcelain` after staging**
+    (the TASK-378 hazard). If anything foreign is dirty or staged, **STOP and report rather than committing it.**
+    `git diff --stat` clean on each · **`L_Arena` NEVER saved** · `reset --hard` / `clean -fd` BANNED · **real hashes on the board and in the
+    handoff, not placeholders** (the TASK-355/357 lesson) · **verify the ahead-count before asserting one** — do not trust a memory note.
+    Report `handoffs/TASK-414-buildmaster.md`. Post the hashes in 🔧 Build & Git.
+- names: >
+    Commits on `main`. Law: the hard gate (no code commit without a PASS QA report) + the per-deliverable commit pattern + Standing lesson 3
+    (commit board + CONVENTIONS at every batch boundary).
+
+#### TASK-415 — [LLM-H1] 🧑 JONATHAN — THE GO / GO-WITH-RESCOPE / NO-GO GATE (the spike verdict)
+- assignee: **Jonathan (human — one decision, no work)**
+- status: backlog
+- blocked-by: **TASK-413**
+- parallel-safe: yes
+- spec: >
+    **Read `handoffs/TASK-413-buildmaster.md` and decide.** Nothing in Wave 1 is written until this is answered, and **TASK-423 (the
+    subsystem) is blocked on a GO.**
+    **What the manager will put in front of you:** the six-bar numbers table per tier, the manager's reading, and a recommendation.
+    **The three answers:**
+    **GO** — all bars met; TASK-423 (`USiegeLlamaSubsystem`) is dispatched and Wave 1 decomposes once TASK-403 (the FOLLOW commit) also lands.
+    **GO-WITH-RESCOPE** — a named bar missed; the plan's ladder is applied (accuracy: better few-shots → tighter grammar → bigger model →
+    *only then* fine-tune; frame-time: partial-offload default, smaller `n_ubatch`, below-normal priority) and a re-measure task is boarded
+    before A2. **This is a normal outcome, not a failure.**
+    **NO-GO** — the feature is parked. The plugin, the harness and the game-lane Wave-0 code (snapshot / grammar / `FindNearestAncientGround`)
+    are already committed and the last three are **model-agnostic and keep their value regardless.**
+    **The one thing only you can weigh:** even at passing numbers, the assistant is **strictly additive** by law — but default-follow means you
+    now personally order every fight, so *your* tolerance for a 2-second pause mid-battle is the real bar, and no measurement substitutes for it.
+- names: >
+    Evidence: `handoffs/TASK-413-buildmaster.md`. Law: CONVENTIONS §2 (strictly additive) — the reason the downside of a marginal GO is
+    bounded. Plan: §"Do the spike" + §"Risks".
+
+#### TASK-416 — [LLM-A3] `USiegeAssistantSnapshot` — `Capture` + the three-zone serializer (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: **qa-passed** (2026-08-02 — `qa/TASK-419.md`. Zone A ↔ GBNF seam **PASSED BY PARSING, not eyeballing** — all 3 few-shots run through the landed grammar AND `ParseSiegeAssistantCommand`, all accepted, all four sketch traps correct (`who` not `select` · `n` not `count` · `"who":"none"` not `[]` · `{"ask":ASK}` taught with ask codes in exact order). Most-vexing-parse fix verified on disk at `:351`; the "include law" reading **REFUTED from the file** — `Engine/DataTable.h` is at `:6`. **Zone A's ~600 tok CONFIRMED CORRECT — no trim recommended anywhere.** ⚠️ **WARN-3 ORDERING (commit-critical):** this file depends on the FOLLOW batch's **UNCOMMITTED** `ACastle::FindNearestCastleForTeam` (`:234-235`) — law-mandated by §8, not a defect — so **TASK-422 commit A MUST NOT land ahead of the FOLLOW code commit or `main` will not compile.** WARN-2: Zone A was measured with `synonyms: none`; with the real `DA_AssistantVocabulary` it roughly doubles to ~1180 tok — still fits 2048 and the KV ratio *improves*, but TASK-413 must re-measure the context budget.)
+- blocked-by: **none — DISPATCHABLE NOW**
+- parallel-safe: yes; **EXCLUSIVE owner of `Source/GitClaudeUnrealTest/Siegebound/SiegeAssistantSnapshot.{h,cpp}`**
+- spec: >
+    **Read CONVENTIONS §3, §4, §8 and the §9 pinned registry first — the signatures are binding character-for-character.**
+    ⚠️ **PINNED LINK (designed, not a defect): this file includes TASK-417's `SiegeAssistantCommand.h` (for `LogSiegeAssistant`) and
+    `SiegeAssistantVocabulary.h`. It CANNOT COMPILE ALONE and is not expected to** — they compile together at TASK-420, exactly like
+    TASK-395/396. **Do not open a QA loop over it, and do not "fix" it by declaring a second log category.**
+    **(1) `Capture(UWorld*, ETeamId)` — SIX `TActorIterator` PASSES, ONCE PER TYPED SENTENCE, NEVER PER TICK** (~0.2 ms).
+    ⛔ **DO NOT ADD A UNIT REGISTRY, AN ACTOR CACHE, A DIRTY FLAG OR A SUBSCRIPTION LIST.** That rejection is law (CONVENTIONS §4): it is new
+    lifetime state to get wrong, to save time we never pay per frame. Cite the clause if tempted.
+    **(2) THE SNAPSHOT IS NOT A WORLD DUMP — IT IS THE SET OF THINGS THE PLAYER CAN LEGALLY NAME.** Roster **aggregated by CardID and group,
+    NEVER per-unit**; the **place vocabulary PINNED CHARACTER-FOR-CHARACTER IN CONVENTIONS §9a**; quantized match facts. Eligibility comes
+    from the **shipping** predicates `IsFollowCommandEligible()` / `IsGroupCommandEligible()` — **never reimplemented** (the
+    Cleric-follows-but-cannot-hold split is already law, and the sealed corpus asserts BOTH halves of it: a Cleric refuses zone orders and
+    accepts Follow).
+    **⚠️ (2a) THE SEVEN PLACE SYMBOLS, EXACT SPELLING — `enemy_castle` · `own_castle` · `mid` · `ancient_ground_near` ·
+    `ancient_ground_far` · `nearest_mine` · `hero`.** Two of these were only settled after TASK-426 delivered, so read §9a, not your memory:
+    · **`nearest_mine`** is the mine symbol (nothing had pinned one; the corpus author chose it and flagged rather than assumed) — asserted by
+      `DEV-23` and `HOLD-12`;
+    · **it is `own_castle`, NOT `my_castle`** — a `my_castle` spelling was proposed and **overruled**, because the sealed `HOLD-06` asserts
+      `own_castle` and the holdout is **frozen** (editing it voids the accuracy number under §11);
+    · **`hero`** is pinned for completeness but **no corpus row asserts it** — forward-looking vocabulary, not measured coverage.
+    A spelling drift here fails the go/no-go **for a naming reason rather than a model reason**, which is the worst way to fail a gate.
+    **The list is CLOSED for v1** — widening it silently changes Zone A and invalidates both the KV-prefix claim and the measured accuracy.
+    **(3) `ancient_ground_near` / `_far` ARE DERIVED, NOT STORED.** Under the 180°-rotational-symmetry law there are **exactly two** ancient
+    grounds and they are rotational twins, so `near` = `AAncientGround::FindNearestAncientGround(World, OwnCastleLocation)` and
+    `far` = the same call from the **enemy** castle location. Exact by construction, zero extra state. (That static is TASK-418's — pinned.)
+    ⚠️ **THE CASTLE LOCATIONS COME FROM THE SHIPPED HELPER: `ACastle::FindNearestCastleForTeam(World, Team, From)`** (`Castle.h:190`, pinned
+    in the FOLLOW section's §7 registry as of 2026-08-02). It **already skips DESTROYED castles**, so `own_castle`, `enemy_castle` and the
+    ancient-ground derivation all inherit that for free. **Writing a fresh castle `TActorIterator` in this file is a QA FAIL** — one search,
+    one owner. Callers own the nullptr case (a destroyed castle simply drops out of the place vocabulary; it must never be emitted as a name
+    the player can use).
+    **(4) THE THREE ZONES, AND THE LAYOUT IS LOAD-BEARING.** `BuildZoneA` static (system prompt, schema, place vocabulary, the synonym table
+    from `USiegeAssistantVocabulary::BuildSynonymTable()`, 3 few-shots) · `BuildZoneB` slow (castle HP **bands**, mid owner, gold **band**) ·
+    `BuildZoneC` fast (roster, pending-intent line, the utterance). **Fixed key order · every key ALWAYS emitted (empty prints `none`) ·
+    everything quantized into bands · NO timestamps and NO coordinates.** This is what lets `llama_kv_cache_seq_rm` keep the prefix and turn a
+    500-token prefill into ~150 from turn two — reordering zones or making Zone A state-dependent silently destroys it.
+    **QA CRITERION: calling `BuildZoneA` twice in one process returns BYTE-IDENTICAL strings.** It may change only when
+    `DA_AssistantVocabulary` changes.
+    **(5) HARD CAP ≤ 400 TOKENS, enforced as ≤ `MaxSnapshotChars` (1440, a conservative 3.6 chars/token)** until TASK-413 supplies the real
+    token count. Over-cap **truncates the ROSTER TAIL deterministically and logs once** — it must never truncate Zone A or the utterance.
+    **(6) `ResolvePlace(FName, FVector&)` KEEPS RESOLVED `FVector`s GAME-SIDE.** ⚠️ A coordinate must never reach the prompt (CONVENTIONS §3).
+    **(7) MATCH TASK-410's PROMPT BYTES** (`handoffs/TASK-410-programmer.md` records them) — spike measurement #3 is meaningless if the shipped
+    serializer emits a different layout.
+    **NO controller edits, NO unit edits, NO `Content/`, NO Git, NO compile.** New files only.
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-416-programmer.md` with a real captured snapshot pasted in full plus its character count.
+- names: >
+    `SiegeAssistantSnapshot.{h,cpp}` · `USiegeAssistantSnapshot` · `FSiegeAssistantRosterEntry` · `Capture` / `BuildZoneA` / `BuildZoneB` /
+    `BuildZoneC` / `GetRoster` / `GetPlaceNames` / `GetUnitKinds` / `ResolvePlace` (**§9 registry, character-for-character**) ·
+    `LogSiegeAssistant` · `MaxSnapshotChars` 1440. Law: CONVENTIONS "In-match LLM command assistant" §3, §4, §8, §9.
+
+#### TASK-417 — [LLM-A4] `USiegeAssistantGrammar::Build` + `FSiegeAssistantCommand` + the parser + `USiegeAssistantVocabulary` + **automation tests** (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: **qa-passed** (2026-08-02 **LOOP 2** — `qa/TASK-419.md`. Blocker closed at `SiegeAssistantVocabulary.cpp:126` = `militiamob`; option 2 correctly DECLINED so `CanonicalKind` stays a pure total derivation. Root cause verified correct AND complete: "`MilitiaMob` is the only multi-word `CardType == Unit` row" independently confirmed. Two new test guards close the **mechanism, not the class** — accepted as such, still exactly 11 tests, none removed or weakened. WARN-1 closed: `mage`/`caster`/`spellcaster` appear in **no alias anywhere**, only the `[notes]` prohibition line; DEV-06 + **HOLD-09** protected. ⬇️ LOOP-1 RECORD BELOW, PRESERVED. ⬇️ ~~qa-failed (loop 1) — ⚠️ **BLOCKER-1, ONE TOKEN:** `SiegeAssistantVocabulary.cpp:103` declares the canonical kind as `militia_mob`, which **can never be emitted** — `cards.csv` row 8 is `MilitiaMob` and `CanonicalKind` (`SiegeAssistantSnapshot.cpp:99-106`) yields **`militiamob`**, and that FName is what feeds the grammar's `kind` rule AND what Zone C prints. Zone A therefore teaches a symbol the sampler forbids while Zone C prints a different one for the same unit — a **self-contradicting prompt**, the unit-symbol analogue of the §9c seam. `militia_mob` is the ONLY occurrence of that spelling in the module. ⚠️ **TASK-426 had explicitly flagged this spelling as UNDECIDED and it was resolved silently** — the corpus→coverage direction inverted. FIX = `militiamob`; the alternative (pin `militia_mob` + a `CanonicalKind` exception) puts a special case into a currently-total derivation and needs a manager ruling. Corpus untouched either way. Also in the same pass: **WARN-1** `wizard <- "fire mage"` (`:109`) sits against the §9b `mage` prohibition and threatens DEV-06 **and the holdout row HOLD-09** — both `Clarify` rows; **WARN-5** same file pair. ✅ **CLEARED by independent re-derivation:** C4172 cause confirmed in the engine (`FJsonObject`'s `using FStringType = UE::FSharedString;` at `JsonObject.h:99`), helper deleted, **no pointer/ref-returning function and no explicit `TPair` binding survives anywhere in the lane**; the two key-type helpers genuinely survive `UE_JSONOBJECT_LEGACY_STRING_KEYS` flipping (`SharedString.h:74`/`:80` public on both types, legacy path live at `JsonObject.h:248`); `count` 1..30 with its guarding 1-kind-roster test; bounded alternation with **no `*`/`+`/`?`** anywhere; `Kinds.Num() != Counts.Num()` hard-fails at `SiegeAssistantCommand.cpp:408`.)
+- status-update: **ready-for-qa** (2026-08-02, **QA LOOP 1 FIXES IN** — see handoff §11). **BLOCKER-1 CLOSED:** `militia_mob` → **`militiamob`**, QA's recommended one-token direction; the `CanonicalKind` special-case route was NOT taken (it would put an exception into a currently-total derivation, and that needs a manager ruling). Verified from the artifacts, not the report: `militia_mob` now survives **only in explanatory comments**, and all 13 unit canonicals were diffed against `cards.csv` — every one is derivable by `CardID.ToLower()`. **WARN-1 CLOSED:** `"fire mage"` dropped; `mage`/`caster`/`spellcaster` now appear in **no alias**, only in the `[notes]` line that routes them to `which_unit`. **WARN-5 CLOSED:** all three stale `~350 tok` comments corrected **with the KV-ratio reason** (78% at 165/765 passes vs 68% at 165/515 marginally fails) so the trim cannot be re-derived. ⚠️ **DECLARED CROSS-OWNER EDIT:** two of the three WARN-5 sites are in **`SiegeAssistantSnapshot.h` (TASK-416's single-owner file)** — **comment-only, zero behaviour change**, made under explicit QA + orchestrator direction while the module was quiet. **NEW MECHANICAL GUARDS** in test 11 so neither defect can return: no unit canonical may contain `_` (the one that would have caught BLOCKER-1 — deliberately NOT applied to places, where underscores are correct), and no unit alias may contain `mage`/`caster`/`spellcaster` as a **substring** (stricter than §9b's token prohibition, on purpose). **Corpus untouched. Zone A size untouched. `count` range untouched.**
+- handoff: `.claude/pipeline/handoffs/TASK-417-programmer.md` (built against **manager ruling 15** — multi-kind `Kinds`/`Counts` + the cap IN the grammar; pre-flight `git status` on `Build.cs` was CLEAN; 7 new files + the 2-word `Build.cs` addition; 11 automation tests; §10/§10b the compile-fix chain; §11 the QA loop-1 fixes)
+- blocked-by: **none — DISPATCHABLE NOW**
+- parallel-safe: yes; **EXCLUSIVE owner of `SiegeAssistantCommand.{h,cpp}`, `SiegeAssistantGrammar.{h,cpp}`, `SiegeAssistantVocabulary.{h,cpp}`, the test file, AND `Source/GitClaudeUnrealTest/GitClaudeUnrealTest.Build.cs`**
+- spec: >
+    **Read CONVENTIONS §1, §3 and the §9 pinned registry first — the signatures are binding character-for-character.**
+    **(0) PRE-FLIGHT:** `git status --porcelain Source/GitClaudeUnrealTest/GitClaudeUnrealTest.Build.cs` — **if dirty, STOP and report.**
+    Add **`Json`, `JsonUtilities` ONLY**. ⚠️ **NOT `HTTP`, NOT `Sockets`** (in-process llama.cpp needs neither; the sidecar was rejected —
+    a Defender firewall prompt on first launch of a shipped game is unacceptable). **Do NOT add the `SiegeLlama` plugin dependency here** —
+    the game lane does not call the subsystem until Wave 1's B2.
+    **(1) `SiegeAssistantCommand.h` = THE PURE-DATA HEADER** (the `UnitCommand.h` / `TeamId.h` precedent): `ESiegeAssistantIntent`,
+    `FSiegeAssistantCommand` (**`uint8`/`int32`/`FName` ONLY** — so M8 P2 takes it over the wire as-is, ~30 bytes at the cap, with inference
+    staying client-local), `static constexpr int32 SiegeAssistantMaxSelectionKinds = 3`, the free function `ParseSiegeAssistantCommand`, and
+    **`DECLARE_LOG_CATEGORY_EXTERN(LogSiegeAssistant, Log, All)`**.
+    ⚠️ **THE SELECTION IS MULTI-KIND (manager ruling 15 — my first pin was WRONG and is corrected).** `TArray<FName> Kinds` +
+    `TArray<int32> Counts`, **index-aligned parallel arrays, NEVER an array of structs** (that is what keeps the type to `FName`/`int32` only
+    and preserves the P2 "takes it as-is" property). Hard cap `SiegeAssistantMaxSelectionKinds`. Without this the feature's own flagship
+    sentence — *"send 10 footmen **with a sorcerer** to the nearest ancient ground"* — is inexpressible.
+    This header is what TASK-416 includes — **its contents are pinned; changing a name breaks the link and is an automatic QA FAIL.**
+    **(2) `USiegeAssistantGrammar::Build(const TArray<FName>& UnitKinds, const TArray<FName>& PlaceNames)` — PURE AND DETERMINISTIC.**
+    **No `UWorld`, no engine state, no UObject inputs — this shape is deliberate**: it decouples A4 from A3 entirely and is what makes the
+    automation tests genuinely cheap, with no model in the loop. Emits the plan's GBNF: `intent` (the 7 enum values, derived from
+    `ESiegeAssistantIntent` so there is ONE source) · `kind` and `where` **GENERATED from the passed arrays** (a small model physically cannot
+    name a unit that does not exist — grounding moves out of the weights and into the grammar) · **`count ::= 1..30 | "all"`** ·
+    `when ::= "now" | { kind, at_least }` · and a **`selection` list of 1..`SiegeAssistantMaxSelectionKinds` `{kind, count}` pairs**.
+    ⚠️ **THE CAP LIVES IN THE GRAMMAR, NOT ONLY IN THE PARSER** — an unbounded repetition rule is precisely what a small model rambles into,
+    and a bounded alternation costs nothing. The parser then enforces `Kinds.Num() == Counts.Num()`; **a mismatch is a parse FAILURE, never a
+    silent truncation.**
+    ⚠️ **`count` IS 1–30, NOT 1–LIVE-MAX, DELIBERATELY** — a grammar capped at the live 8 would make a request for 10 silently emit 8, i.e. the
+    exact valid-shaped-wrong-command failure this whole design exists to prevent, with the clarification made **undetectable** (CONVENTIONS §1).
+    A later "optimization" tightening this range is introducing the defect.
+    **(3) `ParseSiegeAssistantCommand`** — strict: reject unknown keys, reject out-of-range counts, map `"all"` → `Count = 0`, `"now"` →
+    `TriggerKind = NAME_None`. **Never partially fills on failure**; returns a reason string. **No player-facing text is produced here** —
+    reason codes only (§3).
+    **(4) `USiegeAssistantVocabulary : UDataAsset`** with `UnitSynonyms` / `PlaceSynonyms` / `IntentSynonyms` (`FSiegeAssistantSynonym`) and
+    `BuildSynonymTable()` emitting the **Zone-A** synonym block with **deterministic ordering** (Zone A must be byte-stable).
+    ⚠️ **The vocabulary feeds the PROMPT, never the grammar** — the grammar emits canonical symbols only. ⚠️ **It must disambiguate
+    Sorcerer vs Wizard, which are different cards.** The class ships with sane C++ defaults so the game works before the asset exists; the
+    **asset instance is TASK-421's** deliverable.
+    **(5) AUTOMATION TESTS — the one place unit tests are genuinely cheap here.** `IMPLEMENT_SIMPLE_AUTOMATION_TEST` under
+    `#if WITH_DEV_AUTOMATION_TESTS` (no new module needed — `AutomationTest.h` is in `Core`). Cover at minimum: determinism (same inputs ⇒
+    byte-identical GBNF, run twice) · empty roster (grammar still well-formed, `kind` degenerate case handled) · the full 7-intent alternation ·
+    **`count` upper bound is exactly 30** · a place list with one entry · round-trip `Build` → a hand-written conforming JSON →
+    `ParseSiegeAssistantCommand` → the expected struct · and **at least 3 malformed JSONs that MUST be rejected**.
+    **MULTI-KIND CASES ARE MANDATORY:** a 1-kind selection · a 2-kind selection (the flagship *"10 footmen with a sorcerer"*) · a 3-kind
+    selection at the cap · **a 4-kind attempt that the GRAMMAR must not admit** · and **a `Kinds`/`Counts` length mismatch that the PARSER
+    must reject rather than truncate.**
+    **NO snapshot code, NO subsystem code, NO `Content/` asset, NO Git, NO compile.**
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-417-programmer.md` with a full sample GBNF pasted in, plus the test list and what each asserts.
+- names: >
+    `SiegeAssistantCommand.{h,cpp}` (`ESiegeAssistantIntent`, `FSiegeAssistantCommand`, `ParseSiegeAssistantCommand`, `LogSiegeAssistant`) ·
+    `SiegeAssistantGrammar.{h,cpp}` (`USiegeAssistantGrammar::Build`) · `SiegeAssistantVocabulary.{h,cpp}` (`USiegeAssistantVocabulary`,
+    `FSiegeAssistantSynonym`, `BuildSynonymTable`) · tests in `Source/GitClaudeUnrealTest/Siegebound/Tests/SiegeAssistantGrammarTest.cpp` ·
+    `GitClaudeUnrealTest.Build.cs` += `Json`, `JsonUtilities`. **All signatures per CONVENTIONS §9, character-for-character.**
+
+#### TASK-418 — [LLM-A5] `AAncientGround::FindNearestAncientGround` — the `FindBestMineFor` idiom (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: **qa-passed** (2026-08-02 — `qa/TASK-419.md`, 0 findings. Matches its **committed** donor `AGoldNode::FindBestMineFor` and — verified — creates **no dependency on the uncommitted FOLLOW batch**, unlike TASK-416. The implementer caught that `ACastle::FindNearestCastleForTeam` was described as a "shipped precedent" in its dispatch when it is in fact FOLLOW-batch parked work, and matched the committed donor instead.)
+- blocked-by: **none — DISPATCHABLE NOW**
+- parallel-safe: yes; **EXCLUSIVE owner of `Source/GitClaudeUnrealTest/Siegebound/AncientGround.{h,cpp}`**
+- spec: >
+    **(0) PRE-FLIGHT:** `git status --porcelain Source/GitClaudeUnrealTest/Siegebound/AncientGround.{h,cpp}` — **if dirty, STOP and report.**
+    This file is not owned by the FOLLOW batch, but it is a shipped file and this task is its single owner for the duration.
+    **(1) ADD EXACTLY ONE PUBLIC STATIC** (§9 registry, character-for-character):
+    `static AAncientGround* FindNearestAncientGround(UWorld* World, const FVector& From);`
+    Model it on **`AGoldNode::FindBestMineFor(UWorld*, ETeamId, const FVector&)`** — same `TActorIterator` shape, same null-safety, same
+    strict-`<` no-churn tiebreak so the result is stable frame to frame. **Null `World` or zero grounds ⇒ `nullptr`, never a crash.**
+    **(2) NO TEAM PARAMETER, AND THAT IS DELIBERATE.** An ancient ground is **team-neutral** — a contested ground empowers both sides through
+    their own sorcerers (the shipped FRIENDLY-ONLY boost law). Near/far is resolved by the **caller** passing its own or the enemy castle's
+    location; under the 180°-rotational-symmetry law there are exactly two grounds and they are rotational twins, so the two calls return the
+    two distinct grounds **exactly, by construction.** Say this in the doc comment so nobody adds a team filter later.
+    **(3) DO NOT TOUCH ANYTHING ELSE IN THIS FILE.** The boost tick, `InitAncientGround`, the pushed-authority law
+    (⚠️ **a `HasAuthority()` call anywhere in `AncientGround.cpp` is a QA FAIL**), the decal/footprint code, `IsPointInZone`, the paired
+    `ZoneHalfExtent` tunable and the NET RELEVANCY TIER C declaration are all **byte-identical after this task.** This is an additive
+    read-only query and nothing else.
+    **(4)** Blueprint exposure is optional; if added it is `BlueprintPure`, `Category = "Siegebound|AncientGround"`, and it changes nothing else.
+    **(5) VOCABULARY CONFORMANCE (added 2026-08-02).** This static is what TASK-416 resolves **`ancient_ground_near`** and
+    **`ancient_ground_far`** through — those two spellings are pinned in CONVENTIONS §9a and are asserted by six sealed corpus rows
+    (`DEV-01/05/18/24`, `HOLD-01/02/08/09`). **You do not emit symbols here** — you return an actor, and the naming lives in TASK-416 — but
+    **do not rename, wrap or "clarify" this function in a way that changes which of the two grounds a caller gets**, because near/far is
+    derived purely from which location the caller passes in.
+    **NO `Content/`, NO Git, NO compile.**
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-418-programmer.md` naming the `FindBestMineFor` lines you mirrored, file:line.
+- names: >
+    `AAncientGround::FindNearestAncientGround(UWorld* World, const FVector& From)` — **§9 registry, character-for-character** ·
+    idiom donor `AGoldNode::FindBestMineFor` (`GoldNode.h:153`). Law: CONVENTIONS "Ancient Grounds + Sorcerer + 180° terrain symmetry
+    (2026-08-01)" §1–§2 (untouched by this task) + "In-match LLM command assistant" §8 (the near/far derivation) and §9.
+
+#### TASK-419 — [LLM-QA2] QA gate covering TASK-416 · 417 · 418 (the game-lane Wave 0) (qa-reviewer)
+- assignee: qa-reviewer
+- status: **qa-passed** (2026-08-02 **LOOP 2: PASS** — 0 BLOCKER · 5 WARN (carry-forward, none gating) · 10 NIT. TASK-416 · 417 · 418 · 426 **all PASS**. **TASK-420 UNBLOCKED.** Loop 1 was FAIL on a single token; loop-1 record preserved as an appendix in the report.)
+- qa-loop2: ⚠️ **The `miner` set-difference was independently verified and is not a second defect — it is REQUIRED.** `AMinerUnit` derives from `ASummonedUnit`, so live miners get roster rows and `kind` alternatives, and **DEV-08 ("everyone fall back except the miners") is a sealed corpus row** — omitting `miner` would have been the defect. QA also ran the **REVERSE set-difference nobody asked for**: all 12 `CardType == Unit` rows are covered, and no other Economy/Utility row spawns a commandable unit — the check that could have found a third case.
+  ⚖️ **CROSS-OWNER RULING — ACCEPTED, as a NARROW 4-CONDITION PRECEDENT, NOT a licence.** TASK-417's comment-only edits in TASK-416's `SiegeAssistantSnapshot.h` are accepted: QA verified comment-only **independently** (declaration set byte-identical to loop 1, `.cpp` untouched). Single-owner guards **concurrent clobber**, and TASK-416 was already `qa-passed`, so no live writer existed. Conditions, ALL required: (1) owner already `qa-passed`, not merely "module quiet now" · (2) comment-only **and the reviewer re-derives that** · (3) under an explicit QA finding naming the sites · (4) declared in the handoff. Fail any one and it goes back to the owner as its own task. **Never a cross-owner `.cpp` edit; never for a NIT** — applied immediately: NIT-10 names a stale comment in TASK-416's `.cpp` and must NOT be fixed cross-owner.
+  ⚠️ **WARN-7 (NEW) → TASK-421:** the two new test guards read `GetDefault<>()`/`NewObject<>()` and **never see `DA_AssistantVocabulary`** — they protect the *fallback* table, not the *shipped* one, and TASK-421 is exactly where a bad canonical or a caster alias could return. Both rules must be **explicit acceptance criteria** there, checked against the authored asset.
+  ⚠️ **WARN-3 is a Git-ORDERING check, NOT a compile check** — a green compile+link does not close it. Settle with `git show HEAD:Source/GitClaudeUnrealTest/Siegebound/Castle.h | grep FindNearestCastleForTeam`; if absent from HEAD, TASK-422 commit A cannot precede the FOLLOW lane's `Castle.{h,cpp}` commit or `main` is left non-compiling.
+- qa: `.claude/pipeline/qa/TASK-419.md` ⚠️ **NOTE THE PATH** — the board's `names:` line and TASK-422's commit-A payload both pin `qa/TASK-419.md`; an earlier dispatch said `TASK-419-report.md` and QA correctly wrote the pinned name only, since a second file at a second path is the drift class this gate exists to catch.
+  **BLOCKER-1 is ONE TOKEN in TASK-417 only** — `militia_mob` can never be emitted (`militiamob` is what `CanonicalKind` yields). 416/418/426 need no rework. **QA loop 1 of 3.**
+  ⚠️ **THE RELAYED-DIAGNOSIS LAW WORKED:** all three relayed compile-error causes were re-derived from code and engine headers rather than inherited — one was **REFUTED** (the "include law" reading), two **CONFIRMED**. The gate that proved relays can be wrong did not exempt its own spec.
+  ⚠️ **WARN-3 ORDERING FOR TASK-422:** TASK-416 depends on the FOLLOW batch's UNCOMMITTED `ACastle::FindNearestCastleForTeam` — **commit A must not land ahead of the FOLLOW code commit or `main` will not compile.**
+  WARN-4: criterion (6)'s cross-check against `handoffs/TASK-410-programmer.md` is **not performable** — that handoff does not exist yet; the 78% KV figure is an estimate at 3.6 chars/token.
+- blocked-by: TASK-416, TASK-417, TASK-418
+- parallel-safe: no (single QA report)
+- spec: >
+    Pre-compile review. **Report `qa/TASK-419.md`, PASS/FAIL per task, blockers separated from warnings.**
+    **⚠️ EARLY INFORMATION — THREE REAL DIAGNOSTICS ALREADY EXIST, AND THEY ARE YOURS, NOT TASK-401's.** They surfaced when TASK-401 (the
+    FOLLOW lane's compile gate) ran against a **non-quiet module** while TASK-416/417 were mid-write — an ORCHESTRATION defect, now law
+    (CONVENTIONS "⛔ THE QUIET-MODULE LAW"). **Attribution follows the file the diagnostic names**, so these route here as early information:
+    · **`C2228`** — left of `.LoadSynchronous` must have class/struct/union — `SiegeAssistantSnapshot.cpp:338`
+    · **`C2737`** — `CardTable` const object must be initialized — `SiegeAssistantSnapshot.cpp:338`
+    · **`C4172`** — returning address of a temporary (`FindFieldExact`) — `SiegeAssistantCommand.cpp:58`
+    **⚠️ CORRECTED 2026-08-02 — AN EARLIER VERSION OF THIS SPEC CALLED THE FIRST TWO A COMPLETE-TYPE INCLUDE-LAW VIOLATION. THAT WAS WRONG,
+    AND IT IS EXACTLY THE MISTAKE THIS TASK EXISTS TO CATCH. DO NOT CHECK THEM AS CRITERION (12).**
+    · **`C2228` + `C2737` = C++'s MOST VEXING PARSE, and both are caused by line 337, not 338** (which is why the reported columns are 58 and
+      31). `Engine/DataTable.h` **was already included at line 6 of that file from the first version** — adding an include changes nothing and
+      **both errors would have survived into TASK-420.** `FSoftObjectPath` is a *type* and `CardTablePath` an *identifier*, so
+      `const TSoftObjectPtr<UDataTable> CardTableAsset(FSoftObjectPath(CardTablePath));` declares a **FUNCTION**; `.LoadSynchronous` on a
+      function name is `C2228`, and the `const` local left uninitialised is `C2737`. **Fix = brace-initialise `{ ... }`** — braces cannot be a
+      parameter list. **🔍 THE DISTINGUISHING TEST: a genuinely missing complete type gives `C2027` "use of undefined type". `C2228` on a name
+      that otherwise resolves fine is a PARSE problem, never an include problem.** Law: CONVENTIONS "C++ → MOST-VEXING-PARSE law".
+    · **`C4172` IS GENUINE AND IS UNDEFINED BEHAVIOR** — returning the address of a temporary is UB that a Development build may not crash on,
+      so it must **not** be waved through as a warning-class item. ⚠️ **AND ITS ROOT CAUSE IS ALSO NOT THE OBVIOUS ONE:**
+      `FJsonObject::Values` is a `TMap` whose iterator does **not** yield exactly `TPair<FString, TSharedPtr<FJsonValue>>&`, so naming that
+      type **CONVERTED rather than BOUND**, materialising a temporary every iteration. TASK-417 deleted the pointer-returning helper entirely
+      rather than patching the line. **TASK-416's author explicitly asked you to scrutinise THAT FIX'S ROOT CAUSE rather than take the relay —
+      do so. A fix can be sound while its stated reason is wrong, and then the wrong reason is what propagates.**
+    **🔍 STANDING DUTY (CONVENTIONS "THE RELAYED-DIAGNOSIS LAW", 2026-08-02): everything in this block is a LEAD, NOT A FINDING. Re-derive each
+    root cause from the code before accepting it — including this correction.** Three relayed diagnoses in this batch were already wrong or
+    incomplete (the `my_castle` pin, the "include law" reading above, and the shallow `C4172` read); **all three were caught by checking the
+    artifact instead of the message.** A wrong root cause ships a wrong fix *and* mis-teaches a coding law to every future task.
+    ⚠️ **Do NOT record these as TASK-401 findings and do NOT count them against the FOLLOW lane's QA loop budget** — that lane compiled
+    completely clean (7 TUs + 4 unity blobs, zero diagnostics, every §7 pinned symbol clear). **Verify the fixes are present** in what you
+    review; if the files still carry them, that is a BLOCKER on TASK-416/417.
+    **MANDATORY CHECKS:**
+    (1) **The §9 pinned registry, character-for-character** — every signature, including access levels. A "improved" signature is an
+    **automatic FAIL**. ⚠️ **TASK-416 not compiling standalone is DESIGNED (it includes TASK-417's header) — do NOT fail it for that.**
+    (2) **The central law** (§1): no multi-turn loop, nothing feeds model output back to a model.
+    (3) **`count` upper bound is exactly 30 and is NOT derived from the live roster** (§1) — a tightened range is a FAIL, not a nit.
+    (3b) **MULTI-KIND (ruling 15 / §9):** `Kinds` and `Counts` are **index-aligned parallel arrays, not an array of structs** (an array of
+    structs breaks the `FName`/`int32`-only property and the M8 P2 "takes it as-is" claim); the **cap of 3 is enforced in the GRAMMAR as well
+    as the parser**; and a `Kinds.Num() != Counts.Num()` input is **rejected, never silently truncated.**
+    (4) **Symbols only** (§3): **no `FVector`, no coordinate, no timestamp, no prose and no player-facing string reaches the prompt or the
+    command schema.** Confirm `ResolvePlace` keeps resolved locations game-side.
+    (5) **The unit-registry rejection is honored** (§4): no registry, no actor cache, no dirty flag, no subscription list.
+    (6) **Zone A byte-stability**: `BuildZoneA` called twice in one process returns identical bytes; fixed key order; every key always emitted;
+    everything banded/quantized; no timestamps. **Confirm the layout matches `handoffs/TASK-410-programmer.md`'s recorded prompt bytes** —
+    if it does not, spike measurement #3 is void.
+    (6a) **⚠️ THE ZONE-A ↔ GRAMMAR SEAM — BLOCKER-LEVEL, AND IT IS A SILENT-FAILURE SEAM (CONVENTIONS §9c).** **PARSE EVERY Zone-A few-shot's
+    JSON WITH THE LANDED GBNF/parser and show it is ACCEPTED.** "It looks like the schema" is **not** evidence. If a few-shot disagrees with the
+    grammar, constrained decoding fights it on every token and **bar #5 collapses for a reason no log line names.** Check the four known
+    sketch-vs-landed traps by name: the selection key is **`who`** (not `select`) · the per-pair count key is **`n`** (`count` is the GBNF *rule*
+    name, never a JSON key) · an army-wide verb emits **`"who":"none"`**, not `[]` · and the **`{"ask":ASK}`** question branch must be taught by
+    a few-shot. **The landed grammar owns the key names; the prompt conforms to it, never the reverse.**
+    (6b) **⚠️ ZONE A IS DELIBERATELY ~600 TOKENS AND THAT IS NOT A FINDING.** The ≤ 400-token cap governs **Zone B + C only**. A bigger static
+    prefix makes bar #3 *better*: measured **165/765 = 78 % drop (PASS)** vs **165/515 ≈ 68 % (MARGINAL FAIL)** at a trimmed 350.
+    **Do NOT file Zone A's size as a defect, and do NOT recommend trimming it** — that would convert a passing measurement into a failing one.
+    (7) **Zone B+C cap** ≤ `MaxSnapshotChars` (as-built 164 tok = 41 % of budget), over-cap truncates the roster tail deterministically and logs
+    once, never truncates Zone A or the utterance.
+    (8) **Eligibility uses the SHIPPING predicates** `IsFollowCommandEligible()` / `IsGroupCommandEligible()` — **never reimplemented.**
+    (9) **`AncientGround.{h,cpp}` is byte-identical apart from the one added static** — and confirm there is still **no `HasAuthority()` call
+    anywhere in `AncientGround.cpp`** (that is a standing QA FAIL under the ANCIENT-GROUNDS law).
+    (10) **`Build.cs` gained `Json` + `JsonUtilities` ONLY** — no `HTTP`, no `Sockets`, no plugin dependency yet.
+    (11) **Automation tests exist and actually assert** the listed cases, including the malformed-JSON rejections.
+    (12) **Standing coding laws:** the no-shadowing law · the complete-type include law · no literal `*/` in doc comments ·
+    `FString::Printf` format strings literal/`constexpr` (UE 5.8 `TCheckedFormatString`).
+    (13) **M8 DECLARATION DUTY stated verbatim** in all three handoffs.
+    Post the verdict in ⚙️ Dev & QA.
+- names: >
+    Report `qa/TASK-419.md`. Law: CONVENTIONS "In-match LLM command assistant (v1, text-only) — 2026-08-02" §1, §3, §4, §8, §9 +
+    "Ancient Grounds + Sorcerer + 180° terrain symmetry (2026-08-01)" §2.
+
+#### TASK-420 — [LLM-INT1] Compile GREEN + run the grammar automation tests + machine PIE sanity of the game-lane Wave 0 (build-master)
+- assignee: build-master
+- status: ✅ **done — COMPILE GREEN + 11/11 TESTS PASS** (2026-08-02 15:37, `Result: Succeeded`, zero diagnostics of any kind). **BLOCKER-1 CONFIRMED CLOSED BY MACHINE** (headless CDO+`DT_Cards` probe, **NOT** PIE — desktop LOCKED). ⛔ **WARN-3 SETTLED AND IT IS LIVE — IT GATES TASK-422** (see below). Handoff: `handoffs/TASK-420-buildmaster.md`
+- blocked-by: **TASK-419 PASS** — ✅ cleared
+- parallel-safe: no (EXCLUSIVE compile + editor)
+- result: >
+    ## ✅ COMPILE GREEN (2026-08-02 15:37)
+    ```
+    Result: Succeeded
+    Total execution time: 10.96 seconds
+    ```
+    Judged **on log text, not exit code**: `grep -inE "error|warning|unresolved|LNK|fatal|failed"` over the whole log returns
+    **ZERO rows**. Link reached and succeeded (`.lib` + `.dll`). Binary **3,283,456 B @ 15:37:01**, postdates every lane source.
+    **Nothing to attribute — zero diagnostics from any file, this lane's or any other's.**
+    ✅ **NOT A NO-OP RE-RUN OF TASK-401's GREEN.** TASK-401 RUN #3 (15:02) **predates four lane edits** (`Vocabulary.cpp` 15:20:48,
+    `GrammarTest.cpp` 15:21:16, `Snapshot.h` 15:21:51, `Vocabulary.h` 15:21:59) ⇒ **TASK-417's loop-2 fix had never seen a compiler
+    until this gate.** UBT recompiled exactly those TUs.
+    ✅ **MODULE VERIFIABLY QUIET:** 14 m 51 s since the last source write; no build/editor process running; 416/417/418 all
+    `qa-passed` (finished, handoffs written); TASK-401 `done`; 403/422/425 `backlog`. **Source snapshot before vs after the gate:
+    186 files, ZERO differences** ⇒ no foreign write, and I wrote no source file.
+    ✅ **PLUGIN HELD OUT AND RESTORED.** `SiegeLlama` set **explicitly `"Enabled": false`** (NOT deleted — the `.uplugin`'s
+    `"EnabledByDefault": true` at `:17` means deleting the entry would leave it ENABLED). **Zero `siegellama|llama` occurrences in
+    the build log** ⇒ fully excluded. Restored byte-identically: sha `63058F3C…`, **859 B**, `"Enabled": true`.
+    ⚠️ **NEW HAZARD CAUGHT — VERIFY A HOLD-OUT RESTORE BY CHECKSUM, NEVER BY `git diff`.** One toggle done via a Python
+    round-trip returned **805 B / sha `ca5c2cf6…`** — universal-newline read silently rewrote all 54 line endings CRLF→LF.
+    **`git diff` showed it as perfectly clean** (autocrlf normalises it away); only the checksum caught it. Restored from backup.
+    ⚠️ **`Plugins/SiegeLlama/` has NO `Binaries/` — it has never been built**, so leaving it enabled fails the *editor launch*, not
+    just the build. It stays **UNPROVEN through UBT/UHT** and keeps its **TASK-412** gate.
+    ## ✅ AUTOMATION TESTS — 11 FOUND, 11 RUN, **11 PASS**, 0 FAIL, 0 SKIPPED
+    `Found 11 automation tests based on 'Siegebound.Assistant'` → `...Automation Test Queue Empty 11 tests performed.`
+    All Success: `Command.NeverPartiallyFills` · `Command.Rejection` · `Command.RoundTrip` · `Command.SelectionInvariants` ·
+    `Grammar.CountRange` · `Grammar.DegenerateInputs` · `Grammar.Determinism` · `Grammar.Grounding` · `Grammar.Intents` ·
+    `Grammar.SelectionCap` · `Vocabulary.SynonymTable`. Exactly QA's 11 names — none added, removed, renamed or weakened.
+    **QA's four load-bearing tests all pass**, including **both new guards inside `Vocabulary.SynonymTable`** (guard A `:955-956`
+    no `_` in a unit canonical; guard B `:968-969` substring `mage`/`caster`/`spellcaster`, old whole-string check still alongside at `:975-976`).
+    ⚠️ **A first test attempt crashed and it was MY HARNESS FLAG, not the lane** — a non-standard `-noshadercompile` produced
+    `Fatal: Null assigned to TNotNull` **after** `FEngineLoop::Init()`, with a callstack of **100% engine DLLs and ZERO frames in
+    `UnrealEditor-GitClaudeUnrealTest.dll`**. Dropping the flag ran clean first time. **Not a finding against anyone.**
+    ## ⚠️ BLOCKER-1 (`militiamob`) — CONFIRMED CLOSED BY MACHINE, BUT **HEADLESS, NOT LIVE**
+    ❌ **NO PIE. I did NOT field a MilitiaMob and I claim no §(3) item.** Desktop **LOCKED** (`LogonUI` PID 30612).
+    ⚠️ **THE SPEC'S SUBSTITUTE IS NARROWER THAN ASSUMED — RECORD THIS:** `CanonicalKind` is a **private static in the `.cpp`** and
+    `GetUnitKinds()` a **plain inline getter**; `USiegeAssistantSnapshot` has **NO reflected functions at all**, so a commandlet
+    probe **cannot call either one.** What IS reflected is `USiegeAssistantVocabulary`'s three `UPROPERTY` tables.
+    ✅ **What I ran:** headless `-run=pythonscript` reading the **shipped CDO** (the object test 11 reads) against **`DT_Cards`**:
+    all **12 `CardType==Unit` CardIDs round-trip** (`MilitiaMob -> militiamob` **YES**); `MISSING: NONE`; the only extra canonical is
+    `miner` ← DT_Cards row `Miner`/`Economy` (QA-verified correct); **`militia_mob` absent**; **zero `_` in any unit canonical**;
+    **zero aliases embedding `mage`/`caster`/`spellcaster`**. This is the **`DT_Cards` set-membership check QA said "would close the
+    class outright"** but rightly kept out of the asset-free suite — **now run, but EXTERNAL to the suite, so it is not a regression guard.**
+    ❌ **What it does NOT prove:** it **derives** the symbol by applying `CanonicalKind`'s documented rule **in Python — it does not
+    execute the shipped function**, and **no roster line was printed by the real serializer.** The live "field a MilitiaMob, watch
+    Zone C print `militiamob`" confirmation is **STILL OWED** to the first task that reaches PIE.
+    ❌ **SPEC §(3)/§(4) NOT PERFORMED, ZERO ITEMS CLAIMED:** no snapshot capture/paste/char-count, no roster-aggregation check, no
+    `ancient_ground_near ≠ ancient_ground_far` 180° twin check, no coordinate/timestamp/prose sweep, no `BuildZoneA`-twice byte-diff,
+    no regression floor. All need a live world **and** a reflected entry point; both absent. Carry to the first live session.
+    ## ⛔ WARN-3 — SETTLED, AND IT IS **LIVE**. IT GATES TASK-422.
+    `git show HEAD:GitClaudeUnrealTest/Source/.../Castle.h | grep FindNearestCastleForTeam` → **no output**; `Castle.cpp` → **0**.
+    ⇒ **`ACastle::FindNearestCastleForTeam` is ABSENT FROM `HEAD`.** It exists only in the **uncommitted working tree**
+    (declared `Castle.h:190`, defined `Castle.cpp:655`), and `SiegeAssistantSnapshot.cpp:234-235` calls it **twice**.
+    > ⛔ **TASK-422 commit A MUST NOT land before — or without — the FOLLOW lane's `Castle.{h,cpp}` commit (TASK-403), or `main`
+    > is left NON-COMPILING** even though every working tree is green. **Invisible from either board in isolation.**
+    Orchestrator's options: **(a) run TASK-403 first** (clean), or **(b)** TASK-422 commit A additionally includes `Castle.{h,cpp}`
+    — which crosses lane ownership and **needs a ruling**. **I did not choose. Nothing is staged.**
+    ⚠️ **PATH TRAP FOR ANYONE RE-RUNNING IT:** repo root is **one level above** the project (`--show-prefix` = `GitClaudeUnrealTest/`).
+    QA's literal `git show HEAD:Source/...` **fails with `fatal:`, exits non-zero and prints nothing — which reads exactly like
+    "absent".** I nearly filed the right answer for the wrong reason. Correct form: `HEAD:GitClaudeUnrealTest/Source/...`.
+    ## ✅ OTHER
+    **QA note 4 / criterion (9) — `AncientGround` additive-only PASSES mechanically:** `git diff --numstat` = **44/0** (`.cpp`) and
+    **28/0** (`.h`) — **zero deletions ⇒ zero modified lines.**
+    **`L_Arena` NEVER opened, NEVER saved — 535,522 B / 7/29 03:53:38**, verified at gate start, post-build, and after both editor runs.
+    **NO Git, no push, nothing staged**; final `git status --porcelain` **identical to the session-start snapshot**, no `Content/`
+    asset dirtied by either headless run. `reset --hard` / `clean -fd` never invoked.
+    ⚠️ **CARRY-FORWARD — `.gitattributes` LFS TRAP IS LIVE, WITH NUMBERS.** Repo-root `.gitattributes` (305 B) covers
+    `uasset/umap/fbx/png/jpg/wav/mp4` and **has NO `*.dll` / `*.lib` rule**. `Plugins/` = **72 MB, `git ls-files` = 0 tracked** ⇒
+    **the trap has NOT sprung yet.** What it must catch: **20 `.dll`/`.lib`**, headlined by **`ggml-vulkan.dll` 49.9 MB** + `llama.dll`
+    2.7 MB + 15 `ggml-cpu-*.dll`. ⛔ **The pattern must be committed BEFORE the first commit that adds `Plugins/SiegeLlama/`** or those
+    blobs stay **raw in history permanently** — a later edit is not retroactive. **TASK-414 springs it; TASK-422 must not add `Plugins/` either.**
+    ➡️ **TASK-421 UNBLOCKED** (`USiegeAssistantVocabulary` compiled and in-editor — the probe instantiated its CDO by name).
+    ⚠️ Dispatch it with **WARN-6 + WARN-7 as explicit acceptance criteria**: my guard replication covers the **C++ CDO defaults ONLY**;
+    `DA_AssistantVocabulary` does not exist yet and **no test in the suite will ever see it.**
+- spec: >
+    **(0) ⛔ QUIESCE THE MODULE FIRST (CONVENTIONS "THE QUIET-MODULE LAW", 2026-08-02).** **Confirm no programmer task in
+    `Source/GitClaudeUnrealTest/` is in flight and no other compile gate is running** — TASK-401 / TASK-403 (FOLLOW) and TASK-422 / TASK-425
+    are **mutually exclusive** with this one. **A compile gate needs a QUIET MODULE, not merely non-overlapping files:** this exact contamination
+    already failed TASK-401 on three foreign diagnostics. If the module is not quiet, **STOP and report — do not build.**
+    **(1) COMPILE GREEN** (game module + the `SiegeLlama` plugin together). ⚠️ If it fails for a **Smart App Control** reason
+    (`0x800711C7`, ~2 s) that is **NOT a code error — do not loop QA**; escalate to Jonathan in 🚨 Blockers.
+    ⚠️ **ATTRIBUTE EVERY DIAGNOSTIC TO THE FILE THAT NAMES IT.** Anything from outside this batch's owned files is routed to its owning batch,
+    never recorded as this lane's finding, and the gate is **re-run once quiet, not re-litigated.**
+    **(2) RUN THE AUTOMATION TESTS** (`Automation RunTests` / the session frontend, headless is fine) and paste the pass/fail list.
+    **(3) MACHINE PIE SANITY on `L_Arena`** — no gameplay change is expected and none may appear:
+    · field a fleet with `SummonTestUnit`, capture a snapshot, and paste it **in full** with its character count (must be ≤ `MaxSnapshotChars`);
+    · confirm the roster is **aggregated by CardID and group, never per-unit**, and that eligibility matches the shipped predicates;
+    · confirm `ancient_ground_near` and `ancient_ground_far` resolve to **two DIFFERENT actors** and that each is the nearer one to its own
+      castle (the 180° twin check — this is a free assertion, take it);
+    · confirm **no coordinate, no timestamp and no prose** appears anywhere in the captured text;
+    · call `BuildZoneA` twice and diff the bytes — **must be identical.**
+    **(4) REGRESSION FLOOR:** the match runs exactly as before — every keyboard command works, nothing new spawns, nothing auto-enables.
+    **NO Git** (TASK-422 owns the commit) · **`L_Arena` NEVER saved** · `reset --hard` / `clean -fd` BANNED.
+    Handoff `handoffs/TASK-420-buildmaster.md`. Post in 🔧 Build & Git.
+- names: >
+    Build command per CLAUDE.md. Tests `SiegeAssistantGrammarTest.cpp`. Law: CONVENTIONS "In-match LLM command assistant" §3, §4, §8.
+
+#### TASK-421 — [LLM-A6] `DA_AssistantVocabulary` — the synonym data-asset instance (art-director)
+- assignee: art-director
+- status: backlog
+- blocked-by: **TASK-420** (the `USiegeAssistantVocabulary` class must be compiled and available in-editor)
+- parallel-safe: yes vs every code task; **no vs anything else needing the editor**
+- spec: >
+    Create the data-asset instance **`/Game/Data/DA_AssistantVocabulary`** from the compiled `USiegeAssistantVocabulary` class and fill its
+    three synonym tables. **This is a DATA task — no C++, no new class, no gameplay change.**
+    **(1) `UnitSynonyms`** — one row per commandable CardID, `Canonical` = the lowercase canonical symbol the grammar emits (e.g. `footman`),
+    `Aliases` = the natural words a player types. **Read `Docs/Data/cards.csv` for the authoritative CardID list — never invent a unit.**
+    Minimum coverage: plurals and colloquials (`footmen`, `infantry`, `soldiers` → `footman`; `bowmen`, `archers` → `archer`; `knights`,
+    `cavalry`, `horsemen` mapped to their **actual distinct cards**).
+    ⚠️ **THE ONE THAT MATTERS: `sorcerer` AND `wizard` ARE DIFFERENT CARDS AND MUST NOT SHARE AN ALIAS.** The Sorcerer is the non-attacking
+    ley-warden empowerer; the Wizard is the AoE fireball caster. A shared alias makes the assistant confidently command the wrong unit, which
+    is exactly the valid-shaped-wrong-command failure the whole design exists to prevent. **No alias may appear in two rows** — check it.
+    **(2) `PlaceSynonyms` — THE SEVEN CANONICAL SYMBOLS ARE PINNED IN CONVENTIONS §9a AND ARE NOT YOURS TO SPELL:**
+    `enemy_castle` (`their castle`, `the enemy base`, `red castle`) · **`own_castle`** (`home`, `our castle`, `base`) · `mid` (`middle`,
+    **`the middle`**, `mid lane`) · `ancient_ground_near` (`the nearest ancient ground`, `the near ancient ground`, `our ancient ground`) ·
+    `ancient_ground_far` (`the far ancient ground`, `their ancient ground`) · **`nearest_mine`** (`the nearest mine`, `the mine`) · `hero`.
+    ⚠️ **It is `own_castle`, NOT `my_castle`** — a `my_castle` spelling was proposed after the corpus sealed and was **overruled**, because
+    `HOLD-06` asserts `own_castle` and the holdout is frozen. **V1's place vocabulary is CLOSED** — no free-form map references, no "over
+    there". Widening it silently changes Zone A and invalidates the measured accuracy.
+    **(3) `IntentSynonyms`** — the 7 canonical intents (`send`, `guard`, `ambush`, `follow`, `charge`, `fallback`, `rally`) with natural
+    phrasings. ⚠️ **`charge`/`fallback` are ARMY-WIDE stances with no selection; `send`/`guard`/`ambush` are selection-bearing.** Do not give
+    an army-wide verb an alias that reads as selective (e.g. `attack with the footmen` must NOT alias to `charge`) — that mapping is the exact
+    friction the executor design exists to avoid.
+    **(4) KEEP IT SHORT AND ORDERED.** This table is serialized into **Zone A**, which is under a shared ~350-token budget and **must be
+    byte-stable** — so keep aliases tight (aim ≤ 4 per row) and let the ordering be deterministic. A bloated table eats the snapshot budget.
+    **(5) ⚠️ DECLARE REACTIVE COVERAGE (CONVENTIONS §11).** By the time you run, `Docs/Data/assistant_eval_*.csv` exist. Covering a phrasing a
+    corpus row uses is **legitimate work** — the corpus is a realistic distribution of what players type, and requirements flowing into the
+    vocabulary is the right direction. **But list, in the handoff, every alias you added BECAUSE a corpus row needed it**, so the reader knows
+    that coverage was reactive rather than independently derived. ⛔ **Never narrow or edit the corpus to match your table** — that is the
+    forbidden direction and it voids the go/no-go number.
+    **(5a) THE REACTIVE-ALIAS DEBT IS ALREADY KNOWN AND IS A REQUIREMENT, NOT A SUGGESTION** (`handoffs/TASK-426-artist.md` §"Reactive-coverage
+    debt", cross-checked by the manager). These aliases are asserted by sealed corpus rows and **must exist**:
+    `infantry` → `footman` · `footmen` → `footman` · `bowmen` → `archer` · **`horsemen` → `cavalry` (⚠️ NOT `knight` — they are two different
+    cards)** · `the middle` → `mid` · `their castle` / `the enemy base` → `enemy_castle` · `our castle` → `own_castle` ·
+    `the nearest ancient ground` / `the near ancient ground` → `ancient_ground_near` · `the far ancient ground` → `ancient_ground_far` ·
+    `the nearest mine` → `nearest_mine`.
+    **(5c) ⚖️ WARN-6 AND WARN-7 FROM `qa/TASK-419.md` ARE EXPLICIT ACCEPTANCE CRITERIA ON THIS TASK — NOT background reading.**
+    **⚠️ WARN-7 IS THE ONE THAT WILL OTHERWISE BE MISSED, AND IT IS THE WHOLE REASON THIS TASK IS DANGEROUS.** The two new automation guards
+    read `GetDefault<USiegeAssistantVocabulary>()` and `NewObject<USiegeAssistantVocabulary>()` — **both carry the C++ CONSTRUCTOR DEFAULTS.
+    NOTHING IN THE SUITE EVER LOADS THE AUTHORED ASSET.** So the guards protect the **fallback** table and **not the shipped one**, and
+    **this task is precisely where `militia_mob` or a caster alias could return — into the table that actually ships in Zone A.** The suite
+    reads as *"the bug can't come back"*; what it means is *"the bug can't come back in the file we just fixed."* **No test will ever catch a
+    defect you author here.**
+    **THE TWO RULES, VERIFIED AGAINST THE AUTHORED `.uasset` AND NEVER AGAINST THE CDO:**
+    **(a)** no unit `Canonical` contains a separator — it is the **CardID lower-cased, derived from `Docs/Data/cards.csv`, never spelled by
+    eye** (this is what `militia_mob` → `militiamob` was);
+    **(b)** **no alias on any row embeds `mage` / `caster` / `spellcaster` as a SUBSTRING** — substring, not equality, because
+    `battle mage` and `fire caster` would slip an equality check.
+    **WARN-6 — the reactive-alias debt is still OPEN and is your input:** `the nearest ancient ground`, `the nearest mine` and `the enemy base`
+    are **absent**, and ⚠️ **`ancient_ground_near` currently claims the bare alias `ancient ground`, which QUIETLY RESOLVES THE VERY AMBIGUITY
+    `DEV-06` WAS BUILT ON** — remove it. Add the three missing aliases per (5a).
+    **(5b) ⛔ THE NAMED PROHIBITION — `mage` MUST STAY UNALIASED, AND THIS IS AN AUTOMATIC QA FAIL TO VIOLATE (CONVENTIONS §9b).**
+    `mage` resolves to **NOTHING**. `sorcerer` and `wizard` are **different cards** and share **NO alias whatsoever.** The sealed corpus
+    carries `the mage` in **both** files (`DEV-06`, `HOLD-09`) as a **`Clarify`** row. **Aliasing it to either card converts an honest
+    clarification into a confident wrong command — the exact valid-shaped-wrong-command failure this feature's entire architecture exists to
+    prevent.** This is a prohibition rather than a note because *"add the obvious alias"* is precisely what a well-meaning future task will do,
+    and it would look like an improvement while silently deleting a gate row's meaning.
+    **NO C++, NO Git** (TASK-422 owns the commit). **`L_Arena` is NEVER opened and NEVER saved.** No other asset is touched.
+    Handoff `handoffs/TASK-421-artist.md` with the full table dumped as text, the total character count of `BuildSynonymTable()`'s output,
+    an explicit statement that no alias is duplicated across rows, and the reactive-alias list from (5). Post in 🎨 Art.
+- names: >
+    `/Game/Data/DA_AssistantVocabulary` (class `USiegeAssistantVocabulary`) · rows `UnitSynonyms` / `PlaceSynonyms` / `IntentSynonyms`
+    (`FSiegeAssistantSynonym{ Canonical, Aliases }`). Source of truth for CardIDs: `Docs/Data/cards.csv`.
+    Law: CONVENTIONS "Asset prefixes" (`DA_` → Content/Data/) + "In-match LLM command assistant" §5, §8.
+
+#### TASK-422 — [LLM-INT2] Integration commit — the game-lane Wave 0 + `DA_AssistantVocabulary` (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: **TASK-420** · ⛔ **TASK-403 (the FOLLOW commit) — SEE THE WARN-3 RULING BELOW; this is a HARD cross-batch blocker, and TASK-403 in turn waits on Jonathan's TASK-402 playtest gate** · (+ **TASK-421** for commit B — commit A may proceed without it once TASK-403 lands; say so if B is deferred)
+- ⚖️ **WARN-3 RULING (manager, 2026-08-02) — COMMIT A WAITS FOR TASK-403. VERIFIED LIVE, NOT ASSUMED.** `ACastle::FindNearestCastleForTeam` is **ABSENT FROM HEAD** (confirmed in both `Castle.h` and `Castle.cpp`); it exists **only in the uncommitted working tree**, and `SiegeAssistantSnapshot.cpp:234-235` calls it **twice**. Committing this lane first would leave **`main` NON-COMPILING even though every working tree compiles green** — the failure mode where "all lanes are green" and the branch is broken. **Build-master's offered alternative — folding `Castle.{h,cpp}` into commit A — is REJECTED:** that commits **FOLLOW-batch code Jonathan has not yet gated, under an LLM-batch commit, crossing lane ownership.** Not worth saving one wait. **CONSEQUENCE, STATED PLAINLY SO NEITHER IS DISPATCHED EARLY: TASK-422 and TASK-403 now BOTH queue behind Jonathan's TASK-402 playtest gate.**
+- parallel-safe: no (EXCLUSIVE Git — serialize with TASK-414 / TASK-425; order between them is the orchestrator's call)
+- spec: >
+    Final compile (must be GREEN), then commit **on `main`, NO PUSH** (Jonathan's push, standing law). **PER-DELIVERABLE COMMITS:**
+    **commit A** = C++ (`SiegeAssistantCommand.{h,cpp}`, `SiegeAssistantGrammar.{h,cpp}`, `SiegeAssistantVocabulary.{h,cpp}`,
+    `SiegeAssistantSnapshot.{h,cpp}`, `AncientGround.{h,cpp}`, the test file, `GitClaudeUnrealTest.Build.cs`) + `qa/TASK-419.md` +
+    `handoffs/` + board + CONVENTIONS;
+    **commit B** = `DA_AssistantVocabulary.uasset` (a data asset is its own deliverable and must not share a commit with the code).
+    ⚠️ **THE EDITOR'S GIT PROVIDER AUTO-STAGES SAVED ASSETS — stage by EXPLICIT PATHSPEC and re-check `git status --porcelain` after staging**
+    (the TASK-378 hazard). If anything foreign is dirty or staged, **STOP and report it rather than committing it.**
+    `git diff --stat` clean on each · **`L_Arena` NEVER saved** · `reset --hard` / `clean -fd` BANNED · **real hashes on the board and in the
+    handoff, not placeholders** (the TASK-355/357 lesson) · **verify the ahead-count before asserting one** — do not trust a memory note.
+    Report `handoffs/TASK-422-buildmaster.md`. Post the hashes in 🔧 Build & Git.
+- names: >
+    Commits on `main`. Law: the hard gate (no commit without a PASS QA report / a completed integration check) + the per-deliverable
+    commit pattern.
+
+#### TASK-423 — [LLM-A2] `USiegeLlamaSubsystem` — worker thread, queue depth 1, abort, timeouts, offload tiering, KV reuse (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: **TASK-415 = GO or GO-WITH-RESCOPE** (⛔ **manager ruling 3: this task's entire shape is determined by the spike's numbers — writing it before the verdict is writing it twice**)
+- parallel-safe: yes vs the game lane; **EXCLUSIVE owner of `Plugins/SiegeLlama/Source/SiegeLlama/{Public,Private}/SiegeLlamaSubsystem.{h,cpp}`**
+- spec: >
+    **Read CONVENTIONS §8 and the §9 pinned registry first — `USiegeLlamaSubsystem`'s four methods and the delegate are binding
+    character-for-character**, because Wave 1's B2 compiles against them.
+    **⚠️ FIRST ACT: DELETE `SiegeLlamaSpike.cpp` AND ITS CORPUS FILE.** Two model-load paths must never coexist (manager ruling 4). Carry the
+    spike's *measured* settings forward into this file; carry none of its structure.
+    **(1) `USiegeLlamaSubsystem : UGameInstanceSubsystem`** — it **survives level travel, so Play Again never reloads 2.5 GB** (the
+    `USiegeSessionSubsystem` precedent). Model load is **async and never blocks match start**; a failure logs on `LogSiegeLlama`, latches
+    faulted, and leaves `IsReady()` false forever after.
+    **(2) ONE DEDICATED `FRunnable` AT `TPri_BelowNormal`.** `llama_context` is **not thread-safe**, and a long-lived runnable makes
+    single-thread ownership **structural rather than a comment**. Do not use the task graph, do not use `Async()`, do not create a context per
+    request.
+    **(3) QUEUE DEPTH 1 — and it is enforced by the FSM, not by a queue.** `RequestCompletion` returns **false immediately** when
+    `!IsReady()` or `IsBusy()`. **This deletes the out-of-order / stale-context bug class entirely** — do not add a request queue "for
+    robustness"; that reintroduces exactly the class this design removes.
+    **(4) CANCELLATION VIA `llama_context_params::abort_callback` — the ONLY correct mechanism.** Polling a flag after generation is far too
+    late during a long prefill. `CancelActiveRequest()` routes through it.
+    **(5) THREE TIMEOUTS:** soft **4 s** (UX only — keeps waiting, just tells the FSM to say something), hard **10 s** (abort), token budget
+    **96**. Values are `EditDefaultsOnly`/named constants, **corrected from TASK-413's measurements**, all flagged for Jonathan's feel pass.
+    **(6) OFFLOAD TIERING + KV REUSE, BOTH DRIVEN BY THE SPIKE'S NUMBERS:** pick full-offload / partial / CPU-only from measured VRAM
+    headroom, defaulting to **partial** (the tier the frame-time bar is written against); `use_mmap = true`; small `n_ubatch`;
+    `llama_kv_cache_seq_rm` prefix retention keyed on the **Zone A + Zone B** prefix so turn two reuses it (**~70 % prefill drop** is the bar).
+    **(7) SAFETY:** SEH around the eval · **`bAssistantFaulted` session latch** · **the completion delegate ALWAYS fires on the GAME THREAD** ·
+    a GGML crash must not kill the game · shutdown joins the worker cleanly and frees the model.
+    **(8) THE PLUGIN STILL KNOWS NOTHING ABOUT SIEGEBOUND.** No `#include` of any game-lane header, no Siegebound type in any signature.
+    The entire API surface between the two lanes is `(prompt, gbnf) → string`. **A Siegebound include in this file is a QA FAIL.**
+    ⚠️ **AND NO MULTI-TURN LOOP** — this class exposes exactly one single-shot call and holds **no conversation state whatsoever** (§1).
+    **NO game-lane edits, NO `Content/`, NO Git, NO compile.**
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-423-programmer.md`: the tiering policy with the numbers it came from, the abort path traced end to end, and the
+    thread-ownership argument.
+- names: >
+    `Plugins/SiegeLlama/Source/SiegeLlama/{Public,Private}/SiegeLlamaSubsystem.{h,cpp}` · `USiegeLlamaSubsystem` ·
+    `FSiegeLlamaCompletionSignature` · `IsReady` / `IsBusy` / `RequestCompletion` / `CancelActiveRequest` (**§9 registry,
+    character-for-character**) · `LogSiegeLlama`. **DELETES** `SiegeLlamaSpike.cpp` + `SpikeCorpus.inl`.
+    Law: CONVENTIONS "In-match LLM command assistant" §1, §5, §8, §9, §10.
+
+#### TASK-424 — [LLM-QA3] QA gate on TASK-423 — the subsystem gets its OWN gate (qa-reviewer)
+- assignee: qa-reviewer
+- status: backlog
+- blocked-by: TASK-423
+- parallel-safe: no (single QA report)
+- spec: >
+    **This is a separate gate on purpose: a threading + native-interop subsystem must never share a QA report with pure gameplay code.**
+    **Report `qa/TASK-424.md`.** Beyond the standing laws:
+    (1) **THREAD OWNERSHIP.** Exactly one `llama_context`, touched by exactly one thread. No task-graph work, no `Async()`, no per-request
+    context. Trace every path that could touch the context off the worker — **any second toucher is a BLOCKER.**
+    (2) **The completion delegate ALWAYS fires on the GAME THREAD**, on every path including failure, timeout and abort.
+    (3) **Queue depth 1 is enforced by early-return, and NO request queue was added** (adding one reintroduces the stale-context class).
+    (4) **Cancellation goes through `abort_callback`** — a post-generation poll is a BLOCKER, not a warning.
+    (5) **Shutdown**: the worker is joined, the model freed, no dangling delegate into a destroyed UObject, and level travel does **not** unload
+    the model (it is a `UGameInstanceSubsystem` for exactly that reason).
+    (6) **SEH around the eval** + the `bAssistantFaulted` latch + **model-load failure never blocks match start.**
+    (7) **The plugin includes NO game-lane header and names no Siegebound type** (§8's lane split) — a violation is a BLOCKER.
+    (8) **NO multi-turn loop and NO conversation state held anywhere** (§1) — automatic FAIL.
+    (9) **§9 signatures character-for-character**, access levels included.
+    (10) **The spike harness is DELETED** (`SiegeLlamaSpike.cpp` + corpus) — two load paths coexisting is a BLOCKER (manager ruling 4).
+    (11) **Standing coding laws** + **M8 DECLARATION DUTY stated verbatim.**
+    Post the verdict in ⚙️ Dev & QA.
+- names: >
+    Report `qa/TASK-424.md`. Law: CONVENTIONS "In-match LLM command assistant" §1, §8, §9.
+
+#### TASK-425 — [LLM-INT3] Compile GREEN + integration commit — the inference subsystem (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: **TASK-424 PASS**
+- parallel-safe: no (EXCLUSIVE compile + Git — serialize with TASK-414 / TASK-422)
+- spec: >
+    Compile GREEN (game module + plugin). Then a **machine smoke test**: `Siege.Llama.Info` still reports the backend; the subsystem loads the
+    model asynchronously **without blocking match start**; `RequestCompletion` returns a parseable JSON for one hard-coded prompt+GBNF;
+    a second concurrent call **returns false** (queue depth 1); `CancelActiveRequest()` mid-prefill aborts within the hard timeout;
+    and a run with the model file **deliberately absent** leaves the match fully playable with one log line. **Re-measure the frame-time hitch
+    on the partial tier and compare against TASK-413's number** — a regression here is a finding, not a footnote.
+    Then commit **on `main`, NO PUSH**, per-deliverable: **commit A** = the subsystem (+ the spike-harness deletion in the same commit, since
+    the deletion is part of that change) + `qa/TASK-424.md` + `handoffs/` + board.
+    ⚠️ Stage by **EXPLICIT PATHSPEC**, re-check `git status --porcelain` after staging (the TASK-378 hazard); **STOP** on anything foreign.
+    `git diff --stat` clean · **`L_Arena` NEVER saved** · `reset --hard` / `clean -fd` BANNED · **real hashes, not placeholders** ·
+    **verify the ahead-count before asserting one.**
+    Report `handoffs/TASK-425-buildmaster.md`. Post the hashes + the smoke-test results in 🔧 Build & Git.
+- names: >
+    Commits on `main`. Law: the hard gate + the per-deliverable commit pattern.
+
+#### TASK-426 — [LLM-1e] 🔒 THE SEALED ADVERSARIAL EVALUATION CORPUS — 25 dev + 15 holdout Siegebound sentences (art-director, headless, file-only)
+- assignee: art-director
+- status: **ready-for-integration** (2026-08-02 — 🔒 **CORPUS SEALED**, per `handoffs/TASK-426-artist.md`. `Docs/Data/assistant_eval_dev.csv` **25 rows** + `Docs/Data/assistant_eval_holdout.csv` **15 rows**, pinned 9-column header byte-identical in both. Mechanically validated: every row exactly 8 commas, every `ExpectKinds` symbol a real `cards.csv` CardID, every `ExpectCounts` in 0..30 and index-aligned with its kinds, every `ExpectWhere` in the v1 place set, no `ExpectKinds` cell over the cap of 3, no sentence duplicated across the two files, every Refuse row asserting outcome only. All 10 mandatory adversarial categories appear in BOTH files (matrix in the handoff). Outcome mix DEV 13/9/3 Execute/Clarify/Refuse vs HOLDOUT 6/6/3 — comparable, no easy-file split. Expected outcomes were derived from SHIPPED law, not guessed: `ASummonedUnit::IsGroupCommandEligible()` / `IsFollowCommandEligible()` (`SummonedUnit.cpp:1934-1960`) gate on `ECardProfile`, so the Cleric (Support) is follow-only, the Ogre/Sapper (Siege) take no zone orders, and the Sorcerer (Standard) IS commandable — which is what makes the flagship sentence executable. ⚠️ **HOLDOUT NOT SHARED WITH ANY PROMPT AUTHOR AND FROZEN FROM THIS MOMENT**: TASK-410 must not open it, TASK-413 opens it exactly once, and the HOLDOUT number is the ≥85% go/no-go figure — a dev number quoted as the bar is a QA FAIL. 🚩 **TWO SCHEMA FINDINGS RAISED, NOT SILENTLY PATCHED (need a manager ruling BEFORE TASK-410 writes the runner — see handoff §Findings):** (1) **the pinned header has NO `ExpectIntent` column** yet bar #5 scores exact-match on `{intent, kinds, counts, where}` — the header was NOT deviated from; the expected intent is authored now as a deterministic `^intent=([a-z]+); ` prefix on every `Notes` cell, so the runner can score intent with a one-line regex and zero corpus edit; (2) **an empty cell is overloaded** — it means "not asserted", so a row whose correct answer is "this field IS empty" (`rally`, `fallback`) cannot be asserted. No editor, no Blender, no MCP, no C++, no Git; `cards.csv` untouched. **No QA is owed on art**; the seal's integration gates are TASK-412 (few-shot disjointness by literal string comparison) and TASK-413 (the one-time holdout open). ⛔ **Any later edit to `assistant_eval_holdout.csv` voids the accuracy number and requires a FRESH holdout in a new task.**)
+- blocked-by: **none — DISPATCHABLE NOW.** ⚠️ **MUST LAND BEFORE TASK-410 STARTS — that ordering IS the seal.**
+- parallel-safe: yes vs everything (headless, no editor, no Blender, no compile); **EXCLUSIVE owner of `Docs/Data/assistant_eval_dev.csv` + `Docs/Data/assistant_eval_holdout.csv`**
+- spec: >
+    **WHY A DIFFERENT OWNER WRITES THIS (manager ruling 14 / CONVENTIONS §11): accuracy bar #5 is the go/no-go number for a feature that could
+    consume weeks, and it must not be scored against a test set written by the person tuning the prompt.** This project has been burned by
+    exactly that shape three times — `Build.bat` returning exit 0 on a failed build, `rig_character.py` silently ignoring an override that did
+    not exist, MCP readback passing on visually-broken UMG. **Every one produced a confident green that was not real.** You are the
+    independent test author; **TASK-410 writes the prompt and the runner and may not touch these files.**
+    **⚠️ YOU ARE NOT WRITING ART. This is a data/authoring task and it is the ONLY reason it is yours: you are a different role from the prompt
+    author, and you already read `Docs/Data/cards.csv` as the roster source of truth.**
+    **(1) TWO FILES, PINNED HEADER, IDENTICAL IN BOTH, character-for-character:**
+    `Docs/Data/assistant_eval_dev.csv` (**25 rows**) and `Docs/Data/assistant_eval_holdout.csv` (**15 rows**).
+    `Id,Sentence,ExpectOutcome,ExpectKinds,ExpectCounts,ExpectWhere,ExpectTriggerKind,ExpectTriggerAtLeast,Notes`
+    `ExpectOutcome` ∈ **`Execute` | `Clarify` | `Refuse`**. `ExpectKinds` / `ExpectCounts` are **`|`-separated and index-aligned**
+    (the `FSiegeAssistantCommand` shape — ruling 15; **`Count` 0 means "all"**). An empty cell means that field is **not asserted** for the row.
+    **THE TWO FILES MUST BE COMPARABLE IN DIFFICULTY** — do not put all the easy rows in one. Distribute each adversarial category across both.
+    **(2) SENTENCES ARE NATURAL PLAYER ENGLISH, NOT CANONICAL SYMBOLS.** Write what a person actually types mid-fight — lowercase, terse,
+    unpunctuated, sometimes clumsy. ⚠️ **Do NOT phrase rows to match a synonym table** (`DA_AssistantVocabulary` does not even exist yet, and
+    that is deliberate). If a phrasing is realistic and the system later misses it, **that is a true finding, and surfacing it is this file's
+    entire job.**
+    **(3) ADVERSARIAL COVERAGE IS REQUIRED, NOT ASPIRATIONAL — every category appears in BOTH files:**
+    · **ambiguous quantities** ("send a few footmen", "most of the archers", "send 10" with no unit named);
+    · **units that do not exist in the live roster** ("send the catapults") ⇒ `Refuse`;
+    · ⚠️ **THE SORCERER/WIZARD COLLISION — the single most important rows in the file.** They are **different cards**: the Sorcerer is the
+      non-attacking ley-warden empowerer, the Wizard is the AoE fireball caster. Include rows for each **by name**, plus at least one row using
+      a word that could plausibly mean either ("send the mage to the ancient ground") ⇒ `Clarify`. A shared alias would make the assistant
+      confidently command the wrong unit — **the exact valid-shaped-wrong-command failure this whole design exists to prevent**;
+    · **a selection verb mixed with an army-wide one** ("charge with the footmen", "everyone fall back except the miners") — `charge`/`fallback`
+      are **latched army-wide stances with no selection**, so these must NOT map to a selective order;
+    · **MULTI-KIND selections** (ruling 15) — including the flagship *"send 10 footmen with a sorcerer to the nearest ancient ground"*, a
+      3-kind row at the cap, and **at least one 4-kind row that must be refused or clarified** (the grammar caps at 3);
+    · **shortfall** ("send 10 footmen" when only 8 could be alive) ⇒ `Clarify`;
+    · **deferred intent** ("wait until I have 2 more knights then send them mid") — fill `ExpectTriggerKind` / `ExpectTriggerAtLeast`;
+    · **out-of-scope requests that must be REFUSED, not attempted** ⇒ ⚠️ **the AI never plays cards and never spends gold** (Jonathan's ruling):
+      "play a knight", "buy a miner", "upgrade my sword" are all `Refuse`;
+    · **plurals/colloquials** (`footmen`/`infantry`/`soldiers`, `bowmen`, `horsemen`) and **`all`** ("send everyone at their castle").
+    **(4) THE ROSTER AND THE PLACES ARE NOT INVENTED.** Unit names come from **`Docs/Data/cards.csv`** — never invent a card. Places are v1's
+    deliberately small set: `enemy_castle`, `own_castle`, `mid`, `ancient_ground_near`, `ancient_ground_far`, the mines. A sentence naming a
+    place outside that set is a legitimate **`Refuse`/`Clarify`** row — label it so.
+    **(5) INTENTS** are exactly the 7: `send`, `guard`, `ambush`, `follow`, `charge`, `fallback`, `rally`. Nothing else is expressible.
+    **(6) SEAL DISCIPLINE.** Once handed off, **`assistant_eval_holdout.csv` is FROZEN** — TASK-410 must not read it and TASK-413 opens it
+    exactly once. If it is ever edited after this task, the accuracy number is void and a **fresh** holdout is required in a new task.
+    **NO C++, NO editor, NO `Content/`, NO Git** (TASK-414 commit B owns both files). **`L_Arena` is never opened.**
+    Handoff `handoffs/TASK-426-artist.md`: both files dumped as text, a coverage matrix (category × file × row count) proving every category
+    appears in both, and an explicit statement that you did not read any prompt/few-shot material while authoring. Post in 🎨 Art.
+- names: >
+    `Docs/Data/assistant_eval_dev.csv` (25 rows) · `Docs/Data/assistant_eval_holdout.csv` (15 rows) · header
+    `Id,Sentence,ExpectOutcome,ExpectKinds,ExpectCounts,ExpectWhere,ExpectTriggerKind,ExpectTriggerAtLeast,Notes` ·
+    `ExpectOutcome` ∈ `Execute`/`Clarify`/`Refuse` · roster source of truth `Docs/Data/cards.csv` · intents
+    `send|guard|ambush|follow|charge|fallback|rally` · places `enemy_castle|own_castle|mid|ancient_ground_near|ancient_ground_far|<mines>`.
+    Law: CONVENTIONS "In-match LLM command assistant (v1, text-only) — 2026-08-02" **§11 (the sealed/split corpus law)**, §9 (the multi-kind
+    `FSiegeAssistantCommand`, cap 3), §1 (the central law), §5 (naming).
 
 ---
 

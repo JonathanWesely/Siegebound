@@ -37,6 +37,14 @@ Owned by the **manager** agent. All agents MUST follow these. If a needed patter
 - Exception: pure data types (enums, structs, UInterfaces) may share a header-only file when they form one concept (e.g., `TeamId.h`)
 - Gameplay-relevant members exposed with UPROPERTY/UFUNCTION; use TObjectPtr for UObject members
 - **No shadowing inherited reflected members (coding law):** no local variable, function parameter, or loop variable may shadow an inherited reflected UPROPERTY — e.g. `Owner`/`PlayerState`/`Instigator`/`Controller` on AActor/APawn/AController, `Slot` on UWidget. UHT + the UE toolchain compile this as a HARD ERROR (C4457 param / C4458 member / C4459 global), not a warning. Rename the local (e.g. `OwnerState`, `IterPlayerState`, `SlotIndex`). **QA MUST scan every code task for this class of shadow pre-compile** — it slipped past QA twice in the M2 batch (TASK-025, TASK-029) and cost 2 build loops.
+- **⚠️ MOST-VEXING-PARSE law (coding law, added 2026-08-02 — TASK-416, `SiegeAssistantSnapshot.cpp:337`).** A local declared with **parentheses** whose argument is `TypeName(identifier)` is parsed by C++ as a **FUNCTION DECLARATION**, not a variable — redundant parentheses around a parameter *name* are legal, so the compiler sees a parameter of type `TypeName` named `identifier`:
+  ```cpp
+  const TSoftObjectPtr<UDataTable> CardTableAsset(FSoftObjectPath(CardTablePath));   // ✗ declares a FUNCTION
+  const TSoftObjectPtr<UDataTable> CardTableAsset{ FSoftObjectPath(CardTablePath) }; // ✓ braces CANNOT be a parameter list
+  ```
+  **Fix = brace-initialise.** The failure is two diagnostics on the FOLLOWING line, which is what makes it hard to read: applying `.` to a function name gives **`C2228`**, and the `const` local left without an initialiser gives **`C2737`**.
+  - **⚠️ WHY IT HAD NEVER BITTEN BEFORE, AND WHY IT WILL RECUR: every shipped `TSoftObjectPtr` resolve in this repo dodges it by passing a STRING LITERAL, and a literal can never be a parameter name.** **Hoisting the path into a named constant — good practice, done so a log line and the resolve share one string — is exactly what re-opens the trap.** In a codebase full of soft-object resolves this will happen again to someone doing the right thing.
+  - **🔍 THE DISTINGUISHING TEST (record it, it is how you tell these apart in seconds):** a genuinely missing complete type produces **`C2027` "use of undefined type"**. **`C2228` on a name that otherwise resolves fine is a PARSE problem, not an include problem** — adding a header will not fix it and the error will survive to the next gate.
 - **Complete-type include law (coding law, added 2026-07-09):** any `.cpp` that dereferences OR upcasts a value returned as a forward-declared pointer must `#include` that type's full header. The classic trap is component accessors: `GetCapsuleComponent()`, `GetMesh()`, `GetCharacterMovement()`, `GetWorldTimerManager()`, etc. return pointers whose types are only forward-declared by the base header, so calling a method or `Cast<>`-ing the result needs the complete type in the translation unit (e.g. `#include "Components/CapsuleComponent.h"`). This compiles as a HARD ERROR (C2027 "use of undefined type" / C2227), not a warning. **TASK-110 (HeroCharacter.cpp) failed compile on exactly this** — an upcast of `GetCapsuleComponent()` with no `CapsuleComponent.h` include — and QA cannot see include-completeness from source review alone. **QA MUST scan every code task for a member/`Cast<>`/method call on a type whose header is not `#include`d in that .cpp** (forward declaration is not enough); flag it as a pre-compile finding.
 
 ## C++ layout — Siegebound gameplay
@@ -246,6 +254,63 @@ Added 2026-07-28 (M8 kickoff, GDD §9.8; Jonathan: *"If it is ok to run it in pa
 - **PIPELINE-DOCS COMMITS ARE ALWAYS PERMITTED (ratified 2026-07-29):** `.claude/pipeline/**` docs (signed architecture, audits, QA reports, handoffs) may be committed **docs-only, at any time, by any agent that holds Git**, clearly labeled with **no integration claim**. The hard gate governs CODE and ART integration — it was never a reason to leave 30 KB of signed architecture untracked, and this repo has already lost never-committed docs once (`1a04971`). A docs-only commit is NEVER a substitute for a gated integration commit, and never carries code/asset paths.
 - **PHASE-GATE LAW (the M7.6 ladder shape):** P0 audit+architecture → **P1 FIRST PLAYABLE INCREMENT (hard gate: two clients, one `L_Arena` match, identical authoritative core state — castle HP both sides, own gold, match start/win/lose)** → P2 gameplay replication + RPC surfaces (units/hero/combat/placement/spells/group orders) → P3 lobby polish + client-deck handoff + practice-mode coexistence + edge cases → P4 hardening + capstone 2-client playtest + the GDD slice clip. Only the current phase is task-decomposed; later phases stay one-liners until their gate.
 - **M8 PARALLEL LAW (while any other lane holds uncommitted shared-module C++):** M8 tasks are READ-ONLY / NEW-FILES-ONLY until the conflicting lane's code commit lands (UBT compiles the whole module — parked C++ breaks every compile; two agents in one file clobber). Single owner per file within M8; `Config/DefaultEngine.ini` is single-owner like any file.
+  - **⚠️ AMENDED 2026-08-02 — THIS LAW GUARDS EDIT CONFLICTS ONLY, AND THAT GAP COST A COMPILE GATE (TASK-401).** "New files only" makes a task safe to *write* beside another lane; it does **NOT** make it safe to run beside a *build*. See **"⛔ THE QUIET-MODULE LAW — build-gate serialization (2026-08-02)"** below: **file-disjointness is not build-disjointness**, no programmer task in `Source/GitClaudeUnrealTest/` may be in flight while a compile gate runs, and two compile gates are mutually exclusive.
+
+## ⛔ THE QUIET-MODULE LAW — build-gate serialization (2026-08-02)
+Added 2026-08-02 after a **live pipeline defect**: TASK-401 (the FOLLOW lane's compile gate) came back `Result: Failed` on **three diagnostics from `SiegeAssistantCommand.cpp` and `SiegeAssistantSnapshot.cpp`** — files a live agent in a *different batch* was actively writing while the build ran. **The FOLLOW lane itself compiled completely clean** (7 lane TUs + 4 unity blobs, zero diagnostics; a grep of every §7 pinned symbol ∩ `error|warning|unresolved` returned zero rows — the registry held). **A clean lane was failed by a lane it has nothing to do with.** This is an ORCHESTRATION error, not an agent error, and it is recorded as law because it is invisible in any single task's spec — the same class as the board write-race.
+
+> ### **FILE-DISJOINTNESS IS NOT BUILD-DISJOINTNESS.**
+> `Source/GitClaudeUnrealTest/` is **ONE UBT module**. Any in-flight `.cpp` in that module — **even a brand-new file owned by an unrelated batch** — is compiled by, and can fail, every other lane's compile gate.
+> **The M8 PARALLEL LAW guards EDIT CONFLICTS, not COMPILE-GATE CONTAMINATION.** "New files only" makes a task safe to *write* beside another lane; it does **not** make it safe to run beside a *build*.
+> **Therefore: no programmer task in that module may be dispatched `▶ NOW` while any compile gate is running, and two compile gates are MUTUALLY EXCLUSIVE.** A batch's compile gate requires a **quiet module**, not merely non-overlapping files.
+
+- **THE ORCHESTRATOR'S DUTY (this is where the fix lives):** before dispatching a compile/integration task, **quiesce the module** — no programmer task in `Source/GitClaudeUnrealTest/` may be in flight. Before dispatching a programmer task in that module, **confirm no compile gate is running.** Cross-batch is exactly the dangerous case, because each batch's own board looks safe in isolation.
+- **A "quiet module" means: every C++ task in that module is finished (handoff written), not merely non-conflicting.** A half-written new file is the worst case — it is syntactically incomplete *and* nothing in any board flags it.
+- **THE PLUGIN BOUNDARY IS REAL AND IS WHY IT EXISTS.** `Plugins/SiegeLlama/` is a **separate UBT module**, so plugin-only work is genuinely parallel-safe against a game-module compile gate. This is a concrete, now-demonstrated payoff of the plugin split (CONVENTIONS "In-match LLM command assistant" §6 ruling B) — prefer plugin-side work when a game-module gate is imminent.
+- **DIAGNOSTIC ATTRIBUTION IS PART OF THE LAW.** A compile failure is attributed to **the file the diagnostic names**, never to the lane that happened to run the build. **Foreign diagnostics are routed to the owning batch's QA gate as early information, and are NEVER recorded as the running lane's findings** or counted against its QA loop budget. A build-master that reports "my gate failed" without naming which lane owns each diagnostic has not finished the report.
+- **A CONTAMINATED GATE IS RE-RUN, NOT RE-LITIGATED.** Once the module is quiet, re-run it. Do not "fix" another batch's in-flight file to make your own gate pass — that is a single-owner violation on top of a serialization violation.
+
+### Editor-close discipline at a build gate (build-master, added 2026-08-02)
+- **A graceful editor close can hang on a Slate "Save Content" modal.** ⚠️ **"Save Selected" sits DIRECTLY BESIDE "Don't Save"** — a blind click is a coin-flip that can write an unwanted asset, and `L_Arena` is under a **never-save** law. **RULING: terminating the process is the CORRECT call** when the only dirty assets are known-discardable; a blind modal click is not. Verify afterwards and report the evidence (precedent: `L_Arena` confirmed **byte-identical, 535,522 B, 7/29 03:53:38**, with only `L_Arena` and `BP_Unit_Wizard` dirty and both discardable).
+- This does **not** override the standing rule that **closing the editor is Jonathan's choice when he is present** — it governs only an unattended build gate.
+
+## ⛔ GIT HAZARD LAWS (2026-08-02) — three traps, all found live, all silent
+
+### (a) `git diff` CANNOT SEE A LINE-ENDING-ONLY CHANGE. A BYTE-LEVEL RESTORE IS VERIFIED BYTE-LEVEL.
+A `.uproject` plugin toggle done as a Python read/modify/write round-trip was restored and came back **805 B instead of 859 B** — **CRLF → LF on all 54 line endings** — and **`git diff` showed it PERFECTLY CLEAN because `core.autocrlf` normalises the difference away before the comparison.** Only the checksum caught it.
+- **LAW: any "I put the file back" claim is proven by CHECKSUM OR BYTE SIZE, never by `git diff`.** Record the sha/size before the edit and re-compare after. This generalises past `.uproject`: **`autocrlf` makes `git diff` structurally blind to whitespace-class corruption**, which is exactly the corruption a scripted round-trip introduces.
+- **PREFER A TEXT-PRESERVING EDIT OVER A PARSE/RE-SERIALISE ROUND-TRIP** for JSON/INI/config files. A round-trip rewrites every byte it did not need to touch; a targeted string edit does not.
+
+### (b) ⚠️ THE `.gitattributes` LFS TRAP — THE RULE MUST LAND *BEFORE* THE FIRST COMMIT THAT ADDS THE BINARIES
+**No `*.dll` / `*.lib` LFS rule exists in this repo today, and `Plugins/` already holds 72 MB across 20 binaries with 0 tracked files — headlined by `ggml-vulkan.dll` at 49.9 MB.** **Jonathan ruled LFS.**
+- **LAW: the `.gitattributes` LFS rule is committed BEFORE — or in the same commit as — the first commit that adds `Plugins/SiegeLlama/`.** ⚠️ **Git history is append-only: blobs committed raw stay raw FOREVER**, and un-doing it means a history rewrite on a repo Jonathan pushes. **This is a BLOCKING PRE-FLIGHT on the commit task, never a follow-up note.**
+- Verify with `git lfs status` / `git check-attr filter -- <path>` **before** committing, and paste the output — a `.gitattributes` that exists but does not match the path is the same defect as no rule at all.
+
+### (c1) ⚠️ THE HEADLESS-COMMANDLET FALLBACK IS NARROWER THAN IT IS USUALLY OFFERED — IT CAN ONLY REACH **REFLECTED** SURFACE
+The `-run=pythonscript` commandlet is repeatedly offered as a stand-in when PIE is unavailable. **It reaches UPROPERTY/UFUNCTION-reflected surface ONLY.** Worked example: **`USiegeAssistantSnapshot` has NO reflected functions at all** — `CanonicalKind` is a **private static in the `.cpp`** and `GetUnitKinds()` a **plain inline getter** — so a commandlet **cannot call either**, and offering it as a PIE substitute for those would waste a dispatch.
+- **What the route CAN do: read `UPROPERTY` tables off a CDO or an asset.** That is how the `DA_AssistantVocabulary` / `DT_Cards` CardID round-trip was closed without an editor.
+- **LAW: before offering the commandlet as a PIE substitute, name the REFLECTED symbol it will call.** If the answer is a private static, a free function, or a non-`UFUNCTION` inline, the route does not exist and PIE is genuinely owed.
+
+### (c) `git show HEAD:<path>` TAKES A REPO-RELATIVE PATH, AND FAILS SILENTLY-LOOKING WHEN IT DOES NOT
+**The repo root is ONE LEVEL ABOVE the project directory here.** `git show HEAD:Source/...` therefore exits **non-zero with `fatal:` and prints nothing** — **which reads exactly like "the symbol is absent from HEAD."** A build-master nearly filed the right conclusion for entirely the wrong reason.
+- **LAW: any spec, QA note or handoff quoting a `git show HEAD:` path uses the REPO-RELATIVE path** (`GitClaudeUnrealTest/Source/...`), and **any "absent from HEAD" claim must distinguish an empty result from a `fatal:`** — check the exit code, or grep the tree with `git ls-tree` first.
+
+## 🔍 THE RELAYED-DIAGNOSIS LAW (2026-08-02) — verify against the artifact, never against the message
+
+> ### **A RELAYED DIAGNOSIS IS A LEAD, NOT A FINDING. QA CONFIRMS THE ROOT CAUSE FROM THE CODE — NEVER FROM THE REPORT THAT QUOTES IT.**
+
+Added 2026-08-02 because this stopped being luck and became a pattern **three times in one batch**, each time the same way: *someone checked the artifact instead of trusting the message.*
+
+| # | The relayed claim | What the artifact said |
+|---|---|---|
+| 1 | The place symbol is `my_castle` | **`my_castle` appears NOWHERE on disk.** The sealed corpus asserts **`own_castle`** in both files, including the scoring holdout. A transcription slip, caught independently by two agents. |
+| 2 | `C2228`/`C2737` are a complete-type **include-law** violation | **`Engine/DataTable.h` was already included at line 6.** Adding it changes nothing and **both errors would have survived to the next gate.** The real cause was **C++'s most-vexing parse** one line above. |
+| 3 | `C4172` is "returning the address of a temporary" (the obvious read) | True, but **the root cause was not the obvious one**: `FJsonObject::Values` is a `TMap` whose iterator does not yield exactly `TPair<FString, TSharedPtr<FJsonValue>>&`, so naming that type **CONVERTED rather than BOUND**, materialising a temporary every iteration. The fix deleted the pointer-returning helper outright rather than patching the line. |
+
+- **THE DUTY IS QA's, AND IT IS NOT OPTIONAL.** When a diagnosis arrives via a board spec, a handoff, a Slack post or an orchestrator relay, **QA re-derives it from the source before accepting it.** A report that repeats a relayed root cause without independent confirmation has not reviewed anything — it has forwarded.
+- **⚠️ A WRONG ROOT CAUSE IS WORSE THAN NO ROOT CAUSE.** It ships a **wrong fix** (an include that changes nothing) *and* a **wrong lesson** (a coding law mis-taught to every future task), and it burns the QA loop that would have caught it. Diagnosis #2 above was already written into a task spec as the wrong criterion before it was caught.
+- **THIS APPLIES TO A CORRECT-LOOKING FIX TOO.** A fix can be sound while its stated reason is wrong — and then the reason is what propagates. **QA scrutinises the ROOT CAUSE of a fix, not only its outcome.** (TASK-416's author explicitly asked QA to re-check TASK-417's `C4172` fix rather than take the relay; that request is the law working as intended and is the behavior to copy.)
+- **THE MANAGER IS NOT EXEMPT.** Two of the three entries above were the manager's or the orchestrator's own errors, corrected in place. **Correcting the record is cheap; leaving a wrong lesson in a law file is not.**
 
 ## Ancient Grounds + Sorcerer + 180° terrain symmetry (2026-08-01)
 Added 2026-08-01 (batch **ANCIENT-GROUNDS**, TASK-358..378). Design authority = Jonathan's approved plan `C:\Users\wesel\.claude\plans\there-is-one-new-glittery-bentley.md` — **the plan file wins over any board summary**; it carries the verified file:line citations, the code sketches and the derivations, and this section does not re-derive them. Jonathan's directive: a new *ancient grounds* area of interest the size of the mid capture zone, one per side placed symmetrically; a new 60-cost **Sorcerer** unit that is commandable but cannot attack and empowers friendly units standing in an ancient ground; a boost bar above the health bar; and — follow-up — **all terrain becomes 180°-turn mirrored instead of X-mirrored**.
@@ -484,7 +549,22 @@ static AGoldNode* FindBestMineInDisc(UWorld* World, ETeamId Team, const FVector&
 
 // ACastle — public
 FVector GetInteriorAnchorLocation() const;
+
+// ─── ADDED TO THE PIN 2026-08-02 (manager, at the TASK-400 QA gate's request) ───
+// ACastle — public static.  SHIPPED, ADDITIVE, ruled ACCEPTABLE at the FOLLOW gate.
+// Skips DESTROYED castles, so callers own the nullptr case (CONVENTIONS §5:
+// "own castle destroyed => idle in place"). Castle.h:190.
+static ACastle* FindNearestCastleForTeam(UWorld* World, ETeamId Team, const FVector& From);
+
+// ASummonedUnit — public.  ⚠️ PINNED BECAUSE IT IS NOW GENUINELY CONSUMED, not
+// dead code: MinerUnit.cpp:605 (Hold/Ambush station) and :640 (Follow station).
+// An earlier handoff described it as landed-but-unused; that description is STALE
+// and must not be used to justify removing it. SummonedUnit.h:372.
+// One computation, one owner, zero drift — the miner READS the station the
+// controller pushed; a second sunflower implementation could silently disagree.
+FVector GetGroupStationOffset() const;
 ```
+- **🚩 FLAGGED, recorded not built (from `FindNearestCastleForTeam`'s own doc comment):** `ASummonedUnit::FindOwnCastle` could delegate to `ACastle::FindNearestCastleForTeam` in one line once `SummonedUnit.{h,cpp}` is free. Out of scope for TASK-398; a consolidation pass owns it.
 
 ### 8. Tunables (ALL `EditDefaultsOnly`, ALL flagged for Jonathan's feel pass) + reused constants
 - **NEW:** `ASiegePlayerController::FollowFormationRadius` **900** uu (the ring the squad spreads in around the hero) · `ASiegePlayerController::FollowRepathTolerance` **250** uu (the anti-repath band of §4) · `ACastle::InteriorAnchorRelativeLocation` `ZeroVector`.
@@ -493,6 +573,287 @@ FVector GetInteriorAnchorLocation() const;
 
 ### 9. Card-face ACCEPTANCE GATE — the tool name, reserved here before its task issues
 The card-face acceptance checker (`accept.py`) exists only in a session scratchpad, exactly like the render script that was lost. Its durable home is **`Tools/ArtPipeline/cardart_accept.py`**, sibling to `cardart_render.py`, under the same CLI + exit-code discipline; `Tools/**/*.py` is **CODE ⇒ QA-gated**. **Three criteria are added to it as law, because the shipped gate structurally could not see the Sorcerer defect** (`handoffs/SORCERER-DARKNESS-diagnosis.md` §4d/§5b): (1) the key is sampled from **all FOUR corners**, not the two top ones — the defect lived entirely in the two the gate skipped; (2) an **ABSOLUTE backdrop luminance floor** (≥ **0.08** linear, ~the fleet minimum) joins the relative ΔE2000 test — a gate made only of relative criteria drifts as a body; (3) a **gradient-direction assertion, bottom/top ≥ 1.0** — the fleet runs 1.36–6.76 and the Sorcerer 0.46, so this one criterion alone would have failed the shipped card and passed all twelve others. **Why this is not optional: the ΔE ≥ 10 uniqueness rule structurally pushes each new key DARKER** (shipped keys run `val` 0.225→0.655, mean 0.394, and the unoccupied colour volume is increasingly in the dark corner), so the blind spot gets worse with every card added. **The hardened gate must land BEFORE the 29-card roster re-render (TASK-387)** or the whole roster inherits the bias.
+
+## In-match LLM command assistant (v1, text-only) — 2026-08-02
+Added 2026-08-02 (Jonathan approved the feature; batch **LLM-ASSISTANT**, TASK-409+). Design authority = the approved plan `C:\Users\wesel\.claude\plans\there-is-one-new-glittery-bentley.md` (**the plan file wins over any board summary**; it carries the research findings, the derivations and the six spike bars, and this section does not re-derive them). The player types a natural-language order — *"send 10 footmen with a sorcerer to the nearest ancient ground"* — and a **local LLM shipped inside the game** translates it into the game's existing unit commands, surveying state first and asking a clarifying question when the request cannot be met.
+
+**Jonathan's four rulings (DECIDED 2026-08-02 — no agent re-opens them):** (1) **CPU fallback is required** — it must run on the modal 8 GB Steam card *and* CPU-only; no vendor lock-in (this is why the backend is **Vulkan + CPU, never CUDA**). (2) **V1 is a text-only vertical slice** — in-match console, the order verbs + unit selection, the clarification loop; **no voice, no macro UI, no settings screen.** (3) **Command only** — the AI never plays cards and never spends gold; the player spawns, the AI orders. (4) **Prompt-engineer first**, fine-tune only if measurement demands it.
+
+### 1. ⚠️ THE CENTRAL LAW — VERBATIM, AND IT IS THE ONE THAT KILLS THIS FEATURE IF BROKEN
+
+> **One utterance + one snapshot → one constrained JSON; the game owns the dialogue; a multi-turn model loop is a QA FAIL.**
+
+This is written first because **the most likely way this design dies is someone adding "just one more turn."** BFCL multi-turn scores collapse with model size (Qwen3-4B **35 %**, 1.7B 17 %, 0.6B **1.4 %**) while single-shot structured output holds at **~82 %** for 4B. We are building a **translator, not an agent.** The model never sees a prior turn, never holds conversation state, never chains a tool call. Each clarification turn is a **fresh single-turn call**; the FSM carries the context forward as one game-authored line in Zone C (`pending: guard footman×10 -> ancient_ground_near ; problem: only 8 available`). Any code that feeds a model's own previous output back to the model is an automatic QA FAIL, whatever it is called.
+
+> **Grammar guarantees existence, executor guarantees legality, FSM owns the conversation.**
+
+Three owners, three responsibilities, no overlap. The **GBNF grammar is generated per request from live game state**, so unit kinds and place names are literal enum alternatives and a small model *physically cannot* name a unit that does not exist — grounding moves out of the weights and into the grammar. The **executor** re-checks everything the grammar cannot know (counts, eligibility, authority). The **FSM** decides what to say and when. Constrained decoding guarantees **syntax, never semantics** — it cannot prevent a valid-shaped wrong command — which is why **confirm-before-execute with ghost circles on the ground is a requirement, not polish.**
+
+- **⚠️ Constrain identity hard, leave quantity soft — DELIBERATELY.** `count` runs **1–30**, *not* 1–live-max. If the grammar capped at the live 8, a player asking for 10 would get a silently-emitted 8 — the exact valid-shaped-wrong-command failure this design exists to prevent, and the clarification would become **undetectable**. A later task that "tightens" `count` to the live roster is introducing the defect, not fixing one.
+
+### 2. ⚠️ THE ASSISTANT IS STRICTLY ADDITIVE — AND THIS MATTERS MORE THAN IT SOUNDS
+**Every keyboard command still works, byte-identically. The console is never a requirement for any action. No future task may route a key through the assistant.**
+
+This is not a style preference. The FOLLOW batch made **Follow the spawn default**, so the player-side commandable fleet no longer auto-engages and **the player personally orders every fight.** An assistant that is merely unhelpful is fine; an assistant that becomes the *path* to a command and is unreliable makes the game **worse than before it existed.** So:
+- `IA_CmdFollow` / `IA_CmdAttack` / `IA_CmdHold` / `IA_CmdDefend` / `IA_CmdAmbush` / `IA_Rally` / cards 1–6 keep their exact shipped behavior and their exact shipped code paths. The assistant calls the **same public APIs the keys call** — never a parallel implementation, never a "better" one.
+- A model-load failure, a GGML fault, a timeout, a NO-GO verdict, or a missing GGUF **must never block match start and never degrade any key.** `bAssistantFaulted` is a session latch: it disables the console and nothing else.
+- **Jonathan's playtest gate includes, as a hard criterion: "verify every keyboard command still works identically with the console closed."**
+
+### 3. THE LLM EMITS SYMBOLS ONLY
+**Never coordinates, never prose, never player-facing text.** The model's entire output surface is one constrained JSON object of `uint8` / `int32` / `FName`-shaped symbols. **Every sentence the player reads is a game-authored template** filled from a reason code. Consequences that are law, not preference:
+- Resolved `FVector`s for named places stay **game-side**. The model sees `ancient_ground_near`; it never sees a number that means a position.
+- There is no "let the model phrase it nicely" path. A template table is the only source of player-facing strings.
+- Because the command struct is `uint8`/`int32`/`FName` only, **M8 P2 takes `FSiegeAssistantCommand` as-is** over the wire (~20 bytes), with inference staying client-local.
+
+### 4. ⛔ THE UNIT-REGISTRY REJECTION — RECORDED SO NOBODY "OPTIMIZES" IT IN
+`USiegeAssistantSnapshot::Capture` does **six `TActorIterator` passes, once per typed sentence, never per tick** (~0.2 ms). **DO NOT ADD A UNIT REGISTRY.** A registry is **new lifetime state to get wrong** (spawn/death/destroy/level-travel/Play-Again bookkeeping, and every one of those paths is a shipped bug class in this repo) **to save 0.2 ms that we never pay per frame.** The player types a handful of sentences per match; the cost is unmeasurable next to a single inference call. A future task proposing a registry, an actor cache, a "dirty flag", or a subscription list for this feature is **rejected on sight** — cite this clause.
+
+### 5. NAMING + FOLDER LAW (the cross-task contract)
+
+| Thing | Exact name | Location |
+|---|---|---|
+| Plugin | `SiegeLlama` | `Plugins/SiegeLlama/` (`SiegeLlama.uplugin`) |
+| Plugin runtime module | `SiegeLlama` | `Plugins/SiegeLlama/Source/SiegeLlama/` (`Public/`, `Private/`, `SiegeLlama.Build.cs`) |
+| Vendored llama.cpp | `LlamaCpp` | `Plugins/SiegeLlama/Source/ThirdParty/LlamaCpp/` — see §6 ruling B |
+| Inference subsystem | `USiegeLlamaSubsystem` (`UGameInstanceSubsystem`) | plugin — `SiegeLlamaSubsystem.h/.cpp` |
+| FSM / executor component | `USiegeAssistantComponent` (`UActorComponent`) | game — `SiegeAssistantComponent.h/.cpp` |
+| State snapshot | `USiegeAssistantSnapshot` (`UObject`) | game — `SiegeAssistantSnapshot.h/.cpp` |
+| Grammar builder | `USiegeAssistantGrammar` | game — `SiegeAssistantGrammar.h/.cpp` |
+| Command struct + intent enum + log category | `FSiegeAssistantCommand`, `ESiegeAssistantIntent` | game — `SiegeAssistantCommand.h/.cpp` (the `UnitCommand.h` / `TeamId.h` pure-data-header precedent) |
+| Vocabulary data-asset class | `USiegeAssistantVocabulary` (`UDataAsset`) | game — `SiegeAssistantVocabulary.h/.cpp` |
+| Vocabulary asset instance | `DA_AssistantVocabulary` | `/Game/Data/DA_AssistantVocabulary` |
+| Console widget | `USiegeAssistantConsoleWidget` (`UUserWidget`) | game — `SiegeAssistantConsoleWidget.h/.cpp` |
+| Reserved widget asset name (see §6 ruling A) | `WBP_AssistantConsole` | `/Game/UI/WBP_AssistantConsole` — **RESERVED, not authored in v1** |
+| Input action (Wave 1) | `IA_AssistantConsole` | `/Game/Input/Actions/IA_AssistantConsole`, mapped in `/Game/Input/IMC_Hero` |
+| Game-lane log category | **`LogSiegeAssistant`** | declared/defined in `SiegeAssistantCommand.h/.cpp` |
+| Plugin log category | **`LogSiegeLlama`** | declared/defined in `SiegeLlamaSubsystem.h/.cpp` |
+| Model weights (dev) | `<ProjectRoot>/Models/` | **gitignored wholesale** — see §7 |
+| Model fetch tool | `Tools/fetch_llm_model.py` | `Tools/**/*.py` is **CODE ⇒ QA-gated** |
+
+- **TWO log categories, deliberately.** The plugin knows nothing about Siegebound and must stay reusable/replaceable; giving it `LogSiegeAssistant` would couple it to the game lane it is architecturally forbidden to know about. `LogSiegeLlama` = tokens, backends, timings, faults. `LogSiegeAssistant` = snapshots, grammars, commands, FSM transitions, refusals. Both follow the `LogSiege<Domain>` law.
+- **DEV/SPIKE CONSOLE COMMANDS REGISTER VIA `FAutoConsoleCommand` / `FAutoConsoleCommandWithWorld` IN A NEW FILE — NEVER as a `UFUNCTION(exec)` on a shipped class.** `USiegeCheatManager` and `ASiegePlayerController` stay untouched by this batch. This is what keeps the whole inference lane genuinely **new-files-only** under the M8 PARALLEL LAW, and it works from any module including the plugin. Command namespace: **`Siege.Llama.*`** (plugin) and **`Siege.Assistant.*`** (game lane).
+
+### 6. THE TWO MANAGER RULINGS (asked for by name in the dispatch; both DECIDED)
+
+**RULING A — the console widget's tree is CODE-AUTHORED in v1. This is a NAMED, SCOPED, CONDITIONAL EXCEPTION to the `U<Name>Widget` ↔ `WBP_<Name>` law under "Widgets with C++ bases", and it does not generalize.**
+`USiegeAssistantConsoleWidget` builds its tree in `RebuildWidget()` via `WidgetTree->ConstructWidget<>` and ships with **no `.uasset`**. Reasoning, in the order that decided it:
+1. **The law's purpose is satisfied vacuously.** That law exists so the artist's asset name and the programmer's code reference cannot drift apart. When there is no asset, there is nothing to drift. The law is not being violated; it has no subject.
+2. **This repo's single most expensive UI failure mode is exactly the thing a `WBP_` here would invite.** The template-donor rule says every new widget starts as a **duplicate of a donor** — and a duplicated+reparented WidgetBlueprint has **silently broken RUNTIME repaint** on this project (design-time fine, ~9 wasted fixes), while a `K2Node_CustomEvent` masquerading as a BIE hid the health-bar defect **five times**. A code-authored tree cannot have either defect.
+3. **No human Designer step on a v1 vertical slice's critical path**, and the tree cannot drift from the C++ that drives it.
+
+**The exception's five conditions — it is a ruling, not a waiver, and all five are QA criteria:**
+- **(a) SCOPE.** It applies to `USiegeAssistantConsoleWidget` **only**. Every other new widget on this project still obeys the `WBP_` law. Citing this clause for another widget is a misuse.
+- **(b) THE ESCAPE HATCH IS BUILT IN, AT ZERO COST.** Every child widget is still declared as a `UPROPERTY(meta=(BindWidgetOptional))` member with the exact names below, and `RebuildWidget()` **constructs a child only if that member is still null after `Super::RebuildWidget()`**. A `WBP_AssistantConsole` authored later therefore wins automatically with **zero C++ change**.
+- **(c) THE ASSET NAME IS RESERVED NOW.** `/Game/UI/WBP_AssistantConsole` may not be used by anything else, so the fallback path never has a naming fight. Taking the fallback costs **one art task and zero C++ change** — it can be taken at any time, by Jonathan or by a later manager ruling, without a code task.
+- **(d) THE CONTRACT IS UNCHANGED.** The widget still clones `USessionMenuWidget`'s shipped contract exactly: `BindWidgetOptional` members, `BlueprintCallable` wrappers, and **FString/int32/bool/uint8-only BlueprintImplementableEvents** (FSM state is pushed as a `uint8`, never an enum — the widget-param law).
+- **(e) VERIFICATION IS A HUMAN PIXEL CHECK.** Because there is no `.uasset` to read back, correctness closes on **rendered pixels or Jonathan's eyes**, never on a tree/property readback (the standing UMG verification law — MCP readback has repeatedly passed on visually-broken UMG here).
+- **Pinned child-widget member names (the C++ and any future WBP both read this line):** `InputBox` (`UEditableTextBox`) · `TranscriptText` (`UTextBlock`) · `StatusText` (`UTextBlock`) · `ConfirmButton` (`UButton`) · `CancelButton` (`UButton`) · `RootPanel` (`UVerticalBox`).
+
+**RULING B — `Plugins/SiegeLlama/Source/ThirdParty/LlamaCpp/` SATISFIES the third-party-location law. It is not a deviation; it is the correct application of it.**
+The law is **`<ModuleRoot>/Source/ThirdParty/<LibName>/`**, where `<ModuleRoot>` is the **project root *or* a plugin root** — it was always a relative rule ("vendored third-party code lives in a `Source/ThirdParty/` subtree, never intermixed with first-party source"), never an absolute path. Three things settle it:
+1. **It is Epic's own convention** — engine and marketplace plugins vendor into `<Plugin>/Source/ThirdParty/<Lib>/` and reference it from the plugin's `Build.cs`.
+2. **Putting llama.cpp in the GAME module's `Source/ThirdParty/` would defeat the entire reason the plugin exists.** The game module is one UBT unit under per-file single-owner locks; its `PublicIncludePaths` and link settings are global to that unit, so third-party include paths and `/MD`-vs-`/MT` link settings would leak into every file every other lane owns. The plugin boundary is what lets the go/no-go spike run with **zero edits to any locked file.**
+3. **Reversibility.** A NO-GO verdict deletes one directory. Vendoring into the game module would leave residue in a file five other tasks touch.
+- **Vendored layout, pinned:** `LlamaCpp/include/` (`llama.h`, `ggml.h`, and their transitive headers only) · `LlamaCpp/lib/Win64/*.lib` · `LlamaCpp/bin/Win64/*.dll` · `LlamaCpp/LICENSE` (llama.cpp's MIT text, verbatim) · `LlamaCpp/VERSION.md` (upstream tag/commit + build flags + toolset, so the binaries are reproducible).
+- **⚠️ LINK THE C API ONLY** (`llama.h` + `ggml.h`). **Do NOT link llama.cpp's `common/` helpers** — they are C++ with STL in their signatures and are precisely where `/MD` vs `/MT` and toolset-mismatch link failures come from. Cost of not using them: ~60 lines of sampler setup we want to own anyway.
+- **`Build.cs` additions to the GAME module: `Json`, `JsonUtilities` — and nothing else. NOT `HTTP`, NOT `Sockets`.** In-process llama.cpp needs neither. A sidecar `llama-server.exe` was **considered and REJECTED**: a Windows Defender firewall prompt on first launch of a shipped game is unacceptable. A future task adding `HTTP`/`Sockets` for this feature is re-opening a closed decision.
+- **Backend: Vulkan + CPU. NEVER CUDA.** One binary covers NVIDIA / AMD / Intel — this is Jonathan's no-lock-in ruling made concrete.
+
+### 7. LICENSING DUTY + REPO HYGIENE (both are shipping blockers, and both are cheap to get wrong)
+
+- **`Docs/ThirdPartyNotices.md` is created by this batch and must carry BOTH:** (i) llama.cpp's **MIT** licence text verbatim, and (ii) **the model's own licence** verbatim, with the exact repo/file/quant it applies to. Missing notices is a shipping defect, not a docs nit.
+- **⚠️ THE EXACT GGUF QUANT'S MODEL CARD MUST BE VERIFIED AT CONTENT LOCK — NOT THE FAMILY.** A permissive base does not guarantee a permissive quant re-upload: quantizers re-host under their own terms, and a "Qwen3.5-4B-GGUF" repo is a *different* card from Qwen's. The handoff records the **repo id, the exact filename, the quant, and the licence line quoted verbatim.** "It's Apache because the family is" is not verification.
+- **⛔ BANNED MODELS — NAMED, BECAUSE THESE ARE EXACTLY WHAT A NAIVE SEARCH RECOMMENDS.** Every purpose-built small **function-calling** model is non-commercial and **must never be shipped**: **xLAM-2**, **Hammer 2.1**, **Arch-Function** (CC-BY-NC or research-only). Shipping one is a licensing breach.
+- **✅ PERMISSIVE BASES CLEARED FOR EVALUATION:** **Qwen3.5-4B (Apache 2.0)** — the default for the spike · Gemma 4 E4B (Apache 2.0, one clause to confirm) · Phi-4-mini (MIT) · SmolLM3-3B · Granite 4.x. Also clean and already relevant: **llama.cpp (MIT)**, Whisper + whisper.cpp (MIT), Silero VAD (MIT) — the last two are **not** v1 scope (no voice) and are listed only so a later voice pass does not re-research it.
+- **⚠️ `.gitignore` WILL SILENTLY SWALLOW THE VENDORED BINARIES.** The file globally ignores `*.dll`, `*.lib`, `*.a`, `*.so`, `*.exe`, `*.pdb`. Negations are **mandatory**, must be placed **AFTER** those rules (last matching pattern wins), and the parent directories must not themselves be ignored (they are not — only `Plugins/*/Binaries/` and `Plugins/*/Intermediate/` are, and the vendored tree is under `Source/`). Exact block:
+  ```gitignore
+  # --- SiegeLlama vendored third-party (LLM-ASSISTANT batch) ----------------
+  # The global *.dll / *.lib rules above would silently swallow these.
+  !Plugins/SiegeLlama/Source/ThirdParty/LlamaCpp/lib/**/*.lib
+  !Plugins/SiegeLlama/Source/ThirdParty/LlamaCpp/bin/**/*.dll
+  # Model weights NEVER enter git (~2.5 GB). Tools/fetch_llm_model.py fetches
+  # them into /Models, which is ignored wholesale.
+  *.gguf
+  /Models/
+  ```
+- **ACCEPTANCE, NOT ASSERTION:** `git check-ignore -v` on one vendored `.dll`, one vendored `.lib` and one `.gguf` is run and **pasted into the handoff**. The two vendored paths must report the negation line (or no match); the `.gguf` must report the ignore line. "I added the lines" is not the criterion.
+- **The GGUF is never in `Content/`** either — cooking/packaging a 2.5 GB blob as a uasset-adjacent file is a Wave-2 `RuntimeDependencies` problem, deliberately deferred. **`use_mmap = true`** is load-bearing for the 8 GB claim (the weights are page-cache-backed, not resident).
+
+### 8. PROMPT LAYOUT, THREADING, AND MULTIPLAYER POSTURE (short form — the plan carries the derivations)
+
+- **THREE PROMPT ZONES, AND THE LAYOUT IS LOAD-BEARING.** `ZONE A` **~600 tok as-built, DELIBERATELY UNBOUNDED** — STATIC (system prompt, schema, place vocabulary, synonym table, 3 few-shots) · `ZONE B ~120 tok` SLOW (castle HP bands, mid owner, gold band) · `ZONE C ~150 tok` FAST (roster, pending-intent line, the utterance); **B + C together carry the ≤ 400-token cap, as-built 164 tok = 41 % of budget.** (The plan's "~350 tok" for Zone A was a guess and is superseded by measurement — see the cap clause below.) **Fixed key order, every key always emitted** (an empty value prints `none`), everything **quantized into bands**, **no timestamps and no coordinates.** This is what lets `llama_kv_cache_seq_rm` keep the prefix and turn a 500-token prefill into ~150 from turn two onward. Reordering zones or making Zone A state-dependent silently destroys the KV reuse and is a QA FAIL.
+  - **Zone A is byte-identical for the life of the process** and changes **only** when `DA_AssistantVocabulary` changes (a content-lock-time change, never a per-request one). Calling the Zone-A builder twice in one process returning different bytes is a defect.
+  - **⚖️ THE ≤ 400-TOKEN HARD CAP GOVERNS ZONE B + ZONE C ONLY. ZONE A IS DELIBERATELY UNBOUNDED — CORRECTED 2026-08-02 FROM MEASUREMENT.** The earlier "~350 tok" guidance for Zone A was a guess and it was **wrong in the dangerous direction**: because Zone A is the *static prefix*, **bar #3's KV-reuse ratio IMPROVES as it grows.** Measured at TASK-416: **165/765 = a 78 % drop (PASSES)** versus **165/515 ≈ 68 % (MARGINAL FAIL)** had Zone A been trimmed to 350. Zone B+C measured **164 tokens — 41 % of the ≤ 400 budget**, i.e. the part that actually must stay small has ample headroom. **Zone A shipped at ~600 tokens on purpose.** ⚠️ **A future task that "optimizes" Zone A down to hit a 350 number would convert a passing KV-reuse measurement into a marginal failing one** — recorded so nobody does it. What Zone A must *not* do is become state-dependent (that breaks the prefix entirely, which is a different and fatal thing).
+  - **Enforcement until a tokenizer is in the loop: Zone B+C ≤ `MaxSnapshotChars` (1440 chars ≈ 400 tokens at a conservative 3.6 chars/token).** The real token counts are measured by the spike and the constant is corrected from measurement, never guessed twice.
+- **The snapshot is NOT a world dump — it is the set of things the player can legally name.** Roster **aggregated by CardID and group, never per-unit**; the **fixed named-place vocabulary PINNED CHARACTER-FOR-CHARACTER IN §9a** (`enemy_castle` · `own_castle` · `mid` · `ancient_ground_near` · `ancient_ground_far` · `nearest_mine` · `hero`) whose resolved `FVector`s stay game-side; quantized match facts.
+  - **`ancient_ground_near` / `_far` are derived, not stored:** under the 180°-rotational symmetry law there are **exactly two** ancient grounds and they are rotational twins, so `near` = `FindNearestAncientGround(World, OwnCastleLocation)` and `far` = `FindNearestAncientGround(World, EnemyCastleLocation)`. Exact by construction, no extra state.
+  - **The castle locations come from the SHIPPED helper, never a fresh search: `ACastle::FindNearestCastleForTeam(World, Team, From)`** (pinned in the FOLLOW section's §7 registry, `Castle.h:190`). It already skips DESTROYED castles, so `own_castle` / `enemy_castle` / the ancient-ground derivation all inherit that for free. **Reimplementing a castle `TActorIterator` in the assistant lane is a QA FAIL** — one search, one owner.
+- **THREADING/LIFETIME:** `USiegeLlamaSubsystem : UGameInstanceSubsystem` (survives level travel, so Play Again never reloads 2.5 GB — the `USiegeSessionSubsystem` precedent) · **one dedicated `FRunnable` at `TPri_BelowNormal`** (`llama_context` is not thread-safe; a long-lived runnable makes single-thread ownership structural rather than a comment) · **queue depth 1, enforced by the FSM** (input disabled while thinking — this deletes the out-of-order/stale-context bug class entirely) · **cancellation via `llama_context_params::abort_callback`**, the only correct mechanism (polling after generation is far too late during a long prefill) · three timeouts: **soft 4 s** (UX only, keeps waiting), **hard 10 s** (abort), **token budget 96** · **the completion delegate fires on the GAME THREAD**, always.
+- **A GGML CRASH MUST NOT KILL THE GAME.** SEH around the eval, a **`bAssistantFaulted` session latch**, and a model-load failure that **never blocks match start**.
+- **MULTIPLAYER — V1 IS HOST/STANDALONE ONLY, FORCED, NOT CHOSEN.** Group state is not replicated, and `SetUnitCommand` / `BeginGroupPick` / `PlayHandSlot` / `DiscardHandSlot` all carry the D5 observer lockout. **The assistant must never be more capable than the keys:** it refuses on `!HasAuthority()` with the same approved wording. The console still opens and says so — silence would read as a bug.
+  - **⛔ DO NOT WRITE A `ServerExecuteAssistantCommand` RPC IN V1.** It would be a fifth lockout bypass baking in a shape M8 P2 will restructure.
+  - **M8 DECLARATION DUTY, and every header and handoff in this batch must state it verbatim: "adds no replicated property, no new replicated class, no new relevancy tier."** "Tier not declared" is a QA FAIL, and "there is nothing to declare" only counts when it is stated.
+  - **🚩 `Capture(World, ETeamId::Red)` RETURNS CORRECT TOTALS BUT ALL-ZERO ORDERABLE/FOLLOWABLE COLUMNS — FLAGGED, NOT FIXED, AND M8 P2 MUST NOT INHERIT THIS AS A SURPRISE (found at TASK-416, 2026-08-02).** Both shipped eligibility predicates — `IsFollowCommandEligible()` and `IsGroupCommandEligible()` — **hardcode `Team == ETeamId::Blue`**. So the snapshot's `ETeamId` parameter **implies a generality the columns do not have.** This is **correct for v1** (host/standalone, Blue is the only commanding player) and it was deliberately **NOT "fixed"**, because fixing it in the assistant lane would mean **reimplementing predicates that are banned from reimplementation** — the Cleric-follows-but-cannot-hold split has exactly one owner. **The parameter is kept** (removing it would bake the Blue assumption into the signature, which is worse). ⚠️ **When M8 P2 makes Red a real commanding player, the fix belongs in the SHIPPED predicates, not here** — and every caller then works unchanged.
+- **EXECUTOR SEAM (Wave 1, named here so no implementer invents it):** `Attack`/`Defend` are **latched army-wide stances with no selection** — "send 10 footmen at the castle" is **not** the Attack stance. So selection-bearing verbs (`send`/`guard`/`ambush`) stay separate from army-wide ones (`charge`/`fallback`): `send`/`guard` → `CreateUnitGroup(Hold, …)` · `ambush` → `CreateUnitGroup(Ambush, …)` · `follow` → `EnrollInDefaultFollowGroup(Unit)` (already public, already idempotent) · `charge`/`fallback` → `SetUnitCommand(Attack/Defend)` · `rally` → `AHeroCharacter::Rally()`. Selector resolution filters on the **shipping** eligibility predicates `IsFollowCommandEligible()` / `IsGroupCommandEligible()` — **never reimplemented** (the Cleric-follows-but-cannot-hold split is already law) — sorts **nearest to the TARGET, not to the hero**, and **on shortfall returns it, never truncates silently.**
+
+### 9. PINNED CROSS-TASK SIGNATURE REGISTRY (the contract that makes the parallel tasks link)
+⚠️ **UBT compiles the whole module.** Every task in this batch compiles against this list **character-for-character**; a task that "improves" a pinned signature breaks the link and is an **automatic QA FAIL**. Access levels are part of the pin. **Several of these tasks CANNOT COMPILE ALONE and are not expected to** — they compile together at the batch's integration compile (the TASK-395/396 precedent). That is designed, not a defect; do not open a QA loop over it.
+
+```cpp
+// ── Plugins/SiegeLlama — module SiegeLlama ────────────────────────────────
+// SiegeLlamaSubsystem.h
+DECLARE_LOG_CATEGORY_EXTERN(LogSiegeLlama, Log, All);
+DECLARE_DELEGATE_ThreeParams(FSiegeLlamaCompletionSignature, bool /*bSuccess*/, const FString& /*Output*/, const FString& /*Error*/);
+
+UCLASS()
+class SIEGELLAMA_API USiegeLlamaSubsystem : public UGameInstanceSubsystem
+{
+public:
+    bool IsReady() const;                       // model loaded, worker alive, not faulted
+    bool IsBusy() const;                        // a request is in flight (queue depth 1)
+    // Returns false immediately when !IsReady() or IsBusy(). OnComplete ALWAYS fires on the GAME THREAD.
+    bool RequestCompletion(const FString& Prompt, const FString& Grammar, const FSiegeLlamaCompletionSignature& OnComplete);
+    void CancelActiveRequest();                 // routes through llama abort_callback
+};
+
+// ── Source/GitClaudeUnrealTest/Siegebound — game lane ─────────────────────
+// SiegeAssistantCommand.h  (pure-data header; the UnitCommand.h / TeamId.h precedent)
+DECLARE_LOG_CATEGORY_EXTERN(LogSiegeAssistant, Log, All);
+
+UENUM()
+enum class ESiegeAssistantIntent : uint8 { None, Send, Guard, Ambush, Follow, Charge, Fallback, Rally };
+
+// ⚠️ THE SELECTION IS MULTI-KIND. CORRECTED 2026-08-02 (manager) — the first pin
+// carried a SINGULAR `FName Kind`, which could not express the feature's own
+// flagship sentence, "send 10 footmen WITH A SORCERER to the nearest ancient
+// ground". The approved plan is internally inconsistent here: its GBNF sketch
+// shows `kind` as a RULE (singular by nature) but its go/no-go bar #5 scores
+// exact-match on "{intent, KINDS, COUNTS, where}" — plural. Plural is the intent;
+// the sketch simply never drew the top-level object. Found while specifying the
+// evaluation corpus's expected outputs, which is exactly what that task is for.
+static constexpr int32 SiegeAssistantMaxSelectionKinds = 3;
+
+USTRUCT()
+struct FSiegeAssistantCommand      // uint8 / int32 / FName ONLY — M8 P2 takes this as-is over the wire
+{
+    ESiegeAssistantIntent Intent = ESiegeAssistantIntent::None;
+    // INDEX-ALIGNED PARALLEL ARRAYS, never an array of structs — that is what keeps
+    // the payload to FName/int32 only and preserves the "P2 takes it as-is" property
+    // (~30 bytes at the cap). Kinds.Num() == Counts.Num() is an invariant the parser
+    // enforces; a mismatch is a parse failure, never a silent truncation.
+    TArray<FName> Kinds;                 // canonical unit symbols, e.g. "footman"; HARD CAP SiegeAssistantMaxSelectionKinds
+    TArray<int32> Counts;                // 0 == "all"; grammar range is 1..30 (NOT the live max)
+    FName Where           = NAME_None;   // canonical place symbol
+    FName TriggerKind     = NAME_None;   // deferred-intent trigger; NAME_None == "now"
+    int32 TriggerAtLeast  = 0;
+};
+
+// SiegeAssistantCommand.h — free function, NOT a member
+bool ParseSiegeAssistantCommand(const FString& Json, FSiegeAssistantCommand& OutCommand, FString& OutError);
+
+// SiegeAssistantVocabulary.h
+USTRUCT(BlueprintType)
+struct FSiegeAssistantSynonym { FName Canonical = NAME_None; TArray<FString> Aliases; };
+
+UCLASS(BlueprintType)
+class USiegeAssistantVocabulary : public UDataAsset
+{
+public:
+    UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Assistant") TArray<FSiegeAssistantSynonym> UnitSynonyms;
+    UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Assistant") TArray<FSiegeAssistantSynonym> PlaceSynonyms;
+    UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Assistant") TArray<FSiegeAssistantSynonym> IntentSynonyms;
+    FString BuildSynonymTable() const;   // the Zone-A synonym block, deterministic ordering
+};
+
+// SiegeAssistantGrammar.h — PURE + DETERMINISTIC: no UWorld, no engine state, no UObject inputs.
+// This is deliberate — it is what makes automation tests cheap and what decouples A4 from A3.
+// Emits a SELECTION LIST of 1..SiegeAssistantMaxSelectionKinds {kind, count} pairs
+// (see the FSiegeAssistantCommand correction above). The cap is IN THE GRAMMAR, not
+// only in the parser: an unbounded repetition rule is precisely what a small model
+// rambles into, and a bounded alternation costs nothing.
+UCLASS()
+class USiegeAssistantGrammar : public UObject
+{
+public:
+    static FString Build(const TArray<FName>& UnitKinds, const TArray<FName>& PlaceNames);
+};
+
+// SiegeAssistantSnapshot.h
+USTRUCT()
+struct FSiegeAssistantRosterEntry { FName Kind = NAME_None; int32 Count = 0; int32 GroupId = INDEX_NONE; };
+
+UCLASS()
+class USiegeAssistantSnapshot : public UObject
+{
+public:
+    void Capture(UWorld* World, ETeamId Team);                       // six TActorIterator passes, per SENTENCE, never per tick
+    FString BuildZoneA(const USiegeAssistantVocabulary* Vocabulary) const;   // STATIC — byte-identical for the life of the process
+    FString BuildZoneB() const;                                      // SLOW  — quantized match facts
+    FString BuildZoneC(const FString& Utterance, const FString& PendingLine) const;  // FAST
+    const TArray<FSiegeAssistantRosterEntry>& GetRoster() const;
+    const TArray<FName>& GetPlaceNames() const;
+    const TArray<FName>& GetUnitKinds() const;
+    bool ResolvePlace(FName Place, FVector& OutLocation) const;      // resolved FVectors stay GAME-SIDE, never in the prompt
+};
+
+// AncientGround.h — AAncientGround, public static (the AGoldNode::FindBestMineFor idiom)
+static AAncientGround* FindNearestAncientGround(UWorld* World, const FVector& From);
+```
+
+#### 9a. ⚖️ THE v1 PLACE VOCABULARY — PINNED CHARACTER-FOR-CHARACTER (added 2026-08-02)
+**Nothing pinned a symbol for the mine, so TASK-426's corpus author had to choose one and flagged it rather than assuming.** They were right to flag: **a mismatch here fails the go/no-go for a NAMING reason rather than a MODEL reason, which is the worst way to fail a gate** — it reads as "the model is bad" when the model was fine. The seven symbols, exact spelling, lowercase, snake_case:
+
+```
+enemy_castle · own_castle · mid · ancient_ground_near · ancient_ground_far · nearest_mine · hero
+```
+
+- **⚠️ IT IS `own_castle`, NOT `my_castle` — AND THE STORY IS THE LESSON, SO IT IS RECORDED.** A `my_castle` spelling circulated briefly in an orchestrator message as a **transcription error** and was **retracted by the orchestrator the same day**. It was caught twice independently, both times the same way: **by verifying against the artifact on disk instead of trusting the message.** TASK-416's agent checked the corpus files and shipped `own_castle`; the manager checked and overruled the pin. `my_castle` **appears nowhere on disk.** The sealed corpus asserts `own_castle` in BOTH files — `DEV-16` and, decisively, **`HOLD-06`, which is in the holdout set that scores bar #5** — and under §11 the holdout is **frozen**, so a rename would either void the accuracy number or fail the gate for a **naming reason rather than a model reason.** `own_castle` is also what §5/§8 already said *before* the corpus was authored. **Standing lesson: a pinned symbol is verified against the file that asserts it, never against the message that quotes it.** `own_castle` stands; do not "modernize" it.
+- **`nearest_mine`** — adopted from TASK-426 verbatim; it matches the shipped `AGoldNode::FindBestMineFor` idiom and the near/far derivation style. Asserted by `DEV-23` and `HOLD-12`.
+- **`hero`** — pinned for completeness (Follow and Rally both anchor on the hero). ⚠️ **NO corpus row asserts it**, so it is *not* exercised by the go/no-go gate; it is forward-looking vocabulary, not measured coverage. Recorded so nobody reads its presence as tested.
+- **This list is CLOSED for v1.** Widening it is a later pass **with its own accuracy re-measurement** — adding a place silently changes Zone A, which invalidates both the KV-prefix claim and the measured accuracy.
+
+#### 9c. ⚠️ THE ZONE-A ↔ GRAMMAR SEAM — THE PROMPT'S FEW-SHOTS AND THE GBNF ARE ONE CONTRACT, AND NOTHING ENFORCES IT (added 2026-08-02)
+**This is a SILENT-FAILURE seam, and silent-failure seams are what have cost this project most.** The few-shot examples in Zone A teach the model a JSON shape; the GBNF *forces* a JSON shape. **If they disagree, constrained decoding fights the few-shots on every token and accuracy collapses for a reason NO LOG LINE NAMES** — the model looks stupid, the grammar looks fine, and the go/no-go bar fails for a cause nobody can see. Today the entire tie between them is a code comment.
+
+**How we know: TASK-416 wrote Zone A from the approved plan's GBNF sketch, then read TASK-417's LANDED files and found the sketch wrong in four ways.** The plan's sketch is **not** the schema — the landed grammar is. The four, recorded so nobody re-derives them from the sketch:
+| Sketch said | Landed truth |
+|---|---|
+| selection key `select` | **`who`** |
+| per-pair count key `count` | **`n`** — `count` is the GBNF *rule* name, never a JSON key |
+| army-wide verb emits `[]` | **`"who":"none"`** |
+| (absent) | a **`{"ask":ASK}`** question branch the few-shots must teach |
+
+- **THE LAW:** the JSON key names are **owned by the landed grammar (TASK-417) and by nothing else.** Zone A's few-shots, the parser, and any documentation **conform to it** — a disagreement is resolved by changing the prompt, never by changing the grammar to match a doc.
+- **⚖️ QA CRITERION, EXPLICIT, AT TASK-412 AND TASK-419: every few-shot example in Zone A must be VALIDATED AGAINST THE LANDED GBNF** — parse each few-shot's JSON with the same grammar/parser the runtime uses and show it accepts. **"It looks like the schema" is not evidence.** A few-shot the grammar would reject is a **BLOCKER**, not a warning.
+- **The plan's GBNF sketch is superseded on sight by the landed grammar.** If a spec, a handoff or this document quotes a key name that the landed grammar does not emit, the landed grammar wins and the quote is a defect to fix.
+
+#### 9b. ⛔ NAMED ALIAS PROHIBITION — `mage` STAYS UNALIASED, PERMANENTLY
+**`mage` must resolve to NOTHING.** `sorcerer` and `wizard` are **different cards** — the Sorcerer is the non-attacking ley-warden empowerer, the Wizard is the AoE fireball caster — and they must share **no alias whatsoever**. The sealed corpus carries `the mage` in **both** files (`DEV-06`, `HOLD-09`) as a **`Clarify`** row.
+
+**Aliasing `mage` to either card converts an honest clarification into a confident wrong command — the exact valid-shaped-wrong-command failure this feature's entire architecture exists to prevent.** This is written as a **named prohibition rather than a note** because *"add the obvious alias"* is precisely what a future task will do, and it would look like a helpful improvement while silently deleting a gate row's meaning. **Adding a `mage` alias is an automatic QA FAIL**, in this batch and in every later one.
+
+### 10. TUNABLES (all `EditDefaultsOnly` / named constants, ALL flagged for Jonathan's feel pass)
+`SoftTimeoutSeconds` **4.0** · `HardTimeoutSeconds` **10.0** · `MaxOutputTokens` **96** · `MaxSnapshotChars` **1440** (⚠️ **governs ZONE B + ZONE C ONLY, never Zone A** — = the ≤400-token cap at 3.6 chars/token; corrected from the spike's real measurement) · `GrammarCountMax` **30** (⚠️ NOT the live roster max — see §1) · `SiegeAssistantMaxSelectionKinds` **3** (⚠️ a `static constexpr`, NOT a tunable — it is pinned in §9 and enforced in BOTH the grammar and the parser) · `DeferredIntentTTLSeconds` **120** · `DeferredIntentPollHz` **1** (armed only while latched) · `ContextTokens` **2048** · `GpuLayers` **-1 = auto-tier** (full-offload / partial / CPU-only, chosen from the spike's numbers).
+**Compile traps — restate in every dispatch touching these files:** no literal `*/` inside doc comments · `FString::Printf` format strings must be literal/`constexpr` (UE 5.8 `TCheckedFormatString`, the TASK-268 C7595 lesson) · the no-shadowing law · the complete-type include law.
+
+### 11. ⚠️ THE EVALUATION CORPUS IS SEALED, SPLIT, AND AUTHORED BY A DIFFERENT OWNER THAN THE PROMPT
+Added 2026-08-02 at the orchestrator's direction, closing a self-grading risk the manager escalated. **Accuracy bar #5 is the go/no-go number for a feature that could consume weeks — it must not be scored against a test set written by the person tuning the prompt.** This project has been burned by exactly this shape three times already: `Build.bat` returning exit 0 on a failed build, `rig_character.py` silently ignoring an override that did not exist, and MCP readback passing on visually-broken UMG. **Every one produced a confident green that was not real.**
+
+- **DIFFERENT OWNER, STRUCTURALLY.** The corpus is authored by a **different task and a different role** than the prompt/few-shot author. Not an honour system — two dispatches, two contexts.
+- **SEALED BEFORE THE PROMPT EXISTS.** The corpus task lands **before** the prompt is written or tuned, so the prompt cannot be fitted to it and the corpus cannot be narrowed to what the prompt already handles. **Fitting direction matters:** corpus → vocabulary/prompt *coverage* is legitimate requirements flow; vocabulary/prompt → corpus is the cheat.
+- **⚖️ SPLIT 40 = 25 DEV + 15 HOLDOUT, TWO FILES.** The plan's own remediation ladder for a missed accuracy bar begins *"better few-shots"* — which **is** tuning against the eval. So few-shot tuning happens against **DEV only**; the **HOLDOUT is opened exactly once, at the measurement run, and the HOLDOUT number is the one reported against the ≥ 85 % bar.** A dev-set number quoted as the bar is a QA FAIL.
+- **THE FEW-SHOTS MUST BE DISJOINT FROM BOTH FILES** — no corpus sentence may appear as a Zone-A few-shot. QA checks this by literal string comparison, not by assertion.
+- **ADVERSARIAL BY REQUIREMENT, not by good intentions.** Mandatory coverage: ambiguous quantities · units that do not exist in the live roster · **the Sorcerer/Wizard collision** (different cards; a shared alias makes the assistant confidently command the wrong unit) · phrasings that mix a **selection-bearing** verb with an **army-wide** one · multi-kind selections · deferred phrasings · and rows whose correct outcome is **Clarify** or **Refuse**, not Execute.
+- **CANONICAL HOME + SCHEMA (pinned):** `Docs/Data/assistant_eval_dev.csv` and `Docs/Data/assistant_eval_holdout.csv`, siblings of `cards.csv` (the project's data-source-of-truth home). Identical header, character-for-character:
+  ```
+  Id,Sentence,ExpectOutcome,ExpectKinds,ExpectCounts,ExpectWhere,ExpectTriggerKind,ExpectTriggerAtLeast,Notes
+  ```
+  `ExpectOutcome` ∈ `Execute` | `Clarify` | `Refuse`. `ExpectKinds` / `ExpectCounts` are **`|`-separated and index-aligned** (the `FSiegeAssistantCommand` shape). Empty cell = the field is not asserted for that row.
+- **⚖️ INTENT IS ENCODED IN `Notes`, AND THAT ENCODING IS ACCEPTED LAW (ruling 2026-08-02).** The pinned header has **no `ExpectIntent` column**, but bar #5 scores `{intent, kinds, counts, where}` — and rows like `charge with the footmen` vs `send the footmen at their castle` differ in **nothing but intent**. TASK-426 hit this and **did the right thing: it did NOT unilaterally add a 10th column** (that would have broken the contract TASK-410's parser is written against, silently, after the seal). Instead every `Notes` cell is prefixed **`intent=<value>; `**, matched by **`^intent=([a-z]+); `** — the 7 intents plus **`none`** (Refuse rows) and **`unasserted`** (where the verb itself is the ambiguity). **Accepted because the runner scores it with a one-line regex and ZERO corpus edit, and — decisively — the values were authored before any prompt existed, so the seal holds.** The regex is part of the pinned contract: TASK-410's runner parses it, and the `Notes` prefix may not be reformatted.
+- **🚩 KNOWN LIMITATION, v1-ACCEPTED, RECORDED SO NOBODY MISREADS IT: an empty cell is OVERLOADED.** It means *"not asserted"*, so a row whose correct answer is *"this field IS empty"* (`rally`, `fallback` — no kinds, no place) **cannot be positively asserted**; it is carried in `Notes` prose today. ⚠️ **Never read an empty cell as a passing assertion** — it is scored as *skipped*, not as *matched*. Fixing it properly means a sentinel value (e.g. `<none>`) in a future corpus revision, which is a **new** corpus, never an edit to the sealed one.
+- **⚠️ THE CORPUS IS LOADED BY PATH AT RUNTIME, NEVER `#include`d INTO THE PLUGIN.** Baking Siegebound sentences into `Plugins/SiegeLlama/` would give the plugin a Siegebound dependency it is architecturally forbidden to have (§8's lane split). The paths are passed on the console command line.
+- **REACTIVE COVERAGE IS DECLARED, NOT HIDDEN.** If a later vocabulary or prompt task adds an alias or a few-shot *because a corpus row needed it*, its handoff **lists them** — legitimate work, but the reader must know the coverage was reactive.
+- **🔍 AND THE SAME INSTINCT GOVERNS EVERY CLAIM IN THIS BATCH: a relayed diagnosis is a LEAD, not a finding.** See **"🔍 THE RELAYED-DIAGNOSIS LAW (2026-08-02)"** above. This batch alone produced three relayed root causes that were wrong or incomplete — the `my_castle` pin, the `C2228`/`C2737` "include law" reading, and the obvious-but-shallow `C4172` read. **Every one was caught by checking the artifact instead of the message.** The corpus's whole reason for existing is the same principle applied to a benchmark: **do not grade yourself from your own report.**
 
 ## Damage types (C++)
 - UDamageType subclasses named `USiegeDamageType_<Kind>`, all declared in `Source/GitClaudeUnrealTest/Siegebound/DamageTypes.h/.cpp`
