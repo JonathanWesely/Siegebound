@@ -57,8 +57,10 @@ $ git check-attr filter -- .../ThirdParty/LlamaCpp/bin/Win64/llama.dll
 ...llama.dll: filter: lfs
 ```
 
-`git lfs status` lists **58 objects "to be pushed to origin/main"** — the vendored `LlamaCpp` tree (19 DLLs +
-3 LIBs) and the art/PNG assets from the 7 commits already ahead. ⚠️ **They are *pending push*, which is Jonathan's
+`git lfs status` lists **59 objects "to be pushed to origin/main"** — the vendored `LlamaCpp` tree (19 DLLs +
+3 LIBs) and the art/PNG assets from the 7 commits already ahead. ⚠️ **I first wrote 58 here from an eyeball of the
+list; the counted figure is 59** (`git lfs status | grep -cE "\([0-9a-f]{64}\)"`). Corrected rather than left,
+because a wrong number that *sounds* measured is the defect this whole wave keeps finding. ⚠️ **They are *pending push*, which is Jonathan's
 decision, not *pending commit*.** ✅ **That list was byte-identical before and after all four commits — nothing was
 added to it and nothing was disturbed.**
 
