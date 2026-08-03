@@ -21,6 +21,8 @@ class UDeckComponent;
 class UInputAction;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
+class USiegeAssistantComponent; // TASK-440: the assistant FSM/executor default subobject (class authored by TASK-442)
+class USiegeAssistantConsoleWidget; // TASK-449: the in-match console widget (class authored by TASK-444) — created LAZILY on the first successful open, never at BeginPlay
 class UStaticMesh;
 class UUserWidget;
 
@@ -235,6 +237,78 @@ public:
 	 */
 	const FSiegeUnitGroup* FindUnitGroup(int32 GroupId) const;
 
+	/**
+	 *  THE ONE IMPLEMENTATION OF "A ZONE GROUP IS FORMED" (TASK-440) — extracted
+	 *  VERBATIM out of ConfirmGroupPickStage's stage-3 body so the cursor pick and
+	 *  the assistant executor (TASK-443) share it instead of each owning a copy.
+	 *  CONVENTIONS "In-match LLM command assistant" §2: the assistant calls the
+	 *  SAME public API the keys call — never a parallel implementation.
+	 *
+	 *  Does, in this exact order (the order is the contract — it is what makes the
+	 *  extraction provably behavior-preserving):
+	 *    1. takes the next group id (⚠️ CONSUMED EVEN ON THE REFUSAL BELOW — that
+	 *       is the shipped behaviour and it is preserved deliberately; ids are
+	 *       never reused, so a refused confirm burns one and that is fine),
+	 *    2. re-filters Members down to the still-alive ones (they may have died
+	 *       between selection and this call),
+	 *    3. refuses with INDEX_NONE and a log if NOTHING survived — the CALLER owns
+	 *       the player-facing message and the teardown,
+	 *    4. STEALS every surviving member out of any older group (the re-selection
+	 *       law),
+	 *    5. computes + nav-projects the golden-angle sunflower stations ONCE and
+	 *       pushes each as a scalar offset via AssignCommandGroup,
+	 *    6. appends the group and reaps any group the steal emptied
+	 *       (PruneUnitGroups, synchronously — markers included),
+	 *    7. logs the formation line.
+	 *
+	 *  PositionMarker / AttackMarker are OPTIONAL and OWNERSHIP-TRANSFERRING: pass
+	 *  the pick's dropped circles to make them the group's persistent ground
+	 *  markers (they then die with the group), or omit them for a group that owns
+	 *  no ground. ⚠️ A caller that transfers markers MUST null its own references
+	 *  afterwards, or its teardown will destroy decals the group now owns.
+	 *
+	 *  ⛔ CARRIES NO AUTHORITY GUARD, DELIBERATELY. BeginGroupPick owns the M8 D5
+	 *  client lockout for the pick path (it can never reach here on a client), so
+	 *  adding one here would have been a second, unreachable check on a function
+	 *  whose whole acceptance criterion is zero behavior change. ⚠️ TASK-443 must
+	 *  therefore call this only under HasAuthority().
+	 *
+	 *  ⚠️ Members must NOT alias into UnitGroups (e.g. a live group's own Members
+	 *  array): step 6 can reallocate that array and dangle the reference. The pick
+	 *  passes its own disjoint scratch; the assistant builds a fresh local array.
+	 *
+	 *  @return the new group's id, or INDEX_NONE when no member survived step 2.
+	 */
+	int32 CreateUnitGroup(
+		ESiegeGroupCommandType Type,
+		const FVector& PositionCenter,
+		float PositionRadius,
+		const FVector& AttackCenter,
+		float AttackRadius,
+		const TArray<TWeakObjectPtr<ASummonedUnit>>& Members,
+		ADecalActor* PositionMarker = nullptr,
+		ADecalActor* AttackMarker = nullptr);
+
+	/**
+	 *  Spawns ONE wheel-resizable ground circle for the pick (TASK-344) — the
+	 *  SpawnSpellReticle recipe, cloned: null-safe M_SpellReticle (missing ⇒ no
+	 *  visual, the pick still works off the trace; the shared warn-once latch),
+	 *  IDENTITY spawn then ABSOLUTE -90 pitch (the TASK-100 composition lesson),
+	 *  DecalSize=(500,R,R). Applies the optional per-stage tint through an MID
+	 *  ("StageTint" — a silent no-op until TASK-345 adds the parameter). Returns
+	 *  nullptr on any degrade; callers stay null-safe.
+	 *
+	 *  ⚠️ MOVED private → public BY TASK-440, AND THE ACCESS LEVEL IS PART OF THE
+	 *  PIN. The assistant's AwaitConfirm step draws the ghost circles with this
+	 *  exact function (CONVENTIONS "Settings screen…" §5), and it lives on another
+	 *  class, so protected would not reach. The BODY IS UNTOUCHED — this is an
+	 *  access change and nothing else. (A `friend class USiegeAssistantComponent`
+	 *  was considered and rejected: friendship would expose EVERY private member
+	 *  of this controller to reach one function, which is the wider grant, not the
+	 *  narrower one.)
+	 */
+	ADecalActor* SpawnGroupCircleDecal(float Radius);
+
 	//~ ─── FOLLOW command (TASK-395; CONVENTIONS "FOLLOW command + the
 	//~     DEFAULT-STANCE law + the MINER command rework (2026-08-02)" §1/§2/§4,
 	//~     signatures PINNED character-for-character by §7) ───
@@ -364,6 +438,40 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Commands")
 	void SetUnitCommand(ESiegeUnitCommand NewCommand);
+
+	/**
+	 *  THE T/E RELEASE-THEN-LATCH SEQUENCE, AS ONE PUBLIC ENTRY POINT (TASK-454) —
+	 *  the SINGLE implementation of what the immediate-stance keys do, so that every
+	 *  INPUT route into "everyone attack" / "everyone fall back" produces the SAME
+	 *  outcome from the same words. Runs, in this order: the match-ended ignore ·
+	 *  CancelGroupPick() (abandon any mid-flight group pick — no-op-safe) ·
+	 *  ClearAllUnitGroups() (the TASK-344 RELEASE law: a global stance replaces
+	 *  EVERY group order, INCLUDING the default follow group) · SetUnitCommand().
+	 *
+	 *  ⚠️ THE ORDER IS THE CONTRACT AND THE KEY PATH OWNS IT — the release runs
+	 *  BEFORE the latch, exactly as ClearAllUnitGroups' own header documents
+	 *  ("Called by T/E (before SetUnitCommand)"). OnCmdAttackPressed and
+	 *  OnCmdDefendPressed are now nothing but calls to this and hold NO copy of the
+	 *  sequence, which is what makes this the unit of correctness.
+	 *
+	 *  ⛔ CALL THIS, NOT SetUnitCommand, FOR ANY WHOLE-ARMY STANCE ORDER.
+	 *  SetUnitCommand is the bare LATCH primitive: it leaves standing group orders
+	 *  pinned to their zones, so reaching it directly produces a global "charge"
+	 *  with squads still frozen on their ground. That is precisely how the in-match
+	 *  assistant's `charge`/`fallback` came to do LESS than the T/E keys for the
+	 *  same words (found and declared by TASK-443; ruled a consistency defect, not
+	 *  a design change, by the manager). CancelGroupPick and ClearAllUnitGroups
+	 *  stay PRIVATE on purpose — two exposed teardown primitives would invite a
+	 *  future caller to perform half the sequence.
+	 *
+	 *  A stance is a LATCHED GLOBAL applying to every currently-alive AND
+	 *  future-spawned player Standard unit, so it is army-wide whatever sentence
+	 *  asked for it. Off-authority callers meet the same M8 D5 observer posture the
+	 *  keys already meet — the pick abort and the group release run locally and
+	 *  SetUnitCommand itself refuses — UNCHANGED by this task.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Commands")
+	void ApplyArmyWideStance(ESiegeUnitCommand NewCommand);
 
 	/**
 	 *  Plays the card in hand slot 0..5 (GDD §3.5; keys 1..6 / TASK-033 card
@@ -538,6 +646,76 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Match")
 	bool HasMatchEnded() const { return bMatchEnded; }
 
+	//~ ─── LLM ASSISTANT CONSOLE (TASK-440; CONVENTIONS "In-match LLM command
+	//~     assistant" §2 + "Settings screen…" §5) ───
+	//~
+	//~ ⚠️ THIS BLOCK IS `public:` ON PURPOSE AND THE ACCESS LEVEL IS PART OF THE
+	//~ PIN, exactly like the FOLLOW block below it: the console widget (TASK-444)
+	//~ and the assistant component (TASK-442/443) are separate classes that must
+	//~ reach these from outside. Nothing here is reachable while the console is
+	//~ closed, so every shipped keyboard command is byte-identical (§2).
+
+	/** The assistant FSM/executor component — the constructor's default subobject. Never null in a normally-constructed controller, but callers null-check anyway (the shipped DeckComponent contract). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Assistant")
+	USiegeAssistantComponent* GetAssistantComponent() const { return AssistantComponent; }
+
+	/** True while the assistant console owns the cursor/keyboard. THE FOURTH cursor owner in ApplyCursorInputState, and the state the other three modes now refuse to start against. */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Assistant")
+	bool IsAssistantConsoleOpen() const { return bAssistantConsoleOpen; }
+
+	/**
+	 *  THE CONSOLE HALF OF THE MUTUAL EXCLUSION (TASK-440 spec item 4) — false
+	 *  while placement mode, spell targeting or a group-order pick owns the
+	 *  cursor/LMB, and after match end.
+	 *
+	 *  ⚠️ SYMMETRY IS THE REQUIREMENT, NOT THE CONVENIENCE: the other three modes
+	 *  each carry the mirror check against IsAssistantConsoleOpen(), so no pair of
+	 *  these four can ever be live at once. A one-directional guard is exactly how
+	 *  two cursor owners end up disagreeing about the input mode.
+	 *
+	 *  The match-ended clause is the shipped Enter* idiom (all three of those check
+	 *  bMatchEnded first) and it is load-bearing rather than cosmetic here:
+	 *  ApplyCursorInputState EARLY-OUTS after match end, so a console opened on the
+	 *  end screen would never get its cursor posture applied.
+	 *
+	 *  ⛔ DOES NOT CHECK HasAuthority() — TASK-442 spec item 7 owns the assistant's
+	 *  authority refusal, with the same approved wording the keys use. Do not
+	 *  assume this function covers it.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Assistant")
+	bool CanOpenAssistantConsole() const;
+
+	/**
+	 *  Opens/closes the console and re-applies the cursor posture. RE-GATES ON
+	 *  CanOpenAssistantConsole() when opening, so the guard cannot be bypassed by
+	 *  a caller that forgot to ask; CLOSING IS ALWAYS ALLOWED (a close must never
+	 *  be refusable, or a failure could strand the cursor).
+	 *
+	 *  @return true when the console is now in the requested state (including the
+	 *          no-op case where it already was), false when an open was refused.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Assistant")
+	bool SetAssistantConsoleOpen(bool bOpen);
+
+	/**
+	 *  The console widget instance (TASK-449), or NULL until the first SUCCESSFUL
+	 *  open. ⚠️ READ THAT AGAIN BEFORE YOU BIND ANYTHING TO IT: the widget is
+	 *  created LAZILY inside OnAssistantConsolePressed, so this accessor answers
+	 *  null for the whole of BeginPlay and for every frame until the player first
+	 *  presses the open key. A consumer that binds once at BeginPlay binds to
+	 *  nothing and no-ops forever — the same silent-failure shape the code-authored
+	 *  widget rulings already pay for (CONVENTIONS "Settings screen…" §11).
+	 *
+	 *  ⛔ THE WIDGET->COMPONENT FORWARDS (OnConsoleSubmitted / OnConsoleConfirmed /
+	 *  OnConsoleCancelled -> SubmitUtterance / ConfirmPressed / CancelPressed) ARE
+	 *  DELIBERATELY *NOT* TAKEN HERE — TASK-443 owns them (this task's spec item 3
+	 *  splits creation/visibility/posture from the FSM wiring on purpose). This
+	 *  controller binds exactly ONE of the widget's delegates, OnConsoleOpenChanged,
+	 *  and only to keep the cursor posture honest. See handoffs/TASK-449-programmer.md.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Assistant")
+	USiegeAssistantConsoleWidget* GetAssistantConsoleWidget() const { return AssistantConsoleWidget; }
+
 	/**
 	 *  Shared unit-spawn entry (GDD §3.0 Swarm, TASK-059) reused by the player
 	 *  confirm path AND the bot (TASK-060) so both produce identical swarms. Spawns
@@ -631,6 +809,20 @@ protected:
 	 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Deck")
 	TObjectPtr<UDeckComponent> DeckComponent;
+
+	/**
+	 *  LLM assistant FSM/executor (TASK-440) — default subobject named exactly
+	 *  "AssistantComponent", created in the constructor beside DeckComponent and
+	 *  following that same shipped contract. ⛔ THIS TASK CREATES IT AND DOES NOT
+	 *  AUTHOR IT: the class body is TASK-442's, its executor TASK-443's.
+	 *
+	 *  ⚠️ Owning the component costs the controller NOTHING while the console is
+	 *  closed — no tick is registered here, no key is routed through it, and every
+	 *  shipped command path is untouched (CONVENTIONS §2, the strictly-additive
+	 *  law). A faulted or never-opened assistant is simply an idle component.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Assistant")
+	TObjectPtr<USiegeAssistantComponent> AssistantComponent;
 
 	/** M1 fallback card for key "1" while the hand is empty (WARN-2 window). TASK-033 retires the fallback with the HUD. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Cards")
@@ -769,6 +961,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> CmdFollowAction;
 
+	/** IA_AssistantConsole slot (the assistant console open/close key, TASK-449; asset + IMC_Hero mapping created in TASK-445). Left unset, it soft-resolves from AssistantConsoleActionAsset — a missing asset skips the binding and leaves the key inert (never a crash). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> AssistantConsoleAction;
+
 	/** Soft path for IA_Card1 (/Game/Input/Actions/IA_Card1, created in TASK-009). */
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TSoftObjectPtr<UInputAction> Card1ActionAsset;
@@ -827,6 +1023,23 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TSoftObjectPtr<UInputAction> CmdFollowActionAsset;
+
+	/**
+	 *  Soft path for IA_AssistantConsole (/Game/Input/Actions/IA_AssistantConsole,
+	 *  created in TASK-445 and mapped in /Game/Input/IMC_Hero by the same task —
+	 *  ⚠️ the KEY is TASK-445's to choose: Enter is PROPOSED, not approved, and
+	 *  that task FLAGS a conflict rather than stomping a shipped binding).
+	 *
+	 *  ⛔ NULL-SAFE IS THE DESIGNED STATE AT COMPILE TIME AND IT IS WHY TASK-449
+	 *  IS NOT BLOCKED ON TASK-445 — the IA_CmdAmbush (TASK-345) and IA_CmdFollow
+	 *  (TASK-399) precedent, followed character-for-character: an unresolved asset
+	 *  skips the binding, logs ONE line through ResolveInputAction, and leaves the
+	 *  key completely inert. Never a crash, and ⛔ every other key is untouched
+	 *  (CONVENTIONS "In-match LLM command assistant" §2 — this task ADDS a binding
+	 *  and re-routes none).
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TSoftObjectPtr<UInputAction> AssistantConsoleActionAsset;
 
 	/**
 	 *  Half-extent (XY) of the player's spawn box — a 2D square centered on the
@@ -1095,6 +1308,13 @@ private:
 	 *  + nav-projects the golden-angle sunflower stations ONCE and pushes them
 	 *  to the units, transfers the Position + Attack circles to the group as
 	 *  persistent markers, and tears the pick down (the Select circle dies).
+	 *
+	 *  ⚠️ TASK-440: THE STAGE-3 BODY NOW LIVES IN CreateUnitGroup AND THIS STAGE
+	 *  CALLS IT. Everything the paragraph above describes still happens, in the
+	 *  same order, with the same log lines — the stage kept only the parts that
+	 *  are about THE PICK (the HUD refusal, nulling the transferred marker refs,
+	 *  the teardown, the completion prompt) and handed the parts that are about
+	 *  THE GROUP to the shared function the assistant executor also calls.
 	 */
 	void ConfirmGroupPickStage();
 
@@ -1120,16 +1340,9 @@ private:
 	 */
 	void CancelGroupPick();
 
-	/**
-	 *  Spawns ONE wheel-resizable ground circle for the pick (TASK-344) — the
-	 *  SpawnSpellReticle recipe, cloned: null-safe M_SpellReticle (missing ⇒ no
-	 *  visual, the pick still works off the trace; the shared warn-once latch),
-	 *  IDENTITY spawn then ABSOLUTE -90 pitch (the TASK-100 composition lesson),
-	 *  DecalSize=(500,R,R). Applies the optional per-stage tint through an MID
-	 *  ("StageTint" — a silent no-op until TASK-345 adds the parameter). Returns
-	 *  nullptr on any degrade; callers stay null-safe.
-	 */
-	ADecalActor* SpawnGroupCircleDecal(float Radius);
+	//~ SpawnGroupCircleDecal WAS DECLARED HERE until TASK-440 moved it to the
+	//~ public section (the assistant's confirm step draws its ghost circles with
+	//~ it). Access change only — the body is untouched.
 
 	/**
 	 *  IA_CmdFollow pressed (key C, TASK-395; asset lands in TASK-399): enters
@@ -1140,6 +1353,54 @@ private:
 	 *  nothing.
 	 */
 	void OnCmdFollowPressed();
+
+	//~ ─── THE ASSISTANT CONSOLE OPEN KEY (TASK-449 — the SEAM between TASK-440's
+	//~     posture owner and TASK-444's widget; neither half is rebuilt here) ───
+
+	/**
+	 *  IA_AssistantConsole pressed (key chosen by TASK-445; asset lands there too):
+	 *  TOGGLES the assistant console.
+	 *
+	 *  ⛔ THE ORDER INSIDE IS LOAD-BEARING AND IT IS THE POINT OF THIS TASK —
+	 *  GUARD FIRST, UI SECOND. SetAssistantConsoleOpen(true) is called BEFORE
+	 *  anything is created or shown, and on a refusal (placement / targeting /
+	 *  group pick live, or the match ended) NOTHING is created and NOTHING is
+	 *  shown: no widget, no flash, no focus change. A console that appears and
+	 *  then discovers it was not permitted is the bug this ordering prevents, and
+	 *  it is worse than one that never appears — it takes keyboard focus on the
+	 *  way past.
+	 *
+	 *  The CLOSE half is never gated (SetAssistantConsoleOpen's own contract: a
+	 *  close that can fail is a close that can strand the cursor in GameAndUI).
+	 */
+	void OnAssistantConsolePressed();
+
+	/**
+	 *  Bound to USiegeAssistantConsoleWidget::OnConsoleOpenChanged at creation.
+	 *
+	 *  ⚠️ THIS BINDING IS WHAT KEEPS THE POSTURE HONEST WHEN THE CONSOLE CLOSES BY
+	 *  A ROUTE THIS CONTROLLER NEVER SEES — Cancel with no prompt up, the assistant
+	 *  fault latch calling SetConsoleEnabled(false), or any later FSM-driven close.
+	 *  A posture flag left stuck TRUE is a cursor soft-locked in GameAndUI with no
+	 *  owner willing to release it, and ApplyCursorInputState is precisely where
+	 *  this project's input bugs have lived (the level-travel law).
+	 *
+	 *  ⚠️ OnConsoleOpenChanged IS A MULTICAST DELEGATE AND THIS IS NOT ITS ONLY
+	 *  SUBSCRIBER: TASK-443 binds the same delegate to the component's
+	 *  NotifyConsoleOpened / NotifyConsoleClosed. Both are wanted; neither replaces
+	 *  the other, and neither may be "consolidated" into the other.
+	 */
+	UFUNCTION()
+	void HandleAssistantConsoleOpenChanged(bool bOpen);
+
+	/**
+	 *  Returns the console widget, creating it on first use via the widget's own
+	 *  USiegeAssistantConsoleWidget::CreateAndAddToViewport (which adds it CLOSED)
+	 *  and taking the OnConsoleOpenChanged posture binding exactly once. Returns
+	 *  null — never crashes — when creation fails; the caller then rolls the
+	 *  posture back rather than leaving a cursor owner with no UI behind it.
+	 */
+	USiegeAssistantConsoleWidget* GetOrCreateAssistantConsoleWidget();
 
 	/**
 	 *  THE ONE-STAGE TERMINAL CONFIRM (CONVENTIONS §1) — the whole difference
@@ -1186,6 +1447,13 @@ private:
 	 *  explicitly (immediate, no self-heal wait), markers destroyed, prompt
 	 *  emptied. Called by T/E (before SetUnitCommand) and by HandleMatchReset
 	 *  (Play Again).
+	 *
+	 *  TASK-454: the T/E call now arrives through the ONE public entry point
+	 *  ApplyArmyWideStance — which the in-match assistant's `charge`/`fallback`
+	 *  reaches too. The ordering documented above is UNCHANGED; only the immediate
+	 *  caller is named differently, so grep for ApplyArmyWideStance to find it.
+	 *  ⛔ STAYS PRIVATE (TASK-454): exposing this and CancelGroupPick separately
+	 *  would let a caller perform half the release-then-latch sequence.
 	 */
 	void ClearAllUnitGroups();
 
@@ -1326,11 +1594,25 @@ private:
 	 *  game-only free-look with the cursor hidden. Never runs after match end —
 	 *  HandleMatchEnd owns the UI-only end-screen state until HandleMatchReset
 	 *  clears the latch.
+	 *
+	 *  ⚠️ TASK-440 ADDED THE ASSISTANT CONSOLE AS ONE MORE TERM IN THE SAME
+	 *  COMPOSITION — never a parallel path. This function is the ONLY place that
+	 *  owns the match cursor posture (CONVENTIONS "Input-mode ownership
+	 *  (level-travel law)"), and a second code path that calls SetInputMode is how
+	 *  that law started leaking last time.
 	 */
 	void ApplyCursorInputState();
 
 	/** True while placement mode is active. */
 	bool bInPlacementMode = false;
+
+	/**
+	 *  True while the assistant console is open (TASK-440) — the FOURTH cursor
+	 *  owner. Written ONLY by SetAssistantConsoleOpen, which re-applies the cursor
+	 *  posture on every real change. Defaults false, so every pre-existing flow
+	 *  evaluates exactly as it did before this member existed.
+	 */
+	bool bAssistantConsoleOpen = false;
 
 	/** True while IA_UICursor is held — pairs the SetIgnoreLookInput +1/-1 exactly once (the engine API is counter-based). */
 	bool bUICursorHeld = false;
@@ -1542,6 +1824,19 @@ private:
 	/** HUD widget instance (created at BeginPlay when WBP_HUD exists). */
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> HUDWidget;
+
+	/**
+	 *  Assistant console instance (TASK-449). ⚠️ CREATED LAZILY ON THE FIRST
+	 *  SUCCESSFUL OPEN — NOT at BeginPlay, and ⛔ never on a refused open, which is
+	 *  the whole reason the guard runs before the creation. Null until then; read
+	 *  it through GetAssistantConsoleWidget() and null-check every use.
+	 *
+	 *  Once created it lives on the viewport for the rest of the match, CLOSED when
+	 *  not in use (the widget collapses itself — it is not removed and re-added), so
+	 *  the transcript survives a close/reopen. Torn down in EndPlay.
+	 */
+	UPROPERTY(Transient)
+	TObjectPtr<USiegeAssistantConsoleWidget> AssistantConsoleWidget;
 
 	/**
 	 *  M8 HUD PS-retry (TASK-356 doc §3.2): creates the HUD once the owning

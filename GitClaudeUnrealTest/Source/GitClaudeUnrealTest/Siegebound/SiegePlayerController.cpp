@@ -29,6 +29,8 @@
 #include "Siegebound/DeckComponent.h"
 #include "Siegebound/DeckLibrary.h" // UDeckLibrary::IsDeckLegal — gate the active saved deck before SetPendingDeckList (M6 TASK-114)
 #include "Siegebound/HeroCharacter.h"
+#include "Siegebound/SiegeAssistantComponent.h" // USiegeAssistantComponent — complete type for the constructor's CreateDefaultSubobject (TASK-440; the class BODY is TASK-442's, so this header does not exist until that task lands — see the handoff's compile-order note)
+#include "Siegebound/SiegeAssistantConsoleWidget.h" // USiegeAssistantConsoleWidget — complete type for CreateAndAddToViewport / Open / Close / the OnConsoleOpenChanged binding (TASK-449; the widget itself is TASK-444's)
 #include "Siegebound/SiegeCheatManager.h" // TASK-121 — CheatClass complete-type (constructor assignment below)
 #include "Siegebound/SiegeDeckSaveGame.h" // USiegeDeckSaveGame — active saved deck source (M6 TASK-114)
 #include "Siegebound/SiegeFeedbackLibrary.h" // M7 §6 audio hooks (TASK-179): card play/discard/spell/end-of-match
@@ -138,6 +140,17 @@ ASiegePlayerController::ASiegePlayerController()
 	// deck & hand model (GDD §3.4, TASK-022) — subobject name is a spec contract
 	DeckComponent = CreateDefaultSubobject<UDeckComponent>(TEXT("DeckComponent"));
 
+	// LLM command assistant (TASK-440) — subobject name is a spec contract, same
+	// as DeckComponent's. ⛔ THIS TASK CREATES THE SUBOBJECT AND AUTHORS NOTHING
+	// INSIDE IT: the FSM skeleton is TASK-442's and the executor is TASK-443's.
+	//
+	// STRICTLY ADDITIVE (CONVENTIONS "In-match LLM command assistant" §2): owning
+	// the component registers no tick here, routes no key through it, and leaves
+	// every shipped command path byte-identical. With the console never opened the
+	// component is inert, which is exactly the fault posture §2 demands — a missing
+	// GGUF or a faulted model must never block match start or degrade a key.
+	AssistantComponent = CreateDefaultSubobject<USiegeAssistantComponent>(TEXT("AssistantComponent"));
+
 	// debug-exec cheats for headless verification (TASK-121). The engine only
 	// instantiates a UCheatManager in non-shipping builds with cheats enabled, so
 	// this can never leak into Shipping — additive, zero behavior change to play.
@@ -164,6 +177,7 @@ ASiegePlayerController::ASiegePlayerController()
 	CmdDefendActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_CmdDefend.IA_CmdDefend")));         // TASK-273 (Shield Wall — E)
 	CmdAmbushActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_CmdAmbush.IA_CmdAmbush")));         // TASK-345 (Group orders — F; inert-null-safe until the asset lands)
 	CmdFollowActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_CmdFollow.IA_CmdFollow")));         // TASK-399 (FOLLOW — C; inert-null-safe until the asset lands)
+	AssistantConsoleActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_AssistantConsole.IA_AssistantConsole"))); // TASK-445 (assistant console open key; inert-null-safe until the asset lands — the IA_CmdAmbush/IA_CmdFollow precedent)
 }
 
 void ASiegePlayerController::BeginPlay()
@@ -333,6 +347,21 @@ void ASiegePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	// symmetric teardown for the IA_UICursor hold (keeps the ignore-look counter balanced)
 	ClearUICursorHold();
 
+	// Same law for the assistant console (TASK-449): teardown mid-console drops
+	// OUR posture binding, closes the widget and releases the posture flag through
+	// its ONE writer. Unbinding FIRST is deliberate — it makes the release
+	// deterministic (one explicit call) instead of depending on a broadcast
+	// arriving during teardown, and it cannot leave a dynamic delegate pointing at
+	// a controller that is going away.
+	if (AssistantConsoleWidget)
+	{
+		AssistantConsoleWidget->OnConsoleOpenChanged.RemoveDynamic(this, &ASiegePlayerController::HandleAssistantConsoleOpenChanged);
+		AssistantConsoleWidget->CloseConsole();
+		AssistantConsoleWidget->RemoveFromParent();
+		AssistantConsoleWidget = nullptr;
+	}
+	SetAssistantConsoleOpen(false); // never refused; no-op when it was already closed
+
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -361,6 +390,13 @@ void ASiegePlayerController::SetupInputComponent()
 	CmdDefendAction = ResolveInputAction(CmdDefendAction, CmdDefendActionAsset, TEXT("IA_CmdDefend"), TEXT("TASK-273"));
 	CmdAmbushAction = ResolveInputAction(CmdAmbushAction, CmdAmbushActionAsset, TEXT("IA_CmdAmbush"), TEXT("TASK-345")); // group orders (TASK-344): F stays INERT until the asset lands
 	CmdFollowAction = ResolveInputAction(CmdFollowAction, CmdFollowActionAsset, TEXT("IA_CmdFollow"), TEXT("TASK-399")); // FOLLOW (TASK-395): C stays INERT until TASK-399's asset lands — the DESIGNED compile-time state
+
+	// Assistant console open key (TASK-449). SAME null-safe soft-resolve as every
+	// action above and for the same reason: TASK-445 creates IA_AssistantConsole
+	// and maps it in IMC_Hero, so until it lands this returns null and the key is
+	// simply inert (one log line, no crash). ⛔ THAT IS THE DESIGNED STATE, NOT A
+	// DEGRADATION TO FIX HERE — and it is why this task is not blocked on TASK-445.
+	AssistantConsoleAction = ResolveInputAction(AssistantConsoleAction, AssistantConsoleActionAsset, TEXT("IA_AssistantConsole"), TEXT("TASK-445"));
 
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))
 	{
@@ -432,6 +468,18 @@ void ASiegePlayerController::SetupInputComponent()
 		if (CmdFollowAction)
 		{
 			EnhancedInputComponent->BindAction(CmdFollowAction, ETriggerEvent::Started, this, &ASiegePlayerController::OnCmdFollowPressed);
+		}
+
+		// THE ASSISTANT CONSOLE OPEN KEY (TASK-449) — the ONE binding this task
+		// adds. ⛔ IT RE-ROUTES NOTHING: every binding above is untouched, no key
+		// is made to pass through the assistant, and with the console closed every
+		// shipped command path is byte-identical (CONVENTIONS "In-match LLM command
+		// assistant" §2, the strictly-additive law). The IA_AssistantConsole asset
+		// arrives in TASK-445; until then the resolve above returned null and the
+		// key is inert — the IA_CmdAmbush / IA_CmdFollow precedent exactly.
+		if (AssistantConsoleAction)
+		{
+			EnhancedInputComponent->BindAction(AssistantConsoleAction, ETriggerEvent::Started, this, &ASiegePlayerController::OnAssistantConsolePressed);
 		}
 	}
 	else
@@ -955,6 +1003,37 @@ void ASiegePlayerController::SetUnitCommand(ESiegeUnitCommand NewCommand)
 		NewCommand == ESiegeUnitCommand::Attack ? TEXT("Attack") : (NewCommand == ESiegeUnitCommand::Hold ? TEXT("Hold") : TEXT("Defend")));
 }
 
+void ASiegePlayerController::ApplyArmyWideStance(ESiegeUnitCommand NewCommand)
+{
+	// TASK-454: the ONE implementation of the T/E release-then-latch sequence.
+	// The four statements below were LIFTED VERBATIM out of OnCmdAttackPressed and
+	// OnCmdDefendPressed, which were byte-identical mirrors of each other apart
+	// from the stance argument. Nothing about the shipped key behaviour changed
+	// here — same guard, same two calls, same order, same final latch.
+	//
+	// ⚠️ THE RELEASE RUNS BEFORE THE LATCH, AND THAT IS LOAD-BEARING.
+	// ClearAllUnitGroups documents itself as "Called by T/E (before
+	// SetUnitCommand)", and units re-read CurrentCommand on their next 0.25 s
+	// state tick — releasing AFTER the latch would let a group that is about to be
+	// destroyed re-assert its station for one tick.
+	//
+	// Every route that means "the whole army now does X" comes through here: the T
+	// and E keys, and the in-match assistant's `charge`/`fallback` (CONVENTIONS §2
+	// — the assistant calls the same public APIs the keys call, never a parallel
+	// implementation and never a "better" one). SetUnitCommand ALONE is the bare
+	// latch and leaves standing Hold/Ambush/Follow orders pinned to their zones;
+	// that divergence — a global "charge" with squads still frozen on their ground
+	// — is exactly what this entry point exists to close (TASK-443 found it and
+	// correctly declined to re-implement the private primitives to fix it).
+	if (bMatchEnded)
+	{
+		return;
+	}
+	CancelGroupPick();
+	ClearAllUnitGroups();
+	SetUnitCommand(NewCommand);
+}
+
 void ASiegePlayerController::OnCmdAttackPressed()
 {
 	// ATTACK (T) is immediate — no ground pick. Ignored after match end (the
@@ -962,13 +1041,9 @@ void ASiegePlayerController::OnCmdAttackPressed()
 	// forms from the abort — CancelGroupPick is no-op-safe), then apply the
 	// TASK-344 RELEASE law — a global stance replaces EVERY group order — and
 	// only then latch Attack.
-	if (bMatchEnded)
-	{
-		return;
-	}
-	CancelGroupPick();
-	ClearAllUnitGroups();
-	SetUnitCommand(ESiegeUnitCommand::Attack);
+	// TASK-454: that entire sequence now lives in ApplyArmyWideStance — which the
+	// assistant's `charge` reaches too — so this handler keeps no copy of it.
+	ApplyArmyWideStance(ESiegeUnitCommand::Attack);
 }
 
 void ASiegePlayerController::OnCmdHoldPressed()
@@ -1006,13 +1081,10 @@ void ASiegePlayerController::OnCmdDefendPressed()
 {
 	// DEFEND (E) is immediate — mirror of OnCmdAttackPressed (pick abort +
 	// group release, then the stance latch).
-	if (bMatchEnded)
-	{
-		return;
-	}
-	CancelGroupPick();
-	ClearAllUnitGroups();
-	SetUnitCommand(ESiegeUnitCommand::Defend);
+	// TASK-454: both immediate-stance keys now call the ONE shared entry point,
+	// so "mirror of OnCmdAttackPressed" is now literally true rather than a
+	// second copy that has to be kept in step by hand.
+	ApplyArmyWideStance(ESiegeUnitCommand::Defend);
 }
 
 void ASiegePlayerController::HandleHeroDied(AHeroCharacter* DeadHero)
@@ -1084,6 +1156,18 @@ void ASiegePlayerController::EnterPlacementMode(FName CardID)
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Verbose,
 			TEXT("ASiegePlayerController '%s': EnterPlacementMode('%s') ignored — a group-order pick is active."),
+			*GetNameSafe(this), *CardID.ToString());
+		return;
+	}
+
+	// FOURTH-mode mutual exclusion (TASK-440): the assistant console owns the
+	// cursor AND the keyboard while open — the mirror of CanOpenAssistantConsole's
+	// placement clause, appended AFTER the shipped three so their precedence and
+	// their log lines are untouched.
+	if (bAssistantConsoleOpen)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegePlayerController '%s': EnterPlacementMode('%s') ignored — the assistant console is open."),
 			*GetNameSafe(this), *CardID.ToString());
 		return;
 	}
@@ -1960,6 +2044,16 @@ void ASiegePlayerController::EnterTargetingMode(FName CardID)
 		return;
 	}
 
+	// FOURTH-mode mutual exclusion (TASK-440) — mirror of the placement clause
+	// above and of CanOpenAssistantConsole's targeting clause.
+	if (bAssistantConsoleOpen)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegePlayerController '%s': EnterTargetingMode('%s') ignored — the assistant console is open."),
+			*GetNameSafe(this), *CardID.ToString());
+		return;
+	}
+
 	if (CardID.IsNone())
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Warning,
@@ -2433,6 +2527,18 @@ void ASiegePlayerController::BeginGroupPick(ESiegeGroupCommandType Type)
 		return;
 	}
 
+	// FOURTH-mode mutual exclusion (TASK-440) — mirror of CanOpenAssistantConsole's
+	// group-pick clause. ⚠️ CONVENTIONS §2 SURVIVES THIS: R / F / C are refused
+	// ONLY while the console is open, i.e. only while the player is typing into it,
+	// and a closed console leaves every key byte-identical.
+	if (bAssistantConsoleOpen)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegePlayerController '%s': BeginGroupPick ignored — the assistant console is open."),
+			*GetNameSafe(this));
+		return;
+	}
+
 	GroupPickStage = EGroupPickStage::Select;
 	GroupPickType = Type;
 	GroupPickRadius = GroupSelectRadiusDefault;
@@ -2665,104 +2771,60 @@ void ASiegePlayerController::ConfirmGroupPickStage()
 
 	case EGroupPickStage::AttackZone:
 	{
-		// stage 3 — FINAL confirm: build the group, steal re-selected units from
-		// older groups, compute + push the per-unit sunflower stations ONCE, and
-		// transfer the dropped Position + this Attack circle to the group as
-		// persistent markers (delivers the TASK-276-deferred hold marker).
-		FSiegeUnitGroup NewGroup;
-		NewGroup.GroupId = NextUnitGroupId++;
-		NewGroup.Type = GroupPickType;
-		NewGroup.PositionCenter = GroupPickPositionCenter;
-		NewGroup.PositionRadius = GroupPickPositionRadius;
-		NewGroup.AttackCenter = GroupPickLocation;
-		NewGroup.AttackRadius = GroupPickRadius;
-		NewGroup.PositionMarkerDecal = GroupPickPositionDecal;
-		NewGroup.AttackMarkerDecal = GroupPickActiveDecal;
+		// stage 3 — FINAL confirm. ⚠️ TASK-440: THE GROUP-BUILDING BODY THAT USED
+		// TO LIVE HERE IS NOW ASiegePlayerController::CreateUnitGroup — the SAME
+		// work, in the SAME order, with the SAME log lines. What stayed behind is
+		// only what is about THE PICK rather than about the group: the HUD refusal
+		// wording, nulling the marker refs the group now owns, the teardown, and
+		// the completion prompt.
+		//
+		// The dropped Position circle and this Attack circle are handed over as
+		// the group's persistent markers (delivers the TASK-276-deferred hold
+		// marker) — CreateUnitGroup takes ownership of both.
+		const int32 NewGroupId = CreateUnitGroup(
+			GroupPickType,
+			GroupPickPositionCenter, GroupPickPositionRadius,
+			GroupPickLocation,       GroupPickRadius,
+			GroupPickSelectedMembers,
+			GroupPickPositionDecal,  GroupPickActiveDecal);
 
-		// re-filter the stage-1 capture: members may have died during the flow
-		for (const TWeakObjectPtr<ASummonedUnit>& Member : GroupPickSelectedMembers)
-		{
-			const ASummonedUnit* Unit = Member.Get();
-			if (Unit && !Unit->IsUnitDead())
-			{
-				NewGroup.Members.Add(Member);
-			}
-		}
-
-		if (NewGroup.Members.Num() == 0)
+		if (NewGroupId == INDEX_NONE)
 		{
 			// every selected unit died mid-flow: no group to form — refuse with a
-			// HUD reason and tear the whole pick down (nothing was transferred, so
-			// CancelGroupPick destroys all three circles).
-			UE_LOG(LogGitClaudeUnrealTest, Log,
-				TEXT("ASiegePlayerController '%s': %s final confirm refused — every selected unit died during the pick."),
-				*GetNameSafe(this), TypeLabel);
+			// HUD reason and tear the whole pick down. CreateUnitGroup already
+			// logged the reason and transferred NOTHING, so the marker refs are
+			// still ours and CancelGroupPick destroys all three circles.
 			BroadcastRefusal(NSLOCTEXT("Siegebound", "GroupPickRefused_UnitsDied", "Selected units are gone"));
 			CancelGroupPick();
 			return;
 		}
 
-		// STEAL (the re-selection law): a re-selected unit leaves its older group.
-		// PruneUnitGroups below reaps any group this empties — markers included —
-		// synchronously, so it never outlives the confirm that emptied it.
-		for (const TWeakObjectPtr<ASummonedUnit>& Member : NewGroup.Members)
+		// The count the player is told is the count that JOINED, not the count that
+		// was circled — CreateUnitGroup drops members that died between selection
+		// and confirm, exactly as the inline body did. Reading it back off the
+		// formed group is safe and exact: the group was just appended, and the
+		// prune it ran cannot reap a group that still has members nor drop a member
+		// that passed the same alive test one statement earlier.
+		int32 MemberCount = 0;
+		if (const FSiegeUnitGroup* FormedGroup = FindUnitGroup(NewGroupId))
 		{
-			for (FSiegeUnitGroup& OldGroup : UnitGroups)
-			{
-				OldGroup.Members.Remove(Member);
-			}
+			MemberCount = FormedGroup->Members.Num();
 		}
-
-		// Per-unit stations: deterministic golden-angle sunflower inside the
-		// position circle — station i at radius R·√((i+0.5)/N), angle i·golden —
-		// computed ONCE here and nav-projected (the SpawnUnitSwarm ring-projection
-		// pattern), then PUSHED to the unit as a scalar offset (no arrays on
-		// units). This kills the mill-at-one-point clustering (TASK-280/282).
-		UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(GetWorld());
-		const int32 MemberCount = NewGroup.Members.Num();
-		const float StationExtentXY = FMath::Max(NewGroup.PositionRadius * 0.5f, 100.f);
-		const FVector StationProjectExtent(StationExtentXY, StationExtentXY, 200.f);
-		for (int32 Index = 0; Index < MemberCount; ++Index)
+		else
 		{
-			ASummonedUnit* Unit = NewGroup.Members[Index].Get();
-			if (!Unit)
-			{
-				continue; // filtered alive above; belt-and-braces
-			}
-			const float RingFraction = (static_cast<float>(Index) + 0.5f) / static_cast<float>(MemberCount);
-			const float RingRadius = NewGroup.PositionRadius * FMath::Sqrt(RingFraction);
-			const float RingAngle = static_cast<float>(Index) * GoldenAngleRadians;
-			FVector Station = NewGroup.PositionCenter
-				+ FVector(RingRadius * FMath::Cos(RingAngle), RingRadius * FMath::Sin(RingAngle), 0.f);
-			if (NavSys)
-			{
-				FNavLocation Projected;
-				if (NavSys->ProjectPointToNavigation(Station, Projected, StationProjectExtent))
-				{
-					Station = Projected.Location;
-				}
-			}
-			Unit->AssignCommandGroup(NewGroup.GroupId, Station - NewGroup.PositionCenter);
+			// unreachable by the argument above; logged rather than assumed so a
+			// future change to PruneUnitGroups cannot make the prompt lie silently.
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("ASiegePlayerController '%s': %s group %d vanished between creation and the completion prompt — reporting 0 unit(s)."),
+				*GetNameSafe(this), TypeLabel, NewGroupId);
 		}
-
-		const int32 NewGroupId = NewGroup.GroupId;
-		UnitGroups.Add(MoveTemp(NewGroup));
-
-		// reap any older group the steal emptied (its markers die with it)
-		PruneUnitGroups();
 
 		// the pick is DONE: the Position + Attack circles now belong to the group
-		// as its persistent markers — null the scratch refs FIRST so the shared
+		// as its persistent markers — null the scratch refs so the shared
 		// CancelGroupPick teardown below leaves them standing and destroys only
 		// the SELECT circle.
 		GroupPickPositionDecal = nullptr;
 		GroupPickActiveDecal = nullptr;
-
-		UE_LOG(LogGitClaudeUnrealTest, Log,
-			TEXT("ASiegePlayerController '%s': %s group %d formed — %d unit(s), position (%.0f, %.0f) r=%.0f, attack (%.0f, %.0f) r=%.0f (TASK-344)."),
-			*GetNameSafe(this), TypeLabel, NewGroupId, MemberCount,
-			GroupPickPositionCenter.X, GroupPickPositionCenter.Y, GroupPickPositionRadius,
-			GroupPickLocation.X, GroupPickLocation.Y, GroupPickRadius);
 
 		CancelGroupPick();
 
@@ -2777,6 +2839,131 @@ void ASiegePlayerController::ConfirmGroupPickStage()
 		// unreachable — the PlayerTick pick branch only runs while a stage is live
 		break;
 	}
+}
+
+int32 ASiegePlayerController::CreateUnitGroup(
+	ESiegeGroupCommandType Type,
+	const FVector& PositionCenter,
+	float PositionRadius,
+	const FVector& AttackCenter,
+	float AttackRadius,
+	const TArray<TWeakObjectPtr<ASummonedUnit>>& Members,
+	ADecalActor* PositionMarker /* = nullptr */,
+	ADecalActor* AttackMarker /* = nullptr */)
+{
+	// ⚠️ EXTRACTED VERBATIM FROM ConfirmGroupPickStage's stage-3 body (TASK-440).
+	// The acceptance criterion for this function is PROVABLY ZERO BEHAVIOR CHANGE,
+	// so every statement below is the shipped one with pick-scratch members
+	// rewritten to the parameters that carry the identical values. Nothing was
+	// retyped, tidied or "improved" on the way across.
+	//
+	// EXACTLY ONE STATEMENT CHANGED POSITION — the formation UE_LOG at the bottom,
+	// which used to sit after two marker-ref writes that are now the caller's. It
+	// is flagged in full at its own site rather than only here, because a reviewer
+	// checking "was anything reordered?" should find the answer AT the statement.
+	const TCHAR* TypeLabel = GroupCommandTypeLabel(Type);
+
+	FSiegeUnitGroup NewGroup;
+
+	// ⚠️ THE ID IS TAKEN HERE, BEFORE THE ALIVE-FILTER, AND THAT IS DELIBERATE:
+	// the shipped body did exactly this, so a refused confirm BURNS an id. Ids are
+	// never reused and nothing keys off them being contiguous, so burning one is
+	// harmless — but moving this line below the filter would silently change which
+	// id every subsequent group gets, which is a behavior change wearing a tidy-up's
+	// clothes. It stays where it was.
+	NewGroup.GroupId = NextUnitGroupId++;
+	NewGroup.Type = Type;
+	NewGroup.PositionCenter = PositionCenter;
+	NewGroup.PositionRadius = PositionRadius;
+	NewGroup.AttackCenter = AttackCenter;
+	NewGroup.AttackRadius = AttackRadius;
+	NewGroup.PositionMarkerDecal = PositionMarker;
+	NewGroup.AttackMarkerDecal = AttackMarker;
+
+	// re-filter the caller's capture: members may have died since they were picked
+	for (const TWeakObjectPtr<ASummonedUnit>& Member : Members)
+	{
+		const ASummonedUnit* Unit = Member.Get();
+		if (Unit && !Unit->IsUnitDead())
+		{
+			NewGroup.Members.Add(Member);
+		}
+	}
+
+	if (NewGroup.Members.Num() == 0)
+	{
+		// nobody survived: no group to form. The CALLER owns the player-facing
+		// message and the teardown — nothing has been transferred or mutated here,
+		// so the caller still owns both marker decals and can destroy them.
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': %s final confirm refused — every selected unit died during the pick."),
+			*GetNameSafe(this), TypeLabel);
+		return INDEX_NONE;
+	}
+
+	// STEAL (the re-selection law): a re-selected unit leaves its older group.
+	// PruneUnitGroups below reaps any group this empties — markers included —
+	// synchronously, so it never outlives the confirm that emptied it.
+	for (const TWeakObjectPtr<ASummonedUnit>& Member : NewGroup.Members)
+	{
+		for (FSiegeUnitGroup& OldGroup : UnitGroups)
+		{
+			OldGroup.Members.Remove(Member);
+		}
+	}
+
+	// Per-unit stations: deterministic golden-angle sunflower inside the
+	// position circle — station i at radius R·√((i+0.5)/N), angle i·golden —
+	// computed ONCE here and nav-projected (the SpawnUnitSwarm ring-projection
+	// pattern), then PUSHED to the unit as a scalar offset (no arrays on
+	// units). This kills the mill-at-one-point clustering (TASK-280/282).
+	UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(GetWorld());
+	const int32 MemberCount = NewGroup.Members.Num();
+	const float StationExtentXY = FMath::Max(NewGroup.PositionRadius * 0.5f, 100.f);
+	const FVector StationProjectExtent(StationExtentXY, StationExtentXY, 200.f);
+	for (int32 Index = 0; Index < MemberCount; ++Index)
+	{
+		ASummonedUnit* Unit = NewGroup.Members[Index].Get();
+		if (!Unit)
+		{
+			continue; // filtered alive above; belt-and-braces
+		}
+		const float RingFraction = (static_cast<float>(Index) + 0.5f) / static_cast<float>(MemberCount);
+		const float RingRadius = NewGroup.PositionRadius * FMath::Sqrt(RingFraction);
+		const float RingAngle = static_cast<float>(Index) * GoldenAngleRadians;
+		FVector Station = NewGroup.PositionCenter
+			+ FVector(RingRadius * FMath::Cos(RingAngle), RingRadius * FMath::Sin(RingAngle), 0.f);
+		if (NavSys)
+		{
+			FNavLocation Projected;
+			if (NavSys->ProjectPointToNavigation(Station, Projected, StationProjectExtent))
+			{
+				Station = Projected.Location;
+			}
+		}
+		Unit->AssignCommandGroup(NewGroup.GroupId, Station - NewGroup.PositionCenter);
+	}
+
+	const int32 NewGroupId = NewGroup.GroupId;
+	UnitGroups.Add(MoveTemp(NewGroup));
+
+	// reap any older group the steal emptied (its markers die with it)
+	PruneUnitGroups();
+
+	// ⚠️ THE ONE STATEMENT WHOSE POSITION MOVED, AND IT IS PROVABLY INERT: in the
+	// shipped body this log sat AFTER the two lines that null the pick's marker
+	// refs (GroupPickPositionDecal / GroupPickActiveDecal), which are now the
+	// caller's to null. Those two writes are private member-pointer assignments
+	// that this log reads NONE of, and UE_LOG cannot re-enter gameplay code, so
+	// swapping their order changes nothing observable. The log TEXT is byte-
+	// identical, including the "(TASK-344)" provenance tag.
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASiegePlayerController '%s': %s group %d formed — %d unit(s), position (%.0f, %.0f) r=%.0f, attack (%.0f, %.0f) r=%.0f (TASK-344)."),
+		*GetNameSafe(this), TypeLabel, NewGroupId, MemberCount,
+		PositionCenter.X, PositionCenter.Y, PositionRadius,
+		AttackCenter.X, AttackCenter.Y, AttackRadius);
+
+	return NewGroupId;
 }
 
 void ASiegePlayerController::CancelGroupPick()
@@ -3979,11 +4166,16 @@ void ASiegePlayerController::ApplyCursorInputState()
 
 	// cursor owners compose: placement mode (M1, unchanged), spell targeting mode
 	// (M5 TASK-100 — ruling 8: "cursor posture mirrors placement mode"), the
-	// group-order pick (TASK-344 — same reused posture), and the held IA_UICursor
-	// (M2 input ruling) — any one keeps the cursor up. The three card/command
+	// group-order pick (TASK-344 — same reused posture), the assistant console
+	// (TASK-440 — ONE MORE TERM, never a parallel path), and the held IA_UICursor
+	// (M2 input ruling) — any one keeps the cursor up. The four card/command
 	// cursor modes are mutually exclusive, so at most two owners are ever live
 	// (one of them + IA_UICursor).
-	const bool bWantCursor = bInPlacementMode || bInTargetingMode || (GroupPickStage != EGroupPickStage::None) || bUICursorHeld;
+	//
+	// ⚠️ bAssistantConsoleOpen IS FALSE ON EVERY PRE-EXISTING PATH, so this
+	// expression evaluates exactly as it did before the term was added — the
+	// console changes the posture only while it is actually open.
+	const bool bWantCursor = bInPlacementMode || bInTargetingMode || (GroupPickStage != EGroupPickStage::None) || bAssistantConsoleOpen || bUICursorHeld;
 	bShowMouseCursor = bWantCursor;
 	bEnableClickEvents = bWantCursor;
 
@@ -4002,4 +4194,245 @@ void ASiegePlayerController::ApplyCursorInputState()
 		// M1 feel: game-only free-look with the cursor hidden
 		SetInputMode(FInputModeGameOnly());
 	}
+}
+
+bool ASiegePlayerController::CanOpenAssistantConsole() const
+{
+	// THE CONSOLE HALF OF THE FOUR-WAY MUTUAL EXCLUSION (TASK-440). Each of the
+	// three shipped modes carries the mirror clause against bAssistantConsoleOpen,
+	// so the exclusion holds in BOTH directions — which is the requirement. A
+	// one-directional guard is exactly how two cursor owners end up disagreeing
+	// about the input mode, and this controller has paid for that lesson once
+	// already (the level-travel input law).
+	//
+	// The match-ended clause is the shipped Enter*/BeginGroupPick idiom, and here
+	// it is load-bearing rather than cosmetic: ApplyCursorInputState EARLY-OUTS
+	// while bMatchEnded is latched (HandleMatchEnd owns the UIOnly end screen), so
+	// a console opened on the end screen would never receive its cursor posture.
+	return !bMatchEnded
+		&& !bInPlacementMode
+		&& !bInTargetingMode
+		&& (GroupPickStage == EGroupPickStage::None);
+}
+
+bool ASiegePlayerController::SetAssistantConsoleOpen(bool bOpen)
+{
+	// RE-GATE ON OPEN so the guard cannot be bypassed by a caller that forgot to
+	// ask. CLOSING IS NEVER REFUSED — a close that could fail is a close that can
+	// strand the cursor in GameAndUI with no owner willing to release it.
+	if (bOpen && !CanOpenAssistantConsole())
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': assistant console open refused — another cursor mode is live (placement %d, targeting %d, group pick %d) or the match has ended (%d)."),
+			*GetNameSafe(this), bInPlacementMode ? 1 : 0, bInTargetingMode ? 1 : 0,
+			(GroupPickStage != EGroupPickStage::None) ? 1 : 0, bMatchEnded ? 1 : 0);
+		return false;
+	}
+
+	// no-op writes never touch the input mode: re-applying a cursor posture that is
+	// already correct is harmless, but a SetInputMode on every keystroke-driven
+	// call would be a real per-frame cost and a real source of focus churn.
+	if (bAssistantConsoleOpen == bOpen)
+	{
+		return true;
+	}
+
+	bAssistantConsoleOpen = bOpen;
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASiegePlayerController '%s': assistant console %s."),
+		*GetNameSafe(this), bOpen ? TEXT("opened") : TEXT("closed"));
+
+	// the ONE cursor-posture owner — never a parallel SetInputMode call
+	ApplyCursorInputState();
+	return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE OPEN-KEY SEAM (TASK-449)
+//
+// Both halves already existed and neither is rebuilt here: TASK-440 owns the
+// posture (CanOpenAssistantConsole / SetAssistantConsoleOpen / the
+// ApplyCursorInputState term / the four mutual-exclusion mirrors) and TASK-444
+// owns the widget (CreateAndAddToViewport / OpenConsole / CloseConsole /
+// OnConsoleOpenChanged). What follows is the JOIN, and nothing else.
+// ─────────────────────────────────────────────────────────────────────────────
+
+void ASiegePlayerController::OnAssistantConsolePressed()
+{
+	// ── CLOSE FIRST, AND THE CLOSE PATH IS NEVER GATED ──
+	// The toggle asks "is it open?" BEFORE it asks "may it open?", because the
+	// answer to the second question must never be able to block the first: a close
+	// that can be refused is a close that can strand the cursor in GameAndUI with
+	// no owner willing to release it (SetAssistantConsoleOpen's own contract).
+	// Either half of the pair being live counts as open — they can only disagree
+	// through a bug, and if they ever do, the key is what repairs it.
+	if (bAssistantConsoleOpen || (AssistantConsoleWidget && AssistantConsoleWidget->IsConsoleOpen()))
+	{
+		if (AssistantConsoleWidget)
+		{
+			// Broadcasts OnConsoleOpenChanged(false) -> HandleAssistantConsoleOpenChanged
+			// -> SetAssistantConsoleOpen(false). The explicit call below is therefore
+			// usually a no-op, and it is kept anyway: it is the one line that
+			// guarantees the flag cannot survive the key even if the widget is null,
+			// already closed, or a future change drops the broadcast.
+			AssistantConsoleWidget->CloseConsole();
+		}
+
+		SetAssistantConsoleOpen(false);
+		return;
+	}
+
+	// ── OPEN: GUARD FIRST, UI SECOND — THE LOAD-BEARING ORDERING ──
+	// ⛔ NOTHING IS CREATED AND NOTHING IS SHOWN UNTIL THE POSTURE IS GRANTED.
+	// SetAssistantConsoleOpen(true) re-gates on CanOpenAssistantConsole() and
+	// returns false while placement mode, spell targeting or a group-order pick
+	// owns the cursor, or after match end. On that refusal this function does
+	// LITERALLY NOTHING VISIBLE: no widget is constructed, nothing is added to the
+	// viewport, no keyboard focus moves, no transcript line is written.
+	//
+	// ⚖️ A console that appears and THEN discovers it was not permitted is the
+	// exact bug this ordering exists to prevent, and it is worse than one that
+	// never appears — it seizes keyboard focus on the way past and leaves the
+	// player typing into a box that is about to be taken away.
+	if (!SetAssistantConsoleOpen(true))
+	{
+		// SetAssistantConsoleOpen already logged WHICH owner refused. No second
+		// log line here: one refusal, one line.
+		return;
+	}
+
+	USiegeAssistantConsoleWidget* Console = GetOrCreateAssistantConsoleWidget();
+	if (Console == nullptr)
+	{
+		// Creation failed (CreateAndAddToViewport logged it). ROLL THE POSTURE
+		// BACK: a cursor owner with no UI behind it is precisely the soft-lock the
+		// posture flag must never be left in.
+		SetAssistantConsoleOpen(false);
+		return;
+	}
+
+	// ── HAND THE LIVE WIDGET TO THE COMPONENT (TASK-453) ──
+	// The console's outbound seam (OnConsoleSubmitted / Confirmed / Cancelled /
+	// OpenChanged) is declared "the owning USiegeAssistantComponent binds these",
+	// and AttachConsoleWidget is where the component binds them. Creation is LAZY,
+	// so this is the only moment that can possibly know a widget exists: a binder
+	// at BeginPlay would find null and no-op FOREVER — no error, no log, no crash.
+	//
+	// ⛔ THIS MUST RUN BEFORE OpenConsole(), NOT AFTER, AND THE DIFFERENCE IS A
+	// SILENT FAILURE RATHER THAN A STYLE POINT. OpenConsole() ENDS with
+	// OnConsoleOpenChanged.Broadcast(true) (SiegeAssistantConsoleWidget.cpp), and
+	// the component subscribes to that delegate INSIDE AttachConsoleWidget. Attach
+	// afterwards and the component is not yet listening when the only "console
+	// opened" broadcast of this press goes out — the FSM would sit in Idle while
+	// the player types into a box it does not know is open, and it would recover
+	// only on the SECOND open. Attaching first means the broadcast lands on a live
+	// listener the very first time.
+	//
+	// ⚠️ CALLED ON EVERY OPEN, DELIBERATELY. AttachConsoleWidget is pinned
+	// IDEMPOTENT and NULL-SAFE: it drops every binding before it makes it, so
+	// repeated calls leave exactly one of each, and it RE-SEEDS the widget from
+	// live FSM state on each call. That is what makes close-and-reopen correct BY
+	// CONSTRUCTION rather than by the widget happening to persist — whatever might
+	// have dropped the link (an FSM-side DetachConsoleWidget, a rebuilt widget, a
+	// stale weak pointer), the next successful open re-establishes it. A one-shot
+	// attach at the creation site would fire once and have no such recovery.
+	//
+	// ⚠️ NO COMPONENT ⇒ THE CONSOLE STILL OPENS, INERT. AssistantComponent is a
+	// default subobject built in the constructor, so null here means a genuine
+	// construction defect rather than a normal state. It must not crash and must
+	// not refuse the open: the player gets a console whose Enter goes nowhere,
+	// which is exactly how this seam behaved before this task existed.
+	if (USiegeAssistantComponent* Assistant = GetAssistantComponent())
+	{
+		Assistant->AttachConsoleWidget(Console);
+	}
+	else
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASiegePlayerController '%s': the assistant console opened with no USiegeAssistantComponent to attach it to — it will accept text but nothing will act on it. No key, card or command is affected."),
+			*GetNameSafe(this));
+	}
+
+	Console->OpenConsole();
+
+	// ⚠️ OpenConsole() CAN REFUSE, SILENTLY AND BY DESIGN: it returns without
+	// showing anything while the console is DISABLED (the assistant fault latch —
+	// SetConsoleEnabled(false); SiegeAssistantConsoleWidget.cpp's OpenConsole
+	// guard). It has no return value, so ASK THE WIDGET rather than assume the
+	// call worked, and release the posture we took. The flag must never describe
+	// a console the player cannot see.
+	if (!Console->IsConsoleOpen())
+	{
+		SetAssistantConsoleOpen(false);
+
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': assistant console did not open (the widget is disabled — a faulted assistant); cursor posture released, nothing shown. No key, card or command is affected."),
+			*GetNameSafe(this));
+	}
+}
+
+void ASiegePlayerController::HandleAssistantConsoleOpenChanged(bool bOpen)
+{
+	if (!bOpen)
+	{
+		// ⛔ THE WHOLE REASON THIS BINDING EXISTS. The console can close by routes
+		// this controller never sees: Cancel with no confirm prompt up, the fault
+		// latch calling SetConsoleEnabled(false), or any later FSM-driven close
+		// (TASK-443). A posture flag left stuck TRUE is a cursor soft-locked in
+		// GameAndUI with nobody willing to release it — and ApplyCursorInputState
+		// is exactly where this project's input bugs have lived before.
+		// Closing is never refused, so this cannot fail.
+		SetAssistantConsoleOpen(false);
+		return;
+	}
+
+	// Opened by a route other than the key (a future FSM-driven open — e.g. the
+	// deferred-intent path raising a confirm prompt the player must actually see).
+	// Take the posture; if the guard refuses it, CLOSE THE WIDGET rather than let
+	// the two disagree: an open console with no cursor is unusable, and it would
+	// be sitting on top of the very mode that refused it.
+	//
+	// TERMINATING BY CONSTRUCTION, not by luck: on the key path the flag is
+	// already true, so SetAssistantConsoleOpen(true) takes its no-op early-out and
+	// returns true. On a refusal, CloseConsole() clears bConsoleOpen BEFORE it
+	// re-broadcasts, so the nested call lands on the !bOpen branch above and stops.
+	if (!SetAssistantConsoleOpen(true) && AssistantConsoleWidget)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASiegePlayerController '%s': the assistant console opened without the cursor posture (another cursor mode is live or the match ended) — closing it. The console is never a requirement for any action."),
+			*GetNameSafe(this));
+
+		AssistantConsoleWidget->CloseConsole();
+	}
+}
+
+USiegeAssistantConsoleWidget* ASiegePlayerController::GetOrCreateAssistantConsoleWidget()
+{
+	if (AssistantConsoleWidget)
+	{
+		return AssistantConsoleWidget;
+	}
+
+	// LAZY BY SPEC (task item 3): the console is created on the first SUCCESSFUL
+	// open, never at BeginPlay and never on a refused open — which is only true
+	// because the guard above runs first. CreateAndAddToViewport adds it CLOSED
+	// (NativeConstruct collapses it), so this call alone puts nothing on screen.
+	AssistantConsoleWidget = USiegeAssistantConsoleWidget::CreateAndAddToViewport(this);
+
+	if (AssistantConsoleWidget)
+	{
+		// THE POSTURE BINDING, TAKEN EXACTLY ONCE (this function is the only
+		// creation site and it early-outs when the widget already exists, so the
+		// delegate can never be double-bound and fire twice).
+		//
+		// ⚠️ THIS IS NOT THE ONLY SUBSCRIBER THIS DELEGATE WILL CARRY: TASK-443
+		// binds the SAME OnConsoleOpenChanged to the component's
+		// NotifyConsoleOpened / NotifyConsoleClosed. Both are wanted — posture is
+		// the controller's, the FSM is the component's — and neither may be
+		// "consolidated" into the other.
+		AssistantConsoleWidget->OnConsoleOpenChanged.AddDynamic(this, &ASiegePlayerController::HandleAssistantConsoleOpenChanged);
+	}
+
+	return AssistantConsoleWidget;
 }

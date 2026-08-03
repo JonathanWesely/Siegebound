@@ -488,6 +488,18 @@ void USiegeAssistantSnapshot::Capture(UWorld* World, ETeamId Team)
 		if (Unit->IsGroupCommandEligible())
 		{
 			++Tally->Orderable;
+
+			// TASK-441: THE SAME ALREADY-COMPUTED PREDICATE RESULT, RECORDED ON THE
+			// ROSTER ROW TOO - no second call, no second traversal, no re-tally.
+			// The per-KIND column (KindOrderable) answers the FSM's "may I send
+			// these?"; the per-ROW column is what makes the pure guard
+			// ValidateCommandAgainstSnapshot able to tell KindNotOrderable from
+			// KindUnknown FROM THE ROSTER ARRAY ALONE, which is the property that
+			// keeps it testable with no world and no model.
+			// `Entry` is still valid here: nothing between its assignment above and
+			// this line touches `Roster`, and only `Tallies` has grown. ⚠️ Anyone
+			// who adds a Roster insertion between the two must re-fetch Entry.
+			++Entry->Orderable;
 		}
 		if (Unit->IsFollowCommandEligible())
 		{
@@ -599,6 +611,157 @@ bool USiegeAssistantSnapshot::ResolvePlace(FName Place, FVector& OutLocation) co
 	}
 
 	OutLocation = PlaceLocations[Index];
+	return true;
+}
+
+// ---------------------------------------------------------------------------
+// ORDERABILITY ACCESSORS (TASK-441)
+//
+// ⛔ THESE READ. THEY DO NOT COMPUTE. KindOrderable is filled once per Capture,
+// in the SAME per-unit loop that fills KindTotals and KindFollowable, from the
+// SHIPPING predicate ASummonedUnit::IsGroupCommandEligible(). Nothing here
+// re-derives eligibility, adds a traversal, or caches anything across sentences
+// (CONVENTIONS "In-match LLM command assistant" §4 - a registry for this is
+// rejected on sight).
+// ---------------------------------------------------------------------------
+
+int32 USiegeAssistantSnapshot::GetOrderableCount(FName Kind) const
+{
+	// UnitKinds is parallel to KindOrderable by construction (both are appended
+	// in one pass over the sorted tallies). The IsValidIndex guard is not
+	// ceremony: it is the same defensive shape AppendRosterBlock already uses on
+	// these arrays, and it means a future edit that desynchronises them degrades
+	// to "not orderable" instead of reading off the end.
+	const int32 Index = UnitKinds.IndexOfByKey(Kind);
+	if (Index == INDEX_NONE || !KindOrderable.IsValidIndex(Index))
+	{
+		return 0;
+	}
+
+	return KindOrderable[Index];
+}
+
+bool USiegeAssistantSnapshot::IsKindOrderable(FName Kind) const
+{
+	return GetOrderableCount(Kind) > 0;
+}
+
+// ---------------------------------------------------------------------------
+// THE NON-ORDERABLE-KIND GUARD (TASK-441)
+//
+// ⛔ SHIPPED SAFETY, NOT A ROUTE TO THE GATE. The eval scores the model's
+// EMITTED JSON; this refuses an EXECUTED ACTION. It does not make DEV-04 pass
+// and it is not accuracy progress. See the header for the full argument.
+// ---------------------------------------------------------------------------
+
+namespace SiegeAssistantGuardInternal
+{
+	/**
+	 *  The three verbs `IsGroupCommandEligible()` actually gates, and therefore
+	 *  the only ones the ORDERABLE column may refuse.
+	 *
+	 *  ⚠️ THIS IS NARROWER THAN SiegeAssistantIntentTakesSelection(), ON PURPOSE.
+	 *  That predicate also returns true for `Follow`, which is gated by the OTHER
+	 *  shipped predicate, `IsFollowCommandEligible()`. The Cleric is the live
+	 *  counter-example: it follows and cannot take zone orders, so its roster row
+	 *  is `Count > 0, Orderable == 0`, and refusing `follow` on that column would
+	 *  refuse "clerics follow me" - a legal shipped order and the eval's own
+	 *  DEV-20 utterance. Reusing the wider predicate here would turn a guard into
+	 *  a regression, which is why this is spelled out rather than inlined.
+	 *
+	 *  Executor seam it mirrors (CONVENTIONS §8): send / guard -> CreateUnitGroup(Hold),
+	 *  ambush -> CreateUnitGroup(Ambush); follow -> EnrollInDefaultFollowGroup;
+	 *  charge / fallback -> SetUnitCommand; rally -> AHeroCharacter::Rally().
+	 */
+	static bool IntentTakesZoneOrder(ESiegeAssistantIntent Intent)
+	{
+		return Intent == ESiegeAssistantIntent::Send
+			|| Intent == ESiegeAssistantIntent::Guard
+			|| Intent == ESiegeAssistantIntent::Ambush;
+	}
+}
+
+bool ValidateCommandAgainstSnapshot(const FSiegeAssistantCommand& Command,
+                                    const TArray<FSiegeAssistantRosterEntry>& Roster,
+                                    ESiegeAssistantRejectReason& OutReason,
+                                    FName& OutOffendingKind)
+{
+	using namespace SiegeAssistantGuardInternal;
+
+	// ALWAYS WRITTEN, ON EVERY PATH. An untouched reason code is a STALE reason
+	// code from the previous sentence, and a refusal template filled from a stale
+	// code tells the player something true about a command they are no longer
+	// giving. (ResolvePlace goes the other way for the opposite reason - see its
+	// comment.)
+	OutReason = ESiegeAssistantRejectReason::None;
+	OutOffendingKind = NAME_None;
+
+	// `who:"none"` and `who:"all"` BOTH parse to an empty selection, so army-wide
+	// verbs and "everything eligible" arrive here with nothing to validate. They
+	// are not refused: there is no kind to be wrong about.
+	if (Command.Kinds.Num() == 0)
+	{
+		return true;
+	}
+
+	const bool bZoneOrder = IntentTakesZoneOrder(Command.Intent);
+
+	for (const FName Kind : Command.Kinds)
+	{
+		// Sum ACROSS ROWS, never a single row. The roster aggregates by
+		// (Kind, GroupId), so one kind legitimately appears once per group it is
+		// spread over - a footman in a Hold group and a footman following the hero
+		// are two rows of the same symbol. Answering off the first matching row
+		// would refuse a kind whose orderable units all sit in the second one.
+		int32 LiveUnits = 0;
+		int32 OrderableUnits = 0;
+		for (const FSiegeAssistantRosterEntry& Row : Roster)
+		{
+			if (Row.Kind == Kind)
+			{
+				LiveUnits += Row.Count;
+				OrderableUnits += Row.Orderable;
+			}
+		}
+
+		if (LiveUnits <= 0)
+		{
+			// Not on the board at all. Capture() never emits a zero-Count row, so
+			// in production this means "no row for this symbol"; the count test is
+			// what makes a hand-populated or wire-received roster behave the same.
+			OutReason = ESiegeAssistantRejectReason::KindUnknown;
+			OutOffendingKind = Kind;
+
+			// Log, NOT Warning - and the level is a decision, not a default. A
+			// refusal here is the MODEL being wrong, which is expected traffic and
+			// not a code defect, so Warning would both cry wolf and (because the
+			// automation framework treats logged warnings as failures) make this
+			// function untestable by its own tests. Log is on by default, is
+			// rate-limited by human typing speed, and names the symbol - which is
+			// exactly the line TASK-447's first-execution audit and Jonathan's
+			// playtest want to see.
+			UE_LOG(LogSiegeAssistant, Log,
+				TEXT("Guard REFUSED a command: kind `%s` has no live units on the ordering team (roster has %d row(s)). Surfaced as the existing unsupported-ask outcome. NOTE: this refuses an EXECUTED ACTION and changes nothing about what the model EMITS - shipped safety, not eval accuracy."),
+				*Kind.ToString(), Roster.Num());
+
+			return false;
+		}
+
+		if (bZoneOrder && OrderableUnits <= 0)
+		{
+			// THE DEV-04 SHAPE, EXACTLY: a well-formed live order for a kind the
+			// roster line itself prints as `orderable=0`.
+			OutReason = ESiegeAssistantRejectReason::KindNotOrderable;
+			OutOffendingKind = Kind;
+
+			UE_LOG(LogSiegeAssistant, Log,
+				TEXT("Guard REFUSED a command: kind `%s` is on the board (%d live) but NONE of them may take a zone order (send/guard/ambush) - IsGroupCommandEligible() is false for every one. Surfaced as the existing unsupported-ask outcome. NOTE: this refuses an EXECUTED ACTION and changes nothing about what the model EMITS - shipped safety, not eval accuracy."),
+				*Kind.ToString(), LiveUnits);
+
+			return false;
+		}
+	}
+
 	return true;
 }
 
@@ -1229,10 +1392,24 @@ FString USiegeAssistantSnapshot::BuildZoneC(const FString& Utterance, const FStr
 	Tail.Appendf(TEXT("order: %s\n"), SafeUtterance.IsEmpty() ? TEXT("none") : *SafeUtterance);
 
 	// The elastic middle. Start at the kind cap, then shrink until the whole
-	// snapshot (Zone B's reserve + Zone C) fits MaxSnapshotChars. Shrinking is
-	// deterministic - always from the TAIL of the fixed card-row order - so the
+	// snapshot (Zone B's reserve + Zone C) fits SnapshotTrimBudgetChars. Shrinking
+	// is deterministic - always from the TAIL of the fixed card-row order - so the
 	// same board always produces the same bytes.
-	const int32 RosterBudget = MaxSnapshotChars - ZoneBCharReserve - Head.Len() - Tail.Len();
+	//
+	// ⚠️ THIS IS THE TRIMMER, NOT THE BUDGET AUTHORITY (TASK-455). The authority is
+	// USiegeLlamaSubsystem::MaxSnapshotTokens = 400, counted by llama_tokenize on
+	// the worker, and it REJECTS an over-budget turn rather than cutting it. This
+	// loop exists so that rejection is rare: a board that would blow the token
+	// budget gets a narrower roster and a usable answer instead of a refusal. See
+	// SnapshotTrimBudgetChars' comment for the three-role table and for why
+	// pointing this at the pre-filter's 3000 would be a QA FAIL rather than a
+	// simplification.
+	//
+	// ⚠️ BOTH PLAYER-TEXT LINES ARE ALREADY SUBTRACTED HERE, VIA Tail. `pending:`
+	// and `order:` each spend up to MaxUtteranceBytes of this budget and NEITHER is
+	// trimmed by it - the roster absorbs all of it, which is the CONVENTIONS §8 rule
+	// that the utterance is never truncated by the snapshot budget.
+	const int32 RosterBudget = SnapshotTrimBudgetChars - ZoneBCharReserve - Head.Len() - Tail.Len();
 
 	const int32 CapKinds = FMath::Min(UnitKinds.Num(), MaxRosterKinds);
 
@@ -1258,8 +1435,8 @@ FString USiegeAssistantSnapshot::BuildZoneC(const FString& Utterance, const FStr
 	// accuracy: GetUnitKinds() is never truncated, so the GRAMMAR still admits
 	// every collapsed kind and the sampler can name a unit the prompt did not
 	// show the model. Silence is the worst possible way for that to happen, and
-	// it is strictly more likely now that MaxSnapshotChars binds at a measured
-	// budget rather than a generous guess.
+	// it is strictly more likely now that SnapshotTrimBudgetChars binds at a
+	// measured budget rather than a generous guess.
 	const int32 CollapsedKinds = UnitKinds.Num() - KindsToPrint;
 	if (CollapsedKinds > 0)
 	{
@@ -1277,9 +1454,9 @@ FString USiegeAssistantSnapshot::BuildZoneC(const FString& Utterance, const FStr
 		// below deliberately fires once per escalation, so it cannot tell you
 		// which particular sentence was answered against a trimmed roster.
 		UE_LOG(LogSiegeAssistant, Verbose,
-			TEXT("Snapshot roster degraded: %d of %d kind(s) printed in full, %d collapsed into `other_kinds:` by %s (roster %d chars of a %d-char budget; MaxSnapshotChars %d)."),
+			TEXT("Snapshot roster degraded: %d of %d kind(s) printed in full, %d collapsed into `other_kinds:` by %s (roster %d chars of a %d-char budget; SnapshotTrimBudgetChars %d)."),
 			KindsToPrint, UnitKinds.Num(), CollapsedKinds, Cause,
-			RosterBlock.Len(), RosterBudget, MaxSnapshotChars);
+			RosterBlock.Len(), RosterBudget, SnapshotTrimBudgetChars);
 
 		if (KindsToPrint < WarnedRosterKindsPrinted || CollapsedKinds > WarnedRosterKindsCollapsed)
 		{
@@ -1287,9 +1464,9 @@ FString USiegeAssistantSnapshot::BuildZoneC(const FString& Utterance, const FStr
 			WarnedRosterKindsCollapsed = FMath::Max(WarnedRosterKindsCollapsed, CollapsedKinds);
 
 			UE_LOG(LogSiegeAssistant, Warning,
-				TEXT("Snapshot roster TRUNCATED: %d of %d kind(s) printed in full, %d collapsed into `other_kinds:` by %s. The grammar still admits all %d kinds, so the model can name a unit the prompt never showed it. Roster %d chars of a %d-char budget (MaxSnapshotChars %d, ZoneBCharReserve %d). Aggregate harder or re-measure the cap - do NOT raise it to hide this."),
+				TEXT("Snapshot roster TRUNCATED: %d of %d kind(s) printed in full, %d collapsed into `other_kinds:` by %s. The grammar still admits all %d kinds, so the model can name a unit the prompt never showed it. Roster %d chars of a %d-char budget (SnapshotTrimBudgetChars %d, ZoneBCharReserve %d). Aggregate harder, or lower the reserve from a PRINTED zoneB_chars reading - do NOT raise the trim budget to hide this. NOTE the trim budget is a proxy: the real cap is the plugin's MaxSnapshotTokens=400, counted by the tokenizer, which REJECTS an over-budget turn instead of trimming it."),
 				KindsToPrint, UnitKinds.Num(), CollapsedKinds, Cause, UnitKinds.Num(),
-				RosterBlock.Len(), RosterBudget, MaxSnapshotChars, ZoneBCharReserve);
+				RosterBlock.Len(), RosterBudget, SnapshotTrimBudgetChars, ZoneBCharReserve);
 		}
 	}
 
@@ -1366,8 +1543,9 @@ FString USiegeAssistantSnapshot::SanitizeForPrompt(const FString& In, int32& Out
 	// ── PASS 2 - MEASURE IN UTF-8 BYTES, THE UNIT THE BUDGET IS ACTUALLY SPENT IN ──
 	// ⚠️ FString::Len() counts UTF-16 CODE UNITS, and that equals the byte count
 	// ONLY for ASCII - which is exactly the assumption BLOCKER-2 was about, because
-	// the 2.71 chars/token ratio behind MaxSnapshotChars was calibrated on ASCII
-	// while these two lines are the only ones a player can fill with anything else.
+	// the 2.71 chars/token ratio behind SnapshotTrimBudgetChars was calibrated on
+	// ASCII while these two lines are the only ones a player can fill with anything
+	// else.
 	// Every high surrogate reaching here is paired, by construction in pass 1.
 	const int32 ContentBudgetBytes = MaxUtteranceBytes - UtteranceTruncationMarkerBytes;
 

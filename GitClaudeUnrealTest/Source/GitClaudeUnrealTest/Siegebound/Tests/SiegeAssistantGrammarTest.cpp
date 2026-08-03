@@ -451,7 +451,7 @@ bool FSiegeAssistantGrammarDeterminismTest::RunTest(const FString& Parameters)
 	const FString Second = USiegeAssistantGrammar::Build(MidMatchKinds(), MidMatchPlaces());
 
 	TestTrue(TEXT("Build produced a non-empty grammar"), First.Len() > 0);
-	TestEqual(TEXT("Two builds from equal inputs are byte-identical"), Second, First);
+	TestEqualSensitive(TEXT("Two builds from equal inputs are byte-identical"), Second, First);
 
 	// FName reports the case it was FIRST constructed with anywhere in the
 	// process, so identical game state could otherwise yield two different
@@ -461,16 +461,16 @@ bool FSiegeAssistantGrammarDeterminismTest::RunTest(const FString& Parameters)
 	const TArray<FName> MixedCasePlaces = { TEXT("Enemy_Castle"), TEXT("OWN_CASTLE"), TEXT("mid"), TEXT("Ancient_Ground_Near"), TEXT("ancient_ground_far") };
 	const FString FromMixedCase = USiegeAssistantGrammar::Build(MixedCaseKinds, MixedCasePlaces);
 
-	TestEqual(TEXT("Symbol casing does not change the emitted grammar"), FromMixedCase, First);
+	TestEqualSensitive(TEXT("Symbol casing does not change the emitted grammar"), FromMixedCase, First);
 
 	// Duplicates collapse; caller ordering is preserved and never sorted.
 	const TArray<FName> DuplicatedKinds = { TEXT("footman"), TEXT("archer"), TEXT("footman"), TEXT("sorcerer"), TEXT("cleric"), TEXT("archer") };
-	TestEqual(TEXT("Duplicate kinds collapse to the same grammar"),
+	TestEqualSensitive(TEXT("Duplicate kinds collapse to the same grammar"),
 		USiegeAssistantGrammar::Build(DuplicatedKinds, MidMatchPlaces()), First);
 
 	// Reserved sentinels may never become generated alternatives.
 	const TArray<FName> WithReserved = { TEXT("footman"), TEXT("all"), TEXT("archer"), TEXT("none"), TEXT("sorcerer"), TEXT("cleric") };
-	TestEqual(TEXT("Reserved sentinels are dropped from generated alternatives"),
+	TestEqualSensitive(TEXT("Reserved sentinels are dropped from generated alternatives"),
 		USiegeAssistantGrammar::Build(WithReserved, MidMatchPlaces()), First);
 
 	return true;
@@ -565,7 +565,7 @@ bool FSiegeAssistantGrammarIntentTest::RunTest(const FString& Parameters)
 		ESiegeAssistantIntent RoundTripped = ESiegeAssistantIntent::None;
 		TestTrue(*FString::Printf(TEXT("Symbol %s parses back to an intent"), *Symbol),
 			SiegeAssistantIntentFromSymbol(Symbol, RoundTripped));
-		TestEqual(*FString::Printf(TEXT("Symbol %s round-trips"), *Symbol),
+		TestEqualSensitive(*FString::Printf(TEXT("Symbol %s round-trips"), *Symbol),
 			SiegeAssistantIntentToSymbol(RoundTripped), Symbol);
 	}
 
@@ -743,7 +743,7 @@ bool FSiegeAssistantGrammarDegenerateTest::RunTest(const FString& Parameters)
 		const bool bWellFormed = IsGrammarWellFormed(Nothing, WellFormedError);
 		TestTrue(*FString::Printf(TEXT("Two empty arrays still yield a well-formed grammar (%s)"), *WellFormedError), bWellFormed);
 	}
-	TestEqual(TEXT("Two empty arrays are deterministic too"),
+	TestEqualSensitive(TEXT("Two empty arrays are deterministic too"),
 		USiegeAssistantGrammar::Build(TArray<FName>(), TArray<FName>()), Nothing);
 
 	// The populated case must obviously also be well-formed.
@@ -783,9 +783,9 @@ bool FSiegeAssistantCommandRoundTripTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("A single-kind order parses"), ParseSiegeAssistantCommand(Json, Command, Error));
 		TestEqual(TEXT("Single-kind: intent"), static_cast<int32>(Command.Intent), static_cast<int32>(ESiegeAssistantIntent::Send));
 		TestEqual(TEXT("Single-kind: one kind"), Command.Kinds.Num(), 1);
-		TestEqual(TEXT("Single-kind: kind symbol"), Command.Kinds[0].ToString(), FString(TEXT("footman")));
+		TestEqualSensitive(TEXT("Single-kind: kind symbol"), Command.Kinds[0].ToString(), FString(TEXT("footman")));
 		TestEqual(TEXT("Single-kind: count"), Command.Counts[0], 10);
-		TestEqual(TEXT("Single-kind: where"), Command.Where.ToString(), FString(TEXT("ancient_ground_near")));
+		TestEqualSensitive(TEXT("Single-kind: where"), Command.Where.ToString(), FString(TEXT("ancient_ground_near")));
 		TestTrue(TEXT("Single-kind: \"now\" leaves no trigger"), Command.TriggerKind.IsNone() && Command.TriggerAtLeast == 0);
 	}
 
@@ -802,11 +802,11 @@ bool FSiegeAssistantCommandRoundTripTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("The flagship two-kind order parses"), ParseSiegeAssistantCommand(Json, Command, Error));
 		TestEqual(TEXT("Flagship: two kinds"), Command.Kinds.Num(), 2);
 		TestEqual(TEXT("Flagship: counts are index-aligned with kinds"), Command.Counts.Num(), Command.Kinds.Num());
-		TestEqual(TEXT("Flagship: kind 0"), Command.Kinds[0].ToString(), FString(TEXT("footman")));
+		TestEqualSensitive(TEXT("Flagship: kind 0"), Command.Kinds[0].ToString(), FString(TEXT("footman")));
 		TestEqual(TEXT("Flagship: count 0"), Command.Counts[0], 10);
-		TestEqual(TEXT("Flagship: kind 1"), Command.Kinds[1].ToString(), FString(TEXT("sorcerer")));
+		TestEqualSensitive(TEXT("Flagship: kind 1"), Command.Kinds[1].ToString(), FString(TEXT("sorcerer")));
 		TestEqual(TEXT("Flagship: count 1"), Command.Counts[1], 1);
-		TestEqual(TEXT("Flagship: where"), Command.Where.ToString(), FString(TEXT("ancient_ground_near")));
+		TestEqualSensitive(TEXT("Flagship: where"), Command.Where.ToString(), FString(TEXT("ancient_ground_near")));
 	}
 
 	// --- 3 kinds, exactly at the cap ------------------------------------------
@@ -844,7 +844,7 @@ bool FSiegeAssistantCommandRoundTripTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("fallback + who:all parses"),
 			ParseSiegeAssistantCommand(TEXT("{\"intent\":\"fallback\",\"who\":\"all\",\"where\":\"own_castle\",\"when\":\"now\"}"), Command, Error));
 		TestEqual(TEXT("who:all carries no explicit kinds"), Command.Kinds.Num(), 0);
-		TestEqual(TEXT("fallback keeps its place"), Command.Where.ToString(), FString(TEXT("own_castle")));
+		TestEqualSensitive(TEXT("fallback keeps its place"), Command.Where.ToString(), FString(TEXT("own_castle")));
 
 		// A selection-bearing verb MAY name every eligible unit.
 		TestTrue(TEXT("send + who:all parses"),
@@ -858,7 +858,7 @@ bool FSiegeAssistantCommandRoundTripTest::RunTest(const FString& Parameters)
 		FSiegeAssistantCommand Command;
 		FString Error;
 		TestTrue(TEXT("A deferred order parses"), ParseSiegeAssistantCommand(Json, Command, Error));
-		TestEqual(TEXT("Deferred: trigger kind"), Command.TriggerKind.ToString(), FString(TEXT("footman")));
+		TestEqualSensitive(TEXT("Deferred: trigger kind"), Command.TriggerKind.ToString(), FString(TEXT("footman")));
 		TestEqual(TEXT("Deferred: threshold"), Command.TriggerAtLeast, 10);
 	}
 
@@ -871,8 +871,8 @@ bool FSiegeAssistantCommandRoundTripTest::RunTest(const FString& Parameters)
 		FString Error;
 		TestFalse(TEXT("A question is not an executable command"),
 			ParseSiegeAssistantCommand(TEXT("{\"ask\":\"which_unit\"}"), Command, Error));
-		TestEqual(TEXT("A question reports the ask code"), Error, FString(TEXT("ask:which_unit")));
-		TestEqual(TEXT("SiegeAssistantReasonCode splits the payload off"), SiegeAssistantReasonCode(Error), FString(TEXT("ask")));
+		TestEqualSensitive(TEXT("A question reports the ask code"), Error, FString(TEXT("ask:which_unit")));
+		TestEqualSensitive(TEXT("SiegeAssistantReasonCode splits the payload off"), SiegeAssistantReasonCode(Error), FString(TEXT("ask")));
 		TestTrue(TEXT("A question leaves the command default"), IsDefaultCommand(Command));
 	}
 
@@ -959,7 +959,7 @@ bool FSiegeAssistantCommandRejectionTest::RunTest(const FString& Parameters)
 		const bool bAccepted = ParseSiegeAssistantCommand(Case.Json, Command, Error);
 
 		TestFalse(*FString::Printf(TEXT("REJECT: %s"), Case.Description), bAccepted);
-		TestEqual(*FString::Printf(TEXT("REJECT: %s reports the right code"), Case.Description),
+		TestEqualSensitive(*FString::Printf(TEXT("REJECT: %s reports the right code"), Case.Description),
 			SiegeAssistantReasonCode(Error), FString(Case.ExpectedCode));
 
 		// ⚠️ NEVER PARTIALLY FILLS. A caller that ignores the return value must be
@@ -1003,7 +1003,7 @@ bool FSiegeAssistantCommandNeverPartialTest::RunTest(const FString& Parameters)
 		Poisoned, Error);
 
 	TestFalse(TEXT("A late failure is still a failure"), bAccepted);
-	TestEqual(TEXT("A late failure reports bad_when"), SiegeAssistantReasonCode(Error), FString(SiegeAssistantReason::BadWhen));
+	TestEqualSensitive(TEXT("A late failure reports bad_when"), SiegeAssistantReasonCode(Error), FString(SiegeAssistantReason::BadWhen));
 	TestTrue(TEXT("A late failure wipes the previously valid command"), IsDefaultCommand(Poisoned));
 
 	// The success path must also fully overwrite prior contents.
@@ -1018,7 +1018,7 @@ bool FSiegeAssistantCommandNeverPartialTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Success clears stale kinds"), Reused.Kinds.Num(), 0);
 	TestEqual(TEXT("Success clears stale counts"), Reused.Counts.Num(), 0);
 	TestTrue(TEXT("Success clears a stale trigger"), Reused.TriggerKind.IsNone() && Reused.TriggerAtLeast == 0);
-	TestEqual(TEXT("Success reports an empty error"), Error, FString());
+	TestEqualSensitive(TEXT("Success reports an empty error"), Error, FString());
 
 	return true;
 }
@@ -1045,9 +1045,9 @@ bool FSiegeAssistantSelectionInvariantTest::RunTest(const FString& Parameters)
 		const TArray<int32> Counts = { 10 };
 
 		TestFalse(TEXT("A length mismatch is rejected"), SiegeAssistantValidateSelection(Kinds, Counts, Error));
-		TestEqual(TEXT("A length mismatch reports selection_mismatch"),
+		TestEqualSensitive(TEXT("A length mismatch reports selection_mismatch"),
 			SiegeAssistantReasonCode(Error), FString(SiegeAssistantReason::SelectionMismatch));
-		TestEqual(TEXT("The mismatch payload records both lengths"), Error, FString(TEXT("selection_mismatch:2/1")));
+		TestEqualSensitive(TEXT("The mismatch payload records both lengths"), Error, FString(TEXT("selection_mismatch:2/1")));
 	}
 
 	{
@@ -1055,7 +1055,7 @@ bool FSiegeAssistantSelectionInvariantTest::RunTest(const FString& Parameters)
 		const TArray<int32> Counts = { 1, 1, 1, 1 };
 
 		TestFalse(TEXT("Four kinds exceed the cap"), SiegeAssistantValidateSelection(Kinds, Counts, Error));
-		TestEqual(TEXT("An over-cap selection reports selection_overflow"),
+		TestEqualSensitive(TEXT("An over-cap selection reports selection_overflow"),
 			SiegeAssistantReasonCode(Error), FString(SiegeAssistantReason::SelectionOverflow));
 	}
 
@@ -1064,7 +1064,7 @@ bool FSiegeAssistantSelectionInvariantTest::RunTest(const FString& Parameters)
 		const TArray<int32> Counts = { 5, 3 };
 
 		TestFalse(TEXT("A repeated kind is rejected"), SiegeAssistantValidateSelection(Kinds, Counts, Error));
-		TestEqual(TEXT("A repeated kind reports duplicate_kind"),
+		TestEqualSensitive(TEXT("A repeated kind reports duplicate_kind"),
 			SiegeAssistantReasonCode(Error), FString(SiegeAssistantReason::DuplicateKind));
 	}
 
@@ -1073,14 +1073,14 @@ bool FSiegeAssistantSelectionInvariantTest::RunTest(const FString& Parameters)
 		const TArray<int32> Counts = { 5, 3 };
 
 		TestFalse(TEXT("A NAME_None kind is rejected"), SiegeAssistantValidateSelection(Kinds, Counts, Error));
-		TestEqual(TEXT("A NAME_None kind reports bad_kind"),
+		TestEqualSensitive(TEXT("A NAME_None kind reports bad_kind"),
 			SiegeAssistantReasonCode(Error), FString(SiegeAssistantReason::BadKind));
 	}
 
 	{
 		// The legal shapes: empty (whole army), and 1..cap distinct kinds.
 		TestTrue(TEXT("An empty selection is valid"), SiegeAssistantValidateSelection(TArray<FName>(), TArray<int32>(), Error));
-		TestEqual(TEXT("A valid selection reports no error"), Error, FString());
+		TestEqualSensitive(TEXT("A valid selection reports no error"), Error, FString());
 
 		const TArray<FName> Kinds = { TEXT("footman"), TEXT("archer"), TEXT("sorcerer") };
 		const TArray<int32> Counts = { 10, 5, 1 };
@@ -1121,7 +1121,7 @@ bool FSiegeAssistantVocabularyTest::RunTest(const FString& Parameters)
 	// reuse that turns a ~500-token prefill into ~150 silently stops working.
 	const FString First = Vocabulary->BuildSynonymTable();
 	const FString Second = Vocabulary->BuildSynonymTable();
-	TestEqual(TEXT("BuildSynonymTable is byte-stable across calls"), Second, First);
+	TestEqualSensitive(TEXT("BuildSynonymTable is byte-stable across calls"), Second, First);
 	TestTrue(TEXT("The default vocabulary is not empty"), First.Len() > 0);
 
 	// Row ORDER in the asset must not change the bytes, because an artist
@@ -1142,7 +1142,7 @@ bool FSiegeAssistantVocabularyTest::RunTest(const FString& Parameters)
 				Algo::Reverse(Row.Aliases);
 			}
 
-			TestEqual(TEXT("Row and alias ordering do not change the emitted table"),
+			TestEqualSensitive(TEXT("Row and alias ordering do not change the emitted table"),
 				Shuffled->BuildSynonymTable(), First);
 		}
 	}

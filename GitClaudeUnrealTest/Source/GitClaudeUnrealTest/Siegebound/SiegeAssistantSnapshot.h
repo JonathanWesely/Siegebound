@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
+#include "Siegebound/SiegeAssistantCommand.h"   // TASK-441: FSiegeAssistantCommand + ESiegeAssistantIntent for the non-orderable-kind guard. Pure-data header by design (its own doc comment sanctions this) - no new weight.
 #include "Siegebound/TeamId.h"
 #include "SiegeAssistantSnapshot.generated.h"
 
@@ -46,6 +47,46 @@ struct FSiegeAssistantRosterEntry
 	/** Live group-order id, or INDEX_NONE when ungrouped. Game-side only - never serialized into the prompt. */
 	UPROPERTY()
 	int32 GroupId = INDEX_NONE;
+
+	/**
+	 *  How many of this row's units may take a SELECTION-BEARING ZONE ORDER
+	 *  (send / guard / ambush) - ASummonedUnit::IsGroupCommandEligible(), the
+	 *  SHIPPING predicate, counted from the same per-unit call Capture() already
+	 *  makes for KindOrderable. 0 <= Orderable <= Count.
+	 *
+	 *  ⚠️ DECLARED ADDITIVE EXTENSION TO THE CONVENTIONS §9 PIN, NOT A DRIFT -
+	 *  SAY SO RATHER THAN LET A REVIEWER FIND IT (TASK-441). The §9 registry pins
+	 *  this struct as `{ FName Kind; int32 Count; int32 GroupId; }`, and the
+	 *  SETTINGS+CONFIRM §8 registry pins
+	 *
+	 *      bool ValidateCommandAgainstSnapshot(const FSiegeAssistantCommand&,
+	 *                                          const TArray<FSiegeAssistantRosterEntry>& Roster,
+	 *                                          ESiegeAssistantRejectReason&, FName&);
+	 *
+	 *  whose contract requires it to tell `KindNotOrderable` (present, but none
+	 *  of them may take this order) apart from `KindUnknown` (not on the board at
+	 *  all) FROM THE ROSTER ARRAY ALONE. Those two pins are not simultaneously
+	 *  satisfiable while the row carries no orderability: the three pinned fields
+	 *  answer "is it here" and cannot answer "may it be ordered". This field is
+	 *  the MINIMUM addition that makes the pinned signature implementable, and it
+	 *  is strictly additive - nothing is renamed, nothing is re-typed, no existing
+	 *  reader changes.
+	 *
+	 *  ⚠️ AND IT COSTS THE PROMPT NOTHING, WHICH IS THE PART THAT MATTERS AT THIS
+	 *  BATCH. `Roster` is used by Capture() for aggregation and by GetRoster() for
+	 *  the executor; NO ZONE PRINTS IT (the roster block prints from the parallel
+	 *  UnitKinds / KindTotals / KindOrderable / KindFollowable arrays - see
+	 *  AppendRosterBlock). So zoneB_chars = 68 and zoneC_chars = 887 are
+	 *  BYTE-UNCHANGED by this field, and the t0 tripwire cannot move.
+	 *
+	 *  ⚠️ THERE IS DELIBERATELY NO `Followable` COMPANION HERE. The pinned
+	 *  ESiegeAssistantRejectReason has exactly three values and none of them means
+	 *  "cannot follow", so a followable column would be unused state today. When a
+	 *  KindNotFollowable reason is ever pinned, it arrives WITH its column; see the
+	 *  Follow scoping note on ValidateCommandAgainstSnapshot below.
+	 */
+	UPROPERTY()
+	int32 Orderable = 0;
 };
 
 /**
@@ -159,76 +200,136 @@ class GITCLAUDEUNREALTEST_API USiegeAssistantSnapshot : public UObject
 public:
 
 	/**
-	 *  THE ≤400-TOKEN SNAPSHOT CAP, ENFORCED AS CHARACTERS.
+	 *  THE SNAPSHOT'S CHARACTER **TRIM** BUDGET — AND IT IS THE **THIRD** ROLE, NOT
+	 *  EITHER OF THE FIRST TWO. READ THE ROLE TABLE BEFORE TOUCHING THE NUMBER.
 	 *
-	 *  ⚠️ CORRECTED FROM MEASUREMENT ON 2026-08-03 BY TASK-413's SPIKE RUN:
-	 *  1440 → 1085. This is the ONE-PASS correction CONVENTIONS §10 flagged and
-	 *  §8's RESOLUTION trigger armed; the trigger has now FIRED. The number is no
-	 *  longer a guess and is not to be guessed a second time.
+	 *  ⛔ THIS REPLACES `MaxSnapshotChars`, WHICH TASK-455 **RETIRED** RATHER THAN
+	 *  RE-POINTED (CONVENTIONS "In-match LLM command assistant" §8, resolution 1:
+	 *  *"after that commit a grep for MaxSnapshotChars returns nothing"*).
+	 *  ⚠️ THE RETIREMENT IS THE FIX, NOT BOOKKEEPING, AND THE REASON IS SUBTLE:
+	 *  `MaxSnapshotChars` was the AUTHORITY on the ≤400-token budget, and a char
+	 *  cap standing in for a token budget is safe only while it assumes the
+	 *  **SMALLEST** plausible chars/token ratio. The PRE-FILTER role that
+	 *  succeeded it **INVERTS** that — a pre-filter must never reject what the
+	 *  authority would accept, so it must assume the **LARGEST**. Carrying one
+	 *  name across that boundary carries a safety label that now points the wrong
+	 *  way, which is verbatim the defect this lane already shipped once (the 3.6
+	 *  ratio labelled "conservative" while every measured reading sat below it).
+	 *
+	 *  ── THE THREE ROLES, AND WHICH LANE OWNS EACH ──
+	 *
+	 *    AUTHORITY    USiegeLlamaSubsystem::MaxSnapshotTokens = 400   TOKENS, PLUGIN
+	 *                 Counted by llama_tokenize on the worker, so there is no ratio
+	 *                 left to be wrong about — that is the whole point of moving it
+	 *                 to tokens (§8 resolution 2). Over budget ⇒ the request is
+	 *                 REJECTED, never truncated, and logged at Warning.
+	 *
+	 *    PRE-FILTER   USiegeLlamaSubsystem::SnapshotPreFilterMaxChars = 3000  CHARS, PLUGIN
+	 *                 Game thread, before a single token is counted, which is what
+	 *                 makes it cheap. Duties: CHEAP · FINITE · NEVER BINDING IN
+	 *                 NORMAL PLAY. Assumes the LARGEST plausible ratio by
+	 *                 construction (3000 = 400 × 7.5, ~2× the highest ratio ever
+	 *                 measured here — 3.79, Zone A).
+	 *
+	 *    TRIM BUDGET  this constant = 1085                            CHARS, **HERE**
+	 *                 What BuildZoneC sizes its elastic roster block against.
+	 *                 Assumes the SMALLEST plausible ratio — the SAME direction the
+	 *                 retired authority had. ⇒ THAT IS WHY THE VALUE DID NOT MOVE
+	 *                 EVEN THOUGH THE NAME DID: only the *pre-filter* role inverts,
+	 *                 and this is not that role.
+	 *
+	 *  ⚠️ WHY A THIRD CONSTANT EXISTS AT ALL — STATED SO IT IS NOT READ AS THE OLD
+	 *  ONE IN DISGUISE. **The two plugin bounds both REJECT the turn; neither of
+	 *  them trims anything.** If this budget were pointed at the pre-filter's 3000
+	 *  the roster would stop collapsing, a wide board would sail past this file, and
+	 *  the tokenizer would REFUSE THE WHOLE TURN — the player gets "the assistant is
+	 *  unavailable" instead of an answer computed against a slightly narrower
+	 *  roster. **A trimmer and a bound are different jobs, and only a trimmer can
+	 *  degrade gracefully.** ⛔ Pointing this at 3000 is a QA FAIL, not a
+	 *  simplification.
+	 *
+	 *  ── THE VALUE, UNCHANGED, ON ITS ORIGINAL MEASURED OPERANDS ──
 	 *
 	 *      1085 = 400 tokens × 2.71 chars/token
 	 *
-	 *  2.71 is the MEASURED chars/token of ZONE B + ZONE C — the region this cap
-	 *  actually governs — taken from the shipping tokenizer with the model
-	 *  resident (`Siege.Llama.SpikePrompt`, fixture t0: 955 chars / 352 tokens).
-	 *  BOTH OPERANDS ARE MEASUREMENTS.
+	 *  2.71 is the MEASURED chars/token of ZONE B + ZONE C — the region this budget
+	 *  governs — from the shipping tokenizer with the model resident
+	 *  (`Siege.Llama.SpikePrompt`, fixture t0: 955 chars / 352 tokens). BOTH
+	 *  OPERANDS ARE MEASUREMENTS. ⛔ IT IS DELIBERATELY **NOT** RE-DERIVED HERE:
+	 *  moving it would move Zone C's bytes, and CONVENTIONS §12c freezes them for
+	 *  this wave (*"ZONE B AND ZONE C BYTES DO NOT MOVE IN THIS WAVE"* — the `t0`
+	 *  tripwire, on which bar #3's reproduction depends).
 	 *
-	 *  ⚠️ WHY 1440 WAS NOT MERELY IMPRECISE BUT WRONG IN THE UNSAFE DIRECTION.
-	 *  It was derived as 400 × 3.6, and §8 called 3.6 "conservative". Every
-	 *  measured reading is BELOW it — Zone B 2.13, Zone C 2.77, B+C 2.71, whole
-	 *  assembled prompt 3.56 — so 3.6 was OPTIMISTIC on every single one. At the
-	 *  real 2.71 a 1440-char snapshot admits 1440 / 2.71 ≈ 531 tokens against a
-	 *  400-token budget: 33 % OVER. The live board did not breach it (955 chars,
-	 *  352 tok), so the breach was LATENT — the cap simply permitted a snapshot a
-	 *  third over budget the moment the roster or the order line grew.
+	 *  ⚠️ AND IT IS A TRIMMER, NOT A GUARANTEE — SAY IT PLAINLY RATHER THAN LET THE
+	 *  WORD "BUDGET" IMPLY OTHERWISE. At Zone B's own stricter measured ratio (2.13)
+	 *  a 1085-char snapshot can still be ~509 tokens, over the 400 the authority
+	 *  enforces. This budget makes that outcome UNLIKELY; **the tokenizer is what
+	 *  makes it IMPOSSIBLE.** Calling a proxy a guarantee is the defect §8 spent a
+	 *  whole section retiring, and 850 (= 400 × 2.13) is the number to move to if
+	 *  Zone C ever becomes as symbol-dense as Zone B — read the ratio, never re-guess it.
 	 *
-	 *  ⚠️ 2.13 IS THE STRICTER BOUND AND IS DELIBERATELY NOT THE ONE USED. Zone
-	 *  B measures 2.13 chars/token, which would give 400 × 2.13 ≈ 850 chars. Zone
-	 *  B is 68 characters of dense key/value symbols and digits and tokenizes far
-	 *  worse per character than Zone C's roster lines, so applying its ratio to
-	 *  the whole region would over-tighten by ~22 %. IF ZONE C EVER BECOMES AS
-	 *  SYMBOL-DENSE AS ZONE B, ~850 IS THE NUMBER TO MOVE TO — and the way to
-	 *  move it is to re-run `Siege.Llama.SpikePrompt` and read the ratio, never
-	 *  to re-guess.
-	 *
-	 *  ⚠️ TASK-423 SUPERSEDES THIS CONSTANT AND THE WHOLE QUESTION. It enforces
-	 *  the ≤400-token budget against THE TOKENIZER DIRECTLY, at which point this
-	 *  cap demotes to a cheap pre-filter that stops a pathological snapshot ever
-	 *  reaching the tokenizer. Do not implement that here.
-	 *
-	 *  ⚠️ THE CAP COVERS ZONE B + ZONE C - the live snapshot - NOT Zone A.
-	 *  Zone A is the static preamble the three-zone budget accounts for
-	 *  separately, and the board's own clause says over-cap truncation "must
-	 *  never truncate Zone A or the utterance". A cap covering A would leave
-	 *  B+C ~50 tokens, which is not a readable snapshot; so the cap is on what
-	 *  Capture() produced.
-	 *
-	 *  ⚠️ Zone A measures 4,314 chars / 1,139 tok as built with the vocabulary
-	 *  asset attached (TASK-413, replacing the "~600 tok" estimate) - see the
-	 *  zone table on the class above for why growing it PASSES the KV-reuse bar
-	 *  and trimming it toward 350 marginally FAILS it. Do not read this constant
+	 *  ⚠️ THE BUDGET COVERS ZONE B + ZONE C — the live snapshot — NOT Zone A. Zone A
+	 *  is the static preamble, bounded separately by §8's ZONE-A SIZE BOUND
+	 *  assertion, which the plugin runs the moment USiegeAssistantComponent
+	 *  registers the prefix. Zone A measures 4,314 chars / 1,139 tok as built; see
+	 *  the zone table on the class above for why growing it PASSES the KV-reuse bar
+	 *  and trimming it toward 350 marginally FAILS it. ⛔ Do not read this constant
 	 *  as licence to shrink Zone A (TASK-419 WARN-5).
 	 *
-	 *  ⚠️ THIS CAP IS NOW COUPLED TO MaxRosterKinds, WHICH IT WAS NOT AT 1440.
-	 *  Zone C is budgeted at MaxSnapshotChars - ZoneBCharReserve = 1085 - 192 =
-	 *  893 chars. At the shipped MaxRosterKinds = 8 the roster prints ~220 chars
-	 *  shorter than the spike's 13-kind fixture (887 chars), so a realistic board
-	 *  clears the budget with ~220 to spare. RAISE MaxRosterKinds TOWARD 13 AND
-	 *  THE CHARACTER BUDGET STARTS BITING IMMEDIATELY (887 against 893). That is
-	 *  correct behaviour against a real budget rather than a defect - and it is
-	 *  exactly why BuildZoneC's truncation now logs every time it degrades.
-	 *  ⛔ DO NOT RAISE THIS CAP TO BUY THAT ROOM: it would restore the 33 %
-	 *  over-admission this correction exists to remove. The honest lever is
-	 *  ZoneBCharReserve, which over-charges a Zone B that measures 68 chars by
-	 *  124 - re-measure it, do not eyeball it.
+	 *  ⚠️ IT IS COUPLED TO MaxRosterKinds. Zone C is budgeted at
+	 *  SnapshotTrimBudgetChars - ZoneBCharReserve = 1085 - 192 = 893 chars, less the
+	 *  head and the tail. At the shipped MaxRosterKinds = 8 a realistic board clears
+	 *  it with ~220 to spare; RAISE MaxRosterKinds TOWARD 13 AND IT BITES
+	 *  IMMEDIATELY (887 against 893). That is correct behaviour against a real
+	 *  budget rather than a defect — and it is exactly why BuildZoneC's collapse
+	 *  logs every time it degrades. ⛔ DO NOT RAISE THIS BUDGET TO BUY THAT ROOM.
+	 *  The honest lever is ZoneBCharReserve; see its comment for why TASK-455 could
+	 *  not move that one either.
+	 *
+	 *  ⚠️ BOTH PLAYER-TEXT LINES SPEND THIS BUDGET AND NEITHER IS TRIMMED BY IT —
+	 *  the roster absorbs all of it (CONVENTIONS §8: never truncate the utterance).
+	 *  `pending:` and `order:` are each bounded by MaxUtteranceBytes (240) and both
+	 *  sit in BuildZoneC's Tail, so they are subtracted BEFORE the roster is given a
+	 *  budget. Worst case with both lines at their cap: 1085 - 192 reserve - ~137
+	 *  head - ~566 tail leaves the roster ~190 chars, so the collapse is DEEP — and
+	 *  it is LOGGED, at Warning, with its cause named. That is `qa/TASK-416.md`
+	 *  WARN-1 confirmed, bounded, and observable rather than denied.
 	 */
-	static constexpr int32 MaxSnapshotChars = 1085;
+	static constexpr int32 SnapshotTrimBudgetChars = 1085;
 
 	/**
-	 *  Zone B's guaranteed slice of MaxSnapshotChars. Zone B is four short fixed
-	 *  keys and never approaches this; the reserve exists so BuildZoneC can size
-	 *  its roster budget WITHOUT calling BuildZoneB (which would double the work
-	 *  and couple the two builders). BuildZoneB logs once if it ever exceeds it.
+	 *  Zone B's guaranteed slice of SnapshotTrimBudgetChars. Zone B is four short
+	 *  fixed keys and never approaches this; the reserve exists so BuildZoneC can
+	 *  size its roster budget WITHOUT calling BuildZoneB (which would double the
+	 *  work and couple the two builders). BuildZoneB logs once if it ever exceeds it.
+	 *
+	 *  ⛔ 192 IS AN OVER-CHARGE, IT IS THE ACKNOWLEDGED HONEST LEVER, AND TASK-455
+	 *  **DELIBERATELY LEFT IT ALONE.** Read this before "finishing the job": every
+	 *  char over-charged here is a char stolen from the roster, and the recorded
+	 *  Zone B readings are 68 (t0) / 71 (t1) — roughly 124 chars of over-charge.
+	 *  The spec that owns this constant says, in terms, **"set it from the SHIPPED
+	 *  builder's PRINTED worst case"** and **"re-measure it, do not eyeball it."**
+	 *
+	 *  ⚠️ THE PRINTED FIGURE DOES NOT EXIST YET, AND THAT IS THE WHOLE REASON THIS
+	 *  IS STILL 192. Both candidate instruments fail on the word *printed*:
+	 *    - **68 / 71 were printed by `Siege.Llama.SpikePrompt`, which measures the
+	 *      SPIKE's `AppendZoneB` — not this file's `BuildZoneB`.** A measurement of
+	 *      the other lane is not a measurement of this one; CONVENTIONS §12g carries
+	 *      a standing WARN making exactly that point about Zone A.
+	 *    - **`USiegeAssistantComponent::ReportFirstCapture` prints `zoneB_chars`
+	 *      from THIS builder — and it has NEVER EXECUTED.** The batch is uncompiled
+	 *      and TASK-447 is the single compile gate.
+	 *  ⛔ A DERIVED WORST CASE IS NOT A MEASUREMENT. Substituting one here is the
+	 *  precise defect CONVENTIONS §12g exists to prevent, and this constant's own
+	 *  history is the argument: the number it would replace was itself eyeballed.
+	 *
+	 *  ⇒ THE READING IS ONE LINE AWAY AND IS NAMED HERE SO IT IS NOT LOST. After
+	 *  TASK-447 compiles, open the console once and read `zoneB_chars` off the
+	 *  `FIRST LIVE CAPTURE` line, then size this from the WIDEST value each of the
+	 *  four fixed keys can take (both castles at `100%`, `mid: neutral`, a
+	 *  four-digit `gold:` band) — one live board is a sample, not a worst case.
+	 *  ✅ Lowering it can only WIDEN the roster, so it is safe in the one direction
+	 *  it will ever be moved.
 	 */
 	static constexpr int32 ZoneBCharReserve = 192;
 
@@ -248,11 +349,12 @@ public:
 	 *  would be a fresh instance of the very defect this closes. The old name
 	 *  counted FString CODE UNITS (UTF-16 on Windows) while the budget it proxies
 	 *  for is TOKENS OVER UTF-8, and the 2.71 chars/token ratio behind
-	 *  MaxSnapshotChars was calibrated on ASCII, where one char is exactly one
-	 *  byte. Outside ASCII the two diverge and the cap silently OVER-ADMITS: 240
-	 *  code units of emoji (surrogate pairs - 2 units and 4 bytes each) is ~120
-	 *  glyphs and 360-480 tokens against a 400-token B+C budget, while every
-	 *  character-based check reports 240 of 1085 and looks healthy.
+	 *  SnapshotTrimBudgetChars (then named MaxSnapshotChars) was calibrated on
+	 *  ASCII, where one char is exactly one byte. Outside ASCII the two diverge and
+	 *  the cap silently OVER-ADMITS: 240 code units of emoji (surrogate pairs - 2
+	 *  units and 4 bytes each) is ~120 glyphs and 360-480 tokens against a 400-token
+	 *  B+C budget, while every character-based check reports 240 of 1085 and looks
+	 *  healthy.
 	 *
 	 *  ⚠️ THIS IS THE ONE STRING IN THE SNAPSHOT THAT COMES FROM OUTSIDE THE
 	 *  PROGRAM. The ASCII law at the top of SiegeAssistantSnapshot.cpp is scoped to
@@ -414,6 +516,50 @@ public:
 	 *  CONVENTIONS §1 exists to prevent.
 	 */
 	const TArray<FName>& GetUnitKinds() const { return UnitKinds; }
+
+	/**
+	 *  ── THE ORDERABILITY ACCESSORS (TASK-441; CONVENTIONS "Settings screen +
+	 *  the assistant CONFIRM STEP + the non-orderable-kind guard (2026-08-03)"
+	 *  §2, §6, §8 - ADDITIVE to the §9 pin, nothing renamed) ──
+	 *
+	 *  ⛔ THESE EXPOSE WHAT Capture() ALREADY TALLIES. THEY DO NOT RECOMPUTE, DO
+	 *  NOT RE-TALLY AND DO NOT ADD A TRAVERSAL. KindOrderable has been filled on
+	 *  every capture since TASK-416 and was merely private; the printed roster
+	 *  line has been reporting it to the MODEL all along while no code path could
+	 *  read it. ⛔ A unit registry, an actor cache, a dirty flag or a subscription
+	 *  list for this is REJECTED ON SIGHT - cite CONVENTIONS "In-match LLM command
+	 *  assistant" §4.
+	 *
+	 *  ⚠️ ORDERABLE, NOT FOLLOWABLE - AND THE DISTINCTION IS THE WHOLE POINT.
+	 *  KindOrderable counts ASummonedUnit::IsGroupCommandEligible() ("may I SEND
+	 *  these?" - send / guard / ambush, the zone orders). KindFollowable counts
+	 *  IsFollowCommandEligible() ("may these FOLLOW?"). The two genuinely differ
+	 *  on shipped units: the Cleric follows and cannot take zone orders, and the
+	 *  Ogre / Sapper do neither. Exposing the wrong column here would be a silent
+	 *  wrong answer, so it is verified against the code that fills it
+	 *  (SiegeAssistantSnapshot.cpp, the ASummonedUnit loop in Capture) rather than
+	 *  against the name.
+	 *
+	 *  ⚠️ AND THE M8 P2 FLAG TRAVELS WITH THEM, UNCHANGED: on a Red capture BOTH
+	 *  eligibility predicates hardcode `Team == ETeamId::Blue`, so
+	 *  Capture(World, ETeamId::Red) returns correct totals and an ALL-ZERO
+	 *  orderable column. That is correct for v1 (host/standalone, Blue is the only
+	 *  commanding player) and it means these accessors answer `false` / `0` for
+	 *  every Red kind. The fix belongs in the SHIPPED predicates when P2 makes Red
+	 *  a real commanding player - never here (CONVENTIONS §8's flagged item).
+	 *
+	 *  ⚠️ BOTH ANSWER 0 / false FOR "PRESENT BUT NONE ELIGIBLE" *AND* FOR "NOT ON
+	 *  THE BOARD AT ALL", AND THAT COLLAPSE IS DELIBERATE - these are the cheap
+	 *  in-hand questions the FSM asks about ONE kind. A caller that must tell the
+	 *  two apart calls ValidateCommandAgainstSnapshot, which is handed the roster
+	 *  rows and therefore has the presence answer that these two do not.
+	 *
+	 *  Declared in the CONVENTIONS §8 registry's order, character-for-character.
+	 */
+	bool IsKindOrderable(FName Kind) const;
+
+	/** Companion to IsKindOrderable, and the one the shortfall path wants: the live count. 0 == not orderable. See IsKindOrderable's comment for the orderable-vs-followable distinction, the absent-vs-ineligible collapse and the Red-capture flag. */
+	int32 GetOrderableCount(FName Kind) const;
 
 	/**
 	 *  THE COORDINATE AIRLOCK (CONVENTIONS §3). Maps a canonical place symbol
@@ -584,7 +730,7 @@ private:
 	 *  truncated: the grammar still admits every collapsed kind, so the sampler
 	 *  can emit a symbol the prompt never showed the model.
 	 *
-	 *  With MaxSnapshotChars now binding at a real measured budget, truncation
+	 *  With SnapshotTrimBudgetChars binding at a real measured budget, truncation
 	 *  gets MORE likely, and A TIGHTER CAP THAT SILENTLY DEGRADES THE PROMPT IS
 	 *  WORSE THAN THE LOOSE ONE THAT DID NOT. So the cap correction and this
 	 *  latch ship together; neither is complete alone.
@@ -635,3 +781,131 @@ private:
 	/** One-shot log latch for an unresolvable /Game/Data/DT_Cards (the roster then falls back to lexical order, which is still fixed and still deterministic). */
 	bool bWarnedMissingCardTable = false;
 };
+
+// ---------------------------------------------------------------------------
+// THE NON-ORDERABLE-KIND GUARD (TASK-441)
+// CONVENTIONS "Settings screen + the assistant CONFIRM STEP + the
+// non-orderable-kind guard (2026-08-03)" §6 + §8 (pinned signature).
+//
+// M8 DECLARATION DUTY (stated verbatim as required): "adds no replicated
+// property, no new replicated class, no new relevancy tier." Everything added
+// by TASK-441 is a const read of a client-local survey object plus one pure free
+// function over plain arrays; nothing here crosses the wire.
+// ---------------------------------------------------------------------------
+
+/**
+ *  Why the guard rejected a command. PLAIN `enum class`, NOT a `UENUM` - pinned
+ *  that way in the §8 registry and correct for the reason the widget-param law
+ *  gives: this is a code-level reason token the FSM maps to a game-authored
+ *  template, and it crosses to UMG as a `uint8` if it ever crosses at all.
+ *
+ *  ⛔ THREE VALUES, AND THE SET IS PART OF THE PIN. TASK-443 switches on it.
+ *  Adding a value here without re-pinning it breaks that link.
+ */
+enum class ESiegeAssistantRejectReason : uint8
+{
+	/** Nothing to refuse - the only value that accompanies a `true` return. */
+	None,
+
+	/** The kind is on the board and NOT ONE of them may take this order (the DEV-04 shape: `sapper`, which the roster line itself prints as `orderable=0`). */
+	KindNotOrderable,
+
+	/** The kind is not on the board at all - no live unit of it exists on the ordering team. */
+	KindUnknown
+};
+
+/**
+ *  ⛔ THE MODEL-INDEPENDENT COMMAND-LAYER REFUSAL. Returns false when the
+ *  command names a unit kind the live snapshot says cannot take it, BEFORE
+ *  anything executes.
+ *
+ *  ── WHY THIS EXISTS, AND THE HONEST LIMIT FIRST ──
+ *
+ *  CONVENTIONS "In-match LLM command assistant" §1 says "grammar guarantees
+ *  existence, EXECUTOR GUARANTEES LEGALITY, FSM owns the conversation", and §12f
+ *  measured that the executor half was asserted in the document and ABSENT FROM
+ *  THE CODE: `DEV-04` ("send the catapults at the enemy base") emitted a live,
+ *  well-formed order for `sapper` - a kind the roster line prints as
+ *  `orderable=0` - identically on all three runs. Orderability is per-match
+ *  STATE, not identity; §1 forbids the grammar from encoding it, and four
+ *  prompt-level attempts did not teach it. Only the command layer can refuse it.
+ *
+ *  ⛔ AND IT DOES NOT MAKE `DEV-04` PASS THE EVAL. THE EVAL SCORES EMITTED JSON,
+ *  NOT EXECUTED ACTIONS. This guard changes what the game DOES; it changes
+ *  nothing about what the model EMITS. It is SHIPPED SAFETY, not accuracy
+ *  progress, and it is not a route to bar #5. Anything that files it under an
+ *  accuracy heading is factually wrong.
+ *
+ *  ── THE SHAPE IS THE POINT ──
+ *
+ *  ⚠️ IT TAKES THE ROSTER ARRAY, NOT THE SNAPSHOT OBJECT - DELIBERATELY, for the
+ *  same reason USiegeAssistantGrammar::Build takes TArray<FName>. A pure function
+ *  over plain data needs NO UWorld, NO Capture() and NO engine state, so its
+ *  automation tests run with no model resident, no PIE and no editor world.
+ *  ⛔ A later "tidy-up" that changes it to take a `const USiegeAssistantSnapshot*`
+ *  deletes that property and is REJECTED ON SIGHT.
+ *
+ *  ── EXACT CONTRACT ──
+ *
+ *  - `Command.Kinds` EMPTY ⇒ true. `who:"none"` and `who:"all"` both parse to an
+ *    empty selection, so army-wide verbs (charge / fallback / rally) and
+ *    "everything eligible" have NO KIND TO VALIDATE and are never refused here.
+ *  - A named kind with NO live units on the ordering team ⇒ false,
+ *    `KindUnknown`. Checked for EVERY intent, because a hallucinated unit is a
+ *    hallucinated unit whatever verb carries it.
+ *  - A named kind that is present but has ZERO orderable units ⇒ false,
+ *    `KindNotOrderable` - ⚠️ AND ONLY FOR THE ZONE-ORDER VERBS (Send / Guard /
+ *    Ambush). See the Follow scoping note below; it is the difference between a
+ *    guard and a regression.
+ *  - MULTI-KIND SELECTIONS ARE REFUSED AS A WHOLE. The first offending kind in
+ *    `Kinds` order is named and the function returns immediately; the good kinds
+ *    are NOT executed and are NOT silently dropped. ⚠️ Silently dropping one kind
+ *    of a multi-kind order is precisely the valid-shaped-wrong-command failure
+ *    this architecture exists to prevent - a player who asked for footmen AND a
+ *    sorcerer and got only footmen was answered wrongly, confidently.
+ *  - BOTH OUT-PARAMS ARE ALWAYS WRITTEN, on every path, including success
+ *    (`None` / `NAME_None`). ⚠️ This is the OPPOSITE of ResolvePlace, which
+ *    deliberately leaves its FVector untouched, and the two differ for a reason:
+ *    an untouched FVector cannot become a plausible-looking origin an army
+ *    marches to, whereas an untouched reason code CAN become a stale refusal
+ *    reason from the previous sentence. Initialise the one; leave the other.
+ *
+ *  ── WHAT IT DELIBERATELY DOES **NOT** CHECK, STATED SO NOBODY READS MORE INTO IT ──
+ *
+ *  - ⚠️ `Follow` IS NOT GATED BY THE ORDERABLE COLUMN, AND GATING IT WOULD BREAK A
+ *    SHIPPED COMMAND. `IsGroupCommandEligible()` covers the ZONE orders only:
+ *    the Cleric follows and CANNOT take zone orders, so a Cleric row is
+ *    `Count > 0, Orderable == 0`. Refusing `follow` on that column would refuse
+ *    "clerics follow me" - which is a legal shipped order, and is verbatim the
+ *    eval's own `DEV-20` utterance. The followable column exists on the snapshot
+ *    (KindFollowable) but the pinned reason enum has no code for it and TASK-443
+ *    has no template for it, so v1 does not refuse here. It is NOT an open hole:
+ *    the executor's selector filters on `IsFollowCommandEligible()` and a
+ *    non-followable kind arrives at the SHORTFALL path instead.
+ *  - COUNTS ARE NOT CHECKED. "You asked for 10 and 8 exist" is the shortfall /
+ *    clarification path and it belongs to the FSM. Clamping here would make that
+ *    clarification undetectable, which is the defect CONVENTIONS §1 names when it
+ *    says to constrain identity hard and leave quantity soft.
+ *  - `Where` IS NOT CHECKED. Place existence is the grammar's job (the `where`
+ *    alternation is generated from the live resolvable places) and ResolvePlace
+ *    is the game-side airlock.
+ *  - `TriggerKind` IS NOT CHECKED, AND THAT IS CORRECT RATHER THAN AN OVERSIGHT.
+ *    A deferred intent means "fire once at least N of these EXIST", so a trigger
+ *    kind that is absent RIGHT NOW is the whole point of the wait. Validating it
+ *    as if it were a `who[]` entry would refuse every deferred order that was
+ *    doing its job.
+ *  - IT PRODUCES NO PLAYER-FACING STRING (CONVENTIONS §3). It returns a REASON
+ *    CODE; TASK-443 routes it to the EXISTING `{"ask":"unsupported"}` outcome,
+ *    which already has a game-authored template. ⛔ No new player-facing surface
+ *    is invented here or downstream.
+ *
+ *  @param Command          the parsed command. Only `Intent` and `Kinds` are read.
+ *  @param Roster           the live snapshot roster - USiegeAssistantSnapshot::GetRoster(), or a hand-populated array in a test.
+ *  @param OutReason        always written; `None` on success.
+ *  @param OutOffendingKind always written; `NAME_None` on success, otherwise the FIRST offending symbol in `Kinds` order.
+ *  @return                 true when the command may proceed to execution.
+ */
+bool ValidateCommandAgainstSnapshot(const FSiegeAssistantCommand& Command,
+                                    const TArray<FSiegeAssistantRosterEntry>& Roster,
+                                    ESiegeAssistantRejectReason& OutReason,
+                                    FName& OutOffendingKind);
