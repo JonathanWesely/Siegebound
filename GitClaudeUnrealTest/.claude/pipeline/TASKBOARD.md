@@ -4946,7 +4946,18 @@ Concretely, for this batch:
 
 #### TASK-421 — [LLM-A6] `DA_AssistantVocabulary` — the synonym data-asset instance (art-director)
 - assignee: art-director
-- status: backlog
+- status: 🛑 **HELD 2026-08-03 — DO NOT DISPATCH. THE TASK'S OWN PREMISE HAS INVERTED: CREATING THIS ASSET IS NOW THE RISK.**
+    ⛔ **THE MECHANISM, MEASURED AT TASK-463: `UnitSynonyms` / `PlaceSynonyms` / `IntentSynonyms` ARE SERIALISED `UPROPERTY`s, SO AUTHORING
+    `DA_AssistantVocabulary` REPLACES ALL 27 C++ DEFAULT ROWS **WHOLESALE**.** ⇒ **Completing this task faithfully would SILENTLY BREAK the
+    two-lane byte-equality we just spent a task establishing** — unless the asset reproduces all 27 rows **character-for-character.**
+    📌 **AND THE CONFIGURATION HAS INVERTED WITH IT: *"no asset"* IS NOW THE CORRECT, MEASURED STATE.** The C++ defaults were **never empty**
+    (27 rows since TASK-417); the real defect was a `GetVocabulary()` seam, now fixed by constructing the object directly — **deliberately the same
+    construction `ZoneA.TwoLaneByteEquality` uses.** ✅ **art-director is NOT implicated in the original defect and never was.**
+    ⚖️ **HELD RATHER THAN RE-SPECCED, DELIBERATELY: the asset's PURPOSE — letting content tune the vocabulary without a code change — is still
+    legitimate, so this is not cancelled. It is simply a net RISK with ZERO benefit today.**
+    ⛔ **TWO PRECONDITIONS BEFORE IT MAY EVER BE UNHELD, AND BOTH ARE HARD:** **(i)** the asset **reproduces the C++ defaults exactly** at authoring
+    time, proven by comparison and not by intent; **(ii)** **`ZoneA.TwoLaneByteEquality` is re-run against the ASSET-LOADED lane and PASSES** —
+    ⚠️ **which requires TASK-470 to have established that the tests can run at all.** ← was: backlog
 - blocked-by: **TASK-420** (the `USiegeAssistantVocabulary` class must be compiled and available in-editor)
 - parallel-safe: yes vs every code task; **no vs anything else needing the editor**
 - spec: >
@@ -5269,7 +5280,13 @@ Concretely, for this batch:
 | **TASK-461** | 459 |
 | **TASK-462** | 450 · 444 (build-fix diffs only) |
 | **TASK-464** | ⛔ **442 — RETROACTIVE, and it is owed because NO GATE EVER NAMED IT** |
-| — | **445** (art, no QA owed) · **438** (art, no QA owed) |
+| **TASK-469** | **463 · 465** (+ **466** if it lands in time) — ⛔ **required before TASK-468's second build** |
+| **TASK-472** | **471** — ⛔ **required before TASK-468** (469 was already dispatched and could not absorb it) |
+| **TASK-470** | ⛔ **not a gate — it is the first EXECUTION of the 33 automation tests** (see its entry) |
+| ⚠️ **OWED, NOT YET BOARDED** | **466** · **473** — their gates are boarded **when they land**. ⛔ **Recorded here explicitly rather than silently omitted: §29's ledger is only a control if it shows the GAPS as well as the coverage.** |
+| — | **445** (art, no QA owed) · **438** (art — closed under the hard gate's **SECOND LIMB**: a *completed integration check*, performed by build-master at TASK-447, **not** a QA report) |
+
+⛔ **PINNED AGAINST A MIS-CITATION THAT IS WAITING TO HAPPEN: `qa/TASK-464.md` IS **NOT** A GATE ON TASK-438. It is the retroactive gate on TASK-442.** ⚠️ **Two adjacent numbers, similar shape, and one is emphatically not evidence for the other** — build-master spotted this before anyone made the mistake, which is exactly what a ledger is for. ✅ **TASK-438's evidence is the integration check itself, done BY NODE IDENTITY rather than DSL text: `AddToViewport.then` has `connected = 0`, so the chain TERMINATES and there is no `RemoveFromParent` on the Settings path.** ⚖️ **That is a POSITIVE fact — a terminal pin with no connection — not a search that returned nothing** (§14).
 
 ⛔ **THE MISS, RECORDED AS A BREACH RATHER THAN SMOOTHED OVER: TASK-442's FSM skeleton was committed in `cd5f4ed` with NO gate naming it.** ⚠️ **The hard gate is *"nothing is committed to Git without a PASS QA report (code)"*, and by the letter that was not met.** ✅ **The commit STANDS** — reverting green, in-file-reviewed code would be worse — **the remediation is TASK-464, and the record says what happened.**
 ⚖️ **WHY IT WAS INVISIBLE, AND IT IS THE REUSABLE PART: EVERY INDIVIDUAL GATE WAS CORRECT AND COMPLETE FOR ITS OWN SCOPE. The defect existed only in the UNION, which no artifact expressed** — the same shape as the QUIET-MODULE LAW's *"each batch's own board looks safe in isolation."* ⛔ **A property of a SET cannot be checked by inspecting its members one at a time.**
@@ -6216,9 +6233,193 @@ ASSISTANT WAVE 1 LANE                                                           
     `Plugins/SiegeLlama/Source/SiegeLlama/Private/SiegeLlamaSubsystem.cpp` · `FPlatformTime::Seconds` · `HardTimeoutSeconds` (⛔ **unchanged, 10.0**).
     Law: CONVENTIONS "Settings screen…" §17, §21.
 
-#### TASK-465 — [W1-TEMPLATE] ⚠️ BEFORE THE PLAYTEST — the shortfall line says "Send" when the player said "guard" (gameplay-programmer)
+#### TASK-473 — [W1-INTRANS] The parser admits a selection on INTRANSITIVE verbs — *"Fall back 5 footman"* is reachable (gameplay-programmer, DIAGNOSE-FIRST)
 - assignee: gameplay-programmer
 - status: backlog
+- blocked-by: **TASK-448** — ⚖️ **deliberately deferred past the playtest: TASK-471 made the malformed case VISIBLE, which is the correct interim state (§31).** ⛔ **Owed before any further eval claim.**
+- parallel-safe: no (may touch a pinned surface — see (2))
+- spec: >
+    ⛔ **THE DEFECT IS UPSTREAM AND IT IS A DATA COMBINATION, NOT A SENTENCE.** The parser permits `who:[…]` on **charge / fallback / rally**, which
+    are **intransitive**, so ***"Fall back 5 footman"* is reachable.** ⚠️ **No choice of frame can repair it, which is why TASK-471 correctly
+    REFUSED to suppress the selection at the display** — ⛔ **that would have concealed a model error at exactly the step that exists to expose
+    model errors** (CONVENTIONS §31). ✅ **The malformed case is currently VISIBLE, and that is the right interim state.**
+    **(1) ⚖️ DIAGNOSE FIRST AND NAME THE RIGHT HOME BEFORE WRITING ANYTHING — THERE ARE THREE CANDIDATES AND I AM PINNING NONE OF THEM** (§15: I
+    have written enough wrong ordering claims this wave):
+    · **THE PARSER** (`ParseSiegeAssistantCommand`) — it already *"rejects unknown keys, rejects out-of-range counts"*, so rejecting a selection on
+    an intransitive intent fits its existing role, and §1 says **"grammar guarantees existence, EXECUTOR guarantees legality."** ⚠️ **This looks
+    like the strongest candidate — verify it rather than assume it.**
+    · **THE GRAMMAR** — ⛔ **and this one must be argued against the law BEFORE it is chosen.** §12b/ruling 4 says the grammar *"may not be
+    'fixed'"* to repair comprehension, and §1 says **constrain identity HARD, leave quantity SOFT.** ⚖️ **My reading, offered for you to check and
+    NOT as a pin: whether a verb takes a selection is a FIXED PROPERTY OF THE INTENT — identity-class, known at grammar-construction time,
+    invariant across matches — so it is NOT the quantity/state class §1 protects.** ⛔ **If you choose the grammar, say why that reading holds; if
+    it does not hold, choose another home.**
+    · **THE EXECUTOR** — legality's documented owner, but the latest of the three to refuse.
+    **(2) ⛔ IF THE FIX TOUCHES A PINNED §9 SIGNATURE OR THE GBNF, REPORT THE EXACT CHANGE TO ME AND I EDIT THE REGISTRY IN THE SAME PASS.** ⚠️ **A
+    pinned surface changed in code but not in §9 is the drift the registry exists to prevent.** ⚠️ **And any GBNF edit PASTES A PARSE by the
+    vendored build (§9c): a dump is not evidence, a diff is not evidence.**
+    **(3) ⛔ THE REFUSAL MUST BE OBSERVABLE, NOT SILENT.** Route it to the **existing** unsupported-ask / clarify outcome; ⛔ **invent no new
+    player-facing string** (§3). ⚠️ **A selection silently DROPPED is the valid-shaped-wrong-command failure this architecture exists to prevent —
+    reject the command as a whole, exactly as the non-orderable-kind guard does.**
+    **(4) ✅ REGRESSION FENCE: `send` / `guard` / `ambush` keep their selections BYTE-IDENTICALLY**, and ⛔ **`count` stays 1–30, never the live max**
+    (§1 — a later "optimization" tightening it introduces the defect).
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-473-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    `SiegeAssistantCommand.{h,cpp}` (`ParseSiegeAssistantCommand`) · `SiegeAssistantGrammar.{h,cpp}` (⚠️ **only if (1) rules it the right home**) ·
+    `SiegeAssistantComponent.{h,cpp}` · `ESiegeAssistantIntent { Send, Guard, Ambush, Follow, Charge, Fallback, Rally }` ·
+    `SiegeAssistantMaxSelectionKinds` **3** · `GrammarCountMax` **30**.
+    Law: CONVENTIONS "In-match LLM command assistant" §1 (the three owners; identity hard / quantity soft), §3, §9, §9c · §12b/ruling 4 ·
+    "Settings screen…" §15, §31.
+
+#### TASK-471 — [W1-FRAME] ⚠️ BEFORE THE PLAYTEST — "Guard 8 footman **TO** mine_near" on the confirm line itself (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: **qa-passed / ready-for-integration** (2026-08-03 — `qa/TASK-472.md`: **PASS, 0 blockers**, 4 WARN, 3 NIT. Flip by the ORCHESTRATOR. ✅ **TWO frames carried the defect and QA CONFIRMED THE UNCITED ONE WAS REACHABLE, re-derived independently**: the parser's one cross-field check rejects only `who:"none"`, so `who:"all"` yields an empty selection and *"guard everything at the mine"* landed on `Assistant_Order_Place` rendering **"Guard TO mine_near"** — with a **positive control**, not a reading (`Tests/SiegeAssistantGrammarTest.cpp:850-851` already pins that path as parsing). **Third time this wave the uncited instance was the one that mattered.** ✅ **The parenthesis reasoning RATIFIED** — §30 applied one level deeper than §30 states: an *authored* preposition is barred too when one frame serves verbs with incompatible thematic roles; `FText::Format` treats parentheses as ordinary characters so argument binding cannot shift. ✅ **The §20 trace VERIFIED and it changed the answer** — the dash form would have shipped `Guard 8 footman - mine_near - accept?`; composition checked in all three wrappers, none contains a parenthesis so nesting is impossible. ✅ **F1's refusal RATIFIED ON AN ARTIFACT, not taste** — CONVENTIONS §5 defines the confirm line as *"a game-authored one-line summary of THE PARSED ORDER"*, the parse and not the predicted effect ⇒ suppressing the selection would conceal a model error at the step that exists to expose them.)
+- handoff: `handoffs/TASK-471-programmer.md` — ⚠️ **TWO frames carried the preposition, not one**: `Assistant_Order_SelectionPlace` AND the uncited `Assistant_Order_Place` (reachable via `who:"all"` ⇒ empty selection). Both now present the place instead of relating it: **`"{Intent} {Selection} ({Place})"`** / **`"{Intent} ({Place})"`**. ⛔ No `{Preposition}`, no per-intent fork. ✅ **§30 read-aloud enumeration for all 7 intents × 4 frames × the 3 wrappers is in the handoff.** ✅ **WARN-5 sweep CLOSED: all ten out-of-table literals read against §30 — 2 defects (both fixed), 8 compliant; extended sweep found nothing further.** ⚖️ **3 findings reported and deliberately LEFT for a ruling (F1 army-wide verb carrying a selection — no frame can repair it; F2 `who:"all"` objectless summary; F3 a false `SpawnConfirmPreview` comment).** Symbols touched: **`DescribeCommandForPlayer` only** (+ its header doc). ⛔ TASK-463/465 symbols byte-unmodified.
+- blocked-by: **TASK-465** (same file, sequential — ⛔ never concurrent). ⛔ **Must land BEFORE TASK-448.**
+- parallel-safe: no; **EXCLUSIVE owner of `SiegeAssistantComponent.{h,cpp}`**
+- spec: >
+    ⚠️ **WHY THIS JUMPS THE QUEUE AHEAD OF EVERY OTHER OPEN FINDING — AND IT OUTRANKS EVEN TASK-465's:** `DescribeCommandForPlayer`'s single frame
+    `"{Intent} {Selection} to {Place}"` renders **"Guard 8 footman TO mine_near — accept?"** ⛔ **The preposition is wrong for `Guard` and `Ambush`,
+    and it appears on the CONFIRM LINE AND THE EXECUTED LINE of every such order.** ⇒ ⚖️ **That is the confirm step — the surface Jonathan
+    specifically asked for — and he will read that sentence EVERY TIME he guards or ambushes anything.** ⚠️ **465 got promoted for being the only
+    finding a playtester can see; this one is MORE visible.**
+    **(1) ⛔ `{Preposition}` IS BARRED — THE OBVIOUS FIX IS THE WRONG ONE, AND TASK-465 NAMED THE REASON CORRECTLY.** ⚖️ **A substituted preposition
+    is a LOCALIZATION FRAGMENT, NOT A SENTENCE:** it is grammatically bound to the verb before it *and* the noun after it, and those bindings differ
+    per verb and per language. ⇒ ✅ **Use a VERB-NEUTRAL FRAME — one string that reads correctly for every intent** (CONVENTIONS §30).
+    **(2) ⛔ ONE STRING, NOT THREE.** Forking the frame per intent trades one wrong sentence for **three that will drift** — exactly what 465's own
+    spec forbade for the shortfall row, one task earlier.
+    **(3) ✅ THE TEST IS MECHANICAL: READ THE FRAME ALOUD WITH EVERY VALUE ITS PATH CAN SUPPLY.** ⛔ **If any combination is ungrammatical, the FRAME
+    is wrong — not the value.** **Enumerate the intents that reach it and show each rendering in the handoff.**
+    **(4) §3 HOLDS AND MUST BE SHOWN TO HOLD:** `{Intent}` comes from **the parsed command's own intent** through the existing reason-code → template
+    mechanism; the args struct stays pinned to `uint8`/`int32`/`FName`, so ⛔ **no model text can reach the sentence.**
+    **(5) ⚠️ SWEEP THE SHAPE (§22), AND REPORT IT EVEN IF EMPTY.** 465 already cleared the 19-row table, `AskWhichIntent`'s seven-verb list and
+    `ExecuteZoneOrder`'s `HOLD`/`AMBUSH` ternary — ⛔ **but this frame is one of WARN-5's TEN out-of-table literals, and the other nine have not been
+    read against this rule.** ✅ **A sweep that finds nothing else is a RESULT.**
+    ⛔ **No FSM changes, no executor changes, no controller edits, no `Content/`, no Git, no compile.**
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-471-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    `SiegeAssistantComponent.{h,cpp}` · `DescribeCommandForPlayer` · `ESiegeAssistantIntent { Send, Guard, Ambush, … }` ·
+    `ESiegeAssistantReasonCode`. Law: CONVENTIONS "Settings screen…" §30 (nouns and numbers, never grammar), §22 · "In-match LLM command assistant" §3.
+
+#### TASK-472 — [QA-FRAME] QA gate over TASK-471 (qa-reviewer)
+- assignee: qa-reviewer
+- status: **qa-passed** (2026-08-03 — report `qa/TASK-472.md`. **PASS, 0 blockers**, 4 WARN, 3 NIT. Slack posted in ⚙️ Dev & QA. Flip by the ORCHESTRATOR. ✅ **Sweep run WIDER than the task's own**: only **4** `FText::Format` sites exist in the entire game module; the one outside the assistant is compliant, and `SiegePlayerController`'s other 40 literals carry **no placeholders at all**, so the shape cannot hide there. No `.archive`/`.po`/`.locres` exists anywhere ⇒ nothing orphaned. ⚠️ **WARN-3 IS THE ONE TO KEEP VISIBLE: WARN-5 is DISCHARGED for §30 and STILL OPEN for §3** — `SiegeAssistantComponent.h:131-132` still asserts an invariant that ten literals falsify, so **a future §3 audit inspecting only the named function would report a false clean over ten real strings.** ⚠️ **F2 and F3 owed follow-up tasks** (F3 verified false at the code with its conclusion intact). ⛔ Boundary held and stated: it verified 463/465's five symbols by symbol at the current file, has no Git by design, and **makes no claim about TASK-469's scope.**)
+- blocked-by: TASK-471 · ⛔ **BLOCKS TASK-468**
+- parallel-safe: yes (read-only, own report)
+- spec: >
+    **Small scoped gate (§27) — the diff, not a re-review.** ⛔ **Boarded because TASK-469 was already dispatched when 471 was created and cannot
+    absorb it; §29 requires every code task to name a gate.**
+    **CHECK:** the frame is **verb-neutral and SINGLE** (⛔ not forked per intent, ⛔ no `{Preposition}` — §30) · **every intent that reaches it
+    renders grammatically**, shown enumerated rather than asserted · **`{Intent}` comes from the parsed command** and the args struct is still
+    `uint8`/`int32`/`FName`-only so **no model text reaches the sentence** (§3) · **the Send path is unchanged** · and **the §22 sweep across
+    WARN-5's remaining nine out-of-table literals is reported** — ✅ **empty is a result.**
+    ⚠️ **Nothing here has been compiled since `cf8ef8e`; a PASS is a PASS on the source.**
+    Report `qa/TASK-472.md`. Post the verdict in ⚙️ Dev & QA.
+- names: > `SiegeAssistantComponent.{h,cpp}` · `DescribeCommandForPlayer`. Law: CONVENTIONS §30, §22, §27 · "In-match LLM command assistant" §3.
+
+#### TASK-469 — [QA-VOCAB] QA gate over TASK-463 + TASK-465 (+466 if landed) (qa-reviewer)
+- assignee: qa-reviewer
+- status: **done** (2026-08-03 — report `qa/TASK-469.md`. **PASS / PASS, 0 blockers**, 2 WARN, 2 NIT. Slack posted in ⚙️ Dev & QA. Flip by the ORCHESTRATOR. ⚠️ **WARN-2 INDEPENDENTLY FOUND THE SECOND PREPOSITION FRAME** — `Assistant_Order_Place` (*"Guard to mine_near"*), reachable because `who:"all"` is a legal parse for a selection-bearing verb — **without knowing TASK-471 had already fixed it. Two reviewers, same uncited frame, arrived at separately: corroboration, not duplication.** ⚠️ **WARN-1** — the `BeginPlay` log: QA-464's WARN-3 was false in **both** clauses; TASK-463 repaired the first and *"a model fault can only ever disable the console"* **survives verbatim while the latch has zero callers**. Log-only, safe direction ⇒ routes to **TASK-466**. ⛔ **COVERAGE LEDGER (§29): this gate names 463 + 465 ONLY. TASK-466 has NOT landed — `MarkAssistantFaulted` still has zero call sites — and TASK-468 MUST NOT treat it as gated.**)
+- blocked-by: TASK-463 + TASK-465 (`ready-for-qa`) · ⛔ **BLOCKS TASK-468**
+- parallel-safe: yes (read-only, own report)
+- spec: >
+    **Scoped gate, §27 shape — the diffs, not a re-review.** ⛔ **§29: every code task names a gate, and these are the ones that do not yet.**
+    **(1) ⛔ THE ONE THAT MATTERS MOST — TASK-463's SEAM FIX.** The diagnosis is **(a) the asset is genuinely absent** (positive control: the same
+    search shape finds `DA_BattlefieldScatter.uasset`, so the negative is about the repo, not the search) **and the C++ defaults were NEVER empty —
+    27 rows since TASK-417.** The defect was a seam: `GetVocabulary()` returned the raw `LoadSynchronous()` result, so `BuildZoneA(nullptr)` took
+    its documented `else` branch. ✅ **Verify the closed-form proof rather than accept it: `5116 − 2092 + Len("none\n") = 3029` — the EXACT figure
+    PIE printed**, from an offline re-implementation of `BuildSynonymTable()` with no engine resident. ⚖️ **That is a proof, not an inference, and
+    it is the standard to hold the fix to.**
+    **(2) ⚖️ CONFIRM THE FIX SATISFIES §12a's AMENDED (a): the shipped lane must render the SAME Zone A as the measured lane, HOWEVER ACHIEVED.**
+    ✅ **`NewObject<USiegeAssistantVocabulary>(this)` is deliberately the SAME construction `TwoLaneByteEquality` uses**, so that test's PASS
+    becomes a statement about **the object the shipped lane actually renders.** ⛔ **Asset-resolution is NOT required and must not be demanded** —
+    §12a(a) named a mechanism where it meant a property, and it is amended, not waived.
+    **(3) §15 DEPARTURE TO RULE: the missing-asset log drops Warning → Log**, on the grounds that **after the fallback a missing asset IS the
+    measured lane**, so a Warning would flag the *correct* state. ⚖️ **Sound on its face — rule it, do not leave it open.**
+    **(4) ✅ RATIFY TASK-463's ITEM (3) RESTRAINT: `EnsureStaticPrefixRegistered` is BYTE-UNMODIFIED.** It closes the window on **match 2+ / level
+    travel** and is a **deliberate no-op on cold start because the residual window is UNREACHABLE** (`RequestCompletion` returns false while
+    `!IsReady()`). ⛔ **No tick, no timer — verify none was added.** ⚖️ **Adding machinery for an unreachable window is how a benign race becomes a
+    maintenance burden.**
+    **(5) TASK-465 — the shortfall template:** the verb is **parameterised from the parsed intent**, ⛔ **not forked into three copies**; every
+    player-facing string stays **game-authored** (§3); and **the §22 sweep for other templates hard-coding a verb/kind/place is reported — a sweep
+    that finds nothing else is a RESULT.**
+    ⚠️ **STATE THE LIMITS: nothing here has been compiled since `cf8ef8e`, and NO AUTOMATION TEST HAS EVER RUN.** ⛔ **A PASS here is a PASS on the
+    source.**
+    Report `qa/TASK-469.md`. Post the verdict in ⚙️ Dev & QA.
+- names: >
+    `SiegeAssistantVocabulary.{h,cpp}` · `GetVocabulary` · `BuildSynonymTable` · `SiegeAssistantSnapshot.{h,cpp}` (`BuildZoneA`) ·
+    `SiegeAssistantComponent.{h,cpp}` (`EnsureStaticPrefixRegistered`, `ShortfallCount`) · `ZoneA.TwoLaneByteEquality` ·
+    `ZoneA.NullVocabularyIsNotTheMeasuredLane`. Law: CONVENTIONS §12a (amended (a)) · "Settings screen…" §15, §22, §27.
+
+#### TASK-470 — [W1-TESTRUN] 💡 RUN THE 33 AUTOMATION TESTS HEADLESSLY — the standing caveat's only real discharge (build-master, DIAGNOSE-FIRST)
+- assignee: build-master
+- status: backlog
+- blocked-by: **TASK-468** (needs the fresh binaries) · ⚖️ **does NOT block TASK-448 — Jonathan's feel test is independent of whether our suite runs**
+- parallel-safe: yes vs TASK-448
+- spec: >
+    ⛔ ***"NO AUTOMATION TEST HAS EVER RUN"* HAS BEEN THE CAVEAT ON EVERY GATE TODAY.** 33 tests compile, **and compiling is not passing.** ⇒ **This
+    task is the only thing that can turn *"33 compile"* into *"N pass, M fail"*, discharge **WARN-5**, and — decisively — **EXECUTE
+    `ZoneA.TwoLaneByteEquality` and `ZoneA.NullVocabularyIsNotTheMeasuredLane`, the two tests §12a(b) turns on.**
+    ⚠️ **THE STING THAT MAKES THIS URGENT RATHER THAN TIDY: `NullVocabularyIsNotTheMeasuredLane` ALREADY ASSERTED THE EXACT IDENTITY THAT BROKE IN
+    TASK-463. The test that would have caught the empty-synonym-table defect was written, and simply never run.** ⇒ ⚖️ **A written test is not a
+    guardrail; a RUN test is.**
+    **(1) ⚖️ DIAGNOSE FIRST — THE ROUTE IS PROPOSED, NOT PROVEN, AND IT IS LABELLED THAT WAY DELIBERATELY (§20 binds the proposer too).**
+    Candidate: `UnrealEditor-Cmd.exe <project> -ExecCmds="Automation RunTests Siegebound.Assistant" -unattended -nopause -nullrhi -testexit="Automation Test Queue Empty"`.
+    ✅ **Commandlets demonstrably work on this machine** — the same pattern drives `Tools/reimport_meshes.py`. ⛔ **BUT NOBODY HAS TRACED WHETHER
+    `-nullrhi` IS COMPATIBLE WITH THESE TESTS, OR WHETHER THE `SiegeLlama` PLUGIN'S STARTUP TOLERATES IT.** **Establish that first and report it.**
+    **(2) ⛔ IF THE ROUTE DOES NOT WORK, SAY SO AND STOP. DO NOT INVENT A SUBSTITUTE PROCEDURE.** ⚖️ **An honest *"this route is unavailable, here
+    is why"* is a RESULT** — and it is worth more than a partial run whose scope nobody can state. ⚠️ **Do NOT weaken, skip or filter tests to
+    obtain a green.**
+    **(3) REPORT PER-TEST: name, pass/fail, and the failure text for every failure.** ⛔ **A count alone is not a result** (§22/§29's family: a
+    number without its members cannot be audited).
+    **(4) ⚠️ A FAILURE HERE IS A FINDING, NOT AN EMERGENCY.** These tests have never run, so **a first-run failure may be a defect in the TEST
+    rather than in the code** — ⛔ **do not "fix" either side; report and route.** ⚖️ **The point of a first execution is to learn what is true, not
+    to produce a green.**
+    **(5) ⛔ NO CODE CHANGES, NO `Content/`, NO Git.** 🔒 `L_Arena` never opened. 🔒 The gen-2 holdout is not touched. 🔒 `SiegeLlamaSpike.cpp` stays (§16).
+    ⚠️ **The editor close/reopen grant is SESSION-SCOPED (2026-08-03) and expires** — if this runs later, **ask, never force-kill** (§24).
+    Handoff `handoffs/TASK-470-buildmaster.md`. Post the per-test results in 🔧 Build & Git.
+- names: >
+    `UnrealEditor-Cmd.exe` · `-ExecCmds="Automation RunTests Siegebound.Assistant"` · `-unattended -nopause -nullrhi` ·
+    `-testexit="Automation Test Queue Empty"` · `ZoneA.TwoLaneByteEquality` · `ZoneA.NullVocabularyIsNotTheMeasuredLane` ·
+    `Siegebound.Assistant.Grammar.RuleNameCharset`. Law: CONVENTIONS §12a(b) · "Settings screen…" §16, §20, §24 · §9c (the parser is the reviewer of record).
+
+#### TASK-468 — [W1-INT2] ⛔ THE SECOND COMPILE + COMMIT RUN — boarded now as a PLANNED step (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: **TASK-463 + TASK-465 (both `qa-passed` ✅) + TASK-472 (⚠️ RUNNING)** · ⛔ **MUST COMPLETE BEFORE TASK-448** — Jonathan cannot playtest binaries that predate the fixes he is being asked to judge.
+- ⛔ **`blocked-by` CORRECTED 2026-08-03 — IT READ `463 + 465` AND WAS STALE.** ⚠️ **TASK-471 landed AFTER I wrote that line, and its gate TASK-472 is still running** — so `qa/TASK-469.md` correctly reported 468 *"unblocked on both prerequisites"* against a list that no longer described the batch. ⇒ ⛔ **Building without 472 would put uncommitted, ungated code into a green build — precisely what §27b exists to prevent.** ⚖️ **The board is read by three agents at once; a stale `blocked-by` is not a bookkeeping slip, it is an instruction to do the wrong thing.**
+- ⛔ **AND CARRY `qa/TASK-469.md`'s OWN LEDGER NOTE, VERBATIM: *"this gate names 463 + 465 ONLY. TASK-466 has NOT landed — `MarkAssistantFaulted` still has zero call sites — and TASK-468 must not treat it as gated."*** ✅ **That is §29 working exactly as designed: a gate declaring what it did NOT cover.** ⇒ **468 commits 463/465/471 and must NOT imply coverage of 466 or 473.**
+- parallel-safe: no — ⛔ **this is a compile gate; the QUIET-MODULE LAW applies exactly as it did at TASK-447**
+- spec: >
+    ⛔ **WHY THIS EXISTS AND WHY IT IS BOARDED NOW RATHER THAN REMEMBERED LATER (CONVENTIONS §27b): A COMPILE-GATE PASS ATTACHES TO A COMMIT,
+    NEVER TO A LANE.** ✅ **TASK-447's green describes `cd5f4ed` and the four commits around it — it does NOT extend to TASK-463, TASK-465, or
+    anything else landing after `cf8ef8e`.** ⚠️ **Build-master flagged `SiegeAssistantComponent.{h,cpp}` as modified-and-unstaged at hand-off and
+    said its PASS did not cover them — correct, and the reason this task exists as a PLANNED step instead of an end-of-batch scramble.**
+    **(1) ⛔ QUIESCE FIRST, exactly as at TASK-447** — every C++ task in `Source/GitClaudeUnrealTest/` finished with its handoff written.
+    **(2) COMPILE.** ⛔ **`Build.bat` RETURNS EXIT 0 ON A FAILED BUILD — parse the log for `Result:`, never `$LASTEXITCODE`** (it has been wrong
+    in both directions here). ⚠️ **Live Coding must be OFF: this batch adds reflected types and `Ctrl+Alt+F11` cannot introduce them (§26) — a
+    full editor restart is MANDATORY, not preferred.** ⚠️ **Rule out the two false-attribution traps BY MEASUREMENT, never by assumption** (a
+    `0x800711C7` in ~2 s is Smart App Control and is Jonathan-only; foreign diagnostics route to the owning lane and never count against this one).
+    **(3) COMMIT on `main`, ⛔ NO PUSH** — the push is Jonathan's, standing law. ⚠️ **`main` is 18 ahead at this task's start; VERIFY the count with
+    `git rev-list --count origin/main..main`, never from this board or from memory.**
+    **(4) ⛔ THE LFS CHECK IS PER FILE KIND (§25).** If this commit is code-only, expect **`(Git: …)`** on every object and ⛔ **any `(LFS: …)` is
+    the defect**; if any `.uasset` rides along, that one must be **`(LFS: …)`**. **Run `git check-attr filter -- <path>` per kind and paste it.**
+    **(5) TREAT THE INDEX AS HOSTILE** — GitHub Desktop and the editor's Git provider both auto-stage. **Explicit pathspec only, re-check
+    `git status --porcelain` after every `add`, verify by INVERSE FILTER.** ⛔ `reset --hard` / `clean -fd` **BANNED.** **Real hashes, read back.**
+    **(6) 🔒 `L_Arena` NEVER SAVED — verify by SHA256 before and after, not mtime.** 🔒 **The gen-2 holdout is not opened.** 🔒 **`SiegeLlamaSpike.cpp`
+    is NOT deleted (§16).**
+    **(7) ⛔ SAY WHAT THIS GREEN DOES AND DOES NOT MEAN, in the same words TASK-447 used:** compiling is **not** passing · no smoke row has run ·
+    **WARN-5 stays instrumented** · and ⛔ **this PASS attaches to THIS commit, not to the lane.**
+    Handoff `handoffs/TASK-468-buildmaster.md`. Post the hashes in 🔧 Build & Git.
+- names: >
+    Build: `"C:/Program Files/Epic Games/UE_5.8/Engine/Build/BatchFiles/Build.bat" GitClaudeUnrealTestEditor Win64 Development -project="…/GitClaudeUnrealTest.uproject" -waitmutex`.
+    Law: CONVENTIONS "Settings screen…" §25 (LFS per kind), §26 (Live Coding), §27b (a PASS attaches to a commit) · "⛔ THE QUIET-MODULE LAW" ·
+    "GIT HAZARD LAWS" · "UE Build.bat exit code lies".
+
+#### TASK-465 — [W1-TEMPLATE] ⚠️ BEFORE THE PLAYTEST — the shortfall line says "Send" when the player said "guard" (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: **qa-passed** (2026-08-03 — `qa/TASK-469.md`: **PASS, 0 blockers**. Flip by the ORCHESTRATOR. ✅ **§3 holds** — `{Intent}` traces to the parsed command through a game-authored `NSLOCTEXT` switch; the args struct is `uint8`/`int32`/`FName` only. ✅ **Reachability proved by symbol**: `FindShortfall`'s gate plus exactly three `EnterClarify(ShortfallCount,…)` sites, and **no site anywhere writes `Command.Intent`** — QA enumerated every `PendingArgs` write. **The Send path is byte-identical.** ✅ **The §20 refusal of `{Order}` is CORRECT AT THE CODE** — the un-meetable count survives to the render point, so `{Order}` would have rendered back the very order the sentence exists to call impossible.)
 - blocked-by: **none — DISPATCHABLE NOW.** ⛔ **Must land BEFORE TASK-448.** Sequential re-ownership of `SiegeAssistantComponent.{h,cpp}`.
 - parallel-safe: yes to WRITE; ⛔ never beside a compile gate
 - spec: >
@@ -6264,6 +6465,13 @@ ASSISTANT WAVE 1 LANE                                                           
     **(4) ⚠️ NOTE FOR YOUR OWN SWEEP: the 7 matches are 1 declaration + 1 definition + FIVE PROSE MENTIONS INSIDE COMMENTS** (§14 instance 2
     again). ✅ **QA used a positive control to confirm the negative is about the code, not about the search — do the same for any negative you
     report.**
+    **(5) ⛔ ADDED 2026-08-03 — `qa/TASK-469.md` WARN-1 ROUTES HERE, AND IT IS A CLAIM THE CODE NO LONGER SUPPORTS.** `qa/TASK-464.md`'s WARN-3
+    was false in **BOTH** clauses; TASK-463 repaired the first, and ⚠️ ***"a model fault can only ever disable the console"* SURVIVES VERBATIM
+    WHILE THE LATCH HAS ZERO CALLERS** — so today a model fault disables **nothing**. ✅ **Log-only and in the SAFE direction**, but ⛔ **it is an
+    assertion the code does not honour, sitting where a reader goes to check.**
+    ⇒ **You own its disposition either way: if you WIRE the latch, the claim becomes true and needs no edit; if you conclude faultedness should be
+    DERIVED (from `IsReady()`), reword it to what the code actually does.** ⛔ **Do not leave it standing untouched** (§22 — sweep the CLAIM, and
+    runtime/comment assertions are the priority surface because they are what an investigator trusts).
     ⛔ **No plugin edits, no controller edits, no `Content/`, no Git, no compile.**
     **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
     Handoff `handoffs/TASK-466-programmer.md`. Post in ⚙️ Dev & QA.
@@ -6346,7 +6554,7 @@ ASSISTANT WAVE 1 LANE                                                           
 
 #### TASK-463 — [W1-VOCAB] 🚨 HIGH PRIORITY — `DA_AssistantVocabulary` DOES NOT RESOLVE: the shipped synonym table is EMPTY (gameplay-programmer, DIAGNOSE-FIRST)
 - assignee: gameplay-programmer
-- status: backlog
+- status: **qa-passed** (2026-08-03 — `qa/TASK-469.md`: **PASS, 0 blockers**. Flip by the ORCHESTRATOR. ✅ **QA RE-DERIVED THE PROOF BY HAND rather than accepting it**: counted `BuildSynonymTable()` from the constructor rows and independently got **2092** (units 603 + places 526 + intents 425 + notes 529 + `SYNONYMS\n` 9), each operand checked at its own artifact ⇒ **5116 − 2092 + 5 = 3029, exact** — the figure PIE printed. 📌 **A THIRD corroboration nobody cited:** `SiegeAssistantVocabulary.h`'s own doc implies 4250 − 2158 = 2092, authored in a different file by a different task. ✅ **§12a(a) SATISFIED** — shipped `NewObject<USiegeAssistantVocabulary>(this)` vs test `NewObject<...>()`: same class, constructor and builder; the only difference is the `Outer`, and `BuildZoneA` is const with *NOTHING BELOW READS MEMBER STATE*. ✅ **§15 Warning→Log RATIFIED**, with a second mechanism the handoff missed: the automation runner **fails on Warning** for expected traffic. ✅ **Item (3) restraint RATIFIED** — unreachability verified at the PLUGIN symbol (`RequestCompletion` returns false while `!IsReady()`); no tick added, `bCanEverTick = false`.)
 - blocked-by: **none — DISPATCHABLE NOW.** ⚠️ **Highest-priority open item in the batch.**
 - parallel-safe: yes to WRITE; ⛔ never beside a compile gate
 - spec: >
