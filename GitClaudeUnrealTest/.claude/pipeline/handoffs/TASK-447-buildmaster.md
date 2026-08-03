@@ -1,7 +1,7 @@
 # TASK-447 — build-master handoff (W1-INT compile gate)
 
 **Date:** 2026-08-03 · **Agent:** build-master
-**STATUS: ✅ COMPILE GREEN · ✅ COMMITTED (3 commits) · ⚠️ AUDIT PARTIAL · ⛔ SMOKE TESTS NOT RUN · ⛔ TASK-438 NOT DONE**
+**STATUS: ✅ COMPILE GREEN · ✅ COMMITTED (5 commits) · ✅ TASK-438 CHECKED + COMMITTED · ⚠️ AUDIT PARTIAL · ⛔ SMOKE TESTS NOT RUN**
 
 > ✅ **`Result: Succeeded`** on the third attempt, **zero errors, zero warnings**, and ⭐ **the LINK
 > STEP RAN FOR THE FIRST TIME** — both `UnrealEditor-GitClaudeUnrealTest.dll` and
@@ -185,21 +185,49 @@ CONFIGURED, not measured.** Quote the overshoot as **`printed − 10.0`** (~50 m
 
 ---
 
-## 5. ⛔ TASK-438 — NOT DONE. THE SESSION IS HOSTED AND READY; THE WORK IS THE ART-DIRECTOR'S.
+## 5. ✅ TASK-438 — HOSTED, THEN INTEGRATION-CHECKED AND COMMITTED (`87c4784`)
 
-⚖️ **A declared boundary, not an omission.** The board assigns **TASK-438 to `art-director`**, and
-TASK-447's role is to **host** it. My own role bars authoring UI. ⇒ **I did the hosting half and
-stopped at the boundary rather than quietly doing another agent's task.**
+**I hosted the session; `art-director` did the authoring (the board assigns TASK-438 to it and my role
+bars authoring UI). I then performed the integration check myself and committed the asset.**
 
-✅ **Everything the art-director needs is live right now:**
-- **Editor running, PID 9828**, on the **freshly compiled** module — `USettingsMenuWidget` **will**
-  appear in the `CreateWidget` class picker (it compiled and linked; the class registered).
-- **MCP up at `http://127.0.0.1:8000/mcp`** with `BlueprintTools` fully available — `find_nodes`,
-  `create_node`, `connect_pins`, `add_event`, `set_pin_value`, `read_graph_dsl`, `compile_blueprint`.
-  ⚠️ **`write_graph_dsl` exists and TASK-438's spec forbids it — granular ops only.**
-- ⚠️ **The MCP server is a meta-gateway:** call `call_tool` with `toolset_name` + an **unprefixed**
-  `tool_name`. A working PowerShell client is at `scratchpad/mcp.ps1`.
-- 🔒 **`L_Arena` must not be saved. Save `/Game/UI/WBP_MainMenu` ONLY.**
+### ⚖️ THE GATE RULING — **THE ART GATE APPLIES AND IS SATISFIED. THIS IS NOT AN EXEMPTION.**
+The hard gate reads *"a PASS QA report (code) **or** a completed integration check (art)."* **TASK-438
+is art**, so the second limb governs — ⛔ **and I did not commit it on the code-task rule by default.**
+⚠️ **`qa/TASK-464.md` is NOT a gate on TASK-438** — it is a retroactive gate on **TASK-442**. **There is
+no QA report for TASK-438 and none is required.** ⇒ **I performed the integration check and it PASSES
+on the machine-verifiable half; the visual half is explicitly OUT of the gate's reach and is Jonathan's.**
+
+### ✅ THE INTEGRATION CHECK — PERFORMED AT THE ARTIFACT, BY **NODE IDENTITY**, NOT BY DSL TEXT
+⚠️ **The DSL printer renumbers its sequential `_returnvalue_N` binds on any mid-chain insert, so a raw
+DSL diff falsely reads as though the Quit button was relabelled "Settings."** ⛔ **That is §17's shape
+inside a diff tool — the output is a claim about the PRINTER, not about the GRAPH.** I used
+`get_connected_subgraph` / `get_node_infos` throughout.
+
+| # | check | result |
+|---|---|---|
+| 1 | `SettingsBtnClicked` exists and is implemented | ✅ `K2Node_CustomEvent_22`, `AddEvent|Custom` |
+| 2 | picks the **C++ class**, not a WidgetBlueprint | ✅ `UserInterface|CreateWidget`, ReturnValue type **`Settings Menu Widget Object Reference`** |
+| 3 | `AddToViewport(ZOrder 10)` | ✅ `UserInterface|Viewport|AddToViewport`, `ZOrder` = literal `10`, unconnected |
+| 4 | ⭐ **does NOT `RemoveFromParent`** | ✅ **`AddToViewport.then` has `connected = 0` — THE CHAIN TERMINATES** |
+| 5 | compiles `warnings_as_errors`, **silent on the 2nd pass** | ✅ both compiles returned clean |
+| 6 | my verification did not alter the asset | ✅ on disk still **341,978 B**, mtime `15:49:34` |
+
+⭐ **CHECK 4 IS THE ONE THAT MATTERED** — art-director named it *"the likeliest silent defect and
+invisible to every readback."* **Deck Builder and Multiplayer DO call `Widget|RemoveFromParent`
+(2 instances confirmed present in the graph); the Settings path deliberately does not.** ⚖️ **Proved by
+a TERMINAL PIN WITH NO CONNECTION — a positive fact — not by a search returning nothing.**
+📌 **§14 fired live and I did not fall for it:** `find_nodes(title="Remove from Parent")` returned **0
+while the nodes demonstrably exist** (`type_id: Widget|RemoveFromParent`, ×2). **A false negative from
+a title match. Had I trusted it I would have "confirmed" the right answer by the wrong evidence.**
+
+### ⛔ WHAT THE CHECK DOES **NOT** COVER — the gate's honest boundary
+⛔ **NOTHING about the entry's APPEARANCE OR BEHAVIOUR IS VERIFIED.** Not that it renders, reads
+legibly, sits in the right place, or that clicking it opens the panel. **A binding/tree readback cannot
+see geometry** — TASK-355 shipped six controls stacked in a 165×48 px corner box with a **6/6 green
+readback**. ⇒ **Reported as PLACED AND WIRED, never as VERIFIED-LOOKING.**
+🧑 **TWO CHECKS NOW OWED TO JONATHAN AT TASK-448, BOTH ORIGINATING IN THIS TASK:**
+1. ⛔ **Clicking Settings must NOT remove the main menu.**
+2. ⛔ **After `Back`, EVERY main-menu button must still work.**
 
 ---
 
@@ -209,7 +237,9 @@ stopped at the boundary rather than quietly doing another agent's task.**
 |---|---|---|
 | 1 | **`cd5f4ed`** | **Code** — 23 files, **12872 insertions / 2614 deletions**. Per-task attribution in the message (TASK-434 §3 precedent) for the multi-owner files |
 | 2 | **`97c7c8d`** | **TASK-445 assets** — `IA_AssistantConsole.uasset` (new) + `IMC_Hero.uasset`. **5 insertions / 2 deletions ⇒ LFS POINTERS, not binaries** |
-| 3 | *(this commit)* | **Pipeline record** — CONVENTIONS, TASKBOARD, 18 handoffs, 5 QA reports |
+| 3 | **`56acf10`** | **Pipeline record** — CONVENTIONS, TASKBOARD, 18 handoffs, 5 QA reports |
+| 4 | **`87c4784`** | **TASK-438** — `WBP_MainMenu.uasset`, **2 insertions / 2 deletions ⇒ LFS pointer**. Committed only after the integration check in §5 |
+| 5 | *(this commit)* | **Closing record** — TASK-438 handoff, `qa/TASK-464.md`, board + conventions |
 
 ### ⛔ THE HOSTILE INDEX WAS DEFEATED BY METHOD, NOT BY LUCK
 `IA_AssistantConsole.uasset` was **pre-staged by GitHub Desktop / the editor's Git provider**. A bare
@@ -230,10 +260,13 @@ else sits in the index.** ⛔ **No `-a`, no `add -A`, no bare `git commit`.** In
 - ✅ **`Models/*.gguf` — acceptance, not assertion:** `git check-ignore -v Models/*.gguf` ⇒
   `GitClaudeUnrealTest/.gitignore:132:/Models/	Models/Qwen3-4B-Q4_K_M.gguf`. **No `.gguf` in any commit.**
 - ✅ **`git reset --hard` / `git clean -fd` were never typed.** One git command per call, output never suppressed.
-- ⛔ **NOT PUSHED.** `main` was **13 ahead** before this gate; these three commits make it **16**. **The push is Jonathan's.**
-- 🔒 **`L_Arena` — SHA256 AT FOUR CHECKPOINTS, NEVER MTIME:** pre-flight · post-kill · post-build ·
-  **post-PIE** — all `B3DBC5D9AE484A7BD02CAFAD52B4681DA68B011477479B65EE7781AE459F8268`, **535,522 B**.
-  ✅ **PIE did not dirty it. It was never saved.**
+- ⛔ **NOT PUSHED.** `main` was **13 ahead** before this gate; these five commits make it **18**
+  (measured with `git rev-list --count`, not counted by hand). **The push is Jonathan's.**
+- 🔒 **`L_Arena` — SHA256 AT SEVEN CHECKPOINTS, NEVER MTIME:** pre-flight · post-kill · post-build ·
+  post-PIE · final · pre-TASK-438-commit · post-close — all
+  `B3DBC5D9AE484A7BD02CAFAD52B4681DA68B011477479B65EE7781AE459F8268`, **535,522 B**, mtime
+  `2026-07-29 03:53:38` **never moved**. ✅ **PIE did not dirty it; the art session did not touch it;
+  it was never opened for save.**
 
 ---
 
@@ -259,13 +292,17 @@ else sits in the index.** ⛔ **No `-a`, no `add -A`, no bare `git commit`.** In
 
 - **TASK-436 · 437 · 440 · 441 · 442 · 443 · 444 · 445 · 449 · 450 · 451 · 453 · 454 · 455 · 456 ·
   457 · 459 · 423** → ✅ **`done`** (compiled, linked, committed in `cd5f4ed` / `97c7c8d`).
-- **TASK-438** → ⛔ **stays open — dispatch `art-director`. The editor session is hosted and waiting (PID 9828).**
-- **TASK-447** → ⚠️ **substantially done, but NOT fully:** compile ✅, commit ✅, audit ⚠️ **partial**,
-  smoke ⛔, TASK-438 ⛔. **The manager should decide whether to close it with the residue recorded or
-  keep it open for the owed readings.**
-- **TASK-448** → ✅ **UNBLOCKED — this is the gate Jonathan's playtest now runs against**, and it
-  additionally now owes **the one keypress that takes the Zone B reading.**
+- **TASK-438** → ✅ **`done`** — integration check performed (§5), committed `87c4784`.
+- **TASK-447** → ✅ **`done` on everything it OWNS**, with residue recorded rather than hidden:
+  compile ✅ · commit ✅ · TASK-438 hosted + checked + committed ✅ · **audit ⚠️ PARTIAL** ·
+  **smoke ⛔ NOT RUN**. ⚖️ **The two gaps are NOT deferrals of work this task could have done** —
+  (0-ZONEB) needs a keypress and the smoke rows need a console-exec tool that does not exist in this
+  MCP surface. **Both are correctly TASK-448's or a new task's, and neither is closed by this one.**
+- **TASK-448** → ✅ **UNBLOCKED and it is now the critical path.** It owes, beyond its own list:
+  **(a)** the one keypress that takes the **Zone B reading**; **(b)** ⛔ **clicking Settings must NOT
+  remove the main menu**; **(c)** ⛔ **after `Back`, every main-menu button must still work.**
 
-**New tasks the manager should consider:** Finding 1 (missing `DA_AssistantVocabulary`) · Finding 2
-(the §8 guardrail's arming window) · Finding 3 (one-lane-per-session, written into the smoke spec) ·
-the owed automation-test run.
+**New tasks the manager should consider:** Finding 1 (missing `DA_AssistantVocabulary` — TASK-463
+already owns it) · Finding 2 (the §8 guardrail's arming window) · Finding 3 (one-lane-per-session,
+written into the smoke spec) · **the owed automation-test run (33 tests, never executed)** · a smoke
+task that can actually issue console commands (headless `-ExecCmds`, since MCP cannot).
