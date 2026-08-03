@@ -240,22 +240,68 @@ public:
 	 */
 	static constexpr int32 MaxRosterKinds = 8;
 
-	/** Player text is capped and flattened before it reaches the prompt (a pasted paragraph must not become the whole context). */
-	static constexpr int32 MaxUtteranceChars = 240;
+	/**
+	 *  THE PER-LINE CAP ON PLAYER-CONTROLLED TEXT, COUNTED IN UTF-8 BYTES.
+	 *
+	 *  ⚠️ RENAMED FROM `MaxUtteranceChars` BY TASK-433 (BLOCKER-2), AND THE RENAME
+	 *  IS THE FIX, NOT COSMETICS - a constant named "Chars" that measures bytes
+	 *  would be a fresh instance of the very defect this closes. The old name
+	 *  counted FString CODE UNITS (UTF-16 on Windows) while the budget it proxies
+	 *  for is TOKENS OVER UTF-8, and the 2.71 chars/token ratio behind
+	 *  MaxSnapshotChars was calibrated on ASCII, where one char is exactly one
+	 *  byte. Outside ASCII the two diverge and the cap silently OVER-ADMITS: 240
+	 *  code units of emoji (surrogate pairs - 2 units and 4 bytes each) is ~120
+	 *  glyphs and 360-480 tokens against a 400-token B+C budget, while every
+	 *  character-based check reports 240 of 1085 and looks healthy.
+	 *
+	 *  ⚠️ THIS IS THE ONE STRING IN THE SNAPSHOT THAT COMES FROM OUTSIDE THE
+	 *  PROGRAM. The ASCII law at the top of SiegeAssistantSnapshot.cpp is scoped to
+	 *  prompt LITERALS, which are author-written and were never the risk. The
+	 *  utterance and the pending line are not literals, so nothing constrained
+	 *  them: the assumption crossed the authorship boundary with its name and its
+	 *  value unchanged, and stopped being true on the way.
+	 *
+	 *  WHY BYTES AND NOT A TOKENIZER. Bytes are correct-by-construction for ASCII
+	 *  (1 byte = 1 char, so NO EXISTING MEASURED FIGURE MOVES) and strictly
+	 *  conservative for everything else: the worst case per line falls from 720
+	 *  bytes (240 code units x 3 bytes for BMP text such as CJK) to 240 - exactly
+	 *  3x tighter, matching the ~3x over-admission that was measured.
+	 *  ⚠️ IT NARROWS THE GAP WITHOUT CLOSING IT. Text that tokenizes at the
+	 *  byte-fallback floor still costs ~1 token per byte, i.e. up to 240 tokens on
+	 *  a line the 2.71 ratio prices at ~89. THAT RESIDUAL IS DELIBERATE AND
+	 *  ACCEPTED: TASK-423 supersedes this by enforcing the budget against the
+	 *  tokenizer directly, and a second tokenizer here would be the thing it has to
+	 *  delete. Do not build one.
+	 *
+	 *  A pasted paragraph must not become the whole context - and per TASK-433
+	 *  BLOCKER-1 the cut is NO LONGER SILENT: see SanitizeForPrompt and BuildZoneC.
+	 */
+	static constexpr int32 MaxUtteranceBytes = 240;
 
 	/**
-	 *  SURVEYS THE WORLD FOR ONE TYPED SENTENCE. Six logical passes - units,
+	 *  SURVEYS THE WORLD FOR ONE TYPED SENTENCE. Six LOGICAL passes - units,
 	 *  castles, gold nodes, ancient grounds, the capture zone, and the hero -
 	 *  run ONCE PER SENTENCE, NEVER PER TICK.
 	 *
-	 *  Four of those passes are SHIPPED STATIC FINDERS reused verbatim rather
-	 *  than re-derived (CONVENTIONS §4 + the FindBestMineFor idiom):
-	 *  ACastle::FindNearestCastleForTeam, AGoldNode::FindBestMineFor and
-	 *  AAncientGround::FindNearestAncientGround. Two of them are called TWICE
-	 *  (own/enemy castle, near/far ground), which is why the honest traversal
-	 *  count is higher than six - and is still unmeasurable next to one
-	 *  inference call. Re-deriving their loops here to save a traversal would
-	 *  trade a shipped, QA'd selection rule for a second copy that drifts.
+	 *  ⚠️ SIX LOGICAL PASSES IS NOT SIX TRAVERSALS, AND THE HONEST NUMBER IS UP TO
+	 *  EIGHT (TASK-433). Counted from this file: SIX run unconditionally -
+	 *  FindNearestCastleForTeam twice (own, enemy), FindNearestAncientGround for
+	 *  the near ground, FindBestMineFor, the ACaptureZone loop and the
+	 *  ASummonedUnit loop - plus the FAR ground whenever an enemy castle stands,
+	 *  plus the AHeroCharacter fallback loop when the hero is not possessed. So
+	 *  SEVEN in the normal shipped case and EIGHT at worst. CONVENTIONS §4 says
+	 *  "six TActorIterator passes", which understates the traversals by ~33 %; its
+	 *  ~0.2 ms conclusion survives that comfortably, but quote the count from HERE.
+	 *
+	 *  Five of those traversals happen inside SHIPPED STATIC FINDERS reused
+	 *  verbatim rather than re-derived (CONVENTIONS §4 + the FindBestMineFor
+	 *  idiom): ACastle::FindNearestCastleForTeam, AGoldNode::FindBestMineFor and
+	 *  AAncientGround::FindNearestAncientGround - THREE functions, FIVE calls,
+	 *  because two of them are called twice (own/enemy castle, near/far ground).
+	 *  Each is exactly one TActorIterator, verified against their bodies. Still
+	 *  unmeasurable next to one inference call: re-deriving their loops here to
+	 *  save a traversal would trade a shipped, QA'd selection rule for a second
+	 *  copy that drifts.
 	 *
 	 *  Everything is re-derived from scratch every call: this object holds no
 	 *  actor pointers, no weak pointers and no lifetime state, so a unit dying
@@ -277,9 +323,18 @@ public:
 	 *
 	 *  ⚠️ READS NO MEMBER STATE, BY CONSTRUCTION - it is const and touches
 	 *  nothing Capture() wrote, which is precisely what makes it byte-identical
-	 *  for the life of the process and lets llama_kv_cache_seq_rm keep the
+	 *  for the life of the process and lets llama_memory_seq_rm keep the
 	 *  prefix. It is a member (not a static) only because the §9 registry pins
 	 *  it as one. Making it state-dependent is a QA FAIL.
+	 *
+	 *  ⚠️ THE SYMBOL ABOVE IS `llama_memory_seq_rm` (vendored llama.h:735, verified).
+	 *  IT WAS DOCUMENTED HERE AND IN BuildZoneA's BODY AS `llama_kv_cache_seq_rm`,
+	 *  WHICH EXISTS NOWHERE IN THE VENDORED HEADER - corrected by TASK-433 (WARN-3).
+	 *  The dead spelling is spelled out ONCE, here, on purpose: this is the recorded
+	 *  `use_mmap` lesson - "the name a search will fail to find" - so a reader who
+	 *  arrives from an older doc grepping the wrong name lands on this correction
+	 *  instead of on nothing. The plugin lane was always right (SiegeLlamaSpike.cpp
+	 *  calls llama_memory_seq_rm); only the game lane's comments were wrong.
 	 *
 	 *  @param Vocabulary DA_AssistantVocabulary (TASK-421's asset instance); null ⇒ the synonym block prints `none`, deterministically
 	 */
@@ -301,16 +356,35 @@ public:
 	 *  Over-budget behaviour (CONVENTIONS §8): the ROSTER TAIL collapses
 	 *  deterministically - first into a single `other_kinds:` line beyond
 	 *  MaxRosterKinds, then by dropping further tail rows until the character
-	 *  budget fits. The utterance and the pending line are never truncated by the
-	 *  budget (only by MaxUtteranceChars, which is a separate, always-on
-	 *  sanitiser).
+	 *  budget fits. The utterance and the pending line are never truncated by THAT
+	 *  budget; the roster absorbs all of it.
 	 *
-	 *  ⚠️ EVERY COLLAPSE IS LOGGED, INCLUDING THE ONE AT EXACTLY THE CAP. Both
-	 *  causes are reported and named - the MaxRosterKinds cap and the character
-	 *  budget - at Warning on first occurrence and on every escalation, plus a
-	 *  per-turn record at Verbose. It used to log ONCE and only for the budget
-	 *  case, which meant a >MaxRosterKinds board degraded the prompt silently
-	 *  forever (TASK-419 WARN-5). See WarnedRosterKindsPrinted.
+	 *  ⚠️ BUT THEY ARE CAPPED, AND A CAP IS A TRUNCATION LIKE ANY OTHER.
+	 *  MaxUtteranceBytes bounds each of the two player-text lines. This was
+	 *  documented here as "a separate, always-on sanitiser" and thereby treated as
+	 *  EXEMPT from the observable-truncation condition. THAT EXEMPTION WAS THE
+	 *  DEFECT (TASK-433 BLOCKER-1). The condition binds "any enforcement of the
+	 *  snapshot budget, by any mechanism, under any name" - it is anchored to THE
+	 *  ACT OF TRUNCATING rather than to the constant performing it, precisely so
+	 *  that renaming the cutter cannot orphan it, and "sanitiser" is a name.
+	 *
+	 *  ⚠️ EVERY COLLAPSE AND EVERY LINE CUT IS REPORTED, INCLUDING THE COLLAPSE AT
+	 *  EXACTLY THE CAP. Three causes are named separately, because they call for
+	 *  different fixes: the MaxRosterKinds cap, the character budget, and
+	 *  MaxUtteranceBytes on a player-text line. Each reports at Warning on first
+	 *  occurrence and on every escalation, plus an unlatched per-turn record at
+	 *  Verbose. The roster used to log ONCE and only for the budget case, so a
+	 *  >MaxRosterKinds board degraded the prompt silently forever (TASK-419
+	 *  WARN-5); the two player lines used to log NOTHING AT ALL (TASK-433). See
+	 *  WarnedRosterKindsPrinted and WarnedUtteranceBytes.
+	 *
+	 *  ⚠️ A CUT LINE IS ALSO MARKED IN THE PROMPT, NOT ONLY IN THE LOG - see
+	 *  SanitizeForPrompt for why that design call went the way it did. A collapsed
+	 *  roster still prints `other_kinds:`, so the model is TOLD something was
+	 *  hidden; a truncated `order:` line left it nothing, and a half-sentence
+	 *  still yields a well-formed command from a grammar-constrained sampler. That
+	 *  is the valid-shaped-wrong-command failure CONVENTIONS §1 exists to prevent,
+	 *  arriving through the one string the player actually typed.
 	 *
 	 *  @param Utterance   the player's raw typed sentence; flattened + capped, never interpreted here
 	 *  @param PendingLine the FSM's GAME-AUTHORED pending-intent line (§1: each clarification turn is a fresh single-turn call, and this line - never the model's own previous output - is what carries context forward). Empty ⇒ `none`
@@ -381,8 +455,60 @@ private:
 	/** Appends the roster rows (already budget-trimmed by the caller) plus the `other_kinds:` collapse line. */
 	void AppendRosterBlock(FString& Out, int32 KindsToPrint) const;
 
-	/** Flattens newlines/tabs/runs of whitespace and caps to MaxUtteranceChars - the prompt layout is line-oriented, so a pasted paragraph must not be able to forge a key. */
-	static FString SanitizeForPrompt(const FString& In);
+	/**
+	 *  Flattens newlines/tabs/runs of whitespace and caps the line to
+	 *  MaxUtteranceBytes - the prompt layout is line-oriented, so a pasted
+	 *  paragraph must not be able to forge a key.
+	 *
+	 *  ⚠️ A CUT LINE IS MARKED IN THE PROMPT, AND THAT IS A DESIGN CALL, NOT AN
+	 *  INCIDENT (TASK-433 BLOCKER-1). Stated with its reasoning so the next reader
+	 *  can overturn it deliberately rather than by accident:
+	 *
+	 *  - WHY MARK AT ALL, WHEN A LOG WOULD SATISFY THE CONDITION'S LETTER. The
+	 *    roster's collapse leaves `other_kinds:` in the prompt, so the model is
+	 *    told something was hidden. A truncated `order:` line told it nothing, and
+	 *    the sampler is grammar-constrained, so it produces a confident,
+	 *    well-formed command from half a sentence. The log informs the DEVELOPER;
+	 *    only the marker informs the MODEL, and the model is the one acting.
+	 *  - WHY A VALUE AND NEVER A NEW KEY. A `truncated:` key would obey the
+	 *    fixed-key law only by being emitted on EVERY turn, which adds its bytes to
+	 *    every Zone C on every board - including all-ASCII ones - moving the
+	 *    hand-verified Zone C figure and shrinking the roster budget for a case
+	 *    that almost never fires. The marker rides on the VALUE of the `order:` /
+	 *    `pending:` key, exactly as `mid: ours` and `mid: none` do, so the key set
+	 *    is untouched.
+	 *  - WHY IT COSTS NOTHING. The marker's bytes are budgeted INSIDE
+	 *    MaxUtteranceBytes rather than added on top, so a line's maximum length is
+	 *    unchanged and no downstream figure moves. On any line that fits, the
+	 *    output is BYTE-IDENTICAL to the pre-TASK-433 sanitiser.
+	 *  - WHY THIS WORDING. Zone A is byte-identical for the life of the process and
+	 *    is another task's text, so the model CANNOT be taught what the marker
+	 *    means. It is therefore plain editorial English - an ellipsis and a
+	 *    bracketed word - which is what "this quotation was cut" looks like
+	 *    everywhere in pretraining, rather than a symbol that would need teaching.
+	 *  - WHY IT IS SAFE UNTAUGHT. TASK-417's GBNF constrains every emitted symbol
+	 *    to the live kind/place alternations, so the model physically cannot echo
+	 *    the marker into a command; and nothing parses Zone C (the executor and the
+	 *    FSM read none of it), so it cannot break a reader. The worst case is that
+	 *    the model ignores it, which is exactly today's behaviour.
+	 *
+	 *  @param In                 raw player- or FSM-authored line
+	 *  @param OutFlattenedBytes  UTF-8 byte length of the FLATTENED line before the cap; > MaxUtteranceBytes means it was cut (this is the magnitude BuildZoneC escalates on)
+	 */
+	static FString SanitizeForPrompt(const FString& In, int32& OutFlattenedBytes);
+
+	/**
+	 *  Reports one truncated player-text line under the SAME escalating-latch
+	 *  discipline the roster collapse uses: an unlatched Verbose record every turn,
+	 *  plus a Warning on the first cut and on every DEEPER one. It lives here
+	 *  rather than in SanitizeForPrompt because that function is static by design
+	 *  (a pure text transform, no `this`), and the latches are member state.
+	 *
+	 *  @param LineKey         the prompt key whose value was cut - "order" or "pending"
+	 *  @param FlattenedBytes  SanitizeForPrompt's OutFlattenedBytes for that line
+	 *  @param WarnedBytes     the caller's per-line latch: the deepest cut already reported
+	 */
+	void ReportLineTruncation(const TCHAR* LineKey, int32 FlattenedBytes, int32& WarnedBytes) const;
 
 	/** Aggregated rows, (Kind, GroupId) ⇒ Count. */
 	UPROPERTY(Transient)
@@ -475,6 +601,33 @@ private:
 
 	/** Companion to WarnedRosterKindsPrinted: the most kinds ever reported collapsed. See its comment. */
 	mutable int32 WarnedRosterKindsCollapsed = 0;
+
+	/**
+	 *  ⚠️ PLAYER-TEXT TRUNCATION LATCHES (TASK-433 BLOCKER-1). The deepest cut
+	 *  already reported for each of the two capped lines, in flattened UTF-8 bytes;
+	 *  0 = nothing reported yet.
+	 *
+	 *  SEPARATE PER LINE, DELIBERATELY. `order:` carries what the player just
+	 *  typed; `pending:` carries the FSM's own state across a clarification turn
+	 *  (CONVENTIONS §1 - it is how context moves forward WITHOUT feeding the model
+	 *  its own previous output). A deep cut on one must never be able to hide
+	 *  behind an earlier, deeper cut on the other, because the two mean different
+	 *  things and are fixed in different places.
+	 *
+	 *  ⚠️ THE PENDING LINE IS THE LATENT HALF. Today's authored pending lines run
+	 *  ~72 bytes and cannot trip this; the first FSM task that makes them longer
+	 *  will, and before TASK-433 it would have corrupted the FSM's own carried
+	 *  state with no way for the FSM to learn it happened. That is exactly the
+	 *  profile of a defect that first fires long after the code that caused it
+	 *  shipped - which is why the latch exists BEFORE the line grows.
+	 *
+	 *  `mutable` for the same reason as the roster latches: the zone builders are
+	 *  const by the §9 signature pin.
+	 */
+	mutable int32 WarnedUtteranceBytes = 0;
+
+	/** Companion to WarnedUtteranceBytes, for the `pending:` line. See its comment. */
+	mutable int32 WarnedPendingBytes = 0;
 
 	/** One-shot log latch for a Zone B that outgrew ZoneBCharReserve (cannot happen with four fixed keys - it is a tripwire for a later key being added without raising the reserve). */
 	mutable bool bWarnedZoneBOverReserve = false;

@@ -155,11 +155,35 @@ USiegeAssistantVocabulary::USiegeAssistantVocabulary()
 	// the architecture: the vocabulary can only ever help the model CHOOSE among
 	// symbols the grammar already permits, never widen them.
 	PlaceSynonyms.Add(MakeSynonym(TEXT("ancient_ground_far"), { TEXT("far ancient ground"), TEXT("far runes"), TEXT("the far ground"), TEXT("their ancient ground") }));
-	PlaceSynonyms.Add(MakeSynonym(TEXT("ancient_ground_near"), { TEXT("ancient ground"), TEXT("near ancient ground"), TEXT("near runes"), TEXT("our ancient ground"), TEXT("the runes") }));
+	// ⚠️ "nearest ancient ground" IS ADDED BECAUSE THE SYMBOL NAMES THEMSELVES
+	// COMPETE, NOT BECAUSE THE ALIAS LIST WAS SHORT. Measured on the dev split:
+	// "send 10 footmen with a sorcerer to the nearest ancient ground" resolved to
+	// `nearest_mine` — the model matched the word "nearest" against the SYMBOL
+	// `nearest_mine` rather than against the head noun "ancient ground". The
+	// alias below beats that pull for the near ground specifically; the general
+	// case (any proximity word in front of any place noun) is not closed here and
+	// is recorded in the handoff as a residual risk.
+	PlaceSynonyms.Add(MakeSynonym(TEXT("ancient_ground_near"), { TEXT("ancient ground"), TEXT("near ancient ground"), TEXT("near runes"), TEXT("nearest ancient ground"), TEXT("our ancient ground"), TEXT("the runes") }));
 	PlaceSynonyms.Add(MakeSynonym(TEXT("enemy_castle"), { TEXT("enemy base"), TEXT("enemy castle"), TEXT("red castle"), TEXT("their base"), TEXT("their castle") }));
 	PlaceSynonyms.Add(MakeSynonym(TEXT("hero"), { TEXT("my hero"), TEXT("my position"), TEXT("where i am") }));
 	PlaceSynonyms.Add(MakeSynonym(TEXT("mid"), { TEXT("center"), TEXT("centre"), TEXT("middle"), TEXT("the capture zone"), TEXT("the middle") }));
-	PlaceSynonyms.Add(MakeSynonym(TEXT("nearest_mine"), { TEXT("gold"), TEXT("gold mine"), TEXT("mine"), TEXT("the mine"), TEXT("the mines") }));
+	// ⚠️⚠️ THE BARE ALIAS "gold" IS REMOVED, AND IT IS THE HIGHEST-CONSEQUENCE
+	// EDIT IN THIS FILE. It mapped an ECONOMY word onto a PLACE symbol, so any
+	// sentence merely CONTAINING the word "gold" acquired a pull toward a mining
+	// order. That is not a hypothetical: the spent generation-1 holdout row
+	// "spend my gold on another ogre" — an order the assistant must REFUSE under
+	// Jonathan's standing ruling that it never spends gold and never plays cards
+	// — came back as `send miner x1 -> nearest_mine`, and this alias is the
+	// mechanism that made a mining order the locally plausible reading.
+	//
+	// The class, not the string: "gold" is a RESOURCE noun, and the player says
+	// it constantly without naming a destination ("we have gold", "save gold",
+	// "how much gold"). The mine as a PLACE is always reachable through a mine
+	// word — "gold mine", "mine", "the mine", "the mines" all survive — so the
+	// removal costs no legitimate phrasing while closing every economy sentence
+	// that used to leak into a place. The refusal itself is taught in Zone A's
+	// rules block and by a few-shot; this removes the lure that competed with it.
+	PlaceSynonyms.Add(MakeSynonym(TEXT("nearest_mine"), { TEXT("gold mine"), TEXT("mine"), TEXT("the mine"), TEXT("the mines") }));
 	PlaceSynonyms.Add(MakeSynonym(TEXT("own_castle"), { TEXT("base"), TEXT("home"), TEXT("my castle"), TEXT("our base"), TEXT("our castle"), TEXT("the keep") }));
 
 	// --- INTENTS -------------------------------------------------------------
@@ -198,9 +222,64 @@ FString USiegeAssistantVocabulary::BuildSynonymTable() const
 	// player-facing string is a game-authored template filled from a reason code).
 	Table += TEXT("[notes]\n");
 	Table += TEXT("wizard != sorcerer. wizard = ranged fire caster. sorcerer = ritualist, cannot attack, empowers friendlies on an ancient ground. mage / caster / spellcaster = ambiguous -> ask which_unit.\n");
+	// ⚠️ THE SECOND COLLIDING PAIR, AND IT NEEDS A NOTE FOR THE SAME REASON THE
+	// FIRST ONE DOES — NOT ANOTHER ALIAS.
+	//
+	// The spent generation-1 holdout answered "bowmen" with `longbowman` when the
+	// answer was `archer`. The tempting read is "the alias was missing", and it is
+	// WRONG: `bowmen` was already an alias of `archer` when that row ran, and it
+	// still lost. So adding aliases could never have fixed it. What actually
+	// competes is the SYMBOL `longbowman`, which literally contains "bowman" — the
+	// same shape as wizard/sorcerer, where two real cards contend for one player
+	// word, and which this table has always handled with a note rather than with
+	// alias surgery. Deleting `longbow`/`longbows` from the longbowman row would
+	// not have helped either: the attractor is the canonical symbol, which cannot
+	// be deleted.
+	//
+	// Stated as a rule over word SHAPE ("only a long- word") rather than as a list
+	// of the four burned strings, so it decides bow-words this project has never
+	// written down.
+	Table += TEXT("archer != longbowman. bow, bows, bowman, bowmen = archer. only a long- word = longbowman.\n");
 	Table += TEXT("send, guard, ambush, follow take a unit list. charge, fallback, rally move the whole army or the hero and take who = none. defend = ambiguous between guard and fallback -> ask which_intent.\n");
-	Table += TEXT("nearest_mine already means the best mine for the player right now. there is no per-mine symbol.\n");
-	Table += TEXT("use only the place symbols listed in the state block. a unit kind that is not listed there does not exist right now -> ask which_unit.\n");
+	// ⚠️⚠️ TWO LINES WERE DELETED HERE AT LADDER LOOP 2, AND DELETION IS THE POINT.
+	// TASK-431 measured the rung-1 wave moving the dev score by exactly ONE row,
+	// with the double-taught row not flipping - so adding prompt content has poor
+	// leverage on this model and REMOVING CONTENT THAT COMPETES is the trade with
+	// better odds. Both deletions are recorded here rather than silently, because
+	// a reader diffing this block will otherwise reasonably think they are gaps.
+	//
+	// ⛔ DELETED 1 - "nearest_mine already means the best mine for the player right
+	// now. there is no per-mine symbol." (96 chars.) It defended against the model
+	// inventing a per-mine symbol, which the GBNF PHYSICALLY FORBIDS: `where` is
+	// generated from the live place list, so an invented symbol cannot be sampled
+	// and this line was buying a guarantee the sampler already gives for free. It
+	// was also the THIRD printed occurrence of the token `nearest_mine` in Zone A,
+	// and that token is a measured attractor - DEV-01 resolves "the nearest ancient
+	// ground" to it, and rung 2's pinned alias did NOT beat it. The one lever
+	// available against an attractor whose symbol cannot be renamed is to print it
+	// less often. 3 occurrences -> 2. ⚠️ The remaining two are load-bearing and
+	// must NOT be chased: the places-block definition teaches the symbol at all,
+	// and the alias row below is what DEV-23 ("guard the nearest mine") rides on.
+	// The head-noun law that replaces this line is a RULE now, in BuildZoneA.
+	//
+	// ⛔ DELETED 2 - the second sentence of the line below, "a unit kind that is
+	// not listed there does not exist right now -> ask which_unit." It contradicted
+	// the refusal rule in BuildZoneA, which routes the same situation to
+	// `unsupported`: one situation, two ask codes, and a model given two routes
+	// weights each less. Worse, "does not EXIST RIGHT NOW" frames an unknown unit
+	// as real-but-absent, which is an invitation to reach for a present substitute
+	// - and substitution is the exact measured defect (DEV-04 answered "catapults"
+	// with a live `sorcerer` order). The phrasing was licensing the failure.
+	// ⚠️ DECLARED TRADE: `which_unit` was arguably the better ASK CODE for a kind
+	// that is real but dead, and that nuance is now gone - everything unknown says
+	// `unsupported`. No corpus row scores the difference (any question passes a
+	// Refuse row), the ask code only picks a player-facing template, and no model
+	// can tell the two cases apart from a roster anyway - which is why the seam
+	// produced two rules instead of one. Cheap to restore if Jonathan wants the
+	// softer template back; it must then be restored as ONE route, not two.
+	// ⚠️ The `mage / caster / spellcaster -> ask which_unit` route is UNTOUCHED -
+	// it is on the first [notes] line and DEV-06/HOLD-09 both ride on it.
+	Table += TEXT("use only the place symbols listed in the state block.\n");
 
 	return Table;
 }

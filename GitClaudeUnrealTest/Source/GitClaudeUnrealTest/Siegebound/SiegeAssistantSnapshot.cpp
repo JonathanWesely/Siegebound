@@ -129,6 +129,73 @@ namespace SiegeAssistantSnapshotInternal
 	{
 		return (FMath::Max(Gold, 0) / 10) * 10;
 	}
+
+	/**
+	 *  THE CUT MARKER (TASK-433 BLOCKER-1). Appended in place of the text
+	 *  MaxUtteranceBytes dropped, so a shortened `order:` / `pending:` line says so
+	 *  IN THE PROMPT and not only in the log. The full design call - why a marker
+	 *  at all, why never a new key, and why this exact wording - is recorded on
+	 *  USiegeAssistantSnapshot::SanitizeForPrompt's declaration.
+	 *
+	 *  Plain editorial English on purpose: Zone A is byte-identical for the life of
+	 *  the process, so the model can never be TAUGHT a symbol here. An ellipsis
+	 *  plus a bracketed word is what a cut quotation looks like everywhere in
+	 *  pretraining, so it needs no teaching.
+	 */
+	static constexpr TCHAR UtteranceTruncationMarker[] = TEXT(" ...[truncated]");
+
+	/** Compile-time enforcement of this file's ASCII law for the ONE literal that now participates in the byte budget. */
+	static constexpr bool IsAsciiLiteral(const TCHAR* Text)
+	{
+		for (; *Text != TEXT('\0'); ++Text)
+		{
+			if (static_cast<uint32>(*Text) >= 0x80u)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	static_assert(IsAsciiLiteral(UtteranceTruncationMarker),
+		"The truncation marker must be ASCII: its byte cost is taken as its character count, and a multi-byte glyph would silently overrun MaxUtteranceBytes.");
+
+	/**
+	 *  The marker's cost in UTF-8 bytes, DERIVED rather than hand-maintained (a
+	 *  transcribed length is the drift defect this file keeps catching elsewhere).
+	 *  ASCII by the assert above, so one byte per character; -1 drops the null.
+	 */
+	static constexpr int32 UtteranceTruncationMarkerBytes = UE_ARRAY_COUNT(UtteranceTruncationMarker) - 1;
+
+	static_assert(UtteranceTruncationMarkerBytes * 4 < USiegeAssistantSnapshot::MaxUtteranceBytes,
+		"The cut marker must stay small next to the cap, or a truncated line is mostly marker.");
+
+	/**
+	 *  UTF-8 byte length of ONE Unicode code point - the unit the snapshot budget
+	 *  is actually spent in. FString stores UTF-16 code units on Windows, so
+	 *  FString::Len() is NOT this number for anything outside ASCII (TASK-433
+	 *  BLOCKER-2): a CJK glyph is 1 unit and 3 bytes, and an emoji is 2 units
+	 *  (a surrogate pair) and 4 bytes.
+	 */
+	static constexpr int32 Utf8LengthOfCodePoint(uint32 CodePoint)
+	{
+		if (CodePoint < 0x80u)
+		{
+			return 1;
+		}
+		if (CodePoint < 0x800u)
+		{
+			return 2;
+		}
+		if (CodePoint < 0x10000u)
+		{
+			return 3;
+		}
+		return 4;
+	}
+
+	static constexpr bool IsHighSurrogate(uint32 Unit) { return Unit >= 0xD800u && Unit <= 0xDBFFu; }
+	static constexpr bool IsLowSurrogate(uint32 Unit)  { return Unit >= 0xDC00u && Unit <= 0xDFFFu; }
 }
 
 void USiegeAssistantSnapshot::ResetSnapshot()
@@ -540,10 +607,19 @@ FString USiegeAssistantSnapshot::BuildZoneA(const USiegeAssistantVocabulary* Voc
 	using namespace SiegeAssistantSnapshotInternal;
 
 	// ⚠️ NOTHING BELOW READS MEMBER STATE. That is the whole contract of Zone A:
-	// same bytes every turn for the life of the process, so llama_kv_cache_seq_rm
+	// same bytes every turn for the life of the process, so llama_memory_seq_rm
 	// keeps the prefix and turn two prefills ~150 tokens instead of ~500.
+	// (The symbol was `llama_kv_cache_seq_rm` here until TASK-433 - it exists
+	// nowhere in the vendored llama.h; see the header's BuildZoneA comment.)
+	// 6144, not 2048: Zone A measured 4314 chars before the accuracy ladder and
+	// 5108 at TASK-431's MEASURED run. ⚠️ THIS COMMENT SAID 5111 AND THAT WAS
+	// STALE (qa NIT-5) - 5111 was the pre-re-gate draft, before the refusal
+	// exemplar's noun got 3 chars shorter. Ladder loop 2 lands it at 5116. The
+	// old hint had been undersized since well before rung 1 grew it. This changes
+	// no emitted byte - it only stops the builder reallocating three times on a
+	// string whose length is fixed and known.
 	FString Out;
-	Out.Reserve(2048);
+	Out.Reserve(6144);
 
 	Out += TEXT("[RULES]\n");
 	Out += TEXT("Turn ONE Siegebound order into ONE JSON command. Output the JSON object only: no prose, no explanation.\n");
@@ -630,6 +706,181 @@ FString USiegeAssistantSnapshot::BuildZoneA(const USiegeAssistantVocabulary* Voc
 	Out += TEXT("- Ask for the count the player said even if the roster holds fewer; the game reports the shortfall.\n");
 	Out += TEXT("- One order in, one command out. You never see an earlier turn.\n");
 	Out += TEXT("- If the order is not one of the seven intents, return a question instead of guessing.\n");
+
+	// ⚠️⚠️ THE FIVE RULES BELOW ARE THE PROSE HALF OF THE ACCURACY LADDER'S RUNG
+	// 1. Each is paired with a few-shot further down, because the measured
+	// evidence is that NEITHER ALONE IS ENOUGH: the [notes] block has always said
+	// an unlisted kind should become a question, and the model shipped a command
+	// anyway; conversely `bowmen` was already an alias and still lost to a symbol.
+	// A rule states the principle so it reaches sentences nobody wrote down; the
+	// example shows the shape. They are deliberately redundant with each other.
+	//
+	// ⚠️⚠️ LADDER LOOP 2 REWROTE FOUR OF THESE FIVE LINES, AND THE REASON IS A
+	// MEASUREMENT, NOT A PREFERENCE. TASK-431 scored the rung-1 wave at 19/25
+	// against a gate of 22 - ONE row over baseline - and the row that had been
+	// taught TWICE OVER (a near-paraphrase few-shot AND a pinned alias) did not
+	// flip. That is evidence that ADDING examples has poor leverage on this
+	// model, so loop 2 adds none. What it does instead is (i) sharpen these rules
+	// from descriptions into EXECUTABLE CONSTRAINTS - an antecedent the model can
+	// test, then one instruction - and (ii) DELETE the prompt lines that were
+	// contradicting them. Two deletions landed in the vocabulary's [notes] block;
+	// see SiegeAssistantVocabulary.cpp. The net cost of the whole loop is +8
+	// chars, because the sharpening is paid for by the deletions.
+	//
+	// ⚠️ THE FIRST TWO ARE SAFETY, NOT ACCURACY, AND THEY ARE NOT INTERCHANGEABLE
+	// WITH THE OTHER THREE. Both refusal classes were measured emitting live orders:
+	// a unit that does not exist became a real `sapper` order, and an order about
+	// gold became a real mining order. The grammar cannot catch either by
+	// construction — both are structurally valid commands that are semantically
+	// wrong (CONVENTIONS §1: constrain identity hard, leave quantity soft), and
+	// `{"ask":"unsupported"}` has always existed in the grammar with nothing
+	// routing to it. A silently-executed refused order is worse than no assistant.
+	//
+	// ⚠️ AND THEY ARE SCOPED NARROWLY ON PURPOSE — "when unsure, ask" IS NOT
+	// WRITTEN HERE AND MUST NOT BE. The scorer counts a question as SKIPPING every
+	// asserted field, so a model that learns to ask more often converts rows that
+	// currently pass STRICT into rows that pass only LENIENT. STRICT == LENIENT is
+	// a property this feature's whole measurement leans on. Teaching refusal for
+	// TWO named situations buys the safety class without spending that property.
+
+	// ⚠️⚠️ REWRITTEN AT LOOP 2. The rung-1 wording ("A name that is not a
+	// Siegebound unit kind does not exist. Never swap in a listed kind") was
+	// MEASURED failing on DEV-04 - and failing informatively. Two things came out
+	// of that run and both are in the line below:
+	//
+	//  1. IT NEVER TOLD THE MODEL WHERE TO LOOK. "a Siegebound unit kind" is an
+	//     abstraction the model cannot test; there is no list in this prompt with
+	//     that name. The roster under [FORCES] IS that list, and the schema block
+	//     above already points `KIND` at it. The rule now points at the same
+	//     place, so the antecedent is a membership test the model can actually
+	//     run instead of a fact it has to already know.
+	//  2. ⚠️ THE SUBSTITUTION IS SLOT-FILLING FROM AN EXAMPLE, NOT A SEMANTIC
+	//     NEIGHBOUR. Baseline answered "catapults" with `sapper` (demolition -
+	//     the plausible near-miss). After rung 1 it answered `sorcerer`, and
+	//     {"kind":"sorcerer","n":1} is a CHARACTER-FOR-CHARACTER SUBSTRING of
+	//     few-shot #1's output. The model was not reaching for the nearest unit,
+	//     it was copying a slot out of the nearest example. "Never swap in a
+	//     listed kind" does not forbid that, because from the model's seat it is
+	//     not a swap - nothing was there to swap. The second sentence below
+	//     forbids it directly and in the only terms that cover it: the kind has
+	//     to have come from the PLAYER.
+	//
+	// ⚠️ SHIPPED-VS-MEASURED HAZARD, DECLARED: [FORCES] is truncated to
+	// MaxRosterKinds (8) in the shipped snapshot but NOT in the spike fixture,
+	// which prints all 13. So on a >8-kind board this rule can refuse a kind that
+	// is alive and simply got collapsed into `other_kinds`. The prompt already
+	// carried that hazard (the [notes] line loop 2 deleted said the same thing);
+	// this concentrates it into a rule, which makes it worse, not better. It is
+	// board ruling 7's condition biting a second time and it is TASK-416's
+	// constant to move, not mine.
+	Out += TEXT("- If the unit named is not a kind in [FORCES], answer {\"ask\":\"unsupported\"}. Never write a kind the player did not name.\n");
+	// ⛔⛔ THIS LINE IS BYTE-FROZEN AT LOOP 2 AND MUST NOT BE TOUCHED. It is the
+	// one taught class TASK-431 measured LANDING: the card-play/economy refusal
+	// went from 2-of-3 Refuse rows emitting live orders to 1-of-3, and the row it
+	// fixed is the one that was breaking Jonathan's standing ruling that the
+	// assistant never spends gold and never plays cards. Loop 2 changed the rule
+	// above it and the rule below it; this one keeps its exact bytes AND its exact
+	// position in the block, because position is the only other variable a
+	// rewrite could have moved.
+	Out += TEXT("- Gold, buying and card play are the player's, never yours: {\"ask\":\"unsupported\"}.\n");
+
+	// ⚠️⚠️ THE SELECTION RULE, REWRITTEN AT LOOP 2 - AND THIS IS THE HIGHEST-VALUE
+	// LINE IN THE BLOCK, BECAUSE THE OLD ONE WAS NOT MERELY WEAK, IT WAS OUTVOTED.
+	//
+	// QA rated this class STRONGEST on public evidence. TASK-431 measured it
+	// failing TWICE - DEV-07 ("charge with the footmen") and DEV-16 ("infantry
+	// back to our castle now"), both collapsing to who:"none". Reading the two
+	// outputs next to this prompt says why, and it is not that the model missed
+	// the rule. COUNT THE INSTRUCTIONS:
+	//
+	//   who = "none"   intents block, `charge` line          (1)
+	//   who = "none"   intents block, `fallback` line        (2)
+	//   who = "none"   intents block, `rally` line           (3)
+	//   who = "none"   vocabulary [notes], the intents line  (4)
+	//   keep the units the OLD rule here                     (1)
+	//
+	// ⇒ Once the model latched `charge` off the verb or `fallback` off "back",
+	// this prompt ORDERED it to emit who:"none", four times over, and the old
+	// rule asked it not to, once. IT WAS OBEYING. The rung-1 handoff counted that
+	// four-fold repetition as a saving ("already said twice, and Zone A pays for
+	// every repetition") - it was not a saving, it was the competitor.
+	//
+	// ⚠️ SO THE FIX IS NOT MORE EMPHASIS ON "who", IT IS TO ORDER THE DECISION.
+	// The real law is that the SELECTION PICKS THE INTENT, not the verb: if the
+	// player named units, an army-wide intent is not available at all, so
+	// who:"none" is never reached and there is nothing left to contend with. The
+	// line below states exactly that, as a constraint with a testable antecedent,
+	// and it names the three forbidden intents explicitly because naming them is
+	// the half that beats the verb latch. It supplies the MISSING IMPLICATION
+	// DIRECTION: [notes] already says send/guard/ambush/follow take a unit list
+	// and charge/fallback/rally take none; nothing anywhere said that naming
+	// units therefore RULES OUT the second group. Now something does.
+	//
+	// ⚠️ IT ALSO FIXES DEV-16 ENTIRELY ON ITS OWN THREE BROKEN FIELDS. That row
+	// failed intent, kinds AND counts, and all three are downstream of the single
+	// wrong choice of `fallback` - `own_castle` was already right. One rule, one
+	// decision, three fields.
+	//
+	// ⚠️ REPLACES rather than joins the old line, deliberately: the old rule is
+	// the one that was measured losing, it states the goal where this states the
+	// mechanism, and every row where it would still apply on its own (a
+	// unit-taking intent already chosen, e.g. DEV-22) is a row the model already
+	// gets right. Keeping both would spend tokens to re-state a lost argument.
+	// Few-shot #6 ("i want the footmen to rush" -> send) is this rule's exemplar
+	// and already sits in the block, unchanged.
+	Out += TEXT("- If the player names units, the intent is send, guard, ambush or follow, never charge, fallback or rally.\n");
+
+	// The quantity rule, which is one axis with three ways to fall off it — the
+	// model was observed missing in BOTH directions, so a one-sided rule would
+	// have traded one failure for its mirror image. "the wizard" became "all",
+	// while "clerics follow me" became n:2 — and 2 is the number of clerics ON THE
+	// BOARD, i.e. the model read the quantity out of the roster in Zone C instead
+	// of out of the sentence. That last clause is the one that generalises: the
+	// roster says what EXISTS, never what was ASKED FOR, and reading a count from
+	// it also makes the shortfall the rule above deliberately preserves invisible.
+	//
+	// ⚠️ LOOP 2 REORDERED THE CLAUSES, AND THE REORDER IS THE WHOLE EDIT. The
+	// third clause WORKED: DEV-20 stopped answering n:2, so the roster copy is
+	// dead. It then answered n:1, which is the OTHER branch of this same rule -
+	// so the model reached the rule, read it, and took the wrong arm of it. Two
+	// reasons it would: the antecedent ("no number was said") was never stated,
+	// it was only implied by the word "bare"; and "Singular = 1" was written
+	// FIRST, which is also the arm few-shot #3 demonstrates most recently. The
+	// rewrite states the antecedent up front and puts the plural arm first.
+	// ⚠️ Confidence here is honestly MEDIUM-LOW - this is a word-order change to
+	// a rule the model demonstrably already read, and DEV-17 ("horsemen go hit
+	// their castle" -> all) proves it can take the plural arm unaided. If DEV-20
+	// still comes back n:1, the finding is that clause ORDER does not steer this
+	// model and no further rewording of this line is worth a loop.
+	Out += TEXT("- No number said: a plural = \"all\", a singular = 1. Never copy a count from the roster.\n");
+
+	// ⚠️ NEW AT LOOP 2 - AND IT IS A CLASS FIX WHERE RUNG 1 SHIPPED AN INSTANCE.
+	// DEV-01 ("...to the nearest ancient ground") resolved to `nearest_mine`, and
+	// rung 2 answered it with a pinned alias, `ancient_ground_near <- nearest
+	// ancient ground`. ⛔ TASK-431 MEASURED THAT ALIAS FAILING TO FIX ITS OWN
+	// EXACT TARGET STRING. An alias is a lookup and this model does not do
+	// lookups, it does association - and in association space the token "nearest"
+	// was bound to the SYMBOL `nearest_mine`, which the prompt printed THREE
+	// times (places block, [places] alias row, [notes] line) against one buried
+	// mid-list occurrence of "nearest ancient ground". 3 to 1, and the alias lost.
+	//
+	// ⛔ THE SYMBOL CANNOT BE RENAMED (CONVENTIONS §9a pins the place set, the
+	// corpora assert the spellings), so the only two moves available are to cut
+	// the attractor's occurrences and to state the head-noun law as a rule. Loop
+	// 2 does both: the redundant [notes] line is deleted in
+	// SiegeAssistantVocabulary.cpp (3 occurrences -> 2), and this line states the
+	// mechanism - THE NOUN DECIDES, THE MODIFIER ONLY NARROWS.
+	//
+	// ⚠️ IT IS WORDED TO PROTECT DEV-23, WHICH CURRENTLY PASSES. "guard the
+	// nearest mine with 3 footmen" legitimately wants `nearest_mine`, so a rule
+	// saying "nearest never picks a place" would have bought DEV-01 and paid for
+	// it with DEV-23. Noun-first buys both: nearest MINE -> the mine, nearest
+	// ANCIENT GROUND -> the ancient ground. It also generalises to "closest",
+	// which rung 1 cut for budget and named as its most likely holdout miss.
+	// ⚠️ It deliberately does NOT print `nearest_mine` - writing the wrong answer
+	// next to the trigger word is how you feed an attractor, not how you starve
+	// one, and the whole point of this line is to stop feeding it.
+	Out += TEXT("- Choose a place by its noun - ancient ground, mine, castle, centre. near, nearest and far only say which one.\n");
 	Out += TEXT("\n");
 
 	// The synonym table is the ONLY part of Zone A that varies, and it varies
@@ -658,22 +909,131 @@ FString USiegeAssistantSnapshot::BuildZoneA(const USiegeAssistantVocabulary* Voc
 	}
 	Out += TEXT("\n");
 
-	// THREE few-shots (the count is pinned by CONVENTIONS §8), chosen to cover
-	// the three `who` SHAPES rather than three verbs - which is what a small
-	// model actually generalises from:
-	//   1. a multi-kind selection array (the feature's flagship sentence)
-	//   2. a single-kind array using the "all" count sentinel
-	//   3. who == "none" for an army-wide verb, with where == "none" too
-	// The fourth shape - the {"ask":...} question branch - is taught by the
-	// schema block above rather than by an example, because the example count is
-	// pinned. If TASK-413's bar-#5 run shows the model never declining, a fourth
-	// shot is the first thing to try: Zone A changes are content-lock-time and
-	// cost one cache warm-up, not a code change anywhere else.
+	// SEVEN few-shots. The count was pinned at three by CONVENTIONS §8, and the
+	// clause directly below the pin said what would retire it: "if the bar-#5 run
+	// shows the model never declining, a fourth shot is the first thing to try."
+	// The run happened. The model never declined — 2 of 3 refusal rows came back
+	// as executable orders — so the pin is spent exactly as its author intended,
+	// under Jonathan's ruling to climb the prompt ladder (rung 1) before reaching
+	// for a bigger model. The original three are UNCHANGED and still first: they
+	// cover the three `who` SHAPES (multi-kind array / "all" sentinel / "none"),
+	// which is what a small model actually generalises from, and every row that
+	// passes today passes because of them.
+	//
+	// The four new ones teach the four MECHANISMS that were measured failing.
+	// ⚠️ ORDERING IS LOAD-BEARING TWICE OVER, so nothing here may be resorted:
+	//   · #3 sits immediately after #2 to form a MINIMAL PAIR — same verb, same
+	//     kind, and the ONLY difference is the determiner, which flips the count
+	//     from "all" to 1. A minimal pair is the cheapest way to teach a small
+	//     model a distinction, because everything except the distinction is held
+	//     constant across two adjacent lines.
+	//   · #6 sits immediately before #7 to form the second one — units named
+	//     (keep them) against no units named (charge with "none"). That contrast
+	//     IS the failure: the army-wide verb was swallowing the selection.
+	//   · The two refusals sit in the MIDDLE and the block still ENDS on a
+	//     command. Recency pulls a small model toward the last example it read,
+	//     and a block ending in {"ask":...} would raise refusals on rows that must
+	//     execute — trading the accuracy bar for the safety one instead of buying
+	//     both. Five of seven remain commands for the same reason.
+	//
+	// ⚠️ §9c SEAM — DELIBERATELY NOT WIDENED. The emitted JSON below names only
+	// `footman`, `sorcerer` and `archer`: exactly the three symbols the original
+	// three examples already named, and not one more. Zone A is byte-identical for
+	// process life while the grammar's KIND alternatives come from the LIVE
+	// roster, so any kind named here is a symbol the sampler may forbid on a board
+	// that lacks it — with no log line saying so. That seam is open and is
+	// TASK-433's to read; this task refuses to make it wider for the sake of
+	// pedagogical variety. Note the two refusals are seam-FREE by construction:
+	// their sentences mention units ("werewolves", "pikemen") but their OUTPUT
+	// names no kind at all, so an input word can never become a forbidden symbol.
 	Out += TEXT("examples:\n");
 	Out += TEXT("order: send ten footmen with a sorcerer to the ancient ground on our side\n");
 	Out += TEXT("{\"intent\":\"send\",\"who\":[{\"kind\":\"footman\",\"n\":10},{\"kind\":\"sorcerer\",\"n\":1}],\"where\":\"ancient_ground_near\",\"when\":\"now\"}\n");
 	Out += TEXT("order: all archers guard the middle\n");
 	Out += TEXT("{\"intent\":\"guard\",\"who\":[{\"kind\":\"archer\",\"n\":\"all\"}],\"where\":\"mid\",\"when\":\"now\"}\n");
+
+	// (d) DETERMINER -> QUANTITY. The minimal pair with the line above. Also the
+	// only example that emits `own_castle`, which is the canonical symbol that has
+	// already cost two QA loops in its `my_castle` spelling.
+	Out += TEXT("order: the archer guards our castle\n");
+	Out += TEXT("{\"intent\":\"guard\",\"who\":[{\"kind\":\"archer\",\"n\":1}],\"where\":\"own_castle\",\"when\":\"now\"}\n");
+
+	// (a) OUT-OF-ROSTER REFUSAL. The place is deliberately unambiguous ("the
+	// middle" is a real alias of `mid`): the lesson is that the refusal is decided
+	// by the UNIT ALONE and a perfectly parseable remainder does not rescue it —
+	// which is precisely how the measured failure went wrong, snapping an unknown
+	// siege engine onto the nearest listed kind and shipping the rest verbatim.
+	// The unit named is NOT a siege engine, on purpose: the class is "not in the
+	// roster", not "siege engines are refused", and a siege-engine exemplar would
+	// have taught the narrower rule. It is also a BARE SINGLE-WORD PLURAL on
+	// purpose: a <modifier> <noun> invented unit carries a second, unwanted lesson
+	// ("the modifier is what disqualified it"), which is the same narrowing the
+	// no-siege-engine choice exists to avoid. And it keeps a plausible pull toward
+	// a listed kind (ogre <- brute, brutes, giant, giants), so the shot teaches
+	// refusal UNDER TEMPTATION rather than refusal of something obviously alien —
+	// and temptation is the measured failure: an unknown noun snapping onto the
+	// nearest listed kind.
+	//
+	// ⛔⛔ DO NOT RE-AUTHOR THIS NOUN FROM IMAGINATION. An earlier draft named a
+	// different invented unit, and the TASK-430 gate found it collided LITERALLY
+	// with a row in the SEALED holdout corpus — a file this task may not open and
+	// did not open. Neither side was careless: two agents given the same public
+	// brief ("a non-existent unit, and NOT a siege engine") drew from the same
+	// small pool of salient fantasy units and converged on the same word, and
+	// NEITHER COULD SEE IT. Only the one pass allowed to open both sides could.
+	// The noun below was cleared against an explicit absence certificate covering
+	// all three corpus files. Any future change to it must be cleared the same
+	// way, by that same pass; changing it "for variety" re-runs the experiment
+	// that produced the collision. ⚠️ The retired word is deliberately NOT named
+	// here — naming it would write a fact about the SEALED file into the source
+	// tree, which is the seal leaking by a different door.
+	//
+	// ⚠️⚠️ LOOP 2 CHANGED THE FRAME AND NOT THE NOUN, AND THE SPLIT IS DELIBERATE.
+	// ⛔ THE NOUN IS FROZEN: re-authoring it from imagination is the exact
+	// experiment that produced the TASK-430 collision, and this pass cannot get a
+	// fresh absence certificate because it may not open either holdout. It stays.
+	//
+	// The FRAME is a different matter, and TASK-431 measured it as a defect. The
+	// comment above claims this shot teaches that "a perfectly parseable remainder
+	// does not rescue an impossible subject" - but as rung 1 wrote it, the shot
+	// had NO VERB, so it never contained a parseable remainder to be rescued by.
+	// It did not demonstrate the lesson it was designed around. Meanwhile the
+	// measured failure (DEV-04) arrives in `send X at Y`, and `send X to Y` was
+	// the frame of exactly ONE example in this block - few-shot #1 - which is a
+	// COMMAND. So every send-framed sentence in the corpus pattern-matched to the
+	// one send-framed exemplar and inherited its shape, which is precisely what
+	// the {"kind":"sorcerer","n":1} slot-fill looks like. Adding `send` here puts
+	// a REFUSAL in the dominant frame, so the frame stops deciding and the unit
+	// word starts: send + a listed kind -> command (#1), send + a word that is
+	// not a kind -> {"ask":"unsupported"} (here). That contrast IS the lesson.
+	//
+	// ⚠️ It stays a BARE plural ("send werewolves", not "send the werewolves") on
+	// purpose - the determiner rule must still lose to the refusal, which is what
+	// the bare form tested at rung 1, and the bare form is also one token further
+	// from the dev sentence. Word-overlap against DEV-04 is 0.22 (Jaccard), inside
+	// the 0.25 band the whole block was cleared at; no burned surface form is used.
+	Out += TEXT("order: send werewolves to the middle\n");
+	Out += TEXT("{\"ask\":\"unsupported\"}\n");
+
+	// (b) ECONOMY / CARD-PLAY REFUSAL — the highest-value line in this block.
+	// It names a kind that IS on the roster (`pikemen`), because the failure this
+	// teaches against is not "unknown word" but "the object is real, so the model
+	// finds a legal-looking order for it". It also contains the word "gold" while
+	// resolving to a refusal, which is the second half of removing the bare `gold`
+	// place alias in SiegeAssistantVocabulary.cpp: the alias made "gold" pull
+	// toward a mine, and this line makes it pull toward a refusal instead.
+	Out += TEXT("order: get two more pikemen with our gold\n");
+	Out += TEXT("{\"ask\":\"unsupported\"}\n");
+
+	// (c) SELECTION-PRESERVING. "rush" is a listed `charge` alias, so the sentence
+	// contains a genuine army-wide cue AND a named selection — the exact conflict
+	// that was resolving as who:"none". The selection wins and the place, which
+	// the player never gave, becomes "none" rather than being invented; that is
+	// the same shape the model already produces correctly when a destination is
+	// unrecognised, so this teaches a reuse of a behaviour it has, not a new one.
+	Out += TEXT("order: i want the footmen to rush\n");
+	Out += TEXT("{\"intent\":\"send\",\"who\":[{\"kind\":\"footman\",\"n\":\"all\"}],\"where\":\"none\",\"when\":\"now\"}\n");
+
 	Out += TEXT("order: everyone attack\n");
 	Out += TEXT("{\"intent\":\"charge\",\"who\":\"none\",\"where\":\"none\",\"when\":\"now\"}\n");
 
@@ -850,10 +1210,21 @@ FString USiegeAssistantSnapshot::BuildZoneC(const FString& Utterance, const FStr
 	// clarification turn carries context forward WITHOUT ever feeding the model
 	// its own previous output. Sanitised anyway - one stray newline here would
 	// let a line forge a key.
-	const FString SafePending = SanitizeForPrompt(PendingLine);
+	//
+	// ⚠️ BOTH LINES NOW REPORT THEIR OWN TRUNCATION (TASK-433 BLOCKER-1). The cap
+	// used to cut mid-word with no log, no latch and no marker - which made the two
+	// strings that come from OUTSIDE this file the only truncations in the whole
+	// snapshot that nothing observed. Each line carries its own latch: they mean
+	// different things and are fixed in different places, so a deep cut on one must
+	// not be able to hide behind a deeper cut on the other.
+	int32 PendingFlattenedBytes = 0;
+	const FString SafePending = SanitizeForPrompt(PendingLine, PendingFlattenedBytes);
+	ReportLineTruncation(TEXT("pending"), PendingFlattenedBytes, WarnedPendingBytes);
 	Tail.Appendf(TEXT("pending: %s\n"), SafePending.IsEmpty() ? TEXT("none") : *SafePending);
 
-	const FString SafeUtterance = SanitizeForPrompt(Utterance);
+	int32 UtteranceFlattenedBytes = 0;
+	const FString SafeUtterance = SanitizeForPrompt(Utterance, UtteranceFlattenedBytes);
+	ReportLineTruncation(TEXT("order"), UtteranceFlattenedBytes, WarnedUtteranceBytes);
 	Tail += TEXT("[ORDER]\n");
 	Tail.Appendf(TEXT("order: %s\n"), SafeUtterance.IsEmpty() ? TEXT("none") : *SafeUtterance);
 
@@ -901,7 +1272,7 @@ FString USiegeAssistantSnapshot::BuildZoneC(const FString& Utterance, const FStr
 			? TEXT("the CHARACTER BUDGET, below the MaxRosterKinds cap")
 			: TEXT("the MaxRosterKinds cap");
 
-		// Always-on per-turn record. Verbose costs nothing in normal play and is
+		// Unlatched per-turn record. Verbose costs nothing in normal play and is
 		// what makes a degraded turn RECONSTRUCTABLE afterwards - the Warning
 		// below deliberately fires once per escalation, so it cannot tell you
 		// which particular sentence was answered against a trimmed roster.
@@ -925,21 +1296,30 @@ FString USiegeAssistantSnapshot::BuildZoneC(const FString& Utterance, const FStr
 	return Head + RosterBlock + Tail;
 }
 
-FString USiegeAssistantSnapshot::SanitizeForPrompt(const FString& In)
+FString USiegeAssistantSnapshot::SanitizeForPrompt(const FString& In, int32& OutFlattenedBytes)
 {
+	using namespace SiegeAssistantSnapshotInternal;
+
 	// The prompt layout is LINE-ORIENTED, so a newline in player text could
 	// forge a key ("order: hi\nplaces: enemy_castle") and a pasted paragraph
-	// could swamp the context. Flatten, collapse, cap.
-	FString Out;
-	Out.Reserve(FMath::Min(In.Len(), MaxUtteranceChars) + 1);
+	// could swamp the context. Flatten, collapse, cap - and, since TASK-433, SAY SO
+	// when the cap bites, on both channels: the log and the prompt itself.
+	//
+	// ⚠️ TWO PASSES, AND THE SPLIT IS THE POINT. The old single pass stopped the
+	// instant the output reached the cap, so it could never know how much text
+	// there had actually been - which is both the number that makes a truncation
+	// report worth reading and the magnitude the escalating latch compares. The
+	// extra walk is over one line a human typed or pasted, which is nothing beside
+	// the inference call this prompt is being built for.
+
+	// ── PASS 1 - FLATTEN, UNCAPPED ──
+	FString Flattened;
+	Flattened.Reserve(In.Len() + 1);
 
 	bool bPreviousWasSpace = true; // leading whitespace is dropped
-	for (const TCHAR Character : In)
+	for (int32 Index = 0; Index < In.Len(); ++Index)
 	{
-		if (Out.Len() >= MaxUtteranceChars)
-		{
-			break;
-		}
+		const TCHAR Character = In[Index];
 
 		const bool bIsSpace = (Character == TEXT('\n')) || (Character == TEXT('\r'))
 			|| (Character == TEXT('\t')) || (Character == TEXT(' '));
@@ -947,16 +1327,129 @@ FString USiegeAssistantSnapshot::SanitizeForPrompt(const FString& In)
 		{
 			if (!bPreviousWasSpace)
 			{
-				Out.AppendChar(TEXT(' '));
+				Flattened.AppendChar(TEXT(' '));
 				bPreviousWasSpace = true;
 			}
 			continue;
 		}
 
-		Out.AppendChar(Character);
+		// ⚠️ A SURROGATE PAIR MOVES AS ONE (TASK-433 BLOCKER-2, second half). An
+		// emoji is TWO FString code units and ONE code point; carrying them
+		// together here is what lets pass 2's cut land only on code-point
+		// boundaries, so the prompt can never be handed half a character.
+		const uint32 Unit = static_cast<uint32>(Character);
+		if (IsHighSurrogate(Unit) && (Index + 1) < In.Len() && IsLowSurrogate(static_cast<uint32>(In[Index + 1])))
+		{
+			Flattened.AppendChar(Character);
+			Flattened.AppendChar(In[Index + 1]);
+			++Index;
+			bPreviousWasSpace = false;
+			continue;
+		}
+
+		if (IsHighSurrogate(Unit) || IsLowSurrogate(Unit))
+		{
+			// An UNPAIRED surrogate is not text and has no UTF-8 encoding at all.
+			// Dropping it is the only option that leaves the line convertible;
+			// forwarding it would hand the downstream UTF-8 conversion something it
+			// can only guess about. Unreachable from ASCII input, so this cannot
+			// move any measured figure.
+			continue;
+		}
+
+		Flattened.AppendChar(Character);
 		bPreviousWasSpace = false;
 	}
 
+	Flattened.TrimEndInline();
+
+	// ── PASS 2 - MEASURE IN UTF-8 BYTES, THE UNIT THE BUDGET IS ACTUALLY SPENT IN ──
+	// ⚠️ FString::Len() counts UTF-16 CODE UNITS, and that equals the byte count
+	// ONLY for ASCII - which is exactly the assumption BLOCKER-2 was about, because
+	// the 2.71 chars/token ratio behind MaxSnapshotChars was calibrated on ASCII
+	// while these two lines are the only ones a player can fill with anything else.
+	// Every high surrogate reaching here is paired, by construction in pass 1.
+	const int32 ContentBudgetBytes = MaxUtteranceBytes - UtteranceTruncationMarkerBytes;
+
+	OutFlattenedBytes = 0;
+	int32 CutIndex = INDEX_NONE;
+
+	for (int32 Index = 0; Index < Flattened.Len(); )
+	{
+		uint32 CodePoint = static_cast<uint32>(Flattened[Index]);
+		int32 UnitsConsumed = 1;
+
+		if (IsHighSurrogate(CodePoint) && (Index + 1) < Flattened.Len())
+		{
+			const uint32 LowUnit = static_cast<uint32>(Flattened[Index + 1]);
+			CodePoint = 0x10000u + ((CodePoint - 0xD800u) << 10) + (LowUnit - 0xDC00u);
+			UnitsConsumed = 2;
+		}
+
+		const int32 CodePointBytes = Utf8LengthOfCodePoint(CodePoint);
+
+		// The LAST boundary that still leaves room for the marker. Recorded on the
+		// way past rather than searched for afterwards, so the whole measurement is
+		// one walk.
+		if (CutIndex == INDEX_NONE && (OutFlattenedBytes + CodePointBytes) > ContentBudgetBytes)
+		{
+			CutIndex = Index;
+		}
+
+		OutFlattenedBytes += CodePointBytes;
+		Index += UnitsConsumed;
+	}
+
+	if (OutFlattenedBytes <= MaxUtteranceBytes)
+	{
+		// ⚠️ THE PATH THAT MUST NOT MOVE. For an all-ASCII line - which is every
+		// line any measured figure in this file was taken from - this returns
+		// EXACTLY what the pre-TASK-433 sanitiser returned, byte for byte: the
+		// flattening rules above are unchanged, and the old cap could never fire
+		// below 240 output units either.
+		return Flattened;
+	}
+
+	// ── TRUNCATING ──
+	// ⚠️ THE MARKER'S BYTES COME OUT OF THE CAP, NEVER ON TOP OF IT. A capped line
+	// is therefore at most MaxUtteranceBytes exactly as it was before TASK-433, so
+	// Zone C's tail, the roster budget derived from it and every figure computed
+	// off those are all untouched. Paying for visibility out of the payload is the
+	// whole reason this is affordable.
+	FString Out = Flattened.Left((CutIndex == INDEX_NONE) ? 0 : CutIndex);
 	Out.TrimEndInline();
+	Out += UtteranceTruncationMarker;
+
 	return Out;
+}
+
+void USiegeAssistantSnapshot::ReportLineTruncation(const TCHAR* LineKey, int32 FlattenedBytes, int32& WarnedBytes) const
+{
+	using namespace SiegeAssistantSnapshotInternal;
+
+	if (FlattenedBytes <= MaxUtteranceBytes)
+	{
+		return;
+	}
+
+	const int32 OverByBytes = FlattenedBytes - MaxUtteranceBytes;
+	const int32 KeptTextBytes = MaxUtteranceBytes - UtteranceTruncationMarkerBytes;
+
+	// Unlatched per-turn record, the same shape the roster collapse uses: the
+	// Warning below fires once per escalation, so it can never tell you WHICH
+	// sentence was answered against a cut line.
+	UE_LOG(LogSiegeAssistant, Verbose,
+		TEXT("Snapshot `%s:` line cut: %d flattened UTF-8 byte(s), %d over the %d-byte MaxUtteranceBytes cap; the model sees at most a %d-byte prefix followed by `%s`."),
+		LineKey, FlattenedBytes, OverByBytes, MaxUtteranceBytes, KeptTextBytes, UtteranceTruncationMarker);
+
+	// Escalating, never one-shot - a new and DEEPER cut can never hide behind an
+	// earlier, milder one, and a steady state still logs once.
+	if (FlattenedBytes > WarnedBytes)
+	{
+		WarnedBytes = FlattenedBytes;
+
+		UE_LOG(LogSiegeAssistant, Warning,
+			TEXT("Snapshot `%s:` line TRUNCATED by the MaxUtteranceBytes cap (%d): %d flattened UTF-8 byte(s), %d over. The model sees at most a %d-byte prefix plus `%s`. On `order:` this is the player's own sentence - the one string in the snapshot that comes from outside the program - and the grammar still produces a well-formed command from half of it, which is the valid-shaped-wrong-command failure CONVENTIONS 1 exists to prevent. On `pending:` it is the FSM's carried clarification state, which nothing downstream can recover. Shorten the line upstream; do NOT raise the cap to hide this - it is a proxy for the 400-token budget, and TASK-423 replaces it with the tokenizer."),
+			LineKey, MaxUtteranceBytes, FlattenedBytes, OverByBytes, KeptTextBytes, UtteranceTruncationMarker);
+	}
 }

@@ -219,7 +219,7 @@ static const TCHAR* const TagWarn     = TEXT("SPIKE_WARN");
 
 static void AppendZoneA(FString& Out)
 {
-	Out.Reserve(Out.Len() + 4096);
+	Out.Reserve(Out.Len() + 6144);
 
 	Out += TEXT("[RULES]\n");
 	Out += TEXT("Turn ONE Siegebound order into ONE JSON command. Output the JSON object only: no prose, no explanation.\n");
@@ -274,6 +274,14 @@ static void AppendZoneA(FString& Out)
 	Out += TEXT("- Ask for the count the player said even if the roster holds fewer; the game reports the shortfall.\n");
 	Out += TEXT("- One order in, one command out. You never see an earlier turn.\n");
 	Out += TEXT("- If the order is not one of the seven intents, return a question instead of guessing.\n");
+	// The five accuracy-ladder rules, transcribed from the landed BuildZoneA at
+	// ladder loop 2 (2 refusal, 1 selection/intent, 1 quantity, 1 place). Reasoning
+	// lives in the shipped file: a MIRROR that argues its own case invites drift.
+	Out += TEXT("- If the unit named is not a kind in [FORCES], answer {\"ask\":\"unsupported\"}. Never write a kind the player did not name.\n");
+	Out += TEXT("- Gold, buying and card play are the player's, never yours: {\"ask\":\"unsupported\"}.\n");
+	Out += TEXT("- If the player names units, the intent is send, guard, ambush or follow, never charge, fallback or rally.\n");
+	Out += TEXT("- No number said: a plural = \"all\", a singular = 1. Never copy a count from the roster.\n");
+	Out += TEXT("- Choose a place by its noun - ancient ground, mine, castle, centre. near, nearest and far only say which one.\n");
 	Out += TEXT("\n");
 
 	Out += TEXT("synonyms:\n");
@@ -294,11 +302,14 @@ static void AppendZoneA(FString& Out)
 	Out += TEXT("wizard <- wizards\n");
 	Out += TEXT("[places]\n");
 	Out += TEXT("ancient_ground_far <- far ancient ground, far runes, the far ground, their ancient ground\n");
-	Out += TEXT("ancient_ground_near <- ancient ground, near ancient ground, near runes, our ancient ground, the runes\n");
+	Out += TEXT("ancient_ground_near <- ancient ground, near ancient ground, near runes, nearest ancient ground, our ancient ground, the runes\n");
 	Out += TEXT("enemy_castle <- enemy base, enemy castle, red castle, their base, their castle\n");
 	Out += TEXT("hero <- my hero, my position, where i am\n");
 	Out += TEXT("mid <- center, centre, middle, the capture zone, the middle\n");
-	Out += TEXT("nearest_mine <- gold, gold mine, mine, the mine, the mines\n");
+	// The bare alias `gold` is GONE (see SiegeAssistantVocabulary.cpp): it mapped
+	// an economy word onto a place symbol and is the mechanism by which an order
+	// about spending gold came back as a mining order.
+	Out += TEXT("nearest_mine <- gold mine, mine, the mine, the mines\n");
 	Out += TEXT("own_castle <- base, home, my castle, our base, our castle, the keep\n");
 	Out += TEXT("[intents]\n");
 	Out += TEXT("ambush <- hide, lie in wait, set a trap, trap, waylay\n");
@@ -310,21 +321,34 @@ static void AppendZoneA(FString& Out)
 	Out += TEXT("send <- advance, go, march, move, push, take\n");
 	Out += TEXT("[notes]\n");
 	Out += TEXT("wizard != sorcerer. wizard = ranged fire caster. sorcerer = ritualist, cannot attack, empowers friendlies on an ancient ground. mage / caster / spellcaster = ambiguous -> ask which_unit.\n");
+	Out += TEXT("archer != longbowman. bow, bows, bowman, bowmen = archer. only a long- word = longbowman.\n");
 	Out += TEXT("send, guard, ambush, follow take a unit list. charge, fallback, rally move the whole army or the hero and take who = none. defend = ambiguous between guard and fallback -> ask which_intent.\n");
-	Out += TEXT("nearest_mine already means the best mine for the player right now. there is no per-mine symbol.\n");
-	Out += TEXT("use only the place symbols listed in the state block. a unit kind that is not listed there does not exist right now -> ask which_unit.\n");
+	// Loop 2 DELETED the per-mine line and the 2nd sentence below (see the vocabulary).
+	Out += TEXT("use only the place symbols listed in the state block.\n");
 	Out += TEXT("\n");
 
-	// ⚠️ THE THREE FEW-SHOTS ARE TRANSCRIBED FROM THE LANDED BuildZoneA AND ARE
-	// DISJOINT FROM BOTH CORPUS FILES (CONVENTIONS section 11). None of them was
-	// added in reaction to a dev-set failure -- this file introduced ZERO new
-	// few-shots, because they were already authored by TASK-416 before this task
-	// ran. That is stated so the reader knows the coverage was NOT reactive.
+	// ⚠️ THE SEVEN FEW-SHOTS ARE TRANSCRIBED FROM THE LANDED BuildZoneA AND ARE
+	// DISJOINT FROM ALL THREE CORPUS FILES (CONVENTIONS section 11). The original
+	// three were authored by TASK-416 before any eval ran and are NOT reactive.
+	// ⚠️ THE FOUR NEW ONES ARE REACTIVE AND THAT IS DECLARED, NOT HIDDEN (section
+	// 11's reactive-coverage clause): they were written against the four failure
+	// MECHANISMS the spent generation-1 holdout and the dev split both showed.
+	// They contain none of the burned surface forms and no corpus sentence.
+	// ⚠️ ORDER IS LOAD-BEARING (two minimal pairs, refusals in the middle, block
+	// ends on a command) -- see the shipped BuildZoneA for why. Do not resort.
 	Out += TEXT("examples:\n");
 	Out += TEXT("order: send ten footmen with a sorcerer to the ancient ground on our side\n");
 	Out += TEXT("{\"intent\":\"send\",\"who\":[{\"kind\":\"footman\",\"n\":10},{\"kind\":\"sorcerer\",\"n\":1}],\"where\":\"ancient_ground_near\",\"when\":\"now\"}\n");
 	Out += TEXT("order: all archers guard the middle\n");
 	Out += TEXT("{\"intent\":\"guard\",\"who\":[{\"kind\":\"archer\",\"n\":\"all\"}],\"where\":\"mid\",\"when\":\"now\"}\n");
+	Out += TEXT("order: the archer guards our castle\n");
+	Out += TEXT("{\"intent\":\"guard\",\"who\":[{\"kind\":\"archer\",\"n\":1}],\"where\":\"own_castle\",\"when\":\"now\"}\n");
+	Out += TEXT("order: send werewolves to the middle\n");
+	Out += TEXT("{\"ask\":\"unsupported\"}\n");
+	Out += TEXT("order: get two more pikemen with our gold\n");
+	Out += TEXT("{\"ask\":\"unsupported\"}\n");
+	Out += TEXT("order: i want the footmen to rush\n");
+	Out += TEXT("{\"intent\":\"send\",\"who\":[{\"kind\":\"footman\",\"n\":\"all\"}],\"where\":\"none\",\"when\":\"now\"}\n");
 	Out += TEXT("order: everyone attack\n");
 	Out += TEXT("{\"intent\":\"charge\",\"who\":\"none\",\"where\":\"none\",\"when\":\"now\"}\n");
 }
@@ -2173,6 +2197,32 @@ struct FSpikeOptions
 	int32 Iterations = 5;
 	int32 BaselineFrames = SpikeDefaultBaselineFrames;
 	int32 MaxOutputTokens = SpikeDefaultMaxOutputTokens;
+
+	/**
+	 *  deadline= -- THE HARD ABORT CEILING, IN SECONDS, AND IT IS A DIAGNOSTIC
+	 *  OVERRIDE RATHER THAN A RETUNE. The default is and stays
+	 *  SpikeHardTimeoutSeconds = 10.0, which is CONVENTIONS section 10's shipped
+	 *  HardTimeoutSeconds; nothing here moves that number.
+	 *
+	 *  ⚠️ WHY IT IS SETTABLE AT ALL (TASK-429, on Jonathan's "diagnose before
+	 *  redefining the requirement" ruling). TASK-413's CPU tier aborted 2 of 5
+	 *  generations with truncated JSON, and with a FIXED ceiling the logs cannot
+	 *  tell "the CPU is slow and the deadline cut it" (a TUNABLE) apart from
+	 *  "generation genuinely fails on CPU" (a WALL). Those two look identical in
+	 *  the output and have opposite consequences for the CPU-fallback
+	 *  requirement, so the ceiling has to be a variable before the question can
+	 *  be measured at all.
+	 *
+	 *  ⚠️ AND IT IS ONLY AUTHORITATIVE ON THE CPU TIER. llama.h:382-385 documents
+	 *  abort_callback as "currently works only with CPU execution", so on the
+	 *  full/partial tiers this value can only fire BETWEEN graph submissions and
+	 *  MaxOutputTokens is what actually bounds the run. Every line that prints
+	 *  the deadline therefore prints WHICH REGIME it is in -- see
+	 *  FormatDeadlineRegime. A reader who takes a GPU wall time as evidence about
+	 *  this knob has misread the run, and that is exactly what the label prevents.
+	 */
+	double HardTimeoutSeconds = SpikeHardTimeoutSeconds;
+
 	bool bUseGrammar = true;
 	bool bUseChatTemplate = true;
 	FString TierLabel = TEXT("full");
@@ -2198,6 +2248,44 @@ struct FSpikeOptions
 	FString DevCorpusPath;
 	FString HoldoutCorpusPath;
 };
+
+/**
+ *  ⚠️ THE DEADLINE, ITS PROVENANCE, AND -- THE LOAD-BEARING PART -- WHICH REGIME
+ *  IT IS IN. Printed everywhere the deadline is mentioned, because the same
+ *  number means two different things on two different tiers and the difference
+ *  is documented in the vendored header rather than inferable from the logs:
+ *
+ *    llama.h:382-385, verbatim: "Abort callback / if it returns true, execution
+ *    of llama_decode() will be aborted / currently works only with CPU
+ *    execution."
+ *
+ *  So with gpulayers=0 (the cpu tier) the ceiling is a PROMISE -- the callback
+ *  is polled inside llama_decode and cuts the run mid-graph. With any layer on
+ *  the device it is ADVISORY: the callback can only be consulted between graph
+ *  submissions, a submission already in flight runs to completion, and
+ *  MaxOutputTokens is the real bound. CONVENTIONS section 8's footnote records
+ *  this as "a promise on CPU, a request on GPU".
+ *
+ *  ⚠️ WITHOUT THIS LABEL the next reader compares a cpu wall time against a
+ *  full-offload wall time taken at the same deadline= and concludes something
+ *  false about the knob. That is the specific misreading this string exists to
+ *  make impossible.
+ */
+static FString FormatDeadlineRegime(const FSpikeOptions& Options)
+{
+	const bool bOverridden = !FMath::IsNearlyEqual(Options.HardTimeoutSeconds, SpikeHardTimeoutSeconds, 1.e-6);
+	const bool bCpuOnly = (Options.GpuLayers == 0);
+
+	return FString::Printf(
+		TEXT("deadline_s=%.1f(%s, %s)"),
+		Options.HardTimeoutSeconds,
+		bOverridden
+			? TEXT("OVERRIDDEN by deadline= -- NOT the shipped 10.0s ceiling, do NOT compare this run's wall times against a default-deadline run without saying so")
+			: TEXT("default = CONVENTIONS section 10 HardTimeoutSeconds"),
+		bCpuOnly
+			? TEXT("AUTHORITATIVE: gpulayers=0, so abort_callback aborts llama_decode mid-graph per llama.h:382-385")
+			: TEXT("ADVISORY ONLY: layers are on the device and abort_callback is documented CPU-only, so this can fire only BETWEEN graph submissions -- tokens= is what actually bounds this run"));
+}
 
 struct FSpikeMemorySnapshot
 {
@@ -2752,6 +2840,31 @@ struct FGenerationResult
 	 */
 	int32 EogTokenIndex = INDEX_NONE;
 	bool bEogIgnored = false;
+
+	/**
+	 *  ⚠️ WHY THE FAILURE IS CARRIED AND NOT MERELY LOGGED (TASK-429, the WARN-R2
+	 *  fix -- CONVENTIONS section 12e). Every stop site below already printed its
+	 *  own SPIKE_WARN, but the CALLER could not see WHY a turn stopped: it only
+	 *  saw bDecodeFailed/bAborted, and RunPrefillBound did not even read those.
+	 *  So a bound whose turn 1 aborted printed a DROP figure that is an artifact
+	 *  of the cleared cache and then accused the PROMPT LAYOUT of it, at maximum
+	 *  volume, twice. Anything that judges a bound now has the reason in hand and
+	 *  can print it INSTEAD of a verdict.
+	 *
+	 *  Empty when the turn ran to a natural stop. Preformatted at the stop site,
+	 *  which is the only place that holds the llama_decode return code AND the
+	 *  offset/token it happened at.
+	 */
+	FString FailureDetail;
+
+	/**
+	 *  ⚠️ THE ONLY PREDICATE A LAYOUT VERDICT MAY BE GATED ON. "Completed" means
+	 *  the turn reached a natural stop -- EOG, the token budget, or the context
+	 *  ceiling -- with no abort and no llama_decode error. A turn that stopped
+	 *  any other way produces prefill/reuse counters that describe the failure,
+	 *  not the layout.
+	 */
+	bool CompletedNormally() const { return !bAborted && !bDecodeFailed; }
 };
 
 /**
@@ -2768,6 +2881,7 @@ static void RunGeneration(const FSpikeOptions& Options, const FString& Prompt, F
 	if (!TokenizePrompt(Prompt, PromptTokens))
 	{
 		Out.bDecodeFailed = true;
+		Out.FailureDetail = TEXT("TOKENIZE failed -- llama_decode was never called, so there is no return code and nothing about the layout can be read from this turn");
 		return;
 	}
 	Out.PromptTokens = PromptTokens.Num();
@@ -2786,6 +2900,9 @@ static void RunGeneration(const FSpikeOptions& Options, const FString& Prompt, F
 			TEXT("%s: prompt is %d tokens and the output budget is %d, which exceeds the context's EFFECTIVE n_ctx=%d (requested ctx=%d). Raise ctx= or shrink Zone B/C -- this is a budget failure, not a model failure."),
 			TagWarn, PromptTokens.Num(), Options.MaxOutputTokens, GRunner.ContextSize, Options.ContextTokens);
 		Out.bDecodeFailed = true;
+		Out.FailureDetail = FString::Printf(
+			TEXT("PROMPT_BUDGET %d prompt + %d output tokens exceed the ACTUAL n_ctx=%d -- llama_decode was never called, so there is no return code"),
+			PromptTokens.Num(), Options.MaxOutputTokens, GRunner.ContextSize);
 		return;
 	}
 
@@ -2833,7 +2950,12 @@ static void RunGeneration(const FSpikeOptions& Options, const FString& Prompt, F
 	Out.PrefixReused = CommonPrefix;
 	Out.PrefillTokens = PromptTokens.Num() - CommonPrefix;
 
-	GRunner.AbortDeadlineSeconds = StartSeconds + SpikeHardTimeoutSeconds;
+	// ⚠️ THE DEADLINE COMES FROM THE OPTIONS, NOT FROM THE CONSTANT (TASK-429).
+	// Options.HardTimeoutSeconds DEFAULTS to SpikeHardTimeoutSeconds and the
+	// default is unchanged at 10.0 -- deadline= is a diagnostic override so the
+	// CPU aborts can be classified as a tunable or a wall, and every line that
+	// prints a wall time beside it says which regime and whether it was moved.
+	GRunner.AbortDeadlineSeconds = StartSeconds + Options.HardTimeoutSeconds;
 
 	// --- PREFILL ------------------------------------------------------------
 	GCurrentPhase.Set(static_cast<int32>(ESpikePhase::Prefill));
@@ -2857,7 +2979,16 @@ static void RunGeneration(const FSpikeOptions& Options, const FString& Prompt, F
 			if (DecodeResult != 0)
 			{
 				Out.bDecodeFailed = true;
+				// llama.h:963-977 enumerates the codes: 2 = aborted, 1 = no KV
+				// slot, -1 = invalid batch, < -1 = fatal. Only 2 is this harness's
+				// deadline firing.
 				Out.bAborted = (DecodeResult == 2);
+				Out.FailureDetail = FString::Printf(
+					TEXT("PREFILL llama_decode=%d at prompt offset %d (chunk %d, n_batch %d)%s"),
+					DecodeResult, Offset, ChunkTokens, GRunner.BatchSize,
+					(DecodeResult == 2)
+						? TEXT(" -- code 2 is ABORTED, i.e. this run hit the deadline INSIDE the prefill")
+						: TEXT(""));
 				UE_LOG(LogSiegeLlama, Warning,
 					TEXT("%s: prefill llama_decode returned %d at offset %d (chunk %d, n_batch %d)."),
 					TagWarn, DecodeResult, Offset, ChunkTokens, GRunner.BatchSize);
@@ -2985,6 +3116,12 @@ static void RunGeneration(const FSpikeOptions& Options, const FString& Prompt, F
 		{
 			Out.bDecodeFailed = true;
 			Out.bAborted = (DecodeResult == 2);
+			Out.FailureDetail = FString::Printf(
+				TEXT("DECODE llama_decode=%d at output token %d of a %d-token budget%s"),
+				DecodeResult, TokenIndex, Options.MaxOutputTokens,
+				(DecodeResult == 2)
+					? TEXT(" -- code 2 is ABORTED, i.e. this run hit the deadline mid-decode and the JSON is TRUNCATED, not wrong")
+					: TEXT(""));
 			UE_LOG(LogSiegeLlama, Warning, TEXT("%s: decode llama_decode returned %d at token %d."), TagWarn, DecodeResult, TokenIndex);
 			break;
 		}
@@ -3003,8 +3140,12 @@ static void RunGeneration(const FSpikeOptions& Options, const FString& Prompt, F
 		if (FPlatformTime::Seconds() > GRunner.AbortDeadlineSeconds)
 		{
 			Out.bAborted = true;
+			Out.FailureDetail = FString::Printf(
+				TEXT("DEADLINE %.1fs elapsed after %d output token(s) of a %d-token budget -- llama_decode never returned an error; the LOOP stopped, so this is the ceiling cutting a slow run, not a generation failure. Re-run with deadline=<larger> to separate the two"),
+				Options.HardTimeoutSeconds, Out.OutputTokens, Options.MaxOutputTokens);
 			UE_LOG(LogSiegeLlama, Warning,
-				TEXT("%s: hard timeout of %.1fs hit after %d output token(s)."), TagWarn, SpikeHardTimeoutSeconds, Out.OutputTokens);
+				TEXT("%s: hard timeout of %.1fs hit after %d output token(s). %s"),
+				TagWarn, Options.HardTimeoutSeconds, Out.OutputTokens, *FormatDeadlineRegime(Options));
 			break;
 		}
 	}
@@ -3068,6 +3209,14 @@ static bool EnsureModelLoaded(const FSpikeOptions& Options)
 	// kept the previous device would report the previous device's VRAM.
 	// FString comparison is case-insensitive in UE, which is right for Windows
 	// paths; a slash-style difference merely costs one honest reload.
+	//
+	// ⚠️ deadline= IS DELIBERATELY *NOT* PART OF THIS KEY (TASK-429). It is armed
+	// per generation from Options.HardTimeoutSeconds and touches nothing the
+	// context is built from, so including it would force a full 2.5 GB reload
+	// between every cell of the deadline sweep -- changing nothing except how
+	// long the diagnosis takes. Contrast Threads, which IS in the key: it goes
+	// into llama_context_params and a stale context would answer with the
+	// previous cell's thread count.
 	if (GRunner.IsLoaded()
 		&& GRunner.LoadedModelPath == Options.ModelPathOverride
 		&& GRunner.LoadedOptions.GpuDeviceSpec == Options.GpuDeviceSpec
@@ -3210,6 +3359,29 @@ static bool EnsureModelLoaded(const FSpikeOptions& Options)
 	GRunner.ContextSize = static_cast<int32>(llama_n_ctx(GRunner.Context));
 	const int32 ActualUBatch = static_cast<int32>(llama_n_ubatch(GRunner.Context));
 
+	// ⚠️ THE FOURTH MEMBER OF THE SAME FAMILY, AND IT WAS MISSED BY THE PASS THAT
+	// FIXED THE OTHER THREE (TASK-429; qa/TASK-412.md WARN-2 corrected n_ctx,
+	// n_batch and n_ubatch and stopped there). n_threads is a REQUESTED value in
+	// exactly the sense llama.h:551-556 warns about, and until now this file
+	// printed `threads=` straight off llama_context_params -- i.e. it printed the
+	// request and called it fact, which is the defect CONVENTIONS section 10 names.
+	//
+	// ⚠️ WHY IT IS NOT COSMETIC. The whole CPU-abort question is "is the cpu tier
+	// slow because that is what the hardware does, or because it is not using the
+	// hardware?" If the actual generation thread count comes back clamped -- to 1,
+	// or to anything far below the physical core count -- that is a ROOT CAUSE and
+	// a bug, not a wall, and it is settled by this one line instead of by a
+	// benchmark matrix. llama_n_threads / llama_n_threads_batch (llama.h:985-989)
+	// are the getters, and they are SEPARATE numbers: n_threads drives single-token
+	// GENERATION (the decode loop, i.e. the part that runs out of time) while
+	// n_threads_batch drives multi-token PREFILL. Both are printed, because a
+	// clamp on either one is a different diagnosis.
+	const int32 ActualThreads = static_cast<int32>(llama_n_threads(GRunner.Context));
+	const int32 ActualThreadsBatch = static_cast<int32>(llama_n_threads_batch(GRunner.Context));
+	const int32 RequestedThreads = static_cast<int32>(ContextParams.n_threads);
+	const int32 RequestedThreadsBatch = static_cast<int32>(ContextParams.n_threads_batch);
+	const int32 PhysicalCores = FPlatformMisc::NumberOfCores();
+
 	GRunner.LastPromptTokens.Reset();
 	GCurrentPhase.Set(static_cast<int32>(ESpikePhase::Idle));
 
@@ -3223,11 +3395,36 @@ static bool EnsureModelLoaded(const FSpikeOptions& Options)
 			GRunner.ContextSize, GRunner.BatchSize, ActualUBatch);
 	}
 
+	// A SEPARATE line from the clamp warning above, deliberately: this one names
+	// the physical core count, because "clamped" is only meaningful against it.
+	if (ActualThreads != RequestedThreads || ActualThreadsBatch != RequestedThreadsBatch)
+	{
+		UE_LOG(LogSiegeLlama, Warning,
+			TEXT("%s: THE CONTEXT CLAMPED THE THREAD REQUEST. requested n_threads=%d n_threads_batch=%d -> ACTUAL n_threads=%d n_threads_batch=%d, on a machine with %d physical core(s). Quote the ACTUAL figures. If the actual generation thread count is far below the core count, the cpu tier's latency is a CONFIGURATION ROOT CAUSE and not a hardware wall -- that is a bug to fix, not a requirement to renegotiate."),
+			TagWarn, RequestedThreads, RequestedThreadsBatch, ActualThreads, ActualThreadsBatch, PhysicalCores);
+	}
+
+	// ⚠️ EVERY NEGOTIATED FIGURE ON THIS LINE IS NOW `actual(req N)`, AND THE ONE
+	// THAT CANNOT BE IS LABELLED `(req)` RATHER THAN LEFT TO READ AS A
+	// MEASUREMENT (TASK-429's sweep of the WARN-2 family):
+	//   ctx / batch / ubatch / threads / threads_batch -- ACTUAL, queried.
+	//   gpulayers -- REQUEST ONLY. The vendored header exposes n_gpu_layers as an
+	//     INPUT field (llama.h:313) and ships no getter for how many layers were
+	//     actually placed, so there is nothing to query and the honest thing is to
+	//     say which one this is. Do NOT read `gpulayers=-1(req)` as "36 layers
+	//     landed on the device"; -1 is the request "all of them".
+	//   cores -- FPlatformMisc::NumberOfCores(), printed because "the thread count
+	//     is clamped" is not a statement until there is something to clamp against,
+	//     and because TASK-431 is asked to run a cell at the physical core count.
 	UE_LOG(LogSiegeLlama, Display,
-		TEXT("%s tier=%s gpulayers=%d/%d ctx=%d(req %d) batch=%d ubatch=%d(req %d) threads=%d load_ms=%.0f model=%s size=%s device=%s%s"),
+		TEXT("%s tier=%s gpulayers=%d(req)/%d ctx=%d(req %d) batch=%d(req %d) ubatch=%d(req %d) threads=%d(req %d) threads_batch=%d(req %d) cores=%d load_ms=%.0f model=%s size=%s device=%s%s"),
 		TagLoad, *Options.TierLabel, Options.GpuLayers, GRunner.ModelLayerCount,
-		GRunner.ContextSize, Options.ContextTokens, GRunner.BatchSize, ActualUBatch, Options.UBatch,
-		ContextParams.n_threads, LoadMs,
+		GRunner.ContextSize, Options.ContextTokens,
+		GRunner.BatchSize, static_cast<int32>(ContextParams.n_batch),
+		ActualUBatch, Options.UBatch,
+		ActualThreads, RequestedThreads,
+		ActualThreadsBatch, RequestedThreadsBatch,
+		PhysicalCores, LoadMs,
 		*FPaths::GetCleanFilename(ModelPath), *FormatMiB(GRunner.ModelSizeBytes),
 		*GRunner.OffloadDeviceLabel,
 		GRunner.OffloadDevice == nullptr
@@ -3329,8 +3526,36 @@ static constexpr int32 SpikeBenchUtteranceCount = static_cast<int32>(UE_ARRAY_CO
  *                          in the fixtures rather than a good result.
  *  @param OutTurn2         turn 2's timings, so the caller can quote the warm TTFT
  *                          that belongs to each bound.
+ *
+ *  @return TRUE only when BOTH turns completed normally, i.e. only when this
+ *          bound's numbers are bar #3 numbers at all. ⚠️ THE CALLER MUST NOT
+ *          PRINT THIS BOUND'S FIGURES AS A RESULT WHEN IT IS FALSE.
+ *
+ *  ⛔ WARN-R2, AND WHY IT IS A FIX RATHER THAN ANOTHER WARNING (TASK-429;
+ *     CONVENTIONS section 12e; manager ruling 10). This function used to ignore
+ *     bDecodeFailed/bAborted entirely, so a turn 1 that aborted produced:
+ *
+ *       turn 1 stops early -> the prefill-failure path resets LastPromptTokens
+ *       -> turn 2 finds a zero-length previous prompt -> CommonPrefix = 0
+ *       -> turn 2 re-prefills the WHOLE prompt -> DROP computes to ~0 %
+ *       -> DROP < 60 -> "THE PROMPT LAYOUT IS WRONG AND MUST BE FIXED BEFORE
+ *          ANYTHING ELSE IS BUILT", at Warning volume, naming the wrong component.
+ *
+ *     It fired twice (TASK-413 PART 2 and PART 3's cpu tier), was checked twice,
+ *     and was a decode abort BOTH times -- while the SAME run's
+ *     SHIPPED_WORST_CASE bound sat healthy at 77.1 %. A diagnostic that
+ *     confidently accuses the wrong component is worse than silence.
+ *
+ *     ⇒ THE LAYOUT VERDICT MAY ONLY BE EMITTED FOR A BOUND THAT COMPLETED BOTH
+ *       TURNS. An incomplete bound reports the abort instead -- the llama_decode
+ *       return code and the offset/token it stopped at -- and renders no
+ *       judgement about the prompt at all.
+ *
+ *     ⚠️ AND THE OTHER DIRECTION IS PRESERVED ON PURPOSE: a bound that DID
+ *       complete both turns and still reused little is exactly what that line is
+ *       for, and it still shouts. The gate is completion, never the drop value.
  */
-static void RunPrefillBound(const FSpikeOptions& Options, const FString& ZoneAText,
+static bool RunPrefillBound(const FSpikeOptions& Options, const FString& ZoneAText,
 	const TCHAR* BoundName, const TCHAR* Expectation,
 	const FSpikeWorldFixture& Turn1Fixture, const FSpikeWorldFixture& Turn2Fixture,
 	bool bExpectZoneBDivergence, FGenerationResult& OutTurn2)
@@ -3358,12 +3583,75 @@ static void RunPrefillBound(const FSpikeOptions& Options, const FString& ZoneATe
 	// WHERE the reuse landed, against the zone boundaries of turn 2's own prompt.
 	const FSpikeDivergence Divergence = ClassifyDivergence(Prompt, Layout, OutTurn2.PrefixReused);
 
+	// --- WARN-R2's GATE -----------------------------------------------------
+	// The ONE predicate every judgement below hangs on. Read once, named once.
+	const bool bBoundCompleted = Turn1.CompletedNormally() && OutTurn2.CompletedNormally();
+
+	// ⚠️ THE DROP FIELD IS BUILT, NOT INLINED, BECAUSE IT SAYS THREE DIFFERENT
+	// THINGS. The number is still PRINTED when the bound did not complete -- a
+	// datum withheld is its own kind of lie, and a reader who understands the
+	// failure can still use it -- but it is stripped of the Expectation string
+	// and explicitly carries "not a bar #3 result", because a bare `DROP=0.0%`
+	// beside a bar name is precisely what got quoted as a layout finding twice.
+	//
+	// The two incomplete cases are NOT the same and are not described as such:
+	//   turn 1 failed  -> the drop is an ARTIFACT. Turn 1's failure cleared the
+	//                     cache basis, so turn 2 re-prefilled everything and the
+	//                     ~0 % has nothing whatever to do with the prompt layout.
+	//   turn 1 fine,
+	//   turn 2 failed  -> the drop is genuinely MEASURED (PrefillTokens and
+	//                     PrefixReused are both fixed before the first decode),
+	//                     but the bound still did not complete, so it renders no
+	//                     verdict. Conservative on purpose, and the reason is
+	//                     stated rather than hidden behind the same wording.
+	//
+	// NOTE: Expectation and FailureDetail are ARGUMENTS for %s, never format
+	// strings, so a bare `%` inside either is correct and must NOT be doubled.
+	FString DropField;
+	if (bBoundCompleted)
+	{
+		DropField = FString::Printf(TEXT("DROP=%.1f%% (%s)"), DropPercent, Expectation);
+	}
+	else if (!Turn1.CompletedNormally())
+	{
+		DropField = FString::Printf(
+			TEXT("DROP=%.1f%% [NOT A MEASUREMENT -- turn 1 did not complete (%s), so turn 2 re-prefilled from a cleared cache basis. This figure is an artifact of the abort and is NOT a bar #3 result. NO LAYOUT VERDICT IS RENDERED]"),
+			DropPercent, *Turn1.FailureDetail);
+	}
+	else
+	{
+		DropField = FString::Printf(
+			TEXT("DROP=%.1f%% [NO VERDICT -- the drop itself is measured, but turn 2 did not complete (%s), so this bound is NOT a bar #3 result]"),
+			DropPercent, *OutTurn2.FailureDetail);
+	}
+
 	UE_LOG(LogSiegeLlama, Display,
-		TEXT("%s tier=%s bound=%s fixtures=%s->%s turn1_prompt=%d turn1_prefill=%d | turn2_prompt=%d turn2_prefill=%d turn2_ttft_ms=%.1f | %s | DROP=%.1f%% (%s)"),
-		TagPrefill, *Options.TierLabel, BoundName, Turn1Fixture.Label, Turn2Fixture.Label,
+		TEXT("%s tier=%s bound=%s status=%s fixtures=%s->%s turn1_prompt=%d turn1_prefill=%d | turn2_prompt=%d turn2_prefill=%d turn2_ttft_ms=%.1f | %s | %s"),
+		TagPrefill, *Options.TierLabel, BoundName,
+		bBoundCompleted ? TEXT("COMPLETED_BOTH_TURNS") : TEXT("INCOMPLETE"),
+		Turn1Fixture.Label, Turn2Fixture.Label,
 		Turn1.PromptTokens, Turn1.PrefillTokens,
 		OutTurn2.PromptTokens, OutTurn2.PrefillTokens, OutTurn2.TtftMs,
-		*FormatDivergence(Divergence), DropPercent, Expectation);
+		*FormatDivergence(Divergence), *DropField);
+
+	// ⛔ THE SUPPRESSION. Everything past this point is a JUDGEMENT ABOUT THE
+	// PROMPT, and a bound that did not run cannot support one. What it gets
+	// instead is the abort, named -- which is the finding it actually has.
+	if (!bBoundCompleted)
+	{
+		// Named locals rather than ternaries inside the argument list: an FString
+		// temporary built in a UE_LOG argument is a lifetime question nobody
+		// should have to answer while reading a diagnostic (the FixedLengthNote
+		// precedent below).
+		const FString Turn1Status = Turn1.CompletedNormally() ? FString(TEXT("completed")) : Turn1.FailureDetail;
+		const FString Turn2Status = OutTurn2.CompletedNormally() ? FString(TEXT("completed")) : OutTurn2.FailureDetail;
+		const FString DeadlineRegime = FormatDeadlineRegime(Options);
+
+		UE_LOG(LogSiegeLlama, Warning,
+			TEXT("%s: bound=%s DID NOT COMPLETE BOTH TURNS, so ITS LAYOUT VERDICT IS SUPPRESSED -- this is NOT a bar #3 pass or fail, it is a generation that stopped. turn1: %s | turn2: %s | %s. THE FINDING HERE IS THE ABORT, NOT THE PROMPT LAYOUT: fix the stop (raise deadline=, or run a tier that finishes) and re-run before reading anything about bar #3 from this bound."),
+			TagWarn, BoundName, *Turn1Status, *Turn2Status, *DeadlineRegime);
+		return false;
+	}
 
 	// ⚠️ TWO GUARDS, AND THE SECOND ONE IS THE NEW ONE. The old code warned only
 	// when the reuse was too LOW and was silent when it was implausibly HIGH --
@@ -3376,12 +3664,18 @@ static void RunPrefillBound(const FSpikeOptions& Options, const FString& ZoneATe
 			TagWarn, BoundName, OutTurn2.PrefixReused, Divergence.ZoneCStartTokens, DropPercent);
 	}
 
+	// ⚠️ REACHED ONLY BY A BOUND THAT COMPLETED BOTH TURNS -- which is exactly
+	// when this line means what it says. A real layout defect (both turns ran,
+	// reuse was genuinely poor) still lands here at full volume; that direction
+	// is not weakened by the gate above and must not be.
 	if (DropPercent < 60.0)
 	{
 		UE_LOG(LogSiegeLlama, Warning,
-			TEXT("%s: bound=%s KV-prefix reuse is only %.1f%%. Per the plan, if bar #3 fails THE PROMPT LAYOUT IS WRONG AND MUST BE FIXED BEFORE ANYTHING ELSE IS BUILT -- do not read the latency numbers as final until it passes."),
+			TEXT("%s: bound=%s KV-prefix reuse is only %.1f%%, and BOTH TURNS COMPLETED -- so this is a real reuse figure, not an abort artifact. Per the plan, if bar #3 fails THE PROMPT LAYOUT IS WRONG AND MUST BE FIXED BEFORE ANYTHING ELSE IS BUILT -- do not read the latency numbers as final until it passes."),
 			TagWarn, BoundName, DropPercent);
 	}
+
+	return true;
 }
 
 static void RunBenchJob(const FSpikeOptions& InOptions)
@@ -3426,21 +3720,36 @@ static void RunBenchJob(const FSpikeOptions& InOptions)
 	// turn is between them, and BOTH are printed. ⚠️ THE BAR IS JUDGED ON
 	// SHIPPED_WORST_CASE.
 	FGenerationResult Turn2Best;
-	RunPrefillBound(Options, ZoneAText, TEXT("BEST_CASE"),
+	const bool bBestCaseCompleted = RunPrefillBound(Options, ZoneAText, TEXT("BEST_CASE"),
 		TEXT("bar #3 UPPER bound -- a PAUSED board: same fixture both turns, so only the order line differs. The shipped path cannot reach this; do NOT quote it as the result"),
 		SpikeFixtureT0, SpikeFixtureT0, /*bExpectZoneBDivergence*/ false, Turn2Best);
 
 	FGenerationResult Turn2Worst;
-	RunPrefillBound(Options, ZoneAText, TEXT("SHIPPED_WORST_CASE"),
+	const bool bShippedCaseCompleted = RunPrefillBound(Options, ZoneAText, TEXT("SHIPPED_WORST_CASE"),
 		// NOTE: this string is an ARGUMENT for %s, never a format string, so a bare
 		// `%` in it is correct and must NOT be doubled.
 		TEXT("bar #3 THE NUMBER -- a LIVE board: every Zone B key and the roster moved between turns, so only Zone A is reused. Target ~70%, CONVENTIONS section 8 reference 165/765 = 78%"),
 		SpikeFixtureT0, SpikeFixtureT1, /*bExpectZoneBDivergence*/ true, Turn2Worst);
 
+	// ⚠️ THE VALIDITY TRAVELS WITH THE SUMMARY LINE (TASK-429). Suppressing the
+	// verdict inside RunPrefillBound is not enough on its own: this line reprints
+	// both bounds' figures in one place, and it is the line a report is most
+	// likely to be copied from. A bound that did not complete is named here too,
+	// or the suppression is undone one line later.
+	FString BoundsValidity;
+	if (!bBestCaseCompleted || !bShippedCaseCompleted)
+	{
+		BoundsValidity = FString::Printf(
+			TEXT(" -- NOT A BAR #3 RESULT: %s%sdid not complete both turns (see the SPIKE_WARN line above for the llama_decode code and where it stopped). Fix the abort and re-run; do NOT quote these as bar #3 figures."),
+			bBestCaseCompleted ? TEXT("") : TEXT("BEST_CASE "),
+			bShippedCaseCompleted ? TEXT("") : TEXT("SHIPPED_WORST_CASE "));
+	}
+
 	UE_LOG(LogSiegeLlama, Display,
-		TEXT("%s tier=%s BAR#3 BOUNDS best_case_warm_ttft_ms=%.1f shipped_worst_case_warm_ttft_ms=%.1f best_case_turn2_prefill=%d shipped_turn2_prefill=%d -- QUOTE THE SHIPPED FIGURE. The gap between them IS the cost of a board that moved."),
+		TEXT("%s tier=%s BAR#3 BOUNDS best_case_warm_ttft_ms=%.1f shipped_worst_case_warm_ttft_ms=%.1f best_case_turn2_prefill=%d shipped_turn2_prefill=%d -- QUOTE THE SHIPPED FIGURE. The gap between them IS the cost of a board that moved.%s"),
 		TagPrefill, *Options.TierLabel,
-		Turn2Best.TtftMs, Turn2Worst.TtftMs, Turn2Best.PrefillTokens, Turn2Worst.PrefillTokens);
+		Turn2Best.TtftMs, Turn2Worst.TtftMs, Turn2Best.PrefillTokens, Turn2Worst.PrefillTokens,
+		*BoundsValidity);
 
 	// --- BARS #1, #2, #4: the warm-prefix iterations -------------------------
 	// ⚠️ THE FIXTURE ALTERNATES EVERY ITERATION, DELIBERATELY. Bar #2 is the bar
@@ -3455,6 +3764,13 @@ static void RunBenchJob(const FSpikeOptions& InOptions)
 	int32 TotalPrefillTokens = 0;
 	uint64 VramLowWater = MAX_uint64;
 	bool bAnyVramDevice = false;
+
+	// ⚠️ COUNTED, NOT LEFT TO THE READER TO TALLY FROM THE PER-ITERATION LINES
+	// (TASK-429). "2 of 5 generations aborted" is the single most consequential
+	// fact the cpu tier produced, and it was only ever recoverable by counting
+	// ` ABORTED` suffixes by eye across five lines.
+	int32 IncompleteIterations = 0;
+	FString LastFailureDetail = TEXT("<none recorded>");
 
 	FString Prompt;
 	for (int32 Iteration = 0; Iteration < Options.Iterations; ++Iteration)
@@ -3473,6 +3789,15 @@ static void RunBenchJob(const FSpikeOptions& InOptions)
 		TotalTtftMs += Result.TtftMs;
 		TotalOutputTokens += Result.OutputTokens;
 		TotalPrefillTokens += Result.PrefillTokens;
+
+		if (!Result.CompletedNormally())
+		{
+			++IncompleteIterations;
+			if (!Result.FailureDetail.IsEmpty())
+			{
+				LastFailureDetail = Result.FailureDetail;
+			}
+		}
 		if (Result.bHasVramDevice)
 		{
 			bAnyVramDevice = true;
@@ -3487,6 +3812,16 @@ static void RunBenchJob(const FSpikeOptions& InOptions)
 		const FString FixedLengthNote = Result.bEogIgnored
 			? FString::Printf(TEXT(" FIXED_LENGTH_CONTROL(grammar=0: EOG IGNORED at out token %d -- the tokens after it are timing filler, NOT an answer)"), Result.EogTokenIndex)
 			: FString();
+
+		// ⚠️ THE SUFFIX NOW CARRIES THE REASON (TASK-429). ` ABORTED` alone told a
+		// reader that something stopped but not WHAT stopped it, and the cpu tier's
+		// "2 of 5 aborted with truncated JSON" is the finding this whole diagnosis
+		// hangs on. The llama_decode code and the token index are what separate
+		// "the ceiling cut a slow run" from "generation failed".
+		const FString StopNote = Result.CompletedNormally()
+			? FString()
+			: FString::Printf(TEXT(" %s(%s)"),
+				Result.bAborted ? TEXT("ABORTED") : TEXT("DECODE_FAILED"), *Result.FailureDetail);
 
 		const double MsPerToken = Result.OutputTokens > 0 ? Result.DecodeMs / Result.OutputTokens : 0.0;
 
@@ -3504,18 +3839,32 @@ static void RunBenchJob(const FSpikeOptions& InOptions)
 			TagLatency, *Options.TierLabel, Iteration, Fixture.Label,
 			Result.TtftMs, Result.PrefillMs, Result.DecodeMs, Result.WallMs,
 			Result.PrefillTokens, *FormatDivergence(Divergence),
-			Result.OutputTokens, MsPerToken, SixtyTokenEquivalentMs, *FixedLengthNote,
-			Result.bAborted ? TEXT(" ABORTED") : (Result.bDecodeFailed ? TEXT(" DECODE_FAILED") : TEXT("")));
+			Result.OutputTokens, MsPerToken, SixtyTokenEquivalentMs, *FixedLengthNote, *StopNote);
 
 		UE_LOG(LogSiegeLlama, Display, TEXT("%s   iter=%d output=%s"), TagLatency, Iteration, *Result.Text);
 	}
 
+	// ⚠️ THE SUMMARY CARRIES THE DEADLINE AND ITS REGIME (TASK-429). Every wall
+	// time on this line is bounded by that ceiling, so a run at a non-default
+	// deadline= is NOT comparable with a default one -- and the abort count says
+	// how many of these iterations were cut rather than finished. Reporting a
+	// mean wall over a set that includes truncated generations without saying so
+	// is the measurement that lies.
 	const int32 SafeIterations = FMath::Max(1, Options.Iterations);
+	const FString DeadlineRegime = FormatDeadlineRegime(Options);
 	UE_LOG(LogSiegeLlama, Display,
-		TEXT("%s tier=%s SUMMARY iters=%d mean_ttft_ms=%.1f mean_wall_ms=%.1f WORST_wall_ms=%.1f mean_prefill_tok=%d total_out_tokens=%d (bar #2: <=2000ms partial, <=6000ms cpu -- measured with the fixture MOVING between turns, i.e. the shipped shape)"),
+		TEXT("%s tier=%s SUMMARY iters=%d aborted_or_failed=%d/%d %s mean_ttft_ms=%.1f mean_wall_ms=%.1f WORST_wall_ms=%.1f mean_prefill_tok=%d total_out_tokens=%d (bar #2: <=2000ms partial, <=6000ms cpu -- measured with the fixture MOVING between turns, i.e. the shipped shape)"),
 		TagLatency, *Options.TierLabel, Options.Iterations,
+		IncompleteIterations, Options.Iterations, *DeadlineRegime,
 		TotalTtftMs / SafeIterations, TotalWallMs / SafeIterations, WorstWallMs,
 		TotalPrefillTokens / SafeIterations, TotalOutputTokens);
+
+	if (IncompleteIterations > 0)
+	{
+		UE_LOG(LogSiegeLlama, Warning,
+			TEXT("%s: %d of %d warm iteration(s) ABORTED OR FAILED at %s, so the mean/worst wall figures above are computed over a set that includes generations which were CUT, not finished -- and a cut generation emits TRUNCATED JSON, which is unusable rather than merely slow. Re-run with a larger deadline= to establish whether the ceiling is the binding constraint (a TUNABLE) or the generation genuinely fails (a WALL). Last recorded stop: %s"),
+			TagWarn, IncompleteIterations, Options.Iterations, *DeadlineRegime, *LastFailureDetail);
+	}
 
 	const FSpikeMemorySnapshot Final = SampleMemory();
 	UE_LOG(LogSiegeLlama, Display,
@@ -3661,9 +4010,20 @@ static void RunOneSplit(const FSpikeOptions& Options, const FString& ZoneAText,
 			? FString()
 			: FString::Printf(TEXT(" parse_error=%s"), *ParseError);
 
+		// ⚠️ AN ABORTED ROW SCORES AS A WRONG ANSWER AND USED TO SAY NOTHING
+		// (TASK-429). This is WARN-R2's defect in the accuracy lane: a generation
+		// the ceiling CUT emits truncated JSON, fails to parse, and is then
+		// indistinguishable in the log from a model that understood the sentence
+		// and answered it wrongly -- so a ladder loop could be spent re-tuning a
+		// prompt to fix what is actually a decode-rate problem. It is named here.
+		const FString StopSuffix = Generation.CompletedNormally()
+			? FString()
+			: FString::Printf(TEXT(" ROW_DID_NOT_COMPLETE(%s -- this row scores as a WRONG ANSWER but is a STOPPED generation, not a comprehension failure; do not tune against it)"),
+				*Generation.FailureDetail);
+
 		UE_LOG(LogSiegeLlama, Display,
-			TEXT("%s   split=%s id=%s sentence=\"%s\" raw=%s%s"),
-			TagEvalRow, *SplitName, *Row.Id, *Row.Sentence, *Generation.Text, *ParseErrorSuffix);
+			TEXT("%s   split=%s id=%s sentence=\"%s\" raw=%s%s%s"),
+			TagEvalRow, *SplitName, *Row.Id, *Row.Sentence, *Generation.Text, *ParseErrorSuffix, *StopSuffix);
 	}
 
 	const double LenientPercent = 100.0 * PassLenient / FMath::Max(1, Rows.Num());
@@ -3868,10 +4228,29 @@ static bool StartJob(ESpikeJobKind Kind, const FSpikeOptions& Options, UWorld* W
 	// self-evident to whoever reads the log instead of a claim to be trusted.
 	GLastWorldName = World ? World->GetMapName() : TEXT("<no world>");
 
+	// ⚠️ THE DEADLINE IS ON THE FIRST LINE OF EVERY RUN (TASK-429), not only on
+	// the runs that hit it. A wall time is only comparable against another wall
+	// time taken under the same ceiling, and the ceiling is now settable.
+	const FString DeadlineRegime = FormatDeadlineRegime(Options);
+
 	UE_LOG(LogSiegeLlama, Display,
-		TEXT("%s START kind=%d tier=%s map=%s netmode=%d utc=%s"),
-		TagRun, static_cast<int32>(Kind), *Options.TierLabel, *GLastWorldName,
+		TEXT("%s START kind=%d tier=%s %s map=%s netmode=%d utc=%s"),
+		TagRun, static_cast<int32>(Kind), *Options.TierLabel, *DeadlineRegime, *GLastWorldName,
 		World ? static_cast<int32>(World->GetNetMode()) : -1, *FDateTime::UtcNow().ToString());
+
+	// ⛔ AND A NON-DEFAULT CEILING GETS ITS OWN WARNING, DELIBERATELY LOUDER THAN
+	// A FIELD IN A LONG LINE. A reader comparing this run's numbers against an
+	// earlier report has no way to know the ceiling moved unless the log SAYS SO,
+	// and an unflagged non-default deadline is a measurement that lies. This is
+	// also the line that stops the override from being mistaken for a retune: the
+	// shipped HardTimeoutSeconds is unchanged at 10.0 and this argument does not
+	// touch it.
+	if (!FMath::IsNearlyEqual(Options.HardTimeoutSeconds, SpikeHardTimeoutSeconds, 1.e-6))
+	{
+		UE_LOG(LogSiegeLlama, Warning,
+			TEXT("%s: NON-DEFAULT DEADLINE IN EFFECT FOR THIS RUN -- deadline=%.1fs, against the SHIPPED ceiling of %.1fs (CONVENTIONS section 10 HardTimeoutSeconds, which this argument does NOT change). Every wall-clock and abort figure below belongs to the %.1fs ceiling and MUST be quoted with it. %s"),
+			TagWarn, Options.HardTimeoutSeconds, SpikeHardTimeoutSeconds, Options.HardTimeoutSeconds, *DeadlineRegime);
+	}
 
 	if (World == nullptr || !World->IsGameWorld())
 	{
@@ -4021,6 +4400,24 @@ static void GetArgInt(const TArray<FString>& Args, const TCHAR* Key, int32& OutV
 	}
 }
 
+/**
+ *  ⚠️ RETURNS WHETHER THE ARG WAS PRESENT, unlike GetArgInt, and that matters:
+ *  deadline= must be able to tell "not given" (keep the shipped 10.0) apart from
+ *  "given" -- an unannounced non-default ceiling is a measurement that lies.
+ *  FCString::Atod on a non-numeric string yields 0.0, which the caller rejects
+ *  rather than silently arming a zero-second deadline that aborts everything.
+ */
+static bool GetArgDouble(const TArray<FString>& Args, const TCHAR* Key, double& OutValue)
+{
+	FString Text;
+	if (GetArgValue(Args, Key, Text) && !Text.IsEmpty())
+	{
+		OutValue = FCString::Atod(*Text);
+		return true;
+	}
+	return false;
+}
+
 static void GetArgBool(const TArray<FString>& Args, const TCHAR* Key, bool& OutValue)
 {
 	FString Text;
@@ -4108,6 +4505,33 @@ static FSpikeOptions ParseOptions(const TArray<FString>& Args)
 	// state qa/TASK-412.md BLOCKER-2 was raised against: on a machine that
 	// enumerates an iGPU AND a dGPU, "the tier" was not a device.
 	GetArgValue(Args, TEXT("gpu"), Options.GpuDeviceSpec);
+
+	// ⛔ deadline=<seconds> -- A DIAGNOSTIC OVERRIDE, AND THE DEFAULT DOES NOT
+	// MOVE. Options.HardTimeoutSeconds is initialised to SpikeHardTimeoutSeconds
+	// (10.0 = CONVENTIONS section 10's shipped HardTimeoutSeconds); this only
+	// replaces it when the argument is actually present, so a command line
+	// without deadline= measures exactly what shipped.
+	//
+	// ⚠️ A REJECTED VALUE FALLS BACK LOUDLY RATHER THAN BEING CLAMPED QUIETLY.
+	// `deadline=abc` parses to 0.0 through FCString::Atod, and a silently clamped
+	// 0.0 would abort every generation instantly -- which would read as a
+	// catastrophic model failure caused by a typo. The bound is generous (the
+	// point is to find where generation stops succeeding, so an experiment must
+	// be allowed to run long) but not unbounded.
+	double RequestedDeadline = SpikeHardTimeoutSeconds;
+	if (GetArgDouble(Args, TEXT("deadline"), RequestedDeadline))
+	{
+		if (RequestedDeadline < 0.1 || RequestedDeadline > 600.0)
+		{
+			UE_LOG(LogSiegeLlama, Warning,
+				TEXT("%s: deadline=%.3f is outside the accepted range 0.1..600.0 seconds and was IGNORED -- this run uses the default %.1fs. Nothing was clamped: a clamped deadline would have produced timings under a ceiling the command line did not ask for."),
+				TagWarn, RequestedDeadline, SpikeHardTimeoutSeconds);
+		}
+		else
+		{
+			Options.HardTimeoutSeconds = RequestedDeadline;
+		}
+	}
 
 	Options.ContextTokens = FMath::Clamp(Options.ContextTokens, 512, 32768);
 	Options.UBatch = FMath::Clamp(Options.UBatch, 1, 2048);
@@ -4295,6 +4719,8 @@ static void CmdSpikeGrammar(const TArray<FString>& /*Args*/, UWorld* /*World*/)
 static FAutoConsoleCommandWithWorldAndArgs GSiegeLlamaSpikeLoadCommand(
 	TEXT("Siege.Llama.SpikeLoad"),
 	TEXT("Loads the GGUF for a tier and prints n_layer, load time, EVERY ggml device, which one the weights were pinned to, and the VRAM/RSS deltas for THAT device. "
+		 "Also prints the context's ACTUAL n_ctx / n_batch / n_ubatch / n_threads / n_threads_batch beside the REQUESTED value of each, plus the machine's physical core count -- "
+		 "llama.h:551-556 warns the actual may differ from the request, and a thread count clamped below the cores is a root cause rather than a hardware limit. "
 		 "Args: tier=full|partial|cpu gpulayers=N gpu=<index|name> ctx=2048 ubatch=64 threads=N model=<path>"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SiegeLlamaSpike::CmdSpikeLoad));
 
@@ -4309,7 +4735,10 @@ static FAutoConsoleCommandWithWorldAndArgs GSiegeLlamaSpikeBenchCommand(
 		 "turn-1 vs turn-2 prefill tokens, peak VRAM and RSS. RUN IT IN PIE ON L_Arena WITH UNITS ON THE FIELD. "
 		 "Bar #3 prints TWO bounds -- BEST_CASE (a paused board) and SHIPPED_WORST_CASE (the board moved between turns) -- plus WHERE the reuse landed; "
 		 "QUOTE THE SHIPPED FIGURE. The warm iterations alternate the two fixtures, so bar #2 is the shipped shape too. "
-		 "Args: tier=full|partial|cpu gpulayers=N gpu=<index|name> iters=5 baseline=180 ubatch=64 threads=N tokens=96 grammar=0|1 chat=0|1 prompt=<zoneA path>"),
+		 "Args: tier=full|partial|cpu gpulayers=N gpu=<index|name> iters=5 baseline=180 ubatch=64 threads=N tokens=96 grammar=0|1 chat=0|1 prompt=<zoneA path> "
+		 "deadline=<seconds> (DIAGNOSTIC OVERRIDE of the 10.0s hard abort ceiling; the DEFAULT IS AND STAYS 10.0 = the shipped HardTimeoutSeconds. "
+		 "It exists to tell a deadline-cut run apart from a genuine generation failure, which look identical otherwise. "
+		 "AUTHORITATIVE only on tier=cpu -- abort_callback is documented CPU-only, so on GPU tiers it fires only between graph submissions and tokens= is the real bound. Every line that prints it says which)"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SiegeLlamaSpike::CmdSpikeBench));
 
 static FAutoConsoleCommandWithWorldAndArgs GSiegeLlamaSpikeEvalCommand(
@@ -4317,7 +4746,8 @@ static FAutoConsoleCommandWithWorldAndArgs GSiegeLlamaSpikeEvalCommand(
 	TEXT("Bar #5: exact-match accuracy on the SEALED corpus, scored per split and reported separately. "
 		 "dev= defaults to Docs/Data/assistant_eval_dev.csv; holdout= HAS NO DEFAULT and opens the sealed file -- "
 		 "the HOLDOUT number alone scores the 85-percent bar. Every row runs against fixture t0, the board the corpus was authored "
-		 "against. Args: dev=<path> holdout=<path> tier=... gpu=<index|name> prompt=<zoneA path>"),
+		 "against. Args: dev=<path> holdout=<path> tier=... gpu=<index|name> prompt=<zoneA path> deadline=<seconds> "
+		 "(same diagnostic override as SpikeBench, default 10.0. A row whose generation is CUT by the ceiling scores as a WRONG ANSWER, so the row line names it)"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SiegeLlamaSpike::CmdSpikeEval));
 
 static FAutoConsoleCommandWithWorldAndArgs GSiegeLlamaSpikePromptCommand(
