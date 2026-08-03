@@ -130,6 +130,13 @@ namespace SiegeAssistantComponentInternal
 	 *  ("fallback") which the grammar and the prompt share, and this one produces
 	 *  the SENTENCE ("Fall back") which only a human reads. Merging them would put
 	 *  a localizable string into the prompt.
+	 *
+	 *  ⚠️ SINCE TASK-465 THIS IS ALSO THE {Intent} TEMPLATE ARGUMENT (PushMessage),
+	 *  so a verb missing from this switch is a verb missing from a player's
+	 *  sentence. ✅ The default FAILS SAFE - an unknown intent yields an EMPTY word,
+	 *  never a WRONG one, which is the whole point of the change that added the
+	 *  argument. ⛔ A new ESiegeAssistantIntent member still owes a row here AND a
+	 *  word in the AskWhichIntent template.
 	 */
 	static const FText& IntentDisplayText(ESiegeAssistantIntent Intent)
 	{
@@ -340,6 +347,16 @@ const FText& SiegeAssistantReasonTemplate(ESiegeAssistantReasonCode Code)
 	}
 	case ESiegeAssistantReasonCode::AskWhichIntent:
 	{
+		// ⚠️ THIS SENTENCE ENUMERATES ESiegeAssistantIntent BY HAND AND NOTHING
+		// ENFORCES THAT IT STILL DOES. ✅ Correct as of TASK-465's sweep: the seven
+		// words below are exactly the seven non-None members (SiegeAssistantCommand.h),
+		// which is why this is an ANCHOR and not a finding. ⛔ AN EIGHTH VERB MUST
+		// BE ADDED HERE AND TO IntentDisplayText, or the game asks the player to
+		// pick from a list that no longer describes what it accepts.
+		// ⚠️ DELIBERATELY NOT JOINED FROM THE ENUM AT RUNTIME: a comma-and-"or"
+		// list assembled in code is not translatable - the conjunction and the word
+		// order belong to the translator, not to us - so the hand-written sentence
+		// is the correct trade and the drift is paid for with this comment.
 		static const FText T = NSLOCTEXT("Siegebound", "Assistant_AskWhichIntent", "What should they do - send, guard, ambush, follow, charge, fall back or rally?");
 		return T;
 	}
@@ -357,7 +374,22 @@ const FText& SiegeAssistantReasonTemplate(ESiegeAssistantReasonCode Code)
 	}
 	case ESiegeAssistantReasonCode::ShortfallCount:
 	{
-		static const FText T = NSLOCTEXT("Siegebound", "Assistant_ShortfallCount", "You asked for {Requested} {Kind} - {Available} can take that order. Send {Available}?");
+		// ⛔ THE VERB IS A PARAMETER, NOT A LITERAL - AND IT IS ONE STRING, NOT
+		// THREE. This row serves EVERY zone verb: FindShortfall returns true for
+		// Send, Guard AND Ambush and for nothing else (its intent gate is the
+		// whole of that guarantee), so the hard-coded "Send" that used to sit here
+		// answered a player who typed "guard the mine with 10 pikemen" by talking
+		// about SENDING them - the one defect in this feature a player meets
+		// without reading a log (qa/TASK-464.md WARN-4).
+		// ⚠️ FORKING THIS ROW PER INTENT WOULD BE THREE SENTENCES TO DRIFT (§19 /
+		// §22). {Intent} is the SAME game-authored word DescribeCommandForPlayer
+		// prints, from the SAME IntentDisplayText switch, keyed off the PARSED
+		// COMMAND's own intent - never off anything the model emitted (§3).
+		// ⛔ AND NOT {Order}, WHICH IS THE OBVIOUS-LOOKING ALTERNATIVE AND IS
+		// WRONG: at shortfall time Counts still holds the count that CANNOT be met
+		// (the player's 10), so {Order} would offer back verbatim the order this
+		// sentence exists to say is impossible.
+		static const FText T = NSLOCTEXT("Siegebound", "Assistant_ShortfallCount", "You asked for {Requested} {Kind} - {Available} can take that order. {Intent} {Available}?");
 		return T;
 	}
 	case ESiegeAssistantReasonCode::RefusedNoAuthority:
@@ -522,9 +554,22 @@ void USiegeAssistantComponent::BeginPlay()
 
 	// ⚠️ EVERYTHING HERE IS CHEAP AND NONE OF IT CAN BLOCK MATCH START (§2). The
 	// snapshot object is an empty UObject, the vocabulary is a small UDataAsset,
-	// and Zone A is a string build. ⛔ NO MODEL IS TOUCHED: this component holds
-	// no reference into the SiegeLlama plugin at all, which is what makes "a
-	// missing GGUF never blocks match start" structural rather than careful.
+	// and Zone A is a string build.
+	//
+	// ⛔ NO MODEL IS TOUCHED, AND THE MECHANISM IS STATED CORRECTLY HERE BECAUSE
+	// THE OLD ONE WAS FALSE (§22; QA-464 WARN-3). This function used to claim the
+	// component "holds no reference into the SiegeLlama plugin at all" - it never
+	// did: NotifyConsoleOpened, DispatchTurnToModel and AbortInFlightRequest all
+	// call ResolveLlamaSubsystem, and the EnsureStaticPrefixRegistered call below
+	// adds a fourth. ⚖️ THE CONCLUSION SURVIVES; ONLY THE REASON CHANGES, which is
+	// the hardest stale claim to catch. The real mechanism is threefold and each
+	// part is checkable: (i) the subsystem pointer is RESOLVED LIVE AND NEVER
+	// CACHED, so there is no reference to dangle; (ii) every call through it is
+	// null-tolerant - a null subsystem is a silent no-op; and (iii) the plugin's
+	// own entry points are non-blocking (RequestCompletion "returns false
+	// IMMEDIATELY when !IsReady()"), so a missing GGUF costs a map read and a bool.
+	// ⇒ "A missing GGUF never blocks match start" is still true, for reasons that
+	// still exist.
 	EnsureSnapshot();
 
 	// Pre-warm Zone A so the FIRST typed sentence does not pay for it, and so its
@@ -532,9 +577,38 @@ void USiegeAssistantComponent::BeginPlay()
 	const FString& ZoneA = GetCachedZoneA();
 
 	UE_LOG(LogSiegeAssistant, Log,
-		TEXT("USiegeAssistantComponent ready on '%s' (state %s). zoneA_chars=%d, vocabulary=%s. This component NEVER ticks and holds no plugin reference; a model fault can only ever disable the console."),
+		TEXT("USiegeAssistantComponent ready on '%s' (state %s). zoneA_chars=%d, vocabulary=%s. This component NEVER ticks and never caches the subsystem pointer; every plugin call is null-tolerant and non-blocking, so a model fault can only ever disable the console."),
 		*GetNameSafe(GetOwner()), SiegeAssistantComponentInternal::StateName(State), ZoneA.Len(),
 		ResolvedVocabulary ? *GetNameSafe(ResolvedVocabulary) : TEXT("none"));
+
+	// ⚠️ ARM THE §8 BUDGET GUARDRAIL AT MATCH START (TASK-463 item 3). ⛔ THIS
+	// CHANGES **WHEN** THE PREFIX IS REGISTERED AND NOTHING ABOUT **WHAT** IS
+	// CHECKED - EnsureStaticPrefixRegistered is called unmodified, and the string
+	// it registers is the same GetCachedZoneA() every other caller uses.
+	//
+	// The observed problem (TASK-447, first live run): registration happened first
+	// at console OPEN, so a match in which the console was never opened printed
+	// "LLM_BUDGET ASSERTION IS INCOMPLETE -- NO STATIC PREFIX HAS BEEN REGISTERED"
+	// and left both snapshot budgets inert for its whole length.
+	//
+	// ⚖️ WHAT THIS ACTUALLY BUYS, STATED HONESTLY RATHER THAN OVERSOLD - because
+	// the IsReady() gate inside means it is a DELIBERATE NO-OP on a cold start:
+	//   · MATCH 2+ IN A SESSION, and any level travel or restart: USiegeLlamaSubsystem
+	//     is a GameInstance subsystem and SURVIVES travel, so the model is ALREADY
+	//     loaded when this runs and the prefix arms HERE - before anything can open a
+	//     console. That window closes completely.
+	//   · A COLD FIRST MATCH: the model is still loading (measured 1874 ms, async on a
+	//     below-normal worker), IsReady() is false, and this returns silently without
+	//     latching - exactly as designed, since ApplyPendingStaticPrefix DISCARDS a
+	//     prefix that arrives before the weights land. The existing console-open and
+	//     dispatch retries still do the work.
+	// ⛔ THAT RESIDUAL WINDOW IS NOT CLOSABLE FROM THIS LANE AND IT IS ALSO
+	// UNREACHABLE, WHICH IS WHY NO POLL/TIMER/TICK IS ADDED HERE: while !IsReady()
+	// the plugin refuses to hold a prefix at all, AND RequestCompletion returns
+	// false immediately - so there is no interleaving in which an unguarded request
+	// reaches llama_decode during it. Adding a tick to chase it would break this
+	// component's "never ticks" law (§4) to buy nothing.
+	EnsureStaticPrefixRegistered(ResolveLlamaSubsystem());
 }
 
 void USiegeAssistantComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -1003,6 +1077,18 @@ void USiegeAssistantComponent::PushMessage(ESiegeAssistantReasonCode Code, const
 	FormatArgs.Add(TEXT("Kind"), FText::FromName(Args.Kind));
 	FormatArgs.Add(TEXT("Order"), DescribeCommandForPlayer(Args.Command));
 
+	// ⚠️ THE ORDER'S VERB, so a template that names an action names the one the
+	// PLAYER asked for and not one a template author happened to type. Its only
+	// input is Args.Command - a struct pinned to uint8/int32/FName (§3), so there
+	// is no slot here through which model text could reach a sentence - and it
+	// comes from the SAME IntentDisplayText switch that builds {Order}, so the two
+	// can never disagree about the word.
+	// ⚠️ ADDED FOR EVERY CODE RATHER THAN AT ONE CALL SITE, WHICH COSTS NOTHING:
+	// FText::Format ignores an argument the pattern does not name, exactly as this
+	// function has always handed {Requested}/{Kind}/{Available}/{Order} to rows
+	// like "Order cancelled." that name none of them.
+	FormatArgs.Add(TEXT("Intent"), SiegeAssistantComponentInternal::IntentDisplayText(Args.Command.Intent));
+
 	LastMessage = FText::Format(MessageTemplate, FormatArgs).ToString();
 
 	UE_LOG(LogSiegeAssistant, Log, TEXT("[assistant] %s"), *LastMessage);
@@ -1062,17 +1148,54 @@ FText USiegeAssistantComponent::DescribeCommandForPlayer(const FSiegeAssistantCo
 	const bool bHasSelection = !Selection.IsEmpty();
 	const bool bHasPlace = Command.Where != NAME_None;
 
+	// ⛔ THE PLACE IS PRESENTED, NEVER RELATED - CONVENTIONS §30 ("a template
+	// substitutes NOUNS AND NUMBERS, never GRAMMAR"). These frames used to say
+	// "{Intent} ... to {Place}", and "to" is true of only SOME of the verbs that
+	// reach them: it is a DESTINATION for send / charge / fall back / rally and a
+	// LOCATION for guard / ambush, so the shipped line read "Guard 8 footman TO
+	// mine_near - accept?" on the CONFIRM line and the EXECUTED line of every
+	// guard or ambush order (qa/TASK-464.md WARN-5, CONVENTIONS §30).
+	//
+	// ⛔ AND {Preposition} IS BARRED, WHICH IS WHY THE PARENTHESIS IS DOING THE
+	// WORK. A substituted preposition is a LOCALIZATION FRAGMENT, not a sentence -
+	// bound to the verb before it AND the noun after it, with bindings that differ
+	// per verb and per language. English has no single preposition that is true of
+	// both readings, so the frame must stop ASSERTING a relation it cannot verify
+	// and simply PRESENT the place. A parenthetical apposition attaches to the
+	// whole clause without claiming anything about the verb - so ONE string is
+	// correct for all seven intents.
+	//
+	// ⛔ AND NOT " - ", WHICH IS THE OBVIOUS-LOOKING SEPARATOR AND IS WRONG HERE:
+	// {Order} is always read INSIDE a wrapper, and Assistant_ConfirmPrompt is
+	// "{Order} - accept?" - so a dash would render "Guard 8 footman - mine_near -
+	// accept?", two dashes at one level with no way for a reader to tell which
+	// splits the order from the question. ✅ Parentheses are SELF-DELIMITING, so
+	// the frame composes into every wrapper ("{Order} - accept?", "Ordered:
+	// {Order}", "Waiting for {Requested} {Kind}, then: {Order}") unambiguously.
+	//
+	// ⚠️ THESE THREE FRAMES ARE *NOT* THE "ONE STRING, NOT THREE" VIOLATION §30
+	// FORBIDS. They fork on WHICH DATA THE COMMAND CARRIES (a selection, a place,
+	// both), never on WHICH VERB carries it - and that fork is forced, because a
+	// frame naming {Selection} cannot render a command that has none. ⛔ Forking
+	// any ONE of them per intent is the thing that is barred.
 	if (bHasSelection && bHasPlace)
 	{
-		return FText::Format(NSLOCTEXT("Siegebound", "Assistant_Order_SelectionPlace", "{Intent} {Selection} to {Place}"), FormatArgs);
+		return FText::Format(NSLOCTEXT("Siegebound", "Assistant_Order_SelectionPlace", "{Intent} {Selection} ({Place})"), FormatArgs);
 	}
 	if (bHasSelection)
 	{
+		// ✅ Verb-neutral already - it asserts no relation, so §30 leaves it alone.
 		return FText::Format(NSLOCTEXT("Siegebound", "Assistant_Order_Selection", "{Intent} {Selection}"), FormatArgs);
 	}
 	if (bHasPlace)
 	{
-		return FText::Format(NSLOCTEXT("Siegebound", "Assistant_Order_Place", "{Intent} to {Place}"), FormatArgs);
+		// ⚠️ THE UNCITED HALF OF THE SAME DEFECT (§22: a finding names where the
+		// reporter LOOKED, never where the defect IS). WARN-5 and §30 both quote
+		// only the frame above, but this one carried the SAME "to" and IS
+		// REACHABLE: `who:"all"` parses to an EMPTY selection (SiegeAssistantCommand
+		// .cpp, the one cross-field check), so "guard everything at the mine" lands
+		// here and used to render "Guard to mine_near".
+		return FText::Format(NSLOCTEXT("Siegebound", "Assistant_Order_Place", "{Intent} ({Place})"), FormatArgs);
 	}
 
 	// The army-wide verbs (charge / fallback / rally) carry neither, by law.
@@ -2697,21 +2820,80 @@ const USiegeAssistantVocabulary* USiegeAssistantComponent::GetVocabulary()
 	// ⚠️ SET BEFORE THE LOAD, AND THAT IS THE POINT: a failed resolve is
 	// remembered as a RESULT. Retrying on a later turn could succeed mid-session
 	// and CHANGE ZONE A, which throws away every cached prefix. The snapshot's
-	// caller contract is "pass the SAME vocabulary object every turn", and a null
-	// that stays null honours it exactly as a loaded asset does.
+	// caller contract is "pass the SAME vocabulary object every turn", and this
+	// function honours it by deciding the lane exactly once.
 	bVocabularyResolved = true;
 	ResolvedVocabulary = VocabularyAsset.LoadSynchronous();
 
 	if (ResolvedVocabulary)
 	{
-		UE_LOG(LogSiegeAssistant, Log, TEXT("Assistant vocabulary resolved: %s."), *GetNameSafe(ResolvedVocabulary));
+		// ⚠️ THE ASSET LANE OVERRIDES THE C++ DEFAULTS WHOLESALE - UnitSynonyms,
+		// PlaceSynonyms and IntentSynonyms are all serialised properties, so a saved
+		// asset replaces every row rather than adding to them. ⛔ THAT MEANS THE
+		// ASSET LANE IS **NOT** THE LANE `zoneA_chars=5116` WAS MEASURED ON unless
+		// the asset reproduces the constructor defaults byte for byte;
+		// `Siegebound.Assistant.ZoneA.TwoLaneByteEquality` tests the DEFAULT lane and
+		// says nothing about this one. Whoever authors DA_AssistantVocabulary is
+		// therefore changing Zone A, which is a CONVENTIONS §12a event, not content.
+		UE_LOG(LogSiegeAssistant, Log,
+			TEXT("Assistant vocabulary: the ASSET lane is live (%s). CAUTION: an asset OVERRIDES the C++ constructor defaults wholesale, so Zone A is NOT necessarily the lane the eval ladder was measured on - CONVENTIONS 12a binds any eval claim to a PASSING ZoneA.TwoLaneByteEquality, and that test covers the DEFAULT lane only."),
+			*GetNameSafe(ResolvedVocabulary));
+		return ResolvedVocabulary;
 	}
-	else if (!bWarnedMissingVocabulary)
+
+	// ⛔⛔ THE C++ FALLBACK. TASK-417's spec required this class to "ship with sane
+	// C++ defaults so the feature works before any asset exists" (and its header
+	// still says so) - the CLASS delivered that, and this CALL SITE did not use it.
+	// The measured cost of that gap: the first live run printed `zoneA_chars=3029`
+	// with `vocabulary=none`, which is exactly 5116 - 2092 + Len("none\n") - i.e.
+	// the whole synonym table absent from the player's prompt, while every eval
+	// number this project has (18 -> 19 -> 20/25) came from the SPIKE lane, which
+	// carries that table baked into C++. ⇒ The shipped prompt was not the prompt
+	// any number described (CONVENTIONS §12a, the lane clause).
+	//
+	// ⚠️ `NewObject`, NOT `GetMutableDefault`, AND THE REASON IS EVIDENTIARY RATHER
+	// THAN STYLISTIC. `Siegebound.Assistant.ZoneA.TwoLaneByteEquality` builds its
+	// comparison object with `NewObject<USiegeAssistantVocabulary>()`, so using the
+	// same construction here makes that test's PASS a statement about the object
+	// the shipped lane actually renders - not merely about one of the same class.
+	// It also keeps a process-global CDO pointer out of a non-const member, where a
+	// later edit through `ResolvedVocabulary` would corrupt the defaults for every
+	// component in the process.
+	//
+	// Outered to `this` and held by the Transient UPROPERTY, so it is GC-rooted
+	// twice over and dies with the component. Byte-stability is unaffected: the
+	// rows come from the constructor, and BuildSynonymTable normalises order.
+	ResolvedVocabulary = NewObject<USiegeAssistantVocabulary>(this);
+
+	if (!bWarnedMissingVocabulary)
 	{
 		bWarnedMissingVocabulary = true;
-		UE_LOG(LogSiegeAssistant, Warning,
-			TEXT("DA_AssistantVocabulary did not resolve ('%s'). Zone A's synonym block prints `none`, deterministically - the KV prefix stays stable and accuracy is what pays. This is logged ONCE and is never retried, because a mid-session success would change Zone A."),
-			SiegeAssistantComponentInternal::VocabularyAssetPath);
+
+		if (ResolvedVocabulary)
+		{
+			// ⚠️ `Log`, NOT `Warning`, AND IT IS A DELIBERATE SEVERITY CHANGE - see the
+			// handoff, where it is declared. Before the fallback existed, a missing
+			// asset silently gutted Zone A and a Warning was right. Now a missing asset
+			// yields the C++ default table, which IS the lane every measurement was
+			// taken on, so warning about it would flag the CORRECT state as a fault -
+			// the "evidence-shaped false warning" CONVENTIONS §22 ranks as the worse
+			// half of a stale claim. The line still names the lane, because §12a binds
+			// eval claims to it and a reader must be able to tell which one ran.
+			UE_LOG(LogSiegeAssistant, Log,
+				TEXT("DA_AssistantVocabulary did not resolve ('%s') - falling back to the C++ CONSTRUCTOR DEFAULTS, which is TASK-417's designed path and NOT a degradation. The synonym table is present and Zone A is the DEFAULT lane (the one ZoneA.TwoLaneByteEquality checks against the spike fixture). Decided ONCE and never retried: a mid-session success would change Zone A and throw away every cached KV prefix."),
+				SiegeAssistantComponentInternal::VocabularyAssetPath);
+		}
+		else
+		{
+			// ⛔ THE ONLY REMAINING PATH TO AN EMPTY SYNONYM TABLE, AND IT KEEPS A
+			// WARNING BECAUSE IT IS THE DEFECT THIS FUNCTION EXISTS TO CLOSE. If the
+			// allocation itself fails, BuildZoneA(nullptr) prints `none` again and the
+			// prompt silently stops being the measured lane - the exact failure that
+			// went unnoticed for a whole batch. It must never be silent twice.
+			UE_LOG(LogSiegeAssistant, Warning,
+				TEXT("DA_AssistantVocabulary did not resolve ('%s') AND the C++ default vocabulary could not be allocated. Zone A's synonym block prints `none` - the prompt is the DEGRADED lane and NO eval figure describes it (CONVENTIONS 12a). Deterministic and one-shot; the KV prefix stays stable and accuracy is what pays."),
+				SiegeAssistantComponentInternal::VocabularyAssetPath);
+		}
 	}
 
 	return ResolvedVocabulary;

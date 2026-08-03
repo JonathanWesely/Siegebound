@@ -138,7 +138,17 @@ class USiegeLlamaSubsystem;
  *  - A model-load failure, a GGML fault, a timeout or a missing GGUF must NEVER
  *    block match start and NEVER degrade any key. bAssistantFaulted is a SESSION
  *    LATCH that disables the console AND NOTHING ELSE. This component never
- *    ticks, never blocks, and holds no reference into the plugin.
+ *    ticks and never blocks.
+ *    ⚠️ THE THIRD CLAUSE OF THIS LINE USED TO READ "and holds no reference into
+ *    the plugin", AND IT WAS FALSE (QA-464 WARN-3; swept under §22). Four call
+ *    sites resolve the subsystem - BeginPlay, NotifyConsoleOpened,
+ *    DispatchTurnToModel and AbortInFlightRequest. ⚖️ The CONCLUSION is unchanged
+ *    and the real mechanism is stronger than the one that was claimed: the
+ *    pointer is RESOLVED LIVE AND NEVER CACHED (so nothing can dangle across a
+ *    travel), every call is null-tolerant, and the plugin's entry points are
+ *    non-blocking - RequestCompletion returns false immediately when !IsReady().
+ *    ⛔ A true conclusion resting on a dead mechanism reads as verified and is
+ *    not; that is why the mechanism is spelled out rather than reasserted.
  *  - V1 is host/standalone only - FORCED, not chosen. SubmitUtterance refuses on
  *    !HasAuthority() with the SAME APPROVED WORDING as the keys
  *    (NSLOCTEXT("Siegebound", "Refused_OnlineObserver", ...), character-for-
@@ -365,7 +375,13 @@ enum class ESiegeAssistantReasonCode : uint8
 
 	//~ ── game-side, no model call (the short-circuit) ──
 
-	/** The player asked for more than can take that order. Filled from Requested / Available / Kind. */
+	/**
+	 *  The player asked for more than can take that order. Filled from Requested /
+	 *  Available / Kind, ⚠️ AND FROM THE COMMAND'S OWN INTENT (TASK-465): this row
+	 *  serves Send, Guard AND Ambush, so its verb is the {Intent} argument and
+	 *  never a literal. A hard-coded verb here tells a player who typed "guard"
+	 *  that the game misheard them.
+	 */
 	ShortfallCount = 6,
 
 	//~ ── refusals ──
@@ -465,8 +481,15 @@ bool SiegeAssistantParseClarificationReply(const FString& Reply, ESiegeAssistant
  *  ASiegePlayerController::GetObserverLockoutText precedent, which is a
  *  function-local static for exactly this reason).
  *
- *  Format arguments are NAMED ({Requested}, {Available}, {Kind}, {Order}) so a
- *  template can reorder them without touching a call site.
+ *  Format arguments are NAMED ({Requested}, {Available}, {Kind}, {Order},
+ *  {Intent}) so a template can reorder them without touching a call site.
+ *
+ *  ⛔ A WORD THAT IS TRUE OF ONLY SOME OF A ROW'S CALLERS IS AN ARGUMENT, NEVER A
+ *  LITERAL (TASK-465). Before writing a verb, a place, a count or a unit kind
+ *  into a row, check every path that reaches that reason code: {Intent} exists
+ *  because ShortfallCount serves three different orders and said "Send" to all
+ *  three. ⚠️ The repair is one parameterised string, NOT one row per caller -
+ *  three sentences drift, one cannot.
  */
 const FText& SiegeAssistantReasonTemplate(ESiegeAssistantReasonCode Code);
 
@@ -873,6 +896,17 @@ public:
 	 *  ⛔ NEVER A MODEL-PRODUCED STRING. Its only input is FSiegeAssistantCommand,
 	 *  which is uint8 / int32 / FName by pin, so the sentence is assembled here
 	 *  from symbols the grammar already guaranteed exist.
+	 *
+	 *  ⛔ ITS FRAMES PRESENT THE PLACE, THEY NEVER RELATE IT TO THE VERB (§30, and
+	 *  the reason TASK-471 exists). The frames carry NO preposition, because "to"
+	 *  is a destination for send / charge / fall back / rally and a LOCATION for
+	 *  guard / ambush - one word cannot be true of both, and a substituted
+	 *  {Preposition} would be a localization FRAGMENT rather than a sentence.
+	 *  ⚠️ The frames fork on WHICH DATA the command carries, ⛔ NEVER on which verb
+	 *  carries it; forking one of them per intent is barred. The test is mechanical
+	 *  and lives in handoffs/TASK-471-programmer.md: READ THE FRAME ALOUD WITH
+	 *  EVERY VALUE ITS PATH CAN SUPPLY - if any combination is ungrammatical, the
+	 *  FRAME is wrong, not the value.
 	 */
 	FText DescribeCommandForPlayer(const FSiegeAssistantCommand& Command) const;
 
@@ -1179,11 +1213,26 @@ private:
 	const FString& GetCachedZoneA();
 
 	/**
-	 *  The vocabulary asset, resolved ONCE. ⚠️ A FAILED RESOLVE IS REMEMBERED AS A
-	 *  RESULT: retrying later could succeed mid-session and CHANGE ZONE A, which
-	 *  throws away every cached prefix. The snapshot's caller contract is "pass
-	 *  the SAME vocabulary object every turn", and a null that stays null honours
-	 *  it exactly as an asset that stays loaded does.
+	 *  The vocabulary, resolved ONCE, and ⛔ NEVER NULL IN PRACTICE (TASK-463).
+	 *
+	 *  ⚠️ A FAILED RESOLVE IS REMEMBERED AS A RESULT: retrying later could succeed
+	 *  mid-session and CHANGE ZONE A, which throws away every cached prefix. The
+	 *  snapshot's caller contract is "pass the SAME vocabulary object every turn",
+	 *  and deciding the lane exactly once honours it.
+	 *
+	 *  ⛔⛔ TWO LANES, AND WHICH ONE RAN IS AN EVAL-CRITICAL FACT, NOT A DETAIL:
+	 *    · the ASSET lane - /Game/Data/DA_AssistantVocabulary loaded. It OVERRIDES
+	 *      the C++ defaults WHOLESALE, so it is NOT necessarily the lane any eval
+	 *      number describes, and `ZoneA.TwoLaneByteEquality` does not cover it.
+	 *    · the DEFAULT lane - a NewObject of this class, i.e. the C++ constructor
+	 *      rows. ⭐ THIS IS THE LANE THE WHOLE EVAL LADDER WAS MEASURED ON.
+	 *
+	 *  ⚠️ THE HISTORY IS KEPT BECAUSE IT IS THE REASON THE FALLBACK EXISTS: until
+	 *  TASK-463 this returned the raw LoadSynchronous result, so with no asset on
+	 *  disk it returned NULL, BuildZoneA printed `synonyms:\nnone`, and the first
+	 *  live run measured zoneA_chars=3029 against a measured lane of 5116. The
+	 *  class had always shipped sane defaults (TASK-417); nothing had ever used
+	 *  them. CONVENTIONS §12a's lane clause is the law that finding produced.
 	 */
 	const USiegeAssistantVocabulary* GetVocabulary();
 
@@ -1223,7 +1272,19 @@ private:
 	 *  request already in flight) is transient. The Warning is latched separately so
 	 *  a retry loop cannot become per-sentence log spam.
 	 *
-	 *  ⚠️ CALLED FROM TWO PLACES AND BOTH ARE DELIBERATE:
+	 *  ⚠️ CALLED FROM THREE PLACES AND ALL THREE ARE DELIBERATE:
+	 *    · BeginPlay - THE EARLIEST ARMING POINT (TASK-463 item 3), added because the
+	 *      first live run OBSERVED the §8 guardrail inert for a whole match: with
+	 *      registration starting at console open, a match in which the console was
+	 *      never opened never armed it at all. ⚖️ ON A COLD START THIS IS A
+	 *      DELIBERATE NO-OP - the model is still loading, IsReady() is false, and the
+	 *      two callers below do the work. What it closes completely is MATCH 2+ IN A
+	 *      SESSION and any level travel: the subsystem lives on the GameInstance and
+	 *      SURVIVES travel, so the model is already loaded and the prefix arms before
+	 *      anything can open a console. ⛔ The remaining cold-start window is
+	 *      UNREACHABLE, not merely small: while !IsReady() the plugin discards a
+	 *      prefix AND RequestCompletion returns false immediately, so no request can
+	 *      reach llama_decode unguarded during it.
 	 *    · NotifyConsoleOpened - EARLY, so the worker has APPLIED the prefix before
 	 *      the player finishes typing. This is what makes the CHAR pre-filter live
 	 *      on turn 1: it reads the APPLIED prefix on the game thread inside
@@ -1278,11 +1339,11 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<USiegeAssistantSnapshot> Snapshot;
 
-	/** DA_AssistantVocabulary (TASK-421's asset instance), resolved once. Missing ⇒ Zone A's synonym block prints `none`, deterministically. */
+	/** DA_AssistantVocabulary (TASK-421's asset instance), resolved once. Missing ⇒ the C++ constructor defaults are used instead (TASK-463) - see GetVocabulary. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Assistant")
 	TSoftObjectPtr<USiegeAssistantVocabulary> VocabularyAsset;
 
-	/** The resolved vocabulary, or null. Pinned for the life of the component - see GetVocabulary. */
+	/** The live vocabulary - the loaded asset, else a NewObject carrying the C++ defaults. Null ONLY if that allocation failed, which logs at Warning. Pinned for the life of the component - see GetVocabulary. */
 	UPROPERTY(Transient)
 	TObjectPtr<USiegeAssistantVocabulary> ResolvedVocabulary;
 
@@ -1301,7 +1362,7 @@ private:
 	/** One-shot latch for the §7 first-execution audit log. */
 	bool bLoggedFirstCapture = false;
 
-	/** One-shot latch so a missing DA_AssistantVocabulary is reported once, not once per sentence. */
+	/** One-shot latch so the vocabulary LANE is reported once, not once per sentence. ⚠️ Named "Warned" historically; since TASK-463 the missing-asset case logs at Log (it is the designed default path), and only a failed fallback allocation still warns. */
 	bool bWarnedMissingVocabulary = false;
 
 	/**
