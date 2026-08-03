@@ -60,6 +60,8 @@ M5 shipped machine-verified with the desktop LOCKED (SendInput blocked → no si
 
 **LLM-ASSISTANT — LADDER WAVE (Wave 1.5, 2026-08-03, TASK-427..435)** — the spike's verdict is IN and **Jonathan ruled at TASK-415: GO-WITH-RESCOPE.** All six bars measured; **four PASS, bar #5 FAILED at 66.7 % vs 85 %** with `parse_failures = 0` and `STRICT == LENIENT` ⇒ **the grammar provably works and the failure is COMPREHENSION, not FORMAT.** His two rulings: **(1) ITERATE THE PROMPT LADDER FIRST** — rungs 1 (few-shots) then 2 (vocabulary), then re-measure; **not** a bigger model, **not** fine-tuning, **not** a kill. **(2) DIAGNOSE THE CPU ABORTS** (2 of 5 CPU generations truncated) **before anyone changes the CPU-fallback requirement.** ⛔ **THE HARD CONSTRAINT: THE SEAL IS SPENT** — `assistant_eval_holdout.csv` has been opened and scored and may never be graded against again, so the wave's first deliverable is a **fresh sealed holdout (generation 2) authored by an owner who does NO tuning**, carrying the same failure **shapes** and **none** of the burned **strings** (§12b's trap). Also boarded: the **owed doc-vs-code audit** (nine §8 seams found by reading the document; the code has never been read against them) and a **fix** for WARN-R2, which has now misled twice. ⛔ **WAVE 1 STAYS GATED and is NOT decomposed until bar #5 clears.** Full rulings + graph in **"## LADDER WAVE (Wave 1.5)"** under Active tasks; law in CONVENTIONS **§12** (written FIRST). Develops on `main`, **NO push**.
 
+**SETTINGS+CONFIRM batch (2026-08-03, TASK-436..448)** — Jonathan's directive, verbatim: *"I'd shrug and re-order, but lets go ahead and add the confirm step, and make it a toggle in settings. We do not have a settings option so go ahead and add it to the main menu"*. ⚖️ **AND WITH IT, THE RULING THAT DEFINES THE BATCH: WAVE 1 IS UN-GATED.** He was asked explicitly and chose *"un-gate Wave 1, build it all"* — **a DELIBERATE OVERRIDE of his own standing bar-#5 gate, made with the evidence in front of him. It is NOT a bypass and must never be recorded as one.** ⛔ **Bar #5 itself never cleared (20/25 vs a gate of 22 + zero refuse-class failures) and that stays on the record, unsoftened — Wave 1 is unblocked because the USER weighed the failure modes, never because the ladder succeeded.** His grounds are measured, from his own hands-on playtest: **4 of the 5 stable failures are wrong-place / wrong-count on orders the model otherwise understood** — the class he would *"shrug and re-order"*, and **exactly the class a confirm step catches**; the one categorical failure (`DEV-04`, which invents a unit he does not own, 3/3 reproducible) gets a **CODE GUARD instead of a model.** Four deliverables: **(1)** a **settings screen that does not exist today**, reachable from the main menu, persisted across sessions; **(2)** the **assistant confirm-step toggle** living in it; **(3)** the **confirm step itself** (`AwaitConfirm` + ghost circles + accept/cancel); **(4)** the **Wave 1 plumbing it sits on** — in-game text input, live snapshot capture, the executor, the `CreateUnitGroup` extraction — plus **(5)** the **non-orderable-kind guard**, ⛔ **which is shipped safety and is NOT a route to the gate (the eval scores emitted JSON, not executed actions; nobody may report it as accuracy progress).** Develops on `main`, **NO push** (`main` is **13 ahead of origin**). 🔒 **The gen-2 sealed holdout stays SEALED — un-gating Wave 1 does NOT authorize opening it.** Full rulings + graph in **"## SETTINGS+CONFIRM"** under Active tasks; law in CONVENTIONS **"Settings screen + the assistant CONFIRM STEP + the non-orderable-kind guard (2026-08-03)"** + **§12h** (both written FIRST). **Does NOT consume the M8 Phase-1 checkpoint gate, and does NOT substitute for Jonathan's owed multiplayer + 3×-castle feedback.**
+
 ### Standing backlog (manager notes — NOT tasks, no IDs yet)
 - **Balance pass** — Jonathan flagged balancing changes wanted post-M4 (M4 playtest sign-off 2026-07-08: "we will have to make some balancing changes later, but it is fine"). **FIRST NOTES ARRIVED + TASK-IZED 2026-07-24 → TASK-278..279 ("W1 Economy-balance tasks" block below):** passive gold 1/2s→1/1s (reverts the TASK-089 income half) + ALL 28 card costs ×3 + bot `AttackBankThreshold` 12→36 audit; W1-lane branch work on `m7.6-arena10x`; StartingGold 10 left unchanged (flagged). Ledger continues in handoffs/TASK-279.md. This is a partial pass (Jonathan may send more notes). Feed-ins still on file: TASK-090 balance ledger (undefended-castle kill time ~56.5 s / ~71.3 s post-economy-change vs ~33 s prior; bot played ZERO early Miners in both rush matches — bot spend-mix), TASK-070 tuning note (bot opens with attack, not economy). **INTEGRATED 2026-07-24 (TASK-279, build-master, commit `3c32e25` on m7.6-arena10x):** base income 1/2s→1/1s LIVE (CDO `BaseIncomeTickPeriod=1`; PIE runtime: bot reached 36 gold from StartingGold 10 in ~26 s, then 18→36 in ~18 s = 1 gold/s), all 28 DT_Cards `Cost` cells ×3 LIVE (`set_rows` + readback Footman 9 / Ogre 36 / DeepMine 45 / CrystalTower 27, no other column drifted, DT_Cards.uasset saved + committed), bot `AttackBankThreshold` 12→36 LIVE (LogSiegeBot: banked to 36 → fielded Knight cost 18 ×2; deck 'Bot Aggro Rush' avg cost 14.16). StartingGold LEFT at 10 (flagged). NEXT-PASS WATCH (Jonathan): undefended-castle kill-time lengthens further under ×3 costs (prior ~56.5/71.3 s); the slower opening + bot heavier-unit mix is a feel check.
 - **HUD overtime indicator never shows** (pre-existing bug found at TASK-090, routed to manager): WBP_HUD ShowOvertime calls UpdateOvertimeDisplay with a hardcoded-false pin (bound via SetupStatTexts CreateEvent; UpdateOvertimeDisplay itself is correct). One-pin UMG fix + shortened-threshold verify — fold into the next UMG-touching chain or the balance pass; do not lose it.
@@ -4129,7 +4131,7 @@ Concretely, for this batch:
 - **(a) THE ASSISTANT IS STRICTLY ADDITIVE, AND THIS IS THE RISK THAT MATTERS MOST.** Default-follow means **the player now personally orders every fight**, so an unreliable assistant would make the game *worse*, not merely unhelpful. Law is in CONVENTIONS §2: every key still works byte-identically, the console is never a requirement, **no future task may route a key through it**, and a fault/timeout/missing-GGUF never blocks match start.
 - **(b) SHIPPING THE 2.5 GB GGUF IS A WAVE-2 PROBLEM AND IS DELIBERATELY UNSOLVED HERE.** Dev builds read it from a gitignored `/Models`. `RuntimeDependencies` + staging errors **surface only in a packaged build**, which is why Wave 2 requires a packaged Development build, not just an editor compile. Do not bolt a shipping path in early.
 - **(c) DISK/BANDWIDTH COST TO JONATHAN.** `Tools/fetch_llm_model.py` pulls ~2.5 GB per model evaluated. Norton HF exclusions are already live and proven (run bare, no `SSL_CERT_FILE` hack); `HF_TOKEN` lives in HKCU and a Windows rollback wipes it. If a chosen repo is gated, that is a Jonathan step, not an agent workaround.
-- **(d) `Enter` IS THE PROPOSED OPEN KEY** (the arena has no chat). `IMC_Hero` is a **binary `.uasset` the manager cannot text-verify** — Wave 1's B4 runs the same in-editor conflict check TASK-399 ran for `C`, and **FLAGS, never stomps**. Recorded now so the key is not assumed free.
+- **(d) ✅ CLOSED 2026-08-03 — `Enter` IS FREE, VERIFIED EXHAUSTIVELY, NOTHING STOMPED.** TASK-445 enumerated **all 6 `InputMappingContext` assets**, checking `defaultKeyMappings.mappings`, the **legacy `mappings` array** *and* `mappingProfileOverrides`, plus `Config/DefaultInput.ini` and a code grep for `EKeys::Enter` / `Return` / `Virtual_Accept` / `NumPadEnter` — **zero hits.** ⚠️ **The only adjacent fact is `bAltEnterTogglesFullscreen=True`, which is the engine's Alt+Enter CHORD, not a bare-Enter binding** — correctly identified as a non-collision rather than treated as one. ✅ **Path collision closed too: `/Game/Input/Actions/IA_AssistantConsole.IA_AssistantConsole` matches `SiegePlayerController.cpp:180` at 59/59 characters, compared PROGRAMMATICALLY** — so TASK-449's soft-pointer resolve will bind. ⚖️ **This is what "FLAG, never stomp" looks like when the flag comes back green: the three places a binding can hide were all checked, and the answer is evidence rather than an absence of alarm.** ⇒ **A NEW question replaces it — whether `Enter` DOUBLE-FIRES (open + submit) — and that one is a TASK-448 playtest item, not a conflict.** ~~`Enter` IS THE PROPOSED OPEN KEY; `IMC_Hero` is a binary `.uasset` the manager cannot text-verify — B4 runs the conflict check and FLAGS, never stomps.~~
 - **(h) 🔬 THE `MilitiaMob → militiamob` VERIFICATION IS PARTIAL, AND IS RECORDED AS PARTIAL RATHER THAN ROUNDED UP TO "CLOSED".** Build-master probed the shipped **CDO** against `DT_Cards`: all **12 Unit CardIDs round-trip**, `MilitiaMob → militiamob`, **`militia_mob` is gone**, `miner` correctly the only extra. ⚠️ **Two honest limits, both stated by build-master and preserved here:** (1) the check **derives the symbol in Python rather than EXECUTING the shipped function** (`CanonicalKind` is a private static in the `.cpp` — not reflected, so a commandlet cannot call it; CONVENTIONS "GIT HAZARD LAWS" (c1)); (2) it is **external to the test suite, so it is NOT a regression guard** — nothing re-runs it. **The live roster print is still OWED and belongs to whoever first gets PIE** (TASK-420 §(3) or TASK-413). This is exactly the distinction the relayed-diagnosis law exists to protect: a correct answer obtained by a different mechanism than the one that ships.
 - **(e) THE ARENA'S PLACE VOCABULARY IS SMALL BY DESIGN IN V1, AND IS NOW PINNED CHARACTER-FOR-CHARACTER IN CONVENTIONS §9a** — `enemy_castle` · `own_castle` · `mid` · `ancient_ground_near` · `ancient_ground_far` · `nearest_mine` · `hero`. No free-form map references, no "over there", no coordinates. **CLOSED for v1**: widening it silently changes Zone A and invalidates both the KV-prefix claim and the measured accuracy, so it is a later pass **with its own accuracy re-measurement.** (⚠️ `hero` is pinned but **unasserted by any corpus row** — vocabulary, not tested coverage.)
 - **(f) NO HUD WORK IS BOARDED.** The console owns its own transcript; `OnCommandPromptChanged` already surfaces prompts and prompts also LOG.
@@ -4151,7 +4153,11 @@ Concretely, for this batch:
 **START IMMEDIATELY, IN PARALLEL (6): TASK-409 · TASK-411 · TASK-416 · TASK-417 · TASK-418 · TASK-426.** All are new-files-only or single-owner edits to an unowned shipped file, all are file-lane work (TASK-426 is headless and needs no editor), none touches anything the FOLLOW batch owns.
 ⚠️ **TASK-426 MUST LAND BEFORE TASK-410 STARTS** — that ordering *is* the seal (ruling 14). TASK-410 is `blocked-by` both TASK-409 and TASK-426.
 
-### Wave 1 — GATED ONE-LINERS (⛔ `blocked-by` the FOLLOW batch commit **TASK-403** AND the spike verdict **TASK-415 = GO**; IDs assigned at decomposition, NOT now)
+### Wave 1 — ✅ **DECOMPOSED 2026-08-03 → TASK-440..448 in "## SETTINGS+CONFIRM". These four one-liners are HISTORY; the board entries supersede them.**
+
+⚖️ **UN-GATED BY JONATHAN, DELIBERATELY.** He was asked explicitly and chose *"un-gate Wave 1, build it all"* — **an OVERRIDE of his own bar-#5 gate, never a bypass.** ⛔ **Bar #5 never cleared (20/25 vs 22 + zero refuse-class failures) and that stays on the record.** ⚠️ **The FOLLOW-commit gate (TASK-403) did NOT clear either and is handled DIFFERENTLY rather than waived:** TASK-395..398 are qa-passed and compiled green but uncommitted, so **TASK-440 edits `SiegePlayerController.{h,cpp}` ADDITIVELY on top of that work and TASK-447 splits the commit BY ATTRIBUTION** (SETTINGS+CONFIRM ruling 7). **ID map:** B1 → **TASK-440** · B2 → **TASK-442** (skeleton) + **TASK-443** (executor + confirm + toggle + guard) · B3 → **TASK-444** · B4 → **TASK-445**.
+
+~~⛔ `blocked-by` the FOLLOW batch commit **TASK-403** AND the spike verdict **TASK-415 = GO**; IDs assigned at decomposition, NOT now~~
 
 - **B1 — gameplay-programmer, EXCLUSIVE owner of `SiegePlayerController.{h,cpp}`. CRITICAL PATH.** Extract `ConfirmGroupPickStage`'s stage-3 body into a public `CreateUnitGroup(Type, PosCenter, PosRadius, AtkCenter, AtkRadius, Members, PosMarker=nullptr, AtkMarker=nullptr)` so the cursor pick calls it too and there is one implementation — **QA acceptance is "provably zero behavior change" by read-through (the TASK-397 idiom)** — plus the `USiegeAssistantComponent` default subobject, ONE `ApplyCursorInputState` term, and four mutual-exclusion guards against placement/targeting/group-pick. **Nothing else.**
 - **B2 — gameplay-programmer.** `USiegeAssistantComponent`: the `Idle → Composing → Thinking → {AwaitConfirm | Clarify | Failed}` + `Deferred` FSM, the executor, the selector, the deferred intent (latched, kind+count trigger, 120 s TTL, **1 Hz timer armed only while latched, re-resolves on fire and returns to AwaitConfirm — never executes blind**), reason codes and the player-facing template table. Includes the **~15-line short-circuit** that handles most clarification turns **with no model call at all**. **Confirm-before-execute with ghost circles via `SpawnGroupCircleDecal` is a HARD acceptance criterion** — constrained decoding guarantees syntax; the preview is what guarantees semantics.
@@ -5029,8 +5035,40 @@ Concretely, for this batch:
 
 #### TASK-423 — [LLM-A2] `USiegeLlamaSubsystem` — worker thread, queue depth 1, abort, timeouts, offload tiering, KV reuse (gameplay-programmer)
 - assignee: gameplay-programmer
-- status: backlog
-- blocked-by: **TASK-415 = GO or GO-WITH-RESCOPE** (⛔ **manager ruling 3: this task's entire shape is determined by the spike's numbers — writing it before the verdict is writing it twice**)
+- status: **qa-passed** (2026-08-03 — `qa/TASK-424.md`: **PASS, 0 blockers**. Flip applied by the ORCHESTRATOR; qa-reviewer has no partial-edit tool. ⚠️ **STILL THE ZONE-A TWO-LANE GATE ONLY** — the runnable `USiegeLlamaSubsystem` was carved out to **TASK-450** (also `qa-passed`) after an ORCHESTRATION scoping error, not a programmer shortfall; the declared shortfall was recorded as a credit. ✅ QA diffed the 98-line frozen spike copy line-by-line against `SiegeLlamaSpike.cpp:220-354` — **genuinely verbatim, in order**. ✅ §13 clean: 5 `TestEqualSensitive` + 1 `TestNotEqualSensitive`, and all 7 `TestEqual` sites are `int32`. ⛔ **WARN-5 REMAINS INSTRUMENTED, NOT DISCHARGED** — no test in this repo has ever executed; discharge is TASK-447's compile **plus a green run, claimed against that run.**)
+- ⛔ **DO NOT READ THIS `ready-for-qa` AS "TASK-423 IS DONE" (gameplay-programmer, 2026-08-03).** Delivered: ONE new file,
+    `Source/GitClaudeUnrealTest/Siegebound/Tests/SiegeAssistantZoneATest.cpp` — five `Siegebound.Assistant.ZoneA.*` automation tests
+    asserting the shipped `BuildZoneA(default vocab)` byte-identical to a frozen verbatim copy of the spike's `AppendZoneA`, both at
+    exactly **5116 chars AND 5116 UTF-8 bytes**, both ASCII-clean, plus the static-prefix contract. **⛔ NO TOKEN CONSTANT ANYWHERE
+    (§12g).** NOT delivered: the subsystem, the runnable, queue depth 1, abort, the three timeouts, tiering/KV reuse, and spec item (9)'s
+    budget work — **these need their own dispatch.**
+- ⛔ **WARN-5 IS *NOT* DISCHARGED — IT IS INSTRUMENTED.** The test **has never run** (no compile this task; TASK-447 owns the one gate).
+    **Discharge happens when TASK-447's compile lands AND `Siegebound.Assistant.ZoneA.*` runs GREEN**, and must be claimed against that
+    run, never against the handoff. Still out of reach even when green: the **`DA_AssistantVocabulary` ASSET lane is untested** (the asset
+    overrides the C++ defaults wholesale), and tokens remain a runtime reading.
+- ⚠️ **AMENDMENT A — THE SPIKE DELETION IS DEFERRED, DECLARED HERE AS THE AMENDMENT REQUIRES.** `SiegeLlamaSpike.cpp` + `SpikeCorpus.inl`
+    are **NOT deleted**: it is the only command printing `zoneA_tok`, it is what makes the new fixture auditable by text-diff, and — decisive —
+    **its replacement does not exist yet, so deleting it now leaves ZERO model-load paths, not one.** The deletion belongs in the same commit
+    as the subsystem.
+- handoff: `handoffs/TASK-423-programmer.md`
+- blocked-by: ✅ **NONE — UN-GATED 2026-08-03 AND DISPATCHABLE NOW (SETTINGS+CONFIRM ruling 1).** Jonathan was asked explicitly and chose *"un-gate Wave 1, build it all"* — **a DELIBERATE OVERRIDE of his own bar-#5 gate, not a bypass.** ⛔ **Bar #5 itself never cleared (20/25 vs 22 + zero refuse-class failures) and that stays on the record.** The original gate is preserved for history: ~~**TASK-415 = GO or GO-WITH-RESCOPE** (⛔ manager ruling 3: this task's entire shape is determined by the spike's numbers — writing it before the verdict is writing it twice)~~ — ✅ **the numbers now EXIST (TASK-413 measured all six bars), so ruling 3's condition is satisfied on its own terms: you are writing this once, from measurements, exactly as intended.**
+- ⚠️ **AMENDMENTS FOLDED IN BY THE MANAGER 2026-08-03 — READ BEFORE TOUCHING THE SPEC BELOW, WHICH PREDATES THE LADDER WAVE:**
+    **(A) ⛔ DO NOT DELETE THE MEASURING INSTRUMENT AND THEN QUOTE A NUMBER FROM MEMORY.** Spec step "FIRST ACT: DELETE `SiegeLlamaSpike.cpp`" is
+    **still correct in intent** (two model-load paths must never coexist) but it now also deletes **the ONLY command that prints `zoneA_tok`**
+    (`Siege.Llama.SpikePrompt` — §12c's hard gate reads it) **and one of the two lanes of the owed `BuildZoneA` equality test** (§12g,
+    `handoffs/TASK-434-buildmaster.md` §6 item 4). ⇒ **Take the two-lane equality assertion and any final token reading FIRST, in this task,
+    BEFORE the deletion — or defer the deletion and SAY SO in the handoff.** ⛔ **A silent deletion that strands both is a QA FAIL.**
+    **(B) TWO SYMBOLS IN THE SPEC BELOW ARE STALE AND THE VENDORED HEADER WINS:** it is **`llama_memory_seq_rm`** (`llama.h:735`), **not**
+    `llama_kv_cache_seq_rm` — that symbol **does not exist anywhere in the vendored header**; and it is **`load_mode = LLAMA_LOAD_MODE_MMAP`**,
+    **not** `use_mmap = true` — that member no longer exists. **Rename only; both requirements are unchanged.**
+    **(C) THE BUDGET ASSERTION LANDS ON CHARACTERS, THE CEILING STAYS A RUNTIME READING (§12g).** The startup assertion is on **CHARS/BYTES**
+    (exact, countable offline, and this repo's prompt literals are verified ASCII-clean so char == byte); ⛔ **a DERIVED token constant must
+    NEVER be baked into a test** — its error sign is unknown, and an automated guardrail that reports safe is worse than none.
+    **`MaxSnapshotChars` is RETIRED at your commit, not re-pointed** (1085 is an *authority* value assuming the SMALLEST plausible ratio; a
+    *pre-filter* must assume the LARGEST — the safe direction inverts with the role). Introduce **`MaxSnapshotTokens` = 400** and
+    **`SnapshotPreFilterMaxChars` = 3000**. ⚠️ **And the observable-truncation condition is re-anchored onto THE ACT: any mechanism that truncates
+    the snapshot, under any name, must LOG observably** — your new cut sites are not covered by the snapshot builder's existing log.
+    **(D) §12h — THE REPEAT LAW:** any figure you quote from a single run carries its spread, and ⛔ **no "+1 row" claim may rest on one run.**
 - parallel-safe: yes vs the game lane; **EXCLUSIVE owner of `Plugins/SiegeLlama/Source/SiegeLlama/{Public,Private}/SiegeLlamaSubsystem.{h,cpp}`**
 - spec: >
     **Read CONVENTIONS §8 and the §9 pinned registry first — `USiegeLlamaSubsystem`'s four methods and the delegate are binding
@@ -5051,8 +5089,11 @@ Concretely, for this batch:
     **(5) THREE TIMEOUTS:** soft **4 s** (UX only — keeps waiting, just tells the FSM to say something), hard **10 s** (abort), token budget
     **96**. Values are `EditDefaultsOnly`/named constants, **corrected from TASK-413's measurements**, all flagged for Jonathan's feel pass.
     **(6) OFFLOAD TIERING + KV REUSE, BOTH DRIVEN BY THE SPIKE'S NUMBERS:** pick full-offload / partial / CPU-only from measured VRAM
-    headroom, defaulting to **partial** (the tier the frame-time bar is written against); `use_mmap = true`; small `n_ubatch`;
-    `llama_kv_cache_seq_rm` prefix retention keyed on the **Zone A + Zone B** prefix so turn two reuses it (**~70 % prefill drop** is the bar).
+    headroom, defaulting to **partial** (the tier the frame-time bar is written against); **`load_mode = LLAMA_LOAD_MODE_MMAP`** (⚠️ **CORRECTED
+    2026-08-03 — this clause read `use_mmap = true` and THAT MEMBER NO LONGER EXISTS; rename only, requirement unchanged**); small `n_ubatch`;
+    **`llama_memory_seq_rm`** (⚠️ **CORRECTED 2026-08-03 — this clause read `llama_kv_cache_seq_rm`, which appears NOWHERE in the vendored
+    header, `llama.h:735` is the real symbol**) prefix retention keyed on the **Zone A + Zone B** prefix so turn two reuses it
+    (**~70 % prefill drop** is the bar).
     **(7) SAFETY:** SEH around the eval · **`bAssistantFaulted` session latch** · **the completion delegate ALWAYS fires on the GAME THREAD** ·
     a GGML crash must not kill the game · shutdown joins the worker cleanly and frees the model.
     **(8) THE PLUGIN STILL KNOWS NOTHING ABOUT SIEGEBOUND.** No `#include` of any game-lane header, no Siegebound type in any signature.
@@ -5081,11 +5122,22 @@ Concretely, for this batch:
     character-for-character**) · `LogSiegeLlama`. **DELETES** `SiegeLlamaSpike.cpp` + `SpikeCorpus.inl`.
     Law: CONVENTIONS "In-match LLM command assistant" §1, §5, §8, §9, §10.
 
-#### TASK-424 — [LLM-QA3] QA gate on TASK-423 — the subsystem gets its OWN gate (qa-reviewer)
+#### TASK-424 — [LLM-QA3] QA gate on TASK-423 **+ TASK-450** — the subsystem gets its OWN gate (qa-reviewer)
 - assignee: qa-reviewer
-- status: backlog
-- blocked-by: TASK-423
+- status: **done** (2026-08-03 — report `qa/TASK-424.md`. **PASS / PASS, 0 blockers**, 8 warns, 7 nits. Slack posted in ⚙️ Dev & QA. Board flips applied by the ORCHESTRATOR, not by QA. 🔒 **The spike deferral was verified at FOUR artifacts and ruled CORRECT:** `assistant_eval_holdout2.csv` exists · its rows assert *"at t0"* by name · `t0` lives at `SiegeLlamaSpike.cpp:509-519` · `Siege.Llama.SpikeEval` is registered at `:4744-4751` **and exists nowhere else** ⇒ deleting that file would make the sealed corpus **unmeasurable**. CONVENTIONS **§16** already ruled the deletion **UNSCHEDULED**. ⚠️ **THIS GATE'S OWN ITEM (10) IS SUPERSEDED** by §16, as is TASK-447's inherited *"deletion in the same commit"* clause — **both owed a strike by manager.** ⚠️ `SpikeCorpus.inl` **confirmed never to have existed** — owed a strike from both `names:` lines. ⚠️ The game-lane `MaxSnapshotChars` work is **15 matching lines, not 10** — the gap is prose-vs-call-site, **§14 instance 2**.)
+- blocked-by: TASK-423 **+ TASK-450** — ⚠️ **SCOPE WIDENED 2026-08-03**
 - parallel-safe: no (single QA report)
+- ⚠️ **WHY THE SCOPE MOVED, STATED PLAINLY: TASK-423 WAS DISPATCHED AGAINST ITS HEADLINE AND DELIVERED ONLY THE ZONE-A EQUALITY TEST.** The
+  subsystem itself is **TASK-450**. ✅ **The programmer DECLARED the shortfall rather than letting a partial pass as `done` — that is the
+  behaviour this pipeline wants, it is the only reason this was caught before the compile gate, and it is recorded as a credit, not a miss.**
+  ⇒ **ONE report covers both:** the **landed test** (TASK-423) and the **subsystem** (TASK-450). The spec's items (1)–(11) below are the
+  subsystem's criteria and apply to TASK-450. **Two additions:**
+  **(12) ⚠️ THE ZONE-A EQUALITY TEST ASSERTS ON CHARACTERS, NEVER ON A DERIVED TOKEN CONSTANT** (§12g — a baked derived constant is an
+  assertion whose error **sign is unknown**, and it looks authoritative, which is worse). **And check its comparator: a byte-identity claim made
+  with `TestEqual` is VACUOUS** (CONVENTIONS "Settings screen…" §13 — this is what TASK-451 exists to sweep, and this file is in its scope).
+  **(13) ⛔ THE SPIKE DELETION IS DEFERRED-AND-DECLARED, AND THAT WAS THE RIGHT CALL — verify it happened at TASK-450 and not before.** With no
+  subsystem, deleting the spike leaves **ZERO** model-load paths rather than one. ⚠️ **Also confirm any final `zoneA_tok` reading was taken
+  BEFORE the deletion — it is the only command that prints one.**
 - spec: >
     **This is a separate gate on purpose: a threading + native-interop subsystem must never share a QA report with pure gameplay code.**
     **Report `qa/TASK-424.md`.** Beyond the standing laws:
@@ -5108,8 +5160,8 @@ Concretely, for this batch:
 
 #### TASK-425 — [LLM-INT3] Compile GREEN + integration commit — the inference subsystem (build-master)
 - assignee: build-master
-- status: backlog
-- blocked-by: **TASK-424 PASS**
+- status: ⛔ **SUPERSEDED 2026-08-03 by TASK-447 — DO NOT DISPATCH.** ⚖️ **The reason is the QUIET-MODULE LAW, not convenience: two compile gates are MUTUALLY EXCLUSIVE**, and TASK-423's subsystem now lands in the same wave as seven game-module tasks that all need one. **Running both would mean quiescing the module twice to prove the same thing once.** ⇒ **TASK-447 absorbs this task's ENTIRE spec** — the compile, the machine smoke test (`Siege.Llama.Info`; async load never blocks match start; one parseable JSON from a hard-coded prompt+GBNF; **a second concurrent call returns false — queue depth 1**; `CancelActiveRequest()` aborts mid-prefill within the hard timeout; **a deliberately-absent model file leaves the match fully playable with one log line**; and the **partial-tier frame-time hitch re-measured against TASK-413's number — a regression there is a finding, not a footnote**) and the commit, including **the spike-harness deletion in the same commit as the subsystem**. ⚠️ **TASK-424 (QA on the subsystem) is NOT superseded — it is read-only, owes its own report, and gates TASK-447.**
+- blocked-by: ~~TASK-424 PASS~~ — **n/a, superseded**
 - parallel-safe: no (EXCLUSIVE compile + Git — serialize with TASK-414 / TASK-422)
 - spec: >
     Compile GREEN (game module + plugin). Then a **machine smoke test**: `Siege.Llama.Info` still reports the backend; the subsystem loads the
@@ -5184,11 +5236,1489 @@ Concretely, for this batch:
 
 ---
 
+## SETTINGS+CONFIRM — decomposed 2026-08-03 on Jonathan's un-gate ruling — TASK-436..448
+
+**Jonathan's directive, verbatim:** *"I'd shrug and re-order, but lets go ahead and add the confirm step, and make it a toggle in settings. We do not have a settings option so go ahead and add it to the main menu"*.
+
+**Law was written FIRST (house rule):** CONVENTIONS **"Settings screen + the assistant CONFIRM STEP + the non-orderable-kind guard (2026-08-03)"** (10 sub-sections incl. the code-authored-tree ruling and the pinned signature registry) + **§12h** (the repeat law).
+
+### Manager rulings (binding for TASK-436..448)
+
+1. ⚖️ **WAVE 1 IS UN-GATED, AND IT IS A DELIBERATE OVERRIDE BY JONATHAN — RECORD IT AS ONE, NEVER AS A BYPASS.** He was asked explicitly and chose *"un-gate Wave 1, build it all."* This **overrides his own standing bar-#5 gate** (*"Wave 1 GATED until bar #5 clears"*). It is his to override and he made it with the evidence in front of him. ⛔ **BAR #5 ITSELF NEVER CLEARED — 20/25 against a gate of 22 AND zero refuse-class failures — AND THAT STAYS ON THE RECORD, UNSOFTENED.** ⚠️ **No handoff, QA report or commit message may say Wave 1 was unblocked *because the ladder worked.* It was unblocked because the USER weighed the failure modes and accepted them.** Those are different sentences and only one is true.
+2. ⚖️ **THE CONFIRM STEP'S RATIONALE IS MEASURED, NOT ASSUMED — AND THE EVIDENCE IS RECORDED HERE SO NOBODY RE-DERIVES IT.** Of the five stable failures, **four are wrong-place / wrong-count on orders the model otherwise understood**, which is exactly the class a ground preview makes obvious at a glance:
+   · `DEV-01` *"send 10 footmen with a sorcerer to the nearest ancient ground"* → `{"who":[{"footman",10},{"sorcerer",1}],"where":"nearest_mine"}` — **units RIGHT, place WRONG**
+   · `DEV-16` *"infantry back to our castle now"* → `{"intent":"fallback","who":"none"}` — **whole-army retreat**
+   · `DEV-20` *"clerics follow me"* → `{"cleric","n":1}` — **1 instead of all**
+   · `DEV-07` *"charge with the footmen"* → `{"intent":"charge","who":"none"}` — **selection silently dropped**
+   · `DEV-04` *"send the catapults at the enemy base"* → `{"sapper","n":1}` at `enemy_castle` — ⛔ **INVENTS A UNIT HE DOES NOT OWN**
+   ⇒ **`DEV-04` is different IN KIND and 3/3 reproducible. Prompt work will not fix it — it gets the CODE GUARD (ruling 4), not a model.**
+3. ⛔ **THE TOGGLE REMOVES A HUMAN REVIEW STEP AND NEVER A MACHINE CHECK. THIS IS THE RULING THAT MAKES THE TOGGLE SAFE TO SHIP.** With confirm OFF the FSM skips `AwaitConfirm` and executes — it does **NOT** skip the parse, the `Kinds.Num() == Counts.Num()` invariant, the shortfall/clarification path, eligibility, the authority refusal, or the non-orderable guard. ⚠️ **A task that "simplifies" the off-path by short-circuiting any of those has converted a UX preference into a safety regression: automatic QA FAIL.** The tell is one sentence — **every check that runs with the toggle ON runs with it OFF.** Default is **`true` (ON)**, argued from ruling 2's table.
+4. ⛔ **THE NON-ORDERABLE-KIND GUARD IS SHIPPED SAFETY AND IS NOT A ROUTE TO THE GATE.** It rejects any order whose `who[].kind` is not orderable in the live snapshot, **before execution, independent of the model**, surfaced as the **existing** unsupported-ask outcome. ⚠️ **IT DOES NOT MAKE `DEV-04` PASS THE EVAL — the eval scores EMITTED JSON, not EXECUTED ACTIONS.** ⛔ **Any artifact that lists this guard under an accuracy heading is factually wrong and is failed at the gate.** ✅ It is **unit-testable with no model resident**, which is why it is cheap: the snapshot already tallies `KindOrderable` and merely never exposed it.
+5. ⛔ **`USiegeAssistantSnapshot` HAS ZERO CALLERS AND ZERO TESTS TODAY, AND WAVE 1 IS ITS FIRST EXECUTION EVER.** Its truncation logging **has never emitted a line** — every *"now observable"* clause in §8/§10 describes code that has never run. **"Observable" is not "observed."** ⇒ **TASK-447 owes the first-execution audit as a real deliverable with named observations** (`handoffs/TASK-434-buildmaster.md` §6 item 5), not a "looks fine".
+6. ⛔ **THE QUIET-MODULE LAW BINDS THIS BATCH HARDER THAN USUAL AND IT IS SERIALIZED DELIBERATELY.** Seven programmer tasks land in `Source/GitClaudeUnrealTest/` — **one UBT module.** They are single-owner-per-file and therefore **parallel-safe to WRITE**; they are **never safe beside a BUILD.** ⇒ **EXACTLY ONE COMPILE GATE IN THIS BATCH (TASK-447), and the module is quiesced before it runs** — every C++ task finished with its handoff written, not merely non-conflicting. ✅ **TASK-423 is in `Plugins/SiegeLlama/`, a SEPARATE UBT module, and is genuinely parallel-safe against that gate.**
+7. ⚠️ **CORRECTED 2026-08-03 — THIS RULING WAS WRONG AND THE WRONG VERSION IS STRUCK, NOT DELETED** (*"the manager is not exempt"*). ~~The FOLLOW batch's work is sitting uncommitted in `SiegePlayerController.{h,cpp}` and that is the correct state; TASK-440 edits additively and the integration commit splits the two lanes BY ATTRIBUTION because they cannot be split by pathspec.~~
+   ✅ **THE FILES WERE CLEAN. Jonathan had already committed the FOLLOW lane himself (`e70f5ba`)** — the standing *"Jonathan self-commits and pushes his own work"* pattern, which I did not check for. ⇒ ⛔ **THE ATTRIBUTION SPLIT IS RETIRED FROM TASK-447: the lanes are separated BY COMMIT, which is strictly stronger than a split argued in a commit message.** The whole working diff in those files is TASK-440's own work.
+   ⚖️ **THE LESSON THAT GENERALISES: A "THIS FILE IS DIRTY" PREMISE IS A CLAIM ABOUT THE WORKING TREE AND IT DECAYS FASTER THAN ANYTHING ELSE A SPEC CAN ASSERT** — Jonathan commits without telling the pipeline. ⇒ **A spec may say *"run `git status --porcelain` and branch on the answer"*; it may NOT say *"it will be dirty"*.** The pre-flight stays mandatory; the **prediction** was the defect.
+   📌 **PROVENANCE: verified against git BY THE ORCHESTRATOR, first-hand. The manager has no git tool and did NOT re-derive it.** Recorded as a first-hand verification by the party holding the instrument, per the relayed-diagnosis law — which binds me too.
+   ⚠️ **Flag (p) is UNAFFECTED: TASK-402's playtest still has not run, and it now sits under BOTH lanes.**
+8. 🔨 **THE SETTINGS WIDGET'S TREE IS CODE-AUTHORED — A SECOND, SEPARATE NAMED EXCEPTION THAT DOES NOT INHERIT FROM §6 RULING A** (which is scoped to the console widget only and says citing it elsewhere is a misuse). Argued on its own facts in CONVENTIONS §3 of the new section, with the same five conditions. ⛔ **NEVER duplicate+reparent a WidgetBlueprint** — that silently breaks RUNTIME repaint while design-time looks fine and has already cost ~9 wasted fixes. **The reserved asset `/Game/UI/WBP_SettingsMenu` is the zero-C++-change escape hatch.**
+9. ⚠️ **UMG VERIFICATION IS A PIXEL OR HUMAN CHECK, NEVER AN MCP READBACK.** MCP readback has repeatedly passed on visually-broken UMG here (TASK-355's six controls read back 6/6 correct while stacked in a 165×48 px box in the corner — *"a binding readback cannot see geometry"*). **Every on-screen claim in this batch closes on rendered pixels or Jonathan's eyes.**
+10. **SINGLE OWNER PER FILE.** `SiegeSettingsSaveGame.{h,cpp}` + `SiegeSettingsSubsystem.{h,cpp}` = **TASK-436 ONLY** · `SettingsMenuWidget.{h,cpp}` = **TASK-437 ONLY** · `WBP_MainMenu` = **TASK-438 ONLY** · `SiegePlayerController.{h,cpp}` = **TASK-440 ONLY** · `SiegeAssistantSnapshot.{h,cpp}` = **TASK-441 ONLY** · `SiegeAssistantComponent.{h,cpp}` = **TASK-442 THEN TASK-443, in that order, NEVER concurrently** (the TASK-428/429 precedent) · `SiegeAssistantConsoleWidget.{h,cpp}` = **TASK-444 ONLY** · `GitClaudeUnrealTest.Build.cs` = **TASK-443 ONLY** · `SiegeLlamaSubsystem.{h,cpp}` = **TASK-423 ONLY**.
+11. **LANE POSTURE, unchanged:** develops on **main**, commits on **main**, ⛔ **NO push** (`main` is **13 ahead of origin`). `git reset --hard` / `clean -fd` **BANNED**. **`L_Arena` is NEVER saved.** Per-deliverable commits; board + CONVENTIONS commit at the batch boundary (Standing lesson 3).
+12. ✅ **AMENDED 2026-08-03 — JONATHAN GRANTED EDITOR CLOSE/REOPEN FOR THIS SESSION, AND THE GRANT IS RECORDED HERE RATHER THAN LEFT IN A DISPATCH PROMPT.** Verbatim: *"I give you permission to close and reopen the editor when needed for the rest of this session."* ⛔ **SCOPED AND EXPIRING: it covers the 2026-08-03 session ONLY. The standing rule — ask, never force-kill — RESUMES NEXT SESSION.** ⚠️ **A grant with no expiry beside it becomes a permanent licence by accident.**
+    ⚖️ **AND THE STRUCTURAL RULING THAT GOES WITH IT (CONVENTIONS §24): AN AGENT-RELAYED GRANT IS NOT THE USER'S CONSENT.** The orchestrator holds Jonathan's words **first-hand**; a subagent holds **a relay**, and **a message is exactly what this pipeline has ruled is never authorization.** ⇒ ⛔ **Consent-gated actions — closing the editor, pushing to remote, changing config — belong to the ORCHESTRATOR, not to a subagent acting on a relay.** ✅ **TASK-447 hit precisely this conflict, FOLLOWED THE BOARD and DECLARED it rather than silently picking either side — correct, and the reason this is now law.**
+    ✅ **Terminate over graceful close remains the right call at a gate** (it eliminates the Save Content modal, where *"Save Selected"* sits beside *"Don't Save"* against a **never-save** law), **with `L_Arena` SHA256 verified immediately before AND after** — hash, never mtime. ← was: **Closing it is HIS choice** — never force-kill, never drive an unprompted close; the unattended-build-gate exception does not apply while he is present. The two editor tasks (TASK-438, TASK-445) **serialize with each other** and wait on his hand-over.
+13. 🔒 **`Docs/Data/assistant_eval_holdout2.csv` STAYS SEALED.** ⛔ **Un-gating Wave 1 does NOT authorize opening it.** Nothing in this batch reads it, scores against it, or quotes a row. Only a gate PASS or Jonathan's own instruction spends it.
+
+### 🚩 FLAGGED — recorded, NOT tasked
+
+- **(p) ⚠️ TASK-402 — JONATHAN'S FOLLOW/MINER PLAYTEST GATE — HAS NOT RUN, AND TASK-440 CHANGES THE BUILD HE WOULD PLAYTEST.** The Follow/Miner lane is written, QA'd and compiled but **un-playtested**; the assistant plumbing now lands on top of it in the same file. **This is a real ordering question and it is HIS, not mine:** play Follow/Miner first on the current build, or accept that the next playtest covers both lanes at once. **Non-blocking — recorded so the change is not silent.**
+- **(q) `Siege.Llama.SpikePrompt` IS THE ONLY COMMAND THAT PRINTS `zoneA_tok`, AND TASK-423's SPEC ORDERS `SiegeLlamaSpike.cpp` DELETED.** Deleting it removes the **only instrument** that measures the §12c token ceiling **and one of the two lanes** of the owed `BuildZoneA` equality test (§12g / `TASK-434` §6 item 4). ⇒ **AMENDMENT, recorded on TASK-423: the two-lane equality test and any final token reading are taken BEFORE the deletion, in the same task, or the deletion is deferred and said so.** ⛔ **Do not delete a measuring instrument and then report a number from memory.**
+- **(r) IN-MATCH ACCESS TO SETTINGS IS OUT OF SCOPE.** Jonathan named the main menu and nothing else. Because the value lives on a `UGameInstanceSubsystem`, an in-match/pause entry later is **one widget task and zero C++ change.** Recorded so nobody builds a pause menu on spec.
+- **(s) `DEV-11` IS UNSTABLE ACROSS RUNS UNDER A GREEDY SAMPLER AND IS NOT DIAGNOSED** (CONVENTIONS §12h). Not a task here; it is the reason the **repeat law** now binds every future eval number. ⛔ **No task may spec a fix for it as though the cause were known.**
+- **(t) 🧑 ESCAPE DOES NOT CLOSE THE CONSOLE — JONATHAN'S CALL AT TASK-448.** TASK-444 left Escape **unabsorbed on purpose** so the shipped cancel routes keep firing, and **surfaced it instead of deciding silently** — the right move. The trade is a §2 one: absorbing Escape gives the expected close behaviour but takes a key that already means *"cancel"* everywhere else. **Recorded, not tasked; I write the ruling into law once he gives it.**
+- **(u) ⚠️ `GitClaudeUnrealTest.Build.cs:30`'s `SlateCore` COMMENT NAMES A DELETED FILE — RE-POINT THE COMMENT, NEVER REMOVE THE DEPENDENCY** (CONVENTIONS "Settings screen…" §12). `SiegeAssistantInputProbe.cpp` is gone, but **`USiegeAssistantConsoleWidget` is now the module's only `ETextCommit`-in-a-`UFUNCTION` and only `FSlateApplication` user**, so the dependency is still load-bearing. ⛔ **Removing it reproduces the exact 16-unresolved-externals link failure the comment exists to prevent — it compiles fine and fails at LINK.** Fold the one-sentence comment fix into whichever task next touches that file; **it is not worth a task of its own and it must not be lost.**
+- **(v) 📌 THE `Grep` COMMENT-MANGLING TRAP FIRED A FOURTH TIME**, in `SiegePlayerController.cpp` (`//` rendered as `\` at the `ResolveInputAction` and FOLLOW-binding comments). **No new law is owed — CONVENTIONS §10 already covers it** — but it is logged because the count now spans **three files and three lanes**, which is what makes it a property of the tool rather than of any file. ⚖️ **`Grep` LOCATES; it does not READ.**
+
+### Dependency order + dispatch frontier
+
+```
+SETTINGS LANE (independent of the assistant — this is the parallelism that matters)
+▶ NOW  TASK-436 (gp  SaveGame + settings subsystem) ─┐
+▶ NOW  TASK-437 (gp  USettingsMenuWidget, code-authored tree) ─┴─> TASK-439 (QA1) ─┐
+                                                                                    │
+ASSISTANT WAVE 1 LANE                                                               │
+▶ NOW  TASK-423 (gp  USiegeLlamaSubsystem — PLUGIN module) ──> TASK-424 (QA3) ──────┤
+▶ NOW  TASK-440 (gp  B1 CreateUnitGroup extraction — CRITICAL PATH) ────────────────┤
+▶ NOW  TASK-441 (gp  orderability accessors + the GUARD + tests) ─┐                 │
+▶ NOW  TASK-442 (gp  B2a component FSM skeleton) ─────────────────┴─> TASK-443 (gp B2b executor + CONFIRM + toggle + guard call)
+▶ NOW  TASK-444 (gp  B3 console widget, deletes the input probe) ───────────────────┐
+▶ NOW  TASK-445 (art B4 IA_AssistantConsole + IMC_Hero, EDITOR) ────────────────────┤
+                                                              TASK-446 (QA2) <──────┴── 440 · 441 · 443 · 444
+                                                                          │
+        TASK-439 PASS + TASK-446 PASS + TASK-424 PASS ────────────────────┴─> TASK-447 (bm QUIESCE + COMPILE + snapshot FIRST-EXECUTION AUDIT
+                                                                                         + hosts TASK-438 in-session + commit) ─> TASK-448 (🧑 playtest)
+```
+
+**START IMMEDIATELY, IN PARALLEL (8): TASK-423 · TASK-436 · TASK-437 · TASK-440 · TASK-441 · TASK-442 · TASK-444 · TASK-445.** All are new-files-only or single-owner edits; all compile against the pinned registry rather than against each other. ⚠️ **TASK-445 is EDITOR-GATED and waits on Jonathan's hand-over; it serializes with TASK-438.**
+⛔ **NOT PARALLEL: TASK-443 follows TASK-442 on the same file (never concurrently) and needs TASK-441's validator. TASK-438 runs INSIDE TASK-447's session, after its compile step (the TASK-355/357 precedent — the `CreateWidget` node cannot pick a C++ class that has not been compiled).**
+⛔ **ONE COMPILE GATE ONLY (TASK-447). The module is quiesced first — every C++ task finished with its handoff written.** ⚠️ **TASK-425 (the Wave-0 A2 commit) is SUPERSEDED by TASK-447: two compile gates would be mutually exclusive under the quiet-module law, and there is no reason to run two.**
+
+### ⚠️ FRONTIER UPDATE — 2026-08-03, after the first five landed (436 · 437 · 440 · 441 · 444)
+
+```
+▶ NOW  TASK-449 (gp  the OPEN-KEY SEAM — nothing opens the console today) ──┐
+▶ NOW  TASK-450 (gp  USiegeLlamaSubsystem, the REAL one — PLUGIN module) ───┼─> TASK-424 (QA3: 423 + 450)
+▶ NOW  TASK-451 (gp  the TestEqual→TestEqualSensitive sweep, 4 test files) ─┤
+       TASK-443 (gp  executor + CONFIRM + toggle) ─ still waits on 442 ─────┴─> TASK-446 (QA2: 440·441·443·444·449·451)
+       TASK-452 (gp  DA_AssistantVocabulary asset-lane test) ── blocked-by TASK-421
+```
+
+**ADD TO THE IMMEDIATE FRONTIER (3): TASK-449 · TASK-450 · TASK-451.** All three are single-owner, no-compile, and mutually disjoint by file; **TASK-450 is in the PLUGIN module and is parallel-safe against everything game-side.**
+⛔ **TASK-451 MUST LAND BEFORE TASK-447** — that gate runs the very tests it repairs. ⛔ **TASK-450 MUST LAND BEFORE TASK-447** — the gate's smoke test (inherited from the superseded TASK-425) tests a subsystem that does not exist yet.
+📌 **Three finished tasks are being re-owned sequentially and that is legitimate: 440 → 449 (`SiegePlayerController`), and 417/423/436/441 → 451 (their test files). Every one is delivered with its handoff written; ⛔ none may be re-owned while its original task is live.**
+
+---
+
+#### TASK-436 — [SET-1] `USiegeSettingsSaveGame` + `USiegeSettingsSubsystem` — the persisted settings store (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: **qa-passed** (2026-08-03 — `qa/TASK-439.md`: **PASS, 0 blockers**, 2 warns, 2 nits. Flip applied by the ORCHESTRATOR because qa-reviewer has no partial-edit tool; the verdict is QA's, the edit is mine. ⚠️ **WARN-436-2:** the `true`-direction save/load assertion cannot distinguish *loaded true* from *never loaded* — does NOT block TASK-447. ⛔ **QA EXPLICITLY DID NOT CERTIFY THE TOGGLE'S OFF-PATH** — it verified only the scope fact that this task references no assistant/guard/executor code, which is NOT the sentence *"every check still runs with the toggle off."* **That trace is TASK-443's and closes at TASK-446; this task may not be cited as evidence for it.** Handoff `handoffs/TASK-436-programmer.md`; ⛔ NOT compiled, TASK-447 is the one gate)
+- blocked-by: **none — DISPATCHABLE NOW**
+- parallel-safe: yes (new files only); **EXCLUSIVE owner of `SiegeSettingsSaveGame.{h,cpp}` + `SiegeSettingsSubsystem.{h,cpp}`**
+- spec: >
+    **Read CONVENTIONS "Settings screen + the assistant CONFIRM STEP…" §2 and §8 first — the signatures are binding character-for-character**,
+    because TASK-437 and TASK-443 both compile against them and neither will exist when you start.
+    **(1) `USiegeSettingsSaveGame : USaveGame`** carrying exactly one field in v1: **`bool bAssistantConfirmBeforeExecute = true`**.
+    ⚠️ **`USaveGame` AND NOT `UGameUserSettings` — RULED, and the reason matters because the other answer looks more idiomatic:**
+    `UGameUserSettings` is the engine's home for video/audio/input and adopting it means a **`GameUserSettingsClassName` edit in
+    `DefaultEngine.ini`** — a shipped-config change plus a new engine coupling, to store one gameplay bool. **`USiegeDeckSaveGame` + a fixed
+    slot is this project's proven, package-safe, runtime-writable idiom** and needs no config edit. ⛔ **Do NOT edit any `.ini`.**
+    **(2) `USiegeSettingsSubsystem : UGameInstanceSubsystem`** — ⚠️ **the class MUST be a GameInstance subsystem and that is the whole
+    requirement, not a style choice: the value is WRITTEN in `L_MainMenu` and READ in `L_Arena`, mid-match.** A widget- or controller-owned
+    value does not survive `OpenLevel` (the Input-mode ownership law is this same lesson wearing different clothes). Precedents:
+    `USiegeSessionSubsystem`, `USiegeLlamaSubsystem`.
+    **(3) LOAD ONCE, SAVE ON CHANGE, AND NEVER TOUCH THE DISK FROM A GAMEPLAY PATH.** `Initialize()` loads slot **`"SiegeSettings"`**,
+    user index **0**. **Missing / unreadable / wrong class ⇒ fall back to the C++ defaults, log ONCE on `LogSiegeSettings`, never crash**
+    (the `USiegeDeckSaveGame` null-safety contract — copy it, do not reinvent it). `SetAssistantConfirmEnabled` writes the in-memory value
+    **and** saves the slot. ⛔ **`IsAssistantConfirmEnabled()` is a pure in-memory getter — a `LoadGameFromSlot` on the order path would put a
+    disk hit inside a mid-battle interaction.**
+    **(4) `OnSettingsChanged` BROADCASTS ON EVERY ACTUAL VALUE CHANGE, NEVER ON A NO-OP WRITE** (the delegate law + the qa/TASK-005 major-2
+    lesson: a UI that binds without seeding goes stale, and a delegate that fires on refused mutations trains consumers to ignore it).
+    **(5) AUTOMATION TESTS — cheap here and genuinely worth it.** `IMPLEMENT_SIMPLE_AUTOMATION_TEST` under `#if WITH_DEV_AUTOMATION_TESTS`.
+    Cover at minimum: **default is `true` on a fresh/absent slot** · **set → get round-trips** · **save → load round-trips the value**
+    · **a missing slot yields defaults and does not crash** · **the delegate fires on a real change and does NOT fire on a same-value write.**
+    ⛔ **NO widget code, NO assistant code, NO `Content/` asset, NO `.ini`, NO Git, NO compile.** New files only.
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    ⚠️ **And say WHY it is true here rather than only asserting it: this value is client-local by construction — it governs a LOCAL review
+    step and never an authoritative outcome.**
+    Handoff `handoffs/TASK-436-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    `SiegeSettingsSaveGame.{h,cpp}` · `USiegeSettingsSaveGame` · `bAssistantConfirmBeforeExecute` (default **`true`**) ·
+    `SiegeSettingsSubsystem.{h,cpp}` · `USiegeSettingsSubsystem` · `SettingsSlotName` == **`"SiegeSettings"`** (a const,
+    character-for-character — ⚠️ **a changed slot name silently orphans every player's saved settings**) ·
+    `IsAssistantConfirmEnabled` / `SetAssistantConfirmEnabled` / `OnSettingsChanged` / `FOnSiegeSettingsChanged` ·
+    `LogSiegeSettings`. **§8 pinned registry, character-for-character.**
+    Law: CONVENTIONS "Settings screen + the assistant CONFIRM STEP…" §2, §8, §10 · "Deck-builder & saved decks (M6)" (the SaveGame idiom) ·
+    "Delegates (C++)" · "Logging (C++)".
+
+#### TASK-437 — [SET-2] `USettingsMenuWidget` — the settings screen, CODE-AUTHORED TREE (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: **qa-passed** (2026-08-03 — `qa/TASK-439.md`: **PASS, 0 blockers**, 2 warns, 4 nits. Flip applied by the ORCHESTRATOR (qa-reviewer has no partial-edit tool). ✅ **QA RULED THE BEFORE-`Super` DEPARTURE CORRECT AND THE SPEC TEXT WRONG**, verified at the engine source: `UserWidget.cpp:1214` returns an `SSpacer` when `RootWidget` is null, and `BindWidget*` members resolve inside `Initialize()` at `WidgetBlueprintGeneratedClass.cpp:275`, so *"only if still null"* is fully determined before Super runs. ⇒ ⛔ **`CONVENTIONS.md:1195` STILL CARRIES THE WRONG ORDERING AND WILL SHIP THE NEXT CODE-AUTHORED WIDGET BLANK — fix owed to manager.** ✅ **The `NativeOnInitialized` trap is a CONFIRMED NEGATIVE here** — all eight children wire from `NativeConstruct` (`SettingsMenuWidget.cpp:301-315`). ⚠️ Note the asymmetry QA recorded: the shipped `USessionMenuWidget` *does* use `NativeOnInitialized` and is CORRECT to, because it is a WBP — **copying that precedent into a code-authored widget is the bug.** ⚠️ **WARN-437-1:** `ConstructSettingsTree()` runs before Super's defensive `Initialize()` — unreachable via `CreateWidget`, one-line fix, non-blocking. Handoff `handoffs/TASK-437-programmer.md`. New files only: `Source/GitClaudeUnrealTest/Siegebound/SettingsMenuWidget.{h,cpp}`. Built under CONVENTIONS "Settings screen…" **§3** / board **ruling 8** — ⚠️ **NOT §6 ruling A**, which is console-scoped. No `.uasset` authored, `/Game/UI/WBP_SettingsMenu` still RESERVED, no editor/MCP/PIE, no compile, no Git. ⚠️ **QA read §5.1 of the handoff first: the tree is built BEFORE `Super::RebuildWidget()`, a deliberate departure from the spec's literal wording** — the engine reads `WidgetTree->RootWidget` as it stands and returns an `SSpacer` when null, so building after Super yields a silently EMPTY widget that still passes every readback (the TASK-411 probe's recorded finding). ⚠️ **Nothing on screen is verified — pixel checklist for TASK-448 is handoff §7, and the backdrop click-through test is the blocker criterion.**)
+- blocked-by: **none — DISPATCHABLE NOW** (compiles against TASK-436's pinned signatures; ⚠️ **it will not compile ALONE and is not expected to** — the TASK-416/417 precedent, do not open a QA loop over it)
+- parallel-safe: yes; **EXCLUSIVE owner of `SettingsMenuWidget.{h,cpp}`**
+- spec: >
+    **Read CONVENTIONS "Settings screen + the assistant CONFIRM STEP…" §3 (the ruling), §4 (navigation) and §8 (the pin) first.**
+    **(0) ⛔ YOU ARE AUTHORING NO `.uasset`. THE TREE IS BUILT IN C++.** This is a **NEW, NAMED, SCOPED ruling (§3)** — ⚠️ **it is NOT §6
+    ruling A, which is scoped to the console widget only and says citing it elsewhere is a misuse.** The grounds: with no asset there is
+    nothing for a name to drift from; ⛔ **the alternative — a `WBP_` born as a duplicate+reparent — has SILENTLY BROKEN RUNTIME REPAINT on
+    this project (design-time fine, ~9 wasted fixes)**; and the one route avoiding both is a **Jonathan hand-step**, which is not owed for a
+    two-control panel.
+    **(1) BUILD THE TREE IN `RebuildWidget()` via `WidgetTree->ConstructWidget<>`** — and **construct each child ONLY IF that member is still
+    null after `Super::RebuildWidget()`**. Every child is a `UPROPERTY(meta=(BindWidgetOptional))` with the **exact pinned names**, so a
+    `WBP_SettingsMenu` authored later **wins automatically with ZERO C++ change.** That escape hatch is a QA criterion, not a nicety.
+    **(2) ⚠️ `BackdropBorder` IS HIT-TEST **VISIBLE**, AND THIS IS CORRECTNESS, NOT STYLING — IT IS THE OPPOSITE OF `WBP_SessionMenu`'s
+    BACKDROP.** The panel is added **ON TOP of `WBP_MainMenu`** (§4), so a hit-test-INVISIBLE plate lets clicks fall through to
+    Play / Sandbox / Deck Builder / Quit **while the panel looks modal.** TASK-355's backdrop was deliberately `HIT_TEST_INVISIBLE` because it
+    sat over nothing clickable; **copying that choice here ships a live click-through into "Quit".**
+    ⇒ **QA CRITERION: with the panel open, a click on the backdrop reaches NOTHING behind it.**
+    **(3) THE ONE SETTING ROW.** `ConfirmToggleCheckBox` seeded from `USiegeSettingsSubsystem::IsAssistantConfirmEnabled()` **and THEN bound**
+    (seed-then-bind — a bind-only widget created at a pinned value stays stale, qa/TASK-005 major-2). `ConfirmTogglePressed(bool)` forwards to
+    `SetAssistantConfirmEnabled`. Player-facing text is **game-authored** and lives here:
+    label **"Confirm AI orders before they execute"**, hint **"Shows the parsed order and its target circles for review. Recommended — the
+    assistant can pick the wrong place or the wrong number."** ⚠️ **That hint is the measured truth from ruling 2's table, stated plainly to the
+    player; do not soften it into marketing.**
+    **(4) `BackPressed()` CALLS `RemoveFromParent(self)` AND NOTHING ELSE.** ⛔ **It does NOT re-create or re-open the main menu** — the menu was
+    never removed, it is alive underneath, and re-creating it would put navigation state in the leaf plus a soft asset path to get wrong.
+    **(5) NULL-SAFE THROUGHOUT.** No subsystem resolvable ⇒ the row renders **disabled** with the hint text explaining it, logs once, and
+    **never crashes** (the `USessionMenuWidget::ShowLocalError` shape). A settings screen that hard-faults on a missing subsystem is worse than
+    no settings screen.
+    **(6) THE CONTRACT IS CLONED FROM `USessionMenuWidget` EXACTLY:** `BindWidgetOptional` members · `BlueprintCallable` wrappers ·
+    **FString/int32/bool/uint8-only `BlueprintImplementableEvent`s.** ⛔ **Never an enum or a struct in a BIE param.**
+    **(7) ⚠️ VERIFICATION IS A HUMAN PIXEL CHECK AND YOU CANNOT CLOSE IT YOURSELF (§3 condition (e), ruling 9).** There is no `.uasset` to
+    read back and **MCP readback has repeatedly passed on visually-broken UMG here.** **Write down what Jonathan must look at** — it becomes
+    TASK-448's checklist. **Do not report "verified" for anything on-screen.**
+    ⛔ **NO settings-subsystem edits (TASK-436 owns it), NO assistant code, NO `Content/`, NO Git, NO compile.** New files only.
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-437-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    `SettingsMenuWidget.{h,cpp}` · `USettingsMenuWidget` · `BackPressed` / `ConfirmTogglePressed` / `OnSettingsValueChanged`
+    (**§8 registry, character-for-character**). **Pinned children:** `RootPanel` (`UVerticalBox`) · `BackdropBorder` (`UBorder`,
+    **hit-test VISIBLE**) · `TitleText` (`UTextBlock`) · `ConfirmToggleCheckBox` (`UCheckBox`) · `ConfirmToggleLabelText` (`UTextBlock`) ·
+    `ConfirmToggleHintText` (`UTextBlock`) · `BackButton` (`UButton`) · `BackLabelText` (`UTextBlock`).
+    🔒 **RESERVED, NOT AUTHORED: `/Game/UI/WBP_SettingsMenu`** — the zero-C++-change fallback; nothing else may take that path.
+    Law: CONVENTIONS "Settings screen…" §3, §4, §8 · "Widgets with C++ bases" · the template-donor / duplicate+reparent prohibition.
+
+#### TASK-438 — [SET-3] `Btn_Settings` — the main-menu entry, ADDITIVE (art-director, EXCLUSIVE editor)
+- assignee: art-director
+- status: backlog
+- blocked-by: **TASK-447's COMPILE STEP — and it runs INSIDE that session** (the TASK-355/357 precedent). ⚠️ **The reason is mechanical, not procedural: the `CreateWidget` node cannot pick a C++ class that has not been compiled yet.** Also serializes with TASK-445 (one editor).
+- parallel-safe: no (EDITOR-GATED, and Jonathan owns the hand-over)
+- spec: >
+    **Add ONE entry to the EXISTING `/Game/UI/WBP_MainMenu`. Nothing else.**
+    **(1) FOLLOW THE SHIPPED IDIOM CHARACTER-FOR-CHARACTER** — it is already proven on this exact asset by TASK-355's "Multiplayer" entry:
+    font **28**, `MakeMargin(24,12,24,12)`, `HAlign_Fill`; **granular ops only, `write_graph_dsl` NEVER called**; and the **`add_event`-first
+    pattern** that defeats the `AssignOnClicked` auto-rename trap. **Lift the geometry off the shipped buttons — do not invent it.**
+    **(2) ORDER: Play (vs Bot) → Sandbox (No Bot) → Deck Builder → Multiplayer → Settings → Quit.** ⚠️ **Splice BEFORE the Quit block so Quit
+    stays last** (exactly how Multiplayer was spliced).
+    **(3) HANDLER:** `CreateWidget(USettingsMenuWidget)` → **`AddToViewport(ZOrder 10)`**. ⛔ **Do NOT `RemoveFromParent` the main menu** — the
+    settings panel sits ON TOP and `Back` removes only itself (§4). ⚠️ **There is no `WBP_SettingsMenu` asset and there must not be one** — you
+    are picking the **C++ class** in the node's class field. **If the class does not appear in the picker, the compile did not land: STOP and
+    report — do not author a WidgetBlueprint to work around it.**
+    **(4) ⛔ THE FIVE PRE-EXISTING ENTRIES ARE UNTOUCHABLE, AND YOU PROVE IT RATHER THAN ASSERT IT: full-graph DSL diff showing all five are
+    character-identical** (the ruling-3 idiom TASK-355 used). Do not disturb the Play-vs-Bot / Sandbox / Deck Builder / Multiplayer bindings.
+    **(5) COMPILE THE WIDGET with `warnings_as_errors=true`, then COMPILE AGAIN AND CONFIRM SILENCE** — the design-time GUID self-heal is an
+    `ensureAlwaysMsgf`, so **silence on the second compile is the proof it persisted** (the lane law earned at TASK-355).
+    **(6) SAVE `/Game/UI/WBP_MainMenu` ONLY.** ⛔ **`L_Arena` is NEVER saved or opened.** No PIE. **Zero Git — TASK-447 commits.**
+    **Hand the editor back RUNNING and say so with its PID.** ⚠️ **Never force-close it — that is Jonathan's call and he is at the keyboard.**
+    **(7) ⚠️ ON-SCREEN CORRECTNESS IS NOT YOURS TO CLOSE (ruling 9).** A binding/tree readback **cannot see geometry** — that is exactly how
+    TASK-355 shipped six controls stacked in a 165×48 px corner box with a 6/6 green readback. **Report what you built; list what Jonathan must
+    look at.**
+    Handoff `handoffs/TASK-438-artist.md`. Post in 🎨 Art.
+- names: >
+    `Btn_Settings` on `/Game/UI/WBP_MainMenu` (label **"Settings"**) → `CreateWidget(USettingsMenuWidget)` → `AddToViewport(ZOrder 10)`.
+    Law: CONVENTIONS "Settings screen…" §4 · "Dev / test tooling" (the `Btn_Sandbox` additive-entry precedent) · the UMG verification law.
+
+#### TASK-439 — [SET-QA1] QA gate covering TASK-436 + TASK-437 (qa-reviewer)
+- assignee: qa-reviewer
+- status: **done** (2026-08-03 — report `qa/TASK-439.md`. **PASS on both**, 0 blockers. Slack posted in ⚙️ Dev & QA. Board flips applied by the ORCHESTRATOR, not by QA. Two findings escalated beyond this gate: (i) ⛔ **`CONVENTIONS.md:1195` carries a wrong widget-construction ordering** that QA re-derived from the engine source and that will blank the next code-authored widget — routed to manager; (ii) the `NativeOnInitialized` asymmetry between WBP and code-authored trees, owed the same section. ⛔ **This gate did NOT certify the toggle's off-path** — TASK-443 owes that trace and TASK-446 closes it.)
+- blocked-by: TASK-436 + TASK-437 (both `ready-for-qa`) — **both cleared**
+- parallel-safe: yes vs the assistant lane's QA (different report, read-only)
+- spec: >
+    **Pre-compile review. Read the landed files, not the handoffs describing them** (the RELAYED-DIAGNOSIS LAW: a relayed diagnosis is a lead,
+    and **QA re-derives the root cause from the source before accepting it**).
+    **Verify at minimum:** the **§8 pinned signatures character-for-character** · the **slot name `"SiegeSettings"` exactly** ·
+    **default `true`** · **`Initialize` degrades to defaults on a missing/wrong-class slot and logs once, never crashes** · **no
+    `LoadGameFromSlot` on any read path** · **`OnSettingsChanged` does not fire on a same-value write** · **no `.ini` edit anywhere** ·
+    **seed-then-bind on the checkbox** · ⚠️ **`BackdropBorder` is hit-test VISIBLE** (ruling: a hit-test-invisible backdrop is a live
+    click-through into "Quit" and is a **BLOCKER**, not a nit) · **every child is `BindWidgetOptional` and constructed only when null** (the
+    escape hatch is a criterion) · **BIE params are FString/int32/bool/uint8 only** · **the M8 declaration is present VERBATIM in both handoffs**.
+    ⚠️ **`Grep` MANGLES COMMENT SYNTAX ON THIS MACHINE** (`//` renders as `\`; three occurrences, two files, two lanes). ⇒ **Comment-syntax and
+    structural analysis is done on RAW `Read` output. `Grep` LOCATES; it does not READ.** Say which tool produced any text you quote.
+    ⚠️ **STATE WHAT YOU DID NOT RUN.** Nothing here has been compiled and no pixel has been rendered. **"Reviewed by reading" is legitimate,
+    useful and INCOMPLETE — report it as incomplete and name the parser you did not run** (§9c's promoted law). ⛔ **Reporting it as a PASS is
+    how a grammar that had never once loaded reached a measurement run.**
+    Report `qa/TASK-439.md`. Post the verdict in ⚙️ Dev & QA.
+- names: > Law: CONVENTIONS "Settings screen…" §2, §3, §8 · the RELAYED-DIAGNOSIS LAW · §9c (the parser is the reviewer of record) · §10's `Grep` trap.
+
+#### TASK-440 — [W1-B1] `CreateUnitGroup` extraction + the assistant component subobject + the mutual-exclusion guards (gameplay-programmer) — ⛔ CRITICAL PATH
+- assignee: gameplay-programmer
+- status: ✅ **qa-passed → ready-for-integration** (2026-08-03 — `qa/TASK-446.md`: **PASS · 0 BLOCKERS · 9 WARN · 6 NIT** across all eleven tasks. Flip applied by the manager, not QA — QA has no partial-edit tool and the board was being written concurrently.)
+- status: **ready-for-qa** (2026-08-03 — handoff `handoffs/TASK-440-programmer.md`; ⛔ NOT compiled, see that handoff §7)
+- blocked-by: **none — DISPATCHABLE NOW** (⚠️ see ruling 7: the file is DIRTY with uncommitted FOLLOW work and that is CORRECT)
+  - ⚠️ **RULING 7 IS STALE AS OF THIS TASK'S PRE-FLIGHT — THE FILES CAME BACK CLEAN, NOT DIRTY.** Jonathan committed the FOLLOW lane himself as **`e70f5ba` "follow command, and new miner behavior rework"** (Aug 2). ⇒ ✅ **TASK-447 NO LONGER OWES AN ATTRIBUTION SPLIT on `SiegePlayerController.{h,cpp}`** — they were clean when TASK-440 started, so their entire working diff is TASK-440 and the two lanes are already separated **by commit**, which is stronger than by attribution. ⚠️ **Flag (p) still stands: TASK-402's FOLLOW/miner playtest gate has still NOT run, and the assistant plumbing now sits on top of it in the same build.**
+- parallel-safe: yes to WRITE (single owner); ⛔ **never beside a compile gate.** **EXCLUSIVE owner of `SiegePlayerController.{h,cpp}`**
+- spec: >
+    **(0) ⚠️ PRE-FLIGHT, AND THE EXPECTED RESULT IS "DIRTY".** `git status --porcelain` on both files. **TASK-395..398's Follow/Miner work is
+    qa-passed, compiled green and UNCOMMITTED** (TASK-403 waits on Jonathan's TASK-402 playtest). ⛔ **Do NOT revert it, rebase it, "clean it
+    up", or merge it. Edit ADDITIVELY on top of it.** ⛔ **`git reset --hard` / `clean -fd` are BANNED** — they are what destroyed a whole
+    session's board work once already. **If anything looks wrong, STOP and report; do not repair another lane's file.**
+    **(1) EXTRACT `ConfirmGroupPickStage`'s stage-3 body into a public
+    `CreateUnitGroup(Type, PosCenter, PosRadius, AtkCenter, AtkRadius, Members, PosMarker=nullptr, AtkMarker=nullptr)`** so the cursor pick
+    calls it too and **there is ONE implementation**. ⚖️ **QA ACCEPTANCE IS "PROVABLY ZERO BEHAVIOR CHANGE" BY READ-THROUGH (the TASK-397
+    idiom) — that is the whole deliverable and it is why this task is alone in this file.** An extraction that "tidies" one line while moving it
+    is not an extraction; it is an untested change wearing a refactor's clothes.
+    **(2) THE `USiegeAssistantComponent` DEFAULT SUBOBJECT** (created in the constructor; the class is TASK-442's — you create it, you do not
+    author it).
+    **(3) ONE `ApplyCursorInputState` TERM** for the console's cursor posture. ⚠️ **`ApplyCursorInputState` composes the ONLY cursor owners
+    (placement, Alt-held `IA_UICursor`, match-end) — add a term, never a parallel path**, or the level-travel input law starts leaking again.
+    **(4) FOUR MUTUAL-EXCLUSION GUARDS** against placement mode / targeting mode / group-pick / the console. **They must be symmetric** — the
+    console refuses to open during the other three, and the other three refuse to start while it is open.
+    **(5) EXPOSE WHAT THE CONFIRM STEP NEEDS, MINIMALLY.** `SpawnGroupCircleDecal(float Radius)` must be reachable by the component for the
+    ghost circles. **Widen access no further than required and prove zero behavior change.**
+    ⛔ **NOTHING ELSE. No unit edits, no component body, no `Content/`, no Git, no compile.**
+    ⚠️ **§2 IS THE LAW THIS TASK IS MOST ABLE TO BREAK: every keyboard command must still work BYTE-IDENTICALLY** — `IA_CmdFollow` /
+    `IA_CmdAttack` / `IA_CmdHold` / `IA_CmdDefend` / `IA_CmdAmbush` / `IA_Rally` / cards 1–6 keep their exact shipped behaviour and their exact
+    shipped code paths. **The assistant calls the same public APIs the keys call — never a parallel implementation, never a "better" one.**
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-440-programmer.md` — including **a read-through argument for the extraction, function-by-function**, and an explicit
+    **list of which lines in the file are YOURS vs the FOLLOW lane's** (TASK-447 splits the commit BY ATTRIBUTION because pathspec cannot).
+    Post in ⚙️ Dev & QA.
+- names: >
+    `SiegePlayerController.{h,cpp}` · `CreateUnitGroup` · `ConfirmGroupPickStage` · `ApplyCursorInputState` · `SpawnGroupCircleDecal` ·
+    `USiegeAssistantComponent` (subobject only). Law: CONVENTIONS "In-match LLM command assistant" §2 (strictly additive) ·
+    "Input-mode ownership (level-travel law)" · "Settings screen…" §9 (the attribution split) · the QUIET-MODULE LAW.
+
+#### TASK-441 — [W1-GUARD] Orderability accessors + the NON-ORDERABLE-KIND GUARD + automation tests (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: ✅ **qa-passed → ready-for-integration** (2026-08-03 — `qa/TASK-446.md`, PASS · 0 blockers)
+- status: **ready-for-qa** (2026-08-03 — `handoffs/TASK-441-programmer.md`). ⛔ **NOT COMPILED, NOT RUN — one compile gate only (TASK-447). "The tests are written" is the only true statement; "the tests pass" is not claimable yet.** ⛔ **AND THE HEADLINE STAYS THE HEADLINE: THIS GUARD DOES NOT MAKE `DEV-04` PASS THE EVAL AND IS NOT PROGRESS ON BAR #5** — the eval scores EMITTED JSON, this refuses an EXECUTED ACTION; **bar #5 stands at 20/25 against 22 + zero refuse-class failures, uncleared.** ✅ **PUBLISHED FOR TASK-443, character-for-character:** `bool IsKindOrderable(FName) const` · `int32 GetOrderableCount(FName) const` · `enum class ESiegeAssistantRejectReason : uint8 { None, KindNotOrderable, KindUnknown }` · `bool ValidateCommandAgainstSnapshot(const FSiegeAssistantCommand&, const TArray<FSiegeAssistantRosterEntry>&, ESiegeAssistantRejectReason&, FName&)`. **Both out-params written on EVERY path incl. success** (the deliberate opposite of `ResolvePlace`); a multi-kind order with one bad kind is refused **as a whole**, naming the **first** offender. ⚠️ **TWO THINGS QA MUST RULE ON, DECLARED NOT SLIPPED IN: (1) `FSiegeAssistantRosterEntry` GAINED ONE FIELD — `int32 Orderable = 0` (appended).** The §9 struct pin and the §8 validator pin are **not simultaneously satisfiable** otherwise: the three pinned fields answer *"is it here"* and cannot answer *"may it be ordered"*, yet the signature must tell `KindNotOrderable` from `KindUnknown` **from the roster array alone** — and the three alternatives each break something explicitly forbidden (a `const USiegeAssistantSnapshot*` param is *"rejected on sight"*, a 5th param breaks the pin TASK-443 links against, one merged reason breaks the pinned 3-value enum). ✅ **Strictly additive, PROMPT-BYTE-NEUTRAL** — no zone prints `Roster` (the roster block prints from the parallel arrays), so **`zoneB_chars=68` / `zoneC_chars=887` cannot move and the t0 tripwire cannot fire** — and **zero external consumers exist** (`FSiegeAssistantRosterEntry`/`GetRoster()` have no reference anywhere else in `Source/` or `Plugins/`). Filled by **one line inside the branch that already calls `IsGroupCommandEligible()`** — no re-tally, no extra traversal, **no registry** (§4 cited). **(2) ONE NEW FILE outside the `names:` line — `Siegebound/Tests/SiegeAssistantGuardTest.cpp`**, under the shipped `Siegebound/Tests/` precedent (TASK-436 landed `Tests/SiegeSettingsTest.cpp` in the same wave); owned by no other task, collides with nothing, **a file move if QA rules otherwise.** ⚖️ **THE SCOPING DECISION THAT KEPT THIS FROM SHIPPING A REGRESSION: `KindNotOrderable` is scoped to `Send`/`Guard`/`Ambush` ONLY.** `IsGroupCommandEligible()` gates the ZONE orders, so the **Cleric** is `Count>0, Orderable==0` — **a guard refusing every 0-orderable kind for every verb would have refused *"clerics follow me"*, a legal shipped order and verbatim the eval's own `DEV-20` utterance.** `KindUnknown` is NOT scoped (a hallucinated unit is one whatever the verb). ⚠️ **DECLARED v1 GAP:** a `Follow` naming a non-followable kind is not refused here — the pinned enum has no such reason and the executor's `IsFollowCommandEligible()` selector sends it to the **shortfall** path; a test pins it so it is the assertion that flips if `KindNotFollowable` is ever added. **9 tests, all model-free / world-free / PIE-free** (hand-populated roster), incl. the **DEV-04 reproduction** and the **Cleric regression test**. Guard logs at **`Log`, never `Warning`** — a refusal is the MODEL being wrong, and a logged Warning fails the automation runner. 📌 **OWED TO TASK-447's FIRST-EXECUTION AUDIT (the one live proof this task cannot self-serve): confirm `sum(Roster[kind].Orderable)` equals the `orderable=` figure the printed roster line reports for that kind — same per-unit call, so they must agree exactly.** M8: *"adds no replicated property, no new replicated class, no new relevancy tier."*
+- blocked-by: **none — DISPATCHABLE NOW**
+- parallel-safe: yes to WRITE; **EXCLUSIVE owner of `SiegeAssistantSnapshot.{h,cpp}`**
+- spec: >
+    **Read CONVENTIONS "Settings screen…" §6 and §8 first.**
+    **(1) WHY THIS EXISTS — AND THE HONEST LIMIT COMES FIRST, BEFORE THE WORK.** §1 says *"grammar guarantees existence, **executor guarantees
+    legality**, FSM owns the conversation"*, and §12f **measured that the executor half was asserted in the document and absent from the code**:
+    `DEV-04` emitted a live, well-formed order for a kind the roster line itself prints as **`0 orderable`**. Orderability is per-match **STATE**,
+    not identity; §1 forbids the grammar from encoding it and four prompt attempts have not taught it ⇒ **only the command layer can refuse it.**
+    ⛔ **AND IT DOES NOT MAKE `DEV-04` PASS THE EVAL. THE EVAL SCORES EMITTED JSON, NOT EXECUTED ACTIONS.** ⚠️ **If your handoff reports this as
+    progress on bar #5 — under any wording — it is failed at the gate.** This is shipped safety. Say so in those words.
+    **(2) EXPOSE WHAT THE SNAPSHOT ALREADY COMPUTES.** `KindOrderable` is tallied today and is **private** (`SiegeAssistantSnapshot.cpp` around
+    `:490` / `:559` / `:565`, printed at `:1131`). Add **`bool IsKindOrderable(FName) const`** and **`int32 GetOrderableCount(FName) const`**.
+    ⛔ **Do NOT recompute, re-tally, or "optimize" the existing pass, and do NOT add a unit registry** (§4 — a registry is rejected on sight and
+    you cite that clause). ⚠️ **Verify the tally's real semantics from the CODE before you expose it** — the header's own comment distinguishes
+    `orderable` (*"can I send these?"*) from `followable` (*"can these follow?"*), and **exposing the wrong one is a silent wrong-answer defect.**
+    **(3) THE GUARD IS A PURE FREE FUNCTION, AND ITS SHAPE IS THE POINT:**
+    `bool ValidateCommandAgainstSnapshot(const FSiegeAssistantCommand&, const TArray<FSiegeAssistantRosterEntry>& Roster,
+    ESiegeAssistantRejectReason& OutReason, FName& OutOffendingKind)`.
+    ⚠️ **IT TAKES THE ROSTER ARRAY, NOT THE SNAPSHOT OBJECT — deliberately, for the same reason `USiegeAssistantGrammar::Build` takes
+    `TArray<FName>`: a pure function over plain data needs NO `UWorld`, NO `Capture()` and NO engine state to test.** ⛔ **A later "tidy-up"
+    that changes it to take a `const USiegeAssistantSnapshot*` deletes that property and is rejected on sight.**
+    **(4) AUTOMATION TESTS — this is the cheap half and it is mandatory.** Under `#if WITH_DEV_AUTOMATION_TESTS`, against a **hand-populated
+    roster**, no model, no PIE: a kind with `Orderable > 0` **passes** · a kind present but `0 orderable` **is rejected with
+    `KindNotOrderable` and names the offending kind** · a kind absent entirely **is rejected with `KindUnknown`** · a **multi-kind selection
+    where only ONE kind is bad is rejected as a whole** (⚠️ **never silently dropped — a silently-dropped kind is the valid-shaped-wrong-command
+    failure this architecture exists to prevent**) · an empty roster · and `who:"none"` army-wide verbs, which have **no kind to validate and
+    must NOT be rejected**.
+    **(5) ⛔ THE REFUSAL REUSES THE EXISTING UNSUPPORTED-ASK OUTCOME AND INVENTS NO NEW PLAYER-FACING SURFACE.** `{"ask":"unsupported"}` already
+    exists in the grammar and already has a template. You return a **reason code**; TASK-443 routes it. ⛔ **No player-facing string is produced
+    in this file** (§3).
+    ⛔ **NO component code, NO controller edits, NO grammar edits** (⚠️ **`SiegeAssistantGrammar.cpp` is off limits — tightening the grammar to
+    encode board state is introducing the defect §1 names, not fixing one**), **NO `Content/`, NO Git, NO compile.**
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-441-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    `SiegeAssistantSnapshot.{h,cpp}` · `IsKindOrderable` / `GetOrderableCount` · `ValidateCommandAgainstSnapshot` ·
+    `ESiegeAssistantRejectReason` { `None`, `KindNotOrderable`, `KindUnknown` } · `FSiegeAssistantRosterEntry` · `LogSiegeAssistant`
+    (**§8 registry, character-for-character**).
+    Law: CONVENTIONS "Settings screen…" §6, §8 · "In-match LLM command assistant" §1, §3, §4 (the unit-registry rejection), §9.
+
+#### TASK-442 — [W1-B2a] `USiegeAssistantComponent` — the FSM skeleton, reason codes + template table, and the clarification short-circuit (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: **ready-for-qa** (2026-08-03 — `SiegeAssistantComponent.{h,cpp}` NEW, per `handoffs/TASK-442-programmer.md`. **7 states + the pinned admission table + the 9-step gate order in `SubmitUtterance`**; state pushed as `uint8` (never an enum). ⛔ **§1 IS MADE STRUCTURAL, NOT OBSERVED — four mechanisms:** (1) no member ever holds model output — the raw JSON is a function local and the only thing surviving a turn is `FSiegeAssistantMessageArgs`, **`uint8`/`int32`/`FName` ONLY, no FString/FText field**, so there is nowhere to put a transcript; (2) **the FSM composes the prompt, not the model call** — `ComposeTurnPrompt` is private and the `DispatchTurnToModel` seam receives a FINISHED string with no route to a zone builder; (3) `BuildPendingLine()` takes **no parameters** — only typed symbols + an enum; (4) `TurnId` moves in `BeginTurn` alone, `bModelDispatchedThisTurn` refuses a second dispatch, and **a completion whose turn id is not current is DROPPED**. **20-row player-facing template table + 5 state labels = the only place player text exists (§3)**; `RefusedNoAuthority` reuses the keys' approved observer lockout **character-for-character down to the NSLOCTEXT namespace and key**, so the two dedupe and cannot drift. ⛔ **NO new player surface for the guard (§6)** — a deliberate absence of any "kind cannot take orders" code; guard rejection, refused execution and the model's own `{"ask":"unsupported"}` all land on `AskUnsupported`. **The short-circuit answers a shortfall clarification with ZERO model calls** (pure free classifier, exact-match closed word lists, bare integers only with a length guard before `Atoi64`, and a **multi-kind re-run** so a second short kind cannot slip into the confirm step); it **declines the ZERO case** (that is the guard's, and two surfaces for one situation is how a player is told two different things) and **runs only for the zone verbs** — `KindFollowable` is not exposed, so **Follow gets no shortfall clarification in v1**. **First-execution audit landed for TASK-447**: `ReportFirstCapture` logs zoneA/B/C chars + cap + headroom + roster width **and pastes Zone B and Zone C in full**, once per session — grep **`FIRST LIVE CAPTURE of USiegeAssistantSnapshot`**; plus §8's never-executed criterion is now executed — a second-turn, non-Shipping **Zone A byte-identity re-check**. ⚠️ **DEVIATION DECLARED: the short-circuit is 3–5× the "~15 lines" the spec estimated** (negative branch, re-ask, multi-kind re-run, overflow guard) — flagged, not trimmed. 🚩 **NO TASK IN THIS BATCH IS ASSIGNED THE CONSOLE-WIDGET CREATION + BINDING** — the component's three delegates were matched **character-for-character** to TASK-444's declared inbound API and the full forward table is in the handoff §9, but somebody must take it or Wave 1 ships a console that does nothing. 🚩 Also flagged: **Zone A never teaches the model what `pending:` means** (§9c seam class; `SiegeAssistantSnapshot.cpp` is TASK-441's file, untouched). **⛔ NOT COMPILED** — UHT surface, include-completeness and the string/`FText` API calls are reasoned from source, not observed; the file **cannot compile alone and is not expected to** (TASK-395/396 precedent — do not open a QA loop over it). **⛔ Nothing here is accuracy progress: the eval scores EMITTED JSON, not EXECUTED ACTIONS.** M8 duty stated verbatim.)
+- blocked-by: **none — DISPATCHABLE NOW**
+- parallel-safe: yes to WRITE; **EXCLUSIVE owner of `SiegeAssistantComponent.{h,cpp}` — ⛔ TASK-443 follows on the SAME FILE, never concurrently**
+- spec: >
+    **Read CONVENTIONS "In-match LLM command assistant" §1, §2, §3 and the §9 registry first. §1 is the law that kills this feature if broken.**
+    **(1) ⛔ THE CENTRAL LAW, RESTATED BECAUSE IT IS THE MOST LIKELY THING TO BE BROKEN BY A HELPFUL EDIT: "One utterance + one snapshot → one
+    constrained JSON; the game owns the dialogue; a multi-turn model loop is a QA FAIL."** The model never sees a prior turn, never holds
+    conversation state, never chains a call. **Each clarification turn is a FRESH single-turn call**; the FSM carries context forward as ONE
+    game-authored line in Zone C. ⛔ **Any code that feeds a model's own previous output back to the model is an automatic QA FAIL, whatever it
+    is called.** BFCL multi-turn collapses with model size (4B ≈ 35 %) while single-shot structured output holds ≈ 82 % — **we are building a
+    translator, not an agent.**
+    **(2) THE STATES:** `Idle → Composing → Thinking → { AwaitConfirm | Clarify | Failed }` plus `Deferred`. **Push state to the widget as a
+    `uint8`, never an enum** (the widget-param law).
+    **(3) REASON CODES + THE PLAYER-FACING TEMPLATE TABLE — THIS FILE IS THE ONLY PLACE PLAYER TEXT EXISTS.** ⛔ **The model emits SYMBOLS ONLY**
+    (§3): no coordinates, no prose, no player-facing text. **Every sentence the player reads is a game-authored template filled from a reason
+    code.** There is no "let the model phrase it nicely" path — a template table is the only source.
+    **(4) THE ~15-LINE SHORT-CIRCUIT THAT HANDLES MOST CLARIFICATION TURNS WITH NO MODEL CALL AT ALL.** ⚠️ **This is not an optimization, it is
+    a latency and a reliability decision**: the cheapest correct answer is the one that never enters the model. A shortfall
+    (*"send 10, you have 8"*) is arithmetic the game already knows.
+    **(5) THE SNAPSHOT IS CAPTURED PER SENTENCE, NEVER PER TICK.** ⛔ **Do NOT add a unit registry, an actor cache, a dirty flag, or a
+    subscription list** — §4 rejects all four **on sight**, and you cite that clause if tempted. ⚠️ **AND YOU ARE THE FIRST CALLER THIS CLASS
+    HAS EVER HAD: `USiegeAssistantSnapshot` has ZERO callers and ZERO tests today and its truncation logging has NEVER EMITTED A LINE.**
+    Everything §8/§10 says it "now observes" is **unexecuted code**. **Log the first real capture's character count** — TASK-447 audits it.
+    **(6) FAULT POSTURE (§2, and it is a hard criterion):** a model-load failure, a GGML fault, a timeout, a missing GGUF **must never block
+    match start and never degrade any key.** `bAssistantFaulted` is a **session latch** that disables the console **and nothing else.**
+    **(7) AUTHORITY:** V1 is host/standalone only — **forced, not chosen** — and the assistant **refuses on `!HasAuthority()` with the same
+    approved wording as the keys.** ⛔ **It must never be more capable than the keys.**
+    ⛔ **NO executor, NO selector, NO confirm step, NO deferred-intent body, NO `Build.cs` edit — those are TASK-443's** and it edits this same
+    file after you. **Leave the seams named and empty rather than half-filled**; a half-written body is the worst thing to hand a successor.
+    ⛔ **No controller edits, no snapshot edits, no `Content/`, no Git, no compile.**
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-442-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    `SiegeAssistantComponent.{h,cpp}` · `USiegeAssistantComponent` (`UActorComponent`) · `FSiegeAssistantCommand` /
+    `ESiegeAssistantIntent` / `ParseSiegeAssistantCommand` · `USiegeAssistantSnapshot` · `USiegeAssistantGrammar::Build` ·
+    `LogSiegeAssistant` (**§9 registry, character-for-character**).
+    Law: CONVENTIONS "In-match LLM command assistant" §1, §2, §3, §4, §8, §9 · "Settings screen…" §7.
+
+#### TASK-443 — [W1-B2b] The EXECUTOR + the CONFIRM STEP + the toggle + the guard call + the deferred intent (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: ✅ **qa-passed → ready-for-integration** (2026-08-03 — `qa/TASK-446.md`, PASS · 0 blockers). ⚖️ **THE OFF-PATH DEBT IS CLOSED BEHAVIOURALLY, NOT BY SCOPE** — `IsConfirmBeforeExecuteEnabled` has ONE definition and ONE call site, at the LAST routing step, with the guard at step 1; every machine check is upstream of the branch or downstream of both arms, and it **fails safe to ON**. ✅ **Discharged by a reviewer who TRACED it rather than accepting the author's account** — the one debt no other task could close.
+- status: **ready-for-qa** (2026-08-03 — `handoffs/TASK-443-programmer.md`; reviewed under TASK-446). ⛔ **NOT COMPILED, NOT RUN** — one gate only (TASK-447). **All EIGHT TASK-442 seams filled IN PLACE**, no name/signature/call-site moved. ✅ **THE OFF-PATH TRACE IS DISCHARGED — the one duty TASK-436 could not certify and TASK-439's QA explicitly refused to certify.** Verified from the delivered file by grep, not asserted: the toggle is read in **exactly one function** (`IsConfirmBeforeExecuteEnabled`, defined `:1987`) from **exactly one call site** (`RouteParsedCommandInternal` `:1200`, its LAST step), and **`ValidateCommandAgainstSnapshot` runs at `:1134` — 66 lines EARLIER**. ⇒ **All 20 machine checks lie strictly before the branch or downstream of BOTH arms; the only difference between ON and OFF is whether a human looks.** ⛔ **NO BLOCKER FOUND — stated as a finding, not an absence.** Fails safe (`Settings ? … : true`), and `bForceConfirmReview` (the deferred fire) ORs in so it **can only force review ON**. ✅ **`ExecuteAndReport()` is ONE body with TWO callers** (`ConfirmPressed` ON, `RouteParsedCommandInternal` OFF) so ON/OFF cannot drift — ⚠️ **that required a DECLARED edit to TASK-442's finished `ConfirmPressed`** (statement-for-statement identical), plus `EndPlay += DetachConsoleWidget()` and the seam-map comment; **all three revert mechanically if QA rules against them.** ✅ **`Build.cs`: `+ "SiegeLlama"` ONLY** (⛔ not HTTP, not Sockets; `LlamaCpp` stays private so no `llama.h` leak) **and the stale `SlateCore` example RE-POINTED** from the deleted probe to `SiegeAssistantConsoleWidget.{h,cpp}` — ⛔ **the dependency was NOT touched** (§12). ✅ **Mid-task ruling honoured: `AttachConsoleWidget(USiegeAssistantConsoleWidget*)` implemented for TASK-453 to call** — null-safe, idempotent, re-targetable, safe at ANY point in the widget's life; binds all 8 forwards (1 adapter, for the one-delegate→two-entry-points arity); **SEEDS BEFORE BINDING via the new `GetPendingConfirmSummary()`, which closes the lazy-creation trap** (a deferred fire can enter `AwaitConfirm` before the widget exists). ⛔ **Did NOT call it and did NOT touch the controller.** ⚠️ **TWO NEW DELEGATES declared for QA to rule on** — `OnAssistantConfirmPromptShown/Hidden`, the channel TASK-442's forward table listed as mine but left with no wire; deliberately NOT folded into `OnAssistantMessage` (transcript = history, confirm prompt = live modal state gating Accept). 🚩 **FOUR FLAGS, the first consequential: (a) `charge`/`fallback` DO LESS THAN THE T/E KEYS** — §8 pins `SetUnitCommand` and that runs, but the keys also call `CancelGroupPick()` + **`ClearAllUnitGroups()`** (the TASK-344 release law) and **both are `private`**, so standing group orders survive an assistant "charge"; re-implementing is the parallel implementation §2 forbids ⇒ **fix is one public entry point on the controller, another task's file**. **(b)** an assistant-formed group owns **no persistent ground markers** (ghosts are torn down before execution by TASK-442's correct ordering, so there is nothing to transfer). **(c)** two **paired tunables** mirror `protected` controller radii (700/1500) — named, not hard-coded; keep in lockstep. **(d)** `IntentTakesZoneOrder` now exists file-locally in **two** files (mine + TASK-441's) and they must agree. ⚖️ **DEV-11 RULED:** an already-satisfied deferred trigger **RE-ASKS** (existing `AskHowMany`) rather than firing — the relative "N MORE" is indistinguishable from absolute in the JSON, and firing converts a known ambiguity into a confident action; the alternative is one branch if QA rules otherwise. ⛔ **A deferred fire re-`Capture()`s, re-runs the guard, and returns to `AwaitConfirm` EVEN WITH THE TOGGLE OFF — it never executes blind.** ⛔ **No new player-facing string anywhere** — every outcome routes through an existing reason code (§3/§6). ⛔ **No registry/cache/dirty-flag/subscription (§4), no multi-turn loop, no request queue, sealed holdout untouched.** ⚠️ **`#include "SiegeLlamaSubsystem.h"` references a file that DOES NOT EXIST — `USiegeLlamaSubsystem` is TASK-450 (`backlog`), verified against the repo not the board; the ordering is already enforced (TASK-447 ⊃ TASK-424 ⊃ TASK-450) but if 450 has not landed the gate fails naming my include — dispatch it, do not loop QA.** ⛔ **Nothing here is accuracy progress: the eval scores EMITTED JSON, this changes what the game DOES. Bar #5 stands at 20/25 vs 22 + zero refuse-class failures, UNCLEARED.** M8 duty stated verbatim, with the reason.
+- blocked-by: **TASK-442** (same file, sequential — ⛔ never concurrent) **+ TASK-441** (its validator)
+- parallel-safe: no; **EXCLUSIVE owner of `SiegeAssistantComponent.{h,cpp}` and of `Source/GitClaudeUnrealTest/GitClaudeUnrealTest.Build.cs`**
+- spec: >
+    **Read CONVENTIONS "Settings screen…" §5 and §6, and "In-match LLM command assistant" §1–§3, first.**
+    **(0) PRE-FLIGHT:** `git status --porcelain Source/GitClaudeUnrealTest/GitClaudeUnrealTest.Build.cs` — **if dirty, STOP and report.**
+    Add the **`SiegeLlama` plugin dependency** (this is the commit where the game lane first calls the subsystem — TASK-417's spec deliberately
+    deferred it to here). ⛔ **Still NOT `HTTP`, NOT `Sockets`** — in-process llama.cpp needs neither and the sidecar was rejected (a Defender
+    firewall prompt on first launch of a shipped game is unacceptable). **Re-opening that is out of scope.**
+    **(1) THE EXECUTOR AND THE SELECTOR — AND THE ONE RULE THAT GOVERNS THEM: CALL THE SAME PUBLIC APIs THE KEYS CALL.** Route group creation
+    through TASK-440's `CreateUnitGroup`. ⛔ **Never a parallel implementation, never a "better" one** (§2). Every keyboard command must still
+    work byte-identically with the console closed — that is Jonathan's own playtest criterion.
+    **(2) ⛔ THE GUARD RUNS BEFORE EXECUTION, ALWAYS, AND INDEPENDENTLY OF THE MODEL.** Call TASK-441's `ValidateCommandAgainstSnapshot`
+    against the **live** snapshot and route a rejection to the **existing unsupported-ask outcome**. ⚠️ **A multi-kind selection with one bad
+    kind is rejected AS A WHOLE — never silently dropped.** ⛔ **This does not make `DEV-04` pass the eval and may not be reported as accuracy
+    progress.**
+    **(3) THE CONFIRM STEP — `AwaitConfirm`, AND IT IS A HARD ACCEPTANCE CRITERION, NOT POLISH (§1).** Show (i) a **game-authored** one-line
+    summary of the parsed order from the reason-code template table — ⛔ **never a model-produced string** — and (ii) **the ghost circles on the
+    ground** via `SpawnGroupCircleDecal`. **Accept executes. Cancel discards, returns to `Idle`, and leaves NOTHING partially executed.**
+    ⚖️ **Constrained decoding guarantees SYNTAX, never SEMANTICS — it cannot prevent a valid-shaped wrong command, and the preview is what
+    guarantees the rest.** ⚠️ **Ruling 2's table is the measured evidence for this: 4 of 5 stable failures are wrong-place / wrong-count.**
+    **(4) THE TOGGLE — READ IT LIVE FROM `USiegeSettingsSubsystem::IsAssistantConfirmEnabled()` AT CONFIRM TIME** (in-memory getter; the
+    subsystem is on the GameInstance so it survives the menu → arena travel). **OFF ⇒ skip `AwaitConfirm` and execute.**
+    ⛔ **THE LAW THAT MAKES THE TOGGLE SAFE, AND IT IS THE MOST IMPORTANT SENTENCE IN THIS SPEC: THE TOGGLE REMOVES A HUMAN REVIEW STEP AND
+    NEVER A MACHINE CHECK.** OFF does **not** skip the parse, the `Kinds.Num() == Counts.Num()` invariant, the shortfall/clarification path,
+    eligibility, the authority refusal, or the guard in (2). ⚠️ **The tell: every check that runs with the toggle ON runs with it OFF.**
+    ⚠️ **Subsystem unresolvable ⇒ behave as if confirm is ON.** **Failing safe means MORE review, never less.**
+    **(5) THE DEFERRED INTENT:** latched, kind+count trigger, **120 s TTL**, **1 Hz timer armed ONLY while latched**, **re-resolves on fire and
+    returns to `AwaitConfirm`** — ⛔ **it NEVER executes blind**, and ⚠️ **that is true with the confirm toggle OFF as well**: a deferred order
+    fires on a board the player has not looked at since they typed it, which is the one case where the review is worth more, not less.
+    **(6) MODEL CALL:** exactly one `USiegeLlamaSubsystem::RequestCompletion` per turn, **queue depth 1** (a second request returns false —
+    that is the design, not a bug), completion **always on the game thread**. ⛔ **No multi-turn loop, no conversation state, no feeding output
+    back in** (§1).
+    ⛔ **No controller edits, no snapshot edits, no grammar edits, no `Content/`, no Git, no compile.**
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    ⚠️ **AND SAY WHY: the settings value is client-local and governs a LOCAL review step, never an authoritative outcome.**
+    Handoff `handoffs/TASK-443-programmer.md` — with **the toggle's ON and OFF paths traced side by side, check for check**, so QA can verify
+    (4) by reading rather than by trusting. Post in ⚙️ Dev & QA.
+- names: >
+    `SiegeAssistantComponent.{h,cpp}` · `GitClaudeUnrealTest.Build.cs` (**adds `SiegeLlama` ONLY**) · `CreateUnitGroup` ·
+    `SpawnGroupCircleDecal` · `ValidateCommandAgainstSnapshot` / `ESiegeAssistantRejectReason` · `USiegeSettingsSubsystem::IsAssistantConfirmEnabled` ·
+    `USiegeLlamaSubsystem::RequestCompletion` / `IsReady` / `IsBusy` / `CancelActiveRequest` · `FSiegeLlamaCompletionSignature` ·
+    `DeferredIntentTTLSeconds` **120** · `DeferredIntentPollHz` **1** (**§9 + §8 registries, character-for-character**).
+    Law: CONVENTIONS "Settings screen…" §5, §6, §8 · "In-match LLM command assistant" §1, §2, §3, §9, §10.
+
+#### TASK-444 — [W1-B3] `USiegeAssistantConsoleWidget` — the in-game text input (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: **ready-for-qa** — 2026-08-03, **QA LOOP 1 FIX LANDED** (supersedes the `qa-failed` opened by TASK-447's compile gate; the source-review PASS below still stands — the gate found **compile** defects, not review defects). **All 7 diagnostics in `SiegeAssistantConsoleWidget.cpp` addressed: 2 × `C2445` ambiguous ternary (`.Get()` collapses both arms to one type) + 5 × `C4458` locals named `Slot` shadowing the inherited `UWidget::Slot` (renamed to the file's own `<Purpose>Slot` idiom, which 3 sibling sites already used).** ⛔ **§22 SWEEP RUN ON BOTH SHAPES, AND IT IS THE RESULT, NOT THE PATCH:** all **9** conditionals in the file classified — **the 2 cited are the only ambiguous pair**, the other 7 are same-type arms; and a scripted intersection of **123** identifiers I declare against **163** inherited data members across `UWidget`/`UUserWidget`/`UVisual`/`UObject` returns **`Slot` and nothing else** — run with a **positive control** (the probe was proven able to find `Slot` before its zero was trusted, per the TASK-454 pattern). ⚠️ **NOT claimed: that the TU now compiles, or that the link resolves** — the link step has never run, and a failing TU reports only its own errors. ⛔ No compile, no Git, no editor/MCP/PIE. Handoff appended: `handoffs/TASK-444-programmer.md` §9.
+- status: ✅ **qa-passed → ready-for-integration** (2026-08-03 — `qa/TASK-446.md`, PASS · 0 blockers) — ⛔ **then `qa-failed` at the TASK-447 compile gate, 7 errors, loop 1 of 3** (`qa/TASK-446.md` build-master appendix)
+- status: ready-for-qa — 2026-08-03. `SiegeAssistantConsoleWidget.{h,cpp}` NEW (code-authored tree, ruling A, all five conditions); `SiegeAssistantInputProbe.{h,cpp}` **DELETED** with its three `Siege.Assistant.InputProbe*` commands — **zero compiled references survive** (two comment-only mentions remain in files I do not own: `GitClaudeUnrealTest.Build.cs:30` and the plugin's `VERSION.md:160`). ⛔ **`SlateCore` MUST STAY in `Build.cs`** — the console widget is now the module's only `ETextCommit`-in-a-`UFUNCTION` / `FSlateApplication` user, so the dep is still load-bearing and only that comment's *example* is stale (TASK-443 owns the file). 🚩 **GAP FLAGGED: nothing in Wave 1 opens the console** — no key binding, no creation site, and no `ApplyCursorInputState()` posture owner (a `SiegePlayerController` edit outside this task); as the wave stands there is nothing for TASK-448 to type into. ⚠️ **UI rendering is NOT self-verifiable and is not claimed** — ruling A(e), checklist in the handoff. No compile, no Git, no editor/MCP/PIE. Handoff: `handoffs/TASK-444-programmer.md`
+- blocked-by: **none — DISPATCHABLE NOW** (compiles against the §9 pin; will not compile alone and is not expected to)
+- parallel-safe: yes to WRITE; **EXCLUSIVE owner of `SiegeAssistantConsoleWidget.{h,cpp}`; DELETES `SiegeAssistantInputProbe.{h,cpp}`**
+- spec: >
+    **Read CONVENTIONS "In-match LLM command assistant" §6 ruling A (its five conditions are QA criteria) and §9 first.**
+    **(1) THE TREE IS CODE-AUTHORED IN `RebuildWidget()` AND THERE IS NO `.uasset`** — ruling A, whose scope is **this widget** (⚠️ the settings
+    widget has its **own separate** ruling; neither inherits from the other). Every child is `UPROPERTY(meta=(BindWidgetOptional))` with the
+    pinned names and is **constructed only if still null after `Super::RebuildWidget()`**, so `/Game/UI/WBP_AssistantConsole` — **RESERVED, not
+    authored** — wins later with **zero C++ change**.
+    **(2) CLONE `USessionMenuWidget`'s SHIPPED CONTRACT EXACTLY:** `BindWidgetOptional` members · `BlueprintCallable` wrappers ·
+    **FString/int32/bool/uint8-only BIEs.** ⛔ **FSM state is pushed as a `uint8`, never an enum.**
+    **(3) ⛔ DELETE `SiegeAssistantInputProbe.{h,cpp}`.** It is throwaway by construction (manager ruling 4 of the Wave-0 block) and
+    **must not be preserved as a "useful dev tool"** — the input fallback it measured is now a decision, not an open question.
+    **(4) THE CONSOLE IS NEVER A REQUIREMENT FOR ANY ACTION (§2).** Opening/closing it must not disturb any key, and a faulted assistant simply
+    leaves it disabled.
+    **(5) ⚠️ VERIFICATION IS A HUMAN PIXEL CHECK AND YOU CANNOT CLOSE IT (ruling 9, §6 condition (e)).** No `.uasset` exists to read back and
+    MCP readback has repeatedly passed on visually-broken UMG here. **Write the checklist for TASK-448; report nothing on-screen as verified.**
+    ⛔ **No component edits, no controller edits, no `Content/`, no Git, no compile.**
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-444-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    `SiegeAssistantConsoleWidget.{h,cpp}` · `USiegeAssistantConsoleWidget` · pinned children `InputBox` (`UEditableTextBox`) ·
+    `TranscriptText` (`UTextBlock`) · `StatusText` (`UTextBlock`) · `ConfirmButton` (`UButton`) · `CancelButton` (`UButton`) ·
+    `RootPanel` (`UVerticalBox`). 🔒 **RESERVED, NOT AUTHORED: `/Game/UI/WBP_AssistantConsole`.** **DELETES** `SiegeAssistantInputProbe.{h,cpp}`.
+    Law: CONVENTIONS "In-match LLM command assistant" §2, §6 ruling A, §9.
+
+#### TASK-445 — [W1-B4] `IA_AssistantConsole` + the `IMC_Hero` binding + the Enter-key conflict check (art-director, EXCLUSIVE editor)
+- assignee: art-director
+- status: **ready-for-integration** (2026-08-03 — handoff `handoffs/TASK-445-artist.md`)
+- ✅ **`Enter` WAS FREE — NOTHING STOMPED, NO ESCALATION NEEDED.** All **6** `IMC_` contexts enumerated (`defaultKeyMappings.mappings`, legacy `mappings`, AND `mappingProfileOverrides`) + `Config/DefaultInput.ini` + a code grep for `EKeys::Enter`/`Return`/`Virtual_Accept`/`NumPadEnter` → **zero hits**. (`bAltEnterTogglesFullscreen=True` is the engine **Alt+Enter** chord, not a bare-`Enter` binding.) Delivered: `/Game/Input/Actions/IA_AssistantConsole.IA_AssistantConsole` (duplicated from `IA_CmdFollow`; 11 properties verified unanimous across all 6 shipped siblings) + `IMC_Hero` **entry 24 = `Enter`**, entries **1–23 byte-identical** and all **5 instanced modifier subobjects** value-verified (incl. the load-bearing `Negate_2`). Path matches `SiegePlayerController.cpp:180` **59/59 chars, compared programmatically**.
+- 🛑 **THE EDITOR HARD-DEADLOCKED MID-TASK AND WAS RESTARTED — PID 26700 IS DEAD, THE LIVE EDITOR IS `PID 7844` (running, owns `127.0.0.1:8000`).** `AssetTools.duplicate` → `InternalPromptForCheckoutAndSave` wrote the asset then wedged the process: **108/108 threads in `Wait`**, log frozen 5+ min, **no modal dialog existed** (window enumeration proved it — this was NOT the Save-Content trap). Terminated under the session grant; termination was also the safest option for `L_Arena` (discards in-memory dirt). ⚠️ **THE RESIDENT LLM MODEL IS GONE** — the restart unloaded it; anything expecting a warm model must reload. After restart the asset was **re-verified, not trusted**: nothing was corrupted.
+- 🔍 **MCP LAW-GRADE FINDING — `ObjectTools.set_properties` SILENTLY RETURNS `false` UNLESS `values` IS A JSON *STRING*.** Passing a JSON object (the intuitive shape, and the shape `get_properties` *returns*) yields `{"returnValue": false}` with **no error, no log line, and no mutation**. ⚠️ **The `false` return is the ONLY signal — an agent that does not check it AND re-read the data will believe it wrote and it did not.** Also note `instance` must be `{"refPath": …}` for the setter though the getter accepts a bare path. Re-confirms TASK-399's empty-`mappings` trap: the live array is `defaultKeyMappings.mappings`; legacy `mappings` reads `[]` on all 6 contexts.
+- ⚠️ **`Content/Input/Actions/IA_AssistantConsole.uasset` IS ALREADY STAGED IN GIT AND THE ARTIST DID NOT DO IT** (`.git/index` touched ~17 s after the save; **GitHub Desktop is running**, PIDs 11748/12236/3060/8980). **No commit was created** (HEAD still `c8c780c`). ⛔ **Deliberately NOT unstaged — `git reset` is itself a Git write and this task is Git-forbidden. TASK-447 must know the file may already be in the index.**
+- ⚠️ **NOTHING IS COMPILED OR PLAYED.** That `Enter` actually fires `ETriggerEvent::Started` is **MCP-readback-only and closes at Jonathan's playtest** — readback has passed on broken assets here before. Independent non-MCP corroboration that the mapping is really in the file: `IMC_Hero.uasset` grew **12 702 → 13 179 B** and a raw byte scan finds `/Game/Input/Actions/IA_AssistantConsole` + `Enter` in its name table.
+- ✅ **`L_Arena` UNTOUCHED — sha256 `b3dbc5d9…459f8268`, mtime `2026-07-29 03:53:38.9198809`, 535 522 B, IDENTICAL at 6 checkpoints** (incl. before/after the editor kill and before/after the save). Verified by hash, not mtime alone.
+- 🚩 **New flag for the manager (recorded, NOT decided):** `Enter` now both **opens** the console and **submits** the line (`SetKeyboardFocus` at `SiegeAssistantConsoleWidget.cpp:844`, `ETextCommit::OnEnter` at `:625`). Slate should consume it before Enhanced Input while the box has focus, so the toggle should not double-fire — **but that is reasoning, not a measurement.** Sits beside flagged item (t). For the playtest gate.
+- blocked-by: **none — DISPATCHABLE NOW**, but ⚠️ **EDITOR-GATED: waits on Jonathan's hand-over and serializes with TASK-438**
+- parallel-safe: no (one editor instance)
+- spec: >
+    **(1) CREATE `IA_AssistantConsole`** at `/Game/Input/Actions/IA_AssistantConsole` and **map it in `/Game/Input/IMC_Hero`.**
+    **(2) ⚠️ `Enter` IS THE *PROPOSED* OPEN KEY, NOT AN APPROVED ONE** (the arena has no chat, so it reads free). ⛔ **`IMC_Hero` is a BINARY
+    `.uasset` THE MANAGER CANNOT TEXT-VERIFY, so the key is NOT assumed free.** **Run the same in-editor conflict check TASK-399 ran for `C`,
+    and FLAG — NEVER STOMP.** If `Enter` is taken, **report it and stop**; the alternative key is Jonathan's call, not yours.
+    **(3) ⛔ NO EXISTING BINDING IS DISTURBED.** `IA_CmdFollow` (`C`) / `IA_CmdAttack` / `IA_CmdHold` / `IA_CmdDefend` / `IA_CmdAmbush` /
+    `IA_Rally` / cards 1–6 keep their exact shipped mappings — **§2 is law and this asset is where it would break first.** Prove it by readback
+    of the full mapping list, before and after.
+    **(4) `L_Arena` NEVER opened, NEVER saved. No PIE. Zero Git — TASK-447 commits.** Hand the editor back **RUNNING** and report its PID.
+    ⚠️ **Never force-close it — Jonathan is at the keyboard and that is his call.**
+    ⚠️ **Re-append the gitignored `Saved/Config/WindowsEditor/Engine.ini` Python remote-exec block if you needed it — the editor's shutdown
+    rewrite DROPS it every time (confirmed standing behaviour, not a one-off).**
+    Handoff `handoffs/TASK-445-artist.md`. Post in 🎨 Art.
+- names: >
+    `IA_AssistantConsole` at `/Game/Input/Actions/IA_AssistantConsole`, mapped in `/Game/Input/IMC_Hero` (**CONVENTIONS §5 naming law,
+    character-for-character**). Law: CONVENTIONS "In-match LLM command assistant" §2, §5 · the flagged item (d) FLAG-never-stomp ruling.
+
+#### TASK-446 — [W1-QA2] QA gate covering TASK-440 · 441 · 443 · 444 (and 442 through 443) (qa-reviewer)
+- assignee: qa-reviewer
+- status: ✅ **done** (2026-08-03 — `qa/TASK-446.md`: **PASS · 0 BLOCKERS · 9 WARN · 6 NIT**, eleven tasks cleared: 440 · 441 · 443 · 444 · 449 · 451 · 453 · 454 · 455 · 456 · 457. ✅ **All four §15 departures ratified, each on a mechanism QA RE-DERIVED ITSELF.**) ← was: backlog
+- blocked-by: TASK-440 + TASK-441 + TASK-443 + TASK-444 **+ TASK-449 + TASK-451 + TASK-453 + TASK-454 + TASK-455 + TASK-456** (all `ready-for-qa`) — ⚠️ **SCOPE WIDENED 2026-08-03, THREE TIMES.** ⛔ **THIS GATE RUNS LAST, AFTER EVERY C++ TASK IN THE BATCH IS FINISHED — and that is deliberate, not drift: 455 and 456 edit `SiegeAssistantComponent`, 454 edited `SiegePlayerController`, and reviewing files that are about to move produces a report whose citations are stale on arrival** (WARN-4's *7 of 7 stale anchors* is what that costs).
+- parallel-safe: no (single report)
+- ⚠️ **TWO ADDITIONS TO THIS GATE, 2026-08-03:**
+    **(f) TASK-449 — THE OPEN-KEY SEAM.** Verify the handler calls **`SetAssistantConsoleOpen(true)` BEFORE creating or showing anything** and
+    shows **nothing at all** on refusal · that `OnConsoleOpenChanged` is bound so a close by **any** route clears the posture (⚠️ **a posture
+    flag stuck true is a cursor soft-lock, and `ApplyCursorInputState` is where this project's input bugs live**) · that the input asset is
+    resolved through the shipped **`ResolveInputAction`** idiom and is **inert-null-safe** when absent · and ⛔ **that no existing `BindAction`
+    was re-routed** (§2: a key may never pass through the assistant).
+    **(g-0) ⛔ THE SENTENCE THAT MUST NOT APPEAR IN YOUR REPORT: "THE TESTS PASS."** ⚠️ **NO TEST IN THESE FOUR FILES HAS EVER EXECUTED — nothing
+    has been built this batch.** ⇒ **Every claim about test behaviour is a claim about SOURCE, and must be labelled as one.** Discharge is
+    **TASK-447's compile PLUS a green run**, claimed against that run and no other. ⚖️ **This is §9c exactly: where an artifact has a parser, the
+    parser is the reviewer of record — and here the parser is the test runner.** ⛔ **A converted assertion is not a passing assertion.**
+    **(g-1) ⚠️ RESIDUAL RISK, CONTAINED BUT UNPROVABLE WITHOUT RUNNING — carry it forward rather than closing it.** ⛔ **COUNT CORRECTED 2026-08-03: it is 18 SITES, NOT 12** — the source report's headline figure disagreed with its own enumeration and QA confirmed a sample are genuine `FName::ToString()` comparisons. **FIFTH wrong count this wave (§22 — a count is a hint, never a contract).** ⛔ **TASK-447 must not quote the 12.** ~~the **12 converted
+    `FName::ToString()` sites depend on `WITH_CASE_PRESERVING_NAME`** (= `WITH_EDITORONLY_DATA` = 1 under these `EditorContext` tests, **0 in a
+    packaged build**). ⇒ **Those assertions test the EDITOR, not the shipped game.** ✅ Correct for their purpose; ⛔ **a green editor run must not
+    be reported as a shipped-build guarantee** (CONVENTIONS §13's `FName` caveat).
+    **(g-2) VERIFY WARN-436-2's CONTAINMENT** — the ratified overrun must be confined to `FSiegeSettingsSaveLoadRoundTripTest`'s body
+    (+1 statement, +1 pre-condition, 1 moved statement). ⛔ **Confirm it against the diff, not against the handoff.**
+    **(g) TASK-451 — THE COMPARATOR SWEEP.** ⛔ **Do not accept a raw conversion count as the deliverable** (and note **113 is the true
+    denominator, not my 117** — four were prose mentions in a comment block; ✅ **58 of 113 converted, 50 integer sites deliberately untouched,
+    ZERO lines added or removed so the live TASK-441/423/436 reviews still resolve by line number**). ✅ **`SiegeAssistantZoneATest.cpp` needed
+    ZERO conversions — all five of its string claims were ALREADY `*Sensitive`. The scope implied work there and there was none: TASK-423 had
+    got it right unprompted, and that is recorded as a credit, not a gap.** Verify the **triage table** (site →
+    claim shape → converted/left → reason), that **integers were NOT churned**, that the engine-header `file:line` for the case-insensitivity
+    mechanism is **cited and not taken from the spec**, and — the one that matters — **that at least one conversion was PROVEN to bite**
+    (pre-fix passes on an input it should reject, post-fix fails on it). ⚠️ **A sweep that changes 117 lines and demonstrates nothing is the same
+    defect one level up.** ⚖️ **And apply the new law to everything else you read: for each `FString` assertion, name the claim shape and confirm
+    the comparator can detect it — `TestEqual` cannot see casing or bytes** (CONVENTIONS "Settings screen…" §13). **A vacuous test passes hardest.**
+- spec: >
+    **Pre-compile review, from the LANDED FILES. ⚠️ THE RELAYED-DIAGNOSIS LAW IS BINDING: a diagnosis arriving via a spec, a handoff or an
+    orchestrator relay is a LEAD, not a finding — re-derive it from the source.** A report that repeats a relayed root cause has forwarded, not
+    reviewed. ⚠️ **A wrong root cause is worse than none: it ships a wrong FIX and a wrong LESSON, and it burns the loop that would have caught it.**
+    **THE FIVE THINGS THIS GATE EXISTS FOR — everything else is secondary:**
+    ⛔ **READ THIS FIRST: TASK-439's PASS DOES *NOT* COVER THE TOGGLE'S OFF-PATH, AND QA SAID SO EXPLICITLY.** It verified only the **scope
+    fact** that neither TASK-436 nor TASK-437 references the assistant, the guard, the parser or the executor. ⚠️ **That is NOT the sentence
+    *"every check still runs with the toggle off"*** — those are different claims and only one of them has been checked. ⇒ **THE OFF-PATH IS
+    THIS GATE'S DEBT, owed against TASK-443's code, and it is criterion (a) below.** ⚖️ **A scope fact from one lane must never be read as a
+    behavioural guarantee about another** — that substitution is how a green gate ends up covering nothing.
+    **(i) ⚖️ RATIFY TWO PROGRAMMER RULINGS AGAINST MY OWN SPEC TEXT — BOTH LOOK LIKE DEVIATIONS AND BOTH ARE CORRECT.**
+    **(i-1) `ToggleConsole()` IS DELIBERATELY NOT CALLED** despite sitting in TASK-449's `names:` list: it shows the widget **before** the
+    controller can gate it, i.e. **exactly the ordering the ⛔ guard-first clause forbids.** ⇒ **The ⛔ clause wins; I have removed it from the
+    `names:` list.** Confirm the shipped path is `SetAssistantConsoleOpen(true)` → **on refusal show NOTHING** → only then create/open.
+    **(i-2) TASK-437 and TASK-444 BOTH BUILD THE TREE *BEFORE* `Super::RebuildWidget()`**, against CONVENTIONS' then-wording. ✅ **Both are right
+    and the LAW was wrong** (`UserWidget.cpp:1214`); it is corrected. ⛔ **Do not file either as a deviation.**
+    **(i-3) `AttachConsoleWidget` IS CALLED *BEFORE* `OpenConsole()`, AGAINST MY SPEC'S *"immediately after a successful create/open"* — AND
+    THE DEPARTURE IS CORRECT.** TASK-453 settled it by **reading the widget source**: `OpenConsole()` **ENDS** with
+    `OnConsoleOpenChanged.Broadcast(true)`, and the component subscribes to that delegate **INSIDE `AttachConsoleWidget`.** ⇒ ⛔ **Attaching
+    afterwards would miss the ONLY "opened" broadcast of the first press — the FSM would sit in `Idle` while the player types into a box it does
+    not know is open, recovering only on the SECOND open, with no error, no log and no crash.** ⚠️ **That is the `BeginPlay` trap one level
+    deeper, and it would have reached Jonathan as *"the first time I press Enter, nothing happens."*** **Ratify it; do not file it as a deviation.**
+    ⚖️ **The standing principle behind all three: a `names:` list or a condition clause that contradicts its own spec's reasoning LOSES** — and an
+    agent that refuses a spec line on a stated, **checkable** mechanism is doing the job, not exceeding it (now law: CONVENTIONS "Settings
+    screen…" §15). ⛔ **The common property that makes these ratifiable rather than licence is that EACH CITES A MECHANISM QA CAN CHECK WITHOUT
+    TRUSTING THE REFUSER** — an engine line, a broadcast at the end of a named function, a clause in the same spec. **A departure justified by
+    preference or *"this seemed better"* is NOT this and is still a deviation.**
+    ⚠️ **AND DO NOT OPEN A QA LOOP ON TASK-453 FOR AN UNRESOLVED `AttachConsoleWidget`** — it was declared but not yet defined while TASK-443 ran.
+    **That is a schedule fact, not a defect**; the definition is 443's (see TASK-447 step (0-PRE)).
+    **(j) ⛔ TASK-453 — THE WIDGET→COMPONENT JOIN. Verify `AttachConsoleWidget` is called AT OPEN TIME, once per widget, and that the component's
+    implementation is IDEMPOTENT and NULL-SAFE.** ⚠️ **A `BeginPlay`-time binder would bind NOTHING and no-op FOREVER** (widget creation is lazy),
+    with no error and no log — **if you find one, it is a BLOCKER, not a nit.** Confirm all four outbound delegates (`OnConsoleSubmitted` /
+    `Confirmed` / `Cancelled` / `OpenChanged`) actually reach the FSM, and that **TASK-453 touched only the controller and TASK-443 only the
+    component** — ⛔ **a second writer in either file is a single-owner violation.**
+    **(h) ⚠️ THE CODE-AUTHORED-TREE ORDERING — CHECK IT IN `USiegeAssistantConsoleWidget`, AND KNOW THE ANSWER IS ALREADY RIGHT.** ✅ **TASK-444
+    ships `ConstructConsoleTree(); return Super::RebuildWidget();` — the CORRECT order** (`WidgetTree->RootWidget` is set at `:163`, before
+    Super). ⛔ **CONVENTIONS' condition (b) said the OPPOSITE until 2026-08-03 and has been corrected; the defect was in the LAW, never in the
+    code.** Confirm the shipped order and that child wiring lives in **`NativeConstruct`** (`:402`), never `NativeOnInitialized`
+    (CONVENTIONS "Settings screen…" §3(b) + §11). ⚠️ **`UserWidget.cpp:1214` returns an `SSpacer` when `RootWidget` is null — a widget built in
+    the wrong order renders EMPTY while passing every property readback.**
+    **(i-5) ⚖️ RATIFY TASK-455's THREE REFUSALS — ALL THREE ARE §15 INSTANCES AND ALL THREE ARE CORRECT.**
+    **(i-5a) ⛔ IT REFUSED TO RE-POINT THE RETIRED CONSTANT, AND RE-POINTING WOULD HAVE BEEN A REAL DEFECT.** `MaxSnapshotChars`' **only real code
+    reader was `BuildZoneC`'s ROSTER TRIMMER** — neither the authority nor the pre-filter. **Both plugin bounds REJECT**, so aiming the trimmer at
+    the pre-filter's `3000` would have converted ***"gracefully narrow the roster"*** into ***"REFUSE the player's order"*** — **a graceful
+    degradation silently promoted to a hard failure, on a mid-battle interaction.** ✅ **It introduced `SnapshotTrimBudgetChars = 1085` — a NEW
+    NAME with the value deliberately unmoved (§12c freezes Zone B/C bytes this wave).** ⚖️ **Now law (§19): the family has THREE roles — authority ·
+    pre-filter · TRIMMER — and the safe direction AND the failure mode differ in each. A constant's safe direction is a property of its ROLE, never
+    of its VALUE.** ⛔ **Verify the trimmer does NOT read either plugin constant.**
+    **(i-5b) ✅ IT SHIPPED THREE `static_assert`s INSTEAD OF GAME-LANE COPIES — STRICTLY STRONGER THAN THE SPEC ASKED.** `MaxSnapshotTokens` and
+    `SnapshotPreFilterMaxChars` **already existed** (`SiegeLlamaSubsystem.h:149`/`:170`); **duplicating them game-side would have created constants
+    nothing in the game lane enforces — §17's exact failure, a guardrail that reports safe.** ⇒ **Confirm the asserts exist, that they bind the
+    real symbols, and that NO game-lane duplicate was added.** ⚖️ **A `static_assert` cannot report safe falsely, cannot drift, and costs nothing at
+    runtime — this is the enforcement pattern to prefer wherever one is available.**
+    **(i-5c) ⚠️ `ZoneBCharReserve` STAYS 192, AND THE REASONING IS WHY IT RATIFIES.** My dispatch was ***true about the INSTRUMENT and false about
+    the READING***: `ReportFirstCapture` **is** the right instrument, but **it has never executed**, and the 68/71 figures on record were printed by
+    the **spike's `AppendZoneB` — a DIFFERENT LANE** (§9c/§12g's same-authorship-different-lane trap, which is what my dispatch walked into).
+    ✅ **It invoked the spec's own fallback and made the reading TAKEABLE rather than guessing a value.** ⛔ **A derived number substituted here would
+    have been the precise defect §12g exists to prevent.** **The reading is now pinned on TASK-447.**
+    **(r) ⛔ A COUPLING YOU MUST KNOW BEFORE YOU RULE: TASK-455's CALLER AND TASK-450's `SetStaticPrefix` STAND OR FALL TOGETHER.** ⚠️ **If you rule
+    against `SetStaticPrefix`, §8's MANDATORY budget assertion is left with NO IMPLEMENTABLE FORM AT ALL** — Zone A is built in the game lane, the
+    plugin may not include a game-lane header, so there is no other moment the assembled string can be tokenized. ⛔ **That is NOT a reason to
+    ratify it** — rule on the merits. **But a ruling against it is a §8 REWRITE routed to me, not a code fix routed to a programmer**, and it must
+    be reported that way rather than as a defect finding.
+    **(s) ✅ RATIFY THE DECLARED RACE — IT IS §15's DISCIPLINE TURNED ON ITS OWN CLAIM, WHICH IS RARER AND BETTER.** 455's *"authority live on
+    turn 1"* is **a RACE, not a guarantee, and it wrote that into the CODE as a race** rather than asserting an ordering it could not lock.
+    **Worst case the budget goes live one turn later, and the context budget holds in EVERY interleaving.** ⚖️ **An agent that declines to
+    over-claim about its OWN work is doing the thing this pipeline has spent the whole wave asking of reviewers.**
+    **(t) 📌 THE COUNT IS SETTLED AT 15 BY THREE INDEPENDENT DERIVATIONS — and the residue is instructive.** 15 lines / 16 occurrences, of which
+    **only 5 are real code**; 3 prose in log strings, 7 prose in comments. ⚠️ **TASK-450's larger total had folded in `h:274 ZoneBCharReserve` — a
+    DIFFERENT SYMBOL.** ⇒ **§14 gained a fourth variant this wave: a search that matched a different symbol entirely.** ✅ **0 `MaxSnapshotChars`
+    code references remain — verify that yourself.**
+    **(q) ⚠️ ONE PLUGIN-LANE APPENDIX — TASK-457, AND IT IS FOLDED HERE DELIBERATELY.** It closes three `qa/TASK-424.md` warns in
+    `SiegeLlamaSubsystem.cpp`, a file that already passed 424. ⚖️ **A post-QA fix pass owes a re-look (the TASK-417 precedent), and folding one
+    file with three named checks into this gate is cheaper than standing up a fifth QA task for it** — but it is a **cross-lane appendix, so scope
+    it explicitly and do not let it dilute the game-lane review.** Check: ⛔ **the deadline is now a real between-slice term so the hard timeout
+    backstops EVERY tier** (the header at `:130-135` claimed a guarantee the code did not provide — §17's shape, in the place a reviewer goes to
+    check) · **`HardTimeoutSeconds` = 10.0 is UNCHANGED** · `MarkBusy`/`ClearBusy` are symmetric **or the asymmetry is documented in code** ·
+    the VRAM citation now points at `TASK-413:625` (*"+2.0 to +4.6 ms on every tier"*) rather than the full-tier `:638`. ⛔ **And confirm the
+    scope fence held: no queue, no threading change, no game-lane edit, and 🔒 `SiegeLlamaSpike.cpp` UNTOUCHED (§16).**
+    **(0-STALE) ⛔ EVERY LINE NUMBER IN THIS GATE'S CRITERIA IS AS-OF-AUTHORING AND SOME HAVE ALREADY MOVED. VERIFY BY SYMBOL, NEVER BY OFFSET
+    (CONVENTIONS §18c).** Measured: **TASK-453's `AttachConsoleWidget` call moved `4324 → 4348`** when TASK-454 inserted ~72 lines above it, and
+    **nothing about it changed.** TASK-455 and TASK-456 then edit the component again. ⇒ ⛔ **A criterion that fails ONLY because a number moved
+    has found NOTHING — and it manufactures a finding, which is the expensive direction.** ✅ **Assert RELATIVE ORDER, which is durable and is what
+    these checks actually mean:** *"`AttachConsoleWidget` precedes `OpenConsole()`"* survives every insertion; *"`:4324` precedes `:4357`"* does not.
+    ✅ **Already re-verified by symbol after 454 and holding:** attach still precedes open · 449's guard-first `SetAssistantConsoleOpen(true)`
+    intact · **exactly ONE `bAssistantConsoleOpen` writer.**
+    **(i-4) ⚖️ RATIFY TASK-454's REFUSAL OF THE SPEC'S PREFERRED SHAPE — THE FOURTH §15 INSTANCE, AND THE BEST-EVIDENCED ONE.** My spec preferred a
+    shape needing no component edit; **the only such shape is folding the release into `SetUnitCommand` itself.** It refused on three CITED
+    mechanisms: `SetUnitCommand` is documented as a **pure latch** · `ClearAllUnitGroups`' own doc (*"Called by T/E (before SetUnitCommand)"*)
+    would become **self-referential** · and the P2 RPC `ServerSetUnitCommand` is **already named against the pure-latch contract**
+    (`SiegePlayerController.cpp:981`). ✅ **RATIFY. Do not file as a deviation.**
+    ✅ **AND RATIFY *HOW* IT CLEARED THE SAFETY QUESTION FIRST, BECAUSE IT IS THE §14 DISCIPLINE WORKING AS DESIGNED: IT USED A POSITIVE CONTROL.**
+    Before trusting a zero-hit search for Blueprint callers of `SetUnitCommand`, it confirmed the search *could* find such a hit — `OnUnitCommandChanged`
+    **does** appear in `Content/UI/WBP_HUD.uasset`. ⇒ ⚖️ **That converts a negative result from a §14 blind spot into EVIDENCE.** ⛔ **This is the
+    pattern every future "nothing references X" claim must follow.**
+    ✅ **ALSO RATIFY THE `HasAuthority()` GATE IT DECLINED TO ADD.** A client's T today runs the release locally and is refused inside
+    `SetUnitCommand`; adding a gate would have **silently changed SHIPPED KEY BEHAVIOUR under cover of a consistency fix.** ⚖️ **Recognising that a
+    "harmless hardening" was actually a behaviour change on the shipped path is exactly the restraint §2 asks for.**
+    **(o) ⛔ TASK-456 — VERIFY THE CALL SIDE ACTUALLY LANDED.** 454 built `ApplyArmyWideStance`; **456 is what makes the assistant USE it.**
+    Confirm **no `SetUnitCommand` call remains on the charge/fallback paths**, that **both key handlers and the assistant reach ONE
+    implementation**, and that the **two now-false divergence-warning comments are DELETED, not softened** (a stale warning makes the next reader
+    either "restore" the divergence or waste a pass disproving it).
+    **(p) ⛔ TASK-454's DIFF: CHECK THE ITEMISATION, NOT THE NUMBER (CONVENTIONS §18a).** `757/94 → 836/108` is **CORRECT for an EXTRACTION**:
+    the header is 100 % additive (deletions unchanged at 10) and **all +14 `.cpp` deletions are MOVES, itemised line-by-line in the handoff.**
+    ⚠️ **An unchanged-deletion-count demand is UNSATISFIABLE alongside the pinned one-implementation contract** — two handlers cannot both keep
+    intact copies *and* there be exactly one implementation. ⛔ **A reviewer checking the NUMBER fails this wrongly; a reviewer checking the
+    ITEMISATION passes it correctly.**
+    **(k) ✅ THE OFF-PATH TRACE IS DISCHARGED STRUCTURALLY — VERIFY THE STRUCTURE, NOT THE CONCLUSION.** TASK-443 reports the toggle is read in
+    **one function** (`IsConfirmBeforeExecuteEnabled`, `:1987`) from **one call site** (`RouteParsedCommandInternal:1200`, its **last** step),
+    while `ValidateCommandAgainstSnapshot` runs at **`:1134`, 66 lines earlier**, and all 20 machine checks sit strictly **before** the branch or
+    **downstream of both arms**. ⇒ **Confirm those line facts yourself**; if they hold, criterion (a) is met **structurally**, which is the strong
+    form — *the only difference between ON and OFF is whether a human looks.* ✅ **It fails safe (`Settings ? … : true`) and the deferred-fire flag
+    ORs in, so it can only ever force review ON, never off.** ⚖️ **Note that it reported this as a FINDING rather than as an absence of findings —
+    that is the distinction this gate was told to police, and it landed on the right side of it.**
+    **(l) ⛔ RULE ON EACH OF THE THREE DECLARED EDITS TO TASK-442's FINISHED FILE INDIVIDUALLY — DO NOT WAVE THEM THROUGH AS A GROUP.** All three
+    are declared and reported mechanically reversible; the load-bearing one makes `ExecuteAndReport()` **one body with two callers** via a
+    **statement-for-statement-identical** change to `ConfirmPressed`. ⚖️ **That is what keeps the off-path guarantee NON-DRIFTING rather than
+    merely true today — a shared body cannot diverge, two copies can.** ✅ **Sequential re-ownership of a finished task's file is legitimate; an
+    UNDECLARED edit would not be.** **Rule each on its own merits and say so per edit.**
+    **(m) 📌 DEV-11's DEFERRED-TRIGGER BRANCH IS DECLARED, NOT A DEFECT — AND IT IS THE WORST POSSIBLE ROW TO TUNE AGAINST.** An
+    already-satisfied deferred trigger **re-asks** rather than firing, because *"2 **more** knights"* is indistinguishable from an absolute count
+    in the emitted JSON. **One branch to reverse if you rule the other way.** ⛔ **But `DEV-11` IS PRECISELY THE ROW THAT FLIPS BETWEEN EVAL RUNS
+    (§12h) — the batch's least stable evidence.** ⇒ **Rule on the BRANCH's logic from the code, never from an eval observation, and ⛔ do not
+    cite a single run in either direction.** ⚖️ **Re-asking is also the fail-safe direction** — it costs a keypress; firing blind on a
+    misread count costs an army.
+    **(n) ⚠️ TASK-443's HANDOFF SAYS TASK-450 IS `backlog`. IT IS NOT — IT IS RUNNING. It read a stale board.** No action owed and **not a
+    finding against 443** — but the `#include "SiegeLlamaSubsystem.h"` it added **will not resolve until 450 lands**, which the
+    **447 ⊃ 424 ⊃ 450** ordering already covers. ⛔ **Do not open a loop on it** (same class as the `AttachConsoleWidget` link note).
+    ⚖️ **Recorded because it is §14's cousin: a board read at time T is a snapshot of a moving target, exactly like a search result.**
+    **(a) ⛔ THE TOGGLE'S OFF-PATH SKIPS ONLY THE HUMAN REVIEW.** Trace ON and OFF **side by side, check for check**, and confirm the parse, the
+    `Kinds.Num() == Counts.Num()` invariant, the shortfall path, eligibility, the authority refusal and the non-orderable guard **all still run
+    with confirm OFF.** ⚠️ **Any check that runs only on the ON path is a BLOCKER** — that is a UX preference silently converted into a safety
+    regression. Confirm too that **an unresolvable settings subsystem behaves as ON** (fail safe = MORE review).
+    **(b) ⛔ NO MULTI-TURN LOOP ANYWHERE.** Any code path that feeds a model's own previous output back into the model is an **automatic FAIL**,
+    whatever it is called. Each clarification turn must be a **fresh single-turn call** with context carried as one game-authored Zone-C line.
+    **(c) `CreateUnitGroup` IS A PROVABLY ZERO-BEHAVIOR-CHANGE EXTRACTION** (the TASK-397 read-through idiom) — and ⚠️ **`SiegePlayerController`
+    also contains the FOLLOW lane's uncommitted work: attribute every diagnostic to the file AND the lane, and do NOT count foreign findings
+    against this batch's loop budget.**
+    **(d) THE GUARD REJECTS A MIXED SELECTION AS A WHOLE, never silently dropping a kind**, and its tests actually exercise the `0 orderable`
+    case rather than only the absent-kind case. ⚠️ **Check that `IsKindOrderable` exposes the `orderable` tally and NOT the `followable` one** —
+    the header itself distinguishes them and exposing the wrong one is a silent wrong answer.
+    **(e) NO PLAYER-FACING STRING IS PRODUCED BY THE MODEL** (§3) — every one is a game-authored template filled from a reason code.
+    **Also verify:** the §8/§9 pinned signatures character-for-character · `Build.cs` adds **`SiegeLlama` only** (⛔ not `HTTP`, not `Sockets`) ·
+    the input probe is **deleted** · `BindWidgetOptional` + null-construct escape hatches present in both widgets · BIE params
+    FString/int32/bool/uint8 only · **the M8 declaration VERBATIM in all four handoffs** · no unit registry / actor cache / dirty flag (§4).
+    ⚠️ **`Grep` MANGLES COMMENT SYNTAX ON THIS MACHINE — comment-level and structural findings come from RAW `Read` output only. `Grep`
+    LOCATES; it does not READ.** It has manufactured two false blockers and can equally MASK the `*/`-in-comment trap.
+    ⚠️ **STATE WHAT YOU DID NOT RUN — nothing is compiled and nothing has executed. "Reviewed by reading" is legitimate and INCOMPLETE; name
+    the parser you did not run** (§9c: **where an artifact has a parser, THE PARSER IS THE REVIEWER OF RECORD**, and *"a method that compares an
+    artifact to another artifact of the same authorship cannot detect an error they share"*).
+    Report `qa/TASK-446.md`. Post the verdict in ⚙️ Dev & QA.
+- names: > Law: CONVENTIONS "Settings screen…" §5, §6, §8, §9 · "In-match LLM command assistant" §1, §2, §3, §4, §9, §9c · the RELAYED-DIAGNOSIS LAW · §10's `Grep` trap.
+
+#### TASK-447 — [W1-INT] QUIESCE + COMPILE + the snapshot FIRST-EXECUTION AUDIT + host TASK-438 + integration commit (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: **TASK-439 PASS + TASK-446 PASS + TASK-424 PASS** (⚠️ **and TASK-424 now covers TASK-450, so the subsystem must LAND first**) · hosts **TASK-438** in-session
+- parallel-safe: no — ⛔ **this IS the compile gate**
+- ⚠️ **THREE CORRECTIONS TO THE SPEC BELOW, 2026-08-03 — READ THESE FIRST:**
+    **(i) ⛔ THE SMOKE TEST INHERITED FROM TASK-425 TESTS A SUBSYSTEM THAT DID NOT EXIST WHEN I WROTE IT.** TASK-423 delivered **only** the Zone-A
+    equality test and **correctly declared the shortfall**; `USiegeLlamaSubsystem` is written by **TASK-450**. ⇒ **Every clause of step (5) —
+    `Siege.Llama.Info`, async load never blocking match start, one parseable JSON, the second concurrent call returning false, `CancelActiveRequest()`
+    aborting mid-prefill, the absent-model-file path, the partial-tier hitch re-measure — REQUIRES TASK-450 TO HAVE LANDED.** ⛔ **Do not run this
+    gate before it does, and do not quietly drop the smoke test to make the gate runnable.** ⚖️ **My error, not the programmer's: I folded TASK-425's
+    spec into this task while its subject was still unwritten.**
+    **(ii) ⛔ THE ATTRIBUTION SPLIT IN STEP (5) IS RETIRED — ruling 7 was WRONG.** `SiegePlayerController.{h,cpp}` was **CLEAN**; Jonathan had
+    already committed the FOLLOW lane himself (`e70f5ba`). **The lanes are separated BY COMMIT, which is stronger than a split argued in a message.**
+    The whole working diff in those files is TASK-440 + TASK-449. ⚠️ **Still run the `git status --porcelain` pre-flight and branch on the ANSWER —
+    what was wrong was PREDICTING the answer.** 📌 **TASK-440's handoff states `425 insertions`; git measured `430 / 94`. Trust the command, not the
+    handoff** — a number that merely *sounds* measured is the defect this batch keeps finding (the 58-vs-59 LFS precedent).
+    **(iii) ⚠️ WARN-5 IS INSTRUMENTED, NOT DISCHARGED — AND MUST NOT BE REPORTED AS DISCHARGED.** TASK-423's Zone-A equality test **has never
+    run**. ⇒ **Discharge requires BOTH your compile landing AND `Siegebound.Assistant.ZoneA.*` going GREEN, claimed against that run and no
+    other.** ⚠️ **The spike lane inside that test is a frozen 98-line verbatim copy (text-diffed clean, 5116 chars) and its offline agreement is
+    SAME-AUTHORSHIP — it discharges nothing** (§9c: *a method that compares an artifact to another artifact of the same authorship cannot detect
+    an error they share*). ⛔ **"The test exists" is not "the test passed."**
+- spec: >
+    **(0-SPIKE) 🔒⛔ THE INHERITED *"DELETE THE SPIKE HARNESS IN THE SAME COMMIT"* CLAUSE IS STRUCK. DO NOT DELETE `SiegeLlamaSpike.cpp`.**
+    It arrived here by absorbing TASK-425's spec and is **SUPERSEDED BY CONVENTIONS §16** — the file is **reclassified from throwaway to
+    LOAD-BEARING TEST INFRASTRUCTURE** and its deletion is **UNSCHEDULED, not deferred.** ⛔ **Deleting it would spend Jonathan's one honest
+    measurement by destroying the only instrument that can take it:** `assistant_eval_holdout2.csv` is authored against the **`t0` fixture inside
+    that file** and scored by **`Siege.Llama.SpikeEval`, also inside it** — and it is **also** the only `zoneA_tok` printer and the **only**
+    partial-tier sampler. ⚠️ **TASK-424's own item (10) carries the same struck clause; it is superseded identically.**
+    **(0-DEADLINE) ⛔ REWRITTEN 2026-08-03 — MY EARLIER CRITERION ASKED YOU TO MEASURE SOMETHING NO SINGLE TIER CAN SHOW. THE OLD WORDING IS
+    STRUCK.** ~~The ONLY tier that can exercise the deadline is `tier=cpu`; exercise it there or record NOT EXERCISED.~~
+    ⚠️ **THE TWO FACTS COLLIDE, BOTH ARE TRUE, AND TOGETHER THEY DEFINE THE PROCEDURE:**
+    · ⛔ **On `tier=cpu` — where the ceiling IS reachable (TASK-413: 2 of 5)** — the deadline exits via `abort_callback` **MID-GRAPH**,
+    `llama_decode` returns **2**, and the code takes **a DIFFERENT BRANCH WITH NO ELAPSED FIELD.** ⇒ ⛔ **THE FIXED LINE DOES NOT PRINT ON CPU.**
+    · ⚠️ **On the GPU tiers — where the fixed line DOES print** — the ceiling is only **marginally** reachable (worst prefill **417–2914 ms**;
+    partial's worst **decode** wall **8926 ms of 10000**, i.e. within ~1.1 s).
+    ⇒ ⇒ ⛔ **THEREFORE: ON THE TIER WHERE THE CEILING IS REACHABLE THE LOG DOES NOT PRINT, AND ON THE TIER WHERE THE LOG PRINTS THE CEILING IS
+    BARELY REACHABLE.**
+    **WHAT TO DO, IN ORDER:**
+    **(a)** ⛔ **NEVER read the ABSENCE of a `HARD TIMEOUT` line as *"no timeout occurred."*** On CPU a real timeout is **silent in that field** —
+    detect it by its own signature (`llama_decode` returning **2** / the abort path), **not by the log line.**
+    **(b)** **If a GPU-tier run does fire the deadline, the printed elapsed is now a REAL measurement (TASK-459) — record the number.**
+    **(c)** ⛔ **If neither tier fires it, RECORD `NOT EXERCISED`. Do NOT synthesize a procedure at the gate, and do NOT report a pass.**
+    ⚖️ **An honest *"not exercised"* is a RESULT; an invented exercise is how a gate starts producing the false greens this batch exists to catch.**
+    **(d)** ⛔ **`SiegeLlamaSpike.cpp` CARRIES THE SAME UNFIXED SHAPE AND IS UNTOUCHABLE UNDER §16 — AND TASK-413's CPU NUMBERS CAME FROM IT.**
+    ⇒ **You may still read a CONFIGURED number there. NEVER treat a spike-printed timeout figure as measured** (CONVENTIONS §23: a value that
+    varies is not thereby correct; and §16 keeps the file alive precisely because it is the sealed corpus's instrument, not because it is right).
+    **(0-ANCHORS) ⚠️ `qa/TASK-424.md`'s LINE NUMBERS ARE STALE — ~200 LINES WERE ADDED TO THAT FILE.** §18c's rot, now in the **plugin** lane.
+    ⛔ **Verify by SYMBOL, never by offset**, in the plugin exactly as in the game lane.
+    **(0-ZONEB) ⛔ AN OWED READING, PINNED HERE SO IT IS NOT LOST — TAKE IT AT THE FIRST EXECUTION.** `ZoneBCharReserve` **stays 192** and
+    TASK-455 was right to leave it: it charges **192** for a Zone B measuring **68 (t0) / 71 (t1)**, worst case ~85 — **but every one of those
+    figures was printed by the SPIKE's `AppendZoneB`, a DIFFERENT LANE from the shipped builder** (§9c/§12g). ⇒ **`ReportFirstCapture` is the
+    right instrument and it has NEVER EXECUTED. Your snapshot first-execution audit (step 3) is its first run.**
+    ⇒ **RECORD THE SHIPPED BUILDER'S PRINTED `zoneB_chars` AND HAND IT TO THE MANAGER.** ⛔ **Do NOT change the constant yourself** — you are
+    taking the measurement, not spending it. ⚠️ **If the reading does not appear, say so plainly; a derived substitute here is the exact defect
+    §12g exists to prevent.**
+    **(0-BACKENDS) ⛔ A HARD REPORTING DUTY, NOT A PREFERENCE — QA ACCEPTED THE SYNCHRONOUS LOAD *WITH BINDING CONDITIONS*.**
+    `EnsureBackendsLoaded()` is **synchronous on the game thread** (`bBackendsLoaded` is a plain bool, `SiegeLlamaModule.h:83`;
+    `SiegeLlamaInfo.cpp:81` calls the same function). ⇒ **You MUST report the MEASURED `N ms`**, and ⛔ ***"async load never blocks match start"*
+    IS A QUALIFIED-PASS ONLY — it may NOT be recorded as a plain pass.** ⚖️ **A latency claim with no number is the shape this batch has paid for
+    repeatedly: it reads as a measurement and is an assurance.**
+    **(0-SMOKE) ⛔ THE INHERITED SMOKE TEST IS CORRECTED — ONE CHECK IS IMPOSSIBLE, NOT MERELY HARD, AND IT MAY NOT BE SILENTLY REDUCED TO
+    WHATEVER HAPPENS TO RUN.** TASK-450 stated exactly what its code can and cannot support; **honour the distinctions:**
+    | check | verdict |
+    |---|---|
+    | `Siege.Llama.Info` (⚠️ **registered in `SiegeLlamaInfo.cpp`, NOT the subsystem — corrected 2026-08-03**) · one parseable JSON · **queue depth 1** (deterministic — run `Siege.Llama.Test` twice) · absent-model path | ✅ **SUPPORTED — run all four** |
+    | *async load never blocks match start* | ⚠️ **QUALIFIED** — `EnsureBackendsLoaded()` is **synchronous on the game thread**; it is declared, timed and logged. **Report the timing, not the slogan.** |
+    | *cancel mid-prefill* | ⚠️ **genuinely mid-graph ONLY on `tier=cpu`** — say which tier you exercised |
+    | **partial-tier frame-time hitch re-measure** | ⛔ **IMPOSSIBLE FROM THE SUBSYSTEM — that sampler exists ONLY in `SiegeLlamaSpike.cpp`.** Run it **there**, or record **NOT MEASURED**. ⛔ **It may NOT be dropped silently.** |
+    ⚠️ **THE MODEL IS NO LONGER RESIDENT** — the editor was restarted (deadlock during TASK-445, see below) and the restart unloaded it.
+    **Any smoke test needing inference must load it first; budget for that rather than discovering it.**
+    **(0-LFS) ⛔ THE LFS CHECK INVERTS BY FILE KIND, AND THE RULE THIS BOARD INHERITED IS THE *DOCS* ONE. THIS COMMIT CARRIES ASSETS.**
+    `handoffs/TASK-434-buildmaster.md` §1b proved a **docs-only** commit clean with *"every object `(Git: …)`, not one `(LFS: …)`."*
+    ⛔ **APPLIED TO AN ASSET COMMIT THAT TEST IS BACKWARDS.** `.uasset` routes through the **`lfs` filter** ⇒ **`(LFS: …)` IS CORRECT**, and
+    ⛔ **a `.uasset` tagged `(Git: …)` IS THE DEFECT** — the binary went in raw, and **git history is append-only: a raw blob stays raw forever.**
+    | this commit contains | expect | ⛔ defect |
+    |---|---|---|
+    | `.md` `.cpp` `.h` `.csv` `.cs` `.ini` | **`(Git: …)`** | any `(LFS: …)` |
+    | **`.uasset`** (`IA_AssistantConsole`, `IMC_Hero`, `WBP_MainMenu`) | **`(LFS: …)`** | **any `(Git: …)`** |
+    ✅ **Run `git check-attr filter -- <path>` PER KIND before committing and paste it** (§7 *acceptance, not assertion*). Law: CONVENTIONS §25.
+    **(0-INDEX) ⛔ THE INDEX IS ALREADY DIRTY AND IT WAS NOT DIRTIED BY AN AGENT — TREAT IT AS HOSTILE.**
+    ```
+    A   Content/Input/Actions/IA_AssistantConsole.uasset   <- STAGED, not by any agent
+     M  Content/Input/IMC_Hero.uasset                      <- modified, unstaged
+    ```
+    **GitHub Desktop is running and the editor's Git provider auto-stages saved assets.** ✅ **No commit was created — `HEAD` verified still
+    `c8c780c`.** ✅ **TASK-445 deliberately did NOT unstage it, on the correct grounds that `git reset` is itself a Git WRITE and Git is YOUR
+    exclusive tool** — that restraint is the single-owner law working, not an omission.
+    ⇒ ⛔ **Re-read the index; never trust it. Stage by EXPLICIT PATHSPEC only — no `-a`, no `add -A`, no bare `git commit` — and re-check
+    `git status --porcelain` AFTER every `add`. Verify each commit by INVERSE FILTER** (`git show --name-only` piped through a regex that
+    *removes* the intended paths ⇒ empty output). **`handoffs/TASK-434-buildmaster.md` §1c is the procedure that already works — follow it.**
+    **(0-PRE) ⛔ VERIFY THE CROSS-TASK DEFINITION EXISTS *BEFORE* YOU COMPILE — OR THE GATE FAILS ON THE WRONG LINE.**
+    `USiegeAssistantComponent::AttachConsoleWidget` is the pinned seam between **TASK-443** (implements it) and **TASK-453** (calls it).
+    ⚠️ **At the time TASK-453 landed it was DECLARED (`SiegeAssistantComponent.h:723`) but NOT YET DEFINED in the component `.cpp`, because 443
+    was still running. That is the ANTICIPATED state, not a defect.** ⇒ **Before `Build.bat`, confirm the DEFINITION is present on disk.**
+    ⛔ **If it is absent, the unresolved external is TASK-443's, NEVER TASK-453's — and it must NOT open a QA loop on 453.**
+    ⚖️ **THE MISATTRIBUTION IS THE EXPENSIVE PART, NOT THE FAILURE:** a linker names the *calling* translation unit, so an un-implemented pin
+    reads on the console exactly like a bad call. **DIAGNOSTIC ATTRIBUTION applies to LINK errors, not only to compile errors** — attribute to
+    **the owner of the missing definition**, and route it there as early information.
+    ⚠️ **`git grep` CANNOT SEE ANY OF THIS BATCH'S FILES — they are all untracked (`??`) until your commit. Check with `Read`, never with a
+    negative search** (CONVENTIONS "Settings screen…" §14).
+    **(0) ⛔ QUIESCE THE MODULE FIRST AND SAY SO IN THE HANDOFF.** No programmer task in `Source/GitClaudeUnrealTest/` may be in flight —
+    **every C++ task finished with its handoff written, not merely non-conflicting.** ⚠️ **FILE-DISJOINTNESS IS NOT BUILD-DISJOINTNESS:** a
+    half-written new file owned by an unrelated batch is the worst case, and nothing in any board flags it. **This is the exact defect that
+    failed TASK-401 on three diagnostics from a lane it had nothing to do with.**
+    **(1) COMPILE — the hard gate.** ⛔ **`Build.bat` RETURNS EXIT 0 ON A FAILED BUILD. PARSE THE LOG FOR `Result:`; NEVER TRUST
+    `$LASTEXITCODE`** (it has been wrong in BOTH directions on this project — four failed builds returned 0, and one success returned 1).
+    ⚠️ **If the failure is `0x800711C7` in ~2 s, that is enforced Smart App Control blocking UBT's unsigned `ModuleRules.dll` — a JONATHAN-ONLY
+    fix (Windows Security → Smart App Control → Off), NOT a code error. Do not loop QA over it.**
+    **DIAGNOSTIC ATTRIBUTION IS PART OF THE JOB:** a failure belongs to **the file the diagnostic names**, never to the lane that ran the build.
+    ⚠️ **`SiegePlayerController.{h,cpp}` carries the FOLLOW lane's uncommitted work — foreign diagnostics route to THAT batch as early
+    information and are NEVER counted against this batch's QA loop.**
+    **(2) HOST TASK-438 IN-SESSION, AFTER THE COMPILE** (the TASK-355/357 precedent — the `CreateWidget` node cannot pick an uncompiled class).
+    **(3) ⛔ THE SNAPSHOT FIRST-EXECUTION AUDIT — A REAL DELIVERABLE, NOT A NOTE (ruling 5).** `USiegeAssistantSnapshot` has had **ZERO callers
+    and ZERO tests** and its truncation logging has **never emitted a line**; every *"now observable"* clause in §8/§10 describes code that has
+    never run. **Wave 1 is its first execution.** In PIE on `L_Arena` **with units on the field** (⚠️ never an empty map), record:
+    **the real captured snapshot pasted in FULL with its character count** · **live `zoneB_chars` / `zoneC_chars`** against the 68 / 887 fixture
+    figures and the 738 shipped-builder figure · **whether the truncation log fired — and if not, that it was not supposed to** · **whether
+    `MaxRosterKinds = 8` truncated on a real board.** ⛔ **An audit reporting "no problems" without naming which of these it OBSERVED has not
+    been performed.** ⚠️ **"Observable" is not "observed" and "reviewed" is not "executed."**
+    **(4) THE PLAYABLE CHECKS (machine-verifiable half only; the rest is TASK-448's):** the settings screen opens from the main menu and
+    **the backdrop swallows clicks** · the toggle **persists across a full relaunch** (set it OFF, relaunch, confirm it is still OFF — this is
+    the SaveGame's only real test) · a typed order reaches `AwaitConfirm` with ghost circles · **Cancel leaves nothing partially executed** ·
+    a non-orderable kind is refused **before execution** · and ⛔ **every keyboard command still works identically with the console closed.**
+    **(5) COMMIT — `main`, NO PUSH, PER-DELIVERABLE.** ⚠️ **`main` is 13 ahead of origin; verify the ahead-count with
+    `git rev-list --count origin/main..main`, NEVER from a memory note or from this board** (placeholder hashes and remembered counts have both
+    been wrong here). ⛔ **THE FOLLOW LANE'S WORK IS INTERMIXED IN `SiegePlayerController.{h,cpp}` AND CANNOT BE SPLIT BY PATHSPEC — SPLIT IT BY
+    ATTRIBUTION IN THE COMMIT MESSAGE** (the TASK-434 §3 precedent), and ⛔ **do not commit the FOLLOW lane's other files: TASK-403 is still
+    Jonathan's, gated on his TASK-402 playtest.**
+    ⚠️ **The editor's Git provider auto-stages saved assets — stage by EXPLICIT PATHSPEC and re-check `git status --porcelain` AFTER staging.
+    If anything foreign is dirty or staged, STOP and report rather than committing it.** ⛔ `git reset --hard` / `clean -fd` **BANNED**.
+    **Real hashes, read back from `git log` — never predicted.** `git ls-files` must show **no `.gguf` and nothing under `/Models/`**; run
+    **`git check-ignore -v`** and paste it (**acceptance, not assertion**). **`git lfs status` per-object tags checked** — the correct test is
+    the per-object `(Git: …)` tag, **not** an empty "Objects to be committed" list.
+    **⛔ `L_Arena` IS NEVER SAVED.** 🔒 **`Docs/Data/assistant_eval_holdout2.csv` IS NOT OPENED, NOT READ, NOT SCORED** — un-gating Wave 1 does
+    not spend it.
+    ⚠️ **THE EDITOR IS RUNNING WITH THE MODEL LOADED AND JONATHAN IS AT THE KEYBOARD. CLOSING IT IS HIS CHOICE** — if the compile needs a
+    bounce, **ASK; do not force-kill.** The unattended-gate exception does not apply while he is present.
+    Handoff `handoffs/TASK-447-buildmaster.md`. Post hashes in 🔧 Build & Git.
+- names: >
+    Build: `"C:/Program Files/Epic Games/UE_5.8/Engine/Build/BatchFiles/Build.bat" GitClaudeUnrealTestEditor Win64 Development -project="…/GitClaudeUnrealTest.uproject" -waitmutex`.
+    Law: the hard gate (no code commit without a PASS QA report) · CONVENTIONS "⛔ THE QUIET-MODULE LAW" · "GIT HAZARD LAWS" (LFS, checksum-not-`git diff`,
+    repo-relative `git show`) · "UE Build.bat exit code lies" · "Settings screen…" §7, §9, §10.
+
+#### TASK-448 — [W1-H1] 🧑 JONATHAN — the SETTINGS + CONFIRM playtest gate
+- assignee: **Jonathan (human — irreducible; pixels and feel, no work)**
+- status: backlog
+- blocked-by: TASK-447
+- parallel-safe: yes
+- spec: >
+    ⚠️ **EVERY ON-SCREEN CLAIM IN THIS BATCH IS OPEN UNTIL YOU LOOK AT IT.** Neither new widget has a `.uasset` to read back, and **MCP readback
+    has passed on visually-broken UMG here repeatedly** — TASK-355 read back **6/6 bindings correct** while all six controls were stacked in a
+    165×48 px box in the corner of the screen. **A binding readback cannot see geometry.**
+    **THE SETTINGS SCREEN:** it opens from the main menu · it **reads legibly** · ⚠️ **clicking the dimmed background hits NOTHING behind it**
+    (if a background click reaches "Quit", that is the defect this gate exists to catch) · **Back returns you to a working main menu** ·
+    the four pre-existing entries **still work** · and the toggle **survives a full relaunch.**
+    **THE CONFIRM STEP (toggle ON — the default):** type an order, and **before anything moves** you get the parsed order in words **and ghost
+    circles on the ground.** ⚖️ **This is the feature you asked for, and the reason it matters is measured, not assumed: 4 of the 5 stable eval
+    failures are wrong-place / wrong-count** — *"10 footmen + a sorcerer"* sent to **the mine instead of the ancient ground**, *"clerics follow
+    me"* moving **one cleric instead of all**, *"infantry back to our castle"* retreating **the whole army**. **All four are visible on the
+    ground in one glance and cost you one keypress to cancel.**
+    **THE CONFIRM STEP (toggle OFF):** orders execute immediately — **and everything else still refuses what it should.** ⚠️ **Turning confirm
+    off removes YOUR review step, never a machine check.**
+    **THE GUARD:** ask for a unit you do not own (the `DEV-04` shape — *"send the catapults…"*). **It must refuse, before anything executes.**
+    ⛔ **This does NOT change the eval score — the eval grades the JSON the model emits, not what the game does with it. It is shipped safety.**
+    ⛔ **AND THE ONE THAT OUTRANKS ALL OF IT (§2): every keyboard command still works IDENTICALLY with the console closed.** Follow, Attack,
+    Hold, Defend, Ambush, Rally, cards 1–6. ⚠️ **Default-follow means you personally order every fight now, so an assistant that degraded a key
+    would make the game worse than before it existed.**
+    **TWO DECISIONS THAT ARE YOURS, AND NEITHER BLOCKS THIS GATE:**
+    **(1) 🚩 TASK-402 — your Follow/Miner playtest — never ran, and this batch changed `SiegePlayerController` on top of it.** The Follow lane is
+    QA-passed and compiled but **un-played**. Do you want it played separately, or is one combined playtest fine? **Recorded so the change is not
+    silent.**
+    **(2) BAR #5 IS STILL UNCLEARED AT 20/25, AND UN-GATING WAVE 1 WAS YOUR DELIBERATE OVERRIDE, NOT A PASS.** Now that you can feel the confirm
+    step, **the live question is whether the accuracy is good enough WITH it** — which is the only form of that question that was ever worth
+    answering. 🔒 **The gen-2 sealed holdout is still unopened and unspent; nothing in this batch touched it.**
+- names: >
+    Evidence: `handoffs/TASK-447-buildmaster.md` (compile, the snapshot first-execution audit, the machine checks) · `qa/TASK-439.md` ·
+    `qa/TASK-446.md` · `handoffs/TASK-437-programmer.md` + `handoffs/TASK-444-programmer.md` (their pixel checklists).
+    Law: CONVENTIONS "Settings screen…" §1 (the un-gate is yours), §5, §6 · "In-match LLM command assistant" §2 (strictly additive).
+- 🧑 **TWO FEEL ITEMS ADDED FROM `qa/TASK-446.md` — BOTH VERIFIED SAFE, BOTH PURELY YOUR TASTE.**
+  **(WARN-5) A console left OPEN when the match ends STAYS ON SCREEN over the victory screen.** ✅ **Verified CONSISTENT, not a soft-lock:**
+  `CanOpenAssistantConsole()` refuses to *open* after match end, `ApplyCursorInputState` early-outs while `bMatchEnded` is latched so
+  `HandleMatchEnd`'s UIOnly stands, **and the key still closes it.** **A one-line close in `HandleMatchEnd` would tidy it — say the word.**
+  **(WARN-8) AN ASSISTANT-FORMED GROUP LEAVES NO PERSISTENT CIRCLE ON THE GROUND, WHERE R/F WOULD.** ✅ **Verified safe** (no double-free, no
+  dangling): `ConfirmPressed` tears the ghost circles down **before** executing — correctly, so **no ghost outlives the decision it illustrated**
+  — which leaves nothing to transfer to the group. ⚠️ **So an assistant `send` and a key `send` look DIFFERENT after the order lands.**
+  **Is that a feature (the assistant's orders read as transient) or an inconsistency you want closed?**
+- 🧑 **DECISION ADDED 2026-08-03 — DOES `Enter` DO TWO JOBS? (sits beside the Escape item below; ⛔ CHEAP FOR A HUMAN, IMPOSSIBLE FROM TEXT.)**
+  **`Enter` both OPENS the console and SUBMITS the line.** TASK-445's reasoning is that **Slate consumes it before Enhanced Input while the input
+  box has focus**, so the toggle should not double-fire — ✅ **and it labelled that REASONING, NOT MEASUREMENT, which is exactly right.**
+  ⇒ **THE CHECK: press `Enter` to submit an order. Does it also re-trigger the open action?** ⚠️ **If it does, the symptom is a console that
+  CLOSES when you try to send** — which would read as *"the assistant ate my order"* rather than as an input-routing bug. **One press settles it.**
+- 🧑 **DECISION ADDED 2026-08-03 — ESCAPE DOES NOT CLOSE THE CONSOLE, AND THAT WAS A DELIBERATE, DECLARED CHOICE.** TASK-444 left **Escape unabsorbed so the shipped cancel routes keep firing** (placement-cancel, targeting-cancel, group-pick-cancel) rather than silently stealing a key that already means "cancel" everywhere else in the game. ✅ **Surfacing it instead of deciding it silently is exactly right.** ⚖️ **The trade, plainly: absorb Escape and the console closes the way players expect, but Escape stops meaning "cancel" while it is open — and §2 says the assistant may never degrade a shipped key.** Options: **(a)** leave it — close via the open key / Cancel button (**current, and §2-safest**); **(b)** Escape closes the console ONLY when it is open and passes through otherwise; **(c)** something else you want. **Your call at the playtest — record it and I will write it into law.**
+
+---
+
+#### TASK-449 — [W1-WIRE] The open-key seam: bind `IA_AssistantConsole`, create/show the console, drive the posture (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: ✅ **qa-passed → ready-for-integration** (2026-08-03 — `qa/TASK-446.md`, PASS · 0 blockers). 🔒 **THE BLOCKER-GRADE LAZY-CREATION TRAP IS CLEAR: no `BeginPlay` binder exists.** Verified **by relative order at the SYMBOL, not by offset** (§18c): `SetAssistantConsoleOpen(true)` → `GetOrCreateAssistantConsoleWidget()` → `AttachConsoleWidget` → `OpenConsole()`.
+- status: **ready-for-qa** (2026-08-03 — handoff `handoffs/TASK-449-programmer.md`; reviewed under TASK-446 item (f). ⛔ **NOT compiled** — TASK-447 is the one gate. **Additive only: `git diff --stat` on `SiegePlayerController.{h,cpp}` went 425/94 → 715/94 — +290 insertions, deletion count UNCHANGED, so nothing of TASK-440's was reverted or reformatted.** ✅ **The board's correction is confirmed AT THE ARTIFACT: the `|| bAssistantConsoleOpen` posture term IS present at `:4118`** — TASK-444's contrary claim is wrong. Delivered: `AssistantConsoleActionAsset` (ctor, `/Game/Input/Actions/IA_AssistantConsole.IA_AssistantConsole`) · `ResolveInputAction` + **one guarded `BindAction`** appended last, ⛔ **zero shipped bindings re-routed** (§2) · `OnAssistantConsolePressed` with the **guard-first/UI-second** order — `SetAssistantConsoleOpen(true)` runs BEFORE any creation, and on refusal **nothing is constructed, added, focused or flashed** · lazy `CreateAndAddToViewport` on first successful open + `GetAssistantConsoleWidget()` · `OnConsoleOpenChanged` bound to a posture handler (+ `RemoveDynamic`/close/`RemoveFromParent` in `EndPlay`); `bAssistantConsoleOpen` still has exactly ONE writer. ⚠️ **`ToggleConsole()` DELIBERATELY NOT CALLED — it shows the widget itself and would produce the exact forbidden ordering; the ⛔ clause wins over the names list (handoff §4, QA should rule).** ⚠️ **A silent `OpenConsole()` refusal (disabled/faulted console) is detected via `IsConsoleOpen()` and the posture is rolled back.** 🚩 **RESIDUAL GAP, NOT MINE: the widget→component SUBMIT forwards are still unbound (TASK-443), and lazy creation means `GetAssistantConsoleWidget()` is NULL until the first open — a BeginPlay binder would no-op forever. Needs a manager ruling since TASK-443's spec forbids controller edits (handoff §6).** ⚠️ **The key stays INERT until TASK-445's asset + `IMC_Hero` mapping land — TASK-448 cannot test this without it.** No Git, no editor/MCP/PIE, no `Content/`.)
+- blocked-by: **none — DISPATCHABLE NOW.** (Sequential re-ownership of `SiegePlayerController.{h,cpp}` after **TASK-440, which is FINISHED with its handoff written** — never concurrent with it.)
+- parallel-safe: **yes vs TASK-443** (different files) — ⛔ **never beside a compile gate**; **EXCLUSIVE owner of `SiegePlayerController.{h,cpp}`**
+- spec: >
+    ⛔ **WHY THIS TASK EXISTS: A REAL WAVE GAP. NOTHING OPENS THE CONSOLE.** Verified repo-wide, not relayed — **zero call sites** for
+    `CreateAndAddToViewport`, `ToggleConsole` or `SetAssistantConsoleOpen` outside their own definitions, and **zero `BindAction` for any
+    assistant action.** As the board stood, **TASK-448 would have handed Jonathan a feature with nothing to type into**, and it would have
+    surfaced at his playtest.
+    ⚠️ **BOTH SIDES OF THE SEAM ARE ALREADY BUILT AND CORRECT — DO NOT REBUILD EITHER.** TASK-440 shipped the posture owner
+    (`bAssistantConsoleOpen` in `ApplyCursorInputState` at `:4118`, `CanOpenAssistantConsole()` `:4139`, `SetAssistantConsoleOpen()` `:4158`,
+    and all four mutual-exclusion mirrors at `:1107` / `:1989` / `:2474`). TASK-444 shipped the widget (`CreateAndAddToViewport`,
+    `OpenConsole`, `CloseConsole`, `ToggleConsole`, `OnConsoleOpenChanged`). ⛔ **TASK-444's handoff claimed the posture term was missing —
+    THAT CLAIM IS WRONG; it read TASK-440's SPEC, not TASK-440's delivered CODE.** ⚖️ **Recorded because it is the relayed-diagnosis law in its
+    purest form: a report about another task's file is a LEAD, and the artifact settles it.** **You are writing the JOIN, nothing else.**
+    **(1) FOLLOW THE SHIPPED INPUT IDIOM CHARACTER-FOR-CHARACTER — it is fully self-contained in C++ and needs NO editor step.** Mirror
+    `CmdFollowAction` exactly: a `TSoftObjectPtr<UInputAction> AssistantConsoleActionAsset` set in the constructor by path
+    (`/Game/Input/Actions/IA_AssistantConsole.IA_AssistantConsole`), an `UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Input")`
+    `TObjectPtr<UInputAction> AssistantConsoleAction`, resolved via **`ResolveInputAction(...)`** in `SetupInputComponent`, then a guarded
+    `if (AssistantConsoleAction) { BindAction(..., ETriggerEvent::Started, ...); }`.
+    ✅ **INERT-NULL-SAFE IS THE DESIGNED STATE AND IT IS WHY YOU ARE NOT BLOCKED ON TASK-445:** a missing asset skips the binding, logs ONE
+    line, and leaves the key inert — **never a crash, every other key untouched.** Same pattern as `IA_CmdAmbush` and `IA_CmdFollow` before
+    their assets landed.
+    **(2) THE HANDLER'S ORDER IS LOAD-BEARING — GUARD FIRST, UI SECOND.** Call **`SetAssistantConsoleOpen(true)` BEFORE showing anything**;
+    it returns **false** when `CanOpenAssistantConsole()` refuses (placement / targeting / group-pick active). ⛔ **On a refusal, show
+    NOTHING** — do not create the widget, do not flash it. **A console that appears and then cannot be used is worse than one that does not
+    appear.** On close: `CloseConsole()` **and** `SetAssistantConsoleOpen(false)` so the cursor posture is released.
+    **(3) OWN THE WIDGET INSTANCE, LAZILY.** Hold a `TObjectPtr<USiegeAssistantConsoleWidget>`; create it on first successful open via the
+    widget's own `CreateAndAddToViewport`; expose a `GetAssistantConsoleWidget()` accessor. ⚖️ **The controller owns creation, visibility and
+    posture; the COMPONENT (TASK-443) binds the widget's delegates and owns the FSM.** That split is deliberate: it keeps this task to ONE file
+    and adds no new coupling inside the component.
+    **(4) ⛔ BIND `OnConsoleOpenChanged` AND KEEP THE POSTURE HONEST.** If the widget closes by any route other than the key, the posture must
+    still clear. ⚠️ **A posture flag that can be left stuck true is a soft-lock of the cursor** — and `ApplyCursorInputState` is exactly where
+    this project's level-travel input bugs have lived before.
+    **(5) ⛔ §2 IS THE LAW THIS TASK CAN MOST EASILY BREAK: every keyboard command must still work BYTE-IDENTICALLY.** You are ADDING a binding,
+    never re-routing one. **No key may be made to pass through the assistant.**
+    ⚠️ **A `UInputAction` reference is not the input MAPPING — TASK-445 still owns creating the asset and mapping it in `IMC_Hero`, and still
+    FLAGS-never-stomps if `Enter` is taken.**
+    ⛔ **No component edits, no widget edits, no `Content/`, no Git, no compile.**
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-449-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    `SiegePlayerController.{h,cpp}` · `AssistantConsoleAction` / `AssistantConsoleActionAsset` / `ResolveInputAction` ·
+    `OnAssistantConsolePressed` · `SetAssistantConsoleOpen` / `CanOpenAssistantConsole` / `IsAssistantConsoleOpen` ·
+    `USiegeAssistantConsoleWidget::CreateAndAddToViewport` / `OpenConsole` / `CloseConsole` / `OnConsoleOpenChanged` ·
+    `/Game/Input/Actions/IA_AssistantConsole.IA_AssistantConsole`.
+    ⛔ **`ToggleConsole` REMOVED FROM THIS LIST 2026-08-03 — MANAGER RATIFICATION, AND THE PROGRAMMER WAS RIGHT.** It shows the widget **before**
+    the controller can gate it, which produces **exactly the ordering the spec's ⛔ guard-first clause forbids** (*call `SetAssistantConsoleOpen`
+    first; on refusal show NOTHING*). ⇒ **The ⛔ clause WINS and `ToggleConsole()` is deliberately NOT called.** ⚖️ **My `names:` list contradicted
+    my own spec text, and the spec text is the instruction — an index that contradicts what it indexes loses** (the `qa/TASK-430.md` §7 RULING B
+    precedent). **Corrected here so the next reader does not "fix" it back;** `ToggleConsole()` stays on the widget as unused public API.
+    Law: CONVENTIONS "In-match LLM command assistant" §2, §5 · "Input-mode ownership (level-travel law)" · the RELAYED-DIAGNOSIS LAW.
+
+#### TASK-459 — [LLM-WARN3] The new timeout log always prints `10.0s` — one argument (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: **qa-passed / ready-for-integration** (2026-08-03 — `qa/TASK-461.md`: **PASS, 0 blockers**, 2 warns, 2 nits. Flip applied by the ORCHESTRATOR; qa-reviewer has no partial-edit tool. ✅ **THE SECOND-SITE DEPARTURE IS RATIFIED, verified at the code rather than the handoff:** both sites are the identical defect (same `HardTimeoutSeconds`, same `"%.1fs elapsed"`, both in `FSiegeLlamaWorker::RunRequestUnguarded`) and both are now correct — prefill prints `FPlatformTime::Seconds() - StartSeconds`, decode prints `Now - StartSeconds` reusing the clock read that already tripped its own test. ⚠️ **QA's own words: "Declining the departure would have been the defect"** — worst TTFT on ANY tier is 2913.8 ms (29% of the ceiling) and TTFT *upper-bounds* prefill, while partial's worst wall was **8926.3 of 10000**, one slow token from the decode branch. ✅ **§23 base verified at the symbol:** `HardDeadlineSeconds = StartSeconds + HardTimeoutSeconds` ⇒ `printed − 10.0` IS the overshoot; `PrefillStart`/`DecodeStart` were both live at both sites and **either would have been wrong**. ✅ **§22 sweep by QA found NOTHING FURTHER, and that is a result** — the three other `HardTimeoutSeconds` prints are ceilings *labelled as ceilings*; the only surviving instance of the shape is the §16-pinned `SiegeLlamaSpike.cpp`, correctly untouched. ✅ Fences held: `10.0` verbatim, header never opened, 457's guards/placement/`bAborted` byte-intact. ⚠️ The `%.1f` restraint was ruled RIGHT — `10.0s` now means *"overshoot under 50 ms"*, which the line could not previously carry) ← was: backlog
+- delivered: >
+    ⛔ **THE DEFECT WAS AT TWO SITES, NOT ONE — AND THE UNNAMED ONE IS THE ONE THAT CAN ACTUALLY FIRE.** Both fixed in
+    `SiegeLlamaSubsystem.cpp`, both **one argument**, both in `RunRequestUnguarded`: the **PREFILL** timeout detail string (the site WARN-3 cited)
+    now passes `FPlatformTime::Seconds() - StartSeconds`, and the **DECODE** timeout detail string — **identical defect, same constant, same
+    `"%.1fs elapsed"` field, cited by nobody** — now passes `Now - StartSeconds` (the pre-existing clock read that trips its own test, so **no new
+    read**). ⚖️ **DECLARED DEPARTURE (§15), separable in one line if ruled out:** the spec's *"change nothing else"* enumerates flag / guard /
+    placement / `HardTimeoutSeconds` and **I touched none of the four** — but **measured prefill is 417-2914 ms worst-case on ALL THREE tiers**
+    (`TASK-413:944-948`), so **the prefill ceiling is barely reachable**, while **partial's worst DECODE wall was 8926 ms of 10000 ms.**
+    ⇒ ⛔ **Fixing only the named site would have left TASK-447 quoting a constant anyway — this task's own failure mode, achieved by a task that
+    reported success.**
+    **✅ HOW I KNOW IT VARIES (the spec's test):** the substituted expression is the **same subtraction over the same two symbols** that already
+    computes `TtftMs` and `WallMs` in this function — and **TASK-413 published both VARYING across tiers and iterations** (TTFT 417.3/1655.4/2716.1
+    ms; wall worsts 2937.5/8926.3/10000.6 ms). **Empirical, not argued.** ⚖️ **And the BASE is the check QA should make, not the argument:**
+    `HardDeadlineSeconds = StartSeconds + HardTimeoutSeconds`, so **`printed - 10.0` IS the overshoot**; ⚠️ **`PrefillStart`/`DecodeStart` are both
+    in scope at both sites and are the plausible WRONG answer** — they vary too, but cannot be compared with the ceiling.
+    ⚠️ **HONEST LIMIT:** `%.1f` floors at ~50 ms, so a tiny overshoot still renders `10.0s` — **a measurement that rounds to the ceiling, not a
+    constant that ignores it.** ⛔ **`%.1f`→`%.2f` NOT taken (not the argument); flagged for the manager.**
+    ⛔ **FENCES HELD:** `HardTimeoutSeconds` **still 10.0** · **header never opened** (mtime 13:25 vs the `.cpp`'s 13:49) · **no header claim
+    softened** · TASK-457's **guards, placements and `bAborted` byte-intact** · 🔒 **`SiegeLlamaSpike.cpp` UNMODIFIED.**
+    **§14 INSTRUMENT:** the `.cpp` is **UNTRACKED** (positive control run first: `CLAUDE.md` exit 0, target exit 1), so **`git diff` shows NOTHING
+    and would read as "changed nothing"** ⇒ used **`git diff --no-index`** vs a byte-exact pre-edit snapshot: **28 insertions / 2 deletions** =
+    the 2 arguments + 26 comment lines. 📌 **The spike IS tracked, so plain `git diff --stat` is valid THERE and returned empty.**
+    ⚠️ **TWO FINDINGS FOR THE MANAGER / TASK-447, DECLARED NOT FIXED:** **(a)** 🔒 `SiegeLlamaSpike.cpp`'s `DEADLINE %.1fs elapsed` has the **same
+    shape** (§16 — not mine), and **TASK-413's CPU numbers came from the spike**, so **447 may still read a configured number there.**
+    **(b)** ⛔ **THE FIXED LINE IS THE GPU-TIER LINE.** On `tier=cpu` the deadline exits via `abort_callback` mid-graph → `llama_decode` returns 2 →
+    a **different branch with NO elapsed field**, so **the HARD TIMEOUT line usually does not print on CPU at all.** ⇒ **447 must not read its
+    absence as "no timeout"** (§21, pointed at the instrument).
+    **M8 DECLARATION, verbatim:** *adds no replicated property, no new replicated class, no new relevancy tier.*
+    ⛔ **No compile, no editor, no MCP/PIE, no Git, no `Content/`.**
+- blocked-by: **none — DISPATCHABLE NOW.** ⛔ **MUST LAND BEFORE TASK-447.** Sequential re-ownership after the FINISHED TASK-457. ⚠️ **PLUGIN module — parallel-safe against everything game-side.**
+- parallel-safe: yes; **EXCLUSIVE owner of `Plugins/SiegeLlama/Source/SiegeLlama/Private/SiegeLlamaSubsystem.cpp`**
+- spec: >
+    ⛔ **`SiegeLlamaSubsystem.cpp:1557-1559` PRINTS `HardTimeoutSeconds` INTO A `"%.1fs elapsed"` FIELD ⇒ IT ALWAYS PRINTS `10.0s`.** The
+    overshoot the header promises is bounded **can therefore never be measured**, and a large overshoot would be **invisible**.
+    ⚖️ **THIS IS THE §17 SHAPE APPEARING INSIDE THE FIX THAT WAS WRITTEN TO CLOSE A §17 DEFECT — a stated bound standing in for a measurement.**
+    ⚠️ **RECORDED WITHOUT BLAME: TASK-457's control flow, flag choice and guard placement are all CORRECT and QA confirmed it. This is the log
+    line only** — which is precisely why it is a separate one-argument task and not a re-open.
+    **(1) THE WHOLE FIX IS ONE ARGUMENT: pass `FPlatformTime::Seconds() - StartSeconds`** instead of the constant. ⛔ **Change nothing else** —
+    not the flag, not the guard, not its placement (bottom-of-body is load-bearing, §21), not `HardTimeoutSeconds` (**stays 10.0**).
+    **(2) ⚠️ WHY IT BLOCKS TASK-447 RATHER THAN FOLLOWING IT:** 447's **only reachable exercise of the deadline is the CPU tier**, and **this is
+    the number it would quote.** ⛔ **Left unfixed, 447 would faithfully report a constant and the report would look like a measurement** — the
+    exact false green this batch has spent its whole length hunting.
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-459-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    `Plugins/SiegeLlama/Source/SiegeLlama/Private/SiegeLlamaSubsystem.cpp` · `FPlatformTime::Seconds` · `HardTimeoutSeconds` (⛔ **unchanged, 10.0**).
+    Law: CONVENTIONS "Settings screen…" §17, §21.
+
+#### TASK-462 — [QA-FIX] Compile-fix gate over the TASK-450 + TASK-444 diffs ONLY (qa-reviewer)
+- assignee: qa-reviewer
+- status: backlog
+- blocked-by: **TASK-450 (`ready-for-qa`) + TASK-444's compile-fix pass** (both must land) · ⛔ **BLOCKS TASK-447**
+- parallel-safe: yes (read-only, own report)
+- spec: >
+    ⚖️ **RULING, ASKED DIRECTLY AND ANSWERED DIRECTLY: YES, AND YOUR PROPORTIONALITY READ IS RIGHT.** `qa/TASK-446.md`'s PASS **cannot carry
+    these diffs, because the code changed after 446 closed** — identical to the TASK-461/TASK-459 precedent, and the hard gate admits no
+    exception for *"it only fixes the build."* ⛔ **BUT THIS IS A GATE OVER THE TWO DIFFS, NOT A RE-REVIEW OF ELEVEN TASKS.** **16 TUs compiled
+    clean and nothing else moved.** Law: CONVENTIONS §27.
+    ⚖️ **BOTH HALVES MATTER: skip the gate and an unreviewed change rides in on an old PASS; re-review the whole batch and the gate becomes
+    expensive enough that someone argues it away next time — and it dilutes attention away from the only thing that actually moved.**
+    **IN SCOPE — and keep it to this:**
+    **(1) THE CHANGED LINES.** TASK-450's `C2555` fix (**three behavioural lines**) and TASK-444's 7-error fix pass.
+    **(2) ⛔ THE FENCES, VERIFIED AT THE ARTIFACT — build-master already checked these; CONFIRM rather than assume** (relayed diagnosis is a
+    lead): **`HardTimeoutSeconds` still `10.0` verbatim** · **TASK-457's bottom-of-loop deadline test, `bAborted`, and the extended guard
+    BYTE-INTACT** (§21 — placement is load-bearing) · **TASK-459's BOTH elapsed arguments still based on `StartSeconds`** (§23 — the base is the
+    measurement) · the plugin **header never opened** · 🔒 **the spike unmodified** (§16 — **it is TRACKED, so `git diff` IS valid here and
+    returned empty; that is not a §14 blind spot**).
+    **(3) ⛔ DID THE FIX INTRODUCE A NEW WAY TO LEAVE A FUNCTION OR LOOP (§20)?** ✅ **The trace says no and it is worth confirming: `Run()` has
+    exactly ONE exit** — zero `return`s in the body, the single `break` leaves **the while loop, not the function**, and SEH cannot propagate
+    because `SehInvoke`'s `__except` swallows the fault and returns `false` normally; both loop exits converge on one tail
+    (`UnloadModel()` → `State.Set(Stopped)`).
+    ⛔ **AND CONFIRM THE ANTI-REVERT NOTE IS PRESENT AT THE LINE:** converting that `break` into a `return` **reads as equivalent** and would
+    **skip `UnloadModel()` and the `Stopped` transition ⇒ LEAK THE ~2.5 GB MODEL** and hand `JoinAndDestroy`'s `WaitForCompletion` a worker still
+    claiming Busy. ⚖️ **The trap is the plausible repair, not the error — so the warning must live where the instinct strikes, not only in a handoff.**
+    **(4) 📌 ONE DECLARED OPEN QUESTION TO RULE ON: should `Run()`'s return stay `0`?** The argument offered is that **nothing reads
+    `FRunnable::Run`'s exit code** and faults surface through `EState::Faulted` plus the completion delegate, making a non-zero code
+    **a claim no caller could act on.** ✅ **That reasoning is sound on its face — rule it, don't leave it open.**
+    **⛔ OUT OF SCOPE: everything the earlier PASS already covered.** A build-fix gate that re-litigates a passed design is not being thorough;
+    it is being unable to stop.
+    ⚠️ **STATE THE TWO STANDING LIMITS PLAINLY: the LINK STEP HAS NEVER RUN, and this is NOT NECESSARILY THE COMPLETE ERROR SET.** ⛔ **Neither
+    may be assumed away, and a PASS here is a PASS on the diffs — not a prediction that the build is green.**
+    Report `qa/TASK-462.md`. Post the verdict in ⚙️ Dev & QA.
+- names: >
+    `Plugins/SiegeLlama/Source/SiegeLlama/Private/SiegeLlamaSubsystem.cpp` (`FSiegeLlamaWorker::Run`, `SehInvoke`, `UnloadModel`,
+    `JoinAndDestroy`) · `SiegeAssistantConsoleWidget.{h,cpp}` · `HardTimeoutSeconds` **10.0** · `StartSeconds` · `bAborted`.
+    Law: CONVENTIONS "Settings screen…" §20 (trace before typing; the plausible repair is the trap), §21, §22, §23, §27 (scope), §28.
+
+#### TASK-461 — [LLM-QA4] QA pass on TASK-459 — small, and owed (qa-reviewer)
+- assignee: qa-reviewer
+- status: **qa-passed** (2026-08-03 — report `qa/TASK-461.md`. **PASS, 0 blockers**, 2 warns, 2 nits. Slack posted in ⚙️ Dev & QA. Flip applied by the ORCHESTRATOR. **⇒ TASK-447 IS UNBLOCKED AND DISPATCHED.** ⚠️ **Two findings TASK-447 must carry:** **WARN-1** — the comment at the decode site **mislabels** TTFT and total-wall figures as *"prefill"* and *"DECODE wall"*; **TASK-413 never published a prefill figure**, so 447 must quote *"worst TTFT (an upper bound on prefill) 434/1706/2914 ms"* and *"partial's worst total wall 8926 of 10000"*. **WARN-2** — the decode `llama_decode=2` string lacks the prefill twin's three-cause sentence, **and that is the branch 447 lands in on `tier=cpu`**; pre-existing, and 459 was right not to touch it. Disambiguator: `bCancelled = bAborted && bCancelRequested`, so code 2 with `bCancelled` false is **never** a player cancel. ✅ **CPU carry confirmed by tracing three call sites:** on `tier=cpu` the abort exits via `llama_decode=2`, a branch with **NO elapsed field** ⇒ ⛔ **absence of a `HARD TIMEOUT` line is NOT "no timeout".** 📌 QA explicitly did **not** certify: the compile (447's gate), the mtime/`git diff` proofs (no shell in that role — it verified the underlying properties at the files instead), or that either line ever prints.)
+- blocked-by: TASK-459 (`qa-passed`) — **cleared**
+- parallel-safe: yes (read-only, own report)
+- spec: >
+    ⚖️ **RULING ON WHY THIS EXISTS AT ALL — asked directly, answered directly: `qa/TASK-446.md`'s PASS CANNOT CARRY TASK-459, because the CODE
+    CHANGED AFTER 446 CLOSED.** ⛔ **The hard gate is *"no code commit without a PASS QA report"*, and 459's diff did not exist when 446 ran.**
+    ⚠️ **AND THIS BATCH HAS SPENT ITS ENTIRE LENGTH PROVING THAT *"small and obviously right"* IS EXACTLY WHERE SILENT DEFECTS LIVE** — the
+    `Super::RebuildWidget()` ordering, the case-insensitive comparator, the `10.0s` constant itself. **The pass is expected to be quick; it is not
+    optional.** ✅ **Keep it proportionate: this is a two-line semantic change plus comments, not a re-review of the subsystem.**
+    **(1) ⛔ RATIFY THE §15 DEPARTURE — THE SECOND SITE. This is the substantive item.** WARN-3 cited the **prefill** timeout string; TASK-459
+    also fixed the **decode** timeout string, **which nobody cited.** ⚠️ **Verify from the code that the two sites are genuinely the SAME defect
+    (same `HardTimeoutSeconds` constant, same `"%.1fs elapsed"` field, both in `RunRequestUnguarded`) and that BOTH are now correct.**
+    ⇒ ⚖️ **The measured case for the departure is strong and should be checked, not assumed: worst prefill is 417–2914 ms across all tiers while
+    partial's worst DECODE wall was 8926 ms of 10000 — so the UNCITED site is the only one that can realistically fire.** ⛔ **Fixing only the
+    named site would have left TASK-447 quoting a constant anyway.**
+    **(2) ⚠️ VERIFY THE *BASE*, NOT MERELY THAT THE VALUE VARIES (CONVENTIONS §23).** The ceiling is
+    `HardDeadlineSeconds = StartSeconds + HardTimeoutSeconds`, so **only a `StartSeconds`-based elapsed can be compared against it.**
+    ⛔ **`PrefillStart` / `DecodeStart` were both in scope at both sites, both vary, and both would have been WRONG.** **Confirm the shipped
+    expression is the `StartSeconds` one.**
+    **(3) SCOPE-FENCE CHECK:** `HardTimeoutSeconds` **still 10.0** · the flag choice, the guard and its **bottom-of-body placement** (§21)
+    **unchanged** · the `%.1f` **format deliberately NOT changed** (its ~50 ms floor is a **declared** residue — ✅ *a measurement that rounds to
+    the ceiling* beats *a constant that ignores it*, and a fix that quietly widens its own scope is harder to review than one that states its
+    residue) · **26 added comment lines against a "change nothing else" spec — rule whether they are proportionate.**
+    ⚠️ **The file is UNTRACKED, so `git diff --stat` shows NOTHING** (§14 instance 3 / §18b): 459 correctly used **`git diff --no-index`**
+    (28 insertions / 2 deletions). ⛔ **Do not ask for a `--stat` proof.**
+    Report `qa/TASK-461.md`. Post the verdict in ⚙️ Dev & QA.
+- names: >
+    `Plugins/SiegeLlama/Source/SiegeLlama/Private/SiegeLlamaSubsystem.cpp` · `RunRequestUnguarded` · `HardDeadlineSeconds` / `StartSeconds` /
+    `HardTimeoutSeconds` · `FPlatformTime::Seconds`. Law: CONVENTIONS "Settings screen…" §15 (declared departures), §17, §21, §22 (sweep the
+    SHAPE, not the site), §23 (the base is part of the measurement).
+
+#### TASK-460 — [W1-DEDUPE] Single-source the two named duplicated truths (WARN-6 + WARN-7) (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: **TASK-447** — deferred past the commit for the same reason as TASK-458 (it touches files a ten-task review just cleared).
+- parallel-safe: yes (post-batch)
+- spec: >
+    **ONE DELIVERABLE — eliminate two NAMED second-sources-of-truth. Both were DECLARED by their authors rather than left to be found, which is
+    why neither is a defect and both are cheap now.**
+    **(1) WARN-6 — the paired tunables.** `AssistantPositionRadius = 700` ≡ `GroupPositionRadiusDefault` and `AssistantAttackRadius = 1500` ≡
+    `GroupAttackRadiusDefault` (`SiegeAssistantComponent.cpp:1433-1434`). Both controller members are **`protected` and unreachable**, which is
+    why the copies exist. **Clean fix: ONE access change on the controller, then DELETE the copies.** ⛔ **Until then they must stay in lockstep.**
+    **(2) ⚠️ WARN-7 IS THE ONE WITH TEETH — `IntentTakesZoneOrder` EXISTS FILE-LOCALLY IN TWO TRANSLATION UNITS AND THEY MUST AGREE.**
+    `SiegeAssistantSnapshot.cpp:676-681` (`SiegeAssistantGuardInternal`) and the component's own internal namespace. ✅ **Both return
+    `Send | Guard | Ambush` today — QA verified.** ⛔ **Both are file-local statics, so neither can reach the other: if one ever gains a verb and
+    the other does not, THE GUARD AND THE EXECUTOR DISAGREE ABOUT WHAT A ZONE ORDER IS — SILENTLY.** ⇒ **Consolidate into the pinned
+    `SiegeAssistantCommand.h`**, which is the shared home both already depend on.
+    **(3) ⛔ BEHAVIOUR-PRESERVING ONLY, PROVED BY READ-THROUGH** (the TASK-397/440/454 idiom). ⚠️ **Verify the consolidated predicate returns
+    exactly `Send | Guard | Ambush` — if the two copies have drifted by the time you arrive, THAT IS THE FINDING: stop and report which is right.**
+    **(4) ⚠️ THIS TASK RE-OWNS FOUR FILES ACROSS THREE PRIOR OWNERS** (`SiegeAssistantCommand.h` · `SiegeAssistantSnapshot.cpp` ·
+    `SiegeAssistantComponent.cpp` · `SiegePlayerController.h` for the access change). **All are finished with handoffs written.** ⛔ **Never
+    concurrent with any of them, and it is one deliverable — de-duplication — not four errands.**
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-460-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    `SiegeAssistantCommand.h` · `SiegeAssistantSnapshot.cpp` · `SiegeAssistantComponent.cpp` · `SiegePlayerController.h` ·
+    `IntentTakesZoneOrder` · `AssistantPositionRadius` / `GroupPositionRadiusDefault` **700** ·
+    `AssistantAttackRadius` / `GroupAttackRadiusDefault` **1500**.
+    Law: CONVENTIONS "Settings screen…" §17 · "Group orders — 3-zone HOLD + AMBUSH (2026-07-27)" (the tunables' home).
+
+#### TASK-458 — [W1-UNIFORM] `ExecutePendingCommand` reports `Executed` for a match-ended no-op — fix ALL FIVE arms uniformly (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: **TASK-447** — ⚖️ **DELIBERATELY DEFERRED PAST THE COMMIT, and the reasoning is the ruling, not an excuse (see below).**
+- parallel-safe: yes (post-batch); **EXCLUSIVE owner of `SiegeAssistantComponent.{h,cpp}`**
+- spec: >
+    ⚠️ **THE DEFECT: `ExecutePendingCommand` returns `true` UNCONDITIONALLY, so a match-ended no-op reports `Executed` to the FSM and to the
+    player.** **CONVENTIONS §17's shape exactly — a return value that is a claim about the CALL rather than about the WORLD.**
+    ✅ **TASK-456 CORRECTLY DECLINED TO FIX IT, ON TWO GROUNDS, AND BOTH ARE RATIFIED:** its spec **barred guard changes**, and — the sharper one —
+    ⛔ **the same behaviour already exists in the `send` / `guard` / `ambush` arms** (`CreateUnitGroup` carries **zero** `bMatchEnded` references),
+    **so fixing only the two arms it happened to be touching would have left the codebase LESS uniform than it found it.** ⚖️ **A partial fix that
+    increases inconsistency is worse than a declared defect — that judgement is exactly right and is why this is one task, not a footnote on that one.**
+    **(1) FIX ALL FIVE ARMS THE SAME WAY** — `charge` · `fallback` · `send` · `guard` · `ambush`. **One predicate, one shape, applied uniformly.**
+    ⛔ **Do not fix a subset. Do not special-case the two that prompted it.**
+    **(2) A NO-OP MUST NOT REPORT `Executed`.** Route it to an existing outcome; ⛔ **invent no new player-facing string** (§3 — every player-facing
+    sentence is a game-authored template filled from a reason code).
+    **(3) ⚠️ WHY THIS IS DEFERRED PAST TASK-447 AND NOT SLIPPED IN BEFORE IT — three reasons, in order:** ⛔ **it manifests only at MATCH END, when
+    the match is already over, so player impact is the lowest available** · ⛔ **it touches the executor across five arms, and TASK-446 is ALREADY
+    REVIEWING that file — landing it now would invalidate a ten-task review in flight** (the same staleness argument that made 446 run last) ·
+    ✅ **and it is a REPORTING-ACCURACY fix, not a safety fix — nothing executes that should not.** ⚖️ **Deferring a correct fix to protect a gate is
+    a scheduling decision and it is recorded as one, so nobody later reads it as an oversight.**
+    ⛔ **No controller edits, no widget edits, no `Content/`, no Git, no compile.**
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-458-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    `SiegeAssistantComponent.{h,cpp}` · `ExecutePendingCommand` · `bMatchEnded` · `CreateUnitGroup` · the five intent arms
+    `charge` / `fallback` / `send` / `guard` / `ambush`.
+    Law: CONVENTIONS "Settings screen…" §17 · "In-match LLM command assistant" §3.
+
+#### TASK-457 — [LLM-WARN] The hard timeout is not a backstop on GPU tiers + two smaller TASK-424 warns (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: ✅ **qa-passed → ready-for-integration** (2026-08-03 — `qa/TASK-446.md` plugin appendix, PASS · 0 blockers). ⛔ **ONE RESIDUAL, FIXED BY TASK-459 BEFORE TASK-447: WARN-3 — the new timeout log prints `HardTimeoutSeconds` into a `"%.1fs elapsed"` field, so it ALWAYS prints `10.0s` and the overshoot can never be measured.** ← was: ready-for-qa
+- delivered: >
+    **2026-08-03 — `handoffs/TASK-457-programmer.md`.** ⛔ **BOTH FENCES HELD, verified verbatim at the artifact after the last edit:**
+    `HardTimeoutSeconds = 10.0` (`SiegeLlamaSubsystem.h:161`) **UNCHANGED** · the header's **`BACKSTOP`** promise on Partial/FullOffload
+    **STANDS and was not softened** — what moved is *what makes it one* (the loop, not the callback), because **the CODE now implements it.**
+    **(1) THE FIX:** a deadline test at the **BOTTOM of the prefill loop body** in `RunRequestUnguarded`, setting **`bAborted`** (never
+    `bCancelled` — a timeout completing as *"cancelled"* would have the FSM tell the player their order was cancelled when nobody cancelled it).
+    ⇒ **Enforced on ALL THREE tiers**, because the test reads a **clock on the worker thread**, not a device.
+    ⭐ **BOTTOM, NOT TOP, AND THAT IS THE REVIEW POINT:** from turn two the prefill is ~347 tok against a 512-tok `n_batch` (§8, `DROP = 77.1 %`),
+    so the loop body runs **ONCE** — a top-of-body test would look right and **be inert on the hot path.**
+    **(2) ⛔ THE SECOND-ORDER BUG A ONE-LINE FIX WOULD HAVE CREATED:** the post-prefill guard read `if (bCancelled || bDecodeFailed)` and the new
+    exit sets **neither** — it would have **fallen through into the sampler with a half-prefilled prompt**, generating a fluent grammar-valid
+    command from a truncated one. **This assistant ORDERS UNITS**; that is §1's valid-shaped-wrong-answer, strictly worse than the defect closed.
+    ⇒ guard extended to `|| bAborted`, **provably inert on every pre-existing path** (`bAborted` was previously set only alongside `bDecodeFailed`).
+    **(3) WARN-1 — FIXED, NOT JUSTIFIED, and it STOPS BEING INERT WHEN TASK-455 LANDS.** `MarkBusy()` now refuses unless `Idle` (symmetric with
+    `ClearBusy`) · the run loop **re-tests `Busy`** and **COMPLETES the request on the refusal branch** (`RequestCompletion` already returned
+    `true`; dropping it would strand the FSM in "thinking" with no error and no log). ⚠️ **DECLARED DEPARTURE — I ALSO REORDERED
+    `MarkBusy()` BEFORE `bWorkPending = true`, and QA's literal "two lines" is UNSAFE WITHOUT IT:** the run loop's wait is **bounded at 200 ms**,
+    so the worker ticks unprompted, and with the flag raised first it could observe pending work, find the state still `Idle`, and **refuse a
+    PERFECTLY HEALTHY request.** 📌 `SubmitRequest`'s own comment already documented the order the code did not implement — **§17's shape, one
+    function away.** ✅ **Cross-lane order PRESERVED:** `ApplyPendingStaticPrefix()` still precedes the `bWorkPending` branch (TASK-455 depends on it).
+    **(4) WARN-3 — citation only, `768` UNCHANGED.** Re-pointed to `TASK-413:625` (*"+2.0 to +4.6 ms on every tier"*); the full-tier `:638` figure
+    is kept as the VRAM operand it actually is, and **both** partial-scoped bar-#1 rows (`:599`, `:1103`) were verified at the artifact.
+    **(5) ⚠️ A THIRD OVER-CLAIM OF THE SAME SHAPE, FOUND AND DECLARED (§15):** the *"at most one ubatch"* bound was **wrong by 8x in the
+    FLATTERING direction** — the between-slice test runs once per **`llama_decode` CALL** (up to `llama_n_batch(ctx)` = 512 tok), and llama splits
+    that into `n_ubatch` graphs **internally, without returning to this loop.** ⛔ **A loop cannot bound a boundary it never returns through.**
+    Corrected in both files I own; **`handoffs/TASK-450-programmer.md` §4 carries the same wrong figure and is NOT mine to edit.**
+    📌 **NON-FINDING, recorded so nobody files it:** 🔒 `SiegeLlamaSpike.cpp` says **"ADVISORY"**, not "BACKSTOP" — **it is not over-claiming**;
+    the shipped subsystem is simply now STRONGER. **§16 respected — read only, UNTOUCHED.**
+    ⚠️ **UNVERIFIABLE WITHOUT TASK-447's COMPILE, and one of them is a scoring trap:** measured prefill is **~1.7 s on partial**, so the new
+    timeout **will not fire in normal play** — ⛔ **absence of the log line is NOT evidence the fix works.** The reachable exercise is the **CPU
+    tier**, where TASK-413 measured **2 of 5 generations hitting the ceiling.**
+    ⛔ **SCOPE FENCE HELD:** no queue · no threading-model change · no game-lane edit · no `Content/` · no Git · no compile · no editor/MCP/PIE.
+    ⚠️ **EVERY LINE NUMBER IN THIS SPEC AND IN `qa/TASK-424.md` IS NOW STALE — this task added ~200 lines to the `.cpp`. `:1344` is not where the
+    between-slice test lives any more. VERIFY BY SYMBOL (§18c).** ⛔ **No `git diff` exists: both files are UNTRACKED**, so §18a is discharged by
+    the handoff's line-by-line itemisation, not by arithmetic. **M8: adds no replicated property, no new replicated class, no new relevancy tier.**
+- blocked-by: **none — DISPATCHABLE NOW.** ⚠️ **PLUGIN module — genuinely parallel-safe against TASK-455 / TASK-456 and against a game-module gate.** ⛔ **Must land BEFORE TASK-447**, whose smoke test exercises cancel/timeout behaviour.
+- parallel-safe: yes; **EXCLUSIVE owner of `Plugins/SiegeLlama/Source/SiegeLlama/Private/SiegeLlamaSubsystem.cpp`**
+- spec: >
+    ⛔ **WARN-2 IS A FUNCTIONAL GAP, NOT A DOC NIT, AND THAT IS WHY IT IS A TASK RATHER THAN A WARNING THAT AGES.**
+    **`SiegeLlamaSubsystem.cpp:1344`** — the between-slice check is **`if (bCancelRequested || bStopRequested)`** and **OMITS THE DEADLINE.**
+    ⇒ ⛔ **On GPU tiers the hard timeout is NOT the backstop the header claims at `:130-135`.** ⚠️ **That is a header asserting a guarantee the
+    code does not provide — CONVENTIONS §17's shape exactly: a claim about the call rather than about the world** — and it is the **worst**
+    version of it, because the reassurance is written in the place a reviewer goes to check.
+    **(1) MAKE THE DEADLINE A REAL BETWEEN-SLICE TERM** so a runaway generation is cut on **every** tier, not only where a cancel or stop happens
+    to arrive. ⚠️ **`HardTimeoutSeconds` = 10.0 is the shipped value and is NOT yours to change** (§10, and Jonathan's feel pass owns it) — you are
+    making the existing ceiling **effective**, not choosing a new one.
+    **(2) ⚖️ IF THE FIX AND THE HEADER STILL DISAGREE, THE HEADER IS WHAT MOVES *ONLY* WHERE THE CODE IS RIGHT — NEVER THE OTHER WAY ROUND.**
+    Say which you changed and why. ⛔ **Do not "fix" this by softening the header's guarantee into something the current code already does** —
+    the guarantee is the correct behaviour and a truncated-or-runaway command is unusable, not merely slow (§12d).
+    **(3) WARN-1, same file:** **`MarkBusy()` (`:349`) does not guard the fault latch although its twin `ClearBusy()` does**, and the run loop
+    (**`:549`**) dispatches on **`bWorkPending` alone** without re-testing state. ⚠️ **An asymmetric pair is a latent defect even when no current
+    caller can reach it** — make them symmetric, or **document in code why the asymmetry is correct.**
+    **(4) WARN-3 — a CITATION fix, and the conclusion SURVIVES:** the VRAM reserve's derivation (**`:83-87`**) cites a **full**-tier figure
+    (`TASK-413:638`) for a bar scoped to **partial** (`:599`). ✅ **The reserve is still justified — via `TASK-413:625` (*"+2.0 to +4.6 ms on every
+    tier"*), which actually covers the tier in question.** ⇒ **Re-point the citation so the number stops carrying a subject it never had.**
+    ⚖️ **This is the §12-family defect in miniature: a correct conclusion resting on a figure measured against a different noun.**
+    **(5) ⛔ SCOPE FENCE — THIS IS A THREE-WARN CLOSURE PASS, NOT A REDESIGN.** ⛔ **No `HardTimeoutSeconds` change · no queue · no threading
+    model change · no game-lane edits · no `SiegeLlamaSpike.cpp` (🔒 §16 — its deletion is UNSCHEDULED and it is not yours to touch) · no
+    `Content/`, no Git, no compile.**
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-457-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    `Plugins/SiegeLlama/Source/SiegeLlama/Private/SiegeLlamaSubsystem.cpp` · `MarkBusy` / `ClearBusy` · `bCancelRequested` / `bStopRequested` /
+    `bWorkPending` · `HardTimeoutSeconds` **10.0** (⛔ **unchanged**) · `bAssistantFaulted`.
+    Law: CONVENTIONS "In-match LLM command assistant" §1, §9, §10 · §12d (a truncated command is unusable, not slow) · "Settings screen…" §17.
+
+#### TASK-456 — [W1-RELEASE-b] Route the assistant's `charge`/`fallback` through `ApplyArmyWideStance` — the call side (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: ✅ **qa-passed → ready-for-integration** (2026-08-03 — `qa/TASK-446.md`, PASS · 0 blockers). ✅ **WARN-4 containment verified INDEPENDENTLY: every `bMatchEnded` occurrence brackets `CreateUnitGroup` (`:2497`, `:4162`) WITHOUT entering it**, so `send`/`guard`/`ambush` genuinely already behave that way ⇒ **its refusal to patch two arms is FULLY RATIFIED and TASK-458 stays ONE uniform follow-up.**
+- status: **ready-for-qa** (2026-08-03 — handoff `handoffs/TASK-456-programmer.md`; reviews under TASK-446. ⛔ **NOT compiled** — TASK-447 is the one gate. ✅ **THE DEFECT IS CLOSED: the assistant now CALLS the entry point 454 built.** 🚩 **STOP CONDITION DISCHARGED — EXACTLY TWO CALL SITES, found BY SYMBOL (§18c; the board's `:1413`/`:1420` were stale as predicted — TASK-455 shifted this file ~93 lines and I never used those offsets).** ⚠️ **7 matching `SetUnitCommand` LINES, 2 CALL SITES** — the §14-instance-2 shape, stated so a reviewer counting matches does not think five sites went missing. Both sit in `USiegeAssistantComponent::ExecutePendingCommand` on the `Charge`/`Fallback` arms; post-edit `grep -c "Controller->SetUnitCommand"` = **0**. ✅ **DELETED, NOT SOFTENED — and it was FOUR artifacts, not two:** the two `//` divergence blocks **plus the two `UE_LOG(…, Warning, …)` statements carrying the same false sentence into the RUNTIME log (the worse of the two — a stale Warning misleads Jonathan mid-battle, not just the next reader).** The words *"divergence"*, *"does NOT run"*, *"standing group orders survive"* now appear **nowhere** in the file. ⚖️ **DECLARED ADDITION (§15) — QA MUST RULE:** against a spec saying *"NOTHING ELSE"* I added **12 lines** — a comment defending against the revert (**three artifacts still pin the old spelling: `CONVENTIONS.md:823` · `SiegeAssistantCommand.h:59-60` · `SiegeAssistantSnapshot.cpp:674`** ⇒ a future reader diffing code against §8's seam "fixes" it back) and a `Log`-level success line in **this file's own house idiom** (`:1577`/`:1621`/`:1644` all read *"EXECUTED X through … - the SAME API the <key> calls"*); severity `Warning`→`Log` is deliberate, since `Warning` was correct only while the branch was defective. **If QA rules the literal reading, stripping to a bare swap is two minutes.** ⚠️ **DIFF EVIDENCE — `git diff --stat` IS THE WRONG INSTRUMENT AND QUOTING IT WOULD HAVE BEEN THE §14 TRAP: this file is UNTRACKED (`??`), so plain `git diff` shows NOTHING and reads as "changed nothing."** Used `git diff --no-index` against a byte-exact pre-edit snapshot: **`17 insertions(+), 18 deletions(-)`, ONE HUNK `@@ -1491,25 +1491,24 @@`, file 2821→2820 lines.** All 18 deletions itemised (12 = deliberate destruction of false text, 6 = the two swaps); no line lost by accident. ✅ **DISTURBED NOTHING — PROVEN BY BEFORE/AFTER SYMBOL COUNTS, not asserted:** 455's `SnapshotTrimBudgetChars` 8→8 · `static_assert` 4→4 · `EnsureStaticPrefixRegistered` 3→3 · `SetStaticPrefix` 5→5; 443's `ExecuteAndReport` 5→5 · `IsConfirmBeforeExecuteEnabled` 3→3 · `bForceConfirmReview` 6→6 · `ClearConfirmPreview` 9→9. **`SiegeAssistantComponent.h` UNTOUCHED** (mtime 13:06:44 vs my 13:18:16); **TASK-454's controller CALLED, NOT EDITED.** ⛔ **443's OFF-PATH HOLDS STRUCTURALLY, NOT BY INSPECTION: `ExecutePendingCommand` has EXACTLY ONE CALLER — `ExecuteAndReport()` (`:1324`) — which is the convergence point of BOTH toggle arms (`:768` ON, `:1314` OFF)** ⇒ my edit is strictly downstream of both and **cannot** be toggle-conditional; no branch, no early return, no FSM read/write added. ⚠️ **ONE BEHAVIOUR CHANGE + ONE RULING OWED (handoff §6):** `bMatchEnded` now gates the assistant's charge/fallback (component had **ZERO** match-end references before) — post-match `charge` is now inert like T, the intended consistency — **BUT `ExecutePendingCommand` still returns `true` unconditionally, so a match-ended no-op reports `Executed`** (reachable: the deferred-intent path can fire after match end). ⛔ **NOT fixed on purpose:** *"no guard changes"* per spec, **and it is not confined to my arms — `CreateUnitGroup` has ZERO `bMatchEnded` references, so `send`/`guard`/`ambush` already do this.** Remedy is cheap and in-file whenever ruled (`HasMatchEnded()` is **public**, `SiegePlayerController.h:647`); 📌 **wants ONE uniform follow-up across all executor arms, not a two-line patch.** 📌 **STALE SEAM-SPELLINGS LEFT ALONE, LISTED FOR THE OWNER:** `CONVENTIONS.md:823` (**manager's — highest value**), `SiegeAssistantCommand.h:59-60`, `SiegeAssistantSnapshot.cpp:674`, plus `Component.h:182`/`:957` and `Component.cpp:19` in my own file — **none is FALSE** (`ApplyArmyWideStance`'s last statement IS `SetUnitCommand`), merely imprecise, a different class from the deleted divergence claims. **M8: adds no replicated property, no new replicated class, no new relevancy tier.** No Git, no editor/MCP/PIE, no `Content/`, no controller edit, no header edit.)
+- blocked-by: **TASK-455** (same file, sequential — ⛔ never concurrent). ⛔ **Must land BEFORE TASK-446.** ✅ **SATISFIED — 455 landed first; I read its handoff and re-verified its four symbols by count.**
+- parallel-safe: no; **EXCLUSIVE owner of `SiegeAssistantComponent.{h,cpp}`**
+- spec: >
+    ⛔ **THE DEFECT TASK-454 EXISTS TO FIX IS STILL LIVE. 454 BUILT THE ENTRY POINT; NOTHING CALLS IT.** In its own words:
+    ***"I built the entry point the assistant CAN call; 'can' is not 'does'."*** ✅ **It correctly did not touch this file — it is not its.**
+    **(1) THE WHOLE DELIVERABLE, AND IT IS TWO CALLS.** In the **`charge` and `fallback` execution paths**, replace the **bare
+    `SetUnitCommand` latch calls** with **`ApplyArmyWideStance(...)`** (`ASiegePlayerController::ApplyArmyWideStance(ESiegeUnitCommand)`,
+    `BlueprintCallable`, declared `SiegePlayerController.h:474`, implemented `.cpp:1006`). **Both key handlers already route through it** — after
+    you, so does the assistant, and there is **one implementation reached by both paths**, which is the §2 contract.
+    **(2) DELETE THE TWO DIVERGENCE-WARNING COMMENTS IMMEDIATELY ABOVE THOSE CALLS.** ⚠️ **They document a divergence that will no longer exist,
+    and a stale warning is worse than none: the next reader will either "restore" the divergence to match the comment or waste a pass proving it
+    is gone.** ⛔ **Delete them; do not soften them.**
+    **(3) ⚠️ LINE NUMBERS ARE AS-OF-AUTHORING HINTS ONLY AND WILL HAVE MOVED — TASK-455 EDITS THIS FILE BEFORE YOU (CONVENTIONS §18c).** The
+    sites read `:1413` / `:1420` with the comments at `:1412` / `:1419` when TASK-454 found them. ⛔ **VERIFY BY SYMBOL, NEVER BY OFFSET** —
+    find the `SetUnitCommand` calls on the charge/fallback paths. **If you find a number of call sites other than two, STOP and report.**
+    **(4) ⛔ NOTHING ELSE. NO controller edits** (`SiegePlayerController.{h,cpp}` is TASK-454's and is FINISHED — ⛔ **you may CALL it, you may
+    not EDIT it**), **no FSM changes, no executor changes, no guard changes, no `Content/`, no Git, no compile.**
+    ⚠️ **This is the LAST thing standing between the assistant path and the shipped key path behaving identically**, which is Jonathan's own
+    hard playtest criterion — so keep it exactly this small and let QA see it in one glance.
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-456-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    `SiegeAssistantComponent.{h,cpp}` · `ASiegePlayerController::ApplyArmyWideStance(ESiegeUnitCommand)` (**PINNED — call it, do not edit it**) ·
+    `SetUnitCommand` (⛔ **no longer called directly from the charge/fallback paths**) · `ESiegeUnitCommand { Attack, Hold, Defend }`.
+    Law: CONVENTIONS "In-match LLM command assistant" §2 · "Group orders — 3-zone HOLD + AMBUSH (2026-07-27)" (the T/E release law) ·
+    "Settings screen…" §18c.
+
+#### TASK-455 — [W1-BUDGET] The game-lane half of the budget wiring + the missing `SetStaticPrefix` caller (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: ✅ **qa-passed → ready-for-integration** (2026-08-03 — `qa/TASK-446.md`, PASS · 0 blockers). ✅ **AND THE COUPLING I FLAGGED DID NOT BIND: `SetStaticPrefix` was ruled ON THE MERITS at `qa/TASK-424.md` ruling 1, and 455's caller is INDEPENDENTLY correct** ⇒ ⛔ **no §8 rewrite is owed.** ← was: ready-for-qa
+- handoff: `handoffs/TASK-455-programmer.md` (reviews under TASK-446)
+- ⚠️ **THREE DECLARED DEPARTURES (§15) — QA MUST RULE, THEY ARE NOT SLIPS:**
+    **(a) `MaxSnapshotChars` RETIRED, and a THIRD constant `SnapshotTrimBudgetChars` = 1085 introduced in its place** (name new, value deliberately
+    unchanged). ⛔ **The one real code reader was `BuildZoneC`'s roster TRIMMER, which is neither the authority nor the pre-filter** — both plugin
+    bounds **REJECT** the turn, and only a trimmer degrades gracefully. Pointing it at the pre-filter's 3000 would have converted a narrowed roster
+    into a REFUSED TURN. Value not re-derived, because §12c freezes Zone B/C bytes this wave (the `t0` tripwire).
+    **(b) DELIVERABLES 2 + 3 REFUSED AS WRITTEN.** `MaxSnapshotTokens` = 400 and `SnapshotPreFilterMaxChars` = 3000 **already exist** at
+    `SiegeLlamaSubsystem.h:149`/`:170` (public `static constexpr`, verified on disk per §14 — the file is untracked). ⛔ **Game-lane copies would be
+    constants NOTHING IN THE GAME LANE ENFORCES — a guardrail that reports safe.** Shipped instead: **3 `static_assert`s** in
+    `SiegeAssistantComponent.cpp` (the only TU seeing both lanes) turning §8's *"a pre-filter that can reject what the authority would accept is a
+    second hidden authority"* from prose into a **compile error**, at zero new header coupling.
+    **(c) `ZoneBCharReserve` LEFT AT 192 — the spec's OWN fallback clause, fired.** ⛔ **No printed figure exists:** the 68/71 on record were printed
+    by the **spike's** `AppendZoneB` (other lane, §12g's standing WARN), and `ReportFirstCapture` prints the shipped builder's `zoneB_chars` but
+    **HAS NEVER EXECUTED** (batch uncompiled; TASK-447 is the gate). **A derived worst case is not a measurement** (§12g) — and the 192 it would
+    replace was itself eyeballed. ⇒ The audit line now **prints the reserve, the live `zoneB_chars` and the over-charge** so the reading is one
+    console-open away. **Lowering it only ever WIDENS the roster, so 192 is the safe end.** 📌 One-line follow-up task, needs a compiled editor.
+- 📌 **COUNT CORRECTION, AGREEING WITH QA's 15 AGAINST TASK-450's "10":** `MaxSnapshotChars` had **15 matching LINES / 16 occurrences** —
+    but only **5 lines (6 occurrences) were REAL CODE**; 3 were prose in `TEXT()` log strings and **7 were prose in comments** (§14 instance 2).
+    450's total also mis-counted `h:274 ZoneBCharReserve` — a different symbol — into the figure. **Post-edit: 0 code references remain.** Four
+    comment mentions survive **deliberately**, as this file's own established dead-spelling idiom (cf. `llama_kv_cache_seq_rm`) — flagged for ruling.
+- ✅ **GUARDS NOW LIVE:** `MaxSnapshotTokens` authority · `SnapshotPreFilterMaxChars` pre-filter · the §8 ZONE-A SIZE BOUND assertion (now with a
+    **MEASURED** `ZoneA_tokens`). **Context budget unchanged — always enforced.** ⛔ **NONE remain inert, but this is a prediction about unexecuted
+    code:** TASK-447 confirms it by 450's three inertness Warnings CEASING plus a `STATIC PREFIX REGISTERED` line. ✅ That line is also the **shipped
+    lane's first ever measured `zoneA_tok`**, discharging §12g's standing WARN without the spike.
+- ⚠️ **DECLARED GAPS:** the turn-1 authority claim is a **RACE, not a guarantee** (worker can sit between `ApplyPendingStaticPrefix` and the
+    `bWorkPending` branch; worst case the budget goes live one turn later, and the CONTEXT budget holds in every interleaving) · the char pre-filter
+    is a **certain one-turn lag** if the console-open registration was skipped · `bStaticPrefixRegistered` records a **submission, not an outcome**.
+- ⚠️ **BOARD `names:` CORRECTION:** the list says `MaxUtteranceChars`; the shipped symbol is **`MaxUtteranceBytes`** (renamed by TASK-433, *"the
+    rename IS the fix"*). A task working from the board's spelling would grep a symbol that does not exist and conclude the cap is missing.
+- blocked-by: **none — DISPATCHABLE NOW.** Sequential re-ownership of `SiegeAssistantSnapshot.{h,cpp}` (TASK-441, finished) + `SiegeAssistantComponent.{h,cpp}` (TASK-443, finished). ⛔ **Must land BEFORE TASK-446** — it edits two files that gate reviews.
+- parallel-safe: **yes vs TASK-454** (disjoint files) — ⛔ never beside a compile gate
+- spec: >
+    ⚠️ **WHY THIS EXISTS: TASK-450's spec item (9) IS ONLY HALF-DELIVERABLE FROM THE PLUGIN, AND 450 SAID SO RATHER THAN FAKING IT.**
+    `MaxSnapshotChars`'s retirement and `ZoneBCharReserve` live in the **GAME module**; the plugin cannot reach them. ✅ **The good news, and it is
+    what makes this task small: the reading no longer needs the spike at all — `ReportFirstCapture` prints `zoneB_chars` from the SHIPPED
+    builder.**
+    **(1) RETIRE `MaxSnapshotChars`; INTRODUCE `MaxSnapshotTokens` = 400 AND `SnapshotPreFilterMaxChars` = 3000.**
+    ⚠️ **COUNT CORRECTED 2026-08-03: the game lane carries `MaxSnapshotChars` on 15 matching lines, NOT 10.** ⛔ **My 10 came from a search count
+    and conflated PROSE with CALL SITES — §14 instance 2, firing on me for the second time this wave.** ⇒ **Work from the SYMBOL and report what
+    you actually find; if the true number is neither 10 nor 15, that is the finding and the spec is what is wrong.** ⛔ **RETIRED, NOT RE-POINTED**
+    — 1085 is an **AUTHORITY** value that assumes the **SMALLEST** plausible chars/token ratio, and a **PRE-FILTER** must assume the **LARGEST**.
+    ⚖️ **The safe direction INVERTS with the role, which is exactly why carrying the old constant across would be a silent defect wearing a
+    familiar name.** (Floor for the pre-filter: `400 × 3.56 = 1424`; **3000 is generous by ruling** — erring high costs one wasted tokenize,
+    erring low silently truncates.)
+    **(2) SET `ZoneBCharReserve` FROM THE SHIPPED BUILDER'S PRINTED WORST CASE.** ⛔ **Do NOT eyeball 96 or 128** — the header says
+    *"re-measure it, do not eyeball it."* It currently charges **192** for a Zone B measuring **68 (t0) / 71 (t1)**, worst case ~85.
+    ⚠️ **If you cannot obtain a printed figure (no editor), STATE THAT AND LEAVE THE CONSTANT ALONE** — ⛔ **a derived number is not a
+    measurement, and substituting one here is the exact defect §12g exists to prevent.**
+    **(3) ⛔ ADD THE MISSING `SetStaticPrefix` CALLER — TWO OF THE THREE BUDGET GUARDS ARE INERT TODAY.** No game-lane caller invokes it, so they
+    **cannot fire**. ✅ **450 logs this at Warning rather than presenting it as a pass — the correct handling of exactly the failure class this
+    wave keeps finding — and the CONTEXT budget is always enforced, so there is NO unguarded path to `llama_decode`.** **Wire the caller so all
+    three guards are live.**
+    **(4) ⚠️ THE OBSERVABLE-TRUNCATION CONDITION IS RE-ANCHORED ONTO *THE ACT* AND IT BINDS YOU:** **any mechanism that truncates the snapshot,
+    under any name, must LOG OBSERVABLY.** ⛔ **Your NEW cut sites are not covered by the snapshot builder's existing log.** A cap that silently
+    degrades the prompt is **worse than a loose one that does not**.
+    **(5) ⚠️ `MaxUtteranceChars = 240` BOUNDS *BOTH* THE `order:` AND `pending:` LINES, AND NEITHER IS TRUNCATED BY THE BUDGET — ONLY THE ROSTER
+    IS.** Your enforcement must account for **both unbounded lines**, not just roster width.
+    ⛔ **No plugin edits, no controller edits, no `Content/`, no Git, no compile.**
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-455-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    `SiegeAssistantSnapshot.{h,cpp}` · `SiegeAssistantComponent.{h,cpp}` · ⛔ **`MaxSnapshotChars` (RETIRED — must not exist after this task)** ·
+    `MaxSnapshotTokens` **400** · `SnapshotPreFilterMaxChars` **3000** · `ZoneBCharReserve` · `MaxUtteranceChars` **240** ·
+    `USiegeLlamaSubsystem::SetStaticPrefix` · `ReportFirstCapture`.
+    Law: CONVENTIONS "In-match LLM command assistant" §8, §10 · §12g · "Settings screen…" §7.
+
+#### TASK-454 — [W1-RELEASE] The T/E release law must fire on the assistant path too — ONE public entry point (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: ✅ **qa-passed → ready-for-integration** (2026-08-03 — `qa/TASK-446.md`, PASS · 0 blockers). ✅ **Its POSITIVE CONTROL is now the required pattern for every future *"nothing references X"* claim** (CONVENTIONS §14): before trusting a zero-hit search it proved the search COULD find a hit — `OnUnitCommandChanged` does appear in `WBP_HUD.uasset`.
+- status: **ready-for-qa** (2026-08-03 — handoff `handoffs/TASK-454-programmer.md`; reviewed under TASK-446. ⛔ **NOT compiled** — TASK-447 is the one gate. **DELIVERED: ONE public entry point, `ASiegePlayerController::ApplyArmyWideStance(ESiegeUnitCommand)` — `SiegePlayerController.h:474`, `UFUNCTION(BlueprintCallable)`, impl at `.cpp:1006`.** ✅ **VERIFIED MYSELF, NOT RELAYED — 443 WAS RIGHT:** access-specifier map is `public:184 · protected:736 · protected:802 · private:1177`, and `CancelGroupPick` (**:1341**) + `ClearAllUnitGroups` (**:1458**) sit after `private:` ⇒ both private **and both STILL private after my edit — not widened, as ⛔ required.** ✅ **ZERO BEHAVIOUR CHANGE ON THE KEY PATH, BY READ-THROUGH:** the two handlers were byte-identical mirrors apart from the stance arg; each is now a single call whose body inlines to **the identical four statements in the identical order** — `bMatchEnded` guard **first**, then `CancelGroupPick()` → `ClearAllUnitGroups()` → `SetUnitCommand()`, release **BEFORE** latch exactly as the header documents. **No guard added or removed — in particular NO `HasAuthority()` gate was added**, since a client's T today runs the release locally and is refused only inside `SetUnitCommand` (:982); adding one would have been a silent change to shipped key behaviour. ⚖️ **DECLARED DEPARTURE (§15) — I REFUSED THE "no component edit at all" PREFERENCE, ON MECHANISM.** The only shape achieving it is folding the release into `SetUnitCommand`; I checked it was *safe* (**no BP callers: `grep -rl SetUnitCommand Content/` → zero hits, and I ran a POSITIVE CONTROL — `OnUnitCommandChanged` DOES hit `Content/UI/WBP_HUD.uasset` — so the negative is evidence, not a §14 blind spot**; no recursion; all 4 C++ callers want the law) **and refused it anyway:** `SetUnitCommand`'s header defines it as a pure latch · `ClearAllUnitGroups`' doc *"Called by T/E (before SetUnitCommand)"* would become self-referential · **the P2 RPC `ServerSetUnitCommand` is already named against the pure-latch contract (`.cpp:981`, M8 doc §4.3#9)** · and it recreates the half-sequence hazard from the other side. ⇒ **The primitive stays a primitive.** 🚩 **STOP-AND-REPORT, exactly as spec item (3) instructs: `SiegeAssistantComponent.cpp:1413`/`:1420` still call the bare `SetUnitCommand` and need a TWO-LINE swap to `ApplyArmyWideStance` (plus deletion of the now-false divergence `Warning` logs at `:1412`/`:1419`). ⛔ I did NOT touch the component — still `??`, mtimes unchanged 12:41/12:36. ⚠️ THE DEFECT IS THEREFORE STILL LIVE: my deliverable is the entry point the assistant *CAN* call, and "can" is not "does" — this needs one more task against the component.** ⚠️ **ADDITIVE PROOF + DECLARED DELETION DELTA: `git diff --stat` 757/94 → 836/108.** The header is **100% additive (264→305 insertions, deletions UNCHANGED at 10 — not one existing header line edited)**; the **+14 deletions are all in the `.cpp` and all MOVES, itemised line-by-line in the handoff** — 1 signature + 5 ATTACK comment lines re-emitted **verbatim** at `:1037-1043`, 1 latch line parameterised, and Defend's 7 statement lines which **ARE** the shared body at `:1028-1034`. ⚖️ **The brief's "deletions must still read 94" is unsatisfiable alongside the pinned contract** — two handlers cannot keep intact copies AND there be *"exactly ONE implementation"*; **board spec item (4) states it conditionally and I followed the board.** ✅ **440/449/453 UNDISTURBED, re-grepped not assumed:** 453's `AttachConsoleWidget` (**:4348**) still precedes `OpenConsole()` (**:4357**) — *absolute lines shifted 4324→4348 because I inserted ~72 lines above; the ORDER is the contract and it is unchanged* · 449's `SetAssistantConsoleOpen(true)` (**:4298**) still guard-first above `CreateAndAddToViewport` (**:4421**) · exactly ONE `bAssistantConsoleOpen =` writer (**:4240**). **M8: adds no replicated property, no new replicated class, no new relevancy tier.** No Git, no editor/MCP/PIE, no `Content/`.)
+- blocked-by: **none — DISPATCHABLE NOW.** Sequential re-ownership of `SiegePlayerController.{h,cpp}` after the **FINISHED** TASK-453.
+- parallel-safe: yes to WRITE (single owner) — ⛔ **never beside a compile gate**; **EXCLUSIVE owner of `SiegePlayerController.{h,cpp}`**
+- spec: >
+    ⚖️ **MANAGER RULING FIRST, BECAUSE IT DETERMINES THE SHAPE: THIS IS A CONSISTENCY FIX, NOT A DESIGN CHANGE, AND IT IS NOT JONATHAN'S CALL.**
+    ⛔ **The divergence:** assistant `charge` / `fallback` run `SetUnitCommand` as §8 pins, **but the shipped T/E key path ALSO calls
+    `CancelGroupPick()` + `ClearAllUnitGroups()` first.** ⇒ **Standing group orders SURVIVE an assistant "charge" and are cleared by the T key.
+    Same words, two different outcomes.**
+    ✅ **THE LAW ALREADY EXISTS AND THE CODE NAMES IT — verified at the artifact, not relayed:** `SiegePlayerController.h:1414` documents
+    `ClearAllUnitGroups` as ***"Called by T/E (before SetUnitCommand) and by HandleMatchReset (Play Again)"***, and `:337` calls it
+    ***"the T/E release law."*** ⇒ **This is a NAMED, SHIPPED rule that the assistant path is silently not honouring.**
+    ⛔ **AND THE "IT WAS A TARGETED ORDER" DEFENCE DOES NOT SURVIVE CONTACT WITH THE STANCE SYSTEM:** a stance is a **LATCHED GLOBAL** state
+    applying to all currently-alive **and future-spawned** player Standard units. **`SetUnitCommand` is army-wide whatever the sentence said** —
+    so an assistant `charge` that leaves Hold/Ambush groups pinned to their zones produces **exactly the incoherent state the release law exists
+    to prevent**: a global "charge" stance with squads still frozen on their ground, and no log naming why.
+    ⇒ ⚖️ **§2 is the governing law and it is unambiguous: *"the assistant calls the same public APIs the keys call — never a parallel
+    implementation, never a 'better' one."* The assistant is an alternative INPUT to the same action, not an alternative IMPLEMENTATION with its
+    own semantics.** ⛔ **Jonathan's hard playtest criterion is that the two paths behave identically; this is the last thing standing between
+    them.**
+    **(1) ONE IMPLEMENTATION, TWO CALLERS — THE `CreateUnitGroup` IDIOM AGAIN (TASK-440 / TASK-397).** Extract the shared
+    release-then-command sequence the T and E handlers perform into **ONE public entry point** on `ASiegePlayerController`, and have **both the
+    key handler and the assistant call it.** ⛔ **Do NOT re-implement `CancelGroupPick` / `ClearAllUnitGroups` anywhere, and do NOT simply widen
+    them to public** — two public teardown primitives invite a future caller to do half the sequence. **The entry point is the unit of
+    correctness; the primitives stay private.**
+    ⚠️ **THE EXACT SHAPE IS YOURS AND I AM DELIBERATELY NOT PINNING IT** (CONVENTIONS §15: a spec that asserts an ordering or a structure it has
+    not executed is borrowing authority it never earned). **443 reports both methods are `private` — VERIFY that yourself**, then choose one
+    entry point or two. **What is pinned is the CONTRACT: after this task there is exactly ONE implementation of the release-then-command
+    sequence, and both the key path and the assistant path reach it.**
+    **(2) ⛔ QA ACCEPTANCE IS "PROVABLY ZERO BEHAVIOUR CHANGE" ON THE KEY PATH, BY READ-THROUGH** (the TASK-397 / TASK-440 idiom). ⚠️ **The keys
+    are the shipped, playtested behaviour and the assistant is the newcomer — if the two disagree about ORDER, the KEY PATH WINS and the
+    assistant conforms.** The release must still happen **BEFORE** `SetUnitCommand`, exactly as the header documents.
+    **(3) THE ASSISTANT SIDE IS A CALL, NOT A REIMPLEMENTATION.** ⛔ **You own the controller ONLY.** If the component needs a one-line change to
+    call the new entry point, **STOP and report** — `SiegeAssistantComponent.{h,cpp}` is TASK-442/443's and a second writer is the failure this
+    batch has serialized to avoid. ⚖️ **Prefer a shape where the component's existing call site needs no edit at all.**
+    **(4) PRE-FLIGHT `git status --porcelain` on both files and BRANCH ON THE ANSWER — ⛔ do not predict it.** ⚠️ **Inherit the additive duty:
+    your edit should leave the DELETION COUNT unchanged in `git diff --stat` unless the extraction genuinely moves lines — and if it does, SAY SO
+    and account for every moved line** (449 and 453 both proved their claim this way).
+    ⛔ **No component edits, no widget edits, no `Content/`, no Git, no compile.**
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-454-programmer.md` with the read-through argument. Post in ⚙️ Dev & QA.
+- names: >
+    `SiegePlayerController.{h,cpp}` · `CancelGroupPick` / `ClearAllUnitGroups` (⛔ **stay private**) · `SetUnitCommand` ·
+    `ESiegeUnitCommand { Attack, Hold, Defend }`. Law: CONVENTIONS "In-match LLM command assistant" §2 (**strictly additive — same public APIs
+    the keys call**) · "Group orders — 3-zone HOLD + AMBUSH (2026-07-27)" (the T/E release law) · "Settings screen…" §15.
+
+#### TASK-453 — [W1-JOIN] Hand the live console widget to the component at open time (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: ✅ **qa-passed → ready-for-integration** (2026-08-03 — `qa/TASK-446.md`, PASS · 0 blockers). ✅ `AttachConsoleWidget` verified **idempotent (detach-before-bind), null-safe, re-targetable, and SEEDS BEFORE IT BINDS** — so a deferred prompt raised while the console was shut survives.
+- status: **ready-for-qa** (2026-08-03 — handoff `handoffs/TASK-453-programmer.md`; reviewed under TASK-446 item **(j)**. ⛔ **NOT compiled** — TASK-447 is the one gate. ✅ **HARD STOP CHECKED AND IT DID NOT FIRE:** `AttachConsoleWidget` **exists** at `SiegeAssistantComponent.h:723`, `public:`, matching the pinned signature **character-for-character**; ⛔ **the component was NOT touched — not one byte.** ⚠️ **My first TWO greps returned NOTHING and were WRONG** — the component files are **untracked** (so `git grep` cannot see them) **and TASK-443 was writing them mid-session**; a reviewer repeating that probe may reproduce the false negative. **Delivered: ONE call, `Assistant->AttachConsoleWidget(Console)` at `SiegePlayerController.cpp:4324`** — resolved via `GetAssistantComponent()`, `if`-scoped and null-checked. ⛔ **PLACED BEFORE `Console->OpenConsole()`, AND THAT ORDERING IS THE TASK:** `OpenConsole()` **ENDS** with `OnConsoleOpenChanged.Broadcast(true)` and the component subscribes to it **inside** `AttachConsoleWidget` ⇒ attaching afterwards would miss the only "opened" broadcast of the first press and leave the FSM in `Idle` while the player types — **silent, recovering only on the SECOND open.** ✅ **449's guard-first ordering UNDISTURBED** — `SetAssistantConsoleOpen(true)` still runs before any creation and its refusal returns above my call, so a refusal still constructs nothing, shows nothing, moves no focus. ✅ **Called on EVERY open (not once at creation), so close-and-reopen re-establishes all eight forwards** — safe because the pinned contract is IDEMPOTENT + SEED-THEN-BIND; a creation-time attach would fire once with no recovery. ✅ **Null component ⇒ the console still opens, INERT** (one Warning, posture NOT rolled back — never refuse the console over an assistant defect). ✅ **ADDITIVE PROOF: `git diff --stat` went 715/94 → 757/94 — +42 insertions, deletion count UNCHANGED at 94**, and the header's 274 is unchanged too (⇒ `SiegePlayerController.h` **not touched at all**; the deliverable needed no header change). ⛔ **LINK-ORDER CONSTRAINT ON TASK-447, STATED LOUDLY: `USiegeAssistantComponent::AttachConsoleWidget` is DECLARED but has NO DEFINITION in `SiegeAssistantComponent.cpp` yet — this compiles but will NOT LINK until TASK-443 lands its `.cpp`. Expected (the TASK-416/417 precedent — do not open a QA loop); but TASK-447 MUST verify the definition exists BEFORE compiling, or the gate fails on my line for a defect that is not mine.** ⚠️ **My design DEPENDS on 443's idempotence contract being real — QA item (j) already owns that check and it is not optional.** No Git, no editor/MCP/PIE, no `Content/`.)
+- blocked-by: **none for WRITING — DISPATCHABLE NOW, in parallel with TASK-443**, against the pinned signature below. ⚠️ **It will not LINK alone and is not expected to** (the TASK-416/417 precedent — do not open a QA loop over it). Sequential re-ownership of `SiegePlayerController.{h,cpp}` after the **FINISHED** TASK-449.
+- parallel-safe: **yes vs TASK-443** (different files) — ⛔ **never beside a compile gate**; **EXCLUSIVE owner of `SiegePlayerController.{h,cpp}`**
+- spec: >
+    ⛔ **THE GAP: THE KEY OPENS A CONSOLE WHOSE ENTER GOES NOWHERE.** TASK-444 shipped the outbound seam — `OnConsoleSubmitted` /
+    `OnConsoleConfirmed` / `OnConsoleCancelled` / `OnConsoleOpenChanged`, declared under the comment ***"Outbound seam. The owning
+    `USiegeAssistantComponent` binds these."*** TASK-442/443 own the component. **Nothing joins them.**
+    ⚖️ **WHY THIS IS A NEW TASK AND NOT AN AMENDMENT — THE RULING, SO IT IS NOT RE-LITIGATED.** ⛔ **TASK-443 is RUNNING**, its spec forbids
+    controller edits, and **widening a live task's file ownership mid-flight is precisely the churn the single-owner law exists to prevent.**
+    ⛔ **TASK-449 is FINISHED with its handoff written** — re-opening a closed task to add scope muddies the record it exists to be.
+    ⇒ **A new, tiny, single-file task is the cheapest correct answer, and it costs nothing in wall-clock because it runs in PARALLEL with 443.**
+    ⛔ **AND THE OBVIOUS FIX IS BARRED — IT FAILS SILENTLY, WHICH IS THIS PROJECT'S WORST CLASS.** Widget creation is **LAZY by TASK-449's spec**
+    (first successful open), so `GetAssistantConsoleWidget()` is **NULL until then**. **A `BeginPlay` binder would bind nothing and no-op FOREVER
+    — no error, no log, no crash.** ⇒ **The hand-off must happen AT OPEN TIME, in the thing that owns the open, which is the controller.**
+    **(1) THE WHOLE DELIVERABLE, AND IT IS ONE CALL.** In TASK-449's open path, **immediately after a successful create/open**, call
+    **`Component->AttachConsoleWidget(Widget)`** exactly once per widget. ⛔ **Nothing else. No FSM logic, no delegate bodies, no executor, no
+    posture changes** — TASK-449's guard-first ordering and posture handling are **already correct and are not touched.**
+    **(2) THE PINNED CROSS-TASK SIGNATURE — TASK-443 IMPLEMENTS IT, YOU CALL IT, character-for-character:**
+    `void USiegeAssistantComponent::AttachConsoleWidget(USiegeAssistantConsoleWidget* InWidget);`
+    **It is IDEMPOTENT and NULL-SAFE by contract** — you may call it on every open without double-binding, and the component owns all four
+    delegate bindings inside it (that is what the shipped comment means by *"the owning component binds these"*).
+    **(3) ⛔ IF `AttachConsoleWidget` DOES NOT EXIST WHEN YOU ARRIVE, STOP AND REPORT. DO NOT EDIT THE COMPONENT** — that file is TASK-443's and
+    a second writer is exactly the failure this batch has been serializing to avoid. **A missing method is a routing problem, not yours to fix.**
+    **(4) ⚠️ RESOLVE THE COMPONENT FROM YOURSELF, NULL-SAFE** (it is a default subobject created by TASK-440, so it exists from construction —
+    but check anyway; a missing component must leave the console open and inert, never crash). ⛔ **§2 still governs: no keyboard command changes
+    behaviour, and no key is re-routed through the assistant.**
+    **(5) PRE-FLIGHT `git status --porcelain` on both files and BRANCH ON THE ANSWER** — ⛔ **do not predict it** (ruling 7's correction).
+    ⚠️ **TASK-449's additive property is load-bearing and you inherit the duty: your edit must leave the DELETION COUNT unchanged** in
+    `git diff --stat` on those two files. **That is the checkable half of "provably additive" and it is how 449 proved its own claim.**
+    ⛔ **No component edits, no widget edits, no `Content/`, no Git, no compile.**
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-453-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    `SiegePlayerController.{h,cpp}` · `USiegeAssistantComponent::AttachConsoleWidget(USiegeAssistantConsoleWidget*)` (**PINNED — TASK-443
+    implements, TASK-453 calls**) · `GetAssistantConsoleWidget` · `OnConsoleSubmitted` / `OnConsoleConfirmed` / `OnConsoleCancelled` /
+    `OnConsoleOpenChanged`. Law: CONVENTIONS "In-match LLM command assistant" §2, §9 · "Settings screen…" §8, §9.
+
+#### TASK-450 — [LLM-A2b] `USiegeLlamaSubsystem` — the RUNNABLE subsystem (worker thread, queue depth 1, abort, timeouts, tiering, KV reuse) (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: **ready-for-qa** (2026-08-03, **QA LOOP 1 of 3 — C2555 FIXED, re-submitted**. `qa/TASK-424.md`'s build-master appendix: **1 error**, `SiegeLlamaSubsystem.cpp(285,15)` — `FSiegeLlamaWorker::Run` declared `virtual void Run() override` against `FRunnable`'s `virtual uint32 Run() = 0`. **FIXED at both the declaration and the definition, plus ONE `return 0;`.** ⚖️ **§20 TRACED BEFORE TYPED, AND THE TRACE IS THE FINDING: `Run()` has EXACTLY ONE EXIT — it contains ZERO other `return` statements, and the single `break` leaves the WHILE LOOP, not the function.** Both exits converge on the same tail **after** `UnloadModel()` and the `Stopped` transition ⇒ ✅ **the conversion introduced NO new way to leave a loop, so no guard downstream of an early exit needed re-checking, and TASK-457's `MarkBusy()`/`bWorkPending` ordering is untouched.** ⛔ **The trap that was NOT taken: converting the `break` into a `return` would skip `UnloadModel()` + `State.Set(Stopped)` — leaking the ~2.5 GB model and letting `WaitForCompletion` return on a worker still reading Busy.** Recorded in an anti-revert comment. 📌 **§22 SWEEP — A RESULT, NOT A BLANK:** all 4 `FRunnable` overrides re-read against `HAL/Runnable.h:32-61` (`Init` `bool` ✅ · `Stop` `void` ✅ · `Exit` `void` ✅ · **`Run` was the only divergence**); the 2 header overrides (`Initialize`/`Deinitialize`) match `Subsystem.h:59/:62` ✅ **and were already compile-proven by the 16 clean TUs that include the header**; and `FSiegeLlamaWorker` is **the only `FRunnable` subclass in the entire repo** (the spike deliberately uses `AsyncThread`) ⇒ **the shape cannot recur elsewhere.** ✅ Fences verified at the artifact: `HardTimeoutSeconds` **verbatim 10.0**, TASK-457's bottom-of-loop deadline test + `bAborted` + the extended post-prefill guard **byte-intact**, TASK-459's **both** elapsed args still based on `StartSeconds`, header **not opened** (mtime 13:25 = 457's), 🔒 **spike unmodified** (tracked ⇒ `git diff` empty, 188,736 B). Braces 215/215; parens 938→955, **+17 fully accounted as comment prose, 0 in code**. ⛔ **NOT compiled — TASK-447 is the single gate and it re-runs.** ⚠️ **The link step has still never run, so unresolved externals remain unproven in either direction, and this is not necessarily the complete error set.** Handoff appended at `handoffs/TASK-450-programmer.md` §11. — PRIOR: **qa-passed** `qa/TASK-424.md`: **PASS, 0 blockers**, 8 warns, 7 nits. Flip applied by the ORCHESTRATOR. ✅ QA **independently re-read the vendored header** rather than resting on a negative search (§14): `LLAMA_LOAD_MODE_MMAP` = `llama.h:207`, `llama_memory_seq_rm` = `llama.h:735`, and it read the **whole** `llama_model_params` struct (`:306-341`) to confirm `use_mmap` is absent. No deprecated API. ✅ **No unguarded path to `llama_decode`** — the context budget at `:1265` is unconditional on every request. **Three rulings ratified:** `SetStaticPrefix` (⚠️ **§8 is genuinely self-contradictory — manager owes a one-line amendment**, the 4th correctly-refused spec line this wave), reject-not-truncate (**strictly stronger** than the clause), and synchronous `EnsureBackendsLoaded()` (**ACCEPTED with binding conditions — TASK-447 MUST report the `N ms` figure**, and *"async load never blocks match start"* is **QUALIFIED-PASS only**). ⚠️ Top warns, none blocking: **WARN-1** `:349` `MarkBusy()` does not guard the fault latch though its twin `ClearBusy()` does, and the run loop `:549` dispatches on `bWorkPending` alone · **WARN-2** `:1344` the between-slice check omits the **deadline**, so on GPU tiers the hard timeout is **NOT** the backstop the header claims at `:130-135` · **WARN-3** `:83-87` the reserve cites a **full**-tier figure for a **partial**-tier bar; the conclusion survives via `TASK-413:625` instead. ⛔ NOT compiled, NOT run — TASK-447 is the one gate)
+- ⛔ **READ THE HANDOFF BEFORE THE QA GATE — IT DECLARES FOUR THINGS THAT CHANGE WHAT "DONE" MEANS HERE.**
+    **(a) DELIVERED:** two new files only (`Plugins/SiegeLlama/Source/SiegeLlama/{Public,Private}/SiegeLlamaSubsystem.{h,cpp}`), zero edits to any existing file
+    anywhere in the repo. `UGameInstanceSubsystem` · ONE `FRunnable` at `TPri_BelowNormal` owning model/context/vocab · queue depth 1 by early return with **no queue** ·
+    `abort_callback` cancel (+ between-slice checks that bound a GPU-tier cancel to one `n_ubatch`) · the three timeouts · measured tiering + `llama_memory_seq_rm` KV reuse ·
+    SEH + `bAssistantFaulted` latch + the completion delegate **structurally** game-thread-only · the absent-model path as exactly one log line · the §8 startup budget
+    assertion with `ZoneA_tokens` **tokenized**, never a constant · `MaxSnapshotTokens` 400 + `SnapshotPreFilterMaxChars` 3000 with the role-change re-derivation declared.
+    **(b) ⛔ THE SPIKE DELETION IS DEFERRED A SECOND TIME — ON A *NEW* REASON, AND TASK-423's OLD REASON IS EXPLICITLY DISCHARGED.** The decisive new one: the **generation-2
+    sealed holdout (committed UNSPENT at `21f7e01`) is authored against the `t0` fixture INSIDE `SiegeLlamaSpike.cpp` and is scored by `Siege.Llama.SpikeEval`, also inside
+    it** — deleting the file **spends a sealed artifact by destroying it**. Also: no `zoneA_tok` reading could be taken (editor forbidden this task) and the partial-tier
+    **hitch sampler lives only in the spike**. ⚠️ **`SpikeCorpus.inl` DOES NOT EXIST** — the board's `names` line has named a nonexistent file since TASK-423. Nothing outside
+    the spike references any spike symbol, so the deletion stays link-safe whenever it happens. Mitigation shipped: the subsystem logs a Warning at load naming both command
+    families. **Unblock condition is spelled out in the handoff §7 as a 5-step single-session task.**
+    **(c) ⛔ SPEC ITEM (9) IS ONLY HALF DELIVERABLE FROM THE PLUGIN.** `MaxSnapshotChars`'s retirement (10 sites) and `ZoneBCharReserve`'s re-measurement live in the **GAME
+    module** (`SiegeAssistantSnapshot.h:266/:274` + `SiegeAssistantComponent.cpp`), which a plugin-scoped, parallel-safe task may not touch — and 9b additionally needs a
+    **printed** reading no compile-free task can take. ✅ **The reading no longer needs the spike:** `USiegeAssistantComponent::ReportFirstCapture` prints `zoneB_chars` from
+    the **SHIPPED** builder. ⇒ **MANAGER OWES ONE SMALL GAME-LANE TASK.**
+    **(d) ⚠️ TWO OF THE THREE BUDGET GUARDS ARE INERT TODAY AND THE CODE SAYS SO AT WARNING.** `MaxSnapshotTokens` and `SnapshotPreFilterMaxChars` both need the Zone-A/B+C
+    split, which needs the game lane to call `SetStaticPrefix` — and no game-lane caller exists yet. **The CONTEXT budget is always enforced, so there is no unguarded path to
+    `llama_decode`.** ⛔ **Do not read a clean log as those budgets passing.**
+- ⚠️ **DECLARED ADDITIONS TO THE PLUGIN SURFACE — QA MUST RULE, NOT SILENTLY ACCEPT OR DELETE.** The §9 four methods + delegate are untouched, character-for-character.
+    Added: **`SetStaticPrefix(const FString&)`** (opaque string; exists because §8 states BOTH "the surface is `(prompt, gbnf) -> string`" AND that the budget assertion is
+    mandatory with `ZoneA_tokens` tokenized from the assembled Zone-A string — **which the plugin cannot build**, so as written the two clauses cannot both hold; if QA rules
+    it out, **§8's mandatory assertion has no implementable form and the clause must be re-opened**) · **`OnRequestSoftTimeout`** (parameterless multicast — §10 specifies the
+    soft timeout as "tells the FSM to say something", and a constant the FSM polls is not a signal) · `GetOffloadTier` / `DescribeState` · **three `#if !UE_BUILD_SHIPPING`
+    console commands** (`Siege.Llama.Status` / `.Test` / `.Cancel`) — ⛔ **without them TASK-447's inherited gate is UNRUNNABLE, because there is no game-lane caller.**
+- ⛔ **TASK-447: THE GATE'S OWN SCOPE IS ANSWERED IN THE HANDOFF §6, ITEM BY ITEM, INCLUDING TWO IT CANNOT HAVE.** ✅ satisfiable: `Siege.Llama.Info` · one parseable JSON ·
+    queue depth 1 (deterministic, one command: `Siege.Llama.Test twice` — **pass = call 1 TRUE, call 2 FALSE; two FALSEs proves nothing**) · the absent-model path.
+    ⚠️ **qualified:** *async load never blocks match start* — the 2.5 GB read IS async, **but `EnsureBackendsLoaded()` is synchronous on the game thread** (declared, with the
+    data-race reason, timed and logged — **TASK-447 reports that number**); *cancel mid-prefill* — **genuinely mid-graph ONLY on `tier=cpu`**; on GPU tiers `abort_callback` is
+    documented CPU-only and the cancel lands at the next ubatch boundary, **so the run must state its tier**. ⛔ **NOT satisfiable: the partial-tier frame-time hitch
+    re-measure — the frame sampler and histogram exist ONLY in the spike; the subsystem has no frame instrumentation and never was specced to. Run it on the spike in its own
+    session or record it NOT MEASURED — do not substitute a number from a different instrument.**
+- blocked-by: **none — DISPATCHABLE NOW** (⚠️ **PLUGIN module — genuinely parallel-safe against the game-module lane and against a game-module compile gate**)
+- parallel-safe: yes; **EXCLUSIVE owner of `Plugins/SiegeLlama/Source/SiegeLlama/{Public,Private}/SiegeLlamaSubsystem.{h,cpp}`**
+- spec: >
+    ⚠️ **WHY THIS TASK EXISTS — AND THE CAUSE IS AN ORCHESTRATION ERROR, NOT A PROGRAMMER ERROR. RECORDED AS SUCH.** TASK-423 was dispatched
+    against its **headline** (the Zone-A equality test) with the rest of its board spec omitted. ✅ **The programmer delivered the test correctly
+    AND DECLARED THE SHORTFALL rather than letting a partial pass as `done`** — which is the behaviour this pipeline wants and is the only reason
+    this was caught before TASK-447's gate instead of inside it. ⇒ **`USiegeLlamaSubsystem` IS NOT WRITTEN. This task writes it.**
+    **⛔ TASK-423's ENTIRE ORIGINAL SPEC IS YOURS — read it on the board (items 1–9) and treat it as this task's spec, with the four
+    manager amendments (A)–(D) applied.** Short form of what is owed and absent today: the `UGameInstanceSubsystem` that survives level travel ·
+    **ONE dedicated `FRunnable` at `TPri_BelowNormal`** (`llama_context` is not thread-safe; a long-lived runnable makes single-thread ownership
+    **structural rather than a comment** — ⛔ not the task graph, not `Async()`, not a context per request) · **queue depth 1 enforced by
+    returning false, never by a queue** (⛔ **do not add a request queue "for robustness" — that reintroduces exactly the out-of-order /
+    stale-context bug class this design deletes**) · **cancellation via `abort_callback`** (⛔ a post-generation poll is far too late during a
+    long prefill) · **three timeouts** (soft 4 s, hard 10 s, 96 output tokens) · **offload tiering + KV reuse from TASK-413's measured numbers** ·
+    **SEH + the `bAssistantFaulted` latch + the completion delegate ALWAYS on the GAME THREAD** · and **spec item (9)'s budget work**
+    (9a: `MaxUtteranceChars` bounds BOTH the `order:` and `pending:` lines, neither truncated by the budget; 9b: set `ZoneBCharReserve` from
+    Zone B's **printed** worst case — ⚠️ **the header says "re-measure it, do not eyeball it"**).
+    **⛔ THE PLUGIN STILL KNOWS NOTHING ABOUT SIEGEBOUND.** No game-lane `#include`, no Siegebound type in any signature. The entire API surface
+    between the lanes is `(prompt, gbnf) → string`. **A Siegebound include here is a QA FAIL.** ⚠️ **And NO multi-turn loop — one single-shot
+    call, zero conversation state** (§1).
+    **⚠️ THE TWO DEAD SPELLINGS — the vendored header wins, and both are RENAME-ONLY with the requirement unchanged:** it is
+    **`llama_memory_seq_rm`** (`llama.h:735`), **NOT** `llama_kv_cache_seq_rm` — that symbol **does not exist anywhere in the vendored header**;
+    and **`load_mode = LLAMA_LOAD_MODE_MMAP`**, **NOT** `use_mmap = true` — that member no longer exists. ⚠️ **Memory-mapped loading is
+    load-bearing for the 8 GB claim** (weights are page-cache-backed, not resident).
+    **✅ NOW DELETE THE SPIKE — AND ONLY NOW.** TASK-423 **correctly DEFERRED and DECLARED** the deletion under Amendment A on a decisive
+    argument: **with no subsystem, deleting the spike leaves ZERO model-load paths rather than one.** ⇒ **Once your subsystem exists, delete
+    `SiegeLlamaSpike.cpp` + its corpus file** so two load paths never coexist. ⛔ **Before you delete it, take any final `zoneA_tok` reading you
+    need — it is the ONLY command that prints one** (Amendment A: *do not delete the measuring instrument and then quote a number from memory*).
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-450-programmer.md`: the tiering policy **with the numbers it came from**, the abort path traced end to end, and the
+    thread-ownership argument. Post in ⚙️ Dev & QA.
+- names: >
+    `Plugins/SiegeLlama/Source/SiegeLlama/{Public,Private}/SiegeLlamaSubsystem.{h,cpp}` · `USiegeLlamaSubsystem` ·
+    `FSiegeLlamaCompletionSignature` · `IsReady` / `IsBusy` / `RequestCompletion` / `CancelActiveRequest` (**§9 registry,
+    character-for-character** — ⚠️ TASK-443 compiles against these) · `LogSiegeLlama` · `llama_memory_seq_rm` · `LLAMA_LOAD_MODE_MMAP` ·
+    `SoftTimeoutSeconds` 4.0 · `HardTimeoutSeconds` 10.0 · `MaxOutputTokens` 96 · `MaxSnapshotTokens` 400 · `SnapshotPreFilterMaxChars` 3000 ·
+    `ContextTokens` 2048 (⛔ **FROZEN**). **DELETES** `SiegeLlamaSpike.cpp` + `SpikeCorpus.inl`.
+    Law: CONVENTIONS "In-match LLM command assistant" §1, §5, §8, §9, §10 · §12c (the `ContextTokens` freeze) · §12g.
+
+#### TASK-451 — [TEST-FIX] ⛔ `TestEqual` IS CASE-INSENSITIVE ON `FString` — the byte/casing assertion sweep (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: ✅ **qa-passed → ready-for-integration** (2026-08-03 — `qa/TASK-446.md`, PASS · 0 blockers). ⚠️ **WARN-1 CORRECTION: the `WITH_CASE_PRESERVING_NAME` residual is 18 sites, NOT the 12 stated** — the report's own enumeration disagreed with its headline figure and QA confirmed a sample are genuine `FName::ToString()` comparisons. ⛔ **FIFTH wrong count this wave; my own §22 covers it — a count is a hint, never a contract.**
+- status: **ready-for-qa** (2026-08-03 — handoff `handoffs/TASK-451-programmer.md`; reviews under TASK-446. ⛔ **NOT compiled, NOT run — TASK-447 is the one gate, and nothing in this repo has been built this batch, so no test in these files has EVER executed.** **MECHANISM RE-DERIVED FROM ENGINE SOURCE, not from the spec:** `TestEqual(const TCHAR*, const FString&, const FString&)` forwards to the `TCHAR*` overload (`AutomationTest.h:1997-2000`), which compares with **`FCString::Stricmp`** (`AutomationTest.cpp:2163`); `TestEqualSensitive` uses **`FCString::Strcmp`** (`:2295`). ✅ Board's mechanism CONFIRMED for `FString`. **58 of 113 sites converted** — ⚠️ **the board's "117" is wrong: the real total is 113**, the 4-site gap being four prose mentions of the identifiers inside a ZoneA comment block (`:353,354,356,357`) counted as call sites. Grammar 26/53 · Guard 29/33 · Settings 3/14 · **ZoneA 0/13 — ALREADY FULLY COMPLIANT, untouched** (all 5 of its string claims were already `*Sensitive`, with the mechanism independently derived at `:353-362`). 50 integer/`.Num()` sites deliberately NOT churned. **No line added or removed in any converted file — every line number cited by the live TASK-441/423/436 reviews still resolves.** ⛔ **GUARD #2 DISCHARGED — one conversion PROVEN to bite:** at `SiegeAssistantGrammarTest.cpp:464` (*"Symbol casing does not change the emitted grammar"*), deleting the `.ToLower()` at `SiegeAssistantGrammar.cpp:355` — **the exact regression that test exists to catch** — makes `First` and `FromMixedCase` differ ONLY in case (`"\"footman\""` vs `"\"Footman\""`), so **`TestEqual` PASSES (reports SAFE) while `TestEqualSensitive` FAILS.** On the current correct code both pass, so the sweep does not turn TASK-447 red by itself. 🚩 **TWO FINDINGS RAISED, NOT SILENTLY PATCHED:** (1) **CONVENTIONS §13 needs an amendment — its bullet "the defect is confined to `FString` overloads" is NOT accurate**: `FStringView`, `FUtf8StringView`, **`FText`** (`EqualToCaseIgnored`) and **`FName`** (`IsEqual` defaults to `ENameCase::IgnoreCase`, `NameTypes.h:806`) are all case-insensitive too, **and `TestEqualSensitive` has NO `FText`/`FName` overload** — such a claim must go through `.ToString()`. No site in scope was affected; manager owes the edit. (2) ⚠️ **WARN-436-2 was NOT one line and is flagged for a ruling** — see below. Also: `SiegeSettingsTest.cpp:132`'s `TestNotEqual` was **left insensitive ON PURPOSE** — the slot name is a save FILENAME and Windows filenames are case-insensitive, so two names differing only in case are the SAME FILE; the insensitive comparator is the stronger one there. **Scope amendment items both done:** **WARN-437-1** — `Initialize();` added as the first statement of `USettingsMenuWidget::RebuildWidget()`, one line, all four of QA's engine claims re-derived independently and all hold (`UserWidget.cpp:159-162`, `:1197-1200`, `UserWidget.h:297`, `UserWidget.cpp:135-137`); **WARN-436-2** — fixed, ⚠️ **but it took +1 statement, +1 pre-condition assertion and 1 moved statement, NOT one line, because a one-line fix is mechanically impossible**: the only API that moves the reader off `true` is `SetAssistantConfirmEnabled`, which also persists to the same scratch slot (`SiegeSettingsSubsystem.cpp:47`), so the fix must reorder rather than insert. ⚠️ **QA: the one residual risk is the 12 converted `FName::ToString()` sites, which rely on `WITH_CASE_PRESERVING_NAME` (= `WITH_EDITORONLY_DATA` = 1 in these `EditorContext` tests) — contained, but unprovable without executing.** No compile · no Git · no editor · no MCP · no PIE.)
+- blocked-by: **none — DISPATCHABLE NOW.** ⚠️ **Must land BEFORE TASK-447**, which runs these tests. Sequential re-ownership of four finished tasks' test files (417 · 423 · 436 · 441 — all delivered, handoffs written); ⛔ **never concurrent with TASK-443 if it adds tests.**
+- parallel-safe: yes to WRITE; ⛔ never beside a compile gate
+- spec: >
+    ⛔ **A SHIPPED, QA-PASSED TEST IS ASSERTING NOTHING, AND IT IS THIS REPO'S OWN NAMED FAILURE CLASS: AN AUTOMATED GUARDRAIL THAT REPORTS
+    SAFE.** Same family as `Build.bat` returning exit 0 on a failed build, `rig_character.py` silently ignoring an override that did not exist,
+    and MCP readback passing on visually-broken UMG — **three confident greens that were not real.** ⚠️ **This one is worse in one specific way:
+    it looks automated, and it passed a human QA gate.**
+    **VERIFIED AT THE ARTIFACT (manager, raw `Read`, not a relay) — `Source/GitClaudeUnrealTest/Siegebound/Tests/SiegeAssistantGrammarTest.cpp`:**
+    · **`:464` `TestEqual(TEXT("Symbol casing does not change the emitted grammar"), FromMixedCase, First)`** — ⛔ **a CASING claim asserted with
+    a CASE-INSENSITIVE comparator. It cannot fail for the property it names. It is vacuous** — and the comment directly above it
+    (`:456-459`) spells out that the guarantee under test is precisely the lower-casing of every symbol.
+    · **`:454` `TestEqual(TEXT("Two builds from equal inputs are byte-identical"), Second, First)`** — a **BYTE-IDENTITY** claim with the same
+    comparator.
+    **(1) TRIAGE EVERY SITE.** ⛔ **COUNT CORRECTED 2026-08-03 — MY 117 WAS WRONG; THE TRUE DENOMINATOR IS 113.** Four of my "sites" were
+    **prose mentions of the identifiers inside a ZoneA comment block, not call sites** — my figure came from a `Grep` count, and ⚖️ **`Grep`
+    LOCATES; IT DOES NOT READ** (§10's trap, firing on me this time rather than on a reviewer). ⚠️ **A completeness claim is only auditable
+    against a TRUE denominator, so an inflated one silently understates coverage.** True sizes: `SiegeAssistantGrammarTest.cpp` **53** ·
+    `SiegeAssistantGuardTest.cpp` **33** · `SiegeSettingsTest.cpp` **14** · `SiegeAssistantZoneATest.cpp` **13**.
+    ✅ **Integer / bool / `.Num()` comparisons are UNAFFECTED — do not churn them.** **Convert the string-typed ones whose claim is byte-,
+    casing- or identity-shaped to `TestEqualSensitive`.** ⚠️ **The type list is WIDER than `FString`** — see CONVENTIONS §13's correction:
+    `const TCHAR*`, `FString`, `FStringView`, `FUtf8StringView`, `FText` and `FName` are **all** case-insensitive under `TestEqual`, and
+    ⛔ **`TestEqualSensitive` has NO `FText` and NO `FName` overload** (convert explicitly at the site and assert on the conversion).
+    **(2) ⚠️ CONFIRM THE MECHANISM AGAINST THE ENGINE HEADER AND CITE `file:line` — DO NOT TAKE IT FROM THIS SPEC.** The claim is *corroborated*
+    by the existence of `TestEqualSensitive` (you do not add a "Sensitive" variant unless the base is insensitive) and by TASK-423's programmer
+    catching it in their own draft — **but the manager has no engine source to read and did NOT re-derive it.** ⇒ **You are the first party who
+    can. Name the header and line in the handoff.** ⛔ **If the mechanism turns out to be different, STOP and report — do not convert 117 call
+    sites on a wrong premise** (a wrong root cause ships a wrong fix AND a wrong lesson).
+    **(3) ⚖️ PROVE AT LEAST ONE CONVERSION ACTUALLY BITES.** For `:464`, show that the **pre-fix** test passes on an input it should reject —
+    i.e. that the vacuity was real — and that the **post-fix** test fails on it. ⛔ **A sweep that changes 117 lines and demonstrates nothing is
+    the same defect one level up.** *(The TASK-417 idiom: the guard must be **exercised**, not merely present.)*
+    **(4) ⛔ DO NOT WEAKEN OR DELETE A TEST TO MAKE IT PASS.** If a conversion reveals a REAL defect in shipped code, **STOP, report it, and let
+    it route** — that is a finding, not an obstacle, and it is the entire point of doing this.
+    ⛔ **No production-code changes, no `Content/`, no Git, no compile.**
+    Handoff `handoffs/TASK-451-programmer.md` with the **full triage table** (site → claim shape → converted / left, with the reason).
+    Post in ⚙️ Dev & QA.
+- ⚠️ **TWO TASK-439 CARRIES FOLDED IN 2026-08-03 — both non-blocking, both ONE LINE, and neither justifies its own dispatch. Recorded as a deliberate judgment call against the one-task-one-deliverable rule, not an oversight.** This task additionally owns **`SettingsMenuWidget.cpp`** for carry (a) ONLY.
+    **(a) `ConstructSettingsTree()` RUNS BEFORE SUPER'S DEFENSIVE `Initialize()`** — ⚠️ **unreachable via `CreateWidget`, so this is hardening, not a bug**; take the one-line fix and ⛔ **change nothing else in that file** (it is `qa-passed`).
+    **(b) ⛔ TASK-436's `true`-DIRECTION SAVE/LOAD ASSERTION CANNOT DISTINGUISH *LOADED TRUE* FROM *NEVER LOADED*** — and **that is squarely this task's charter**: a test that passes for the wrong reason is the same defect class as a comparator that cannot see casing. ⚖️ **The default is `true`, so the assertion is satisfied by the very state it is meant to rule out.** Fix by asserting the **`false` direction** (set false → save → reload → still false), which **only a real round-trip can produce.**
+    - ✅ **RULED AND RATIFIED 2026-08-03 — THE ONE-LINE CEILING IS WAIVED FOR THIS ITEM, AND THE WAIVER IS THE ORCHESTRATOR'S, NOT MINE (recorded here because the board is where rulings live).** The *"stop and report if it exceeds one line"* constraint was the orchestrator's; **TASK-451 flagged rather than quietly absorbing the overrun, which is exactly the behaviour that was asked for** and is the reason this was decided rather than discovered. ⚖️ **The mechanical reason is sound and was verified, not accepted: the only API that moves the reader off `true` (`SetAssistantConfirmEnabled`) PERSISTS TO THE SAME SCRATCH SLOT** (`SiegeSettingsSubsystem.cpp:47`), **so perturbing in place would clobber the value under test — the fix HAS to reorder.** Cost: **+1 statement, +1 pre-condition, 1 moved statement, all inside `FSiegeSettingsSaveLoadRoundTripTest`.** ⇒ ***"One line" meant NO SCOPE CREEP, not "abandon a correctness fix"*** — and a ceiling that would force a wrong test to ship is a ceiling misapplied. ⛔ **TASK-446 VERIFIES CONTAINMENT rather than taking anyone's word for it: the change must be confined to that one test body.**
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/Tests/SiegeAssistantGrammarTest.cpp` · `SiegeAssistantGuardTest.cpp` ·
+    `SiegeAssistantZoneATest.cpp` · `SiegeSettingsTest.cpp` · `TestEqualSensitive` (UE 5.8 `AutomationTest.h`) ·
+    **`SettingsMenuWidget.cpp`** (carry (a) ONLY).
+    Law: CONVENTIONS "Settings screen…" §13 (the comparator law) · §9c (**where an artifact has a parser, the parser is the reviewer of record**).
+
+#### TASK-452 — [LLM-GAP] `DA_AssistantVocabulary` — close the untested ASSET lane (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: **TASK-421** (the asset must exist first)
+- parallel-safe: yes
+- spec: >
+    ⚠️ **THE GAP, STATED PRECISELY: EVEN WITH `Siegebound.Assistant.ZoneA.*` FULLY GREEN, THE SHIPPED PATH IS STILL UNTESTED.**
+    `USiegeAssistantVocabulary`'s **asset instance overrides the C++ defaults WHOLESALE**, so the tests exercise the **C++ defaults** while the
+    game runs the **asset**. ⇒ **The tested path is not the shipped path** — and Zone A is the static KV prefix, so a divergence there silently
+    moves the measured accuracy AND the prefix-reuse claim with **no log line naming the cause** (§9c's signature exactly).
+    **(1) ADD AN AUTOMATION TEST THAT LOADS `/Game/Data/DA_AssistantVocabulary` AND ASSERTS THE SHIPPED ZONE A**, not the default one:
+    `BuildZoneA(TheAsset)` must satisfy the same exact-character assertion the default-lane test makes, and `BuildSynonymTable()` must be
+    **deterministically ordered** (⚠️ Zone A must be byte-stable — calling it twice in one process returning different bytes is a defect).
+    **(2) ⛔ ASSERT ON CHARACTERS, NEVER ON A DERIVED TOKEN CONSTANT** (§12g): its error **sign is unknown**, and a test asserting a number
+    nobody measured **is a guardrail that reports safe** — the same class TASK-451 exists to clean up. **The token ceiling stays a RUNTIME gate
+    read off the printed `zoneA_tok~=`.**
+    **(3) ⚠️ IF THE ASSET AND THE C++ DEFAULTS DISAGREE, THAT IS THE FINDING — REPORT IT, DO NOT SILENTLY CONFORM EITHER ONE.** The asset is
+    content and the defaults are code; **which one is wrong is a manager ruling**, and TASK-428's tuned table is the thing both must match
+    (flagged item (m): the winning synonym table was recorded so the shipped asset and the measured prompt could not diverge — **this test is
+    what would actually catch it if they did**).
+    ⛔ **No `Content/` authoring (TASK-421 owns the asset), no Git, no compile.**
+    Handoff `handoffs/TASK-452-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    `/Game/Data/DA_AssistantVocabulary` · `USiegeAssistantVocabulary::BuildSynonymTable` · `USiegeAssistantSnapshot::BuildZoneA` ·
+    `Siegebound.Assistant.ZoneA.*`. Law: CONVENTIONS "In-match LLM command assistant" §8, §9, §9c · §12g.
+
+---
+
 ## LADDER WAVE (Wave 1.5) — decomposed 2026-08-03 on Jonathan's TASK-415 rulings — TASK-427..435
 
 **What this wave is.** The spike measured all six bars. **Four PASS. Bar #5 FAILED at 66.7 % vs 85 %.** Jonathan ruled **iterate the prompt ladder first** (rungs 1–2, then re-measure) and **diagnose the CPU aborts before touching the CPU-fallback requirement.** This wave is those two things, plus the fresh sealed holdout the re-measure requires, plus the owed doc-vs-code audit. **Law was written FIRST (house rule): CONVENTIONS §12** — 12a spent-seal + holdout generations · 12b the failure-shape trap · 12c the Zone-A growth budget + the `ContextTokens` freeze · 12d the bar #2 wall-clock ruling · 12e standing procedure items.
 
-⛔ **WAVE 1 (console UI, the FSM, the executor, the `CreateUnitGroup` extraction) STAYS GATED and is NOT decomposed.** Its gate is unchanged and now doubled: the FOLLOW commit **TASK-403** *and* **bar #5 clearing 85 %** on a fresh holdout. Nothing in Wave 1 is written until TASK-432 reports and TASK-435 answers.
+⛔ ~~**WAVE 1 (console UI, the FSM, the executor, the `CreateUnitGroup` extraction) STAYS GATED and is NOT decomposed.** Its gate is unchanged and now doubled: the FOLLOW commit **TASK-403** *and* **bar #5 clearing 85 %** on a fresh holdout. Nothing in Wave 1 is written until TASK-432 reports and TASK-435 answers.~~
+⚖️ **SUPERSEDED 2026-08-03 — WAVE 1 IS UN-GATED AND DECOMPOSED (TASK-436..448, "## SETTINGS+CONFIRM").** Jonathan was asked explicitly and chose *"un-gate Wave 1, build it all."* ⛔ **THIS IS A DELIBERATE OVERRIDE OF HIS OWN GATE AND MUST NEVER BE RECORDED AS A BYPASS — the gate did not clear; he moved it.** **TASK-432 never ran, TASK-435 was never answered, and bar #5 stands at 20/25 against 22 + zero refuse-class failures.** His grounds are measured: **4 of the 5 stable failures are wrong-place / wrong-count on understood orders** — *"I'd shrug and re-order"* — **which is exactly what the confirm step catches**; the one categorical failure (`DEV-04`) gets a **code guard, not a model**. 🔒 **The gen-2 holdout stays SEALED — un-gating does NOT spend it** (§12a: only a gate PASS or Jonathan's own instruction can).
 
 ### Manager rulings (binding for TASK-427..435)
 
