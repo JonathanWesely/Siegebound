@@ -100,7 +100,14 @@ The editor (**PID 28072**) was live throughout and its Git provider auto-stages 
 ✅ **`L_Arena.umap` never opened, never saved** — mtime still `2026-07-29 03:53:38`.
 ⛔ **NOT PUSHED.** `main` was **7** ahead of `origin/main` before this task — ✅ **read from
 `git rev-list --count origin/main..main`, not from the board and not from memory** (the board's claimed 7 happened
-to be right; it was still verified). It is **11** after. **The push is Jonathan's and he is asleep.**
+to be right; it was still verified). **This task added 6 commits ⇒ ahead 13 at hand-off.**
+**The push is Jonathan's and he is asleep.**
+
+⚠️ **WHY THE COUNT IS STATED AS `7 + 6` AND NOT AS A BARE NUMBER.** A committed file cannot state the branch's own
+post-commit height without going stale the instant the next commit lands — I wrote *"ahead 11"* twice and it was
+wrong within minutes, both times, for that reason alone. **The arithmetic is stable; the snapshot is not.**
+⇒ 📌 **The authoritative reading is always the command, never a number in a document. If it disagrees with this
+line, a later commit moved it and the command wins.**
 
 ---
 
@@ -276,6 +283,6 @@ not write it, because ⛔ **CONVENTIONS is the manager's file and inventing law 
 | Editor | **LEFT RUNNING, PID 28072**, untouched — no MCP call, no PIE, no save |
 | `L_Arena` | ✅ **never opened, never saved** (mtime `2026-07-29 03:53:38`) |
 | Working tree | ✅ **clean** |
-| `main` | ✅ **ahead 11 of `origin/main`** — read from `git rev-list --count origin/main..main` (**7** before this task, **10** after commit C, **11** with this hash-fill), ⛔ **NOT PUSHED** |
+| `main` | ✅ **ahead 13 of `origin/main`** — **7** before TASK-434 (verified, not remembered) **+ the 6 commits this task made** = 13. ⛔ **NOT PUSHED** |
 | `Models/Qwen3-4B-Q4_K_M.gguf` | on disk, **ignored, uncommitted, untouched** |
 | Scratchpad | three commit-message files (`msg_A/B/C.txt`), transient |
