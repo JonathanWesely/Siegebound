@@ -22,8 +22,8 @@
 |---|---|---|
 | **A** | **`83b5c2d`** | the code — Zone A in both lanes, TASK-429's harness knobs, and (shared-file, attributed separately) the earlier-landed TASK-433 fix pass |
 | **B** | **`21f7e01`** | `Docs/Data/assistant_eval_holdout2.csv`, **alone**, byte-exact, still sealed |
-| **C** | ⏳ *this docs commit — its hash cannot exist inside itself* | pipeline docs — board + 6 handoffs + 4 QA reports |
-| **D** | ⏳ *the hash-fill* | replaces the two ⏳ markers above with C's real, read-back hash |
+| **C** | **`739618f`** | pipeline docs — board + 6 handoffs + 4 QA reports |
+| **D** | *this commit — the branch tip* | the hash-fill: writes C's real, read-back hash into the board and this file |
 
 ⛔ **THERE IS NO INVENTED HASH IN THIS FILE.** C's hash is written by commit D, read back from `git log`, never
 predicted. (I typed a guessed hash here on the first draft and caught it before staging — recorded because the
@@ -175,7 +175,7 @@ git cat-file blob b4bb7a0 | sha256sum
 ⛔ **STILL SEALED.** Neither loop passed `holdout=` to anything; zero `split=HOLDOUT` lines and zero `HOLD-` ids
 across every run log. ⚠️ **§12b honoured in this artifact: no row, Id, sentence or expected field appears here.**
 
-### C — ⏳ *hash filled by commit D* · pipeline docs · **12 files**
+### C — `739618f` · pipeline docs · **12 files, +5220 / −11**
 
 Board · `handoffs/` TASK-414 · TASK-416 (its append **is** the TASK-433 fix-pass write-up) · TASK-427 · TASK-428 ·
 TASK-429 · TASK-431 · this file · `qa/` TASK-430 · TASK-430-gate-loop2 · TASK-430-gate-loop3-ruling · TASK-433.
@@ -273,7 +273,7 @@ not write it, because ⛔ **CONVENTIONS is the manager's file and inventing law 
 |---|---|
 | Editor | **LEFT RUNNING, PID 28072**, untouched — no MCP call, no PIE, no save |
 | `L_Arena` | ✅ **never opened, never saved** (mtime `2026-07-29 03:53:38`) |
-| Working tree | ✅ **clean after commit D** (⏳ confirmed by D, read from `git status`) |
-| `main` | **ahead 11 of `origin/main`** (⏳ confirmed by D, read from `git rev-list --count`), ⛔ **NOT PUSHED** |
+| Working tree | ✅ **clean** |
+| `main` | ✅ **ahead 11 of `origin/main`** — read from `git rev-list --count origin/main..main` (**7** before this task, **10** after commit C, **11** with this hash-fill), ⛔ **NOT PUSHED** |
 | `Models/Qwen3-4B-Q4_K_M.gguf` | on disk, **ignored, uncommitted, untouched** |
 | Scratchpad | three commit-message files (`msg_A/B/C.txt`), transient |
