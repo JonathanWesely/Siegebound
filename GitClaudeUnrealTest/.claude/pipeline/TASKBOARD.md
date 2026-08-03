@@ -4166,6 +4166,37 @@ Concretely, for this batch:
 #### TASK-409 — [LLM-0] `SiegeLlama` plugin scaffold + vendored llama.cpp (C API only) + build plumbing + repo hygiene + licences + the model fetch tool (build-master)
 - assignee: build-master
 - status: **ready-for-qa** (2026-08-02 — gate is TASK-412) · handoff `handoffs/TASK-409-buildmaster.md` · **NOT COMMITTED** (TASK-414 owns the commit)
+- ✅ **FOURTH PASS 2026-08-02 — BOTH BUILDS GREEN. PLUGIN LEFT `"Enabled": true`. JONATHAN CAN REOPEN THE EDITOR.** >
+    **Build 1** (game module isolated, plugin disabled): `Result: Succeeded` / 5.84 s / zero diagnostics —
+    `[1/2] Link [x64] UnrealEditor-GitClaudeUnrealTest.dll`. **The game module linked for the first time**; TASK-417's one-line
+    `"SlateCore"` addition cleared all 16 unresolved externals exactly as diagnosed.
+    **Build 2** (plugin enabled): `Result: Succeeded` / 2.59 s / zero diagnostics. UBT regenerated the makefile, pulled SiegeLlama
+    into the build graph, found all outputs current, wrote the receipt.
+    **Verified end state:** `Plugins/SiegeLlama/Binaries/Win64/UnrealEditor.modules` → `"SiegeLlama": "UnrealEditor-SiegeLlama.dll"` ·
+    **22** SiegeLlama build products + **20** `NonUFS` runtime deps in `GitClaudeUnrealTestEditor.target` · game DLL **18:25** newer
+    than newest source **18:14** (so **no out-of-date-modules prompt**) · `.uproject` **859 B / CRLF 54 / 0 lone LF**.
+    ⚠️ **Exit codes were wrong in BOTH directions today** — four failed builds returned exit 0, and build 1's wrapper returned exit 1
+    on a *success*. **The `Result:` line was correct every time.**
+    📌 **Toggling `"Enabled"` needs NO plugin rebuild** — build 2 proves it: one `WriteMetadata` action, zero compilation, 2.59 s.
+    🎯 **Still outstanding for spec (4):** run **`Siege.Llama.Info`** in the editor console to capture the in-engine output.
+- ✅ **SECOND PASS 2026-08-02 — THE PLUGIN COMPILED AND LINKED IN-ENGINE, ZERO DIAGNOSTICS.** >
+    Fixed a `*/`-inside-a-doc-comment defect in `SiegeLlamaModule.h:38` (`llama_*` + `ggml_*` written adjacently closed the block
+    comment, failing **every** plugin TU — CONVENTIONS §10's trap; found by TASK-410's author, fixed by me under ruling 6).
+    ⚠️ **My first fix reintroduced it** (the explanation itself contained a literal `*/`); a comment-state-machine scanner caught it.
+    Final sweep of all 9 first-party plugin sources: **`COMMENTSCAN_VERDICT: PASS (0 findings)`**.
+    Then ran the **first ever UBT/UHT build**: `Module.SiegeLlama.cpp` (UHT glue) + `SiegeLlamaModule.cpp` + `SiegeLlamaSpike.cpp`
+    compiled and **`UnrealEditor-SiegeLlama.dll` LINKED**; all 19 vendored DLLs staged to `Plugins/SiegeLlama/Binaries/Win64/` by
+    `RuntimeDependencies`. This settles UHT reflection (`USiegeLlamaSettings` as `UDeveloperSettings`), the `.uplugin` wiring and the
+    delay-load link — none of which the standalone harness could prove.
+    🎯 **UBT selected MSVC 14.50.35717, NOT the 14.38 the import libs were built with — three toolsets, clean link.** That is the
+    C-API-only ruling's toolset immunity proven under a harder condition than specified. **Do not regenerate the import libs to match.**
+- ❌ **TARGET BUILD `Result: Failed` — ONE FOREIGN DIAGNOSTIC, NOT THIS LANE'S** (raw exit code was **0**; exit-code law applied) >
+    `Siegebound/SiegeAssistantInputProbe.cpp(417,27): error C4458: declaration of 'Cursor' hides class member` (shadows
+    `UWidget::Cursor`; warnings-as-errors). **Owner: TASK-411** — routed as early information, **NOT** counted against TASK-409 and
+    **not fixed by me** (single-owner + diagnostic-attribution law). Fix = rename the local. Rest of the game module compiled clean.
+    🔻 **Plugin set back to `"Enabled": false`** per the standing safety rule; `.uproject` restored **byte-identical** (860 B, sha256
+    `2147635c…4182a`, clean vs HEAD). ⚠️ **Do NOT reopen the editor until TASK-411 is fixed and a green build runs** — the game module
+    never relinked, so it is stale against its sources, and that blocks launch **regardless** of the plugin's enabled state.
 - blocked-by: **none — DISPATCHABLE NOW**
 - parallel-safe: yes (new files + 2 single-owner edits to unowned shipped files); **EXCLUSIVE owner of `Plugins/SiegeLlama/**`, `.gitignore`, `GitClaudeUnrealTest.uproject`, `Docs/ThirdPartyNotices.md`, `Tools/fetch_llm_model.py`**
 - delivered: >
@@ -4232,7 +4263,10 @@ Concretely, for this batch:
 
 #### TASK-410 — [LLM-1a] THE SPIKE HARNESS — model load, the 3-zone prompt, a static GBNF, the 40-sentence Siegebound corpus, and the instrumentation (gameplay-programmer)
 - assignee: gameplay-programmer
-- status: backlog
+- status: ready-for-qa
+- ⛔ **BLOCKER-1 RAISED BY THIS TASK, AND IT IS NOT IN THIS TASK'S FILE: `Plugins/SiegeLlama/Source/SiegeLlama/Public/SiegeLlamaModule.h:38` DOES NOT COMPILE.** The doc comment reads `!! GATE EVERY llama_*/ggml_* CALL ON THIS !!` — the `*/` inside that glob pair **terminates the block comment early** (the CONVENTIONS §10 trap, verbatim), so `ggml_* CALL ON THIS !!` and the unmatched `*/` four lines later are parsed as code. **Every translation unit that includes this header fails**, which is all four plugin `.cpp` files. It survived because TASK-409's build was deliberately deferred. **The file is TASK-409's under ruling 6, so TASK-410 flagged it rather than editing it.** One-line fix: `GATE EVERY llama_ AND ggml_ CALL ON THIS`. ⚠️ **TASK-413 step (0) cannot go green until this lands.**
+- 🚩 **FINDING for TASK-416 (not fixed here): CONVENTIONS §8's "Zone A ~600 tok as-built" was measured with NO vocabulary attached.** Reproduced exactly — Zone A minus the synonym block = 2,142 chars ≈ 595 tok at 3.6 c/t. With `DA_AssistantVocabulary`'s table (2,172 chars) Zone A is **4,314 chars ≈ 1,100–1,200 tok**, i.e. roughly double what §8 records. Bar #3's *ratio* improves (a bigger static prefix reuses more), but **turn-1 cold prefill — the first sentence of every match, which is bar #2's TTFT — roughly doubles.** Measured, not estimated: `Siege.Llama.SpikePrompt` prints both.
+- 🚩 **FINDING for TASK-416 (not fixed here): `MaxRosterKinds = 8` hides kinds the grammar still admits.** `GetUnitKinds()` is uncapped, so on a >8-kind board the sampler can emit a symbol Zone C never printed — the §9c seam one level down. The spike prints all 13 kinds and measures Zone B+C at **955 of 1,440 chars (485 headroom)**, so the char cap was never the constraint.
 - blocked-by: **TASK-409** (needs the plugin + linked headers to compile against) · **TASK-426** (⚠️ **the corpus must be SEALED before you write a prompt** — ruling 14)
 - parallel-safe: yes vs every other task; **EXCLUSIVE owner of `Plugins/SiegeLlama/Source/SiegeLlama/Private/SiegeLlamaSpike.cpp`**. ⚠️ **You do NOT own the corpus — see (4).**
 - spec: >
@@ -4293,8 +4327,69 @@ Concretely, for this batch:
 
 #### TASK-411 — [LLM-1b] SPIKE MEASUREMENT #6 — does a focused `UEditableTextBox` starve Enhanced Input of WASD? (gameplay-programmer)
 - assignee: gameplay-programmer
-- status: backlog
+- status: ✅ **RESOLVED — BUILDS GREEN (2026-08-02, TASK-409's fourth pass).** Both the C4458 shadow fix and TASK-417's `"SlateCore"` addition are confirmed: `Result: Succeeded`, zero diagnostics, `UnrealEditor-GitClaudeUnrealTest.dll` linked. Reverts to `ready-for-qa` (gate TASK-412). History of the two defects retained below.
+- ⬇️ **(resolved history)** ⛔ LINK-FAILED (earlier the same day). The C4458 compile fix was CONFIRMED GOOD; a SECOND, DIFFERENT defect it was hiding blocked the link.
+- ⛔ **16 UNRESOLVED EXTERNALS — `SlateCore` IS NOT ON THE GAME MODULE'S LINK LINE. THIS IS THE ONLY THING BLOCKING A GREEN BUILD:** >
+    ✅ First, the good news: `SiegeAssistantInputProbe.cpp` **compiled clean** — the `Cursor` → `Walker` rename did exactly what it claimed.
+    ❌ The build then reached the **linker for the first time** (the compile error had always aborted it earlier) and failed:
+    ```
+    Module.GitClaudeUnrealTest.1.cpp.obj : error LNK2019: Z_Construct_UEnum_SlateCore_ETextCommit
+    SiegeAssistantInputProbe.cpp.obj    : error LNK2019/LNK2001: FInputEvent / FKeyEvent /
+                                          FCharacterEvent / FPointerEvent (dtors, ToText, IsKeyEvent, ...)
+    UnrealEditor-GitClaudeUnrealTest.dll : fatal error LNK1120: 16 unresolved externals
+    ```
+    Attribution: **15 × `SiegeAssistantInputProbe.cpp.obj`** + **1 × `Module.GitClaudeUnrealTest.1.cpp.obj`** (UHT glue for that
+    file's own `HandleProbeTextCommitted(const FText&, ETextCommit::Type)`). Every symbol is **SlateCore**-owned.
+    🎯 **ROOT CAUSE:** `GitClaudeUnrealTest.Build.cs` lists **`"Slate"` (line 22) but NOT `"SlateCore"`**, and
+    `PrivateDependencyModuleNames` is empty (line 36) — `SlateCore` appears only in Epic's commented-out boilerplate at line 57.
+    `Slate` propagates SlateCore's **include paths** (so it compiles) but not its **import library** (so it cannot link).
+    ✅ **FIX: add `"SlateCore"` to `PublicDependencyModuleNames`. One line, no logic change.**
+    ⚠️ **OWNERSHIP:** `GitClaudeUnrealTest.Build.cs` = **TASK-417 ONLY**; `SiegeAssistantInputProbe.{h,cpp}` = **TASK-411 ONLY**
+    (ruling 6). Build-master did **NOT** edit either. Routed as **early information**; **not** counted against TASK-409's loop
+    budget. The natural owner is **TASK-417**, since the fix lives in the `Build.cs` it owns.
+    ⚠️ **This is NOT a regression from TASK-411's fix** — the defect was always present, hidden behind the earlier compile abort.
+    TASK-411's 130-member shadow sweep was thorough *within its defect class*; a missing link dependency is a different class.
+    🚫 **Jonathan still cannot reopen the editor** — the game module never relinked and is stale against its sources, so the
+    editor's rebuild prompt hits these same 16 errors, **regardless of the plugin's enabled state.**
+- ⛔ **BLOCKS THE WHOLE TARGET BUILD — this is currently the only thing stopping a green editor build:** >
+    ```
+    Source\GitClaudeUnrealTest\Siegebound\SiegeAssistantInputProbe.cpp(417,27):
+    error C4458: declaration of 'Cursor' hides class member
+        for (TSharedPtr<SWidget> Cursor = FocusedSlate; Cursor.IsValid(); Cursor = Cursor->GetParentWidget())
+    Engine\Source\Runtime\UMG\Public\Components\Widget.h(422,34): note: see declaration of 'UWidget::Cursor'
+    ```
+    The local `Cursor` shadows the inherited **`UWidget::Cursor`**, and UE's warnings-as-errors makes C4458 fatal.
+    **Fix = rename the local** (e.g. `Walker` / `ParentChain`); no logic change. Reported as **early information** under the
+    diagnostic-attribution law — build-master did NOT touch the file (single-owner: `SiegeAssistantInputProbe.{h,cpp}` = TASK-411 ONLY),
+    and this is **NOT** counted against TASK-409's QA loop budget. ⚠️ **Jonathan cannot reopen the editor until this is fixed and a
+    green build runs** — the game module never relinked and is now stale against its sources.
 - blocked-by: **none — DISPATCHABLE NOW** (zero dependency on llama.cpp, the plugin, or a model)
+- delivered: >
+    `SiegeAssistantInputProbe.{h,cpp}` — `USiegeAssistantInputProbeWidget` (code-authored tree, ruling-A rehearsal) +
+    `Siege.Assistant.InputProbe` / `Siege.Assistant.InputProbeReport`. **THREE passes, not two:** a CONTROL pass with no focus
+    runs FIRST and must move the hero; if it does not, modes A and B are stamped **INCONCLUSIVE, never PASS** (a two-pass probe
+    would report a confident PASS when the injection never reached the input stack at all). Keystrokes go through
+    `FSlateApplication::ProcessKeyDownEvent`/`ProcessKeyCharEvent` — the real Slate routing, and NOT `SendInput`, so it works on a
+    locked desktop. **Zero shipped files touched** (`git status --porcelain` on `SiegePlayerController.{h,cpp}`, `SummonedUnit.cpp`,
+    `MinerUnit.cpp`, `SiegeCheatManager.cpp`, the game `Build.cs` and the `.uproject` = 0 lines); `ApplyCursorInputState()` READ, never edited.
+- ✅ ANSWER — **TRUE**, derived from UE 5.8 ENGINE SOURCE, **measurement still OWED to TASK-413**: >
+    `FSlateEditableTextLayout::HandleKeyDown`'s final branch (`SlateEditableTextLayout.cpp:1218`) returns **Handled** for any
+    printable non-Alt/Ctrl/Tab key with a non-zero character code — the engine's own comment says *"Absorb this event so it is not
+    bubbled and handled by other widgets that could have something bound to the key press."* So W/A/S/D never bubble to `SViewport`,
+    `UGameViewportClient::InputKey` is never called, and Enhanced Input never sees them.
+    **⇒ B3 RECOMMENDATION: ship the console on `FInputModeGameAndUI` + `SetKeyboardFocus()`. The camera stays live.**
+    ⚠️ **NOT MEASURED IN PIE BY THIS TASK** (no compile, editor is Jonathan's). TASK-413 already owns the run; **if the run
+    contradicts the source read, the RUN WINS** and B3 flips to the `UIOnly` fallback.
+- 🚩 four side findings B3 must not rediscover (detail in the handoff): >
+    **(a) ⚠️ RULING-A TRAP:** the code-authored tree must be built **BEFORE** `Super::RebuildWidget()` — it takes
+    `WidgetTree->RootWidget` as it stands and returns an `SSpacer` when null, so the natural ordering yields a **silently EMPTY
+    widget that still passes every readback**. Also: `UUserWidget` defaults to `SelfHitTestInvisible` but a code-authored
+    `UVerticalBox` root does NOT, and would swallow every click.
+    **(b)** Enter is absorbed AND clears focus (`ClearKeyboardFocusOnCommit` defaults true) — B3 must re-focus or close on submit.
+    **(c) ⚠️** Escape is CONDITIONAL: with `RevertTextOnEscape=false` (the default) it **bubbles**, so the shipped
+    `WasInputKeyJustPressed(EKeys::Escape)` cancels still fire under `GameAndUI` — exactly what B1's four mutual-exclusion guards are for.
+    **(d)** the `UIOnly` fallback costs more than the camera: `SetIgnoreInput(true)` kills mouse-look, the Escape/RMB cancel routes
+    AND every keyboard command while focused. If the measured answer is ever FALSE, that bill is Jonathan's call, not a silent fallback.
 - parallel-safe: yes; **EXCLUSIVE owner of `Source/GitClaudeUnrealTest/Siegebound/SiegeAssistantInputProbe.{h,cpp}`**
 - spec: >
     **⚠️ THE REAL HAZARD THIS ANSWERS:** the shipped match posture is `GameAndUI`, which **keeps WASD live — so typing "w" would walk the hero.**

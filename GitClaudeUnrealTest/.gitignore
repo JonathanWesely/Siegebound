@@ -27,6 +27,21 @@ Tools/ArtPipeline/Inbox/*
 Tools/ArtPipeline/Cache/*
 !Tools/ArtPipeline/Cache/.gitkeep
 
+# LLM model weights (LLM-ASSISTANT batch) — NEVER committed, in ANY form.
+# `Tools/fetch_llm_model.py` downloads these on demand and the exact build is
+# pinned in Plugins/SiegeLlama/Source/ThirdParty/LlamaCpp/VERSION.md, so the
+# weights are a reproducible artifact, not repo content.
+# ⚠️ THIS RULE IS LOAD-BEARING. A GGUF is ~2.5 GB. Git history is APPEND-ONLY,
+# so a single accidental commit is permanent for every clone and can only be
+# undone by rewriting history. The identical trap already fired once on this
+# batch — 2026-08-02, commit 20c8e48 swept 70.7 MB of llama.cpp DLLs in as raw
+# blobs and had to be repaired as e70f5ba while still unpushed. LFS is NOT the
+# answer here: these weights should not be versioned at all.
+*.gguf
+Models/*
+!Models/.gitkeep
+!Models/README.md
+
 # Branch junk-strip guards (TASK-246): Python bytecode caches, FBX-import
 # texture-extraction dirs (UE writes <name>.fbm/ beside the source FBX), and
 # Jonathan's GDD homework PDF (kept on disk, untracked by ruling).

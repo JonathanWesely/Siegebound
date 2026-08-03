@@ -478,3 +478,51 @@ Test 11 (`Vocabulary.SynonymTable`) gained two assertions:
 Both are pure, need no world, and cost nothing. **Test count is still 11** — no test was removed or weakened.
 
 **Not compiled** — TASK-420 owns that, and the module is being kept quiet for it.
+
+---
+
+## 12. LINK FIX — `SlateCore` added to `Build.cs` (one line)
+
+The game module **linked for the first time** (an earlier compile abort had been masking it) and failed with **16
+unresolved externals**, all SlateCore-owned — 15 from `SiegeAssistantInputProbe.cpp.obj` and 1 from the UHT glue in
+`Module.GitClaudeUnrealTest.1.cpp.obj`, led by **`Z_Construct_UEnum_SlateCore_ETextCommit`**.
+
+`Build.cs` is TASK-417's single-owner file (ruling 6), so the fix is mine even though it is one line:
+**`"SlateCore"` added to `PublicDependencyModuleNames`.** No logic change.
+
+**Why it hid for so long, which is the part worth keeping:** `Slate` publicly depends on `SlateCore`, so it propagates
+SlateCore's **include paths** — every file compiled clean — but that does **not** hand the module SlateCore's **import
+library**, so nothing could ever *link* a SlateCore symbol. The gap is invisible until some file references an actual
+**symbol** rather than merely a type. `SiegeAssistantInputProbe` was the first: `ETextCommit::Type` in a `UFUNCTION`
+signature (UHT then emits a cross-module reflection reference) plus `Widgets/SWidget.h`. Epic's own commented-out
+boilerplate at the bottom of the file pairs `Slate` and `SlateCore` for exactly this reason. **This is a different
+defect class from anything a shadow/API sweep can see, which is why TASK-411's review was thorough and still missed
+it — and it is not a regression; it was always latent.**
+
+### The sanity-check over the rest of the dependency list
+
+Every engine include in **every new file this batch added** was mapped to its owning engine module by locating the
+header under `Engine/Source/Runtime/*/Public/`:
+
+| Header (new files only) | Owning module | Listed? |
+|---|---|---|
+| `Types/SlateEnums.h` (`ETextCommit`), `Widgets/SWidget.h` | **SlateCore** | **← the gap, now ADDED** |
+| `Framework/Application/SlateApplication.h` | Slate | ✓ |
+| `Blueprint/UserWidget.h`, `Blueprint/WidgetTree.h`, `Components/EditableTextBox.h` / `TextBlock.h` / `VerticalBox.h` / `VerticalBoxSlot.h` | UMG | ✓ |
+| `Misc/AutomationTest.h`, `Algo/Reverse.h`, `Containers/StringView.h`, `HAL/IConsoleManager.h` | Core | ✓ |
+| `UObject/Object.h`, `UObject/Class.h`, `UObject/ReflectedTypeAccessors.h` | CoreUObject | ✓ |
+| `Engine/World.h`, `Engine/DataAsset.h`, `Engine/DataTable.h`, `GameFramework/*` | Engine | ✓ |
+| `Dom/JsonObject.h`, `Dom/JsonValue.h`, `Serialization/Json*.h` | **Json** | ✓ (added at TASK-417) |
+
+**The automation tests confirmed to need NO new module** — `Misc/AutomationTest.h` is in `Core`, exactly as the board
+stated.
+
+**One include deliberately NOT acted on, with the reasoning, so nobody adds a module we do not need:**
+`SiegeAssistantInputProbe.cpp:17` includes `GenericPlatform/GenericWindow.h`, which **ApplicationCore** owns and which
+is **not** in the dependency list. It is correct as-is. Its only use is line 171,
+`SlateApp.ProcessMouseButtonDownEvent(TSharedPtr<FGenericWindow>(), PointerEvent)` — a **default-constructed empty**
+`TSharedPtr`, which never emits a constructor, destructor, deleter or vtable reference, so it needs the *complete type*
+(the include is right, per the complete-type law) but produces **no link symbol**. The linker is the proof: it reports
+*all* unresolved externals in one pass, and **not one of the 16 was ApplicationCore-owned.**
+
+**Verdict: `SlateCore` was the only gap.** Not compiled — build-master owns the rebuild.

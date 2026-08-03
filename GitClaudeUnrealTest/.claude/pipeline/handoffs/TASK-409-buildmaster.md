@@ -1,5 +1,267 @@
 # TASK-409 — `SiegeLlama` plugin scaffold + vendored llama.cpp (C API only)
 
+---
+
+# ⬆️ UPDATE — SECOND PASS (2026-08-02, later): comment fix + FIRST EVER UBT/UHT BUILD
+
+## Job 1 — the `*/`-in-a-doc-comment defect: FIXED, and the sweep found more
+
+`SiegeLlamaModule.h:38` read `!! GATE EVERY llama_*/ggml_* CALL ON THIS !!` inside a `/** */` block.
+The `*/` inside `llama_*/` **closed the comment early**, so the following prose parsed as code and
+**every TU including that header failed** — all four plugin `.cpp` files. CONVENTIONS §10's trap
+verbatim. Caught by TASK-410's author sweeping for the pattern; correctly flagged rather than fixed
+(ruling 6 — the file is mine).
+
+**Fixed** by removing the glob asterisks entirely: `!! GATE EVERY llama_ AND ggml_ CALL ON THIS !!`
+
+🐞 **My first fix reintroduced the identical bug** — the replacement text explained the trap using a
+literal `*/`, which closed the comment again. **A hand-written scanner caught it, not my eyes.**
+Recording that because it is the whole lesson: this defect is invisible on reading, including to
+someone who has just been told about it.
+
+**Structural sweep, not a read-through.** I wrote a comment-state-machine scanner (block / line /
+string / char states) that flags any **multi-line** block comment terminating mid-line with trailing
+content — this bug's exact signature, while ignoring the legitimate single-line `/*Unused*/`
+parameter idiom. Final result across all 9 first-party plugin sources (including TASK-410's
+`SiegeLlamaSpike.cpp`):
+
+```
+scanned 9 first-party source files
+COMMENTSCAN_VERDICT: PASS (0 finding(s))
+```
+
+Also hardened `LlamaCpp.Build.cs:64`, which carried the same phrasing in a `//` line comment —
+harmless there, but a latent trap if ever reflowed into a block.
+
+## Job 2 — first ever UBT/UHT build
+
+**`.uproject` baseline verified before touching it:** 860 B, sha256
+`2147635ca97e6f4224727594093415271830246ea475370c84ebc9f99574182a`, clean vs HEAD, and
+`"Enabled": false` present exactly once.
+
+Enabled via a **byte-level** edit (`p.write_bytes`), deliberately **not** a JSON parse/re-serialise
+round-trip — that is what silently converted CRLF→LF earlier today, invisible to `git diff` because
+`autocrlf` normalises exactly that. Verified by **byte count and line-ending count**, per instruction:
+860 → 859 B (exactly the `false`→`true` delta), **CRLF 54 → 54**, lone LF **0**.
+
+### ⚠️ VERDICT — judged on log text, because the raw exit code was 0
+
+```
+Result: Failed (OtherCompilationError)
+Total execution time: 15.78 seconds
+```
+
+**`Build.bat` returned raw exit code 0 on a failed build.** The exit-code law earned its keep again.
+
+### ✅ THE PLUGIN LANE IS COMPLETELY GREEN
+
+**Zero diagnostics from any `SiegeLlama` file.** The plugin compiled *and linked*:
+
+```
+[21/33] Compile [x64] Module.SiegeLlama.cpp      <- UHT reflection glue
+[22/33] Compile [x64] SiegeLlamaModule.cpp
+[24/33] Compile [x64] SiegeLlamaSpike.cpp        <- TASK-410
+[25/33] Link    [x64] UnrealEditor-SiegeLlama.lib
+[26/33] Link    [x64] UnrealEditor-SiegeLlama.dll
+```
+
+This settles everything the standalone harness could not: **UHT reflection**
+(`Module.SiegeLlama.cpp` is generated, so `USiegeLlamaSettings` as a `UDeveloperSettings` is valid),
+the `.uplugin` wiring, the module's `IMPLEMENT_MODULE`, and the delay-load link.
+
+`Plugins/SiegeLlama/Binaries/Win64/` now exists — **its absence is exactly why the editor refused to
+launch**: `UnrealEditor-SiegeLlama.dll` (295,424 B) + `.pdb`, **plus all 19 vendored DLLs staged by
+`RuntimeDependencies`** (log actions 1–19), which proves the staging wiring end-to-end.
+
+### 🎯 An unplanned, and better, validation of the C-API-only ruling
+
+UBT selected **MSVC 14.50.35717 (VS 18)** — *not* the 14.38 my import libs were generated with, and
+not the toolset the upstream DLLs were built with. **Three different toolsets, and it linked clean.**
+
+Import libraries for a **C** API carry symbol→DLL records and no C++ ABI, so they are
+toolset-agnostic. **This is precisely the immunity "link the C API only" was chosen to buy, tested
+under a harder condition than anyone specified.** Had `common/` been linked — C++ with STL in its
+signatures — a three-way toolset mismatch is exactly where `/MD` vs `/MT` and
+`_ITERATOR_DEBUG_LEVEL` failures surface.
+⚠️ **Do not regenerate the import libs to "match" the engine toolset.** Recorded in `VERSION.md`.
+
+### ❌ The sole failure is FOREIGN — one diagnostic, attributed
+
+```
+Source\GitClaudeUnrealTest\Siegebound\SiegeAssistantInputProbe.cpp(417,27):
+error C4458: declaration of 'Cursor' hides class member
+    for (TSharedPtr<SWidget> Cursor = FocusedSlate; Cursor.IsValid(); Cursor = Cursor->GetParentWidget())
+Engine\Source\Runtime\UMG\Public\Components\Widget.h(422,34): note: see declaration of 'UWidget::Cursor'
+```
+
+**Owner: TASK-411** (`SiegeAssistantInputProbe.{h,cpp}` = TASK-411 ONLY, ruling 6). Game module, not
+mine. A local `TSharedPtr<SWidget> Cursor` shadows the inherited `UWidget::Cursor`; UE's
+warnings-as-errors turns C4458 into a hard failure. **Fix is a rename of the local** (e.g. `Walker`).
+**I did not touch it** — per the quiet-module law, a failure is attributed to the file the diagnostic
+names, never to the lane that ran the build, and fixing another batch's file would be a single-owner
+violation. The rest of the game module compiled fine (`Module.GitClaudeUnrealTest.1–4.cpp` all clean).
+
+### 🔻 Plugin set back to `"Enabled": false` — SAY SO
+
+Per the standing instruction (build failed ⇒ revert, so Jonathan is never left unable to launch).
+**Round-trip proof that my edits caused no drift:** the file is back to **860 B**, sha256
+**`2147635c…4182a`** — *byte-identical to the baseline* — and `git status` reports it clean vs HEAD.
+
+⚠️ **Re-enabling is a one-byte change and the plugin needs NO rebuild — its DLL is already built and
+current.** But **do not re-enable and do not reopen the editor until TASK-411's C4458 is fixed and a
+green target build has run**: the game module never relinked, so `UnrealEditor-GitClaudeUnrealTest.dll`
+is stale against its sources. The editor will offer to rebuild, and that rebuild fails on the same
+error — **and that is true whether SiegeLlama is enabled or not.** The blocker is TASK-411, not this
+plugin.
+
+---
+
+# ✅ UPDATE — FOURTH PASS (2026-08-02): BOTH BUILDS GREEN. PLUGIN ENABLED. EDITOR CLEAR.
+
+**Build 1 — game module isolated, plugin `"Enabled": false`:**
+```
+Result: Succeeded
+Total execution time: 5.84 seconds
+```
+`[1/2] Link [x64] UnrealEditor-GitClaudeUnrealTest.dll` · **zero diagnostics**.
+**The game module linked for the first time.** TASK-417's one-line `"SlateCore"` addition resolved all
+16 unresolved externals exactly as diagnosed.
+
+**Build 2 — plugin `"Enabled": true`:**
+```
+Result: Succeeded
+Total execution time: 2.59 seconds
+```
+**Zero diagnostics.** UBT regenerated the makefile (`.uproject file is newer`), pulled the plugin into
+the build graph (`[Adaptive Build] Excluded from SiegeLlama unity file: SiegeLlamaModule.cpp,
+SiegeLlamaSpike.cpp`), found every output current, and wrote the target receipt. It compiled nothing
+**because there was nothing to compile** — which is itself the point recorded below.
+
+⚠️ Exit codes remained untrustworthy in both directions today: build 1's wrapper returned **exit 1**
+on a *successful* build (a trailing `grep -c` with zero matches), after four *failed* builds returned
+**exit 0**. **Judging on the `Result:` line was correct every single time.**
+
+### Verified end state — not assumed
+
+| Check | Evidence |
+|---|---|
+| Plugin registered for load | `Plugins/SiegeLlama/Binaries/Win64/UnrealEditor.modules` → `"SiegeLlama": "UnrealEditor-SiegeLlama.dll"` |
+| Build products | **22** SiegeLlama entries in `GitClaudeUnrealTestEditor.target` (DLL + PDB + DLLs) |
+| Vendored DLLs staged | **20** runtime dependencies typed **`NonUFS`** |
+| Plugin binaries current | `UnrealEditor-SiegeLlama.dll` + 20 DLLs, written 18:26 |
+| Game module fresh | DLL **18:25** vs newest source **18:14** — newer, so **no editor rebuild prompt** |
+| `.uproject` | **859 B**, CRLF **54**, lone LF **0**, `SiegeLlama` = `"Enabled": true` |
+
+### ✅ JONATHAN CAN REOPEN THE EDITOR.
+
+The game module is freshly linked and newer than its sources, and the plugin is built and registered,
+so the editor will launch without an out-of-date-modules prompt.
+**To capture the last outstanding deliverable, run `Siege.Llama.Info` in the editor console** — the
+command is registered and will print `llama_print_system_info()`, the ggml backends/devices and the
+DLL handle status. That is the only piece of TASK-409's spec (4) still uncaptured in-engine.
+
+### 📌 Recorded per request — toggling `"Enabled"` needs NO plugin rebuild
+
+Build 2 is the proof: flipping the flag and rebuilding produced **one** action
+(`WriteMetadata …target`) and **zero** compilation, in 2.59 s. `UnrealEditor-SiegeLlama.dll` and all
+19 vendored DLLs were already built and staged. **Enabling/disabling the plugin is a genuine one-byte
+change; nobody should assume a plugin rebuild is needed per toggle.**
+
+---
+
+# ⬆️ UPDATE — THIRD PASS (2026-08-02): rebuild after the C4458 fix
+
+**Build 1 of 2 — game module isolated, plugin deliberately left `"Enabled": false`.** Build 2
+(plugin enabled) was **NOT run**, because it was gated on build 1 going green.
+
+```
+Result: Failed (OtherCompilationError)
+Total execution time: 5.35 seconds
+```
+
+⚠️ **Raw exit code 0 again on a failed build — that is four times today.**
+
+### ✅ TASK-411's C4458 fix is CORRECT and is confirmed
+
+`SiegeAssistantInputProbe.cpp` **compiled cleanly** (`[1/4] Compile [x64] SiegeAssistantInputProbe.cpp`,
+zero compile diagnostics). The `Cursor` → `Walker` rename did exactly what it claimed.
+
+### ❌ But the build now fails LATER, at LINK — a defect the C4458 error was HIDING
+
+**This is not a regression.** The compile error previously aborted the build *before* the link stage,
+so these 16 unresolved externals could never surface. Fixing the compile error simply let the build
+reach the linker for the first time. TASK-411's shadow sweep was thorough **within its defect class**
+(C4457/4458/4459 shadowing) — a missing link dependency is a different class and no shadow analysis
+could have found it.
+
+```
+Module.GitClaudeUnrealTest.1.cpp.obj : error LNK2019: unresolved external symbol
+  __declspec(dllimport) class UEnum * Z_Construct_UEnum_SlateCore_ETextCommit(...)
+  referenced in ...USiegeAssistantInputProbeWidget_HandleProbeTextCommitted...
+SiegeAssistantInputProbe.cpp.obj : error LNK2019/LNK2001: FInputEvent / FKeyEvent /
+  FCharacterEvent / FPointerEvent  (destructors, ToText, IsPointerEvent, IsKeyEvent)
+Binaries\Win64\UnrealEditor-GitClaudeUnrealTest.dll : fatal error LNK1120: 16 unresolved externals
+```
+
+**Attribution by object file:** 15 × `SiegeAssistantInputProbe.cpp.obj`, 1 ×
+`Module.GitClaudeUnrealTest.1.cpp.obj` (UHT reflection glue for that same file's
+`HandleProbeTextCommitted(const FText&, ETextCommit::Type)`). **All 16 trace to TASK-411's file.**
+
+### 🎯 Root cause — `SlateCore` is not on the game module's link line
+
+Every unresolved symbol is **SlateCore**-owned: `FInputEvent`/`FKeyEvent`/`FCharacterEvent`/
+`FPointerEvent` live in SlateCore's `Input/Events.h`, and the first symbol name literally contains
+`Z_Construct_UEnum_**SlateCore**_ETextCommit`.
+
+`Source/GitClaudeUnrealTest/GitClaudeUnrealTest.Build.cs` lists **`"Slate"` (line 22) but never
+`"SlateCore"`**, and `PrivateDependencyModuleNames` is **empty** (line 36). The only occurrence of
+`SlateCore` in the whole file is Epic's commented-out boilerplate at line 57:
+
+```csharp
+// Uncomment if you are using Slate UI
+// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
+```
+
+It compiled because `Slate` propagates SlateCore's *include paths*; it failed to link because
+SlateCore's import library is not on the link line. TASK-411's file constructs `FKeyEvent` (l.104,
+135), `FCharacterEvent` (l.118) and `FPointerEvent` (l.162, 190), and declares
+`ETextCommit::Type` (l.439).
+
+**Fix: add `"SlateCore"` to `PublicDependencyModuleNames`.** One line, no logic change.
+
+⛔ **I did NOT make it.** `GitClaudeUnrealTest.Build.cs` is **TASK-417 ONLY** and
+`SiegeAssistantInputProbe.{h,cpp}` is **TASK-411 ONLY** (ruling 6). Under the diagnostic-attribution
+law this routes to those owners as early information and is **not** counted against TASK-409.
+The orchestrator decides the owner — the natural split is **TASK-417**, since the fix lives in the
+`Build.cs` it owns.
+
+### State left behind
+
+- **Plugin remains `"Enabled": false`** — it was never enabled this pass, so there was nothing to
+  revert. `.uproject` is untouched at **860 B / sha256 `2147635c…4182a`**, clean vs HEAD.
+- `Plugins/SiegeLlama/Binaries/Win64/` is **still present and current** from the green plugin build:
+  `UnrealEditor-SiegeLlama.dll` + 20 DLLs.
+- `Binaries/Win64/UnrealEditor-GitClaudeUnrealTest.dll` exists but is **stale** — the link never
+  produced a new one.
+
+🚫 **Jonathan still cannot reopen the editor.** The game module is out of date against its sources
+and the editor's rebuild prompt will fail on the same 16 unresolved externals — **independent of the
+plugin's enabled state.**
+
+### 📌 Recorded per request: toggling the plugin needs NO plugin rebuild
+
+`UnrealEditor-SiegeLlama.dll` and all 19 vendored DLLs are **already built and staged**. Flipping
+`"Enabled"` in the `.uproject` is a **one-byte change** that costs nothing on the plugin side —
+UBT will not recompile the plugin for it. **Nobody should assume a plugin rebuild is needed each time
+the setting is toggled.** (A build is still required for whatever *other* module work is pending.)
+
+---
+
+## ⬇️ ORIGINAL FIRST-PASS REPORT (below) — note two items it lists as deferred are now DONE
+
+The "(0) BASELINE" and "link proof deferred" caveats below are **superseded**: the build has now run,
+and the plugin lane is green. Everything else stands.
+
 **Agent:** build-master · **Date:** 2026-08-02 · **Status:** `ready-for-qa` (gate = TASK-412)
 **Lane posture:** developed on `main`. **NOT COMMITTED, NOT PUSHED** — TASK-414 owns the commit.
 **`L_Arena` never opened. No editor asset touched. No gameplay code written.**
