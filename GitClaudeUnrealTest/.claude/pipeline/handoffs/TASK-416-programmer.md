@@ -250,3 +250,134 @@ Swept both files with a regex for the vexing shape `Decl Name(TypeName(identifie
 Since the compiler stops at the first error in a translation unit, I also re-verified the API calls I could not compile-check, against the UE 5.8 headers on disk: `FName::Compare` (`NameTypes.h:943`), `FString::AppendChar` / `TrimEndInline` (`UnrealString.h.inl:434` / `:1685`), and `FString`'s range-for `end()` stepping back over the null terminator (`:286-287`) — which is what makes `SanitizeForPrompt`'s `for (const TCHAR Character : In)` correct. `static constexpr` members inside a `UCLASS` and plain nested `enum class` inside a `UCLASS` both have shipped precedent in this module (`AGoldNode::DrainTickIntervalSeconds`; `ASiegePlayerController::EPlacementInvalidReason` / `EGroupPickStage`).
 
 **Not compiled** — TASK-420 owns that.
+
+---
+
+## TASK-433 — the two BLOCKERs from the doc-vs-code audit (`qa/TASK-433.md`)
+
+**Files touched: `Source/GitClaudeUnrealTest/Siegebound/SiegeAssistantSnapshot.{h,cpp}` and nothing else.**
+Not compiled (no gate scheduled), not committed, board untouched. Neither holdout CSV opened.
+
+### BLOCKER-1 — the silent cut is now observable on TWO channels
+
+`SanitizeForPrompt` cut `order:` and `pending:` at 240 units with no log, no latch and no marker.
+
+**Header exemption DELETED.** `BuildZoneC`'s docstring called `MaxUtteranceChars` *"a separate, always-on
+sanitiser"* and thereby exempted it from the observable-truncation condition. That exemption was the defect: the
+condition is anchored to **the act of truncating**, "by any mechanism, under any name" — and "sanitiser" is a
+name. The replacement text says so explicitly, so the exemption cannot be re-derived from the file.
+
+**Channel 1 — the log**, in the same shape as the roster collapse: unlatched Verbose every turn, plus a Warning
+on the first cut and on every *deeper* one. Two latches (`WarnedUtteranceBytes`, `WarnedPendingBytes`),
+**separate per line on purpose** — they mean different things and are fixed in different places, so a deep cut on
+one must not hide behind a deeper cut on the other. `SanitizeForPrompt` stays `static` (a pure text transform);
+it reports magnitude through an out-param, and the new const member `ReportLineTruncation` owns the latching.
+
+**Channel 2 — a marker in the prompt. This is the design call the spec asked me to make, and I made it: YES.**
+Reasoning, recorded in full on `SanitizeForPrompt`'s declaration so it can be overturned deliberately:
+
+- A collapsed roster still prints `other_kinds:`, so the model is *told*. A truncated `order:` line told it
+  nothing, and the sampler is grammar-constrained — it produces a confident, well-formed command from half a
+  sentence. **The log informs the developer; only the marker informs the model, and the model is the one acting.**
+- **A VALUE, never a new key.** A `truncated:` key would obey the fixed-key law only by being emitted every
+  turn, adding its bytes to every Zone C on every board including all-ASCII ones — which would move the
+  hand-verified Zone C figure. The marker rides on the value of the existing `order:` / `pending:` key, exactly
+  as `mid: ours` vs `mid: none` does. **The key set is untouched.**
+- **The marker's bytes come OUT OF the cap, never on top of it** (` ...[truncated]`, 15 ASCII bytes, derived via
+  `UE_ARRAY_COUNT` rather than transcribed, with a `static_assert` that it stays ASCII). A capped line is still
+  at most 240 bytes, so Zone C's tail and the roster budget derived from it do not move by one byte.
+- **Wording is plain editorial English because the model cannot be taught it** — Zone A is byte-identical for
+  process life and is TASK-428's text. An ellipsis plus a bracketed word is what a cut quotation looks like
+  throughout pretraining. **Safe untaught:** the GBNF constrains every emitted symbol to the live kind/place
+  alternations, so the model physically cannot echo the marker into a command, and nothing parses Zone C. Worst
+  case it is ignored — which is today's behaviour.
+
+### BLOCKER-2 — the cap is now UTF-8 bytes, and the constant was RENAMED
+
+`MaxUtteranceChars` → **`MaxUtteranceBytes`** (value unchanged, 240). **The rename is part of the fix**: a
+constant named "Chars" that measures bytes would be a fresh instance of the same name-vs-meaning divergence the
+audit caught. Verified before renaming: **CONVENTIONS.md names neither `MaxUtteranceChars` nor
+`SanitizeForPrompt` anywhere (0 hits)** — §9 pins neither, so the rename is law-neutral.
+
+⚠️ **Applying the recorded `use_mmap` lesson:** the dead name is spelled out **once**, in the new constant's
+comment as "RENAMED FROM `MaxUtteranceChars`", so a reader arriving from an older doc and grepping the old name
+lands on the correction instead of on nothing.
+
+**Residual, stated honestly — bytes narrow the gap, they do not close it.** Bytes are correct-by-construction
+for ASCII (1 byte = 1 char, so nothing measured moves) and strictly conservative otherwise. Worst case per line
+falls from 720 bytes (240 units × 3 for CJK-class BMP text) to 240 — **exactly 3× tighter**, matching the ~3×
+over-admission the audit measured. But at the byte-fallback tokenizer floor (~1 token/byte) a 240-byte line
+still costs up to 240 tokens where the 2.71 ratio prices it at ~89: **the residual over-admission factor is
+2.71× per line, down from 8.13×.** Both lines pathological = up to 480 tokens against a 400-token B+C budget, so
+**two adversarial lines can still alone exceed the budget.** TASK-423 closes it with the real tokenizer; I did
+not build a second one.
+
+**Second half also fixed:** surrogate pairs move as a unit through pass 1 and the cut only ever lands on a
+code-point boundary, so a lone surrogate can no longer be emitted into the prompt. Unpaired surrogates are
+dropped (not text, no UTF-8 encoding, unreachable from ASCII input).
+
+### PROOF that ASCII output is byte-identical — run, not asserted
+
+Both algorithms were transcribed to a differential harness and run over **200,013 ASCII inputs** (0–600 chars,
+whitespace runs, boundary lengths 239/240/241, plus the two fixture lines):
+
+```
+non-truncating (must match): 80572      MISMATCHES: 0
+truncating (intended diff) : 119441     max output len old / new: 240 / 240  (cap 240)
+order  (~61 chars): flattened_bytes=66  identical=True
+pending(~72 chars): flattened_bytes=68  identical=True
+```
+
+**Max output length is 240 under both old and new**, so no length-derived figure can move. Consequences:
+
+- **Zone B = 68 and Zone C = 887 are UNCHANGED.** `BuildZoneB` was not touched at all. Zone C's Head and roster
+  block are untouched; the Tail changes only if a line exceeds 240 **bytes**, and the fixture's two lines are 66
+  and 68 ASCII bytes — nowhere near it.
+- **Bar #3's 77.1 % cannot move, by construction.** It was measured on the spike fixture's assembled prompt, and
+  the spike has its **own private `SanitizeForPrompt` with its own local `MaxUtteranceChars = 240`**
+  (`SiegeLlamaSpike.cpp:600-602`) — the measured artifact does not execute my code at all.
+- WARN-2's reserve table is likewise unmoved: it is driven by maximum line length, which is identical.
+
+### Also taken
+
+- **`llama_kv_cache_seq_rm` → `llama_memory_seq_rm`** in my two comments (the header, and the `BuildZoneA` body
+  comment). **Verified against the vendored header myself: `llama.h:735` is `llama_memory_seq_rm`, and the dead
+  spelling appears nowhere in it.** Dead name retained once, deliberately, as a correction note.
+- **WARN-E1, one word:** *"Always-on per-turn record"* → *"Unlatched per-turn record"*. It is a `Verbose`
+  `UE_LOG`, so it dies under `NO_LOGGING` **and** is off at the default runtime verbosity — the category is
+  `DECLARE_LOG_CATEGORY_EXTERN(LogSiegeAssistant, Log, All)`. "Always-on" was false twice over; "unlatched" is
+  the property actually being claimed (it contrasts with the latched Warning below it).
+- **Traversal count corrected in `Capture`'s docstring, counted from the code rather than copied.** Six run
+  unconditionally (castle ×2, near ground, best mine, capture zone, summoned units); +far ground whenever an
+  enemy castle stands; +hero fallback when the hero is unpossessed ⇒ **7 normal, 8 worst.** I opened all three
+  finders and confirmed **each is exactly one `TActorIterator`** (`Castle.cpp:669`, `AncientGround.cpp:167`,
+  `GoldNode.cpp:199`); `GoldNode.cpp:264` is `FindBestMineInDisc`, which `Capture` never calls. The old text's
+  *"Four of those passes are SHIPPED STATIC FINDERS"* was also wrong — it is **three functions, five calls**.
+
+### For QA to scrutinise
+
+1. **The marker is a behaviour change visible to the model.** It is the design call, argued above; overturn it
+   knowingly if at all.
+2. **`SanitizeForPrompt` now walks the whole input** instead of stopping at the cap, so a pathological
+   multi-megabyte paste is O(n). Deliberate — the true flattened size is what makes the report and the
+   escalation latch meaningful, and it is nothing beside one inference call.
+3. **Pass 1 changed from range-for to an index loop** (needed to look ahead one unit for surrogate pairing). The
+   earlier handoff section reasoned about the range-for's `end()` stepping back over the null terminator;
+   `In.Len()` excludes it, so the index form is equivalent and no longer depends on that subtlety.
+4. **Unreachable-by-arithmetic branch:** `CutIndex == INDEX_NONE` in the truncating path cannot occur (content
+   budget is 225 bytes and one code point is at most 4), but it is guarded defensively anyway.
+
+### ⚠️ Reported, NOT touched — other owners' files
+
+- **`SiegeLlamaSpike.cpp:600-613` carries BOTH blockers verbatim** — its own `SanitizeForPrompt`, its own
+  `static constexpr int32 MaxUtteranceChars = 240`, the same silent `break`, the same TCHAR counting. **Plugin
+  lane, not mine.** No compile coupling (it never includes `SiegeAssistantSnapshot.h`), so my rename cannot
+  break it — but it is the same defect in a second place, and it is the code that produced the measured figures.
+- **`SiegeAssistantVocabulary.h:52`** still names the dead `llama_kv_cache_seq_rm` (game lane, different file).
+- Dead symbol also in `CONVENTIONS.md:686` and `TASKBOARD.md:4288` / `:4634` / `:5055` — doc owners'.
+- **`MaxUtteranceChars` appears 6× in `TASKBOARD.md`** and in `qa/TASK-416.md`, `qa/TASK-419.md` and this
+  handoff's earlier sections. Board lines need the manager's rename; **QA reports and prior handoff sections are
+  immutable records and should NOT be rewritten.**
+- **NIT-2 left alone deliberately** (the header's Zone-C key list omits `other_kinds` and the `[ORDER]` marker).
+  It sits two lines from text I edited, but it is not in this task's scope and I kept the change tight so
+  TASK-428 inherits a minimal diff.
