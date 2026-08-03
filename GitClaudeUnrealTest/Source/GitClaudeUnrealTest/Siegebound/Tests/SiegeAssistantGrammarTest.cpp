@@ -25,6 +25,13 @@
  *  the weight.
  *
  *  The laws under test, in the order they matter:
+ *   0. ⛔ EVERY RULE NAME AND REFERENCE IS [a-zA-Z0-9-]. This is law ZERO
+ *      because a single violation makes the WHOLE grammar unparseable, at which
+ *      point laws 1-4 are all still true of a string llama.cpp will not load
+ *      and the feature silently runs unconstrained. That is not hypothetical:
+ *      `at_least` shipped, and TASK-413's spike found
+ *      llama_sampler_init_grammar returning NULL on every generation of all six
+ *      bench runs, with the model emitting `<think>` prose instead of JSON.
  *   1. The grammar is DETERMINISTIC — same state in, byte-identical grammar out.
  *   2. GROUNDING: a unit that is not alive is not an alternative, so the model
  *      physically cannot name it.
@@ -33,6 +40,15 @@
  *   4. The multi-kind selection is CAPPED IN THE GRAMMAR at three kinds
  *      (manager ruling 15) — not merely rejected afterwards.
  *   5. The parser is strict, never partially fills, and never truncates.
+ *
+ *  ⚠️ AND THE LIMIT OF ALL OF IT, STATED SO NOBODY RELIES ON MORE THAN IS HERE:
+ *  none of these tests parse the grammar with llama.cpp. They assert properties
+ *  a HUMAN or a MIRROR can check. Two careful reviews compared this generator
+ *  against the spike's mirror rule-for-rule and found them identical, which they
+ *  were — identically unparseable. STRING-COMPARING TWO GENERATORS CAN NEVER
+ *  PROVE EITHER IS VALID; ONLY THE TARGET PARSER CAN. Law 0 is the cheap
+ *  mechanical stand-in for the one failure mode that review demonstrably misses;
+ *  the real proof stays a live `llama_sampler_init_grammar` call.
  */
 
 namespace SiegeAssistantTestUtils
@@ -100,13 +116,86 @@ namespace SiegeAssistantTestUtils
 	}
 
 	/**
-	 *  A minimal GBNF well-formedness check: every rule referenced by some
+	 *  ⛔ THE GBNF RULE-NAME CHARSET. llama.cpp reads a rule name as a run of
+	 *  [a-zA-Z0-9-] and STOPS at the first character outside it, so `at_least`
+	 *  parses as the name `at`, after which the parser demands `::=`, finds
+	 *  `_least`, and rejects the WHOLE grammar.
+	 *
+	 *  ⚠️ UNDERSCORES ARE CORRECT EVERYWHERE ELSE IN THIS FEATURE — canonical
+	 *  place symbols (`ancient_ground_near`) and JSON keys (`at_least`) are lower
+	 *  snake_case and are wire format. Only the RULE NAME is kebab-case. That
+	 *  asymmetry is exactly what made the defect look reasonable on the page.
+	 *
+	 *  ⛔ THIS PREDICATE IS THE SINGLE DEFINITION OF THE CHARSET IN THIS FILE.
+	 *  Both consumers — IsLegalGbnfRuleName (whole-name legality) and
+	 *  IsGrammarWellFormed's identifier scanner (where a reference STOPS) — must
+	 *  ask it, because those are the two halves of one question and the defect
+	 *  class under test is precisely two things disagreeing about a charset.
+	 *  The scanner previously used FChar::IsAlnum, which is Unicode/locale-aware,
+	 *  while its sibling used this explicit ASCII range. The divergence happened
+	 *  to be safe and unreachable, and it is still exactly how this starts.
+	 *
+	 *  ⚠️ AND IT CONVERGED ON THE ASCII RANGE, NOT ON THE FRIENDLIER-LOOKING
+	 *  FChar::IsAlnum, deliberately: llama.cpp's rule-name scan is plain ASCII,
+	 *  so IsAlnum would bless characters (an accented letter, a full-width digit)
+	 *  that the real parser breaks an identifier on. Widening the test's notion
+	 *  of legality past the parser's is the direction that HIDES a defect, which
+	 *  is the whole failure this suite was written after.
+	 */
+	static bool IsGbnfNameChar(const TCHAR Char)
+	{
+		return (Char >= TEXT('a') && Char <= TEXT('z'))
+			|| (Char >= TEXT('A') && Char <= TEXT('Z'))
+			|| (Char >= TEXT('0') && Char <= TEXT('9'))
+			|| Char == TEXT('-');
+	}
+
+	/**
+	 *  Whole-name legality: non-empty, and every character in the charset above.
+	 *
+	 *  ⚠️ DELIBERATELY A SEPARATE COPY FROM THE PRODUCTION ONE IN
+	 *  SiegeAssistantGrammar.cpp, and it has to be: that one has internal linkage
+	 *  inside an anonymous namespace and is not declared in the header, so this
+	 *  file cannot reach it. Asserting the charset with the very function under
+	 *  test would also be circular. The spike's third copy
+	 *  (SiegeLlamaSpike.cpp) is separated by a module boundary the plugin is
+	 *  architecturally forbidden to cross. Three copies is the cost of those two
+	 *  constraints — but WITHIN a file there is exactly one definition, which is
+	 *  the part that was actually fixable.
+	 */
+	static bool IsLegalGbnfRuleName(const FString& Identifier)
+	{
+		if (Identifier.IsEmpty())
+		{
+			return false;
+		}
+
+		for (const TCHAR Char : Identifier)
+		{
+			if (!IsGbnfNameChar(Char))
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 *  A minimal GBNF well-formedness check: every rule name and every rule
+	 *  reference is spelled in llama.cpp's charset, every rule referenced by some
 	 *  right-hand side is itself defined, and `root` exists.
 	 *
 	 *  This is what catches the degenerate-input bug that would otherwise ship
 	 *  silently — omitting `kind` because the roster is empty while still
 	 *  referencing it from `item` produces a grammar that llama.cpp refuses to
 	 *  compile, and nothing else in this suite would notice.
+	 *
+	 *  ⚠️ THE CHARSET HALF WAS ADDED AFTER THE FACT, AND IT IS WORTH SAYING WHY:
+	 *  the identifier scanner below used to accept `_` as an identifier
+	 *  character, which is what let `at_least` sail through this very function as
+	 *  a well-formed, fully-resolved rule reference. The check agreed with the
+	 *  generator instead of with the parser. It now agrees with the parser.
 	 */
 	static bool IsGrammarWellFormed(const FString& Grammar, FString& OutError)
 	{
@@ -130,9 +219,9 @@ namespace SiegeAssistantTestUtils
 			const FString RuleName = Line.Left(ArrowIndex);
 			const FString Rhs = Line.RightChop(ArrowIndex + 5);
 
-			if (RuleName.IsEmpty() || RuleName.Contains(TEXT(" ")))
+			if (!IsLegalGbnfRuleName(RuleName))
 			{
-				OutError = FString(TEXT("bad rule name: ")) + RuleName;
+				OutError = FString(TEXT("illegal rule name (llama.cpp accepts [a-zA-Z0-9-] only): ")) + RuleName;
 				return false;
 			}
 
@@ -174,7 +263,15 @@ namespace SiegeAssistantTestUtils
 					continue;
 				}
 
-				if (FChar::IsAlnum(Char) || Char == TEXT('_'))
+				// ⚠️ '-', NOT '_'. That one character is the whole point: with '_'
+				// accepted here, `at_least` read as a single well-formed reference
+				// and this function blessed a grammar llama.cpp cannot load.
+				//
+				// Shares IsGbnfNameChar with IsLegalGbnfRuleName above rather than
+				// carrying its own predicate: where an identifier STOPS and whether
+				// an identifier is LEGAL are one question, and two scanners in one
+				// file answering it differently is this defect class in miniature.
+				if (IsGbnfNameChar(Char))
 				{
 					Token.AppendChar(Char);
 				}
@@ -207,7 +304,13 @@ namespace SiegeAssistantTestUtils
 		{
 			if (!Defined.Contains(Reference))
 			{
-				OutError = FString(TEXT("undefined rule referenced: ")) + Reference;
+				// The scanner can only ever emit [a-zA-Z0-9-] tokens, so an illegal
+				// REFERENCE cannot arrive here intact — it arrives as its fragments.
+				// `at_least` shows up as an undefined `at` plus an undefined `least`,
+				// which is a genuinely confusing thing to read at 2 a.m., so the
+				// message says what it is really telling you.
+				OutError = FString(TEXT("undefined rule referenced: ")) + Reference
+					+ TEXT(" (if this looks like half an identifier, the reference contains a character outside [a-zA-Z0-9-] — most likely an underscore — and llama.cpp split it exactly here)");
 				return false;
 			}
 		}
@@ -225,6 +328,110 @@ namespace SiegeAssistantTestUtils
 			&& Command.TriggerKind.IsNone()
 			&& Command.TriggerAtLeast == 0;
 	}
+}
+
+// ---------------------------------------------------------------------------
+// 0. ⛔ THE RULE-NAME CHARSET — LAW ZERO
+// ---------------------------------------------------------------------------
+//
+// ⚠️ WHY THIS TEST IS FIRST AND WHY IT EXISTS AT ALL.
+//
+// `at_least` shipped as a rule name in USiegeAssistantGrammar::Build. llama.cpp
+// reads a rule name as [a-zA-Z0-9-] and stops at the underscore, so the parser
+// saw the name `at`, demanded `::=`, found `_least`, and REJECTED THE ENTIRE
+// GRAMMAR:
+//
+//     parse: error parsing grammar: expecting ::= at _least ::= "1" | "2" | ...
+//
+// TASK-413's spike then measured the consequence: llama_sampler_init_grammar
+// returned NULL on every generation of all six bench runs, and with nothing
+// constraining it the model emitted `<think>` reasoning prose instead of JSON on
+// every iteration, burning the whole output budget to the abort timeout. Bars #2
+// and #5 came back NOT MEASURED.
+//
+// ⚠️ EVERY OTHER TEST IN THIS FILE PASSED THROUGHOUT. So did two careful human
+// reviews, which diffed this generator against the spike's mirror rule-for-rule
+// and correctly found them identical — THEY WERE IDENTICALLY UNPARSEABLE. That
+// is the specific thing review cannot do and a test can: a property of the
+// TARGET PARSER, asserted mechanically, rather than a property shared by two
+// copies of the same mistake.
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeAssistantGrammarRuleNameCharsetTest,
+	"Siegebound.Assistant.Grammar.RuleNameCharset",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeAssistantGrammarRuleNameCharsetTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeAssistantTestUtils;
+
+	// Every shape the builder can produce, because a rule that is only emitted on
+	// one branch is exactly the rule that escapes review.
+	const TArray<FString> Grammars =
+	{
+		USiegeAssistantGrammar::Build(MidMatchKinds(), MidMatchPlaces()),
+		USiegeAssistantGrammar::Build(TArray<FName>(), MidMatchPlaces()),
+		USiegeAssistantGrammar::Build(MidMatchKinds(), TArray<FName>()),
+		USiegeAssistantGrammar::Build(TArray<FName>(), TArray<FName>())
+	};
+
+	for (const FString& Grammar : Grammars)
+	{
+		TArray<FString> Lines;
+		Grammar.ParseIntoArrayLines(Lines, /*bCullEmpty*/ true);
+		TestTrue(TEXT("The grammar has at least one rule"), Lines.Num() > 0);
+
+		for (const FString& Line : Lines)
+		{
+			const int32 ArrowIndex = Line.Find(TEXT(" ::= "), ESearchCase::CaseSensitive);
+			TestTrue(*FString::Printf(TEXT("Line is a rule: %s"), *Line), ArrowIndex != INDEX_NONE);
+			if (ArrowIndex == INDEX_NONE)
+			{
+				continue;
+			}
+
+			const FString RuleName = Line.Left(ArrowIndex);
+			TestTrue(
+				*FString::Printf(TEXT("Rule name \"%s\" is legal GBNF — llama.cpp accepts [a-zA-Z0-9-] ONLY, and one bad character rejects the WHOLE grammar"), *RuleName),
+				IsLegalGbnfRuleName(RuleName));
+		}
+
+		// The reference half of the same defect: `at_least` appeared once as a
+		// definition and once as a reference, and either alone is fatal.
+		// IsGrammarWellFormed's scanner now breaks identifiers on exactly the
+		// characters llama.cpp breaks on, so an illegal reference arrives as
+		// unresolvable fragments and fails here.
+		FString WellFormedError;
+		const bool bWellFormed = IsGrammarWellFormed(Grammar, WellFormedError);
+		TestTrue(*FString::Printf(TEXT("Every rule reference resolves under llama.cpp's identifier rules (%s)"), *WellFormedError),
+			bWellFormed);
+
+	}
+
+	// ⚠️ THE OTHER HALF OF THE ASYMMETRY, ASSERTED SO THE RENAME CANNOT BE
+	// "MADE CONSISTENT" IN THE WRONG DIRECTION. Rule names are kebab-case, but
+	// the JSON keys and canonical place symbols carried INSIDE terminals are
+	// snake_case wire format and must keep their underscores — Zone A's schema,
+	// the sealed evaluation corpus and ParseSiegeAssistantCommand all assert
+	// them. A well-meaning sweep that kebab-cased these would produce a grammar
+	// that parses perfectly and emits commands nothing downstream can read.
+	{
+		const FString Populated = USiegeAssistantGrammar::Build(MidMatchKinds(), MidMatchPlaces());
+		TestTrue(TEXT("The JSON key \"at_least\" keeps its underscore"), Populated.Contains(TEXT("at_least")));
+		TestTrue(TEXT("The place symbol \"ancient_ground_near\" keeps its underscores"),
+			Populated.Contains(TEXT("ancient_ground_near")));
+		TestTrue(TEXT("The place symbol \"own_castle\" keeps its underscore"), Populated.Contains(TEXT("own_castle")));
+	}
+
+	// The guard itself is worth one row: a test that always passes is not a gate.
+	TestTrue(TEXT("kebab-case is accepted"), IsLegalGbnfRuleName(TEXT("at-least")));
+	TestTrue(TEXT("plain lower-case is accepted"), IsLegalGbnfRuleName(TEXT("root")));
+	TestTrue(TEXT("digits are accepted"), IsLegalGbnfRuleName(TEXT("item2")));
+	TestFalse(TEXT("snake_case is REJECTED — this is the shipped defect"), IsLegalGbnfRuleName(TEXT("at_least")));
+	TestFalse(TEXT("a space is rejected"), IsLegalGbnfRuleName(TEXT("at least")));
+	TestFalse(TEXT("an empty name is rejected"), IsLegalGbnfRuleName(FString()));
+
+	return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -405,10 +612,23 @@ bool FSiegeAssistantGrammarCountRangeTest::RunTest(const FString& Parameters)
 
 	// The deferred trigger takes the same numeric range WITHOUT "all": "wait
 	// until I have all footmen" is a condition that can never become true.
-	const FString AtLeastRule = GetRuleRhs(Grammar, TEXT("at_least"));
+	//
+	// ⛔ THE RULE IS `at-least`. THE JSON KEY IS `at_least`. Asserting the rule
+	// under the key's spelling is what this test used to do, and it passed for as
+	// long as the generator emitted an unparseable grammar.
+	const FString AtLeastRule = GetRuleRhs(Grammar, TEXT("at-least"));
 	const TArray<FString> AtLeastAlternatives = SplitAlternatives(AtLeastRule);
-	TestEqual(TEXT("`at_least` offers exactly 30 numbers"), AtLeastAlternatives.Num(), USiegeAssistantGrammar::GrammarCountMax);
-	TestFalse(TEXT("`at_least` does NOT offer \"all\""), AtLeastRule.Contains(TEXT("all")));
+	TestEqual(TEXT("`at-least` offers exactly 30 numbers"), AtLeastAlternatives.Num(), USiegeAssistantGrammar::GrammarCountMax);
+	TestFalse(TEXT("`at-least` does NOT offer \"all\""), AtLeastRule.Contains(TEXT("all")));
+
+	// The rule was renamed; the WIRE FORMAT was not. `when`'s deferred branch
+	// must still emit the JSON key `at_least`, because Zone A's schema, the
+	// sealed evaluation corpus and ParseSiegeAssistantCommand all assert it.
+	const FString WhenRule = GetRuleRhs(Grammar, TEXT("when"));
+	TestTrue(TEXT("`when` still emits the JSON key \"at_least\" (snake_case wire format)"),
+		WhenRule.Contains(TEXT("at_least")));
+	TestTrue(TEXT("`when` references the rule `at-least` (kebab-case GBNF name)"),
+		CountRuleReferences(WhenRule, TEXT("at-least")) == 1);
 
 	return true;
 }
@@ -492,7 +712,7 @@ bool FSiegeAssistantGrammarDegenerateTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("An empty roster omits `item`"), HasRule(EmptyRoster, TEXT("item")));
 	TestFalse(TEXT("An empty roster omits `selection`"), HasRule(EmptyRoster, TEXT("selection")));
 	TestFalse(TEXT("An empty roster omits `count`"), HasRule(EmptyRoster, TEXT("count")));
-	TestFalse(TEXT("An empty roster omits `at_least`"), HasRule(EmptyRoster, TEXT("at_least")));
+	TestFalse(TEXT("An empty roster omits `at-least`"), HasRule(EmptyRoster, TEXT("at-least")));
 
 	TestTrue(TEXT("An empty roster still defines root/command/question/intent/where/who/when"),
 		HasRule(EmptyRoster, TEXT("root"))

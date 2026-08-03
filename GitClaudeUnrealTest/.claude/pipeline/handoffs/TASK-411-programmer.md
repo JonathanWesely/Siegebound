@@ -114,3 +114,120 @@ The spec asked me to report anything surprising about the code-authored-tree pat
 - **`LogSiegeAssistant`** is *included* from TASK-417's `SiegeAssistantCommand.h`, never redeclared (pinned-registry ruling 8).
 - No `Content/` change, no `L_Arena` save, no Git, no compile, no PIE, no editor contact. The plugin, the model and every assistant file were untouched (zero llama dependency, as specced).
 - **Throwaway by design:** Wave 1 B3 **deletes both files**.
+
+---
+---
+
+# TASK-411 — REWORK (2026-08-02, after TASK-413's run)
+
+- **Owner:** gameplay-programmer · **Status set to:** `ready-for-qa`
+- **Files touched (BOTH, and nothing else):** `Source/GitClaudeUnrealTest/Siegebound/SiegeAssistantInputProbe.h` · `.cpp`
+- **NOT COMPILED.** The quiet-module law is in force (a build-master is fetching a 2.5 GB model and will compile in one pass afterward). No build, no Git, no editor contact, no `Content/` change, no `L_Arena` save.
+
+**⚖️ M8 DECLARATION DUTY (verbatim):** this task adds no replicated property, no new replicated class, no new relevancy tier. Stated verbatim in the header, as before.
+
+---
+
+## R1. THE HEADLINE: TASK-413's two failures are ONE root cause, and it is not the one that was diagnosed
+
+TASK-413 reported two distinct obstacles — PIE self-terminating, and standalone `-game` CONTROL-FAILED "because `-ExecCmds` fires on frame 0". **The second attribution is wrong, and both symptoms come from a single line in my own file:**
+
+```cpp
+FSlateApplication::Get().ClearKeyboardFocus(EFocusCause::SetDirectly);   // the old CONTROL pass
+```
+
+`FSlateApplication::ProcessKeyDownEvent` routes a key event **only along `SlateUser->GetFocusPath()`** — tunnel then bubble, nothing else (`SlateApplication.cpp:5018-5066`, UE 5.8, read not recalled). With focus cleared that path is **empty**, so:
+
+| consequence | evidence in TASK-413's own log |
+|---|---|
+| **(a)** no synthetic key reached any widget ⇒ never `SViewport` ⇒ `UGameViewportClient::InputKey` never called ⇒ `UPlayerInput` never saw W/A/S/D ⇒ the hero could not move | `-game` CONTROL: `PATH length 0.00`, `W/A/S/D on PlayerInput: no` |
+| **(b)** the event fell through to `UnhandledKeyDownEventHandler` (`:5069`) → `FMainFrameActionCallbacks::OnUnhandledKeyDownEvent` (`MainFrameActions.cpp:275`) → `FPlayWorldCommands::GlobalPlayWorldActions`, where **`StopPlaySession` is bound to `FInputChord(EKeys::Escape)`** (`DebuggerCommands.cpp:358`) | PIE: probe abort + `BeginTearingDown` in the same frame, right after pass 1's Escape |
+
+**⚠️ The frame-0 theory does not survive contact with the timeline.** `-ExecCmds` does fire on frame 0, and that IS a real hazard I have now gated — but the CONTROL pass types for ~4 s starting 0.35 s after `BeginProbe`, and `BeginProbe` already refused to run without a possessed pawn. Enhanced Input was live by then. The empty focus path explains the zero exactly; frame 0 does not.
+
+**Two corrections to TASK-413's §6 that the re-run must not inherit:**
+
+1. **"Passes 2 and 3 would have survived" is FALSE.** A plain `UEditableTextBox` does **not** absorb Escape: `FSlateEditableTextLayout::HandleKeyDown` routes Escape to `HandleEscape()` (`:1102`), which returns **false** when `RevertTextOnEscape == false` with no selection and no search text (`:1448-1476`) ⇒ **Unhandled** ⇒ it bubbles to `SViewport`, and `FSceneViewport::OnKeyDown` returns **Unhandled** whenever the viewport client does not consume the key (`SceneViewport.cpp:1288`) ⇒ on to `SGlobalPlayWorldActions`. **Escape ends PIE from ANY pass, focused or not.**
+2. **`FInputModeGameAndUI` with no `WidgetToFocus` focuses NOTHING.** `FInputModeDataBase::SetFocusAndLocking` sets focus only when `InWidgetToFocus.IsValid()` (`PlayerController.cpp:6313-6318`); only `FInputModeGameOnly` focuses the viewport itself (`:6446`). My own old inline comment claimed the opposite. Corrected in the file.
+
+---
+
+## R2. What changed — how a pass now STARTS and ENDS, per environment
+
+### How a run starts (both environments)
+
+`Siege.Assistant.InputProbe` **arms**; it no longer measures. It registers an `FTSTicker` that waits for **hard requirements** — a game world, a first player controller, a **possessed pawn**, `PlayerInput != nullptr`, a valid **game viewport widget**, `FSlateApplication` initialised, at least 4 frames since arming — and then a **soft requirement**, a settled frame rate: `warmup` seconds of wall time (default **5 s**) plus **45 consecutive frames at or under 50 ms** (20 FPS). Budget **120 s**. This is the explicit guard for *"PIE on `L_Arena` sits at ~3 FPS for the first ~25 s"*.
+
+- Budget expires with hard requirements met ⇒ **it starts anyway and says so, loudly**, and the report prints `warm-frame window ⚠️ NOT SATISFIED`. Refusing to run at all would be a different kind of unhelpful.
+- Budget expires with hard requirements unmet ⇒ **ABORT naming the exact condition that failed** (`world=… controller=… pawn=… playerInput=… viewportWidget=… slate=…`), and `NOTHING WAS MEASURED`.
+- World disappears after arming (PIE stopped) ⇒ abort immediately rather than idling a ticker for two minutes.
+- Args: `warmup=<s> budget=<s> warmframes=<n> controlattempts=<n> force escape noescape`. An unrecognised token is **reported**, not silently ignored. New `Siege.Assistant.InputProbeCancel` drops an armed run.
+
+**On top of that, CONTROL is itself the readiness test.** A failed control is retried up to **4 times** (1.5 s apart, 60 s budget), and **every failed attempt is printed and carried into the banked row** (`earlier attempts : #1 path=0.00cm viewportFocus=NO wasd=no;`). Retrying a *positive proof* is legitimate — it can only ever be satisfied by the hero actually moving — but it is never hidden.
+
+### How a pass ends
+
+| | PIE | standalone `-game` |
+|---|---|---|
+| typing window | 17 keys, unchanged | 17 keys, unchanged |
+| **Escape** | **NOT INJECTED** (slot kept for timing parity; reported `NOT INJECTED — PIE world — EKeys::Escape is the editor's StopPlaySession chord…`) | **injected** |
+| Enter | injected | injected |
+| RMB | injected | injected |
+| settle | 0.35 s, then the row is banked | same |
+
+So in PIE a pass ends on **Enter → RMB → settle**, and nothing in that sequence can end the session. In `-game` the full matrix runs. `escape` forces injection in PIE with a loud warning that the session will end; `noescape` bans it anywhere.
+
+### Rows are banked and logged one at a time
+
+Each row is `UE_LOG`'d the instant it exists (`BANKED row 2/3 — MODE A | PASS | path=0.00cm …`). `LogReport` prints any rows it has, under a **PARTIAL RUN** banner when fewer than three were banked, instead of the old `"No probe has run in this session."` — which is what TASK-413 saw after losing a run whose rows only ever existed in memory.
+
+---
+
+## R3. The one result TASK-413 established — preserved, and made harder to misread
+
+**MODE B (`FInputModeUIOnly`) swallows RMB and Enter; MODE A (`GameAndUI`) fires both.** Still measured in every environment (neither Enter nor RMB is ever suppressed), and the mechanism is now cited in the report footer: `FInputModeUIOnly::ApplyInputMode` calls `SetIgnoreInput(true)` (`PlayerController.cpp:6384`) where `FInputModeGameAndUI` calls `SetIgnoreInput(false)` (`:6410`). The cost the design has to price in — RMB cancels group picks, Enter is the console's own open key — is spelled out in the printed footer, not left to the reader.
+
+Two additions that make that row trustworthy rather than merely present:
+
+- **focus-at-press is recorded per observation.** Escape is *not* absorbed by the box, so it can bubble into the game and change the posture before Enter and RMB are observed. If the box had already lost focus at the press, the report says `this observation is contaminated, the box had already lost focus` instead of quietly reporting a routing result.
+- **the OS cursor position at the RMB press is printed.** RMB travels the **pointer** path, not the focus path, so it only means anything if the cursor was over the game viewport.
+
+⚠️ **Honest caveat on the A/B comparison, which I am not able to close from a file:** in TASK-413's `-game` log, MODE A reported `Enter -> PlayerInput: YES` — but `FSlateEditableTextLayout::HandleKeyDown` **handles** Enter for a non-read-only box (`:1092-1097`), so a genuinely focused box should have absorbed it. The most likely explanation is that Escape (injected immediately before) bubbled into the game and cost the box its focus. **That is exactly what the new focus-at-press field will show**, and it is the first thing to read on the re-run.
+
+---
+
+## R4. What would make me distrust my own result
+
+Named deliberately, because the failure mode this batch keeps hitting is a confident wrong green.
+
+1. **`CONTROL-OK` while `viewport focus : ⛔ NOT ESTABLISHED`.** Impossible by construction — if it ever prints, the focus check and the movement check disagree and neither can be trusted.
+2. **`CONTROL-OK` with `PATH length` in the low single-digit cm.** `MoveEpsilonCm` is 5 cm and `bMoved` also trips on `bMoveKeyReachedPlayerInput` alone. A control that "passes" only via the key-state bool with a near-zero path proves the key reached `UPlayerInput` but **not** that `IA_Move` is bound — read `max move-input mag` before believing it.
+3. **MODE A `PASS` while `focus held (typing)` is well under its window** — the 90 % gate should have stamped it INCONCLUSIVE. If PASS and a low focus ratio ever coexist, the gate is broken.
+4. **A control that only passes on attempt 3 or 4 while the earlier attempts show `viewportFocus=yes`.** Then something is *intermittently* eating the input and the whole run is measuring a moving target — not a warm-up artefact.
+5. **`pass timing` mean above ~50 ms.** The probe prints a `BELOW 20 FPS` warning per pass. At ~3 FPS a 0.15 s hold becomes one ~330 ms frame and the pass no longer resembles human typing; treat every row from such a pass as indicative only.
+6. **MODE A and MODE B both PASS with identical everything.** Expected, but it is also exactly what a dead injection path looks like — which is why rule 1 (the control) exists. If the control is anything other than a clean `CONTROL-OK`, **the answer is INCONCLUSIVE and must be reported as such.**
+7. **Any row where an observation reads `NOT INJECTED`, quoted as a swallow.** It is not one. In PIE the Escape row is *never* evidence; the Escape matrix is a standalone `-game` measurement.
+8. **A `-game` run whose CONTROL passes but whose MODE A focus ratio is 100 % and text read-back is empty.** Contradictory: focus held but nothing landed means the character events are not reaching the box, and `bTypedTextLanded` should already have forced INCONCLUSIVE.
+
+**And the structural one:** the probe still measures with `FSlateApplication::ProcessKeyDownEvent` rather than the OS message pump. That is deliberate and unchanged (it works on a locked desktop, TASK-076/112), but it means **the one thing this probe can never test is the platform layer itself.** If the shipped console ever behaves differently from this measurement, the message pump is the first suspect.
+
+---
+
+## R5. What QA should scrutinise in the rework
+
+- **`IsGameViewportFocused()`** — the **box exclusion** is the load-bearing half. The probe's widget is a *descendant* of the game viewport widget, so a naive ancestor walk would report "viewport focused" while the text box holds focus and turn a focused pass into a fake control. Verify the `IsInputBoxFocused()` early-`return false` cannot be bypassed.
+- **The suppressed-action path.** `PressCurrentAction` must set `bInjected = false` and inject nothing; `ReleaseCurrentAction` must not send a key-up for it; `SampleFrame` must not read `UPlayerInput` for it (otherwise an unrelated Escape press elsewhere gets reported as this probe's observation); `LeavePass` must carry `bInjected` into the row so the report can say NOT INJECTED.
+- **The control-retry branch in `LeavePass`** — it must be unreachable for MODE A/B, must not bank a row, must not advance `PassIndex`, and must be bounded by BOTH the attempt count and the wall-clock budget.
+- **`GetResults()[0]` is still the CONTROL row** after retries (retries do not bank), so the INCONCLUSIVE gate for MODE A/B is unchanged.
+- **`Disarm(bFromTicker)`** — `RemoveTicker` is skipped when called from inside the ticker (returning `false` is what unregisters it); `Options`/`LastFrameSeconds` are copied *before* `Disarm` at both start sites.
+- **`EndProbe` now re-focuses the game viewport.** Without it the last pass leaves focus on a text box that is about to be removed and `FInputModeGameAndUI` focuses nothing — the session would be left unplayable, which would read as "the probe broke the game". Skipped when the world is tearing down.
+- **The C4458 fix survives:** the parent-chain local is still `Walker`, never `Cursor` (`UWidget::Cursor`), in **both** `IsInputBoxFocused()` and the new `IsGameViewportFocused()`.
+- **Comment-trap scan: PASS.** Run mechanically over raw file contents, not through a text search: **89 block comments in the .h, 44 in the .cpp, zero unterminated, zero premature terminators inside a doc block**, longest block 116 lines (the header doc) closing exactly once.
+- **⚠️ Behavioural caveat for whoever runs it:** the CONTROL pass now genuinely delivers 17 keystrokes plus RMB into the live game (that is the point). Any single-key binding on `w a s d e n f o t m` and any RMB order **will fire** during the control. That is expected and does not affect the measurement, but it is not a no-op on the match state.
+
+## R6. Compliance
+
+- **CONVENTIONS §5:** `FAutoConsoleCommandWithWorldAndArgs` + two `FAutoConsoleCommandWithWorld`, all in this new file. **No `UFUNCTION(exec)` on any shipped class** — `USiegeCheatManager` and `ASiegePlayerController` remain untouched.
+- **No new module dependency.** `Widgets/SViewport.h` comes from Slate, `Engine/GameViewportClient.h` and `Engine/Engine.h` from Engine, `Containers/Ticker.h` / `Misc/Parse.h` / `HAL/PlatformTime.h` from Core — all already public deps. **`GitClaudeUnrealTest.Build.cs` NOT edited** (TASK-417 owns it).
+- **No per-tick work beyond the probe's own need:** the arming ticker exists only while armed and unregisters itself the moment it starts, aborts or is cancelled; `NativeTick` returns immediately when no probe is running; the `Cooldown` phase samples nothing.
+- **Throwaway by design:** Wave 1 B3 still deletes both files.

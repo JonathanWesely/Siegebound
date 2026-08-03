@@ -88,7 +88,7 @@ public:
 	 *  across processes.
 	 *
 	 *  DEGENERATE INPUTS ARE HANDLED, NOT ASSERTED ON. With no unit kinds the
-	 *  `kind` / `count` / `at_least` / `item` / `selection` rules are OMITTED
+	 *  `kind` / `count` / `at-least` / `item` / `selection` rules are OMITTED
 	 *  ENTIRELY (they would be unreachable), `who` collapses to "all" | "none"
 	 *  and `when` collapses to "now" — so the grammar stays well-formed with
 	 *  every referenced rule defined, and with nothing nameable the only
@@ -110,6 +110,21 @@ public:
 	 *  no `ws` rule because permitting optional whitespace would spend tokens
 	 *  from a 96-token output budget on nothing and add sampling branches at
 	 *  every boundary — the model emits exactly one compact JSON object.
+	 *
+	 *  ⛔ EVERY RULE NAME IS KEBAB-CASE, AND THAT IS LOAD-BEARING, NOT STYLE.
+	 *  llama.cpp reads a rule name as [a-zA-Z0-9-] and stops at anything else, so
+	 *  ONE underscore in ONE rule name makes the WHOLE grammar unparseable and
+	 *  generation silently runs unconstrained — which is what shipped as
+	 *  `at_least` and cost TASK-413 two of its six bars. The JSON KEYS the rules
+	 *  carry stay snake_case (`at_least`) because they are the wire format. The
+	 *  builder now validates both halves at construction and names the offender;
+	 *  Siegebound.Assistant.Grammar.RuleNameCharset asserts it in automation.
+	 *
+	 *  ⚠️ AND THE REASON THAT GUARD EXISTS RATHER THAN A CONVENTION: two reviews
+	 *  diffed this generator against the spike's mirror rule-for-rule and found
+	 *  them identical, which they were — identically unparseable. String-comparing
+	 *  two generators can never prove either one is valid; only the target parser
+	 *  can.
 	 *
 	 *  @param UnitKinds   canonical unit symbols the player may legally name, e.g. {"footman", "sorcerer"}.
 	 *                     Empty, NAME_None, and the reserved symbols "all"/"none" are skipped.

@@ -20,6 +20,21 @@ public class GitClaudeUnrealTest : ModuleRules
 			"GameplayStateTreeModule",
 			"UMG",
 			"Slate",
+
+			// ⚠️ SlateCore is NOT optional and is NOT implied by "Slate".
+			// Slate PUBLICLY DEPENDS on SlateCore, so it propagates SlateCore's
+			// INCLUDE PATHS — which is why everything here compiled clean for a
+			// long time without it — but a dependency does not propagate the
+			// IMPORT LIBRARY, so nothing could LINK against a SlateCore symbol.
+			// That gap is invisible until some file references an actual symbol
+			// rather than just a type: SiegeAssistantInputProbe.cpp was the first
+			// (ETextCommit::Type in a UFUNCTION signature, plus FInputEvent /
+			// FKeyEvent / FCharacterEvent / FPointerEvent from SlateCore's
+			// Input/Events.h), and it produced 16 unresolved externals led by
+			// Z_Construct_UEnum_SlateCore_ETextCommit. Epic's own commented
+			// boilerplate below pairs the two modules for exactly this reason.
+			"SlateCore",
+
 			"Niagara",
 
 			// LLM-ASSISTANT batch (TASK-417): ParseSiegeAssistantCommand parses the

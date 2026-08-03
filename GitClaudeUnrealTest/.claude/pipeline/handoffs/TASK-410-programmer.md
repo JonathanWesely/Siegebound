@@ -464,3 +464,488 @@ showed it perfectly clean, because `autocrlf` normalises exactly that away** (GI
 | §10 tunables | ctx 2048 · MaxOutputTokens 96 · HardTimeout 10 s · GrammarCountMax 30 · MaxSelectionKinds 3, all named constants. |
 | §11 sealed corpus | Loaded **by path at runtime**, never `#include`d — the plugin gains no Siegebound dependency. Holdout never opened. Intent parsed from the pinned `Notes` prefix; the corpus was **not edited, narrowed or reformatted**. |
 | Quiet-module law | **No build run.** No game-module file touched. |
+
+---
+
+## Fix loop 1 (2026-08-02) — answering `qa/TASK-412.md`
+
+**One file touched: `Plugins/SiegeLlama/Source/SiegeLlama/Private/SiegeLlamaSpike.cpp`.** Nothing else. The corpus,
+Zone A's bytes, the GBNF, the few-shots and the scoring rule are byte-unchanged. **NOT COMPILED** — the editor is
+open and build-master owns the gate.
+
+Per blocker: what changed, and **which number it moves**.
+
+### BLOCKER-1 — bar #3 measured a KV reuse the shipped path cannot reach ✅
+
+**What changed.** There is now a **second world fixture**. `FSpikeWorldFixture` holds one complete Zone B + Zone C
+state (HP bands, mid owner, gold, roster, stances, hero), and there are two instances:
+
+- **`t0`** — the corpus's board. **Its emitted bytes are unchanged**: the refactor turned literals into `Appendf`
+  calls that produce the identical characters, so Zone B is still **68** chars and Zone C still **887** for the
+  default order line (I re-derived both by hand; `Siege.Llama.SpikePrompt` now prints a WARNING if they ever drift).
+- **`t1`** — the same board a few seconds later. Every Zone B key moved (`80%` → `70%`, `60%` → `45%`, `ours` →
+  `neutral`, `120` → `165`), the roster shrank, stances moved, hero went `alive` → `down`. **Same 13 kinds in the
+  same order** — the GBNF's `kind` alternatives are generated from `SpikeRoster`, so a fixture with different kinds
+  would open the §9c seam. That invariant is a `static_assert` on the count **plus** a run-time
+  `VerifyFixtureKindParity()` that the bench and `SpikePrompt` both call.
+
+The bench now runs **two bounds** instead of one number (`RunPrefillBound`):
+
+| bound | fixtures | where it diverges | how to read it |
+|---|---|---|---|
+| `BEST_CASE` | t0 → t0 | the `order:` line, end of Zone C | a **paused** board. This is the ~97-98 % the old code reported. **Do not quote it.** |
+| `SHIPPED_WORST_CASE` | t0 → **t1** | the **start of Zone B** | a **live** board — the shipped worst case. **This is bar #3.** |
+
+Every `SPIKE_PREFILL`, `SPIKE_LATENCY` and `SPIKE_EVAL_ROW` line now carries
+`reused=N landed_in=ZONE_A|ZONE_B|ZONE_C zoneB_start~=N zoneC_start~=N` — the reuse point **against the zone
+boundaries in token space**. The boundaries come from `BuildPrompt` reporting the zones' **character** offsets
+structurally (never by searching for a marker like `[FORCES]`, which also appears inside Zone A's schema block) and
+tokenizing the prefix. They are marked `~` because tokenization is not compositional; ±1 does not affect the only
+question being asked, which is *which zone*.
+
+**New guard, and it is the one that was missing:** when a bound claims to be shipped-shaped and the reuse lands at
+or past the start of Zone C, it warns loudly. The old `DropPercent < 60.0` guard fired only on too **little** reuse
+and was silent on implausibly too **much** — the direction that flatters.
+
+**Numbers this moves.**
+
+- **Bar #3** — the headline drop moves from a reported ~97-98 % to whatever the SHIPPED bound measures (expect the
+  ~78-82 % family, near §8's 165/765 = 78 %). **Both bounds are printed, so the gap between them is itself evidence.**
+- **Bar #2** — the warm iterations now **alternate t0/t1**, so every one pays the full Zone B + Zone C re-prefill
+  (~265 tok, not ~20). `mean_ttft_ms` / `WORST_wall_ms` will get **worse** and are now the shipped shape;
+  `mean_prefill_tok` is printed beside them so the basis is visible. The best-case warm TTFT is still on the record
+  on the `BAR#3 BOUNDS` line, so both bounds exist for latency too.
+- **Bar #5 — unaffected.** The eval is pinned to **t0**, with a comment saying why: DEV-03's shortfall is only real
+  while footman is 8 and DEV-11's trigger only unsatisfied while knight is 3. Running a split against t1 would
+  rewrite the corpus's premises without touching the corpus. Each split also prints one line saying its per-row
+  `prefill=` / `reused=` columns are a **constant-fixture (best case)** measurement and are **not** bar #3.
+
+⚠️ **Cost:** the prefill phase now runs **4 generations instead of 2** (two cold turn-1s, two turn-2s). On the CPU
+tier that is a few extra seconds before the iteration loop.
+
+### BLOCKER-2 — the offload device is now pinned and named ✅
+
+**What changed.**
+
+- New **`gpu=<index|name>`** argument on every command. The index is the one printed on the device-inventory lines,
+  so what the log prints can be pasted straight back in; a name is matched against `ggml_backend_dev_name`.
+- `EnsureModelLoaded` builds an explicit **one-entry `devices` array** and sets **`split_mode =
+  LLAMA_SPLIT_MODE_NONE`** and **`main_gpu = 0`**. `main_gpu` indexes `params.devices`, so with a one-entry list it
+  is unambiguous — no assumption about where ggml's own filtered ordering would have put the card.
+- **Every** device is logged **before and after** the load — `dev=<index>/<name>/<type> free= total= desc=` — with
+  the pinned one marked `<== PINNED, AND THE SUBJECT OF EVERY vram_ FIGURE`.
+- `SampleMemory()` now reports on **`GRunner.OffloadDevice`** (the pinned one) instead of "the first discrete GPU it
+  finds". Every VRAM line carries **`vram_dev=`**. With no device it prints **`n/a`**, not `0` (that was NIT-3, and
+  it was the same lines).
+- If nothing was pinned, or the device was only assumed because no `gpu=` was given, the bench says so at the end
+  and tells the reader to re-run with an explicit index.
+- Selecting a CPU/ACCEL device by name is refused with a reason rather than silently pinned; falling back to an
+  iGPU says out loud that bar #4's 8 GB question is about a discrete card.
+
+**Numbers this moves.** **Bar #4.** Previously the weights could layer-split across the iGPU **and** the dGPU while
+the free-VRAM low-water mark came from one of them — understating the footprint, i.e. **manufacturing a PASS** on
+"does it fit 8 GB". Now the tier means one named card, and the before/after delta is two samples of the **same**
+device. Bars #1/#2 also stop being measured on a split configuration no player has.
+
+⚠️ **`enum ggml_backend_dev_type` is spelled with the elaborated `enum` keyword** in two places, and it must be:
+ggml declares a **function** of exactly that name (`ggml-backend.h:182`), which hides the enum type in C++. The
+vendored header does the same thing for the same reason. This is the likeliest thing to look like a typo in review.
+
+### BLOCKER-3 — a model swap can no longer be silently ignored ✅
+
+**What changed.** The reload key gained the model path **and** the device spec — `GRunner.LoadedModelPath ==
+Options.ModelPathOverride` and `GRunner.LoadedOptions.GpuDeviceSpec == Options.GpuDeviceSpec`, on top of the four
+fields already compared. `UnloadModel()` now also clears `LoadedModelPath`. I did **not** take QA's stated
+alternative (a procedural "run `SpikeUnload` between swaps") — QA did not recommend it either, and a procedural
+mitigation for a silent wrong measurement is the shape that has burned this project.
+
+**Numbers this moves.** `SpikeBench model=<B>` after `model=<A>` at the same tier now **reloads and prints a
+`SPIKE_LOAD` line**. Previously it printed **A's numbers under B's command line with no load line at all** —
+directly on TASK-413's model ladder. `FString::operator==` is case-insensitive, which is right for Windows paths; a
+slash-style difference costs one honest reload, which is the safe direction.
+
+### The four warns, same pass
+
+- **WARN-1 ✅** `SpikeBenchUtterances[4]` was `"everyone pull back to our castle"`, byte-identical to a sealed
+  holdout sentence. It is now `"whole army disengage from the middle and regroup at the home keep"` — same job (the
+  only army-wide `who:"none"` shape in the list), deliberately long and compound so it cannot plausibly collide with
+  a short authored corpus row. **I checked it against the dev split (no match). I did not and cannot check it
+  against the holdout** — that file is not mine to open. The bench is unscored, so if it does collide no number is
+  invalidated; change the string and re-run.
+- **WARN-2 ✅** `llama_n_batch()`, `llama_n_ctx()` and `llama_n_ubatch()` are queried after context creation.
+  `GRunner.ContextSize` is new and is what the prompt-budget pre-check and the context-full check use;
+  `GRunner.BatchSize` now comes from the actual value, so a prefill slice can no longer exceed the effective
+  `n_batch`. When any of the three is clamped, a loud `SPIKE_WARN` prints requested vs actual, and the `SPIKE_LOAD`
+  line prints both as `ctx=N(req M)` / `ubatch=N(req M)`. **Moves:** prevents the failure mode where every bar reads
+  "inference failed" for a reason no line names.
+- **WARN-4 ✅** `bKindsOk` and `bCountsOk` are now two independent `KindSetMatches` calls. **Pass/fail is provably
+  unchanged**: `bFieldsOk` is their conjunction, and `KindSetMatches(counts=true)` implies
+  `KindSetMatches(counts=false)`, so the conjunction equals what the single call returned. Only the attribution
+  moves — a right-unit/wrong-quantity row now prints `kinds=ok counts=BAD`, so TASK-413's per-row diff points the
+  remediation ladder at counting instead of naming. (A wrong kind still shows `counts=BAD`, which is true: there is
+  no quantity to compare.)
+- **WARN-10 ✅** New derived option `bIgnoreEogForFixedLength`, set by the **bench only** when `grammar=0`. The
+  decode loop then keeps going to the token budget, records `EogTokenIndex`, drops the pieces after EOG from the
+  text (timing filler, not an answer), and prints
+  `FIXED_LENGTH_CONTROL(grammar=0: EOG IGNORED at out token N ...)` on the line. **The eval job never sets it** — an
+  accuracy run must stop where the model stopped, so no bar #5 number moves.
+
+### What I did not do, and why
+
+- **No compile, no build, no Git.** The editor is open.
+- **WARN-3** (baseline captured before the first load of a tier) is a **procedure** item — QA's own remedy is "run
+  each tier's bench twice and report the second". Restructuring the phase order would change what the control window
+  means; I left it, and it stays on TASK-413's list.
+- **WARN-5 / WARN-9 / NIT-4** are rulings about how to *read* bar #5 and are TASK-413's to state beside the number.
+- **WARN-6** is `Tools/fetch_llm_model.py` — TASK-409's file, not mine.
+- **WARN-7 / WARN-8** are `.gitignore` and `SiegeLlamaModule.cpp` — not my file.
+- **NIT-1 / NIT-2** left as recorded for TASK-423; **NIT-3** is fixed as a side effect of BLOCKER-2 (`n/a` instead of
+  a `0` that reads like a measurement).
+
+### What QA should scrutinise hardest
+
+1. **The t0 bytes.** The refactor must be byte-identical for t0 or the sealed corpus's premises shift under it. I
+   re-derived Zone B = **68** and Zone C = **887** by hand against the new `Appendf` forms and they match; there is
+   also a run-time tripwire in `SpikePrompt`. Please re-derive rather than take it.
+2. **The `%` handling.** `AppendZoneB` uses `%%` in a **format** string (correct). The two bound-`Expectation`
+   strings contain a bare `%` and are passed as **`%s` arguments**, never as format strings — doubling them would
+   print `%%`. Both are commented at the site.
+3. **`enum ggml_backend_dev_type`** (see BLOCKER-2 above) — reads like a typo, is required.
+4. **Format-specifier / argument counts** on the rewritten `UE_LOG` lines. I audited every one of them by hand;
+   every format string is still a literal.
+5. **The comment trap.** I ran the terminator audit on **raw reads, not Grep** (per your tooling note): 78 block
+   openers, 78 terminators, paired sequentially with no overlap and no premature close. The `/*ParamName*/` idiom is
+   used in four new places (`bCompareCounts` twice, `bExpectZoneBDivergence` twice) and is the benign single-line
+   form.
+6. **The one-entry `devices` array's lifetime** — declared in `EnsureModelLoaded`'s scope, so it outlives
+   `llama_model_load_from_file`, which copies it during the load.
+
+---
+---
+
+# Post-TASK-413 fix pass — THE GRAMMAR NEVER PARSED, AND THE CAP RULING
+
+**Date:** 2026-08-03 · **Author:** gameplay-programmer · **Status:** `ready-for-qa`
+**Source:** `handoffs/TASK-413-buildmaster.md` PART 2 §13 (the blocker) and §12 (the cap trigger).
+
+> **This one note covers three lanes' files**, because the defect and the ruling cut across them and splitting the
+> record would hide the coupling. Board entries **TASK-410**, **TASK-416** and **TASK-417** each carry a
+> `POST-TASK-413 FIX PASS` bullet pointing here.
+>
+> ⚠️ **NOT COMPILED. NO GIT.** Build-master owns the gate and re-runs bars #2 and #5.
+
+---
+
+## 1. What changed
+
+| File | Change |
+|---|---|
+| `Source/GitClaudeUnrealTest/Siegebound/SiegeAssistantGrammar.cpp` | RULE `at_least` → `at-least` (definition + reference); `IsLegalGbnfRuleName` + `CollectRuleReferences` added; `AppendRule` now validates |
+| `Source/GitClaudeUnrealTest/Siegebound/SiegeAssistantGrammar.h` | Doc: the degenerate-input rule list renamed; a new kebab-case law paragraph |
+| `Plugins/SiegeLlama/Source/SiegeLlama/Private/SiegeLlamaSpike.cpp` | The same rename + the same validator (mirrored, not shared — the plugin may not include the game header); `SpikeMaxSnapshotChars = 1085` replaces two bare `1440` literals in the `SPIKE_TOKENS` line |
+| `Source/GitClaudeUnrealTest/Siegebound/SiegeAssistantSnapshot.h` | `MaxSnapshotChars` 1440 → **1085** with the derivation; truncation latch replaced; zone-table figures replaced with TASK-413's measurements |
+| `Source/GitClaudeUnrealTest/Siegebound/SiegeAssistantSnapshot.cpp` | `BuildZoneC`'s truncation now logs on the case that was silent; one Zone-A comment (not bytes) records the key/rule split |
+| `Source/GitClaudeUnrealTest/Siegebound/Tests/SiegeAssistantGrammarTest.cpp` | Rename applied; `IsGrammarWellFormed`'s scanner corrected; **new test `Siegebound.Assistant.Grammar.RuleNameCharset`** |
+
+**Not touched, deliberately:** the corpus, Zone A's bytes, the few-shots, the JSON schema, the scoring rule,
+`ParseSiegeAssistantCommand`, `GrammarCountMax`, `SiegeAssistantMaxSelectionKinds`, `MaxRosterKinds`,
+`ZoneBCharReserve`, `CONVENTIONS.md` (another agent holds it).
+
+---
+
+## 2. ⛔ THE RENAME — and the one thing QA must take from it
+
+`at_least` → `at-least` **as a GBNF RULE NAME ONLY**, in both generators:
+
+- `SiegeAssistantGrammar.cpp` — the definition (was `:312`) and the reference in `when` (was `:392`)
+- `SiegeLlamaSpike.cpp` — the definition and the reference in `when`
+
+**The JSON key `"at_least"` is byte-for-byte untouched everywhere**: `SiegeAssistantJsonKeys::AtLeast`, Zone A's
+`WHEN = "now", or {"kind":KIND,"at_least":1 to 30}` line, the spike's copy of that line, the parser's key
+comparison, and every corpus row. In the emitted `when` rule the two now sit one token apart, which is exactly the
+shape of the `n` / `count` split this file already had:
+
+```gbnf
+when ::= "\"now\"" | "{\"kind\":" kind ",\"at_least\":" at-least "}"
+                                        ^ JSON key      ^ rule name
+```
+
+### 2a. The sentence QA asked for, stated plainly
+
+> **STRING-COMPARING TWO GENERATORS CAN NEVER PROVE EITHER ONE IS VALID. ONLY THE TARGET PARSER CAN. A DUMP IS
+> NOT A PARSE.**
+
+TASK-419 diffed `USiegeAssistantGrammar::Build` against the spike mirror rule-for-rule and reported that they
+matched. **That report was correct.** TASK-413 part 1 diffed the runtime dump against the generator and blessed it.
+**That was correct too.** Both were true of a string llama.cpp refuses to load. The two artifacts agreed with each
+other and neither was ever checked against the thing that consumes them — and every other assertion in the test
+suite (determinism, grounding, the count range, the selection cap, well-formedness) stayed green throughout,
+because each is a property of the *string*, not of the *parse*.
+
+**I am not treating this as a review failure.** It is a failure of a method that cannot see this defect class, which
+is why the fix below is a mechanical guard rather than a note asking people to look harder.
+
+---
+
+## 3. THE SWEEP — full result
+
+**Method:** enumerated every `AppendRule` call site and every bare (unquoted) identifier passed into a rule body in
+both generators, then read both files raw to confirm no rule name is constructed at runtime.
+
+**Both files emit exactly 13 rules, in the same order, with the same reference set** — they are still true mirrors:
+
+`root · command · question · ask · intent · kind · where · count · at-least · item · selection · who · when`
+
+References: `command`, `question` (from `root`) · `intent`, `who`, `where`, `when` (from `command`) · `ask` ·
+`kind`, `count` (from `item`) · `item` ×6 (from `selection`) · `selection` (from `who`) · `kind`, `at-least`
+(from `when`).
+
+**Findings:**
+
+1. **`at_least` was the ONLY identifier outside `[a-zA-Z0-9-]` in either file** — build-master's expectation
+   confirmed by enumeration rather than assumed. It occurred **twice per file** (definition + reference), i.e. four
+   sites total, all four fixed.
+2. **⚠️ THERE ARE NO GENERATED OR DERIVED RULE NAMES ANYWHERE.** Every rule name is a compile-time `TEXT("...")`
+   literal. **This is the load-bearing half of the sweep**, and I checked it rather than assuming it: all
+   data-derived text — unit kinds, place symbols, intents, ask codes, counts — reaches the grammar through
+   `GbnfJsonString` / `GbnfTerminal`, i.e. **always inside a quoted terminal, never in identifier position**. So a
+   live unit called `militia_mob` could never have produced an illegal rule name, and the failure could only ever
+   have come from source. That is why the validator can be a hard check with no risk of firing on live data.
+3. **⚠️ THE SAME UNDERSCORE IS CORRECT IN THREE OTHER PLACES AND I LEFT IT ALONE** — this asymmetry is what made the
+   defect look reasonable: canonical place symbols (`ancient_ground_near`, `own_castle`), JSON keys (`at_least`),
+   and `CanonicalizeSymbols`' `[a-z0-9_]` symbol charset. **`CanonicalizeSymbols` is unchanged.** A sweep that
+   "made these consistent" would produce a grammar that parses perfectly and emits commands nothing downstream can
+   read; the new test asserts these underscores **survive**, in both directions.
+
+---
+
+## 4. THE VALIDATOR — what it now guarantees, and what it does not
+
+Added to `AppendRule` in **both** generators (duplicated, not shared, for the same reason the generator is: the
+plugin is architecturally forbidden to include the game header).
+
+**Guarantees:**
+
+- **Every rule NAME** is `[a-zA-Z0-9-]` and non-empty, checked at construction.
+- **Every rule REFERENCE** in every right-hand side is too. This half matters: the defect had two halves, and
+  llama.cpp rejects an illegal reference for the same reason it rejects an illegal definition.
+- **The offender is NAMED** — the log line prints the exact identifier and the rule it appeared in, which is the
+  one thing six bench runs of `SPIKE_WARN: ... returned NULL` could not tell anyone.
+- **⚠️ CORRECTED AFTER QA — TASK-416 BLOCKER-1. This bullet previously read "Not compiled out of Shipping."
+  THAT WAS FALSE**, and it was false in the worst possible way for this particular pass: an assertion about a
+  consuming system (UBT/Core) written **from memory instead of read out of it** — the exact failure class the
+  pass exists to kill, one system over from where it was killed. What UE 5.8 actually does, read from disk:
+
+  | fact | source |
+  |---|---|
+  | `USE_LOGGING_IN_SHIPPING` defaults to **0** | `Misc/Build.h:200-203` |
+  | Shipping **and Test** ⇒ `NO_LOGGING = !USE_LOGGING_IN_SHIPPING` ⇒ **1** | `Build.h:350-352`, `:322-324` |
+  | `NO_LOGGING` ⇒ `UE_LOG` *"will only log Fatal errors"* — an `Error` call becomes an empty `if constexpr(false)` | `Logging/LogMacros.h:184-194` |
+  | `USE_CHECKS_IN_SHIPPING` **0**, `USE_ENSURES_IN_SHIPPING` follows it ⇒ **0** | `Build.h:205-212` |
+  | Shipping **and Test** ⇒ `DO_ENSURE = USE_ENSURES_IN_SHIPPING` ⇒ **0** | `Build.h:332-334`, `:304-306` |
+  | `DO_ENSURE 0` ⇒ `ensureAlwaysMsgf` degrades to `(LIKELY(!!(expr)))` — condition still evaluated, nothing reported | `Misc/AssertionMacros.h:467-472` |
+  | `GitClaudeUnrealTest.Target.cs` (15 lines, read in full) sets **NO** `bUseLoggingInShipping` / `bUseChecksInShipping` override | `Source/GitClaudeUnrealTest.Target.cs` |
+
+  ⇒ **BOTH HALVES OF THE GUARD COMPILE OUT IN SHIPPING AND IN TEST.** It is live in Debug, DebugGame and
+  Development, editor variants included (`Build.h:241-296` gives both `UE_BUILD_DEBUG` and
+  `UE_BUILD_DEVELOPMENT` `NO_LOGGING 0` / `DO_ENSURE 1`).
+
+- **✅ AND THAT IS THE CORRECT SCOPE — a development-time and CI gate, by nature rather than by accident.**
+  Stating it as a scope rather than as a confession, because the property being checked is settled before the
+  program runs:
+  - **No rule name is ever built from data** (finding 2 above, re-derived by QA §3b). Every name is a
+    compile-time `TEXT("…")` literal; all data-derived text reaches the grammar inside a quoted terminal via
+    `GbnfJsonString` / `GbnfTerminal`. **The guard cannot fire on live data — only on source.**
+  - ⇒ **A Shipping build contains exactly the identifiers a Development build contained.** There is no input
+    that breaks it in a player's hands and not on a developer's machine — which is the *only* thing that would
+    have made a dev-only guard "the same silent failure wearing a different hat".
+  - ⇒ **The mechanism that protects a shipped build is the automation test, not this log:**
+    **`Siegebound.Assistant.Grammar.RuleNameCharset`** in `Siegebound/Tests/SiegeAssistantGrammarTest.cpp`. It
+    runs `Build` over all four builder shapes and asserts this same charset **in CI, before anything is
+    packaged.** That is the gate. The runtime guard is the fast local echo that *names the offending
+    identifier* in a log line while you are still at the keyboard.
+  - **The target flags were NOT flipped.** QA ruled that out, I agree, and it is not this file's decision:
+    Shipping logging project-wide has performance and log-volume consequences far outside this batch. Recorded
+    as an option for TASK-423.
+- **Both channels, where they are live.** The `Error` log names the offender in the run log; `ensureAlwaysMsgf`
+  adds a callstack and an automation-visible error so an editor or CI run **fails** on it rather than merely
+  mentioning it.
+- **Cost:** a linear scan of ~13 short identifiers per `Build` call, once per typed sentence, on a pure function
+  with no engine state — unmeasurable beside the inference call it precedes. This is exactly why the plan pinned
+  `Build` as pure and designated it the one place automation tests are worth writing.
+
+**Deliberate design choices QA should push on if it disagrees:**
+
+- **The offending rule is still EMITTED, not dropped.** Dropping it would leave a dangling reference and a grammar
+  that fails to parse for a *second*, less obvious reason, and `Siege.Llama.SpikeGrammar`'s dump would stop showing
+  what the code intended. llama.cpp refuses it either way; the job is to make the refusal loud and named.
+- **`ensureAlwaysMsgf`, not `checkf`.** A grammar failure degrades the assistant; it does not corrupt the game. A
+  fatal check would trade a broken feature for a crashed match. ⚠️ **This bullet used to end "the Error log is
+  the always-on channel" — the same false claim as the one above, in weaker clothing, and QA did not catch this
+  one. It is not always-on; it is on in Debug/DebugGame/Development.** The ensure is the *louder* of the two
+  where both are live (it fails a run instead of appending to it), and the log is the one that survives a
+  packaged Development build. Neither survives Shipping or Test — see the corrected bullet above.
+- **The terminal scanner honours the backslash escape and skips terminals as whole units** rather than splitting
+  the RHS on whitespace. A generated symbol containing a space is legal-but-odd (`CanonicalizeSymbols` warns and
+  emits it escaped), and a whitespace split would tear `"foo bar"` in half and report the fragment as an illegal
+  rule name. **A validator that fires on legal input is worse than none**, because it teaches people to ignore it.
+
+**What it does NOT guarantee, stated so nobody over-reads it:** it does not parse the grammar. It checks the one
+property that this failure turned on. **The only proof remains a live `llama_sampler_init_grammar` returning
+non-NULL**, which is build-master's re-run, and I have not claimed it.
+
+### 4a. The test suite was part of the blind spot — and that is now fixed too
+
+`SiegeAssistantGrammarTest.cpp`'s `IsGrammarWellFormed` collected identifiers with
+`FChar::IsAlnum(Char) || Char == TEXT('_')`. **That one character is why the suite blessed the broken grammar**: it
+read `at_least` as a single, well-formed, fully-resolved reference. **The scanner now breaks identifiers exactly
+where llama.cpp breaks them** (`-`, not `_`), so an illegal reference arrives as unresolvable fragments and fails —
+and the error string explains that "half an identifier" means a charset violation, because `undefined rule
+referenced: at` is genuinely baffling on its own.
+
+**⚠️ UPDATED FOR QA TASK-416 WARN-3 — the two scanners in this file no longer disagree about the charset.** The
+first fix left the file with *two* differently-implemented scanners: `IsLegalGbnfRuleName` used an explicit ASCII
+range, while `IsGrammarWellFormed`'s inner loop used `FChar::IsAlnum`. QA was right that the divergence was in the
+safe direction and unreachable **and** that two scanners disagreeing about a charset inside one file is how this
+exact defect class starts — it is what the `_` was.
+
+Both now call a single `IsGbnfNameChar(TCHAR)`. **It converged on the ASCII range, not on `FChar::IsAlnum`**, and
+the direction is the whole point: `IsAlnum` is Unicode/locale-aware, so it would bless an accented letter or a
+full-width digit that llama.cpp's plain-ASCII rule-name scan breaks an identifier on. **Converging on the
+friendlier-looking predicate would have widened the test's notion of legality past the parser's — the direction
+that hides a defect rather than catching one.** Where an identifier *stops* and whether an identifier is *legal*
+are one question, and the file now answers it once.
+
+**The remaining three-file duplication is stated in the code rather than left silent** (`SiegeAssistantGrammar.cpp`
+· `SiegeLlamaSpike.cpp` · this file). It is not fixable here and the comment says why: the production copy has
+internal linkage inside an anonymous namespace and is not declared in the header, so the test cannot reach it;
+asserting the charset with the very function under test would also be circular; and the spike's copy is across a
+module boundary the plugin may not cross. **Within a file there is now exactly one definition — the part that was
+actually fixable.** (Carry-forward on TASK-423, which deletes the spike lane anyway.)
+
+**New test — `Siegebound.Assistant.Grammar.RuleNameCharset`** (the 12th; none removed or weakened). It runs over
+**all four builder shapes** (populated · empty roster · empty places · both empty), because a rule emitted on only
+one branch is exactly the rule that escapes review, and asserts:
+
+- every rule name is legal GBNF;
+- every reference resolves under llama.cpp's identifier rules;
+- **the guard itself is exercised** — `at-least`/`root`/`item2` accepted, `at_least`/`at least`/empty rejected. A
+  test that always passes is not a gate.
+- **the wire format keeps its underscores** — `at_least`, `ancient_ground_near`, `own_castle` must all still be
+  present, so the rename cannot be "made consistent" in the wrong direction.
+
+Two existing tests were updated for the rename (`GetRuleRhs(..., "at-least")` in the count-range test;
+`HasRule(EmptyRoster, "at-least")` in the degenerate test) and the count-range test gained two rows asserting the
+key/rule split explicitly. **⚠️ DECLARED: the test file is TASK-417's single-owner file.** The rename breaks it, so
+leaving it would have shipped a knowingly-failing suite; the edits are the rename's necessary consequence plus the
+guard the dispatch asked for.
+
+---
+
+## 5. THE CAP RULING — `MaxSnapshotChars` 1440 → 1085
+
+Applied exactly as ruled. The derivation, the date and TASK-413 are recorded beside the constant.
+
+```
+1085 = 400 tokens × 2.71 chars/token   (Zone B+C: 955 chars / 352 tokens, measured)
+```
+
+Recorded in the comment, per the ruling's conditions:
+
+- **3.6 was optimistic on every reading**, not conservative — Zone B 2.13, Zone C 2.77, B+C 2.71, whole prompt
+  3.56. At 2.71, the old 1440 admitted **~531 tokens against a 400-token budget, 33 % over**. The live board
+  (955 chars / 352 tok) did not breach it, so **the breach was latent**, not active.
+- **2.13 is the stricter bound (⇒ ~850 chars)** and is named as the number to move to **if Zone C ever becomes as
+  symbol-dense as Zone B** — with the reason it is not used today (Zone B is 68 chars of dense key/value symbols
+  and tokenizes far worse per character than Zone C's roster lines; applying it to the whole region over-tightens
+  by ~22 %).
+- **TASK-423 supersedes the question entirely** by enforcing the token budget with the tokenizer directly, demoting
+  this cap to a pre-filter. **Not implemented here**, and the comment says so.
+
+### 5a. ⚠️ A COUPLING THIS CREATES THAT WAS NOT IN THE RULING — flagging, not fixing
+
+Zone C's budget is `MaxSnapshotChars − ZoneBCharReserve = 1085 − 192 =` **893 chars**.
+
+- At the shipped `MaxRosterKinds = 8`, Zone C runs ~220 chars shorter than the spike's 13-kind fixture (887 chars),
+  so a realistic board clears 893 with **~220 to spare**. **No truncation today.**
+- At **13** printed kinds Zone C is **887 against 893 — six characters.** So **`MaxSnapshotChars` and
+  `MaxRosterKinds` are now coupled**, where at 1440 they were not: TASK-416's WARN-5 seam can no longer be closed
+  by simply raising `MaxRosterKinds`.
+- ⚠️ **The arithmetic in the two bullets above is DERIVED, not measured** — 46 chars for a `- footman: 8 total, 8
+  orderable, 8 followable` line, the five collapsed kinds' name lengths, minus the widened `other_kinds:` line.
+  **QA should re-derive it rather than take it from me**, and build-master's re-run prints the real Zone C.
+- ⛔ **Do not raise the cap to buy that room** — it restores the 33 % over-admission. The honest lever is
+  `ZoneBCharReserve`, which charges 192 for a Zone B that measures **68**. **I did not touch it**: it is a separate
+  §10 tunable, changing it alters the budget derivation, and it was not in the ruling.
+
+### 5b. The spike's mirror of the constant
+
+`SiegeLlamaSpike.cpp` printed `MaxSnapshotChars=1440` and `headroom = 1440 - zoneBC` as **bare literals** in the
+`SPIKE_TOKENS` line. Left alone, the re-run would have reported a headroom computed against a cap the game no
+longer uses — a stale premise inside the very tool used to re-measure. Replaced with `SpikeMaxSnapshotChars = 1085`
+and a mirror-duty comment. **⚠️ BUILD-MASTER: the `SPIKE_TOKENS` line will now read `MaxSnapshotChars=1085
+headroom=130` (t0), not `1440 / 485`.** If any parsing script pins the old numbers, that is why.
+
+---
+
+## 6. ⚠️ WARN-5 CLOSED — the truncation is no longer silent, and this is not optional beside §5
+
+**The old condition could not fire on the common case.** It tested
+`KindsToPrint < FMath::Min(UnitKinds.Num(), MaxRosterKinds)`, which is **false at exactly the cap** — so a 13-kind
+board collapsing five kinds into `other_kinds:` logged **nothing, on every sentence, forever**. That is the case
+that actually costs accuracy: `GetUnitKinds()` is **never** truncated, so the grammar still admits every collapsed
+kind and the sampler can emit a symbol the prompt never showed the model.
+
+**A tighter cap that silently degrades the prompt is worse than the loose one that did not**, so the two changes
+ship together and neither is complete alone.
+
+**Now:**
+
+- The test is **"did any kind fail to print in full"** — `UnitKinds.Num() - KindsToPrint > 0`.
+- **Both causes are named** in the message: `the MaxRosterKinds cap` vs `the CHARACTER BUDGET, below the
+  MaxRosterKinds cap`. They call for different fixes, so conflating them would waste the warning.
+- The message carries the numbers needed to act: kinds printed / total / collapsed, roster chars, the budget,
+  `MaxSnapshotChars`, `ZoneBCharReserve` — and says **"do NOT raise it to hide this"**.
+- **Escalating, not one-shot.** `bWarnedSnapshotTruncated` is replaced by `WarnedRosterKindsPrinted` /
+  `WarnedRosterKindsCollapsed`. A steady state still logs **once** (the per-sentence spam the original latch
+  existed to prevent), but a **new, deeper** collapse can never hide behind an earlier, milder one — which a plain
+  bool made impossible.
+- A per-turn `Verbose` line records **every** degraded turn, so a specific scored answer can be reconstructed
+  afterwards; the `Warning` fires per escalation and therefore cannot say *which sentence* was answered against a
+  trimmed roster.
+
+Both latches are `mutable` (the builders are const by the §9 pin) and process-lifetime, exactly as the bool was —
+`ResetSnapshot()` did not touch the old one and does not touch these, which is correct: they are log-spam latches,
+not snapshot state.
+
+---
+
+## 7. What QA should scrutinise
+
+1. **⚠️ THE THING I CANNOT PROVE AND HAVE NOT CLAIMED: I did not parse the fixed grammar with llama.cpp.**
+   Build-master verified `at-least` parses clean against the same b10235 parser and I am relying on that. **Do not
+   let my validator, my test, or a rule-for-rule diff against the spike be read as proof the grammar loads** —
+   that is precisely the error that produced this task. The only proof is a non-NULL
+   `llama_sampler_init_grammar` on the re-run.
+2. **The reference scanner in `CollectRuleReferences`** — the terminal-skipping state machine (quote toggling +
+   backslash escape). If it mis-tracks quote state it could either miss an illegal reference or, worse, fire on a
+   legal one. Worth a hand-trace against `when`'s RHS and against a symbol containing a space.
+3. **§5a's derived arithmetic** (the ~220-char / 6-char headroom figures). Derived, not measured. Re-derive it.
+4. **Whether `ensureAlwaysMsgf` is the right loudness**, vs `checkf`. My reasoning is in §4; overrule it if the
+   project wants a hard stop.
+5. **That the JSON key really is untouched everywhere** — I claim four categories (`SiegeAssistantJsonKeys::AtLeast`,
+   Zone A in both lanes, the parsers, the corpus). A repo-wide search for `at_least` now returns only JSON-key
+   uses, parser assertions, corpus rows and comments; **no rule name and no rule reference**. Please re-run it
+   independently.
+6. **The cross-owner edits, declared:** `SiegeAssistantGrammar.{h,cpp}` and the test file are TASK-417's;
+   `SiegeAssistantSnapshot.{h,cpp}` is TASK-416's; `SiegeLlamaSpike.cpp` is TASK-410's. One dispatch covered all
+   three because the defect and the ruling cut across them.
+7. **Comment-trap audit: PASS.** Re-run on **raw reads, never Grep**, over every block comment I touched or that
+   sat adjacent to an edit. No `*/` inside a glob pair was introduced. Comments corrected because my edits
+   falsified them: the grammar header's degenerate-rule list · the snapshot header's zone table and Zone A figures
+   (now TASK-413's measurements) and its `BuildZoneC` "logs ONCE" clause · the snapshot `.cpp`'s Zone-A to grammar
+   mirror note · the spike's "well inside MaxSnapshotChars (1440)" claim about its 13-kind deviation (**re-checked,
+   still true at 1085 — 130 chars of headroom, not 485, and I said so rather than leaving the adjective**).
+8. **Nothing sealed was opened.** The corpus, the holdout, Zone A's bytes, the few-shots, the schema and the
+   scoring rule are untouched. **Bar #3's 77.1 % result is undisturbed** — no fixture, no zone boundary and no
+   prompt byte moved, so `reused − zoneB_start = 9` should reproduce exactly.

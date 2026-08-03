@@ -35,7 +35,9 @@ public:
 	/**
 	 * True only when every vendored llama.cpp DLL resolved.
 	 *
-	 * !! GATE EVERY llama_*/ggml_* CALL ON THIS !!
+	 * !! GATE EVERY llama_ AND ggml_ CALL ON THIS !!
+	 * (Written without glob asterisks on purpose: an asterisk immediately
+	 *  followed by a slash inside this block would close the comment early.)
 	 * The DLLs are delay-loaded, so calling into them while this is false
 	 * raises a structured exception rather than returning an error.
 	 */

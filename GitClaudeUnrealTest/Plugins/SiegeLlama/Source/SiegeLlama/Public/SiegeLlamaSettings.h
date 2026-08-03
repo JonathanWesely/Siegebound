@@ -43,14 +43,33 @@ public:
 	/**
 	 * File looked for inside <ProjectDir>/Models/ when ModelPath is empty.
 	 *
-	 * PROVISIONAL. The spike defaults to Qwen3.5-4B-Instruct Q4_K_M from the
-	 * cleared permissive list; TASK-410/413 confirm the exact repo id, filename
-	 * and quant, and TASK-413 records the licence line verbatim. Note that
-	 * every purpose-built small function-calling model (xLAM-2, Hammer 2.1,
-	 * Arch-Function) is non-commercial and BANNED.
+	 * LICENCE: CLEARED. Qwen/Qwen3-4B-GGUF :: Qwen3-4B-Q4_K_M.gguf, Apache-2.0,
+	 * ungated, published by Qwen themselves (not a third-party re-upload) and
+	 * shipping its own verbatim Apache-2.0 LICENSE file. Verified against that
+	 * exact quant repo's card by TASK-413 and recorded in
+	 * Docs/ThirdPartyNotices.md section 2. Note that every purpose-built small
+	 * function-calling model (xLAM-2, Hammer 2.1, Arch-Function) is
+	 * non-commercial and BANNED.
+	 *
+	 * The PREVIOUS default, "Qwen3.5-4B-Instruct-Q4_K_M.gguf", was a filename
+	 * that CANNOT EXIST: Qwen publishes no -Instruct variant of Qwen3.5-4B and
+	 * no official GGUF for it at all. It was never downloadable.
+	 *
+	 * WHY THE DENSE Qwen3-4B AND NOT Qwen3.5-4B: Qwen3.5-4B is a hybrid
+	 * multimodal model whose 32 layers are only 8 full_attention to 24
+	 * linear_attention (Gated DeltaNet). Linear-attention layers carry a rolling
+	 * recurrent state rather than a per-token KV cache, so the prefix-reuse
+	 * behaviour CONVENTIONS section 8 is written around does not apply to them.
+	 * Qwen3-4B is Qwen3ForCausalLM, 36 uniform full-attention layers, GQA 32Q/8KV
+	 * -- the architecture section 8 was actually designed against.
+	 *
+	 * This is a SPIKE MEASUREMENT choice, not a shipping decision. Jonathan
+	 * rules on the shipping model at TASK-415. Known open risk: Qwen3 is a
+	 * hybrid-reasoning model that can emit <think> blocks; the GBNF constrains
+	 * generation from token 0, so any residual cost lands visibly in spike bar 5.
 	 */
 	UPROPERTY(config, EditAnywhere, Category = "Model")
-	FString DefaultModelFileName = TEXT("Qwen3.5-4B-Instruct-Q4_K_M.gguf");
+	FString DefaultModelFileName = TEXT("Qwen3-4B-Q4_K_M.gguf");
 
 	/** Directory the fetch tool populates: <ProjectDir>/Models/. */
 	static FString GetModelSearchDir();

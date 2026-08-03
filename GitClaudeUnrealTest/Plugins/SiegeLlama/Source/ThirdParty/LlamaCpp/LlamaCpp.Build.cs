@@ -61,9 +61,12 @@ public class LlamaCpp : ModuleRules
 		// unavailable" instead of failing the whole editor at process load.
 		// The module's StartupModule does an explicit FPlatformProcess::
 		// GetDllHandle so the delay-load helper finds them already resident.
-		// WARNING: because these are delay-loaded, calling ANY llama_*/ggml_*
+		// WARNING: because these are delay-loaded, calling ANY llama_ or ggml_
 		// function while FSiegeLlamaModule::IsLlamaAvailable() is false raises a
 		// structured exception. Every call site must gate on it.
+		// (Glob asterisks omitted on purpose: an asterisk immediately followed
+		//  by a slash closes a block comment. Harmless in a line comment like
+		//  this one, fatal in a doc block. Same phrasing used everywhere.)
 		string[] DelayLoad = { "llama.dll", "ggml.dll", "ggml-base.dll" };
 		foreach (string Dll in DelayLoad)
 		{

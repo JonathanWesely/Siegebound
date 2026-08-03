@@ -26,7 +26,24 @@ and avoids a bespoke shader-compilation toolchain.
 | Platform | Win64, x64 |
 | Configuration | Release |
 | CRT | **`/MD`** (dynamic) — verified: every vendored DLL imports `MSVCP140.dll` / `VCRUNTIME140.dll`, matching UE's own `/MD`. |
-| Toolset (import libs) | MSVC **19.38.33145** (VS2022 **14.38.33130**), satisfying UE 5.8's 14.38+ requirement |
+| Toolset (import libs) | MSVC **19.38.33145** (VS2022 **14.38.33130**) |
+| Toolset (engine build) | MSVC **14.50.35717** (VS 18) — what UBT actually selected |
+
+### ✅ The three-way toolset mismatch linked clean — this validates the C-API-only ruling
+
+The vendored DLLs, the generated import libs (14.38) and the engine's own compile
+(**14.50**) are **three different toolsets**, and `UnrealEditor-SiegeLlama.dll` still
+linked with zero diagnostics.
+
+That is not luck. Import libraries for a **C** API are toolset-agnostic — they carry
+symbol→DLL records, no C++ ABI. **This is precisely the immunity the "link the C API
+only" decision was chosen to buy**, and it was tested here under a *harder* condition
+than anticipated (nobody expected UBT to pick 14.50). Had `common/` been linked — C++
+with STL in its signatures — this is exactly where `/MD` vs `/MT`,
+`_ITERATOR_DEBUG_LEVEL` and toolset-mismatch failures would have surfaced.
+
+⚠️ **Do not "fix" the import libs to match the engine toolset.** They are correct as
+generated, and regenerating them per-toolset would be cargo-cult churn.
 
 **Why Vulkan, not CUDA:** one binary covers NVIDIA / AMD / Intel, which is
 Jonathan's no-vendor-lock-in ruling made concrete. CUDA would add 1 GB+ of DLLs
@@ -123,7 +140,24 @@ CPU : SSE3 = 1 | SSSE3 = 1 | AVX = 1 | AVX_VNNI = 1 | AVX2 = 1 | F16C = 1 | FMA 
 LINKPROOF_VERDICT: PASS (backends=2 devices=3)
 ```
 
-⚠️ This is the **standalone** proof. The equivalent in-engine proof —
-`Siege.Llama.Info` under a UBT build — was deferred at TASK-409 because the game
-module was not quiet (the quiet-module law). See
+## In-engine build — ✅ GREEN (2026-08-02, second pass)
+
+The UBT/UHT build has since run. **The plugin compiled and linked with zero
+diagnostics:**
+
+```
+[21/33] Compile [x64] Module.SiegeLlama.cpp      <- UHT reflection glue
+[22/33] Compile [x64] SiegeLlamaModule.cpp
+[24/33] Compile [x64] SiegeLlamaSpike.cpp
+[25/33] Link    [x64] UnrealEditor-SiegeLlama.lib
+[26/33] Link    [x64] UnrealEditor-SiegeLlama.dll
+```
+
+All 19 vendored DLLs were staged to `Plugins/SiegeLlama/Binaries/Win64/` by
+`RuntimeDependencies` (log actions 1–19), confirming the staging wiring.
+
+⚠️ The **overall target** build reported `Result: Failed` on a single foreign
+diagnostic in `Source/GitClaudeUnrealTest/Siegebound/SiegeAssistantInputProbe.cpp`
+(TASK-411's file, game module) — **not attributable to this plugin.** `Siege.Llama.Info`
+still needs one green target build to produce its in-editor output. See
 `.claude/pipeline/handoffs/TASK-409-buildmaster.md`.

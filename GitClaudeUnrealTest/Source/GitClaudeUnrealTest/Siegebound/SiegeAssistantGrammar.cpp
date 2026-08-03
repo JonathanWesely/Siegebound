@@ -69,9 +69,254 @@ namespace
 		return FString::Join(Alternatives, TEXT(" | "));
 	}
 
-	/** Emits one complete rule line: `Name ::= <Rhs>` plus its newline. */
+	/**
+	 *  ⛔ THE GBNF RULE-NAME CHARSET — AND WHY IT IS CHECKED RATHER THAN TRUSTED.
+	 *
+	 *  llama.cpp reads a rule name as a run of [a-zA-Z0-9-] and STOPS at the
+	 *  first character outside it. `at_least ::= "1" | ...` therefore parses as
+	 *  the name `at`, after which the parser demands `::=`, finds `_least`, and
+	 *  REJECTS THE ENTIRE GRAMMAR:
+	 *
+	 *      parse: error parsing grammar: expecting ::= at _least ::= "1" | "2" ...
+	 *
+	 *  ⚠️ THAT SHIPPED. TASK-413's spike measured the consequence:
+	 *  llama_sampler_init_grammar returned NULL on every generation of all six
+	 *  bench runs, and with nothing constraining it the model emitted `<think>`
+	 *  prose instead of JSON on every iteration — a total loss of the mechanism
+	 *  the whole feature rests on, in the file CONVENTIONS §9c names as THE
+	 *  AUTHORITY.
+	 *
+	 *  ⚠️ IT ALSO SURVIVED TWO CAREFUL REVIEWS, AND THAT IS THE REASON THIS
+	 *  FUNCTION EXISTS. Both diffed this generator against the spike's mirror
+	 *  rule-for-rule and correctly reported that they matched. They did match.
+	 *  THEY WERE IDENTICALLY UNPARSEABLE.
+	 *
+	 *  > STRING-COMPARING TWO GENERATORS CAN NEVER PROVE EITHER ONE IS VALID.
+	 *  > ONLY THE TARGET PARSER CAN. A dump is not a parse. This check is the
+	 *  > cheap stand-in for the parser, applied at the one point where the answer
+	 *  > is still a named identifier in a log line instead of a silent capability
+	 *  > loss at runtime.
+	 *
+	 *  ⚠️ DO NOT CONFUSE THIS CHARSET WITH THE SYMBOL CHARSET IN
+	 *  CanonicalizeSymbols ABOVE. A canonical SYMBOL ("ancient_ground_near") and
+	 *  a JSON KEY ("at_least") are lower snake_case and MUST keep their
+	 *  underscores — they are wire format, and the output schema, the sealed
+	 *  evaluation corpus and ParseSiegeAssistantCommand all assert them. Only the
+	 *  GBNF RULE NAME is kebab-case. The two sit one token apart inside `when`:
+	 *
+	 *      when ::= "\"now\"" | "{\"kind\":" kind ",\"at_least\":" at-least "}"
+	 *                                              ^ JSON key      ^ rule name
+	 */
+	bool IsLegalGbnfRuleName(const FString& Identifier)
+	{
+		if (Identifier.IsEmpty())
+		{
+			return false;
+		}
+
+		for (const TCHAR Char : Identifier)
+		{
+			const bool bLegal =
+				(Char >= TEXT('a') && Char <= TEXT('z')) ||
+				(Char >= TEXT('A') && Char <= TEXT('Z')) ||
+				(Char >= TEXT('0') && Char <= TEXT('9')) ||
+				Char == TEXT('-');
+
+			if (!bLegal)
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 *  Collects the rule REFERENCES from a right-hand side — every identifier
+	 *  that sits OUTSIDE a terminal literal.
+	 *
+	 *  ⚠️ THE DEFECT HAD TWO HALVES. `at_least` appeared once as a definition and
+	 *  once as a reference, and validating only definitions would have left the
+	 *  reference to rot — llama.cpp rejects the reference for exactly the same
+	 *  reason it rejects the definition. Both halves are checked.
+	 *
+	 *  Terminals are SKIPPED AS WHOLE UNITS, honouring GBNF's backslash escape,
+	 *  rather than the right-hand side being split on whitespace. A generated
+	 *  symbol is PERMITTED to contain a space — CanonicalizeSymbols warns about
+	 *  it but still emits it, correctly escaped, because silently dropping a live
+	 *  unit kind would be worse — and a whitespace split would tear `"foo bar"`
+	 *  in half and then report the fragment as an illegal rule name. A validator
+	 *  that fires on legal input is worse than no validator, because it teaches
+	 *  people to ignore it.
+	 */
+	void CollectRuleReferences(const FString& Rhs, TArray<FString>& OutReferences)
+	{
+		FString Identifier;
+		bool bInTerminal = false;
+		bool bEscaped = false;
+
+		for (const TCHAR Char : Rhs)
+		{
+			if (bInTerminal)
+			{
+				if (bEscaped)
+				{
+					bEscaped = false;
+				}
+				else if (Char == TEXT('\\'))
+				{
+					bEscaped = true;
+				}
+				else if (Char == TEXT('"'))
+				{
+					bInTerminal = false;
+				}
+
+				continue;
+			}
+
+			if (Char == TEXT('"'))
+			{
+				bInTerminal = true;
+				continue;
+			}
+
+			// Outside a terminal this generator emits only identifiers, ' | ' and
+			// spaces. Anything that is not a separator is therefore part of an
+			// identifier — INCLUDING an illegal character, which is precisely what
+			// must be captured rather than skipped past.
+			const bool bIsSeparator = (Char == TEXT(' ')) || (Char == TEXT('\t')) || (Char == TEXT('|'));
+			if (bIsSeparator)
+			{
+				if (!Identifier.IsEmpty())
+				{
+					OutReferences.Add(Identifier);
+					Identifier.Reset();
+				}
+
+				continue;
+			}
+
+			Identifier.AppendChar(Char);
+		}
+
+		if (!Identifier.IsEmpty())
+		{
+			OutReferences.Add(Identifier);
+		}
+	}
+
+	/**
+	 *  Emits one complete rule line: `Name ::= <Rhs>` plus its newline.
+	 *
+	 *  ⚠️ EVERY RULE NAME AND EVERY RULE REFERENCE IN THE GRAMMAR PASSES THROUGH
+	 *  HERE, which is what makes this the single point where the charset can be
+	 *  enforced for the whole file rather than for the one rule that happened to
+	 *  fail first. The check is a linear scan of ~13 short identifiers, run once
+	 *  per typed sentence, and Build is a pure function with no engine state — so
+	 *  it is unmeasurable next to the inference call it precedes.
+	 *
+	 *  ⛔ WHERE THIS GUARD IS LIVE — READ OUT OF UE 5.8's HEADERS, NOT RECALLED.
+	 *  This comment previously claimed the guard was "DELIBERATELY NOT COMPILED
+	 *  OUT OF SHIPPING". THAT WAS FALSE. It was an assertion about a consuming
+	 *  system (UBT/Core) written from memory and never checked — the identical
+	 *  mistake, one system over, to the one this function exists to catch. What
+	 *  the engine actually does, with the lines it does it on:
+	 *
+	 *    Build.h:200-203      USE_LOGGING_IN_SHIPPING defaults to 0
+	 *    Build.h:350-352      Shipping ⇒ NO_LOGGING = !USE_LOGGING_IN_SHIPPING ⇒ 1
+	 *    Build.h:322-324      Test     ⇒ the same
+	 *    LogMacros.h:184-194  NO_LOGGING ⇒ UE_LOG "will only log Fatal errors";
+	 *                         an Error call becomes an empty if constexpr(false)
+	 *    Build.h:205-212      USE_CHECKS_IN_SHIPPING 0, and
+	 *                         USE_ENSURES_IN_SHIPPING follows it ⇒ 0
+	 *    Build.h:332-334      Shipping ⇒ DO_ENSURE = USE_ENSURES_IN_SHIPPING ⇒ 0
+	 *    Build.h:304-306      Test     ⇒ the same
+	 *    AssertionMacros.h:467-472
+	 *                         DO_ENSURE 0 ⇒ ensureAlwaysMsgf degrades to
+	 *                         (LIKELY(!!(expr))) — the condition is still
+	 *                         evaluated, but nothing is reported
+	 *
+	 *  GitClaudeUnrealTest.Target.cs sets NO bUseLoggingInShipping and NO
+	 *  bUseChecksInShipping override, so BOTH HALVES OF THIS GUARD COMPILE OUT
+	 *  IN SHIPPING AND IN TEST. It is live in Debug, DebugGame and Development,
+	 *  editor variants included (Build.h:241-296 gives both UE_BUILD_DEBUG and
+	 *  UE_BUILD_DEVELOPMENT NO_LOGGING 0 and DO_ENSURE 1).
+	 *
+	 *  ✅ AND THAT IS THE CORRECT SCOPE, not a hole being confessed. This is a
+	 *  DEVELOPMENT-TIME AND CI check by nature rather than by accident, because
+	 *  the property it checks is settled before the program runs:
+	 *
+	 *   1. NO RULE NAME IS EVER BUILT FROM DATA. Every one of the 13 names in
+	 *      Build is a compile-time TEXT("…") literal, and every data-derived
+	 *      string — unit kinds, place symbols, intents, ask codes, counts —
+	 *      reaches the grammar through GbnfJsonString / GbnfTerminal, i.e.
+	 *      INSIDE a quoted terminal, never in identifier position. A live unit
+	 *      called `militia_mob` cannot produce an illegal rule name. THIS GUARD
+	 *      CANNOT FIRE ON LIVE DATA — only on source.
+	 *   2. ⇒ A Shipping build therefore contains exactly the identifiers a
+	 *      Development build contained. There is no input that breaks it in a
+	 *      player's hands and not on a developer's machine, and that is the
+	 *      only thing that would have made a dev-only guard the "silent failure
+	 *      wearing a different hat" the old comment was worried about.
+	 *   3. WHAT PROTECTS A SHIPPED BUILD IS THE AUTOMATION TEST, NOT THIS LOG:
+	 *      `Siegebound.Assistant.Grammar.RuleNameCharset`, in
+	 *      Siegebound/Tests/SiegeAssistantGrammarTest.cpp. It runs Build over
+	 *      all four builder shapes and asserts this same charset in CI, before
+	 *      anything is packaged. THAT is the gate. This function is the fast
+	 *      local echo of it that names the offending identifier in a log line
+	 *      while you are still at the keyboard.
+	 *
+	 *  ⚠️ DO NOT "MAKE THE OLD COMMENT TRUE" BY SETTING bUseLoggingInShipping /
+	 *  bUseChecksInShipping. Turning Shipping logging on project-wide carries
+	 *  performance and log-volume consequences far outside this file, and it is
+	 *  not this file's call to make (QA TASK-416 BLOCKER-1; recorded there as an
+	 *  option for TASK-423).
+	 *
+	 *  ⚠️ THE OFFENDING RULE IS STILL EMITTED, NOT DROPPED. Swallowing it would
+	 *  leave a dangling reference and a grammar that fails to parse for a second,
+	 *  less obvious reason, and the `Siege.Llama.SpikeGrammar` dump would no
+	 *  longer show what the code actually intended. llama.cpp will refuse this
+	 *  grammar either way; the job here is to make the refusal LOUD and to NAME
+	 *  the identifier that caused it, which is the one thing the six bench runs
+	 *  could not do for themselves.
+	 *
+	 *  In the configurations where the guard is live, the two channels do two
+	 *  different jobs: the Error log NAMES the offending identifier in the run
+	 *  log, and the ensure adds a callstack and an automation-visible error so an
+	 *  editor or CI run FAILS on it rather than merely mentioning it. Neither
+	 *  survives Shipping or Test — see the table above for why that is the right
+	 *  scope for this check and where the shipped build's actual protection is.
+	 */
 	void AppendRule(FString& Grammar, const TCHAR* RuleName, const FString& Rhs)
 	{
+		const bool bLegalRuleName = IsLegalGbnfRuleName(RuleName);
+		if (!bLegalRuleName)
+		{
+			UE_LOG(LogSiegeAssistant, Error,
+				TEXT("USiegeAssistantGrammar::Build: ILLEGAL GBNF RULE NAME '%s'. llama.cpp rule names are [a-zA-Z0-9-] only, so the WHOLE grammar will fail to parse and generation will run UNCONSTRAINED. Rename the RULE to kebab-case; do NOT rename the JSON key it carries."),
+				RuleName);
+		}
+		ensureAlwaysMsgf(bLegalRuleName,
+			TEXT("Illegal GBNF rule name '%s' — the grammar will not parse. See LogSiegeAssistant."), RuleName);
+
+		TArray<FString> References;
+		CollectRuleReferences(Rhs, References);
+
+		for (const FString& Reference : References)
+		{
+			const bool bLegalReference = IsLegalGbnfRuleName(Reference);
+			if (!bLegalReference)
+			{
+				UE_LOG(LogSiegeAssistant, Error,
+					TEXT("USiegeAssistantGrammar::Build: rule '%s' REFERENCES the illegal identifier '%s'. llama.cpp rule names are [a-zA-Z0-9-] only, so the WHOLE grammar will fail to parse and generation will run UNCONSTRAINED."),
+					RuleName, *Reference);
+			}
+			ensureAlwaysMsgf(bLegalReference,
+				TEXT("Illegal GBNF rule reference '%s' in rule '%s' — the grammar will not parse. See LogSiegeAssistant."),
+				*Reference, RuleName);
+		}
+
 		Grammar += RuleName;
 		Grammar += TEXT(" ::= ");
 		Grammar += Rhs;
@@ -296,11 +541,24 @@ FString USiegeAssistantGrammar::Build(const TArray<FName>& UnitKinds, const TArr
 			AppendRule(Grammar, TEXT("count"), JoinAlternatives(Alternatives));
 		}
 
-		// --- at_least ---------------------------------------------------------
+		// --- at-least ---------------------------------------------------------
 		// The deferred-intent threshold is the same numeric range as `count` but
 		// WITHOUT "all": "wait until I have all footmen" is not a condition that
 		// can ever become true, so it is made unsayable rather than left for the
 		// parser to reject. Same range, generated from the same constants.
+		//
+		// ⛔ THE RULE IS `at-least`, KEBAB-CASE. THE JSON KEY IT CARRIES IS
+		//    `at_least`, SNAKE_CASE. THEY ARE NOT THE SAME STRING AND NEITHER MAY
+		//    BE "MADE CONSISTENT" WITH THE OTHER.
+		//    - `at_least` as a RULE name does not parse: llama.cpp reads the name
+		//      as `at`, then demands `::=` and finds `_least`, and REJECTS THE
+		//      WHOLE GRAMMAR. That shipped and cost TASK-413 two of its six bars.
+		//    - `at-least` as a JSON KEY breaks the wire format: the output schema
+		//      in Zone A, the sealed evaluation corpus (TASK-426) and
+		//      ParseSiegeAssistantCommand's SiegeAssistantJsonKeys::AtLeast all
+		//      assert `at_least`, and the executor reads it.
+		//    See IsLegalGbnfRuleName above; AppendRule now refuses to let the
+		//    first half of this recur silently.
 		{
 			TArray<FString> Alternatives;
 			Alternatives.Reserve(GrammarCountMax);
@@ -309,7 +567,7 @@ FString USiegeAssistantGrammar::Build(const TArray<FName>& UnitKinds, const TArr
 				Alternatives.Add(GbnfTerminal(FString::FromInt(Quantity)));
 			}
 
-			AppendRule(Grammar, TEXT("at_least"), JoinAlternatives(Alternatives));
+			AppendRule(Grammar, TEXT("at-least"), JoinAlternatives(Alternatives));
 		}
 
 		// --- item -------------------------------------------------------------
@@ -385,11 +643,15 @@ FString USiegeAssistantGrammar::Build(const TArray<FName>& UnitKinds, const TArr
 
 		if (bHasKinds)
 		{
+			// ⛔ TWO DIFFERENT STRINGS ON PURPOSE, ONE LINE APART: the JSON KEY is
+			//    SiegeAssistantJsonKeys::AtLeast == "at_least" (wire format), the
+			//    RULE REFERENCE is "at-least" (GBNF charset). See the `at-least`
+			//    rule above.
 			TArray<FString> Parts;
 			Parts.Add(JsonObjectOpen(SiegeAssistantJsonKeys::Kind));
 			Parts.Add(TEXT("kind"));
 			Parts.Add(JsonNextKey(SiegeAssistantJsonKeys::AtLeast));
-			Parts.Add(TEXT("at_least"));
+			Parts.Add(TEXT("at-least"));
 			Parts.Add(GbnfTerminal(TEXT("}")));
 
 			Alternatives.Add(FString::Join(Parts, TEXT(" ")));

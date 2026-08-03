@@ -56,7 +56,10 @@ from pathlib import Path
 from typing import Optional
 
 HF_HOST = "huggingface.co"
-ALLOWED_AUTH_SUFFIXES = (".huggingface.co", "huggingface.co", ".hf.co", "hf.co")
+# Hosts allowed to receive the Authorization header. Matched exact-or-subdomain
+# by _may_send_auth() -- NEVER as a bare suffix, because a bare
+# host.endswith("huggingface.co") also accepts "evilhuggingface.co".
+ALLOWED_AUTH_HOSTS = ("huggingface.co", "hf.co")
 CHUNK = 1024 * 1024
 USER_AGENT = "siegebound-fetch-llm-model/1.0 (stdlib urllib)"
 
@@ -67,6 +70,19 @@ DEFAULT_DEST = PROJECT_ROOT / "Models"
 # ---------------------------------------------------------------------------
 # HTTP plumbing
 # ---------------------------------------------------------------------------
+
+def _may_send_auth(host: Optional[str]) -> bool:
+    """True iff `host` is an allowed host itself, or a subdomain of one.
+
+    Subdomains MUST still match: HF redirects large files to its own CDN
+    (cdn-lfs*.huggingface.co), and those requests have to keep the bearer token
+    or the download 401s. Look-alike registrations that merely END WITH an
+    allowed name -- evilhuggingface.co, myhf.co -- must not.
+    """
+    host = (host or "").lower()
+    return any(host == allowed or host.endswith("." + allowed)
+               for allowed in ALLOWED_AUTH_HOSTS)
+
 
 class _TokenStrippingRedirectHandler(urllib.request.HTTPRedirectHandler):
     """Drops the Authorization header when a redirect leaves Hugging Face.
@@ -81,7 +97,7 @@ class _TokenStrippingRedirectHandler(urllib.request.HTTPRedirectHandler):
         if new_req is None:
             return None
         host = (urllib.parse.urlparse(newurl).hostname or "").lower()
-        if not host.endswith(ALLOWED_AUTH_SUFFIXES):
+        if not _may_send_auth(host):
             # `Authorization` may be stored under either casing depending on how
             # it was added; clear both views.
             new_req.headers.pop("Authorization", None)

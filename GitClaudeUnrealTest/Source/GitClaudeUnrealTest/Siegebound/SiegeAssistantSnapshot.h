@@ -90,22 +90,32 @@ struct FSiegeAssistantRosterEntry
  *
  *  ── THE THREE ZONES, AND WHY THE LAYOUT IS LOAD-BEARING ──
  *
- *      ZONE A  ~600 tok  STATIC  system prompt, schema, place vocabulary,
+ *      ZONE A  1139 tok  STATIC  system prompt, schema, place vocabulary,
  *                                synonym table, 3 few-shots
- *      ZONE B  ~120 tok  SLOW    castle HP bands, mid owner, gold band
- *      ZONE C  ~150 tok  FAST    roster, pending-intent line, the utterance
+ *      ZONE B    32 tok  SLOW    castle HP bands, mid owner, gold band
+ *      ZONE C   320 tok  FAST    roster, pending-intent line, the utterance
  *
- *  ⚠️ ZONE A IS ~600 tok AS BUILT, NOT THE "~350" THE ORIGINAL PLAN ESTIMATED,
- *  AND IT MUST NOT BE TRIMMED TOWARD 350. Measured: 2158 chars with
- *  `synonyms: none`; with DA_AssistantVocabulary loaded the synonym table roughly
- *  doubles it (~4250 chars, ~1180 tok). That is DELIBERATE and it makes the spike
- *  BETTER, not worse. Bar #3 is the KV-reuse drop, whose ratio is (B+C)/(A+B+C):
- *  at the shipped sizes 165/765 = a 78% drop and the bar PASSES, whereas cutting
+ *  ⚠️ THOSE ARE MEASURED TOKEN COUNTS, NOT ESTIMATES - TASK-413's spike run,
+ *  2026-08-03, `Siege.Llama.SpikePrompt` against the shipping tokenizer with the
+ *  model resident (Zone A 4314 chars, Zone B 68, Zone C 887; assembled prompt
+ *  5349 chars / 1504 tok of a 2048 context). Everything below was written
+ *  against the earlier estimates and its ARGUMENT survived the measurement
+ *  intact; only the numbers moved.
+ *
+ *  ⚠️ ZONE A IS 1139 tok AS BUILT, NOT THE "~350" THE ORIGINAL PLAN ESTIMATED
+ *  AND NOT THE "~600" THIS FILE ESTIMATED SECOND, AND IT MUST NOT BE TRIMMED
+ *  TOWARD EITHER. The earlier 2158-char figure was measured with
+ *  `synonyms: none`; with DA_AssistantVocabulary attached the synonym table
+ *  doubles it, and the real figure is 4314 chars. That is DELIBERATE and it
+ *  makes the spike BETTER, not worse. Bar #3 is the KV-reuse drop, whose ratio
+ *  is (B+C)/(A+B+C): the reference derivation gave 165/765 = 78% and TASK-413
+ *  MEASURED 77.1% on the shipped-worst-case bound, within 0.9 pp - so the bar
+ *  PASSES and the reference figure is corroborated rather than assumed. Cutting
  *  Zone A to the nominal 350 gives 165/515 = 68% and the bar MARGINALLY FAILS.
  *  Zone A is also prefilled once and cached, so its size costs turn-1 TTFT only
  *  and barely touches bar #2, which measures a warm prefix. Trimming here would
  *  optimise the wrong number and could turn a GO into a GO-WITH-RESCOPE.
- *  (CONVENTIONS §8; TASK-419 WARN-5. Real tokenizer counts are TASK-413's.)
+ *  (CONVENTIONS §8; TASK-419 WARN-5.)
  *
  *  The zones exist to keep the llama.cpp KV cache prefix warm - that is what
  *  turns a ~500-token prefill into ~150 from turn two onward. Every rule below
@@ -149,10 +159,42 @@ class GITCLAUDEUNREALTEST_API USiegeAssistantSnapshot : public UObject
 public:
 
 	/**
-	 *  ⚠️ FLAGGED TUNABLE (CONVENTIONS §10) - the ≤400-token snapshot cap
-	 *  enforced as characters at a conservative 3.6 chars/token, until
-	 *  TASK-413's spike supplies the real tokenizer count and this constant is
-	 *  CORRECTED FROM THE MEASUREMENT (never guessed a second time).
+	 *  THE ≤400-TOKEN SNAPSHOT CAP, ENFORCED AS CHARACTERS.
+	 *
+	 *  ⚠️ CORRECTED FROM MEASUREMENT ON 2026-08-03 BY TASK-413's SPIKE RUN:
+	 *  1440 → 1085. This is the ONE-PASS correction CONVENTIONS §10 flagged and
+	 *  §8's RESOLUTION trigger armed; the trigger has now FIRED. The number is no
+	 *  longer a guess and is not to be guessed a second time.
+	 *
+	 *      1085 = 400 tokens × 2.71 chars/token
+	 *
+	 *  2.71 is the MEASURED chars/token of ZONE B + ZONE C — the region this cap
+	 *  actually governs — taken from the shipping tokenizer with the model
+	 *  resident (`Siege.Llama.SpikePrompt`, fixture t0: 955 chars / 352 tokens).
+	 *  BOTH OPERANDS ARE MEASUREMENTS.
+	 *
+	 *  ⚠️ WHY 1440 WAS NOT MERELY IMPRECISE BUT WRONG IN THE UNSAFE DIRECTION.
+	 *  It was derived as 400 × 3.6, and §8 called 3.6 "conservative". Every
+	 *  measured reading is BELOW it — Zone B 2.13, Zone C 2.77, B+C 2.71, whole
+	 *  assembled prompt 3.56 — so 3.6 was OPTIMISTIC on every single one. At the
+	 *  real 2.71 a 1440-char snapshot admits 1440 / 2.71 ≈ 531 tokens against a
+	 *  400-token budget: 33 % OVER. The live board did not breach it (955 chars,
+	 *  352 tok), so the breach was LATENT — the cap simply permitted a snapshot a
+	 *  third over budget the moment the roster or the order line grew.
+	 *
+	 *  ⚠️ 2.13 IS THE STRICTER BOUND AND IS DELIBERATELY NOT THE ONE USED. Zone
+	 *  B measures 2.13 chars/token, which would give 400 × 2.13 ≈ 850 chars. Zone
+	 *  B is 68 characters of dense key/value symbols and digits and tokenizes far
+	 *  worse per character than Zone C's roster lines, so applying its ratio to
+	 *  the whole region would over-tighten by ~22 %. IF ZONE C EVER BECOMES AS
+	 *  SYMBOL-DENSE AS ZONE B, ~850 IS THE NUMBER TO MOVE TO — and the way to
+	 *  move it is to re-run `Siege.Llama.SpikePrompt` and read the ratio, never
+	 *  to re-guess.
+	 *
+	 *  ⚠️ TASK-423 SUPERSEDES THIS CONSTANT AND THE WHOLE QUESTION. It enforces
+	 *  the ≤400-token budget against THE TOKENIZER DIRECTLY, at which point this
+	 *  cap demotes to a cheap pre-filter that stops a pathological snapshot ever
+	 *  reaching the tokenizer. Do not implement that here.
 	 *
 	 *  ⚠️ THE CAP COVERS ZONE B + ZONE C - the live snapshot - NOT Zone A.
 	 *  Zone A is the static preamble the three-zone budget accounts for
@@ -161,13 +203,26 @@ public:
 	 *  B+C ~50 tokens, which is not a readable snapshot; so the cap is on what
 	 *  Capture() produced.
 	 *
-	 *  ⚠️ Zone A measures ~600 tok as built (~1180 with the vocabulary asset),
-	 *  NOT the "~350" the original plan estimated - see the zone table on the
-	 *  class above for why growing it PASSES the KV-reuse bar and trimming it
-	 *  toward 350 marginally FAILS it. Do not read this constant as licence to
-	 *  shrink Zone A (TASK-419 WARN-5).
+	 *  ⚠️ Zone A measures 4,314 chars / 1,139 tok as built with the vocabulary
+	 *  asset attached (TASK-413, replacing the "~600 tok" estimate) - see the
+	 *  zone table on the class above for why growing it PASSES the KV-reuse bar
+	 *  and trimming it toward 350 marginally FAILS it. Do not read this constant
+	 *  as licence to shrink Zone A (TASK-419 WARN-5).
+	 *
+	 *  ⚠️ THIS CAP IS NOW COUPLED TO MaxRosterKinds, WHICH IT WAS NOT AT 1440.
+	 *  Zone C is budgeted at MaxSnapshotChars - ZoneBCharReserve = 1085 - 192 =
+	 *  893 chars. At the shipped MaxRosterKinds = 8 the roster prints ~220 chars
+	 *  shorter than the spike's 13-kind fixture (887 chars), so a realistic board
+	 *  clears the budget with ~220 to spare. RAISE MaxRosterKinds TOWARD 13 AND
+	 *  THE CHARACTER BUDGET STARTS BITING IMMEDIATELY (887 against 893). That is
+	 *  correct behaviour against a real budget rather than a defect - and it is
+	 *  exactly why BuildZoneC's truncation now logs every time it degrades.
+	 *  ⛔ DO NOT RAISE THIS CAP TO BUY THAT ROOM: it would restore the 33 %
+	 *  over-admission this correction exists to remove. The honest lever is
+	 *  ZoneBCharReserve, which over-charges a Zone B that measures 68 chars by
+	 *  124 - re-measure it, do not eyeball it.
 	 */
-	static constexpr int32 MaxSnapshotChars = 1440;
+	static constexpr int32 MaxSnapshotChars = 1085;
 
 	/**
 	 *  Zone B's guaranteed slice of MaxSnapshotChars. Zone B is four short fixed
@@ -246,9 +301,16 @@ public:
 	 *  Over-budget behaviour (CONVENTIONS §8): the ROSTER TAIL collapses
 	 *  deterministically - first into a single `other_kinds:` line beyond
 	 *  MaxRosterKinds, then by dropping further tail rows until the character
-	 *  budget fits - and logs ONCE. The utterance and the pending line are never
-	 *  truncated by the budget (only by MaxUtteranceChars, which is a separate,
-	 *  always-on sanitiser).
+	 *  budget fits. The utterance and the pending line are never truncated by the
+	 *  budget (only by MaxUtteranceChars, which is a separate, always-on
+	 *  sanitiser).
+	 *
+	 *  ⚠️ EVERY COLLAPSE IS LOGGED, INCLUDING THE ONE AT EXACTLY THE CAP. Both
+	 *  causes are reported and named - the MaxRosterKinds cap and the character
+	 *  budget - at Warning on first occurrence and on every escalation, plus a
+	 *  per-turn record at Verbose. It used to log ONCE and only for the budget
+	 *  case, which meant a >MaxRosterKinds board degraded the prompt silently
+	 *  forever (TASK-419 WARN-5). See WarnedRosterKindsPrinted.
 	 *
 	 *  @param Utterance   the player's raw typed sentence; flattened + capped, never interpreted here
 	 *  @param PendingLine the FSM's GAME-AUTHORED pending-intent line (§1: each clarification turn is a fresh single-turn call, and this line - never the model's own previous output - is what carries context forward). Empty ⇒ `none`
@@ -384,8 +446,35 @@ private:
 	/** Hero presence for the ordering team. */
 	EHeroPresence HeroPresence = EHeroPresence::Absent;
 
-	/** One-shot log latch for the character-budget truncation - `mutable` because the builders are const by the §9 pin, and a per-sentence warning would spam. */
-	mutable bool bWarnedSnapshotTruncated = false;
+	/**
+	 *  ⚠️ TRUNCATION-VISIBILITY LATCH (TASK-419 WARN-5, closed here by TASK-413).
+	 *
+	 *  This pair REPLACES a single `bWarnedSnapshotTruncated` bool that made the
+	 *  most common degradation completely INVISIBLE. The old warning fired on
+	 *  `KindsToPrint < FMath::Min(UnitKinds.Num(), MaxRosterKinds)`, which is
+	 *  FALSE at exactly the cap - so a 13-kind board collapsing five kinds into
+	 *  `other_kinds:` logged nothing at all, on every sentence, forever. That is
+	 *  the case that actually costs accuracy, because GetUnitKinds() is NEVER
+	 *  truncated: the grammar still admits every collapsed kind, so the sampler
+	 *  can emit a symbol the prompt never showed the model.
+	 *
+	 *  With MaxSnapshotChars now binding at a real measured budget, truncation
+	 *  gets MORE likely, and A TIGHTER CAP THAT SILENTLY DEGRADES THE PROMPT IS
+	 *  WORSE THAN THE LOOSE ONE THAT DID NOT. So the cap correction and this
+	 *  latch ship together; neither is complete alone.
+	 *
+	 *  ESCALATING, NOT ONE-SHOT: a Warning is emitted the first time the roster
+	 *  fails to print in full, and again whenever the degradation gets WORSE than
+	 *  anything already reported. A steady state still logs once - which is the
+	 *  per-sentence spam the original latch existed to prevent - but a new and
+	 *  deeper collapse can never hide behind an earlier, milder one.
+	 *
+	 *  `mutable` because the zone builders are const by the §9 signature pin.
+	 */
+	mutable int32 WarnedRosterKindsPrinted = MAX_int32;
+
+	/** Companion to WarnedRosterKindsPrinted: the most kinds ever reported collapsed. See its comment. */
+	mutable int32 WarnedRosterKindsCollapsed = 0;
 
 	/** One-shot log latch for a Zone B that outgrew ZoneBCharReserve (cannot happen with four fixed keys - it is a tripwire for a later key being added without raising the reserve). */
 	mutable bool bWarnedZoneBOverReserve = false;

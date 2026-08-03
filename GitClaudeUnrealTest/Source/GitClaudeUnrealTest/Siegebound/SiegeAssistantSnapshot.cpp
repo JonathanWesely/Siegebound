@@ -554,7 +554,7 @@ FString USiegeAssistantSnapshot::BuildZoneA(const USiegeAssistantVocabulary* Voc
 	// they disagree, constrained decoding fights the few-shots on every token
 	// and accuracy (go/no-go bar #5) collapses for a reason no log line names.
 	// Verified character-for-character against SiegeAssistantGrammar.cpp's root
-	// / command / question / who / selection / item / count / at_least rules and
+	// / command / question / who / selection / item / count / at-least rules and
 	// the SiegeAssistantJsonKeys + SiegeAssistantAsk symbol tables:
 	//   key order   intent, who, where, when   (JsonObjectOpen + JsonNextKey)
 	//   pair keys   "kind" and "n"             (NOT "count" - "count" is the
@@ -562,6 +562,13 @@ FString USiegeAssistantSnapshot::BuildZoneA(const USiegeAssistantVocabulary* Voc
 	//                                           key, and they differ)
 	//   selection   a JSON ARRAY of 1..3 items, bounded by alternation
 	//   who         the array, or "all", or "none"
+	//   trigger     JSON key "at_least" (snake_case, below), GBNF rule `at-least`
+	//               (kebab-case). ⛔ SAME DIVERGENCE AS "n"/"count" AND FOR A
+	//               HARDER REASON: llama.cpp rule names are [a-zA-Z0-9-] only, so
+	//               `at_least` as a RULE NAME makes the WHOLE grammar
+	//               unparseable - which is what shipped, and what left TASK-413
+	//               with bars #2 and #5 unmeasured. THE JSON KEY ON LINE ~580 IS
+	//               CORRECT AND MUST NOT BE KEBAB-CASED to "match" the rule.
 	// ⚠️ A LATER EDIT TO EITHER FILE MUST EDIT BOTH. There is no compile-time
 	// link between them - this comment and the QA gate are the whole tie.
 	//
@@ -856,7 +863,9 @@ FString USiegeAssistantSnapshot::BuildZoneC(const FString& Utterance, const FStr
 	// same board always produces the same bytes.
 	const int32 RosterBudget = MaxSnapshotChars - ZoneBCharReserve - Head.Len() - Tail.Len();
 
-	int32 KindsToPrint = FMath::Min(UnitKinds.Num(), MaxRosterKinds);
+	const int32 CapKinds = FMath::Min(UnitKinds.Num(), MaxRosterKinds);
+
+	int32 KindsToPrint = CapKinds;
 	FString RosterBlock;
 	for (;;)
 	{
@@ -870,12 +879,47 @@ FString USiegeAssistantSnapshot::BuildZoneC(const FString& Utterance, const FStr
 		--KindsToPrint;
 	}
 
-	if (KindsToPrint < FMath::Min(UnitKinds.Num(), MaxRosterKinds) && !bWarnedSnapshotTruncated)
+	// ⚠️ THE TEST IS "DID ANY KIND FAIL TO PRINT IN FULL", NOT "DID THE CHARACTER
+	// BUDGET BITE" (TASK-419 WARN-5, closed by TASK-413). The old condition
+	// compared KindsToPrint against the cap, and those are EQUAL at exactly the
+	// cap - so the common case, a >MaxRosterKinds board collapsing its tail into
+	// `other_kinds:`, logged nothing at all. That is the case that costs
+	// accuracy: GetUnitKinds() is never truncated, so the GRAMMAR still admits
+	// every collapsed kind and the sampler can name a unit the prompt did not
+	// show the model. Silence is the worst possible way for that to happen, and
+	// it is strictly more likely now that MaxSnapshotChars binds at a measured
+	// budget rather than a generous guess.
+	const int32 CollapsedKinds = UnitKinds.Num() - KindsToPrint;
+	if (CollapsedKinds > 0)
 	{
-		bWarnedSnapshotTruncated = true;
-		UE_LOG(LogSiegeAssistant, Warning,
-			TEXT("Snapshot over budget: roster trimmed to %d of %d kind(s) to stay within %d chars. Aggregate harder or re-measure MaxSnapshotChars against the spike's real token count."),
-			KindsToPrint, UnitKinds.Num(), MaxSnapshotChars);
+		// The two causes are named separately because they call for different
+		// fixes: the kind cap is a deliberate aggregation policy, whereas a budget
+		// bite means the snapshot genuinely does not fit and something upstream
+		// has to aggregate harder.
+		const bool bBudgetBite = KindsToPrint < CapKinds;
+		const TCHAR* const Cause = bBudgetBite
+			? TEXT("the CHARACTER BUDGET, below the MaxRosterKinds cap")
+			: TEXT("the MaxRosterKinds cap");
+
+		// Always-on per-turn record. Verbose costs nothing in normal play and is
+		// what makes a degraded turn RECONSTRUCTABLE afterwards - the Warning
+		// below deliberately fires once per escalation, so it cannot tell you
+		// which particular sentence was answered against a trimmed roster.
+		UE_LOG(LogSiegeAssistant, Verbose,
+			TEXT("Snapshot roster degraded: %d of %d kind(s) printed in full, %d collapsed into `other_kinds:` by %s (roster %d chars of a %d-char budget; MaxSnapshotChars %d)."),
+			KindsToPrint, UnitKinds.Num(), CollapsedKinds, Cause,
+			RosterBlock.Len(), RosterBudget, MaxSnapshotChars);
+
+		if (KindsToPrint < WarnedRosterKindsPrinted || CollapsedKinds > WarnedRosterKindsCollapsed)
+		{
+			WarnedRosterKindsPrinted = FMath::Min(WarnedRosterKindsPrinted, KindsToPrint);
+			WarnedRosterKindsCollapsed = FMath::Max(WarnedRosterKindsCollapsed, CollapsedKinds);
+
+			UE_LOG(LogSiegeAssistant, Warning,
+				TEXT("Snapshot roster TRUNCATED: %d of %d kind(s) printed in full, %d collapsed into `other_kinds:` by %s. The grammar still admits all %d kinds, so the model can name a unit the prompt never showed it. Roster %d chars of a %d-char budget (MaxSnapshotChars %d, ZoneBCharReserve %d). Aggregate harder or re-measure the cap - do NOT raise it to hide this."),
+				KindsToPrint, UnitKinds.Num(), CollapsedKinds, Cause, UnitKinds.Num(),
+				RosterBlock.Len(), RosterBudget, MaxSnapshotChars, ZoneBCharReserve);
+		}
 	}
 
 	return Head + RosterBlock + Tail;
