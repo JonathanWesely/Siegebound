@@ -38,9 +38,23 @@ Tools/ArtPipeline/Cache/*
 # blobs and had to be repaired as e70f5ba while still unpushed. LFS is NOT the
 # answer here: these weights should not be versioned at all.
 *.gguf
-Models/*
-!Models/.gitkeep
-!Models/README.md
+/Models/
+# ⛔ NOTHING UNDER /Models/ CAN BE RE-INCLUDED BY A `!` NEGATION — AND NOTHING
+# SHOULD BE. TASK-499 (2026-08-03) STRUCK TWO DEAD RULES THAT USED TO SIT HERE,
+# `!Models/.gitkeep` and `!Models/README.md`. Git does not descend into an
+# ignored DIRECTORY, so it never sees a `!` for a path inside one. Verified live
+# before the strike: `git check-ignore -v Models/README.md` reported the
+# `/Models/` directory rule (then at line 132), and neither negated file has
+# ever existed on disk or in the index — anything put in Models/ meaning to be
+# tracked was being swallowed in silence.
+# The directory form is used here deliberately INSTEAD of the `Models/*` +
+# negation form used for Tools/ArtPipeline above. A traversable Models/ would
+# open a WORKING re-include surface inside the one directory that holds the
+# 2.5 GB GGUF — the carve-out CONVENTIONS "THE FINE-TUNE RUNG" §9 forbids — and
+# it would buy nothing: fetch_llm_model.py creates the directory itself
+# (`dest_dir.mkdir(parents=True, exist_ok=True)`), so no .gitkeep is needed.
+# ⇒ MODEL DOCUMENTATION CANNOT LIVE IN Models/. IT LIVES IN Docs/ — the shipping
+#   manifest is pinned at Docs/ModelManifest.md (FINE-TUNE RUNG §5 and §9).
 
 # Branch junk-strip guards (TASK-246): Python bytecode caches, FBX-import
 # texture-extraction dirs (UE writes <name>.fbm/ beside the source FBX), and
@@ -128,5 +142,10 @@ desktop.ini
 !Plugins/SiegeLlama/Source/ThirdParty/LlamaCpp/bin/**/*.dll
 # Model weights NEVER enter git (~2.5 GB). Tools/fetch_llm_model.py fetches
 # them into /Models, which is ignored wholesale.
+# Restated after the negations above ON PURPOSE: last matching pattern wins, so
+# the final word on the weights is an ignore and never a `!`. This duplication
+# of the block near the top of the file is a backstop, not an oversight
+# (TASK-499) — redundancy in the IGNORE direction is free; redundancy in the
+# NEGATION direction is the incident this rule exists to prevent.
 *.gguf
 /Models/
