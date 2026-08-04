@@ -2034,6 +2034,222 @@ Deriving the GBNF per-fixture makes **`VerifyFixtureKindParity` MORE load-bearin
 
 **⛔ (d) STAGE A IS COMPLETE *AS SPECIFIED*, NOT *AS MEASURED* — SAID IN THE IMPLEMENTER'S OWN WORDS AND KEPT.** **Not one line has been compiled or executed.** §16's **instrument-unchanged** re-run is **TASK-481's**, and **three named gaps survive into it:** the `prompt=` bypass (**TASK-501**) · **no `wire=` indicator on `SpikeEval`** (deliberate — §16's frozen default) · ⛔ **D2 remains INEXPRESSIBLE by the spike at all** (§3's `other_kinds:` constant). ⚖️ **A completion claim that names its own three gaps is the kind this pipeline accepts; one that does not is the kind it has been burned by.**
 
+## Keyboard layout / positional input (2026-08-04) — namespace **`KBD-§N`**
+
+Added 2026-08-04 on Jonathan's directive, verbatim: *"we need to make the game handle alternative keyboard layouts. I currently use the Dvorak keyboard, so I want the game to be able to detect the layout and adjust which letter keys are mapped so that it still puts the keys in the same locations as if we were using qwerty."*
+
+Design authority = the approved plan `C:\Users\wesel\.claude\plans\ok-there-are-a-cheerful-mccarthy.md` (produced in plan mode, every engine claim verified against installed UE 5.8 source, approved by Jonathan via ExitPlanMode). ⛔ **The plan file wins over any board summary. The architecture is NOT re-litigated** — this section is the naming/behaviour law derived from it, plus the batch's link contract.
+
+📌 **THIS SECTION IS BORN WITH ITS NAMESPACE PREFIX (`KBD-§N`), BEFORE TASK-503's retrofit runs.** ⚖️ Cite as `KBD-§2`, never as a bare `§2` — this file already carries three sections whose bare `§12b` and `§14` collided (`qa/TASK-502.md`), and the cheapest time to prevent that is at authoring.
+
+### KBD-§0. ⚖️ JONATHAN'S TWO RULINGS — DECIDED, BINDING, ⛔ NOT RE-OPENABLE BY ANY AGENT
+
+Both answered by Jonathan directly via AskUserQuestion on 2026-08-04. Recorded here because the *"shouldn't this be a setting?"* question is the single most likely thing a future agent proposes.
+
+1. ⛔ **ALWAYS-ON AUTO-DETECT. NO PLAYER-FACING SETTING.** ⛔ **No new field in `USiegeSettingsSaveGame`, no row in `USettingsMenuWidget`, no `SC-§8` registry addition.** A **CVar for runtime testing is permitted** (`KBD-§7`); a settings toggle is **out of scope and is a scope breach if added.** ⚖️ The remap is a *correctness* fix — the keys go where they are printed on a QWERTY reference — not a preference.
+2. ⛔ **MID-SESSION LAYOUT SWITCHES ARE IN SCOPE, NOT DEFERRED.** Jonathan may `Win+Space` to QWERTY for gaming and back. **The 1 Hz HKL poll AND the `OnApplicationActivationStateChanged` hook both ship in this batch.** ⚠️ A design that only probes at `Initialize` does not satisfy the directive and is incomplete, not "phase 1".
+
+### KBD-§1. ⛔ THE CENTRAL LAW — AND IT IS THE ONE THAT DESTROYS THIS FEATURE IF BROKEN
+
+> ### ⛔ **THE POSITIONAL REMAP NEVER WRITES TO `IMC_Hero.uasset`. IT WRITES ONLY THE `.Key` FIELD OF A TRANSIENT `DuplicateObject` COPY — ⛔ NEVER `Modifiers`, ⛔ NEVER `Triggers`, ⛔ NEVER THE MAPPINGS ARRAY ITSELF.**
+
+- ⚠️ **THE PRECEDENT IS THIS REPO'S OWN AND IT ALREADY COST A PLAYTEST — `.claude/pipeline/handoffs/TASK-445-artist.md:95-105`: rewriting the mappings array SILENTLY DEFAULT-CONSTRUCTED the instanced `SwizzleAxis`/`Negate` modifiers. WASD broke and mouse-look inverted — WHILE THE PROPERTY TABLE STILL READ CORRECT.** ⛔ That last clause is the whole reason this is a law and not a code comment: **the readback passed.** It is the project's named failure class (`SC-§17`) wearing an input asset's clothes.
+- ✅ **THE STRUCTURAL FORM OF THE FIX — copy it, do not merely obey it:** every value written is **re-derived from the pristine `Source` array BY INDEX**, and the only field ever assigned is `.Key`. ⇒ **The TASK-445 failure mode is ABSENT BY CONSTRUCTION, not dodged by care** (`AS-§17`'s standing preference: a hazard closed by choosing a different shape does not reopen when somebody is tired).
+  ```cpp
+  const TArray<FEnhancedActionKeyMapping>& Src = Source->GetMappings();
+  for (int32 i = 0; i < Src.Num(); ++i)
+  {
+      const FKey* T = Translation.Find(Src[i].Key);
+      Target->GetMapping(i).Key = T ? *T : Src[i].Key;   // ONLY .Key. Ever.
+  }
+  ```
+- ⚠️ **RE-DERIVING FROM `Source` IS ALSO WHAT MAKES THE SUBSTITUTION SIMULTANEOUS.** On Dvorak the map holds **`D→E` AND `E→Period`** — reading the *target* would cascade `D→E→Period`. **This sentence belongs in the header comment**, because the bug it prevents is invisible in review and looks like a model failure at playtest.
+- ⛔ **REVIEWABLE INVARIANT, AND IT IS THE CHEAPEST CHECK IN THE GATE: the source asset is only ever held through `const` pointers. THE ONLY NON-CONST `UInputMappingContext*` IN THE ENTIRE FEATURE IS THE DUPLICATE.** `AddMappingContext` takes `const UInputMappingContext*` (`EnhancedInputSubsystemInterface.h:265`), so **no cast is needed** — a cast appearing here is itself the finding. ⚠️ In PIE the source **is** the editor's loaded asset; read-only access is what makes PIE structurally unable to dirty it.
+
+### KBD-§2. ⛔ `MapKey` / `UnmapKey` / `UnmapAll` ARE BANNED ON EVERY SHIPPED PATH — AND THE SUPPORTED PATH, WITH ITS STALE-SYMBOL TRAP
+
+- ⛔ **BANNED, VERIFIED AT `InputMappingContext.cpp:154-158`: `MapKey` APPENDS a mapping built from the 2-arg `FEnhancedActionKeyMapping` ctor (`EnhancedActionKeyMapping.h:44`) with EMPTY `Modifiers` and EMPTY `Triggers`.** ⇒ An unmap+map of `IA_Move`/`W` **drops the Swizzle** — ⚠️ **TASK-445's failure rewritten in C++**, same silence, same wrong-feeling movement. **`UnmapKey` and `UnmapAll` are banned with it**, since they exist only to enable that round-trip.
+- ✅ **THE SUPPORTED MUTATION PATH IS `UInputMappingContext::GetMapping(Index)`** — `InputMappingContext.h:220`, verified **public**, **non-const ref**, and ⭐ **NOT `WITH_EDITOR`-guarded** (that last property is what makes the whole approach shippable, and it is the one a reviewer will doubt).
+- ⛔ **FOLLOWED BY `UEnhancedInputLibrary::RequestRebuildControlMappingsUsingContext(const UInputMappingContext* Context, bool bForceImmediately)`** — `EnhancedInputLibrary.h:36-37`.
+- ⚠️⛔ **THE STALE-SYMBOL TRAP, RECORDED SO NOBODY GREPS FOR THE WRONG NAME: THE ENGINE'S OWN DOC COMMENT AT `InputMappingContext.h:217` NAMES `…ForContext`, WHICH DOES NOT EXIST IN 5.8.** The correct symbol is **`RequestRebuildControlMappingsUsingContext`**. ⇒ ⚖️ **A grep for the documented name returns nothing, and `AS-§14` already ruled that a search result is evidence about the search — an agent that trusts the engine comment here will conclude the API was removed and go looking for `MapKey`, which is the banned path.** *The trap leads directly to the ban.*
+
+### KBD-§3. ⛔ THE `UEnhancedInputUserSettings` / `MapPlayerKey` REJECTION — THREE INDEPENDENT REASONS, RECORDED SO IT IS NOT PROPOSED AGAIN
+
+It is the API a competent reader reaches for first, which is exactly why the refusal is written down rather than left to be re-derived.
+
+1. ⛔ **IT REQUIRES `PlayerMappableKeySettings` ON EVERY MAPPING** (`EnhancedInputUserSettings.cpp:1689-1695`) — i.e. **precisely the `IMC_Hero.uasset` edit `KBD-§1` forbids.**
+2. ⛔ **AND THAT MEMBER CANNOT BE SUPPLIED AT RUNTIME EVEN IF ONE WANTED TO: it is `protected` with NO public setter** (`EnhancedActionKeyMapping.h:120-132`). ⇒ The asset edit is not a shortcut around the law; it is the **only** way in.
+3. ⛔ **IT PERSISTS — `Saved/SaveGames/EnhancedInputUserSettings.sav` — AND IT WINS OVER IMC DEFAULTS.** ⚠️ **A layout-derived remap MUST NOT persist**: switch back to QWERTY and the player is left with stale Dvorak bindings, saved to disk, with no UI to clear them. ⚖️ This one is fatal on its own — the feature is *derived state*, and derived state that outlives its input is a bug generator.
+- ✅ **IT REMAINS THE RIGHT HOME FOR A FUTURE REBIND SCREEN.** ⛔ **This is a rejection FOR THIS FEATURE, not a ban on the API** — a task that proposes it for player-authored rebinding is correct and must not be failed by citing this clause.
+
+### KBD-§4. SCOPE LAW — ⛔ LETTERS ONLY, ALL 26, AND THE EXCLUSIONS ARE DELIBERATE
+
+- ✅ **ALL 26 LETTERS `EKeys::A`..`EKeys::Z` ARE IN THE TABLE — not just the 10 the game binds today.** ⚖️ It is free, and it removes the *"update the table when you add a key"* footgun, which is the kind of debt that surfaces as a mystery input bug six months later.
+- ⛔ **DELIBERATELY NOT REMAPPED: digits (the `1`–`6` hotkeys), punctuation, modifiers (`Shift`, `LeftAlt`, `Ctrl`), the mouse, `Space`, `Enter`, `Escape`.** ⚠️ **This is a design decision, not an omission** — Dvorak's number row is identical anyway, and positionally remapping digits would actively hurt AZERTY. **A task or QA finding that "the hotkeys weren't remapped" is WRONG and is answered by this clause.**
+
+### KBD-§5. ⛔ THE FAIL-SAFE LAW — EVERY FAILURE MODE DEGRADES TO THE UNTRANSLATED SOURCE CONTEXT
+
+> ### ⛔ **NEVER `nullptr`. NEVER `EKeys::Invalid`. NEVER A PARTIALLY-RETARGETED CONTEXT. THE WORST OUTCOME THIS FEATURE MAY PRODUCE IS *"THE GAME BEHAVES EXACTLY AS IT DID YESTERDAY."***
+
+Every one of these degrades to the pristine `Source` context and logs — and **QA traces each early return individually** (`KBD-§9` criterion 6):
+
+| failure | outcome |
+|---|---|
+| `Source == nullptr` | return `nullptr` (the caller's existing null-guard already covers it) |
+| translation map empty (host is positionally QWERTY) | ⭐ return **`Source` — the SAME POINTER**, no duplicate, no allocation |
+| `DuplicateObject` returns null | return `Source`, `UE_LOG(Error)` |
+| `RetargetContextKeys` returns false (length mismatch / profile overrides present) | return `Source`, `UE_LOG(Error)`, ⛔ **and the duplicate is discarded, never handed out half-written** |
+| probe yields `VirtualKey == 0`, or the resolver yields `EKeys::Invalid`, or two positions claim one target | that letter keeps its **source** key (identity); the map simply has no entry |
+| non-Windows (`ProbeActiveLayout` returns 0 probes) | empty translation ⇒ pass-through, one `Log` line at `Initialize` |
+| the subsystem itself unresolvable from `GetGameInstance()` | `AHeroCharacter` applies `HeroMappingContext` unchanged — **byte-identical to today's behaviour** |
+
+- ⚠️ **`MappingProfileOverrides` IS THE NON-OBVIOUS ONE AND IT IS WHY `RetargetContextKeys` HAS A FALSE RETURN AT ALL:** profile overrides live in `MappingProfileOverrides` (`InputMappingContext.h:109-110`), **which `GetMapping()` CANNOT REACH.** ⇒ If `Source->GetProfilesWithOverridenMappings().Num() > 0` the retarget would be **silently partial** — so it refuses wholesale instead. ⚖️ *Refusing loudly beats retargeting half a context.*
+
+### KBD-§6. ⛔ THE PROBE IS A WIN32 SCANCODE PROBE, AND THE ENGINE OFFERS NO SHORTCUT — RECORDED SO IT IS NOT "SIMPLIFIED"
+
+- **UE 5.8 exposes NO layout-independent physical key.** `FKeyEvent::GetKeyCode()` (`SlateCore/Public/Input/Events.h:488`) *claims* to be a pre-conversion hardware code and **on Windows carries the layout-dependent VK**; the real scancode is consumed inside `WindowsApplication.cpp` (Shift disambiguation only) and **never propagated.**
+- ⭐ **THE SEAM THAT MAKES THE TABLE CORRECT BY CONSTRUCTION: `ResolveKeyFromCodes` IS A THIN WRAPPER ON `FInputKeyManager::Get().GetKeyFromCodes` (`InputCoreTypes.h:857`, module `InputCore` — ⛔ ALREADY A PUBLIC DEPENDENCY, verified at `GitClaudeUnrealTest.Build.cs:15`).** Calling **the engine's own resolver with the same two numbers the message pump supplies** (`WindowsApplication.cpp:3248-3321` → `SlateApplication.cpp:4953-4957`) means the translation table **agrees with runtime by construction**, including on layouts nobody tested.
+- ⛔ **DO NOT MASK THE DEAD-KEY BIT `0x80000000`** — `WindowsApplication.cpp:3317` does not, and the table must match runtime byte for byte.
+- **`check(IsInGameThread())`** — `GetKeyboardLayout(0)` is per-thread. Non-negotiable.
+- ⭐ **THE SELF-CHECK IS PART OF THE FEATURE, NOT A DEBUG EXTRA: on a US-QWERTY host `MapVirtualKeyEx(0x11, MAPVK_VSC_TO_VK_EX, hkl)` MUST return `'W'` (0x57).** ⚖️ **No scancode table exists anywhere in engine source to cross-check against, so that one assertion is the ONLY thing validating our hand-authored table against the OS.** Log it at `Initialize`.
+- ✅ **NO `Build.cs` CHANGE. `ApplicationCore` IS NOT NEEDED.** Include `Windows/WindowsHWrapper.h` (what `InputCore/Private/Windows/WindowsPlatformInput.cpp:4` uses; it is in **Core**); `user32.lib` is a UBT default (`UEBuildWindows.cs:2093`). ⛔ **A `Build.cs` edit in this batch is a finding** — it means somebody reached for the wrong header.
+- ⛔ **EVERY Win32 SYMBOL LIVES INSIDE `#if PLATFORM_WINDOWS`, CONFINED TO ONE STATIC FUNCTION IN THE `.cpp`.** The **header stays Win32-free** — the HKL is stored as an opaque `uint64`. Fence the poll timer and the activation hook the same way.
+- **MID-SESSION SWITCH — WHY THERE ARE THREE MECHANISMS AND NOT ONE:** Windows fires `WM_INPUTLANGCHANGE` and Slate handles it (`SlateApplication.cpp:5138-5141` → `FInputKeyManager::InitKeyMappings()`), but ⛔ **`OnInputLanguageChanged` is a bare virtual with NO delegate — the whole Runtime tree was grepped, zero.** So: (1) re-probe on every `GetPositionalContext` call (free; covers a layout set before launch) · (2) `FSlateApplication::Get().OnApplicationActivationStateChanged()` (`SlateApplication.h:1690-1691`) — covers alt-tab-out/change/alt-tab-in, ⛔ **unbind in `Deinitialize`** · (3) the 1 Hz HKL poll — **the only thing that catches an in-place `Win+Space`.**
+- ⭐ **RE-APPLY WITHOUT TOUCHING THE HERO:** on a change, retarget **the cached duplicate IN PLACE** (re-derived from the pristine source, so no compounding) and call `RequestRebuildControlMappingsUsingContext(Dup)`. ⇒ **The pointer `AHeroCharacter` handed to `AddMappingContext` never changes — ZERO new state and ZERO re-application code in `HeroCharacter`.** ⚖️ That property is the reason the hero edit is four lines, and a "refactor" that re-applies contexts from the subsystem throws it away.
+
+### KBD-§7. NAMING + FOLDER LAW (the cross-task contract)
+
+| thing | law |
+|---|---|
+| statics | **`FSiegeKeyboardLayoutStatics`** — `Source/GitClaudeUnrealTest/Siegebound/SiegeKeyboardLayoutStatics.{h,cpp}`. Plain static library, **not a UObject**, `GITCLAUDEUNREALTEST_API`. Precedent: `FSiegeCombatStatics` (`SiegeCombatStatics.h:23`). ⭐ **ALL pure, testable logic lives here.** |
+| probe struct + resolver alias | **`FSiegePositionalKeyProbe`** and **`FSiegeKeyResolver`** share `SiegeKeyboardLayoutStatics.h`. ✅ **This is the existing "pure data types may share a header when they form one concept" exception (`TeamId.h` precedent) — it is NOT a one-class-per-header violation and QA must not flag it as one.** |
+| subsystem | **`USiegeKeyboardLayoutSubsystem : UGameInstanceSubsystem`** — `SiegeKeyboardLayoutSubsystem.{h,cpp}`, `GITCLAUDEUNREALTEST_API`. Clones the `USiegeSettingsSubsystem` shape (`SiegeSettingsSubsystem.h:88-89`, `Initialize` at `.cpp:22-34`). |
+| log category | **`LogSiegeInputLayout`** — the standing `LogSiege<Domain>` law ("Logging (C++)"). Declared in `SiegeKeyboardLayoutSubsystem.h`, defined in its `.cpp`. |
+| delegate | **`FOnSiegeKeyboardLayoutChanged`** / member **`OnKeyboardLayoutChanged`** — the `FOn<Owner><Event>` / `On<Owner><Event>` law ("Delegates (C++)"), matching `FOnSiegeSettingsChanged`/`OnSettingsChanged`. |
+| tests | **`Source/GitClaudeUnrealTest/Siegebound/Tests/SiegeKeyboardLayoutTest.cpp`**, `#if WITH_DEV_AUTOMATION_TESTS`, `IMPLEMENT_SIMPLE_AUTOMATION_TEST` with `EAutomationTestFlags::EditorContext \| EAutomationTestFlags::EngineFilter` (the `SiegeSettingsTest.cpp:113-116` pattern). **Test names live under `Siegebound.Input.<Name>`.** |
+| ⭐ **CVar (NEW PATTERN — this batch introduces the repo's FIRST console variable; the pattern is added here BEFORE the task issues, per the house rule)** | **`siege.<Domain>.<Thing>`** — lowercase `siege.` prefix mirroring the engine's own `r.` / `net.` / `a.` families, PascalCase after it. **This batch's only CVar: `siege.Input.LayoutPollEnabled`** (int32, **default 1 = ON**, `ECVF_Default`). ⛔ **It is a DEV/TEST lever, never a player-facing setting (`KBD-§0` ruling 1)** — it is not read by any UI and gets no settings row. |
+| tunable | **`LayoutPollIntervalSeconds` = `1.0f`** — a named constant, ⛔ never a bare `1.0f` at the timer call. |
+
+⛔ **The `names:` block of each task is the single source of truth (the standing cross-discipline rule). Every symbol above appears there character-for-character.**
+
+### KBD-§8. ⚠️ PINNED CROSS-TASK SIGNATURE REGISTRY (this batch's link contract)
+
+⚠️ **UBT compiles the whole module.** Every task in this batch compiles against this list **character-for-character**; "improving" a pinned signature breaks the link and is an **automatic QA FAIL.** ⛔ **`HeroCharacter.cpp` compiles against `GetPositionalContext`, and the test file compiles against all four statics** — precedent for pinning before dispatch: `:453`, `:564`, `:915`, `:1345`.
+
+```cpp
+// ── SiegeKeyboardLayoutStatics.h ──────────────────────────────────────────
+
+/** One physical key position: what QWERTY calls it, and what the ACTIVE layout yields there. */
+struct FSiegePositionalKeyProbe
+{
+    FKey   QwertyKey;        // FKey this position carries on US-QWERTY, e.g. EKeys::W
+    uint32 ScanCode   = 0;   // scan-code set 1, e.g. 0x11
+    uint32 VirtualKey = 0;   // VK the ACTIVE layout yields here; 0 == probe failed
+    uint32 CharCode   = 0;   // MapVirtualKeyEx(VK, MAPVK_VK_TO_CHAR, hkl) — dead-key bit UNMASKED
+};
+
+/** The injectable seam that lets every test run on a QWERTY machine. */
+using FSiegeKeyResolver = TFunctionRef<FKey(uint32 VirtualKey, uint32 CharCode)>;
+
+class GITCLAUDEUNREALTEST_API FSiegeKeyboardLayoutStatics
+{
+public:
+    static TArray<FSiegePositionalKeyProbe> GetQwertyLetterScanCodes();
+
+    static FKey ResolveKeyFromCodes(uint32 VirtualKey, uint32 CharCode);
+
+    static int32 BuildTranslationMap(const TArray<FSiegePositionalKeyProbe>& Probes,
+                                     FSiegeKeyResolver Resolver,
+                                     TMap<FKey, FKey>& OutTranslation);
+
+    static bool RetargetContextKeys(const UInputMappingContext* Source,
+                                    UInputMappingContext* Target,
+                                    const TMap<FKey, FKey>& Translation,
+                                    int32& OutNumRetargeted);
+};
+
+// ── SiegeKeyboardLayoutSubsystem.h ────────────────────────────────────────
+DECLARE_LOG_CATEGORY_EXTERN(LogSiegeInputLayout, Log, All);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSiegeKeyboardLayoutChanged);
+
+UCLASS()
+class GITCLAUDEUNREALTEST_API USiegeKeyboardLayoutSubsystem : public UGameInstanceSubsystem
+{
+    GENERATED_BODY()
+
+public:
+    /** THE ONE CALL-SITE CONTRACT. Never null-for-non-null-input; degrades to Source. */
+    const UInputMappingContext* GetPositionalContext(const UInputMappingContext* Source);
+
+    UFUNCTION(BlueprintPure,     Category = "Siegebound|Input") bool IsPositionalRemapActive() const;
+    UFUNCTION(BlueprintPure,     Category = "Siegebound|Input") FString DescribeActiveTranslation() const;
+    UFUNCTION(BlueprintCallable, Category = "Siegebound|Input") void RefreshKeyboardLayout();
+
+    UPROPERTY(BlueprintAssignable, Category = "Siegebound|Input") FOnSiegeKeyboardLayoutChanged OnKeyboardLayoutChanged;
+
+    /** ⛔ Automation tests ONLY. Mirrors SiegeSettingsSubsystem::SetSlotNameForAutomationTests (.h:175). */
+    void SetTranslationMapForAutomationTests(const TMap<FKey, FKey>& InTranslation);
+
+    virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+    virtual void Deinitialize() override;
+
+private:
+    /** HKL as an opaque uint64 — this is what keeps the header Win32-free. */
+    uint64 CachedLayoutHandle = 0;
+
+    UPROPERTY(Transient)
+    TMap<TObjectPtr<const UInputMappingContext>, TObjectPtr<UInputMappingContext>> PositionalContexts;
+
+    TMap<FKey, FKey> TranslationMap;
+};
+```
+
+- ⛔ **`GetPositionalContext` IS DELIBERATELY *NOT* A `UFUNCTION`, AND THAT IS NOT AN OVERSIGHT.** UHT rejects a `const UObject*` **return** type on a reflected function. ⚠️ **A well-meaning "expose it to Blueprint" edit does not fail review — it fails UHT, loudly, at the batch's only compile gate.** Say so in the header.
+- ⛔ **`IsPositionalRemapActive()` MEANS `TranslationMap.Num() > 0`** — i.e. *"the host layout is not positionally QWERTY."* It does **not** mean *"a duplicate exists"*. ⚖️ Pinned because the two diverge on the very first call and a test asserting the wrong one passes for the wrong reason.
+- **`DescribeActiveTranslation()` format:** `"W → Comma, S → O, D → E"` — `", "` separated, `" → "` between, **source-key order as returned by `GetQwertyLetterScanCodes()`** (i.e. A..Z), identity entries omitted, **empty string when the map is empty.** ⛔ **A byte/format claim about this string is asserted with `TestEqualSensitive`, never `TestEqual` (`SC-§13`).**
+
+### KBD-§9. THE QA GATE — ⛔ `.claude/pipeline/qa/TASK-513-keyboard-layout.md`, AND IT NAMES 509 · 510 · 511 · 512
+
+⚠️ **NAMING DEPARTURE, DECLARED (`SC-§15`): the plan proposed `qa/TASK-509-keyboard-layout.md`. ⛔ SUPERSEDED — the gate file is named for the GATE task**, matching `qa/TASK-506.md` (which gates TASK-505). ⚖️ Reason: `qa/TASK-464.md` was already nearly mis-cited as a gate on TASK-438 because its number resembled its subject (`SC-§29`); naming a gate after a task it does not belong to manufactures that trap. **Nobody greps for `TASK-509-keyboard-layout.md`; it will not exist.**
+
+**Criteria 1–9 are carried VERBATIM from the approved plan's "QA gate criteria" section:**
+
+1. ⛔ **No path writes to `IMC_Hero.uasset`** — grep the diff for any non-const use of the *source* IMC. *(TASK-445.)*
+2. ⛔ **No code writes `Modifiers`, `Triggers`, or the mappings array — only `.Key`.** `MapKey`/`UnmapKey`/`UnmapAll`/`Add`/`RemoveAt`/`Empty` must not appear on any IMC on a shipped path. *(TASK-399/445 failure class.)*
+3. Complete-type include law on `HeroCharacter.cpp`. *(TASK-110.)*
+4. No shadowing of inherited reflected members (C4457/C4458).
+5. Most-vexing-parse scan. *(TASK-416.)*
+6. Every failure mode degrades to the untranslated source context — never null, never `EKeys::Invalid`. Trace each early return.
+7. `#if PLATFORM_WINDOWS` encloses every Win32 symbol; non-Windows compiles and is pass-through.
+8. `TestEqualSensitive`, not `TestEqual`, for FString claims. *(§13.)*
+9. The tests genuinely run without Dvorak hardware — confirm the injected-resolver seam has no hidden dependence on the host layout.
+
+**Criteria 10–13 are MANAGER ADDITIONS (added, never substituted — the nine above are unaltered):**
+
+10. ⛔ **GUARD PLACEMENT, not guard presence (`SC-§21`): the `GetPositionalContext` resolve sits INSIDE the existing `LocalPlayer`/`EnhancedInputLocalPlayerSubsystem` guard chain in `NotifyControllerChanged`.** ⚠️ **That function runs on the server for a remote client's pawn too** — a probe hoisted above the guard would run a layout probe for a machine that is not there. **"The guard is present" is not the review; *where* it sits is.**
+11. ⛔ **THE M8 DECLARATION IS PRESENT VERBATIM** in every code task's handoff and in both new headers: *"adds no replicated property, no new replicated class, no new relevancy tier."* **"Tier not declared" is a QA FAIL** (the standing M8 declaration duty).
+12. **Pinned-registry conformance, character-for-character against `KBD-§8`** — every signature, the CVar name `siege.Input.LayoutPollEnabled`, `check(IsInGameThread())` present in the Win32 probe, the activation hook **unbound in `Deinitialize`**, and **no `Build.cs` change** (`KBD-§6`).
+13. ⛔ **`KBD-§0` SCOPE: no `USiegeSettingsSaveGame` field, no settings-menu row, no digit/modifier/mouse remap.** ⚠️ **A settings toggle is a scope breach EVEN IF THE REVIEWER AGREES WITH IT** — it is Jonathan's decided ruling (the `AS-§6`/`Escape` precedent, same shape).
+
+⛔ **`SC-§27b` — A COMPILE-GATE PASS ATTACHES TO A COMMIT, NEVER TO A LANE. ✅ THIS BATCH IS ORDERED SO THAT IS SATISFIED STRUCTURALLY: all four code tasks land BEFORE the single gate, and the single gate precedes the single compile+commit.** ⇒ **No second verdict is owed** — *unless* the gate fails and a fix lands, in which case `SC-§27`'s **diff-scoped** verdict applies (the fix's changed lines + the fences it must not have disturbed, ⛔ never a re-litigation of the passed design).
+
+### KBD-§10. M8 DECLARATION — STATED, BECAUSE *"THERE IS NOTHING TO DECLARE"* ONLY COUNTS WHEN IT IS STATED
+
+⛔ **THIS FEATURE ADDS NO REPLICATED PROPERTY, NO NEW REPLICATED CLASS, AND NO NEW RELEVANCY TIER.**
+
+- ✅ **AND THE REASON IS STRUCTURAL, NOT INCIDENTAL: `USiegeKeyboardLayoutSubsystem` IS A `UGameInstanceSubsystem` — one per client process, client-local by construction.** In a listen-server match the host and the joining client each probe **their own** OS layout, which is the correct behaviour and the only possible one. **The duplicate IMC lives in the transient package and is never seen by the network.**
+- ⚠️ **The `AHeroCharacter` edit sits inside the local-player guard chain (`KBD-§9` criterion 10), so nothing about it executes for a non-local pawn.**
+
+### KBD-§11. ⚠️ KNOWN LIMITATIONS — STATED UP FRONT, ⛔ NONE OF THEM ARE BUGS
+
+Carried from the plan so a playtest report does not spend a QA loop on a designed outcome.
+
+- ⚠️ **The `~` console key MOVES.** `InputSettings.cpp:173-195` picks it by CULTURE (`VK_OEM_7`/`5`/`3`) and this feature does not touch it — it lands wherever Dvorak puts it.
+- ⚠️ **Digits and punctuation are deliberately not remapped** (`KBD-§4`).
+- ⚠️ **Windows only.** macOS (`TISCopyCurrentKeyboardLayoutInputSource`) and Linux (XKB) need their own probes; **pass-through there is CORRECT, not broken.**
+- ⚠️ **Non-Latin layouts (Cyrillic/Greek) come out identity-equivalent** — Windows keeps `VK_A`..`VK_Z` at QWERTY positions for them and `GetKeyFromCodes` synthesizes a matching FKey (`InputCoreTypes.cpp:1603-1609`). **Correct outcome; recorded so it is not reported as a miss.**
+- ⚠️ **A future rebind screen will display `"Comma"`, not `"W"`.** `DescribeActiveTranslation()` exists so a settings row can eventually read *"Key positions: QWERTY (layout: US-Dvorak)"* — ⛔ **that is a FUTURE task and is not in this batch's scope** (`KBD-§0` ruling 1).
+
 ## Damage types (C++)
 - UDamageType subclasses named `USiegeDamageType_<Kind>`, all declared in `Source/GitClaudeUnrealTest/Siegebound/DamageTypes.h/.cpp`
 - Kinds: `Melee`, `Projectile`, `Siege` (**added M4, TASK-054**), `Spell` (**added M5, TASK-098**)
