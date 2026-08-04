@@ -8,6 +8,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/DataTable.h"
+#include "Engine/GameInstance.h" // TASK-512: complete type for GetGameInstance()->GetSubsystem<>() (Actor.h:3772 forward-declares UGameInstance)
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -24,6 +25,7 @@
 #include "Siegebound/CombatantHealthBarComponent.h"
 #include "Siegebound/SiegeFeedbackLibrary.h"
 #include "Siegebound/SiegeHitFlashComponent.h"
+#include "Siegebound/SiegeKeyboardLayoutSubsystem.h" // TASK-512: USiegeKeyboardLayoutSubsystem::GetPositionalContext — the positional remap's ONE call site
 #include "Siegebound/SiegeNavAreas.h" // TASK-349: team object channel for the capsule stamp
 #include "Siegebound/SiegeNetLimits.h" // M8 (TASK-356 loop-1): the ONE arena relevancy constant (Tier B)
 #include "Siegebound/SiegePlayerState.h" // M8 (TASK-356): PossessedBy team resolve (doc §2.3)
@@ -237,7 +239,40 @@ void AHeroCharacter::NotifyControllerChanged()
 			{
 				if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(LocalPlayer))
 				{
-					Subsystem->AddMappingContext(HeroMappingContext, HeroMappingContextPriority);
+					// ─── POSITIONAL KEYBOARD LAYOUT (TASK-512, KEYBOARD-LAYOUT batch; CONVENTIONS `KBD-§5`/`KBD-§6`) ───
+					// On Dvorak the FKey Windows delivers is LAYOUT-dependent, so every letter binding in
+					// IMC_Hero (WASD, Q rally, T/R/E/F/C) lands on the wrong PHYSICAL key. The subsystem hands
+					// back a transient duplicate whose `.Key` fields are retargeted to the active layout — or,
+					// on a positionally-QWERTY host, THE SAME POINTER, with no duplicate and no allocation.
+					//
+					// ⛔ THE PLACEMENT IS PART OF THE CORRECTNESS, NOT A STYLE CHOICE (`SC-§21`; `KBD-§9`
+					// criterion 10). This resolve sits in the INNERMOST scope of the existing guard chain —
+					// HeroMappingContext -> APlayerController -> ULocalPlayer -> UEnhancedInputLocalPlayerSubsystem —
+					// beside the AddMappingContext call it feeds. NotifyControllerChanged ALSO RUNS ON THE
+					// SERVER FOR A REMOTE CLIENT'S PAWN; hoisting this above the GetLocalPlayer() check would
+					// probe an OS keyboard layout on behalf of a machine that is not there.
+					//
+					// ⛔ FAIL-SAFE (`KBD-§5`, last row): no GameInstance or no subsystem => ContextToApply stays
+					// HeroMappingContext and the behaviour is byte-identical to before this feature existed.
+					// GetPositionalContext never returns null for a non-null input, and this code does not
+					// depend on that trust — a null would simply fail AddMappingContext's own guard, so no
+					// redundant branch is added here that would hide a contract violation.
+					//
+					// ⛔ NO NEW STATE AND NO RE-APPLICATION PATH, DELIBERATELY (`KBD-§6`): on a mid-session
+					// Win+Space the subsystem re-targets that cached duplicate IN PLACE and calls
+					// RequestRebuildControlMappingsUsingContext, so the pointer handed over here stays valid
+					// and current. A cached pointer, a tick, or a delegate binding on AHeroCharacter would
+					// throw that property away.
+					const UInputMappingContext* ContextToApply = HeroMappingContext;
+					if (const UGameInstance* GameInstance = GetGameInstance())
+					{
+						if (USiegeKeyboardLayoutSubsystem* LayoutSubsystem = GameInstance->GetSubsystem<USiegeKeyboardLayoutSubsystem>())
+						{
+							ContextToApply = LayoutSubsystem->GetPositionalContext(HeroMappingContext);
+						}
+					}
+
+					Subsystem->AddMappingContext(ContextToApply, HeroMappingContextPriority);
 				}
 			}
 		}
