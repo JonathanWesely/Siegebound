@@ -910,6 +910,112 @@ public:
 	 */
 	FText DescribeCommandForPlayer(const FSiegeAssistantCommand& Command) const;
 
+	// ─────────────────────────────────────────────────────────────────────────
+	// THE DEV-ONLY OBSERVER (TASK-479 — CONVENTIONS "THE FINE-TUNE RUNG" §13)
+	// ─────────────────────────────────────────────────────────────────────────
+
+#if !UE_BUILD_SHIPPING
+	/**
+	 *  ⛔ DEV-ONLY. Returns the EXACT BYTES THE SHIPPED LANE WOULD COMPOSE for
+	 *  RawUtterance, by capturing a live snapshot and then DELEGATING to the one
+	 *  composer. ⚠️ IT EXISTS BECAUSE NOTHING IN THIS PROJECT HAS EVER PRINTED
+	 *  THE SHIPPED BuildZoneA (CONVENTIONS "In-match LLM command assistant"
+	 *  §12g's standing WARN): every byte figure on record - the 3029, the 5116,
+	 *  the 68/71 - was printed by the SPIKE's AppendZoneA/AppendZoneB, A
+	 *  DIFFERENT LANE, and the fine-tune rung's M3 artifact diff is the first
+	 *  reading ever taken from THIS one.
+	 *
+	 *  ═══════════════════════════════════════════════════════════════════════
+	 *  ⚖️ WHY THIS DOES NOT SPEND MECHANISM #2 - WRITTEN HERE, WHERE THE NEXT
+	 *  READER MEETS IT, BECAUSE AN ADDITION THAT LEAVES NO WRITTEN TRACE OF WHY
+	 *  IT IS SAFE HAS QUIETLY CONVERTED A MECHANISM INTO A COMMENT.
+	 *  ═══════════════════════════════════════════════════════════════════════
+	 *
+	 *  MECHANISM #2 (the class comment, §1's four) reads: ⛔ THE FSM - NOT THE
+	 *  EXECUTOR, AND NOT THE MODEL CALL - COMPOSES THE PROMPT. "ComposeTurnPrompt()
+	 *  is private and assembles Zone A + Zone B + Zone C itself; the TASK-443
+	 *  seam receives a FINISHED prompt string and HAS NO ROUTE TO A ZONE BUILDER.
+	 *  ⇒ The one function that could feed the model its own previous words cannot
+	 *  reach the model, and the one that reaches the model cannot compose."
+	 *
+	 *  ⚠️ ITS PROPERTY IS "NO ROUTE TO A ZONE BUILDER" - ⛔ NOT "no public
+	 *  function ever returns a prompt". That distinction IS the ruling:
+	 *
+	 *   · THIS HANDS OUT A FINISHED, IMMUTABLE FString AND NOTHING ELSE. No zone
+	 *     builder, no USiegeAssistantSnapshot, no vocabulary, no pending line. A
+	 *     caller holding the return value still cannot assemble a prompt, cannot
+	 *     re-order the three zones, and cannot build a fourth.
+	 *   · ⛔ ComposeTurnPrompt() STAYS PRIVATE. There is still EXACTLY ONE
+	 *     COMPOSER; this CALLS it and never reproduces it. Two composers would be
+	 *     the same defect this dump was created to measure - a confident green
+	 *     describing a string the game does not build (traps T1/T8).
+	 *   · THE TASK-443 SEAM IS UNTOUCHED. It still receives a finished string and
+	 *     still cannot compose. ⚠️ NOTHING THAT COULD NOT REACH A ZONE BUILDER
+	 *     YESTERDAY CAN REACH ONE TODAY - which is the mechanism, stated as a
+	 *     property rather than as an access keyword.
+	 *
+	 *  ⇒ THIS IS AN ADDITION, NOT A RE-EXPOSURE. ⛔ Widening ComposeTurnPrompt
+	 *  itself WOULD delete the stated barrier, and it was REFUSED (CONVENTIONS
+	 *  "THE FINE-TUNE RUNG" §13(b)). So was `friend class USiegeCheatManager`, on
+	 *  the ground ASiegePlayerController::SpawnGroupCircleDecal's own comment
+	 *  already records (cited by SYMBOL, not by line - §18c) - friendship exposes
+	 *  EVERY private member to reach one function, i.e. it is THE WIDER GRANT,
+	 *  NOT THE NARROWER ONE.
+	 *
+	 *  ⛔ NOT A UFUNCTION, AND COMPILED OUT OF SHIPPING. No exec, no Blueprint
+	 *  node, no reflection entry - so it is not a surface a Blueprint or a later
+	 *  seam can find. Its ONLY caller is USiegeCheatManager::DumpAssistantPrompt,
+	 *  itself on a class the engine never instantiates in a Shipping build.
+	 *  ⚠️ The guard token is `!UE_BUILD_SHIPPING` in ALL THREE places (this
+	 *  declaration, the definition, and the cheat manager's call site); changing
+	 *  it in one place only is a link error, not a compile error.
+	 *
+	 *  ⛔ WHAT IT DELIBERATELY DOES NOT DO - a diagnostic that moves the thing it
+	 *  measures is worth nothing: NO BeginTurn, NO TurnId increment, NO model
+	 *  dispatch, NO SetState, NO PushMessage, NO order execution, NO deferred
+	 *  latch touched, NO MaxRosterKinds read-modify. It runs SubmitUtterance's
+	 *  STEPS 7 AND 8 (capture, compose) and STOPS.
+	 *
+	 *  ⚠️ IT REFUSES UNLESS THE FSM IS AT REST, AND THE WHITELIST IS THE POINT.
+	 *  Capture() RE-SURVEYS the one snapshot object IN PLACE, and
+	 *  GetTurnSnapshot()'s contract is that the executor reads the survey THE
+	 *  MODEL SAW - "a second survey mid-turn would silently answer a different
+	 *  question from the one the model was asked". Idle / Composing / Failed hold
+	 *  nothing; Thinking, AwaitConfirm, Clarify and Deferred each still consult
+	 *  the current survey downstream. ⇒ It is a WHITELIST so that a state added
+	 *  later is REFUSED BY DEFAULT rather than admitted by omission.
+	 *
+	 *  ⚠️ WHAT IT CONSUMES, DECLARED RATHER THAN OVERLOOKED - both are
+	 *  session-latched one-shots that fire INSIDE the delegated path, so
+	 *  delegation cannot avoid them without becoming a second composer:
+	 *   · bLoggedFirstCapture  - ReportFirstCapture() is called INSIDE
+	 *     ComposeTurnPrompt, so the FIRST LIVE CAPTURE audit is spent by whatever
+	 *     reaches the composer first, INCLUDING THE PLAYER'S FIRST SENTENCE. It
+	 *     was never uniquely this function's to protect. ⛔ This must NOT call
+	 *     ReportFirstCapture a second time. ⇒ CONVENTIONS "THE FINE-TUNE RUNG"
+	 *     §13(c): WHOEVER CALLS A LATCHED REPORTER FIRST OWNS ITS OUTPUT AND MUST
+	 *     PUBLISH IT - so this exec and the owed audit are taken in ONE session,
+	 *     by ONE task, with the audit line quoted (TASK-485).
+	 *   · bZoneAIdentityChecked - GetCachedZoneA()'s §8 byte-identity re-check
+	 *     runs on the SECOND call of a session; this may be that call.
+	 *
+	 *  @param RawUtterance  the sentence to compose for. ⚠️ TRIMMED HERE with the
+	 *                       SAME single TrimStartAndEnd() SubmitUtterance gate 1
+	 *                       applies - the bytes must be the ones the shipped lane
+	 *                       would build for the same typed string, and that trim
+	 *                       is the ONLY transform the shipped lane applies before
+	 *                       step 8 (everything else, including SanitizeForPrompt
+	 *                       and the MaxUtteranceBytes cap, happens INSIDE
+	 *                       BuildZoneC and is therefore inherited, not repeated).
+	 *  @return the composed prompt, or ⛔ AN EMPTY STRING ON ANY REFUSAL (empty
+	 *          utterance / no authority / FSM not at rest / the survey failed),
+	 *          each logged under LogSiegeAssistant. ⚠️ A successful compose can
+	 *          never be empty - Zone A alone is thousands of chars - so empty is
+	 *          an unambiguous "NO READING WAS TAKEN", never a short reading.
+	 */
+	FString DebugCaptureAndComposePrompt(const FString& RawUtterance);
+#endif // !UE_BUILD_SHIPPING
+
 private:
 
 	// ═════════════════════════════════════════════════════════════════════════

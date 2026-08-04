@@ -8,10 +8,16 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "GitClaudeUnrealTest.h"
+#include "HAL/FileManager.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/DateTime.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "UObject/SoftObjectPtr.h"
 #include "Siegebound/Castle.h"
 #include "Siegebound/HealthBarProvider.h"
+#include "Siegebound/SiegeAssistantCommand.h"     // LogSiegeAssistant — the dump logs beside the assistant, never under the generic category
+#include "Siegebound/SiegeAssistantComponent.h"   // DebugCaptureAndComposePrompt (TASK-479's one addition)
 #include "Siegebound/SiegePlayerController.h"
 #include "Siegebound/SiegePlayerState.h"
 #include "Siegebound/SummonedUnit.h"
@@ -568,4 +574,105 @@ void USiegeCheatManager::SetTestDamageBoost(float Percent, bool bAllFriendly)
 			TEXT("USiegeCheatManager::SetTestDamageBoost — requested %.1f%% on %d friendly unit(s) (team %s): bar reads %.1f%%..%.1f%%. Over-cap requests clamp inside AddPermanentDamageStacks."),
 			Percent, AppliedCount, TeamName, MinAchieved, MaxAchieved);
 	}
+}
+
+void USiegeCheatManager::DumpAssistantPrompt(FString Utterance)
+{
+#if !UE_BUILD_SHIPPING
+	// ⛔ THIS FUNCTION IS AN I/O SHELL AND NOTHING MORE. It resolves the shipped
+	// component, asks it for the bytes, and writes them. ⚠️ IT ASSEMBLES NO PART
+	// OF THE PROMPT — reassembling the zones here is banned (CONVENTIONS "THE
+	// FINE-TUNE RUNG" §13(b)) because it would have to GUESS the vocabulary lane
+	// (the measured 3029-vs-5116 defect) and the pending line, producing a green
+	// M3 that measures a string the game never builds. That is traps T1 and T8 in
+	// one move, and it is this batch's founding defect committed on purpose.
+
+	APlayerController* PC = GetOuterAPlayerController();
+	if (!PC)
+	{
+		UE_LOG(LogSiegeAssistant, Warning, TEXT("USiegeCheatManager::DumpAssistantPrompt — no owning PlayerController; nothing dumped."));
+		return;
+	}
+
+	ASiegePlayerController* SiegePC = Cast<ASiegePlayerController>(PC);
+	if (!SiegePC)
+	{
+		UE_LOG(LogSiegeAssistant, Warning,
+			TEXT("USiegeCheatManager::DumpAssistantPrompt — the owning controller is not an ASiegePlayerController, so it owns no assistant component; nothing dumped."));
+		return;
+	}
+
+	USiegeAssistantComponent* Assistant = SiegePC->GetAssistantComponent();
+	if (!Assistant)
+	{
+		UE_LOG(LogSiegeAssistant, Warning,
+			TEXT("USiegeCheatManager::DumpAssistantPrompt — no USiegeAssistantComponent on the local controller; nothing dumped."));
+		return;
+	}
+
+	// ── THE SHIPPED PATH, AND THE ONLY LINE IN THIS FILE THAT PRODUCES BYTES ──
+	// DebugCaptureAndComposePrompt runs USiegeAssistantSnapshot::Capture and then
+	// DELEGATES to the one private ComposeTurnPrompt. ⛔ Empty means REFUSED, and
+	// the reason is already on the log immediately above this line — a successful
+	// compose is never empty (Zone A alone is thousands of chars).
+	const FString Prompt = Assistant->DebugCaptureAndComposePrompt(Utterance);
+	if (Prompt.IsEmpty())
+	{
+		UE_LOG(LogSiegeAssistant, Warning,
+			TEXT("USiegeCheatManager::DumpAssistantPrompt — the assistant REFUSED to compose (see the DebugCaptureAndComposePrompt line directly above for the named reason). NO file was written and NO reading was taken."));
+		return;
+	}
+
+	// ── THE ARTIFACT ──────────────────────────────────────────────────────────
+	// ⚠️ THE FILENAME CARRIES A UTC TIMESTAMP SO A SECOND INVOCATION CANNOT
+	// OVERWRITE THE FIRST. The first invocation of a session is the one that may
+	// have spent the FIRST LIVE CAPTURE latch, so it is the least replaceable
+	// file this command can produce; a fixed name would let a follow-up reading
+	// silently destroy it. The timestamp is in the NAME — ⛔ never in the file.
+	const FString DumpDir = FPaths::ProjectSavedDir() / TEXT("SiegeAssistant");
+	IFileManager::Get().MakeDirectory(*DumpDir, /*Tree=*/true);
+
+	const FString FileName = FString::Printf(TEXT("ShippedPrompt_%s.txt"), *FDateTime::UtcNow().ToString(TEXT("%Y%m%d_%H%M%S")));
+	const FString FilePath = FPaths::ConvertRelativePathToFull(DumpDir / FileName);
+
+	// ⛔ THE FILE IS THE PROMPT AND NOTHING ELSE — no header, no banner, no
+	// counts, no re-ordering, no trimming, no normalising. It has to diff against
+	// the harness dump WITH NO INTERPRETATION STEP, so a single decorative byte
+	// here is a defect in the instrument.
+	//
+	// ⛔ ForceUTF8WithoutBOM IS LOAD-BEARING, NOT A STYLE CHOICE. The default is
+	// AutoDetect, which writes ANSI for an all-ANSI string and UTF-16 otherwise —
+	// i.e. the file's ENCODING would depend on its CONTENT, and one stray
+	// non-ASCII glyph would silently turn a byte diff into noise. Forcing UTF-8
+	// without a BOM makes the encoding a property of this call, and the prompt is
+	// ASCII by law (the ASCII law at the head of SiegeAssistantSnapshot.cpp), so
+	// the bytes on disk are the prompt's own. SaveStringToFile performs no
+	// line-ending translation, so the builders' \n survive as \n.
+	const bool bWritten = FFileHelper::SaveStringToFile(
+		Prompt, *FilePath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+
+	if (!bWritten)
+	{
+		// ⚠️ THE LOG IS THE RECOVERY ROUTE, NOT THE DIFF ARTIFACT: every line here
+		// is prefixed with a category and a timestamp by the log writer, so it
+		// CANNOT be byte-diffed as-is. It is emitted only because a reading that
+		// spent a one-shot latch and then vanished would be unrecoverable.
+		UE_LOG(LogSiegeAssistant, Error,
+			TEXT("USiegeCheatManager::DumpAssistantPrompt — FAILED to write '%s'. Emitting the %d chars below as a RECOVERY COPY; it is line-prefixed by the log writer and must be de-prefixed before any byte comparison.\n--- BEGIN SHIPPED PROMPT ---\n%s\n--- END SHIPPED PROMPT ---"),
+			*FilePath, Prompt.Len(), *Prompt);
+		return;
+	}
+
+	UE_LOG(LogSiegeAssistant, Log,
+		TEXT("USiegeCheatManager::DumpAssistantPrompt — wrote the SHIPPED-LANE prompt for \"%s\" (echoed AS TYPED; it is TrimStartAndEnd'd before composing, exactly as SubmitUtterance gate 1 does, so surrounding whitespace shown here is absent from the bytes): %d chars -> '%s'.\n")
+		TEXT("  ⚠️ THIS IS THE FIRST READING EVER TAKEN FROM THE SHIPPED BuildZoneA (CONVENTIONS \"In-match LLM command assistant\" 12g's standing WARN). Every byte figure previously on record was printed by the SPIKE's AppendZoneA — a DIFFERENT LANE.\n")
+		TEXT("  The file is BYTES ONLY, UTF-8 without BOM, no header and no normalisation — diff it against the harness dump directly. Zone boundaries are recoverable offline by locating the known Zone A prefix.\n")
+		TEXT("  EXPECTED ROSTER DIVERGENCE ON A 13-KIND BOARD, AND IT IS THE FINDING RATHER THAN A BUG (D2): this lane prints MaxRosterKinds=8 rows plus a COMPUTED 'other_kinds: <N> kinds, <M> units'; the harness prints 13 rows plus a HARDCODED 'other_kinds: none'. Same key set, five absent rows and a different value. It is Jonathan's escalation (TASK-486) — do NOT 'align' anything.\n")
+		TEXT("  If a 'FIRST LIVE CAPTURE' line appears ABOVE this one, this command spent the session's one-shot audit latch: quote that line in the same handoff (TASK-485), because whoever calls a latched reporter first OWNS its output."),
+		*Utterance, Prompt.Len(), *FilePath);
+#else
+	UE_LOG(LogGitClaudeUnrealTest, Warning,
+		TEXT("USiegeCheatManager::DumpAssistantPrompt — compiled out of Shipping (the dev-only observer it calls does not exist there); '%s' was not dumped."),
+		*Utterance);
+#endif // !UE_BUILD_SHIPPING
 }

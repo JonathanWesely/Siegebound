@@ -36,6 +36,20 @@
  *                       AddPermanentDamageStacks (the ancient-ground grant path —
  *                       integer stacks, the +400% cap and the
  *                       OnDamageBoostChanged broadcast all preserved).
+ *   - DumpAssistantPrompt → USiegeAssistantComponent::DebugCaptureAndComposePrompt
+ *                       (the dev-only observer, which itself delegates to the ONE
+ *                       private composer) — READ-ONLY, writes a file and a log
+ *                       line and changes no game state.
+ *
+ *  ⚖️ WHY AN exec HERE IS §5's OWN IDIOM AND NOT A BREACH OF IT (TASK-479;
+ *  CONVENTIONS "THE FINE-TUNE RUNG" §8). "In-match LLM command assistant" §5
+ *  says dev/spike commands register via FAutoConsoleCommand, NEVER as a
+ *  UFUNCTION(exec) on a shipped class. ⚠️ READ ITS REASON, NOT ITS LETTER: that
+ *  clause exists so THE SPIKE does not become a shipped exec surface, keeping the
+ *  inference lane new-files-only. ✅ A SHIPPED-LANE dev dump is the thing §5 was
+ *  protecting, not the thing it was banning — a Siege.Llama.* console command
+ *  STRUCTURALLY CANNOT REACH the shipped path, which is the entire point of the
+ *  reading. The spike's commands stay in Siege.Llama.* where §5 put them.
  */
 UCLASS()
 class GITCLAUDEUNREALTEST_API USiegeCheatManager : public UCheatManager
@@ -111,4 +125,48 @@ public:
 	 */
 	UFUNCTION(exec)
 	void SetTestDamageBoost(float Percent, bool bAllFriendly);
+
+	/**
+	 *  ⛔ THE SHIPPED-LANE PROMPT DUMP (TASK-479; CONVENTIONS "THE FINE-TUNE RUNG"
+	 *  §5, §8, §13). Composes the turn prompt THE SHIPPED LANE WOULD BUILD for
+	 *  Utterance and writes ITS EXACT BYTES to a file under
+	 *  Saved/SiegeAssistant/, logging the absolute path.
+	 *
+	 *  ⚠️ WHY IT EXISTS: NO COMMAND IN THIS PROJECT HAS EVER PRINTED THE SHIPPED
+	 *  BuildZoneA (§12g's standing WARN). Every byte count anyone has quoted came
+	 *  from the SPIKE's AppendZoneA — a DIFFERENT LANE — so the shipped lane's
+	 *  bytes have been a READING-LEVEL CLAIM carried across two loops and two
+	 *  gates. This takes the first actual reading, and it is what M3's artifact
+	 *  diff compares against.
+	 *
+	 *  ⛔ READ-ONLY, AND STRICTLY SO. It routes through
+	 *  USiegeAssistantComponent::DebugCaptureAndComposePrompt, which runs
+	 *  SubmitUtterance's steps 7 and 8 (capture, compose) and stops: no turn, no
+	 *  TurnId, no model dispatch, no FSM transition, no player-facing message, no
+	 *  order executed. ⛔ It reads MaxRosterKinds and never writes it, and it
+	 *  "aligns" nothing — an expected roster-block divergence from the harness is
+	 *  D2, THE FINDING, and it is Jonathan's escalation (TASK-486), not a bug to
+	 *  fix from here.
+	 *
+	 *  ⛔ THE FILE IS BYTES AND NOTHING BUT BYTES — no header, no banner, no
+	 *  counts, no re-ordering, no trimming, no normalising. It must diff against
+	 *  the harness dump WITH NO INTERPRETATION STEP, so anything this function
+	 *  added to it would be a defect in the instrument.
+	 *
+	 *  ⚠️ IT REFUSES rather than guesses: an empty utterance, a client (no
+	 *  authority), an FSM that is not at rest, or an unsurveyable board each log
+	 *  a named reason under LogSiegeAssistant and write NO file.
+	 *
+	 *  ⚠️ IT MAY SPEND THE "FIRST LIVE CAPTURE" ONE-SHOT. ReportFirstCapture is
+	 *  latched once per session and fires INSIDE the composer, so it is spent by
+	 *  whatever reaches the composer first — including the player's first real
+	 *  sentence. ⇒ §13(c): whoever calls a latched reporter first OWNS its output
+	 *  and must publish it, so run this and quote that audit line in the SAME
+	 *  session (TASK-485).
+	 *
+	 *  USAGE: the exec parser splits on whitespace, so a multi-word sentence MUST
+	 *  be quoted — DumpAssistantPrompt "send the footmen to the gate".
+	 */
+	UFUNCTION(exec)
+	void DumpAssistantPrompt(FString Utterance);
 };

@@ -92,8 +92,24 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSiegeAssistantConsoleOpenChanged,
  *     WasInputKeyJustPressed(EKeys::Escape) cancel routes in
  *     ASiegePlayerController still fire while the console is open. Measured
  *     from engine source at TASK-411 §3 and confirmed at the qa/TASK-411 gate.
- *     ⇒ Escape does NOT close this console. Cancel does, and so does whatever
- *     the open key is bound to.
+ *     ⇒ Escape does NOT close this console. ⛔ AND IT MAY NOT BE MADE TO: that
+ *     is Jonathan's open ruling (AS-§6 A-2), not an oversight to tidy up.
+ *
+ *  ⛔ THE FOUR CLOSE ROUTES ARE ENUMERATED IN CONVENTIONS AS-§6 RULING A-2, AND
+ *  THAT LIST IS THE CONTRACT. Repeated here because the gap surfaced TWICE by
+ *  being written down nowhere, and a behaviour nobody enumerated is a behaviour
+ *  every later task re-decides:
+ *      1. The open key pressed while open — ASiegePlayerController::
+ *         OnAssistantConsolePressed is a toggle whose close half is
+ *         deliberately UN-GATED (a close that can be refused can strand the
+ *         cursor in GameAndUI).
+ *      2. CancelPressed() with no confirm prompt up.
+ *      3. SetConsoleEnabled(false) — the fault latch.
+ *      4. Enter committed on an EMPTY (whitespace-trimmed) box — Jonathan's
+ *         directive, 2026-08-03. It lives in HandleTextCommitted, NEVER in
+ *         SubmitPressed; see the comment at both.
+ *  ⛔ A CLOSE IS NOT A CANCEL. Every route above reuses CloseConsole() verbatim
+ *  and none of them broadcasts a cancellation — see CloseConsole()'s comment.
  *   - This widget NEVER calls SetInputMode. Input posture in L_Arena is owned
  *     by ASiegePlayerController::ApplyCursorInputState() (CONVENTIONS
  *     "Input-mode ownership (level-travel law)"), and a second owner is exactly
@@ -357,7 +373,13 @@ protected:
 	virtual void NativeDestruct() override;
 	//~ End UUserWidget interface
 
-	/** OnTextCommitted thunk. Submits on Enter ONLY — a focus change is not an order. */
+	/**
+	 *  OnTextCommitted thunk. Acts on Enter ONLY — a focus change is not an order.
+	 *  ⚠️ THIS IS ALSO WHERE CLOSE ROUTE 4 LIVES (Enter on an empty box closes the
+	 *  console), and it is here PRECISELY BECAUSE this filter is the keypress:
+	 *  SubmitPressed is BlueprintCallable and reachable by routes that are not the
+	 *  key. See the comment at the branch, and AS-§6 RULING A-2.
+	 */
 	UFUNCTION()
 	void HandleTextCommitted(const FText& CommittedText, ETextCommit::Type CommitMethod);
 
@@ -408,6 +430,28 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Assistant")
 	int32 MaxTranscriptLines = 6;
+
+	/**
+	 *  How long OpenConsole() refuses a re-open immediately after CLOSE ROUTE 4
+	 *  (Enter-on-an-empty-box) closed the console. See CONVENTIONS "In-match LLM
+	 *  command assistant" AS-§6 RULING A-2's ordering clause, and the long
+	 *  comment at the guard in OpenConsole().
+	 *
+	 *  A human cannot press a key twice this fast; keyboard auto-repeat is the
+	 *  only thing that can, and suppressing that is correct too.
+	 *
+	 *  ⛔ HARD-CLAMPED IN CODE (SiegeAssistantConsole::MaxReopenSuppressionSeconds)
+	 *  regardless of what is configured here. A long window is a console that
+	 *  REFUSES TO OPEN, and that failure must not be reachable by configuration.
+	 *  Setting this to 0 disables the suppression entirely and is a clean off
+	 *  switch.
+	 *
+	 *  ⚠️ A float is correct HERE because this is a DURATION. The TIMESTAMP it is
+	 *  compared against must be a double — see LastRoute4CloseRealTimeSeconds.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Assistant",
+		meta = (ClampMin = "0.0", ClampMax = "0.25", UIMin = "0.0", UIMax = "0.25"))
+	float ReopenSuppressionSeconds = 0.12f;
 
 private:
 
@@ -466,4 +510,29 @@ private:
 
 	/** One-shot log guards, so a missing child cannot spam a frame loop. */
 	bool bWarnedNoInputBox = false;
+
+	/**
+	 *  FPlatformTime::Seconds() at the moment CLOSE ROUTE 4 (Enter-on-empty)
+	 *  closed the console, or a NEGATIVE SENTINEL when no such close is pending.
+	 *  Read and CONSUMED by the guard in OpenConsole(). Route 1/2/3 closes do NOT
+	 *  set it — only route 4 can have a re-open racing the same keypress.
+	 *
+	 *  ⛔ THIS MUST BE A double AND MUST NEVER BE NARROWED TO A float, AND THAT IS
+	 *  NOT STYLE. FWindowsPlatformTime::Seconds() adds a deliberate offset of
+	 *  16777216.0 == 2^24 (WindowsPlatformTime.h:48), whose stated purpose is "add
+	 *  big number to make bugs apparent where return value is being passed to
+	 *  float" (:28). A float has a 24-bit mantissa, so at 2^24 its ULP is exactly
+	 *  1.0 SECOND — a float here would quantize every timestamp to whole seconds
+	 *  and turn a 0.12 s window into a 0-or-1 s window. Verified at the engine
+	 *  source, not remembered.
+	 *
+	 *  ⚠️ WHY THIS CLOCK AND NOT THE WORLD'S. FPlatformTime::Seconds() is
+	 *  QueryPerformanceCounter-based (WindowsPlatformTime.h:23): monotonic, never
+	 *  paused, never time-dilated, never reset by level travel, and available
+	 *  without a UWorld. UWorld::GetTimeSeconds() has none of those properties —
+	 *  it STOPS while the game is paused, so a window armed just before a pause
+	 *  would never expire and the console would refuse to open forever. That is
+	 *  the exact defect this member is shaped to be incapable of.
+	 */
+	double LastRoute4CloseRealTimeSeconds = -1.0;
 };

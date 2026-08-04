@@ -173,6 +173,21 @@ static constexpr int32 SpikeGrammarCountMax = 30;
  */
 static constexpr int32 SpikeMaxSnapshotChars = 1085;
 
+/**
+ *  repeats= CEILING. GENEROUS BUT BOUNDED, for the same reason deadline= is:
+ *  the argument exists so an experiment can be run long, but an unbounded value
+ *  turns a typo into an hours-long job that looks like a hang. 25 repeats over
+ *  the 25-row dev split is 625 generations, which is already a deliberate act.
+ *
+ *  ⚠️ AN OUT-OF-RANGE VALUE IS REJECTED LOUDLY AND FALLS BACK TO 1 -- IT IS
+ *  NEVER CLAMPED QUIETLY. A silently clamped repeats= would produce a SINGLE
+ *  pass that the operator believes was N passes, and reporting a single run as
+ *  a repeat-satisfying measurement is precisely the failure CONVENTIONS section
+ *  12h (THE REPEAT LAW) was written about -- it is how the 19/25 -> 20/25
+ *  confusion happened. Same argument as deadline=, one lane over.
+ */
+static constexpr int32 SpikeMaxEvalRepeats = 25;
+
 /** Every measurement line carries one of these tags so the whole run greps out of the log. */
 static const TCHAR* const TagRun      = TEXT("SPIKE_RUN");
 static const TCHAR* const TagLoad     = TEXT("SPIKE_LOAD");
@@ -183,6 +198,25 @@ static const TCHAR* const TagMem      = TEXT("SPIKE_MEM");
 static const TCHAR* const TagTokens   = TEXT("SPIKE_TOKENS");
 static const TCHAR* const TagEvalRow  = TEXT("SPIKE_EVAL_ROW");
 static const TCHAR* const TagEvalScore = TEXT("SPIKE_EVAL_SCORE");
+/**
+ *  ⚠️ A SEPARATE TAG, NOT A NEW FIELD ON SPIKE_EVAL_SCORE, AND THAT IS THE POINT.
+ *  Every line carrying this tag is emitted ONLY when repeats= > 1, so a reader
+ *  grepping SPIKE_EVAL_SCORE out of a repeat run gets exactly the same line shape
+ *  they have always got, N times, and the DISTRIBUTION is a separate stream they
+ *  opt into. It also makes the additive claim checkable by grep: zero
+ *  SPIKE_EVAL_REPEAT lines in a log == the default path ran.
+ */
+static const TCHAR* const TagEvalRepeat = TEXT("SPIKE_EVAL_REPEAT");
+/**
+ *  ⚠️ TWO MORE OPT-IN STREAMS, ON EXACTLY THE REASONING ABOVE. Both are emitted
+ *  by Siege.Llama.SpikePrompt and ONLY when out= or ids= is actually typed, so a
+ *  log taken from a command line that passes neither contains ZERO lines carrying
+ *  either tag. That makes CONVENTIONS section 16's additive claim checkable by
+ *  grep rather than by reading a diff -- which is the standard TASK-476 set for
+ *  this file and the standard every later flag here is held to.
+ */
+static const TCHAR* const TagPromptOut = TEXT("SPIKE_PROMPT_OUT");
+static const TCHAR* const TagPromptIds = TEXT("SPIKE_PROMPT_IDS");
 static const TCHAR* const TagWarn     = TEXT("SPIKE_WARN");
 
 // ===========================================================================
@@ -432,13 +466,27 @@ static const FSpikeRosterRow SpikeRoster[] =
  *     between turns -- so the bench can report both bounds instead of one
  *     number that is only true of a paused game.
  *
- *  ⚠️ THE KIND SET IS IDENTICAL TO SpikeRoster, DELIBERATELY AND LOAD-BEARINGLY.
- *     The GBNF's `kind` alternatives are generated from SpikeRoster (see
- *     BuildSpikeGrammar), so a kind that appears in a fixture but not in
- *     SpikeRoster would be a symbol the prompt shows and the sampler forbids --
- *     the CONVENTIONS section 9c seam. Only the NUMBERS move here: units died,
- *     a miner was lost, a wizard went down. VerifyFixtureKindParity() checks
- *     this at run time rather than trusting the comment.
+ *  ⚠️ THE KIND SET IS IDENTICAL TO t0's, DELIBERATELY -- BUT THE REASON CHANGED
+ *     AT TASK-478 AND THE OLD ONE IS GONE, SO IT IS RESTATED RATHER THAN LEFT
+ *     TO ROT (CONVENTIONS section 22: a stale comment is believed over the code).
+ *
+ *     IT USED TO SAY: "the GBNF's `kind` alternatives are generated from
+ *     SpikeRoster, so a kind in a fixture but not in SpikeRoster is a symbol the
+ *     prompt shows and the sampler forbids." THAT MECHANISM NO LONGER EXISTS --
+ *     BuildSpikeGrammar now derives `kind` from THE FIXTURE IT IS GENERATING FOR,
+ *     so a fixture can no longer disagree with its own grammar.
+ *
+ *     THE REASON THAT SURVIVES IS t1's OWN JOB, and it is independent of the
+ *     grammar: t1 is "the same board a few seconds later", so bar #3's worst case
+ *     is about the NUMBERS moving between turns. If t1 also DROPPED a kind, turn 1
+ *     and turn 2 would run under two DIFFERENT grammars and the bound would be
+ *     measuring two changes at once -- a confound in the one bar the feature's
+ *     latency budget is judged on. Only the NUMBERS move here: units died, a miner
+ *     was lost, a wizard went down.
+ *
+ *     ⇒ The kinds are still CHECKED, not trusted -- VerifyFixtureKindParity()
+ *     still rejects any kind that is not in SpikeRoster (the game's vocabulary),
+ *     and the static_assert below still binds the two row counts.
  */
 static const FSpikeRosterRow SpikeRosterT1[] =
 {
@@ -457,8 +505,17 @@ static const FSpikeRosterRow SpikeRosterT1[] =
 	{ TEXT("sorcerer"),   1, 1, 1 }
 };
 
+// ⚠️ THE MESSAGE WAS REWRITTEN AT TASK-478 AND THE ASSERT WAS KEPT. Its old text
+// ("the kinds the GBNF was generated from") named a mechanism that no longer
+// exists -- the GBNF is now generated from each fixture. Its NEW reason is the one
+// above: t0 and t1 must differ in NUMBERS ONLY, or bar #3's SHIPPED_WORST_CASE
+// bound compares two turns taken under two different grammars.
+//
+// ⚠️ AND IT IS LOAD-BEARING FOR A SECOND THING NOW: it is what makes the seam
+// readout below PROVABLY SILENT on t1 at COMPILE TIME rather than by my reading.
+// (It binds the COUNT; VerifyFixtureKindParity binds the symbols.)
 static_assert(UE_ARRAY_COUNT(SpikeRosterT1) == UE_ARRAY_COUNT(SpikeRoster),
-	"The t1 fixture must carry exactly the kinds the GBNF was generated from.");
+	"t0 and t1 must differ in NUMBERS ONLY -- a t1 that dropped a kind would give turn 1 and turn 2 different grammars and confound bar #3.");
 
 /** The seven pinned place symbols, in the pinned order (CONVENTIONS section 9a). */
 static const TCHAR* const SpikePlaces[] =
@@ -541,31 +598,360 @@ static const FSpikeWorldFixture SpikeFixtureT1 =
 };
 
 /**
- *  The comment on SpikeRosterT1 claims both fixtures carry the same kind set,
- *  and the GBNF's `kind` alternatives depend on it. Checked, not trusted.
- *  @return true when every fixture kind exists in the roster the grammar was
- *          generated from, in the same order.
+ *  THE FIXTURE REGISTRY -- ONE ROW PER SELECTABLE FIXTURE. ⚠️ THIS TABLE IS THE
+ *  "CAPABILITY, NOT CONTENT" HALF OF TASK-478 MADE CONCRETE: Stage D lands tA-tF by
+ *  adding ROWS HERE, not by growing another `bUseT1 ? A : B` ternary at every call
+ *  site (which is how a two-fixture ternary becomes a six-fixture bug farm).
+ *
+ *  ⛔ ADDING A ROW IS NOT ENOUGH TO SCORE THE CORPUS AGAINST IT, AND THAT IS
+ *     DELIBERATE. The eval lane hardcodes t0 and MUST keep doing so -- the sealed
+ *     rows were authored against t0's numbers, so scoring them on another board
+ *     silently rewrites the corpus's premises. See the comment in RunOneSplit.
+ */
+struct FSpikeFixtureEntry
+{
+	const TCHAR* Name;
+	const FSpikeWorldFixture* Fixture;
+};
+
+static const FSpikeFixtureEntry SpikeFixtureRegistry[] =
+{
+	{ TEXT("t0"), &SpikeFixtureT0 },
+	{ TEXT("t1"), &SpikeFixtureT1 }
+};
+
+/**
+ *  Resolves a fixture= value. ⚠️ AN UNRECOGNISED NAME IS REPORTED, NEVER SILENTLY
+ *  TREATED AS t0: a typo that quietly hands back the default is how an operator ends
+ *  up believing they measured a board they never loaded. Same posture as ApplyTier's
+ *  unknown-tier warning and repeats='s out-of-range refusal.
+ *
+ *  @param OutRecognised  false when Name was non-empty and matched nothing.
+ *  @return the named fixture, or t0 when Name is empty or unmatched.
+ */
+static const FSpikeWorldFixture& ResolveSpikeFixture(const FString& Name, bool& OutRecognised)
+{
+	OutRecognised = true;
+
+	if (Name.IsEmpty())
+	{
+		return SpikeFixtureT0;
+	}
+
+	for (int32 Index = 0; Index < static_cast<int32>(UE_ARRAY_COUNT(SpikeFixtureRegistry)); ++Index)
+	{
+		if (Name.Equals(SpikeFixtureRegistry[Index].Name, ESearchCase::IgnoreCase))
+		{
+			return *SpikeFixtureRegistry[Index].Fixture;
+		}
+	}
+
+	OutRecognised = false;
+	return SpikeFixtureT0;
+}
+
+/** Every registered fixture name, for an error message that lists what WOULD have worked. */
+static FString ListSpikeFixtureNames()
+{
+	FString Out;
+	for (int32 Index = 0; Index < static_cast<int32>(UE_ARRAY_COUNT(SpikeFixtureRegistry)); ++Index)
+	{
+		if (!Out.IsEmpty())
+		{
+			Out += TEXT("|");
+		}
+		Out += SpikeFixtureRegistry[Index].Name;
+	}
+	return Out;
+}
+
+/**
+ *  ⛔ SUBSET PARITY (TASK-478). RELAXED IN EXACTLY ONE DIRECTION; TIGHTENED IN
+ *     THREE. ⚠️ A PARITY CHECK THAT PERMITS ANYTHING HAS BEEN REMOVED, NOT FIXED.
+ *
+ *  WHAT IT USED TO ENFORCE: RosterNum == 13 AND Roster[i].Kind == SpikeRoster[i]
+ *  for every i. That is fixture-IS-SpikeRoster, not fixture-is-VALID -- and it is
+ *  the structural reason the CONVENTIONS section 9c seam (Zone A demonstrates
+ *  `footman`/`sorcerer`/`archer` on a board that may not hold them) was
+ *  UNMEASURABLE: no legal fixture could ever omit a kind, so the seam could not be
+ *  reproduced by the only instrument that exists.
+ *
+ *  WHAT IT ENFORCES NOW -- the fixture's kinds must be a SUBSET of SpikeRoster,
+ *  in SpikeRoster's own relative order, with no repeats and at least one row:
+ *
+ *   (a) ⛔ EVERY KIND MUST EXIST IN SpikeRoster. THIS IS THE DIRECTION THAT MAY
+ *       NEVER BE RELAXED, AND DERIVING THE GRAMMAR FROM THE FIXTURE MADE IT MORE
+ *       LOAD-BEARING, NOT LESS. Before, SpikeRoster generated the grammar, so a
+ *       typo'd fixture kind was a symbol the sampler FORBADE -- loud by the model
+ *       failing every row that needed it. Now the fixture generates the grammar,
+ *       so a typo'd kind would be ADDED to the grammar as a legal alternative: the
+ *       sampler could emit a unit the game does not have, and the shipped executor
+ *       is the only thing left between that and a valid-shaped wrong command.
+ *       ⇒ SpikeRoster remains the VOCABULARY authority even though it is no longer
+ *       the GRAMMAR authority, and this check is the whole of that guarantee.
+ *   (b) NO DUPLICATES. The old index-identity check forbade them for free; a naive
+ *       "is it in the list" subset test would not. A repeated kind emits a repeated
+ *       GBNF alternative and a repeated `roster:` line in Zone C -- a board the
+ *       shipped Capture() cannot produce.
+ *   (c) SpikeRoster's RELATIVE ORDER IS KEPT (relaxed from index-identity, not
+ *       dropped). ⚠️ This is deliberately stricter than "a subset": SpikeRoster's
+ *       order IS Docs/Data/cards.csv row order, which is what the shipped
+ *       USiegeAssistantSnapshot::Capture() sorts to. A fixture that reordered its
+ *       rows would print a `roster:` block no live board can produce, so bar #3's
+ *       byte-level prefix claims would be measuring a layout that does not ship.
+ *       Declared as a judgement call in the handoff: the spec said "permit a
+ *       subset", and a subset in ARBITRARY order is a different, larger relaxation.
+ *   (d) AT LEAST ONE ROW. An empty roster generates `kind ::= ` with no
+ *       alternatives; llama.cpp refuses the WHOLE grammar, llama_sampler_init_grammar
+ *       returns NULL, and every generation then runs UNCONSTRAINED (the exact
+ *       failure CONVENTIONS section 9c records as having reached a measurement run).
+ *
+ *  ⚠️ NOTE WHAT THIS CANNOT SEE, because a caller must not mistake it for the whole
+ *     seam: it compares the fixture against SpikeRoster only. Whether ZONE A shows
+ *     the model a kind the fixture omits is a DIFFERENT question, on a DIFFERENT
+ *     artifact -- see ReportZoneAKindSeam below.
+ *
+ *  @return true when the fixture's kinds are a duplicate-free, in-order, non-empty
+ *          subset of SpikeRoster.
  */
 static bool VerifyFixtureKindParity(const FSpikeWorldFixture& Fixture, FString& OutFirstMismatch)
 {
-	if (Fixture.RosterNum != SpikeRosterNum)
+	if (Fixture.Roster == nullptr || Fixture.RosterNum <= 0)
 	{
-		OutFirstMismatch = FString::Printf(TEXT("roster_row_count=%d vs grammar_kinds=%d"),
-			Fixture.RosterNum, SpikeRosterNum);
+		OutFirstMismatch = FString::Printf(
+			TEXT("the fixture carries %d roster rows -- an EMPTY roster generates `kind ::= ` with NO alternatives, llama.cpp refuses the whole grammar, and EVERY generation then runs UNCONSTRAINED"),
+			Fixture.RosterNum);
+		return false;
+	}
+
+	// Which SpikeRoster kinds this fixture has already claimed, so a DUPLICATE is
+	// distinguished from an OUT-OF-ORDER row instead of the two sharing one message.
+	bool bSeen[SpikeRosterNum] = {};
+	int32 PreviousRosterIndex = INDEX_NONE;
+
+	for (int32 RowIndex = 0; RowIndex < Fixture.RosterNum; ++RowIndex)
+	{
+		const TCHAR* const Kind = Fixture.Roster[RowIndex].Kind;
+
+		int32 RosterIndex = INDEX_NONE;
+		for (int32 Candidate = 0; Candidate < SpikeRosterNum; ++Candidate)
+		{
+			if (Kind != nullptr && FCString::Strcmp(Kind, SpikeRoster[Candidate].Kind) == 0)
+			{
+				RosterIndex = Candidate;
+				break;
+			}
+		}
+
+		if (RosterIndex == INDEX_NONE)
+		{
+			OutFirstMismatch = FString::Printf(
+				TEXT("row %d names '%s', WHICH IS NOT A KIND IN SpikeRoster -- the grammar is generated from THIS fixture, so that symbol would become a legal GBNF alternative and the sampler could emit a unit the game does not have"),
+				RowIndex, Kind != nullptr ? Kind : TEXT("<null>"));
+			return false;
+		}
+
+		if (bSeen[RosterIndex])
+		{
+			OutFirstMismatch = FString::Printf(
+				TEXT("row %d repeats the kind '%s' -- a duplicate emits a duplicate GBNF alternative and a duplicate `roster:` line, which no live board can produce"),
+				RowIndex, SpikeRoster[RosterIndex].Kind);
+			return false;
+		}
+
+		if (RosterIndex < PreviousRosterIndex)
+		{
+			OutFirstMismatch = FString::Printf(
+				TEXT("row %d is '%s' (SpikeRoster index %d) but follows '%s' (index %d) -- a fixture may OMIT kinds, never REORDER them; SpikeRoster's order is cards.csv row order, which is what the shipped Capture() sorts to"),
+				RowIndex, SpikeRoster[RosterIndex].Kind, RosterIndex,
+				SpikeRoster[PreviousRosterIndex].Kind, PreviousRosterIndex);
+			return false;
+		}
+
+		bSeen[RosterIndex] = true;
+		PreviousRosterIndex = RosterIndex;
+	}
+
+	return true;
+}
+
+/** true when this fixture's roster names Kind. The grammar's `kind` alternatives are exactly these. */
+static bool FixtureHasKind(const FSpikeWorldFixture& Fixture, const TCHAR* Kind)
+{
+	if (Kind == nullptr || Fixture.Roster == nullptr)
+	{
 		return false;
 	}
 
 	for (int32 RowIndex = 0; RowIndex < Fixture.RosterNum; ++RowIndex)
 	{
-		if (FCString::Strcmp(Fixture.Roster[RowIndex].Kind, SpikeRoster[RowIndex].Kind) != 0)
+		if (Fixture.Roster[RowIndex].Kind != nullptr
+			&& FCString::Strcmp(Fixture.Roster[RowIndex].Kind, Kind) == 0)
 		{
-			OutFirstMismatch = FString::Printf(TEXT("row %d is '%s' but the grammar has '%s'"),
-				RowIndex, Fixture.Roster[RowIndex].Kind, SpikeRoster[RowIndex].Kind);
-			return false;
+			return true;
 		}
 	}
 
-	return true;
+	return false;
+}
+
+/**
+ *  Collects the unit symbols a Zone A text DEMONSTRATES in a few-shot answer, by
+ *  scanning for the literal `"kind":"` and reading to the closing quote.
+ *
+ *  ⚠️ SCANNED OUT OF THE ACTUAL TEXT RATHER THAN TRANSCRIBED INTO A SECOND LIST,
+ *     AND THAT IS THE POINT (CONVENTIONS section 9c's own lesson: a method that
+ *     compares an artifact to another artifact of the same authorship cannot detect
+ *     an error they share). A hardcoded { footman, sorcerer, archer } would be a
+ *     third copy of Zone A's content, free to drift from it silently -- and it would
+ *     be flatly WRONG for a prompt= override, which is the case that matters most.
+ *
+ *  `"kind":"` appears in exactly two places in the landed schema: inside a `who`
+ *  entry and inside the `when` at_least form. Both are demonstrations of a symbol
+ *  the model is being taught to emit, which is what this is measuring.
+ */
+static void CollectZoneAFewShotKinds(const FString& ZoneAText, TArray<FString>& OutKinds)
+{
+	OutKinds.Reset();
+
+	const FString KindKey = TEXT("\"kind\":\"");
+
+	int32 SearchFrom = 0;
+	while (SearchFrom < ZoneAText.Len())
+	{
+		const int32 KeyStart = ZoneAText.Find(KindKey, ESearchCase::CaseSensitive, ESearchDir::FromStart, SearchFrom);
+		if (KeyStart == INDEX_NONE)
+		{
+			break;
+		}
+
+		const int32 ValueStart = KeyStart + KindKey.Len();
+		const int32 ValueEnd = ZoneAText.Find(TEXT("\""), ESearchCase::CaseSensitive, ESearchDir::FromStart, ValueStart);
+		if (ValueEnd == INDEX_NONE)
+		{
+			break;
+		}
+
+		const FString Symbol = ZoneAText.Mid(ValueStart, ValueEnd - ValueStart);
+		if (!Symbol.IsEmpty())
+		{
+			OutKinds.AddUnique(Symbol);
+		}
+
+		SearchFrom = ValueEnd + 1;
+	}
+}
+
+/**
+ *  ⭐ THE INSTRUMENT D3 WAS MISSING -- IT REPORTS THE ZONE A <-> GRAMMAR KIND SEAM
+ *     FOR ONE FIXTURE, AND ITS WHOLE VALUE IS THAT THE SEAM STOPS BEING SILENT.
+ *
+ *  CONVENTIONS section 9c: "what makes it dangerous is an ABSENCE, not an event:
+ *  THERE IS NO LOG LINE. Nothing throws, nothing refuses, nothing warns, and the
+ *  JSON that does come back is well-formed... the cost arrives as diffuse accuracy
+ *  loss with no cause attached, spread across rows that have nothing to do with the
+ *  missing kind, and read as 'the model is bad'." That sentence is a specification
+ *  for this function: on a fixture that omits a kind Zone A still teaches, the run
+ *  now SAYS SO, so a score drop is attributable instead of mysterious.
+ *
+ *  ⛔ IT IS PROVABLY SILENT ON EVERY MEASUREMENT ON RECORD, AND THAT IS MECHANICAL,
+ *     NOT A PROMISE (CONVENTIONS section 16 freeze #2 -- a new line on a default
+ *     path moves the instrument every existing number was taken with):
+ *       - it emits nothing unless some SpikeRoster kind that Zone A names is ABSENT
+ *         from the fixture;
+ *       - t0's Roster IS SpikeRoster, by construction, so nothing can be absent;
+ *       - t1's row count is bound to SpikeRoster's BY static_assert, and its symbols
+ *         by VerifyFixtureKindParity, so nothing can be absent there either.
+ *     ⇒ On t0 and t1 -- the only fixtures that exist today -- this function cannot
+ *     emit a line. It first speaks when a Stage D subset fixture arrives, which is
+ *     exactly when D3 becomes measurable.
+ *
+ *  TWO SETS ARE REPORTED, because they are different strengths of evidence:
+ *    NAMED       -- the symbol appears ANYWHERE in Zone A (the synonym table names
+ *                   all thirteen kinds, so this is the wide set).
+ *    DEMONSTRATED-- the symbol appears inside a few-shot ANSWER as `"kind":"X"`.
+ *                   This is section 9c's actual claim and the stronger teaching
+ *                   signal: the model is shown that token being EMITTED.
+ *
+ *  ⚠️ THE `NAMED` TEST IS A SUBSTRING TEST, STATED PLAINLY. No SpikeRoster kind is a
+ *     substring of another, so the sets cannot cross-contaminate; but a Zone A that
+ *     merely mentions a kind in prose counts as naming it. That is the intended
+ *     reading -- the question is "is this symbol in front of the model" -- and it is
+ *     a POSITIVE structural fact about the prompt bytes rather than a search for an
+ *     absence (CONVENTIONS section 14).
+ *
+ *  @param bReportWhenClosed  true only on the inspection command, where "the seam is
+ *                            CLOSED" is the result worth printing. The measurement
+ *                            lanes pass false, so their default output cannot move.
+ *  @return the number of SpikeRoster kinds Zone A names that this fixture forbids.
+ */
+static int32 ReportZoneAKindSeam(const FString& ZoneAText, const FSpikeWorldFixture& Fixture,
+	const TCHAR* LaneLabel, bool bReportWhenClosed)
+{
+	TArray<FString> DemonstratedKinds;
+	CollectZoneAFewShotKinds(ZoneAText, DemonstratedKinds);
+
+	FString ForbiddenNamed;
+	FString ForbiddenDemonstrated;
+	int32 NamedCount = 0;
+	int32 ForbiddenNamedCount = 0;
+	int32 ForbiddenDemonstratedCount = 0;
+
+	for (int32 Index = 0; Index < SpikeRosterNum; ++Index)
+	{
+		const TCHAR* const Kind = SpikeRoster[Index].Kind;
+		if (!ZoneAText.Contains(Kind, ESearchCase::CaseSensitive))
+		{
+			continue;
+		}
+
+		++NamedCount;
+		if (FixtureHasKind(Fixture, Kind))
+		{
+			continue;
+		}
+
+		++ForbiddenNamedCount;
+		if (!ForbiddenNamed.IsEmpty())
+		{
+			ForbiddenNamed += TEXT(",");
+		}
+		ForbiddenNamed += Kind;
+	}
+
+	for (const FString& Symbol : DemonstratedKinds)
+	{
+		if (FixtureHasKind(Fixture, *Symbol))
+		{
+			continue;
+		}
+
+		++ForbiddenDemonstratedCount;
+		if (!ForbiddenDemonstrated.IsEmpty())
+		{
+			ForbiddenDemonstrated += TEXT(",");
+		}
+		ForbiddenDemonstrated += Symbol;
+	}
+
+	if (ForbiddenNamedCount == 0 && ForbiddenDemonstratedCount == 0)
+	{
+		if (bReportWhenClosed)
+		{
+			UE_LOG(LogSiegeLlama, Display,
+				TEXT("%s ZONE_A_KIND_SEAM lane=%s fixture=%s CLOSED -- every one of the %d SpikeRoster kinds this Zone A names, and all %d it DEMONSTRATES in a few-shot answer, are admissible in this fixture's grammar. (This is the positive control: the check ran and found nothing, which is a result, not a silence.)"),
+				TagRun, LaneLabel, Fixture.Label, NamedCount, DemonstratedKinds.Num());
+		}
+		return 0;
+	}
+
+	UE_LOG(LogSiegeLlama, Warning,
+		TEXT("%s: ZONE_A_KIND_SEAM OPEN lane=%s fixture=%s fixture_kinds=%d/%d zoneA_named=%d forbidden_named=%d [%s] forbidden_DEMONSTRATED=%d [%s] -- THIS RUN REPRODUCES THE CONVENTIONS section 9c SEAM, AND ON A SUBSET FIXTURE THAT IS BY CONSTRUCTION, NOT A DEFECT. Zone A shows the model these unit symbols while this fixture's GBNF forbids them, so constrained decoding fights the prompt on every token that reaches for one. A score taken here is a measurement OF THE SEAM (divergence D3), never of the model, and it may NOT be compared against a full-roster score as though the two differed only in board contents. The DEMONSTRATED set is the sharp one: those symbols appear inside a few-shot ANSWER, i.e. the model was shown that exact token being emitted."),
+		TagWarn, LaneLabel, Fixture.Label, Fixture.RosterNum, SpikeRosterNum,
+		NamedCount, ForbiddenNamedCount, ForbiddenNamed.IsEmpty() ? TEXT("none") : *ForbiddenNamed,
+		ForbiddenDemonstratedCount, ForbiddenDemonstrated.IsEmpty() ? TEXT("none") : *ForbiddenDemonstrated);
+
+	return ForbiddenNamedCount;
 }
 
 /** Zone B -- four fixed keys, always all four, always this order, every value a BAND. */
@@ -855,7 +1241,35 @@ static void AppendRule(FString& Grammar, const TCHAR* RuleName, const FString& R
 	Grammar += TEXT("\n");
 }
 
-static FString BuildSpikeGrammar()
+/**
+ *  ⛔ THE `kind` ALTERNATIVES COME FROM THE FIXTURE, NOT FROM SpikeRoster (TASK-478).
+ *
+ *  ⚠️ THIS IS A CORRECTION TOWARD THE LANDED AUTHORITY, NOT A DIVERGENCE FROM IT.
+ *     CONVENTIONS section 9c: "the landed grammar is the authority". The shipped
+ *     USiegeAssistantGrammar::Build already takes the LIVE roster's kinds -- the
+ *     spike was the one generating from a fixed thirteen-symbol list, so the two
+ *     lanes disagreed on the one property section 1 calls the grounding
+ *     ("a small model PHYSICALLY CANNOT name a unit that does not exist").
+ *
+ *  ⚠️ AND IT IS WHY DIVERGENCE D3 IS MEASURABLE AT ALL. With the alternatives pinned
+ *     to all thirteen kinds, no fixture could express a board that LACKS a kind, so
+ *     the seam where Zone A's few-shots name footman/sorcerer/archer on a board
+ *     without them could not be reproduced by the only instrument that exists.
+ *
+ *  ⛔ WHAT DID **NOT** CHANGE, SAID EXPLICITLY BECAUSE IT IS THE ADJACENT MISTAKE:
+ *     the identity/quantity split of CONVENTIONS section 1 is untouched. `count`
+ *     and `at-least` still run SpikeGrammarCountMin..SpikeGrammarCountMax (1..30)
+ *     and are NOT capped at the fixture's live totals. "Constrain identity hard,
+ *     leave quantity soft" -- a grammar capped at the live 8 would silently emit 8
+ *     for a player who asked for 10 and make the clarification UNDETECTABLE. Only
+ *     the IDENTITY side (`kind`) is fixture-derived, which is exactly the side
+ *     section 1 says to constrain hard.
+ *
+ *  ⚠️ t0 AND t1 BOTH CARRY ALL THIRTEEN KINDS IN SpikeRoster'S ORDER, so for every
+ *     fixture that exists today this function returns a CHARACTER-IDENTICAL grammar
+ *     to the one it returned before this change. No number on record moves.
+ */
+static FString BuildSpikeGrammar(const FSpikeWorldFixture& Fixture)
 {
 	FString Grammar;
 	Grammar.Reserve(4096);
@@ -917,13 +1331,35 @@ static FString BuildSpikeGrammar()
 		AppendRule(Grammar, TEXT("intent"), FString::Join(Alternatives, TEXT(" | ")));
 	}
 
-	// THE GROUNDING: every alternative is a unit that exists on the fixture
+	// THE GROUNDING: every alternative is a unit that exists on THIS fixture's
 	// board. Anything else -- "catapult", say -- is unreachable for the sampler.
+	//
+	// ⛔ AN EMPTY ROSTER IS REPORTED AND THEN EMITTED ANYWAY, WHICH IS THIS FILE'S
+	//    ESTABLISHED IDIOM AND NOT AN OVERSIGHT (see AppendRule's illegal-rule-name
+	//    path: "the offending rule is still EMITTED, not dropped: llama.cpp refuses
+	//    the grammar either way, and a faithful dump is what makes the failure
+	//    diagnosable"). ⚠️ Substituting SpikeRoster's full list here would be far
+	//    worse than the crash it prevents: the run would proceed under a grammar
+	//    NOBODY ASKED FOR and report a clean number for a board it never used --
+	//    a confident green describing something else. VerifyFixtureKindParity
+	//    rejects this fixture up front; this is the second line of defence, sited
+	//    where the damage would actually be done.
 	{
-		TArray<FString> Alternatives;
-		for (int32 Index = 0; Index < SpikeRosterNum; ++Index)
+		if (Fixture.Roster == nullptr || Fixture.RosterNum <= 0)
 		{
-			Alternatives.Add(GbnfJsonString(SpikeRoster[Index].Kind));
+			UE_LOG(LogSiegeLlama, Error,
+				TEXT("%s: fixture '%s' has %d roster rows, so `kind` is being emitted with NO alternatives. llama.cpp will REFUSE the whole grammar, llama_sampler_init_grammar will return NULL, and every generation in this run will be UNCONSTRAINED -- do not report any number from it as a constrained result."),
+				TagWarn, Fixture.Label != nullptr ? Fixture.Label : TEXT("<unnamed>"), Fixture.RosterNum);
+		}
+
+		// The null test is repeated in the loop guard on purpose: the log above
+		// REPORTS the condition, it does not prevent the dereference.
+		const int32 KindCount = (Fixture.Roster != nullptr) ? FMath::Max(0, Fixture.RosterNum) : 0;
+
+		TArray<FString> Alternatives;
+		for (int32 Index = 0; Index < KindCount; ++Index)
+		{
+			Alternatives.Add(GbnfJsonString(Fixture.Roster[Index].Kind));
 		}
 		AppendRule(Grammar, TEXT("kind"), FString::Join(Alternatives, TEXT(" | ")));
 	}
@@ -2224,6 +2660,31 @@ struct FSpikeOptions
 	double HardTimeoutSeconds = SpikeHardTimeoutSeconds;
 
 	bool bUseGrammar = true;
+
+	/**
+	 *  chat=0|1 -- THE WIRE FORMAT. ⛔ DEFAULT 1, AND THE DEFAULT IS LOAD-BEARING:
+	 *  every number on record (18 -> 19 -> 20, the 66.7 %) was taken templated.
+	 *
+	 *  ⚠️ DOCUMENTED AT TASK-477, NOT ADDED THERE -- THE FLAG ALREADY EXISTED, WAS
+	 *  ALREADY PARSED IN THE SHARED ParseOptions (so it has always been live on
+	 *  BOTH SpikeEval AND SpikePrompt), AND BuildPrompt ALREADY HONOURED IT. The
+	 *  task spec asked for it to be added; re-adding it would have shipped a
+	 *  duplicate flag, so it was VERIFIED against the mechanism instead and only
+	 *  the missing documentation was written. This comment exists so the next
+	 *  reader meets that history here rather than re-deriving it.
+	 *
+	 *  1 = the model's own chat template (Zone A as `system`, Zone B+C as `user`,
+	 *      add_generation_prompt = true) -- see BuildPrompt.
+	 *  0 = THE SHIPPED SHAPE: a raw Zone A + Zone B + Zone C concatenation with no
+	 *      roles and no separator, which is byte-for-byte the assembly rule
+	 *      USiegeAssistantComponent::ComposeTurnPrompt uses.
+	 *
+	 *  ⛔ AND THE TRAP THIS FLAG CANNOT SEE ON ITS OWN: BuildPrompt falls back to
+	 *  raw concatenation when the loaded GGUF carries NO chat template, which is
+	 *  SILENT. So chat= records an INTENTION; only the produced bytes record the
+	 *  wire format. Siege.Llama.SpikePrompt therefore reports `wire=` read off the
+	 *  bytes (SPIKE_PROMPT_OUT) instead of echoing this field back.
+	 */
 	bool bUseChatTemplate = true;
 	FString TierLabel = TEXT("full");
 	FString ModelPathOverride;
@@ -2247,6 +2708,67 @@ struct FSpikeOptions
 
 	FString DevCorpusPath;
 	FString HoldoutCorpusPath;
+
+	/**
+	 *  repeats=<N> -- HOW MANY TIMES THE EVAL LOOPS EACH SPLIT **INSIDE ONE JOB**.
+	 *
+	 *  ⛔ THE DEFAULT IS 1 AND repeats=1 PRODUCES BYTE-IDENTICAL OUTPUT TO THE
+	 *  COMMAND AS IT SHIPPED. Every SPIKE_EVAL_REPEAT line, every rep= field and
+	 *  the whole distribution block are gated on N > 1. This is not politeness:
+	 *  CONVENTIONS section 16 freezes SpikeEval's EXISTING output contract, and
+	 *  "an edit that silently moves the instrument is worse than a deletion,
+	 *  because a deletion is loud" -- every number on record (18 -> 19 -> 20, the
+	 *  66.7 %) was taken with the old one and must stay comparable.
+	 *
+	 *  ⚠️ WHY IT EXISTS AT ALL (CONVENTIONS section 12h, THE REPEAT LAW): "one run
+	 *  is not a measurement". Until now that law was satisfied by a HUMAN
+	 *  re-typing the console command, which is exactly how the 19/25 -> 20/25
+	 *  confusion happened -- and the harness correctly REFUSED the 3rd and 4th
+	 *  attempt, because queue depth is 1 by design. So the only mechanical way to
+	 *  take N readings is to loop INSIDE the single job, which is what this does.
+	 *
+	 *  ⛔ AND IT IS WHAT THE SEALED HOLDOUT STRUCTURALLY REQUIRES. Section 12h:
+	 *  "the holdout is opened once; the repeat therefore happens INSIDE that
+	 *  single opening." Without this flag section 10's gate clause #1 (">= 13/15
+	 *  at the MINIMUM of 5 runs") cannot be taken at all without spending the seal
+	 *  five times, which is spending it.
+	 *
+	 *  ⚠️ IT IS READ ONLY BY THE EVAL JOB. StartJob warns if a value > 1 reaches a
+	 *  job kind that ignores it, so "I ran the bench five times" cannot be
+	 *  believed silently.
+	 */
+	int32 EvalRepeats = 1;
+
+	/**
+	 *  out=<path> -- WRITE THE ASSEMBLED PROMPT'S EXACT BYTES TO A FILE.
+	 *
+	 *  ⛔ THIS EXISTS SO THE PYTHON TRAINER NEVER BECOMES A FOURTH LANE (trap T1).
+	 *  There are already three lanes that disagree -- the spike, the shipped
+	 *  composer, and what the documents say -- and a trainer that re-implements
+	 *  Zone A bakes that skew into the weights, where it is invisible forever. The
+	 *  consumer READS these bytes and asserts a length and a sha256 against them;
+	 *  it never assembles a prompt of its own.
+	 *
+	 *  ⛔ EMPTY MEANS "NOT ASKED FOR", AND NOTHING IS WRITTEN. Read only by
+	 *  Siege.Llama.SpikePrompt; StartJob warns if it reaches any other job kind.
+	 */
+	FString PromptOutPath;
+
+	/**
+	 *  ids=1 -- PRINT THE ENGINE'S TOKEN-ID SEQUENCE for the assembled prompt.
+	 *
+	 *  ⚠️ THIS IS THE **ENGINE HALF** OF M4 AND NOTHING MORE. The Python-side
+	 *  comparison is a separate, later task and is deliberately not attempted here:
+	 *  a tokenizer improvised inside this file to "check parity" would be the
+	 *  fourth lane out= exists to prevent, wearing a different hat.
+	 *
+	 *  ⛔ THE FLAGS THE IDS WERE TAKEN UNDER ARE PRINTED BESIDE THEM. llama_tokenize
+	 *  is called with add_special = true and parse_special = true (see
+	 *  TokenizePrompt), and a Python count taken under different flags is a
+	 *  different measurement -- comparing the two would manufacture a divergence,
+	 *  or hide one.
+	 */
+	bool bDumpTokenIds = false;
 };
 
 /**
@@ -2872,8 +3394,19 @@ struct FGenerationResult
  *  THE MODEL NEVER SEES A PRIOR TURN (CONVENTIONS section 1). What is reused
  *  across calls is the KV CACHE of the byte-identical Zone A + Zone B prefix,
  *  which is a cache, not a conversation.
+ *
+ *  @param Fixture  THE BOARD THIS PROMPT WAS BUILT FROM (TASK-478). The GBNF's
+ *                  `kind` alternatives are generated from it, so it must be the
+ *                  SAME fixture the caller passed to BuildPrompt -- a mismatch
+ *                  shows the model one board and constrains it to another.
+ *
+ *  ⛔ NO DEFAULT ARGUMENT, DELIBERATELY. A `= SpikeFixtureT0` default would turn a
+ *     forgotten call site into a SILENTLY WRONG grammar; with no default it is a
+ *     compile error. Every one of this function's callers already holds the fixture
+ *     it built the prompt from, so the parameter costs nothing at any of them.
  */
-static void RunGeneration(const FSpikeOptions& Options, const FString& Prompt, FGenerationResult& Out)
+static void RunGeneration(const FSpikeOptions& Options, const FString& Prompt,
+	const FSpikeWorldFixture& Fixture, FGenerationResult& Out)
 {
 	const double StartSeconds = FPlatformTime::Seconds();
 
@@ -3028,7 +3561,7 @@ static void RunGeneration(const FSpikeOptions& Options, const FString& Prompt, F
 	FString GrammarText;
 	if (Options.bUseGrammar)
 	{
-		GrammarText = BuildSpikeGrammar();
+		GrammarText = BuildSpikeGrammar(Fixture);
 		const FTCHARToUTF8 GrammarUtf8(*GrammarText);
 		llama_sampler* Grammar = llama_sampler_init_grammar(GRunner.Vocab, GrammarUtf8.Get(), "root");
 		if (Grammar == nullptr)
@@ -3571,10 +4104,10 @@ static bool RunPrefillBound(const FSpikeOptions& Options, const FString& ZoneATe
 	BuildPrompt(Options, ZoneAText, Turn1Fixture, SpikeBenchUtterances[0], FString(), Prompt, &Layout);
 
 	FGenerationResult Turn1;
-	RunGeneration(Options, Prompt, Turn1);
+	RunGeneration(Options, Prompt, Turn1Fixture, Turn1);
 
 	BuildPrompt(Options, ZoneAText, Turn2Fixture, SpikeBenchUtterances[1], FString(), Prompt, &Layout);
-	RunGeneration(Options, Prompt, OutTurn2);
+	RunGeneration(Options, Prompt, Turn2Fixture, OutTurn2);
 
 	const double DropPercent = (Turn1.PrefillTokens > 0)
 		? 100.0 * (1.0 - static_cast<double>(OutTurn2.PrefillTokens) / static_cast<double>(Turn1.PrefillTokens))
@@ -3694,15 +4227,27 @@ static void RunBenchJob(const FSpikeOptions& InOptions)
 
 	const FString ZoneAText = ResolveZoneAText(Options);
 
-	// The GBNF's kinds come from SpikeRoster; a fixture that drifted from it would
-	// show the model a symbol the sampler forbids. Checked, not assumed.
+	// ⚠️ REWORDED AT TASK-478 BECAUSE THE OLD SENTENCE NAMED A DEAD MECHANISM
+	// (CONVENTIONS section 22 -- a false claim in a runtime log string is believed
+	// over the code). It used to read "the GBNF's kinds come from SpikeRoster; a
+	// fixture that drifted from it would show the model a symbol the sampler
+	// forbids." The GBNF's kinds now come from THE FIXTURE, so the danger inverted:
+	// a fixture naming a kind SpikeRoster does not have would ADD that symbol to the
+	// grammar and let the sampler emit a unit the game does not own.
 	FString KindMismatch;
 	if (!VerifyFixtureKindParity(SpikeFixtureT0, KindMismatch) || !VerifyFixtureKindParity(SpikeFixtureT1, KindMismatch))
 	{
 		UE_LOG(LogSiegeLlama, Warning,
-			TEXT("%s: A BENCH FIXTURE DISAGREES WITH THE GRAMMAR'S KIND LIST (%s). The prompt is showing a unit symbol the sampler cannot emit -- fix the fixture before quoting any number from this run."),
+			TEXT("%s: A BENCH FIXTURE IS NOT A VALID SUBSET OF SpikeRoster (%s). The grammar is generated from the fixture, so this run may admit a unit symbol the game does not have -- fix the fixture before quoting any number from it."),
 			TagWarn, *KindMismatch);
 	}
+
+	// ⛔ SILENT ON t0 AND t1 BY CONSTRUCTION -- see ReportZoneAKindSeam. Both bench
+	// fixtures carry all thirteen kinds (t1's count is bound to t0's by static_assert),
+	// so neither call can emit a line and the bench's default output cannot move.
+	// It first speaks on a Stage D subset fixture, which is the point.
+	ReportZoneAKindSeam(ZoneAText, SpikeFixtureT0, TEXT("bench"), /*bReportWhenClosed*/ false);
+	ReportZoneAKindSeam(ZoneAText, SpikeFixtureT1, TEXT("bench"), /*bReportWhenClosed*/ false);
 
 	// --- BAR #3: TWO BOUNDS, NOT ONE NUMBER ---------------------------------
 	// ⚠️ WHY THERE ARE TWO (qa/TASK-412.md BLOCKER-1). Turn 1 and turn 2 used to
@@ -3782,7 +4327,7 @@ static void RunBenchJob(const FSpikeOptions& InOptions)
 		BuildPrompt(Options, ZoneAText, Fixture, Utterance, FString(), Prompt, &Layout);
 
 		FGenerationResult Result;
-		RunGeneration(Options, Prompt, Result);
+		RunGeneration(Options, Prompt, Fixture, Result);
 
 		WorstWallMs = FMath::Max(WorstWallMs, Result.WallMs);
 		TotalWallMs += Result.WallMs;
@@ -3886,16 +4431,128 @@ static void RunBenchJob(const FSpikeOptions& InOptions)
 // 7b. The eval job (bar #5)
 // ---------------------------------------------------------------------------
 
-static void RunOneSplit(const FSpikeOptions& Options, const FString& ZoneAText,
-	const FString& SplitName, const FString& CorpusPath)
+/**
+ *  ONE ROW'S OUTCOME IN ONE REPEAT -- the unit the stability report is built from.
+ *
+ *  ⚠️ THE SIGNATURE IS THE RAW GENERATED TEXT, COMPARED CASE-SENSITIVELY, AND THE
+ *  CASE-SENSITIVITY IS DELIBERATE (CONVENTIONS section 13: FString comparison in
+ *  this codebase has already produced a false "identical" once, because
+ *  TestEqual on FString is case-INsensitive). A byte claim is made with a byte
+ *  comparison. FString::Equals already defaults to CaseSensitive; it is passed
+ *  explicitly so the next reader does not have to know that.
+ *
+ *  ⚠️ THE VERDICT IS COMPARED TOO EVEN THOUGH ScoreRow IS A PURE FUNCTION of
+ *  (row, parsed output). Identical bytes MUST therefore yield an identical
+ *  verdict, and if they ever do not, the scorer is carrying hidden state -- which
+ *  would silently invalidate every accuracy number this harness has produced. The
+ *  aggregate below reports that as an ERROR rather than assuming it cannot happen.
+ */
+struct FSplitRowObservation
 {
-	TArray<FCorpusRow> Rows;
-	FString LoadError;
-	if (!LoadCorpus(CorpusPath, Rows, LoadError))
+	FString RawOutput;
+	bool bPassLenient = false;
+	bool bPassStrict = false;
+	bool bParsed = false;
+
+	bool SameBytesAs(const FSplitRowObservation& Other) const
 	{
-		UE_LOG(LogSiegeLlama, Error, TEXT("%s: split '%s' NOT SCORED -- %s"), TagEvalScore, *SplitName, *LoadError);
+		return RawOutput.Equals(Other.RawOutput, ESearchCase::CaseSensitive);
+	}
+
+	bool SameVerdictAs(const FSplitRowObservation& Other) const
+	{
+		return bPassLenient == Other.bPassLenient
+			&& bPassStrict == Other.bPassStrict
+			&& bParsed == Other.bParsed;
+	}
+};
+
+/** ONE REPEAT'S split-level totals, plus that repeat's per-row observations (parallel to the corpus). */
+struct FSplitRunTotals
+{
+	int32 PassLenient = 0;
+	int32 PassStrict = 0;
+	int32 ParseFailures = 0;
+	int32 QuestionPasses = 0;
+	int32 DegenerateQuestionFloor = 0;
+	TArray<FSplitRowObservation> Observations;
+};
+
+/**
+ *  ⛔ THE AGGREGATION IS NAMED IN THE OUTPUT; IT IS NEVER LEFT FOR THE READER TO
+ *  INFER. CONVENTIONS "THE FINE-TUNE RUNG" section 10 gate clause #1 scores the
+ *  MINIMUM of N runs -- not the median, never the best -- while clause #6's dev
+ *  regression rule scores the MEDIAN. Two clauses, two aggregations, one
+ *  instrument: a printed number whose aggregation a reader has to guess is a
+ *  DEFECT IN A GATE INSTRUMENT, not a formatting preference.
+ *
+ *  EVEN N: the median is the mean of the two middle values and can therefore be a
+ *  half-integer. It is returned as a double and printed with one decimal for
+ *  exactly that reason -- a silently floored 19.5 -> 19 would move a gate.
+ */
+static void SummariseIntSeries(const TArray<int32>& Values, int32& OutMin, double& OutMedian, int32& OutMax)
+{
+	OutMin = 0;
+	OutMedian = 0.0;
+	OutMax = 0;
+
+	if (Values.Num() == 0)
+	{
 		return;
 	}
+
+	TArray<int32> Sorted = Values;
+	Sorted.Sort();
+
+	OutMin = Sorted[0];
+	OutMax = Sorted[Sorted.Num() - 1];
+
+	const int32 Middle = Sorted.Num() / 2;
+	OutMedian = (Sorted.Num() % 2 == 1)
+		? static_cast<double>(Sorted[Middle])
+		: 0.5 * (static_cast<double>(Sorted[Middle - 1]) + static_cast<double>(Sorted[Middle]));
+}
+
+/** "[19,20,20,19,20]" -- the per-run series travels beside every aggregate, so the aggregation is checkable. */
+static FString FormatIntSeries(const TArray<int32>& Values)
+{
+	FString Out = TEXT("[");
+	for (int32 Index = 0; Index < Values.Num(); ++Index)
+	{
+		if (Index > 0)
+		{
+			Out += TEXT(",");
+		}
+		Out += FString::FromInt(Values[Index]);
+	}
+	Out += TEXT("]");
+	return Out;
+}
+
+/**
+ *  SCORES ONE PASS OVER ONE ALREADY-LOADED SPLIT.
+ *
+ *  ⛔ RepeatTag IS EMPTY ON THE DEFAULT PATH AND THAT IS WHAT KEEPS THIS EDIT
+ *  ADDITIVE. It is spliced into the log lines as a bare %s immediately after
+ *  `split=<name>`; an empty string changes not one byte of the line, so a
+ *  repeats=1 run (i.e. every invocation that existed before this flag) prints
+ *  character-for-character what it printed before. At repeats>1 it becomes
+ *  " rep=2/5", which is what stops 125 identically-prefixed SPIKE_EVAL_ROW lines
+ *  from being attributable only by counting.
+ *
+ *  ⚠️ THE CORPUS IS PASSED IN, NOT LOADED HERE (it used to be loaded here). N
+ *  repeats have to be N replicates of the SAME rows: re-reading the CSV per
+ *  repeat would let a mid-run edit turn a distribution into a comparison of two
+ *  different corpora, and would reprint LoadCorpus's own warnings N times. The
+ *  load and its "NOT SCORED" error moved UP to RunSplitRepeated verbatim, and it
+ *  was the first statement in this function, so nothing prints out of order.
+ */
+static void RunOneSplit(const FSpikeOptions& Options, const FString& ZoneAText,
+	const FString& SplitName, const TArray<FCorpusRow>& Rows,
+	const FString& RepeatTag, FSplitRunTotals& OutTotals)
+{
+	OutTotals.Observations.Reset();
+	OutTotals.Observations.Reserve(Rows.Num());
 
 	int32 PassLenient = 0;
 	int32 PassStrict = 0;
@@ -3932,8 +4589,12 @@ static void RunOneSplit(const FSpikeOptions& Options, const FString& ZoneAText,
 		FSpikePromptLayout Layout;
 		BuildPrompt(Options, ZoneAText, SpikeFixtureT0, Row.Sentence, FString(), Prompt, &Layout);
 
+		// ⛔ THE SAME FIXTURE THAT BUILT THE PROMPT ONE LINE ABOVE, AND IT MUST STAY
+		// THAT WAY: the GBNF's `kind` alternatives are now generated from it, so
+		// passing a different fixture here would show the model one board and
+		// constrain it to another -- a divergence with no log line.
 		FGenerationResult Generation;
-		RunGeneration(Options, Prompt, Generation);
+		RunGeneration(Options, Prompt, SpikeFixtureT0, Generation);
 
 		// ⚠️ THE prefill=/reused= COLUMNS ARE NOT SHIPPED-SHAPED KV NUMBERS, and
 		// now they say so rather than leaving the reader to assume. Every row in a
@@ -3967,6 +4628,19 @@ static void RunOneSplit(const FSpikeOptions& Options, const FString& ZoneAText,
 		ParseFailures += bParsed ? 0 : 1;
 		TotalAssertionsCompared += Result.AssertionsCompared;
 
+		// ⚠️ RECORDED ON EVERY RUN, INCLUDING repeats=1 (WHERE NOTHING EVER READS
+		// IT). One traversal, one record: a stability report assembled by a second
+		// pass over the corpus would be reporting about a different run than the
+		// one that was scored, which is this project's exact recurring defect --
+		// a confident green describing something else. RawOutput is the same
+		// string the raw= column above prints, so the identity of a flip is
+		// inspectable in the log rather than only summarised.
+		FSplitRowObservation& Observation = OutTotals.Observations.AddDefaulted_GetRef();
+		Observation.RawOutput = Generation.Text;
+		Observation.bPassLenient = Result.bPassLenient;
+		Observation.bPassStrict = Result.bPassStrict;
+		Observation.bParsed = bParsed;
+
 		if (Row.bTriggerAsserted)
 		{
 			++TriggerAsserted;
@@ -3994,8 +4668,8 @@ static void RunOneSplit(const FSpikeOptions& Options, const FString& ZoneAText,
 		}
 
 		UE_LOG(LogSiegeLlama, Display,
-			TEXT("%s split=%s id=%-8s expect=%-8s got=%-8s lenient=%s strict=%s asserted=%d compared=%d skipped=%d intent=%s kinds=%s counts=%s where=%s fixture=%s prefill=%d %s wall_ms=%.0f"),
-			TagEvalRow, *SplitName, *Row.Id, *Row.ExpectOutcome,
+			TEXT("%s split=%s%s id=%-8s expect=%-8s got=%-8s lenient=%s strict=%s asserted=%d compared=%d skipped=%d intent=%s kinds=%s counts=%s where=%s fixture=%s prefill=%d %s wall_ms=%.0f"),
+			TagEvalRow, *SplitName, *RepeatTag, *Row.Id, *Row.ExpectOutcome,
 			bParsed ? (Parsed.bIsQuestion ? TEXT("question") : TEXT("command")) : TEXT("PARSEFAIL"),
 			Result.bPassLenient ? TEXT("PASS") : TEXT("FAIL"),
 			Result.bPassStrict ? TEXT("PASS") : TEXT("FAIL"),
@@ -4022,16 +4696,16 @@ static void RunOneSplit(const FSpikeOptions& Options, const FString& ZoneAText,
 				*Generation.FailureDetail);
 
 		UE_LOG(LogSiegeLlama, Display,
-			TEXT("%s   split=%s id=%s sentence=\"%s\" raw=%s%s%s"),
-			TagEvalRow, *SplitName, *Row.Id, *Row.Sentence, *Generation.Text, *ParseErrorSuffix, *StopSuffix);
+			TEXT("%s   split=%s%s id=%s sentence=\"%s\" raw=%s%s%s"),
+			TagEvalRow, *SplitName, *RepeatTag, *Row.Id, *Row.Sentence, *Generation.Text, *ParseErrorSuffix, *StopSuffix);
 	}
 
 	const double LenientPercent = 100.0 * PassLenient / FMath::Max(1, Rows.Num());
 	const double StrictPercent = 100.0 * PassStrict / FMath::Max(1, Rows.Num());
 
 	UE_LOG(LogSiegeLlama, Display,
-		TEXT("%s split=%s rows=%d PRIMARY(lenient)=%d/%d = %.1f%% | STRICT=%d/%d = %.1f%% | parse_failures=%d | clarify_rows_passed_by_question=%d | assertions_compared=%d"),
-		TagEvalScore, *SplitName, Rows.Num(),
+		TEXT("%s split=%s%s rows=%d PRIMARY(lenient)=%d/%d = %.1f%% | STRICT=%d/%d = %.1f%% | parse_failures=%d | clarify_rows_passed_by_question=%d | assertions_compared=%d"),
+		TagEvalScore, *SplitName, *RepeatTag, Rows.Num(),
 		PassLenient, Rows.Num(), LenientPercent,
 		PassStrict, Rows.Num(), StrictPercent,
 		ParseFailures, QuestionPasses, TotalAssertionsCompared);
@@ -4039,37 +4713,371 @@ static void RunOneSplit(const FSpikeOptions& Options, const FString& ZoneAText,
 	if (TriggerAsserted > 0)
 	{
 		UE_LOG(LogSiegeLlama, Display,
-			TEXT("%s split=%s deferred-trigger agreement (NOT part of bar #5's four fields) = %d/%d"),
-			TagEvalScore, *SplitName, TriggerOk, TriggerAsserted);
+			TEXT("%s split=%s%s deferred-trigger agreement (NOT part of bar #5's four fields) = %d/%d"),
+			TagEvalScore, *SplitName, *RepeatTag, TriggerOk, TriggerAsserted);
 	}
 
 	// The eval holds one fixture across every row, so its per-row reuse figures are
 	// the BEST case by construction. Said once per split so no one lifts them into
 	// the bar #3 slot of the report.
 	UE_LOG(LogSiegeLlama, Display,
-		TEXT("%s split=%s NOTE: every row above ran against fixture %s, so the per-row prefill=/reused= columns are a CONSTANT-FIXTURE (best case) KV measurement and are NOT bar #3. Bar #3 is the bench's SHIPPED_WORST_CASE bound."),
-		TagEvalScore, *SplitName, SpikeFixtureT0.Label);
+		TEXT("%s split=%s%s NOTE: every row above ran against fixture %s, so the per-row prefill=/reused= columns are a CONSTANT-FIXTURE (best case) KV measurement and are NOT bar #3. Bar #3 is the bench's SHIPPED_WORST_CASE bound."),
+		TagEvalScore, *SplitName, *RepeatTag, SpikeFixtureT0.Label);
 
 	// ⚠️ THREE HONESTY LINES. They exist so nobody reads the headline percentage
 	// as stronger than it is, and they are printed for BOTH splits.
 	UE_LOG(LogSiegeLlama, Display,
-		TEXT("%s split=%s LENIENCY FLOOR: a degenerate model that answers {\"ask\":...} to EVERY sentence would score %d/%d = %.1f%% under the PRIMARY rule (it fails every Execute row). The bar is 85%% -- the floor is how much of the score is NOT evidence of translation."),
-		TagEvalScore, *SplitName, DegenerateQuestionFloor, Rows.Num(),
+		TEXT("%s split=%s%s LENIENCY FLOOR: a degenerate model that answers {\"ask\":...} to EVERY sentence would score %d/%d = %.1f%% under the PRIMARY rule (it fails every Execute row). The bar is 85%% -- the floor is how much of the score is NOT evidence of translation."),
+		TagEvalScore, *SplitName, *RepeatTag, DegenerateQuestionFloor, Rows.Num(),
 		100.0 * DegenerateQuestionFloor / FMath::Max(1, Rows.Num()));
 
 	if (SingleAssertionRows > 0)
 	{
 		UE_LOG(LogSiegeLlama, Display,
-			TEXT("%s split=%s %d row(s) assert at most ONE field and therefore test less than the score implies (CONVENTIONS section 11's overloaded-empty-cell limitation -- a row whose true answer is an EMPTY field cannot be positively asserted in v1): %s"),
-			TagEvalScore, *SplitName, SingleAssertionRows, *ThinRowIds);
+			TEXT("%s split=%s%s %d row(s) assert at most ONE field and therefore test less than the score implies (CONVENTIONS section 11's overloaded-empty-cell limitation -- a row whose true answer is an EMPTY field cannot be positively asserted in v1): %s"),
+			TagEvalScore, *SplitName, *RepeatTag, SingleAssertionRows, *ThinRowIds);
 	}
 
 	if (ZeroAssertionRows > 0)
 	{
 		UE_LOG(LogSiegeLlama, Warning,
-			TEXT("%s split=%s %d row(s) assert NOTHING AT ALL and pass on any parseable output. Subtract them before believing the headline: %s"),
-			TagEvalScore, *SplitName, ZeroAssertionRows, *FreeRowIds);
+			TEXT("%s split=%s%s %d row(s) assert NOTHING AT ALL and pass on any parseable output. Subtract them before believing the headline: %s"),
+			TagEvalScore, *SplitName, *RepeatTag, ZeroAssertionRows, *FreeRowIds);
 	}
+
+	// The totals this repeat contributes to the distribution. Assigned from the
+	// same locals the lines above printed, so the aggregate cannot disagree with
+	// the per-run report it summarises.
+	OutTotals.PassLenient = PassLenient;
+	OutTotals.PassStrict = PassStrict;
+	OutTotals.ParseFailures = ParseFailures;
+	OutTotals.QuestionPasses = QuestionPasses;
+	OutTotals.DegenerateQuestionFloor = DegenerateQuestionFloor;
+}
+
+/**
+ *  ⭐ THE REPEAT DRIVER -- CONVENTIONS section 12h (THE REPEAT LAW) MADE MECHANICAL.
+ *
+ *  Loops one split N times INSIDE THE SINGLE JOB it was already running in. No
+ *  StartJob call is added, so queue depth stays 1 by design and the refusal
+ *  section 12h recorded as a PASS is not weakened -- N readings now cost one
+ *  queue slot, one model load and one session, which is also the only shape in
+ *  which the sealed holdout can be repeated at all (section 12a: it opens once,
+ *  so the repeat has to happen inside that opening).
+ *
+ *  ⛔ AT repeats=1 THIS FUNCTION PRINTS NOTHING OF ITS OWN. It loads the corpus
+ *  (which RunOneSplit used to do), calls RunOneSplit once with an EMPTY repeat
+ *  tag, and returns before the distribution block. That is the additive
+ *  guarantee section 16 demands, and it is checkable by grep: a default run
+ *  emits zero SPIKE_EVAL_REPEAT lines.
+ */
+static void RunSplitRepeated(const FSpikeOptions& Options, const FString& ZoneAText,
+	const FString& SplitName, const FString& CorpusPath)
+{
+	// MOVED UP FROM RunOneSplit VERBATIM -- same tag, same text, same Error level.
+	// It was that function's FIRST statement and nothing preceded it, so a failed
+	// load prints exactly the line it printed before, in the same position.
+	TArray<FCorpusRow> Rows;
+	FString LoadError;
+	if (!LoadCorpus(CorpusPath, Rows, LoadError))
+	{
+		UE_LOG(LogSiegeLlama, Error, TEXT("%s: split '%s' NOT SCORED -- %s"), TagEvalScore, *SplitName, *LoadError);
+		return;
+	}
+
+	// Already validated in ParseOptions; clamped here only so a future caller that
+	// builds FSpikeOptions directly cannot drive a negative loop count.
+	const int32 Repeats = FMath::Clamp(Options.EvalRepeats, 1, SpikeMaxEvalRepeats);
+
+	TArray<FSplitRunTotals> PerRepeat;
+	PerRepeat.SetNum(Repeats);
+
+	for (int32 RepeatIndex = 0; RepeatIndex < Repeats; ++RepeatIndex)
+	{
+		FString RepeatTag;
+		if (Repeats > 1)
+		{
+			RepeatTag = FString::Printf(TEXT(" rep=%d/%d"), RepeatIndex + 1, Repeats);
+
+			UE_LOG(LogSiegeLlama, Display,
+				TEXT("%s ---- split=%s REPEAT %d of %d (rows=%d) ---- ONE job, ONE model load, ONE session: the loop is INSIDE the job, so the queue-depth-1 contract is untouched (CONVENTIONS section 12h recorded the harness REFUSING a concurrent job as a PASS, and nothing here weakens it)."),
+				TagEvalRepeat, *SplitName, RepeatIndex + 1, Repeats, Rows.Num());
+		}
+
+		RunOneSplit(Options, ZoneAText, SplitName, Rows, RepeatTag, PerRepeat[RepeatIndex]);
+	}
+
+	// ⛔ THE DEFAULT PATH ENDS HERE. At repeats=1 this command has now printed
+	// character-for-character what it printed before the flag existed.
+	if (Repeats <= 1)
+	{
+		return;
+	}
+
+	// -----------------------------------------------------------------------
+	// SPLIT-LEVEL DISTRIBUTION -- min / median / max, EACH LABELLED
+	// -----------------------------------------------------------------------
+	TArray<int32> LenientSeries;
+	TArray<int32> StrictSeries;
+	TArray<int32> ParseFailureSeries;
+	LenientSeries.Reserve(Repeats);
+	StrictSeries.Reserve(Repeats);
+	ParseFailureSeries.Reserve(Repeats);
+
+	for (const FSplitRunTotals& Totals : PerRepeat)
+	{
+		LenientSeries.Add(Totals.PassLenient);
+		StrictSeries.Add(Totals.PassStrict);
+		ParseFailureSeries.Add(Totals.ParseFailures);
+	}
+
+	int32 LenientMin = 0;
+	int32 LenientMax = 0;
+	double LenientMedian = 0.0;
+	SummariseIntSeries(LenientSeries, LenientMin, LenientMedian, LenientMax);
+
+	int32 StrictMin = 0;
+	int32 StrictMax = 0;
+	double StrictMedian = 0.0;
+	SummariseIntSeries(StrictSeries, StrictMin, StrictMedian, StrictMax);
+
+	int32 ParseFailMin = 0;
+	int32 ParseFailMax = 0;
+	double ParseFailMedian = 0.0;
+	SummariseIntSeries(ParseFailureSeries, ParseFailMin, ParseFailMedian, ParseFailMax);
+
+	UE_LOG(LogSiegeLlama, Display,
+		TEXT("%s ======== split=%s REPEAT SUMMARY over %d runs (rows=%d) ========"),
+		TagEvalRepeat, *SplitName, Repeats, Rows.Num());
+
+	// ⛔ THE AGGREGATION IS NAMED IN THE LINE. Section 10 gate clause #1 scores the
+	// MINIMUM of 5 runs -- never the median, never the best -- and clause #6's dev
+	// regression rule scores the MEDIAN. The per-run series travels beside them so
+	// the aggregation itself is checkable rather than trusted.
+	//
+	// ⚠️ AND THE LENIENCY FLOOR TRAVELS WITH THE NUMBER, EVERY TIME (section 12a).
+	// An aggregate that dropped it would be the one number in this harness quoted
+	// without the part of it that is not evidence of translation.
+	UE_LOG(LogSiegeLlama, Display,
+		TEXT("%s split=%s LENIENT per_run=%s MIN=%d/%d MEDIAN=%.1f/%d MAX=%d/%d | leniency_floor=%d/%d -- READ THE MINIMUM for a gate: CONVENTIONS \"THE FINE-TUNE RUNG\" section 10 clause #1 scores the MINIMUM of the runs, clause #6's dev regression rule scores the MEDIAN, and NOTHING scores the maximum. MEDIAN of an even run count is the mean of the two middle values, hence one decimal."),
+		TagEvalRepeat, *SplitName, *FormatIntSeries(LenientSeries),
+		LenientMin, Rows.Num(), LenientMedian, Rows.Num(), LenientMax, Rows.Num(),
+		PerRepeat[0].DegenerateQuestionFloor, Rows.Num());
+
+	UE_LOG(LogSiegeLlama, Display,
+		TEXT("%s split=%s STRICT  per_run=%s MIN=%d/%d MEDIAN=%.1f/%d MAX=%d/%d"),
+		TagEvalRepeat, *SplitName, *FormatIntSeries(StrictSeries),
+		StrictMin, Rows.Num(), StrictMedian, Rows.Num(), StrictMax, Rows.Num());
+
+	// Gate clause #2 (STRICT == LENIENT in every run) is the anti-hedging clause,
+	// so the runs where it does NOT hold are named rather than summarised.
+	FString StrictLenientDisagreementRuns;
+	for (int32 RepeatIndex = 0; RepeatIndex < Repeats; ++RepeatIndex)
+	{
+		if (PerRepeat[RepeatIndex].PassStrict != PerRepeat[RepeatIndex].PassLenient)
+		{
+			if (!StrictLenientDisagreementRuns.IsEmpty())
+			{
+				StrictLenientDisagreementRuns += TEXT(",");
+			}
+			StrictLenientDisagreementRuns += FString::FromInt(RepeatIndex + 1);
+		}
+	}
+
+	const FString StrictLenientVerdict = StrictLenientDisagreementRuns.IsEmpty()
+		? FString(TEXT("YES"))
+		: FString::Printf(TEXT("NO -- disagreed in run(s) %s"), *StrictLenientDisagreementRuns);
+
+	UE_LOG(LogSiegeLlama, Display,
+		TEXT("%s split=%s strict_equals_lenient_in_every_run=%s (section 10 clause #2, the anti-hedging clause)"),
+		TagEvalRepeat, *SplitName, *StrictLenientVerdict);
+
+	UE_LOG(LogSiegeLlama, Display,
+		TEXT("%s split=%s parse_failures per_run=%s MIN=%d MEDIAN=%.1f MAX=%d (section 10 clause #4 requires ZERO in EVERY run, so the figure that matters here is the MAXIMUM)"),
+		TagEvalRepeat, *SplitName, *FormatIntSeries(ParseFailureSeries),
+		ParseFailMin, ParseFailMedian, ParseFailMax);
+
+	// ⛔ NUMBERS ONLY. This block does NOT print a gate verdict, and that is a
+	// boundary rather than an omission: section 10's gate is CONJUNCTIVE over nine
+	// clauses, five of which this command cannot see (the artifact's sha256, the
+	// latency budget, the prompt-shape diff...). A harness that printed "GATE:
+	// PASS" from the four clauses it can measure would be the project's recurring
+	// defect -- a confident green describing something else.
+
+	// -----------------------------------------------------------------------
+	// PER-ROW STABILITY -- "THE IDENTITY OF THE UNSTABLE ROW IS THE DIAGNOSTIC,
+	// NOT THE SCORE" (section 12h, verbatim)
+	// -----------------------------------------------------------------------
+	int32 UnstableRowCount = 0;
+	FString UnstableRowIds;
+
+	for (int32 RowIndex = 0; RowIndex < Rows.Num(); ++RowIndex)
+	{
+		TArray<const FSplitRowObservation*> Series;
+		Series.Reserve(Repeats);
+		for (const FSplitRunTotals& Totals : PerRepeat)
+		{
+			if (Totals.Observations.IsValidIndex(RowIndex))
+			{
+				Series.Add(&Totals.Observations[RowIndex]);
+			}
+		}
+
+		// Cannot happen while RunOneSplit visits every row unconditionally -- but a
+		// stability claim made over a partial series would be a FALSE claim rather
+		// than a missing one, so it is refused out loud instead of averaged over.
+		if (Series.Num() != Repeats)
+		{
+			UE_LOG(LogSiegeLlama, Warning,
+				TEXT("%s: split=%s id=%s contributed only %d of %d observations, so NO stability verdict is issued for it and it is NOT counted in UNSTABLE_ROWS below. Treat this split's stability report as incomplete."),
+				TagWarn, *SplitName, *Rows[RowIndex].Id, Series.Num(), Repeats);
+			continue;
+		}
+
+		int32 Flips = 0;
+		int32 LenientPasses = 0;
+		int32 StrictPasses = 0;
+		bool bVerdictMovedWithoutBytes = false;
+
+		TArray<FString> VariantTexts;   // distinct raw outputs, in first-seen order
+		TArray<int32> VariantOfRun;     // run index -> variant index
+		VariantOfRun.Reserve(Repeats);
+
+		for (int32 RunIndex = 0; RunIndex < Series.Num(); ++RunIndex)
+		{
+			const FSplitRowObservation& Observation = *Series[RunIndex];
+
+			LenientPasses += Observation.bPassLenient ? 1 : 0;
+			StrictPasses += Observation.bPassStrict ? 1 : 0;
+
+			int32 VariantIndex = INDEX_NONE;
+			for (int32 Candidate = 0; Candidate < VariantTexts.Num(); ++Candidate)
+			{
+				// ⚠️ CaseSensitive PASSED EXPLICITLY (CONVENTIONS section 13). It is
+				// the default, but this is a BYTE claim and a byte claim in this
+				// codebase has already been made wrong once by an implicitly
+				// case-insensitive comparison.
+				if (VariantTexts[Candidate].Equals(Observation.RawOutput, ESearchCase::CaseSensitive))
+				{
+					VariantIndex = Candidate;
+					break;
+				}
+			}
+
+			if (VariantIndex == INDEX_NONE)
+			{
+				VariantIndex = VariantTexts.Add(Observation.RawOutput);
+			}
+			VariantOfRun.Add(VariantIndex);
+
+			if (RunIndex > 0)
+			{
+				const FSplitRowObservation& Previous = *Series[RunIndex - 1];
+				const bool bSameBytes = Observation.SameBytesAs(Previous);
+				const bool bSameVerdict = Observation.SameVerdictAs(Previous);
+
+				if (!bSameBytes || !bSameVerdict)
+				{
+					++Flips;
+				}
+
+				if (bSameBytes && !bSameVerdict)
+				{
+					bVerdictMovedWithoutBytes = true;
+				}
+			}
+		}
+
+		const bool bStable = (Flips == 0) && (VariantTexts.Num() == 1);
+
+		if (bStable)
+		{
+			UE_LOG(LogSiegeLlama, Display,
+				TEXT("%s split=%s id=%-8s stable=%d/%d (byte-identical output AND identical verdict in every run)"),
+				TagEvalRepeat, *SplitName, *Rows[RowIndex].Id, Repeats, Repeats);
+		}
+		else
+		{
+			++UnstableRowCount;
+			if (!UnstableRowIds.IsEmpty())
+			{
+				UnstableRowIds += TEXT(" ");
+			}
+			UnstableRowIds += Rows[RowIndex].Id;
+
+			UE_LOG(LogSiegeLlama, Warning,
+				TEXT("%s split=%s id=%-8s flips=%d variants=%d lenient_passes=%d/%d strict_passes=%d/%d MOVED -- flips counts run-to-run TRANSITIONS (0..N-1, so an A/B/A/B alternation reads higher than a single settle); variants counts DISTINCT outputs. THIS ROW'S IDENTITY IS THE READING, NOT THE SCORE (CONVENTIONS section 12h)."),
+				TagEvalRepeat, *SplitName, *Rows[RowIndex].Id, Flips, VariantTexts.Num(),
+				LenientPasses, Repeats, StrictPasses, Repeats);
+
+			// The variants themselves, with the runs that produced them -- this is
+			// what turns DEV-11's known flip between n:2 and n:all from an anecdote
+			// somebody remembered into an instrument reading somebody can read.
+			for (int32 VariantIndex = 0; VariantIndex < VariantTexts.Num(); ++VariantIndex)
+			{
+				FString RunsWithVariant;
+				for (int32 RunIndex = 0; RunIndex < VariantOfRun.Num(); ++RunIndex)
+				{
+					if (VariantOfRun[RunIndex] == VariantIndex)
+					{
+						if (!RunsWithVariant.IsEmpty())
+						{
+							RunsWithVariant += TEXT(",");
+						}
+						RunsWithVariant += FString::FromInt(RunIndex + 1);
+					}
+				}
+
+				UE_LOG(LogSiegeLlama, Warning,
+					TEXT("%s   split=%s id=%s variant=%d/%d seen_in_runs=%s raw=%s"),
+					TagEvalRepeat, *SplitName, *Rows[RowIndex].Id,
+					VariantIndex + 1, VariantTexts.Num(), *RunsWithVariant, *VariantTexts[VariantIndex]);
+			}
+		}
+
+		if (bVerdictMovedWithoutBytes)
+		{
+			UE_LOG(LogSiegeLlama, Error,
+				TEXT("%s: split=%s id=%s produced BYTE-IDENTICAL output in two consecutive runs but a DIFFERENT pass/fail verdict. ScoreRow is a pure function of (corpus row, parsed output), so this is IMPOSSIBLE unless the scorer carries state -- and if it does, EVERY accuracy number this harness has ever produced is suspect. Do not report this run; diagnose the scorer first."),
+				TagWarn, *SplitName, *Rows[RowIndex].Id);
+		}
+	}
+
+	if (UnstableRowCount == 0)
+	{
+		UE_LOG(LogSiegeLlama, Display,
+			TEXT("%s split=%s repeats=%d UNSTABLE_ROWS=0/%d -- every row produced byte-identical output in all %d runs, which is why the per-run scores above are identical. A spread with no row named here would be a bug in this report."),
+			TagEvalRepeat, *SplitName, Repeats, Rows.Num(), Repeats);
+	}
+	else
+	{
+		UE_LOG(LogSiegeLlama, Warning,
+			TEXT("%s split=%s repeats=%d UNSTABLE_ROWS=%d/%d ids=%s -- THIS LIST IS THE INSTRUMENT READING. CONVENTIONS section 12h: a one-row delta is measured to sit INSIDE the instrument's own noise band, so no wave may claim a '+1 row' gain from a single run, and the spread travels with the number."),
+			TagEvalRepeat, *SplitName, Repeats, UnstableRowCount, Rows.Num(), *UnstableRowIds);
+	}
+
+	// ⚠️ THE ONE CONFOUND IN THIS DESIGN, PRINTED RATHER THAN BURIED IN A HANDOFF.
+	//
+	// The KV cache is CHAINED across repeats and this change deliberately did not
+	// touch that. RunGeneration reuses the token prefix it shares with the PREVIOUS
+	// prompt, so the amount re-prefilled on a row depends on WHICH ROW RAN BEFORE
+	// IT. Within a split that predecessor is fixed -- except for the first row,
+	// whose predecessor in repeat 1 is whatever preceded the split and in repeats
+	// 2..N is the split's own last row.
+	//
+	// ⛔ AND THE CONSEQUENCE IS NOT CONFINED TO THAT ONE ROW, WHICH IS WHY IT IS
+	// STATED CAREFULLY RATHER THAN REASSURINGLY: row 2 reuses the cache row 1 left
+	// behind, so a different re-prefill boundary on row 1 can carry down the split.
+	// The claim that survives is the narrow one -- repeats 2..N are MUTUALLY
+	// identical conditions; repeat 1 is the odd one out.
+	//
+	// Clearing the cache per repeat was rejected: it would make repeat 1 differ
+	// from the run every number on record was taken with, which section 16 forbids
+	// outright, and choosing the replicate design is M0's job (a corpus-free
+	// determinism probe), not this flag's.
+	UE_LOG(LogSiegeLlama, Warning,
+		TEXT("%s split=%s CAVEAT -- THE KV CACHE IS CHAINED ACROSS REPEATS AND THAT WAS NOT CHANGED. Row 1 of repeat 1 follows whatever preceded this split (a fresh load, or the previous split); row 1 of repeats 2..%d follows the split's OWN last row, so its re-prefill boundary differs -- and because each row reuses the cache the previous row left, that difference can propagate DOWN the split rather than staying on row 1. => THE SOUND COMPARISON IS AMONG REPEATS 2..%d, WHICH ARE MUTUALLY IDENTICAL CONDITIONS. A row that differs ONLY between repeat 1 and the rest is NOT established as a model property; re-run with a higher N and read the 2..N agreement. The instrument's own noise floor is M0's job (a determinism probe with no corpus), not this flag's."),
+		TagEvalRepeat, *SplitName, Repeats, Repeats);
 }
 
 static void RunEvalJob(const FSpikeOptions& Options)
@@ -4081,9 +5089,30 @@ static void RunEvalJob(const FSpikeOptions& Options)
 
 	const FString ZoneAText = ResolveZoneAText(Options);
 
+	// ⚠️ ADDED AT TASK-478 AS A SECTION 22 SWEEP RESULT, NOT AS A NEW IDEA. The
+	// parity check existed on the bench lane and on Siege.Llama.SpikePrompt and was
+	// MISSING from the eval lane -- the one lane that produces the go/no-go number.
+	// A citation is a lower bound on the extent of a defect, so the shape was swept
+	// for rather than the two known sites trusted as the whole set.
+	//
+	// ⛔ BOTH CALLS ARE SILENT TODAY AND THAT IS PROVABLE, NOT HOPED FOR: t0's Roster
+	// member IS SpikeRoster, so parity holds by identity and no kind can be absent.
+	// ⚠️ Per CONVENTIONS section 32 this guard has therefore NEVER BEEN OBSERVED TO
+	// FIRE and is not known to function -- it is an assertion that t0's frozen bytes
+	// have not moved, and the only thing that could ever trip it is exactly that.
+	FString EvalKindMismatch;
+	if (!VerifyFixtureKindParity(SpikeFixtureT0, EvalKindMismatch))
+	{
+		UE_LOG(LogSiegeLlama, Error,
+			TEXT("%s: THE EVAL FIXTURE t0 IS NOT A VALID SUBSET OF SpikeRoster (%s). t0's bytes are FROZEN (CONVENTIONS section 16) because the sealed corpus was authored against them, so this means the fixture was edited -- every row scored in this run is being asked a question nobody wrote. Reconcile before quoting any number."),
+			TagWarn, *EvalKindMismatch);
+	}
+
+	ReportZoneAKindSeam(ZoneAText, SpikeFixtureT0, TEXT("eval"), /*bReportWhenClosed*/ false);
+
 	if (!Options.DevCorpusPath.IsEmpty())
 	{
-		RunOneSplit(Options, ZoneAText, TEXT("dev"), Options.DevCorpusPath);
+		RunSplitRepeated(Options, ZoneAText, TEXT("dev"), Options.DevCorpusPath);
 	}
 
 	if (!Options.HoldoutCorpusPath.IsEmpty())
@@ -4096,7 +5125,14 @@ static void RunEvalJob(const FSpikeOptions& Options)
 			TEXT("%s: OPENING THE HOLDOUT. Report the HOLDOUT number against the >= 85%% bar, never the dev number, and DO NOT TUNE ANYTHING AFTER THIS POINT -- a re-tune requires a FRESH holdout, which is a new task."),
 			TagRun);
 
-		RunOneSplit(Options, ZoneAText, TEXT("HOLDOUT"), Options.HoldoutCorpusPath);
+		// ⚠️ THE REPEAT HAPPENS INSIDE THIS SINGLE OPENING, WHICH IS THE ONLY SHAPE
+		// section 12a AND section 12h BOTH ALLOW: "the holdout is opened once; the
+		// repeat therefore happens INSIDE that single opening -- N generations
+		// against the same file in the same session, reported as a distribution,
+		// never as a second opening on a later day." repeats= is what makes that
+		// mechanically possible; without it, taking N readings of the sealed file
+		// means opening it N times, which is spending it N times.
+		RunSplitRepeated(Options, ZoneAText, TEXT("HOLDOUT"), Options.HoldoutCorpusPath);
 	}
 	else
 	{
@@ -4250,6 +5286,36 @@ static bool StartJob(ESpikeJobKind Kind, const FSpikeOptions& Options, UWorld* W
 		UE_LOG(LogSiegeLlama, Warning,
 			TEXT("%s: NON-DEFAULT DEADLINE IN EFFECT FOR THIS RUN -- deadline=%.1fs, against the SHIPPED ceiling of %.1fs (CONVENTIONS section 10 HardTimeoutSeconds, which this argument does NOT change). Every wall-clock and abort figure below belongs to the %.1fs ceiling and MUST be quoted with it. %s"),
 			TagWarn, Options.HardTimeoutSeconds, SpikeHardTimeoutSeconds, Options.HardTimeoutSeconds, *DeadlineRegime);
+	}
+
+	// ⛔ repeats= IS READ BY THE EVAL JOB AND BY NOTHING ELSE, AND A FLAG THAT IS
+	// SILENTLY IGNORED IS WORSE THAN A FLAG THAT DOES NOT EXIST. Without this line
+	// `Siege.Llama.SpikeBench repeats=5` runs ONCE, prints a completely normal
+	// report, and the operator writes "5 runs" in a handoff. That is the same
+	// class of defect the repeats= range check above refuses -- a single reading
+	// believed to be N readings -- so it is caught at the one place that knows the
+	// job kind. Unreachable unless repeats= is actually typed, so the default
+	// output of every command is untouched.
+	if (Options.EvalRepeats > 1 && Kind != ESpikeJobKind::Eval)
+	{
+		UE_LOG(LogSiegeLlama, Warning,
+			TEXT("%s: repeats=%d was given but this is job kind=%d, and ONLY Siege.Llama.SpikeEval honours repeats=. THIS JOB RUNS EXACTLY ONCE -- do not report its numbers as a repeated measurement (CONVENTIONS section 12h)."),
+			TagWarn, Options.EvalRepeats, static_cast<int32>(Kind));
+	}
+
+	// ⛔ THE SAME LAW ONE FLAG OVER, AND HERE IT IS UNCONDITIONAL RATHER THAN
+	// KIND-DEPENDENT: out= AND ids= ARE READ BY Siege.Llama.SpikePrompt, WHICH DOES
+	// NOT GO THROUGH StartJob AT ALL. So EVERY job kind that reaches this line
+	// ignores them. Without this warning `Siege.Llama.SpikeEval out=C:/x.txt`
+	// completes normally and writes nothing, and the operator is left to decide
+	// whether the dump is EMPTY or ABSENT -- two very different facts that look
+	// identical from a missing file. Unreachable unless one of them is typed, so
+	// the default output of every command is untouched.
+	if (!Options.PromptOutPath.IsEmpty() || Options.bDumpTokenIds)
+	{
+		UE_LOG(LogSiegeLlama, Warning,
+			TEXT("%s: out= and/or ids= was given but this is job kind=%d, and ONLY Siege.Llama.SpikePrompt honours them. NO PROMPT FILE AND NO TOKEN-ID DUMP WILL BE PRODUCED BY THIS RUN -- nothing below is a rendered prompt artifact."),
+			TagWarn, static_cast<int32>(Kind));
 	}
 
 	if (World == nullptr || !World->IsGameWorld())
@@ -4533,6 +5599,59 @@ static FSpikeOptions ParseOptions(const TArray<FString>& Args)
 		}
 	}
 
+	// ⛔ repeats=<N> -- THE SAME "REJECT LOUDLY, NEVER CLAMP QUIETLY" TREATMENT AS
+	// deadline=, AND FOR A SHARPER REASON. GetArgInt would turn `repeats=abc` into
+	// 0 through FCString::Atoi and a Max(1, ...) would then quietly run ONE pass.
+	// The operator would read the log, see a normal-looking single score, and
+	// report it as a repeat-satisfying measurement -- which is CONVENTIONS section
+	// 12h's exact failure, mechanised. So presence is detected separately from
+	// value (GetArgValue, not GetArgInt), and an unusable value is REFUSED with a
+	// line that says the run is a SINGLE pass and may not be quoted as a repeat.
+	FString RepeatsText;
+	if (GetArgValue(Args, TEXT("repeats"), RepeatsText) && !RepeatsText.IsEmpty())
+	{
+		const int32 RequestedRepeats = FCString::Atoi(*RepeatsText);
+		if (RequestedRepeats < 1 || RequestedRepeats > SpikeMaxEvalRepeats)
+		{
+			UE_LOG(LogSiegeLlama, Warning,
+				TEXT("%s: repeats='%s' parsed to %d, which is outside the accepted range 1..%d, and was IGNORED -- THIS RUN IS A SINGLE PASS. Nothing was clamped: a quietly clamped repeats= would print one score that reads exactly like a repeated measurement, and CONVENTIONS section 12h (THE REPEAT LAW) forbids quoting a single run as a measurement. Re-run with repeats=<1..%d>."),
+				TagWarn, *RepeatsText, RequestedRepeats, SpikeMaxEvalRepeats, SpikeMaxEvalRepeats);
+		}
+		else
+		{
+			Options.EvalRepeats = RequestedRepeats;
+		}
+	}
+
+	// ⛔ out=<path> AND ids=1 -- PARSED HERE, IN THE SHARED PARSER, FOR THE SAME
+	// REASON chat= IS: one parser means one spelling of every flag, and a flag that
+	// is spelled twice is a flag that will eventually be spelled two ways. They are
+	// READ by Siege.Llama.SpikePrompt alone; StartJob warns when either reaches a
+	// job kind that cannot honour it.
+	//
+	// ⚠️ AN EMPTY out= IS REFUSED OUT LOUD RATHER THAN TREATED AS ABSENT. `out=`
+	// with nothing after it is a typo whose entire effect is that no file appears,
+	// while the command completes normally -- so the operator goes looking for a
+	// dump that was never created and concludes something false about the dumper.
+	// Same "reject loudly, never proceed quietly" treatment as deadline= and
+	// repeats= above.
+	FString PromptOutText;
+	if (GetArgValue(Args, TEXT("out"), PromptOutText))
+	{
+		if (PromptOutText.IsEmpty())
+		{
+			UE_LOG(LogSiegeLlama, Warning,
+				TEXT("%s: out= was given with an EMPTY value and was IGNORED -- NO FILE WILL BE WRITTEN by this run. Re-run with out=<path> (a relative path resolves against the project directory)."),
+				TagWarn);
+		}
+		else
+		{
+			Options.PromptOutPath = PromptOutText;
+		}
+	}
+
+	GetArgBool(Args, TEXT("ids"), Options.bDumpTokenIds);
+
 	Options.ContextTokens = FMath::Clamp(Options.ContextTokens, 512, 32768);
 	Options.UBatch = FMath::Clamp(Options.UBatch, 1, 2048);
 	Options.Iterations = FMath::Clamp(Options.Iterations, 1, 200);
@@ -4591,6 +5710,35 @@ static void CmdSpikeEval(const TArray<FString>& Args, UWorld* World)
 	StartJob(ESpikeJobKind::Eval, Options, World);
 }
 
+/**
+ *  ⚠️ THE TOKEN-ID DUMP IS CHUNKED, AND THE CHUNKING IS THE POINT. A templated
+ *  Zone A alone is ~1362 tokens, so a single line would be ~10 KB -- long enough
+ *  that log sinks truncate it, and a TRUNCATED id sequence compared against a
+ *  Python one manufactures a divergence at exactly the index where the log gave
+ *  up. Indexed chunks make the comparison resumable and the truncation visible.
+ */
+static constexpr int32 SpikePromptIdsPerLine = 32;
+
+/** Comma-separated token ids over [Start, Start + Count) -- one formatter, used by both the summary line and the chunks. */
+static FString FormatTokenIdSpan(const TArray<llama_token>& Tokens, int32 Start, int32 Count)
+{
+	FString Out;
+
+	const int32 First = FMath::Max(0, Start);
+	const int32 End = FMath::Min(First + FMath::Max(0, Count), Tokens.Num());
+
+	for (int32 Index = First; Index < End; ++Index)
+	{
+		if (!Out.IsEmpty())
+		{
+			Out += TEXT(",");
+		}
+		Out += FString::FromInt(static_cast<int32>(Tokens[Index]));
+	}
+
+	return Out;
+}
+
 static void CmdSpikePrompt(const TArray<FString>& Args, UWorld* /*World*/)
 {
 	const FSpikeOptions Options = ParseOptions(Args);
@@ -4641,11 +5789,22 @@ static void CmdSpikePrompt(const TArray<FString>& Args, UWorld* /*World*/)
 			TagWarn, ZoneB.Len(), ZoneC.Len());
 	}
 
+	// ⚠️ THE STRING WAS SWEPT AT TASK-478 AND NOTHING ELSE IN THIS FUNCTION WAS
+	// TOUCHED (CONVENTIONS section 22 -- a runtime log string is the PRIORITY
+	// surface for a stale claim, because it is the artifact an investigator trusts
+	// most). It read "fixture %s disagrees with THE GRAMMAR'S KIND LIST", which is
+	// now self-contradictory: the grammar's kind list IS this fixture's roster. What
+	// the check actually verifies is the fixture against SpikeRoster, the game's
+	// unit VOCABULARY -- which is the authority that survived.
+	// ⛔ The branch is unreachable for t0 and t1 (both are valid subsets by
+	// construction), so this rewording cannot move one byte of this command's
+	// output on any command line that exists today.
 	FString KindMismatch;
 	if (!VerifyFixtureKindParity(Fixture, KindMismatch))
 	{
 		UE_LOG(LogSiegeLlama, Warning,
-			TEXT("%s: fixture %s disagrees with the grammar's kind list (%s)."), TagWarn, Fixture.Label, *KindMismatch);
+			TEXT("%s: fixture %s is NOT A VALID SUBSET of SpikeRoster (%s). The grammar is generated from this fixture, so the prompt above may be showing -- and the sampler may be able to emit -- a unit symbol the game does not have."),
+			TagWarn, Fixture.Label, *KindMismatch);
 	}
 
 	FSiegeLlamaModule* Module = FSiegeLlamaModule::GetPtr();
@@ -4654,6 +5813,27 @@ static void CmdSpikePrompt(const TArray<FString>& Args, UWorld* /*World*/)
 		UE_LOG(LogSiegeLlama, Display,
 			TEXT("%s: TOKEN counts need a resident model and no job in flight -- run 'Siege.Llama.SpikeLoad' first. Character counts above are exact regardless."),
 			TagTokens);
+
+		// ⛔ AND IF A DUMP WAS ASKED FOR, REFUSE IT AT ERROR LEVEL RATHER THAN
+		// RETURNING QUIETLY. The dump is NOT merely unavailable here -- writing it
+		// would be actively WRONG. With no resident model BuildPrompt cannot reach
+		// llama_model_chat_template, so it falls back to raw concatenation SILENTLY,
+		// and out= would produce a file that is the RAW wire format while the
+		// command line said chat=1. A consumer asserting a length and a sha256
+		// against that file would be asserting against the wrong lane and would
+		// PASS -- traps T1 and T8 in a single move, which is this project's exact
+		// recurring failure: a confident green describing something else.
+		//
+		// ⚠️ Deliberately NOT special-cased for chat=0, which genuinely needs no
+		// model: that would create a SECOND site that writes the artifact, and
+		// "exactly one composer" is the rule this whole batch exists to defend.
+		if (!Options.PromptOutPath.IsEmpty() || Options.bDumpTokenIds)
+		{
+			UE_LOG(LogSiegeLlama, Error,
+				TEXT("%s: REFUSED -- out= and/or ids= needs a RESIDENT MODEL and no job in flight, and NOTHING WAS WRITTEN. This is a refusal, not a failure to find the file. Without a loaded model BuildPrompt cannot consult the chat template and would silently emit the RAW concatenation, so out= would write a file whose wire format does not match the chat= this command line asked for. Run 'Siege.Llama.SpikeLoad tier=full gpu=0' first, then re-issue this command."),
+				TagPromptOut);
+		}
+
 		return;
 	}
 
@@ -4690,11 +5870,207 @@ static void CmdSpikePrompt(const TArray<FString>& Args, UWorld* /*World*/)
 		TagTokens, Fixture.Label, FullPrompt.Len(), Layout.ZoneBCharOffset, Layout.ZoneCCharOffset,
 		TokenIndexOfCharOffset(FullPrompt, Layout.ZoneBCharOffset),
 		TokenIndexOfCharOffset(FullPrompt, Layout.ZoneCCharOffset));
+
+	// =======================================================================
+	// out= / ids= -- APPENDED AFTER EVERY PRE-EXISTING LINE, ON PURPOSE
+	// =======================================================================
+	//
+	// ⛔ NOTHING ABOVE THIS POINT WAS TOUCHED. The whole block is unreachable
+	// unless out= or ids= is typed, so a command line passing neither produces
+	// character-identical output to this command as it stood before the flags
+	// existed (CONVENTIONS section 16 freeze #2). Placing it at the END rather
+	// than woven in also means no pre-existing line CHANGED POSITION in the
+	// stream, which is the half of "identical output" that a format-string
+	// comparison alone would not catch.
+	if (!Options.PromptOutPath.IsEmpty() || Options.bDumpTokenIds)
+	{
+		// ⛔ WHICH WIRE FORMAT THESE BYTES ACTUALLY ARE, READ OFF THE BYTES RATHER
+		// THAN ECHOED BACK FROM THE FLAG -- and that distinction is the whole
+		// validity of STOP 1. chat= records an INTENTION. BuildPrompt falls back to
+		// raw concatenation whenever llama_model_chat_template returns null (the
+		// GGUF carries no template) and that fallback is SILENT; it falls back
+		// again, with a warning, if llama_chat_apply_template fails. Either way a
+		// `chat=1` run can produce raw bytes, and an A/B that was secretly raw-vs-raw
+		// would measure a difference of zero and be read as "D1 does not exist".
+		//
+		// ⚠️ THE DISCRIMINATOR IS A POSITIVE STRUCTURAL FACT, NOT A SEARCH FOR AN
+		// ABSENCE (CONVENTIONS section 14): in BOTH raw branches BuildPrompt emits
+		// ZoneAText + ZoneB + ZoneC, so Zone A sits at offset 0. Any chat template
+		// opens with a role marker BEFORE the system content, so it cannot. The
+		// prompt therefore starts with Zone A if and only if these bytes are raw.
+		const bool bChatRequested = Options.bUseChatTemplate;
+		const bool bModelHasTemplate = (GRunner.Model != nullptr)
+			&& (llama_model_chat_template(GRunner.Model, nullptr) != nullptr);
+		const bool bStartsWithZoneA = FullPrompt.StartsWith(ZoneA, ESearchCase::CaseSensitive);
+		const TCHAR* const WireLabel = bStartsWithZoneA ? TEXT("raw") : TEXT("chat");
+
+		UE_LOG(LogSiegeLlama, Display,
+			TEXT("%s fixture=%s wire=%s chat_requested=%d model_has_template=%d prompt_starts_with_zoneA=%d assembled_chars=%d assembled_tok=%d zoneA_chars=%d (wire= is MEASURED from the produced bytes, never copied from chat=)"),
+			TagPromptOut, Fixture.Label, WireLabel,
+			bChatRequested ? 1 : 0, bModelHasTemplate ? 1 : 0, bStartsWithZoneA ? 1 : 0,
+			FullPrompt.Len(), FullTokens, ZoneA.Len());
+
+		if (bChatRequested && bStartsWithZoneA)
+		{
+			UE_LOG(LogSiegeLlama, Warning,
+				TEXT("%s: chat=1 WAS REQUESTED BUT THESE BYTES ARE THE RAW CONCATENATION. BuildPrompt fell back, for one of exactly two reasons: the loaded GGUF exposes no chat template (model_has_template=%d above), or llama_chat_apply_template failed and logged its own line. DO NOT quote this run as the templated half of a wire-format A/B -- it would compare raw against raw and report a difference of zero, which reads as 'the two shapes are the same' and is the one conclusion this measurement must never reach by accident."),
+				TagWarn, bModelHasTemplate ? 1 : 0);
+		}
+
+		if (!Options.PromptOutPath.IsEmpty())
+		{
+			// A relative path resolves against the PROJECT directory, matching how
+			// dev= builds its default, and the ABSOLUTE path is then printed -- so a
+			// typo shows up as a file in a surprising place rather than as a silence.
+			//
+			// ⚠️ THE SECOND CALL IS NOT REDUNDANT, AND THE TWO-ARGUMENT OVERLOAD ALONE
+			// WOULD HAVE BEEN WRONG HERE. FPaths::ProjectDir() is ITSELF RELATIVE in an
+			// editor build (`../../../<Project>/` from Engine/Binaries/Win64), and
+			// ConvertRelativePathToFull(Base, In) only JOINS and COLLAPSES -- it does
+			// not force absoluteness when the base is relative. The result would still
+			// have opened the right file, because IFileManager anchors relative paths
+			// at BaseDir, and would have PRINTED a `../../../` path that is useless as
+			// the "here is exactly what I wrote" evidence this line exists to be. The
+			// one-argument overload anchors at FPlatformProcess::BaseDir() and does
+			// normalize + collapse internally, which is why NormalizeFilename is not
+			// called separately.
+			FString AbsPath = Options.PromptOutPath;
+			if (FPaths::IsRelative(AbsPath))
+			{
+				AbsPath = FPaths::ProjectDir() / AbsPath;
+			}
+			AbsPath = FPaths::ConvertRelativePathToFull(AbsPath);
+
+			// The destination tree is created because the intended home for these
+			// dumps does not exist yet, and "the write failed" is a poor way to
+			// learn that a directory is missing.
+			const FString OutDir = FPaths::GetPath(AbsPath);
+			if (!OutDir.IsEmpty())
+			{
+				IFileManager::Get().MakeDirectory(*OutDir, true);
+			}
+
+			// ⛔ UTF-8 WITHOUT A BOM, AND THIS IS NOT A STYLE CHOICE -- IT IS THE
+			// ONLY ENCODING THAT MAKES THE FILE THE SAME OBJECT THE ENGINE MEASURED.
+			// TokenizePrompt hands llama_tokenize the FTCHARToUTF8 of this exact
+			// FString, so these bytes are, byte for byte, what the tokenizer saw.
+			// FFileHelper's DEFAULT encoding is AutoDetect, which writes UTF-16 with
+			// a BOM the moment the prompt contains one non-ASCII character -- a file
+			// that still looks correct in an editor, still has a plausible length,
+			// and hashes to something no consumer can reproduce. Hence the explicit
+			// byte array rather than SaveStringToFile.
+			const FTCHARToUTF8 Utf8(*FullPrompt);
+			TArray64<uint8> Bytes;
+			Bytes.Append(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length());
+
+			if (FFileHelper::SaveArrayToFile(Bytes, *AbsPath))
+			{
+				// ⚠️ THE sha256 IS DELIBERATELY NOT COMPUTED HERE. The consumer
+				// asserts it over the file it actually reads, which is the only
+				// place the assertion means anything; a hash printed by the writer
+				// certifies the writer. The LENGTH is printed because it is the
+				// cheap disagreement detector, and it is the UTF-8 BYTE count --
+				// not the FString character count, which differs on any non-ASCII
+				// content and is printed separately so the two never get confused.
+				UE_LOG(LogSiegeLlama, Display,
+					TEXT("%s WROTE fixture=%s wire=%s utf8_bytes=%d chars=%d encoding=UTF-8-no-BOM path=%s (assert LENGTH and sha256 over THIS FILE; the trainer CONSUMES these bytes and must never assemble a prompt of its own)"),
+					TagPromptOut, Fixture.Label, WireLabel, Utf8.Length(), FullPrompt.Len(), *AbsPath);
+			}
+			else
+			{
+				UE_LOG(LogSiegeLlama, Error,
+					TEXT("%s: FAILED to write the prompt bytes to '%s' -- NOTHING was written and any file already at that path is UNCHANGED and therefore STALE. Check the path is writable and is not open elsewhere."),
+					TagPromptOut, *AbsPath);
+			}
+		}
+
+		if (Options.bDumpTokenIds)
+		{
+			// ⚠️ Tokens STILL HOLDS THE FULL PROMPT'S IDS -- TokenizePrompt(FullPrompt,
+			// Tokens) filled it above and nothing between here and there touches it
+			// (TokenIndexOfCharOffset uses its own local array). Reused DELIBERATELY
+			// rather than re-tokenized: the ids printed below are then PROVABLY the
+			// same sequence that produced the assembled_total_tok figure on the
+			// SPIKE_TOKENS line, instead of a second reading that merely ought to
+			// agree with it. FullTokens > 0 is exactly the condition under which
+			// that call succeeded.
+			if (FullTokens <= 0)
+			{
+				UE_LOG(LogSiegeLlama, Error,
+					TEXT("%s: ids=1 was requested but llama_tokenize FAILED on the assembled prompt, so NO ids were produced. The character counts above are still exact; nothing here is a zero-length token sequence."),
+					TagPromptIds);
+			}
+			else
+			{
+				UE_LOG(LogSiegeLlama, Display,
+					TEXT("%s fixture=%s wire=%s count=%d add_special=1 parse_special=1 source=llama_tokenize(vocab,UTF-8(assembled prompt)) first=[%s] last=[%s] -- THE ENGINE HALF OF THE TOKEN-ID PARITY CHECK. A Python count taken under different add_special/parse_special flags is a DIFFERENT measurement and comparing them manufactures a divergence."),
+					TagPromptIds, Fixture.Label, WireLabel, Tokens.Num(),
+					*FormatTokenIdSpan(Tokens, 0, 8),
+					*FormatTokenIdSpan(Tokens, FMath::Max(0, Tokens.Num() - 8), 8));
+
+				for (int32 SpanStart = 0; SpanStart < Tokens.Num(); SpanStart += SpikePromptIdsPerLine)
+				{
+					const int32 SpanCount = FMath::Min(SpikePromptIdsPerLine, Tokens.Num() - SpanStart);
+					UE_LOG(LogSiegeLlama, Display,
+						TEXT("%s i=%d..%d ids=%s"),
+						TagPromptIds, SpanStart, SpanStart + SpanCount - 1,
+						*FormatTokenIdSpan(Tokens, SpanStart, SpanCount));
+				}
+			}
+		}
+	}
 }
 
-static void CmdSpikeGrammar(const TArray<FString>& /*Args*/, UWorld* /*World*/)
+/**
+ *  ⭐ THE ONE PLACE THE PER-FIXTURE CAPABILITY CAN BE SEEN WITH NO MODEL LOADED,
+ *     AND THAT IS WHY THE ALWAYS-ON READOUT LIVES HERE RATHER THAN ON SpikeEval.
+ *
+ *  ⚖️ THE TASK-477 DISPOSITION, COPIED DELIBERATELY: when the useful line would move
+ *     the instrument, it goes on the OTHER command and the help text says so. A
+ *     "seam CLOSED" line is genuinely valuable -- CONVENTIONS section 14 wants the
+ *     positive proved, and a check that only ever prints on failure is
+ *     indistinguishable from a check that never ran. But printing it on
+ *     Siege.Llama.SpikeEval's default path would add a line to the instrument every
+ *     number on record was taken with (section 16 freeze #2, unconditional).
+ *     ⇒ The measurement lanes get the WARNING only; THIS command gets the verdict
+ *     both ways, because Siege.Llama.SpikeGrammar is not in section 16's frozen set
+ *     and no measurement has ever been taken from it.
+ *
+ *  ⛔ THE PRE-EXISTING HEADER LINE AND THE DUMP ARE UNTOUCHED AND STILL FIRST, and
+ *     the new block is appended AFTER them (TASK-477's placement rule: nothing that
+ *     already existed changes POSITION in the stream). The single exception is a
+ *     LEADING banner when a NON-DEFAULT fixture was named -- because at that point
+ *     the dump below is NOT the canonical grammar, and a reader who copied it into
+ *     a diff against the landed generator would file a false mismatch.
+ *
+ *  ⚠️ THIS COMMAND READS THE TRANSCRIBED ZONE A CONSTANT. It has no prompt= override
+ *     (it never called ParseOptions), which is stated in the readout rather than left
+ *     to be assumed -- see the handoff's finding on prompt= and Siege.Llama.SpikePrompt.
+ */
+static void CmdSpikeGrammar(const TArray<FString>& Args, UWorld* /*World*/)
 {
-	const FString Grammar = BuildSpikeGrammar();
+	FString FixtureName;
+	GetArgValue(Args, TEXT("fixture"), FixtureName);
+
+	bool bFixtureRecognised = true;
+	const FSpikeWorldFixture& Fixture = ResolveSpikeFixture(FixtureName, bFixtureRecognised);
+
+	if (!bFixtureRecognised)
+	{
+		// Loudly, and BEFORE the dump: a typo that silently hands back t0 is how an
+		// operator ends up quoting a grammar for a board they never selected.
+		UE_LOG(LogSiegeLlama, Warning,
+			TEXT("%s: unknown fixture '%s' -- expected %s. FALLING BACK TO t0, so the grammar below is t0's and NOT the one you asked for."),
+			TagWarn, *FixtureName, *ListSpikeFixtureNames());
+	}
+	else if (!FixtureName.IsEmpty() && &Fixture != &SpikeFixtureT0)
+	{
+		UE_LOG(LogSiegeLlama, Warning,
+			TEXT("%s: ---- THE DUMP BELOW IS FIXTURE '%s', NOT THE DEFAULT t0 ---- The `kind` alternatives are generated from THIS fixture's roster (%d of SpikeRoster's %d kinds), so do NOT diff it against the landed USiegeAssistantGrammar::Build output taken for a full board and report a mismatch."),
+			TagWarn, Fixture.Label, Fixture.RosterNum, SpikeRosterNum);
+	}
+
+	const FString Grammar = BuildSpikeGrammar(Fixture);
 
 	UE_LOG(LogSiegeLlama, Display,
 		TEXT("%s ---- GBNF (%d chars) ---- diff this against USiegeAssistantGrammar::Build(fixture kinds, the 7 pinned places). THE LANDED GRAMMAR IS THE AUTHORITY (CONVENTIONS section 9c); if they differ, THIS FILE IS WRONG."),
@@ -4706,6 +6082,29 @@ static void CmdSpikeGrammar(const TArray<FString>& /*Args*/, UWorld* /*World*/)
 	{
 		UE_LOG(LogSiegeLlama, Display, TEXT("  %s"), *Line);
 	}
+
+	// =======================================================================
+	// TASK-478's READOUT -- APPENDED AFTER EVERY PRE-EXISTING LINE
+	// =======================================================================
+	FString KindMismatch;
+	const bool bParityOk = VerifyFixtureKindParity(Fixture, KindMismatch);
+	const FString ParityText = bParityOk ? FString(TEXT("OK")) : (FString(TEXT("FAILED -- ")) + KindMismatch);
+
+	UE_LOG(LogSiegeLlama, Display,
+		TEXT("%s GRAMMAR_FIXTURE fixture=%s kinds=%d of SpikeRoster's %d (%s) subset_parity=%s -- `kind` is generated from THIS fixture. `count` and `at-least` are NOT: they stay %d..%d, never the live totals (CONVENTIONS section 1: constrain identity hard, leave quantity soft; a grammar capped at the live count silently emits the wrong number and makes the clarification undetectable)."),
+		TagRun, Fixture.Label, Fixture.RosterNum, SpikeRosterNum,
+		Fixture.RosterNum == SpikeRosterNum
+			? TEXT("FULL ROSTER -- character-identical to the grammar this command emitted before per-fixture derivation existed")
+			: TEXT("STRICT SUBSET -- a sparse board, the class divergence D3 is about"),
+		*ParityText,
+		SpikeGrammarCountMin, SpikeGrammarCountMax);
+
+	// The transcribed constant, named as such: this command has no prompt= override,
+	// so the seam reported here is the one the SHIPPED-mirror Zone A produces.
+	FString ZoneA;
+	AppendZoneA(ZoneA);
+	ReportZoneAKindSeam(ZoneA, Fixture, TEXT("grammar(transcribed Zone A -- this command has NO prompt= override)"),
+		/*bReportWhenClosed*/ true);
 }
 
 } // namespace SiegeLlamaSpike
@@ -4747,7 +6146,19 @@ static FAutoConsoleCommandWithWorldAndArgs GSiegeLlamaSpikeEvalCommand(
 		 "dev= defaults to Docs/Data/assistant_eval_dev.csv; holdout= HAS NO DEFAULT and opens the sealed file -- "
 		 "the HOLDOUT number alone scores the 85-percent bar. Every row runs against fixture t0, the board the corpus was authored "
 		 "against. Args: dev=<path> holdout=<path> tier=... gpu=<index|name> prompt=<zoneA path> deadline=<seconds> "
-		 "(same diagnostic override as SpikeBench, default 10.0. A row whose generation is CUT by the ceiling scores as a WRONG ANSWER, so the row line names it)"),
+		 "(same diagnostic override as SpikeBench, default 10.0. A row whose generation is CUT by the ceiling scores as a WRONG ANSWER, so the row line names it) "
+		 "repeats=<N> (1..25, DEFAULT 1). Loops each split N times INSIDE THIS ONE JOB -- one queue slot, one model load, one session. "
+		 "CONVENTIONS section 12h: ONE RUN IS NOT A MEASUREMENT, and this is the mechanical way to satisfy that instead of re-typing the command -- "
+		 "which the harness correctly REFUSES, because queue depth is 1 by design. It is also the only way to repeat the SEALED holdout, whose repeat must happen INSIDE its single opening. "
+		 "At N>1 it additionally prints SPIKE_EVAL_REPEAT lines: split-level min/median/max (section 10 clause #1 scores the MINIMUM, clause #6 the MEDIAN, nothing scores the maximum), "
+		 "per-row stable=N/N or flips=k, and THE IDENTITY of every row that moved together with its distinct outputs. "
+		 "repeats=1 emits ZERO SPIKE_EVAL_REPEAT lines and is byte-identical to this command as it was before the flag existed. "
+		 "chat=0|1 (DEFAULT 1) selects the wire format for EVERY row: 1 = the model's chat template (Zone A as system, Zone B+C as user, add_generation_prompt=true), "
+		 "0 = THE SHIPPED SHAPE, a raw Zone A + Zone B + Zone C concatenation with no roles. This flag was ALWAYS parsed here; only this sentence is new. "
+		 "It is what makes the wire-format A/B two commands instead of a code change: 'chat=1 repeats=5' then 'chat=0 repeats=5'. "
+		 "WARNING: this command prints NO wire= indicator, because adding a line to its default output would move the instrument every number on record was taken with. "
+		 "BuildPrompt falls back to raw concatenation SILENTLY when the loaded GGUF exposes no chat template, so a chat=1 eval can be secretly raw. "
+		 "TAKE THE WIRE-FORMAT READING WITH Siege.Llama.SpikePrompt FIRST -- its SPIKE_PROMPT_OUT line reports wire= measured off the produced bytes -- and only then trust an A/B taken here"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SiegeLlamaSpike::CmdSpikeEval));
 
 static FAutoConsoleCommandWithWorldAndArgs GSiegeLlamaSpikePromptCommand(
@@ -4755,10 +6166,30 @@ static FAutoConsoleCommandWithWorldAndArgs GSiegeLlamaSpikePromptCommand(
 	TEXT("Dumps the exact Zone A / Zone B / Zone C bytes plus character and token counts, so MaxSnapshotChars "
 		 "is corrected from measurement rather than guessed twice. Args: order=\"...\" fixture=t0|t1 "
 		 "(t0 is the corpus's board and the default; t1 is the same board seconds later, which is what the bench's "
-		 "SHIPPED_WORST_CASE bound diverges into. Token counts need a loaded model)"),
+		 "SHIPPED_WORST_CASE bound diverges into. Token counts need a loaded model) "
+		 "out=<path> writes the ASSEMBLED prompt's exact bytes as UTF-8 WITHOUT a BOM. THE TRAINER CONSUMES THESE BYTES AND MUST NEVER ASSEMBLE A PROMPT OF ITS OWN -- "
+		 "three lanes already disagree and a re-implementation would bake that skew into the weights, where it is invisible forever. "
+		 "A relative path resolves against the project directory, the destination directory is created, and the absolute path is printed. "
+		 "Assert LENGTH and sha256 over the written file; the command deliberately does not hash it, because a hash printed by the writer certifies the writer. "
+		 "ids=1 prints the engine's llama_tokenize sequence for the SAME assembled prompt, in indexed 32-id chunks, beside the add_special/parse_special flags it was taken under -- "
+		 "the ENGINE half of the token-id parity check; the Python comparison is a separate task and is deliberately not attempted here. "
+		 "chat=0|1 (DEFAULT 1) selects the wire format: 1 = the model's chat template (Zone A as system, Zone B+C as user, add_generation_prompt=true), "
+		 "0 = THE SHIPPED SHAPE, a raw Zone A + Zone B + Zone C concatenation with no roles and no separator. "
+		 "THE FLAG IS NOT ECHOED BACK: the SPIKE_PROMPT_OUT line reports wire= MEASURED from the produced bytes, so a chat=1 that silently fell back to raw "
+		 "(the GGUF carries no template, or llama_chat_apply_template failed) is VISIBLE rather than assumed. "
+		 "out= and ids= both need a resident model and REFUSE at Error level without one -- a dump taken with no model would silently be the raw shape whatever chat= said"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SiegeLlamaSpike::CmdSpikePrompt));
 
 static FAutoConsoleCommandWithWorldAndArgs GSiegeLlamaSpikeGrammarCommand(
 	TEXT("Siege.Llama.SpikeGrammar"),
-	TEXT("Dumps the spike's GBNF so QA can DIFF it against USiegeAssistantGrammar::Build instead of proof-reading it."),
+	TEXT("Dumps the spike's GBNF so QA can DIFF it against USiegeAssistantGrammar::Build instead of proof-reading it. "
+		 "Args: fixture=t0|t1 (DEFAULT t0). THE `kind` ALTERNATIVES ARE GENERATED FROM THE NAMED FIXTURE'S ROSTER, not from a fixed thirteen-symbol list -- "
+		 "which is what the SHIPPED USiegeAssistantGrammar::Build has always done, so this is the spike moving TOWARD the landed authority (CONVENTIONS section 9c). "
+		 "t0 and t1 both carry all thirteen kinds, so the default dump is CHARACTER-IDENTICAL to what this command emitted before per-fixture derivation existed. "
+		 "An unknown fixture name is REFUSED OUT LOUD and falls back to t0, and a NON-default fixture prints a banner ABOVE the dump -- a dump nobody labelled is a false mismatch waiting to be filed. "
+		 "`count` and `at-least` are NOT fixture-derived and MUST NEVER BECOME SO: they stay 1..30, never the live totals (CONVENTIONS section 1 -- a grammar capped at the live count silently emits 8 for a player who asked for 10 and makes the clarification undetectable). "
+		 "It also prints ZONE_A_KIND_SEAM: which unit symbols the transcribed Zone A shows the model that THIS fixture's grammar forbids, split into NAMED (anywhere in Zone A) and DEMONSTRATED (inside a few-shot answer). "
+		 "That is divergence D3 made visible, and it is printed BOTH WAYS here -- 'CLOSED' is a result, not a silence. "
+		 "Siege.Llama.SpikeEval and Siege.Llama.SpikeBench deliberately print it ONLY when the seam is OPEN: a new line on their default path would move the instrument every number on record was taken with. "
+		 "NEEDS NO MODEL -- this is the whole per-fixture capability, inspectable offline"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SiegeLlamaSpike::CmdSpikeGrammar));

@@ -2751,6 +2751,89 @@ FString USiegeAssistantComponent::ComposeTurnPrompt(const FString& Utterance)
 	return Prompt;
 }
 
+#if !UE_BUILD_SHIPPING
+FString USiegeAssistantComponent::DebugCaptureAndComposePrompt(const FString& RawUtterance)
+{
+	// ⚠️ DEFINED IMMEDIATELY BELOW ComposeTurnPrompt RATHER THAN IN HEADER ORDER,
+	// ON PURPOSE. The whole safety argument for this function is "IT DELEGATES",
+	// and the cheapest way to keep that checkable by eye is to put the two
+	// functions where one screen shows both. ⛔ The argument itself lives on the
+	// DECLARATION - the SpawnGroupCircleDecal idiom of putting the access
+	// rationale where the next reader meets it, not where the body hides it.
+	//
+	// ⛔ THIS FUNCTION RUNS SubmitUtterance's STEPS 7 AND 8 AND NOTHING ELSE.
+	// No BeginTurn, no TurnId, no dispatch, no SetState, no PushMessage.
+
+	// ── MIRRORS SubmitUtterance GATE 1, WITH THE SAME SINGLE CALL ─────────────
+	// ⚠️ TrimStartAndEnd() is the ONLY transform the shipped lane applies to the
+	// raw string before step 8. Everything else the utterance undergoes
+	// (SanitizeForPrompt, the MaxUtteranceBytes cap, the flattening warnings)
+	// happens INSIDE BuildZoneC and is therefore INHERITED by delegating - never
+	// repeated here, which would be the re-implementation this dump exists to
+	// avoid measuring.
+	const FString Utterance = RawUtterance.TrimStartAndEnd();
+	if (Utterance.IsEmpty())
+	{
+		UE_LOG(LogSiegeAssistant, Warning,
+			TEXT("DebugCaptureAndComposePrompt REFUSED: empty utterance. The shipped lane discards it at gate 1 and NEVER reaches the composer, so there are no bytes to read."));
+		return FString();
+	}
+
+	// ── MIRRORS SubmitUtterance GATE 3 (AUTHORITY, §7) ────────────────────────
+	// ⚠️ REFUSAL-ONLY, AND IT IS ABOUT THE ARTIFACT RATHER THAN ABOUT PERMISSION:
+	// on a client the composer is never reached at all, so a dump taken there
+	// would describe a lane that does not run - which is precisely the
+	// "the measured lane is not the shipped lane" defect this reading exists to
+	// close, re-committed by the instrument built to close it.
+	const AActor* OwningActor = GetOwner();
+	if (!OwningActor || !OwningActor->HasAuthority())
+	{
+		UE_LOG(LogSiegeAssistant, Warning,
+			TEXT("DebugCaptureAndComposePrompt REFUSED: no authority. The shipped lane refuses here too (gate 3), so this machine composes no prompt to read."));
+		return FString();
+	}
+
+	// ── THE AT-REST WHITELIST ─────────────────────────────────────────────────
+	// ⛔ Capture() RE-SURVEYS THE ONE SNAPSHOT OBJECT IN PLACE. Idle and Composing
+	// hold nothing pending; Failed's turn is over and its intent cleared.
+	// Thinking, AwaitConfirm, Clarify and Deferred each still consult the CURRENT
+	// survey downstream (RouteParsedCommandInternal, ConfirmPressed's execution,
+	// FindShortfall), and re-surveying under any of them would "silently answer a
+	// different question from the one the model was asked" - GetTurnSnapshot()'s
+	// own stated contract, which this must not breach from the outside either.
+	//
+	// ⚠️ A WHITELIST, NOT A BLACKLIST, AND THAT IS THE SAFE DIRECTION: a state
+	// added later is REFUSED BY DEFAULT rather than admitted by omission.
+	if (State != ESiegeAssistantState::Idle &&
+		State != ESiegeAssistantState::Composing &&
+		State != ESiegeAssistantState::Failed)
+	{
+		UE_LOG(LogSiegeAssistant, Warning,
+			TEXT("DebugCaptureAndComposePrompt REFUSED: the FSM is '%s', which is not at rest. Re-surveying now would replace the snapshot the live turn is still reading. Finish or cancel the turn and re-issue."),
+			*GetStateLabel());
+		return FString();
+	}
+
+	// ── STEP 7 - THE SNAPSHOT (USiegeAssistantSnapshot::Capture, reached through
+	//    the ONE shipped caller, never directly) ─────────────────────────────
+	if (!CaptureTurnSnapshot())
+	{
+		UE_LOG(LogSiegeAssistant, Warning,
+			TEXT("DebugCaptureAndComposePrompt REFUSED: the board could not be surveyed (no world, or the ordering team did not resolve). Nothing composed - a refusal, never a guess."));
+		return FString();
+	}
+
+	// ── STEP 8 - COMPOSE, BY DELEGATION ───────────────────────────────────────
+	// ⛔ THE ONE COMPOSER, AND THIS LINE IS THE ENTIRE FUNCTION'S REASON TO EXIST:
+	// the returned bytes ARE the shipped lane's, not a re-derivation that would
+	// have to guess the vocabulary lane (the measured 3029-vs-5116 defect) and
+	// the pending line, and would then be scored as if it were the artifact.
+	// ⚠️ ReportFirstCapture() fires INSIDE this call when the session latch is
+	// still unspent - see "what it consumes" on the declaration.
+	return ComposeTurnPrompt(Utterance);
+}
+#endif // !UE_BUILD_SHIPPING
+
 FString USiegeAssistantComponent::ComposeTurnGrammar() const
 {
 	if (!Snapshot)

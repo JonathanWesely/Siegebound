@@ -17,6 +17,11 @@
 #include "Engine/World.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
+// ⚠️ REQUIRED, AND NOT INHERITED FROM CoreMinimal.h — CHECKED, NOT ASSUMED.
+// CoreMinimal.h does not include HAL/PlatformTime.h (grepped at the UE 5.8
+// source on this machine: zero hits). FPlatformTime::Seconds() backs the
+// re-open suppression window in OpenConsole(), so this include is load-bearing.
+#include "HAL/PlatformTime.h"
 
 namespace SiegeAssistantConsole
 {
@@ -34,6 +39,19 @@ namespace SiegeAssistantConsole
 
 	/** Shown on open when the FSM has not pushed a state label yet. */
 	static const TCHAR* IdleStatusText  = TEXT("Ready");
+
+	/**
+	 *  ⛔ THE HARD CEILING ON THE RE-OPEN SUPPRESSION WINDOW, APPLIED IN CODE ON
+	 *  EVERY READ — not merely a ClampMax in the details panel.
+	 *
+	 *  The suppression exists to swallow AT MOST ONE re-open racing a single
+	 *  keypress, which is a sub-frame event. Anything approaching a quarter of a
+	 *  second stops being "the same press" and starts being "the console ignored
+	 *  me", and THAT failure — a console that refuses to open — is strictly worse
+	 *  than the one the window prevents. Clamping here means no configuration, no
+	 *  .ini, no Blueprint default and no future editing hand can reach it.
+	 */
+	static constexpr float MaxReopenSuppressionSeconds = 0.25f;
 
 	/**
 	 *  Legibility is law here, not decoration — the console renders over live
@@ -492,8 +510,81 @@ void USiegeAssistantConsoleWidget::OpenConsole()
 	{
 		// Already open: re-assert focus rather than no-op, so a second press of
 		// the open key recovers focus if something else took it.
+		// ⚠️ The suppression guard below deliberately sits AFTER this: if the
+		// console is already open there is no open to suppress, and a live stamp
+		// cannot exist here anyway (an open consumes it).
 		FocusInputBox();
 		return;
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// RE-OPEN SUPPRESSION — CONVENTIONS AS-§6 RULING A-2, THE ORDERING CLAUSE
+	// ─────────────────────────────────────────────────────────────────────────
+	// ⚠️ THE HAZARD THIS COVERS IS UNMEASURED, WHICH IS WHY IT IS BUILT TO BE
+	// CORRECT IN BOTH WORLDS RATHER THAN TO BET ON ONE.
+	//
+	// Enter now has three jobs: OPEN the console (IA_AssistantConsole, bound in
+	// ASiegePlayerController), SUBMIT a typed line, and CLOSE an empty box
+	// (route 4, in HandleTextCommitted).
+	//
+	//  WORLD A — Slate consumes the key while the box holds keyboard focus (the
+	//    standing reasoning, and what Jonathan's own "I cannot close it" report
+	//    corroborates: the controller toggle at OnAssistantConsolePressed is
+	//    already CLOSE-FIRST and UN-GATED, so if Enhanced Input were receiving
+	//    Enter at all, the console would ALREADY have been closing on him).
+	//    Enhanced Input never sees the press, nothing re-opens, and this guard
+	//    never fires. ⚠️ CORROBORATION, NOT A MEASUREMENT.
+	//
+	//  WORLD B — Enhanced Input receives the same press too. Route 4 closes and
+	//    broadcasts, the controller clears the posture, and OnAssistantConsole-
+	//    Pressed then finds the console CLOSED and takes its OPEN branch — the
+	//    SAME physical press closing and immediately re-opening, which reads to
+	//    the player as "the close key does nothing". This guard is what makes
+	//    that press a clean close instead.
+	//
+	// ✅ REFUSING HERE IS SAFE AND NEEDS NO CONTROLLER EDIT, AND I VERIFIED THAT
+	// AT THE ARTIFACT RATHER THAN ASSERTING IT. ASiegePlayerController::
+	// OnAssistantConsolePressed re-reads the widget after calling OpenConsole()
+	// and rolls the posture back when the widget refused, quoted verbatim from
+	// SiegePlayerController.cpp (symbol OnAssistantConsolePressed, at :4365):
+	//
+	//     if (!Console->IsConsoleOpen())
+	//     {
+	//         SetAssistantConsoleOpen(false);
+	//
+	// ⇒ A suppressed re-open cannot strand the cursor in GameAndUI. That rollback
+	// is the property this guard depends on; if it is ever removed, this guard
+	// becomes a cursor soft-lock and the two must be changed together.
+	//
+	// ⛔ THE WINDOW CANNOT STICK, AND IT IS BOUNDED TWO INDEPENDENT WAYS:
+	//   (i)  TIME — a monotonic real-time clock that cannot be paused or dilated
+	//        (see LastRoute4CloseRealTimeSeconds' comment for why not the world's).
+	//   (ii) ONE SHOT — the stamp is CONSUMED by the first open attempt after the
+	//        close, whatever the verdict. At most ONE open can ever be suppressed
+	//        per close, so even a clock that misbehaved could not produce a
+	//        console that refuses to open twice.
+	// Either bound alone ends the window; both must hold to refuse.
+	if (LastRoute4CloseRealTimeSeconds >= 0.0)
+	{
+		const double ElapsedSinceClose = FPlatformTime::Seconds() - LastRoute4CloseRealTimeSeconds;
+		const double SuppressionWindow = static_cast<double>(
+			FMath::Clamp(ReopenSuppressionSeconds, 0.0f, SiegeAssistantConsole::MaxReopenSuppressionSeconds));
+
+		// ⛔ DISARM FIRST, DECIDE SECOND. Consuming the stamp before the branch is
+		// what makes bound (ii) structural instead of a promise — every early
+		// return below this line leaves the window closed.
+		LastRoute4CloseRealTimeSeconds = -1.0;
+
+		if (ElapsedSinceClose < SuppressionWindow)
+		{
+			// ⚠️ ONE LINE, AND ITS PRESENCE IS THE MEASUREMENT NOBODY HAS TAKEN:
+			// this can only be reached in WORLD B. If this line never appears in a
+			// log, Enter is not reaching Enhanced Input while the box has focus.
+			UE_LOG(LogSiegeAssistant, Log,
+				TEXT("[AssistantConsole] Re-open suppressed %.0f ms after an empty-Enter close (AS-§6 A-2 route 4). The same keypress reached BOTH Slate and Enhanced Input; the console stays closed, as the player asked. No key, card or command is affected."),
+				ElapsedSinceClose * 1000.0);
+			return;
+		}
 	}
 
 	bConsoleOpen = true;
@@ -655,6 +746,62 @@ void USiegeAssistantConsoleWidget::HandleTextCommitted(const FText& CommittedTex
 		return;
 	}
 
+	// ─────────────────────────────────────────────────────────────────────────
+	// CLOSE ROUTE 4 — ENTER ON AN EMPTY BOX CLOSES THE CONSOLE
+	// CONVENTIONS AS-§6 RULING A-2. Jonathan's directive, 2026-08-03: "if you
+	// press enter without anything typed in the box then it will close".
+	// ─────────────────────────────────────────────────────────────────────────
+	// ⛔ IT LIVES HERE AND NOT IN SubmitPressed, AND THE DIFFERENCE IS NOT STYLE.
+	// The filter above is what makes this branch mean "the player pressed Enter"
+	// — OnUserMovedFocus and OnCleared arrive at the same delegate and are
+	// already excluded. SubmitPressed is BlueprintCallable and reachable from
+	// callers that are not the key, and ITS empty-string branch is a SEPARATE,
+	// RATIFIED protection (no model call on a blank prompt; queue depth is 1).
+	// Routing the close through it would make "some caller passed an empty
+	// string" mean "close the window", which nobody asked for.
+	//
+	// ⛔ NOT GATED ON bConsoleEnabled, DELIBERATELY. A close that can be refused
+	// is a close that can strand the cursor — the same reason RULING A-2 pins the
+	// controller toggle's close half un-gated.
+	FString CommittedTrimmed = CommittedText.ToString();
+	CommittedTrimmed.TrimStartAndEndInline();
+
+	if (CommittedTrimmed.IsEmpty())
+	{
+		if (!bConsoleOpen)
+		{
+			// Nothing to close. Reachable only if something closed the console
+			// between the keypress and this callback — the WORLD B ordering where
+			// Enhanced Input's toggle ran FIRST and already closed it. Not an
+			// error, and deliberately NOT stamped: no re-open is racing this
+			// press, so arming the window would only suppress a later, wanted one.
+			return;
+		}
+
+		// ⛔ ARM BEFORE CLOSING, NOT AFTER. CloseConsole() ends in
+		// OnConsoleOpenChanged.Broadcast(false); a consumer that re-opened
+		// synchronously from inside that broadcast would slip past a window armed
+		// afterwards. Costs nothing and removes the re-entrant case entirely.
+		LastRoute4CloseRealTimeSeconds = FPlatformTime::Seconds();
+
+		UE_LOG(LogSiegeAssistant, Log,
+			TEXT("[AssistantConsole] Enter on an empty box — closing the console (AS-§6 A-2 route 4). Nothing was submitted, and nothing was cancelled: a close is not a cancel."));
+
+		// ⛔ CloseConsole() IS REUSED VERBATIM AND NO NEW BROADCAST IS ADDED. It
+		// already handles the confirm-prompt case on ratified terms: the prompt
+		// comes down, OnConfirmPromptChanged(false, …) fires so no BIE consumer
+		// renders a phantom, NO cancellation is broadcast, and the FSM still holds
+		// the order and decides for itself on OnConsoleOpenChanged(false).
+		// Empty-Enter closes even with a prompt up — that is the point of the
+		// feature, and the FSM semantics are not this widget's to change.
+		CloseConsole();
+		return;
+	}
+
+	// ⛔ THE NON-EMPTY PATH IS BYTE-FOR-BYTE WHAT IT WAS. The trimmed copy above
+	// exists ONLY to answer "is the box empty"; the RAW text is still what goes to
+	// SubmitPressed, which does its own trimming exactly as before. Submit did not
+	// become closable and close did not become a submit.
 	SubmitPressed(CommittedText.ToString());
 }
 

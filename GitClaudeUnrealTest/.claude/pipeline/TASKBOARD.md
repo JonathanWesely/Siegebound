@@ -5325,6 +5325,16 @@ Concretely, for this batch:
     - ⚖️ **AND MY INSTRUCTION WAS THE WEAKER FORM — CORRECTED IN LAW, NOT JUST HERE: I authorised TWO DIRECTORIES; build-master staged SIX EXPLICIT FILE PATHS**, on the ground that ⛔ ***a directory pathspec is precisely what would have swept in `qa/TASK-480.md` had it appeared between the status read and the `add`*** — **and TASK-480 was writing into `qa/` at that moment.** ⇒ ⛔ **A DIRECTORY PATHSPEC IS A BOUNDED `add -A`: safe against OTHER directories, defenceless against ITS OWN directory's concurrent writes.** **Full law: GIT HAZARD LAWS (d), added 2026-08-03.** ✅ **It also VERIFIED `qa/TASK-480.md` did not yet exist rather than assuming the race had not fired, and SECRET-SCANNED six documents it did not author before staging.**
     - ⚖️ **THE GENERAL RULE, SO THIS IS NOT RE-ASKED EVERY WAVE: A BOARD STATUS AND THE ARTIFACT IT CITES BELONG IN GIT TOGETHER, OR THE STATUS IS AN UNSUPPORTED ASSERTION.** ⛔ **The pipeline's own hard gate is *"nothing is committed without a PASS QA report"* — a board that records verdicts whose reports are untracked has satisfied the letter of that gate while destroying its audit trail.**
 
+17. ⚖️ **THE STAGE-A COMMIT HOLD IS RATIFIED — TASK-481 IS `PARTIAL`, AND THE SOURCE STAYS UNCOMMITTED UNTIL §16's NUMBER EXISTS (ruled 2026-08-03).**
+    - ✅ **THE COMPILE PASSED AND IS NOT IN DOUBT:** `Result: Succeeded`, **0 errors, 0 warnings**, all five changed TUs in the action list, both DLLs relinked, 15.53 s. ⛔ **THE MEASUREMENT DID NOT RUN** — MCP unreachable, no editor, and that session had **no Unreal MCP tool at all.**
+    - ⛔ **§16's INSTRUMENT-UNCHANGED PROOF REQUIRES THE DEV-SPLIT NUMBER *"BEFORE ITS EDIT IS ACCEPTED"*. WITH NO SCORE, THE CRITERION IS UNMET — NOT DEFERRED, UNMET.** ⇒ ⚖️ **Committing would record, in an APPEND-ONLY history, that Stage A cleared a gate it never cleared.** ⛔ **Not committing is trivially reversible next session; the converse is not.** ✅ **Everything is verified and staged-ready, so this is ONE COMMAND the moment the number exists.**
+    - ✅ **AND THE HEADLESS SUBSTITUTE WAS REFUSED ON *MECHANISM*, NOT ON CAUTION — which is what makes the refusal binding rather than timid: `SpikeEval` is ASYNCHRONOUS** (`FThreadSafeBool GJobInFlight` + `StartJob`), so an `-ExecCmds` startup command **fires and the process exits before the job completes**, yielding a partial or absent score; and step (4) needs **live PIE with the FPS check** regardless. ⚖️ **In its own words: *a wrong 20/25 is precisely the silent instrument-move §16 says is worse than a deletion, because it is the single most reassuring result available and reassurance is not audited.*** ⛔ **That is `FT-§4`'s STOP-1 false-negative class recognised in a second location, by a different agent, unprompted.**
+    - ⚠️ **GPU SERIALIZATION IS A HARD CONSTRAINT, NOT A COURTESY: the measurement follows Jonathan's standalone run, never alongside it.** **Two models on one 8 GB card is a failure he has already hit twice**, and `SC-§16`'s measured cost — *two model-load paths WON'T FIT, so smoke runs are ONE-LANE-PER-SESSION* — is the same fact. ⛔ **TASK-503 stays HELD until this settles**, since a pipeline-file writer must not race the record commit that follows the measurement.
+    - ✅ **ALL FOUR GIT ITEMS DISCHARGED, EACH WITH A POSITIVE CONTROL** — 479's **354/0** exact (control: the same checker returns **62** deletions on the spike) · **`UE_LOG` 87 → 120 with ORPHANED = 0**, ledger closing with nothing left over · **`t0` byte-identical HEAD vs now** plus 7 further frozen symbols · and **a fifth item nobody listed** (help strings: 3 of 6 changed, all pure appends — 477's *"2 of 6"* was scoped to 477, so the two counts never disagreed).
+    - ✅ **THE `t0` FINGERPRINT GAP IS CLOSED AND THE THREE LEDGERS RECONCILE — QA's *"mutually incomparable"* FINDING IS RETIRED AS A ***METHOD*** DIFFERENCE, NOT A DISAGREEMENT. NEITHER HANDOFF WAS WRONG.** ⚠️ **They differ only by a trailing-newline convention**; the block had **moved +57 lines**, which is why line-range ledgers were incomparable in the first place. ⛔ **THE FINGERPRINT IS ANCHOR-BASED, NEVER LINE-BASED, AND BOTH COMPONENTS ARE REQUIRED: a fixture-only hash is PROVABLY BLIND — mutating `footman 8→9` moves the seal while leaving the fixture hash untouched.** ⚖️ **A disagreement that dissolves into a convention difference is worth recording as loudly as one that does not, or the next reader re-opens it.**
+    - 📌 **GIT HAZARD LAW (d) FIRED LIVE IN THIS SAME TASK: `qa/TASK-502.md` landed at 22:41 MID-TASK, and a `qa/` DIRECTORY pathspec would have swept it in.** Staged by explicit file path; inverse filter empty. ⚖️ **A law written two hours earlier caught a real race the same evening — which is the strongest argument available that these rulings are load-bearing rather than ceremonial.**
+    - **Commits: `23d380e`** (evidence + pipeline files, 640 insertions) **· `0b7dd2f`** (handoff + board). ⛔ **`main` 29 ahead, NOT pushed.**
+
 ### ⚠️ FIVE THINGS I FOUND WHILE DECOMPOSING — RECORDED BECAUSE THEY CHANGE THE ORDER, NOT JUST THE PROSE
 
 - ⛔ **(i) A DEPENDENCY INVERSION IN THE PLAN'S OWN SEQUENCE, AND IT IS LOAD-BEARING: STAGE B's **M2** RUNS ON `assistant_eval_dev2.csv`, WHICH STAGE **D** CREATES.** `Docs/Data/assistant_eval_dev2.csv` **does not exist** (verified: `Docs/Data/` holds `cards.csv`, `assistant_eval_dev.csv`, `assistant_eval_holdout.csv`, `assistant_eval_holdout2.csv`). ⇒ **Jonathan's raw voice file and the non-tuner split are PULLED FORWARD ahead of Stage B** (TASK-482 → TASK-484), and **Stage B is split into B1 (M0/M1/M3 — needs no dev2) and B2 (M2 — needs it).** ✅ **STOP 1 and STOP 2 are evaluated in B1 and are NOT delayed by the voice file** — the stops stay first.
@@ -5482,7 +5492,12 @@ Concretely, for this batch:
     **(2) ⭐ THE ACCEPTANCE CRITERION THAT MATTERS MOST — RE-RUN THE EXISTING DEV-SPLIT MEASUREMENT WITH DEFAULT FLAGS AND SHOW THE NUMBER IS UNCHANGED.** `SpikeEval dev=Docs/Data/assistant_eval_dev.csv tier=full gpu=0` ⇒ ⛔ **expect 20/25 and the SAME failing-row identities (`DEV-01` · `DEV-04` · `DEV-07` · `DEV-16` · `DEV-20`).** ⚠️ **A different score here means the instrument moved, and every number this project holds becomes a claim about a tool that no longer exists.** ⇒ **STOP and report; do not proceed.**
     **(3) EXERCISE EVERY NEW FLAG ONCE, AND PASTE THE EVIDENCE:** `repeats=5` prints per-row `stable=`/`flips=` **and** split `min/median/max` · `SpikePrompt out=<path>` produces a file whose **Zone A is 5116 chars** · `ids=1` prints a token-id sequence · `chat=0` and `chat=1` produce **different** prompt bytes (⛔ **if they are identical, D1 does not exist and that is a major finding — report it, do not assume a bug**).
     **(4) `DumpAssistantPrompt` — RUN IT IN PIE ON `L_Arena` WITH UNITS ON THE FIELD**, never an empty map. ⚠️ **Verify measured FPS ≥ 58 live first** — `bThrottleCPUWhenNotForeground=False` is load-bearing and a background PIE idles at exactly 3.0 FPS (§12e). 🔒 **`L_Arena` is NEVER saved — SHA256 before AND after, hash never mtime.**
-    **(5) COMMIT** the Stage-A code on `main`. ⛔ **NO push** (`main` is **21 ahead**). ⛔ **Verify `.gitattributes`/LFS posture before adding anything binary; no `.gguf` and no `Models/` path may enter history.**
+    **(5) COMMIT** the Stage-A code on `main`. ⛔ **NO push** (`main` is **29 ahead**).
+    ⚠️ **AMENDED 2026-08-03 — THE CONSOLE-CLOSE FIX (TASK-505) RIDES THIS COMMIT.** Jonathan's mid-playtest directive was folded into the same
+    pending compile+commit on a stated mechanism: `SiegeAssistantConsoleWidget.{h,cpp}` is a **different TU with zero call sites from `SpikeEval`**,
+    so it **cannot move the dev-split score** step (2) exists to prove unchanged. ⛔ **TASK-507 already compiled it — COMPILE ONLY, nothing was
+    committed and this hold was left intact.** ⇒ **When you resume: take the measurement first, then commit Stage A AND the console fix together,
+    listing both by explicit file path (GIT HAZARD LAWS (d) — never a directory pathspec).** ⛔ **Verify `.gitattributes`/LFS posture before adding anything binary; no `.gguf` and no `Models/` path may enter history.**
     Handoff `handoffs/TASK-481-buildmaster.md`. Post in 🔧 Build & Git.
 - names: >
     Build: `"C:/Program Files/Epic Games/UE_5.8/Engine/Build/BatchFiles/Build.bat" GitClaudeUnrealTestEditor Win64 Development -project="…/GitClaudeUnrealTest.uproject" -waitmutex` ·
@@ -5973,6 +5988,168 @@ Concretely, for this batch:
 ⛔ **TASK-476 → 477 → 478 are STRICTLY SERIAL** (one file). ⛔ **TASK-481 and TASK-492 are the batch's only compile gates and each requires a QUIET MODULE ACROSS BOTH BATCHES.**
 ⚠️ **THE CRITICAL PATH TO THE FIRST REAL DECISION IS SHORT ON PURPOSE: 476 → 477 → 478 → 480 → 481 → 485 → 486.** ⭐ **It can legitimately end there, and that ending is a success.**
 
+## CONSOLE-CLOSE — decomposed 2026-08-03, MID-PLAYTEST, on Jonathan's live directive — TASK-505..508
+
+**Jonathan's directive, verbatim:** *"we need a way to be able to close the AI chat window in the game. Lets make it to where if you press "enter" without anything typed in the box then it will close. After that I will resume testing"*.
+
+**Law was written FIRST (house rule):** CONVENTIONS "In-match LLM command assistant" **`AS-§6` RULING A-2 — THE CONSOLE'S CLOSE ROUTES** (the four routes enumerated, the close-is-not-a-cancel rule restated, the ordering hazard named, and Escape left OPEN as Jonathan's).
+
+### ⚖️ THE FOUR MANAGER RULINGS FOR THIS BATCH
+
+**RULING 1 — THE CHANGE LANDS IN `HandleTextCommitted`, NOT IN `SubmitPressed`. This is the whole design decision and it is one symbol wide.**
+`HandleTextCommitted` **already** filters to `ETextCommit::OnEnter` only — it exists because `OnUserMovedFocus` and `OnCleared` arrive at the same delegate and *"treating either as an order would let a click elsewhere submit a half-typed sentence."* ⇒ **That filter is exactly Jonathan's trigger: an `Enter` keypress, and nothing else.** ⛔ **`SubmitPressed` is `BlueprintCallable`, reachable from routes that are not the key, and its empty-string branch is a DIFFERENT, ratified protection (no model call on a blank prompt — queue depth is 1). Moving the close there would make "some other caller passed an empty string" mean "close the window", which nobody asked for.**
+
+**RULING 2 — ⚠️ THE ORDERING QUESTION IS UNMEASURED, SO THE FIX IS BUILT TO BE CORRECT IN *BOTH* WORLDS RATHER THAN TO BET ON ONE.**
+⛔ `Enter` would now do **three jobs**: open the console (TASK-445's `IA_AssistantConsole`) · submit a typed line · close it when empty. **World A — Slate consumes the key while the input box has focus** (TASK-445's reasoning, ⚠️ *"reasoning, not measurement"*): Enhanced Input never sees it, the controller toggle never fires while open, the three jobs never collide, and route 4 is the ONLY thing that can close the box. **World B — Enhanced Input sees it too:** an empty-box press would `CloseConsole()` → broadcast → the controller clears the posture → `OnAssistantConsolePressed` then finds the console CLOSED and takes the **open** branch ⇒ **close-then-reopen, which reads to the player as "the close key does nothing."**
+⭐ **AND JONATHAN'S OWN REPORT IS EVIDENCE FOR WORLD A, WHICH IS WHY THIS FIX IS THE RIGHT ONE:** the controller's toggle already closes the console (`SiegePlayerController.cpp:4270`, close-first and un-gated). **If Enhanced Input were receiving `Enter` while the box had focus, the console would ALREADY close on `Enter` — and his complaint is that it does not.** ⚖️ **That is corroboration, not a measurement, and it is recorded as corroboration.**
+⇒ **TASK-505 ships a re-open suppression window and states which world it relied on.** ✅ **The suppression is SAFE ALREADY: `OnAssistantConsolePressed` re-reads `IsConsoleOpen()` after `OpenConsole()` and releases the posture on a refusal (`:4365`) — so a refused re-open cannot strand the cursor in `GameAndUI`.**
+
+**RULING 3 — ⛔ THE FIX IS COMPILED NOW AND COMMITTED LATER, WITH TASK-481. THE COMPILE AND THE COMMIT ARE SPLIT ON PURPOSE.**
+TASK-481 is **PARTIAL**: Stage A compiled clean and its **source is deliberately UNCOMMITTED** because `FT-§16`'s dev-split proof could not run (no editor, no MCP). ⚖️ **I rule the fold IN for the compile and the commit, and OUT for the measurement:**
+- ✅ **FOLD THE SOURCE.** The console widget is **not on the dev-split's path** — a different TU, zero call sites from `SpikeEval`, no shared symbol. Adding it cannot move a score that grades JSON emitted by the spike. **One compile, one commit, one gate — Jonathan does not pay for a second cycle.**
+- ⛔ **DO NOT FOLD THE MEASUREMENT INTO HIS PLAYTEST.** The §16 proof needs an exclusive editor + PIE + **the whole GPU** (`SC-§16`: two model-load paths WON'T FIT ⇒ one lane per session), and **Jonathan is at the keyboard and wants to play.** ⇒ **TASK-507 is COMPILE-ONLY: no MCP, no PIE, no `SpikeEval`, no Git.** The measurement and the single combined commit stay exactly where they are, in TASK-481, and run when he hands the machine over.
+- ⚠️ **THE COST OF THIS RULING, STATED: Stage-A source AND the console fix both sit UNCOMMITTED through his playtest.** That is already the state Stage A is in; the fix adds one more uncommitted file to the same pending commit. **`main` stays 29 ahead and nothing is pushed.**
+- ⛔ **IF TASK-505 FAILS TO COMPILE, THE CONSOLE FIX IS THE THING THAT STOPS — NEVER STAGE A.** Build-master reports the errors and hands back to the programmer; **it does not `git checkout`/revert an uncommitted file** (that would destroy work that has no commit to fall back to).
+
+**RULING 4 — 🧑 THE ESCAPE QUESTION GOES TO JONATHAN AS A QUESTION, AND IT DOES NOT BLOCK HIS FIX.**
+⚠️ **This is the SECOND time the same underlying need has surfaced** — flagged item (t) recorded that **Escape does not close the console** (TASK-444 left it unabsorbed on purpose so the shipped cancel routes keep firing), and now he has hit the missing close in play. ⇒ **The conventional answer is Escape, and it needs no key overloading at all** — but **§2 says the assistant may never degrade a shipped key**, and Escape already means *"cancel"* in placement, targeting and group-pick. ⛔ **I am not deciding it.** It rides TASK-508 as a one-line question at the playtest he is already doing. **His answer gets written into `AS-§6 A-2`, not into a code comment.**
+
+---
+
+#### TASK-505 — [CC-1] `Enter` on an EMPTY input box closes the console (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: **qa-passed / ready-for-integration** (2026-08-03 — `qa/TASK-506.md`: **PASS, 0 blockers**, 4 warns, 3 nits. Flip by the ORCHESTRATOR. ✅ **The both-worlds design VERIFIED per world at the symbol**, and **the no-flicker proof is STRONGER than 505 claimed** — 505 missed the half that could actually flicker (`SetAssistantConsoleOpen(true)` DOES show the cursor), but **the rollback is in the SAME synchronous call, so no frame is presented between them.** ✅ Window bounded three ways with **disarm BEFORE the branch — one-shot is structural, not a promise**; sentinel cannot collide with a real stamp; **stamp is a `double`** ✅. ✅ **Both engine facts re-derived, not accepted:** `CoreMinimal.h` read whole — eight `HAL/Platform*.h` includes and **no `PlatformTime.h`** ⇒ the explicit include is load-bearing; `GetSecondsTimeOffset()` = `16777216.0`, purpose stated in-header. ✅ Shadowing sweep re-run with a positive control, 0 hits across `Engine/Source/Runtime`. ✅ **The declared-but-unfixed World-B submit-then-close: refusal RULED CORRECT** — gating a close is forbidden by `AS-§6` A-2 and a controller edit is out of scope; ⛔ **the symptom is PRE-EXISTING (`SiegePlayerController.cpp:4270-4283`, untouched) and MUST NOT be read as this task's regression.**)
+- handoff: `handoffs/TASK-505-programmer.md` — ⚠️ **BUILT FOR BOTH ORDERINGS, RELIED ON NEITHER: the both-worlds trace is §3 and the
+  pre-existing World-B *submit* defect I found and deliberately did NOT fix is §3a (it is TASK-508 check (a), NOT a regression from this fix).**
+  ⭐ **The suppression log line ships as the MEASUREMENT: it is reachable ONLY in World B, so if it never appears, `Enter` is not reaching
+  Enhanced Input while the box has focus.** ✅ Controller rollback **QUOTED** from `SiegePlayerController.cpp:4365`, verified by symbol.
+  ⛔ **Two engine facts checked, not remembered, and BOTH changed the code:** `CoreMinimal.h` does **not** include `HAL/PlatformTime.h`
+  (zero grep hits — would have been a compile error), and `FWindowsPlatformTime::GetSecondsTimeOffset()` returns **2^24**, whose stated purpose
+  is to break `float` timestamps ⇒ the stamp is a **`double`** and the header says why. Window is bounded **three** ways (monotonic clock ·
+  one-shot consume · hard code clamp 0.25 s). ⛔ **No compile, no Git, no editor/MCP/PIE. One file pair. All five TASK-444 fences re-checked at
+  the file; `Escape` STILL UNABSORBED.**
+- blocked-by: **none — DISPATCHABLE NOW.** ⚠️ **Sequential re-ownership of a `qa-passed` + COMMITTED file (`cd5f4ed`), never a concurrent edit — TASK-444 is finished.**
+- parallel-safe: yes (nothing else is in flight) — **EXCLUSIVE owner of `SiegeAssistantConsoleWidget.{h,cpp}`**
+- spec: >
+    ⛔ **READ CONVENTIONS `AS-§6` RULING A-2 FIRST — it enumerates the four close routes and it is the contract you are adding route 4 to.**
+    **(1) THE CHANGE, AND IT IS DELIBERATELY ONE SYMBOL WIDE.** In **`HandleTextCommitted`** (already `ETextCommit::OnEnter`-only), trim the
+    committed text; **if it is empty, `CloseConsole()` and return** — do not call `SubmitPressed`. Non-empty text keeps taking the existing path
+    byte-for-byte.
+    ⛔ **DO NOT PUT THIS IN `SubmitPressed`** (ruling 1). Its empty-string branch — clear the box, re-focus, no broadcast, no model call — is a
+    **separate ratified protection and MUST SURVIVE UNCHANGED**; it guards a `BlueprintCallable` entry point that is not the key.
+    **(2) ⛔ CARRY A RE-OPEN SUPPRESSION WINDOW, AND SAY WHICH ORDERING YOU RELIED ON** (ruling 2). ⚠️ **If Enhanced Input also receives the same
+    `Enter`, your close broadcasts → the controller clears the posture → the SAME press then takes the OPEN branch and the console re-opens.**
+    Record the close time on the widget and have **`OpenConsole()` refuse a re-open inside a short window** (~0.05–0.15 s — a human cannot
+    re-press that fast; keyboard auto-repeat is the only thing that can, and suppressing that is correct too). ✅ **This is SAFE and you do not
+    need a controller edit to make it so: `OnAssistantConsolePressed` re-reads `IsConsoleOpen()` after `OpenConsole()` and releases the cursor
+    posture when the widget refused** — verify that at the artifact before you rely on it, and **quote the line you verified.**
+    ⛔ **A refusal must never be silent-and-sticky:** log ONE line, and make certain the window cannot outlive the frame it was meant to cover.
+    **(3) ⛔ A CLOSE IS NOT A CANCEL — REUSE `CloseConsole()` VERBATIM AND BROADCAST NOTHING NEW.** It already handles the confirm-prompt case on
+    ratified terms (prompt comes down, `OnConfirmPromptChanged(false, …)` fires, **no cancellation is broadcast**, the FSM still holds the order and
+    decides for itself on `OnConsoleOpenChanged(false)`). **Empty-`Enter` closes even with a prompt up** — that is the point of the feature; the FSM
+    semantics are not yours to change.
+    **(4) ⛔ THE FIVE TASK-444 RATIFICATIONS ARE FENCES, NOT SUGGESTIONS — DO NOT DISTURB ANY OF THEM:** the code-authored tree under `AS-§6`
+    ruling A (tree built **before** `Super::RebuildWidget()`) · children wired in **`NativeConstruct`, never `NativeOnInitialized`** ·
+    **`ToggleConsole()` stays deliberately UNCALLED** (calling it shows the widget before the controller can gate it — the forbidden ordering) ·
+    **Slate focus only, never `SetInputMode`** · ⛔ **`Escape` STAYS UNABSORBED** — it is Jonathan's ruling at TASK-508 and **you may not take it.**
+    **(5) ⛔ ONE FILE PAIR. No controller edit, no component edit, no `Content/`, no Git, no compile, no editor/MCP/PIE.** ⚠️ **`SiegePlayerController.cpp`
+    is READ-ONLY to you** — you cite it, you never touch it.
+    **(6) ⚠️ VERIFICATION IS A HUMAN PIXEL/FEEL CHECK AND YOU CANNOT CLOSE IT** (`AS-§6` ruling A(e)). **Write the check for TASK-508 in three lines
+    or fewer — Jonathan is mid-playtest and will read it standing up.** ⛔ **Report nothing on-screen as verified.**
+    **M8 DECLARATION DUTY: state verbatim in the handoff — "adds no replicated property, no new replicated class, no new relevancy tier."**
+    Handoff `handoffs/TASK-505-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SiegeAssistantConsoleWidget.{h,cpp}` · `USiegeAssistantConsoleWidget::HandleTextCommitted` ·
+    `CloseConsole()` · `OpenConsole()` · `SubmitPressed()` (⛔ **unchanged**) · `ETextCommit::OnEnter`.
+    Read-only citations: `ASiegePlayerController::OnAssistantConsolePressed` · `IsConsoleOpen()` · `SetAssistantConsoleOpen()`.
+    Law: CONVENTIONS "In-match LLM command assistant" `AS-§2` (strictly additive) · `AS-§6` ruling A + **ruling A-2** (the close routes).
+
+#### TASK-506 — [CC-QA] QA gate on the empty-`Enter` close (qa-reviewer)
+- assignee: qa-reviewer
+- status: **qa-passed** (2026-08-03 — report `qa/TASK-506.md`. **PASS, 0 blockers**, 4 WARN, 3 NIT. Flip by the ORCHESTRATOR. ⛔ **THE LIMIT: nothing is compiled and nothing has been seen on screen — this PASS means correct AS SOURCE.** ⚠️ **WARN-1 CHANGES THE TEST PROTOCOL: a HELD `Enter` (auto-repeat) can fire the suppression log in World A** — after the close, focus returns to the viewport and a repeat key-down can trip the `ETriggerEvent::Started` binding. ⇒ **Absence still proves World A; PRESENCE proves World B ONLY FOR A TAPPED `Enter`. TASK-508 must say TAP, DON'T HOLD.** ⚠️ **WARN-2: `ReopenSuppressionSeconds` CANNOT be tuned without a compile** — `EditDefaultsOnly`, no Blueprint subclass, not `config`; the default 0.12 is fine but the handoff's tunability claim is wrong. ⚠️ **WARN-3:** one duplicated transcript line per empty-Enter close in World B — pre-existing, cosmetic, and **a useful second World-B tell**. ⚠️ **WARN-4 — JONATHAN SHOULD KNOW: the FSM treats a close as a DISCARD and Accept is mouse-only, so with a confirm prompt up, `Enter` now means "discard and close".** `AS-§6` A-2 ruled this explicitly, so QA did not overturn it — routed to TASK-508 as a question.)
+- blocked-by: **TASK-505**
+- parallel-safe: yes (read-only)
+- spec: >
+    ⚠️ **THIS IS A SMALL DIFF AND JONATHAN IS WAITING — REVIEW IT FAST AND NARROWLY. The value here is the seam, not a re-audit of TASK-444.**
+    **(1) THE TRIGGER IS IN THE RIGHT PLACE.** The close fires from **`HandleTextCommitted` under `ETextCommit::OnEnter` only**, and
+    ⛔ **`SubmitPressed`'s empty-string branch is BYTE-UNCHANGED** (clear · re-focus · no broadcast · no model call). **A close routed through
+    `SubmitPressed` is a FAIL** — it would fire for non-key callers of a `BlueprintCallable` (ruling 1).
+    **(2) ⛔ THE NON-EMPTY PATH IS UNTOUCHED.** A typed sentence still reaches `SubmitPressed` → `OnConsoleSubmitted.Broadcast` with the same
+    trimming, the same transcript echo and the same clear-and-refocus. **Submit must not have become closable.**
+    **(3) THE RE-OPEN SUPPRESSION EXISTS, IS BOUNDED, AND CANNOT STICK.** ⚠️ **A window that can outlive its press is a console that refuses to
+    open** — check the clock source, the comparison direction, and what happens if the widget is closed and re-opened much later. ⛔ **And confirm
+    the programmer QUOTED the controller rollback (`IsConsoleOpen()` re-read after `OpenConsole()`) rather than asserting it** — a suppression
+    without that rollback is a cursor soft-lock, which is the one defect class this seam has always been able to produce.
+    **(4) ⛔ A CLOSE IS STILL NOT A CANCEL.** No new broadcast on the close path; `CloseConsole()` reused verbatim; the confirm-prompt semantics
+    (FSM still holds the order) are unchanged.
+    **(5) ⛔ THE FIVE FENCES HELD:** tree built before `Super::RebuildWidget()` · `NativeConstruct` wiring · **`ToggleConsole()` still uncalled** ·
+    no `SetInputMode` · **`Escape` STILL UNABSORBED** (⚠️ **absorbing it is a scope breach even if you agree with it — it is Jonathan's open ruling**).
+    **(6) ⛔ ONE FILE PAIR TOUCHED.** `SiegePlayerController.{h,cpp}`, the component and `Content/` are all unchanged. ⚠️ **Check the artifact, not
+    the handoff** — the relayed-diagnosis law, which this exact seam has already broken once (TASK-444's wrong claim about the posture term).
+    Report `qa/TASK-506.md`. Post in ⚙️ Dev & QA.
+- names: >
+    Under review: `SiegeAssistantConsoleWidget.{h,cpp}` (diff only). Baselines: `qa/TASK-446.md` · `handoffs/TASK-444-programmer.md`.
+    Law: CONVENTIONS `AS-§2` · `AS-§6` ruling A + **ruling A-2** · the RELAYED-DIAGNOSIS LAW.
+
+#### TASK-507 — [CC-BUILD] ⛔ **COMPILE ONLY — NO GIT, NO MCP, NO MEASUREMENT** (build-master)
+- assignee: build-master
+- status: **done** — 2026-08-03 23:46. `Result: Succeeded`, 0 errors / 0 warnings, 13.44 s.
+  `UnrealEditor-GitClaudeUnrealTest.dll` relinked (3,804,160 → 3,810,816 B, 23:46:16).
+  ⛔ **NOTHING COMMITTED — Stage-A hold intact, HEAD still `0b7dd2f`, `main` still 29 ahead, tree dirt unchanged.**
+  🔒 `L_Arena` SHA256 identical before AND after (`B3DBC5D9…F8268`, 535,522 B). Handoff `handoffs/TASK-507-buildmaster.md`.
+- blocked-by: **TASK-506 (PASS)** · ⛔ **QUIET MODULE: no other game-module task in flight, from any board**
+- parallel-safe: no (the module's only compile)
+- spec: >
+    ⛔ **THE SCOPE OF THIS TASK IS ONE VERB: COMPILE. Jonathan is mid-playtest and this exists so he can resume with the fix in the binary**
+    (ruling 3).
+    **(1) ⚠️ THE EDITOR MUST BE CLOSED AND CLOSING IT IS JONATHAN'S CHOICE, NOT YOURS.** He is at the keyboard. ⛔ **Never force-kill, never drive
+    an unprompted close — ASK, and wait.** (Standing law; the unattended-gate exception does not apply while he is present.)
+    **(2) COMPILE.** ⛔ **Parse the log for `Result: Failed` — NEVER trust `$LASTEXITCODE`** (Build.bat returns 0 on a failed build under the Live
+    Coding mutex). ⛔ **A ~2 s failure is Smart App Control, NOT a code error — do not loop QA on it; tell Jonathan.**
+    **(3) ⛔ THE TREE ALREADY CARRIES UNCOMMITTED STAGE-A SOURCE (TASK-481) AND IT IS HELD ON PURPOSE.** ⛔ **You are compiling BOTH. That is
+    intended.** ⛔ **NO `git add`, NO `git commit`, NO `git reset`, NO `git checkout`, NO push — `main` is 29 ahead.** ⚠️ **If TASK-505's file fails
+    to compile, report the errors and hand back to the programmer; ⛔ DO NOT revert or stash an uncommitted file — it has no commit to fall back to,
+    and Stage A must not be disturbed.**
+    **(4) ⛔ DO NOT RUN `SpikeEval`, `SpikePrompt`, `DumpAssistantPrompt`, PIE, or ANY MCP call.** ⚠️ **The §16 dev-split proof needs the whole GPU
+    and an exclusive session, and Jonathan wants to play** — **it stays in TASK-481 and runs when he hands the machine over.** ⚖️ **Taking that
+    measurement now would race his playtest for the one 8 GB card, which is a failure this project has already hit twice.**
+    **(5) 🔒 `L_Arena` IS NEVER OPENED AND NEVER SAVED.** No editor work of any kind beyond the build.
+    **(6) REPORT, IN ONE SHORT PARAGRAPH:** the verdict line, error/warning counts, whether both DLLs relinked, and ⛔ **the plain statement that
+    NOTHING WAS COMMITTED and the Stage-A hold is intact.** Then tell Jonathan he can relaunch.
+    Handoff `handoffs/TASK-507-buildmaster.md`. Post in 🔧 Build & Git.
+- names: >
+    Build: `"C:/Program Files/Epic Games/UE_5.8/Engine/Build/BatchFiles/Build.bat" GitClaudeUnrealTestEditor Win64 Development -project="C:/GitProjects/GitHub/GitClaudeUnrealTesting/GitClaudeUnrealTest/GitClaudeUnrealTest.uproject" -waitmutex`.
+    Law: CONVENTIONS "⛔ THE QUIET-MODULE LAW" · "UE Build.bat exit code lies" · "Smart App Control blocks UE compile" · the never-save `L_Arena` law ·
+    "Editor close is Jonathan's choice" · `SC-§16` (one GPU lane per session).
+
+#### TASK-508 — [CC-H] 🧑 **JONATHAN** — the 60-second close check, and the two `Enter`/`Escape` rulings
+- assignee: **Jonathan (human — irreducible: pixels, feel, and two product decisions)**
+- status: backlog
+- blocked-by: **TASK-507**
+- parallel-safe: yes
+- spec: >
+    ⛔ **THE FIX (10 seconds):** open the console, type nothing, press **`Enter`** ⇒ **it closes**, the cursor goes back to the game, and every key
+    works again. **Then open it again and type a real order — it must still submit exactly as before.**
+    **⚠️ AND WHILE YOU ARE THERE, ONE PRESS SETTLES A QUESTION NO AGENT CAN ANSWER (it was already on your list):**
+    **(a) DOES `Enter` DOUBLE-FIRE?** Press `Enter` to **submit a typed order.** Does the console also **close or flicker**? ⛔ **If it does, say so —
+    the symptom would read as *"the assistant ate my order"*, not as an input bug, and it is the one thing that would send this fix back.**
+    ⭐ **Your own report is already evidence it does NOT: the open key is a toggle that closes when pressed while open, so if Enhanced Input were
+    receiving `Enter` at all, the console would have been closing on you already. One press confirms it.**
+    **(b) 🧑 YOUR RULING — DO YOU WANT `ESCAPE` TO CLOSE IT TOO?** ⚠️ **This is the second time this gap has surfaced** (flagged item (t)), and
+    **Escape is the conventional answer that overloads nothing.** ⛔ **The cost is real and is why nobody took it for you: Escape already means
+    *"cancel"* everywhere — placement, spell targeting, group-pick — and `AS-§2` forbids the assistant degrading a shipped key.**
+    **(a) leave it as-is** (close via `Enter`-on-empty, the open key, or the Cancel button — safest) · **(b) Escape closes ONLY while the console is
+    open and passes straight through otherwise** · **(c) your own answer.** ⚖️ **Whatever you say gets written into law (`AS-§6` ruling A-2), and
+    (b) is a small, boardable task — it does not need to happen now.**
+    **⛔ ONE THING THAT IS NOT DONE AND IS WAITING ON YOU LEAVING THE KEYBOARD:** TASK-481's §16 dev-split proof needs the **whole GPU** and an
+    exclusive editor session, so **the Stage-A source and this fix both stay UNCOMMITTED until you hand the machine over.** ⚠️ **Nothing is lost —
+    the code is on disk and compiled — but there is no commit to fall back to, so do not `git reset` anything.** **`main` is 29 ahead, unpushed.**
+- names: >
+    Evidence: `handoffs/TASK-505-programmer.md` (the 3-line check) · `qa/TASK-506.md` · `handoffs/TASK-507-buildmaster.md` (the compile verdict).
+    Law: CONVENTIONS `AS-§2` · `AS-§6` ruling A-2. Related open item: TASK-448 flagged item (t).
+
+---
+
 ## SETTINGS+CONFIRM — decomposed 2026-08-03 on Jonathan's un-gate ruling — TASK-436..448
 
 **Jonathan's directive, verbatim:** *"I'd shrug and re-order, but lets go ahead and add the confirm step, and make it a toggle in settings. We do not have a settings option so go ahead and add it to the main menu"*.
@@ -6051,7 +6228,7 @@ Concretely, for this batch:
 - **(q) `Siege.Llama.SpikePrompt` IS THE ONLY COMMAND THAT PRINTS `zoneA_tok`, AND TASK-423's SPEC ORDERS `SiegeLlamaSpike.cpp` DELETED.** Deleting it removes the **only instrument** that measures the §12c token ceiling **and one of the two lanes** of the owed `BuildZoneA` equality test (§12g / `TASK-434` §6 item 4). ⇒ **AMENDMENT, recorded on TASK-423: the two-lane equality test and any final token reading are taken BEFORE the deletion, in the same task, or the deletion is deferred and said so.** ⛔ **Do not delete a measuring instrument and then report a number from memory.**
 - **(r) IN-MATCH ACCESS TO SETTINGS IS OUT OF SCOPE.** Jonathan named the main menu and nothing else. Because the value lives on a `UGameInstanceSubsystem`, an in-match/pause entry later is **one widget task and zero C++ change.** Recorded so nobody builds a pause menu on spec.
 - **(s) `DEV-11` IS UNSTABLE ACROSS RUNS UNDER A GREEDY SAMPLER AND IS NOT DIAGNOSED** (CONVENTIONS §12h). Not a task here; it is the reason the **repeat law** now binds every future eval number. ⛔ **No task may spec a fix for it as though the cause were known.**
-- **(t) 🧑 ESCAPE DOES NOT CLOSE THE CONSOLE — JONATHAN'S CALL AT TASK-448.** TASK-444 left Escape **unabsorbed on purpose** so the shipped cancel routes keep firing, and **surfaced it instead of deciding silently** — the right move. The trade is a §2 one: absorbing Escape gives the expected close behaviour but takes a key that already means *"cancel"* everywhere else. **Recorded, not tasked; I write the ruling into law once he gives it.**
+- **(t) 🧑 ESCAPE DOES NOT CLOSE THE CONSOLE — JONATHAN'S CALL, ⚠️ NOW CARRIED BY TASK-508 (2026-08-03).** ⛔ **THE UNDERLYING NEED SURFACED A SECOND TIME, IN PLAY: Jonathan hit the missing close mid-playtest and directed `Enter`-on-an-empty-box (→ CONSOLE-CLOSE batch, TASK-505..508). That ships the close; it does NOT answer this.** ⚖️ **Escape remains the conventional answer that overloads no key, and it remains HIS ruling — asked as a question at TASK-508, written into `AS-§6` ruling A-2 when he answers.** Original entry: TASK-444 left Escape **unabsorbed on purpose** so the shipped cancel routes keep firing, and **surfaced it instead of deciding silently** — the right move. The trade is a §2 one: absorbing Escape gives the expected close behaviour but takes a key that already means *"cancel"* everywhere else. **Recorded, not tasked; I write the ruling into law once he gives it.**
 - **(u) ⚠️ `GitClaudeUnrealTest.Build.cs:30`'s `SlateCore` COMMENT NAMES A DELETED FILE — RE-POINT THE COMMENT, NEVER REMOVE THE DEPENDENCY** (CONVENTIONS "Settings screen…" §12). `SiegeAssistantInputProbe.cpp` is gone, but **`USiegeAssistantConsoleWidget` is now the module's only `ETextCommit`-in-a-`UFUNCTION` and only `FSlateApplication` user**, so the dependency is still load-bearing. ⛔ **Removing it reproduces the exact 16-unresolved-externals link failure the comment exists to prevent — it compiles fine and fails at LINK.** Fold the one-sentence comment fix into whichever task next touches that file; **it is not worth a task of its own and it must not be lost.**
 - **(v) 📌 THE `Grep` COMMENT-MANGLING TRAP FIRED A FOURTH TIME**, in `SiegePlayerController.cpp` (`//` rendered as `\` at the `ResolveInputAction` and FOLLOW-binding comments). **No new law is owed — CONVENTIONS §10 already covers it** — but it is logged because the count now spans **three files and three lanes**, which is what makes it a property of the tool rather than of any file. ⚖️ **`Grep` LOCATES; it does not READ.**
 
@@ -6844,7 +7021,7 @@ ASSISTANT WAVE 1 LANE                                                           
   dangling): `ConfirmPressed` tears the ghost circles down **before** executing — correctly, so **no ghost outlives the decision it illustrated**
   — which leaves nothing to transfer to the group. ⚠️ **So an assistant `send` and a key `send` look DIFFERENT after the order lands.**
   **Is that a feature (the assistant's orders read as transient) or an inconsistency you want closed?**
-- 🧑 **DECISION ADDED 2026-08-03 — DOES `Enter` DO TWO JOBS? (sits beside the Escape item below; ⛔ CHEAP FOR A HUMAN, IMPOSSIBLE FROM TEXT.)**
+- 🧑 **DECISION ADDED 2026-08-03 — DOES `Enter` DO TWO JOBS? ⚠️ NOW *THREE*, AND THE CHECK MOVED TO TASK-508.** ⛔ **Jonathan's mid-playtest directive adds a THIRD job to the same key — close-when-empty (CONSOLE-CLOSE batch, TASK-505..508) — so this measurement is now load-bearing for a shipped fix, not just a curiosity.** ⭐ **AND HIS COMPLAINT IS ITSELF EVIDENCE: the open key is a toggle whose close half is un-gated (`SiegePlayerController.cpp:4270`), so if Enhanced Input were receiving `Enter` while the box had focus, the console would ALREADY have been closing on him. Corroboration, not measurement — one press still settles it.** Original entry (sits beside the Escape item below; ⛔ CHEAP FOR A HUMAN, IMPOSSIBLE FROM TEXT):
   **`Enter` both OPENS the console and SUBMITS the line.** TASK-445's reasoning is that **Slate consumes it before Enhanced Input while the input
   box has focus**, so the toggle should not double-fire — ✅ **and it labelled that REASONING, NOT MEASUREMENT, which is exactly right.**
   ⇒ **THE CHECK: press `Enter` to submit an order. Does it also re-trigger the open action?** ⚠️ **If it does, the symptom is a console that
