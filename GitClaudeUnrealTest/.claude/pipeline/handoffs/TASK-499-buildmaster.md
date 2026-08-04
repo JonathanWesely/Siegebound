@@ -5,8 +5,11 @@
 - **Files touched:** `GitClaudeUnrealTest/.gitignore` (this task is its **single owner** — manager ruling 11)
 - **Commit:** **`f4f88e6`** (`f4f88e632eb25731fbafe1787d76269c40641150`) — read back from `git log -1 --format=%H`
   **after** the commit, never predicted. Contents: `.gitignore` + this handoff, **2 files, 250 insertions, 3 deletions.**
-  `main` is now **22 ahead of `origin/main`** (was 21). ⛔ **UNPUSHED — the push is Jonathan's.**
-  (This one line was added by the follow-up commit below, since a commit cannot contain its own hash.)
+  ⛔ **UNPUSHED — the push is Jonathan's.**
+- **Ahead-count, stated so it cannot go stale (the TASK-434 lesson):** `main` was **21 ahead of `origin/main` before
+  this task**, and TASK-499 adds **3 commits** — `f4f88e6` (the fix), `7d82394` (the hash fill-in, since a commit
+  cannot contain its own hash), and this correction. ⚠️ **Do not quote a total from this file** — other tasks in this
+  batch are committing concurrently. **Count it:** `git rev-list --count origin/main..main`.
 - **Compile:** ⛔ **none run.** This task owns no compile gate (two exist in this batch and neither is mine). No editor, no MCP, no model touched.
 - **Push:** ⛔ **none.** `main` is ahead of origin; the push is Jonathan's.
 
