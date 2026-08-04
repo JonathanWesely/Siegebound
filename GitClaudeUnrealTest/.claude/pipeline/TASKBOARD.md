@@ -62,6 +62,10 @@ M5 shipped machine-verified with the desktop LOCKED (SendInput blocked → no si
 
 **SETTINGS+CONFIRM batch (2026-08-03, TASK-436..448)** — Jonathan's directive, verbatim: *"I'd shrug and re-order, but lets go ahead and add the confirm step, and make it a toggle in settings. We do not have a settings option so go ahead and add it to the main menu"*. ⚖️ **AND WITH IT, THE RULING THAT DEFINES THE BATCH: WAVE 1 IS UN-GATED.** He was asked explicitly and chose *"un-gate Wave 1, build it all"* — **a DELIBERATE OVERRIDE of his own standing bar-#5 gate, made with the evidence in front of him. It is NOT a bypass and must never be recorded as one.** ⛔ **Bar #5 itself never cleared (20/25 vs a gate of 22 + zero refuse-class failures) and that stays on the record, unsoftened — Wave 1 is unblocked because the USER weighed the failure modes, never because the ladder succeeded.** His grounds are measured, from his own hands-on playtest: **4 of the 5 stable failures are wrong-place / wrong-count on orders the model otherwise understood** — the class he would *"shrug and re-order"*, and **exactly the class a confirm step catches**; the one categorical failure (`DEV-04`, which invents a unit he does not own, 3/3 reproducible) gets a **CODE GUARD instead of a model.** Four deliverables: **(1)** a **settings screen that does not exist today**, reachable from the main menu, persisted across sessions; **(2)** the **assistant confirm-step toggle** living in it; **(3)** the **confirm step itself** (`AwaitConfirm` + ghost circles + accept/cancel); **(4)** the **Wave 1 plumbing it sits on** — in-game text input, live snapshot capture, the executor, the `CreateUnitGroup` extraction — plus **(5)** the **non-orderable-kind guard**, ⛔ **which is shipped safety and is NOT a route to the gate (the eval scores emitted JSON, not executed actions; nobody may report it as accuracy progress).** Develops on `main`, **NO push** (`main` is **13 ahead of origin**). 🔒 **The gen-2 sealed holdout stays SEALED — un-gating Wave 1 does NOT authorize opening it.** Full rulings + graph in **"## SETTINGS+CONFIRM"** under Active tasks; law in CONVENTIONS **"Settings screen + the assistant CONFIRM STEP + the non-orderable-kind guard (2026-08-03)"** + **§12h** (both written FIRST). **Does NOT consume the M8 Phase-1 checkpoint gate, and does NOT substitute for Jonathan's owed multiplayer + 3×-castle feedback.**
 
+**FINE-TUNE batch — THE FINE-TUNE RUNG (2026-08-03, TASK-476..499; Stages D-gold / E / F are GATED ONE-LINERS)** — ⛔ **JONATHAN'S RESERVED RUNG, OPENED BY JONATHAN.** `CONVENTIONS.md` §12f reserved rung 3 to him by name (*"THE NEXT RUNG IS JONATHAN'S AND HE RESERVED IT"*) and this board's LLM-ASSISTANT flag (g) + the TASK-428 spec both **forbid an agent proposing it**. ✅ **He has exercised it himself — the reservation was HONOURED, not bypassed, and no agent may cite this batch as precedent for proposing the next rung.** Design authority = the approved plan `C:\Users\wesel\.claude\plans\inherited-bubbling-acorn.md` (**the plan file wins over any board summary**). **His four rulings, recorded as HIS:** (1) the rung is opened; (2) ⚖️ **CUDA is AMENDED, not waived** — the "Vulkan + CPU, NEVER CUDA" law is **scoped to the shipped runtime backend**, CUDA permitted **host-side at authoring time only**, four checkable boundaries, **§6 edited IN PLACE, never recorded as an exception**; (3) ⛔ **teacher = an open permissive (Apache/MIT) model ONLY — no commercial-API output anywhere in the training data**, recorded in **§7's licensing duty** beside the banned-models list because it is that rule one level up; (4) **Jonathan authors the sentences and reviews 100 % of the refuse/clarify golds** (~100–150 decisions), Execute rows drafted + 20 %-sampled.
+⛔⭐ **THE SHAPE THAT DEFINES THIS BATCH — TWO HARD STOPS BEFORE ANY TRAINING.** Exploration found **three independent places where the measured lane is not the shipped lane**: **D1** the chat template (the harness templates; `ComposeTurnPrompt` concatenates raw — ⇒ **every number on record, 18/19/20 and the 66.7 %, describes a prompt shape the game never produces**), **D2** roster collapse (`MaxRosterKinds = 8` shipped vs the harness's 13 on `t0`), **D3** sparse boards structurally unmeasurable. ⇒ **The plan front-loads measurement and CAN LEGITIMATELY END BEFORE A SINGLE TRAINING STEP.** ⭐ **THE CHEAPEST POSSIBLE OUTCOME IS DISCOVERING THE SHIPPED LANE WAS NEVER MEASURED AT ITS OWN BEST — fixing D1 is HOURS, QLoRA is WEEKS — so a batch that stops at STOP 1 having fixed the wire format and saved weeks is a ⭐ SUCCESS AND IS REPORTED AS ONE. This is written BEFORE the measurement runs, because an early stop is only credible as a success if it was declared one in advance.**
+⚠️ **D2 IS A GENUINE ESCALATION TO JONATHAN, NOT A TASK DECISION** — all three candidate fixes move something frozen (`t0`'s bytes · §12c's Zone B/C freeze · `MaxRosterKinds`), and it may mean **`holdout2` is no longer authored against the thing it would score.** 🔒 **`holdout2` opens EXACTLY ONCE, on the merged shipping GGUF, with `repeats=5` INSIDE that single opening.** ⛔ **`assistant_eval_dev.csv` is NEVER trained on — it is the REGRESSION instrument.** Develops on `main`, ⛔ **NO push** (`main` is **21 ahead of origin**). Full decomposition + rulings + graph in **"## FINE-TUNE"** under Active tasks; law in CONVENTIONS **"⚖️ THE FINE-TUNE RUNG — QLoRA on `Qwen3-4B` (2026-08-03)"** (12 sub-sections, written FIRST) + the in-place §6 CUDA amendment + the §7 teacher-model clause + the §16 *edit-is-not-deletion* clarification. **Does NOT consume the M8 Phase-1 checkpoint gate, and does NOT substitute for Jonathan's owed multiplayer + 3×-castle feedback.**
+
 ### Standing backlog (manager notes — NOT tasks, no IDs yet)
 - **Balance pass** — Jonathan flagged balancing changes wanted post-M4 (M4 playtest sign-off 2026-07-08: "we will have to make some balancing changes later, but it is fine"). **FIRST NOTES ARRIVED + TASK-IZED 2026-07-24 → TASK-278..279 ("W1 Economy-balance tasks" block below):** passive gold 1/2s→1/1s (reverts the TASK-089 income half) + ALL 28 card costs ×3 + bot `AttackBankThreshold` 12→36 audit; W1-lane branch work on `m7.6-arena10x`; StartingGold 10 left unchanged (flagged). Ledger continues in handoffs/TASK-279.md. This is a partial pass (Jonathan may send more notes). Feed-ins still on file: TASK-090 balance ledger (undefended-castle kill time ~56.5 s / ~71.3 s post-economy-change vs ~33 s prior; bot played ZERO early Miners in both rush matches — bot spend-mix), TASK-070 tuning note (bot opens with attack, not economy). **INTEGRATED 2026-07-24 (TASK-279, build-master, commit `3c32e25` on m7.6-arena10x):** base income 1/2s→1/1s LIVE (CDO `BaseIncomeTickPeriod=1`; PIE runtime: bot reached 36 gold from StartingGold 10 in ~26 s, then 18→36 in ~18 s = 1 gold/s), all 28 DT_Cards `Cost` cells ×3 LIVE (`set_rows` + readback Footman 9 / Ogre 36 / DeepMine 45 / CrystalTower 27, no other column drifted, DT_Cards.uasset saved + committed), bot `AttackBankThreshold` 12→36 LIVE (LogSiegeBot: banked to 36 → fielded Knight cost 18 ×2; deck 'Bot Aggro Rush' avg cost 14.16). StartingGold LEFT at 10 (flagged). NEXT-PASS WATCH (Jonathan): undefended-castle kill-time lengthens further under ×3 costs (prior ~56.5/71.3 s); the slower opening + bot heavier-unit mix is a feel check.
 - **HUD overtime indicator never shows** (pre-existing bug found at TASK-090, routed to manager): WBP_HUD ShowOvertime calls UpdateOvertimeDisplay with a hardcoded-false pin (bound via SetupStatTexts CreateEvent; UpdateOvertimeDisplay itself is correct). One-pin UMG fix + shortened-threshold verify — fold into the next UMG-touching chain or the balance pass; do not lose it.
@@ -5247,6 +5251,567 @@ Concretely, for this batch:
 
 ---
 
+## FINE-TUNE — THE FINE-TUNE RUNG — decomposed 2026-08-03 on **Jonathan's own exercise of his reserved rung** — TASK-476..499
+
+**Design authority:** `C:\Users\wesel\.claude\plans\inherited-bubbling-acorn.md`. ⛔ **THE PLAN FILE WINS OVER ANYTHING IN THIS SECTION.** It carries the context, the six stages, the pre-registered decision rules, the nine gate clauses, the verification table and the ten-item trap ledger; this section does not re-derive them.
+
+**Law was written FIRST (house rule):** CONVENTIONS **"⚖️ THE FINE-TUNE RUNG — QLoRA on `Qwen3-4B` (2026-08-03)"** (12 sub-sections) · the **§6 CUDA amendment IN PLACE** · the **§7 teacher-model clause** · the **§16 *edit-is-not-deletion* clarification**.
+
+### ⛔ PROVENANCE — READ FIRST
+
+> ⛔ **§12f RESERVED RUNG 3 TO JONATHAN BY NAME. FLAG (g) OF THE LLM-ASSISTANT BATCH AND THE TASK-428 SPEC BOTH FORBID AN AGENT PROPOSING IT. ⇒ ✅ HE EXERCISED IT HIMSELF. THE RESERVATION WAS HONOURED, NOT BYPASSED.**
+
+⚖️ **Both sentences stay true and both stay on the record:** *no agent may propose this rung* — unchanged, still binding for the next one — and *Jonathan opened this one*. ⛔ **No future agent may cite this batch as precedent for proposing a rung.** The precedent set here is about **how a rung is executed once opened**, never about who may open it.
+
+### ⭐ THE OUTCOME LAW — WRITTEN BEFORE THE MEASUREMENT RUNS, NOT AFTER
+
+> ⭐ **A BATCH THAT ENDS AT STOP 1, HAVING FIXED THE WIRE FORMAT AND SAVED WEEKS, IS THE BEST RESULT AVAILABLE AND IS REPORTED AS A SUCCESS.**
+
+⛔ **No handoff, QA report, board entry or Slack post may frame an early stop as a failure, a cancellation, or *"the fine-tune didn't happen"*.** Fixing D1 is **hours**; QLoRA is **weeks**. ⚖️ **The reason this is dated before the run is that an early stop is only credible as a success if it was declared one in advance** — declared afterwards it reads as consolation, which is how a pipeline learns to push past its own stops. ⚠️ **And the symmetric trap is named too: this is NOT a licence to stop early to avoid hard work.** *"It felt like the wire format was the problem"* is not STOP 1 — **a stop is a number, in writing, against a rule written before the run**, and its denominator is M0's measured noise floor.
+
+### ⛔ THE THREE DIVERGENCES (D1 / D2 / D3) — the whole reason this batch is measurement-first
+
+| # | Divergence | Consequence |
+|---|---|---|
+| **D1** | **Chat template.** Harness wraps in Qwen3's template (Zone A `system`, B+C `user`, `add_generation_prompt=true`); `USiegeAssistantComponent::ComposeTurnPrompt` **concatenates raw, no roles.** | ⛔ **Every number on record — 18 → 19 → 20, the 66.7 % — describes a prompt shape the game never produces.** Qwen3 is post-trained on its template ⇒ raw concat is off-distribution **by construction.** |
+| **D2** | **Roster collapse.** Shipped Zone C caps at `MaxRosterKinds = 8` and collapses the tail; the harness prints all **13**, on `t0`. | ⛔ **`holdout2` may be authored against a board the game does not render**, inside the block the model reads unit names from. |
+| **D3** | **Sparse boards unmeasurable.** `VerifyFixtureKindParity` demands every fixture carry all 13 kinds; the GBNF is built from `SpikeRoster`, not the fixture. | The few-shots-name-a-kind-the-board-lacks seam **cannot be measured by the only instrument that exists.** |
+
+⚖️ **This is §12a's two-lane hole (`DA_AssistantVocabulary`) recurring THREE more times — same shape, different seam: the lanes agree on everything a reader can check and differ in content the reader never sees.** Each was found by reading **the shipped path** rather than the measured one.
+
+### 🔒 THE TWO PRE-REGISTERED STOPS + THE THREE DECISION RULES
+
+- ⛔ **STOP 1 — WIRE FORMAT.** `chat=0` materially below `chat=1` ⇒ **fix the runtime wire format, re-measure, re-ask. TRAINING IS NOT AUTHORISED until the shipped lane has been measured at its own best.**
+- ⛔ **STOP 2 — ROSTER SEAM.** M3's diff fails on the roster block ⇒ **resolve D2 first.**
+- **M2 ≈ M1 within M0's band** ⇒ gap is **capability**; mix is class-driven from M5.
+- **M2 materially worse than M1** ⇒ gap is **distribution**; mix is voice-heavy; fine-tuning very likely works.
+- ⛔ **M2 already ≥ 13/15-equivalent on the shipped shape** ⇒ **DO NOT TRAIN.** Re-run the gate arithmetic — the feature may already pass once the wire format is honest.
+- ⚠️ **"MATERIALLY" IS DEFINED BY M0, NOT BY JUDGEMENT.** ⛔ **A stop evaluated before M0 has printed a number has no denominator.**
+
+### Manager rulings (binding for TASK-476..499)
+
+1. ⛔ **THE MEASUREMENT-FIRST ORDERING IS THE BATCH, AND IT IS NOT AN OPTIMISATION TO BE REORDERED.** A → B → C → (D → E → F only if the stops clear). **Stages D-gold, E and F are GATED ONE-LINERS with no IDs** and are decomposed **only** after Jonathan rules on the Stage-B escalations. ⚖️ **Boarding 25 fully-specced training tasks now would encode the opposite claim to the one this plan makes** — it would make the stops look like obstacles on the way to a foregone conclusion. **The board's shape is part of the ruling.**
+2. ⛔ **`SiegeLlamaSpike.cpp` IS UNTOUCHABLE FOR ***DELETION*** (§16) AND THIS BATCH ***EDITS*** IT. THOSE ARE DIFFERENT THINGS AND THE DIFFERENCE IS NOW WRITTEN INTO §16 ITSELF.** ✅ **Additive edits are not merely allowed — they are the point:** the clause's own argument is *"this is the only instrument that can score the sealed corpus"*, and **an instrument that cannot be improved is an instrument that decays.** ⛔ **Exactly three things are frozen:** `t0`'s **bytes** · the **existing default behaviour/output contract** of `SpikeEval` and `SpikePrompt` (**new flags are additive with defaults that reproduce today's output exactly**) · the **file's existence**. ⚠️ **An edit that silently moves the instrument is WORSE than a deletion, because a deletion is loud** ⇒ **TASK-481 must show the existing dev-split number UNCHANGED before the Stage-A edits are accepted.**
+3. ⛔ **THE QUIET-MODULE LAW BINDS THIS BATCH ACROSS TWO BATCHES, WHICH IS THE DANGEROUS CASE.** `Source/GitClaudeUnrealTest/` is **ONE UBT module**: TASK-479 lands in it, **and so do the still-open SETTINGS+CONFIRM leftovers TASK-473 and TASK-475** — ⛔ **TASK-475 deliberately MUTATES code and REBUILDS, i.e. it is a compile gate.** ⇒ **TASK-479 and TASK-481 are MUTUALLY EXCLUSIVE with TASK-475, and the orchestrator quiesces BOTH batches before TASK-481 runs.** ✅ **TASK-476/477/478 are in `Plugins/SiegeLlama/`, a SEPARATE UBT module, and are genuinely parallel-safe against a game-module gate** — the concrete payoff of the plugin split, again.
+4. ⛔ **DO NOT TRAIN ON `Docs/Data/assistant_eval_dev.csv`.** 25 rows = **3 % of an 800-row set**, and it is **the only corpus with three waves of comparable history.** It is **the REGRESSION INSTRUMENT.** ⚠️ **Catastrophic forgetting is the #1 QLoRA failure mode and it is INVISIBLE in the holdout number** — the holdout only reports what you gained.
+5. ⛔ **§11's AUTHORSHIP SEPARATION IS STRUCTURAL AND EXTENDS TO THE TUNER.** The corpus author is **not** the tuner; **the tuner never opens `assistant_voice_raw.txt`, `holdout2` or `holdout3`.** Two dispatches, two contexts — not an honour system. **TASK-484 goes to art-director on the TASK-427 precedent** (a different role from the prompt author, already fluent in `Docs/Data/`), ⚠️ **and it is a DATA task, not art.**
+6. 🔒 **`holdout2` OPENS EXACTLY ONCE — ON THE MERGED SHIPPING GGUF, WITH `repeats=5` INSIDE THAT SINGLE OPENING** (§12a + §12h). ⛔ **Nothing in Stages A–C opens it.** Every Stage-A/B/C measurement runs on `assistant_eval_dev.csv` and `assistant_eval_dev2.csv`.
+7. ⛔ **BURNED ROWS STAY BURNED, AND IT IS STRICTER HERE THAN AT THE PROMPT RUNG.** The five spent gen-1 rows and the **retired collision noun** are **CLASS signal, never STRING signal** (§12b) — ⚠️ **a fine-tune is a far more efficient memoriser than a prompt.** QA verifies by literal match **plus near-paraphrase** over the whole training set and issues an **ABSENCE CERTIFICATE ONLY, never a recommendation** (§12b's certificate/recommendation split, reused verbatim).
+8. ⚖️ **CUDA IS AMENDED, NOT WAIVED — AND THE AMENDMENT LIVES IN §6, IN PLACE.** ⛔ **No artifact in this batch may describe it as an exception, a waiver, or a carve-out.** The four boundaries are checkable: no CUDA in `ThirdParty/` · the shipped GGUF loads on NVIDIA **and** Arc **and** CPU · CUDA only in a gitignored `.venv` · `ThirdPartyNotices.md` gains no CUDA row **because nothing CUDA is redistributed**.
+9. ⛔ **THE TEACHER-MODEL LAW IS A SHIPPING BLOCKER, VERIFIED BEFORE AUTHORING AND NEVER AFTER.** Open permissive (Apache/MIT) weights only; **no commercial-API output anywhere in the training data.** ⚠️ **Contaminated weights are NOT repairable by Apache compliance on the base** — the only remedy is re-running the data stage, which is the expensive one. Handoff records **repo id + revision sha + `license:` quoted verbatim** (§7's standard, unchanged).
+10. ⛔ **NEVER REPORT A RESULT AS A DELTA FROM 66.7 %** — generations are not row-comparable (§12a). **The bar is ABSOLUTE, and the split's own printed leniency floor travels beside the number, every time.**
+11. **SINGLE OWNER PER FILE.** `Plugins/SiegeLlama/Source/SiegeLlama/Private/SiegeLlamaSpike.cpp` = **TASK-476 → 477 → 478, IN THAT ORDER, NEVER CONCURRENTLY** (the TASK-428/429 precedent) · `SiegeCheatManager.{h,cpp}` = **TASK-479 ONLY** · ⚖️ **`SiegeAssistantComponent.{h,cpp}` = TASK-479 *THEN* TASK-489, IN THAT ORDER, NEVER CONCURRENTLY — AMENDED 2026-08-03, see ruling 14** (was: *TASK-489 ONLY*, which made the board **circular**) · `Tools/LlmFinetune/**` = **TASK-493 ONLY** (then build-master for lock/artifacts) · `Docs/Data/assistant_voice_raw.txt` = **Jonathan ONLY** · `Docs/Data/assistant_eval_dev2.csv` + `assistant_eval_holdout3.csv` = **TASK-484 ONLY** · `.gitignore` = **TASK-499 ONLY**.
+14. ⚖️ **THE OBSERVER RULING — ADDED 2026-08-03 ON TASK-479's REFUSAL. ✅ THE REFUSAL WAS CORRECT ON ALL THREE LIMBS AND NOTHING WAS WRITTEN TO THE TREE.** Full law: CONVENTIONS "THE FINE-TUNE RUNG" **§13**. Summary, binding:
+    - ⛔ **(a) THE CIRCULARITY WAS MINE:** `479 → M3 → 486 → 489 → 479`. ⇒ **Resolved by carving ownership IN TIME** (ruling 11, amended) — ✅ **single-owner-per-file forbids CONCURRENT edits, never sequential hand-off**, and these two are separated by three tasks and a Jonathan decision. **TASK-479's carve is EXACTLY ONE ADDITION and nothing else in either file.**
+    - ⛔ **(b) RULED: OPTION A — A DEV-ONLY PUBLIC ACCESSOR DELEGATING TO THE ONE COMPOSER. NOT private → public on `ComposeTurnPrompt` itself.** Its privateness is **mechanism #2 of four** at `SiegeAssistantComponent.h:49-74`, *"each of which a later edit would have to DELETE rather than merely overlook."* ⚖️ **#2's property is that the MODEL-CALL SEAM HAS NO ROUTE TO A ZONE BUILDER — an accessor returning a FINISHED string hands out no zone builder, and there is still EXACTLY ONE COMPOSER. This is ADDITION, not RE-EXPOSURE.** ✅ **The `SpawnGroupCircleDecal` precedent was correctly distinguished: that function carries NO invariant — a precedent transfers its REASONING, not its VERDICT.** ⛔ **`friend` is refused on that same header's own stated ground: it is the wider grant, not the narrower one.**
+    - ⛔ **(c) FAULT B IS REAL AND IS RESOLVED BY MERGING TWO READINGS.** `ComposeTurnPrompt` returns only the concatenation and calls the **latched** `ReportFirstCapture`. ✅ **M3 needs the BYTES, not the zone counts** — boundaries are recoverable offline from the known Zone A prefix — **and the latch is spent by whatever calls the composer first, including the first real player sentence.** ⇒ ⛔ **THE EXEC AND TASK-447's OWED FIRST-CAPTURE AUDIT ARE THE SAME READING, TAKEN IN THE SAME SESSION, BY THE SAME TASK, WITH THE AUDIT LINE QUOTED** (TASK-485). ⚠️ **A latched one-shot diagnostic is a CONSUMABLE and must be boarded as one — nothing said who owned `bLoggedFirstCapture`'s single firing, which is how two tasks both planned to spend it.**
+    - ⛔ **REASSEMBLING THE ZONES INSIDE THE CHEAT MANAGER IS FORBIDDEN AND IS NOT A THIRD OPTION** — it would guess the vocabulary lane (the measured **3029-vs-5116** defect) and produce **a green M3 that measures nothing: T1 and T8 in one move.**
+12. **LANE POSTURE:** develops on **main**, commits on **main**, ⛔ **NO push** (`main` is **21 ahead of origin**). `git reset --hard` / `clean -fd` **BANNED**. 🔒 **`L_Arena` is NEVER saved** — ⚠️ **and `Config/DefaultEngine.ini:3` still points `EditorStartupMap` at it (TASK-474), so every headless invocation in this batch overrides the map explicitly.**
+13. ⛔ **`Tools/**/*.py` IS CODE ⇒ QA-GATED** (§5's table). Every Python file this batch authors owes a gate; they are boarded, not assumed.
+
+15. ⚖️ **THE DECOMPOSITION COMMITS NOW, ON ITS OWN, BEFORE THE NEXT DISPATCH — RULED 2026-08-03 (build-master asked, correctly, and it is my call not its).**
+    - ✅ **BUILD-MASTER WAS RIGHT NOT TO SWEEP IT INTO `TASK-499:`.** Staging the board to capture its own one-line status change would have buried **819 insertions of law and decomposition** (`TASKBOARD.md` +612 · `CONVENTIONS.md` +211) inside a `.gitignore` commit. ⚖️ **A commit message that does not describe its own diff is a lie that git preserves forever** — and it refused to tell one.
+    - ⛔ **BUT "NOT IN THAT COMMIT" IS NOT "LATER".** Standing lesson 3 (*board + CONVENTIONS at the batch boundary*) assumes a boundary that is **days away and MAY NEVER ARRIVE** — this batch can legitimately end at STOP 1. ⚠️ **This machine crashed once today, and the entire FINE-TUNE law + board exists ONLY ON DISK.** ⇒ **The boundary rule does not apply to a body of law that gates every task under it.**
+    - **THE COMMIT:** build-master, **`TASKBOARD.md` + `CONVENTIONS.md` ONLY**, one commit, ⛔ **NO push.** It **explicitly carries TASK-499's board status** — say so in the message, since that status exists nowhere else.
+    - ⛔ **PATHSPEC-LIMITED, NEVER `git add -A` / `git add .`.** ⚠️ **The index has gone hostile mid-task TWICE today** — `SiegeLlamaSpike.cpp` and `handoffs/TASK-479-programmer.md` appeared between a status read and a staging. **TASK-476 is live in `SiegeLlamaSpike.cpp` right now**, and sweeping a half-written instrument into a docs commit is the QUIET-MODULE LAW's failure wearing git's clothes.
+    - **TIMING: after this ruling lands and before the next dispatch.** ⚠️ **The manager is still writing these two files as of this line** — ⛔ **do not stage them while a manager edit is in flight; confirm quiet, then commit.**
+
+### ⚠️ FIVE THINGS I FOUND WHILE DECOMPOSING — RECORDED BECAUSE THEY CHANGE THE ORDER, NOT JUST THE PROSE
+
+- ⛔ **(i) A DEPENDENCY INVERSION IN THE PLAN'S OWN SEQUENCE, AND IT IS LOAD-BEARING: STAGE B's **M2** RUNS ON `assistant_eval_dev2.csv`, WHICH STAGE **D** CREATES.** `Docs/Data/assistant_eval_dev2.csv` **does not exist** (verified: `Docs/Data/` holds `cards.csv`, `assistant_eval_dev.csv`, `assistant_eval_holdout.csv`, `assistant_eval_holdout2.csv`). ⇒ **Jonathan's raw voice file and the non-tuner split are PULLED FORWARD ahead of Stage B** (TASK-482 → TASK-484), and **Stage B is split into B1 (M0/M1/M3 — needs no dev2) and B2 (M2 — needs it).** ✅ **STOP 1 and STOP 2 are evaluated in B1 and are NOT delayed by the voice file** — the stops stay first.
+- ⛔ **(ii) M4's TOKEN-ID PARITY CANNOT RUN IN STAGE B EITHER — it compares the engine against *"the Python tokenizer the trainer will use"*, which Stage C installs.** ⇒ **the ENGINE half (`ids=1` dump) is captured in B1 as an artifact; the COMPARISON is TASK-498 in Stage C.** ⚠️ **Boarded explicitly rather than left to whoever hits it, because the failure mode is a build-master improvising a substitute tokenizer and reporting parity against the wrong one.**
+- 🚩 **(iii) THE `/Models/` GITIGNORE DEFECT IS LIVE TODAY AND IS INDEPENDENT OF WHETHER TRAINING EVER HAPPENS** — `git check-ignore -v Models/README.md` → `.gitignore:132:/Models/` ⇒ **the directory rule ignores it wholesale and the `!Models/README.md` negation is DEAD.** ⇒ **TASK-499 is dispatchable NOW**, and **model documentation lives in `Docs/`** (hence `Docs/ModelManifest.md`).
+- ⛔ **(v) ADDED 2026-08-03 FROM TASK-479's REFUSAL AND TASK-499's RUN — TWO GUARDRAILS WERE FOUND EMITTING BACKWARDS OR ABSENT EVIDENCE, AND BOTH ARE NOW LAW.** ⚠️ **`git check-ignore -v` EXITS 0 WHEN A NEGATION MATCHED** (the `!` in the output line is the discriminator, **never** the exit code — the `Build.bat`-returns-0 class again) **and PRINTS NOTHING for a tracked path without `--no-index`** (which reads exactly like *"no rule protects this file"*). ⇒ **§7's own mandated acceptance procedure was producing evidence a careful reader would misread — §17's shape inside the clause written to prevent §17's shape.** ✅ **Root cause of the dead negations, and it closes a whole class: `dir/*` excludes CONTENTS and a later `!dir/keep` works; `/dir/` excludes the DIRECTORY, git never descends, and EVERY `!` under it is dead. The two forms look like stylistic variants and are not** — the dead `!Models/…` sat **13 lines under a WORKING `Tools/ArtPipeline/Inbox/*` + `!.../.gitkeep` pair.** ⚠️ **The donor was correct, the copy was correct-looking, and only the FORM differed.**
+- 📌 **(iv) `LoadCorpus` ONLY *WARNS* ON A HEADER MISMATCH, AND THIS BATCH CREATES THE FILE THAT EXPLOITS IT.** A gold CSV beside `assistant_eval_dev.csv` is **one tab-completion away from being passed as `dev=`** and silently scored. ⇒ **the gold corpus gets a different header AND a subdirectory (`Docs/Data/Finetune/`)**, and *"make the mismatch FATAL"* is boarded as a **gated one-liner** — ⚖️ **a decision, not a side effect.**
+
+---
+
+#### TASK-476 — [FT-A1] ⭐ `repeats=<N>` ON `Siege.Llama.SpikeEval` — the highest-value single change in the batch (gameplay-programmer, plugin module)
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: **none — DISPATCHABLE NOW**
+- parallel-safe: **yes vs TASK-479 / TASK-482 / TASK-483 / TASK-499** (⛔ **`Plugins/SiegeLlama/` is a SEPARATE UBT module from `Source/GitClaudeUnrealTest/`**). ⛔ **NOT parallel-safe vs TASK-477 / TASK-478 — same file, strict order 476 → 477 → 478.**
+- spec: >
+    ⭐ **WHY THIS IS FIRST: §12h's REPEAT LAW IS CURRENTLY SATISFIED BY A HUMAN RE-TYPING THE COMMAND, AND THAT IS EXACTLY HOW THE 19/25 → 20/25 CONFUSION HAPPENED.** This change makes the law **mechanical instead of manual**, and it is **what the sealed holdout's one-shot opening structurally requires** — §12h: *"the holdout is opened once; the repeat therefore happens INSIDE that single opening."* **Without this flag, the gate in §10 of the fine-tune law cannot be taken at all.**
+    **(1) ADD `repeats=<N>` to `Siege.Llama.SpikeEval`.** It loops the split **N times inside one job** — one queue slot, one model load, one session. ⛔ **`repeats` DEFAULTS TO 1 AND `repeats=1` MUST PRODUCE BYTE-IDENTICAL OUTPUT TO TODAY'S COMMAND** (manager ruling 2: new flags are additive with defaults that reproduce today's output exactly).
+    **(2) PRINT, PER ROW: `stable=N/N` OR `flips=k`, AND THE IDENTITY OF EVERY ROW THAT MOVED.** ⚠️ **§12h: *"the IDENTITY of the unstable row is the diagnostic, not the score."*** `DEV-11` is the known flipper (`n:2` ↔ `n:"all"`); **this flag is what turns that anecdote into an instrument reading.**
+    **(3) PRINT SPLIT-LEVEL `min / median / max`** — ⛔ **and label them, because §10's gate clause #1 scores the *MINIMUM* of 5 runs, never the median and never the best.** A printed number a reader has to guess the aggregation of is a defect in a gate instrument.
+    **(4) RESPECT THE QUEUE-DEPTH-1 CONTRACT** — this is ONE job that loops internally, ⛔ **never N queued jobs.** §12h recorded the harness refusing a concurrent job as a **PASS**; do not weaken it.
+    ⛔ **DO NOT touch `t0`'s bytes. DO NOT change `SpikeEval`'s existing scoring, parsing or output for the default path.** ⛔ **No Git, no compile** — file-only; TASK-481 owns the gate.
+    ⚖️ **§16 IS A DELETION LAW, NOT A FREEZE — EDITING THIS FILE IS SANCTIONED AND IS THE POINT** (CONVENTIONS §16's new *edit-is-not-deletion* clause). Read it before you start.
+    Handoff `handoffs/TASK-476-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    `Plugins/SiegeLlama/Source/SiegeLlama/Private/SiegeLlamaSpike.cpp` · `Siege.Llama.SpikeEval` · `repeats=<N>` · `stable=` / `flips=` · `min`/`median`/`max`.
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §4, §10 · §12h (the repeat law) · §16 (edit ≠ delete) · "In-match LLM command assistant" §5 (the `Siege.Llama.*` namespace).
+
+#### TASK-477 — [FT-A2] ⛔ `out=<path>` + `ids=1` ON `SpikePrompt`, AND `chat=0|1` ON BOTH COMMANDS — this is what stops the trainer becoming lane four (gameplay-programmer, plugin module)
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: **TASK-476** (same file, strict serialization — manager ruling 11)
+- parallel-safe: no (vs 476/478); yes vs everything outside `SiegeLlamaSpike.cpp`
+- spec: >
+    ⛔ **THERE ARE ALREADY THREE LANES THAT DISAGREE (spike · shipped · what the document says). `out=` EXISTS SO THE PYTHON TRAINER NEVER BECOMES A FOURTH** — trap **T1**: *the trainer re-implements Zone A ⇒ skew baked into weights, invisible forever.* **Python must NEVER assemble a prompt; it consumes these bytes.**
+    **(1) `out=<path>` on `Siege.Llama.SpikePrompt`** — dumps **the exact assembled prompt BYTES** for the named fixture to a file. ⛔ **Bytes, not a pretty-print**: the consumer asserts **length and sha256** against it.
+    **(2) `ids=1` on `Siege.Llama.SpikePrompt`** — prints the **token-id sequence** from the engine's `llama_tokenize`. ⚠️ **This is the ENGINE half of M4; the Python comparison is TASK-498 and is deliberately NOT yours** (finding (ii)).
+    **(3) `chat=0|1` on BOTH `SpikePrompt` AND `SpikeEval`** — ⛔ **THE FLAG THAT MAKES STOP 1 MEASURABLE.** `chat=1` = today's behaviour (Qwen3 template: Zone A as `system`, B+C as `user`, `add_generation_prompt=true`). `chat=0` = **the SHIPPED shape — raw concatenation, no roles**, exactly as `USiegeAssistantComponent::ComposeTurnPrompt` produces it. ⛔ **`chat=1` IS THE DEFAULT so today's numbers remain reproducible byte-for-byte.**
+    ⚠️ **`chat=0` MUST REPRODUCE THE SHIPPED CONCATENATION, NOT AN APPROXIMATION OF IT.** ⛔ **Derive it by READING `ComposeTurnPrompt`, and say in the handoff which lines you read** — this whole batch exists because three people assumed the two lanes matched. **If you cannot make `chat=0` byte-identical to the shipped composer, STOP AND SAY SO** — that is a finding, not a blocker to work around (§15's declared-departure law).
+    ⛔ **Additive only. Defaults reproduce today's output exactly.** ⛔ **No Git, no compile.**
+    Handoff `handoffs/TASK-477-programmer.md` — ⛔ **must state, explicitly, whether `chat=0` is byte-identical to `ComposeTurnPrompt` or merely equivalent-by-reading.** Post in ⚙️ Dev & QA.
+- names: >
+    `Plugins/SiegeLlama/Source/SiegeLlama/Private/SiegeLlamaSpike.cpp` · `Siege.Llama.SpikePrompt` · `out=<path>` · `ids=1` · `chat=0|1` ·
+    `USiegeAssistantComponent::ComposeTurnPrompt` (**READ ONLY — you do not own that file**) · `llama_tokenize`.
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §3 (D1), §4, §7 (T1) · §16 · §12g (chars are exact; tokens are a runtime reading).
+
+#### TASK-478 — [FT-A3] PER-FIXTURE GBNF + SUBSET PARITY — without this, D3 stays invisible and the sparse-board class can be neither trained nor measured (gameplay-programmer, plugin module)
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: **TASK-477** (same file, strict serialization)
+- parallel-safe: no (vs 476/477); yes vs everything outside `SiegeLlamaSpike.cpp`
+- spec: >
+    ⛔ **THE DEFECT IS STRUCTURAL, NOT A BUG: `BuildSpikeGrammar` derives the `kind` alternatives from `SpikeRoster` (all 13) rather than from the FIXTURE, and `VerifyFixtureKindParity` ENFORCES that every fixture carry exactly those 13.** ⇒ **A board that lacks a kind cannot be expressed, so the seam where Zone A's few-shots name `footman`/`sorcerer`/`archer` on a board without them is UNMEASURABLE by the only instrument that exists** (D3).
+    **(1) `BuildSpikeGrammar` DERIVES `kind` ALTERNATIVES FROM THE FIXTURE.**
+    **(2) `VerifyFixtureKindParity` PERMITS A FIXTURE THAT IS A SUBSET** — ⛔ **it must still REJECT a fixture naming a kind that is not in `SpikeRoster`.** ⚠️ **Relax the direction that is over-strict; do not delete the check.** A parity check that permits anything has been removed, not fixed.
+    **(3) ⛔ `t0` IS UNAFFECTED AND ITS BYTES DO NOT MOVE.** `t0` carries all 13, so it is a subset of itself and every existing number must reproduce **exactly**. ⛔ **This is the acceptance criterion, not a hope: re-run `SpikeEval dev=` and show the same score and the same failing-row identities.**
+    **(4) ⚠️ DO NOT ADD THE TRAINING FIXTURES `tA`–`tF` HERE.** They are Stage D and are **gated**. This task delivers **the capability**, not the content — ⚖️ **and that split is deliberate: the capability is worth having even if the batch stops at STOP 1, because it is what makes D3 measurable at all.**
+    ⛔ **This is NOT a licence to touch the grammar's identity/quantity split.** §1's *"constrain identity hard, leave quantity soft"* is untouched: `count` stays **1–30**, never the live max. **Tightening `count` is introducing the defect §1 names.**
+    ⛔ **No Git, no compile.** Handoff `handoffs/TASK-478-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    `Plugins/SiegeLlama/Source/SiegeLlama/Private/SiegeLlamaSpike.cpp` · `BuildSpikeGrammar` · `VerifyFixtureKindParity` · `SpikeRoster` · `t0`.
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §3 (D3), §7 (`tD`/`tF` blocked until this lands) · "In-match LLM command assistant" §1 · §16.
+
+#### TASK-479 — [FT-A4] `DumpAssistantPrompt` — THE SHIPPED-LANE PROMPT DUMP (gameplay-programmer, ⛔ GAME MODULE)
+- assignee: gameplay-programmer
+- status: ⚖️ **RULED 2026-08-03 — RE-DISPATCHABLE. The manager ruling this task asked for is MADE (ruling 14 + CONVENTIONS "THE FINE-TUNE RUNG" §13); read the R1/R2/R3 block below, it OVERRIDES any older reading of the spec.** ✅ **THE REFUSAL WAS CORRECT ON ALL THREE LIMBS AND IS RECORDED AS THE PIPELINE WORKING, NOT AS A DELAY** — it found a **circularity in MY board**, declined to spend a **numbered structural invariant** for a diagnostic, and found an independent second fault; ⚖️ **breaking a cycle is a BOARD decision, not a programmer's, and stopping at the boundary of its own authority was cheaper than any of the three ways it could have guessed.** ← was: **BLOCKED-ESCALATED 2026-08-03 (gameplay-programmer, §15 declared departure — ⛔ NOT IMPLEMENTED, NO FILE CHANGED, tree clean).** Spec clause (2) mandates going through `ComposeTurnPrompt`; it is **private** (`SiegeAssistantComponent.h:1200`, sole `private:` at 913, sole `public:` at 621, **no `friend` in the file** — §14 positive control passed) **and its privateness is MECHANISM #2 of the four the class comment says a later edit must "DELETE rather than merely overlook"** (`SiegeAssistantComponent.h:49-65`). Second, independent fault: it **returns only the concatenation**, so `zoneA/B/C_chars` are unobtainable (cpp 2727-2752), and the one line that prints them (`ReportFirstCapture`) is **latched once per session** (cpp 2904/2909). Both routes around it are banned by this task's own spec — reassembling the zones is the forbidden reimplementation **and would guess the vocabulary lane** (the measured 3029-vs-5116 defect, T1/T8), and `SubmitUtterance` is not read-only. ⇒ **The fix lands in `SiegeAssistantComponent.{h,cpp}` = TASK-489 ONLY (ruling 11), which TASK-480 scopes "Reference-only", and TASK-489 is `blocked-by` TASK-486 ← M3 ← THIS TASK — routing it there makes the batch circular (479→M3→486→489→479).** Three options costed in the handoff (A: dev-only accessor delegating to the one composer, keeps mechanism #2 — recommended as input, not decided; B: private→public, spends mechanism #2; C: re-scope the output, fixes only the second fault). ⛔ Deliberately did NOT land compile-ready code — TASK-481 is the module's only Stage-A compile gate under the QUIET-MODULE LAW. **Needs a manager/Jonathan ruling.** handoffs/TASK-479-programmer.md
+- blocked-by: **none — DISPATCHABLE NOW**, ⛔ **BUT MUTUALLY EXCLUSIVE WITH TASK-475** (SETTINGS+CONFIRM's mutation run rebuilds this module — manager ruling 3, the QUIET-MODULE LAW's cross-batch case)
+- parallel-safe: **yes vs TASK-476/477/478** (different UBT module) · ⛔ **no vs any game-module compile gate**
+- ⚖️ **THE THREE RULINGS THIS TASK WAS BLOCKED ON — THEY OVERRIDE THE SPEC BELOW WHEREVER THEY TOUCH IT:**
+  **(R1) FILE OWNERSHIP IS CARVED IN TIME, NOT RE-ORDERED. You now own EXACTLY ONE ADDITION to `SiegeAssistantComponent.{h,cpp}` and nothing else in either file** (ruling 11, amended: **TASK-479 THEN TASK-489, never concurrently** — the TASK-442/443 idiom). ✅ **Single-owner-per-file forbids CONCURRENT edits, never sequential hand-off, and you are separated from TASK-489 by three tasks and a Jonathan decision.** ⇒ **The `479 → M3 → 486 → 489 → 479` cycle is broken at the board level, which is where it belonged.**
+  **(R2) ⛔ OPTION A: ADD A DEV-ONLY PUBLIC ACCESSOR THAT DELEGATES TO THE ONE COMPOSER. ⛔ DO NOT WIDEN `ComposeTurnPrompt` private → public.** ⚖️ **Mechanism #2's actual property is that THE MODEL-CALL SEAM HAS NO ROUTE TO A ZONE BUILDER** — ✅ **an accessor returning a FINISHED prompt string hands out no zone builder, the TASK-443 seam still receives a finished string and still cannot compose, and there is still EXACTLY ONE COMPOSER. That is ADDITION, not RE-EXPOSURE.** ⛔ **`friend class USiegeCheatManager` is refused on `SiegePlayerController.h:305-308`'s own stated ground — friendship is the WIDER grant, not the narrower one.** ✅ **Your distinction of the `SpawnGroupCircleDecal` precedent is UPHELD: that function carries no invariant, and a precedent transfers its REASONING, not its VERDICT.**
+  **CONDITIONS — all QA criteria:** dev-only-guarded (**never a shipping surface**) · **read-only, no state change** · **DELEGATES — never re-derives, re-assembles or re-orders** · **the header comment NAMES mechanism #2 and states why it does not spend it**, in the `SpawnGroupCircleDecal` idiom of putting the access rationale where the next reader meets it.
+  **(R3) ⚖️ FAULT B IS RESOLVED BY MERGING TWO READINGS, NOT BY RE-SCOPING YOURS.** ✅ **M3 needs the prompt BYTES, not `zoneA/B/C_chars`** — the composer returns exactly those bytes, and zone boundaries are recoverable offline by locating the known Zone A prefix. ⛔ **Do NOT add an out-param, a member, or a second `ReportFirstCapture` call to get the counts.** ⚠️ **The `bLoggedFirstCapture` latch is spent by whatever calls the composer FIRST — including the first real player sentence — so it was never uniquely yours to protect.** ⇒ **TASK-485 runs your exec and quotes the audit line IN THE SAME SESSION**, spending the one-shot **on purpose, into the artifact that was owed it.**
+- spec: >
+    ⛔ **NO COMMAND PRINTS THE SHIPPED `BuildZoneA` TODAY** (§12g's standing WARN). Every byte count everyone has quoted came from the spike's `AppendZoneA`; **the shipped lane's bytes remain a READING-LEVEL CLAIM carried across two loops and two gates.** ⇒ **This task takes the first shipped-lane reading, and it is what M3's artifact diff compares against.**
+    **(1) ADD `DumpAssistantPrompt(FString Utterance)` AS A `UFUNCTION(exec)` ON `USiegeCheatManager`**, beside the existing `SummonTestUnit` / `ApplyTestDamage`. It captures a live snapshot, composes the turn prompt **through the shipped path**, and writes the **exact bytes** plus `zoneA_chars` / `zoneB_chars` / `zoneC_chars` to a file and the log.
+    ⚖️ **AND THE CLAUSE THAT LOOKS LIKE IT FORBIDS THIS, ANSWERED BEFORE YOU ASK: §5 of the assistant law says dev/spike commands register via `FAutoConsoleCommand`, NEVER as a `UFUNCTION(exec)` on a shipped class. READ ITS REASON, NOT ITS LETTER — that clause exists so THE SPIKE does not become a shipped exec surface, keeping the inference lane new-files-only.** ✅ **A shipped-lane dev dump is the thing §5 was protecting, not the thing it was banning** — a `Siege.Llama.*` console command **structurally cannot reach the shipped path**, which is the entire point. **The full ruling is in CONVENTIONS "THE FINE-TUNE RUNG" §8.** ⛔ **This is the ONLY exec this batch adds, and it is READ-ONLY — no state change.**
+    **(2) ⛔ IT MUST GO THROUGH `USiegeAssistantSnapshot::Capture` AND `ComposeTurnPrompt` — NEVER A REIMPLEMENTATION.** ⚠️ **A dump that assembles its own string measures nothing.** That is this batch's founding defect, committed on purpose.
+    **(3) ⚠️ EXPECT THE ROSTER BLOCK TO DIFFER FROM THE HARNESS (D2) — THAT IS THE FINDING, NOT A BUG TO FIX HERE.** ⛔ **Do NOT change `MaxRosterKinds`. Do NOT "align" anything.** Report the bytes; **D2 is Jonathan's escalation (TASK-486)**, and it is his because all three candidate fixes move something frozen.
+    **(4) ⚠️ `USiegeAssistantSnapshot` HAD ZERO CALLERS UNTIL WAVE 1** — if the truncation log fires here, **that is the first observation this project has ever had of it (§12g / ruling 5 of SETTINGS+CONFIRM). Record it as a named observation, not a "looks fine".**
+    ⛔ **No Git, no compile.** Handoff `handoffs/TASK-479-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SiegeCheatManager.{h,cpp}` · `DumpAssistantPrompt(FString Utterance)` · `USiegeAssistantSnapshot::Capture` ·
+    `USiegeAssistantComponent::ComposeTurnPrompt` · `MaxRosterKinds` (⛔ **read, never write**) · `LogSiegeAssistant`.
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §8, §3 (D2) · "In-match LLM command assistant" §5 · §12g · THE QUIET-MODULE LAW.
+
+#### TASK-480 — [FT-A-GATE] QA gate on the Stage-A instrument (qa-reviewer)
+- assignee: qa-reviewer
+- status: backlog
+- blocked-by: **TASK-476 · TASK-477 · TASK-478 · TASK-479** (all four; §29's coverage ledger — ⛔ **a property of a SET cannot be checked by inspecting its members one at a time**)
+- parallel-safe: yes (read-only)
+- spec: >
+    **GATE ALL FOUR STAGE-A TASKS IN ONE REPORT.** ⛔ **The union is what matters and no individual task's gate can see it.**
+    **PRE-REGISTERED CRITERIA:**
+    **(1) ⛔ ADDITIVITY IS THE FIRST AND HARDEST CRITERION: every new flag's DEFAULT must reproduce today's behaviour EXACTLY.** ⚠️ **An edit that silently moves the instrument is worse than a deletion, because a deletion is loud** (manager ruling 2). **Check `repeats` defaults to 1 · `chat` defaults to 1 · `out`/`ids` absent ⇒ no change.**
+    **(2) `t0`'s BYTES ARE UNCHANGED.** ⛔ **`holdout2` is authored against them and is committed UNSPENT at `21f7e01`** — moving them voids the seal and forces a generation-3 corpus.
+    **(3) `chat=0` — READ `ComposeTurnPrompt` YOURSELF AND SAY WHETHER THE CLAIM HOLDS.** ⛔ **This is the one criterion you may not take from the handoff** (the RELAYED-DIAGNOSIS LAW: verify against the artifact, never against the message). ⚖️ **If it is equivalent-by-reading rather than byte-identical, SAY WHICH — the distinction is the whole of STOP 1's validity.**
+    **(4) `VerifyFixtureKindParity` STILL REJECTS an unknown kind** — a parity check that permits anything has been removed, not relaxed.
+    **(5) §1 IS INTACT:** `count` still **1–30**, kinds not pruned, no policy production added.
+    **(6) ⚖️ RE-SCOPED 2026-08-03 ON THE OBSERVER RULING — TASK-479 NOW LANDS AN ACCESSOR AS WELL AS AN EXEC, AND *BOTH* ARE IN SCOPE.** ~~TASK-479 goes through the SHIPPED path — no reimplementation, `MaxRosterKinds` untouched, exec is read-only.~~ ⇒ **(6a)** the exec goes through the **SHIPPED path** — ⛔ **no reimplementation, `MaxRosterKinds` untouched, read-only**; **(6b)** ⛔ **`ComposeTurnPrompt` IS STILL `private` — verify it in the header yourself.** A widened composer is an **automatic FAIL** whatever the handoff says; **(6c)** the accessor is **dev-only-guarded, delegates rather than re-derives, and there is still EXACTLY ONE COMPOSER**; **(6d)** ⛔ **no out-param, no new member, and no second `ReportFirstCapture` call** — the latch fires once and TASK-485 owns its output.
+    **(7) M8 DECLARATION:** confirm each handoff states *"adds no replicated property, no new replicated class, no new relevancy tier."*
+    **(8) ⛔ THE INVARIANT CRITERION, AND IT IS THE ONE THAT MATTERS MOST HERE: CONFIRM THE ACCESSOR'S HEADER COMMENT NAMES MECHANISM #2 AND ARGUES WHY IT IS NOT SPENT.** ⚖️ **`SiegeAssistantComponent.h:49-74` says the four mechanisms are things *"a later edit would have to DELETE rather than merely overlook — which is the difference between a rule and a comment."*** ⇒ **An addition that leaves no written trace of why it is safe has quietly converted #2 into a comment**, which is the exact degradation that clause exists to prevent. ⚠️ **A silent-but-correct edit here is indistinguishable, to the next reader, from a careless one.**
+    **(9) 📌 IF TASK-479 IS STILL UNIMPLEMENTED WHEN YOU RUN, GATE THE OTHER THREE AND SAY SO.** ⛔ **Never record a PASS over an absent deliverable** — §29's ledger is only a control if it shows the gaps.
+    ⛔ **You may open no sealed corpus for this gate — nothing here touches one.** Report `qa/TASK-480.md`. Post the verdict in ⚙️ Dev & QA.
+- names: >
+    Files under review: `SiegeLlamaSpike.cpp` · `SiegeCheatManager.{h,cpp}`. Reference-only: `SiegeAssistantComponent.cpp`, `SiegeAssistantSnapshot.cpp`.
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §2, §3, §16 · "Settings screen…" §29 · THE RELAYED-DIAGNOSIS LAW · §14 (search-tool law).
+
+#### TASK-481 — [FT-A-BUILD] ⛔ COMPILE + **PROVE THE INSTRUMENT DID NOT MOVE** + commit (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: **TASK-480 (PASS)** · ⛔ **QUIET MODULE ACROSS BOTH BATCHES — TASK-475 must not be in flight**
+- parallel-safe: no (⛔ **the batch's only Stage-A compile gate**)
+- spec: >
+    **(1) COMPILE.** ⛔ **Parse the log for `Result: Failed` — NEVER trust `$LASTEXITCODE`** (Build.bat returns 0 on a failed build under the Live Coding mutex). ⛔ **Quiesce BOTH batches first** — no game-module task in flight, from any board.
+    **(2) ⭐ THE ACCEPTANCE CRITERION THAT MATTERS MOST — RE-RUN THE EXISTING DEV-SPLIT MEASUREMENT WITH DEFAULT FLAGS AND SHOW THE NUMBER IS UNCHANGED.** `SpikeEval dev=Docs/Data/assistant_eval_dev.csv tier=full gpu=0` ⇒ ⛔ **expect 20/25 and the SAME failing-row identities (`DEV-01` · `DEV-04` · `DEV-07` · `DEV-16` · `DEV-20`).** ⚠️ **A different score here means the instrument moved, and every number this project holds becomes a claim about a tool that no longer exists.** ⇒ **STOP and report; do not proceed.**
+    **(3) EXERCISE EVERY NEW FLAG ONCE, AND PASTE THE EVIDENCE:** `repeats=5` prints per-row `stable=`/`flips=` **and** split `min/median/max` · `SpikePrompt out=<path>` produces a file whose **Zone A is 5116 chars** · `ids=1` prints a token-id sequence · `chat=0` and `chat=1` produce **different** prompt bytes (⛔ **if they are identical, D1 does not exist and that is a major finding — report it, do not assume a bug**).
+    **(4) `DumpAssistantPrompt` — RUN IT IN PIE ON `L_Arena` WITH UNITS ON THE FIELD**, never an empty map. ⚠️ **Verify measured FPS ≥ 58 live first** — `bThrottleCPUWhenNotForeground=False` is load-bearing and a background PIE idles at exactly 3.0 FPS (§12e). 🔒 **`L_Arena` is NEVER saved — SHA256 before AND after, hash never mtime.**
+    **(5) COMMIT** the Stage-A code on `main`. ⛔ **NO push** (`main` is **21 ahead**). ⛔ **Verify `.gitattributes`/LFS posture before adding anything binary; no `.gguf` and no `Models/` path may enter history.**
+    Handoff `handoffs/TASK-481-buildmaster.md`. Post in 🔧 Build & Git.
+- names: >
+    Build: `"C:/Program Files/Epic Games/UE_5.8/Engine/Build/BatchFiles/Build.bat" GitClaudeUnrealTestEditor Win64 Development -project="…/GitClaudeUnrealTest.uproject" -waitmutex` ·
+    `Siege.Llama.SpikeEval` · `Siege.Llama.SpikePrompt` · `DumpAssistantPrompt` · `zoneA_chars=5116`.
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §2, §10 · §12e · THE QUIET-MODULE LAW · UE Build.bat exit-code memory · the never-save `L_Arena` law.
+
+---
+
+#### TASK-482 — [FT-J1] 🙋 **JONATHAN'S TASK** — author `Docs/Data/assistant_voice_raw.txt` (60–80 sentences, verbatim)
+- assignee: **Jonathan** (manager escalates; ⛔ no agent may author this file)
+- status: backlog
+- blocked-by: **none — ▶ ASK NOW.** ⚠️ **THIS IS THE LONG POLE: it gates `dev2`, which gates Stage B's M2, which feeds every decision rule about the training mix.**
+- parallel-safe: yes (it is a text file; blocks nothing else)
+- spec: >
+    **WHAT IS ASKED:** **60–80 sentences you would actually type at the assistant mid-match**, written **verbatim and unsorted**, into `Docs/Data/assistant_voice_raw.txt`.
+    ⛔ **DO NOT CLEAN THEM UP. Typos, abbreviations, shorthand, run-ons and half-sentences ARE THE SIGNAL** — the whole reason this file exists is that *"send all units to hold the nearest mine"* is a sentence you would naturally type and the corpus row for it still fails, **even though the vocabulary already maps `hold → guard` and `infantry → footman`. The alias lever was already pulled and the row did not move — the failure is COMPOSITIONAL, not lexical.** A tidied corpus would hide exactly the thing being measured.
+    **INCLUDE, deliberately:** orders you would give **when you are losing** · orders that **cannot be satisfied** (units you do not have, places that do not exist) · orders that are **genuinely ambiguous** · army-wide orders · multi-kind orders · deferred/"when X happens" orders. ⚠️ **The refuse/clarify half matters MORE than the execute half — the eval is adversarial by requirement and generation 1 failed exactly there.**
+    ⛔ **YOU ARE THE ONLY POSSIBLE AUTHOR.** An agent writing these sentences would be **writing its own test**, which is the self-grading trap this entire apparatus exists to prevent (§11) — and it would produce phrasing that sounds like an agent, which measures nothing about how *you* type.
+    ⛔ **NOBODY SPLITS OR EDITS THIS FILE BUT TASK-484**, and **the tuner never opens it at all** (§11's authorship separation, extended).
+- names: >
+    `Docs/Data/assistant_voice_raw.txt` — plain text, one sentence per line, no header, no IDs, no sorting.
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §1 (ruling 4), §7 · §11 · §12a/§12b.
+
+#### TASK-483 — [FT-J2] 🙋 **JONATHAN'S TASK** — rule the TWO CONTRACTS the plan names, ⛔ before any gold row is authored
+- assignee: **Jonathan** (manager escalates)
+- status: backlog
+- blocked-by: **none — ▶ ASK NOW** (batch it with TASK-482 — it is the same sitting)
+- parallel-safe: yes
+- spec: >
+    ⛔ **TWO PRODUCT CONTRACTS ARE UNDECLARED, AND IF NOBODY RULES THEM THEY WILL BE DECIDED SILENTLY BY ~800 DRAFTED ROWS. A POLICY DECIDED BY A DATA-DRAFTING PASS IS A POLICY NOBODY CHOSE.**
+    **(1) WHAT DOES `send everyone` EMIT?** ⚠️ **`DEV-13`'s own note says a task was meant to declare this and none did.** ~10 % of the planned training mix is army-wide zero-arg rows, and they are being authored against nothing. **Options to choose between:** a distinguished `who:"all"` · an explicit enumeration of every live kind · a dedicated intent. **Whatever you pick becomes law and the corpora encode it.**
+    **(2) THE ASK-CODE TAXONOMY.** ⛔ **The corpora accept ANY OF FIVE codes**, so **the training set is where that policy actually gets decided.** Which code does the assistant emit when it cannot proceed — and is *"I don't have those units"* a different answer from *"I don't understand"*, from *"that's not something I can do"*, and from *"which ones?"* ⚠️ **The model will learn whatever the 800 rows do consistently; consistency is the only thing that is cheap to teach and the hardest thing to change later.**
+    ⚖️ **BOTH ARE RECORDED AS OPEN RATHER THAN GUESSED AT. An agent that picks one and proceeds has made a product decision inside a data task** — the §12f *"the corpus author is not the tuner"* separation, one level up.
+- names: >
+    Consumers of the ruling: `Docs/Data/Finetune/assistant_finetune_gold.csv` · `Docs/Data/assistant_eval_dev2.csv` · `SiegeAssistantCommand.h` (`ESiegeAssistantIntent`).
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §12 · "In-match LLM command assistant" §1, §3.
+
+#### TASK-484 — [FT-D1] 🔒 SPLIT THE VOICE FILE — `dev2` (open) / `holdout3` (SEALED) / training-eligible (art-director, headless, file-only, ⛔ NON-TUNER)
+- assignee: art-director
+- status: backlog
+- blocked-by: **TASK-482**
+- parallel-safe: yes vs everything (headless, no editor, no Blender, no compile); **EXCLUSIVE owner of `assistant_eval_dev2.csv` + `assistant_eval_holdout3.csv`**
+- spec: >
+    ⚠️ **YOU ARE NOT WRITING ART. This is a DATA task and it is yours for one structural reason: you are a different role from the tuner** (§11 + §12a, and the TASK-427 precedent, which worked). ⛔ **The tuner never opens the raw file or `holdout3`.**
+    **(1) SPLIT `Docs/Data/assistant_voice_raw.txt` THREE WAYS.** ~**30 → `Docs/Data/assistant_eval_dev2.csv`** (the owner-voice development instrument — **open and tunable**) · **15 → `Docs/Data/assistant_eval_holdout3.csv`** (⛔ **SEALED, reserve for a SECOND generation — nothing in this batch opens it**) · **remainder → training-eligible**, listed in the handoff by line index.
+    **(2) ⛔ BOTH NEW CSVs CARRY THE PINNED 9-COLUMN HEADER CHARACTER-FOR-CHARACTER AND THE `^intent=([a-z]+); ` `Notes` PREFIX.** ✅ **Zero parser change** — that is a hard requirement, not a convenience: `LoadCorpus` only **warns** on a header mismatch, so a wrong header would be **silently accepted and silently misread.**
+    **(3) ⛔ SPLIT ON CLASS BALANCE, NOT ON ORDER.** Each split must carry refuse-class and clarify-class rows **in proportion**; a `holdout3` that is accidentally all-Execute is worthless as a reserve. **Print the class table for all three splits in the handoff.**
+    **(4) 🔒 YOU MAY READ `assistant_eval_dev.csv` IN FULL AND YOU MUST DECLARE THAT YOU DID, WITH A COLLISION TABLE** (§12a's ruling, from the gen-2 pass: **the read is a SHOULD, the declaration is a MUST** — *"a reader cannot tell 'checked and clear' from 'never looked'"*). ⛔ **You may NOT open `assistant_eval_holdout.csv` or `assistant_eval_holdout2.csv`.**
+    **(5) ⛔ BURNED STRINGS ARE EXCLUDED FROM ALL THREE SPLITS** — the five spent gen-1 rows' surface forms and **the retired collision noun** (§12b's standing burned list). ⚠️ **If one of Jonathan's own sentences collides with a burned form, MOVE IT TO training-eligible and say so** — do not rewrite his words. **His file is never edited.**
+    **(6) COMPUTE AND PRINT THE DEGENERATE-QUESTION FLOOR FOR `dev2` AND `holdout3`**, as TASK-427 did. ⚠️ **Generation 1's floor was 60 % against a measured 66.7 % — its entire signal was ONE ROW WIDE, and that was a property of the FILE, not of the model.**
+    ⛔ **No Git.** Handoff `handoffs/TASK-484-artist.md`. Post in 🎨 Art.
+- names: >
+    In: `Docs/Data/assistant_voice_raw.txt`. Out: `Docs/Data/assistant_eval_dev2.csv` · `Docs/Data/assistant_eval_holdout3.csv` · the training-eligible list (handoff only).
+    Header: `Id,Sentence,ExpectOutcome,ExpectKinds,ExpectCounts,ExpectWhere,ExpectTriggerKind,ExpectTriggerAtLeast,Notes` · `Notes` prefix `^intent=([a-z]+); `.
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §5, §7 · §11 · §12a (holdout generations, `N` = 3) · §12b (burned rows).
+
+---
+
+#### TASK-485 — [FT-B1] ⛔ **THE MEASUREMENT — M0 · M1 · M3, AND BOTH STOPS EVALUATED IN WRITING** (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: **TASK-481**
+- parallel-safe: no (exclusive editor/PIE session)
+- spec: >
+    ⛔ **ALL ON THE CURRENT `Qwen3-4B-Q4_K_M.gguf`, `tier=full`, `gpu=0`, `grammar=1`. NO PROMPT BYTE AND NO WEIGHT CHANGES. NO SEAL IS SPENT.** 🔒 **`holdout2` and `holdout3` are NOT opened.**
+    **M0 — DETERMINISM PROBE.** Same prompt, **20 greedy generations, no corpus.** ⇒ **THE INSTRUMENT'S NOISE FLOOR, AS A NUMBER.** ⚠️ **`DEV-11` is known to flip between `n:2` and `n:"all"` with a greedy sampler, no temperature, no seed — so the obvious explanation is EXCLUDED BY CONSTRUCTION** (§12h). ⛔ **This bounds it; it does NOT diagnose it, and no task may spec a fix as though the GPU/KV-nondeterminism hypothesis were a finding.**
+    **M1 — WIRE-FORMAT A/B on `Docs/Data/assistant_eval_dev.csv`: `chat=1 repeats=5`, then `chat=0 repeats=5`.** ⇒ ⛔ **THE SIZE OF THE LIE IN EVERY NUMBER ON RECORD.**
+    **M3 — ARTIFACT DIFF.** `DumpAssistantPrompt` output vs the harness's assembled prompt, **same utterance, BYTE-COMPARED.** ⇒ PASS/FAIL on *"the harness measures the string the game produces."* ⚠️ **EXPECT FAIL ON THE ROSTER BLOCK (D2) — that is the predicted result, and predicting it in advance is what makes the FAIL informative rather than alarming.**
+    ⚖️ **D2's EXPECTED SHAPE IS PINNED FROM BOTH LANES' SOURCE — READ IT BEFORE YOU DIFF, SO YOU DO NOT REPORT A SECOND DEFECT THAT IS NOT THERE.** ⛔ **It is NOT a key-set difference — the key set is IDENTICAL in both lanes** (`places, roster, other_kinds, stances, hero, pending, order`; both files carry that fixed-key comment). **On `t0`: the spike prints 13 roster rows + `other_kinds: none` (⛔ HARDCODED at `SiegeLlamaSpike.cpp:632`), the shipped builder prints 8 rows + `other_kinds: 5 kinds, N units` (computed, `SiegeAssistantSnapshot.cpp:1313-1320`).** ⇒ **Expect exactly TWO differences: five ABSENT roster rows, and the `other_kinds:` VALUE.**
+    ⭐ **AND CARRY THE GOOD NEWS TO TASK-486 BESIDE THE BAD: D2 BITES ONLY *ABOVE* THE CAP. A fixture of ≤ 8 kinds renders BYTE-IDENTICALLY in both lanes** ⇒ ✅ **training fixtures `tA`–`tF` are lane-identical by construction and the training data is NOT blocked on D2. ⛔ Only `t0` is affected — and `t0` is the sealed one, which is why the escalation still stands.**
+    **⛔ RUN `DumpAssistantPrompt` AND QUOTE THE `FIRST LIVE CAPTURE` LOG LINE IN THE SAME SESSION — YOU NOW OWN TASK-447's OWED FIRST-EXECUTION AUDIT.** ⚠️ **`ReportFirstCapture` is latched by `bLoggedFirstCapture` and fires ONCE per session, spent by whatever calls the composer first.** ⇒ **Quote `zoneA_chars` / `zoneB_chars` / `zoneC_chars` / `roster_kinds` / `MaxRosterKinds` verbatim** — ⚖️ **a latched one-shot is a CONSUMABLE, and this is it being spent on purpose into the artifact that was owed it, instead of by accident in an unwatched session.**
+    **ARTIFACT CAPTURE FOR M4:** run `SpikePrompt out=<path> ids=1` and **keep both files** — ⛔ **the Python comparison is TASK-498 and is deliberately not yours.** ⚠️ **Do NOT improvise a substitute tokenizer to "finish" M4 here; parity against the wrong tokenizer is worse than no parity.**
+    ⛔ **THEN EVALUATE BOTH STOPS, IN WRITING, BEFORE ANYTHING ELSE IS PROPOSED:**
+    · **STOP 1** — is `chat=0` **materially below** `chat=1`? ⛔ **"Materially" is defined against M0's measured band, not against your judgement.** If yes ⇒ **TRAINING IS NOT AUTHORISED; the wire format is fixed and re-measured first.**
+    · **STOP 2** — did M3 fail on the roster seam? If yes ⇒ **D2 must be resolved first**, and it is **Jonathan's** (TASK-486).
+    ⭐ **IF STOP 1 FIRES, SAY SO AS A SUCCESS.** ⛔ **A stop is not a failure and no sentence in your handoff may frame it as one** — fixing D1 is hours, QLoRA is weeks, and **discovering the shipped lane was never measured at its own best is the cheapest good outcome available.**
+    ⛔ **REPORT min/median/max AND THE IDENTITY OF EVERY ROW THAT MOVED** (§12h). ⛔ **Never as a delta from 66.7 %** — generations are not row-comparable (§12a). **The split's printed leniency floor travels beside every number.**
+    ⚠️ **`bThrottleCPUWhenNotForeground=False` verified and FPS ≥ 58 live before any timing figure** (§12e). 🔒 **`L_Arena` never saved — SHA256 before and after.** ⛔ **Override `EditorStartupMap` explicitly on every headless invocation (TASK-474's finding).**
+    Handoff `handoffs/TASK-485-buildmaster.md` — ⛔ **and PRE-REGISTER, before you run, what result would falsify your own reading** (§12f's method result, now standing law on this lane). Post in 🔧 Build & Git; **cross-post one line in 🚨 Blockers if either stop fires.**
+- names: >
+    `Siege.Llama.SpikeEval` (`dev=` · `chat=0|1` · `repeats=5` · `tier=full` · `gpu=0`) · `Siege.Llama.SpikePrompt` (`out=` · `ids=1`) · `DumpAssistantPrompt` ·
+    `Docs/Data/assistant_eval_dev.csv` · `zoneA_chars=5116`.
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §2, §3, §4, §10 · §12a · §12e · §12h · §12f (pre-registration).
+
+#### TASK-486 — [FT-J3] 🙋 **JONATHAN'S TASK** — the TWO STAGE-B ESCALATIONS: D1's recommendation and D2's question
+- assignee: **Jonathan** (manager escalates, carrying TASK-485's artifacts)
+- status: backlog
+- blocked-by: **TASK-485**
+- parallel-safe: n/a — ⛔ **this is the batch's decision point and everything downstream waits on it**
+- spec: >
+    **DECISION 1 — D1, THE WIRE FORMAT. THE PIPELINE'S RECOMMENDATION IS: ADOPT THE CHAT TEMPLATE IN THE RUNTIME.** It **preserves the interpretation of three waves of measurement**, and **Qwen3 is post-trained on it** — raw concatenation is off-distribution by construction. ⚠️ **It is a change to shipped behaviour and it re-bases what every historical number means, so it is yours.**
+    ⚠️ **AND THE TRAP THAT COMES WITH IT, STATED UP FRONT BECAUSE IT IS SILENT: `SetStaticPrefix` MUST THEN REGISTER THE *TEMPLATED* PREFIX** (system-open + Zone A + system-close + user-open), **not bare Zone A.** Register the wrong one and **KV reuse dies at token ~3, silently degrading bar #2 and bar #3 with NO LOG LINE.** ⇒ The pre-template half is locked by a new frozen-transcription test; ⛔ **the wrapper half lives inside the GGUF and can only be ARTIFACT-CHECKED — we will say so plainly rather than over-claim a test.**
+    ⛔ **DECISION 2 — D2, THE ROSTER SEAM. THIS IS A GENUINE QUESTION, NOT A RECOMMENDATION WITH A BOW ON IT, BECAUSE ALL THREE CANDIDATE FIXES MOVE SOMETHING FROZEN:**
+    · **shrink the fixtures to 8 kinds** ⇒ ⛔ **`t0`'s bytes are sealed law** (§12a/§16) and `holdout2` is authored against them;
+    · **teach the harness to collapse like the shipped builder** ⇒ ⛔ **same — it changes what `t0` renders;**
+    · **raise `MaxRosterKinds` 8 → 13** ⇒ ⛔ **§12c freezes Zone B/C bytes this wave**, and it changes the shipped prompt.
+    ⚠️ **THE CONSEQUENCE THAT MAKES IT YOURS: it may mean `holdout2` is no longer authored against the thing it would score** — i.e. **your one honest measurement may need to be re-authored as a generation 3.** ⛔ **Nobody else may spend that.** **M3's byte diff is attached as the evidence.**
+    ⭐ **DECISION 3 — PROCEED, OR STOP HERE.** ⛔ **If STOP 1 fired, the honest answer may be "fix the wire format, re-measure, and we may not need to train at all" — and if M2 later comes back ≥ 13/15-equivalent on the shipped shape, the pre-registered rule says DO NOT TRAIN.** ⭐ **A batch that ends here having saved weeks is a success and the board says so in advance.**
+- names: >
+    Evidence: `handoffs/TASK-485-buildmaster.md` (M0 band · M1 A/B · M3 byte diff) · `Docs/Data/assistant_eval_holdout2.csv` (🔒 **UNSPENT at `21f7e01`**) ·
+    `MaxRosterKinds` · `SetStaticPrefix` · `t0`.
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §2, §3, §4 · §12a · §12c · §16.
+
+#### TASK-487 — [FT-B2] M2 — THE OWNER-VOICE BASELINE ON `dev2`, BOTH WIRE FORMATS ×5 (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: **TASK-485** · **TASK-484** (⚠️ **`assistant_eval_dev2.csv` does not exist until then — finding (i)**) · **TASK-486** (Jonathan's proceed)
+- parallel-safe: no (exclusive editor/PIE session)
+- spec: >
+    **RUN `SpikeEval dev=Docs/Data/assistant_eval_dev2.csv tier=full gpu=0 repeats=5` in BOTH wire formats (`chat=1` and `chat=0`).** ⇒ ⛔ **THE REAL GAP: on HIS phrasings, on the SHIPPED shape.**
+    ⛔ **THEN APPLY THE PRE-REGISTERED DECISION RULES — they were written before M1 ran and they are not re-negotiated now:**
+    · **M2 ≈ M1 within M0's band** ⇒ the gap is **CAPABILITY**; the training mix is **class-driven from M5's taxonomy**.
+    · **M2 materially worse than M1** ⇒ the gap is **DISTRIBUTION**; the mix is **voice-heavy**; fine-tuning very likely works.
+    · ⛔ **M2 already ≥ 13/15-equivalent on the shipped shape** ⇒ **DO NOT TRAIN. Re-run the gate arithmetic — the feature may already pass once the wire format is honest.**
+    ⛔ **`repeats=5`, min/median/max, and the identity of every row that moved** (§12h). ⛔ **`dev2` is an OPEN instrument and its numbers are FITTED BY CONSTRUCTION — never quote a `dev2` figure against the ≥ 85 % bar** (§11/§12a).
+    ⛔ **Do NOT open `holdout2` or `holdout3`.** ⚠️ **FPS ≥ 58 and the throttle check before any timing figure.** 🔒 **`L_Arena` never saved.**
+    Handoff `handoffs/TASK-487-buildmaster.md`. Post in 🔧 Build & Git.
+- names: >
+    `Siege.Llama.SpikeEval` (`dev=Docs/Data/assistant_eval_dev2.csv` · `chat=0|1` · `repeats=5`) · the printed `LENIENCY FLOOR`.
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §4, §10 · §11 · §12a · §12h.
+
+#### TASK-488 — [FT-B3] M5 — THE FAILURE TAXONOMY (qa-reviewer) — ⛔ this determines the training mix, not the score
+- assignee: qa-reviewer
+- status: backlog
+- blocked-by: **TASK-487**
+- parallel-safe: yes (read-only analysis)
+- spec: >
+    ⛔ **HAND-BUILD A TAXONOMY OVER M2's FAILURES. THIS IS NOT A SCORE AND IT MUST NOT BE REPORTED AS ONE.** ⚖️ **It is assigned to you rather than to the party that ran the numbers, deliberately: the person who produced a measurement should not also decide what it means.**
+    **PER FAILING ROW, EXACTLY ONE OF THE SIX PRE-REGISTERED CLASSES** (⛔ **the classes are fixed in the plan — do not invent a seventh mid-analysis, because a taxonomy that grows to fit its data explains everything and predicts nothing, §12f's worked example**):
+    **wrong-intent · wrong-kind · wrong-count · wrong-place · commanded-when-it-should-have-asked · asked-when-it-should-have-commanded.**
+    ⚠️ **THE LAST TWO ARE THE ONES THAT MATTER MOST AND THEY POINT IN OPPOSITE DIRECTIONS.** *Commanded-when-it-should-have-asked* is the class that broke a standing Jonathan ruling; *asked-when-it-should-have-commanded* is the class the **scorer rewards by accident** (it skips asserted fields when a question is emitted) ⇒ ⛔ **a training set that over-teaches "ask" converts STRICT passes into LENIENT-only ones and looks like progress.** **Report `clarify_rows_passed_by_question` and the printed `LENIENCY FLOOR` beside the taxonomy, every time.**
+    **DELIVERABLE: a per-class COUNT and, for each class, the shortest honest statement of what would fix it.** ⛔ **Say plainly which classes MORE DATA WILL NOT FIX** — pre-register it now, before Stage E can rationalise it: *"if refuse-class rows still fail, the defect is POLICY ROUTING and more data of the same kind will not fix it."*
+    ⛔ **You may quote `dev2` rows freely (it is open). You may NOT open `holdout2` or `holdout3`.**
+    Report `qa/TASK-488.md`. Post in ⚙️ Dev & QA.
+- names: >
+    In: `handoffs/TASK-487-buildmaster.md` · `Docs/Data/assistant_eval_dev2.csv`. Out: per-class counts + the mix recommendation.
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §4, §7 (the disposition ceiling) · §12f · §12a.
+
+---
+
+#### TASK-489 — [FT-D1FIX] ADOPT THE CHAT TEMPLATE IN THE RUNTIME + the `SetStaticPrefix` templated-prefix fix (gameplay-programmer, GAME MODULE) — ⛔ CONDITIONAL
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: **TASK-486 (Jonathan's D1 ruling)** · ⛔ **MUTUALLY EXCLUSIVE with any game-module compile gate**
+- parallel-safe: no
+- spec: >
+    ⛔ **ONLY RUNS IF JONATHAN RULES TO ADOPT THE TEMPLATE. If he rules otherwise, this task is CLOSED as `not-needed`, not left hanging.**
+    **(1) `ComposeTurnPrompt` EMITS THE QWEN3 CHAT TEMPLATE** — Zone A as `system`, Zone B + Zone C as `user`, `add_generation_prompt=true` — **byte-matching the shape `chat=1` produces in the harness.** ⛔ **The acceptance criterion is a BYTE COMPARISON against `SpikePrompt out=` with `chat=1`, not a reading.**
+    **(2) ⛔ THE TRAP, AND IT IS THE WHOLE RISK OF THIS TASK: `SetStaticPrefix` MUST REGISTER THE *TEMPLATED* PREFIX** — system-open **+** Zone A **+** system-close **+** user-open — ⛔ **NOT bare Zone A.** ⚠️ **Register the wrong one and KV reuse dies at token ~3, silently degrading bar #2 (TTFT/wall clock) and bar #3 (the 77.1 % prefix-reuse drop) with NO LOG LINE AT ALL.** ⇒ **Print the registered prefix's length and its first/last 40 bytes to `LogSiegeLlama` so the failure is loud instead of silent.**
+    **(3) ⚠️ ZONE A's BYTES ARE UNCHANGED — you are WRAPPING it, not editing it.** `zoneA_chars` must still read **5116**. ⛔ **§12c's ceiling (`zoneA_tok ≤ 1389`) is a RUNTIME gate read off the printed `zoneA_tok~=`, and the wrapper adds ~13 tokens — state the new total and check it against the budget.**
+    **(4) ⛔ `ContextTokens` STAYS 2048** (§12c) — bars #1/#3/#4 passed at that value and raising it silently invalidates three passing measurements.
+    ⛔ **No Git, no compile.** Handoff `handoffs/TASK-489-programmer.md` — ⛔ **must state which half of the wire format is TESTED and which half is only ARTIFACT-CHECKED. Do not over-claim.** Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SiegeAssistantComponent.{h,cpp}` · `ComposeTurnPrompt` · `SetStaticPrefix` · `llama_memory_seq_rm` · `LogSiegeLlama` ·
+    `ContextTokens` (⛔ **unchanged, 2048**) · `zoneA_chars=5116`.
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §4 (the trap) · "In-match LLM command assistant" §8 · §12c · THE QUIET-MODULE LAW.
+
+#### TASK-490 — [FT-D1TEST] `SiegeAssistantPromptWireTest.cpp` — freeze the PRE-TEMPLATE half, and say plainly that it is only half (gameplay-programmer) — ⛔ CONDITIONAL
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: **TASK-489**
+- parallel-safe: yes vs everything outside the game module's compile gate (new file, single owner)
+- spec: >
+    **A FROZEN-TRANSCRIPTION TEST FOR THE WIRE FORMAT, COPYING `SiegeAssistantZoneATest.cpp`'s IDIOM EXACTLY.**
+    **(1) ASSERT ON CHARACTERS/BYTES, NEVER ON TOKENS** (§12g): **chars are exact and countable offline with no model resident**; the repo's verified ASCII-clean prompt-literal property makes **char count == byte count**. ⛔ **A DERIVED TOKEN CONSTANT MUST NOT BE BAKED INTO ANY TEST — its error sign is unknown, and a test asserting a number nobody measured is a guardrail that reports safe.**
+    **(2) ⛔ USE `TestEqualSensitive`, NEVER `TestEqual`** — `TestEqual` on `FString` is **case-insensitive** here, and a byte/casing claim made with it asserts less than it appears to (§13).
+    **(3) ⛔ STATE THE LIMIT IN THE TEST'S OWN COMMENT, NOT ONLY IN THE HANDOFF: THIS TEST COVERS THE PRE-TEMPLATE HALF ONLY. THE WRAPPER HALF LIVES INSIDE THE GGUF AND CAN ONLY BE ARTIFACT-CHECKED.** ⚖️ **Over-claiming here would be this project's exact recurring failure — a confident green describing something else.**
+    **(4) ⚠️ A WRITTEN TEST IS NOT A GUARDRAIL; A RUN TEST IS.** `ZoneA.NullVocabularyIsNotTheMeasuredLane` **asserted the exact identity that broke and caught nothing, because it had never been run** ⇒ **this test must appear in TASK-492's executed suite, by name, with its result quoted.**
+    ⛔ **No Git, no compile.** Handoff `handoffs/TASK-490-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    **NEW** `Source/GitClaudeUnrealTest/Siegebound/Tests/SiegeAssistantPromptWireTest.cpp` (donor idiom: `SiegeAssistantZoneATest.cpp`) · `TestEqualSensitive` ·
+    `Siegebound.Assistant.PromptWire.*`.
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §4 · §12g (chars not tokens) · §13 (`TestEqualSensitive`) · §32 (present ≠ proven).
+
+#### TASK-491 — [FT-D1-GATE] QA gate on the wire-format change (qa-reviewer) — ⛔ CONDITIONAL
+- assignee: qa-reviewer
+- status: backlog
+- blocked-by: **TASK-489 · TASK-490**
+- parallel-safe: yes
+- spec: >
+    **(1) ⛔ THE `SetStaticPrefix` CRITERION IS THE GATE. Read the code and confirm the registered prefix is the TEMPLATED one** (system-open + Zone A + system-close + user-open), **not bare Zone A.** ⚠️ **This failure is COMPLETELY SILENT — no log line, no error, just two bars quietly degrading** — so it cannot be caught downstream and it must be caught here.
+    **(2) ZONE A's BYTES ARE UNCHANGED** (`zoneA_chars` still **5116**) and **`ContextTokens` is still 2048.**
+    **(3) THE TEST ASSERTS CHARS, NOT TOKENS, AND USES `TestEqualSensitive`.**
+    **(4) ⛔ THE OVER-CLAIM CHECK: confirm the handoff AND the test comment both say the wrapper half is artifact-checked, not tested.** ⚖️ **A gate that lets an over-claim through has manufactured the confident green it exists to prevent.**
+    Report `qa/TASK-491.md`. Post in ⚙️ Dev & QA.
+- names: >
+    Under review: `SiegeAssistantComponent.{h,cpp}` · `SiegeAssistantPromptWireTest.cpp`. Law: CONVENTIONS "THE FINE-TUNE RUNG" §4 · §12c · §12g · §13.
+
+#### TASK-492 — [FT-D1-BUILD] compile + RE-RUN M1/M3 ON THE FIXED LANE + run the suite + commit (build-master) — ⛔ CONDITIONAL
+- assignee: build-master
+- status: backlog
+- blocked-by: **TASK-491 (PASS)** · ⛔ **quiet module across both batches**
+- parallel-safe: no
+- spec: >
+    **(1) COMPILE** (⛔ parse the log for `Result: Failed`; never trust the exit code).
+    **(2) ⭐ RE-RUN M1 AND M3 ON THE FIXED LANE — THIS IS THE POINT OF THE WHOLE STAGE.** ⛔ **M3 must now PASS on everything except the roster block if D2 is still open** (say which). **M1's `chat=0` should now equal `chat=1`** — ⚠️ **if it does not, the fix did not land and NOTHING downstream may proceed on the assumption that it did.**
+    **(3) RUN THE FULL AUTOMATION SUITE** via `Tools/run_automation_tests.ps1` (filter **`Siegebound`**, ⛔ **not `Siegebound.Assistant`, which matched only 26 of 33**), and ⛔ **quote `Siegebound.Assistant.PromptWire.*` BY NAME with its result** — a written test that never ran is not a guardrail.
+    **(4) VERIFY BAR #2 AND BAR #3 DID NOT DEGRADE** — ⚠️ **that is the silent-failure signature of a mis-registered static prefix**, and it is the only observable that would catch it.
+    **(5) COMMIT on `main`. ⛔ NO push.** 🔒 `L_Arena` never saved (SHA256 before/after). ⛔ Override `EditorStartupMap` on every headless invocation.
+    Handoff `handoffs/TASK-492-buildmaster.md`. Post in 🔧 Build & Git.
+- names: >
+    `Tools/run_automation_tests.ps1` · `Siegebound` (test filter) · `Siegebound.Assistant.PromptWire.*` · bar #2 (wall clock) · bar #3 (`DROP = 77.1 %`).
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §4, §10 · §12d · §12e · THE QUIET-MODULE LAW · UE Build.bat exit-code memory.
+
+---
+
+#### TASK-493 — [FT-C1] `Tools/LlmFinetune/` — the sibling uv project + `finetune_env.py` (gameplay-programmer, file-only)
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: **TASK-486 (Jonathan's proceed)** — ⚖️ **deliberate: Stage C does not start before the stops are evaluated.** 📌 **Jonathan may pull C1+C2 forward if he wants an EARLY HARDWARE VERDICT — that is his call to make, not the pipeline's default.**
+- parallel-safe: yes (a new directory nobody else owns; no compile, no editor)
+- spec: >
+    **AUTHOR THE PROJECT SKELETON — FILES ONLY, NO INSTALL** (`uv sync` and the probe run are TASK-495's).
+    **(1) `pyproject.toml` · `.python-version` (3.12) · `README.md`.** ⛔ **DO NOT BOLT THIS INTO `Tools/ArtPipeline/`** — that project pins 3.12 for `gradio_client`, and adding **~4 GB of torch wheels couples two unrelated lanes' dependency resolution.** ⚠️ **3.12 here for an INDEPENDENT reason: wheel coverage for `bitsandbytes` / torch-cu128 is best on 3.11–3.12 and system 3.14 has effectively none.** ⛔ **Write that reason in the header, exactly as `ArtPipeline/pyproject.toml` already does** — two projects pinning the same version for different reasons will otherwise be "helpfully" merged later.
+    **(2) PINS (floors; `uv.lock` is the truth):** `torch >=2.8,<3.0` **from the cu128 index** (⚠️ **the RTX 5070 is Blackwell `sm_120`; pre-2.7 wheels have NO kernels for it**) · `bitsandbytes >=0.47` · `transformers >=4.56,<5` · `peft >=0.17` · `trl >=0.24` · `datasets >=4.0` · `accelerate >=1.10` · `safetensors >=0.6`.
+    ⛔ **NOT INSTALLED, DELIBERATELY, AND SAY SO IN THE README SO NOBODY "FIXES" IT:** `flash-attn` + `xformers` (**no Windows wheels** — use `attn_implementation="sdpa"`) · `unsloth` (**held as a VRAM lever**) · **no CUDA Toolkit** (the wheels bundle the runtime — this is also boundary 3 of the §6 CUDA amendment).
+    **(3) `finetune_env.py --check` — MIRROR THE CONVENTION `Tools/fetch_llm_model.py` ALREADY SET:** every failure **printed rather than raised**, **token never printed**, ends **`CHECK_VERDICT: PASS|FAIL`**, exit 0/1. **Probes:** torch + **`sm_120` in `get_arch_list()`** · ⛔ **A REAL `bnb.nn.Linear4bit` FORWARD ON CUDA — import success is NOT function (§32, and trap T6: bitsandbytes imports fine and then has no `sm_120` kernels)** · a **paged-optimizer step** (⚠️ Windows/WDDM unified memory is historically unreliable — **fall back to non-paged `adamw_8bit` and SAY SO**) · **free VRAM with a FLOOR THAT REFUSES, not a warning** — ⚖️ **a deliberate contrast with the tier selector, which picks a tier it cannot run in** · `HF_TOKEN` **presence only** · `huggingface.co` reachability **RUN BARE** (⛔ **the Norton HF exclusions are live and proven — do NOT reintroduce `SSL_CERT_FILE`**) · **free disk ≥ 60 GB** · toolchain cache presence.
+    **(4) `Cache/` AND `Runs/` ARE GITIGNORED**; ⛔ **`uv.lock` IS COMMITTED.**
+    **(5) ⛔ THE PIN RATIONALE GOES IN THE README VERBATIM OR SOMEONE WILL HELPFULLY UPGRADE IT: *converter/runtime skew produces a GGUF that loads and is subtly wrong* — both ends pinned to `221f0f63` eliminates the class.**
+    ⛔ **`Tools/**/*.py` IS CODE ⇒ QA-GATED. No Git.** Handoff `handoffs/TASK-493-programmer.md`. Post in ⚙️ Dev & QA.
+- names: >
+    **NEW** `Tools/LlmFinetune/pyproject.toml` · `.python-version` · `README.md` · `finetune_env.py` · (stubs) `build_dataset.py` `train_qlora.py` `merge_and_convert.py` `check_disjoint.py` ·
+    gitignored `Cache/` + `Runs/` · `CHECK_VERDICT: PASS|FAIL` · donor idiom `Tools/fetch_llm_model.py`.
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §5, §6 · "In-match LLM command assistant" §5 (`Tools/**/*.py` is CODE) · §6 CUDA amendment boundary 3 · §32.
+
+#### TASK-494 — [FT-C-GATE] QA gate on `Tools/LlmFinetune/` (qa-reviewer)
+- assignee: qa-reviewer
+- status: backlog
+- blocked-by: **TASK-493**
+- parallel-safe: yes
+- spec: >
+    **(1) ⛔ THE PROBE MUST RUN A REAL 4-BIT FORWARD, NOT AN IMPORT.** §32: **present is not proven.** An `--check` that only imports `bitsandbytes` reports PASS on the exact configuration trap T6 describes.
+    **(2) ⛔ THE VRAM CHECK MUST *REFUSE*, NOT WARN.** ⚖️ **This is the named contrast with the tier selector, which picks a tier it cannot run in** — a probe that warns and continues has reproduced that defect in a new place.
+    **(3) `HF_TOKEN` IS NEVER PRINTED**, presence only. **`huggingface.co` is probed BARE — flag any `SSL_CERT_FILE` reintroduction as a FAIL.**
+    **(4) NO CUDA TOOLKIT DEPENDENCY, and nothing that would place a CUDA artifact outside the `.venv`** — ⛔ **§6 CUDA amendment boundaries 1 and 3 are QA criteria, not prose.**
+    **(5) THE 3.12 RATIONALE IS IN THE HEADER** and the *"not installed, deliberately"* list is in the README with reasons.
+    **(6) `uv.lock` committed · `Cache/` + `Runs/` gitignored.**
+    Report `qa/TASK-494.md`. Post in ⚙️ Dev & QA.
+- names: >
+    Under review: `Tools/LlmFinetune/**`. Law: CONVENTIONS "THE FINE-TUNE RUNG" §6 · §6 CUDA amendment · §32 · the Norton-TLS standing note.
+
+#### TASK-495 — [FT-C2] `uv sync` + run `finetune_env.py --check` ⇒ **`CHECK_VERDICT`** (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: **TASK-494 (PASS)**
+- parallel-safe: yes (no editor, no compile, no Git)
+- spec: >
+    **(1) `uv sync` IN `Tools/LlmFinetune/`; COMMIT-READY `uv.lock` PRODUCED.** ⛔ **Record the RESOLVED versions in the handoff — the pins are floors and the lock is the truth.**
+    **(2) RUN `finetune_env.py --check` AND PASTE THE FULL OUTPUT, ending `CHECK_VERDICT: PASS|FAIL`.**
+    **(3) ⛔ A `FAIL` IS A RESULT, NOT A BLOCKER TO WORK AROUND.** ⚠️ **Trap T5: the logits term (a 151,936 vocabulary) is one term wide against the margin — the probe REFUSES AT STEP 0 rather than OOM-ing at 60–90 % of a multi-hour run.** ⇒ **If the VRAM floor refuses, report it with the number and escalate; do not lower the floor.**
+    **(4) RECORD FREE VRAM WITH THE EDITOR CLOSED, AS A NUMBER** — the whole 8 GB question turns on it (~5.6–6.9 GB needed vs ~7.3–7.7 GB free).
+    ⛔ **Run `huggingface.co` reachability BARE.** ⛔ **No Git in this task.**
+    Handoff `handoffs/TASK-495-buildmaster.md`. Post in 🔧 Build & Git; **cross-post one line in 🚨 Blockers on a FAIL.**
+- names: >
+    `Tools/LlmFinetune/finetune_env.py --check` · `uv.lock` · `CHECK_VERDICT: PASS|FAIL` · `bnb.nn.Linear4bit` · `get_arch_list()` (`sm_120`).
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §6, §11 (the logits term) · §32 · the uv/Python machine-config standing note (UV_SYSTEM_CERTS + HF_TOKEN live in HKCU).
+
+#### TASK-496 — [FT-C3] THE GGUF TOOLCHAIN + THE BASE SAFETENSORS + ⛔ ITS OWN LICENCE VERIFICATION (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: **TASK-495 (`CHECK_VERDICT: PASS`)**
+- parallel-safe: yes
+- spec: >
+    **(1) `llama-quantize.exe` — RE-FETCH THE *SAME* RELEASE ZIP `llama-b10235-bin-win-vulkan-x64.zip`**, ⛔ **verify against the sha256 ALREADY RECORDED in `Plugins/SiegeLlama/Source/ThirdParty/LlamaCpp/VERSION.md`**, extract whole into `Cache/`. ⛔ **The exes were DELIBERATELY excluded from `bin/Win64/` at vendoring time — DO NOT put them back.**
+    **(2) CLONE llama.cpp INTO `Cache/` AT COMMIT `221f0f6356efe2260023208365705ec5d5a7c8f5`** — the SHA already in `VERSION.md`. ✅ **A commit SHA pins the whole tree; nothing new needs provenancing.** ⛔ **`Cache/` is gitignored, so this is a REPRODUCIBLE ARTIFACT, not repo content.**
+    **(3) FETCH `Qwen/Qwen3-4B` SAFETENSORS (~8 GB) WITH `Tools/fetch_llm_model.py` UNCHANGED** (`--repo/--file/--dest`, sha256 verified against the HF LFS oid) into **`Tools/LlmFinetune/Cache/base/`** — ⛔ **NOT `Models/`.**
+    **(4) ⛔ LICENCE VERIFICATION IS A SEPARATE DELIVERABLE AND IT IS NOT INHERITED: `Qwen/Qwen3-4B` IS A DIFFERENT REPO ID FROM `Qwen/Qwen3-4B-GGUF`.** §7's rule in the other direction — *"it's Apache because the family is" is not verification.* **Verify the card LIVE; quote the `license:` line VERBATIM; record the REVISION SHA.** ⚠️ **Also check it is UNGATED** — a manual gate is disqualifying for an unattended fetch (the Gemma precedent).
+    **(5) ⛔ WHY THE PIN MATTERS, INTO THE HANDOFF AND THE README: converter/runtime skew produces a GGUF that LOADS AND IS SUBTLY WRONG (T7). Both ends pinned to `221f0f63` eliminates the class.**
+    ⛔ **No `.gguf` and no `Models/` path may enter git history.** Handoff `handoffs/TASK-496-buildmaster.md`. Post in 🔧 Build & Git.
+- names: >
+    `llama-b10235-bin-win-vulkan-x64.zip` · `Plugins/SiegeLlama/Source/ThirdParty/LlamaCpp/VERSION.md` · commit `221f0f6356efe2260023208365705ec5d5a7c8f5` ·
+    `convert_hf_to_gguf.py` · `convert_lora_to_gguf.py` · `llama-quantize.exe` · `Qwen/Qwen3-4B` · `Tools/fetch_llm_model.py` (⛔ **unchanged**) · `Tools/LlmFinetune/Cache/base/`.
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §6, §9 · "In-match LLM command assistant" §7 (licensing duty).
+
+#### TASK-497 — [FT-C4] ⭐⭐ **THE ROUND-TRIP PROOF ON THE BASE MODEL** — the highest-value step in the plan and the easiest to skip (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: **TASK-496** · **TASK-481** (needs the instrument)
+- parallel-safe: no (exclusive editor session — ⚠️ **two model-load paths WON'T FIT ON ONE CARD; smoke runs are one-lane-per-session**)
+- spec: >
+    ⭐ **DO THIS BEFORE ANY TRAINING. IT PROVES THE TOOLCHAIN END TO END WHILE THE *ONLY* VARIABLE IS THE TOOLCHAIN.**
+    **THE CHAIN:** base safetensors → `convert_hf_to_gguf.py --outtype f16` → `llama-quantize` to **Q4_K_M** → **load in the engine** → `SpikeEval dev=Docs/Data/assistant_eval_dev.csv tier=full gpu=0 repeats=5`.
+    ⛔ **THE QUESTION IT ANSWERS, AND IT IS THE ONLY ONE THAT MATTERS HERE: DOES *OUR* Q4_K_M OF THE UNMODIFIED BASE SCORE THE SAME AS QWEN'S OFFICIAL Q4_K_M (20/25)?**
+    · ✅ **Same score, same failing rows ⇒ the pipeline is sound and every later number can be attributed to the fine-tune.**
+    · ⛔ **Materially different ⇒ THE QUANTISATION PIPELINE HAS A PROBLEM, and you have learned that BEFORE it is entangled with a fine-tune** (trap T7). ⚠️ **That is the entire value of doing this now: after training, the same discrepancy is uninterpretable.**
+    **⛔ COMPARE AGAINST M0's NOISE BAND, NOT AGAINST INTUITION** — a ±1 difference is inside the instrument (§12h).
+    **⛔ ZERO CODE CHANGES ARE REQUIRED TO SWAP THE MODEL** — the override chain was built so *"swapping models never needs a rebuild."* **If you find yourself editing C++ to load this file, STOP: that is a finding about the override chain.**
+    ⚠️ **RECORD THE TOKEN COUNTS. They must reproduce IDENTICALLY** — ⛔ **a quantisation does not touch the tokenizer, so any movement means the vocab was touched and §8/§10's entire numeric apparatus is void.**
+    ⛔ **The intermediate f16 GGUF and the produced Q4_K_M live in `Cache/`/`Models/` and NEVER enter git.** 🔒 `L_Arena` never saved.
+    Handoff `handoffs/TASK-497-buildmaster.md`. Post in 🔧 Build & Git.
+- names: >
+    `convert_hf_to_gguf.py --outtype f16` · `llama-quantize` · `Q4_K_M` · `Siege.Llama.SpikeEval` (`repeats=5`) · the official baseline **20/25** ·
+    `DEV-01` · `DEV-04` · `DEV-07` · `DEV-16` · `DEV-20`.
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §6, §10 · §12h · §12a (never a delta from 66.7 %).
+
+#### TASK-498 — [FT-C5] M4 — TOKEN-ID PARITY: engine `llama_tokenize` vs **the Python tokenizer the trainer will actually use** (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: **TASK-495** (the env) · **TASK-485** (the `ids=1` artifact) — ⚠️ **finding (ii): this could not run in Stage B because the Python tokenizer did not exist yet**
+- parallel-safe: yes (no editor — it compares two artifacts)
+- spec: >
+    ⛔ **COMPARE THE ENGINE'S `ids=1` TOKEN-ID SEQUENCE AGAINST THE PYTHON TOKENIZER'S, ON THE SAME PROMPT BYTES.** **Deliverable: IDENTICAL, or the FIRST DIVERGENCE INDEX.**
+    ⛔ **WHY THIS IS NOT OPTIONAL: IF THEY DIFFER, TRAINING OPTIMISES A DIFFERENT STRING THAN INFERENCE SEES.** ⚠️ **That defect is invisible in every metric — the loss curve looks fine, the eval looks merely disappointing, and nothing ever points at the cause.**
+    **⛔ USE THE TOKENIZER THE TRAINER WILL USE — the one resolved by `uv.lock` from the base repo — NOT a convenient substitute.** ⚠️ **Parity against the wrong tokenizer is worse than no parity, because it will be quoted later as if it meant something.**
+    **WATCH TRAP T2 SPECIFICALLY:** `enable_thinking`, the **empty `<think>` block**, and **HF's template vs llama.cpp's built-in** — ⛔ **all three produce silent skew on every sample.** **Compare the Python token COUNT against the engine's printed `turn1_prompt`** (⚠️ **1504 is the STRING; 1517 is what the CONTEXT holds — BOS/EOS and the wrapper add ~13. They are different measurements of different things and §8 conflated them once already**).
+    ⛔ **No Git.** Handoff `handoffs/TASK-498-buildmaster.md`. Post in 🔧 Build & Git.
+- names: >
+    `Siege.Llama.SpikePrompt ids=1` · `llama_tokenize` · `transformers` `AutoTokenizer` (from `Cache/base/`) · `enable_thinking` · `turn1_prompt` · `1504` (string) / `1517` (context).
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §4, §10 (T2) · §8 🔢 TOKEN PROVENANCE · §12g.
+
+---
+
+#### TASK-499 — [FT-F0] 🚩 THE `/Models/` GITIGNORE NEGATIONS ARE DEAD — verified live, and it is true TODAY (build-master)
+- assignee: build-master
+- status: **done** — commit **`f4f88e6`** (2026-08-03, build-master; +`7d82394` hash fill-in and one ahead-count correction. ⛔ **unpushed** — `main` was **21 ahead before this task**; ⚠️ **don't quote a total, count it:** `git rev-list --count origin/main..main`) — ⚖️ **DECISION: THE DEAD NEGATIONS ARE STRUCK, NOT REPAIRED**, and the reasoning is in `handoffs/TASK-499-buildmaster.md`: repairing the mechanism (`Models/*` + a live `!`) would open a **working re-include surface inside the directory holding the 2.5 GB GGUF** — the carve-out **FINE-TUNE RUNG §9** forbids — and it buys nothing, because `fetch_llm_model.py` mkdirs the directory itself (`dest_dir.mkdir(parents=True, exist_ok=True)`) so no `.gitkeep` is needed, and the manifest is pinned at `Docs/ModelManifest.md`. `Models/*` was also replaced by `/Models/` to kill the **false affordance** (the `dir/*` form is the one that supports negation; leaving it invites the same mistake). ⛔ **WEIGHT EXCLUSION VERIFIED NOT WEAKENED — `git add -n` on the live 2.5 GB `.gguf` REFUSES (exit 1), and both vendored `.dll`/`.lib` negations still match**; full `git check-ignore -v` paste in the handoff (§7 acceptance-not-assertion). 🔒 `L_Arena` untouched by sha256 `b3dbc5d9ae484a7b…` / 535,522 B. ⛔ No compile, no editor, no push. ⚠️ **THIS BOARD EDIT IS NOT IN THE TASK-499 COMMIT** — `TASKBOARD.md` carried 603 lines of the manager's uncommitted FINE-TUNE decomposition and a `TASK-499:` commit must not claim it; the commit is `.gitignore` + the handoff only.
+- blocked-by: **none — DISPATCHABLE NOW** (⚖️ **independent of whether training ever happens**)
+- parallel-safe: yes (`.gitignore` only; no compile, no editor, no model)
+- spec: >
+    ⚠️ **VERIFIED LIVE: `git check-ignore -v Models/README.md` → `.gitignore:132:/Models/`.** ⇒ ⛔ **THE `/Models/` RULE IGNORES THE DIRECTORY WHOLESALE, WHICH KILLS EVERY `!Models/...` NEGATION BELOW IT.** Git cannot re-include a file inside an excluded directory.
+    **(1) DECIDE AND DO ONE OF TWO THINGS, AND SAY WHICH:** **strike the dead negations** (honest, minimal — model docs live in `Docs/`), **or fix the rule** so the directory is traversable and only its contents are ignored. ⛔ **Do not do both and do not leave a dead negation in place "just in case" — a rule that looks like it works and does not is the defect.**
+    **(2) ⛔ ACCEPTANCE IS `git check-ignore -v` OUTPUT PASTED INTO THE HANDOFF, NOT "I EDITED THE FILE"** — §7's standing *acceptance, not assertion* standard. **Run it on: one path under `Models/`, one `.gguf`, and (if kept) the negated path.** The `.gguf` **must** report the ignore line.
+    **(3) ⛔ CONFIRM `*.gguf` AND `/Models/` STILL IGNORE EVERYTHING THEY SHOULD.** ⚠️ **This edit is one keystroke from un-ignoring 2.5 GB of weights, which is the incident the rule exists to prevent** — and **git history is append-only: a blob committed raw stays raw forever.**
+    **(4) RECORD THE CONSEQUENCE AS LAW-ADJACENT FACT: MODEL DOCUMENTATION CANNOT LIVE IN `Models/`. It goes in `Docs/`** — which is why the shipping manifest is pinned at **`Docs/ModelManifest.md`.**
+    ⛔ **No push.** Handoff `handoffs/TASK-499-buildmaster.md`. Post in 🔧 Build & Git.
+- names: >
+    `.gitignore` (line ~132 `/Models/`, and the `!Models/README.md` negation) · `git check-ignore -v` · `*.gguf` · **`Docs/ModelManifest.md`** (the pinned home).
+    Law: CONVENTIONS "THE FINE-TUNE RUNG" §9 · "In-match LLM command assistant" §7 (acceptance, not assertion) · GIT HAZARD LAWS (b).
+
+---
+
+### ⛔ STAGES D-GOLD · E · F — **GATED ONE-LINERS, NO IDs YET**
+
+⚖️ **THEY GET IDs ONLY AFTER TASK-486 (Jonathan's Stage-B rulings) AND TASK-487's DECISION RULE SAY *TRAIN*.** ⛔ **Boarding them now with IDs would encode the opposite claim to the one this plan makes — it would make the two stops look like obstacles on the way to a foregone conclusion. The board's shape is part of the ruling.**
+
+- **D-GOLD-1** — training-only fixtures `tA`–`tF` in `SiegeLlamaSpike.cpp` (⛔ **`t0` is NEVER used for training**; `tD` = kinds at `0 orderable` and `tF` = 2–4 kinds/early match are **blocked-by TASK-478**).
+- **D-GOLD-2** — `build_dataset.py`: consumes `SpikePrompt out=` bytes, **asserts length + sha256** (⛔ **T1 — Python never assembles a prompt**), emits `Docs/Data/Finetune/assistant_finetune_train.jsonl`; every row carries its `depends_on` set.
+- **D-GOLD-3** — gold authoring, **render → propose → adjudicate → validate** (⛔ **open permissive teacher ONLY, generating under the GBNF**; **Jonathan reviews 100 % of refuse/clarify, 20 % sample of Execute**). ⛔ **Teach TWO NAMED SITUATIONS, never a disposition** — the scorer rewards hedging and Zone A's own comments already forbid it.
+- **D-GOLD-4** — `check_disjoint.py` + **QA's ABSENCE CERTIFICATE ONLY** over train × {dev, dev2, holdout2, holdout3}, **literal + near-paraphrase** (⛔ **certificate, never a recommendation** — §12b's split).
+- **D-GOLD-5** — 📌 **make `LoadCorpus`'s header mismatch FATAL** (finding (iv)) — ⚖️ **a decision, not a side effect**; blocked-by TASK-478 (same-file serialization).
+- **E-1** — `train_qlora.py` (⛔ `use_dora=False` · `use_rslora=False` · `modules_to_save` empty · **completion-only loss** · seed pinned · `Runs/<id>/run.json`).
+- **E-2** — the VRAM ladder, **one lever at a time, re-measuring after each** (⛔ **never shorten Zone A in training only — that is train/serve skew**).
+- **E-3** — `merge_and_convert.py`: **merged → bf16 → convert → re-quantise to Q4_K_M** (⛔ **score the artifact that ships; T8**).
+- **E-4** — 🔒 **THE GATE: `holdout2`, opened EXACTLY ONCE, `repeats=5` inside that single opening, nine conjunctive clauses**, falsifying condition pre-registered before the run.
+- **F-1** — `Docs/ThirdPartyNotices.md` §2 **REWRITTEN, not patched** + the **Apache §4(b) modification statement** + §4(a)/(c) at package time.
+- **F-2** — packaging: ⛔ **the GGUF stages as a LOOSE `NonUFS` file** (mmap cannot read a `.pak`), `ResolveModelPath()` **verified in a real packaged build**, `Docs/ModelManifest.md` with the sha256.
+
+### Dependency order + dispatch frontier
+
+```
+▶ NOW  TASK-482 (🙋 Jonathan — voice file)  ──────────────> TASK-484 (art split → dev2/holdout3) ─┐
+▶ NOW  TASK-483 (🙋 Jonathan — two contracts) ─────────────────────────────(feeds D-GOLD)         │
+▶ NOW  TASK-499 (bm — /Models/ gitignore)   [independent]                                         │
+▶ NOW  TASK-476 (gp repeats=) ─> TASK-477 (gp out=/ids=/chat=) ─> TASK-478 (gp per-fixture GBNF) ─┤
+▶ NOW  TASK-479 (gp DumpAssistantPrompt) ⛔ mutually exclusive with TASK-475 ─────────────────────┤
+                                                                                                  │
+       TASK-476·477·478·479 ─> TASK-480 (QA gate) ─> TASK-481 (bm compile + INSTRUMENT-UNCHANGED proof + commit)
+                                                            │
+                                                            ├─> TASK-485 (bm  M0 · M1 · M3  ⛔ STOP 1 + STOP 2 IN WRITING)
+                                                            │        │
+                                                            │        └─> TASK-486 (🙋 JONATHAN — D1 recommendation · D2 question · proceed-or-stop)
+                                                            │                 │
+                                                            │                 ├─[if adopt template]─> TASK-489 (gp) ─> TASK-490 (gp test) ─> TASK-491 (QA) ─> TASK-492 (bm re-measure + commit)
+                                                            │                 │
+                                                            │                 ├─[proceed]─> TASK-487 (bm M2, needs TASK-484) ─> TASK-488 (QA M5 taxonomy)
+                                                            │                 │
+                                                            │                 └─[proceed]─> TASK-493 (gp uv project) ─> TASK-494 (QA) ─> TASK-495 (bm --check)
+                                                            │                                                                                  ├─> TASK-496 (bm toolchain + base + LICENCE)
+                                                            │                                                                                  │        └─> TASK-497 (bm ⭐ ROUND-TRIP PROOF)
+                                                            └──────────────────────────────────────────────────────────────────────────────────┴─> TASK-498 (bm M4 token-id parity)
+
+       ⛔ STAGES D-GOLD / E / F: NO IDs until TASK-486 + TASK-487 say TRAIN.
+```
+
+**PARALLEL-SAFE, STARTABLE IMMEDIATELY (5):** **TASK-482** + **TASK-483** (🙋 Jonathan, batch them into one sitting) · **TASK-476** (gp, plugin module) · **TASK-479** (gp, game module — ⛔ **only if TASK-475 is not in flight**) · **TASK-499** (bm, `.gitignore` only).
+⛔ **TASK-476 → 477 → 478 are STRICTLY SERIAL** (one file). ⛔ **TASK-481 and TASK-492 are the batch's only compile gates and each requires a QUIET MODULE ACROSS BOTH BATCHES.**
+⚠️ **THE CRITICAL PATH TO THE FIRST REAL DECISION IS SHORT ON PURPOSE: 476 → 477 → 478 → 480 → 481 → 485 → 486.** ⭐ **It can legitimately end there, and that ending is a success.**
+
 ## SETTINGS+CONFIRM — decomposed 2026-08-03 on Jonathan's un-gate ruling — TASK-436..448
 
 **Jonathan's directive, verbatim:** *"I'd shrug and re-order, but lets go ahead and add the confirm step, and make it a toggle in settings. We do not have a settings option so go ahead and add it to the main menu"*.
@@ -5283,7 +5848,7 @@ Concretely, for this batch:
 | **TASK-469** | **463 · 465** (+ **466** if it lands in time) — ⛔ **required before TASK-468's second build** |
 | **TASK-472** | **471** — ⛔ **required before TASK-468** (469 was already dispatched and could not absorb it) |
 | **TASK-470** | ⛔ **not a gate — it is the first EXECUTION of the 33 automation tests** (see its entry) |
-| ⚠️ **OWED, NOT YET BOARDED** | **466** · **473** — their gates are boarded **when they land**. ⛔ **Recorded here explicitly rather than silently omitted: §29's ledger is only a control if it shows the GAPS as well as the coverage.** |
+| ⚠️ **OWED, NOT YET BOARDED** | **466** · **473** · **474** (⛔ `Tools/**/*.ps1` is CODE ⇒ QA-gated) · **475** · **452** — their gates are boarded **when they land**. ⛔ **Recorded here explicitly rather than silently omitted: §29's ledger is only a control if it shows the GAPS as well as the coverage.** |
 | — | **445** (art, no QA owed) · **438** (art — closed under the hard gate's **SECOND LIMB**: a *completed integration check*, performed by build-master at TASK-447, **not** a QA report) |
 
 ⛔ **PINNED AGAINST A MIS-CITATION THAT IS WAITING TO HAPPEN: `qa/TASK-464.md` IS **NOT** A GATE ON TASK-438. It is the retroactive gate on TASK-442.** ⚠️ **Two adjacent numbers, similar shape, and one is emphatically not evidence for the other** — build-master spotted this before anyone made the mistake, which is exactly what a ledger is for. ✅ **TASK-438's evidence is the integration check itself, done BY NODE IDENTITY rather than DSL text: `AddToViewport.then` has `connected = 0`, so the chain TERMINATES and there is no `RemoveFromParent` on the Settings path.** ⚖️ **That is a POSITIVE fact — a terminal pin with no connection — not a search that returned nothing** (§14).
@@ -6233,6 +6798,60 @@ ASSISTANT WAVE 1 LANE                                                           
     `Plugins/SiegeLlama/Source/SiegeLlama/Private/SiegeLlamaSubsystem.cpp` · `FPlatformTime::Seconds` · `HardTimeoutSeconds` (⛔ **unchanged, 10.0**).
     Law: CONVENTIONS "Settings screen…" §17, §21.
 
+#### TASK-474 — [TOOL] 🚨 `EditorStartupMap` POINTS AT `L_Arena` — every headless invocation is a live risk to the never-save map (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: **none — DISPATCHABLE NOW.** ⛔ **Before the next headless run of any kind.**
+- parallel-safe: yes (config + a new tool file; no compile)
+- spec: >
+    ⛔ **THE ROOT CAUSE, AND IT IS ONE LINE: `Config/DefaultEngine.ini:3` IS `EditorStartupMap=/Game/Maps/L_Arena.L_Arena`.** ⇒ **A headless
+    invocation that does not explicitly override the map LOADS THE PROTECTED MAP.** ⚠️ **TASK-470's boarded command, run as written, would have
+    done exactly that** — caught only because it checked what its own invocation loads.
+    **(1) FIX `EditorStartupMap` so headless runs stop being a standing risk to `L_Arena`.** ⚠️ **VERIFY WHAT ELSE READS IT before changing it** —
+    it is also the editor's startup convenience for a human, so state the trade you are making rather than assuming nobody notices. ⛔ **If the
+    right answer turns out to be *"leave it and make every invocation override"*, say so and do (2) only.**
+    **(2) PROMOTE THE INVOCATION TO `Tools/run_automation_tests.ps1` — ⛔ POWERSHELL, NOT `sh`.** ⚠️ **Git Bash MSYS mangled `/Engine/Maps/Entry`
+    into `C:/Program Files/Git/Engine/Maps/Entry`** — a path-mangling class that **cannot recur in PowerShell.** ⛔ **The `-ini:` override is a HARD
+    REQUIREMENT in the script, not a suggestion**, because it was **the only limb of TASK-470's belt-and-braces that actually worked.**
+    **(3) ⛔ AND FIX THE REDUNDANCY, DO NOT JUST KEEP IT (§32): every limb must be verified to work ON ITS OWN, or it is decoration.** ⚠️ **A
+    redundancy that silently degrades to a single point of failure is WORSE than no redundancy, because it is BELIEVED.** **Either prove both limbs
+    independently, or ship one limb and say it is one.**
+    **(4) ✅ CARRY TASK-470's WORKING RECIPE FORWARD VERBATIM** — the widened filter **`Siegebound`** (⛔ **NOT `Siegebound.Assistant`, which matched
+    only 26 of 33 and would silently omit all 7 `Siegebound.Settings.*` tests**), `-unattended -nopause -nullrhi`, and the `index.json` field read.
+    **(5) ⛔ `Tools/**/*.py` AND `Tools/**/*.ps1` ARE CODE ⇒ QA-GATED.** This task owes a gate; board it when it lands.
+    🔒 **`L_Arena` NEVER opened or saved — verify by SHA256 before and after.** ⛔ **No Git** unless the batch's commit task takes it.
+    Handoff `handoffs/TASK-474-buildmaster.md`. Post in 🔧 Build & Git.
+- names: >
+    `Config/DefaultEngine.ini` (`EditorStartupMap`) · **NEW** `Tools/run_automation_tests.ps1` · `-ExecCmds="Automation RunTests Siegebound"` ·
+    `-unattended -nopause -nullrhi` · `-testexit="Automation Test Queue Empty"` · `-ini:Engine:[/Script/EngineSettings.GameMapsSettings]`.
+    Law: CONVENTIONS "Settings screen…" §32 · "Dev / test tooling" · the never-save `L_Arena` law.
+
+#### TASK-475 — [TEST-PROVE] ⛔ THE 33 ASSERTIONS ARE *PRESENT*, NOT *PROVEN* — one deliberate mutation run (build-master)
+- assignee: build-master
+- status: backlog
+- blocked-by: **TASK-474** (uses its script) · ⚖️ **does NOT block TASK-448**
+- parallel-safe: yes
+- spec: >
+    ⛔ **33 OF 33 PASSED ON FIRST EXECUTION ⇒ NOT ONE HAS EVER BEEN OBSERVED TO FAIL.** ✅ **That is a real result and it discharged WARN-5.** ⚠️ **It
+    is also a DIFFERENT CLAIM from *"these 33 assertions protect us"*** — single run, no shuffle, **flakiness unmeasured** (CONVENTIONS §32).
+    ⚖️ **THE ARGUMENT IS NOT HYPOTHETICAL — THIS WAVE PRODUCED THE WORKED EXAMPLE: `ZoneA.NullVocabularyIsNotTheMeasuredLane` ASSERTED THE EXACT
+    IDENTITY THAT BROKE THIS MORNING AND CAUGHT NOTHING, BECAUSE IT HAD NEVER BEEN RUN.** ⛔ **A guardrail nobody has watched trip is a guardrail
+    nobody has tested.**
+    **(1) DELIBERATE MUTATION, ONE AT A TIME: break ONE thing, run the suite, confirm THE RIGHT TEST GOES RED, then REVERT.** ⛔ **Never leave a
+    mutation in the tree; verify the revert by checksum, not by `git diff`** (autocrlf makes `git diff` structurally blind to whitespace-class
+    corruption).
+    **(2) PRIORITISE THE ASSERTIONS THIS BATCH RELIES ON MOST** — ⚠️ **`ZoneA.TwoLaneByteEquality` FIRST** (it is the sole remaining guard on
+    §12a(b)), then `NullVocabularyIsNotTheMeasuredLane`, the grammar rule-name charset guard, and the non-orderable-kind guard.
+    **(3) ⛔ A MUTATION THAT DOES **NOT** TURN A TEST RED IS THE FINDING — REPORT IT, DO NOT PATCH THE TEST.** ⚖️ **That is the whole point: you are
+    measuring which assertions are load-bearing, not manufacturing a green.**
+    **(4) ALSO RUN THE SUITE TWICE UNCHANGED** to give flakiness its first datum. ⚠️ **One repeat is not a flakiness measurement — report it as
+    n = 2** (§12h's repeat law, applied to tests instead of evals).
+    🔒 `L_Arena` never opened. ⛔ No production-code changes survive this task.
+    Handoff `handoffs/TASK-475-buildmaster.md`. Post in 🔧 Build & Git.
+- names: >
+    `Tools/run_automation_tests.ps1` · `ZoneA.TwoLaneByteEquality` · `ZoneA.NullVocabularyIsNotTheMeasuredLane` ·
+    `Siegebound.Assistant.Grammar.RuleNameCharset` · `ValidateCommandAgainstSnapshot`. Law: CONVENTIONS "Settings screen…" §32 · §12h · §20.
+
 #### TASK-473 — [W1-INTRANS] The parser admits a selection on INTRANSITIVE verbs — *"Fall back 5 footman"* is reachable (gameplay-programmer, DIAGNOSE-FIRST)
 - assignee: gameplay-programmer
 - status: backlog
@@ -6354,7 +6973,7 @@ ASSISTANT WAVE 1 LANE                                                           
 
 #### TASK-470 — [W1-TESTRUN] 💡 RUN THE 33 AUTOMATION TESTS HEADLESSLY — the standing caveat's only real discharge (build-master, DIAGNOSE-FIRST)
 - assignee: build-master
-- status: backlog
+- status: **done — THE ROUTE WORKS. 33/33 EXECUTED, 33 Success, 0 fail, 0 warn, 0 not-run, 0 skipped (2026-08-03).** ⛔ ***"NO AUTOMATION TEST HAS EVER RUN" IS DISCHARGED — WARN-5 CLOSED.*** Report `index.json`: `succeeded=33 / failed=0 / notRun=0 / succeededWithWarnings=0`; suite wall time **0.070 s** after a ~19 s editor boot. ✅ **THE §12a(b) UNKNOWN IS ANSWERED AND THE ANSWER IS GOOD: `ZoneA.TwoLaneByteEquality` PASSED — shipped 5116 chars / 5116 UTF-8 bytes == spike 5116 == measured reference 5116.** ⇒ **TASK-463's vocabulary-fallback change did NOT move Zone A; the two lanes still agree and `zoneA_chars=5116` is NOT stale.** ✅ **`ZoneA.NullVocabularyIsNotTheMeasuredLane` PASSED** — the test that already asserted this morning's broken identity has now actually been run. ⚠️ **FILTER WIDENED, DELIBERATELY: the spec's `Siegebound.Assistant` matches only 26 of 33 and would have silently omitted all 7 `Siegebound.Settings.*` tests. Ran `Siegebound` (33) instead — a WIDENING, never a narrowing (fence 2).** ⛔ **`-nullrhi` §20 QUESTION TRACED AND CLOSED: compatible. The `SiegeLlama` plugin startup is delay-load ONLY (`StartupModule` resolves DLL handles; `llama_backend_init` is lazy inside `EnsureBackendsLoaded`), so it never touches UE's RHI — it loaded cleanly, 4 modules, zero warnings. No test needs a `UWorld` or rendering.** 🔒 **`L_Arena` UNTOUCHED AND NEVER EVEN LOADED — SHA256 `B3DBC5D9AE484A7B…F8268` IDENTICAL before/after, 535,522 B, mtime still 2026-07-29; ZERO occurrences of `L_Arena` in the whole 110 KB log.** ⚠️ **AND THAT WAS NOT FREE — `EditorStartupMap=/Game/Maps/L_Arena.L_Arena`, so the spec's bare invocation WOULD HAVE OPENED IT.** It was prevented by `-ini:Engine:[/Script/EngineSettings.GameMapsSettings]:EditorStartupMap=/Engine/Maps/Entry.Entry`; the editor loaded `Engine/Content/Maps/Entry.umap` instead. ⛔ **THE TRAP THE NEXT RUNNER MUST KNOW: the belt-and-braces positional arg `/Engine/Maps/Entry` was MANGLED BY GIT BASH MSYS PATH TRANSLATION into `C:/Program Files/Git/Engine/Maps/Entry` and silently failed to resolve — the `-ini:` override is the ONLY thing that actually worked.** ⚖️ **A leading-slash UE object path CANNOT be passed positionally from Git Bash.** Raw `$?` was **0** and **was NOT used as the verdict** (verdict parsed from `index.json` + `Test Completed. Result={…}` lines). ⛔ **NO code, NO `Content/`, NO Git, NO commit — nothing in the repo changed.**
 - blocked-by: **TASK-468** (needs the fresh binaries) · ⚖️ **does NOT block TASK-448 — Jonathan's feel test is independent of whether our suite runs**
 - parallel-safe: yes vs TASK-448
 - spec: >
@@ -6386,7 +7005,7 @@ ASSISTANT WAVE 1 LANE                                                           
 
 #### TASK-468 — [W1-INT2] ⛔ THE SECOND COMPILE + COMMIT RUN — boarded now as a PLANNED step (build-master)
 - assignee: build-master
-- status: backlog
+- status: **done — SECOND COMPILE GATE GREEN, COMMITTED 2026-08-03** (`b24edb5` code · `0cf98f2` record · `8ccb0d5` handoff; `main` **18 → 21 ahead, NOT pushed**). `Result: Succeeded`, 11/11 actions, **zero error / zero LNK / zero warning lines in the whole log**. `\0` was 0 and **was not used as the verdict** — on this project that value has now been **6 for an environment block, 6 for a real code failure, and 0 for success**. **Carries EXACTLY TASK-463 + TASK-465 + TASK-471**, gated by `qa/TASK-469.md` and `qa/TASK-472.md`, whose self-declared limits were kept **separate rather than merged into a wave-level claim**. ⛔ **TASK-466 HAS NOT LANDED — verified at the artifact, not repeated:** `MarkAssistantFaulted` has 1 declaration, 1 definition, **6 prose mentions in comments, and ZERO call sites**, so the fault latch remains inert. Makes no claim about TASK-473. ⚠️ **TWO THINGS THE GREEN DOES NOT MEAN, recorded because a second green invites the opposite reading:** (1) TASK-463 arming the prefix earlier *should* change the first capture — **but that is a prediction about unexecuted code**, the same shape TASK-455 labelled and the first execution then falsified; (2) ⛔ **TASK-463 CHANGED ZONE A, which is exactly the input `ZoneA.TwoLaneByteEquality` compares across lanes ⇒ whether the two lanes still agree is now UNKNOWN and unknowable without running the test.** Nothing executed this run.)
 - blocked-by: **TASK-463 + TASK-465 (both `qa-passed` ✅) + TASK-472 (⚠️ RUNNING)** · ⛔ **MUST COMPLETE BEFORE TASK-448** — Jonathan cannot playtest binaries that predate the fixes he is being asked to judge.
 - ⛔ **`blocked-by` CORRECTED 2026-08-03 — IT READ `463 + 465` AND WAS STALE.** ⚠️ **TASK-471 landed AFTER I wrote that line, and its gate TASK-472 is still running** — so `qa/TASK-469.md` correctly reported 468 *"unblocked on both prerequisites"* against a list that no longer described the batch. ⇒ ⛔ **Building without 472 would put uncommitted, ungated code into a green build — precisely what §27b exists to prevent.** ⚖️ **The board is read by three agents at once; a stale `blocked-by` is not a bookkeeping slip, it is an instruction to do the wrong thing.**
 - ⛔ **AND CARRY `qa/TASK-469.md`'s OWN LEDGER NOTE, VERBATIM: *"this gate names 463 + 465 ONLY. TASK-466 has NOT landed — `MarkAssistantFaulted` still has zero call sites — and TASK-468 must not treat it as gated."*** ✅ **That is §29 working exactly as designed: a gate declaring what it did NOT cover.** ⇒ **468 commits 463/465/471 and must NOT imply coverage of 466 or 473.**
@@ -7099,7 +7718,10 @@ ASSISTANT WAVE 1 LANE                                                           
 #### TASK-452 — [LLM-GAP] `DA_AssistantVocabulary` — close the untested ASSET lane (gameplay-programmer)
 - assignee: gameplay-programmer
 - status: backlog
-- blocked-by: **TASK-421** (the asset must exist first)
+- blocked-by: ⛔ **RE-SPECCED 2026-08-03 — ~~TASK-421 (the asset must exist first)~~ IS STRUCK. THIS IS DISPATCHABLE NOW, AND THE DEPENDENCY HAS INVERTED.**
+    ⚖️ **TASK-421 is HELD, so waiting on it would park the last open §12a hole indefinitely — and the hole is real: `USiegeAssistantVocabulary`'s asset instance OVERRIDES the C++ defaults WHOLESALE at runtime, so the 33-green suite tests the DEFAULTS lane while any authored asset would ship a DIFFERENT one.** ⚠️ **`ZoneA.TwoLaneByteEquality`'s own header disclaims the asset lane.**
+    ✅ **AND IT NEEDS NO AUTHORED ASSET: construct a `USiegeAssistantVocabulary` IN-TEST with non-default rows** — the same `NewObject` construction TASK-463 shipped and the equality test already uses. ⇒ ⛔ **THIS TASK IS NOW A PRECONDITION OF UNHOLDING TASK-421, not a consumer of it** (421's hold names it as precondition (ii)).
+    **What it must assert:** `BuildZoneA(AssetWithDifferentRows)` **differs** from the default-lane reference (⚠️ **proving the override is real and the lane is genuinely distinct — a test that cannot tell the lanes apart proves nothing**), and `BuildZoneA(AssetReproducingTheDefaults)` **equals `5116` exactly**. ⛔ **Assert on CHARACTERS, never a derived token constant** (§12g). ⚠️ **And per §32, a new assertion is PRESENT, not PROVEN — hand it to TASK-475's mutation run.**
 - parallel-safe: yes
 - spec: >
     ⚠️ **THE GAP, STATED PRECISELY: EVEN WITH `Siegebound.Assistant.ZoneA.*` FULLY GREEN, THE SHIPPED PATH IS STILL UNTESTED.**
