@@ -122,4 +122,47 @@ public:
 
 	/** Adopts the team's query filter as this controller's default pathfinding filter (idempotent; safe to re-push on a late team change). */
 	void ApplyTeamNavigationFilter(ETeamId Team);
+
+	/**
+	 *  TASK-534 (CONVENTIONS NAV-§1 Cause 2 / NAV-§3) — harvests the stuck verdict
+	 *  the engine is ALREADY computing and this project has never asked for.
+	 *
+	 *  UPathFollowingComponent runs block detection by default
+	 *  (PathFollowingComponent.cpp:137-139 + :1560-1603 — BlockDetectionDistance=10,
+	 *  BlockDetectionInterval=0.5, BlockDetectionSampleCount=10, bUseBlockDetection
+	 *  true) and finishes the request with EPathFollowingResult::Blocked
+	 *  (:1111) once the agent has moved under 10 uu across the 5.0 s sample window.
+	 *  Before this override there was NO OnMoveCompleted anywhere in the project and
+	 *  zero EPathFollowingResult references, so that verdict was DISCARDED — and
+	 *  0.25 s later ASummonedUnit::EnterAdvance's Idle branch (SummonedUnit.cpp:2440)
+	 *  re-issued the byte-identical request: same start poly, same goal, same filter,
+	 *  same path, same rock. A silent 5-second livelock with no telemetry.
+	 *
+	 *  ⛔ THIS FUNCTION IS EVIDENCE, NOT ACTION (NAV-§3). It records and returns. It
+	 *  issues NO move — no MoveTo*, no StopMovement, no steering of any kind — because
+	 *  only ASummonedUnit::TickStuckWatchdog may steer. Two code paths that can both
+	 *  re-path on one UPathFollowingComponent is the TASK-280/282 mill this feature
+	 *  exists to remove, and re-pathing here would be an automatic QA FAIL.
+	 *
+	 *  ⚠️ THE OVERLOAD IS DELIBERATE. AAIController declares OnMoveCompleted TWICE:
+	 *  the FPathFollowingResult form (AIController.h:230) and a
+	 *  UE_DEPRECATED_FORGAME(4.13) EPathFollowingResult::Type form (:233). This
+	 *  overrides the FORMER. In a non-engine module UE_DEPRECATED_FORGAME expands to
+	 *  UE_DEPRECATED (UEBuildModuleCPP.cs:1693), so overriding the latter from this
+	 *  module would emit C4996. Zero polling cost: this is purely event-driven.
+	 */
+	virtual void OnMoveCompleted(FAIRequestID RequestID, const FPathFollowingResult& Result) override;
+
+private:
+
+	/**
+	 *  World-time stamp (seconds) of the last "blocked:" line this controller emitted;
+	 *  NEGATIVE means "never logged" — world time is never negative — so a unit's
+	 *  FIRST block always prints, which is what the TASK-537 gate greps for.
+	 *
+	 *  This IS the per-unit rate limit: every unit auto-possesses its own controller
+	 *  instance (SummonedUnit.cpp:105-106), so per-controller state is per-unit state.
+	 *  ⛔ It throttles the LOG ONLY and never the NotifyMoveBlocked evidence feed.
+	 */
+	double LastBlockedLogTimeSeconds = -1.0;
 };

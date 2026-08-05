@@ -11,6 +11,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/PlayerStart.h"
 #include "Materials/MaterialInterface.h"
+#include "NavigationData.h" // TASK-535: ANavigationData is the OnNavigationGenerationFinishedDelegate payload — complete type, read through GetNameSafe
 #include "NavigationPath.h"
 #include "NavigationSystem.h"
 #include "Net/UnrealNetwork.h" // M8 (TASK-356): DOREPLIFETIME for the seed pair
@@ -20,6 +21,7 @@
 #include "Siegebound/GoldNode.h"
 #include "Siegebound/ScatterConfig.h"
 #include "Siegebound/SiegeNavAreas.h" // TASK-349: team object channels — re-typed combatant capsules must keep blocking scatter
+#include "Siegebound/SiegeNavDiagnostics.h" // TASK-535/529 (NAV-§9 Stage 0): the three telemetry call sites
 
 DEFINE_LOG_CATEGORY(LogSiegeTerrain);
 
@@ -201,6 +203,24 @@ void ASiegeBattlefieldScatter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// ── STAGE 0 TELEMETRY (TASK-535 wiring TASK-529's library; CONVENTIONS `NAV-§9`) ──
+	// Two pure reads + two log lines. ⛔ NO behaviour change: FSiegeNavDiagnostics
+	// holds no state, ticks nothing and writes to no engine object.
+	// ⭐ THE CONFIG LINE IS THE BATCH'S ACCEPTANCE TEST. Its `gatherOnGameThread=`
+	// token is read OFF THE RUNNING ARecastNavMesh, and it is the ONLY way to prove
+	// whether the TASK-530 ini flip reached the SERIALIZED L_Arena nav actor — the
+	// exact trap Config/DefaultEngine.ini:281-284 documents in its own comment. A PIE
+	// log still reading `gatherOnGameThread=false` after the flip is TASK-540's
+	// rollback trigger (`NAV-§9` clause 3), ⛔ never an excuse for an L_Arena save.
+	// Taken BEFORE GenerateScatter so `pre-scatter` genuinely is the pre-scatter
+	// queue depth — it is the baseline the `post-scatter` dirty spike is read against.
+	// Deliberately NOT authority-gated: a client's nav actor carries its own
+	// serialized config, and a client-side mismatch is exactly the kind of thing
+	// this line exists to make visible. Both calls are null-World safe.
+	UWorld* const TelemetryWorld = GetWorld();
+	FSiegeNavDiagnostics::LogNavConfigOnce(TelemetryWorld);
+	FSiegeNavDiagnostics::LogNavBuildSnapshot(TelemetryWorld, TEXT("pre-scatter"));
+
 	// Match-start scatter (Jonathan: "randomly generated at the start of each match").
 	// M8 (TASK-356 doc §3.5): AUTHORITY-gated — a client instance NEVER
 	// self-generates (its local random seed is the different-battlefields bug);
@@ -224,7 +244,15 @@ void ASiegeBattlefieldScatter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(TraversabilityTimerHandle);
+		// TASK-535: the definitive post-settle re-check rides its OWN handle.
+		World->GetTimerManager().ClearTimer(DefinitiveCheckTimerHandle);
 	}
+
+	// TASK-535 (`NAV-§4`): clean teardown of the nav-generation-finished binding. A
+	// dynamic delegate holds the object by name+pointer, so a binding that outlives
+	// this actor is a callback into a destroyed actor on the next world's build.
+	UnbindNavGenerationFinished();
+
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -292,6 +320,16 @@ void ASiegeBattlefieldScatter::GenerateScatter()
 	++GenerationIndex;
 
 	RunScatterPasses(Seed, /*bAuthoritativeGenerate=*/ true);
+
+	// ── STAGE 0 TELEMETRY (TASK-535/529, `NAV-§9`) — THE DIRTY-COUNT SPIKE ──
+	// Every blocking instance of this generate (738 in the shipped DA) has just
+	// landed, so this snapshot is the whole scatter's nav cost in one line:
+	// `dirtyAreas=`/`remaining=` here against `pre-scatter` is what turns "the
+	// navmesh rebuilds slowly" from a claim into a measured number, and
+	// `activeTiles=` against `poolCap=` is the ONLY instrument on the `NAV-§6`
+	// tile-pool hazard. Read-only; one line; the AUTHORITY path only, because the
+	// client's spike is its own OnRep-driven generate.
+	FSiegeNavDiagnostics::LogNavBuildSnapshot(World, TEXT("post-scatter"));
 }
 
 void ASiegeBattlefieldScatter::OnRep_GenerationIndex()
@@ -412,6 +450,21 @@ void ASiegeBattlefieldScatter::RunScatterPasses(int32 Seed, bool bAuthoritativeG
 	// delay guessed wrong at the ~9.8× field), capped by MaxNavSettleWait.
 	// StartNavSettlePoll clears any pending timer itself.
 	ReachabilityAttempt = 0;
+
+	// TASK-535 (`NAV-§4`): re-arm the DEFINITIVE post-settle check for this generate.
+	// Play Again runs the whole path again, so every latch resets here rather than at
+	// construction — a stale `done` latch would silently disarm the guarantee on the
+	// second match. The pending timer is cleared for the same reason: a re-check armed
+	// against the PREVIOUS layout must never land on this one.
+	bDefinitiveCheckPending = false;
+	bDefinitiveCheckDone = false;
+	bInDefinitiveCheck = false;
+	if (UWorld* const World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(DefinitiveCheckTimerHandle);
+	}
+	BindNavGenerationFinished();
+
 	StartNavSettlePoll();
 }
 
@@ -1978,6 +2031,20 @@ void ASiegeBattlefieldScatter::ValidateTraversability()
 		return;
 	}
 
+	// ── STAGE 0 TELEMETRY (TASK-535/529, `NAV-§9`) — THE MOMENT OF THE CLAIM ──
+	// The snapshot that sits beside the CONFIRMED/PROVISIONAL line and decomposes it:
+	// `remaining=`/`running=` are the tile-task queue this verdict is labelled by, and
+	// `dirtyAreas=`/`hasDirty=` are the OTHER half of IsNavigationBeingBuilt — together
+	// they say exactly which of the two made the settle poll fall through. Read-only.
+	FSiegeNavDiagnostics::LogNavBuildSnapshot(World, TEXT("at-confirmation"));
+
+	// Which caller is speaking. The event-driven pass is the DEFINITIVE one
+	// (`NAV-§4`): it runs off the engine's own generation-finished signal rather than
+	// off a queue-empty lull, so its verdict is the one that discharges the guarantee.
+	const TCHAR* const VerdictSource = bInDefinitiveCheck
+		? TEXT(" [definitive: OnNavigationGenerationFinished]")
+		: TEXT("");
+
 	// Inset the endpoints toward the centerline onto open pad ground — the raw
 	// castle center can sit inside the castle's own nav-carved hole (a false
 	// negative). FindPathToLocationSynchronously still projects each endpoint to
@@ -2001,6 +2068,29 @@ void ASiegeBattlefieldScatter::ValidateTraversability()
 		}
 		return;
 	}
+
+	// ⛔ IS THE ANSWER WE ARE ABOUT TO GET EVEN TRUE YET? (TASK-535, `NAV-§4`.)
+	// GetNumRemainingBuildTasks() is the generator's live queue depth
+	// (RunningDirtyTiles + PendingDirtyTiles + the time-sliced generator —
+	// RecastNavMeshGenerator.h:794). Zero means the navmesh has nothing left to
+	// carve, so a path query against it answers about the FINAL geometry. Non-zero
+	// means tiles are still holding an older bake and the query answers about a
+	// navmesh that no longer matches the field — which is exactly the state in which
+	// this function used to print "CONFIRMED" and, worse, DELETE INSTANCES.
+	// ⚠️ The dirty-area queue is folded in on purpose: dirty areas that have not yet
+	// become tile tasks read `remaining=0` while carving is still owed, and treating
+	// that as settled would re-open the same hole one level up. This can only ever
+	// make CONFIRMED HARDER to print, never easier.
+	const int32 RemainingTileTasks = FMath::Max(NavSys->GetNumRemainingBuildTasks(), 0);
+	const bool bNavStillBuilding = UNavigationSystemV1::IsNavigationBeingBuilt(World);
+	const bool bNavSettled = (RemainingTileTasks == 0) && !bNavStillBuilding;
+
+	// Which half of the settle test failed — so a "PROVISIONAL (0 tile task(s)
+	// pending)" line can never read as a contradiction. The adjacent `at-confirmation`
+	// snapshot carries the raw `dirtyAreas=`/`hasDirty=` numbers behind this word.
+	const TCHAR* const UnsettledReason = (RemainingTileTasks > 0)
+		? TEXT("tile tasks still queued")
+		: TEXT("dirty areas queued but not yet submitted as tile tasks");
 
 	UNavigationPath* Path = UNavigationSystemV1::FindPathToLocationSynchronously(World, BlueLoc, RedLoc);
 	const bool bCastleReachable = Path && Path->IsValid() && !Path->IsPartial();
@@ -2035,14 +2125,72 @@ void ASiegeBattlefieldScatter::ValidateTraversability()
 
 	if (bCastleReachable && UnreachableMines.Num() == 0)
 	{
-		UE_LOG(LogSiegeTerrain, Log,
-			TEXT("[BattlefieldScatter '%s'] Traversability CONFIRMED — Blue→Red castle path + %d mine path(s) exist (after %d cull(s))."),
-			*GetNameSafe(this), SpawnedMines.Num(), ReachabilityAttempt);
+		// ⛔ HONEST LABELLING (`NAV-§4`). "CONFIRMED" is a CLAIM about a navmesh, and a
+		// query run against a still-building one cannot make it. The word is now spent
+		// ONLY on a settled query; a pre-settle pass says PROVISIONAL and says why.
+		if (bNavSettled)
+		{
+			UE_LOG(LogSiegeTerrain, Log,
+				TEXT("[BattlefieldScatter '%s'] Traversability CONFIRMED (nav settled: 0 pending) — 0 tile task(s) pending; Blue→Red castle path + %d mine path(s) exist (after %d cull(s))%s."),
+				*GetNameSafe(this), SpawnedMines.Num(), ReachabilityAttempt, VerdictSource);
+
+			// The event-driven pass is the one that DISCHARGES the guarantee (`NAV-§4`):
+			// it ran off the engine's own generation-finished signal, so there is
+			// nothing left to wait for. A settle-poll CONFIRMED deliberately does NOT
+			// discharge it — a queue that reads empty at +5 s can be a lull between
+			// waves of dirty areas, and the whole point of the event bind is to get one
+			// verdict against a navmesh the ENGINE calls finished.
+			if (bInDefinitiveCheck)
+			{
+				bDefinitiveCheckDone = true;
+				UnbindNavGenerationFinished();
+			}
+			return;
+		}
+
+		UE_LOG(LogSiegeTerrain, Warning,
+			TEXT("[BattlefieldScatter '%s'] Traversability PROVISIONAL (%d tile task(s) pending — PRE-SETTLE query; %s) — a Blue→Red castle path + %d mine path(s) were found, but the navmesh is NOT settled, so this is NOT the CONFIRMED guarantee; the definitive re-check runs once on OnNavigationGenerationFinished%s."),
+			*GetNameSafe(this), RemainingTileTasks, UnsettledReason, SpawnedMines.Num(), VerdictSource);
+		return;
+	}
+
+	// ⭐⛔ THE SETTLED-ONLY CULL GATE (TASK-535, `NAV-§4`) — THE DETERMINISM FIX.
+	// Below this point the code DELETES INSTANCES. On a partially-built navmesh the
+	// failure that would trigger that deletion is an artefact of WALL-CLOCK TIMING —
+	// tiles still holding the pre-scatter bake — so culling on it would make the
+	// shipped instance set depend on how fast the machine baked, not on the seed. That
+	// is a live violation of the determinism law (TASKBOARD.md:11044: "the same seed
+	// must produce byte-identical placement"), and it is the reason this task exists.
+	// ⭐ THE CULL IS NOT REMOVED — IT IS MOVED to the only moment at which it is both
+	// TRUE and DETERMINISTIC: post-settle, the reachability answer is stable, so a cull
+	// driven by it is a pure function of the geometry, hence of the seed. The
+	// NON-NEGOTIABLE traversability guarantee survives intact (layer (1), the reserved
+	// corridor, never depended on nav state at all, and the definitive post-settle
+	// check still performs every repair this path ever performed).
+	// 🚩 ACCEPTED CONSEQUENCE, FLAGGED FOR JONATHAN (TASK-539), ⛔ NOT TO BE "FIXED":
+	// the repair now lands LATER and can be VISIBLE (~27 s at 8× tile concurrency,
+	// ~216 s if the concurrency flip rolls back) where it used to happen invisibly at
+	// +5 s. It only ever fires when the field is genuinely walled off — a visible pop
+	// beats an unwinnable match.
+	if (!bNavSettled && !bCullOnProvisionalFailure)
+	{
+		UE_LOG(LogSiegeTerrain, Warning,
+			TEXT("[BattlefieldScatter '%s'] Traversability PROVISIONAL (%d tile task(s) pending — PRE-SETTLE query; %s) — castle lane %s, %d mine(s) unreachable; defensive cull SUPPRESSED (bCullOnProvisionalFailure=false, the determinism law): a cull decided against a partially-built navmesh is decided by wall-clock timing. Deferring the repair to the definitive post-settle check (OnNavigationGenerationFinished)%s."),
+			*GetNameSafe(this), RemainingTileTasks, UnsettledReason,
+			bCastleReachable ? TEXT("REACHABLE") : TEXT("NOT reachable"),
+			UnreachableMines.Num(), VerdictSource);
+
+		// ⛔ Nothing is culled, ReachabilityAttempt is NOT consumed (it counts CULLS,
+		// and no cull happened), and NO re-poll is armed — re-polling would spin the
+		// timer against a navmesh whose queue we already know is not empty. The event
+		// bind is what brings us back, exactly once, when it really is.
 		return;
 	}
 
 	// Defensive re-roll — SHARED attempts machinery (one counter, one widen step,
-	// one re-poll loop) for both failure kinds, castle lane first:
+	// one re-poll loop) for both failure kinds, castle lane first. ⚠️ Reached ONLY on
+	// a SETTLED query (or with the bCullOnProvisionalFailure escape hatch explicitly
+	// flipped), so every cull below is reproducible from the seed alone.
 	++ReachabilityAttempt;
 	if (!bCastleReachable)
 	{
@@ -2097,6 +2245,9 @@ void ASiegeBattlefieldScatter::ValidateTraversability()
 	if (ReachabilityAttempt < MaxReachabilityAttempts)
 	{
 		// Wait for the post-cull nav re-carve to settle (poll to idle again), then re-check.
+		// TASK-535: the event bind stays live alongside this poll on purpose — the poll
+		// gives up at MaxNavSettleWait and would then hand back a PROVISIONAL (culls
+		// suppressed), so the generation-finished signal is what finishes the repair.
 		StartNavSettlePoll();
 	}
 	else if (!bCastleReachable)
@@ -2105,19 +2256,151 @@ void ASiegeBattlefieldScatter::ValidateTraversability()
 		// straight Y≈0 lane is now obstacle-free even if the async nav has not yet
 		// reported a path. Never leave a match unwinnable.
 		UE_LOG(LogSiegeTerrain, Error,
-			TEXT("[BattlefieldScatter '%s'] Reachability unconfirmed after %d culls; corridor force-cleared to |Y|<=%.0f as the final traversability guarantee (straight lane is obstacle-free)."),
-			*GetNameSafe(this), ReachabilityAttempt, CorridorHalfWidthCached + ReachabilityAttempt * CorridorWidenStep);
+			TEXT("[BattlefieldScatter '%s'] Reachability unconfirmed after %d culls; corridor force-cleared to |Y|<=%.0f as the final traversability guarantee (straight lane is obstacle-free)%s."),
+			*GetNameSafe(this), ReachabilityAttempt, CorridorHalfWidthCached + ReachabilityAttempt * CorridorWidenStep, VerdictSource);
+
+		// TASK-535: TERMINAL. The attempts budget is spent and the force-clear stance
+		// is final, so a later generation-finished callback could only re-log the same
+		// verdict — release the bind rather than leave a live callback with no work.
+		bDefinitiveCheckDone = true;
+		UnbindNavGenerationFinished();
 	}
 	else
 	{
 		// Final economy stance: every unreachable mine's approach disc has been
 		// force-cleared of non-hill blockers at the widest radius — best-effort;
-		// the match is still winnable (castle lane confirmed above) even if a
-		// pathological layout leaves a mine contested-by-terrain.
+		// the match is still winnable (the castle lane itself passed this pass's path
+		// query) even if a pathological layout leaves a mine contested-by-terrain.
+		// TASK-535: the castle lane's standing is reported with the SAME honesty rule
+		// as the main verdict — the word CONFIRMED is never spent on a pre-settle query.
 		UE_LOG(LogSiegeTerrain, Error,
-			TEXT("[BattlefieldScatter '%s'] Mine reachability unconfirmed after %d culls; unreachable-mine approach discs force-cleared (best-effort economy guarantee — castle lane itself is CONFIRMED)."),
-			*GetNameSafe(this), ReachabilityAttempt);
+			TEXT("[BattlefieldScatter '%s'] Mine reachability unconfirmed after %d culls; unreachable-mine approach discs force-cleared (best-effort economy guarantee — castle lane itself is %s)%s."),
+			*GetNameSafe(this), ReachabilityAttempt,
+			bNavSettled ? TEXT("CONFIRMED (nav settled: 0 pending)") : TEXT("PROVISIONAL (PRE-SETTLE query)"),
+			VerdictSource);
+
+		// TASK-535: TERMINAL — same reasoning as the castle-lane branch above.
+		bDefinitiveCheckDone = true;
+		UnbindNavGenerationFinished();
 	}
+}
+
+void ASiegeBattlefieldScatter::BindNavGenerationFinished()
+{
+	// Idempotent: Play Again re-arms through RunScatterPasses, and a second bind would
+	// mean two definitive checks racing one latch.
+	if (bNavGenerationFinishedBound)
+	{
+		return;
+	}
+
+	// AUTHORITY ONLY (M8 doc D9, the same rule the validation itself follows): the
+	// client never path-queries and never culls, so it has nothing to be woken for.
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	UNavigationSystemV1* const NavSys = UNavigationSystemV1::GetCurrent(World);
+	if (!NavSys)
+	{
+		// No nav system to listen to. NOT a failure: layer (1), the reserved corridor,
+		// is a geometric guarantee that never needed nav at all — and the settle-poll
+		// path already degrades to its fixed fallback wait. One Verbose line, because
+		// this is a legitimate configuration, not a fault.
+		UE_LOG(LogSiegeTerrain, Verbose,
+			TEXT("[BattlefieldScatter '%s'] No navigation system at arm time — the definitive post-settle traversability check is not bound (the reserved corridor remains the deterministic guarantee)."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	// AddUniqueDynamic, not AddDynamic: belt-and-braces against a double bind if this
+	// ever gets called from a path the latch above does not cover.
+	NavSys->OnNavigationGenerationFinishedDelegate.AddUniqueDynamic(this, &ASiegeBattlefieldScatter::OnNavGenerationFinished);
+	BoundNavSystem = NavSys;
+	bNavGenerationFinishedBound = true;
+}
+
+void ASiegeBattlefieldScatter::UnbindNavGenerationFinished()
+{
+	// Weak: if the nav system has already been torn down (EndPlay during world
+	// teardown is the normal case) there is nothing to unbind from and nothing to
+	// dereference — the delegate died with its owner.
+	if (UNavigationSystemV1* const NavSys = BoundNavSystem.Get())
+	{
+		NavSys->OnNavigationGenerationFinishedDelegate.RemoveDynamic(this, &ASiegeBattlefieldScatter::OnNavGenerationFinished);
+	}
+
+	BoundNavSystem.Reset();
+	bNavGenerationFinishedBound = false;
+}
+
+void ASiegeBattlefieldScatter::OnNavGenerationFinished(ANavigationData* NavData)
+{
+	// Already discharged, or a check is already queued for this drain: the engine
+	// broadcasts once PER ANavigationData, and a match can drain more than once, so
+	// this pair of latches is what keeps an EVENT from degenerating into a POLL.
+	if (bDefinitiveCheckDone || bDefinitiveCheckPending)
+	{
+		return;
+	}
+
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	bDefinitiveCheckPending = true;
+
+	UE_LOG(LogSiegeTerrain, Log,
+		TEXT("[BattlefieldScatter '%s'] Nav generation FINISHED ('%s') — running the DEFINITIVE post-settle traversability check (one deferred re-check; NAV-§4)."),
+		*GetNameSafe(this), *GetNameSafe(NavData));
+
+	// ⚠️ DEFERRED BY ONE TIMER TICK, DELIBERATELY. This callback runs from INSIDE the
+	// Recast generator's own tick (RecastNavMeshGenerator.cpp:7631 →
+	// ARecastNavMesh::OnNavMeshGenerationFinished → NavigationSystem.cpp:4915). The
+	// check it schedules can DELETE HISM INSTANCES, which immediately dirties nav
+	// areas — re-entering the nav system from inside its generator tick. One tick of
+	// latency removes that entire class of problem, and it is nothing against a
+	// confirmation that was previously wrong by ~211 s.
+	// ⛔ NOT A POLL: armed once per latch, never re-arms itself.
+	World->GetTimerManager().ClearTimer(DefinitiveCheckTimerHandle);
+	World->GetTimerManager().SetTimer(DefinitiveCheckTimerHandle, this,
+		&ASiegeBattlefieldScatter::RunDefinitiveTraversabilityCheck, 0.001f, false);
+}
+
+void ASiegeBattlefieldScatter::RunDefinitiveTraversabilityCheck()
+{
+	bDefinitiveCheckPending = false;
+
+	// A verdict landed between the broadcast and this tick (the settle poll can get
+	// there first): nothing to do.
+	if (bDefinitiveCheckDone)
+	{
+		return;
+	}
+
+	// The ONLY difference from any other pass: the label. Every rule — the settled
+	// gate, the attempts budget, RegroundMines — is the same code, so there is no
+	// second implementation of the guarantee to keep in sync.
+	// ⛔ Non-re-entrant: ValidateTraversability never calls back into this, and the
+	// pending latch above is already cleared, so a broadcast fired from inside the
+	// check itself would simply queue the next one.
+	bInDefinitiveCheck = true;
+	ValidateTraversability();
+	bInDefinitiveCheck = false;
 }
 
 int32 ASiegeBattlefieldScatter::CullCorridorBlockers(float Band)

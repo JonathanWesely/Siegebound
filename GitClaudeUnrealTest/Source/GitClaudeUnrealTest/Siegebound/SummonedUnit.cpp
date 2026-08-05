@@ -39,6 +39,7 @@
 #include "Siegebound/SiegeMeshJuiceComponent.h"
 #include "Siegebound/SiegeNavAreas.h" // TASK-349: team object channels + ASiegeUnitAIController (complete types for the gating stamp)
 #include "Siegebound/SiegePlayerController.h" // W1 TASK-275: reads the latched Shield Wall command (GetCurrentCommand/HasIssuedCommand); TASK-344: resolves the live group (FindUnitGroup) — complete type needed for the const calls
+#include "Siegebound/SiegeStuckStatics.h" // TASK-532: the pure stall ladder + LogSiegeStuck (also reached via SummonedUnit.h, which needs the complete types for its members — explicit per IWYU)
 #include "Siegebound/UnitCommand.h" // TASK-344: FSiegeUnitGroup complete type (UpdateStateGrouped reads its zones/type) — explicit include, not just via the controller header
 #include "TimerManager.h"
 
@@ -85,6 +86,37 @@ namespace
 	 *  detail (like StructureMoveAcceptanceRadius), not a GDD stat.
 	 */
 	constexpr float HoldArrivalTolerance = 150.f;
+
+	/**
+	 *  TASK-532 — upper bound on ONE stuck-watchdog delta. A CLAMP, deliberately NOT an
+	 *  FSiegeStuckTuning field: NAV-§7 pins that struct's eight fields as the ONLY tunables
+	 *  this feature adds, and this is a safety rail rather than a feel knob.
+	 *
+	 *  Why it is needed: the watchdog's delta comes from the WORLD CLOCK (the miner's
+	 *  StateCheckInterval-0 seal forbids the alternative), but UpdateState does not run
+	 *  while a unit is spell-frozen — ApplyFreeze clears StateTimerHandle for the whole
+	 *  freeze (TASK-099, up to 4 s). Without this, the FIRST poll after EndSpellFreeze
+	 *  would hand the ladder a multi-second delta and could jump straight to Abandon,
+	 *  skipping rungs. One state poll is 0.25 s, so anything beyond this is a GAP in the
+	 *  poll, not elapsed stall time, and must not be charged to the unit as stall.
+	 */
+	constexpr float MaxStuckDeltaSeconds = 1.f;
+
+	/**
+	 *  TASK-532 — the pinned NAV-§7 `action=` token for a rung. File-local on purpose:
+	 *  nothing outside this translation unit logs a rung, and ESiegeStuckAction is
+	 *  deliberately NOT a UENUM (NAV-§8), so there is no reflected name to fall back on.
+	 */
+	const TCHAR* StuckActionToken(ESiegeStuckAction Action)
+	{
+		switch (Action)
+		{
+		case ESiegeStuckAction::Sidestep:       return TEXT("Sidestep");
+		case ESiegeStuckAction::WidenAndRepath: return TEXT("WidenAndRepath");
+		case ESiegeStuckAction::Abandon:        return TEXT("Abandon");
+		default:                                return TEXT("None");
+		}
+	}
 }
 
 ASummonedUnit::ASummonedUnit()
@@ -656,6 +688,14 @@ void ASummonedUnit::FreezeAI()
 	State = ESummonedUnitState::Idle;
 	CurrentTarget = nullptr;
 	CurrentMoveGoal = nullptr;
+
+	// STUCK WATCHDOG RESET — exit 4 of 4 (TASK-532, NAV-§3). A match-end-frozen unit is
+	// parked forever, so a surviving lease would be inert here; it is cleared anyway
+	// because "the lease is cleared on every exit" is a rule that only holds if it has no
+	// exceptions to remember. Reset also drops the stall anchor, so the PIE readback of a
+	// frozen unit never shows a half-climbed ladder.
+	SidestepLeaseRemaining = 0.f;
+	FSiegeStuckStatics::Reset(StuckState);
 }
 
 void ASummonedUnit::ApplyMoveSpeedBuff(float Multiplier, float Duration)
@@ -888,6 +928,19 @@ void ASummonedUnit::ApplyFreeze(float Seconds)
 	State = ESummonedUnitState::Idle;
 	CurrentTarget = nullptr;
 	CurrentMoveGoal = nullptr;
+
+	// STUCK WATCHDOG RESET — ⚠️ THE DECLARED FIFTH EXIT (TASK-532). The spec names four
+	// (EnterIdle, EnterAttack, HandleDeath, FreezeAI); this one was found by tracing the
+	// lease and is REPORTED, NOT BURIED — QA rules on it.
+	// Why it belongs: ApplyFreeze parks the unit Idle by writing State DIRECTLY, so it
+	// never routes through EnterIdle — and EnterIdle's own `State == Idle` early-out (:2696)
+	// means a later EnterIdle could not clean up after it either. It then clears
+	// StateTimerHandle, so UpdateState stops running and the lease cannot even drain. A
+	// spell-frozen unit would thaw with a live lease and steer to a SidestepGoal chosen
+	// before the freeze, ignoring its standing body for up to SidestepLeaseSeconds. Same
+	// rule as the other four, same two lines.
+	SidestepLeaseRemaining = 0.f;
+	FSiegeStuckStatics::Reset(StuckState);
 
 	GetWorldTimerManager().SetTimer(SpellFreezeTimerHandle, this, &ASummonedUnit::EndSpellFreeze, FreezeSeconds, /*bLoop=*/ false);
 }
@@ -1283,6 +1336,35 @@ void ASummonedUnit::UpdateState()
 	// (guarded by bCharge), so every non-Cavalry unit — and the Miner subclass — is byte-unchanged.
 	// Runs before the profile dispatch so it tracks regardless of profile.
 	TrackChargeMovement();
+
+	// STUCK WATCHDOG (TASK-532; CONVENTIONS NAV-§3): ONE line, and its placement is
+	// load-bearing for exactly the reason TrackChargeMovement's is — it sits ABOVE the
+	// follow hoist and ABOVE the profile dispatch, so Standard, Siege, Support, Follow and
+	// Hold/Ambush are all covered by this single call and no rescue has to be scattered
+	// into the individual bodies. The freeze/death early-out is above us, so a dead,
+	// frozen or spell-frozen unit never reaches it. ZERO new timers: this rides the
+	// 0.25 s StateTimerHandle poll that already exists (the no-double-driver law).
+	// The delta is the WORLD CLOCK, never StateCheckInterval — AMinerUnit seals that to 0.
+	TickStuckWatchdog(ConsumeStuckDeltaSeconds());
+
+	// ⚠️ THE SIDESTEP LEASE (TASK-532, NAV-§3) — this early-out is what makes the Sidestep
+	// rung work at all. EnterAdvanceToLocation NULLS CurrentMoveGoal (:2675), so WITHOUT
+	// this the next poll's bGoalChanged (:2533) would immediately re-issue
+	// EnterAdvance(real goal) and cancel the sidestep 0.25 s after it started — the unit
+	// would stay wedged and all the ladder would have achieved is one extra path request.
+	//
+	// It deliberately RE-ISSUES NOTHING: the sidestep's MoveToLocation was issued ONCE
+	// when the lease was armed and path-following is already carrying it out. Re-calling
+	// EnterAdvanceToLocation here every poll would be a mill in the making — its guard
+	// falls through on GetMoveStatus() == Idle (:2677), so a sidestep goal the navmesh
+	// rejects would re-request 4×/s for the whole lease and blow the NAV-§3 worst case of
+	// ≤1 extra path request per unit per second. Suppressing the dispatch is the entire
+	// job; the ladder still runs above (the lease is drained there), so a unit that is
+	// STILL stalled escalates to WidenAndRepath on schedule, which supersedes the lease.
+	if (SidestepLeaseRemaining > 0.f)
+	{
+		return;
+	}
 
 	// ── FOLLOW dispatch — HOISTED ABOVE THE PROFILE DISPATCH (TASK-396) ────────
 	// CONVENTIONS "FOLLOW command … (2026-08-02)" §4 "DISPATCH POINT
@@ -2378,6 +2460,18 @@ void ASummonedUnit::EnterAttack()
 	{
 		State = ESummonedUnitState::Attack;
 		CurrentMoveGoal = nullptr;
+
+		// STUCK WATCHDOG RESET — exit 2 of 4 (TASK-532, NAV-§3). The unit stopped walking
+		// and started swinging: any sidestep in flight is over, and the stall clock must
+		// not carry into the next advance (an attacker standing still for 6 s is doing its
+		// job, not stalling — and the StopMovement below makes GetMoveStatus() Idle, so
+		// the ladder reads it as not-advancing anyway; this keeps the state honest rather
+		// than relying on that second-order fact). Inside the transition guard on purpose:
+		// it mirrors the CurrentMoveGoal clear beside it, and a lease can only be live on
+		// a unit that was Advancing (EnterAdvanceToLocation sets State = Advance to arm it).
+		SidestepLeaseRemaining = 0.f;
+		FSiegeStuckStatics::Reset(StuckState);
+
 		if (AAIController* AI = GetAIController())
 		{
 			AI->StopMovement();
@@ -2606,6 +2700,16 @@ void ASummonedUnit::EnterIdle()
 	State = ESummonedUnitState::Idle;
 	CurrentMoveGoal = nullptr;
 
+	// STUCK WATCHDOG RESET — exit 1 of 4 (TASK-532, NAV-§3). Standing down ends the
+	// sidestep: without this the lease would keep UpdateState returning early and steer a
+	// unit that was just told to hold. Reset drops the anchor and the clocks too, so the
+	// NEXT advance starts its ladder from zero rather than inheriting a stall that ended
+	// here. Placed after the `State == Idle` early-out above deliberately — an
+	// already-Idle unit cannot be holding a lease (arming it goes through
+	// EnterAdvanceToLocation, which sets State = Advance).
+	SidestepLeaseRemaining = 0.f;
+	FSiegeStuckStatics::Reset(StuckState);
+
 	GetWorldTimerManager().ClearTimer(AttackTimerHandle);
 	StopAttackLunge(); // leaving Attack (or defensive from Advance): exact rest pose (TASK-020)
 	RestoreLocomotionAnim(); // TASK-165 (rigged): back to idle locomotion; no-op for static units
@@ -2750,6 +2854,241 @@ void ASummonedUnit::TrackChargeMovement()
 		bChargePrimed = false;
 	}
 	// State == Attack: leave the primed flag for ComputeOutputDamage to consume.
+}
+
+float ASummonedUnit::ConsumeStuckDeltaSeconds()
+{
+	// ⛔ THE WORLD CLOCK, NEVER StateCheckInterval (TASK-532, NAV-§3). AMinerUnit seals that
+	// field to 0 (MinerUnit.cpp:61) and TASK-533 drives this same watchdog from
+	// UpdateMining, so a delta read from it would be silently ZERO on every miner: the
+	// ladder would never advance a rung and the feature would be a no-op on exactly the
+	// unit class most likely to walk into a rock. This is a NAMED helper rather than two
+	// inlined clock reads for that reason — one clock, one place to be wrong.
+	const UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return 0.f;
+	}
+
+	// static_cast: GetTimeSeconds() is float today, but narrowing it explicitly costs
+	// nothing and this build treats warnings as errors.
+	const float Now = static_cast<float>(World->GetTimeSeconds());
+
+	// FIRST CALL ON THIS UNIT — there is no previous tick to measure from, so the tick is
+	// INERT (the spec's explicit case). Latch the timestamp and charge the unit nothing.
+	if (LastStuckTickTimeSeconds <= 0.f)
+	{
+		LastStuckTickTimeSeconds = Now;
+		return 0.f;
+	}
+
+	// Clamped BOTH ways. Lower: a world clock that went backwards (PIE restart / time
+	// reset) must never run the ladder in reverse. Upper: a GAP in the poll — a spell
+	// freeze cleared StateTimerHandle, or a hitch — is not elapsed stall time and must not
+	// be charged to the unit as though it had stood still through it.
+	const float Delta = FMath::Clamp(Now - LastStuckTickTimeSeconds, 0.f, MaxStuckDeltaSeconds);
+	LastStuckTickTimeSeconds = Now;
+	return Delta;
+}
+
+void ASummonedUnit::TickStuckWatchdog(float DeltaSeconds)
+{
+	// The caller already clamps, but TASK-533 drives this too: Evaluate must never see a
+	// negative delta, and a 0 delta must be inert rather than an assert.
+	const float Delta = FMath::Max(DeltaSeconds, 0.f);
+
+	// THE LEASE DRAINS ON THE SAME CLOCK AS THE LADDER, unconditionally and BEFORE the
+	// evaluation — so a lease expires on schedule even on the polls where the unit is
+	// moving fine and the ladder returns None immediately.
+	if (SidestepLeaseRemaining > 0.f)
+	{
+		SidestepLeaseRemaining = FMath::Max(SidestepLeaseRemaining - Delta, 0.f);
+	}
+
+	// bAdvancing = "this unit has an ACTIVE path-following request THIS poll" — the shipped
+	// idiom, the same GetMoveStatus() read the anti-repath gate at :2534 uses. ⛔ This stops
+	// the ladder "rescuing" units that were TOLD to stand still: a holding, stationed or
+	// idle-by-design unit has no live request, so Evaluate returns None however long it has
+	// been motionless. No controller at all is likewise not-advancing.
+	const AAIController* const AI = GetAIController();
+	const bool bAdvancing = (AI != nullptr) && (AI->GetMoveStatus() != EPathFollowingStatus::Idle);
+
+	// Captured BEFORE Evaluate: the Abandon rung RESETS the state inside Evaluate (NAV-§3),
+	// so reading StalledSeconds afterwards would log 0.00 for the one rung that matters
+	// most. On every escalating path Evaluate accumulates the delta first, so this is
+	// exactly the value it compared against its thresholds.
+	const float StalledAtEscalation = StuckState.StalledSeconds + Delta;
+
+	// The whole per-unit cost of this feature: one DistSquared, one float compare, two adds
+	// and a uint8 compare, with zero allocations and zero world queries — on the same
+	// 0.25 s poll that already runs a full-world GetAllActorsWithInterface in AcquireTarget.
+	const ESiegeStuckAction Action = FSiegeStuckStatics::Evaluate(
+		bAdvancing,
+		GetActorLocation(),
+		static_cast<float>(GetVelocity().SizeSquared()),
+		Delta,
+		StuckTuning,
+		StuckState);
+
+	if (Action == ESiegeStuckAction::None)
+	{
+		return; // the overwhelmingly common path: moving normally, or idle by design
+	}
+
+	// ⛔ ONE LINE PER ESCALATION, NEVER ONE PER POLL (NAV-§7) — at 120 units a per-poll log
+	// IS a cost, and this feature's whole claim is that it is cheap. It is throttled
+	// STRUCTURALLY rather than by a timer: the ladder's own brakes (EscalationCooldown plus
+	// the MONOTONIC EscalationLevel) cap it at three lines per stall.
+	// Logged HERE rather than inside HandleStuckEscalation so AMinerUnit's override
+	// (TASK-533) emits the same pinned tokens without having to remember to.
+	// level= is the ACTION's ordinal, which IS the rung index by construction
+	// (None 0 / Sidestep 1 / WidenAndRepath 2 / Abandon 3) and therefore survives the
+	// Abandon reset that has already zeroed StuckState.EscalationLevel by this point.
+	UE_LOG(LogSiegeStuck, Log, TEXT("escalate: unit='%s' level=%d action=%s stalled=%.2f"),
+		*GetNameSafe(this), static_cast<int32>(Action), StuckActionToken(Action), StalledAtEscalation);
+
+	HandleStuckEscalation(Action);
+}
+
+void ASummonedUnit::HandleStuckEscalation(ESiegeStuckAction Action)
+{
+	switch (Action)
+	{
+	case ESiegeStuckAction::Sidestep:
+	{
+		// The sidestep is perpendicular to the direction of TRAVEL, so it needs the goal
+		// the unit is actually trying to reach: the live actor goal, else the last point
+		// goal, else our own location — a degenerate input FSiegeStuckStatics answers with
+		// a stable fallback axis rather than a NaN (its pinned contract).
+		FVector StalledGoal = GetActorLocation();
+		if (CurrentMoveGoal)
+		{
+			StalledGoal = CurrentMoveGoal->GetActorLocation();
+		}
+		else if (bHasMoveGoalLocation)
+		{
+			StalledGoal = CurrentMoveGoalLocation;
+		}
+
+		// ⭐ Attempt parity picks the side, and BOTH terms are load-bearing for different
+		// reasons:
+		//   • SidestepAttemptCount++ ALTERNATES THIS UNIT'S OWN SIDE ACROSS SUCCESSIVE
+		//     STALLS — sidestep left, and if the unit wedges again, sidestep right. It is a
+		//     free-running member of THIS class rather than a field of FSiegeStuckState
+		//     precisely because Reset clears that struct on every Abandon and every
+		//     re-anchor (FSiegeStuckStatics::Reset), so nothing kept there survives a stall.
+		//     ⛔ Deriving this term from StuckState.EscalationLevel — the first shipped
+		//     version — is a per-unit CONSTANT: Evaluate assigns the level BEFORE its
+		//     switch, so it is ALWAYS exactly 1 here, and brake 2 lets Sidestep fire only
+		//     once per stall. A unit wedged on a rock's left face then stepped into that
+		//     rock every stall, forever (qa/TASK-537.md, the BLOCKER).
+		//   • GetUniqueID() % 2 DE-CORRELATES NEIGHBOURS, so a clump wedged on the SAME rock
+		//     does not all sidestep the same way into each other — one stuck unit becoming
+		//     several. It is a fixed per-unit offset, so it shifts the phase without ever
+		//     defeating the alternation above.
+		// The post-increment wraps at 255 -> 0; harmless, because only the parity is read and
+		// 256 is even (see the member's comment). Non-negative by construction, so the
+		// callee's parity test is well defined either way.
+		const int32 Attempt = static_cast<int32>(SidestepAttemptCount++)
+			+ static_cast<int32>(GetUniqueID() % 2);
+
+		SidestepGoal = FSiegeStuckStatics::ComputeSidestepGoal(
+			GetActorLocation(), StalledGoal, StuckTuning.SidestepDistance, Attempt);
+
+		// ARM THE LEASE BEFORE ISSUING, so the state is consistent whatever the request
+		// returns, then make EXACTLY ONE path request through the existing point mover.
+		// UpdateState's lease early-out re-issues nothing, so this single request is the
+		// rung's entire cost — which is what keeps the NAV-§3 worst case at ≤1 extra path
+		// request per unit per second.
+		SidestepLeaseRemaining = StuckTuning.SidestepLeaseSeconds;
+		EnterAdvanceToLocation(SidestepGoal);
+		break;
+	}
+
+	case ESiegeStuckAction::WidenAndRepath:
+	{
+		// The ladder has climbed PAST the sidestep, so the sidestep is over: drop the lease
+		// FIRST, or UpdateState's early-out would suppress the very re-path this rung
+		// exists to cause — and because EscalationLevel is monotonic the rung would never
+		// fire again. This ordering is the difference between a working rung and a no-op.
+		SidestepLeaseRemaining = 0.f;
+
+		// A GENUINE re-path toward the ORIGINAL goal, by invalidating the "we already asked
+		// for this" bookkeeping — NAV-§3's own sanctioned mechanism ("clear CurrentMoveGoal
+		// so the next EnterAdvance* really re-issues"). Expressed as invalidation rather
+		// than a widened radius threaded through the movement calls because the law forbids
+		// widening anything that PERSISTS past the stall, and every acceptance radius in
+		// this file is a shared constant the normal path reads too.
+		// All three latches, because three different bodies own them and any one of them
+		// left set would swallow the re-issue: the actor gate (:2533), the point gate
+		// (:2676-2677), and the follow body's own LastFollowGoalLocation drift latch.
+		// ⛔ THE STANDING ORDER IS UNTOUCHED — CommandGroupId, the group and CurrentTarget
+		// all survive; the unit re-paths to the SAME goal, it does not get a new one.
+		CurrentMoveGoal = nullptr;
+		bHasMoveGoalLocation = false;
+		bHasFollowGoalLocation = false;
+		break;
+	}
+
+	case ESiegeStuckAction::Abandon:
+	{
+		SidestepLeaseRemaining = 0.f;
+
+		// Six seconds of not moving while genuinely trying to: this goal is not reachable
+		// right now. Drop the move goal AND the acquired target, then stand down. EnterIdle
+		// is the mechanism NAV-§3 names, and clearing CurrentTarget is what makes the next
+		// poll a RE-TARGET instead of a re-chase of the very thing we just failed to reach.
+		// ⛔ NOT a cancellation of the standing ORDER: CommandGroupId is untouched, so a
+		// grouped unit is re-dispatched by its group on the very next poll and an ungrouped
+		// one re-acquires through the normal AcquireTarget path. ⛔ The unit is never left
+		// inert forever — EnterIdle is a stand-down, not a stop — and ⛔ it never enters
+		// Attack from here.
+		// ⛔ No Reset call: Evaluate ALREADY reset the state when it returned Abandon
+		// (NAV-§3's rung table). The explicit clears below still earn their place because
+		// EnterIdle early-outs when the unit is already Idle.
+		CurrentMoveGoal = nullptr;
+		bHasMoveGoalLocation = false;
+		bHasFollowGoalLocation = false;
+		CurrentTarget = nullptr;
+		EnterIdle();
+		break;
+	}
+
+	case ESiegeStuckAction::None:
+	default:
+		// TickStuckWatchdog never dispatches None; enumerated so the switch is total and a
+		// future rung cannot be added to the enum and silently fall through here.
+		break;
+	}
+}
+
+void ASummonedUnit::NotifyMoveBlocked()
+{
+	// ⛔⛔ EVIDENCE, NOT ACTION (NAV-§3, the no-double-driver law) — read the header comment
+	// before adding ANYTHING to this function. It may not issue a move and it may not call
+	// HandleStuckEscalation. It records what the engine observed and leaves the decision to
+	// the next TickStuckWatchdog, which is the ONE driver — so the escalation still passes
+	// through EscalationCooldown and the monotonic EscalationLevel. The tempting "we
+	// already know it is blocked, just re-path here" is the TASK-280/282 mill wearing a
+	// rescue's clothes: two code paths re-pathing one UPathFollowingComponent.
+	if (bDead || bAIFrozen || bSpellFrozen)
+	{
+		return; // a unit that makes no decisions collects no evidence
+	}
+
+	// Anchor first if the ladder has never seen this unit: Evaluate's cheap path re-anchors
+	// (and zeroes the clocks) for a unit with no anchor, which would discard the clock bump
+	// below on the very next poll.
+	if (!StuckState.bHasAnchor)
+	{
+		StuckState.ProgressAnchor = GetActorLocation();
+		StuckState.bHasAnchor = true;
+	}
+
+	// Advance the stall clock TO the first rung's threshold — never PAST it, and never
+	// backwards (FMath::Max). So this can only ever pull the FIRST escalation forward by
+	// one poll; it can never skip Sidestep and jump a unit straight to Abandon.
+	StuckState.StalledSeconds = FMath::Max(StuckState.StalledSeconds, StuckTuning.SidestepSeconds);
 }
 
 float ASummonedUnit::ComputeOutputDamage(const AActor* Target)
@@ -3132,6 +3471,14 @@ void ASummonedUnit::HandleDeath()
 	GetWorldTimerManager().ClearTimer(AttackTimerHandle);
 	GetWorldTimerManager().ClearTimer(AttackAnimRestoreTimerHandle); // TASK-165: no attack-anim restore during the death hold
 	StopHealing(); // TASK-054: a dying Cleric heals no one
+
+	// STUCK WATCHDOG RESET — exit 3 of 4 (TASK-532, NAV-§3). The StateTimerHandle clear
+	// above already stops the watchdog, so this is the zero-residual half of the contract:
+	// a rigged unit's Destroy is deferred by up to DeathAnimMaxHoldSeconds (2 s), and a
+	// corpse must not spend that window holding a live lease or a half-climbed ladder that
+	// a debug readback would report. Same discipline as the StopAttackLunge below it.
+	SidestepLeaseRemaining = 0.f;
+	FSiegeStuckStatics::Reset(StuckState);
 
 	// death restores the exact rest pose before the actor goes away (TASK-020 contract)
 	StopAttackLunge();

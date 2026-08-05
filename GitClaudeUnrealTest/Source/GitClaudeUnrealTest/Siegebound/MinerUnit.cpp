@@ -15,6 +15,7 @@
 #include "Siegebound/SiegeGameState.h"
 #include "Siegebound/SiegePlayerController.h" // TASK-397 command seam: FindControllerForTeam / FindUnitGroup / HasIssuedCommand
 #include "Siegebound/SiegePlayerState.h"
+#include "Siegebound/SiegeStuckStatics.h" // TASK-533: FSiegeStuckStatics::ComputeSidestepGoal + ESiegeStuckAction at the rung switch (also reached via MinerUnit.h, which needs the complete enum for the override's parameter — explicit per IWYU)
 #include "Siegebound/UnitCommand.h" // TASK-397 command seam: FSiegeUnitGroup (complete type at the FindUnitGroup call)
 #include "Sound/SoundBase.h"
 #include "TimerManager.h"
@@ -303,6 +304,59 @@ void AMinerUnit::UpdateMining()
 	if (!bRegisteredAlive)
 	{
 		TryRegisterWithOwnerState();
+	}
+
+	// ---- THE STALL WATCHDOG (TASK-533; law: CONVENTIONS NAV-§3) -----------
+	// ⛔ ZERO NEW TIMERS. The ladder rides THIS poll — the ArrivalCheckInterval
+	// one that already exists, at the same 0.25 s cadence the base state timer
+	// would have run at. NAV-§3 forbids a second 0.25 s driver on one
+	// UPathFollowingComponent, and a SetTimer in this feature is a finding.
+	//
+	// ⛔⛔ THE DELTA IS THE WORLD CLOCK, VIA ConsumeStuckDeltaSeconds(), AND IT
+	// IS NEVER StateCheckInterval. This class SEALS StateCheckInterval to 0
+	// (constructor, seal #1) precisely so the base state machine has no driver
+	// at all — so a delta read from it would be silently ZERO on every miner:
+	// Evaluate's clamp (SiegeStuckStatics.cpp:60) would accumulate nothing, no
+	// rung would EVER fire, and the whole feature would be a no-op on exactly
+	// the unit class most likely to walk into a rock. ⚠️ It would fail SILENTLY
+	// — no crash, no log, no assert — which is why TASK-532 put the clock read
+	// behind ONE named helper instead of a literal duplicated across two files.
+	//
+	// ⚠️ AND THIS IS THE *ONLY* CONSUMER OF THAT HELPER ON A MINER, which is
+	// what makes the delta whole rather than split between two call sites: seal
+	// #1 means ASummonedUnit::UpdateState's own call site never runs on this
+	// class (its timer is never armed, and seal #3's post-BeginPlay
+	// ClearAllTimersForObject sweep covers anything that somehow was). The lone
+	// synchronous UpdateState inside Super::BeginPlay is the one exception and
+	// it is INERT by construction — the first call on any unit returns 0.
+	TickStuckWatchdog(ConsumeStuckDeltaSeconds());
+
+	// ⚠️ THE SIDESTEP LEASE — A DECLARED ADDITION OVER THE DISPATCH'S "TWO
+	// THINGS", AND WITHOUT IT THE Sidestep RUNG IS A GUARANTEED SILENT NO-OP.
+	// Exactly one movement driver runs per poll below (StandInPlace,
+	// DriveToPoint or EnsureWalkingToNode — approach (B)'s one-driver promise),
+	// and EVERY one of them would cancel an in-flight sidestep in the SAME call
+	// stack that just issued it: EnsureWalkingToNode re-issues MoveToActor
+	// because the live goal is a LOCATION and not the node, and DriveToPoint
+	// re-issues because the order's point has drifted ~SidestepDistance from
+	// the sidestep goal. While the lease is live this poll's STEERING is
+	// suppressed so the rescue move can actually run. It reuses the base's
+	// existing member — no new state: TickStuckWatchdog above drained it on the
+	// same clock as the ladder, and the base clears it at every exit (EnterIdle,
+	// EnterAttack, HandleDeath, FreezeAI, ApplyFreeze), so it cannot outlive
+	// the stall or the unit.
+	//
+	// ⚠️ WHAT IT DELAYS, STATED HONESTLY RATHER THAN CLAIMED AWAY: the
+	// alive-registration retry runs ABOVE this line; eviction is push-driven
+	// (NotifyMineDepleted) and death runs through EndPlay, so neither can be
+	// delayed at all. What CAN be delayed, by at most SidestepLeaseSeconds
+	// (2.0 s), is the AT-THE-RING test — arrival/registration and the wait-mode
+	// retry — and only for a miner that is BY CONSTRUCTION wedged and being
+	// steered laterally away from that ring. ⛔ No latch, no rate, no cap and no
+	// tenure rule changes: only WHEN this miner's next arrival poll happens.
+	if (SidestepLeaseRemaining > 0.f)
+	{
+		return;
 	}
 
 	// ---- THE COMMAND SEAM (TASK-397 plumbing, TASK-398 semantics) ---------
@@ -939,6 +993,184 @@ void AMinerUnit::EnsureWalkingToNode(AGoldNode* Node)
 		UE_LOG(LogGitClaudeUnrealTest, Warning,
 			TEXT("AMinerUnit '%s': MoveToActor toward '%s' failed — is the NavMeshBoundsVolume covering L_Arena (TASK-015/TASK-036)? The poll keeps retrying."),
 			*GetNameSafe(this), *GetNameSafe(Node));
+	}
+}
+
+void AMinerUnit::HandleStuckEscalation(ESiegeStuckAction Action)
+{
+	// ⛔ THE DECISION IS THE BASE'S AND STAYS THERE. FSiegeStuckStatics::Evaluate
+	// already chose this rung, already applied both anti-mill brakes, and
+	// TickStuckWatchdog already emitted the pinned `escalate:` line (TASK-532 logs it
+	// at the call site precisely so this override gets the same tokens for free).
+	// ⛔ Only the ACTION is ours — see the header comment for why it HAS to be.
+	switch (Action)
+	{
+	case ESiegeStuckAction::Sidestep:
+	{
+		// The sidestep is PERPENDICULAR to the direction of travel, so it needs the
+		// point this miner is actually walking at. This class holds exactly two kinds
+		// of intent and they are mutually exclusive by construction:
+		//   - a MINE (Mine / MineInDisc)                 -> the node's location;
+		//   - a POINT (Defend / Follow / the MineInDisc
+		//     station)                                   -> the goal DriveToPoint
+		//                                                   last issued.
+		// LeaveMining() nulls TargetGoldNode on the way INTO the point orders, so the
+		// node source is live only under a mining order. A degenerate input — neither
+		// available — is answered by FSiegeStuckStatics with a stable +Y fallback axis
+		// rather than a NaN (its pinned contract), so no extra guard is owed here.
+		FVector StalledGoal = GetActorLocation();
+		if (const AGoldNode* const Node = TargetGoldNode.Get())
+		{
+			StalledGoal = Node->GetActorLocation();
+		}
+		else if (bHasIssuedPointGoal)
+		{
+			StalledGoal = LastIssuedPointGoal;
+		}
+
+		// The same Attempt idiom the base uses, for the same two reasons, and against the
+		// SAME inherited counter (SidestepAttemptCount is ASummonedUnit's — this class adds
+		// no member of its own): the free-running attempt term ALTERNATES THIS MINER'S OWN
+		// SIDE ACROSS SUCCESSIVE STALLS, and the unit-id term DE-CORRELATES NEIGHBOURS so a
+		// clump of miners wedged on the SAME rock does not all sidestep the same way into
+		// each other — one stuck miner becoming several.
+		// ⛔ The counter deliberately does NOT live in FSiegeStuckState: Reset clears that
+		// struct on every Abandon and every re-anchor, and the first shipped version's
+		// StuckState.EscalationLevel term was therefore a per-unit CONSTANT (always 1 here),
+		// so a wedged miner stepped the same way into the same rock forever
+		// (qa/TASK-537.md, the BLOCKER). The uint8 wrap at 255 -> 0 is harmless — only the
+		// parity is read. Non-negative by construction, so the callee's parity test is well
+		// defined.
+		const int32 Attempt = static_cast<int32>(SidestepAttemptCount++)
+			+ static_cast<int32>(GetUniqueID() % 2);
+
+		const FVector SidestepPoint = FSiegeStuckStatics::ComputeSidestepGoal(
+			GetActorLocation(), StalledGoal, StuckTuning.SidestepDistance, Attempt);
+
+		// ⛔ ARM THE LEASE ONLY IF THERE IS ACTUALLY SOMEWHERE TO WALK. DriveToPoint
+		// treats anything inside ArrivalRadius as ARRIVED and answers with
+		// StopMovement instead of a move, so a SidestepDistance tuned at or below the
+		// 150 uu ring — or the degenerate `return Location` ComputeSidestepGoal gives
+		// for a non-positive/NaN distance — would PARK the miner for the whole lease
+		// and call that a rescue. FSiegeStuckTuning is EditDefaultsOnly and Jonathan
+		// tunes it without a recompile, so this rung has to be safe under arbitrary
+		// values (NAV-§7), not just the shipped 350.
+		if (static_cast<float>(FVector::Dist2D(GetActorLocation(), SidestepPoint)) > ArrivalRadius)
+		{
+			SidestepLeaseRemaining = StuckTuning.SidestepLeaseSeconds;
+		}
+
+		// ⭐ ONE move, through the MINER'S OWN mover and its SHIPPED anti-repath band
+		// (:841-856) — ⛔ never EnterAdvanceToLocation, which is the base's mover and
+		// would put a SECOND steering authority on this UPathFollowingComponent.
+		// Tolerance 0 reuses that band exactly as the static orders do: it suppresses
+		// a re-issue only when the destination has not moved at all, which is what
+		// keeps this rung to EXACTLY ONE path request and inside NAV-§3's ceiling.
+		DriveToPoint(SidestepPoint, 0.f);
+		break;
+	}
+
+	case ESiegeStuckAction::WidenAndRepath:
+	{
+		// The ladder has climbed PAST the sidestep, so the sidestep is over: drop the
+		// lease FIRST or the poll would return on it and the re-path this rung exists
+		// to cause would never reach a mover — and because EscalationLevel is
+		// MONOTONIC the rung could never fire again. With the shipped defaults the
+		// lease IS still live here (armed at 1.5 s for 2.0 s; Widen fires at 3.0 s),
+		// so this ordering is the difference between a working rung and a silent
+		// no-op. Same argument as TASK-532's base rung.
+		SidestepLeaseRemaining = 0.f;
+
+		// A GENUINE re-path toward the ORIGINAL destination. ⛔ The goal itself is NOT
+		// changed and the standing ORDER is not cancelled — only the "we already asked
+		// for this" bookkeeping that would otherwise swallow the re-issue. This class
+		// holds TWO such latches and the rung has to break BOTH, because which one is
+		// live depends on the order the miner is under:
+		//
+		//   1. bHasIssuedPointGoal — DriveToPoint's anti-repath band (:851). Cleared
+		//      here so the next Defend/Follow/station drive re-issues MoveToLocation
+		//      instead of measuring drift against a goal we are wedged short of. For
+		//      those orders this clear IS the whole re-path: UpdateMining calls
+		//      DriveToPoint again later in this very poll and the band no longer
+		//      suppresses it.
+		bHasIssuedPointGoal = false;
+
+		//   2. THE LIVE PATH REQUEST ITSELF — EnsureWalkingToNode's goal check
+		//      (:917-924) returns early while a move toward THIS node is in flight,
+		//      and a wedged miner's move IS in flight: that is what makes bAdvancing
+		//      true, which is what let the ladder climb this far in the first place.
+		//      ⇒ Without this StopMovement the mining half of the rung is a no-op.
+		//      ⛔ It is NOT a second driver: it is the one driver cancelling its own
+		//      request, and it is what guarantees the re-issue below is ONE request
+		//      rather than two concurrent ones (NAV-§3's rung-2 prohibition).
+		AGoldNode* const Node = TargetGoldNode.Get();
+		if (AAIController* const AI = Cast<AAIController>(GetController()))
+		{
+			AI->StopMovement();
+		}
+
+		// Re-issue the SAME node walk, once. ⛔ Null-guarded: under Defend/Follow
+		// LeaveMining() has already nulled the target, and EnsureWalkingToNode would
+		// hand MoveToActor a null goal — Failed, plus a misleading "is the
+		// NavMeshBoundsVolume covering L_Arena" warning latched for the match.
+		if (Node)
+		{
+			EnsureWalkingToNode(Node);
+		}
+		break;
+	}
+
+	case ESiegeStuckAction::Abandon:
+	{
+		// Both earlier rungs are spent; neither may hold this one back (same ordering
+		// argument as WidenAndRepath above).
+		SidestepLeaseRemaining = 0.f;
+
+		// Stop the walk and drop the point-goal latch so whatever runs next re-paths
+		// from scratch. Idempotent and null-safe. ⛔ This rung issues NO path request
+		// of its own, exactly as NAV-§3 requires of Abandon.
+		StandInPlace();
+
+		// ⛔⛔ THE GUARD THAT KEEPS THIS RUNG OUT OF THE INCOME PATH — a miner holding
+		// a TENURE never re-seeks. SeekBestMine overwrites TargetGoldNode, and a null
+		// finder (every mine depleted) would make the next poll read
+		// `bArrivedAtNode && bTargetDead` -> LeaveMining() -> RemoveMinerIncome: this
+		// rung would END A TENURE and change the gold rate, which is squarely outside
+		// this task (CONVENTIONS §5 — the command layer only chooses WHERE the miner
+		// is steered).
+		// ⭐ AND IT COSTS NOTHING, because the case is all but unreachable: arrival
+		// calls StopMovement, so an ARRIVED miner reads GetMoveStatus() == Idle ->
+		// bAdvancing false -> Evaluate re-anchors and returns None however long it
+		// stands there. The ONLY path that can reach a rung with a tenure held is a
+		// DISPLACED arrived miner walking back, and this guard is what makes that case
+		// provably safe instead of merely argued safe.
+		if (!bArrivedAtNode)
+		{
+			// Six seconds of not moving while genuinely trying to: re-consult the
+			// finder from where the miner stands NOW. It may well answer with the same
+			// node — mines do not move — and that is ACCEPTABLE: Evaluate has already
+			// Reset the ladder, so a second Abandon has to earn the whole 6 s climb
+			// again. What DOES change is that the next poll issues a path request from
+			// a fresh start poly against the navmesh as it stands now, instead of the
+			// byte-identical re-request NAV-§1 Cause 2 names as the livelock.
+			//
+			// ⚠️ Under Hold/Ambush this can briefly target a mine OUTSIDE the position
+			// circle, because SeekBestMine is the map-wide finder. The retarget gate's
+			// bOutOfOrderDisc test catches it on the very next poll and re-seeks with
+			// SeekMineInDisc, so it self-heals in 0.25 s with no bookkeeping involved
+			// (bArrivedAtNode is false here, so that gate's LeaveMining branch cannot
+			// run). Choosing between the two finders here would mean a second
+			// ResolveMinerOrder on the same poll for a case that corrects itself.
+			SeekBestMine();
+		}
+		break;
+	}
+
+	case ESiegeStuckAction::None:
+	default:
+		// TickStuckWatchdog never dispatches None; enumerated so the switch is total
+		// and a rung added to the enum later cannot silently fall through here.
+		break;
 	}
 }
 

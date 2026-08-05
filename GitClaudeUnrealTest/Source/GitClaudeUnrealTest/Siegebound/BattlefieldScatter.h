@@ -11,9 +11,11 @@
 
 class AAncientGround;
 class AGoldNode;
+class ANavigationData;
 class USceneComponent;
 class USiegeScatterConfig;
 class UHierarchicalInstancedStaticMeshComponent;
+class UNavigationSystemV1;
 class UStaticMesh;
 struct FScatterLayer;
 
@@ -59,6 +61,47 @@ DECLARE_LOG_CATEGORY_EXTERN(LogSiegeTerrain, Log, All);
  *        defensive cull is followed by RegroundMines (a cull can delete a
  *        mine's supporting hill). Re-checks until confirmed. Never leaves a
  *        match unwinnable.
+ *
+ *  ⛔ SETTLED-ONLY CULL LAW (TASK-535 — CONVENTIONS `NAV-§4`; the determinism law,
+ *  TASKBOARD.md:11044). Layer (2) is a query against an ASYNCHRONOUSLY BUILDING
+ *  navmesh, and until TASK-535 it could both (a) print "Traversability CONFIRMED"
+ *  while tile tasks were still queued — measured: the MaxNavSettleWait cap fires,
+ *  logs "proceeding anyway", and the very next line claimed CONFIRMED — and (b)
+ *  DELETE INSTANCES on the strength of that unsettled answer. (b) is the real
+ *  defect: a cull decided by a partially-built navmesh is a cull decided by WALL-
+ *  CLOCK TIMING, so the shipped instance set stopped being a pure function of the
+ *  seed. Three rules now bind this actor:
+ *    (i)   HONEST LABELLING. ValidateTraversability reads
+ *          UNavigationSystemV1::GetNumRemainingBuildTasks() at the query and
+ *          prints EITHER "CONFIRMED (nav settled: 0 pending)" OR "PROVISIONAL
+ *          (N tile task(s) pending — PRE-SETTLE query)". ⛔ A pre-settle query may
+ *          NEVER print the word CONFIRMED — that string is a claim.
+ *    (ii)  ⛔ A CULL MAY ONLY BE DRIVEN BY A SETTLED QUERY. A PROVISIONAL failure
+ *          culls NOTHING (bCullOnProvisionalFailure, EditDefaultsOnly, default
+ *          false — the escape hatch exists only so the old behaviour is one
+ *          checkbox away, never as the shipped default).
+ *    (iii) THE DEFINITIVE CHECK IS EVENT-DRIVEN. This actor binds
+ *          UNavigationSystemV1::OnNavigationGenerationFinishedDelegate
+ *          (NavigationSystem.h:444) and re-runs the reachability check ONCE, when
+ *          generation ACTUALLY finishes — one bind, one deferred re-check per
+ *          match. ⛔ No polling, ⛔ no 216 s stall, unbound in EndPlay.
+ *  ⭐ AND WHY THIS *KEEPS* THE NON-NEGOTIABLE GUARANTEE RATHER THAN WEAKENING IT:
+ *  post-settle, the reachability answer is STABLE, so a cull driven by it is a pure
+ *  function of the geometry — hence of the seed. The cull is NOT removed; it is
+ *  MOVED to the only moment at which it is both TRUE and DETERMINISTIC. Layer (1),
+ *  the reserved corridor, is unchanged and still guarantees the lane geometrically
+ *  with no dependence on any async nav state.
+ *  🚩 ACCEPTED, FLAGGED CONSEQUENCE (Jonathan's call at the playtest, TASK-539):
+ *  a post-settle cull deletes instances LATER — potentially VISIBLY (a rock popping
+ *  out ~27 s in at 8× tile concurrency, or ~216 s if that flip rolls back) where it
+ *  used to happen invisibly at +5 s. It only ever fires when the field is genuinely
+ *  walled off — the HARD-FAILURE case — and a visible pop is strictly better than an
+ *  unwinnable match. ⛔ Do NOT "fix" it by restoring the provisional cull.
+ *
+ *  ⚖️ M8 DECLARATION (TASK-535): adds no replicated property, no new replicated
+ *  class, no new relevancy tier. Everything TASK-535 adds is server-side validation
+ *  state on an actor that already replicates only its seed pair; the client path
+ *  (OnRep_GenerationIndex) never validates, never culls and never binds the delegate.
  *
  *  ⚠️ 180°-ROTATIONAL SYMMETRY LAW (TASK-358 — CONVENTIONS "Ancient Grounds +
  *  Sorcerer + 180° terrain symmetry" §1; SUPERSEDES the M6.5 asymmetric-organic
@@ -171,7 +214,7 @@ protected:
 	/** Scatters once at match start. */
 	virtual void BeginPlay() override;
 
-	/** Stops the pending traversability timer. */
+	/** Stops the pending traversability timers AND unbinds the nav-generation-finished delegate (TASK-535 — a bind that outlives the actor is a dangling callback into a destroyed world). */
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/**
@@ -417,8 +460,53 @@ private:
 	 */
 	void RegroundMines();
 
-	/** Deferred (async-nav-settled) reachability confirmation — path-queries Blue→Red AND Blue→each mine (TASK-255 economy guarantee); defensively culls corridor blockers / per-mine clearance discs and regrounds mines after every cull. */
+	/**
+	 *  Deferred (async-nav-settled) reachability confirmation — path-queries
+	 *  Blue→Red AND Blue→each mine (TASK-255 economy guarantee); defensively culls
+	 *  corridor blockers / per-mine clearance discs and regrounds mines after every
+	 *  cull.
+	 *  TASK-535 (`NAV-§4`): the verdict is now LABELLED by the live tile-task queue
+	 *  (GetNumRemainingBuildTasks) — CONFIRMED only when the queue is empty,
+	 *  PROVISIONAL otherwise — and ⛔ the defensive cull runs ONLY on a SETTLED
+	 *  query (unless bCullOnProvisionalFailure is flipped). A PROVISIONAL failure
+	 *  logs, culls nothing, arms nothing, and hands the verdict to the
+	 *  event-driven definitive re-check. Idempotent and re-entrancy-safe: callable
+	 *  from the settle poll, the retry path and the nav-generation-finished
+	 *  callback without any of them stacking.
+	 */
 	void ValidateTraversability();
+
+	/**
+	 *  Binds OnNavGenerationFinished to the live nav system's
+	 *  OnNavigationGenerationFinishedDelegate (NavigationSystem.h:444) — ONCE, and
+	 *  AUTHORITY-ONLY (the validation it drives is authority-only, M8 doc D9).
+	 *  Idempotent: a second call while already bound is a no-op, so the Play-Again
+	 *  re-scatter cannot stack a second callback. Null-safe when there is no nav
+	 *  system (the reserved corridor is still the deterministic guarantee).
+	 */
+	void BindNavGenerationFinished();
+
+	/** Removes the binding from the EXACT nav system it was taken on (a weak ptr, so a torn-down nav system is simply forgotten). Idempotent; called by EndPlay and by every terminal verdict. */
+	void UnbindNavGenerationFinished();
+
+	/**
+	 *  ⭐ THE DEFINITIVE CHECK (`NAV-§4`): the navmesh generator has just drained its
+	 *  tile-task queue, which is the ONLY moment at which the reachability answer is
+	 *  both TRUE and DETERMINISTIC. Schedules ONE deferred ValidateTraversability
+	 *  and latches, so repeated broadcasts (one per ANavigationData, plus any later
+	 *  drain) cannot turn this into a poll.
+	 *  ⚠️ IT DEFERS BY DESIGN, IT DOES NOT VALIDATE INLINE: this fires from INSIDE
+	 *  the Recast generator's tick (RecastNavMeshGenerator.cpp:7631 →
+	 *  ARecastNavMesh::OnNavMeshGenerationFinished → NavigationSystem.cpp:4915), and
+	 *  a cull re-entering the nav system to dirty areas from inside its own generator
+	 *  tick is exactly the re-entrancy the spec forbids. One timer tick of latency
+	 *  costs nothing against a check that was previously wrong by ~211 s.
+	 */
+	UFUNCTION()
+	void OnNavGenerationFinished(ANavigationData* NavData);
+
+	/** Timer body for the deferred definitive re-check: clears the pending latch, then runs the ordinary ValidateTraversability (same code path, same rules — the only difference is that the navmesh has actually settled). */
+	void RunDefinitiveTraversabilityCheck();
 
 	/**
 	 *  Starts the nav-settle wait for the deferred reachability validation (M7.6 —
@@ -522,6 +610,32 @@ private:
 	/** Widening-cull attempt counter for the deferred validation. */
 	int32 ReachabilityAttempt = 0;
 
+	/**
+	 *  One-shot timer for the DEFINITIVE (post-settle) re-check — deliberately its
+	 *  OWN handle, never TraversabilityTimerHandle: the two can legitimately be in
+	 *  flight at the same time (a settle poll re-arming while generation finishes),
+	 *  and sharing one handle would silently cancel whichever armed first. Cleared
+	 *  by EndPlay and by every re-scatter.
+	 *  ⛔ NOT A POLL: it is armed once per generation-finished latch, never re-arms
+	 *  itself, and fires at the next timer tick.
+	 */
+	FTimerHandle DefinitiveCheckTimerHandle;
+
+	/** The nav system this actor's delegate binding was taken on (weak: a torn-down nav system is forgotten rather than unbound through a stale pointer). */
+	TWeakObjectPtr<UNavigationSystemV1> BoundNavSystem;
+
+	/** True while OnNavGenerationFinished is bound — the idempotence latch for the bind/unbind pair. */
+	bool bNavGenerationFinishedBound = false;
+
+	/** True between the generation-finished broadcast and the deferred re-check running: collapses the N broadcasts of one drain (one per ANavigationData) into ONE check, and makes the callback non-re-entrant. */
+	bool bDefinitiveCheckPending = false;
+
+	/** True once the event-driven definitive re-check has produced a verdict — the "run it ONCE" latch (`NAV-§4`). Reset by every authority re-scatter. */
+	bool bDefinitiveCheckDone = false;
+
+	/** True while the definitive (post-settle) check is the one executing, so ValidateTraversability can label its line as the definitive verdict rather than the poll's. */
+	bool bInDefinitiveCheck = false;
+
 	/** Seconds accumulated by the CURRENT nav-settle poll (reset by StartNavSettlePoll, compared against MaxNavSettleWait). Runtime state, not a tunable. */
 	float NavSettleElapsed = 0.f;
 
@@ -553,6 +667,24 @@ private:
 	/** Max widening-cull re-checks before the corridor is force-cleared (each re-check widens the culled Y band by CorridorWidenStep). */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Terrain|Traversability", meta = (ClampMin = "1"))
 	int32 MaxReachabilityAttempts = 5;
+
+	/**
+	 *  ⛔ THE DETERMINISM SWITCH (TASK-535 — CONVENTIONS `NAV-§4`). DEFAULT false, and
+	 *  the default is the law: a PROVISIONAL (pre-settle) reachability FAILURE never
+	 *  runs the widening cull, because that cull DELETES INSTANCES and its answer, on
+	 *  a partially-built navmesh, depends on wall-clock timing — which would make the
+	 *  shipped instance set stop being a pure function of the seed (the determinism
+	 *  law, TASKBOARD.md:11044). With it false, every cull that ever runs was decided
+	 *  by a SETTLED query, so it is reproducible from the seed alone.
+	 *  ⚠️ FLIPPING IT TO true RESTORES THE PRE-TASK-535 BEHAVIOUR AND RE-OPENS THAT
+	 *  HOLE. It exists only so the old path is one checkbox away for a diagnostic
+	 *  A/B — ⛔ never as a shipping default, and ⛔ never as the answer to "the rock
+	 *  popped out late" (that visible late cull is the accepted, flagged consequence:
+	 *  it fires ONLY when the field is genuinely walled off, and a visible pop is
+	 *  strictly better than an unwinnable match).
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Terrain|Traversability")
+	bool bCullOnProvisionalFailure = false;
 
 	/** How much (cm) the culled corridor band widens per failed re-check. M7.6: 250 → 400, scaled with the corridor (half-width now 1,000) so each widening attempt still clears a meaningful band of the 10× field. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Terrain|Traversability", meta = (ClampMin = "0"))

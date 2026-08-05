@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Siegebound/SiegeStuckStatics.h" // TASK-533: ESiegeStuckAction is a BY-VALUE parameter of the HandleStuckEscalation override — an enum parameter needs a COMPLETE type in the declaration, so this is a real dependency and not a convenience (complete-type include law, TASK-110). It also arrives through SummonedUnit.h below; named explicitly per IWYU so the dependency survives a later reshuffle of that header.
 #include "Siegebound/SummonedUnit.h"
 #include "MinerUnit.generated.h"
 
@@ -435,6 +436,42 @@ protected:
 	 *  cap-6 slot for the hold window. The §6 gold-burst on death is the miner's death feedback.
 	 */
 	virtual bool ShouldHoldDeathAnim() const override { return false; }
+
+	/**
+	 *  ⭐ THE STUCK LADDER'S *ACTION*, IN THE MINER'S OWN VOCABULARY (TASK-533; law:
+	 *  CONVENTIONS `NAV-§3` — the no-double-driver clause — and §6's MINER SEAL).
+	 *
+	 *  ⛔ THE DECISION IS NOT OVERRIDDEN AND MUST NEVER BE. A stalled miner is stalled
+	 *  exactly like any other unit, so FSiegeStuckStatics::Evaluate — and the two
+	 *  anti-mill brakes inside it — stay the single owner of WHICH rung fires and WHEN.
+	 *  Only the ACTION differs, and that is the entire reason this override exists:
+	 *
+	 *  ⛔⛔ THE BASE'S RUNGS STEER THROUGH EnterAdvance / EnterAdvanceToLocation. THIS
+	 *  CLASS'S WALK IS OWNED BY EnsureWalkingToNode / DriveToPoint. Running the base's
+	 *  rungs on a miner would put a SECOND STEERING AUTHORITY on ONE
+	 *  UPathFollowingComponent — the double-drive CONVENTIONS §6 forbids, and the
+	 *  measured reason (iii) approach (A) was rejected in the first place: the base's
+	 *  re-path gate and this class's goal check each read the other's request as a
+	 *  hijack and re-issue it, which is the TASK-280/282 re-path mill exactly.
+	 *
+	 *  The three rungs, translated (mechanism is the programmer's; the OUTCOME is law):
+	 *   Sidestep       — ONE move to FSiegeStuckStatics::ComputeSidestepGoal through
+	 *                    DriveToPoint, reusing its SHIPPED anti-repath band, and take
+	 *                    the base's sidestep lease so the rest of THIS poll does not
+	 *                    cancel the move in the call stack that issued it.
+	 *   WidenAndRepath — a genuine re-path to the ORIGINAL destination: drop the lease,
+	 *                    clear bHasIssuedPointGoal (DriveToPoint's band) and StopMovement
+	 *                    (EnsureWalkingToNode's goal check), then re-issue the node walk.
+	 *   Abandon        — StandInPlace, then re-consult the finder (SeekBestMine) so the
+	 *                    next poll paths afresh. ⛔ NEVER while a tenure is held.
+	 *
+	 *  ⛔ NOTHING HERE TOUCHES THE INCOME PATH — no registration, no gold rate, no
+	 *  wait-mode rule, no eviction, no per-tenure latch, no §3.3 cap. It only chooses
+	 *  WHERE the miner is steered, which is the boundary CONVENTIONS §5 draws.
+	 *  ⛔ It never enters Attack (this class cannot: CanEverAttack() is false and all
+	 *  four seals are intact), and it never cancels the miner's standing ORDER.
+	 */
+	virtual void HandleStuckEscalation(ESiegeStuckAction Action) override;
 
 	/**
 	 *  Standing this close to the mine (2D) counts as at-the-ring: registration

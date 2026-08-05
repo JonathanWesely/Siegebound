@@ -7,6 +7,7 @@
 #include "UObject/SoftObjectPtr.h"
 #include "Siegebound/CardRow.h"
 #include "Siegebound/HealthBarProvider.h"
+#include "Siegebound/SiegeStuckStatics.h" // TASK-532: FSiegeStuckState / FSiegeStuckTuning are BY-VALUE members and ESiegeStuckAction is a parameter type — complete types required here, not a forward declaration
 #include "Siegebound/TeamId.h"
 #include "SummonedUnit.generated.h"
 
@@ -311,6 +312,24 @@ public:
 	/** True once FreezeAI ran (PIE verification hook for the TASK-024 match-end freeze). */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Unit")
 	bool IsAIFrozen() const { return bAIFrozen; }
+
+	/**
+	 *  STUCK WATCHDOG — the engine's blocked verdict, harvested (TASK-532; CONVENTIONS
+	 *  NAV-§3, NAV-§8). Called by ASiegeUnitAIController::OnMoveCompleted ONLY (TASK-534),
+	 *  when UPathFollowingComponent declares EPathFollowingResult::Blocked — a verdict the
+	 *  engine has always computed (<10 uu in 5.0 s) and this project has never asked for.
+	 *
+	 *  ⛔⛔ THIS RECORDS **EVIDENCE**, IT DOES NOT TAKE AN **ACTION** — THE NO-DOUBLE-DRIVER
+	 *  LAW (NAV-§3, CONVENTIONS "FOLLOW command…" §6). It may advance the stall clock so the
+	 *  NEXT TickStuckWatchdog fires a rung; it may NEVER issue a move, and it may NEVER call
+	 *  HandleStuckEscalation itself. ⚖️ Two code paths that can both re-path one
+	 *  UPathFollowingComponent is the TASK-280/282 mill this whole feature exists to remove,
+	 *  and it is an automatic QA FAIL — the brakes (EscalationCooldown + the monotonic
+	 *  EscalationLevel) live in FSiegeStuckStatics::Evaluate and this must pass through them.
+	 *
+	 *  Safe on dead / frozen / spell-frozen units (no-op) and on a unit that was never stuck.
+	 */
+	void NotifyMoveBlocked();
 
 	/** Current hit points, in [0, MaxHP]. PIE verification hook (TASK-010). */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Unit")
@@ -858,6 +877,110 @@ protected:
 	 *  read only by the type tripwire that guards the dispatch contract.
 	 */
 	void UpdateStateFollow(const FSiegeUnitGroup& Group);
+
+	//~ ── STUCK WATCHDOG (TASK-532; CONVENTIONS NAV-§3 behaviour law, NAV-§8 pin) ──────
+	//   Jonathan's report: units wedge on scatter rocks and never recover. The engine
+	//   ALREADY declares EPathFollowingResult::Blocked after <10 uu in 5.0 s; nothing in
+	//   this project ever asked, and EnterAdvance's Idle branch (SummonedUnit.cpp:2534)
+	//   then re-issues a BYTE-IDENTICAL request 0.25 s later — a silent livelock. This is
+	//   the escape hatch; ⛔ the anti-repath gates themselves are UNTOUCHED.
+	//
+	//   ⛔ ONE DRIVER, ZERO NEW TIMERS: the whole ladder rides the 0.25 s StateTimerHandle
+	//   poll that already exists. A SetTimer in this feature is a finding (NAV-§3).
+
+	/**
+	 *  Runs the stall ladder for ONE poll and dispatches at most ONE rung. Called from
+	 *  exactly one place — UpdateState, immediately after TrackChargeMovement — which is
+	 *  ABOVE the follow hoist and the profile dispatch, so Standard, Siege, Support,
+	 *  Follow and Hold/Ambush are all covered by that single line (the TrackChargeMovement
+	 *  precedent). UpdateState's freeze/death early-out sits above it, so a dead, frozen or
+	 *  spell-frozen unit never reaches it.
+	 *
+	 *  Also DRAINS SidestepLeaseRemaining by the same DeltaSeconds — the lease and the
+	 *  ladder must advance on one clock or the lease could outlive the stall it belongs to.
+	 *
+	 *  ⚠️ DeltaSeconds MUST come from ConsumeStuckDeltaSeconds() (the world clock),
+	 *  ⛔ NEVER from StateCheckInterval — AMinerUnit sets that to 0 by seal
+	 *  (MinerUnit.cpp:61) and TASK-533 calls this same watchdog. A 0 delta is inert.
+	 */
+	void TickStuckWatchdog(float DeltaSeconds);
+
+	/**
+	 *  Performs ONE rung of the NAV-§3 ladder. Virtual + protected because AMinerUnit
+	 *  OVERRIDES it (TASK-533): the stall DECISION is identical for a miner, but the
+	 *  ACTION must differ — the miner's walk is owned by EnsureWalkingToNode/DriveToPoint,
+	 *  and running these rungs on it would put a SECOND STEERING AUTHORITY on its movement
+	 *  component (the double-drive the miner seal exists to prevent).
+	 *
+	 *  Sidestep       — ONE move to FSiegeStuckStatics::ComputeSidestepGoal, and take the lease.
+	 *  WidenAndRepath — supersede the lease and invalidate the goal latches so the next poll's
+	 *                   EnterAdvance* genuinely re-issues toward the ORIGINAL goal.
+	 *  Abandon        — drop the move goal and stand down; the standing body re-chooses next poll.
+	 *
+	 *  ⛔ NEVER cancels the unit's standing ORDER (CommandGroupId is untouched on every
+	 *  rung), ⛔ never enters Attack, ⛔ never leaves the unit inert forever.
+	 */
+	virtual void HandleStuckEscalation(ESiegeStuckAction Action);
+
+	/**
+	 *  Seconds of WORLD CLOCK since the previous call, clamped to [0, MaxStuckDeltaSeconds].
+	 *  ⛔ THE ONLY SANCTIONED DELTA SOURCE FOR THE WATCHDOG, and it exists as a named
+	 *  helper precisely because BOTH call sites (here and AMinerUnit::UpdateMining,
+	 *  TASK-533) need it: StateCheckInterval is 0 on the miner by seal, so an inlined
+	 *  literal would become the same magic number duplicated across two files.
+	 *  The FIRST call on any unit returns 0 (inert) — there is no previous tick to measure.
+	 */
+	float ConsumeStuckDeltaSeconds();
+
+	/** Transient per-unit stall state (anchor + clocks + rung level). ⛔ Deliberately UNREFLECTED (NAV-§8/§11): an unreflected struct cannot be replicated by accident. */
+	FSiegeStuckState StuckState;
+
+	/** The ladder's thresholds. EditDefaultsOnly so Jonathan can tune the feel per unit class WITHOUT a recompile; these are the ONLY tunables this feature adds (NAV-§7). CONFIG, never replicated (NAV-§11). */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Stuck")
+	FSiegeStuckTuning StuckTuning;
+
+	/** World point the Sidestep rung last steered this unit to. Meaningful only while SidestepLeaseRemaining > 0. */
+	FVector SidestepGoal = FVector::ZeroVector;
+
+	/**
+	 *  ⚠️ THE SIDESTEP LEASE — LOAD-BEARING, NOT A POLISH ITEM (NAV-§3).
+	 *  EnterAdvanceToLocation NULLS CurrentMoveGoal (SummonedUnit.cpp:2675), so the next UpdateState
+	 *  would see bGoalChanged == true, re-issue EnterAdvance(real goal), and CANCEL the
+	 *  sidestep 0.25 s after it started — the rescue would never happen. While this is
+	 *  positive UpdateState skips the profile dispatch entirely and lets the in-flight
+	 *  sidestep move run. Drained by TickStuckWatchdog on the same delta as the ladder.
+	 *  ⛔ CLEARED ON EVERY EXIT: EnterIdle, EnterAttack, HandleDeath, FreezeAI — and
+	 *  ApplyFreeze (the declared fifth; see its comment). A lease that outlives a state
+	 *  change is a stuck unit of a new kind.
+	 */
+	float SidestepLeaseRemaining = 0.f;
+
+	/**
+	 *  ⭐ SIDESTEP ATTEMPTS THIS UNIT HAS MADE, EVER — the ONLY term that makes the side actually
+	 *  alternate. Incremented once per fired Sidestep rung; its PARITY is the whole payload.
+	 *
+	 *  ⛔ DELIBERATELY **NOT** A FIELD OF FSiegeStuckState, AND THAT IS THE ENTIRE POINT.
+	 *  FSiegeStuckStatics::Reset assigns a default-constructed instance, and Evaluate calls it on
+	 *  EVERY Abandon and EVERY re-anchor, so nothing stored there can survive a stall.
+	 *  The first shipped version derived Attempt from StuckState.EscalationLevel,
+	 *  which Evaluate assigns BEFORE its switch and is therefore ALWAYS exactly 1 whenever
+	 *  Sidestep dispatches — a per-unit CONSTANT, so a unit wedged on a rock's left face sidestepped
+	 *  into that rock on every stall, forever (qa/TASK-537.md, the BLOCKER). Free-running across
+	 *  stalls is the fix; anything Reset can reach is not.
+	 *
+	 *  ⚠️ IT WRAPS AT 255 -> 0, AND THAT IS HARMLESS AND INTENDED. Only `Attempt & 1` is ever read
+	 *  (FSiegeStuckStatics::ComputeSidestepGoal), 256 is even, so the alternation continues
+	 *  unbroken across the wrap. ⛔ NOTHING MAY DEPEND ON THIS VALUE MONOTONICALLY — it is not a
+	 *  count anyone reports, not a clock, not an index, and it is never compared with >, <, or a
+	 *  threshold. A reader wanting a true lifetime tally must add their own counter, not widen this.
+	 *
+	 *  ⛔ UNREFLECTED, like StuckState and the lease (NAV-§8/§11): an unreflected member cannot be
+	 *  replicated by accident. ⛔ Not an FSiegeStuckTuning field either — it is state, not a feel knob.
+	 */
+	uint8 SidestepAttemptCount = 0;
+
+	/** World-clock timestamp of the previous ConsumeStuckDeltaSeconds call; 0 = never ticked (the first call is inert). */
+	float LastStuckTickTimeSeconds = 0.f;
 
 private:
 
