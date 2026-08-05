@@ -222,6 +222,59 @@ public:
 	void RefreshKeyboardLayout();
 
 	/**
+	 *  ⭐ ADDED 2026-08-04 (batch ASSISTANT-EXCLUDE, TASK-516) — THE SINGLE-KEY QUERY.
+	 *  "What does the physical position that QWERTY calls `QwertyKey` yield on the ACTIVE
+	 *  layout?" `KBD-§4` already puts ALL 26 LETTERS in the translation, so the answer is
+	 *  computed and stored; this is the only way to ask for ONE of them.
+	 *
+	 *  ⛔ DIRECTION — GETTING IT BACKWARDS COMPILES AND SILENTLY BINDS THE WRONG KEY. The map
+	 *  is SOURCE (QWERTY) -> what the ACTIVE layout yields at that physical position.
+	 *  ⇒ ON US-DVORAK, GetPositionalKey(EKeys::Z) RETURNS EKeys::Semicolon, because the
+	 *  physical position QWERTY calls `Z` produces `;` on Dvorak.
+	 *  ⇒ A key-press test is `InKeyEvent.GetKey() == GetPositionalKey(EKeys::Z)`, ⛔ NEVER a
+	 *    reverse lookup of the pressed key back into QWERTY space.
+	 *
+	 *  ⛔ IT NEVER RETURNS EKeys::Invalid (`KBD-§5`'s fail-safe law applied to a scalar).
+	 *  ⚠️ IDENTITY IS NEVER *STORED* (BuildTranslationMap emits no identity entry), so "no
+	 *  entry" and "identity" are THE SAME ANSWER and both return the input unchanged — an
+	 *  extra `if (Translated == QwertyKey)` branch would be dead code, do not add one.
+	 *  ⚠️ AN INVALID INPUT RETURNS THAT SAME INVALID INPUT: this is a LOOKUP, not a
+	 *  validator, and it must not start refusing keys the caller already holds.
+	 *
+	 *  ⛔⛔ `const`, AND THEREFORE IT DOES **NOT** RE-PROBE — unlike GetPositionalContext(),
+	 *      which is non-const precisely because it re-probes (mechanism 1 of 3). It reads the
+	 *      map AS IT STANDS. ⚖️ RULED (`KBD-§8`): THE CALLER REFRESHES, THE ACCESSOR READS.
+	 *      ⇒ A caller that needs a current answer calls RefreshKeyboardLayout() ITSELF first —
+	 *        USiegeAssistantConsoleWidget::OpenConsole() does it ONCE PER OPEN, which is free
+	 *        by mechanism 1's own standard and stays correct even when
+	 *        `siege.Input.LayoutPollEnabled` has been turned off for testing.
+	 *      ⛔ DO NOT bind OnKeyboardLayoutChanged from a widget for this — new lifetime state
+	 *        to unbind wrongly, for a value that is re-read at every open anyway.
+	 *      ⛔ DO NOT "fix" the staleness by making this non-const, by adding a `mutable`
+	 *        member, by const_cast-ing, or by hanging a timer off it.
+	 *
+	 *  ⛔⛔ AND THE PLAYER-FACING STRING DOES **NOT** USE THIS FUNCTION. ANY PROMPT THAT NAMES
+	 *      THE ACCEPT KEY SAYS `Z`, ON EVERY LAYOUT (`KBD-§8`, `KBD-§0` ruling 1). The player
+	 *      is on QWERTY HARDWARE with a Dvorak SOFTWARE layout — their keycap reads `Z`, so
+	 *      telling them to "press `;`" would be the bug, not the fix.
+	 *      ⇒ THE LOOKUP IS FOR THE COMPARISON; THE LITERAL IS FOR THE HUMAN.
+	 *
+	 *  M8 DECLARATION (verbatim): adds no replicated property, no new replicated class, no new
+	 *  relevancy tier. ✅ It is a const read of one client-local map on a
+	 *  UGameInstanceSubsystem — see the class comment for why that is structural.
+	 *
+	 *  ⚠️ QA gate for THIS addition is TASK-525 (`.claude/pipeline/qa/TASK-525.md`), NOT the
+	 *  class-level TASK-513 gate below — this member arrived in a later, separate batch.
+	 *
+	 *  @param QwertyKey the key as it is PRINTED on a US-QWERTY reference, e.g. EKeys::Z.
+	 *  @return the FKey the active layout yields at that physical position; ⛔ QwertyKey
+	 *          itself when the map holds no entry for it (the QWERTY-host path, and every
+	 *          fail-safe path). ⛔ Never EKeys::Invalid for a valid input.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Input")
+	FKey GetPositionalKey(const FKey& QwertyKey) const;
+
+	/**
 	 *  Broadcast on every ACTUAL change of the active translation, never on a no-op. UI
 	 *  consumers SEED FROM DescribeActiveTranslation()/IsPositionalRemapActive() FIRST, THEN
 	 *  BIND (qa/TASK-005 major-2: a bind-only widget created at a pinned value stays stale).

@@ -88,13 +88,13 @@ public:
 	 *  across processes.
 	 *
 	 *  DEGENERATE INPUTS ARE HANDLED, NOT ASSERTED ON. With no unit kinds the
-	 *  `kind` / `count` / `at-least` / `item` / `selection` rules are OMITTED
-	 *  ENTIRELY (they would be unreachable), `who` collapses to "all" | "none"
-	 *  and `when` collapses to "now" — so the grammar stays well-formed with
-	 *  every referenced rule defined, and with nothing nameable the only
-	 *  expressible outputs are army-wide orders and questions. That is the
-	 *  correct answer, not a workaround. With no place names, `where` collapses
-	 *  to just "none".
+	 *  `kind` / `count` / `at-least` / `item` / `selection` / `exceptlist` /
+	 *  `except` rules are OMITTED ENTIRELY (they would be unreachable), `who`
+	 *  collapses to "all" | "none" and `when` collapses to "now" — so the grammar
+	 *  stays well-formed with every referenced rule defined, and with nothing
+	 *  nameable the only expressible outputs are army-wide orders and questions.
+	 *  That is the correct answer, not a workaround. With no place names, `where`
+	 *  collapses to just "none".
 	 *
 	 *  NOTE FOR THE CALLER (Wave 1's B2): the grammar closes the world over
 	 *  EXACTLY the arrays it is handed. Passing the live roster is what delivers

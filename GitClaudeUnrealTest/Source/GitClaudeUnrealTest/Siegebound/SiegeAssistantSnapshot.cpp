@@ -781,6 +781,21 @@ FString USiegeAssistantSnapshot::BuildZoneA(const USiegeAssistantVocabulary* Voc
 	// old hint had been undersized since well before rung 1 grew it. This changes
 	// no emitted byte - it only stops the builder reallocating three times on a
 	// string whose length is fixed and known.
+	//
+	// ⚠️⚠️ 5116 IS NOW THE *PREVIOUS* SHIPPED LENGTH. TASK-521 added 308 chars to
+	// this builder (44 to the `WHO =` schema line + two rule lines at 111 and 153),
+	// so the shipped Zone A is 5424 chars / 5424 UTF-8 bytes. The 6144 reserve
+	// still covers it with 720 spare, so it is NOT re-tuned. ⛔ THIS IS A DECLARED
+	// DIVERGENCE (`D4`): the SPIKE lane in Plugins/SiegeLlama is NOT touched by
+	// this batch (it is TASK-481's in-flight instrument, FT-§16), so the two lanes
+	// are no longer byte-equal and Siegebound.Assistant.ZoneA.TwoLaneByteEquality /
+	// .MeasuredCharCount are RE-BASED BY TASK-523 against 5424 — ⛔ never by
+	// re-copying this builder's output into the fixture. ⛔ AND THE TOKEN FIGURES
+	// ARE **STALE - PENDING RE-MEASUREMENT ON THE MODEL**: `zoneA_tok = 1139`, the
+	// 77.1 % KV-reuse figure and every prefill number derived from them are NOT
+	// recomputed by arithmetic and NOT deleted. Only Siege.Llama.SpikePrompt prints
+	// them. The CHAR count is re-counted because chars are countable without a
+	// model; the TOKEN count is not, and that asymmetry is the whole rule.
 	FString Out;
 	Out.Reserve(6144);
 
@@ -800,7 +815,20 @@ FString USiegeAssistantSnapshot::BuildZoneA(const USiegeAssistantVocabulary* Voc
 	//                                           GBNF RULE name, "n" is the JSON
 	//                                           key, and they differ)
 	//   selection   a JSON ARRAY of 1..3 items, bounded by alternation
-	//   who         the array, or "all", or "none"
+	//   except      {"all_except":[KIND]}, 1..3 BARE kind strings, bounded the
+	//               same way (SiegeAssistantMaxExclusionKinds = 3). ⛔ NO counts
+	//               in it, BY DESIGN: "all except 5 archers" has no shape in the
+	//               grammar to be sampled into (AS-§20.1).
+	//   who         the array, or the except object, or "all", or "none"
+	//
+	// ⚠️⚠️ THE `except` ALTERNATIVE IS NEW AT TASK-518 AND THE `WHO =` LINE BELOW
+	// HAD TO FOLLOW IT — THAT IS THE MIRROR LAW ABOVE BEING OBEYED, NOT AN EXTRA.
+	// TASK-518 added `except` to SiegeAssistantGrammar.cpp's `who` rule while this
+	// block still enumerated three shapes. Left alone, Zone A would have TOLD the
+	// model the exclusion shape does not exist while the sampler ALLOWED it — the
+	// exact "the rule was outvoted by the prompt's own lines" failure loop 2
+	// measured on who:"none" (see the selection rule below). The alternative order
+	// here is the grammar's order, deliberately: selection | except | "all" | "none".
 	//   trigger     JSON key "at_least" (snake_case, below), GBNF rule `at-least`
 	//               (kebab-case). ⛔ SAME DIVERGENCE AS "n"/"count" AND FOR A
 	//               HARDER REASON: llama.cpp rule names are [a-zA-Z0-9-] only, so
@@ -819,7 +847,7 @@ FString USiegeAssistantSnapshot::BuildZoneA(const USiegeAssistantVocabulary* Voc
 	Out += TEXT("schema (a command):\n");
 	Out += TEXT("{\"intent\":INTENT,\"who\":WHO,\"where\":WHERE,\"when\":WHEN}\n");
 	Out += TEXT("INTENT = send | guard | ambush | follow | charge | fallback | rally\n");
-	Out += TEXT("WHO    = [{\"kind\":KIND,\"n\":COUNT}] with 1 to 3 entries, or \"all\", or \"none\"\n");
+	Out += TEXT("WHO    = [{\"kind\":KIND,\"n\":COUNT}] with 1 to 3 entries, or {\"all_except\":[KIND]} with 1 to 3 kinds, or \"all\", or \"none\"\n");
 	Out += TEXT("KIND   = a unit symbol from roster in [FORCES]\n");
 	Out += TEXT("COUNT  = 1 to 30, or \"all\"\n");
 	Out += TEXT("WHERE  = a place symbol from places in [FORCES], or \"none\"\n");
@@ -928,14 +956,42 @@ FString USiegeAssistantSnapshot::BuildZoneA(const USiegeAssistantVocabulary* Voc
 	//     forbids it directly and in the only terms that cover it: the kind has
 	//     to have come from the PLAYER.
 	//
-	// ⚠️ SHIPPED-VS-MEASURED HAZARD, DECLARED: [FORCES] is truncated to
-	// MaxRosterKinds (8) in the shipped snapshot but NOT in the spike fixture,
-	// which prints all 13. So on a >8-kind board this rule can refuse a kind that
-	// is alive and simply got collapsed into `other_kinds`. The prompt already
-	// carried that hazard (the [notes] line loop 2 deleted said the same thing);
-	// this concentrates it into a rule, which makes it worse, not better. It is
-	// board ruling 7's condition biting a second time and it is TASK-416's
-	// constant to move, not mine.
+	// ⚠️⚠️ THE HAZARD THIS COMMENT USED TO DECLARE IS CLOSED, AND THE LINE BELOW
+	// IS DELIBERATELY LEFT BYTE-FOR-BYTE ALONE. TASK-521 read TASK-517's finished
+	// output and ruled a NO-OP here, which is a decision and not an omission:
+	//
+	// WHAT IT SAID (and it was true when it was written): [FORCES] truncated to
+	// MaxRosterKinds = 8 in the shipped snapshot but not in the spike fixture, so
+	// on a >8-kind board this rule could refuse a kind that is ALIVE and merely got
+	// collapsed into `other_kinds` - and `Sorcerer` is the LAST commandable row in
+	// DT_Cards, so it was the first kind collapsed, every time. That is the whole
+	// mechanism behind the reported "all units never includes sorcerers".
+	//
+	// WHY IT IS CLOSED: TASK-517 did two things. The cap is 13 (Jonathan's ruling),
+	// and - the durable half - `other_kinds:` now prints the collapsed kinds' NAMES:
+	// `other_kinds: sorcerer, cleric (5 units)`. That line is printed INSIDE the
+	// [FORCES] block by AppendRosterBlock, so a collapsed symbol IS a symbol in
+	// [FORCES] and this rule's antecedent - a literal membership test over the text
+	// the model can see - is TRUE again. A collapse now costs the per-kind COUNTS,
+	// never a kind's EXISTENCE (CONVENTIONS AS-§20.2 / AS-§20.3).
+	//
+	// ⛔ SO NO WORDING WAS ADDED HERE, AND THE THREE REASONS ARE RECORDED RATHER
+	// THAN LEFT TO BE RE-LITIGATED:
+	//  1. The rule is already true as written. A clause saying "other_kinds names
+	//     count as [FORCES]" would restate what the block's own layout shows.
+	//  2. TASK-521's spec requires any edit HERE to be char-neutral or NEGATIVE,
+	//     and no addition can be. The 325-char Zone-A budget is spent on the two
+	//     rules below, which teach behaviour the prompt did not have at all.
+	//  3. The ladder measured that restating something the prompt already shows has
+	//     poor leverage on this model (TASK-431: 19/25, the twice-taught row did not
+	//     flip). Spending chars on emphasis here would buy the least per char.
+	//
+	// ⚠️ THE RESIDUAL, NOT PAPERED OVER: when the trimmer bites (measured: SEVEN
+	// extra typed `order:` chars on a 13-kind board), a collapsed kind appears with
+	// NO count. The model can still name it and still order it; what it cannot do
+	// is read a per-kind tally for it - and the "Never copy a count from the roster"
+	// rule below already forbids reading tallies out of the roster anyway, so the
+	// two degrade in the same direction. The shortfall stays a GAME-side report.
 	Out += TEXT("- If the unit named is not a kind in [FORCES], answer {\"ask\":\"unsupported\"}. Never write a kind the player did not name.\n");
 	// ⛔⛔ THIS LINE IS BYTE-FROZEN AT LOOP 2 AND MUST NOT BE TOUCHED. It is the
 	// one taught class TASK-431 measured LANDING: the card-play/economy refusal
@@ -992,6 +1048,71 @@ FString USiegeAssistantSnapshot::BuildZoneA(const USiegeAssistantVocabulary* Voc
 	// Few-shot #6 ("i want the footmen to rush" -> send) is this rule's exemplar
 	// and already sits in the block, unchanged.
 	Out += TEXT("- If the player names units, the intent is send, guard, ambush or follow, never charge, fallback or rally.\n");
+
+	// ⚠️⚠️ THE TWO LINES BELOW ARE TASK-521, AND THEY ARE RULES ON PURPOSE — THE
+	// OBVIOUS FIX (A NEW `who:"all"` FEW-SHOT) IS FORBIDDEN, NOT MERELY DECLINED.
+	// A new EXAMPLE SENTENCE needs an absence certificate proving literal
+	// disjointness from all three corpus files, and `assistant_eval_holdout2.csv`
+	// is SEALED (CONVENTIONS AS-§12a / AS-§20.6). ⛔ TASK-430 already proved the
+	// certificate cannot be skipped by care: two agents given the same PUBLIC brief
+	// converged on the same invented noun and NEITHER COULD SEE IT. A rule line
+	// needs no certificate at all — the disjointness law binds example sentences,
+	// not instructions — so the seal stays unspent. ⭐ And it is the better
+	// instrument anyway: loop 2 MEASURED a decision-ordering rule beating an
+	// exemplar-and-emphasis pass at this exact seam (the block directly above).
+	//
+	// ⛔ THEY NAME NO KIND SYMBOL. `KIND` is the schema metavariable, not `miner`.
+	// The §9c seam warning at the examples block is why: Zone A is byte-identical
+	// for process life while the grammar's KIND alternatives come from the LIVE
+	// roster, so any concrete symbol written here is one the sampler may FORBID on
+	// a board that lacks it, with no log line saying so. Zone A names exactly three
+	// kinds today (footman, sorcerer, archer) and this task refuses to make that
+	// four — even though the flagship sentence is about miners.
+	//
+	// ⚠️ THEY ARE A MINIMAL PAIR AND MUST STAY ADJACENT AND IN THIS ORDER. Same
+	// opening ("Every unit"), and the ONLY difference is whether an exception was
+	// stated — which is the entire distinction being taught, held against a
+	// constant frame. That is the same device few-shots #2/#3 use, applied to
+	// rules. They sit here, immediately after the selection rule, because the three
+	// together are ONE decision ladder read top-down: kinds named -> a selection
+	// and a unit-taking intent; everyone, no exception -> "all"; everyone minus
+	// some kinds -> the exclusion. ⛔ Do not move them above the byte-frozen
+	// economy line — its POSITION is frozen along with its bytes, and its declared
+	// neighbours are the [FORCES] rule above it and the selection rule below it.
+	//
+	// (1) THE `who:"all"` RULE — the one Jonathan actually reported. Nothing in the
+	// shipped prompt ever demonstrated the bare "all" sentinel: all seven few-shots
+	// emit a <=3-kind array or "none", and the only "everyone" exemplar maps to
+	// charge/who:"none". So "all units ..." pulled toward the ARRAY form, the array
+	// is capped at SiegeAssistantMaxSelectionKinds = 3 kinds, and a 13-kind board
+	// therefore CANNOT reach the Sorcerer through it — structurally, not by
+	// mistake. "never a list of kinds" is the half that closes that; the trailing
+	// clause is the half that protects the `everyone attack` -> charge few-shot,
+	// which is CORRECT and stays. ⚠️ Note the antecedent is deliberately "every
+	// unit", not the alias "everyone": an alias is a lookup and TASK-431 measured
+	// this model failing lookups (the `ancient_ground_near` alias missing its own
+	// exact target string). The synonym table already routes `everyone attack`.
+	Out += TEXT("- Every unit, no exception: who is \"all\", never a list of kinds. charge, fallback and rally still take \"none\".\n");
+
+	// (2) THE EXCLUSION RULE. The second sentence is not caution, it is read off
+	// the executor: `charge`/`fallback` run through ASiegePlayerController::
+	// ApplyArmyWideStance(...) — the same shipped API the T and E keys call — and
+	// `rally` through AHeroCharacter::Rally(). ⛔ NONE OF THE THREE WALKS THE
+	// CANDIDATE LIST, so an exception handed to them has no code path that could
+	// subtract anything: "fall back except the miners" would execute as "fall back
+	// INCLUDING the miners", a valid-shaped wrong command that looks obeyed.
+	// TASK-518's parser REFUSES `all_except` there (`exclude_conflict`), so without
+	// this line the model emits an exclusion the parser then rejects — and the
+	// player experiences a refusal, i.e. the feature not working. Naming the three
+	// verbs explicitly is the half loop 2 measured beating the verb latch, so they
+	// are named here too rather than left to "only with send, guard, ambush or
+	// follow" to imply. `{"ask":"unsupported"}` is the shape this block already
+	// teaches twice — ⛔ no new ask symbol was invented (AS-§20.1).
+	// ⚠️ The arity and the no-counts property are carried by the `WHO =` schema
+	// line, not repeated here: the GBNF enforces both structurally (a bounded
+	// alternation of 1..3 BARE kind strings), so restating them would spend budget
+	// on something the sampler cannot violate.
+	Out += TEXT("- Every unit but some kinds: who is {\"all_except\":[KIND]}, only with send, guard, ambush or follow. On charge, fallback or rally: {\"ask\":\"unsupported\"}.\n");
 
 	// The quantity rule, which is one axis with three ways to fall off it — the
 	// model was observed missing in BOTH directions, so a one-sided rule would
@@ -1302,10 +1423,40 @@ void USiegeAssistantSnapshot::AppendRosterBlock(FString& Out, int32 KindsToPrint
 	// ALWAYS EMITTED, `none` when nothing was collapsed - the fixed-key law. The
 	// tail collapses into ONE line rather than spilling: aggregate harder, never
 	// exceed the budget.
+	//
+	// ⭐ AND THE LINE NAMES WHAT IT HID (TASK-517). It used to print
+	// `other_kinds: 5 kinds, 9 units` - counts with NO SYMBOLS - which is the
+	// root cause of the defect Jonathan reported as *"whenever I say all units,
+	// it doesn't seem to include sorcerers even when they were spawned."* The
+	// roster prints in fixed DT_Cards row order and `Sorcerer` is the LAST
+	// commandable row, so it is ALWAYS the first kind collapsed; with counts only,
+	// the token `sorcerer` never reached the model, and Zone A's "if the unit
+	// named is not a kind in [FORCES], answer unsupported" rule then refused a
+	// unit that was standing on the board.
+	//
+	// ⛔ A COLLAPSE MAY HIDE A KIND'S *NUMBERS*. IT MAY NEVER HIDE ITS *NAME*.
+	// That is the invariant this line exists to hold, and it holds at ANY cap and
+	// on ANY board size - which is what makes it, not MaxRosterKinds, the durable
+	// half of the fix (CONVENTIONS AS-§20.2). The grammar has ALWAYS admitted
+	// every collapsed kind (GetUnitKinds() is never truncated), so before this the
+	// sampler could name a unit the prompt had not shown it; that is the gap being
+	// closed.
+	//
+	// The names are accumulated in the SAME pass that tallies the units - one walk
+	// of the collapsed tail, in the roster's own fixed order, so the line can never
+	// disagree with the rows above it about what was hidden or in what order.
 	int32 CollapsedKinds = 0;
 	int32 CollapsedUnits = 0;
+	FString CollapsedNames;
+	CollapsedNames.Reserve(FMath::Max(0, UnitKinds.Num() - PrintCount) * 14);
 	for (int32 KindIndex = PrintCount; KindIndex < UnitKinds.Num(); ++KindIndex)
 	{
+		if (CollapsedKinds > 0)
+		{
+			CollapsedNames += TEXT(", ");
+		}
+		CollapsedNames += UnitKinds[KindIndex].ToString();
+
 		++CollapsedKinds;
 		CollapsedUnits += KindTotals.IsValidIndex(KindIndex) ? KindTotals[KindIndex] : 0;
 	}
@@ -1316,7 +1467,10 @@ void USiegeAssistantSnapshot::AppendRosterBlock(FString& Out, int32 KindsToPrint
 	}
 	else
 	{
-		Out.Appendf(TEXT("other_kinds: %d kinds, %d units\n"), CollapsedKinds, CollapsedUnits);
+		// `(1 units)` on a single collapsed kind is DELIBERATE: the format is
+		// pinned, and a pluralisation branch would spend characters out of a
+		// ~6-char headroom to teach a 1.7B model English it does not need.
+		Out.Appendf(TEXT("other_kinds: %s (%d units)\n"), *CollapsedNames, CollapsedUnits);
 	}
 }
 
@@ -1409,10 +1563,30 @@ FString USiegeAssistantSnapshot::BuildZoneC(const FString& Utterance, const FStr
 	// and `order:` each spend up to MaxUtteranceBytes of this budget and NEITHER is
 	// trimmed by it - the roster absorbs all of it, which is the CONVENTIONS §8 rule
 	// that the utterance is never truncated by the snapshot budget.
+	//
+	// ⚠️ AND SINCE TASK-517 RAISED MaxRosterKinds TO 13, THAT SENTENCE HAS TEETH.
+	// The shipped operating point on a 13-kind board is head 108 + roster 621 +
+	// tail 158 = 887 chars of an 893-char Zone C budget, i.e. ~6 chars spare on the
+	// DEFAULT 61-char `order:` line. About SEVEN more characters of typed text
+	// re-collapse the tail. ⛔ That is the reason the collapse line NAMES what it
+	// hid rather than counting it: at this cap the trimmer is expected to bite in
+	// normal play, and a fix that only worked when it did not bite would be a fix
+	// that fails silently for exactly the player who types a long sentence.
 	const int32 RosterBudget = SnapshotTrimBudgetChars - ZoneBCharReserve - Head.Len() - Tail.Len();
 
 	const int32 CapKinds = FMath::Min(UnitKinds.Num(), MaxRosterKinds);
 
+	// ⚠️ THE LOOP IS STILL STRICTLY MONOTONIC WITH THE NAMED COLLAPSE LINE, AND
+	// THAT IS THE ONE PROPERTY THE NEW FORMAT COULD HAVE BROKEN, SO IT IS PROVED
+	// HERE RATHER THAN ASSUMED. A step removes one roster row, which costs
+	// 36 + len(symbol) + digits(the three counts) chars, and adds that symbol back
+	// on the collapse line for len(symbol) + 2 (the ", " separator) - so the symbol
+	// cancels and every step shrinks the block by at least ~29 chars whatever the
+	// kind is named. The first step is the shallowest, because it also swaps
+	// `none` for ` (N units)`, and it still shrinks: measured 621 -> 588 -> 551 ->
+	// ... -> 182 at one kind printed on the 13-kind board. KindsToPrint <= 0
+	// remains the unconditional floor either way, so the loop terminates even if a
+	// later format change breaks the algebra above.
 	int32 KindsToPrint = CapKinds;
 	FString RosterBlock;
 	for (;;)
@@ -1432,11 +1606,19 @@ FString USiegeAssistantSnapshot::BuildZoneC(const FString& Utterance, const FStr
 	// compared KindsToPrint against the cap, and those are EQUAL at exactly the
 	// cap - so the common case, a >MaxRosterKinds board collapsing its tail into
 	// `other_kinds:`, logged nothing at all. That is the case that costs
-	// accuracy: GetUnitKinds() is never truncated, so the GRAMMAR still admits
-	// every collapsed kind and the sampler can name a unit the prompt did not
-	// show the model. Silence is the worst possible way for that to happen, and
-	// it is strictly more likely now that SnapshotTrimBudgetChars binds at a
-	// measured budget rather than a generous guess.
+	// accuracy, and it is strictly more likely now that SnapshotTrimBudgetChars
+	// binds at a measured budget rather than a generous guess.
+	//
+	// 📌 THE ACCURACY CLAIM HERE IS NARROWER THAN IT WAS, AND THE NARROWING IS THE
+	// TASK-517 FIX RATHER THAN A CONCESSION. This comment used to end "...so the
+	// GRAMMAR still admits every collapsed kind and the sampler can name a unit the
+	// prompt did not show the model." GetUnitKinds() is still never truncated, so
+	// the grammar half is unchanged - but the prompt half is no longer true,
+	// because `other_kinds:` now NAMES every collapsed kind. What a collapse costs
+	// the model today is the per-kind COUNTS, not the kinds' EXISTENCE. ⛔ It is
+	// still worth logging: a model that can see `sorcerer` but not how many there
+	// are can still open a clarification turn the snapshot used to be able to
+	// answer, and a degraded turn nobody recorded cannot be reconstructed later.
 	const int32 CollapsedKinds = UnitKinds.Num() - KindsToPrint;
 	if (CollapsedKinds > 0)
 	{
@@ -1444,6 +1626,16 @@ FString USiegeAssistantSnapshot::BuildZoneC(const FString& Utterance, const FStr
 		// fixes: the kind cap is a deliberate aggregation policy, whereas a budget
 		// bite means the snapshot genuinely does not fit and something upstream
 		// has to aggregate harder.
+		//
+		// ⚠️ AT MaxRosterKinds = 13 THE CAP BRANCH IS UNREACHABLE TODAY, AND IT IS
+		// KEPT RATHER THAN DELETED (TASK-517). DT_Cards has exactly 13 commandable
+		// kinds, so CapKinds == UnitKinds.Num() on every live board and the ONLY
+		// reachable cause is the character budget - which is precisely why the cap
+		// raise alone did not close the defect. The branch survives because a
+		// FOURTEENTH kind makes it reachable again on the same day it is added, and
+		// a log line that has to be re-derived at that moment is a log line nobody
+		// will trust. Both strings were re-read against the new cap and both are
+		// still TRUE of the case they name.
 		const bool bBudgetBite = KindsToPrint < CapKinds;
 		const TCHAR* const Cause = bBudgetBite
 			? TEXT("the CHARACTER BUDGET, below the MaxRosterKinds cap")
@@ -1464,7 +1656,7 @@ FString USiegeAssistantSnapshot::BuildZoneC(const FString& Utterance, const FStr
 			WarnedRosterKindsCollapsed = FMath::Max(WarnedRosterKindsCollapsed, CollapsedKinds);
 
 			UE_LOG(LogSiegeAssistant, Warning,
-				TEXT("Snapshot roster TRUNCATED: %d of %d kind(s) printed in full, %d collapsed into `other_kinds:` by %s. The grammar still admits all %d kinds, so the model can name a unit the prompt never showed it. Roster %d chars of a %d-char budget (SnapshotTrimBudgetChars %d, ZoneBCharReserve %d). Aggregate harder, or lower the reserve from a PRINTED zoneB_chars reading - do NOT raise the trim budget to hide this. NOTE the trim budget is a proxy: the real cap is the plugin's MaxSnapshotTokens=400, counted by the tokenizer, which REJECTS an over-budget turn instead of trimming it."),
+				TEXT("Snapshot roster TRUNCATED: %d of %d kind(s) printed in full, %d collapsed into `other_kinds:` by %s. The grammar admits all %d kinds and `other_kinds:` NAMES every collapsed one, so the model can still SEE each symbol - what a collapse costs is the per-kind COUNTS, which degrades an order into a clarification rather than a refusal (TASK-517). Roster %d chars of a %d-char budget (SnapshotTrimBudgetChars %d, ZoneBCharReserve %d). Aggregate harder, or lower the reserve from a PRINTED zoneB_chars reading - do NOT raise the trim budget to hide this. NOTE the trim budget is a proxy: the real cap is the plugin's MaxSnapshotTokens=400, counted by the tokenizer, which REJECTS an over-budget turn instead of trimming it."),
 				KindsToPrint, UnitKinds.Num(), CollapsedKinds, Cause, UnitKinds.Num(),
 				RosterBlock.Len(), RosterBudget, SnapshotTrimBudgetChars, ZoneBCharReserve);
 		}

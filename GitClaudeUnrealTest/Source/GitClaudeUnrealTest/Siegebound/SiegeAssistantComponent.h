@@ -97,7 +97,10 @@ class USiegeLlamaSubsystem;
  *                 HandleModelCompletion, CancelPressed or NotifyConsoleClosed.
  *   AwaitConfirm  a parsed, guard-passed order is on screen with its ghost circles
  *                 (TASK-443 owns the body). ConfirmPressed executes; CancelPressed
- *                 discards with NOTHING partially executed.
+ *                 discards with NOTHING partially executed - and so does
+ *                 NotifyConsoleClosed, which is the route the player actually has
+ *                 in v1 (AS-§6 A-2, amended: closing the box IS the cancel) and
+ *                 which prints the SAME game-authored Cancelled line.
  *   Clarify       the game is holding a question. The pending line carries the
  *                 context; the next utterance is a FRESH single-turn call unless
  *                 the short-circuit answers it first.
@@ -220,7 +223,10 @@ class USiegeLlamaSubsystem;
  *                                     snapshot / compose          ── before
  *      HandleModelCompletion          stale-turn guard / state guard / success
  *                                     guard / ParseSiegeAssistantCommand /
- *                                     SiegeAssistantValidateSelection /
+ *                                     SiegeAssistantValidateSelection (⛔ CALLED
+ *                                     WITH Command.ExcludeKinds - the 4th
+ *                                     parameter is DEFAULTED, so omitting it
+ *                                     compiles and checks nothing) /
  *                                     FindShortfall               ── before
  *      RouteParsedCommandInternal (1) ValidateCommandAgainstSnapshot - THE
  *                                     NON-ORDERABLE-KIND GUARD    ── before
@@ -231,6 +237,8 @@ class USiegeLlamaSubsystem;
  *                                     ELSE IN THE FEATURE <<<
  *      ExecutePendingCommand          HasAuthority re-check / ResolvePlace /
  *                                     the SHIPPED eligibility predicates /
+ *                                     the ExcludeKinds subtraction + its
+ *                                     empty-after-exclusion refusal /
  *                                     the never-truncate-silently rule
  *                                                                 ── AFTER
  *
@@ -270,7 +278,13 @@ class USiegeLlamaSubsystem;
  *      OnConsoleSubmitted(const FString&)-> SubmitUtterance(const FString&)
  *      OnConsoleConfirmed()              -> ConfirmPressed()
  *      OnConsoleCancelled()              -> CancelPressed()
+ *          ⛔ BOUND, CORRECT, AND WITHOUT A LIVE CALLER IN v1 - the Cancel button
+ *          is gone (AS-§6 A-2, amended). Kept as public API; see CancelPressed().
  *      OnConsoleOpenChanged(bool)        -> NotifyConsoleOpened / NotifyConsoleClosed
+ *          ⭐ THE CLOSE HALF IS NOW THE PLAYER'S CANCEL GESTURE, and it is still
+ *          the FSM - not the widget - that decides so. The widget says only "the
+ *          window closed"; NotifyConsoleClosed turns that into a discard AND
+ *          prints the Cancelled line when an order was actually pending.
  *
  *  ⚠️ SEED BEFORE YOU BIND (the standing qa/TASK-005 major-2 lesson): push
  *  GetStateAsByte() + GetStateLabel(), GetLastMessage(), IsConsoleAvailable()
@@ -768,6 +782,14 @@ public:
 	 *  The console was closed. An in-flight request is aborted, an unconfirmed
 	 *  order is discarded with its preview, and the FSM returns to Idle -
 	 *  ⚠️ EXCEPT from Deferred, which is preserved for the reason above.
+	 *
+	 *  ⭐ AND FROM AwaitConfirm IT ALSO PRINTS - the game-authored Cancelled
+	 *  template, the same one CancelPressed() uses (AS-§6 RULING A-2, amended
+	 *  2026-08-04). Closing the box IS the player's cancel gesture now that the
+	 *  Cancel button is gone, and this component is the ONLY thing that turns a
+	 *  close into a discard - the widget still broadcasts nothing but "the window
+	 *  closed". ⛔ The line is pushed on the AwaitConfirm path ONLY, AFTER the
+	 *  discard is complete: a close with nothing pending says nothing.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Assistant")
 	void NotifyConsoleClosed();
@@ -811,6 +833,18 @@ public:
 	 *  leaves anything partially executed: an in-flight request is aborted, an
 	 *  unconfirmed order and its ghost circles are discarded, a latched deferred
 	 *  intent is dropped, and the FSM returns to the console's resting state.
+	 *
+	 *  ⛔ DELIBERATELY UNCALLED IN v1, EXACTLY LIKE ToggleConsole() - AND THAT IS
+	 *  RULED, NOT ROTTEN (AS-§6 RULING A-2, route 2, amended 2026-08-04). The
+	 *  console's Cancel button is gone, so nothing in the shipped tree broadcasts
+	 *  OnConsoleCancelled any more; ⛔ the signature and behaviour are UNCHANGED
+	 *  because deleting shipped BlueprintCallable public API to remove a button is
+	 *  a breaking change bought for nothing. It remains the non-key discard route
+	 *  for Blueprint, a future WBP_AssistantConsole, a gamepad or an
+	 *  accessibility path.
+	 *  ⚠️ The case the console actually still hits - a close that discards an
+	 *  order awaiting confirmation - is handled by NotifyConsoleClosed(), which
+	 *  prints the SAME Cancelled template.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Assistant")
 	void CancelPressed();
@@ -907,6 +941,14 @@ public:
 	 *  and lives in handoffs/TASK-471-programmer.md: READ THE FRAME ALOUD WITH
 	 *  EVERY VALUE ITS PATH CAN SUPPLY - if any combination is ungrammatical, the
 	 *  FRAME is wrong, not the value.
+	 *
+	 *  ⭐ IT NAMES THE EXCEPTION (TASK-522). An ExcludeKinds order renders
+	 *  "Send all except miner (mid)" - the clause is built into {Selection}, so no
+	 *  new frame and no new template row was needed. ⛔ A confirm prompt that says
+	 *  "Send (mid)" for an order carrying an exception describes a DIFFERENT order
+	 *  from the one that will execute, and the ghost circles cannot cover for it:
+	 *  SpawnConfirmPreview draws two PLACE decals and nothing per-unit, so this
+	 *  sentence is the whole unit-facing half of the review.
 	 */
 	FText DescribeCommandForPlayer(const FSiegeAssistantCommand& Command) const;
 
@@ -1167,6 +1209,23 @@ private:
 	 *  ⛔ ON SHORTFALL IT RETURNS false RATHER THAN TRUNCATING SILENTLY. Handing
 	 *  back 7 units for an order that said 10 is the valid-shaped-wrong-command
 	 *  failure this whole architecture exists to stop.
+	 *
+	 *  ⭐ IT IS ALSO THE ONE PLACE Command.ExcludeKinds MEANS ANYTHING (TASK-522,
+	 *  AS-§20.1). who:{"all_except":[…]} parses to an EMPTY Kinds plus a populated
+	 *  ExcludeKinds, so the subtraction is a predicate inside the "every eligible
+	 *  unit" branch - one pass over the world, no registry and no cache (§4).
+	 *  ⛔ THE FOUR INTENTS THAT REACH THIS FUNCTION ARE EXACTLY THE FOUR FOR WHICH
+	 *  SiegeAssistantIntentTakesSelection() IS TRUE - Send/Guard/Ambush via
+	 *  ExecuteZoneOrder, Follow via ExecuteFollowOrder. Charge and Fallback go to
+	 *  ASiegePlayerController::ApplyArmyWideStance and Rally to
+	 *  AHeroCharacter::Rally, so an exclusion could never be honoured there, which
+	 *  is why the PARSER refuses it for those three rather than this file
+	 *  re-deciding it.
+	 *
+	 *  ⛔ AN EXCLUSION THAT EMPTIES THE SELECTION RETURNS false - the whole order is
+	 *  refused through the EXISTING unsupported-ask outcome, with the arithmetic in
+	 *  the log. ⛔ NEVER a silent no-op: the parser is pure and has no roster, so
+	 *  "did that exception subtract everybody?" is only answerable here.
 	 *
 	 *  @param Command     the order being executed
 	 *  @param SortAnchor  the world point to sort nearest-first against

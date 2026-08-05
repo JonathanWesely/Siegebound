@@ -616,16 +616,102 @@ FString USiegeAssistantGrammar::Build(const TArray<FName>& UnitKinds, const TArr
 
 			AppendRule(Grammar, TEXT("selection"), JoinAlternatives(Alternatives));
 		}
+
+		// --- exceptlist -------------------------------------------------------
+		// The EXCLUSION list: 1, 2 or 3 BARE kind strings. Built by exactly the
+		// same construction as `selection` directly above — a bounded alternation
+		// generated from the cap constant, never a repetition operator — so
+		// widening SiegeAssistantMaxExclusionKinds widens the grammar
+		// automatically and a 4-kind exclusion stays unreachable for the sampler.
+		//
+		// ⛔⭐ BARE KIND STRINGS, NOT `item`. THIS IS THE DECLINED FEATURE BEING
+		// MADE INEXPRESSIBLE RATHER THAN MERELY UNIMPLEMENTED. Referencing `item`
+		// here would cost nothing to write and would silently re-introduce the
+		// count-controlled variant Jonathan DECLINED — "all except 5 archers" —
+		// because {"kind":…,"n":…} would then be a shape the sampler could reach.
+		// A feature that a shape cannot express cannot be brought back by a prompt
+		// tweak, a tired author, or a model that guessed. Do not "unify" these two
+		// rules.
+		//
+		// ⛔ THE RULE NAME IS `exceptlist`, ONE WORD, AND THAT IS A DECLARED
+		// DEPARTURE (SC-§15) FROM THE `except_list` SPELLED IN CONVENTIONS
+		// AS-§20.1. llama.cpp reads a rule name as [a-zA-Z0-9-] and STOPS at the
+		// underscore, so `except_list` would parse as the name `except`, and the
+		// WHOLE grammar would then be rejected and generation would run
+		// UNCONSTRAINED — the identical defect `at_least` shipped with, which cost
+		// TASK-413 two of its six bars. AS-§20.1 anticipated this and named
+		// `exceptlist` as the substitute to use, so this is the sanctioned name
+		// rather than a third one invented here. The JSON KEY it carries keeps its
+		// underscore (`all_except`) because that is wire format.
+		{
+			TArray<FString> Alternatives;
+			Alternatives.Reserve(SiegeAssistantMaxExclusionKinds);
+
+			for (int32 KindCount = 1; KindCount <= SiegeAssistantMaxExclusionKinds; ++KindCount)
+			{
+				TArray<FString> Parts;
+				Parts.Add(GbnfTerminal(TEXT("[")));
+				for (int32 Index = 0; Index < KindCount; ++Index)
+				{
+					if (Index > 0)
+					{
+						Parts.Add(GbnfTerminal(TEXT(",")));
+					}
+					Parts.Add(TEXT("kind"));
+				}
+				Parts.Add(GbnfTerminal(TEXT("]")));
+
+				Alternatives.Add(FString::Join(Parts, TEXT(" ")));
+			}
+
+			AppendRule(Grammar, TEXT("exceptlist"), JoinAlternatives(Alternatives));
+		}
+
+		// --- except -----------------------------------------------------------
+		// {"all_except":["miner"]} — a `who` VALUE, and deliberately NOT a fourth
+		// top-level key. The parser validates an EXACT top-level key set and the
+		// prompt law emits every key always, so a new top-level key would have had
+		// to appear in every emission at once. As a `who` shape this is strictly
+		// additive: every grammar path that existed before still exists unchanged.
+		//
+		// ⚠️ THE UNDERSCORE IN `all_except` IS INSIDE A TERMINAL, WHICH IS WHY IT IS
+		// SAFE. CollectRuleReferences skips terminals as whole units, so the JSON key
+		// is never seen in identifier position — exactly the `at_least` / `at-least`
+		// split, one rule over.
+		{
+			TArray<FString> Parts;
+			Parts.Add(JsonObjectOpen(SiegeAssistantJsonKeys::AllExcept));
+			Parts.Add(TEXT("exceptlist"));
+			Parts.Add(GbnfTerminal(TEXT("}")));
+
+			AppendRule(Grammar, TEXT("except"), FString::Join(Parts, TEXT(" ")));
+		}
 	}
 
 	// --- who ------------------------------------------------------------------
-	// "all" selects every eligible unit; "none" is for the army-wide verbs, which
-	// carry no selection at all.
+	// FOUR SHAPES: a bounded positive `selection`; an `except` exclusion ("everyone
+	// but the miners"); "all", which selects every eligible unit; and "none", for
+	// the army-wide verbs, which carry no selection at all.
+	//
+	// ⚠️ `except` IS EMITTED ONLY WHEN THE ROSTER HAS KINDS, on the same reasoning
+	// that gates `selection`: an empty roster has nothing to EXCLUDE for exactly the
+	// reason it has nothing to select, and emitting the alternative anyway would
+	// leave `exceptlist` referencing an undefined `kind` rule and break the whole
+	// grammar. With no kinds `who` collapses to "all" | "none", unchanged.
+	//
+	// ⚠️ AT A ONE-KIND ROSTER `exceptlist`'s 2- and 3-kind alternatives can only
+	// produce the SAME symbol twice, and the parser refuses that with
+	// DuplicateKind. That is degradation to REFUSABLE rather than to UNREACHABLE,
+	// and it is deliberate: `selection` has had the identical property since it
+	// shipped, and bounding this rule by the live kind COUNT instead of by the cap
+	// constant would make the two rules disagree about their own construction for a
+	// case the parser already answers.
 	{
 		TArray<FString> Alternatives;
 		if (bHasKinds)
 		{
 			Alternatives.Add(TEXT("selection"));
+			Alternatives.Add(TEXT("except"));
 		}
 		Alternatives.Add(GbnfJsonString(SiegeAssistantSymbols::All));
 		Alternatives.Add(GbnfJsonString(SiegeAssistantSymbols::None));

@@ -95,6 +95,21 @@ enum class ESiegeAssistantIntent : uint8
  */
 static constexpr int32 SiegeAssistantMaxSelectionKinds = 3;
 
+/** Whole KINDS subtractable from an "all" selection. Mirrors SiegeAssistantMaxSelectionKinds
+ *  deliberately: bounded in the GRAMMAR as an alternation, and re-checked in the PARSER
+ *  because M8 P2 takes this struct over the wire from a peer that passed no grammar.
+ *  ⛔ Widening it is a MANAGER RULING (the ruling-15 precedent), not a tuner's edit.
+ *
+ *  ⚠️ THERE IS NO COUNT-CONTROLLED VARIANT AND THERE MUST NEVER BE ONE (Jonathan's
+ *  ruling 3, 2026-08-04 — CONVENTIONS AS-§20.1). "all except 5 archers" was DECLINED,
+ *  and the decline is enforced STRUCTURALLY: the exclusion list is an array of BARE
+ *  kind symbols, never {"kind":…,"n":…} items, so the shape has no place in the
+ *  grammar for a count to be sampled into. A declined feature made INEXPRESSIBLE
+ *  cannot be re-introduced by a prompt tweak or a tired author. Do not add a parallel
+ *  ExcludeCounts array.
+ */
+static constexpr int32 SiegeAssistantMaxExclusionKinds = 3;
+
 /**
  *  One translated order — the ENTIRE output surface of the model, after
  *  parsing. uint8 / int32 / FName ONLY (see the net-relevancy note above).
@@ -109,6 +124,12 @@ static constexpr int32 SiegeAssistantMaxSelectionKinds = 3;
  *  USiegeAssistantGrammar::GrammarCountMax for the full reasoning. The executor
  *  is what detects "you asked for 10 and 8 exist"; if this field had already
  *  been clamped, that clarification would be undetectable.
+ *
+ *  SIX FIELDS, and the sixth is the ONLY one that is not a positive statement:
+ *  ExcludeKinds SUBTRACTS whole kinds from the "all" selection ("send everyone
+ *  except the miners" — Jonathan's ruling 3, CONVENTIONS AS-§20.1). It was added
+ *  2026-08-04 by TASK-518, AFTER the five above, and the five keep their shipped
+ *  order and their shipped types so the wire property is untouched.
  */
 USTRUCT()
 struct FSiegeAssistantCommand
@@ -153,6 +174,39 @@ struct FSiegeAssistantCommand
 	/** Deferred-intent threshold: fire once at least this many TriggerKind exist. 0 when TriggerKind is NAME_None. */
 	UPROPERTY()
 	int32 TriggerAtLeast = 0;
+
+	/**
+	 *  Kinds SUBTRACTED from an "all" selection. Non-empty ONLY when Kinds is empty,
+	 *  and ONLY when SiegeAssistantIntentTakesSelection(Intent). No counts, by design.
+	 *
+	 *  ⚠️ THE SIXTH FIELD, APPENDED AFTER THE FIVE SHIPPED ONES — never inserted
+	 *  among them. Kinds/Counts stay PARALLEL ARRAYS and stay index-aligned; this is
+	 *  a THIRD, INDEPENDENT array and it is NOT index-aligned with either of them.
+	 *
+	 *  ⛔ THE TWO INVARIANTS, AND THEY ARE THE WHOLE SEMANTICS:
+	 *   - EXCLUSION IS ONLY MEANINGFUL AGAINST "all". Kinds non-empty AND ExcludeKinds
+	 *     non-empty is a parse FAILURE (SiegeAssistantReason::ExcludeConflict), NEVER a
+	 *     merge — "send 10 footmen except miners" is a confused sentence and the FSM
+	 *     must ask rather than guess which half of it to honour.
+	 *   - EXCLUSION IS ONLY MEANINGFUL ON A SELECTION-BEARING VERB. Charge / Fallback
+	 *     execute through ASiegePlayerController::ApplyArmyWideStance and Rally through
+	 *     AHeroCharacter::Rally() — NONE of them passes through the selector, so an
+	 *     exception handed to them would be parsed and then silently DROPPED. "Fall back
+	 *     except the miners" executing as "fall back INCLUDING the miners" is the exact
+	 *     valid-shaped-wrong-command this whole design exists to prevent, so the parser
+	 *     REFUSES it (ExcludeConflict) instead of accepting an order it cannot keep.
+	 *
+	 *  ⚠️ EXCLUDING EVERY LIVE KIND IS A LEGAL PARSE, NOT A PARSE ERROR, AND THAT IS
+	 *  A RULING RATHER THAN AN OVERSIGHT (AS-§20.1 "EMPTY-AFTER-EXCLUSION").
+	 *  ParseSiegeAssistantCommand is PURE — it has no world, no roster and no snapshot,
+	 *  and is never handed the live kind list — so "did that subtract everything?" is a
+	 *  question it structurally CANNOT answer. It is the executor's, and the executor
+	 *  refuses the whole order through the EXISTING unsupported-ask outcome with the
+	 *  arithmetic in the log. ⛔ Never a silent no-op: "nothing happened and nothing was
+	 *  said" is the shape that reads as "the assistant ate my order".
+	 */
+	UPROPERTY()
+	TArray<FName> ExcludeKinds;
 };
 
 /**
@@ -185,8 +239,29 @@ namespace SiegeAssistantJsonKeys
 	/** Command object: the verb. */
 	inline constexpr const TCHAR* Intent = TEXT("intent");
 
-	/** Command object: the selection — an array of 1..SiegeAssistantMaxSelectionKinds items, or "all", or "none". */
+	/**
+	 *  Command object: the selection — an array of 1..SiegeAssistantMaxSelectionKinds
+	 *  items, or "all", or "none", or the exclusion object {"all_except":[…]}.
+	 */
 	inline constexpr const TCHAR* Who = TEXT("who");
+
+	/**
+	 *  Exclusion object (a `who` VALUE, never a top-level key): the array of whole
+	 *  kinds subtracted from "all". {"who":{"all_except":["miner"]}}
+	 *
+	 *  ⛔ IT IS A THIRD SHAPE FOR AN EXISTING KEY AND NOT A FOURTH TOP-LEVEL KEY, AND
+	 *  THAT WAS RULED RATHER THAN PREFERRED (AS-§20.1). ValidateExactKeySet demands an
+	 *  EXACT top-level key set and the prompt law emits every key ALWAYS, so a new
+	 *  top-level key would have had to appear in every emission — rewriting all seven
+	 *  few-shots, every corpus row's expected JSON and the parser's key set at once.
+	 *  As a `who` shape it is STRICTLY ADDITIVE AT THE WIRE: every JSON that parses
+	 *  today still parses, byte-for-byte, and nothing that passes starts failing.
+	 *
+	 *  ⛔ snake_case because it is WIRE FORMAT. The GBNF RULE that carries it is
+	 *  `exceptlist`, with no underscore — the `at_least` / `at-least` split, one rule
+	 *  over. See SiegeAssistantGrammar.cpp.
+	 */
+	inline constexpr const TCHAR* AllExcept = TEXT("all_except");
 
 	/** Command object: the destination place symbol, or "none". */
 	inline constexpr const TCHAR* Where = TEXT("where");
@@ -270,6 +345,33 @@ namespace SiegeAssistantReason
 	/** `who` was an array whose length was outside 1..SiegeAssistantMaxSelectionKinds. Payload: the length. */
 	inline constexpr const TCHAR* WhoArity = TEXT("who_arity");
 
+	/**
+	 *  The exclusion list was empty or longer than SiegeAssistantMaxExclusionKinds.
+	 *  Payload: the length.
+	 *
+	 *  ⚠️ THE TWO HALVES ARE CHECKED IN DIFFERENT PLACES AND THAT IS DELIBERATE. The
+	 *  parser checks BOTH bounds, because it is reading a `{"all_except":[…]}` object
+	 *  whose whole point is to carry at least one kind. SiegeAssistantValidateSelection
+	 *  checks only the UPPER bound, because an EMPTY ExcludeKinds is the normal, correct
+	 *  state of every command that excludes nothing.
+	 */
+	inline constexpr const TCHAR* ExcludeArity = TEXT("exclude_arity");
+
+	/**
+	 *  An exclusion was paired with something it cannot combine with. Payload names the
+	 *  offender. THREE cases, and the third is the load-bearing one:
+	 *   - with a positive selection — payload "<kinds>/<excludes>". ⛔ Never a merge.
+	 *   - with `who` = "none" — payload "none".
+	 *   - on an ARMY-WIDE intent (charge / fallback / rally) — payload the intent symbol,
+	 *     e.g. "exclude_conflict:fallback". Those three execute through
+	 *     ApplyArmyWideStance / Rally() and never reach the selector, so honouring an
+	 *     exception there would mean editing a shipped controller API two keys depend on,
+	 *     or building an assistant-side parallel army-wide path — which AS-§2 forbids by
+	 *     name. Refusing at the parser is what keeps "fall back except the miners" from
+	 *     executing as "fall back INCLUDING the miners".
+	 */
+	inline constexpr const TCHAR* ExcludeConflict = TEXT("exclude_conflict");
+
 	/** A selection-bearing intent was paired with `who` = "none". Payload: the intent. */
 	inline constexpr const TCHAR* WhoRequired = TEXT("who_required");
 
@@ -350,13 +452,30 @@ bool SiegeAssistantIntentTakesSelection(ESiegeAssistantIntent Intent);
  *  an executable check rather than a comment. The parser calls it as its final
  *  gate; the Wave-1 executor should call it on anything it did not parse itself.
  *
- *  @param Kinds     the selection's unit symbols.
- *  @param Counts    the index-aligned quantities.
- *  @param OutError  a SiegeAssistantReason code with a ':detail' payload. Empty when valid.
- *  @return          true when Kinds.Num() == Counts.Num(), the length is within the
- *                   cap, and no symbol repeats.
+ *  ⛔⚠️ ExcludeKinds IS A TRAILING DEFAULTED PARAMETER, AND THE REASON IS RECORDED
+ *  HERE RATHER THAN LEFT TO BE REDISCOVERED AS AN ODD SIGNATURE. This function has
+ *  callers in TWO files TASK-518 does not own — USiegeAssistantComponent's
+ *  receive-side gate and the automation suite — and a REQUIRED fourth parameter
+ *  would have broken the module's compile in files the task is forbidden to edit.
+ *  A trailing default is the only shape that adds the invariant without reaching
+ *  into another task's file. It is why the parameter sits AFTER OutError instead of
+ *  beside the two arrays it belongs with.
+ *
+ *  ⚠️ THE COST OF THAT SHAPE, STATED SO IT IS NOT DISCOVERED LATER: a caller that
+ *  omits the argument silently validates NOTHING about exclusion. ⇒ ANY CALLER
+ *  HOLDING A WHOLE FSiegeAssistantCommand MUST PASS Command.ExcludeKinds. The
+ *  default exists for the arrays-only call sites, not as permission to skip the check.
+ *
+ *  @param Kinds         the selection's unit symbols.
+ *  @param Counts        the index-aligned quantities.
+ *  @param OutError      a SiegeAssistantReason code with a ':detail' payload. Empty when valid.
+ *  @param ExcludeKinds  the subtracted kinds. Must be empty whenever Kinds is non-empty,
+ *                       within SiegeAssistantMaxExclusionKinds, and free of repeats.
+ *  @return              true when Kinds.Num() == Counts.Num(), both lengths are within
+ *                       their caps, no symbol repeats in either list, and the selection
+ *                       and the exclusion are not both populated.
  */
-bool SiegeAssistantValidateSelection(const TArray<FName>& Kinds, const TArray<int32>& Counts, FString& OutError);
+bool SiegeAssistantValidateSelection(const TArray<FName>& Kinds, const TArray<int32>& Counts, FString& OutError, const TArray<FName>& ExcludeKinds = TArray<FName>());
 
 /**
  *  Parses ONE constrained-decoding result into a command. STRICT by design —
@@ -369,6 +488,11 @@ bool SiegeAssistantValidateSelection(const TArray<FName>& Kinds, const TArray<in
  *  1..SiegeAssistantMaxSelectionKinds, a repeated kind, and `at_least: "all"`.
  *  Maps "all" -> Count 0 and "now" -> TriggerKind = NAME_None.
  *
+ *  `who` HAS FOUR SHAPES: the selection array, "all", "none", and the exclusion
+ *  object {"all_except":["miner"]}. The fourth is ADDITIVE — it introduced no new
+ *  top-level key and changed no existing shape, so every JSON that parsed before
+ *  TASK-518 parses identically after it.
+ *
  *  ⚠️ NEVER PARTIALLY FILLS. OutCommand is reset to a default-constructed value
  *  on entry AND again on every failure path, so a caller that ignores the
  *  return value gets an inert None command rather than half an order.
@@ -377,16 +501,26 @@ bool SiegeAssistantValidateSelection(const TArray<FName>& Kinds, const TArray<in
  *  case-insensitively, because FName is case-insensitive anyway and the
  *  grammar only ever emits lower case.
  *
- *  ⚠️ IT PERFORMS EXACTLY ONE CROSS-FIELD CHECK, and only because that one pair
- *  is REPRESENTATIONALLY ambiguous: `who` = "none" with a selection-bearing
- *  intent is rejected, because "none" and "all" both land on an empty
- *  Kinds/Counts pair and the struct has no field to tell them apart — so
- *  accepting it would silently turn "send nobody" into "send everybody". Every
- *  OTHER cross-field question — is that place resolvable, are there enough
- *  units, is this intent legal right now, does this player have authority — is
- *  the EXECUTOR's, and this function deliberately does not answer any of them.
- *  Grammar guarantees existence, executor guarantees legality, FSM owns the
- *  conversation.
+ *  ⚠️ IT PERFORMS EXACTLY TWO CROSS-FIELD CHECKS — it performed ONE until
+ *  TASK-518 — and each earns its place for the SAME narrow reason: the pairing is
+ *  one the STRUCT ITSELF cannot represent honestly, so accepting it would produce a
+ *  well-formed order that means something nobody asked for.
+ *
+ *   1. `who` = "none" with a selection-bearing intent is rejected, because "none"
+ *      and "all" both land on an empty Kinds/Counts pair and the struct has no
+ *      field to tell them apart — so accepting it would silently turn "send
+ *      nobody" into "send everybody".
+ *   2. An EXCLUSION on an army-wide intent is rejected, because charge / fallback /
+ *      rally never reach the selector — so accepting it would silently turn "fall
+ *      back except the miners" into "fall back INCLUDING the miners". Same failure
+ *      class, opposite sign: check 1 stops a selection being invented, check 2
+ *      stops an exception being discarded.
+ *
+ *  ⛔ AND THAT IS THE WHOLE LIST. Every OTHER cross-field question — is that place
+ *  resolvable, are there enough units, DID THE EXCLUSION SUBTRACT EVERYTHING, is
+ *  this intent legal right now, does this player have authority — is the EXECUTOR's,
+ *  and this function deliberately does not answer any of them. Grammar guarantees
+ *  existence, executor guarantees legality, FSM owns the conversation.
  *
  *  @param Json        the model's raw output (already constrained by the GBNF).
  *  @param OutCommand  the parsed command; default-constructed on any failure.

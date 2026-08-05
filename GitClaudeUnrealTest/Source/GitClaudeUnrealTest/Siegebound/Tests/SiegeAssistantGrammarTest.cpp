@@ -672,10 +672,37 @@ bool FSiegeAssistantGrammarSelectionCapTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("The grammar contains no '+' repetition operator"), Grammar.Contains(TEXT("+")));
 	TestFalse(TEXT("The grammar contains no '?' optional operator"), Grammar.Contains(TEXT("?")));
 
-	// `who` wraps the capped selection alongside the two whole-army selectors.
+	// ── `who` WRAPS THE CAPPED SELECTION ALONGSIDE THE WHOLE-ARMY SELECTORS ────
+	//
+	// ⭐ RE-BASED 3 → 4 ON 2026-08-04 (TASK-523, batch ASSISTANT-EXCLUDE).
+	// TASK-518 added the `except` alternative — `{"all_except":["miner"]}`, a
+	// THIRD SHAPE FOR AN EXISTING KEY and deliberately NOT a fourth top-level key
+	// (AS-§20.1) — and left this assertion for TASK-523 rather than editing a test
+	// file it did not own.
+	//
+	// ⚠️ THE COUNT IS RE-BASED, NOT LOOSENED. The obvious "fix" for a broken count
+	// assertion is `>= 3`, which would then pass for any future widening of `who`
+	// including an accidental one; `who`'s alternative set is a SCHEMA, and an
+	// exact count is the only assertion that notices a fifth shape arriving
+	// unannounced.
+	//
+	// ⛔ THE EMPTY-ROSTER COUNT STAYS 2 AND IS UNCHANGED — see
+	// `Siegebound.Assistant.Grammar.DegenerateInputs`. `except` is gated on
+	// `bHasKinds` for exactly the reason `selection` is: an empty roster has
+	// nothing to exclude, and emitting the alternative anyway would leave
+	// `exceptlist` referencing an UNDEFINED `kind` rule, which breaks the whole
+	// grammar rather than one rule of it.
+	//
+	// 📌 The `except` / `exceptlist` rules themselves — the 1..3 arity bound, the
+	// BARE kind strings that make Jonathan's declined "all except 5 archers"
+	// inexpressible, and the empty-roster omission — are asserted in
+	// `Siegebound.Assistant.Selection.GrammarAdmitsExceptOnlyWithKinds`. They are
+	// NOT duplicated here: this test's subject is the SELECTION cap.
 	const FString WhoRule = GetRuleRhs(Grammar, TEXT("who"));
-	TestEqual(TEXT("`who` offers selection | all | none"), SplitAlternatives(WhoRule).Num(), 3);
+	TestEqual(TEXT("`who` offers selection | except | \"all\" | \"none\" (4 alternatives since TASK-518; was 3)"),
+		SplitAlternatives(WhoRule).Num(), 4);
 	TestTrue(TEXT("`who` references `selection`"), CountRuleReferences(WhoRule, TEXT("selection")) == 1);
+	TestTrue(TEXT("`who` references `except`"), CountRuleReferences(WhoRule, TEXT("except")) == 1);
 
 	return true;
 }

@@ -79,6 +79,15 @@ struct FSiegeAssistantRosterEntry
 	 *  AppendRosterBlock). So zoneB_chars = 68 and zoneC_chars = 887 are
 	 *  BYTE-UNCHANGED by this field, and the t0 tripwire cannot move.
 	 *
+	 *  📌 THAT CLAIM IS ABOUT *THIS FIELD* AND IT STILL HOLDS - but the t0 tripwire
+	 *  itself was retired for the SHIPPED lane on 2026-08-04 by TASK-517, which
+	 *  raised MaxRosterKinds 8 → 13 on Jonathan's ruling. The shipped builder's
+	 *  zoneC_chars on a t0-shaped board moves 670 → 887, i.e. INTO agreement with
+	 *  the spike fixture that always measured 887. Anything re-measured after that
+	 *  change is not comparable to a figure measured before it. ⛔ Do not read this
+	 *  paragraph as licence to "align" the spike lane: Plugins/SiegeLlama/** was
+	 *  deliberately not touched.
+	 *
 	 *  ⚠️ THERE IS DELIBERATELY NO `Followable` COMPANION HERE. The pinned
 	 *  ESiegeAssistantRejectReason has exactly three values and none of them means
 	 *  "cannot follow", so a followable column would be unused state today. When a
@@ -276,15 +285,27 @@ public:
 	 *  and trimming it toward 350 marginally FAILS it. ⛔ Do not read this constant
 	 *  as licence to shrink Zone A (TASK-419 WARN-5).
 	 *
-	 *  ⚠️ IT IS COUPLED TO MaxRosterKinds. Zone C is budgeted at
+	 *  ⚠️ IT IS COUPLED TO MaxRosterKinds, AND SINCE TASK-517 THE COUPLING IS TIGHT
+	 *  RATHER THAN THEORETICAL. Zone C is budgeted at
 	 *  SnapshotTrimBudgetChars - ZoneBCharReserve = 1085 - 192 = 893 chars, less the
-	 *  head and the tail. At the shipped MaxRosterKinds = 8 a realistic board clears
-	 *  it with ~220 to spare; RAISE MaxRosterKinds TOWARD 13 AND IT BITES
-	 *  IMMEDIATELY (887 against 893). That is correct behaviour against a real
-	 *  budget rather than a defect — and it is exactly why BuildZoneC's collapse
-	 *  logs every time it degrades. ⛔ DO NOT RAISE THIS BUDGET TO BUY THAT ROOM.
-	 *  The honest lever is ZoneBCharReserve; see its comment for why TASK-455 could
-	 *  not move that one either.
+	 *  head and the tail. The old text here said "at MaxRosterKinds = 8 a realistic
+	 *  board clears it with ~220 to spare; raise it toward 13 and it BITES
+	 *  IMMEDIATELY (887 against 893)" - MaxRosterKinds IS 13 NOW (Jonathan's
+	 *  ruling, see its comment), so that is no longer a warning about a future
+	 *  edit, it is the shipped operating point:
+	 *
+	 *      head 108 + roster 621 + tail 158 = 887 of 893  ⇒  ~6 chars spare
+	 *
+	 *  counted on the t0-shaped 13-kind board with the default 61-char `order:`
+	 *  line. ⚠️ ~7 MORE CHARACTERS OF TYPED TEXT RE-COLLAPSE THE TAIL, and both
+	 *  player-text lines below can each spend up to MaxUtteranceBytes, so a deep
+	 *  collapse is NORMAL rather than exceptional. That is correct behaviour
+	 *  against a real budget rather than a defect - and it is exactly why
+	 *  BuildZoneC's collapse logs every time it degrades, and why `other_kinds:`
+	 *  prints the collapsed kinds' NAMES (a collapse costs the model those kinds'
+	 *  COUNTS, never their EXISTENCE). ⛔ DO NOT RAISE THIS BUDGET TO BUY THAT
+	 *  ROOM. The honest lever is ZoneBCharReserve; see its comment for why
+	 *  TASK-455 could not move that one either.
 	 *
 	 *  ⚠️ BOTH PLAYER-TEXT LINES SPEND THIS BUDGET AND NEITHER IS TRIMMED BY IT —
 	 *  the roster absorbs all of it (CONVENTIONS §8: never truncate the utterance).
@@ -335,11 +356,51 @@ public:
 
 	/**
 	 *  Roster kinds printed in full before the tail collapses into one
-	 *  `other_kinds:` line. Over budget ⇒ aggregate harder, never spill: the
-	 *  deck holds far more kinds than any one match fields, and eight covers a
-	 *  realistic mid-match board.
+	 *  `other_kinds:` line. Over budget ⇒ aggregate harder, never spill.
+	 *
+	 *  ⚖️ 13 IS JONATHAN'S RULING (2026-08-04, TASK-517), TAKEN VIA AskUserQuestion
+	 *  WITH THE COST IN FRONT OF HIM, AND IT IS NOT A TUNER'S NUMBER. It was 8,
+	 *  with the note that "eight covers a realistic mid-match board" - and that
+	 *  note was WRONG in the one way that mattered. DT_Cards has THIRTEEN
+	 *  commandable kinds and the roster prints in fixed DT_Cards ROW ORDER, in
+	 *  which `Sorcerer` is the LAST row - so at 8 the Sorcerer was ALWAYS the
+	 *  first kind collapsed, and the collapse line printed COUNTS ONLY. The token
+	 *  `sorcerer` never reached the model at all, Zone A's "if the unit named is
+	 *  not a kind in [FORCES], answer unsupported" rule then refused it, and the
+	 *  player's report was *"whenever I say all units, it doesn't seem to include
+	 *  sorcerers even when they were spawned."* (CONVENTIONS AS-§20.2.)
+	 *
+	 *  ⛔ 13, NOT 12, NOT "all kinds, dynamically". It stays a static constexpr:
+	 *  the grammar, the budget arithmetic and two log lines all read it, and a
+	 *  runtime-sized cap would make the roster's width depend on the board, which
+	 *  is the one thing the fixed-order rule exists to prevent.
+	 *
+	 *  ⚠️ THE COST, ACCEPTED BY ITS OWNER, WRITTEN HERE RATHER THAN IN A FOOTNOTE:
+	 *  A 13-KIND BOARD MEASURES 887 CHARS OF ZONE C AGAINST A 893-CHAR BUDGET
+	 *  (SnapshotTrimBudgetChars 1085 - ZoneBCharReserve 192). THAT IS ~6 CHARS OF
+	 *  HEADROOM, and ~7 extra characters of typed `order:` text re-collapse the
+	 *  tail. A FOURTEENTH COMMANDABLE KIND FORCES A RE-TUNE. ⛔ Do NOT buy the
+	 *  room by raising SnapshotTrimBudgetChars (its own comment forbids it, and
+	 *  the three-role table is why); the one honest lever is ZoneBCharReserve,
+	 *  which must be set from a PRINTED zoneB_chars reading and never a derived
+	 *  one. (CONVENTIONS AS-§20.3.)
+	 *
+	 *  ⭐ AND THE CAP IS ONLY HALF THE FIX - READ AppendRosterBlock BEFORE
+	 *  TOUCHING EITHER HALF. Because the roster is elastic, a longer sentence can
+	 *  still collapse the tail at any cap; that is why `other_kinds:` now prints
+	 *  the collapsed kinds' NAMES. A collapse may hide a kind's NUMBERS; it may
+	 *  never hide its NAME. Lowering this constant does not re-open the defect,
+	 *  but it does cost the model every collapsed kind's counts.
+	 *
+	 *  ✅ THIS CONVERGES THE TWO LANES RATHER THAN WIDENING THEM (FINE-TUNE §3 D2,
+	 *  RESOLVED). The spike fixture always printed all 13 kinds and a hardcoded
+	 *  `other_kinds: none`; the shipped builder printed 8 and a computed collapse
+	 *  line. At 13 the shipped builder emits 13 rows and computes `none`, which is
+	 *  byte-identical to the fixture - t0's sealed bytes were not touched and the
+	 *  harness was not touched. The lane that moved is the one that was wrong
+	 *  about the game.
 	 */
-	static constexpr int32 MaxRosterKinds = 8;
+	static constexpr int32 MaxRosterKinds = 13;
 
 	/**
 	 *  THE PER-LINE CAP ON PLAYER-CONTROLLED TEXT, COUNTED IN UTF-8 BYTES.
@@ -598,7 +659,54 @@ private:
 	/** Wipes every field back to its empty-state default. Called first thing in Capture so a failed survey can never leave a half-filled snapshot behind. */
 	void ResetSnapshot();
 
-	/** Appends the roster rows (already budget-trimmed by the caller) plus the `other_kinds:` collapse line. */
+	/**
+	 *  Appends the roster rows (already budget-trimmed by the caller) plus the
+	 *  `other_kinds:` collapse line.
+	 *
+	 *  ⭐ THE COLLAPSE LINE NAMES THE KINDS IT HID, AND THAT IS THE ROOT-CAUSE FIX
+	 *  FOR THE SORCERER DEFECT (TASK-517, CONVENTIONS AS-§20.2). Two shapes, both
+	 *  always emitted (the fixed-key law - a missing key teaches the model that a
+	 *  key is optional):
+	 *
+	 *      other_kinds: none
+	 *      other_kinds: sorcerer, cleric (5 units)
+	 *
+	 *  Canonical symbols, comma-separated, in the SAME fixed DT_Cards row order the
+	 *  rows above use, then the aggregate unit count.
+	 *
+	 *  ⛔ NEVER GO BACK TO COUNTS ONLY. `other_kinds: 5 kinds, 9 units` is what
+	 *  shipped, and it is why a player who said "all units" never got Sorcerers:
+	 *  the roster is elastic and the Sorcerer is the LAST DT_Cards row, so it was
+	 *  always the first kind collapsed - and the collapsed line showed the model a
+	 *  NUMBER where it needed a SYMBOL. Zone A refuses any unit "not a kind in
+	 *  [FORCES]", so a name the prompt never printed is a unit the model refuses to
+	 *  command even though it is alive on the board.
+	 *
+	 *  ✅ AND IT IS CHEAPER THAN WHAT IT REPLACES, so it cannot make the budget
+	 *  worse: a collapsed symbol costs len(symbol) + 2 on this line, against the
+	 *  36 + len(symbol) + digits a full roster row costs (43-49 on today's kinds).
+	 *  The LINE is longer than the old one - measured +36 chars with 5 kinds
+	 *  collapsed, +2 with one - but every char of that is bought by a row that is
+	 *  no longer printed, and BuildZoneC's shrink loop re-measures the WHOLE block
+	 *  after each step, so this line can never push the block past the budget.
+	 *
+	 *  ⚠️ ONE HONEST EXCEPTION, STATED SO IT IS NOT DISCOVERED: the shrink loop's
+	 *  `KindsToPrint <= 0` floor breaks UNCONDITIONALLY, so a zero-row block is
+	 *  emitted over budget if it ever comes to that - and this format makes that
+	 *  overshoot bigger (all 13 symbols on one line is ~152 chars against the old
+	 *  ~47). It is UNREACHABLE on today's board and the margin is not thin:
+	 *  the smallest possible roster budget is ~202 chars (108-char head, and a tail
+	 *  with BOTH player lines at MaxUtteranceBytes), while a one-kind block on a
+	 *  13-kind board measures 182. A fourteenth kind narrows that too.
+	 *
+	 *  ⚠️ `(1 units)` IS DELIBERATE, NOT AN OVERSIGHT. The format is pinned by
+	 *  CONVENTIONS AS-§20.2 as `(<N> units)`; a pluralisation branch would cost
+	 *  characters out of a ~6-char headroom and make the line's bytes depend on the
+	 *  board, and the model does not need the grammar lesson.
+	 *
+	 *  @param KindsToPrint  rows to print in full; clamped to [0, UnitKinds.Num()].
+	 *                       Everything past it is named on the collapse line.
+	 */
 	void AppendRosterBlock(FString& Out, int32 KindsToPrint) const;
 
 	/**

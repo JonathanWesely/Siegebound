@@ -681,6 +681,32 @@ void USiegeAssistantComponent::NotifyConsoleClosed()
 		return;
 	}
 
+	// ─────────────────────────────────────────────────────────────────────────
+	// ⭐ DID THIS CLOSE DESTROY AN ORDER THE PLAYER WAS BEING ASKED ABOUT?
+	// CONVENTIONS AS-§6 RULING A-2, the 2026-08-04 close-is-a-cancel amendment.
+	// ─────────────────────────────────────────────────────────────────────────
+	// ⛔ SAMPLED BEFORE THE DISCARD RUNS, because the discard is what destroys
+	// the evidence: three lines below, State is Idle and PendingArgs is empty, so
+	// asking afterwards can only ever answer "nothing happened".
+	//
+	// ⚠️ AwaitConfirm IS THE WHOLE TEST, and it is not a proxy for one - it is
+	// the state's definition. EnterAwaitConfirm is the only way in and it is
+	// reached with PendingArgs already filled, so "State == AwaitConfirm" and
+	// "there is a parsed order the player has been shown and not yet accepted"
+	// are the same statement. Every other state is silent for a REASON, not by
+	// omission:
+	//   · Deferred      - returned above; the latch SURVIVES a close, so nothing
+	//                     was discarded and a "cancelled" line would be a lie.
+	//   · Thinking      - the model has not answered yet, so there is no ORDER to
+	//                     report; the abort stays silent exactly as it shipped.
+	//                     ⚠️ NOTE THIS DIFFERS FROM CancelPressed(), which does
+	//                     print here - AS-§6 A-2 names the AwaitConfirm→Idle path
+	//                     ONLY, and that narrowing is deliberate, not an oversight.
+	//   · Idle/Composing/Failed - nothing pending. ⛔ A "cancelled" line on every
+	//                     close would be noise on the common case and would teach
+	//                     the player to stop reading the transcript.
+	const bool bDiscardedPendingOrder = (State == ESiegeAssistantState::AwaitConfirm);
+
 	switch (State)
 	{
 	case ESiegeAssistantState::Thinking:
@@ -699,6 +725,37 @@ void USiegeAssistantComponent::NotifyConsoleClosed()
 
 	ClearPendingIntent();
 	SetState(ESiegeAssistantState::Idle);
+
+	// ⛔ LAST, AND THE ORDERING IS THE CONTRACT: the player is told the order is
+	// gone only once it actually IS gone - preview down, intent cleared, state
+	// settled. A line pushed earlier would be a promise the FSM had not kept yet,
+	// and any handler of OnAssistantMessage that re-entered this component would
+	// observe a half-torn-down confirm.
+	if (bDiscardedPendingOrder)
+	{
+		// ⛔ THE EXISTING GAME-AUTHORED TEMPLATE, BYTE-FOR-BYTE THE CALL
+		// CancelPressed() MAKES (§3: every sentence the player reads comes from
+		// the reason-code table, never from a call site). ⛔ Do NOT author a
+		// close-specific string here: "the order was discarded" is the same fact
+		// however the player expressed it, and a second wording for it would be a
+		// second source of truth for one sentence.
+		//
+		// ⭐ WHY THIS EXISTS AT ALL (AS-§6 A-2, amended): Jonathan's ruling
+		// removes the Cancel button, so closing the box IS the cancel gesture.
+		// The FSM already discarded correctly - it just did it SILENTLY, and an
+		// order that vanishes with nothing on screen reads as "the assistant ate
+		// my order", which is a trust failure rather than a UI nit.
+		//
+		// ⚠️ THE WIDGET IS ALREADY HIDDEN WHEN THIS RUNS (CloseConsole applies its
+		// visual state before broadcasting OnConsoleOpenChanged(false)), so the
+		// line lands in the transcript BUFFER and is read on the next open. That
+		// is a property of the surface, not of this decision: the transcript is
+		// the only game-authored channel this component owns, and ⛔ AS-§6 A-2
+		// forbids solving it by moving the decision into the widget. If the line
+		// needs to be visible at the instant of the close, that is a NEW on-screen
+		// surface and a NEW task - it is NOT a reason to broadcast from the widget.
+		PushMessage(ESiegeAssistantReasonCode::Cancelled);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -926,8 +983,22 @@ void USiegeAssistantComponent::HandleModelCompletion(int32 InTurnId, bool bSucce
 		// something we did not build ourselves. ⚠️ It runs with the confirm toggle
 		// OFF exactly as it runs with it ON: the toggle removes a HUMAN REVIEW
 		// STEP and NEVER A MACHINE CHECK ("Settings screen..." §5).
+		//
+		// ⛔⭐ THE FOURTH ARGUMENT IS PASSED DELIBERATELY AND MUST NEVER BE DROPPED
+		// (TASK-518 §5 / TASK-522). SiegeAssistantValidateSelection's ExcludeKinds
+		// parameter is TRAILING AND DEFAULTED — a shape forced by file ownership,
+		// not chosen — so this call COMPILES CLEANLY WITHOUT IT and then silently
+		// validates NOTHING about the exclusion: the cap, the no-repeats rule and
+		// the "never a selection AND an exclusion" rule would all report SAFE while
+		// checking nothing. That is a guardrail reporting safe, which is the one
+		// failure shape this feature's law names by hand. ⛔ Every caller holding a
+		// whole FSiegeAssistantCommand passes Command.ExcludeKinds; the default is
+		// for the arrays-only call sites (the automation suite), never permission
+		// to skip the check. ⚠️ Removing this argument would raise no compiler
+		// diagnostic anywhere — the ONLY thing standing behind it is this comment
+		// and the QA grep it invites.
 		FString SelectionError;
-		if (!SiegeAssistantValidateSelection(Command.Kinds, Command.Counts, SelectionError))
+		if (!SiegeAssistantValidateSelection(Command.Kinds, Command.Counts, SelectionError, Command.ExcludeKinds))
 		{
 			UE_LOG(LogSiegeAssistant, Warning,
 				TEXT("Turn %d parsed but violated the selection invariant (%s). ⛔ A mismatch is a failure, NEVER a silent truncation."),
@@ -1137,6 +1208,56 @@ FText USiegeAssistantComponent::DescribeCommandForPlayer(const FSiegeAssistantCo
 		else
 		{
 			Selection += FString::Printf(TEXT("%d %s"), Command.Counts[Index], *Command.Kinds[Index].ToString());
+		}
+	}
+
+	// ⛔⭐ THE EXCEPTION IS PART OF THE ORDER, SO IT IS PART OF THE SENTENCE THE
+	// PLAYER IS ASKED TO ACCEPT (TASK-522). Without this, "send everyone except
+	// the miners to mid" renders as "Send (mid) - accept?" - a confirm prompt that
+	// DESCRIBES A DIFFERENT ORDER FROM THE ONE THAT WILL EXECUTE, which is exactly
+	// the defect the confirm step exists to prevent, and the same sentence is
+	// reused by the Executed line and by the deferred "waiting for..." line.
+	//
+	// ⚠️ THE GHOST CIRCLES CANNOT CARRY THIS AND IT IS SAID HERE RATHER THAN
+	// ASSUMED: SpawnConfirmPreview draws TWO PLACE DECALS at the resolved
+	// destination and nothing per-unit, so no preview geometry depends on WHICH
+	// units were selected - the exclusion is invisible on the ground either way.
+	// ⇒ This line IS the unit-facing half of the review. (An "N units" count would
+	// need the selector to run at prompt time, on a board that can change before
+	// the player presses accept - a second, staler survey, so it is not taken.)
+	//
+	// ⛔ NO NEW FRAME AND NO NEW TEMPLATE ROW. The clause is built into
+	// {Selection}, so the three existing frames render it unchanged and §30's
+	// "one string, not three" stays true. It follows the "all %s" idiom five lines
+	// above character-for-character: a raw symbol, never a display-name lookup.
+	// Read aloud on every path its values can supply: "Send all except miner
+	// (mid)", "Guard all except miner, cleric (mine_near)", "Follow all except
+	// miner".
+	if (Command.ExcludeKinds.Num() > 0)
+	{
+		if (Selection.IsEmpty())
+		{
+			Selection += TEXT("all except ");
+		}
+		else
+		{
+			// ⚠️ UNREACHABLE, AND WRITTEN ANYWAY. A positive selection AND an
+			// exclusion is refused by the parser, by SiegeAssistantValidateSelection
+			// and by the selector's own backstop - but a DESCRIBER that drops an
+			// exception it was handed would print a reassuring sentence about an
+			// order nobody gave, and this function is called from paths (LastMessage
+			// re-seeding, the deferred summary) that do not re-run those gates.
+			Selection += TEXT(", except ");
+		}
+
+		for (int32 Index = 0; Index < Command.ExcludeKinds.Num(); ++Index)
+		{
+			if (Index > 0)
+			{
+				Selection += TEXT(", ");
+			}
+
+			Selection += Command.ExcludeKinds[Index].ToString();
 		}
 	}
 
@@ -1772,6 +1893,37 @@ bool USiegeAssistantComponent::SelectUnitsForOrder(const FSiegeAssistantCommand&
 {
 	OutMembers.Reset();
 
+	// ── ⛔ AN EXCLUSION IS NEVER SILENTLY IGNORED (AS-§20.1) ──────────────────
+	// ExcludeKinds is meaningful ONLY against the "all" selection, and the branch
+	// below is the only one that can subtract anything. A command carrying BOTH a
+	// positive selection and an exclusion would therefore reach the per-kind loop,
+	// which has no subtraction step, and the exception would be parsed and then
+	// DROPPED IN SILENCE - "send 10 footmen except the miners" executing as "send
+	// 10 footmen", a valid-shaped wrong command that looks obeyed.
+	//
+	// ⚠️ THIS IS A BACKSTOP, NOT A SECOND ENFORCEMENT, and the distinction matters
+	// because a divergent duplicate of a parser rule is its own defect. Two gates
+	// already refuse this state with the same verdict: the parser (ExcludeConflict,
+	// cross-field check 2) and SiegeAssistantValidateSelection, which
+	// HandleModelCompletion now calls WITH Command.ExcludeKinds. So this is
+	// unreachable from the model and stays unreachable from the M8 P2 wire path,
+	// which passes the same validator. It exists because "unreachable" is a claim
+	// about today's callers, and the cost of being wrong about it is the exact
+	// failure the schema was shaped to prevent.
+	//
+	// ⚠️ Warning, not Log, AND THAT IS A DECISION: the refusals below are the MODEL
+	// being wrong (expected traffic, logged at Log so the automation runner does
+	// not read them as failures), whereas reaching THIS line is a CODE defect - a
+	// struct that passed neither gate. No automation test can trigger it (the
+	// selection tests have no world), so the Warning costs no green bar.
+	if (Command.ExcludeKinds.Num() > 0 && Command.Kinds.Num() > 0)
+	{
+		UE_LOG(LogSiegeAssistant, Warning,
+			TEXT("Selector refused - a command reached the selector with BOTH a %d-kind selection and a %d-kind exclusion. ⛔ The parser and SiegeAssistantValidateSelection both refuse that shape (exclude_conflict), so this is a code or wire defect, not a model error. The whole order is refused; the exception is NEVER dropped in silence. NOTHING was executed."),
+			Command.Kinds.Num(), Command.ExcludeKinds.Num());
+		return false;
+	}
+
 	UWorld* World = GetWorld();
 	if (!World)
 	{
@@ -1837,17 +1989,89 @@ bool USiegeAssistantComponent::SelectUnitsForOrder(const FSiegeAssistantCommand&
 	// ── who:"all" (and every army-wide verb) - an EMPTY selection means EVERY
 	//    eligible unit, never "nobody". The parser already refused who:"none" for
 	//    a selection-bearing intent, which is the only case those two differ in.
+	//
+	// ⭐ AND THIS IS THE BRANCH THE EXCLUSION SUBTRACTS FROM (TASK-522 /
+	//    AS-§20.1): who:{"all_except":["miner"]} parses to an EMPTY Kinds plus a
+	//    populated ExcludeKinds, so "everyone" is built here and the named kinds
+	//    are simply not added. ⛔ It is a PREDICATE INSIDE A LOOP THAT ALREADY
+	//    EXISTS - still ONE pass over the world, still no registry, no actor
+	//    cache, no dirty flag and no subscription list (§4 rejects all four on
+	//    sight).
 	if (Command.Kinds.Num() == 0)
 	{
+		// ⛔ NO SECOND LOWER-CASING AND NO RE-DERIVED MAPPING. FName comparison is
+		// case-insensitive (TArray::Contains uses the same operator== as the
+		// sibling seam below), the snapshot owns the card-row -> symbol transform
+		// (SiegeAssistantSnapshot's CanonicalKind: the row name lower-cased), and
+		// the grammar only ever emits a symbol that transform produced. So
+		// "miner" finds the "Miner" card row here exactly as it does 40 lines down.
+		const int32 EligibleCount = Eligible.Num();
+		int32 ExcludedCount = 0;
+
 		for (const FSelectorCandidate& Candidate : Eligible)
 		{
+			if (Command.ExcludeKinds.Contains(Candidate.Unit->GetCardID()))
+			{
+				++ExcludedCount;
+				continue;
+			}
+
 			OutMembers.Add(Candidate.Unit);
 		}
 
 		if (OutMembers.Num() == 0)
 		{
-			UE_LOG(LogSiegeAssistant, Log, TEXT("Selector found no eligible unit at all for an army-wide selection. NOTHING was executed."));
+			// ⛔⭐ EMPTY AFTER EXCLUSION IS A REFUSAL, LOUDLY, AND NEVER A NO-OP
+			// (AS-§20.1's "EMPTY-AFTER-EXCLUSION"). ⚠️ The parser CANNOT answer
+			// this: ParseSiegeAssistantCommand is pure, holds no world and no
+			// roster, and is never handed the live kind list, so "did that
+			// exception subtract everybody?" is structurally the executor's
+			// question. Returning false routes to the EXISTING unsupported-ask
+			// outcome in ExecuteAndReport - ⛔ no new ask symbol (the ask
+			// alternatives are part of the grammar the model samples from) and no
+			// new reason code authored at a call site (§3). The LOG carries the
+			// precise arithmetic, exactly as the shortfall path below does and for
+			// the same stated reason.
+			if (ExcludedCount > 0)
+			{
+				UE_LOG(LogSiegeAssistant, Log,
+					TEXT("Selector refused - the exclusion emptied the selection: %d eligible unit(s) on the ordering team, %d removed by the %d-kind exclusion, %d left. ⛔ The whole order is refused and the player is TOLD through the existing unsupported-ask outcome; \"nothing happened and nothing was said\" is the one report shape this feature cannot afford. NOTHING was executed."),
+					EligibleCount, ExcludedCount, Command.ExcludeKinds.Num(), OutMembers.Num());
+			}
+			else
+			{
+				UE_LOG(LogSiegeAssistant, Log, TEXT("Selector found no eligible unit at all for an army-wide selection. NOTHING was executed."));
+			}
+
 			return false;
+		}
+
+		if (ExcludedCount > 0)
+		{
+			// ⚠️ THE SUCCESS LINE IS NOT DECORATION - IT IS THIS PATH'S ONLY
+			// INSTRUMENT. The exclusion filter cannot be reached by TASK-523's
+			// automation tests (EditorContext simple tests have no world and no
+			// actors), so the evidence that an exception was actually SUBTRACTED
+			// rather than parsed-and-dropped is this line plus Jonathan's playtest
+			// at TASK-527. It prints the arithmetic on the path that WORKED,
+			// because a log that only speaks on failure cannot prove a success.
+			UE_LOG(LogSiegeAssistant, Log,
+				TEXT("Selector applied an EXCLUSION: %d eligible, %d removed by the %d-kind exclusion, %d selected. The order moves everyone EXCEPT the named kind(s)."),
+				EligibleCount, ExcludedCount, Command.ExcludeKinds.Num(), OutMembers.Num());
+		}
+		else if (Command.ExcludeKinds.Num() > 0)
+		{
+			// ⚠️ AN EXCLUSION THAT SUBTRACTED NOBODY IS NOT AN ERROR AND IS NOT
+			// PAPERED OVER. "Send everyone except the miners" with no live miner
+			// is the same order as "send everyone", and refusing it would punish
+			// the player for a correct sentence. ⛔ The kind-does-not-exist-at-all
+			// refusal is NOT this layer's job: the grammar can only emit a symbol
+			// the live roster produced, and Zone A's [FORCES] rule answers
+			// unsupported for a noun that is not a kind at all (the corpus row
+			// DEV-32). Re-refusing here would paper over exactly that.
+			UE_LOG(LogSiegeAssistant, Log,
+				TEXT("Selector applied a %d-kind exclusion that removed NOBODY - no unit of the excluded kind(s) is eligible and alive. %d unit(s) selected. This is the same order as \"all\", and it is executed rather than refused."),
+				Command.ExcludeKinds.Num(), OutMembers.Num());
 		}
 
 		return true;
@@ -2294,7 +2518,26 @@ void USiegeAssistantComponent::AttachConsoleWidget(USiegeAssistantConsoleWidget*
 	// binds these", so this is the shipped design intent rather than a new one.
 	InWidget->OnConsoleSubmitted.AddDynamic(this, &USiegeAssistantComponent::SubmitUtterance);
 	InWidget->OnConsoleConfirmed.AddDynamic(this, &USiegeAssistantComponent::ConfirmPressed);
+
+	// ⛔ THIS BINDING IS LIVE API WITH NO LIVE CALLER IN v1, AND THAT IS RULED,
+	// NOT ROTTEN. DO NOT "CLEAN IT UP". (CONVENTIONS AS-§6 RULING A-2, amended
+	// 2026-08-04 by Jonathan's ruling 3: "there is no cancel button (they just
+	// simply close the chat box)".)
+	//   · The console's Cancel BUTTON is gone, so the only thing that ever
+	//     broadcast OnConsoleCancelled is gone with it. The delegate, the widget's
+	//     CancelPressed() and this component's CancelPressed() all SURVIVE with
+	//     their exact signatures - deleting shipped BlueprintCallable public API
+	//     to remove a button is a breaking change bought for nothing.
+	//   · They join ToggleConsole() in the deliberately-uncalled set: reachable
+	//     from Blueprint, from a future WBP_AssistantConsole, from a gamepad path
+	//     or from an accessibility path.
+	//   · ⚠️ WHAT THIS COSTS, NAMED RATHER THAN HIDDEN: CancelPressed()'s
+	//     Thinking-ABORT and Deferred-DROP handling is now unreachable FROM THE
+	//     CONSOLE. Both are correct and both stay. The close path
+	//     (NotifyConsoleClosed) covers the case that actually loses an order -
+	//     AwaitConfirm - and prints the same Cancelled line for it.
 	InWidget->OnConsoleCancelled.AddDynamic(this, &USiegeAssistantComponent::CancelPressed);
+
 	InWidget->OnConsoleOpenChanged.AddDynamic(this, &USiegeAssistantComponent::HandleConsoleOpenChanged);
 
 	// ── OUTBOUND: this FSM's delegates -> the widget's inbound API ────────────
@@ -3002,7 +3245,7 @@ void USiegeAssistantComponent::ReportFirstCapture(const FString& ZoneA, const FS
 		TEXT("FIRST LIVE CAPTURE of USiegeAssistantSnapshot (CONVENTIONS \"Settings screen...\" 7 - the owed first-execution audit; this class had NO caller before this line ran).\n")
 		TEXT("  zoneA_chars=%d  zoneB_chars=%d  zoneC_chars=%d  zoneB+C_chars=%d  SnapshotTrimBudgetChars=%d  headroom=%d\n")
 		TEXT("  roster_kinds=%d  MaxRosterKinds=%d  roster_rows=%d  places=%d\n")
-		TEXT("  Reference figures to compare against: the TASK-413 spike FIXTURE measured zoneB=68 zoneC=887 (B+C=955) on a 13-kind board, and the SHIPPED builder was DERIVED at B+C=738 - this is the first MEASURED shipped-builder reading.\n")
+		TEXT("  Reference figures to compare against: the TASK-413 spike FIXTURE measured zoneB=68 zoneC=887 (B+C=955) on a 13-kind board. ⚠️ The old 'SHIPPED builder DERIVED at B+C=738' figure is DEAD and was removed: it was derived at MaxRosterKinds=8, which TASK-517 raised to 13 on Jonathan's 2026-08-04 ruling. The shipped builder's Zone C on a 13-kind board is now 887 of an 893-char budget (head 108 / roster 621 / tail 158, re-derived from this builder's own format at TASK-517) - i.e. ~6 chars of headroom, an accepted risk. ⛔ The shipped zoneB has still NEVER been printed, so there is no shipped B+C figure to compare against; taking one is what the OWED READING below is for, and this remains the first MEASURED shipped-builder reading.\n")
 		TEXT("  >>> OWED READING - THIS IS THE LINE TASK-455 NEEDED AND COULD NOT TAKE. ZoneBCharReserve is %d and this board's zoneB_chars is %d, i.e. it over-charges Zone B by %d chars and steals exactly that many from the roster. It is 192 ONLY because no PRINTED figure from THIS builder existed (the 68/71 on record were printed by the SPIKE's AppendZoneB, a different lane). Size it from this figure PLUS the widest value each of the four fixed keys can take - both castles at 100%%, mid: neutral, a four-digit gold band - because one live board is a sample, not a worst case. Lowering it can only WIDEN the roster.\n")
 		TEXT("  The character figures above are a TRIM budget, not the cap: the authority is the plugin's MaxSnapshotTokens=400, counted by llama_tokenize, and it REJECTS rather than truncates.\n")
 		TEXT("  Any roster/utterance truncation is reported by the snapshot's own Warning lines; their absence here means nothing was cut on this board.\n")

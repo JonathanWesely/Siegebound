@@ -19,9 +19,11 @@
  *
  *  ── WHAT THIS FILE EXISTS TO FIX, IN ONE PARAGRAPH ──
  *
- *  `zoneA_chars=5116` is the figure every Zone-A decision in this feature rests
+ *  `zoneA_chars=5116` was the figure every Zone-A decision in this feature rested
  *  on — the KV-reuse bar (#3), the "do not trim Zone A" ruling, and the whole
- *  three-zone budget. IT WAS MEASURED ON THE SPIKE LANE, by
+ *  three-zone budget. (⚠️ It is now the SPIKE lane's figure only; the shipped
+ *  lane moved to 5424 on 2026-08-04 — see the D4 amendment at the end of this
+ *  header.) IT WAS MEASURED ON THE SPIKE LANE, by
  *  `Siege.Llama.SpikePrompt` against SiegeLlamaSpike.cpp's `AppendZoneA`. ⛔ NO
  *  COMMAND HAS EVER PRINTED THE SHIPPED `USiegeAssistantSnapshot::BuildZoneA`,
  *  so the shipped lane's byte count was a READING-LEVEL CLAIM carried across two
@@ -51,8 +53,36 @@
  *  checked it.
  *
  *  ⚖️ TWO ARTIFACTS, TWO QUANTITIES, NEITHER DOING THE OTHER'S JOB: this TEST
- *  asserts lane equality and an exact CHAR count; the token ceiling stays a
- *  RUNTIME gate, read off the printed `zoneA_tok~=` at a measurement run.
+ *  asserts the lane relationship and an exact CHAR count; the token ceiling stays
+ *  a RUNTIME gate, read off the printed `zoneA_tok~=` at a measurement run.
+ *
+ *  ═══════════════════════════════════════════════════════════════════════════
+ *  ⭐ AMENDED 2026-08-04 (TASK-523, batch ASSISTANT-EXCLUDE) — `D4`
+ *  ═══════════════════════════════════════════════════════════════════════════
+ *
+ *  ⛔ THE TWO LANES ARE NO LONGER BYTE-EQUAL, AND THAT IS A RULED, DECLARED
+ *  DIVERGENCE — NOT A REGRESSION AND NOT A BUG TO FIX. TASK-521 added 308
+ *  characters to the SHIPPED `BuildZoneA` (a 44-char `WHO =` schema shape plus
+ *  two rule lines at 111 and 153) on Jonathan's rulings 1 and 3, while
+ *  `Plugins/SiegeLlama/**` was DELIBERATELY NOT TOUCHED because it is another
+ *  batch's in-flight instrument (FT-§16; TASK-481 is mid-flight against it).
+ *  ⇒ shipped 5424, spike 5116.
+ *
+ *  ⛔⛔ THE TEST WAS NOT "UPDATED TO PASS", AND THE DISTINCTION IS THE WHOLE
+ *  SPEC. AS-§20.4 ruled that the original subject — "the shipped prompt is the
+ *  prompt the numbers were measured on" — became FALSE the moment the shipped
+ *  prompt was deliberately changed, and that no edit can make it true again. So
+ *  the equality test below now asserts the SHIPPED LANE AGAINST A NAMED, DATED
+ *  BASELINE expressed as THE FROZEN SPIKE FIXTURE PLUS THE THREE RULED EDITS,
+ *  each reproduced as its own literal and measured by the compiler. ⛔ The frozen
+ *  fixture is untouched; ⛔ `BuildZoneA`'s output is nowhere copied into it. A
+ *  fourth edit to Zone A still fails this file, loudly, with a character offset.
+ *
+ *  ⛔ AND THE TOKEN FIGURES DID NOT MOVE WITH THE CHARACTERS. `zoneA_tok = 1139`,
+ *  the `77.1 %` KV-reuse figure and every prefill number derived from them are
+ *  relabelled **STALE — PENDING RE-MEASUREMENT ON THE MODEL**. They are ⛔ NOT
+ *  recomputed by arithmetic and ⛔ NOT deleted. Characters are countable offline;
+ *  tokens are a runtime reading with a measured ±band of unpredictable sign.
  */
 
 namespace SiegeAssistantZoneATestFixture
@@ -78,14 +108,19 @@ namespace SiegeAssistantZoneATestFixture
 	 *
 	 *  ⛔ WHEN THE SPIKE IS DELETED THIS BLOCK BECOMES THE ONLY SURVIVING RECORD
 	 *  OF THE MEASURED BYTES, and its status changes from "copy" to "evidence".
-	 *  At that point a divergence reported by the equality test below means THE
-	 *  SHIPPED BUILDER MOVED AWAY FROM THE MEASUREMENT — i.e. `zoneA_chars=5116`
-	 *  and every figure derived from it have gone stale and must be RE-MEASURED
-	 *  on the model. It does NOT mean this fixture is out of date. ⛔ EDITING
-	 *  THIS BLOCK TO MAKE THE TEST GO GREEN DESTROYS THE ONLY EVIDENCE THE TEST
-	 *  EXISTS TO HOLD, and is the single worst thing that can be done to this
-	 *  file. Re-measure instead, then move both sides together with the new
-	 *  number.
+	 *  It does NOT mean this fixture is out of date. ⛔ EDITING THIS BLOCK TO MAKE
+	 *  A TEST GO GREEN DESTROYS THE ONLY EVIDENCE THIS FILE EXISTS TO HOLD, and is
+	 *  the single worst thing that can be done here.
+	 *
+	 *  ⚠️⚠️ AMENDED 2026-08-04 (TASK-523): THE SHIPPED BUILDER HAS NOW MOVED AWAY
+	 *  FROM THIS FIXTURE ON PURPOSE — divergence `D4`, +308 chars, see the file
+	 *  header. ⇒ A divergence between the two lanes is EXPECTED and is no longer
+	 *  evidence of anything. What the equality test asserts instead is that the
+	 *  shipped lane equals THIS BLOCK PLUS THE THREE ENUMERATED D4 EDITS, so a
+	 *  FOURTH, undeclared edit still fails. ⛔ The rule that this block is never
+	 *  re-copied from the shipped builder is UNCHANGED and is now load-bearing in
+	 *  a second way: it is the base the declared diff is applied to, so a
+	 *  re-copied fixture would make the diff assertion vacuously true.
 	 *
 	 *  ⚠️ IT IS DELIBERATELY A DUMB LITERAL BLOCK AND NOT A CALL INTO THE PLUGIN.
 	 *  The game module does not depend on SiegeLlama, `AppendZoneA` is a file-
@@ -205,7 +240,8 @@ namespace SiegeAssistantZoneATestFixture
 	}
 
 	/**
-	 *  THE MEASURED CHARACTER COUNT OF ZONE A — 5116.
+	 *  THE SPIKE LANE'S MEASURED CHARACTER COUNT — 5116. ⛔ UNCHANGED, AND IT MUST
+	 *  STAY UNCHANGED.
 	 *
 	 *  ⚠️ PROVENANCE, BECAUSE THIS PROJECT HAS TWICE PAID FOR A NUMBER WHOSE
 	 *  PROVENANCE WAS ASSUMED (CONVENTIONS §8 TOKEN PROVENANCE, §12g). This is a
@@ -217,18 +253,144 @@ namespace SiegeAssistantZoneATestFixture
 	 *  quantity and not on tokens.
 	 *
 	 *  ⛔ THE COMPANION FIGURE `zoneA_tok~=1139` IS DELIBERATELY ABSENT FROM THIS
-	 *  FILE. It is a RUNTIME READING off the shipping tokenizer with the model
-	 *  resident; it belongs to the measurement run, never to a test. See the file
-	 *  header.
-	 *
-	 *  ⚠️ IF ZONE A IS EDITED ON PURPOSE, THIS NUMBER MOVES — and moving it is a
-	 *  RE-MEASUREMENT, not an arithmetic update. Run the spike command (or its
-	 *  successor), read the printed `zoneA_chars=`, and put THAT here. ⛔ Do not
-	 *  compute the new value by adding your diff's character count to 5116: that
-	 *  is exactly the derivation-in-place-of-measurement move §12g exists to stop,
-	 *  and the token figure that travels with it does not scale linearly.
+	 *  FILE, AND SINCE 2026-08-04 IT IS ALSO **STALE — PENDING RE-MEASUREMENT ON
+	 *  THE MODEL**, along with the `77.1 %` KV-reuse figure and every prefill
+	 *  number derived from either. ⛔ They are NOT recomputed by arithmetic and NOT
+	 *  deleted: only `Siege.Llama.SpikePrompt` prints them, with the model
+	 *  resident. A stale number that says it is stale is safe; a stale number
+	 *  wearing a fresh label is how §8 lost two days.
 	 */
-	static constexpr int32 MeasuredZoneAChars = 5116;
+	static constexpr int32 SpikeLaneZoneAChars = 5116;
+
+	/**
+	 *  ⭐ THE SHIPPED LANE'S CHARACTER COUNT AS OF 2026-08-04 — 5424. THE NAMED,
+	 *  DATED BASELINE THIS FILE NOW ASSERTS AGAINST (batch ASSISTANT-EXCLUDE,
+	 *  TASK-521 authored the edit, TASK-523 re-based these tests).
+	 *
+	 *  ⚠️ THE CHAR COUNT IS RE-COUNTED, THE TOKEN COUNT IS NOT, AND THAT ASYMMETRY
+	 *  IS THE WHOLE RULE (AS-§20.4). Characters are countable offline with no model
+	 *  resident, so a deliberate edit's new char figure is a COUNT rather than a
+	 *  conversion. Tokens are not: §12g measured a −15/+4 error band with
+	 *  UNPREDICTABLE SIGN on exactly this kind of derivation.
+	 *
+	 *  ⛔ THIS NUMBER WAS NOT TAKEN ON TRUST FROM TASK-521's HANDOFF. It is the
+	 *  spike lane's 5116 plus the THREE enumerated edits below, each of which is
+	 *  reproduced as its own literal in this file and measured by the compiler:
+	 *      +44   the `WHO    =` schema line gains the `{"all_except":[KIND]}` shape
+	 *      +111  rule line 1 — `who` is "all" for every-unit orders
+	 *      +153  rule line 2 — `who` is {"all_except":[KIND]}, and only on the four
+	 *            selection-bearing verbs
+	 *      ————
+	 *      +308  ⇒ 5116 + 308 = 5424, against AS-§20.4's 325-char Zone-A growth
+	 *            budget for the WHOLE batch: 17 chars of slack, spent.
+	 */
+	static constexpr int32 ShippedZoneAChars = 5424;
+
+	/** The declared D4 growth. Its three components are asserted individually below, so a wrong total cannot hide inside a right one. */
+	static constexpr int32 DeclaredD4Delta = ShippedZoneAChars - SpikeLaneZoneAChars;
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	//  ⭐ THE DECLARED DIVERGENCE `D4` (2026-08-04) — THE THREE EDITS, SPELLED OUT
+	// ═══════════════════════════════════════════════════════════════════════════
+	//
+	//  ⛔⛔ READ THIS BEFORE TOUCHING THE EQUALITY TEST BELOW.
+	//
+	//  Editing `BuildZoneA` broke `Siegebound.Assistant.ZoneA.TwoLaneByteEquality`
+	//  and `…MeasuredCharCount`, exactly as AS-§20.4 predicted it would. That
+	//  clause also wrote the procedure, rather than leaving it to whoever hit the
+	//  red bar at 2 a.m.:
+	//
+	//   · ⛔ `Plugins/SiegeLlama/**` IS NOT TOUCHED BY THIS BATCH. It is ANOTHER
+	//     BATCH'S IN-FLIGHT INSTRUMENT (FT-§16 reclassified `SiegeLlamaSpike.cpp`
+	//     from throwaway to LOAD-BEARING test infrastructure; TASK-481 is mid-flight
+	//     against it). So the shipped lane moved and the spike lane did not: that is
+	//     a NEW, DELIBERATE, RULED divergence — `D4` — and it is RECORDED, never
+	//     hidden and never "fixed" by editing a transcription until it agrees.
+	//
+	//   · ⛔⛔ THE FROZEN SPIKE FIXTURE ABOVE IS NOT EDITED, AND THE SHIPPED
+	//     BUILDER'S OUTPUT IS NOT COPIED INTO IT. That fixture is the only
+	//     surviving record of the bytes `zoneA_chars=5116` was measured on. A test
+	//     whose transcription is silently re-copied from the thing it is testing is
+	//     a guardrail that reports SAFE — the exact failure §12g rules worse than
+	//     having no test at all, and the failure this very file's comments rail
+	//     against.
+	//
+	//  ⇒ SO THE ASSERTION IS RE-PURPOSED RATHER THAN SILENCED: the shipped lane is
+	//    asserted to be the frozen spike fixture PLUS EXACTLY THESE THREE EDITS AND
+	//    NOTHING ELSE. Each edit is its own literal here, so the compiler measures
+	//    it and a wrong total cannot hide inside a right one. ⭐ This is STRICTLY
+	//    STRONGER than the byte-equality it replaces: equality only ever said "the
+	//    two lanes agree", whereas this says "the two lanes differ by precisely the
+	//    diff the manager ruled and by nothing else" — and it still fails, loudly
+	//    and with a character offset, on any fourth edit to Zone A.
+
+	/** The `WHO =` schema line AS THE SPIKE LANE STILL PRINTS IT. Three shapes. */
+	static const TCHAR* const D4_WhoLineBefore =
+		TEXT("WHO    = [{\"kind\":KIND,\"n\":COUNT}] with 1 to 3 entries, or \"all\", or \"none\"\n");
+
+	/**
+	 *  The same line after TASK-521 (+44 chars). ⚠️ THIS EDIT IS THE AS-§9c MIRROR
+	 *  LAW BEING OBEYED, NOT AN EXTRA: TASK-518 added `except` to the grammar's
+	 *  `who` rule, so a Zone A that still enumerated three shapes would have TOLD
+	 *  the model the exclusion shape does not exist while the sampler ALLOWED it.
+	 *  The alternation order here is the GRAMMAR's order, deliberately.
+	 */
+	static const TCHAR* const D4_WhoLineAfter =
+		TEXT("WHO    = [{\"kind\":KIND,\"n\":COUNT}] with 1 to 3 entries, or {\"all_except\":[KIND]} with 1 to 3 kinds, or \"all\", or \"none\"\n");
+
+	/** The rule line the two new lines are inserted AFTER — an anchor, not an edit. Unchanged in both lanes. */
+	static const TCHAR* const D4_RuleAnchor =
+		TEXT("- If the player names units, the intent is send, guard, ambush or follow, never charge, fallback or rally.\n");
+
+	/**
+	 *  NEW RULE 1 (+111 chars) — the `who`:"all" teaching, which is the behaviour
+	 *  Jonathan actually complained about. ⭐ AS-§20.4 ruled RULE LINES ONLY and NO
+	 *  NEW FEW-SHOT SENTENCES: a new example sentence would have required opening
+	 *  the SEALED `assistant_eval_holdout2.csv` for a disjointness certificate,
+	 *  and a rule line requires nothing. The seal is not spent.
+	 */
+	static const TCHAR* const D4_RuleAllUnits =
+		TEXT("- Every unit, no exception: who is \"all\", never a list of kinds. charge, fallback and rally still take \"none\".\n");
+
+	/** NEW RULE 2 (+153 chars) — the exclusion shape, gated to the four selection-bearing verbs (manager ruling 3). */
+	static const TCHAR* const D4_RuleExclusion =
+		TEXT("- Every unit but some kinds: who is {\"all_except\":[KIND]}, only with send, guard, ambush or follow. On charge, fallback or rally: {\"ask\":\"unsupported\"}.\n");
+
+	/**
+	 *  The spike lane with the three declared edits applied — i.e. what the SHIPPED
+	 *  lane must be, byte for byte.
+	 *
+	 *  ⛔ EVERY REPLACEMENT IS `ESearchCase::CaseSensitive`. `FString::Replace`
+	 *  defaults to CASE-INSENSITIVE, which on a byte-exact derivation would let a
+	 *  casing change slip through unnoticed — the same trap `TestEqual`-on-FString
+	 *  sets one layer up (SC-§13).
+	 *
+	 *  @param OutApplied  how many of the three edits actually matched. ⛔ Asserted
+	 *                     by the caller: a replacement that silently matched
+	 *                     NOTHING would leave this function returning the spike
+	 *                     lane unchanged and turn the comparison into an equality
+	 *                     test that has already been ruled false.
+	 */
+	static FString BuildDeclaredD4ShippedLane(int32& OutApplied)
+	{
+		FString Out = BuildSpikeLaneZoneA();
+		OutApplied = 0;
+
+		if (Out.Contains(D4_WhoLineBefore, ESearchCase::CaseSensitive))
+		{
+			Out.ReplaceInline(D4_WhoLineBefore, D4_WhoLineAfter, ESearchCase::CaseSensitive);
+			++OutApplied;
+		}
+
+		if (Out.Contains(D4_RuleAnchor, ESearchCase::CaseSensitive))
+		{
+			const FString Replacement = FString(D4_RuleAnchor) + D4_RuleAllUnits + D4_RuleExclusion;
+			Out.ReplaceInline(D4_RuleAnchor, *Replacement, ESearchCase::CaseSensitive);
+			OutApplied += 2;
+		}
+
+		return Out;
+	}
 
 	/** True when every code unit is ASCII — the premise that makes char count == UTF-8 byte count. */
 	static bool IsAsciiClean(const FString& In, int32& OutFirstNonAsciiIndex)
@@ -330,37 +492,70 @@ bool FSiegeAssistantZoneATwoLaneEqualityTest::RunTest(const FString& Parameters)
 	const FString ShippedLane = Snapshot->BuildZoneA(Vocabulary.Get());
 	const FString SpikeLane = BuildSpikeLaneZoneA();
 
-	// Reported before the equality assertion on purpose: when this test fails,
-	// the two lengths are the first thing the next reader needs, and an
-	// AddError on the comparison alone would bury them.
-	AddInfo(FString::Printf(
-		TEXT("Zone A lengths - shipped: %d chars / %d UTF-8 bytes; spike: %d chars / %d UTF-8 bytes; measured reference: %d chars."),
-		ShippedLane.Len(), Utf8ByteLength(ShippedLane),
-		SpikeLane.Len(), Utf8ByteLength(SpikeLane),
-		MeasuredZoneAChars));
+	int32 EditsApplied = 0;
+	const FString DeclaredShippedLane = BuildDeclaredD4ShippedLane(EditsApplied);
 
-	const int32 Divergence = FirstDifference(ShippedLane, SpikeLane);
+	// Reported before the assertions on purpose: when this test fails, the lengths
+	// are the first thing the next reader needs, and an AddError on the comparison
+	// alone would bury them.
+	AddInfo(FString::Printf(
+		TEXT("Zone A lengths - shipped: %d chars / %d UTF-8 bytes (named baseline %d, 2026-08-04); spike lane: %d chars / %d UTF-8 bytes (frozen at %d); declared D4 delta: %d."),
+		ShippedLane.Len(), Utf8ByteLength(ShippedLane), ShippedZoneAChars,
+		SpikeLane.Len(), Utf8ByteLength(SpikeLane), SpikeLaneZoneAChars,
+		DeclaredD4Delta));
+
+	// ── ⛔ THE THREE EDITS MUST ACTUALLY HAVE MATCHED ─────────────────────────
+	// A `Replace` that matched nothing returns the input unchanged, which would
+	// turn everything below into the byte-equality assertion AS-§20.4 has ruled
+	// FALSE — and it would pass or fail for a reason that has nothing to do with
+	// what this test claims to measure. So the derivation is checked before it is
+	// used, which is the same "did the guard actually run" discipline SC-§21
+	// applies to guard placement.
+	if (!TestEqual(TEXT("⛔ All THREE declared D4 edits matched the frozen spike fixture (if not, the fixture or the declared diff has moved and NOTHING below is meaningful)"),
+		EditsApplied, 3))
+	{
+		AddError(TEXT("The declared D4 diff no longer applies to the frozen spike fixture. ⛔ Do NOT 'fix' this by re-copying BuildZoneA's output into the fixture - that destroys the only surviving record of the bytes `zoneA_chars=5116` was measured on. Re-derive the diff from the shipped builder BY HAND and write it out edit by edit."));
+		return false;
+	}
+
+	// ── ⭐ THE RE-PURPOSED ASSERTION ──────────────────────────────────────────
+	// The two lanes are EXPECTED to differ now. What is asserted is that they
+	// differ by EXACTLY the ruled diff.
+	const int32 Divergence = FirstDifference(ShippedLane, DeclaredShippedLane);
 	if (Divergence != INDEX_NONE)
 	{
 		AddError(FString::Printf(
-			TEXT("THE TWO ZONE A LANES HAVE DIVERGED at character %d. `zoneA_chars=%d` and everything derived from it are now STALE and must be RE-MEASURED on the model - do NOT edit the frozen spike fixture to silence this.\n")
-			TEXT("  shipped: ...%s...\n")
-			TEXT("  spike  : ...%s..."),
-			Divergence, MeasuredZoneAChars,
-			*Window(ShippedLane, Divergence), *Window(SpikeLane, Divergence)));
+			TEXT("⛔ THE SHIPPED ZONE A IS NOT THE SPIKE LANE PLUS THE DECLARED `D4` DIFF - it first departs at character %d.\n")
+			TEXT("  D4 (declared 2026-08-04, batch ASSISTANT-EXCLUDE): the SHIPPED lane gained a 44-char `WHO =` schema shape and two rule lines (+111, +153) = +308, moving it from %d to %d chars. `Plugins/SiegeLlama/**` was DELIBERATELY NOT TOUCHED (it is TASK-481's in-flight instrument, FT-§16), so the spike lane stayed at %d.\n")
+			TEXT("  ⛔ `zoneA_tok = 1139` and the 77.1%% KV-reuse figure are STALE - PENDING RE-MEASUREMENT ON THE MODEL. They are NOT recomputed by arithmetic; only Siege.Llama.SpikePrompt prints them.\n")
+			TEXT("  ⛔ DO NOT silence this by editing the frozen spike fixture, and DO NOT paste BuildZoneA's output into it. If Zone A was edited on purpose again, ADD the new edit to the D4 diff above, edit by edit, and re-count.\n")
+			TEXT("  shipped : ...%s...\n")
+			TEXT("  declared: ...%s..."),
+			Divergence,
+			SpikeLaneZoneAChars, ShippedZoneAChars, SpikeLaneZoneAChars,
+			*Window(ShippedLane, Divergence), *Window(DeclaredShippedLane, Divergence)));
 	}
 
 	// ⛔⛔ `TestEqualSensitive`, NEVER `TestEqual`, ON EVERY STRING IN THIS FILE.
 	// FAutomationTestBase::TestEqual(const FString&, const FString&) forwards to
 	// the TCHAR* overload, which is CASE-INSENSITIVE — that is the entire reason
-	// TestEqualSensitive exists as a separate API. A byte-equality gate written
-	// with TestEqual would pass two Zone As differing in case, i.e. it would
-	// report SAFE on a prompt where `own_castle` had become `OWN_CASTLE` and the
-	// tokenizer output had changed completely. That is precisely the
-	// "automated guardrail that reports safe" failure CONVENTIONS §12g rules
-	// worse than having no test at all, so it is called out here rather than
-	// left as a silent idiom for the next editor to undo.
-	TestEqualSensitive(TEXT("The shipped BuildZoneA(default vocabulary) is BYTE-IDENTICAL to the spike lane that `zoneA_chars=5116` was measured on"),
+	// TestEqualSensitive exists as a separate API. A byte gate written with
+	// TestEqual would pass two Zone As differing in case, i.e. it would report
+	// SAFE on a prompt where `own_castle` had become `OWN_CASTLE` and the
+	// tokenizer output had changed completely. That is precisely the "automated
+	// guardrail that reports safe" failure CONVENTIONS §12g rules worse than
+	// having no test at all, so it is called out here rather than left as a silent
+	// idiom for the next editor to undo.
+	TestEqualSensitive(TEXT("⭐ The shipped BuildZoneA(default vocabulary) is the frozen spike lane PLUS EXACTLY the three declared `D4` edits and nothing else"),
+		ShippedLane, DeclaredShippedLane);
+
+	// ── AND THE DIVERGENCE ITSELF IS ASSERTED, NOT MERELY TOLERATED ───────────
+	// ⚠️ If the two lanes ever became byte-equal again, this test would pass
+	// silently on a premise that is no longer true — either the spike was edited
+	// (⛔ another batch's instrument) or the shipped rule lines were reverted (⛔
+	// Jonathan's fix, gone). Both are events that must be SEEN, so `D4` is
+	// asserted to still be a real, non-empty divergence.
+	TestNotEqualSensitive(TEXT("⛔ `D4` IS STILL A REAL DIVERGENCE: the shipped lane and the frozen spike lane are NOT byte-equal. If they are, either the spike was edited (another batch's instrument) or TASK-521's rule lines were reverted."),
 		ShippedLane, SpikeLane);
 
 	return true;
@@ -376,11 +571,17 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 /**
- *  ⚠️ THIS IS NOT REDUNDANT WITH THE EQUALITY TEST, AND THE REASON IS THE ONE
- *  FAILURE MODE EQUALITY ALONE CANNOT SEE: two lanes that BOTH moved by the same
- *  edit stay equal to each other while both drift away from the number that was
- *  measured. Equality proves the lanes agree; this proves they agree ON 5116.
- *  Only the pair discharges the claim.
+ *  ⚠️ THIS IS NOT REDUNDANT WITH THE TEST ABOVE, AND THE REASON IS THE ONE
+ *  FAILURE MODE A DIFF-SHAPED ASSERTION CANNOT SEE: a shipped lane and a declared
+ *  diff that BOTH moved by the same amount stay consistent with each other while
+ *  both drift away from the number that was counted. The test above proves the
+ *  shipped lane is the spike lane plus the ruled diff; this proves the two lanes
+ *  sit on 5424 and 5116 respectively. Only the pair discharges the claim.
+ *
+ *  ⛔ THE TWO LANES NOW HAVE TWO DIFFERENT NUMBERS, AND THAT IS THE POINT —
+ *  divergence `D4`, declared 2026-08-04 (AS-§20.4). ⛔ RE-COUNTED, NOT
+ *  RE-DERIVED-BY-TRUST: the components of the +308 are asserted individually
+ *  below from the literals in this file, so the total cannot be right by accident.
  */
 bool FSiegeAssistantZoneAMeasuredCharCountTest::RunTest(const FString& Parameters)
 {
@@ -398,20 +599,50 @@ bool FSiegeAssistantZoneAMeasuredCharCountTest::RunTest(const FString& Parameter
 	const FString ShippedLane = Snapshot->BuildZoneA(Vocabulary.Get());
 	const FString SpikeLane = BuildSpikeLaneZoneA();
 
-	TestEqual(TEXT("The SHIPPED Zone A is exactly the measured 5116 characters"),
-		ShippedLane.Len(), MeasuredZoneAChars);
-	TestEqual(TEXT("The SPIKE Zone A is exactly the measured 5116 characters"),
-		SpikeLane.Len(), MeasuredZoneAChars);
+	TestEqual(TEXT("⭐ The SHIPPED Zone A is exactly 5424 characters — the named, dated baseline of 2026-08-04"),
+		ShippedLane.Len(), ShippedZoneAChars);
+	TestEqual(TEXT("⛔ The SPIKE Zone A is STILL exactly the measured 5116 characters — Plugins/SiegeLlama was deliberately NOT touched (D4, FT-§16)"),
+		SpikeLane.Len(), SpikeLaneZoneAChars);
 
 	// The byte figure is asserted separately from the char figure rather than
 	// inferred from it. `MaxUtteranceBytes` was renamed by TASK-433 precisely
 	// because a constant named "Chars" that measured bytes hid a 3x
 	// over-admission; the same conflation is not going to be re-introduced here
 	// by assumption.
-	TestEqual(TEXT("The SHIPPED Zone A is exactly 5116 UTF-8 BYTES (asserted, not inferred from the char count)"),
-		Utf8ByteLength(ShippedLane), MeasuredZoneAChars);
+	TestEqual(TEXT("The SHIPPED Zone A is exactly 5424 UTF-8 BYTES (asserted, not inferred from the char count)"),
+		Utf8ByteLength(ShippedLane), ShippedZoneAChars);
 	TestEqual(TEXT("The SPIKE Zone A is exactly 5116 UTF-8 BYTES"),
-		Utf8ByteLength(SpikeLane), MeasuredZoneAChars);
+		Utf8ByteLength(SpikeLane), SpikeLaneZoneAChars);
+
+	// ── ⭐ THE +308, COMPONENT BY COMPONENT ───────────────────────────────────
+	// ⛔ THIS IS THE RE-COUNT, AND IT IS WHY 5424 IS NOT A NUMBER TAKEN ON TRUST
+	// FROM A HANDOFF. Each figure is measured by the compiler off the literal in
+	// this file's D4 block, so a transcription error in any one of them fails HERE
+	// with the component named, rather than showing up as an unexplained 308 that
+	// happens not to match.
+	const int32 WhoLineDelta = FCString::Strlen(D4_WhoLineAfter) - FCString::Strlen(D4_WhoLineBefore);
+	const int32 RuleAllUnitsLength = FCString::Strlen(D4_RuleAllUnits);
+	const int32 RuleExclusionLength = FCString::Strlen(D4_RuleExclusion);
+
+	TestEqual(TEXT("D4 component 1 — the `WHO =` schema line gains exactly 44 chars for the {\"all_except\":[KIND]} shape"), WhoLineDelta, 44);
+	TestEqual(TEXT("D4 component 2 — the `who`:\"all\" rule line is exactly 111 chars"), RuleAllUnitsLength, 111);
+	TestEqual(TEXT("D4 component 3 — the exclusion rule line is exactly 153 chars"), RuleExclusionLength, 153);
+	TestEqual(TEXT("⭐ The three components sum to the declared D4 delta of 308"),
+		WhoLineDelta + RuleAllUnitsLength + RuleExclusionLength, DeclaredD4Delta);
+
+	// ⛔ THE BATCH-LEVEL BUDGET, ASSERTED RATHER THAN TRUSTED (AS-§20.4). The
+	// Zone-A growth ceiling for the WHOLE batch is ~325 characters, derived at
+	// §12g's pinned worst marginal rate from `zoneA_tok <= 1389` with
+	// `ContextTokens` frozen at 2048. ⛔ Over budget ⇒ STOP and escalate; it is not
+	// a soft target, and the next Zone-A edit has only the remainder to spend.
+	static constexpr int32 ZoneAGrowthBudgetChars = 325;
+	TestTrue(*FString::Printf(TEXT("⛔ The batch's Zone A growth (%d chars) is within AS-§20.4's %d-char ceiling — %d chars remain for any FUTURE Zone A edit"),
+		DeclaredD4Delta, ZoneAGrowthBudgetChars, ZoneAGrowthBudgetChars - DeclaredD4Delta),
+		DeclaredD4Delta <= ZoneAGrowthBudgetChars);
+
+	AddInfo(FString::Printf(
+		TEXT("⛔ TOKENS ARE NOT RE-COUNTED HERE AND MUST NOT BE. `zoneA_tok = 1139` and the 77.1%% KV-reuse figure are STALE - PENDING RE-MEASUREMENT ON THE MODEL (AS-§20.4). Characters are countable offline; tokens carry a MEASURED -15/+4 error band with UNPREDICTABLE SIGN (§12g), so converting %d chars into a token delta would be a derivation wearing a measurement's authority. Only Siege.Llama.SpikePrompt prints the real figure."),
+		DeclaredD4Delta));
 
 	return true;
 }
@@ -599,9 +830,24 @@ bool FSiegeAssistantZoneANullVocabularyTest::RunTest(const FString& Parameters)
 
 	// The whole difference between the two branches, stated as an identity so a
 	// future divergence points at WHICH part moved.
+	//
+	// ⚠️⚠️ THIS TEST WAS A THIRD CASUALTY OF THE ZONE-A EDIT AND NOBODY LISTED IT
+	// (TASK-523). AS-§20.4, the board and every handoff name TWO broken tests —
+	// TwoLaneByteEquality and MeasuredCharCount. This one breaks too, silently and
+	// for a DIFFERENT reason: its expectation is DERIVED from the Zone-A char
+	// constant, so re-basing that constant without reading this line would have
+	// left a red bar with no owner and a message pointing at the vocabulary, which
+	// is not what moved.
+	//
+	// ⛔ THE BASE IS THE SHIPPED FIGURE, NOT THE SPIKE'S. `NullLane` is
+	// `Snapshot->BuildZoneA(nullptr)` — the SHIPPED builder — so its base is the
+	// SHIPPED length. Using SpikeLaneZoneAChars here would compile, run, and be
+	// wrong by exactly 308 (SC-§23: a measurement's BASE is part of the
+	// measurement, and a varying value in the right field is still wrong if its
+	// base is wrong).
 	const FString SynonymTable = Vocabulary->BuildSynonymTable();
-	const int32 ExpectedNullLength = MeasuredZoneAChars - SynonymTable.Len() + 5; // 5 == Len("none\n")
-	TestEqual(TEXT("The null-vocabulary Zone A is the measured lane with the synonym table swapped for `none`"),
+	const int32 ExpectedNullLength = ShippedZoneAChars - SynonymTable.Len() + 5; // 5 == Len("none\n")
+	TestEqual(TEXT("The null-vocabulary Zone A is the SHIPPED lane with the synonym table swapped for `none`"),
 		NullLane.Len(), ExpectedNullLength);
 
 	return true;

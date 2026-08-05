@@ -4,6 +4,12 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+// ⚠️ REQUIRED BY TASK-519, NOT INHERITED: GetAcceptKey() returns an FKey BY VALUE
+// and the ACCEPT-KEY comparison names EKeys::Z. Both live in InputCoreTypes.h.
+// Blueprint/UserWidget.h happens to pull it in transitively (FKeyEvent holds an
+// FKey), but the complete-type include law says a file includes what it USES —
+// a transitive include is a dependency on somebody else's include list.
+#include "InputCoreTypes.h"
 #include "Templates/SubclassOf.h"
 #include "Types/SlateEnums.h"
 #include "SiegeAssistantConsoleWidget.generated.h"
@@ -11,6 +17,7 @@
 class APlayerController;
 class UButton;
 class UEditableTextBox;
+class USiegeKeyboardLayoutSubsystem;
 class UTextBlock;
 class UVerticalBox;
 
@@ -83,8 +90,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSiegeAssistantConsoleOpenChanged,
  *  must not "tidy" away:
  *
  *   - The root container is SelfHitTestInvisible, so the panel never swallows a
- *     click meant for the game. Only the box and the two buttons are
- *     hit-testable. ⚠️ This is the OPPOSITE of USettingsMenuWidget's
+ *     click meant for the game. ⚠️ AMENDED BY TASK-519: the code-authored tree no
+ *     longer builds ANY button, so InputBox is now the ONLY hit-testable widget
+ *     in it. ⚠️ This is the OPPOSITE of USettingsMenuWidget's
  *     BackdropBorder, which is deliberately hit-test VISIBLE because it is
  *     modal over a menu. This one is NOT modal and sits over live gameplay;
  *     copying that choice here would eat the shipped right-mouse cancel.
@@ -92,8 +100,13 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSiegeAssistantConsoleOpenChanged,
  *     WasInputKeyJustPressed(EKeys::Escape) cancel routes in
  *     ASiegePlayerController still fire while the console is open. Measured
  *     from engine source at TASK-411 §3 and confirmed at the qa/TASK-411 gate.
- *     ⇒ Escape does NOT close this console. ⛔ AND IT MAY NOT BE MADE TO: that
- *     is Jonathan's open ruling (AS-§6 A-2), not an oversight to tidy up.
+ *     ⇒ Escape does NOT close this console.
+ *     ⛔⛔ AND IT MAY NEVER BE MADE TO — CLOSED 2026-08-04 BY JONATHAN, so this
+ *     is no longer an open question with a default: it is the decision
+ *     (AS-§6 A-2, option (a)). ⛔ NativeOnPreviewKeyDown below MUST NOT return
+ *     Handled for Escape, "harmlessly" or otherwise; A-2 names that exact
+ *     mechanism as a way to break the ruling. It consumes the accept key and
+ *     NOTHING else.
  *
  *  ⛔ THE FOUR CLOSE ROUTES ARE ENUMERATED IN CONVENTIONS AS-§6 RULING A-2, AND
  *  THAT LIST IS THE CONTRACT. Repeated here because the gap surfaced TWICE by
@@ -103,13 +116,25 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSiegeAssistantConsoleOpenChanged,
  *         OnAssistantConsolePressed is a toggle whose close half is
  *         deliberately UN-GATED (a close that can be refused can strand the
  *         cursor in GameAndUI).
- *      2. CancelPressed() with no confirm prompt up.
+ *      2. CancelPressed() with no confirm prompt up. ⚠️ ROUTE 2 IS DELIBERATELY
+ *         WITHOUT A CALLER FROM 2026-08-04 (TASK-519): the Cancel button that
+ *         was its only v1 caller is gone. The route SURVIVES as public API —
+ *         see CancelPressed()'s comment, and do not "clean it up".
  *      3. SetConsoleEnabled(false) — the fault latch.
  *      4. Enter committed on an EMPTY (whitespace-trimmed) box — Jonathan's
  *         directive, 2026-08-03. It lives in HandleTextCommitted, NEVER in
  *         SubmitPressed; see the comment at both.
- *  ⛔ A CLOSE IS NOT A CANCEL. Every route above reuses CloseConsole() verbatim
- *  and none of them broadcasts a cancellation — see CloseConsole()'s comment.
+ *  ⛔ A CLOSE IS NOT A CANCEL *IN THIS WIDGET*, AND TASK-519 DID NOT CHANGE THAT.
+ *  Every route above reuses CloseConsole() verbatim and none of them broadcasts
+ *  a cancellation — see CloseConsole()'s comment.
+ *  ⚖️ WHAT JONATHAN'S 2026-08-04 RULING 3 MOVED, STATED SO THE TWO ARE NOT
+ *  CONFUSED: closing the box while a confirm prompt is up is now the PLAYER'S
+ *  cancel GESTURE. The half that did NOT move is the one this clause protects —
+ *  the WIDGET still broadcasts nothing new, and USiegeAssistantComponent's FSM
+ *  is still the only thing that turns a close into a discard (it already did:
+ *  NotifyConsoleClosed() clears a pending AwaitConfirm order). The player-facing
+ *  "Cancelled" transcript line for that path is TASK-520's, on the COMPONENT.
+ *
  *   - This widget NEVER calls SetInputMode. Input posture in L_Arena is owned
  *     by ASiegePlayerController::ApplyCursorInputState() (CONVENTIONS
  *     "Input-mode ownership (level-travel law)"), and a second owner is exactly
@@ -118,6 +143,40 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSiegeAssistantConsoleOpenChanged,
  *     contract for the task that binds the open key; see §4 below.
  *   - A faulted assistant calls SetConsoleEnabled(false, Reason). That disables
  *     THIS WIDGET and nothing else. No key, no card, no command changes.
+ *
+ *  ---------------------------------------------------------------------------
+ *  2b. THE CONFIRM STEP HAS NO BUTTONS. `Z` ACCEPTS; CLOSING DISCARDS.
+ *  ---------------------------------------------------------------------------
+ *  Jonathan's ruling 3, 2026-08-04, verbatim: "instead of it being a cancel
+ *  button and an accept button, lets make it to where there is no cancel button
+ *  (they just simply close the chat box), and instead of an accept button they
+ *  press 'z' ('z' button for QWERTY, make it that same button location for other
+ *  keyboards)". CONVENTIONS AS-§20.5 is the law; the mechanism is pinned there
+ *  and is NOT re-decidable here:
+ *   - NativeOnPreviewKeyDown, because preview TUNNELS DOWN the focus path from
+ *     the root BEFORE the focused leaf. NativeOnKeyDown BUBBLES UP from the leaf
+ *     and would never fire for a printable key SEditableText already ate. The
+ *     engine-source verification is quoted at the override's declaration below.
+ *   - ⛔ NOT an Enhanced Input action (rejected in AS-§20.5, with the reason).
+ *   - The key is resolved POSITIONALLY through
+ *     USiegeKeyboardLayoutSubsystem::GetPositionalKey(EKeys::Z) — on US-Dvorak
+ *     that is EKeys::Semicolon, because the physical position QWERTY prints `Z`
+ *     on yields `;` there. OpenConsole() refreshes the layout once per open;
+ *     ⛔ this widget binds OnKeyboardLayoutChanged to nothing (KBD-§8).
+ *   - ⛔ BUT THE PROMPT THE PLAYER READS SAYS `Z` ON EVERY LAYOUT (KBD-§8,
+ *     KBD-§0 ruling 1): they are on QWERTY HARDWARE with a Dvorak SOFTWARE
+ *     layout, so their keycap reads `Z` and "press ;" would be the bug.
+ *     ⇒ THE LOOKUP IS FOR THE COMPARISON; THE LITERAL IS FOR THE HUMAN.
+ *   - The player is TOLD, on the status line, for exactly as long as the prompt
+ *     is up: "Press Z to accept, or close this box to discard". It names both
+ *     halves because with both buttons gone there is no longer any control on
+ *     screen that reads as "cancel", and an order that vanishes to an
+ *     undocumented gesture reads as "the assistant ate my order".
+ *   - ⚠️ ACCEPTED CONSEQUENCE, RECORDED NOT DISCOVERED (AS-§20.5): while a
+ *     confirm prompt is up the player cannot type the letter `z` into the box.
+ *     Judged acceptable because a submission during AwaitConfirm is ALREADY
+ *     refused by the FSM — the box is editable but useless in that state. It is
+ *     on the human feel gate, not asserted here.
  *
  *  ---------------------------------------------------------------------------
  *  3. WHY THIS WIDGET NEVER INTERPRETS THE uint8 IT IS HANDED
@@ -146,14 +205,29 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSiegeAssistantConsoleOpenChanged,
  *
  *  OUTBOUND (the component binds these):
  *      OnConsoleSubmitted(FString)  — the player pressed Enter in the box
- *      OnConsoleConfirmed()         — Accept, and ONLY while a prompt is up
- *      OnConsoleCancelled()         — Cancel, discard whatever is pending
+ *      OnConsoleConfirmed()         — Accept, and ONLY while a prompt is up.
+ *                                     From 2026-08-04 its ONE live source is the
+ *                                     `Z` key (NativeOnPreviewKeyDown), not a
+ *                                     button.
+ *      OnConsoleCancelled()         — Cancel, discard whatever is pending.
+ *                                     ⛔⛔ AS OF TASK-519 THIS DELEGATE HAS **NO
+ *                                     LIVE BROADCASTER**: its only v1 source was
+ *                                     the Cancel button, and CancelPressed() —
+ *                                     the one remaining thing that broadcasts it
+ *                                     — is now deliberately uncalled. It is KEPT
+ *                                     as public API (AS-§6 A-2 route 2), and the
+ *                                     component's binding is kept too, but ⚠️ the
+ *                                     FSM's Thinking-abort and Deferred-drop
+ *                                     branches behind it are UNREACHABLE FROM
+ *                                     THE CONSOLE. Recorded, not hidden; it is a
+ *                                     manager call, not a thing to quietly fix
+ *                                     here. See handoffs/TASK-519-programmer.md.
  *      OnConsoleOpenChanged(bool)   — the console opened or closed
  *
  *  ⛔ EVERY PLAYER-FACING SENTENCE ARRIVES FROM OUTSIDE. The model emits symbols
  *  only (§3); the reason-code template table lives on the component. The only
- *  strings authored in this file are static chrome (the two button labels, the
- *  hint text and the idle status line) and widget-local failure notices — never
+ *  strings authored in this file are static chrome (the input hint, the idle
+ *  status line and the accept-key hint) and widget-local failure notices — never
  *  a rendering of anything a model produced.
  *
  *  ---------------------------------------------------------------------------
@@ -262,6 +336,10 @@ public:
 	 *  Accept. ⛔ Ignored unless a confirm prompt is actually up — a stray
 	 *  Accept must never be able to execute an order the player was not being
 	 *  shown.
+	 *
+	 *  ⚠️ ITS BODY IS BYTE-UNCHANGED BY TASK-519; only its CALLER moved. The v1
+	 *  live caller is now NativeOnPreviewKeyDown (the `Z` key), and
+	 *  HandleConfirmClicked survives for a future WBP-supplied ConfirmButton.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Assistant")
 	void ConfirmPressed();
@@ -269,7 +347,28 @@ public:
 	/**
 	 *  Cancel. With a prompt up it lowers the prompt and broadcasts
 	 *  OnConsoleCancelled (discard; nothing partially executed). With no prompt
-	 *  up it simply closes the console — the same button reading as "dismiss".
+	 *  up it simply closes the console — the same reading as "dismiss".
+	 *
+	 *  ⛔⛔ DELIBERATELY UNCALLED FROM 2026-08-04, AND SAYING SO IS THE WHOLE
+	 *  POINT OF THIS PARAGRAPH — exactly like ToggleConsole() below/above it. An
+	 *  uncalled BlueprintCallable that does not ADMIT it is uncalled is how the
+	 *  next reader concludes it is dead and deletes it.
+	 *
+	 *  Jonathan's ruling 3 (AS-§6 RULING A-2, route 2, amended 2026-08-04)
+	 *  removed the Cancel BUTTON, which was this function's only v1 caller. The
+	 *  FUNCTION survives BYTE-UNCHANGED, in behaviour and in signature, because
+	 *  it is shipped BlueprintCallable public API and an ENUMERATED CLOSE ROUTE:
+	 *  deleting a shipped entry point in order to remove a button is a breaking
+	 *  change bought for nothing. It is now the NON-KEY discard route — for a
+	 *  future /Game/UI/WBP_AssistantConsole, a gamepad path, or an accessibility
+	 *  path.
+	 *
+	 *  ⚠️ AND THE COST IS NAMED RATHER THAN LEFT TO BE DISCOVERED: because
+	 *  nothing calls this, OnConsoleCancelled has NO live broadcaster, so the
+	 *  FSM's Thinking-abort and Deferred-drop branches cannot be reached from the
+	 *  console at all. ⛔ That is NOT fixed here (it is the component's file and
+	 *  another task's scope) — it is recorded in handoffs/TASK-519-programmer.md
+	 *  for the manager, and at the component's binding site by TASK-520.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Assistant")
 	void CancelPressed();
@@ -304,10 +403,13 @@ public:
 	void ClearTranscript();
 
 	/**
-	 *  Raises the confirm prompt: writes the game-authored one-line summary
-	 *  into the transcript and shows Accept/Cancel. The ghost circles on the
-	 *  ground are the component's half of the same step (SpawnGroupCircleDecal)
-	 *  and are NOT this widget's business.
+	 *  Raises the confirm prompt: writes the game-authored one-line summary into
+	 *  the transcript and puts the accept-key hint on the status line ("Press Z
+	 *  to accept, or close this box to discard"). ⚠️ TASK-519: there are no
+	 *  buttons to raise any more — the hint IS the confirm step's player surface,
+	 *  and it is the only thing that tells the player the key exists. The ghost
+	 *  circles on the ground are the component's half of the same step
+	 *  (SpawnGroupCircleDecal) and are NOT this widget's business.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Assistant")
 	void ShowConfirmPrompt(const FString& SummaryLine);
@@ -371,6 +473,61 @@ protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+
+	/**
+	 *  ⭐ THE ACCEPT KEY (TASK-519, CONVENTIONS AS-§20.5). Consumes the
+	 *  positionally-resolved `Z` and calls ConfirmPressed(), and does NOTHING
+	 *  ELSE WHATSOEVER.
+	 *
+	 *  WHY *PREVIEW*, VERIFIED FROM THE INSTALLED UE 5.8 SOURCE ON THIS MACHINE
+	 *  RATHER THAN REMEMBERED (there is ZERO precedent for this mechanism
+	 *  anywhere in Source/ — no NativeOnKeyDown, no OnKeyChar, no FReply
+	 *  override existed before this one):
+	 *
+	 *   1. FSlateApplication::ProcessKeyDownEvent runs the TUNNEL pass FIRST:
+	 *        Reply = FEventRouter::RouteAlongFocusPath(this,
+	 *                    FEventRouter::FTunnelPolicy(EventPath), InKeyEvent,
+	 *                    [](const FArrangedWidget& CurrentWidget, const FKeyEvent& Event)
+	 *                    { ... CurrentWidget.Widget->OnPreviewKeyDown(...) ... });
+	 *      and only "Send out key down events" (the BUBBLE pass) afterwards, and
+	 *      only `if (!Reply.IsEventHandled())`.
+	 *      (SlateApplication.cpp:5025-5046.)
+	 *   2. FTunnelPolicy starts at `WidgetIndex(0)` and increments — i.e. it walks
+	 *      the focus path ROOT → LEAF (SlateApplication.cpp:347-366), so an
+	 *      ANCESTOR of the focused widget is offered the key BEFORE the focused
+	 *      SEditableText can turn it into the character `z`.
+	 *   3. SObjectWidget forwards that pass straight into this class:
+	 *        FReply SObjectWidget::OnPreviewKeyDown(...) {
+	 *            if (CanRouteEvent()) { return WidgetObject->NativeOnPreviewKeyDown(...); } ... }
+	 *      (SObjectWidget.cpp:221-228.)
+	 *
+	 *  ⇒ NativeOnKeyDown ALONE IS NOT VIABLE and that is not a preference: the
+	 *  BUBBLE pass starts at the focused leaf, which has already handled a
+	 *  printable key, so it never reaches us.
+	 *
+	 *  ⛔ SetIsFocusable(true) IS DELIBERATELY *NOT* CALLED, AND ITS ABSENCE IS
+	 *  THE VERIFIED ANSWER, NOT AN OVERSIGHT. Focusability decides whether a
+	 *  widget can BE the focus target; the tunnel pass walks the focus PATH, and
+	 *  every ancestor of the focused box is on that path regardless. Nothing in
+	 *  the three quotes above consults SupportsKeyboardFocus(). Calling it would
+	 *  be a live risk for zero gain — UUserWidget's own property comment says
+	 *  bIsFocusable "is only set at construction and is not modifiable at
+	 *  runtime" (UserWidget.h:1030), and a focusable console competing with its
+	 *  own InputBox is the one thing this widget cannot survive.
+	 *
+	 *  ⚠️ THE ONE REAL PRECONDITION, STATED SO IT IS NOT MISTAKEN FOR A BUG: the
+	 *  tunnel only reaches us while KEYBOARD FOCUS IS SOMEWHERE INSIDE THIS
+	 *  WIDGET. OpenConsole() → FocusInputBox() is what puts it there, and
+	 *  ApplyInputBoxContract item 3 (ClearKeyboardFocusOnCommit = false) is what
+	 *  keeps it there across a submit. If a player clicks the world and focus
+	 *  leaves the box, `Z` stops accepting until the box is focused again — the
+	 *  same condition that already governs typing at all.
+	 *
+	 *  ⛔⛔ ESCAPE IS NOT NAMED IN THE IMPLEMENTATION AND MUST NEVER BE. AS-§6 A-2
+	 *  is CLOSED on "Escape is left exactly as it is", and it names
+	 *  NativeOnPreviewKeyDown explicitly as a way to break that ruling.
+	 */
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	//~ End UUserWidget interface
 
 	/**
@@ -383,13 +540,20 @@ protected:
 	UFUNCTION()
 	void HandleTextCommitted(const FText& CommittedText, ETextCommit::Type CommitMethod);
 
-	/** OnClicked thunk for the optional ConfirmButton binding. */
+	/**
+	 *  OnClicked thunk for the optional ConfirmButton binding.
+	 *  ⚠️ KEPT AND STILL WIRED even though the v1 tree no longer CONSTRUCTS a
+	 *  ConfirmButton: a future WBP_AssistantConsole that supplies one binds to
+	 *  this with zero C++ change (ruling A(b)). The `Z` key is the v1 route.
+	 *
+	 *  ⛔ THE CANCEL THUNK THAT SAT HERE IS GONE, DELETED WITH ITS BUTTON
+	 *  (TASK-519 / AS-§6 ruling A, amended: "the CancelButton member, its
+	 *  HandleCancelClicked thunk and its CancelLabelText all go"). Do not restore
+	 *  it: CancelPressed() is still callable directly, which is the whole reason
+	 *  the thunk is redundant rather than missing.
+	 */
 	UFUNCTION()
 	void HandleConfirmClicked();
-
-	/** OnClicked thunk for the optional CancelButton binding. */
-	UFUNCTION()
-	void HandleCancelClicked();
 
 	//~ ---------------------------------------------------------------------
 	//~ RULING A pinned children. The names are the contract a future
@@ -414,13 +578,30 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|Assistant", meta = (BindWidgetOptional))
 	TObjectPtr<UEditableTextBox> InputBox;
 
-	/** Accept — shown only while a confirm prompt is up. */
+	/**
+	 *  Accept — shown only while a confirm prompt is up.
+	 *
+	 *  ⛔ STILL PINNED, STILL BOUND, AND FROM 2026-08-04 NO LONGER CONSTRUCTED
+	 *  (TASK-519 / AS-§6 ruling A, amended). Jonathan's ruling replaced the only
+	 *  WAY to accept; it did not forbid the button EXISTING. So the v1
+	 *  code-authored tree builds none, and every use site below stays exactly as
+	 *  it was — which is precisely ruling A(b)'s escape hatch working as written:
+	 *  a future WBP_AssistantConsole may supply a child named ConfirmButton and it
+	 *  binds, shows, hides and fires with ZERO C++ change.
+	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|Assistant", meta = (BindWidgetOptional))
 	TObjectPtr<UButton> ConfirmButton;
 
-	/** Cancel — shown only while a confirm prompt is up. */
-	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|Assistant", meta = (BindWidgetOptional))
-	TObjectPtr<UButton> CancelButton;
+	//~ ⛔⛔ RETIRED 2026-08-04 — `CancelButton` (UButton) STOOD HERE AND IS GONE.
+	//~ It is STRUCK from ruling A's pinned child list, not merely left
+	//~ unconstructed, and the CONVENTIONS pin keeps the strikethrough so the next
+	//~ author meets a RETIREMENT rather than an absence. This comment is the same
+	//~ retirement, at the code site, for the same reason.
+	//~ ⚠️ A FUTURE WBP_AssistantConsole MUST NOT ADD A CHILD NAMED `CancelButton`
+	//~ EXPECTING IT TO BIND — nothing declares it, so it would bind to nothing and
+	//~ still LOOK wired. There is no cancel button in this design: closing the box
+	//~ IS the cancel gesture (AS-§6 A-2, amended), and CancelPressed() survives as
+	//~ the non-key discard route for a WBP / gamepad / accessibility path.
 
 	/**
 	 *  How many transcript lines are kept on screen. Tunable, and FLAGGED FOR
@@ -475,6 +656,40 @@ private:
 	/** Rewrites TranscriptText from TranscriptLines. */
 	void RefreshTranscriptText();
 
+	/**
+	 *  Rewrites StatusText from LastStateLabel + bConfirmPromptVisible, so the
+	 *  accept-key hint appears exactly while a prompt is up and disappears with
+	 *  it — the same lifecycle the two buttons used to have. Null-safe.
+	 *  ⛔ It YIELDS THE LINE while the console is disabled: SetConsoleEnabled owns
+	 *  StatusText then, and a fault reason must not be overwritten by "Ready".
+	 */
+	void RefreshStatusLine();
+
+	/**
+	 *  Null-safe at every hop — the USettingsMenuWidget::ResolveSettingsSubsystem
+	 *  shape, cloned. ⛔ Returns null freely; BOTH call sites degrade rather than
+	 *  branch on trust (KBD-§5's fail-safe law).
+	 */
+	USiegeKeyboardLayoutSubsystem* ResolveKeyboardLayoutSubsystem() const;
+
+	/**
+	 *  The key that accepts a confirm prompt, resolved POSITIONALLY for the
+	 *  ACTIVE keyboard layout: GetPositionalKey(EKeys::Z), i.e. "whatever the
+	 *  physical position QWERTY prints `Z` on yields here". US-Dvorak ⇒
+	 *  EKeys::Semicolon.
+	 *
+	 *  ⛔ NEVER EKeys::Invalid AND NEVER "no accept key": no world / no
+	 *  GameInstance / no subsystem all fall back to a plain EKeys::Z, which is the
+	 *  exact behaviour of a machine that never had this feature.
+	 *  ⛔ ITS RESULT IS FOR THE COMPARISON ONLY. The player-facing hint says the
+	 *  letter `Z` on every layout and does not call this (KBD-§8, KBD-§0 ruling 1).
+	 *  ⚠️ Resolved LIVE on each press rather than cached at open: the subsystem's
+	 *  1 Hz poll re-probes a mid-session Win+Space, and a cached FKey would go
+	 *  stale exactly when it mattered. OpenConsole()'s RefreshKeyboardLayout()
+	 *  covers the case where that poll has been switched off for testing.
+	 */
+	FKey GetAcceptKey() const;
+
 	/** Puts keyboard focus in the box. Logs once if there is no box to focus. */
 	void FocusInputBox();
 
@@ -490,11 +705,26 @@ private:
 	/** False once the assistant faults. Purely local: it disables this widget and nothing else. */
 	bool bConsoleEnabled = true;
 
-	/** True while Accept/Cancel are up. The ONLY gate on ConfirmPressed. */
+	/**
+	 *  True while a confirm prompt is up. The ONLY gate on ConfirmPressed — and
+	 *  from 2026-08-04 also the ONLY state in which NativeOnPreviewKeyDown
+	 *  consumes a key. ⛔ That narrowness is load-bearing, not tidiness: typing is
+	 *  NOT blocked during AwaitConfirm (the box stays editable; submissions are
+	 *  refused at the FSM), so a `Z` grab that ignored this flag would break
+	 *  typing outright and would breach AS-§2.
+	 */
 	bool bConfirmPromptVisible = false;
 
 	/** The last uint8 the FSM pushed. Stored, displayed, never interpreted. */
 	uint8 AssistantState = 0;
+
+	/**
+	 *  The last label SetAssistantState pushed. Held ONLY so RefreshStatusLine
+	 *  can re-compose StatusText when the confirm prompt rises or falls without
+	 *  losing what the FSM last said. ⛔ Display state, never interpreted — the
+	 *  same law as AssistantState above.
+	 */
+	FString LastStateLabel;
 
 	/** The transcript, oldest first, capped at MaxTranscriptLines. */
 	TArray<FString> TranscriptLines;

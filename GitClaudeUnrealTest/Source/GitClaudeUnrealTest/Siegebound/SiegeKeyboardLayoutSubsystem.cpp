@@ -660,6 +660,27 @@ void USiegeKeyboardLayoutSubsystem::RefreshKeyboardLayout()
 	OnKeyboardLayoutChanged.Broadcast();
 }
 
+FKey USiegeKeyboardLayoutSubsystem::GetPositionalKey(const FKey& QwertyKey) const
+{
+	// ⛔ const, AND IT DOES NOT RE-PROBE. RefreshKeyboardLayout() is what makes the map
+	// current; this reads it as it stands (`KBD-§8`: the caller refreshes, the accessor
+	// reads). No mutable member, no const_cast, no timer.
+	const FKey* TranslatedKey = TranslationMap.Find(QwertyKey);
+
+	// ⛔ NEVER EKeys::Invalid (`KBD-§5` applied to a scalar). Absent means IDENTITY — identity
+	// is never stored, so "no entry" and "maps to itself" are the same answer and both return
+	// the input unchanged; an extra equality branch here would be dead code.
+	//
+	// ⛔ AND DO NOT "SIMPLIFY" THIS TO TranslationMap.FindRef(QwertyKey): FindRef returns a
+	// DEFAULT-CONSTRUCTED FKey on a miss, whose KeyName is left NAME_None
+	// (InputCoreTypes.h:53-55) — and EKeys::Invalid IS FKey(NAME_None)
+	// (InputCoreTypes.cpp:414), compared by KeyName alone (InputCoreTypes.h:109). So FindRef
+	// returns EXACTLY the one value this function is forbidden to return, on the single most
+	// common path: a QWERTY host, where the map is EMPTY and every lookup misses.
+	// The Find-then-fallback idiom is the same one DescribeActiveTranslation uses above.
+	return TranslatedKey ? *TranslatedKey : QwertyKey;
+}
+
 void USiegeKeyboardLayoutSubsystem::SetTranslationMapForAutomationTests(const TMap<FKey, FKey>& InTranslation)
 {
 	// ⛔⛔ AUTOMATION TESTS ONLY — NOTHING IN THE GAME CALLS THIS. The latch is what makes the

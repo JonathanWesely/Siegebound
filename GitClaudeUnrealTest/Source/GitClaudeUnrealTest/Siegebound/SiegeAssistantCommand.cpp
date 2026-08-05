@@ -398,7 +398,7 @@ bool SiegeAssistantIntentTakesSelection(ESiegeAssistantIntent Intent)
 	}
 }
 
-bool SiegeAssistantValidateSelection(const TArray<FName>& Kinds, const TArray<int32>& Counts, FString& OutError)
+bool SiegeAssistantValidateSelection(const TArray<FName>& Kinds, const TArray<int32>& Counts, FString& OutError, const TArray<FName>& ExcludeKinds)
 {
 	OutError.Reset();
 
@@ -435,6 +435,59 @@ bool SiegeAssistantValidateSelection(const TArray<FName>& Kinds, const TArray<in
 			{
 				OutError = WithDetail(SiegeAssistantReason::DuplicateKind, Kinds[Index].ToString());
 				return false;
+			}
+		}
+	}
+
+	// --- the exclusion invariants (TASK-518) ---------------------------------
+	// Nothing that comes out of the parser below can violate these either — the
+	// `who` JSON shapes are DISJOINT, so a parsed command physically cannot hold a
+	// selection and an exclusion at once. They are checked here for the same reason
+	// the selection invariants are: in M8 P2 this struct arrives OVER THE WIRE from
+	// a peer that never passed through anyone's grammar or parser, and this is the
+	// receive-side gate. An invariant that is only true because of how we happen to
+	// build the value is not an invariant.
+	if (ExcludeKinds.Num() > 0)
+	{
+		// ⛔ NEVER A MERGE. "Send 10 footmen except the miners" is a confused
+		// sentence: the exclusion is meaningful only against "all", and silently
+		// picking one half of it to honour is the valid-shaped-wrong-command class
+		// this whole design exists to stop. The FSM asks instead.
+		if (Kinds.Num() > 0)
+		{
+			OutError = WithDetail(SiegeAssistantReason::ExcludeConflict,
+				FString::FromInt(Kinds.Num()) + TEXT("/") + FString::FromInt(ExcludeKinds.Num()));
+			return false;
+		}
+
+		// ⚠️ UPPER BOUND ONLY, DELIBERATELY. An EMPTY ExcludeKinds is the normal
+		// state of every command that excludes nothing, so the "< 1" half of
+		// ExcludeArity belongs to the parser — which is reading an object whose
+		// entire purpose is to carry at least one kind — and not here.
+		if (ExcludeKinds.Num() > SiegeAssistantMaxExclusionKinds)
+		{
+			OutError = WithDetail(SiegeAssistantReason::ExcludeArity, FString::FromInt(ExcludeKinds.Num()));
+			return false;
+		}
+
+		for (int32 Index = 0; Index < ExcludeKinds.Num(); ++Index)
+		{
+			if (ExcludeKinds[Index].IsNone())
+			{
+				OutError = WithDetail(SiegeAssistantReason::BadKind, FString::FromInt(Index));
+				return false;
+			}
+
+			// A repeated exclusion is not merely redundant — it spends one of only
+			// three exclusion slots saying nothing, which means the sentence the
+			// player typed and the order we built have already diverged.
+			for (int32 EarlierIndex = 0; EarlierIndex < Index; ++EarlierIndex)
+			{
+				if (ExcludeKinds[EarlierIndex] == ExcludeKinds[Index])
+				{
+					OutError = WithDetail(SiegeAssistantReason::DuplicateKind, ExcludeKinds[Index].ToString());
+					return false;
+				}
 			}
 		}
 	}
@@ -614,6 +667,70 @@ bool ParseSiegeAssistantCommand(const FString& Json, FSiegeAssistantCommand& Out
 				Parsed.Counts.Add(ItemCount);
 			}
 		}
+		else if (Who->Type == EJson::Object)
+		{
+			// --- the EXCLUSION shape: {"all_except":["miner"]} (TASK-518) -------
+			// A third shape for an EXISTING key, never a fourth top-level key. The
+			// top-level key set above is untouched, so every JSON that parsed before
+			// this branch existed still parses byte-for-byte identically.
+			//
+			// ⚠️ Kinds and Counts stay EMPTY here, and that is the seam the executor
+			// keys on: an exclusion is a modified "all", so it flows through the
+			// existing Kinds.Num() == 0 branch rather than through a second selector.
+			const TSharedPtr<FJsonObject> ExcludeObject = Who->AsObject();
+			if (!ExcludeObject.IsValid())
+			{
+				return Fail(WithDetail(SiegeAssistantReason::BadType, FString(SiegeAssistantJsonKeys::Who)));
+			}
+
+			TArray<const TCHAR*> ExcludeKeys;
+			ExcludeKeys.Add(SiegeAssistantJsonKeys::AllExcept);
+
+			FString ExcludeKeyError;
+			if (!ValidateExactKeySet(ExcludeObject, ExcludeKeys, ExcludeKeyError))
+			{
+				return Fail(ExcludeKeyError);
+			}
+
+			const TSharedPtr<FJsonValue> ExcludeValue = FindFieldValue(ExcludeObject, SiegeAssistantJsonKeys::AllExcept);
+			if (!ExcludeValue.IsValid() || ExcludeValue->Type != EJson::Array)
+			{
+				return Fail(WithDetail(SiegeAssistantReason::BadType, FString(SiegeAssistantJsonKeys::AllExcept)));
+			}
+
+			// ExcludeValue is held for the whole scope below, so this reference into
+			// it cannot dangle — the same ownership pattern as the `who` array above.
+			const TArray<TSharedPtr<FJsonValue>>& ExcludedItems = ExcludeValue->AsArray();
+
+			// ⚠️ BOTH BOUNDS. An empty list is refused rather than treated as a plain
+			// "all": {"all_except":[]} is the model saying "everyone except — " and
+			// stopping, and quietly promoting that to "everyone" is how an exception
+			// gets dropped without anybody noticing.
+			if (ExcludedItems.Num() < 1 || ExcludedItems.Num() > SiegeAssistantMaxExclusionKinds)
+			{
+				return Fail(WithDetail(SiegeAssistantReason::ExcludeArity, FString::FromInt(ExcludedItems.Num())));
+			}
+
+			Parsed.ExcludeKinds.Reserve(ExcludedItems.Num());
+
+			// ⛔ BARE KIND SYMBOLS, THROUGH THE SAME ParseKindSymbol THE SELECTION AND
+			// THE DEFERRED TRIGGER USE. No second kind-validation path, and no
+			// {"kind":…,"n":…} item shape — the count-controlled variant was DECLINED
+			// (Jonathan's ruling 3), so "all except 5 archers" has no shape here to be
+			// sampled into. Repeats are caught by the final validator gate below,
+			// which is the one uniqueness path for both lists.
+			for (const TSharedPtr<FJsonValue>& ExcludedItem : ExcludedItems)
+			{
+				FName ExcludedKind = NAME_None;
+				FString ExcludedError;
+				if (!ParseKindSymbol(ExcludedItem, ExcludedKind, ExcludedError))
+				{
+					return Fail(ExcludedError);
+				}
+
+				Parsed.ExcludeKinds.Add(ExcludedKind);
+			}
+		}
 		else
 		{
 			return Fail(WithDetail(SiegeAssistantReason::BadType, FString(SiegeAssistantJsonKeys::Who)));
@@ -698,7 +815,7 @@ bool ParseSiegeAssistantCommand(const FString& Json, FSiegeAssistantCommand& Out
 		}
 	}
 
-	// --- THE ONE CROSS-FIELD CHECK -------------------------------------------
+	// --- CROSS-FIELD CHECK 1 OF 2 --------------------------------------------
 	// `who` = "none" and `who` = "all" both land on an empty Kinds/Counts pair,
 	// because the struct has no field that distinguishes them. For an army-wide
 	// verb that is harmless (the executor ignores the selection). For a
@@ -711,10 +828,57 @@ bool ParseSiegeAssistantCommand(const FString& Json, FSiegeAssistantCommand& Out
 		return Fail(WithDetail(SiegeAssistantReason::WhoRequired, SiegeAssistantIntentToSymbol(Parsed.Intent)));
 	}
 
-	// --- the selection invariants --------------------------------------------
+	// --- CROSS-FIELD CHECK 2 OF 2 (TASK-518) ---------------------------------
+	// ⛔⭐ AN EXCLUSION IS REFUSED ON ANY VERB THAT DOES NOT REACH THE SELECTOR,
+	// AND THIS IS READ OFF THE EXECUTOR RATHER THAN CHOSEN OUT OF CAUTION.
+	// Charge and Fallback are executed by calling
+	// ASiegePlayerController::ApplyArmyWideStance(...) — the same shipped API the
+	// T and E keys call — and Rally calls AHeroCharacter::Rally(). NONE of the
+	// three walks the candidate list, so an ExcludeKinds handed to them has no
+	// code path that could subtract anything, and it would be parsed and then
+	// dropped in silence.
+	//
+	// ⛔⛔ THAT IS THE PRECISE FAILURE THIS FEATURE EXISTS TO PREVENT: "fall back,
+	// except the miners" would execute as "fall back, INCLUDING the miners" — a
+	// valid-shaped wrong command that LOOKS obeyed, which is strictly worse than a
+	// refusal because nothing in the game or the log would contradict it.
+	//
+	// ⛔ AND THE FIX IS NOT TO TEACH THOSE THREE VERBS ABOUT EXCLUSION. Doing so
+	// would mean either editing a shipped controller API that two keybinds depend
+	// on, or building an assistant-side parallel army-wide path — and AS-§2 forbids
+	// the second by name ("never a parallel implementation, never a better one").
+	// Refusing here is the honest answer; the FSM turns it into a clarification.
+	//
+	// ⭐ THE GATE IS SiegeAssistantIntentTakesSelection ITSELF, deliberately: reusing
+	// the shipped predicate means there is no second list of army-wide verbs to
+	// drift out of step with the executor seam it is describing.
+	if (Parsed.ExcludeKinds.Num() > 0)
+	{
+		if (!SiegeAssistantIntentTakesSelection(Parsed.Intent))
+		{
+			return Fail(WithDetail(SiegeAssistantReason::ExcludeConflict, SiegeAssistantIntentToSymbol(Parsed.Intent)));
+		}
+
+		// ⚠️ DEFENSIVE, AND HONESTLY LABELLED AS SUCH RATHER THAN PRESENTED AS A
+		// LIVE GUARD: this cannot fire from JSON today, because the `who` shapes are
+		// DISJOINT — bWhoIsNone is set only in the String branch and ExcludeKinds is
+		// filled only in the Object branch, so no single `who` value can produce
+		// both. It is written because the law names "none" as one of the three
+		// ExcludeConflict cases, and because a FIFTH `who` shape added later could
+		// make it reachable while this file was not being read.
+		if (bWhoIsNone)
+		{
+			return Fail(WithDetail(SiegeAssistantReason::ExcludeConflict, FString(SiegeAssistantSymbols::None)));
+		}
+	}
+
+	// --- the selection AND exclusion invariants -------------------------------
+	// ⚠️ ExcludeKinds IS PASSED EXPLICITLY. The parameter has a default so that the
+	// arrays-only call sites still compile, but a caller holding a whole command and
+	// omitting it would validate nothing about the exclusion — see the header.
 	{
 		FString SelectionError;
-		if (!SiegeAssistantValidateSelection(Parsed.Kinds, Parsed.Counts, SelectionError))
+		if (!SiegeAssistantValidateSelection(Parsed.Kinds, Parsed.Counts, SelectionError, Parsed.ExcludeKinds))
 		{
 			return Fail(SelectionError);
 		}
