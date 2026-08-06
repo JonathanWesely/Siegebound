@@ -65,6 +65,24 @@ namespace SiegeAssistantTestUtils
 		return TArray<FName>{ TEXT("enemy_castle"), TEXT("own_castle"), TEXT("mid"), TEXT("ancient_ground_near"), TEXT("ancient_ground_far") };
 	}
 
+	/**
+	 *  ⭐ THE REGION-BEARING SUBSET (TASK-549, CONVENTIONS AS-§21.4) — the three
+	 *  places a shipped `IsPointInZone` answers for. `USiegeAssistantGrammar::Build`
+	 *  takes these as a THIRD, TRAILING, DEFAULTED parameter, and every fixture that
+	 *  omits it emits NO `inplace` and NO `zone` rule.
+	 *
+	 *  ⛔ THIS EXISTS BECAUSE LAW ZERO BELOW WAS BLIND TO THE TWO NEW RULES.
+	 *  TASK-546 found it: `RuleNameCharset` built four grammars under a comment
+	 *  claiming "every shape the builder can produce", and ALL FOUR used the
+	 *  two-argument overload — so `inplace` and `zone` were invisible to the one
+	 *  test guarding the rule-name charset, in a project that has already shipped
+	 *  `at_least` and caught `except_list`.
+	 */
+	static TArray<FName> MidMatchRegionPlaces()
+	{
+		return TArray<FName>{ TEXT("mid"), TEXT("ancient_ground_near"), TEXT("ancient_ground_far") };
+	}
+
 	/** Returns the right-hand side of `RuleName ::= ...`, or an empty string when the rule is absent. */
 	static FString GetRuleRhs(const FString& Grammar, const TCHAR* RuleName)
 	{
@@ -367,12 +385,45 @@ bool FSiegeAssistantGrammarRuleNameCharsetTest::RunTest(const FString& Parameter
 
 	// Every shape the builder can produce, because a rule that is only emitted on
 	// one branch is exactly the rule that escapes review.
+	//
+	// ⚠️⚠️ AMENDED 2026-08-05 (TASK-549, batch AI-COMMANDER ROBUSTNESS) — AND THE
+	// AMENDMENT IS THE WHOLE POINT OF THIS COMMENT.
+	//
+	// ⛔ THE CLAIM ABOVE WAS TRUE WHEN WRITTEN AND BECAME FALSE WITHOUT ANYONE
+	// EDITING THIS FILE. `USiegeAssistantGrammar::Build` gained a THIRD, TRAILING,
+	// DEFAULTED parameter (`RegionPlaceNames`, TASK-546) which gates two NEW rules
+	// — `inplace` and `zone`. All four fixtures below used the TWO-argument
+	// overload, so those two rules were emitted on a branch this test never took:
+	// the one test guarding the rule-name charset was BLIND to the only new rule
+	// names in the batch, and it would have gone on reporting SAFE.
+	//
+	// ⚖️ THIS IS THE `AS-§21.1` SHAPE, IN A TEST INSTEAD OF IN A PROMPT: an
+	// assertion about the rest of the system, falsified by an edit somewhere else,
+	// with nobody re-reading it. ⇒ 📌 A FIXTURE LIST THAT CLAIMS TO BE EXHAUSTIVE
+	// OWES AN ENTRY TO EVERY NEW DEFAULTED PARAMETER OF THE FUNCTION IT CALLS —
+	// because a defaulted parameter is precisely a branch a caller can take without
+	// mentioning it.
+	//
+	// ⛔ AND THE HISTORY IS WHY IT MATTERS RATHER THAN BEING TIDINESS: `at_least`
+	// SHIPPED as a rule name and cost TASK-413 two of its six bars; `except_list`
+	// was caught before it shipped; `in_place` / `zone_list` would have been the
+	// third. Every other property anyone asserts about a grammar is true of a
+	// string llama.cpp never loads.
 	const TArray<FString> Grammars =
 	{
 		USiegeAssistantGrammar::Build(MidMatchKinds(), MidMatchPlaces()),
 		USiegeAssistantGrammar::Build(TArray<FName>(), MidMatchPlaces()),
 		USiegeAssistantGrammar::Build(MidMatchKinds(), TArray<FName>()),
-		USiegeAssistantGrammar::Build(TArray<FName>(), TArray<FName>())
+		USiegeAssistantGrammar::Build(TArray<FName>(), TArray<FName>()),
+
+		// ⭐ THE REGION-BEARING SHAPES (TASK-549). `inplace` is gated on REGIONS
+		// ONLY, never on `bHasKinds` (AS-§21.4), so the no-kinds row is not
+		// redundant with the kinds row — it is the branch where `who` collapses to
+		// `inplace | "all" | "none"` and `zone` is the only generated rule left.
+		USiegeAssistantGrammar::Build(MidMatchKinds(), MidMatchPlaces(), MidMatchRegionPlaces()),
+		USiegeAssistantGrammar::Build(TArray<FName>(), MidMatchPlaces(), MidMatchRegionPlaces()),
+		USiegeAssistantGrammar::Build(MidMatchKinds(), MidMatchPlaces(), TArray<FName>{ TEXT("mid") }),
+		USiegeAssistantGrammar::Build(MidMatchKinds(), MidMatchPlaces(), TArray<FName>())
 	};
 
 	for (const FString& Grammar : Grammars)
@@ -406,6 +457,39 @@ bool FSiegeAssistantGrammarRuleNameCharsetTest::RunTest(const FString& Parameter
 		TestTrue(*FString::Printf(TEXT("Every rule reference resolves under llama.cpp's identifier rules (%s)"), *WellFormedError),
 			bWellFormed);
 
+	}
+
+	// ⛔⛔ THE SWEEP MUST ACTUALLY HAVE REACHED THE NEW RULES (TASK-549). Without
+	// this, the loop above could pass on eight grammars none of which emitted
+	// `inplace` — which is EXACTLY the hole this amendment closes, reproduced one
+	// level up. A fixture list is only exhaustive if something asserts that it is.
+	{
+		int32 GrammarsDefiningInplace = 0;
+		int32 GrammarsDefiningZone = 0;
+		for (const FString& Grammar : Grammars)
+		{
+			GrammarsDefiningInplace += Grammar.Contains(TEXT("inplace ::="), ESearchCase::CaseSensitive) ? 1 : 0;
+			GrammarsDefiningZone += Grammar.Contains(TEXT("zone ::="), ESearchCase::CaseSensitive) ? 1 : 0;
+		}
+
+		TestEqual(TEXT("⛔ THREE of the eight fixtures actually EMITTED `inplace` — otherwise this test is blind to the new rule names again"),
+			GrammarsDefiningInplace, 3);
+		TestEqual(TEXT("⛔ …and the same three emitted `zone`. An `inplace` without a `zone` leaves a DANGLING REFERENCE, which llama.cpp answers by rejecting the whole grammar."),
+			GrammarsDefiningZone, 3);
+
+		// The two names this batch could have got wrong, asserted by name so the
+		// failure says WHICH spelling arrived rather than "some rule name is illegal".
+		TestTrue(TEXT("`inplace` is a legal rule name"), IsLegalGbnfRuleName(TEXT("inplace")));
+		TestTrue(TEXT("`zone` is a legal rule name"), IsLegalGbnfRuleName(TEXT("zone")));
+		TestFalse(TEXT("⛔ `in_place` is REJECTED — it would parse as the name `in`, and llama.cpp would reject the WHOLE grammar (the shipped `at_least` defect, third instance)"),
+			IsLegalGbnfRuleName(TEXT("in_place")));
+		TestFalse(TEXT("⛔ `zone_list` is REJECTED for the same reason"), IsLegalGbnfRuleName(TEXT("zone_list")));
+
+		// ⛔ And the JSON KEY `in` needs no kebab-case split at all — it has no
+		// underscore to lose. ⚠️ That coincidence is NOT permission to unify
+		// `at_least`/`at-least` or `all_except`/`exceptlist`, which do.
+		TestTrue(TEXT("The JSON key `in` is emitted inside a TERMINAL, where its (absent) underscore would have been safe anyway"),
+			Grammars.IsValidIndex(4) && Grammars[4].Contains(TEXT("\\\"in\\\""), ESearchCase::CaseSensitive));
 	}
 
 	// ⚠️ THE OTHER HALF OF THE ASYMMETRY, ASSERTED SO THE RENAME CANNOT BE

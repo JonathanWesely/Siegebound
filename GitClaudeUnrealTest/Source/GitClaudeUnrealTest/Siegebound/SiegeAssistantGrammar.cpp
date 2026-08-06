@@ -407,7 +407,8 @@ namespace
 	}
 }
 
-FString USiegeAssistantGrammar::Build(const TArray<FName>& UnitKinds, const TArray<FName>& PlaceNames)
+FString USiegeAssistantGrammar::Build(const TArray<FName>& UnitKinds, const TArray<FName>& PlaceNames,
+	const TArray<FName>& RegionPlaceNames)
 {
 	TArray<FString> Kinds;
 	CanonicalizeSymbols(UnitKinds, Kinds);
@@ -415,9 +416,31 @@ FString USiegeAssistantGrammar::Build(const TArray<FName>& UnitKinds, const TArr
 	TArray<FString> Places;
 	CanonicalizeSymbols(PlaceNames, Places);
 
+	// The REGION-BEARING subset — the places a shipped IsPointInZone can answer
+	// for. It arrives already decided (AS-§21.4 gives the snapshot's
+	// PlaceVocabulary the single `bHasRegion` column); this builder never judges
+	// which places are areas and must not start, because the answer is geometry
+	// this pure function has no access to.
+	//
+	// ⚠️ IT GOES THROUGH THE SAME CanonicalizeSymbols AS THE OTHER TWO, which is
+	// what makes "all"/"none"/NAME_None unsamplable inside `in` rather than merely
+	// rejected downstream — AS-§21.5's BadRegion class, made unreachable at the
+	// sampler instead of caught at the parser.
+	TArray<FString> Regions;
+	CanonicalizeSymbols(RegionPlaceNames, Regions);
+
 	// With nothing nameable the selection machinery is unreachable, so it is not
 	// emitted at all — see the degenerate-input note on Build's declaration.
 	const bool bHasKinds = Kinds.Num() > 0;
+
+	// ⛔ THE COUNT THAT GATES `inplace` / `zone` IS THE POST-FILTER ONE, NOT
+	// RegionPlaceNames.Num(). A caller that passed only reserved or empty symbols
+	// hands us a non-empty array that canonicalizes to NOTHING, and gating on the
+	// raw parameter would then emit `zone ::= ` with an EMPTY right-hand side —
+	// the whole grammar rejected, generation UNCONSTRAINED, which is the exact
+	// `at_least` disaster class this file exists to refuse (TASK-413, two of six
+	// bars). Gate on what will actually be written.
+	const bool bHasRegions = Regions.Num() > 0;
 
 	FString Grammar;
 	Grammar.Reserve(2048);
@@ -688,16 +711,91 @@ FString USiegeAssistantGrammar::Build(const TArray<FName>& UnitKinds, const TArr
 		}
 	}
 
+	// --- inplace / zone (GENERATED) -------------------------------------------
+	// {"in":"ancient_ground_near"} — the FIFTH `who` shape: the units STANDING in
+	// a place, as opposed to `where`, which is the place they are SENT to. Like
+	// `except` it is a `who` VALUE and deliberately NOT a fourth top-level key —
+	// the parser validates an EXACT top-level key set and the prompt law emits
+	// every key always, so a new top-level key would have had to appear in EVERY
+	// emission at once (AS-§21.5, on AS-§20.1's identical argument). As a `who`
+	// shape this is strictly additive at the wire: every JSON that parsed before
+	// still parses, byte-for-byte.
+	//
+	// ⛔ THE GATE IS THE REGION LIST, ⛔ NOT bHasKinds — see the `who` rule below
+	// for why the asymmetry with `except` is correct rather than an oversight.
+	//
+	// ⛔ AND NOTHING IS EMITTED WHEN THERE ARE NO REGIONS. An empty alternation
+	// would leave `zone` DEFINED-AS-NOTHING and `inplace` referencing it, and
+	// llama.cpp answers a grammar it cannot parse by generating UNCONSTRAINED —
+	// i.e. the failure is a total loss of the mechanism, not a missing feature.
+	// With an empty region list the emitted grammar is byte-identical to the one
+	// this builder produced before the shape existed.
+	//
+	// ⛔ RULE NAMES ARE ONE WORD EACH: `inplace`, `zone`. THIS IS THE SAME
+	// DECLARED DEPARTURE (SC-§15) AS `exceptlist` ABOVE, FOR THE SAME REASON —
+	// llama.cpp reads a rule name as [a-zA-Z0-9-] and STOPS at an underscore, so
+	// `in_place` would parse as the name `in`, and the whole grammar would be
+	// rejected. ⛔ Do not "improve" them to `in_place` / `zone_list`. ✅ The JSON
+	// KEY needs no departure at all this time: it is `in`, which has no underscore
+	// to lose — so unlike `at_least`/`at-least` and `all_except`/`exceptlist`,
+	// the key and the rule name coincide here by luck, not by unification. Do not
+	// read that coincidence as permission to unify the other two.
+	//
+	// `inplace` REFERENCES `zone` ONE LINE BEFORE `zone` IS DEFINED, which is
+	// legal and already the file's practice: `root ::= command | question` is the
+	// first line emitted and both of its references are defined further down.
+	// Ordered this way to match the AS-§21.5 rule block character-for-character.
+	if (bHasRegions)
+	{
+		{
+			TArray<FString> Parts;
+			Parts.Add(JsonObjectOpen(SiegeAssistantJsonKeys::In));
+			Parts.Add(TEXT("zone"));
+			Parts.Add(GbnfTerminal(TEXT("}")));
+
+			AppendRule(Grammar, TEXT("inplace"), FString::Join(Parts, TEXT(" ")));
+		}
+
+		// ⛔ NO "none" ALTERNATIVE HERE, AND THE CONTRAST WITH `where` IS THE
+		// POINT. `where` carries "none" because it is a key that is ALWAYS
+		// emitted and the army-wide verbs have no destination. `zone` is reachable
+		// only from INSIDE `inplace`, which the model chooses to enter — "no
+		// region" is already expressible as any of the other four `who` shapes, so
+		// a "none" here would be a second spelling of the same thing and
+		// {"in":"none"} is AS-§21.5's BadRegion. Absence is said by not entering.
+		{
+			TArray<FString> Alternatives;
+			Alternatives.Reserve(Regions.Num());
+			for (const FString& Region : Regions)
+			{
+				Alternatives.Add(GbnfJsonString(Region));
+			}
+
+			AppendRule(Grammar, TEXT("zone"), JoinAlternatives(Alternatives));
+		}
+	}
+
 	// --- who ------------------------------------------------------------------
-	// FOUR SHAPES: a bounded positive `selection`; an `except` exclusion ("everyone
-	// but the miners"); "all", which selects every eligible unit; and "none", for
-	// the army-wide verbs, which carry no selection at all.
+	// FIVE SHAPES: a bounded positive `selection`; an `except` exclusion ("everyone
+	// but the miners"); an `inplace` region ("everyone in the mid"); "all", which
+	// selects every eligible unit; and "none", for the army-wide verbs, which carry
+	// no selection at all.
+	//
+	// ⛔ THE ALTERNATION ORDER IS PINNED (AS-§21.5) AND IT IS MIRRORED IN PROSE BY
+	// ZONE A's `WHO =` LINE (SiegeAssistantSnapshot.cpp), WHICH A TEST ASSERTS
+	// AGREES WITH IT: selection | except | inplace | "all" | "none". `inplace` goes
+	// THIRD, after `except` and BEFORE the two bare strings, so the three OBJECT/
+	// ARRAY shapes stay grouped ahead of the two scalars. ⚠️ There is no
+	// compile-time link between this line and Zone A's — this comment and the QA
+	// gate are the whole tie, exactly as the mirror comment at
+	// SiegeAssistantSnapshot.cpp:806-840 says.
 	//
 	// ⚠️ `except` IS EMITTED ONLY WHEN THE ROSTER HAS KINDS, on the same reasoning
 	// that gates `selection`: an empty roster has nothing to EXCLUDE for exactly the
 	// reason it has nothing to select, and emitting the alternative anyway would
 	// leave `exceptlist` referencing an undefined `kind` rule and break the whole
-	// grammar. With no kinds `who` collapses to "all" | "none", unchanged.
+	// grammar. With no kinds AND no regions `who` collapses to "all" | "none",
+	// unchanged; with no kinds but live regions it is `inplace` | "all" | "none".
 	//
 	// ⚠️ AT A ONE-KIND ROSTER `exceptlist`'s 2- and 3-kind alternatives can only
 	// produce the SAME symbol twice, and the parser refuses that with
@@ -706,12 +804,25 @@ FString USiegeAssistantGrammar::Build(const TArray<FName>& UnitKinds, const TArr
 	// shipped, and bounding this rule by the live kind COUNT instead of by the cap
 	// constant would make the two rules disagree about their own construction for a
 	// case the parser already answers.
+	//
+	// ⛔⚠️ AND THE ASYMMETRY ON THE VERY NEXT LINE IS DELIBERATE, NOT A MISSED
+	// `bHasKinds`: `inplace` IS GATED ON REGIONS ONLY. "Everyone in the mid" names
+	// NO unit kind — it is the region that supplies the selection — so gating it on
+	// the roster would make the shape unreachable on a board with nothing spawned,
+	// which is precisely a board where the player is most likely to be pointing at
+	// ground rather than at units. `except` is gated on kinds because `exceptlist`
+	// literally references the `kind` rule; `zone` references no kind at all
+	// (AS-§21.4, and this is a stated QA criterion — do not "fix" it into symmetry).
 	{
 		TArray<FString> Alternatives;
 		if (bHasKinds)
 		{
 			Alternatives.Add(TEXT("selection"));
 			Alternatives.Add(TEXT("except"));
+		}
+		if (bHasRegions)
+		{
+			Alternatives.Add(TEXT("inplace"));
 		}
 		Alternatives.Add(GbnfJsonString(SiegeAssistantSymbols::All));
 		Alternatives.Add(GbnfJsonString(SiegeAssistantSymbols::None));

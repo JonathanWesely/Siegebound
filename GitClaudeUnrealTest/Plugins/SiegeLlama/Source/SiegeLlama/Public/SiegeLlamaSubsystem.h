@@ -199,15 +199,53 @@ public:
 	static constexpr int32 SnapshotPreFilterMaxChars = 3000;
 
 	/**
-	 *  REQUESTED context size. FROZEN AT 2048 -- bars #1, #3 and #4 all PASSED at
-	 *  this value and n_ctx drives both KV-cache size and prefill cost, so moving
-	 *  it silently invalidates three passing measurements. It is not a tuner's
-	 *  lever; it moves on a measurement, on Jonathan's call.
+	 *  REQUESTED context size.
+	 *
+	 *  THE FREEZE IS RECORDED, NOT DELETED. This constant was FROZEN AT 2048:
+	 *  "bars #1, #3 and #4 all PASSED at this value and n_ctx drives both
+	 *  KV-cache size and prefill cost, so moving it silently invalidates three
+	 *  passing measurements. It is not a tuner's lever; it moves on a
+	 *  measurement, on Jonathan's call."
+	 *
+	 *  UNFROZEN 2026-08-05 BY JONATHAN, AND BY NOBODY ELSE. The freeze reserved
+	 *  this constant to him; he moved it himself, via AskUserQuestion, ruling 2
+	 *  of CONVENTIONS AS-section-21.0. His reason, verbatim: RAISE THE CEILING
+	 *  RATHER THAN TRIM TEACHING CONTENT. The alternative on the table was
+	 *  cutting shipped prompt lines to fit the AI-COMMANDER batch into the
+	 *  remaining Zone A room; he declined it.
+	 *
+	 *  ==> AN AGENT PROPOSING A FURTHER MOVE NEEDS HIS WORD AGAIN. The freeze's
+	 *  own rule survives the unfreeze intact: this is still not a tuner's lever,
+	 *  and "the last move was allowed" is not authority for the next one.
+	 *
+	 *  WHAT THE MOVE COSTS, AND IT IS HANDLED, NOT DISCOVERED: n_ctx sizes the
+	 *  KV cache, so the VRAM tier gate in SiegeLlamaSubsystem.cpp had to be
+	 *  re-checked against the new value in the same change. It was --
+	 *  see SiegeLlamaPrivate::ContextGrowthVramReserveMiB. The three passing
+	 *  measurements the freeze protected (bars #1, #3, #4) and the tier table's
+	 *  vram_delta figures were all taken at 2048 and are now STALE PENDING
+	 *  RE-MEASUREMENT; TASK-552 (Stage 5) is where they are re-taken.
+	 *
+	 *  OCCUPANCY, AND EVERY FIGURE IN THIS PARAGRAPH IS DERIVED, NOT MEASURED
+	 *  (CONVENTIONS AS-section-12g: a derivation may never be cited as a
+	 *  reading). Zone A ~1362 + MaxSnapshotTokens 400 + MaxOutputTokens 96 +
+	 *  SafetyMarginTokens 48 = ~1906. Against 2048 that left ~142 spare; against
+	 *  3072 the slack is ~1045. The 1362 operand descends from the recorded
+	 *  zoneA_tok = 1139, which stays labelled STALE -- PENDING RE-MEASUREMENT ON
+	 *  THE MODEL and IS NOT RECOMPUTED BY ARITHMETIC HERE. Only
+	 *  Siege.Llama.SpikePrompt prints the real figure.
+	 *
+	 *  ==> THESE NUMBERS ARE THE REASON THE CEILING MOVED. THEY ARE NOT A REPORT
+	 *  THAT ANYTHING OVERFLOWED. Nothing has ever printed PROMPT BUDGET
+	 *  OVERFLOW -- but that assertion may never have EXECUTED (it needs both a
+	 *  live context AND a registered prefix), and CONVENTIONS SC-section-32 is
+	 *  explicit that a mechanism never observed to function is not known to
+	 *  function. ITS SILENCE IS NOT EVIDENCE AND IS NOT CITED AS ANY.
 	 *
 	 *  IT IS A REQUEST. llama.h:551-556 says the context is entitled to use a
 	 *  different one. Everything that sizes work reads llama_n_ctx(ctx) instead.
 	 */
-	static constexpr int32 ContextTokens = 2048;
+	static constexpr int32 ContextTokens = 3072;
 
 	/**
 	 *  The startup budget assertion's margin. NAMED AND NON-ZERO by law.

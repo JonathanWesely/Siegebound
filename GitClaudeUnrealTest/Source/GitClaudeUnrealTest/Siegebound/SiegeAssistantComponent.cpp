@@ -14,7 +14,8 @@
 #include "Siegebound/HeroCharacter.h"            // AHeroCharacter::Rally - the hero ability, called exactly as IA_Rally calls it
 #include "Siegebound/SiegeAssistantConsoleWidget.h" // the console widget's inbound/outbound API - AttachConsoleWidget binds both directions
 #include "Siegebound/SiegeAssistantGrammar.h"    // USiegeAssistantGrammar::Build + GrammarCountMin/Max (the short-circuit's range IS the grammar's)
-#include "Siegebound/SiegeAssistantSnapshot.h"   // Capture / BuildZoneA|B|C / GetOrderableCount / ResolvePlace / ValidateCommandAgainstSnapshot
+#include "Siegebound/SiegeAssistantRegionStatics.h" // ⭐ THE ONLY CALL SITE IN THE MODULE (TASK-544 shipped with zero, deliberately): IsPointInRegion, the selector's region membership test
+#include "Siegebound/SiegeAssistantSnapshot.h"   // Capture / BuildZoneA|B|C / GetOrderableCount / ResolvePlace / ResolvePlaceRegion / GetRegionPlaceNames / ValidateCommandAgainstSnapshot
 #include "Siegebound/SiegeAssistantVocabulary.h" // DA_AssistantVocabulary, for Zone A's synonym block
 #include "Siegebound/SiegePlayerController.h"    // CreateUnitGroup / SpawnGroupCircleDecal / EnrollInDefaultFollowGroup / SetUnitCommand
 #include "Siegebound/SiegePlayerState.h"         // ASiegePlayerState::GetTeam - the ordering team
@@ -977,6 +978,44 @@ void USiegeAssistantComponent::HandleModelCompletion(int32 InTurnId, bool bSucce
 	FSiegeAssistantCommand Command;
 	FString ParseError;
 
+	// ⭐ THE RAW MODEL OUTPUT - THE ONE FAILURE CLASS THAT LEFT NO ARTIFACT
+	// (AS-§21.8). EVERY OTHER OUTCOME ALREADY NAMES ITSELF BELOW: a decline logs
+	// `ask=`, a parse failure logs its reason and detail, the selection invariant
+	// logs its error, a shortfall logs its arithmetic, a non-orderable kind logs
+	// the kind. The ONE class with nothing to read afterwards was "well-formed,
+	// passed every machine check, and means something nobody asked for" - which is
+	// exactly the class AS-§20.1 calls an automatic QA FAIL and AS-§20.4 says must
+	// be FOUND, NOT GUESSED. This line is the finding instrument.
+	//
+	// ⛔ VERBOSITY IS `Log`, AND BOTH ALTERNATIVES ARE REFUSED ON PURPOSE so they
+	// are not "improved" in later: NOT `Verbose`, because the report arrives after
+	// the session and nobody re-runs a lost turn at a raised verbosity; NOT
+	// `Warning`, because this fires on the HAPPY path and the automation runner
+	// reads Warning as failure.
+	//
+	// ⛔ IT SITS BEFORE THE PARSE CALL SO IT FIRES WHETHER OR NOT THE PARSE
+	// SUCCEEDS - a malformed emission is the case most in need of its own bytes,
+	// and a line that only printed on success would be missing exactly then.
+	//
+	// ⚠️ THE LENGTH IS PRINTED BESIDE THE TEXT, AND THE TEXT IS BRACKETED, so an
+	// EMPTY completion (`(0 chars): []`) and a TRUNCATED one are distinguishable
+	// from a merely malformed one, and trailing whitespace or a stray newline is
+	// visible as a gap before the `]`. ⛔ THE STRING IS PRINTED IN FULL AND IS
+	// NEVER ELIDED: the tail is precisely where a malformed or invented field
+	// would sit, so an ellipsis here would drop the evidence this line exists to
+	// capture. The grammar bounds the shape and the sampler bounds the length.
+	//
+	// ⛔ THIS IS AN OBSERVATION AND NOTHING ELSE. It reads a parameter that already
+	// exists and writes nothing: no branch, no early return, no member, no state
+	// read or write, no player-facing surface (§3 - the player gets game-authored
+	// templates, never model bytes), and ZERO prompt bytes. ⚖️ PRINTING IS NOT
+	// KEEPING: AS-§1's "never keep a word of it" bans a word of model output
+	// SURVIVING INTO ANOTHER TURN, and a log line is write-only and one-directional
+	// - ComposeTurnPrompt() reads Zone A/B/C builders and has no route to a log,
+	// so nothing here can ever re-enter a prompt. `Output` is still a local and
+	// still dies with the frame.
+	UE_LOG(LogSiegeAssistant, Log, TEXT("Turn %d: RAW MODEL OUTPUT (%d chars): [%s]"), InTurnId, Output.Len(), *Output);
+
 	if (ParseSiegeAssistantCommand(Output, Command, ParseError))
 	{
 		// The index-alignment / cap / uniqueness invariant, re-asserted on
@@ -984,21 +1023,32 @@ void USiegeAssistantComponent::HandleModelCompletion(int32 InTurnId, bool bSucce
 		// OFF exactly as it runs with it ON: the toggle removes a HUMAN REVIEW
 		// STEP and NEVER A MACHINE CHECK ("Settings screen..." §5).
 		//
-		// ⛔⭐ THE FOURTH ARGUMENT IS PASSED DELIBERATELY AND MUST NEVER BE DROPPED
-		// (TASK-518 §5 / TASK-522). SiegeAssistantValidateSelection's ExcludeKinds
-		// parameter is TRAILING AND DEFAULTED — a shape forced by file ownership,
-		// not chosen — so this call COMPILES CLEANLY WITHOUT IT and then silently
-		// validates NOTHING about the exclusion: the cap, the no-repeats rule and
-		// the "never a selection AND an exclusion" rule would all report SAFE while
-		// checking nothing. That is a guardrail reporting safe, which is the one
-		// failure shape this feature's law names by hand. ⛔ Every caller holding a
-		// whole FSiegeAssistantCommand passes Command.ExcludeKinds; the default is
-		// for the arrays-only call sites (the automation suite), never permission
-		// to skip the check. ⚠️ Removing this argument would raise no compiler
-		// diagnostic anywhere — the ONLY thing standing behind it is this comment
-		// and the QA grep it invites.
+		// ⛔⭐ THE FOURTH AND FIFTH ARGUMENTS ARE PASSED DELIBERATELY AND MUST NEVER
+		// BE DROPPED (TASK-518 §5 / TASK-522 for the fourth; TASK-548 / AS-§21.9 for
+		// the fifth). SiegeAssistantValidateSelection's ExcludeKinds and RegionPlace
+		// parameters are both TRAILING AND DEFAULTED — a shape forced by file
+		// ownership, not chosen — so this call COMPILES CLEANLY WITHOUT EITHER and
+		// then silently validates NOTHING about the dropped one: the cap, the
+		// no-repeats rule and the "never a selection AND an exclusion" rule would all
+		// report SAFE while checking nothing. That is a guardrail reporting safe,
+		// which is the one failure shape this feature's law names by hand. ⛔ Every
+		// caller holding a whole FSiegeAssistantCommand passes BOTH
+		// Command.ExcludeKinds AND Command.RegionPlace; the defaults are for the
+		// arrays-only call sites (the automation suite), never permission to skip the
+		// check. ⚠️ Removing either argument would raise no compiler diagnostic
+		// anywhere — the ONLY thing standing behind them is this comment and the QA
+		// grep it invites.
+		//
+		// ⚠️ THE FIFTH WAS ADDED HERE BY TASK-548 AND THE GAP IT CLOSED IS RECORDED
+		// RATHER THAN QUIETLY FIXED: between TASK-545 landing the parameter and this
+		// line, THIS CALL SITE — the receive-side gate, the last machine check
+		// standing between a well-formed model emission and the executor — validated
+		// nothing whatsoever about the region. It compiled, linked and reported
+		// SUCCESS the whole time. That is the identical shape as the ExcludeKinds
+		// hazard one batch earlier, which is exactly why AS-§21.9 forbids a SIXTH
+		// default and pins an FSiegeAssistantCommand overload as the next shape.
 		FString SelectionError;
-		if (!SiegeAssistantValidateSelection(Command.Kinds, Command.Counts, SelectionError, Command.ExcludeKinds))
+		if (!SiegeAssistantValidateSelection(Command.Kinds, Command.Counts, SelectionError, Command.ExcludeKinds, Command.RegionPlace))
 		{
 			UE_LOG(LogSiegeAssistant, Warning,
 				TEXT("Turn %d parsed but violated the selection invariant (%s). ⛔ A mismatch is a failure, NEVER a silent truncation."),
@@ -1258,6 +1308,57 @@ FText USiegeAssistantComponent::DescribeCommandForPlayer(const FSiegeAssistantCo
 			}
 
 			Selection += Command.ExcludeKinds[Index].ToString();
+		}
+	}
+
+	// ⛔⭐ THE REGION IS PART OF THE ORDER, SO IT IS PART OF THE SENTENCE THE PLAYER
+	// IS ASKED TO ACCEPT (TASK-548; the TASK-522 argument above, verbatim and for
+	// the second time). Without this, "send everyone in the ancient ground to the
+	// enemy castle" renders as "Send (enemy_castle)" - A CONFIRM PROMPT THAT
+	// DESCRIBES A DIFFERENT ORDER FROM THE ONE THAT WILL EXECUTE, which defeats the
+	// confirm step's entire purpose. It would describe moving the WHOLE ARMY while
+	// the executor moves only the occupants of one ground, and the player would
+	// accept the wrong sentence. The same string is reused by the Executed line and
+	// by the deferred "waiting for..." line.
+	//
+	// ⛔ NO NEW FRAME AND NO NEW TEMPLATE ROW. The clause is built into {Selection},
+	// exactly as the exception above is, so all three existing frames render it
+	// unchanged and §30's "one string, not three" stays true. It follows the
+	// "all except " idiom character-for-character: a raw symbol, never a
+	// display-name lookup. Read aloud on every path its values can supply: "Send all
+	// in ancient_ground_near (enemy_castle)", "Guard all in mid (own_castle)",
+	// "Follow all in ancient_ground_far".
+	//
+	// ⛔ THE PRESENTATION LAYER DOES NOT REPAIR ITS INPUT (SC-§31). It describes what
+	// WILL RUN - including a region that will resolve to nobody. The refusal for
+	// that case belongs to the selector, which owns the arithmetic and the log; a
+	// describer that quietly softened the sentence would be hiding the very order the
+	// player is being asked to approve. ⚠️ And it does NOT run the selector to count
+	// occupants: that would be a second, staler survey of a board that can change
+	// before the player presses accept.
+	//
+	// ⚠️ THE GHOST CIRCLES STRUCTURALLY CANNOT CARRY THIS, AND IT IS SAID HERE
+	// RATHER THAN ATTEMPTED (TASK-522's finding, which applies unchanged):
+	// SpawnConfirmPreview draws TWO PLACE DECALS at the resolved DESTINATION and
+	// nothing per-unit - identical geometry for 3 units or 30 - so no preview shape
+	// depends on WHICH units were selected. A selection filter is invisible on the
+	// ground either way. ⇒ This line IS the unit-facing half of the review.
+	if (Command.RegionPlace != NAME_None)
+	{
+		if (Selection.IsEmpty())
+		{
+			Selection += FString::Printf(TEXT("all in %s"), *Command.RegionPlace.ToString());
+		}
+		else
+		{
+			// ⚠️ UNREACHABLE, AND WRITTEN ANYWAY - the same reasoning as the
+			// exception's twin branch above. A region beside a selection or an
+			// exclusion is refused by the parser, by SiegeAssistantValidateSelection
+			// and by the selector's own backstop - but a DESCRIBER that drops a
+			// filter it was handed would print a reassuring sentence about an order
+			// nobody gave, and this function is called from paths (LastMessage
+			// re-seeding, the deferred summary) that do not re-run those gates.
+			Selection += FString::Printf(TEXT(", in %s"), *Command.RegionPlace.ToString());
 		}
 	}
 
@@ -1924,6 +2025,43 @@ bool USiegeAssistantComponent::SelectUnitsForOrder(const FSiegeAssistantCommand&
 		return false;
 	}
 
+	// ── ⛔ A REGION IS NEVER MERGED WITH A SELECTION OR AN EXCLUSION (AS-§21.5) ──
+	// THE EXCLUSION BACKSTOP ABOVE, SECOND INSTANCE - and it is the second instance
+	// of ONE principle rather than a second principle, which is the same argument
+	// AS-§21.6 used to earn the parser's third cross-field check.
+	//
+	// ⚠️ NOTE THE ASYMMETRY WITH THE BACKSTOP ABOVE, BECAUSE IT CHANGES THE REASON
+	// RATHER THAN THE VERDICT. An exclusion beside a selection would be DROPPED IN
+	// SILENCE (the per-kind loop has no subtraction step). A region beside either
+	// would NOT be dropped - the predicate below sits in the shared candidate
+	// gather, so it would apply and the two filters would COMPOSE. That is worse in
+	// a different way and refused for a different sentence: AS-§21.5 rules the
+	// combination a PARSE FAILURE, NEVER A MERGE. "Send 10 footmen in the mid" is a
+	// FILTERED COUNT - a different feature, not asked for - and executing the
+	// intersection would be this architecture answering a question nobody put to it.
+	// ⛔ Guessing which half to honour is the valid-shaped-wrong-command class; so is
+	// silently honouring both.
+	//
+	// ⚠️ THE EXCLUSION LEG IS A DELIBERATE WIDENING BEYOND THE LITERAL DISPATCH,
+	// DECLARED RATHER THAN SLIPPED IN. The task spec names region + SELECTION; AS-
+	// §21.5 says in terms that "`all_except` plus a region is the same failure", the
+	// parser refuses both with region_conflict, and SiegeAssistantValidateSelection
+	// refuses both. Refusing only one of the two would leave the other composing
+	// quietly. Both legs are unreachable from the model and from the M8 P2 wire path
+	// for the same reason the exclusion backstop is: two gates already refuse them.
+	// It exists because "unreachable" is a claim about TODAY'S CALLERS.
+	//
+	// ⚠️ Warning, not Log, on the same reasoning as the backstop above: the refusals
+	// further down are the MODEL being wrong (expected traffic), whereas reaching
+	// THIS line is a CODE defect - a struct that passed neither gate.
+	if (Command.RegionPlace != NAME_None && (Command.Kinds.Num() > 0 || Command.ExcludeKinds.Num() > 0))
+	{
+		UE_LOG(LogSiegeAssistant, Warning,
+			TEXT("Selector refused - a command reached the selector naming region '%s' AND a %d-kind selection / a %d-kind exclusion. ⛔ AS-§21.5 rules that combination a PARSE FAILURE (region_conflict), never a merge. The parser and SiegeAssistantValidateSelection both refuse it, so this is a code or wire defect, not a model error. The whole order is refused; the region is NEVER quietly composed with another filter. NOTHING was executed."),
+			*Command.RegionPlace.ToString(), Command.Kinds.Num(), Command.ExcludeKinds.Num());
+		return false;
+	}
+
 	UWorld* World = GetWorld();
 	if (!World)
 	{
@@ -1937,12 +2075,58 @@ bool USiegeAssistantComponent::SelectUnitsForOrder(const FSiegeAssistantCommand&
 		return false;
 	}
 
+	// ── ⛔⭐ THE REGION RESOLVES ONCE, ABOVE THE LOOP, AND A NAMED REGION THAT DOES
+	//    NOT RESOLVE IS A REFUSAL - ⛔ NEVER AN UNFILTERED ORDER (AS-§21.5) ───────
+	//
+	// ⚖️ THIS IS THE HARD RULE THE WHOLE FEATURE RESTS ON. Falling through here
+	// would execute "send everyone in the ancient ground" as "send everyone" - an
+	// ARMY MOVING THAT THE PLAYER NEVER ASKED TO MOVE, and precisely the AS-§20.1
+	// valid-shaped-wrong-command class this design exists to make unreachable. Fail
+	// closed; there is no acceptable open failure mode here. ⛔ There is deliberately
+	// no "whole map" fallback box and no zero-extent default: ResolvePlaceRegion
+	// leaves BOTH out-params untouched on failure for exactly this reason, and
+	// inventing a box here would re-open the hole from the other side.
+	//
+	// ⛔ ONE RESOLVE, NOT ONE PER UNIT. The geometry is snapshot-time and constant
+	// for the call; only the POSITIONS are live (AS-§21.4: the units move, the
+	// grounds do not). Resolving inside the loop would be a per-candidate FName
+	// lookup for an answer that cannot change.
+	//
+	// ⚠️ THE REACHABLE CAUSE IS DECLARED RATHER THAN TREATED AS IMPOSSIBLE: the
+	// grammar can only emit a region symbol GetRegionPlaceNames() published this
+	// match, so an unknown symbol is near-unreachable - but the snapshot's own
+	// declared residual (a ground DESTROYED between Capture() and execution) lands
+	// exactly here, and so does a missing snapshot. Both take the same refusal.
+	//
+	// ⚠️ Log, not Warning, matching ExecuteZoneOrder's sibling "place did not
+	// resolve at execution time" line: this is a board condition, not a code defect,
+	// and the automation runner reads Warning as failure.
+	FVector RegionCentre = FVector::ZeroVector;
+	FVector2D RegionHalfExtent = FVector2D::ZeroVector;
+	const bool bHasRegion = Command.RegionPlace != NAME_None;
+	if (bHasRegion && (!Snapshot || !Snapshot->ResolvePlaceRegion(Command.RegionPlace, RegionCentre, RegionHalfExtent)))
+	{
+		UE_LOG(LogSiegeAssistant, Log,
+			TEXT("Selector refused - region '%s' did not resolve at execution time (no snapshot, not a region-bearing place, or the region is gone). ⛔ The whole order is refused and NOTHING was executed. ⚖️ It is NEVER downgraded to an unfiltered order: \"send everyone in the ancient ground\" executing as \"send everyone\" is an army moving that the player never asked to move (AS-§21.5, fail closed)."),
+			*Command.RegionPlace.ToString());
+		return false;
+	}
+
 	/** One eligible candidate with its precomputed distance, so the sort compares numbers rather than recomputing geometry. */
 	struct FSelectorCandidate
 	{
 		double DistSq = 0.0;
 		ASummonedUnit* Unit = nullptr;
 	};
+
+	// ⚠️ THE TWO COUNTERS THE REFUSAL ARITHMETIC IS BUILT FROM, AND THEY ARE
+	// COUNTED WHERE THE REJECTION HAPPENS RATHER THAN RE-DERIVED AFTERWARDS.
+	// ⛔ IneligibleCount IS A WHOLE-TEAM FIGURE AND IS LABELLED AS ONE EVERYWHERE IT
+	// IS PRINTED - it is NOT "ineligible units inside the region", because the
+	// region test never runs on a unit the eligibility gate already dropped, so that
+	// number is not measured and must not be implied.
+	int32 OutsideRegionCount = 0;
+	int32 IneligibleCount = 0;
 
 	// ONE pass over the world - not one per kind. ⛔ No registry, no actor cache,
 	// no dirty flag, no subscription list: CONVENTIONS §4 rejects all four on
@@ -1969,6 +2153,43 @@ bool USiegeAssistantComponent::SelectUnitsForOrder(const FSiegeAssistantCommand&
 		const bool bEligible = bFollowOrder ? Unit->IsFollowCommandEligible() : Unit->IsGroupCommandEligible();
 		if (!bEligible)
 		{
+			++IneligibleCount;
+			continue;
+		}
+
+		// ── ⭐ THE REGION PREDICATE (TASK-548, AS-§21.5) ──────────────────────
+		// ⛔ IT IS A PREDICATE INSIDE A LOOP THAT ALREADY EXISTS - still ONE pass
+		// over the world, still no registry, no actor cache, no dirty flag and no
+		// subscription list (§4 rejects all four on sight). It adds two float
+		// compares per candidate and not one traversal.
+		//
+		// ⭐ IT SITS IN THE SHARED CANDIDATE GATHER RATHER THAN IN THE
+		// Kinds.Num() == 0 BRANCH, AND THAT PLACEMENT IS THE WHOLE REASON IT
+		// APPLIES TO BOTH SELECTOR BRANCHES FROM ONE PIECE OF CODE. The exclusion
+		// is "all"-only by its own semantics; a region is not - "the footmen in the
+		// ancient ground" is as sensible an order as "everyone in the ancient
+		// ground". ⚠️ TODAY the per-kind branch cannot be reached with a region
+		// (the parser refuses region + selection, and the backstop at the top of
+		// this function refuses it again), so this predicate's effect on that
+		// branch is currently unobservable - it is written correctly anyway,
+		// because if a later ruling opens the combination the filter must already
+		// be there. ⛔ A region that is parsed and then dropped by a branch that
+		// never learned about it is the exact failure mode AS-§21.6 names.
+		//
+		// ⛔ A PURE CALL TO THE SHIPPED PREDICATE - ⛔ never an inline box test and
+		// ⛔ never AAncientGround::IsPointInZone directly. The executor holds no
+		// actor: the SNAPSHOT holds the geometry, deliberately (AS-§21.4). The
+		// boundary is INCLUSIVE and Z is IGNORED, which are copied semantics, not
+		// re-decided ones - the assistant has to give the same answer the game
+		// already gives, or a unit is "in the mid" for capture scoring and "not in
+		// the mid" for selection.
+		//
+		// ⚠️ THE POSITION IS READ LIVE, HERE, AT EXECUTION TIME. Snapshot-time
+		// geometry, execution-time membership: a unit that walked OUT of the ground
+		// between the typed sentence and the order landing is not selected.
+		if (bHasRegion && !FSiegeAssistantRegionStatics::IsPointInRegion(Unit->GetActorLocation(), RegionCentre, RegionHalfExtent))
+		{
+			++OutsideRegionCount;
 			continue;
 		}
 
@@ -1978,9 +2199,68 @@ bool USiegeAssistantComponent::SelectUnitsForOrder(const FSiegeAssistantCommand&
 		Eligible.Add(Candidate);
 	}
 
+	// ── ⛔⭐ EMPTY AFTER THE REGION IS A LOUD REFUSAL WITH THE ARITHMETIC IN THE
+	//    LOG - ⛔ NEVER A SILENT NO-OP (AS-§21.5, the EMPTY-AFTER-EXCLUSION clause
+	//    applied verbatim) ────────────────────────────────────────────────────────
+	//
+	// ⚠️ THE PARSER STRUCTURALLY CANNOT ANSWER THIS. ParseSiegeAssistantCommand is
+	// PURE - no world, no roster, no snapshot - so "did that region contain
+	// anybody?" is the executor's question and only the executor's. Returning false
+	// routes to the EXISTING unsupported-ask outcome in ExecuteAndReport: ⛔ no new
+	// ask symbol (the ask alternatives are grammar the model samples from) and ⛔ no
+	// new reason code authored at a call site (§3). "Nothing happened and nothing
+	// was said" is the one report shape this feature cannot afford - it reads as
+	// "the assistant ate my order".
+	//
+	// ⭐ IT IS CHECKED HERE, BEFORE THE SORT AND BEFORE EITHER BRANCH, PRECISELY SO
+	// NEITHER BRANCH CAN MISREPORT IT. An empty candidate set would otherwise fall
+	// into the "no eligible unit at all for an army-wide selection" line below (or,
+	// on the per-kind side, "no ELIGIBLE '<kind>' is alive") - both of which are
+	// TRUE-SOUNDING AND WRONG when the units exist and are simply standing
+	// elsewhere. A refusal that names the wrong cause is worse than a generic one:
+	// it sends the reader to look at the roster instead of at the ground.
+	//
+	// ⛔ AND THE ARITHMETIC IS HONEST ABOUT WHAT IT DID NOT MEASURE (AS-§21.11
+	// designed outcome 2). Ogres, Sappers and Clerics can never take a zone order at
+	// all - ASummonedUnit::CanTakeZoneOrders() is Standard-profile only - so a region
+	// order correctly skips them, and they are counted as NEVER ELIGIBLE, never as
+	// "outside the region". ⚠️ That count is a WHOLE-TEAM figure and says so in the
+	// line: the region test never ran on those units, so this log CANNOT distinguish
+	// "the ground is empty" from "the ground is full of units that could never take
+	// this order", and it must not pretend otherwise. The eligibility predicate that
+	// actually ran is named, because it differs between a zone order and a follow.
+	if (bHasRegion && Eligible.Num() == 0)
+	{
+		UE_LOG(LogSiegeAssistant, Log,
+			TEXT("Selector refused - the region emptied the selection: %d eligible unit(s) on the ordering team, %d standing OUTSIDE region '%s', %d left. ⚠️ A further %d live unit(s) on the team never reached the region test at all - %s rejected them first (a zone order is Standard-profile only, so Ogres, Sappers and Clerics are never candidates: AS-§21.11 designed outcome 2, NOT a bug), and that is a WHOLE-TEAM figure, so this line cannot tell you whether the region is EMPTY or merely holds units that could never take this order. ⛔ The whole order is refused and the player is TOLD through the existing unsupported-ask outcome; \"nothing happened and nothing was said\" is the one report shape this feature cannot afford. NOTHING was executed."),
+			OutsideRegionCount + Eligible.Num(), OutsideRegionCount, *Command.RegionPlace.ToString(), Eligible.Num(),
+			IneligibleCount, bFollowOrder ? TEXT("IsFollowCommandEligible()") : TEXT("IsGroupCommandEligible()"));
+		return false;
+	}
+
+	if (bHasRegion)
+	{
+		// ⚠️ THE SUCCESS LINE IS NOT DECORATION - IT IS THIS PATH'S ONLY INSTRUMENT,
+		// for the same stated reason the exclusion's is (TASK-522): A LOG THAT ONLY
+		// SPEAKS ON FAILURE CANNOT PROVE A SUCCESS. The region filter cannot be
+		// reached by the automation suite (EditorContext simple tests have no world
+		// and no actors), so the evidence that a region actually FILTERED rather than
+		// being parsed and dropped is this line plus Jonathan's playtest at TASK-552.
+		// ⚠️ It prints CANDIDATES, not "selected": the per-kind take and the
+		// exclusion both run downstream of here and own the final figure. Today they
+		// cannot coexist with a region (the backstop above), so the numbers coincide
+		// - but the word must stay true of the code rather than of today's callers.
+		UE_LOG(LogSiegeAssistant, Log,
+			TEXT("Selector applied a REGION: %d eligible, %d outside region '%s', %d INSIDE and carried forward as candidates. ⚠️ A further %d live unit(s) on the team never reached the region test - %s rejected them first (AS-§21.11 designed outcome 2). The order moves ONLY the units STANDING IN the named region, and membership was tested against LIVE positions at execution time."),
+			OutsideRegionCount + Eligible.Num(), OutsideRegionCount, *Command.RegionPlace.ToString(), Eligible.Num(),
+			IneligibleCount, bFollowOrder ? TEXT("IsFollowCommandEligible()") : TEXT("IsGroupCommandEligible()"));
+	}
+
 	// ⚠️ NEAREST TO THE TARGET, NOT TO THE HERO (§8's executor seam, verbatim).
 	// Sorting to the hero would send the back rank across the map while the front
-	// rank stayed home.
+	// rank stayed home. ⛔ THE REGION FILTERS; IT DOES NOT RE-RANK - DistSq computes
+	// exactly what it always computed, against the same anchor, and this comparator
+	// is untouched.
 	Eligible.Sort([](const FSelectorCandidate& A, const FSelectorCandidate& B)
 	{
 		return A.DistSq < B.DistSq;
@@ -3089,7 +3369,34 @@ FString USiegeAssistantComponent::ComposeTurnGrammar() const
 	// PRINTED roster), so a kind the prompt collapsed into `other_kinds:` is
 	// still sayable; that asymmetry is deliberate and is the snapshot's law, not
 	// this file's to correct.
-	return USiegeAssistantGrammar::Build(Snapshot->GetUnitKinds(), Snapshot->GetPlaceNames());
+	//
+	// ⛔⭐ THE THIRD ARGUMENT IS THE SECOND TRAILING-DEFAULT HAZARD IN THIS FILE AND
+	// IT IS THE ONE THAT WOULD HAVE KILLED THE WHOLE FEATURE SILENTLY (TASK-548,
+	// AS-§21.9). USiegeAssistantGrammar::Build's RegionPlaceNames parameter is
+	// TRAILING AND DEFAULTED, so this line compiled, linked and ran perfectly
+	// without it - and produced a grammar with NO `inplace` rule, NO `zone`
+	// alternation and NO `in` alternative on `who`. Constrained decoding cannot
+	// sample a shape the grammar does not contain, so `{"in":"ancient_ground_near"}`
+	// would have been UNREACHABLE AT RUNTIME no matter what the model wanted to
+	// emit, and the parser, the validator, the snapshot and the executor would all
+	// have sat there correct and unreached.
+	//
+	// ⚠️ AND THE FAILURE WOULD HAVE BEEN MISREAD, WHICH IS WHY IT IS WRITTEN DOWN
+	// HERE RATHER THAN JUST FIXED: AS-§21.11 outcome 5 already warns that a rule
+	// line is a weaker teaching signal than an exemplar for a brand-new output
+	// shape, so "the model never emitted `in`" at Stage 5 would have been read as
+	// the PROMPT under-teaching the shape - a conclusion about the model drawn from
+	// a missing function argument. ⛔ This is the ONLY shipped (non-test) caller of
+	// Build in the module; TASK-546 owns the builder but could not reach this line.
+	// ⇒ ANY CALLER HOLDING A SNAPSHOT PASSES Snapshot->GetRegionPlaceNames().
+	//
+	// ✅ AN EMPTY LIST IS A LEGAL, HANDLED STATE, NOT A REASON TO GUARD HERE: a map
+	// with no ancient ground and no capture zone publishes no regions, and the
+	// builder then omits `zone` / `inplace` and the `who` alternative ENTIRELY -
+	// which is required, because an empty alternation would leave `zone` undefined
+	// and make the WHOLE grammar unparseable (AS-§21.4 - the `at_least` disaster).
+	// The snapshot decides which places are region-bearing; this line only relays.
+	return USiegeAssistantGrammar::Build(Snapshot->GetUnitKinds(), Snapshot->GetPlaceNames(), Snapshot->GetRegionPlaceNames());
 }
 
 const FString& USiegeAssistantComponent::GetCachedZoneA()

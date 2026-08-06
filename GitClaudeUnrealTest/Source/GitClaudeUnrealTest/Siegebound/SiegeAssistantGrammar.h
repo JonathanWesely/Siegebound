@@ -20,8 +20,8 @@
  *  ⚠️ THE GRAMMAR IS GENERATED PER REQUEST FROM LIVE GAME STATE, and that is
  *  where the grounding lives — NOT in the weights. If no Sorcerer is alive,
  *  "sorcerer" is simply not an alternative of the `kind` rule and the model
- *  physically cannot name one. Only `kind` and `where` are generated; every
- *  other rule is fixed.
+ *  physically cannot name one. Only `kind`, `where` and `zone` are generated;
+ *  every other rule is fixed.
  *
  *  > THE LAW: grammar guarantees existence, executor guarantees legality, FSM
  *  > owns the conversation.
@@ -90,11 +90,16 @@ public:
 	 *  DEGENERATE INPUTS ARE HANDLED, NOT ASSERTED ON. With no unit kinds the
 	 *  `kind` / `count` / `at-least` / `item` / `selection` / `exceptlist` /
 	 *  `except` rules are OMITTED ENTIRELY (they would be unreachable), `who`
-	 *  collapses to "all" | "none" and `when` collapses to "now" — so the grammar
+	 *  collapses to "all" | "none" — or to `inplace` | "all" | "none" if the board
+	 *  still has region-bearing places, since a region names no kind — and `when`
+	 *  collapses to "now" — so the grammar
 	 *  stays well-formed with every referenced rule defined, and with nothing
 	 *  nameable the only expressible outputs are army-wide orders and questions.
 	 *  That is the correct answer, not a workaround. With no place names, `where`
-	 *  collapses to just "none".
+	 *  collapses to just "none". With no REGION-BEARING places the `zone` and
+	 *  `inplace` rules are omitted entirely and `who` loses its `inplace`
+	 *  alternative — the grammar is then BYTE-IDENTICAL to the one this builder
+	 *  produced before the shape existed (AS-§21.4).
 	 *
 	 *  NOTE FOR THE CALLER (Wave 1's B2): the grammar closes the world over
 	 *  EXACTLY the arrays it is handed. Passing the live roster is what delivers
@@ -126,10 +131,30 @@ public:
 	 *  two generators can never prove either one is valid; only the target parser
 	 *  can.
 	 *
-	 *  @param UnitKinds   canonical unit symbols the player may legally name, e.g. {"footman", "sorcerer"}.
-	 *                     Empty, NAME_None, and the reserved symbols "all"/"none" are skipped.
-	 *  @param PlaceNames  canonical place symbols, e.g. {"enemy_castle", "ancient_ground_near"}. Same filtering.
-	 *  @return            a complete GBNF grammar whose entry rule is `root`, newline-terminated.
+	 *  ⛔⭐ THE THIRD PARAMETER IS TRAILING AND DEFAULTED, AND THE COST OF THAT IS
+	 *  NAMED RATHER THAN HIDDEN. RegionPlaceNames is the REGION-BEARING SUBSET of
+	 *  PlaceNames — the places a shipped IsPointInZone can answer for (AS-§21.4:
+	 *  exactly `mid`, `ancient_ground_near`, `ancient_ground_far` today, and the
+	 *  SNAPSHOT decides which, never this builder). A CALLER THAT OMITS IT GETS A
+	 *  GRAMMAR WITH NO `in` ALTERNATIVE AT ALL — the player then cannot say
+	 *  "everyone in the mid", and the sampler cannot reach the shape.
+	 *
+	 *  ⚠️ THAT IS DECLARED BEHAVIOUR, NOT A SILENT FAILURE, and it is the same
+	 *  trade SiegeAssistantValidateSelection's trailing defaults already make
+	 *  (SiegeAssistantCommand.h — "a caller that omits the argument silently
+	 *  validates NOTHING"). The shape was chosen so every existing call site stays
+	 *  BYTE-IDENTICAL and the feature lands without editing files it does not own;
+	 *  the price is that a NEW caller which forgets the argument loses a feature
+	 *  quietly rather than failing to compile. ⇒ ANY CALLER HOLDING A SNAPSHOT
+	 *  PASSES Snapshot->GetRegionPlaceNames(). The pin is AS-§21.9.
+	 *
+	 *  @param UnitKinds         canonical unit symbols the player may legally name, e.g. {"footman", "sorcerer"}.
+	 *                           Empty, NAME_None, and the reserved symbols "all"/"none" are skipped.
+	 *  @param PlaceNames        canonical place symbols, e.g. {"enemy_castle", "ancient_ground_near"}. Same filtering.
+	 *  @param RegionPlaceNames  the region-bearing SUBSET, in the caller's order. Same filtering. Empty (the
+	 *                           default) omits `zone` / `inplace` and the `who` alternative entirely.
+	 *  @return                  a complete GBNF grammar whose entry rule is `root`, newline-terminated.
 	 */
-	static FString Build(const TArray<FName>& UnitKinds, const TArray<FName>& PlaceNames);
+	static FString Build(const TArray<FName>& UnitKinds, const TArray<FName>& PlaceNames,
+		const TArray<FName>& RegionPlaceNames = TArray<FName>());
 };

@@ -103,6 +103,54 @@ namespace SiegeLlamaPrivate
 	 */
 	static constexpr uint64 VramGameReserveMiB = 768;
 
+	/**
+	 *  DERIVED, NOT MEASURED. IT IS SEPARATELY NAMED FOR EXACTLY THAT REASON.
+	 *
+	 *  WHY IT EXISTS. ContextTokens moved 2048 -> 3072 on Jonathan's ruling 2
+	 *  (CONVENTIONS AS-section-21.0). KV-cache VRAM scales with n_ctx, but
+	 *  FullOffloadCostMiB and PartialOffloadCostMiB above are MEASUREMENTS TAKEN
+	 *  AT 2048 -- so raising the context leaves them stale LOW, and ChooseTier
+	 *  PROMOTES on them. Stale-low on a promoting gate is stale in the UNSAFE
+	 *  direction: it would let a machine promote into a tier it can no longer
+	 *  run, and "the tier selector picks a tier it cannot run in" is already a
+	 *  named defect on this project (CONVENTIONS FT-section-6).
+	 *
+	 *  WHY IT IS A NEW CONSTANT INSTEAD OF 2703 BECOMING 2854. Editing a
+	 *  measured constant by arithmetic is A DERIVATION WEARING A MEASUREMENT'S
+	 *  AUTHORITY -- the precise defect AS-section-23 names (a measurement's BASE
+	 *  is part of the measurement) and AS-section-12g bans. The measured numbers
+	 *  keep their provenance; the uncertainty stays visible in the source
+	 *  instead of being folded into a number that LOOKS measured.
+	 *
+	 *  THE DERIVATION, WITH ITS ASSUMPTION NAMED:
+	 *    36 layers x 8 KV heads x 128 head-dim x 2 (K+V) x 2 bytes (f16)
+	 *      = 147,456 bytes per token
+	 *    x 1024 added tokens (3072 - 2048) = 150,994,944 bytes = 144 MiB exactly.
+	 *  WARNING: THE 128 HEAD-DIM IS AN ASSUMPTION, not a read of the GGUF. So is f16
+	 *  KV; a quantised KV cache would make this smaller, never larger.
+	 *
+	 *  WHY 151 AND NOT 144, STATED SO IT IS A CHOICE RATHER THAN A SLIP. 144 MiB
+	 *  is the honest binary conversion; 151 is the same quantity in decimal MB
+	 *  (150.99 MB), which is the figure AS-section-21.7 records. The LARGER of
+	 *  the two is kept deliberately. AS-section-19's safe-direction rule: A GATE
+	 *  THAT PROMOTES MUST ASSUME THE LARGER COST. Erring high costs a machine on
+	 *  the boundary one tier of speed; erring low costs it a tier it cannot run.
+	 *
+	 *  IT IS APPLIED TO BOTH GATES, AND ON THE PARTIAL GATE THAT IS KNOWINGLY
+	 *  CONSERVATIVE. At PartialGpuLayers = 18 of 36 only the offloaded half of
+	 *  the KV cache is GPU-resident, so the layer-scaled figure would be roughly
+	 *  half of this. Applying the full figure to both comparisons is the ruled
+	 *  shape and the safe one; it is NOT an oversight, and it is NOT to be
+	 *  "corrected" by scaling it -- a second derived number stacked on the first
+	 *  is not more knowledge, it is more assumption.
+	 *
+	 *  THIS IS A PLACEHOLDER FOR A READING THAT DOES NOT EXIST YET. TASK-552
+	 *  (Stage 5) prints the LIVE vram_delta at 3072 on the load line, and that
+	 *  reading REPLACES this value -- at which point this constant either goes
+	 *  away or becomes a measured one with its own provenance block.
+	 */
+	static constexpr uint64 ContextGrowthVramReserveMiB = 151;
+
 	/** 18 of 36 -- the exact partial configuration every partial-tier number above was taken on. */
 	static constexpr int32 PartialGpuLayers = 18;
 
@@ -882,25 +930,39 @@ ESiegeLlamaOffloadTier FSiegeLlamaWorker::ChooseTier(ggml_backend_dev_t& OutDevi
 		return ESiegeLlamaOffloadTier::Partial;
 	}
 
-	if (FreeMiB >= FullOffloadCostMiB + VramGameReserveMiB)
+	// BOTH PROMOTING COMPARISONS CARRY ContextGrowthVramReserveMiB, and every
+	// reason string below NAMES it. A selector whose reason omits an operand it
+	// actually used is a log that lies quietly -- the next reader re-adds the
+	// measured numbers by hand, gets a different threshold, and concludes the
+	// code is doing something other than what it is doing.
+	if (FreeMiB >= FullOffloadCostMiB + VramGameReserveMiB + ContextGrowthVramReserveMiB)
 	{
 		OutReason = FString::Printf(
-			TEXT("%llu MiB free >= %llu (measured full-offload cost) + %llu (game reserve)"),
-			FreeMiB, FullOffloadCostMiB, VramGameReserveMiB);
+			TEXT("%llu MiB free >= %llu (measured full-offload cost, taken at ctx=2048) + %llu (game reserve) + %llu (DERIVED ctx-growth KV reserve for 2048->3072) = %llu"),
+			FreeMiB, FullOffloadCostMiB, VramGameReserveMiB, ContextGrowthVramReserveMiB,
+			FullOffloadCostMiB + VramGameReserveMiB + ContextGrowthVramReserveMiB);
 		return ESiegeLlamaOffloadTier::FullOffload;
 	}
 
-	if (FreeMiB >= PartialOffloadCostMiB + VramGameReserveMiB)
+	if (FreeMiB >= PartialOffloadCostMiB + VramGameReserveMiB + ContextGrowthVramReserveMiB)
 	{
 		OutReason = FString::Printf(
-			TEXT("%llu MiB free is below %llu needed for full offload but >= %llu (worse of the two measured partial readings) + %llu (game reserve)"),
-			FreeMiB, FullOffloadCostMiB + VramGameReserveMiB, PartialOffloadCostMiB, VramGameReserveMiB);
+			TEXT("%llu MiB free is below %llu needed for full offload but >= %llu (worse of the two measured partial readings) + %llu (game reserve) + %llu (DERIVED ctx-growth KV reserve for 2048->3072) = %llu"),
+			FreeMiB, FullOffloadCostMiB + VramGameReserveMiB + ContextGrowthVramReserveMiB,
+			PartialOffloadCostMiB, VramGameReserveMiB, ContextGrowthVramReserveMiB,
+			PartialOffloadCostMiB + VramGameReserveMiB + ContextGrowthVramReserveMiB);
 		return ESiegeLlamaOffloadTier::Partial;
 	}
 
+	// THE FALL-THROUGH ITSELF IS UNCHANGED -- same condition, same tier, same
+	// known defect (the CPU tier measurably fails: 2 of 5 generations hit the
+	// ceiling). Only the THRESHOLD IT REPORTS moved, because the partial gate
+	// above moved. Reporting the old number here would print a threshold the
+	// code never tested against.
 	OutReason = FString::Printf(
-		TEXT("only %llu MiB free, below the %llu needed even for the partial tier"),
-		FreeMiB, PartialOffloadCostMiB + VramGameReserveMiB);
+		TEXT("only %llu MiB free, below the %llu needed even for the partial tier (%llu measured + %llu game reserve + %llu DERIVED ctx-growth KV reserve)"),
+		FreeMiB, PartialOffloadCostMiB + VramGameReserveMiB + ContextGrowthVramReserveMiB,
+		PartialOffloadCostMiB, VramGameReserveMiB, ContextGrowthVramReserveMiB);
 	return ESiegeLlamaOffloadTier::CpuOnly;
 }
 

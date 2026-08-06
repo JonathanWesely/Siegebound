@@ -466,6 +466,13 @@ public:
 	 *  save a traversal would trade a shipped, QA'd selection rule for a second
 	 *  copy that drifts.
 	 *
+	 *  ⛔ AND TASK-547's REGION CAPTURE ADDED **ZERO** TRAVERSALS TO THAT COUNT -
+	 *  SAY SO RATHER THAN LET A REVIEWER RE-COUNT. All three region boxes come off
+	 *  actors the passes above ALREADY hold: NearGround / FarGround (pass 3) and
+	 *  the ACaptureZone (pass 5), through the public GetZoneHalfExtent() on each.
+	 *  A fresh TActorIterator for regions is a QA FAIL (CONVENTIONS AS-§21.4), and
+	 *  so is a registry, an actor cache, a dirty flag or a subscription list (§4).
+	 *
 	 *  Everything is re-derived from scratch every call: this object holds no
 	 *  actor pointers, no weak pointers and no lifetime state, so a unit dying
 	 *  between two sentences can never leave a stale row behind.
@@ -565,6 +572,64 @@ public:
 	 *  grammar is what enforces existence.
 	 */
 	const TArray<FName>& GetPlaceNames() const { return PlaceNames; }
+
+	/**
+	 *  ── THE REGION ACCESSORS (TASK-547; CONVENTIONS AS-§21.4 + the AS-§21.9
+	 *  pinned registry, character-for-character) ──
+	 *
+	 *  The REGION-BEARING SUBSET of GetPlaceNames(), in the same fixed vocabulary
+	 *  order. A place is region-bearing IFF A SHIPPED `IsPointInZone` ANSWERS FOR
+	 *  IT - that is the whole ruling, and it admits exactly three of the seven:
+	 *  `mid` (ACaptureZone) and both ancient grounds (AAncientGround).
+	 *
+	 *  ⛔ THE OTHER FOUR ARE NOT MISSING FEATURES, THEY ARE A RULING. `own_castle`,
+	 *  `enemy_castle`, `nearest_mine` and `hero` have NO region primitive anywhere
+	 *  in the shipped code, so giving them one would mean INVENTING A RADIUS -
+	 *  a number nobody chose, picked to make a feature compile. See
+	 *  FPlaceDefinition::bHasRegion in the .cpp for the full argument and
+	 *  AS-§21.11 for the designed consequence ("everyone at my castle" will not
+	 *  filter, by ruling, and a report of it is not a bug).
+	 *
+	 *  This is what USiegeAssistantGrammar::Build generates its `zone` alternation
+	 *  from - so a region the map does not have this match cannot be emitted at
+	 *  all, exactly as GetPlaceNames() does for `where`. ⚠️ Zone A still prints the
+	 *  FULL region vocabulary (it must stay byte-identical for process life); the
+	 *  grammar is what enforces existence.
+	 */
+	const TArray<FName>& GetRegionPlaceNames() const { return RegionPlaceNames; }
+
+	/**
+	 *  THE COORDINATE AIRLOCK, SECOND DOOR (CONVENTIONS §3 / AS-§21.4). Maps a
+	 *  region-bearing place symbol back to the 2D XY BOX the executor tests unit
+	 *  positions against.
+	 *
+	 *  ⚖️ SNAPSHOT-TIME GEOMETRY, EXECUTION-TIME MEMBERSHIP - AND THE SPLIT IS THE
+	 *  DESIGN, NOT AN ACCIDENT OF WHERE THE CODE SITS. This returns the box that
+	 *  existed when Capture() ran; the "is this unit inside it" test runs later,
+	 *  in the executor, against LIVE unit positions (FSiegeAssistantRegionStatics::
+	 *  IsPointInRegion). ⚠️ THE UNITS MOVE, THE GROUNDS DO NOT, so a unit that
+	 *  walked out of the ground between the sentence and the order landing must not
+	 *  be selected - and it is not.
+	 *
+	 *  ⚠️ DECLARED RESIDUAL, STATED RATHER THAN LEFT TO BE FOUND: a ground DESTROYED
+	 *  between capture and execution leaves a stale centre here. That is the
+	 *  IDENTICAL staleness ResolvePlace already carries for the DESTINATION - the
+	 *  same risk profile, not a new one - and it is bounded the same way: Capture()
+	 *  runs once per typed sentence, so the window is one inference call.
+	 *
+	 *  ⛔ THE BOX IS PAIRED WITH THE SHIPPED PREDICATE, NEVER RE-DERIVED. The centre
+	 *  is the actor location and the extent is GetZoneHalfExtent(), which is exactly
+	 *  what AAncientGround::IsPointInZone and ACaptureZone::IsPointInZone test
+	 *  against; reading a component bounds or a decal size instead would answer a
+	 *  different question than the shipped membership test.
+	 *
+	 *  @return false - leaving BOTH out-params UNTOUCHED, exactly as ResolvePlace
+	 *          does - for an unknown place, a place with no region primitive, or a
+	 *          region-bearing place that did not resolve this match. ⛔ There is no
+	 *          "whole map" fallback: a region named and not resolved must become a
+	 *          REFUSAL, never an unfiltered order (AS-§21.5).
+	 */
+	bool ResolvePlaceRegion(FName Place, FVector& OutCentre, FVector2D& OutHalfExtent) const;
 
 	/**
 	 *  Every canonical unit symbol alive on the ordering team, sorted by fixed
@@ -775,6 +840,31 @@ private:
 	/** Resolved world locations, parallel to PlaceNames. ⚠️ GAME-SIDE ONLY - never serialized into any zone (CONVENTIONS §3). */
 	UPROPERTY(Transient)
 	TArray<FVector> PlaceLocations;
+
+	/**
+	 *  Zone half-extents (XY), parallel to PlaceNames / PlaceLocations. ZeroVector
+	 *  for a place with no region primitive - which is why RegionPlaceNames, and
+	 *  not "is this extent non-zero", is what ResolvePlaceRegion asks first.
+	 *
+	 *  ⚠️ GAME-SIDE ONLY, on the SAME clause as PlaceLocations (CONVENTIONS §3): an
+	 *  extent is a distance, a distance is a number that means a position, and no
+	 *  zone ever prints one. ⭐ THAT IS THE WHOLE REASON THIS FEATURE COSTS ZONE C
+	 *  NOTHING - the model names a region SYMBOL, exactly as it already names a
+	 *  destination symbol, and the geometry never leaves this object except through
+	 *  ResolvePlaceRegion into the executor.
+	 */
+	UPROPERTY(Transient)
+	TArray<FVector2D> PlaceHalfExtents;
+
+	/**
+	 *  The region-bearing subset of PlaceNames, in the same fixed vocabulary order
+	 *  (AS-§21.4). Feeds the grammar's `zone` alternation and gates
+	 *  ResolvePlaceRegion. ⚠️ Empty is a LEGAL state - a map with no capture zone
+	 *  and no ancient ground - and it correctly makes the whole `{"in":ZONE}` shape
+	 *  unsamplable rather than making it sampleable and unresolvable.
+	 */
+	UPROPERTY(Transient)
+	TArray<FName> RegionPlaceNames;
 
 	/** Canonical unit symbols, DT_Cards row order. Parallel to KindTotals / KindOrderable / KindFollowable. */
 	UPROPERTY(Transient)

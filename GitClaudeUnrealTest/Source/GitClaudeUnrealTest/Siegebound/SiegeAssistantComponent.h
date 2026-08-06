@@ -949,6 +949,20 @@ public:
 	 *  from the one that will execute, and the ghost circles cannot cover for it:
 	 *  SpawnConfirmPreview draws two PLACE decals and nothing per-unit, so this
 	 *  sentence is the whole unit-facing half of the review.
+	 *
+	 *  ⭐ AND IT NAMES THE REGION (TASK-548, AS-§21.5) - the SECOND instance of that
+	 *  same argument, not a second argument. A RegionPlace order renders
+	 *  "Send all in ancient_ground_near (enemy_castle)", in the "all except " idiom
+	 *  and built into {Selection} the same way, so again ⛔ no new frame and ⛔ no new
+	 *  template row. Without it the sentence would read "Send (enemy_castle)" - a
+	 *  whole-army order shown to the player for an order that moves the occupants of
+	 *  ONE ground.
+	 *
+	 *  ⛔ IT DESCRIBES; IT DOES NOT REPAIR (SC-§31). A region that will resolve to
+	 *  nobody is still rendered - the refusal and its arithmetic belong to
+	 *  SelectUnitsForOrder. ⛔ And it never runs the selector to count occupants:
+	 *  that would be a second, staler survey of a board that can change before the
+	 *  player presses accept.
 	 */
 	FText DescribeCommandForPlayer(const FSiegeAssistantCommand& Command) const;
 
@@ -1227,6 +1241,34 @@ private:
 	 *  the log. ⛔ NEVER a silent no-op: the parser is pure and has no roster, so
 	 *  "did that exception subtract everybody?" is only answerable here.
 	 *
+	 *  ⭐ IT IS ALSO THE ONE PLACE Command.RegionPlace MEANS ANYTHING (TASK-548,
+	 *  AS-§21.5). who:{"in":"ancient_ground_near"} parses to an EMPTY Kinds plus a
+	 *  set RegionPlace; the region resolves ONCE above the survey through
+	 *  USiegeAssistantSnapshot::ResolvePlaceRegion, and membership is a PURE CALL to
+	 *  FSiegeAssistantRegionStatics::IsPointInRegion inside the candidate loop that
+	 *  already exists - one pass over the world, no registry and no cache (§4).
+	 *  ⛔ THE PREDICATE SITS IN THE SHARED CANDIDATE GATHER, NOT IN THE "all" BRANCH,
+	 *  so it applies to BOTH selector branches from one piece of code. An exclusion
+	 *  is "all"-only by its own semantics; a region is not ("the footmen in the
+	 *  ancient ground" is as sensible as "everyone in the ancient ground"), even
+	 *  though the per-kind branch cannot be REACHED with a region today.
+	 *
+	 *  ⛔⭐ A REGION NAMED AND NOT RESOLVED IS A REFUSAL, ⛔ NEVER AN UNFILTERED
+	 *  ORDER. "Send everyone in the mid" degrading into "send everyone" is an army
+	 *  moving that the player never asked to move; there is no acceptable open
+	 *  failure mode here, so it fails CLOSED.
+	 *
+	 *  ⛔ AN EMPTY-AFTER-REGION SELECTION RETURNS false THE SAME WAY AN EMPTY-AFTER-
+	 *  EXCLUSION ONE DOES, with "N eligible, M outside the region, 0 left" in the
+	 *  log. ⚠️ The arithmetic distinguishes UNITS OUTSIDE THE REGION from units the
+	 *  eligibility gate never admitted (Ogres / Sappers / Clerics take no zone order
+	 *  at all - AS-§21.11 designed outcome 2), and it says which figure it did NOT
+	 *  measure.
+	 *
+	 *  ⛔ A REGION BESIDE A SELECTION OR AN EXCLUSION IS REFUSED WHOLE, at Warning -
+	 *  AS-§21.5 rules that combination a parse failure, NEVER a merge, and reaching
+	 *  the selector with it is a code or wire defect rather than a model error.
+	 *
 	 *  @param Command     the order being executed
 	 *  @param SortAnchor  the world point to sort nearest-first against
 	 *  @param bFollowOrder true ⇒ IsFollowCommandEligible, false ⇒ IsGroupCommandEligible
@@ -1364,7 +1406,20 @@ private:
 	/** Zone A + Zone B + Zone C, in the fixed order §8 pins. ⚠️ The FSM's job, never the executor's (mechanism #2). */
 	FString ComposeTurnPrompt(const FString& Utterance);
 
-	/** The per-request GBNF, generated from the LIVE kinds and places so the model physically cannot name what is not there. */
+	/**
+	 *  The per-request GBNF, generated from the LIVE kinds, places and REGION-BEARING
+	 *  places so the model physically cannot name what is not there.
+	 *
+	 *  ⛔ IT IS THE MODULE'S ONLY SHIPPED CALLER OF USiegeAssistantGrammar::Build AND
+	 *  IT PASSES ALL THREE ARGUMENTS (TASK-548, AS-§21.9). The third,
+	 *  Snapshot->GetRegionPlaceNames(), is TRAILING AND DEFAULTED: omitting it
+	 *  compiles, links and runs, and yields a grammar with no `inplace` rule, no
+	 *  `zone` alternation and no `in` alternative on `who` - which makes the fifth
+	 *  `who` shape UNSAMPLEABLE and the whole spatial-selection feature unreachable
+	 *  at runtime, silently. ⚠️ Worse, the symptom ("the model never emits `in`")
+	 *  looks exactly like the prompt-teaching risk AS-§21.11 outcome 5 warns about,
+	 *  so the missing argument would be read as a conclusion about the MODEL.
+	 */
 	FString ComposeTurnGrammar() const;
 
 	/**

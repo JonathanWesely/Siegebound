@@ -125,11 +125,23 @@ static constexpr int32 SiegeAssistantMaxExclusionKinds = 3;
  *  is what detects "you asked for 10 and 8 exist"; if this field had already
  *  been clamped, that clarification would be undetectable.
  *
- *  SIX FIELDS, and the sixth is the ONLY one that is not a positive statement:
- *  ExcludeKinds SUBTRACTS whole kinds from the "all" selection ("send everyone
- *  except the miners" — Jonathan's ruling 3, CONVENTIONS AS-§20.1). It was added
- *  2026-08-04 by TASK-518, AFTER the five above, and the five keep their shipped
- *  order and their shipped types so the wire property is untouched.
+ *  SEVEN FIELDS, and the last two are the only ones that are not positive
+ *  statements about which units to take:
+ *   - ExcludeKinds SUBTRACTS whole kinds from the "all" selection ("send everyone
+ *     except the miners" — Jonathan's ruling 3, CONVENTIONS AS-§20.1). Added
+ *     2026-08-04 by TASK-518, AFTER the five above, and the five keep their
+ *     shipped order and their shipped types so the wire property is untouched.
+ *   - RegionPlace NARROWS the "all" selection to the units STANDING IN a named
+ *     region ("send all units currently in an ancient ground" — Jonathan's
+ *     directive, CONVENTIONS AS-§21.5). Added 2026-08-05 by TASK-545, AFTER the
+ *     six above, with the identical discipline: appended, never inserted, and an
+ *     FName rather than a box so the wire property survives a second time.
+ *
+ *  ⚠️ BOTH OF THEM ARE FILTERS, WHICH IS WHY THEY OBEY THE SAME LAW INSTEAD OF
+ *  EACH GETTING ITS OWN: a filter handed to a verb that never runs the selector is
+ *  parsed and then silently DROPPED, and a dropped filter is an order that looks
+ *  obeyed while meaning something nobody asked for. See the cross-field checks
+ *  documented on ParseSiegeAssistantCommand.
  */
 USTRUCT()
 struct FSiegeAssistantCommand
@@ -207,6 +219,51 @@ struct FSiegeAssistantCommand
 	 */
 	UPROPERTY()
 	TArray<FName> ExcludeKinds;
+
+	/**
+	 *  The region whose OCCUPANTS ARE the selection — the units standing inside the
+	 *  named place ("send everyone in the mid"). NAME_None == no region was named.
+	 *
+	 *  ⚠️ THE SEVENTH FIELD, APPENDED AFTER THE SIX SHIPPED ONES — never inserted
+	 *  among them. It is an FName and deliberately NOT an FVector, an FBox or a
+	 *  soft actor path: that is what keeps this struct uint8 / int32 / FName ONLY,
+	 *  so the "M8 P2 takes it over the wire AS-IS" property stated at the top of
+	 *  this header SURVIVES the addition. That property is the whole reason this
+	 *  design is possible — the geometry stays game-side behind
+	 *  USiegeAssistantSnapshot::ResolvePlaceRegion exactly as the destination
+	 *  geometry already stays behind ResolvePlace, so the model names
+	 *  `ancient_ground_near` and still never sees a number that means a position.
+	 *
+	 *  ⛔ THE TWO INVARIANTS, AND THEY ARE THE WHOLE SEMANTICS:
+	 *   - A REGION IS ONLY MEANINGFUL AGAINST "all". Non-None ONLY when Kinds AND
+	 *     ExcludeKinds are BOTH empty. "Send 10 footmen in the mid" is a filtered
+	 *     COUNT — a different feature that was not asked for — and "everyone except
+	 *     the miners, in the mid" stacks two filters whose interaction nobody ruled
+	 *     on. Both are a parse FAILURE (SiegeAssistantReason::RegionConflict), NEVER
+	 *     a merge and never a silent choice of which half to honour.
+	 *   - A REGION IS ONLY MEANINGFUL ON A SELECTION-BEARING VERB. Non-None ONLY
+	 *     when SiegeAssistantIntentTakesSelection(Intent). Charge / Fallback execute
+	 *     through ASiegePlayerController::ApplyArmyWideStance and Rally through
+	 *     AHeroCharacter::Rally() — NONE of them passes through the selector, so a
+	 *     region handed to them would be parsed and then silently DROPPED. "Fall
+	 *     back, but only the ones in the mid" executing as "fall back, EVERYONE" is
+	 *     the same valid-shaped wrong command as its exclusion twin one field up, so
+	 *     the parser REFUSES it (RegionConflict) rather than accept an order it
+	 *     cannot keep.
+	 *
+	 *  ⚠️ A REGION THAT CONTAINS NOBODY IS A LEGAL PARSE, NOT A PARSE ERROR, AND
+	 *  THAT IS A RULING RATHER THAN AN OVERSIGHT (AS-§21.5, applying AS-§20.1's
+	 *  "EMPTY-AFTER-EXCLUSION" clause verbatim). ParseSiegeAssistantCommand is PURE —
+	 *  no world, no roster, no snapshot, and it is never handed a unit position — so
+	 *  "was anybody standing there?" is a question it structurally CANNOT answer. It
+	 *  is the executor's, and the executor refuses the whole order through the
+	 *  EXISTING unsupported-ask outcome with the arithmetic in the log. ⛔ Never a
+	 *  silent no-op, and ⛔ never a fall-through to an UNFILTERED order: "send
+	 *  everyone in the mid" degrading into "send everyone" is an army moving that
+	 *  the player never asked to move. Fail closed.
+	 */
+	UPROPERTY()
+	FName RegionPlace = NAME_None;
 };
 
 /**
@@ -241,7 +298,9 @@ namespace SiegeAssistantJsonKeys
 
 	/**
 	 *  Command object: the selection — an array of 1..SiegeAssistantMaxSelectionKinds
-	 *  items, or "all", or "none", or the exclusion object {"all_except":[…]}.
+	 *  items, or "all", or "none", or the exclusion object {"all_except":[…]}, or the
+	 *  region object {"in":…}. FIVE shapes for ONE key; the top-level key set has
+	 *  never changed and must not (see In and AllExcept below for why).
 	 */
 	inline constexpr const TCHAR* Who = TEXT("who");
 
@@ -262,6 +321,27 @@ namespace SiegeAssistantJsonKeys
 	 *  over. See SiegeAssistantGrammar.cpp.
 	 */
 	inline constexpr const TCHAR* AllExcept = TEXT("all_except");
+
+	/**
+	 *  Region object (a `who` VALUE, never a top-level key): the place whose
+	 *  OCCUPANTS are the selection. {"who":{"in":"ancient_ground_near"}}
+	 *
+	 *  ⛔ IT IS THE FIFTH SHAPE FOR AN EXISTING KEY AND NOT A FOURTH TOP-LEVEL KEY,
+	 *  REFUSED ON THE IDENTICAL ARGUMENT THAT REFUSED "except" ONE SHAPE EARLIER
+	 *  (AS-§21.5). ValidateExactKeySet demands an EXACT top-level key set and the
+	 *  prompt law emits every key ALWAYS, so a new top-level key would have had to
+	 *  appear in every emission — rewriting all seven few-shots, every corpus row's
+	 *  expected JSON and the parser's key set at once. As a `who` shape it is
+	 *  STRICTLY ADDITIVE AT THE WIRE: every JSON that parses today parses
+	 *  BYTE-IDENTICALLY after it, and nothing that passes starts failing.
+	 *
+	 *  ⛔ NO UNDERSCORE, AND THAT IS LOAD-BEARING RATHER THAN TASTE. A GBNF rule name
+	 *  is [a-zA-Z0-9-] and llama.cpp STOPS AT AN UNDERSCORE, which is why the key one
+	 *  entry up needed the `exceptlist` rule-name departure. This key is one word and
+	 *  so is the rule that carries it (`inplace`), so no split is needed anywhere.
+	 *  See SiegeAssistantGrammar.cpp.
+	 */
+	inline constexpr const TCHAR* In = TEXT("in");
 
 	/** Command object: the destination place symbol, or "none". */
 	inline constexpr const TCHAR* Where = TEXT("where");
@@ -372,6 +452,43 @@ namespace SiegeAssistantReason
 	 */
 	inline constexpr const TCHAR* ExcludeConflict = TEXT("exclude_conflict");
 
+	/**
+	 *  A REGION was paired with something it cannot combine with. Payload names the
+	 *  offender. FOUR cases — the three ExcludeConflict already names, for word-for-word
+	 *  the same reasons (a region and an exclusion are BOTH FILTERS), plus one that
+	 *  exists only because there are now two filters that could be stacked:
+	 *   - with a positive selection — payload "<kinds>/<region>". ⛔ Never a merge:
+	 *     "send 10 footmen in the mid" is a filtered COUNT, a different feature nobody
+	 *     asked for, and guessing which half to honour is the class this design stops.
+	 *   - with an EXCLUSION — payload "all_except/<region>". Two filters stacked, and
+	 *     nobody ruled on how they compose, so the parser refuses instead of inventing
+	 *     an order of operations.
+	 *   - with `who` = "none" — payload "none".
+	 *   - on an ARMY-WIDE intent (charge / fallback / rally) — payload the intent
+	 *     symbol, e.g. "region_conflict:fallback". Those three execute through
+	 *     ApplyArmyWideStance / Rally() and never reach the selector, so a region
+	 *     handed to them would be parsed and then DROPPED IN SILENCE. Refusing at the
+	 *     parser is what keeps "fall back, but only the ones in the mid" from executing
+	 *     as "fall back, EVERYONE". ⚠️ "Everyone in the mid, fall back" is therefore
+	 *     REFUSED BY DESIGN (AS-§21.6, AS-§21.11 item 1) — it is not a bug.
+	 */
+	inline constexpr const TCHAR* RegionConflict = TEXT("region_conflict");
+
+	/**
+	 *  The region symbol inside {"in":…} was empty, or was one of the three reserved
+	 *  wire symbols. Payload: the value.
+	 *
+	 *  ⚠️ "none" IS THE LOAD-BEARING ONE AND IT IS REJECTED RATHER THAN IGNORED.
+	 *  FName is case-insensitive and FName(TEXT("none")) IS NAME_None, so storing it
+	 *  would collapse into "no region was named" — i.e. {"who":{"in":"none"}} would
+	 *  quietly become "everyone", turning a filter the player typed into an unfiltered
+	 *  army order. That is the exact silent-drop class the whole feature refuses, so
+	 *  the symbol is caught in the parser BEFORE the FName is constructed. "all" and
+	 *  "" are refused with it: the grammar never emits a reserved symbol as a place
+	 *  alternative, so neither can name a real region.
+	 */
+	inline constexpr const TCHAR* BadRegion = TEXT("bad_region");
+
 	/** A selection-bearing intent was paired with `who` = "none". Payload: the intent. */
 	inline constexpr const TCHAR* WhoRequired = TEXT("who_required");
 
@@ -466,16 +583,38 @@ bool SiegeAssistantIntentTakesSelection(ESiegeAssistantIntent Intent);
  *  HOLDING A WHOLE FSiegeAssistantCommand MUST PASS Command.ExcludeKinds. The
  *  default exists for the arrays-only call sites, not as permission to skip the check.
  *
+ *  ⛔⚠️ RegionPlace IS A FIFTH TRAILING DEFAULTED PARAMETER, ADDED 2026-08-05 BY
+ *  TASK-545 ON THE IDENTICAL PRECEDENT, AND ITS COST IS IDENTICAL AND WORSE FOR
+ *  BEING THE SECOND ONE. The function NAME does not change (AS-§20.1 ruled it keeps
+ *  its name; renaming it is a 26-site diff across five files for zero behaviour, and
+ *  it would destroy the "the diff is additive" property this batch's whole safety
+ *  argument rests on). ⇒ A CALLER THAT OMITS THIS ARGUMENT SILENTLY VALIDATES
+ *  NOTHING ABOUT THE REGION, AND NO COMPILER DIAGNOSTIC STANDS BEHIND IT — the
+ *  omission compiles, links, runs and reports SUCCESS. Only this comment and the
+ *  cross-field gate in ParseSiegeAssistantCommand stop it. ⇒ ANY CALLER HOLDING A
+ *  WHOLE FSiegeAssistantCommand MUST PASS BOTH Command.ExcludeKinds AND
+ *  Command.RegionPlace — a QA criterion (AS-§21.9), not a style note.
+ *
+ *  ⛔ A SIXTH TRAILING DEFAULT IS FORBIDDEN. Two is already one more than the shape
+ *  can carry honestly. 📌 The right long-term shape is an OVERLOAD taking a
+ *  `const FSiegeAssistantCommand&`, which cannot be under-called at all; it is
+ *  RECORDED here as a follow-up and deliberately NOT taken in this batch (churn at a
+ *  compile gate). The NEXT field-shaped addition takes the overload instead.
+ *
  *  @param Kinds         the selection's unit symbols.
  *  @param Counts        the index-aligned quantities.
  *  @param OutError      a SiegeAssistantReason code with a ':detail' payload. Empty when valid.
  *  @param ExcludeKinds  the subtracted kinds. Must be empty whenever Kinds is non-empty,
  *                       within SiegeAssistantMaxExclusionKinds, and free of repeats.
+ *  @param RegionPlace   the region whose occupants are the selection, or NAME_None.
+ *                       Must be NAME_None whenever Kinds OR ExcludeKinds is non-empty,
+ *                       and may never be the reserved symbol "all".
  *  @return              true when Kinds.Num() == Counts.Num(), both lengths are within
- *                       their caps, no symbol repeats in either list, and the selection
- *                       and the exclusion are not both populated.
+ *                       their caps, no symbol repeats in either list, and the selection,
+ *                       the exclusion and the region are not populated together.
  */
-bool SiegeAssistantValidateSelection(const TArray<FName>& Kinds, const TArray<int32>& Counts, FString& OutError, const TArray<FName>& ExcludeKinds = TArray<FName>());
+bool SiegeAssistantValidateSelection(const TArray<FName>& Kinds, const TArray<int32>& Counts, FString& OutError,
+                                     const TArray<FName>& ExcludeKinds = TArray<FName>(), FName RegionPlace = NAME_None);
 
 /**
  *  Parses ONE constrained-decoding result into a command. STRICT by design —
@@ -488,10 +627,13 @@ bool SiegeAssistantValidateSelection(const TArray<FName>& Kinds, const TArray<in
  *  1..SiegeAssistantMaxSelectionKinds, a repeated kind, and `at_least: "all"`.
  *  Maps "all" -> Count 0 and "now" -> TriggerKind = NAME_None.
  *
- *  `who` HAS FOUR SHAPES: the selection array, "all", "none", and the exclusion
- *  object {"all_except":["miner"]}. The fourth is ADDITIVE — it introduced no new
- *  top-level key and changed no existing shape, so every JSON that parsed before
- *  TASK-518 parses identically after it.
+ *  `who` HAS FIVE SHAPES: the selection array, "all", "none", the exclusion object
+ *  {"all_except":["miner"]}, and the region object {"in":"ancient_ground_near"}.
+ *  The fourth and the fifth are each ADDITIVE — neither introduced a new top-level
+ *  key and neither changed an existing shape — so every JSON that parsed before
+ *  TASK-518 parses identically after it, and every JSON that parses before
+ *  TASK-545 parses BYTE-IDENTICALLY after it. ⭐ That property outranks every other
+ *  acceptance criterion this file has, and it is the FIRST thing the suite checks.
  *
  *  ⚠️ NEVER PARTIALLY FILLS. OutCommand is reset to a default-constructed value
  *  on entry AND again on every failure path, so a caller that ignores the
@@ -501,8 +643,8 @@ bool SiegeAssistantValidateSelection(const TArray<FName>& Kinds, const TArray<in
  *  case-insensitively, because FName is case-insensitive anyway and the
  *  grammar only ever emits lower case.
  *
- *  ⚠️ IT PERFORMS EXACTLY TWO CROSS-FIELD CHECKS — it performed ONE until
- *  TASK-518 — and each earns its place for the SAME narrow reason: the pairing is
+ *  ⚠️ IT PERFORMS EXACTLY THREE CROSS-FIELD CHECKS — ONE until TASK-518, TWO until
+ *  TASK-545 — and each earns its place for the SAME narrow reason: the pairing is
  *  one the STRUCT ITSELF cannot represent honestly, so accepting it would produce a
  *  well-formed order that means something nobody asked for.
  *
@@ -515,12 +657,33 @@ bool SiegeAssistantValidateSelection(const TArray<FName>& Kinds, const TArray<in
  *      back except the miners" into "fall back INCLUDING the miners". Same failure
  *      class, opposite sign: check 1 stops a selection being invented, check 2
  *      stops an exception being discarded.
+ *   3. A REGION on an army-wide intent is rejected, and it earns its place on
+ *      CHECK 2's IDENTICAL ARGUMENT rather than on a new one — which is precisely
+ *      why it is a check and not a special case. Charge and Fallback execute
+ *      through ASiegePlayerController::ApplyArmyWideStance and Rally through
+ *      AHeroCharacter::Rally(); NONE of the three passes through the selector, so a
+ *      region handed to them would be PARSED AND THEN SILENTLY DROPPED, and "fall
+ *      back, but only the ones in the mid" would execute as "fall back, EVERYONE" —
+ *      a valid-shaped wrong command that LOOKS obeyed, which is worse than a
+ *      refusal because nothing in the game or the log would contradict it. An
+ *      exclusion and a region are BOTH FILTERS and both fail the same way for the
+ *      same reason, so check 3 is the SECOND INSTANCE OF ONE PRINCIPLE rather than
+ *      a second principle. ⛔ Silently ignoring RegionPlace on any path is an
+ *      automatic QA FAIL (AS-§21.6). ⚠️ Its designed consequence — "everyone in the
+ *      mid, fall back" is REFUSED — is on Jonathan's playtest sheet and is NOT a bug.
+ *
+ *  ⛔ ALL THREE ARE GATED BY THE ONE SHIPPED PREDICATE, SiegeAssistantIntentTakesSelection.
+ *  There is deliberately NO second list of army-wide verbs anywhere in this file: a
+ *  second list is a thing that can drift out of step with the executor seam it claims
+ *  to describe, and this one would have had to be edited by a task that never opens
+ *  the executor.
  *
  *  ⛔ AND THAT IS THE WHOLE LIST. Every OTHER cross-field question — is that place
- *  resolvable, are there enough units, DID THE EXCLUSION SUBTRACT EVERYTHING, is
- *  this intent legal right now, does this player have authority — is the EXECUTOR's,
- *  and this function deliberately does not answer any of them. Grammar guarantees
- *  existence, executor guarantees legality, FSM owns the conversation.
+ *  resolvable, are there enough units, DID THE EXCLUSION SUBTRACT EVERYTHING, DID
+ *  THAT REGION CONTAIN ANYBODY, is this intent legal right now, does this player have
+ *  authority — is the EXECUTOR's, and this function deliberately does not answer any
+ *  of them. Grammar guarantees existence, executor guarantees legality, FSM owns the
+ *  conversation.
  *
  *  @param Json        the model's raw output (already constrained by the GBNF).
  *  @param OutCommand  the parsed command; default-constructed on any failure.

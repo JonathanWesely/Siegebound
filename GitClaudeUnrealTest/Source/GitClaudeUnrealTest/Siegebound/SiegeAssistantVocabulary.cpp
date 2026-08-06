@@ -189,11 +189,33 @@ USiegeAssistantVocabulary::USiegeAssistantVocabulary()
 	// --- INTENTS -------------------------------------------------------------
 	// Canonical symbols are the ESiegeAssistantIntent wire symbols.
 	//
-	// ⚠️ "defend" appears under NEITHER guard NOR fallback. It sits exactly on the
-	// executor seam — guard stations the units you named at a place, fallback
-	// swings the WHOLE army back to your own castle — and picking one would move
-	// an army the player never mentioned. The notes block routes it to a
-	// which_intent question.
+	// ⚠️ "defend" is still an alias of NEITHER guard NOR fallback, and it must not
+	// become one — AS-§21.3 refuses promoting it to an eighth intent for the same
+	// reason. It sits exactly on the executor seam: guard stations the units you
+	// named at a place, fallback swings the WHOLE army back to your own castle.
+	//
+	// ⚠️ WHAT CHANGED, AND THIS IS THE PART WORTH KEEPING. The [notes] line below
+	// used to route EVERY "defend" to a which_intent question, on the argument
+	// that picking one would move an army the player never mentioned. That
+	// argument was TRUE WHEN IT WAS WRITTEN, and it was falsified later by an
+	// edit somewhere ELSE in the prompt: USiegeAssistantSnapshot::BuildZoneA's
+	// rules block now teaches, unconditionally, "If the player names units, the
+	// intent is send, guard, ambush or follow, never charge, fallback or rally"
+	// (SiegeAssistantSnapshot.cpp:1050 as of 2026-08-05). When a selection is
+	// present `fallback` is therefore ALREADY unreachable, so the harm this note
+	// was guarding against is structurally impossible — the note was competing
+	// with a rule that had already won, and nobody re-read it. Two shipped lines
+	// asserted contradictory things about the same input class until TASK-541.
+	//
+	// ⇒ The note now splits on the antecedent that actually decides it — a
+	// selection is present, or it is not. The which_intent route SURVIVES exactly
+	// where the original objection still holds: no units named, so fallback
+	// really is reachable and the choice really is unforced.
+	//
+	// ⛔ THE GENERAL LESSON (AS-§21.1): a prompt line is not a constant, it is an
+	// ASSERTION ABOUT THE REST OF THE PROMPT, and it can be falsified by an edit
+	// in another file that never touches this one. Any future line that conditions
+	// on a harm must name the other lines capable of removing that harm.
 	IntentSynonyms.Add(MakeSynonym(TEXT("ambush"), { TEXT("hide"), TEXT("lie in wait"), TEXT("set a trap"), TEXT("trap"), TEXT("waylay") }));
 	IntentSynonyms.Add(MakeSynonym(TEXT("charge"), { TEXT("all in"), TEXT("all out attack"), TEXT("everyone attack"), TEXT("full attack"), TEXT("push everything"), TEXT("rush") }));
 	IntentSynonyms.Add(MakeSynonym(TEXT("fallback"), { TEXT("everyone back"), TEXT("fall back"), TEXT("pull back"), TEXT("regroup"), TEXT("retreat") }));
@@ -240,7 +262,7 @@ FString USiegeAssistantVocabulary::BuildSynonymTable() const
 	// of the four burned strings, so it decides bow-words this project has never
 	// written down.
 	Table += TEXT("archer != longbowman. bow, bows, bowman, bowmen = archer. only a long- word = longbowman.\n");
-	Table += TEXT("send, guard, ambush, follow take a unit list. charge, fallback, rally move the whole army or the hero and take who = none. defend = ambiguous between guard and fallback -> ask which_intent.\n");
+	Table += TEXT("send, guard, ambush, follow take a unit list. charge, fallback, rally move the whole army or the hero and take who = none. defend with units -> guard. defend alone -> ask which_intent.\n");
 	// ⚠️⚠️ TWO LINES WERE DELETED HERE AT LADDER LOOP 2, AND DELETION IS THE POINT.
 	// TASK-431 measured the rung-1 wave moving the dev score by exactly ONE row,
 	// with the double-taught row not flipping - so adding prompt content has poor

@@ -267,6 +267,54 @@ namespace
 		OutKind = FName(*Symbol);
 		return true;
 	}
+
+	/**
+	 *  Reads the REGION place symbol out of {"in": …}. Empty is rejected, and so is
+	 *  every one of the reserved wire symbols.
+	 *
+	 *  ⚠️ "none" IS CAUGHT HERE, BEFORE THE FName IS CONSTRUCTED, AND THAT ORDERING
+	 *  IS THE WHOLE POINT. FName is case-insensitive and FName(TEXT("none")) IS
+	 *  NAME_None, so tolerating the symbol would store it as "no region was named" —
+	 *  {"who":{"in":"none"}} would then execute as "everyone", turning a filter the
+	 *  player typed into an unfiltered army order, in silence. That is the exact
+	 *  class this feature exists to refuse (AS-§21.5).
+	 *
+	 *  ⚠️ THE REJECTED SET IS A DELIBERATE SUPERSET OF THE ENUMERATION IN THE LAW,
+	 *  AND THE DIFFERENCE IS RECORDED RATHER THAN QUIETLY CHOSEN. AS-§21.5 enumerates
+	 *  "" / "all" / "none" while JUSTIFYING them as "the three reserved wire symbols
+	 *  (SiegeAssistantSymbols) can never name a place" — but the third reserved symbol
+	 *  is "now", not "". This code refuses "" plus ALL THREE reserved symbols, which
+	 *  is what the stated principle demands and which leaves every case the law
+	 *  enumerates behaving exactly as pinned. USiegeAssistantGrammar::Build already
+	 *  refuses to emit any of the three as a generated place alternative, so none of
+	 *  them can ever name a real region.
+	 *
+	 *  ⛔ IT IS NOT ParseKindSymbol AND IT IS NOT THE `where` READER, deliberately.
+	 *  ParseKindSymbol reports bad_kind and tolerates "all"; the `where` reader MAPS
+	 *  "none" onto NAME_None, because a DESTINATION is genuinely optional. A region is
+	 *  not optional inside a shape whose entire content is the region.
+	 */
+	bool ParseRegionSymbol(const TSharedPtr<FJsonValue>& Value, FName& OutRegion, FString& OutError)
+	{
+		if (!Value.IsValid() || Value->Type != EJson::String)
+		{
+			OutError = WithDetail(SiegeAssistantReason::BadType, FString(SiegeAssistantJsonKeys::In));
+			return false;
+		}
+
+		const FString Symbol = Value->AsString().TrimStartAndEnd().ToLower();
+		if (Symbol.IsEmpty()
+			|| Symbol.Equals(SiegeAssistantSymbols::None, ESearchCase::IgnoreCase)
+			|| Symbol.Equals(SiegeAssistantSymbols::All, ESearchCase::IgnoreCase)
+			|| Symbol.Equals(SiegeAssistantSymbols::Now, ESearchCase::IgnoreCase))
+		{
+			OutError = WithDetail(SiegeAssistantReason::BadRegion, Symbol);
+			return false;
+		}
+
+		OutRegion = FName(*Symbol);
+		return true;
+	}
 }
 
 FString SiegeAssistantReasonCode(const FString& Reason)
@@ -398,7 +446,8 @@ bool SiegeAssistantIntentTakesSelection(ESiegeAssistantIntent Intent)
 	}
 }
 
-bool SiegeAssistantValidateSelection(const TArray<FName>& Kinds, const TArray<int32>& Counts, FString& OutError, const TArray<FName>& ExcludeKinds)
+bool SiegeAssistantValidateSelection(const TArray<FName>& Kinds, const TArray<int32>& Counts, FString& OutError,
+	const TArray<FName>& ExcludeKinds, FName RegionPlace)
 {
 	OutError.Reset();
 
@@ -489,6 +538,62 @@ bool SiegeAssistantValidateSelection(const TArray<FName>& Kinds, const TArray<in
 					return false;
 				}
 			}
+		}
+	}
+
+	// --- the region invariants (TASK-545) ------------------------------------
+	// Same standing as the exclusion block above, and for the same reason: nothing
+	// the parser below produces can violate these either — the `who` shapes are
+	// DISJOINT, so one `who` value physically cannot fill a selection, an exclusion
+	// and a region together — but in M8 P2 this struct arrives OVER THE WIRE from a
+	// peer that never passed through anyone's grammar or parser, and this is the
+	// receive-side gate. An invariant that holds only because of how we happen to
+	// BUILD the value is not an invariant.
+	//
+	// ⛔ THE INTENT INVARIANT IS NOT CHECKED HERE, AND THAT IS NOT AN OVERSIGHT: this
+	// function is never handed the Intent (its signature is the two arrays plus the
+	// two filters, pinned by AS-§21.9), so "is this verb allowed to carry a region?"
+	// is a question it cannot answer. It is CROSS-FIELD CHECK 3 in the parser below,
+	// which does hold the intent and gates on the one shipped
+	// SiegeAssistantIntentTakesSelection.
+	if (!RegionPlace.IsNone())
+	{
+		// ⚠️ THE RESERVED-SYMBOL HALF OF BadRegion IS RE-CHECKED HERE, AND IT IS NOT
+		// DUPLICATED CEREMONY: the parser catches these in the STRING it reads, but a
+		// wire peer hands us a finished FName and never passed that reader. Checking
+		// first mirrors the parser's own ordering, so the same wire value earns the
+		// same code down either path.
+		//
+		// ⚠️ "none" NEEDS NO TEST AND CANNOT HAVE ONE: FName(TEXT("none")) IS
+		// NAME_None, so a peer sending "none" is indistinguishable from a peer sending
+		// no region at all — and "no region" is the safe reading of it, because it
+		// filters nothing rather than filtering wrongly.
+		if (RegionPlace == FName(SiegeAssistantSymbols::All) || RegionPlace == FName(SiegeAssistantSymbols::Now))
+		{
+			OutError = WithDetail(SiegeAssistantReason::BadRegion, RegionPlace.ToString());
+			return false;
+		}
+
+		// ⛔ NEVER A MERGE, on the exclusion block's argument exactly. "Send 10 footmen
+		// in the mid" is a filtered COUNT — a different feature that was not asked for
+		// — and silently honouring one half of it is the valid-shaped-wrong-command
+		// class this whole design exists to stop. The FSM asks instead.
+		if (Kinds.Num() > 0)
+		{
+			OutError = WithDetail(SiegeAssistantReason::RegionConflict,
+				FString::FromInt(Kinds.Num()) + TEXT("/") + RegionPlace.ToString());
+			return false;
+		}
+
+		// ⛔ TWO FILTERS STACKED, AND NOBODY RULED ON HOW THEY COMPOSE. "Everyone
+		// except the miners, in the mid" has at least two defensible readings and the
+		// parser is not entitled to pick one; refusing is the only answer that cannot
+		// be wrong (AS-§21.5).
+		if (ExcludeKinds.Num() > 0)
+		{
+			OutError = WithDetail(SiegeAssistantReason::RegionConflict,
+				FString(SiegeAssistantJsonKeys::AllExcept) + TEXT("/") + RegionPlace.ToString());
+			return false;
 		}
 	}
 
@@ -669,66 +774,120 @@ bool ParseSiegeAssistantCommand(const FString& Json, FSiegeAssistantCommand& Out
 		}
 		else if (Who->Type == EJson::Object)
 		{
-			// --- the EXCLUSION shape: {"all_except":["miner"]} (TASK-518) -------
-			// A third shape for an EXISTING key, never a fourth top-level key. The
-			// top-level key set above is untouched, so every JSON that parsed before
-			// this branch existed still parses byte-for-byte identically.
+			// --- the TWO OBJECT SHAPES ------------------------------------------
+			// {"all_except":["miner"]} (TASK-518) and {"in":"mid"} (TASK-545). Each is
+			// a shape for an EXISTING key and neither is a new top-level key: the
+			// top-level key set above is untouched by both, so every JSON that parsed
+			// before either branch existed still parses byte-for-byte identically.
 			//
-			// ⚠️ Kinds and Counts stay EMPTY here, and that is the seam the executor
-			// keys on: an exclusion is a modified "all", so it flows through the
-			// existing Kinds.Num() == 0 branch rather than through a second selector.
-			const TSharedPtr<FJsonObject> ExcludeObject = Who->AsObject();
-			if (!ExcludeObject.IsValid())
+			// ⚠️ Kinds and Counts stay EMPTY in BOTH, and that is the seam the executor
+			// keys on: an exclusion and a region are each a MODIFIED "all", so both
+			// flow through the existing Kinds.Num() == 0 branch rather than through a
+			// second selector.
+			const TSharedPtr<FJsonObject> WhoObject = Who->AsObject();
+			if (!WhoObject.IsValid())
 			{
 				return Fail(WithDetail(SiegeAssistantReason::BadType, FString(SiegeAssistantJsonKeys::Who)));
 			}
 
-			TArray<const TCHAR*> ExcludeKeys;
-			ExcludeKeys.Add(SiegeAssistantJsonKeys::AllExcept);
-
-			FString ExcludeKeyError;
-			if (!ValidateExactKeySet(ExcludeObject, ExcludeKeys, ExcludeKeyError))
+			// ⛔ THE MIXED OBJECT IS REFUSED WITH ITS OWN CODE, BEFORE THE DISPATCH,
+			// RATHER THAN LEFT TO ValidateExactKeySet. {"in":"mid","all_except":["miner"]}
+			// would otherwise be reported as unknown_key — technically true and useless.
+			// It is TWO FILTERS STACKED, the composition nobody ruled on, and the log
+			// should say so (AS-§21.5). ⚠️ This changes no input that currently
+			// SUCCEEDS: that object is rejected today too (unknown_key:in).
+			const bool bHasRegionKey = HasFieldExact(WhoObject, SiegeAssistantJsonKeys::In);
+			const bool bHasExcludeKey = HasFieldExact(WhoObject, SiegeAssistantJsonKeys::AllExcept);
+			if (bHasRegionKey && bHasExcludeKey)
 			{
-				return Fail(ExcludeKeyError);
+				return Fail(WithDetail(SiegeAssistantReason::RegionConflict,
+					FString(SiegeAssistantJsonKeys::AllExcept) + TEXT("/") + FString(SiegeAssistantJsonKeys::In)));
 			}
 
-			const TSharedPtr<FJsonValue> ExcludeValue = FindFieldValue(ExcludeObject, SiegeAssistantJsonKeys::AllExcept);
-			if (!ExcludeValue.IsValid() || ExcludeValue->Type != EJson::Array)
+			if (bHasRegionKey)
 			{
-				return Fail(WithDetail(SiegeAssistantReason::BadType, FString(SiegeAssistantJsonKeys::AllExcept)));
-			}
+				// --- the REGION shape: {"in":"ancient_ground_near"} (TASK-545) ---
+				// ⛔ THE FIFTH `who` SHAPE. It names a PLACE SYMBOL, not units — the
+				// identical operation the model already performs for `where` — which is
+				// why it costs the prompt nothing beyond the schema mirror and why the
+				// coordinate airlock is untouched: the box that answers "is this unit
+				// standing there?" is captured game-side by the snapshot and applied
+				// game-side by the executor. This function stays PURE.
+				TArray<const TCHAR*> RegionKeys;
+				RegionKeys.Add(SiegeAssistantJsonKeys::In);
 
-			// ExcludeValue is held for the whole scope below, so this reference into
-			// it cannot dangle — the same ownership pattern as the `who` array above.
-			const TArray<TSharedPtr<FJsonValue>>& ExcludedItems = ExcludeValue->AsArray();
-
-			// ⚠️ BOTH BOUNDS. An empty list is refused rather than treated as a plain
-			// "all": {"all_except":[]} is the model saying "everyone except — " and
-			// stopping, and quietly promoting that to "everyone" is how an exception
-			// gets dropped without anybody noticing.
-			if (ExcludedItems.Num() < 1 || ExcludedItems.Num() > SiegeAssistantMaxExclusionKinds)
-			{
-				return Fail(WithDetail(SiegeAssistantReason::ExcludeArity, FString::FromInt(ExcludedItems.Num())));
-			}
-
-			Parsed.ExcludeKinds.Reserve(ExcludedItems.Num());
-
-			// ⛔ BARE KIND SYMBOLS, THROUGH THE SAME ParseKindSymbol THE SELECTION AND
-			// THE DEFERRED TRIGGER USE. No second kind-validation path, and no
-			// {"kind":…,"n":…} item shape — the count-controlled variant was DECLINED
-			// (Jonathan's ruling 3), so "all except 5 archers" has no shape here to be
-			// sampled into. Repeats are caught by the final validator gate below,
-			// which is the one uniqueness path for both lists.
-			for (const TSharedPtr<FJsonValue>& ExcludedItem : ExcludedItems)
-			{
-				FName ExcludedKind = NAME_None;
-				FString ExcludedError;
-				if (!ParseKindSymbol(ExcludedItem, ExcludedKind, ExcludedError))
+				FString RegionKeyError;
+				if (!ValidateExactKeySet(WhoObject, RegionKeys, RegionKeyError))
 				{
-					return Fail(ExcludedError);
+					return Fail(RegionKeyError);
 				}
 
-				Parsed.ExcludeKinds.Add(ExcludedKind);
+				// ⚠️ NO EXISTENCE CHECK, ON PURPOSE AND ON THE `where` PRECEDENT four
+				// blocks down: whether the symbol names a live region — and whether
+				// anybody is standing in it — are the EXECUTOR's questions, asked
+				// through USiegeAssistantSnapshot::ResolvePlaceRegion. A parser with no
+				// world cannot answer either, and an empty region is a legal PARSE
+				// (AS-§20.1's EMPTY-AFTER-EXCLUSION clause, applied verbatim).
+				FString RegionError;
+				if (!ParseRegionSymbol(FindFieldValue(WhoObject, SiegeAssistantJsonKeys::In), Parsed.RegionPlace, RegionError))
+				{
+					return Fail(RegionError);
+				}
+			}
+			else
+			{
+				// --- the EXCLUSION shape: {"all_except":["miner"]} (TASK-518) ----
+				// ⛔ THE DEFAULT ARM, AND IT IS THE FALL-THROUGH RATHER THAN A SECOND
+				// `if` FOR ONE REASON: an object carrying NEITHER key must still report
+				// missing_key:all_except, exactly the byte it reported before this
+				// branch was split. Everything below is the shipped code, unmoved.
+				TArray<const TCHAR*> ExcludeKeys;
+				ExcludeKeys.Add(SiegeAssistantJsonKeys::AllExcept);
+
+				FString ExcludeKeyError;
+				if (!ValidateExactKeySet(WhoObject, ExcludeKeys, ExcludeKeyError))
+				{
+					return Fail(ExcludeKeyError);
+				}
+
+				const TSharedPtr<FJsonValue> ExcludeValue = FindFieldValue(WhoObject, SiegeAssistantJsonKeys::AllExcept);
+				if (!ExcludeValue.IsValid() || ExcludeValue->Type != EJson::Array)
+				{
+					return Fail(WithDetail(SiegeAssistantReason::BadType, FString(SiegeAssistantJsonKeys::AllExcept)));
+				}
+
+				// ExcludeValue is held for the whole scope below, so this reference into
+				// it cannot dangle — the same ownership pattern as the `who` array above.
+				const TArray<TSharedPtr<FJsonValue>>& ExcludedItems = ExcludeValue->AsArray();
+
+				// ⚠️ BOTH BOUNDS. An empty list is refused rather than treated as a plain
+				// "all": {"all_except":[]} is the model saying "everyone except — " and
+				// stopping, and quietly promoting that to "everyone" is how an exception
+				// gets dropped without anybody noticing.
+				if (ExcludedItems.Num() < 1 || ExcludedItems.Num() > SiegeAssistantMaxExclusionKinds)
+				{
+					return Fail(WithDetail(SiegeAssistantReason::ExcludeArity, FString::FromInt(ExcludedItems.Num())));
+				}
+
+				Parsed.ExcludeKinds.Reserve(ExcludedItems.Num());
+
+				// ⛔ BARE KIND SYMBOLS, THROUGH THE SAME ParseKindSymbol THE SELECTION AND
+				// THE DEFERRED TRIGGER USE. No second kind-validation path, and no
+				// {"kind":…,"n":…} item shape — the count-controlled variant was DECLINED
+				// (Jonathan's ruling 3), so "all except 5 archers" has no shape here to be
+				// sampled into. Repeats are caught by the final validator gate below,
+				// which is the one uniqueness path for both lists.
+				for (const TSharedPtr<FJsonValue>& ExcludedItem : ExcludedItems)
+				{
+					FName ExcludedKind = NAME_None;
+					FString ExcludedError;
+					if (!ParseKindSymbol(ExcludedItem, ExcludedKind, ExcludedError))
+					{
+						return Fail(ExcludedError);
+					}
+
+					Parsed.ExcludeKinds.Add(ExcludedKind);
+				}
 			}
 		}
 		else
@@ -815,7 +974,7 @@ bool ParseSiegeAssistantCommand(const FString& Json, FSiegeAssistantCommand& Out
 		}
 	}
 
-	// --- CROSS-FIELD CHECK 1 OF 2 --------------------------------------------
+	// --- CROSS-FIELD CHECK 1 OF 3 --------------------------------------------
 	// `who` = "none" and `who` = "all" both land on an empty Kinds/Counts pair,
 	// because the struct has no field that distinguishes them. For an army-wide
 	// verb that is harmless (the executor ignores the selection). For a
@@ -828,7 +987,7 @@ bool ParseSiegeAssistantCommand(const FString& Json, FSiegeAssistantCommand& Out
 		return Fail(WithDetail(SiegeAssistantReason::WhoRequired, SiegeAssistantIntentToSymbol(Parsed.Intent)));
 	}
 
-	// --- CROSS-FIELD CHECK 2 OF 2 (TASK-518) ---------------------------------
+	// --- CROSS-FIELD CHECK 2 OF 3 (TASK-518) ---------------------------------
 	// ⛔⭐ AN EXCLUSION IS REFUSED ON ANY VERB THAT DOES NOT REACH THE SELECTOR,
 	// AND THIS IS READ OFF THE EXECUTOR RATHER THAN CHOSEN OUT OF CAUTION.
 	// Charge and Fallback are executed by calling
@@ -866,19 +1025,74 @@ bool ParseSiegeAssistantCommand(const FString& Json, FSiegeAssistantCommand& Out
 		// both. It is written because the law names "none" as one of the three
 		// ExcludeConflict cases, and because a FIFTH `who` shape added later could
 		// make it reachable while this file was not being read.
+		//
+		// ⭐ THE FIFTH SHAPE THIS COMMENT ANTICIPATED HAS NOW ARRIVED (TASK-545's
+		// {"in":…}) AND THE GUARD WAS RE-CHECKED AGAINST IT RATHER THAN ASSUMED: the
+		// region branch fills RegionPlace and touches NEITHER bWhoIsNone NOR
+		// ExcludeKinds, so this is still unreachable from JSON. It stays, for the
+		// wire, and check 3 below carries the same guard for the region.
 		if (bWhoIsNone)
 		{
 			return Fail(WithDetail(SiegeAssistantReason::ExcludeConflict, FString(SiegeAssistantSymbols::None)));
 		}
 	}
 
-	// --- the selection AND exclusion invariants -------------------------------
-	// ⚠️ ExcludeKinds IS PASSED EXPLICITLY. The parameter has a default so that the
-	// arrays-only call sites still compile, but a caller holding a whole command and
-	// omitting it would validate nothing about the exclusion — see the header.
+	// --- CROSS-FIELD CHECK 3 OF 3 (TASK-545) ---------------------------------
+	// ⛔⭐ A REGION IS REFUSED ON ANY VERB THAT DOES NOT REACH THE SELECTOR, AND IT
+	// EARNS ITS PLACE ON CHECK 2's IDENTICAL ARGUMENT RATHER THAN ON A NEW ONE —
+	// which is exactly why it is a third CHECK and not a special case. Charge and
+	// Fallback are executed by calling ASiegePlayerController::ApplyArmyWideStance,
+	// and Rally calls AHeroCharacter::Rally(). NONE of the three walks the candidate
+	// list, so a RegionPlace handed to them has no code path that could filter
+	// anything: it would be parsed and then dropped in silence.
+	//
+	// ⛔⛔ "FALL BACK, BUT ONLY THE ONES IN THE MID" WOULD EXECUTE AS "FALL BACK,
+	// EVERYONE" — a valid-shaped wrong command that LOOKS obeyed, which is strictly
+	// worse than a refusal because nothing in the game or the log would contradict
+	// it. AN EXCLUSION AND A REGION ARE BOTH FILTERS and both fail this way for the
+	// same reason, so this is the SECOND INSTANCE OF ONE PRINCIPLE rather than a
+	// second principle (AS-§21.6). ⛔ Silently ignoring RegionPlace on any path is an
+	// automatic QA FAIL.
+	//
+	// ⭐ THE GATE IS SiegeAssistantIntentTakesSelection ITSELF — the SAME shipped
+	// predicate checks 1 and 2 use. ⛔ There is no second intent-classification path
+	// in this file, deliberately: a second list of army-wide verbs is a thing that
+	// can drift out of step with the executor seam it claims to describe.
+	//
+	// 📌 THE CONSEQUENCE IS DELIBERATE AND IT IS ON JONATHAN'S PLAYTEST SHEET:
+	// "everyone in the mid, fall back" is REFUSED (region_conflict:fallback) — the
+	// same verdict, for the same reason, as DEV-08. ⚠️ It is not a bug and must not
+	// be reported as one (AS-§21.11 item 1).
+	if (!Parsed.RegionPlace.IsNone())
+	{
+		if (!SiegeAssistantIntentTakesSelection(Parsed.Intent))
+		{
+			return Fail(WithDetail(SiegeAssistantReason::RegionConflict, SiegeAssistantIntentToSymbol(Parsed.Intent)));
+		}
+
+		// ⚠️ DEFENSIVE, on the same honest label as check 2's twin, and not presented
+		// as a live guard: it cannot fire from JSON, because bWhoIsNone is set only in
+		// the String branch and RegionPlace only in the Object branch. It is written
+		// because the law names "none" as one of the four RegionConflict cases, and
+		// because a SIXTH `who` shape could make it reachable while this file was not
+		// being read — which is precisely what happened to the guard above, and it
+		// held only because it had been written.
+		if (bWhoIsNone)
+		{
+			return Fail(WithDetail(SiegeAssistantReason::RegionConflict, FString(SiegeAssistantSymbols::None)));
+		}
+	}
+
+	// --- the selection, exclusion AND region invariants -----------------------
+	// ⚠️ BOTH TRAILING DEFAULTS ARE PASSED EXPLICITLY, AND THIS CALL IS THE WORKED
+	// EXAMPLE THE HEADER'S RULE POINTS AT. Each parameter has a default so the
+	// arrays-only call sites still compile, but a caller holding a WHOLE command and
+	// omitting one would validate nothing about that half — silently, with no
+	// compiler diagnostic behind it. Any caller holding an FSiegeAssistantCommand
+	// passes Command.ExcludeKinds AND Command.RegionPlace.
 	{
 		FString SelectionError;
-		if (!SiegeAssistantValidateSelection(Parsed.Kinds, Parsed.Counts, SelectionError, Parsed.ExcludeKinds))
+		if (!SiegeAssistantValidateSelection(Parsed.Kinds, Parsed.Counts, SelectionError, Parsed.ExcludeKinds, Parsed.RegionPlace))
 		{
 			return Fail(SelectionError);
 		}

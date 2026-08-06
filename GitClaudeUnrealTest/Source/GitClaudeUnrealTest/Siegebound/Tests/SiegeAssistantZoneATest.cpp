@@ -4,6 +4,8 @@
 
 #include "Containers/StringConv.h"
 #include "UObject/StrongObjectPtr.h"
+#include "UObject/UnrealType.h"
+#include "UObject/UObjectGlobals.h"
 
 #include "Siegebound/SiegeAssistantSnapshot.h"
 #include "Siegebound/SiegeAssistantVocabulary.h"
@@ -83,6 +85,60 @@
  *  relabelled **STALE — PENDING RE-MEASUREMENT ON THE MODEL**. They are ⛔ NOT
  *  recomputed by arithmetic and ⛔ NOT deleted. Characters are countable offline;
  *  tokens are a runtime reading with a measured ±band of unpredictable sign.
+ *
+ *  ═══════════════════════════════════════════════════════════════════════════
+ *  ⭐⭐ AMENDED AGAIN 2026-08-05 (TASK-549, batch AI-COMMANDER ROBUSTNESS) —
+ *      THE SECOND RE-BASE. NAMED, DATED BASELINE: **5658 chars, 2026-08-05**.
+ *  ═══════════════════════════════════════════════════════════════════════════
+ *
+ *  ⛔ THE SPIKE LANE IS STILL 5116 AND IT DID NOT MOVE. `Plugins/SiegeLlama/**`
+ *  was DELIBERATELY NOT TOUCHED BY THIS BATCH EITHER — it is TASK-481's
+ *  in-flight instrument (FT-§16), and `AS-§21.10` lists `SiegeLlamaSpike.cpp`
+ *  under ⛔ NOT TOUCHED by name. ⇒ `D4` — the lane divergence — is unchanged as a
+ *  FACT and merely LARGER as a quantity: 308 → 542.
+ *
+ *  ⛔⛔ AND IT WAS RE-BASED THE HONEST WAY, WHICH IS THE ONLY THING WORTH SAYING
+ *  ABOUT A RE-BASE. The frozen spike fixture below is byte-untouched; ⛔ NOT ONE
+ *  CHARACTER OF `BuildZoneA`'s OUTPUT WAS COPIED INTO IT. What grew is the
+ *  DECLARED DIFF, which now names SEVEN components across THREE tasks, each as
+ *  its own literal measured by the compiler:
+ *
+ *      +44   TASK-521  `WHO =` gains {"all_except":[KIND]}          ─┐ D4
+ *      +111  TASK-521  rule line — who is "all"                      │ (2026-08-04)
+ *      +153  TASK-521  rule line — the exclusion, 4 verbs           ─┘
+ *       -5   TASK-541  the `defend` note repair (AS-§21.2)          ─┐
+ *      +16   TASK-547  `WHO =` gains {"in":ZONE}                     │ D5
+ *      +76   TASK-547  the whole `ZONE   = ` metavariable line       │ (2026-08-05)
+ *      +147  TASK-547  the in-vs-where rule line                    ─┘
+ *      ————
+ *      +542  ⇒ 5116 + 542 = 5658
+ *
+ *  ⚠️ THE `-5` IS ANOTHER FILE'S LINE AND IT IS STILL ZONE A'S BYTE. TASK-541
+ *  edited `SiegeAssistantVocabulary.cpp`'s `[notes]` row; Zone A prints it
+ *  through `BuildSynonymTable()`, so it lands here. A re-base that looked only at
+ *  `SiegeAssistantSnapshot.cpp` would have been wrong by exactly 5.
+ *
+ *  ⚠️⚠️ THE BUDGET BASE MOVED AND THE BASE IS PART OF THE MEASUREMENT (`SC-§23`).
+ *  `AS-§20.4`'s 325-char ceiling was measured against the SPIKE's 5116 and it is
+ *  kept below, still asserted, still true of the 308. `AS-§21.7`'s ceiling is a
+ *  DIFFERENT quantity: **+250 for the AI-COMMANDER batch, measured against the
+ *  RE-BASED 5419** (= 5424 − 5, post-TASK-541). Both are asserted, separately,
+ *  against their own bases. ⛔ Comparing this batch's spend to 325, or the whole
+ *  542 to 250, is the base error `SC-§23` names.
+ *
+ *  ⛔ WHICH TESTS READ THE CONSTANT — THE QUESTION THAT MATTERS, ASKED THE RIGHT
+ *  WAY ROUND. The last re-base (TASK-523) broke a THIRD test nobody had listed,
+ *  `…ZoneA.NullVocabularyIsNotTheMeasuredLane`, because its expectation is
+ *  DERIVED from `ShippedZoneAChars` rather than named in any spec. So this time
+ *  the file was swept for READERS of the constants instead of for names in the
+ *  spec: `ShippedZoneAChars` / `SpikeLaneZoneAChars` / `DeclaredD4Delta` / the
+ *  `D4_`/`D5_` literals appear in THIS FILE ONLY (grepped across `Source/` and
+ *  `Plugins/`, 2026-08-05), and inside it in exactly three tests —
+ *  TwoLaneByteEquality, MeasuredCharCount and NullVocabulary. AsciiCleanliness
+ *  and StaticPrefixContract read neither and are re-asserted rather than
+ *  re-based. ⚖️ THE RULE, WRITTEN DOWN SO THE NEXT RE-BASE DOES NOT RE-LEARN IT:
+ *  **a spec lists the tests it KNOWS about; only a grep lists the tests that
+ *  READ THE NUMBER.**
  */
 
 namespace SiegeAssistantZoneATestFixture
@@ -263,31 +319,64 @@ namespace SiegeAssistantZoneATestFixture
 	static constexpr int32 SpikeLaneZoneAChars = 5116;
 
 	/**
-	 *  ⭐ THE SHIPPED LANE'S CHARACTER COUNT AS OF 2026-08-04 — 5424. THE NAMED,
-	 *  DATED BASELINE THIS FILE NOW ASSERTS AGAINST (batch ASSISTANT-EXCLUDE,
-	 *  TASK-521 authored the edit, TASK-523 re-based these tests).
+	 *  ⚠️ THE 2026-08-04 BASELINE, KEPT AS A NAMED WAYPOINT RATHER THAN OVERWRITTEN.
+	 *  5424 was the shipped figure after batch ASSISTANT-EXCLUDE (TASK-521 authored
+	 *  the edit, TASK-523 re-based these tests to it). It is NOT the current shipped
+	 *  length any more — it is the base the AI-COMMANDER batch's own arithmetic
+	 *  starts from, and keeping it named is what lets the D4 and D5 generations be
+	 *  asserted separately against their OWN bases (`SC-§23`).
+	 */
+	static constexpr int32 ZoneAChars_2026_08_04 = 5424;
+
+	/**
+	 *  ⭐ THE RE-BASED BASELINE THE AI-COMMANDER BATCH'S +250 CEILING IS MEASURED
+	 *  AGAINST — 5419, post-TASK-541 (`AS-§21.7`, which names this number).
+	 *
+	 *  ⛔ IT IS NOT AN INTERMEDIATE VALUE ANY BUILDER EVER PRODUCED IN A SHIPPED
+	 *  BUILD: TASK-541 and TASK-547 landed in the same working tree. It is a stated
+	 *  BASE, and it exists as a named constant for one reason — `AS-§21.7`'s ceiling
+	 *  is meaningless without it, and a ceiling checked against the wrong base is
+	 *  the exact defect `SC-§23` names ("a measurement's BASE is part of the
+	 *  measurement, and a varying value in the right field is still wrong if its
+	 *  base is wrong").
+	 */
+	static constexpr int32 RebasedZoneAChars_2026_08_05 = ZoneAChars_2026_08_04 - 5;
+
+	/**
+	 *  ⭐⭐ THE SHIPPED LANE'S CHARACTER COUNT AS OF 2026-08-05 — 5658. THE NAMED,
+	 *  DATED BASELINE THIS FILE NOW ASSERTS AGAINST (batch AI-COMMANDER ROBUSTNESS:
+	 *  TASK-541 and TASK-547 authored the edits, TASK-549 re-based these tests).
 	 *
 	 *  ⚠️ THE CHAR COUNT IS RE-COUNTED, THE TOKEN COUNT IS NOT, AND THAT ASYMMETRY
-	 *  IS THE WHOLE RULE (AS-§20.4). Characters are countable offline with no model
-	 *  resident, so a deliberate edit's new char figure is a COUNT rather than a
-	 *  conversion. Tokens are not: §12g measured a −15/+4 error band with
+	 *  IS THE WHOLE RULE (AS-§20.4, AS-§21.7). Characters are countable offline with
+	 *  no model resident, so a deliberate edit's new char figure is a COUNT rather
+	 *  than a conversion. Tokens are not: §12g measured a −15/+4 error band with
 	 *  UNPREDICTABLE SIGN on exactly this kind of derivation.
 	 *
-	 *  ⛔ THIS NUMBER WAS NOT TAKEN ON TRUST FROM TASK-521's HANDOFF. It is the
-	 *  spike lane's 5116 plus the THREE enumerated edits below, each of which is
-	 *  reproduced as its own literal in this file and measured by the compiler:
-	 *      +44   the `WHO    =` schema line gains the `{"all_except":[KIND]}` shape
-	 *      +111  rule line 1 — `who` is "all" for every-unit orders
-	 *      +153  rule line 2 — `who` is {"all_except":[KIND]}, and only on the four
-	 *            selection-bearing verbs
+	 *  ⛔ THIS NUMBER WAS NOT TAKEN ON TRUST FROM ANY HANDOFF. It is the spike lane's
+	 *  5116 plus the SEVEN enumerated components below, each of which is reproduced
+	 *  as its own literal in this file and measured by the compiler:
+	 *      +44   TASK-521  the `WHO    =` line gains `{"all_except":[KIND]}`
+	 *      +111  TASK-521  rule line — `who` is "all" for every-unit orders
+	 *      +153  TASK-521  rule line — `who` is {"all_except":[KIND]}, four verbs
+	 *       -5   TASK-541  the `defend` note repair (it reaches Zone A through
+	 *                      BuildSynonymTable(), so it is Zone A's byte)
+	 *      +16   TASK-547  the `WHO    =` line gains `, or {"in":ZONE}`
+	 *      +76   TASK-547  the whole `ZONE   = ` metavariable line, incl. newline
+	 *      +147  TASK-547  the in-vs-where rule line, incl. newline
 	 *      ————
-	 *      +308  ⇒ 5116 + 308 = 5424, against AS-§20.4's 325-char Zone-A growth
-	 *            budget for the WHOLE batch: 17 chars of slack, spent.
+	 *      +542  ⇒ 5116 + 542 = 5658
 	 */
-	static constexpr int32 ShippedZoneAChars = 5424;
+	static constexpr int32 ShippedZoneAChars = 5658;
 
-	/** The declared D4 growth. Its three components are asserted individually below, so a wrong total cannot hide inside a right one. */
+	/** The declared lane divergence. Its SEVEN components are asserted individually below, so a wrong total cannot hide inside a right one. */
 	static constexpr int32 DeclaredD4Delta = ShippedZoneAChars - SpikeLaneZoneAChars;
+
+	/** The ASSISTANT-EXCLUDE generation's growth, against AS-§20.4's 325-char ceiling and the SPIKE's 5116. */
+	static constexpr int32 DeclaredD4Delta_2026_08_04 = ZoneAChars_2026_08_04 - SpikeLaneZoneAChars;
+
+	/** ⭐ The AI-COMMANDER generation's growth, against AS-§21.7's +250 ceiling and the RE-BASED 5419. ⛔ A different quantity with a different base — do not compare either to the other's ceiling. */
+	static constexpr int32 DeclaredD5Delta_2026_08_05 = ShippedZoneAChars - RebasedZoneAChars_2026_08_05;
 
 	// ═══════════════════════════════════════════════════════════════════════════
 	//  ⭐ THE DECLARED DIVERGENCE `D4` (2026-08-04) — THE THREE EDITS, SPELLED OUT
@@ -356,16 +445,101 @@ namespace SiegeAssistantZoneATestFixture
 	static const TCHAR* const D4_RuleExclusion =
 		TEXT("- Every unit but some kinds: who is {\"all_except\":[KIND]}, only with send, guard, ambush or follow. On charge, fallback or rally: {\"ask\":\"unsupported\"}.\n");
 
+	// ═══════════════════════════════════════════════════════════════════════════
+	//  ⭐⭐ `D5` — THE AI-COMMANDER ROBUSTNESS GENERATION (2026-08-05), FOUR MORE
+	//      COMPONENTS ON TOP OF `D4`'s THREE
+	// ═══════════════════════════════════════════════════════════════════════════
+	//
+	//  ⛔ SAME RULE, RESTATED BECAUSE IT IS THE ONLY THING THAT MAKES A RE-BASE
+	//  WORTH ANYTHING: none of the four literals below was copied out of the
+	//  builders they describe. Each was re-derived from the law and the source and
+	//  is measured by the compiler; a transcription error fails the component
+	//  assertion in MeasuredCharCount BY NAME, not as an unexplained total.
+	//
+	//  ⚠️ AND THE ONE THAT IS EASY TO MISS: component 4 does NOT live in
+	//  `SiegeAssistantSnapshot.cpp` at all. It is a row of the VOCABULARY's
+	//  `[notes]` block (`SiegeAssistantVocabulary.cpp`), which Zone A prints through
+	//  `BuildSynonymTable()` — another file's line, unambiguously Zone A's byte.
+
+	/** COMPONENT 4 (TASK-541, −5 chars) — the `[notes]` row AS THE SPIKE LANE STILL PRINTS IT. */
+	static const TCHAR* const D5_NotesLineBefore =
+		TEXT("send, guard, ambush, follow take a unit list. charge, fallback, rally move the whole army or the hero and take who = none. defend = ambiguous between guard and fallback -> ask which_intent.\n");
+
 	/**
-	 *  The spike lane with the three declared edits applied — i.e. what the SHIPPED
-	 *  lane must be, byte for byte.
+	 *  The same row after TASK-541. ⭐ THE DELIVERABLE IS THE DIFF AND IT IS
+	 *  CHARACTER-NEGATIVE (`AS-§21.2`): it REMOVES a contradiction — one shipped
+	 *  prompt line asserted `defend` was ambiguous, conditioned on a harm that a
+	 *  newer, unconditional line ("if the player names units, the intent is send,
+	 *  guard, ambush or follow, never charge, fallback or rally") had already made
+	 *  structurally impossible. ⛔ NO ACCURACY FIGURE IS ATTACHED TO IT ANYWHERE
+	 *  (`AS-§12f`) and none may be added here.
+	 */
+	static const TCHAR* const D5_NotesLineAfter =
+		TEXT("send, guard, ambush, follow take a unit list. charge, fallback, rally move the whole army or the hero and take who = none. defend with units -> guard. defend alone -> ask which_intent.\n");
+
+	/**
+	 *  COMPONENT 5 (TASK-547, +16 chars) — the `WHO =` line AFTER `{"in":ZONE}` is
+	 *  inserted. ⛔ THIRD, after the `all_except` shape and BEFORE the two bare
+	 *  strings, because that is the GRAMMAR's own alternation order
+	 *  (`who ::= selection | except | inplace | "all" | "none"`, `AS-§21.5`) and
+	 *  Zone A mirrors the grammar character-for-character (`AS-§9c`). Moving it is
+	 *  not a style choice — `Siegebound.Assistant.Selection.ZoneAWhoLineMirrorsGrammar`
+	 *  asserts the two agree.
+	 */
+	static const TCHAR* const D5_WhoLineAfterRegion =
+		TEXT("WHO    = [{\"kind\":KIND,\"n\":COUNT}] with 1 to 3 entries, or {\"all_except\":[KIND]} with 1 to 3 kinds, or {\"in\":ZONE}, or \"all\", or \"none\"\n");
+
+	/** The line the `ZONE   = ` metavariable is inserted AFTER — an anchor, not an edit. Unchanged in both lanes. */
+	static const TCHAR* const D5_CountLineAnchor =
+		TEXT("COUNT  = 1 to 30, or \"all\"\n");
+
+	/**
+	 *  COMPONENT 6 (TASK-547, 76 chars incl. the newline) — the `ZONE` metavariable.
+	 *
+	 *  ⚠️ THE SHIPPED LINE IS GENERATED FROM `PlaceVocabulary`'s `bHasRegion` COLUMN,
+	 *  NOT HAND-WRITTEN, and this literal is the expected RESULT of that generation
+	 *  at the shipped table (three region-bearing rows, fixed vocabulary order). If
+	 *  a place gains or loses a region primitive this literal must move with it —
+	 *  which is the point: the change would fail HERE, named, instead of silently
+	 *  altering a byte-frozen prompt.
+	 */
+	static const TCHAR* const D5_ZoneLine =
+		TEXT("ZONE   = an area place symbol: mid, ancient_ground_near, ancient_ground_far\n");
+
+	/**
+	 *  COMPONENT 7 (TASK-547, 147 chars incl. the newline) — the in-vs-where rule,
+	 *  inserted immediately AFTER the exclusion rule so the `who`-shape ladder runs
+	 *  kinds → "all" → exclusion → region.
+	 *
+	 *  ⭐ IT IS THE LINE THAT TEACHES THE ONE DISTINCTION THAT *IS* THE FEATURE:
+	 *  Jonathan's "send all units currently in an ancient ground to attack a castle"
+	 *  fills BOTH place-valued keys at once (`who:{"in":…}` and `where:…`) out of the
+	 *  same seven-symbol vocabulary, and before this line nothing in the prompt said
+	 *  which key takes which.
+	 */
+	static const TCHAR* const D5_RuleInPlace =
+		TEXT("- Units already in a place: who is {\"in\":ZONE}, where is still where they go, and one order may set both. Only with send, guard, ambush or follow.\n");
+
+	/** Every declared component, in one place, so the caller can assert the count without re-listing them. */
+	static constexpr int32 DeclaredComponentCount = 7;
+
+	/**
+	 *  The spike lane with ALL SEVEN declared components applied — i.e. what the
+	 *  SHIPPED lane must be, byte for byte.
 	 *
 	 *  ⛔ EVERY REPLACEMENT IS `ESearchCase::CaseSensitive`. `FString::Replace`
 	 *  defaults to CASE-INSENSITIVE, which on a byte-exact derivation would let a
 	 *  casing change slip through unnoticed — the same trap `TestEqual`-on-FString
 	 *  sets one layer up (SC-§13).
 	 *
-	 *  @param OutApplied  how many of the three edits actually matched. ⛔ Asserted
+	 *  ⚠️ THE ORDER OF THE REPLACEMENTS IS LOAD-BEARING, NOT COSMETIC. The `WHO =`
+	 *  line is edited TWICE (TASK-521 then TASK-547) and the second edit matches the
+	 *  FIRST edit's output, so swapping them silently applies neither. Likewise the
+	 *  in-place rule is anchored on `D4_RuleExclusion`, which does not exist in the
+	 *  fixture until the D4 rule pair has been inserted. Each step is counted
+	 *  separately for exactly this reason.
+	 *
+	 *  @param OutApplied  how many of the SEVEN components actually matched. ⛔ Asserted
 	 *                     by the caller: a replacement that silently matched
 	 *                     NOTHING would leave this function returning the spike
 	 *                     lane unchanged and turn the comparison into an equality
@@ -376,17 +550,49 @@ namespace SiegeAssistantZoneATestFixture
 		FString Out = BuildSpikeLaneZoneA();
 		OutApplied = 0;
 
+		// ── D4 component 1 (TASK-521, +44) ────────────────────────────────────
 		if (Out.Contains(D4_WhoLineBefore, ESearchCase::CaseSensitive))
 		{
 			Out.ReplaceInline(D4_WhoLineBefore, D4_WhoLineAfter, ESearchCase::CaseSensitive);
 			++OutApplied;
 		}
 
+		// ── D4 components 2 and 3 (TASK-521, +111 and +153) ───────────────────
 		if (Out.Contains(D4_RuleAnchor, ESearchCase::CaseSensitive))
 		{
 			const FString Replacement = FString(D4_RuleAnchor) + D4_RuleAllUnits + D4_RuleExclusion;
 			Out.ReplaceInline(D4_RuleAnchor, *Replacement, ESearchCase::CaseSensitive);
 			OutApplied += 2;
+		}
+
+		// ── D5 component 4 (TASK-541, −5) — the `[notes]` row ─────────────────
+		if (Out.Contains(D5_NotesLineBefore, ESearchCase::CaseSensitive))
+		{
+			Out.ReplaceInline(D5_NotesLineBefore, D5_NotesLineAfter, ESearchCase::CaseSensitive);
+			++OutApplied;
+		}
+
+		// ── D5 component 5 (TASK-547, +16) — MUST FOLLOW component 1 ──────────
+		if (Out.Contains(D4_WhoLineAfter, ESearchCase::CaseSensitive))
+		{
+			Out.ReplaceInline(D4_WhoLineAfter, D5_WhoLineAfterRegion, ESearchCase::CaseSensitive);
+			++OutApplied;
+		}
+
+		// ── D5 component 6 (TASK-547, +76) — the `ZONE   = ` line ─────────────
+		if (Out.Contains(D5_CountLineAnchor, ESearchCase::CaseSensitive))
+		{
+			const FString Replacement = FString(D5_CountLineAnchor) + D5_ZoneLine;
+			Out.ReplaceInline(D5_CountLineAnchor, *Replacement, ESearchCase::CaseSensitive);
+			++OutApplied;
+		}
+
+		// ── D5 component 7 (TASK-547, +147) — MUST FOLLOW components 2/3 ──────
+		if (Out.Contains(D4_RuleExclusion, ESearchCase::CaseSensitive))
+		{
+			const FString Replacement = FString(D4_RuleExclusion) + D5_RuleInPlace;
+			Out.ReplaceInline(D4_RuleExclusion, *Replacement, ESearchCase::CaseSensitive);
+			++OutApplied;
 		}
 
 		return Out;
@@ -451,6 +657,25 @@ namespace SiegeAssistantZoneATestFixture
 	{
 		return TStrongObjectPtr<USiegeAssistantSnapshot>(NewObject<USiegeAssistantSnapshot>());
 	}
+
+	/**
+	 *  A `Capture()`-owned `TArray<FName>` member, reached through reflection.
+	 *
+	 *  ⚠️ THE INNER TYPE IS CHECKED, NOT JUST THE NAME — the sibling SelectionTest
+	 *  file's reasoning, and it matters more here than there: a rename or a retype
+	 *  makes this return null, the snapshot then stays EMPTY, and the
+	 *  state-independence assertion below would pass VACUOUSLY on a snapshot with
+	 *  nothing in it. ⛔ A test that silently stops testing is worse than no test.
+	 */
+	static TArray<FName>* FindNameArrayField(UObject* Object, const TCHAR* FieldName)
+	{
+		FArrayProperty* const ArrayProperty = FindFProperty<FArrayProperty>(Object->GetClass(), FieldName);
+		if (!ArrayProperty || !ArrayProperty->Inner || !ArrayProperty->Inner->IsA<FNameProperty>())
+		{
+			return nullptr;
+		}
+		return ArrayProperty->ContainerPtrToValuePtr<TArray<FName>>(Object);
+	}
 }
 
 // ===========================================================================
@@ -499,10 +724,10 @@ bool FSiegeAssistantZoneATwoLaneEqualityTest::RunTest(const FString& Parameters)
 	// are the first thing the next reader needs, and an AddError on the comparison
 	// alone would bury them.
 	AddInfo(FString::Printf(
-		TEXT("Zone A lengths - shipped: %d chars / %d UTF-8 bytes (named baseline %d, 2026-08-04); spike lane: %d chars / %d UTF-8 bytes (frozen at %d); declared D4 delta: %d."),
+		TEXT("Zone A lengths - shipped: %d chars / %d UTF-8 bytes (NAMED, DATED BASELINE %d, 2026-08-05, batch AI-COMMANDER ROBUSTNESS); spike lane: %d chars / %d UTF-8 bytes (frozen at its MEASURED %d, unmoved since 2026-08-03); declared lane divergence D4+D5: %d chars across %d components and THREE tasks (521 / 541 / 547)."),
 		ShippedLane.Len(), Utf8ByteLength(ShippedLane), ShippedZoneAChars,
 		SpikeLane.Len(), Utf8ByteLength(SpikeLane), SpikeLaneZoneAChars,
-		DeclaredD4Delta));
+		DeclaredD4Delta, DeclaredComponentCount));
 
 	// ── ⛔ THE THREE EDITS MUST ACTUALLY HAVE MATCHED ─────────────────────────
 	// A `Replace` that matched nothing returns the input unchanged, which would
@@ -511,10 +736,10 @@ bool FSiegeAssistantZoneATwoLaneEqualityTest::RunTest(const FString& Parameters)
 	// what this test claims to measure. So the derivation is checked before it is
 	// used, which is the same "did the guard actually run" discipline SC-§21
 	// applies to guard placement.
-	if (!TestEqual(TEXT("⛔ All THREE declared D4 edits matched the frozen spike fixture (if not, the fixture or the declared diff has moved and NOTHING below is meaningful)"),
-		EditsApplied, 3))
+	if (!TestEqual(*FString::Printf(TEXT("⛔ All %d declared components (D4's three + D5's four) matched the frozen spike fixture (if not, the fixture or the declared diff has moved and NOTHING below is meaningful)"), DeclaredComponentCount),
+		EditsApplied, DeclaredComponentCount))
 	{
-		AddError(TEXT("The declared D4 diff no longer applies to the frozen spike fixture. ⛔ Do NOT 'fix' this by re-copying BuildZoneA's output into the fixture - that destroys the only surviving record of the bytes `zoneA_chars=5116` was measured on. Re-derive the diff from the shipped builder BY HAND and write it out edit by edit."));
+		AddError(TEXT("The declared D4+D5 diff no longer applies to the frozen spike fixture. ⛔ Do NOT 'fix' this by re-copying BuildZoneA's output into the fixture - that destroys the only surviving record of the bytes `zoneA_chars=5116` was measured on, and it would make the comparison below vacuously true. Re-derive the diff from the shipped builders BY HAND and write it out component by component. ⚠️ Two components edit the SAME `WHO =` line and one is anchored on another's output, so check the ORDER of the replacements before concluding a literal is wrong."));
 		return false;
 	}
 
@@ -525,14 +750,16 @@ bool FSiegeAssistantZoneATwoLaneEqualityTest::RunTest(const FString& Parameters)
 	if (Divergence != INDEX_NONE)
 	{
 		AddError(FString::Printf(
-			TEXT("⛔ THE SHIPPED ZONE A IS NOT THE SPIKE LANE PLUS THE DECLARED `D4` DIFF - it first departs at character %d.\n")
-			TEXT("  D4 (declared 2026-08-04, batch ASSISTANT-EXCLUDE): the SHIPPED lane gained a 44-char `WHO =` schema shape and two rule lines (+111, +153) = +308, moving it from %d to %d chars. `Plugins/SiegeLlama/**` was DELIBERATELY NOT TOUCHED (it is TASK-481's in-flight instrument, FT-§16), so the spike lane stayed at %d.\n")
+			TEXT("⛔ THE SHIPPED ZONE A IS NOT THE SPIKE LANE PLUS THE DECLARED `D4`+`D5` DIFF - it first departs at character %d.\n")
+			TEXT("  D4 (declared 2026-08-04, batch ASSISTANT-EXCLUDE): a 44-char `WHO =` schema shape and two rule lines (+111, +153) = +308.\n")
+			TEXT("  D5 (declared 2026-08-05, batch AI-COMMANDER ROBUSTNESS): the `defend` note repair (-5, TASK-541, in SiegeAssistantVocabulary.cpp - Zone A prints it through BuildSynonymTable()), `, or {\"in\":ZONE}` on the `WHO =` line (+16), the whole `ZONE   = ` metavariable line (+76) and the in-vs-where rule line (+147) = +234.\n")
+			TEXT("  ⇒ the SHIPPED lane is %d chars. ⛔ THE SPIKE LANE HAS DIVERGED AND STAYS AT ITS MEASURED %d: `Plugins/SiegeLlama/**` was DELIBERATELY NOT TOUCHED by EITHER batch - it is TASK-481's in-flight instrument (FT-§16) and AS-§21.10 lists SiegeLlamaSpike.cpp under NOT TOUCHED by name. The %d-char gap is DECLARED, not a regression.\n")
 			TEXT("  ⛔ `zoneA_tok = 1139` and the 77.1%% KV-reuse figure are STALE - PENDING RE-MEASUREMENT ON THE MODEL. They are NOT recomputed by arithmetic; only Siege.Llama.SpikePrompt prints them.\n")
-			TEXT("  ⛔ DO NOT silence this by editing the frozen spike fixture, and DO NOT paste BuildZoneA's output into it. If Zone A was edited on purpose again, ADD the new edit to the D4 diff above, edit by edit, and re-count.\n")
+			TEXT("  ⛔ DO NOT silence this by editing the frozen spike fixture, and DO NOT paste BuildZoneA's output into it - a test transcribed from its own subject is a guardrail that reports SAFE. If Zone A was edited on purpose again, ADD the new edit to the diff above as its OWN NAMED LITERAL, and re-count.\n")
 			TEXT("  shipped : ...%s...\n")
 			TEXT("  declared: ...%s..."),
 			Divergence,
-			SpikeLaneZoneAChars, ShippedZoneAChars, SpikeLaneZoneAChars,
+			ShippedZoneAChars, SpikeLaneZoneAChars, DeclaredD4Delta,
 			*Window(ShippedLane, Divergence), *Window(DeclaredShippedLane, Divergence)));
 	}
 
@@ -546,7 +773,7 @@ bool FSiegeAssistantZoneATwoLaneEqualityTest::RunTest(const FString& Parameters)
 	// guardrail that reports safe" failure CONVENTIONS §12g rules worse than
 	// having no test at all, so it is called out here rather than left as a silent
 	// idiom for the next editor to undo.
-	TestEqualSensitive(TEXT("⭐ The shipped BuildZoneA(default vocabulary) is the frozen spike lane PLUS EXACTLY the three declared `D4` edits and nothing else"),
+	TestEqualSensitive(TEXT("⭐ The shipped BuildZoneA(default vocabulary) is the frozen spike lane PLUS EXACTLY the seven declared `D4`+`D5` components and nothing else"),
 		ShippedLane, DeclaredShippedLane);
 
 	// ── AND THE DIVERGENCE ITSELF IS ASSERTED, NOT MERELY TOLERATED ───────────
@@ -555,8 +782,20 @@ bool FSiegeAssistantZoneATwoLaneEqualityTest::RunTest(const FString& Parameters)
 	// (⛔ another batch's instrument) or the shipped rule lines were reverted (⛔
 	// Jonathan's fix, gone). Both are events that must be SEEN, so `D4` is
 	// asserted to still be a real, non-empty divergence.
-	TestNotEqualSensitive(TEXT("⛔ `D4` IS STILL A REAL DIVERGENCE: the shipped lane and the frozen spike lane are NOT byte-equal. If they are, either the spike was edited (another batch's instrument) or TASK-521's rule lines were reverted."),
+	TestNotEqualSensitive(TEXT("⛔ `D4` IS STILL A REAL DIVERGENCE: the shipped lane and the frozen spike lane are NOT byte-equal. If they are, either the spike was edited (another batch's instrument) or TASK-521 / TASK-547's lines were reverted."),
 		ShippedLane, SpikeLane);
+
+	// ⭐ AND THE SPIKE LANE'S OWN BYTES ARE ASSERTED HERE TOO, NOT ONLY ITS LENGTH.
+	// A length check alone would pass a fixture that had been edited to stay 5116
+	// while its CONTENT drifted toward the shipped builder — which is precisely the
+	// "re-copied transcription" failure this file forbids, in its cheapest form.
+	// The `defend` clause is the one D5 touched, so it is the one worth naming.
+	TestTrue(TEXT("⛔ The FROZEN SPIKE FIXTURE still carries the PRE-TASK-541 `defend` note verbatim — it is the measured lane's bytes and TASK-541 deliberately did not touch Plugins/SiegeLlama"),
+		SpikeLane.Contains(TEXT("defend = ambiguous between guard and fallback -> ask which_intent."), ESearchCase::CaseSensitive));
+	TestFalse(TEXT("⛔ …and it does NOT carry the post-TASK-541 wording. If it does, the fixture was re-copied from the shipped builder and every assertion above is vacuous."),
+		SpikeLane.Contains(TEXT("defend with units -> guard."), ESearchCase::CaseSensitive));
+	TestFalse(TEXT("⛔ The frozen spike fixture carries NO `ZONE   = ` line — the region feature is 2026-08-05 and the spike lane predates it"),
+		SpikeLane.Contains(TEXT("ZONE   = "), ESearchCase::CaseSensitive));
 
 	return true;
 }
@@ -576,12 +815,20 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
  *  diff that BOTH moved by the same amount stay consistent with each other while
  *  both drift away from the number that was counted. The test above proves the
  *  shipped lane is the spike lane plus the ruled diff; this proves the two lanes
- *  sit on 5424 and 5116 respectively. Only the pair discharges the claim.
+ *  sit on 5658 and 5116 respectively. Only the pair discharges the claim.
  *
  *  ⛔ THE TWO LANES NOW HAVE TWO DIFFERENT NUMBERS, AND THAT IS THE POINT —
- *  divergence `D4`, declared 2026-08-04 (AS-§20.4). ⛔ RE-COUNTED, NOT
- *  RE-DERIVED-BY-TRUST: the components of the +308 are asserted individually
- *  below from the literals in this file, so the total cannot be right by accident.
+ *  divergence `D4`, declared 2026-08-04 (AS-§20.4) and WIDENED 2026-08-05 by the
+ *  four `D5` components (AS-§21.7). ⛔ RE-COUNTED, NOT RE-DERIVED-BY-TRUST: all
+ *  SEVEN components of the +542 are asserted individually below from the literals
+ *  in this file, so the total cannot be right by accident — and a wrong literal
+ *  fails with its own task number attached.
+ *
+ *  ⛔⛔ AND THE TWO CEILINGS ARE ASSERTED AGAINST THEIR OWN BASES. `AS-§20.4`'s
+ *  325 is measured from the SPIKE's 5116; `AS-§21.7`'s 250 is measured from the
+ *  RE-BASED 5419. Checking either spend against the other's ceiling — or the
+ *  whole 542 against either — is the base error `SC-§23` names, and it would pass
+ *  or fail for a reason that has nothing to do with what was spent.
  */
 bool FSiegeAssistantZoneAMeasuredCharCountTest::RunTest(const FString& Parameters)
 {
@@ -599,9 +846,9 @@ bool FSiegeAssistantZoneAMeasuredCharCountTest::RunTest(const FString& Parameter
 	const FString ShippedLane = Snapshot->BuildZoneA(Vocabulary.Get());
 	const FString SpikeLane = BuildSpikeLaneZoneA();
 
-	TestEqual(TEXT("⭐ The SHIPPED Zone A is exactly 5424 characters — the named, dated baseline of 2026-08-04"),
+	TestEqual(TEXT("⭐ The SHIPPED Zone A is exactly 5658 characters — the named, dated baseline of 2026-08-05 (batch AI-COMMANDER ROBUSTNESS)"),
 		ShippedLane.Len(), ShippedZoneAChars);
-	TestEqual(TEXT("⛔ The SPIKE Zone A is STILL exactly the measured 5116 characters — Plugins/SiegeLlama was deliberately NOT touched (D4, FT-§16)"),
+	TestEqual(TEXT("⛔ The SPIKE Zone A is STILL exactly the measured 5116 characters — Plugins/SiegeLlama was deliberately NOT touched by EITHER batch (D4, FT-§16, AS-§21.10)"),
 		SpikeLane.Len(), SpikeLaneZoneAChars);
 
 	// The byte figure is asserted separately from the char figure rather than
@@ -609,36 +856,70 @@ bool FSiegeAssistantZoneAMeasuredCharCountTest::RunTest(const FString& Parameter
 	// because a constant named "Chars" that measured bytes hid a 3x
 	// over-admission; the same conflation is not going to be re-introduced here
 	// by assumption.
-	TestEqual(TEXT("The SHIPPED Zone A is exactly 5424 UTF-8 BYTES (asserted, not inferred from the char count)"),
+	TestEqual(TEXT("The SHIPPED Zone A is exactly 5658 UTF-8 BYTES (asserted, not inferred from the char count)"),
 		Utf8ByteLength(ShippedLane), ShippedZoneAChars);
 	TestEqual(TEXT("The SPIKE Zone A is exactly 5116 UTF-8 BYTES"),
 		Utf8ByteLength(SpikeLane), SpikeLaneZoneAChars);
 
-	// ── ⭐ THE +308, COMPONENT BY COMPONENT ───────────────────────────────────
-	// ⛔ THIS IS THE RE-COUNT, AND IT IS WHY 5424 IS NOT A NUMBER TAKEN ON TRUST
+	// ── ⭐ THE +542, COMPONENT BY COMPONENT, ACROSS THREE TASKS ───────────────
+	// ⛔ THIS IS THE RE-COUNT, AND IT IS WHY 5658 IS NOT A NUMBER TAKEN ON TRUST
 	// FROM A HANDOFF. Each figure is measured by the compiler off the literal in
-	// this file's D4 block, so a transcription error in any one of them fails HERE
-	// with the component named, rather than showing up as an unexplained 308 that
-	// happens not to match.
+	// this file's D4/D5 block, so a transcription error in any one of them fails
+	// HERE with the component named, rather than showing up as an unexplained 542
+	// that happens not to match. ⚠️ THE NUMBERS ARE THE ONES THE AUTHORS MEASURED
+	// (TASK-541 §3, TASK-547 §3), ⛔ NOT arithmetic performed on a total.
 	const int32 WhoLineDelta = FCString::Strlen(D4_WhoLineAfter) - FCString::Strlen(D4_WhoLineBefore);
 	const int32 RuleAllUnitsLength = FCString::Strlen(D4_RuleAllUnits);
 	const int32 RuleExclusionLength = FCString::Strlen(D4_RuleExclusion);
+	const int32 NotesLineDelta = FCString::Strlen(D5_NotesLineAfter) - FCString::Strlen(D5_NotesLineBefore);
+	const int32 WhoLineRegionDelta = FCString::Strlen(D5_WhoLineAfterRegion) - FCString::Strlen(D4_WhoLineAfter);
+	const int32 ZoneLineLength = FCString::Strlen(D5_ZoneLine);
+	const int32 RuleInPlaceLength = FCString::Strlen(D5_RuleInPlace);
 
-	TestEqual(TEXT("D4 component 1 — the `WHO =` schema line gains exactly 44 chars for the {\"all_except\":[KIND]} shape"), WhoLineDelta, 44);
-	TestEqual(TEXT("D4 component 2 — the `who`:\"all\" rule line is exactly 111 chars"), RuleAllUnitsLength, 111);
-	TestEqual(TEXT("D4 component 3 — the exclusion rule line is exactly 153 chars"), RuleExclusionLength, 153);
-	TestEqual(TEXT("⭐ The three components sum to the declared D4 delta of 308"),
-		WhoLineDelta + RuleAllUnitsLength + RuleExclusionLength, DeclaredD4Delta);
+	TestEqual(TEXT("D4 component 1 (TASK-521) — the `WHO =` schema line gains exactly 44 chars for the {\"all_except\":[KIND]} shape"), WhoLineDelta, 44);
+	TestEqual(TEXT("D4 component 2 (TASK-521) — the `who`:\"all\" rule line is exactly 111 chars"), RuleAllUnitsLength, 111);
+	TestEqual(TEXT("D4 component 3 (TASK-521) — the exclusion rule line is exactly 153 chars"), RuleExclusionLength, 153);
+	TestEqual(TEXT("⭐ D5 component 4 (TASK-541) — the `defend` note repair is exactly -5 chars. ⛔ NEGATIVE: it REMOVES a contradiction (AS-§21.2). It lives in SiegeAssistantVocabulary.cpp, and it is Zone A's byte because Zone A prints the table."), NotesLineDelta, -5);
+	TestEqual(TEXT("⭐ D5 component 5 (TASK-547) — the `WHO =` line gains exactly 16 chars for `, or {\"in\":ZONE}`"), WhoLineRegionDelta, 16);
+	TestEqual(TEXT("⭐ D5 component 6 (TASK-547) — the whole `ZONE   = ` metavariable line is exactly 76 chars incl. its newline"), ZoneLineLength, 76);
+	TestEqual(TEXT("⭐ D5 component 7 (TASK-547) — the in-vs-where rule line is exactly 147 chars incl. its newline"), RuleInPlaceLength, 147);
 
-	// ⛔ THE BATCH-LEVEL BUDGET, ASSERTED RATHER THAN TRUSTED (AS-§20.4). The
-	// Zone-A growth ceiling for the WHOLE batch is ~325 characters, derived at
-	// §12g's pinned worst marginal rate from `zoneA_tok <= 1389` with
-	// `ContextTokens` frozen at 2048. ⛔ Over budget ⇒ STOP and escalate; it is not
-	// a soft target, and the next Zone-A edit has only the remainder to spend.
+	const int32 ComponentSum =
+		WhoLineDelta + RuleAllUnitsLength + RuleExclusionLength
+		+ NotesLineDelta + WhoLineRegionDelta + ZoneLineLength + RuleInPlaceLength;
+
+	TestEqual(TEXT("⭐ The seven components sum to the declared lane divergence of 542 (5116 -> 5658)"),
+		ComponentSum, DeclaredD4Delta);
+
+	// ── ⛔ TWO CEILINGS, TWO BASES, ASSERTED SEPARATELY (SC-§23) ──────────────
+	// ⚠️ A MEASUREMENT'S BASE IS PART OF THE MEASUREMENT. These are DIFFERENT
+	// quantities and folding them together is the exact defect SC-§23 names:
+	//
+	//   AS-§20.4 : 325 chars, measured against the SPIKE's 5116 — the
+	//              ASSISTANT-EXCLUDE generation's ceiling. Its spend is the 308.
+	//   AS-§21.7 : 250 chars, measured against the RE-BASED 5419 (= 5424 - 5,
+	//              post-TASK-541) — the AI-COMMANDER generation's ceiling. Its
+	//              spend is the 239 that TASK-547 measured component by component.
+	//
+	// ⛔ Comparing the whole 542 to either ceiling would be wrong against BOTH.
 	static constexpr int32 ZoneAGrowthBudgetChars = 325;
-	TestTrue(*FString::Printf(TEXT("⛔ The batch's Zone A growth (%d chars) is within AS-§20.4's %d-char ceiling — %d chars remain for any FUTURE Zone A edit"),
-		DeclaredD4Delta, ZoneAGrowthBudgetChars, ZoneAGrowthBudgetChars - DeclaredD4Delta),
-		DeclaredD4Delta <= ZoneAGrowthBudgetChars);
+	TestEqual(TEXT("The ASSISTANT-EXCLUDE generation's growth is the 308 it declared (5116 -> 5424)"),
+		WhoLineDelta + RuleAllUnitsLength + RuleExclusionLength, DeclaredD4Delta_2026_08_04);
+	TestTrue(*FString::Printf(TEXT("⛔ The ASSISTANT-EXCLUDE batch's Zone A growth (%d chars) is within AS-§20.4's %d-char ceiling, measured against the SPIKE's %d"),
+		DeclaredD4Delta_2026_08_04, ZoneAGrowthBudgetChars, SpikeLaneZoneAChars),
+		DeclaredD4Delta_2026_08_04 <= ZoneAGrowthBudgetChars);
+
+	// ⭐ THE CEILING THAT ACTUALLY GOVERNS THIS BATCH. Over budget ⇒ STOP and
+	// escalate (AS-§21.7); ⛔ never trim a shipped few-shot to make room.
+	static constexpr int32 AiCommanderZoneABudgetChars = 250;
+	TestEqual(TEXT("⭐ The re-based baseline AS-§21.7's ceiling is measured against is 5419 (5424 post-TASK-521, minus TASK-541's 5)"),
+		RebasedZoneAChars_2026_08_05, 5419);
+	TestEqual(TEXT("⭐ The AI-COMMANDER batch spent exactly 239 chars of Zone A against that base — TASK-547's measured 16 + 76 + 147"),
+		DeclaredD5Delta_2026_08_05, WhoLineRegionDelta + ZoneLineLength + RuleInPlaceLength);
+	TestTrue(*FString::Printf(TEXT("⛔ The AI-COMMANDER batch's Zone A growth (%d chars) is within AS-§21.7's %d-char ceiling, measured against the RE-BASED %d — %d chars remain for any FUTURE Zone A edit"),
+		DeclaredD5Delta_2026_08_05, AiCommanderZoneABudgetChars, RebasedZoneAChars_2026_08_05,
+		AiCommanderZoneABudgetChars - DeclaredD5Delta_2026_08_05),
+		DeclaredD5Delta_2026_08_05 <= AiCommanderZoneABudgetChars);
 
 	AddInfo(FString::Printf(
 		TEXT("⛔ TOKENS ARE NOT RE-COUNTED HERE AND MUST NOT BE. `zoneA_tok = 1139` and the 77.1%% KV-reuse figure are STALE - PENDING RE-MEASUREMENT ON THE MODEL (AS-§20.4). Characters are countable offline; tokens carry a MEASURED -15/+4 error band with UNPREDICTABLE SIGN (§12g), so converting %d chars into a token delta would be a derivation wearing a measurement's authority. Only Siege.Llama.SpikePrompt prints the real figure."),
@@ -708,6 +989,44 @@ bool FSiegeAssistantZoneAAsciiCleanTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("char count == UTF-8 byte count for the spike Zone A"),
 		Utf8ByteLength(SpikeLane), SpikeLane.Len());
 
+	// ── ⭐ RE-ASSERTED PER COMPONENT (TASK-549) ───────────────────────────────
+	// ⚠️ THE WHOLE-STRING CHECK ABOVE IS TRUE AND UNHELPFUL WHEN IT FAILS: it
+	// reports a character INDEX into a 5658-character prompt. Every declared
+	// component is its own literal in this file, so checking each one separately
+	// costs nothing and makes a bad paste name ITSELF. ⛔ This matters most for
+	// the D5 components: they are the newest bytes, three of them contain quote
+	// marks and arrows, and a curly apostrophe or an en dash pasted across the
+	// TEXT() boundary is the single cheapest way to silently separate this
+	// feature's char figures from its byte figures.
+	struct FNamedLiteral
+	{
+		const TCHAR* Label;
+		const TCHAR* Value;
+	};
+
+	const FNamedLiteral Components[] = {
+		{ TEXT("D4 component 1 — the `WHO =` line, pre-region"),        D4_WhoLineAfter },
+		{ TEXT("D4 component 2 — the `who`:\"all\" rule line"),          D4_RuleAllUnits },
+		{ TEXT("D4 component 3 — the exclusion rule line"),              D4_RuleExclusion },
+		{ TEXT("D5 component 4 — the repaired `[notes]` row"),           D5_NotesLineAfter },
+		{ TEXT("D5 component 5 — the `WHO =` line WITH {\"in\":ZONE}"),   D5_WhoLineAfterRegion },
+		{ TEXT("D5 component 6 — the `ZONE   = ` metavariable line"),    D5_ZoneLine },
+		{ TEXT("D5 component 7 — the in-vs-where rule line"),            D5_RuleInPlace }
+	};
+
+	for (const FNamedLiteral& Component : Components)
+	{
+		int32 ComponentNonAscii = INDEX_NONE;
+		const FString Value(Component.Value);
+		if (!IsAsciiClean(Value, ComponentNonAscii))
+		{
+			AddError(FString::Printf(
+				TEXT("%s contains a non-ASCII character at index %d of its own %d. Every char-based budget figure in this feature assumes char == byte, and this literal breaks it. Context: ...%s..."),
+				Component.Label, ComponentNonAscii, Value.Len(), *Window(Value, ComponentNonAscii, 30)));
+		}
+		TestTrue(*FString::Printf(TEXT("%s is ASCII-clean"), Component.Label), ComponentNonAscii == INDEX_NONE);
+	}
+
 	return true;
 }
 
@@ -776,6 +1095,79 @@ bool FSiegeAssistantZoneADeterminismTest::RunTest(const FString& Parameters)
 			Snapshot->BuildZoneA(SecondVocabulary.Get()), First);
 	}
 
+	// ══════════════════════════════════════════════════════════════════════════
+	//  ⭐⭐ ADDED TASK-549 — THE STATE-INDEPENDENCE CLAIM, MADE NON-VACUOUS
+	// ══════════════════════════════════════════════════════════════════════════
+	//
+	//  ⚠️ THE TWO-SNAPSHOT CHECK ABOVE HAS A HOLE AND IT ONLY OPENED TODAY. Both
+	//  objects have empty member state, so "two independent snapshots agree" is a
+	//  claim about two EMPTY snapshots — it cannot see a Zone A that reads a member
+	//  which happens to be empty in both. Until TASK-547 there was no member Zone A
+	//  could plausibly have read; there is one now (`RegionPlaceNames`), and its
+	//  values are exactly the three symbols the new `ZONE   = ` line prints.
+	//
+	//  ⭐ SO THE MEMBER IS POPULATED AND THE BYTES ARE COMPARED. This is an
+	//  INDEPENDENT check of TASK-547's declared departure (its handoff §1: the
+	//  `ZONE =` line is generated from the `PlaceVocabulary` TABLE, ⛔ not from
+	//  `GetRegionPlaceNames()` as the board's spec (4)(b) words it), and it asserts
+	//  the property `BuildZoneA`'s own declaration comment calls a QA FAIL to break:
+	//  "NOTHING BELOW READS MEMBER STATE ... same bytes every turn for the life of
+	//  the process". A state-dependent Zone A destroys the measured 77.1 % KV reuse
+	//  SILENTLY — as a latency regression, never as a wrong answer — which is
+	//  precisely why it needs a test and not a playtest.
+	//
+	//  ⚠️ AND THE COUPLING IS DECLARED RATHER THAN HIDDEN: if TASK-550 rules
+	//  TASK-547's departure INVALID and orders the line generated from
+	//  `GetRegionPlaceNames()`, THIS ASSERTION IS THE ONE THAT WILL FAIL. That is
+	//  the correct outcome and it is not a bug in the test — it is the contract and
+	//  the ruling disagreeing, in the one place a reader can see both.
+	{
+		TStrongObjectPtr<USiegeAssistantSnapshot> Populated = MakeSnapshot();
+		if (TestTrue(TEXT("A third snapshot object was created"), Populated.IsValid()))
+		{
+			TArray<FName>* const PlaceNames = FindNameArrayField(Populated.Get(), TEXT("PlaceNames"));
+			TArray<FName>* const RegionPlaceNames = FindNameArrayField(Populated.Get(), TEXT("RegionPlaceNames"));
+
+			// ⛔ A MISS IS AN ERROR, NOT A SKIP. If either field was renamed or
+			// retyped, the write below silently does nothing and the comparison
+			// passes on two empty snapshots — the vacuous-pass shape this whole file
+			// exists to refuse.
+			if (!TestTrue(TEXT("⛔ `PlaceNames` (TArray<FName>) is reachable by reflection — a rename here would make the assertion below pass VACUOUSLY"), PlaceNames != nullptr)
+				|| !TestTrue(TEXT("⛔ `RegionPlaceNames` (TArray<FName>) is reachable by reflection — same reason. It is TASK-547's new Capture()-owned member."), RegionPlaceNames != nullptr))
+			{
+				return false;
+			}
+
+			*PlaceNames = TArray<FName>{
+				TEXT("own_castle"), TEXT("enemy_castle"), TEXT("mid"),
+				TEXT("ancient_ground_near"), TEXT("ancient_ground_far"),
+				TEXT("nearest_mine"), TEXT("hero")
+			};
+			*RegionPlaceNames = TArray<FName>{ TEXT("mid"), TEXT("ancient_ground_near"), TEXT("ancient_ground_far") };
+
+			TestEqualSensitive(TEXT("⭐⭐ A snapshot whose REGION MEMBERS ARE POPULATED emits a BYTE-IDENTICAL Zone A — the static-prefix contract survives TASK-547's new state"),
+				Populated->BuildZoneA(Vocabulary.Get()), First);
+
+			// ⭐ THE OTHER DIRECTION, WHICH IS THE ONE THAT CATCHES A "HELPFUL" FIX.
+			// A map with ONE region publishes ONE symbol. If Zone A ever generated
+			// its `ZONE =` line from the live list, this snapshot would print a
+			// SHORTER line and the prefix would be thrown away on that map only —
+			// a failure that appears on some boards and not others, which is the
+			// hardest kind to report.
+			*RegionPlaceNames = TArray<FName>{ TEXT("mid") };
+			TestEqualSensitive(TEXT("⭐⭐ A snapshot publishing only ONE region STILL emits the byte-identical Zone A — the `ZONE =` line is the fixed vocabulary, never the per-match list"),
+				Populated->BuildZoneA(Vocabulary.Get()), First);
+
+			// And the line really is there to be varied — otherwise the two
+			// assertions above would hold for the trivial reason that no such line
+			// exists, and they would keep holding after somebody deleted it.
+			TestTrue(TEXT("⛔ Zone A DOES carry a `ZONE   = ` line (otherwise the two assertions above are true for the wrong reason)"),
+				First.Contains(TEXT("ZONE   = an area place symbol: "), ESearchCase::CaseSensitive));
+			TestTrue(TEXT("⛔ …and it names all THREE region-bearing symbols of the fixed vocabulary, not the one this snapshot published"),
+				First.Contains(TEXT("ZONE   = an area place symbol: mid, ancient_ground_near, ancient_ground_far\n"), ESearchCase::CaseSensitive));
+		}
+	}
+
 	return true;
 }
 
@@ -842,9 +1234,21 @@ bool FSiegeAssistantZoneANullVocabularyTest::RunTest(const FString& Parameters)
 	// ⛔ THE BASE IS THE SHIPPED FIGURE, NOT THE SPIKE'S. `NullLane` is
 	// `Snapshot->BuildZoneA(nullptr)` — the SHIPPED builder — so its base is the
 	// SHIPPED length. Using SpikeLaneZoneAChars here would compile, run, and be
-	// wrong by exactly 308 (SC-§23: a measurement's BASE is part of the
+	// wrong by exactly 542 (SC-§23: a measurement's BASE is part of the
 	// measurement, and a varying value in the right field is still wrong if its
 	// base is wrong).
+	//
+	// ⭐⭐ RE-CHECKED 2026-08-05 (TASK-549) AND IT SURVIVED THE SECOND RE-BASE
+	// UNTOUCHED — WHICH IS THE POINT, AND IT IS WHY THE EXPRESSION IS WRITTEN THIS
+	// WAY. `SynonymTable` is read from the LIVE vocabulary rather than pinned, so
+	// TASK-541's −5 lands on BOTH sides of the equation at once: the shipped Zone A
+	// shrank by 5 and `SynonymTable.Len()` shrank by 5, and the identity holds with
+	// no edit. ⇒ ONE constant moved (ShippedZoneAChars, 5424 → 5658) and this test
+	// re-based itself. ⛔ THE LESSON IS NOT "IT WAS FINE": it is that a derived
+	// expectation is only safe when EVERY term is derived from something live. The
+	// term that is NOT live here is `ShippedZoneAChars`, and that is exactly the
+	// term that had to move — so this test is still a READER of the constant and
+	// still has to be found by grepping for readers rather than by reading a spec.
 	const FString SynonymTable = Vocabulary->BuildSynonymTable();
 	const int32 ExpectedNullLength = ShippedZoneAChars - SynonymTable.Len() + 5; // 5 == Len("none\n")
 	TestEqual(TEXT("The null-vocabulary Zone A is the SHIPPED lane with the synonym table swapped for `none`"),

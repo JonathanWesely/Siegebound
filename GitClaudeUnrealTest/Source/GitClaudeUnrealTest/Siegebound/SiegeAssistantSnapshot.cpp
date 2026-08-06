@@ -47,17 +47,53 @@ namespace SiegeAssistantSnapshotInternal
 	{
 		const TCHAR* Symbol;
 		const TCHAR* Description;
+
+		/**
+		 *  ⚖️ THE REGION-BEARING COLUMN (TASK-547; CONVENTIONS AS-§21.4). TRUE IFF A
+		 *  SHIPPED `IsPointInZone` ANSWERS FOR THIS PLACE - that is the whole test,
+		 *  and it is a ruling rather than a judgement call.
+		 *
+		 *  THREE OF THE SEVEN QUALIFY: `mid` (ACaptureZone::IsPointInZone) and both
+		 *  ancient grounds (AAncientGround::IsPointInZone) - the same 2D XY box
+		 *  idiom, deliberately.
+		 *
+		 *  ⛔ THE OTHER FOUR ARE `false` AND AN AGENT MAY NOT "FIX" THAT. Castle.h
+		 *  carries NO radius property, AGoldNode's radius is a CALLER's parameter and
+		 *  the hero's RallyRadius belongs to the Rally ability - so `own_castle`,
+		 *  `enemy_castle`, `nearest_mine` and `hero` would each need an INVENTED
+		 *  NUMBER. "How far from the castle counts as AT the castle?" is a product
+		 *  question with no measured answer, and two of the four MOVE (the mine is
+		 *  "the best mine for the player NOW"; the hero moves every frame), so their
+		 *  region would shift under the player mid-sentence. AS-§21.4: if Jonathan
+		 *  wants castle-region selection he supplies the number - it is his call, not
+		 *  a tuner's.
+		 *
+		 *  ⛔ ZONE A NEVER PRINTS THIS COLUMN, so adding it moved ZERO Zone-A bytes.
+		 *  The `places` block prints Symbol + Description and nothing else; the
+		 *  `ZONE =` line prints the SYMBOLS this column selects, never the column.
+		 */
+		bool bHasRegion;
 	};
 
-	static const FPlaceDefinition PlaceVocabulary[] =
+	/**
+	 *  ⚠️ `constexpr`, NOT `const` (TASK-547) - AND THE KEYWORD IS LOAD-BEARING
+	 *  RATHER THAN TIDYING. It is what lets RegionBearingPlaceCount() below COUNT
+	 *  the region-bearing rows AT COMPILE TIME, so the "no region-bearing place
+	 *  exists" state - which would emit a `ZONE = ` line with nothing after the
+	 *  colon - is caught by a static_assert instead of by a model reading a
+	 *  dangling metavariable. Every initialiser here was already a constant
+	 *  expression (string literals + bools), so NOT ONE EMITTED BYTE MOVES and the
+	 *  table's storage is unchanged.
+	 */
+	static constexpr FPlaceDefinition PlaceVocabulary[] =
 	{
-		{ TEXT("own_castle"),          TEXT("the player's castle") },
-		{ TEXT("enemy_castle"),        TEXT("the enemy castle") },
-		{ TEXT("mid"),                 TEXT("the capturable centre zone") },
-		{ TEXT("ancient_ground_near"), TEXT("the ancient ground on the player's side") },
-		{ TEXT("ancient_ground_far"),  TEXT("the ancient ground on the enemy side") },
-		{ TEXT("nearest_mine"),        TEXT("the best gold mine for the player now") },
-		{ TEXT("hero"),                TEXT("where the player's hero stands") }
+		{ TEXT("own_castle"),          TEXT("the player's castle"),                     false },
+		{ TEXT("enemy_castle"),        TEXT("the enemy castle"),                        false },
+		{ TEXT("mid"),                 TEXT("the capturable centre zone"),              true  },
+		{ TEXT("ancient_ground_near"), TEXT("the ancient ground on the player's side"), true  },
+		{ TEXT("ancient_ground_far"),  TEXT("the ancient ground on the enemy side"),    true  },
+		{ TEXT("nearest_mine"),        TEXT("the best gold mine for the player now"),   false },
+		{ TEXT("hero"),                TEXT("where the player's hero stands"),          false }
 	};
 
 	/** Slot indices into PlaceVocabulary. Kept beside the table so a new place cannot be added to one and not the other. */
@@ -75,6 +111,27 @@ namespace SiegeAssistantSnapshotInternal
 
 	static_assert(static_cast<int32>(UE_ARRAY_COUNT(PlaceVocabulary)) == static_cast<int32>(EPlaceSlot::Count),
 		"PlaceVocabulary and EPlaceSlot must describe the same fixed place vocabulary.");
+
+	/**
+	 *  How many rows carry a region primitive - COUNTED FROM THE TABLE, never
+	 *  transcribed. A transcribed "3" is the drift defect this file keeps catching
+	 *  elsewhere (see UtteranceTruncationMarkerBytes for the same idiom).
+	 */
+	static constexpr int32 RegionBearingPlaceCount()
+	{
+		int32 Count = 0;
+		for (const FPlaceDefinition& Place : PlaceVocabulary)
+		{
+			if (Place.bHasRegion)
+			{
+				++Count;
+			}
+		}
+		return Count;
+	}
+
+	static_assert(RegionBearingPlaceCount() > 0,
+		"At least one place must be region-bearing: BuildZoneA generates the `ZONE =` metavariable line from this column, and an empty list would print a metavariable with nothing after the colon - teaching the model a shape it can never fill.");
 
 	/** DT_Cards, resolved null-safe at use time (the house soft-path law, GDD 3.0 data-driven rule). */
 	static const TCHAR* const CardTablePath = TEXT("/Game/Data/DT_Cards.DT_Cards");
@@ -203,6 +260,8 @@ void USiegeAssistantSnapshot::ResetSnapshot()
 	Roster.Reset();
 	PlaceNames.Reset();
 	PlaceLocations.Reset();
+	PlaceHalfExtents.Reset();
+	RegionPlaceNames.Reset();
 	UnitKinds.Reset();
 	KindTotals.Reset();
 	KindOrderable.Reset();
@@ -247,9 +306,33 @@ void USiegeAssistantSnapshot::Capture(UWorld* World, ETeamId Team)
 	// and can never be named.
 	FVector ResolvedLocations[static_cast<int32>(EPlaceSlot::Count)];
 	bool bSlotResolved[static_cast<int32>(EPlaceSlot::Count)];
+
+	// ⚖️ SNAPSHOT-TIME GEOMETRY, EXECUTION-TIME MEMBERSHIP (TASK-547, AS-§21.4).
+	// The BOX is captured here beside the centre; the "is this unit inside it"
+	// test runs later, in the executor, against live unit positions. THE UNITS
+	// MOVE, THE GROUNDS DO NOT - so a unit that walked out of the ground between
+	// this capture and the order landing must not be selected, and it is not.
+	//
+	// ⛔ THIS COSTS NOT ONE NEW TRAVERSAL. Every actor the boxes come from is
+	// ALREADY held by a pass below: NearGround / FarGround (pass 3) and the
+	// ACaptureZone (pass 5). Both expose GetZoneHalfExtent() publicly, so this is
+	// two extra reads off pointers this function already dereferences. A fresh
+	// TActorIterator for regions would be a QA FAIL (AS-§21.4), and so would a
+	// registry, a cache, a dirty flag or a subscription list (§4).
+	//
+	// ⚠️ DECLARED RESIDUAL, STATED RATHER THAN LEFT TO BE FOUND: a ground
+	// DESTROYED between capture and execution leaves a stale centre here. That is
+	// the IDENTICAL staleness ResolvePlace already carries for the destination
+	// (the snapshot holds no actor pointers by design - see the class comment), so
+	// it is the same risk profile, not a new one. The mitigation is the same one
+	// too: Capture() runs once per typed sentence, so the window is the length of
+	// one inference call.
+	FVector2D ResolvedHalfExtents[static_cast<int32>(EPlaceSlot::Count)];
+
 	for (int32 SlotIndex = 0; SlotIndex < static_cast<int32>(EPlaceSlot::Count); ++SlotIndex)
 	{
 		ResolvedLocations[SlotIndex] = FVector::ZeroVector;
+		ResolvedHalfExtents[SlotIndex] = FVector2D::ZeroVector;
 		bSlotResolved[SlotIndex] = false;
 	}
 
@@ -332,6 +415,13 @@ void USiegeAssistantSnapshot::Capture(UWorld* World, ETeamId Team)
 	if (NearGround)
 	{
 		ResolvedLocations[static_cast<int32>(EPlaceSlot::AncientGroundNear)] = NearGround->GetActorLocation();
+		// ⚠️ THE CENTRE IS THE ACTOR LOCATION AND THAT IS NOT A COINCIDENCE TO BE
+		// "TIDIED": AAncientGround::IsPointInZone tests a 2D XY box ABOUT THE ACTOR
+		// ORIGIN (AncientGround.cpp:143-151), so the pair published here is exactly
+		// the pair that predicate uses. Reading the box from anywhere else - a
+		// component bounds, a decal size - would answer a different question than
+		// the shipped membership test.
+		ResolvedHalfExtents[static_cast<int32>(EPlaceSlot::AncientGroundNear)] = NearGround->GetZoneHalfExtent();
 		bSlotResolved[static_cast<int32>(EPlaceSlot::AncientGroundNear)] = true;
 	}
 
@@ -342,6 +432,7 @@ void USiegeAssistantSnapshot::Capture(UWorld* World, ETeamId Team)
 	if (FarGround && FarGround != NearGround)
 	{
 		ResolvedLocations[static_cast<int32>(EPlaceSlot::AncientGroundFar)] = FarGround->GetActorLocation();
+		ResolvedHalfExtents[static_cast<int32>(EPlaceSlot::AncientGroundFar)] = FarGround->GetZoneHalfExtent();
 		bSlotResolved[static_cast<int32>(EPlaceSlot::AncientGroundFar)] = true;
 	}
 
@@ -368,6 +459,11 @@ void USiegeAssistantSnapshot::Capture(UWorld* World, ETeamId Team)
 		}
 
 		ResolvedLocations[static_cast<int32>(EPlaceSlot::Mid)] = Zone->GetActorLocation();
+		// Same pairing as the grounds above: ACaptureZone::IsPointInZone is a 2D XY
+		// box about the actor origin (CaptureZone.cpp:112-118) - a byte-copy of the
+		// ancient-ground test, deliberately, so "standing in the zone" reads
+		// identically for both zone actors.
+		ResolvedHalfExtents[static_cast<int32>(EPlaceSlot::Mid)] = Zone->GetZoneHalfExtent();
 		bSlotResolved[static_cast<int32>(EPlaceSlot::Mid)] = true;
 
 		const ECaptureState Owner = Zone->GetCaptureOwner();
@@ -388,8 +484,36 @@ void USiegeAssistantSnapshot::Capture(UWorld* World, ETeamId Team)
 	{
 		if (bSlotResolved[SlotIndex])
 		{
-			PlaceNames.Add(FName(PlaceVocabulary[SlotIndex].Symbol));
+			const FName Symbol(PlaceVocabulary[SlotIndex].Symbol);
+
+			PlaceNames.Add(Symbol);
 			PlaceLocations.Add(ResolvedLocations[SlotIndex]);
+			PlaceHalfExtents.Add(ResolvedHalfExtents[SlotIndex]);
+
+			// THE REGION LIST IS THE SUBSET, NOT A SECOND VOCABULARY: a symbol
+			// reaches it only by ALSO being in PlaceNames, so the two can never
+			// disagree about what exists this match.
+			//
+			// ⚠️ A REGION-BEARING PLACE WHOSE ACTOR IS ABSENT THIS MATCH IS SIMPLY
+			// NOT HERE, AND THAT IS THE CORRECT DEGRADATION: the grammar generates
+			// its `zone` alternation from this array, so the model cannot even
+			// SPELL a region the world does not have (AS-§21.4 - the same rule that
+			// keeps `where` honest).
+			//
+			// ⛔ AND A DEGENERATE BOX IS DROPPED RATHER THAN PUBLISHED. ZoneHalfExtent
+			// is an instance-editable tunable (default (840,840)); at (0,0) the
+			// shipped IsPointInZone answers TRUE only for a point exactly on the
+			// actor origin, so the region would be offerable, sampleable, and then
+			// contain nobody - a refusal the player cannot act on. Dropping it here
+			// makes the shape unsayable instead, which is the same fail-closed
+			// direction AS-§21.5 takes everywhere else: a region named and not
+			// resolved is a refusal, NEVER an unfiltered order.
+			if (PlaceVocabulary[SlotIndex].bHasRegion
+				&& ResolvedHalfExtents[SlotIndex].X > 0.f
+				&& ResolvedHalfExtents[SlotIndex].Y > 0.f)
+			{
+				RegionPlaceNames.Add(Symbol);
+			}
 		}
 	}
 
@@ -594,9 +718,17 @@ void USiegeAssistantSnapshot::Capture(UWorld* World, ETeamId Team)
 		GoldBand = QuantizeGoldBand(PlayerState->GetGold());
 	}
 
+	// ⚠️ THE REGION COUNT IS ON THIS LINE DELIBERATELY (TASK-547) AND IT IS THE
+	// ONLY ADDITION TO IT. An EMPTY region list turns the whole spatial-selection
+	// feature OFF SILENTLY - the grammar then emits no `inplace` alternative, so
+	// the shape is unsampleable and nothing anywhere says why. One %d on a line
+	// that already reports the other three published vocabularies is the cheapest
+	// artifact that can answer "did the snapshot publish any regions?".
+	// ⛔ It stays at Verbose with its neighbours: this fires on EVERY typed
+	// sentence, and TASK-542 owns the one line that had to be promoted to Log.
 	UE_LOG(LogSiegeAssistant, Verbose,
-		TEXT("Snapshot: %d kind(s), %d roster row(s), %d place(s), gold band %d."),
-		UnitKinds.Num(), Roster.Num(), PlaceNames.Num(), GoldBand);
+		TEXT("Snapshot: %d kind(s), %d roster row(s), %d place(s) (%d region-bearing), gold band %d."),
+		UnitKinds.Num(), Roster.Num(), PlaceNames.Num(), RegionPlaceNames.Num(), GoldBand);
 }
 
 bool USiegeAssistantSnapshot::ResolvePlace(FName Place, FVector& OutLocation) const
@@ -611,6 +743,37 @@ bool USiegeAssistantSnapshot::ResolvePlace(FName Place, FVector& OutLocation) co
 	}
 
 	OutLocation = PlaceLocations[Index];
+	return true;
+}
+
+bool USiegeAssistantSnapshot::ResolvePlaceRegion(FName Place, FVector& OutCentre, FVector2D& OutHalfExtent) const
+{
+	// THE REGION LIST IS THE AUTHORITY, NOT PlaceNames - and asking it FIRST is
+	// what makes the four non-region places fail here. `own_castle` resolves
+	// perfectly well as a DESTINATION and has no box at all; answering it with the
+	// castle's location and a zero extent would be a silent wrong answer wearing a
+	// `true`.
+	const int32 Index = RegionPlaceNames.Contains(Place) ? PlaceNames.IndexOfByKey(Place) : INDEX_NONE;
+
+	// The three arrays are parallel by construction (one append site, one loop),
+	// exactly like UnitKinds / KindOrderable. The IsValidIndex pair is not
+	// ceremony: it is the same defensive shape the accessors above use, and it
+	// means a future edit that desynchronises them degrades to "not a region"
+	// instead of reading off the end.
+	if (Index == INDEX_NONE || !PlaceLocations.IsValidIndex(Index) || !PlaceHalfExtents.IsValidIndex(Index))
+	{
+		// BOTH OUT-PARAMS ARE LEFT UNTOUCHED ON FAILURE, mirroring ResolvePlace
+		// rather than ValidateCommandAgainstSnapshot - and the choice is the same
+		// one, for the same reason. A caller that ignores the return value keeps
+		// its own initialised box; whatever that box is, it selects a set the
+		// caller already knew about. ⛔ There is no "whole map" default to fall
+		// back to, and inventing one would turn "send everyone in the mid" into
+		// "send everyone" - the one open-failure mode AS-§21.5 forbids outright.
+		return false;
+	}
+
+	OutCentre = PlaceLocations[Index];
+	OutHalfExtent = PlaceHalfExtents[Index];
 	return true;
 }
 
@@ -785,12 +948,37 @@ FString USiegeAssistantSnapshot::BuildZoneA(const USiegeAssistantVocabulary* Voc
 	// ⚠️⚠️ 5116 IS NOW THE *PREVIOUS* SHIPPED LENGTH. TASK-521 added 308 chars to
 	// this builder (44 to the `WHO =` schema line + two rule lines at 111 and 153),
 	// so the shipped Zone A is 5424 chars / 5424 UTF-8 bytes. The 6144 reserve
-	// still covers it with 720 spare, so it is NOT re-tuned. ⛔ THIS IS A DECLARED
+	// still covers it with 720 spare, so it is NOT re-tuned.
+	//
+	// ⚠️⚠️ AND 5424 IS NOW THE PREVIOUS FIGURE IN ITS TURN. TWO TASKS MOVED IT IN
+	// THE AI-COMMANDER BATCH AND THE ARITHMETIC IS RECORDED COMPONENT BY COMPONENT
+	// SO A TRANSCRIPTION ERROR CANNOT HIDE INSIDE A TOTAL:
+	//
+	//     5424   the TASK-521 shipped figure
+	//       -5   TASK-541, the `defend` note repair - it lands in the VOCABULARY's
+	//            [notes] block, which Zone A prints through BuildSynonymTable(), so
+	//            it is Zone A's byte even though it is another file's line
+	//   ------
+	//     5419   the RE-BASED baseline this task measured against
+	//      +16   TASK-547 component 1 - `, or {"in":ZONE}` on the `WHO =` line
+	//      +76   TASK-547 component 2 - the whole `ZONE   = ` line, incl. newline
+	//     +147   TASK-547 component 3 - the in-vs-where rule line, incl. newline
+	//   ------
+	//     5658   chars / 5658 UTF-8 bytes (ASCII-clean, so the two are equal)
+	//
+	// The +239 is inside the batch's +250 Zone-A ceiling (AS-§21.7) with 11 chars
+	// left for any FUTURE edit. The 6144 reserve still covers the string with 486
+	// spare, so it is STILL not re-tuned - it exists to stop the builder
+	// reallocating, not to bound the prompt. ⛔ THIS IS A DECLARED
 	// DIVERGENCE (`D4`): the SPIKE lane in Plugins/SiegeLlama is NOT touched by
 	// this batch (it is TASK-481's in-flight instrument, FT-§16), so the two lanes
 	// are no longer byte-equal and Siegebound.Assistant.ZoneA.TwoLaneByteEquality /
 	// .MeasuredCharCount are RE-BASED BY TASK-523 against 5424 — ⛔ never by
-	// re-copying this builder's output into the fixture. ⛔ AND THE TOKEN FIGURES
+	// re-copying this builder's output into the fixture. ⚠️ BOTH TESTS GO RED AGAIN
+	// AT THIS BATCH AND THAT IS EXPECTED, NOT A REGRESSION: TASK-549 owns the
+	// re-base, to 5658, and the spike lane STAYS at its measured 5116 because D4
+	// still holds — Plugins/SiegeLlama was not touched by this batch either.
+	// ⛔ AND THE TOKEN FIGURES
 	// ARE **STALE - PENDING RE-MEASUREMENT ON THE MODEL**: `zoneA_tok = 1139`, the
 	// 77.1 % KV-reuse figure and every prefill number derived from them are NOT
 	// recomputed by arithmetic and NOT deleted. Only Siege.Llama.SpikePrompt prints
@@ -819,7 +1007,12 @@ FString USiegeAssistantSnapshot::BuildZoneA(const USiegeAssistantVocabulary* Voc
 	//               same way (SiegeAssistantMaxExclusionKinds = 3). ⛔ NO counts
 	//               in it, BY DESIGN: "all except 5 archers" has no shape in the
 	//               grammar to be sampled into (AS-§20.1).
-	//   who         the array, or the except object, or "all", or "none"
+	//   inplace     {"in":ZONE} - the units STANDING in a region. `zone` is a bare
+	//               alternation of the LIVE region-bearing place symbols, so the
+	//               JSON is {"in":"mid"}, exactly the shape `where` already emits
+	//               for a destination.
+	//   who         the array, or the except object, or the in object, or "all",
+	//               or "none"
 	//
 	// ⚠️⚠️ THE `except` ALTERNATIVE IS NEW AT TASK-518 AND THE `WHO =` LINE BELOW
 	// HAD TO FOLLOW IT — THAT IS THE MIRROR LAW ABOVE BEING OBEYED, NOT AN EXTRA.
@@ -829,6 +1022,18 @@ FString USiegeAssistantSnapshot::BuildZoneA(const USiegeAssistantVocabulary* Voc
 	// exact "the rule was outvoted by the prompt's own lines" failure loop 2
 	// measured on who:"none" (see the selection rule below). The alternative order
 	// here is the grammar's order, deliberately: selection | except | "all" | "none".
+	//
+	// ⚠️⚠️ AND THE SAME THING HAPPENED AGAIN AT TASK-546/547 WITH `inplace`, WHICH
+	// IS WHY THE ORDER IS NOW WRITTEN DOWN IN BOTH FILES RATHER THAN INFERRED.
+	// The shipped `who` alternation is
+	//
+	//     who ::= selection | except | inplace | "all" | "none"
+	//
+	// (SiegeAssistantGrammar.cpp, the `--- who ---` block, verified at the artifact
+	// rather than taken from a handoff). `inplace` goes THIRD - after `except`, and
+	// BEFORE the two bare strings - so the three object/array shapes stay grouped
+	// ahead of the two scalars. ⛔ THE `WHO =` LINE BELOW LISTS THE FIVE SHAPES IN
+	// THAT ORDER AND A TEST ASSERTS THE TWO AGREE (AS-§21.5).
 	//   trigger     JSON key "at_least" (snake_case, below), GBNF rule `at-least`
 	//               (kebab-case). ⛔ SAME DIVERGENCE AS "n"/"count" AND FOR A
 	//               HARDER REASON: llama.cpp rule names are [a-zA-Z0-9-] only, so
@@ -847,9 +1052,60 @@ FString USiegeAssistantSnapshot::BuildZoneA(const USiegeAssistantVocabulary* Voc
 	Out += TEXT("schema (a command):\n");
 	Out += TEXT("{\"intent\":INTENT,\"who\":WHO,\"where\":WHERE,\"when\":WHEN}\n");
 	Out += TEXT("INTENT = send | guard | ambush | follow | charge | fallback | rally\n");
-	Out += TEXT("WHO    = [{\"kind\":KIND,\"n\":COUNT}] with 1 to 3 entries, or {\"all_except\":[KIND]} with 1 to 3 kinds, or \"all\", or \"none\"\n");
+	// ⭐ COMPONENT 1 OF 3 (TASK-547, +16 chars): `, or {"in":ZONE}` inserted in the
+	// GRAMMAR'S OWN ORDER - after the `all_except` shape, before the two bare
+	// strings. ⛔ Moving it is not a style choice; it breaks the mirror the comment
+	// above pins and the test asserts.
+	Out += TEXT("WHO    = [{\"kind\":KIND,\"n\":COUNT}] with 1 to 3 entries, or {\"all_except\":[KIND]} with 1 to 3 kinds, or {\"in\":ZONE}, or \"all\", or \"none\"\n");
 	Out += TEXT("KIND   = a unit symbol from roster in [FORCES]\n");
 	Out += TEXT("COUNT  = 1 to 30, or \"all\"\n");
+
+	// ⭐ COMPONENT 2 OF 3 (TASK-547, 76 chars incl. the newline). THE MODEL CANNOT
+	// OTHERWISE KNOW WHICH OF THE SEVEN PLACES ARE AREAS. The grammar makes an
+	// invalid one UNSAMPLABLE; this line is what stops the model TRYING, and a
+	// blocked attempt still costs the whole turn.
+	//
+	// ⛔ GENERATED FROM THE PlaceVocabulary TABLE'S `bHasRegion` COLUMN, NEVER A
+	// HAND-WRITTEN LIST OF THREE - the table stays the single owner of the place
+	// set, so a place that later gains a region primitive appears here by adding
+	// ONE bool, and one that loses it disappears the same way. The static_assert
+	// beside the table is what makes the empty case impossible.
+	//
+	// ⛔⛔ AND IT READS NO MEMBER STATE, WHICH IS THE WHOLE REASON IT IS THE TABLE
+	// AND NOT GetRegionPlaceNames(). Zone A must be BYTE-IDENTICAL FOR THE LIFE OF
+	// THE PROCESS or llama_memory_seq_rm cannot keep the prefix and the measured
+	// 77.1 % KV reuse is destroyed silently - a QA FAIL that surfaces as a latency
+	// regression rather than a wrong answer. GetRegionPlaceNames() is per-MATCH
+	// state (a map with one ancient ground publishes fewer symbols), so printing it
+	// here would make Zone A vary. This is exactly the split the `places` block
+	// above already ships: ZONE A PRINTS THE FULL FIXED VOCABULARY, THE GRAMMAR
+	// ENFORCES WHAT EXISTS THIS MATCH (see GetPlaceNames()'s comment, which states
+	// the same rule for `where` in those words).
+	//
+	// 📌 NAMING NOTE SO NOBODY "FIXES" IT: the placeholder is `ZONE` to mirror the
+	// GBNF rule `zone`. It has NOTHING to do with prompt Zones A/B/C - the model
+	// never sees that vocabulary.
+	Out += TEXT("ZONE   = an area place symbol: ");
+	{
+		bool bFirstRegion = true;
+		for (int32 SlotIndex = 0; SlotIndex < static_cast<int32>(EPlaceSlot::Count); ++SlotIndex)
+		{
+			if (!PlaceVocabulary[SlotIndex].bHasRegion)
+			{
+				continue;
+			}
+
+			if (!bFirstRegion)
+			{
+				Out += TEXT(", ");
+			}
+
+			Out += PlaceVocabulary[SlotIndex].Symbol;
+			bFirstRegion = false;
+		}
+	}
+	Out += TEXT("\n");
+
 	Out += TEXT("WHERE  = a place symbol from places in [FORCES], or \"none\"\n");
 	Out += TEXT("WHEN   = \"now\", or {\"kind\":KIND,\"at_least\":1 to 30}\n");
 	Out += TEXT("\n");
@@ -1113,6 +1369,73 @@ FString USiegeAssistantSnapshot::BuildZoneA(const USiegeAssistantVocabulary* Voc
 	// alternation of 1..3 BARE kind strings), so restating them would spend budget
 	// on something the sampler cannot violate.
 	Out += TEXT("- Every unit but some kinds: who is {\"all_except\":[KIND]}, only with send, guard, ambush or follow. On charge, fallback or rally: {\"ask\":\"unsupported\"}.\n");
+
+	// ⭐⭐ COMPONENT 3 OF 3 (TASK-547, 147 chars incl. the newline) - AND ON THE
+	// MANAGER'S FINDING THIS IS THE HIGHEST-VALUE LINE IN THE BATCH, BECAUSE IT
+	// TEACHES THE ONE DISTINCTION THAT *IS* THE FEATURE.
+	//
+	// ⚠️⚠️ THE PROBLEM IT SOLVES, STATED WITH JONATHAN'S OWN SENTENCE: "send all
+	// units currently in an ancient ground to attack a castle" POPULATES BOTH KEYS
+	// AT ONCE -
+	//
+	//     who   = {"in":"ancient_ground_near"}   the units STANDING there
+	//     where = "enemy_castle"                 the place they GO to
+	//
+	// Both values are place symbols out of the SAME seven-symbol vocabulary, and
+	// before this line nothing in the prompt said which key takes which. That is a
+	// COIN FLIP on the exact distinction the feature exists for, and the two wrong
+	// answers are not harmless: {"in":"enemy_castle"} is not even sayable (the
+	// castle is not region-bearing, AS-§21.4), and where:"ancient_ground_near"
+	// sends the army to the ground it was supposed to be RECRUITED FROM.
+	//
+	// ⚠️ SO THE LINE MUST SAY "BOTH, IN ONE ORDER" EXPLICITLY. Teaching the shape
+	// alone would leave the model choosing between the two keys instead of filling
+	// each - and a prompt that never demonstrates two place symbols in one command
+	// implicitly teaches that there is only ever one.
+	//
+	// ⛔ A RULE, NOT AN EXEMPLAR SENTENCE, AND THE CHOICE IS MEASURED RATHER THAN
+	// PREFERRED (AS-§20.4 leg 2): loop 2 measured a decision-ordering rule beating
+	// an exemplar-and-emphasis pass AT THIS EXACT SEAM (the two lines above). 🔒 A
+	// new few-shot would also need an absence certificate against three corpora,
+	// one of which is SEALED - so the rule is both the better instrument and the
+	// free one.
+	//
+	// ⚠️ THE ANTECEDENT IS TESTABLE AND IT DELIBERATELY CARRIES THE TRIGGER WORD.
+	// "Units already in a place" is a test the model can run against the sentence
+	// ("units currently IN an ancient ground"), and the word "in" it matches on is
+	// the JSON key it must then emit. An abstraction the model has to already know
+	// is what rung 1 measured failing (see the [FORCES] rule above).
+	//
+	// ⚠️ IT NAMES NO PLACE SYMBOL, ON THE §9c SEAM RULE. `ZONE` is the schema
+	// metavariable; writing `mid` or `ancient_ground_near` here would pin a symbol
+	// into a byte-frozen Zone A that the sampler may FORBID on a map lacking it.
+	// The `ZONE =` line above is where the live-ish vocabulary is named, and it is
+	// named from the table for exactly that reason.
+	//
+	// ⚠️ SCOPED POSITIVELY ONLY, AND THE OMISSION IS DECLARED RATHER THAN
+	// OVERLOOKED. The exclusion rule directly above carries BOTH halves ("only
+	// with send, guard, ambush or follow" AND "On charge, fallback or rally:
+	// {"ask":"unsupported"}"); this line carries only the first, because the second
+	// costs 52 more characters and the batch's Zone-A ceiling is +250 against a
+	// spend that is already 239. The residual is bounded and known: a region handed
+	// to charge / fallback / rally is REFUSED BY THE PARSER (`region_conflict`,
+	// AS-§21.6) rather than silently dropped, and AS-§21.11 records that refusal as
+	// designed behaviour on Jonathan's playtest sheet. ⇒ The cost of the missing
+	// half is a refusal the player sees, never an army that moves unasked.
+	//
+	// ⚠️ THE OTHER THREE CONFLICTS NEED NO TEACHING AT ALL, WHICH IS WHY THEY ARE
+	// ABSENT RATHER THAN FORGOTTEN: `who` is ONE alternation, so a region cannot be
+	// sampled together with a selection array, with `all_except`, or with "none".
+	// The grammar makes those three unsayable; only the INTENT conflict survives
+	// into prose, and that is the half this line spends its characters on.
+	//
+	// ⚠️ POSITION: it extends the `who`-shape ladder that runs top-down through the
+	// three rules above (kinds named -> a selection and a unit-taking intent;
+	// everyone, no exception -> "all"; everyone minus some kinds -> the exclusion;
+	// and now the units standing somewhere -> the region). ⛔ It goes AFTER the
+	// TASK-521 minimal pair, never between them, and the byte-frozen economy line
+	// keeps both of its declared neighbours.
+	Out += TEXT("- Units already in a place: who is {\"in\":ZONE}, where is still where they go, and one order may set both. Only with send, guard, ambush or follow.\n");
 
 	// The quantity rule, which is one axis with three ways to fall off it — the
 	// model was observed missing in BOTH directions, so a one-sided rule would
