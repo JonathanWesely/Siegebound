@@ -2,6 +2,7 @@
 
 <!-- v2 (2026-07-02). Changes from v1: 50-card deck with duplicates + per-card copy caps; 6-card hand + next-card preview; card pool expanded 6 → 28 (new towers, hero upgrades, spells, spawners); Miner rebalanced (economy payback was too fast); unit targeting profiles replace hero-first priority (kiting exploit); overtime income; premium stylized art bar; milestones restructured 6 → 8. Written for the agent team: concrete numbers over adjectives, acceptance criteria per mechanic, a tiny Milestone 1, and an explicit Out of Scope. Numbers are first-pass and meant to be tuned during playtests. -->
 <!-- v2.1 (2026-07-03). M1 playtest round-1: baseline combat legibility pulled forward from M7 into M1 — visible hero swing animation + per-hit impact feedback (§3.1), units telegraph attacks (§3.8), floating castle HP bars (§3.9). The full §6 juice checklist remains M7. -->
+<!-- v4 (2026-08-05). AS-BUILT UPDATE PASS #2 (Jonathan-directed: "the GDD has not been updated to include all the changes"). Adds the Sorcerer and the Wizard to §4, Ancient Grounds as a mechanic (§3.12) and as terrain (§5), and gives the unit command layer (§3.13) and the in-match AI commander (§3.14) real sections — both had been doing a mechanics section's work inside one bullet of §10. Re-scales EVERY cost in §3/§4/§8 by the ×3 economy rescale of 2026-07-24, which the document had never recorded, and corrects the gold income in both directions (base +1/s, overtime +2/s). Also records the W1 battlefield changes those numbers depend on: castle-box placement, the capturable mid zone, and six neutral depleting mines in place of the two team gold nodes. Same v3 rules: *[as-built …]* tags annotate and never delete; §-numbers 1–10 are stable IDs, so only 3.x subsections and one §4 set were added. `Docs/Data/cards.csv` remains the stat source of truth and every stat below was re-read from it for this pass rather than carried forward. -->
 <!-- v3 (2026-07-21). AS-BUILT UPDATE PASS (Jonathan-directed). In-place corrections wherever shipped reality diverged from v2, each marked with a consistent *[as-built YYYY-MM-DD: …]* tag; §9 gains milestone statuses; a Design Change Log appendix records the major pivots. Nothing aspirational was deleted — where reality contradicts an unbuilt aspiration, the aspiration stands and the tag records the delta. Engineering law (naming, pipeline contracts, tool mechanics) lives in .claude/pipeline/CONVENTIONS.md and is only referenced here, never inlined. Section numbering unchanged (other docs and code comments reference §-numbers). -->
 
 ## 1. Overview
@@ -16,11 +17,14 @@
 Target loop length 30–60 seconds:
 Gold accrues → play cards from the 6-card hand (spend gold) to spawn units / build defenses / add economy / upgrade the hero / cast spells → summoned units auto-path toward the enemy castle and fight using built-in AI → the player pushes or defends directly as the hero → economy grows → enemy castle HP hits 0 → win.
 
+*[as-built 2026-08-05: the loop gained a step, and it is the biggest single change since v2. **Player-side units no longer auto-path and auto-engage — they spawn following the hero and wait to be ordered** (§3.13). The loop as played is now: gold accrues → play cards → **order the units you just summoned** (by key, or by typing a sentence to the in-match assistant, §3.14) → push or defend as the hero → economy grows → castle falls. The v2 sentence still describes the bot side exactly, and still describes the player's own Ogres and Sappers, which auto-march unchanged. Rationale in the Design Change Log: summoning without steering made the mid-game passive.]*
+
 ## 3. Mechanics
 One subsection per mechanic. Acceptance criteria are how QA verifies it.
 
 ### 3.0 Global Rules (read first)
 - **Data-driven stats:** every card/unit/building/spell stat in this document lives in one data table: `Docs/Data/cards.csv` (source of truth, checked into Git) imported as `DT_Cards` in `/Content/Data/`. Balance changes are CSV edits — **agents must never hardcode a stat that exists in the table.**
+- **Mechanic rules are not card stats** *[as-built 2026-08-05]* — a number that belongs to a *system* rather than to a *card* is an engine tunable, never a CSV column. The Ancient-Ground boost magnitudes (§3.12), the keyword multipliers below, the command circle radii (§3.13) and the assistant's timeouts (§3.14) are all mechanic rules. The test: if adding a second card would not give the number a second value, it is not a card stat.
 - **No friendly fire** anywhere: units, towers, spells, and the hero cannot damage friendly actors or their own castle.
 - **Projectiles** (Archer, Longbowman, towers): homing, travel at **1500 units/s**, destroyed on impact.
 - **Damage vs castle:** melee deals **100%**, `Siege` units deal **200%**, projectiles and spells deal **50%** (anti-sniping rule — castles must die to committed pushes, not chip from range).
@@ -32,6 +36,7 @@ One subsection per mechanic. Acceptance criteria are how QA verifies it.
   - **Aura** — passive effect applied to friendly units within the stated radius.
   - **Chain** — attack bounces to additional nearby targets (damage per bounce stated on card).
   - **Instant** — card resolves immediately on play; no placement targeting (hero upgrades, Masons).
+  - **Empower** *[as-built 2026-08-05]* — while the unit stands inside an Ancient Ground it permanently strengthens friendly units standing in the same ground (Sorcerer only; magnitudes and rules in §3.12).
 - **Refund rule:** any card whose effect is refused (miner cap, upgrade stack cap) refunds its full cost and shows a HUD message stating the reason.
 
 ### 3.1 Hero Movement & Combat
@@ -41,20 +46,28 @@ One subsection per mechanic. Acceptance criteria are how QA verifies it.
 - Hero has **200 HP** base (modifiable by upgrades, §3.10). Out-of-combat regeneration: **5 HP/s** after 8 s without taking or dealing damage.
 - On death, the hero respawns at its own castle after **5 s** (hero death does not lose the match — only castle destruction does). Upgrades persist through death.
 - *[as-built 2026-07-14 (M6.6): terrain-climb comfort retune — step height 50, walkable slope 50°, jump velocity 600 — so the hero climbs the §5 hills. Base move/sprint speeds unchanged.]*
-- *[as-built 2026-08-04 (keyboard-layout batch): every LETTER binding in the game — WASD movement, the Q rally, the T/R/E/F/C unit commands — is **positional**, not literal. On Windows the game detects the active OS keyboard layout at runtime and remaps all 26 letters so they land in the same **physical** positions as US-QWERTY; a Dvorak player presses the key printed "," where a QWERTY player presses "W" and both move forward. It is always on, has no player-facing setting, and follows a mid-session layout switch (Win+Space) within ~1 s with no reload. **Deliberately NOT remapped: the §7 hotkeys 1–6, Left Alt, Shift, Space, Enter, Escape, punctuation and the mouse** — those stay literal on every layout, so the §7 line about hotkeys 1–6 and Left Alt reads exactly as written. Non-Windows hosts pass through unchanged.]*
+- *[as-built 2026-08-04 (keyboard-layout batch): every LETTER binding in the game — WASD movement, the Q rally, the T/R/E/F/C unit commands (§3.13) — is **positional**, not literal. On Windows the game detects the active OS keyboard layout at runtime and remaps all 26 letters so they land in the same **physical** positions as US-QWERTY; a Dvorak player presses the key printed "," where a QWERTY player presses "W" and both move forward. It is always on, has no player-facing setting, and follows a mid-session layout switch (Win+Space) within ~1 s with no reload. **Deliberately NOT remapped: the §7 hotkeys 1–6, Left Alt, Shift, Space, Enter, Escape, punctuation and the mouse** — those stay literal on every layout, so the §7 line about hotkeys 1–6 and Left Alt reads exactly as written. Non-Windows hosts pass through unchanged.]*
 - **Acceptance:** hero moves at 500 u/s (750 sprinting); an LMB swing damages every enemy unit within 150 units and inside the 60° cone for 20 HP; a target at 200 units is unaffected; hero at 0 HP disappears and respawns at its castle within 5–6 s with all purchased upgrades intact; a hero at 150/200 HP untouched for 8 s begins regenerating 5 HP/s.
 
 ### 3.2 Gold Economy (passive accrual + overtime)
-- Each player has a **gold** integer, starting at **10**, accruing **+1 gold per 2 s** at base rate, capped at **999**. *[as-built 2026-07-08: rebalanced from start 50 / +2 gold/s on Jonathan's urgent directive — passive income was way too high. The HUD shows the per-second average rounded up (+1/s); miner and Deep Mine per-second income untouched.]*
-- **Overtime:** at match time **7:00**, base accrual doubles to **+1 gold/s** for both players (miner bonuses unchanged) and a HUD indicator appears. This forces long matches toward a conclusion. *[as-built: the doubling is a multiplier on the rebalanced base (was "doubles to +4/s" pre-rebalance).]*
+- Each player has a **gold** integer, starting at **10**, accruing **+1 gold per 2 s** at base rate, capped at **999**. *[as-built 2026-07-08: rebalanced from start 50 / +2 gold/s on Jonathan's urgent directive — passive income was way too high. The HUD shows the per-second average rounded up (+1/s); miner and Deep Mine per-second income untouched.]* *[as-built 2026-08-05 — ⚠️ **THE LINE ABOVE IS NO LONGER THE SHIPPED RATE.** On 2026-07-24 the 1-per-2-s change was **reverted**: base accrual is **+1 gold per 1 s**, granted on the same 1 s income tick as miner and Deep Mine income. Start 10 and the 999 cap are unchanged. The HUD's "+1/s" is now exact rather than a rounded-up 0.5/s, so the displayed rate and the real accrual finally agree.]*
+- **Overtime:** at match time **7:00**, base accrual doubles to **+1 gold/s** for both players (miner bonuses unchanged) and a HUD indicator appears. This forces long matches toward a conclusion. *[as-built: the doubling is a multiplier on the rebalanced base (was "doubles to +4/s" pre-rebalance).]* *[as-built 2026-08-05: the doubling is unchanged as a RULE and moved with the base — overtime is **+2 gold/s**. It is a live read of the match clock, so accrual can never desync from the overtime indicator.]*
 - Gold is spent to play cards (§3.5) and to discard (§3.6).
-- **Acceptance:** gold starts at 10, increases by ~1 per 2 s, never exceeds 999; at 7:00 the base rate becomes ~1/s (+ miner bonuses) and the overtime indicator shows; the HUD counter matches the underlying value at all times.
+- **Acceptance:** gold starts at 10, increases by **1 per second**, never exceeds 999; at 7:00 the base rate becomes **2/s** (+ miner and Deep Mine bonuses) and the overtime indicator shows; the HUD's gold counter and its "+N/s" rate both match the underlying values at all times.
 
 ### 3.3 Miners (economy scaling)
-- A miner is a non-combat unit spawned by the Miner card (**cost 8**). It walks to the owner's gold node and begins mining; **+1 gold/s activates only when it arrives** (~10 s walk from a mid-half placement). *[as-built: the gold nodes moved WITH the castles at every arena scale-up (§5), so the walk stays short when the miner is placed near your castle — a mid-half placement is now a much longer hike on the widened field.]*
-- Miners are destructible: **30 HP**. If killed, its +1/s is removed. Economy is a raidable investment — the payback window (~18 s effective) is the point.
+- A miner is a non-combat unit spawned by the Miner card (**cost 24** *[as-built 2026-08-05: was 8 — the ×3 rescale, §4]*). It walks to a mine and begins mining; **+1 gold/s activates only when it arrives**. *[as-built: the gold nodes moved WITH the castles at every arena scale-up (§5), so the walk stays short when the miner is placed near your castle — a mid-half placement is now a much longer hike on the widened field.]*
+- Miners are destructible: **30 HP**. If killed, its +1/s is removed. Economy is a raidable investment — the payback window is the point.
 - Active cap **6 miners** per player. A 7th Miner card is refused per the refund rule (§3.0).
-- **Acceptance:** playing a Miner deducts 8 gold and accrual rises from +2/s to +3/s only after the miner reaches the node; killing that miner returns accrual to +2/s; a 7th miner is refused with "Miner limit reached" and 8 gold refunded.
+
+*[as-built 2026-08-05 (W1-PREP, shipped 2026-07-23) — ⚠️ **MINERS NO LONGER WALK TO "the owner's gold node", BECAUSE THERE ISN'T ONE.** The two castle-adjacent per-team gold nodes were deleted. In their place the battlefield carries **six neutral mines, three per side** (§5), and the whole economy is now contested and exhaustible:]*
+- ***Neutral and claimable.** No mine belongs to a team at match start. The **first miner to arrive claims it** for its team, and while claimed the other team's miners cannot register on it. A miner sent to an enemy-held mine queues rather than mines.*
+- ***Depleting.** Each mine starts the match with a **300-gold reserve**. While occupied it drains **1 gold per second per miner working it** — exactly the rate it pays out, so the reserve is a literal count of the gold left in it. At 0 it **depletes for the rest of the match**: it stops paying, evicts every miner registered on it, and dims its glow. Miner income is therefore no longer a permanent tap — six mines hold **1,800 gold** between them and the match outlasts them.*
+- ***Miners retarget.** An evicted miner looks for the next best mine it can claim rather than standing idle; a miner with no reachable mine is a dead purchase, which is why the bot refuses to buy one in that state (§4).*
+- ***Play Again re-scatters fresh, full mines** — depletion is per-match and never persists.*
+- ***Payback:** at 24 gold and +1 gold/s a miner repays itself after **24 seconds of arrived mining**, plus the walk. ⚠️ FLAGGED for playtest: on the ±25,000 field the walk is the dominant term and it is not a fixed number any more — it depends on which mine the scatter placed where. The "meaningful payback window" rule in §8 stands; the specific window is now map-dependent and unmeasured.*
+
+- **Acceptance:** playing a Miner deducts 24 gold and accrual rises from +1/s to +2/s only after the miner reaches a mine it can claim; killing that miner returns accrual to +1/s; a 7th miner is refused with "Miner limit reached" and 24 gold refunded; a mine worked for 300 miner-seconds depletes, stops paying, dims, and releases its miners, which walk to another mine.
 
 ### 3.4 Deck & Hand
 - A **deck is exactly 50 cards**. **Duplicates are allowed** up to each card's **Max Copies** value (per-card column in the §4 tables). The default deck (used until the deck-builder ships in M6) is:
@@ -71,9 +84,34 @@ One subsection per mechanic. Acceptance criteria are how QA verifies it.
 
 *[as-built 2026-07-09 (M6): the deck-builder shipped, and this table is superseded as the DEFAULT by the curated 50 in `cards.csv` (DeckCount column): Footman 12, Archer 8, Wall 4, Knight 3, Miner 3, Arrow Tower 3, Militia Mob 3, Pikeman 3, Cavalry 3, Longbowman 2, Cleric 2, Ogre 2, Fireball 2. Players build/save their own 50-card decks (§7); the bot carries 2 curated decks.]*
 
+*[as-built 2026-08-05: the curated 50 has moved since that note and the list above no longer sums to 50 — **Footman is 9, not 12**, and it omits **Frost Nova 1** and **Sorcerer 2**. Re-read from the `DeckCount` column, the shipped curated deck is:]*
+
+| Card | Copies |
+|---|---|
+| Footman | 9 |
+| Archer | 8 |
+| Wall | 4 |
+| Knight | 3 |
+| Miner | 3 |
+| Arrow Tower | 3 |
+| Militia Mob | 3 |
+| Pikeman | 3 |
+| Cavalry | 3 |
+| Longbowman | 2 |
+| Cleric | 2 |
+| Ogre | 2 |
+| Fireball | 2 |
+| **Sorcerer** | **2** |
+| Frost Nova | 1 |
+| **Total** | **50** |
+
+- ***The 50 is an invariant, not a coincidence:** the `DeckCount` column is required to sum to exactly 50, so a card added to the curated deck must take its copies from another card.*
+- ***The curated 50 draws on only 15 of the 30 cards — the other 15 ship at `DeckCount` 0.** They exist in the collection and in the deck-builder, and a player can put them in a deck; they are simply in no DEFAULT deck. The fifteen: **Sapper · Bomb Tower · Ballista Tower · Barracks · Deep Mine · Masons · Sharpened Blade · Plate Armor · Swift Boots · War Banner · Lightning · Battle Cry · Pickpocket · Crystal Tower · Wizard**. ⚠️ **Half the collection being absent from the default deck is a real balance fact, not a data gap** — every tower past the Arrow Tower, every hero upgrade, every economy building and three of the five spells are things a player only meets by building a deck. Whether that is the intent is a **FLAGGED playtest question**, not something this document decides.*
+- ***Of the 12 unit-spawning `Unit` cards, exactly two are absent from the default deck: the **Sapper** and the **Wizard**.** That narrower claim is the one worth remembering when reading the §4 tables.*
+
 - The player has a visible **hand of 6 cards**. Playing or discarding a card immediately draws the next card from the **draw pile**; played/discarded cards go to a **discard pile**; when the draw pile empties, the discard pile is shuffled into a new draw pile.
 - **Next-card preview:** the HUD shows the top card of the draw pile (Clash Royale rule — enables planning).
-- **Acceptance:** exactly 6 cards show in the hand; playing one immediately draws a replacement; the preview slot always shows the actual next draw; after 50 plays/discards the deck has reshuffled and keeps dealing; the default deck contains exactly the copy counts above.
+- **Acceptance:** exactly 6 cards show in the hand; playing one immediately draws a replacement; the preview slot always shows the actual next draw; after 50 plays/discards the deck has reshuffled and keeps dealing; a fresh match's deck contains exactly the copy counts in the **curated 50** table (Footman 9 … Frost Nova 1, summing to 50), not the superseded v2 table above it.
 
 ### 3.5 Playing Cards
 - Each card shows a **gold cost** (top-right). Cards whose cost exceeds current gold are greyed out and unplayable.
@@ -82,7 +120,14 @@ One subsection per mechanic. Acceptance criteria are how QA verifies it.
   - **Hero Upgrade / Utility (`Instant`)** — the card resolves immediately on click; no placement step.
   - **Spell** (Milestone 5) — clicking enters **targeting mode**; a reticle can be placed **anywhere on the map**; the spell resolves at that point. *[as-built 2026-07-21: still true for Lightning and Battle Cry; Fireball + Frost Nova now use the reticle as an AIM point for a hero-origin line (§3.11); Pickpocket resolves instantly with no reticle (global effect, M5 ruling).]*
 - **Placement rules:** units/buildings/economy only on the owner's half (centerline-bounded); buildings additionally require **200 units** of clearance from any other building; invalid placement shows a red ghost and refuses the click without cost.
-- **Acceptance:** a card with cost 3 is unplayable at 2 gold (greyed), playable at 3 (deducts 3 and spawns at the clicked point); placement on the enemy half is refused with no gold spent; a building placed 100 units from another building is refused; a Fireball reticle on the enemy half is accepted; an Instant card deducts gold and applies with a single click.
+
+*[as-built 2026-08-05 (W1-PREP, shipped 2026-07-23) — ⚠️ **THE "own half, centerline-bounded" RULE IS RETIRED.** Owning half the map was worth nothing to fight over; placement is now something you hold rather than something you have. There are exactly **two legal placement regions**:]*
+- ***Your castle's spawn box** — a square centred on your own castle, half-extent **2,460** each way. It covers the castle's walkable interior, so cards can be placed inside the castle itself.*
+- ***The mid capture zone (§5), but only while your team holds it** — a **1,680 × 1,680** square straddling the centerline at the map origin. Hold it and you get a forward staging beachhead in the middle of the field; lose it and placement there is refused mid-match.*
+- ***Everything downstream is unchanged and still applies:** navmesh projection, slope, the 200-unit building clearance, and the terrain obstacle clearances.*
+- ***Spells are unaffected** — a spell reticle still reaches the whole map (§3.11).*
+
+- **Acceptance:** a card with cost 9 is unplayable at 8 gold (greyed), playable at 9 (deducts 9 and spawns at the clicked point); placement outside your castle's 2,460 spawn box and outside a mid zone your team holds is refused with no gold spent; placement inside your own castle's interior is accepted; a building placed 100 units from another building is refused; a Fireball reticle on the enemy half is accepted; an Instant card deducts gold and applies with a single click.
 
 ### 3.6 Discard
 - The player may discard a card for a fixed **1 gold**; the card goes to the discard pile and a replacement is drawn. Discard is refused if gold < 1.
@@ -102,12 +147,20 @@ Every unit runs the same state machine (**Advance → Acquire → Attack → Rea
 | **Standard** | units, hero, buildings, castle | Advance toward enemy castle; acquire **nearest** enemy within **600** aggro radius; if two targets are within 100 units of each other, prefer units/hero over buildings. |
 | **Siege** | buildings and castle only | Ignores units and the hero entirely; walks to the nearest enemy building in its path, else the castle. |
 | **Support** | friendly units | Follows the nearest damaged friendly unit and applies its effect (e.g., Cleric heal); never attacks. Follows the closest friendly combat unit if none are damaged. |
+| **None** *[as-built 2026-08-05]* | — | Not a combat profile. Buildings, spells and hero upgrades carry it, and so does the **Miner**, whose behaviour is §3.3's rather than this state machine's. |
+
+*[as-built 2026-08-05 — three clarifications this table has always needed:]*
+- ***Profile governs TARGETING, not whether a unit can attack at all.** The **Sorcerer** is `Standard` and can never attack (§3.12); the **Cleric** is `Support` and never attacks; the **Wizard** is `Standard` and attacks with splash. A profile answers "what may this unit shoot at, and may the player command it" — nothing more.*
+- ***Profile is also the commandability gate (§3.13)** — zone orders are `Standard`-only — **with one deliberate carve-out: the Miner's profile is `None` and it is still fully commandable**, because it overrides both gates on purpose. Any sentence of the form "profile determines commandability" needs that exception attached or it is wrong.*
+- ***`Siege` deals **200%** to buildings and the castle (§3.0) and ignores units and the hero entirely. Only the **Ogre** and the **Sapper** carry it, and they are the two units the player cannot command at all.*
 
 - **Advance:** move toward the enemy castle along the shortest valid path (UE navigation).
 - **Attack:** in range, deal damage on the unit's cadence.
 - **Reacquire/leash:** if the target dies or moves beyond **900 units**, resume Advance. (Deliberate change from v1: no hero-first priority — a sprinting hero must not be able to kite entire waves off-lane.)
 - **Attack telegraph (M1+, playtest 2026-07-03):** every unit visibly telegraphs its attack plus an impact effect on hit. Blockout tier: a procedural lunge toward the target is acceptable until the M7 skeletal/animation pass. *[as-built 2026-07-19: the M7/M7.5 skeletal pass shipped — units play real full-body attack/walk/death/idle animations (§6); the procedural lunge survives only as the automatic null-safe fallback for any unit without a resolvable rig.]*
-- **Acceptance:** a Standard unit walks toward the enemy castle, engages the nearest enemy entering 600, and resumes advancing when it dies; a Siege unit walks past enemy units without engaging and attacks the first tower/wall in its path; a Support unit follows friendlies and heals the nearest damaged one; a unit whose target sprints 900+ units away disengages and resumes Advance.
+*[as-built 2026-08-05 — ⚠️ **THE ACCEPTANCE LINE BELOW WAS ACTIVELY WRONG AND IS CORRECTED IN PLACE.** It told a tester that a Standard unit "walks toward the enemy castle and engages", which a **correct** build now fails on the player's side: a player unit spawns into Follow and waits for an order (§3.13). The clause is kept, scoped to the cases where it is still true — the bot's units always, and the player's units under the Attack stance.]*
+
+- **Acceptance:** a **bot** Standard unit — or a **player** Standard unit after the player presses **T** — walks toward the enemy castle, engages the nearest enemy entering 600, and resumes advancing when it dies; a Siege unit walks past enemy units without engaging and attacks the first tower/wall in its path; a Support unit follows friendlies and heals the nearest damaged one; a unit whose target sprints 900+ units away disengages and resumes Advance; a **freshly summoned player** Standard unit does **not** advance at all until commanded.
 
 ### 3.9 Castle & Win Condition
 - Each castle has **2000 HP**, is destructible, and does not attack. Damage model per §3.0 (melee 100% / Siege 200% / projectiles+spells 50%).
@@ -123,12 +176,14 @@ Every unit runs the same state machine (**Advance → Acquire → Attack → Rea
 
 | Upgrade | Cost | Effect | Stack cap |
 |---|---|---|---|
-| Sharpened Blade | 6 | +10 melee damage | 2 |
-| Plate Armor | 6 | +100 max HP, and heals 100 on play | 2 |
-| Swift Boots | 5 | +25% move & sprint speed | 1 |
-| War Banner | 8 | Aura (600): friendly units deal +20% damage | 1 |
+| Sharpened Blade | 18 | +10 melee damage | 2 |
+| Plate Armor | 18 | +100 max HP, and heals 100 on play | 2 |
+| Swift Boots | 15 | +25% move & sprint speed | 1 |
+| War Banner | 24 | Aura (600): friendly units deal +20% damage | 1 |
 
-- **Acceptance:** one Sharpened Blade makes the hero swing deal 30; a second makes it 40; a third is refused and refunds 6 gold; Plate Armor raises max HP 200→300 and heals 100 immediately; upgrades survive hero respawn; all reset on Play Again.
+*[as-built 2026-08-05: costs re-read from `cards.csv` after the ×3 rescale (were 6 / 6 / 5 / 8). Effects and stack caps are unchanged.]*
+
+- **Acceptance:** one Sharpened Blade makes the hero swing deal 30; a second makes it 40; a third is refused and refunds 18 gold; Plate Armor raises max HP 200→300 and heals 100 immediately; upgrades survive hero respawn; all reset on Play Again.
 
 ### 3.11 Spells (Milestone 5)
 - Spells use targeting mode (§3.5): reticle anywhere on the map, resolve at the point, no friendly fire, **50% damage vs castle**.
@@ -141,67 +196,176 @@ Every unit runs the same state machine (**Advance → Acquire → Attack → Rea
 - *The bot has no hero, so its line spells fire from its own castle toward its chosen target point (flagged design default — distant clusters beyond the 900 reach can whiff; watch item).*
 - *Lightning stays a reticle-placed sky strike, bigger and taller: radius **400 → 700** (a `cards.csv` data change), the strike reads from high in the sky, and the ground-circle visual and the hitbox both scale honestly from the same data — no visual-only lying.*
 
+### 3.12 Ancient Grounds & the Sorcerer (as-built 2026-08-01, recorded 2026-08-05)
+The first terrain feature that is worth fighting over. Everything in this subsection is new since v3; nothing here replaces an earlier design.
+
+- **The ground.** An **Ancient Ground** is a square rune-marked region **1,680 × 1,680 units** (half-extent 840 each way — deliberately the same footprint as the mid capture zone, §5). There are **exactly two per match**, one per side, placed by the procedural scatter as a 180° rotational pair, re-placed on every match and every Play Again. It has **no collision and no navmesh footprint** — it blocks nothing, carries no props, and cannot break the traversability guarantee. It is a decal and a rule.
+- **It is never captured.** An Ancient Ground is **team-neutral, permanently**. There is no owner, no progress bar and no capture state — those belong to the mid zone (§5), which is a different thing on purpose.
+- **The Sorcerer** (cost **60**, max **2**, §4 Set IV) is a `Standard`-profile unit that **can never attack**. Its damage, range and cadence are all 0 and the attack state is sealed shut in three places, so it cannot be coaxed into a fight by any command or any target. It is commandable exactly like any other `Standard` unit — that is why it carries `Standard` and not `Support`.
+- **The mechanic.** Once **every second**, each Ancient Ground counts the live friendly Sorcerers standing inside it, **per team**, and grants every *other* live friendly unit inside it that many **permanent damage stacks**. One stack is **+5% of that unit's base damage**. The cap is **80 stacks = +400%**.
+- **Permanent means permanent.** A boosted unit **keeps its stacks when it walks out**, keeps them for the rest of the match, and loses them **only by dying**. There is no decay and no dispel. A boost survives to the end screen.
+- **Friendly-only, and that is the whole design.** A Blue Sorcerer boosts only Blue units. So a **contested** ground empowers **both sides at once**, each through their own sorcerers — it is a shared resource, never a prize. Two friendly Sorcerers in one ground grant **2 stacks/s**, so time-to-cap is **80 s** with one and **40 s** with two.
+- **A Sorcerer never boosts itself** — it is counted as an empowerer and then skipped as an occupant. Units that deal no damage cannot receive stacks either (Sorcerer, Miner, Cleric): a stack on them would be a number that does nothing.
+- **These magnitudes are mechanic rules, not card stats** (§3.0): the +5% per stack, the 80-stack cap and the 1 s tick are engine tunables and appear in no card table. All three are flagged balance levers.
+- **HUD:** a unit carrying stacks shows its bonus as a percentage on a second row of its overhead bar; an unboosted unit shows no row (§7).
+- **Acceptance:** every match contains exactly two Ancient Grounds, each 1,680 × 1,680, placed as an exact 180° rotational pair about the map center; a Sorcerer standing in one for 10 s raises a friendly Footman standing in the same ground from 12 to 18 damage (+50%); that Footman keeps 18 after walking out and returns to 12 only by dying and being re-summoned; the Sorcerer itself never gains a stack and never enters an attack, whatever it is ordered to do; a second friendly Sorcerer in the ground doubles the rate to 2 stacks/s; after 80 s with one Sorcerer the bonus stops at +400% (12 → 60) and stops broadcasting; an enemy unit standing in the same ground gains nothing from it; Play Again re-places both grounds and clears every stack.
+
+### 3.13 Direct Unit Command (as-built 2026-07-23 → 2026-08-02, recorded 2026-08-05)
+The player selects and orders their own summoned units. §10 listed this as out of scope until 2026-08-05; it has been shipped since 2026-08-02 and it changed the core loop (§2).
+
+- **Scope:** the player commands **their own (Blue) units only**. The enemy's units and the bot's entire fleet are untouched and remain fully AI-driven.
+- **Follow is the spawn default.** Every command-eligible Blue unit enrols in the hero's follow group the moment it spawns, on every spawn path. **The player-side fleet no longer auto-engages** — the player personally orders every fight. The two exceptions are deliberate: **Ogres and Sappers auto-march the enemy castle unchanged**, and **Miners spawn mining**.
+- **Five commands.** Two are army-wide latched stances; three open a ground-circle pick.
+
+| Key | Order | Shape | What it does |
+|---|---|---|---|
+| **T** | Attack | army-wide stance | Every commandable unit advances on the enemy castle and engages the nearest enemy inside its **600** aggro radius. **Clears every group**, follow included. |
+| **E** | Defend | army-wide stance | Every commandable unit falls back to its own castle and engages anything within **2500** of it. Also clears every group. |
+| **R** | Hold | 3-stage circle pick | Select → station circle → attack circle. The group holds its station and fights only inside its two circles: a live target that leaves **both** is dropped and the unit walks home. |
+| **F** | Ambush | 3-stage circle pick | Identical three stages, one difference — an Ambush group **chases a live target with no leash**, finishes the kill, and only then returns to station. |
+| **C** | Follow | 1-stage circle pick | Adds the circled units to the hero's single follow group. |
+
+- **The pick.** The **mouse wheel** resizes the active circle by **100** per notch, clamped to **200–5000**; the three stages open at **1200 / 700 / 1500**. **LMB** confirms a stage, **RMB or Escape** cancels the entire pick at any stage. A circle containing no eligible unit **refuses and stays open** so a different circle can be tried — it does not silently create an empty group.
+- **Formation.** A group's members are assigned fixed stations on a golden-angle (sunflower) spread inside the station circle, computed once at confirm. Units spread across the zone instead of milling on one point. Follow uses the same spread re-anchored on the hero within **900** units, so an arbitrarily large escort still fits in a ring.
+- **Lifetime.** Re-selecting a unit **steals** it from its previous group. **T or E clears everything.** An all-dead group is reaped with its ground markers. Play Again resets all of it.
+- **Eligibility — the whole matrix:**
+
+| Unit | Profile | Follow (C) | Zone orders (R/F) | Stances (T/E) | Spawn default |
+|---|---|---|---|---|---|
+| Footman, Archer, Knight, Militia Mob, Pikeman, Cavalry, Longbowman, Wizard, Sorcerer | `Standard` | yes | yes | yes | **Follow** |
+| Cleric | `Support` | yes | **no** | no | **Follow** — and it keeps healing while it follows |
+| Miner | `None` | yes, but only if you explicitly circle it | yes, with miner semantics | yes, with miner semantics | **Mining** |
+| Ogre, Sapper | `Siege` | **no** | **no** | **no** | auto-march the enemy castle, unchanged |
+| every bot / Red unit | any | **no** | **no** | **no** | unchanged — fully AI-driven |
+
+- **Miner semantics** (the five commands mean different things to a miner, by design): **T** = find the nearest mine it can claim and mine it · **E** = walk inside your own castle and idle, no mining and no attacking · **R** = mine a mine inside the circled zone; a miner is **never** given an attack circle · **F** = identical to **R** · **C** = follow like anyone else. **A miner never enters an attack under any command.**
+- **A following unit does not fight.** It acquires nothing and attacks nothing while it follows, and becomes a normal attacker the instant its group is released. A **following Cleric still heals** on its own timer. If the hero dies, follow groups **hold position** and resume the moment he respawns — they do not march to the corpse and do not fall back.
+- **Stuck-unit watchdog** (2026-08-05): a unit whose movement is blocked escalates at **1.5 s** (one lateral sidestep of **350** units), **3.0 s** (re-path to the original goal) and **6.0 s** (abandon the move goal and let its standing order re-choose). It never cancels the unit's **order**, never makes it attack, and never leaves it inert. A unit standing still *by design* is not "stuck".
+- **Keys are positional, not literal** — on a non-QWERTY layout T/E/R/F/C land in the same **physical** positions (§3.1). The hotkeys 1–6, Left Alt, Shift, Space, Enter and Escape stay literal on every layout.
+- **Acceptance:** a Footman the player summons joins the hero's follow group automatically and does **not** advance until ordered; pressing **T** makes every commandable Blue unit advance and engage and clears all groups; pressing **R**, circling 5 Footmen, then placing a station circle and an attack circle creates a group of 5 that spreads onto 5 distinct stations and drops any target that leaves both circles; the same flow with **F** keeps chasing a target that flees past both circles and then returns to station; **C** on a circled Cleric makes it follow the hero, still healing, never attacking; an Ogre inside any of those circles is never selected; a Miner given **E** walks inside its own castle and stops mining; the wheel resizes the live circle by 100 per notch between 200 and 5000; **RMB or Escape** cancels the pick with nothing created; a circle containing no eligible unit refuses and leaves the pick open.
+
+### 3.14 The In-Match Command Assistant — "the AI commander" (as-built 2026-08-02 → 2026-08-05, recorded 2026-08-05)
+A **local language model running inside the game** that turns one typed sentence into one of the §3.13 commands. Open the console with **Enter**, type an order, submit; the game shows back the order it understood plus **ghost circles on the ground**; press **Z** to accept, or close the box to cancel.
+
+- **It runs on the player's machine.** A **~2.5 GB, 4-billion-parameter Qwen3 model under Apache-2.0**, loaded in-process and run on the GPU or the CPU. At play time there is no account, no network call, no server, no key and no firewall prompt. **The licence is a first-class selection criterion, not an afterthought** — several better-scoring open models are non-commercial and were ruled out by name.
+- ⚠️ **It does NOT yet ship WITH the game, and that is a deferral, not an oversight.** The weights are kept out of Git entirely and fetched by a setup tool; **getting a 2.5 GB binary to ride a cooked, packaged build is a recorded, deliberately unsolved problem**, parked so that nobody bolts a half-considered packaging path onto a feature whose quality bar was still moving. ⇒ **On a fresh clone the model is ABSENT by default.** That is why the disable-and-carry-on behaviour in the next bullet is the **normal** state of a new checkout rather than an edge case, and why it was built first.
+- **It is strictly additive, and that is a hard rule.** Every keyboard command still works byte-identically; **the console is never required for any action.** If the model fails to load for any reason, the console disables itself for the session and **nothing else about the match changes**. An assistant that became *the* path to a command and was unreliable would make the game worse than before it existed.
+- **What it can express today — 7 orders**, each executed through exactly the same code the matching key calls, never a parallel implementation:
+
+| Order | Executes as |
+|---|---|
+| **send**, **guard** | a Hold group — the **R** key's path |
+| **ambush** | an Ambush group — the **F** key's path |
+| **follow** | enrol in the hero's follow group — the **C** key's path |
+| **charge** | army-wide Attack — the **T** key's path, group-clearing included |
+| **fall back** | army-wide Defend — the **E** key's path |
+| **rally** | the hero's Rally ability — the **Q** key's path |
+
+- **Who it can name:** up to **3 unit kinds with counts** ("10 footmen and a sorcerer"), **everything except up to 3 kinds** ("everyone but the miners"), **everything inside a region** ("everyone in the mid"), **all**, or **none**. **Where** it can send them: a **closed list of 7 places** — your castle, the enemy castle, the mid, the near ancient ground, the far ancient ground, the nearest mine, and the hero. **When:** an order can carry a trigger ("when I have at least 6 archers"), latched for up to **120 s** and re-checked once a second; a triggered order **still asks for confirmation** before it fires.
+- ⚠️ **Only 3 of the 7 places can be used as a *region*** — the mid and the two ancient grounds — because those are the only three the game can answer a "is this point inside it" question for. "Everyone at my castle" would need an invented radius, and **how far from a castle counts as "at" it is a product question with no measured answer**: it stays unbuilt until Jonathan supplies the number rather than being guessed.
+- **⛔ Hard scope limits — every one of them deliberate:**
+  - **It commands units. It never plays a card and it never spends gold.** This is the single most protected rule in the feature.
+  - **It emits symbols, never coordinates and never prose.** It picks a place *name*; the game resolves the location itself. Every sentence the player reads is written by the game from a fixed template — there is no "let the model phrase it nicely" path anywhere.
+  - **It fails closed.** A request it cannot satisfy becomes a clarifying question or a stated refusal, out loud — **never a guessed order**. "Send everyone in the mid" with nobody in the mid refuses and says so, because an army moving that the player never asked to move is worse than nothing happening, and *nothing happening silently* is worse than both.
+  - **Filters are refused on the army-wide verbs.** "Fall back, except the miners" is refused rather than quietly executed as "fall back, *including* the miners" — charge, fall back and rally move everything by definition, so a filter handed to them would be parsed and then silently dropped.
+  - **"mage" resolves to nothing, permanently.** The Sorcerer and the Wizard are different cards (§4). Giving them a shared alias would convert an honest clarifying question into a confident wrong order.
+  - **Confirm-before-execute is ON by default** and is the one entry on the settings screen (§7). Turning it off removes the *review*, never a guard — and a triggered order still asks even then.
+- **Deliberately out of v1, and not scheduled:** voice input, and any macro / graphical order UI.
+
+*[⚠️ **PLANNED, NOT BUILT — the quality work. Read this before quoting the feature as finished:**]*
+- *On a 25-sentence development set the model reaches **20 of 25** against a pre-registered gate of **22 of 25 with zero refusal-class failures**. It is **shipped and usable, and it is below its own bar**.*
+- ***Prompt tuning is exhausted, not paused.** Three tuning rounds moved it 18 → 19 → 20, and 23 of 25 outputs came back byte-identical between the last two. What those rounds did buy is real: zero regressions, and the "never spends my gold, never plays my cards" refusal now works.*
+- *⚠️ **Every number the project holds was measured on a test harness, not on the shipped game path**, and the two are known to differ in how they frame the prompt. **Closing that gap is the first step, it costs hours rather than weeks, and it may turn out to be the entire fix** — a plan that stops there, having discovered the shipped path was never measured at its best, is a success.*
+- ***That first step is IN FLIGHT, not merely planned.** The instrument work needed to run the comparison has been built and compiles; its source is being held uncommitted until it can be re-measured in an exclusive editor session. **What has NOT happened is any training** — and the two are worth keeping apart, because "we are building the measuring stick" and "we are changing the model" are different risks.*
+- *Beyond it, a **fine-tune of the same model** is fully decomposed and **has not begun**, held behind two pre-registered stops (do not train until the shipped path has been measured at its own best; resolve the roster mismatch first) and **blocked on inputs only Jonathan can author**: 60–80 real orders in his own voice, and two product rulings — what "send everyone" should emit, and when the assistant should answer "I don't have those units" versus "that's not something I can do".*
+- ***The shipping path is unbuilt too, and on purpose** — see the model bullet above. Packaging the weights into a cooked build is deferred, so today the assistant is a feature of a **development checkout**, not of a distributable one.*
+- *⚠️ **The capability list above is what the game can EXPRESS. How reliably the model emits the two newest shapes — the exclusion list and the region — has never been measured.** Neither is promised to work at a rate.*
+
+- **Acceptance:** **Enter** opens the console and **Enter** on an empty box closes it; **Escape** never closes it and is never swallowed; with 5+ Footmen alive, "send 5 footmen to the mid" shows a game-written summary plus ghost circles and executes only after **Z**; closing the box instead discards the order and the transcript says so in the game's own words; "buy an ogre" is refused and no gold moves; "send the mage" asks which unit rather than choosing one; "fall back except the miners" is refused rather than executed unfiltered; "everyone in the mid" with an empty mid refuses out loud; with the confirm setting off the same order executes immediately while a *triggered* order still asks; and — **run this one FIRST, on a clone that has not fetched the weights, because it is the default state** — with the model absent the match starts normally, the console disables itself, nothing else about the game changes, and every one of the five key commands still works.
+
 ## 4. Characters, Units & Card Compendium
 **Player Hero** (one fixed hero for the prototype): 200 HP base, 500/750 u/s, 20-damage cleave melee (§3.1), upgradeable via §3.10. One active ability (Milestone 3+): **Rally** — nearby friendly units (600) gain +25% move speed for 5 s, 20 s cooldown, key: Q.
 
 All stats below live in `cards.csv` (§3.0). **Cost** = gold. **Max** = max copies per 50-card deck (also the stack cap for hero upgrades).
 
+*[as-built 2026-08-05 — ⚠️ **EVERY COST BELOW WAS TRIPLED ON 2026-07-24 AND THIS DOCUMENT HAD NEVER RECORDED IT.** The W1 economy pass multiplied all 28 card costs by 3 to go with the restored 1 gold/s base income (§3.2): Footman 3→9, Archer 4→12, Knight 6→18, Miner 8→24, Ogre 12→36, Deep Mine 15→45, and the rest in proportion. **The tables below carry the tripled values, re-read from `cards.csv` for this pass — they are not to be multiplied again.** Set IV (the Wizard and the Sorcerer) arrived a week later and was priced natively at the new scale, so those two were never tripled and never should be. Every derived number elsewhere in the document (§3.3's refund, §3.5's example, §3.10's refund, §4's bot thresholds, §8's paybacks and deck-curve bands) has been corrected to match.]*
+
+*[as-built 2026-08-05: the collection is **30 cards**, of which **13 spawn a unit** — 12 of type `Unit` plus the Miner, which is typed `Economy`. The v2 text said 28; the Wizard and the Sorcerer joined the pool on 2026-08-01 (Set IV).]*
+
+*[as-built 2026-08-05 — ⚠️ **DEFAULT-DECK MEMBERSHIP IS NOT MARKED ON THESE TABLES, DELIBERATELY.** Exactly **15 of the 30 cards carry `DeckCount 0`** and appear in no default deck — they are named as a set in §3.4, and marking half the rows of three tables would be noise that goes stale on the next curation pass. **Read `DeckCount` in `cards.csv` for the answer, never a row annotation here.** ⛔ Absence from the default deck says nothing about a card being finished, balanced or playable: all 15 are fully implemented and a player can deck any of them.]*
+
 ### Core Set — Milestone 2 (6 cards)
 
 | Card | Type | Cost | Max | HP | Dmg | Range | Cadence | Speed | Profile / notes |
 |---|---|---|---|---|---|---|---|---|---|
-| Footman | Unit | 3 | 12 | 80 | 12 | 120 | 1.0 s | 400 | Standard. Frontline. |
-| Archer | Unit | 4 | 10 | 45 | 10 | 700 | 1.2 s | 350 | Standard. Ranged. |
-| Knight | Unit | 6 | 6 | 200 | 15 | 120 | 1.2 s | 300 | Standard. Tank. |
-| Miner | Economy | 8 | 4 | 30 | — | — | — | 350 | §3.3. +1 gold/s on arrival. |
-| Arrow Tower | Building | 5 | 8 | 150 | 15 | 900 | 1.5 s | — | Anti-unit tower. |
-| Wall | Building | 4 | 10 | 300 | — | — | — | — | Blocks pathing. |
+| Footman | Unit | 9 | 12 | 80 | 12 | 120 | 1.0 s | 400 | Standard. Frontline. |
+| Archer | Unit | 12 | 10 | 45 | 10 | 700 | 1.2 s | 350 | Standard. Ranged. |
+| Knight | Unit | 18 | 6 | 200 | 15 | 120 | 1.2 s | 300 | Standard. Tank. |
+| Miner | Economy | 24 | 4 | 30 | — | — | — | 350 | §3.3. +1 gold/s on arrival. Profile `None`, but **commandable** (§3.13). |
+| Arrow Tower | Building | 15 | 8 | 150 | 15 | 900 | 1.5 s | — | Anti-unit tower. |
+| Wall | Building | 12 | 10 | 300 | — | — | — | — | Blocks pathing. |
 
 ### Set II — Milestone 4 (16 cards)
 
 | Card | Type | Cost | Max | HP | Dmg | Range | Cadence | Speed | Profile / notes |
 |---|---|---|---|---|---|---|---|---|---|
-| Militia Mob | Unit | 5 | 6 | 25 ×4 | 6 | 120 | 1.0 s | 400 | Standard, **Swarm** (spawns 4). Dies to AoE. |
-| Pikeman | Unit | 5 | 6 | 100 | 30 | 120 | 1.5 s | 350 | Standard, **Slayer** (2× vs 150+ HP). Anti-tank. |
-| Sapper | Unit | 5 | 4 | 60 | 80 AoE (250) | contact | once | 500 | **Siege**. Explodes on contact or death. |
-| Cavalry | Unit | 7 | 4 | 140 | 20 | 120 | 1.0 s | 600 | Standard, **Charge** (first hit 2×). |
-| Longbowman | Unit | 6 | 4 | 70 | 18 | 1200 | 1.5 s | 300 | Standard. Outranges towers (900). |
-| Cleric | Unit | 6 | 3 | 90 | heals 8/s | 400 | — | 350 | **Support**. No attack. |
-| Ogre | Unit | 12 | 2 | 500 | 35 | 120 | 1.5 s | 250 | **Siege** tank. The win-condition card. |
-| Bomb Tower | Building | 8 | 4 | 180 | 25 AoE (250) | 800 | 2.5 s | — | Anti-swarm splash. |
-| Ballista Tower | Building | 7 | 4 | 120 | 45 | 1400 | 3.0 s | — | Long range; **blind spot inside 300**. |
-| Barracks | Building | 10 | 3 | 250 | — | — | spawns | — | Spawns 1 Footman every 8 s; expires after 60 s. |
-| Deep Mine | Economy | 15 | 2 | 200 | — | — | — | — | Building: +2 gold/s immediately; raidable. |
-| Masons | Utility | 8 | 3 | — | — | — | — | — | **Instant**: restores 300 castle HP over 10 s. |
-| Sharpened Blade | Hero Upg. | 6 | 2 | — | — | — | — | — | §3.10. |
-| Plate Armor | Hero Upg. | 6 | 2 | — | — | — | — | — | §3.10. |
-| Swift Boots | Hero Upg. | 5 | 1 | — | — | — | — | — | §3.10. |
-| War Banner | Hero Upg. | 8 | 1 | — | — | — | — | — | §3.10. |
+| Militia Mob | Unit | 15 | 6 | 25 ×4 | 6 | 120 | 1.0 s | 400 | Standard, **Swarm** (spawns 4 on a 300 circle). Dies to AoE. |
+| Pikeman | Unit | 15 | 6 | 100 | 30 | 120 | 1.5 s | 350 | Standard, **Slayer** (2× vs 150+ max HP). Anti-tank. |
+| Sapper | Unit | 15 | 4 | 60 | 80 AoE (250) | 120 | 1.0 s | 500 | **Siege**. Suicide blast, Siege-typed: on reaching attack range it detonates **once** for 80 in a 250 radius and dies, so its cadence never runs a second time. |
+| Cavalry | Unit | 21 | 4 | 140 | 20 | 120 | 1.0 s | 600 | Standard, **Charge** (first hit after 2 s of movement is 2×). |
+| Longbowman | Unit | 18 | 4 | 70 | 18 | 1200 | 1.5 s | 300 | Standard. Outranges towers (900). |
+| Cleric | Unit | 18 | 3 | 90 | heals 8/s | 400 | 1.0 s | 350 | **Support**. Never attacks. ⚠️ The 8 is a **HEAL RATE in HP/s** — it sits in the CSV's `Damage` column but no enemy is ever damaged by it, and the 1.0 s cadence is the heal's timer, not an attack's. |
+| Ogre | Unit | 36 | 2 | 500 | 35 | 120 | 1.5 s | 250 | **Siege** tank. The win-condition card. |
+| Bomb Tower | Building | 24 | 4 | 180 | 25 AoE (250) | 800 | 2.5 s | — | Anti-swarm splash. |
+| Ballista Tower | Building | 21 | 4 | 120 | 45 | 1400 | 3.0 s | — | Long range; **blind spot inside 300**. |
+| Barracks | Building | 30 | 3 | 250 | — | — | spawns | — | Spawns 1 Footman every 8 s; expires after 60 s. |
+| Deep Mine | Economy | 45 | 2 | 200 | — | — | — | — | Building: +2 gold/s immediately; raidable. |
+| Masons | Utility | 24 | 3 | — | — | — | — | — | **Instant**: restores 300 castle HP over 10 s. |
+| Sharpened Blade | Hero Upg. | 18 | 2 | — | — | — | — | — | §3.10. |
+| Plate Armor | Hero Upg. | 18 | 2 | — | — | — | — | — | §3.10. |
+| Swift Boots | Hero Upg. | 15 | 1 | — | — | — | — | — | §3.10. |
+| War Banner | Hero Upg. | 24 | 1 | — | — | — | — | — | §3.10. |
 
 ### Set III — Milestone 5 (6 cards)
 
 | Card | Type | Cost | Max | Effect |
 |---|---|---|---|---|
-| Fireball | Spell | 7 | 3 | 100 damage in a 300 radius at the reticle. |
-| Frost Nova | Spell | 6 | 3 | Freezes enemy units and towers in a 350 radius for 4 s (castle unaffected). |
-| Lightning | Spell | 8 | 2 | 200 damage to the 3 highest-HP enemies in a 700 radius *(rev. 2026-07-21, was 400)*. The tower-killer. |
-| Battle Cry | Spell | 5 | 3 | Friendly units in a 400 radius: +50% attack speed, +25% move speed for 8 s. |
-| Pickpocket | Spell | 6 | 2 | Steal 10 gold from the opponent (up to what they have). |
-| Crystal Tower | Building | 9 | 3 | 150 HP; **Chain** attack every 1.5 s, 800 range: 15 dmg primary, 10 second, 5 third. |
+| Fireball | Spell | 21 | 3 | 100 damage in a 300 radius at the reticle. |
+| Frost Nova | Spell | 18 | 3 | Freezes enemy units and towers in a 350 radius for 4 s (castle unaffected). |
+| Lightning | Spell | 24 | 2 | 200 damage to the 3 highest-HP enemies in a 700 radius *(rev. 2026-07-21, was 400)*. The tower-killer. |
+| Battle Cry | Spell | 15 | 3 | Friendly units in a 400 radius: +50% attack speed, +25% move speed for 8 s. |
+| Pickpocket | Spell | 18 | 2 | Steal 10 gold from the opponent (up to what they have). Resolves instantly, no reticle. |
+| Crystal Tower | Building | 27 | 3 | 150 HP; **Chain** attack every 1.5 s, 800 range: 15 dmg primary, 10 second, 5 third. |
 
 *[as-built 2026-07-21: Fireball + Frost Nova keep these magnitudes but deliver along a hero-origin line instead of a reticle-placed ground circle — see §3.11.]*
+
+*[as-built 2026-08-05: Lightning's shipped radius is **700**. `cards.csv`'s free-text `Notes` cell for that row still reads 400; it is stale and is read by no code — the `AoERadius` column at 700 is what ships.]*
+
+### Set IV — Ancient Grounds batch (2 cards, as-built 2026-08-01)
+
+| Card | Type | Cost | Max | HP | Dmg | Range | Cadence | Speed | Profile / notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Wizard | Unit | 24 | 4 | 45 | 15 | 700 | 1.6 s | 350 | Standard, **ranged splash**: each shot deals its damage to everything within **250** of the impact point. |
+| Sorcerer | Unit | 60 | 2 | 70 | — | — | — | 350 | Standard, **Empower** (§3.12). **Cannot attack, ever** — damage, range and cadence are all 0 by design. Commandable like any other Standard unit. 2 copies in the curated 50. |
+
+**⚠️ The Sorcerer and the Wizard are not variants of each other, and the separation is deliberate.**
+- The **Wizard** is an **Archer built for crowds** — a ranged attacker whose shots splash. It has no special class behind it at all; it is pure data reusing the Bomb Tower's shipped splash path. It is the roster's answer to massed cheap units.
+- The **Sorcerer** is the opposite of an attacker: a ritualist whose entire contribution is **standing somewhere**. It shares no mechanic, no stat shape and no cost band with the Wizard — 60 gold against 24, 2 copies against 4.
+- **They deliberately share no name.** A reference to a generic "mage" resolves to **neither**, on purpose, in the card data and in the assistant's vocabulary (§3.14): with two cards this different, a shared alias turns an honest clarifying question into a confident wrong answer.
+- **Art identity is pinned for the same reason.** A generic "sorcerer" art prompt returns a *wizard* — hooded, bearded, throwing fire — roughly nine times in ten, which is exactly the Wizard the roster already has. The Sorcerer's identity is therefore fixed as a **ley-warden / geomancer**: a carved **stone ritual mask** and antler crown with no face and no hood, **both hands on a rune-carved monolith staff planted in the ground**, stone-and-moss vestments under a flat slab mantle, and cool **jade ley-light** keyed to the Ancient Ground's runes. It should read at 15 m as *a standing stone with legs*, never as a spellcaster mid-cast.
 
 ### Bot Opponent (Milestone 3, extended in M4/M5)
 Through Milestone 2 there is no opponent (target-practice castle). The M3 bot follows explicit rules — no fuzzy "plays well":
 - Accrues gold identically to the player; uses the default deck; controls **no hero**.
 - **Every 2 s, evaluate in order** (play the first rule that fires):
   1. If enemy units are on the bot's half and gold ≥ cheapest affordable *defensive* play → play a unit at its centerline or a tower between the intruders and the castle.
-  2. If miners < 3 and no enemy units on the bot's half and gold ≥ 8 → play Miner.
-  3. If gold ≥ 12 → play the most expensive affordable unit at its centerline.
+  2. If miners < 3 and no enemy units on the bot's half and gold ≥ 8 → play Miner. *[as-built 2026-08-05: the "≥ 8" was just the old Miner cost — the shipped gate is simply **the Miner card being affordable (24)**, plus one new condition: **there must be a mine it can actually claim** (§3.3). A miner with nowhere to walk is a doomed 24 gold, so the bot skips the rule entirely rather than buying one.]*
+  3. If gold ≥ 12 → play the most expensive affordable unit at its centerline. *[as-built 2026-08-05: the bank threshold is **36** — scaled with the ×3 rescale, and deliberately set to the new Ogre cost so the bot still **banks toward the priciest unit it can field** instead of dumping its gold on the cheapest affordable one. This is what makes its waves grow as its income scales.]*
   4. If hand has an unplayable card and gold ≥ 1 → discard the most expensive card in hand.
 - **M4 extension:** bot plays Set II cards by the same rules; plays hero upgrades... *(n/a — bot has no hero)* → bot treats Hero Upgrade cards as discards. **M5 extension:** bot casts Fireball at 3+ clustered player units; Lightning at a tower adjacent to 2+ units. *[as-built 2026-07-21: the bot's line spells (Fireball/Frost Nova) fire from its castle (§3.11); it also marches attack waves FROM its castle on the 10× field — no mid-field materialization (M7.6 ruling).]*
 - Difficulty is a single fixed level for now.
-- **Acceptance:** with the player idle, the bot reaches 3 miners and attacks with progressively larger waves; when the player pushes, the bot responds with a defensive play within 2 s; the bot never plays a card it cannot afford; a logged decision trace shows which rule fired for every play.
+- *[as-built 2026-08-05: **the bot is not commandable and was never meant to be.** The §3.13 command layer and the §3.14 assistant are player-side only; the bot's whole fleet keeps the §3.8 auto-advance behaviour the player's fleet gave up. That asymmetry is deliberate, and it is the main thing a balance playtest should be watching.]*
+- **Acceptance:** with the player idle, the bot reaches 3 miners and attacks with progressively larger waves; when the player pushes, the bot responds with a defensive play within 2 s; the bot never plays a card it cannot afford; the bot never buys a Miner when no mine is claimable; a logged decision trace shows which rule fired for every play.
 
 ## 5. Levels / World
 - **One symmetric arena.** Two castles at opposite ends (~4000 units apart *[as-built: 50,000 — see below]*), a mostly open battlefield, a clear centerline dividing placement halves.
@@ -216,6 +380,14 @@ Through Milestone 2 there is no opponent (target-practice castle). The M3 bot fo
 - ***Terrain:** a runtime PROCEDURAL scatter of trees, rocks, climbable hills, and grass, re-seeded fresh each match — organic ASYMMETRIC placement (a PvE fairness ruling; a mirror-symmetric toggle is reserved if playtests ever read unfair). Obstacles physically block movement and carve the navmesh; hills are climbable by the hero AND units (convex ≤30° faces with flat crowns — high ground is physical only, no stat bonuses); terrain blocks projectiles (arrows die on rocks/hills/trunks — an accepted balance change).*
 - ***Corridor & keep-clears:** a guaranteed clear castle-to-castle corridor (half-width 1,000) plus keep-clear radii around castles, gold nodes, and spawns. A match where units cannot reach the enemy castle is a hard failure — traversability is enforced every match, by design.*
 - ***Vista & POIs (M7.6 plan, in progress):** a far ring of cliff/mountain silhouettes OUTSIDE the play bounds (visual-only; the one Nanite exception — §6), 6–10 mid-field points of interest, and 2 pre-seeded NEUTRAL gold-node props mid-field — visual-only today; a neutral-node capture mechanic is a recorded future hook (§10), not designed.*
+
+*[as-built 2026-08-05 — the arena gained THREE gameplay regions and one law since v3. The battlefield stopped being scenery.]*
+- ***⚠️ SYMMETRY LAW — 180° ROTATIONAL, and it SUPERSEDES the M6.5 "organic asymmetric" ruling above.** Every terrain pass now generates on the Blue half and emits each placement's exact rotational twin about the map center: position mirrors to (−X, −Y), yaw turns 180°, scale is untouched. It is an exact rigid rotation, not an approximation and not the retired X-mirror. The scatter is still random per match and re-seeded every match — it is now **random AND provably fair**, which is what a battlefield carrying objectives has to be. The asymmetric-organic ruling was right for decorative scatter and wrong the moment the terrain started holding things worth taking. Two residual asymmetries are accepted and logged when they fire: traversability culls, and the player-start keep-clear.*
+- ***SIX NEUTRAL DEPLETING MINES replace the two team gold nodes (2026-07-23).** ⚠️ The "gold node per side, 800 units from each castle" line at the top of this section, and the v3 note that they moved with the castles, are **both superseded** — those two actors were deleted. The field now carries **3 mines per side, 6 total**, scatter-placed as rotational pairs so castle-distance sums are equal by construction, corridor-legal, and colliding with nothing. Each holds **300 gold**, is claimed by the first miner to reach it, drains 1 gold/s per miner working it, and **depletes permanently for the rest of the match** when empty. Full mechanic in §3.3. Economy is now a contested, exhaustible map resource — six mines hold **1,800 gold** between them and a long match outlives all of it.*
+- ***THE MID CAPTURE ZONE (2026-07-23).** One square, **1,680 × 1,680**, straddling the centerline at the map origin. Every **0.5 s** it counts units inside it (summoned units, miners and the hero count; buildings, towers, castles and mines do not): one team alone inside owns it, **both teams inside NEUTRALIZES it** (a live tug-of-war that must be held, not a sticky flag), and an empty zone latches its last owner. Holding it is the **only** way to place cards forward of your own castle box (§3.5).*
+- ***THE TWO ANCIENT GROUNDS (2026-08-01).** One per side, same 1,680 × 1,680 footprint as the mid zone, placed by the scatter as a rotational pair, re-placed every match. Team-neutral and never captured; they are where Sorcerers permanently strengthen an army (§3.12). No collision, no navmesh footprint — the traversability guarantee is untouched.*
+- ***CASTLES ARE 3× AND HOLLOW.** The castle mesh scaled up and its interior is walkable: the hero and units can enter it, cards can be placed inside it, and a Miner ordered to Defend walks in and stands down there (§3.13). The placement box was re-derived to match the castle's full 2,460 width so "the box is about the castle's size" still holds.*
+- ***Field scale — status correction.** The v3 note above says the 10× field "currently lives on its own branch" while the mainline carries ±8,000. That is stale: the shipped code and level now carry the **±25,000** field (the scatter's own keep-clear law names a single player start at −23,800, and the placement box is tuned to it). ⚠️ FLAGGED rather than declared closed: the **M7.6 phase-ladder gates and Jonathan's W1 perf/feel watch are still open** — the field merged, the verdict on it did not.*
 
 ## 6. Art Style & Audio — the "premium stylized" bar
 **Direction: polished stylized** (Warcraft Rumble / Fortnite quality tier, low-poly base). Chosen deliberately: achievable by the Blender→UE agent pipeline *and* premium-looking with the right materials, lighting, and juice. Timeline is flexible; this bar is not.
@@ -235,6 +407,11 @@ Through Milestone 2 there is no opponent (target-practice castle). The M3 bot fo
 - ***Animation:** all humanoid units share ONE skeleton ("SiegeBiped", 21 bones); motion comes from Meshy auto-rig preset clips (idle/walk/attack/death) retargeted through a Blender-side lane (a UE 5.8 retarget-export defect makes the in-editor export route unusable — detail in CONVENTIONS), with a hard height-normalized foot-amplitude gate so root-only "sliding" clips can never ship. Per-unit status (2026-07-21): Footman, Knight, Pikeman, Cleric, Longbowman, Miner, Militia Mob, Sapper LIVE on full-body clips; Archer + Ogre in flight; **Cavalry HELD** — biped clips deform the horse, needs a quadruped source (known open item). Buildings do not animate (tower recoil stays procedural); the hero remains the template skeletal character.*
 - ***Known open items:** the Lightning sky-strike material rework (first attempt used a custom-HLSL node that wedged the editor; re-author with stock material nodes), the Cavalry quadruped source, and the 7 uncovered audio cues below.*
 
+*[as-built 2026-08-05 — the art bar's two newest obligations:]*
+- ***The roster is 18 cards' worth of art, not 16.** The **Wizard** and the **Sorcerer** (§4 Set IV) joined after the "16/16 textured" line above was written. ⚠️ FLAGGED rather than claimed: **their per-asset status against the concept-fidelity colour law and the animation fleet is not recorded here** — check the pipeline records, not this document, before treating the roster as complete.*
+- ***⭐ The Sorcerer carries a NAMED art constraint, and it is a gameplay-legibility constraint, not a taste one.** A generic "sorcerer" prompt returns a Wizard reskin roughly nine times in ten, and two cards 36 gold apart that look alike is a misread every time one appears on the field. The pinned identity is the **ley-warden / geomancer** described in §4 — stone ritual mask, monolith staff planted in the ground, jade ley-light keyed to the Ancient Ground decal, reading at 15 m as "a standing stone with legs". The team-colour region is the slab mantle.*
+- ***The Ancient Ground itself is an art deliverable:** a jade rune decal the size of the mid zone, sorted to draw above the capture-zone decal where the two footprints touch, and deliberately NOT screen-size-culled — at the arena's zoomed-out framing the default cull threshold makes it vanish exactly when the player is surveying the whole battlefield.*
+
 **Scene standards:**
 - Lighting: one strong key light + Lumen GI; warm-vs-cool team framing; stylized gradient skybox.
 - Post stack: bloom, subtle vignette, color-grade LUT (saturated characters over slightly desaturated environment — Ori rule).
@@ -252,15 +429,24 @@ Through Milestone 2 there is no opponent (target-practice castle). The M3 bot fo
 - *[as-built 2026-07-03 (M2 input model): hand slots also play via hotkeys **1–6**; holding **Left Alt** shows the cursor (camera look suspended) so cards/discard are mouse-clickable — free-look is otherwise preserved. Card faces carry real illustrations (one per card, data-driven).]*
 - **Placement mode:** ghost preview + legal-half highlight; building clearance violations show red. **Targeting mode (spells):** ground reticle, full map.
 - **End screen:** Victory / Defeat + "Play Again" (full reset per §3.9).
-- **Deck-builder screen (Milestone 6):** browse the 28-card collection; add/remove copies with per-card **Max Copies** enforced; live count "x/50"; save/load named decks; a deck is playable only at exactly 50. *[as-built 2026-07-10: shipped in M6; browser tiles render as PHYSICAL cards (same face treatment as the in-match hand) with a prominent above-card in-deck copy count — both from Jonathan's playtest feedback. Saved decks persist cross-session and feed matches; the bot picks one of 2 curated decks.]*
-- **Main menu (Milestone 3+):** Play (vs Bot), Deck Builder (M6), Quit.
+- **Deck-builder screen (Milestone 6):** browse the 28-card collection *[as-built 2026-08-05: **30** — the Wizard and the Sorcerer joined the pool]*; add/remove copies with per-card **Max Copies** enforced; live count "x/50"; save/load named decks; a deck is playable only at exactly 50. *[as-built 2026-07-10: shipped in M6; browser tiles render as PHYSICAL cards (same face treatment as the in-match hand) with a prominent above-card in-deck copy count — both from Jonathan's playtest feedback. Saved decks persist cross-session and feed matches; the bot picks one of 2 curated decks.]*
+- **Main menu (Milestone 3+):** Play (vs Bot), Deck Builder (M6), Quit. *[as-built 2026-08-05: the shipped menu has six entries — **Play (vs Bot)** · **Sandbox (No Bot)** · **Deck Builder** · **Multiplayer** · **Settings** · **Quit**. **Sandbox** starts a match with no opponent and 9,999 gold, a dev affordance kept in the shipped menu; **Multiplayer** opens the host/join session screen (§9, M8 Phase 1); **Settings** opens the one-setting panel described below. "Play (vs Bot)" is untouched by both additions and never routes through the session screen.]*
+
+*[as-built 2026-08-05 — everything the UI grew since v3, and one correction:]*
+- ***⚠️ CORRECTION to "Targeting mode (spells): ground reticle, full map".** That describes **Lightning** exactly. It does **not** describe the rest: **Fireball and Frost Nova** keep a reticle but use it as an **aim point** for a hero-origin line, and **Pickpocket** has no reticle at all — it resolves the instant it is clicked (§3.11).*
+- ***Command feedback (§3.13).** The Hold / Ambush / Follow picks draw a live ground circle the **mouse wheel** resizes; each confirmed group leaves its station and attack circles on the ground as persistent markers, so a player can see what every group was told. Circles are ground decals, not screen UI — they read at the arena's zoom.*
+- ***Boost row on the overhead bars (§3.12).** A unit carrying Ancient-Ground stacks shows its permanent damage bonus as a percentage on a second row above its health bar. A unit with no stacks shows **no row at all**, so the field is not littered with zeroes.*
+- ***The assistant console (§3.14).** **Enter** opens a typed-order box with a transcript above it. A parsed order comes back as a **game-written** sentence plus ghost circles on the ground; **Z** accepts, closing the box cancels and the transcript says the order was discarded. **Escape never closes it** — a permanent ruling, so Escape keeps meaning "cancel what I'm placing". The console refuses to open while placement mode, spell targeting or a command pick owns the cursor, and it refuses silently rather than appearing and then discovering it was not allowed. Only the input box is clickable; the rest passes clicks through to the game.*
+- ***Settings screen.** Reached from a **Settings** button on the main menu. It carries exactly **one** setting in v1: **assistant confirm-before-execute**, default **on** (§3.14). It persists across sessions.*
+- ***Keyboard layout.** The letter keys are remapped **positionally** on non-QWERTY layouts, always on, with **no player-facing setting** and no rebind screen (§3.1). ⚠️ FLAGGED as a known gap rather than a decision: **there is no key-rebinding UI**, and the layout remap is not a substitute for one.*
+- ***Still missing from this section and owed by a future pass:** the mine reserve gauge is a glow that dims as a mine empties (§5) — deliberately zero UI today, and the "how much is left in that mine" question has no readable answer. FLAGGED, not designed.*
 
 ## 8. Progression & Economy
-- **In-match currency:** gold only — start **10**, base **+1 per 2 s**, **+1/s in overtime** (7:00), **+1/s per active miner**, **+2/s per Deep Mine**, cap **999**. Discard costs **1**. *[as-built 2026-07-08: rebalanced from start 50 / +2/s / +4/s overtime — see §3.2.]*
-- **Economy design rule:** economy cards must have a **meaningful payback window** (Miner ≈ 18 s effective, Deep Mine ≈ 7.5 s but a 15-gold tempo hit and a stationary raid target). If a playtest shows "always max economy first" is dominant, raise costs — do not shorten paybacks.
-- **Deck cost curve:** default deck averages ~4.3 gold/card; decks that average < 4 tend to spam, > 7 tend to brick — the deck-builder shows average cost as a guide (no hard rule).
+- **In-match currency:** gold only — start **10**, base **+1 per 2 s**, **+1/s in overtime** (7:00), **+1/s per active miner**, **+2/s per Deep Mine**, cap **999**. Discard costs **1**. *[as-built 2026-07-08: rebalanced from start 50 / +2/s / +4/s overtime — see §3.2.]* *[as-built 2026-08-05 — **two corrections, in opposite directions.** Base income is **+1 per SECOND** (the 2026-07-08 halving was reverted on 2026-07-24) and overtime is therefore **+2/s**. And miner income is no longer unconditional: a miner pays **+1/s only while it is working a claimed mine that still has reserve** (§3.3). Start 10, the 999 cap, the Deep Mine's +2/s and the 1-gold discard are unchanged.]*
+- **Economy design rule:** economy cards must have a **meaningful payback window** (Miner ≈ 18 s effective, Deep Mine ≈ 7.5 s but a 15-gold tempo hit and a stationary raid target). If a playtest shows "always max economy first" is dominant, raise costs — do not shorten paybacks. *[as-built 2026-08-05: at the tripled costs the windows are **Miner 24 gold at +1/s = 24 s of arrived mining plus the walk**, and **Deep Mine 45 gold at +2/s = 22.5 s**. The rule itself held up and was applied: the 2026-07-24 pass raised costs rather than shortening paybacks, exactly as this line instructs. ⚠️ The Miner's *effective* window is now map-dependent — the walk to a scattered mine dominates it, and the mine can run dry underneath the investment.]*
+- **Deck cost curve:** default deck averages ~4.3 gold/card; decks that average < 4 tend to spam, > 7 tend to brick — the deck-builder shows average cost as a guide (no hard rule). *[as-built 2026-08-05: those bands were written against untripled costs. Scaled with everything else they read **< 12 spam, > 21 brick**. The shipped curated 50 (§3.4) averages **17.5** gold/card — **873** gold across 50 cards — which sits inside the band but high in it, and the Sorcerer's two copies alone are **120** of that 873. ⚠️ FLAGGED, not resolved: the bands were **re-scaled, never re-tuned**. Nobody has playtested whether "under 12 spams" is still the right shape at 1 gold/s income, and the deck-builder's guide number is the same arithmetic it always was.]*
 - **Card costs and copy caps:** single source of truth is the §4 tables / `cards.csv`. Tune numbers there during playtests.
-- **Meta progression:** none in the prototype. The deck-builder (M6) assembles decks from the fixed 28-card pool. Card unlocks / collection / ranked are future (§10).
+- **Meta progression:** none in the prototype. The deck-builder (M6) assembles decks from the fixed 28-card pool *[as-built 2026-08-05: **30**]*. Card unlocks / collection / ranked are future (§10).
 
 ## 9. Milestones
 Ordered playable increments. The manager decomposes only the current milestone. Each milestone ends in a **recordable portfolio slice**.
@@ -272,7 +458,11 @@ Ordered playable increments. The manager decomposes only the current milestone. 
 5. **Spell system + Set III.** Targeting mode, 5 spells + Crystal Tower, spell Niagara VFX at the §6 bar; bot casts spells per its M5 rules. *(Slice: spell VFX showcase reel.)* — **SHIPPED 2026-07-08** *[as-built: delivery later overhauled 2026-07-21 — hero-origin lines + Lightning 700 (§3.11).]*
 6. **Deck-builder meta.** Deck-builder screen per §7 (copy caps, x/50 counter, save/load named decks); decks feed into matches; replace default deck with a legal curated one; give the bot 2 distinct decks. *(Slice: UI/UX + save-load systems clip.)* — **SHIPPED 2026-07-09** *[as-built: plus physical-card tiles + above-card copy counts from playtest feedback.]*
 7. **Premium art & feel pass.** Bring the whole game to the §6 bar: materials/lighting/post stack, full juice checklist, castle crumble, arena set dressing, Lumen showcase lighting; Sequencer cinematic flythrough + gameplay b-roll. *(Slice: environment/archviz flythrough + game-feel before/after reel.)* — **SHIPPED 2026-07-18 (art-complete)** *[as-built: juice checklist, skeletal-animation workstream, 16/16 textured roster, Lumen/post/skybox, audio hooks all live. STILL OPEN from the M7 checkpoint: the Sequencer flythrough slice + the 60 fps perf watch — deliberately deferred so the flythrough captures the final M7.5/M7.6 art.]*
-8. **Networked 1v1 multiplayer.** Server-authoritative gold, spawns, combat, spells, upgrades; lobby/host-join; replicate units/heroes/economy for a real online 1v1. *(Slice: multiplayer replication systems clip.)* — **future (unchanged, not started)**
+8. **Networked 1v1 multiplayer.** Server-authoritative gold, spawns, combat, spells, upgrades; lobby/host-join; replicate units/heroes/economy for a real online 1v1. *(Slice: multiplayer replication systems clip.)* — **future (unchanged, not started)** *[as-built 2026-08-05 — ⚠️ **THIS STATUS WAS WRONG. M8 PHASE 1 SHIPPED 2026-07-29.** M8 was split into phases and the first one is committed and playable:]*
+   - ***PHASE 1 — SHIPPED 2026-07-29.** A **listen server**: one player hosts and the other joins by **direct IP / LAN address** through an in-game **Multiplayer** screen off the main menu (§7) — host, join, leave, and clean return to the menu, with errors surfaced rather than swallowed. **Match state is server-authoritative and replicated**: game state, player state, gold, castle HP and the whole match/win flow. Verified live end-to-end (host opens the arena as a listen server, a client travels in and connects).*
+   - *⚠️ ***PHASE 1's joiner is deliberately an OBSERVER of authoritative state, and that is a designed boundary, not a defect.** In P1 **units are server-only**, so a joining player sees the shared terrain, both ancient grounds and the match state at bit-identical positions but **no units and no unit health bars**. **Card play, placement, spells and unit command are all locked out on the client** — including the assistant, which refuses with the same wording the keys use, because it must never be more capable than a key. **Phase 2 is what makes the second player a player.***
+   - ***PHASE 2 — NOT STARTED**, and it is gated on a Phase-1 checkpoint playtest with Jonathan that has not happened yet. Scope: replicate the unit fleet, the heroes and the command layer, and lift the client lockouts. ⚠️ Everything built since — the command groups (§3.13), the ancient-ground boost (§3.12), the assistant's command struct (§3.14) — was **designed to survive that transition** and each carries a declared replication posture, but none of it is replicated today.*
+   - ***No lobby, no matchmaking, no server browser** — direct address only, by design, and unchanged from the v2 line above in that respect.*
 
 *[as-built — milestones INSERTED between the v2 numbers during development (each shipped one is preserved on an `mN-testable` branch):*
 - ***M4.5** gameplay-terrain pass (2026-07-08) — conceived as hand-placed mirror-symmetric terrain, parked on asset availability, then SUPERSEDED by M6.5's procedural approach; its climbable-terrain intent shipped as M6.6.*
@@ -282,11 +472,18 @@ Ordered playable increments. The manager decomposes only the current milestone. 
 - ***M7.5** art-quality upgrade (2026-07-18) — SHIPPED in substance: Meshy Pro second engine, fleet retexture to the concept-fidelity bar (16/16), the animation fleet (§6); FAB pack purchases remain Jonathan-gated.*
 - ***M7.6** arena 10× + LOD/perf structure (2026-07-18) — IN PROGRESS: Phase 0 (the 10× scale spike) is integrated on its own branch; the hard-gated phase ladder (scatter culls → density → LOD batch → vista/POIs → capstone playtest) waits on Jonathan's W1 perf/feel watch, and nothing merges to main before the final gate.]*
 
+*[as-built 2026-08-05 — four more increments shipped between M7.6 and M8, none of which existed as a v2 milestone. Recorded here so the numbered list stays the stable spine it is:*
+- ***W1** economy + battlefield rebalance (2026-07-23 → 2026-07-24) — SHIPPED: castle-box placement and the capturable mid zone replacing own-half placement; six neutral depleting mines replacing the two team gold nodes; **every card cost ×3**; base income restored to 1 gold/s; the bot's attack bank moved 12 → 36 to match. (§3.2, §3.3, §3.5, §4, §5, §8.)*
+- ***COMMANDS** (2026-07-23 → 2026-08-02) — SHIPPED: the five unit commands, mouse-wheel selection circles, three-stage group picks, golden-angle formations, and **Follow as the spawn default** — the change that rewrote §2's core loop. (§3.13.)*
+- ***ANCIENT GROUNDS** (2026-08-01) — SHIPPED: the 180° rotational terrain-symmetry law, the two ancient grounds, the **Sorcerer** and the **Wizard**, the permanent stacking damage boost and its HUD row. (§3.12, §4 Set IV, §5.)*
+- ***ASSISTANT** (2026-08-02 → 2026-08-05) — SHIPPED **as a v1 vertical slice**: a local language model in-game, 7 orders, the confirm step, the settings screen, and the positional keyboard remap. ⚠️ **Its accuracy work is planned, gated, and blocked on Jonathan — it is a roadmap item, not a shipped one**, and the **model weights are not packaged into a build**, so this slice is playable from a development checkout only (§3.14).]*
+
 ## 10. Out of Scope
 Not yet — do not build until scheduled or explicitly requested:
 - **Networking / replication until Milestone 8** (build and tune everything locally first).
 - ~~**Direct unit command / RTS control** (selecting and ordering summoned units) — post-GDD future feature; units are fully AI-driven.~~
-- *[as-built 2026-08-05: **THIS LINE IS SUPERSEDED — direct unit command SHIPPED, in two layers, and the document had gone stale in two directions at once.** **(1) KEYBOARD COMMANDS (2026-07-23 → 2026-08-02):** the player selects and orders their own summoned units directly — Attack / Hold / Ambush via mouse-wheel-resizable selection circles, and **Follow, which became the SPAWN DEFAULT**, so the player-side commandable fleet **no longer auto-engages** and the player personally orders every fight. (Siege units — Ogre, Sapper — and the entire bot side remain fully AI-driven, so the original sentence still describes them.) Miners take all five commands with miner-specific semantics. §3.1's as-built note above already named the T/R/E/F/C keys as shipped, **244 lines before this line said it was out of scope** — that contradiction is what this note closes. **(2) THE IN-MATCH LLM COMMAND ASSISTANT (2026-08-02 → 2026-08-04), which the GDD mentions nowhere else:** a local language model **shipped inside the game** turns a typed natural-language order (*"send 10 footmen with a sorcerer to the nearest ancient ground"*) into those same existing unit commands. It surveys game state first, asks a clarifying question when a request cannot be met, and routes every order through the shipped command path — **it never plays cards, never spends gold, and never invents a coordinate: it emits only symbols the game resolves itself.** A confirm step (accept with **Z**) is on by default and is toggleable in the settings screen. **What is still genuinely out of scope: RTS-style control of the ENEMY or of AI-driven Siege units, box-select, and unit-level micro beyond the five commands.** ⛔ Deliberately NOT recorded here: the region-selection work in flight at the time of writing — this note covers only what is committed.]*
+- *[as-built 2026-08-05: **THIS LINE IS SUPERSEDED — direct unit command SHIPPED, in two layers, and the document had gone stale in two directions at once.** **(1) KEYBOARD COMMANDS (2026-07-23 → 2026-08-02):** the player selects and orders their own summoned units directly — Attack / Hold / Ambush via mouse-wheel-resizable selection circles, and **Follow, which became the SPAWN DEFAULT**, so the player-side commandable fleet **no longer auto-engages** and the player personally orders every fight. (Siege units — Ogre, Sapper — and the entire bot side remain fully AI-driven, so the original sentence still describes them.) Miners take all five commands with miner-specific semantics. §3.1's as-built note already named the T/R/E/F/C keys as shipped **while the struck line here still called direct unit command out of scope** — that contradiction is what this note closes. *(A line-count reference stood here and was replaced by section references on 2026-08-05: any insertion above §10 silently falsified it, and this pass made several.)* **(2) THE IN-MATCH LLM COMMAND ASSISTANT (2026-08-02 → 2026-08-04), which the GDD mentions nowhere else:** a local language model **shipped inside the game** turns a typed natural-language order (*"send 10 footmen with a sorcerer to the nearest ancient ground"*) into those same existing unit commands. It surveys game state first, asks a clarifying question when a request cannot be met, and routes every order through the shipped command path — **it never plays cards, never spends gold, and never invents a coordinate: it emits only symbols the game resolves itself.** A confirm step (accept with **Z**) is on by default and is toggleable in the settings screen. **What is still genuinely out of scope: RTS-style control of the ENEMY or of AI-driven Siege units, box-select, and unit-level micro beyond the five commands.** ⛔ Deliberately NOT recorded here: the region-selection work in flight at the time of writing — this note covers only what is committed.]*
+- *[as-built 2026-08-05 — **this note is itself now superseded, in the document's favour.** Both layers have real sections: the keyboard commands are **§3.13** and the assistant is **§3.14**, with its shipped surface and its unbuilt roadmap split apart. The region-selection work the note above deliberately excluded has since **committed** and is described in §3.14. **The out-of-scope list is unchanged and still stands as written: RTS-style control of the enemy or of AI-driven Siege units, box-select, unit-level micro beyond the five commands — and, from the assistant's side, voice input and any macro/graphical order UI.**]*
 - More heroes / class selection, more than one arena, spectator mode, replays.
 - Card unlocks, collection/gacha, ranked/matchmaking, player accounts, monetization.
 - Mobile/controller support, save systems beyond deck save/load, cosmetics.
@@ -311,5 +508,12 @@ Dated record of the major design pivots since v2. One entry per pivot, rationale
 - **2026-07-18 — Art pipeline, generation 3: + Meshy second engine (M7.5).** Meshy Pro added for retexture (killing the accepted-dark TRELLIS look), image-to-3D alternatives, and auto-rig/preset animation clips.
 - **2026-07-18 — Arena 10× + LOD/perf structure (M7.6).** True 10× area with speeds/ranges deliberately unscaled — the slow-epic pacing ruling; LOD chains + cull bands + the scoped Nanite vista exception make it affordable.
 - **2026-07-19 — Animation lane pivot.** UE 5.8's retarget export proved defective (root-only motion); the Blender-side retarget became the sanctioned path and the unit fleet went live on full-body clips.
+- **2026-07-21 — Spell delivery overhaul + fleet retexture GO.** Fireball/Frost Nova became hero-origin cursor-aimed line spells and Lightning a bigger (700) taller sky strike — spells now read as HERO actions; the whole roster was retextured under the new concept-fidelity color law (16/16). *(Entry re-ordered into date sequence 2026-08-05; it had drifted below a later one.)*
+- **2026-07-23 — W1: the battlefield became something to fight over.** Own-half placement was retired for a **castle box** plus a **capturable mid zone**, and the two castle-adjacent team gold nodes were replaced by **six neutral depleting mines**. Rationale: owning half the map was worth nothing, and an economy that pays forever makes raiding pointless. Economy became a contested, exhaustible map objective (§3.3, §3.5, §5).
+- **2026-07-24 — The ×3 cost rescale and the income revert.** Every card cost was **tripled** and base income went **back to 1 gold/s** from the 2026-07-08 1-per-2-s; the bot's attack bank moved 12 → 36 to keep banking toward the priciest unit. Rationale: at halved income and single-digit costs every interesting decision happened in the first minute and the rest of the match was automatic. ⚠️ **This pivot went unrecorded in the GDD for twelve days and made every cost, refund, threshold and payback figure in the document wrong** — the v4 pass (2026-08-05) is what fixed it.
+- **2026-07-29 — M8 Phase 1: the game became networked, one player at a time.** Milestone 8 was split into phases and the first shipped: a listen server, direct-IP join through an in-game Multiplayer screen, and server-authoritative match state, gold and castle HP. The joining player is deliberately an **observer** in P1 — units are server-only and every play/placement/command path is locked out client-side — because replicating match state and replicating the unit fleet are different jobs and doing them in one step would have made both unverifiable. ⚠️ **The GDD carried "future (unchanged, not started)" against this milestone for a week; the v4 pass (2026-08-05) is what corrected it** (§9).
+- **2026-08-01 — Ancient Grounds, the Sorcerer, the Wizard, and 180° symmetry.** The battlefield got a **terrain objective with a real gameplay effect** — a ground where a non-combat unit permanently strengthens the army standing on it — and the terrain generator's asymmetric-organic ruling was replaced by **exact 180° rotational symmetry**, because a map holding objectives has to be provably fair. The Wizard shipped alongside as the AoE ranged card the roster lacked; the two were kept deliberately distinct in mechanic, cost and art identity so neither reads as the other (§3.12, §4 Set IV).
 - **2026-08-02 → 2026-08-04 — The command layer: the player now orders their own units, by key and by sentence.** §10's "direct unit command is out of scope" line fell in two steps: first the five keyboard commands (Attack/Hold/Ambush/Follow/Defend stances with selection circles), with **Follow as the new spawn default** — a deliberate change to the core loop, since the player-side fleet stopped auto-engaging; then an **in-match local LLM assistant** that translates a typed sentence into those same commands, symbols only, with a confirm step. Rationale: summoning without steering made the mid-game passive, and typing an order is faster than the key-plus-circle flow for anything involving more than one kind of unit.
-- **2026-07-21 — Spell delivery overhaul + fleet retexture GO.** Fireball/Frost Nova became hero-origin cursor-aimed line spells and Lightning a bigger (700) taller sky strike — spells now read as HERO actions; the whole roster was retextured under the new concept-fidelity color law (16/16).
+- **2026-08-04 — Every letter key became positional.** The game detects the OS keyboard layout and remaps all 26 letters to the same **physical** positions as US-QWERTY, always on, no setting, following a mid-session layout switch. Digits, modifiers, Enter, Escape and the mouse stay literal on purpose. Rationale: the command layer put five letters on the critical path, and a Dvorak player pressing "R" for Hold was pressing the wrong key on the wrong side of the keyboard (§3.1).
+- **2026-08-05 — The assistant learned regions, and its accuracy work was recognised as a roadmap, not a feature.** A fifth way to name units shipped — "everyone in the mid" and the two ancient grounds, the only three places the game can answer a region test for — with region and exclusion filters **refused** on the army-wide verbs rather than silently dropped. In the same week prompt tuning was declared **exhausted at 20/25 against a 22/25 gate**, and the fine-tune that would follow it was decomposed, pre-gated and **blocked on Jonathan's own inputs**. Recorded here because the difference between "shipped" and "planned" is the one thing this document cannot get wrong (§3.14).
+- **2026-08-05 — GDD as-built pass #2 (v4).** Jonathan: *"the GDD has not been updated to include all the changes."* Correct. This pass added §3.12/§3.13/§3.14, added the Sorcerer and the Wizard, re-read every stat from `cards.csv`, corrected 28 costs and both income rates along with everything derived from them, and replaced §10's line-number self-reference with section references.

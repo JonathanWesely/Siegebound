@@ -7796,6 +7796,29 @@ The mandate says *"a fix committed without runtime evidence of the root cause is
     ⛔ **NOT touched:** any `TEXT()` prompt payload · `Tests/` · any `.csv` · any `Content/` asset · any `Build.cs`.
     Law: CONVENTIONS **`SC-§22` (sweep the SHAPE, logs first) · `SC-§18c` (locate by symbol) · `SC-§20` (a suggested fix is a hypothesis) · `SC-§33` · `AS-§12g` · `AS-§21.5` · `AS-§21.7`**.
 
+#### TASK-554 — [GDD-REFS] ⛔ **BOARDED, NOT DISPATCHED** — backfill the `// GDD §x.x` placeholders the v4 GDD pass just made answerable (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: **backlog** — ⛔ **BOARDED, NOT DISPATCHED.**
+- blocked-by: **none** (⚠️ but see the batching note — it must not open a second comment-only compile)
+- parallel-safe: **no** — comment-only, but it touches the game module and obeys the QUIET-MODULE LAW like any other code task
+- spec: >
+    ⛔ **COMMENT-ONLY. ZERO EMITTED BYTES, ZERO BEHAVIOUR, ZERO GAMEPLAY CHANGE. ⛔ NO `.csv`, NO `Content/`, NO `Build.cs`.**
+    ⭐ **WHY THIS EXISTS AND WHY IT IS CHEAP: the code asked a question the document could not answer, and on 2026-08-05 the document answered it.** The ANCIENT-GROUNDS batch shipped its two boost tunables carrying the literal placeholder `// GDD §x.x` because, in its own words, *"the GDD has no ancient-grounds section yet, so this comment is the rule's home of record"*. **`Docs/GDD.md` v4 now has `### 3.12 Ancient Grounds & the Sorcerer`**, which is that home. This task retires the placeholders.
+    ⚠️ **LOCATE BY SYMBOL — every line number below is an as-of-authoring HINT and `SC-§18c` says it has already rotted.** ⛔ **Each suggested wording is a HYPOTHESIS (`SC-§20`), never a patch: read the artifact before typing.**
+    **(1) `SummonedUnit.h` — `PermanentDamageBonusPerStack` (~`:795`) and `MaxPermanentDamageStacks` (~`:805`).** Both end `// GDD §x.x`. **HYPOTHESIS: `// GDD §3.12`.** ⛔ **Change ONLY the section token — the surrounding doc comments are correct, ratified, and must not be re-worded.**
+    **(2) `AncientGround.h` — `BoostTickInterval`'s doc paragraph** states *"the GDD has no ancient-grounds section yet, so this comment is the rule's home of record alongside CONVENTIONS §2"*. **That sentence is now FALSE.** **HYPOTHESIS: point it at §3.12 while KEEPING the mechanic-rules-aren't-card-stats clause**, which §3.0 of the GDD now states as law in its own right. ⛔ **Do not delete the CONVENTIONS §2 cross-reference — the engineering law still lives there; the GDD only gained the DESIGN home.**
+    **(3) `SiegeGameMode.cpp` (~`:1161`) — a comment reads *"the normal base economy stands (1 gold per 2 s, TASK-089)"*.** ⛔ **STALE AND CONTRADICTS SHIPPED BEHAVIOUR:** TASK-278 (2026-07-24) reverted that change and `ASiegePlayerState::GoldPerTick`'s own doc says so — base income is **1 gold per 1 s**. ⚠️ **This one matters more than a section token: a sandbox comment asserting the wrong economy rate is exactly what a future balance task would read and trust.** **HYPOTHESIS: `1 gold per 1 s, TASK-278 (reverting TASK-089)`.**
+    ⛔ **(4) `SC-§22` BINDS — SWEEP THE CLAIM, NOT THE COMMENT.** **Grep the whole game module for `GDD §x.x`, for `per 2 s` / `1 gold per 2` / `+1 per 2`, and for `no ancient-grounds section`.** ✅ **A sweep that finds nothing else is a RESULT and is reported as one.**
+    📌 **(5) RECORDED, DELIBERATELY NOT TASKED — `Docs/Data/cards.csv`, the `Lightning` row's free-text `Notes` cell still says radius 400 while the shipped `AoERadius` column says 700.** ⛔ **DO NOT FIX IT HERE.** The cell is read by nothing, and a CSV edit drags in a `DT_Cards` reimport, an editor session and the CSV-diff checks this comment-only task exists to avoid. **It is logged here so the next task that legitimately opens `cards.csv` picks it up for free.**
+    ⚠️ **BATCHING NOTE, AND IT IS THE POINT OF BOARDING RATHER THAN DISPATCHING: this is three comments. It must NOT buy its own compile gate.** ⇒ **Dispatch it TOGETHER WITH TASK-553 as ONE comment-only diff under ONE QA gate and ONE commit.** TASK-553 is hard-blocked on TASK-552 (it needs a measured number); **this task is blocked on nothing and is the cheaper half — if TASK-552 stays parked for long, the orchestrator may instead fold this into whatever the next game-module batch's commit is, but it may never open a compile of its own.**
+    ⛔ **No compile, no Git, no editor, no tests.** ⚠️ **A comment-only diff still needs a PASS before commit (hard gate) — board the gate WITH the dispatch; it can be a small one.** Handoff `handoffs/TASK-554-programmer.md` — ⛔ **paste each before/after line.** Post in ⚙️ Dev & QA.
+- names: >
+    `Source/GitClaudeUnrealTest/Siegebound/SummonedUnit.h` · `Source/GitClaudeUnrealTest/Siegebound/AncientGround.h` · `Source/GitClaudeUnrealTest/Siegebound/SiegeGameMode.cpp` ·
+    symbols to locate by: `PermanentDamageBonusPerStack` · `MaxPermanentDamageStacks` · `BoostTickInterval` · `GrantSandboxStartingGold` ·
+    the section that answers them: `Docs/GDD.md` **`### 3.12 Ancient Grounds & the Sorcerer`** (and **§3.0** for the mechanic-rules-aren't-card-stats law) ·
+    ⛔ **NOT touched:** `AncientGround.cpp` · `SorcererUnit.{h,cpp}` · any `.csv` · any `Content/` asset · any `Build.cs` · any `Tests/`.
+    Law: CONVENTIONS **`SC-§22` · `SC-§18c` · `SC-§20`** · the ANCIENT-GROUNDS §4 clause that authored the placeholders.
+
 ---
 
 ## SETTINGS+CONFIRM — decomposed 2026-08-03 on Jonathan's un-gate ruling — TASK-436..448
