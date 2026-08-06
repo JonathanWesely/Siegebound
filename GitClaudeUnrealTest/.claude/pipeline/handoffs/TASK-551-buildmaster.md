@@ -153,3 +153,28 @@ Pipeline + docs (13): `TASKBOARD.md` · `CONVENTIONS.md` · `qa/TASK-550.md` · 
 
 ⛔ **This feature adds no replicated property, no new replicated class, no new relevancy tier.**
 ✅ Structurally true and now compiler-confirmed: `RegionPlace` is an `FName` on a struct that stayed `uint8`/`int32`/`FName`-only (UHT accepted it), `FSiegeAssistantRegionStatics` is a non-UObject static library, and the membership test runs where the selector already runs — **on the authority**.
+
+---
+
+## 10. FOLLOW-ON COMMIT `c67a16c` — ⛔ DOC-ONLY, NO CODE (2026-08-05)
+
+⚠️ **Recorded HERE rather than in a new handoff file: a doc commit does not earn its own record.** This section closes the loop on §8's follow-ups 2 and 3.
+
+**`c67a16c`** — `pipeline: the post-gate record — SC-§33 (the trailing-default law), SC-§29b, and the board corrections`
+
+**⛔ TWO PATHS, BOTH `.md`, BOTH AUTHORED BY THE MANAGER:** `.claude/pipeline/CONVENTIONS.md` · `.claude/pipeline/TASKBOARD.md`. **122 insertions / 15 deletions.**
+
+- ⛔ **NO GATE WAS OWED AND NONE WAS SOUGHT.** The hard gate binds **code and art**; this is the **pipeline record**. ✅ **Every correction in it had ALREADY been ruled by `qa/TASK-550.md`** (RULINGS 1–4, WARN-4, NIT-1/2/3), and **the code those corrections describe is committed and gated at `6219af3`** — the diff moves **prose about shipped code**, never the code.
+- ✅ **PRE-FLIGHT, RUN BEFORE STAGING ANYTHING** (`SC-§29b`'s third leg, applied to itself): `git status --porcelain` returned **exactly the two paths**, and `git status --porcelain --untracked-files=all` returned **the same two and nothing else** — ⛔ **no `Source/`, no `Plugins/`, no new `qa/` file, no untracked stray.** The index was **empty** before the commit and the commit used the **explicit two-path form**, so nothing could ride along. **Post-commit `git status --porcelain` is EMPTY: the tree is clean for Jonathan's TASK-552 session.**
+- ⚠️ **THE PATH-PREFIX TRAP, LOGGED BECAUSE IT HAS NOW BITTEN THREE TIMES: the repo root is `C:\GitProjects\GitHub\GitClaudeUnrealTesting`, ONE LEVEL ABOVE the project folder** ⇒ every pathspec needs the **`GitClaudeUnrealTest/`** prefix. A path written from the project directory silently matches nothing and yields a **smaller commit with no error** — the same failure mode `SC-§29b` was adopted against.
+
+**WHAT IT CARRIES:**
+
+- ⭐ **`SC-§33`, THE TRAILING-DEFAULT LAW — NEW, and the reason §8 follow-up 3 is now CLOSED.** Adopted because the hazard fired **twice in two consecutive batches** (`SiegeAssistantValidateSelection`'s 4th default, TASK-518; `USiegeAssistantGrammar::Build`'s 3rd, TASK-546, omitted by `ComposeTurnGrammar` and caught by TASK-548 **by reading**). **The adding task pastes a call-site grep with its raw hit count and classifies every hit; ⛔ THE GATE RE-RUNS THE GREP AND PASTES ITS OWN COUNT.** ⚖️ *A mechanism that lives only in a handoff is a mechanism nobody runs.*
+- **`SC-§29b` — NEW: the commit-path list is DERIVED from the coverage ledger plus the gate's ratifications, ⛔ never hand-authored; build-master reconciles its own `git status --porcelain` and refuses on any unexplained difference.** ⭐ **This is §7's WARN-4 catch becoming law** — `6219af3` committed `SiegeAssistantGrammarTest.cpp` correctly **because the tree was reconciled, not because the spec's list was right.**
+- **§8 follow-up 2 CLOSED:** `AS-§21.2` / `.4` / `.5` / `.9` and `AS-§20.1` corrected in place (⛔ originals preserved, each marked `CORRECTED 2026-08-05`), incl. the **"seventh field"** ordinal — `RegionPlace` is the **eighth `UPROPERTY`** — and `AS-§21.5`'s `bad_region` enumeration, whose **superset is load-bearing** (`CanonicalizeSymbols` does **not** drop `now`; ⛔ **do not delete the parser's `now` clause**). Board fixes to **TASK-547 4(b)**, **TASK-548 (1)**, and **TASK-551's commit list**.
+- **TASK-553 boarded, ⛔ NOT dispatched** — comment-only stale-comment sweep (§8 follow-ups 4 and 5), **`blocked-by: TASK-552`** so it can use measured numbers.
+
+⛔ **NO PUSH.** `c67a16c` left `main` **9 ahead of `origin/main`**; **this file's own trailing record commit takes it to 10, and the tree to EMPTY.** The push remains Jonathan's, standing law.
+
+⚠️ **WHY A SECOND COMMIT AND NOT ONE: A HANDOFF THAT RECORDS A COMMIT CANNOT CONTAIN ITS OWN HASH** ⇒ the trailing record commit is the only honest form, and it is the **`6219af3` → `c275134` precedent this batch already set** (§7). ⭐ **The ahead-count, unlike the hash, IS knowable in advance — so it is stated above rather than left stale.** ⚖️ **A clean tree for Jonathan's TASK-552 session is worth more than a round ahead-count:** he should open on **nothing modified**, not on one doc file he has to reason about before he can trust `git status`.
