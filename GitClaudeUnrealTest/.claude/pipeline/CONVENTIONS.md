@@ -1657,6 +1657,30 @@ bool ValidateCommandAgainstSnapshot(const FSiegeAssistantCommand& Command,
 
 ⇒ **THE REVIEWER'S HALF:** a finding says *"here is an instance"*, not *"here is the extent"* — **say which you searched for and which you merely saw.** ⇒ **THE IMPLEMENTER'S HALF:** ⛔ **a one-line fix to a cited line is not done until the shape has been swept for.** ✅ **A sweep that finds nothing else is a RESULT and is reported as one.**
 
+### 33. ⛔⭐ THE TRAILING-DEFAULT LAW — A NEW TRAILING DEFAULTED PARAMETER IS A CALL-SITE HAZARD **NO COMPILER AND NO TEST CAN SEE**. THE ADDING TASK PASTES A CALL-SITE GREP; THE GATE RE-RUNS IT (2026-08-05)
+
+> ### ⛔ **A TASK THAT ADDS A TRAILING DEFAULTED PARAMETER TO AN EXISTING FUNCTION OWES, IN THE SAME HANDOFF, AN ENUMERATION OF *EVERY* EXISTING CALL SITE OF THAT FUNCTION — PRODUCED BY A GREP WHOSE EXACT COMMAND AND RAW HIT COUNT ARE PASTED — WITH EACH HIT CLASSIFIED AS (i) UPDATED, (ii) DELIBERATELY LEFT AT THE DEFAULT, WITH THE REASON, OR (iii) OUTSIDE THIS TASK'S OWNERSHIP AND ⛔ NAMED TO THE TASK THAT OWNS IT.**
+> ### ⭐ **THE OBLIGATION HOLDS EVEN WHEN THE TASK MAY NOT EDIT THOSE FILES** — naming a call site costs two lines and is the entire control.
+> ### ⛔ **AND THE SECOND LEG, WHICH IS WHAT MAKES IT ENFORCEABLE: THE QA GATE RE-RUNS THAT GREP ITSELF AND PASTES ITS OWN COUNT.** ⚖️ **A mechanism that lives only in a handoff is a mechanism nobody runs.**
+
+- ⛔ ***"Every existing call site stays byte-identical"* IS THE *BENEFIT* OF THE SHAPE. IT IS NEVER THE AUDIT.** Both instances below shipped that sentence in place of a call-site list; it was **true both times and useless both times**.
+
+**⛔⛔ TWO PROPERTIES MAKE THIS CLASS UNIQUELY DANGEROUS, AND THEY ARE WHY THE OBLIGATION IS MECHANICAL RATHER THAN ADVISORY:**
+
+1. ⛔ **NO COMPILER DIAGNOSTIC AND NO TEST CAN CATCH IT.** The omission compiles **by definition** — that is what the default is for. And a test cannot reach it when the caller is private and world-driven: **TASK-549 stated plainly it CANNOT test the `Build` case** (`ComposeTurnGrammar` is `private` and world-driven) ⇒ ⛔ **the suite stays GREEN with the feature DEAD.** ⚖️ **A grep is the ONLY available mechanism**, which is why this law names a tool instead of an intention.
+2. ⛔ **IT MISDIAGNOSES — THE FAILURE ARRIVES WEARING ANOTHER SUBSYSTEM'S CLOTHES, AND THAT IS THE EXPENSIVE HALF.** A dropped `RegionPlaceNames` yields a grammar with **no `inplace` rule at all**, so `{"in":…}` is **unsamplable at runtime while every one of nine tasks is individually correct**. ⚠️ **`AS-§21.11` outcome 5 primes the playtest to read *"the model never emitted `in`"* as the prompt UNDER-TEACHING a new shape** ⇒ **the batch would have been declared a MODEL failure when it was a WIRING failure** — and the next wave would have spent a few-shot, and an argument about a sealed corpus, on a missing function argument.
+
+**THE TWO INSTANCES — SAME FUNCTION FAMILY, TWO CONSECUTIVE BATCHES, BOTH CITED BY TASK ID:**
+
+- **INSTANCE 1 — batch ASSISTANT-EXCLUDE (2026-08-04).** `SiegeAssistantValidateSelection` gained a **FOURTH** trailing default (`ExcludeKinds`, **TASK-518**); the whole-command call site in `SiegeAssistantComponent.cpp` kept passing **three**, so it **validated nothing about the exclusion.** `qa/TASK-525.md` **W-6** priced it in its own words — ***"dropping the argument would raise no compiler diagnostic, no test failure and no behavioural change"*** — and accepted it for that batch on compensating controls. ⚠️ **It was still open in `HEAD` an entire batch later**: flagged by **TASK-545** §4, closed by **TASK-548**, confirmed by independent grep at `qa/TASK-550.md` RULING 1(b).
+- **INSTANCE 2 — batch AI-COMMANDER (2026-08-05).** `USiegeAssistantGrammar::Build` gained a **THIRD** trailing default (`RegionPlaceNames`, **TASK-546**); **`ComposeTurnGrammar` — its ONLY shipped caller — omitted it.** ⭐ **Caught by TASK-548 BY READING THE FILE IT OWNED, not by any tool the pipeline had aimed at it**, and re-verified at the gate (**54 hits / 4 files; exactly one shipped call site, and it now passes three arguments**).
+
+⭐⛔ **AND THE REASON THIS IS A NUMBERED STANDING CLAUSE INSTEAD OF A WARNING INSIDE A FEATURE SECTION: PROSE ALREADY DESCRIBED THIS HAZARD AND DID NOT PREVENT INSTANCE 2.** `AS-§21.9` says in terms *"a caller that omits the argument silently validates NOTHING"* and ⛔ *"ANY CALLER HOLDING A WHOLE `FSiegeAssistantCommand` MUST PASS BOTH…"* — written **BEFORE** instance 2, in the same document the batch was authored from, by the same author. ⇒ ⚖️ **A HAZARD THAT FIRES TWICE UNDER A LAW THAT DESCRIBES IT IS NOT BEING CONTROLLED BY DESCRIPTION.** **The control is an obligation on an artifact (the handoff) plus a check at a gate (the re-run) — both countable, both refusable.**
+
+- ✅ **WHAT DISCHARGES IT, AND IT IS SHORT ENOUGH THAT NOBODY ARGUES: the command, the raw hit count, one line per hit.** ✅ **A sweep that finds every call site already correct is a RESULT and is reported as one** (`SC-§22`'s closing rule).
+- 📌 **THE STRUCTURAL ESCAPE, RECORDED SO IT IS PREFERRED WHERE IT IS AVAILABLE: AN OVERLOAD TAKING THE WHOLE STRUCT CANNOT BE UNDER-CALLED.** `AS-§21.9` already boards it (*"a SIXTH default is FORBIDDEN; the next field-shaped addition takes a `const FSiegeAssistantCommand&` overload"*). ⚖️ **A default parameter buys a byte-identical diff and pays for it in a hazard neither the compiler nor the suite can see. When the same struct grows a field twice, buy the overload.**
+- ⚠️ **SCOPE, STATED SO IT IS NOT OVER-APPLIED: this binds a DEFAULTED parameter added to a function that ALREADY HAS CALL SITES.** ⛔ It does **not** bind a brand-new function (`FSiegeAssistantRegionStatics::IsPointInRegion` shipped with zero call sites **by design** and owes nothing here), and it does **not** bind a REQUIRED parameter — **the compiler audits that one for you, which is precisely the property a default trades away.**
+
 ### 32. ⛔ A SAFETY MECHANISM THAT HAS NEVER BEEN **OBSERVED TO FUNCTION** IS NOT KNOWN TO FUNCTION (2026-08-03)
 
 > ### ⛔ **AN ASSERTION THAT HAS ONLY EVER BEEN GREEN IS NOT YET PROVEN LOAD-BEARING.**
@@ -1700,6 +1724,15 @@ bool ValidateCommandAgainstSnapshot(const FSiegeAssistantCommand& Command,
 
 - **The manager writes it at decomposition and updates it as gates land; build-master REFUSES TO COMMIT until every code task in the batch names a gate** (or names an explicit, reasoned exemption). ⚖️ **This is the cheapest possible control for the most expensive possible miss, and it would have caught 442 at gate 446 rather than at the flip.**
 - ⚠️ **NOTE WHY IT WAS INVISIBLE: EVERY INDIVIDUAL GATE WAS CORRECT AND COMPLETE FOR ITS OWN SCOPE.** ⛔ **The defect existed only in the UNION, which no artifact expressed** — the same shape as the QUIET-MODULE LAW (*"each batch's own board looks safe in isolation"*). **A property of a set cannot be checked by inspecting its members one at a time.**
+
+> ### ⛔ 29b. THE COMMIT-PATH LIST IS **DERIVED FROM THE COVERAGE LEDGER + THE GATE'S RATIFICATIONS** — ⛔ NEVER HAND-AUTHORED (2026-08-05)
+
+**THE INSTANCE (batch AI-COMMANDER, `qa/TASK-550.md` WARN-4).** TASK-551's spec item (5) mandated commit **by explicit file path only** (GIT HAZARD LAW (d)) and its list **OMITTED `Source/GitClaudeUnrealTest/Siegebound/Tests/SiegeAssistantGrammarTest.cpp`** — a file TASK-549 edited under a **DECLARED** scope departure that the gate then **RATIFIED**. ⇒ ⛔ **As written, the batch's one commit would have left a ratified, gated edit UNCOMMITTED and the tree dirty afterwards.** ✅ **Build-master committed correctly — but because it reconciled its own `git status` against the list, ⛔ not because the list was right.**
+
+- ⚖️ **THE STRUCTURAL FAULT, AND IT IS A TIMING FAULT: THE PATH LIST IS WRITTEN AT DECOMPOSITION; THE RATIFIED FILE SET IS ONLY FINAL AT THE GATE.** A hand-authored list is therefore a record of the manager's **expectations**, and ⛔ **every ratified scope departure is a way for a real file to fall OUT of the commit — silently, because a missing path raises no error, it just makes a smaller commit.** ⚠️ **`SC-§15` exists to make declared departures SAFE; this is the one way a departure can still cost something, and it costs it at the last step.**
+- ✅ **THE RULE: the build task's path list is DERIVED — the coverage ledger's tasks, each task's `names:` block, PLUS every departure the gate RATIFIED, which the gate states AS PATHS.** ⇒ **A ratification is what adds a path. The manager's list is the starting point, ⛔ never the authority.**
+- ⛔ **THE THIRD LEG, AND THE ONLY MECHANICAL ONE: BUILD-MASTER RECONCILES ITS OWN `git status --porcelain` AGAINST THE DERIVED LIST AND REFUSES TO COMMIT ON ANY DIFFERENCE IT CANNOT EXPLAIN** (`SC-§9` — a spec may say *"run the check"*; it may never say *"the list is complete"*). ⚖️ **The list and the working tree are two independent statements about one set; a difference is a finding about one of them, ⛔ never a rounding error.**
+- 📌 **DUTY ON THE GATE: state ratified departures as PATHS, not as prose** (*"TASK-549's edit to the grammar test is ratified"* is a ruling; ⛔ it is not a commit instruction until it is written as a path).
 
 ### 27. ⚖️ A COMPILE-FIX DIFF IS **CODE** — IT NEEDS A VERDICT, AND THE GATE IS SCOPED TO **THE DIFF**, NOT TO THE TASK (2026-08-03)
 
@@ -1807,7 +1840,12 @@ static constexpr int32 SiegeAssistantMaxExclusionKinds = 3;
 
 struct FSiegeAssistantCommand
 {
-    // ... the five shipped fields, UNCHANGED, IN THEIR SHIPPED ORDER ...
+    // ... the SIX shipped UPROPERTY members, UNCHANGED, IN THEIR SHIPPED ORDER ...
+    // ⚠️ ORDINAL CORRECTED 2026-08-05 (qa/TASK-550.md NIT-3): this pin read "the five
+    // shipped fields" when SIX UPROPERTYs were shipped (Intent · Kinds · Counts · Where ·
+    // TriggerKind · TriggerAtLeast) ⇒ ExcludeKinds is the SEVENTH UPROPERTY, and the
+    // off-by-one was inherited by AS-§21.9. Fixed on both sides in one action (the
+    // FT-§12b PAIR RULE). Nothing else about this pin changes.
 
     /** Kinds SUBTRACTED from an "all" selection. Non-empty ONLY when Kinds is empty,
      *  and ONLY when SiegeAssistantIntentTakesSelection(Intent). No counts, by design. */
@@ -2861,7 +2899,10 @@ Design authority = the approved plan `C:\Users\wesel\.claude\plans\ok-there-are-
 ```
 **Δ = −5 chars. Zone A 5424 → 5419.** House arrow notation preserved; it **REMOVES a competitor** rather than adding emphasis — the only lever with recorded evidence behind it (`AS-§20.4`: *"THE WAVE ALREADY MEASURED THAT A DECISION-ORDERING RULE BEATS AN EXEMPLAR HERE"*).
 
-> ### ⛔ **THE LAW THIS EDIT MUST SURVIVE (`AS-§12f`, `CONVENTIONS.md:1208-1209`): *"NO PROMPT-LEVEL TASK MAY BE JUSTIFIED BY NAMING THE ROWS IT WILL FIX… RATE IS UNDER PROMPT CONTROL; SELECTION IS NOT."***
+> ### ⛔ **THE LAW THIS EDIT MUST SURVIVE — `AS-§12f`, `CONVENTIONS.md:1208-1209`, ⚠️ NOW QUOTED VERBATIM:**
+> > ***"THE LAW — IT BINDS EVERY FUTURE PROMPT-LEVEL TASK ON THIS MODEL: NO SUCH TASK MAY BE JUSTIFIED BY NAMING THE ROWS IT WILL FIX."*** … ***"RATE IS UNDER PROMPT CONTROL; SELECTION IS NOT."***
+>
+> ⚠️ **CORRECTED 2026-08-05 (`qa/TASK-550.md` NIT-2, raised by TASK-541 and confirmed at both artifacts): the earlier rendering compressed *"NO **SUCH** TASK"* into *"NO PROMPT-LEVEL TASK"* while keeping the quote marks.** ⚖️ **The substance was identical and nothing turned on it — which is exactly why it is worth fixing: a quote inside quote marks is a claim about BYTES, and a compression is a paraphrase that has lost its own label.** (The line range was correct; only the transcription was not.)
 
 ⭐ **IT SURVIVES BECAUSE ITS CASE NAMES NO ROW.** The justification, in full, and it is the only justification permitted:
 > **Two shipped prompt lines assert contradictory things about the same input class. One is unconditional; the other is conditioned on a harm the first makes impossible. The deliverable is the REMOVAL OF A CONTRADICTION — verifiable as a diff, at NEGATIVE character cost.**
@@ -2888,7 +2929,11 @@ Design authority = the approved plan `C:\Users\wesel\.claude\plans\ok-there-are-
 | `hero` | ⛔ no | same, and worst: the hero moves every frame |
 
 - ⛔ **AN AGENT MAY NOT INVENT A RADIUS FOR THE FOUR.** ⚖️ *"How far from the castle counts as at the castle?"* is a **product question with no measured answer**, and a number picked to make a feature compile is the defect `AS-§20.1` names. ⇒ **If Jonathan later wants castle-region selection, he supplies the number or approves one — it is his call, not a tuner's.**
-- ✅ **THE LIST IS GENERATED, NEVER HARD-CODED.** `PlaceVocabulary` (`SiegeAssistantSnapshot.cpp:52-61`) stays the **single owner** and gains **one `bHasRegion` column**. ⛔ **Zone A never prints that column, so it moves ZERO bytes.** The grammar's `zone` alternation is generated from the live region-bearing list exactly as `where` already is (`SiegeAssistantGrammar.cpp:510-525`).
+- ✅ **THE LIST IS GENERATED, NEVER HARD-CODED.** `PlaceVocabulary` (`SiegeAssistantSnapshot.cpp:52-61`) stays the **single owner** and gains **one `bHasRegion` column**. ⛔ **Zone A never prints that column, so the column itself moves ZERO bytes.**
+- ⛔⛔ **TWO CONSUMERS, TWO DIFFERENT SOURCES — AND MIXING THEM IS A QA FAIL. ⚠️ CORRECTED 2026-08-05 (`qa/TASK-550.md` RULING 2); the earlier wording, and the board item derived from it, led TASK-547 toward exactly the failure below and 547 REFUSED it correctly.**
+  - ✅ **ZONE A's `ZONE = ` LINE IS GENERATED FROM THE `PlaceVocabulary` TABLE'S `bHasRegion` COLUMN — a `static constexpr` table, read at build time, ⛔ NEVER from `GetRegionPlaceNames()`.** ⚖️ **`GetRegionPlaceNames()` is a `Transient` member filled by `Capture()` — PER-MATCH STATE, legitimately shorter on a map with one ancient ground — and `BuildZoneA`'s own contract is that it *"READS NO MEMBER STATE, BY CONSTRUCTION."*** ⛔ **A state-dependent Zone A destroys the measured 77.1 % KV prefix reuse SILENTLY, surfacing as a latency regression rather than a wrong answer.** ⭐ **That is why it is generated and yet fixed: *generated, never hard-coded* means "no literal list of three in the file", ⛔ it does NOT mean "read the live member".** The `static_assert` beside the table is what makes the empty case impossible.
+  - ✅ **THE GRAMMAR's `zone` ALTERNATION IS GENERATED FROM THE LIVE `GetRegionPlaceNames()`**, exactly as `where` already is (`SiegeAssistantGrammar.cpp:510-525`). ⇒ **A region the map lacks stays UNSAMPLABLE even though the prompt names it.**
+  - ⚖️ **THIS IS THE SPLIT THE `places` BLOCK ALREADY SHIPS, AND IT IS THE GENERAL RULE: ZONE A PRINTS THE FULL FIXED VOCABULARY; THE GRAMMAR ENFORCES WHAT EXISTS THIS MATCH.** ⛔ **Any future prompt line that wants a live list is asking the byte-frozen prefix to vary — refuse it there and put the enforcement in the grammar.**
 - ⛔ **SNAPSHOT-TIME GEOMETRY, EXECUTION-TIME MEMBERSHIP.** The half-extents are captured with everything else; the **membership test runs in the executor** — ⚖️ **the units move, the grounds do not**, and a unit that walked out of the ground between capture and execution must not be selected.
 - ⛔ **NO NEW SNAPSHOT TRAVERSAL.** All three actors are **already held by existing passes** (`NearGround`/`FarGround` from pass 3, `Zone` from pass 5) and expose `GetZoneHalfExtent()` publicly (`AncientGround.h:117`, `CaptureZone.h:131`). **A new `TActorIterator` in this batch is a finding.**
 - ⛔ **THE GRAMMAR GATE IS THE REGION LIST, ⛔ NOT `bHasKinds`.** *"everyone in the mid"* names **no kind**. ⚠️ **And the alternation is emitted ONLY when the region list is non-empty** — an empty alternation leaves `zone` undefined and **breaks the whole grammar**, which llama.cpp answers by generating UNCONSTRAINED (the `at_least` disaster that cost TASK-413 two of its six bars).
@@ -2908,7 +2953,8 @@ Design authority = the approved plan `C:\Users\wesel\.claude\plans\ok-there-are-
   ```
   ⚠️ **`inplace` goes THIRD, after `except`** — the shipped order is `selection | except | "all" | "none"` (`SiegeAssistantGrammar.cpp:709-719`, verified) and **appending before the two bare strings keeps the object shapes together.** ⛔ **Zone A's `WHO =` line lists the five shapes in the GRAMMAR'S OWN ORDER; a test asserts they match.**
 - **SEMANTICS, PINNED:** `RegionPlace` is meaningful **only** as a standalone `who` shape. ⛔ **`Kinds` non-empty AND `RegionPlace` set is a parse FAILURE (`RegionConflict`), never a merge** — *"send 10 footmen in the mid"* is a **different feature** (a filtered count), it was not asked for, and guessing which half to honour is the valid-shaped-wrong-command class. **`who:"none"` plus a region is the same failure. `all_except` plus a region is the same failure.**
-- ⛔ **`""` / `"all"` / `"none"` inside `in` are `BadRegion`** — the three reserved wire symbols (`SiegeAssistantSymbols`) can never name a place.
+- ⛔ **`""` PLUS THE THREE RESERVED WIRE SYMBOLS — `"none"` / `"all"` / `"now"` — INSIDE `in` ARE `BadRegion`.** ⚠️ **CORRECTED 2026-08-05 (`qa/TASK-550.md` RULING 4 / NIT-1): the original bullet enumerated `""` / `"all"` / `"none"` while justifying them as *"the three reserved wire symbols"* — but the third reserved symbol is **`now`**, not `""`. The enumeration and its own justification described different sets.** ✅ **TASK-545 shipped the SUPERSET (`""` + all three, `SiegeAssistantCommand.cpp:306-313`) and the gate RATIFIED it — every case the law enumerates behaves exactly as pinned.**
+  - ⭐⛔ **AND THE SUPERSET IS LOAD-BEARING, ⛔ NOT MERELY HARMLESS — WHICH IS WHY THE ENUMERATION HAD TO BE FIXED RATHER THAN THE CODE TRIMMED TO MATCH IT.** `CanonicalizeSymbols` (`SiegeAssistantGrammar.cpp`) drops `NAME_None`, empty, `all` and `none` — it does ⛔ **NOT drop `now`.** ⇒ **The parser's `now` clause is the ONLY guard against it, not a redundant belt beside the grammar's.** ⛔ **DO NOT DELETE THE `now` CLAUSE FROM THE PARSER.** ⚠️ **No behaviour is at risk today (`PlaceVocabulary` cannot contain `now`) — which is precisely what would make the clause look deletable to a reader who trusted the old wording.**
 - ⛔ **EMPTY-AFTER-REGION IS NOT A PARSE ERROR.** `ParseSiegeAssistantCommand` is **PURE** — no world, no roster, no snapshot — so *"did that region contain anybody?"* is a question it **structurally cannot answer**. It is the **executor's**, and the answer is a **loud refusal with the arithmetic in the log**, routed through the **existing unsupported-ask outcome**. ⛔ **NO NEW `ask` SYMBOL** (the ask alternatives are grammar the model samples from). ⛔ **NEVER a silent no-op** — *"nothing happened and nothing was said"* is the shape that reads as *"the assistant ate my order"*. **This is `AS-§20.1`'s EMPTY-AFTER-EXCLUSION clause, applied verbatim.**
 - ⛔⭐ **AND THE HARD RULE THE WHOLE FEATURE RESTS ON: A REGION NAMED AND NOT RESOLVED IS A REFUSAL — ⛔ NEVER AN UNFILTERED ORDER.** *"Send everyone in the mid"* degrading to *"send everyone"* is an army moving that the player never asked to move. ⚖️ **Fail closed. There is no acceptable open-failure mode here.**
 
@@ -2965,10 +3011,11 @@ Design authority = the approved plan `C:\Users\wesel\.claude\plans\ok-there-are-
 
 struct FSiegeAssistantCommand
 {
-    // ... the SIX shipped fields, UNCHANGED, IN THEIR SHIPPED ORDER ...
+    // ... the SEVEN shipped UPROPERTY members, UNCHANGED, IN THEIR SHIPPED ORDER ...
+    // (Intent · Kinds · Counts · Where · TriggerKind · TriggerAtLeast · ExcludeKinds)
 
     /** The region whose occupants are the selection. NAME_None == no region named.
-     *  ⚠️ THE SEVENTH FIELD, APPENDED AFTER THE SIX — never inserted among them.
+     *  ⚠️ THE EIGHTH `UPROPERTY`, APPENDED AFTER THE SEVEN — never inserted among them.
      *  Non-None ONLY when Kinds AND ExcludeKinds are both empty, and ONLY when
      *  SiegeAssistantIntentTakesSelection(Intent). */
     UPROPERTY()
@@ -2989,7 +3036,12 @@ bool SiegeAssistantValidateSelection(const TArray<FName>& Kinds, const TArray<in
                                      const TArray<FName>& ExcludeKinds = TArray<FName>(), FName RegionPlace = NAME_None);
 
 // ── SiegeAssistantGrammar.h ───────────────────────────────────────────────
-/** ⛔ A THIRD, DEFAULTED parameter — every existing call site stays byte-identical. */
+/** ⛔ A THIRD, DEFAULTED parameter — every existing call site stays byte-identical.
+ *  ⚠️⛔ AND THAT SENTENCE IS THE BENEFIT, NEVER THE AUDIT (SC-§33, adopted 2026-08-05
+ *  ON THIS EXACT LINE): the module's ONE shipped caller, ComposeTurnGrammar, omitted
+ *  the argument and would have shipped a grammar with NO `inplace` rule — compiling
+ *  clean, suite green, {"in":…} unsamplable. TASK-548 caught it by reading.
+ *  ⇒ THE ADDING TASK PASTES A CALL-SITE GREP; THE GATE RE-RUNS IT. */
 static FString Build(const TArray<FName>& UnitKinds, const TArray<FName>& PlaceNames,
                      const TArray<FName>& RegionPlaceNames = TArray<FName>());
 
@@ -3005,8 +3057,10 @@ struct GITCLAUDEUNREALTEST_API FSiegeAssistantRegionStatics
 };
 ```
 
+- ⚠️ **THE ORDINAL, CORRECTED 2026-08-05 (`qa/TASK-550.md` NIT-3) — AND SAY WHICH COUNT YOU MEAN:** `RegionPlace` is **the EIGHTH `UPROPERTY` member in declaration order** (`Intent` · `Kinds` · `Counts` · `Where` · `TriggerKind` · `TriggerAtLeast` · `ExcludeKinds` · `RegionPlace` — a `UPROPERTY` grep on the struct returns **8**). ⚠️ **It is *"the seventh FIELD"* only under the prose count the shipped header uses (`SiegeAssistantCommand.h`, the *"SEVEN FIELDS"* block), which collapses one adjacent pair — and that count has been ONE LOW since `AS-§20.1`'s pin said *"the five shipped fields"* when six `UPROPERTY`s were shipped.** ⇒ ⛔ **Cite the countable thing (`UPROPERTY`s in declaration order) or name the convention you are counting under; ⛔ never an unqualified ordinal.** ✅ **NOTHING ELSE MOVES: the load-bearing claim — appended LAST, no prior member relocated, wire layout `uint8`/`int32`/`FName` preserved — is TRUE and was verified at the artifact.**
 - ⛔⛔ **`SiegeAssistantValidateCommand` IS **REJECTED** AS A NAME AND THE REJECTION IS RECORDED HERE BECAUSE IT WAS PROPOSED.** **No such symbol exists** (verified: 26 references, all `SiegeAssistantValidateSelection`, across 5 files). **`AS-§20.1` explicitly ruled the function KEEPS ITS NAME**, and renaming it now would produce a 26-site diff across two files this batch does not otherwise need to touch, for **zero behaviour** — destroying the *"the diff is additive"* review property that is this batch's main safety argument. ⇒ **The name stays.**
 - ⚠️ **THE FIFTH TRAILING DEFAULT IS ACCEPTED *WITH ITS COST NAMED*, AND A SIXTH IS FORBIDDEN.** The shipped comment (`SiegeAssistantCommand.h:464-467`) already warns that *"a caller that omits the argument silently validates NOTHING"*. ⇒ ⛔ **ANY CALLER HOLDING A WHOLE `FSiegeAssistantCommand` MUST PASS BOTH `Command.ExcludeKinds` AND `Command.RegionPlace`** — a QA criterion, not a style note. 📌 **The right long-term shape is an overload taking `const FSiegeAssistantCommand&`; it is RECORDED as a follow-up and ⛔ NOT taken in this batch (churn at a gate). The NEXT field-shaped addition takes the overload instead of a sixth default.**
+  - ⛔⭐ **AND THIS BULLET IS NOW SUPERSEDED AS A *CONTROL* BY `SC-§33` (THE TRAILING-DEFAULT LAW, adopted 2026-08-05).** ⚖️ **It is kept because it is true — and because it is the evidence: this warning was written BEFORE the second instance, in the document the batch was authored from, and it did not prevent it.** ⇒ **Prose describing the hazard is not a control. The control is the pasted call-site grep in the handoff plus the gate's re-run, and `SC-§33` owns it.**
 - 📌 **M8: `RegionPlace` is an `FName`, so `FSiegeAssistantCommand` stays `uint8` / `int32` / `FName` only and `AS-§3`'s *"M8 P2 takes this struct as-is over the wire"* property SURVIVES.**
 - 📌 **`FSiegeAssistantRegionStatics` SHIPS WITH ZERO CALL SITES** and gains its only caller in the executor task — **the `FSiegeNavDiagnostics` precedent (`NAV-§` RULING 2): a diff that is one new file pair proves behaviour-freedom in ONE LOOK.**
 
