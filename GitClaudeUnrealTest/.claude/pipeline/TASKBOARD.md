@@ -78,6 +78,8 @@ M5 shipped machine-verified with the desktop LOCKED (SendInput blocked → no si
 
 **WAR-ROOM batch (2026-08-15, TASK-555..571)** — a STANDALONE feature batch in the AI-COMMANDER / UNIT-PATHING shape, **not** a GDD milestone and **not** part of M8. **Jonathan's directive, verbatim:** *"I want to make the castle much bigger. Make it 3 times bigger in each dimension. After that, add some lighting in the middle of it maybe via torches. After that, add an NPC character that you can talk to that will be the avatar for the AI model that we talk to that commands units."* — plus his clarification of the NPC's role (the fullscreen battlefield map at the castle, clickable locations, live ally dots, a **30-gold** enemy reveal that dies on close), quoted verbatim in CONVENTIONS `WR-§0`. ⚖️ **THE SCALE BASELINE IS SETTLED AND ⛔ NOT RE-LITIGABLE: the castle already went 3× once (CASTLE-3X, `2437.9 × 2461.5 × 2694.2 uu`); he was asked which baseline he meant, was shown that "another 3× from today" means 729× the ORIGINAL blockout's volume, and chose it deliberately.** ⭐⭐ **THE BATCH'S CENTRAL DESIGN RULING — CLICK → SYMBOL, ⛔ NEVER CLICK → COORDINATE:** an arbitrary map click is a *continuous world coordinate* and the shipped vocabulary has **no primitive for one**, so **only the seven `PlaceVocabulary` markers are hit-testable** and a click inserts the **literal place symbol** into the shipped console's input box. ⇒ ⭐ **THE WHOLE FEATURE SPENDS ZERO PROMPT CHARACTERS — `ZoneA` stays byte-frozen at `5658`, and a test in this batch ASSERTS it did not move.** ⛔ **No new place symbol, no grid cell, no snap radius, no eighth `who` shape** (`AS-§21.4` reserves that number to Jonathan). ⭐ **AND THE SECOND RISK-COLLAPSING RULING: the map's markers and dots are drawn in C++ `NativeOnPaint`, NOT as UMG child widgets** — it dodges the MCP widget-tree limit AND the duplicate-and-reparent runtime-repaint corruption class in one stroke. ⛔ **The NPC is an AVATAR of the shipped assistant, never a second AI, and ⛔ no task may add a proximity gate to the console — Jonathan said in terms that it must keep working anywhere.** ⚠️ **The 30-gold reveal is a GAMEPLAY-ECONOMY change and the *"the AI never spends gold"* ruling is UNTOUCHED — the player clicks, the authority spends; the assistant executor can reach it from nowhere (a QA criterion).** Develops on `main`, ⛔ **NO push.** Full decomposition + the nine manager rulings + the flagged decisions + the quiet-module pre-flight + the coverage ledger in **"## WAR-ROOM"** under Active tasks; law in CONVENTIONS **"⚖️ WAR ROOM — the 9× castle · interior torches · the commander NPC + the battlefield map (2026-08-15)"**, namespace **`WR-§N`** (written FIRST, 10 sub-sections `WR-§0..§9`), plus the new standing clause **`SC-§34` — THE RE-DERIVATION LEDGER LAW**. ⚠️ **M8 DECLARATION IS NOT THE USUAL BOILERPLATE: no replicated property and no new relevancy tier, but TWO NEW RPCs** (`ServerRequestEnemyReveal` / `ClientReceiveEnemyReveal`) **because gold is authority-owned.** **Does NOT consume the M8 Phase-1 checkpoint gate, and does NOT substitute for Jonathan's owed multiplayer + 3×-castle feedback.**
 
+**ACCOUNTS batch (2026-08-16, TASK-599..610; Phases 2–3 are gated one-liners)** — a STANDALONE feature batch in the WAR-ROOM / FOLLOW-COMMAND shape, **not** a GDD milestone and **not** part of M8. **Jonathan's request, verbatim, opens the batch section.** ⭐ **Phase 1 = a LOCAL-FIRST, BACKEND-AGNOSTIC account shell:** main-menu **Login** → **Create Account** / **Log into existing account** (his exact two buttons), `USiegeAccountSubsystem` + `USiegeAccountSaveGame`, and per-profile decks + settings by **slot-name scoping through one seam** over the EXISTING `USiegeDeckSaveGame`/`USiegeSettingsSubsystem` systems — the accountless game stays byte-identical (guest default; login gates NOTHING). ⛔ **GitHub Pages is RULED OUT as the data store with the mechanism on the record** (static hosting ⇒ the only write path is an extractable API token granting every player read/write over every account); **Phase 2's default backend is Supabase** (Postgres + auth + RLS + plain HTTPS/JSON via `FHttpModule`, connector already wired) — ⚠️ **FLAGGED A1, Jonathan's ruling, owed before Phase 2 decomposes; nothing in Phase 1 depends on it.** ⛔ **The HONEST-CREDENTIAL LAW: Phase-1 credentials are a local convenience, NOT security — salted `FSHA1`, plaintext never persisted/logged, and no artifact may say "secure"; real auth is the Phase-2 backend.** 🔨 The account panel is a **code-authored tree** (a NEW narrow exception argued on its own facts; `WBP_AccountMenu` reserved; pixels are Jonathan's). ⛔ **QUIET-MODULE: authoring coexists with the live WAR-ROOM floor-repair lane as file edits, but the compile gates SERIALIZE — never two gates at once — and any PIE this batch runs types no console sentence and presses no `M`** (the TASK-571/579 instruments stay intact; F1's answered flag changed the floor-fix ORDER, not the protection). Develops on `main`, ⛔ **NO push.** Full decomposition + the 8 manager rulings + the 7 flagged A-decisions + the quiet-module pre-flight + the coverage ledger in **"## ACCOUNTS"** under Active tasks; law in CONVENTIONS **"⚖️ ACCOUNTS — local-first player accounts · profile-scoped saves · the cloud-backend ruling (2026-08-16)"**, namespace **`ACC-§N`** (written FIRST, 10 sub-sections `ACC-§0..§9` incl. the pinned cross-task signature registry). **Adds no replicated property, no new replicated class, no new relevancy tier, no RPC. Does NOT consume the M8 Phase-1 checkpoint gate, and does NOT substitute for Jonathan's owed multiplayer + 3×-castle feedback.**
+
 ### Standing backlog (manager notes — NOT tasks, no IDs yet)
 - **Balance pass** — Jonathan flagged balancing changes wanted post-M4 (M4 playtest sign-off 2026-07-08: "we will have to make some balancing changes later, but it is fine"). **FIRST NOTES ARRIVED + TASK-IZED 2026-07-24 → TASK-278..279 ("W1 Economy-balance tasks" block below):** passive gold 1/2s→1/1s (reverts the TASK-089 income half) + ALL 28 card costs ×3 + bot `AttackBankThreshold` 12→36 audit; W1-lane branch work on `m7.6-arena10x`; StartingGold 10 left unchanged (flagged). Ledger continues in handoffs/TASK-279.md. This is a partial pass (Jonathan may send more notes). Feed-ins still on file: TASK-090 balance ledger (undefended-castle kill time ~56.5 s / ~71.3 s post-economy-change vs ~33 s prior; bot played ZERO early Miners in both rush matches — bot spend-mix), TASK-070 tuning note (bot opens with attack, not economy). **INTEGRATED 2026-07-24 (TASK-279, build-master, commit `3c32e25` on m7.6-arena10x):** base income 1/2s→1/1s LIVE (CDO `BaseIncomeTickPeriod=1`; PIE runtime: bot reached 36 gold from StartingGold 10 in ~26 s, then 18→36 in ~18 s = 1 gold/s), all 28 DT_Cards `Cost` cells ×3 LIVE (`set_rows` + readback Footman 9 / Ogre 36 / DeepMine 45 / CrystalTower 27, no other column drifted, DT_Cards.uasset saved + committed), bot `AttackBankThreshold` 12→36 LIVE (LogSiegeBot: banked to 36 → fielded Knight cost 18 ×2; deck 'Bot Aggro Rush' avg cost 14.16). StartingGold LEFT at 10 (flagged). NEXT-PASS WATCH (Jonathan): undefended-castle kill-time lengthens further under ×3 costs (prior ~56.5/71.3 s); the slower opening + bot heavier-unit mix is a feel check.
 - **HUD overtime indicator never shows** (pre-existing bug found at TASK-090, routed to manager): WBP_HUD ShowOvertime calls UpdateOvertimeDisplay with a hardcoded-false pin (bound via SetupStatTexts CreateEvent; UpdateOvertimeDisplay itself is correct). One-pin UMG fix + shortened-threshold verify — fold into the next UMG-touching chain or the balance pass; do not lose it.
@@ -7334,6 +7336,8 @@ The mandate says *"a fix committed without runtime evidence of the root cause is
 ⭐⭐ **BATCH STATUS 2026-08-16 — ⛔ SHIPPED, ⛔ NOT PLAYED, ⛔ NOT PUSHED.** **The integration commit is `93c5ec8` (87 files, +19,994/−358) plus a docs-only `a49f740`; `git rev-list --left-right --count origin/main...main` = `0 2` ⇒ ⛔ TWO COMMITS UNPUSHED, and the push is Jonathan's.** ✅ **Three gates PASS (`qa/TASK-565.md` · `qa/TASK-584.md` · `qa/TASK-592.md`), `SC-§29` coverage = NO GAP, compile 0/0, suite 111/111, row (m) = 0 Blueprint runtime errors over 154 s, `L_Arena` byte-identical throughout.** ⛔⛔ **AND THE THING THAT MAY NEVER BE SOFTENED: THE PIE MATRIX DID ⛔ NOT PASS — 11 of 18 rows plus row (r), row (n)'s respawn half and row (e)'s *Play Again* half are UNOBSERVED (no input-injection or console-exec lane exists), all inherited by TASK-571.** ⛔ **No agent rendered a pixel; every appearance question is Jonathan's.**
 **OPEN, IN ORDER:** 🙋 **TASK-571** (his playtest — ⭐ take it in ONE sitting with **TASK-552**, ordering at item (3r), and read item (0) first) → then **TASK-580** unblocks for a ruling. **WAVE 9 (TASK-594 · 595) runs NOW, in parallel with his sitting** — it touches no C++, no editor and no compile. **TASK-596 is boarded and deliberately undispatched.**
 
+⭐ **STATUS ANNOTATION 2026-08-16 (manager, later the same day — the headline above is now PARTLY STALE and is left as authored per board law):** **"⛔ NOT PLAYED" and "⛔ NOT PUSHED" are BOTH superseded.** Jonathan took a SHORT first playtest AND pushed: **`HEAD = 7a4bf39`** (he committed the previously-untracked TASK-595b handoff HIMSELF), **`main` 0 ahead / 0 behind origin, tree clean** (orchestrator-measured this session, RELAYED — ⛔ every older "N ahead unpushed" claim anywhere on this board is stale). **His first finding — the player SINKS INTO the castle floor — is boarded as ⭐ WAVE 10 (TASK-597..598) below, in this batch's PLAYTEST-FEEDBACK block.** ⛔ **TASK-571's full instrumented sitting is STILL OWED — a short playtest is not the sitting**: the one-shot latch is **UNSPENT** and the press-`M`-before-any-sentence ordering is **INTACT** — ✅ **CONFIRMED BY JONATHAN HIMSELF (2026-08-16, direct in Claude Code, verbatim: *"I did not press M or type anything in the console when I did my short playtest"*), CONCURRING with the orchestrator's session-log measurement. Two independent instruments, same answer: NOTHING CONSUMED.** ⚠️ ~~The editor is DOWN and MCP is unreachable at annotation time~~ — ✅ **SUPERSEDED same day: Jonathan relaunched the editor (PID 17704, MCP answering at `http://127.0.0.1:8000/mcp`) with a SESSION GRANT to open/close it as needed** — Wave 10's file-only vs editor-blocked markings carry their own dated updates.
+
 **Jonathan's directive, verbatim:** *"I want to make the castle much bigger. Make it 3 times bigger in each dimension. After that, add some lighting in the middle of it maybe via torches. After that, add an NPC character that you can talk to that will be the avatar for the AI model that we talk to that commands units."*
 
 **His clarification of the NPC's role, verbatim:** *"I think that I want the console to work anywhere, but the advantage to talking to the NPC in the castle is that there is a map of the entire battlefield that you walk up to and make it appear on your entire screen, and then click on different locations to easily communicate about certain points of interest with the AI powered NPC. I want this NPC to the be powered by the same AI that you communicate with in the console, but the console still works anywhere. It is just sometimes easier to go back to castle to look at the map to communicate a bit easier. The map stays at the castle and it updates with dots that show ally locations. You can pay 30 gold to reveal all enemy locations and then the red dots will appear on the map, but the enemy locations go away as soon as you close the map and you have to pay another 30 gold to reveal the new locations."*
@@ -8771,6 +8775,383 @@ TASK-554's spec says it *"must NOT buy its own compile gate"* and that if TASK-5
     `Source/GitClaudeUnrealTest/Siegebound/CommanderNpc.cpp` (`:351-357`) · `Source/GitClaudeUnrealTest/Siegebound/SummonedUnit.cpp` (`:445-455`) ·
     ⛔ **NOT touched:** `/Game/Characters/ABP_Footman` · any `.h` · any `.uasset` ·
     Law: CONVENTIONS ⭐ **`SC-§35` items 1 + 3** · **`SC-§15`** · `SC-§27` · the RELAYED-DIAGNOSIS LAW.
+
+### ⚖️⭐ WAVE 10 — WAR-ROOM PLAYTEST FEEDBACK, ROUND 1 (boarded 2026-08-16, manager) — TASK-597..598 + one gated repair one-liner — ⛔ THIS BLOCK IS APPEND-ONLY AND MORE ROUNDS ARE EXPECTED
+
+**Jonathan, verbatim (2026-08-16, direct in Claude Code — his FIRST playtest of the WAR-ROOM build):** *"what I can tell you from my short playtest is that the castle needs some work, the floor is not low enough which causes the player to sink into it, that is the first fix I would make"*
+
+📌 **He said "the FIRST fix I would make" ⇒ more findings are expected. Every later note lands HERE as a new task in THIS block** (the M1/M6 playtest-feedback precedent) **and the WAR-ROOM milestone is not complete until this block is.**
+
+📌 **GROUND TRUTH AT BOARDING (orchestrator-measured THIS SESSION; every git figure is a RELAY — the RELAYED-DIAGNOSIS LAW binds):** `HEAD = 7a4bf39`, `main` **0/0 vs origin**, tree clean (Jonathan pushed himself). ⛔ **The editor is NOT running and MCP (`http://127.0.0.1:8000/mcp`) is UNREACHABLE** ⇒ **TASK-597 (file-only) is dispatchable NOW; TASK-598 is EDITOR-BLOCKED.** 📌 The one-shot latch is **UNSPENT** and TASK-571's ordering is **INTACT** (session-log measurement; his confirmation pending).
+⭐ **UPDATE 2026-08-16, LATER THE SAME DAY — BOTH OPEN ITEMS ABOVE CLOSED, EACH BY JONATHAN HIMSELF:** **(1)** ✅ **LATCH CONFIRMED UNSPENT BY HIS OWN WORD** — verbatim, direct in Claude Code: *"I did not press M or type anything in the console when I did my short playtest."* **His statement and the session-log measurement now CONCUR — two independent instruments, nothing consumed, the TASK-571 press-`M`-first instrument INTACT by confirmation, no longer by inference.** **(2)** ✅ **THE EDITOR IS BACK UP** — relaunched by Jonathan (**PID 17704**, MCP answering at `http://127.0.0.1:8000/mcp`), **with a session grant to open/close it as needed** ⇒ **TASK-598's editor blocker is SATISFIED; its only remaining blocker is TASK-597's evidence** (already dispatched in parallel).
+
+⭐⛔ **THE DECISIVE FACT FOR THE SPEC — THE DEFECT CLASS IS ALREADY ON THE RECORD, MEASURED, IN THE SHIPPED READBACK.** `handoffs/TASK-555-artist.md` measured visual-vs-collision floor deltas and SHIPPED them as named residuals:
+- **§2d: max SINK `377 uu` on the worst FLANK column of the approach apron** (1× baseline was `137.4`) — ⭐ **the ONLY recorded site with SINK polarity (collision BELOW visual)**;
+- **§2e: gate-passage + corridor visual floor `128` vs collision floor `174`/`145`** ⇒ designed **FLOAT** ≤ `17.46` (`approach_tread_05`), with a **costed-but-not-taken** tread_05 extension left as *"Manager's/Jonathan's call"*;
+- **§4: hall interior FLUSH at `174.0`** (floor median AND max), except one natural pocket at visual `108` (~1.1 % of hall area, exists identically at 1×) — also FLOAT polarity.
+
+⚠️⛔ **THE POLARITY TRAP, STATED SO NOBODY REPAIRS THE WRONG DELTA: a SINK requires collision BELOW visual. The corridor (`174` over `128`) and the pocket produce FLOAT — the opposite defect. The flank columns are the only recorded sink-polarity site. If the flanks do not explain what Jonathan saw, something UNRECORDED does — which is exactly why this is DIAGNOSE-FIRST (the TASK-282 / UNIT-PATHING pattern) and ⛔ the cause is NOT presupposed in any spec below.**
+
+**⚖️ THE FOUR MANAGER RULINGS FOR THIS WAVE:**
+- **W10-R1 — ⛔ DIAGNOSE-FIRST IS HARD.** No repair is specced, boarded or attempted until TASK-597's evidence (plus TASK-598's when the editor returns) names the cause with measurements. The repair is a **GATED ONE-LINER with NO ID** below.
+- **W10-R2 — ⛔ THIS WAVE IS READ-ONLY ON EVERY ARTIFACT.** No `Build.bat`, no `L_Arena` save, no asset save of any kind, no reimport, no git, no manifest edit. Both tasks produce HANDOFFS ONLY.
+- **W10-R3 — ⛔ THE 27× HAZARD BINDS THE DIAGNOSIS.** `rescale_refined_fbx.py`'s scale guard is one-sided (`qa/TASK-594.md` WARN-1) and **running the rescaler on the shipped FBX is itself the hazard** (TASK-595 refused to execute it for exactly this reason). TASK-597 works from the EXISTING `Tools/ArtPipeline/Cache/Castle/rescale_report.json` + read-only measurement; ⛔ **any script mode not proven write-free at the source is not used.**
+- **W10-R4 — ✅ THE FIX PROCEEDS DESPITE THE LIVE PLAYTEST CYCLE.** His feedback IS a change request against the artifact he is testing — freezing the artifact against his own requested fix would be perverse. ⛔ **But the repair's INTEGRATION step (reimport and/or compile and/or commit) is sequenced against his owed TASK-571+552 sitting — see FLAG F1.** Row (m)'s evidence now survives on paper (`handoffs/TASK-593-buildmaster.md`'s recorded measurement), so the warm-DLL preservation concern is discharged **for the batch that legitimately owns the next compile** — and per TASK-596's own boarding condition, **TASK-596 RIDES that batch's compile + gate if this repair owns one.**
+
+**🚩 FLAGGED FOR JONATHAN — recorded, ⛔ NOT BLOCKING (defaults ship unless he says otherwise):**
+
+| # | question | manager default | blocks what |
+|---|---|---|---|
+| **F1** | **ORDERING: your TASK-571+552 instrumented sitting vs. the floor fix.** A repair changes the castle under you (reimport) and, if C++ is needed, replaces the playtest binary (compile). | **Sitting FIRST, repair-integration second** — the sitting's instruments (the unspent latch + TASK-579's empty-map first-open) are protected; natural sequencing while the editor is down makes this free. **Say the word and the order flips** — the fix touches neither instrument (the repair spec must verify that claim). | ⚠️ Only the repair's INTEGRATION step. ⛔ Not the diagnosis, not the repair spec. |
+| **F2** | **IF evidence lands on castle PLACEMENT (hypothesis (b)):** the repair would need an `L_Arena` edit + save — forbidden under the never-save law; the one-time exception is SPENT (RULING 8). | **Repair at the mesh/manifest, ⛔ never the map.** If placement is truly the cause, the ask arrives WITH TASK-597/598's evidence (the RULING 8 pattern: never permission in advance). | Nothing now. |
+| **F3** | **The §2e costed corridor mitigation** (tread_05 extended to y +270 ⇒ corridor float 46 → 17) was shipped untaken, marked *"Manager's/Jonathan's call."* | **TAKEN in the same repair pass IF the approach hulls are already being re-derived** (zero marginal reimport). Say no and it stays as shipped. | Nothing now. |
+
+⭐ **F1 IS ANSWERED — BY JONATHAN HIMSELF, 2026-08-16 (direct in Claude Code, verbatim: *"go ahead and dispatch the floor fix when the manager is done"*).** **The order FLIPS: the floor fix — INTEGRATION STEP INCLUDED (reimport/compile/commit as the evidence demands) — proceeds WITHOUT waiting for his TASK-571+552 sitting.** His word is exactly the *"say the word"* the default reserved for him. ⛔ **The STANDING INSTRUMENT PROTECTION IS UNCHANGED and is now the binding constraint in the sitting's place: no step of the repair lane may consume TASK-579's press-`M`-first instrument — ⛔ no console sentence typed, ⛔ no `M` pressed, in ANY PIE the repair runs** (the one-shot latch stays UNSPENT for his sitting). The repair spec still owes its verify-the-claim leg: state, with evidence, that the fix touches neither instrument. *(Original F1 row above preserved as authored, per board law.)*
+
+✅ **AND THE OTHER TWO FLAGS ARE RESOLVED BY THE EVIDENCE (2026-08-16, manager, on `handoffs/TASK-597-artist.md` + `handoffs/TASK-598-buildmaster.md`): F2's default is now FACT, not default** — both instruments land the cause MESH-SIDE (placement refuted headless at ≤0.17 uu, live at **0.00**; *"the map is innocent"*) ⇒ ⛔ no `L_Arena` edit, no exception ask, ever, in this lane. **F3's condition FIRES** — TASK-611 re-derives the approach hulls, so the tread_05 rider is **TAKEN** (Jonathan answered F1 and vetoed nothing; the rider is free in the same apply pass).
+
+```
+▶ NOW        TASK-597  🎨 headless SINK MAP + three-hypothesis adjudication (file-only, read-only)
+                 │
+⌛ EDITOR     TASK-598  🔧 live confirmation at BOTH castles (read-only; no PIE input lane needed)
+                 │
+⛔ NO ID      FLOOR-SINK REPAIR — specced by the manager FROM the evidence, not before (W10-R1).
+             Will carry: the crumble-trio collision-invariance re-derivation (WR-§1 / W6-R2 — any
+             pristine-collision change re-derives SM_Castle_Crumble01/02/03 to IDENTICAL collision,
+             per-stage readback), the same-path SM_Castle reimport law (never delete+recreate),
+             F3 if ruled in, its own QA/integration gate + commit tail, and the TASK-596 ride-along
+             IF it owns a compile (W10-R4).
+```
+
+#### TASK-597 — [WR-43] 🎨 THE FLOOR-SINK DIAGNOSIS — a measured SINK MAP of the castle walk route, ⛔ diagnose-first, ⛔ repair forbidden (art-director)
+- assignee: **art-director**
+- status: **done — SINK MAP delivered (`handoffs/TASK-597-artist.md`, 2026-08-16). Verdict: (a) CONFIRMED — designed tread-below-visual saw-tooth, median +24.2 uu, max +29 centre-route; (c) CONFIRMED-DOMINANT — 1,503 hull-free flank columns supported by arena ground, sink +48…+496.7 uu; (b) REFUTED at ≤0.17 uu (TASK-598 has the live word). Interior: ZERO sink (float/flush only — polarity trap held). Worst-column list S1–S6+F1 ready for TASK-598; costed repair sketch §6 for the manager's spec. Read-only throughout; rescaler never executed (W10-R3). *(Was: backlog — ▶ DISPATCHABLE NOW (file-only; needs no editor, no MCP-Unreal, no network, no credits).)***
+- blocked-by: **none**
+- parallel-safe: **yes** — read-only on every artifact; no open task touches its files
+- spec: >
+    **(0) ⛔ READ FIRST: `handoffs/TASK-555-artist.md` §2b–§2e + §4 in full (your own lane's shipped readback), CONVENTIONS `WR-§1` + `WR-§2` rows 8/11 + `TL-§2`.** The RELAYED-DIAGNOSIS LAW binds: **re-verify shipped numbers at the artifact — inherit none.**
+    **(1) ⭐ THE QUESTION, EXACTLY: at which walkable location(s) does the SUPPORT SURFACE (top of collision under a hero-width column) sit BELOW the VISUAL floor surface, by how much, over what span?** Jonathan reports the player **sinking into the castle floor**. Produce a **SINK MAP** covering the full walk route — arena ground → apron → `approach_tread_01..05` → gate passage → corridor → hall (`floor_slab_hall`) — sampling **the centre line AND flank columns across the FULL VISUAL APRON WIDTH** (the recorded tread x-spans are `−960…990` narrowing to `−882…918`; ⛔ **sample BEYOND them too** — a visual-wider-than-collision flank means the support out there is nothing or the arena ground). Table format per column: `(x, y) → visual-top z → collision-top z → signed delta (+ = SINK, − = FLOAT) → what the support actually is (which hull / ground / none)`.
+    **(2) SOURCES, in order:** **(i)** `Tools/ArtPipeline/Cache/Castle/rescale_report.json` — §2's claim is it holds the full approach profile, the through-route floor table and the per-tread float/sink scan: **confirm that claim, then mine it**; **(ii)** read-only measurement of `Content/RawAssets/Castle.fbx` (visual surface) via your Blender lane (import only, ⛔ export nothing); **(iii)** the collision authority per `TL-§2` — ⚠️ **MEASURE WHICH AUTHORITY IS LIVE, do not assume: `TL-§2` recorded the castle's `UCX_SM_Castle_00..24` importing as 25 convex elems straight from the FBX with ZERO manifest authoring, while `WR-§1` names `pipeline_manifest.json` `ucx.boxes` the authority BY CHOICE.** State which set the shipped `SM_Castle` actually carries, with the evidence.
+    **(3) ⛔ THE THREE HYPOTHESES, ADJUDICATED WITH EVIDENCE, ⛔ NONE PRESUPPOSED:**
+      **(a) mesh collision-vs-visual mismatch after scale** — the SINK MAP answers it directly; the recorded 377-uu flank sink is the PRIOR, ⛔ not the verdict.
+      **(b) `ACastle` spawn-Z / placement offset** — record the MECHANISM argument (an actor transform moves visual and collision TOGETHER ⇒ it cannot produce a DIFFERENTIAL sink; and a spawn-Z error cannot persist under gravity while walking) **and** check the recorded live base-z in `handoffs/TASK-569-buildmaster.md` against the mesh's own base ⇒ report the delta. ⛔ **Final live confirmation is TASK-598's, not yours.**
+      **(c) arena ground-plane interaction** — from the SINK MAP: every column where NO castle hull exists under the visual surface is a column whose support is the arena ground (`z ≈ 0`); **name each one and its sink depth.**
+    **(4) DELIVERABLE:** the SINK MAP + a one-paragraph cause statement naming which measured site(s) plausibly produced *"the player sinks into the floor"* + a **COSTED repair sketch** (which hulls / which visual geometry / which numbers, and whether the crumble trio's invariance re-derivation is implicated). ⛔ **The sketch is INPUT to the manager's repair spec — it is NOT authorization to start the repair (W10-R1).**
+    **(5) ⛔ SCOPE FENCE (W10-R2/R3):** ⛔ no file writes outside the handoff · ⛔ no FBX export · ⛔ no manifest edit · ⛔ no reimport · ⛔ no `Content/` touch · ⛔ no editor / MCP-Unreal · ⛔ no git · ⛔ **`rescale_refined_fbx.py` is NOT executed in any mode that can write** (the 27× hazard, `qa/TASK-594.md` WARN-1). Blender = import-only.
+    Handoff `handoffs/TASK-597-artist.md`. **Slack: post in 🎨 Art (thread per SLACK.md registry), prefix `🎨 ART-DIRECTOR:`, at least one completion-or-blocker post, status emoji + TASK-597 on every post.**
+- names: >
+    **READ-ONLY:** `Content/RawAssets/Castle.fbx` · `Content/Meshes/SM_Castle.uasset` (⛔ never opened for write) · `Tools/ArtPipeline/Cache/Castle/rescale_report.json` · `Tools/ArtPipeline/pipeline_manifest.json` (`ucx.boxes`) · `handoffs/TASK-555-artist.md` (§2b–§2e, §4) · `handoffs/TASK-569-buildmaster.md` (recorded live bounds) ·
+    hull names: `approach_tread_01..05` · `floor_slab_hall` · `UCX_SM_Castle_00..24` · anchor numbers: interior floor `174.0` · risers `29.0` · recorded max flank SINK `377` · corridor visual `128` vs collision `174/145` · `AHeroCharacter::HeroMaxStepHeight = 50` ·
+    Law: `WR-§1` · `WR-§2` rows 8/11 · `TL-§2` · `SC-§34` · the RELAYED-DIAGNOSIS LAW · `qa/TASK-594.md` WARN-1 (the one-sided 27× guard).
+
+#### TASK-598 — [WR-44] 🔧 THE LIVE ADJUDICATION — trace the worst columns at BOTH castles, confirm-or-refute, ⛔ read-only (build-master)
+- assignee: **build-master**
+- status: **done — LIVE ADJUDICATION delivered (`handoffs/TASK-598-buildmaster.md`, 2026-08-16). TASK-597 CONFIRMED live at BOTH castles at every worst column to ≤ 0.04 uu (S1 +496.73 / S2 +490.18 / S3 +380.59 / S4 +294.74 / S5 +116.33 / S6 +27.82; F1 −46.66 FLOAT polarity control PASSED). (b) REFUTED FINAL: measured placement offset 0.00 uu, ground top exactly 0.0, hull bottoms −60 by design. (c) CONFIRMED: castle collision ABSENT at S1/S2/S5 across the walkable range — support is the `ArenaGround` slab. Live BodySetup readback: 25 KBoxElem / 0 convex, byte-identical to manifest — the R6a relay is now measured fact. `L_Arena` SHA256 identical entry AND exit (`B3DBC5D9…F8268`); no PIE, latch UNSPENT, no compile, no git. §6 repair sketch stands unchanged; W10-R1 evidence gate fully satisfied. *(Was: backlog — ⌛ ~~EDITOR-BLOCKED~~ → ✅ EDITOR BLOCKER SATISFIED (2026-08-16, later the same day): Jonathan relaunched the editor (PID 17704, MCP answering at `http://127.0.0.1:8000/mcp`) with a SESSION GRANT to open/close as needed. ⇒ Dispatchable the moment TASK-597's evidence lands.)***
+- blocked-by: **TASK-597** (it supplies the worst-column coordinates) **+ a live editor with MCP up** — ✅ **the editor leg is SATISFIED (see status)**; ⛔ if MCP is unreachable at dispatch anyway, SAY SO, never fake results (standing law) — re-verify at dispatch, do not inherit this line
+- parallel-safe: **no** — single editor; ⛔ **if Jonathan is personally driving the editor at dispatch time, his hands win: coordinate, do not take it mid-interaction.** ✅ **The session grant (status line) covers open/close for THIS session — the standing editor-close-is-Jonathan's-choice law resumes when the session ends.**
+- spec: >
+    ⛔ **HARD FENCES FIRST (W10-R2): ⛔ NO save of anything, ⛔ `L_Arena` open-and-trace ONLY (hash at entry AND exit, paste both), ⛔ no `Build.bat` (F1 — the playtest binary is not yours to replace), ⛔ no git, ⛔ nothing added to the index, ⛔ no asset edits.**
+    **(1) THE CONFIRMATION:** at **BOTH** castle actors in `L_Arena`, for each worst-site column TASK-597 names: line-trace straight down (WorldStatic) from above the visual surface → record **hit z + hit component/hull**; read the **visual surface z** at the same `(x, y)` from the mesh. **Report the live signed delta per column and CONFIRM or REFUTE the headless numbers — a difference from TASK-597 is a FINDING, not an embarrassment; state it.**
+    **(2) HYPOTHESIS (b) LIVE:** both castles' colliding-bounds base z (`GetActorBounds(bOnlyCollidingComponents=true)`) vs the arena ground z beneath them — report the deltas.
+    **(3) HYPOTHESIS (c) LIVE:** trace at the columns TASK-597 named hull-free — **report what the support actually is** (ground plane / nothing / an unexpected hull).
+    **(4) ⛔ NO PIE INPUT IS NEEDED — static traces suffice.** If you enter PIE for a trace lane anyway: ⛔ **the 11 unobserved matrix rows are STILL not yours (`W8-R4`), ⛔ no console sentence may be typed** (the latch is UNSPENT and TASK-571's ordering is INTACT — a typed sentence destroys it), ⛔ **TASK-579's empty-map first-open instrument may not be consumed: do NOT press `M`.**
+    **(5)** Editor close, if one is needed, per `W7-R2` — graceful only, re-measure dirtiness yourself immediately before closing, and ⛔ never close a session Jonathan opened.
+    Handoff `handoffs/TASK-598-buildmaster.md`. **Slack: post in 🔧 Build & Git (thread per SLACK.md registry), prefix `🔧 BUILD-MASTER:`, at least one completion-or-blocker post, status emoji + TASK-598 on every post; one-line cross-post to 🚨 Blockers if MCP is unreachable at dispatch.**
+- names: >
+    **READ/TRACE-ONLY:** `Content/Maps/L_Arena` (⛔ **NEVER SAVED**; hash `B3DBC5D9…F8268` lane — paste entry+exit; ⛔ **corrected 2026-08-16: this block originally read "`b3bd…`", a TRANSPOSITION of the true prefix — caught by TASK-598 itself and fixed per the `WR-§2b` wrong-name lesson before it could replicate into a spec**) · the two placed castle actors (`ACastle`) · `SM_Castle` collision (live `BodySetup` readback) ·
+    inputs: `handoffs/TASK-597-artist.md` (the worst-column list) · `handoffs/TASK-569-buildmaster.md` (prior live bounds, for the (b) delta) ·
+    Law: `W10-R1..R4` · `W7-R2` · `W8-R4` · `NAV-§4`/`NAV-§12` (settled-only, if PIE is entered) · the never-save law · the editor-close-is-Jonathan's-choice law · the MCP tell-don't-fake law.
+
+~~⛔ **GATED ONE-LINER, NO ID (W10-R1): FLOOR-SINK REPAIR**~~ — ✅ **THE W10-R1 EVIDENCE GATE IS FULLY SATISFIED (2026-08-16: TASK-597 done + TASK-598 done, zero discrepancies between them) ⇒ THE REPAIR IS NOW SPECCED BELOW AS TASK-611 → TASK-612.** *(The one-liner's carries all landed in the specs; original text struck, not deleted, per board law.)*
+
+#### ⚖️ THE REPAIR RULINGS (W10-R5..R7, boarded 2026-08-16 on the evidence)
+
+**W10-R5 — ✅ THE REPAIR IS §6's R3 AS SKETCHED: R1 (manifest-only) NOW; R2 (visual re-derivation) HELD, BOARDED NOWHERE.** Owner by the evidence: **art-director** — no code-side cause exists (placement 0.00 live; interior zero-sink). ⭐ **R2's trigger is Jonathan's EYE after R1 ships** (*"does the residual ≤14.5-uu saw-tooth still read on screen?"*) — a playtest item for the NEXT feedback round, ⛔ not a task today. **The acceptance numbers are PINNED NOW, before the work:** centre-route (|x| < 720) max sink **≤ 14.5 uu**; the C1 shelf becomes REAL FLOOR (S5 supported); the C2/C3 berms become STRUCTURAL WALLS (S1–S4 unwalkable or supported at-visual); interior stays untouched (float/flush as measured); F3 rider: F1 corridor float **−46.7 → ≈ −17**.
+**W10-R6 — ⛔⭐ THIS LANE OWNS ZERO COMPILE, STATED SO THE GATES DO NOT FALSELY CONTEND.** No C++, no `Build.bat`, in EITHER task — R1 is manifest + collision re-apply, and `.uasset` collision is not a compiled byte. ⇒ **QUIET-MODULE contention with the ACCOUNTS lane's compile gate (TASK-606): NONE on the build mutex.** The ONLY shared resource is the SINGLE EDITOR (TASK-611's apply + TASK-612's readback/traces vs. whatever ACCOUNTS needs) — **the orchestrator sequences editor occupancy, one lane at a time.** ⇒ ⛔ **TASK-596 does NOT ride this lane** — its boarding condition demands a compile + gate, and this lane has neither; **it rides TASK-606 or whichever compile fires first**, exactly per its own text.
+**W10-R7 — ⛔ WHAT A "MANIFEST-ONLY" DIFF MAY CONTAIN, PINNED BEFORE ANYONE IS TEMPTED: exactly FIVE artifacts** — `Tools/ArtPipeline/pipeline_manifest.json` + the four `Content/Meshes/SM_Castle*.uasset` (collision re-applied). ⛔ `Content/RawAssets/Castle.fbx` is NOT touched (R1 changes no visual byte — that is R2, which is held). ⛔ **Any `Tools/**/*.py` edit converts that file to CODE owing a FULL QA gate** (CONVENTIONS:3464 — the TASK-594 lesson); helper scripts live in the scratchpad and are ⛔ never committed. ⛔ `L_Arena` is never saved (F2 is FACT: both castles share the ONE `SM_Castle` — TASK-598's measured fact — so the map needs nothing and one asset repair fixes both). ⛔ **In-editor hand-editing of collision primitives stays BANNED** (`WR-§1`/`TL-§2`) — the sanctioned mechanism is `_apply_box_collision()` from the manifest, same-path, never delete+recreate.
+
+```
+▶ NOW   TASK-611  🎨 THE R1 REPAIR — manifest re-author + apply to SM_Castle + trio (single-editor resource:
+                     orchestrator sequences vs ACCOUNTS; F1 answered ⇒ no sitting gate)
+                       │
+        TASK-612  🔧 INDEPENDENT integration check (S1–S6/F1 re-trace, per-stage invariance) + THE COMMIT
+                       ⛔ no Build.bat anywhere in this lane (W10-R6) · ⛔ no push
+```
+
+#### TASK-611 — [WR-45] 🎨 THE FLOOR-SINK REPAIR, R1 — 25 → ~37 manifest hulls: split treads · berm blockers · shelf widening · F3 rider, applied same-path to all four `SM_Castle*` (art-director)
+- assignee: **art-director**
+- status: **done — landed by TASK-612 (2026-08-16): the independent gate PASSED on all four legs and the commit is cut (`handoffs/TASK-612-buildmaster.md`; hash in the 🔧 Build & Git Slack thread + orchestrator report). *(Was: ready-for-integration — R1 APPLIED.)* Manifest `ucx.boxes` 25 → **35** (9 flush-split treads 29+8×14.5+29, treads 01–06 widened ±1470, 6 berm blockers to visual tops 497/411/219, F3 rider taken: tread_09 → y +270, slab starts there); applied to `SM_Castle` + the trio via the live set_properties lane (the TASK-567 precedent — no editor close, no PIE, no `M`, no console), save gated on perfect readback: all four **35/0, max dev 0.000, per-stage invariance IDENTICAL**. Live pre-check both castles: S1 −0.27 · S2 −6.82 · S3 −29.41 · S4 −0.26 · S5 +43.83 supported (declared D5 residual) · **S6 +13.32 ≤ 14.5** · **F1 −17.66 ≈ −17**; old-slab negative probe EMPTY; visuals byte-identical to TASK-598 (no visual byte changed). `L_Arena` hash entry = exit `B3DBC5D9…F8268`. Two measured SC-§15 departures: the ground-lip riser and the hall riser cannot flush-split (D1/D2 — lip strip y −3616…−3560 keeps 14.5…22.1, outside every S-column); counts land 9 treads / 35 hulls. ⇒ TASK-612 owns the independent gate + commit. *(Was: backlog — ▶ DISPATCHABLE NOW (editor live PID 17704 + session grant; single-editor occupancy sequenced by the orchestrator vs. the ACCOUNTS lane).)***
+- blocked-by: **none** — the W10-R1 evidence gate is satisfied; F1 is answered by Jonathan
+- parallel-safe: **no** — single editor + asset writes; ⛔ never two processes writing the project at once
+- spec: >
+    **(0) ⛔ READ FIRST: `handoffs/TASK-597-artist.md` §6 (your own sketch IS the shape — this spec pins the acceptance) + §2c (shelf/berm extents) + §5 (S1–S6/F1) · `handoffs/TASK-598-buildmaster.md` (the live confirmation + the one-asset fact) · `WR-§1` · `TL-§2` · `W6-R2` · W10-R5..R7.**
+    **(1) THE FOUR LEGS, EXACT (all four are manifest `ucx.boxes` authoring — ⛔ no visual byte changes):**
+      **(i) TREAD SPLIT:** each 29-uu riser → two 14.5-uu risers (6 → 12 risers, every riser ≪ 40 stays `WR-§1`-clean; tread depths stay > agent Ø 68). Split boundaries derive from the 63-sample visual profile already in `rescale_report.json`; ⭐ **the flush-at-uphill-edge rule is RETAINED** (zero-float preserved — the design trade is now STATED: residual sink halves to ≤ 14.5 instead of vanishing, and R2 is the held escape if his eye still objects).
+      **(ii) BERM BLOCKERS:** ~4–8 boxes filling the C2/C3 berm volumes (bounds y −2440…−1930, |x| 720…1470, tops 380–497) to their VISUAL tops ⇒ S1/S2/S3/S4 become structural walls matching the visual read of raised masonry. ⛔ **Blockers must NOT encroach the centre walk corridor (|x| < 720)** — the route stays walkable.
+      **(iii) SHELF WIDENING:** treads 01–03 x-spans widened toward the measured flat shelf (≈ ±1470, the C1 strip at face ≈ 3°) ⇒ the shelf becomes real floor (S5 supported).
+      **(iv) THE F3 RIDER (TAKEN — flag resolution above):** tread_05 → y +270, `floor_slab_hall` starts there ⇒ corridor float 46 → ≈ 17.
+    **(2) APPLY:** update `pipeline_manifest.json` `ucx.boxes` (the SOLE authority; hull count 25 → ~37; new keys follow the existing snake_case set — treads continue `approach_tread_NN`, berm boxes are `berm_block_01..NN`), then re-apply to `SM_Castle` via the sanctioned same-path lane **`Tools/reimport_meshes.py::_apply_box_collision()`** — ⛔ never delete+recreate, refs preserved.
+    **(3) ⛔ THE CRUMBLE TRIO — COMMIT-BLOCKING INVARIANCE (`W6-R2`):** apply the IDENTICAL new box set to `SM_Castle_Crumble01/02/03`. Acceptance is **INVARIANCE PER STAGE** — count, extents, aperture, lintel IDENTICAL to pristine — readback pasted PER STAGE; ⛔ **ANY difference is a STOP, including a larger one.**
+    **(4) SELF-READBACK (the author's check, ⛔ not the gate — TASK-612 runs the independent version):** post-apply `BodySetup` elem count + per-hull AABB vs the manifest — expect max deviation **0.000** (the §1d standard); paste it. Then pre-check S5/S6 (supported, ≤ 14.5) and S1–S4 (blocked/supported-at-visual) on your own instrument.
+    **(5) EDITOR DISCIPLINE — ⛔ ONE WRITER AT A TIME:** headless commandlet lane ⇒ the live editor must not hold the assets (the session grant covers a graceful close/reopen; coordinate through the orchestrator); live MCP python lane ⇒ no commandlet in parallel.
+    **(6) ⛔ SCOPE FENCE:** exactly the FIVE W10-R7 artifacts may change · ⛔ no FBX · ⛔ no C++ · ⛔ no `Build.bat` · ⛔ no `L_Arena` save · ⛔ no git (TASK-612 commits) · ⛔ no committed `.py` · ⛔ **no Blender — R1 is manifest-only; if you find yourself in Blender you have drifted into the held R2: STOP and report.** Instruments: ⛔ no `M`, ⛔ no console sentence, in anything you run.
+    **(7) DECLARE:** nav is runtime-`Dynamic` ⇒ grown collision is covered at PIE with NO save; zero replication impact (static-mesh collision, both clients derive identically); every `SC-§15` departure named.
+    Handoff `handoffs/TASK-611-artist.md`. **Slack: 🎨 Art thread per SLACK.md, prefix `🎨 ART-DIRECTOR:`, ≥1 completion-or-blocker post, status emoji + TASK-611.**
+- names: >
+    **MAY CHANGE (the whole whitelist):** `Tools/ArtPipeline/pipeline_manifest.json` (`ucx.boxes` 25 → ~37) · `Content/Meshes/SM_Castle.uasset` · `Content/Meshes/SM_Castle_Crumble01.uasset` · `SM_Castle_Crumble02.uasset` · `SM_Castle_Crumble03.uasset` ·
+    tool: `Tools/reimport_meshes.py::_apply_box_collision()` (READ/RUN, ⛔ not edited) · hull keys: `approach_tread_01..12` (split set) · `berm_block_01..NN` (new) · `floor_slab_hall` (y-start moves per F3) ·
+    ⛔ **NOT touched:** `Content/RawAssets/Castle.fbx` · `Content/Maps/L_Arena` · any `.py` diff · any C++ · `rescale_refined_fbx.py` (⛔ never executed — the 27× hazard stands) ·
+    Law: `WR-§1` · `WR-§2` rows 8/10/11 · `TL-§2` · `W6-R2` · W10-R5..R7 · `SC-§15` · `SC-§34`.
+
+#### TASK-612 — [WR-46] 🔧 THE INDEPENDENT INTEGRATION CHECK + THE COMMIT — re-trace S1–S6/F1 against pinned acceptance, per-stage invariance, then land it (build-master)
+- assignee: **build-master**
+- status: **done — ALL FOUR GATES GREEN, INDEPENDENTLY MEASURED, COMMITTED (2026-08-16, `handoffs/TASK-612-buildmaster.md`).** (1) Readback: 35 box / 0 convex / 0 everything-else ×4, CTF_UseDefault, max dev vs manifest **0.000**, rotations 0; `W6-R2` invariance **IDENTICAL** (canonical-JSON string equality across all four). (2) Re-trace BOTH castles, identical numbers: S1 −0.27 · S2 −6.82 · S3 −29.41 · S4 −0.27 · S5 +43.82 supported (D5) · **S6 +13.31 ≤ 14.5** · **F1 −17.66** · HALL 0.0 · GND control; all ±0.6 brackets held; negatives as declared; centre-route max residual +13.31 ⇒ no STOP. (3) Nav/entry via **Simulate-In-Editor** (`bSimulate` — no pawn, no input surface: latch UNSPENT, no `M`, no console): settled-only grep 2 → 4 lines, NEW definitive `OnNavigationGenerationFinished` confirmation — Blue→Red castle path + 6 mine paths, 0 pending, 0 culls; zero spawn/encroachment errors; commander NPC observed on pixels at the war-map table at floor height. ⭐ Declared deviation, orchestrator-approved PRE-RUN with a pinned falsifiable criterion (what would have failed was written down first): "fresh boot" satisfied by baseline-delta on the live session — an editor bounce loses to the save-modal hazard + the editor-close-is-Jonathan's-choice law; mechanism in the handoff §3. (4) `L_Arena` entry = exit `B3DBC5D9…F8268` byte-identical. Commit: explicit pathspecs only — the W10-R7 five + 4 repair-lane handoffs (597/598/611/612) + this board (which carries a NAMED docs-only ACCOUNTS-lane rider; `CONVENTIONS.md` and every `Siege*` code file EXCLUDED); `§25b` digest lane: 4× `filter: lfs`, HEAD oid ≠ worktree sha256 on all four, staged oid == worktree sha256 verified. **This lane compiled NOTHING** (W10-R6); no push, no branch. *(Was: backlog)*
+- blocked-by: ~~**TASK-611**~~ satisfied — ⛔ hard gate: the completed integration check (items 1–4) IS the commit condition; any red item = ⛔ no commit, route back with the numbers
+- parallel-safe: **no** — single editor; occupancy sequenced by the orchestrator vs. ACCOUNTS (W10-R6)
+- spec: >
+    ⛔ **NO `Build.bat` — ANYWHERE IN THIS TASK (W10-R6: this lane owns zero compile; the ACCOUNTS lane's TASK-606 owns the next one, and TASK-596 rides THERE, not here).** ⛔ No push. ⛔ No `L_Arena` save.
+    **(1) INDEPENDENT READBACK (the gate, ⛔ not an echo of TASK-611's §4):** live `BodySetup` on `SM_Castle` AND each crumble stage — elem count + per-hull AABB vs `pipeline_manifest.json`, expect max deviation **0.000**; **per-stage INVARIANCE vs pristine pasted** (`W6-R2` — commit-blocking; any difference a STOP, including a larger one).
+    **(2) ⭐ THE RE-TRACE — the TASK-598 instrument, UNCHANGED, at BOTH castles:** S1–S6 + F1 against the **pinned W10-R5 acceptance**: S1/S2 no longer walkable-on-ground (blocker top ≈ visual, or column structurally blocked) · S3/S4 same class · S5 supported (small delta) · **S6 ≤ 14.5** · **F1 ≈ −17** (F3 rider). **Paste the live table BESIDE TASK-598's baseline.** ⛔ **Any centre-route (|x| < 720) residual > 14.5 uu is a STOP, not a nit.**
+    **(3) NAV + ENTRY SANITY — PIE from a fresh boot, ⛔ NO save:** grep `CONFIRMED (nav settled:` and paste (`NAV-§4`/`NAV-§12` settled-only); confirm units still enter (the |x| < 720 corridor is untouched by design — verify, do not assume) and interior spawning is intact. ⛔ **No console sentence, no `M` press — the TASK-571 instruments stay live.**
+    **(4) `L_Arena` SHA256 entry AND exit (`B3DBC5D9…F8268`) — byte-identical or STOP.**
+    **(5) THE COMMIT (only if 1–4 are ALL green):** explicit file pathspecs ONLY — the FIVE W10-R7 artifacts + `handoffs/TASK-611-artist.md` + `handoffs/TASK-612-buildmaster.md` + the board/records. **`git diff --cached --name-only` pasted FIRST** (the hostile-index law); `git check-attr filter -- <path>` per path (`§25b` — expect `lfs` for `.uasset` ⇒ digest lane, ⛔ never a size check; `unspecified` for `.json`/`.md` ⇒ diff lane). ⛔ **If any `.cpp`/`.h`/`.gen.cpp`/`Intermediate/`/`.umap` appears staged, someone dispatched wrong: STOP** (`SC-§29b`). Message names **TASK-597/598/611/612**, states the finding (Jonathan's floor-sink), and that this lane compiled NOTHING. Report the hash + `git rev-list --left-right --count origin/main...main`. ⛔ No push, ⛔ no branch cut.
+    **(6)** Editor per the session grant; graceful only; coordinate occupancy with ACCOUNTS through the orchestrator.
+    Handoff `handoffs/TASK-612-buildmaster.md`. **Slack: 🔧 Build & Git per SLACK.md, prefix `🔧 BUILD-MASTER:`, ≥1 post with status emoji + TASK-612; one-line cross-post to 🚨 Blockers on any STOP.**
+- names: >
+    commit whitelist = the W10-R7 five + the two handoffs + board/records — ⛔ **DERIVED from this ledger, never hand-authored** (`SC-§29b`) ·
+    greps: `CONFIRMED (nav settled:` · acceptance: S1–S6/F1 per W10-R5 · baseline: `handoffs/TASK-598-buildmaster.md` ·
+    Law: `W6-R2` · W10-R5..R7 · GIT HAZARD LAWS (a)–(f) · `§25` + `§25b` · `SC-§29b` · `NAV-§4`/`NAV-§12` · the never-save law + the hard gates in CLAUDE.md.
+
+---
+
+## ACCOUNTS — decomposed 2026-08-16 on Jonathan's feature request — TASK-599..610 (Phase 1; Phases 2–3 are gated one-liners)
+
+**Jonathan's request, verbatim (2026-08-16, direct in Claude Code):** *"I want to add the ability to create an account that saves data. This can be a "login" button in the main menu that leads to a "create account" button and a "log into existing account" button. Eventually I want to make the accounts created saved in the cloud so that way people can log in from any device. These accounts will be able to track different deck builds that the user has created and saved, any setting adjustments, etc. Come up with a plan for how we can save that data in the cloud. If we need to use a website I would prefer to use github pages since I already have a github account with a website using github pages. If there is another method that you think is easier to manage and store this data in the could let me know."*
+
+**Law was written FIRST (house rule):** CONVENTIONS **"⚖️ ACCOUNTS — local-first player accounts · profile-scoped saves · the cloud-backend ruling (2026-08-16)"**, namespace **`ACC-§N`**, 10 sub-sections `ACC-§0..§9` incl. the pinned cross-task signature registry (`ACC-§7`) and the naming table (`ACC-§6`). ⛔ **Every task below cites it; no task restates it.** 📌 **There is no plan file — every binding name and number is inline in `ACC-§`.**
+
+⭐ **THE SHAPE: PHASE 1 IS A LOCAL-FIRST ACCOUNT SHELL, BACKEND-AGNOSTIC, FULLY DECOMPOSED AND DISPATCHABLE NOW.** The main-menu **Login** button → the account panel with **Create Account** / **Log into existing account** (his exact two buttons) · a C++ profile model · per-profile decks + settings layered on the EXISTING `USiegeDeckSaveGame` / `USiegeSettingsSubsystem` systems by **slot-name scoping through one seam** (`ACC-§4`) — ⛔ **no rewrite of either save system.** Works fully offline; Phase 2's cloud sync bolts on with zero UI rework. **Phases 2–3 are GATED ONE-LINERS, no IDs, pending Jonathan's backend ruling (A1 — default Supabase; GitHub Pages is RULED OUT as the data store with the mechanism on the record, `ACC-§0`).**
+
+### ⚖️ THE EIGHT MANAGER RULINGS FOR THIS BATCH
+
+**RULING 1 — ⛔ GITHUB PAGES IS NOT A DATA STORE, AND THE RULING CARRIES ITS MECHANISM.** Static hosting; a write path requires a GitHub API token inside the game binary, extractable by any player, granting read/write over EVERY account. `ACC-§0`. It may host a companion SITE later. **Phase 2's default backend is Supabase** (hosted Postgres + email/password auth + RLS + plain HTTPS/JSON that `FHttpModule`+`Json` speak natively; the Supabase connector is already wired in Jonathan's Claude environment). ⚠️ **FLAGGED A1 — his ruling, owed before Phase 2 decomposes. NOTHING in Phase 1 depends on it.**
+
+**RULING 2 — ⛔ GUEST IS THE DEFAULT AND LOGIN GATES NOTHING.** The accountless game stays byte-identical: guest slots `"SiegeDecks"`/`"SiegeSettings"` untouched, every menu flow unchanged (`ACC-§1`). **Login surface = main menu ONLY in P1** — no mid-match identity change (slot swap mid-session + unanswered M8 questions).
+
+**RULING 3 — ⛔ THE HONEST-CREDENTIAL LAW.** P1 credentials are a **local convenience, NOT security** — salted `FSHA1` hex, plaintext never persisted and never logged, and ⛔ **no task/handoff/QA text may call it "secure"** (`ACC-§2`). Real auth is the Phase-2 backend's job (server-side bcrypt via Supabase GoTrue). ✅ **QA criterion: grep the diff for any write/log of the password parameter — ZERO.**
+
+**RULING 4 — ⭐ PROFILE SCOPING IS SLOT-NAME SCOPING THROUGH ONE SEAM.** `USiegeAccountSubsystem::GetDeckSlotName()/GetSettingsSlotName()`; unresolvable subsystem ⇒ guest constant (fail-safe = today's behavior). **The call-site set is ENUMERATED, manager-verified first-hand, not assumed:** five deck sites in two files + the settings lane's single `ResolveSlotName()` choke point — file:line in `ACC-§4`. ⛔ **A bare slot literal outside the two guest-constant definition sites and the tests is a QA FAIL.** The shipped `SiegeSettingsTest.cpp:120` constant assertion survives untouched.
+
+**RULING 5 — 🔨 THE ACCOUNT PANEL IS A CODE-AUTHORED TREE — A NEW, NARROW EXCEPTION ARGUED ON ITS OWN FACTS** (the settings ruling is scoped to `USettingsMenuWidget` only and may not be cited). Five cloned conditions incl. the CORRECTED RebuildWidget order (build tree → set `RootWidget` → `return Super::RebuildWidget();`) and the reserved `/Game/UI/WBP_AccountMenu` (✅ verified absent). `BackdropBorder` HIT-TEST VISIBLE (the click-through-into-Quit lesson). **Rendering correctness closes on Jonathan's pixels (TASK-609), never readback** (`ACC-§5`).
+
+**RULING 6 — ⛔ THE MENU SPLICE WAITS FOR THE COMPILE, AND THE REASON IS `SC-§26`.** The `Btn_Login` graph must reference class `UAccountMenuWidget` — a NEW reflected type. **Live Coding cannot introduce new reflected types; a full editor restart on the new binary is mandatory** ⇒ TASK-607 is blocked-by TASK-606 (the compile gate + editor bounce), never dispatched before it.
+
+**RULING 7 — ⛔ QUIET-MODULE vs THE LIVE FLOOR-REPAIR LANE (the batch's serialization law).** The WAR-ROOM Wave-10 chain (TASK-597 diagnosis RUNNING at decomposition → TASK-598 live traces → a gated repair that will own a compile) runs in parallel. **Phase-1 C++ COEXISTS AS EDITS** (file-collision check: ✅ disjoint — this batch touches no castle/mesh/manifest/`ACastle` file), **but ⛔ NO ACCOUNTS COMPILE GATE MAY RUN WHILE THE FLOOR-REPAIR LANE'S GATE RUNS.** The orchestrator sequences TASK-606/608 against the repair's gate — one gate at a time, whoever is ready first. ⛔ **And in ANY PIE this batch runs: no console sentence typed, no `M` pressed** — the TASK-571 latch and TASK-579's empty-map instrument stay intact (F1's answered flag changed the ORDER, not the protection).
+
+**RULING 8 — ⭐ SEED-COPY ON FIRST CREATE (default TAKEN, FLAGGED A6).** `CreateAccount` copies the existing guest decks + settings INTO the new profile's slots, once, at create only — his existing decks follow him into his first account; guest originals never mutated (`ACC-§3`).
+
+### 🚩 FLAGGED FOR JONATHAN — ⛔ recorded, NOT decided by me. ⛔ NONE OF THE SEVEN BLOCKS PHASE 1.
+
+| # | question | manager default that ships | blocks what |
+|---|---|---|---|
+| **A1** | **THE BACKEND.** Supabase (recommended: free tier, RLS, no SDK, connector already wired), Firebase, PlayFab, or EOS? ⛔ GitHub Pages is ruled OUT as the store (`ACC-§0`) — it can host a companion site only. | **Supabase.** | ⛔ **Phase 2's decomposition. Nothing in Phase 1.** |
+| **A2** | **P2 LOGIN IDENTITY.** Supabase auth is email-native ⇒ in P2 the login credential becomes an EMAIL; `DisplayName` stays the in-game handle. OK? | **Yes — email login in P2, display name unchanged.** | Nothing now. |
+| **A3** | **SYNC STRATEGY (P2).** | **Last-write-wins on `updated_at`** (per-deck row granularity). | Nothing now. |
+| **A4** | **FIRST CLOUD LOGIN (P2): migrate the local profile up, or start clean?** | **Upload/migrate the local decks + settings.** | Nothing now. |
+| **A5** | **EMAIL CONFIRMATION at signup (P2)?** | **OFF** (friction; can be enabled server-side later). | Nothing now. |
+| **A6** | **SEED-COPY on first create** (RULING 8). | **TAKEN** — guest data copied into the first profile. | Nothing now. |
+| **A7** | **Should the profile `DisplayName` become the multiplayer session/player name?** | ⛔ **NOT in P1** (M8 surface untouched; one-liner later). | Nothing now. |
+
+### ⛔ QUIET-MODULE PRE-FLIGHT — RECORDED, NOT HAND-WAVED (CONVENTIONS "⛔ THE QUIET-MODULE LAW")
+
+📌 **PROVENANCE: I have NO git tool and NO shell — every git/editor figure below is ORCHESTRATOR-RELAYED (the RELAYED-DIAGNOSIS LAW binds; gate tasks re-run the instruments themselves).** RELAYED at decomposition: `HEAD = 7a4bf39` · `main` **0/0 vs origin** (Jonathan pushed) · tree CLEAN · **editor UP (PID 17704), MCP answering at `http://127.0.0.1:8000/mcp`, session grant to open/close** · in-flight lane: **TASK-597 (art, file-only) RUNNING → TASK-598 (editor traces) → the gated floor repair (will own a compile)**.
+
+✅ **What I verified FIRST-HAND by reading the files:** `SiegeDeckSaveGame.cpp:7` (the one `"SiegeDecks"` definition) · the FIVE deck-slot consumer sites (`DeckBuilderWidget.cpp:589/677/744/752`, `SiegePlayerController.cpp:253`) · `SiegeSettingsSubsystem.cpp:16/62/143/177` (`SettingsSlotName`, the `ResolveSlotName()` choke point) · `SiegeSettingsSubsystem.h:104/175` (the statics + the automation slot seam) · `SiegeSettingsTest.cpp:120-133` (the shipped slot-name assertions my seam must not break) · `Source/.../Siegebound/` contains **NO `*Account*` file** · `Content/UI/` contains **NO `WBP_AccountMenu`** (10 WBPs listed; `WBP_MainMenu` present) · the settings-lane law §2/§3 (the subsystem + code-authored-widget precedents this batch clones).
+
+| # | fact at dispatch | what the gates must do |
+|---|---|---|
+| 1 | The game module is QUIET for AUTHORING: no other `gameplay-programmer` C++ task is in flight (`Source/` lane closed at WAR-ROOM; the floor repair is not yet specced and is art-side until evidence says otherwise). | ▶ **TASK-599..604 dispatch NOW, in parallel.** |
+| 2 | ⛔ The floor-repair lane WILL own a compile (Wave-10 gated one-liner + F1 answered = it proceeds). | ⛔ **RULING 7: TASK-606/608 serialize against that gate — orchestrator sequences, never concurrent. Confirm at dispatch which lane's gate is live.** |
+| 3 | Backlog C++ tasks that must NOT run concurrently with a gate: TASK-489 · 490 · 473 · 501 · 528 · 540 · 553 · 596 (rides whichever batch's compile fires next — if TASK-606 is that compile, TASK-596 RIDES IT per its own boarding condition, and then owes its gate line in THIS batch's ledger). | ⛔ **Confirm all are still un-dispatched immediately before building; if 596 rides, say so in the handoff + ledger.** |
+| 4 | The single editor is shared: Jonathan holds a session grant, TASK-598 needs traces, TASK-607 needs UMG ops. | ⛔ **Coordinate; his hands win; never take the editor mid-interaction. TASK-599..606 need no editor until 606's bounce.** |
+| 5 | Baseline: last recorded full compile = WAR-ROOM (0/0, suite 111/111). | ⛔ **Parse the log for `Result: Failed`, never `$LASTEXITCODE`; a ~2 s `0x800711C7` failure is Smart App Control, NOT a code error. State the delta you observe.** |
+
+### ⛔ COVERAGE LEDGER — `task → gate`. THE UNION IS CROSS-CHECKED AGAINST THE ROSTER **BEFORE** THE INTEGRATION COMMIT (`SC-§29`; commit paths DERIVED from this ledger per `SC-§29b`, never hand-authored)
+
+| gate | covers |
+|---|---|
+| **TASK-605** → `qa/TASK-605.md` | **599 · 600 · 601 · 602 · 603 · 604** — all six authoring tasks; the union IS the roster. Named criteria: the `ACC-§2` plaintext grep · the `ACC-§4` bare-slot-literal grep · the `ACC-§5`(b) RebuildWidget order · `SC-§33` (any new trailing default pastes its call-site grep) · the guest path provably byte-identical. |
+| **integration check (not a QA report)** | **607** (the `Btn_Login` splice — asset/graph work; gated by the integration check at TASK-608, ⛔ not by `qa/TASK-605.md`; the full-graph DSL diff proving the six pre-existing entries untouched is the check's core evidence). |
+| — | **606 · 608** (build-master: compile, bounce, assemble, commit; authors no code — ⚠️ any compile-fix diff is CODE and owes its own `SC-§27` diff-scoped verdict before the commit). |
+| — | **609** (Jonathan, human — pixels + the A-flags; no machine route exists) · **610** (manager — the GDD amendment, AFTER 608 commits). |
+
+### 📌 M8 DECLARATION (batch-level; every code task repeats it verbatim)
+**Adds no replicated property, no new replicated class, no new relevancy tier, no RPC.** All account state is client-local (`UGameInstanceSubsystem` + local `USaveGame`); the display name touches no session/player name (A7). Does NOT consume the M8 Phase-1 checkpoint gate; does NOT substitute for Jonathan's owed feedback items.
+
+### 📌 GDD — ⛔ DEFERRED ON PURPOSE (the `WR-§`/`AS-§` precedent: nothing describes work in flight as shipped)
+Owed at **TASK-610, AFTER TASK-608 commits**: a new **`### 3.16 Player Accounts & Profiles`** (guest-default, local-first, the honest-credential statement, the Phase-2/3 cloud plan incl. the GH-Pages ruling), a **§7 UI-flow note** (main-menu order + the account panel), and a **Design Change Log** entry naming this batch + the commit. ⛔ Not written now; ⛔ not smuggled into an implementation task.
+
+### DEPENDENCY GRAPH — ▶ = dispatchable immediately
+
+```
+▶ NOW  TASK-599  code: FSiegeProfileInfo + USiegeAccountSaveGame (new files) ─┐
+▶ NOW  TASK-600  code: USiegeAccountSubsystem + seam (new files)             ─┤
+▶ NOW  TASK-601  code: settings lane profile scoping (2 files)               ─┤
+▶ NOW  TASK-602  code: deck lane profile scoping (2 files, 5 sites)          ─┼─→ TASK-605 ⛔ QA GATE
+▶ NOW  TASK-603  code: UAccountMenuWidget code-authored tree (new files)     ─┤   (qa/TASK-605.md)
+▶ NOW  TASK-604  code: Tests/SiegeAccountTest.cpp (new file)                 ─┘        │
+                                                                                       v
+                              TASK-606 🔧 COMPILE GATE + editor bounce (⛔ RULING 7 serialization)
+                                                                                       │
+                              TASK-607 ⚙️ Btn_Login splice on WBP_MainMenu (editor)  <─┘
+                                                                                       │
+                              TASK-608 🔧 integration check + suite + COMMIT (⛔ no push) <─┘
+                                                                   │                   
+                              TASK-609 🙋 Jonathan: pixels + A-flags ratification  <───┤
+                              TASK-610 📋 manager: GDD §3.16 amendment             <───┘
+⛔ NO IDs   PHASE 2 (cloud sync, blocked on A1) · PHASE 3 (cross-device polish) — one-liners in ACC-§8
+```
+
+#### TASK-599 — [ACC-1] ⚙️ THE ACCOUNT MODEL — `FSiegeProfileInfo` + `USiegeAccountSaveGame` (gameplay-programmer)
+- assignee: **gameplay-programmer**
+- status: **qa-passed** (2026-08-16 — `qa/TASK-605.md` PASS, 0 blockers/0 warns; the `UserIndex` static-const-vs-constexpr flag ACCEPTED [registry outranks the loose idiom]. Orchestrator-proxied flip per the qa-reviewer no-edit-tool protocol. Authored: `SiegeAccountSaveGame.h/.cpp` per `ACC-§7` block 1; handoff `handoffs/TASK-599-programmer.md`)
+- blocked-by: **none**
+- parallel-safe: **yes** — new files only (`SiegeAccountSaveGame.h/.cpp`); no open task touches them
+- spec: >
+    **(0) READ FIRST: CONVENTIONS `ACC-§2` + `ACC-§3` + `ACC-§7` (the registry is the contract, character-for-character) + the `USiegeDeckSaveGame`/`USiegeSettingsSaveGame` headers (the shipped idiom being cloned).**
+    **(1)** Author `Source/GitClaudeUnrealTest/Siegebound/SiegeAccountSaveGame.h/.cpp` exactly per the `ACC-§7` registry: `FSiegeProfileInfo` + `USiegeAccountSaveGame` with statics `SlotName = TEXT("SiegeAccounts")` / `UserIndex = 0` (the `SiegeDeckSaveGame.cpp:7` idiom). Doc-comment the class with the `ACC-§2` honesty statement — the credential fields are a local convenience, NOT security, and the comment SAYS SO.
+    **(2)** ⛔ No subsystem logic here (TASK-600's), no widget, no hashing implementation beyond the field docs. Model only.
+    **(3)** M8 declaration: verbatim from the batch header. Handoff `handoffs/TASK-599-programmer.md`.
+    **Slack: ⚙️ Dev & QA thread (SLACK.md registry), prefix `⚙️ GAMEPLAY-PROGRAMMER:`, ≥1 completion/blocker post, status emoji + TASK-599.**
+- names: > `ACC-§6` row 1–2 · `ACC-§7` block 1 · law: `ACC-§2` · `ACC-§3`.
+
+#### TASK-600 — [ACC-2] ⚙️ `USiegeAccountSubsystem` — registry, login/logout, the slot-name seam, seed-copy (gameplay-programmer)
+- assignee: **gameplay-programmer**
+- status: **qa-passed** (2026-08-16 — `qa/TASK-605.md` PASS, 0 blockers/0 warns; distinct login-failure reasons ACCEPTED [vagueness would fake a security property ACC-§2 disclaims] and the seed-copy-under-override crumb ACCEPTED [closed by 604's janitor]. Orchestrator-proxied flip. Authored: `SiegeAccountSubsystem.h/.cpp` NEW per `ACC-§7` block 2; handoff `handoffs/TASK-600-programmer.md`)
+- blocked-by: **none** (compiles against the `ACC-§7` registry, not against TASK-599's landed files)
+- parallel-safe: **yes** — new files only (`SiegeAccountSubsystem.h/.cpp`)
+- spec: >
+    **(0) READ FIRST: `ACC-§1..§4` + `ACC-§7` + `SiegeSettingsSubsystem.h/.cpp` in full (the precedent being cloned: load-once/save-on-change, null-safe slot load, `SetSlotNameForAutomationTests`, `LogSiege*` category shape).**
+    **(1)** Author the subsystem per `ACC-§7`: `Initialize` loads `"SiegeAccounts"` (missing/unreadable ⇒ empty registry + guest, logged once on `LogSiegeAccount`, never a crash) · `CreateAccount` (validate per `ACC-§3` name/password rules, `OutReason` carries the first violation — the `IsDeckLegal` idiom; fresh `FGuid` ProfileId + salt; hash per `ACC-§2`; register, set active, save registry, **SEED-COPY per RULING 8**, broadcast) · `Login` (case-insensitive lookup, hash-compare, set active + `LastLoginUtc`, save, broadcast) · `Logout` (clear active, save, broadcast) · the seam `GetDeckSlotName()/GetSettingsSlotName()` (guest ⇒ the bare shipped constants; active ⇒ `<base>_<MakeProfileSlotSuffix>`).
+    **(2)** ⛔ `ACC-§2` binds hard: the password parameter is hashed and DROPPED — never stored, never logged, never in `OutReason`.
+    **(3)** ⛔ No Settings/Deck include in this class (`ACC-§4` dependency direction — they depend on YOU; you reference only the two slot-name constants' headers).
+    **(4)** M8 declaration verbatim. Handoff `handoffs/TASK-600-programmer.md`. **Slack: ⚙️ Dev & QA, `⚙️ GAMEPLAY-PROGRAMMER:`, ≥1 post, emoji + TASK-600.**
+- names: > `ACC-§6` rows 3–5 · `ACC-§7` block 2 · law: `ACC-§1` · `ACC-§2` · `ACC-§3` · `ACC-§4` · RULING 8.
+
+#### TASK-601 — [ACC-3] ⚙️ SETTINGS LANE PROFILE SCOPING — `ResolveSlotName` precedence + `ReloadForActiveProfile` (gameplay-programmer)
+- assignee: **gameplay-programmer**
+- status: **qa-passed** (2026-08-16 — `qa/TASK-605.md` PASS, 0 blockers/0 warns; broadcast-on-ACTUAL-change ACCEPTED [the standing delegate law outranks the spec's loose "then broadcast"; `BroadcastSettingChanged` verified the file's only `.Broadcast` caller] and the private `UFUNCTION` forwarder ACCEPTED. Orchestrator-proxied flip. Bounded diff to `SiegeSettingsSubsystem.h/.cpp`; `SiegeSettingsTest.cpp:120` green as written; handoff `handoffs/TASK-601-programmer.md`)
+- blocked-by: **none** (registry contract)
+- parallel-safe: **yes** — owns `SiegeSettingsSubsystem.h/.cpp` exclusively in this batch; no other open task touches them
+- spec: >
+    **(0) READ FIRST: `ACC-§4` (the whole seam law) + `SiegeSettingsSubsystem.cpp:177` (the choke point) + `SiegeSettingsTest.cpp:104-133` (the shipped assertions you must not break).**
+    **(1)** `Initialize` gains `Collection.InitializeDependency<USiegeAccountSubsystem>()` BEFORE the existing load, and subscribes to `OnActiveProfileChanged` → `ReloadForActiveProfile()`.
+    **(2)** `ResolveSlotName()` precedence becomes: `SlotNameOverride` (tests — UNCHANGED semantics) > account-profile slot via `GetSettingsSlotName()` (unresolvable subsystem ⇒ fall through) > `SettingsSlotName`. ⛔ The `SettingsSlotName` constant itself does not move — `SiegeSettingsTest.cpp:120` stays green as written.
+    **(3)** New `ReloadForActiveProfile()` per `ACC-§7`: reload via `ResolveSlotName()` (missing ⇒ C++ defaults, logged once), then broadcast the EXISTING `OnSettingsChanged` (the widget refreshes for free — verified: `USettingsMenuWidget` already subscribes).
+    **(4)** ⛔ Additive only: no existing member renamed, no shipped behavior changed for guest (the guest path must be byte-identical — a QA criterion).
+    **(5)** M8 declaration verbatim. Handoff `handoffs/TASK-601-programmer.md`. **Slack: ⚙️ Dev & QA, `⚙️ GAMEPLAY-PROGRAMMER:`, ≥1 post, emoji + TASK-601.**
+- names: > files: `SiegeSettingsSubsystem.h/.cpp` ONLY · `ACC-§7` block 3 · law: `ACC-§4`.
+
+#### TASK-602 — [ACC-4] ⚙️ DECK LANE PROFILE SCOPING — the five enumerated call sites route through the seam (gameplay-programmer)
+- assignee: **gameplay-programmer**
+- status: **qa-passed** (2026-08-16 — `qa/TASK-605.md` PASS, 0 blockers/0 warns; the SC-§14 log-line catch [2 SaveDeckAs slot-name logs now print the resolved slot] ACCEPTED as a correct beyond-enumeration finding. Orchestrator-proxied flip. All 5 enumerated sites through the ACC-§4 seam, guest path byte-identical; handoff `handoffs/TASK-602-programmer.md`)
+- blocked-by: **none** (registry contract)
+- parallel-safe: **yes** — owns `DeckBuilderWidget.cpp` + `SiegePlayerController.cpp` (slot-site edits only) exclusively in this batch
+- spec: >
+    **(0) READ FIRST: `ACC-§4`. The call-site set is ENUMERATED LAW: `DeckBuilderWidget.cpp:589 · 677 · 744 · 752` + `SiegePlayerController.cpp:253`.** ⚠️ **The SEARCH-TOOL LAW (`SC-§14`) still binds: re-grep `SiegeDecks` + `USiegeDeckSaveGame::SlotName` yourself at the artifact and reconcile against this list — a site the law missed is a FINDING, reported, not silently absorbed.**
+    **(1)** At each site, replace the slot-name ARGUMENT with a resolve-at-call-time seam read: resolve `USiegeAccountSubsystem` from the GameInstance; null ⇒ `USiegeDeckSaveGame::SlotName` (guest, fail-safe); else `GetDeckSlotName()`. A small local helper per file is fine; ⛔ no cached slot member, no reload machinery (`ACC-§4`: the deck lane resolves at call time).
+    **(2)** ⛔ `USiegeDeckSaveGame::SlotName` / `UserIndex` statics stay byte-identical. ⛔ Guest behavior byte-identical (QA criterion). ⛔ Nothing else in either file is touched.
+    **(3)** M8 declaration verbatim. Handoff `handoffs/TASK-602-programmer.md`. **Slack: ⚙️ Dev & QA, `⚙️ GAMEPLAY-PROGRAMMER:`, ≥1 post, emoji + TASK-602.**
+- names: > files: `DeckBuilderWidget.cpp` · `SiegePlayerController.cpp` · seam: `USiegeAccountSubsystem::GetDeckSlotName()` · law: `ACC-§4` · `SC-§14`.
+
+#### TASK-603 — [ACC-5] ⚙️ `UAccountMenuWidget` — the code-authored account panel (gameplay-programmer)
+- assignee: **gameplay-programmer**
+- status: **qa-passed** (2026-08-16 — `qa/TASK-605.md` PASS, 0 blockers/0 warns; `ACC-§5`(b) RebuildWidget order verified at `AccountMenuWidget.cpp:84-86`/`:143`; the refused `static const TCHAR*` format-string constant UPHELD [engine `static_assert` mechanism confirmed]. Orchestrator-proxied flip. All 17 pinned children, `ACC-§2` greps clean; compiles only at TASK-606; handoff `handoffs/TASK-603-programmer.md`)
+- blocked-by: **none** (registry contract)
+- parallel-safe: **yes** — new files only (`AccountMenuWidget.h/.cpp`)
+- spec: >
+    **(0) READ FIRST: `ACC-§5` IN FULL (the pinned child names, the modes, the (b) ordering law) + `SettingsMenuWidget.cpp` (the shipped code-authored-tree precedent being cloned, including its corrected `ConstructTree(); return Super::RebuildWidget();` shape and the `NativeOnInitialized`-too-early trap ledger §11).**
+    **(1)** Author the widget: `RebuildWidget()` builds the pinned tree (children only where the `BindWidgetOptional` member is still null), `BackdropBorder` HIT-TEST **VISIBLE**, both password boxes `SetIsPassword(true)`. Modes per `ACC-§5` (`Chooser` → `CreateForm`/`LoginForm` → `LoggedIn`; open-while-logged-in lands on `LoggedIn`).
+    **(2)** Wiring: all model calls go to `USiegeAccountSubsystem` (resolve via GameInstance, null-safe — unresolvable ⇒ `StatusText` explains and the forms disable, the `ResolveSettingsSubsystem` fail-safe shape). Submit failures render `OutReason` in `StatusText`. `Back` = `RemoveFromParent(self)` only.
+    **(3)** ⛔ `ACC-§2`: the password never appears in a log or a member that outlives the submit call. ⛔ No `.uasset` authored; `/Game/UI/WBP_AccountMenu` stays reserved.
+    **(4)** M8 declaration verbatim. Handoff `handoffs/TASK-603-programmer.md`. **Slack: ⚙️ Dev & QA, `⚙️ GAMEPLAY-PROGRAMMER:`, ≥1 post, emoji + TASK-603.**
+- names: > `ACC-§5` pinned children (character-for-character) · `ACC-§6` rows 6–7 · law: `ACC-§2` · `ACC-§5` · settings-lane §11 lifecycle trap.
+
+#### TASK-604 — [ACC-6] ⚙️ AUTOMATION TESTS — `Tests/SiegeAccountTest.cpp` (gameplay-programmer)
+- assignee: **gameplay-programmer**
+- status: **qa-passed** (2026-08-16 — `qa/TASK-605.md` PASS, 0 blockers/0 warns; blind-registry tests consume only symbols TASK-600 actually shipped, behavioral pins hold; the deliberate case-insensitive `TestEqual` ACCEPTED [hex case unpinned by ACC-§2] with a nit that the handoff undercounted them by one. Orchestrator-proxied flip. 7 tests `Siegebound.Account.*`, CI-clean both ways; handoff `handoffs/TASK-604-programmer.md`)
+- blocked-by: **none** (registry contract)
+- parallel-safe: **yes** — new file only
+- spec: >
+    **(0) READ FIRST: `Tests/SiegeSettingsTest.cpp` (the scratch-slot pattern + `SetSlotNameForAutomationTests` seam usage — clone it; never write the real slots from a test).**
+    **(1)** Cover, minimum: hash determinism + salt sensitivity (`MakeCredentialHashHex`) · wrong-password rejection · `MakeProfileSlotSuffix` = 32-hex `Digits` (and that the composed slot names match `ACC-§3`'s table character-for-character — `TestEqualSensitive`, per `SC-§13`) · create→login→logout round trip on a scratch registry slot · TWO profiles ⇒ disjoint deck/settings slot names · guest fallback: no subsystem/no active profile ⇒ the bare shipped constants · display-name uniqueness case-insensitivity · `OutReason` populated on each rejection class.
+    **(2)** ⛔ Tests must pass on a machine with NO save files (CI-clean) and must leave none behind (scratch-slot cleanup, the SiegeSettingsTest idiom).
+    **(3)** M8 declaration verbatim. Handoff `handoffs/TASK-604-programmer.md`. **Slack: ⚙️ Dev & QA, `⚙️ GAMEPLAY-PROGRAMMER:`, ≥1 post, emoji + TASK-604.**
+- names: > file: `Source/GitClaudeUnrealTest/Siegebound/Tests/SiegeAccountTest.cpp` · law: `ACC-§2` · `ACC-§3` · `SC-§13`.
+
+#### TASK-605 — [ACC-7] 🔍 THE QA GATE — `qa/TASK-605.md`, and it NAMES 599 · 600 · 601 · 602 · 603 · 604 (qa-reviewer)
+- assignee: **qa-reviewer**
+- status: **done** (2026-08-16 — gate ran: **PASS, 0 blockers / 0 warns / 4 nits**, all 9 flagged decisions ruled ACCEPTED with reasoning; report `qa/TASK-605.md`; per-task flips orchestrator-proxied [qa-reviewer has no board edit tool]. Named criteria run first-hand: ACC-§2 grep ZERO [first grep was a false empty caught by the §14 positive-control law, re-run clean], ACC-§4 grep = definition sites only, ACC-§7 character-for-character, SC-§33 vacuous, engine APIs verified by symbol in installed 5.8 headers. Carries for TASK-606: RULING-7 serialization confirmed at dispatch · SC-§26 full editor bounce mandatory before 607 · suite baseline 111 → expected 118)
+- parallel-safe: **yes** (file-only review; ⛔ no editor, no compile)
+- spec: >
+    Review all six diffs pre-compile against `ACC-§0..§9`. **Named criteria (the ledger's list, in full):** the `ACC-§2` plaintext-password grep = ZERO writes/logs · the `ACC-§4` bare-slot-literal grep (only the two guest definition sites + tests may match) · registry conformance character-for-character (`ACC-§7`) · `ACC-§5`(b) RebuildWidget ORDER (tree → RootWidget → Super) · guest-path byte-identity argument per task · `SC-§33` trailing-default call-site greps if any · dependency direction (`ACC-§4`: Account includes no Settings/Deck header) · the `SiegeSettingsTest.cpp:120` assertion survives. Verdict per task + one gate verdict. ⛔ A suggested fix is a HYPOTHESIS (`SC-§20`). Report `qa/TASK-605.md`.
+    **Slack: ⚙️ Dev & QA, prefix `🔍 QA:`, verdict post with report path, emoji + TASK-605.**
+- names: > gate file: `qa/TASK-605.md` (the `qa/TASK-565.md` naming precedent) · law: the whole `ACC-§` namespace + `SC-§13/§14/§20/§22/§27/§29/§33`.
+
+#### TASK-606 — [ACC-8] 🔧 THE COMPILE GATE + EDITOR BOUNCE — ⛔ RULING 7 SERIALIZATION BINDS (build-master)
+- assignee: **build-master**
+- status: **backlog**
+- blocked-by: **TASK-605 PASS** + ⛔ **the floor-repair lane's gate NOT live (RULING 7 — orchestrator confirms at dispatch)**
+- parallel-safe: **no** — the module compile + the single editor
+- spec: >
+    **(0)** Re-run the git trio yourself (`status --porcelain` / `rev-list --left-right --count origin/main...main` / `HEAD`) and branch on the answer (`SC-§9`); confirm pre-flight row 3's backlog tasks still un-dispatched; ⚠️ **if TASK-596 is ruled to ride this compile, its comment-only diff joins the roster and the ledger is amended BEFORE the build.**
+    **(1)** Full `Build.bat` (the pinned command; parse for `Result: Failed`, never `$LASTEXITCODE`; ~2 s `0x800711C7` = Smart App Control, not code). Then the FULL automation suite headless; paste counts vs the 111/111 baseline.
+    **(2)** ⛔ **`SC-§26`: the batch adds new reflected types — a FULL editor restart on the new binary is MANDATORY before TASK-607** (no Live Coding). Editor open/close under the session grant + `W7-R2` discipline (graceful, re-measure dirtiness, never close a session Jonathan is driving).
+    **(3)** ⛔ Fences: no `L_Arena` save · no asset save · no git commit here (TASK-608's) · any compile-fix diff = CODE ⇒ `SC-§27` diff-scoped verdict before 608 commits · **any PIE: ⛔ no console sentence, ⛔ no `M` press (RULING 7).**
+    Handoff `handoffs/TASK-606-buildmaster.md`. **Slack: 🔧 Build & Git, prefix `🔧 BUILD-MASTER:`, ≥1 post, emoji + TASK-606; one-liner to 🚨 Blockers if the build fails or the serialization cannot be confirmed.**
+- names: > law: QUIET-MODULE · RULING 7 · `SC-§9` · `SC-§26` · `SC-§27` · `W7-R2` · the Build.bat exit-code law.
+
+#### TASK-607 — [ACC-9] ⚙️ THE MAIN-MENU SPLICE — `Btn_Login` on `WBP_MainMenu` (gameplay-programmer, editor/MCP)
+- assignee: **gameplay-programmer**
+- status: **backlog**
+- blocked-by: **TASK-606** (⛔ RULING 6: `UAccountMenuWidget` must exist in the running editor binary) **+ single-editor coordination (pre-flight row 4)**
+- parallel-safe: **no** — single editor
+- spec: >
+    **(0) READ FIRST: `ACC-§5` navigation paragraph + the settings-lane §4 splice law (the shipped idiom being cloned character-for-character).** Verify MCP up at `http://127.0.0.1:8000/mcp` first; unreachable ⇒ SAY SO, never fake (standing law).
+    **(1)** Additive splice on `/Game/UI/WBP_MainMenu`: `Btn_Login`, label `"Login"`, spliced BEFORE the Quit block ⇒ order **Play → Sandbox → Deck Builder → Multiplayer → Settings → Login → Quit**. Shipped idiom exactly: font 28, `MakeMargin(24,12,24,12)`, `HAlign_Fill`, **granular ops never `write_graph_dsl`**, **`add_event`-first** (the `AssignOnClicked` auto-rename trap).
+    **(2)** `OnClicked` → `CreateWidget` (class `UAccountMenuWidget`) → `AddToViewport(ZOrder 10)` — the `Btn_Settings`→`USettingsMenuWidget` shipped shape; ⛔ the main menu is NOT removed.
+    **(3)** ⛔ **Prove the SIX pre-existing entries byte-identical by full-graph DSL diff — paste it in the handoff (the integration check's core evidence).** Save ONLY `WBP_MainMenu`. ⛔ No `L_Arena` touch, no PIE console sentence, no `M` press.
+    **(4)** M8 declaration verbatim. Handoff `handoffs/TASK-607-programmer.md`. **Slack: ⚙️ Dev & QA, `⚙️ GAMEPLAY-PROGRAMMER:`, ≥1 post, emoji + TASK-607.**
+- names: > asset: `/Game/UI/WBP_MainMenu` (`Btn_Login`) · class ref: `UAccountMenuWidget` · law: `ACC-§5` · RULING 6 · the settings §4 splice idiom · the MCP tell-don't-fake law.
+
+#### TASK-608 — [ACC-10] 🔧 INTEGRATION CHECK + THE COMMIT — ⛔ derived paths, ⛔ NO PUSH (build-master)
+- assignee: **build-master**
+- status: **backlog**
+- blocked-by: **TASK-607** + ⛔ RULING 7 serialization re-confirmed
+- parallel-safe: **no**
+- spec: >
+    **(1)** Integration check for TASK-607 (its gate, per the ledger): the DSL diff evidence, the seven-entry order, `Btn_Login` opens the panel — plus a headless suite re-run if anything recompiled. ⚠️ UMG RENDER correctness is NOT yours to claim — pixels are TASK-609's (`ACC-§5`(e)); check structure + graph only, and say so in the handoff.
+    **(2)** Commit: path list DERIVED from this batch's coverage ledger + `names:` blocks (`SC-§29b`); reconcile your own `git status --porcelain` against it and REFUSE on any unexplained difference (the `SC-§29b`/TASK-570 precedent). Per-file-kind verification (`SC-§25`: the WBP is a binary/LFS-lane check, the C++ is a text-diff check). One commit; message names the batch + gate files. ⛔ **NEVER push.**
+    **(3)** Fences: ⛔ no `L_Arena` save · any PIE: ⛔ no console sentence, ⛔ no `M` press.
+    Handoff `handoffs/TASK-608-buildmaster.md`. **Slack: 🔧 Build & Git, `🔧 BUILD-MASTER:`, commit hash post, emoji + TASK-608.**
+- names: > law: `SC-§25` · `SC-§29` · `SC-§29b` · RULING 7 · the never-push law.
+
+#### TASK-609 — [ACC-11] 🙋 JONATHAN — the pixel playtest + the A-flags (Jonathan, human)
+- assignee: **Jonathan**
+- status: **backlog**
+- blocked-by: **TASK-608**
+- parallel-safe: — (his time)
+- spec: >
+    **WATCH list (no machine route exists for any of it):** (a) main menu shows SEVEN entries in order, nothing regressed; (b) Login → the panel renders (⛔ the account panel closes on YOUR pixels only — `ACC-§5`(e)); (c) Create Account → name+password+confirm, errors legible in `StatusText`; (d) log out / log back in; (e) build + save a deck logged IN, then log OUT ⇒ the guest deck list is your OLD list, untouched; log back in ⇒ the profile's list returns; (f) flip the assistant-confirm setting logged in vs guest — they track separately; (g) seed-copy: your first-created profile starts with your existing decks (A6). **And the SEVEN A-FLAGS are yours to ratify or overturn — A1 (Supabase) is the one Phase 2 waits on.** ⚠️ This does NOT consume the TASK-571 sitting or its instruments.
+- names: > law: `ACC-§1..§5` · the A-flag table.
+
+#### TASK-610 — [ACC-12] 📋 MANAGER — the GDD amendment, AFTER the commit (manager)
+- assignee: **manager**
+- status: **backlog**
+- blocked-by: **TASK-608** (⛔ nothing describes work in flight as shipped)
+- parallel-safe: **yes** (docs only)
+- spec: > Write `Docs/GDD.md` **`### 3.16 Player Accounts & Profiles`** + the §7 UI-flow note + the Design Change Log entry naming TASK-599..608 + the commit hash, against the ARTIFACT (claim no pixels Jonathan has not confirmed). Post the summary in 📢 Planning & Feedback.
+- names: > file: `Docs/GDD.md` · law: the `WR-§`/`AS-§` GDD-deferral precedent.
 
 ---
 
