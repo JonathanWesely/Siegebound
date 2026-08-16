@@ -175,6 +175,19 @@ public:
 	void SetSlotNameForAutomationTests(const FString& InSlotName);
 
 	/**
+	 *  ACC-§7 / TASK-601: runs when USiegeAccountSubsystem broadcasts
+	 *  OnActiveProfileChanged (create / login / logout re-point the resolved
+	 *  settings slot). Reloads through LoadSettingsFromSlot() — so a missing
+	 *  profile slot falls back to C++ defaults via the CDO, and any value that
+	 *  ACTUALLY changes broadcasts the EXISTING OnSettingsChanged through the
+	 *  one mutation path (never on a no-op: the delegate law).
+	 *  USettingsMenuWidget already subscribes (SettingsMenuWidget.cpp:377), so
+	 *  the UI refreshes for free; a reload that lands on the value already in
+	 *  memory needs no refresh because the widget is already showing it.
+	 */
+	void ReloadForActiveProfile();
+
+	/**
 	 *  DIAGNOSTICS + THE AUTOMATION TESTS' OBSERVATION POINT: how many times
 	 *  OnSettingsChanged has been broadcast this session. Incremented inside
 	 *  BroadcastSettingChanged(), which is the ONLY place in the .cpp that calls
@@ -203,7 +216,22 @@ private:
 	/** The ONLY caller of OnSettingsChanged.Broadcast — also bumps the diagnostics counter and logs the change. */
 	void BroadcastSettingChanged(FName SettingName);
 
-	/** SlotNameOverride when a test set one, otherwise the pinned SettingsSlotName. */
+	/**
+	 *  UFUNCTION forwarder for USiegeAccountSubsystem::OnActiveProfileChanged —
+	 *  a DYNAMIC multicast binds by UFUNCTION name, while ReloadForActiveProfile()
+	 *  stays the plain member the ACC-§7 registry pins character-for-character.
+	 *  Forwards, nothing else.
+	 */
+	UFUNCTION()
+	void HandleActiveProfileChanged();
+
+	/**
+	 *  ACC-§4 precedence (TASK-601): SlotNameOverride (tests — semantics
+	 *  UNCHANGED) > the account-profile slot via
+	 *  USiegeAccountSubsystem::GetSettingsSlotName() (an unresolvable game
+	 *  instance or account subsystem FALLS THROUGH — today's behavior, never a
+	 *  crash) > the pinned SettingsSlotName (guest, byte-identical).
+	 */
 	FString ResolveSlotName() const;
 
 	/** In-memory confirm-toggle value. Mirrors USiegeSettingsSaveGame's C++ default; LoadSettingsFromSlot re-derives the fallback from that class's CDO so the two cannot drift (an automation test asserts they agree). */

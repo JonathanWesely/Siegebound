@@ -348,13 +348,27 @@ void ACommanderNpc::ApplyAvatarAnimation()
 	// mismatch to degrade to ref pose and ⛔ never to crash, so the comparison
 	// happens HERE, before PlayAnimation is ever called.
 	//
-	// ⚠️ Deliberately an EXACT identity test, and deliberately ⛔ NOT
-	// USkeleton::IsCompatibleForEditor — that API is WITH_EDITOR-only and this
-	// path runs at runtime. Identity is the CONSERVATIVE direction: a merely
-	// "compatible" skeleton is refused and falls to ref pose, which is the safe
-	// way to be wrong. The whole rigged fleet is retargeted onto the single
-	// SK_Footman_Skeleton, so identity is the EXPECTED match and the conservatism
-	// is expected to cost nothing.
+	// ⚠️ Deliberately an EXACT identity test, and deliberately ⛔ NOT either of
+	// the engine's skeleton-compatibility APIs — BOTH were considered and each
+	// was DECLINED for its own reason (qa/TASK-592.md WARN-1):
+	//   (a) USkeleton::IsCompatibleForEditor — UNAVAILABLE here: all three
+	//       overloads sit inside Skeleton.h's #if WITH_EDITORONLY_DATA block,
+	//       and this path runs at runtime in a non-editor build.
+	//   (b) USkeleton::IsCompatibleMesh — AVAILABLE at runtime (it is declared
+	//       OUTSIDE the editor-only block, and USkeletalMesh derives from
+	//       USkinnedAsset, so IdleSequence->GetSkeleton()->IsCompatibleMesh(
+	//       AvatarSkeletalMesh) would compile in a shipping build) — and STILL
+	//       DECLINED: it is deliberately PERMISSIVE (bone-name matching plus an
+	//       optional parent-chain walk against a percentage threshold — read at
+	//       the engine source, not assumed), which is the OPPOSITE of the
+	//       conservative direction this guard chose on purpose.
+	// Identity is the CONSERVATIVE direction: a merely "compatible" skeleton is
+	// refused and falls to ref pose, which is the safe way to be wrong. The
+	// whole rigged fleet is retargeted onto the single SK_Footman_Skeleton, so
+	// identity is the EXPECTED match and the conservatism is expected to cost
+	// nothing. ⛔ Do NOT "complete" this guard by swapping the identity test for
+	// IsCompatibleMesh — the permissive direction is a RECORDED REJECTION, not a
+	// gap left for want of a runtime API.
 	const USkeleton* const MeshSkeleton = AvatarSkeletalMesh->GetSkeleton();
 	if (!MeshSkeleton || IdleSequence->GetSkeleton() != MeshSkeleton)
 	{

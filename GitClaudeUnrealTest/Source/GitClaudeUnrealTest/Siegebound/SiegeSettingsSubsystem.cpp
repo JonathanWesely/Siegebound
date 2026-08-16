@@ -2,8 +2,11 @@
 
 #include "Siegebound/SiegeSettingsSubsystem.h"
 
+#include "Engine/GameInstance.h"
 #include "Kismet/GameplayStatics.h"
+#include "Siegebound/SiegeAccountSubsystem.h"
 #include "Siegebound/SiegeSettingsSaveGame.h"
+#include "Subsystems/SubsystemCollection.h"
 #include "UObject/UObjectGlobals.h"
 
 // The ONE definition of the settings log category (CONVENTIONS "Settings
@@ -22,6 +25,21 @@ const FName USiegeSettingsSubsystem::SettingName_AssistantConfirmBeforeExecute(T
 void USiegeSettingsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+
+	// ACC-§4 (TASK-601): the account subsystem initializes BEFORE the first
+	// settings load — the engine's sanctioned subsystem-ordering route — so an
+	// active profile persisted in the account registry is already visible to
+	// ResolveSlotName() when the load below runs. ⚠️ FAIL-SAFE: a null return
+	// degrades to guest behavior (ResolveSlotName falls through to the pinned
+	// constant), never a crash.
+	if (USiegeAccountSubsystem* AccountSubsystem = Collection.InitializeDependency<USiegeAccountSubsystem>())
+	{
+		// Create / login / logout re-point the resolved slot, so the store must
+		// reload when the active profile changes. Bound through the UFUNCTION
+		// forwarder (a dynamic multicast binds by UFUNCTION name).
+		AccountSubsystem->OnActiveProfileChanged.AddUniqueDynamic(
+			this, &USiegeSettingsSubsystem::HandleActiveProfileChanged);
+	}
 
 	// LOAD ONCE. This is the only disk read on any shipped path — every later
 	// read is the in-memory getter (§2: a LoadGameFromSlot on the order path
@@ -170,9 +188,59 @@ void USiegeSettingsSubsystem::BroadcastSettingChanged(FName SettingName)
 	OnSettingsChanged.Broadcast(SettingName);
 }
 
+void USiegeSettingsSubsystem::ReloadForActiveProfile()
+{
+	// ACC-§7 / TASK-601: the active profile changed, so ResolveSlotName() now
+	// points at a different slot. This line always records the switch itself;
+	// the missing-slot fallback inside LoadSettingsFromSlot stays latched to one
+	// emission per instance, unchanged.
+	UE_LOG(LogSiegeSettings, Log,
+		TEXT("[SiegeSettings] Active profile changed — reloading settings from slot '%s' (user %d)."),
+		*ResolveSlotName(), SettingsUserIndex);
+
+	// Reload through the SAME single load path (missing slot => C++ defaults
+	// via the CDO fallback). LoadSettingsFromSlot funnels the loaded value
+	// through ApplyBoolSetting, which broadcasts the EXISTING OnSettingsChanged
+	// exactly when the value ACTUALLY changes — never on a no-op (the delegate
+	// law; and BroadcastSettingChanged stays the file's only Broadcast caller).
+	// USettingsMenuWidget already subscribes, so the UI refreshes for free; a
+	// reload landing on the value already in memory needs no refresh because
+	// the widget is already showing it.
+	LoadSettingsFromSlot();
+}
+
+void USiegeSettingsSubsystem::HandleActiveProfileChanged()
+{
+	// UFUNCTION forwarder only — FOnSiegeActiveProfileChanged is a dynamic
+	// multicast, which binds by UFUNCTION name, while ReloadForActiveProfile()
+	// keeps the plain pinned ACC-§7 signature.
+	ReloadForActiveProfile();
+}
+
 FString USiegeSettingsSubsystem::ResolveSlotName() const
 {
-	// SlotNameOverride is empty on every shipped path — only an automation test
-	// ever sets it (SetSlotNameForAutomationTests).
-	return SlotNameOverride.IsEmpty() ? FString(SettingsSlotName) : SlotNameOverride;
+	// (1) SlotNameOverride — automation only, semantics UNCHANGED (ACC-§4: the
+	// test seam outranks everything so a test run can never address a player
+	// slot, profile-scoped or not).
+	if (!SlotNameOverride.IsEmpty())
+	{
+		return SlotNameOverride;
+	}
+
+	// (2) The account seam (ACC-§4): with an active profile this returns
+	// "SiegeSettings_<Digits>"; as guest it returns the bare pinned constant,
+	// so the guest path stays byte-identical. ⚠️ FAIL-SAFE: an unresolvable
+	// game instance or account subsystem falls through to (3) — today's
+	// behavior, never a crash.
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const USiegeAccountSubsystem* AccountSubsystem = GameInstance->GetSubsystem<USiegeAccountSubsystem>())
+		{
+			return AccountSubsystem->GetSettingsSlotName();
+		}
+	}
+
+	// (3) The pinned guest constant — it does NOT move; SiegeSettingsTest.cpp:120
+	// asserts the string and stays green as written.
+	return FString(SettingsSlotName);
 }

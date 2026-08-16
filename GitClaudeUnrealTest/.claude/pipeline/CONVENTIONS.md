@@ -3842,6 +3842,146 @@ Names for developer/test-bench features that are NOT GDD content and NOT part of
 
 - **Debug exec cheats (headless-verification affordance, added 2026-07-09, TASK-121):** `USiegeCheatManager` (`UCheatManager` subclass), `Source/GitClaudeUnrealTest/Siegebound/SiegeCheatManager.h/.cpp`, set as `ASiegePlayerController::CheatClass` in the controller constructor. The engine instantiates a `UCheatManager` ONLY in non-shipping builds with cheats enabled (never in Shipping), so these commands cannot leak into a shipped game — additive and non-shipping by construction. `UFUNCTION(exec)` dev commands, each null-safe and routed through the SAME shipping code paths (never a raw field write / never a bespoke spawn): `SummonTestUnit(FString CardID, bool bRed)` (spawns a card actor for the given team via the existing spawn path — drives PIE without card input on a locked desktop), `ApplyTestDamage(float Amount)` (applies damage to the actor under the crosshair / nearest enemy through the normal TakeDamage path — induces the health-bar + castle-HP changes build-master cannot otherwise trigger headless), `AddTestGold(int32 Amount)` (tops up the Blue player through the `ASiegePlayerState` gold API). Purpose: close the recurring locked-desktop WATCH debt (TASK-076/112 doctrine — no `SendInput`, so the Blue player cannot play cards during PIE) so build-master can fully drive verification headlessly. This is a dev/test affordance, NOT GDD content and NOT part of any milestone's playable slice.
 
+## ⚖️ ACCOUNTS — local-first player accounts · profile-scoped saves · the cloud-backend ruling (2026-08-16) — namespace **`ACC-§N`**
+
+Added 2026-08-16 (batch ACCOUNTS, TASK-599..610). **Jonathan's request, verbatim:** *"I want to add the ability to create an account that saves data. This can be a "login" button in the main menu that leads to a "create account" button and a "log into existing account" button. Eventually I want to make the accounts created saved in the cloud so that way people can log in from any device. These accounts will be able to track different deck builds that the user has created and saved, any setting adjustments, etc. Come up with a plan for how we can save that data in the cloud. If we need to use a website I would prefer to use github pages since I already have a github account with a website using github pages. If there is another method that you think is easier to manage and store this data in the could let me know."*
+
+**The shape: THREE PHASES.** Phase 1 (this batch, fully decomposed) = a **LOCAL-FIRST account shell, backend-agnostic** — the UI he described, a profile model, and per-profile persistence of decks + settings layered on the EXISTING `USaveGame` systems. Phase 2 (gated one-liners, ⛔ no IDs) = cloud sync, pending his backend ruling. Phase 3 = cross-device polish one-liners. ⭐ **Phase 1 works fully offline and Phase 2 bolts on without UI rework — that is the design constraint, not an accident.**
+
+### ACC-§0 ⛔ THE GITHUB-PAGES RULING — RULED OUT AS THE DATA STORE, ON THE RECORD, WITH THE MECHANISM
+
+- ⛔ **GitHub Pages CANNOT be the accounts backend.** It is **static file hosting**: no server code, no database, no secure per-user auth. The only way a game client could WRITE to it is a GitHub API token **shipped inside the game binary** — which any player can extract and use to read/write EVERY account. That is not a hardening problem; it is structural. ⛔ **No task may propose a GH-Pages/gist/repo-commit data store; this ruling is cited, not re-argued.**
+- ✅ **GitHub Pages MAY host a companion WEBSITE later** (landing page, account-portal front-end that talks to the real backend over HTTPS). Site ≠ store.
+- **DEFAULT BACKEND FOR PHASE 2: Supabase** — hosted Postgres + built-in email/password auth (JWTs) + row-level security (each account reaches only its own rows) + a plain HTTPS/JSON REST API that UE's built-in `FHttpModule` + `Json` modules call with **no third-party SDK**. Free tier ample at this scale, and Jonathan's Claude environment already has a **Supabase connector wired**, so agents can create/manage the project, tables and RLS policies directly when Phase 2 opens. **Alternatives on record:** Firebase, PlayFab (both viable, more SDK friction), EOS (Epic-native, but its auth model fits Epic accounts/device IDs, not simple email/password). ⚠️ **FLAGGED A1 — the backend choice is JONATHAN'S, owed before Phase 2 decomposes. Nothing in Phase 1 depends on it.**
+- ⚠️ **Environmental caveat, recorded now:** Norton MITMs HTTPS on this machine (the HF precedent) — `*.supabase.co` will likely need a Norton exclusion when Phase 2 goes live. **A dev-machine artifact, not a product defect, and a Jonathan hand-step.**
+
+### ACC-§1 ⛔ THE GUEST-DEFAULT LAW — LOGIN GATES NOTHING, AND THE ACCOUNTLESS GAME IS BYTE-IDENTICAL
+
+- **Guest is the default.** With no account created and no login performed, every shipped flow behaves EXACTLY as today: decks read/write slot `"SiegeDecks"`, settings read/write slot `"SiegeSettings"`, all menus work. ⛔ **No task may gate Play, Sandbox, Deck Builder, Multiplayer or Settings behind login.**
+- **Login surface = the MAIN MENU ONLY in Phase 1.** No in-match login/logout, no identity change during a live match (it would swap save slots mid-session and raise M8 questions nobody has answered). The subsystem crosses levels, so an in-match entry later is one widget task.
+- **The guest slots are never mutated by account code.** Creating a profile SEED-COPIES the guest data into the new profile's slots once (ACC-§3; FLAGGED A6, default TAKEN); the guest originals stay untouched forever.
+
+### ACC-§2 ⛔ THE HONEST-CREDENTIAL LAW — PHASE 1 CREDENTIALS ARE A CONVENIENCE, ⛔ NOT SECURITY, AND NO ARTIFACT MAY SAY OTHERWISE
+
+- Phase 1 stores a **salted hash** locally: `CredentialHashHex = hex(FSHA1::HashBuffer(UTF8(CredentialSaltHex + ":" + Password)))`, salt = a fresh `FGuid` in `Digits` hex per profile. This stops shoulder-surfing and accidental plaintext on disk. **It is NOT a security boundary: anyone with disk access can edit `SiegeAccounts.sav`.**
+- ⛔ **No task, handoff, QA report, or code comment may describe Phase-1 auth as "secure," "encrypted," or "protected."** The honest phrase is **"local convenience credential — real auth is the Phase-2 backend's job"** (Supabase GoTrue does server-side bcrypt; the client never stores a password).
+- ⛔ **The plaintext password is NEVER persisted and NEVER logged** — not in the save game, not on `LogSiegeAccount`, not in a handoff. ✅ **QA CRITERION: grep the diff for any write/log of the password parameter and report ZERO.**
+
+### ACC-§3 THE PROFILE MODEL + THE SLOT-NAME LAW
+
+| Thing | Exact value |
+|---|---|
+| Profile identity | `FGuid ProfileId` — never the display name |
+| Slot suffix derivation | `ProfileId.ToString(EGuidFormats::Digits)` — 32 hex chars, filename-safe; helper `USiegeAccountSubsystem::MakeProfileSlotSuffix` is the ONE implementation |
+| Account registry slot | **`"SiegeAccounts"`**, user index **0** ⇒ `Saved/SaveGames/SiegeAccounts.sav` |
+| Profile deck slot | **`"SiegeDecks_<Digits>"`** (guest: bare `"SiegeDecks"` — unchanged) |
+| Profile settings slot | **`"SiegeSettings_<Digits>"`** (guest: bare `"SiegeSettings"` — unchanged) |
+| Display name rules | trimmed; 3–24 chars; unique case-insensitive among local profiles; login lookup case-insensitive |
+| Password rule (P1) | ≥ 4 chars, non-empty — a convenience bar, not a policy (ACC-§2) |
+
+- ⛔ **A slot name is NEVER derived from the display name** (users type anything; filenames + collisions + renames).
+- **Seed-copy on create (FLAGGED A6, default TAKEN):** `CreateAccount` — after registering the profile and making it active — copies the existing guest `"SiegeDecks"` / `"SiegeSettings"` payloads into the new profile's slots IF the guest slots exist (load → re-save under the profile slot). Once, at create only, never at login. His existing decks follow him into his first account; guest slots untouched.
+- **Existing save CLASSES are NOT rewritten.** `USiegeDeckSaveGame` and `USiegeSettingsSaveGame` keep their exact fields; profile scoping is 100 % slot-name scoping (ACC-§4).
+
+### ACC-§4 ⛔ THE SEAM LAW — EVERY SLOT NAME RESOLVES THROUGH `USiegeAccountSubsystem`, AND THE CALL-SITE SET IS ENUMERATED, NOT ASSUMED
+
+**Verified first-hand at decomposition (manager, raw grep + read):** the deck slot has ONE definition (`SiegeDeckSaveGame.cpp:7`, `const FString USiegeDeckSaveGame::SlotName = TEXT("SiegeDecks")`) and exactly **FIVE consumer sites in TWO files** — `DeckBuilderWidget.cpp:589` (SaveDeckAs) · `:677` (SetActiveDeck) · `:744` (DoesSaveGameExist) · `:752` (LoadGameFromSlot) · `SiegePlayerController.cpp:253` (match-side active-deck load). The settings slot already funnels through ONE choke point: `USiegeSettingsSubsystem::ResolveSlotName()` (`SiegeSettingsSubsystem.cpp:177` — `SlotNameOverride.IsEmpty() ? SettingsSlotName : SlotNameOverride`), with a shipped test seam `SetSlotNameForAutomationTests` (`SiegeSettingsSubsystem.h:175`).
+
+- **The seam:** `USiegeAccountSubsystem::GetDeckSlotName()` / `GetSettingsSlotName()` return the profile-scoped slot when a profile is active, the bare guest constant otherwise. **Fail-safe: an unresolvable account subsystem ⇒ the guest constant — today's behavior, never a crash** (the `USiegeDeckSaveGame` null-safety contract).
+- **Deck lane (the five sites):** each resolves the slot name **at call time** through the seam. No cached slot, no reload machinery — `GameInstance` outlives `OpenLevel`, so a menu login is naturally live at `SiegePlayerController.cpp:253` when the match loads. `USiegeDeckSaveGame::SlotName` STAYS as the guest constant, byte-identical.
+- **Settings lane:** `ResolveSlotName()` precedence becomes **`SlotNameOverride` (tests, unchanged) > account-profile slot > `SettingsSlotName`**. `USiegeSettingsSubsystem::Initialize` gains `Collection.InitializeDependency<USiegeAccountSubsystem>()` (the engine's sanctioned subsystem-ordering route) and subscribes to `OnActiveProfileChanged` → `ReloadForActiveProfile()` (reload via `ResolveSlotName()`, C++ defaults on missing slot, then broadcast the existing `OnSettingsChanged` so `USettingsMenuWidget` refreshes for free). ⚠️ **Dependency direction: Settings depends on Account. `USiegeAccountSubsystem` never includes a Settings header.**
+- ⛔ **A literal `"SiegeDecks"` / `"SiegeSettings"` anywhere outside the two guest-constant definition sites and the tests is a QA FAIL.** ✅ **The shipped invariants SURVIVE UNTOUCHED:** `SiegeSettingsTest.cpp:120-121` asserts `SettingsSlotName == "SiegeSettings"` — true before and after, because the guest constant does not move.
+
+### ACC-§5 🔨 THE UI RULING — `UAccountMenuWidget` IS A CODE-AUTHORED TREE. A **NEW, NARROW** EXCEPTION ARGUED ON ITS OWN FACTS — ⛔ NOT AN INHERITANCE FROM THE SETTINGS RULING
+
+⚠️ The settings-lane ruling (§3 of "Settings screen + …", 2026-08-03) is scoped to `USettingsMenuWidget` ONLY and says citing it for another widget is misuse. **So this is a fresh ruling, same facts, equally narrow:** a forms panel (text boxes + buttons); the duplicate+reparent `WBP_` route is this project's most expensive UI failure mode (~9 wasted fixes, runtime repaint silently broken); the fresh-hand-authored route is a Jonathan hand-step not owed for a form. `UAccountMenuWidget` builds its tree in `RebuildWidget()` via `WidgetTree->ConstructWidget<>` and ships with **no `.uasset`**. The five conditions are cloned as QA criteria:
+- **(a) SCOPE:** `UAccountMenuWidget` ONLY. Citing this clause for a fourth widget is the same misuse.
+- **(b) THE ORDER (the corrected law, already paid for once):** build the tree and set `WidgetTree->RootWidget` **FIRST**, then `return Super::RebuildWidget();` — the TASK-444 shipped shape. ⛔ Anything constructed after Super is discarded (`UserWidget.cpp:1214`) and the widget renders empty **while passing every property readback.** Every child is `UPROPERTY(meta=(BindWidgetOptional))`; construct only if still null.
+- **(c) RESERVED NAME:** `/Game/UI/WBP_AccountMenu` may be used by nothing else (✅ verified absent at decomposition). A later authored WBP wins automatically with zero C++ change.
+- **(d) CONTRACT:** `BindWidgetOptional` members · `BlueprintCallable` wrappers · FString/int32/bool/uint8-only BIEs — the shipped `USessionMenuWidget`/`USettingsMenuWidget` contract.
+- **(e) VERIFICATION IS A HUMAN PIXEL CHECK.** No `.uasset` to read back; MCP readback has repeatedly passed on visually-broken UMG here. Rendering correctness closes on **Jonathan's pixels** (TASK-609), never tree/property readback.
+
+**Pinned child names** (C++ and any future WBP both read this line): `RootPanel` (`UVerticalBox`) · `BackdropBorder` (`UBorder`) · `TitleText` · `StatusText` · `CreateAccountButton` + `CreateAccountLabelText` · `LoginExistingButton` + `LoginExistingLabelText` · `NameInputBox` (`UEditableTextBox`) · `PasswordInputBox` (`UEditableTextBox`, `SetIsPassword(true)`) · `ConfirmPasswordInputBox` (`UEditableTextBox`, `SetIsPassword(true)`) · `SubmitButton` + `SubmitLabelText` · `LogoutButton` + `LogoutLabelText` · `BackButton` + `BackLabelText`.
+
+- ⚠️ **`BackdropBorder` is HIT-TEST **VISIBLE** — a correctness requirement, not styling.** The panel overlays `WBP_MainMenu`; an invisible plate lets clicks fall through to Play/Quit while the panel looks modal (the settings lane's click-through-into-Quit lesson, same geometry).
+- **Modes (internal `enum class EAccountMenuMode : uint8` — C++-only, never a BIE param):** `Chooser` (the two buttons Jonathan named: **Create Account** / **Log into existing account**) → `CreateForm` (name + password + confirm) or `LoginForm` (name + password) → `LoggedIn` (StatusText shows `Logged in as <DisplayName>` + Logout + Back). Opening while logged in lands on `LoggedIn`. Submit failures render `OutReason` in `StatusText` — never a crash, never a silent no-op.
+- **Navigation = the settings §4 overlay law, cloned:** `Btn_Login` on `WBP_MainMenu` does `CreateWidget(UAccountMenuWidget)` → `AddToViewport(ZOrder 10)`; it does NOT remove the main menu; `Back` removes only itself. **Main-menu order becomes: Play (vs Bot) → Sandbox (No Bot) → Deck Builder → Multiplayer → Settings → Login → Quit** — spliced before the Quit block, shipped idiom character-for-character (font 28, `MakeMargin(24,12,24,12)`, `HAlign_Fill`, granular ops never `write_graph_dsl`, `add_event`-first), pre-existing entries proven character-identical by full-graph DSL diff.
+
+### ACC-§6 NAMING + FOLDER LAW (the cross-task contract)
+
+| Thing | Exact name | Location |
+|---|---|---|
+| Profile struct | `FSiegeProfileInfo` (USTRUCT, BlueprintType) | in `SiegeAccountSaveGame.h` |
+| Account registry | `USiegeAccountSaveGame` (`USaveGame`) — statics `SlotName = "SiegeAccounts"`, `UserIndex = 0` | game — `SiegeAccountSaveGame.h/.cpp` (new) |
+| Account owner | `USiegeAccountSubsystem` (`UGameInstanceSubsystem`) | game — `SiegeAccountSubsystem.h/.cpp` (new) |
+| Log category | **`LogSiegeAccount`** | declared/defined in `SiegeAccountSubsystem.h/.cpp` |
+| Profile-changed delegate | `FOnSiegeActiveProfileChanged` (dynamic multicast, no params) — member `OnActiveProfileChanged` | on `USiegeAccountSubsystem` |
+| Account widget C++ base | `UAccountMenuWidget` (`UUserWidget`) | game — `AccountMenuWidget.h/.cpp` (new) |
+| Reserved widget asset name | `WBP_AccountMenu` | `/Game/UI/WBP_AccountMenu` — **RESERVED, not authored in P1** |
+| Main-menu entry button | `Btn_Login`, label text `"Login"` | additive on `/Game/UI/WBP_MainMenu` |
+| Tests | `SiegeAccountTest.cpp` | game — `Source/GitClaudeUnrealTest/Siegebound/Tests/` (new) |
+| Phase-2 reserved names | `USiegeCloudClient` (`SiegeCloudClient.h/.cpp`) · tables `profiles` / `decks` / `settings` (jsonb payloads) | ⛔ **NOT authored in P1 — reserved only** |
+
+### ACC-§7 📌 PINNED CROSS-TASK SIGNATURE REGISTRY — ⛔ every parallel task compiles against THIS, character-for-character
+
+```cpp
+// ── SiegeAccountSaveGame.h (TASK-599) ─────────────────────────────────────
+USTRUCT(BlueprintType) struct FSiegeProfileInfo {
+  GENERATED_BODY()
+  UPROPERTY(SaveGame, BlueprintReadOnly) FGuid     ProfileId;
+  UPROPERTY(SaveGame, BlueprintReadOnly) FString   DisplayName;
+  UPROPERTY(SaveGame)                    FString   CredentialSaltHex;  // ACC-§2: convenience, NOT security
+  UPROPERTY(SaveGame)                    FString   CredentialHashHex;  // hex(SHA1(Salt + ":" + Password))
+  UPROPERTY(SaveGame, BlueprintReadOnly) FDateTime CreatedUtc;
+  UPROPERTY(SaveGame, BlueprintReadOnly) FDateTime LastLoginUtc;
+};
+UCLASS() class GITCLAUDEUNREALTEST_API USiegeAccountSaveGame : public USaveGame {
+  GENERATED_BODY()
+public:
+  static const FString SlotName;   // TEXT("SiegeAccounts")  — the SiegeDeckSaveGame idiom
+  static const int32   UserIndex;  // 0
+  UPROPERTY(SaveGame) TArray<FSiegeProfileInfo> Profiles;
+  UPROPERTY(SaveGame) FGuid ActiveProfileId;   // invalid GUID = guest
+};
+
+// ── SiegeAccountSubsystem.h (TASK-600) ────────────────────────────────────
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSiegeActiveProfileChanged);
+UCLASS() class GITCLAUDEUNREALTEST_API USiegeAccountSubsystem : public UGameInstanceSubsystem {
+  GENERATED_BODY()
+public:
+  virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+  UFUNCTION(BlueprintCallable) bool CreateAccount(const FString& DisplayName, const FString& Password, FString& OutReason);
+  UFUNCTION(BlueprintCallable) bool Login(const FString& DisplayName, const FString& Password, FString& OutReason);
+  UFUNCTION(BlueprintCallable) void Logout();
+  UFUNCTION(BlueprintPure) bool    IsLoggedIn() const;
+  UFUNCTION(BlueprintPure) FString GetActiveDisplayName() const;  // empty when guest
+  FGuid GetActiveProfileId() const;                               // invalid when guest
+  UFUNCTION(BlueprintPure) FString GetDeckSlotName() const;       // guest => USiegeDeckSaveGame::SlotName
+  UFUNCTION(BlueprintPure) FString GetSettingsSlotName() const;   // guest => USiegeSettingsSubsystem::SettingsSlotName
+  UPROPERTY(BlueprintAssignable) FOnSiegeActiveProfileChanged OnActiveProfileChanged;
+  static FString MakeCredentialHashHex(const FString& Password, const FString& SaltHex);
+  static FString MakeProfileSlotSuffix(const FGuid& ProfileId);   // ProfileId.ToString(EGuidFormats::Digits)
+  void SetSlotNameForAutomationTests(const FString& InSlotName);  // the USiegeSettingsSubsystem seam, cloned
+};
+
+// ── SiegeSettingsSubsystem.h ADDITION (TASK-601; everything existing is untouched) ──
+void ReloadForActiveProfile();  // reload via ResolveSlotName(); broadcasts OnSettingsChanged
+
+// ── AccountMenuWidget.h (TASK-603) ────────────────────────────────────────
+UCLASS() class GITCLAUDEUNREALTEST_API UAccountMenuWidget : public UUserWidget { /* ACC-§5 pinned children + modes */ };
+```
+
+`Login`/`Logout`/`CreateAccount` update `ActiveProfileId` + `LastLoginUtc`, save the registry slot, then broadcast `OnActiveProfileChanged`. **Load once, save on change, never read the disk from a gameplay path** (the settings-lane contract, cloned).
+
+### ACC-§8 ⛔ PHASE 2/3 ARE RESERVED, NOT AUTHORED — AND THE FLAGGED DEFAULTS TRAVEL WITH THEM
+
+⛔ **No cloud code, no HTTP call, no credential upload ships in Phase 1.** Reserved now so P1 code never squats on the names: `USiegeCloudClient` (UE `FHttpModule` + `Json`, no third-party SDK), Supabase tables `profiles` / `decks` / `settings` with jsonb payloads + per-user RLS, JWT auth via Supabase email/password. **Defaults awaiting Jonathan (recorded, not decided):** sync = last-write-wins on `updated_at` (A3) · first cloud login uploads the local profile (A4) · email confirmation OFF at signup (A5) · the P2 login identity becomes an EMAIL (Supabase-native) with `DisplayName` staying the in-game handle (A2). Norton `*.supabase.co` exclusion = Jonathan hand-step (ACC-§0).
+
+### ACC-§9 📌 M8 DECLARATION + KNOWN LIMITATIONS — ⛔ none of these is a bug
+
+- **M8:** adds **no replicated property, no new replicated class, no new relevancy tier, no RPC.** All account state is CLIENT-LOCAL (`UGameInstanceSubsystem` + local `USaveGame`). ⛔ **The display name is NOT pushed into any session/player name in P1** (FLAGGED A7 — a later one-liner if Jonathan wants it).
+- **Known limitations, stated up front:** P1 credentials are not security (ACC-§2) · profiles are per-machine until Phase 2 · no password recovery in P1 (a forgotten local password = create a new profile; recovery is a P3 email flow) · no mid-match login (ACC-§1) · the account panel's look is unstyled C++-default until a polish pass.
+
 ## Numbering
 Variants use two digits: `SM_Rock_01`, `SM_Rock_02`
 

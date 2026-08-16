@@ -3,14 +3,41 @@
 #include "Siegebound/DeckBuilderWidget.h"
 
 #include "Engine/DataTable.h"
+#include "Engine/GameInstance.h" // TASK-602: UGameInstance::GetSubsystem — resolve the ACC-§4 account seam at call time
 #include "Engine/Texture2D.h"
 #include "GitClaudeUnrealTest.h"
 #include "Kismet/GameplayStatics.h"
 #include "Siegebound/CardRow.h"
 #include "Siegebound/DeckLibrary.h"
+#include "Siegebound/SiegeAccountSubsystem.h" // TASK-602: USiegeAccountSubsystem — the ACC-§4 deck-slot seam (the class is TASK-600's, landing in the same batch — the TASK-442 parallel-header precedent)
 #include "Siegebound/SiegeDeckSaveGame.h"
 #include "Siegebound/SpellLibrary.h"
 #include "Siegebound/SummonedUnit.h" // TASK-379: GetDefault<ASummonedUnit>() needs the COMPLETE type for the two Sorcerer boost getters
+
+// ---------------------------------------------------------------------------
+// TASK-602 (ACC-§4 seam law): the deck save slot resolves AT CALL TIME through
+// USiegeAccountSubsystem — the profile-scoped slot when a profile is active,
+// the bare guest constant otherwise. Fail-safe: an unresolvable GameInstance or
+// subsystem yields USiegeDeckSaveGame::SlotName (guest — byte-identical to the
+// pre-account behavior, never a crash). Deliberately NO cached slot member and
+// no reload machinery: the GameInstance outlives OpenLevel, so a main-menu
+// login is naturally live at every later read (ACC-§4 deck-lane clause).
+// USiegeDeckSaveGame::SlotName / ::UserIndex themselves stay byte-identical.
+// ---------------------------------------------------------------------------
+namespace
+{
+	FString ResolveDeckSlotName(const UGameInstance* GameInstance)
+	{
+		if (GameInstance)
+		{
+			if (const USiegeAccountSubsystem* AccountSubsystem = GameInstance->GetSubsystem<USiegeAccountSubsystem>())
+			{
+				return AccountSubsystem->GetDeckSlotName();
+			}
+		}
+		return USiegeDeckSaveGame::SlotName; // guest fail-safe (ACC-§4)
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Card-details glossary (TASK-268) — the ONLY authored player-facing copy in
@@ -586,17 +613,20 @@ void UDeckBuilderWidget::SaveDeckAs(const FString& Name)
 	// reflect the name onto the live working deck
 	WorkingDeck.DeckName = Trimmed;
 
-	if (!UGameplayStatics::SaveGameToSlot(SaveObj, USiegeDeckSaveGame::SlotName, USiegeDeckSaveGame::UserIndex))
+	// TASK-602 (ACC-§4): resolved at call time — profile-scoped when logged in, guest otherwise.
+	// The two logs below print the RESOLVED slot so they never lie about which slot was written.
+	const FString DeckSlotName = ResolveDeckSlotName(GetGameInstance());
+	if (!UGameplayStatics::SaveGameToSlot(SaveObj, DeckSlotName, USiegeDeckSaveGame::UserIndex))
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Warning,
 			TEXT("UDeckBuilderWidget::SaveDeckAs: SaveGameToSlot('%s') failed — deck '%s' NOT persisted."),
-			*USiegeDeckSaveGame::SlotName, *Trimmed);
+			*DeckSlotName, *Trimmed);
 		return;
 	}
 
 	UE_LOG(LogGitClaudeUnrealTest, Log,
 		TEXT("UDeckBuilderWidget: saved deck '%s' (%d cards) to slot '%s'."),
-		*Trimmed, ToSave.TotalCount(), *USiegeDeckSaveGame::SlotName);
+		*Trimmed, ToSave.TotalCount(), *DeckSlotName);
 
 	OnDeckModelChanged();
 }
@@ -674,7 +704,9 @@ void UDeckBuilderWidget::SetActiveDeck(const FString& Name)
 
 	SaveObj->ActiveDeckName = CanonicalName;
 
-	if (!UGameplayStatics::SaveGameToSlot(SaveObj, USiegeDeckSaveGame::SlotName, USiegeDeckSaveGame::UserIndex))
+	// TASK-602 (ACC-§4): resolved at call time — profile-scoped when logged in, guest otherwise
+	const FString DeckSlotName = ResolveDeckSlotName(GetGameInstance());
+	if (!UGameplayStatics::SaveGameToSlot(SaveObj, DeckSlotName, USiegeDeckSaveGame::UserIndex))
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Warning,
 			TEXT("UDeckBuilderWidget::SetActiveDeck('%s'): SaveGameToSlot failed — active deck NOT persisted."), *CanonicalName);
@@ -739,9 +771,13 @@ const FCardRow* UDeckBuilderWidget::ResolveCardRow(FName CardID) const
 
 USiegeDeckSaveGame* UDeckBuilderWidget::LoadSaveGame() const
 {
+	// TASK-602 (ACC-§4): ONE resolve per operation, so the exist-check and the
+	// load below can never straddle a profile change — call-time scoping, no cache
+	const FString DeckSlotName = ResolveDeckSlotName(GetGameInstance());
+
 	// DoesSaveGameExist first so the normal first-run (no save yet) is SILENT —
 	// LoadGameFromSlot on a missing slot would otherwise log an engine warning
-	if (!UGameplayStatics::DoesSaveGameExist(USiegeDeckSaveGame::SlotName, USiegeDeckSaveGame::UserIndex))
+	if (!UGameplayStatics::DoesSaveGameExist(DeckSlotName, USiegeDeckSaveGame::UserIndex))
 	{
 		return nullptr;
 	}
@@ -749,7 +785,7 @@ USiegeDeckSaveGame* UDeckBuilderWidget::LoadSaveGame() const
 	// null-check the cast (TASK-113 carry-forward): a corrupt/foreign slot casts to
 	// nullptr rather than crashing
 	return Cast<USiegeDeckSaveGame>(
-		UGameplayStatics::LoadGameFromSlot(USiegeDeckSaveGame::SlotName, USiegeDeckSaveGame::UserIndex));
+		UGameplayStatics::LoadGameFromSlot(DeckSlotName, USiegeDeckSaveGame::UserIndex));
 }
 
 USiegeDeckSaveGame* UDeckBuilderWidget::LoadOrCreateSaveGame() const

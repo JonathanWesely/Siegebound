@@ -11,6 +11,7 @@
 #include "Engine/CollisionProfile.h"
 #include "Engine/DataTable.h"
 #include "Engine/DecalActor.h"
+#include "Engine/GameInstance.h" // TASK-602: UGameInstance::GetSubsystem — resolve the ACC-§4 account seam at call time
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
@@ -30,6 +31,7 @@
 #include "Siegebound/DeckComponent.h"
 #include "Siegebound/DeckLibrary.h" // UDeckLibrary::IsDeckLegal — gate the active saved deck before SetPendingDeckList (M6 TASK-114)
 #include "Siegebound/HeroCharacter.h"
+#include "Siegebound/SiegeAccountSubsystem.h" // TASK-602: USiegeAccountSubsystem — the ACC-§4 deck-slot seam (the class is TASK-600's, landing in the same batch — the TASK-442 parallel-header precedent)
 #include "Siegebound/SiegeAssistantComponent.h" // USiegeAssistantComponent — complete type for the constructor's CreateDefaultSubobject (TASK-440; the class BODY is TASK-442's, so this header does not exist until that task lands — see the handoff's compile-order note)
 #include "Siegebound/SiegeAssistantConsoleWidget.h" // USiegeAssistantConsoleWidget — complete type for CreateAndAddToViewport / Open / Close / the OnConsoleOpenChanged binding (TASK-449; the widget itself is TASK-444's)
 #include "Siegebound/SiegeCheatManager.h" // TASK-121 — CheatClass complete-type (constructor assignment below)
@@ -249,8 +251,19 @@ void ASiegePlayerController::BeginPlay()
 		// unset, so BuildAndShuffle uses the curated DeckCount default exactly as
 		// before (backward-compatible). The SaveGame is the menu->match handoff
 		// (M6 ruling 1); the active deck is NOT passed through the level-open URL.
+		// TASK-602 (ACC-§4 seam law): the slot resolves AT CALL TIME through
+		// USiegeAccountSubsystem — profile-scoped when a main-menu login happened
+		// (the GameInstance outlives OpenLevel, so it is naturally live here at
+		// match start), the bare guest constant otherwise or when the subsystem
+		// is unresolvable (fail-safe — today's behavior, never a crash). No
+		// cached slot member on purpose (ACC-§4 deck-lane clause).
+		const UGameInstance* OwningGameInstance = GetGameInstance();
+		const USiegeAccountSubsystem* AccountSubsystem =
+			OwningGameInstance ? OwningGameInstance->GetSubsystem<USiegeAccountSubsystem>() : nullptr;
+		const FString DeckSlotName =
+			AccountSubsystem ? AccountSubsystem->GetDeckSlotName() : USiegeDeckSaveGame::SlotName;
 		if (USiegeDeckSaveGame* DeckSave = Cast<USiegeDeckSaveGame>(
-				UGameplayStatics::LoadGameFromSlot(USiegeDeckSaveGame::SlotName, USiegeDeckSaveGame::UserIndex)))
+				UGameplayStatics::LoadGameFromSlot(DeckSlotName, USiegeDeckSaveGame::UserIndex)))
 		{
 			const FString& ActiveName = DeckSave->ActiveDeckName;
 			if (!ActiveName.IsEmpty())

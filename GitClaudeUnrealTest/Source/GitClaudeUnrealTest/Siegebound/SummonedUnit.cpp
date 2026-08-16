@@ -451,6 +451,20 @@ void ASummonedUnit::ResolveSkeletalVisual()
 	//      ABPs exist (all units share SK_Footman_Skeleton, so its idle/walk applies).
 	//   3. ELSE (NEITHER resolves) leave the skeletal mesh with no anim instance — it shows
 	//      in its ref pose, null-safe, never a crash (matches the soft-ref discipline above).
+	//
+	// ⛔ SC-§35 item 1 — THE OWNER-CLASS CONTRACT, the half the paragraph above does not
+	// state (added by TASK-596, from qa/TASK-592.md R7): BOTH classes resolved below — the
+	// composed per-unit ABP_<CardID> and the shared ABP_Footman fallback — ASSUME A PAWN
+	// OWNER. ABP_Footman's EventGraph drives its Set GroundSpeed / Set bIsMoving nodes
+	// through UAnimInstance::TryGetPawnOwner(), which returns None on a non-Pawn owner.
+	// ASummonedUnit is an ACharacter (see the class declaration in SummonedUnit.h), i.e. a
+	// Pawn — which is exactly why ABP_Footman is a LEGAL value HERE and this assignment is
+	// CORRECT. Assigning either class to a non-Pawn actor is the exact defect SC-§35 was
+	// written for: 1,806 Blueprint runtime errors in 49 s with 2 NPCs alive, through a
+	// clean compile, 111/111 tests and two QA gates. The composed path below is the shape
+	// future unit authors will copy — if the copying class is NOT a Pawn, the repair is
+	// made at that consumer (single-node playback, SC-§35 items 2 + 3), ⛔ never by
+	// editing the shared ABP_Footman.
 	const FString AbpPath = FString::Printf(TEXT("/Game/Characters/ABP_%s.ABP_%s_C"), *CardIdString, *CardIdString);
 	const TSoftClassPtr<UAnimInstance> PerUnitAbpSoft{ FSoftObjectPath(AbpPath) };
 	UClass* AnimClass = PerUnitAbpSoft.LoadSynchronous();
