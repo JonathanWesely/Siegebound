@@ -9127,7 +9127,7 @@ Owed at **TASK-610, AFTER TASK-608 commits**: a new **`### 3.16 Player Accounts 
 
 #### TASK-608 — [ACC-10] 🔧 INTEGRATION CHECK + THE COMMIT — ⛔ derived paths, ⛔ NO PUSH (build-master)
 - assignee: **build-master**
-- status: **backlog**
+- status: **done** (2026-08-16 — **the ACCOUNTS batch COMMITTED: `5ccd796`** [`5ccd796d463b4dba41f3ca7fa78840f2a4d78a45`], 27 files +3803/−23, ⛔ NOT pushed [main 2 ahead of origin]. Integration check PASSED on build-master's own instruments: live-graph DSL re-read [seven entries in order, six pre-existing handlers verbatim, `LoginBtnClicked`→`CreateWidget(AccountMenuWidget)`→`AddToViewport(10)`, `BuildSandboxButton` 684 chars identical] · TASK-596 staged-diff byte check EXACTLY two hunks +35/−7 all comment [qa/TASK-596.md §7 note 1 CLOSED] · roster reconciled porcelain-vs-ledger with ZERO unexplained lines [SC-§29b] · WBP LFS staged+committed pointer oid == worktree sha256 `03cc0a39…4ae3` [§25b, oid never size] · `L_Arena` SHA256 `B3DBC5D9…F8268` verified before staging AND post-commit, never staged · DLL still 13:11:31 ⇒ nothing recompiled ⇒ no suite re-run owed · no PIE/`M`/console — latch unspent. ⚠️ UMG RENDER correctness NOT claimed — TASK-609's. Handoff `handoffs/TASK-608-buildmaster.md`. **TASK-609 + TASK-610 are now UNBLOCKED.**)
 - blocked-by: **TASK-607** + ⛔ RULING 7 serialization re-confirmed
 - parallel-safe: **no**
 - spec: >
@@ -9139,8 +9139,8 @@ Owed at **TASK-610, AFTER TASK-608 commits**: a new **`### 3.16 Player Accounts 
 
 #### TASK-609 — [ACC-11] 🙋 JONATHAN — the pixel playtest + the A-flags (Jonathan, human)
 - assignee: **Jonathan**
-- status: **backlog**
-- blocked-by: **TASK-608**
+- status: **backlog — UNBLOCKED 2026-08-16 (TASK-608 committed `5ccd796`)**
+- blocked-by: **TASK-608** ✅ cleared
 - parallel-safe: — (his time)
 - spec: >
     **WATCH list (no machine route exists for any of it):** (a) main menu shows SEVEN entries in order, nothing regressed; (b) Login → the panel renders (⛔ the account panel closes on YOUR pixels only — `ACC-§5`(e)); (c) Create Account → name+password+confirm, errors legible in `StatusText`; (d) log out / log back in; (e) build + save a deck logged IN, then log OUT ⇒ the guest deck list is your OLD list, untouched; log back in ⇒ the profile's list returns; (f) flip the assistant-confirm setting logged in vs guest — they track separately; (g) seed-copy: your first-created profile starts with your existing decks (A6). **And the SEVEN A-FLAGS are yours to ratify or overturn — A1 (Supabase) is the one Phase 2 waits on.** ⚠️ This does NOT consume the TASK-571 sitting or its instruments.
@@ -9148,8 +9148,8 @@ Owed at **TASK-610, AFTER TASK-608 commits**: a new **`### 3.16 Player Accounts 
 
 #### TASK-610 — [ACC-12] 📋 MANAGER — the GDD amendment, AFTER the commit (manager)
 - assignee: **manager**
-- status: **backlog**
-- blocked-by: **TASK-608** (⛔ nothing describes work in flight as shipped)
+- status: **backlog — UNBLOCKED 2026-08-16 (TASK-608 committed `5ccd796`; the commit hash for the Design Change Log is `5ccd796d463b4dba41f3ca7fa78840f2a4d78a45`)**
+- blocked-by: **TASK-608** ✅ cleared
 - parallel-safe: **yes** (docs only)
 - spec: > Write `Docs/GDD.md` **`### 3.16 Player Accounts & Profiles`** + the §7 UI-flow note + the Design Change Log entry naming TASK-599..608 + the commit hash, against the ARTIFACT (claim no pixels Jonathan has not confirmed). Post the summary in 📢 Planning & Feedback.
 - names: > file: `Docs/GDD.md` · law: the `WR-§`/`AS-§` GDD-deferral precedent.
