@@ -9148,8 +9148,8 @@ Owed at **TASK-610, AFTER TASK-608 commits**: a new **`### 3.16 Player Accounts 
 
 #### TASK-610 — [ACC-12] 📋 MANAGER — the GDD amendment, AFTER the commit (manager)
 - assignee: **manager**
-- status: **backlog — UNBLOCKED 2026-08-16 (TASK-608 committed `5ccd796`; the commit hash for the Design Change Log is `5ccd796d463b4dba41f3ca7fa78840f2a4d78a45`)**
-- blocked-by: **TASK-608** ✅ cleared
+- status: **✅ done — 2026-08-16 (manager).** Written against the artifact of commit `5ccd796` (+ record `f9f0b72`): new **`### 3.16 Player Accounts & Profiles`** with the measured/not-observed split (compile 0/0 · suite **118/118** incl. the seven `Siegebound.Account.*` tests · both gates PASS 0 blockers · the splice verified STRUCTURALLY — six pre-existing entries verbatim, seven-entry order — vs ⛔ **no pixel rendered by any agent**: every appearance claim + the live account round trip stay TASK-609's, said in the section itself) and an Acceptance list mirroring the TASK-609 WATCH items · **§7**: the stale *"six entries"* as-built claim corrected with a DATED note (never overwritten) + a new dated account-panel bullet · **Design Change Log**: the 2026-08-16 Accounts entry (the GH-Pages ruling with its mechanism, the honest-credential law, the Supabase/A1 flag, suite 111→118, the no-pixel caveat). ⛔ **The GDD diff is UNCOMMITTED by instruction — it rides the next batch's docs commit or Jonathan's own, and per the `a49f740` precedent that docs commit's MESSAGE must name `5ccd796`.**
+- blocked-by: **TASK-608** ✅ cleared (`5ccd796`)
 - parallel-safe: **yes** (docs only)
 - spec: > Write `Docs/GDD.md` **`### 3.16 Player Accounts & Profiles`** + the §7 UI-flow note + the Design Change Log entry naming TASK-599..608 + the commit hash, against the ARTIFACT (claim no pixels Jonathan has not confirmed). Post the summary in 📢 Planning & Feedback.
 - names: > file: `Docs/GDD.md` · law: the `WR-§`/`AS-§` GDD-deferral precedent.
