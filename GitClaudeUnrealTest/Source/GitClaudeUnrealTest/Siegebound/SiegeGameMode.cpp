@@ -250,13 +250,20 @@ FString ASiegeGameMode::InitNewPlayer(APlayerController* NewPlayerController, co
 void ASiegeGameMode::RestartPlayer(AController* NewPlayer)
 {
 	// M8 per-player spawn resolve (TASK-356 doc §3.4.4/D10): every (re)start goes
-	// through the team-keyed transform resolve. Blue/standalone resolves the
-	// level PlayerStart — the same spawn the engine path used (§10 byte-identity;
-	// the one site where "identical route" is not literal: the engine used the
-	// start actor's full rotation, this uses its yaw — L_Arena's PlayerStart has
-	// zero pitch/roll, so the transform is identical; QA-scrutinize). The Red
-	// client resolves the castle-relative fallback (no Red PlayerStart exists in
-	// L_Arena — the fallback IS the design, doc §3.4.4).
+	// through the team-keyed transform resolve. Blue/standalone resolved the level
+	// PlayerStart — the same spawn the engine path used (§10 byte-identity; the
+	// one site where "identical route" is not literal: the engine used the start
+	// actor's full rotation, this uses its yaw — L_Arena's PlayerStart has zero
+	// pitch/roll, so the transform is identical; QA-scrutinize). The Red client
+	// resolves the castle-relative fallback (no Red PlayerStart exists in L_Arena
+	// — the fallback IS the design, doc §3.4.4).
+	//
+	// ⚠️ TASK-573 AMENDS THE FIRST HALF OF THAT PARAGRAPH: at the 9× castle
+	// L_Arena's Blue PlayerStart lies INSIDE Castle_Blue, so BLUE now takes the
+	// same castle-relative fallback Red does. The §10 byte-identity claim holds
+	// only while the PlayerStart is outside its own keep — see
+	// GetHeroStartTransform for the arithmetic and for why the level is not
+	// edited (CONVENTIONS WR-§2b row A, WR-§3).
 	if (!NewPlayer)
 	{
 		return;
@@ -644,12 +651,39 @@ void ASiegeGameMode::GetHeroStartTransform(AController* Player, ETeamId HeroTeam
 	//    M8 team law retires "Blue = local"), so a future Red-side PlayerStart is
 	//    picked up automatically.
 	//
+	// ── TASK-573 (CONVENTIONS WR-§2b row A): THE SIDE TEST ALONE IS NOT SUFFICIENT
+	//    AT THE 9× CASTLE, AND IT WAS THE ONLY TEST. Branch 2 accepted a same-side
+	//    PlayerStart and returned BEFORE the hardened branch 3 could run. The
+	//    castle then grew 3× a second time (7,313.7 x 7,384.5 x 8,082.6 uu,
+	//    CONVENTIONS WR-§0) around a PlayerStart that did not move: Castle_Blue
+	//    sits at X=-25000 with a colliding half-extent of 3,656.85 on X, so the
+	//    footprint spans -28,656.85…-21,343.15 and L_Arena's Blue PlayerStart
+	//    (≈-23800, 0, 98) is 2,456.85 uu INSIDE THE KEEP — and 76 uu BELOW the 9×
+	//    interior floor (z≈174), i.e. inside the floor slab, not standing on it.
+	//    The hero would spawn inside the castle at match start AND at every
+	//    respawn, or SpawnActor would refuse on collision and leave the player
+	//    with NO PAWN — the TASK-357 BLOCKER-5 failure, reproduced on the branch
+	//    nobody hardened.
+	//
+	//    THE REPAIR IS HERE AND NOT IN THE LEVEL, DELIBERATELY: the PlayerStart
+	//    transform is LEVEL DATA and the one-time L_Arena save exception is SPENT
+	//    (CONVENTIONS WR-§3). A PlayerStart lying inside the own castle's COLLIDING
+	//    bounds is REFUSED and falls through to branch 3, which already derives a
+	//    clear spawn from those very same bounds. The .umap is never touched.
+	//
 	//    STANDALONE BYTE-IDENTITY (load-bearing, TASK-357 gate g passed and must
-	//    keep passing): the single player is Blue, L_Arena's one PlayerStart
-	//    (≈-23800) and Castle_Blue (-25000) are both X < 0 ⇒ same side ⇒ the
-	//    PlayerStart is accepted exactly as before — same location, same yaw-only
-	//    rotation. With no castle in the level at all, ANY PlayerStart is
-	//    accepted (the pre-M8 behavior, preserved for defensive/test maps).
+	//    keep passing): the two tests are ANDed, and the new one can only ever
+	//    REJECT — and only a start that is inside the castle, which is exactly the
+	//    geometry in which the old branch was ALREADY BROKEN. For every geometry
+	//    where the PlayerStart lies OUTSIDE the castle's colliding box this
+	//    function still returns the identical location and the identical yaw-only
+	//    rotation it always did. With no castle in the level at all — or with
+	//    unresolvable/degenerate bounds — the rejection CANNOT fire (see
+	//    bCastleBoundsUsable) and ANY same-side PlayerStart is accepted, the
+	//    pre-M8 behavior, preserved for defensive/test maps.
+	//    ⚠️ That guard direction is deliberate and load-bearing: branch 3 reads the
+	//    SAME bounds, so a mis-signed or over-eager test would break BOTH branches
+	//    at once and leave only the arena-origin last resort.
 
 	// 1) Resolve the hero's OWN-team castle first — it defines "this team's side".
 	const ACastle* OwnCastle = nullptr;
@@ -662,22 +696,82 @@ void ASiegeGameMode::GetHeroStartTransform(AController* Player, ETeamId HeroTeam
 		}
 	}
 
+	// 1b) ── TASK-573: ONE castle-bounds query, read by BOTH branch 2 and branch 3.
+	//     Branch 3 has derived its spawn distance from these bounds since TASK-356
+	//     loop-2; branch 2 now derives its REJECTION from them. Two independent
+	//     derivations of the same geometry inside one function is the pairing-law
+	//     hazard in miniature — they drift, and a drifted pair is a spawn that one
+	//     branch calls clear and the other calls occupied. There is exactly one
+	//     query and exactly one result.
+	//
+	//     bOnlyCollidingComponents = true: what matters is what BLOCKS a pawn
+	//     spawn, not the render/widget bounds — ACastle::HPBarWidget sits at
+	//     relative Z +9450 (Castle.cpp, re-derived by TASK-557) and would inflate
+	//     an all-components query catastrophically.
+	//
+	//     bCastleBoundsUsable DECIDES THE FAILURE DIRECTION, and it is written to
+	//     fail toward ACCEPTING (CONVENTIONS WR-§2b row A): a mesh that has not
+	//     streamed in, an actor with no colliding component, or any other path
+	//     that yields a ~zero extent must NEVER be able to reject a PlayerStart,
+	//     because branch 3 depends on these same bounds and would have nothing
+	//     left but the arena origin. Branch 3 is deliberately NOT gated on this
+	//     flag — it keeps its own FMath::Max against the authored floor, which is
+	//     precisely how it already absorbs a degenerate bound.
+	FVector CastleBoundsOrigin = FVector::ZeroVector;
+	FVector CastleBoxExtent = FVector::ZeroVector;
+	bool bCastleBoundsUsable = false;
+	if (OwnCastle)
+	{
+		OwnCastle->GetActorBounds(/*bOnlyCollidingComponents=*/ true, CastleBoundsOrigin, CastleBoxExtent);
+		bCastleBoundsUsable = CastleBoxExtent.GetMin() > UE_KINDA_SMALL_NUMBER;
+	}
+
 	// 2) The level's PlayerStart (L_Arena: ≈(-23800, 0, 98) yaw 0 on the Blue
-	//    side — moved outward with the ±25000 castle in the M7.6 10× widening).
-	//    FindPlayerStart falls back to WorldSettings when the level has no
-	//    PlayerStart; that is not a spawn point, so only a real APlayerStart is
-	//    accepted here — and only when it is on this hero's own half.
+	//    side — moved outward with the ±25000 castle in the M7.6 10× widening,
+	//    and SWALLOWED by the castle at the 9× pass, which is what TASK-573's
+	//    second test exists to survive). FindPlayerStart falls back to
+	//    WorldSettings when the level has no PlayerStart; that is not a spawn
+	//    point, so only a real APlayerStart is accepted here — and only when it
+	//    is (a) on this hero's own half AND (b) not inside this team's keep.
 	if (AActor* Start = FindPlayerStart(Player))
 	{
 		if (Start->IsA<APlayerStart>())
 		{
+			const FVector StartLocation = Start->GetActorLocation();
+
 			const bool bStartOnOwnSide = !OwnCastle
-				|| ((Start->GetActorLocation().X <= 0.0) == (OwnCastle->GetActorLocation().X <= 0.0));
-			if (bStartOnOwnSide)
+				|| ((StartLocation.X <= 0.0) == (OwnCastle->GetActorLocation().X <= 0.0));
+
+			// TASK-573: the castle-footprint rejection. The colliding AABB read
+			// once at (1b), tested RAW — no added margin, no clearance padding.
+			// That is the minimum test that catches the defect, and the minimum is
+			// what keeps the divergence from the shipped behavior as small as the
+			// defect itself. Padding it with HeroSpawnCastleClearance would reject
+			// starts that are demonstrably fine, and would re-introduce exactly the
+			// kind of hand-tuned derived margin CONVENTIONS SC-§34 exists to ban.
+			const bool bStartInsideOwnCastle = bCastleBoundsUsable
+				&& FBox(CastleBoundsOrigin - CastleBoxExtent, CastleBoundsOrigin + CastleBoxExtent).IsInsideOrOn(StartLocation);
+
+			if (bStartOnOwnSide && !bStartInsideOwnCastle)
 			{
-				OutLocation = Start->GetActorLocation();
+				OutLocation = StartLocation;
 				OutRotation = FRotator(0.0f, Start->GetActorRotation().Yaw, 0.0f);
 				return;
+			}
+
+			if (bStartInsideOwnCastle)
+			{
+				// Warning, not Log, and not once-only: this fires at match start and
+				// at every respawn, and each occurrence is a real level/geometry
+				// mismatch a human should be able to read straight out of the PIE
+				// log. The branch-3 Log line below prints where the hero went
+				// instead, so the pair reads as one story.
+				UE_LOG(LogGitClaudeUnrealTest, Warning,
+					TEXT("[%s] PlayerStart '%s' at (%.0f, %.0f, %.0f) lies INSIDE the %s castle's colliding bounds (centre X %.0f, half-extent %.0f x %.0f x %.0f) — REFUSED, falling through to the castle-relative resolver. The PlayerStart did not move; the castle grew around it (CONVENTIONS WR-§2b row A). The level is NOT edited to fix this."),
+					*GetNameSafe(this), *GetNameSafe(Start),
+					StartLocation.X, StartLocation.Y, StartLocation.Z,
+					HeroTeam == ETeamId::Blue ? TEXT("Blue") : TEXT("Red"),
+					CastleBoundsOrigin.X, CastleBoxExtent.X, CastleBoxExtent.Y, CastleBoxExtent.Z);
 			}
 		}
 	}
@@ -698,18 +792,23 @@ void ASiegeGameMode::GetHeroStartTransform(AController* Player, ETeamId HeroTeam
 		//    geometry means the next castle resize carries the spawn with it (the
 		//    lesson the 3× remaster taught: hardcoded extents rot).
 		//
-		//    bOnlyCollidingComponents = true: what matters is what BLOCKS a pawn
-		//    spawn, not the render/widget bounds (the HP-bar widget sits 3,150 uu
-		//    up and must not inflate this). Degenerate/unresolvable bounds (mesh
-		//    not yet loaded, extent ~0) simply fall through to the authored floor.
-		FVector CastleBoundsOrigin = FVector::ZeroVector;
-		FVector CastleBoxExtent = FVector::ZeroVector;
-		OwnCastle->GetActorBounds(/*bOnlyCollidingComponents=*/ true, CastleBoundsOrigin, CastleBoxExtent);
+		//    The bounds themselves are read ONCE at (1b) above — see that block for
+		//    why bOnlyCollidingComponents = true (the HP-bar widget now sits 9,450
+		//    uu up, re-derived by TASK-557, and would inflate an all-components
+		//    query catastrophically) and for the degenerate-bounds reasoning.
+		//    Degenerate/unresolvable bounds (mesh not yet loaded, extent ~0) simply
+		//    fall through to the authored floor here, unchanged by TASK-573.
 
 		// Floor at the authored X (1,500 — the empirically validated ≥1,200 band
 		// with margin), so a zero/degenerate bound can never produce an inside-the-
-		// castle spawn again. With the live 3× castle this resolves 1,219 + 300 =
-		// 1,519 (derived wins); with no usable bounds it resolves 1,500 (floor wins).
+		// castle spawn again. With the live 9× castle (half-extent 3,656.85) this
+		// resolves 3,656.85 + 300 = 3,956.85 (derived wins, and the authored floor
+		// is now inert by a wide margin — it was 1,219 + 300 = 1,519 at the 3×
+		// castle); with no usable bounds it resolves 1,500 (floor wins). ⚠️ The
+		// floor is deliberately LEFT at 1,500: it is a body-scale last resort for
+		// the no-bounds case, not a castle-derived number, so scaling it with the
+		// castle would be the defect (CONVENTIONS WR-§1, SC-§34 human-scale
+		// exemption; TASK-557 row S9 verified it).
 		// Both operands cast to float explicitly: FVector components are DOUBLE in
 		// UE5, and FMath::Max is a single-type template — mixing double and float
 		// would fail template deduction (CONVENTIONS compile traps).
@@ -841,8 +940,9 @@ void ASiegeGameMode::PlayAgain()
 	//     (§3.9 "match clock"; the §3.2 doubling re-arms for the new match).
 	//     MUST precede step 4: ResetEconomy() re-derives each player's gold
 	//     rate by reading this latch live — clearing it first lands the rate
-	//     on the pre-overtime base (display +1/s round-up, true 1 gold per
-	//     2 s, TASK-089).
+	//     on the pre-overtime base (display +1/s, and with the 2026-07-24
+	//     defaults it is EXACT, not a round-up — true accrual is 1 gold per
+	//     1 s, TASK-278 reverting TASK-089's 1-per-2-s rate).
 	if (ASiegeGameState* SiegeGameState = Cast<ASiegeGameState>(GameState))
 	{
 		SiegeGameState->ResetClock();
@@ -1158,7 +1258,9 @@ void ASiegeGameMode::GrantSandboxStartingGold()
 	// Grant through the gold API: AddGold routes through the player state's single
 	// SetGold() choke point, so the [0, MaxGold] clamp and OnGoldChanged broadcast
 	// both apply — NEVER a raw Gold field write. The BASE gold rate is untouched
-	// (no AddIncome), so the normal base economy stands (1 gold per 2 s, TASK-089;
+	// (no AddIncome), so the normal base economy stands (1 gold per 1 s, TASK-278
+	// (2026-07-24) reverting TASK-089's 1-per-2-s rate — ASiegePlayerState's
+	// GoldPerTick=1 / BaseIncomeTickPeriod=1 are the record of truth, GDD §3.2;
 	// spec: keep the normal rate). NOTE: MaxGold (999) clamps SandboxStartingGold
 	// (9999) to 999 — still a full generous pile for the 22-card roster (flagged
 	// for QA).

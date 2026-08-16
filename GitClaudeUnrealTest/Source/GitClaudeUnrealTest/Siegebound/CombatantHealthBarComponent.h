@@ -55,6 +55,28 @@ public:
 	/** Hides the bar. Called by the owner on death/destruction (ACastle::HandleDestroyed parity) — screen-space widgets do not follow SetActorHiddenInGame. */
 	void HideBar();
 
+	/**
+	 *  ⭐ THE TEAM PALETTE'S PUBLIC READ SEAM — WR-§6, manager ruling W4-R5 (added at TASK-560's
+	 *  C2248 repair). These return this component's CLASS DEFAULTS (the CDO's BlueBarColor /
+	 *  RedBarColor), so any display that must match a health bar's team tint — UWarMapWidget's
+	 *  ally and enemy dots are the first caller — reads the ONE shipped owner instead of
+	 *  re-typing the literals and drifting the day the palette moves.
+	 *
+	 *  ⛔ STATIC, AND THAT IS THE ENTIRE MECHANISM: a static member may read its own class's
+	 *  protected members, so BlueBarColor/RedBarColor STAY protected below and gain NO writable
+	 *  surface. ⛔ Plain C++ statics, NOT UFUNCTIONs — a palette read is not a Blueprint API and
+	 *  reflecting it would invite a second caller. ⛔ ZERO parameters, deliberately: a
+	 *  team-parameterised accessor would force Siegebound/TeamId.h into this header, which today
+	 *  only the .cpp includes. (Zero parameters also means SC-§33 cannot fire structurally.)
+	 *
+	 *  ⚠️ CLASS DEFAULTS, ⛔ NOT AN INSTANCE READ, AND THE DIFFERENCE IS DELIBERATE: the per-bar
+	 *  team tint applied in BeginPlay reads THIS INSTANCE's fields, which a BP subclass may
+	 *  legitimately override. That read is a different question and is left exactly as it is —
+	 *  routing it through these accessors would silently delete per-BP tint overrides.
+	 */
+	static FLinearColor GetDefaultBlueBarColor();
+	static FLinearColor GetDefaultRedBarColor();
+
 protected:
 
 	/**

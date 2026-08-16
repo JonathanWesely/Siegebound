@@ -214,8 +214,14 @@ void AProjectile::Tick(float DeltaSeconds)
 	if (bTargetLive)
 	{
 		// reach test against the CLOSEST POINT on the target's collision (house
-		// pattern, TASK-003/004): the castle's ~800x800 base impacts at its
+		// pattern, TASK-003/004): a big target like the castle impacts at its
 		// walls, not its origin — and the closest point is the impact-VFX point.
+		// ⭐ This line used to quote "the castle's ~800x800 base", the M1 blockout
+		// figure (~2438x2462 after Castle-3×, ~7314x7384 at the 9× castle —
+		// CONVENTIONS WR-§0). It rotted through two resizes and NOTHING BROKE:
+		// GetDistanceToTarget measures against the target's LIVE collision, so
+		// the test is bounds-aware and self-derives at every scale. See the
+		// class doc block in Projectile.h.
 		FVector ImpactPoint = FVector::ZeroVector;
 		if (GetDistanceToTarget(MyLocation, Target, ImpactPoint) <= ReachDistance)
 		{

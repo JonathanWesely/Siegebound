@@ -19,7 +19,16 @@ class ASummonedUnit;
  *  - Attack (T): units march the enemy castle, clearing any defenders inside
  *    the enemy spawn box first (local self-defense aggro is unchanged).
  *  - Defend (E): units fall back toward the own castle, fighting only the
- *    enemies attacking it (within DefendRadius).
+ *    enemies inside a disc centred on that castle.
+ *    ⚠️ THE MECHANISM CHANGED IN TASK-574 (CONVENTIONS WR-§2b row B) AND THIS IS
+ *    THE HEADER A READER OPENS TO LEARN WHAT DEFEND *MEANS*, so it is stated
+ *    here rather than left to the unit: DefendRadius IS NO LONGER THAT DISC. It
+ *    is the BAND PAST THE OWN CASTLE'S WALL FACE, and the acquisition radius is
+ *    DERIVED at every decision — the castle's LIVE colliding half-width plus the
+ *    band — by ASummonedUnit::ResolveDefendEngagementRadius, which is the ONLY
+ *    supported reader of the value. ⛔ Never read DefendRadius as a centre
+ *    radius: at the 9× castle the colliding half-width is ≈3,657 uu, so the old
+ *    2,500 disc lay ENTIRELY INSIDE THE KEEP and DEFEND acquired nobody, ever.
  *
  *  SUPERSESSION (TASK-344, CONVENTIONS "Group orders — 3-zone HOLD + AMBUSH"):
  *  the team-wide Hold STANCE flow (the one-circle R pick) is REPLACED by the

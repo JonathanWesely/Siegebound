@@ -67,10 +67,16 @@ namespace
 {
 	/**
 	 *  Acceptance radius when advancing on a castle. The castle's box collision is huge
-	 *  (~800x800 footprint), so overlap-based reach tests against its bounding CYLINDER
-	 *  (radius ~566) would stop the unit well outside attack range on a flat wall face.
-	 *  Instead the move targets the castle origin with bStopOnOverlap = false and relies
-	 *  on the partial path ending at the nav edge flush against the castle's walls.
+	 *  (7313.7 x 7384.5 uu footprint), so overlap-based reach tests against its bounding
+	 *  CYLINDER (radius ~5175) would stop the unit well outside attack range on a flat
+	 *  wall face. Instead the move targets the castle origin with bStopOnOverlap = false
+	 *  and relies on the partial path ending at the nav edge flush against the walls.
+	 *  ⚠️ CITATION CORRECTED BY TASK-574 (uncited instance of WR-§2b row G, found by this
+	 *  task's SC-§22 shape sweep): both figures quoted the M1 castle ("~800x800", cylinder
+	 *  "~566") and were two remasters stale. ⛔ THE 50 uu VALUE IS DELIBERATELY UNCHANGED
+	 *  (SC-§34 (ii)): it is a MOVE-ACCEPTANCE tolerance keyed to a unit's body and its
+	 *  path-follow granularity, not to any castle dimension — and the argument the comment
+	 *  makes gets STRONGER as the castle grows, never weaker.
 	 */
 	constexpr float StructureMoveAcceptanceRadius = 50.f;
 
@@ -1644,7 +1650,14 @@ void ASummonedUnit::UpdateStateStandardCommanded(const ASiegePlayerController& P
 			break;
 		}
 
-		CurrentTarget = AcquireEnemyNearPoint(OwnCastle->GetActorLocation(), DefendRadius);
+		// TASK-574 (CONVENTIONS WR-§2b row B): the disc is still CENTRED on the castle,
+		// but its RADIUS is now DERIVED — the castle's live colliding half-width plus the
+		// authored DefendRadius band. ⛔ DefendRadius is NO LONGER a centre radius and is
+		// never passed here directly: at the 9× castle a 2,500 centre disc lay entirely
+		// inside the keep, so DEFEND could never acquire the besiegers standing at the
+		// gate. ResolveDefendEngagementRadius owns the 0-band seal, the
+		// bOnlyCollidingComponents query and the null/degenerate fallback.
+		CurrentTarget = AcquireEnemyNearPoint(OwnCastle->GetActorLocation(), ResolveDefendEngagementRadius(OwnCastle));
 
 		if (CurrentTarget)
 		{
@@ -2141,6 +2154,91 @@ ACastle* ASummonedUnit::FindOwnCastle() const
 	}
 
 	return BestCastle;
+}
+
+float ASummonedUnit::ResolveDefendEngagementRadius(const ACastle* OwnCastle)
+{
+	// ── CONTRACT 1: A BAND OF 0 MEANS "NO ACQUISITION", AND IT IS TESTED FIRST, BEFORE
+	//    ANY GEOMETRY IS TOUCHED. ASorcererUnit's constructor sets DefendRadius = 0 as
+	//    half 1 of its never-attacks seal ("at 0 the disc is empty, so a sorcerer under
+	//    DEFEND falls back to marching home"), and that sentence must stay true after the
+	//    semantic change. A naive max(BoxExtent) + band would turn that 0 into ≈3,657 uu
+	//    at the 9× castle and hand a unit that cannot attack a real target disc — the
+	//    highest-value trap in this change. The early-out keeps 0 meaning EXACTLY what it
+	//    meant before this function existed: AcquireEnemyNearPoint gets 0, its disc filter
+	//    admits nobody, and the unit marches home. Tested as <= 0 rather than == 0 so a
+	//    hand-authored negative can never resolve into a live radius either.
+	if (DefendRadius <= 0.f)
+	{
+		return 0.f;
+	}
+
+	// ── CONTRACT 3a: no castle to measure ⇒ the authored value is used as a plain CENTRE
+	//    radius (exactly the pre-TASK-574 behaviour), never 0, never a crash.
+	//    ⚠️ DEFENSIVE AND DECLARED AS SUCH: the only shipped caller
+	//    (UpdateStateStandardCommanded's DEFEND branch) EnterIdle()s on a null own castle
+	//    BEFORE it reaches this call, so this branch is unreachable from today's single
+	//    call site. It is kept because the null-safety contract belongs to the function
+	//    that does the dereference, not to its callers.
+	if (!IsValid(OwnCastle))
+	{
+		if (!bLoggedDefendBandFallback)
+		{
+			bLoggedDefendBandFallback = true;
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("[%s] DEFEND band: no own castle to measure — falling back to the authored %.0f uu used as a plain centre radius."),
+				*GetNameSafe(this), DefendRadius);
+		}
+		return DefendRadius;
+	}
+
+	// ── CONTRACT 2: bOnlyCollidingComponents = true, and it is load-bearing. The castle's
+	//    HP-bar widget sits ≈9,450 uu above the keep at the 9× scale, and a render-bounds
+	//    query would fold that height into the extent. What DEFEND cares about is the
+	//    footprint a besieger is physically STOPPED by — the same query, for the same
+	//    reason, as ASiegeGameMode::GetHeroStartTransform branch 3 (the shipped model for
+	//    deriving a castle-relative distance instead of transcribing one).
+	FVector CastleBoundsOrigin = FVector::ZeroVector;
+	FVector CastleBoxExtent = FVector::ZeroVector;
+	OwnCastle->GetActorBounds(/*bOnlyCollidingComponents=*/ true, CastleBoundsOrigin, CastleBoxExtent);
+
+	// max of the two horizontal half-extents: the disc is centred on the castle, so it has
+	// to clear the WIDEST face or a besieger on that side is still inside the dead zone.
+	// FVector components are DOUBLE in UE5 and FMath::Max is a single-type template, so
+	// the max is taken in double and converted ONCE (CONVENTIONS compile traps — mixing
+	// double and float in FMath::Max fails template deduction).
+	const float CastleHalfWidth = static_cast<float>(FMath::Max(CastleBoxExtent.X, CastleBoxExtent.Y));
+
+	// ── CONTRACT 3b: degenerate/unresolvable bounds (mesh not streamed in yet, collision
+	//    stripped) ⇒ same fallback as 3a. ⛔ Never a zero radius by accident.
+	if (CastleHalfWidth <= UE_KINDA_SMALL_NUMBER)
+	{
+		if (!bLoggedDefendBandFallback)
+		{
+			bLoggedDefendBandFallback = true;
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("[%s] DEFEND band: own castle %s reported degenerate colliding bounds (half-extent %.1f x %.1f) — falling back to the authored %.0f uu used as a plain centre radius."),
+				*GetNameSafe(this), *GetNameSafe(OwnCastle), CastleBoxExtent.X, CastleBoxExtent.Y, DefendRadius);
+		}
+		return DefendRadius;
+	}
+
+	const float EngagementRadius = CastleHalfWidth + DefendRadius;
+
+	// One Log line per unit lifetime, never re-armed (the AMinerUnit::bLoggedInteriorAnchor
+	// idiom). This is the ONLY place the live castle half-width and the resolved radius are
+	// both readable back from a PIE log with no editor probe, and the PIE acceptance rows
+	// for this change are graded on it: at the 3× castle it prints 1218.95 + 1281 = 2500.0
+	// (byte-identical to the shipped behaviour), at the 9× castle ≈3656.85 + 1281 ≈ 4937.9.
+	if (!bLoggedDefendBandDerived)
+	{
+		bLoggedDefendBandDerived = true;
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("[%s] DEFEND band resolved: castle %s measured colliding half-width %.2f + authored band %.0f (past the wall face) => engagement radius %.2f uu."),
+			*GetNameSafe(this), *GetNameSafe(OwnCastle), CastleHalfWidth, DefendRadius, EngagementRadius);
+	}
+
+	return EngagementRadius;
 }
 
 void ASummonedUnit::UpdateStateSiege()
@@ -3571,8 +3669,10 @@ float ASummonedUnit::GetDistanceToTarget(const FVector& From, const AActor* Targ
 	}
 
 	// closest point on the target's collision, mirroring the hero melee (TASK-003):
-	// the castle's origin sits at the center of an ~800x800 footprint and would never
-	// come within Range/AggroRadius of a unit standing at its walls. ECC_Pawn is blocked
+	// the castle's origin sits at the center of a 7313.7 x 7384.5 uu footprint and would
+	// never come within Range/AggroRadius of a unit standing at its walls (⚠️ citation
+	// corrected by TASK-574 — this line quoted the M1 castle's "~800x800"; the reasoning
+	// is unchanged and only became more true). ECC_Pawn is blocked
 	// by pawn capsules and by the castle's BlockAll mesh (TASK-002). The closest point
 	// doubles as the impact-VFX contact point (TASK-020).
 	const float Distance = Target->ActorGetDistanceToCollision(From, ECC_Pawn, OutClosestPoint);

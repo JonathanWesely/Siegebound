@@ -9,6 +9,7 @@
 #include "Siegebound/DeckTypes.h" // FDeckList — complete type for the TArray<FDeckList> BotDecks UPROPERTY (M6 TASK-114)
 #include "SiegeBotController.generated.h"
 
+class ACastle;
 class ASiegePlayerState;
 class UDataTable;
 class UDeckComponent;
@@ -282,32 +283,77 @@ protected:
 	float BotHalfBoundaryX = 0.f;
 
 	/**
-	 *  How far in FRONT of Castle_Red (toward the centerline) the bot's UNITS
-	 *  materialize before MARCHING out (Y fanned across ±BotSpawnLaneSpread).
-	 *  M7.6 ruling #1 (Jonathan, 2026-07-18): at the 10× arena (castles ±25,000)
-	 *  the old mid-field BotCenterlineSpawnX=350 materialize is REPLACED — the bot
-	 *  spawns CASTLE-RELATIVE (spec band ~1,500–2,000; default 1,750) and marches
-	 *  the field like the player's units do, so an attack wave's first contact is
-	 *  a real march (~9 min accepted "for now"; the W1 watch sanity-checks that
-	 *  pacing live). Resolved against the LIVE castle location every play
-	 *  (GetCastleRedLocation — the same live-resolve the defense path uses), so a
-	 *  moved castle moves the spawn with it. Applies to rule-4 attack waves AND
-	 *  rule-1 defensive units (both formerly shared the mid-field knob; castle-
-	 *  front is strictly more defensive, and no mid-field materialize path
-	 *  remains). FLAGGED follow-up (Standing backlog, NOT designed): "adaptive
-	 *  bot spawn positioning by strategy" — a later pass may choose spawn/stage
-	 *  points per strategy (defend vs push vs flank).
+	 *  BAND PAST CASTLE_RED'S WALL FACE (toward the centerline) at which the bot's
+	 *  UNITS materialize before MARCHING out (Y fanned across ±BotSpawnLaneSpread).
 	 *
-	 *  W1-PREP appendix 3a (TASK-265), cross-note refreshed by TASK-349: with
-	 *  SpawnBoxHalfExtent now (2460,2460) (Castle 3× HOLLOW re-derivation) this
-	 *  1,750 offset lands INSIDE the spawn box, so the knob is ACTIVE exactly as
-	 *  ruling #1 intended — castle-front materialize with no clamp pull. (At the
-	 *  old 840 box it was inert: ClampAnchorToBotSpawnRegion pulled the anchor to
-	 *  the box's front band.) The anchor-clamp law itself is structurally
-	 *  untouched — it reads the tunables.
+	 *  ⚠ THE SEMANTIC CHANGED IN TASK-575 AND THE NAME DID NOT: this is NO LONGER a
+	 *  distance from the castle CENTRE. The anchor offset is now
+	 *      (live colliding half-extent on X) + this band,
+	 *  resolved every decision through ResolveCastleFrontAnchorOffset() — so the
+	 *  number stored here is the CLEARANCE Jonathan actually chose, and the castle's
+	 *  size is measured instead of transcribed (CONVENTIONS SC-§34's structural
+	 *  escape; the same shape ASiegeGameMode::GetHeroStartTransform branch 3
+	 *  already ships).
+	 *
+	 *  M7.6 ruling #1 (Jonathan, 2026-07-18): at the 10× arena (castles ±25,000) the
+	 *  old mid-field BotCenterlineSpawnX=350 materialize is REPLACED — the bot spawns
+	 *  CASTLE-RELATIVE and marches the field like the player's units do, so an attack
+	 *  wave's first contact is a real march (~9 min accepted "for now"; the W1 watch
+	 *  sanity-checks that pacing live). Resolved against the LIVE castle every play
+	 *  (GetCastleRedActor — the same live-resolve the defense path uses), so a moved
+	 *  OR RESIZED castle now carries the spawn with it. Applies to rule-4 attack waves,
+	 *  rule-1 defensive units AND the rule-2b Deep Mine castle-front fallback — all
+	 *  three read this knob through the ONE helper, so no call site does castle math.
+	 *  FLAGGED follow-up (Standing backlog, NOT designed): "adaptive bot spawn
+	 *  positioning by strategy" — a later pass may choose spawn/stage points per
+	 *  strategy (defend vs push vs flank).
+	 *
+	 *  TASK-575 / CONVENTIONS WR-§2b row F — MANAGER RULING W2-R2, which is the ruling
+	 *  TASK-557 flagged this row for and correctly refused to pre-empt. BOTH recorded
+	 *  rulings STAND and NEITHER is retired, because they answer different questions:
+	 *  M7.6 ruling #1 is a DIRECTIVE (units materialize IN FRONT and MARCH); CASTLE-3X
+	 *  ruling 3 (see SpawnBoxHalfExtent below) is a PERMISSION (an anchor that lands
+	 *  inside the hollow castle is no longer REJECTED). A permission does not become
+	 *  the specification. What is RETIRED is the READING that ruling 3 authorised
+	 *  leaving 1,750 unchanged at 9×; that reading may not be cited again.
+	 *
+	 *  WHY 1,343.15 AND ⚠ NOT 5,250 (the ×3) — the arithmetic is the argument:
+	 *    • castle colliding half-depth on X: ~407 uu at M7.6 (ruling #1's authoring
+	 *      castle), 1,218.95 uu after CASTLE-3X, 3,656.85 uu at the 9× castle.
+	 *    • the authored 1,750 therefore sat 1,343 uu IN FRONT of the wall face when
+	 *      Jonathan chose it, only 531 uu in front after CASTLE-3X (never re-derived —
+	 *      TASK-349 checked box-containment only), and at 9× it is 1,907 uu INSIDE the
+	 *      footprint ⇒ "castle-FRONT materialize, then march the field" had become
+	 *      "materialize in the hall and funnel out through one gate."
+	 *    • ⚠ 5,250 (the ×3) preserves the 531-uu clearance — but NOBODY CHOSE 531. It is
+	 *      what 1,750 decayed into when CASTLE-3X failed to re-derive it, and
+	 *      multiplying an accident by three preserves the accident.
+	 *    • 1,343.15 RESTORES the human-chosen quantity: 1,750 − ~407 at the castle
+	 *      ruling #1 was written against, equivalently 5,000 − 3,656.85 at the 9× one.
+	 *    ⚠ ruling #1's quoted band "~1,500–2,000" is a CASTLE-RELATIVE band whose castle
+	 *      has since grown 9× in volume; it cannot be read as an absolute today, which
+	 *      is exactly why the band — not the total — is what this property stores.
+	 *
+	 *  RESOLVED OFFSET FROM THE CASTLE CENTRE (was a flat 1,750 at every scale):
+	 *      M1        407    + 1,343.15 = 1,750.15   (reproduces Jonathan's own value)
+	 *      CASTLE-3X 1,218.95 + 1,343.15 = 2,562.10
+	 *      9×        3,656.85 + 1,343.15 = 5,000.00
+	 *  — the same 1,343-uu face clearance at all three, and it cannot rot at the next
+	 *  resize. Degenerate/unresolvable castle bounds fall back to this band used as a
+	 *  bare offset (today's shape), logged once — see ResolveCastleFaceDistance.
+	 *
+	 *  VERIFIED INERT AGAINST THE ANCHOR-CLAMP LAW (W1-PREP appendix 3a, TASK-265;
+	 *  cross-note first written by TASK-265, refreshed by TASK-349, by TASK-557 for the
+	 *  7380 box, and re-checked here against the RESOLVED value): at 9× the Red anchor
+	 *  resolves to X ≈ 25,000 − 5,000 = 20,000, inside the SpawnBoxHalfExtent (7380)
+	 *  box [17,620, 32,380] ⇒ IsPointInBotSpawnBox passes ⇒ ClampAnchorToBotSpawnRegion
+	 *  returns it UNTOUCHED via the pass-through carve-out (5,000 is also < the 7,340
+	 *  clamp limit, 7380 − SpawnBoxAnchorInset 40, so even the clamped path would be a
+	 *  no-op). The clamp, SpawnBoxAnchorInset and BotSpawnLaneSpread are UNCHANGED by
+	 *  TASK-575 — the anchor-clamp law reads the tunables and stays structurally sound.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
-	float BotCastleSpawnOffset = 1750.f;
+	float BotCastleSpawnOffset = 1343.15f;
 
 	/** Half-width of the Y band units spawn across so waves fan out instead of stacking on one point. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
@@ -317,9 +363,14 @@ protected:
 	 *  Swarm fan radius — a SwarmCount card (Militia Mob = 4) spawns its copies on a
 	 *  circle of this radius around the validated spawn point, via the shared
 	 *  ASiegePlayerController::SpawnUnitSwarm (TASK-059) so the bot's Militia Mob
-	 *  matches the player's. M7.6: with the castle-relative spawn (~23,250 from the
-	 *  centerline) a 300-radius fan can never cross onto the Blue half; value kept
-	 *  at 300 (spawn rings are on the M7.6 keep-list). // GDD §3.0
+	 *  matches the player's. M7.6: with the castle-relative spawn a 300-radius fan can
+	 *  never cross onto the Blue half; value kept at 300 (spawn rings are on the M7.6
+	 *  keep-list). ⚠ TASK-575 refreshed the worked number this note used to quote
+	 *  ("~23,250 from the centerline" = 25,000 − the then-flat 1,750): the castle-front
+	 *  anchor is now RESOLVED from live castle bounds, so it is ~20,000 from the
+	 *  centerline at the 9× castle. The claim is unaffected — 300 is nowhere near
+	 *  either figure — and it is stated as a relationship here so it cannot rot again.
+	 *  // GDD §3.0
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
 	float SwarmSpawnRadius = 300.f; // GDD §3.0
@@ -338,7 +389,40 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
 	float MinerNodeApproachOffset = 400.f;
 
-	/** Standoff from Castle_Red toward the nearest intruder where a rule-1 defensive TOWER is dropped (clamped above the 570-uu standoff floor — the retired plinth keep-out's numeric legacy, TASK-349 — and short of the intruder). */
+	/**
+	 *  BAND PAST CASTLE_RED'S WALL FACE, along the direction of the nearest intruder,
+	 *  where a rule-1 defensive TOWER is dropped (then clamped short of the intruder,
+	 *  and never nearer the castle than the derived floor — see the .cpp call site).
+	 *
+	 *  ⚠ THE SEMANTIC CHANGED IN TASK-575 AND THE NAME DID NOT: this is NO LONGER a
+	 *  standoff from the castle CENTRE. The placement distance is now
+	 *      (live colliding face distance along the intruder direction) + this band,
+	 *  via ResolveCastleFaceDistance(), so 750 means "750 uu outside the wall" at every
+	 *  castle size instead of meaning it only at the M1 castle it was sized against.
+	 *
+	 *  TASK-575 / CONVENTIONS WR-§2b row C — MANAGER RULING W2-R3. ⚠ THIS ROTTED AT
+	 *  CASTLE-3X, NOT AT THE 9× PASS; it is repaired here anyway because a batch that
+	 *  makes a latent defect three times worse owns it. Measured from the CENTRE, the
+	 *  authored 750 put the tower:
+	 *    • at the M1 castle (half-depth ~407):    343 uu OUTSIDE the wall — as designed;
+	 *    • after CASTLE-3X (half-depth 1,218.95): 469 uu INSIDE the footprint, never
+	 *      re-derived;
+	 *    • at 9× (half-depth 3,656.85):         2,907 uu INSIDE — so rule 1's defensive
+	 *      placement was meaningless and the ring search was silently doing all the work.
+	 *  ⚠ A ×3 IS BANNED HERE AND THE ARITHMETIC IS WHY: 2,250 is STILL 1,407 uu inside.
+	 *  This is the row that proves WR-§2b's governing principle — a castle-derived
+	 *  constant is not repaired by multiplying it, it is repaired by deriving it from
+	 *  the castle's live colliding bounds with the authored value demoted to a band/floor.
+	 *
+	 *  RESOLVED DISTANCE FROM THE CASTLE CENTRE, intruder due-centerline (was a flat 750):
+	 *      M1        407    + 750 = 1,157      (was 750  =   343 uu outside the face)
+	 *      CASTLE-3X 1,218.95 + 750 = 1,968.95 (was 750  =   469 uu INSIDE)
+	 *      9×        3,656.85 + 750 = 4,406.85 (was 750  = 2,907 uu INSIDE)
+	 *  — 750 uu outside the wall face at all three, which is what the number always meant.
+	 *
+	 *  ⚠ The value is UNCHANGED at 750 on purpose: the ruling changes the MECHANISM, not
+	 *  Jonathan's right to the number. It stays EditDefaultsOnly and stays his feel knob.
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
 	float TowerDefenseStandoff = 750.f;
 
@@ -350,9 +434,23 @@ protected:
 	//~ by TASK-349 (CONVENTIONS "Castle 3× HOLLOW" plinth-retirement law): the bot
 	//~ may now spawn units/buildings right up to and INSIDE its own castle — spawn
 	//~ truth = the spawn box gate + nav projection + collision + the existing
-	//~ clearances (IsBotHalfPointClear). The rule-1 tower-standoff floor it once
-	//~ derived (420 + 150) is preserved numerically as a literal at that call site
-	//~ so bot decision output is byte-identical.
+	//~ clearances (IsBotHalfPointClear). The symbol STAYS RETIRED (CONVENTIONS WR-§2
+	//~ row 12) — it is NOT resurrected because the castle got bigger; interior
+	//~ placement is the FEATURE.
+	//~
+	//~ ⚠ TASK-575 AMENDS THE SECOND HALF OF THIS TOMBSTONE. It used to end: "The
+	//~ rule-1 tower-standoff floor it once derived (420 + 150) is preserved
+	//~ numerically as a literal at that call site so bot decision output is
+	//~ byte-identical." THAT BYTE-IDENTITY GUARANTEE IS DELIBERATELY GIVEN UP HERE,
+	//~ and the reason is that the guarantee itself became the defect: 570 was
+	//~ 420 + 150 measured against a ~814-uu castle, so at the 9× castle the floor it
+	//~ preserved sits 3,087 uu INSIDE the footprint — it "preserved" a number that
+	//~ can no longer mean what it meant (CONVENTIONS WR-§2b row C / ruling W2-R3).
+	//~ The floor is now DERIVED at the call site — (live colliding face distance) +
+	//~ the 150-uu margin that was always the body-scale half of 420 + 150 — with the
+	//~ 570 literal kept ONLY as the degenerate-bounds floor, where it reproduces
+	//~ today's behaviour exactly. See ResolveCastleFaceDistance and the rule-1
+	//~ building branch in SiegeBotController.cpp.
 
 	/** Half-extent for snapping a SYNTHETIC spawn point onto the navmesh (generous vertical so a guessed ground Z still finds the floor; mirrors the §3.5 ProjectPointToNavigation rule). */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement")
@@ -366,15 +464,16 @@ protected:
 	 *  2D half-extent of the Red spawn box centered on Castle_Red (W1-PREP
 	 *  additions 3, TASK-262 — the bot mirror of the player box). The spawn gate is
 	 *  this box (or a Red-owned capture zone) instead of the whole own-half.
-	 *  Default (2460,2460) — re-derived 840 → 2460 by TASK-349 (CONVENTIONS
-	 *  "Castle 3× HOLLOW" paired-tunable law: half-extent ≈ the 3× castle's full
-	 *  2460 width), so bot wave anchors may now legally resolve INSIDE the hollow
-	 *  castle (ruling 3 — fine). PAIRED-TUNABLE (3-way law): ≡
-	 *  ACastle::SpawnBoxHalfExtent ≡ ASiegePlayerController::SpawnBoxHalfExtent —
-	 *  keep the three in lockstep. // CONVENTIONS "Castle 3× HOLLOW"
+	 *  Default (7380,7380) — re-derived 840 → 2460 by TASK-349 (Castle 3× HOLLOW)
+	 *  and 2460 → 7380 by TASK-557 (CONVENTIONS WR-§2 row 1, the 9× castle), the
+	 *  SAME paired-tunable law both times: half-extent ≈ the castle's full width
+	 *  (9× bounds 7313.7 × 7384.5 × 8082.6 uu), so bot wave anchors may legally
+	 *  resolve INSIDE the hollow castle (ruling 3 — fine). PAIRED-TUNABLE (3-way
+	 *  law): ≡ ACastle::SpawnBoxHalfExtent ≡ ASiegePlayerController::SpawnBoxHalfExtent
+	 *  — keep the three in lockstep. // CONVENTIONS WR-§2
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
-	FVector2D SpawnBoxHalfExtent = FVector2D(2460.f, 2460.f);
+	FVector2D SpawnBoxHalfExtent = FVector2D(7380.f, 7380.f);
 
 	/**
 	 *  How far INSIDE the box edge an INELIGIBLE spawn anchor is parked when
@@ -473,8 +572,53 @@ private:
 	 */
 	AActor* FindLightningTowerTarget(float SearchRadius, int32 MinUnits, int32& OutNearbyUnitCount) const;
 
+	/**
+	 *  Live Castle_Red ACTOR (the FIRST same-team ACastle the world iterator yields),
+	 *  or nullptr when none exists. TASK-575 lifted this out of GetCastleRedLocation
+	 *  so the castle's BOUNDS and its LOCATION are always read off the SAME actor —
+	 *  the whole point of deriving the spawn/standoff geometry from live bounds is
+	 *  lost if the two can disagree. Iteration order and team filter are unchanged.
+	 */
+	const ACastle* GetCastleRedActor() const;
+
 	/** Live Castle_Red world location (nearest same-team ACastle), else CastleRedFallbackLocation. */
 	FVector GetCastleRedLocation() const;
+
+	/**
+	 *  TASK-575 / CONVENTIONS WR-§2b rulings W2-R2 + W2-R3 — THE ONE PLACE THE BOT
+	 *  MEASURES ITS OWN CASTLE. Returns the distance from Castle_Red's CENTRE to the
+	 *  boundary of its LIVE colliding bounds along Direction2D (world XY), i.e. "how
+	 *  far away the wall face is, that way".
+	 *
+	 *  bOnlyCollidingComponents = true is load-bearing, not incidental: what matters
+	 *  is what BLOCKS a unit, not the render/widget bounds — ACastle's HP-bar widget
+	 *  sits 9,450 uu up (TASK-557) and must never inflate this. Same call and same
+	 *  reasoning as ASiegeGameMode::GetHeroStartTransform branch 3, deliberately,
+	 *  so the project has ONE castle-measuring idiom.
+	 *
+	 *  The bounds are a world axis-aligned box, so the face distance along a unit
+	 *  direction is the NEAREST axis crossing, min(Ex/|dx|, Ey/|dy|) — exact for every
+	 *  direction, where max(Ex, Ey) would leave a corner-approach placement up to
+	 *  ~730 uu INSIDE the 9× footprint. Measured from GetCastleRedLocation() (the
+	 *  actor origin), matching the spawn box and every other anchor in this class.
+	 *
+	 *  Returns 0 when no castle resolves or the bounds are degenerate — chosen so
+	 *  callers can add it unconditionally and degrade to their authored band alone,
+	 *  which is exactly the pre-TASK-575 behaviour. Logs ONCE (bWarnedNoCastleBounds).
+	 *  Non-const for that warn-once latch, mirroring ComputeValidBotSpawnPoint.
+	 */
+	float ResolveCastleFaceDistance(const FVector2D& Direction2D);
+
+	/**
+	 *  Castle-front anchor offset for the THREE call sites that materialize on the
+	 *  centerline-facing face (rule-1 defensive unit, rule-2b Deep Mine fallback,
+	 *  rule-4 attack wave): the live ±X face distance + BotCastleSpawnOffset.
+	 *  Sign-free — the caller still applies TowardCenterSign, exactly as before.
+	 *  Kept as its own helper so the band can never be added at two of three sites
+	 *  (the failure mode that makes a semantic change worse than the stale constant).
+	 *  Non-const: it funnels through ResolveCastleFaceDistance's warn-once latch.
+	 */
+	float ResolveCastleFrontAnchorOffset();
 
 	/**
 	 *  Finds a placement-valid spawn point near Desired by snapping onto the
@@ -520,12 +664,17 @@ private:
 	 *  M7.6 ruling #1 stands; with no zone / a Neutral zone / a Blue-owned zone the
 	 *  behavior is byte-identical to the board's spec.
 	 *
-	 *  Why it is needed: TASK-262 shrank the spawn GATE to the 840 box but the
-	 *  anchors stayed pre-shrink (castle-front at BotCastleSpawnOffset = 1,750 in
-	 *  front of Castle_Red, and the rule-2 mine anchors thousands of uu away),
-	 *  while the ring search tops out at 1,100 uu — so those anchors either piled
-	 *  every wave onto the single ring sample that cleared the box edge, or failed
-	 *  outright and stalled the rule-2 economy ladder.
+	 *  Why it was needed (HISTORY — the box was 840 then): TASK-262 shrank the spawn
+	 *  GATE to the 840 box but the anchors stayed pre-shrink (castle-front at the
+	 *  then-1,750 BotCastleSpawnOffset in front of Castle_Red, and the rule-2 mine
+	 *  anchors thousands of uu away), while the ring search tops out at 1,100 uu — so
+	 *  those anchors either piled every wave onto the single ring sample that cleared
+	 *  the box edge, or failed outright and stalled the rule-2 economy ladder.
+	 *  ⚠ WHERE THAT STANDS TODAY (TASK-349 → TASK-557 → TASK-575): the box is now
+	 *  (7380,7380) and the castle-front anchor RESOLVES to ~5,000 from the castle
+	 *  centre at the 9× castle, so it is INSIDE the box and takes the pass-through
+	 *  above untouched. The clamp still owns the far-flung rule-2 mine anchors, which
+	 *  is the case it was actually written for.
 	 */
 	FVector ClampAnchorToBotSpawnRegion(const FVector& Desired) const;
 
@@ -559,6 +708,18 @@ private:
 
 	/** One-shot latch for the no-navmesh degrade-open warning (ComputeValidBotSpawnPoint). */
 	bool bWarnedNoNavData = false;
+
+	/**
+	 *  One-shot latch for the "castle bounds unusable" warning (TASK-575,
+	 *  ResolveCastleFaceDistance): no same-team ACastle resolved, or its colliding
+	 *  bounds came back degenerate, so the castle-front anchor and the rule-1 tower
+	 *  standoff fall back to their authored bands used as bare centre-relative
+	 *  offsets — the pre-TASK-575 shape. Deliberately NOT cleared in ResetBot, and
+	 *  deliberately on LogGitClaudeUnrealTest rather than LogSiegeBot: it is an
+	 *  environment fault, not a decision, and the one-line-per-FIRED-rule law owns
+	 *  LogSiegeBot. Same one-shot posture as bWarnedNoNavData above.
+	 */
+	bool bWarnedNoCastleBounds = false;
 
 	/**
 	 *  Rule-2 mine-lockout log latch (W1-PREP mirrored mines, TASK-256): set

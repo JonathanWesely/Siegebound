@@ -207,9 +207,11 @@ void ASiegePlayerState::HandleGoldTick()
 	// Decomposed accrual (TASK-089 2026-07-08 balance directive): miner + flat
 	// income land EVERY 1.0 s tick — their per-second values are untouched by
 	// this change (GDD §3.3 / §8) — while the BASE income lands only on every
-	// BaseIncomeTickPeriod-th tick (default 2 ⇒ 1 gold per 2 s, §3.2 amended).
-	// This function deliberately does NOT call GetGoldRate() anymore: that is
-	// now the HUD's rounded-up DISPLAY average, not the exact accrual.
+	// BaseIncomeTickPeriod-th tick (default 1 ⇒ 1 gold per 1 s, §3.2 amended —
+	// TASK-278 2026-07-24 reverted TASK-089's period 2 / 1-per-2-s rate; the
+	// header's BaseIncomeTickPeriod default is the record of truth, not this
+	// comment). This function deliberately does NOT call GetGoldRate() anymore:
+	// that is now the HUD's rounded-up DISPLAY average, not the exact accrual.
 	int32 TickGrant = (MinerIncomeCount * MinerGoldPerTick) + FlatIncomePerTick;
 
 	// Base-income cadence: transient tick-parity counter (non-reflected,
@@ -259,16 +261,20 @@ int32 ASiegePlayerState::GetGoldRate() const
 	// DISPLAY rate (TASK-089 2026-07-08): the per-second AVERAGE behind the
 	// HUD's "+N/s" text — NO LONGER the exact per-tick accrual, and
 	// HandleGoldTick no longer calls this. GDD §3.2 (amended): base
-	// GoldPerTick (1) per BaseIncomeTickPeriod (2) ticks, doubled at 7:00 —
-	// the shared overtime latch is read LIVE so the display can never desync
-	// from the match clock.
+	// GoldPerTick (1) per BaseIncomeTickPeriod (1 since TASK-278 2026-07-24;
+	// was 2) ticks, doubled at 7:00 — the shared overtime latch is read LIVE
+	// so the display can never desync from the match clock.
 	const ASiegeGameState* SiegeGameState = GetSiegeGameState();
 	const bool bOvertime = SiegeGameState && SiegeGameState->IsOvertimeActive();
 	const int32 EffectiveBase = bOvertime ? (GoldPerTick * OvertimeIncomeMultiplier) : GoldPerTick;
 
-	// Base averaged over the grant period and rounded UP for display: defaults
-	// show +1/s pre-overtime (true 0.5/s — ruled acceptable, "+0/s" over a
-	// visibly rising counter reads as broken) and an exact +1/s in overtime.
+	// Base averaged over the grant period and rounded UP for display: with the
+	// TASK-278 2026-07-24 defaults (period 1) the average is EXACT and the
+	// round-up is a NO-OP — a truthful +1/s pre-overtime, +2/s in overtime. It
+	// only bites again if the period is editor-tuned above 1. (HISTORY: at
+	// TASK-089's period 2 the true base was 0.5/s and the round-up displayed
+	// +1/s over it — ruled acceptable because "+0/s" over a visibly rising
+	// counter reads as broken. Since TASK-278 the accrual matches the display.)
 	// Round-up is STABLE (never alternates), so RefreshGoldRate change
 	// detection is unaffected. BaseIncomeTickPeriod is ClampMin 1 — no /0.
 	const int32 BaseRate = FMath::DivideAndRoundUp(EffectiveBase, BaseIncomeTickPeriod);
@@ -501,7 +507,8 @@ void ASiegePlayerState::ResetEconomy()
 	// listeners re-seed even when the values were already at base. The game
 	// mode ran ASiegeGameState::ResetClock() before this, so the rate below
 	// re-derives against a cleared overtime latch and lands on the pre-overtime
-	// base display value (+1/s round-up with defaults, TASK-089).
+	// base display value (+1/s with the TASK-278 defaults, and it is EXACT —
+	// the round-up TASK-089 relied on here is a no-op at period 1).
 	OnMinerCountChanged.Broadcast(AliveMinerCount);
 	RefreshGoldRate(/*bForceBroadcast*/ true);
 }
@@ -510,10 +517,13 @@ void ASiegePlayerState::HandleOvertimeStarted()
 {
 	// The base accrual just doubled (GDD §3.2). Accrual reads the latch live in
 	// HandleGoldTick — this handler exists purely to notify rate listeners of a
-	// DISPLAY change. NOTE (TASK-089): with default tuning the rounded display
-	// base is 1 on both sides of the flip, so change detection correctly
-	// broadcasts nothing — the 7:00 signal is the overtime HUD indicator,
-	// not the rate text (ruling 4).
+	// DISPLAY change. With the TASK-278 2026-07-24 defaults (period 1) the
+	// rounded display base moves 1 -> 2 across the flip, so change detection
+	// DOES fire and the HUD's "+N/s" text updates at 7:00. (HISTORY: at
+	// TASK-089's period 2 the display base was 1 on BOTH sides, so this
+	// broadcast was correctly suppressed and the 7:00 signal was the overtime
+	// HUD indicator alone — ruling 4. TASK-278 reverted the TUNING, not this
+	// handler; the bForceBroadcast=false call is correct under either.)
 	RefreshGoldRate(/*bForceBroadcast*/ false);
 }
 

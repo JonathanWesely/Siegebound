@@ -200,10 +200,12 @@ protected:
 	/**
 	 *  M8 per-player spawn resolve (TASK-356 doc §3.4.4/D10): routes EVERY player
 	 *  (re)start through the team-keyed GetHeroStartTransform — the Blue/host path
-	 *  resolves the level PlayerStart exactly as the engine did (§10 byte-identity;
-	 *  QA-scrutinized site), the Red client resolves its castle-relative fallback
-	 *  (no Red PlayerStart exists in L_Arena — the fallback IS the design, no P1
-	 *  level edit). Null-safe: an unresolvable ASiegePlayerState defers to Super.
+	 *  resolved the level PlayerStart exactly as the engine did (§10 byte-identity;
+	 *  QA-scrutinized site) until the 9× castle swallowed that PlayerStart, and
+	 *  since TASK-573 it takes the SAME castle-relative fallback the Red client
+	 *  takes whenever the start lies inside its own keep (no Red PlayerStart
+	 *  exists in L_Arena either — the fallback IS the design, and still no level
+	 *  edit). Null-safe: an unresolvable ASiegePlayerState defers to Super.
 	 */
 	virtual void RestartPlayer(AController* NewPlayer) override;
 
@@ -288,17 +290,27 @@ protected:
 	 *
 	 *  ⚠️ X IS A FLOOR, NOT THE DISTANCE (TASK-356 loop-2, BLOCKER-5 fix). The
 	 *  authored 600 was derived from the M1 castle's ~810-uu footprint and ROTTED
-	 *  when the 3× remaster tripled it: TASK-357 measured the live castle's
-	 *  colliding half-extent at **1,219 uu** (span 23,781…26,219), so a 600 offset
-	 *  put the Red spawn 819 uu INSIDE its own castle — `SpawnActor failed because
-	 *  of collision` and the joining player got NO pawn at all. The resolver now
+	 *  when the 3× remaster tripled it: TASK-357 measured that castle's colliding
+	 *  half-extent at **1,219 uu** (span 23,781…26,219), so a 600 offset put the
+	 *  Red spawn 819 uu INSIDE its own castle — `SpawnActor failed because of
+	 *  collision` and the joining player got NO pawn at all. The resolver now
 	 *  DERIVES the distance from the castle's live bounds
 	 *  (`HeroSpawnCastleClearance` past the measured half-extent) and uses this X
-	 *  only as the floor, so a future geometry change cannot rot it again.
-	 *  Raised 600 → 1,500 to match the derived value (and to be safe on its own if
-	 *  bounds are ever unresolvable): the level's own Blue PlayerStart sits 1,200
-	 *  uu out and spawns cleanly every time, so 1,200 is the empirical floor and
-	 *  1,500 is that with margin.
+	 *  only as the floor, so a geometry change cannot rot it again — and it did
+	 *  not: at the 9× castle (half-extent **3,656.85**) the derived distance is
+	 *  ≈**3,957** and this floor is simply inert (TASK-557 row S9 measured that
+	 *  with NO edit, which is why this value is deliberately UNCHANGED — see the
+	 *  clearance field below for why scaling it would be the defect).
+	 *
+	 *  ⛔ RETIRED CLAIM (TASK-573, recorded rather than deleted so a future tuner
+	 *  who finds it in git history knows it was refuted): this block used to argue
+	 *  *"the level's own Blue PlayerStart sits 1,200 uu out and spawns cleanly
+	 *  every time, so 1,200 is the empirical floor and 1,500 is that with
+	 *  margin."* At the 9× castle that PlayerStart is **2,456.85 uu INSIDE the
+	 *  keep** and spawns cleanly never — 1,200 is not an empirical floor, it is
+	 *  the distance from Castle_Blue (-25000) to a PlayerStart (≈-23800) that the
+	 *  castle has since swallowed. **1,500 stands as a no-bounds last resort, not
+	 *  as a value derived from that PlayerStart.**
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Hero")
 	FVector HeroSpawnCastleOffset = FVector(1500.0f, 0.0f, 100.0f);
@@ -306,11 +318,17 @@ protected:
 	/**
 	 *  Clearance ADDED to the own-castle's measured colliding half-extent when
 	 *  resolving a castle-relative hero spawn (TASK-356 loop-2). 300 uu past the
-	 *  geometry: with the live 3× castle (half-extent 1,219) this derives 1,519 —
-	 *  just past the empirically validated 1,200 floor and at the recommended
-	 *  ~1,500 band, and it AUTO-FOLLOWS any future castle resize instead of
-	 *  rotting like the old hardcoded offset did. Comfortably clears the hero
-	 *  capsule (r≈42) plus the castle's real (tighter than box-bound) 22-hull UCX.
+	 *  geometry: with the live 9× castle (half-extent **3,656.85**) this derives
+	 *  ≈**3,957**; with the retired 3× castle (half-extent 1,219) it derived
+	 *  1,519. ⭐ **It AUTO-FOLLOWED the 9× resize with no edit at all** — TASK-557
+	 *  row S9 measured exactly that, and CONVENTIONS WR-§2b names this field the
+	 *  MODEL the rest of that ledger is repaired against.
+	 *
+	 *  ⛔ VALUE DELIBERATELY UNCHANGED AT 9× (SC-§34 human-scale exemption,
+	 *  WR-§1): 300 is keyed to a BODY, not to the castle — the hero capsule
+	 *  (r≈42) plus slack for the castle's real, tighter-than-box-bound 22-hull
+	 *  UCX. **Units did not grow.** Multiplying it by 3 would be the defect this
+	 *  whole wave exists to stop.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Hero", meta = (ClampMin = "0"))
 	float HeroSpawnCastleClearance = 300.0f;
@@ -380,15 +398,26 @@ private:
 	 *  BLOCKER-3 fix: the old order consulted the PlayerStart BEFORE HeroTeam, so
 	 *  the castle-relative branch was dead code and BOTH heroes stacked on the
 	 *  Blue PlayerStart). In order: (1) resolve the hero's own-team castle — it
-	 *  defines this team's side of the centerline; (2) the level's PlayerStart
-	 *  (L_Arena: ≈(-23800, 0, 98) yaw 0 on the Blue side, M7.6 ±25000 widening)
-	 *  **only when it lies on that same side** (or when the level has no castle
-	 *  at all — the pre-M8 behavior); (3) else next to the own-team castle,
+	 *  defines this team's side of the centerline; (1b) read that castle's
+	 *  colliding bounds ONCE, for both of the branches that need them (TASK-573);
+	 *  (2) the level's PlayerStart (L_Arena: ≈(-23800, 0, 98) yaw 0 on the Blue
+	 *  side, M7.6 ±25000 widening) **only when it lies on that same side AND is
+	 *  not inside that castle's colliding bounds** (or when the level has no
+	 *  castle at all — the pre-M8 behavior); (3) else next to the own-team castle,
 	 *  offset toward the centerline, facing the enemy half; (4) else the arena
 	 *  origin (logged). The side test is data-driven (castle X sign), never a
 	 *  Blue/Red hardcode. FindPlayerStart's WorldSettings fallback is rejected —
-	 *  it is not a spawn point. Standalone (Blue, one Blue-side PlayerStart) is
-	 *  byte-identical to the pre-M8 result.
+	 *  it is not a spawn point.
+	 *
+	 *  ⚠️ THE FOOTPRINT TEST IS WHY (2) IS NO LONGER UNCONDITIONALLY
+	 *  BYTE-IDENTICAL, AND IT IS THE POINT (TASK-573, CONVENTIONS WR-§2b row A):
+	 *  at the 9× castle L_Arena's only PlayerStart sits **2,456.85 uu inside
+	 *  Castle_Blue**, so accepting it spawns the hero in the keep or leaves the
+	 *  player pawnless. Standalone is byte-identical for every geometry in which
+	 *  that PlayerStart lies OUTSIDE the castle box — the new test can only
+	 *  reject, and only in the case that was already broken. It also cannot fire
+	 *  at all without usable colliding bounds, so a missing/unstreamed castle
+	 *  degrades to the old behavior rather than to the arena origin.
 	 */
 	void GetHeroStartTransform(AController* Player, ETeamId HeroTeam, FVector& OutLocation, FRotator& OutRotation);
 

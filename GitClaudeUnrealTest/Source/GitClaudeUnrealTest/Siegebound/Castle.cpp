@@ -9,6 +9,7 @@
 #include "Engine/CollisionProfile.h"
 #include "Engine/DamageEvents.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/World.h" // TASK-562: SpawnActor for the castle's own furnishing
 #include "EngineUtils.h" // TASK-398: TActorIterator for FindNearestCastleForTeam
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
@@ -19,10 +20,12 @@
 #include "Siegebound/SiegeSessionSubsystem.h" // LogSiegeNet (CONVENTIONS M8)
 #include "TimerManager.h"
 #include "Siegebound/CastleHealthBarWidget.h"
+#include "Siegebound/CommanderNpc.h" // TASK-562: the commander NPC this castle spawns (TASK-559's class)
 #include "Siegebound/DamageTypes.h"
 #include "Siegebound/SiegeFeedbackLibrary.h"
 #include "Siegebound/SiegeHitFlashComponent.h"
 #include "Siegebound/SiegeNavAreas.h"
+#include "Siegebound/Torch.h" // TASK-562: the interior torches this castle spawns (TASK-558's class)
 
 namespace
 {
@@ -31,8 +34,98 @@ namespace
 	const TCHAR* CastleDestroyedSoundPath = TEXT("/Game/Audio/S_CastleDestroyed"); // TASK-179
 	const TCHAR* CastleDebrisVFXPath = TEXT("/Game/VFX/NS_CastleDebris");          // TASK-157 debris burst
 
-	/** Height above the castle origin for its floating damage number (clears the ~2694-tall 3× mesh, HP-bar Z parity — re-derived ×3 with the bar by TASK-349). */
-	constexpr float CastleDamageNumberHeightZ = 3150.f;
+	/**
+	 *  Height above the castle origin for its floating damage number (clears the
+	 *  ~8083-tall 9× mesh, HP-bar Z parity).
+	 *
+	 *  ⚠️ TASK-557 LEDGER ROW, AND IT IS A SEPARATE ROW FROM THE HP BAR EVEN THOUGH
+	 *  IT HOLDS THE SAME NUMBER — CONVENTIONS WR-§2 lists only ACastle::HPBarWidget's
+	 *  Z (row 5); this constant is the SC-§22 sweep's find, a SECOND transcription of
+	 *  the same derived height in a different file scope. Re-derived ×3 with the bar
+	 *  by TASK-349 (1050 → 3150) and again by TASK-557 (3150 → 9450). ⛔ The two MUST
+	 *  move together — "HP-bar Z parity" is the whole contract, and a partial edit
+	 *  puts the damage numbers and the health bar at visibly different heights while
+	 *  compiling perfectly.
+	 */
+	constexpr float CastleDamageNumberHeightZ = 9450.f;
+
+	//~ ======================= WAR ROOM FURNISHING (TASK-562) =======================
+	//~ THE 9× INTERIOR, IN CASTLE-MESH-LOCAL SPACE. Every furnishing anchor below is
+	//~ COMPUTED from these figures rather than typed, so the derivation is readable
+	//~ instead of trusted (SC-§34's structural preference, applied to authored data:
+	//~ the anchors are still transcriptions — an EditDefaultsOnly transform has to be
+	//~ — but each one is a NAMED ARITHMETIC EXPRESSION over the room it sits in).
+	//~
+	//~ ⛔ PROVENANCE, STATED SO IT CAN BE CHECKED RATHER THAN BELIEVED. Primary source
+	//~ = handoffs/TASK-348-artist.md's PUBLISHED, COMMITTED carve readbacks for the 3×
+	//~ castle, multiplied by 3 under CONVENTIONS WR-§1 ("the SHELL scales"), which
+	//~ states the two headline results itself: grand hall 970 × 240 → 2910 × 720, and
+	//~ clear height 520 → 1560. Corroborated read-only against the in-tree
+	//~ Tools/ArtPipeline/pipeline_manifest.json carve block, which TASK-555 has
+	//~ already re-derived to exactly these numbers — ⚠️ CORROBORATION ONLY: that file
+	//~ belongs to an in-flight parallel task and is deliberately NOT the source (the
+	//~ TASK-558 precedent — an in-flight working file is not a contract).
+	//~
+	//~   SM_Castle's origin is GROUND-CENTRE (WR-§0), so local Z 0 is the arena floor
+	//~   and local Z 174 is the interior floor. The gate corridor mouth is on the
+	//~   local −Y side and +Y is "deeper into the keep" (InteriorAnchorRelativeLocation
+	//~   and GateBlockerRelativeLocation both state this; TASK-350 PIE-verified it).
+	//~
+	//~ ⛔ NOT A WR-§2 / SC-§34 LEDGER ROW. Every constant in this block is BORN at the
+	//~ 9× scale — none of them existed before this batch and none was derived from the
+	//~ old castle's size, so there is nothing stale here to re-derive. TASK-557 owns
+	//~ the ledger and this task adds no row to it (and ⛔ re-touches none of its eight
+	//~ initialisers).
+
+	/** Interior floor height, mesh-local (WR-§1: the 3× castle's z 58 × 3). */
+	constexpr float InteriorFloorZ = 174.f;
+
+	/** Grand-hall clear height (WR-§1: 520 × 3). */
+	constexpr float HallClearHeightZ = 1560.f;
+
+	/**
+	 *  THE ONE MOUNT HEIGHT EVERY TORCH USES — the midpoint of the hall's clear
+	 *  height, i.e. 780 uu above the interior floor. One number, one derivation:
+	 *    • It is also the hall carve box's own centre Z, so it is the height at
+	 *      which the walls are guaranteed vertical and solid in EVERY interior
+	 *      volume, not just the hall.
+	 *    • Verified against the GATE CORRIDOR too, which is an ARCH and not a box:
+	 *      the corridor's walls are vertical from the floor up to the springline at
+	 *      z 1410, and 174 < 954 < 1410, so a corridor torch is on flat wall with
+	 *      456 uu of wall still above it.
+	 *    • It puts each light pool's centre 780 above the floor. A torch's
+	 *      attenuation radius is ATorch's own EditDefaultsOnly tunable and is
+	 *      deliberately NOT duplicated here; at its shipped default the pool still
+	 *      reaches ≈912 uu horizontally AT FLOOR LEVEL, which is the figure the
+	 *      spacing below is checked against (see ACastle::ACastle).
+	 */
+	constexpr float TorchWallMountZ = InteriorFloorZ + 0.5f * HallClearHeightZ; // 954
+
+	//~ hall_main — the grand hall under the keep. TASK-348: box x −640..+330,
+	//~ y +90..+330, z 58..578 ⇒ ×3 below. 2910 × 720 × 1560, exactly WR-§1's figures.
+	constexpr float HallMinX = -1920.f;
+	constexpr float HallMaxX = 990.f;
+	constexpr float HallMinY = 270.f;
+	constexpr float HallMaxY = 990.f;
+	constexpr float HallCentreX = 0.5f * (HallMinX + HallMaxX); // −465
+	constexpr float HallCentreY = 0.5f * (HallMinY + HallMaxY); // 630
+	constexpr float HallThirdX = (HallMaxX - HallMinX) / 3.f;   // 970
+
+	//~ hall_east — the east annex, connected to hall_main by a full-height doorway.
+	//~ TASK-348: box x +280..+560, y +190..+330 ⇒ ×3: x +840..+1680, y +570..+990.
+	constexpr float AnnexMaxX = 1680.f;
+	constexpr float AnnexCentreY = 780.f;
+
+	//~ gate_corridor — the vaulted passage from the gate arch into the hall.
+	//~ TASK-348: 500-wide arch, y −380..+170 ⇒ ×3: 1500 wide about the mesh's own
+	//~ gate centreline x = 18, y −1140..+510. Its side walls are therefore at
+	//~ x = 18 ∓ 750.
+	constexpr float CorridorWestWallX = -732.f;
+	constexpr float CorridorCentreY = -315.f;
+
+	//~ ---- the actor classes the castle furnishes itself with (BP first, C++ fallback) ----
+	const TCHAR* TorchBlueprintPath = TEXT("/Game/Blueprints/BP_Torch.BP_Torch_C");                   // WR-§4
+	const TCHAR* CommanderNpcBlueprintPath = TEXT("/Game/Blueprints/BP_CommanderNpc.BP_CommanderNpc_C"); // WR-§5
 }
 
 ACastle::ACastle()
@@ -64,16 +157,21 @@ ACastle::ACastle()
 	CastleMesh->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
 
 	// Overhead HP bar (playtest R1 finding 2, TASK-018). Screen space so it reads at
-	// any camera angle/distance; relative Z +3150 clears the ~2694-tall 3× castle
-	// (TASK-349 re-derivation ×3 of the original 1050-over-900 pair; TASK-350
-	// verifies the read at the gameplay camera). The widget CLASS is soft-resolved
-	// at BeginPlay (WBP_CastleHealthBar, TASK-019); the bare component always
-	// exists and draws nothing.
+	// any camera angle/distance; relative Z +9450 clears the ~8083-tall 9× castle.
+	// TASK-557 (CONVENTIONS WR-§2 row 5) DIAGNOSED this Z as C++-AUTHORED HERE — not
+	// BP-authored — and therefore re-derived it in code rather than deferring it to
+	// the integration task: 1050-over-900 → 3150-over-2694 (TASK-349) → 9450-over-8083,
+	// the same ≈1.17× headroom over the mesh top at all three scales. ⛔ The DrawSize
+	// (256x32) is DELIBERATELY NOT SCALED — a screen-space widget's size is in SCREEN
+	// pixels and has nothing to do with world scale (SC-§34's human-scale exemption,
+	// applied to a UI quantity). The widget CLASS is soft-resolved at BeginPlay
+	// (WBP_CastleHealthBar, TASK-019); the bare component always exists and draws
+	// nothing.
 	HPBarWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("HPBarWidget"));
 	HPBarWidget->SetupAttachment(CastleMesh);
 	HPBarWidget->SetWidgetSpace(EWidgetSpace::Screen);
 	HPBarWidget->SetDrawSize(FVector2D(256.0f, 32.0f));
-	HPBarWidget->SetRelativeLocation(FVector(0.0f, 0.0f, 3150.0f));
+	HPBarWidget->SetRelativeLocation(FVector(0.0f, 0.0f, 9450.0f));
 	// UI-only component: never collides, never blocks traces (placement cursor
 	// trace TASK-007, unit acquisition TASK-004).
 	HPBarWidget->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -133,6 +231,86 @@ ACastle::ACastle()
 	TeamMaterialRed = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Materials/Instances/MI_TeamColor_Red.MI_TeamColor_Red")));
 	// TASK-018 names block: widget asset built in TASK-019 — resolved null-safe at BeginPlay.
 	HPBarWidgetClass = TSoftClassPtr<UUserWidget>(FSoftObjectPath(TEXT("/Game/UI/WBP_CastleHealthBar.WBP_CastleHealthBar_C")));
+
+	// ================= WAR ROOM FURNISHING (TASK-562; WR-§4 + WR-§5) =================
+	// The classes. Soft + null-safe, and the fallback is the C++ class rather than
+	// "no furniture" — see the two header doc blocks for the two distinct null paths.
+	// ⚠️ Neither Blueprint exists yet and no task in this batch authors one, so the
+	// FALLBACK is the path that runs today. That is a complete, working torch and a
+	// complete, working commander; the Blueprints are the tuning surface, not a
+	// requirement.
+	TorchClassAsset = TSoftClassPtr<ATorch>(FSoftObjectPath(TorchBlueprintPath));
+	CommanderNpcClassAsset = TSoftClassPtr<ACommanderNpc>(FSoftObjectPath(CommanderNpcBlueprintPath));
+
+	// ---- THE SIX TORCH ANCHORS ----
+	// Rotation is what aims the torch OFF the wall: SM_Torch's origin is its
+	// WALL-MOUNT FACE and the mesh extends along its own +X into the room
+	// (TASK-556 / WR-§4), so yaw points +X away from the masonry. Every anchor sits
+	// EXACTLY ON the carve-cutter face, i.e. flush on the wall surface: an inset
+	// would float the torch, and the cutter faces ARE the wall surfaces (TASK-348's
+	// probe hit hall_back at exactly the cutter's y_max). Scale stays 1 — a torch's
+	// SIZE is TASK-556's mesh, not this array's business.
+	//
+	// SPACING, AND THE CHECK IT WAS DERIVED FROM: at TorchWallMountZ the light pool's
+	// centre is 780 above the floor, so at ATorch's shipped attenuation default the
+	// pool still reaches ≈912 uu horizontally where the floor is. Three torches on
+	// the hall's 2910-uu north wall, one at the centre of each THIRD (970 apart),
+	// therefore overlap continuously and cover the hall's full length AND its full
+	// 720-uu depth from one wall. ⛔ The attenuation radius itself is deliberately
+	// NOT duplicated into this file — it is ATorch's EditDefaultsOnly tunable, and a
+	// second copy of it here is exactly the stale-constant hazard SC-§34 exists for.
+	TorchAnchors.Reserve(6);
+
+	// 1–3: the grand hall's NORTH wall (y = HallMaxY), each at the centre of one
+	// third of the hall's length, all facing −Y into the room.
+	TorchAnchors.Add(FTransform(FRotator(0.f, -90.f, 0.f), FVector(HallMinX + 0.5f * HallThirdX, HallMaxY, TorchWallMountZ))); // (−1435, 990, 954)
+	TorchAnchors.Add(FTransform(FRotator(0.f, -90.f, 0.f), FVector(HallMinX + 1.5f * HallThirdX, HallMaxY, TorchWallMountZ))); // (−465, 990, 954) — the hall's own centre line
+	TorchAnchors.Add(FTransform(FRotator(0.f, -90.f, 0.f), FVector(HallMinX + 2.5f * HallThirdX, HallMaxY, TorchWallMountZ))); // (+505, 990, 954)
+
+	// 4: the hall's SOUTH wall, mirroring anchor 1, facing +Y. ⚠️ IT IS THE ONLY
+	// third-centre THAT WALL HAS: the 1500-wide gate corridor punches through the
+	// south wall from x −732 to +768, which swallows the other two. Placing it
+	// anyway is deliberate — without it every torch in the room is on one wall.
+	TorchAnchors.Add(FTransform(FRotator(0.f, 90.f, 0.f), FVector(HallMinX + 0.5f * HallThirdX, HallMinY, TorchWallMountZ))); // (−1435, 270, 954)
+
+	// 5: the EAST ANNEX's far wall, at the annex's own Y centre, facing −X.
+	// ⚠️ NOT decoration: the annex reaches x +1680 and the nearest hall torch's pool
+	// stops ≈263 uu short of that wall at floor level, so without this anchor the
+	// annex is the one carved interior volume that is unlit.
+	TorchAnchors.Add(FTransform(FRotator(0.f, 180.f, 0.f), FVector(AnnexMaxX, AnnexCentreY, TorchWallMountZ))); // (+1680, 780, 954)
+
+	// 6: the GATE CORRIDOR's west wall at its mid-length, facing +X. One pool spans
+	// the passage's full 1650-uu length; the corridor is 1500 wide, so its east half
+	// is lit by falloff and by hall spill rather than directly.
+	// ⚠️ FLAGGED, AND IT IS THE FIRST THING TO ADD IF THE PASSAGE READS DARK: the
+	// mirrored anchor (+768, −315, 954) yaw 180 completes a facing pair. It is left
+	// out only because MaxTorchesPerCastle is 6 by law; adding it is one array entry
+	// plus one cap bump, both EditDefaultsOnly, no recompile.
+	TorchAnchors.Add(FTransform(FRotator(0.f, 0.f, 0.f), FVector(CorridorWestWallX, CorridorCentreY, TorchWallMountZ))); // (−732, −315, 954)
+
+	// ---- THE COMMANDER NPC ANCHOR ----
+	// A FLOOR point in the grand hall: X = the hall's own centre; Y = the midpoint of
+	// the hall's northern half, which leaves 180 uu of clearance to the back wall;
+	// Z = the interior floor (SK_Sorcerer is feet-origin and SM_WarTable is
+	// floor-contact-origin, so relative Z 0 on both — TASK-559). Yaw −90 turns him to
+	// face −Y, i.e. toward the gate corridor the player walks in through.
+	//
+	// ⭐ WHY THE ANCHOR IS THE COMMANDER AND NOT THE TABLE, AND WHY THAT MATTERS:
+	// ACommanderNpc places its war table a fixed distance along the actor's own +X.
+	// This anchor deliberately does NOT transcribe that distance — instead it is
+	// chosen so the placement is ROBUST to it. At TASK-559's shipped 200 uu the table
+	// lands at y ≈ 610, within 20 uu of the hall's own centre (630); and the anchor
+	// stays legal for ANY forward offset below 300 uu (the table stays north of the
+	// corridor mouth at y 510) and below 540 uu (it stays inside the hall at y 270).
+	// ⇒ if that constant is ever tuned, this anchor does not silently go stale.
+	//
+	// ⛔ CHECKED AGAINST THE TWO PLACES HE MAY NOT STAND (WR-§5 / spec item 2):
+	//   • the GATE CORRIDOR occupies y −1140..+510; he is at y 810, north of it.
+	//   • the APPROACH ramp/stair is OUTSIDE the shell, below the gate arch at
+	//     y ≤ −2100; he is 2910 uu deeper in and 174 uu up, on the flat hall floor.
+	// ⛔ And he is not in the doorway either: the corridor mouth overlaps the hall
+	// only up to y 510.
+	CommanderNpcAnchor = FTransform(FRotator(0.f, -90.f, 0.f), FVector(HallCentreX, 0.5f * (HallCentreY + HallMaxY), InteriorFloorZ)); // (−465, 810, 174)
 }
 
 void ACastle::OnConstruction(const FTransform& Transform)
@@ -175,6 +353,36 @@ void ACastle::BeginPlay()
 
 	// TASK-349: arm both team-gating lanes from the now-authoritative Team.
 	ConfigureTeamGating();
+
+	// TASK-562 (WR-§4 + WR-§5): the castle furnishes ITSELF — nothing is placed in
+	// L_Arena. Runs on the server AND on every client (both build their own Tier-C
+	// local set); ⛔ no authority guard, deliberately — see the class doc.
+	//
+	// ⚠️ THE TEAM-TIMING HAZARD TASK-559 ASKED THIS TASK TO RE-CONFIRM RATHER THAN
+	// ASSUME, ANSWERED AT THE CODE: Team is COND_InitialOnly, so on a client
+	// BeginPlay could in principle run before initial replication settles — but both
+	// castles are LEVEL-PLACED (a module-wide grep finds no SpawnActor<ACastle>
+	// anywhere), so each machine's own copy of L_Arena deserializes the correct Team
+	// before any replication arrives; the rep is the belt Castle.h documents, not the
+	// source. ⭐ AND THE SHIPPED CODE ALREADY DEPENDS ON EXACTLY THIS, EARLIER:
+	// PostInitializeComponents selects the team interior nav area from Team one hook
+	// BEFORE this one, and TASK-350 PIE-verified the result on both instances. A push
+	// at BeginPlay is therefore strictly safer than something already proven in
+	// engine. ⛔ IF a runtime-spawned castle is ever added, this assumption must be
+	// re-opened — that, not the replication, is the condition it rests on.
+	SpawnCastleFurnishings();
+}
+
+void ACastle::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// TASK-562 belt (see the header): AActor::Destroy DETACHES attached actors
+	// instead of destroying them, so an explicit ACastle::Destroy() would strand the
+	// furniture. Nothing calls it today; this is here so nothing has to remember not
+	// to. World teardown reaches every actor anyway, which makes this a no-op on the
+	// ordinary path.
+	DestroyCastleFurnishings();
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void ACastle::ConfigureTeamGating()
@@ -247,6 +455,196 @@ void ACastle::ConfigureTeamGating()
 		// rebuild), which the r5 probe measures against the R2 ≤10 s band.
 		InteriorNavModifier->RefreshNavigationModifiers();
 	}
+}
+
+UClass* ACastle::ResolveTorchClass()
+{
+	// CLEARED = the deliberate designer opt-out: this castle spawns no torches, and
+	// says nothing about it (the AttackImpactEffect IsNull pattern, TASK-020).
+	// Deliberately DISTINCT from "set but unresolvable", below.
+	if (TorchClassAsset.IsNull())
+	{
+		return nullptr;
+	}
+
+	if (UClass* LoadedClass = TorchClassAsset.LoadSynchronous())
+	{
+		return LoadedClass;
+	}
+
+	// SET BUT UNRESOLVABLE ⇒ the raw C++ class, which is a complete working torch
+	// (the ASiegeGameMode::ResolveHeroPawnClass fallback shape). Logged ONCE per
+	// castle, and at Log rather than Warning ON PURPOSE: BP_Torch's absence is the
+	// EXPECTED state right now — no task in the WAR ROOM batch authors it — and a
+	// warning that always fires is a warning everyone learns to ignore.
+	if (!bLoggedTorchClassFallback)
+	{
+		bLoggedTorchClassFallback = true;
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ACastle '%s': torch blueprint '%s' unavailable — spawning the C++ ATorch instead (fully functional; the Blueprint is only the tuning surface)."),
+			*GetNameSafe(this), *TorchClassAsset.ToString());
+	}
+
+	return ATorch::StaticClass();
+}
+
+UClass* ACastle::ResolveCommanderNpcClass()
+{
+	// Same two null paths as ResolveTorchClass — cleared is a silent opt-out,
+	// unresolvable falls back to the C++ class with one log line.
+	if (CommanderNpcClassAsset.IsNull())
+	{
+		return nullptr;
+	}
+
+	if (UClass* LoadedClass = CommanderNpcClassAsset.LoadSynchronous())
+	{
+		return LoadedClass;
+	}
+
+	if (!bLoggedCommanderNpcClassFallback)
+	{
+		bLoggedCommanderNpcClassFallback = true;
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ACastle '%s': commander blueprint '%s' unavailable — spawning the C++ ACommanderNpc instead (fully functional; the Blueprint is only the tuning surface)."),
+			*GetNameSafe(this), *CommanderNpcClassAsset.ToString());
+	}
+
+	return ACommanderNpc::StaticClass();
+}
+
+void ACastle::SpawnCastleFurnishings()
+{
+	UWorld* World = GetWorld();
+	if (!World || !CastleMesh)
+	{
+		return;
+	}
+
+	// IDEMPOTENT BY CONSTRUCTION. Every caller (BeginPlay, and both edges of a
+	// Play-Again restore) gets exactly one set: clearing first is what makes a
+	// redundant call harmless instead of a doubling, and it is cheaper to reason
+	// about than a "have I already furnished?" latch that a reset path could desync.
+	DestroyCastleFurnishings();
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Owner = this;
+	// AlwaysSpawn, stated ACCURATELY rather than as the usual incantation — I checked
+	// the engine rather than assuming, and the honest reason is not the one it looks
+	// like: AActor's OWN default is ALREADY AlwaysSpawn (Actor.cpp), so on today's
+	// classes this override changes nothing. It is here because the class being
+	// spawned is a SOFT REFERENCE somebody will later point at a Blueprint, and
+	// SpawnCollisionHandlingMethod is an EditDefaultsOnly property that Blueprint can
+	// change — and because APawn's default is AdjustIfPossibleButDontSpawnIfColliding
+	// (Pawn.cpp), so anyone who ever "upgrades" ACommanderNpc from AActor to a Pawn
+	// would silently get a commander that FAILS TO SPAWN. Every anchor here is a point
+	// ON A WALL or on the floor inside the castle's own BlockAll shell, so under either
+	// adjusting mode the furniture would be nudged off its authored anchor or dropped
+	// entirely. The override makes the castle's placement authoritative whatever the
+	// spawned class says. ⇒ No overlap actually needs resolving anyway: both classes
+	// ship NoCollision + SetCanEverAffectNavigation(false) (verified in TASK-558/559).
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	// The anchors are CASTLE-MESH-relative, so compose against the MESH's world
+	// transform, never the actor's location: Castle_Red is placed at yaw 180 and the
+	// whole point of a relative anchor is that the rotation comes along for free
+	// (the GetInteriorAnchorLocation reasoning, applied to a transform instead of a
+	// point). FTransform composition is local-then-parent.
+	const FTransform CastleMeshTransform = CastleMesh->GetComponentTransform();
+
+	if (UClass* TorchClass = ResolveTorchClass())
+	{
+		// The cap is a HARD bound on the level's light count, so it is applied to the
+		// anchor list rather than trusted to it: adding anchors in a Blueprint can
+		// never quietly multiply the lights past MaxTorchesPerCastle, and a cap of 0
+		// (or an empty array) simply means no torches.
+		const int32 TorchCount = FMath::Min(TorchAnchors.Num(), FMath::Max(MaxTorchesPerCastle, 0));
+		SpawnedTorches.Reserve(TorchCount);
+
+		for (int32 AnchorIndex = 0; AnchorIndex < TorchCount; ++AnchorIndex)
+		{
+			const FTransform TorchWorldTransform = TorchAnchors[AnchorIndex] * CastleMeshTransform;
+			// Spawned AT its final transform (not at the origin then moved): ATorch's
+			// BeginPlay runs INSIDE SpawnActor, so anything it ever derives from its
+			// own transform sees the real one.
+			ATorch* Torch = World->SpawnActor<ATorch>(TorchClass, TorchWorldTransform, SpawnParams);
+			if (!Torch)
+			{
+				// A refused spawn is survivable by design: one torch fewer, no crash,
+				// and the loop keeps going so a single failure cannot unlight the hall.
+				UE_LOG(LogGitClaudeUnrealTest, Warning,
+					TEXT("ACastle '%s': torch %d/%d failed to spawn — the castle plays exactly as it does without it."),
+					*GetNameSafe(this), AnchorIndex + 1, TorchCount);
+				continue;
+			}
+
+			// KeepWorldTransform, because the actor is already AT the composed world
+			// transform: the attach must preserve it, not re-interpret it as a new
+			// relative one. From here the torch tracks the castle forever.
+			Torch->AttachToComponent(CastleMesh, FAttachmentTransformRules::KeepWorldTransform);
+			SpawnedTorches.Add(Torch);
+		}
+	}
+
+	if (UClass* CommanderClass = ResolveCommanderNpcClass())
+	{
+		const FTransform CommanderWorldTransform = CommanderNpcAnchor * CastleMeshTransform;
+		ACommanderNpc* Npc = World->SpawnActor<ACommanderNpc>(CommanderClass, CommanderWorldTransform, SpawnParams);
+		if (Npc)
+		{
+			Npc->AttachToComponent(CastleMesh, FAttachmentTransformRules::KeepWorldTransform);
+
+			// ⛔ THE TEAM IS **PUSHED**, NEVER DERIVED (TASK-559's contract, and its
+			// header says why): a nearest-castle search would silently pick the ENEMY
+			// castle on the mirrored side, and it would make the NPC depend on this
+			// class. ⚠️ AND THE ACCESSOR ON THE OTHER SIDE IS GetCommanderTeam(), NOT
+			// GetTeamId() — ACommanderNpc deliberately does NOT implement ITeamAgent,
+			// because eight shipped call sites read that interface as "legal combat
+			// target" and ASummonedUnit::IsTargetAlive treats unknown ITeamAgent types
+			// as permanently alive, which would make the commander an unkillable aggro
+			// sink standing in the grand hall.
+			Npc->InitCommanderNpc(Team);
+			SpawnedCommanderNpc = Npc;
+		}
+		else
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("ACastle '%s': commander NPC failed to spawn — the war table is absent and the castle plays exactly as it does today."),
+				*GetNameSafe(this));
+		}
+	}
+
+	// One line per furnishing pass, so TASK-569's PIE matrix ("torches spawn … and do
+	// not survive a Play Again as orphans") is a log read rather than an eyeball count.
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ACastle '%s' (%s): furnished — %d of %d torch anchors spawned (cap %d), commander %s (WR-§4/WR-§5; nothing placed in L_Arena)."),
+		*GetNameSafe(this), (Team == ETeamId::Red) ? TEXT("Red") : TEXT("Blue"),
+		SpawnedTorches.Num(), TorchAnchors.Num(), MaxTorchesPerCastle,
+		SpawnedCommanderNpc ? TEXT("spawned") : TEXT("absent"));
+}
+
+void ACastle::DestroyCastleFurnishings()
+{
+	// DESTROYED, NEVER POOLED — the ASiegeBattlefieldScatter::ClearScatter lifecycle
+	// verbatim. A pooled torch would carry whatever state a future ATorch grows
+	// across a match reset; destroying also guarantees the commander's Team push
+	// re-runs on a genuinely fresh actor rather than being skipped as "already set".
+	for (const TObjectPtr<ATorch>& Torch : SpawnedTorches)
+	{
+		ATorch* TorchPtr = Torch.Get();
+		if (IsValid(TorchPtr))
+		{
+			TorchPtr->Destroy();
+		}
+	}
+	SpawnedTorches.Reset();
+
+	ACommanderNpc* CommanderPtr = SpawnedCommanderNpc.Get();
+	if (IsValid(CommanderPtr))
+	{
+		CommanderPtr->Destroy();
+	}
+	SpawnedCommanderNpc = nullptr;
 }
 
 void ACastle::InitHPBarWidget()
@@ -451,6 +849,24 @@ void ACastle::ApplyDestroyedState(bool bNowDestroyed)
 	{
 		HPBarWidget->SetVisibility(!bNowDestroyed, /*bPropagateToChildren=*/true);
 	}
+
+	// TASK-562 (WR-§4 teardown clause): the furnishing is SPAWNED ACTORS, not
+	// components, so SetActorHiddenInGame/SetActorEnableCollision above do NOT reach
+	// it — it needs its own edge handling, and it gets it HERE rather than in
+	// HandleDestroyed/ResetCastle for the reason spelled out in the header: those two
+	// are authority-only, the furniture is Tier C and exists separately on every
+	// machine, and this function is the one BOTH the server paths and the client's
+	// OnRep_Destroyed run. A fallen castle keeps no lit torches; a Play-Again restore
+	// gets an exactly-fresh set (destroyed, never pooled — the ClearScatter
+	// lifecycle), which also re-runs the Team push on the new commander.
+	if (bNowDestroyed)
+	{
+		DestroyCastleFurnishings();
+	}
+	else
+	{
+		SpawnCastleFurnishings();
+	}
 }
 
 void ACastle::OnRep_CurrentHP()
@@ -628,9 +1044,10 @@ void ACastle::ResetCastle()
 
 bool ACastle::IsPointInSpawnBox(const FVector& Point) const
 {
-	// Castle-centered 2D square test (Z ignored). Additive third reader of the (2460,2460)
-	// paired-tunable (TASK-349 re-derivation) — does NOT touch the bot's
-	// IsPointInBotSpawnBox (TASK-262). W1 TASK-275.
+	// Castle-centered 2D square test (Z ignored). Additive third reader of the (7380,7380)
+	// paired-tunable (TASK-349 re-derived 840 → 2460; TASK-557 re-derived 2460 → 7380
+	// for the 9× castle, WR-§2 row 1) — does NOT touch the bot's IsPointInBotSpawnBox
+	// (TASK-262). W1 TASK-275.
 	const FVector Origin = GetActorLocation();
 	return FMath::Abs(Point.X - Origin.X) <= SpawnBoxHalfExtent.X
 		&& FMath::Abs(Point.Y - Origin.Y) <= SpawnBoxHalfExtent.Y;

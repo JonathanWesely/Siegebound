@@ -10,6 +10,8 @@
 #include "Castle.generated.h"
 
 class ACastle;
+class ACommanderNpc;
+class ATorch;
 class UBoxComponent;
 class UCameraShakeBase;
 class UMaterialInterface;
@@ -52,6 +54,38 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCastleHPChanged, float, CurrentH
  *    component; its widget class is soft-resolved null-safe at BeginPlay
  *    (WBP_CastleHealthBar, built in TASK-019 — a missing asset is a silent
  *    no-op). Hidden on destruction, shown again by ResetCastle().
+ *
+ *  ⛔⛔ THE CASTLE FURNISHES ITSELF — NOTHING IS PLACED IN L_Arena (batch WAR
+ *  ROOM, TASK-562; law CONVENTIONS WR-§4 placement clause + WR-§5 placement
+ *  clause). At BeginPlay this actor SPAWNS and ATTACHES its own interior
+ *  torches (ATorch, from TorchAnchors) and its own commander NPC + war table
+ *  (ACommanderNpc, from CommanderNpcAnchor), then pushes its own Team into the
+ *  NPC. ⚖️ THREE LOAD-BEARING REASONS, AND ALL THREE ARE WHY THIS IS CODE
+ *  RATHER THAN LEVEL CONTENT:
+ *    (1) L_Arena is the asset this project is under STANDING ORDERS never to
+ *        save (WR-§3; the one-time nav-data-only exception was granted for
+ *        TASK-350 and EXPIRED at that commit). Furniture placed by hand would
+ *        require exactly the save that is forbidden.
+ *    (2) BOTH castles get IDENTICAL furnishing BY CONSTRUCTION — there is no
+ *        mirror step for anyone to get wrong, and Castle_Red's yaw 180 is
+ *        handled for free because every anchor is CASTLE-MESH-RELATIVE.
+ *    (3) The anchors travel with the castle actor FOREVER: move, rotate or
+ *        re-scale the castle and its furniture follows, with no second edit.
+ *
+ *  ⚠️ THE FURNISHING IS DELIBERATELY **NOT** AUTHORITY-GATED, AND THAT IS THE
+ *  OPPOSITE OF THE USUAL M8 RULE — SO IT IS STATED HERE RATHER THAN LEFT TO
+ *  LOOK LIKE AN OVERSIGHT. ATorch and ACommanderNpc are NET RELEVANCY TIER C
+ *  (not replicated, no gameplay truth — declared in their own headers). This
+ *  BeginPlay runs on the server AND on every client, so each machine builds
+ *  its own identical local set from the same EditDefaultsOnly anchors: a pure
+ *  local projection of already-replicated castle state, exactly the
+ *  AAncientGround / AGoldNode precedent. ⛔ A HasAuthority() guard here would
+ *  be the DEFECT, not the safeguard — it would leave every client with an
+ *  unlit castle and no commander. Nothing in this lane mutates gameplay truth,
+ *  so there is no mutation to guard.
+ *
+ *  ⛔ LIFECYCLE — see ApplyDestroyedState(), which is where the furnishing is
+ *  torn down and rebuilt. A leak here is 12 orphan point lights per replay.
  */
 UCLASS()
 class GITCLAUDEUNREALTEST_API ACastle : public AActor, public ITeamAgent
@@ -208,14 +242,26 @@ protected:
 	 */
 	virtual void PostInitializeComponents() override;
 
-	/** Seeds CurrentHP from MaxHP, fires the OnCastleHPChanged seed broadcast, and initializes the HP bar widget (null-safe). */
+	/** Seeds CurrentHP from MaxHP, fires the OnCastleHPChanged seed broadcast, initializes the HP bar widget (null-safe), arms team gating, and spawns this castle's own furnishing (TASK-562). */
 	virtual void BeginPlay() override;
+
+	/**
+	 *  Tears the spawned furnishing down (TASK-562). ⚠️ A BELT, DECLARED AS ONE:
+	 *  the ordinary teardown paths are ApplyDestroyedState(true) and world
+	 *  shutdown (which ends every actor anyway). This override closes the one
+	 *  remaining lane — an explicit ACastle::Destroy() — because AActor::Destroy
+	 *  DETACHES its attached actors rather than destroying them, so without this
+	 *  a destroyed castle would leave its torches and its commander standing in
+	 *  mid-air with no owner. Nothing calls ACastle::Destroy() today; this exists
+	 *  so that nothing has to remember not to.
+	 */
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/** Static mesh root. Mesh asset assigned null-safe in OnConstruction from CastleMeshAsset. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Castle")
 	TObjectPtr<UStaticMeshComponent> CastleMesh;
 
-	/** Screen-space overhead HP bar (DrawSize 256x32 at Z+3150 — the 3× castle is ~2694 tall; re-derived ×3 from the old 1050/900 pair by TASK-349). Widget class resolved null-safe at BeginPlay from HPBarWidgetClass. */
+	/** Screen-space overhead HP bar (DrawSize 256x32 at Z+9450 — the 9× castle is ~8083 tall; the Z is C++-AUTHORED here, not BP-authored, so TASK-557 re-derived it ×3 a second time: 1050-over-900 → 3150-over-2694 (TASK-349) → 9450-over-8083, holding the same ≈1.17× headroom over the mesh top at every scale). Widget class resolved null-safe at BeginPlay from HPBarWidgetClass. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Siegebound|Castle")
 	TObjectPtr<UWidgetComponent> HPBarWidget;
 
@@ -296,56 +342,123 @@ protected:
 	 *  Half-extent (XY) of this castle's spawn box, read by IsPointInSpawnBox (W1
 	 *  TASK-275, Shield Wall ATTACK command). PAIRED-TUNABLE (3-way law, CONVENTIONS):
 	 *  ACastle::SpawnBoxHalfExtent ≡ ASiegePlayerController::SpawnBoxHalfExtent ≡
-	 *  ASiegeBotController::SpawnBoxHalfExtent — all default (2460,2460); keep the three
-	 *  in lockstep. Re-derived 840 → 2460 by TASK-349 (CONVENTIONS "Castle 3× HOLLOW"
-	 *  paired-tunable law: half-extent ≈ the 3× castle's full 2460 width, preserving the
-	 *  original intent), which makes the box span the castle's now-walkable INTERIOR —
-	 *  spawn-inside works by construction. The value appears in 3 places (flagged in
-	 *  CONVENTIONS); a future pass MAY delegate both controllers to this castle helper —
-	 *  OUT of scope here. The mid ACaptureZone::ZoneHalfExtent deliberately STAYS (840,840).
+	 *  ASiegeBotController::SpawnBoxHalfExtent — all default (7380,7380); keep the three
+	 *  in lockstep. Re-derived 840 → 2460 by TASK-349 (Castle 3× HOLLOW), then
+	 *  2460 → 7380 by TASK-557 (CONVENTIONS WR-§2 row 1, the 9× castle) — the SAME
+	 *  paired-tunable law both times: half-extent ≈ the castle's full width
+	 *  (9× bounds 7313.7 × 7384.5 × 8082.6 uu), preserving the original intent, which
+	 *  keeps the box spanning the castle's walkable INTERIOR — spawn-inside works by
+	 *  construction. The value appears in 3 places (flagged in CONVENTIONS); a future
+	 *  pass MAY delegate both controllers to this castle helper — OUT of scope here.
+	 *  The mid ACaptureZone::ZoneHalfExtent deliberately STAYS (840,840) (WR-§2 row 7).
+	 *
+	 *  ⚠️ TASK-557 LEDGER NOTE — TWO CONSEQUENCES OF THE 7380 BOX, BOTH REPORTED, NEITHER
+	 *  A DEFECT HERE. (a) The box now reaches |X| = 32,380 against a ±26,000
+	 *  USiegeScatterConfig::ArenaHalfExtent.X — HARMLESS, because the box is only the
+	 *  FIRST gate: navmesh projection + collision + clearances still run and there is no
+	 *  navmesh past the arena, so the overhang can never yield a placement. (b) It moves
+	 *  the spawn-box EDGE from |X| = 22,540 to |X| = 17,620, which is the figure
+	 *  CONVENTIONS "Ancient Grounds …" names as THE binding constraint on
+	 *  USiegeScatterConfig::AncientGroundMaxAbsX. ✅ THAT FLAG WAS ANSWERED THE SAME
+	 *  DAY AND THIS NOTE IS THE RECORD OF IT: manager ruling W2-R1 (CONVENTIONS
+	 *  WR-§2b row E) RE-DERIVED the ceiling 21,000 → 16,080, and TASK-576 landed it
+	 *  in ScatterConfig.h. ⛔ IT IS NO LONGER "FLAGGED", IT IS RULED — do not re-open
+	 *  a closed ruling. 16,080 is not a new margin: it re-solves the SAME relationship
+	 *  against the 17,620 edge this note reports, preserving the original 1,540 centre
+	 *  margin and the original 700 uu footprint-edge clearance exactly. ⚠️ Two
+	 *  artifacts, and NEITHER is this header's: the C++ default lives in
+	 *  ScatterConfig.h (TASK-576) and the saved DA_BattlefieldScatter is TASK-569's
+	 *  editor step.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Castle", meta = (ClampMin = "0"))
-	FVector2D SpawnBoxHalfExtent = FVector2D(2460.f, 2460.f);
+	FVector2D SpawnBoxHalfExtent = FVector2D(7380.f, 7380.f);
 
 	/**
 	 *  GateBlockerVolume center, relative to the castle root (TASK-349 Gating
-	 *  tunable — component data, so neither the 3× mesh import nor a crumble swap
-	 *  can strip it). Default (6, −525, 284) is the TASK-350 PIE-VERIFIED gate
-	 *  position for the AUTHORED 3× hollow SM_Castle (the gate corridor mouth on
-	 *  the local −Y side; hero blocked at the enemy gate / passing his own proven
-	 *  in-engine on both instances), baked as the C++ default in loop 2 on the
-	 *  build-master's flag.
+	 *  tunable — component data, so neither a mesh import nor a crumble swap can
+	 *  strip it). The TASK-350 PIE-VERIFIED position for the AUTHORED 3× hollow
+	 *  SM_Castle was (6, −525, 284) — the gate corridor mouth on the local −Y side;
+	 *  hero blocked at the enemy gate / passing his own, proven in-engine on both
+	 *  instances.
 	 *
-	 *  WHY baking the 3×-derived value is now SAFE where loop-0's was not
-	 *  (co-commit reasoning, QA re-check point): TASK-350 commits this code and
-	 *  the 3× mesh IN THE SAME SESSION — the defaults and the mesh they were
-	 *  measured against land together, so no committed world pairs these values
-	 *  with the old solid mesh the way loop-0's uncoordinated (1221, 0, 300)
-	 *  default did.
+	 *  RE-DERIVED ×3 → (18, −1575, 852) by TASK-557 for the 9× castle (CONVENTIONS
+	 *  WR-§2 row 3). It is a MESH-LOCAL offset and the mesh scaled uniformly under
+	 *  it, so the ×3 is exact, not an estimate: the point tracks the same feature of
+	 *  the same geometry. SIGN CONVENTION VERIFIED BEFORE TYPING, not assumed — Y is
+	 *  NEGATIVE because the gate corridor mouth is on the local −Y side and +Y is
+	 *  "deeper into the keep" (InteriorAnchorRelativeLocation's doc states this, and
+	 *  the shipped box span Y [−660, −390] confirms it); ×3 preserves the sign and
+	 *  the direction.
 	 *
-	 *  HONEST RESIDUE (the failure path's known, accepted cost): a future
-	 *  MESH-ONLY revert to the old solid 814.5×820.6×894.9 castle would re-create
-	 *  a mis-placed blocker — this box spans Y [−660, −390] against that mesh's
-	 *  ±410 half-width, i.e. ~250 uu proud of its −Y face: a 520-wide × 250-deep ×
-	 *  452-tall enemy-only bump flush against that wall, holding enemy melee on
-	 *  that one strip ~250 uu out of range (localized stall, not match-breaking;
-	 *  every other face unaffected). Any such revert must retune these two
-	 *  tunables with the mesh. EditAnywhere stays — per-instance facing/offset
-	 *  corrections remain TASK-350's lever.
+	 *  WHY baking a mesh-derived value here is SAFE (co-commit reasoning, QA
+	 *  re-check point, unchanged in substance from TASK-350): the code default and
+	 *  the mesh it is measured against land in the SAME batch, so no committed world
+	 *  ever pairs these values with a mesh of a different scale.
+	 *
+	 *  HONEST RESIDUE (the failure path's known, accepted cost — RE-STATED for 9×): a
+	 *  future MESH-ONLY revert to the 3× castle (or further back to the solid
+	 *  814.5×820.6×894.9 one) re-creates a mis-placed blocker, now proportionally
+	 *  larger. Any such revert must retune these two tunables WITH the mesh.
+	 *  EditAnywhere stays — per-instance facing/offset corrections remain the
+	 *  integration task's lever.
 	 */
 	UPROPERTY(EditAnywhere, Category = "Siegebound|Castle|Gating")
-	FVector GateBlockerRelativeLocation = FVector(6.f, -525.f, 284.f);
+	FVector GateBlockerRelativeLocation = FVector(18.f, -1575.f, 852.f);
 
 	/**
-	 *  GateBlockerVolume half-extents (TASK-349 Gating tunable). Default
-	 *  (260, 135, 226) is the TASK-350 PIE-VERIFIED gate-opening cover for the
-	 *  authored 3× castle (X 520 span across the corridor mouth, Y 270 through the
-	 *  wall — no capsule tunneling, Z covering floor≈58 up to ≈510, past the
-	 *  ≥450 clear height), baked with GateBlockerRelativeLocation in loop 2 (same
-	 *  co-commit reasoning and mesh-only-revert residue — see that doc).
+	 *  GateBlockerVolume half-extents (TASK-349 Gating tunable). The TASK-350
+	 *  PIE-VERIFIED cover for the 3× castle was (260, 135, 226): X 520 span across
+	 *  the corridor mouth (a 600-wide clear opening ⇒ ≈40 uu of jamb gap per side),
+	 *  Y 270 through the wall (no capsule tunneling), Z covering floor ≈58 up to
+	 *  ≈510, past the ≥450 clear height.
+	 *
+	 *  ⛔⛔ RE-DERIVED FOR THE 9× CASTLE BY TASK-557 — AND **X IS NOT A ×3**
+	 *  (CONVENTIONS WR-§2 row 2 says ×3; this is a DECLARED DEPARTURE under SC-§15,
+	 *  refused on a CHECKABLE MECHANISM, and the arithmetic is the whole argument):
+	 *    • Y 135 → 405 and Z 226 → 678 ARE ×3. Both span SHELL features that scaled —
+	 *      wall thickness and floor-to-lintel. The new Z band is [174, 1530], and its
+	 *      floor 174 is EXACTLY the 9× interior floor height (3 × 58, WR-§1), so the
+	 *      blocker still sits ON the threshold rather than above or below it; 1530
+	 *      still clears the ≈1356 gate clear height, as 510 cleared ≈452.
+	 *    • X 260 → **900, NOT 780.** ⚠️ THE VALUE IS RATIFIED AND THE ARGUMENT THAT
+	 *      STOOD HERE IS RETIRED — they are not the same act (CONVENTIONS WR-§2b
+	 *      ruling **W4-R4**, 2026-08-15, raised as qa/TASK-565.md WARN-1). ⛔ That
+	 *      ruling keeps the retired wording VERBATIM, which is exactly why it is not
+	 *      re-printed here: two copies of a dead claim is how it comes back to life.
+	 *      Read it there; what follows is the corrected reasoning.
+	 *      ⛔ THE APERTURE IS MEASURED, NEVER PROJECTED. The delivered 9× gate is a
+	 *      **1560 uu COLLISION gap spanning x −762 … +798**, and a **1470 uu VISUAL**
+	 *      opening — handoffs/TASK-555-artist.md, the as-built readback. ⛔ **1800 is
+	 *      the CARVE-CUTTER RECIPE width** (that handoff's row H, "recipe only; no
+	 *      carve ran"): the width of the TOOL, not the width of the HOLE, because the
+	 *      cutter meets wall geometry.
+	 *      ⇒ AGAINST THAT APERTURE THE ×3 IS AN EXACT, ZERO-GAP FIT — not a leaky one.
+	 *      With GateBlockerRelativeLocation.X = 18, X = 780 spans −762 … +798,
+	 *      character for character the measured collision gap. ⇒ **the jamb gap at 780
+	 *      is 0 per side, and the mesh-local X offset leaves NO residual** to argue
+	 *      about.
+	 *      ⇒ SO 900 STANDS AS A HARMLESS SUPERSET, and that is the whole of its
+	 *      justification — it closes no gap, because there is none to close. It spans
+	 *      −882 … +918, i.e. it embeds 120 uu per side INTO THE SOLID UCX JAMB HULLS
+	 *      (a 1560 collision gap is precisely the claim that everything outside
+	 *      −762 … +798 is hull). Inert twice over: nothing can occupy that space to be
+	 *      blocked by it, and the volume Ignores every channel except the ENEMY team's
+	 *      (ConfigureTeamGating).
+	 *      ⛔ WHAT THE TOLERANCE IS STILL PINNED TO — this half was never in doubt:
+	 *      **BODIES DID NOT GROW (WR-§1 / SC-§34's human-scale exemption), so the GAP
+	 *      TOLERANCE MAY NOT GROW EITHER.** The bar is the narrowest agent DIAMETER on
+	 *      the field — hero capsule r≈42 ⇒ 84 uu (SiegeGameMode.h), Cavalry r45 ⇒ 90 uu
+	 *      (CONVENTIONS "Castle 3× HOLLOW", the sizing agents). Any per-side gap that
+	 *      reaches 84 uu lets those capsules walk into the enemy keep AROUND the
+	 *      blocker, silently deleting the team-gated interior while every bounds
+	 *      readback still passes.
+	 *  ⚠️ The integration task PIE-VERIFIES the cover and may re-tune this EditAnywhere
+	 *  value against the delivered geometry. It may NOT reduce it below "opening span
+	 *  minus one agent diameter" — and that span is the MEASURED **1560**, ⛔ NOT 1800
+	 *  — without re-opening the reasoning above.
 	 */
 	UPROPERTY(EditAnywhere, Category = "Siegebound|Castle|Gating", meta = (ClampMin = "0"))
-	FVector GateBlockerExtent = FVector(260.f, 135.f, 226.f);
+	FVector GateBlockerExtent = FVector(900.f, 405.f, 678.f);
 
 	/**
 	 *  🚩 FLAGGED TUNABLE (TASK-398; CONVENTIONS "FOLLOW command … (2026-08-02)"
@@ -353,24 +466,120 @@ protected:
 	 *  local frame — read only through GetInteriorAnchorLocation(), which applies
 	 *  the actor transform (so Castle_Red's yaw 180 is handled for free).
 	 *
-	 *  Default ZeroVector per §8, and it is not an arbitrary zero: SM_Castle's
-	 *  origin is GROUND-CENTRE by law (CONVENTIONS "Castle 3× HOLLOW" — bounds
-	 *  2442×2460×2694, ground-centre origin), and the hollow interior's floor is
-	 *  authored FLAT AT GROUND LEVEL with a ≤40 uu threshold step, so local
-	 *  (0, 0, 0) is the interior floor's centre — and Z 0 is the FLOOR, which is
-	 *  exactly what a navmesh destination wants (a character's own location is its
-	 *  capsule centre ~90 uu higher; the mover projects).
+	 *  Default ZeroVector, and it is not an arbitrary zero: SM_Castle's origin is
+	 *  GROUND-CENTRE by law (CONVENTIONS WR-§0 — 9× bounds within ±10 % of
+	 *  7326 × 7380 × 8082 uu, ground-centre origin), so local (0, 0) is the interior
+	 *  floor's CENTRE in XY.
+	 *
+	 *  ⚖️ TASK-557 LEDGER ROW — (ii) DELIBERATELY UNCHANGED, AND THE REASON IS
+	 *  STRUCTURAL, NOT A JUDGEMENT CALL: a ZERO VECTOR IS SCALE-INVARIANT. The centre
+	 *  of a 3× castle and the centre of a 9× castle are the same local point, so
+	 *  there is nothing here to multiply. ⚠️ What DID rot is the old comment's claim
+	 *  that the interior floor is "FLAT AT GROUND LEVEL with a ≤40 uu threshold step":
+	 *  the shipped floor is z ≈ 58 and the 9× floor is z ≈ 174 (WR-§1), reached by a
+	 *  RE-DERIVED stair/ramp approach — the ≤40 uu STEP LIMIT survives (bodies did not
+	 *  grow), the single step does not. Z 0 remains correct anyway BECAUSE this value
+	 *  is only ever a navmesh DESTINATION: GetInteriorAnchorLocation feeds a
+	 *  MoveToLocation, and the mover projects onto the interior floor poly whatever
+	 *  its height.
 	 *
 	 *  ⚠️ WHAT TO CHANGE IT TO, AND WHEN: nudge it (never the code) if the PIE
 	 *  measurement shows local (0,0) sitting inside a keep/tower hull rather than
 	 *  the open hall — the symptom is a miner that stalls at the gate instead of
 	 *  walking in. The gate corridor mouth is on the local −Y side
-	 *  (GateBlockerRelativeLocation Y −525), so +Y is "deeper into the keep".
+	 *  (GateBlockerRelativeLocation Y −1575), so +Y is "deeper into the keep".
 	 *  EditDefaultsOnly, never replicated: it is design-time data, identical on
 	 *  both machines by construction — exactly like the two Gating tunables above.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Gating")
 	FVector InteriorAnchorRelativeLocation = FVector::ZeroVector;
+
+	//~ ---------------- WAR ROOM FURNISHING (TASK-562; WR-§4 + WR-§5) ----------------
+	//~ Every anchor below is CASTLE-MESH-RELATIVE and is authored in the NEW 9×
+	//~ interior space. ⛔ NO pre-scale number was copied. The defaults are filled in
+	//~ the constructor from named interior constants (Castle.cpp anonymous namespace),
+	//~ so the derivation lives next to the arithmetic instead of behind a literal.
+
+	/**
+	 *  Where this castle's torches hang, in CASTLE-MESH-LOCAL space (WR-§4's
+	 *  placement clause). ⚠️ AN ANCHOR IS A POINT **ON A WALL**, NOT ON THE
+	 *  FLOOR: SM_Torch's origin is its WALL-MOUNT FACE (TASK-556 / WR-§4) and
+	 *  the mesh extends along its own +X into the room, so each transform's
+	 *  ROTATION is what aims the torch off the wall — yaw 0 = "the wall is to my
+	 *  −X", yaw 180 = "to my +X", yaw +90 = "to my −Y", yaw −90 = "to my +Y". A
+	 *  floor-origin torch would bury itself in the masonry, which is why the
+	 *  origin convention is repeated here.
+	 *
+	 *  The six shipped defaults and how they were derived are documented in
+	 *  Castle.cpp (ACastle::ACastle, the furnishing block). Scale is left at 1 on
+	 *  every anchor — the torch's SIZE belongs to TASK-556's mesh, not to this
+	 *  array.
+	 *
+	 *  ⚠️ FLAGGED FOR JONATHAN (TASK-571): both the count and the placement are
+	 *  feel tunables. EditDefaultsOnly ⇒ BP_Torch's owner edits this array on the
+	 *  castle's defaults with no recompile.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Furnishing")
+	TArray<FTransform> TorchAnchors;
+
+	/**
+	 *  Hard cap on spawned torches per castle (WR-§4: "recommended default 6 ⇒ 12
+	 *  shadowless point lights in the whole level"). The spawn takes
+	 *  min(TorchAnchors.Num(), MaxTorchesPerCastle), so ADDING anchors in a
+	 *  Blueprint can never quietly multiply the level's light count past this
+	 *  number — raising the cap is the deliberate second edit.
+	 *  0 disables torches entirely (a clean designer/perf kill switch, and the
+	 *  answer if decision D3 ever comes back against runtime lights).
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Furnishing", meta = (ClampMin = "0"))
+	int32 MaxTorchesPerCastle = 6;
+
+	/**
+	 *  Where the commander NPC stands, in CASTLE-MESH-LOCAL space (WR-§5's
+	 *  placement clause) — a FLOOR point in the grand hall, rotated so the
+	 *  commander faces the room (his war table is placed by ACommanderNpc a
+	 *  fixed distance along the actor's own +X). Derivation in Castle.cpp.
+	 *
+	 *  ⛔ HE MAY NOT STAND IN THE GATE CORRIDOR OR ON THE APPROACH: the corridor
+	 *  is the only way in and out for both teams, and the approach is the
+	 *  re-derived stair/ramp (WR-§1) — furniture on either is an obstacle in the
+	 *  one route the whole feature depends on. The shipped default is checked
+	 *  against both volumes in Castle.cpp's comment, and a re-tune must re-check.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Furnishing")
+	FTransform CommanderNpcAnchor;
+
+	/**
+	 *  Torch actor class, soft — /Game/Blueprints/BP_Torch (the ASiegeGameMode::
+	 *  HeroPawnClassAsset precedent, verbatim). TWO DISTINCT NULL PATHS, and the
+	 *  difference is deliberate:
+	 *    • CLEARED (IsNull) ⇒ SILENT OPT-OUT — this castle spawns no torches at
+	 *      all. The AttackImpactEffect designer-opt-out pattern (TASK-020).
+	 *    • SET BUT UNRESOLVABLE ⇒ fall back to the raw C++ ATorch and say so ONCE
+	 *      in the log. ⚠️ THIS IS THE PATH THAT RUNS TODAY: no task in the WAR
+	 *      ROOM batch authors BP_Torch (TASK-566 imports meshes, 567 the crumble
+	 *      trio, 568 the input/UI assets, 569 the DataAsset + PIE), so the raw
+	 *      class is the shipped behaviour until somebody creates the Blueprint.
+	 *      That is a complete, working torch — see ATorch's own defaults.
+	 *  ⚠️ NAMED FORWARD: TASK-558 parks TASK-556's MEASURED flame-centre offset on
+	 *  BP_Torch's TorchLightRelativeOffset. That landing site only exists once the
+	 *  Blueprint does; until then the torch derives the offset from its own mesh
+	 *  bounds (a ≈2.6 % polish item, never a defect). ⛔ Do NOT "fix" that by
+	 *  transcribing the number into C++.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Furnishing")
+	TSoftClassPtr<ATorch> TorchClassAsset;
+
+	/**
+	 *  Commander NPC actor class, soft — /Game/Blueprints/BP_CommanderNpc. Same
+	 *  two null paths as TorchClassAsset: cleared = this castle gets no commander
+	 *  (silent), set-but-unresolvable = the raw C++ ACommanderNpc plus one log
+	 *  line. ⚠️ As with the torch, no task in this batch authors the Blueprint, so
+	 *  the C++ fallback is what runs — and it is fully functional (soft meshes,
+	 *  null-safe, its own EditDefaultsOnly tunables at their law defaults).
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Furnishing")
+	TSoftClassPtr<ACommanderNpc> CommanderNpcClassAsset;
 
 	/** Seconds between heal-over-time ticks (Masons repair, TASK-059) — impl detail, not a GDD stat. Smaller = smoother bar; the total/duration are the caller's. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle", meta = (ClampMin = "0.05"))
@@ -435,6 +644,33 @@ private:
 	 *  behavior, never a crash.
 	 */
 	void ConfigureTeamGating();
+
+	/**
+	 *  Spawns this castle's torches + commander NPC from the anchors and attaches
+	 *  them to CastleMesh (TASK-562, WR-§4/WR-§5). Pushes this castle's Team into
+	 *  the NPC via ACommanderNpc::InitCommanderNpc — ⛔ PUSHED, never derived by
+	 *  the NPC (TASK-559's contract).
+	 *
+	 *  IDEMPOTENT BY CONSTRUCTION: it clears any existing set first, so it can be
+	 *  called from BeginPlay and again from every Play-Again restore without ever
+	 *  producing two sets or an orphan. Null-safe throughout — a cleared class, an
+	 *  unresolvable class, an empty anchor array or a refused SpawnActor each
+	 *  degrade to "that piece of furniture is absent" and the castle plays exactly
+	 *  as it does today.
+	 *
+	 *  ⛔ NO AUTHORITY GUARD, DELIBERATELY — see the class doc. Both machines
+	 *  build their own Tier-C local set.
+	 */
+	void SpawnCastleFurnishings();
+
+	/** Destroys the spawned torches + commander NPC and empties the tracking arrays (the ASiegeBattlefieldScatter::ClearScatter lifecycle: destroyed, never pooled). Idempotent and null-safe. */
+	void DestroyCastleFurnishings();
+
+	/** Resolves TorchClassAsset: nullptr = the deliberate cleared opt-out; unresolvable = ATorch::StaticClass() plus one log line. */
+	UClass* ResolveTorchClass();
+
+	/** Resolves CommanderNpcClassAsset: nullptr = the deliberate cleared opt-out; unresolvable = ACommanderNpc::StaticClass() plus one log line. */
+	UClass* ResolveCommanderNpcClass();
 
 	/** Single-fire destruction: guards on bDestroyed, hides the actor, disables collision, broadcasts OnCastleDestroyed. */
 	void HandleDestroyed();
@@ -520,6 +756,20 @@ private:
 	 *  server paths (HandleDestroyed / ResetCastle) AND by OnRep_Destroyed, so
 	 *  both machines run the identical state change; the server-only halves
 	 *  (heal-stop, sting, win broadcast, HP/crumble resets) stay in their owners.
+	 *
+	 *  ⛔⛔ IT ALSO OWNS THE WAR-ROOM FURNISHING LIFECYCLE (TASK-562) — destroy on
+	 *  the true edge, re-spawn on the false edge — AND THAT HOOK CHOICE IS
+	 *  LOAD-BEARING, NOT A CONVENIENCE. The TASK-562 spec named HandleDestroyed
+	 *  and ResetCastle as the donors; both are AUTHORITY-ONLY (each opens with a
+	 *  HasAuthority() refusal), while the furnishing is TIER C and exists
+	 *  SEPARATELY ON EVERY MACHINE. Hooking them would therefore have leaked one
+	 *  full set of torches + one commander per castle per replay ON EVERY CLIENT
+	 *  — the exact "12 orphan lights per replay" hazard WR-§4 warns about,
+	 *  arriving on the machine nobody was watching. This function is the ONE the
+	 *  server paths and the client's OnRep_Destroyed both run, which is precisely
+	 *  why the CASTLE-3X gate blocker already "rides the actor state on both
+	 *  machines" from here (addendum §2) — mirroring that lifecycle, which the
+	 *  spec asked for, means hooking HERE.
 	 */
 	void ApplyDestroyedState(bool bNowDestroyed);
 
@@ -533,4 +783,24 @@ private:
 
 	/** Repeating heal-over-time timer handle (Masons repair). Cleared by StopHealOverTime. */
 	FTimerHandle HealTimerHandle;
+
+	/**
+	 *  The torch actors this castle spawned (TASK-562), in TorchAnchors order.
+	 *  GC-rooted via UPROPERTY; DestroyCastleFurnishings DESTROYS them — the
+	 *  ASiegeBattlefieldScatter::SpawnedMines lifecycle verbatim (destroyed,
+	 *  never pooled, so a Play Again gets an exactly-fresh set). Transient: it is
+	 *  runtime bookkeeping, never saved with a level or a Blueprint.
+	 */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<ATorch>> SpawnedTorches;
+
+	/** The commander NPC this castle spawned (TASK-562). Same lifecycle as SpawnedTorches — exactly one per standing castle, destroyed and re-spawned rather than re-used, so the Team push re-runs on the fresh actor. */
+	UPROPERTY(Transient)
+	TObjectPtr<ACommanderNpc> SpawnedCommanderNpc;
+
+	/** One-shot guard for the "BP_Torch unresolvable, using the C++ ATorch" line (once per castle, never per spawn and never per Play Again). */
+	bool bLoggedTorchClassFallback = false;
+
+	/** One-shot guard for the "BP_CommanderNpc unresolvable, using the C++ ACommanderNpc" line. */
+	bool bLoggedCommanderNpcClassFallback = false;
 };

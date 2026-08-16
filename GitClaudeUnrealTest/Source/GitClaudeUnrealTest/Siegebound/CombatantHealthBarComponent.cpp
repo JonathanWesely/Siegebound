@@ -225,3 +225,21 @@ void UCombatantHealthBarComponent::HideBar()
 {
 	SetVisibility(false, /*bPropagateToChildren=*/true);
 }
+
+FLinearColor UCombatantHealthBarComponent::GetDefaultBlueBarColor()
+{
+	// ⭐ A static member function may read its own class's protected members — which is the whole
+	// reason this seam exists in this shape: BlueBarColor stays protected and no caller gains a
+	// way to write it (WR-§6, ruling W4-R5).
+	//
+	// ⛔ NO NULL BRANCH, DELIBERATELY: GetDefault<T>() on a statically-linked native UCLASS always
+	// returns that class's CDO, so a defensive branch here would be untestable dead code.
+	return GetDefault<UCombatantHealthBarComponent>()->BlueBarColor;
+}
+
+FLinearColor UCombatantHealthBarComponent::GetDefaultRedBarColor()
+{
+	// Same contract as GetDefaultBlueBarColor() above: class defaults, no null branch, and the
+	// field stays protected.
+	return GetDefault<UCombatantHealthBarComponent>()->RedBarColor;
+}

@@ -701,14 +701,43 @@ protected:
 	float TieBreakDistance = 100.f;
 
 	/**
-	 *  Shield Wall DEFEND engagement radius (W1 TASK-275): under the player's DEFEND
-	 *  stance, a Blue Standard unit fights ONLY enemies within this 2D distance of its
-	 *  OWN castle, else falls back toward home. Default 2500 uu (Q6 default; FLAGGED
-	 *  tunable for the 10x arena). Lives HERE per CONVENTIONS (the unit owns it, NOT
-	 *  the controller). // Shield Wall — Defend radius
+	 *  Shield Wall DEFEND engagement BAND (W1 TASK-275; ⚠️ SEMANTIC CHANGE — TASK-574,
+	 *  CONVENTIONS WR-§2b row B): under the player's DEFEND stance, a Blue Standard unit
+	 *  fights ONLY enemies within this 2D distance PAST ITS OWN CASTLE'S WALL FACE, else
+	 *  falls back toward home.
+	 *
+	 *  ⚠️ IT IS NO LONGER A RADIUS FROM THE CASTLE CENTRE. ⛔ NEVER pass this member
+	 *  straight to AcquireEnemyNearPoint — ResolveDefendEngagementRadius() is the ONE
+	 *  place the band is converted into a centre radius, and it is the only supported
+	 *  read of this value.
+	 *
+	 *  ⚠️ THE NAME WAS DELIBERATELY NOT CHANGED TO MATCH THE NEW MEANING, and the reason
+	 *  is mechanical rather than stylistic: ASorcererUnit's constructor writes this member
+	 *  BY NAME to seal itself (SorcererUnit.cpp "DefendRadius 0"), and SorcererUnit.{h,cpp}
+	 *  is outside TASK-574's ownership — a rename would have broken a file this task may
+	 *  not edit. The MEANING moved; the SYMBOL stayed.
+	 *
+	 *  WHY THE SHAPE CHANGED, AND WHY BUMPING THE NUMBER WAS REFUSED: the old value was a
+	 *  disc about the castle CENTRE, and after the 9× remaster the castle's colliding
+	 *  half-width is ≈3,657 uu — so a 2,500 disc lay ENTIRELY INSIDE THE KEEP. Besiegers
+	 *  are physically blocked at the gate and therefore stand at ≥3,657 uu from centre, so
+	 *  DEFEND acquired nothing, ever: every defender walked home while the castle was
+	 *  battered, and no bounds readback could see it. A radius measured from the centre of
+	 *  a thing that is SMALLER than the thing cannot mean anything at ANY scale, so the
+	 *  repair is structural — the resolver reads the castle's LIVE colliding bounds and
+	 *  this value is the band added to them (CONVENTIONS SC-§34's structural escape).
+	 *
+	 *  DEFAULT 1281 IS BEHAVIOUR-PRESERVING, NOT INVENTED: the 3× castle's measured
+	 *  colliding half-extent is 1218.95 uu, and 1218.95 + 1281 = 2500 — EXACTLY the disc
+	 *  the shipped game had, so this is a repair and not a balance change. The same 1281
+	 *  resolves to ≈4,938 at the 9× castle, and carries itself through the next resize.
+	 *
+	 *  Q6 default; ⚠️ FLAGGED tunable (playtest item D10) — the MECHANISM above is a
+	 *  manager ruling, the NUMBER is Jonathan's. Lives HERE per CONVENTIONS (the unit owns
+	 *  it, NOT the controller). // Shield Wall — Defend band past the wall face
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Commands", meta = (ClampMin = "0"))
-	float DefendRadius = 2500.f;
+	float DefendRadius = 1281.f;
 
 	/** Seconds between state-machine checks (spec: ~0.25 s, never per-tick). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|AI", meta = (ClampMin = "0.05"))
@@ -720,7 +749,15 @@ protected:
 	 *  nearest-collision point. Must comfortably cover the gap between a castle
 	 *  wall face and the nearest navmesh poly the mover's team filter ALLOWS
 	 *  (agent-radius erosion ~34 uu + the interior-area hull-box margin; 800
-	 *  horizontal is generous for every wall/gate face of the 2437×2461 castle).
+	 *  horizontal is generous for every wall/gate face of the castle, whose
+	 *  colliding bounds are 7313.7 × 7384.5 × 8082.6 uu after the 9× remaster).
+	 *  ⚠️ CITATION CORRECTED BY TASK-574 (CONVENTIONS WR-§2b row G): this line used
+	 *  to quote "the 2437×2461 castle", which was the PRE-remaster size and had been
+	 *  false since the 9× pass. ⛔ THE NUMBER IS DELIBERATELY UNCHANGED (SC-§34 (ii),
+	 *  the human/body-scale exemption) and TASK-557 row S10 verified it: what 800
+	 *  measures is the GAP AT A FACE — agent-radius erosion plus a hull-box margin,
+	 *  both keyed to a UNIT'S BODY — not any castle dimension. Units did not grow, so
+	 *  this extent does not scale with the castle. Only the citation was wrong.
 	 *  Deliberately NOT castle-half-diagonal-sized: a goal buried DEEP inside the
 	 *  enemy interior (e.g. an enemy building at the hall center) is
 	 *  unreachable-by-design and should FAIL projection (legacy-fallback, unit
@@ -792,7 +829,7 @@ protected:
 	 *  hot (the third is AAncientGround::BoostTickInterval).
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Keywords", meta = (ClampMin = "0"))
-	float PermanentDamageBonusPerStack = 0.05f; // GDD §x.x
+	float PermanentDamageBonusPerStack = 0.05f; // GDD §3.12
 
 	/**
 	 *  ANCIENT GROUNDS (TASK-360, CONVENTIONS §4) — the hard stack cap: 80 × 5% = the
@@ -802,7 +839,7 @@ protected:
 	 *  without bound. Mechanic rule, FLAGGED tunable (see above).
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Keywords", meta = (ClampMin = "0"))
-	int32 MaxPermanentDamageStacks = 80; // GDD §x.x
+	int32 MaxPermanentDamageStacks = 80; // GDD §3.12
 
 	/**
 	 *  Blockout "attack animation" (TASK-020): how far VisualMesh lunges along the
@@ -1086,8 +1123,11 @@ private:
 	 *    • HOLD   — SUPERSEDED (TASK-344): the team-wide Hold stance was replaced by the
 	 *      per-unit group orders (UpdateStateGrouped) and nothing latches it any more; a
 	 *      stale/out-of-contract Hold value defensively falls through to the ATTACK branch.
-	 *    • DEFEND — target = AcquireEnemyNearPoint(own castle, DefendRadius); goal = that
-	 *      target ?? fall back to the own castle (EnterAdvance).
+	 *    • DEFEND — target = AcquireEnemyNearPoint(own castle centre,
+	 *      ResolveDefendEngagementRadius(own castle)); goal = that target ?? fall back to
+	 *      the own castle (EnterAdvance). ⚠️ The radius is DERIVED from the castle's live
+	 *      colliding bounds (TASK-574) — DefendRadius is the band PAST THE WALL FACE, not
+	 *      the disc itself.
 	 */
 	void UpdateStateStandardCommanded(const ASiegePlayerController& PC);
 
@@ -1137,6 +1177,35 @@ private:
 	 *  into a Follow task.
 	 */
 	ACastle* FindOwnCastle() const;
+
+	/**
+	 *  TASK-574 (CONVENTIONS WR-§2b row B) — the ONE conversion from the DEFEND BAND
+	 *  (DefendRadius, measured past the wall face) to the CENTRE RADIUS that
+	 *  AcquireEnemyNearPoint actually consumes:
+	 *
+	 *      max(colliding half-extent X, Y) of the own castle  +  DefendRadius
+	 *
+	 *  read LIVE from the castle actor every time, so the next castle resize carries
+	 *  the defence band with it instead of silently deleting the command (the lesson
+	 *  the 9× remaster taught, and the same GetActorBounds derivation
+	 *  ASiegeGameMode::GetHeroStartTransform branch 3 already ships).
+	 *
+	 *  ⛔ THREE CONTRACTS THIS FUNCTION IS THE SOLE KEEPER OF — a caller that inlines
+	 *  the arithmetic instead breaks all three:
+	 *    1. A BAND OF 0 STILL MEANS "NO ACQUISITION", ALWAYS. ASorcererUnit sets
+	 *       DefendRadius = 0 as half 1 of its never-attacks seal; a bare
+	 *       max(BoxExtent) + 0 would hand it a ~3,657 uu disc and start it picking
+	 *       fights. 0 short-circuits to 0 BEFORE any geometry is queried.
+	 *    2. bOnlyCollidingComponents = true — the castle's HP-bar widget sits ~9,450 uu
+	 *       up at the 9× scale and must never inflate the query. What DEFEND cares
+	 *       about is the footprint a besieger is physically stopped by.
+	 *    3. NULL / DEGENERATE BOUNDS FALL BACK TO THE AUTHORED VALUE USED AS A PLAIN
+	 *       CENTRE RADIUS — i.e. exactly the pre-TASK-574 behaviour, logged once.
+	 *       ⛔ Never a zero radius by accident, never a crash.
+	 *
+	 *  Non-const because it owns the two one-shot log guards below.
+	 */
+	float ResolveDefendEngagementRadius(const ACastle* OwnCastle);
 
 	/**
 	 *  Siege-profile state (TASK-054, GDD §3.8): IGNORE units and the hero;
@@ -1422,8 +1491,13 @@ private:
 	/**
 	 *  Distance from a point to the CLOSEST POINT on the target's collision
 	 *  (mirrors the hero melee, TASK-003) so large-footprint targets — the
-	 *  castle's ~800x800 base, origin at center — measure from their walls.
-	 *  Falls back to the actor origin when no usable collision exists.
+	 *  castle's 7313.7 × 7384.5 uu base, origin at center — measure from their
+	 *  walls. Falls back to the actor origin when no usable collision exists.
+	 *  ⚠️ CITATION CORRECTED BY TASK-574 (uncited instance of WR-§2b row G, found by
+	 *  this task's SC-§22 shape sweep): this line quoted "~800x800", the M1 castle,
+	 *  and was already two remasters stale. ✅ NO CODE CHANGE IS OWED — measuring to
+	 *  the closest collision point is scale-INDEPENDENT by construction, which is
+	 *  precisely why this helper never rotted the way DefendRadius did.
 	 *  TODO(post-TASK-028, qa/TASK-026-report.md NIT-4): three hand-mirrors of
 	 *  this closest-point pattern exist (hero melee inline, this pair,
 	 *  AProjectile::GetDistanceToTarget) — consolidate into ONE shared static
@@ -1614,6 +1688,28 @@ private:
 
 	/** One-shot guard for the missing-AIController warning. */
 	bool bWarnedNoAIController = false;
+
+	/**
+	 *  TASK-574 one-shot Log guard, once per UNIT LIFETIME and never re-armed — the
+	 *  AMinerUnit::bLoggedInteriorAnchor idiom verbatim (Play Again destroys units, so a
+	 *  second match is a second unit and logs again). Prints the castle's measured
+	 *  colliding half-width, the authored band and the resolved engagement radius the
+	 *  first time this unit resolves a DEFEND disc. ⚠️ THIS IS THE ACCEPTANCE INSTRUMENT:
+	 *  it is the only place the derivation is readable back from a PIE log with no editor
+	 *  probe, and one line per defending unit is the honest cost of that (CONVENTIONS §5
+	 *  "MEASURE, DO NOT ASSUME").
+	 */
+	bool bLoggedDefendBandDerived = false;
+
+	/**
+	 *  TASK-574 one-shot Warning guard for the DEFEND-band FALLBACK path (no own castle,
+	 *  or degenerate colliding bounds ⇒ the authored DefendRadius is used as a plain
+	 *  centre radius, i.e. pre-TASK-574 behaviour). ONE flag covers BOTH causes on
+	 *  purpose: they are both static over a unit's lifetime and they produce the IDENTICAL
+	 *  behaviour, so a second flag could only ever add a duplicate line; the message names
+	 *  which cause fired.
+	 */
+	bool bLoggedDefendBandFallback = false;
 
 	/** World time of the last landed attack — keeps the cadence honest across target swaps and range flapping. */
 	double LastAttackTime = -1.0e9;

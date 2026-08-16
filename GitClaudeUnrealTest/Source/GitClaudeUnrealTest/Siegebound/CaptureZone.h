@@ -40,8 +40,14 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCaptureZoneOwnerChanged, ACaptur
  *  Siegebound capturable mid zone (W1-PREP additions 3, TASK-260 — Jonathan's
  *  2026-07-23 directive: shrink each side's spawn area to a castle-box and add a
  *  single capturable square straddling the centerline). ONE level instance
- *  `CaptureZone_Center` sits at world origin (0,0,0); its box straddles X=0 and
- *  is the SAME size as each side's spawn box (ZoneHalfExtent default (840,840)).
+ *  `CaptureZone_Center` sits at world origin (0,0,0); its box straddles X=0,
+ *  ZoneHalfExtent default (840,840).
+ *  ⚠️ THE ORIGINAL "SAME size as each side's spawn box" CLAIM IS DEAD, AND IT DIED
+ *  ONE RESIZE AGO: it was true at authoring (SpawnBoxHalfExtent was (840,840) too),
+ *  went false when TASK-349 (Castle 3×) re-derived that box 840 -> 2460, and is now
+ *  off by ~8.8× at TASK-557's 7380. ⛔ The equality was DESCRIPTIVE, never a pairing
+ *  law: CONVENTIONS WR-§2 row 7 ruled ZoneHalfExtent DELIBERATELY UNCHANGED, because
+ *  scaling mid changes capture gameplay. ⛔ Do NOT "fix" the constant to the comment.
  *
  *  CAPTURE STATE MACHINE (server/authoritative — the eval runs only on
  *  HasAuthority(), consistent with ASiegeGameState/ASiegeGameMode being the
@@ -165,11 +171,20 @@ protected:
 
 	/**
 	 *  Half-extent (XY) of the capturable box, centered on the actor origin.
-	 *  Default (840,840) = "same size as the spawnable region on either side"
-	 *  (Jonathan) = 2x the castle footprint. FLAGGED tunable.
+	 *  Default (840,840). FLAGGED tunable.
+	 *  ⚠️ ITS TWO ORIGIN STORIES ARE HISTORY, NOT LIVE RELATIONSHIPS, AND BOTH WENT
+	 *  FALSE ONE RESIZE AGO. Jonathan's "same size as the spawnable region on either
+	 *  side" held only while SpawnBoxHalfExtent was also (840,840) — it is 2460 after
+	 *  TASK-349 (Castle 3×) and 7380 after TASK-557 (the 9× castle). And "= 2x the
+	 *  castle footprint": the 1680 full width was ~2.1x the ~814-uu M1 castle
+	 *  (CONVENTIONS WR-§2b row C), ~0.69x after Castle-3× (~2438 wide) and ~0.23x at
+	 *  the 9× castle (~7314 wide). ⛔ Do NOT re-derive this default from either of
+	 *  them: CONVENTIONS WR-§2 row 7 rules it DELIBERATELY UNCHANGED because scaling
+	 *  mid changes capture gameplay — the same ruling Castle-3× made.
 	 *  ⚠️ PAIRED TUNABLE with AAncientGround::ZoneHalfExtent (TASK-359): the
 	 *  ancient grounds are specified as "the size of the mid capture zone", so
 	 *  the two defaults are deliberately identical — change them TOGETHER.
+	 *  ⭐ THAT pairing is live law; the two above are not.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Capture")
 	FVector2D ZoneHalfExtent = FVector2D(840.f, 840.f);

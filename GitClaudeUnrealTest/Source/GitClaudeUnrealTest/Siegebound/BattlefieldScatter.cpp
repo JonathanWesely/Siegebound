@@ -1671,13 +1671,20 @@ void ASiegeBattlefieldScatter::PlaceAncientGrounds(int32 Seed, bool bAuthoritati
 	const float ClearR = FMath::Max(ScatterConfig->AncientGroundClearRadius, 0.f);
 
 	// The half-draw band (CONVENTIONS §2 — these numbers ARE the law):
-	//  - |X| in [4000, 21000] — 2,320 uu clear of the mid capture zone at the near
-	//    end, 1,540 uu in FRONT of the |X| = 22,540 spawn boxes at the far end;
+	//  - |X| in [4000, 16080] — 2,320 uu clear of the mid capture zone at the near
+	//    end, 1,540 uu in FRONT of the spawn-box edge at the far end. ⚖️ THE CEILING
+	//    WAS RE-DERIVED 21,000 → 16,080 at the 9× castle (WR-§2b row E / ruling
+	//    W2-R1, TASK-576): the spawn-box edge moved 22,540 → 17,620 when
+	//    SpawnBoxHalfExtent went (2460,2460) → (7380,7380), and 16,080 re-solves the
+	//    SAME relationship — 17,620 − 1,540 centre margin, footprint edge 16,920,
+	//    i.e. the identical 700 uu edge clearance. ⛔ Measure against the LIVE
+	//    SpawnBoxHalfExtent if you ever retune it; the old doc transcribed 22,540 as
+	//    an absolute and that is exactly what rotted (SC-§34);
 	//  - |Y| <= 10,800 — ArenaHalfExtent.Y minus a 1,200 margin, so the 840-half
 	//    footprint edge lands at 11,640, inside the ±12,500 arena ground.
 	// The extra Min() against (arena half-extent − footprint half-extent) is a
 	// pure GUARD for a mis-tuned DataAsset — it is a NO-OP at the shipped defaults
-	// (26,000−840 = 25,160 > 21,000 and 12,000−840 = 11,160 > 10,800), so it
+	// (26,000−840 = 25,160 > 16,080 and 12,000−840 = 11,160 > 10,800), so it
 	// cannot silently alter the specced band.
 	// ⚠️ NO CORRIDOR TEST and NO keep-clear DISC test, both deliberate: the ruling
 	// for the corridor is the mines' (AAncientGround has no collision primitive
@@ -1685,6 +1692,11 @@ void ASiegeBattlefieldScatter::PlaceAncientGrounds(int32 Seed, bool bAuthoritati
 	// lane objective is good contested design), and the |X| ceiling above is the
 	// castle/spawn-box exclusion in closed form — the band was derived FROM those
 	// geometries, so re-testing them would tighten the law rather than enforce it.
+	// ⚠️ THE DISC TEST STAYS OMITTED AT 9× AND IT IS STILL A PROVABLE NO-OP, on the
+	// re-derived numbers: with CastleKeepClearRadius 4,500 the castle disc bites at
+	// |X| ≥ 20,500, which is 3,580 uu OUTSIDE the 16,920 footprint edge. (The old
+	// rationale quoted |X| ≥ 23,500 off the pre-CASTLE-3X radius; that figure is
+	// retired — the CONCLUSION survives, the number did not.)
 	const float MinAbsX = FMath::Max(ScatterConfig->AncientGroundMinAbsX, 0.f);
 	const float MaxAbsX = FMath::Min(FMath::Max(ScatterConfig->AncientGroundMaxAbsX, 0.f), FMath::Max(ArenaHalfX - HalfExtX, 0.f));
 	const float MaxAbsY = FMath::Min(FMath::Max(ScatterConfig->AncientGroundMaxAbsY, 0.f), FMath::Max(ArenaHalfY - HalfExtY, 0.f));
@@ -2049,10 +2061,30 @@ void ASiegeBattlefieldScatter::ValidateTraversability()
 	// castle center can sit inside the castle's own nav-carved hole (a false
 	// negative). FindPathToLocationSynchronously still projects each endpoint to
 	// the navmesh within its default query extent.
+	// ⚖️ TASK-576 (WR-§2b row D): the inset is now DERIVED PER CASTLE from that
+	// castle's live colliding bounds — the flat CastleQueryInset literal had been
+	// stale since CASTLE-3X (endpoint ≈19 uu inside the footprint) and at the 9×
+	// castle put both endpoints 2,457 uu inside, i.e. inside the nav-carved hole:
+	// the precise false negative this inset exists to avoid. Sign convention is
+	// unchanged (both teams move toward the centerline); only the MAGNITUDE moved.
 	FVector BlueLoc = ResolveCastleLocation(ETeamId::Blue);
 	FVector RedLoc = ResolveCastleLocation(ETeamId::Red);
-	BlueLoc.X -= FMath::Sign(BlueLoc.X) * CastleQueryInset; // Blue (X<0) moves toward 0
-	RedLoc.X -= FMath::Sign(RedLoc.X) * CastleQueryInset;   // Red  (X>0) moves toward 0
+	const float BlueInset = ResolveCastleQueryInset(ETeamId::Blue, BlueLoc);
+	const float RedInset = ResolveCastleQueryInset(ETeamId::Red, RedLoc);
+	BlueLoc.X -= FMath::Sign(BlueLoc.X) * BlueInset; // Blue (X<0) moves toward 0
+	RedLoc.X -= FMath::Sign(RedLoc.X) * RedInset;    // Red  (X>0) moves toward 0
+
+	// One grep-able line per actor lifetime (not per re-check — this function runs
+	// from the poll AND from the definitive nav callback). It is the PIE instrument
+	// for TASK-569 row (p): the two insets must clear the castle half-depth, and the
+	// two endpoints must sit between the wall face and the mid-field.
+	if (!bLoggedCastleInsetDerivation)
+	{
+		bLoggedCastleInsetDerivation = true;
+		UE_LOG(LogSiegeTerrain, Log,
+			TEXT("[BattlefieldScatter '%s'] CastleQueryInset derived: Blue %.0f -> endpoint X %.0f, Red %.0f -> endpoint X %.0f (authored floor %.0f + face pad %.0f)."),
+			*GetNameSafe(this), BlueInset, BlueLoc.X, RedInset, RedLoc.X, CastleQueryInset, CastleQueryFacePad);
+	}
 
 	UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(World);
 	if (!NavSys)
@@ -2543,8 +2575,13 @@ int32 ASiegeBattlefieldScatter::RemoveBlockingInstancesInDisc(const FVector2D& C
 	return TotalRemoved;
 }
 
-FVector ASiegeBattlefieldScatter::ResolveCastleLocation(ETeamId Team) const
+ACastle* ASiegeBattlefieldScatter::ResolveCastleActor(ETeamId Team) const
 {
+	// TASK-576: this loop is ResolveCastleLocation's ORIGINAL body, extracted verbatim
+	// (same iteration, same IsValid + team test, same first-match semantics) so that
+	// the endpoint's LOCATION and its BOUNDS are read from the same actor. Behaviour
+	// of ResolveCastleLocation is byte-identical — it delegates and keeps its own
+	// ±25000 fallback, which only ever applied when no castle was found.
 	if (UWorld* World = GetWorld())
 	{
 		for (TActorIterator<ACastle> It(World); It; ++It)
@@ -2552,10 +2589,106 @@ FVector ASiegeBattlefieldScatter::ResolveCastleLocation(ETeamId Team) const
 			ACastle* Castle = *It;
 			if (IsValid(Castle) && Castle->GetTeamId() == Team)
 			{
-				return Castle->GetActorLocation();
+				return Castle;
 			}
 		}
 	}
+	return nullptr;
+}
+
+FVector ASiegeBattlefieldScatter::ResolveCastleLocation(ETeamId Team) const
+{
+	if (const ACastle* Castle = ResolveCastleActor(Team))
+	{
+		return Castle->GetActorLocation();
+	}
 	// World axes, M7.6 10× scale-up (branch supersedes main's ±8000 law at merge): Blue -25000, Red +25000.
 	return FVector((Team == ETeamId::Blue) ? -25000.f : 25000.f, 0.f, 0.f);
+}
+
+float ASiegeBattlefieldScatter::ResolveCastleQueryInset(ETeamId Team, const FVector& CastleLocation)
+{
+	// ⚖️ WR-§2b row D / SC-§34's structural escape: MEASURE THE CASTLE, do not
+	// transcribe a number. The authored literals are the floor and the fallback.
+	//
+	// ⛔ NEVER ZERO (spec item 7): the fallback is the larger of the two authored
+	// tunables, so a single mis-typed 0 in either field still cannot produce the
+	// centre-of-castle endpoint this constant exists to prevent.
+	const float AuthoredFloor = FMath::Max(CastleQueryInset, 0.f);
+	const float AuthoredPad = FMath::Max(CastleQueryFacePad, 0.f);
+	const float AuthoredFallback = FMath::Max(AuthoredFloor, AuthoredPad);
+
+	auto WarnFallbackOnce = [this, Team, AuthoredFallback](const TCHAR* Reason)
+	{
+		if (bWarnedCastleInsetFallback)
+		{
+			return;
+		}
+		bWarnedCastleInsetFallback = true;
+		UE_LOG(LogSiegeTerrain, Warning,
+			TEXT("[BattlefieldScatter '%s'] CastleQueryInset could not be derived for %s (%s) — falling back to the authored inset %.0f (pre-TASK-576 behaviour). The path-query endpoint may land inside the castle footprint if the castle is larger than that."),
+			*GetNameSafe(this), (Team == ETeamId::Blue) ? TEXT("Blue") : TEXT("Red"), Reason, AuthoredFallback);
+	};
+
+	const ACastle* Castle = ResolveCastleActor(Team);
+	if (!IsValid(Castle))
+	{
+		// ResolveCastleLocation took its ±25000 fallback too, so there is no live
+		// geometry to measure — today's behaviour is the only honest answer.
+		WarnFallbackOnce(TEXT("no live ACastle for this team"));
+		return AuthoredFallback;
+	}
+
+	// bOnlyCollidingComponents = true: what matters is what CARVES THE NAVMESH and
+	// blocks a path, not the render/widget bounds (ACastle's HP-bar widget sits far
+	// above the keep and must not inflate this) — the same choice, for the same
+	// reason, as ASiegeGameMode::GetHeroStartTransform branch 3.
+	FVector CastleBoundsOrigin = FVector::ZeroVector;
+	FVector CastleBoxExtent = FVector::ZeroVector;
+	Castle->GetActorBounds(/*bOnlyCollidingComponents=*/ true, CastleBoundsOrigin, CastleBoxExtent);
+
+	// The direction the endpoint travels: Blue (X<0) moves +X toward the centerline,
+	// Red (X>0) moves −X. Matches the FMath::Sign() form at the call site exactly;
+	// X == 0 cannot happen for a castle but resolves to +X harmlessly.
+	const float TowardCenterline = (CastleLocation.X <= 0.0) ? 1.f : -1.f;
+
+	// Distance from the CASTLE ACTOR'S PIVOT to the colliding wall face on the
+	// centerline side. The (Origin − Location) term is not pedantry: GetActorBounds
+	// returns the bounds' own centre, which need not sit on the actor pivot, and
+	// ignoring it would silently under-inset a mesh whose pivot is off-centre.
+	const float FaceDistance = static_cast<float>((CastleBoundsOrigin.X - CastleLocation.X) * TowardCenterline + CastleBoxExtent.X);
+	if (!(FaceDistance > 1.f))
+	{
+		// Degenerate/unresolvable bounds (mesh not yet streamed in, extent ~0, or a
+		// pivot offset that swallows the extent) — fall through to the authored value.
+		WarnFallbackOnce(TEXT("degenerate colliding bounds"));
+		return AuthoredFallback;
+	}
+
+	// Stay inside the castle keep-clear disc WHEN THE DISC IS WIDER THAN THE CASTLE:
+	// inside it no scatter obstacle is ever placed, so the pad is guaranteed open
+	// ground. When the disc is NARROWER than the footprint (a stale/mis-tuned
+	// DataAsset — which is exactly the state until TASK-569 lands 4,500 in
+	// DA_BattlefieldScatter), the cap is skipped on purpose: clearing the wall face
+	// outranks sitting in the disc, because outside-the-disc merely RISKS a blocker
+	// while inside-the-footprint is a CERTAIN false negative.
+	const float KeepClearRadius = ScatterConfig ? FMath::Max(ScatterConfig->CastleKeepClearRadius, 0.f) : 0.f;
+	const float RoomInsideDisc = KeepClearRadius - FaceDistance;
+	const float Pad = (RoomInsideDisc > 0.f) ? FMath::Min(AuthoredPad, RoomInsideDisc) : AuthoredPad;
+
+	// The authored literal is a FLOOR (WR-§2b's governing principle), then the disc
+	// caps it back down where the disc is usable. Both operands are floats already;
+	// FaceDistance/Pad were cast at their source (FVector components are DOUBLE in
+	// UE5 and FMath::Max is a single-type template — CONVENTIONS compile trap).
+	float Inset = FMath::Max(AuthoredFloor, FaceDistance + Pad);
+	if (RoomInsideDisc > 0.f)
+	{
+		Inset = FMath::Min(Inset, KeepClearRadius);
+	}
+
+	// INVARIANT, and it holds for every branch above: Inset > FaceDistance whenever
+	// the pad is non-zero (both Inset candidates exceed FaceDistance, and so does the
+	// cap, since RoomInsideDisc > 0 ⇒ KeepClearRadius > FaceDistance) ⇒ the endpoint
+	// is OUTSIDE the colliding footprint. That is the whole contract of this constant.
+	return Inset;
 }

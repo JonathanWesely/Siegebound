@@ -425,7 +425,12 @@ void AHeroCharacter::DoMeleeAttack()
 		}
 
 		// range: measure to the closest point on the target's collision so large bodies
-		// (the castle: ~800x800 footprint, origin at center) are reachable from their walls.
+		// (the castle — ~814x814 at the M1 blockout, ~2438x2462 after Castle-3× and
+		// ~7314x7384 at the 9× castle, origin at center) are reachable from their walls.
+		// ⭐ Those figures are HISTORY, not a dependency: ActorGetDistanceToCollision
+		// measures against the target's live COLLISION, so it follows the mesh by
+		// itself. That is why this line survived both resizes untouched while the
+		// old "~800x800" text rotted — the MECHANISM was never the stale part.
 		// ECC_Pawn is blocked by both pawn capsules and default static mesh collision.
 		// Falls back to the actor origin when no usable collision exists (e.g. SM_Castle
 		// not yet imported — the castle resolves its mesh null-safe, TASK-002/013).

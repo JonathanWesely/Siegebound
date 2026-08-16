@@ -144,6 +144,17 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSiegeAssistantConsoleOpenChanged,
  *   - A faulted assistant calls SetConsoleEnabled(false, Reason). That disables
  *     THIS WIDGET and nothing else. No key, no card, no command changes.
  *
+ *  ⛔⛔ AND FROM 2026-08-15 THE CONVERSE IS LAW TOO, AND IT IS WRITTEN HERE
+ *  BECAUSE THIS IS WHERE THE NEXT AUTHOR WOULD ADD THE THING IT FORBIDS: NOTHING
+ *  IS A REQUIREMENT FOR *THE CONSOLE* EITHER. The war room ships a commander NPC
+ *  and a battlefield map at the castle (CONVENTIONS WR-§5/WR-§6), and Jonathan's
+ *  RULING 5 on it is verbatim: "the console still works anywhere". ⇒ ⛔ NO
+ *  PROXIMITY CHECK, NO NPC REFERENCE, NO RANGE CONDITION AND NO MAP-OPEN
+ *  CONDITION MAY EVER ENTER THIS FILE OR ITS OPEN PATH. The NPC is an AVATAR for
+ *  the same one assistant, never a second AI and never a gatekeeper; the map is
+ *  an ADVANTAGE, never a requirement. The map's ONLY channel into this class is
+ *  AppendToInput() below, which writes text the player still has to send.
+ *
  *  ---------------------------------------------------------------------------
  *  2b. THE CONFIRM STEP HAS NO BUTTONS. `Z` ACCEPTS; CLOSING DISCARDS.
  *  ---------------------------------------------------------------------------
@@ -202,6 +213,16 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSiegeAssistantConsoleOpenChanged,
  *      ShowTranscriptLine(FString)          — GAME-AUTHORED text only (§3)
  *      ShowConfirmPrompt(FString) / HideConfirmPrompt()
  *      SetConsoleEnabled(bool, reason)      — the fault latch's only effect here
+ *      AppendToInput(FString) -> bool       — ⭐ THE WAR MAP'S ONLY CHANNEL TO THE
+ *                                     ASSISTANT (TASK-561, WR-§6). Writes ONE
+ *                                     literal place symbol into the box and
+ *                                     focuses it. ⛔ It does NOT submit, and it
+ *                                     does NOT open the console — the player
+ *                                     still presses Enter himself. That single
+ *                                     property is why the entire war-map feature
+ *                                     spends ZERO prompt characters, adds no
+ *                                     `who` shape, and changes no grammar and no
+ *                                     schema.
  *
  *  OUTBOUND (the component binds these):
  *      OnConsoleSubmitted(FString)  — the player pressed Enter in the box
@@ -425,6 +446,178 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Assistant")
 	void SetConsoleEnabled(bool bEnabled, const FString& DisabledReason);
+
+	//~ ---------------------------------------------------------------------
+	//~ ⭐ THE WAR-MAP INPUT-INSERT SEAM (TASK-561, CONVENTIONS WR-§6 + WR-§5).
+	//~ The ENTIRE interface between the battlefield map and the assistant, and
+	//~ it is one function that moves one string into one text box. ⚖️ That is
+	//~ the design working, not a shortcut: a click becomes TEXT IN A BOX THE
+	//~ PLAYER STILL HAS TO SEND, so nothing about the assistant's contract —
+	//~ prompt, grammar, schema, `who` shapes, confirm step — changes at all.
+	//~ ---------------------------------------------------------------------
+
+	/**
+	 *  Appends one literal PLACE SYMBOL to the input box and puts keyboard focus
+	 *  back in it. ⛔ IT NEVER SUBMITS. The player reads what landed in the box
+	 *  and presses Enter himself, exactly as if he had typed it.
+	 *
+	 *  @param  TextToInsert  the literal symbol, e.g. TEXT("ancient_ground_near").
+	 *                        Trimmed on the way in; empty or whitespace-only is
+	 *                        refused with a log and no text change.
+	 *  @return true iff the box's text actually changed.
+	 *
+	 *  ⚠️ THE WHITESPACE RULE — A DECISION, NOT A DETAIL.
+	 *
+	 *  ⭐⛔ CORRECTED 2026-08-15 (TASK-581), AND THE ORIGINAL WORDING IS NAMED RATHER
+	 *  THAN QUIETLY REPLACED BECAUSE IT WAS *WRONG*: this block used to read "AND
+	 *  TASK-564 TESTS EACH CASE BY NAME". ⛔ TASK-564 COULD NOT. The composition was
+	 *  inline here, behind a Slate-realized + open + enabled console, and InputBox is
+	 *  protected with no public text getter, so the composed string was unreadable
+	 *  through the shipped public API — TASK-564 proved it and reported it instead of
+	 *  writing a replica test that would have asserted nothing.
+	 *  ⇒ THE THREE RULES BELOW ARE NOW ComposeAppendedInput()'s CONTRACT, ⛔ NOT
+	 *    THIS FUNCTION'S — this function READS the box and CALLS it — and
+	 *    `Siegebound.WarMap.ComposeAppendedInputWhitespaceRule` asserts every case
+	 *    headlessly (CONVENTIONS WR-§6, ruling W4-R1: a testability obligation
+	 *    without a testability seam is an unfunded mandate):
+	 *    1. ONE space is placed BEFORE the symbol iff the existing text is
+	 *       non-empty AND does not already end in whitespace. ⇒ "…to " + "mid"
+	 *       gives "…to mid ", never "…tomid" and never "…to  mid".
+	 *    2. Exactly ONE trailing space always follows the symbol, so the next word
+	 *       — or the next click — starts cleanly, and rule 1 then sees it. Two
+	 *       clicks in a row therefore give "mid hero ", never "mid  hero".
+	 *    3. ⛔ NOTHING ELSE IN THE PLAYER'S TEXT IS TOUCHED — no global whitespace
+	 *       normalisation, no re-casing, no head trim, no reordering. The
+	 *       half-typed sentence is his (CONVENTIONS §31: a presentation layer may
+	 *       not repair its input).
+	 *
+	 *  ⛔⛔ DECLARED DEPARTURE (CONVENTIONS §15) — THE SPEC SAID "AT THE CARET";
+	 *  THIS APPENDS AT THE END, AND ON *THIS* WIDGET THE TWO ARE THE SAME
+	 *  OBSERVABLE BEHAVIOUR.
+	 *  ✅ STATUS 2026-08-15 — THE DEPARTURE IS NO LONGER OPEN, AND THE HEADING ABOVE
+	 *  IS KEPT ONLY AS THE RECORD OF HOW THAT WAS REACHED: qa/TASK-565.md criterion
+	 *  (10)(b) RATIFIED it leg by leg against the installed source, and CONVENTIONS
+	 *  WR-§6 was then AMENDED to match — ruling W4-R3, "placed at the caret" ⇒
+	 *  APPENDED AT THE END. ⛔ This is settled law now; do NOT re-litigate it below.
+	 *  📌 The standing lesson W4-R3 drew, worth more than this one function: SPECIFY
+	 *  THE OBSERVABLE AND LEAVE THE MECHANISM TO THE IMPLEMENTER — the retired wording
+	 *  named a mechanism the platform does not expose, and (a) is why.
+	 *  Traced at the installed UE 5.8 source, not assumed:
+	 *    (a) ⛔ THERE IS NO CARET TO READ. UEditableTextBox exposes no caret getter
+	 *        and no caret setter, and MyEditableTextBlock is protected
+	 *        (EditableTextBox.h:300). SEditableTextBox has GoTo() but NO
+	 *        GetCursorLocation() — that getter exists only on the MULTI-LINE box
+	 *        (SMultiLineEditableTextBox.h:482). Nothing public can read the caret
+	 *        of a single-line UMG text box, so no implementation could honour the
+	 *        line as written.
+	 *    (b) THE ENGINE MOVES THE CARET TO THE END ON A PROGRAMMATIC SetText WHILE
+	 *        FOCUSED: FSlateEditableTextLayout::OnBoundTextChanged runs
+	 *        JumpTo(ETextLocation::EndOfDocument, ECursorAction::MoveCursor) under
+	 *        `bForceBoundTextReview && Widget->HasAnyUserFocus().IsSet()
+	 *         && !bWasFocusedByLastMouseDown`
+	 *        (SlateEditableTextLayout.cpp:4280-4284), and SetText is precisely what
+	 *        raises that flag (same file, symbol SetText).
+	 *        ⚠️ THE THIRD CONJUNCT IS CARRIED HERE BY qa/TASK-565.md NIT N3 — an
+	 *        earlier revision of this citation stated the condition as TWO terms and
+	 *        omitted `!bWasFocusedByLastMouseDown`. ✅ THE VERDICT IS UNCHANGED, and
+	 *        the reason is a lifetime, not an assumption: that flag is SET at
+	 *        mouse-DOWN (symbol HandleMouseButtonDown, same file :1280) and CLEARED at
+	 *        mouse-UP (symbol HandleMouseButtonUp, :1374) ON THE TEXT BOX ITSELF ⇒ it
+	 *        is true only while a button is held down INSIDE this box, and false in
+	 *        every window in which AppendToInput can run (a war-map marker click is a
+	 *        press-and-release on a DIFFERENT widget). ⇒ route (b) is live for us.
+	 *    (c) AND IT MOVES IT TO THE END AGAIN ON THE FOCUS THIS FUNCTION TAKES:
+	 *        HandleFocusReceived runs GoTo(ETextLocation::EndOfDocument) for any
+	 *        non-mouse focus cause when ShouldJumpCursorToEndWhenFocused() (same
+	 *        file, symbol HandleFocusReceived), which reads
+	 *        bIsCaretMovedWhenGainFocus — default TRUE (EditableTextBox.cpp:31),
+	 *        deliberately never changed by ApplyInputBoxContract. And
+	 *        UWidget::SetKeyboardFocus() focuses with EFocusCause::SetDirectly
+	 *        (Widget.cpp, symbol UWidget::SetKeyboardFocus → SlateApplication.h's
+	 *        default argument), which is neither Mouse nor OtherWidgetLostFocus.
+	 *  ⇒ BOTH ORDERINGS CONVERGE ON END-OF-DOCUMENT: an already-focused box takes
+	 *    (b), an unfocused one takes (c). A hypothetical "insert at the caret"
+	 *    could place the text mid-string and would STILL leave the caret at the
+	 *    end — a worse result, bought with new retained state and a delegate
+	 *    subscription. ✅ THE FUNCTION IS NAMED FOR WHAT IT ACTUALLY DOES.
+	 *
+	 *  ⛔⛔ IT NEVER OPENS THE CONSOLE, AND THAT IS TWO MECHANISMS, NOT A TASTE:
+	 *    (i)  Opening requires the INPUT POSTURE change ASiegePlayerController
+	 *         owns — this widget never calls SetInputMode (class comment §2), so a
+	 *         widget-initiated open would put a visible console on the wrong
+	 *         posture and strand the cursor.
+	 *    (ii) A write into a CLOSED console would be destroyed anyway:
+	 *         OpenConsole() calls InputBox->SetText(FText::GetEmpty()) on every
+	 *         open. Silently losing the player's click is the one outcome this
+	 *         seam must not have.
+	 *  ⇒ A CLOSED CONSOLE REFUSES, LOUDLY, AND RETURNS false. The caller
+	 *    (TASK-563, on the controller) opens through the shipped posture-owning
+	 *    path first, then calls this.
+	 *
+	 *  ⛔ NO PROXIMITY, NPC OR RANGE CONDITION MAY EVER ENTER THIS FUNCTION OR THIS
+	 *  FILE — WR-§5, Jonathan's RULING 5 verbatim: "the console still works
+	 *  anywhere". The map gate is TASK-563's and applies to THE MAP ONLY.
+	 *
+	 *  ⛔ IT KNOWS NOTHING ABOUT THE PLACE VOCABULARY, AND MUST NOT LEARN. It moves
+	 *  an OPAQUE string. Which symbols exist is USiegeAssistantVocabulary's; which
+	 *  of them are clickable is UWarMapWidget's (TASK-560). A validation branch
+	 *  here would be a second, drifting copy of a vocabulary this file does not own.
+	 *
+	 *  ⛔ AND NO LENGTH CAP LIVES HERE. USiegeAssistantSnapshot::MaxUtteranceBytes
+	 *  is the shipped authority on how much player text can reach a prompt, and it
+	 *  is already static_asserted against the Zone C budget. A second copy inside a
+	 *  widget is CONVENTIONS §19's duplicated-authority defect — a guardrail that
+	 *  reports safe while the real one moves away from it.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Assistant")
+	bool AppendToInput(const FString& TextToInsert);
+
+	/**
+	 *  ⭐⭐ THE SEPARATOR COMPOSITION — THE WHITESPACE RULE AS A PURE FUNCTION, AND
+	 *  THE EXTRACTION *IS* THE DELIVERABLE (TASK-581, CONVENTIONS WR-§6 ruling
+	 *  W4-R1).
+	 *
+	 *  Given the box's CURRENT text and one ALREADY-TRIMMED symbol, returns the
+	 *  text the box should hold afterwards. ⛔ It reads no member, writes no member,
+	 *  touches no widget and logs nothing — a static needs NO instance, NO Slate, NO
+	 *  world and NO CDO, and that is the entire point of it existing.
+	 *
+	 *  @param  ExistingText   the input box's current contents; may be empty.
+	 *  @param  TrimmedSymbol  the literal place symbol, e.g. TEXT("ancient_ground_near").
+	 *  @return the composed text — ⛔ ALWAYS with exactly one trailing space.
+	 *
+	 *  ⚠️ PRECONDITION — DOCUMENTED HERE RATHER THAN DEFENDED IN CODE:
+	 *  TrimmedSymbol IS ALREADY TRIMMED AND NON-EMPTY. AppendToInput trims it and
+	 *  refuses the empty case before this is ever reached, and that refusal is the
+	 *  SINGLE authority on the question. A second guard here would be CONVENTIONS
+	 *  §19's duplicated-authority defect — two answers that can drift apart.
+	 *
+	 *  THE THREE RULES IT OWNS, and they are the SHIPPED behaviour, ⛔ not a redesign:
+	 *    1. ONE space before the symbol iff ExistingText is non-empty AND does not
+	 *       already end in whitespace. ⛔ THE TEST IS ON THE LAST CHARACTER, VIA
+	 *       FChar::IsWhitespace — ⛔ NOT EndsWith(" "), BECAUSE A TAB MUST COUNT.
+	 *       ⛔ AND !IsEmpty() STAYS FIRST IN THE && : it is what makes the index
+	 *       access safe, and reordering it is an out-of-bounds read on an empty box.
+	 *    2. ⛔ ALWAYS exactly ONE trailing space. That is the IDEMPOTENCE property:
+	 *       "mid " + "hero" reads the trailing space, adds no second one, and gives
+	 *       "mid hero " — ⛔ never "mid  hero".
+	 *    3. ⛔ NOTHING ELSE IN THE PLAYER'S TEXT IS TOUCHED — no global whitespace
+	 *       normalisation, no re-casing, no head trim, no reordering (CONVENTIONS
+	 *       §31: a presentation layer may not repair its input). ExistingText is a
+	 *       byte-exact PREFIX of the result whenever no separator is added, and is
+	 *       byte-exact up to the inserted separator when one is.
+	 *
+	 *  ⛔ IT IS DELIBERATELY *NOT* A UFUNCTION. It is a TEST SEAM, ⛔ not a Blueprint
+	 *  API: reflecting it would put a bare string helper on the palette and invite a
+	 *  second caller that bypasses AppendToInput's refusal ladder entirely.
+	 *
+	 *  ⛔ AND IT TAKES EXACTLY TWO PARAMETERS, ⛔ NEITHER DEFAULTED (CONVENTIONS
+	 *  SC-§33). ⚠️ THE PRECISE TRAP THAT LAW EXISTS FOR HERE IS A
+	 *  `bool bAddTrailingSpace = true`: rule 2 IS what makes rule 1 idempotent, so a
+	 *  caller that switched it off would break rule 1 with ⛔ no compiler diagnostic
+	 *  and ⛔ no test failure. A third parameter is forbidden on this signature.
+	 */
+	static FString ComposeAppendedInput(const FString& ExistingText, const FString& TrimmedSymbol);
 
 	//~ ---------------------------------------------------------------------
 	//~ BlueprintImplementableEvents — FString/int32/bool/uint8 params ONLY
@@ -740,6 +933,18 @@ private:
 
 	/** One-shot log guards, so a missing child cannot spam a frame loop. */
 	bool bWarnedNoInputBox = false;
+
+	/**
+	 *  AppendToInput's OWN one-shot "there is no InputBox" latch (TASK-561).
+	 *
+	 *  ⚠️ IT IS SEPARATE FROM bWarnedNoInputBox ON PURPOSE, AND THE REASON IS THE
+	 *  ADDITIVE LAW RATHER THAN TIDINESS: sharing the shipped latch would let a
+	 *  war-map insert CONSUME it, so FocusInputBox()'s own warning — a diagnostic
+	 *  that has shipped since TASK-444 — would silently never print. Suppressing an
+	 *  existing log line is a behaviour change on an existing path, which this task
+	 *  is forbidden to make. One bool buys byte-identical shipped behaviour.
+	 */
+	bool bWarnedNoInputBoxForAppend = false;
 
 	/**
 	 *  FPlatformTime::Seconds() at the moment CLOSE ROUTE 4 (Enter-on-empty)

@@ -1133,6 +1133,179 @@ void USiegeAssistantConsoleWidget::SetConsoleEnabled(bool bEnabled, const FStrin
 }
 
 // ---------------------------------------------------------------------------
+// ⭐ The war-map input-insert seam (TASK-561, CONVENTIONS WR-§6 + WR-§5)
+// ---------------------------------------------------------------------------
+//
+// ⭐⭐ THIS IS THE WHOLE INTERFACE BETWEEN THE BATTLEFIELD MAP AND THE ASSISTANT,
+// AND IT IS DELIBERATELY ONE FUNCTION THAT MOVES ONE STRING INTO ONE TEXT BOX.
+// Everything the batch's safety argument rests on is visible from here:
+//   ✅ no coordinate, dot, count or marker geometry crosses this line — only a
+//      literal place symbol the model ALREADY reads out of [FORCES] (WR-§6, the
+//      coordinate airlock);
+//   ✅ nothing is submitted, so no prompt is built and no model call is spent;
+//   ✅ Zone A, the grammar, the JSON schema, the `who` shapes and the confirm
+//      step are all untouched — this file cannot reach any of them.
+// ⛔ A future edit that makes this function submit, build a sentence, resolve a
+// place, or consult the vocabulary has broken that argument, whatever it gains.
+
+// ---------------------------------------------------------------------------
+// ⭐ THE SEPARATOR COMPOSITION — A PURE STATIC (TASK-581, WR-§6 ruling W4-R1)
+// ---------------------------------------------------------------------------
+//
+// ⭐⭐ WHY THIS IS A NAMED FUNCTION AND NOT FOUR LINES INSIDE AppendToInput, AND
+// IT IS LAW RATHER THAN TASTE: TASK-564 TRIED TO TEST THIS RULE AND PROVED IT
+// UNASSERTABLE. Inline, reaching it needed a Slate-REALIZED widget tree plus an
+// OPEN, ENABLED console, and InputBox is protected with no public text getter —
+// so the composed string was UNREADABLE THROUGH THE SHIPPED PUBLIC API. It
+// reported that instead of writing a replica test that would have asserted
+// nothing about shipped code. ⇒ WR-§6: a rule that cannot be read cannot be
+// tested, and this seam is the war map's ONLY channel to the AI — if it composes
+// "to ancient_ground_nearand" the parse fails and the whole feature reads broken.
+//
+// ⛔ A static needs NO instance, NO Slate, NO world and NO CDO. THAT IS THE ENTIRE
+// POINT OF THE EXTRACTION: Siegebound.WarMap.ComposeAppendedInputWhitespaceRule
+// calls this directly, headlessly, and asserts every case byte-exactly.
+//
+// ⛔⛔ THE MOVE IS BEHAVIOUR-FREE AND THAT IS THE WHOLE DELIVERABLE. The body below
+// is TASK-561's body, moved verbatim; the ONLY textual change is the two parameter
+// names (Existing -> ExistingText, Symbol -> TrimmedSymbol). ⛔ Not one operator,
+// not one operand and not one order of evaluation moved, so the produced string is
+// identical for every input. See handoffs/TASK-581-programmer.md for the before and
+// after side by side — an assertion that "it is just a move" is not evidence.
+//
+// ⛔ EVERY REFUSAL STAYED BEHIND IN AppendToInput. This function has NO guards on
+// purpose: the empty-symbol case is refused up there, and duplicating that refusal
+// here would be a second authority on the same question (CONVENTIONS §19).
+
+FString USiegeAssistantConsoleWidget::ComposeAppendedInput(const FString& ExistingText, const FString& TrimmedSymbol)
+{
+	// ⛔ IT COMPOSES A NEW STRING FROM THE EXISTING ONE AND TOUCHES NOTHING ELSE IN
+	// IT: no global whitespace normalisation, no re-casing, no head trim. A
+	// half-typed sentence is the player's, and a presentation layer may not repair
+	// its input (CONVENTIONS §31).
+
+	// Rule 1: a separator only where one is actually missing. Checking the LAST
+	// CHARACTER — rather than "does it end with a space" — also covers a tab, and
+	// costs the same. The IsEmpty() test is what makes the index safe, so it is
+	// first in the && by construction, not by habit.
+	// ⚠️ NO NEW INCLUDE IS NEEDED FOR FChar, AND THAT WAS CHECKED RATHER THAN
+	// ASSUMED — the same discipline the HAL/PlatformTime.h note at the top of this
+	// file records, which found the OPPOSITE answer. CoreMinimal.h:60 includes
+	// Misc/Char.h directly, at the installed UE 5.8 source on this machine.
+	// Precedent in this module: SiegeAssistantSnapshot.cpp's flattener.
+	const bool bNeedsLeadingSpace =
+		!ExistingText.IsEmpty() && !FChar::IsWhitespace(ExistingText[ExistingText.Len() - 1]);
+
+	FString Composed = ExistingText;
+	if (bNeedsLeadingSpace)
+	{
+		Composed.AppendChar(TEXT(' '));
+	}
+	Composed.Append(TrimmedSymbol);
+
+	// Rule 2: ALWAYS exactly one trailing space. It is what makes a second click
+	// idempotent under rule 1 — "mid " + "hero" reads the trailing space and adds
+	// no second one, so repeated clicks give "mid hero ", never "mid  hero".
+	Composed.AppendChar(TEXT(' '));
+
+	return Composed;
+}
+
+bool USiegeAssistantConsoleWidget::AppendToInput(const FString& TextToInsert)
+{
+	// ⛔ EVERY REFUSAL BELOW IS LOUD, AND THAT IS THE SHIPPED DOCTRINE APPLIED TO A
+	// NEW SURFACE: a seam that quietly does nothing reads to the player as "I
+	// clicked the map and the game ignored me" — the same trust failure as "the
+	// assistant ate my order", which is why AS-§6 A-2 ruled the silent-discard case
+	// out. ⛔ Never a silent no-op here either.
+
+	FString Symbol = TextToInsert;
+	Symbol.TrimStartAndEndInline();
+
+	if (Symbol.IsEmpty())
+	{
+		UE_LOG(LogSiegeAssistant, Warning,
+			TEXT("[AssistantConsole] Insert refused: there is nothing to insert. The input box is unchanged — in particular no stray separator was appended."));
+		return false;
+	}
+
+	if (!bConsoleEnabled)
+	{
+		// The fault latch's posture, honoured exactly as SubmitPressed honours it.
+		// ⚠️ THIS IS NOT A GATE ON THE CONSOLE (WR-§5 RULING 5, "the console still
+		// works anywhere") — it is the SHIPPED disabled state, in which
+		// ApplyConsoleVisualState has already called InputBox->SetIsEnabled(false)
+		// and nothing the player types can be submitted. Writing here would strand
+		// text he can neither send nor clear.
+		UE_LOG(LogSiegeAssistant, Log,
+			TEXT("[AssistantConsole] Insert ignored: the console is disabled. The input box is unchanged. No key, card or command is affected."));
+		return false;
+	}
+
+	if (!bConsoleOpen)
+	{
+		// ⛔ AND IT DOES NOT OPEN THE CONSOLE TO FIX THIS. Two mechanisms, both in
+		// the header comment and both checkable here:
+		//  (i)  the INPUT POSTURE belongs to ASiegePlayerController — this widget
+		//       never calls SetInputMode (class comment §2), so a widget-initiated
+		//       open would show a console on the wrong posture;
+		//  (ii) OpenConsole() clears the box on EVERY open
+		//       (InputBox->SetText(FText::GetEmpty())), so a write into a closed
+		//       console would be destroyed a moment later, silently.
+		UE_LOG(LogSiegeAssistant, Log,
+			TEXT("[AssistantConsole] Insert refused: the console is closed. The caller opens it through ASiegePlayerController (the input-posture owner) first; this widget never opens itself."));
+		return false;
+	}
+
+	if (InputBox == nullptr)
+	{
+		// ⛔ bWarnedNoInputBox IS DELIBERATELY NOT REUSED — see its neighbour's
+		// comment in the header. Consuming the shipped latch here would silence
+		// FocusInputBox()'s own warning, and suppressing an existing diagnostic is a
+		// behaviour change on an existing path.
+		if (!bWarnedNoInputBoxForAppend)
+		{
+			bWarnedNoInputBoxForAppend = true;
+			UE_LOG(LogSiegeAssistant, Warning,
+				TEXT("[AssistantConsole] No InputBox to insert into — the war map cannot hand the console a symbol. (Logged once.) The console, the map and the assistant are otherwise unaffected."));
+		}
+		return false;
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// THE WHITESPACE RULE — ⭐ ONE READ AND ONE CALL (TASK-581, WR-§6 ruling W4-R1)
+	// ─────────────────────────────────────────────────────────────────────────
+	// ⛔ THE RULE ITSELF LIVES IN ComposeAppendedInput() ABOVE, WHICH IS WHAT MAKES
+	// IT TESTABLE AT ALL — Siegebound.WarMap.ComposeAppendedInputWhitespaceRule
+	// asserts every case headlessly. ⛔ THE EXTRACTION WAS BEHAVIOUR-FREE: the body
+	// moved verbatim and only the parameter names changed, so the string this
+	// function writes is identical to the one TASK-561 shipped, for every input.
+	// ⛔ Do NOT re-inline it, and ⛔ do NOT add a second composition path here.
+	const FString Existing = InputBox->GetText().ToString();
+	const FString Composed = ComposeAppendedInput(Existing, Symbol);
+
+	// ⛔ SetText THEN FocusInputBox, matching SubmitPressed and OpenConsole rather
+	// than inventing a third order. Both orderings land the caret at
+	// END-OF-DOCUMENT by two INDEPENDENT engine mechanisms (header comment (b) and
+	// (c)), so this order is a consistency choice and not a correctness bet.
+	//
+	// ⚠️ NO EXISTING HANDLER FIRES FROM THIS. WireChildWidgets binds ONLY
+	// InputBox->OnTextCommitted, and SetText commits nothing — OnTextChanged has no
+	// subscriber in this class. Verified at WireChildWidgets, not assumed.
+	InputBox->SetText(FText::FromString(Composed));
+	FocusInputBox();
+
+	// ⚠️ THE LENGTH, NOT THE CONTENT — the same shape SubmitPressed logs, and for
+	// the same reason: the text is on screen in front of the player, and a log is
+	// not where player text should accumulate.
+	UE_LOG(LogSiegeAssistant, Log,
+		TEXT("[AssistantConsole] War map inserted %d chars; the box now holds %d. ⛔ Nothing was submitted — the player still presses Enter himself."),
+		Symbol.Len(), Composed.Len());
+
+	return true;
+}
+
+// ---------------------------------------------------------------------------
 // Presentation + focus
 // ---------------------------------------------------------------------------
 

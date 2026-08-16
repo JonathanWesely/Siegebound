@@ -349,9 +349,31 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|Bounds")
 	FVector2D ArenaHalfExtent = FVector2D(26000.f, 12000.f);
 
-	/** Keep-clear radius (cm) around EACH castle (±25000, M7.6) — no blocking obstacle lands inside, so a castle's mouth is never walled. Part of the traversability guarantee. MESH-RELATIVE (sized to the castle footprint, NOT ×3.125-scaled — M7.6 keep-list). */
+	/**
+	 *  Keep-clear radius (cm) around EACH castle (±25000, M7.6) — no blocking
+	 *  obstacle lands inside, so a castle's mouth is never walled. Part of the
+	 *  traversability guarantee. MESH-RELATIVE (sized to the castle FOOTPRINT, not to
+	 *  the arena — it did NOT take M7.6's ×3.125 arena scale-up, and still does not).
+	 *
+	 *  RE-DERIVED ×3, 1500 → 4500, by TASK-557 for the 9× castle (CONVENTIONS WR-§2
+	 *  row 4). Being mesh-relative is precisely why it moves when the mesh does.
+	 *
+	 *  ⛔⛔ A HEADER-ONLY CHANGE IS INERT AND THAT IS NOT A FIGURE OF SPEECH: this is a
+	 *  UPROPERTY DEFAULT, and the SHIPPED Content/Data/DA_BattlefieldScatter.uasset
+	 *  SERIALIZES ITS OWN VALUE, WHICH OVERRIDES IT. ASiegeBattlefieldScatter reads the
+	 *  DataAsset, never this default. TASK-569 owns the asset edit — TWO ARTIFACTS,
+	 *  TWO TASKS, and without both the scatter still walls the 9× castle's mouth.
+	 *
+	 *  📌 HONEST NOTE ON THE ARITHMETIC, so nobody "corrects" it later: 4500 does NOT
+	 *  circumscribe the 9× castle — its XY half-diagonal is ≈5,197 uu. Neither did
+	 *  1500 circumscribe the 3× castle (half-diagonal ≈1,732). The ×3 preserves the
+	 *  shipped relationship EXACTLY, so this is not a regression; the corner shortfall
+	 *  is pre-existing and unchanged in proportion. Widening it beyond ×3 would shrink
+	 *  the legal mine/scatter region further and is a design change this directive
+	 *  does not authorise.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|KeepClear", meta = (ClampMin = "0"))
-	float CastleKeepClearRadius = 1500.f;
+	float CastleKeepClearRadius = 4500.f;
 
 	/** Keep-clear radius (cm) around the PlayerStart / hero spawn (≈-23800,0, M7.6) — the hero never spawns inside an obstacle. Mesh-relative, not scaled. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|KeepClear", meta = (ClampMin = "0"))
@@ -475,15 +497,53 @@ public:
 	float AncientGroundMinAbsX = 4000.f;
 
 	/**
-	 *  Maximum |X| (cm) of an ancient ground's center. 21,000 keeps the objective
-	 *  out of the deep back-field: the castles sit at ±25,000 and the unit spawn
-	 *  boxes start at |X| = 22,540, so a ground is always at least 1,540 uu in
-	 *  FRONT of the spawn boxes — you fight over it, you do not spawn on it.
-	 *  (Additionally clamped down at runtime, if ever needed, so the 840-half
-	 *  footprint stays inside ArenaHalfExtent.X — a no-op at these defaults.)
+	 *  Maximum |X| (cm) of an ancient ground's center. It keeps the objective out of
+	 *  the deep back-field: the castles sit at ±25,000, the unit spawn boxes start at
+	 *  |X| = 25,000 − SpawnBoxHalfExtent.X, and a ground must sit in FRONT of that
+	 *  edge — you fight over it, you do not spawn on it. (Additionally clamped down at
+	 *  runtime, if ever needed, so the 840-half footprint stays inside
+	 *  ArenaHalfExtent.X — a no-op at these defaults.)
+	 *
+	 *  ⚖️ RE-DERIVED 2026-08-15 — WR-§2b row E / manager ruling W2-R1 (TASK-576).
+	 *  ⛔ RETIRED VALUE: **21,000**. It is recorded, not deleted, because it is in git
+	 *  history and in every pre-amendment handoff, and a future tuner will meet it.
+	 *  CAUSE: WR-§2 row 1 moved SpawnBoxHalfExtent (2460,2460) → (7380,7380) for the 9×
+	 *  castle, so THE SPAWN-BOX EDGE MOVED 22,540 → 17,620 (25,000 − 7,380). At the old
+	 *  21,000 ceiling a ground then sat 3,380 uu INSIDE a team's own spawn box, and its
+	 *  21,840 footprint edge OVERLAPPED the 9× castle footprint (|X| ≥ 21,343 at the
+	 *  measured half-depth 3,656.85) ⇒ the rule above was INVERTED, symmetrically for
+	 *  both teams (the 180° law), i.e. a design change, not a fairness break.
+	 *
+	 *  📐 16,080 IS NOT A NEW MARGIN — IT IS THE SAME RELATIONSHIP RE-SOLVED, and both
+	 *  of the original derivation's margins come back EXACTLY:
+	 *      centre margin   17,620 − 16,080 = 1,540  ≡  22,540 − 21,000 = 1,540
+	 *      footprint edge  16,080 + 840 = 16,920 ⇒ 17,620 − 16,920 = **700**
+	 *                                          ≡  22,540 − 21,840 = **700**
+	 *  Castle footprint: the 16,920 edge is 4,423 uu clear of |X| ≥ 21,343.
+	 *  Castle keep-clear disc at the live CastleKeepClearRadius 4,500: it bites at
+	 *  |X| ≥ 20,500, i.e. 3,580 uu OUTSIDE the 16,920 edge — so the omitted disc test
+	 *  in PlaceAncientGrounds stays a provable no-op, for the reason it always had.
+	 *
+	 *  ⭐ THE STRUCTURAL LESSON (SC-§34), and it is why the wording above changed shape:
+	 *  this ceiling rotted because the doc TRANSCRIBED a derived absolute (22,540)
+	 *  instead of naming its source. ⛔ ANYONE TUNING THIS BAND MEASURES AGAINST THE
+	 *  LIVE SpawnBoxHalfExtent — never against a quoted edge, never against the castle
+	 *  keep-clear disc (which has never been the binding constraint at any scale).
+	 *
+	 *  ⛔ TWO ARTIFACTS, TWO TASKS (the CastleKeepClearRadius precedent, WR-§2 row 4):
+	 *  this is a USiegeScatterConfig field, and ASiegeBattlefieldScatter reads the
+	 *  DataAsset — /Game/Data/DA_BattlefieldScatter — never this C++ default when the
+	 *  asset overrides it. **TASK-569 owns the asset side and MUST confirm it in the
+	 *  editor.** 📌 Evidence gathered at TASK-576 (file-only, so it is evidence and not
+	 *  a verdict): the saved DA_BattlefieldScatter's serialised property set contains
+	 *  CastleKeepClearRadius but NO AncientGround* property at all — it was last saved
+	 *  in the CASTLE-3X era, before these fields existed, and UE writes only properties
+	 *  that DIFFER from the CDO ⇒ this default is expected to be LIVE already. ⚠️ That
+	 *  makes TASK-569's step a VERIFY-AND-CLEAR (if the editor shows an override arrow
+	 *  on this row, reset it or set it to 16,080), ⛔ not an assumption to skip.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter|AncientGrounds", meta = (ClampMin = "0"))
-	float AncientGroundMaxAbsX = 21000.f;
+	float AncientGroundMaxAbsX = 16080.f;
 
 	/**
 	 *  Maximum |Y| (cm) of an ancient ground's center: ArenaHalfExtent.Y (12,000)

@@ -233,40 +233,52 @@ ASiegeBotController::ASiegeBotController()
 		return Result;
 	};
 
-	// [0] AGGRO RUSH — cheap, fast, unit-heavy pressure (avg cost ~4.72). Sum 50.
+	// ⚠️ THE COST ANNOTATIONS BELOW WERE RE-DERIVED 2026-08-15 (TASK-578), AND THEY HAD
+	// BEEN FALSE SINCE 2026-07-24 — this is handoffs/TASK-278.md §114's SECOND LIMB,
+	// owed since that day and now closed. TASK-278 tripled all 28 card costs in
+	// Docs/Data/cards.csv; these inline "cost x count" notes and BOTH "avg cost" figures
+	// went on quoting the PRE-triple values (Footman 3, Ogre 12, avg ~4.72/~7.02).
+	// ⛔ NONE OF IT IS READ AT RUNTIME, which is precisely why it rotted unnoticed for
+	// three weeks: deck legality is sum(Count) == 50 and Count <= MaxCopies — COUNTS,
+	// not costs — and the logged average comes from UDeckLibrary::GetDeckAverageCost
+	// reading DT_Cards LIVE. Re-derived from the shipped cards.csv Cost column; this
+	// class's own AttackBankThreshold = 36 (h) is the same ×3 scaling seen from the
+	// other side. Format is unchanged: cost x count = subtotal.
+
+	// [0] AGGRO RUSH — cheap, fast, unit-heavy pressure (avg cost 14.16 = 708/50). Sum 50.
 	FDeckList AggroDeck;
 	AggroDeck.DeckName = TEXT("Bot Aggro Rush");
 	AggroDeck.Cards =
 	{
-		Entry(TEXT("Footman"),    12), // 3 x12 = 36
-		Entry(TEXT("MilitiaMob"),  6), // 5 x6  = 30 (swarm: 4 bodies per copy)
-		Entry(TEXT("Pikeman"),     6), // 5 x6  = 30
-		Entry(TEXT("Knight"),      6), // 6 x6  = 36
-		Entry(TEXT("Archer"),      6), // 4 x6  = 24
-		Entry(TEXT("Cavalry"),     4), // 7 x4  = 28 (charge)
-		Entry(TEXT("Sapper"),      4), // 5 x4  = 20 (siege suicide)
-		Entry(TEXT("Wall"),        4), // 4 x4  = 16
-		Entry(TEXT("Miner"),       2), // 8 x2  = 16 (minimal economy)
+		Entry(TEXT("Footman"),    12), //  9 x12 = 108
+		Entry(TEXT("MilitiaMob"),  6), // 15 x6  = 90 (swarm: 4 bodies per copy)
+		Entry(TEXT("Pikeman"),     6), // 15 x6  = 90
+		Entry(TEXT("Knight"),      6), // 18 x6  = 108
+		Entry(TEXT("Archer"),      6), // 12 x6  = 72
+		Entry(TEXT("Cavalry"),     4), // 21 x4  = 84 (charge)
+		Entry(TEXT("Sapper"),      4), // 15 x4  = 60 (siege suicide)
+		Entry(TEXT("Wall"),        4), // 12 x4  = 48
+		Entry(TEXT("Miner"),       2), // 24 x2  = 48 (minimal economy)
 	};
 
-	// [1] DEFENSIVE ECONOMY — towers, walls, full economy, heavy finishers (avg cost ~7.02). Sum 50.
+	// [1] DEFENSIVE ECONOMY — towers, walls, full economy, heavy finishers (avg cost 21.06 = 1053/50). Sum 50.
 	FDeckList FortressDeck;
 	FortressDeck.DeckName = TEXT("Bot Defensive Economy");
 	FortressDeck.Cards =
 	{
-		Entry(TEXT("Wall"),           8), // 4 x8  = 32 (TASK-252: 10 → 8, donor for Lightning ×2)
-		Entry(TEXT("ArrowTower"),     8), // 5 x8  = 40
-		Entry(TEXT("Knight"),         6), // 6 x6  = 36
-		Entry(TEXT("BombTower"),      4), // 8 x4  = 32
-		Entry(TEXT("BallistaTower"),  4), // 7 x4  = 28
-		Entry(TEXT("Miner"),          4), // 8 x4  = 32 (full economy)
-		Entry(TEXT("Barracks"),       3), // 10 x3 = 30 (Footman spawner)
-		Entry(TEXT("CrystalTower"),   3), // 9 x3  = 27 (chain tower)
-		Entry(TEXT("Cleric"),         3), // 6 x3  = 18 (heals)
-		Entry(TEXT("Ogre"),           2), // 12 x2 = 24 (siege finisher)
-		Entry(TEXT("DeepMine"),       2), // 15 x2 = 30 (raidable economy)
-		Entry(TEXT("Lightning"),      2), // 8 x2  = 16 (spell — rule-3b tower-killer; TASK-252 per the M6 QA rec)
-		Entry(TEXT("Longbowman"),     1), // 6 x1  = 6
+		Entry(TEXT("Wall"),           8), // 12 x8 = 96 (TASK-252: 10 → 8, donor for Lightning ×2)
+		Entry(TEXT("ArrowTower"),     8), // 15 x8 = 120
+		Entry(TEXT("Knight"),         6), // 18 x6 = 108
+		Entry(TEXT("BombTower"),      4), // 24 x4 = 96
+		Entry(TEXT("BallistaTower"),  4), // 21 x4 = 84
+		Entry(TEXT("Miner"),          4), // 24 x4 = 96 (full economy)
+		Entry(TEXT("Barracks"),       3), // 30 x3 = 90 (Footman spawner)
+		Entry(TEXT("CrystalTower"),   3), // 27 x3 = 81 (chain tower)
+		Entry(TEXT("Cleric"),         3), // 18 x3 = 54 (heals)
+		Entry(TEXT("Ogre"),           2), // 36 x2 = 72 (siege finisher)
+		Entry(TEXT("DeepMine"),       2), // 45 x2 = 90 (raidable economy)
+		Entry(TEXT("Lightning"),      2), // 24 x2 = 48 (spell — rule-3b tower-killer; TASK-252 per the M6 QA rec)
+		Entry(TEXT("Longbowman"),     1), // 18 x1 = 18
 	};
 
 	BotDecks = { AggroDeck, FortressDeck };
@@ -448,24 +460,57 @@ void ASiegeBotController::EvaluateDecisions()
 				const FVector ToIntruder2D = FVector(IntruderLocation.X - CastleRed.X, IntruderLocation.Y - CastleRed.Y, 0.f);
 				const FVector Dir2D = ToIntruder2D.GetSafeNormal();
 				const float IntruderDist = static_cast<float>(ToIntruder2D.Size());
-				// TASK-349 plinth retirement: was CastlePlinthClearance (420) + 150 —
-				// the literal 570 preserves the shipped tower-standoff floor
-				// byte-for-byte now that the plinth tunable is retired (this is a
-				// standoff heuristic, not a placement refusal; actual validity is
-				// ComputeValidBotSpawnPoint's nav projection + clearances).
-				const float MinStandoff = 570.f;
-				const float Standoff = FMath::Clamp(TowerDefenseStandoff, MinStandoff, FMath::Max(MinStandoff, IntruderDist - 100.f));
-				Desired = Dir2D.IsNearlyZero()
-					? CastleRed + FVector(-Standoff, 0.f, 0.f) // intruder atop the castle: fall back toward the centerline
-					: CastleRed + Dir2D * Standoff;
+
+				// The direction the tower is actually placed along. Folded out of the
+				// old trailing ternary so the face measurement below and the placement
+				// below CANNOT disagree about which way "toward the intruder" is; the
+				// degenerate case (intruder atop the castle) keeps its -X fallback and
+				// the result is arithmetically identical to the old expression.
+				const FVector PlacementDir2D = Dir2D.IsNearlyZero() ? FVector(-1.f, 0.f, 0.f) : Dir2D;
+
+				// TASK-575 / CONVENTIONS WR-§2b row C, ruling W2-R3 — THE STANDOFF IS
+				// NOW MEASURED FROM THE WALL FACE, NOT THE CASTLE CENTRE. A centre
+				// standoff smaller than the thing it is centred on cannot mean anything:
+				// the authored 750 put the tower 343 uu OUTSIDE the M1 wall (as designed),
+				// 469 uu INSIDE after CASTLE-3X, and 2,907 uu INSIDE at the 9× castle. A
+				// x3 is banned here and the arithmetic is why — 2,250 is still 1,407 uu
+				// inside. FaceDistance is the live colliding-bounds face along this exact
+				// direction, and is 0 when the castle is unresolvable/degenerate, which
+				// degrades every term below to its pre-TASK-575 value.
+				const float FaceDistance = ResolveCastleFaceDistance(FVector2D(PlacementDir2D.X, PlacementDir2D.Y));
+
+				// The floor. TASK-349 preserved the retired plinth keep-out's derived
+				// floor as the literal 570 (= CastlePlinthClearance 420 + 150) to keep bot
+				// decision output byte-identical; TASK-575 DELIBERATELY GIVES THAT
+				// GUARANTEE UP, because 570 was sized against a ~814-uu castle and now
+				// sits 3,087 uu inside the 9x footprint — it preserved a number that can
+				// no longer mean what it meant. What survives is the 150-uu margin, which
+				// was always the body-scale half of 420 + 150 and therefore does NOT scale
+				// with the castle (CONVENTIONS WR-§1). The 570 literal is kept ONLY as the
+				// degenerate-bounds floor, where it reproduces today's behaviour exactly.
+				// This is still a standoff HEURISTIC, not a placement refusal — actual
+				// validity remains ComputeValidBotSpawnPoint's nav projection + clearances.
+				constexpr float TowerStandoffFaceMargin = 150.f;
+				constexpr float TowerStandoffDegenerateFloor = 570.f;
+				const float MinStandoff = FMath::Max(TowerStandoffDegenerateFloor, FaceDistance + TowerStandoffFaceMargin);
+
+				// TowerDefenseStandoff is now a BAND PAST THE FACE, so it is added to the
+				// face rather than used as the distance itself. The upper bound (short of
+				// the intruder) and the FMath::Max guard on it are unchanged.
+				const float DesiredStandoff = FaceDistance + TowerDefenseStandoff;
+				const float Standoff = FMath::Clamp(DesiredStandoff, MinStandoff, FMath::Max(MinStandoff, IntruderDist - 100.f));
+				Desired = CastleRed + PlacementDir2D * Standoff;
 				Desired.Z = CastleRed.Z;
 			}
 			else
 			{
 				// Toward the centerline (X=0) whichever half the castle sits on — the
-				// same sign convention the miner approach uses.
+				// same sign convention the miner approach uses. TASK-575: the offset is
+				// resolved from the castle's LIVE colliding bounds (wall face +
+				// BotCastleSpawnOffset), so the unit materializes in FRONT of the castle
+				// at every castle size instead of inside the hall at the 9x one.
 				const float TowardCenterSign = (CastleRed.X >= 0.f) ? -1.f : 1.f;
-				Desired = CastleRed + FVector(TowardCenterSign * BotCastleSpawnOffset,
+				Desired = CastleRed + FVector(TowardCenterSign * ResolveCastleFrontAnchorOffset(),
 					FMath::FRandRange(-BotSpawnLaneSpread, BotSpawnLaneSpread), 0.f);
 				Desired.Z = CastleRed.Z;
 			}
@@ -563,7 +608,14 @@ void ASiegeBotController::EvaluateDecisions()
 						? MineLocation // degenerate (mine at the castle point): the ring search walks it clear
 						: MineLocation + ApproachDir * MinerNodeApproachOffset;
 					Desired.Z = MineLocation.Z;
-					// KEPT AS AUTHORED (TASK-265): ComputeValidBotSpawnPoint's box clamp now dominates this half clamp at an 840 box; it re-activates untouched if the box ever grows.
+					// KEPT AS AUTHORED (TASK-265). Stale-claim fix, TASK-575 (WR-§2b row G):
+					// the box this note cited was 840 at TASK-265, went 2460 at TASK-349 and
+					// is (7380,7380) since TASK-557. The CLAIM still holds at 7380 and that
+					// was re-checked, not assumed: the box clamp limit is 7,340 about
+					// Castle_Red (+25,000), so a box-clamped X never falls below 17,660 —
+					// far own-half of BotHalfBoundaryX (0), so this half clamp cannot bind
+					// after it. It is not dead code: it still binds on the capture-zone
+					// pass-through path, where the box clamp deliberately does not run.
 					if (!IsOnOwnHalf(Desired.X))
 					{
 						Desired.X = BotHalfBoundaryX;
@@ -625,7 +677,13 @@ void ASiegeBotController::EvaluateDecisions()
 						// Same own-half clamp as 2a — a Blue-half best mine anchors the
 						// building at the centerline, never across it.
 						Desired = BestMine->GetActorLocation();
-						// KEPT AS AUTHORED (TASK-265): the box clamp in ComputeValidBotSpawnPoint dominates this half clamp at an 840 box (a Deep Mine needs no mine adjacency, so building it inside the castle box is mechanically identical).
+						// KEPT AS AUTHORED (TASK-265). Stale-claim fix, TASK-575 (WR-§2b row G):
+						// same correction as rule 2a above — the cited 840 box is now
+						// (7380,7380) (840 -> 2460 at TASK-349 -> 7380 at TASK-557), and the
+						// claim survives the change for the identical reason (a box-clamped X
+						// never falls below 17,660, so this half clamp cannot bind after it).
+						// A Deep Mine needs no mine adjacency, so building it inside the
+						// castle box remains mechanically identical.
 						if (!IsOnOwnHalf(Desired.X))
 						{
 							Desired.X = BotHalfBoundaryX;
@@ -633,8 +691,13 @@ void ASiegeBotController::EvaluateDecisions()
 					}
 					else
 					{
+						// TASK-575: same live-bounds castle-front resolve as the rule-1
+						// unit and the rule-4 wave. This site MUST convert with them —
+						// BotCastleSpawnOffset is now a band past the wall face, so
+						// reading it as a bare centre offset here would put the Deep Mine
+						// deeper inside the 9x keep than the stale value ever did.
 						const float TowardCenterSign = (CastleRed.X >= 0.f) ? -1.f : 1.f;
-						Desired = CastleRed + FVector(TowardCenterSign * BotCastleSpawnOffset, 0.f, 0.f);
+						Desired = CastleRed + FVector(TowardCenterSign * ResolveCastleFrontAnchorOffset(), 0.f, 0.f);
 						Desired.Z = CastleRed.Z;
 					}
 
@@ -798,11 +861,15 @@ void ASiegeBotController::EvaluateDecisions()
 			// the centerline, Y fanned across ±BotSpawnLaneSpread — and MARCH the
 			// 10× field (replaces the old BotCenterlineSpawnX=350 mid-field commit;
 			// resolved from the LIVE castle location like the defense path).
+			// TASK-575 / ruling W2-R2: "in front of" is now MEASURED, not transcribed —
+			// the offset is the castle's live colliding face + BotCastleSpawnOffset, so
+			// a wave appearing INSIDE the Red hall is a DEFECT (CONVENTIONS WR-§9
+			// outcome 9), not the designed behaviour.
 			// Flagged follow-up (Standing backlog): "adaptive bot spawn positioning
 			// by strategy" — not designed.
 			const FVector CastleRed = GetCastleRedLocation();
 			const float TowardCenterSign = (CastleRed.X >= 0.f) ? -1.f : 1.f;
-			FVector Desired = CastleRed + FVector(TowardCenterSign * BotCastleSpawnOffset,
+			FVector Desired = CastleRed + FVector(TowardCenterSign * ResolveCastleFrontAnchorOffset(),
 				FMath::FRandRange(-BotSpawnLaneSpread, BotSpawnLaneSpread), 0.f);
 			Desired.Z = CastleRed.Z;
 
@@ -1108,8 +1175,12 @@ AActor* ASiegeBotController::FindLightningTowerTarget(float SearchRadius, int32 
 	return BestTower;
 }
 
-FVector ASiegeBotController::GetCastleRedLocation() const
+const ACastle* ASiegeBotController::GetCastleRedActor() const
 {
+	// TASK-575: lifted verbatim out of GetCastleRedLocation (same iterator, same
+	// IsValid + team filter, same first-match wins) so the castle's BOUNDS and its
+	// LOCATION are always read off the SAME actor. Behaviour of the location getter
+	// below is unchanged.
 	if (UWorld* World = GetWorld())
 	{
 		for (TActorIterator<ACastle> It(World); It; ++It)
@@ -1117,11 +1188,97 @@ FVector ASiegeBotController::GetCastleRedLocation() const
 			const ACastle* Castle = *It;
 			if (IsValid(Castle) && Castle->GetTeamId() == BotTeam)
 			{
-				return Castle->GetActorLocation();
+				return Castle;
 			}
 		}
 	}
-	return CastleRedFallbackLocation;
+	return nullptr;
+}
+
+FVector ASiegeBotController::GetCastleRedLocation() const
+{
+	const ACastle* Castle = GetCastleRedActor();
+	return Castle ? Castle->GetActorLocation() : CastleRedFallbackLocation;
+}
+
+float ASiegeBotController::ResolveCastleFaceDistance(const FVector2D& Direction2D)
+{
+	// TASK-575 / CONVENTIONS WR-§2b rulings W2-R2 + W2-R3 — the ONE place the bot
+	// measures its own castle. Every castle-derived distance in this controller is
+	// now (this) + an authored band, so a castle resize carries them all with it
+	// (SC-§34's structural escape; the shipped model is ASiegeGameMode::
+	// GetHeroStartTransform branch 3, which has survived two castle resizes
+	// untouched).
+	const ACastle* Castle = GetCastleRedActor();
+
+	FVector BoundsOrigin = FVector::ZeroVector;
+	FVector BoxExtent = FVector::ZeroVector;
+	if (Castle)
+	{
+		// bOnlyCollidingComponents = true: what matters is what BLOCKS a unit, not
+		// the render/widget bounds — ACastle's HP-bar widget sits 9,450 uu up
+		// (TASK-557) and must never inflate this.
+		Castle->GetActorBounds(/*bOnlyCollidingComponents=*/ true, BoundsOrigin, BoxExtent);
+	}
+
+	// FVector components are DOUBLE in UE5; keep the whole derivation in double and
+	// narrow once at the return (CONVENTIONS compile traps — FMath::Min/Max are
+	// single-type templates and will not deduce across float/double).
+	const double ExtentX = FMath::Abs(BoxExtent.X);
+	const double ExtentY = FMath::Abs(BoxExtent.Y);
+	const FVector2D Direction = Direction2D.GetSafeNormal();
+	const double AbsDirX = FMath::Abs(Direction.X);
+	const double AbsDirY = FMath::Abs(Direction.Y);
+
+	if (!Castle || ExtentX <= UE_KINDA_SMALL_NUMBER || ExtentY <= UE_KINDA_SMALL_NUMBER ||
+		(AbsDirX <= UE_KINDA_SMALL_NUMBER && AbsDirY <= UE_KINDA_SMALL_NUMBER))
+	{
+		// Degrade to "no measurable castle" and let every caller fall back to its
+		// authored band used as a bare centre-relative offset — the pre-TASK-575
+		// shape, so a missing/unloaded castle can never brick the bot (house
+		// null-safety law). Warned ONCE, and NOT on LogSiegeBot: that category is
+		// one line per FIRED rule and this is a diagnostic, not a decision.
+		if (!bWarnedNoCastleBounds)
+		{
+			bWarnedNoCastleBounds = true;
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("ASiegeBotController '%s': no usable Castle_Red colliding bounds (castle %s, measured half-extent %.1f x %.1f) — castle-front spawn anchors and the rule-1 tower standoff fall back to their authored bands as bare centre offsets (pre-TASK-575 behavior). Logged once."),
+				*GetNameSafe(this), Castle ? TEXT("found") : TEXT("NOT found"), ExtentX, ExtentY);
+		}
+		return 0.f;
+	}
+
+	// World AABB ray-exit from the centre: the boundary along a unit direction is the
+	// NEAREST axis crossing. Exact in every direction — max(Ex, Ey) would be the
+	// INSCRIBED square and would leave a 45-degree approach up to ~730 uu inside the
+	// 9x footprint. Direction is unit and non-zero here, so at most one component can
+	// be ~0 and neither division below can blow up.
+	double FaceDistance = 0.0;
+	if (AbsDirX <= UE_KINDA_SMALL_NUMBER)
+	{
+		FaceDistance = ExtentY / AbsDirY; // pure +/-Y
+	}
+	else if (AbsDirY <= UE_KINDA_SMALL_NUMBER)
+	{
+		FaceDistance = ExtentX / AbsDirX; // pure +/-X (the castle-front anchor case)
+	}
+	else
+	{
+		FaceDistance = FMath::Min(ExtentX / AbsDirX, ExtentY / AbsDirY);
+	}
+
+	return static_cast<float>(FaceDistance);
+}
+
+float ASiegeBotController::ResolveCastleFrontAnchorOffset()
+{
+	// The centerline-facing face is a +/-X crossing, and BoxExtent.X is a HALF-extent,
+	// so the same magnitude serves both signs — the caller applies TowardCenterSign.
+	// TASK-575 / ruling W2-R2: BotCastleSpawnOffset is the BAND PAST THE FACE, so at
+	// the 9x castle this resolves 3,656.85 + 1,343.15 = 5,000 (and 1,750.15 at the M1
+	// castle Jonathan authored 1,750 against — the mechanism reproduces his choice).
+	// A degenerate/unresolvable castle returns 0 above, leaving the band alone.
+	return ResolveCastleFaceDistance(FVector2D(1.0, 0.0)) + BotCastleSpawnOffset;
 }
 
 FVector ASiegeBotController::ClampAnchorToBotSpawnRegion(const FVector& Desired) const
@@ -1223,12 +1380,20 @@ bool ASiegeBotController::ComputeValidBotSpawnPoint(const FVector& Desired, bool
 	// clamp. Every caller (rule-1 unit/tower, rule-2a miner, rule-2b Deep Mine,
 	// rule-4 attack wave) funnels its desired point through here, so one edit
 	// covers all five sites and NO call site does anchor math. Anchors that are
-	// already eligible pass through byte-unchanged (see the carve-out above);
-	// ineligible ones (castle-front at BotCastleSpawnOffset 1,750 ⇒ ~910 uu outside
-	// an 840 box, and the rule-2 mine anchors thousands of uu away) land in the
-	// box's centerline-facing front band and MARCH out from there — M7.6 ruling
-	// #1's intent survives, the wave simply starts inside its own box like the
-	// player's units do.
+	// already eligible pass through byte-unchanged (see the carve-out above).
+	//
+	// Stale-claim fix, TASK-575 (WR-§2b row G). This note used to say the castle-front
+	// anchor was one of the INELIGIBLE ones — "BotCastleSpawnOffset 1,750 ⇒ ~910 uu
+	// outside an 840 box". BOTH halves are dead: the box has been 2460 (TASK-349) and
+	// is now (7380,7380) (TASK-557), and the castle-front anchor is no longer 1,750 —
+	// it RESOLVES from live castle bounds (TASK-575, ruling W2-R2) to ~5,000 from the
+	// castle centre at the 9x castle, i.e. X ~ 20,000 for Red. That is inside the box
+	// [17,620, 32,380], so the castle-front anchor now takes the PASS-THROUGH and this
+	// clamp never touches it (it is also < the 7,340 clamp limit, so even the clamped
+	// path would be a no-op — checked both ways deliberately). What the clamp still
+	// owns is the far-flung rule-2 mine anchors, thousands of uu away; those land in
+	// the box's centerline-facing front band and MARCH out from there, and M7.6 ruling
+	// #1's intent is now carried by the anchor itself rather than by this clamp.
 	const FVector Anchor = ClampAnchorToBotSpawnRegion(Desired);
 
 	UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(World);

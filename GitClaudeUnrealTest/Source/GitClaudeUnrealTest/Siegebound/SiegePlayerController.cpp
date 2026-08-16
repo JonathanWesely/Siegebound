@@ -26,6 +26,7 @@
 #include "Siegebound/CaptureZone.h" // ACaptureZone — capture-spawn clause (complete type: CanTeamSpawnHere call, TASK-261)
 #include "Siegebound/CardRow.h"
 #include "Siegebound/Castle.h"
+#include "Siegebound/CommanderNpc.h" // ACommanderNpc — the war map's proximity gate + the EnemyRevealCost the authority prices the reveal from (TASK-563; the class is TASK-559's). ⛔ READ ONLY: this controller never spawns, mutates or destroys one (TASK-562's ACastle owns that lifecycle).
 #include "Siegebound/DeckComponent.h"
 #include "Siegebound/DeckLibrary.h" // UDeckLibrary::IsDeckLegal — gate the active saved deck before SetPendingDeckList (M6 TASK-114)
 #include "Siegebound/HeroCharacter.h"
@@ -40,6 +41,7 @@
 #include "Siegebound/SiegeSpawnConstants.h"
 #include "Siegebound/SpellLibrary.h"
 #include "Siegebound/SummonedUnit.h"
+#include "Siegebound/WarMapWidget.h" // UWarMapWidget — complete type for CreateAndAddToViewport / OpenMap / CloseMap / ReceiveEnemyReveal and the three delegate binds (TASK-563; the widget itself is TASK-560's)
 #include "TimerManager.h" // TASK-344: the 1 s group-order prune timer (SetTimer on the world timer manager)
 
 namespace
@@ -91,6 +93,35 @@ namespace
 	 *  packing density only, never correctness.
 	 */
 	constexpr int32 FollowFormationSlots = 12;
+
+	//~ TASK-563 WAR MAP — implementation constants (the MaxHUDInitAttempts class:
+	//~ engine/transport bounds, ⛔ NOT feel tunables and ⛔ NOT mechanic rules, so
+	//~ neither is a UPROPERTY and neither is a cards.csv column).
+
+	/**
+	 *  Viewport Z order for the war map. ⚠️ THE VALUE IS A RELATIONSHIP, NOT A
+	 *  PREFERENCE, and it is the reason it is not left at CreateAndAddToViewport's
+	 *  default of 0: the map must sit ABOVE the HUD (added at the AddToViewport()
+	 *  default, 0) because it is a full-screen panel, and BELOW the assistant console
+	 *  (USiegeAssistantConsoleWidget::CreateAndAddToViewport's ZOrder default, 5)
+	 *  because a marker click writes into the console's input box and the player must
+	 *  be able to SEE and CLICK that box while the map is still up. A map drawn over
+	 *  the console would hide the one surface the click exists to fill.
+	 */
+	constexpr int32 WarMapWidgetZOrder = 4;
+
+	/**
+	 *  Hard bound on the paid reveal's dot payload (WR-§7). A Reliable RPC carrying an
+	 *  unbounded TArray is a bandwidth hazard rather than a gameplay one — this is the
+	 *  MaxHUDInitAttempts class of constant, not a design number.
+	 *
+	 *  ⚠️ IT IS DELIBERATELY FAR ABOVE ANY REAL ARMY, so it is a tripwire and never a
+	 *  silent truncation of a normal match: exceeding it logs a Warning naming the
+	 *  drop. ⛔ The reveal is NOT re-priced or refunded on a truncation — the player
+	 *  paid for a survey and got one; a partial refund would be exactly the partial
+	 *  spend WR-§7 forbids.
+	 */
+	constexpr int32 MaxEnemyRevealDots = 512;
 
 	/** Player-facing label for a group-order type — used by the pick prompts and the pick logs. */
 	const TCHAR* GroupCommandTypeLabel(ESiegeGroupCommandType Type)
@@ -178,6 +209,8 @@ ASiegePlayerController::ASiegePlayerController()
 	CmdAmbushActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_CmdAmbush.IA_CmdAmbush")));         // TASK-345 (Group orders — F; inert-null-safe until the asset lands)
 	CmdFollowActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_CmdFollow.IA_CmdFollow")));         // TASK-399 (FOLLOW — C; inert-null-safe until the asset lands)
 	AssistantConsoleActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_AssistantConsole.IA_AssistantConsole"))); // TASK-445 (assistant console open key; inert-null-safe until the asset lands — the IA_CmdAmbush/IA_CmdFollow precedent)
+	WarMapActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_WarMap.IA_WarMap")));                             // TASK-568 (war-map toggle — M; inert-null-safe until the asset lands. Dvorak/positional remapping is FREE via IMC_Hero, KBD-§)
+	WarMapWidgetClass = TSoftClassPtr<UWarMapWidget>(FSoftObjectPath(TEXT("/Game/UI/WBP_WarMap.WBP_WarMap_C")));                                    // TASK-568 (chrome only — the C++ painter draws and hit-tests every marker and dot without it)
 }
 
 void ASiegePlayerController::BeginPlay()
@@ -362,6 +395,23 @@ void ASiegePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 	SetAssistantConsoleOpen(false); // never refused; no-op when it was already closed
 
+	// Same law again for the war map (TASK-563), in the same order and for the same
+	// reasons: unbind FIRST so the release is one explicit call rather than a
+	// broadcast arriving during teardown, and so no dynamic delegate is left pointing
+	// at a controller that is going away. CloseMap() also DISCARDS any paid reveal
+	// (WR-§7 — the widget clears unconditionally), which is what makes "no persistence
+	// across a match teardown" true without a second clear here.
+	if (WarMapWidget)
+	{
+		WarMapWidget->OnMapOpenChanged.RemoveDynamic(this, &ASiegePlayerController::HandleWarMapOpenChanged);
+		WarMapWidget->OnPlacePicked.RemoveDynamic(this, &ASiegePlayerController::HandleWarMapPlacePicked);
+		WarMapWidget->OnRevealButtonClicked.RemoveDynamic(this, &ASiegePlayerController::HandleWarMapRevealButtonClicked);
+		WarMapWidget->CloseMap();
+		WarMapWidget->RemoveFromParent();
+		WarMapWidget = nullptr;
+	}
+	SetWarMapOpen(false); // never refused; no-op when it was already closed
+
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -397,6 +447,12 @@ void ASiegePlayerController::SetupInputComponent()
 	// simply inert (one log line, no crash). ⛔ THAT IS THE DESIGNED STATE, NOT A
 	// DEGRADATION TO FIX HERE — and it is why this task is not blocked on TASK-445.
 	AssistantConsoleAction = ResolveInputAction(AssistantConsoleAction, AssistantConsoleActionAsset, TEXT("IA_AssistantConsole"), TEXT("TASK-445"));
+
+	// War-map toggle key (TASK-563). SAME null-safe soft-resolve, SAME reason:
+	// TASK-568 creates IA_WarMap and maps it in IMC_Hero to M, so until it lands this
+	// returns null and M is simply inert (one log line, no crash). ⛔ THAT IS THE
+	// DESIGNED STATE, and it is why this task is not blocked on TASK-568.
+	WarMapAction = ResolveInputAction(WarMapAction, WarMapActionAsset, TEXT("IA_WarMap"), TEXT("TASK-568"));
 
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))
 	{
@@ -481,6 +537,23 @@ void ASiegePlayerController::SetupInputComponent()
 		{
 			EnhancedInputComponent->BindAction(AssistantConsoleAction, ETriggerEvent::Started, this, &ASiegePlayerController::OnAssistantConsolePressed);
 		}
+
+		// THE WAR-MAP TOGGLE (TASK-563, WR-§5's input row) — Started, the same
+		// trigger event every command key above uses. ⛔ IT RE-ROUTES NOTHING: every
+		// binding above is untouched and no key is made to pass through the map. The
+		// IA_WarMap asset arrives in TASK-568; until then the resolve above returned
+		// null and M is inert — the IA_CmdAmbush / IA_CmdFollow / IA_AssistantConsole
+		// precedent exactly.
+		//
+		// ✅ ⛔ NO GetPositionalKey CALL HERE, DELIBERATELY (KBD-§): this is a MAPPED
+		// Enhanced Input action, and USiegeKeyboardLayoutSubsystem already rewrites
+		// IMC_Hero's .Key fields wholesale — so Dvorak/positional remapping is
+		// inherited for free. That API belongs to RAW polled keys; calling it here
+		// would double-apply the remap.
+		if (WarMapAction)
+		{
+			EnhancedInputComponent->BindAction(WarMapAction, ETriggerEvent::Started, this, &ASiegePlayerController::OnWarMapPressed);
+		}
 	}
 	else
 	{
@@ -550,6 +623,36 @@ void ASiegePlayerController::PlayerTick(float DeltaTime)
 		if (WasInputKeyJustPressed(EKeys::LeftMouseButton))
 		{
 			TryConfirmSpellTarget();
+		}
+		return;
+	}
+
+	// WAR MAP (TASK-563) — a POLLED CLOSE ONLY, and it is an ADDITION over the
+	// spec's names block that is declared rather than smuggled (SC-§15). The map
+	// itself needs no per-frame work: it paints and hit-tests itself, and its ally
+	// dots run off a world timer.
+	//
+	// ⛔ WHY THE POLL EXISTS, AND IT IS A MECHANISM RATHER THAN A TASTE: a marker
+	// click OPENS THE ASSISTANT CONSOLE, which takes Slate keyboard focus on its
+	// input box. A focused UEditableTextBox consumes character keys, so pressing M
+	// again TYPES "m" INTO THE SENTENCE instead of reaching IA_WarMap — and until
+	// TASK-568's WBP_WarMap supplies a CloseButton there would be no other way out
+	// of a full-screen panel. RMB/Esc polled here is exactly the double-cover the
+	// three shipped cursor modes already use ("the player can always leave ... even
+	// if the asset is missing"), and SetWarMapOpen(false) is never refused.
+	//
+	// ⚠️ bWarMapOpen IS FALSE ON EVERY PRE-EXISTING PATH, and the war map is mutually
+	// exclusive with all three branches above, so this branch changes nothing about
+	// placement, targeting or the group pick.
+	if (bWarMapOpen)
+	{
+		if (WasInputKeyJustPressed(EKeys::RightMouseButton) || WasInputKeyJustPressed(EKeys::Escape))
+		{
+			// ⛔ CLOSE THE WIDGET, NOT JUST THE FLAG: CloseMap() is what discards the
+			// paid reveal (WR-§7), and its OnMapOpenChanged broadcast is what releases
+			// the posture through its ONE writer. CloseWarMap() is the ONE sequence, so
+			// no caller can perform half of it.
+			CloseWarMap();
 		}
 		return;
 	}
@@ -1172,6 +1275,18 @@ void ASiegePlayerController::EnterPlacementMode(FName CardID)
 		return;
 	}
 
+	// FIFTH-mode mutual exclusion (TASK-563): the war map owns the cursor AND the
+	// LMB while open (its markers are hit-tested on mouse-down) — the mirror of
+	// CanOpenWarMap's placement clause, appended AFTER the shipped four so their
+	// precedence and their log lines are untouched.
+	if (bWarMapOpen)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegePlayerController '%s': EnterPlacementMode('%s') ignored — the war map is open."),
+			*GetNameSafe(this), *CardID.ToString());
+		return;
+	}
+
 	if (CardID.IsNone())
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Warning,
@@ -1317,6 +1432,13 @@ void ASiegePlayerController::HandleMatchEnd(ETeamId Winner)
 	// anyway) — HandleMatchReset clears them for the next match.
 	CancelGroupPick();
 
+	// same for the war map (TASK-563): close it BEFORE the UI-only switch, so the
+	// end screen is never under a full-screen panel. ⛔ CloseWarMap() also discards
+	// any paid reveal — WR-§7's "no persistence across a match" half, delivered by
+	// the same one call rather than by a second clear that could drift out of sync.
+	// No-op-safe.
+	CloseWarMap();
+
 	// end any IA_UICursor hold too: UI-only input can swallow the action's
 	// release event, which would leave the ignore-look counter stuck across
 	// the end screen (the end screen owns the cursor from here anyway)
@@ -1453,6 +1575,14 @@ void ASiegePlayerController::HandleMatchReset()
 
 	// same defensive teardown for the group-order pick (TASK-344)
 	CancelGroupPick();
+
+	// same defensive teardown for the war map (TASK-563). ⛔ THIS IS WR-§7's
+	// "⛔ NO PERSISTENCE ACROSS PLAY AGAIN / MATCH RESET" CLAUSE, hooked onto the
+	// EXISTING reset path exactly as the spec asked rather than onto a new one:
+	// CloseWarMap() discards the paid reveal through the widget's own unconditional
+	// clear, so the next match starts with no red dots and no credit for the last
+	// 30 gold. No-op-safe.
+	CloseWarMap();
 
 	bMatchEnded = false;
 
@@ -1855,8 +1985,10 @@ void ASiegePlayerController::UpdatePlacementGhost()
 	// Placement validity v4 (GDD §3.5 TASK-030 + GDD §5 M4.5 TASK-093 +
 	// W1-PREP additions 3 TASK-261 + Castle 3× HOLLOW TASK-349), in cost order:
 	// (1) ground hit inside the player's spawn box — a 2D square around the owned
-	//     Castle_Blue with half-extent SpawnBoxHalfExtent (2460: covers the
-	//     castle's walkable interior, TASK-349) — OR inside a Blue-owned capture
+	//     Castle_Blue with half-extent SpawnBoxHalfExtent (7380 since TASK-557,
+	//     WR-§2 row 1 — the 9× castle; 2460 was the TASK-349 3× value. It covers
+	//     the castle's walkable interior at whichever scale is live, which is the
+	//     point of the paired tunable) — OR inside a Blue-owned capture
 	//     zone (TASK-261; REPLACES the retired X<=PlacementMaxX half-gate.
 	//     Neutral/Red mid zone => not placeable there);
 	// (2) the point projects onto the navmesh within NavProjectionExtent —
@@ -2050,6 +2182,16 @@ void ASiegePlayerController::EnterTargetingMode(FName CardID)
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Verbose,
 			TEXT("ASiegePlayerController '%s': EnterTargetingMode('%s') ignored — the assistant console is open."),
+			*GetNameSafe(this), *CardID.ToString());
+		return;
+	}
+
+	// FIFTH-mode mutual exclusion (TASK-563) — mirror of the placement clause and of
+	// CanOpenWarMap's targeting clause.
+	if (bWarMapOpen)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegePlayerController '%s': EnterTargetingMode('%s') ignored — the war map is open."),
 			*GetNameSafe(this), *CardID.ToString());
 		return;
 	}
@@ -2535,6 +2677,17 @@ void ASiegePlayerController::BeginGroupPick(ESiegeGroupCommandType Type)
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Verbose,
 			TEXT("ASiegePlayerController '%s': BeginGroupPick ignored — the assistant console is open."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	// FIFTH-mode mutual exclusion (TASK-563) — mirror of CanOpenWarMap's group-pick
+	// clause. ⚠️ Same §2 note as the console clause above: R / F / C are refused ONLY
+	// while the map is actually up, and a closed map leaves every key byte-identical.
+	if (bWarMapOpen)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegePlayerController '%s': BeginGroupPick ignored — the war map is open."),
 			*GetNameSafe(this));
 		return;
 	}
@@ -4065,8 +4218,10 @@ bool ASiegePlayerController::IsPointInOwnSpawnBox(const FVector& Point)
 
 	// W1-PREP additions 3 (TASK-261): the player's spawn region is a 2D (XY)
 	// square centered on the owned Castle_Blue with half-extent SpawnBoxHalfExtent
-	// (2460 since TASK-349 — the box covers the 3× castle's walkable interior, so
-	// spawn-inside passes this gate by construction) — this REPLACES the retired
+	// (7380 since TASK-557 / WR-§2 row 1 — the box covers the 9× castle's walkable
+	// interior, so spawn-inside passes this gate by construction; it was 2460 for
+	// the 3× castle, TASK-349. ⛔ PAIRED 3 WAYS — ACastle ≡ this ≡ ASiegeBotController;
+	// a partial edit is the silent bug the pairing law exists for) — this REPLACES the retired
 	// X<=PlacementMaxX half-line gate. The local player is always ETeamId::Blue
 	// (team contract). The castle is found with the house team-filtered
 	// TActorIterator<ACastle> pattern; the box is centered on the castle
@@ -4167,15 +4322,26 @@ void ASiegePlayerController::ApplyCursorInputState()
 	// cursor owners compose: placement mode (M1, unchanged), spell targeting mode
 	// (M5 TASK-100 — ruling 8: "cursor posture mirrors placement mode"), the
 	// group-order pick (TASK-344 — same reused posture), the assistant console
-	// (TASK-440 — ONE MORE TERM, never a parallel path), and the held IA_UICursor
+	// (TASK-440 — ONE MORE TERM, never a parallel path), the war map (TASK-563 —
+	// ONE MORE TERM AGAIN, for exactly the same reason), and the held IA_UICursor
 	// (M2 input ruling) — any one keeps the cursor up. The four card/command
-	// cursor modes are mutually exclusive, so at most two owners are ever live
-	// (one of them + IA_UICursor).
+	// cursor modes are mutually exclusive, so at most three owners are ever live
+	// (one of them + the console + IA_UICursor).
 	//
-	// ⚠️ bAssistantConsoleOpen IS FALSE ON EVERY PRE-EXISTING PATH, so this
-	// expression evaluates exactly as it did before the term was added — the
-	// console changes the posture only while it is actually open.
-	const bool bWantCursor = bInPlacementMode || bInTargetingMode || (GroupPickStage != EGroupPickStage::None) || bAssistantConsoleOpen || bUICursorHeld;
+	// ⚠️ bAssistantConsoleOpen AND bWarMapOpen ARE BOTH FALSE ON EVERY PRE-EXISTING
+	// PATH, so this expression evaluates exactly as it did before either term was
+	// added — each changes the posture only while its own surface is actually open.
+	//
+	// ⭐ THIS IS ALSO THE CURSOR/POSTURE GAP TASK-444 FLAGGED (its §5 flag (a),
+	// item (iii)) AND TASK-560 RE-FLAGGED FOR THE MAP: "one `|| bWarMapOpen` term in
+	// ApplyCursorInputState's bWantCursor composition — that last one is how the law
+	// says a new posture owner is added, and it composes with placement / targeting /
+	// group-pick / IA_UICursor rather than fighting them." Adding the term HERE,
+	// rather than calling SetInputMode from the widget, is what keeps this function
+	// the ONLY owner of the match cursor posture (the level-travel law). ⛔ A map that
+	// hit-tests markers with no visible cursor and no GameAndUI mode would look
+	// perfectly painted and be entirely inert.
+	const bool bWantCursor = bInPlacementMode || bInTargetingMode || (GroupPickStage != EGroupPickStage::None) || bAssistantConsoleOpen || bWarMapOpen || bUICursorHeld;
 	bShowMouseCursor = bWantCursor;
 	bEnableClickEvents = bWantCursor;
 
@@ -4283,7 +4449,26 @@ void ASiegePlayerController::OnAssistantConsolePressed()
 		return;
 	}
 
-	// ── OPEN: GUARD FIRST, UI SECOND — THE LOAD-BEARING ORDERING ──
+	// ── OPEN ──
+	// ⚠️ TASK-563 EXTRACTED THE WHOLE OPEN HALF INTO EnsureAssistantConsoleOpen()
+	// AND MOVED IT VERBATIM — not one line of the sequence, its ordering or its log
+	// text changed, and this key still ignores the return value exactly as it always
+	// did (nothing here ever branched on it). The extraction exists because the war
+	// map's marker click needs the SAME sequence and a second copy of a delicate
+	// ordering is how the "attach before open" silent failure comes back (the
+	// CreateUnitGroup / ApplyArmyWideStance precedent: one implementation, several
+	// callers).
+	EnsureAssistantConsoleOpen();
+}
+
+bool ASiegePlayerController::EnsureAssistantConsoleOpen()
+{
+	// ⛔ NO GATE WAS ADDED TO THIS FUNCTION AND NONE MAY EVER BE (WR-§5 RULING 5,
+	// Jonathan verbatim: "the console still works anywhere"). There is no proximity
+	// test, no ACommanderNpc reference and no war-map condition anywhere below — the
+	// map is a CALLER of this sequence, never a requirement of it.
+
+	// ── GUARD FIRST, UI SECOND — THE LOAD-BEARING ORDERING ──
 	// ⛔ NOTHING IS CREATED AND NOTHING IS SHOWN UNTIL THE POSTURE IS GRANTED.
 	// SetAssistantConsoleOpen(true) re-gates on CanOpenAssistantConsole() and
 	// returns false while placement mode, spell targeting or a group-order pick
@@ -4299,7 +4484,7 @@ void ASiegePlayerController::OnAssistantConsolePressed()
 	{
 		// SetAssistantConsoleOpen already logged WHICH owner refused. No second
 		// log line here: one refusal, one line.
-		return;
+		return false;
 	}
 
 	USiegeAssistantConsoleWidget* Console = GetOrCreateAssistantConsoleWidget();
@@ -4309,7 +4494,7 @@ void ASiegePlayerController::OnAssistantConsolePressed()
 		// BACK: a cursor owner with no UI behind it is precisely the soft-lock the
 		// posture flag must never be left in.
 		SetAssistantConsoleOpen(false);
-		return;
+		return false;
 	}
 
 	// ── HAND THE LIVE WIDGET TO THE COMPONENT (TASK-453) ──
@@ -4369,7 +4554,10 @@ void ASiegePlayerController::OnAssistantConsolePressed()
 		UE_LOG(LogGitClaudeUnrealTest, Log,
 			TEXT("ASiegePlayerController '%s': assistant console did not open (the widget is disabled — a faulted assistant); cursor posture released, nothing shown. No key, card or command is affected."),
 			*GetNameSafe(this));
+		return false;
 	}
+
+	return true;
 }
 
 void ASiegePlayerController::HandleAssistantConsoleOpenChanged(bool bOpen)
@@ -4435,4 +4623,643 @@ USiegeAssistantConsoleWidget* ASiegePlayerController::GetOrCreateAssistantConsol
 	}
 
 	return AssistantConsoleWidget;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE WAR MAP (TASK-563) — input, proximity, and the 30-gold enemy reveal
+//
+// Three seams meet here and NONE of them is rebuilt: TASK-559 owns the NPC
+// (InteractRadius / IsPlayerInRange / EnemyRevealCost / FindCommanderNpcForTeam),
+// TASK-560 owns the widget (the C++ painter, the markers, the dots, OnPlacePicked)
+// and TASK-561 owns the console's AppendToInput. What follows is the JOIN plus the
+// one thing only an authority can do: move gold.
+//
+// ⭐ THE AIRLOCK PROPERTY OF THIS WHOLE BLOCK (WR-§6): the only thing that ever
+// crosses from the map toward the model is ONE PLACE SYMBOL, moved as an opaque
+// FName the player then sends himself. ⛔ No coordinate, dot, count, marker rect or
+// arena figure is written anywhere near a prompt zone, no Zone builder is opened, no
+// grammar rule or `who` shape is added, and no place-symbol literal appears in this
+// file. ⇒ This task spends ZERO prompt characters.
+// ─────────────────────────────────────────────────────────────────────────────
+
+bool ASiegePlayerController::CanOpenWarMap() const
+{
+	// THE MAP HALF OF THE FIVE-WAY MUTUAL EXCLUSION (TASK-563) — the SAME clause
+	// list as CanOpenAssistantConsole, for the same reasons, and each of the three
+	// modes carries the mirror clause against bWarMapOpen so the exclusion holds in
+	// BOTH directions. A one-directional guard is exactly how two cursor owners end
+	// up disagreeing about the input mode.
+	//
+	// The match-ended clause is load-bearing rather than cosmetic here for the same
+	// reason it is for the console: ApplyCursorInputState EARLY-OUTS while bMatchEnded
+	// is latched (HandleMatchEnd owns the UIOnly end screen), so a map opened on the
+	// end screen would never receive its cursor posture and its markers would be inert.
+	//
+	// ⛔ NO bAssistantConsoleOpen CLAUSE, DELIBERATELY — see the declaration comment.
+	// The map's whole purpose is to write a symbol into the console's box, so the two
+	// are a PAIR; refusing each other would be a deadlock by construction.
+	//
+	// ⛔ AND NO PROXIMITY CLAUSE — that gate is IsHeroInCommanderRange()'s and is
+	// applied by OnWarMapPressed, so the refusal can NAME which of the two reasons
+	// fired instead of collapsing them into one silent "no".
+	return !bMatchEnded
+		&& !bInPlacementMode
+		&& !bInTargetingMode
+		&& (GroupPickStage == EGroupPickStage::None);
+}
+
+bool ASiegePlayerController::SetWarMapOpen(bool bOpen)
+{
+	// RE-GATE ON OPEN so the guard cannot be bypassed by a caller that forgot to
+	// ask. CLOSING IS NEVER REFUSED — a close that could fail is a close that can
+	// strand the cursor in GameAndUI with no owner willing to release it. This is
+	// SetAssistantConsoleOpen's contract, cloned rather than re-invented.
+	if (bOpen && !CanOpenWarMap())
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': war map open refused — another cursor mode is live (placement %d, targeting %d, group pick %d) or the match has ended (%d)."),
+			*GetNameSafe(this), bInPlacementMode ? 1 : 0, bInTargetingMode ? 1 : 0,
+			(GroupPickStage != EGroupPickStage::None) ? 1 : 0, bMatchEnded ? 1 : 0);
+		return false;
+	}
+
+	// no-op writes never touch the input mode (the console's reasoning verbatim: a
+	// SetInputMode on every toggle-driven call is a real cost and a real source of
+	// focus churn).
+	if (bWarMapOpen == bOpen)
+	{
+		return true;
+	}
+
+	bWarMapOpen = bOpen;
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASiegePlayerController '%s': war map %s."),
+		*GetNameSafe(this), bOpen ? TEXT("opened") : TEXT("closed"));
+
+	// the ONE cursor-posture owner — never a parallel SetInputMode call
+	ApplyCursorInputState();
+	return true;
+}
+
+ACommanderNpc* ASiegePlayerController::FindOwnTeamCommanderNpc() const
+{
+	UWorld* const World = GetWorld();
+	if (World == nullptr)
+	{
+		return nullptr;
+	}
+
+	// ⛔ NEVER GUESS A TEAM (the ResolveOrderingTeam doctrine, and the same refusal
+	// UWarMapWidget::RefreshAllyDots takes): with no ASiegePlayerState there is no
+	// honest answer, and a Blue default on a Red client would gate the map on the
+	// ENEMY's commander and price the reveal off the wrong actor. No PS ⇒ no NPC.
+	const ASiegePlayerState* const OwningState = GetPlayerState<ASiegePlayerState>();
+	if (OwningState == nullptr)
+	{
+		return nullptr;
+	}
+
+	// The finder lives on the class being FOUND (ACommanderNpc::FindCommanderNpcForTeam,
+	// the AGoldNode::FindBestMineFor / ACastle::FindNearestCastleForTeam house law),
+	// which is what keeps a TActorIterator out of this controller. Deliberately not
+	// cached: TASK-562 destroys and re-spawns the NPC on castle destruction and on
+	// ResetCastle / Play Again.
+	return ACommanderNpc::FindCommanderNpcForTeam(World, OwningState->GetTeam());
+}
+
+bool ASiegePlayerController::IsHeroInCommanderRange() const
+{
+	const APawn* const MyPawn = GetPawn();
+	if (MyPawn == nullptr)
+	{
+		return false;
+	}
+
+	const ACommanderNpc* const Npc = FindOwnTeamCommanderNpc();
+	if (Npc == nullptr)
+	{
+		return false;
+	}
+
+	// ⛔ THE RADIUS AND THE TEST BOTH BELONG TO THE NPC (WR-§5: InteractRadius is
+	// its EditDefaultsOnly feel tunable, and IsPlayerInRange is the 2D-distance
+	// comparison that reads it). This controller re-implements neither and invents
+	// no distance of its own — a second copy of an interaction radius is a second
+	// number to get wrong, and it would silently disagree with the NPC's the first
+	// time Jonathan tunes one of them.
+	return Npc->IsPlayerInRange(MyPawn->GetActorLocation());
+}
+
+void ASiegePlayerController::OnWarMapPressed()
+{
+	// ── CLOSE FIRST, AND THE CLOSE PATH IS NEVER GATED ──
+	// The toggle asks "is it open?" BEFORE it asks "may it open?" — the console
+	// key's contract exactly, and for the same reason: a close that can be refused
+	// is a close that can strand the cursor in GameAndUI with no owner willing to
+	// release it. Either half of the pair being live counts as open; they can only
+	// disagree through a bug, and if they ever do, the key is what repairs it.
+	if (bWarMapOpen || (WarMapWidget && WarMapWidget->IsMapOpen()))
+	{
+		CloseWarMap();
+		return;
+	}
+
+	// ── PROXIMITY BEFORE POSTURE (spec item 2) ──
+	// ⚠️ CHECKED BEFORE SetWarMapOpen, DELIBERATELY: an out-of-range press must not
+	// touch the cursor at all, so a refusal cannot be felt as a one-frame posture
+	// flicker in the middle of a fight.
+	//
+	// ⛔⛔ THIS GATE IS THE MAP'S AND THE MAP'S ONLY. It is NOT applied to the
+	// console — WR-§5 RULING 5, Jonathan verbatim: "the console still works
+	// anywhere". EnsureAssistantConsoleOpen / SetAssistantConsoleOpen /
+	// CanOpenAssistantConsole / OnAssistantConsolePressed carry no range test, no NPC
+	// reference and no map state, and nothing below reaches into them to add one.
+	if (!IsHeroInCommanderRange())
+	{
+		// One HUD line NAMING the reason, on the shipped refusal surface the hand HUD
+		// already binds (OnCardRefused via BroadcastRefusal — the "Not enough gold" /
+		// "Hero is down" route). The log distinguishes the three causes the player
+		// cannot; the player only needs to know where to walk.
+		BroadcastRefusal(NSLOCTEXT("Siegebound", "WarMapRefused_OutOfRange", "Walk up to your commander in the castle to use the war map"));
+
+		if (FindOwnTeamCommanderNpc() == nullptr)
+		{
+			// Warn ONCE: a missing commander is a furnishing problem (TASK-562 spawns
+			// it from ACastle::BeginPlay), not something the player can act on, and an
+			// unlatched Warning would fire on every M press.
+			if (!bWarnedNoCommanderNpc)
+			{
+				bWarnedNoCommanderNpc = true;
+				UE_LOG(LogGitClaudeUnrealTest, Warning,
+					TEXT("ASiegePlayerController '%s': war map refused — no OWN-TEAM ACommanderNpc in the world (or no ASiegePlayerState to resolve the team from). The castle furnishing (TASK-562) spawns it at BeginPlay; ⛔ the CONSOLE is UNAFFECTED and still opens anywhere (WR-§5 RULING 5)."),
+					*GetNameSafe(this));
+			}
+			return;
+		}
+
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': war map refused — out of the commander's interact radius (pawn %s)."),
+			*GetNameSafe(this), GetPawn() ? TEXT("present") : TEXT("MISSING"));
+		return;
+	}
+
+	// ── OPEN: GUARD FIRST, UI SECOND — THE LOAD-BEARING ORDERING ──
+	// ⛔ NOTHING IS CREATED AND NOTHING IS SHOWN UNTIL THE POSTURE IS GRANTED. On a
+	// refusal this function does LITERALLY NOTHING VISIBLE: no widget is constructed,
+	// nothing is added to the viewport, no cursor moves. A FULL-SCREEN panel that
+	// appears and then discovers it was not permitted is worse than the console's
+	// version of the same bug — it covers the battlefield on the way past.
+	if (!SetWarMapOpen(true))
+	{
+		// SetWarMapOpen already logged WHICH owner refused. One refusal, one line.
+		return;
+	}
+
+	UWarMapWidget* const Map = GetOrCreateWarMapWidget();
+	if (Map == nullptr)
+	{
+		// Creation failed (CreateAndAddToViewport logged it). ROLL THE POSTURE BACK:
+		// a cursor owner with no UI behind it is the soft-lock the flag must never be
+		// left in.
+		SetWarMapOpen(false);
+		return;
+	}
+
+	Map->OpenMap();
+
+	// ⚠️ ASK THE WIDGET RATHER THAN ASSUME THE CALL WORKED — the console key's
+	// post-hoc IsConsoleOpen() check, cloned. OpenMap() has no return value, and the
+	// flag must never describe a map the player cannot see.
+	if (!Map->IsMapOpen())
+	{
+		SetWarMapOpen(false);
+
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': the war map did not open; cursor posture released, nothing shown. No key, card or command is affected."),
+			*GetNameSafe(this));
+	}
+}
+
+void ASiegePlayerController::CloseWarMap()
+{
+	if (WarMapWidget)
+	{
+		// ⛔ CloseMap() IS WHAT DISCARDS THE PAID REVEAL, UNCONDITIONALLY (WR-§7 /
+		// WR-§9 outcome 4: "red dots vanish the moment the map closes, even one
+		// second after paying — that is the mechanic"). It also broadcasts
+		// OnMapOpenChanged(false) -> HandleWarMapOpenChanged -> SetWarMapOpen(false),
+		// which makes the explicit call below usually a no-op. It is kept anyway: it
+		// is the one line that guarantees the posture flag cannot survive a close
+		// even if the widget is null, already closed, or a future change drops the
+		// broadcast.
+		WarMapWidget->CloseMap();
+	}
+
+	SetWarMapOpen(false); // never refused
+}
+
+void ASiegePlayerController::HandleWarMapOpenChanged(bool bOpen)
+{
+	if (!bOpen)
+	{
+		// ⛔ THE WHOLE REASON THIS BINDING EXISTS. The map can close by routes this
+		// controller never sees — WBP_WarMap's CloseButton (TASK-568 wires it to
+		// CloseMap directly), or any later widget-side close. A posture flag left
+		// stuck TRUE is a cursor soft-locked in GameAndUI with nobody willing to
+		// release it. Closing is never refused, so this cannot fail.
+		SetWarMapOpen(false);
+		return;
+	}
+
+	// Opened by a route other than the key. Take the posture; if the guard refuses
+	// it, CLOSE THE WIDGET rather than let the two disagree — a full-screen map with
+	// no cursor is unusable, and it would be sitting on top of the very mode that
+	// refused it.
+	//
+	// TERMINATING BY CONSTRUCTION, not by luck: on the key path the flag is already
+	// true, so SetWarMapOpen(true) takes its no-op early-out and returns true. On a
+	// refusal, CloseMap() clears bMapOpen BEFORE it re-broadcasts, so the nested call
+	// lands on the !bOpen branch above and stops.
+	if (!SetWarMapOpen(true) && WarMapWidget)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASiegePlayerController '%s': the war map opened without the cursor posture (another cursor mode is live or the match ended) — closing it. The map is an advantage, never a requirement."),
+			*GetNameSafe(this));
+
+		WarMapWidget->CloseMap();
+	}
+}
+
+void ASiegePlayerController::HandleWarMapPlacePicked(FName PlaceSymbol)
+{
+	// ⭐ THE CLICK → SYMBOL SEAM (WR-§6). ⛔ Nobody bound OnPlacePicked before this
+	// task, so a marker click painted a status line and reached nothing.
+	if (PlaceSymbol.IsNone())
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASiegePlayerController '%s': war-map place pick carried no symbol — ignored."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	// ⛔ THE CONSOLE MUST BE OPENED FIRST, THROUGH THE POSTURE-OWNING PATH, AND THAT
+	// IS TASK-561's PINNED CONTRACT RATHER THAN A PREFERENCE: AppendToInput NEVER
+	// opens the console and NEVER submits, and a write into a CLOSED console would be
+	// destroyed anyway — OpenConsole() calls InputBox->SetText(empty) on EVERY open,
+	// so appending first and opening second would silently eat the player's click.
+	if (!EnsureAssistantConsoleOpen())
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASiegePlayerController '%s': war-map place pick could not open the assistant console — nothing inserted (the click is lost, not mis-delivered). EnsureAssistantConsoleOpen logged the cause."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	USiegeAssistantConsoleWidget* const Console = GetAssistantConsoleWidget();
+	if (Console == nullptr)
+	{
+		// Unreachable while EnsureAssistantConsoleOpen returned true (it only returns
+		// true after resolving a live widget), kept as a loud regression tripwire.
+		UE_LOG(LogGitClaudeUnrealTest, Error,
+			TEXT("ASiegePlayerController '%s': the assistant console reports open with no widget — war-map insert dropped."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	// ⛔ THE SYMBOL IS MOVED OPAQUELY AND IS NEVER SPELLED HERE. This file knows
+	// nothing about PlaceVocabulary and must not learn: which symbols exist is
+	// USiegeAssistantVocabulary's, which are clickable is UWarMapWidget's, and a
+	// validation branch here would be a second, drifting copy of a vocabulary this
+	// class does not own.
+	//
+	// ⚠️ AND THE RETURN VALUE IS CHECKED, WHICH TASK-561 ASKED FOR BY NAME: a caller
+	// that ignores it gets a refusal it never sees.
+	if (!Console->AppendToInput(PlaceSymbol.ToString()))
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASiegePlayerController '%s': AppendToInput refused the war-map symbol (the console is disabled, or its input box is missing) — nothing inserted."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	// ⛔ NOTHING IS SUBMITTED HERE, AND THAT IS THE RULING (WR-§6): the map writes
+	// the symbol into the box and THE PLAYER SENDS THE SENTENCE HIMSELF. An
+	// auto-submit would turn a click into an order, which is exactly the coordinate-
+	// shaped power this whole feature is designed not to hand the model.
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASiegePlayerController '%s': war-map marker click inserted one place symbol into the console input box (not submitted)."),
+		*GetNameSafe(this));
+}
+
+void ASiegePlayerController::HandleWarMapRevealButtonClicked()
+{
+	// ── THE LOCAL PRE-CHECK IS A MESSAGE, ⛔ NEVER THE GATE ──
+	// It exists so the refusal can carry a HUD LINE: refusals decided on the
+	// authority reach a REMOTE client's screen through nothing (the server-side copy
+	// of that PC broadcasts OnCardRefused to no widget), and WR-§8 fixes this batch
+	// at exactly TWO RPCs, so a third "reveal refused" RPC is not available. The
+	// shipped PlayHandSlot / DiscardHandSlot pattern does the same thing for the same
+	// reason: pre-check affordability locally for the message, let the authority own
+	// the actual SpendGold. Gold is DOREPLIFETIME_CONDITION(..., COND_OwnerOnly), so
+	// the value read here is the owning client's live balance, not a guess.
+	const ASiegePlayerState* const SiegeState = GetPlayerState<ASiegePlayerState>();
+	const ACommanderNpc* const Npc = FindOwnTeamCommanderNpc();
+
+	if (SiegeState && Npc && !SiegeState->CanAfford(Npc->GetEnemyRevealCost()))
+	{
+		// ⛔ NET-ZERO REFUSAL (WR-§7 / spec item 4): refused BEFORE any gold moves —
+		// no partial spend, and never a silent no-op.
+		BroadcastRefusal(NSLOCTEXT("Siegebound", "CardRefused_CantAfford", "Not enough gold"));
+
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': enemy reveal refused locally — cost %d, gold %d. No gold moved, no request sent."),
+			*GetNameSafe(this), Npc->GetEnemyRevealCost(), SiegeState->GetGold());
+		return;
+	}
+
+	// ── ROUTE TO THE AUTHORITY (the RequestPlayAgain shape, TASK-356 doc §4.2) ──
+	// Authority (host or standalone) does the work directly — the RPC would resolve
+	// Local anyway, and branching explicitly is what makes the client path
+	// unambiguous (FINDING-4: a Server RPC body running on the caller means the
+	// callspace resolved Local and the host never heard it).
+	if (HasAuthority())
+	{
+		PerformEnemyReveal();
+		return;
+	}
+
+	UE_LOG(LogSiegeNet, Log,
+		TEXT("ASiegePlayerController '%s': enemy reveal — client relay via ServerRequestEnemyReveal (M8 RPC law, WR-§7)."),
+		*GetNameSafe(this));
+	ServerRequestEnemyReveal();
+}
+
+UWarMapWidget* ASiegePlayerController::GetOrCreateWarMapWidget()
+{
+	if (WarMapWidget)
+	{
+		return WarMapWidget;
+	}
+
+	// LAZY, exactly like the console: created on the first SUCCESSFUL open, never at
+	// BeginPlay and never on a refused open (mode exclusion OR the proximity gate) —
+	// which is only true because both guards run first. CreateAndAddToViewport adds
+	// it CLOSED, so this call alone puts nothing on screen.
+	//
+	// ⛔⛔ BOTH TRAILING DEFAULTS ARE PASSED EXPLICITLY, AND THAT IS THE `SC-§33`
+	// OBLIGATION TASK-560's HANDOFF §4(d) NAMED TO THIS TASK BY NUMBER:
+	// CreateAndAddToViewport(OwningController, MapClass = nullptr, ZOrder = 0) — left
+	// at its defaults, the map would silently fall back to the bare C++ class the
+	// moment TASK-568's WBP_WarMap lands (functional, but with no background panel
+	// and no buttons) and would draw at the HUD's own Z order. Neither failure raises
+	// an error; both are exactly the silent-default class the law exists to catch.
+	//
+	// ⚠️ A NULL CLASS IS STILL FULLY SUPPORTED AND IS THE STATE AT THIS COMPILE:
+	// WBP_WarMap does not exist until TASK-568, LoadSynchronous returns null, and
+	// CreateAndAddToViewport falls back to UWarMapWidget::StaticClass() — which
+	// paints and hit-tests every marker and dot on its own. ⛔ Not a degradation to
+	// "fix" here.
+	UClass* const ResolvedMapClass = WarMapWidgetClass.LoadSynchronous();
+	if (ResolvedMapClass == nullptr)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': war map class '%s' not found (built in TASK-568) — using the C++ UWarMapWidget, which still draws and hit-tests every marker and dot."),
+			*GetNameSafe(this), *WarMapWidgetClass.ToString());
+	}
+
+	WarMapWidget = UWarMapWidget::CreateAndAddToViewport(
+		this,
+		TSubclassOf<UWarMapWidget>(ResolvedMapClass),
+		WarMapWidgetZOrder);
+
+	if (WarMapWidget)
+	{
+		// THE THREE BINDINGS, TAKEN EXACTLY ONCE (this function is the only creation
+		// site and it early-outs when the widget already exists, so no delegate can
+		// be double-bound and fire twice).
+		//
+		// ⭐ OnPlacePicked IS THE ONE THAT WAS MISSING: it is the widget's ENTIRE
+		// outbound surface (TASK-560 handoff §7.4 — "until it binds, a click paints a
+		// status line and reaches nothing"), and this controller is the only class
+		// that owns BOTH the map instance and the console instance, which is why the
+		// binding belongs here rather than inside the widget.
+		WarMapWidget->OnMapOpenChanged.AddDynamic(this, &ASiegePlayerController::HandleWarMapOpenChanged);
+		WarMapWidget->OnPlacePicked.AddDynamic(this, &ASiegePlayerController::HandleWarMapPlacePicked);
+		WarMapWidget->OnRevealButtonClicked.AddDynamic(this, &ASiegePlayerController::HandleWarMapRevealButtonClicked);
+	}
+
+	return WarMapWidget;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE 30-GOLD ENEMY REVEAL (WR-§7) — the only gold this batch moves
+// ─────────────────────────────────────────────────────────────────────────────
+
+void ASiegePlayerController::PerformEnemyReveal()
+{
+	// ⛔ EVERY MUTATION SITE CARRIES ITS OWN AUTHORITY GUARD (M8: an unguarded
+	// mutation is an automatic QA FAIL). This function is reached from exactly two
+	// places — HandleWarMapRevealButtonClicked's HasAuthority() branch and the
+	// Server RPC's implementation — and it re-asserts rather than trusting either,
+	// because a Server RPC body CAN execute on the caller when the callspace
+	// resolves Local (TASK-357 FINDING-4 measured it).
+	if (!HasAuthority())
+	{
+		UE_LOG(LogSiegeNet, Error,
+			TEXT("ASiegePlayerController '%s': PerformEnemyReveal reached WITHOUT authority — refusing. No gold moved."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	UWorld* const World = GetWorld();
+	if (World == nullptr)
+	{
+		return;
+	}
+
+	ASiegePlayerState* const SiegeState = GetPlayerState<ASiegePlayerState>();
+	if (SiegeState == nullptr)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Error,
+			TEXT("ASiegePlayerController '%s': enemy reveal — PlayerState is not an ASiegePlayerState; cannot charge or resolve a team. No gold moved."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	// ⛔ THE COST IS READ OFF THE OWN-TEAM ACommanderNpc AND IS NEVER RE-TYPED HERE
+	// (WR-§7: EnemyRevealCost is the NPC's EditDefaultsOnly UPROPERTY, ⛔ never a
+	// cards.csv column and ⛔ never a second literal in a second file). No commander
+	// ⇒ nothing to price the purchase against ⇒ FAIL CLOSED: refuse with no gold
+	// moved, rather than invent a fallback price.
+	const ACommanderNpc* const Npc = FindOwnTeamCommanderNpc();
+	if (Npc == nullptr)
+	{
+		if (!bWarnedNoCommanderNpc)
+		{
+			bWarnedNoCommanderNpc = true;
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("ASiegePlayerController '%s': enemy reveal refused on the authority — no OWN-TEAM ACommanderNpc to read EnemyRevealCost from (TASK-562 spawns it from ACastle::BeginPlay). ⛔ No gold moved."),
+				*GetNameSafe(this));
+		}
+		return;
+	}
+
+	const int32 RevealCost = Npc->GetEnemyRevealCost();
+
+	// ⛔⛔ NET-ZERO REFUSAL (WR-§7 / spec item 4) — REFUSE BEFORE ANY GOLD MOVES.
+	// SpendGold is itself refusal-safe (it changes nothing and broadcasts nothing on
+	// an unaffordable cost), so this branch cannot leak; it exists so the LOG names
+	// the reason and so the shape reads as the shipped refusal doctrine rather than
+	// as a lucky property of the callee.
+	if (!SiegeState->SpendGold(RevealCost))
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': enemy reveal refused — cost %d, gold %d. ⛔ No gold moved, no dots sent (net-zero refusal)."),
+			*GetNameSafe(this), RevealCost, SiegeState->GetGold());
+		return;
+	}
+
+	// ⛔⛔ THE GOLD IS NOW SPENT. Everything below must reach ClientReceiveEnemyReveal
+	// on every path — a refusal AFTER the spend would be exactly the partial spend
+	// WR-§7 forbids, so there is deliberately no early-out from here on. An EMPTY
+	// survey (the enemy army really is wiped out) is a legitimate, paid-for answer
+	// and is sent as one.
+
+	// ⛔ THE STANDING RULING "THE AI NEVER SPENDS GOLD" IS UNTOUCHED BY THIS LINE,
+	// AND IT IS WRITTEN DOWN HERE SO NOBODY LATER "FIXES" IT. The spend above was
+	// initiated by the PLAYER'S OWN CLICK on a UI button and is unreachable from
+	// every assistant path — no intent, no `who`, no `where`, no executor branch and
+	// no confirm step can call this function; USiegeAssistantComponent does not name
+	// PerformEnemyReveal, ServerRequestEnemyReveal, SpendGold or ACommanderNpc at
+	// all. ⚖️ The player spending gold at a map his AI happens to stand next to is
+	// not the AI spending gold, and the distinction is recorded because it will look
+	// like a violation to someone reading fast.
+
+	const ETeamId OwnTeam = SiegeState->GetTeam();
+	const ETeamId EnemyTeam = (OwnTeam == ETeamId::Blue) ? ETeamId::Red : ETeamId::Blue; // the shipped inline idiom (SiegeAssistantSnapshot.cpp / SiegeBotController.cpp) — there is no shared opposing-team helper to reuse
+
+	// ⛔ WORLD-SPACE (X, Y) IN UNREAL UNITS — ⛔ NOT map UV and ⛔ NOT screen pixels
+	// (TASK-560 named this to this task by number: TArray<FVector2D> cannot tell the
+	// two apart, and a silent mismatch would put every red dot in a plausible wrong
+	// place). The projection has exactly ONE owner, FSiegeWarMapProjection inside the
+	// widget, shared byte-for-byte with the ally dots.
+	//
+	// ⚠️ A FROZEN SNAPSHOT, TAKEN AT PURCHASE (WR-§7's frozen-snapshot ruling, D6's
+	// shipping default): these dots do NOT track. Jonathan's own sentence presupposes
+	// it — "pay another 30 gold to reveal the NEW locations" only makes sense if the
+	// first set went stale. Flipping to live-until-close is one re-push on a timer
+	// and changes nothing in the widget.
+	//
+	// The survey mirrors UWarMapWidget::RefreshAllyDots exactly, with the team
+	// comparison inverted — same actor classes, same alive tests, same order — so the
+	// red dots and the blue dots can never mean different things.
+	TArray<FVector2D> EnemyWorldXY;
+
+	for (TActorIterator<ASummonedUnit> UnitIt(World); UnitIt; ++UnitIt)
+	{
+		const ASummonedUnit* const Unit = *UnitIt;
+		if (!IsValid(Unit) || Unit->IsUnitDead() || Unit->GetTeamId() != EnemyTeam)
+		{
+			continue;
+		}
+
+		const FVector Location = Unit->GetActorLocation();
+		EnemyWorldXY.Emplace(Location.X, Location.Y);
+	}
+
+	for (TActorIterator<AHeroCharacter> HeroIt(World); HeroIt; ++HeroIt)
+	{
+		const AHeroCharacter* const Hero = *HeroIt;
+		if (!IsValid(Hero) || Hero->IsDead() || Hero->GetTeamId() != EnemyTeam)
+		{
+			continue;
+		}
+
+		const FVector Location = Hero->GetActorLocation();
+		EnemyWorldXY.Emplace(Location.X, Location.Y);
+	}
+
+	// ⚠️ DECLARED SCOPE DECISION (SC-§15): buildings, towers and the enemy CASTLE are
+	// deliberately NOT dotted. Jonathan's sentence is "reveal all enemy LOCATIONS"
+	// about a map that "updates with dots that show ally locations", and the ally
+	// side is units + hero — so the paid reveal is the SAME survey for the other
+	// team. A castle is at a fixed, already-known place (it is a place SYMBOL), and
+	// paying 30 gold to be told where it is would be a worse purchase, not a richer
+	// one. ⇒ FLAGGED for Jonathan's playtest rather than assumed in either direction.
+
+	if (EnemyWorldXY.Num() > MaxEnemyRevealDots)
+	{
+		UE_LOG(LogSiegeNet, Warning,
+			TEXT("ASiegePlayerController '%s': enemy reveal produced %d dots, over the %d transport bound — truncating. ⛔ The purchase is NOT refunded (a partial refund would be the partial spend WR-§7 forbids)."),
+			*GetNameSafe(this), EnemyWorldXY.Num(), MaxEnemyRevealDots);
+		EnemyWorldXY.SetNum(MaxEnemyRevealDots);
+	}
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASiegePlayerController '%s': enemy reveal PURCHASED for %d gold (gold now %d) — %d dots surveyed and sent. Frozen at purchase; cleared the moment the map closes."),
+		*GetNameSafe(this), RevealCost, SiegeState->GetGold(), EnemyWorldXY.Num());
+
+	ClientReceiveEnemyReveal(EnemyWorldXY);
+}
+
+bool ASiegePlayerController::ServerRequestEnemyReveal_Validate()
+{
+	// No input payload to validate (the ServerRequestPlayAgain shape) — the
+	// implementation's authority guard, own-team commander lookup and SpendGold
+	// refusal ARE the intent validation.
+	return true;
+}
+
+void ASiegePlayerController::ServerRequestEnemyReveal_Implementation()
+{
+	// The FINDING-4 self-diagnosis, cloned from ServerRequestPlayAgain: a Server
+	// RPC's implementation must only ever execute on the authority; if it does not,
+	// the callspace resolved Local instead of Remote and the request never reached
+	// the host. PerformEnemyReveal re-asserts this itself — belt AND braces, because
+	// the thing on the other side of the guard is gold.
+	if (!HasAuthority())
+	{
+		UE_LOG(LogSiegeNet, Error,
+			TEXT("ASiegePlayerController '%s': ServerRequestEnemyReveal executed WITHOUT authority — the RPC resolved LOCAL instead of routing to the host; refusing. ⛔ No gold moved."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	// ⚠️ NO SEPARATE SERVER-SIDE PROXIMITY RE-TEST, AND IT IS A DECISION RATHER THAN
+	// AN OMISSION (WR-§7, manager-recorded and not to be re-argued): the reveal is an
+	// ECONOMY/UI GATE, ⛔ NOT an anti-cheat boundary — on a listen server the client
+	// already holds every enemy actor under Tier-B relevancy, so nothing is being
+	// concealed and there is nothing to protect. A position re-test would only add a
+	// failure mode: a legitimately in-range player whose replicated pawn position lags
+	// by a frame would be refused. ⭐ AND THE ECONOMY IS ITS OWN LIMIT — every request
+	// costs the full price, so a spammed RPC drains the spammer's own gold and stops.
+	PerformEnemyReveal();
+}
+
+void ASiegePlayerController::ClientReceiveEnemyReveal_Implementation(const TArray<FVector2D>& EnemyWorldXY)
+{
+	// ⛔ THIS IS THE PAID SURVEY ARRIVING, AND THE WIDGET IS THE SINK. Nothing here
+	// re-checks a cost or a balance: a second economy check would be a second economy
+	// rule to get wrong, and the authority has already decided.
+	if (WarMapWidget == nullptr)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASiegePlayerController '%s': enemy reveal arrived with no war map widget — %d dots dropped. The gold was spent on the authority; the player closed the map inside the round trip."),
+			*GetNameSafe(this), EnemyWorldXY.Num());
+		return;
+	}
+
+	if (!bWarMapOpen)
+	{
+		// ⛔ A CLOSED MAP KEEPS NOTHING (WR-§7: "cleared on close, ALWAYS"). Handing
+		// the dots to a collapsed widget would resurrect them on the next open, which
+		// is precisely the persistence the mechanic forbids.
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': enemy reveal arrived after the map closed — %d dots discarded (WR-§7: nothing survives a close). Re-opening costs another purchase, by design."),
+			*GetNameSafe(this), EnemyWorldXY.Num());
+		return;
+	}
+
+	WarMapWidget->ReceiveEnemyReveal(EnemyWorldXY);
 }

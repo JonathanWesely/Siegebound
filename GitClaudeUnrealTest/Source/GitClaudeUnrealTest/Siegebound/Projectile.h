@@ -28,9 +28,19 @@ class UStaticMeshComponent;
  *    TASK-003/004) — within max(ImpactRadius, this tick's travel step). There
  *    is NO physics collision: the visual mesh is NoCollision, so the projectile
  *    can never collide with friendlies (§3.0), and its intended target is the
- *    ONLY actor it can damage. Large targets (the castle's ~800x800 base)
- *    impact at their walls, and the closest point doubles as the impact-VFX
- *    point (TASK-020 pattern).
+ *    ONLY actor it can damage. Large targets — the castle above all — impact at
+ *    their WALLS rather than their origin, and the closest point doubles as the
+ *    impact-VFX point (TASK-020 pattern).
+ *    ⭐ THE "~800x800 base" FIGURE THIS LINE USED TO QUOTE IS RETIRED AS A
+ *    NUMBER, NOT AS A REASON: the castle measured ~814x814 at the M1 blockout,
+ *    ~2438x2462 after Castle-3× and ~7314x7384 at the 9× castle (CONVENTIONS
+ *    WR-§0), so the transcribed figure rotted across two resizes. NOTHING BROKE,
+ *    and the reason is structural — GetDistanceToTarget calls
+ *    ActorGetDistanceToCollision, which measures against the target's LIVE
+ *    collision, so the reach test is bounds-aware and SELF-DERIVING and followed
+ *    both resizes by itself. The MECHANISM was never the stale part. ⛔ Do not
+ *    re-introduce a castle size here — it would rot again at the next resize
+ *    and it is not read by anything.
  *  - Terrain law (M4.5, TASK-094 / ruling 8): every tick the FULL travel
  *    segment is line-traced (multi, object types WorldStatic + WorldDynamic,
  *    SIMPLE collision) and the projectile is DESTROYED — zero damage, no AoE,

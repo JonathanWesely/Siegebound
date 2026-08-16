@@ -145,7 +145,7 @@ def _resolve_card_ids():
     sidecar = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reimport_cards.txt")
     if os.path.isfile(sidecar):
         ids = []
-        with open(sidecar, "r") as fh:
+        with open(sidecar, "r", encoding="utf-8") as fh:
             for line in fh:
                 s = line.strip()
                 if s and not s.startswith("#"):
@@ -159,7 +159,7 @@ def _resolve_card_ids():
 
 def _load_manifest():
     try:
-        with open(MANIFEST_PATH, "r") as fh:
+        with open(MANIFEST_PATH, "r", encoding="utf-8") as fh:
             return json.load(fh).get("assets", {})
     except Exception as ex:
         _err("Could not load manifest %s: %s" % (MANIFEST_PATH, ex))

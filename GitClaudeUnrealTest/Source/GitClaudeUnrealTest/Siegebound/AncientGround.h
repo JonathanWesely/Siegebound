@@ -180,10 +180,12 @@ protected:
 	/**
 	 *  Seconds between boost evaluations. MECHANIC RULE — a UPROPERTY default,
 	 *  NEVER a cards.csv column (CONVENTIONS "mechanic rules aren't card stats";
-	 *  the GDD has no ancient-grounds section yet, so this comment is the rule's
-	 *  home of record alongside CONVENTIONS §2). 1.0 s is the design unit: each
-	 *  friendly sorcerer on the ground grants exactly ONE stack per second.
-	 *  Changing it re-scales the whole boost rate. FLAGGED tunable.
+	 *  GDD §3.0 now states that law in its own right, and the DESIGN home of
+	 *  record is GDD §3.12 "Ancient Grounds & the Sorcerer", which names this
+	 *  1 s tick as one of the three engine tunables — the ENGINEERING law still
+	 *  lives at CONVENTIONS §2). 1.0 s is the design unit: each friendly
+	 *  sorcerer on the ground grants exactly ONE stack per second. Changing it
+	 *  re-scales the whole boost rate. FLAGGED tunable.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|AncientGround", meta = (ClampMin = "0.05"))
 	float BoostTickInterval = 1.0f;

@@ -10,6 +10,7 @@
 #include "BattlefieldScatter.generated.h"
 
 class AAncientGround;
+class ACastle; // TASK-576 (WR-§2b row D): the castle whose LIVE colliding bounds the traversability query inset is derived from
 class AGoldNode;
 class ANavigationData;
 class USceneComponent;
@@ -542,8 +543,30 @@ private:
 	 */
 	int32 RemoveBlockingInstancesInDisc(const FVector2D& Center, float Radius);
 
+	/**
+	 *  Resolves a team's live ACastle actor, or null if none exists.
+	 *  TASK-576: extracted from ResolveCastleLocation (whose behaviour is unchanged —
+	 *  it now delegates) so the LOCATION and the BOUNDS used by the traversability
+	 *  query endpoint are read from THE SAME actor by construction, rather than from
+	 *  two independent iterations that a duplicate/mis-teamed castle could split.
+	 */
+	ACastle* ResolveCastleActor(ETeamId Team) const;
+
 	/** Resolves a team's castle world location from the live ACastle actors, falling back to the ±25000 constants (M7.6 10× scale-up). */
 	FVector ResolveCastleLocation(ETeamId Team) const;
+
+	/**
+	 *  ⚖️ TASK-576 (WR-§2b row D): the traversability query inset, DERIVED FROM THE
+	 *  LIVE CASTLE instead of transcribed. Returns the distance to move CastleLocation
+	 *  toward the centerline so the path-query endpoint lands on open pad ground.
+	 *
+	 *  ⛔ NOT const, deliberately: it owns the one-shot fallback warning flag.
+	 *  ⚠️ Null castle or degenerate colliding bounds ⇒ the AUTHORED literals (today's
+	 *  behaviour), warned once. ⛔ Never zero — a zero inset puts the endpoint at the
+	 *  castle CENTRE, inside its own nav-carved hole, which is the guaranteed
+	 *  false-negative this whole constant exists to avoid.
+	 */
+	float ResolveCastleQueryInset(ETeamId Team, const FVector& CastleLocation);
 
 	/** A single keep-clear disc (center XY + radius²). */
 	struct FKeepClearZone
@@ -643,6 +666,12 @@ private:
 	bool bWarnedNoConfig = false;
 	bool bWarnedNoNav = false;
 
+	/** TASK-576: one-shot guard for the castle-query-inset fallback warning (no castle / degenerate bounds ⇒ the authored literals). */
+	bool bWarnedCastleInsetFallback = false;
+
+	/** TASK-576: one-shot guard for the resolved-inset Log line, so the derivation is observable at PIE exactly once per actor lifetime instead of once per re-check. */
+	bool bLoggedCastleInsetDerivation = false;
+
 	// --- Tunables the traversability validation uses (mechanic rules → UPROPERTY defaults, CONVENTIONS §3.0 law) ---
 
 	/**
@@ -695,12 +724,55 @@ private:
 	int32 MaxPlacementAttemptsPerInstance = 24;
 
 	/**
-	 *  Inset (cm) applied to each castle location toward the centerline before the
-	 *  reachability path query, so the query endpoints land on OPEN pad ground
-	 *  rather than inside the castle's own nav-carved footprint (which would be a
-	 *  false-negative path result). The pad is inside CastleKeepClearRadius so no
-	 *  obstacle ever sits there; ≈1200 clears a ~810-unit castle footprint.
+	 *  ⛔ AUTHORED FLOOR / DEGENERATE-BOUNDS FALLBACK ONLY — ⛔ NO LONGER THE INSET
+	 *  THAT SHIPS. Inset (cm) applied to each castle location toward the centerline
+	 *  before the reachability path query, so the query endpoints land on OPEN pad
+	 *  ground rather than inside the castle's own nav-carved footprint (which would be
+	 *  a false-negative path result).
+	 *
+	 *  ⚖️ RE-DERIVED STRUCTURALLY 2026-08-15 — WR-§2b row D (TASK-576). ⛔ THE VALUE IS
+	 *  UNCHANGED AND THAT IS THE POINT: what changed is that ResolveCastleQueryInset
+	 *  now MEASURES the castle (GetActorBounds(bOnlyCollidingComponents=true)) and adds
+	 *  CastleQueryFacePad, with this literal demoted to a floor. WHY a bump was refused:
+	 *    • its own retired doc said "≈1200 clears a ~810-unit castle footprint", so it
+	 *      is castle-derived by construction — and it has been STALE SINCE CASTLE-3X:
+	 *      at half-depth 1,218.95 the endpoint already landed ≈19 uu INSIDE the
+	 *      footprint, the exact false-negative it exists to prevent;
+	 *    • at the 9× castle (half-depth 3,656.85) it is 2,457 uu inside;
+	 *    • ⛔ ×3 = 3,600 DOES NOT FIX IT — still 57 uu inside. A multiplier buys one
+	 *      resize before it rots again, which is why WR-§2b bans it for this row.
+	 *  ⚠️ A NON-ZERO value here is load-bearing: it is what the null/degenerate path
+	 *  falls back to (with CastleQueryFacePad), and a zero inset would put the endpoint
+	 *  at the castle CENTRE — inside the nav hole, a guaranteed false negative.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Terrain|Traversability", meta = (ClampMin = "0"))
 	float CastleQueryInset = 1200.f;
+
+	/**
+	 *  ⭐ THE LIVE TUNABLE (TASK-576, WR-§2b row D — the same BAND-PAST-THE-WALL-FACE
+	 *  shape rulings W2-R2 and row B use): how far (cm) PAST the castle's measured
+	 *  colliding wall face the path-query endpoint is placed. The shipped inset is
+	 *      measured face distance  +  this pad,
+	 *  floored by CastleQueryInset, so a castle resize carries the endpoint with it and
+	 *  this constant can never rot the way the raw inset did.
+	 *
+	 *  📐 795 IS NOT A NEW NUMBER — IT IS THE ORIGINAL AUTHOR'S PAD, RECOVERED: the
+	 *  retired doc sized 1,200 against a ~810-uu castle footprint (half-extent ≈405),
+	 *  so the pad they actually chose was 1,200 − 405 = 795. ⇒ at that castle this
+	 *  derivation REPRODUCES 1,200 EXACTLY (405 + 795); at CASTLE-3X it yields 2,014
+	 *  (the value that row should always have had); at 9× it yields 4,451.85.
+	 *
+	 *  ⚖️ THE HONEST BAND, AND BOTH ENDS ARE ENFORCED IN CODE: the endpoint must be
+	 *  OUTSIDE the castle footprint (> 3,656.85 at 9×) and, where possible, INSIDE
+	 *  USiegeScatterConfig::CastleKeepClearRadius (4,500 after WR-§2 row 4), inside
+	 *  which the pad is guaranteed obstacle-free. 4,451.85 satisfies both, with 48 uu
+	 *  of headroom under the disc — so the pad is CAPPED at the room the disc leaves
+	 *  whenever that room is positive. ⚠️ If the disc is NARROWER than the castle
+	 *  (e.g. before TASK-569 lands 4,500 in DA_BattlefieldScatter, where it reads
+	 *  1,500), the cap is skipped ON PURPOSE: clearing the wall face outranks sitting
+	 *  in the disc, because outside-the-disc risks a stray blocker while
+	 *  inside-the-footprint is a CERTAIN false negative.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Terrain|Traversability", meta = (ClampMin = "0"))
+	float CastleQueryFacePad = 795.f;
 };
