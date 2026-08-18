@@ -190,8 +190,11 @@ public:
 	 *  that ignores the OWN team's channel. This function only names the destination.
 	 *
 	 *  = the ACTOR TRANSFORM applied to InteriorAnchorRelativeLocation, never
-	 *  ActorLocation + offset: Castle_Red is placed at yaw 180, so a non-zero
-	 *  relative anchor must rotate with the castle or it lands outside the wrong wall.
+	 *  ActorLocation + offset. (TASK-623 comment rider, CR-R6: the claim here that
+	 *  "Castle_Red is placed at yaw 180" was STALE — BOTH castle actors sit at yaw
+	 *  0 and both gates face world −Y, measured live at TASK-617 C1. The transform
+	 *  form is kept regardless: a non-zero relative anchor must rotate with the
+	 *  castle if a level edit ever yaws one, or it lands outside the wrong wall.)
 	 *  At the shipped ZeroVector default the two are identical BY CONSTRUCTION, and
 	 *  this returns the actor's own location.
 	 *

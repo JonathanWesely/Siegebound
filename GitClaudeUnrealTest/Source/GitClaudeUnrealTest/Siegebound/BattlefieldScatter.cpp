@@ -687,8 +687,23 @@ void ASiegeBattlefieldScatter::ScatterLayer(const FScatterLayer& Layer, FRandomS
 
 			// Blocking obstacles honor keep-clear + the reserved corridor, now inflated
 			// by the footprint radius so a wide instance centered off-lane no longer
-			// sprawls across the corridor; grass (non-blocking) ignores keep-clear.
+			// sprawls across the corridor.
 			if (Layer.bBlocking && IsInKeepClear(Candidate, FootprintR))
+			{
+				continue;
+			}
+
+			// R-A1 (TASK-623): NON-blocking layers (Grass/Plants) now honor the
+			// keep-clear DISCS ONLY, inflated by FootprintR through the SAME
+			// IsInKeepClearDiscs inflation the blocking path uses. ⛔ The corridor
+			// band is deliberately NOT applied here — the Blue→Red lane stays lush;
+			// only the keep-clear pads lose decoration. Radius authority: the live
+			// CastleKeepClearRadius 4,500 is DA-SERIALIZED in DA_BattlefieldScatter
+			// (CR-R6's W8-R3 correction), not merely the ScatterConfig.h C++ default —
+			// a future header re-derivation alone will NOT move this disc. Kills the
+			// measured in-footprint flora at the root (TASK-617 A7: ~170 z<10 grass
+			// per castle footprint + ~104 grass / ~17 plants per apron, every seed).
+			if (!Layer.bBlocking && IsInKeepClearDiscs(Candidate, FootprintR))
 			{
 				continue;
 			}
@@ -774,6 +789,17 @@ void ASiegeBattlefieldScatter::ScatterLayer(const FScatterLayer& Layer, FRandomS
 				// nothing and a future level edit (a moved castle, a second
 				// PlayerStart) would otherwise silently place into a keep-clear zone.
 				bool bPlaceTwin = !(Layer.bBlocking && IsInKeepClear(TwinPoint, FootprintR));
+				// R-A1 (TASK-623): the non-blocking DISC re-test, mirroring the primary
+				// site (discs only — the corridor is never applied to non-blocking
+				// layers). Same defensive character as the blocking guard above: the
+				// castle discs are an exact rotational pair and the PlayerStart disc is
+				// unreachable by a twin (X >= 0), so under the shipped level this can
+				// never reject — it guards the same future level edits, for free. A
+				// rejection lands in the existing TwinSkipped asymmetry-escape counter.
+				if (bPlaceTwin && !Layer.bBlocking && IsInKeepClearDiscs(TwinPoint, FootprintR))
+				{
+					bPlaceTwin = false;
+				}
 				float TwinGroundZ = 0.f;
 				if (bPlaceTwin)
 				{
