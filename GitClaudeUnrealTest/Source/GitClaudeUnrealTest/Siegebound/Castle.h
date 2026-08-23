@@ -693,6 +693,11 @@ private:
 	 *  whichever resolves — null-safe, missing keeps the current look) and bursts NS_CastleDebris
 	 *  at the castle. VISUAL ONLY — the crumble mesh variants must preserve the UCX footprint
 	 *  (art contract) so placement/pathing are untouched.
+	 *
+	 *  ⭐ SLOT CONTRACT (TASK-634 slot-audit addendum, per TASK-630 §3): the material
+	 *  write is SLOT 0 ONLY — slots >= 1 ([1 CastlePBR, 2 CastleInteriorPBR from
+	 *  TASK-633's import]) always come from the SAVED stage asset, never from
+	 *  runtime. Full record beside the write in Castle.cpp.
 	 */
 	void ApplyCrumbleStage(int32 Stage);
 

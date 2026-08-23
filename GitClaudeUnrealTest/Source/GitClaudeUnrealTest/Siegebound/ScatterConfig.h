@@ -110,9 +110,15 @@ struct FScatterLayer
 	 *  the Pawn channel and set bCanEverAffectNavigation=true so units physically
 	 *  block on them AND the (Dynamic) navmesh carves around them. Defaults TRUE
 	 *  (the obstacle layers TREES/ROCKS/HILLS) — set FALSE for the GRASS layer
-	 *  (pure decoration: NoCollision, no nav effect). Blocking layers ALSO honor
-	 *  the keep-clear zones + reserved corridor; the non-blocking GRASS layer
-	 *  ignores keep-clear (lush everywhere).
+	 *  (pure decoration: NoCollision, no nav effect). Blocking layers honor the
+	 *  keep-clear zones + the reserved corridor.
+	 *  ⚠️ COMMENT CORRECTED by the TASK-634 rider (GH-R8(i), the TASK-596
+	 *  comment-only precedent; zero behaviour change): since TASK-623 the
+	 *  NON-blocking layers (GRASS — and PLANTS, which is also non-blocking) honor
+	 *  the keep-clear DISCS too (castles + PlayerStart, footprint-inflated via
+	 *  IsInKeepClearDiscs) but NOT the reserved corridor band — the lane stays
+	 *  lush. The old claim here that grass "ignores keep-clear (lush everywhere)"
+	 *  was falsified by that change (qa/TASK-623.md rider 1 is the paper trail).
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Scatter")
 	bool bBlocking = true;

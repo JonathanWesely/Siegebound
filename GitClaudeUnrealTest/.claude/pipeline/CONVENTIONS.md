@@ -3701,6 +3701,7 @@ Added 2026-07-27 (TASK-329..331; Jonathan ruling on the TASK-309 building audit:
   - **WHY "BOTH SLOTS" IS LOAD-BEARING — verified in C++ at TASK-329, and it is the easy thing to get wrong.** `ACastle::ApplyCrumbleStage()` (`Castle.cpp:326`) does `CastleMesh->SetStaticMesh(CrumbleMesh); CastleMesh->SetMaterial(0, CrumbleMaterial);` — **slot 0 ONLY. Slot 1 is NEVER touched at runtime**, so it comes from the crumble asset's own saved material. A fresh duplicate of the rebuilt `SM_Castle` inherits slot 1 = `MI_Castle_PBR`, so unless slot 1 is **explicitly re-assigned at design time** the damaged castle renders **crumble material on the roofs and pristine castle material on the walls — a half-crumbled look, with NO error logged.** Slot 1 must be baked into the saved asset; there is no runtime path that will fix it.
   - **Evidence the crumbles really are stale byte-copies (read-only `.uasset` string inspection, TASK-329):** `SM_Castle_Crumble01` still carries **`Factory_RootNode.SM_Castle`** internally — proof it is a byte-copy of the OLD `SM_Castle` — and its slots are `[TeamRegion, CastlePBR]` with BOTH pre-assigned to `MI_Castle_Crumble01`. `M_CastleCrumble` samples `/Game/Textures/T_Castle_{D,N,ORM}` — the exact three textures a remaster overwrites. There is **no partial-compatibility path**: the rebuilt mesh has a completely different layout (19,995 tris / 9,792 verts / 19.2 % coverage vs the old 40k), so the crumbles must be **fully re-derived**, never patched.
 - **⚖️ CRUMBLE STAGE-LEGIBILITY law (added 2026-07-27 — manager adjudication of the TASK-331 flag; HISTORY CORRECTED same day at the TASK-337 re-adjudication):** the crumble stage params are MULTIPLICATIVE against `T_Castle_D`, so **stage tuning is BASE-RELATIVE: ANY brightness change to the castle base albedo automatically RE-OPENS the stage-spread check.** *Corrected history:* the flat **28.0 / 28.9 / 29.2** table that triggered this law turned out to be three measurements of the **engine Default Material** (the SAMPLER-TYPE TRAP in "Fleet Meshy remaster" — `M_CastleCrumble` had failed compilation since TASK-330's reimport), NOT of the TASK-157 stage params; the earlier "`ScorchAmount` dominates" analysis is WITHDRAWN. **The band below is RETAINED as the standing gate regardless** — the base-relative principle is real, and whether the TASK-157 spread (01 `Darken 0.80/ScorchAmount 0.12`, 02 `0.50/0.45`, 03 `0.30/0.80`, authored against the old 0.0078 albedo) passes against the ~21×-brighter rebuilt base is decided by MEASUREMENT-FIRST at the TASK-337 re-run, against the first real render (fix chain TASK-339 → 337 → 338; retune only on a real-render band FAIL — compiled-material headroom measured 0.957×P before Darken/Scorch). **The GATE, ratio-based so it survives future re-bases** — P = pristine wall luma measured in the SAME session under the TASK-331 protocol (same lit wall region, identical camera pose, exposure-consistent scene, grass control ~11.5): **S1 ∈ 0.55–0.80×P** ("battle-worn but standing") · **S2 ∈ 0.35–0.55×P** ("blackened, clearly worse") · **S3 ≤ 0.40×P** (near-dead charred) · **S1−S2 ≥ 0.10×P** · **S2−S3 ≥ 0.05×P**. Param names are LAW (`Darken`, `ScorchAmount`, `CharColor`, `RoughBoost`, dormant `EmberColor`/`EmberAmount`) — a retune overrides VALUES on `MI_Castle_Crumble0N` only, never renames a param and never edits the `M_CastleCrumble` graph for a spread change. **Jonathan's eye at playtest remains the final acceptance authority over the band** (the albedo-floor doctrine). A stage retune NEVER touches the meshes — the CRUMBLE-DERIVATION law above is orthogonal and stays closed.
+- **⚖️ INTERIOR CRUMBLE MI LAW (added 2026-08-18, GREAT-HALL TASK-632/633 — manager ruling GH-R12).** The redesign's 3-slot world (TASK-629/630: `[0 TeamRegion, 1 CastlePBR, 2 CastleInteriorPBR]`; pristine slot 2 → `MI_Castle_Interior_PBR` sampling `T_Castle_Interior_{D,N,ORM}`) extends the crumble chain: **each stage mesh's slot 2 is baked to `MI_Castle_Interior_Crumble01/02/03`** — MI-only work (TASK-632 measured `M_CastleCrumble`'s texture samples are PARAMETERS): parent `M_CastleCrumble`, texture params re-pointed to `T_Castle_Interior_{D,N,ORM}`, stage params VALUE-COPIED from the sibling `MI_Castle_Crumble0N` at authoring time so interior damage reads match exterior stage-for-stage (param names stay LAW; ⛔ the master graph is never edited for this). **Folder: `/Game/Materials/` beside `MI_Castle_Crumble0N`** — the standing crumble-MI folder law above, ⛔ NOT `Instances/`. The "crumble MIs and `M_CastleCrumble` themselves are NOT re-authored" sentence above remains true for the EXTERIOR pair — this law ADDS the interior trio, it re-authors nothing. **⚠️ The BOTH-SLOTS trap generalizes to ALL NON-ZERO SLOTS:** runtime writes slot 0 only (`ApplyCrumbleStage` / `ApplyTeamVisuals` — the TASK-634 slot-audit record), so slots 1 AND 2 must be baked into each saved stage asset — a missed slot 2 ships a crumbled castle with a pristine interior and NO error logged. Interior stage-spread acceptance: the base-relative principle applies (the interior base albedo is fresh), but the ratio band above is EXTERIOR-calibrated — the interior read is accepted by **Jonathan's eye at the TASK-636 checkpoint** (the 632 mid-match stage-swap eyeball); a measured interior band is owed only if his eye objects.
 - **Castle LOD law — the LANDMARK EXCEPTION, not `LargeProp` (ruling):** the M7.6 "Classic LOD law" exempts castles from the SM fleet's `lod_group='LargeProp'` auto-4-chain. The Castle takes the EXPLICIT reduction chain **LOD1 50 % @ screen 0.4 / LOD2 25 % @ 0.15** ⇒ target readback **`lod_count == 3`**. The audit's "every other building is 4" describes the `LargeProp` group and is NOT the Castle's target — do not "fix" the Castle to 4 by applying `LargeProp`.
 - **Brightness profile:** the LOCKED fleet `albedo_delight {ao_divide_strength 1.0, ao_floor 0.25, gamma 0.55, gain 1.2}` (Footman-validated, `d7254da`) is pinned in the manifest for the Castle too.
 - **⚖️ ALBEDO ACCEPTANCE FLOOR — AMENDED 2026-07-27 (manager ruling on TASK-329). THE RAW ARM IS RETIRED AS A GATE; the UV-normalised arm is the sole albedo gate, for BUILDINGS AND UNITS ALIKE.** The clause previously read "≥ **0.164** raw **AND** ≥ **0.2536** UV-normalised". That dual form is withdrawn. **THE OPERATIVE FLOOR IS: mean linear albedo ≥ 0.2536 on the UV-NORMALISED (covered-texel) metric.** Raw all-pixel albedo is still MEASURED AND REPORTED on every asset for continuity with the audit record — it is **never a fail reason**. Four reasons, and they are settled; **do not re-litigate this on the next building rebuild**:
@@ -3854,6 +3855,7 @@ Added 2026-08-16 (batch ACCOUNTS, TASK-599..610). **Jonathan's request, verbatim
 - ✅ **GitHub Pages MAY host a companion WEBSITE later** (landing page, account-portal front-end that talks to the real backend over HTTPS). Site ≠ store.
 - **DEFAULT BACKEND FOR PHASE 2: Supabase** — hosted Postgres + built-in email/password auth (JWTs) + row-level security (each account reaches only its own rows) + a plain HTTPS/JSON REST API that UE's built-in `FHttpModule` + `Json` modules call with **no third-party SDK**. Free tier ample at this scale, and Jonathan's Claude environment already has a **Supabase connector wired**, so agents can create/manage the project, tables and RLS policies directly when Phase 2 opens. **Alternatives on record:** Firebase, PlayFab (both viable, more SDK friction), EOS (Epic-native, but its auth model fits Epic accounts/device IDs, not simple email/password). ⚠️ **FLAGGED A1 — the backend choice is JONATHAN'S, owed before Phase 2 decomposes. Nothing in Phase 1 depends on it.**
 - ⚠️ **Environmental caveat, recorded now:** Norton MITMs HTTPS on this machine (the HF precedent) — `*.supabase.co` will likely need a Norton exclusion when Phase 2 goes live. **A dev-machine artifact, not a product defect, and a Jonathan hand-step.**
+- ⭐ **DATED AMENDMENT 2026-08-23 — A1 IS RULED: SUPABASE (Jonathan, verbatim in ACC-§10).** The flagged default stood and the flag is discharged. Phase-2 law = **ACC-§10..§15** below; the GH-Pages ruling above is UNCHANGED.
 
 ### ACC-§1 ⛔ THE GUEST-DEFAULT LAW — LOGIN GATES NOTHING, AND THE ACCOUNTLESS GAME IS BYTE-IDENTICAL
 
@@ -3922,6 +3924,8 @@ Added 2026-08-16 (batch ACCOUNTS, TASK-599..610). **Jonathan's request, verbatim
 | Tests | `SiegeAccountTest.cpp` | game — `Source/GitClaudeUnrealTest/Siegebound/Tests/` (new) |
 | Phase-2 reserved names | `USiegeCloudClient` (`SiegeCloudClient.h/.cpp`) · tables `profiles` / `decks` / `settings` (jsonb payloads) | ⛔ **NOT authored in P1 — reserved only** |
 
+- ⭐ **DATED NOTE 2026-08-23:** the Phase-2 reserved row above is now **LIVE** — the full P2 naming table is **ACC-§14** and the reserved names are used exactly as reserved.
+
 ### ACC-§7 📌 PINNED CROSS-TASK SIGNATURE REGISTRY — ⛔ every parallel task compiles against THIS, character-for-character
 
 ```cpp
@@ -3977,10 +3981,132 @@ UCLASS() class GITCLAUDEUNREALTEST_API UAccountMenuWidget : public UUserWidget {
 
 ⛔ **No cloud code, no HTTP call, no credential upload ships in Phase 1.** Reserved now so P1 code never squats on the names: `USiegeCloudClient` (UE `FHttpModule` + `Json`, no third-party SDK), Supabase tables `profiles` / `decks` / `settings` with jsonb payloads + per-user RLS, JWT auth via Supabase email/password. **Defaults awaiting Jonathan (recorded, not decided):** sync = last-write-wins on `updated_at` (A3) · first cloud login uploads the local profile (A4) · email confirmation OFF at signup (A5) · the P2 login identity becomes an EMAIL (Supabase-native) with `DisplayName` staying the in-game handle (A2). Norton `*.supabase.co` exclusion = Jonathan hand-step (ACC-§0).
 
+- ⭐ **DATED AMENDMENT 2026-08-23 — PHASE 2 IS NOW AUTHORED (TASK-639..652).** The reservation above is superseded FOR PHASE 2 by **ACC-§10..§15**; **Phase 3 stays reserved** (cross-device polish, password recovery, field-level merge/tombstones, per-save auto-push). The A2..A7 defaults travel unchanged into the P2 law: **A2** email login (ACC-§10) · **A3** last-write-wins on server `updated_at`, landed in the honest P2 shape ACC-§13 states · **A4** first-link upload (ACC-§13) · **A5** confirmation OFF, now live config law (ACC-§10) · **A6** spent in P1 · **A7** still NOT taken.
+
+- ⭐ **DATED ADDITION 2026-08-23 — two Phase-3 candidates carried from `qa/TASK-640.md` (recorded here where the Phase-3 one-liners live; ⛔ no tasks, no IDs until Phase 3 is decomposed):** **(a)** `USiegeDeckSaveGame::ActiveDeckName` has no cloud representation — a law-conformant refusal by TASK-639 (the ACC-§12 fence forbids improvised columns; per-device active-deck is the P2 default); candidate column for Phase 3. **(b)** `display_name` and the two `payload jsonb` columns carry no server-side size bounds (P1's 3–24-char check is client-side only); RLS confines abuse to the offender's own rows — `check`-constraint hardening is a Phase-3 candidate, never an in-flight edit.
+
 ### ACC-§9 📌 M8 DECLARATION + KNOWN LIMITATIONS — ⛔ none of these is a bug
 
 - **M8:** adds **no replicated property, no new replicated class, no new relevancy tier, no RPC.** All account state is CLIENT-LOCAL (`UGameInstanceSubsystem` + local `USaveGame`). ⛔ **The display name is NOT pushed into any session/player name in P1** (FLAGGED A7 — a later one-liner if Jonathan wants it).
 - **Known limitations, stated up front:** P1 credentials are not security (ACC-§2) · profiles are per-machine until Phase 2 · no password recovery in P1 (a forgotten local password = create a new profile; recovery is a P3 email flow) · no mid-match login (ACC-§1) · the account panel's look is unstyled C++-default until a polish pass.
+
+### ACC-§10 ⚖️ A1 IS RULED — SUPABASE — AND THE PROJECT LAW (added 2026-08-23, Phase-2 decomposition)
+
+**Jonathan's ruling, verbatim (2026-08-23, direct in Claude Code):** *"I am officially green lighting the continuation on to phase 2 for the account storage system. Supabase is good, go ahead and continue on the next steps to set everything up using Supabase and let me know what you need from me. Run this in parallel with your current tasks if you can."*
+
+- **The backend is Supabase.** A1 is discharged; the ACC-§0 GH-Pages ruling stands untouched.
+- **THE PROJECT LAW (FLAGGED S1 — default proceeds):** Phase 2 runs on a **NEW dedicated project named `siegebound`** on org `JonathanWesely's Org` (id `pbgbbgneacgeznvgaiid`), region **us-west-2**, **free tier — $0/month verified live at decomposition**. ⛔ **The existing paused project ("JonathanWesely's Project", ref `sebxviekcrnnhifdmfdl`, INACTIVE since ~2026-06-30, provenance unknown) is NEVER touched** — it may be Jonathan's personal sandbox, and restoring it would couple the game to an asset nobody here understands. A dedicated, game-named project is the clean ownership story. Overrule = one word from Jonathan (S1).
+  - ⭐ **DATED CORRECTION 2026-08-23 (TASK-641 deviation 1):** the live project `siegebound` (ref `cjgqqeogsynrphowdcdp`) is in **`us-west-1`**, not the `us-west-2` written above — the MCP `create_project` region enum offers no `us-west-2`; same US-West coast, same $0. Jonathan's overrule window was surfaced (delete+recreate cheap before TASK-642's apply) and the default proceeded. **`us-west-1` is the region of record.** Cite: `handoffs/TASK-641-buildmaster.md` §5.1.
+- **THE ACCESS SURFACE:** agents reach Supabase ONLY through the **orchestrator-held MCP tools** under Jonathan's account — the manager and the specialist agent definitions hold NO standalone Supabase credentials. Every provisioning/schema task is dispatched WITH that surface and its handoff SAYS SO (the RELAYED-instrument model: name the tool that produced each figure).
+- **Auth config law:** email/password provider ON; **email confirmation OFF at signup** (A5 default, now live config — FLAGGED S2 to flip); no other providers in P2. Any auth setting the MCP surface cannot reach is reported as a Jonathan hand-step with the exact dashboard clicks — never silently skipped.
+- **Norton re-pin (ACC-§0 caveat, now imminent):** `*.supabase.co` exclusion is a Jonathan hand-step BEFORE client-side HTTPS testing (S3). A TLS/cert failure from this machine is the recorded environmental issue FIRST, a code bug second.
+
+### ACC-§11 ⛔ THE KEY LAW + THE CLIENT TRUST MODEL + THE CONFIG HOME (2026-08-23)
+
+- ⛔ **THE `service_role` KEY NEVER TOUCHES THE REPO, THE GAME BINARY, ANY COMMITTED FILE, ANY FILE THE GAME READS, OR ANY HANDOFF/QA/BOARD TEXT.** It exists only inside Supabase's own dashboard and the orchestrator-held MCP surface. ✅ **QA CRITERION (every P2 diff): grep for `service_role` and for secret-key material (`sb_secret`, JWTs beginning `eyJ` other than the anon key's ruled home) — ZERO hits.**
+- **The game client = publishable/anon key + user JWTs + RLS, nothing else.** Every row it can reach is bounded by an `auth.uid()` policy (ACC-§12). The anon key is **public-by-design** (RLS is the security boundary, not key secrecy) — ⛔ but it still has exactly ONE ruled home (below); a hardcoded anon key in a `.cpp` is a QA FAIL.
+- **THE CONFIG HOME:** gitignored **`Config/SiegeCloudDev.ini`** — section `[SiegeCloud]`, keys `ProjectUrl=` / `AnonKey=` (+ an optional `; DbPassword=` custody comment line the game NEVER reads). Committed template **`Config/SiegeCloudDev.ini.example`** with placeholders; `.gitignore` gains the exact line `Config/SiegeCloudDev.ini`. **Missing/unparsable config ⇒ cloud OFF and the game behaves byte-identically to Phase 1** — this extends ACC-§1: cloud gates NOTHING, ever.
+- ⭐ **LOCAL-FIRST REMAINS THE LAW.** The local `USaveGame` files stay the on-device source of truth; the cloud is a SYNC LAYER (ACC-§13). ⛔ No gameplay or menu flow may block on an HTTP round trip; every cloud failure degrades to the local Phase-1 behavior with a `LogSiegeCloud` line and a `CloudStatusText` message.
+- **Auth transport:** Supabase GoTrue REST (`/auth/v1/signup`, `/auth/v1/token?grant_type=password` / `?grant_type=refresh_token`, `/auth/v1/logout`) via `FHttpModule` + `Json` — ⛔ no third-party SDK (ACC-§0). Real credential hashing is server-side (GoTrue bcrypt).
+- ⛔ **THE P1 LOCAL HASH NEVER UPLOADS.** Cloud signup/link takes a **fresh typed password**; the local `FSHA1` convenience hash and salt never leave the machine (ACC-§2 extends to the wire).
+- **THE TOKEN LAW (honest, per ACC-§2's lens):** the access token (JWT) lives in MEMORY only. The refresh token MAY persist per-profile as `FSiegeProfileInfo::CloudRefreshToken` — **stored plaintext-on-disk in the local save, the same trust level as every launcher's local session file; ⛔ no artifact may call it "encrypted" or "secure."** Cloud sign-out clears it. ⛔ Neither token is ever logged.
+
+### ACC-§12 THE SCHEMA + RLS LAW — MIGRATIONS ARE FILES, REVIEWED, THEN APPLIED (2026-08-23)
+
+- ⛔ **NO AD-HOC DDL.** Every schema change is a numbered SQL file in **`Tools/Supabase/migrations/`** (`0001_init_accounts.sql`, `0002_…`), QA-reviewed BEFORE it is applied, applied to the live project via the MCP migration tool by build-master, and the applied-vs-file text must be identical (paste the tool echo in the handoff).
+- **The three tables (ACC-§6 reserved names, now live):**
+  - `public.profiles` — `id uuid primary key references auth.users(id) on delete cascade` · `display_name text not null` · `updated_at timestamptz not null default now()`
+  - `public.decks` — `id uuid primary key default gen_random_uuid()` · `user_id uuid not null references auth.users(id) on delete cascade` · `deck_name text not null` · `payload jsonb not null` · `updated_at timestamptz not null default now()` · `unique (user_id, deck_name)`
+  - `public.settings` — `user_id uuid primary key references auth.users(id) on delete cascade` · `payload jsonb not null` · `updated_at timestamptz not null default now()`
+- **RLS:** `enable row level security` on ALL three; one policy per operation (`select` / `insert` / `update` / `delete`), named **`<table>_<op>_own`**, each bound `auth.uid() = user_id` (`profiles`: `auth.uid() = id`) in `using` AND `with check` as the operation requires. ⛔ No table without RLS; ⛔ no policy referencing `service_role` (it bypasses RLS by definition — a policy naming it is a design smell and a QA FAIL).
+- **`updated_at` is SERVER time — the sync clock (A3):** one trigger function **`public.touch_updated_at()`** + a `before update` trigger per table. ⛔ The client never writes `updated_at`.
+  - ⭐ **DATED AMENDMENT 2026-08-23 (TASK-640 ruling — the invariant binds over the letter):** the binding trigger wording is **`before insert or update`** — the PostgREST upsert's INSERT branch would otherwise accept a client-supplied `updated_at` and forward-date the A3 last-write-wins clock. The `before update` letter above stands as originally written; this amendment is the operative wording for `0001_init_accounts.sql` (as shipped) and every migration `0002+`. Ruling: `qa/TASK-640.md` §(c)1.
+- **Post-apply gate:** the MCP security advisors run must report **zero RLS findings** on these tables; any finding blocks the lane and is escalated, never waived in-task.
+
+### ACC-§13 THE SYNC LAW — EXPLICIT SURFACE, HONEST CONFLICT SHAPE (2026-08-23; A3/A4 defaults live)
+
+- **Granularity:** per-deck row (`unique (user_id, deck_name)`) + ONE settings row per user. Payloads = jsonb projections of the EXISTING save classes' data — ⛔ `USiegeDeckSaveGame` / `USiegeSettingsSaveGame` are NOT rewritten (ACC-§3 survives; serialization is a projection, never a schema change to the save classes).
+- ⭐ **THE SYNC SURFACE IS EXPLICIT — exactly three triggers, ⛔ no per-save hooks in P2:** (1) **cloud-login pull** — rows with `updated_at > LastSyncUtc` land locally; (2) **first-link upload** (A4) — the active profile's decks + settings push up once; (3) **Sync Now** (manual button) — pull-newer, then push-all, then `LastSyncUtc = server now`. ⇒ **ZERO edits to the deck/settings lanes' shipped files** — the ACC-§4 enumerated call-site set does not move. Per-save auto-push is a P3 candidate, recorded, not smuggled in.
+- **The honest A3 shape:** last-write-wins lands in P2 as *push-wins-at-write / pull-newer-at-sync*. **Recorded limitations (⛔ not bugs):** a row edited on two devices between syncs resolves to the most recent WRITER, not a field merge · deck DELETION does not propagate (no tombstones) — both are P3 work.
+- **Guest NEVER syncs** (ACC-§1 — guest has no cloud identity). Sync acts only on the ACTIVE, CLOUD-LINKED profile's slots.
+- **Every sync outcome is visible:** `CloudStatusText` states the last result; failures log once on `LogSiegeCloud` and leave local state untouched.
+
+### ACC-§14 P2 NAMING + FOLDER LAW (the cross-task contract)
+
+| Thing | Exact name | Location |
+|---|---|---|
+| Cloud client | `USiegeCloudClient` (`UGameInstanceSubsystem`) | game — `SiegeCloudClient.h/.cpp` (new) |
+| Config struct | `FSiegeCloudConfig` | in `SiegeCloudClient.h` |
+| Sync engine | `FSiegeCloudSync` (plain C++, NO UObject — offline-testable) | game — `SiegeCloudSync.h/.cpp` (new) |
+| Log category | **`LogSiegeCloud`** | declared/defined in `SiegeCloudClient.h/.cpp` |
+| Result delegate | `FSiegeCloudResult` (non-dynamic, `bool bOk, const FString& PayloadOrError`) | `SiegeCloudClient.h` |
+| Cloud-state delegate | `FOnSiegeCloudStateChanged` (dynamic multicast, no params) — member `OnCloudStateChanged` | on `USiegeCloudClient` |
+| Profile cloud fields | `LinkedEmail` · `CloudUserId` · `CloudRefreshToken` · `LastSyncUtc` | on `FSiegeProfileInfo` (`SaveGame`) |
+| Account subsystem P2 API | `IsCloudLinked()` · `GetLinkedEmail()` · `SetCloudLink(...)` · `ClearCloudLink()` · `SetLastSyncUtc(...)` | `USiegeAccountSubsystem` (edit) |
+| Widget child additions | `EmailInputBox` (`UEditableTextBox`) · `CloudStatusText` · `LinkCloudButton` + `LinkCloudLabelText` · `SyncNowButton` + `SyncNowLabelText` | `UAccountMenuWidget` (ACC-§5 scope HOLDS — same widget, same five conditions) |
+| Mode addition | `EAccountMenuMode::CloudLinkForm`; `LoggedIn` grows the cloud block | `AccountMenuWidget` internals |
+| Tests | `SiegeCloudTest.cpp` (`Siegebound.Cloud.*`) | `Source/GitClaudeUnrealTest/Siegebound/Tests/` (new) |
+| Migrations | `Tools/Supabase/migrations/0001_init_accounts.sql` (numbered onward) | repo (new folder) |
+| Dev config | `Config/SiegeCloudDev.ini` (**gitignored**) + `Config/SiegeCloudDev.ini.example` (committed) | repo |
+| Supabase project | `siegebound` (org `pbgbbgneacgeznvgaiid`, us-west-2, free tier) | cloud (ACC-§10) |
+
+- ⭐ **DATED CORRECTION 2026-08-23 — the Supabase-project row above:** live region is **`us-west-1`** (ref `cjgqqeogsynrphowdcdp`); the MCP `create_project` enum has no `us-west-2`. Full record in ACC-§10's dated correction; cite `handoffs/TASK-641-buildmaster.md` §5.1.
+
+### ACC-§15 📌 P2 PINNED CROSS-TASK SIGNATURE REGISTRY — ⛔ every parallel task compiles against THIS, character-for-character
+
+```cpp
+// ── SiegeCloudClient.h (TASK-643) ─────────────────────────────────────────
+USTRUCT() struct FSiegeCloudConfig {
+  GENERATED_BODY()
+  UPROPERTY() FString ProjectUrl;   // https://<ref>.supabase.co  (ACC-§11 config home)
+  UPROPERTY() FString AnonKey;      // publishable key — RLS is the boundary, key is public-by-design
+  bool IsValid() const;             // both non-empty
+};
+DECLARE_DELEGATE_TwoParams(FSiegeCloudResult, bool /*bOk*/, const FString& /*PayloadOrError*/);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSiegeCloudStateChanged);
+UCLASS() class GITCLAUDEUNREALTEST_API USiegeCloudClient : public UGameInstanceSubsystem {
+  GENERATED_BODY()
+public:
+  virtual void Initialize(FSubsystemCollectionBase& Collection) override; // loads Config/SiegeCloudDev.ini; missing => disabled, logged once
+  UFUNCTION(BlueprintPure) bool    IsCloudConfigured() const;
+  UFUNCTION(BlueprintPure) bool    IsCloudAuthenticated() const;          // access token held (memory only — ACC-§11)
+  UFUNCTION(BlueprintPure) FString GetCloudUserId() const;                // empty when signed out
+  void SignUp        (const FString& Email, const FString& Password, FSiegeCloudResult OnDone);
+  void SignIn        (const FString& Email, const FString& Password, FSiegeCloudResult OnDone);
+  void RefreshSession(const FString& RefreshToken,                   FSiegeCloudResult OnDone);
+  void SignOut();                                                         // clears in-memory tokens; fire-and-forget /logout
+  void FetchRows (const FString& Table, const FString& QuerySuffix, FSiegeCloudResult OnDone); // GET  /rest/v1/<Table>?<QuerySuffix>
+  void UpsertRow (const FString& Table, const FString& JsonBody,    FSiegeCloudResult OnDone); // POST /rest/v1/<Table>, Prefer: resolution=merge-duplicates
+  UPROPERTY(BlueprintAssignable) FOnSiegeCloudStateChanged OnCloudStateChanged;
+};
+
+// ── SiegeCloudSync.h (TASK-645) ───────────────────────────────────────────
+class FSiegeCloudSync {                       // plain C++, no UObject — offline unit-testable
+public:
+  static bool    ShouldPullRow(const FDateTime& CloudUpdatedUtc, const FDateTime& ProfileLastSyncUtc); // pure — pinned by tests
+  static FString MakeDeckRowJson(const FString& CloudUserId, const FString& DeckName, const TSharedRef<FJsonObject>& Payload);
+  static FString MakeSettingsRowJson(const FString& CloudUserId, const TSharedRef<FJsonObject>& Payload);
+  void PullAll(UGameInstance& GameInstance, FSiegeCloudResult OnDone);    // cloud-login lane (ACC-§13 trigger 1)
+  void PushAll(UGameInstance& GameInstance, FSiegeCloudResult OnDone);    // first-link upload (ACC-§13 trigger 2, A4)
+  void SyncNow(UGameInstance& GameInstance, FSiegeCloudResult OnDone);    // pull-newer -> push-all -> LastSyncUtc = server now (trigger 3)
+};
+
+// ── SiegeAccountSaveGame.h ADDITIONS (TASK-644; everything existing untouched) ──
+// on FSiegeProfileInfo:
+UPROPERTY(SaveGame, BlueprintReadOnly) FString   LinkedEmail;        // empty = not cloud-linked
+UPROPERTY(SaveGame)                    FString   CloudUserId;        // auth.users id (uuid string)
+UPROPERTY(SaveGame)                    FString   CloudRefreshToken;  // ACC-§11 token law: plaintext-on-disk convenience, NOT security
+UPROPERTY(SaveGame, BlueprintReadOnly) FDateTime LastSyncUtc;
+
+// ── SiegeAccountSubsystem.h ADDITIONS (TASK-644) ──────────────────────────
+UFUNCTION(BlueprintPure) bool    IsCloudLinked() const;              // active profile has LinkedEmail + CloudUserId
+UFUNCTION(BlueprintPure) FString GetLinkedEmail() const;             // empty when guest/unlinked
+void SetCloudLink(const FString& Email, const FString& UserId, const FString& RefreshToken); // saves registry, broadcasts OnActiveProfileChanged
+void ClearCloudLink();                                               // cloud sign-out; the LOCAL profile survives (ACC-§11)
+void SetLastSyncUtc(const FDateTime& WhenUtc);                       // saves registry
+```
+
+`SetCloudLink`/`ClearCloudLink` mutate ONLY the active profile, save the registry slot, then broadcast. **Load once, save on change, never read the disk from a gameplay path** — the P1 contract, unchanged.
 
 ## ⚖️ SIE OCCUPANCY LAW (2026-08-17, bought by TASK-617) — namespace `SIE-§N`
 

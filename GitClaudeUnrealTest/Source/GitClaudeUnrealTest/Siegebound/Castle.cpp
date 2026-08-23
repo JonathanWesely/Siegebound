@@ -76,52 +76,77 @@ namespace
 	//~ old castle's size, so there is nothing stale here to re-derive. TASK-557 owns
 	//~ the ledger and this task adds no row to it (and ⛔ re-touches none of its eight
 	//~ initialisers).
+	//~
+	//~ ⭐ TASK-634 (GH-R7, 2026-08-18) — THE INTERIOR WAS REDESIGNED. TASK-629 rebuilt
+	//~ the inside as ONE hollow grand hall (as-built readback: handoffs/TASK-629-artist.md
+	//~ §2/§3 — MEASURED, not projected). The provenance above stays as the BIRTH
+	//~ record; from here on the AUTHORITY for interior wall/floor planes is 629's
+	//~ readback. Constants the new geometry invalidated are RE-DERIVED below and each
+	//~ says so on its own line; every unmarked constant was AUDITED and verified to
+	//~ HOLD (the per-constant verdict table lives in handoffs/TASK-634-programmer.md).
+	//~ This is a GEOMETRY re-derivation, not a WR-§2 scale row — the scale never moved.
 
-	/** Interior floor height, mesh-local (WR-§1: the 3× castle's z 58 × 3). */
+	/** Interior floor height, mesh-local (WR-§1: the 3× castle's z 58 × 3; TASK-629 as-built: measured flat 174.00–174.69 end-to-end — HOLDS, TASK-634 audit). */
 	constexpr float InteriorFloorZ = 174.f;
 
-	/** Grand-hall clear height (WR-§1: 520 × 3). */
+	/**
+	 *  Grand-hall DESIGN clear height (WR-§1 minimum: 520 × 3). ⚠️ TASK-634: the
+	 *  as-built 629 hall clears MORE — flat ceiling z 2160 ⇒ 1986 uu measured — so
+	 *  this constant is the WR-§1 design MINIMUM the torch mount height derives
+	 *  from, deliberately NOT an as-built readback (GH-R7 pins the derived mount
+	 *  z 954 as a design input the redesign preserved; see TorchWallMountZ).
+	 */
 	constexpr float HallClearHeightZ = 1560.f;
 
 	/**
-	 *  THE ONE MOUNT HEIGHT EVERY TORCH USES — the midpoint of the hall's clear
-	 *  height, i.e. 780 uu above the interior floor. One number, one derivation:
-	 *    • It is also the hall carve box's own centre Z, so it is the height at
-	 *      which the walls are guaranteed vertical and solid in EVERY interior
-	 *      volume, not just the hall.
-	 *    • Verified against the GATE CORRIDOR too, which is an ARCH and not a box:
-	 *      the corridor's walls are vertical from the floor up to the springline at
-	 *      z 1410, and 174 < 954 < 1410, so a corridor torch is on flat wall with
-	 *      456 uu of wall still above it.
-	 *    • It puts each light pool's centre 780 above the floor. A torch's
-	 *      attenuation radius is ATorch's own EditDefaultsOnly tunable and is
-	 *      deliberately NOT duplicated here; at its shipped default the pool still
-	 *      reaches ≈912 uu horizontally AT FLOOR LEVEL, which is the figure the
-	 *      spacing below is checked against (see ACastle::ACastle).
+	 *  THE ONE MOUNT HEIGHT EVERY TORCH USES — the midpoint of the WR-§1 DESIGN
+	 *  clear height, i.e. 780 uu above the interior floor. One number, one
+	 *  derivation — RE-VERIFIED against the TASK-629 as-built hall (TASK-634):
+	 *    • GH-R7 pinned z 954 as a DESIGN INPUT of the redesign, and 629 §3
+	 *      measured it good: the hall walls are vertical 174 → 2160, so 954 is
+	 *      flat solid wall on EVERY hall wall plane ("mount z 954 has flat wall
+	 *      everywhere"). The as-built ceiling (2160) is higher than the design
+	 *      minimum, so 954 now sits below the as-built mid-height — that is torch
+	 *      FEEL, which is Jonathan's flagged tunable (TASK-571), not a derivation
+	 *      error; the derivation basis stays the WR-§1 minimum.
+	 *    • The GATE CORRIDOR is an ARCH, not a box — its walls are vertical from
+	 *      the floor to the springline, and 629 kept the spring at z 1410
+	 *      UNCHANGED: 174 < 954 < 1410, so the corridor torch is on flat wall
+	 *      with 456 uu of wall still above it.
+	 *    • It puts each light pool's centre 780 above the floor (the LIVE light
+	 *      sits at 855 — BP_Torch's TorchLightRelativeOffset (50, 0, 75), the
+	 *      TASK-617 amended offset). A torch's attenuation radius is ATorch's /
+	 *      BP_Torch's own tunable and is deliberately NOT duplicated here; the
+	 *      pool-coverage math for the NEW hall at the live TASK-620 values is in
+	 *      handoffs/TASK-634-programmer.md and cited at the anchors below.
 	 */
-	constexpr float TorchWallMountZ = InteriorFloorZ + 0.5f * HallClearHeightZ; // 954
+	constexpr float TorchWallMountZ = InteriorFloorZ + 0.5f * HallClearHeightZ; // 954 — HOLDS (TASK-634 audit; GH-R7 design pin, 629-measured flat wall at every site)
 
-	//~ hall_main — the grand hall under the keep. TASK-348: box x −640..+330,
-	//~ y +90..+330, z 58..578 ⇒ ×3 below. 2910 × 720 × 1560, exactly WR-§1's figures.
-	constexpr float HallMinX = -1920.f;
-	constexpr float HallMaxX = 990.f;
-	constexpr float HallMinY = 270.f;
-	constexpr float HallMaxY = 990.f;
-	constexpr float HallCentreX = 0.5f * (HallMinX + HallMaxX); // −465
-	constexpr float HallCentreY = 0.5f * (HallMinY + HallMaxY); // 630
-	constexpr float HallThirdX = (HallMaxX - HallMinX) / 3.f;   // 970
+	//~ THE GRAND HALL — one hollow volume, the TASK-629 redesign (as-built,
+	//~ MEASURED: handoffs/TASK-629-artist.md §2). X span RETAINED from the old
+	//~ hall_main (2910 wide); Y grew north, 270..990 → 240..1380 (1140 deep, was
+	//~ 720); floor flat 174, ceiling flat 2160 (clear 1986). No partitions, no
+	//~ columns, no annex (H1's one-volume default). Re-derived by TASK-634 (GH-R7).
+	constexpr float HallMinX = -1920.f;                         // HOLDS (629: hall x −1920..990)
+	constexpr float HallMaxX = 990.f;                           // HOLDS (now ALSO the hall's east WALL plane — torch anchor 5)
+	constexpr float HallMinY = 240.f;                           // RE-DERIVED 270 → 240 (629: measured south wall plane y 240)
+	constexpr float HallMaxY = 1380.f;                          // RE-DERIVED 990 → 1380 (629: measured north wall plane y 1380)
+	constexpr float HallCentreX = 0.5f * (HallMinX + HallMaxX); // −465 (unchanged)
+	constexpr float HallCentreY = 0.5f * (HallMinY + HallMaxY); // 810 (was 630)
+	constexpr float HallThirdX = (HallMaxX - HallMinX) / 3.f;   // 970 (unchanged)
 
-	//~ hall_east — the east annex, connected to hall_main by a full-height doorway.
-	//~ TASK-348: box x +280..+560, y +190..+330 ⇒ ×3: x +840..+1680, y +570..+990.
-	constexpr float AnnexMaxX = 1680.f;
-	constexpr float AnnexCentreY = 780.f;
+	//~ ⛔ hall_east — the old east annex (AnnexMaxX 1680 / AnnexCentreY 780) — DIED
+	//~ WITH TASK-629: the redesign filled the annex void SOLID (629 §5.3, H1's
+	//~ one-volume default), so its two constants are DELETED by TASK-634, not
+	//~ re-derived — the old torch anchor 5 that sat on its far wall was inside
+	//~ masonry and moved to the hall's own east wall (see the anchor block).
 
 	//~ gate_corridor — the vaulted passage from the gate arch into the hall.
-	//~ TASK-348: 500-wide arch, y −380..+170 ⇒ ×3: 1500 wide about the mesh's own
-	//~ gate centreline x = 18, y −1140..+510. Its side walls are therefore at
-	//~ x = 18 ∓ 750.
-	constexpr float CorridorWestWallX = -732.f;
-	constexpr float CorridorCentreY = -315.f;
+	//~ TASK-629 re-cut the old arch profile +3 uu per side (§5.2, the de-graze):
+	//~ wall planes now x −735 / +771 (1506 wide, was 18 ∓ 750 = −732/+768); span
+	//~ y −1140..+510 UNCHANGED (length 1650, centre −315); spring z 1410 UNCHANGED.
+	constexpr float CorridorWestWallX = -735.f;                 // RE-DERIVED −732 → −735 (629: measured corridor west wall plane)
+	constexpr float CorridorCentreY = -315.f;                   // HOLDS (629: corridor y −1140..510, unchanged)
 
 	//~ ---- the actor classes the castle furnishes itself with (BP first, C++ fallback) ----
 	const TCHAR* TorchBlueprintPath = TEXT("/Game/Blueprints/BP_Torch.BP_Torch_C");                   // WR-§4
@@ -242,75 +267,103 @@ ACastle::ACastle()
 	TorchClassAsset = TSoftClassPtr<ATorch>(FSoftObjectPath(TorchBlueprintPath));
 	CommanderNpcClassAsset = TSoftClassPtr<ACommanderNpc>(FSoftObjectPath(CommanderNpcBlueprintPath));
 
-	// ---- THE SIX TORCH ANCHORS ----
+	// ---- THE SIX TORCH ANCHORS (RE-DERIVED for the 629 hollow hall — TASK-634) ----
 	// Rotation is what aims the torch OFF the wall: SM_Torch's origin is its
 	// WALL-MOUNT FACE and the mesh extends along its own +X into the room
 	// (TASK-556 / WR-§4), so yaw points +X away from the masonry. Every anchor sits
-	// EXACTLY ON the carve-cutter face, i.e. flush on the wall surface: an inset
-	// would float the torch, and the cutter faces ARE the wall surfaces (TASK-348's
-	// probe hit hall_back at exactly the cutter's y_max). Scale stays 1 — a torch's
-	// SIZE is TASK-556's mesh, not this array's business.
+	// EXACTLY ON a wall plane TASK-629 MEASURED (§2/§3 readback: north y 1380,
+	// south y 240, east x 990, corridor west x −735 — each verified planar,
+	// vertical, and solid at z 954): an inset would float the torch. Scale stays 1
+	// — a torch's SIZE is TASK-556's mesh, not this array's business.
 	//
-	// SPACING, AND THE CHECK IT WAS DERIVED FROM: at TorchWallMountZ the light pool's
-	// centre is 780 above the floor, so at ATorch's shipped attenuation default the
-	// pool still reaches ≈912 uu horizontally where the floor is. Three torches on
-	// the hall's 2910-uu north wall, one at the centre of each THIRD (970 apart),
-	// therefore overlap continuously and cover the hall's full length AND its full
-	// 720-uu depth from one wall. ⛔ The attenuation radius itself is deliberately
-	// NOT duplicated into this file — it is ATorch's EditDefaultsOnly tunable, and a
-	// second copy of it here is exactly the stale-constant hazard SC-§34 exists for.
+	// SPACING, AND THE CHECK IT WAS DERIVED FROM (re-run for the 2910 × 1140 hall
+	// in handoffs/TASK-634-programmer.md): the LIVE light sits 855 above the floor
+	// (BP_Torch's (50, 0, 75) offset, TASK-617) and the LIVE attenuation is
+	// BP_Torch's 1900 (TASK-620's post-save readback — the C++ 1200 default is
+	// superseded on the live surface), so the floor pool reaches
+	// √(1900² − 855²) ≈ 1697 uu. Three north-wall torches a THIRD apart (970) plus
+	// the south/east singles put every point of the hall ≤ ~1240 uu from its
+	// nearest anchor — continuous overlap, the full 1140-uu depth covered from the
+	// walls. ⛔ The attenuation radius itself is deliberately NOT duplicated into
+	// this file — the figures above are CITATIONS of 620's live readback and 634's
+	// math, never a second authority; the tunable stays ATorch's/BP_Torch's
+	// (SC-§34's stale-constant hazard).
 	TorchAnchors.Reserve(6);
 
-	// 1–3: the grand hall's NORTH wall (y = HallMaxY), each at the centre of one
-	// third of the hall's length, all facing −Y into the room.
-	TorchAnchors.Add(FTransform(FRotator(0.f, -90.f, 0.f), FVector(HallMinX + 0.5f * HallThirdX, HallMaxY, TorchWallMountZ))); // (−1435, 990, 954)
-	TorchAnchors.Add(FTransform(FRotator(0.f, -90.f, 0.f), FVector(HallMinX + 1.5f * HallThirdX, HallMaxY, TorchWallMountZ))); // (−465, 990, 954) — the hall's own centre line
-	TorchAnchors.Add(FTransform(FRotator(0.f, -90.f, 0.f), FVector(HallMinX + 2.5f * HallThirdX, HallMaxY, TorchWallMountZ))); // (+505, 990, 954)
+	// 1–3: the grand hall's NORTH wall (y = HallMaxY — the 629 wall plane at 1380;
+	// the old y-990 wall is GONE, the hall grew 390 uu north), each at the centre
+	// of one third of the hall's length, all facing −Y into the room. TASK-629 §3
+	// suggested exactly these three sites; the third-centre arithmetic reproduces
+	// them because the hall's X span did not change.
+	TorchAnchors.Add(FTransform(FRotator(0.f, -90.f, 0.f), FVector(HallMinX + 0.5f * HallThirdX, HallMaxY, TorchWallMountZ))); // (−1435, 1380, 954)
+	TorchAnchors.Add(FTransform(FRotator(0.f, -90.f, 0.f), FVector(HallMinX + 1.5f * HallThirdX, HallMaxY, TorchWallMountZ))); // (−465, 1380, 954) — the hall's own centre line
+	TorchAnchors.Add(FTransform(FRotator(0.f, -90.f, 0.f), FVector(HallMinX + 2.5f * HallThirdX, HallMaxY, TorchWallMountZ))); // (+505, 1380, 954)
 
-	// 4: the hall's SOUTH wall, mirroring anchor 1, facing +Y. ⚠️ IT IS THE ONLY
-	// third-centre THAT WALL HAS: the 1500-wide gate corridor punches through the
-	// south wall from x −732 to +768, which swallows the other two. Placing it
-	// anyway is deliberate — without it every torch in the room is on one wall.
-	TorchAnchors.Add(FTransform(FRotator(0.f, 90.f, 0.f), FVector(HallMinX + 0.5f * HallThirdX, HallMinY, TorchWallMountZ))); // (−1435, 270, 954)
+	// 4: the hall's SOUTH wall (y = HallMinY — the 629 plane at 240, was 270),
+	// mirroring anchor 1, facing +Y. ⚠️ IT IS THE ONLY third-centre THAT WALL HAS:
+	// the 1506-wide gate corridor punches through the south wall from x −735 to
+	// +771 (629 §2), which swallows the other two (−465 and +505 both fall inside
+	// the punch-through). Placing it anyway is deliberate — without it every torch
+	// in the room is on one wall. 629 §3's suggested south site, verbatim.
+	TorchAnchors.Add(FTransform(FRotator(0.f, 90.f, 0.f), FVector(HallMinX + 0.5f * HallThirdX, HallMinY, TorchWallMountZ))); // (−1435, 240, 954)
 
-	// 5: the EAST ANNEX's far wall, at the annex's own Y centre, facing −X.
-	// ⚠️ NOT decoration: the annex reaches x +1680 and the nearest hall torch's pool
-	// stops ≈263 uu short of that wall at floor level, so without this anchor the
-	// annex is the one carved interior volume that is unlit.
-	TorchAnchors.Add(FTransform(FRotator(0.f, 180.f, 0.f), FVector(AnnexMaxX, AnnexCentreY, TorchWallMountZ))); // (+1680, 780, 954)
+	// 5: the hall's EAST wall (x = HallMaxX) at the hall's own Y centre, facing −X.
+	// RE-DERIVED by TASK-634: the old site was the east ANNEX's far wall
+	// (+1680, 780) and TASK-629 filled the annex SOLID (§5.3) — the old anchor now
+	// sits inside masonry. 629 §3's suggested replacement site, verbatim: east
+	// wall x 990 at (990, 810), wall verified planar at z 954.
+	TorchAnchors.Add(FTransform(FRotator(0.f, 180.f, 0.f), FVector(HallMaxX, HallCentreY, TorchWallMountZ))); // (990, 810, 954)
 
-	// 6: the GATE CORRIDOR's west wall at its mid-length, facing +X. One pool spans
-	// the passage's full 1650-uu length; the corridor is 1500 wide, so its east half
-	// is lit by falloff and by hall spill rather than directly.
-	// ⚠️ FLAGGED, AND IT IS THE FIRST THING TO ADD IF THE PASSAGE READS DARK: the
-	// mirrored anchor (+768, −315, 954) yaw 180 completes a facing pair. It is left
-	// out only because MaxTorchesPerCastle is 6 by law; adding it is one array entry
-	// plus one cap bump, both EditDefaultsOnly, no recompile.
-	TorchAnchors.Add(FTransform(FRotator(0.f, 0.f, 0.f), FVector(CorridorWestWallX, CorridorCentreY, TorchWallMountZ))); // (−732, −315, 954)
+	// 6: the GATE CORRIDOR's west wall (the 629 plane at x −735, was −732) at its
+	// mid-length, facing +X. One pool spans the passage's full 1650-uu length
+	// (the y span is UNCHANGED by 629); the corridor is 1506 wide, and at the LIVE
+	// TASK-620 attenuation the single pool now reaches even the far corridor
+	// corners (≈1674 uu ≤ the ≈1697 floor-pool radius — TASK-634 math), closing
+	// the old east-half coverage hole AT CUTOFF (delivered brightness out there is
+	// still falloff + hall spill).
+	// ⚠️ FLAGGED, STILL THE FIRST THING TO ADD IF THE PASSAGE READS DARK: the
+	// mirrored anchor (+771, −315, 954) yaw 180 completes a facing pair. It is left
+	// out only because MaxTorchesPerCastle is 6 by law; adding it is one array
+	// entry plus one cap bump, both EditDefaultsOnly, no recompile (TASK-571 is
+	// Jonathan's feel pass).
+	TorchAnchors.Add(FTransform(FRotator(0.f, 0.f, 0.f), FVector(CorridorWestWallX, CorridorCentreY, TorchWallMountZ))); // (−735, −315, 954)
 
 	// ---- THE COMMANDER NPC ANCHOR ----
-	// A FLOOR point in the grand hall: X = the hall's own centre; Y = the midpoint of
-	// the hall's northern half, which leaves 180 uu of clearance to the back wall;
-	// Z = the interior floor (SK_Sorcerer is feet-origin and SM_WarTable is
-	// floor-contact-origin, so relative Z 0 on both — TASK-559). Yaw −90 turns him to
-	// face −Y, i.e. toward the gate corridor the player walks in through.
+	// A FLOOR point in the grand hall: X = the hall's own centre; Y = the hall's
+	// own centre too — the 629 hall grew north (240..1380), which moved HallCentreY
+	// to exactly 810, the y this anchor has ALWAYS held; Z = the interior floor
+	// (SK_Sorcerer is feet-origin and SM_WarTable is floor-contact-origin, so
+	// relative Z 0 on both — TASK-559). Yaw −90 turns him to face −Y, i.e. toward
+	// the gate corridor the player walks in through.
+	//
+	// ⭐ TASK-634 (GH-R7): the anchor VALUE (−465, 810, 174) is BYTE-IDENTICAL to
+	// pre-redesign — 629 §3 MEASURED it interior with 570 uu min horizontal
+	// clearance (probed 24 directions × z 300/600/954) — but the old EXPRESSION
+	// 0.5×(HallCentreY + HallMaxY) would now compute 1095 under the new bounds, so
+	// ONLY the arithmetic is re-based on the new hall constants; the spawned
+	// transform does not move by a single unit.
 	//
 	// ⭐ WHY THE ANCHOR IS THE COMMANDER AND NOT THE TABLE, AND WHY THAT MATTERS:
 	// ACommanderNpc places its war table a fixed distance along the actor's own +X.
 	// This anchor deliberately does NOT transcribe that distance — instead it is
-	// chosen so the placement is ROBUST to it. At TASK-559's shipped 200 uu the table
-	// lands at y ≈ 610, within 20 uu of the hall's own centre (630); and the anchor
-	// stays legal for ANY forward offset below 300 uu (the table stays north of the
-	// corridor mouth at y 510) and below 540 uu (it stays inside the hall at y 270).
+	// chosen so the placement is ROBUST to it. At TASK-559's shipped 200 uu the
+	// table lands at y ≈ 610 (629 §3 measured it: 370 uu clear of the south wall);
+	// and the anchor stays legal for ANY forward offset below 300 uu (the table
+	// stays north of the corridor mouth at y 510) and below 570 uu (it stays
+	// inside the hall, y > 240 — was 540 against the old y-270 wall).
 	// ⇒ if that constant is ever tuned, this anchor does not silently go stale.
 	//
-	// ⛔ CHECKED AGAINST THE TWO PLACES HE MAY NOT STAND (WR-§5 / spec item 2):
-	//   • the GATE CORRIDOR occupies y −1140..+510; he is at y 810, north of it.
-	//   • the APPROACH ramp/stair is OUTSIDE the shell, below the gate arch at
-	//     y ≤ −2100; he is 2910 uu deeper in and 174 uu up, on the flat hall floor.
+	// ⛔ CHECKED AGAINST THE TWO PLACES HE MAY NOT STAND (WR-§5 / spec item 2,
+	// re-run against 629 §2):
+	//   • the GATE CORRIDOR occupies y −1140..+510 (UNCHANGED); he is at y 810,
+	//     300 uu north of its mouth.
+	//   • the APPROACH/THRESHOLD (the apron + the 148/161 landings) ends at
+	//     y −1460 and the ramp itself is outside the shell below the gate arch
+	//     (y ≤ −2100); he is on the flat 174 hall floor, 2,270 uu north of the
+	//     threshold's end.
 	// ⛔ And he is not in the doorway either: the corridor mouth overlaps the hall
 	// only up to y 510.
-	CommanderNpcAnchor = FTransform(FRotator(0.f, -90.f, 0.f), FVector(HallCentreX, 0.5f * (HallCentreY + HallMaxY), InteriorFloorZ)); // (−465, 810, 174)
+	CommanderNpcAnchor = FTransform(FRotator(0.f, -90.f, 0.f), FVector(HallCentreX, HallCentreY, InteriorFloorZ)); // (−465, 810, 174) — value HOLDS (GH-R7); expression re-based by TASK-634
 }
 
 void ACastle::OnConstruction(const FTransform& Transform)
@@ -697,7 +750,16 @@ void ACastle::ApplyTeamVisuals()
 	const TSoftObjectPtr<UMaterialInterface>& TeamMaterial = (Team == ETeamId::Red) ? TeamMaterialRed : TeamMaterialBlue;
 	if (UMaterialInterface* Material = TeamMaterial.LoadSynchronous())
 	{
-		// SM_Castle has a single material slot (TASK-013 spec); the same mesh serves both teams.
+		// SLOT 0 ONLY — and slot-0-only is the recorded CONTRACT (TASK-634 slot-audit
+		// addendum, per TASK-630 §3): SM_Castle's slots are [0 TeamRegion, 1 CastlePBR]
+		// as shipped and [0 TeamRegion, 1 CastlePBR, 2 CastleInteriorPBR] from
+		// TASK-633's import. This write recolors the TeamRegion slot; slots >= 1 are
+		// NEVER written at runtime — they render whatever the SAVED mesh asset binds,
+		// which is exactly what lets the appended interior slot ship with zero code
+		// change. (The claim that stood here — "SM_Castle has a single material slot
+		// (TASK-013 spec)" — was stale twice over: the mesh has been two-slot since
+		// the TeamRegion split, three-slot from 633. The same mesh still serves both
+		// teams.)
 		CastleMesh->SetMaterial(0, Material);
 	}
 }
@@ -976,6 +1038,16 @@ void ACastle::ApplyCrumbleStage(int32 Stage)
 	}
 	if (UMaterialInterface* CrumbleMaterial = USiegeFeedbackLibrary::ResolveMaterial(CrumbleMaterialPath))
 	{
+		// ⭐ THE SLOT CONTRACT, RECORDED HERE PER TASK-630 §3 (TASK-634 slot-audit
+		// addendum): this write — like EVERY runtime material write on the castle —
+		// touches SLOT 0 ONLY. Slots >= 1 always render what the SAVED stage mesh
+		// binds: [0 TeamRegion, 1 CastlePBR/crumble, 2 CastleInteriorPBR] after
+		// TASK-633's import. ⛔ The old board line "ApplyCrumbleStage writes both
+		// slots by index" NEVER matched this code (630 verified it at source); the
+		// crumble look on slots >= 1 is the artist's DESIGN-TIME binding on each
+		// SM_Castle_Crumble0N (630 §7.4 — what is saved is what renders mid-match).
+		// A future runtime write to slots >= 1 must re-open this contract
+		// explicitly, never assume it.
 		CastleMesh->SetMaterial(0, CrumbleMaterial);
 	}
 
