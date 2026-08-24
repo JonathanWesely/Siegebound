@@ -9,7 +9,9 @@
 /**
  *  ONE LOCAL PLAYER PROFILE (batch ACCOUNTS, TASK-599; CONVENTIONS ACC-§3 and
  *  the ACC-§7 pinned signature registry — every field below is registry-pinned
- *  character-for-character).
+ *  character-for-character. ⭐ 2026-08-23, TASK-644: the four Phase-2
+ *  cloud-link fields at the end of the struct are pinned by the ACC-§15
+ *  block-3 registry the same way; everything Phase-1 is untouched).
  *
  *  Identity is ProfileId (FGuid) — NEVER the display name (ACC-§3: users type
  *  anything; filenames + collisions + renames). The profile-scoped save slots
@@ -56,6 +58,38 @@ struct FSiegeProfileInfo
 	/** UTC timestamp of the most recent successful Login (== CreatedUtc until then). */
 	UPROPERTY(SaveGame, BlueprintReadOnly)
 	FDateTime LastLoginUtc;
+
+	// ── Phase-2 cloud-link fields (batch ACCOUNTS-P2, TASK-644; the ACC-§15
+	// block-3 pinned registry, character-for-character; CONVENTIONS ACC-§11).
+	// BACK-COMPAT: all four are ADDITIVE tagged properties — an older
+	// SiegeAccounts.sav simply lacks them and each loads at its C++ default
+	// (empty string / unset FDateTime) per the versioning contract in the class
+	// comment below. A Phase-1 profile therefore loads as a valid, UNLINKED
+	// Phase-2 profile with zero migration; nothing existing above moved.
+
+	/** Cloud account e-mail this profile is linked to (A2: the cloud login identity is an EMAIL; DisplayName stays the in-game handle). EMPTY = not cloud-linked — the IsCloudLinked predicate is LinkedEmail AND CloudUserId both non-empty. */
+	UPROPERTY(SaveGame, BlueprintReadOnly)
+	FString LinkedEmail;
+
+	/** Supabase auth.users id (uuid string) of the linked cloud account; empty when unlinked. The RLS owner key every cloud row is bound to (ACC-§12). */
+	UPROPERTY(SaveGame)
+	FString CloudUserId;
+
+	/**
+	 *  GoTrue refresh token for the linked cloud session. ⛔ ACC-§11 TOKEN LAW,
+	 *  stated where the field lives: plaintext-on-disk convenience, NOT
+	 *  security — the same trust level as every launcher's local session file;
+	 *  no artifact may call it "encrypted" or "secure." The ACCESS token (JWT)
+	 *  never persists at all (memory only, inside USiegeCloudClient). Cloud
+	 *  sign-out (USiegeAccountSubsystem::ClearCloudLink) clears this field.
+	 *  ⛔ Neither token is ever logged.
+	 */
+	UPROPERTY(SaveGame)
+	FString CloudRefreshToken;
+
+	/** SERVER-time clock of the last completed sync (A3 last-write-wins, ACC-§13 trigger 3). Default/unset = never synced => the next cloud-login pull takes every row (updated_at > unset is always true). */
+	UPROPERTY(SaveGame, BlueprintReadOnly)
+	FDateTime LastSyncUtc;
 };
 
 /**

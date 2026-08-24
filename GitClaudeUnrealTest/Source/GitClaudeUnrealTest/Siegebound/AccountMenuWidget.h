@@ -12,6 +12,7 @@ class UEditableTextBox;
 class UTextBlock;
 class UVerticalBox;
 class USiegeAccountSubsystem;
+class USiegeCloudClient;
 
 /**
  *  Internal mode machine for the account panel (ACC-§5).
@@ -30,8 +31,16 @@ enum class EAccountMenuMode : uint8
 	CreateForm,
 	/** Name + password + Submit. */
 	LoginForm,
-	/** "Logged in as <DisplayName>" + Logout + Back. */
-	LoggedIn
+	/** "Logged in as <DisplayName>" + Logout + Back (+ the P2 cloud block, ACC-§14). */
+	LoggedIn,
+	/**
+	 *  P2 (TASK-646, ACC-§14): cloud email + the REUSED PasswordInputBox /
+	 *  ConfirmPasswordInputBox (no duplicate password children) + Submit.
+	 *  Confirm box FILLED = create a NEW cloud account (SignUp, then the A4
+	 *  first-link upload - ACC-§13 trigger 2); left BLANK = sign into an
+	 *  existing one (SignIn, then the cloud-login pull - ACC-§13 trigger 1).
+	 */
+	CloudLinkForm
 };
 
 /**
@@ -45,6 +54,47 @@ enum class EAccountMenuMode : uint8
  *  touches no session/player name (A7). Does NOT consume the M8 Phase-1
  *  checkpoint gate; does NOT substitute for Jonathan's owed feedback items.
  *  ============================================================================
+ *  M8 DECLARATION - PHASE 2 (TASK-646, batch verbatim): Adds no replicated
+ *  property, no new replicated class, no new relevancy tier, no RPC. All cloud
+ *  traffic is client-local HTTPS from USiegeCloudClient (a
+ *  UGameInstanceSubsystem); nothing crosses the UE networking layer. Does NOT
+ *  consume the M8 Phase-1 checkpoint gate; does NOT substitute for Jonathan's
+ *  owed feedback items.
+ *  ============================================================================
+ *
+ *  ---------------------------------------------------------------------------
+ *  PHASE 2 (TASK-646) - THE CLOUD BLOCK, ADDITIVE ON THE QA-PASSED P1 TREE
+ *  ---------------------------------------------------------------------------
+ *  The ACC-§14 widget rows land here, character-for-character: EmailInputBox,
+ *  CloudStatusText, LinkCloudButton + LinkCloudLabelText, SyncNowButton +
+ *  SyncNowLabelText - all BindWidgetOptional, constructed-if-null inside
+ *  ConstructAccountTree() (i.e. BEFORE Super::RebuildWidget(), the ACC-§5(b)
+ *  order, unchanged). One mode is added: CloudLinkForm. Nothing shipped in P1
+ *  moves: the panel still overlays the main menu without removing it, Back
+ *  still removes only this widget in EVERY mode, BackdropBorder still absorbs
+ *  clicks, and Escape stays permanently unabsorbed (AS-§6 A-2).
+ *
+ *  The LoggedIn screen grows the cloud block (ACC-§11 rules it):
+ *    - cloud unconfigured  => the block STATES it and DISABLES; it never hides
+ *                             and it gates NOTHING local (cloud gates nothing);
+ *    - linked              => "Linked as <email>" + Sync Now;
+ *    - unlinked            => the Link-to-Cloud entry.
+ *
+ *  Wiring (the ACC-§15 pinned surfaces only): auth via USiegeCloudClient
+ *  (SignUp/SignIn), link state via TASK-644's USiegeAccountSubsystem API
+ *  (IsCloudLinked/GetLinkedEmail/SetCloudLink), sync via FSiegeCloudSync
+ *  (PushAll on first link - A4/trigger 2; PullAll on cloud login - trigger 1;
+ *  SyncNow on the button - trigger 3). Everything is delegate-async: no
+ *  gameplay or menu flow blocks on an HTTP round trip (ACC-§11), and every
+ *  outcome lands in CloudStatusText.
+ *
+ *  P2-R6, as it binds this file: the typed cloud password lives in locals for
+ *  the duration of SubmitCloudLink() only - never logged, never a member,
+ *  never captured by a completion lambda. The refresh token is parsed from the
+ *  auth response into a local and handed ONLY to SetCloudLink (the ACC-§11
+ *  token law's one sanctioned home) - never logged. The raw auth payload
+ *  (which carries tokens on success) is never logged from this file on any
+ *  path. The P1 local hash/salt are not read, not written, not uploaded.
  *
  *  ---------------------------------------------------------------------------
  *  WHY THERE IS NO .uasset - THE RULING THIS WIDGET IS BUILT UNDER
@@ -156,6 +206,23 @@ public:
 	void BackPressed();
 
 	/**
+	 *  P2: LoggedIn -> CloudLinkForm. Guarded no-op unless logged in, cloud
+	 *  configured (ACC-§11) and not yet linked - the only state in which
+	 *  LinkCloudButton is shown enabled.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Account")
+	void LinkCloudPressed();
+
+	/**
+	 *  P2: the ACC-§13 trigger-3 manual sync - FSiegeCloudSync::SyncNow on the
+	 *  active, cloud-linked profile. Async end to end; the outcome lands in
+	 *  CloudStatusText; nothing local blocks or is gated (ACC-§11). Guest,
+	 *  unlinked and unconfigured never sync (ACC-§13).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Account")
+	void SyncNowPressed();
+
+	/**
 	 *  Fired for presentation on top of what C++ already does to the bound
 	 *  controls - on every REAL (mode, status) change, first seed included.
 	 *  It does NOT fire on a no-op (the delegate law, cloned from the settings
@@ -195,6 +262,14 @@ protected:
 	UFUNCTION()
 	void HandleBackClicked();
 
+	/** OnClicked thunk for LinkCloudButton (P2). Forwards to LinkCloudPressed. */
+	UFUNCTION()
+	void HandleLinkCloudClicked();
+
+	/** OnClicked thunk for SyncNowButton (P2). Forwards to SyncNowPressed. */
+	UFUNCTION()
+	void HandleSyncNowClicked();
+
 	/**
 	 *  USiegeAccountSubsystem::OnActiveProfileChanged handler (no params - the
 	 *  ACC-§7 pinned delegate shape). Re-derives the mode from the subsystem so
@@ -203,8 +278,20 @@ protected:
 	UFUNCTION()
 	void HandleActiveProfileChanged();
 
+	/**
+	 *  USiegeCloudClient::OnCloudStateChanged handler (no params - the ACC-§15
+	 *  pinned delegate shape, P2). Re-derives ONLY the cloud block: a cloud
+	 *  auth-state transition never changes the panel MODE and never gates a
+	 *  local flow (ACC-§11: cloud gates NOTHING).
+	 */
+	UFUNCTION()
+	void HandleCloudStateChanged();
+
 	/** Null-safe subsystem resolve through this widget's world's game instance. */
 	USiegeAccountSubsystem* ResolveAccountSubsystem() const;
+
+	/** Null-safe USiegeCloudClient resolve (P2). Null or unconfigured => the cloud block states it and disables (ACC-§11). */
+	USiegeCloudClient* ResolveCloudClient() const;
 
 	/**
 	 *  Builds the code-authored tree. Called from RebuildWidget() BEFORE
@@ -247,6 +334,73 @@ protected:
 
 	/** Clears both password boxes (ACC-§2 hygiene). The name box is left alone - it is not a credential. */
 	void ClearPasswordBoxes();
+
+	// ------------------------------------------------------------------------
+	// P2 CLOUD LANE (TASK-646). Plain methods, not UFUNCTIONs - FSiegeCloudResult
+	// is the ACC-§15 non-dynamic delegate and these are its C++-only handlers.
+	// ------------------------------------------------------------------------
+
+	/**
+	 *  Which FSiegeCloudSync operation a completion belongs to - wording and
+	 *  logging only. C++-only, never a BIE param (condition (d)).
+	 */
+	enum class ECloudSyncOpContext : uint8
+	{
+		/** ACC-§13 trigger 2 (A4): the first-link upload after SignUp. */
+		FirstLinkUpload,
+		/** ACC-§13 trigger 1: the cloud-login pull after SignIn. */
+		LoginPull,
+		/** ACC-§13 trigger 3: the Sync Now button. */
+		ManualSync
+	};
+
+	/**
+	 *  The CloudLinkForm submit lane: validate locally, then async
+	 *  SignUp/SignIn on USiegeCloudClient. P2-R6: the password lives in this
+	 *  call's locals only and both password boxes are cleared on every path.
+	 */
+	void SubmitCloudLink();
+
+	/**
+	 *  SignUp/SignIn completion. On success: SetCloudLink (TASK-644), then the
+	 *  ACC-§13 trigger mapping exactly - PushAll for a sign-up (first link,
+	 *  A4), PullAll for a sign-in. On failure: the error string (contractually
+	 *  token-free, TASK-643) lands in CloudStatusText; the raw payload is never
+	 *  logged from this file.
+	 */
+	void HandleCloudAuthResult(bool bOk, const FString& PayloadOrError, const FString& Email, bool bSignUpFlow);
+
+	/** PushAll/PullAll/SyncNow completion: steady-state redraw, then the outcome line in CloudStatusText. */
+	void HandleCloudSyncResult(bool bOk, const FString& PayloadOrError, ECloudSyncOpContext OpContext);
+
+	/**
+	 *  The LoggedIn screen's cloud rows, one owner: linked / unlinked /
+	 *  unconfigured / request-in-flight (ACC-§11 states-and-disables law).
+	 *  A deliberate no-op in every other mode.
+	 */
+	void RefreshCloudBlock();
+
+	/**
+	 *  Writes CloudStatusText only. Deliberately NOT routed through
+	 *  OnAccountMenuStateChanged - the BIE's pinned (ModeName, StatusMessage)
+	 *  signature is a shipped P1 contract this task does not move; a future
+	 *  WBP_AccountMenu reads CloudStatusText directly.
+	 */
+	void ShowCloudStatus(const FString& CloudMessage);
+
+	/** Marks a round trip in flight: busy line in CloudStatusText, the three cloud-lane buttons disabled. Back is never touched. */
+	void StartCloudRequest(const FString& BusyMessage);
+
+	/** Clears the in-flight flag, re-enables Submit, redraws the LoggedIn cloud rows. */
+	void FinishCloudRequest();
+
+	/**
+	 *  Best-effort parse of a GoTrue auth response body: top-level
+	 *  "refresh_token", and "user.id" as a fallback ONLY when InOutUserId
+	 *  arrived empty (the pinned GetCloudUserId() getter is preferred). Not
+	 *  JSON => both outputs left as they came in. Never logs the payload.
+	 */
+	void ParseAuthPayload(const FString& Payload, FString& InOutUserId, FString& OutRefreshToken) const;
 
 	// ------------------------------------------------------------------------
 	// PINNED CHILDREN - CONVENTIONS ACC-§5, character-for-character.
@@ -323,6 +477,37 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|Account", meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> BackLabelText;
 
+	// ------------------------------------------------------------------------
+	// P2 PINNED CHILDREN (TASK-646) - CONVENTIONS ACC-§14 widget rows,
+	// character-for-character. Same BindWidgetOptional law as above: an
+	// asset-authored WBP_AccountMenu using these exact names binds here and the
+	// code-authored branch never runs. Nothing below is ever hard-required.
+	// ------------------------------------------------------------------------
+
+	/** Cloud-account email entry (CloudLinkForm only). The P2 login identity is an EMAIL (A2/ACC-§10); DisplayName stays the in-game handle. */
+	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|Account", meta = (BindWidgetOptional))
+	TObjectPtr<UEditableTextBox> EmailInputBox;
+
+	/** The cloud block's one status surface: linked/unlinked/unconfigured state, busy lines, every sync outcome (ACC-§13: every sync outcome is visible). */
+	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|Account", meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> CloudStatusText;
+
+	/** LoggedIn + unlinked: opens CloudLinkForm. Shown DISABLED when the cloud is unconfigured (ACC-§11 states-and-disables). */
+	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|Account", meta = (BindWidgetOptional))
+	TObjectPtr<UButton> LinkCloudButton;
+
+	/** "Link to Cloud" - the button's content text. */
+	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|Account", meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> LinkCloudLabelText;
+
+	/** LoggedIn + linked: the ACC-§13 trigger-3 manual sync. */
+	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|Account", meta = (BindWidgetOptional))
+	TObjectPtr<UButton> SyncNowButton;
+
+	/** "Sync Now" - the button's content text. */
+	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|Account", meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> SyncNowLabelText;
+
 private:
 
 	/** The mode currently applied to the tree. C++-only (see EAccountMenuMode). */
@@ -342,4 +527,12 @@ private:
 
 	/** Latches the "subsystem unavailable" log to ONE line per widget instance. */
 	bool bLoggedSubsystemUnavailable = false;
+
+	/**
+	 *  P2: true while a cloud round trip (link auth, post-link sync, manual
+	 *  sync) is outstanding - ONE at a time. Disables only the three cloud-lane
+	 *  buttons; Back and every local flow stay live (ACC-§11: nothing blocks on
+	 *  HTTP, cloud gates nothing).
+	 */
+	bool bCloudRequestInFlight = false;
 };

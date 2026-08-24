@@ -1,0 +1,16 @@
+; ============================================================================
+; SiegeCloudDev.ini.example — committed placeholder template (ACC-§11).
+; Copy to Config/SiegeCloudDev.ini (which is GITIGNORED) and fill in the real
+; values for the `siegebound` Supabase project. The anon key is public-by-design
+; (RLS is the security boundary) but its ONE ruled home is the gitignored copy.
+; ⛔ The service_role key NEVER goes in any file, anywhere (ACC-§11).
+; Missing/unparsable config => cloud OFF, byte-identical Phase-1 behavior.
+; ============================================================================
+[SiegeCloud]
+; ProjectUrl MUST stay double-quoted: UE's ini line reader swallows an
+;   unquoted // as an inline comment (the value truncates to "https:") —
+;   TASK-649 loop-2 finding, pinned by Siegebound.Cloud.ConfigIniParseSeam.
+;   Quotes are stripped on read; the client receives the bare URL.
+ProjectUrl="https://<project-ref>.supabase.co"
+AnonKey=<anon-or-publishable-key>
+; DbPassword=<optional custody comment line — the game NEVER reads this>

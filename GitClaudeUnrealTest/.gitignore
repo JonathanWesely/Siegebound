@@ -56,6 +56,12 @@ Tools/ArtPipeline/Cache/*
 # ⇒ MODEL DOCUMENTATION CANNOT LIVE IN Models/. IT LIVES IN Docs/ — the shipping
 #   manifest is pinned at Docs/ModelManifest.md (FINE-TUNE RUNG §5 and §9).
 
+# ACCOUNTS Phase 2 (TASK-641, ACC-§11 config home): the REAL Supabase dev
+# config — project URL + anon key + the DB-password custody comment — lives
+# ONLY in this gitignored file. The committed placeholder template is
+# Config/SiegeCloudDev.ini.example.
+Config/SiegeCloudDev.ini
+
 # Branch junk-strip guards (TASK-246): Python bytecode caches, FBX-import
 # texture-extraction dirs (UE writes <name>.fbm/ beside the source FBX), and
 # Jonathan's GDD homework PDF (kept on disk, untracked by ruling).

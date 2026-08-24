@@ -75,7 +75,33 @@ public class GitClaudeUnrealTest : ModuleRules
 			// dependency of SiegeLlama, so the native header stays off this module's
 			// include path and the whole cross-lane surface remains
 			// (prompt, gbnf) -> string.
-			"SiegeLlama"
+			"SiegeLlama",
+
+			// ACCOUNTS PHASE 2 (TASK-643): USiegeCloudClient speaks Supabase
+			// GoTrue + PostgREST over HTTPS via FHttpModule — the transport
+			// CONVENTIONS ACC-§11 pins by law ("FHttpModule + Json, no
+			// third-party SDK"), under Jonathan's A1 Supabase ruling (ACC-§10).
+			// SiegeCloudClient.cpp is this module's ONLY FHttpModule user.
+			//
+			// ⚠️ THIS DOES NOT RE-OPEN THE LLM-ASSISTANT RULING ABOVE, WHICH
+			// STANDS BYTE-FOR-BYTE. That closed decision (CONVENTIONS "In-match
+			// LLM command assistant" §6) rejected a LISTENING sidecar
+			// (llama-server.exe) whose inbound socket draws a Windows firewall
+			// prompt on a shipped game's first launch; llama.cpp still runs
+			// IN-PROCESS and nothing about the assistant lane changes here.
+			// FHttpModule makes OUTBOUND client requests only — no listener,
+			// no firewall prompt — for a DIFFERENT feature under a DIFFERENT,
+			// later law. ⛔ "Sockets" remains ABSENT, exactly as that ruling
+			// requires.
+			//
+			// ⚠️ Declared SC-§15 deviation (handoffs/TASK-643-programmer.md):
+			// TASK-643's names: block assigns only SiegeCloudClient.{h,cpp};
+			// this one-token line is the module dependency without which the
+			// lane's one compile (TASK-649) cannot succeed. Pre-flight
+			// `git status --porcelain` on this file: CLEAN. Ownership model =
+			// the TASK-417 precedent (Json/JsonUtilities landed with their
+			// first user).
+			"HTTP"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

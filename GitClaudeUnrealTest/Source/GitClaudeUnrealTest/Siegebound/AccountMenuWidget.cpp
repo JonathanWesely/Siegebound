@@ -10,9 +10,14 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Dom/JsonObject.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 #include "SiegeAccountSubsystem.h"
+#include "SiegeCloudClient.h"
+#include "SiegeCloudSync.h"
 
 namespace SiegeAccountMenuText
 {
@@ -36,6 +41,14 @@ namespace SiegeAccountMenuText
 	static const TCHAR* PasswordHint        = TEXT("Password");
 	static const TCHAR* ConfirmPasswordHint = TEXT("Confirm password");
 
+	// ---- P2 cloud block (TASK-646, ACC-§14) --------------------------------
+	static const TCHAR* LinkCloudLabel  = TEXT("Link to Cloud");
+	static const TCHAR* SyncNowLabel    = TEXT("Sync Now");
+	static const TCHAR* SubmitLinkLabel = TEXT("Link to Cloud");
+
+	static const TCHAR* EmailHint                = TEXT("Email address");
+	static const TCHAR* CloudConfirmPasswordHint = TEXT("Confirm password (new cloud accounts only)");
+
 	/**
 	 *  Per-mode default status lines. The numbers in the create line are the
 	 *  ACC-§3 rules (name 3-24 chars, password 4+ chars) stated to the player
@@ -54,6 +67,34 @@ namespace SiegeAccountMenuText
 	// TCHAR* constant fails the engine's format-string static_assert.
 
 	static const TCHAR* PasswordsDoNotMatch = TEXT("Passwords do not match.");
+
+	/**
+	 *  P2 (TASK-646) cloud-lane text. Honest per ACC-§2/§11: nothing here calls
+	 *  anything "secure" or "encrypted"; the unconfigured line says the exact
+	 *  ACC-§11 truth - cloud OFF means Phase-1 behavior, nothing is lost. The
+	 *  CloudLinkForm status states the confirm-box convention up front (filled
+	 *  = new cloud account, blank = existing) instead of letting the player
+	 *  discover it one rejection at a time.
+	 */
+	static const TCHAR* CloudLinkFormStatus =
+		TEXT("Link this profile to the cloud: enter your cloud email and password. Fill the confirm box to create a NEW cloud account, or leave it blank to sign into an existing one.");
+	static const TCHAR* CloudEnterEmail    = TEXT("Enter the email address for the cloud account.");
+	static const TCHAR* CloudEnterPassword = TEXT("Enter the cloud account's password.");
+	static const TCHAR* CloudNotConfigured =
+		TEXT("Cloud sync is not set up on this machine, so the cloud buttons are disabled. Decks and settings still save locally - nothing is lost.");
+	static const TCHAR* CloudNotLinked =
+		TEXT("Not linked to the cloud. Link to back up this profile's decks and settings.");
+	static const TCHAR* CloudBusyLinking = TEXT("Contacting the cloud...");
+	static const TCHAR* CloudBusySyncing = TEXT("Syncing with the cloud...");
+	static const TCHAR* CloudUploadingAfterLink =
+		TEXT("Cloud account linked - uploading this profile's decks and settings...");
+	static const TCHAR* CloudPullingAfterLink =
+		TEXT("Cloud account linked - pulling your cloud decks and settings...");
+	static const TCHAR* CloudNoUserId =
+		TEXT("The cloud accepted the sign-in but returned no user id. Nothing was linked - try again.");
+	// The linked steady-state line is the TASK-646 pinned "Linked as <email>".
+	// Like the P1 LoggedIn line it is a Printf literal at its use sites - a
+	// TCHAR* constant fails the engine's format-string static_assert.
 
 	/**
 	 *  Shown INSTEAD of the mode status when the account subsystem cannot be
@@ -204,7 +245,11 @@ void UAccountMenuWidget::ConstructAccountTree()
 		TEXT("LoginExistingButton"), TEXT("LoginExistingLabelText"), SiegeAccountMenuText::LoginExistingLabel);
 
 	// ---- The form inputs ----------------------------------------------------
+	// EmailInputBox (P2, ACC-§14) rides between the name row and the two
+	// password rows; CloudLinkForm shows email + the REUSED password boxes
+	// (ACC-§14: no duplicate password children), the P1 forms collapse it.
 	ConstructInputBox(NameInputBox, TEXT("NameInputBox"), SiegeAccountMenuText::NameHint, /*bIsPassword=*/false);
+	ConstructInputBox(EmailInputBox, TEXT("EmailInputBox"), SiegeAccountMenuText::EmailHint, /*bIsPassword=*/false);
 	ConstructInputBox(PasswordInputBox, TEXT("PasswordInputBox"), SiegeAccountMenuText::PasswordHint, /*bIsPassword=*/true);
 	ConstructInputBox(ConfirmPasswordInputBox, TEXT("ConfirmPasswordInputBox"), SiegeAccountMenuText::ConfirmPasswordHint, /*bIsPassword=*/true);
 
@@ -215,6 +260,34 @@ void UAccountMenuWidget::ConstructAccountTree()
 		TEXT("SubmitButton"), TEXT("SubmitLabelText"), SiegeAccountMenuText::SubmitCreateLabel);
 	ConstructPanelButton(LogoutButton, LogoutLabelText,
 		TEXT("LogoutButton"), TEXT("LogoutLabelText"), SiegeAccountMenuText::LogoutLabel);
+
+	// ---- The P2 cloud block (ACC-§14): status + Link to Cloud + Sync Now ----
+	// LoggedIn rows (CloudStatusText also rides CloudLinkForm for round-trip
+	// feedback); ApplyMode/RefreshCloudBlock own visibility and enablement.
+	// ⛔ When the cloud is unconfigured the block STATES it and DISABLES - it
+	// never hides, and it gates NOTHING local (ACC-§11).
+	if (CloudStatusText == nullptr)
+	{
+		CloudStatusText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CloudStatusText"));
+		if (CloudStatusText != nullptr)
+		{
+			CloudStatusText->SetFontSize(16.f);
+			CloudStatusText->SetAutoWrapText(true);
+			CloudStatusText->SetColorAndOpacity(FSlateColor(FLinearColor(0.7f, 0.8f, 0.9f, 1.f)));
+
+			if (UVerticalBoxSlot* CloudStatusSlot = RootPanel->AddChildToVerticalBox(CloudStatusText))
+			{
+				CloudStatusSlot->SetPadding(FMargin(24.f, 12.f, 24.f, 4.f));
+				CloudStatusSlot->SetHorizontalAlignment(HAlign_Fill);
+				CloudStatusSlot->SetVerticalAlignment(VAlign_Top);
+			}
+		}
+	}
+
+	ConstructPanelButton(LinkCloudButton, LinkCloudLabelText,
+		TEXT("LinkCloudButton"), TEXT("LinkCloudLabelText"), SiegeAccountMenuText::LinkCloudLabel);
+	ConstructPanelButton(SyncNowButton, SyncNowLabelText,
+		TEXT("SyncNowButton"), TEXT("SyncNowLabelText"), SiegeAccountMenuText::SyncNowLabel);
 
 	// ---- BackButton, last and unconditional ---------------------------------
 	ConstructPanelButton(BackButton, BackLabelText,
@@ -355,6 +428,14 @@ void UAccountMenuWidget::NativeConstruct()
 	{
 		LogoutButton->OnClicked.AddUniqueDynamic(this, &UAccountMenuWidget::HandleLogoutClicked);
 	}
+	if (LinkCloudButton != nullptr)
+	{
+		LinkCloudButton->OnClicked.AddUniqueDynamic(this, &UAccountMenuWidget::HandleLinkCloudClicked);
+	}
+	if (SyncNowButton != nullptr)
+	{
+		SyncNowButton->OnClicked.AddUniqueDynamic(this, &UAccountMenuWidget::HandleSyncNowClicked);
+	}
 
 	// Back is bound unconditionally and LAST: it must work even when the
 	// account subsystem is missing and every form above is dead. A panel you
@@ -369,6 +450,13 @@ void UAccountMenuWidget::NativeConstruct()
 	if (USiegeAccountSubsystem* Account = ResolveAccountSubsystem())
 	{
 		Account->OnActiveProfileChanged.AddUniqueDynamic(this, &UAccountMenuWidget::HandleActiveProfileChanged);
+	}
+
+	// Track cloud auth-state transitions while the panel is open (the ACC-§15
+	// pinned no-param delegate). Cloud state only ever redraws the cloud BLOCK.
+	if (USiegeCloudClient* Cloud = ResolveCloudClient())
+	{
+		Cloud->OnCloudStateChanged.AddUniqueDynamic(this, &UAccountMenuWidget::HandleCloudStateChanged);
 	}
 
 	// Seed the mode LAST, after every binding is armed: opening while logged
@@ -386,6 +474,11 @@ void UAccountMenuWidget::NativeDestruct()
 		Account->OnActiveProfileChanged.RemoveDynamic(this, &UAccountMenuWidget::HandleActiveProfileChanged);
 	}
 
+	if (USiegeCloudClient* Cloud = ResolveCloudClient())
+	{
+		Cloud->OnCloudStateChanged.RemoveDynamic(this, &UAccountMenuWidget::HandleCloudStateChanged);
+	}
+
 	if (CreateAccountButton != nullptr)
 	{
 		CreateAccountButton->OnClicked.RemoveDynamic(this, &UAccountMenuWidget::HandleCreateAccountClicked);
@@ -401,6 +494,14 @@ void UAccountMenuWidget::NativeDestruct()
 	if (LogoutButton != nullptr)
 	{
 		LogoutButton->OnClicked.RemoveDynamic(this, &UAccountMenuWidget::HandleLogoutClicked);
+	}
+	if (LinkCloudButton != nullptr)
+	{
+		LinkCloudButton->OnClicked.RemoveDynamic(this, &UAccountMenuWidget::HandleLinkCloudClicked);
+	}
+	if (SyncNowButton != nullptr)
+	{
+		SyncNowButton->OnClicked.RemoveDynamic(this, &UAccountMenuWidget::HandleSyncNowClicked);
 	}
 	if (BackButton != nullptr)
 	{
@@ -434,6 +535,14 @@ void UAccountMenuWidget::LoginExistingChosen()
 
 void UAccountMenuWidget::SubmitPressed()
 {
+	if (CurrentMode == EAccountMenuMode::CloudLinkForm)
+	{
+		// The P2 cloud lane - async, never blocking (ACC-§11). Its own function
+		// keeps the qa-passed P1 local flows below textually untouched.
+		SubmitCloudLink();
+		return;
+	}
+
 	if (CurrentMode != EAccountMenuMode::CreateForm && CurrentMode != EAccountMenuMode::LoginForm)
 	{
 		// The submit button is hidden outside the two forms; reaching here
@@ -569,6 +678,24 @@ void UAccountMenuWidget::HandleBackClicked()
 	BackPressed();
 }
 
+void UAccountMenuWidget::HandleLinkCloudClicked()
+{
+	LinkCloudPressed();
+}
+
+void UAccountMenuWidget::HandleSyncNowClicked()
+{
+	SyncNowPressed();
+}
+
+void UAccountMenuWidget::HandleCloudStateChanged()
+{
+	// The ACC-§15 pinned no-param delegate: cloud auth state moved (sign-in,
+	// sign-out, refresh). Only the cloud BLOCK re-derives - cloud state never
+	// changes the panel MODE and never gates a local flow (ACC-§11).
+	RefreshCloudBlock();
+}
+
 void UAccountMenuWidget::HandleActiveProfileChanged()
 {
 	// The pinned delegate carries no payload (ACC-§7) - re-derive everything
@@ -596,10 +723,11 @@ void UAccountMenuWidget::ApplyMode(EAccountMenuMode NewMode)
 {
 	CurrentMode = NewMode;
 
-	const bool bChooser  = (NewMode == EAccountMenuMode::Chooser);
-	const bool bCreate   = (NewMode == EAccountMenuMode::CreateForm);
-	const bool bLogin    = (NewMode == EAccountMenuMode::LoginForm);
-	const bool bLoggedIn = (NewMode == EAccountMenuMode::LoggedIn);
+	const bool bChooser   = (NewMode == EAccountMenuMode::Chooser);
+	const bool bCreate    = (NewMode == EAccountMenuMode::CreateForm);
+	const bool bLogin     = (NewMode == EAccountMenuMode::LoginForm);
+	const bool bLoggedIn  = (NewMode == EAccountMenuMode::LoggedIn);
+	const bool bCloudLink = (NewMode == EAccountMenuMode::CloudLinkForm);
 
 	// Collapsed (not Hidden) so hidden rows release their layout space and
 	// each mode reads as its own screen. TitleText, StatusText and BackButton
@@ -615,15 +743,34 @@ void UAccountMenuWidget::ApplyMode(EAccountMenuMode NewMode)
 	SetShown(CreateAccountButton, bChooser);
 	SetShown(LoginExistingButton, bChooser);
 	SetShown(NameInputBox, bCreate || bLogin);
-	SetShown(PasswordInputBox, bCreate || bLogin);
-	SetShown(ConfirmPasswordInputBox, bCreate);
-	SetShown(SubmitButton, bCreate || bLogin);
+	SetShown(EmailInputBox, bCloudLink);
+	SetShown(PasswordInputBox, bCreate || bLogin || bCloudLink);
+	SetShown(ConfirmPasswordInputBox, bCreate || bCloudLink);
+	SetShown(SubmitButton, bCreate || bLogin || bCloudLink);
 	SetShown(LogoutButton, bLoggedIn);
+
+	// The P2 cloud rows: CloudStatusText rides LoggedIn (the block) and
+	// CloudLinkForm (round-trip feedback); the two cloud buttons default
+	// collapsed here - RefreshCloudBlock() at the bottom owns them in LoggedIn.
+	SetShown(CloudStatusText, bLoggedIn || bCloudLink);
+	SetShown(LinkCloudButton, false);
+	SetShown(SyncNowButton, false);
 
 	if (SubmitLabelText != nullptr)
 	{
-		SubmitLabelText->SetText(FText::FromString(
-			FString(bCreate ? SiegeAccountMenuText::SubmitCreateLabel : SiegeAccountMenuText::SubmitLoginLabel)));
+		SubmitLabelText->SetText(FText::FromString(FString(
+			bCreate ? SiegeAccountMenuText::SubmitCreateLabel
+			: bCloudLink ? SiegeAccountMenuText::SubmitLinkLabel
+			: SiegeAccountMenuText::SubmitLoginLabel)));
+	}
+
+	// The confirm box is REUSED by CloudLinkForm (ACC-§14: no duplicate
+	// password children); there, filling it means "create a NEW cloud account"
+	// - the hint says so, and says the P1 thing everywhere else.
+	if (ConfirmPasswordInputBox != nullptr)
+	{
+		ConfirmPasswordInputBox->SetHintText(FText::FromString(FString(
+			bCloudLink ? SiegeAccountMenuText::CloudConfirmPasswordHint : SiegeAccountMenuText::ConfirmPasswordHint)));
 	}
 
 	// ACC-§2 hygiene: no typed password survives a mode change.
@@ -638,6 +785,10 @@ void UAccountMenuWidget::ApplyMode(EAccountMenuMode NewMode)
 
 	case EAccountMenuMode::LoginForm:
 		Status = SiegeAccountMenuText::LoginFormStatus;
+		break;
+
+	case EAccountMenuMode::CloudLinkForm:
+		Status = SiegeAccountMenuText::CloudLinkFormStatus;
 		break;
 
 	case EAccountMenuMode::LoggedIn:
@@ -656,6 +807,19 @@ void UAccountMenuWidget::ApplyMode(EAccountMenuMode NewMode)
 	}
 
 	ShowStatus(Status);
+
+	if (bLoggedIn)
+	{
+		// The LoggedIn screen's cloud rows - linked / unlinked / unconfigured /
+		// in-flight - have ONE owner (the ACC-§11 states-and-disables law).
+		RefreshCloudBlock();
+	}
+	else if (bCloudLink)
+	{
+		// Fresh entry into the link form: no stale cloud line. (An async
+		// failure does NOT re-enter ApplyMode, so its error text survives.)
+		ShowCloudStatus(FString());
+	}
 }
 
 void UAccountMenuWidget::ShowStatus(const FString& StatusMessage)
@@ -670,11 +834,12 @@ void UAccountMenuWidget::ShowStatus(const FString& StatusMessage)
 	const TCHAR* ModeName = TEXT("Chooser");
 	switch (CurrentMode)
 	{
-	case EAccountMenuMode::CreateForm: ModeName = TEXT("CreateForm"); break;
-	case EAccountMenuMode::LoginForm:  ModeName = TEXT("LoginForm");  break;
-	case EAccountMenuMode::LoggedIn:   ModeName = TEXT("LoggedIn");   break;
+	case EAccountMenuMode::CreateForm:    ModeName = TEXT("CreateForm");    break;
+	case EAccountMenuMode::LoginForm:     ModeName = TEXT("LoginForm");     break;
+	case EAccountMenuMode::LoggedIn:      ModeName = TEXT("LoggedIn");      break;
+	case EAccountMenuMode::CloudLinkForm: ModeName = TEXT("CloudLinkForm"); break;
 	case EAccountMenuMode::Chooser:
-	default:                           ModeName = TEXT("Chooser");    break;
+	default:                              ModeName = TEXT("Chooser");       break;
 	}
 
 	// The delegate law, cloned from the settings lane: notify on a real
@@ -725,13 +890,16 @@ void UAccountMenuWidget::SetFormsEnabled(bool bEnabled)
 	SetEnabled(CreateAccountButton);
 	SetEnabled(LoginExistingButton);
 	SetEnabled(NameInputBox);
+	SetEnabled(EmailInputBox);
 	SetEnabled(PasswordInputBox);
 	SetEnabled(ConfirmPasswordInputBox);
 	SetEnabled(SubmitButton);
 	SetEnabled(LogoutButton);
 
 	// BackButton is deliberately NOT in this list, in either direction: it must
-	// stay live when everything else is dead.
+	// stay live when everything else is dead. LinkCloudButton/SyncNowButton are
+	// also deliberately absent - RefreshCloudBlock() owns their enablement (the
+	// ACC-§11 states-and-disables law needs them independently controllable).
 }
 
 void UAccountMenuWidget::ClearPasswordBoxes()
@@ -746,6 +914,474 @@ void UAccountMenuWidget::ClearPasswordBoxes()
 	}
 }
 
+// ============================================================================
+// P2 CLOUD LANE (TASK-646) - everything below is additive; the qa-passed P1
+// flows above are untouched. All I/O is delegate-async (ACC-§11: nothing
+// blocks on HTTP, cloud gates NOTHING), and only the ACC-§15 pinned surfaces
+// of the sibling tasks are consumed.
+// ============================================================================
+
+void UAccountMenuWidget::LinkCloudPressed()
+{
+	if (bCloudRequestInFlight)
+	{
+		return; // one round trip at a time - the button is disabled in flight anyway
+	}
+
+	USiegeAccountSubsystem* Account = ResolveAccountSubsystem();
+	if (Account == nullptr)
+	{
+		ShowUnavailable();
+		return;
+	}
+
+	if (!Account->IsLoggedIn())
+	{
+		// Guest never links or syncs (ACC-§13). Unreachable through the UI (the
+		// button only exists on the LoggedIn screen); a Blueprint calling the
+		// wrapper out of turn lands back on the derived mode.
+		RefreshModeFromSubsystem();
+		return;
+	}
+
+	USiegeCloudClient* Cloud = ResolveCloudClient();
+	if (Cloud == nullptr || !Cloud->IsCloudConfigured())
+	{
+		// ACC-§11: the block states it and disables; nothing local is gated.
+		RefreshCloudBlock();
+		return;
+	}
+
+	if (Account->IsCloudLinked())
+	{
+		RefreshCloudBlock(); // already linked - a stale click just redraws the block
+		return;
+	}
+
+	ApplyMode(EAccountMenuMode::CloudLinkForm);
+}
+
+void UAccountMenuWidget::SyncNowPressed()
+{
+	if (bCloudRequestInFlight)
+	{
+		return;
+	}
+
+	USiegeAccountSubsystem* Account = ResolveAccountSubsystem();
+	if (Account == nullptr)
+	{
+		ShowUnavailable();
+		return;
+	}
+
+	USiegeCloudClient* Cloud = ResolveCloudClient();
+	const bool bReady = Account->IsLoggedIn() && Account->IsCloudLinked()
+		&& Cloud != nullptr && Cloud->IsCloudConfigured();
+	if (!bReady)
+	{
+		// Guest, unlinked and unconfigured never sync (ACC-§13, ACC-§11) -
+		// redraw the block so the on-screen state says why.
+		RefreshCloudBlock();
+		return;
+	}
+
+	const UWorld* World = GetWorld();
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	if (GameInstance == nullptr)
+	{
+		return;
+	}
+
+	StartCloudRequest(FString(SiegeAccountMenuText::CloudBusySyncing));
+
+	// ACC-§13 trigger 3, exactly: pull-newer -> push-all -> LastSyncUtc =
+	// server now - ALL of it inside FSiegeCloudSync (TASK-645); this widget
+	// only shows the outcome. The TSharedRef captured by the completion lambda
+	// keeps the sync engine alive across its async hops even if this panel is
+	// dismissed mid-flight (Back is never disabled); the weak-this guard makes
+	// the UI update safe either way.
+	TSharedRef<FSiegeCloudSync> Sync = MakeShared<FSiegeCloudSync>();
+	TWeakObjectPtr<UAccountMenuWidget> WeakThis(this);
+	Sync->SyncNow(*GameInstance, FSiegeCloudResult::CreateLambda(
+		[WeakThis, Sync](bool bOk, const FString& PayloadOrError)
+		{
+			if (UAccountMenuWidget* Widget = WeakThis.Get())
+			{
+				Widget->HandleCloudSyncResult(bOk, PayloadOrError, ECloudSyncOpContext::ManualSync);
+			}
+		}));
+}
+
+void UAccountMenuWidget::SubmitCloudLink()
+{
+	if (bCloudRequestInFlight)
+	{
+		return; // Submit is disabled in flight; a raced click is a no-op
+	}
+
+	USiegeAccountSubsystem* Account = ResolveAccountSubsystem();
+	if (Account == nullptr)
+	{
+		ShowUnavailable();
+		return;
+	}
+
+	if (!Account->IsLoggedIn())
+	{
+		// Guest never links (ACC-§13). The form is only reachable from
+		// LoggedIn; losing the profile mid-form lands back on the derived mode.
+		ClearPasswordBoxes();
+		RefreshModeFromSubsystem();
+		return;
+	}
+
+	USiegeCloudClient* Cloud = ResolveCloudClient();
+	if (Cloud == nullptr || !Cloud->IsCloudConfigured())
+	{
+		ClearPasswordBoxes();
+		ShowStatus(FString(SiegeAccountMenuText::CloudNotConfigured));
+		return;
+	}
+
+	const FString Email =
+		(EmailInputBox != nullptr) ? EmailInputBox->GetText().ToString().TrimStartAndEnd() : FString();
+
+	// ⛔ ACC-§2's wire extension + P2-R6. The plaintext password lives in these
+	// LOCALS only: it crosses ONE call boundary (USiegeCloudClient - GoTrue
+	// bcrypts it server-side, ACC-§11), it is NEVER logged, NEVER stored in a
+	// member, NEVER captured by the completion lambda (which captures Email and
+	// the flow flag only), and both password boxes are cleared before every
+	// return below. The P1 local hash/salt are not read, written or uploaded.
+	const FString Password =
+		(PasswordInputBox != nullptr) ? PasswordInputBox->GetText().ToString() : FString();
+	const FString ConfirmPassword =
+		(ConfirmPasswordInputBox != nullptr) ? ConfirmPasswordInputBox->GetText().ToString() : FString();
+
+	if (Email.IsEmpty() || !Email.Contains(TEXT("@")))
+	{
+		// Light check only - GoTrue owns real address validation; this just
+		// saves an obviously-doomed round trip.
+		ClearPasswordBoxes();
+		ShowStatus(FString(SiegeAccountMenuText::CloudEnterEmail));
+		return;
+	}
+
+	if (Password.IsEmpty())
+	{
+		ClearPasswordBoxes();
+		ShowStatus(FString(SiegeAccountMenuText::CloudEnterPassword));
+		return;
+	}
+
+	// Confirm box FILLED = create a NEW cloud account (must match); EMPTY =
+	// sign into an existing one - exactly what the form's status line tells
+	// the player up front. Case-sensitive: passwords compare exactly (the P1
+	// rule, cloned).
+	const bool bSignUp = !ConfirmPassword.IsEmpty();
+	if (bSignUp && !Password.Equals(ConfirmPassword, ESearchCase::CaseSensitive))
+	{
+		ClearPasswordBoxes();
+		ShowStatus(FString(SiegeAccountMenuText::PasswordsDoNotMatch));
+		return;
+	}
+
+	StartCloudRequest(FString(SiegeAccountMenuText::CloudBusyLinking));
+
+	TWeakObjectPtr<UAccountMenuWidget> WeakThis(this);
+	FSiegeCloudResult OnDone = FSiegeCloudResult::CreateLambda(
+		[WeakThis, Email, bSignUp](bool bOk, const FString& PayloadOrError)
+		{
+			if (UAccountMenuWidget* Widget = WeakThis.Get())
+			{
+				Widget->HandleCloudAuthResult(bOk, PayloadOrError, Email, bSignUp);
+			}
+		});
+
+	// Async end to end - nothing here waits on HTTP (ACC-§11), and Back stays
+	// live for the whole round trip.
+	if (bSignUp)
+	{
+		Cloud->SignUp(Email, Password, OnDone);
+	}
+	else
+	{
+		Cloud->SignIn(Email, Password, OnDone);
+	}
+
+	ClearPasswordBoxes();
+}
+
+void UAccountMenuWidget::HandleCloudAuthResult(bool bOk, const FString& PayloadOrError, const FString& Email, bool bSignUpFlow)
+{
+	if (!bOk)
+	{
+		// ⛔ P2-R6 discipline for this file: the payload is NEVER logged on any
+		// path. On failure it is an error string (contractually token- and
+		// password-free, TASK-643) and it is DISPLAYED, not logged.
+		UE_LOG(LogSiegeCloud, Log,
+			TEXT("[AccountMenu] Cloud %s failed - the reason is on the panel. Local play is untouched (ACC-§11)."),
+			bSignUpFlow ? TEXT("sign-up") : TEXT("sign-in"));
+		FinishCloudRequest();
+		ShowCloudStatus(PayloadOrError);
+		return;
+	}
+
+	USiegeAccountSubsystem* Account = ResolveAccountSubsystem();
+	USiegeCloudClient* Cloud = ResolveCloudClient();
+	if (Account == nullptr || Cloud == nullptr || !Account->IsLoggedIn())
+	{
+		// The local profile vanished mid-flight (a logout raced the round
+		// trip). There is no profile to link - drop the result, honestly.
+		UE_LOG(LogSiegeCloud, Warning,
+			TEXT("[AccountMenu] Cloud auth succeeded but no active local profile remains - the link was NOT stored."));
+		FinishCloudRequest();
+		return;
+	}
+
+	// The pinned getter first (ACC-§15); the response body only fills gaps.
+	FString UserId = Cloud->GetCloudUserId();
+	FString RefreshToken;
+	ParseAuthPayload(PayloadOrError, UserId, RefreshToken);
+
+	if (UserId.IsEmpty())
+	{
+		UE_LOG(LogSiegeCloud, Warning,
+			TEXT("[AccountMenu] Cloud auth succeeded but returned no user id - the link was NOT stored."));
+		FinishCloudRequest();
+		ShowCloudStatus(FString(SiegeAccountMenuText::CloudNoUserId));
+		return;
+	}
+
+	if (RefreshToken.IsEmpty())
+	{
+		// Token-free log line (P2-R6). An empty refresh token only means the
+		// link cannot silently re-authenticate later; it is stored as-is.
+		UE_LOG(LogSiegeCloud, Log,
+			TEXT("[AccountMenu] No refresh token in the auth response - the cloud link is session-only until the next sign-in."));
+	}
+
+	// TASK-644's API: mutates the ACTIVE profile, saves the registry,
+	// broadcasts OnActiveProfileChanged - which lands this panel on LoggedIn
+	// (still in flight, so RefreshCloudBlock keeps the cloud buttons disabled
+	// until the sync below completes). The refresh token goes ONLY into
+	// SetCloudLink - the ACC-§11 token law's one sanctioned home - and dies
+	// with this call's locals.
+	Account->SetCloudLink(Email, UserId, RefreshToken);
+
+	const UWorld* World = GetWorld();
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	if (GameInstance == nullptr)
+	{
+		FinishCloudRequest();
+		return;
+	}
+
+	// ACC-§13's trigger mapping, exactly:
+	//   sign-UP (new cloud account)      => trigger 2, the A4 FIRST-LINK UPLOAD (PushAll)
+	//   sign-IN (existing cloud account) => trigger 1, the CLOUD-LOGIN PULL     (PullAll)
+	// LastSyncUtc bookkeeping is FSiegeCloudSync's (TASK-645), not this
+	// widget's - it never calls SetLastSyncUtc.
+	ShowCloudStatus(FString(bSignUpFlow
+		? SiegeAccountMenuText::CloudUploadingAfterLink
+		: SiegeAccountMenuText::CloudPullingAfterLink));
+
+	TSharedRef<FSiegeCloudSync> Sync = MakeShared<FSiegeCloudSync>();
+	TWeakObjectPtr<UAccountMenuWidget> WeakThis(this);
+	const ECloudSyncOpContext OpContext =
+		bSignUpFlow ? ECloudSyncOpContext::FirstLinkUpload : ECloudSyncOpContext::LoginPull;
+	FSiegeCloudResult OnSyncDone = FSiegeCloudResult::CreateLambda(
+		[WeakThis, Sync, OpContext](bool bSyncOk, const FString& SyncPayloadOrError)
+		{
+			if (UAccountMenuWidget* Widget = WeakThis.Get())
+			{
+				Widget->HandleCloudSyncResult(bSyncOk, SyncPayloadOrError, OpContext);
+			}
+		});
+
+	if (bSignUpFlow)
+	{
+		Sync->PushAll(*GameInstance, OnSyncDone);
+	}
+	else
+	{
+		Sync->PullAll(*GameInstance, OnSyncDone);
+	}
+}
+
+void UAccountMenuWidget::HandleCloudSyncResult(bool bOk, const FString& PayloadOrError, ECloudSyncOpContext OpContext)
+{
+	// Steady state first (visibility, enables, the pinned "Linked as <email>"),
+	// then the outcome line lands on top of it in CloudStatusText.
+	FinishCloudRequest();
+
+	USiegeAccountSubsystem* Account = ResolveAccountSubsystem();
+	const FString LinkedEmail = (Account != nullptr) ? Account->GetLinkedEmail() : FString();
+
+	const TCHAR* OpDoneText =
+		(OpContext == ECloudSyncOpContext::FirstLinkUpload)
+			? TEXT("your decks and settings were uploaded to the cloud.")
+		: (OpContext == ECloudSyncOpContext::LoginPull)
+			? TEXT("your cloud decks and settings were pulled to this machine.")
+		: TEXT("sync complete.");
+
+	if (bOk)
+	{
+		UE_LOG(LogSiegeCloud, Log,
+			TEXT("[AccountMenu] Cloud sync operation completed (context %d)."), static_cast<int32>(OpContext));
+		ShowCloudStatus(FString::Printf(TEXT("Linked as %s - %s"), *LinkedEmail, OpDoneText));
+	}
+	else
+	{
+		// ACC-§11/§13: a failed sync leaves local state untouched and gates
+		// nothing; the link itself stands and Sync Now is the retry. The error
+		// string is displayed, never logged (P2-R6 discipline for this file).
+		UE_LOG(LogSiegeCloud, Warning,
+			TEXT("[AccountMenu] Cloud sync operation failed (context %d) - the reason is on the panel; local saves are untouched."),
+			static_cast<int32>(OpContext));
+		ShowCloudStatus(FString::Printf(TEXT("Linked as %s - sync failed: %s"), *LinkedEmail, *PayloadOrError));
+	}
+}
+
+void UAccountMenuWidget::RefreshCloudBlock()
+{
+	// Only the LoggedIn screen carries the cloud rows (ACC-§14); every other
+	// mode collapsed them in ApplyMode. A deliberate no-op elsewhere.
+	if (CurrentMode != EAccountMenuMode::LoggedIn)
+	{
+		return;
+	}
+
+	USiegeAccountSubsystem* Account = ResolveAccountSubsystem();
+	USiegeCloudClient* Cloud = ResolveCloudClient();
+
+	const bool bLinked = (Account != nullptr) && Account->IsCloudLinked();
+	const bool bConfigured = (Cloud != nullptr) && Cloud->IsCloudConfigured();
+
+	auto SetShown = [](UWidget* Widget, bool bShown)
+	{
+		if (Widget != nullptr)
+		{
+			Widget->SetVisibility(bShown ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		}
+	};
+	auto SetEnabled = [](UWidget* Widget, bool bEnabled)
+	{
+		if (Widget != nullptr)
+		{
+			Widget->SetIsEnabled(bEnabled);
+		}
+	};
+
+	// One button at a time (the TASK-646 spec's mapping): the Link-to-Cloud
+	// entry while unlinked, Sync Now while linked.
+	SetShown(LinkCloudButton, !bLinked);
+	SetShown(SyncNowButton, bLinked);
+
+	if (bCloudRequestInFlight)
+	{
+		// A round trip is running: the rows keep their shape, the buttons go
+		// quiet, and the busy/interim line set by the request lane stays.
+		SetEnabled(LinkCloudButton, false);
+		SetEnabled(SyncNowButton, false);
+		return;
+	}
+
+	if (!bConfigured)
+	{
+		// ⛔ ACC-§11: cloud OFF => the block STATES it and DISABLES. It never
+		// hides, and it gates NOTHING local - the panel above is untouched and
+		// the game is byte-identical Phase-1 everywhere else.
+		SetEnabled(LinkCloudButton, false);
+		SetEnabled(SyncNowButton, false);
+		ShowCloudStatus(FString(SiegeAccountMenuText::CloudNotConfigured));
+		return;
+	}
+
+	if (bLinked)
+	{
+		SetEnabled(SyncNowButton, true);
+		// The TASK-646 pinned LoggedIn line: "Linked as <email>".
+		ShowCloudStatus(FString::Printf(TEXT("Linked as %s"), *Account->GetLinkedEmail()));
+	}
+	else
+	{
+		SetEnabled(LinkCloudButton, true);
+		ShowCloudStatus(FString(SiegeAccountMenuText::CloudNotLinked));
+	}
+}
+
+void UAccountMenuWidget::ShowCloudStatus(const FString& CloudMessage)
+{
+	if (CloudStatusText != nullptr)
+	{
+		CloudStatusText->SetText(FText::FromString(CloudMessage));
+	}
+
+	// Deliberately NOT routed through OnAccountMenuStateChanged: the BIE's
+	// pinned (ModeName, StatusMessage) signature is a shipped P1 contract this
+	// task does not move (condition (d)); a future WBP_AccountMenu reads
+	// CloudStatusText directly.
+}
+
+void UAccountMenuWidget::StartCloudRequest(const FString& BusyMessage)
+{
+	bCloudRequestInFlight = true;
+	ShowCloudStatus(BusyMessage);
+
+	// The three cloud-lane entry points go quiet while a round trip runs. Back
+	// is DELIBERATELY untouched - dismissing the panel must always work - and
+	// no local flow is gated by a cloud request (ACC-§11).
+	auto SetEnabled = [](UWidget* Widget, bool bEnabled)
+	{
+		if (Widget != nullptr)
+		{
+			Widget->SetIsEnabled(bEnabled);
+		}
+	};
+	SetEnabled(SubmitButton, false);
+	SetEnabled(LinkCloudButton, false);
+	SetEnabled(SyncNowButton, false);
+}
+
+void UAccountMenuWidget::FinishCloudRequest()
+{
+	bCloudRequestInFlight = false;
+
+	if (SubmitButton != nullptr)
+	{
+		SubmitButton->SetIsEnabled(true);
+	}
+
+	// LoggedIn redraws its cloud rows (visibility + enables + steady text);
+	// outside LoggedIn this is a no-op and the async handler's own line stands.
+	RefreshCloudBlock();
+}
+
+void UAccountMenuWidget::ParseAuthPayload(const FString& Payload, FString& InOutUserId, FString& OutRefreshToken) const
+{
+	// Best-effort parse of a GoTrue auth response body (ACC-§11 transport). Not
+	// JSON => leave the outputs exactly as they came in. ⛔ Nothing here logs
+	// the payload or anything parsed from it (P2-R6).
+	TSharedPtr<FJsonObject> Root;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Payload);
+	if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid())
+	{
+		return;
+	}
+
+	Root->TryGetStringField(TEXT("refresh_token"), OutRefreshToken);
+
+	if (InOutUserId.IsEmpty())
+	{
+		const TSharedPtr<FJsonObject>* UserObject = nullptr;
+		if (Root->TryGetObjectField(TEXT("user"), UserObject) && UserObject != nullptr && UserObject->IsValid())
+		{
+			(*UserObject)->TryGetStringField(TEXT("id"), InOutUserId);
+		}
+	}
+}
+
 USiegeAccountSubsystem* UAccountMenuWidget::ResolveAccountSubsystem() const
 {
 	// Null-safe at every hop - the shipped ResolveSettingsSubsystem shape,
@@ -754,4 +1390,16 @@ USiegeAccountSubsystem* UAccountMenuWidget::ResolveAccountSubsystem() const
 	const UWorld* World = GetWorld();
 	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
 	return GameInstance ? GameInstance->GetSubsystem<USiegeAccountSubsystem>() : nullptr;
+}
+
+USiegeCloudClient* UAccountMenuWidget::ResolveCloudClient() const
+{
+	// The ResolveAccountSubsystem shape, cloned (P2). USiegeCloudClient is a
+	// UGameInstanceSubsystem (ACC-§15) so the cloud session survives the
+	// L_MainMenu -> L_Arena travel exactly like the account state does. Null or
+	// unconfigured lands on the ACC-§11 states-and-disables branch, never a
+	// crash and never a gate.
+	const UWorld* World = GetWorld();
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	return GameInstance ? GameInstance->GetSubsystem<USiegeCloudClient>() : nullptr;
 }

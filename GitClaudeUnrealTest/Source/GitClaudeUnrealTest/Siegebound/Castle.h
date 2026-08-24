@@ -67,8 +67,14 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCastleHPChanged, float, CurrentH
  *        TASK-350 and EXPIRED at that commit). Furniture placed by hand would
  *        require exactly the save that is forbidden.
  *    (2) BOTH castles get IDENTICAL furnishing BY CONSTRUCTION — there is no
- *        mirror step for anyone to get wrong, and Castle_Red's yaw 180 is
+ *        mirror step for anyone to get wrong, and any future re-pose is
  *        handled for free because every anchor is CASTLE-MESH-RELATIVE.
+ *        (TASK-637 comment rider, GH-R13: the old claim here that "Castle_Red's
+ *        yaw 180" is what the relative anchors absorb was STALE — BOTH castle
+ *        actors sit at yaw 0 and both gates face world −Y, measured live at
+ *        TASK-617 C1. The mesh-relative reasoning stands on its own: if a
+ *        level edit ever DOES yaw a castle, its furniture follows with no
+ *        second edit.)
  *    (3) The anchors travel with the castle actor FOREVER: move, rotate or
  *        re-scale the castle and its furniture follows, with no second edit.
  *
@@ -467,7 +473,12 @@ protected:
 	 *  🚩 FLAGGED TUNABLE (TASK-398; CONVENTIONS "FOLLOW command … (2026-08-02)"
 	 *  §5 + §8). Where "inside the castle" IS, expressed in the castle's OWN
 	 *  local frame — read only through GetInteriorAnchorLocation(), which applies
-	 *  the actor transform (so Castle_Red's yaw 180 is handled for free).
+	 *  the actor transform (so any castle pose is handled for free — TASK-637
+	 *  comment rider, GH-R13: the old parenthesis here credited "Castle_Red's
+	 *  yaw 180", which was STALE: BOTH castle actors sit at yaw 0 and both gates
+	 *  face world −Y, measured live at TASK-617 C1. The transform form is what
+	 *  keeps this value pose-proof if a level edit ever yaws one — the
+	 *  GetInteriorAnchorLocation() doc's TASK-623 rider reasoning).
 	 *
 	 *  Default ZeroVector, and it is not an arbitrary zero: SM_Castle's origin is
 	 *  GROUND-CENTRE by law (CONVENTIONS WR-§0 — 9× bounds within ±10 % of

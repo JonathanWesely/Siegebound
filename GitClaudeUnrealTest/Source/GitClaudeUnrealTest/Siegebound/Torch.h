@@ -180,10 +180,16 @@ protected:
 	 *  Attenuation radius in uu — 1200 by law (WR-§4 tunables row).
 	 *
 	 *  ⚠️ FEEL TUNABLE, FLAGGED FOR JONATHAN. Scale sanity, because it is easy to
-	 *  misread: the 9× castle's grand hall is ≈2910 × 720 uu with ≈1560 uu clear
-	 *  height (WR-§1), so 1200 uu is a pool of light around each torch rather
-	 *  than whole-room coverage — the room is lit by SEVERAL torches, which is
-	 *  what MaxTorchesPerCastle (TASK-562) exists to bound.
+	 *  misread: the AS-BUILT grand hall is 2910 × 1140 uu with 1986 uu clear
+	 *  height — flat floor z 174 end-to-end, flat ceiling z 2160, MEASURED in
+	 *  handoffs/TASK-629-artist.md (WR-§1's 1560 is the design MINIMUM the build
+	 *  clears, not the ceiling) — so 1200 uu is a pool of light around each
+	 *  torch rather than whole-room coverage — the room is lit by SEVERAL
+	 *  torches, which is what MaxTorchesPerCastle (TASK-562) exists to bound.
+	 *  (TASK-637 comment rider, GH-R13: the old "≈2910 × 720 / ≈1560 clear"
+	 *  figures here were the pre-redesign carve, stale since the TASK-629
+	 *  interior rebuild; the pool-not-floodlight argument only got STRONGER in
+	 *  the deeper hall.)
 	 *  ⛔ NOT a WR-§2 ledger row: this constant is BORN at the 9× scale, it was
 	 *  not derived from the old castle's size, so there is nothing stale in it.
 	 *  TASK-557 owns the re-derivation ledger; this task adds no row to it.

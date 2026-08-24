@@ -204,6 +204,158 @@ FString USiegeAccountSubsystem::GetSettingsSlotName() const
 	return Active ? Base + TEXT("_") + MakeProfileSlotSuffix(Active->ProfileId) : Base;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PHASE-2 CLOUD-LINK API (batch ACCOUNTS-P2, TASK-644 — ACC-§15 block 4,
+// ACC-§11/§13). Persistence of the cloud link ONLY: ⛔ no HTTP here (643's),
+// ⛔ no sync logic (645's). Every mutator below follows the P1 contract —
+// mutate ONLY the active profile, save the registry slot, broadcast — and the
+// delegate law: a no-op saves nothing and broadcasts NOTHING.
+// ─────────────────────────────────────────────────────────────────────────────
+
+bool USiegeAccountSubsystem::IsCloudLinked() const
+{
+	// The ACC-§15 predicate, verbatim: active profile has LinkedEmail +
+	// CloudUserId. The refresh token is deliberately NOT part of it — a link
+	// with an expired/absent token is still a link (re-auth refills it).
+	const FSiegeProfileInfo* Active = FindActiveProfile();
+	return Active && !Active->LinkedEmail.IsEmpty() && !Active->CloudUserId.IsEmpty();
+}
+
+FString USiegeAccountSubsystem::GetLinkedEmail() const
+{
+	// Guest => empty; an unlinked profile's LinkedEmail is empty by contract,
+	// so one expression covers both registry-comment cases ("empty when
+	// guest/unlinked").
+	const FSiegeProfileInfo* Active = FindActiveProfile();
+	return Active ? Active->LinkedEmail : FString();
+}
+
+void USiegeAccountSubsystem::SetCloudLink(const FString& Email, const FString& UserId, const FString& RefreshToken)
+{
+	FSiegeProfileInfo* Active = FindActiveProfileMutable();
+	if (!Active)
+	{
+		// Guest has no cloud identity (ACC-§13) and no profile row to mutate.
+		UE_LOG(LogSiegeAccount, Warning,
+			TEXT("[SiegeAccount] SetCloudLink while guest — no active profile to link; no-op (no save, no broadcast)."));
+		return;
+	}
+
+	const FString TrimmedEmail  = Email.TrimStartAndEnd();
+	const FString TrimmedUserId = UserId.TrimStartAndEnd();
+	if (TrimmedEmail.IsEmpty() || TrimmedUserId.IsEmpty())
+	{
+		// Storing a half-link would break the IsCloudLinked predicate while
+		// leaving a token on disk — refuse whole. ⛔ Neither value is echoed:
+		// one is empty and the other is not needed to state the rule.
+		UE_LOG(LogSiegeAccount, Warning,
+			TEXT("[SiegeAccount] SetCloudLink refused: e-mail and cloud user id must both be non-empty after trimming — no-op (no save, no broadcast)."));
+		return;
+	}
+
+	if (Active->LinkedEmail == TrimmedEmail
+		&& Active->CloudUserId == TrimmedUserId
+		&& Active->CloudRefreshToken == RefreshToken)
+	{
+		// Nothing changed — the delegate law forbids broadcasting a no-op.
+		UE_LOG(LogSiegeAccount, Verbose,
+			TEXT("[SiegeAccount] SetCloudLink with identical values — no-op (no save, no broadcast)."));
+		return;
+	}
+
+	Active->LinkedEmail       = TrimmedEmail;
+	Active->CloudUserId       = TrimmedUserId;
+	Active->CloudRefreshToken = RefreshToken;
+
+	SaveAccountsToSlot();
+
+	// ⛔ ACC-§11 TOKEN LAW: the refresh token value is NEVER logged — the line
+	// below states only whether one is held. (The e-mail is not token/credential
+	// material; the widget prints it on screen as "Linked as <email>".)
+	UE_LOG(LogSiegeAccount, Log,
+		TEXT("[SiegeAccount] Profile '%s' cloud-linked as '%s' (cloud user id %s, refresh token: %s)."),
+		*Active->DisplayName, *Active->LinkedEmail, *Active->CloudUserId,
+		Active->CloudRefreshToken.IsEmpty() ? TEXT("none") : TEXT("held"));
+
+	BroadcastActiveProfileChanged();
+}
+
+void USiegeAccountSubsystem::ClearCloudLink()
+{
+	FSiegeProfileInfo* Active = FindActiveProfileMutable();
+	if (!Active)
+	{
+		UE_LOG(LogSiegeAccount, Verbose,
+			TEXT("[SiegeAccount] ClearCloudLink while guest — no-op (no save, no broadcast)."));
+		return;
+	}
+
+	const bool bHadAnyCloudState =
+		!Active->LinkedEmail.IsEmpty()
+		|| !Active->CloudUserId.IsEmpty()
+		|| !Active->CloudRefreshToken.IsEmpty()
+		|| Active->LastSyncUtc != FDateTime();
+	if (!bHadAnyCloudState)
+	{
+		// Already fully unlinked — a complete no-op (the delegate law).
+		UE_LOG(LogSiegeAccount, Verbose,
+			TEXT("[SiegeAccount] ClearCloudLink on an already-unlinked profile — no-op (no save, no broadcast)."));
+		return;
+	}
+
+	const FString PreviousEmail = Active->LinkedEmail;
+
+	// Cloud sign-out clears the persisted token (ACC-§11) and the whole cloud
+	// identity. LastSyncUtc resets too: a stale sync clock surviving into a
+	// future re-link would suppress the ACC-§13 trigger-1 pull for every cloud
+	// row older than it (updated_at > LastSyncUtc), silently losing data on a
+	// re-link — "never synced" is the only honest state for an unlinked
+	// profile. The LOCAL profile — identity, credential, decks, settings —
+	// SURVIVES untouched (ACC-§11).
+	Active->LinkedEmail.Reset();
+	Active->CloudUserId.Reset();
+	Active->CloudRefreshToken.Reset();
+	Active->LastSyncUtc = FDateTime();
+
+	SaveAccountsToSlot();
+
+	UE_LOG(LogSiegeAccount, Log,
+		TEXT("[SiegeAccount] Profile '%s' cloud link cleared (was '%s') — local profile survives; sync clock reset."),
+		*Active->DisplayName,
+		PreviousEmail.IsEmpty() ? TEXT("<no e-mail stored>") : *PreviousEmail);
+
+	BroadcastActiveProfileChanged();
+}
+
+void USiegeAccountSubsystem::SetLastSyncUtc(const FDateTime& WhenUtc)
+{
+	FSiegeProfileInfo* Active = FindActiveProfileMutable();
+	if (!Active)
+	{
+		// Guest never syncs (ACC-§13) — a stamp with no active profile is a
+		// caller error worth a Warning, not a crash.
+		UE_LOG(LogSiegeAccount, Warning,
+			TEXT("[SiegeAccount] SetLastSyncUtc while guest — no active profile; no-op (no save, no broadcast)."));
+		return;
+	}
+
+	if (Active->LastSyncUtc == WhenUtc)
+	{
+		UE_LOG(LogSiegeAccount, Verbose,
+			TEXT("[SiegeAccount] SetLastSyncUtc with the already-stored value — no-op (no save, no broadcast)."));
+		return;
+	}
+
+	Active->LastSyncUtc = WhenUtc;
+	SaveAccountsToSlot();
+
+	UE_LOG(LogSiegeAccount, Log,
+		TEXT("[SiegeAccount] Profile '%s' LastSyncUtc -> %s (server time — the A3 sync clock)."),
+		*Active->DisplayName, *WhenUtc.ToIso8601());
+
+	BroadcastActiveProfileChanged();
+}
+
 FString USiegeAccountSubsystem::MakeCredentialHashHex(const FString& Password, const FString& SaltHex)
 {
 	// ACC-§2, character-for-character:
@@ -293,6 +445,16 @@ const FSiegeProfileInfo* USiegeAccountSubsystem::FindActiveProfile() const
 	{
 		return Profile.ProfileId == ActiveProfileId;
 	});
+}
+
+FSiegeProfileInfo* USiegeAccountSubsystem::FindActiveProfileMutable()
+{
+	// TASK-644: the Meyers const-twin — implemented ON TOP of the const funnel
+	// so there is exactly ONE active-profile predicate in this file and the P2
+	// mutators cannot disagree with the P1 getters. The const_cast is sound:
+	// Profiles is a non-const member and *this* is non-const here — the
+	// underlying storage was never const.
+	return const_cast<FSiegeProfileInfo*>(FindActiveProfile());
 }
 
 FSiegeProfileInfo* USiegeAccountSubsystem::FindProfileByDisplayName(const FString& TrimmedName)

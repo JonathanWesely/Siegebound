@@ -599,10 +599,14 @@ void ACastle::SpawnCastleFurnishings()
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
 	// The anchors are CASTLE-MESH-relative, so compose against the MESH's world
-	// transform, never the actor's location: Castle_Red is placed at yaw 180 and the
-	// whole point of a relative anchor is that the rotation comes along for free
-	// (the GetInteriorAnchorLocation reasoning, applied to a transform instead of a
-	// point). FTransform composition is local-then-parent.
+	// transform, never the actor's location: the whole point of a relative anchor is
+	// that any castle pose comes along for free (the GetInteriorAnchorLocation
+	// reasoning, applied to a transform instead of a point). FTransform composition
+	// is local-then-parent. (TASK-637 comment rider, GH-R13: this comment used to
+	// justify the composition with "Castle_Red is placed at yaw 180" — STALE: BOTH
+	// castle actors sit at yaw 0 and both gates face world −Y, measured live at
+	// TASK-617 C1. The composition is correct at ANY pose, which is the real reason
+	// it is written this way.)
 	const FTransform CastleMeshTransform = CastleMesh->GetComponentTransform();
 
 	if (UClass* TorchClass = ResolveTorchClass())
@@ -1127,15 +1131,20 @@ bool ACastle::IsPointInSpawnBox(const FVector& Point) const
 
 FVector ACastle::GetInteriorAnchorLocation() const
 {
-	// THE ACTOR TRANSFORM, never ActorLocation + offset (header doc): Castle_Red is
-	// placed at yaw 180, so a non-zero relative anchor has to ROTATE with the castle
-	// or the "deeper into the keep" direction inverts on one side of the map. At the
+	// THE ACTOR TRANSFORM, never ActorLocation + offset (header doc): a non-zero
+	// relative anchor has to ROTATE with the castle if a level edit ever yaws one,
+	// or the "deeper into the keep" direction inverts on the re-posed side. At the
 	// shipped ZeroVector default this returns the actor's own location on both
 	// castles, which is the ground-centre origin = the interior floor's centre.
+	// (TASK-637 comment rider, GH-R13: this comment and the placement note below
+	// used to state "Castle_Red is placed at yaw 180" as the live map — STALE:
+	// BOTH castle actors sit at yaw 0 and both gates face world −Y, measured live
+	// at TASK-617 C1. TASK-218's yaw-180 plan is history, not the map.)
 	//
-	// RESOLVED WORLD POINTS at the shipped L_Arena placement (Castle_Blue
-	// (−25000, 0, 0) yaw 0, Castle_Red (+25000, 0, 0) yaw 180 — TASK-218):
-	// Blue (−25000, 0, 0), Red (+25000, 0, 0). Reported in handoffs/TASK-398-programmer.md;
+	// RESOLVED WORLD POINTS at the measured L_Arena placement (Castle_Blue
+	// (−25000, 0, 0) and Castle_Red (+25000, 0, 0), BOTH yaw 0 — TASK-617 C1):
+	// Blue (−25000, 0, 0), Red (+25000, 0, 0) — identical under any yaw while the
+	// anchor stays ZeroVector. Reported in handoffs/TASK-398-programmer.md;
 	// the live nav-projection readback belongs to the PIE task, and AMinerUnit logs
 	// the resolved point once per miner so that readback is free.
 	return GetActorTransform().TransformPosition(InteriorAnchorRelativeLocation);

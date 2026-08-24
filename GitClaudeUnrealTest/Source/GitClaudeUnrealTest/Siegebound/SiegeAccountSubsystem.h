@@ -20,13 +20,21 @@ DECLARE_LOG_CATEGORY_EXTERN(LogSiegeAccount, Log, All);
  *  re-read the seam (GetDeckSlotName / GetSettingsSlotName /
  *  GetActiveDisplayName), which is the ACC-§4 contract. ⛔ Never broadcast on a
  *  no-op (a Logout while already guest broadcasts nothing — the delegate law).
+ *
+ *  ⭐ 2026-08-23, TASK-644 (Phase 2): ALSO fired when the active profile's
+ *  CLOUD-LINK state actually mutates — SetCloudLink / ClearCloudLink /
+ *  SetLastSyncUtc (the TASK-644 spec's save-on-change contract; consumers
+ *  additionally re-read IsCloudLinked / GetLinkedEmail). The no-op law is
+ *  unchanged: a refused or valueless mutation still broadcasts NOTHING.
  */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSiegeActiveProfileChanged);
 
 /**
  *  THE LOCAL ACCOUNT OWNER (batch ACCOUNTS, TASK-600; CONVENTIONS ACC-§1..§4,
  *  ACC-§6 rows 3–5, and the ACC-§7 pinned signature registry — the public
- *  surface below is registry-pinned character-for-character).
+ *  surface below is registry-pinned character-for-character. ⭐ 2026-08-23,
+ *  TASK-644: the Phase-2 cloud-link block is pinned by the ACC-§15 block-4
+ *  registry the same way; the Phase-1 surface is untouched).
  *
  *  Owns the in-memory profile registry (loaded once from
  *  USiegeAccountSaveGame::SlotName at Initialize), the create/login/logout
@@ -147,8 +155,69 @@ public:
 	 */
 	UFUNCTION(BlueprintPure) FString GetSettingsSlotName() const;
 
-	/** Broadcast on every REAL active-profile change (create / login / logout), never on a no-op. Consumers seed from the getters first, then bind. */
+	/** Broadcast on every REAL active-profile change (create / login / logout — and, since TASK-644, every real cloud-link mutation), never on a no-op. Consumers seed from the getters first, then bind. */
 	UPROPERTY(BlueprintAssignable) FOnSiegeActiveProfileChanged OnActiveProfileChanged;
+
+	// ── PHASE-2 CLOUD-LINK API (batch ACCOUNTS-P2, TASK-644; the ACC-§15
+	// block-4 pinned registry, character-for-character; CONVENTIONS ACC-§11/
+	// ACC-§13). ADDITIVE ONLY: the Phase-1 surface above is qa-passed and
+	// committed — nothing there moved. ⛔ No HTTP lives here (USiegeCloudClient,
+	// TASK-643) and no sync logic (FSiegeCloudSync, TASK-645): this API is the
+	// PERSISTENCE of the link — who the active profile is linked to, its
+	// refresh token, and the A3 sync clock. ⛔ P2-R6: CredentialHashHex /
+	// CredentialSaltHex are NEVER surfaced through any method below — the P1
+	// local hash never leaves the machine (ACC-§11).
+	//
+	// M8 DECLARATION (P2 batch header, verbatim): Adds no replicated property,
+	// no new replicated class, no new relevancy tier, no RPC. All cloud traffic
+	// is client-local HTTPS from USiegeCloudClient (a UGameInstanceSubsystem);
+	// nothing crosses the UE networking layer. Does NOT consume the M8 Phase-1
+	// checkpoint gate; does NOT substitute for Jonathan's owed feedback items.
+
+	/** PURE IN-MEMORY: true iff the ACTIVE profile is cloud-linked — LinkedEmail AND CloudUserId both non-empty (the ACC-§15 predicate). Guest => false, always. */
+	UFUNCTION(BlueprintPure) bool    IsCloudLinked() const;
+
+	/** PURE IN-MEMORY: the active profile's linked cloud e-mail; EMPTY when guest or unlinked (the widget's "Linked as <email>" source). */
+	UFUNCTION(BlueprintPure) FString GetLinkedEmail() const;
+
+	/**
+	 *  Records a successful cloud link/sign-in on the ACTIVE profile: stores
+	 *  Email (trimmed) + UserId (trimmed) + RefreshToken, saves the registry
+	 *  slot, broadcasts OnActiveProfileChanged (the P1 save-on-change
+	 *  contract). Mutates ONLY the active profile. No-ops (log line, no save,
+	 *  no broadcast — the delegate law): guest · empty Email or UserId after
+	 *  trimming (the IsCloudLinked predicate would be broken) · values
+	 *  identical to what is already stored. An empty RefreshToken is ACCEPTED
+	 *  (the link predicate does not include it; the next sign-in can supply
+	 *  one). ⛔ ACC-§11: the RefreshToken value is NEVER logged — the log line
+	 *  says only whether one is held.
+	 */
+	void SetCloudLink(const FString& Email, const FString& UserId, const FString& RefreshToken);
+
+	/**
+	 *  Cloud sign-out; the LOCAL profile survives (ACC-§11) — nothing local is
+	 *  deleted, the profile merely returns to the unlinked state. Clears ALL
+	 *  FOUR cloud fields on the active profile (LinkedEmail, CloudUserId,
+	 *  CloudRefreshToken — the ACC-§11 sign-out-clears-it law — AND
+	 *  LastSyncUtc: a stale sync clock surviving into a future re-link would
+	 *  silently suppress the ACC-§13 trigger-1 pull for every row older than
+	 *  it, so the clock resets to "never synced"). Saves the registry,
+	 *  broadcasts. Guest or already-unlinked (no cloud state at all) => a
+	 *  complete no-op: no save, NO BROADCAST (the delegate law).
+	 */
+	void ClearCloudLink();
+
+	/**
+	 *  Stamps the active profile's LastSyncUtc — SERVER time, supplied by the
+	 *  sync engine after a completed SyncNow (A3/ACC-§13 trigger 3; never
+	 *  client wall-clock, which the A3 last-write-wins compare cannot trust).
+	 *  Saves the registry, broadcasts OnActiveProfileChanged (the TASK-644
+	 *  spec's save-on-change contract — the broadcast is what lets the
+	 *  settings lane reload freshly PULLED data). Mutates ONLY the active
+	 *  profile. Guest, or a value identical to the stored one => no-op: no
+	 *  save, no broadcast.
+	 */
+	void SetLastSyncUtc(const FDateTime& WhenUtc);
 
 	/**
 	 *  THE ONE hash implementation (ACC-§2, character-for-character):
@@ -201,6 +270,9 @@ private:
 
 	/** The active profile's registry entry, or nullptr when guest / when the id matches no profile (defensive — the getters and the seam all funnel through here so they cannot disagree). */
 	const FSiegeProfileInfo* FindActiveProfile() const;
+
+	/** The non-const twin (TASK-644) for the cloud-link mutators — implemented ON TOP of FindActiveProfile (one predicate, structurally incapable of disagreeing with the P1 getters about which profile is active). */
+	FSiegeProfileInfo* FindActiveProfileMutable();
 
 	/** Case-insensitive display-name lookup among local profiles (ACC-§3). Expects a TRIMMED name. */
 	FSiegeProfileInfo* FindProfileByDisplayName(const FString& TrimmedName);
