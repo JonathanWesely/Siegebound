@@ -92,6 +92,16 @@ namespace SiegeAccountMenuText
 		TEXT("Cloud account linked - pulling your cloud decks and settings...");
 	static const TCHAR* CloudNoUserId =
 		TEXT("The cloud accepted the sign-in but returned no user id. Nothing was linked - try again.");
+
+	// ---- P2.1 re-auth wire (TASK-653, rider R1 - ACC-§15 P2.1) -------------
+	// The failure line is the seam law's own pinned wording ("cloud session
+	// expired — sign in again to re-link"), carried in this file's established
+	// ASCII-hyphen posture for player-visible literals (every shipped string
+	// above uses '-'; the em dash lives only in comments) - declared in the
+	// TASK-653 handoff, not silently transformed.
+	static const TCHAR* CloudBusyRestoringSession = TEXT("Restoring your cloud session...");
+	static const TCHAR* CloudSessionExpired =
+		TEXT("cloud session expired - sign in again to re-link");
 	// The linked steady-state line is the TASK-646 pinned "Linked as <email>".
 	// Like the P1 LoggedIn line it is a Printf literal at its use sites - a
 	// TCHAR* constant fails the engine's format-string static_assert.
@@ -458,6 +468,11 @@ void UAccountMenuWidget::NativeConstruct()
 	{
 		Cloud->OnCloudStateChanged.AddUniqueDynamic(this, &UAccountMenuWidget::HandleCloudStateChanged);
 	}
+
+	// P2.1 (TASK-653): a fresh panel activation gets a fresh - single -
+	// re-auth attempt. Reset BEFORE the mode seed below, whose LoggedIn path
+	// runs RefreshCloudBlock and may spend it.
+	bCloudSessionRefreshAttempted = false;
 
 	// Seed the mode LAST, after every binding is armed: opening while logged
 	// in lands on LoggedIn (ACC-§5); guest lands on the Chooser; an
@@ -1303,6 +1318,14 @@ void UAccountMenuWidget::RefreshCloudBlock()
 		SetEnabled(SyncNowButton, true);
 		// The TASK-646 pinned LoggedIn line: "Linked as <email>".
 		ShowCloudStatus(FString::Printf(TEXT("Linked as %s"), *Account->GetLinkedEmail()));
+
+		// P2.1 (TASK-653, rider R1): the post-restart re-auth attempt rides the
+		// cloud-block refresh, exactly as the seam law names it. Both pointers
+		// are non-null here by construction: bLinked implies Account resolved,
+		// and the !bConfigured branch above already returned for a null or
+		// unconfigured client. At most ONE attempt per activation (the latch
+		// inside); with a live session or no held token it does nothing.
+		TryRefreshCloudSession(*Account, *Cloud);
 	}
 	else
 	{
@@ -1380,6 +1403,130 @@ void UAccountMenuWidget::ParseAuthPayload(const FString& Payload, FString& InOut
 			(*UserObject)->TryGetStringField(TEXT("id"), InOutUserId);
 		}
 	}
+}
+
+// ============================================================================
+// P2.1 RE-AUTH WIRE (TASK-653, riders R1+R2 - ACC-§15 P2.1). Additive on the
+// qa-passed 646 lane above; the only consumer of the ACC-§11 single lawful
+// token reader, USiegeAccountSubsystem::GetCloudRefreshToken.
+// ============================================================================
+
+void UAccountMenuWidget::TryRefreshCloudSession(USiegeAccountSubsystem& Account, USiegeCloudClient& Cloud)
+{
+	// The P2.1 predicate, split caller/callee: RefreshCloudBlock's linked
+	// branch established linked + client resolved + configured + no request in
+	// flight; the three checks below complete it. A predicate miss here does
+	// NOT burn the activation's attempt - only a launched request does.
+	if (bCloudSessionRefreshAttempted || Cloud.IsCloudAuthenticated())
+	{
+		return; // already attempted this activation, or a live session needs nothing
+	}
+
+	// ⛔ ACC-§11 / P2-R6: THE ONE lawful read of the persisted refresh token
+	// (the ACC-§11 dated addition names this exact consumer). The value lives
+	// in this local, is handed to RefreshSession's HTTPS grant, and is NEVER
+	// logged, NEVER displayed, and NOT captured by the completion lambda below.
+	const FString StoredRefreshToken = Account.GetCloudRefreshToken();
+	if (StoredRefreshToken.IsEmpty())
+	{
+		// A session-only link (646's honest state: no token was returned at
+		// link time). Nothing to attempt - the player re-links via the cloud
+		// form when they want the cloud back; no status change, no log spam.
+		return;
+	}
+
+	// Latch BEFORE the async call: whatever the round trip does, this
+	// activation has spent its one attempt (no retry loop, ever - ACC-§11).
+	bCloudSessionRefreshAttempted = true;
+
+	// Token-free by construction (P2-R6): the line states the situation only.
+	UE_LOG(LogSiegeCloud, Log,
+		TEXT("[AccountMenu] Linked profile with no live cloud session - attempting the one P2.1 session refresh."));
+
+	StartCloudRequest(FString(SiegeAccountMenuText::CloudBusyRestoringSession));
+
+	// Async end to end (ACC-§11): nothing blocks, Back stays live, and the
+	// lambda captures ONLY the weak widget - never the token.
+	TWeakObjectPtr<UAccountMenuWidget> WeakThis(this);
+	Cloud.RefreshSession(StoredRefreshToken, FSiegeCloudResult::CreateLambda(
+		[WeakThis](bool bOk, const FString& PayloadOrError)
+		{
+			if (UAccountMenuWidget* Widget = WeakThis.Get())
+			{
+				Widget->HandleCloudRefreshResult(bOk, PayloadOrError);
+			}
+		}));
+}
+
+void UAccountMenuWidget::HandleCloudRefreshResult(bool bOk, const FString& PayloadOrError)
+{
+	if (!bOk)
+	{
+		// ⛔ THE P2.1 FAILURE LAW: ONE honest CloudStatusText line, ZERO state
+		// mutation - no ClearCloudLink, no SetCloudLink, no stamp, nothing: a
+		// transient network error must never destroy the link (local-first,
+		// ACC-§11). The pinned line stands INSTEAD of the raw error text, and
+		// the payload is neither displayed nor logged on this path. Order per
+		// the 646 idiom: steady state first (FinishCloudRequest redraws
+		// "Linked as <email>"), then the outcome line lands on top of it.
+		UE_LOG(LogSiegeCloud, Log,
+			TEXT("[AccountMenu] The P2.1 session refresh failed - the pinned line is on the panel; the link and all local state are untouched (ACC-§11)."));
+		FinishCloudRequest();
+		ShowCloudStatus(FString(SiegeAccountMenuText::CloudSessionExpired));
+		return;
+	}
+
+	USiegeAccountSubsystem* Account = ResolveAccountSubsystem();
+	USiegeCloudClient* Cloud = ResolveCloudClient();
+	if (Account == nullptr || Cloud == nullptr || !Account->IsLoggedIn() || !Account->IsCloudLinked())
+	{
+		// A logout or unlink raced the round trip - there is no link to store a
+		// rotated token onto. Drop the result honestly, mutating nothing; the
+		// client-side session the refresh adopted is unaffected (643's state).
+		UE_LOG(LogSiegeCloud, Warning,
+			TEXT("[AccountMenu] The P2.1 session refresh succeeded but no cloud-linked profile remains - the rotated token was NOT stored."));
+		FinishCloudRequest();
+		return;
+	}
+
+	// The pinned getter first (ACC-§15), the payload only fills gaps - the 646
+	// idiom, which equals the seam law's own SetCloudLink(GetLinkedEmail(),
+	// Client->GetCloudUserId(), NewToken) shape whenever the getter answers.
+	// The rotated token is parsed into a LOCAL, reaches exactly one sink
+	// (SetCloudLink - the ACC-§11 token law's one sanctioned home) and dies
+	// with this call. ⛔ Never logged, never displayed (P2-R6).
+	FString UserId = Cloud->GetCloudUserId();
+	FString RotatedToken;
+	ParseAuthPayload(PayloadOrError, UserId, RotatedToken);
+
+	if (!RotatedToken.IsEmpty())
+	{
+		// The P2.1 pinned re-store. Rotation is a REAL mutation: 644's
+		// identical-values guard needs ALL THREE values identical, so a new
+		// token with the unchanged email/user id stores, saves the registry and
+		// broadcasts (the upheld 644 decision 4). If GoTrue returned the very
+		// same token (its reuse window), the whole triple is identical and the
+		// no-op guard correctly saves and broadcasts nothing. An empty UserId
+		// corner (getter empty AND no user.id in the payload) is refused whole
+		// by SetCloudLink's trim/refuse guard - never a half-link.
+		Account->SetCloudLink(Account->GetLinkedEmail(), UserId, RotatedToken);
+		UE_LOG(LogSiegeCloud, Log,
+			TEXT("[AccountMenu] Cloud session restored - the rotated refresh token was re-stored (token: held)."));
+	}
+	else
+	{
+		// A success payload without a rotated token: store NOTHING. Wiping the
+		// held token on a success would be a destructive write the law does not
+		// order (SetCloudLink treats an empty token as a real value - 644).
+		UE_LOG(LogSiegeCloud, Log,
+			TEXT("[AccountMenu] Cloud session restored - no rotated refresh token in the payload; the stored token was kept."));
+	}
+
+	// Steady state: RefreshCloudBlock redraws "Linked as <email>" with Sync Now
+	// live - the honest signed-in surface. No sync is triggered here: the seam
+	// law orders none (Sync Now stays the player's lane, its pull now live per
+	// rider R2).
+	FinishCloudRequest();
 }
 
 USiegeAccountSubsystem* UAccountMenuWidget::ResolveAccountSubsystem() const

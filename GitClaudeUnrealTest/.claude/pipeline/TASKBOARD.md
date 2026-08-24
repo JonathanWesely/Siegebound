@@ -9381,7 +9381,7 @@ TASK-636 ─→ 643 ⚙️ USiegeCloudClient ─┐                             
 
 #### TASK-652 — [ACC-P2-14] 📋 MANAGER — the GDD Phase-2 amendment, AFTER the commit (manager)
 - assignee: **manager**
-- status: **backlog**
+- status: **✅ done — 2026-08-23 (manager).** `Docs/GDD.md` §3.16 amended in place against the artifacts of `65de67e` (never a summary): title line now names both phases · the P1 A1-flag bullet got its dated ruled-2026-08-23 bracket (history untouched) · new **`#### Phase 2 (as-built 2026-08-23)`** block — Supabase project of record (`siegebound`, us-west-1), the three-trigger local-first sync surface + server-owned LWW clock, the recorded limitations (writer-wins, no tombstones, no-baseline first Sync Now → 653), the ACC-§11 key/trust one-liner, the RLS negative-probe proof, the honest-credential-on-the-wire law — with the 610-discipline measured/not-observed split: MEASURED = compile, suite 118→126 (zero-network), migration applied verbatim, 20/20 live REST smoke incl. the full RLS deny matrix + server-stamped clock both branches + S2-off live, the ini `//`-truncation record; NOT OBSERVED = zero cloud-UI pixels (651's), the game binary has never touched the live wire (the smoke was a script on the same contract), post-restart re-auth BOARDED-NOT-SHIPPED (653, said so), no cloud-unlink UI (deliberate). Phase-2 acceptance block = the 651 script incl. the expected-honest re-auth failure. Change Log: two dated entries — the grand-hall wave (`1025160`, TASK-636 integrator, **measured-only, no acceptance claimed**, §3.15/§5 deliberately not rewritten until Jonathan's open checkpoint eye rules) + ACCOUNTS Phase 2 (`65de67e`, TASK-639..650 + the 637 rider). ⛔ No git — the GDD delta rides TASK-655's commit (P2-R7). Slack posted in 📢 Planning & Feedback. *(Was: backlog.)*
 - blocked-by: **TASK-650**
 - parallel-safe: **yes** (docs only)
 - spec: > Amend `Docs/GDD.md` `### 3.16 Player Accounts & Profiles` against the ARTIFACT of TASK-650's commit: the A1 ruling (Supabase, Jonathan's date) · the sync model + its recorded limitations (`ACC-§13`, honestly stated) · the key/trust model one-liner (`ACC-§11`) · the measured/not-observed split (suite counts, smoke + RLS probe results vs ⛔ whatever pixels Jonathan has not yet confirmed at 651) · Design Change Log entry naming TASK-639..650 + the commit hash. Post the summary in 📢 Planning & Feedback.
@@ -9402,7 +9402,7 @@ TASK-636 ─→ 643 ⚙️ USiegeCloudClient ─┐                             
 
 #### TASK-653 — [ACC-P2.1-1] ⚙️ THE RE-AUTH WIRE + THE SYNC-BASELINE GETTER — riders R1+R2 (gameplay-programmer)
 - assignee: **gameplay-programmer**
-- status: **backlog**
+- status: **qa-passed — 2026-08-23 (orchestrator flip; handoff `handoffs/TASK-653-programmer.md` · QA `qa/TASK-654.md` **PASS** 0 blockers / 2 warns / 2 nits; rulings on record: D2 ASCII hyphen ACCEPTED · R1 hook site UPHELD (predicate airtight at the cited lines) · D5 latch semantics ACCEPTED (the law pins the count, not the seed); guard/mirror/caller-census all recomputed at source — `RefreshSession` exactly one product caller, gap cured; no reflected member = no SC-§26 restart owed).** Exactly the six boarded files. P2.1 conformance: getters character-exact (non-UFUNCTION, pure profile reads); R1 wire = `TryRefreshCloudSession`/`HandleCloudRefreshResult` + activation latch in `RefreshCloudBlock`'s linked branch — one `RefreshSession` per activation, no retry/poll, failure = the one pinned line + zero mutation; **`RefreshSession` now has exactly one product caller — the 648 §1.5 gap CURED**; zero reflected members (no SC-§26 restart owed on P2.1's account). R2 = `MakeContext()` swap, session mirror REMOVED (declared), D1 skip branch deleted — **behavior change stated plainly: SyncNow's pull always runs; PullAll stamp-filtered across sessions**. Rotated-token guard analysis on record (3-value identical guard defeated by rotation ⇒ saves+broadcasts, test-pinned; empty-rotated-token D4 declared). **Suite expectation for 655: 127/127** (+`Siegebound.Cloud.ReAuthSeamGetters`, existing 8 bodies byte-untouched). 8 SC-§15 deviations tabled; QA rulings owed: D2 ASCII-hyphen player string · the hook-site reading · D5 latch-burns-on-launch vs mid-session expiry. Greps clean, trailing-default vacuous, QUIET-MODULE held. *(Was: backlog.)*
 - blocked-by: **TASK-650** (QUIET-MODULE — ⛔ no `Source/` write before 650's commit lands; the riders ride BEHIND the in-flight chain)
 - parallel-safe: **yes vs non-Source tasks** (it is the only Source-writer of its wave)
 - spec: >
@@ -9416,7 +9416,7 @@ TASK-636 ─→ 643 ⚙️ USiegeCloudClient ─┐                             
 
 #### TASK-654 — [ACC-P2.1-2] 🔍 THE RIDER-WAVE QA GATE — `qa/TASK-654.md` covers 653 (qa-reviewer)
 - assignee: **qa-reviewer**
-- status: **backlog**
+- status: **✅ done — 2026-08-23 (orchestrator flip; report `qa/TASK-654.md` **PASS** 0/2/2; three rulings recorded; 655 pre-flight = exactly the six 653 files, suite expectation **127/127**; warns non-blocking: an unreachable profile-swap corner (SC-§20 hypothesis recorded) + the no-git residual discharged by 655's git trio).** *(Was: backlog.)*
 - blocked-by: **TASK-653** (ready-for-qa)
 - parallel-safe: **yes** (file-only review; no editor, no compile, no network)
 - spec: >

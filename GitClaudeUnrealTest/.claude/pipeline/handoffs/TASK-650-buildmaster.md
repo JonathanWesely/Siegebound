@@ -107,3 +107,9 @@ issuer=C=US, O=Google Trust Services, CN=WE1   (notBefore Jun 28 2026, notAfter 
 **Smoke verdict: 20/20 legs PASS. ACC-§11/§12 verified live, first-hand. The 641/642 ledger row is re-verified. No stop conditions met — the commit gate OPENS.**
 
 ## 7. THE COMMIT (appended post-commit — this section is the one expected-dirty line-set after the commit; TASK-655 carries it per P2-R7)
+
+- **Commit: `65de67e`** on `main` — `TASK-650: ACCOUNTS Phase 2 lands — the live smoke 20/20 PASSES (S2 confirm-email measured OFF, RLS negative probes ALL-DENY, updated_at server-stamped both branches), suite 126/126, the loop-2 production-ini //-truncation cured by the quoted ProjectUrl form (TASK-637+639..650)`.
+- **33 files, +5264/−50** — exactly the derived cargo: §7 items 1–14 (Source/Build.cs) · migration SQL · `.example` · the one `.gitignore` line · 11 handoffs (637 + 639/641..647/649/650) · qa 637/640/648 · TASKBOARD + CONVENTIONS staged LAST. Porcelain-vs-ledger reconciled at 0 unexplained lines pre-stage.
+- **Hard stops re-proven at commit time:** HEAD `1025160` unmoved through staging · `git check-ignore -v` → `.gitignore:63` (exit 0) · staged-set grep for `Config/SiegeCloudDev.ini` = 0 hits — the real ini NEVER staged.
+- **Ahead-count after: 5 / behind 0** (was 4). ⛔ NOT pushed, per the standing law.
+- Post-commit tree: clean except THIS §7 append (declared here; TASK-655's committer carries it — the P2-R7 pattern).

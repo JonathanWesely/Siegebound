@@ -219,6 +219,16 @@ public:
 	 */
 	void SetLastSyncUtc(const FDateTime& WhenUtc);
 
+	// ── PHASE-2.1 RE-AUTH SEAM (TASK-653; the ACC-§15 P2.1 dated 2026-08-23
+	// registry addition, character-for-character; riders R1+R2 out of
+	// qa/TASK-648.md §6). ⛔ Deliberately NON-UFUNCTION, both — off the
+	// Blueprint/reflection surface by design (the token law; the sync engine is
+	// plain C++). P2.1 adds NO reflected member (the SC-§26 pin for TASK-655).
+	// Pure active-profile reads: no mutation, no save, no broadcast.
+
+	FDateTime GetLastSyncUtc() const;        // active profile's LastSyncUtc; FDateTime() when guest/unlinked (R2 — pure read, no mutation, no broadcast)
+	FString   GetCloudRefreshToken() const;  // ACC-§11 token law: never logged/displayed; single lawful consumer = the AccountMenuWidget re-auth path (R1)
+
 	/**
 	 *  THE ONE hash implementation (ACC-§2, character-for-character):
 	 *  hex(FSHA1::HashBuffer(UTF8(SaltHex + ":" + Password))). Static + pure so

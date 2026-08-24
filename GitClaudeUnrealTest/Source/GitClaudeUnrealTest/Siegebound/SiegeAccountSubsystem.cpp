@@ -356,6 +356,32 @@ void USiegeAccountSubsystem::SetLastSyncUtc(const FDateTime& WhenUtc)
 	BroadcastActiveProfileChanged();
 }
 
+FDateTime USiegeAccountSubsystem::GetLastSyncUtc() const
+{
+	// P2.1 (TASK-653, rider R2 — 645-D1's named cure): PURE IN-MEMORY read of
+	// the A3 sync clock, consumed by FSiegeCloudSync's MakeContext() as the one
+	// pull baseline. Guest => FDateTime() (zero ticks — the never-synced
+	// default every real cloud row pulls against, ACC-§13 trigger 1); an
+	// unlinked profile's stored value is FDateTime() by contract (fresh profiles
+	// default it, ClearCloudLink resets it), so one expression covers both
+	// registry-comment cases. No mutation, no save, no broadcast — a getter.
+	const FSiegeProfileInfo* Active = FindActiveProfile();
+	return Active ? Active->LastSyncUtc : FDateTime();
+}
+
+FString USiegeAccountSubsystem::GetCloudRefreshToken() const
+{
+	// P2.1 (TASK-653, rider R1): THE ONE LAWFUL READER of the persisted refresh
+	// token (the ACC-§11 dated 2026-08-23 addition) — its single sanctioned
+	// consumer is the UAccountMenuWidget re-auth path, which hands the value to
+	// USiegeCloudClient::RefreshSession's HTTPS grant and NOTHING else.
+	// ⛔ ACC-§11/P2-R6: the value is NEVER logged, NEVER displayed, NEVER sent
+	// anywhere but that grant — this getter must not grow other callers.
+	// Guest/unlinked => empty. No mutation, no save, no broadcast — a getter.
+	const FSiegeProfileInfo* Active = FindActiveProfile();
+	return Active ? Active->CloudRefreshToken : FString();
+}
+
 FString USiegeAccountSubsystem::MakeCredentialHashHex(const FString& Password, const FString& SaltHex)
 {
 	// ACC-§2, character-for-character:

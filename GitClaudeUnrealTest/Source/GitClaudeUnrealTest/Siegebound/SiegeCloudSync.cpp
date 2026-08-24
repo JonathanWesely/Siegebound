@@ -40,18 +40,25 @@ static const TCHAR* const KeyCardId           = TEXT("card_id");
 static const TCHAR* const KeyCount            = TEXT("count");
 static const TCHAR* const KeyAssistantConfirm = TEXT("assistant_confirm_before_execute");
 
-// ─── The session-scoped LastSyncUtc mirror (SC-§15 deviation D1) ─────────────
-// The ACC-§15 registry pins USiegeAccountSubsystem::SetLastSyncUtc (a WRITER)
-// and no reader, and the account registry slot has a single-reader law — so
-// the pull baseline this engine filters against is a per-cloud-user,
-// per-PROCESS mirror seeded only by this engine's own completed cycles.
+// ─── Per-cloud-user session state (in-flight guard ONLY since TASK-653) ──────
+// ⭐ 2026-08-23, TASK-653 (rider R2 — ACC-§15 P2.1): the session-scoped
+// LastSyncUtc MIRROR that lived here (the SC-§15 deviation D1 shape) is
+// RETIRED. The registry now pins USiegeAccountSubsystem::GetLastSyncUtc(), so
+// the PERSISTED A3 sync clock is readable and MakeContext() consumes IT as the
+// one pull baseline — both of D1's no-baseline branches collapse to the
+// ACC-§13 letter (never-synced => FDateTime() => ShouldPullRow pulls every
+// real row; previously-synced => strictly-newer rows only, across sessions).
+// SC-§15 NOTE, THE DECLARED MIRROR FATE: the same-session cache is REMOVED,
+// not kept — two baseline authorities would need a merge rule the law does not
+// have. Consequence of removal, stated: the one degraded corner (account
+// subsystem unresolvable at FinishSync => stamp not persisted) now re-pulls
+// already-applied rows on a later cycle instead of being masked in-session —
+// idempotent (overwrite-on-collision with the same or newer rows), honest,
+// never destructive. What remains below is the D5 hygiene guard only.
 // Game thread only (FHttpModule completion delegates fire on the game thread).
 struct FSessionState
 {
-	/** Baseline for ShouldPullRow. Unset = no completed cycle this session. */
-	TOptional<FDateTime> LastSyncUtc;
-
-	/** One sync at a time per cloud user (hygiene guard; cleared by RAII in ~FSyncContext). */
+	/** One sync at a time per cloud user (hygiene guard D5; cleared by RAII in ~FSyncContext). */
 	bool bInFlight = false;
 };
 
@@ -88,13 +95,12 @@ struct FSyncContext
 	FString                       CloudUserId;
 	FSiegeCloudResult             OnDone;
 
-	/** Pull filter baseline (session mirror at kickoff). Unset => D1 branch per trigger. */
-	TOptional<FDateTime>          PullBaseline;
+	/** Pull filter baseline — the PERSISTED profile stamp via GetLastSyncUtc() at MakeContext() (⭐ TASK-653 R2; no session mirror). Zero ticks = never synced => ShouldPullRow pulls every real row. */
+	FDateTime                     PullBaseline;
 
 	/** Max server updated_at observed across the cycle — the pull-side stamp basis (D3). */
 	FDateTime                     MaxSeenUpdatedUtc; // ticks 0 = none seen
 
-	bool  bPullSkippedNoBaseline = false;
 	int32 PulledDecks            = 0;
 	bool  bPulledSettings        = false;
 	int32 SkippedMalformedRows   = 0;
@@ -293,16 +299,17 @@ static void FailSync(const FSyncContextRef& Ctx, const FString& Reason)
  */
 static void FinishSync(const FSyncContextRef& Ctx, const FDateTime& StampUtc, const FString& Summary)
 {
-	GSessionStateByCloudUser.FindOrAdd(Ctx->CloudUserId).LastSyncUtc = StampUtc;
-
 	if (USiegeAccountSubsystem* Accounts = ResolveAccounts(Ctx))
 	{
 		Accounts->SetLastSyncUtc(StampUtc);
 	}
 	else
 	{
-		// The data moved; only the persisted stamp is lost. The session mirror
-		// above still guards this process; the next session re-pulls (D1).
+		// The data moved; only the stamp is lost (⭐ TASK-653 R2: the session
+		// mirror that also recorded it here is retired). The next cycle's
+		// baseline is the older persisted stamp, so already-applied rows
+		// re-pull idempotently (overwrite-on-collision with the same or newer
+		// rows) — honest, never destructive.
 		UE_LOG(LogSiegeCloud, Warning,
 			TEXT("[SiegeCloudSync] %s: account subsystem unresolvable at finish — LastSyncUtc not persisted this cycle."),
 			TriggerName(Ctx->Trigger));
@@ -318,15 +325,10 @@ static FString BuildSuccessSummary(const FSyncContextRef& Ctx)
 	FString Summary;
 	if (Ctx->Trigger != ESyncTrigger::PushAll)
 	{
-		if (Ctx->bPullSkippedNoBaseline)
-		{
-			Summary += TEXT("pull skipped (no session baseline — cloud rows land at the next cloud login)");
-		}
-		else
-		{
-			Summary += FString::Printf(TEXT("pulled %d deck(s)%s"),
-				Ctx->PulledDecks, Ctx->bPulledSettings ? TEXT(" + settings") : TEXT(""));
-		}
+		// ⭐ TASK-653 R2: the "pull skipped (no session baseline)" branch is gone
+		// with D1 — the pull phase always runs now (persisted baseline).
+		Summary += FString::Printf(TEXT("pulled %d deck(s)%s"),
+			Ctx->PulledDecks, Ctx->bPulledSettings ? TEXT(" + settings") : TEXT(""));
 	}
 	if (Ctx->Trigger != ESyncTrigger::PullAll)
 	{
@@ -358,18 +360,13 @@ static void ReadBackStamp(const FSyncContextRef& Ctx);
 
 static void StartPullPhase(const FSyncContextRef& Ctx)
 {
-	// D1: SyncNow with no session baseline skips its pull phase entirely —
-	// LOCAL-FIRST: an unfiltered pull could land older cloud rows on top of
-	// local edits made since the last (unreadable) sync point, and the push
-	// phase would then upload the stomped values. PullAll (trigger 1) is the
-	// deliberate "land the cloud state" lane and pulls everything instead.
-	if (Ctx->Trigger == ESyncTrigger::SyncNow && !Ctx->PullBaseline.IsSet())
-	{
-		Ctx->bPullSkippedNoBaseline = true;
-		StartPushPhase(Ctx);
-		return;
-	}
-
+	// ⭐ TASK-653 (rider R2 — ACC-§15 P2.1): 645-D1's skip-pull compromise is
+	// REMOVED. The baseline is now the PERSISTED LastSyncUtc (read at
+	// MakeContext), so EVERY SyncNow pull phase runs: never-synced => zero
+	// ticks => pull ALL (trigger 1's fresh-link semantics, now the lawful
+	// trigger-3 shape too — the ACC-§13 letter); previously-synced =>
+	// strictly-newer rows only (ShouldPullRow), including the first SyncNow of
+	// a NEW session, which used to skip its pull entirely.
 	USiegeCloudClient* Client = ResolveClient(Ctx);
 	if (Client == nullptr)
 	{
@@ -409,7 +406,7 @@ static void HandleDecksFetched(const FSyncContextRef& Ctx, bool bFetchOk, const 
 		return;
 	}
 
-	const FDateTime Baseline = Ctx->PullBaseline.Get(FDateTime());
+	const FDateTime Baseline = Ctx->PullBaseline;
 	TArray<FDeckList> DecksToApply;
 	for (const TSharedPtr<FJsonValue>& RowValue : Rows)
 	{
@@ -537,7 +534,7 @@ static void HandleSettingsFetched(const FSyncContextRef& Ctx, bool bFetchOk, con
 			ParseDbTimestampUtc(UpdatedAtValue, UpdatedAtUtc))
 		{
 			Ctx->MaxSeenUpdatedUtc = FMath::Max(Ctx->MaxSeenUpdatedUtc, UpdatedAtUtc);
-			const FDateTime Baseline = Ctx->PullBaseline.Get(FDateTime());
+			const FDateTime Baseline = Ctx->PullBaseline;
 			if (FSiegeCloudSync::ShouldPullRow(UpdatedAtUtc, Baseline))
 			{
 				USiegeAccountSubsystem* Accounts = ResolveAccounts(Ctx);
@@ -831,7 +828,16 @@ static FSyncContextRef MakeContext(
 	Ctx->Trigger      = Trigger;
 	Ctx->CloudUserId  = CloudUserId;
 	Ctx->OnDone       = MoveTemp(OnDone);
-	Ctx->PullBaseline = GSessionStateByCloudUser.FindOrAdd(CloudUserId).LastSyncUtc;
+
+	// ⭐ TASK-653 (rider R2 — ACC-§15 P2.1): THE NAMED SWAP SITE
+	// (handoffs/TASK-645-programmer.md §5 D1). The pull baseline is the
+	// PERSISTED profile stamp via the pinned GetLastSyncUtc() — the session
+	// mirror is retired (SC-§15 note at FSessionState). PreflightRefusal
+	// resolved this same subsystem in this same synchronous frame, so the null
+	// branch is structurally unreachable; its FDateTime() fallback (= pull-all,
+	// trigger 1's fresh-link semantics) is null-safety, not a code path.
+	USiegeAccountSubsystem* Accounts = GameInstance.GetSubsystem<USiegeAccountSubsystem>();
+	Ctx->PullBaseline = Accounts ? Accounts->GetLastSyncUtc() : FDateTime();
 	return Ctx;
 }
 

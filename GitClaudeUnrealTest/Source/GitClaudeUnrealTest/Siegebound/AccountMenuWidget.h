@@ -96,6 +96,21 @@ enum class EAccountMenuMode : uint8
  *  (which carries tokens on success) is never logged from this file on any
  *  path. The P1 local hash/salt are not read, not written, not uploaded.
  *
+ *  P2.1 (TASK-653, riders R1+R2 - ACC-§15 P2.1, the dated 2026-08-23 seam):
+ *  THE POST-RESTART RE-AUTH WIRE. On the cloud-block refresh of a LoggedIn
+ *  panel whose profile is linked while NO live session exists, exactly ONE
+ *  USiegeCloudClient::RefreshSession attempt runs per panel activation, off
+ *  the persisted refresh token read via the ACC-§11 single lawful reader
+ *  (USiegeAccountSubsystem::GetCloudRefreshToken - this file is its ONLY
+ *  consumer). Success re-stores the ROTATED token via SetCloudLink (a REAL
+ *  mutation - saves + broadcasts, the upheld 644 decision 4); failure shows
+ *  ONE honest CloudStatusText line and mutates NOTHING (local-first,
+ *  ACC-§11). No retry loop, no tick, no poll; nothing blocks on HTTP; the
+ *  token is never logged or displayed and never captured by a completion
+ *  lambda. The refresh deliberately triggers NO sync - the law orders none;
+ *  Sync Now (ACC-§13 trigger 3) stays the player's lane, and its pull phase
+ *  is live against the persisted baseline (R2).
+ *
  *  ---------------------------------------------------------------------------
  *  WHY THERE IS NO .uasset - THE RULING THIS WIDGET IS BUILT UNDER
  *  ---------------------------------------------------------------------------
@@ -402,6 +417,34 @@ protected:
 	 */
 	void ParseAuthPayload(const FString& Payload, FString& InOutUserId, FString& OutRefreshToken) const;
 
+	/**
+	 *  P2.1 (TASK-653, rider R1 - ACC-§15 P2.1): the post-restart re-auth
+	 *  attempt. Called from RefreshCloudBlock()'s linked branch, which has
+	 *  already established linked + client resolved + configured + no request
+	 *  in flight; this function adds the once-per-activation latch, the
+	 *  live-session check and the token read (via the ACC-§11 single lawful
+	 *  reader, GetCloudRefreshToken). When the whole predicate holds: exactly
+	 *  ONE USiegeCloudClient::RefreshSession call - no retry loop, no tick, no
+	 *  poll, nothing blocks on HTTP (ACC-§11). ⛔ The token lives in this
+	 *  call's locals, is never logged or displayed, and is NOT captured by the
+	 *  completion lambda. Plain method, not a UFUNCTION - P2.1 adds NO
+	 *  reflected member by design (the SC-§26 pin).
+	 */
+	void TryRefreshCloudSession(USiegeAccountSubsystem& Account, USiegeCloudClient& Cloud);
+
+	/**
+	 *  RefreshSession completion (P2.1). Success: the client already adopted
+	 *  the fresh session (643); the ROTATED refresh token is parsed from the
+	 *  payload into a local and re-stored via SetCloudLink(GetLinkedEmail(),
+	 *  GetCloudUserId(), NewToken) - a REAL mutation (saves + broadcasts; 644's
+	 *  identical-values guard needs all THREE values identical, so a rotated
+	 *  token always stores). An absent rotated token stores NOTHING - a success
+	 *  never wipes the held token. Failure: the ONE honest pinned
+	 *  CloudStatusText line and ⛔ ZERO state mutation - a transient network
+	 *  error must never destroy the link (local-first, ACC-§11).
+	 */
+	void HandleCloudRefreshResult(bool bOk, const FString& PayloadOrError);
+
 	// ------------------------------------------------------------------------
 	// PINNED CHILDREN - CONVENTIONS ACC-§5, character-for-character.
 	// All BindWidgetOptional, never BindWidget: an asset-authored
@@ -535,4 +578,14 @@ private:
 	 *  HTTP, cloud gates nothing).
 	 */
 	bool bCloudRequestInFlight = false;
+
+	/**
+	 *  P2.1 (TASK-653): latches the post-restart re-auth to exactly ONE
+	 *  RefreshSession attempt per panel activation (reset in NativeConstruct;
+	 *  set only at the moment an attempt actually launches, so a healthy
+	 *  session or an absent token never burns the activation's attempt).
+	 *  Plain member, deliberately NOT a UPROPERTY - P2.1 adds NO reflected
+	 *  member by design (the SC-§26 pin for TASK-655).
+	 */
+	bool bCloudSessionRefreshAttempted = false;
 };

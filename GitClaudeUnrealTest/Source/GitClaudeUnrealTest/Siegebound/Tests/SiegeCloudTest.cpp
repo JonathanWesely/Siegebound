@@ -86,6 +86,15 @@
  *  the async error shape of cloud calls while unconfigured (unpinned) ·
  *  LastSyncUtc / CloudRefreshToken value readback (no pinned getter) ·
  *  OnCloudStateChanged broadcasts · PullAll/PushAll/SyncNow end-to-end.
+ *
+ *  ⭐ 2026-08-23, TASK-653 (riders R1+R2 — ACC-§15 P2.1): the "value readback"
+ *  gap above is CLOSED — GetLastSyncUtc / GetCloudRefreshToken are now
+ *  registry-pinned, and Siegebound.Cloud.ReAuthSeamGetters below covers the
+ *  defaults, both round trips, the rotation-through-644's-guards shape, and
+ *  cross-instance persistence. The zero-network law is UNCHANGED:
+ *  RefreshSession still has zero callers in this file (the widget's R1 wire is
+ *  live-smoke territory, not offline-testable), and no other gap-list line
+ *  moves.
  */
 
 namespace SiegeCloudTestUtils
@@ -778,6 +787,133 @@ bool FSiegeCloudClientUnconfiguredTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("SignOut on the unconfigured client leaves it unauthenticated"), Client->IsCloudAuthenticated());
 	TestTrue(TEXT("SignOut on the unconfigured client leaves GetCloudUserId empty"),
 		Client->GetCloudUserId().IsEmpty());
+
+	return true;
+}
+
+/**
+ *  THE ACC-§15 P2.1 RE-AUTH SEAM GETTERS (TASK-653, riders R1+R2):
+ *  GetLastSyncUtc / GetCloudRefreshToken — guest and unlinked defaults, the
+ *  SetLastSyncUtc -> GetLastSyncUtc round trip (the R2 pull-baseline value),
+ *  the SetCloudLink -> GetCloudRefreshToken round trip (the R1 token value),
+ *  pure-read discipline (no broadcast, no save), the token-ROTATION shape
+ *  through 644's guards (a new token with unchanged email/user id is a REAL
+ *  mutation — the identical-values guard needs all THREE identical), and
+ *  cross-instance persistence — the exact values a next session's
+ *  MakeContext() baseline (R2) and re-auth attempt (R1) read. FDateTime
+ *  comparisons ride TestTrue(==) — the file's own FGuid idiom (the generic
+ *  TestEqual has no FDateTime debug-print lane to lean on).
+ *  ⛔ The zero-network law holds: RefreshSession is never called; every
+ *  surface driven here is a pure in-memory getter or a P1-pinned local-save
+ *  mutator. Scratch identity only (P2-R2): placeholder tokens, not JWTs.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeCloudReAuthSeamGettersTest,
+	"Siegebound.Cloud.ReAuthSeamGetters",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeCloudReAuthSeamGettersTest::RunTest(const FString& Parameters)
+{
+	SiegeCloudTestUtils::FCloudScratchGuard Guard;
+
+	SiegeCloudTestUtils::FScratchAccounts Store = SiegeCloudTestUtils::MakeScratchAccounts();
+	if (!Store.IsValid())
+	{
+		AddError(TEXT("Could not construct a USiegeAccountSubsystem inside a UGameInstance."));
+		return false;
+	}
+
+	// GUEST: both getters answer the pinned safe defaults (P2.1: "FDateTime()
+	// when guest/unlinked" / "empty when guest/unlinked").
+	TestTrue(TEXT("Guest GetLastSyncUtc is FDateTime() (zero ticks — the never-synced default)"),
+		Store.Accounts->GetLastSyncUtc() == FDateTime());
+	TestTrue(TEXT("Guest GetCloudRefreshToken is empty (the P2.1 pin)"),
+		Store.Accounts->GetCloudRefreshToken().IsEmpty());
+
+	// UNLINKED PROFILE: same defaults — a fresh local profile has no cloud state.
+	FString Reason;
+	TestTrue(TEXT("CreateAccount succeeds"),
+		Store.Accounts->CreateAccount(TEXT("ReAuthGetterTester"), TEXT("password1"), Reason));
+	Guard.TrackActiveProfile(*Store.Accounts);
+
+	TestTrue(TEXT("An unlinked profile's GetLastSyncUtc is FDateTime()"),
+		Store.Accounts->GetLastSyncUtc() == FDateTime());
+	TestTrue(TEXT("An unlinked profile's GetCloudRefreshToken is empty"),
+		Store.Accounts->GetCloudRefreshToken().IsEmpty());
+
+	// LINK + STAMP, then the two value round trips (the 647 header's named
+	// "value readback" gap, closed by the P2.1 getters).
+	const FString LinkEmail = TEXT("reauth.getter.tester@example.com");
+	const FString LinkUserId = TEXT("9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d"); // arbitrary uuid, not a live account
+	const FString LinkRefreshToken = TEXT("scratch-refresh-token-not-a-real-credential");
+	const FDateTime SyncStamp(2026, 8, 23, 18, 30, 0);
+
+	Store.Accounts->SetCloudLink(LinkEmail, LinkUserId, LinkRefreshToken);
+	TestEqualSensitive(TEXT("SetCloudLink -> GetCloudRefreshToken round-trips the stored token byte-identically"),
+		Store.Accounts->GetCloudRefreshToken(), LinkRefreshToken);
+
+	Store.Accounts->SetLastSyncUtc(SyncStamp);
+	TestTrue(TEXT("SetLastSyncUtc -> GetLastSyncUtc round-trips the stamp (the R2 pull-baseline value)"),
+		Store.Accounts->GetLastSyncUtc() == SyncStamp);
+
+	// PURE-READ DISCIPLINE (the P2.1 trailing comments: "pure read, no
+	// mutation, no broadcast"): a burst of reads moves neither the broadcast
+	// counter nor the (deleted) registry file.
+	SiegeCloudTestUtils::DeleteScratchRegistrySlot();
+	const int32 BroadcastsBeforeReads = Store.Accounts->ActiveProfileChangedBroadcastCount;
+	for (int32 ReadIndex = 0; ReadIndex < 3; ++ReadIndex)
+	{
+		Store.Accounts->GetLastSyncUtc();
+		Store.Accounts->GetCloudRefreshToken();
+	}
+	TestEqual(TEXT("The getters broadcast nothing (pure reads — no delegate)"),
+		Store.Accounts->ActiveProfileChangedBroadcastCount, BroadcastsBeforeReads);
+	TestFalse(TEXT("The getters wrote no registry file (pure reads — no save)"),
+		UGameplayStatics::DoesSaveGameExist(SiegeCloudTestUtils::ScratchRegistrySlotName, USiegeAccountSaveGame::UserIndex));
+
+	// TOKEN ROTATION through 644's guards — the R1 re-store shape,
+	// SetCloudLink(GetLinkedEmail(), <same uid>, NewToken): a NEW token with
+	// the SAME email + user id is a REAL mutation (the identical-values guard
+	// needs all THREE identical) — exactly one broadcast, a registry save, and
+	// the rotated value reads back.
+	const FString RotatedRefreshToken = TEXT("scratch-refresh-token-rotated-not-a-real-credential");
+	const int32 BroadcastsBeforeRotate = Store.Accounts->ActiveProfileChangedBroadcastCount;
+	Store.Accounts->SetCloudLink(Store.Accounts->GetLinkedEmail(), LinkUserId, RotatedRefreshToken);
+	TestEqualSensitive(TEXT("A rotated token with identical email/user id STORES (644's no-op guard needs all three identical)"),
+		Store.Accounts->GetCloudRefreshToken(), RotatedRefreshToken);
+	TestEqual(TEXT("The rotation broadcast exactly once (a REAL mutation — the upheld 644 decision 4)"),
+		Store.Accounts->ActiveProfileChangedBroadcastCount, BroadcastsBeforeRotate + 1);
+	TestTrue(TEXT("The rotation SAVED the registry slot (save-on-change)"),
+		UGameplayStatics::DoesSaveGameExist(SiegeCloudTestUtils::ScratchRegistrySlotName, USiegeAccountSaveGame::UserIndex));
+
+	// IDENTICAL RE-STORE: the same triple is a complete no-op (the delegate law).
+	const int32 BroadcastsBeforeNoOp = Store.Accounts->ActiveProfileChangedBroadcastCount;
+	Store.Accounts->SetCloudLink(LinkEmail, LinkUserId, RotatedRefreshToken);
+	TestEqual(TEXT("Re-storing the identical triple broadcasts nothing (the delegate law)"),
+		Store.Accounts->ActiveProfileChangedBroadcastCount, BroadcastsBeforeNoOp);
+
+	// CROSS-INSTANCE: the persisted values a NEXT session's engine reads — the
+	// closest offline pin of the R2 baseline-consumption seam (MakeContext()
+	// itself sits behind the network preflight and is live-smoke territory).
+	SiegeCloudTestUtils::FScratchAccounts Reloaded = SiegeCloudTestUtils::MakeScratchAccounts();
+	if (!Reloaded.IsValid())
+	{
+		AddError(TEXT("Could not construct the second USiegeAccountSubsystem for the reload check."));
+		return false;
+	}
+	Reloaded.Accounts->LoadAccountsFromSlot();
+	TestTrue(TEXT("GetLastSyncUtc survives the save/load round trip (the persisted R2 baseline)"),
+		Reloaded.Accounts->GetLastSyncUtc() == SyncStamp);
+	TestEqualSensitive(TEXT("GetCloudRefreshToken survives the save/load round trip (the persisted R1 token)"),
+		Reloaded.Accounts->GetCloudRefreshToken(), RotatedRefreshToken);
+
+	// CLEAR: both getters return to the safe defaults (ClearCloudLink resets
+	// ALL FOUR cloud fields — the stale-clock law).
+	Reloaded.Accounts->ClearCloudLink();
+	TestTrue(TEXT("ClearCloudLink resets GetLastSyncUtc to FDateTime()"),
+		Reloaded.Accounts->GetLastSyncUtc() == FDateTime());
+	TestTrue(TEXT("ClearCloudLink empties GetCloudRefreshToken"),
+		Reloaded.Accounts->GetCloudRefreshToken().IsEmpty());
 
 	return true;
 }
