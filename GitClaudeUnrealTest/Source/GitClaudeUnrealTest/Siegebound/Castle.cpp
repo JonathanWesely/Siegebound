@@ -151,6 +151,81 @@ namespace
 	//~ ---- the actor classes the castle furnishes itself with (BP first, C++ fallback) ----
 	const TCHAR* TorchBlueprintPath = TEXT("/Game/Blueprints/BP_Torch.BP_Torch_C");                   // WR-§4
 	const TCHAR* CommanderNpcBlueprintPath = TEXT("/Game/Blueprints/BP_CommanderNpc.BP_CommanderNpc_C"); // WR-§5
+
+	//~ ========= F1 DISCOVERABILITY FURNISHING (TASK-661; VID-001 branch (i)) =========
+	//~ CASTLE-MESH-LOCAL geometry of the entry problem, from the 656 MEASUREMENT
+	//~ record (handoffs/TASK-656-buildmaster.md §1/§2 — live==manifest at every
+	//~ probed face) per the RELAYED-DIAGNOSIS law: every figure below was
+	//~ recomputed against that handoff's tables, never copied from a dispatch
+	//~ transcription. Frame: the castle origin is GROUND-CENTRE (WR-§0), local
+	//~ z 0 = the arena grass, the gate corridor mouth is on the local −Y side,
+	//~ and local +X is the face a straight run from the Blue spawn hits (656 §1,
+	//~ the d1 line). ⛔ F1-R3: these constants place VISUALS ONLY — no seal, hull
+	//~ or collision figure is authored or altered anywhere in this block.
+
+	/** The d1 design seal: skirt_toe_01's east face plane (656 §2 face bisection — EMPTY at x ≥ 3665, Castle_0 at x ≤ 3660; manifest 3657.5, live == manifest). Referenced for DERIVING visual poses only; the seal itself is untouched (F1-R3). */
+	constexpr float SealFaceLocalX = 3657.5f;
+
+	/** Hero capsule radius (Ø84×192 — the GH-R9 measured capsule, 656 §2's instrument). */
+	constexpr float HeroCapsuleRadius = 42.f;
+
+	/** The hero's east-face stop lane: seal face + one capsule radius = 3699.5 — 656 measured the VID-001 stop centre at exactly this x (capsule FREE at 3710, BLOCKED at 3690). The trample path's east leg runs down this lane, so the trail begins under the hero's own feet. */
+	constexpr float HeroStopLaneX = SealFaceLocalX + HeroCapsuleRadius; // 3699.5
+
+	/** The visual rim crest VID-001's hero jumped at (656 §1: chartreuse rim x ≈ 3645..3655, top 95–96, spanning y −1000..+800 across the face width). The toe rocks stand ON this crest. */
+	constexpr float SealRimCrestX = 3650.f;
+	constexpr float SealRimTopZ = 95.f;    // measured rim top at the crest; the 92..101 spread across the width sinks/floats a rock base ≤ 6 uu — natural for fieldstone
+	constexpr float SealRimMinY = -1000.f; // rim span, south end (656 §1, the x 3600 line probe)
+	constexpr float SealRimMaxY = 800.f;   // rim span, north end
+
+	/** Toe-rock picket spacing — the activation ruling verbatim: "spacing ≈ 200 with yaw jitter". */
+	constexpr float ToeRockSpacingY = 200.f;
+
+	/** Rock count = the rim span walked at the picket spacing, both ends inclusive: (800 − (−1000)) ÷ 200 + 1 = 10. */
+	constexpr int32 ToeRockCount = static_cast<int32>((SealRimMaxY - SealRimMinY) / ToeRockSpacingY) + 1;
+
+	/** Deterministic yaw jitter step for the rocks — the golden angle: no two neighbours share a facing and no repeat period is visible in a 10-rock line. Baked into the CDO anchor array ONCE, so both castles and both machines get the identical picket by construction (the Tier-C symmetry law). */
+	constexpr float ToeRockYawStepDeg = 137.5f;
+
+	/** The toe-ring wrap lane: 656 §2 measured the wrap clear SOUTH of y −3692.5, and −3700 is the proven route's own southmost station line (the 16/16 EMPTY battery starts at y −3700) — 7.5 uu of margin inside measured-clear ground. */
+	constexpr float WrapLaneY = -3700.f;
+
+	/** South channel half-width: the mouth spans x −1470..+1470 (656 names / the 626 route tables). */
+	constexpr float ChannelHalfWidthX = 1470.f;
+
+	/** The mouth's knee-step line: the ~48–52-uu visual step sits in the y −3650..−3600 band (656 §1), the tan ramp 48→142 behind it. Path and banners stop SOUTH of this line — 656 §4: the plaza/doorway already reads as a door once SEEN; only the approach needs dressing. */
+	constexpr float MouthStepLineY = -3650.f;
+
+	//~ Gate banner pair — the ruling pins "markers at the mouth (x ±1470 line)".
+	//~ ⚠️ DECLARED SC-§15 DEPARTURE from the literal (±1470, −3650) point, on
+	//~ measured geometry: ±1470 IS the channel edge where the flank knolls begin
+	//~ (245–468 uu over head, 656 §1), so a pole base AT the line risks standing
+	//~ in knoll toe; and −3650 is the step band's own start. Each banner is
+	//~ pulled 70 uu INTO the channel and 25 uu SOUTH onto the flat approach —
+	//~ still "the ±1470 line" to any approaching eye, and provably on ground the
+	//~ 656 full-width mouth-line down-traces (x −1500..+1500) measured clear.
+	constexpr float GateBannerEdgeInsetX = 70.f;
+	constexpr float GateBannerAbsX = ChannelHalfWidthX - GateBannerEdgeInsetX; // 1400
+	constexpr float GateBannerY = MouthStepLineY - 25.f;                       // −3675 — flat approach, south of the step band
+
+	//~ Trample path chain — pitch and lift. The ribbon segment's own LENGTH is
+	//~ TASK-657's to author (tileable along local X; NOT pinned by the cross-lane
+	//~ contract), so the chain is authored to be correct at ANY length: at the
+	//~ 600 pitch a shorter segment reads as a worn dashed trail and a longer one
+	//~ as a continuous road, and overlapping segments can never z-fight because
+	//~ every chain anchor adds a monotonic 0.25-uu stagger on top of the +2
+	//~ support lift — no two segments are ever coplanar.
+	constexpr float TramplePitch = 600.f;
+	constexpr float TrampleLiftZ = 2.f;       // the ruling's "z +2 over measured support"
+	constexpr float TrampleStaggerZ = 0.25f;  // per-chain-index anti-coplanar stagger (13 anchors ⇒ max lift 2 + 12×0.25 = 5.0)
+	constexpr int32 TrampleSouthLegCount = 6; // east leg y 0 → −3000 at the 600 pitch (then the corner at −3700)
+	constexpr int32 TrampleWestLegCount = 5;  // wrap leg x 3099.5 → 699.5 (corner x minus 1..5 pitches; then the turn-in at x 0)
+
+	//~ ---- the F1 mesh assets (TASK-657 authors all four IN PARALLEL — soft, null-safe; the code lands first BY DESIGN, the F1-R2 ruling) ----
+	const TCHAR* GateBannerMeshPath = TEXT("/Game/Meshes/SM_Castle_GateBanner.SM_Castle_GateBanner");
+	const TCHAR* TramplePathMeshPath = TEXT("/Game/Meshes/SM_Castle_TramplePath.SM_Castle_TramplePath");
+	const TCHAR* ToeRockMesh01Path = TEXT("/Game/Meshes/SM_Castle_ToeRock01.SM_Castle_ToeRock01");
+	const TCHAR* ToeRockMesh02Path = TEXT("/Game/Meshes/SM_Castle_ToeRock02.SM_Castle_ToeRock02");
 }
 
 ACastle::ACastle()
@@ -364,6 +439,91 @@ ACastle::ACastle()
 	// ⛔ And he is not in the doorway either: the corridor mouth overlaps the hall
 	// only up to y 510.
 	CommanderNpcAnchor = FTransform(FRotator(0.f, -90.f, 0.f), FVector(HallCentreX, HallCentreY, InteriorFloorZ)); // (−465, 810, 174) — value HOLDS (GH-R7); expression re-based by TASK-634
+
+	// ========= F1 DISCOVERABILITY FURNISHING (TASK-661; VID-001 branch (i)) =========
+	// The mesh soft-refs. TASK-657 authors the assets IN PARALLEL to this code —
+	// SpawnDiscoverabilityFurnishings resolves each null-safe (missing = family
+	// skipped, one log line), so this code compiles, ships and runs correctly
+	// BEFORE any asset exists and the families simply appear when 657's import
+	// lands. MIs are deliberately NOT referenced here: the meshes carry their
+	// materials from import (the 661 names block soft-references SM_ paths only).
+	GateBannerMeshAsset = TSoftObjectPtr<UStaticMesh>(FSoftObjectPath(GateBannerMeshPath));
+	TramplePathMeshAsset = TSoftObjectPtr<UStaticMesh>(FSoftObjectPath(TramplePathMeshPath));
+	ToeRockMeshAsset01 = TSoftObjectPtr<UStaticMesh>(FSoftObjectPath(ToeRockMesh01Path));
+	ToeRockMeshAsset02 = TSoftObjectPtr<UStaticMesh>(FSoftObjectPath(ToeRockMesh02Path));
+
+	// ---- GATE BANNER PAIR — the mouth markers (activation ruling item (a)) ----
+	// One either side of the channel mouth at (±1400, −3675, 0): |x| = the 1470
+	// channel half-width minus the 70 flank-knoll inset, y = 25 south of the
+	// −3650 step line, z 0 = the flat approach the −3700 route station stands on
+	// (derivation + the SC-§15 departure note at the constants). Yaw −90 points
+	// +X — the banner's FACE, the TASK-657 pivot contract — due SOUTH at the
+	// open field, so the pair reads on the approach and frames the one door.
+	GateBannerAnchors.Reserve(2);
+	GateBannerAnchors.Add(FTransform(FRotator(0.f, -90.f, 0.f), FVector(-GateBannerAbsX, GateBannerY, 0.f))); // west of the mouth (−1400, −3675, 0)
+	GateBannerAnchors.Add(FTransform(FRotator(0.f, -90.f, 0.f), FVector(+GateBannerAbsX, GateBannerY, 0.f))); // east of the mouth (+1400, −3675, 0)
+
+	// ---- TRAMPLE PATH CHAIN — spawn line → around the toe ring → the mouth (ruling item (b)) ----
+	// 13 anchors in WALK ORDER, every yaw aiming +X along the direction of
+	// travel (the tileable-along-X contract); z = TrampleLiftZ +
+	// TrampleStaggerZ × chain index (the +2 support lift plus the anti-coplanar
+	// stagger — see the constants).
+	TramplePathAnchors.Reserve(TrampleSouthLegCount + 1 + TrampleWestLegCount + 1);
+	int32 TrampleChainIndex = 0;
+
+	// Leg 1 — SOUTH down the hero's own stop lane: x 3699.5 (seal face 3657.5 +
+	// capsule radius 42 — the exact line VID-001's hero walked), y 0, −600, …
+	// −3000. The first segment starts AT the measured stop point (+3699.5, 0):
+	// the trail begins under the hero's feet and leads away. Yaw −90 ⇒ +X = −Y.
+	for (int32 SouthSegIndex = 0; SouthSegIndex < TrampleSouthLegCount; ++SouthSegIndex)
+	{
+		TramplePathAnchors.Add(FTransform(FRotator(0.f, -90.f, 0.f),
+			FVector(HeroStopLaneX, -TramplePitch * static_cast<float>(SouthSegIndex), TrampleLiftZ + TrampleStaggerZ * static_cast<float>(TrampleChainIndex))));
+		++TrampleChainIndex;
+	}
+
+	// The SE corner at (3699.5, −3700): the south→west turn, yaw −135 = the
+	// diagonal between the two legs' headings. On the wrap lane, south of the
+	// measured −3692.5 toe-ring bound.
+	TramplePathAnchors.Add(FTransform(FRotator(0.f, -135.f, 0.f),
+		FVector(HeroStopLaneX, WrapLaneY, TrampleLiftZ + TrampleStaggerZ * static_cast<float>(TrampleChainIndex))));
+	++TrampleChainIndex;
+
+	// Leg 2 — WEST along the wrap: y −3700 (south of the measured-clear −3692.5
+	// bound, ON the proven route's own station line), x = corner x minus 1..5
+	// pitches ⇒ 3099.5, 2499.5, 1899.5, 1299.5, 699.5. Yaw 180 ⇒ +X = world −X.
+	for (int32 WestSegIndex = 0; WestSegIndex < TrampleWestLegCount; ++WestSegIndex)
+	{
+		TramplePathAnchors.Add(FTransform(FRotator(0.f, 180.f, 0.f),
+			FVector(HeroStopLaneX - TramplePitch * static_cast<float>(WestSegIndex + 1), WrapLaneY, TrampleLiftZ + TrampleStaggerZ * static_cast<float>(TrampleChainIndex))));
+		++TrampleChainIndex;
+	}
+
+	// The TURN-IN at (0, −3700): the channel's centre lane (x 0 — the exact lane
+	// 656 walked 16/16 EMPTY), yaw +90 ⇒ +X = +Y = due north THROUGH the mouth.
+	// The chain's last segment is the arrow at the ramp foot; whatever length
+	// 657 ships, any overrun past y −3650 vanishes under/into the step mass —
+	// the trail runs to the door's own threshold and no further (the ramp needs
+	// no dressing, 656 §4).
+	TramplePathAnchors.Add(FTransform(FRotator(0.f, 90.f, 0.f),
+		FVector(0.f, WrapLaneY, TrampleLiftZ + TrampleStaggerZ * static_cast<float>(TrampleChainIndex))));
+
+	// ---- TOE ROCK PICKET — the east seal line reads as what it is (ruling item (c)) ----
+	// Ten rocks ON the rim crest: x 3650 (the measured 3645..3655 crest), y
+	// −1000, −800, … +800 (the full measured rim span at the ≈200 ruling
+	// spacing, ends inclusive), z 95 = the measured rim top — each ground-
+	// contact pivot STANDS ON the very lip the hero jumped at, putting the
+	// silhouette exactly where the refusal happens. Yaw walks the golden angle
+	// per rock (deterministic — baked into this CDO array once, identical on
+	// every machine and both castles). The 01/02 mesh alternation happens at
+	// spawn, not here: an anchor is a pose, never an asset choice.
+	ToeRockAnchors.Reserve(ToeRockCount);
+	for (int32 RockIndex = 0; RockIndex < ToeRockCount; ++RockIndex)
+	{
+		const float RockYawDeg = FMath::Fmod(ToeRockYawStepDeg * static_cast<float>(RockIndex), 360.f);
+		ToeRockAnchors.Add(FTransform(FRotator(0.f, RockYawDeg, 0.f),
+			FVector(SealRimCrestX, SealRimMinY + ToeRockSpacingY * static_cast<float>(RockIndex), SealRimTopZ)));
+	}
 }
 
 void ACastle::OnConstruction(const FTransform& Transform)
@@ -671,6 +831,12 @@ void ACastle::SpawnCastleFurnishings()
 		}
 	}
 
+	// TASK-661: the F1 discoverability set rides this SAME pass — spawned here so
+	// it inherits the identical lifecycle (BeginPlay + both Play-Again edges via
+	// ApplyDestroyedState) with zero new call sites; torn down with the torches
+	// in DestroyCastleFurnishings, which this function already ran above.
+	SpawnDiscoverabilityFurnishings();
+
 	// One line per furnishing pass, so TASK-569's PIE matrix ("torches spawn … and do
 	// not survive a Play Again as orphans") is a log read rather than an eyeball count.
 	UE_LOG(LogGitClaudeUnrealTest, Log,
@@ -702,6 +868,183 @@ void ACastle::DestroyCastleFurnishings()
 		CommanderPtr->Destroy();
 	}
 	SpawnedCommanderNpc = nullptr;
+
+	// TASK-661: the F1 discoverability set — COMPONENTS, not actors, so the
+	// teardown is DestroyComponent (detach + unregister + GC-unroot via the
+	// array Reset). Destroyed, never pooled — the same reasoning as the torches
+	// above; a Play-Again restore gets an exactly-fresh set.
+	for (const TObjectPtr<UStaticMeshComponent>& FurnishingMesh : SpawnedDiscoverabilityMeshes)
+	{
+		UStaticMeshComponent* FurnishingMeshPtr = FurnishingMesh.Get();
+		if (IsValid(FurnishingMeshPtr))
+		{
+			FurnishingMeshPtr->DestroyComponent();
+		}
+	}
+	SpawnedDiscoverabilityMeshes.Reset();
+}
+
+void ACastle::SpawnDiscoverabilityFurnishings()
+{
+	// TASK-661 (the F1-R2 activation ruling; VID-001 branch (i)) — the castle
+	// signposts its own door. The caller is SpawnCastleFurnishings, which has
+	// already cleared the previous set and checked the world/mesh, but this
+	// function re-checks its own precondition anyway so it can never come to
+	// depend on the caller's ordering.
+	if (!CastleMesh)
+	{
+		return;
+	}
+
+	int32 BannerCount = 0;
+	int32 PathCount = 0;
+	int32 RockCount = 0;
+
+	// ---- gate banners (the mouth markers) ----
+	// Two null paths per the property doc (the ATorch law): CLEARED = silent
+	// opt-out; SET BUT UNRESOLVABLE = ONE log line and the family is skipped —
+	// the EXPECTED state until TASK-657's import lands. Log, not Warning, on
+	// purpose: an always-firing warning is a warning everyone learns to ignore
+	// (the ResolveTorchClass reasoning, verbatim).
+	if (!GateBannerMeshAsset.IsNull())
+	{
+		if (UStaticMesh* BannerMesh = GateBannerMeshAsset.LoadSynchronous())
+		{
+			for (const FTransform& BannerAnchor : GateBannerAnchors)
+			{
+				// bCastShadow true: a banner pole is scenery and should shadow.
+				if (SpawnDiscoverabilityMesh(BannerMesh, BannerAnchor, true))
+				{
+					++BannerCount;
+				}
+			}
+		}
+		else if (!bLoggedGateBannerMeshMissing)
+		{
+			bLoggedGateBannerMeshMissing = true;
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("ACastle '%s': gate banner mesh '%s' unavailable — family skipped (TASK-657 authors it in parallel; the castle plays exactly as it does today)."),
+				*GetNameSafe(this), *GateBannerMeshAsset.ToString());
+		}
+	}
+
+	// ---- trample path (the guided route) ----
+	if (!TramplePathMeshAsset.IsNull())
+	{
+		if (UStaticMesh* PathMesh = TramplePathMeshAsset.LoadSynchronous())
+		{
+			for (const FTransform& PathAnchor : TramplePathAnchors)
+			{
+				// bCastShadow false: a 2-uu-high flat ribbon's shadow buys
+				// nothing and is acne fuel under the low grazing moonlight.
+				if (SpawnDiscoverabilityMesh(PathMesh, PathAnchor, false))
+				{
+					++PathCount;
+				}
+			}
+		}
+		else if (!bLoggedTramplePathMeshMissing)
+		{
+			bLoggedTramplePathMeshMissing = true;
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("ACastle '%s': trample path mesh '%s' unavailable — family skipped (TASK-657 authors it in parallel; the castle plays exactly as it does today)."),
+				*GetNameSafe(this), *TramplePathMeshAsset.ToString());
+		}
+	}
+
+	// ---- toe rocks (the seal-line dressing) ----
+	// The family spawns if EITHER mesh resolves: SM_Castle_ToeRock02 is OPTIONAL
+	// by the 657 names block, so odd anchors quietly fall back to 01 (and vice
+	// versa) — a missing optional never thins the picket. Logged only when at
+	// least one path is SET and NEITHER resolves; both cleared = the silent
+	// opt-out, exactly the two-null-paths split above.
+	UStaticMesh* RockMesh01 = ToeRockMeshAsset01.IsNull() ? nullptr : ToeRockMeshAsset01.LoadSynchronous();
+	UStaticMesh* RockMesh02 = ToeRockMeshAsset02.IsNull() ? nullptr : ToeRockMeshAsset02.LoadSynchronous();
+	if (RockMesh01 || RockMesh02)
+	{
+		for (int32 RockAnchorIndex = 0; RockAnchorIndex < ToeRockAnchors.Num(); ++RockAnchorIndex)
+		{
+			// Alternate 01/02 by parity for variety; each parity falls back to
+			// the other mesh when its own is missing (never a null pick — the
+			// enclosing branch guarantees at least one resolved).
+			UStaticMesh* PickedRockMesh = ((RockAnchorIndex % 2) == 1 && RockMesh02) ? RockMesh02 : (RockMesh01 ? RockMesh01 : RockMesh02);
+
+			// bCastShadow true: rocks are scenery — their shadow is silhouette.
+			if (SpawnDiscoverabilityMesh(PickedRockMesh, ToeRockAnchors[RockAnchorIndex], true))
+			{
+				++RockCount;
+			}
+		}
+	}
+	else if ((!ToeRockMeshAsset01.IsNull() || !ToeRockMeshAsset02.IsNull()) && !bLoggedToeRockMeshMissing)
+	{
+		bLoggedToeRockMeshMissing = true;
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ACastle '%s': no toe rock mesh resolves ('%s' / '%s') — family skipped (TASK-657 authors them in parallel; the castle plays exactly as it does today)."),
+			*GetNameSafe(this), *ToeRockMeshAsset01.ToString(), *ToeRockMeshAsset02.ToString());
+	}
+
+	// One line per pass so TASK-659's live re-verify is a log read. The torch
+	// furnishing line above is an existing instrument surface (TASK-569's PIE
+	// matrix greps it) and stays byte-identical; this family gets its OWN line.
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ACastle '%s': F1 discoverability set — %d/%d banners, %d/%d path segments, %d/%d toe rocks spawned (TASK-661; every component forced NoCollision — GH-R9)."),
+		*GetNameSafe(this),
+		BannerCount, GateBannerAnchors.Num(),
+		PathCount, TramplePathAnchors.Num(),
+		RockCount, ToeRockAnchors.Num());
+}
+
+UStaticMeshComponent* ACastle::SpawnDiscoverabilityMesh(UStaticMesh* Mesh, const FTransform& Anchor, bool bCastShadow)
+{
+	if (!Mesh || !CastleMesh)
+	{
+		return nullptr;
+	}
+
+	// Auto-unique name (no explicit FName): these components are re-created on
+	// every Play-Again restore, and re-using explicit names over just-destroyed
+	// pending-kill siblings is a rename-collision hazard for zero benefit —
+	// nothing ever addresses them by name.
+	UStaticMeshComponent* MeshComponent = NewObject<UStaticMeshComponent>(this);
+	if (!MeshComponent)
+	{
+		return nullptr;
+	}
+
+	MeshComponent->SetStaticMesh(Mesh);
+
+	// Movable: runtime-created, and a Movable child under the Static level-
+	// placed castle root is the legal attach direction (the reverse is the
+	// engine's mobility warning). They never actually move — they ride the attach.
+	MeshComponent->SetMobility(EComponentMobility::Movable);
+
+	// ⛔⛔ THE GH-R9 ENFORCEMENT SITE (TASK-661; the activation ruling's belt and
+	// braces, verbatim): collision is disabled CODE-SIDE on every spawned
+	// component REGARDLESS of the asset. TASK-657's meshes are collisionless by
+	// design (ucx: null declared in the manifest — the belt); these four lines
+	// hold even against a mis-authored import (the braces). Profile first, then
+	// the explicit SetCollisionEnabled(NoCollision) call the ruling names;
+	// overlap events and nav relevancy switched off so the entry chain's
+	// collision AND navmesh records stay byte-identical on every route (the
+	// GateBlockerVolume inert-setup pattern).
+	MeshComponent->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+	MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	MeshComponent->SetGenerateOverlapEvents(false);
+	MeshComponent->SetCanEverAffectNavigation(false);
+	MeshComponent->SetCastShadow(bCastShadow);
+
+	// CASTLE-MESH-relative attach: the anchor IS the relative transform, so any
+	// castle pose comes along for free — the SpawnCastleFurnishings composition
+	// reasoning without the composition, because a component takes the relative
+	// form directly. SetupAttachment is the pre-registration lane;
+	// RegisterComponent then creates the render state.
+	MeshComponent->SetupAttachment(CastleMesh);
+	MeshComponent->SetRelativeTransform(Anchor);
+	MeshComponent->RegisterComponent();
+
+	SpawnedDiscoverabilityMeshes.Add(MeshComponent);
+	return MeshComponent;
 }
 
 void ACastle::InitHPBarWidget()

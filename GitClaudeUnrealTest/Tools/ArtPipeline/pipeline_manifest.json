@@ -684,6 +684,46 @@
           { "name": "footprint", "center": [0.0, 0.0, 124.72], "size": [190.21, 200.0, 249.44] }
         ]
       }
+    },
+    "Castle_GateBanner": {
+      "category": "castle-prop",
+      "_comment_task657": "TASK-657 (2026-08-27), VID-001-F1 branch (i) / the F1-R2 activation ruling: gate-ward marker for the south channel mouth. Authored PROCEDURALLY (Tools/ArtPipeline/build_entry_dressing_props.py --family GateBanner) - NO TRELLIS/Meshy stage, zero credits (GH-R4). Full bake lane, NOT the WR-4 stock-node prop exception: T_Castle_GateBanner_{D,N,ORM} 1024^2 under the pinned LOCKED delight profile; MI_Castle_GateBanner parents M_AssetPBR; single NEUTRAL slot 'GateBannerPBR' (M4.5 environment-prop law, no TeamRegion). PIVOT: pole axis at (0,0), min Z 0 = ground contact, cloth face normal +X = forward (the TASK-661 anchor contract). Placement is TASK-661's ACastle-spawned-furnishing lane (mouth pair, castle-local (+-1470, ~-3650), gate-ward) - NEVER level-placed.",
+      "origin": "ground-center",
+      "target_dims_ue": [88.0, 544.42, 1168.0],
+      "_dims_source": "TASK-657 measured readback (Cache/EntryDressing/props_report.json): 88.0 x 544.42 x 1168.0, min_z 0, 1912 tris, UV layer UVMap, roundtrip-probe identical in UE space.",
+      "team_region": null,
+      "ucx": null,
+      "_ucx_source": "COLLISIONLESS ON PURPOSE (the SM_Torch precedent; ucx null = zero simple hulls is the DECLARED intended state, not an omission). The F1 entry chain's collision record stays byte-identical; every readability delta is visual. TASK-661 additionally enforces SetCollisionEnabled(NoCollision) code-side on every spawned component (GH-R9 belt-and-braces)."
+    },
+    "Castle_TramplePath": {
+      "category": "castle-prop",
+      "_comment_task657": "TASK-657 (2026-08-27), VID-001-F1 branch (i): trampled-road ribbon segment signposting the spawn -> toe-ring wrap -> channel-mouth route. Procedurally authored (build_entry_dressing_props.py --family TramplePath), zero credits. TILEABLE ALONG LOCAL X (the travel axis): straight end faces at x +-300 with periodic-by-construction edge ruffle and texture (end profiles byte-match), ruffled +-Y edges, crowned top with wheel ruts. T_Castle_TramplePath_{D,N,ORM} 1024^2, pinned delight profile (palette lifted +12% run 2 to clear the 0.2536 albedo floor); MI_Castle_TramplePath parents M_AssetPBR; single neutral slot 'TramplePathPBR'. PIVOT: XY segment centre, min Z 0, +X forward; TASK-661 chains segments at ~600-uu spacing, z +2 over measured support.",
+      "origin": "ground-center",
+      "target_dims_ue": [600.0, 348.02, 2.98],
+      "_dims_source": "TASK-657 measured readback: 600.0 x 348.02 x 2.98, min_z 0, 1976 tris, UVMap, roundtrip-probe identical.",
+      "team_region": null,
+      "ucx": null,
+      "_ucx_source": "COLLISIONLESS ON PURPOSE (SM_Torch precedent; see Castle_GateBanner._ucx_source - same law, same TASK-661 code-side NoCollision enforcement). A road decal-mesh with collision would perturb the measured entry chain; ucx null is load-bearing."
+    },
+    "Castle_ToeRock01": {
+      "category": "castle-prop",
+      "_comment_task657": "TASK-657 (2026-08-27), VID-001-F1 branch (i): east d1 seal-line dressing - the VISIBLE cause for the invisible +506.5 design seal (skirt_toe_01 east face, castle-local x ~3650, y -1000..+800). Tall angular granite cluster (displaced+facet-cut icospheres, faceted flat shading). Procedurally authored (build_entry_dressing_props.py --family ToeRock), zero credits. SHARES one texture set + MI with Castle_ToeRock02: T_Castle_ToeRock_{D,N,ORM} 1024^2 (01 = left atlas half, 02 = right), MI_Castle_ToeRock parents M_AssetPBR, slot 'ToeRockPBR' on BOTH meshes. PIVOT: ground contact min Z 0, +X forward (faces the approaching hero). TASK-661 lines the seal at ~200-uu spacing with yaw jitter. F1-R3 note: these rocks are DRESSING - no seal geometry/collision is touched anywhere.",
+      "origin": "ground-center",
+      "target_dims_ue": [299.07, 327.44, 314.39],
+      "_dims_source": "TASK-657 measured readback: 299.07 x 327.44 x 314.39, min_z 0, 714 tris, UVMap, roundtrip-probe identical.",
+      "team_region": null,
+      "ucx": null,
+      "_ucx_source": "COLLISIONLESS ON PURPOSE (SM_Torch precedent; see Castle_GateBanner._ucx_source). MOUNT-PROOF corollary: with zero collision the rocks can never become a climbable ledge on the sealed face - the GH-R9/mount-proof law is preserved by construction."
+    },
+    "Castle_ToeRock02": {
+      "category": "castle-prop",
+      "_comment_task657": "TASK-657 (2026-08-27): the low-wide variant of Castle_ToeRock01 (line variety against repetition). Same authoring run, same shared T_Castle_ToeRock_{D,N,ORM} set + MI_Castle_ToeRock, same slot name 'ToeRockPBR', same pivot law.",
+      "origin": "ground-center",
+      "target_dims_ue": [400.49, 268.25, 209.72],
+      "_dims_source": "TASK-657 measured readback: 400.49 x 268.25 x 209.72, min_z 0, 480 tris, UVMap, roundtrip-probe identical.",
+      "team_region": null,
+      "ucx": null,
+      "_ucx_source": "COLLISIONLESS ON PURPOSE - see Castle_ToeRock01._ucx_source."
     }
   }
 }

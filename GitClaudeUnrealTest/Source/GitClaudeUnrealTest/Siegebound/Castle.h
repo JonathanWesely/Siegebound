@@ -595,6 +595,84 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Furnishing")
 	TSoftClassPtr<ACommanderNpc> CommanderNpcClassAsset;
 
+	//~ ------ F1 DISCOVERABILITY FURNISHING (TASK-661; VID-001 branch (i)) ------
+	//~ The castle-entry fix chain's placement lane (the F1-R2 activation ruling,
+	//~ 2026-08-27). VID-001 was the FIRST real-input entry attempt on record and
+	//~ it died at the EAST design seal — working exactly as GH-R9 intends — while
+	//~ the SOUTH route re-proved hero-walkable live (handoffs/TASK-656-
+	//~ buildmaster.md: 16/16 capsule stations EMPTY, risers manifest-true). The
+	//~ defect is DISCOVERABILITY: nothing tells the player the door is south. The
+	//~ three families below are pure visual signage — banner poles marking the
+	//~ channel mouth, a trampled-path ribbon sweeping spawn line → around the toe
+	//~ ring → the mouth, and rock dressing on the east seal line so the visible
+	//~ cause matches the invisible wall. Every anchor is CASTLE-MESH-LOCAL like
+	//~ every furnishing anchor above (symmetric on both castles by construction;
+	//~ Red's mouth banners signpost the hero's ATTACK approach for free). The
+	//~ derivations from 656's measured geometry live beside the arithmetic in
+	//~ Castle.cpp (ACastle::ACastle, the F1 block).
+	//~ ⛔ F1-R3: nothing in this lane touches a seal, a hull, or collision of any
+	//~ kind. TASK-657's assets are collisionless by design (ucx: null declared)
+	//~ AND every spawned component is forced NoCollision code-side regardless of
+	//~ what the asset ships — GH-R9 belt and braces; the entry-chain collision
+	//~ record stays byte-identical.
+
+	/**
+	 *  Gate banner-pole anchors, CASTLE-MESH-LOCAL (TASK-661): one marker either
+	 *  side of the south channel mouth, faced SOUTH (+X forward = the banner's
+	 *  read direction, the TASK-657 pivot contract) so the pair reads from the
+	 *  open field and frames the one legitimate way in. Derivation in Castle.cpp;
+	 *  EditDefaultsOnly ⇒ re-posing is a defaults edit, no recompile.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Furnishing")
+	TArray<FTransform> GateBannerAnchors;
+
+	/**
+	 *  Trample-path ribbon anchors, CASTLE-MESH-LOCAL (TASK-661), in CHAIN ORDER:
+	 *  the hero's own east-face stop lane heading south, a corner, the wrap west
+	 *  along the measured-clear line south of the toe ring, and a final turn-in
+	 *  segment pointing due north into the channel mouth. Each anchor's yaw aims
+	 *  +X along the direction of travel (the TASK-657 tileable-along-X contract);
+	 *  each sits a couple of uu over measured support with a small monotonic z
+	 *  stagger so no two segments are ever coplanar whatever length the delivered
+	 *  ribbon has. Derivation and the leg tables in Castle.cpp.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Furnishing")
+	TArray<FTransform> TramplePathAnchors;
+
+	/**
+	 *  Toe-rock anchors, CASTLE-MESH-LOCAL (TASK-661): a picket of rocks along
+	 *  the d1 seal line's visual rim crest — the exact line VID-001's hero jumped
+	 *  at — so the friendly 95-uu green lip reads as the hard stop it already is
+	 *  (656: riser +506.5 vs step 50, unmountable BY DESIGN and STAYING so —
+	 *  F1-R3). Spacing ≈ 200 uu with deterministic yaw jitter, alternating the
+	 *  01/02 meshes for variety. Derivation in Castle.cpp.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Furnishing")
+	TArray<FTransform> ToeRockAnchors;
+
+	/**
+	 *  Gate banner mesh, soft — /Game/Meshes/SM_Castle_GateBanner (TASK-657
+	 *  authors it IN PARALLEL; this code deliberately lands first). The ATorch
+	 *  two-null-paths law: CLEARED (IsNull) = the silent designer opt-out — no
+	 *  banners, no log; SET BUT UNRESOLVABLE = skip the family with ONE log line
+	 *  (one-shot guard), never a crash. No C++ fallback exists or should: there
+	 *  is no such thing as a placeholder banner worth shipping.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Furnishing")
+	TSoftObjectPtr<UStaticMesh> GateBannerMeshAsset;
+
+	/** Trample-path ribbon segment mesh, soft — /Game/Meshes/SM_Castle_TramplePath (TASK-657, tileable along local X, pivot at ground contact). Same two null paths as GateBannerMeshAsset: cleared = silent opt-out, unresolvable = one-line skip. */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Furnishing")
+	TSoftObjectPtr<UStaticMesh> TramplePathMeshAsset;
+
+	/** Toe rock mesh 1 of 2, soft — /Game/Meshes/SM_Castle_ToeRock01 (TASK-657). The family spawns if EITHER rock mesh resolves (each anchor falls back to the one that did); both cleared = silent opt-out; set-but-neither-resolvable = one-line skip. */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Furnishing")
+	TSoftObjectPtr<UStaticMesh> ToeRockMeshAsset01;
+
+	/** Toe rock mesh 2 of 2, soft — /Game/Meshes/SM_Castle_ToeRock02 (TASK-657 names it OPTIONAL, so its absence alone is never logged: odd anchors quietly fall back to 01). */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Furnishing")
+	TSoftObjectPtr<UStaticMesh> ToeRockMeshAsset02;
+
 	/** Seconds between heal-over-time ticks (Masons repair, TASK-059) — impl detail, not a GDD stat. Smaller = smoother bar; the total/duration are the caller's. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle", meta = (ClampMin = "0.05"))
 	float HealTickInterval = 0.2f;
@@ -677,8 +755,38 @@ private:
 	 */
 	void SpawnCastleFurnishings();
 
-	/** Destroys the spawned torches + commander NPC and empties the tracking arrays (the ASiegeBattlefieldScatter::ClearScatter lifecycle: destroyed, never pooled). Idempotent and null-safe. */
+	/** Destroys the spawned torches + commander NPC and empties the tracking arrays (the ASiegeBattlefieldScatter::ClearScatter lifecycle: destroyed, never pooled). Idempotent and null-safe. TASK-661: also destroys the F1 discoverability mesh components. */
 	void DestroyCastleFurnishings();
+
+	/**
+	 *  Spawns the F1 discoverability set (TASK-661) — gate banners, trample-path
+	 *  ribbon, toe rocks — as UStaticMeshComponents attached to CastleMesh at the
+	 *  three anchor arrays' CASTLE-MESH-LOCAL transforms. A SIBLING of the torch/
+	 *  commander spawn, called from inside SpawnCastleFurnishings so it rides the
+	 *  IDENTICAL lifecycle with zero extra call sites: BeginPlay, both Play-Again
+	 *  edges (ApplyDestroyedState), teardown via DestroyCastleFurnishings.
+	 *  Null-safe throughout — every family soft-resolves per its property doc and
+	 *  a missing asset degrades to "that dressing is absent" (TASK-657 builds the
+	 *  assets in parallel and may land after this code; that ordering is the
+	 *  ruling's design, not an accident). ⛔ No authority guard, deliberately —
+	 *  the same Tier-C local-projection posture as the torches (see the class
+	 *  doc): both machines build identical sets from the same CDO defaults.
+	 */
+	void SpawnDiscoverabilityFurnishings();
+
+	/**
+	 *  Creates, configures, attaches and registers ONE discoverability mesh
+	 *  component at a castle-local anchor (TASK-661). ⛔ THE GH-R9 ENFORCEMENT
+	 *  SITE: SetCollisionEnabled(NoCollision) + no overlap events + no nav
+	 *  relevancy are forced HERE, code-side, on every component regardless of
+	 *  what the soft-resolved asset ships — the entry chain's collision record
+	 *  stays byte-identical even against a mis-authored asset. bCastShadow is
+	 *  EXPLICIT at every call site (the trailing-defaulted-parameter law: no
+	 *  default, so no caller can forget it means anything). Returns nullptr only
+	 *  on a null mesh/CastleMesh; the component is tracked in
+	 *  SpawnedDiscoverabilityMeshes.
+	 */
+	UStaticMeshComponent* SpawnDiscoverabilityMesh(UStaticMesh* Mesh, const FTransform& Anchor, bool bCastShadow);
 
 	/** Resolves TorchClassAsset: nullptr = the deliberate cleared opt-out; unresolvable = ATorch::StaticClass() plus one log line. */
 	UClass* ResolveTorchClass();
@@ -817,9 +925,30 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<ACommanderNpc> SpawnedCommanderNpc;
 
+	/**
+	 *  The F1 discoverability mesh components this castle spawned (TASK-661), in
+	 *  spawn order (banners, then the path chain, then the rocks). COMPONENTS,
+	 *  not actors, on purpose: they live and die WITH this actor, so the WR-§4
+	 *  orphan hazard the torch belt exists for cannot arise here at all —
+	 *  DestroyCastleFurnishings tears them down on the same edges anyway so a
+	 *  fallen castle sheds its signage with its torches. GC-rooted via UPROPERTY;
+	 *  Transient — runtime bookkeeping, never saved.
+	 */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UStaticMeshComponent>> SpawnedDiscoverabilityMeshes;
+
 	/** One-shot guard for the "BP_Torch unresolvable, using the C++ ATorch" line (once per castle, never per spawn and never per Play Again). */
 	bool bLoggedTorchClassFallback = false;
 
 	/** One-shot guard for the "BP_CommanderNpc unresolvable, using the C++ ACommanderNpc" line. */
 	bool bLoggedCommanderNpcClassFallback = false;
+
+	/** One-shot guard for the "SM_Castle_GateBanner unavailable — family skipped" line (TASK-661; once per castle, never per Play Again — the expected state until TASK-657 lands). */
+	bool bLoggedGateBannerMeshMissing = false;
+
+	/** One-shot guard for the "SM_Castle_TramplePath unavailable — family skipped" line (TASK-661). */
+	bool bLoggedTramplePathMeshMissing = false;
+
+	/** One-shot guard for the "no toe rock mesh resolves — family skipped" line (TASK-661; fires only when at least one of the two is SET and NEITHER resolves — a cleared pair is the silent opt-out). */
+	bool bLoggedToeRockMeshMissing = false;
 };
