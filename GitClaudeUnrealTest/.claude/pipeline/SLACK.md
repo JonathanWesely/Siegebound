@@ -32,6 +32,7 @@ All work traffic lives in a fixed registry of threads, each rooted by one manage
 | 🎨 Art | 1783116278.693139 | Asset production updates, imports to Content/, integration handoffs (handoff file paths) | art-director; manager/orchestrator as needed |
 | 🔧 Build & Git | 1783116286.945249 | Compile results, scene assembly, commit hashes, integration checks | build-master; orchestrator as needed |
 | 🚨 Blockers | 1783116296.221319 | Anything needing Jonathan or the orchestrator: escalations, QA-loop limit reached, MCP/editor outages, hard-gate questions | any agent + orchestrator; Jonathan monitors |
+| 🎬 Footage Review | 1787798959.639009 | Footage dispatches, VID-### finding summaries + report paths (`.claude/pipeline/footage/`), promoted evidence links (law: FR-§) | footage-analyst; manager/orchestrator as needed |
 
 `thread_ts` = the Slack ts of the thread's root post. Whoever creates a root (manager directly, or orchestrator proxying) records the ts here immediately. **A thread is not live until its ts is recorded.** Replies use `thread_ts` from this table; never start a parallel root.
 
@@ -46,11 +47,12 @@ Update (2026-07-03, M2 decomposition dispatch): manager direct posting PROVEN �
 | gameplay-programmer tasks, qa-reviewer verdicts | ⚙️ Dev & QA |
 | art-director tasks | 🎨 Art |
 | build-master compile/assemble/commit | 🔧 Build & Git |
+| footage-analyst reviews (VID-###) | 🎬 Footage Review |
 | any `blocked` status, escalation to Jonathan | 🚨 Blockers (cross-post one line; details stay in the domain thread) |
 
 ## Who posts
 
-All five agents post **directly** (manager and qa-reviewer granted direct Slack access 2026-07-03; the other three had it from v1). **Orchestrator proxying is the fallback**, not the norm: used only in headless runs where an agent's connector tools are absent. Proxied posts are verbatim, never edited beyond formatting.
+All six agents post **directly** (manager and qa-reviewer granted direct Slack access 2026-07-03; the other three had it from v1). **Orchestrator proxying is the fallback**, not the norm: used only in headless runs where an agent's connector tools are absent. Proxied posts are verbatim, never edited beyond formatting.
 
 Minimum duty per dispatch: at least one completion (or blocker) post in the agent's domain thread. Mid-task progress posts are optional.
 
@@ -58,7 +60,7 @@ Minimum duty per dispatch: at least one completion (or blocker) post in the agen
 
 All posts share one Slack account — **the prefix is the speaker.** Every post, top-level or in-thread, direct or proxied, starts with exactly one of:
 
-`📋 MANAGER:` · `🔍 QA:` · `⚙️ GAMEPLAY-PROGRAMMER:` · `🎨 ART-DIRECTOR:` · `🔧 BUILD-MASTER:` · `ORCHESTRATOR:`
+`📋 MANAGER:` · `🔍 QA:` · `⚙️ GAMEPLAY-PROGRAMMER:` · `🎨 ART-DIRECTOR:` · `🔧 BUILD-MASTER:` · `🎬 FOOTAGE-ANALYST:` · `ORCHESTRATOR:`
 
 ## Task lifecycle inside a domain thread
 

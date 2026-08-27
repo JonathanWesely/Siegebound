@@ -6,3 +6,7 @@ Build/
 .vs/
 *.sln
 *.suo
+# Gameplay footage review lane (FR-§0.2): raw videos + the .frames/ cache never enter git.
+# *.mp4 is an LFS pattern in .gitattributes — without this line a careless add pushes whole videos into LFS.
+# Only promoted evidence PNGs under GitClaudeUnrealTest/.claude/pipeline/playtest-evidence/ are committed.
+testvideo/

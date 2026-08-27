@@ -4137,3 +4137,37 @@ Variants use two digits: `SM_Rock_01`, `SM_Rock_02`
 
 ## Cross-discipline rule
 The task spec's `names:` block is the single source of truth. Programmer code references and Artist asset names must BOTH come from it, character-for-character.
+
+## ⚖️ FOOTAGE REVIEW — gameplay-video diagnosis lane (2026-08-26) — namespace **FR-§**
+
+Jonathan's directive, verbatim intent: he drops screen-recorded gameplay videos into `testvideo/`, describes the issues in the terminal, and AI reviews the footage, diagnoses, and routes fixes. Claude cannot ingest video — the lane is ffmpeg frame extraction → batched image Reads. Sections cite as `FR-§N`, never bare `§N` (born with its prefix).
+
+### FR-§0. ⚖️ JONATHAN'S RULINGS — DECIDED, BINDING, ⛔ NOT RE-OPENABLE
+1. **ffmpeg via winget** on the system PATH (installed 2026-08-26, Gyan.FFmpeg 9.0.1; the tool also self-locates via the WinGet Links/Packages dirs, so pre-install shells still work).
+2. **Videos NEVER enter git.** `testvideo/` is ignored at the ROOT `.gitignore` (`.gitignore:12`) — load-bearing because `*.mp4` is an LFS pattern in the root `.gitattributes`; without the ignore, one careless `git add` pushes whole videos into LFS. Only promoted evidence PNGs are committed.
+3. **footage-analyst is DIAGNOSE-ONLY** (the qa-reviewer model): never edits code/assets, never opens the editor or any engine/Blender MCP surface, never runs git. Its `tools:` allowlist carries no Edit and no MCP beyond Slack; the Bash grant makes the no-edit fence doctrinal (the build-master posture) — a footage-analyst diff in any file other than its report/evidence is a failed task.
+4. **DIRECT DISPATCH — the recorded exception to CLAUDE.md routing rule 1.** Jonathan's terminal report (video + description) IS the trigger; the orchestrator dispatches footage-analyst immediately with his verbatim words + the next VID-### (diagnosis is evidence-gathering, not decomposition — the CASTLE-FINDINGS precedent). The manager consumes the finished report to board EVERY fix; fixes then follow the normal routing rules.
+
+### FR-§1. NAMING + FOLDER LAW (the cross-task contract)
+| thing | law |
+|---|---|
+| video inbox | `<git-root>/testvideo/` (NOT the project folder). Filenames accepted VERBATIM — ⛔ never parse tokens from them, ⛔ never assume a TASK-### (Game Bar names carry double spaces + parentheses); every consumer quotes paths / uses list argv. Default selector = newest mtime among `*.mp4|*.mkv|*.mov`. |
+| frame cache | `testvideo/.frames/<slug>-<hash8>/` — machine-derived, DISPOSABLE (safe to delete whole dir), gitignored with its parent. Contains `probe.json`, `manifest.json` (tile→timestamp ground truth), `thumbs/`, `sheet_NN.png`, `frames/` |
+| reports | `.claude/pipeline/footage/VID-###-<symptom-slug>.md` — **VID-###** sequential (next = highest existing + 1); the ID is the join key manager-boarded fix tasks and Slack posts cite |
+| evidence | `.claude/pipeline/playtest-evidence/<YYYY-MM-DD>/VID-###[-t<MM>m<SS>s]-<symptom>.png` — written ONLY via the tool's `promote` (the naming law lives in code). This EXTENDS the 2026-08-17 precedent: video-derived frames carry ID+timestamp provenance; manual screenshots keep the old `<location>-<symptom>.png` shape; `handoffs/TASK-###-…` screenshots unchanged |
+
+### FR-§2. TOOL LAW — `Tools/VideoReview/extract_frames.py`
+System Python 3.14, stdlib + `subprocess`→ffmpeg only; Pillow OPTIONAL (labeled sheets + `crop` degrade gracefully without it). ⛔ No venv, ⛔ no numpy, ⛔ `Tools/ArtPipeline/.venv` never touched. ⛔ `shell=True` BANNED — list argv everywhere (the double-space law). Autocrop (`cropdetect`) is ON by default — Game Bar parks the game window in a corner of a larger black canvas (measured 2026-08-26: content 992×576 inside 2496×1440); `--no-autocrop` opts out. Exit codes: 0 ok · 2 no ffmpeg (message names the winget command) · 3 video missing/undecodable · 4 Pillow needed · 5 bad timestamp · 64 usage.
+
+### FR-§3. THE TWO-PASS DOCTRINE + BUDGET
+Coarse = labeled contact sheets (default 4x3 @ 480px tiles, interval `clamp(duration/48, 0.5, 10)` s — legibility VERIFIED on a real capture 2026-08-26: HUD gold counter readable per tile). Fine = full-res `frames --at` around candidates (0.5–1 s steps; `--run N` is the flicker instrument). Jonathan-given timestamps ⇒ ⛔ skip coarse, go fine at t±2 s. **Budget ≤ ~40 image Reads per video** — at the limit, report what you have and NAME the unexamined. ⛔ No UI-text claims from sheet tiles — `crop --scale 2` first. Pixel-proof doctrine inherited verbatim: report the observation with frame ref + measurement, never the conclusion; motion claims are frame-delta inferences and must say so.
+
+### FR-§4. REPORTING + ROUTING LAW
+The report template is pinned in `.claude/agents/footage-analyst.md` (Symptoms → Timeline table → promoted evidence → **Suspected mechanism — HYPOTHESIS, NOT VERDICT** (SC-§20 inheritance) → Routing recommendation → Not examined). Files are the contract; Slack (the 🎬 Footage Review standing thread) is visibility only. The manager boards ALL fixes from the report; downstream QA/compile/commit law unchanged (max-3-loop, never push). Evidence bullets use the path + dense pixel-description shape the manager already consumes.
+
+### FR-§5. ⚠️ KNOWN LIMITATIONS — ⛔ NONE OF THEM ARE BUGS
+- **No audio analysis** — anything audible-only is invisible; Jonathan's terminal description is the authoritative symptom source.
+- **Temporal resolution is bounded by sampling** — coarse tiles are ±interval/2 (Game Bar captures are VFR); sub-interval events can be missed; `--run` is the instrument for suspected flicker.
+- **Claude reads stills, not motion** — stutter/velocity judgments are frame-delta inferences and are labeled as such.
+- **Capture compression can mimic rendering defects** — low-confidence findings are flagged, not asserted.
+- **Sheet legibility is bounded by the model's image downscale** (~1568 px long edge); the 4x3 default was gate-verified with autocrop on 992×576 content — bigger content or subtler defects may need `--grid 3x2 --tile-width 640` or fine frames.

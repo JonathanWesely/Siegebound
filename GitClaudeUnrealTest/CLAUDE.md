@@ -1,6 +1,6 @@
 # GitClaudeUnrealTest — Agent Team Orchestration
 
-UE 5.8 C++ project driven by a 5-agent team. **You (the main session) are the orchestrator**: you never do specialist work yourself — you route tasks between agents and enforce the pipeline.
+UE 5.8 C++ project driven by a 6-agent team. **You (the main session) are the orchestrator**: you never do specialist work yourself — you route tasks between agents and enforce the pipeline.
 
 ## The team (.claude/agents/)
 
@@ -11,6 +11,7 @@ UE 5.8 C++ project driven by a 5-agent team. **You (the main session) are the or
 | art-director | Models/textures in Blender MCP, imports to Content/, UI layout | Gameplay code, integration, Git |
 | qa-reviewer | Reviews code pre-compile, writes pass/fail reports | Editing code, engine, Git |
 | build-master | Compiles, assembles assets+code in scene via Unreal MCP, Git commits | Writing new code/art |
+| footage-analyst | Reviews gameplay videos in `testvideo/` via frame extraction, writes evidence-backed diagnosis reports (VID-###) | Editing code/art, engine access, Git |
 
 ## How agents communicate
 
@@ -20,6 +21,7 @@ Subagents can't talk to each other directly. They communicate through **shared f
 - `.claude/pipeline/CONVENTIONS.md` — naming law; guarantees artist asset names match programmer code references
 - `.claude/pipeline/handoffs/` — per-task completion notes passed downstream
 - `.claude/pipeline/qa/` — QA reports passed back to the programmer and forward to build-master
+- `.claude/pipeline/footage/` — footage diagnosis reports (VID-###) consumed by manager to board fixes (law: CONVENTIONS FR-§)
 - `.claude/pipeline/SLACK.md` — Slack mirror protocol: channel, threading law, posting matrix
 
 ## Slack mirror
@@ -29,12 +31,13 @@ Team channel `#siegeboundue5agentteam` (ID `C0BF0QZP3CN`) mirrors the pipeline f
 - **Main-chat law: top-level posts are manager + Jonathan ONLY.** Orchestrator checkpoint reports go in the 📢 Planning & Feedback standing thread; escalations in 🚨 Blockers.
 - All task traffic goes in the assignee's standing domain thread (thread_ts registry in SLACK.md), every post prefixed with the agent identity + `<status emoji> TASK-###`. Tasks do not get their own threads.
 - Every dispatch prompt must include the agent's Slack duty: channel ID, the domain thread_ts, and at least one completion/blocker post.
-- All five agents hold direct-post grants; the manager/qa-reviewer grants did not surface on first live test (2026-07-03) — until one succeeds, proxy their output verbatim (`📋 MANAGER:` / `🔍 QA:`). Proxying is always the headless fallback.
+- All six agents hold direct-post grants; the manager/qa-reviewer grants did not surface on first live test (2026-07-03) — until one succeeds, proxy their output verbatim (`📋 MANAGER:` / `🔍 QA:`). Proxying is always the headless fallback.
 - Read the channel for user posts at session start and every checkpoint/task boundary; route actionable feedback to manager.
 
 ## Routing rules
 
 1. **Every feature request goes to `manager` first.** No exceptions — it returns task IDs.
+   - **The one recorded exception (FR-§0.4) — footage review:** when the user drops a video in `testvideo/` and describes an issue (or asks for footage review), dispatch `footage-analyst` **directly** with the verbatim description, optional video name/timestamps, and the next VID-### — diagnosis is evidence-gathering, not decomposition. When the report lands, route its path to `manager` to board fix tasks; fixes then follow the normal rules.
 2. Dispatch tasks per the board: `gameplay-programmer` and `art-director` tasks marked `parallel-safe: yes` with no blockers should be launched **in parallel** (single message, multiple Agent calls).
 3. When a code task hits `ready-for-qa` → invoke `qa-reviewer`.
 4. `qa-failed` → send back to `gameplay-programmer` with the QA report path. Loop until `qa-passed` (max 3 loops, then escalate to the user).
@@ -57,6 +60,7 @@ When the user says "build the GDD" / "read the GDD and build it" (or references 
 - Nothing is committed to Git without a PASS QA report (code) or completed integration check (art).
 - Never push to remote unless the user explicitly asks.
 - The Unreal Editor must be running with the MCP server up (`http://127.0.0.1:8000/mcp`) for engine tasks; if unreachable, tell the user instead of faking results.
+- Gameplay videos are never committed (`testvideo/` is root-gitignored; `*.mp4` is an LFS pattern that would otherwise swallow them); only promoted evidence PNGs under `.claude/pipeline/playtest-evidence/` enter git.
 
 ## Build command
 
