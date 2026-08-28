@@ -351,6 +351,22 @@ protected:
 	 *  clamp limit, 7380 − SpawnBoxAnchorInset 40, so even the clamped path would be a
 	 *  no-op). The clamp, SpawnBoxAnchorInset and BotSpawnLaneSpread are UNCHANGED by
 	 *  TASK-575 — the anchor-clamp law reads the tunables and stays structurally sound.
+	 *
+	 *  ⚖️ ROT-§4 rider (TASK-665, 2026-08-27, recomputed from
+	 *  handoffs/TASK-663-buildmaster.md §6): the CASTLE-ROTATION wave swapped
+	 *  Castle_Red's colliding X/Y half-extents — ResolveCastleFaceDistance(±X) now
+	 *  measures **3,692.18**, so the resolved offset is 3,692.18 + 1,343.15 =
+	 *  **5,035.33** and the wave anchor materializes at X = 25,000 − 5,035.33 =
+	 *  **19,964.67** (measured live in 663's SIE session: castle-front (19965, 418,
+	 *  20)). ⛔ NOTHING here was edited to make that happen — the live-bounds
+	 *  derivation self-corrected, which is this block's whole argument working as
+	 *  designed; the 9× worked rows above (…= 5,000.00 ⇒ X ≈ 20,000) stay as
+	 *  authored — pre-ROT historical record. Truth-change worth recording: with
+	 *  Red's gate rotated onto its −X face, the centerline-facing face this band
+	 *  fronts IS now the GATE face — the wave materializes in front of Red's own
+	 *  gate and marches out (663 §6), which serves M7.6 ruling #1's intent
+	 *  directly. Anchor-clamp claims re-checked at the new figure: 19,964.67 ∈
+	 *  [17,620, 32,380] and 5,035.33 < 7,340 — both still hold.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Bot|Placement", meta = (ClampMin = "0"))
 	float BotCastleSpawnOffset = 1343.15f;

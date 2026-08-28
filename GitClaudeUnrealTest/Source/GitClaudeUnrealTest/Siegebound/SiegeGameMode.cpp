@@ -632,7 +632,13 @@ void ASiegeGameMode::RestoreHeroAtStart(AController* Player)
 	// Full HP, visible, collision + movement + input restored (TASK-003 contract).
 	Hero->ResetHero();
 
-	// Face the hero's spawn direction (PlayerStart yaw 0 looks across the arena).
+	// Face the hero's spawn direction, whatever the resolver derived: a branch-2
+	// PlayerStart's authored yaw, or — since TASK-665 (ROT ACTIVATION RULING
+	// item 5) — the branch-3 castle-relative facing TOWARD the own castle's
+	// rotated gate. (This line used to say "PlayerStart yaw 0 looks across the
+	// arena" — a world-frame claim the CASTLE-ROTATION wave retired, CONVENTIONS
+	// ROT-§4: L_Arena's only PlayerStart is refused at the 9× castle and the
+	// live respawn facing is branch 3's.)
 	if (PC)
 	{
 		PC->SetControlRotation(StartRotation);
@@ -778,9 +784,11 @@ void ASiegeGameMode::GetHeroStartTransform(AController* Player, ETeamId HeroTeam
 
 	// 3) The hero's own-castle side (§3.1): the own-team castle's position,
 	//    offset toward the centerline (X=0, CONVENTIONS world axes) so the spawn
-	//    clears the castle footprint, facing the enemy half. THIS is the branch
-	//    the Red client takes (no Red-side PlayerStart exists in L_Arena — the
-	//    fallback IS the design, doc §3.4.4), and it is now reachable.
+	//    clears the castle footprint, facing the OWN castle (TASK-665 — pre-ROT
+	//    this branch faced the enemy half; see the facing derivation below,
+	//    CONVENTIONS ROT-§4). THIS is the branch the Red client takes (no
+	//    Red-side PlayerStart exists in L_Arena — the fallback IS the design,
+	//    doc §3.4.4), and it is now reachable.
 	if (OwnCastle)
 	{
 		// ── TASK-356 loop-2 BLOCKER-5 FIX: DERIVE the distance from the castle's
@@ -819,13 +827,30 @@ void ASiegeGameMode::GetHeroStartTransform(AController* Player, ETeamId HeroTeam
 		const FVector CastleLocation = OwnCastle->GetActorLocation();
 		const float TowardCenterline = (CastleLocation.X <= 0.0f) ? 1.0f : -1.0f;
 		OutLocation = CastleLocation + FVector(SpawnDistance * TowardCenterline, HeroSpawnCastleOffset.Y, HeroSpawnCastleOffset.Z);
-		OutRotation = FRotator(0.0f, (TowardCenterline > 0.0f) ? 0.0f : 180.0f, 0.0f);
+
+		// ── TASK-665 SPAWN-FACING FIX (ROT ACTIVATION RULING item 5; measured facing
+		//    delta 180°, handoffs/TASK-663-buildmaster.md §1): with the CASTLE-ROTATION
+		//    wave the gate mouth sits dead ahead ON this spawn axis (292 uu out, 663
+		//    §1), so the hero now spawns FACING HIS OWN CASTLE instead of the enemy
+		//    half. The yaw is DERIVED AT RUNTIME from the resolved castle transform —
+		//    atan2 toward the castle centre, ⛔ never a hardcoded yaw — so a moved
+		//    castle carries the facing with it exactly as it already carries the
+		//    location. Under the current layout this lands at yaw 180 (Blue) / 0 (Red)
+		//    — the old TowardCenterline facing negated, as the ruling derives.
+		//    Yaw-only on purpose (pitch/roll 0 — the same yaw-only contract branch 2
+		//    keeps). Degenerate-input proof: SpawnDistance >= the authored floor
+		//    (1,500) > 0, so ToOwnCastle.X is never ~0 and Atan2 is well-defined.
+		//    Whole derivation in double (FVector components are double in UE5) —
+		//    CONVENTIONS compile traps.
+		const FVector ToOwnCastle = CastleLocation - OutLocation;
+		const double FacingYawDeg = FMath::RadiansToDegrees(FMath::Atan2(ToOwnCastle.Y, ToOwnCastle.X));
+		OutRotation = FRotator(0.0, FacingYawDeg, 0.0);
 
 		UE_LOG(LogGitClaudeUnrealTest, Log,
-			TEXT("[%s] Castle-relative hero start for %s: castle X %.0f, measured colliding half-extent %.0f + clearance %.0f => spawn distance %.0f (authored floor %.0f) -> (%.0f, %.0f, %.0f)."),
+			TEXT("[%s] Castle-relative hero start for %s: castle X %.0f, measured colliding half-extent %.0f + clearance %.0f => spawn distance %.0f (authored floor %.0f) -> (%.0f, %.0f, %.0f), facing yaw %.0f toward the own castle (TASK-665)."),
 			*GetNameSafe(this), HeroTeam == ETeamId::Blue ? TEXT("Blue") : TEXT("Red"),
 			CastleLocation.X, CastleBoxExtent.X, HeroSpawnCastleClearance, SpawnDistance, AuthoredFloorX,
-			OutLocation.X, OutLocation.Y, OutLocation.Z);
+			OutLocation.X, OutLocation.Y, OutLocation.Z, OutRotation.Yaw);
 		return;
 	}
 

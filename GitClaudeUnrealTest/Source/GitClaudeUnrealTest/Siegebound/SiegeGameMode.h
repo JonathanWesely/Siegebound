@@ -301,6 +301,14 @@ protected:
 	 *  ≈**3,957** and this floor is simply inert (TASK-557 row S9 measured that
 	 *  with NO edit, which is why this value is deliberately UNCHANGED — see the
 	 *  clearance field below for why scaling it would be the defect).
+	 *  ⚖️ ROT-§4 rider (TASK-665, 2026-08-27, recomputed from
+	 *  handoffs/TASK-663-buildmaster.md §1): the CASTLE-ROTATION wave swapped the
+	 *  colliding X/Y half-extents — the resolver now reads X half **3,692.18**
+	 *  ⇒ derived distance **3,992** (663's live resolver log: "half-extent 3692 +
+	 *  clearance 300 => spawn distance 3992"). The floor stays inert by an even
+	 *  wider margin; the mechanism auto-followed the rotation with NO edit,
+	 *  exactly as this block argues it must. The pre-ROT figures above stay as
+	 *  authored — historical record.
 	 *
 	 *  ⛔ RETIRED CLAIM (TASK-573, recorded rather than deleted so a future tuner
 	 *  who finds it in git history knows it was refuted): this block used to argue
@@ -323,6 +331,10 @@ protected:
 	 *  1,519. ⭐ **It AUTO-FOLLOWED the 9× resize with no edit at all** — TASK-557
 	 *  row S9 measured exactly that, and CONVENTIONS WR-§2b names this field the
 	 *  MODEL the rest of that ledger is repaired against.
+	 *  ⚖️ ROT-§4 rider (TASK-665, 2026-08-27): the CASTLE-ROTATION extent swap
+	 *  makes the live X half **3,692.18** ⇒ this now derives **3,992** — measured
+	 *  live by TASK-663 §1. Auto-followed again, third resize/repose in a row
+	 *  with no edit.
 	 *
 	 *  ⛔ VALUE DELIBERATELY UNCHANGED AT 9× (SC-§34 human-scale exemption,
 	 *  WR-§1): 300 is keyed to a BODY, not to the castle — the hero capsule
@@ -404,10 +416,13 @@ private:
 	 *  side, M7.6 ±25000 widening) **only when it lies on that same side AND is
 	 *  not inside that castle's colliding bounds** (or when the level has no
 	 *  castle at all — the pre-M8 behavior); (3) else next to the own-team castle,
-	 *  offset toward the centerline, facing the enemy half; (4) else the arena
-	 *  origin (logged). The side test is data-driven (castle X sign), never a
-	 *  Blue/Red hardcode. FindPlayerStart's WorldSettings fallback is rejected —
-	 *  it is not a spawn point.
+	 *  offset toward the centerline, facing the OWN castle — the yaw derived at
+	 *  runtime, atan2 toward the castle centre (TASK-665, ROT ACTIVATION RULING
+	 *  item 5: pre-ROT this branch faced the enemy half, and 663 measured the
+	 *  hero spawning 180° away from his own rotated gate — CONVENTIONS ROT-§4);
+	 *  (4) else the arena origin (logged). The side test is data-driven (castle
+	 *  X sign), never a Blue/Red hardcode. FindPlayerStart's WorldSettings
+	 *  fallback is rejected — it is not a spawn point.
 	 *
 	 *  ⚠️ THE FOOTPRINT TEST IS WHY (2) IS NO LONGER UNCONDITIONALLY
 	 *  BYTE-IDENTICAL, AND IT IS THE POINT (TASK-573, CONVENTIONS WR-§2b row A):

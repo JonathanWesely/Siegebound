@@ -162,6 +162,21 @@ namespace
 	//~ and local +X is the face a straight run from the Blue spawn hits (656 §1,
 	//~ the d1 line). ⛔ F1-R3: these constants place VISUALS ONLY — no seal, hull
 	//~ or collision figure is authored or altered anywhere in this block.
+	//~
+	//~ (TASK-664 comment rider, ROT-§4 — 2026-08-27: TASK-662 rotated both
+	//~ castles (Blue yaw +90 / Red −90; the gates now face the battlefield
+	//~ centre, measured at TASK-662/663), so this block's WORLD-frame
+	//~ equivalences are history: a straight run from the Blue spawn now hits the
+	//~ gate MOUTH (local −Y) — the hero spawns dead ON the gate axis, 292 uu out
+	//~ (handoffs/TASK-663-buildmaster.md §1) — and compass words in this lane
+	//~ ("south", "east", "west") are the 656 record's castle-LOCAL shorthand
+	//~ (local −Y = the mouth side), not live world directions. Present-tense
+	//~ premise statements about the trample path and toe rocks below describe
+	//~ the RETIRED TASK-661 defaults: the ROT ACTIVATION RULING (items 2/3, on
+	//~ 663's measured record) emptied both CDO anchor arrays in the constructor;
+	//~ these constants stay as the recorded derivation for reversal. The gate
+	//~ banner pair is the KEPT family (ruling item 1) — 663 confirmed on pixels
+	//~ that the pair frames the mouth on the LIVE approach.)
 
 	/** The d1 design seal: skirt_toe_01's east face plane (656 §2 face bisection — EMPTY at x ≥ 3665, Castle_0 at x ≤ 3660; manifest 3657.5, live == manifest). Referenced for DERIVING visual poses only; the seal itself is untouched (F1-R3). */
 	constexpr float SealFaceLocalX = 3657.5f;
@@ -463,67 +478,37 @@ ACastle::ACastle()
 	GateBannerAnchors.Add(FTransform(FRotator(0.f, -90.f, 0.f), FVector(-GateBannerAbsX, GateBannerY, 0.f))); // west of the mouth (−1400, −3675, 0)
 	GateBannerAnchors.Add(FTransform(FRotator(0.f, -90.f, 0.f), FVector(+GateBannerAbsX, GateBannerY, 0.f))); // east of the mouth (+1400, −3675, 0)
 
-	// ---- TRAMPLE PATH CHAIN — spawn line → around the toe ring → the mouth (ruling item (b)) ----
-	// 13 anchors in WALK ORDER, every yaw aiming +X along the direction of
-	// travel (the tileable-along-X contract); z = TrampleLiftZ +
-	// TrampleStaggerZ × chain index (the +2 support lift plus the anti-coplanar
-	// stagger — see the constants).
-	TramplePathAnchors.Reserve(TrampleSouthLegCount + 1 + TrampleWestLegCount + 1);
-	int32 TrampleChainIndex = 0;
+	// ---- TRAMPLE PATH CHAIN — ⚖️ RETIRED EMPTY (TASK-664, ROT ACTIVATION RULING item 2, 2026-08-27) ----
+	// The TASK-661 default authored 13 anchors in walk order down the hero's OLD
+	// east-face stop lane (x 3699.5), around the toe ring and into the mouth — a
+	// guide for the pre-rotation refusal route VID-001 recorded. TASK-662's
+	// rotation dissolved that premise and TASK-663 measured the remains: the
+	// chain's origin leg lies on a flank no route touches, and the live spawn
+	// now stands 292 uu from the mouth dead ON the gate axis
+	// (handoffs/TASK-663-buildmaster.md §1/§3) — a guide path there would be
+	// ~zero-length. TramplePathAnchors is therefore left DEFAULT-CONSTRUCTED
+	// EMPTY: the spawn lane iterates zero anchors, spawns nothing, and logs
+	// nothing beyond the one summary line ("0/0 path segments" — the ATorch
+	// empty-family posture). Machinery, TramplePathMeshAsset and the imported
+	// asset all STAY — reversal = re-authoring anchors right here (the retired
+	// 13-anchor derivation: this block pre-664 in git, or the TASK-661 handoff
+	// §2 table).
 
-	// Leg 1 — SOUTH down the hero's own stop lane: x 3699.5 (seal face 3657.5 +
-	// capsule radius 42 — the exact line VID-001's hero walked), y 0, −600, …
-	// −3000. The first segment starts AT the measured stop point (+3699.5, 0):
-	// the trail begins under the hero's feet and leads away. Yaw −90 ⇒ +X = −Y.
-	for (int32 SouthSegIndex = 0; SouthSegIndex < TrampleSouthLegCount; ++SouthSegIndex)
-	{
-		TramplePathAnchors.Add(FTransform(FRotator(0.f, -90.f, 0.f),
-			FVector(HeroStopLaneX, -TramplePitch * static_cast<float>(SouthSegIndex), TrampleLiftZ + TrampleStaggerZ * static_cast<float>(TrampleChainIndex))));
-		++TrampleChainIndex;
-	}
-
-	// The SE corner at (3699.5, −3700): the south→west turn, yaw −135 = the
-	// diagonal between the two legs' headings. On the wrap lane, south of the
-	// measured −3692.5 toe-ring bound.
-	TramplePathAnchors.Add(FTransform(FRotator(0.f, -135.f, 0.f),
-		FVector(HeroStopLaneX, WrapLaneY, TrampleLiftZ + TrampleStaggerZ * static_cast<float>(TrampleChainIndex))));
-	++TrampleChainIndex;
-
-	// Leg 2 — WEST along the wrap: y −3700 (south of the measured-clear −3692.5
-	// bound, ON the proven route's own station line), x = corner x minus 1..5
-	// pitches ⇒ 3099.5, 2499.5, 1899.5, 1299.5, 699.5. Yaw 180 ⇒ +X = world −X.
-	for (int32 WestSegIndex = 0; WestSegIndex < TrampleWestLegCount; ++WestSegIndex)
-	{
-		TramplePathAnchors.Add(FTransform(FRotator(0.f, 180.f, 0.f),
-			FVector(HeroStopLaneX - TramplePitch * static_cast<float>(WestSegIndex + 1), WrapLaneY, TrampleLiftZ + TrampleStaggerZ * static_cast<float>(TrampleChainIndex))));
-		++TrampleChainIndex;
-	}
-
-	// The TURN-IN at (0, −3700): the channel's centre lane (x 0 — the exact lane
-	// 656 walked 16/16 EMPTY), yaw +90 ⇒ +X = +Y = due north THROUGH the mouth.
-	// The chain's last segment is the arrow at the ramp foot; whatever length
-	// 657 ships, any overrun past y −3650 vanishes under/into the step mass —
-	// the trail runs to the door's own threshold and no further (the ramp needs
-	// no dressing, 656 §4).
-	TramplePathAnchors.Add(FTransform(FRotator(0.f, 90.f, 0.f),
-		FVector(0.f, WrapLaneY, TrampleLiftZ + TrampleStaggerZ * static_cast<float>(TrampleChainIndex))));
-
-	// ---- TOE ROCK PICKET — the east seal line reads as what it is (ruling item (c)) ----
-	// Ten rocks ON the rim crest: x 3650 (the measured 3645..3655 crest), y
-	// −1000, −800, … +800 (the full measured rim span at the ≈200 ruling
-	// spacing, ends inclusive), z 95 = the measured rim top — each ground-
-	// contact pivot STANDS ON the very lip the hero jumped at, putting the
-	// silhouette exactly where the refusal happens. Yaw walks the golden angle
-	// per rock (deterministic — baked into this CDO array once, identical on
-	// every machine and both castles). The 01/02 mesh alternation happens at
-	// spawn, not here: an anchor is a pose, never an asset choice.
-	ToeRockAnchors.Reserve(ToeRockCount);
-	for (int32 RockIndex = 0; RockIndex < ToeRockCount; ++RockIndex)
-	{
-		const float RockYawDeg = FMath::Fmod(ToeRockYawStepDeg * static_cast<float>(RockIndex), 360.f);
-		ToeRockAnchors.Add(FTransform(FRotator(0.f, RockYawDeg, 0.f),
-			FVector(SealRimCrestX, SealRimMinY + ToeRockSpacingY * static_cast<float>(RockIndex), SealRimTopZ)));
-	}
+	// ---- TOE ROCK PICKET — ⚖️ RETIRED EMPTY, ⛔ NO RE-AIM (TASK-664, ROT ACTIVATION RULING item 3, 2026-08-27) ----
+	// The TASK-661 default stood ten rocks on the d1 seal rim crest (local
+	// x 3650, y −1000..+800, z 95) so the OLD east-face refusal line read as
+	// the hard stop it was. Post-rotation that face sits 90° off every live
+	// route, and TASK-663 measured the forward-of-spawn field EMPTY ×3 stations
+	// on BOTH castles — no misleading walk-up face survives anywhere the player
+	// looks (handoffs/TASK-663-buildmaster.md §2/§3) — so the ruling retires
+	// the picket WITHOUT a re-aim: a re-aim would dress a defect that no longer
+	// exists. ToeRockAnchors is left DEFAULT-CONSTRUCTED EMPTY (zero anchors ⇒
+	// zero spawns, zero log noise, "0/0 toe rocks" in the summary line — the
+	// ATorch empty-family posture); machinery, both ToeRockMeshAsset soft refs
+	// and the imported assets all STAY. (This retirement also MOOTS the 659
+	// §5.3 "M1 rock dominance" eye-call — ruling item 3.) Reversal = the
+	// retired 10-anchor derivation: this block pre-664 in git, or the TASK-661
+	// handoff §2 table.
 }
 
 void ACastle::OnConstruction(const FTransform& Transform)
@@ -767,6 +752,13 @@ void ACastle::SpawnCastleFurnishings()
 	// castle actors sit at yaw 0 and both gates face world −Y, measured live at
 	// TASK-617 C1. The composition is correct at ANY pose, which is the real reason
 	// it is written this way.)
+	// (TASK-664 comment rider, ROT-§4 — 2026-08-27: the 637 rider's map claim is
+	// now the stale one — TASK-662 ROTATED both castle actors: Blue yaw +90 /
+	// Red −90, gates facing the battlefield centre (Blue +X / Red −X), measured
+	// live at TASK-662/663. "Correct at ANY pose" just carried its first real
+	// pose change: 663 read every castle-local anchor riding the rotation
+	// byte-true. The 637 text above stays as authored — the record is never
+	// rewritten.)
 	const FTransform CastleMeshTransform = CastleMesh->GetComponentTransform();
 
 	if (UClass* TorchClass = ResolveTorchClass())
@@ -1483,6 +1475,12 @@ FVector ACastle::GetInteriorAnchorLocation() const
 	// used to state "Castle_Red is placed at yaw 180" as the live map — STALE:
 	// BOTH castle actors sit at yaw 0 and both gates face world −Y, measured live
 	// at TASK-617 C1. TASK-218's yaw-180 plan is history, not the map.)
+	// (TASK-664 comment rider, ROT-§4 — 2026-08-27: superseded again — TASK-662
+	// rotated the map: Blue yaw +90 / Red −90, gates facing the battlefield
+	// centre (Blue +X / Red −X), measured at TASK-662/663. The RESOLVED WORLD
+	// POINTS below survive unchanged exactly as their own note promises —
+	// "identical under any yaw while the anchor stays ZeroVector"; only the
+	// "BOTH yaw 0" parenthetical is historical now.)
 	//
 	// RESOLVED WORLD POINTS at the measured L_Arena placement (Castle_Blue
 	// (−25000, 0, 0) and Castle_Red (+25000, 0, 0), BOTH yaw 0 — TASK-617 C1):

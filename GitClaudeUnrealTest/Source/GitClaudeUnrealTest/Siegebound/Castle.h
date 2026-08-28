@@ -75,6 +75,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCastleHPChanged, float, CurrentH
  *        TASK-617 C1. The mesh-relative reasoning stands on its own: if a
  *        level edit ever DOES yaw a castle, its furniture follows with no
  *        second edit.)
+ *        (TASK-664 comment rider, ROT-§4 — 2026-08-27: that level edit
+ *        HAPPENED. TASK-662 rotated both castles — Blue yaw +90 / Red −90,
+ *        gates facing the battlefield centre (Blue +X / Red −X), measured at
+ *        TASK-662/663 — and 663 read the furniture riding the rotation
+ *        byte-true, exactly as promised. The 637 text above stays as
+ *        authored.)
  *    (3) The anchors travel with the castle actor FOREVER: move, rotate or
  *        re-scale the castle and its furniture follows, with no second edit.
  *
@@ -201,6 +207,11 @@ public:
 	 *  0 and both gates face world −Y, measured live at TASK-617 C1. The transform
 	 *  form is kept regardless: a non-zero relative anchor must rotate with the
 	 *  castle if a level edit ever yaws one, or it lands outside the wrong wall.)
+	 *  (TASK-664 comment rider, ROT-§4 — 2026-08-27: the level edit arrived —
+	 *  TASK-662 set Blue yaw +90 / Red −90, gates now facing the battlefield
+	 *  centre (Blue +X / Red −X), measured at TASK-662/663. The transform form
+	 *  absorbed it with no code change, as designed; at the ZeroVector default
+	 *  the returned point is unchanged.)
 	 *  At the shipped ZeroVector default the two are identical BY CONSTRUCTION, and
 	 *  this returns the actor's own location.
 	 *
@@ -479,6 +490,9 @@ protected:
 	 *  face world −Y, measured live at TASK-617 C1. The transform form is what
 	 *  keeps this value pose-proof if a level edit ever yaws one — the
 	 *  GetInteriorAnchorLocation() doc's TASK-623 rider reasoning).
+	 *  (TASK-664 comment rider, ROT-§4 — 2026-08-27: TASK-662 yawed them for
+	 *  real — Blue +90 / Red −90, gates facing the battlefield centre, measured
+	 *  at TASK-662/663; the ZeroVector value is pose-proof and unchanged.)
 	 *
 	 *  Default ZeroVector, and it is not an arbitrary zero: SM_Castle's origin is
 	 *  GROUND-CENTRE by law (CONVENTIONS WR-§0 — 9× bounds within ±10 % of
@@ -615,6 +629,21 @@ protected:
 	//~ AND every spawned component is forced NoCollision code-side regardless of
 	//~ what the asset ships — GH-R9 belt and braces; the entry-chain collision
 	//~ record stays byte-identical.
+	//~
+	//~ (TASK-664 comment rider, ROT-§4 — 2026-08-27: the paragraph above is the
+	//~ PRE-ROTATION record. TASK-662 rotated both castles (Blue yaw +90 / Red
+	//~ −90), so the mouth now faces the battlefield centre and the hero spawns
+	//~ ON the gate axis, 292 uu from his own mouth (handoffs/TASK-663-
+	//~ buildmaster.md §1) — "the door is south" is no longer the world-frame
+	//~ truth, and the discoverability defect the two route-dressing families
+	//~ existed to fix no longer exists. The ROT ACTIVATION RULING on 663's
+	//~ record KEEPS the banners (663 pixels: the pair frames the mouth on the
+	//~ live approach; Red's pair still signposts the hero's attack approach)
+	//~ and RETIRES the trample path and toe rocks by emptying their two CDO
+	//~ anchor arrays in the constructor (TASK-664). Spawn lanes, soft mesh refs
+	//~ and imported assets stay — the families revive by re-authoring anchors,
+	//~ zero code changes. Compass words in this lane are the 656 record's
+	//~ castle-LOCAL shorthand: local −Y = the mouth side.)
 
 	/**
 	 *  Gate banner-pole anchors, CASTLE-MESH-LOCAL (TASK-661): one marker either
@@ -635,6 +664,15 @@ protected:
 	 *  each sits a couple of uu over measured support with a small monotonic z
 	 *  stagger so no two segments are ever coplanar whatever length the delivered
 	 *  ribbon has. Derivation and the leg tables in Castle.cpp.
+	 *
+	 *  ⚖️ RETIRED EMPTY (TASK-664, ROT ACTIVATION RULING item 2, 2026-08-27):
+	 *  the CDO default is now the EMPTY array — the route this chain guided
+	 *  dissolved when TASK-662 turned the mouth onto the spawn axis (TASK-663
+	 *  §3: origin leg on a dead flank; the live spawn is 292 uu from the mouth).
+	 *  The paragraph above documents the RETIRED TASK-661 default for the
+	 *  record; the property, spawn lane and mesh asset all stay, so
+	 *  re-authoring anchors here (or a BP defaults edit) revives the family
+	 *  with zero code changes.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Furnishing")
 	TArray<FTransform> TramplePathAnchors;
@@ -646,6 +684,14 @@ protected:
 	 *  (656: riser +506.5 vs step 50, unmountable BY DESIGN and STAYING so —
 	 *  F1-R3). Spacing ≈ 200 uu with deterministic yaw jitter, alternating the
 	 *  01/02 meshes for variety. Derivation in Castle.cpp.
+	 *
+	 *  ⚖️ RETIRED EMPTY, ⛔ NO RE-AIM (TASK-664, ROT ACTIVATION RULING item 3,
+	 *  2026-08-27): the CDO default is now the EMPTY array — post-rotation the
+	 *  d1 rim sits 90° off every live route and TASK-663 §2 measured the
+	 *  forward-of-spawn field EMPTY on both castles, so no misleading walk-up
+	 *  face remains to dress and the ruling forbids a re-aim. The paragraph
+	 *  above documents the RETIRED TASK-661 default for the record; property,
+	 *  spawn lane and both rock meshes stay.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Castle|Furnishing")
 	TArray<FTransform> ToeRockAnchors;

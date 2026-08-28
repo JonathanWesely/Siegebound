@@ -1394,6 +1394,13 @@ bool ASiegeBotController::ComputeValidBotSpawnPoint(const FVector& Desired, bool
 	// owns is the far-flung rule-2 mine anchors, thousands of uu away; those land in
 	// the box's centerline-facing front band and MARCH out from there, and M7.6 ruling
 	// #1's intent is now carried by the anchor itself rather than by this clamp.
+	// ⚖️ ROT-§4 rider (TASK-665, 2026-08-27): post-CASTLE-ROTATION the extent swap
+	// resolves the castle-front anchor to ~5,035.33 from the centre ⇒ X ≈ 19,964.67
+	// (TASK-663 §6 measured the wave live at 19,965 — in front of Red's rotated
+	// GATE face). Both containment claims above re-checked at the new figure and
+	// still hold (19,964.67 ∈ [17,620, 32,380]; 5,035.33 < 7,340) — the
+	// pass-through carve-out still governs and this clamp still never touches it.
+	// The ~20,000 figures above stay as authored — pre-ROT record.
 	const FVector Anchor = ClampAnchorToBotSpawnRegion(Desired);
 
 	UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(World);
