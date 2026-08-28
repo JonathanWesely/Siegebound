@@ -2,6 +2,8 @@
 
 #include "Siegebound/DeckBuilderWidget.h"
 
+#include "Components/HorizontalBox.h"     // TASK-671: the DeckBar container (DECK-§7)
+#include "Components/HorizontalBoxSlot.h" // TASK-671: per-entry slot rules on the bar row
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h" // TASK-602: UGameInstance::GetSubsystem — resolve the ACC-§4 account seam at call time
 #include "Engine/Texture2D.h"
@@ -9,6 +11,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Siegebound/CardRow.h"
 #include "Siegebound/DeckLibrary.h"
+#include "Siegebound/DeckSlotEntryWidget.h" // TASK-671: the code-authored bar entry (DECK-§5)
 #include "Siegebound/SiegeAccountSubsystem.h" // TASK-602: USiegeAccountSubsystem — the ACC-§4 deck-slot seam (the class is TASK-600's, landing in the same batch — the TASK-442 parallel-header precedent)
 #include "Siegebound/SiegeDeckSaveGame.h"
 #include "Siegebound/SpellLibrary.h"
@@ -268,6 +271,254 @@ UDeckBuilderWidget::UDeckBuilderWidget(const FObjectInitializer& ObjectInitializ
 }
 
 // ---------------------------------------------------------------------------
+// The ten-slot model (TASK-670 — CONVENTIONS DECK-§1..§4, signatures DECK-§8)
+// ---------------------------------------------------------------------------
+
+void UDeckBuilderWidget::NativeConstruct()
+{
+	// Super FIRST, deliberately: UUserWidget::NativeConstruct fires the WBP's
+	// Event Construct, so any legacy graph-side seed (the seed-then-bind
+	// LoadDefaultDeck call) runs BEFORE the model init below and is simply
+	// overwritten by it. It cannot clobber a saved slot either: EditingDeckIndex
+	// is still INDEX_NONE at that point, so the PersistWorkingDeck guard refuses
+	// the auto-save (one Warning — the visible signal that the graph seed is
+	// redundant and TASK-672 should cut it per the TASK-669 record).
+	Super::NativeConstruct();
+
+	// DECK-§2: the ONE shipping migration call site — builder-open-time only;
+	// the match path (SiegePlayerController) never migrates.
+	if (USiegeDeckSaveGame* SaveObj = LoadOrCreateSaveGame())
+	{
+		if (USiegeDeckSaveGame::MigrateToFixedSlots(*SaveObj))
+		{
+			// caller persists (the migration itself never touches disk) — the
+			// ACC-§4 call-time seam, same shape as SaveDeckAs/SetActiveDeck
+			const FString DeckSlotName = ResolveDeckSlotName(GetGameInstance());
+			if (UGameplayStatics::SaveGameToSlot(SaveObj, DeckSlotName, USiegeDeckSaveGame::UserIndex))
+			{
+				UE_LOG(LogGitClaudeUnrealTest, Log,
+					TEXT("UDeckBuilderWidget: migrated slot '%s' to the %d fixed decks (active '%s')."),
+					*DeckSlotName, USiegeDeckSaveGame::NumFixedDeckSlots, *SaveObj->ActiveDeckName);
+			}
+			else
+			{
+				// non-fatal: the migration is idempotent, so the next builder
+				// open simply re-runs it (DECK-§2)
+				UE_LOG(LogGitClaudeUnrealTest, Warning,
+					TEXT("UDeckBuilderWidget: SaveGameToSlot('%s') failed — migration NOT persisted; it will re-run next open."),
+					*DeckSlotName);
+			}
+		}
+	}
+	else
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("UDeckBuilderWidget::NativeConstruct: could not load or create the deck SaveGame — the ten-slot model is unavailable this session."));
+	}
+
+	// DECK-§3: the builder opens on the ACTIVE deck selected for editing.
+	// GetActiveDeckIndex never returns INDEX_NONE (deck1 fallback), so this
+	// always selects a real slot.
+	SelectDeckForEdit(GetActiveDeckIndex());
+
+	// ------------------------------------------------------------------------
+	// TASK-671 (DECK-§5): the deck bar — ten code-authored UDeckSlotEntryWidget
+	// entries in slot order, populated into the WBP-authored DeckBar container.
+	// Built AFTER the model init above so the first RefreshDeckBarStates below
+	// renders the true post-migration active/editing pair. Idempotent across
+	// re-adds to the viewport: cleared and rebuilt every NativeConstruct.
+	// ------------------------------------------------------------------------
+	if (DeckBar != nullptr)
+	{
+		DeckBar->ClearChildren();
+		DeckBarEntries.Reset();
+		DeckBarEntries.Reserve(USiegeDeckSaveGame::NumFixedDeckSlots);
+
+		for (int32 SlotIndex = 0; SlotIndex < USiegeDeckSaveGame::NumFixedDeckSlots; ++SlotIndex)
+		{
+			UDeckSlotEntryWidget* Entry = CreateWidget<UDeckSlotEntryWidget>(this);
+			if (Entry == nullptr)
+			{
+				UE_LOG(LogGitClaudeUnrealTest, Warning,
+					TEXT("UDeckBuilderWidget: could not create the deck-bar entry for slot %d - that slot is missing from the bar this session."),
+					SlotIndex);
+				continue;
+			}
+
+			// The label is the ONE composer's name (DECK-§1: "deck1".."deck10"
+			// are never hand-typed — label = save key = cloud key, triple duty).
+			Entry->SetSlotIndexAndLabel(SlotIndex, USiegeDeckSaveGame::MakeFixedDeckName(SlotIndex));
+
+			// Gesture routing (D7 / DECK-§3): LEFT selects the slot for
+			// EDITING, RIGHT makes it the ACTIVE match deck. Both bind straight
+			// onto the model UFUNCTIONs — the same surfaces TASK-674 drives
+			// directly — whose own success paths refresh the bar states, so a
+			// gesture and a direct call render identically.
+			Entry->OnLeftClicked.BindUObject(this, &UDeckBuilderWidget::SelectDeckForEdit);
+			Entry->OnRightClicked.BindUObject(this, &UDeckBuilderWidget::SetActiveDeckBySlot);
+
+			if (UHorizontalBoxSlot* EntrySlot = DeckBar->AddChildToHorizontalBox(Entry))
+			{
+				// Ten equal Fill shares: the bar divides ANY window width
+				// evenly, so all ten entries stay visible at every size the
+				// DECK-§6 pixel gate captures — the row never clips an entry.
+				EntrySlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+				EntrySlot->SetPadding(FMargin(2.f, 2.f));
+				EntrySlot->SetHorizontalAlignment(HAlign_Fill);
+				EntrySlot->SetVerticalAlignment(VAlign_Fill);
+			}
+
+			DeckBarEntries.Add(Entry);
+		}
+
+		RefreshDeckBarStates();
+	}
+	else
+	{
+		// DECK-§5: WBP_DeckBuilder does not carry the DeckBar container yet
+		// (TASK-672 authors it in parallel). One Warning, skip the bar —
+		// everything else in the builder keeps working. Never a crash.
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("UDeckBuilderWidget: no DeckBar container bound (WBP_DeckBuilder not updated yet?) - the deck bar is skipped this session."));
+	}
+}
+
+void UDeckBuilderWidget::SelectDeckForEdit(int32 SlotIndex)
+{
+	if (SlotIndex < 0 || SlotIndex >= USiegeDeckSaveGame::NumFixedDeckSlots)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("UDeckBuilderWidget::SelectDeckForEdit(%d): not a fixed slot (0..%d) — refused."),
+			SlotIndex, USiegeDeckSaveGame::NumFixedDeckSlots - 1);
+		return;
+	}
+
+	const FString FixedName = USiegeDeckSaveGame::MakeFixedDeckName(SlotIndex);
+
+	// Load the slot's saved deck into the working model. Post-migration the
+	// slot always exists (DECK-§1 always-materialized); the null-safe fallback
+	// (no save yet / pre-migration) is an EMPTY working deck stamped with the
+	// fixed name — DECK-§3's "empty slot => empty working deck", never a crash.
+	WorkingDeck.Cards.Reset();
+	WorkingDeck.DeckName = FixedName;
+	if (const USiegeDeckSaveGame* SaveObj = LoadSaveGame())
+	{
+		for (const FDeckList& Deck : SaveObj->SavedDecks)
+		{
+			if (Deck.DeckName.Equals(FixedName, ESearchCase::IgnoreCase))
+			{
+				WorkingDeck = Deck;
+				WorkingDeck.DeckName = FixedName; // canonical lowercase even off a pre-migration save
+				break;
+			}
+		}
+	}
+
+	EditingDeckIndex = SlotIndex;
+
+	// No disk write here: selecting changes WHICH deck is edited, not any
+	// deck's content — content mutations reach disk through PersistWorkingDeck
+	// (DECK-§4), and the editing selection itself is transient by construction
+	// (DECK-§1: the save class gains no field; ActiveDeckName is the only
+	// persisted selection and it belongs to SetActiveDeckBySlot).
+	OnDeckModelChanged();
+
+	// TASK-671: the EDITING index moved — retint the bar (fill tint follows the
+	// edited slot, DECK-§3). Refusals above returned before any state change,
+	// so they redraw nothing. No-op until the bar exists (NativeConstruct calls
+	// this function BEFORE the bar build; the build's own refresh catches up).
+	RefreshDeckBarStates();
+}
+
+int32 UDeckBuilderWidget::GetEditingDeckIndex() const
+{
+	return EditingDeckIndex;
+}
+
+void UDeckBuilderWidget::SetActiveDeckBySlot(int32 SlotIndex)
+{
+	if (SlotIndex < 0 || SlotIndex >= USiegeDeckSaveGame::NumFixedDeckSlots)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("UDeckBuilderWidget::SetActiveDeckBySlot(%d): not a fixed slot (0..%d) — refused."),
+			SlotIndex, USiegeDeckSaveGame::NumFixedDeckSlots - 1);
+		return;
+	}
+
+	// Delegate to the EXISTING strict activation path (byte-compatible API,
+	// DECK-§4): deck-exists check, canonical-name store, ACC-§4 call-time slot
+	// seam, persist, OnDeckModelChanged — reused, never reimplemented. Post-
+	// migration every fixed slot exists, so the strict check always passes;
+	// pre-migration (edge) it warns and no-ops, never dangles ActiveDeckName.
+	SetActiveDeck(USiegeDeckSaveGame::MakeFixedDeckName(SlotIndex));
+}
+
+int32 UDeckBuilderWidget::GetActiveDeckIndex() const
+{
+	if (const USiegeDeckSaveGame* SaveObj = LoadSaveGame())
+	{
+		const int32 SlotIndex = USiegeDeckSaveGame::FindFixedDeckIndex(SaveObj->ActiveDeckName);
+		if (SlotIndex != INDEX_NONE)
+		{
+			return SlotIndex;
+		}
+	}
+
+	// deck1 — the DECK-§3 default: fresh account, pre-migration legacy name,
+	// or no save at all. Never INDEX_NONE, so the builder always opens on a
+	// real slot. The MATCH side needs no parallel of this — its own curated-
+	// default fallback (TASK-114) already absorbs every unresolvable case (D5).
+	return 0;
+}
+
+void UDeckBuilderWidget::PersistWorkingDeck()
+{
+	// THE one auto-save funnel (DECK-§4 / fix 3). Everything routes through the
+	// EXISTING SaveDeckAs path so the ACC-§4 call-time slot seam (profile-
+	// scoped when logged in, guest otherwise) is inherited, never duplicated.
+	if (EditingDeckIndex < 0 || EditingDeckIndex >= USiegeDeckSaveGame::NumFixedDeckSlots)
+	{
+		// A mutation arrived before NativeConstruct selected a slot (e.g. a
+		// legacy WBP Event Construct seed). Nothing is lost — the working deck
+		// stays in memory — but nothing is written to a slot nobody chose.
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("UDeckBuilderWidget::PersistWorkingDeck: no editing slot selected yet — mutation NOT auto-saved (a pre-construct graph seed is the known benign cause)."));
+		return;
+	}
+
+	SaveDeckAs(USiegeDeckSaveGame::MakeFixedDeckName(EditingDeckIndex));
+}
+
+void UDeckBuilderWidget::RefreshDeckBarStates()
+{
+	// TASK-671 (DECK-§3): the ONE bar-state redraw. Outline = ACTIVE only, fill
+	// tint = EDITING only — two separate visual channels writable only through
+	// the entry's two pinned setters, so the states coexist on one entry
+	// without ever conflating (a second outline is the confusable-signal
+	// defect class the law forbids). Idempotent; silent no-op when the bar was
+	// never built (DeckBar unbound, or an offline-test widget with no tree).
+	if (DeckBarEntries.Num() == 0)
+	{
+		return;
+	}
+
+	// One save read per refresh (not per entry). GetActiveDeckIndex never
+	// returns INDEX_NONE (deck1 fallback, DECK-§3), so exactly one entry gets
+	// the orange; EditingDeckIndex can be INDEX_NONE only pre-construct, when
+	// no bar exists to refresh.
+	const int32 ActiveIndex = GetActiveDeckIndex();
+
+	for (int32 SlotIndex = 0; SlotIndex < DeckBarEntries.Num(); ++SlotIndex)
+	{
+		if (UDeckSlotEntryWidget* Entry = DeckBarEntries[SlotIndex])
+		{
+			Entry->SetOutlineActive(SlotIndex == ActiveIndex);
+			Entry->SetEditingHighlight(SlotIndex == EditingDeckIndex);
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Deck editing
 // ---------------------------------------------------------------------------
 
@@ -312,6 +563,12 @@ void UDeckBuilderWidget::AddCopy(FName CardID)
 
 	OnDeckSlotCountChanged(CardID.ToString(), NewCount);
 	OnDeckModelChanged();
+
+	// DECK-§4 auto-save: a SUCCESSFUL add persists immediately (the refusals
+	// above returned before any broadcast, so they save nothing). SaveDeckAs
+	// fires one more OnDeckModelChanged on success — a redundant re-read, never
+	// a wrong one (the getters are the single source the WBP renders from).
+	PersistWorkingDeck();
 }
 
 void UDeckBuilderWidget::RemoveCopy(FName CardID)
@@ -341,6 +598,10 @@ void UDeckBuilderWidget::RemoveCopy(FName CardID)
 
 	OnDeckSlotCountChanged(CardID.ToString(), NewCount);
 	OnDeckModelChanged();
+
+	// DECK-§4 auto-save: a SUCCESSFUL remove persists immediately (the
+	// remove-at-0 no-op returned before any broadcast and saves nothing).
+	PersistWorkingDeck();
 }
 
 void UDeckBuilderWidget::LoadDefaultDeck()
@@ -372,6 +633,13 @@ void UDeckBuilderWidget::LoadDefaultDeck()
 	// missing table ⇒ ResolveCardTable logged once; the working deck stays empty.
 
 	OnDeckModelChanged();
+
+	// D9 (DECK-§4): under auto-save, Reset persists the curated default to the
+	// EDITING slot immediately — SaveDeckAs also re-stamps WorkingDeck.DeckName
+	// with the fixed slot name the Reset() above cleared. Pre-construct callers
+	// (the legacy WBP Event Construct seed) hit the funnel's no-slot guard and
+	// write nothing.
+	PersistWorkingDeck();
 }
 
 // ---------------------------------------------------------------------------
@@ -717,6 +985,13 @@ void UDeckBuilderWidget::SetActiveDeck(const FString& Name)
 		TEXT("UDeckBuilderWidget: active deck set to '%s' — the next match will use it."), *CanonicalName);
 
 	OnDeckModelChanged();
+
+	// TASK-671: the ACTIVE deck moved — the orange outline follows it
+	// (DECK-§3). Appended on the SUCCESS path only (the refusals above changed
+	// nothing); this one site covers SetActiveDeckBySlot's right-click lane AND
+	// the shipped D8 "Play with this deck" activation, so the orange follows
+	// both. Existing behavior above is untouched (DECK-§4 byte-compatibility).
+	RefreshDeckBarStates();
 }
 
 // ---------------------------------------------------------------------------

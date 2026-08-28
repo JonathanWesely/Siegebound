@@ -9,6 +9,7 @@
 #include "DeckBuilderWidget.generated.h"
 
 class UDataTable;
+class UDeckSlotEntryWidget;
 class UTexture2D;
 class USiegeDeckSaveGame;
 struct FCardRow;
@@ -46,6 +47,74 @@ class GITCLAUDEUNREALTEST_API UDeckBuilderWidget : public UUserWidget
 public:
 
 	UDeckBuilderWidget(const FObjectInitializer& ObjectInitializer);
+
+	// --- The ten-slot model (TASK-670) + the deck bar (TASK-671) ----------------
+	// (CONVENTIONS DECK-§1..§5, signatures DECK-§8)
+	// The ten fixed decks "deck1".."deck10" (USiegeDeckSaveGame::MakeFixedDeckName)
+	// with the active deck (orange outline, next match) persisted in
+	// ActiveDeckName and the EDITING selection transient (derived from active on
+	// open — the save class gains no field, DECK-§1). Every content mutation
+	// auto-saves through the ONE funnel PersistWorkingDeck() (DECK-§4) — there
+	// is no manual save in the model's contract.
+	// M8: adds no replicated property, no new replicated class, no new
+	// relevancy tier, no RPC — client-local UI/model state only.
+
+	/**
+	 *  Migrate the save to the ten fixed slots (USiegeDeckSaveGame::
+	 *  MigrateToFixedSlots — the ONE shipping call site, DECK-§2), persist iff
+	 *  it mutated, then select the ACTIVE deck for editing (DECK-§3: the
+	 *  builder opens on the match deck). Runs AFTER Super::NativeConstruct() on
+	 *  purpose: Super fires the WBP's Event Construct, so any legacy graph-side
+	 *  seed (LoadDefaultDeck) lands BEFORE the model init and is overwritten by
+	 *  it — and cannot auto-save, because no editing slot is selected yet (the
+	 *  PersistWorkingDeck guard). The TASK-671 deck-bar build then lands LAST:
+	 *  ten UDeckSlotEntryWidget entries into DeckBar (null container ⇒ one
+	 *  Warning, bar skipped, everything else works — DECK-§5), followed by one
+	 *  RefreshDeckBarStates so the bar opens showing the true active/editing
+	 *  states.
+	 */
+	virtual void NativeConstruct() override;                          // migrate -> persist if mutated -> select active for edit -> build bar
+
+	/**
+	 *  Left-click meaning (D7, DECK-§3): load fixed slot SlotIndex (0-based)
+	 *  into the working deck for EDITING (an empty slot ⇒ an empty working
+	 *  deck stamped with the fixed name). Out-of-range is refused (logged).
+	 *  No disk write — selection of the editing slot is transient; content
+	 *  mutations persist via the funnel, and the ACTIVE deck choice belongs to
+	 *  SetActiveDeckBySlot. Fires OnDeckModelChanged (re-read the getters).
+	 */
+	UFUNCTION(BlueprintCallable, Category="Siegebound|Deck") void  SelectDeckForEdit(int32 SlotIndex);
+
+	/** The 0-based fixed slot currently loaded for editing; INDEX_NONE only before NativeConstruct has run. */
+	UFUNCTION(BlueprintPure,     Category="Siegebound|Deck") int32 GetEditingDeckIndex() const;
+
+	/**
+	 *  Right-click meaning (DECK-§3): mark fixed slot SlotIndex as the ACTIVE
+	 *  deck the next match uses. Delegates to the EXISTING strict SetActiveDeck
+	 *  path (kept byte-compatible, DECK-§4) — deck-exists check, ACC-§4
+	 *  call-time slot seam, persist, OnDeckModelChanged — never reimplemented.
+	 *  Out-of-range is refused (logged).
+	 */
+	UFUNCTION(BlueprintCallable, Category="Siegebound|Deck") void  SetActiveDeckBySlot(int32 SlotIndex);
+
+	/**
+	 *  The 0-based fixed slot of the ACTIVE deck (ActiveDeckName resolved via
+	 *  FindFixedDeckIndex). 0 (deck1 — the DECK-§3 default) when no save
+	 *  exists yet, pre-migration, or the name is not a fixed name — never
+	 *  INDEX_NONE, so the builder always opens on a real slot.
+	 */
+	UFUNCTION(BlueprintPure,     Category="Siegebound|Deck") int32 GetActiveDeckIndex() const;
+
+	/**
+	 *  The deck-bar container (TASK-671; DECK-§5/§7): ONE horizontal row at the
+	 *  very top of WBP_DeckBuilder, authored THERE by TASK-672 — empty at
+	 *  design time, populated here in NativeConstruct with the ten
+	 *  UDeckSlotEntryWidget entries in slot order. Optional binding by law
+	 *  (the TASK-646 BindWidgetOptional shape): a WBP without the container —
+	 *  672 lands in parallel — costs one Warning and the bar only; the rest of
+	 *  the builder keeps working. Never a crash.
+	 */
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<class UHorizontalBox> DeckBar;   // authored in WBP by TASK-672; null-safe
 
 	// --- Deck editing (mutating) -------------------------------------------------
 
@@ -266,9 +335,52 @@ protected:
 
 private:
 
-	/** The deck currently being edited (in-memory model; not persisted until SaveDeckAs). */
+	/** The deck currently being edited (in-memory model; every content mutation persists to the editing slot via PersistWorkingDeck — DECK-§4). */
 	UPROPERTY(Transient)
 	FDeckList WorkingDeck;
+
+	/**
+	 *  0-based fixed slot the working deck edits (TASK-670). INDEX_NONE only
+	 *  before NativeConstruct selects the active slot — the PersistWorkingDeck
+	 *  guard makes any pre-construct mutation (e.g. a legacy WBP Event
+	 *  Construct seed) unable to write a slot nobody chose. Transient by
+	 *  DECK-§1: the save class gains no field; the only persisted selection is
+	 *  ActiveDeckName (DECK-§3), and opening derives editing from active.
+	 */
+	UPROPERTY(Transient)
+	int32 EditingDeckIndex = INDEX_NONE;
+
+	/**
+	 *  THE ONE AUTO-SAVE FUNNEL (DECK-§4 / fix 3): persists the working deck to
+	 *  its fixed editing slot by calling the EXISTING SaveDeckAs path —
+	 *  SaveDeckAs(USiegeDeckSaveGame::MakeFixedDeckName(EditingDeckIndex)) —
+	 *  so the ACC-§4 call-time slot seam is inherited, never reimplemented.
+	 *  Called from successful AddCopy / RemoveCopy / LoadDefaultDeck (refused
+	 *  no-ops save nothing). No editing slot selected ⇒ refuses with one
+	 *  Warning (nothing is written to a slot nobody chose).
+	 */
+	void PersistWorkingDeck();
+
+	/**
+	 *  TASK-671 (DECK-§3): redraw the ten bar entries' two states — the ORANGE
+	 *  OUTLINE on the ACTIVE slot ONLY (SetOutlineActive), the fill tint on the
+	 *  EDITING slot ONLY (SetEditingHighlight) — from the live model (one
+	 *  GetActiveDeckIndex read per refresh, plus EditingDeckIndex). Idempotent,
+	 *  and a silent no-op when the bar was never built (DeckBar null path /
+	 *  offline-test widgets). Called wherever either index can move: the bar
+	 *  build in NativeConstruct, SelectDeckForEdit, and SetActiveDeck's success
+	 *  path (which also covers SetActiveDeckBySlot and the D8 "Play with this
+	 *  deck" activation — the orange follows it).
+	 */
+	void RefreshDeckBarStates(); // outline = active, fill tint = editing
+
+	/**
+	 *  The ten bar entries in slot order (TASK-671), kept so RefreshDeckBarStates
+	 *  redraws states without re-creating widgets. Rebuilt (cleared + repopulated)
+	 *  on every NativeConstruct; stays empty when DeckBar is unbound.
+	 */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UDeckSlotEntryWidget>> DeckBarEntries;
 
 	/**
 	 *  The card the details panel is showing (TASK-268), or NAME_None for "nothing
