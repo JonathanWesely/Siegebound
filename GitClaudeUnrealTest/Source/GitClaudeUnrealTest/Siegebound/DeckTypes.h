@@ -8,8 +8,9 @@
 /**
  *  One card slot of a deck: a CardID (a DT_Cards row name, PascalCase) and how
  *  many copies of it the deck holds. Pure data — it stores, it never validates.
- *  The legal range of Count ([0..the row's MaxCopies]) and the exactly-50 rule
- *  live in the ONE validator, UDeckLibrary::IsDeckLegal (never duplicated here).
+ *  The legal range of Count (any value >= 0 — per-card copy caps abolished,
+ *  CARD-UNCAP 2026-08-28) and the exactly-50 rule live in the ONE validator,
+ *  UDeckLibrary::IsDeckLegal (never duplicated here).
  *
  *  Members are UPROPERTY so they serialize inside USiegeDeckSaveGame's
  *  TArray<FDeckList> (tagged-property serialization recurses into USTRUCT
@@ -25,7 +26,7 @@ struct GITCLAUDEUNREALTEST_API FDeckCardEntry
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Siegebound|Deck")
 	FName CardID = NAME_None;
 
-	/** Copies of this card in the deck. Legal range is [0..row MaxCopies] (enforced by UDeckLibrary::IsDeckLegal). */
+	/** Copies of this card in the deck. Any Count >= 0 is legal per card (per-card caps abolished, CARD-UNCAP 2026-08-28); UDeckLibrary::IsDeckLegal refuses negatives and enforces the exactly-50 total. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Siegebound|Deck")
 	int32 Count = 0;
 };
@@ -34,8 +35,10 @@ struct GITCLAUDEUNREALTEST_API FDeckCardEntry
  *  A named deck: a player-entered (or curated) name plus its card entries
  *  (GDD §3.4). Keyed by DeckName in USiegeDeckSaveGame::SavedDecks (overwrite-
  *  on-collision, M6 ruling 2). A deck is LEGAL when TotalCount() ==
- *  SiegeLegalDeckSize AND every entry respects its row's MaxCopies — that rule
- *  is UDeckLibrary::IsDeckLegal, not this struct. This struct only stores.
+ *  SiegeLegalDeckSize (EXACTLY 50) and every entry's CardID resolves with a
+ *  non-negative Count (per-card copy caps abolished, CARD-UNCAP 2026-08-28) —
+ *  that rule is UDeckLibrary::IsDeckLegal, not this struct. This struct only
+ *  stores.
  */
 USTRUCT(BlueprintType)
 struct GITCLAUDEUNREALTEST_API FDeckList

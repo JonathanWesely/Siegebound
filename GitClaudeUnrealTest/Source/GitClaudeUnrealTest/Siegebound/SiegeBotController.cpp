@@ -214,11 +214,14 @@ ASiegeBotController::ASiegeBotController()
 	CardTableAsset = TSoftObjectPtr<UDataTable>(FSoftObjectPath(TEXT("/Game/Data/DT_Cards.DT_Cards")));
 
 	// --- M6 (TASK-114 / ruling 4): TWO distinct legal curated bot decks as
-	// EditDefaultsOnly defaults. Each is legal against DT_Cards — sum(Count)==50 and
-	// every Count <= that card's MaxCopies (Footman 12, MilitiaMob/Pikeman/Knight 6,
-	// Archer 10, Cavalry/Sapper/Miner/BombTower/BallistaTower 4, Ogre/DeepMine 2,
+	// EditDefaultsOnly defaults. Each is legal against DT_Cards — sum(Count)==50
+	// (CARD-UNCAP 2026-08-28: legality no longer bounds per-card copies; the
+	// compositions below simply predate the uncap and happen to also sit within
+	// the OLD per-card caps — Footman 12, MilitiaMob/Pikeman/Knight 6, Archer 10,
+	// Cavalry/Sapper/Miner/BombTower/BallistaTower 4, Ogre/DeepMine 2,
 	// Barracks/CrystalTower/Cleric 3, Wall 10, ArrowTower 8, Longbowman 4,
-	// Lightning 2). Both are composed ONLY of bot-PLAYABLE types — Unit/Building/
+	// Lightning 2 — kept here as the historical record of how they were sized).
+	// Both are composed ONLY of bot-PLAYABLE types — Unit/Building/
 	// Economy plus the decision loop's rule-3 castable Spells (TASK-252 added
 	// Lightning ×2 to [1] per the M6 QA recommendation, making rule 3b reachable
 	// in curated play) — so the bot never wastes a decision cycling an unplayable
@@ -239,7 +242,8 @@ ASiegeBotController::ASiegeBotController()
 	// Docs/Data/cards.csv; these inline "cost x count" notes and BOTH "avg cost" figures
 	// went on quoting the PRE-triple values (Footman 3, Ogre 12, avg ~4.72/~7.02).
 	// ⛔ NONE OF IT IS READ AT RUNTIME, which is precisely why it rotted unnoticed for
-	// three weeks: deck legality is sum(Count) == 50 and Count <= MaxCopies — COUNTS,
+	// three weeks: deck legality is sum(Count) == 50 (plus, until CARD-UNCAP
+	// 2026-08-28 abolished it, Count <= MaxCopies) — COUNTS,
 	// not costs — and the logged average comes from UDeckLibrary::GetDeckAverageCost
 	// reading DT_Cards LIVE. Re-derived from the shipped cards.csv Cost column; this
 	// class's own AttackBankThreshold = 36 (h) is the same ×3 scaling seen from the

@@ -43,9 +43,10 @@ void UDeckComponent::BuildAndShuffle()
 	{
 		for (const FDeckCardEntry& Entry : PendingDeckList.Cards)
 		{
-			// IsDeckLegal guarantees every Count is in [0..MaxCopies] and
-			// TotalCount()==SiegeLegalDeckSize (50) over resolvable CardIDs, so this
-			// always yields exactly a legal 50-card draw pile.
+			// IsDeckLegal guarantees every Count >= 0 over resolvable CardIDs and
+			// TotalCount()==SiegeLegalDeckSize (50) — per-card copy caps abolished,
+			// CARD-UNCAP 2026-08-28 — so this always yields exactly a legal 50-card
+			// draw pile.
 			for (int32 Copy = 0; Copy < Entry.Count; ++Copy)
 			{
 				DrawPile.Add(Entry.CardID);

@@ -106,7 +106,13 @@ struct GITCLAUDEUNREALTEST_API FCardRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Card")
 	int32 Cost = 0;
 
-	/** Maximum copies of this card allowed in a deck */
+	/**
+	 *  Hero-upgrade STACK CAP only (AHeroCharacter::GetStackCapForUpgrade /
+	 *  ApplyUpgrade read it; 0 refuses the play). CARD-UNCAP 2026-08-28
+	 *  (UNCAP-§2): its per-deck copy-cap meaning is ABOLISHED — a deck may hold
+	 *  any number of copies of any card; only the exactly-50 total binds
+	 *  (UDeckLibrary::IsDeckLegal). Column kept, data untouched (U6).
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Card")
 	int32 MaxCopies = 0;
 

@@ -17,7 +17,8 @@ struct FCardRow;
 /**
  *  C++ base for /Game/UI/WBP_DeckBuilder (TASK-118 reparents the UMG duplicate
  *  to this class) — the GDD §7 deck-builder screen: browse the 28-card pool,
- *  add/remove copies with per-card MaxCopies enforced, a live x/50 counter, the
+ *  add/remove copies (per-card copy caps ABOLISHED, CARD-UNCAP 2026-08-28
+ *  UNCAP-§4 — only the exactly-50 deck total binds), a live x/50 counter, the
  *  §8 average-cost readout, and save/load of NAMED decks (SaveGame).
  *
  *  Division of labor (CONVENTIONS "Deck-builder & saved decks (M6)" + the widget
@@ -120,10 +121,13 @@ public:
 
 	/**
 	 *  Add one copy of CardID to the working deck. REFUSED (no-op, no broadcast)
-	 *  when the card is already at its DT_Cards MaxCopies (data-driven, §3.0 —
-	 *  never hardcoded) or when the table/row cannot be resolved. On success
-	 *  fires OnDeckSlotCountChanged(CardID, newCount) then OnDeckModelChanged().
-	 *  The WBP greys the "+" at the cap; this is the authoritative backstop.
+	 *  ONLY when the table/row cannot be resolved. CARD-UNCAP 2026-08-28
+	 *  (UNCAP-§4): the per-card MaxCopies refusal is DELETED — any count of a
+	 *  resolvable card may be added, and deliberately NO add-time deck-total
+	 *  guard exists (U4; the x/50 counter + the exactly-50 legality gate carry
+	 *  the invariant). On success fires OnDeckSlotCountChanged(CardID, newCount)
+	 *  then OnDeckModelChanged(). The WBP greys the "+" at GetCardMaxCopies'
+	 *  shim value (50).
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Deck")
 	void AddCopy(FName CardID);
@@ -160,7 +164,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Deck")
 	float GetAverageCost() const;
 
-	/** True iff the working deck is a legal 50-card, cap-respecting deck via UDeckLibrary::IsDeckLegal (gates "Play with this deck"). */
+	/** True iff the working deck is a legal exactly-50-card deck via UDeckLibrary::IsDeckLegal (gates "Play with this deck"; per-card caps abolished, CARD-UNCAP 2026-08-28). */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Deck")
 	bool IsCurrentDeckLegal() const;
 
@@ -169,9 +173,10 @@ public:
 	TArray<FName> GetCollectionCardIDs() const;
 
 	// --- Per-card display resolvers (additive; keep the WBP out of DT_Cards) -----
-	// The grid needs each card's name/cost/cap/art to render a cell and grey the
-	// "+" at the cap. Per "C++ base owns ALL logic" + the UCardHandWidget rule
-	// (the WBP never reads DT_Cards), these are resolved here, null-safe.
+	// The grid needs each card's name/cost/art (and the GetCardMaxCopies shim
+	// value the "+" greys at — 50 since CARD-UNCAP 2026-08-28) to render a cell.
+	// Per "C++ base owns ALL logic" + the UCardHandWidget rule (the WBP never
+	// reads DT_Cards), these are resolved here, null-safe.
 
 	/** DT_Cards DisplayName for CardID; falls back to the raw CardID string when the row is missing. */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Deck")
@@ -181,7 +186,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Deck")
 	int32 GetCardCost(FName CardID) const;
 
-	/** DT_Cards MaxCopies for CardID (0 when the row is missing) — the WBP greys the "+" when GetCountOf >= this. */
+	/**
+	 *  CARD-UNCAP 2026-08-28 (UNCAP-§4) COMPAT SHIM — per-card deck copy caps
+	 *  are abolished, but the signature (and its WBP_DeckCardTile caller, which
+	 *  greys the "+" when GetCountOf >= this) is pinned. Returns
+	 *  SiegeLegalDeckSize (50) for a resolved row — the only per-card bound
+	 *  left is the deck size itself — and 0 when the table/row is missing
+	 *  (unchanged). No longer reads the row's MaxCopies column (that column is
+	 *  the hero-upgrade STACK cap only, UNCAP-§2).
+	 */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Deck")
 	int32 GetCardMaxCopies(FName CardID) const;
 
@@ -211,7 +224,9 @@ public:
 	 *  designer-only Notes column is NEVER surfaced.
 	 *
 	 *  Composition (any line whose source field is 0/None/not applicable is OMITTED):
-	 *    identity line "<Type> · Cost <n> gold · Max <n> per deck"
+	 *    identity line "<Type> · Cost <n> gold" (the "Max <n> per deck" clause was
+	 *                   DELETED — CARD-UNCAP 2026-08-28, UNCAP-§5; the hero-upgrade
+	 *                   rules line still states the stack cap, which stays true)
 	 *    (blank)
 	 *    stat block   — health, damage (+ splash), attack cadence, range (melee vs
 	 *                   homing shot vs instant hit), blind spot, move speed
@@ -325,7 +340,8 @@ public:
 protected:
 
 	/**
-	 *  Card stat table (GDD §3.0) — /Game/Data/DT_Cards, the source for MaxCopies/
+	 *  Card stat table (GDD §3.0) — /Game/Data/DT_Cards, the source for MaxCopies
+	 *  (the hero-upgrade STACK cap only — CARD-UNCAP 2026-08-28, UNCAP-§2)/
 	 *  Cost/DisplayName/CardArt/DeckCount and the collection row names. Soft,
 	 *  resolved null-safe at use time (the UCardHandWidget / UDeckComponent
 	 *  precedent). EditDefaultsOnly so a BP can retarget the table without code.
@@ -395,7 +411,7 @@ private:
 
 	// --- GetCardDescription composers (TASK-268; all row-driven, never per card) ---
 
-	/** Identity line: "<Type> · Cost <n> gold · Max <n> per deck". Always emits exactly one line. */
+	/** Identity line: "<Type> · Cost <n> gold" (the Max-per-deck clause deleted — CARD-UNCAP 2026-08-28, UNCAP-§5). Always emits exactly one line. */
 	void AppendIdentityLines(const FCardRow& Row, TArray<FString>& OutLines) const;
 
 	/** Stat block: health / damage (+ splash) / cadence / range / blind spot / move speed — each line omitted when its field is 0 or does not apply to the card's kind. */

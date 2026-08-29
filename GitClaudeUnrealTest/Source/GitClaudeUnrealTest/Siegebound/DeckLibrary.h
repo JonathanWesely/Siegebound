@@ -14,7 +14,7 @@ class UDataTable;
  *  the ONE home for these rules, shared by the deck-builder widget
  *  (UDeckBuilderWidget, TASK-116), the DeckComponent build path (TASK-114) and
  *  the bot (TASK-114). Every rule is data-driven from /Game/Data/DT_Cards
- *  (FCardRow.MaxCopies / .Cost), never hardcoded (§3.0). Pure, stateless,
+ *  (row existence / FCardRow.Cost), never hardcoded (§3.0). Pure, stateless,
  *  null-safe: a null table or a missing row degrades gracefully — it never
  *  crashes.
  *
@@ -33,15 +33,15 @@ public:
 
 	/**
 	 *  True iff Deck is a legal Siegebound deck against CardTable (DT_Cards):
-	 *  every entry's CardID resolves to a row, the running per-CardID copy total
-	 *  stays within that row's MaxCopies, and TotalCount() == SiegeLegalDeckSize
-	 *  (50, GDD §3.4). OutReason carries the FIRST violation (entry order) for a
-	 *  HUD/log line, and is cleared on success. A null table ⇒ false + reason.
+	 *  every entry's CardID resolves to a row, every entry's Count is >= 0, and
+	 *  TotalCount() == SiegeLegalDeckSize (EXACTLY 50, GDD §3.4 — never <=50).
+	 *  OutReason carries the FIRST violation (entry order) for a HUD/log line,
+	 *  and is cleared on success. A null table ⇒ false + reason.
 	 *
-	 *  Copy-cap note: the cap is enforced on the per-CardID AGGREGATE (a running
-	 *  sum), so a deck that splits one card across duplicate entries cannot slip
-	 *  past MaxCopies. For the normal one-entry-per-card deck the widget builds
-	 *  this is identical to a per-entry check.
+	 *  CARD-UNCAP 2026-08-28 (UNCAP-§1/§3): the per-CardID MaxCopies copy cap is
+	 *  ABOLISHED — a 50-of-one-card deck is LEGAL. MaxCopies survives only as
+	 *  the hero-upgrade stack cap (UNCAP-§2, AHeroCharacter). Strictly WIDENING:
+	 *  every previously legal deck stays legal.
 	 */
 	static bool IsDeckLegal(const UDataTable* CardTable, const FDeckList& Deck, FString& OutReason);
 

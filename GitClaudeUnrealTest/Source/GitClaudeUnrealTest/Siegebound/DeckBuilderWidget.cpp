@@ -223,7 +223,8 @@ namespace
 
 	/**
 	 *  Separator for the identity line — the CONVENTIONS-mandated MIDDLE DOT
-	 *  (U+00B7): "<Type> [dot] Cost <n> gold [dot] Max <n> per deck". Composed
+	 *  (U+00B7): "<Type> [dot] Cost <n> gold" (the "Max <n> per deck" clause was
+	 *  deleted — CARD-UNCAP 2026-08-28, UNCAP-§5). Composed
 	 *  from its CODE POINT, not typed as a literal glyph, so this source file
 	 *  stays pure ASCII inside string literals: comments in this module carry raw
 	 *  UTF-8 harmlessly, but a mis-decoded string literal would ship mojibake into
@@ -529,9 +530,13 @@ void UDeckBuilderWidget::AddCopy(FName CardID)
 		return;
 	}
 
-	// data-driven cap (§3.0): resolve MaxCopies from DT_Cards. A missing table/row
-	// means we cannot validate the cap — refuse rather than build an illegal deck
-	// (ResolveCardRow logs the fault once).
+	// unknown-card gate (§3.0): the row must resolve in DT_Cards — refuse rather
+	// than add a card legality would then reject (ResolveCardRow logs the fault
+	// once). CARD-UNCAP 2026-08-28 (UNCAP-§4): the Current >= Row->MaxCopies
+	// refusal that used to follow is DELETED — any count of a resolvable card
+	// may be added. Deliberately NO add-time deck-total guard either (U4):
+	// over-50 WORKING decks were already reachable and are handled by the live
+	// x/50 counter + the exactly-50 legality gate.
 	const FCardRow* Row = ResolveCardRow(CardID);
 	if (!Row)
 	{
@@ -539,14 +544,6 @@ void UDeckBuilderWidget::AddCopy(FName CardID)
 	}
 
 	const int32 Current = GetCountOf(CardID);
-	if (Current >= Row->MaxCopies)
-	{
-		// at the cap — refuse silently (the WBP greys the "+"; this is the
-		// authoritative backstop). Never broadcast on a refused mutation
-		// (CONVENTIONS delegate law).
-		return;
-	}
-
 	const int32 NewCount = Current + 1;
 	const int32 Index = IndexOfCard(CardID);
 	if (Index == INDEX_NONE)
@@ -705,8 +702,14 @@ int32 UDeckBuilderWidget::GetCardCost(FName CardID) const
 
 int32 UDeckBuilderWidget::GetCardMaxCopies(FName CardID) const
 {
+	// CARD-UNCAP 2026-08-28 (UNCAP-§4) COMPAT SHIM: per-card deck copy caps are
+	// abolished, but this BlueprintPure signature is pinned (WBP_DeckCardTile
+	// greys the "+" when GetCountOf >= this — no WBP graph edit needed). A
+	// resolved row now reports the only per-card bound left, the deck size
+	// itself (SiegeLegalDeckSize = 50), so the "+" greys exactly at
+	// 50-of-one-card. Missing table/row still returns 0 (unchanged).
 	const FCardRow* Row = ResolveCardRow(CardID);
-	return Row ? Row->MaxCopies : 0;
+	return Row ? SiegeLegalDeckSize : 0;
 }
 
 UTexture2D* UDeckBuilderWidget::GetCardArtTexture(FName CardID)
@@ -1085,17 +1088,14 @@ USiegeDeckSaveGame* UDeckBuilderWidget::LoadOrCreateSaveGame() const
 
 void UDeckBuilderWidget::AppendIdentityLines(const FCardRow& Row, TArray<FString>& OutLines) const
 {
-	// CONVENTIONS: "<Type> · Cost <n> gold · Max <n> per deck".
+	// CONVENTIONS: "<Type> · Cost <n> gold". CARD-UNCAP 2026-08-28 (UNCAP-§5,
+	// truth law): the "Max <n> per deck" clause is DELETED — per-card deck caps
+	// no longer exist. The hero-upgrade RULES tail (UpgradeTailFmt, below in
+	// AppendRuleLines) still prints MaxCopies as the STACK cap — still true.
 	const FString Separator = IdentitySeparator();
 
-	FString IdentityLine = FString::Printf(TEXT("%s%sCost %d gold"),
+	const FString IdentityLine = FString::Printf(TEXT("%s%sCost %d gold"),
 		*CardTypeLabel(Row.CardType), *Separator, Row.Cost);
-
-	if (Row.MaxCopies > 0)
-	{
-		// the per-card deck cap the "+" greys out at — the SAME column AddCopy enforces
-		IdentityLine += FString::Printf(TEXT("%sMax %d per deck"), *Separator, Row.MaxCopies);
-	}
 
 	OutLines.Add(IdentityLine);
 }

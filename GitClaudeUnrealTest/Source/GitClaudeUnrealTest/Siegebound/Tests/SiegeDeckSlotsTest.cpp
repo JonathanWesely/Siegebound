@@ -42,6 +42,13 @@
  *
  *  M8: adds no replicated property, no new replicated class, no new relevancy
  *  tier, no RPC.
+ *
+ *  CARD-UNCAP 2026-08-28 (TASK-676, CONVENTIONS UNCAP-§7 tests law): the four
+ *  Siegebound.Deck.Uncap* cases below pin the amended IsDeckLegal — per-card
+ *  copy caps abolished, the exactly-50 total EXACT (UNCAP-§1, never <=50),
+ *  unknown-CardID and negative-Count refusals surviving. They run on a
+ *  TRANSIENT in-test UDataTable (NewObject + FCardRow rows — ⛔ never the
+ *  shipped DT_Cards asset; commandlet-safe, zero disk, ZERO network).
  */
 
 namespace SiegeDeckSlotsTestUtils
@@ -87,6 +94,39 @@ namespace SiegeDeckSlotsTestUtils
 	static USiegeDeckSaveGame* MakeSave()
 	{
 		return NewObject<USiegeDeckSaveGame>();
+	}
+
+	/**
+	 *  Transient in-test card table (UNCAP-§7 tests law: NewObject + FCardRow
+	 *  rows — ⛔ never the shipped DT_Cards; commandlet-safe). Transient outer;
+	 *  single RunTest frame ⇒ no GC window (the MakeSave idiom).
+	 */
+	static UDataTable* MakeScratchCardTable()
+	{
+		UDataTable* Table = NewObject<UDataTable>();
+		Table->RowStruct = FCardRow::StaticStruct();
+		return Table;
+	}
+
+	/**
+	 *  Add one FCardRow to the scratch table. MaxCopies is set DELIBERATELY (the
+	 *  old-cap value) so the uncap tests prove legality IGNORES it (UNCAP-§2:
+	 *  the column survives as the hero-upgrade stack cap only).
+	 */
+	static void AddScratchCard(UDataTable& Table, const TCHAR* CardID, int32 MaxCopies)
+	{
+		FCardRow Row;
+		Row.MaxCopies = MaxCopies;
+		Table.AddRow(FName(CardID), Row);
+	}
+
+	/** Append one (CardID, Count) entry to a deck under test. */
+	static void AddDeckEntry(FDeckList& Deck, const TCHAR* CardID, int32 Count)
+	{
+		FDeckCardEntry Entry;
+		Entry.CardID = FName(CardID);
+		Entry.Count = Count;
+		Deck.Cards.Add(Entry);
 	}
 
 	/**
@@ -618,6 +658,175 @@ bool FSiegeDeckScratchSlotRoundTripTest::RunTest(const FString& Parameters)
 	}
 	TestEqualSensitive(TEXT("The active-deck choice (\"deck4\") round-tripped byte-exact"),
 		Loaded->ActiveDeckName, FString(TEXT("deck4")));
+
+	return true;
+}
+
+/**
+ *  CARD-UNCAP CASE 1 (UNCAP-§1/§3): 50 COPIES OF ONE CARD IS LEGAL. The scratch
+ *  row carries the OLD cap (MaxCopies = 12, the historical Footman value) to
+ *  prove legality now IGNORES the column entirely — including the old AGGREGATE
+ *  path: the same 50 split across two entries of the same CardID is legal too
+ *  (the RunningCounts map is gone, not just relaxed).
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeDeckUncapFiftyOfOneCardLegalTest,
+	"Siegebound.Deck.UncapFiftyOfOneCardLegal",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeDeckUncapFiftyOfOneCardLegalTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeDeckSlotsTestUtils;
+
+	UDataTable* Table = MakeScratchCardTable();
+	if (!TestNotNull(TEXT("Scratch card table constructed"), Table))
+	{
+		return false;
+	}
+	AddScratchCard(*Table, TEXT("Footman"), /*MaxCopies (the OLD cap — must be ignored)*/ 12);
+
+	// one entry, Count 50 — 50-of-one-card, far past the row's MaxCopies
+	FDeckList Deck;
+	AddDeckEntry(Deck, TEXT("Footman"), 50);
+	TestEqual(TEXT("The deck totals exactly SiegeLegalDeckSize (50)"),
+		Deck.TotalCount(), SiegeLegalDeckSize);
+
+	FString Reason;
+	TestTrue(TEXT("50 copies of ONE card is LEGAL (per-card caps abolished, UNCAP-§1)"),
+		UDeckLibrary::IsDeckLegal(Table, Deck, Reason));
+	TestTrue(TEXT("...and the reason string is cleared on success"), Reason.IsEmpty());
+
+	// the old AGGREGATE check is gone too: the same card split across duplicate
+	// entries (25 + 25) no longer trips a running-count cap
+	FDeckList SplitDeck;
+	AddDeckEntry(SplitDeck, TEXT("Footman"), 25);
+	AddDeckEntry(SplitDeck, TEXT("Footman"), 25);
+
+	FString SplitReason;
+	TestTrue(TEXT("The same 50 split across duplicate entries of one card is LEGAL (RunningCounts removed)"),
+		UDeckLibrary::IsDeckLegal(Table, SplitDeck, SplitReason));
+	TestTrue(TEXT("...with a cleared reason"), SplitReason.IsEmpty());
+
+	return true;
+}
+
+/**
+ *  CARD-UNCAP CASE 2 (UNCAP-§1, the U5 pin): the deck total is EXACTLY 50,
+ *  never <=50 — 51 refuses AND 49 refuses (both directions of the pin), each
+ *  with the exact-50 reason.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeDeckUncapExactFiftyPinnedTest,
+	"Siegebound.Deck.UncapExactFiftyPinned",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeDeckUncapExactFiftyPinnedTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeDeckSlotsTestUtils;
+
+	UDataTable* Table = MakeScratchCardTable();
+	if (!TestNotNull(TEXT("Scratch card table constructed"), Table))
+	{
+		return false;
+	}
+	AddScratchCard(*Table, TEXT("Footman"), 12);
+
+	// 51 total — one over — illegal with the exact-50 reason
+	FDeckList OverDeck;
+	AddDeckEntry(OverDeck, TEXT("Footman"), 51);
+
+	FString OverReason;
+	TestFalse(TEXT("A 51-card deck is ILLEGAL (the exactly-50 rule survives the uncap)"),
+		UDeckLibrary::IsDeckLegal(Table, OverDeck, OverReason));
+	TestTrue(TEXT("...for the exact-50 reason (the reason names 'exactly 50')"),
+		OverReason.Contains(TEXT("exactly 50")));
+
+	// 49 total — one under — ILLEGAL TOO: the pin is EXACT, not <=50 (U5)
+	FDeckList UnderDeck;
+	AddDeckEntry(UnderDeck, TEXT("Footman"), 49);
+
+	FString UnderReason;
+	TestFalse(TEXT("A 49-card deck is ILLEGAL (EXACTLY 50, never <=50 — the U5 pin)"),
+		UDeckLibrary::IsDeckLegal(Table, UnderDeck, UnderReason));
+	TestTrue(TEXT("...for the same exact-50 reason"),
+		UnderReason.Contains(TEXT("exactly 50")));
+
+	return true;
+}
+
+/**
+ *  CARD-UNCAP CASE 3 (UNCAP-§3 clause a): an UNKNOWN CardID still refuses — the
+ *  row lookup survived the uncap as the unknown-card gate. The deck would total
+ *  50 without the violation, proving the refusal is the unknown-CardID clause,
+ *  not the total.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeDeckUncapUnknownCardStillIllegalTest,
+	"Siegebound.Deck.UncapUnknownCardStillIllegal",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeDeckUncapUnknownCardStillIllegalTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeDeckSlotsTestUtils;
+
+	UDataTable* Table = MakeScratchCardTable();
+	if (!TestNotNull(TEXT("Scratch card table constructed"), Table))
+	{
+		return false;
+	}
+	AddScratchCard(*Table, TEXT("Footman"), 12);
+
+	// 50 resolvable copies + one unresolvable entry (Count 0, so the TOTAL is
+	// still exactly 50 — only the unknown-CardID clause can refuse this deck)
+	FDeckList Deck;
+	AddDeckEntry(Deck, TEXT("Footman"), 50);
+	AddDeckEntry(Deck, TEXT("NoSuchCard"), 0);
+	TestEqual(TEXT("The deck totals exactly 50 (isolating the unknown-CardID clause)"),
+		Deck.TotalCount(), SiegeLegalDeckSize);
+
+	FString Reason;
+	TestFalse(TEXT("A deck holding an unknown CardID is STILL ILLEGAL after the uncap"),
+		UDeckLibrary::IsDeckLegal(Table, Deck, Reason));
+	TestTrue(TEXT("...for the unknown-card reason (the reason names 'Unknown card')"),
+		Reason.Contains(TEXT("Unknown card")));
+
+	return true;
+}
+
+/**
+ *  CARD-UNCAP CASE 4 (UNCAP-§3 clause b): a NEGATIVE Count still refuses. The
+ *  entries sum to exactly 50 (55 - 5) so the total check cannot be what refuses
+ *  it — a negative entry can never launder a deck to legality.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeDeckUncapNegativeCountStillIllegalTest,
+	"Siegebound.Deck.UncapNegativeCountStillIllegal",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeDeckUncapNegativeCountStillIllegalTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeDeckSlotsTestUtils;
+
+	UDataTable* Table = MakeScratchCardTable();
+	if (!TestNotNull(TEXT("Scratch card table constructed"), Table))
+	{
+		return false;
+	}
+	AddScratchCard(*Table, TEXT("Footman"), 12);
+	AddScratchCard(*Table, TEXT("Archer"), 10);
+
+	// 55 + (-5) = exactly 50 — only the negative-Count clause can refuse this
+	FDeckList Deck;
+	AddDeckEntry(Deck, TEXT("Footman"), 55);
+	AddDeckEntry(Deck, TEXT("Archer"), -5);
+	TestEqual(TEXT("The deck SUMS to exactly 50 (isolating the negative-Count clause)"),
+		Deck.TotalCount(), SiegeLegalDeckSize);
+
+	FString Reason;
+	TestFalse(TEXT("A deck holding a negative Count is STILL ILLEGAL after the uncap"),
+		UDeckLibrary::IsDeckLegal(Table, Deck, Reason));
+	TestTrue(TEXT("...for the negative-count reason (the reason names 'negative copy count')"),
+		Reason.Contains(TEXT("negative copy count")));
 
 	return true;
 }

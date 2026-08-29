@@ -9,18 +9,17 @@ bool UDeckLibrary::IsDeckLegal(const UDataTable* CardTable, const FDeckList& Dec
 {
 	if (!CardTable)
 	{
-		// null table ⇒ we cannot resolve any card's MaxCopies — illegal, with a reason (never a crash)
+		// null table ⇒ no entry's CardID can be resolved against DT_Cards — illegal, with a reason (never a crash)
 		OutReason = TEXT("No card table (DT_Cards) supplied.");
 		return false;
 	}
 
-	// Per-CardID running copy total: the copy cap is enforced on the AGGREGATE so
-	// a deck that splits one card across duplicate entries still cannot exceed
-	// MaxCopies. For the widget's one-entry-per-card deck this equals a per-entry
-	// check, and the "first violation" is reported deterministically in entry order.
-	TMap<FName, int32> RunningCounts;
-	RunningCounts.Reserve(Deck.Cards.Num());
-
+	// CARD-UNCAP 2026-08-28 (UNCAP-§3): the per-CardID aggregate MaxCopies check
+	// (and its RunningCounts map) is DELETED — a deck may hold any number of
+	// copies of any single card; MaxCopies is the hero-upgrade STACK cap only
+	// (UNCAP-§2). The row lookup below survives purely as the unknown-CardID
+	// gate, and the "first violation" is still reported deterministically in
+	// entry order.
 	for (const FDeckCardEntry& Entry : Deck.Cards)
 	{
 		const FCardRow* Row = CardTable->FindRow<FCardRow>(Entry.CardID, TEXT("UDeckLibrary::IsDeckLegal"), /*bWarnIfRowMissing=*/ false);
@@ -33,14 +32,6 @@ bool UDeckLibrary::IsDeckLegal(const UDataTable* CardTable, const FDeckList& Dec
 		if (Entry.Count < 0)
 		{
 			OutReason = FString::Printf(TEXT("Card '%s' has a negative copy count (%d)."), *Entry.CardID.ToString(), Entry.Count);
-			return false;
-		}
-
-		int32& Running = RunningCounts.FindOrAdd(Entry.CardID);
-		Running += Entry.Count;
-		if (Running > Row->MaxCopies)
-		{
-			OutReason = FString::Printf(TEXT("Card '%s' has %d copies — the cap is %d (MaxCopies)."), *Entry.CardID.ToString(), Running, Row->MaxCopies);
 			return false;
 		}
 	}
