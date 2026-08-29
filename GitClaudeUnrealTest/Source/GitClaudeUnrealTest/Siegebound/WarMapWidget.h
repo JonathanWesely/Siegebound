@@ -93,16 +93,20 @@ struct GITCLAUDEUNREALTEST_API FSiegeWarMapProjection
 	/**
 	 *  WORLD `(X, Y)` → NORMALISED MAP UV, CLAMPED TO `[0,1]²`.
 	 *
-	 *  ── ORIENTATION, PINNED SO A LATER READER DOES NOT RE-DECIDE IT ──
+	 *  ── ORIENTATION, PINNED SO A LATER READER DOES NOT RE-DECIDE IT (TASK-692, `WM-§7`) ──
 	 *    UV.X = 0 at world X = −HalfX  ⇒  world **+X grows RIGHT** on screen.
-	 *    UV.Y = 0 at world Y = +HalfY  ⇒  world **+Y grows UP** on screen.
+	 *    UV.Y = 0 at world Y = −HalfY  ⇒  world **+Y grows DOWN** on screen.
 	 *
-	 *  ⚠️ THE Y FLIP IS NOT A TASTE CALL: Slate's local Y grows DOWNWARD, so a map that did
-	 *  not flip would render the battlefield MIRRORED about the castle axis, and every dot
-	 *  would be on the wrong side of the lane while looking perfectly plausible. The long
-	 *  arena axis is X (`ArenaHalfExtent` ships `(26000, 12000)`), which is also the
-	 *  castle-to-castle axis, so X-horizontal puts the two castles left and right — the
-	 *  reading a player expects of a battlefield map.
+	 *  ⚠️ BOTH AXES ARE THE SAME AFFINE FORM — ⛔ THERE IS NO Y INVERSION, AND THAT IS THE
+	 *  CORRECTION JONATHAN'S FIRST MAP TEST BOUGHT (`WM-§7`): Unreal's world frame is
+	 *  LEFT-HANDED (X forward, Y right, Z up — at identity yaw `GetRightVector()` IS +Y), so
+	 *  on a top-down map that draws +X to the RIGHT, world +Y physically lies 90° CLOCKWISE
+	 *  from +X seen from above — toward the map's BOTTOM. Slate's downward local Y therefore
+	 *  already runs the CORRECT way; the pre-692 "flip" that inverted Y here is what rendered
+	 *  the battlefield mirrored about the castle lane (what lay on the player's left drew on
+	 *  his right). The long arena axis is X (`ArenaHalfExtent` ships `(26000, 12000)`), which
+	 *  is also the castle-to-castle axis, so X-horizontal puts the two castles left and
+	 *  right — the reading a player expects of a battlefield map.
 	 *
 	 *  ⚠️ CLAMPED, NOT DROPPED. A unit that has wandered past the configured arena bound
 	 *  pins to the map edge rather than vanishing or drawing outside the panel. A vanished

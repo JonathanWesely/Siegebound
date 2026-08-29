@@ -329,10 +329,13 @@ bool FSiegeWarMapProjectionCentreAndCornersTest::RunTest(const FString& Paramete
 	TestEqual(TEXT("World (0,0) maps to the map's vertical centre"), Centre.Y, 0.5, UvTolerance);
 
 	// ── The four ArenaHalfExtent corners map to the four UV corners ───────────
-	// ⭐ THE Y ROW IS THE ONE THAT MATTERS. Slate's local Y grows DOWNWARD, so world +Y must
-	// come out as UV 0 (the TOP). A projection that skipped the flip would render the whole
-	// battlefield MIRRORED about the castle axis — every dot on the wrong side of the lane
-	// while the map still looked perfectly plausible. That is the defect this block kills.
+	// ⭐ THE Y ROW IS THE ONE THAT MATTERS, AND IT WAS RE-PINNED BY TASK-692 (`WM-§7`):
+	// UE's world frame is LEFT-HANDED (X forward, Y right, Z up), so on a top-down map
+	// drawing +X to the RIGHT, world +Y lies toward the map's BOTTOM — the direction
+	// Slate's local Y already grows. The pre-692 convention inverted Y here and rendered
+	// the whole battlefield MIRRORED about the castle lane — every dot on the wrong side
+	// while the map still looked perfectly plausible (Jonathan's first map test caught
+	// it). That mirror is the defect this block now kills.
 	struct FCornerCase
 	{
 		const TCHAR* Label;
@@ -343,10 +346,10 @@ bool FSiegeWarMapProjectionCentreAndCornersTest::RunTest(const FString& Paramete
 
 	const FCornerCase Corners[] =
 	{
-		{ TEXT("(-HalfX, +HalfY) is the TOP-LEFT of the map"),     FVector2D(-Arena.X,  Arena.Y), 0.0, 0.0 },
-		{ TEXT("(+HalfX, +HalfY) is the TOP-RIGHT of the map"),    FVector2D( Arena.X,  Arena.Y), 1.0, 0.0 },
-		{ TEXT("(-HalfX, -HalfY) is the BOTTOM-LEFT of the map"),  FVector2D(-Arena.X, -Arena.Y), 0.0, 1.0 },
-		{ TEXT("(+HalfX, -HalfY) is the BOTTOM-RIGHT of the map"), FVector2D( Arena.X, -Arena.Y), 1.0, 1.0 }
+		{ TEXT("(-HalfX, -HalfY) is the TOP-LEFT of the map"),     FVector2D(-Arena.X, -Arena.Y), 0.0, 0.0 },
+		{ TEXT("(+HalfX, -HalfY) is the TOP-RIGHT of the map"),    FVector2D( Arena.X, -Arena.Y), 1.0, 0.0 },
+		{ TEXT("(-HalfX, +HalfY) is the BOTTOM-LEFT of the map"),  FVector2D(-Arena.X,  Arena.Y), 0.0, 1.0 },
+		{ TEXT("(+HalfX, +HalfY) is the BOTTOM-RIGHT of the map"), FVector2D( Arena.X,  Arena.Y), 1.0, 1.0 }
 	};
 
 	for (const FCornerCase& Case : Corners)
@@ -366,9 +369,9 @@ bool FSiegeWarMapProjectionCentreAndCornersTest::RunTest(const FString& Paramete
 	TestEqual(TEXT("Against the SHIPPED CDO extent, world (0,0) is still the map centre — U"), ShippedCentre.X, 0.5, UvTolerance);
 	TestEqual(TEXT("Against the SHIPPED CDO extent, world (0,0) is still the map centre — V"), ShippedCentre.Y, 0.5, UvTolerance);
 
-	const FVector2D ShippedTopLeft = FSiegeWarMapProjection::WorldToMapUV(FVector2D(-Shipped.X, Shipped.Y), Shipped);
-	TestEqual(TEXT("Against the SHIPPED CDO extent, (-HalfX, +HalfY) is the top-left — U"), ShippedTopLeft.X, 0.0, UvTolerance);
-	TestEqual(TEXT("Against the SHIPPED CDO extent, (-HalfX, +HalfY) is the top-left — V"), ShippedTopLeft.Y, 0.0, UvTolerance);
+	const FVector2D ShippedTopLeft = FSiegeWarMapProjection::WorldToMapUV(FVector2D(-Shipped.X, -Shipped.Y), Shipped);
+	TestEqual(TEXT("Against the SHIPPED CDO extent, (-HalfX, -HalfY) is the top-left — U"), ShippedTopLeft.X, 0.0, UvTolerance);
+	TestEqual(TEXT("Against the SHIPPED CDO extent, (-HalfX, -HalfY) is the top-left — V"), ShippedTopLeft.Y, 0.0, UvTolerance);
 
 	return true;
 }
@@ -390,13 +393,13 @@ bool FSiegeWarMapProjectionOrientationTest::RunTest(const FString& Parameters)
 
 	// ⭐ MONOTONICITY, NOT A SPOT CHECK. Test 1 pins five points; a sign error at exactly one
 	// of them is conceivable, a sign error across a whole sweep is not. This is the assertion
-	// a "helpful" future edit that removes the Y flip has to get past.
+	// a "helpful" future edit that RE-INTRODUCES the pre-692 mirrored Y has to get past.
 	constexpr int32 SampleCount = 33;
 
 	double PreviousU = -1.0;
-	double PreviousV = 2.0;
+	double PreviousV = -1.0;
 	bool bUStrictlyIncreases = true;
-	bool bVStrictlyDecreases = true;
+	bool bVStrictlyIncreases = true;
 
 	for (int32 Sample = 0; Sample < SampleCount; ++Sample)
 	{
@@ -408,7 +411,7 @@ bool FSiegeWarMapProjectionOrientationTest::RunTest(const FString& Parameters)
 		if (Sample > 0)
 		{
 			bUStrictlyIncreases = bUStrictlyIncreases && (Uv.X > PreviousU);
-			bVStrictlyDecreases = bVStrictlyDecreases && (Uv.Y < PreviousV);
+			bVStrictlyIncreases = bVStrictlyIncreases && (Uv.Y > PreviousV);
 		}
 
 		PreviousU = Uv.X;
@@ -417,9 +420,10 @@ bool FSiegeWarMapProjectionOrientationTest::RunTest(const FString& Parameters)
 
 	TestTrue(TEXT("World +X grows RIGHT: UV.X strictly INCREASES across a 33-sample sweep of the arena"), bUStrictlyIncreases);
 
-	// ⭐⭐ THE FLIP. If this line ever goes red, the map is drawing the battlefield mirrored
-	// about the castle axis and every ally dot is on the wrong side of the lane.
-	TestTrue(TEXT("⭐ World +Y grows UP: UV.Y strictly DECREASES across the same sweep (Slate's local Y grows DOWNWARD, so the projection MUST invert it — a map that did not would render mirrored and still look plausible)"), bVStrictlyDecreases);
+	// ⭐⭐ THE TASK-692 CONVENTION (`WM-§7`). If this line ever goes red, someone has put the
+	// pre-692 Y inversion back and the map is drawing the battlefield mirrored about the
+	// castle lane again — every dot on the wrong side while looking perfectly plausible.
+	TestTrue(TEXT("⭐ World +Y grows DOWN: UV.Y strictly INCREASES across the same sweep (UE's left-handed frame puts +Y 90° clockwise from +X seen from above — the same way Slate's local Y grows; a projection that inverts it renders mirrored, TASK-692/WM-§7)"), bVStrictlyIncreases);
 
 	// The two axes are independent: moving on X alone must not move V, and vice versa.
 	const FVector2D XOnly = FSiegeWarMapProjection::WorldToMapUV(FVector2D(Arena.X * 0.5, 0.0), Arena);
@@ -428,7 +432,32 @@ bool FSiegeWarMapProjectionOrientationTest::RunTest(const FString& Parameters)
 
 	const FVector2D YOnly = FSiegeWarMapProjection::WorldToMapUV(FVector2D(0.0, Arena.Y * 0.5), Arena);
 	TestEqual(TEXT("Moving on world Y alone leaves UV.U at the centre"), YOnly.X, 0.5, UvTolerance);
-	TestEqual(TEXT("…and moves UV.V UPWARD to one quarter (0.25), ⛔ not down to 0.75"), YOnly.Y, 0.25, UvTolerance);
+	TestEqual(TEXT("…and moves UV.V DOWNWARD to three quarters (0.75), ⛔ not up to 0.25"), YOnly.Y, 0.75, UvTolerance);
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// ⭐⭐ TASK-692 (`WM-§7`): THE ABSOLUTE-SIDE PIN — the case that would have CAUGHT the
+	// mirror. Every assertion above (and the round trip in test 25) stays green under ANY
+	// self-consistent sign convention; only tying REAL actors to an ABSOLUTE map side can
+	// fail on a coherent mirror. The actors and world XY are the TASK-692 truth table's:
+	// castles from source (`BattlefieldScatter.cpp:2632` — Blue −25000, Red +25000, Y 0;
+	// ⚠️ transcribed DELIBERATELY, the CanonicalPlaceSymbols argument: an expectation read
+	// from the code under test asserts nothing), the mine from the recorded live MinesPass
+	// line (seed 704140289, pair[0] primary P=(−17358, 6103)). The frame: the player exits
+	// the Blue gate facing battlefield centre = world +X; at identity yaw UE's right vector
+	// IS +Y, so his RIGHT = world +Y — and a top-down map drawing +X to the RIGHT must
+	// draw +Y toward the map's BOTTOM. Half-plane claims (not exact UVs) so an arena
+	// RESIZE cannot break them — only a re-mirrored axis can.
+	// ─────────────────────────────────────────────────────────────────────────
+	const FVector2D Shipped = ShippedCdoArenaHalfExtent();
+
+	const FVector2D BlueCastleUv = FSiegeWarMapProjection::WorldToMapUV(FVector2D(-25000.0, 0.0), Shipped);
+	TestTrue(TEXT("⭐ TASK-692: the BLUE castle (world −X) lands on the map's WEST/LEFT half — U < 0.5"), BlueCastleUv.X < 0.5);
+
+	const FVector2D RedCastleUv = FSiegeWarMapProjection::WorldToMapUV(FVector2D(25000.0, 0.0), Shipped);
+	TestTrue(TEXT("⭐ TASK-692: the RED castle (world +X) lands on the map's EAST/RIGHT half — U > 0.5"), RedCastleUv.X > 0.5);
+
+	const FVector2D RecordedMineUv = FSiegeWarMapProjection::WorldToMapUV(FVector2D(-17358.0, 6103.0), Shipped);
+	TestTrue(TEXT("⭐⭐ TASK-692: a world +Y mine — on the RIGHT of a +X-facing player at the Blue gate — lands on the map's BOTTOM half, V > 0.5 (the pre-692 transform drew it at V≈0.246, the top — the exact left↔right mirror Jonathan reported)"), RecordedMineUv.Y > 0.5);
 
 	return true;
 }
@@ -461,10 +490,10 @@ bool FSiegeWarMapProjectionClampTest::RunTest(const FString& Parameters)
 
 	const FClampCase Cases[] =
 	{
-		{ TEXT("far past -X and +Y pins to the top-left corner"),     FVector2D(-Arena.X * 40.0,  Arena.Y * 40.0), 0.0, 0.0 },
-		{ TEXT("far past +X and -Y pins to the bottom-right corner"), FVector2D( Arena.X * 40.0, -Arena.Y * 40.0), 1.0, 1.0 },
-		{ TEXT("far past +X only pins U while leaving V centred"),    FVector2D( Arena.X * 40.0,  0.0),            1.0, 0.5 },
-		{ TEXT("far past -Y only pins V while leaving U centred"),    FVector2D( 0.0,            -Arena.Y * 40.0), 0.5, 1.0 }
+		{ TEXT("far past -X and -Y pins to the top-left corner"),                   FVector2D(-Arena.X * 40.0, -Arena.Y * 40.0), 0.0, 0.0 },
+		{ TEXT("far past +X and +Y pins to the bottom-right corner"),               FVector2D( Arena.X * 40.0,  Arena.Y * 40.0), 1.0, 1.0 },
+		{ TEXT("far past +X only pins U while leaving V centred"),                  FVector2D( Arena.X * 40.0,  0.0),            1.0, 0.5 },
+		{ TEXT("far past -Y only pins V to the TOP edge while leaving U centred"),  FVector2D( 0.0,            -Arena.Y * 40.0), 0.5, 0.0 }
 	};
 
 	for (const FClampCase& Case : Cases)
@@ -533,7 +562,7 @@ bool FSiegeWarMapProjectionDegenerateArenaTest::RunTest(const FString& Parameter
 	TestTrue(TEXT("An off-centre point on a degenerate arena is finite in U"), FMath::IsFinite(OffCentre.X));
 	TestTrue(TEXT("An off-centre point on a degenerate arena is finite in V"), FMath::IsFinite(OffCentre.Y));
 	TestEqual(TEXT("…and pins to the right edge"), OffCentre.X, 1.0, UvTolerance);
-	TestEqual(TEXT("…and pins to the bottom edge"), OffCentre.Y, 1.0, UvTolerance);
+	TestEqual(TEXT("…and pins to the top edge (world -Y is the map's top, TASK-692)"), OffCentre.Y, 0.0, UvTolerance);
 
 	// `ComputeMapRectLocal` divides by the same extent and carries the same floor. It must not
 	// be the one that got missed.
@@ -878,10 +907,10 @@ bool FSiegeWarMapFullChainTest::RunTest(const FString& Parameters)
 
 	const FChainCase Cases[] =
 	{
-		{ TEXT("world (-HalfX, +HalfY) lands on the rect's TOP-LEFT pixel"),     FVector2D(-Arena.X,  Arena.Y), RectOrigin.X,               RectOrigin.Y },
-		{ TEXT("world (+HalfX, +HalfY) lands on the rect's TOP-RIGHT pixel"),    FVector2D( Arena.X,  Arena.Y), RectOrigin.X + RectSize.X,  RectOrigin.Y },
-		{ TEXT("world (-HalfX, -HalfY) lands on the rect's BOTTOM-LEFT pixel"),  FVector2D(-Arena.X, -Arena.Y), RectOrigin.X,               RectOrigin.Y + RectSize.Y },
-		{ TEXT("world (+HalfX, -HalfY) lands on the rect's BOTTOM-RIGHT pixel"), FVector2D( Arena.X, -Arena.Y), RectOrigin.X + RectSize.X,  RectOrigin.Y + RectSize.Y },
+		{ TEXT("world (-HalfX, -HalfY) lands on the rect's TOP-LEFT pixel"),     FVector2D(-Arena.X, -Arena.Y), RectOrigin.X,               RectOrigin.Y },
+		{ TEXT("world (+HalfX, -HalfY) lands on the rect's TOP-RIGHT pixel"),    FVector2D( Arena.X, -Arena.Y), RectOrigin.X + RectSize.X,  RectOrigin.Y },
+		{ TEXT("world (-HalfX, +HalfY) lands on the rect's BOTTOM-LEFT pixel"),  FVector2D(-Arena.X,  Arena.Y), RectOrigin.X,               RectOrigin.Y + RectSize.Y },
+		{ TEXT("world (+HalfX, +HalfY) lands on the rect's BOTTOM-RIGHT pixel"), FVector2D( Arena.X,  Arena.Y), RectOrigin.X + RectSize.X,  RectOrigin.Y + RectSize.Y },
 		{ TEXT("world (0,0) lands on the rect's exact centre"),                  FVector2D::ZeroVector,         RectOrigin.X + RectSize.X * 0.5, RectOrigin.Y + RectSize.Y * 0.5 }
 	};
 
@@ -2033,19 +2062,20 @@ bool FSiegeWarMapUvToWorldInverseTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("(a) UV (0.5, 0.5) is the world origin — X"), Centre.X, 0.0, UvTolerance);
 		TestEqual(TEXT("(a) UV (0.5, 0.5) is the world origin — Y"), Centre.Y, 0.0, UvTolerance);
 
-		// ⭐ The Y row carries the pinned axis flip: UV.Y = 0 is the TOP of the map, which is
-		// world +HalfY — the same contract test 1 pins forward.
+		// ⭐ The Y row carries the TASK-692 convention (`WM-§7`): UV.Y = 0 is the TOP of the
+		// map, which is world −HalfY (world +Y grows DOWN on screen, no inversion) — the
+		// same contract test 1 pins forward.
 		const FVector2D TopLeft = FSiegeWarMapProjection::MapUVToWorld(FVector2D(0.0, 0.0), CleanArena);
-		TestEqual(TEXT("(a) UV (0,0) — the map's top-left — is world (-HalfX, +HalfY) — X"), TopLeft.X, -CleanArena.X, UvTolerance);
-		TestEqual(TEXT("(a) UV (0,0) — the map's top-left — is world (-HalfX, +HalfY) — Y"), TopLeft.Y, CleanArena.Y, UvTolerance);
+		TestEqual(TEXT("(a) UV (0,0) — the map's top-left — is world (-HalfX, -HalfY) — X"), TopLeft.X, -CleanArena.X, UvTolerance);
+		TestEqual(TEXT("(a) UV (0,0) — the map's top-left — is world (-HalfX, -HalfY) — Y"), TopLeft.Y, -CleanArena.Y, UvTolerance);
 
 		const FVector2D BottomRight = FSiegeWarMapProjection::MapUVToWorld(FVector2D(1.0, 1.0), CleanArena);
-		TestEqual(TEXT("(a) UV (1,1) — the map's bottom-right — is world (+HalfX, -HalfY) — X"), BottomRight.X, CleanArena.X, UvTolerance);
-		TestEqual(TEXT("(a) UV (1,1) — the map's bottom-right — is world (+HalfX, -HalfY) — Y"), BottomRight.Y, -CleanArena.Y, UvTolerance);
+		TestEqual(TEXT("(a) UV (1,1) — the map's bottom-right — is world (+HalfX, +HalfY) — X"), BottomRight.X, CleanArena.X, UvTolerance);
+		TestEqual(TEXT("(a) UV (1,1) — the map's bottom-right — is world (+HalfX, +HalfY) — Y"), BottomRight.Y, CleanArena.Y, UvTolerance);
 
 		const FVector2D ShippedTopLeft = FSiegeWarMapProjection::MapUVToWorld(FVector2D(0.0, 0.0), ShippedArena);
 		TestEqual(TEXT("(a) Against the SHIPPED CDO extent too — X"), ShippedTopLeft.X, -ShippedArena.X, UvTolerance);
-		TestEqual(TEXT("(a) Against the SHIPPED CDO extent too — Y"), ShippedTopLeft.Y, ShippedArena.Y, UvTolerance);
+		TestEqual(TEXT("(a) Against the SHIPPED CDO extent too — Y"), ShippedTopLeft.Y, -ShippedArena.Y, UvTolerance);
 	}
 
 	// ── (b) ⭐ THE ROUND TRIP, ON THE BAKE'S OWN LATTICE ─────────────────────────────────
@@ -2088,7 +2118,7 @@ bool FSiegeWarMapUvToWorldInverseTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("(c) A (0,0) extent yields FINITE world coordinates"),
 			FMath::IsFinite(Degenerate.X) && FMath::IsFinite(Degenerate.Y));
 		TestEqual(TEXT("(c) …floored at 1 uu — X = (2·0.25 − 1)·1"), Degenerate.X, -0.5, UvTolerance);
-		TestEqual(TEXT("(c) …floored at 1 uu — Y = (1 − 2·0.75)·1"), Degenerate.Y, -0.5, UvTolerance);
+		TestEqual(TEXT("(c) …floored at 1 uu — Y = (2·0.75 − 1)·1"), Degenerate.Y, 0.5, UvTolerance);
 
 		const FVector2D DegenerateTrip = FSiegeWarMapProjection::WorldToMapUV(Degenerate, FVector2D::ZeroVector);
 		TestEqual(TEXT("(c) …and the round trip STILL closes, because both directions floor the SAME axes the SAME way — U"),
@@ -2187,13 +2217,14 @@ bool FSiegeWarMapPoiIconProjectionTest::RunTest(const FString& Parameters)
 			TestEqual(*FString::Printf(TEXT("(b) A world-origin POI is the rect centre on the %s arena — Y"), ArenaNames[ArenaIndex]),
 				MidField.Y, RectOrigin.Y + RectSize.Y * 0.5, PxTolerance);
 
-			// A castle-shaped fixture at the arena's (-HalfX, +HalfY) corner is the rect's
-			// top-left — the Y row carries the pinned axis flip (world +Y = screen up).
+			// A castle-shaped fixture at the arena's (-HalfX, -HalfY) corner is the rect's
+			// top-left — the Y row carries the TASK-692 convention (world +Y = screen DOWN,
+			// `WM-§7`).
 			const FVector2D CornerCastle = FSiegeWarMapProjection::MapUVToLocal(
-				FSiegeWarMapProjection::WorldToMapUV(FVector2D(-Arena.X, Arena.Y), Arena), RectOrigin, RectSize);
-			TestEqual(*FString::Printf(TEXT("(b) A (-HalfX, +HalfY) POI is the rect top-left on the %s arena — X"), ArenaNames[ArenaIndex]),
+				FSiegeWarMapProjection::WorldToMapUV(FVector2D(-Arena.X, -Arena.Y), Arena), RectOrigin, RectSize);
+			TestEqual(*FString::Printf(TEXT("(b) A (-HalfX, -HalfY) POI is the rect top-left on the %s arena — X"), ArenaNames[ArenaIndex]),
 				CornerCastle.X, RectOrigin.X, PxTolerance);
-			TestEqual(*FString::Printf(TEXT("(b) A (-HalfX, +HalfY) POI is the rect top-left on the %s arena — Y"), ArenaNames[ArenaIndex]),
+			TestEqual(*FString::Printf(TEXT("(b) A (-HalfX, -HalfY) POI is the rect top-left on the %s arena — Y"), ArenaNames[ArenaIndex]),
 				CornerCastle.Y, RectOrigin.Y, PxTolerance);
 
 			// A fixture far PAST the opposite bound pins EXACTLY to the bottom-right corner
@@ -2201,7 +2232,7 @@ bool FSiegeWarMapPoiIconProjectionTest::RunTest(const FString& Parameters)
 			// the edge instead of drawing over the WBP chrome (the WorldToMapUV contract the
 			// icon layer inherits without writing a line of its own).
 			const FVector2D FarOut = FSiegeWarMapProjection::MapUVToLocal(
-				FSiegeWarMapProjection::WorldToMapUV(FVector2D(Arena.X * 3.0, -Arena.Y * 4.0), Arena), RectOrigin, RectSize);
+				FSiegeWarMapProjection::WorldToMapUV(FVector2D(Arena.X * 3.0, Arena.Y * 4.0), Arena), RectOrigin, RectSize);
 			TestEqual(*FString::Printf(TEXT("(b) A far-out-of-arena POI pins to the rect bottom-right on the %s arena — X"), ArenaNames[ArenaIndex]),
 				FarOut.X, RectOrigin.X + RectSize.X, PxTolerance);
 			TestEqual(*FString::Printf(TEXT("(b) A far-out-of-arena POI pins to the rect bottom-right on the %s arena — Y"), ArenaNames[ArenaIndex]),

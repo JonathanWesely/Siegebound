@@ -4415,3 +4415,50 @@ Jonathan's directive, verbatim (2026-08-28): *"lets also uncap the maximum numbe
 - **File map (disjointness is the parallelism argument):** programmer lane owns `WarMapWidget.{h,cpp}` (+ `Tests/SiegeWarMapTest.cpp` extension; + `SiegeAssistantComponent.{h,cpp}` ONLY if/when 580 is un-held, under 580's own fences) · art lane owns the three `T_WarMap_*` textures + `WBP_WarMap` property styling. ⛔ **No lane touches the other's files; the two art tasks and the code chain are parallel-safe.**
 - 📌 **M8: this wave adds NO replicated property, NO new class tier, NO RPC — every layer (elevation, icons, dots) is client-local display.** Each code handoff declares it.
 - ⚠️ **KNOWN DESIGNED OUTCOMES added to Jonathan's sheet:** castle shells and boundary walls read FULL WHITE on the elevation layer (the clamp, by design) · POI icons are not clickable (only the seven markers are, `WR-§6`) · icon POSITIONS are live world truth but enemy UNITS still need the 30-gold reveal.
+
+### WM-§7 ⚖️ THE PROJECTION MIRROR (added 2026-08-29 — TASK-690's FIRST FINDING, processed as playtest feedback per the GDD-mode law; boarded as TASK-692..694)
+
+**Jonathan's verbatim (his first map test):** *"it appears that the map needs to be flipped along its horizontal axis, because the locations that you listed are actually located on the opposite side of that axis, so whenever I exit the castle things that should have been on my left were on my right and vice versa, lets fix that by flipping the map on the horizontal axis."*
+
+- ⚠️ **THE SPEC IS THE SYMPTOM, ⛔ NOT AN AXIS NAME.** "Horizontal axis" is his description of the effect, not the contract. The binding truth: **exiting the castle (the Blue gate faces +X post-rotation, so he faces battlefield centre = +X; facing +X, his LEFT = world +Y), what lay on his LEFT drew on the map's RIGHT and vice versa.** WHICH projection line carries the wrong sign is DIAGNOSED, never assumed — screen-vs-world axis naming is exactly where a guessed flip lands mirrored twice.
+- **DIAGNOSE-FIRST, CHEAP BY DESIGN:** compare 2–3 known world actor positions (the TWO castles + one specific mine, their world XY read from live level/source data — ⛔ not from memory) against their computed `WorldToMapUV` outputs. The answer is arithmetic — minutes, not hours. The truth table (actor · world XY · computed UV · the side it MUST draw on from the exit-perspective) is PASTED in the handoff; it is the aim of the fix and the input to the integration capture check.
+- ⛔⛔ **THE SINGLE-OWNER LAW: the flip lands in `FSiegeWarMapProjection` and NOWHERE ELSE** — `WorldToMapUV` AND its EXACT INVERSE `MapUVToWorld` AND the round-trip/lattice tests updated IN PLACE (`Tests/SiegeWarMapTest.cpp` — extend, ⛔ never a second war-map test file). **Verified at source 2026-08-29 — every layer routes through the pair:** the seven markers (`WarMapWidget.cpp:1391-1392`) · POI icons (`:1495-1528`) · ally/enemy dots (`:1537-1551`) · click resolution (`FindMarkerIndexAtLocal` over `MapUVToLocal` rects) · **the elevation bake (`:984` — per-texel `MapUVToWorld`)** ⇒ **ONE flip in the pair re-orients icons + dots + markers + clicks + elevation COHERENTLY. A sign change in any single layer, in the bake loop, or at a draw site is a FAIL** — it would shear the layers apart, which is worse than the mirror it replaces.
+- **The orientation NARRATION follows the code:** the *"+X world grows RIGHT" / "+Y world grows UP … inverted here and NOWHERE ELSE"* comment block inside the pair is part of the contract and is corrected in the SAME diff (a surviving stale direction comment is the `W691-3` class of debt). Comment riders elsewhere ONLY where a comment asserts the specific direction that changed.
+- **Suite baseline 143** (TASK-689's independently-counted total); test updates in place — the count MAY hold; any delta is DECLARED in the handoff for the integration gate.
+- **TASK-690 STAYS OPEN:** his retest of the FLIPPED map is the acceptance. Before it reaches him, integration re-shoots the first-open capture (the 689 machine route) and compares it against the truth table — e.g. the west-edge reference actor must now draw on the correct side.
+
+## ⚖️ SHIPPING PACKAGE — the cooked Win64 zip anyone can run (2026-08-29) — namespace **PKG-§**
+
+📌 **BORN WITH ITS NAMESPACE PREFIX (`PKG-§N`)**, per the `KBD-§`/`NAV-§`/`WM-§` precedent. Cite as `PKG-§1`, never a bare `§1`.
+**Trigger — Jonathan's directive (abridged):** package the game so *"anyone can play, they just have to extract and click on something"* into his new folder `packagedZIPofGame/`, plus a markdown inside it explaining what was packaged, what was left out from the original folder, and how to run from just the zip.
+
+### PKG-§1 ⚖️ THE HONEST CORRECTION — A PROJECT FOLDER IS NOT A GAME
+
+His stated model (*"just the GitClaudeUnrealTest folder without .claude/Tools/Docs"*) would ⛔ **NOT run on a machine without UE 5.8** — `.uproject` + `Content/` + `Source/` need the engine installed PLUS a C++ build before anything is clickable. **"Extract and click to play" = a COOKED Win64 package: UAT `BuildCookRun` producing the game `.exe` + cooked `.pak` content + the engine runtime. That is what ships.** The correction is stated IN the README **and relayed TO Jonathan** — ⛔ never silently substituted.
+
+### PKG-§2 📌 THE PINNED SHAPE + NAMES
+
+- Tooling: **UAT `RunUAT.bat BuildCookRun`** (UE 5.8), platform **Win64**, config **Development** — ⚖️ parity: every test and playtest this project has ever run was Development; a Shipping variant is a FLAGGED follow-up (Jonathan's sheet), ⛔ not smuggled into this task.
+- Staging home: **`packagedZIPofGame/` at the git root** (`C:\GitProjects\GitHub\GitClaudeUnrealTesting\GitClaudeUnrealTest\packagedZIPofGame\`) — not found on disk at boarding (2026-08-29) ⇒ created if absent; if Jonathan made his folder elsewhere, his word relocates it (one FOR-JONATHAN row, proceeding default = git root).
+- Names pinned: zip **`Siegebound-Win64-Development-<YYYY-MM-DD>.zip`** · README **`packagedZIPofGame/README.md`**. README's MANDATED content: what was packaged (cooked maps list, config) · what was LEFT OUT and WHY (`Source/`, `.claude/`, `Tools/`, `Docs/`, raw assets, uncooked Content, the GGUF) · how to run (extract → double-click the named `.exe`) · the `PKG-§1` correction · the `PKG-§4` model statement.
+
+### PKG-§3 ⛔⛔ GIT POSTURE — THE MULTI-GB BUILD NEVER ENTERS GIT, IN ANY FORM
+
+The `testvideo/` precedent + the append-only-history law (the `20c8e48` DLL sweep, repaired only because it was unpushed) apply in full: **the ignore line `/packagedZIPofGame/` is added BEFORE the first cook runs** — a pre-cook FENCE, ⛔ not a post-hoc cleanup, because the editor auto-stage trap has fired live (TASK-683). ⛔ LFS is NOT the answer (nothing here should be versioned at all — the `.gitignore`'s own `/Models/` reasoning). The README ships INSIDE the zip, not in git; its full text is reproduced in the build-master handoff so the repo keeps the record.
+
+### PKG-§4 ⚖️ THE MODEL WEIGHTS — SHIP WITHOUT, GRACEFUL-DEGRADE VERIFIED AT SOURCE
+
+`/Models/` is gitignored by the never-version law and is NOT cook content. **Verified at source 2026-08-29 (⛔ not assumed): `Plugins/SiegeLlama/Source/SiegeLlama/Private/SiegeLlamaSubsystem.cpp:1991-1995` — no model file at resolve time ⇒ ONE log line, the in-match assistant is unavailable for the session, and by the code's own words *"THE MATCH IS FULLY PLAYABLE: nothing is blocked, nothing is retried, and every keyboard command is byte-identical"* (`:2085` reports `state=UNAVAILABLE` honestly).** ⇒ **DEFAULT: the zip ships WITHOUT the GGUF** — small zip, assistant off/degraded, STATED in the README. FOR JONATHAN: a with-model variant (+~2.5 GB) is one word away. The packaging task re-verifies the staged build contains no `Models/` and no `.gguf`.
+
+### PKG-§5 ⚠️ COOK HAZARDS PRE-EMPTED FROM THE RECORD
+
+- **The template maps** (`ThirdPerson`/`Variant_*` + their `__ExternalActors__`/`__ExternalObjects__` OFPA stubs) are marketplace scaffolding, not the game. **The cook uses an EXPLICIT maps list** — the game's reachable maps ONLY (the main-menu map + `L_Arena` + anything the menu flow actually opens); the implementer enumerates the list from `Config/DefaultEngine.ini` + the menu flow and PASTES it in the handoff. ⛔ No all-maps cook.
+- **Plugins ride AS CONFIGURED** (SiegeLlama, VFR/UI plugins): ⛔ no plugin enable/disable surgery inside the packaging task. A plugin that fails the cook is REPORTED with the log lines, never silently stripped.
+- The unclaimed **`bAllowHighDPIInGameMode=True`** in `Config/DefaultEngine.ini` (TASK-689 adjudicated it OUT of its commit, left in tree for Jonathan's ruling) **WILL be baked into the package's ini if still in the tree at cook time** — flagged as his natural claim-or-strike moment; proceeding default = cook the tree as-is.
+
+### PKG-§6 📌 GATES + VERIFICATION
+
+- **The cook is its OWN serialized gate (QUIET-MODULE):** it runs AFTER the map-mirror commit lands (the package MUST contain the flip) and ⛔ never concurrently with any compile gate.
+- **The UAT log is parsed for real success** — the Build.bat exit-code-lie law extends to UAT: read the log's own verdict lines, ⛔ never trust `%ERRORLEVEL%`/`$LASTEXITCODE` alone.
+- **Boot-verify, honestly scoped:** launch the staged `.exe`, confirm the main menu is reached on process/log evidence, close it. ⛔ No input-injection lane exists ⇒ no gameplay or PIE-matrix claims; Jonathan's own extract-and-click is the human acceptance.
+- ⛔ **NEVER push** (unchanged law). The zip is a local artifact; distribution is Jonathan's alone.

@@ -372,10 +372,14 @@ FVector2D FSiegeWarMapProjection::WorldToMapUV(const FVector2D& WorldXY, const F
 	// +X world grows RIGHT.
 	MapUV.X = FMath::Clamp((WorldXY.X + HalfX) / (2.0 * HalfX), 0.0, 1.0);
 
-	// +Y world grows UP: Slate's local Y grows DOWNWARD, so the axis is inverted here and
-	// NOWHERE ELSE. Doing it at the projection means the ally dots, the enemy dots and the
-	// markers cannot disagree about which way the field runs.
-	MapUV.Y = FMath::Clamp((HalfY - WorldXY.Y) / (2.0 * HalfY), 0.0, 1.0);
+	// +Y world grows DOWN (TASK-692, WM-§7): UE's world frame is left-handed (X forward,
+	// Y RIGHT, Z up), so from a bird's eye with +X drawn to the right, +Y physically lies
+	// toward the map's BOTTOM — the same direction Slate's local Y already grows. ⛔ NO
+	// inversion: the pre-692 (HalfY - Y) flip here is what mirrored the whole field about
+	// the castle lane (Jonathan's first map test). The convention is decided here and
+	// NOWHERE ELSE — the ally dots, the enemy dots, the icons, the markers and the
+	// elevation bake all route through this pair and cannot disagree about it.
+	MapUV.Y = FMath::Clamp((WorldXY.Y + HalfY) / (2.0 * HalfY), 0.0, 1.0);
 
 	return MapUV;
 }
@@ -437,12 +441,16 @@ FVector2D FSiegeWarMapProjection::MapUVToWorld(const FVector2D& MapUV, const FVe
 	const double HalfX = FMath::Max(ArenaHalfExtent.X, static_cast<double>(MinArenaHalfExtentUu));
 	const double HalfY = FMath::Max(ArenaHalfExtent.Y, static_cast<double>(MinArenaHalfExtentUu));
 
-	// Solve WorldToMapUV's two lines for the world coordinate. The Y sign carries the ONE
-	// pinned axis flip (world +Y grows UP on screen), inverted here and NOWHERE ELSE — the
-	// orientation contract still has a single owner, now readable in both directions.
+	// Solve WorldToMapUV's two lines for the world coordinate — the EXACT inverse,
+	// re-derived for the TASK-692 convention (WM-§7):
+	//   U = (X + HalfX) / (2·HalfX)  ⇒  X = (2U − 1)·HalfX
+	//   V = (Y + HalfY) / (2·HalfY)  ⇒  Y = (2V − 1)·HalfY
+	// Both axes are now the SAME affine form (world +Y grows DOWN on screen, no inversion
+	// anywhere) — the orientation contract still has a single owner, readable in both
+	// directions, and the round trip stays byte-exact on (0,1)².
 	return FVector2D(
 		(2.0 * MapUV.X - 1.0) * HalfX,
-		(1.0 - 2.0 * MapUV.Y) * HalfY);
+		(2.0 * MapUV.Y - 1.0) * HalfY);
 }
 
 int32 FSiegeWarMapProjection::FindMarkerIndexAtLocal(const TArray<FSiegeWarMapMarker>& Markers, const FVector2D& LocalPoint)
