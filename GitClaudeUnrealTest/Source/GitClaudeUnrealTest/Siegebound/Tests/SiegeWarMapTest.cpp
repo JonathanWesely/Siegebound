@@ -1898,4 +1898,318 @@ bool FSiegeWarMapComposeAppendedInputTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+//  24. ELEVATION (TASK-684, WM-§2) — the pinned pure ramp: floor ⇒ dark,
+//      ceiling ⇒ light, above-ceiling ⇒ CLAMPED full white, mid ⇒ monotonic
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeWarMapHeightToBrightnessTest,
+	"Siegebound.WarMap.HeightToBrightnessRampFloorCeilingAndClamp",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeWarMapHeightToBrightnessTest::RunTest(const FString& Parameters)
+{
+	// ⭐ THE SEAM IS PURE (the W4-R1 doctrine WM-§2 cites): no world, no widget instance, no
+	// CDO — three floats in, one float out. That purity is exactly what lets this file pin
+	// the whole normalization law headlessly while the 7,800-trace capture itself stays a
+	// live-editor concern (TASK-689/690's instrument, stated in the not-covered list above).
+	constexpr float Tolerance = 1.e-6f;
+
+	// The MEASURED shipped default (SM_Hill_02's 400 uu × the DA hill-scale max 2.5 —
+	// derivation at the ElevationReliefCeiling declaration). ⚠️ Used here as an ARBITRARY
+	// band value, transcribed the CanonicalPlaceSymbols way: the ramp must hold for ANY
+	// ceiling, and the arithmetic below is exact at this one.
+	constexpr float Ceiling = 1000.f;
+
+	// ── (a) The FLOOR is dark — brightness exactly 0, at Z=0 and at a lifted ground ──────
+	TestEqual(TEXT("(a) A hit AT the ground is brightness 0 (dark) when the ground is Z=0"),
+		UWarMapWidget::HeightToBrightness(0.f, 0.f, Ceiling), 0.f, Tolerance);
+
+	TestEqual(TEXT("(a) …and still 0 when the MEASURED ground is non-zero — the ramp is anchored at GroundZ, never at a transcribed Z=0"),
+		UWarMapWidget::HeightToBrightness(137.5f, 137.5f, Ceiling), 0.f, Tolerance);
+
+	// ── (b) The CEILING is light — brightness exactly 1 ──────────────────────────────────
+	TestEqual(TEXT("(b) A hit AT GroundZ + ReliefCeiling is brightness 1 (light)"),
+		UWarMapWidget::HeightToBrightness(Ceiling, 0.f, Ceiling), 1.f, Tolerance);
+
+	TestEqual(TEXT("(b) …and the anchor moves WITH the ground"),
+		UWarMapWidget::HeightToBrightness(137.5f + Ceiling, 137.5f, Ceiling), 1.f, Tolerance);
+
+	// ── (c) ⭐ ABOVE the ceiling CLAMPS to full white — THE WM-§2 NORMALIZATION LAW ───────
+	// A castle shell is ≈8,000 uu over a ≈1,000-uu hill band; without this clamp a min→max
+	// normalization would crush every hill into one gray band and the layer would deliver
+	// nothing of "lighter or darker depending on elevation". The clamp is the ruling.
+	TestEqual(TEXT("(c) ⭐ A castle-class hit (8,000 uu) clamps to EXACTLY 1 — full white, never a rescale of the whole band"),
+		UWarMapWidget::HeightToBrightness(8000.f, 0.f, Ceiling), 1.f, Tolerance);
+
+	TestEqual(TEXT("(c) …and one hair above the ceiling already clamps"),
+		UWarMapWidget::HeightToBrightness(Ceiling + 1.f, 0.f, Ceiling), 1.f, Tolerance);
+
+	// ── (d) MID-BAND is linear — the quarter points land exactly ─────────────────────────
+	TestEqual(TEXT("(d) Quarter height is brightness 0.25"),
+		UWarMapWidget::HeightToBrightness(250.f, 0.f, Ceiling), 0.25f, Tolerance);
+	TestEqual(TEXT("(d) Half height is brightness 0.5"),
+		UWarMapWidget::HeightToBrightness(500.f, 0.f, Ceiling), 0.5f, Tolerance);
+	TestEqual(TEXT("(d) Three-quarter height is brightness 0.75"),
+		UWarMapWidget::HeightToBrightness(750.f, 0.f, Ceiling), 0.75f, Tolerance);
+
+	// ── (e) MONOTONIC — lighter NEVER means lower (Jonathan's words, as an invariant) ────
+	// Non-decreasing across the whole sweep (the clamped shoulders are flat), STRICTLY
+	// increasing inside the open band — a ramp that plateaued mid-band would paint two
+	// different heights the same gray and the map would lie by omission.
+	{
+		float PreviousBrightness = -1.f;
+
+		for (int32 Step = 0; Step <= 60; ++Step)
+		{
+			// -500 … +2,500 in 50-uu steps: below-ground, the whole band, and past the clamp.
+			const float HitZ = -500.f + static_cast<float>(Step) * 50.f;
+			const float Brightness = UWarMapWidget::HeightToBrightness(HitZ, 0.f, Ceiling);
+
+			TestTrue(*FString::Printf(TEXT("(e) Brightness is in [0,1] at Z=%.0f"), HitZ),
+				Brightness >= 0.f && Brightness <= 1.f);
+
+			TestTrue(*FString::Printf(TEXT("(e) Brightness never DECREASES with height (Z=%.0f)"), HitZ),
+				Brightness >= PreviousBrightness);
+
+			if (HitZ > 0.f && HitZ < Ceiling && PreviousBrightness >= 0.f)
+			{
+				TestTrue(*FString::Printf(TEXT("(e) …and strictly INCREASES inside the open band (Z=%.0f)"), HitZ),
+					Brightness > PreviousBrightness);
+			}
+
+			PreviousBrightness = Brightness;
+		}
+	}
+
+	// ── (f) BELOW ground clamps dark — a pit cannot underflow the ramp ───────────────────
+	TestEqual(TEXT("(f) A hit BELOW the measured ground clamps to 0, never negative"),
+		UWarMapWidget::HeightToBrightness(-400.f, 0.f, Ceiling), 0.f, Tolerance);
+
+	// ── (g) ⛔ THE ZERO-DIVIDE FLOOR — a degenerate ceiling is total, never NaN ───────────
+	// ElevationReliefCeiling is an EditDefaultsOnly float a designer can zero; the seam
+	// floors it at 1 uu (the MinArenaHalfExtentUu doctrine), so every output stays finite
+	// and clamped. 0.5 over a zeroed ceiling ⇒ 0.5 / 1 = 0.5 exactly.
+	{
+		const float DegenerateZero = UWarMapWidget::HeightToBrightness(0.5f, 0.f, 0.f);
+		TestTrue(TEXT("(g) A ZERO ceiling yields a FINITE brightness"), FMath::IsFinite(DegenerateZero));
+		TestEqual(TEXT("(g) …floored at 1 uu: 0.5 over a zeroed ceiling is 0.5"), DegenerateZero, 0.5f, Tolerance);
+
+		const float DegenerateNegative = UWarMapWidget::HeightToBrightness(2.f, 0.f, -5.f);
+		TestTrue(TEXT("(g) A NEGATIVE ceiling yields a FINITE brightness"), FMath::IsFinite(DegenerateNegative));
+		TestEqual(TEXT("(g) …and clamps at 1 like any above-ceiling hit"), DegenerateNegative, 1.f, Tolerance);
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  25. ELEVATION (TASK-684) — MapUVToWorld is the EXACT inverse of the shipped
+//      projection, so the bake's sample lattice and the painter's texels agree
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeWarMapUvToWorldInverseTest,
+	"Siegebound.WarMap.MapUvToWorldInvertsTheProjection",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeWarMapUvToWorldInverseTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeWarMapTestFixture;
+
+	// ⭐ WHY THIS TEST EXISTS: the elevation bake generates ONE world sample point per texel
+	// through MapUVToWorld. If the inverse drifted from WorldToMapUV by even a sign, every
+	// hill would render at a plausible WRONG place — most likely mirrored about the lane,
+	// exactly the defect the orientation-pinning tests above exist to kill in the forward
+	// direction. The round trip below closes the loop in the backward one.
+
+	const FVector2D CleanArena = CleanArenaHalfExtent();
+	const FVector2D ShippedArena = ShippedCdoArenaHalfExtent();
+
+	// ── (a) The centre and the four corners, both arenas ─────────────────────────────────
+	{
+		const FVector2D Centre = FSiegeWarMapProjection::MapUVToWorld(FVector2D(0.5, 0.5), CleanArena);
+		TestEqual(TEXT("(a) UV (0.5, 0.5) is the world origin — X"), Centre.X, 0.0, UvTolerance);
+		TestEqual(TEXT("(a) UV (0.5, 0.5) is the world origin — Y"), Centre.Y, 0.0, UvTolerance);
+
+		// ⭐ The Y row carries the pinned axis flip: UV.Y = 0 is the TOP of the map, which is
+		// world +HalfY — the same contract test 1 pins forward.
+		const FVector2D TopLeft = FSiegeWarMapProjection::MapUVToWorld(FVector2D(0.0, 0.0), CleanArena);
+		TestEqual(TEXT("(a) UV (0,0) — the map's top-left — is world (-HalfX, +HalfY) — X"), TopLeft.X, -CleanArena.X, UvTolerance);
+		TestEqual(TEXT("(a) UV (0,0) — the map's top-left — is world (-HalfX, +HalfY) — Y"), TopLeft.Y, CleanArena.Y, UvTolerance);
+
+		const FVector2D BottomRight = FSiegeWarMapProjection::MapUVToWorld(FVector2D(1.0, 1.0), CleanArena);
+		TestEqual(TEXT("(a) UV (1,1) — the map's bottom-right — is world (+HalfX, -HalfY) — X"), BottomRight.X, CleanArena.X, UvTolerance);
+		TestEqual(TEXT("(a) UV (1,1) — the map's bottom-right — is world (+HalfX, -HalfY) — Y"), BottomRight.Y, -CleanArena.Y, UvTolerance);
+
+		const FVector2D ShippedTopLeft = FSiegeWarMapProjection::MapUVToWorld(FVector2D(0.0, 0.0), ShippedArena);
+		TestEqual(TEXT("(a) Against the SHIPPED CDO extent too — X"), ShippedTopLeft.X, -ShippedArena.X, UvTolerance);
+		TestEqual(TEXT("(a) Against the SHIPPED CDO extent too — Y"), ShippedTopLeft.Y, ShippedArena.Y, UvTolerance);
+	}
+
+	// ── (b) ⭐ THE ROUND TRIP, ON THE BAKE'S OWN LATTICE ─────────────────────────────────
+	// Texel centres (i + 0.5) / N — the exact expression BakeElevationTexture evaluates —
+	// through MapUVToWorld and back through the SHIPPED WorldToMapUV. In-range UVs never
+	// engage the forward clamp, so the trip must close to tolerance on BOTH arenas.
+	{
+		constexpr int32 LatticeX = 13;
+		constexpr int32 LatticeY = 6;
+
+		const FVector2D Arenas[] = { CleanArena, ShippedArena };
+		const TCHAR* ArenaNames[] = { TEXT("clean"), TEXT("shipped-CDO") };
+
+		for (int32 ArenaIndex = 0; ArenaIndex < 2; ++ArenaIndex)
+		{
+			for (int32 Iy = 0; Iy < LatticeY; ++Iy)
+			{
+				for (int32 Ix = 0; Ix < LatticeX; ++Ix)
+				{
+					const FVector2D Uv(
+						(static_cast<double>(Ix) + 0.5) / static_cast<double>(LatticeX),
+						(static_cast<double>(Iy) + 0.5) / static_cast<double>(LatticeY));
+
+					const FVector2D RoundTrip = FSiegeWarMapProjection::WorldToMapUV(
+						FSiegeWarMapProjection::MapUVToWorld(Uv, Arenas[ArenaIndex]),
+						Arenas[ArenaIndex]);
+
+					TestEqual(*FString::Printf(TEXT("(b) Round trip closes at texel (%d,%d) on the %s arena — U"), Ix, Iy, ArenaNames[ArenaIndex]),
+						RoundTrip.X, Uv.X, UvTolerance);
+					TestEqual(*FString::Printf(TEXT("(b) Round trip closes at texel (%d,%d) on the %s arena — V"), Ix, Iy, ArenaNames[ArenaIndex]),
+						RoundTrip.Y, Uv.Y, UvTolerance);
+				}
+			}
+		}
+	}
+
+	// ── (c) ⛔ THE DEGENERATE EXTENT — same 1-uu floor as the forward map, no NaN ────────
+	{
+		const FVector2D Degenerate = FSiegeWarMapProjection::MapUVToWorld(FVector2D(0.25, 0.75), FVector2D::ZeroVector);
+		TestTrue(TEXT("(c) A (0,0) extent yields FINITE world coordinates"),
+			FMath::IsFinite(Degenerate.X) && FMath::IsFinite(Degenerate.Y));
+		TestEqual(TEXT("(c) …floored at 1 uu — X = (2·0.25 − 1)·1"), Degenerate.X, -0.5, UvTolerance);
+		TestEqual(TEXT("(c) …floored at 1 uu — Y = (1 − 2·0.75)·1"), Degenerate.Y, -0.5, UvTolerance);
+
+		const FVector2D DegenerateTrip = FSiegeWarMapProjection::WorldToMapUV(Degenerate, FVector2D::ZeroVector);
+		TestEqual(TEXT("(c) …and the round trip STILL closes, because both directions floor the SAME axes the SAME way — U"),
+			DegenerateTrip.X, 0.25, UvTolerance);
+		TestEqual(TEXT("(c) …and the round trip STILL closes — V"),
+			DegenerateTrip.Y, 0.75, UvTolerance);
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  26. POI ICONS (TASK-685) — every icon centre the layer can produce lands
+//      INSIDE the map rect, because the icons ride the SHIPPED projection chain
+//      (clamp included) — the bake's lattice idiom, pointed at the icon claim
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeWarMapPoiIconProjectionTest,
+	"Siegebound.WarMap.PoiIconProjectionStaysInsideTheMapRect",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeWarMapPoiIconProjectionTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeWarMapTestFixture;
+
+	// ⭐ WHY THIS TEST EXISTS: TASK-685's POI icon layer projects LIVE ACTOR positions
+	// (gold-node mines, ancient grounds, castles) through the SHIPPED
+	// WorldToMapUV → MapUVToLocal chain — the same two calls the dots make, ⛔ never a
+	// re-derived transform (WM-§1). The property the layer stands on is that EVERY world
+	// position — including a fixture past the configured arena bound, which the forward
+	// clamp pins to the edge — produces an icon centre INSIDE the drawn rect, because a
+	// centre outside it would paint POI chrome over the WBP's panel border. The lattice
+	// below is the elevation bake's (i + 0.5)/N texel idiom (test 25), swept over a world
+	// span 1.5× the arena so the OUTER RING of samples exercises the clamp on every edge.
+	//
+	// ⛔ WHAT THIS TEST DELIBERATELY DOES NOT DO: iterate actors, build a world, or assert
+	// the census (the WAVE-2 precedent the spec re-cites: that would test the engine's
+	// iterator, not our logic — TASK-690's eye is that instrument). Geometry only.
+
+	const FVector2D PanelSize(1920.0, 1080.0);
+
+	const FVector2D Arenas[] = { CleanArenaHalfExtent(), ShippedCdoArenaHalfExtent() };
+	const TCHAR* ArenaNames[] = { TEXT("clean"), TEXT("shipped-CDO") };
+
+	for (int32 ArenaIndex = 0; ArenaIndex < 2; ++ArenaIndex)
+	{
+		const FVector2D Arena = Arenas[ArenaIndex];
+
+		FVector2D RectOrigin = FVector2D::ZeroVector;
+		FVector2D RectSize = FVector2D::ZeroVector;
+		FSiegeWarMapProjection::ComputeMapRectLocal(
+			PanelSize, static_cast<float>(ShippedMapPaddingPx), Arena, RectOrigin, RectSize);
+
+		TestTrue(*FString::Printf(TEXT("Precondition: the %s arena yields a non-degenerate rect on a 1920x1080 panel"), ArenaNames[ArenaIndex]),
+			RectSize.X > 0.0 && RectSize.Y > 0.0);
+
+		// ── (a) The lattice sweep at 1.5× the arena span — in-arena AND out-of-arena ─────
+		{
+			constexpr int32 LatticeX = 13;
+			constexpr int32 LatticeY = 6;
+			constexpr double SpanScale = 1.5;
+
+			for (int32 Iy = 0; Iy < LatticeY; ++Iy)
+			{
+				for (int32 Ix = 0; Ix < LatticeX; ++Ix)
+				{
+					// Lattice centre in [-SpanScale, +SpanScale] of each half-extent — the
+					// bake's texel-centre expression, widened past the bound on purpose.
+					const FVector2D WorldXY(
+						(2.0 * ((static_cast<double>(Ix) + 0.5) / static_cast<double>(LatticeX)) - 1.0) * Arena.X * SpanScale,
+						(2.0 * ((static_cast<double>(Iy) + 0.5) / static_cast<double>(LatticeY)) - 1.0) * Arena.Y * SpanScale);
+
+					const FVector2D IconCentre = FSiegeWarMapProjection::MapUVToLocal(
+						FSiegeWarMapProjection::WorldToMapUV(WorldXY, Arena), RectOrigin, RectSize);
+
+					// Boundary INCLUSIVE: an edge-pinned icon centre ON the rect border is
+					// the clamp working as specified, not a leak.
+					TestTrue(*FString::Printf(TEXT("(a) Lattice (%d,%d) on the %s arena projects INSIDE the rect"), Ix, Iy, ArenaNames[ArenaIndex]),
+						IconCentre.X >= RectOrigin.X - PxTolerance
+						&& IconCentre.X <= RectOrigin.X + RectSize.X + PxTolerance
+						&& IconCentre.Y >= RectOrigin.Y - PxTolerance
+						&& IconCentre.Y <= RectOrigin.Y + RectSize.Y + PxTolerance);
+				}
+			}
+		}
+
+		// ── (b) Closed-form spot pins on POI-shaped positions ────────────────────────────
+		{
+			// A mid-field fixture at the world origin (the two neutral mines' neighbourhood)
+			// is the exact rect centre.
+			const FVector2D MidField = FSiegeWarMapProjection::MapUVToLocal(
+				FSiegeWarMapProjection::WorldToMapUV(FVector2D(0.0, 0.0), Arena), RectOrigin, RectSize);
+			TestEqual(*FString::Printf(TEXT("(b) A world-origin POI is the rect centre on the %s arena — X"), ArenaNames[ArenaIndex]),
+				MidField.X, RectOrigin.X + RectSize.X * 0.5, PxTolerance);
+			TestEqual(*FString::Printf(TEXT("(b) A world-origin POI is the rect centre on the %s arena — Y"), ArenaNames[ArenaIndex]),
+				MidField.Y, RectOrigin.Y + RectSize.Y * 0.5, PxTolerance);
+
+			// A castle-shaped fixture at the arena's (-HalfX, +HalfY) corner is the rect's
+			// top-left — the Y row carries the pinned axis flip (world +Y = screen up).
+			const FVector2D CornerCastle = FSiegeWarMapProjection::MapUVToLocal(
+				FSiegeWarMapProjection::WorldToMapUV(FVector2D(-Arena.X, Arena.Y), Arena), RectOrigin, RectSize);
+			TestEqual(*FString::Printf(TEXT("(b) A (-HalfX, +HalfY) POI is the rect top-left on the %s arena — X"), ArenaNames[ArenaIndex]),
+				CornerCastle.X, RectOrigin.X, PxTolerance);
+			TestEqual(*FString::Printf(TEXT("(b) A (-HalfX, +HalfY) POI is the rect top-left on the %s arena — Y"), ArenaNames[ArenaIndex]),
+				CornerCastle.Y, RectOrigin.Y, PxTolerance);
+
+			// A fixture far PAST the opposite bound pins EXACTLY to the bottom-right corner
+			// — the clamp is a pin, not an ejection, so a wandered-out POI stays visible at
+			// the edge instead of drawing over the WBP chrome (the WorldToMapUV contract the
+			// icon layer inherits without writing a line of its own).
+			const FVector2D FarOut = FSiegeWarMapProjection::MapUVToLocal(
+				FSiegeWarMapProjection::WorldToMapUV(FVector2D(Arena.X * 3.0, -Arena.Y * 4.0), Arena), RectOrigin, RectSize);
+			TestEqual(*FString::Printf(TEXT("(b) A far-out-of-arena POI pins to the rect bottom-right on the %s arena — X"), ArenaNames[ArenaIndex]),
+				FarOut.X, RectOrigin.X + RectSize.X, PxTolerance);
+			TestEqual(*FString::Printf(TEXT("(b) A far-out-of-arena POI pins to the rect bottom-right on the %s arena — Y"), ArenaNames[ArenaIndex]),
+				FarOut.Y, RectOrigin.Y + RectSize.Y, PxTolerance);
+		}
+	}
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

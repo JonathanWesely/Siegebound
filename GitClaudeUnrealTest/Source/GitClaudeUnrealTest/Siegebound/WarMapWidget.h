@@ -4,16 +4,23 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+// FSlateBrush is a BY-VALUE member below (the elevation background's brush, TASK-684), so the
+// complete type is required here — a forward declaration cannot size a member.
+#include "Styling/SlateBrush.h"
 #include "Templates/SubclassOf.h"
 #include "UObject/SoftObjectPtr.h"
+#include "UObject/WeakObjectPtrTemplates.h"
 
 #include "WarMapWidget.generated.h"
 
+class AActor;
 class APlayerController;
 class UButton;
 class USiegeAssistantSnapshot;
 class USiegeScatterConfig;
 class UTextBlock;
+class UTexture2D;
+class UWorld;
 
 /**
  *  ⚖️ A SEPARATE CATEGORY FROM `LogSiegeAssistant`, AND THE SEPARATION IS THE POINT
@@ -138,6 +145,24 @@ struct GITCLAUDEUNREALTEST_API FSiegeWarMapProjection
 	static FVector2D MapUVToLocal(const FVector2D& MapUV, const FVector2D& RectOrigin, const FVector2D& RectSize);
 
 	/**
+	 *  NORMALISED MAP UV → WORLD `(X, Y)` — the EXACT INVERSE of `WorldToMapUV` on `[0,1]²`.
+	 *
+	 *  ⚠️ DECLARED ADDITION (`SC-§15`), AND IT LIVES **HERE** RATHER THAN INLINE IN THE BAKE
+	 *  LOOP FOR THE SINGLE-OWNER REASON: the elevation bake (TASK-684, `WM-§2`) must generate
+	 *  one world sample point per texel, i.e. it needs the world↔UV mapping RUN BACKWARDS.
+	 *  Writing `(2u−1)·HalfX` inline in `WarMapWidget.cpp` would be a SECOND, unshared copy of
+	 *  the orientation contract — exactly the "re-derive the transform" drift this struct
+	 *  exists to make impossible. Both directions now live in the one owner, and the round
+	 *  trip `WorldToMapUV(MapUVToWorld(UV)) == UV` is pinned by a headless test.
+	 *
+	 *  ⚠️ SAME ORIENTATION, SAME ZERO-DIVIDE FLOOR, ⛔ NO CLAMP: the forward map clamps
+	 *  because out-of-arena ACTORS exist and must pin to the edge; the inverse is only ever
+	 *  fed texel centres in `(0,1)`, and an unclamped inverse is what keeps the round trip
+	 *  byte-exact there. Out-of-range UVs extrapolate linearly — callers own their range.
+	 */
+	static FVector2D MapUVToWorld(const FVector2D& MapUV, const FVector2D& ArenaHalfExtent);
+
+	/**
 	 *  ⭐ THE HIT TEST, AND IT IS A **WIDGET RECT** TEST — ⛔ NEVER A WORLD RADIUS (`WR-§6`).
 	 *
 	 *  ⚖️ THIS IS THE CLAUSE THAT KEEPS `AS-§21.4` HONOURED RATHER THAN ARGUED AROUND. A
@@ -248,12 +273,17 @@ struct FSiegeWarMapMarker
  *  GetTurnSnapshot()` (public, `const`, returns the EXISTING object). ⛔ `Capture()` is not
  *  called, referenced or reachable from this file.
  *
- *  ⚠️⚠️ **THE RESIDUAL, REPORTED RATHER THAN CODED AROUND — THIS IS THE TASK'S NAMED
- *  FINDING.** `GetTurnSnapshot()` is **null until the player's FIRST console sentence**
- *  (`Snapshot` is allocated in `EnsureSnapshot()`, reached only from the turn path). ⇒ **A
- *  player who opens the war map before ever typing into the console sees ally dots and enemy
- *  dots but NO PLACE MARKERS, and therefore has nothing to click.** The map is otherwise
- *  fully functional and self-heals the moment one sentence is sent.
+ *  ⚠️⚠️ **THE RESIDUAL, REPORTED RATHER THAN CODED AROUND — AND ITS MECHANISM WAS
+ *  RE-DIAGNOSED, SO READ THE CORRECTED STORY, NOT THE 560-ERA ONE (TASK-691, ruling
+ *  `W691-3`; corrected here by TASK-685's rider).** `GetTurnSnapshot()` is in fact
+ *  **NON-NULL from match start**: `USiegeAssistantComponent::BeginPlay()` calls
+ *  `EnsureSnapshot()`, and has since the assistant first landed (TASK-447, `cd5f4ed`).
+ *  What is empty is the OBJECT — `PlaceNames` has exactly ONE append site, `Capture()`'s
+ *  resolved-slot loop, reachable only from the turn path. ⇒ **A player who opens the war
+ *  map before ever typing into the console sees ally dots but NO PLACE MARKERS — via the
+ *  snapshot-present-but-never-captured route, not a null pointer.** The map is otherwise
+ *  fully functional and self-heals the moment one sentence is sent; TASK-580 (in flight,
+ *  same wave) seeds one REAL at-rest capture per match so the first open is populated.
  *
  *  ⛔ THIS FILE DOES NOT FIX THAT, AND THE REFUSAL IS THE POINT. Every fix crosses a
  *  boundary this task may not cross: forcing a `Capture()` is the exact side effect `WR-§6`
@@ -269,10 +299,15 @@ struct FSiegeWarMapMarker
  *  ───────────────────────────────────────────────────────────────────────────────────────
  *
  *  ⛔⛔ **READ THE DISTINCTION BEFORE READING THE CODE: TASK-579 MAKES THE EMPTY STATE
- *  EXPLAIN ITSELF. IT DOES ⛔ NOT POPULATE IT.** The snapshot is still null on a first open,
- *  there are still no markers, and ⛔ nothing here calls `Capture()` or `EnsureSnapshot()`.
+ *  EXPLAIN ITSELF. IT DOES ⛔ NOT POPULATE IT.** A first open still has no markers (the
+ *  snapshot EXISTS from BeginPlay but lists no places until the first real capture — the
+ *  corrected §3 story), and ⛔ nothing here calls `Capture()` or `EnsureSnapshot()`.
  *  What changed is that the player is TOLD, in the status line the map already owns, why the
- *  map has nothing to click and what single action fixes it.
+ *  map has nothing to click and what single action fixes it. ⭐ **TASK-685 (`W691-3`)
+ *  RE-POINTED BOTH DISCRIMINATORS from "snapshot null" to "NO PLACE RESOLVED"**
+ *  (`GetPlaceNames().Num() == 0`; a null snapshot short-circuits into the same arm) —
+ *  TASK-691 proved the pointer test aimed at a state that never occurs, so "War map" and
+ *  the click-a-marked-place hint were rendering over a marker-less map (VID-003).
  *
  *  ⚖️ **AND THE GAP IS RECORDED HONESTLY RATHER THAN DRESSED UP: `WR-§9` row 12 is the ONE
  *  row on that list explicitly labelled a KNOWN GAP WE CHOSE NOT TO CLOSE — ⛔ NOT a designed
@@ -283,10 +318,11 @@ struct FSiegeWarMapMarker
  *
  *  ⭐ **THE LINE IS A LATCH, NOT A POLL, AND IT MUST DISAPPEAR — a stale hint is its own
  *  defect.** `bShowingNoSnapshotHint` is true EXACTLY WHEN the hint is the line currently on
- *  screen; the map's existing refresh timer clears it the moment a snapshot exists, and any
- *  other line (a picked symbol, the empty-click hint) clears it immediately. ⛔ No new timer,
- *  ⛔ no tick, ⛔ no per-frame log and ⛔ no `Warning` — a status line the player reads IS the
- *  whole mechanism.
+ *  screen; the map's existing refresh timer clears it the moment the snapshot lists at least
+ *  one resolved place (the `W691-3` re-point — the retire condition matches the arming
+ *  condition), and any other line (a picked symbol, the empty-click hint) clears it
+ *  immediately. ⛔ No new timer, ⛔ no tick, ⛔ no per-frame log and ⛔ no `Warning` — a status
+ *  line the player reads IS the whole mechanism.
  *
  *  ✅ **AND WHAT THE FIRST OPEN ALREADY DOES CORRECTLY, CONFIRMED AT THE CODE RATHER THAN
  *  ASSUMED (TASK-579 spec item 4):** the ALLY dots (`RefreshAllyDots` — world actors + the
@@ -507,9 +543,42 @@ public:
 	 *  mine NOW"), for seven array lookups a frame.
 	 *
 	 *  Empty output — never a partial one — for: no owning controller, no assistant
-	 *  component, no snapshot yet (see §3), or a degenerate panel.
+	 *  component, no snapshot (defensive — §3's corrected story: the common empty case is a
+	 *  present-but-never-captured snapshot, whose `GetPlaceNames()` loop simply runs zero
+	 *  times), or a degenerate panel.
 	 */
 	void BuildMarkerRects(const FGeometry& AllottedGeometry, TArray<FSiegeWarMapMarker>& OutMarkers) const;
+
+	//~ ---------------------------------------------------------------------
+	//~ ═══ THE ELEVATION BACKGROUND (TASK-684; CONVENTIONS `WM-§2`) ═══
+	//~ A RUNTIME one-time trace bake per match — ⛔ never an offline asset,
+	//~ because the hills are a scatter layer re-rolled per match seed, so a
+	//~ baked picture of last match's hills is a lie about this match's.
+	//~ Lazy on the first map open; cached until the field re-rolls; ZERO
+	//~ per-frame cost after the bake (`NativePaint` draws one cached brush).
+	//~ 📌 M8: client-local display — no replicated property, no new class,
+	//~ no RPC. Nothing from this layer enters any prompt zone (`WR-§6`).
+	//~ ---------------------------------------------------------------------
+
+	/**
+	 *  ⭐ THE §-PINNED PURE SEAM (`WM-§2` — the `W4-R1` lesson: a testability obligation gets
+	 *  a testability seam). Maps a traced surface height to a brightness in `[0,1]`:
+	 *
+	 *      0 at `GroundZ` (the field floor ⇒ dark) … 1 at `GroundZ + ReliefCeiling` (light),
+	 *      linear between, and ⛔ CLAMPED to exactly 1 ABOVE the ceiling — full white.
+	 *
+	 *  ⚠️ THE CLAMP IS THE NORMALIZATION LAW, NOT A SAFETY NET: castle shells (≈8,000 uu) and
+	 *  boundary walls tower over the tallest hill crown (≈1,000 uu at max scatter scale); a
+	 *  min→max normalization over RAW heights would crush every hill into one gray band. They
+	 *  clamp white instead — they read as "walls", declared a designed outcome (`WM-§6`).
+	 *
+	 *  Below-ground hits clamp to 0; a non-positive `ReliefCeiling` is floored at 1 uu (the
+	 *  `MinArenaHalfExtentUu` zero-divide doctrine) so the function is total — no NaN, ever.
+	 *
+	 *  ⛔ `public`, plain C++ static, ⛔ NOT a `UFUNCTION`, exactly three parameters, none
+	 *  defaulted (`SC-§33`). Tested headlessly in `Tests/SiegeWarMapTest.cpp`.
+	 */
+	static float HeightToBrightness(float HitZ, float GroundZ, float ReliefCeiling);
 
 	//~ ---------------------------------------------------------------------
 	//~ Construction. A plain static, not a UFUNCTION — the
@@ -607,6 +676,52 @@ protected:
 	float MapPaddingPx = 48.f;
 
 	/**
+	 *  HALF the drawn ALLY dot, in local px (the quad painter's half-size — a "radius" in
+	 *  the square-dot sense every dot on this map already uses).
+	 *
+	 *  ⭐ TASK-685 (`WM-§3`): PROMOTED from the file-local `DotDrawHalfSizePx = 3` literal
+	 *  and BUMPED 3 → 5 for contrast at map scale against TASK-684's dark elevation
+	 *  background — a 6-px square was a live "I see nothing" candidate VID-003 could not
+	 *  rule out. ⚠️ ENEMY dots deliberately keep the shipped literal: `WM-§3` scopes the
+	 *  legibility bump to Jonathan's blue dots, and the `WR-§7` reveal lane is not this
+	 *  wave's to restyle (flagged in the handoff — making them ride a tunable is one line).
+	 *  Still a UI affordance in PIXELS, ⛔ never a world radius (`AS-§21.4` untouched).
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|WarMap", meta = (ClampMin = "1.0", ClampMax = "32.0"))
+	float AllyDotRadius = 5.f;
+
+	/**
+	 *  Elevation-bake sample columns (world X). 130 × 60 = 7,800 down-traces ONCE per match
+	 *  (`WM-§2`'s pinned grid: ≈400-uu cells over the shipped 52,000 × 24,000 arena) — a
+	 *  one-shot sub-frame cost class, ⛔ zero per-frame. The sampled rect comes from
+	 *  `ResolveArenaHalfExtent()` (asset → CDO), ⛔ never a hand-typed size (`SC-§34`).
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|WarMap", meta = (ClampMin = "2", ClampMax = "1024"))
+	int32 ElevationGridX = 130;
+
+	/** Elevation-bake sample rows (world Y). See `ElevationGridX`. */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|WarMap", meta = (ClampMin = "2", ClampMax = "1024"))
+	int32 ElevationGridY = 60;
+
+	/**
+	 *  Relief band height (uu) mapped to the full dark→light ramp; every hit above
+	 *  `GroundZ + this` clamps to full white (`HeightToBrightness` — the `WM-§2`
+	 *  normalization law that stops castles erasing hills).
+	 *
+	 *  ⚠️ THE DEFAULT IS **MEASURED, NOT GUESSED** (`WM-§2` demands the derivation):
+	 *  tallest hill mesh = `SM_Hill_02`, authored height **400 uu** (CONVENTIONS "Climbable
+	 *  terrain (M6.6)" mesh table: knoll 250 / hill 400 / ridge 350, base pivot z_min = 0)
+	 *  × the shipped `DA_BattlefieldScatter` Hills-layer `ScaleRange` max **2.5**
+	 *  (`handoffs/TASK-251.md`: 0.9–1.3 → 0.4–2.5, uniform scale by the scatter law)
+	 *  = **1,000 uu** — the tallest possible hill crown above the floor. Cross-check: the
+	 *  W1-PREP nav-Z cap law caps hill scale so the tallest crown stays under the ±1,200
+	 *  NavMeshBoundsVolume Z; 1,000 < 1,200 ✓ consistent. ⇒ the tallest hill maps to ≈1.0
+	 *  (light) and every hill face lands inside the ramp, exactly the `WM-§2` intent.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|WarMap", meta = (ClampMin = "1.0"))
+	float ElevationReliefCeiling = 1000.f;
+
+	/**
 	 *  `DA_BattlefieldScatter` — the SINGLE OWNER of the arena extent (`WR-§6`, `SC-§34`).
 	 *
 	 *  ⚠️ THE ASSET, NOT THE HEADER DEFAULT, IS THE AUTHORITY: `WR-§2` row 4 records that the
@@ -617,6 +732,36 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|WarMap")
 	TSoftObjectPtr<USiegeScatterConfig> ArenaConfigAsset;
+
+	//~ ---------------------------------------------------------------------
+	//~ ═══ THE POI ICON LAYER — textures (TASK-685; CONVENTIONS `WM-§1`) ═══
+	//~ ⛔⛔ DISPLAY ONLY, restated at the members so the boundary cannot be
+	//~ missed: icons are NOT clickable, add NO place symbol, NO grid cell, NO
+	//~ snap radius and NO coordinate field. Only the seven `ResolvePlace`
+	//~ markers hit-test (`WR-§6` stands byte-untouched by this layer).
+	//~ All three textures are WHITE-on-transparent by authored law — every
+	//~ colour arrives at DRAW TIME (castles via the `W4-R5` team accessors,
+	//~ mine/ancient-ground via one named constant each in the .cpp).
+	//~ Soft-referenced with the ATorch TWO-NULL-PATHS idiom, per asset:
+	//~   • CLEARED (IsNull)      ⇒ SILENT opt-out — that POI draws the shipped
+	//~     dot primitive in its own tint (a designer choice, not a fault).
+	//~   • SET but UNRESOLVABLE  ⇒ same dot-primitive fallback + ONE log line
+	//~     (never a crash, never silence — the spec's degrade clause).
+	//~ Defaults are set in the CONSTRUCTOR, never NativeConstruct — the
+	//~ ArenaConfigAsset stomp argument above applies verbatim.
+	//~ ---------------------------------------------------------------------
+
+	/** Mine icon — `/Game/UI/WarMap/T_WarMap_Icon_Mine` (TASK-683's pickaxe glyph). Marks the GOLD-NODE mines only (J4: `ADeepMine` is a player-built `ABuilding`, never iconed). */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|WarMap|PoiIcons")
+	TSoftObjectPtr<UTexture2D> MineIconTexture;
+
+	/** Ancient-ground icon — `/Game/UI/WarMap/T_WarMap_Icon_AncientGround` (the rune ring). */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|WarMap|PoiIcons")
+	TSoftObjectPtr<UTexture2D> AncientGroundIconTexture;
+
+	/** Castle icon — `/Game/UI/WarMap/T_WarMap_Icon_Castle` (the keep). Tinted PER CASTLE TEAM at draw via the `W4-R5` accessors — the one POI whose tint is not a named constant. */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|WarMap|PoiIcons")
+	TSoftObjectPtr<UTexture2D> CastleIconTexture;
 
 private:
 
@@ -645,13 +790,17 @@ private:
 	void RefreshAllyDots();
 
 	/**
-	 *  ⭐ THE ONE THING THE REFRESH TIMER CALLS: the ally sweep, then the hint latch (TASK-579).
+	 *  ⭐ THE ONE THING THE REFRESH TIMER CALLS: the ally sweep, then the POI icon census
+	 *  (TASK-685), then the hint latch (TASK-579, re-pointed by TASK-685), then the
+	 *  elevation cache's staleness check (TASK-684).
 	 *
-	 *  ⚖️ ONE TIMER, TWO JOBS, AND THE ALTERNATIVE IS WORSE. A second timer for a bool that
-	 *  flips ONCE per open would be a second lifetime to start, stop, clear on close and clear
-	 *  again on teardown — the exact bookkeeping `NativeDestruct` already carries a
-	 *  double-clear for. ⛔ And the latch costs nothing after it clears: `UpdateNoSnapshotHint`
-	 *  early-outs on the bool BEFORE it reads anything.
+	 *  ⚖️ ONE TIMER, FOUR JOBS, AND THE ALTERNATIVE IS WORSE. A second timer for a bool that
+	 *  flips ONCE per open — or a third for a cache that re-bakes once per MATCH — would be
+	 *  another lifetime to start, stop, clear on close and clear again on teardown — the exact
+	 *  bookkeeping `NativeDestruct` already carries a double-clear for. ⛔ And the riders cost
+	 *  little-to-nothing at steady state: `UpdateNoSnapshotHint` early-outs on its bool BEFORE
+	 *  it reads anything, `EnsureElevationBake` early-outs on two pointer checks, and the POI
+	 *  census is the ally sweep's own cost class (a handful of world actors, 4×/s, open only).
 	 */
 	void HandleMapRefreshTimer();
 
@@ -679,14 +828,119 @@ private:
 	 *  ⛔ THE HINT MUST DISAPPEAR — A STALE HINT IS ITS OWN DEFECT (TASK-579 spec item 5).
 	 *
 	 *  Runs on the map's existing refresh timer while the map is open. One-way: it only ever
-	 *  RETIRES the hint, and only when the hint is what is on screen AND a snapshot now exists —
-	 *  so it can never stomp a symbol the player just clicked, and never re-arms mid-open.
+	 *  RETIRES the hint, and only when the hint is what is on screen AND the snapshot now
+	 *  lists at least one resolved place (the `W691-3` re-point — the retire condition
+	 *  mirrors the arming condition, so the hint and the marker layer cannot disagree) — so
+	 *  it can never stomp a symbol the player just clicked, and never re-arms mid-open.
 	 *
 	 *  ⚠️ Bound above by the refresh interval (0.25 s by default), ⛔ not instantaneous — stated
 	 *  rather than implied. The MARKERS themselves appear on the very next paint; only the line
 	 *  of text lags, by at most one interval.
 	 */
 	void UpdateNoSnapshotHint();
+
+	//~ ---------------------------------------------------------------------
+	//~ Elevation bake internals (TASK-684; `WM-§2`). ⛔ Every writer below is a
+	//~ NON-const path (`OpenMap` / the refresh timer) — `NativePaint`'s const
+	//~ guarantee that painting cannot change what is painted stays intact: the
+	//~ painter only READS `ElevationTexture`/`ElevationBrush`.
+	//~ ---------------------------------------------------------------------
+
+	/**
+	 *  The lazy gate: (re)bakes when — and only when — the cache is stale. Steady state
+	 *  costs TWO pointer checks; a valid cache is never re-traced.
+	 *
+	 *  ⚖️ THE STALENESS KEY, DIAGNOSED AT SOURCE RATHER THAN COPIED FROM THE SPEC'S
+	 *  SUGGESTION (`SC-§20` — the spec itself says the `TWeakObjectPtr<UWorld>` key is "the
+	 *  suggested shape, not a spec"): **a world key ALONE is provably insufficient here,
+	 *  because Play Again is an IN-PLACE reset** — `ASiegeGameMode::PlayAgain` drives
+	 *  `ClearScatter()` + `GenerateScatter()` on the SAME `UWorld` (no travel), so the hills
+	 *  re-roll while the world pointer never changes. The world key is kept (level travel,
+	 *  stale-world safety) and a SCATTER-LIFECYCLE SENTINEL is layered on top: `ClearScatter`
+	 *  **DESTROYS** the scatter-spawned mine + ancient-ground actors and every generate
+	 *  spawns FRESH ones (BattlefieldScatter.h — `SpawnedMines`/the ancient-ground pair,
+	 *  "destroyed, never pooled"), so a weak pointer to one of them goes invalid EXACTLY
+	 *  when the field re-rolled. Verified at source; no scatter file is touched for this.
+	 */
+	void EnsureElevationBake();
+
+	/**
+	 *  The one-shot 7,800-trace capture → ONE transient `UTexture2D`. Never called directly —
+	 *  `EnsureElevationBake` owns the cache discipline. Returns false (and leaves the shipped
+	 *  flat background standing) on: no world, degenerate rect, texture-allocation failure,
+	 *  or ZERO trace hits. ⛔ Never a crash; failure logs ONCE (`LogSiegeWarMap`, Log).
+	 */
+	bool BakeElevationTexture();
+
+	//~ ---------------------------------------------------------------------
+	//~ POI icon internals (TASK-685; `WM-§1`). ⛔ DISPLAY ONLY: nothing below
+	//~ is hit-testable, nothing enters the marker array, and no position read
+	//~ here ever leaves this widget or reaches a prompt zone (`WR-§6`). Every
+	//~ writer is a NON-const path (`OpenMap` / the refresh timer); the painter
+	//~ only READS the arrays/brushes, so `NativePaint`'s const guarantee that
+	//~ painting cannot change what is painted stays intact.
+	//~ ---------------------------------------------------------------------
+
+	/**
+	 *  Loads any still-unresolved icon soft ref and configures its brush. `OpenMap` path
+	 *  (never paint — it loads). Idempotent: an already-resolved icon is never re-loaded.
+	 *  The SET-but-unresolvable family logs ONCE (`bWarnedPoiIconUnresolved`); a CLEARED
+	 *  soft ref is a silent designer opt-out (the ATorch two-null-paths law) — both degrade
+	 *  to the shipped dot primitive in that POI's tint at paint.
+	 */
+	void ResolvePoiIconTextures();
+
+	/**
+	 *  The POI census: world `(X, Y)` of the live gold-node mines (⛔ skipping depleted ones
+	 *  — `AGoldNode::IsDepleted`, diagnosed at source; ⛔ `ADeepMine` is an `ABuilding`, so
+	 *  the `AGoldNode` iterator excludes player-built DeepMines BY CONSTRUCTION, J4), both
+	 *  ancient grounds, and the standing castles split BY TEAM for the `W4-R5` tint.
+	 *
+	 *  READ-ONLY over live world actors — the ally-dot precedent `WM-§1` names (that layer
+	 *  already iterates world actors and is not snapshot-gated; neither is this one).
+	 *  Runs on the same refresh timer as the dots, plus the `OpenMap` seed; never while the
+	 *  map is closed. ⛔ NOT a place iterator: no `PlaceVocabulary` symbol is involved, no
+	 *  `ResolvePlace` answer is duplicated — this asks "where are the world's POIs", never
+	 *  "where is place symbol X" (`WR-§6`: `ResolvePlace` stays the single owner of
+	 *  place → position).
+	 */
+	void RefreshPoiIcons();
+
+	/** Resolved mine icon. ⛔ `Transient` `UPROPERTY` hard ref on purpose: the class's ownership of the loaded asset for GC — the brush below is non-reflected and invisible to GC (the `ElevationTexture` idiom). Null ⇒ cleared, unresolvable, or not yet opened ⇒ dot-primitive fallback. */
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> MineIconResolvedTexture;
+
+	/** Resolved ancient-ground icon. Same contract as `MineIconResolvedTexture`. */
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> AncientGroundIconResolvedTexture;
+
+	/** Resolved castle icon. Same contract as `MineIconResolvedTexture`. */
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> CastleIconResolvedTexture;
+
+	/** Wraps `MineIconResolvedTexture` for `FSlateDrawElement::MakeBox`. Configured at resolve; only READ under `NativePaint` (the `ElevationBrush` discipline). */
+	FSlateBrush MineIconBrush;
+
+	/** Wraps `AncientGroundIconResolvedTexture`. */
+	FSlateBrush AncientGroundIconBrush;
+
+	/** Wraps `CastleIconResolvedTexture`. Tinted per element at draw (blue/red by castle team), never on the brush. */
+	FSlateBrush CastleIconBrush;
+
+	/** Gold-node mine positions in WORLD `(X, Y)` — the census's mine list. Projected at paint, never stored projected (the `AllyDotsWorldXY` doctrine). Cleared on close/teardown. */
+	TArray<FVector2D> MinePoiWorldXY;
+
+	/** Ancient-ground positions in WORLD `(X, Y)`. Same lifecycle as `MinePoiWorldXY`. */
+	TArray<FVector2D> AncientGroundPoiWorldXY;
+
+	/** BLUE-team standing castles in WORLD `(X, Y)`. Split by team so the paint loop pairs each list with one `W4-R5` accessor and carries no per-element branch. */
+	TArray<FVector2D> BlueCastlePoiWorldXY;
+
+	/** RED-team standing castles in WORLD `(X, Y)`. See `BlueCastlePoiWorldXY`. */
+	TArray<FVector2D> RedCastlePoiWorldXY;
+
+	/** One-shot log latch for the unresolvable-icon line. ⛔ NOT `mutable` — every writer is the non-const `OpenMap` path (the `bWarnedElevationBakeFailed` discipline, not the paint-path latches'). */
+	bool bWarnedPoiIconUnresolved = false;
 
 	/** Auto-wire target for `RevealButton`. Broadcasts and nothing else — ⛔ it prices nothing. */
 	UFUNCTION()
@@ -728,6 +982,47 @@ private:
 	 */
 	mutable bool bWarnedNoSnapshot = false;
 	mutable bool bWarnedNoArenaConfig = false;
+
+	/**
+	 *  The baked elevation layer (TASK-684, `WM-§2`). ⛔ TRANSIENT AND `UPROPERTY` ON
+	 *  PURPOSE: `UTexture2D::CreateTransient` textures are unreferenced by any asset, so this
+	 *  pointer is the ONLY thing keeping the bake alive across GC — `ElevationBrush` below is
+	 *  NOT a reflected member and its resource-object reference is invisible to the GC.
+	 *  Null ⇒ no bake exists (never opened / bake failed) and the painter draws exactly the
+	 *  pre-TASK-684 background.
+	 */
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> ElevationTexture;
+
+	/** Wraps `ElevationTexture` for `FSlateDrawElement::MakeBox`. Configured at bake; only READ under `NativePaint`. */
+	FSlateBrush ElevationBrush;
+
+	/** Cache key 1: the world the bake was traced in. Stale/different world ⇒ re-bake (level travel; the `SC-§20` suggested shape). */
+	TWeakObjectPtr<UWorld> ElevationBakedWorld;
+
+	/**
+	 *  Cache key 2: a scatter-spawned per-generate actor (a mine, else an ancient ground)
+	 *  captured at bake time. `ClearScatter` destroys these and every generate spawns fresh
+	 *  ones ⇒ this going invalid means THE FIELD RE-ROLLED (Play Again's in-place reset —
+	 *  the case the world key cannot see; `EnsureElevationBake`'s comment has the diagnosis).
+	 *  ⛔ IDENTITY ONLY: no position, name or state is ever read off it.
+	 */
+	TWeakObjectPtr<const AActor> ElevationGenerationSentinel;
+
+	/**
+	 *  True when a sentinel was CAPTURED at bake time. When false (a field with no scatter
+	 *  actors at all — debug fields; a client whose deterministic re-generate has not run
+	 *  yet), the refresh-timer path watches for one APPEARING and re-bakes then, so an
+	 *  early-open client still picks the hills up within one refresh interval. On the shipped
+	 *  field the economy law guarantees mines exist, so this is effectively always true.
+	 */
+	bool bElevationSentinelArmed = false;
+
+	/** One failed bake attempt per open, MAX — stops a pathological world (zero trace hits) from re-tracing 7,800 rays on every timer tick. Reset by `OpenMap`. */
+	bool bElevationBakeFailedThisOpen = false;
+
+	/** One-shot log latch for the failed-bake line. ⛔ NOT `mutable` — every writer is non-const (unlike the two paint-path latches above). */
+	bool bWarnedElevationBakeFailed = false;
 
 	/** Ally positions in WORLD `(X, Y)`. Projected at paint, never stored projected — a resize must not need a re-survey. */
 	TArray<FVector2D> AllyDotsWorldXY;

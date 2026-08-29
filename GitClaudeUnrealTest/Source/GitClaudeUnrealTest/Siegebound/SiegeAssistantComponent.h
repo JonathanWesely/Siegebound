@@ -896,7 +896,19 @@ public:
 	 *  The snapshot captured for the CURRENT turn - the same object the prompt
 	 *  was built from, so the executor resolves places (ResolvePlace) and checks
 	 *  orderability (ValidateCommandAgainstSnapshot / GetOrderableCount) against
-	 *  the state the model actually saw. ⚠️ Null before the first capture.
+	 *  the state the model actually saw.
+	 *
+	 *  ⚠️ NON-NULL FROM MATCH START - the old note here ("Null before the first
+	 *  capture") had been FALSE since TASK-447: BeginPlay calls EnsureSnapshot(),
+	 *  so in any normally-initialized match callers have always received an
+	 *  ALLOCATED object, merely FIELD-EMPTY until the first Capture() (TASK-691's
+	 *  premise inversion - the VID-003 empty-map mechanism). Since TASK-580 the
+	 *  first Capture() is the component's own at-rest seed (TrySeedSnapshotAtRest,
+	 *  one tick after BeginPlay), so on an authority machine the place fields are
+	 *  populated before any map open; where the seed stands down (no authority /
+	 *  FSM busy twice) the object is still non-null and empty until the first
+	 *  sentence. ⛔ Readers keep their null checks - defensive, and still the only
+	 *  correct posture before BeginPlay.
 	 *  ⛔ Do NOT re-Capture() from the executor: a second survey mid-turn would
 	 *  silently answer a different question from the one the model was asked.
 	 */
@@ -1403,6 +1415,34 @@ private:
 	/** Survey the world for THIS SENTENCE. ⛔ Never called from a tick, a timer or a delegate that fires per frame. */
 	bool CaptureTurnSnapshot();
 
+	/**
+	 *  THE TASK-580 SEED - ONE real at-rest Capture() per match, from the
+	 *  component's OWN lifecycle, so the war map has place markers on its FIRST
+	 *  open with no sentence needed (TASK-691: BeginPlay's EnsureSnapshot()
+	 *  allocates but never surveys, so every match otherwise starts with a
+	 *  field-empty snapshot - VID-003's empty blue map).
+	 *
+	 *  ⚠️ SCHEDULED FOR THE TICK AFTER BeginPlay, AND THE DEFERRAL IS THE POINT:
+	 *  the scatter (mines, hills, ancient grounds) generates synchronously inside
+	 *  ASiegeBattlefieldScatter::BeginPlay, and all actor BeginPlays complete
+	 *  before the first world tick, so a next-tick timer is demonstrably AFTER
+	 *  world population - a capture racing the scatter would under-resolve places
+	 *  and ship a half-broken marker set.
+	 *
+	 *  ⛔ REFUSE-BY-DEFAULT, mirroring the at-rest whitelist discipline
+	 *  DebugCaptureAndComposePrompt models: authority + FSM at rest (Idle /
+	 *  Composing / Failed) or no capture. A transient refusal is retried ONCE
+	 *  (SiegeAssistantComponentInternal::SnapshotSeedRetryDelaySeconds), then the
+	 *  seed stands down for the match - a degraded default, never a loop: the
+	 *  first real sentence captures anyway.
+	 *
+	 *  ⛔ IT SPENDS ZERO PROMPT CHARACTERS: Capture() fills snapshot STATE; no
+	 *  zone is built, no prompt is composed, nothing reaches the model. And it is
+	 *  reachable ONLY from BeginPlay's timer and its own retry - ⛔ never from the
+	 *  map or any widget path (WR-§6: opening a panel surveys nothing).
+	 */
+	void TrySeedSnapshotAtRest();
+
 	/** Zone A + Zone B + Zone C, in the fixed order §8 pins. ⚠️ The FSM's job, never the executor's (mechanism #2). */
 	FString ComposeTurnPrompt(const FString& Utterance);
 
@@ -1555,7 +1595,7 @@ private:
 	/** Index into PendingArgs.Command.Kinds of the kind the shortfall is about, or INDEX_NONE. */
 	int32 PendingShortfallIndex = INDEX_NONE;
 
-	/** THE ONE SNAPSHOT. Created once, re-Capture()d per sentence. ⛔ Not a cache, not a registry - see §4. */
+	/** THE ONE SNAPSHOT. Created once, re-Capture()d per sentence - plus the ONE at-rest seed capture per match (TrySeedSnapshotAtRest, TASK-580). ⛔ Not a cache, not a registry - see §4. */
 	UPROPERTY(Transient)
 	TObjectPtr<USiegeAssistantSnapshot> Snapshot;
 
@@ -1599,6 +1639,12 @@ private:
 
 	/** One-shot latch so a REFUSED SetStaticPrefix is reported once. Separate from bStaticPrefixRegistered on purpose: the refusal is retried, so latching them together would either spam the log or stop the retry. */
 	bool bWarnedStaticPrefixRefused = false;
+
+	/** The TASK-580 seed's handle - armed in BeginPlay (next tick) and at most ONCE more for the single retry; cleared in EndPlay. ⛔ Never looping. */
+	FTimerHandle SnapshotSeedTimerHandle;
+
+	/** True once the seed's single retry has been spent. With it spent, any further refusal stands the seed down for the match (the first sentence captures anyway). */
+	bool bSnapshotSeedRetryUsed = false;
 
 	// ═════════════════════════════════════════════════════════════════════════
 	// THE EXECUTOR'S STATE (TASK-443). ⚠️ Still all per-session or per-turn, and

@@ -95,6 +95,17 @@ namespace SiegeAssistantComponentInternal
 	static const TCHAR* const VocabularyAssetPath = TEXT("/Game/Data/DA_AssistantVocabulary.DA_AssistantVocabulary");
 
 	/**
+	 *  THE TASK-580 SEED'S SINGLE-RETRY DELAY, seconds. One second is deliberate:
+	 *  the only transient refusals at match start are a PlayerState/team that has
+	 *  not finished seating (the game mode's own login/one-tick work) - long since
+	 *  settled a second in - and by then a busy FSM means a real sentence beat the
+	 *  seed to the capture, so standing down is correct. ⛔ Not a tunable: there is
+	 *  nothing to tune - the retry either finds the world ready or the seed is
+	 *  redundant.
+	 */
+	static constexpr float SnapshotSeedRetryDelaySeconds = 1.0f;
+
+	/**
 	 *  THE SHORT-CIRCUIT'S CLOSED WORD LISTS.
 	 *
 	 *  ⚠️ EXACT MATCHES ONLY, AFTER TRIMMING / LOWERCASING / STRIPPING TRAILING
@@ -610,6 +621,28 @@ void USiegeAssistantComponent::BeginPlay()
 	// reaches llama_decode during it. Adding a tick to chase it would break this
 	// component's "never ticks" law (§4) to buy nothing.
 	EnsureStaticPrefixRegistered(ResolveLlamaSubsystem());
+
+	// ── THE TASK-580 SEED: ONE real at-rest Capture() per match, NEXT TICK ────
+	// ⛔ NOT captured here directly, and the deferral is load-bearing (TASK-691
+	// prescription 4): the scatter spawns the mines and ancient grounds
+	// SYNCHRONOUSLY inside ASiegeBattlefieldScatter::BeginPlay (authority
+	// branch), and BeginPlay dispatch order between that actor and this component
+	// is not guaranteed - a capture from THIS function could race the scatter and
+	// under-resolve places, shipping a half-broken marker set. All actor
+	// BeginPlays complete before the first world tick, and FTimerManager::Tick
+	// runs inside UWorld::Tick, so a next-tick timer is strictly AFTER world
+	// population. The callee re-checks every at-rest gate at fire time.
+	//
+	// ⚠️ PER-WORLD, NOT PER-PlayAgain, AND DECLARED RATHER THAN HIDDEN: PlayAgain
+	// is an in-place reset that never re-runs BeginPlay (SiegeGameMode.cpp) but
+	// DOES re-scatter, so a PlayAgain match keeps this seed's survey until the
+	// player's first sentence re-captures - the same self-healing staleness class
+	// as ruling W691-1, accepted and documented rather than chased with a hook.
+	if (UWorld* World = GetWorld())
+	{
+		SnapshotSeedTimerHandle = World->GetTimerManager().SetTimerForNextTick(
+			this, &USiegeAssistantComponent::TrySeedSnapshotAtRest);
+	}
 }
 
 void USiegeAssistantComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -622,6 +655,14 @@ void USiegeAssistantComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	// ⚠️ DetachConsoleWidget IS NOT OPTIONAL HERE. The widget's lifetime is the
 	// CONTROLLER's, not this component's, so it can outlive us - and a surviving
 	// binding into a destroyed component is the silent kind of dangling.
+	//
+	// The TASK-580 seed timer is cleared FIRST for the same reason the scatter
+	// clears its own handles: a pending fire into a component that is going away
+	// is dangling work. Safe when never armed or already fired.
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(SnapshotSeedTimerHandle);
+	}
 	AbortInFlightRequest();
 	ClearDeferredIntent();
 	ClearConfirmPreview();
@@ -3245,6 +3286,91 @@ bool USiegeAssistantComponent::CaptureTurnSnapshot()
 	Snapshot->Capture(World, OrderingTeam);
 
 	return true;
+}
+
+void USiegeAssistantComponent::TrySeedSnapshotAtRest()
+{
+	// ⚠️ DEFINED IMMEDIATELY BELOW CaptureTurnSnapshot ON PURPOSE - the
+	// DebugCaptureAndComposePrompt placement idiom: this function's whole safety
+	// argument is "it delegates to the one shipped capture path under the same
+	// at-rest whitelist", and one screen should show both.
+	//
+	// ⛔ THIS FUNCTION RUNS SubmitUtterance's STEP 7 AND NOTHING ELSE. No
+	// BeginTurn, no TurnId, no compose, no dispatch, no SetState, no PushMessage
+	// - Capture() fills snapshot STATE; not one prompt character is built or
+	// spent here (the Zone A byte-freeze is untouched by construction).
+	//
+	// Reachable ONLY from BeginPlay's next-tick timer and its own single retry.
+	// ⛔ NEVER from the map or any widget path - WR-§6's "opening this panel
+	// surveys nothing" stands; the widget keeps reading GetTurnSnapshot() only.
+
+	// ── A SENTENCE BEAT THE SEED ⇒ THE SEED IS MOOT ───────────────────────────
+	// BeginTurn() increments TurnId before the shipped lane's own capture, so a
+	// non-zero TurnId means a REAL survey (or a refused turn, which the next
+	// sentence heals) already superseded anything this seed could add.
+	if (TurnId > 0)
+	{
+		UE_LOG(LogSiegeAssistant, Verbose,
+			TEXT("Snapshot seed skipped - a real turn (%d) already ran, and its capture is fresher than any seed."), TurnId);
+		return;
+	}
+
+	// ── MIRRORS SubmitUtterance GATE 3 (AUTHORITY, §7) - PERMANENT, NO RETRY ──
+	// The assistant is host/standalone only; on a client the console refuses
+	// every sentence, no capture ever runs, and the map's marker layer stays in
+	// its designed pre-580 state. Retrying cannot change a machine's authority.
+	const AActor* OwningActor = GetOwner();
+	if (!OwningActor || !OwningActor->HasAuthority())
+	{
+		UE_LOG(LogSiegeAssistant, Log,
+			TEXT("Snapshot seed stood down - P1 client observer posture (M8 doc 4.1). The seed refuses exactly where the sentences do."));
+		return;
+	}
+
+	// ── THE AT-REST WHITELIST (DebugCaptureAndComposePrompt's, verbatim) ──────
+	// ⚠️ A WHITELIST, NOT A BLACKLIST: a state added later is REFUSED BY DEFAULT.
+	// Idle / Composing / Failed hold nothing pending; every other state still
+	// consults the CURRENT survey downstream, and ⛔ a capture forced through it
+	// would silently answer a different question from the one the model was
+	// asked - GetTurnSnapshot()'s own contract.
+	const bool bAtRest =
+		State == ESiegeAssistantState::Idle ||
+		State == ESiegeAssistantState::Composing ||
+		State == ESiegeAssistantState::Failed;
+
+	// ⚠️ SHORT-CIRCUIT ORDER IS LOAD-BEARING: CaptureTurnSnapshot must not run
+	// unless the FSM is at rest. Its own refusals (no world / no ordering team)
+	// are the TRANSIENT match-start races the single retry below exists for.
+	if (bAtRest && CaptureTurnSnapshot())
+	{
+		// ONE Log line, once per match by construction - the acceptance
+		// instrument for TASK-690's eye and the QA gate: how many places the
+		// at-rest survey resolved (7 expected in L_Arena; fewer is a LEGAL world
+		// shape, never padded - ruling W691-2).
+		UE_LOG(LogSiegeAssistant, Log,
+			TEXT("Snapshot seeded at rest (TASK-580): %d places resolved (%d region-bearing). The war map has markers before the first sentence; moving anchors (hero, nearest_mine) refresh at each sentence (W691-1)."),
+			Snapshot->GetPlaceNames().Num(), Snapshot->GetRegionPlaceNames().Num());
+		return;
+	}
+
+	// ── TRANSIENT REFUSAL: RETRY ONCE, THEN STAND DOWN (never a loop) ─────────
+	if (!bSnapshotSeedRetryUsed)
+	{
+		bSnapshotSeedRetryUsed = true;
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimer(SnapshotSeedTimerHandle, this,
+				&USiegeAssistantComponent::TrySeedSnapshotAtRest,
+				SiegeAssistantComponentInternal::SnapshotSeedRetryDelaySeconds, /*bLoop*/ false);
+			return;
+		}
+	}
+
+	// A missed seed is a DEGRADED DEFAULT, not a defect: the map shows its
+	// honest empty state and the player's first sentence captures for real.
+	UE_LOG(LogSiegeAssistant, Log,
+		TEXT("Snapshot seed stood down after one retry (state %s). No capture forced; the first sentence surveys the board instead."),
+		SiegeAssistantComponentInternal::StateName(State));
 }
 
 FString USiegeAssistantComponent::ComposeTurnPrompt(const FString& Utterance)
