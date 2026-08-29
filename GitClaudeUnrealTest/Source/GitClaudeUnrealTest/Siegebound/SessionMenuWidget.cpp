@@ -8,6 +8,8 @@
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "GameFramework/PlayerController.h"  // TASK-680: CreateWidget's owner static_assert needs the complete type
+#include "UObject/UObjectGlobals.h"          // TASK-680: LoadClass<> (explicit IWYU - no compile verifies transitive pulls)
 #include "SiegeSessionSubsystem.h"
 
 void USessionMenuWidget::NativeOnInitialized()
@@ -122,10 +124,45 @@ void USessionMenuWidget::BackPressed()
 		return;
 	}
 
-	// Plain standalone menu: Back is WBP-side panel navigation. Deliberately
-	// NOT LeaveMatch here - reloading L_MainMenu on every Back press would
-	// flicker-reset the menu for no reason (flagged in the TASK-354 handoff).
-	UE_LOG(LogSiegeNet, Log, TEXT("[SessionMenu] Back pressed - no session active; WBP handles panel dismissal."));
+	// Plain standalone menu: Back dismisses the panel HERE, C++-side.
+	// SUPERSEDED RATIONALE (2026-08-28, the SESSION-BACK ruling in
+	// CONVENTIONS, off VID-002): the TASK-354 flagged decision read "Back is
+	// WBP-side panel navigation", but the TASK-355 route-(A) zero-graph WBP
+	// never authored that navigation - measured on pixels, three full press
+	// cycles rendered and nobody closed the panel. The decision is REVERSED.
+	// The half of the old rationale that SURVIVES is the LeaveMatch refusal:
+	// reloading L_MainMenu on every standalone Back press would flicker-reset
+	// the menu for no reason, so dismissal is a viewport widget swap, never
+	// travel.
+	//
+	// The swap is the exact INVERSE of the TASK-355 open transition (the
+	// main-menu Multiplayer entry: RemoveFromParent(self) ->
+	// CreateWidget(WBP_SessionMenu_C) -> AddToViewport - the main menu is
+	// fully REMOVED from the viewport, not hidden, so Back must re-create
+	// it). Add-before-remove is LAW: the main menu enters the viewport BEFORE
+	// this panel leaves it, so no frame renders with neither widget; a failed
+	// class resolve leaves THIS panel up (ShowLocalError - one log, one error
+	// line), never a zero-UI strand. Deliberately NO SetInputMode on any
+	// path: L_MainMenu's posture (UIOnly + visible cursor) is owned by
+	// BP_MenuGameMode at level boot (Input-mode ownership law) and survives
+	// viewport widget swaps - the open transition made no input-mode call
+	// either, and VID-002 shows the swapped-in panel fully hover- and
+	// click-interactive under the surviving posture.
+	UClass* MainMenuClass = LoadClass<UUserWidget>(nullptr, TEXT("/Game/UI/WBP_MainMenu.WBP_MainMenu_C"));
+	APlayerController* OwningPlayer = GetOwningPlayer();
+	UUserWidget* MainMenu = (MainMenuClass && OwningPlayer)
+		? CreateWidget<UUserWidget>(OwningPlayer, MainMenuClass)
+		: nullptr;
+	if (!MainMenu)
+	{
+		// Panel STAYS up - the player keeps a live, clickable UI.
+		ShowLocalError(TEXT("Main menu unavailable."));
+		return;
+	}
+
+	UE_LOG(LogSiegeNet, Log, TEXT("[SessionMenu] Back pressed - no session active; returning to main menu."));
+	MainMenu->AddToViewport();
+	RemoveFromParent();
 }
 
 void USessionMenuWidget::HandleHostClicked()

@@ -10380,7 +10380,7 @@ POST-WAVE  TASK-637 ⚙️ comment-rider sweep (blocked-by 636 — GH-R13) ─�
 
 #### TASK-674 — [DB3-6] 🔧 ONE COMPILE (the slot AFTER 667) + LIVE VERIFY + 3-SIZE CAPTURES + THE COMMIT — ⛔ no push (build-master)
 - assignee: build-master
-- status: backlog
+- status: **✅ done — 2026-08-28, 2 loops (orchestrator flip; handoff `handoffs/TASK-674-buildmaster.md`). THE DECK COMMIT: `d8bfd23` — 19 files, main 4 ahead, NOT pushed, porcelain ZERO.** Loop 1: gate ran end-to-end, STOPPED on the one real defect ([BLOCKER 674-1] blank bar labels — stamp-before-RebuildWidget; his real legacy save migration PROVEN + all five saves restored byte-identical; the loop-1 blank-bar capture committed as evidence). Fix (671 §11, `DeckSlotEntryWidget.{h,cpp}` only, order-independent store+apply) → QA §9 addendum PASS. Loop 2: **REAL rebuild proven** (`Compile DeckSlotEntryWidget.cpp` action, DLL 01:25 > fix 01:17) · **suite 136/136 gating** · **ten labels `deck1..deck10` on pixels at 1280 + orange on deck1 + working scrollbar + Exit bottom-right** (labeled AFTER capture committed). `L_Arena` == ROT-§2 ledger throughout; `SiegePlayerController` zero-diff; grant record in the handoff. Editor UP PID 34664 (fresh binary, MCP + remote-exec live) for the morning sittings. **675 debt list consolidated in the handoff** (2 remaining sizes · gestures · Exit/Play clicks · the WARN-1 cloud-name one-liner · 668's walk foldable into the same sitting). *(Was: backlog.)*
 - blocked-by: TASK-673 PASS + TASK-667 done (QUIET-MODULE — 667 owns the prior slot; ⛔ no other compile gate live, orchestrator confirms at dispatch)
 - parallel-safe: no
 - spec: >
@@ -10395,6 +10395,133 @@ POST-WAVE  TASK-637 ⚙️ comment-rider sweep (blocked-by 636 — GH-R13) ─�
 - spec: >
     His eye + hands, per the directive: **(1)** resize the window through several sizes — the bottom card row is NEVER cut off (fits or scrolls). **(2)** the top bar shows deck1..deck10; LEFT-click a few decks and edit cards in each; **(3)** RIGHT-click a deck — orange outline moves; **(4)** click Exit (bottom-right) → main menu, relaunch → all edited decks AND the orange choice persisted with no save step; **(5)** enter a match with a non-deck1 deck active — the log line names the deck (D5: an empty active deck = curated default, not a block); **(6)** if logged in: same round trip on the account profile. A clip dropped in `testvideo/` is a valid instrument (FR-§0.4) but his word suffices. Findings → manager as change requests in THIS wave. **Slack: outcome posted by the orchestrator in 📢 Planning & Feedback (`1783116257.317519`), referencing TASK-675.**
 - names: > Law: DECK-§3/§4/§6 acceptance clauses · FR-§0.4 (optional clip lane) · the D1–D9 defaults table above (his overrule window).
+
+---
+
+## CARD-UNCAP — every per-card copy cap abolished; the 50-total stays EXACT — decomposed 2026-08-28 on Jonathan's directive — TASK-676..679 (law: CONVENTIONS **UNCAP-§**, written FIRST — verbatim directive lives there; ⛔ no task restates it)
+
+**Sequencing facts (2026-08-28):** the deck wave is COMMITTED (`d8bfd23`, main 4 ahead, not pushed) and NO compile gate is live. ⚖️ **DISJOINTNESS RULED (`UNCAP-§7`):** this batch = the deck/card lane (8 Source files); ALL menu-widget surfaces are fenced ⛔. **UPDATE, same board pass:** the VID-002 report LANDED and its fix chain is boarded below (**"## VID-002-S1 — SESSION-MENU BACK"**, TASK-680..682, owning `SessionMenuWidget.{h,cpp}` only) — disjointness is now BILATERAL by both file maps, the two code lanes run in PARALLEL (676 ∥ 680), and **TASK-678 is the ONE SHARED integrator gate for both** (one editor bounce, one compile, one suite run, two per-batch commits — don't spend two editor windows where one serves). Suite baseline correction, measured at source: **136/136** landed at `d8bfd23` (TASK-674 record) — 127 was the pre-deck-wave number; 676/678 pin against 136.
+
+### FOR JONATHAN — defaults taken, all proceeding (overrule = one word, any time before TASK-678's commit)
+
+| # | Question | Default taken (proceeding) | Cost of overruling later |
+|---|---|---|---|
+| **U1** | A deck can now hold MORE copies of a hero upgrade than its in-match stack cap (e.g. 50 Sharpened Blades). Keep the stack caps? | **YES — stack caps unchanged** (`MaxCopies` via `HeroCharacter`, untouched); drawing/playing past the cap keeps today's refuse-no-spend "at max stacks" message. | Small code task later. |
+| **U2** | Hand/draw system: any same-card-repeat rule change now that 50-of-one is legal? | **NO change** — the draw pile and hand are already per-card-INSTANCE; nothing assumes per-card uniqueness (verified at `SiegePlayerController.cpp:241-300` + `DeckComponent`). | — |
+| **U3** | Above-tile copy-count badge: display cap? | **Show the TRUE number** (up to 50) — no clamp. | Cosmetic tweak. |
+| **U4** | Should "+" hard-stop when the WORKING deck hits 50 total? | **NO new guard** — over-50 working decks were already reachable under the old caps and are handled (x/50 counter + the exactly-50 play gate); minimal diff, behavior class unchanged. | Small code task later. |
+| **U5** | Deck legality: EXACTLY 50, or ≤50? | **EXACTLY 50 — PINNED** (`UNCAP-§1`; your words + the shipped D5 Play-with-fallback posture). | Small code task + test edits. |
+| **U6** | Touch the DT_Cards data (`MaxCopies`/`DeckCount` columns)? | **NO data edit** — columns stay (stack caps + curated default); only the LAW severs the meanings. | — |
+
+**Graph (fused with the VID-002-S1 chain at the shared gate):**
+```
+TASK-676 ⚙️ the uncap code wave (the UNCAP-§7 8-file map)   ◀ dispatchable NOW ─┐  676 ∥ 680 (disjoint file maps)
+  └─→ TASK-677 🔍 QA gate (qa/TASK-677.md)                                      │
+TASK-680 ⚙️ the session-Back fix (SessionMenuWidget.{h,cpp}) ◀ dispatchable NOW ─┘
+  └─→ TASK-681 🔍 QA gate (qa/TASK-681.md)
+        677 PASS + 681 PASS
+        └─→ TASK-678 🔧 THE SHARED GATE: one compile + one suite (136 + 676's declared adds) + live Back check + TWO commits (⛔ no push; QUIET-MODULE)
+              ├─→ TASK-679 🙋 Jonathan — uncap acceptance RIDER, co-sits with the owed TASK-675 sitting (blocks nothing machine-side)
+              └─→ TASK-682 🙋 Jonathan — Back-fix acceptance via the footage lane (VID-003 or his word; blocks nothing machine-side)
+
+Degraded mode (either lane fails QA): 678 may gate on the SURVIVING lane alone rather than hold a passed batch hostage —
+orchestrator's call at dispatch; the failed lane re-loops and takes the NEXT slot.
+```
+
+#### TASK-676 — [UNCAP-1] ⚙️ THE UNCAP CODE WAVE — legality + builder shim + comment truth + tests (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: **qa-passed — 2026-08-28 (orchestrator flip; `qa/TASK-677.md` **PASS** 0 blockers / 2 warns / 1 nit — all 8 criteria recomputed at source; severance genuine, shim zero-C++-callers, MaxCopies census 1:1 hero-lane-only, comment-only claims byte-verified, transient-table isolation proven at the engine header, suite census 140 measured; all 3 deviations ACCEPTED — the SiegeBotController.h:203 hit escalated to WARN-1: rider owed to that header's next wave, ⛔ 678 must NOT sweep the .h into COMMIT A; WARN-2 recorded: a tamper-only int32 TotalCount wrap is now reachable — future one-line fix proposed (refuse Count > SiegeLegalDeckSize per entry), a manager rider).**
+- blocked-by: none (no live compile gate; disjoint from the VID-002 lane per `UNCAP-§7`)
+- parallel-safe: yes (vs any menu-widget/footage-lane task — no shared file; the compile serializes at TASK-678)
+- spec: >
+    Implement CONVENTIONS `UNCAP-§1..§7` exactly — the law IS the spec. The wave:
+    **(1) `DeckLibrary.cpp` `IsDeckLegal`:** DELETE the per-CardID aggregate MaxCopies check + the `RunningCounts` map + the "the cap is %d (MaxCopies)" reason; KEEP unknown-CardID, negative-Count, and `TotalCount()==SiegeLegalDeckSize` (EXACT) checks; update the null-table reason wording + the `DeckLibrary.h` doc comment (`UNCAP-§3`; signature byte-identical).
+    **(2) `DeckBuilderWidget.cpp`:** `AddCopy` — DELETE the `Current >= Row->MaxCopies` refusal, KEEP the `!Row` refusal, ⛔ add NO total guard (U4). `GetCardMaxCopies` — return `SiegeLegalDeckSize` for a resolved row, 0 for missing table/row, signature byte-identical (`UNCAP-§4` shim — this is what spares the WBP). DELETE the identity-line `Max %d per deck` clause (the `Row.MaxCopies > 0` block, ~line 1094); ⛔ the `UpgradeTailFmt` stack-cap tail is UNTOUCHED (`UNCAP-§5`). Update the stale `.h` comments (~lines 20/123/184/328).
+    **(3) Comment truth:** `CardRow.h` `MaxCopies` UPROPERTY comment → hero-upgrade stack cap ONLY (dated CARD-UNCAP 2026-08-28); `DeckTypes.h` (~lines 11/28/37) drop the `[0..MaxCopies]` claims; comment-ONLY riders in `DeckComponent.cpp` (~46) + `SiegeBotController.cpp` (~218-242) — ZERO logic diff in those two files. Self-run a grep for `MaxCopies` across `Source/` and rule every surviving hit stack-cap-lane or updated — declare the census in the handoff.
+    **(4) Tests (`Tests/SiegeDeckSlotsTest.cpp`):** the four `UNCAP-§7` cases on a transient `NewObject<UDataTable>` (⛔ never the shipped asset): 50×-one-card LEGAL · 51-total illegal (exact-50 reason) · unknown-CardID illegal · negative-Count illegal. DECLARE the new expected suite total (baseline 136) in the handoff for the 678 gate.
+    ⛔ Fences (`UNCAP-§7`): `HeroCharacter.{h,cpp}` · any `.uasset`/WBP · `cards.csv`/DT_Cards · `SiegeDeckSaveGame.{h,cpp}` · cloud/account files · ALL menu-widget files. ⛔ QUIET-MODULE: no compile here (TASK-678 owns it). Handoff `handoffs/TASK-676-programmer.md`.
+    **Slack: ⚙️ Dev & QA (`C0BF0QZP3CN`, thread `1783116269.740549`), prefix `⚙️ GAMEPLAY-PROGRAMMER:`, ≥1 completion-or-blocker post, emoji + TASK-676.**
+- names: >
+    `UDeckLibrary::IsDeckLegal` (pinned, `UNCAP-§3`) · `UDeckBuilderWidget::AddCopy` / `GetCardMaxCopies` (pinned, `UNCAP-§4`) · `SiegeLegalDeckSize` · new tests under `Siegebound.Deck.*` · law `UNCAP-§1..§7`.
+
+#### TASK-677 — [UNCAP-2] 🔍 THE QA GATE — one report over 676's diff (qa-reviewer)
+- assignee: qa-reviewer
+- status: **✅ done — 2026-08-28 (orchestrator flip; report `qa/TASK-677.md` PASS 0/2/1; 678 live items pinned: suite 140/140 · AddCopy climbs past 12 · the shim's 50 at the WBP tile · 50-of-one deck legal end-to-end with the override log + no fallback Warning · COMMIT A ledger = the 9 owned files + records, ⛔ never `SiegeBotController.h`).** *(Was: backlog.)*
+- blocked-by: TASK-676 (ready-for-qa)
+- parallel-safe: no
+- spec: >
+    Report `qa/TASK-677.md` over the full 676 diff. Criteria, each verified at the artifact: **(a)** the file set is EXACTLY the `UNCAP-§7` owned list — any extra file is a finding; **(b)** `IsDeckLegal` + `GetCardMaxCopies` + `AddCopy` signatures byte-identical (BP compat); **(c)** the exactly-50 check SURVIVES (U5 pin) and unknown-CardID + negative-Count refusals survive; **(d)** grep-prove `HeroCharacter.{h,cpp}` untouched + zero `.uasset`/csv diffs; **(e)** `DeckComponent.cpp`/`SiegeBotController.cpp` diffs are comment-only; **(f)** comment truth — no surviving claim that MaxCopies caps deck copies (run the MaxCopies census against 676's handoff declaration); **(g)** the four new tests present, transient-table-built, and the declared suite total is arithmetically right (136 + adds); **(h)** the `UpgradeTailFmt` stack-cap tail untouched (`UNCAP-§5`). Verdict PASS/FAIL per the standard gate.
+    **Slack: ⚙️ Dev & QA (`C0BF0QZP3CN`, thread `1783116269.740549`), prefix `🔍 QA:`, verdict + report path, emoji + TASK-677.**
+- names: >
+    gate file `qa/TASK-677.md` · law `UNCAP-§1..§7` · inputs `handoffs/TASK-676-programmer.md` + the 676 diff.
+
+#### TASK-678 — [UNCAP-3 + VID2S1-3] 🔧 THE SHARED GATE — one compile + one suite + live Back check + TWO commits — ⛔ no push (build-master)
+- assignee: build-master
+- status: **✅ done — 2026-08-28 (build-master flip; handoff `handoffs/TASK-678-buildmaster.md`). Compile `Result: Succeeded` (REAL rebuild, 18 actions, every touched TU by name) · suite **140/140** expected==actual (the 4 `Siegebound.Deck.Uncap*` green by name) · BOTH lanes live-GREEN in ONE standalone client: Back = 2 machine-driven `BackPressed()` round trips (panel out + a FRESH `WBP_MainMenu_C` instance each time — `_1` then `_2`), new line ×2 exact / old line 0 (runtime AND Source), all-7-entries menu pixel banked; Uncap = `AddCopy(Footman)` 12→13→50 no refusal on scratch deck10, shim 50 live at the tile's own BlueprintPure + badge-50 / Deck-50/50 pixel, end-to-end `open L_Arena` → 'deck10 is legal (50 cards)' + the OVERRIDE build line, ZERO deck fallbacks · all 5 saves restored byte-identical (sha ledger) · COMMIT A `90db1e1` (11 files) + COMMIT B (the records commit carrying the handoff + TASKBOARD/CONVENTIONS LAST) — main 6 ahead, NOT pushed · ⛔ `SiegeBotController.h` zero-diff honored (WARN-1). ⚠️ Deviation of record (handoff §1): PID 34664 was gone; the 17:28 process was Jonathan's OWN standalone client (his live VID-002 repro — the OLD line ×3 at 17:29 in its log); my editor-shaped remote-exec preflight crashed it (AV in the Python plugin — editor API into a `-game` node). No editor was up ⇒ no unsaved work existed, no save write in flight, L_Arena intact; reported to Slack mid-task; lesson banked = probe the node's identity before any editor API. TASK-679 + TASK-682 unblocked (Jonathan).** *(Was: backlog.)*
+- blocked-by: TASK-677 PASS + TASK-681 PASS (the fused-gate ruling above; DEGRADED MODE: if one lane is qa-failed and re-looping, the orchestrator may dispatch 678 on the surviving lane alone — the failed lane takes the next slot) + ⛔ no other compile gate live (QUIET-MODULE — orchestrator confirms at dispatch)
+- parallel-safe: no
+- spec: >
+    ONE editor bounce / ONE compile serves BOTH batches (CARD-UNCAP TASK-676 + SESSION-BACK TASK-680 — file maps disjoint by law, `UNCAP-§7` + the SESSION-BACK ruling).
+    **(0) Fences:** the Build.bat log-parse law (`Result:` line, never `$LASTEXITCODE`; SAC ~2-s fail = escalate, not a QA loop) · `SIE-§1` · editor bounce per standing grants — Jonathan's hands win · any compile-fix diff = CODE ⇒ QA verdict before the commit · ⛔ no `L_Arena` save · any PIE: ⛔ no console sentence, ⛔ no `M` (the latch stays UNSPENT).
+    **(1) Compile + suite (once):** the CLAUDE.md Build.bat line over both diffs; headless suite = 676's declared expected total (baseline 136 + the new `Siegebound.Deck.*` cases) — state expected vs actual. The Back fix adds no tests (SESSION-BACK ruling); the suite guards it against regression only.
+    **(2) Uncap sanity (machine lane, no gesture claims):** drive `AddCopy` directly (exec/MCP, or rest on the suite if the editor stays down) proving a card climbs PAST its old `MaxCopies` value and `IsDeckLegal` accepts a 50×-one-card list — the new tests already prove this headless; live is a bonus, not a gate.
+    **(3) Back-fix live check (machine lane):** on `L_MainMenu`, instantiate/navigate to the session menu (exec/MCP — no mouse claims), call `BackPressed()` directly with no session active; verify via widget probe + log: `WBP_SessionMenu` REMOVED from viewport, `WBP_MainMenu` PRESENT, and 680's declared new `LogSiegeNet` line printed (the old "WBP handles panel dismissal" line must NOT appear). This is the analyst's confirmation instrument, machine-driven; the mouse-click closure stays TASK-682's.
+    **(4) TWO commits, in order (per-batch ledgers):** verify HEAD first (Jonathan self-commits — never duplicate/amend). COMMIT A (CARD-UNCAP): the `UNCAP-§7` owned file set + `handoffs/TASK-676-programmer.md` + `qa/TASK-677.md` + the CONVENTIONS/TASKBOARD CARD-UNCAP deltas. COMMIT B (SESSION-BACK): `SessionMenuWidget.{h,cpp}` + `handoffs/TASK-680-programmer.md` + `qa/TASK-681.md` + `.claude/pipeline/footage/VID-002-multiplayer-back-inert.md` + the 5 promoted evidence PNGs (`.claude/pipeline/playtest-evidence/2026-08-28/VID-002-*.png`) + the SESSION-BACK CONVENTIONS/TASKBOARD deltas (check what COMMIT A already carried — the P2-R7 pattern). Reconcile porcelain-vs-ledger, REFUSE unexplained lines. ⛔ NEVER push.
+    Handoff `handoffs/TASK-678-buildmaster.md`. **Slack: 🔧 Build & Git (`C0BF0QZP3CN`, thread `1783116286.945249`), prefix `🔧 BUILD-MASTER:`, compile/suite result + BOTH commit hashes, emoji + TASK-678; 🚧 one-liner to 🚨 Blockers (`1783116296.221319`) on failure.**
+- names: >
+    build: the CLAUDE.md Build.bat line · suite: 136 + declared adds · inputs `qa/TASK-677.md` + `qa/TASK-681.md` · law: QUIET-MODULE · `UNCAP-§7` · the SESSION-BACK ruling (CONVENTIONS "Net class naming") · `SIE-§1` · the Build.bat log-parse law · the never-push law.
+
+#### TASK-679 — [UNCAP-4] 🙋 JONATHAN — THE ACCEPTANCE RIDER — co-sits with the owed TASK-675 deck-builder sitting (Jonathan; orchestrator relays)
+- assignee: **Jonathan** (human-owed; ⛔ no agent work exists in this task; blocks NOTHING machine-side)
+- status: backlog — waiting on TASK-678, then folds into the TASK-675 sitting (one sitting, two checklists — his choice of when)
+- blocked-by: TASK-678
+- parallel-safe: yes (touches nothing)
+- spec: >
+    While in the builder for TASK-675, additionally: **(1)** "+" a card PAST its old cap (Footman past 12) all the way to 50/50 — no refusal, badge shows the true count; **(2)** Play with the 50-Footman deck — the match uses IT (the log line names the deck; no curated-fallback line); **(3)** click a card's face — the details identity line no longer says "Max N per deck"; **(4)** click a hero-upgrade card — its details STILL show the "up to N stacks" line, and in-match upgrade plays past the stack cap still refuse with "at max stacks" (U1); **(5)** overrule window closes here for U1–U6 (one word each). Findings → manager as change requests in THIS wave.
+    **Slack: outcome posted by the orchestrator in 📢 Planning & Feedback (`1783116257.317519`), referencing TASK-679.**
+- names: > Law: `UNCAP-§1/§4/§5/§6` acceptance clauses · the U1–U6 defaults table above (his overrule window) · rides `handoffs/TASK-674-buildmaster.md`'s consolidated 675 debt list.
+
+---
+
+## VID-002-S1 — SESSION-MENU BACK — the multiplayer Back renders clicks but never dismisses — decomposed 2026-08-28 off the footage report — TASK-680..682 (law: the ⚖️ SESSION-BACK ruling in CONVENTIONS "Net class naming" (M8), written FIRST; source of record `.claude/pipeline/footage/VID-002-multiplayer-back-inert.md`)
+
+**The finding (measured, not inferred):** on the Multiplayer screen (Host/Join/IP — NOT the deck builder), Back renders hover (+32 luminance) and pressed (−20) through THREE full press cycles, yet the panel probes bit-stable to clip end — no dismissal exists anywhere. Mechanism (code + both handoffs agree): `SessionMenuWidget.cpp:125-128` standalone branch deliberately no-ops, deferring to "the WBP's own navigation"; TASK-355 shipped `WBP_SessionMenu` route (A) with ZERO graph work ⇒ neither side closes the panel. **⚖️ THE RULING (2026-08-28, manager — full text in CONVENTIONS): C++-SIDE dismissal.** The TASK-354 flagged decision is revisited and REVERSED; `BackPressed()`'s standalone branch performs the inverse transition itself — resolve `/Game/UI/WBP_MainMenu.WBP_MainMenu_C` → `CreateWidget` → `AddToViewport` → THEN `RemoveFromParent()` (add-before-remove law; resolve-failure leaves the panel up + `ShowLocalError`). Grounds: the house retires graph work (deck wave cut 35 nodes), C++ is compile-gated/grep-able/exec-driveable, shipped-WBP graph edits are the UMG-corruption risk class, and this Back is a NAMED `BindWidgetOptional` button (669's anonymous-delegate finding does not apply). **Batch fusion:** file map = `SessionMenuWidget.{h,cpp}` ONLY — disjoint from CARD-UNCAP's `UNCAP-§7` map by construction; both lanes integrate at the SHARED TASK-678 gate above (one bounce, one suite, two commits).
+
+#### TASK-680 — [VID2S1-1] ⚙️ THE BACK-FIX — C++ standalone dismissal in `BackPressed()` (gameplay-programmer)
+- assignee: gameplay-programmer
+- status: **qa-passed — 2026-08-28 (orchestrator flip; `qa/TASK-681.md` **PASS** 0 blockers / 0 warns / 2 nits — mechanism verified at source: RemoveFromParent exactly once, strictly after AddToViewport, all early-returns pre-removal; the inverse claim CONFIRMED against the TASK-355 open record; NO-SetInputMode RATIFIED (a call would have been a blocker); LeaveMatch branch verbatim; all 3 judgment calls RATIFIED — owner-null fold required, synchronous LoadClass prescribed by the ruling, ZOrder 0 single-callstack-safe).**
+- blocked-by: none (disjoint from TASK-676 — no shared file; ⛔ no compile gate involvement, 678 owns the slot)
+- parallel-safe: yes (runs beside TASK-676)
+- spec: >
+    Implement the ⚖️ SESSION-BACK ruling exactly (CONVENTIONS "Net class naming" → the 2026-08-28 sub-bullet — the law IS the spec). In `SessionMenuWidget.{h,cpp}` ONLY:
+    **(1)** `BackPressed()` standalone branch: resolve `/Game/UI/WBP_MainMenu.WBP_MainMenu_C` via `LoadClass<UUserWidget>` (null-safe) → `CreateWidget` on the owning player → `AddToViewport` → THEN `RemoveFromParent()` on self. Resolve-failure: panel STAYS, `ShowLocalError(TEXT("Main menu unavailable."))` (+ its existing `LogSiegeNet` Warning) — never zero UI.
+    **(2)** Log truth: replace the `"no session active; WBP handles panel dismissal"` line with a new declared line (e.g. `"[SessionMenu] Back pressed - no session active; returning to main menu."`) — DECLARE the exact final string in the handoff (TASK-678 step (3) greps for it and for the ABSENCE of the old one).
+    **(3)** Contract truth: update the `.h:62-68` `BackPressed` contract comment + the `.cpp:125-127` rationale comment to the new law (the flicker-reset rationale is now historical — record it as superseded, don't delete the reasoning).
+    ⛔ Fences: the net-active branch (`LeaveMatch`, `.cpp:117-123`) byte-untouched · no other file · no WBP/.uasset · no new BIE · no new test file · ⛔ QUIET-MODULE: no compile (TASK-678 owns it). Handoff `handoffs/TASK-680-programmer.md`.
+    **Slack: ⚙️ Dev & QA (`C0BF0QZP3CN`, thread `1783116269.740549`), prefix `⚙️ GAMEPLAY-PROGRAMMER:`, ≥1 completion-or-blocker post, emoji + TASK-680.**
+- names: >
+    `USessionMenuWidget::BackPressed()` (signature unchanged) · `/Game/UI/WBP_MainMenu.WBP_MainMenu_C` (composed-path law) · `ShowLocalError` · `LogSiegeNet` · law: the SESSION-BACK ruling · input: `.claude/pipeline/footage/VID-002-multiplayer-back-inert.md`.
+
+#### TASK-681 — [VID2S1-2] 🔍 THE QA GATE — one report over 680's diff (qa-reviewer)
+- assignee: qa-reviewer
+- status: **✅ done — 2026-08-28 (orchestrator flip; report `qa/TASK-681.md` PASS 0/0/2; 678 live items pinned: the machine-driven `BackPressed()` + exact-line log grep (new present/old absent) + the menu-returns pixel + one second round-trip proving the re-created menu re-wires; 2 pre-existing nits recorded, no rider owed).** *(Was: backlog.)*
+- blocked-by: TASK-680 (ready-for-qa)
+- parallel-safe: yes (vs TASK-677 — different diff, different report; same reviewer runs them in either order)
+- spec: >
+    Report `qa/TASK-681.md` over the full 680 diff. Criteria, each at the artifact: **(a)** file set EXACTLY `SessionMenuWidget.{h,cpp}`; **(b)** add-before-remove order (`AddToViewport` precedes `RemoveFromParent` in control flow) and the resolve-failure path leaves the panel up with `ShowLocalError`; **(c)** the net-active branch byte-untouched; **(d)** `BackPressed()` signature unchanged; **(e)** the old log line GONE, the new one matches the handoff declaration character-for-character; **(f)** comment truth at `.h` contract + `.cpp` rationale (superseded-not-deleted); **(g)** no new BIE/test/WBP/include-graph surprises. Verdict PASS/FAIL per the standard gate.
+    **Slack: ⚙️ Dev & QA (`C0BF0QZP3CN`, thread `1783116269.740549`), prefix `🔍 QA:`, verdict + report path, emoji + TASK-681.**
+- names: >
+    gate file `qa/TASK-681.md` · law: the SESSION-BACK ruling · inputs `handoffs/TASK-680-programmer.md` + the 680 diff + the VID-002 report.
+
+#### TASK-682 — [VID2S1-4] 🙋 JONATHAN — BACK-FIX ACCEPTANCE via the footage lane (Jonathan; orchestrator relays)
+- assignee: **Jonathan** (human-owed; ⛔ no agent work exists in this task; blocks NOTHING machine-side)
+- status: backlog — waiting on TASK-678 COMMIT B, then his click (foldable into any sitting, or just his word)
+- blocked-by: TASK-678
+- parallel-safe: yes (touches nothing)
+- spec: >
+    The real mouse click MCP cannot make: open Multiplayer from the main menu, click Back — the panel closes and the main menu returns. A new clip in `testvideo/` (VID-003, FR-§ lane) is the strongest instrument; his one-word confirmation suffices. Regression eye while there: Host/Join still respond (their delegate wiring is untouched, but his eye closes it). Findings → manager as change requests.
+    **Slack: outcome posted by the orchestrator in 📢 Planning & Feedback (`1783116257.317519`), referencing TASK-682.**
+- names: > Law: the SESSION-BACK ruling acceptance clause · FR-§ (footage lane) · evidence baseline: the 5 promoted VID-002 frames in `.claude/pipeline/playtest-evidence/2026-08-28/`.
 
 ---
 

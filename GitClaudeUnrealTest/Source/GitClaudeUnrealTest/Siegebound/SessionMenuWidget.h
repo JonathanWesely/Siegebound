@@ -63,9 +63,20 @@ public:
 	 *  Back button entry. If a networked session or a pending join connection
 	 *  exists, this routes to USiegeSessionSubsystem::LeaveMatch (canceling the
 	 *  pending join / leaving the match back to the menu). In the plain
-	 *  standalone menu it deliberately does NOT reload L_MainMenu - panel
-	 *  dismissal there is the WBP's own navigation (flagged decision in the
-	 *  TASK-354 handoff).
+	 *  standalone menu it performs the panel dismissal ITSELF, C++-side:
+	 *  resolve /Game/UI/WBP_MainMenu.WBP_MainMenu_C -> CreateWidget on the
+	 *  owning player -> AddToViewport -> THEN RemoveFromParent on self
+	 *  (add-before-remove law: no frame ever renders with neither widget). A
+	 *  failed resolve leaves this panel up and surfaces via ShowLocalError -
+	 *  never a zero-UI viewport. It still deliberately does NOT reload
+	 *  L_MainMenu: standalone Back is a viewport widget swap, never LeaveMatch
+	 *  travel (a reload would flicker-reset the menu for no reason).
+	 *
+	 *  SUPERSEDED (2026-08-28, the SESSION-BACK ruling in CONVENTIONS, off
+	 *  VID-002): the TASK-354 flagged decision deferred standalone dismissal
+	 *  to "the WBP's own navigation", but the TASK-355 route-(A) zero-graph
+	 *  WBP never authored that navigation - measured on pixels, nobody closed
+	 *  the panel. The decision is REVERSED to C++-side dismissal.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Session")
 	void BackPressed();
