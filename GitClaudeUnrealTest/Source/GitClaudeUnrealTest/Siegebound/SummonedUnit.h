@@ -590,6 +590,59 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Unit")
 	int32 GetMaxPermanentDamageStacks() const { return MaxPermanentDamageStacks; }
 
+	//~ ---------------------------------------------------------------------
+	//~ ⭐ HIGH GROUND (TASK-724, HIGH-§1/§2/§3) — the elevation damage bonus.
+	//~ Jonathan, verbatim: "make their attacks deal more damage the higher
+	//~ elevation they are. I would say that for every 5 feet that their
+	//~ elevation increases, their damage multiplier increases by 10%."
+	//~ 📌 M8: nothing here is replicated, there is no RPC and no new class
+	//~ tier — the composition is server-authoritative exactly as every other
+	//~ multiplier in ComputeOutputDamage already is.
+	//~ ---------------------------------------------------------------------
+
+	/**
+	 *  ⭐ THE §-PINNED PURE SEAM (HIGH-§3, cloning the WM-§2 / HeightToBrightness precedent:
+	 *  a testability obligation gets a testability seam). The whole elevation rule, as four
+	 *  floats in and one multiplier out:
+	 *
+	 *      Multiplier = 1 + BonusPerStep × max(0, AttackerZ − TargetZ) / StepUU
+	 *
+	 *  ⭐ HEIGHT IS MEASURED **ABOVE THE TARGET**, ⛔ NEVER AS ABSOLUTE WORLD Z (HIGH-§2, his
+	 *  row R-1). Absolute Z would make a unit on a hill hit harder than one standing beside it
+	 *  on that same hill, and would tie the bonus to wherever the level designer put Z=0. The
+	 *  consequence is the argument FOR it: a unit on a tower shooting a unit on the SAME tower
+	 *  gets exactly nothing — the bonus is height ADVANTAGE, which is what he pictured.
+	 *
+	 *  ⛔ BONUS ONLY WHEN ΔZ > 0. Level ground and shooting UPWARD both return EXACTLY 1.0, and
+	 *  there is ⛔ NO low-ground penalty — he asked for a bonus, and inventing a malus is
+	 *  inventing a mechanic.
+	 *
+	 *  ⭐ CONTINUOUS (linear), ⛔ NOT stepped (HIGH-§2, his row R-4): a floored rule puts
+	 *  invisible breakpoints on a hillside that a player cannot see, cannot aim for and cannot
+	 *  learn, and a 1-uu step flipping damage by 10% is worse feel and harder to test.
+	 *
+	 *  ⛔ NO CAP (HIGH-§5, his row R-3) — he did not ask for one, and inventing a ceiling is
+	 *  silently softening his number. The worst case is COMPUTED and handed to him instead:
+	 *  ×2.44 for a unit on a 1,200-uu tower on a ~1,000-uu hill firing into a valley. If he
+	 *  ever wants a cap, the sanctioned shape is ONE EditDefaultsOnly HeightBonusMaxMultiplier
+	 *  (0 = uncapped), ⛔ never a magic number inside this formula.
+	 *
+	 *  ⛔⛔ IT READS THE WORLD'S REAL HEIGHT AND NOTHING ELSE — there is no bIsOnATower flag, no
+	 *  tower query, no occupancy lookup, and ⛔ NO read of the war map's elevation bake
+	 *  (WM-§8d: that bake CLAMPS at GroundZ + 1,000 uu, so a gameplay rule reading it would be
+	 *  right on low ground and WRONG on exactly the towers and tall hills this feature exists
+	 *  for — SHIP-§9's class of fake instrument). ⭐ That is what makes a hill and a tower at
+	 *  the same Z deal IDENTICAL damage, and what lets TOWER-§ work for free: the tower grants
+	 *  elevation by BEING TALL, and this rule never learns it exists.
+	 *
+	 *  A non-positive (or NaN) StepUU returns exactly 1.0 — total, never a divide by zero.
+	 *
+	 *  ⛔ public, plain C++ static, ⛔ NOT a UFUNCTION, exactly four parameters, none defaulted
+	 *  (SC-§33). No world access, no actor access. Tested headlessly in
+	 *  Tests/SiegeHighGroundTest.cpp.
+	 */
+	static float HeightAdvantageMultiplier(float AttackerZ, float TargetZ, float StepUU, float BonusPerStep);
+
 protected:
 
 	/** Binds the card stats from DT_Cards and starts the state machine. */
@@ -840,6 +893,47 @@ protected:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Keywords", meta = (ClampMin = "0"))
 	int32 MaxPermanentDamageStacks = 80; // GDD §3.12
+
+	/**
+	 *  ⭐⛔⛔ HIGH GROUND (TASK-724, HIGH-§1) — THE ELEVATION STEP, IN UNREAL UNITS, AND THE
+	 *  ARITHMETIC IS WRITTEN OUT HERE SO ⛔ NOBODY EVER RE-DERIVES IT:
+	 *
+	 *      Jonathan said "for every 5 FEET". "5 feet" is ⛔ NOT an engine unit.
+	 *      Unreal is CENTIMETRES, and 1 uu = 1 cm.
+	 *      1 ft = 30.48 cm  (exact, by international definition)
+	 *      5 ft = 5 × 30.48 = 152.4 cm  ⇒  ⭐ 152.4 uu
+	 *
+	 *  ⛔⛔ 152.4 IS THE ONLY NUMBER. ⛔ NOT 150 ("close enough" — wrong by 1.6% and it looks
+	 *  like a designer's round number), ⛔ NOT 152, ⛔ NOT 500, and ⛔⛔ ABOVE ALL NOT 5 —
+	 *  feet-as-units is wrong by 30×, it would make every unit on the field a god, and it
+	 *  would look entirely plausible in review. ⭐ This comment exists so a future "tidy-up"
+	 *  cannot round the value away without reading why it is not round.
+	 *  Tests/SiegeHighGroundTest.cpp asserts this default against 5 × 30.48 re-derived from
+	 *  the foot definition — the regression claim that catches exactly that tidy-up.
+	 *
+	 *  ⭐ EditDefaultsOnly BECAUSE THE TUNABLE IS THE POINT: he chose 5 ft and 10% in prose,
+	 *  so his next sentence retunes both WITHOUT a code change. A mechanic RULE, therefore ⛔
+	 *  NEVER a cards.csv column (the mechanic-rules-aren't-card-stats law; the Charge / Slayer
+	 *  / BattleCry magnitudes above are the precedent).
+	 *
+	 *  0 (or negative) disables the bonus cleanly — HeightAdvantageMultiplier returns exactly
+	 *  1.0 rather than dividing by zero.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|HighGround", meta = (ClampMin = "0"))
+	float HeightBonusStepUU = 152.4f; // HIGH-§1: 5 ft × 30.48 cm/ft
+
+	/**
+	 *  ⭐ HIGH GROUND (TASK-724, HIGH-§1) — the damage bonus earned per HeightBonusStepUU of
+	 *  height ADVANTAGE over the target. 0.10 = Jonathan's "+10%", ADDITIVE and UNCOMPOUNDED
+	 *  (the plain reading of his sentence): two steps is ×1.20, ⛔ not ×1.21.
+	 *
+	 *  Applied CONTINUOUSLY, ⛔ not in discrete rungs (HIGH-§2, his row R-4), and ⛔ WITHOUT A
+	 *  CAP (HIGH-§5, his row R-3 — the worst case is stated to him instead: ×2.44).
+	 *  0 disables the bonus while leaving the seam total. Mechanic rule, EditDefaultsOnly for
+	 *  the same reason as the step above.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|HighGround", meta = (ClampMin = "0"))
+	float HeightBonusPerStep = 0.10f; // HIGH-§1: his "+10%"
 
 	/**
 	 *  Blockout "attack animation" (TASK-020): how far VisualMesh lunges along the
@@ -1443,12 +1537,16 @@ private:
 	void RearmAttackTimerAtEffectiveCadence();
 
 	/**
-	 *  Centralized damage OUTPUT (TASK-055): row Damage × Charge × Slayer × Aura, composed in
-	 *  ONE place so every modifier stacks predictably. Consumes the primed charge (single hit)
-	 *  and reads Target's MaxHP for the Slayer gate. Siege 200% is applied fortification-side by
-	 *  the damage TYPE (TASK-054), NOT here — composing it here would double-count. Returns
-	 *  AttackDamage bit-for-bit for a non-keyword, un-auraed unit (M1/M2 non-regression).
-	 *  Non-const: consumes the charge.
+	 *  Centralized damage OUTPUT (TASK-055): row Damage × Charge × Slayer × Aura × Ancient
+	 *  Grounds × HIGH GROUND, composed in ONE place so every modifier stacks predictably.
+	 *  Consumes the primed charge (single hit) and reads Target's MaxHP for the Slayer gate.
+	 *  Siege 200% is applied fortification-side by the damage TYPE (TASK-054), NOT here —
+	 *  composing it here would double-count. Returns AttackDamage bit-for-bit for a
+	 *  non-keyword, un-auraed, MELEE unit (M1/M2 non-regression). Non-const: consumes the
+	 *  charge.
+	 *  ⭐ HIGH GROUND (TASK-724, HIGH-§3) is composed HERE and ⛔ NOWHERE ELSE, gated on the
+	 *  shipped bRangedAttack member — ⛔ never a CardID list and ⛔ never a name check, so a
+	 *  future ranged card inherits the behaviour from its own data row with zero code.
 	 */
 	float ComputeOutputDamage(const AActor* Target);
 

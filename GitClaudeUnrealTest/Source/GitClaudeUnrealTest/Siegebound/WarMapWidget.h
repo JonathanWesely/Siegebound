@@ -584,6 +584,38 @@ public:
 	 */
 	static float HeightToBrightness(float HitZ, float GroundZ, float ReliefCeiling);
 
+	/**
+	 *  ⭐ THE RAMP'S **COLOUR** SEAM (TASK-722; `WM-§8a`) — the COMPANION to
+	 *  `HeightToBrightness` above, and ⛔ EMPHATICALLY NOT A CHANGE TO IT. `WM-§2` split the
+	 *  ramp's SHAPE (that function) from its SCREEN MAPPING (this one) on purpose; `WM-§8a`
+	 *  re-states the split, because turning the map from GRAY to GREEN had to happen without
+	 *  the shape moving a single byte — and it did.
+	 *
+	 *  Maps a `[0,1]` brightness — exactly what `HeightToBrightness` returns — to the texel
+	 *  written into the elevation texture: a per-channel lerp between the two MEASURED grass
+	 *  colours (`WM-§8b`), dark green at 0, light green at 1. Out-of-range input clamps, so
+	 *  the function is total.
+	 *
+	 *  ⚠️⚠️ IT RETURNS AN `FColor` OF **sRGB-ENCODED TEXTURE BYTES**, ⛔ not linear light —
+	 *  the bake's texture is created with `SRGB = true`. The whole colour-space argument (and
+	 *  the warning that this file holds `FLinearColor` constants in TWO different spaces)
+	 *  lives at the constants' declaration in `WarMapWidget.cpp`. The one line that matters
+	 *  at this signature: ⛔ `FLinearColor::ToFColor(true)` must NEVER be used to build this
+	 *  value — it would sRGB-encode floats that are already encoded.
+	 *
+	 *  ⛔ DISPLAY ONLY (`WM-§8d`). Like the whole elevation layer, nothing here may ever be
+	 *  read by gameplay: the bake feeding it clamps at `GroundZ + ElevationReliefCeiling`
+	 *  (1,000 uu), so it answers correctly in the ordinary case and lies exactly where a
+	 *  tower or a tall hill lives — `SHIP-§9`'s class. `HIGH-§` reads `GetActorLocation().Z`
+	 *  from live actors and nothing else.
+	 *
+	 *  ⛔ `public`, plain C++ static, ⛔ NOT a `UFUNCTION` (a texel is not a Blueprint API),
+	 *  exactly ONE parameter, ⛔ none defaulted (`SC-§33`). It is a seam for the same reason
+	 *  `HeightToBrightness` is one — `W4-R1`: a testability obligation gets a testability
+	 *  seam — and it is pinned headlessly in `Tests/SiegeWarMapTest.cpp`.
+	 */
+	static FColor BrightnessToRampColor(float Brightness);
+
 	//~ ---------------------------------------------------------------------
 	//~ Construction. A plain static, not a UFUNCTION — the
 	//~ `USiegeAssistantConsoleWidget::CreateAndAddToViewport` contract, cloned.

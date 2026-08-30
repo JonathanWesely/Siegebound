@@ -2243,4 +2243,149 @@ bool FSiegeWarMapPoiIconProjectionTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+//  27. ELEVATION COLOUR (TASK-722, WM-§8a/§8b) — the ramp is GREEN, runs dark to
+//      light, is monotonic, and its lerp lives in the DISPLAY space its bytes
+//      are written in
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeWarMapBrightnessToRampColorTest,
+	"Siegebound.WarMap.BrightnessToRampColorIsGreenDarkToLightAndMonotonic",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeWarMapBrightnessToRampColorTest::RunTest(const FString& Parameters)
+{
+	// ⭐ THE SECOND PURE SEAM OF THE ELEVATION LAYER. `WM-§2` split the ramp's SHAPE
+	// (`HeightToBrightness`, section 24 above) from its SCREEN MAPPING; TASK-722 turned the
+	// map from gray to green by changing ONLY the mapping, so section 24 is byte-untouched
+	// and this section is the whole of the new claim. One float in, one FColor out — no
+	// world, no widget instance, no CDO, exactly like its sibling.
+	//
+	// ⚠️ A WORDING NOTE, so nobody reads a contradiction: section 24 still says brightness 1
+	// clamps to "full white". That phrase now describes the ramp's LIGHT GREEN end.
+	// `HeightToBrightness` and its documentation were left byte-untouched on purpose
+	// (`WM-§8a` item 1 outranks a wording repair); it is flagged in
+	// handoffs/TASK-722-programmer.md, not silently edited.
+	//
+	// ⭐⭐ EVERY CLAIM BELOW IS A RELATIONSHIP, ⛔ NEVER A LITERAL. The two grass constants
+	// are file-local to WarMapWidget.cpp and were MEASURED off the shipped ground material
+	// (`WM-§8b`, TASK-721) — if this file re-typed them, it would be a test transcribed from
+	// its own subject, which is a guardrail that reports SAFE no matter what the subject
+	// does (the standing lesson). ⇒ Everything here holds for ANY dark-green/light-green
+	// pair, and fails for a gray one.
+
+	const FColor Dark  = UWarMapWidget::BrightnessToRampColor(0.f);
+	const FColor Light = UWarMapWidget::BrightnessToRampColor(1.f);
+
+	// ── (a) THE ENDS ARE THE ENDS — "darker green to lighter green" as an invariant ───────
+	TestTrue(TEXT("(a) Brightness 0 is STRICTLY DARKER than brightness 1 on EVERY channel — the ramp runs dark green → light green"),
+		Dark.R < Light.R && Dark.G < Light.G && Dark.B < Light.B);
+
+	// ⛔ TOTAL IN BOTH DIRECTIONS. The seam clamps, so no input can produce a colour that is
+	// not ON the ramp. HeightToBrightness (its only shipped caller) already returns [0,1] and
+	// section 24(g) proves it never returns NaN — but this seam is public and does not trust
+	// its caller, and this pair is what pins that.
+	TestTrue(TEXT("(a) A below-zero brightness clamps to the SAME texel as 0"),
+		UWarMapWidget::BrightnessToRampColor(-5.f) == Dark);
+	TestTrue(TEXT("(a) An above-one brightness clamps to the SAME texel as 1"),
+		UWarMapWidget::BrightnessToRampColor(5.f) == Light);
+
+	// ── (b) OPAQUE at both ends — a transparent texel would punch a hole in the map ───────
+	TestEqual(TEXT("(b) The dark end is fully opaque"), static_cast<int32>(Dark.A), 255);
+	TestEqual(TEXT("(b) The light end is fully opaque"), static_cast<int32>(Light.A), 255);
+
+	// ── (c) GREEN-DOMINANT EVERYWHERE + (d) MONOTONIC ────────────────────────────────────
+	// ⭐ (c) is the claim that catches the two ways this task could have shipped wrong and
+	// still compiled: a REVERTED luma ramp (R == G == B) and a TRANSPOSED FColor constructor
+	// argument — FColor's ctor takes R,G,B,A while its memory layout is B,G,R,A, and an R/G
+	// or G/B swap inverts the dominance outright.
+	// ⚠️ STATED HONESTLY: it CANNOT catch an R/B swap. The measured grass chromaticity is
+	// only very slightly red-over-blue, so R and B differ by ONE byte at the light end and
+	// tie at the dark end. Block (f) is the only guard on that case, and it is weak by
+	// nature — the real control there is the comment at the seam.
+	{
+		FColor PreviousColor = FColor(0, 0, 0, 0);
+		float PreviousLuminance = -1.f;
+
+		constexpr int32 StepCount = 20; // 0.00 … 1.00 in 0.05 steps
+
+		for (int32 Step = 0; Step <= StepCount; ++Step)
+		{
+			const float Brightness = static_cast<float>(Step) / static_cast<float>(StepCount);
+			const FColor Color = UWarMapWidget::BrightnessToRampColor(Brightness);
+
+			TestTrue(*FString::Printf(TEXT("(c) GREEN dominates RED at brightness %.2f"), Brightness),
+				Color.G > Color.R);
+			TestTrue(*FString::Printf(TEXT("(c) GREEN dominates BLUE at brightness %.2f"), Brightness),
+				Color.G > Color.B);
+			TestTrue(*FString::Printf(TEXT("(c) ⛔ …so the texel is NOT GRAY at brightness %.2f — a reverted luma ramp fails right here"), Brightness),
+				!(Color.R == Color.G && Color.G == Color.B));
+
+			// (d) MONOTONIC — "lighter never means lower" (Jonathan's instruction, as an
+			// invariant a test can hold forever). Non-decreasing per channel, and STRICTLY
+			// increasing in WCAG relative luminance, computed on the bytes.
+			const float Luminance =
+				0.2126f * static_cast<float>(Color.R)
+				+ 0.7152f * static_cast<float>(Color.G)
+				+ 0.0722f * static_cast<float>(Color.B);
+
+			if (Step > 0)
+			{
+				TestTrue(*FString::Printf(TEXT("(d) No channel DECREASES as brightness rises (brightness %.2f)"), Brightness),
+					Color.R >= PreviousColor.R && Color.G >= PreviousColor.G && Color.B >= PreviousColor.B);
+
+				TestTrue(*FString::Printf(TEXT("(d) …and LUMINANCE strictly INCREASES (brightness %.2f) — a plateau would paint two heights the same green"), Brightness),
+					Luminance > PreviousLuminance);
+			}
+
+			PreviousColor = Color;
+			PreviousLuminance = Luminance;
+		}
+	}
+
+	// ── (e) ⭐⭐ THE MAPPING IS AFFINE IN THE SPACE IT WRITES ─────────────────────────────
+	// THE CLAIM THAT CATCHES THE COLOUR-SPACE TRAP, and the reason this test exists at all.
+	// The ramp's bytes are sRGB-ENCODED (the bake's texture is created with SRGB = true) and
+	// the lerp runs in that SAME space, so the MIDPOINT byte must be the average of the two
+	// END bytes on every channel. If a future edit "corrects" the seam to lerp in LINEAR
+	// space and re-encode — a change that looks like a bug fix, compiles perfectly and
+	// reviews as more correct — the midpoint's display value jumps from 0.55 to 0.73 and all
+	// three channels fail here at once.
+	// ⛔ Nothing is transcribed: the expected midpoint is COMPUTED from the measured ends.
+	{
+		const FColor Mid = UWarMapWidget::BrightnessToRampColor(0.5f);
+
+		// Half-up rounding, three independent channels, integer-halved endpoints — one byte
+		// of slack is arithmetic, not tolerance for a wrong space (a linear-space lerp misses
+		// by ~46 bytes on green).
+		constexpr int32 RoundingSlackBytes = 1;
+
+		const int32 ExpectedR = (static_cast<int32>(Dark.R) + static_cast<int32>(Light.R)) / 2;
+		const int32 ExpectedG = (static_cast<int32>(Dark.G) + static_cast<int32>(Light.G)) / 2;
+		const int32 ExpectedB = (static_cast<int32>(Dark.B) + static_cast<int32>(Light.B)) / 2;
+
+		TestTrue(TEXT("(e) ⭐ The MIDPOINT's RED is the average of the two ends — the lerp is in the sRGB space the bytes are written in"),
+			FMath::Abs(static_cast<int32>(Mid.R) - ExpectedR) <= RoundingSlackBytes);
+		TestTrue(TEXT("(e) ⭐ …and its GREEN is too — a linear-space lerp would land ~46 bytes high here"),
+			FMath::Abs(static_cast<int32>(Mid.G) - ExpectedG) <= RoundingSlackBytes);
+		TestTrue(TEXT("(e) ⭐ …and its BLUE is too"),
+			FMath::Abs(static_cast<int32>(Mid.B) - ExpectedB) <= RoundingSlackBytes);
+	}
+
+	// ── (f) ⚠️ THE R/B TRANSPOSITION GUARD — A ONE-BYTE MARGIN, AND IT SAYS SO ────────────
+	// The measured grass chromaticity is very slightly RED-over-BLUE, which at the light end
+	// is 160 vs 159 and at the dark end is a tie. ⛔ This is a WEAK guard and it is NOT the
+	// primary control against a swapped channel — the primary control is the comment at
+	// `BrightnessToRampColor`, which says in words that the ramp's own pixels must never be
+	// used as the channel-order check. It is here because it is free, and because a swap
+	// that survives (c) has nowhere else to be caught.
+	TestTrue(TEXT("(f) The LIGHT end is red-over-blue, as the measured grass sample is (R >= B)"),
+		Light.R >= Light.B);
+	TestTrue(TEXT("(f) …and the DARK end never inverts it either"),
+		Dark.R >= Dark.B);
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -162,9 +162,45 @@ namespace SiegeWarMap
 	 *  BackdropColor/TranscriptColor precedent. The textures themselves are PURE WHITE on
 	 *  every texel (TASK-683's authored law), so a draw-time tint multiplies cleanly with
 	 *  zero fringe.
+	 *
+	 *  ⚠️⚠️ COLOUR SPACE - THESE TWO ARE **TRUE LINEAR**, ⛔ NOT the space the elevation
+	 *  ramp's constants below are in, AND THAT DIFFERENCE IS INVISIBLE IN THE TYPE NAME.
+	 *  An overlay tint reaches the screen through SLATE, which sRGB-ENCODES it AT DRAW TIME
+	 *  (PackVertexColor -> FLinearColor::ToFColor(bSRGBVertexColor), and
+	 *  FSlateRHIRenderingPolicy::IsVertexColorInLinearSpace() returns false, so the encode
+	 *  always happens). ⇒ what these literals mean is LINEAR LIGHT, and the screen shows
+	 *  srgb_encode(them).
+	 *  ⛔⛔ ElevationGrassDark / ElevationGrassLight below are the OPPOSITE - DISPLAY-ENCODED
+	 *  sRGB values in the same FLinearColor type - because they never pass through Slate at
+	 *  all; they become the raw BYTES of a texture created with SRGB = true. ⇒ THIS FILE
+	 *  HOLDS FLinearColor CONSTANTS IN TWO DIFFERENT COLOUR SPACES, A FEW HUNDRED LINES
+	 *  APART. ⛔ Never copy a value between the two families, and ⛔ never "correct" one into
+	 *  the other: BOTH readings compile, BOTH render, and only one is right at each site.
+	 *
+	 *  ⭐ WHY AncientGroundIconTint MOVED (TASK-721/722, WM-§8c). It was (0.62, 0.93, 0.66)
+	 *  "pale verdant" - a PALE GREEN picked against a GRAYSCALE background. Measured against
+	 *  the new green ramp's light end it was 1.03:1 contrast at dE 36.7: the only overlay in
+	 *  the file that collides on LUMINANCE AND HUE AT ONCE. Deep emerald (0.04, 0.22, 0.09)
+	 *  measures 3.79:1 against the ramp's dark end and 3.89:1 against its light end, versus a
+	 *  3.84:1 theoretical ceiling for ANY flat colour over this ramp's 14.74:1 span.
+	 *  ⚖️ WM-§8c's ruling, applied: THE ICON YIELDS, ⛔ the ramp never comes off the measured
+	 *  grass Jonathan asked for. Only the tint's VALUE moved - it is still verdant, and it is
+	 *  still the furthest of every passing candidate from BOTH team hues (dE 89.8 from blue,
+	 *  100.9 from red), which is exactly what the first paragraph says this constant is for.
+	 *
+	 *  🚩 KNOWN, MEASURED, ⛔ DELIBERATELY NOT REPAIRED HERE (TASK-721 flagged these and did
+	 *  not fix them; neither did TASK-722). MineIconTint (1.09:1) and MarkerLabelColor
+	 *  (1.15:1) also sit under the 3:1 gate at the ramp's light end - but they were ALREADY
+	 *  under it against the OLD gray ramp (1.33:1 and 1.06:1), so ⛔ the green did not break
+	 *  them. ⭐ THE STRUCTURAL FINDING: the three overlays that fail are EXACTLY the three
+	 *  drawn with NO OUTLINE. The marker GLYPH is fine (12.22:1) because it gets
+	 *  MarkerOutlineColor; its LABEL, drawn by MakeText a few lines later, gets none.
+	 *  ⚖️ No flat colour can clear 3:1 against BOTH ends of a 14.74:1 background by luminance
+	 *  alone, so the repair for those two is an OUTLINE, ⛔ not another re-tint - and it is
+	 *  not this task's to make.
 	 */
-	static const FLinearColor MineIconTint          = FLinearColor(1.00f, 0.72f, 0.18f, 1.00f); // gold - what a gold-node mine yields; reads beside the warm marker family, apart from BOTH team hues
-	static const FLinearColor AncientGroundIconTint = FLinearColor(0.62f, 0.93f, 0.66f, 1.00f); // pale verdant - mystic-neutral, deliberately far from team blue AND team red
+	static const FLinearColor MineIconTint          = FLinearColor(1.00f, 0.72f, 0.18f, 1.00f); // TRUE LINEAR (Slate tint) - gold - what a gold-node mine yields; reads beside the warm marker family, apart from BOTH team hues
+	static const FLinearColor AncientGroundIconTint = FLinearColor(0.04f, 0.22f, 0.09f, 1.00f); // TRUE LINEAR (Slate tint) - deep emerald - still verdant and still mystic-neutral, at a value that clears 3:1 on BOTH ramp ends
 
 	/** Gap between a marker's right edge and its label. */
 	static constexpr float MarkerLabelGapPx = 6.f;
@@ -189,13 +225,49 @@ namespace SiegeWarMap
 	// ── The elevation background (TASK-684; WM-§2) ──────────────────────────────
 
 	/**
-	 *  The dark end of the elevation ramp, as a luma in [0,1]. ⛔ NOT pitch black on purpose:
-	 *  the flat field floor must still read as "map" against the letterbox outside the rect,
-	 *  and WM-§4 already darkens the WBP panel toward near-black — a 0.0 floor here would
-	 *  make the two indistinguishable. Widget CHROME in exactly the MarkerColor sense above:
-	 *  height is not a team, so this is deliberately not the team palette.
+	 *  ⭐⭐ THE ELEVATION RAMP'S TWO ENDS (TASK-722; WM-§8a/§8b). Dark green at brightness 0,
+	 *  light green at 1. They REPLACE the shipped `ElevationFloorLuma = 0.10f` scalar, which
+	 *  is retired rather than left behind: a dead luma constant would imply this ramp is
+	 *  still gray. (The 0.10 is not lost - it is literally the factor ElevationGrassDark is
+	 *  the chromaticity scaled by.)
+	 *
+	 *  ⚠️⚠️ COLOUR SPACE - THESE ARE **DISPLAY-ENCODED (sRGB) VALUES** IN AN `FLinearColor`
+	 *  CONTAINER. ⛔⛔ THEY ARE NOT LINEAR, DESPITE THE TYPE'S NAME, AND THAT IS CORRECT.
+	 *  ⛔ WHY, and why "fixing" it would ship a wrong-looking map that reviews as right:
+	 *  these two colours never reach Slate. They are turned into the raw BYTES of a texture
+	 *  created with `Texture->SRGB = true` (BakeElevationTexture, below), and THE BYTES OF AN
+	 *  sRGB TEXTURE ARE sRGB-ENCODED VALUES. The scalar they replaced lived in exactly this
+	 *  space for exactly this reason. ⇒ Typing the TRUE-LINEAR equivalents of these same two
+	 *  colours - (0.00516, 0.01002, 0.00515) and (0.34934, 1.00000, 0.34770) - would drop the
+	 *  light end from byte 255 to 160 and the dark end from 26 to 3: a visibly much darker
+	 *  map, from literals that look perfectly plausible in a diff. ⛔ Do not convert these.
+	 *  ⛔⛔ AND THE OVERLAY TINTS ABOVE (MarkerColor, MineIconTint, AncientGroundIconTint, the
+	 *  team accessors) ARE THE OPPOSITE - TRUE LINEAR - because Slate sRGB-encodes a tint at
+	 *  draw time. TWO SPACES, ONE TYPE, ONE FILE. The full argument is at the POI-tint block
+	 *  above; ⛔ never copy a value between the two families.
+	 *
+	 *  ⭐ MEASURED, ⛔ NEVER PICKED BY EYE (WM-§8b). Sampled from
+	 *  /Game/Materials/Instances/MI_BattlefieldGround - the material actually on ArenaGround,
+	 *  ⛔ not a swatch - and cross-checked byte-identical against /Game/Materials/M_HillGrass,
+	 *  the terrain at the ramp's HIGH end, so field and hills are the same green and there is
+	 *  no seam. Method, sample counts and provenance: handoffs/TASK-721-artist.md §0-§1.
+	 *  ⭐ BOTH ENDS ARE ONE COLOUR AT TWO LUMINANCES: the identical display-space chromaticity
+	 *  C = (0.6257, 1.0000, 0.6243), scaled by 0.10 and by 1.00. Since
+	 *  Lerp(C*0.10, C*1.00, B) = C * Lerp(0.10, 1.00, B), HUE AND SATURATION ARE CONSTANT AT
+	 *  EVERY POINT ON THE RAMP BY CONSTRUCTION and only VALUE moves - which is the whole of
+	 *  WM-§8b - while the luminance curve stays byte-identical to the gray ramp this replaced
+	 *  (WM-§8a: the ramp's COLOUR changed, the relief's SHAPE did not).
+	 *
+	 *  ⛔ NOT pitch black at the dark end, for the reason the retired scalar gave: the flat
+	 *  field floor must still read as "map" against the letterbox outside the rect, and
+	 *  WM-§4 already darkens the WBP panel toward near-black - a 0.0 floor would make the two
+	 *  indistinguishable. Widget CHROME in exactly the MarkerColor sense above: height is not
+	 *  a team, so this is deliberately not the team palette.
+	 *
+	 *  As bytes, for the reader who wants them: dark (16, 26, 16), light (160, 255, 159).
 	 */
-	static constexpr float ElevationFloorLuma = 0.10f;
+	static const FLinearColor ElevationGrassDark  = FLinearColor(0.0626f, 0.1000f, 0.0624f, 1.00f);
+	static const FLinearColor ElevationGrassLight = FLinearColor(0.6257f, 1.0000f, 0.6243f, 1.00f);
 
 	/**
 	 *  The trace bracket, ±uu around Z=0 — COPIED from the shipped ground-trace idiom
@@ -853,6 +925,47 @@ float UWarMapWidget::HeightToBrightness(float HitZ, float GroundZ, float ReliefC
 	return FMath::Clamp((HitZ - GroundZ) / SafeCeiling, 0.f, 1.f);
 }
 
+FColor UWarMapWidget::BrightnessToRampColor(float Brightness)
+{
+	// Total for any input. HeightToBrightness (the only shipped caller) already returns a
+	// clamped [0,1], but this seam is public and tested independently, so it does not trust
+	// its caller - the shipped defensive idiom, one line.
+	const float T = FMath::Clamp(Brightness, 0.f, 1.f);
+
+	// ⭐⭐ THE LERP IS IN DISPLAY (sRGB) SPACE, PER CHANNEL - the SAME arithmetic the gray
+	// ramp shipped with, with three channels instead of one luma repeated three times.
+	// ⛔⛔ DO NOT "IMPROVE" THIS by converting to linear, lerping there, and converting back.
+	// Both endpoints are ONE chromaticity C at {0.10, 1.00}, so Lerp(C*0.10, C*1.00, T) =
+	// C * Lerp(0.10, 1.00, T): hue and saturation are constant along the ramp BY
+	// CONSTRUCTION and the luminance curve is byte-identical to the gray ramp this replaced
+	// (WM-§8a). A LINEAR-space lerp would move the ramp's midpoint from display 0.55 to 0.73
+	// and visibly redistribute where the relief reads - a change WM-§8a forbids, from an
+	// edit that would look like a correctness fix.
+	const float R = FMath::Lerp(SiegeWarMap::ElevationGrassDark.R, SiegeWarMap::ElevationGrassLight.R, T);
+	const float G = FMath::Lerp(SiegeWarMap::ElevationGrassDark.G, SiegeWarMap::ElevationGrassLight.G, T);
+	const float B = FMath::Lerp(SiegeWarMap::ElevationGrassDark.B, SiegeWarMap::ElevationGrassLight.B, T);
+
+	// ⛔ ROUND-AND-CAST, ⛔ NEVER FLinearColor::ToFColor(true): these floats are ALREADY
+	// sRGB-encoded (the constants' declaration says why at length), so ToFColor(true) would
+	// encode them a SECOND time. This is the shipped `RoundToInt(Luma * 255.f)` line,
+	// unchanged except that it now runs three times.
+	const auto ToByte = [](float Channel) -> uint8
+	{
+		return static_cast<uint8>(FMath::Clamp(FMath::RoundToInt(Channel * 255.f), 0, 255));
+	};
+
+	// ⚠️ CHANNEL ORDER, STATED BECAUSE A PER-CHANNEL REWRITE IS EXACTLY WHERE IT GETS
+	// TRANSPOSED: FColor's CONSTRUCTOR takes R, G, B, A in that order, while its MEMORY
+	// layout is B, G, R, A (little-endian) - which is what makes the Memcpy into
+	// PF_B8G8R8A8 correct downstream (the comment at that Memcpy says so). Both facts are
+	// true and they are not in conflict: the ctor names channels, the memcpy copies members.
+	// ⛔ DO NOT verify the order against the ramp's own pixels - the dark end (16, 26, 16) is
+	// SYMMETRIC in R and B and the light end (160, 255, 159) differs by ONE byte, so an R/B
+	// swap hides there. Verify against this comment (and the suite's G-dominance claim,
+	// which catches an R/G or G/B swap outright).
+	return FColor(ToByte(R), ToByte(G), ToByte(B), 255);
+}
+
 void UWarMapWidget::EnsureElevationBake()
 {
 	UWorld* const World = GetWorld();
@@ -1078,13 +1191,12 @@ bool UWarMapWidget::BakeElevationTexture()
 			++AboveCeilingCount;
 		}
 
-		// The pure seam owns the RAMP; this line owns only the SCREEN mapping of its two
-		// ends (ElevationFloorLuma..white). Kept out of HeightToBrightness so the pinned
-		// three-parameter signature stays exactly the WM-§2 signature (SC-§33).
-		const float Luma = FMath::Lerp(SiegeWarMap::ElevationFloorLuma, 1.f, Brightness);
-		const uint8 LumaByte = static_cast<uint8>(FMath::RoundToInt(Luma * 255.f));
-
-		Pixels[SampleIndex] = FColor(LumaByte, LumaByte, LumaByte, 255);
+		// TWO seams, and the split is the point (WM-§2, restated by WM-§8a): HeightToBrightness
+		// above owns the ramp's SHAPE, BrightnessToRampColor owns its SCREEN MAPPING. TASK-722
+		// turned this ramp from gray to green by changing ONLY the second one - the first is
+		// byte-identical to the day it shipped, and its pinned three-parameter signature never
+		// had to move (SC-§33). Both are tested headlessly in Tests/SiegeWarMapTest.cpp.
+		Pixels[SampleIndex] = UWarMapWidget::BrightnessToRampColor(Brightness);
 	}
 
 	FTexturePlatformData* const PlatformData = Texture->GetPlatformData();
@@ -1117,8 +1229,11 @@ bool UWarMapWidget::BakeElevationTexture()
 	// this is the whole diagnostic surface of the feature, not spam. Figures, not vibes:
 	// TASK-689's editor verify and any playtest report land on a line that already answers
 	// "did it see the hills" (relief > 0) and "did the clamp fire where expected".
+	// ⚠️ The tail reads "clamped to the ramp's LIGHT END", ⛔ no longer "full white":
+	// TASK-722 made the ramp green, and a diagnostic a human reads while looking at a green
+	// map must not name a colour the map no longer contains.
 	UE_LOG(LogSiegeWarMap, Log,
-		TEXT("[WarMap] Elevation baked: %dx%d samples, %d hits, groundZ=%.1f, maxZ=%.1f (relief %.1f uu), ceiling=%.1f, %d texel(s) clamped full white."),
+		TEXT("[WarMap] Elevation baked: %dx%d samples, %d hits, groundZ=%.1f, maxZ=%.1f (relief %.1f uu), ceiling=%.1f, %d texel(s) clamped to the ramp's light end."),
 		GridX, GridY, HitCount, GroundZ, MaxHitZ, MaxHitZ - GroundZ, FMath::Max(ElevationReliefCeiling, 1.f), AboveCeilingCount);
 
 	return true;

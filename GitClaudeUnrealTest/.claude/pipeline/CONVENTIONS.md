@@ -4854,3 +4854,340 @@ Every ship ends with: the zip's **absolute path** + size · the config · **HEAD
 - ✅ **Machine-provable (automation tests, and they are required):** the row set is non-empty and covers every enumerated action · **every row's key label resolves through the layout accessor** (⛔ the test asserts *derivation*, not the letter `F`) · **the Dvorak case is exercised via the `KBD-§7` CVar** — the acceptance test flips the simulated layout and asserts the label CHANGES for a key that moves and HOLDS for one that does not · no row renders blank · `Escape` is not consumed.
 - 🧑 **Jonathan's part (⛔ not claimable by any agent):** it reads well, the descriptions are right, the detail pages are useful. **A clip through the footage lane (`FR-§`, `testvideo/` → `Tools/VideoReview/extract_frames.py` → `.claude/pipeline/footage/`) is a VALID instrument** for the acceptance sitting.
 - ⛔ **No agent may claim the overlay "looks right" from a property readback** (`AS-§6` A(e)).
+
+---
+
+## ⚖️ WM-§8 — THE GREEN ELEVATION RAMP (2026-08-30) — AMENDMENT TO `WM-§2`, ⛔ NOT A NEW NAMESPACE
+
+📌 **This is a WM-§ amendment because it changes ONE property of a shipped WM-§ feature: the ramp's COLOUR.** ⛔ A colour change to an existing feature does not earn a namespace. Cite as `WM-§8`.
+
+**Trigger — Jonathan's directive, verbatim (2026-08-30):** *"notice with the map that the entire thing is black and turns to white with higher elevation locations, lets instead make it to where the entire map is green and goes from darker green to lighter green as elevation increases, try to make the green match as closely to the grass as possible."*
+
+### WM-§8a ⛔⛔ WHAT DOES **NOT** CHANGE — THE WHOLE OF `WM-§2` SURVIVES BYTE-FOR-BYTE
+
+- ⛔ **`HeightToBrightness(HitZ, GroundZ, ReliefCeiling)` IS UNTOUCHED** — same file, same `public` plain-static form, **exactly three parameters, none defaulted** (`SC-§33`), same `WM-§2` normalization, same clamp. **It returns a normalized `[0..1]` scalar and it always will.** ⚖️ **The ramp's COLOUR is not the ramp's SHAPE**, and `WM-§2` already put the shape behind a pinned pure seam precisely so a presentation change would not have to move it.
+- ⛔ **UNCHANGED:** the 130×60 runtime trace bake · `ElevationGridX/Y` · `ElevationReliefCeiling = 1000` and its measured derivation · `ECC_WorldStatic` · the cache/sentinel discipline · the once-per-match cost class · the draw order (lowest native layer) · `FSiegeWarMapProjection` and the `WM-§7` flip · ⛔ no `.uasset`, ⛔ no editor bake, ⛔ no new WBP.
+- **The ENTIRE code change is the two-line screen mapping at `WarMapWidget.cpp:1084-1087`** — today `FMath::Lerp(ElevationFloorLuma, 1.f, Brightness)` into a gray `FColor(L,L,L,255)`. It becomes a lerp between two **named colour constants** and a per-channel write. ⚖️ **The mapping stays OUT of `HeightToBrightness` for exactly the reason `WM-§2` put it out there.**
+
+### WM-§8b ⛔⛔ THE GREEN IS **MEASURED FROM THE SHIPPED GRASS**, ⛔ NEVER PICKED BY EYE
+
+> ### ⛔ **"MATCH THE GRASS AS CLOSELY AS POSSIBLE" IS A MEASUREMENT INSTRUCTION. A COLOUR THAT NOBODY SAMPLED IS A COLOUR NOBODY CAN DEFEND, AND THE HANDOFF MUST NAME THE SAMPLE SOURCE.**
+
+- ⭐ **THE SAMPLE SOURCE IS PINNED AND IT IS THE ASSET ACTUALLY ON THE GROUND: `/Game/Materials/Instances/MI_BattlefieldGround`** — the material instance applied to the `ArenaGround` actor (evidence: `.claude/pipeline/M6.5-BATTLEFIELD-CHECKPOINT.md:12`, *"grass ground material, applied to `ArenaGround`"*). ⛔ **Not `M_Grass`, ⛔ not the `Realistic_Grass_and_plant` pack, ⛔ not a Google swatch** — the pack is a vendor drop; `MI_BattlefieldGround` is what the player's eye is actually comparing against.
+- **CROSS-CHECK, REQUIRED, ⛔ NOT OPTIONAL: `/Game/Materials/M_HillGrass`** — the material on the HILLS, i.e. the terrain at the ramp's HIGH end. It was authored to *"match `M_BattlefieldGround`"* (TASK-249). **Both samples go in the handoff.** If they disagree materially, that disagreement is a FINDING and it is reported, ⛔ not averaged away in silence.
+- **HOW TO SAMPLE, so the number is reproducible:** the effective base colour as seen — the MI's base-colour/tint parameter where one exists, otherwise the **area-average of the base-colour texture** it samples. **The handoff states the asset, the parameter or texture, the method, and the resulting LINEAR RGB.** ⚖️ *A number whose derivation is not written down will be re-derived differently by the next person.*
+- ⛔⛔ **THE HUE IS THE GRASS'S; ONLY VALUE MOVES.** The two ramp ends are the SAME measured grass colour at two luminances — **hue and saturation PRESERVED from the sample, only value/luminance varies.** ⇒ his *"darker green → lighter green"* is satisfied **monotonically and by construction**, and *"match the grass"* is satisfied at every point on the ramp, not just one end. ⛔ **Two independently-chosen greens is REFUSED** — it reintroduces exactly the by-eye pick this clause exists to forbid.
+
+### WM-§8c ⚠️ LEGIBILITY IS AN ACCEPTANCE CRITERION, AND THE REAL COLLISION IS ⛔ NOT THE ONE THAT WAS FEARED
+
+- **Every overlay drawn ON the elevation layer is re-checked against the new background. The full list, read at source (`WarMapWidget.cpp`):**
+
+  | Overlay | Colour | Source | Risk on green |
+  |---|---|---|---|
+  | POI icon glyphs | WHITE-on-transparent, tinted at draw | `WM-§1` | ✅ **IMPROVES** — today's top end is **pure white**, so white-on-white is the *current* near-collision; any green top end is strictly better |
+  | ⚠️ **Ancient-ground icon** | **`(0.62, 0.93, 0.66)` — "pale verdant"** | `:167` | ⛔⛔ **THE REAL COLLISION. It is a PALE GREEN, chosen against a GRAYSCALE background. On a green ramp it can vanish at the light end.** |
+  | Mine icon | `(1.00, 0.72, 0.18)` gold | `:166` | ✅ complementary to green, low risk |
+  | Marker / outline / label | `(1.00,0.86,0.45)` / `(0.02,0.02,0.03)` / `(0.97,0.94,0.86)` | `:129-131` | low risk, still measured |
+  | Ally / enemy dots | `GetDefaultBlueBarColor()` / `GetDefaultRedBarColor()` | `W4-R5`, `:1448-1449` | ✅ high hue separation from green |
+
+- ⭐ **THE ANCIENT-GROUND TINT IS THE FINDING THIS LAW EXISTS TO CATCH, AND IT WAS FOUND BY READING THE CODE, ⛔ NOT BY IMAGINING THE PICTURE.** ⚖️ **The correct repair, if the measurement says one is needed, is to RE-TINT THAT ICON — ⛔ never to pull the ramp off the grass colour Jonathan asked for.** A one-icon tint change is `WM-§1`'s own named-constant lever (*"ONE named neutral-tint constant per icon"*) and costs nothing.
+- ⚠️ **IF the measured ramp genuinely must shift to keep an overlay readable, that is a REAL FINDING and it is reported with its numbers** — ⛔ **it is NOT a licence to ignore the instruction.** The result must still be **green**, still **dark→light**, and still **anchored on the measured grass sample**; only the ramp's luminance ENDPOINTS may move, and the handoff says by how much and why.
+- ⛔ **NO AGENT MAY DECLARE THE MAP "READS WELL" FROM A PROPERTY READBACK** (`AS-§6 A(e)`). The machine part is the contrast arithmetic; the eye part is Jonathan's.
+
+### WM-§8d ⛔⛔ THE DISPLAY/GAMEPLAY FIREWALL — RESTATED BECAUSE THIS BATCH SHIPS A GAMEPLAY ELEVATION RULE ON THE SAME DAY
+
+> ### ⛔⛔ **THE WAR MAP'S ELEVATION BAKE IS A DISPLAY ARTEFACT WITH A 1,000 uu CLAMP. ⛔ NO GAMEPLAY CODE MAY EVER READ IT — NOT THE TEXTURE, NOT `HeightToBrightness`, NOT `ElevationReliefCeiling`.**
+
+- ⚠️ **WHY THIS CLAUSE IS WRITTEN DOWN RATHER THAN ASSUMED:** `HIGH-§` (this same batch) introduces a **gameplay** elevation rule, and the two features share a word. **They share NOTHING else.** The bake **clamps at `GroundZ + 1000`** — every hit above it reads identical. ⇒ **A gameplay rule reading it would silently stop scaling above 1,000 uu**, which is precisely where a tower or a tall hill lives, and it would be **invisible in the ordinary case and wrong in exactly the case the feature exists for.**
+- ⚖️ **THAT IS `SHIP-§9`'s CLASS, VERBATIM — an instrument that answers correctly in the ordinary case and lies in the case that matters.** ⛔ **`HIGH-§` reads `GetActorLocation().Z` from live actors and nothing else.** A single `#include "WarMapWidget.h"` from a gameplay path is a **QA BLOCKER on sight**, and the reverse — `WarMapWidget` reading `HIGH-§`'s seam — is equally forbidden.
+
+### WM-§8e ⛔⛔ **`WarMapWidget.cpp` NOW HOLDS `FLinearColor` CONSTANTS IN *TWO DIFFERENT COLOUR SPACES* — DELIBERATELY. ⛔ DO NOT "CORRECT" EITHER INTO THE OTHER** (recorded 2026-08-30, from TASK-721/722)
+
+> ### ⚠️⚠️ **THE TYPE IS THE SAME. THE SPACE IS NOT. `FLinearColor` IS A CONTAINER OF FOUR FLOATS AND IT ⛔ DOES NOT ENFORCE ITS OWN NAME.**
+
+| Family | Space | Why it must be that space | Fate of the value |
+|---|---|---|---|
+| **Elevation ramp** — `ElevationGrassDark` `(0.0626, 0.1000, 0.0624)` · `ElevationGrassLight` `(0.6257, 1.0000, 0.6243)` | ⭐ **sRGB-ENCODED (display)** | they are lerped per channel and then `RoundToInt(x × 255)` into the **bytes of an `SRGB=true` texture** — the hardware decodes on sample, so the bytes must already be encoded | becomes texture bytes `(16,26,16)` / `(160,255,159)` |
+| **Slate icon tints** — e.g. `AncientGroundIconTint` `(0.04, 0.22, 0.09)` | ⭐ **TRUE LINEAR** | **Slate encodes at draw.** A display-encoded float handed to a Slate tint is encoded twice | drawn directly by Slate |
+
+- ⛔⛔ **"CORRECTING" EITHER FAMILY INTO THE OTHER SHIPS A VISIBLY WRONG MAP THAT REVIEWS AS FIXED.** ⚠️ **The failure is silent in code review and silent in every property readback** — it compiles, it renders, and it looks like a deliberate colour choice. **A linear-space lerp of the ramp lands the midpoint ~46 bytes high on green** (byte **186** instead of **140**), i.e. a map whose relief curve is wrong everywhere except the two ends.
+- ⭐ **THE SHIPPED DETECTOR, so this is not left to vigilance:** the ramp's midpoint byte must equal the **average of the two end bytes** on all three channels (±1). ⭐ **That single assertion catches the colour-space error on every channel at once**, and it is the reason the test exists. ⛔ **Do not weaken it into a range check.**
+- ⛔ **NO `FLinearColor::ToFColor(true)`, ⛔ no `sRGBToLinear`, ⛔ no `Pow(x, 2.2)` on the ramp path** — any of them is a double-encode.
+- ⚠️ **The DO-NOT-TYPE linear column for the ramp — `(0.00516, 0.01002, 0.00515)` / `(0.34934, 1.00000, 0.34770)` — exists in this repo ONLY inside the comment that forbids it.** ⛔ It is never a value. ⭐ *A tempting wrong number is safest when it is written down and labelled, ⛔ not when it is left for someone to re-derive.*
+- ⚖️⛔ **THIS IS THE SAME CLASS AS THE INERT INI KEY AND THE `152.4`-NOT-`5` TRAP: A PLAUSIBLE-LOOKING VALUE IN THE RIGHT-LOOKING TYPE THAT IS WRONG IN A WAY REVIEW CANNOT SEE.** ⇒ **Every colour constant in this file states its space at its declaration, and any new one must.** ⛔ **A colour constant whose space is not written beside it is not shippable.**
+
+---
+
+## ⚖️ HIGH GROUND — tripled ranged reach + the elevation damage bonus (2026-08-30) — namespace **HIGH-§**
+
+📌 **BORN WITH ITS NAMESPACE PREFIX (`HIGH-§N`)**, per the `KBD-§`/`NAV-§`/`WM-§`/`PKG-§`/`SHIP-§`/`HELP-§` precedent. Cite as `HIGH-§2`, never a bare `§2`.
+
+**Trigger — Jonathan's directive, verbatim (2026-08-30):** *"lets give all archers and wizards and range units increased range. Triple the range of their attacks and make their attacks deal more damage the higher elevation they are. I would say that for every 5 feet that their elevation increases, their damage multiplier increases by 10%."*
+
+### HIGH-§1 ⭐⛔⛔ THE UNIT CONVERSION — PINNED ONCE, WITH THE ARITHMETIC SHOWN, SO ⛔ NOBODY RE-DERIVES IT
+
+> ### ⭐ **"5 FEET" IS NOT AN ENGINE UNIT. UNREAL IS CENTIMETRES, AND 1 uu = 1 cm.**
+> ### **1 ft = 30.48 cm (exact, by international definition).**
+> ### **5 ft = 5 × 30.48 = **152.4 cm** = ⭐ **152.4 uu**.**
+
+- ⛔⛔ **`152.4` IS THE ONLY NUMBER. ⛔ NOT 150 ("close enough"), ⛔ NOT 152, ⛔ NOT 5 (feet-as-units), ⛔ NOT 500.** ⚠️ **A silent guess here is a 3× design error and it would be invisible in review** — `150` looks like a designer's round number and is wrong by 1.6%; `5` is wrong by **30×** and would make every unit on the field a god.
+- **It ships as ONE named, commented, `EditDefaultsOnly` constant** carrying the arithmetic in its comment — **`HeightBonusStepUU = 152.4f`** — and ⛔ **no second literal of it exists anywhere in the codebase.** The bonus per step ships beside it as **`HeightBonusPerStep = 0.10f`** (= his 10%).
+- ⭐ **THE TUNABLE IS THE POINT: he chose 5 ft and 10% in feet, in prose.** Both are `EditDefaultsOnly` so his next sentence retunes them **without a code change** — and the comment tells the next reader *why* the number is 152.4 and not 150, so a future "tidy-up" cannot round it away.
+
+### HIGH-§2 ⚖️ "THE HIGHER ELEVATION **THEY** ARE" — RELATIVE TO **WHAT**? THE PROCEEDING DEFAULT, AND WHY
+
+⚠️ **His sentence reads two ways and the difference is enormous. It is RULED, ⛔ not blocked on.**
+
+- ⛔ **(b) ABSOLUTE WORLD Z — REFUSED as the default.** It makes a unit on a hill hit harder than a unit at sea level **even when both are shooting a target standing beside them on that same hill**, and it makes the bonus depend on where the level designer put Z=0. ⚖️ *That is not what "high ground" means to anybody who has played a game.*
+- ✅⭐ **(a) HEIGHT ABOVE THE TARGET — THIS IS THE DEFAULT.** `ΔZ = AttackerZ − TargetZ`. **The bonus applies ONLY when `ΔZ > 0`**; level ground and shooting UPWARD both give **exactly ×1.0**. ⛔ **NO penalty for low ground — he asked for a bonus, and inventing a malus is inventing a mechanic.**
+- **The formula, pinned:** `Multiplier = 1 + HeightBonusPerStep × max(0, ΔZ) / HeightBonusStepUU` — ⭐ **CONTINUOUS (linear), ⛔ not stepped.** ⚖️ **Why continuous:** a stepped rule puts invisible breakpoints on a hillside that the player cannot see, cannot aim for, and cannot learn; a 1-uu step flipping damage by 10% is worse feel and harder to test. **Both readings are defensible English; continuous is the better game.** 🧑 **Rulable by Jonathan in one word.**
+- ⛔ **BOTH Z VALUES COME FROM `GetActorLocation().Z`, on both sides, no exceptions.** ⚠️ **The known consequence, stated rather than discovered later: a large-footprint target (a castle) reports its ORIGIN Z, which sits at its base.** Same convention on both sides is what makes the difference meaningful; a mixed convention (origin vs. capsule vs. bounds) is how a sign error hides.
+- ⛔⛔ **IT IS SELF-LIMITING BY CONSTRUCTION AND THAT IS THE WHOLE ARGUMENT FOR (a):** a unit on a tower shooting a unit on the same tower gets **nothing**. The bonus is *height advantage*, which is what he pictured.
+
+### HIGH-§3 ⛔ THE ONE SEAM — ⛔ NEVER A SPECIAL CASE FOR TOWERS, AND ⛔ NEVER A SECOND COMPOSE POINT
+
+- ⭐ **THE INSERTION POINT IS ALREADY BUILT AND IT WAS FOUND AT SOURCE: `ASummonedUnit::ComputeOutputDamage(const AActor* Target)` (`SummonedUnit.cpp:3206`).** It already takes the Target, it already composes Charge · Slayer · War-Banner aura · Ancient-Grounds permanent boost in **ONE place**, and its own comment states the contract: *"this ONE insertion covers BOTH delivery modes — melee … and ranged … and every keyword unit, because they all funnel through this function."* ⇒ **The elevation bonus is COMPOSE POINT 3 and it goes here.** ⛔ **A second compose point anywhere is a QA BLOCKER.**
+- ⭐ **THE ARITHMETIC IS A PINNED PURE SEAM** (the `WM-§2`/`HeightToBrightness` precedent — a testability obligation gets a testability seam): `static float ASummonedUnit::HeightAdvantageMultiplier(float AttackerZ, float TargetZ, float StepUU, float BonusPerStep);` — **`public`, plain C++ static, ⛔ NOT a `UFUNCTION`, exactly four parameters, none defaulted (`SC-§33`)**, no world access, no actor access, trivially testable headlessly.
+- ⛔⛔ **THE RULE READS THE WORLD'S REAL HEIGHT AND ⛔ NOTHING ELSE. THERE IS NO `bIsOnATower` FLAG, NO TOWER QUERY, NO OCCUPANCY LOOKUP, NO `#include` OF ANY TOWER HEADER.** ⚖️ **A unit on a hill and a unit on a tower at the same Z must deal identical damage.** ⭐ **This is what makes `TOWER-§` work for free: the tower grants elevation by BEING TALL, and the damage rule never learns it exists.** A tower special case would guarantee that hills and towers eventually disagree.
+- ⛔ **⛔ AND IT NEVER READS THE WAR MAP** — `WM-§8d`, which is `SHIP-§9`'s class. `GetActorLocation().Z` from live actors, full stop.
+
+### HIGH-§4 ⚖️ WHO GETS IT — THE RANGED SET IS **ENUMERATED FROM THE DATA**, ⛔ NEVER GUESSED
+
+- ⭐ **THE SELECTOR, PINNED: `bRanged == true` AND `CardType == Unit`.** Read from `Docs/Data/cards.csv` (2026-08-30), the shipped set is **EXACTLY THREE**:
+
+  | CardID | Cost | Damage | **Range (shipped)** | **Range (×3)** | Note |
+  |---|---|---|---|---|---|
+  | **Archer** | 12 | 10 | **700** | **2,100** | |
+  | **Wizard** | 24 | 15 | **700** | **2,100** | `AoERadius 250` — ⛔ **UNCHANGED**, splash is not reach |
+  | **Longbowman** | 18 | 18 | **1,200** | **3,600** | |
+
+- ⛔ **NOT IN THE SET, each with its reason, so nobody re-litigates it:**
+  - **ArrowTower (900) · BombTower (800) · BallistaTower (1,400)** — `bRanged=true` but **`CardType == Building`. They are ⛔ NOT UNITS**, and his sentence says *"archers and wizards and range units."* **Proceeding default: towers are UNCHANGED.** 🧑 **One-word overrule available (`HIGH-§7` row R-2).**
+  - **CrystalTower** — `bRanged=false`, and its attack is an **instant chain zap, not a projectile**. Not a unit either.
+  - **Cleric (Range 400)** — `bRanged=false`; that Range is a **HEAL radius on a unit that cannot attack** (`Profile=Support`). ⚠️ **Tripling it would triple a HEAL, which he did not ask for.** ⛔ UNCHANGED.
+  - **Sorcerer** — cannot attack (Range 0). **Hero (`AHeroCharacter`)** — melee, separate damage path, ⛔ not an `ASummonedUnit`. **All melee units** — Range 120 is contact reach.
+- ⭐ **THE SAME THREE-CARD SET GETS THE ELEVATION BONUS, and it is gated by the ALREADY-SHIPPED `bRangedAttack` member** (`SummonedUnit.cpp:1197`, bound from `Row->bRanged`) — ⛔ **not by a new CardID list, ⛔ not by a hardcoded name check.** ⚖️ **A future ranged card inherits both behaviours from its own data row and needs zero code.** ⛔ Melee units get **×1.0**, unconditionally.
+
+### HIGH-§5 ⛔⛔ NO CAP IS INVENTED — BUT THE WORST CASE IS **COMPUTED AND HANDED TO HIM**
+
+- ⛔ **HE DID NOT ASK FOR A CAP AND ⛔ ONE IS NOT ADDED.** ⚖️ *Inventing a ceiling he did not request is silently softening his number, which is the same sin as not tripling the range.*
+- ⭐ **THE COMPUTED WORST CASES, so a cap is HIS decision made with figures rather than a surprise at playtest** (all at +10% per 152.4 uu, **additive and uncompounded** — the plain reading):
+
+  | Height advantage ΔZ | Arithmetic | Multiplier |
+  |---|---|---|
+  | 152.4 uu (his 5 ft) | 1 + 0.10×1 | **×1.10** |
+  | ~1,000 uu — the tallest shipped hill crown (`ElevationReliefCeiling`'s measured derivation) | 1 + 0.10×(1000/152.4) = 1 + 0.6562 | **×1.656 (+65.6%)** |
+  | ~1,200 uu — `TOWER-§`'s proposed platform, on flat ground | 1 + 0.10×7.874 | **×1.787 (+78.7%)** |
+  | ~2,200 uu — **the tower ON a tall hill, target in a valley** | 1 + 0.10×14.435 | ⚠️ **×2.44 (+144%)** |
+  | ~8,000 uu — a castle shell, if a unit ever reached one | 1 + 0.10×52.49 | ⛔ **×6.25** — theoretical; ⛔ no unit can stand there today |
+
+- ⚠️ **THE ONE TO ACTUALLY WATCH IS ×2.44** (tower on a hill). ⭐ **A Longbowman there deals `18 × 2.44 = 43.9` per shot at 3,600 range against a target that, if it is another Longbowman on flat ground, cannot reach it at all.** **That is the stacking case, it is stated before he plays it, and it is his to cap or keep.**
+- **If he later wants one, the sanctioned shape is ONE `EditDefaultsOnly` `HeightBonusMaxMultiplier` (0 = uncapped, the shipped default), ⛔ not a magic number in the formula.**
+
+### HIGH-§6 ⚠️ THE CONSEQUENCES OF ×3 RANGE — MEASURED AGAINST THE REAL ARENA, ⛔ NOT ASSERTED
+
+- **The arena is BIGGER than the number sounds** (`USiegeScatterConfig::ArenaHalfExtent = (26000, 12000)` ⇒ **52,000 × 24,000 uu**; castles at **X = ±25,000**, i.e. **50,000 uu apart**). ⇒ **Longbowman at 3,600 covers 7.2% of the castle-to-castle line and 15% of the field's width.** ⭐ ⛔ **"They will hit across most of the arena" is FALSE, and it is worth telling him so** — the M7.6 10× scale-up absorbs most of the ×3.
+- ⚠️⚠️ **THE REAL CONSEQUENCE, AND IT IS SEVERE: EVERY DEFENSIVE TOWER IN THE GAME IS NOW OUTRANGED BY A UNIT IT CANNOT ANSWER.**
+
+  | Defender | Range | vs Archer 2,100 | vs Longbowman 3,600 |
+  |---|---|---|---|
+  | ArrowTower | 900 | outranged **2.3×** | outranged **4.0×** |
+  | BombTower | 800 | outranged **2.6×** | outranged **4.5×** |
+  | CrystalTower | 800 | outranged **2.6×** | outranged **4.5×** |
+  | BallistaTower | 1,400 | outranged **1.5×** | outranged **2.6×** |
+
+  ⇒ **A stationary archer can demolish any tower card for free.** Towers stop being defence. ⛔ **This is NOT softened — he said triple.** ✅ **It is STATED, with the fix he might want (triple the towers too) offered as `HIGH-§7` row R-2.**
+- ⚠️ **AI ENGAGEMENT DISTANCES CHANGE.** Ranged units halt and open fire from 3× further out; the bot's approach logic was tuned against the shipped ranges. ⛔ **This is a WATCH ITEM for his playtest, ⛔ not a speculative fix task** — no observation exists yet, and boarding a repair for an unobserved symptom is guessing.
+- ✅ **The castle itself has NO attack loop** (`ATower` is the only auto-firing actor — `Tower.h:13-24`), so ⛔ there is no "outranging castle defences" interaction to fear. **The range task re-confirms this in one grep and declares it.**
+
+### HIGH-§7 📌 THE FOR-JONATHAN ROWS THIS LAW OWES (all proceeding defaults — work does ⛔ NOT stop for them)
+
+| Row | Question | **Proceeding default** |
+|---|---|---|
+| **R-1** | Bonus relative to the TARGET (a) or absolute world Z (b)? | ✅ **(a) above the target, bonus only when positive** (`HIGH-§2`) |
+| **R-2** | Do the three ranged **TOWERS** get ×3 range too? | ⛔ **No — units only.** They are buildings, not units |
+| **R-3** | Cap on the elevation bonus? | ⛔ **None** — uncapped; worst case ×2.44 stated (`HIGH-§5`) |
+| **R-4** | Continuous or stepped per 5 ft? | ✅ **Continuous (linear)** |
+| **R-5** | Does the **hero** get the bonus? | ⛔ **No** — melee, separate damage path |
+| **R-6** | Do **melee** units get a high-ground bonus? | ⛔ **No** — his sentence is about ranged attacks |
+
+### HIGH-§8 📌 BATCH SHAPE + M8
+
+- **ONE QA gate over the batch's code diffs · ONE compile · ONE commit (code + `cards.csv` + Content together) · then Jonathan plays it.**
+- ⛔⛔ **`Docs/Data/cards.csv` HAS EXACTLY ONE OWNER IN THIS BATCH** (the ×3 cells **and** `TOWER-§`'s new row land in the **same** task). ⚠️ **Two tasks editing one CSV is a board write-race and this batch does not run one.**
+- ⚠️ **A `cards.csv` edit is INERT until `/Game/Data/DT_Cards` is REIMPORTED** — an **editor** step, and therefore **build-master's at integration**, ⛔ never claimed done by the task that edits the text. **The reimport is an explicit integration acceptance line.**
+- 📌 **M8: ⛔ NO replicated property, ⛔ NO new class tier, ⛔ NO RPC.** The damage composition is server-authoritative exactly as every existing multiplier in `ComputeOutputDamage` already is; the range is a data row. **Each code handoff declares it.**
+
+---
+
+## ⚖️ THE CLIMBABLE TOWER — a 30-gold building ranged units ascend for height (2026-08-30) — namespace **TOWER-§**
+
+📌 **BORN WITH ITS NAMESPACE PREFIX (`TOWER-§N`).** Cite as `TOWER-§3`, never a bare `§3`.
+
+**Trigger — Jonathan's directive, verbatim (2026-08-30):** *"Also, lets add a climable tower as a building card, make the cost 30 gold, and any ranged unit can climb it, so you will have to rig a climbing animation for all the ranged units."*
+
+### TOWER-§0 ⭐⭐ THE MEASUREMENT THAT RESIZES THE WHOLE ASK — **THE RANGED UNITS DO NOT HAVE THREE RIGS. THEY HAVE ONE.**
+
+> ### ⭐ **"RIG A CLIMBING ANIMATION FOR ALL THE RANGED UNITS" COSTS **ONE** ANIMATION, ⛔ NOT THREE — AND THIS WAS VERIFIED IN THE CONTENT TREE, ⛔ NOT ASSUMED.**
+
+- **`SK_Archer`, `SK_Longbowman`, `SK_Wizard` are all bound to the SINGLE shared skeleton `/Game/Characters/SK_Footman_Skeleton`** (the 21-bone SiegeBiped rig), and **the entire rigged fleet shares ONE AnimBlueprint, `ABP_Footman`** (`SummonedUnit.cpp:60`; CONVENTIONS *"`ABP_Footman` is the ENTIRE rigged fleet's locomotion asset"*; corroborated at TASK-297/305). **The retarget chain already exists and is shipped: `IK_MeshyBiped` → `RTG_MeshyBiped_to_SiegeBiped` → `IK_SiegeBiped`.**
+- ⇒ ⭐ **ONE clip, authored once on the shared rig, named `A_SiegeBiped_Climb` per the existing shared-skeleton naming clause** (CONVENTIONS *"Shared-skeleton locomotion retargeted across several units may instead be authored once as `A_SiegeBiped_<Action>`"*), **covers all three units.** ⛔ **A per-unit `A_Archer_Climb` / `A_Longbowman_Climb` / `A_Wizard_Climb` set is REFUSED as redundant** — three clips on one identical rig for three near-identical silhouettes.
+- ⚖️ **THE HONEST RESTATEMENT OF THE COST, AND IT INVERTS THE OBVIOUS ASSUMPTION: the RIG is the CHEAP half. The EXPENSIVE half is the ASCENT MECHANIC** — a scripted ladder-mover, its state in the shared ABP, its interruption/death/destruction cases, and its interaction with `ACharacter` movement and the navmesh. ⭐ **That distinction is what lets a playable tower ship without a rig, and it is the reason this namespace is decomposed the way it is.**
+
+### TOWER-§1 ⛔⛔ THE SHIP-FIRST LAW — **A RIG MAY NOT BLOCK A PLAYABLE TOWER**
+
+> ### ⚖️ **THE TOWER'S REASON TO EXIST IS ELEVATION, AND `HIGH-§` DELIVERS ELEVATION WITH ⛔ ZERO ANIMATION WORK. THEREFORE THE CARD, THE STRUCTURE, THE ASCENT AND THE OCCUPANCY SHIP AND ARE PLAYTESTED FIRST; THE BESPOKE CLIMB CLIP FOLLOWS.**
+
+- ⛔ **THE RIG IS ⛔ NOT CANCELLED, ⛔ NOT DEFERRED INDEFINITELY, AND ⛔ NOT QUIETLY DROPPED. He asked for it; it stays the target.** ✅ **The only question this law settles is WHAT SHIPS FIRST**, and it is boarded as a real task with a real cost so it cannot be forgotten.
+- ⭐ **THE SHIP-FIRST SHAPE IS A WALKABLE RAMP, AND IT IS ⛔ NOT A HACK:** a unit **walks up** a ramp using `A_<CardID>_Walk`, **which all three ranged units already have**. It reads correctly — *a unit walking up a tower ramp IS climbing the tower* — it needs **no new animation, no ascent mechanic, no ABP edit, and no `ACharacter` movement override**, and `HIGH-§` grants the damage bonus from the unit's genuinely-higher `GetActorLocation().Z` with **zero tower-awareness** (`HIGH-§3`).
+- ⛔ **AN "INTERIM GARRISON/TELEPORT" IS REFUSED AS THE FIRST SHIP.** A unit snapping to a platform is the thing that would look broken; **the ramp looks correct on day one** and — ⭐ **decisively** — **the ramp is not thrown away when the climb clip lands.** ⚖️ *Ship-first work that must be deleted to make room for the real feature is a detour; ship-first work the real feature builds on is a foundation.*
+
+### TOWER-§2 ⛔⛔ THE RAMP IS **ARITHMETIC**, ⛔ NOT AN ARTIST'S GUESS — DERIVED FROM THIS PROJECT'S OWN NAV CONFIG
+
+**All four agent figures are the project's own, quoted from `Config/DefaultEngine.ini:287-290` — *"AgentMaxStepHeight stays at the engine/project default 35.0"*, *"Agent radius/height/slope untouched (engine defaults 34/144/44)"* — plus `NavMeshResolutionParams[1]=(CellSize=32.0, CellHeight=20.0, AgentMaxStepHeight=35.0)` at `:340`.**
+
+| Nav parameter | Value | What it forces on the mesh |
+|---|---|---|
+| `AgentMaxSlope` | **44°** | ~~⛔ **The ramp must be under 44° or it is not walkable at all**~~ ⛔⛔ **STRUCK 2026-08-30 — 44° IS ⛔ NOT THE CEILING. THE REAL CEILING IS `atan(20/32)` = 32.005°** (`TOWER-§2a`). This setting only *marks* triangles walkable; Recast's ledge filter then runs **unconditionally** in voxels and shreds anything steeper. |
+| `AgentMaxStepHeight` | **35 uu** | ~~⛔⛔ **STAIRS ARE REFUSED. A 35 cm riser is unusably small at this scale — a stepped mesh will simply not generate a nav surface.**~~ ⛔ **THE REFUSAL STANDS; THE REASON WAS WRONG AND IS STRUCK** — a 35 uu riser most likely *would* generate (`rcFilterLowHangingWalkableObstacles` re-marks it). **Stairs are refused on COST: ~35 steps for 1,200 uu of rise** (`TOWER-§2a`). ⇒ **A SMOOTH RAMP, always.** |
+| `AgentRadius` | **34 uu** | needs > 68 uu of clear width; with `CellSize 32` voxelization, ⇒ ~~⭐ **RAMP WIDTH ≥ 200 uu**~~ **≥200 is a VALID FLOOR, REFINED ⛔ not refuted: the shipped deck is ⭐ 300 uu** — ledge + erosion cost **128 uu** (2 cells/side) whatever the width (`TOWER-§2a`) |
+| `AgentHeight` | **144 uu** | ⇒ ⭐ **vertical clearance over the walking surface ≥ 200 uu** — ⛔ **but ⛔ NOT because of the 144: `ASummonedUnit`'s REAL capsule is 176 uu tall** and the nav agent is **shorter than the actual unit** (`TOWER-§2a`) |
+
+- ~~⭐ **THE DERIVED GEOMETRY BUDGET** (platform height **1,200 uu** — `TOWER-§3`): at **40°** (a deliberate 4° margin under the 44° limit) the horizontal run is `1200 / tan(40°) = 1200 / 0.8391 =` **≈1,430 uu**. At a gentler **30°** it is `1200 / 0.5774 =` **≈2,078 uu**. **The mesh task picks inside `[1,430 … 2,080]` and states the slope it used.**~~
+  - ⛔⛔ **STRUCK 2026-08-30 (TASK-725's spike, measured at the engine source). 40° IS REFUTED AND THE RANGE IS WITHDRAWN — THE MESH TASK PICKS ⛔ NOTHING. THE SLOPE IS 30°, THE RUN IS 2,078 uu, AND BOTH ARE PINNED IN `TOWER-§2a`.** ⚖️ *The old bullet's arithmetic was right in every digit; the conclusion it licensed — "anything under 44° works, choose your margin" — was wrong, and a correct number reached through a wrong reason fails the moment the reason is tested.*
+- ✅⭐ **A SINGLE STRAIGHT EXTERNAL RAMP IS THE RULED SHAPE. A SPIRAL IS REFUSED FOR THE FIRST SHIP.** ~~⚖️ **Why, and it is a measurement not a preference:** `CellHeight = 20` is coarse, and a spiral passes **over itself** — flights closer than ~200 uu vertically risk Recast **merging the spans** into one unwalkable blob. **A straight ramp has ⛔ no self-overlap and therefore ⛔ no span-merge failure mode.**~~
+  - ⛔ **THE REFUSAL STANDS; THE SPAN-MERGE REASON IS STRUCK 2026-08-30 AS OVERSTATED** — Recast heightfields are **multi-span by design**, and a turn needs only the same ≥200 uu clearance the straight ramp already needs. ⭐ **THE REAL DISQUALIFIER IS GEOMETRIC AND IT IS WORSE THAN THE ONE WE FEARED: on a helix the INNER EDGE IS STEEPER THAN THE CENTRELINE.** To fit a 300 uu deck the outer radius must be ≥ ~350 uu, so a 30° centreline puts the inner edge **over the 32.005° ceiling** — shredded by the same ledge clause, **on the inside of the curve only, INVISIBLY.** ⚠️ *A failure that shows up as "some units sometimes don't make it up" is far more expensive than one that fails outright.*
+- ⛔ **THIS IS NOT A PREDICTION OF SUCCESS.** ⚠️ Whether Recast **actually** generates a walkable surface on a **runtime-spawned** ramp at this arena's coarsened settings is an **open question**, and it is answered by a **cheap diagnose-first spike from config + source arithmetic BEFORE any mesh is authored** — ⛔ never by authoring a tower and hoping. ⚖️ **The spike's ruling is the mesh task's specification.**
+  - ✅ **ANSWERED 2026-08-30 (TASK-725): it GENERATES. There is ⛔ NO code path in the generator that distinguishes a building from a hill** — `ABuilding::VisualMesh` (`BlockAll` + `SetCanEverAffectNavigation(true)`, `Building.cpp:47`/`:55`) and the scatter hills register in the same octree and go through the same rasteriser. **A wall "carves" because its faces are 90°, i.e. over `AgentMaxSlope`; a 30° face is under it and is therefore walkable. Same pass, same rules.** ⭐ **The shipped hills are the existence proof, and the whole no-rig path rested on this one claim.**
+
+### TOWER-§2a ⛔⛔ THE GEOMETRY LAW, **MEASURED** (2026-08-30, TASK-725's spike) — ⭐ **AND THE REASONS MATTER MORE THAN THE NUMBERS**
+
+> ### ⭐⭐ **THE REAL WALKABLE CEILING IS `atan(20/32)` = **32.005°**, ⛔ NOT THE 44° `AgentMaxSlope` SUGGESTS.**
+> ### ⚠️ **`AgentMaxSlope` ONLY *MARKS* TRIANGLES (`rcMarkWalkableTriangles`). `rcFilterLedgeSpans` THEN RUNS ⛔ UNCONDITIONALLY, IN VOXELS, AND IT IS THE BINDING CONSTRAINT.**
+
+- **The mechanism, so it can be re-derived rather than believed:** `rcFilterLedgeSpansImp`'s clause B nulls a span when `(asmax − asmin) > walkableClimb`. `walkableClimb = ceil(AgentMaxStepHeight / CellHeight) = ceil(35/20) =` **2 voxels**. Rise per cell at slope θ is `CellSize × tan(θ) = 32·tan(θ)` uu; span tops are `ceil()`-quantised, so once rise-per-cell exceeds **1 voxel** a step of 2 lands beside a step of 1 ⇒ sum **3 > 2** ⇒ the cell is **nulled**. ⇒ **survives iff `32·tan(θ) ≤ 20`, i.e. θ ≤ 32.005°.**
+- ⚠️⚠️ **AND THE PART THAT MAKES THIS A STANDING LESSON, ⛔ NOT A TOWER DETAIL: THE COARSENING FOR THE 10× ARENA SILENTLY DROPPED THE CEILING FROM 46.5° TO 32°, AND NOTHING HAS HIT IT BECAUSE EVERY SHIPPED HILL SITS AT 27°.** At engine-default cells (19/10) `walkableClimb = 4` and the ceiling is `atan(2×10/19) = 46.5°`, so the 44° cap genuinely bound and 40° was genuinely fine. **TASK-217's `CellSize 32 / CellHeight 20` moved it, and the three shipped hills measure 27.54° / 27.18° / 27.48°** (`handoffs/TASK-139-artist.md:28-30`) — comfortably under **both** ceilings. ⚖️ ***A latent constraint with no shipped case near it is invisible until the first case walks into it. The tower was going to be that case.*** ⭐ **The hill law's ≤30° was the right number for a stated reason (the 44° cap) that turns out to be the WRONG reason.**
+- ⚠️ **The engine ships a validator for exactly this (`RecastNavMeshGenerator.cpp:5309-5332`) and it stays SILENT here** — it checks only the *worst-case* slope (44° ⇒ `RequiredClimbVx = 2` vs `WalkableClimbVx = 2`), so it does not warn about the **mid-range** failure at 40°. **⛔ Do not treat engine silence as engine approval.**
+
+**THE PINNED BUDGET — ⛔ build targets, ⛔ NOT a range to interpret:**
+
+| Property | **Value** | Why this number, and ⛔ not the obvious one |
+|---|---|---|
+| **Ramp slope** | ⭐ **30.0°** | 7.6 % margin under the 32.005° ledge ceiling; and it is the angle this project has already built three times |
+| **Platform rise** | **1,200 uu** | `T-5` / `PlatformHeightUU` |
+| **Ramp run** | **2,078 uu** | `1200 / tan(30°)` |
+| **Ramp deck width** | ⭐ **300 uu**, ⛔ **not 200** | **nulling + erosion cost 128 uu** — the outer column dies to ledge clause A (the drop off the open side), then `rcErodeWalkableArea` takes one more (`walkableRadius = ceil(34/32) = 2`). **300 ⇒ 172 uu of surviving corridor; 200 ⇒ 72 uu, one noise cell from nothing.** Hard floor for any corridor at all: **160 uu** |
+| **Vertical clearance** | **≥ 200 uu** | ⭐ **driven by `ASummonedUnit`'s REAL 176 uu capsule** (engine `ACharacter` default 34 r / 88 half-height; the project never calls `InitCapsuleSize`, `SiegeSpawnConstants.h:9`), ⛔ **not by the nav agent's 144.** ⚠️ **The nav agent is SHORTER than the actual unit**, so Recast would happily generate nav under a ceiling a unit physically cannot pass |
+| **Structure** | ⭐ **SOLID WEDGE**, ⛔ **not a floating plank** | `ABuilding` does ⛔ **not** set `bFillCollisionUnderneathForNavmesh` (the scatter hills do). A thin deck lets Recast generate ground spans **underneath**, and `rcFilterWalkableLowHeightSpans` then nulls the ground within 160 uu of the underside — **punching a ring of missing ground nav around the ramp's low end.** A wedge removes the ground span and the artifact with it |
+| **Ramp→platform junction** | ⭐ **FLUSH, co-planar, ⛔ no lip** | **a step > 40 uu (2 voxels) SEVERS the connection.** ⚠️ This is the castle-floor defect class (35→61 hulls): every property readback correct, and nothing can climb it |
+| **Parapet, if any** | **OUTSIDE the 300 uu deck** | a rail **carved out of** the deck seeds erosion from its own face and costs another 2 cells per side |
+
+- ⛔ **STAIRS AND THE SPIRAL STAY REFUSED — ⭐ BUT BOTH ORIGINAL REASONS WERE WRONG, AND THE CORRECTED REASONS ARE RECORDED BECAUSE THAT IS THE WHOLE POINT:**
+  - **STAIRS** — ~~"a 35 cm riser will not generate a nav surface"~~ is **FALSE**: `walkableClimb` is 40 uu and `rcFilterLowHangingWalkableObstacles` is precisely the pass that re-marks a riser's top as walkable. ⇒ **Refused on COST AND FRAGILITY: 1,200 uu of rise at a sub-35 uu riser needs 35+ steps**, each with a tread deep enough to survive 64 uu/side erosion (≈130 uu) ⇒ a run of **≈4,550 uu, 2.2× the ramp**, for a far more expensive mesh — and at `CellHeight 20` a 34 uu riser is 1.7 voxels, so quantisation makes every step a coin-flip.
+  - **SPIRAL** — the span-merge reason is struck (see `TOWER-§2`); it fails because **a helix's inner edge is steeper than its centreline and breaches the 32.005° ceiling INVISIBLY**, on the inside of the curve only.
+- ⚖️⭐ **THE STANDING LESSON THIS SUB-SECTION EXISTS TO CARRY, AND IT IS WORTH MORE THAN THE BUDGET ABOVE:** ***a right answer held for a wrong reason fails the moment the reason is tested.*** **All three of this law's original geometry conclusions (ramp-not-stairs · straight-not-spiral · ≥200 width) survived the measurement. ⛔ Not one of their reasons did.** ⇒ **When a claim about engine behaviour is load-bearing, it is read at the engine source or it is not asserted** — `NAV-§5`'s *"an unverified engine assumption is how this feature got a 216-second navmesh in the first place"*, now proven a fourth time.
+- 📌 **The serialized-`L_Arena` trap was NEUTRALISED WITHOUT THE EDITOR, and the method is the record-worthy part:** the ini's values may never reach the placed `RecastNavMesh` actor (the reconciliation at `RecastNavMesh.cpp:963-1015` is gated on `IsVoxelCacheEnabled()`, which this project never enables ⇒ **the serialized values win and files alone cannot say which cell size the shipped level runs**). ⭐ **Rather than force the editor open, the spike checked the spec against BOTH configurations: 30° / 300 / 200 / 600×600 generates under BOTH; 40° is a coin-flip on an unresolved question.** ⚖️ *An unresolvable question can be made irrelevant instead of answered — and that asymmetry is on its own sufficient reason to refuse 40°.*
+- ⚠️ **THE REJECTED ALTERNATIVE, NAMED SO IT IS NOT RE-PROPOSED (`SC-§15`): flipping `LedgeSlopeFilterMode` to `UseStepHeightFromAgentMaxSlope`** would raise the cap to 4 voxels and make 40° legal. ⛔ **REFUSED: it is a GLOBAL generation change that would re-bake every hill, the castle floor and the whole arena — to buy a steeper ramp nobody asked for.**
+
+### TOWER-§3 📌 THE CARD — NAMES, STATS, AND WHERE EVERY NUMBER CAME FROM
+
+- **CardID `WatchTower`, DisplayName "Watch Tower".** Follows the shipped `<Name>Tower` family (`ArrowTower`, `BombTower`, `BallistaTower`, `CrystalTower`). 🧑 **A rename is CHEAP NOW and EXPENSIVE once art lands** — it is on his sheet as row T-1 for exactly that reason.
+- **The pinned asset family** — every name derived from the shipped convention, ⛔ none invented:
+  - `Docs/Data/cards.csv` row **`WatchTower`**
+  - C++ **`AClimbableTower : public ABuilding`** in `Source/GitClaudeUnrealTest/Siegebound/ClimbableTower.{h,cpp}`
+  - **`/Game/Blueprints/Buildings/BP_Building_WatchTower`** — ⛔ **the name is FORCED, not chosen**: `SiegePlayerController.cpp:3842` and `SiegeBotController.cpp:1570` both resolve `/Game/Blueprints/Buildings/BP_Building_<CardID>.BP_Building_<CardID>_C`. **A different name = the card silently does nothing.**
+  - **`/Game/Meshes/SM_WatchTower`** · **`/Game/Materials/Instances/MI_WatchTower_PBR`** · **`/Game/UI/CardArt/T_CardArt_WatchTower`** · raw `Content/RawAssets/WatchTower.fbx`
+- **The stat row, and the derivation of every cell:**
+
+  | Cell | Value | Why |
+  |---|---|---|
+  | `Cost` | **30** | ⭐ **Jonathan's, verbatim. ⛔ Not tuned by anyone.** |
+  | `CardType` | `Building` | his word ("a building card") |
+  | `HP` | **250** | ⭐ **Derived, ⛔ not guessed: Barracks is the other 30-gold non-weapon structure and has HP 250. Same cost ⇒ same HP.** |
+  | `Damage`/`Range`/`Cadence` | **0 / 0 / 0** | ⛔ **It does NOT auto-fire — he asked for a platform, not a turret.** `Cadence 0` also guarantees no timer ever arms (`ABuilding`'s `qa/TASK-021` WARN-1 law). |
+  | `bRanged` | **false** | ⛔⛔ **LOAD-BEARING: `true` would pull it into `HIGH-§4`'s `bRanged && Unit` selector logic and into any future ranged sweep.** It has no attack. |
+  | `DeckCount` | **0** | ⛔ **`sum(DeckCount)` must stay EXACTLY 50** (`UNCAP-§`/GDD §3.4). A non-zero cell would break the default deck's legality and force compensating edits elsewhere. |
+  | `MaxCopies` | **3** | inert for a Building since `UNCAP-§2` (hero-upgrade stack cap only); mirrors Barracks for consistency |
+
+- ⛔ **THE ROW CARRIES ALL 31 FIELDS AND ⛔ NO COMMA APPEARS INSIDE `Notes`** — `cards.csv` is unquoted, and a stray comma shifts every subsequent column silently.
+
+### TOWER-§4 ⚖️ THE FOUR BEHAVIOUR QUESTIONS — RULED WITH DEFAULTS, ⛔ NONE BLOCKING
+
+| Question | ⚖️ Ruling (proceeding default) | Why — and what it COSTS to have ruled this way |
+|---|---|---|
+| **Can ENEMIES climb it?** | ⛔ **No — own-team only.** ⭐ **Reuse the SHIPPED team-gating mechanism**, `ECC_SiegeTeamBlue`/`ECC_SiegeTeamRed` (`SiegeNavAreas.h`, the castle 3× hollow law). | ⛔ **No new mechanism is invented** — the castle already solves "enemies cannot walk in here" and it is proven in shipped play. |
+| **Ranged-only, or any own unit?** | ✅ **Any OWN-TEAM unit may walk up.** | ⚖️ His *"any ranged unit **can** climb it"* is a **permission**, not an exclusion. And a nav filter admitting 3 CardIDs while rejecting 8 is a **new failure mode** — a melee unit pathing toward a tower it may not enter is exactly the stuck-unit class `NAV-§` exists for. ⭐ **A melee unit on top gains nothing (`HIGH-§4`) and self-selects away, so the outcome is near-identical for a fraction of the risk.** |
+| **Capacity?** | ✅ **NO capacity counter. Physical space is the cap** — platform **600×600 uu**, agent radius 34 ⇒ comfortably 4–6 bodies. | ⭐ **An entire occupancy subsystem — a counter, a full/refuse state, its UI, its replication, its desync cases — is DELETED by choosing the ramp.** ⚖️ *The cheapest correct feature is the one whose bookkeeping does not exist.* |
+| **What happens to occupants when it dies?** | ✅ **They FALL and survive.** ⛔ No teleport, ⛔ no death, ⛔ no special case. | `ASummonedUnit : ACharacter` ⇒ CharacterMovement handles the fall, and **this project has ⛔ NO fall damage — ⭐ MEASURED, ⛔ not assumed (`TOWER-§4a`)**. ~~⚠️ **The named risk: a unit may land off-navmesh or wedged — and the `NAV-§` stuck watchdog ALREADY covers exactly that** (`SiegeStuckStatics`).~~ ⛔⛔ **STRUCK 2026-08-30 — THAT CLAIM IS FALSE. THE WATCHDOG COVERS NO SUCH THING.** The true residual, and the source measurement that refuted it, are in **`TOWER-§4a`**. ⛔ **No new recovery code** (still correct — for a different reason). 🧑 Row T-4: he may prefer occupants die with the tower — a dramatic choice, and his. |
+| **Does it block pathing?** | ✅ **Yes — automatically, with ⛔ zero work.** | `ABuilding` already roots `VisualMesh` with `BlockAll` + `bCanEverAffectNavigation(true)` (`Building.h:43-51`) ⇒ **the body is solid and carves the navmesh like every other building; the ramp is the walkable route.** |
+
+### TOWER-§4a ⛔⛔ THE STRUCK CLAIM — **THE `NAV-§` WATCHDOG DOES ⛔ NOT COVER A BAD LANDING**, AND THE TRUE RESIDUAL IN ITS PLACE (2026-08-30)
+
+> ### ⛔⛔ **THE FALSE CLAIM, QUOTED SO IT CANNOT BE RE-INTRODUCED BY MEMORY:** ~~*"a unit may land off-navmesh or wedged — and the `NAV-§` stuck watchdog ALREADY covers exactly that."*~~
+> ### ⚖️ **IT WAS WRITTEN IN TWO PLACES — THIS SECTION'S OWN CELL AND TASK-726'S BOARD SPEC §5 — AND IT WAS WRONG IN BOTH. BOTH ARE STRUCK, ⛔ NOT DELETED.**
+
+**⭐ WHAT WAS MEASURED, AT THE SOURCE, BEFORE THIS REPAIR WAS WRITTEN** (TASK-725 §8 raised it; ⛔ **the manager did not repair on a relay — every line below was re-read in the working tree**):
+
+1. ⛔ **THE LADDER NEVER TELEPORTS AND NEVER NAV-PROJECTS.** `FSiegeStuckStatics` is **pure by construction** — *"No `UWorld`, no `AActor`, no `UObject`, no engine singleton, no allocation, no logging, no RNG, no clock read"* (`SiegeStuckStatics.h:32-36`), and `ComputeSidestepGoal` states outright that its result *"is **NOT** nav-projected and is **NOT** guaranteed reachable, by design"* (`:237-241`).
+2. ⛔ **ITS THREE RUNGS ARE THE WHOLE MECHANISM, AND ⛔ NONE OF THEM MOVES A UNIT ANYWHERE IT COULD NOT ALREADY WALK** (`SummonedUnit.cpp:3065-3175`): **Sidestep** = one ordinary `EnterAdvanceToLocation` to a raw geometric point · **WidenAndRepath** = clear three latches so the *same* goal genuinely re-paths · **Abandon** = drop goal + target and **`EnterIdle()`**. ⭐ **The terminal rung is `EnterIdle()` — a stand-down.** ⛔ **There is ⛔ no `SetActorLocation`, ⛔ no `TeleportTo` and ⛔ no `ProjectPointToNavigation` anywhere in the lane** (grepped project-wide; `SummonedUnit.cpp`'s single `ProjectPointToNavigation` at `:2739` projects the **GOAL** — a structure's near wall face, `ResolveStructureMarchPoint`, TASK-349 — ⛔ never the unit's own position).
+3. ⭐⭐ **AND THE DECISIVE ONE — THE LADDER NEVER EVEN STARTS FOR A STRANDED UNIT.** Its gate is `bAdvancing = (AI != nullptr) && (AI->GetMoveStatus() != EPathFollowingStatus::Idle)` (`SummonedUnit.cpp:3026`) — *"this unit has an ACTIVE path-following request THIS poll."* **A unit standing off the navmesh has no live request, so `Evaluate` re-anchors and returns `None` for as long as it stands there** — the same clause that (correctly) stops the ladder "rescuing" units told to hold position.
+
+⇒ ⛔⛔ **THE WATCHDOG COVERS A UNIT STUCK **ON** THE NAVMESH. IT DOES ⛔ NOT COVER A UNIT STRANDED **OFF** IT.** ⚖️ *Those are not two degrees of one problem; they are opposite problems. The ladder's whole design assumes a live path request, and a stranded unit has none.*
+
+**✅ THE TRUE RESIDUAL, RECORDED IN THE FALSE CLAIM'S PLACE — ⛔ DECLARED, ⛔ NOT SOLVED:**
+
+- ⚠️ **A dead tower's occupants can land in a footprint whose navmesh has ⛔ NOT YET REGENERATED, and ⛔ NOTHING IN THIS PROJECT CURRENTLY RECOVERS THEM.** `RuntimeGeneration=Dynamic` rebuilds dirtied tiles over a real (short) window; for that window the landing zone carries no poly, and there is no recovery lane.
+- ⭐ **WHY IT IS STILL RIGHT TO SHIP NO RECOVERY CODE — and note the reason CHANGED even though the ruling did not:** it is low-likelihood (the landing zone is the ground the tower was *standing on*, which was navmesh before and becomes navmesh again within the rebuild window, and `UNavigationSystemV1` projects a move request's **start** point to the nearest poly), and ⛔ **the fix would be worse than the bug: a nav-projecting teleport is precisely the mechanism `NAV-§` deliberately refuses.**
+- ⛔ **NO ARTIFACT MAY CITE THE WATCHDOG AS THE GUARANTEE.** ✅ `ClimbableTower.h` already carries the correction at its source (the occupant clause). **It is a declared residual and a watch item for Jonathan's sitting (TASK-732) — ⛔ never a coverage claim.**
+
+**✅ AND THE OTHER HALF OF `T-4` IS CONFIRMED FREE — RECORDED SO NOBODY RE-OPENS IT:** `Landed` / `OnLanded` / `FallDamage` / `LandingVelocity` / `MOVE_Falling` measure **ZERO hits across `Source/GitClaudeUnrealTest/Siegebound`** (re-grepped 2026-08-30; every hit in the repo lives in untouched Epic template `Variant_*` classes that are ⛔ not ancestors of `ASummonedUnit`). ⇒ ⛔⛔ **THERE IS NO FALL DAMAGE IN SIEGEBOUND. Occupants drop and resume walking. ⛔ No catch, ⛔ no fall damage, ⛔ NO WORK.** ⚠️ *And the watchdog does not interfere with the fall itself either — `Evaluate` re-anchors whenever speed exceeds `MinSpeedSq` (50 uu/s), and a falling unit is far above that.*
+
+> ### ⚖️⛔⛔ **THE METHOD RULING THIS REPAIR CARRIES, BECAUSE IT IS THE THIRD LAW CLAIM THIS WEEK AN IMPLEMENTER REFUTED BY MEASURING:**
+> ### **A LAW CLAIM ABOUT ENGINE OR SHIPPED-CODE BEHAVIOUR IS VERIFIED AT THE SOURCE BY WHOEVER WRITES IT. ⛔ A REPAIR IS NEVER MADE ON A RELAY.**
+> **`PKG-§7a` has been damaged TWICE by exactly that mistake** — a correction accepted second-hand, then re-corrected. ⭐ **The implementer who refutes a law is doing the law a favour; the law's job is to be re-measured before it is re-written.** ⛔ **"An agent told me it was wrong" is not grounds to edit a law. Reading the source is.**
+
+### TOWER-§4b ⚖️ `bCanWalkOffLedges` STAYS ENGINE-DEFAULT `true` — ⭐ **DELIBERATELY, AND IT IS DESIRABLE** (TASK-726's ruling, ⛔ NOT re-litigable)
+
+- ⛔ **It is ⛔ not `AClimbableTower`'s property to set.** It lives on each unit's `UCharacterMovementComponent`; the tower holds no unit reference, and acquiring one to flip a movement flag is exactly the coupling `TOWER-§` exists to avoid.
+- ⛔ **The only place to set it is `ASummonedUnit` — and there it is GLOBAL.** It would change behaviour on **every hill, every rampart and every ledge in the arena**, to fix an aesthetic on one building.
+- ⭐⭐ **IT IS THE PRESSURE-RELEASE VALVE, AND THAT IS THE LOAD-BEARING REASON.** `bUseRVOAvoidance` is `false`, so units physically jostle. **A platform with ⛔ no capacity counter, ⛔ no eviction, and no way to be shoved off is a TRAP.** Being walk-off-able is what guarantees ⛔ **no unit is ever permanently stranded up there** — and `T-4` already proves that falling is free. ⚖️ *The capacity subsystem we deliberately did not build is affordable only because the platform leaks.*
+- ✅ **The art fix, if Jonathan wants one, is a PARAPET BUILT OUTSIDE THE 300 uu DECK** (`TOWER-§2a`) — ⛔ never carved out of it, and ⛔ never a movement-flag change.
+
+### TOWER-§5 ⛔ SCOPE FENCES
+
+- ⛔ **`ATower` IS NOT TOUCHED.** `AClimbableTower` is a **sibling** under `ABuilding`, ⛔ **not a subclass of `ATower`** — inheriting an auto-fire cadence loop the card explicitly does not want is how a "harmless" base class becomes a bug. **Four shipped tower cards depend on `ATower` and ⛔ none of them may change.**
+- ⛔ **NO CHANGE to `ABuilding`**, to any existing `BP_Building_*`, to `ABP_Footman`, to `SK_Footman_Skeleton`, or to any shipped `A_<CardID>_*` sequence. ⚠️ **`SK_Footman_Skeleton` is the whole fleet's rig — a careless save on it silently breaks every unit's ABP binding** (the standing editor-bounce warning).
+- 📌 **M8: ⛔ no new replicated property, ⛔ no RPC, ⛔ no class-tier change.** `AClimbableTower` sits at `ABuilding`'s existing tier and inherits its shipped team/HP replication unchanged.
+
+### TOWER-§6 📌 THE FOR-JONATHAN ROWS THIS LAW OWES
+
+| Row | Question | **Proceeding default** |
+|---|---|---|
+| **T-1** | CardID/name `WatchTower` / "Watch Tower"? | ✅ **Yes** — ⚠️ **rename is cheap NOW, expensive after art** |
+| **T-2** | ⭐ **Which ascent ships FIRST — walkable ramp (no new anim) or the climb clip?** | ✅ **Ramp first, clip second.** ⭐ **The clip is ONE animation, not three (`TOWER-§0`)** |
+| **T-3** | Enemies climb it? Ranged-only? Capacity? | ⛔ no / ✅ any own unit / ⛔ no counter (`TOWER-§4`) |
+| **T-4** | Occupants when it dies — fall, or die with it? | ✅ **Fall and survive** |
+| **T-5** | Platform height 1,200 uu (⇒ **+78.7%** damage on flat ground, **×2.44** on a hill)? | ✅ **1,200 uu** — `EditDefaultsOnly`, retunable without code |
+| **T-6** ⭐ *(added 2026-08-30, `TOWER-§7`)* | **May a Watch Tower be dropped ON TOP of your own units?** Its footprint is **~2,700 uu** — roughly **10× a wall's** — and the shipped placement rules were sized for a wall | ⛔ **NO — REFUSE THE PLACEMENT** (red ghost, no gold spent), ⛔ **never push the units.** ⚖️ *Moving a unit the placer does not own would be the first code in this project to do so.* 🧑 **One word overrules it** |
+
+### TOWER-§7 ⚠️⚠️ THE OUT-OF-FENCE FINDING — **PLACEMENT VALIDATION IS SIZED FOR A WALL, AND THE TOWER IS ~2,700 uu** (raised by TASK-726, 2026-08-30; boarded as **TASK-735**)
+
+> ### ⛔⛔ **EVERY SHIPPED BUILDING-PLACEMENT GATE IS A **POINT** TEST. THE WATCH TOWER IS THE FIRST STRUCTURE WHOSE FOOTPRINT IS AN ORDER OF MAGNITUDE LARGER THAN THE POINT.**
+
+**⭐ VERIFIED AT SOURCE BEFORE BOARDING (`TOWER-§4a`'s method ruling applies to findings too) — the complete gate list, and what each one measures:**
+
+| Gate | What it actually tests | Sized for |
+|---|---|---|
+| ground hit + spawn box / captured zone | ⭐ **the cursor POINT** | any card |
+| navmesh projection (`NavProjectionExtent`) | ⭐ **the cursor POINT** | any card |
+| `MaxPlacementSlopeDegrees = 20.f` | one straight-down trace **at the point** | a wall |
+| `ObstaclePlacementClearance = 150.f` | 2D distance **from the point** to `Obstacle`-tagged actors | a wall |
+| `BuildingClearance = 200.f` | 2D distance **from the point** to the nearest other `ABuilding` | a wall |
+| ⛔⛔ **units** | ⛔ **NOTHING. THERE IS NO UNIT TERM AT ALL** — `EPlacementInvalidReason` is `{ None, Point, Slope, Obstacle, Clearance }` and ⛔ **no member of it names a unit** | — |
+
+- ⇒ ⚠️ **A player can very likely drop a ~2,700 uu tower on top of their own army and ⛔ nothing refuses it.** `BlockAll` geometry materialises around the capsules; `UCharacterMovementComponent` depenetrates them, ⛔ but nothing in this project chooses where they go.
+- ⚠️ **AND THE GENERAL FORM, STATED HONESTLY RATHER THAN NARROWED TO THE SYMPTOM: with a point test, a 2,700 uu structure's FAR END is unvalidated** — it may overhang a 40° flank the slope gate never sampled, cross an obstacle the 150 uu radius never saw, intersect a building the 200 uu radius never reached, or extend outside the spawn box entirely. ⭐ **`BuildingClearance = 200` cannot even reach this tower's own half-extent of ~1,350 uu.**
+- ⛔⛔ **THE FIX IS THE PLACEMENT RULE, ⛔ NOT `AClimbableTower` AND ⛔ NOT A UNIT SWEEP.** TASK-726 **correctly refused to widen its own fence** to touch this (`SC-§15`), and that refusal is recorded as the right call: a tower class reaching out to reposition units it does not own is exactly the coupling this namespace exists to prevent.
+- ⭐ **THE SIZE MUST COME FROM THE MESH, ⛔ NEVER FROM A LITERAL.** A hardcoded `2700` would be wrong for the next large building and silently wrong the day `SM_WatchTower` is re-authored. **The placement ghost already spawns the real `SM_<CardID>` — its bounds ARE the footprint, and every existing small building keeps its shipped behaviour by construction because its bounds are small.**
+- ⚠️ **THE RISK THIS FIX CARRIES, NAMED SO IT IS NOT DISCOVERED IN PLAY: a footprint-sized refusal can make a large building feel UNPLACEABLE in a busy spawn box.** ⇒ **The refusal is the OWN-team unit-overlap case + a footprint-aware building clearance, ⛔ not a wholesale re-sampling of every gate across the footprint** (that is declared as a follow-on finding, ⛔ not smuggled into one task), and its threshold ships `EditDefaultsOnly` so 🧑 **T-6** is a one-word retune.
+- 📌 **This is ⛔ NOT a speculative fix for an unobserved symptom** (the standing anti-guessing law): the **mechanism** is measured — the validation has **no unit term in its enum** and its two clearances are **200/150 uu against a ~1,350 uu half-extent**. ⚖️ *A missing check is a measurement, not a symptom report.*

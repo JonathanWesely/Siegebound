@@ -925,8 +925,17 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			// two of the mentions are QUOTATIONS — of his own ruling and of the console's own live
 			// status line two inches away — and a page that said "press ;" beside a prompt that says
 			// "Press Z" would be worse than either choice alone. ⭐ The reversal is still exactly one
-			// flag: bLiteralKeyLabel = false derives the chip, and this prose would then move to
-			// {Interface.AssistantAccept} tokens — a `KBD-§8` amendment, ⛔ not a help edit.
+			// flag: bLiteralKeyLabel = false derives the chip, and the ACCEPT-KEY mentions in this
+			// prose would then move to {Interface.AssistantAccept} tokens — a `KBD-§8` amendment,
+			// ⛔ not a help edit.
+			// ⛔⛔ CORRECTION, AND READ IT BEFORE ACTING ON THE PARAGRAPH ABOVE (708 W-1): ⛔ NOT EVERY
+			// `Z` IN THIS PROSE IS AN ACCEPT KEY, SO THE REVERSAL DOES ⛔ NOT REACH ALL OF THEM. The
+			// Ctrl+Z / Ctrl+Shift+Z mentions are SLATE'S OWN undo/redo, which no layout remap touches —
+			// ⛔ tokenising THOSE would print a key the player does not press. ⭐ The carve-out is those
+			// two Ctrl mentions ONLY: the trailing "Shift+Z is accepted" clause IS the accept key and
+			// DOES follow the pin, so a reversal must SPLIT that sentence, ⛔ not exempt it wholesale.
+			// ⇒ The engine citations and the full reasoning are in the ⛔ DO-NOT-TOKENISE block at
+			// :948-965, immediately above the sentence it guards.
 			Row.Detail = FText::FromString(FString(
 				TEXT("There are no accept and cancel buttons; Jonathan removed both. His ruling: \"instead of it ")
 				TEXT("being a cancel button and an accept button, lets make it to where there is no cancel button ")
@@ -936,6 +945,24 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 				TEXT("The key is caught in preview — it tunnels down the focus path from the root before the ")
 				TEXT("focused text box, which is why a plain key handler could never see a printable key the box ")
 				TEXT("already ate.\n\n")
+				// ⛔⛔ WARNING TO THE NEXT AUTHOR — THE TWO `Z`s IN THE SENTENCE BELOW ARE SLATE'S OWN
+				// UNDO/REDO SHORTCUT, ⛔ NOT A LAYOUT-REMAPPED ACTION KEY, AND THEY MUST ⛔ NEVER BE
+				// TOKENISED. (Source of the ruling: qa/TASK-708.md finding W-1.)
+				// VERIFIED AT ENGINE SOURCE: Ctrl+Z undo is FGenericCommands::Undo's chord
+				// FInputChord(EModifierKey::Control, EKeys::Z) (GenericCommands.cpp:19), mapped onto the
+				// text layout at SlateEditableTextLayout.cpp:154-157; Ctrl+Shift+Z redo is
+				// SlateEditableTextLayout.cpp:1170-1172. Slate dispatches BOTH itself against a hardcoded
+				// EKeys::Z — USiegeKeyboardLayoutSubsystem never sees them and never retargets them — so
+				// this `Z` does ⛔ NOT follow the accept key's pinned position.
+				// ⭐ THEREFORE THE F-1 REVERSAL DESCRIBED ABOVE (:927-930) DOES NOT REACH THIS SENTENCE.
+				// Setting bLiteralKeyLabel = false moves the ACCEPT-key mentions to
+				// {Interface.AssistantAccept} tokens; doing the same to these two would print whatever the
+				// accept key resolved to beside a shortcut the player still presses as Ctrl+Z — i.e. it
+				// would INTRODUCE the printing-a-key-you-do-not-press defect that the tokenisation work
+				// exists to prevent.
+				// ⚠️ THE CARVE-OUT IS THE TWO Ctrl MENTIONS ONLY — the trailing "Shift+Z is accepted"
+				// clause IS the accept key and DOES follow the pin. That boundary is stated ONCE, at
+				// :934-936; ⛔ do not restate it here, because two copies drift apart.
 				TEXT("Modified presses are not the accept key — Ctrl+Z and Ctrl+Shift+Z are the text box's own ")
 				TEXT("undo and redo, and consuming them would both kill undo and execute an order you never asked ")
 				TEXT("for. Shift+Z is accepted — it is still \"the Z key\" to a human.\n\n")

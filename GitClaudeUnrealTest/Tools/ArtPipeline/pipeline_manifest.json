@@ -724,6 +724,25 @@
       "team_region": null,
       "ucx": null,
       "_ucx_source": "COLLISIONLESS ON PURPOSE - see Castle_ToeRock01._ucx_source."
+    },
+    "WatchTower": {
+      "category": "building",
+      "_comment_task727": "TASK-727 (2026-08-30): SM_WatchTower + its walkable 30-degree ramp, authored PROCEDURALLY and HEADLESS by Tools/ArtPipeline/build_watchtower.py. NOT a TRELLIS/Meshy asset - the defining property of this mesh is ARITHMETIC (TASK-725's measured nav budget), and a generative mesh cannot hold 30.000 degrees. There is no Inbox concept and no Cache/WatchTower/trellis_raw.glb; the build script IS the source.",
+      "origin": "tower-centre at ground level (NOT bounding-box centre): pivot (0,0,0) sits at the centre of the tower shaft with min_z 0; the ramp extends along +X. The player places the TOWER, the ramp is its appendage.",
+      "target_dims_ue": [3058.461, 940.0, 1420.0],
+      "_dims_source": "TASK-727 measured readback from the authored mesh: 3058.461 x 940.0 x 1420.0, min_z 0.0, 464 tris, UVMap, Y-symmetric (worst mismatch 0.0 uu). Bounds X[-560, 2458.461] Y[-470, 470] Z[0, 1420].",
+      "bake_resolution": 2048,
+      "tri_budget": 20000,
+      "team_region": {
+        "max_fraction": 0.4,
+        "_verified": "TASK-727 MEASURED 0.0615 area fraction (143 of 233 faces, all small): merlons + kerb posts + parapet coping top faces. Chosen for the top-down RTS read - the team colour marches UP THE RAMP on the posts and rings the platform on the merlons, so ownership is legible from the play camera."
+      },
+      "ucx": {
+        "boxes": [],
+        "_ucx_source": "DECLARED DEPARTURE (SC-15), and the empty box list is DELIBERATE - it is NOT the TL-2 silent-zero path. A 30-degree ramp CANNOT be expressed as an axis-aligned box, so _apply_box_collision() is the wrong instrument for this asset and boxes here would DESTROY the ramp surface (it clears agg_geom and rewrites it). Collision authority for SM_WatchTower is the 14 hand-placed UCX_SM_WatchTower_00..13 convex hulls IN THE FBX, which TL-2's own W6-R3 correction licenses: UCX hulls DO survive UE 5.8 import when the node names bind, and this FBX carries exactly ONE render node (SM_WatchTower) with UCX_<that name>_NN matching byte-for-byte - the same Model/Geometry naming pattern as the known-good Castle.fbx whose 25 hulls bound. With boxes:[] , _apply_box_collision() appends a WARN and LEAVES the imported collision, which is the wanted behaviour. The category MUST stay 'building': if this entry were absent, _category_of() defaults to 'unit' and _apply_unit_hulls() would remove_collisions() + set_convex_decomposition_collisions() - an AUTO-DECOMPOSITION that would decide whether the ramp is walkable. That is the single failure this entry exists to prevent.",
+        "_acceptance": "TL-2 readback rule: expect convex_hull_count == 14 and box_count == 0 on /Game/Meshes/SM_WatchTower. ZERO hulls is a STOP - this mesh is NOT collisionless on purpose.",
+        "_walkable_surfaces": "Hull 00 (ramp wedge, 6 verts) carries the 30-degree walkable plane as its own +Z face; hull 06 (cap) carries the platform deck at z=1200. Measured deviation of the authored collision from the analytic walkable surface: ramp max 0.000512 uu over 8400 samples, platform max 0.000286 uu over 3600 samples, zero ray misses. Junction lip ramp->platform: 0.0001 uu (budget 40 uu)."
+      }
     }
   }
 }

@@ -3203,13 +3203,52 @@ void ASummonedUnit::NotifyMoveBlocked()
 	StuckState.StalledSeconds = FMath::Max(StuckState.StalledSeconds, StuckTuning.SidestepSeconds);
 }
 
+// ---------------------------------------------------------------------------
+// ═══ HIGH GROUND — the elevation damage bonus (TASK-724; HIGH-§1/§2/§3) ═══
+// Jonathan, verbatim: "make their attacks deal more damage the higher elevation
+// they are. I would say that for every 5 feet that their elevation increases,
+// their damage multiplier increases by 10%."
+// ---------------------------------------------------------------------------
+
+float ASummonedUnit::HeightAdvantageMultiplier(float AttackerZ, float TargetZ, float StepUU, float BonusPerStep)
+{
+	// ⛔ THE ZERO-DIVIDE GUARD, APPLIED BEFORE THE DIVISION (the HeightToBrightness /
+	// MinArenaHalfExtentUu doctrine): HeightBonusStepUU is an EditDefaultsOnly float a
+	// designer can zero, and an unguarded divide would put inf or NaN straight into a damage
+	// number. Written as !(StepUU > 0) rather than (StepUU <= 0) so a NaN step — which fails
+	// EVERY comparison — also lands here instead of propagating. A disabled step means NO
+	// bonus (exactly 1.0), never an explosion.
+	if (!(StepUU > 0.f))
+	{
+		return 1.f;
+	}
+
+	// ⭐ HEIGHT ABOVE THE TARGET, ⛔ NOT absolute world Z (HIGH-§2, his row R-1), and the
+	// FMath::Max is the whole "bonus only when positive" rule: level ground and shooting
+	// UPWARD both fall to 0 here and return EXACTLY 1.0. ⛔ There is deliberately no negative
+	// branch — he asked for a bonus, and inventing a low-ground malus is inventing a mechanic.
+	const float HeightAdvantageUU = FMath::Max(0.f, AttackerZ - TargetZ);
+
+	// ⭐ CONTINUOUS (linear), ⛔ NOT stepped (his row R-4) — no FMath::FloorToFloat here, on
+	// purpose: a floored rule puts invisible breakpoints on a hillside a player cannot see,
+	// cannot aim for and cannot learn. ADDITIVE and UNCOMPOUNDED (the plain reading of "+10%
+	// per 5 feet"): two steps is ×1.20, ⛔ not ×1.21. ⛔ AND NO CLAMP — he did not ask for a
+	// cap (his row R-3), and the worst case (×2.44) was computed and handed to him instead.
+	return 1.f + BonusPerStep * (HeightAdvantageUU / StepUU);
+}
+
 float ASummonedUnit::ComputeOutputDamage(const AActor* Target)
 {
 	// Base is the row Damage bound at LoadStatsAndStart (never hardcoded, GDD §3.0). Output composes
 	// the Standard keyword multipliers in ONE place: Charge (spent here), Slayer (target-HP gated),
 	// and the War Banner aura. Siege 200% is NOT composed here — it is applied fortification-side by
 	// the damage TYPE (TASK-054), so composing it here would double-count. For a non-keyword,
-	// un-auraed unit every factor is exactly 1.0, so this returns AttackDamage bit-for-bit.
+	// un-auraed MELEE unit every factor is exactly 1.0, so this returns AttackDamage bit-for-bit.
+	// ⚠️ THE WORD "MELEE" IN THAT SENTENCE IS LOAD-BEARING AS OF TASK-724 and is not decoration:
+	// the high-ground factor at the bottom of this function is the ONE factor that can be non-1.0
+	// on a keyword-free unit — and it can only ever be so for a bRangedAttack unit that genuinely
+	// stands above its target. (The M7.7 lesson: prose that restates a behaviour drifts from it,
+	// so this line was corrected in the same edit that made it necessary.)
 	float Output = AttackDamage;
 
 	// CHARGE (Cavalry): the FIRST attack after >= ChargeMoveSeconds of continuous movement deals
@@ -3241,6 +3280,44 @@ float ASummonedUnit::ComputeOutputDamage(const AActor* Target)
 	// stacks, so an unboosted unit still returns AttackDamage bit-for-bit (the M1/M2
 	// non-regression this function's contract promises).
 	Output *= GetPermanentDamageMultiplier();
+
+	// ⭐ HIGH GROUND (TASK-724, HIGH-§2/§3) — THE ELEVATION BONUS'S ONE AND ONLY COMPOSE
+	// POINT. ⛔ A second application site anywhere in the codebase is a QA blocker: it lands
+	// here for the same reason the Ancient-Grounds factor above does — this ONE insertion
+	// covers BOTH delivery modes, since a ranged unit's projectile damage is this very
+	// composed value carried into FireProjectileAt.
+	//
+	// ⛔ GATED ON THE ALREADY-SHIPPED bRangedAttack MEMBER (bound from Row->bRanged at
+	// LoadStatsAndStart), ⛔ NOT on a CardID list and ⛔ NOT on a name check — so the shipped
+	// set is exactly the three ranged UNITS the data names (Archer / Wizard / Longbowman) and
+	// a FUTURE ranged card inherits this behaviour from its own row with zero code. Melee
+	// units skip the branch entirely, which is what keeps this function's contract literally
+	// true: it still returns AttackDamage BIT-FOR-BIT for a non-keyword, un-auraed melee unit.
+	// The hero is not an ASummonedUnit and never reaches this function at all (HIGH-§4).
+	//
+	// ⛔⛔ BOTH Z VALUES ARE GetActorLocation().Z, ON BOTH SIDES, NO EXCEPTIONS — a mixed
+	// convention (origin vs capsule vs bounds) is how a sign error hides. ⚠️ THE KNOWN
+	// CONSEQUENCE, STATED RATHER THAN DISCOVERED LATER: a large-footprint target (a castle)
+	// reports its ORIGIN Z, which sits at its base, so a unit on level ground beside a castle
+	// reads as ABOVE it. Same convention on both sides is what makes the difference mean
+	// something at all.
+	//
+	// ⛔ NO TOWER AWARENESS OF ANY KIND — no bIsOnATower flag, no occupancy lookup, no tower
+	// header included — and ⛔ NO read of the war map's elevation bake (WM-§8d / SHIP-§9: that
+	// bake clamps at 1,000 uu and would silently stop scaling on exactly the towers and tall
+	// hills this feature exists for). A unit on a hill and a unit on a tower at the same Z
+	// therefore deal IDENTICAL damage, which is what lets TOWER-§ work for free.
+	//
+	// A null Target yields ×1.0 by skipping the branch — there is no height advantage over
+	// nothing, and PerformAttack never reaches here with one anyway.
+	if (bRangedAttack && Target != nullptr)
+	{
+		Output *= HeightAdvantageMultiplier(
+			GetActorLocation().Z,
+			Target->GetActorLocation().Z,
+			HeightBonusStepUU,
+			HeightBonusPerStep);
+	}
 
 	return Output;
 }
