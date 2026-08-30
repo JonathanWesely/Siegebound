@@ -10,3 +10,10 @@ Build/
 # *.mp4 is an LFS pattern in .gitattributes — without this line a careless add pushes whole videos into LFS.
 # Only promoted evidence PNGs under GitClaudeUnrealTest/.claude/pipeline/playtest-evidence/ are committed.
 testvideo/
+# Packaged builds (PKG-§3): the cooked Win64 package + its zip are MULTI-GB and never
+# enter git in any form. ⛔ LFS is NOT the answer here — nothing in this folder should be
+# versioned at all (the same reasoning as /Models/). This fence is added BEFORE the first
+# cook runs, not as a post-hoc cleanup: the editor auto-stage trap has fired live (TASK-683),
+# and history is append-only. The folder's README.md is reproduced in the build-master
+# handoff so the repo keeps the record without carrying the build.
+packagedZIPofGame/
