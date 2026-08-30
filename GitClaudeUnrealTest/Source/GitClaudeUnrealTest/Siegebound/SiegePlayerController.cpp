@@ -35,6 +35,7 @@
 #include "Siegebound/SiegeAssistantComponent.h" // USiegeAssistantComponent — complete type for the constructor's CreateDefaultSubobject (TASK-440; the class BODY is TASK-442's, so this header does not exist until that task lands — see the handoff's compile-order note)
 #include "Siegebound/SiegeAssistantConsoleWidget.h" // USiegeAssistantConsoleWidget — complete type for CreateAndAddToViewport / Open / Close / the OnConsoleOpenChanged binding (TASK-449; the widget itself is TASK-444's)
 #include "Siegebound/SiegeCheatManager.h" // TASK-121 — CheatClass complete-type (constructor assignment below)
+#include "Siegebound/SiegeControlsHelpWidget.h" // USiegeControlsHelpWidget — complete type for CreateAndAddToViewport / OpenHelp / CloseHelp / the OnHelpOpenChanged binding (TASK-706, `HELP-§3`)
 #include "Siegebound/SiegeDeckSaveGame.h" // USiegeDeckSaveGame — active saved deck source (M6 TASK-114)
 #include "Siegebound/SiegeFeedbackLibrary.h" // M7 §6 audio hooks (TASK-179): card play/discard/spell/end-of-match
 #include "Siegebound/SiegeGameMode.h" // M8 (TASK-356): RequestPlayAgain resolves the server GameMode (doc §4.2)
@@ -111,6 +112,22 @@ namespace
 	 *  the console would hide the one surface the click exists to fill.
 	 */
 	constexpr int32 WarMapWidgetZOrder = 4;
+
+	/**
+	 *  Viewport Z order for the TAB controls overlay (TASK-706). ⚠️ THE VALUE IS A
+	 *  RELATIONSHIP, NOT A PREFERENCE, exactly as above: 6 puts it ABOVE the HUD (0),
+	 *  above the war map (4) and above the assistant console (5).
+	 *
+	 *  ⚖️ ABOVE THE CONSOLE, AND THAT IS THE OPPOSITE CHOICE FROM THE MAP'S — because
+	 *  the reason the map sits BELOW it does not apply here. The map is below the
+	 *  console because a marker click writes into the console's input box and the
+	 *  player must see and click that box. The help overlay delivers nothing into any
+	 *  other surface; it is the thing the player just explicitly asked to READ, so it
+	 *  is the thing that must be legible. ⛔ And it steals nothing by sitting on top:
+	 *  its backdrop is SelfHitTestInvisible, so only its own panel's area is
+	 *  hit-testable and every click outside it falls through unchanged.
+	 */
+	constexpr int32 ControlsHelpWidgetZOrder = 6;
 
 	/**
 	 *  Hard bound on the paid reveal's dot payload (WR-§7). A Reliable RPC carrying an
@@ -213,6 +230,8 @@ ASiegePlayerController::ASiegePlayerController()
 	AssistantConsoleActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_AssistantConsole.IA_AssistantConsole"))); // TASK-445 (assistant console open key; inert-null-safe until the asset lands — the IA_CmdAmbush/IA_CmdFollow precedent)
 	WarMapActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_WarMap.IA_WarMap")));                             // TASK-568 (war-map toggle — M; inert-null-safe until the asset lands. Dvorak/positional remapping is FREE via IMC_Hero, KBD-§)
 	WarMapWidgetClass = TSoftClassPtr<UWarMapWidget>(FSoftObjectPath(TEXT("/Game/UI/WBP_WarMap.WBP_WarMap_C")));                                    // TASK-568 (chrome only — the C++ painter draws and hit-tests every marker and dot without it)
+	ControlsHelpActionAsset = TSoftObjectPtr<UInputAction>(FSoftObjectPath(TEXT("/Game/Input/Actions/IA_ControlsHelp.IA_ControlsHelp")));           // TASK-705 (controls overlay toggle — Tab; inert-null-safe until the asset lands. Dvorak/positional remapping is FREE via IMC_Hero, KBD-§)
+	ControlsHelpWidgetClass = TSoftClassPtr<USiegeControlsHelpWidget>(FSoftObjectPath(TEXT("/Game/UI/WBP_ControlsHelp.WBP_ControlsHelp_C")));       // `HELP-§3` RESERVED + UNAUTHORED — the code-authored tree renders the whole overlay without it
 }
 
 void ASiegePlayerController::BeginPlay()
@@ -425,6 +444,20 @@ void ASiegePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 	SetWarMapOpen(false); // never refused; no-op when it was already closed
 
+	// Same law a third time for the controls overlay (TASK-706), in the same order and for the
+	// same reasons: unbind FIRST so the release is one explicit call rather than a broadcast
+	// arriving during teardown, and so no dynamic delegate is left pointing at a controller
+	// that is going away. ⛔ CloseHelp() mutates nothing in the world — the overlay is
+	// read-only (`HELP-§5`), so this teardown can never cancel an order or refund a card.
+	if (ControlsHelpWidget)
+	{
+		ControlsHelpWidget->OnHelpOpenChanged.RemoveDynamic(this, &ASiegePlayerController::HandleControlsHelpOpenChanged);
+		ControlsHelpWidget->CloseHelp();
+		ControlsHelpWidget->RemoveFromParent();
+		ControlsHelpWidget = nullptr;
+	}
+	SetControlsHelpOpen(false); // never refused; no-op when it was already closed
+
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -466,6 +499,12 @@ void ASiegePlayerController::SetupInputComponent()
 	// returns null and M is simply inert (one log line, no crash). ⛔ THAT IS THE
 	// DESIGNED STATE, and it is why this task is not blocked on TASK-568.
 	WarMapAction = ResolveInputAction(WarMapAction, WarMapActionAsset, TEXT("IA_WarMap"), TEXT("TASK-568"));
+
+	// Controls-overlay toggle key (TASK-706, `HELP-§4`). SAME null-safe soft-resolve, SAME
+	// reason: TASK-705 creates IA_ControlsHelp and maps it in IMC_Hero to Tab, so until it
+	// lands this returns null and Tab is simply inert (one log line, no crash). ⛔ THAT IS THE
+	// DESIGNED STATE, and it is why this task was not blocked on TASK-705.
+	ControlsHelpAction = ResolveInputAction(ControlsHelpAction, ControlsHelpActionAsset, TEXT("IA_ControlsHelp"), TEXT("TASK-705"));
 
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))
 	{
@@ -566,6 +605,25 @@ void ASiegePlayerController::SetupInputComponent()
 		if (WarMapAction)
 		{
 			EnhancedInputComponent->BindAction(WarMapAction, ETriggerEvent::Started, this, &ASiegePlayerController::OnWarMapPressed);
+		}
+
+		// THE CONTROLS-OVERLAY TOGGLE (TASK-706, `HELP-§4`'s input row) — Started, the same
+		// trigger event every command key above uses. ⛔ IT RE-ROUTES NOTHING: every binding
+		// above is untouched, no key is made to pass through the overlay, and with the overlay
+		// closed every shipped command path is byte-identical. The IA_ControlsHelp asset
+		// arrives in TASK-705; until then the resolve above returned null and Tab is inert —
+		// the IA_CmdAmbush / IA_CmdFollow / IA_AssistantConsole / IA_WarMap precedent exactly.
+		//
+		// ✅ ⛔ NO GetPositionalKey CALL HERE, DELIBERATELY (`KBD-§`, `HELP-§1`): this is a
+		// MAPPED Enhanced Input action, and USiegeKeyboardLayoutSubsystem already rewrites
+		// IMC_Hero's .Key fields wholesale — so Dvorak/positional remapping is inherited for
+		// free. That API belongs to RAW polled keys; calling it here would double-apply the
+		// remap. ⭐ The overlay's own DISPLAYED label for this key reads the same already-
+		// retargeted mapping back through QueryKeysMappedToAction, so the menu documents its
+		// own key with zero hardcoded letters and zero second translations.
+		if (ControlsHelpAction)
+		{
+			EnhancedInputComponent->BindAction(ControlsHelpAction, ETriggerEvent::Started, this, &ASiegePlayerController::OnControlsHelpPressed);
 		}
 	}
 	else
@@ -4354,7 +4412,23 @@ void ASiegePlayerController::ApplyCursorInputState()
 	// the ONLY owner of the match cursor posture (the level-travel law). ⛔ A map that
 	// hit-tests markers with no visible cursor and no GameAndUI mode would look
 	// perfectly painted and be entirely inert.
-	const bool bWantCursor = bInPlacementMode || bInTargetingMode || (GroupPickStage != EGroupPickStage::None) || bAssistantConsoleOpen || bWarMapOpen || bUICursorHeld;
+	// ⭐ TASK-706 ADDS THE SIXTH TERM — `bControlsHelpOpen` — AND ⛔ CHANGES NOTHING ELSE ON
+	// THIS LINE. The five existing owners keep their EXACT shipped precedence; the help overlay
+	// is APPENDED to the ladder and ⛔ never re-orders it (`HELP-§5`). Like every term before
+	// it, it is FALSE on every pre-existing path, so this expression evaluates exactly as it
+	// did before the term existed.
+	//
+	// ⚖️ AND IT COMPOSES RATHER THAN EXCLUDES, WHICH IS THE `bUICursorHeld` LANE AND NOT THE
+	// FOUR-WAY LMB LANE: the overlay hit-tests ONE PANEL and never the world (its backdrop is
+	// SelfHitTestInvisible by design), so ⛔ no shipped guard gained a clause against it and
+	// every shipped cancel route keeps firing byte-identically underneath it. The reasoning is
+	// argued in full at CanOpenControlsHelp's declaration and flagged in the TASK-706 handoff.
+	//
+	// ⛔ ADDING THE TERM *HERE*, rather than calling SetInputMode from the widget, is what
+	// keeps this function the ONLY owner of the match cursor posture (the level-travel law,
+	// TASK-074). USiegeControlsHelpWidget contains no SetInputMode and no bShowMouseCursor
+	// write at all — grep it.
+	const bool bWantCursor = bInPlacementMode || bInTargetingMode || (GroupPickStage != EGroupPickStage::None) || bAssistantConsoleOpen || bWarMapOpen || bControlsHelpOpen || bUICursorHeld;
 	bShowMouseCursor = bWantCursor;
 	bEnableClickEvents = bWantCursor;
 
@@ -5063,6 +5137,205 @@ UWarMapWidget* ASiegePlayerController::GetOrCreateWarMapWidget()
 	}
 
 	return WarMapWidget;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE TAB CONTROLS OVERLAY (TASK-706; CONVENTIONS `HELP-§1`/`§3`/`§4`/`§5`)
+//
+// ⛔⛔ EVERY FUNCTION BELOW IS READ-ONLY ON THE WORLD. Grep this block: there is no
+// order issued, no group cancelled, no card played, no gold moved and no pause —
+// `HELP-§5`, and it is a law rather than an observation.
+//
+// ⛔⛔ AND `Escape` APPEARS NOWHERE IN IT. The overlay closes on its toggle key and on
+// its own Close button, and that is the complete list (`AS-§6 A-2`, a PERMANENT
+// Jonathan ruling). Every shipped cancel route keeps firing byte-identically while
+// the overlay is open.
+// ─────────────────────────────────────────────────────────────────────────────
+
+bool ASiegePlayerController::CanOpenControlsHelp() const
+{
+	// ⛔ ONE CLAUSE. The match-ended test is the shipped Enter*/BeginGroupPick idiom, and here
+	// it is load-bearing rather than cosmetic for exactly CanOpenAssistantConsole's reason:
+	// ApplyCursorInputState EARLY-OUTS while bMatchEnded is latched (HandleMatchEnd owns the
+	// UIOnly end screen), so an overlay opened on the end screen would never receive its cursor
+	// posture.
+	//
+	// ⚖️⭐ THE THREE ABSENT CLAUSES ARE A RULING, NOT AN OVERSIGHT — see the declaration
+	// comment. Jonathan's own named question for this feature is "how to exit the command",
+	// and the moment he needs that answer is DURING a group-order pick. Refusing there would
+	// make the help screen unavailable in precisely the situation it was built for.
+	return !bMatchEnded;
+}
+
+bool ASiegePlayerController::SetControlsHelpOpen(bool bOpen)
+{
+	// RE-GATE ON OPEN so the guard cannot be bypassed by a caller that forgot to ask. CLOSING
+	// IS NEVER REFUSED — a close that could fail is a close that can strand the cursor in
+	// GameAndUI with no owner willing to release it. SetAssistantConsoleOpen's contract,
+	// cloned rather than re-invented.
+	if (bOpen && !CanOpenControlsHelp())
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': controls overlay open refused — the match has ended (%d) and HandleMatchEnd owns the end-screen posture."),
+			*GetNameSafe(this), bMatchEnded ? 1 : 0);
+		return false;
+	}
+
+	// no-op writes never touch the input mode (the console's reasoning verbatim: a SetInputMode
+	// on every toggle-driven call is a real cost and a real source of focus churn).
+	if (bControlsHelpOpen == bOpen)
+	{
+		return true;
+	}
+
+	bControlsHelpOpen = bOpen;
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASiegePlayerController '%s': controls overlay %s."),
+		*GetNameSafe(this), bOpen ? TEXT("opened") : TEXT("closed"));
+
+	// ⛔ THE ONE CURSOR-POSTURE OWNER — never a parallel SetInputMode call, and never one from
+	// the widget (TASK-074, the level-travel law).
+	ApplyCursorInputState();
+	return true;
+}
+
+void ASiegePlayerController::OnControlsHelpPressed()
+{
+	// ── CLOSE FIRST, AND THE CLOSE PATH IS NEVER GATED ──
+	// The toggle asks "is it open?" BEFORE it asks "may it open?" — the console and war-map
+	// keys' contract exactly, and for the same reason. Either half of the pair being live
+	// counts as open; they can only disagree through a bug, and if they ever do, the key is
+	// what repairs it.
+	if (bControlsHelpOpen || (ControlsHelpWidget && ControlsHelpWidget->IsHelpOpen()))
+	{
+		CloseControlsHelp();
+		return;
+	}
+
+	// ── OPEN: GUARD FIRST, UI SECOND — THE LOAD-BEARING ORDERING ──
+	// ⛔ NOTHING IS CREATED AND NOTHING IS SHOWN UNTIL THE POSTURE IS GRANTED. On a refusal
+	// this function does LITERALLY NOTHING VISIBLE.
+	if (!SetControlsHelpOpen(true))
+	{
+		// SetControlsHelpOpen already logged the reason. One refusal, one line.
+		return;
+	}
+
+	USiegeControlsHelpWidget* const Help = GetOrCreateControlsHelpWidget();
+	if (Help == nullptr)
+	{
+		// Creation failed (CreateAndAddToViewport logged it). ROLL THE POSTURE BACK: a cursor
+		// owner with no UI behind it is the soft-lock the flag must never be left in.
+		SetControlsHelpOpen(false);
+		return;
+	}
+
+	// ⭐ OpenHelp() is what RE-DERIVES EVERY KEY LABEL (`HELP-§1`): it refreshes the keyboard
+	// layout once and rebuilds every row from scratch. ⛔ This controller does NOT derive
+	// anything itself and does NOT call GetPositionalKey — the widget owns the label lane and
+	// this key is a MAPPED action whose remap is already inherited (`KBD-§`).
+	Help->OpenHelp();
+
+	// ⚠️ ASK THE WIDGET RATHER THAN ASSUME THE CALL WORKED — the console/map keys' post-hoc
+	// check, cloned. The flag must never describe an overlay the player cannot see.
+	if (!Help->IsHelpOpen())
+	{
+		SetControlsHelpOpen(false);
+
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': the controls overlay did not open; cursor posture released, nothing shown. No key, card or command is affected."),
+			*GetNameSafe(this));
+	}
+}
+
+void ASiegePlayerController::CloseControlsHelp()
+{
+	if (ControlsHelpWidget)
+	{
+		// CloseHelp() broadcasts OnHelpOpenChanged(false) -> HandleControlsHelpOpenChanged ->
+		// SetControlsHelpOpen(false), which makes the explicit call below usually a no-op. It
+		// is kept anyway: it is the one line that guarantees the posture flag cannot survive a
+		// close even if the widget is null, already closed, or a future change drops the
+		// broadcast.
+		ControlsHelpWidget->CloseHelp();
+	}
+
+	SetControlsHelpOpen(false); // never refused
+}
+
+void ASiegePlayerController::HandleControlsHelpOpenChanged(bool bOpen)
+{
+	if (!bOpen)
+	{
+		// ⛔ THE WHOLE REASON THIS BINDING EXISTS. The overlay can close by a route this
+		// controller never sees — its own Close button. A posture flag left stuck TRUE is a
+		// cursor soft-locked in GameAndUI with nobody willing to release it. Closing is never
+		// refused, so this cannot fail.
+		SetControlsHelpOpen(false);
+		return;
+	}
+
+	// Opened by a route other than the key. Take the posture; if the guard refuses it, CLOSE
+	// THE WIDGET rather than let the two disagree.
+	//
+	// TERMINATING BY CONSTRUCTION, not by luck: on the key path the flag is already true, so
+	// SetControlsHelpOpen(true) takes its no-op early-out and returns true. On a refusal,
+	// CloseHelp() clears bHelpOpen BEFORE it re-broadcasts, so the nested call lands on the
+	// !bOpen branch above and stops.
+	if (!SetControlsHelpOpen(true) && ControlsHelpWidget)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASiegePlayerController '%s': the controls overlay opened without the cursor posture (the match has ended) — closing it. A help screen is never a requirement."),
+			*GetNameSafe(this));
+
+		ControlsHelpWidget->CloseHelp();
+	}
+}
+
+USiegeControlsHelpWidget* ASiegePlayerController::GetOrCreateControlsHelpWidget()
+{
+	if (ControlsHelpWidget)
+	{
+		return ControlsHelpWidget;
+	}
+
+	// LAZY, exactly like the console and the map: created on the first SUCCESSFUL open, never
+	// at BeginPlay and never on a refused open — which is only true because the guard runs
+	// first. CreateAndAddToViewport adds it CLOSED, so this call alone puts nothing on screen.
+	//
+	// ⚠️ A NULL CLASS IS FULLY SUPPORTED AND IS THE STATE AT THIS COMPILE: /Game/UI/
+	// WBP_ControlsHelp is `HELP-§3`-RESERVED and UNAUTHORED, LoadSynchronous returns null, and
+	// CreateAndAddToViewport falls back to USiegeControlsHelpWidget::StaticClass() — which
+	// builds its whole tree in C++. ⛔ Not a degradation to "fix" here.
+	//
+	// ⛔ `SC-§33`: CreateAndAddToViewport defaults NONE of its three parameters, so there is no
+	// trailing default that could silently discard the WBP the moment it lands — and all three
+	// are passed explicitly here regardless.
+	UClass* const ResolvedHelpClass = ControlsHelpWidgetClass.LoadSynchronous();
+	if (ResolvedHelpClass == nullptr)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': controls overlay class '%s' not found (RESERVED and unauthored by HELP-§3) — using the code-authored C++ USiegeControlsHelpWidget, which renders the full list."),
+			*GetNameSafe(this), *ControlsHelpWidgetClass.ToString());
+	}
+
+	ControlsHelpWidget = USiegeControlsHelpWidget::CreateAndAddToViewport(
+		this,
+		TSubclassOf<USiegeControlsHelpWidget>(ResolvedHelpClass),
+		ControlsHelpWidgetZOrder);
+
+	if (ControlsHelpWidget)
+	{
+		// THE ONE BINDING, TAKEN EXACTLY ONCE (this function is the only creation site and it
+		// early-outs when the widget already exists, so the delegate can never be double-bound).
+		// ⛔ OnRowSelected is deliberately NOT bound here: the row click is the WIDGET's own
+		// business until TASK-707 gives it a destination, and a controller binding today would
+		// be a second owner of a seam that has no consumer.
+		ControlsHelpWidget->OnHelpOpenChanged.AddDynamic(this, &ASiegePlayerController::HandleControlsHelpOpenChanged);
+	}
+
+	return ControlsHelpWidget;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
