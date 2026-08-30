@@ -224,9 +224,20 @@ Cargo (explicit paths, board LAST): the root `.gitignore` fence line · `Docs/se
 folder; its full text above IS the repo's record, exactly as `PKG-§3` intends** · the 696 + 697
 handoffs · TASKBOARD.
 
-**⛔ INDEX-CLEAN PROOF taken before committing** — `git status --porcelain` and the staged file
-list both checked for any `packagedZIPofGame` path: the 1.31 GB zip and the 1.91 GB build must
-appear **neither staged nor untracked**. Result recorded in §6. ⛔ Never pushed.
+**COMMIT B = `24e0730`** (5 files, 1247 insertions; main **3 ahead** of origin, ⛔ **not pushed**).
+Commit A (TASK-694) was `b21ccc5`.
+
+**⛔ INDEX-CLEAN PROOF, taken twice before committing — both clean:**
+1. `git status --porcelain | grep -i packagedZIP` → **no match** (the zip and the 1.91 GB build are
+   neither staged nor untracked).
+2. `git diff --cached --name-only | grep -i packagedZIP` → **no match**; the staged list was exactly
+   `.gitignore` · `TASKBOARD.md` · `handoffs/TASK-696-buildmaster.md` ·
+   `handoffs/TASK-697-buildmaster.md` · `Docs/setupdirections.md`.
+3. `git check-ignore -v` confirms the zip, the exe and `packagedZIPofGame/README.md` all resolve to
+   `.gitignore:19`.
+
+Post-commit porcelain carries **only** `Config/DefaultEngine.ini` — still excluded, still Jonathan's
+P3 ruling. ⛔ Never pushed.
 
 ## 6. STATE
 
