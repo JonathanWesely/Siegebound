@@ -2332,7 +2332,9 @@ Both answered by Jonathan directly via AskUserQuestion on 2026-08-04. Recorded h
 - ⛔ **FOUR CONDITIONS. EACH IS AN ACCEPTANCE CRITERION, ⛔ NOT ADVICE:**
   1. ⛔ **The call lives in a SCRATCHPAD authoring script. ⛔ NEVER in `Source/`.** A `MapKey` in a `.cpp` is still a `KBD-§2` violation and QA still fails it.
   2. ⛔ **ONE call, ONE appended row. ⛔ `UnmapKey` / `UnmapAllKeysFromAction` / `UnmapAll` STAY BANNED IN EVERY LANE** — they exist only to enable the round-trip. **Their presence in the script is a STOP.**
-  3. ⛔⛔ **PROVE THE SURVIVORS BY NAMING THE MODIFIER OBJECTS, ⛔ NOT THE KEYS.** ⚖️ **TASK-445's whole signature is *"the property table still reads correct"*, so a key-list readback is precisely the instrument the defect defeats.** **Required: count `24 → 25`; the first 24 keys identical IN ARRAY ORDER; and `IA_Move`'s four rows still carrying `InputModifierSwizzleAxis_0` / `SwizzleAxis_1` + `Negate_0` / `Negate_1`, and `IA_Look` still carrying `Negate_2`, BY NAME.**
+  3. ⛔⛔ **PROVE THE SURVIVORS BY NAMING THE MODIFIER OBJECTS, ⛔ NOT THE KEYS.** ⚖️ **TASK-445's whole signature is *"the property table still reads correct"*, so a key-list readback is precisely the instrument the defect defeats.** **Required: count `N → N+1` where `N` is the count MEASURED IN THE ASSET IMMEDIATELY BEFORE THE APPEND; the first `N` keys identical IN ARRAY ORDER; and `IA_Move`'s four rows still carrying `InputModifierSwizzleAxis_0` / `SwizzleAxis_1` + `Negate_0` / `Negate_1`, and `IA_Look` still carrying `Negate_2`, BY NAME.**
+     - ⚖️⚠️ **REPAIRED 2026-08-30 ON TASK-705's MEASUREMENT — THE LITERALS WERE STALE AND WOULD HAVE CAUSED A FALSE QA FAIL AGAINST A CORRECT APPEND.** ~~count `24 → 25`; the first 24 keys~~ was true when written (2026-08-15) and **went stale the moment `IA_WarMap`→`M` landed (TASK-568): the live count was `25 → 26`, and each future append moves it again.** ⇒ ⛔ **A reviewer checking the LITERAL `24` against a correct `25 → 26` append fails a good diff** — and *"the law says 24"* is an argument that beats a tired implementer who is, in fact, right. **The invariant was always RELATIVE; only its expression was absolute.**
+     - ⭐ **THE GENERAL RULE THIS BUYS, AND IT IS THE POINT: ⛔ NEVER PIN A GROWING COUNT AS A LITERAL IN LAW.** A number that increments with normal work is a **scheduled false failure**. ✅ **Pin the INVARIANT (`N → N+1`, first `N` identical in order, named modifiers surviving) and require `N` to be MEASURED AT THE ASSET IN THE SAME SESSION AS THE APPEND** — which also makes the check strictly stronger, because it re-reads the truth instead of trusting a remembered one. ⚠️ **Same family as the M7.7 `Notes` drift (*"in 400"* vs `AoERadius` **700**) and `PKG-§9a-3`'s inert key: a stale literal is more dangerous than a missing one, because it is CONFIDENT.**
   4. ⛔ **The appended row carries EMPTY `Triggers` and EMPTY `Modifiers`** — matching the shipped `IA_AssistantConsole` row. ⭐ **Its emptiness is the SPECIFICATION, not a side effect. That is exactly why the append is safe and the round-trip is not.**
 - ⛔ **THE ARRAY REWRITE STAYS FORBIDDEN, AND IT IS REACHABLE, WHICH IS WHY THE PROHIBITION IS LOAD-BEARING RATHER THAN THEORETICAL: `DefaultKeyMappings` is `UPROPERTY(config, BlueprintReadOnly, EditAnywhere)` (`InputMappingContext.h:100-101`)** ⇒ **MCP genuinely CAN write the whole struct.** ⛔ **It may not.**
 - ⭐⭐ **THE 5.7 DEPRECATION, MEASURED BY TASK-568 AND ✅ CONFIRMED BY THE MANAGER AT THE HEADER — RECORDED SO NO FUTURE BATCH RE-DERIVES IT OR PANICS AT IT: `UInputMappingContext::Mappings` is `UE_DEPRECATED(5.7, "Use the DefaultKeyMappings struct instead.")` and reads `[]`; the live data is `DefaultKeyMappings.Mappings`** (`:93-95` vs `:100-101`). ✅ **`KBD-§` IS UNAFFECTED: `GetMappings()` and `GetMapping(i)` (`:219-220`) BOTH already return the new array** ⇒ **`USiegeKeyboardLayoutSubsystem`'s index-by-index `.Key`-only retarget of its transient duplicate works verbatim, and any APPENDED mapping is covered for free.** ⇒ ⭐ **A letter key added today inherits Dvorak support with ZERO code (`KBD-§4` puts all 26 letters in the table).**
@@ -4420,7 +4422,8 @@ Jonathan's directive, verbatim (2026-08-28): *"lets also uncap the maximum numbe
 
 **Jonathan's verbatim (his first map test):** *"it appears that the map needs to be flipped along its horizontal axis, because the locations that you listed are actually located on the opposite side of that axis, so whenever I exit the castle things that should have been on my left were on my right and vice versa, lets fix that by flipping the map on the horizontal axis."*
 
-- ⚠️ **THE SPEC IS THE SYMPTOM, ⛔ NOT AN AXIS NAME.** "Horizontal axis" is his description of the effect, not the contract. The binding truth: **exiting the castle (the Blue gate faces +X post-rotation, so he faces battlefield centre = +X; facing +X, his LEFT = world +Y), what lay on his LEFT drew on the map's RIGHT and vice versa.** WHICH projection line carries the wrong sign is DIAGNOSED, never assumed — screen-vs-world axis naming is exactly where a guessed flip lands mirrored twice.
+- ⚠️ **THE SPEC IS THE SYMPTOM, ⛔ NOT AN AXIS NAME.** "Horizontal axis" is his description of the effect, not the contract. The binding truth: **exiting the castle (the Blue gate faces +X post-rotation, so he faces battlefield centre = +X; facing +X, **his RIGHT = world +Y (his LEFT = −Y)**), what lay on his LEFT drew on the map's RIGHT and vice versa.**
+  - ⚖️ **CORRECTED IN PLACE 2026-08-30 — the MANAGER-OWED RIDER from `qa/TASK-693.md`'s one WARN, discharged at the first manager pass after it was raised.** ~~facing +X, his LEFT = world +Y~~ was **arithmetically wrong**: the engine's own `FVector::RightVector = (0,1,0)` (`Vector.h:96-97`) ⇒ facing +X, **RIGHT is +Y**. Two independent proofs it was the aside and never the fix: (1) the engine constant; (2) **had LEFT truly been +Y, the pre-692 map would have LOOKED CORRECT and Jonathan would never have reported it.** ⛔ **The FIX (TASK-692's V-line flip) is UNAFFECTED and is NOT re-opened** — it was diagnosed from measured UVs, not from this sentence. ⚠️ **Recorded rather than silently patched because a wrong aside in law REPLICATES** (the `ResolveHeroStart` lesson): the next reader quotes the parenthetical, not the arithmetic. WHICH projection line carries the wrong sign is DIAGNOSED, never assumed — screen-vs-world axis naming is exactly where a guessed flip lands mirrored twice.
 - **DIAGNOSE-FIRST, CHEAP BY DESIGN:** compare 2–3 known world actor positions (the TWO castles + one specific mine, their world XY read from live level/source data — ⛔ not from memory) against their computed `WorldToMapUV` outputs. The answer is arithmetic — minutes, not hours. The truth table (actor · world XY · computed UV · the side it MUST draw on from the exit-perspective) is PASTED in the handoff; it is the aim of the fix and the input to the integration capture check.
 - ⛔⛔ **THE SINGLE-OWNER LAW: the flip lands in `FSiegeWarMapProjection` and NOWHERE ELSE** — `WorldToMapUV` AND its EXACT INVERSE `MapUVToWorld` AND the round-trip/lattice tests updated IN PLACE (`Tests/SiegeWarMapTest.cpp` — extend, ⛔ never a second war-map test file). **Verified at source 2026-08-29 — every layer routes through the pair:** the seven markers (`WarMapWidget.cpp:1391-1392`) · POI icons (`:1495-1528`) · ally/enemy dots (`:1537-1551`) · click resolution (`FindMarkerIndexAtLocal` over `MapUVToLocal` rects) · **the elevation bake (`:984` — per-texel `MapUVToWorld`)** ⇒ **ONE flip in the pair re-orients icons + dots + markers + clicks + elevation COHERENTLY. A sign change in any single layer, in the bake loop, or at a draw site is a FAIL** — it would shear the layers apart, which is worse than the mirror it replaces.
 - **The orientation NARRATION follows the code:** the *"+X world grows RIGHT" / "+Y world grows UP … inverted here and NOWHERE ELSE"* comment block inside the pair is part of the contract and is corrected in the SAME diff (a surviving stale direction comment is the `W691-3` class of debt). Comment riders elsewhere ONLY where a comment asserts the specific direction that changed.
@@ -4438,9 +4441,11 @@ His stated model (*"just the GitClaudeUnrealTest folder without .claude/Tools/Do
 
 ### PKG-§2 📌 THE PINNED SHAPE + NAMES
 
-- Tooling: **UAT `RunUAT.bat BuildCookRun`** (UE 5.8), platform **Win64**, config **Development** — ⚖️ parity: every test and playtest this project has ever run was Development; a Shipping variant is a FLAGGED follow-up (Jonathan's sheet), ⛔ not smuggled into this task.
-- Staging home: **`packagedZIPofGame/` at the git root** (`C:\GitProjects\GitHub\GitClaudeUnrealTesting\GitClaudeUnrealTest\packagedZIPofGame\`) — not found on disk at boarding (2026-08-29) ⇒ created if absent; if Jonathan made his folder elsewhere, his word relocates it (one FOR-JONATHAN row, proceeding default = git root).
-- Names pinned: zip **`Siegebound-Win64-Development-<YYYY-MM-DD>.zip`** · README **`packagedZIPofGame/README.md`**. README's MANDATED content: what was packaged (cooked maps list, config) · what was LEFT OUT and WHY (`Source/`, `.claude/`, `Tools/`, `Docs/`, raw assets, uncooked Content, the GGUF) · how to run (extract → double-click the named `.exe`) · the `PKG-§1` correction · the `PKG-§4` model statement.
+- Tooling: **UAT `RunUAT.bat BuildCookRun`** (UE 5.8), platform **Win64**, config ~~**Development**~~ → **SHIPPING (amended 2026-08-30, see `PKG-§2a`)**. The original reasoning is preserved because it was sound at the time: parity — every test and playtest this project had ever run was Development.
+  - ### PKG-§2a ⚖️ **AMENDED 2026-08-30 BY JONATHAN — SHIPPING IS NOW THE SHIPPED ARTIFACT'S CONFIG. DATED, AND THE OLD DEFAULT IS STRUCK RATHER THAN DELETED.**
+    His directive, verbatim: *"fix the project name and rename it as 'Siegebound' and rebuild the game as a shipping build."* ⇒ **`-clientconfig=Shipping`** replaces Development for the artifact anyone extracts and clicks. ⛔ **This does NOT move the TEST lane:** the automation suite and every QA gate still run against the **Development EDITOR target** (`PKG-§9c`) — automation tests do not exist in a Shipping build, so a Shipping cook can never be the thing that proves the code. **Zip name flips with it** (`PKG-§7b`). ⚠️ **Shipping is not "Development with a flag"** — five behavioural deltas are ruled in `PKG-§9` and the implementer must meet them there, ⛔ never discover them cold at 2 a.m.
+- Staging home: **`C:\GitProjects\GitHub\GitClaudeUnrealTesting\packagedZIPofGame\`** — ⚖️ **RE-CORRECTED 2026-08-30 (second repair, and this bullet was the LAST SURVIVING INSTANCE OF THE ORIGINAL ERROR — it kept asserting the struck claim 40 lines above the clause that struck it).** ~~*"at the git root"*~~ · ~~*"ONE LEVEL ABOVE the git root and therefore OUTSIDE the work tree entirely"*~~ — **BOTH STRUCK, BOTH FALSE.** ✅ **THE MEASURED TRUTH (`PKG-§7a`): the folder is a SIBLING of `GitClaudeUnrealTest\` and is therefore INSIDE the git work tree** (whose root is the parent, `…\GitClaudeUnrealTesting\`), **fenced by the live work-tree-root `.gitignore:19` rule `packagedZIPofGame/` — route (ii), ⛔ not route (i).** ⚠️ **The path string was always right; the CLAIM ABOUT IT was wrong twice.** ⛔ **The fence is still ruled as a PROPERTY re-measured every run (`PKG-§7a`) — this bullet records the current reading, ⛔ never a constant to trust.**
+- Names pinned: zip **`Siegebound-Win64-<Config>-<YYYY-MM-DD>.zip`** (`Development` → **`Shipping`** from `PKG-§2a`) · README **`packagedZIPofGame/README.md`**. README's MANDATED content: what was packaged (cooked maps list, config) · what was LEFT OUT and WHY (`Source/`, `.claude/`, `Tools/`, `Docs/`, raw assets, uncooked Content, the GGUF) · how to run (extract → double-click the named `.exe`) · the `PKG-§1` correction · the `PKG-§4` model statement · **from 2026-08-30: the `PKG-§8` display-identity statement and the `PKG-§9b` assistant-in-Shipping FINDING, stated honestly whichever way it measures.**
 
 ### PKG-§3 ⛔⛔ GIT POSTURE — THE MULTI-GB BUILD NEVER ENTERS GIT, IN ANY FORM
 
@@ -4454,11 +4459,398 @@ The `testvideo/` precedent + the append-only-history law (the `20c8e48` DLL swee
 
 - **The template maps** (`ThirdPerson`/`Variant_*` + their `__ExternalActors__`/`__ExternalObjects__` OFPA stubs) are marketplace scaffolding, not the game. **The cook uses an EXPLICIT maps list** — the game's reachable maps ONLY (the main-menu map + `L_Arena` + anything the menu flow actually opens); the implementer enumerates the list from `Config/DefaultEngine.ini` + the menu flow and PASTES it in the handoff. ⛔ No all-maps cook.
 - **Plugins ride AS CONFIGURED** (SiegeLlama, VFR/UI plugins): ⛔ no plugin enable/disable surgery inside the packaging task. A plugin that fails the cook is REPORTED with the log lines, never silently stripped.
-- The unclaimed **`bAllowHighDPIInGameMode=True`** in `Config/DefaultEngine.ini` (TASK-689 adjudicated it OUT of its commit, left in tree for Jonathan's ruling) **WILL be baked into the package's ini if still in the tree at cook time** — flagged as his natural claim-or-strike moment; proceeding default = cook the tree as-is.
+- 🧑✅ **`bAllowHighDPIInGameMode=True` — CLOSED 2026-08-30 BY JONATHAN. IT IS HIS, IT IS DELIBERATE, AND IT STAYS.** ~~unclaimed since TASK-689~~ His verbatim ruling: *"About the 'bAllowHighDPIInGameMode=True', I set that because it fixed a bug with screen recording, so leave it as it is."* ⇒ ⚖️ **THE LINE IS NOW CLAIMED, ITS PROVENANCE IS ON THE RECORD, AND IT IS COMMITTED** (`Config/DefaultEngine.ini:358`, riding the first commit of the 2026-08-30 batch, its reason named in the commit message). ⛔ **NO FUTURE AUDIT MAY STRIP IT AS FOREIGN DIRT.** ⚠️ **The provenance is the whole point of this clause:** the line sat excluded-and-unclaimed across three commits precisely because nobody could say who set it or why — an unexplained config line is indistinguishable from an accident, and the next sweep deletes it. **It is now explained. A task that proposes removing it is overturning a Jonathan ruling.**
+
+### PKG-§5a ⭐⛔ **THE SOFT-REFERENCE COOK LAW — A `-map` ALLOWLIST COOKS ONLY *HARD* REFERENCES, AND THE RESULTING PACKAGE PASSES EVERY GATE WHILE BEING UNPLAYABLE**
+
+> ### ⭐ **THIS IS THE MOST EXPENSIVE THING THE PACKAGING LANE KNOWS. IT IS WRITTEN AS LAW BECAUSE IT ALREADY SHIPPED A BROKEN ARTIFACT ONCE, AND BECAUSE THE ARTIFACT *REPORTED SUCCESS*.**
+
+- ⚠️ **MEASURED LIVE, TASK-696 pass 1 (2026-08-29):** UAT printed its own `BUILD SUCCESSFUL`, the exe launched, the main menu came up — and the game was **UNPLAYABLE**. The `-map` allowlist had cooked only what the two maps HARD-reference, so everything this project resolves through `TSoftObjectPtr`/`TSoftClassPtr` was silently omitted: **`DT_Cards` (the deck EMPTY, 6 blank slots) · `WBP_HUD` (no HUD at all) · `BP_HeroCharacter` · `BP_CommanderNpc` · `BP_Torch` · invisible mines.** ⛔ **Nothing errored. The cook was "successful". The menu was perfect.**
+- ⚖️ **AND THE ARCHITECTURE GUARANTEES THIS WILL RECUR: soft references are this project's HOUSE STYLE, not an accident** — `ASiegePlayerController`'s constructor resolves its entire content contract through soft pointers on purpose (`SiegePlayerController.cpp:194-215`, *"everything soft, resolved null-safe at runtime"*). ⇒ **The cooker cannot see the game's content graph by construction.** A future feature adds one more soft ref and re-arms this trap for free.
+- ✅ **THE FIX, PINNED AS THE RECIPE (⛔ not as advice): the maps allowlist is KEPT, and content directories are added via the cook commandlet's supported `-COOKDIR=` passed through UAT `-AdditionalCookerOptions`.** As shipped and measured: `Data` · `UI` · `Blueprints` · `Input` · `Characters` · `Meshes` · `Materials` · `Textures` · `VFX` · `Audio` · `LevelPrototyping`. Result: ucas 901.1 → 1027.8 MB, archive 1.789 → 1.91 GB, all five missing assets resolve, `not found`/`unavailable` = **0**, errors 12 → 1. ⛔ **NO repo file is edited to achieve this** (no `DirectoriesToAlwaysCook` ini surgery), ⛔ no plugin surgery, and the ~8 GB of unused marketplace packs stay OUT.
+- ⛔⛔ **THE RECIPE IS NOW LOAD-BEARING AND MAY NOT BE RE-DERIVED PER COOK. IT LIVES IN `Tools/Packaging/ship.ps1` (`SHIP-§`) SO NO FUTURE SHIP CAN SILENTLY REGRESS TO A MENU-ONLY PACKAGE.** A hand-run cook that omits `-COOKDIR` is a defect even if UAT says `BUILD SUCCESSFUL`.
+- ⚖️ **AND THE VERIFICATION MOVED WITH IT — this hazard is the entire reason `PKG-§6`'s boot-verify was widened past the menu.** ⛔ **A menu-only boot-verify would have PASSED pass 1.** The gate that caught it was booting into a real arena; that is now mandatory, not optional.
 
 ### PKG-§6 📌 GATES + VERIFICATION
 
 - **The cook is its OWN serialized gate (QUIET-MODULE):** it runs AFTER the map-mirror commit lands (the package MUST contain the flip) and ⛔ never concurrently with any compile gate.
 - **The UAT log is parsed for real success** — the Build.bat exit-code-lie law extends to UAT: read the log's own verdict lines, ⛔ never trust `%ERRORLEVEL%`/`$LASTEXITCODE` alone.
 - **Boot-verify, honestly scoped:** launch the staged `.exe`, confirm the main menu is reached on process/log evidence, close it. ⛔ No input-injection lane exists ⇒ no gameplay or PIE-matrix claims; Jonathan's own extract-and-click is the human acceptance.
+  - ### PKG-§6a ⭐⛔ **WIDENED 2026-08-30 — THE BOOT-VERIFY MUST REACH A REAL ARENA MATCH. A MENU IS NOT A PASS.**
+    ⚠️ **Bought by `PKG-§5a`'s live failure: a menu-only boot-verify PASSED a package with no deck, no HUD and no hero.** ⇒ **MANDATORY, every cook, every config:** the artifact boots to **`L_Arena`** and the check reads, from that boot's OWN evidence, that **the content graph RESOLVED** — at minimum a **real card deck built from `DT_Cards` rows** (⛔ not 6 blank slots), the **HUD present**, the **hero pawn spawned**, and a **`not found` / `unavailable` sweep of the run's log = 0**. ⛔ **"BUILD SUCCESSFUL" is not evidence of anything but the build.**
+    - ⚠️ **In SHIPPING this check needs an evidence standard that survives log-stripping — `PKG-§9a` rules it. The requirement does NOT weaken because the instrument changed:** if the log lane is unavailable, the arena reach is proven on **rendered pixels** instead. ⛔ **What is never acceptable is dropping the arena requirement because it got harder to measure.**
+    - ⛔ **Still no input-injection lane, and this does not invent one.** The arena is reached by the route the machine can drive (the shipped menu flow / a launch arg / the recorded route in the handoff), and the lane is **declared honestly** in the handoff. Gameplay-feel claims remain Jonathan's alone.
 - ⛔ **NEVER push** (unchanged law). The zip is a local artifact; distribution is Jonathan's alone.
+
+### PKG-§7 ⚖️ THE STAGING GROUND — CORRECTED BY MEASUREMENT, AND THE FENCE IS RE-STATED AS A PROPERTY
+
+#### PKG-§7a ⛔ **THE FENCE IS A PROPERTY, NOT A PATH — AND THIS CLAUSE'S OWN FIRST DRAFT GOT THE FACTS BACKWARDS**
+
+> ### ⚖️ **REPAIRED 2026-08-30 (same day it was written), ON TASK-701's MEASUREMENT. THE RULING SURVIVED; BOTH OF ITS STATED FACTS WERE FALSE. THE ORIGINAL WORDING IS PRESERVED BELOW BECAUSE THE *ERROR* IS THE MORE USEFUL ARTIFACT.**
+
+- ✅ **THE MEASURED TRUTH (TASK-701, re-verified by the manager at the files, ⛔ not relayed):**
+  ```
+  git rev-parse --show-toplevel   ->  C:/GitProjects/GitHub/GitClaudeUnrealTesting
+  git check-ignore -v -- <staging>/README.md
+      .gitignore:19:packagedZIPofGame/    <staging>/README.md
+  ```
+  ⇒ **The git work tree root is `C:\GitProjects\GitHub\GitClaudeUnrealTesting\` and the UE project folder `GitClaudeUnrealTest\` is a SUBDIRECTORY of it.** ⇒ **`packagedZIPofGame\` is INSIDE the work tree**, and it is fenced by a **live rule at the work-tree-root `.gitignore` line 19** (`packagedZIPofGame/`), which **TASK-696 added before the first cook** and TASK-697 proved three ways. **This is route (ii): inside-tree + a live ignore rule.**
+- ⛔⛔ ~~**THE FOLDER IS OUTSIDE THE REPO**~~ · ~~**THE ROOT `.gitignore` CONTAINS NO `packagedZIPofGame` LINE (grepped 2026-08-30, zero hits)**~~ · ~~**the artifact is fenced STRUCTURALLY, by living outside the work tree**~~ — **ALL THREE FALSE. STRUCK.**
+- ⚠️⭐ **HOW THE MANAGER GOT IT WRONG, RECORDED BY NAME BECAUSE IT IS `AS-§14` VERBATIM — *A SEARCH RESULT IS EVIDENCE ABOUT THE SEARCH*:** I grepped **`…\GitClaudeUnrealTesting\GitClaudeUnrealTest\.gitignore`** — the **project** ignore file — got zero hits, and reported it as *"the ROOT `.gitignore` contains no line."* **There are TWO `.gitignore` files**; the one that carries the fence is the **work-tree root's**, one directory up, which I never opened. Then, seeing the folder beside the project directory, I inferred *"outside the repo"* — ⛔ **without ever running `rev-parse`, the one command that answers where the work tree actually starts.** ⇒ ⛔ **THE LESSON, AND IT IS WHY THE RULING BELOW IS SHAPED THE WAY IT IS: I ASSERTED A FACT ABOUT GIT WITHOUT ASKING GIT.** ⚖️ **Two `.gitignore` files in a nested layout is not exotic — it is this repo's actual shape — and any future claim about ignore state must name WHICH file it read.**
+- ⚠️⚠️ **AND THE CONSEQUENCE FOR ANYONE COPYING FROM LAW: the parenthetical this clause originally printed as the staging path DESCRIBED A FOLDER THAT DOES NOT EXIST AS DESCRIBED.** A script that hardcoded it would point at nothing. ⇒ ⭐ **THE ONE THING THAT MADE THE ERROR HARMLESS IS THE RULING ITSELF: `ship.ps1` gate `A4-FENCE` measures the fence per run via `rev-parse` + `check-ignore` and ⛔ hardcodes no path — so the WRONG FACT IN THE LAW COULD NOT REACH THE SCRIPT.** ⚖️ **That is the case for ruling properties instead of paths, made by accident, at our own expense.**
+- ⛔⛔ **THEREFORE THE FENCE IS RULED AS A PROPERTY, ⛔ NEVER AS A PATH: BEFORE EVERY COOK, THE STAGING DIRECTORY MUST BE PROVEN — BY MEASUREMENT, THAT RUN — TO BE EITHER (i) OUTSIDE THE GIT WORK TREE, OR (ii) MATCHED BY A LIVE `.gitignore` RULE.** One of the two, proven, or the cook does not start. ⚖️ **A property survives someone moving the folder; a hardcoded path does not** — ⭐ **and it just survived the law's own author being wrong about the folder.**
+  - 📌 **THE INSTRUMENTS ARE NAMED, so the proof is reproducible and so nobody re-derives it from a directory listing (which is exactly what failed above): `git rev-parse --show-toplevel` establishes where the work tree starts; `git check-ignore -v -- <path>` establishes whether a rule covers it AND PRINTS WHICH FILE:LINE DID IT.** ⛔ **A claim about ignore state that does not name the `.gitignore` file it read is not a measurement.**
+  - ✅ **AS OF 2026-08-30 THE LIVE ANSWER IS ROUTE (ii)** — inside the work tree, covered by the work-tree-root `.gitignore:19`. ⛔ **Recorded as the current reading, ⛔ NOT as a constant to trust:** the gate re-measures every run, and it would keep working unchanged if Jonathan moved the folder outside the tree tomorrow.
+  The TASK-683 editor-auto-stage trap is the reason this is pre-cook and not post-hoc cleanup.
+- ### ✅⛔ **THIRD VERIFICATION, 2026-08-30 — THIS CLAUSE'S BODY IS *CORRECT AS WRITTEN*. ⛔ DO NOT "REPAIR" IT AGAIN ON A RELAY.**
+  ⚠️ **This clause was reported to me a THIRD time as still factually wrong — specifically that its route (ii) reading and its `.gitignore:19` citation were both false. I re-measured at the files before writing, per `AS-§14`, and THE REPORT WAS WRONG: both claims are TRUE.** ⭐ **Had I edited on the relay, I would have broken a correct clause for the third time — which is the whole reason this bullet exists.**
+  - 📌 **THE INSTRUMENTS I ACTUALLY USED, NAMED HONESTLY (⛔ I had no shell this session, so these are FILE READS, ⛔ not `git` invocations — the `rev-parse`/`check-ignore` output on record is TASK-701's):**
+    1. **`C:\GitProjects\GitHub\GitClaudeUnrealTesting\.git\HEAD` EXISTS** and reads `ref: refs/heads/main` ⇒ **a real git directory at the PARENT** ⇒ the work-tree root is `…\GitClaudeUnrealTesting\`. ✅
+    2. **Globbed `GitClaudeUnrealTest/.git*` ⇒ the ONLY hit is `.gitignore`** — ⛔ **no nested `.git`, no submodule** ⇒ there is exactly ONE work tree and the project folder is inside it. ✅ *(This was the missing check the first time: "the folder sits beside the project directory" is compatible with BOTH readings; only the `.git` location distinguishes them.)*
+    3. **Read the work-tree-root `.gitignore`: line 19 is literally `packagedZIPofGame/`** (lines 13–18 are the `PKG-§3` comment block, line 20 is EOF). ✅ **THE `:19` CITATION IS EXACT.**
+    4. **Listed the folder: `…\GitClaudeUnrealTesting\packagedZIPofGame\` EXISTS**, containing `README.md` + `Siegebound-Win64-Development-2026-08-29.zip` (the `PKG-§7b` row-S4 protected artifact) ⇒ **a sibling of `GitClaudeUnrealTest\`, i.e. INSIDE the work tree.** ✅
+    5. **Grepped the PROJECT `.gitignore` (`…\GitClaudeUnrealTest\.gitignore`) for `packagedZIPofGame` ⇒ ZERO hits** — ✅ **confirming the two-file trap that produced the original error, and confirming that ONLY the root file carries the fence.**
+  - ⇒ ✅ **RULING: route (ii) stands, `.gitignore:19` stands, the body is unchanged.** ⛔ **The one thing that WAS still false lived in `PKG-§2`'s staging-home bullet** (*"one level above the git root… outside the work tree entirely"*) — **now struck and repaired there.**
+  - ⚖️ **THE STANDING LESSON, NOW PROVEN IN BOTH DIRECTIONS: `AS-§14` cuts both ways — a relayed CLAIM about a file is evidence about the relay, exactly as a search result is evidence about the search.** ⛔ **Any future edit to this clause must be preceded by opening the four artifacts above and NAMING what they said.**
+- ⛔ **`PKG-§3` is otherwise UNCHANGED and absolute: the multi-GB build NEVER enters git, in any form, and LFS is NOT the answer.** The README's full text is still reproduced in the handoff so the repo keeps the record of an unversioned file.
+
+#### PKG-§7b 📌 **ZIP RETENTION — RULED, BECAUSE "IT DEPENDS" IS HOW A DISK FILLS AND HOW AN ARTIFACT DISAPPEARS**
+
+- **Name:** `Siegebound-Win64-<Config>-<YYYY-MM-DD>.zip`. **The config is IN the name**, so a Shipping zip can never quietly overwrite a Development one.
+- **Retention: WRITE-NEW-THEN-PRUNE, keep N=2 per configuration.** The new zip is written and **verified** (`SHIP-§4`) FIRST; only then are older zips **of the same configuration** pruned beyond the newest 2. ⛔ **Never delete before the replacement verifies** — a failed zip plus a deleted predecessor leaves Jonathan with nothing.
+- ⛔⛔ **A ZIP OF A DIFFERENT CONFIGURATION IS NEVER PRUNED WITHOUT JONATHAN'S WORD.** ⇒ `Siegebound-Win64-Development-2026-08-29.zip` — **the one he has actually been handed** — is PRESERVED indefinitely (FOR-JONATHAN row S4). ⚖️ Same-day re-ships collide on filename: the newer **replaces** the same-name file (that is the point of a dated re-ship), and the replacement still writes-then-verifies before the old bytes are released.
+- **The staged `Windows/` tree is overwritten in place** by each cook — it is a build output, not an artifact.
+
+### PKG-§8 ⚖️ THE GAME'S DISPLAYED IDENTITY IS "SIEGEBOUND" — AND THIS IS ⛔ **NOT** A PROJECT RENAME
+
+**Jonathan's directive, verbatim:** *"fix the project name and rename it as 'Siegebound' and rebuild the game as a shipping build."* **Context that fixes its meaning:** he was answering a report that the package's Windows file properties read **`ProjectName=Third Person Game Template`** — the leftover marketplace-template string, which the shipped README already had to apologise for in print (*"cosmetic only"*).
+
+- ✅ **THE RULED READING — THE DEFAULT, AND IT IS THE ONE THAT ACTUALLY FIXES WHAT HE SAW: the game's DISPLAYED identity becomes "Siegebound".** Surface, pinned: **`Config/DefaultGame.ini` → `[/Script/EngineSettings.GeneralProjectSettings]`** — `ProjectName=Siegebound` (⛔ replacing `Third Person Game Template` at `DefaultGame.ini:3`), plus `ProjectDisplayedTitle` (the window title) and the companion description fields. ⛔ **`ProjectID` is NOT touched.**
+- ⛔⛔ **WHAT THIS IS NOT, RULED EXPLICITLY SO NOBODY "FINISHES THE JOB": IT IS ⛔ NOT A `.uproject` / MODULE / FOLDER RENAME.** `GitClaudeUnrealTest` → `Siegebound` is a **multi-day, high-risk refactor** that breaks **every hardcoded path this pipeline owns** — the CLAUDE.md `Build.bat` line, the MCP config, `Tools/**`, `Docs/setupdirections.md`, the LFS paths, the `GITCLAUDEUNREALTEST_API` export macro on ~every class, and the staged layout the cook produces. ⚖️ **It is a legitimate thing to want and an illegitimate thing to infer** — it is escalated as **FOR-JONATHAN row S1**, never performed on a reading.
+- ⚠️ **STATE THE RESIDUE HONESTLY RATHER THAN LET HIM FIND IT: under this reading the shipped executable stays `GitClaudeUnrealTest.exe` and the staged folder stays `Windows\GitClaudeUnrealTest\`.** The README already explains this to the player and that explanation STAYS — with the template-name apology **deleted**, because it will no longer be true.
+- ⛔ **THE INI FIELDS ARE THE CONTRACT; THE `.exe`'s WINDOWS FILE-PROPERTY FIELDS ARE *MEASURED*, ⛔ NOT ASSUMED.** Whether UBT propagates `ProjectName` into the executable's version resource for a monolithic client target is **an engine claim, and this project does not ship engine claims it has not read** (the standing relayed-diagnosis law). ⇒ **The implementer sets the ini, cooks, then OPENS the properties and REPORTS what they actually say.** If they still read the template string, that is a **finding for Jonathan** (row S2), ⛔ never a silent fix, ⛔ never a hack into engine files.
+- ✅ **Zero-bounce property, and it is why this lands first:** the ini edit is **file-only** — no editor, no MCP, no engine. Its result is verified by the cook that was already going to run.
+
+### PKG-§9 ⚠️⛔ SHIPPING IS NOT "DEVELOPMENT WITH A FLAG" — FIVE DELTAS, RULED UP FRONT
+
+> ⚖️ **Every one of these is a real, known property of a UE Shipping build. They are written here so the implementer MEETS them, ⛔ never DISCOVERS them mid-cook and improvises.**
+
+#### PKG-§9a ⛔ **LOGGING IS COMPILED OUT IN SHIPPING BY DEFAULT — AND OUR ENTIRE VERIFICATION METHOD PARSES THE GAME'S OWN LOG**
+
+- ⚠️ **This is the one that silently voids the gate.** `PKG-§6a`'s arena proof, the `not found` sweep, `MinesPass`, `Traversability CONFIRMED`, the graceful-degrade line — **all of it is log evidence.** Measured 2026-08-30: **`Config/DefaultEngine.ini` contains NO `bUseLoggingInShipping` entry** ⇒ the engine default applies.
+- **TWO ROUTES WERE OFFERED. ⛔ ROUTE 1 IS DEAD ON THIS MACHINE CLASS — SEE `PKG-§9a-1`. ROUTE 2 IS THE STANDING EVIDENCE ROUTE.**
+  1. ~~**`bUseLoggingInShipping=True`** in `Config/DefaultEngine.ini`~~ — ⛔⛔ **STRUCK 2026-08-30: THIS IS NOT AN INI SETTING AND NEVER WAS.**
+  2. ✅ **THE STANDING EVIDENCE STANDARD** — process liveness + the **window title** (which `PKG-§8` made load-bearing: it should read *Siegebound*) + a **rendered-pixel capture** proving the arena, deck and HUD are on screen.
+
+#### PKG-§9a-1 ⛔⛔ **ROUTE 1 IS UNAVAILABLE ON AN INSTALLED-ENGINE MACHINE. MEASURED AT THE UE 5.8 SOURCE BY TASK-698, ⛔ NOT INFERRED FROM A FAILED ATTEMPT.**
+
+> ### ⛔ **SHIPPING BUILDS ON THIS MACHINE ARE **LOG-SILENT, PERMANENTLY**. THAT IS A PROPERTY OF THE ENGINE INSTALL, ⛔ NOT A CONFIG WE FORGOT TO SET.**
+
+| Claim | Evidence, at the engine |
+|---|---|
+| It is a **UBT C# target property**, ⛔ not a config key | `TargetRules.cs:1610-1611` — `[RequiresUniqueBuildEnvironment] public bool bUseLoggingInShipping { get; set; }` |
+| It has **no ini binding at all** | ⛔ **no `[ConfigFile]`/`[XmlConfigFile]` attribute** on the property — contrast `UEBuildWindows.cs:539`, which *does* carry `[ConfigFile(ConfigHierarchyType.Game, …)]`. **The contrast is the proof**: the attribute exists in this codebase and is simply not on this property. |
+| **No C++ reads it** | `bUseLoggingInShipping` across `Engine/Source` = UBT `.cs` + generated `.xml` docs **only** |
+| And it **cannot be forced here** | `[RequiresUniqueBuildEnvironment]`, while this target resolves to **`TargetBuildEnvironment.Shared`** — `TargetRules.cs:2859` returns `Shared` when `Unreal.IsEngineInstalled()`, and **`C:\Program Files\Epic Games\UE_5.8\Engine\Build\InstalledBuild.txt` EXISTS (measured)** = a Launcher install ⇒ modifying it throws at `UEBuildTarget.cs:1512-1516` and **the cook FAILS OUTRIGHT** |
+
+- ⚖️ **⇒ RULED: route 1 is `unavailable-on-this-machine-class`, and route 2 is the STANDING route for every Shipping cook here — ⛔ not a fallback, ⛔ not a degradation.** ⭐ **Reframe it honestly, because it is genuinely true: a rendered-pixel capture of a real deck in a real arena is BETTER evidence than a log line** — it is the thing the player sees, and it cannot be faked by a process that boots and then does nothing.
+- ⛔ **`PKG-§6a` DOES NOT WEAKEN. The arena requirement is UNCHANGED — only the instrument changed.** ⚠️ Restating the ban that now carries all the weight: ⛔ **never report a PASS from the absence of errors in a log that CANNOT EMIT ERRORS.** In Shipping here, **a silent log is the expected state**, so silence is worth exactly nothing as evidence.
+- 📌 **The route becomes selectable again only on a SOURCE-BUILT engine** (`IsEngineInstalled()` false ⇒ `Unique` environment), and even then via **`TargetRules`, ⛔ never an ini**. ⛔ **No task may "fix" this by editing `.Target.cs` to chase a log line** — that trades a shipped-build property for a broken cook.
+
+#### PKG-§9a-2 ⚖️ **THE `A6-EVIDENCE-ROUTE` GATE — RULED, SO THE `ship.ps1` REPAIR IS AUTHORIZED RATHER THAN IMPROVISED**
+
+⚠️ **TASK-701 built `A6-EVIDENCE-ROUTE` as a pre-cook STOP that fires when config is Shipping + route is Log + `bUseLoggingInShipping=True` is absent from the ini — correct against the law AS WRITTEN, and it flagged the dependency honestly. Since the key can NEVER be present, ⛔ every `/ship` would STOP there forever.**
+
+- ✅ **RULED: `A6` ACCEPTS ROUTE-2 EVIDENCE, AND THAT IS THE WHOLE POINT OF THE GATE EXISTING.** The gate's purpose is **"this run must have SOME valid way to prove the boot BEFORE we burn 30 minutes"** — ⛔ never *"the ini must contain a specific key."* **Repaired semantics:**
+  1. **Detect the machine class** — `Engine\Build\InstalledBuild.txt` present ⇒ installed engine ⇒ **route Log is UNAVAILABLE**; select route **Pixel** automatically and **say so in the report**.
+  2. ⛔ **STOP only if the run would proceed with NO usable evidence route** — i.e. the operator explicitly demanded `-BootEvidence Log` on an installed engine (⇒ stop and cite `PKG-§9a-1`), **or** the pixel-capture instrument is unavailable (⇒ stop: a ship that cannot verify its boot must not ship).
+  3. ⛔ **`A6` MUST NOT PASS SILENTLY WITH NO ROUTE.** ⚖️ `SHIP-§1`'s posture is preserved exactly: **the gate still stops a ship that cannot prove itself** — it just stops for the real reason instead of a phantom one.
+- ⛔ **This ruling changes `A6` ONLY.** ⛔ No other gate is relaxed, ⛔ `-SkipTests`-class flags are still forbidden, and the `PKG-§6a` arena bar is untouched.
+
+#### PKG-§9a-3 📌 **THE INERT KEY TASK-698 LEFT IN `DefaultEngine.ini` — STRIKE THE KEY, KEEP A SIGNPOST**
+
+- ⛔ **STRIKE `bUseLoggingInShipping=True` from `Config/DefaultEngine.ini`.** It does **nothing** — and an inert key that *looks* like a working setting is this project's named **stale-symbol trap** (`KBD-§2`'s class): the next agent greps it, finds it in our own ini, and concludes Shipping logging is ON — which is **precisely the inversion `PKG-§9a` bans**, now with our own file as the false witness. ⚠️ It would also cook into the player's package as a lie about itself.
+- ✅ **KEEP, IN ITS PLACE, A ONE-LINE SIGNPOST COMMENT** — e.g. *"`bUseLoggingInShipping` is NOT an ini key: it is a UBT `TargetRules` property and is unusable on an installed engine — see `PKG-§9a-1`. Shipping builds here are log-silent by design."* ⚖️ **A comment where the next author will look beats a law they must already know to consult**, and it costs one line. ⭐ **TASK-698 did exactly the right thing** — it complied with the spec's letter, then measured the mechanism and reported that the spec was wrong. **The finding is the deliverable; the inert key is just the receipt.**
+- ⛔ **WHAT IS BANNED EITHER WAY: claiming a boot-verify PASS from the absence of errors in a log that cannot emit errors.** ⚠️ **A silent log in Shipping looks EXACTLY like a clean run.** That inversion — absence of evidence read as evidence of absence — is the specific failure this clause exists to prevent.
+
+#### PKG-§9b ⚠️ **THE IN-GAME AI ASSISTANT CONSOLE MAY BE STRIPPED OR INERT IN SHIPPING — MEASURE IT, ⛔ NEVER HACK AROUND IT**
+
+- Console / cheat-manager surfaces are commonly compiled out of Shipping (`USiegeCheatManager` is already `#if !UE_BUILD_SHIPPING`-guarded by house law), and the assistant console's open path runs through the player controller's input lane, not the cheat lane — **so whether it survives is a QUESTION, ⛔ not a known.**
+- ⛔⛔ **THE IMPLEMENTER MEASURES AND REPORTS. FULL STOP.** If the console is stripped or inert in the Shipping artifact, that is a **FINDING for Jonathan** (row S5) and **the README must say so plainly**. ⛔ **No `#if` surgery, no guard-lifting, no "quick fix" to make it appear** — changing shipped-code guards to make a package look complete is the exact move that turns a documented limitation into an undocumented defect.
+- ✅ **Note the honest floor already on record (`PKG-§4`): with no GGUF present the assistant is unavailable and *"THE MATCH IS FULLY PLAYABLE"* by the code's own words.** ⇒ **Even the worst outcome here costs the player nothing they were getting in the Development zip.** Say that in the README too.
+
+#### PKG-§9c ⛔ **AUTOMATION TESTS DO NOT EXIST IN A SHIPPING BUILD — THE SUITE GATE STAYS ON THE DEVELOPMENT EDITOR TARGET**
+
+The suite (baseline **143**) is run against the **Development editor target**, exactly as always, and it gates the CODE. ⛔ **The Shipping artifact is never the thing that proves the code, and a Shipping cook never substitutes for a suite run.** ⚖️ Two different questions: *"is the code correct"* (suite, Development) vs *"does the shipped artifact work"* (`PKG-§6a`, Shipping).
+
+#### PKG-§9d 📌 **THE `.pdb` CHANGES SIZE OR DISAPPEARS — RECORD THE NEW NUMBER**
+
+The Development stage shipped `GitClaudeUnrealTest.pdb` alongside the exe. Shipping symbol output differs; whatever lands, **the handoff records the new exe size, pdb size (or its absence), and the total archive size** against the Development baseline (exe 347 MB, ucas 1.03 GB, zip 1.313 GB / 1,409,955,049 B, extracted 1.91 GB). ⚖️ **A size that moves the wrong way is the cheapest possible smoke alarm for a mis-configured cook.**
+
+#### PKG-§9e ⛔ **THE `-COOKDIR` RECIPE (`PKG-§5a`) IS NOT OPTIONAL IN SHIPPING EITHER**
+
+⚠️ **Soft references do not become hard because the config changed.** A Shipping cook without `-COOKDIR` produces the same menu-only, deck-empty artifact — and in Shipping, with logging possibly off, **it is HARDER to detect.** ⇒ ⛔ **`-COOKDIR` + the `PKG-§6a` arena proof ride every cook, in every configuration, forever.**
+
+#### PKG-§9f ⛔⛔ **A SHIPPING BINARY IGNORES THE MAP ARGUMENT AND `-ExecCmds`. `PKG-§6a`'s LAUNCH-ARG ROUTE INTO AN ARENA DOES NOT EXIST IN SHIPPING.**
+
+**Measured by TASK-699 (2026-08-30) as a CONTROLLED A/B, ⛔ not inferred from one failure:** `/Game/Maps/L_Arena`, bare `L_Arena`, and `-ExecCmds="open /Game/Maps/L_Arena"` **all three booted to the menu** on the Shipping exe — while **the Development exe, same machine, same content, minutes apart, logged `LoadMap: /Game/Maps/L_Arena`.** ⚖️ **Reported as a MEASUREMENT with the mechanism UNREAD — that is the correct posture and it is why this clause is trustworthy** (the relayed-diagnosis law: we state what we observed, ⛔ not why the engine does it).
+
+- ⇒ ⛔ **EVERY FUTURE SHIPPING COOK HITS THIS SAME WALL. A Shipping artifact CANNOT self-drive into an arena.** Combined with `PKG-§9a-1` (log-silent) the honest position is stark: **in Shipping, the machine can prove the process, the window title and the menu — and NOTHING BEYOND IT — by itself.**
+- ⛔⛔ **AND THE TEMPTING CONCLUSION IS THE FORBIDDEN ONE: THIS DOES ⛔ NOT LOWER `PKG-§6a`. A MENU IS STILL NEVER A PASS.** ⚠️ **The last Development cook booted to a PERFECT menu while the game was unplayable** (empty deck, no HUD, no hero — `PKG-§5a`). ⇒ **"the arena is hard to reach in Shipping" is an argument about the INSTRUMENT, ⛔ never about the BAR.** A gate relaxed because it became inconvenient is not a gate.
+- ✅ **THE COMPLETION ROUTE, RULED: REACH THE ARENA THE WAY A PLAYER DOES — CLICK `Play` IN THE SHIPPED GAME'S OWN MENU — AND ADJUDICATE THE RESULTING CAPTURE UNDER `SHIP-§8`.** The pipeline already owns both halves: the click rig (`t669_topclick.ps1`) and screen capture. ⭐ **This is strictly BETTER evidence than the launch-arg route it replaces: it exercises the real menu → level-travel → HUD path a player takes, on the shipped binary, instead of a developer shortcut that bypasses it.**
+- ⚠️ **ITS COST IS HONEST AND IS PART OF THE RULING: the click rig needs an UNLOCKED DESKTOP** (the standing `TASK-076` no-simulated-input-on-a-locked-desktop reality). ⇒ **Shipping boot-verify is SCHEDULABLE, ⛔ not unattended.** ⚖️ **That is a real constraint on `/ship`, and it is stated rather than engineered around** — a ship whose boot-verify silently degraded to "the menu came up" would be `PKG-§5a` all over again, with our own gate as the false witness.
+- ✅ **THE CONTENT HALF IS SEPARATELY PROVABLE, UNATTENDED, AND SHOULD BE (TASK-699's own method — ratified):** a **UnrealPak listing** of the shipped pak proves the `PKG-§5a` casualties are present and the `-COOKDIR` set landed; and **the Development exe pointed at THIS package's own cooked bytes** proves the content graph resolves at runtime (`LoadMap`, a real 50-card draw pile, mines, `Traversability CONFIRMED`). ⇒ ⭐ **The two halves decompose cleanly: CONTENT is machine-provable without a desktop; RENDERING is what the click adjudication buys.** ⛔ **Neither substitutes for the other, and the pair is not complete until both are in.**
+
+## ⚖️ PKG-§10 ⛔⛔ STAGE HYGIENE — THE ZIP CONTAINS EXACTLY ONE RUNNABLE GAME, AND IT IS THE RIGHT ONE
+
+> ### ⚠️ **MEASURED BY TASK-699: UAT DOES NOT CLEAN THE STAGE. 714.5 MB OF STALE *DEVELOPMENT* BINARIES SURVIVED A SHIPPING COOK, IN ZERO MANIFESTS, INDIVIDUALLY RUNNABLE.**
+
+`GitClaudeUnrealTest/Binaries/Win64/GitClaudeUnrealTest.exe` (347,694,080 B) + its `.pdb` (401,526,784 B) — **absent from all three manifests** (`UFSFiles`, `NonUFSFiles`, `DebugFiles`, verified 0 hits), which list only `…-Win64-Shipping.exe` and its companions. **They are pure orphans of an earlier cook.**
+
+- ⛔⛔ **THE HAZARD IS NOT THE DEAD WEIGHT — IT IS THAT THE WRONG EXE RUNS.** A curious player who opens `Binaries\Win64\` and double-clicks `GitClaudeUnrealTest.exe` **silently launches the OLD DEVELOPMENT BUILD** — different config, different behaviour, stale code — **while believing they ran Siegebound.** ⚖️ **That is the `PKG-§5a` family exactly: an artifact that works, reports nothing wrong, and is not the thing anyone meant to ship.**
+- ⛔ **RULED: THE STAGE IS PRUNED OF EVERY NON-MANIFEST GAME BINARY BEFORE THE ZIP IS WRITTEN.** The manifests are the authority — **a game `.exe`/`.pdb` in the stage that appears in NO manifest is an orphan and is deleted.** ⛔ Never "left in, it's harmless": it is not harmless, it is *runnable*.
+- ⛔⛔ **PRUNE BEFORE BOOT-VERIFY, ⛔ NEVER AFTER — VERIFY THE ARTIFACT YOU ACTUALLY SHIP.** ⚠️ A boot-verify run against a tree that is then modified proves something about a tree that no longer exists. **Order is: prune → measure → boot-verify → zip.**
+- ✅ **THIS BECOMES A `ship.ps1` GATE, ⛔ not a one-off TASK-700 cleanup** — because UAT will do it again on every cook, forever. **Invariant: exactly ONE runnable game exe in the staged tree (plus the root shim), and it is the one the manifests name.**
+- ✅ **AND THE README NAMES THE CLICK TARGET EXPLICITLY** (`PKG-§2`'s mandate, sharpened): the exact path a player double-clicks, stated once and unambiguously. ⚠️ **The previous README already had to explain why the exe is not called `Siegebound.exe`; with two exes present that explanation becomes an actively misleading one.**
+- ⭐ **THE SIZE ALARM WORKED, AND THAT IS WORTH RECORDING:** `PKG-§9d` calls a wrong-direction size move *"the cheapest possible smoke alarm."* **It rang** — the staged tree GREW while the exe itself shrank 48.9% (331.6 → 169.5 MB, correct for Shipping) — **and chasing the discrepancy is what found the orphans.** ⇒ ⛔ **A size delta that does not reconcile is INVESTIGATED, never noted and passed.**
+
+## ⚖️ PKG-§11 📌 THE README STATES **WHAT IS NOT IN THIS BUILD** — A PACKAGE IS A SNAPSHOT, AND A SNAPSHOT THAT DOESN'T SAY WHEN IT WAS TAKEN LIES BY OMISSION
+
+**Measured by TASK-699 (`strings` on the artifact): the package is HEAD `22728c8` + TASK-698's ini changes and NOTHING ELSE** — ⛔ **it does not contain the TAB controls menu, and it does not contain the `ship`-command work.**
+
+- ⛔ **RULED: SHIP THE ARTIFACT, AND SAY WHAT IT IS.** ⚖️ **Waiting for in-flight features would make "ship" mean "ship when everything lands" — which is precisely the thing `/ship` exists to abolish** (Jonathan's words: *"anytime we make any changes, I can say 'ship'"*). **A dated snapshot is the product; re-shipping is one word.**
+- ✅ **MANDATORY README SECTION — *"What is NOT in this build"*: the commit the artifact was built from, and a plain-language list of work that exists in the repo but landed AFTER it.** ⛔ **The *what changed* section may never imply a feature is present when it is not** — ⚖️ **the whole trust value of the README is that it describes THIS zip, not the project's ambitions.**
+- ⭐ **AND IT MAKES THE NEXT SHIP THE PROOF OF ASK 2:** the honest gap named here is exactly what the first real `/ship` closes.
+
+## ⚖️ THE `ship` COMMAND — one word, one repeatable, refusable release procedure (2026-08-30) — namespace **SHIP-§**
+
+📌 **BORN WITH ITS NAMESPACE PREFIX (`SHIP-§N`)** per the `KBD-§`/`NAV-§`/`WM-§`/`PKG-§` precedent. Cite as `SHIP-§4`, never a bare `§4`.
+**Trigger — Jonathan's directive, verbatim:** *"I want to be able to make a command to where anytime we make any changes, I can say 'ship' to you and you will update the zip file and any other documentation with all the current changes to the game. So set that up for me."*
+
+### SHIP-§0 ⚖️ WHAT HE ASKED FOR IS **DURABLE INFRASTRUCTURE**, ⛔ NOT A ONE-OFF
+
+*"anytime we make any changes"* is a standing instruction. ⇒ **Three artifacts, and all three are required for the word "ship" to work from any surface:**
+
+| # | Artifact | Why it must exist separately |
+|---|---|---|
+| 1 | **`.claude/commands/ship.md`** | makes **`/ship`** a real slash command (the `.claude/commands/` directory **does not exist yet** — measured 2026-08-30; this creates it) |
+| 2 | **`Tools/Packaging/ship.ps1`** | carries the **RECIPE** — ⭐ **this is where `PKG-§5a`'s `-COOKDIR` lesson is BAKED IN so no future ship can silently regress to a menu-only package.** A procedure that lives only in a prompt is a procedure that decays. |
+| 3 | **a line in `CLAUDE.md`** | routes the **bare word "ship"** (what he actually said he would say) to the same procedure |
+
+⛔ **The script is the authority on the RECIPE; the command file is the authority on the PROCEDURE AND ITS REFUSALS.** ⚠️ Neither may contradict `PKG-§`; where they seem to, `PKG-§` wins and the divergence is a defect.
+
+### SHIP-§1 ⛔⛔ THE FAILURE POSTURE — RULED FIRST, BECAUSE IT IS THE WHOLE VALUE OF THE COMMAND
+
+> ### ⛔ **A FAILED GATE **STOPS** THE SHIP AND **SAYS SO**. ⛔ THE COMMAND NEVER SHIPS A BUILD IT COULD NOT PROVE.**
+
+⚖️ **A one-word release command that can emit a broken zip is WORSE THAN NO COMMAND** — it converts *"I'll go check the build"* into *"the build is fine, he shipped it"*, and it does that at exactly the moment nobody is watching. ⇒ **Every gate below is a STOP, not a warning.** On a stop the command reports **which gate failed, the evidence, and what is required to clear it** — and **leaves the previous zip untouched** (`PKG-§7b`'s write-new-then-prune exists for this).
+- ⛔ **NO PARTIAL SHIPS.** Zip written but README not updated ⇒ the ship is INCOMPLETE and reported as such; ⛔ never announced as done.
+- ⛔ **NO GATE MAY BE SKIPPED TO "SAVE TIME", and the script offers no flag to do it.** A `-SkipTests` switch is exactly the thing that gets used at 2 a.m.
+- ⚖️ **AMENDED 2026-08-30 (`SHIP-§8`) — THERE ARE **THREE** TERMINAL VERDICTS, NOT TWO: `OK` · `STOP <gate> — <reason>` · `ADJUDICATE C3 — <capture path>`.** ⛔⛔ **`ADJUDICATE` IS NOT A PASS AND IS NOT A SHIP.** It is a **suspension** awaiting the one judgment a script physically cannot make, and **an unresolved suspension is exactly as unshipped as a `STOP`.** ⚖️ **The posture above is unchanged in every particular** — nothing is skipped, no flag exists, and a boot that cannot be proven still cannot ship. ⭐ **Note what the phase order buys for free: C3 precedes phase D, so at an adjudication stop THERE IS NO ZIP YET — the previous artifact sits untouched and there is nothing to clean up** (`PKG-§7b`'s write-new-then-prune, holding on its own).
+
+### SHIP-§2 📌 THE PROCEDURE — THE EXACT ORDERED STEPS
+
+**PHASE A — PRE-FLIGHT (cheap, fails fast, all STOPs):**
+1. **Tree state:** capture `git status --porcelain` + `HEAD`. ⛔ **A dirty tree does NOT auto-stop** — Jonathan ships mid-work — but **every dirty path is LISTED in the report** and the ship's commit stages **explicit paths only** (`SHIP-§5`). **What IS a stop:** an unresolved merge/rebase state.
+2. **QUIET-MODULE:** confirm no other compile/cook gate is live. The cook is a serialized gate (`PKG-§6`) — ⛔ never concurrent with a compile.
+3. **The `PKG-§7a` FENCE PROPERTY:** prove *this run* that the staging dir is outside the work tree **or** ignored. ⛔ Neither ⇒ STOP before anything is written.
+4. **Disk headroom** for a fresh stage + zip (~4 GB) beside the retained ones.
+
+**PHASE B — PROVE THE BUILD (⭐ recommended YES and RULED YES):**
+5. **Compile** the Development editor target via the CLAUDE.md `Build.bat` line — ⛔ **parse the log for `Result:`; the exit code lies** (standing law).
+6. **Run the automation suite** (baseline **143**) against the **Development editor target** (`PKG-§9c`). ⛔ Any fail ⇒ **STOP**.
+   - ⚖️ **WHY THIS IS IN THE COMMAND AND NOT LEFT TO DISCIPLINE: a ship that packages an unproven build is THE trap.** The cook takes ~30 minutes; discovering afterwards that the code never compiled is the most expensive ordering available. **Prove, then cook.**
+
+**PHASE C — COOK + VERIFY (`PKG-§2a`, `§5a`, `§6a`, `§9`):**
+7. **UAT `BuildCookRun`**, Win64, **Shipping**, maps allowlist **+ the `-COOKDIR` list** — ⛔ the recipe comes from the script, ⛔ never retyped from memory.
+8. **Parse the UAT log for its own verdict lines** (the exit-code-lie law extends to UAT).
+9. **BOOT-VERIFY TO A REAL ARENA** (`PKG-§6a`): deck built from real card rows, HUD present, hero spawned, `not found`/`unavailable` = 0 — on log evidence or, under `PKG-§9a` route 2, on pixels. ⛔ **Menu-only ⇒ STOP.**
+   - ⚖️ **AMENDED 2026-08-30: under route 2 — which `PKG-§9a-1` made the STANDING route — this step ends in `ADJUDICATE`, ⛔ not in a self-certified pass. See `SHIP-§8`. THE RUN IS THEREFORE `script → agent-adjudicated pixel checkpoint → script`, ⛔ NOT ONE UNINTERRUPTED SCRIPT.**
+10. **`PKG-§4` re-check:** no `Models/`, no `.gguf` in the stage.
+
+**PHASE D — PACKAGE:**
+11. **Zip** to `Siegebound-Win64-<Config>-<YYYY-MM-DD>.zip` using a **ZIP64-capable** writer (.NET `ZipFile.CreateFromDirectory`; ⛔ **not** PS 5.1 `Compress-Archive` — unreliable near 2 GB, and a silently-truncated archive is the worst possible failure mode). **Purge boot-verify `Saved/` output before zipping.**
+12. **VERIFY THE ZIP BY READING IT BACK** (`SHIP-§4`) — entry count, the click-target `.exe`, the paks, `README.md` at root, and **zero** `Models/`/`.gguf` entries.
+13. **Prune per `PKG-§7b`** (N=2 same-config, ⛔ never another config) — **only after step 12 passes.**
+
+**PHASE E — DOCUMENT (`SHIP-§3`) → PHASE F — COMMIT (`SHIP-§5`) → PHASE G — REPORT (`SHIP-§6`).**
+
+### SHIP-§3 📌 WHICH DOCUMENTATION THE SHIP UPDATES — RULED, ⛔ NOT LEFT TO JUDGEMENT
+
+| Doc | In scope? | Rule |
+|---|---|---|
+| **`packagedZIPofGame/README.md`** | ⛔ **MANDATORY** | Rewritten every ship: zip name · date · config · sizes · **WHAT CHANGED since the previous zip** (from the git log between the last shipped commit and `HEAD`, in **player-facing language** — ⛔ not raw commit subjects) · **WHAT WAS VERIFIED this ship** (the `PKG-§6a` arena evidence, stated as what was actually measured) · the `PKG-§1` correction · `PKG-§4` · `PKG-§8` · the `PKG-§9b` assistant finding. **The last shipped commit is recorded IN the README** so the next ship knows its own diff base. |
+| **`CLAUDE.md`** | ✅ once (setup) | The routing line for the bare word "ship". ⛔ Not rewritten per ship. |
+| **`Docs/GDD.md` change log** | 🙋 **row S6, default NO** | ⛔ **A release procedure must not edit the DESIGN document.** The GDD is Jonathan's design intent; a build script writing to it conflates *what we meant to build* with *what we packaged*. **Default: OUT of scope.** |
+| **`Docs/setupdirections.md`** | 🙋 **row S7, default NARROW YES** | Updated **only** when the ship changes something that doc asserts (e.g. the packaging chapter, the config). ⛔ Never a blanket rewrite — it is an 824-line hand-authored guide and a script has no business restructuring it. |
+| **`TASKBOARD.md` / `CONVENTIONS.md`** | ⛔ NO | Pipeline law is the manager's, ⛔ never a build script's. |
+
+### SHIP-§4 ⛔ THE ZIP IS VERIFIED BY READING IT BACK, ⛔ NEVER BY "THE COMMAND RETURNED 0"
+
+Same family as the exit-code-lie law and `PKG-§5a`: **the tool's success report is about the tool, not about the artifact.** Required, every ship: entry count · the `.exe` present at the documented click path · the pak/ucas/utoc trio · `README.md` at the archive root · **`Models/`/`.gguf` entries = 0** · a plausible total size against `PKG-§9d`'s baseline. ⛔ **A zip that cannot be read back is a STOP, and the previous zip is not pruned.**
+
+### SHIP-§5 ⛔ GIT POSTURE — THE THREE PROHIBITIONS, ABSOLUTE
+
+1. ⛔⛔ **NEVER PUSH.** Unchanged, universal, no exception for `/ship`. **Distribution is Jonathan's alone.**
+2. ⛔⛔ **NEVER STAGE THE BUILD OR THE ZIP.** `git add -A` / `git add .` are **BANNED in this lane** — the commit stages **EXPLICIT PATHS ONLY**. Before committing, prove the staging dir appears **neither staged nor untracked** (`PKG-§7a`). ⚠️ The editor auto-stage trap fired live at TASK-683; the fence is a property, not a hope.
+3. ⛔ **NEVER AMEND OR REWRITE HISTORY.** Append-only (the `20c8e48` lesson). ⚠️ **And Jonathan self-commits milestones** — the ship reads `HEAD`/`origin` and **reports** what it finds; ⛔ it never "tidies" his commit.
+- **Commit cargo:** the doc updates + any config the ship itself changed (e.g. `PKG-§9a` route 1) + pipeline files. Message names the ship date, the config, the zip name and the verification verdict.
+
+### SHIP-§6 📌 THE REPORT BACK — HONEST, AND IT NAMES WHAT IT DID NOT PROVE
+
+Every ship ends with: the zip's **absolute path** + size · the config · **HEAD** and the diff base · **what changed** (player-facing) · **what was verified and BY WHICH INSTRUMENT** (log vs pixels — `PKG-§9a` makes this material) · **what was NOT verified** (⛔ always includes: no input-injection lane ⇒ **no gameplay-feel claim**; human acceptance is Jonathan's extract-and-click) · docs touched · commit hash · ⛔ **not pushed** · and any `PKG-§9b`-class finding.
+
+### SHIP-§7 ⚖️ THE SCRIPT'S OWN ACCEPTANCE — ⛔ NOT A SECOND 30-MINUTE COOK
+
+**`ship.ps1` ships with a `-DryRun` mode that executes every pre-flight and every check EXCEPT the cook, the zip and the commit**, printing the exact UAT command line it *would* run. ⇒ **Its acceptance is a `-DryRun` pass + a line-by-line read of the recipe against `PKG-§5a`.** ⚖️ **A second full cook to validate the wrapper of the first cook buys nothing and burns a serialized gate.** **The first REAL run is Jonathan's own `/ship`.**
+
+- ⚠️⛔ **AMENDED 2026-08-30 — THE DRY RUN'S BLIND SPOT IS NAMED, BECAUSE IT ALREADY HID A FOREVER-STOP: A DRY RUN NEVER REACHES PHASES C–F, SO A `-DryRun` PASS IS ⛔ **NOT EVIDENCE** ABOUT THE COOK, THE BOOT-VERIFY, THE ZIP OR THE COMMIT.** ⭐ **This is exactly how `C3`'s unconditional stop would have shipped "green" and failed the first real use** (TASK-712's finding). ⇒ **The dry run MUST PRINT THE ADJUDICATION CONTRACT it cannot exercise** — that route 2 ends at `ADJUDICATE C3`, what the adjudicator will be asked to judge, and the exact resume invocation — **so the seam is visible in the dry run's own output even though the gate is not run.** ⚖️ **A gate a test cannot reach must at minimum ANNOUNCE itself in that test's output.**
+
+### SHIP-§8 ⚖️⭐ **THE ADJUDICATED PIXEL CHECKPOINT — THE ONE STEP A SCRIPT CANNOT DO IS GIVEN TO THE ONE PARTICIPANT THAT CAN SEE**
+
+> ### ⚖️ **RULED 2026-08-30 on TASK-712's measurement. `C3-BOOT-ARENA` IS A **STOP-FOR-ADJUDICATION**, ⛔ NOT A FAILURE AND ⛔ NOT A SELF-CERTIFIED PASS. THE VERDICT RE-ENTERS THE RUN AS A **MEASURED ARTIFACT**, ⛔ NEVER AS A FLAG.**
+
+**The measured problem (`ship.ps1:1125`, read at the file):** with route 2 standing, `C3` was an **unconditional** `Assert-Gate -Ok $false` — correct of TASK-701, because **a PowerShell script genuinely cannot read a PNG and must not pretend to.** But it therefore never reached the state write at `:1129-1143`, which is the **only** thing that arms resume-by-measurement. ⇒ **every live Shipping `/ship` would compile, run 143 tests, cook ~30 minutes, capture, and stop — forever.** ⚠️ **The forever-stop MOVED from `A6` to `C3`; it did not disappear.**
+
+#### SHIP-§8a ✅ **THE RULING**
+
+**The caller of `/ship` is a Claude agent, and it can read images.** ⇒ **`C3` emits a distinct third terminal verdict — `SHIP RESULT: ADJUDICATE C3 — <capture path>` — and `.claude/commands/ship.md` instructs the agent to READ the capture, JUDGE it against the `PKG-§6a` bar, RECORD a verdict, and then either resume the remaining phases or fail the ship with a named reason.**
+
+- ⚖️ **THIS IS THIS PROJECT'S OWN DOCTRINE, APPLIED WHERE IT BELONGS.** `AS-§6` A(e) has said since 2026-08-03 that UMG correctness closes on **rendered pixels or Jonathan's eyes, never a property readback** — because readback has repeatedly PASSED on visually-broken UI here. ⭐ **`SHIP-§8` is that same law reaching the release lane: judgment is placed where sight exists.** ⛔ The alternative — *"machine checks pass, ship it"* — is the exact posture this project has paid to abandon.
+- ⛔⛔ **THREE THINGS THIS RULING DOES NOT AUTHORIZE, NAMED SO THEY ARE NOT SMUGGLED IN UNDER IT: (1) a skip flag of any kind; (2) `C3` self-certifying on log-silence — ⚠️ in Shipping here a silent log is the EXPECTED state and proves NOTHING (`PKG-§9a-1`); (3) lowering the real-arena bar. `PKG-§6a` is untouched.**
+
+#### SHIP-§8b ⛔⛔ **A MEASURED VERDICT, NOT A FLAG — AND THE DISTINCTION IS LOAD-BEARING, BECAUSE A LAZY IMPLEMENTATION COLLAPSES ONE INTO THE OTHER**
+
+⚖️ **A flag says *"trust me, it passed"* (`-PixelAdjudicated`) — ⛔ banned by `SHIP-§1`. A measured verdict is an ARTIFACT ON DISK that the next invocation READS AND VALIDATES.** ⭐ **TASK-712 proposed exactly this (its option (a)) and it is ADOPTED, because it reuses the byte-identical-input proof `D2` already ships.** Required properties of the verdict record — **each mechanically checkable by the script, which is what keeps it from degenerating into a flag:**
+
+1. ⛔ **IT BINDS TO THE EXACT CAPTURE AND THE EXACT BUILD.** The record carries the **capture's path + content hash**, plus `D2`'s identity set (HEAD, config, staged exe size/timestamp). **On resume the script RE-MEASURES all of it; any mismatch is a STOP, ⛔ never a warning.** ⚖️ **This is the anti-rubber-stamp mechanism and it is genuinely enforceable: a verdict cannot be reused for a different capture or a different build, so a stale PASS cannot be replayed onto a new cook.**
+2. ⛔ **IT NAMES WHAT WAS *SEEN*, PER CRITERION, IN THE AFFIRMATIVE.** *"deck: six slots populated with card art, bottom-left"* · *"HUD: gold counter and stance readout present"* · *"arena: terrain and castle rendering, not a menu"*. ⛔ **A record that says `"PASS"`, `"criteria met"` or leaves an observation empty is MALFORMED and the script REJECTS it.** ⭐ **The script cannot judge whether the observations are TRUE — but it can absolutely require that they were MADE, and that alone defeats the reflexive rubber-stamp.** ⚖️ Same doctrine as `KBD-§2a` condition 3: **prove survivors by NAMING THE OBJECTS, never by a summary** — and it is how TASK-694 already worked in practice.
+3. ⛔ **TWO VALUES ONLY: `PASS` or `FAIL`.** ⛔ No "probably", no "looks fine", no third state.
+4. ⛔⛔ **AMBIGUITY IS A FAIL, AND THE ASYMMETRY IS THE POINT.** An unreadable, black, truncated or uncertain capture ⇒ **FAIL**. ⚠️ *"I think it's probably fine"* is a **FAIL**, not a pass. ⚖️ **We are now relying on pixels for the whole boot-verify (`PKG-§9a-1`), so the pixel verdict must be at least as unforgiving as the log line it replaced.**
+5. ✅ **THE BAR IS RE-STATED AT THE STOP, ⛔ NOT REMEMBERED.** The script prints the `PKG-§6a` criteria **verbatim** beside the capture path, so the adjudicator judges against **the written bar** rather than its own idea of "looks right". ⛔ An adjudication performed without the criteria in front of it is not one.
+6. ✅ **THE VERDICT IS RETAINED AND REPORTED**, with its observations, in the ship report and in the README's *what was verified* section (`SHIP-§3`), and the **capture is kept** alongside the handoff record. ⚖️ **A pixel verdict must be exactly as auditable as the log line it replaced** — otherwise we have traded a checkable instrument for an unlogged opinion.
+7. 🧑 **JONATHAN MAY DISCHARGE THE ADJUDICATION HIMSELF AT ANY TIME, AND HIS EYE WINS.** ⛔ His acceptance (extract-and-click) is unchanged and is still the final word (`PKG-§6`).
+
+#### SHIP-§8c 📌 **THE MECHANICAL PRE-FILTER — IT MAY ONLY EVER *FAIL***
+
+`C3` may run cheap mechanical checks before adjudication (capture file exists · non-zero size · frame not uniformly blank · process was alive · window title read). ⛔⛔ **THESE MAY PRODUCE A `STOP` AND ⛔ CAN NEVER PRODUCE A `PASS`.** ⚠️ **A "does it look like an arena" heuristic in PowerShell would pass a black screen with a loading spinner while WEARING A GATE'S CLOTHES** — that is the confident-stale-literal family (`KBD-§2a` repair, `PKG-§9a-3`), and a fake gate is worse than no gate. ✅ **Fail-only is strictly useful: it catches "the capture never happened" without pretending to judge content.**
+
+#### SHIP-§8d 📌 **THE RESUME SEAM — ⛔ NEVER RE-COOK WHAT WAS ALREADY PROVEN**
+
+- **State is written BEFORE the adjudication stop** (the `:1129-1143` write must become reachable), so a `PASS` verdict resumes at **phase D (zip) → E (docs) → F (commit) → G (report)** against **the same staged build**, ⛔ with no second cook.
+- ⛔ **RESUME RE-VERIFIES, IT DOES NOT TRUST:** `SHIP-§8b(1)`'s identity set is re-measured at resume; a mismatch is a **STOP**. ⚠️ **Resuming onto a different build than the one adjudicated is the single worst failure this seam could have**, and it is closed by measurement, not by care.
+- **A `FAIL` verdict ends the ship** with the named reason; ⛔ the previous zip is untouched (nothing was written — `C3` precedes phase D) and the finding is reported.
+
+### SHIP-§9 ⭐⛔⛔ **THE INSTRUMENT-VALIDATION LAW — A GATE MUST BE VALIDATED AGAINST THE FAILURE IT EXISTS TO DETECT, ⛔ NEVER MERELY AGAINST SUCCESS (RULED 2026-08-30)**
+
+> ### ⚖️ **THE CLASS, STATED ONCE SO THE NEXT AUTHOR MEETS IT INSTEAD OF REDISCOVERING IT: AN INSTRUMENT THAT ANSWERS CORRECTLY IN THE ORDINARY CASE AND ⛔ LIES IN PRECISELY THE CASE THE GATE EXISTS TO CATCH.**
+> **Bought by two independently-measured instances on the same day, in the same lane** — `qa/TASK-702.md` (the forever-stop's fourth move) and `handoffs/TASK-716-buildmaster.md` (the desktop probes). ⭐ **The generalisation is the durable artifact; the two instances are its evidence.**
+
+#### SHIP-§9a 📌 **INSTANCE 1 — GATES WRITTEN AGAINST DEVELOPMENT-BUILD NAMES THAT ONLY *COINCIDENTALLY* MATCH THE PROJECT NAME**
+
+⚠️ **QA's meta-finding, verbatim in substance:** *"the forever-stop has now moved four times — three from the same root cause."* The chain: **`A6-EVIDENCE-ROUTE` → `C3-BOOT-ARENA` → `C3-BOOT-TITLE` → the D2×D11 binding stop.**
+
+- **The asymmetry:** under **Development** the staged binary is `<Project>.exe`, so the **root shim** and the **game process** share a name — every name-keyed lookup matches both and resolves. Under **Shipping** the names **diverge**: the game is `<Project>-Win64-Shipping` and the staged binary is `…/Binaries/Win64/<Project>-Win64-Shipping.exe`, while `<Project>.exe` names **only the title-less shim** (or, worse, a **stale Development orphan** — `PKG-§10`).
+- ⇒ **`Get-Process -Name $ProjectName` (no implicit wildcard) matches the shim and NEVER the game** ⇒ `C3-BOOT-TITLE` is false on every Shipping run; and the pre-repair hardcode `<Project>/Binaries/Win64/<Project>.exe` pointed at **the exact orphan the `PKG-§10` prune deletes**, which would have stopped `C2-STAGE-PRESENT` and `D2-ZIP-READBACK` on every clean package.
+- ⛔⛔ **THE RULE: EVERY GATE ON THE STANDING ROUTE IS WRITTEN AGAINST THE STANDING CONFIGURATION'S *MEASURED* PROCESS AND FILE NAMES — ⛔ NEVER AGAINST DEVELOPMENT NAMES THAT HAPPEN TO MATCH THE PROJECT NAME.** ✅ **Prefer an identity that CHANGES WITH THE CONDITION** — a **path** under the stage root, a manifest-derived relative path, a per-run stamped capture path — over a **name** that is stable only by coincidence.
+- ⚠️ **AND THE REASON IT SURVIVED EVERY CHECK: the route that works is the only route anybody had exercised. The standing, default route (Shipping + Pixel) is the broken one.** ⇒ 📌 **A gate reviewed only under Development is UNREVIEWED. State the configuration in the review, or the review does not cover the gate.**
+
+#### SHIP-§9b 📌 **INSTANCE 2 — BOTH OBVIOUS DESKTOP-AVAILABILITY PROBES LIE ON A LOCKED SESSION**
+
+**Measured by TASK-716 (2026-08-30), 12/12 poll samples over 4 minutes, on a session that was provably locked:**
+
+| Probe | Answer on a LOCKED session | Truthful? |
+|---|---|---|
+| `OpenInputDesktop()` | returned **`"Default"`** | ⛔ **LIES** |
+| `SetCursorPos` | **SUCCEEDED** | ⛔ **LIES** |
+| **Window class under the click point** (`GetAncestor(WindowFromPoint(pt), GA_ROOT)`) | explorer's **`LockScreenBackstopFrame`** at every candidate coordinate | ✅ **TRUE** |
+| **Pixels** | full-screen lock screen occluding all five live windows | ✅ **TRUE** |
+
+- ⛔⛔ **THEREFORE: a `ship.ps1` desktop-availability gate built on `OpenInputDesktop`/`SetCursorPos` would PASS on a locked machine and then boot-verify into a lock-screen backstop** — ⚖️ **the `SHIP-§8c` fake-gate family exactly: a check wearing a gate's clothes.**
+- ✅ **THE RULED PREDICATE: the click rig's OWN check — `GetAncestor(WindowFromPoint(pt), GA_ROOT)` — because the instrument that decides must be the instrument that ACTS.** The working probe is **`t716_probe3.ps1`**; ⛔ do not re-derive a new one.
+- ⭐ **Same shape as `SHIP-§9a`:** both APIs are correct in the ordinary case (an unlocked interactive session) and false in exactly the case the gate exists to catch.
+
+#### SHIP-§9c ⛔⛔ **THE RULE ITSELF — THE PART TO OBEY WHEN THE INSTANCES ARE FORGOTTEN**
+
+1. ⛔⛔ **VALIDATE AN INSTRUMENT AGAINST THE FAILURE IT IS MEANT TO DETECT, ⛔ NOT MERELY AGAINST SUCCESS.** ⚖️ *"It returned the right answer when everything was fine"* is **not evidence that it is a gate** — it is evidence that it is a **status line**. **Demonstrate that it FAILS when the thing is broken**, or do not call it a gate.
+2. ✅ **PREFER THE PREDICATE THE CONSUMER ITSELF USES**, and prefer identities that **move with the condition** (paths, hashes, pixels, per-run stamps) over identities that are stable by coincidence (names, handles, default-case API returns).
+3. 📌 **NAME THE CONFIGURATION AND THE SESSION STATE** any gate was exercised under. An unstated configuration is an untested one.
+4. ⚖️ **KINSHIP, SO THIS IS NOT READ AS A NEW IDEA:** this is `SHIP-§8c`'s *"may only ever FAIL, never PASS"* generalised from pre-filters to **all** verification instruments, and it is the same doctrine as `AS-§6 A(e)` (**pixels or Jonathan's eyes, never a property readback**) and `AS-§14` (**a search result is evidence about the search**). ⛔ **A fake gate is worse than no gate**, because it also consumes the trust that would have bought a real one.
+5. ⚠️ **THIS CLASS HIDES BEHIND A GREEN TEST.** All three of `qa/TASK-702.md`'s blockers live in phases a `-DryRun` cannot reach ⇒ **`DRYRUN-OK` would have been reported over every one of them.** ⇒ 🔗 **`SHIP-§7`'s dry-run amendment and this clause are the same law seen from two ends**: a gate a test cannot reach must at minimum **announce itself** in that test's output.
+
+#### SHIP-§9d ⚖️ **FRAMED ACCURATELY, BECAUSE THE FRAMING IS LOAD-BEARING: THIS IS A LATENT ENVIRONMENT ASYMMETRY, ⛔ NOT ANYONE'S CARELESSNESS**
+
+⭐ **ALL THREE IMPLEMENTERS WERE RIGHT, and each was right in a way that COST them:**
+- **TASK-701** refused to let a PowerShell script claim it had read a PNG — correct, and it became `SHIP-§8`.
+- **TASK-712** measured that the forever-stop had merely MOVED, and **refused to fix it out of fence** — correct, and its own option (a) was the adopted design.
+- **TASK-714** **found the hardcoded-path defect itself** and repaired it at source; QA ruled that collateral repair *"the highest-value item in the diff."*
+- **TASK-716** put its go/no-go probe **first**, returned NO-GO, launched nothing and manufactured no observations — ⭐ **which is what converted a would-be false pass into a clean, cheap block, and produced `SHIP-§9b`.**
+
+⛔ **A future reader must NOT read this clause as a record of sloppiness.** ⚖️ **Every one of these gates was correct against the environment its author could see; the environment is what diverged.** ⭐ **The pipeline's implementers measuring instead of obeying is precisely what surfaced all four instances — that is the process working, and it is why the class could be written down at all.**
+
+## ⚖️ THE IN-GAME CONTROLS MENU (TAB) — every action, keyed to the PLAYER'S OWN LAYOUT (2026-08-30) — namespace **HELP-§**
+
+📌 **BORN WITH ITS NAMESPACE PREFIX (`HELP-§N`).** Cite as `HELP-§2`, never a bare `§2`.
+**Trigger — Jonathan's directive (abridged, his words):** an in-game button/menu on **TAB** listing every clickable/keyed action — *"the 'follow' command, 'attack' command, 'defend' command, 'ambush' command, 'hold' command, how to sprint and attack, play cards, open the map, open the AI chat, etc."* — each row showing the key **as bound for the player's actual layout** (*"just display the 'f' key if the player is on QWERTY keyboard or the 'u' key if they are on the Dvorak keyboard"*) plus a one-line description (his example, verbatim: *"select units to wait at a position and then forever attack units once they enter even if they leave"*); clicking a row opens a full-screen detailed explanation — *"all the controls with it such as what the first, second, and third circles do, how to resize them, how to exit the command."*
+
+### HELP-§1 ⛔⛔ THE CENTRAL LAW — KEY LABELS ARE **DERIVED LIVE**, ⛔ NEVER HARDCODED LETTERS
+
+> ### ⛔ **NO LETTER IN THIS FEATURE IS EVER TYPED AS A STRING LITERAL. EVERY DISPLAYED KEY COMES FROM THE SAME ACCESSOR THE INPUT SYSTEM ITSELF USES.**
+
+- ⚖️ **His QWERTY/Dvorak sentence IS the acceptance criterion, not an illustration.** A help screen that says **F** to a Dvorak player who must press **U** is **worse than no help screen** — it does not merely fail to help, it **actively teaches the wrong thing**, and the player blames the game's input, not its documentation.
+- ✅ **THE SOURCE OF TRUTH:** `USiegeKeyboardLayoutSubsystem` (`SiegeKeyboardLayoutSubsystem.h:132`) and **`GetPositionalKey(const FKey& QwertyKey)`** (`:275`). Its own header states the contract: *"ON US-DVORAK, `GetPositionalKey(EKeys::Z)` RETURNS `EKeys::Semicolon`"* (`:232`). ⇒ **The row's label is the display name of the key the player must physically press, derived at paint time.**
+- ⛔ **AND IT MUST RE-DERIVE ON LAYOUT CHANGE, NOT ONCE AT CONSTRUCTION.** `KBD-§0` ruling 2 is binding and explicit: **mid-session `Win+Space` layout switches are IN SCOPE** (1 Hz HKL poll + activation hook already ship). ⚠️ **A menu built once at `Construct` and cached shows stale letters after a switch — which is this feature's failure mode wearing a performance optimisation's clothes.** ⇒ **Labels are resolved on open (minimum) and the widget must not cache a key string across opens.**
+- ⛔ **`KBD-§1`/`KBD-§2` ARE UNTOUCHED BY THIS FEATURE.** This is a **READ-ONLY consumer** of the layout system: ⛔ no `IMC_Hero` write, ⛔ no `MapKey`/`UnmapKey`/`UnmapAll`, ⛔ no mutation of any mapping context. **A help screen that edits input bindings is a `KBD-§` violation and an automatic QA FAIL.**
+- ⚠️ **THE PRECEDENT THAT NAMES THE EXCEPTION, so nobody applies the accessor blindly:** `SiegePlayerController.h:1223-1225` records that some actions run through the IMC's already-remapped `.Key` fields, where **calling `GetPositionalKey` again would DOUBLE-TRANSLATE** — *"that API is for RAW polled keys."* ⇒ ⛔ **FOR EACH ACTION THE IMPLEMENTER MUST ESTABLISH WHICH LANE IT IS IN (Enhanced-Input-mapped vs raw-polled) AND DERIVE ACCORDINGLY.** ⭐ **Getting this wrong produces a label that is wrong ONLY on non-QWERTY layouts — i.e. invisible to every reviewer on this project and visible immediately to Jonathan.** The handoff states the lane per row.
+
+### HELP-§2 ⛔⛔ THE ANTI-STALENESS LAW — HELP TEXT THAT CAN ROT SILENTLY WILL
+
+> ### ⚖️ **A WRONG CONTROL IN A HELP SCREEN IS WORSE THAN NO HELP SCREEN. THIS SECTION EXISTS BECAUSE HELP CONTENT IS THE ONE THING NO TEST EVER FAILS.**
+
+- ✅ **MECHANISM 1 — THE KEY CANNOT ROT, BY CONSTRUCTION:** `HELP-§1` routes every label through the **same accessor the input system uses**. ⇒ a rebind or a layout change **surfaces automatically**; there is no second copy of the truth to drift.
+- ✅ **MECHANISM 2 — THE ACTION LIST DERIVES FROM THE SHIPPED INPUT SURFACE WHERE POSSIBLE.** The rows are keyed to the **actual `IA_*` assets the controller resolves** (`SiegePlayerController.cpp:194-215` — the pinned soft-ref block: `IA_Card1..6`, `IA_UICursor`, `IA_CancelPlace`, `IA_CmdAttack`, `IA_CmdHold`, `IA_CmdDefend`, `IA_CmdAmbush`, `IA_CmdFollow`, `IA_AssistantConsole`, `IA_WarMap`, plus `IA_Sprint`/`IA_Attack`/`IA_Rally` on `AHeroCharacter`). ⇒ **a new command added later has ONE obvious place to appear.**
+  - ⚠️ **HONEST LIMIT, STATED SO IT IS NOT OVERSOLD: this makes a new command SURFACE-ABLE, ⛔ not automatically documented.** A brand-new action still needs its one-liner and its detail text written. ⇒ ⛔ **A row whose text is missing renders as an explicit *"(undocumented — TODO)"*, ⛔ NEVER as a blank row and ⛔ NEVER omitted.** ⚖️ **A visible gap gets fixed; a silent omission does not.**
+- ⛔⛔ **MECHANISM 3 — THE DETAIL TEXT IS AUTHORED FROM THE SHIPPED MECHANICS *AT SOURCE*, ⛔ NEVER FROM MEMORY, ⛔ NEVER FROM THE GDD, ⛔ NEVER FROM THIS BOARD.** ⚠️ **The GDD is design intent and has diverged from shipped behaviour repeatedly on this project** (the standing verify-against-the-artifact law). **Every sentence in the detail overlay must be traceable to a file:line the author actually read**, and the handoff carries that citation table. **Named sources, pinned:**
+  | Topic | Read it here |
+  |---|---|
+  | AMBUSH / HOLD 3-stage circle pick, **the three circles**, wheel resize, exit | `CONVENTIONS` "Group orders — 3-zone HOLD + AMBUSH" (stages `Select`→`Position`→`AttackZone`; `GroupRadiusWheelStep` 100, min 200, max 5000; `CancelGroupPick()` teardown) + the controller's pick branch in `PlayerTick` |
+  | AMBUSH vs HOLD semantics (his verbatim one-liner names the leash-exemption) | same section's "Behavior law": HOLD drops the target on zone-exit; **AMBUSH skips the drop-test while a live target exists** |
+  | ATTACK / DEFEND stances + the latched-stance law | "Unit commands (Shield Wall stances)" + its partial supersession note |
+  | FOLLOW + **the spawn-default law** | "FOLLOW command + the DEFAULT-STANCE law…" ⚠️ **units no longer auto-engage — this is core-loop-critical and MUST be in the help** |
+  | Sprint + attack | `HeroCharacter.h:76,77,95,156` (`IA_Sprint`, `IA_Attack`) |
+  | Play cards + the Alt cursor + cancel | `SiegePlayerController.cpp:355,393,438-445` (`IA_Card1..6`, `IA_UICursor`, `IA_CancelPlace`) |
+  | War map: **proximity gate + the 30-gold reveal** | `CommanderNpc.h:299,311` (`EnemyRevealCost = 30`, GDD §3.15) + `SiegePlayerController.cpp:4982-5132` (afford check → `SpendGold`) — ⚠️ **the gate is proximity to your OWN commander; say so** |
+  | AI chat: open/close routes | `AS-§6 A-2`'s **enumerated** close routes (open key while open · empty-`Enter` · `SetConsoleEnabled(false)`) + the confirm step |
+  | ⛔ **`Escape`** | `AS-§6`'s **permanent** ruling — see `HELP-§5` |
+- ⛔ **NO NUMBER IS RESTATED IN PROSE IF IT CAN BE READ FROM DATA.** The M7.7 precedent is binding: authored numbers drift (the shipped `Notes` column said *"in 400"* while `AoERadius` was **700**). ⇒ **Prefer deriving; where a literal is unavoidable, cite its source file:line in a code comment beside it.**
+
+### HELP-§3 📌 THE WIDGET IS **CODE-AUTHORED** — `AS-§6` RULING A EXTENDED BY NAME, ⛔ NOT BY ANALOGY
+
+- ✅ **Pinned names:** **`USiegeControlsHelpWidget`** (the TAB overlay: scrolling list of rows) + **`USiegeControlsHelpRowWidget`** (one action row: key chip · action name · one-line description; clickable) + **`USiegeControlsDetailWidget`** (the full-screen detail view). **Header/impl:** `Source/GitClaudeUnrealTest/Siegebound/SiegeControlsHelpWidget.{h,cpp}` (all three classes may share the pair — one feature, one file pair, the `AccountMenuWidget` precedent).
+- ✅ **Reserved WBP names (`AS-§6` A(c) escape hatch):** `/Game/UI/WBP_ControlsHelp` · `/Game/UI/WBP_ControlsHelpRow` · `/Game/UI/WBP_ControlsDetail` — **reserved and unused**; every child declared `UPROPERTY(meta=(BindWidgetOptional))`, constructed **only if still null** ⇒ a future WBP wins with **zero C++ change**.
+- ⛔ **`RebuildWidget()` ORDER IS LOAD-BEARING AND HAS BITTEN THIS PROJECT TWICE: build the tree and set `WidgetTree->RootWidget` FIRST, then `return Super::RebuildWidget();`** — `UserWidget.cpp:1214` returns an `SSpacer` when `RootWidget` is null, so **anything built after `Super` is discarded and the widget renders EMPTY while passing every property readback.**
+- ⚖️ **WHY CODE-AUTHORED IS THE RULED ROUTE HERE (the reasoning, so it is not mistaken for a blanket permission):** the project's UI WBPs are **graph-constructed duplicated templates** (the TASK-669 finding), and **a duplicated+reparented WidgetBlueprint has silently broken RUNTIME repaint on this project** (~9 wasted fixes). **A code-authored tree cannot have either defect and is the testable route.** ⛔ **This does NOT generalize to other widgets** — `AS-§6` A(a)'s scope clause stands; this is a second **named** instance, not a repeal.
+- ⛔ **Widget-param law unchanged:** any `BlueprintImplementableEvent` takes **FString/int32/bool/uint8 only** — ⛔ never an enum, ⛔ never a struct.
+- ⛔ **VERIFICATION CLOSES ON PIXELS OR JONATHAN'S EYES, ⛔ NEVER ON A UMG PROPERTY READBACK** (`AS-§6` A(e); MCP readback has repeatedly passed on visually-broken UMG here).
+
+### HELP-§4 ⛔ **TAB IS NOT ASSUMED FREE — IT IS PROVEN FREE, IN THE ASSET, BEFORE IT IS CLAIMED**
+
+- **Measured 2026-08-30:** `EKeys::Tab` / `"Tab"` appears **nowhere in `Source/`** (zero hits). ⚠️ **That is necessary and NOT sufficient — `IMC_Hero` is a BINARY asset and the bindings live inside it.**
+- ⛔ **The implementer MUST confirm `Tab` is unmapped in `IMC_Hero` in-editor, and FLAG — ⛔ never stomp — any conflict** (the `IA_CmdAmbush`/**F** precedent, verbatim law). A conflict is a **FOR-JONATHAN row**, not an agent's call.
+- **New asset: `IA_ControlsHelp`** (`/Game/Input/Actions/IA_ControlsHelp`, Digital/bool) mapped to **Tab** in `/Game/Input/IMC_Hero`. **The append is the `KBD-§2a` EDITOR-TIME AUTHORING CARVE** — a scratchpad script, ⛔ never `Source/`, **ONE `MapKey`, ONE appended row**, ⛔ `UnmapKey`/`UnmapAll` stay banned, **EMPTY `Triggers` + EMPTY `Modifiers`** (matching the shipped `IA_AssistantConsole` row), and the survivors proven **by naming the modifier objects, ⛔ not the keys** (`IA_Move`'s `SwizzleAxis_0/1` + `Negate_0/1`, `IA_Look`'s `Negate_2`, count N→N+1, first N keys identical in array order).
+- ✅ **Controller side: soft-ref + null-safe resolve — a missing asset means TAB is INERT, ⛔ never a crash** (the `IA_Cmd*` pattern). ⭐ **And because `KBD-§4` tables all 26 letters, the new action inherits Dvorak support with ZERO extra code.**
+- ⭐ **CONSEQUENCE WORTH STATING: TAB itself is a positional key** — on a layout where Tab moves, the overlay's own key must be derived like every other row. **The menu documents its own key.**
+
+### HELP-§5 ⚖️ SCOPE, CURSOR OWNERSHIP, AND THE ⛔ UNTOUCHABLE `Escape`
+
+- **Scope (defaults, all rulable by Jonathan):** an **in-match overlay** on `L_Arena` · **does NOT pause** (single-player has no pause today and the bot keeps marching; a pause is a new mechanic, ⛔ not a side effect of a help screen) · **rows are clickable** (his ask) · the detail view is **full-screen** (his word) and returns to the list.
+- ⛔⛔ **`Escape` IS PERMANENTLY UNTOUCHABLE (`AS-§6`'s CLOSED Jonathan ruling).** ⛔ **The overlay may NOT absorb `Escape` — not via `NativeOnKeyDown`, ⛔ not `NativeOnPreviewKeyDown`, ⛔ not an Enhanced Input action, ⛔ not a Slate `FReply::Handled()` on `EKeys::Escape`, ⛔ not a viewport intercept. Returning `Handled` for `Escape` "harmlessly" is overturning a Jonathan ruling and is an AUTOMATIC QA FAIL.** ⇒ **The overlay closes on TAB (toggle) and/or its own on-screen Close button. That is the complete list.** ⚠️ **The shipped cancel routes (placement, spell targeting, group-pick) must keep firing byte-identically while the overlay is open.**
+- ⛔ **CURSOR OWNERSHIP GOES THROUGH `ApplyCursorInputState()` AND NOWHERE ELSE.** The controller composes match posture there and **normalizes at `BeginPlay`** (TASK-074, the level-travel law) precisely because input-routing state **survives level travel on the persistent `UGameViewportClient`**. ⇒ **The overlay is a NEW cursor owner and is added to that composition function**; ⛔ **a direct `SetInputMode`/`bShowMouseCursor` call from a widget is the defect this law exists to prevent** (it booted the arena input-dead once already and cost a playtest). ⛔ **The existing owners — placement mode, the Alt-held `IA_UICursor`, `HandleMatchEnd`'s end screen, targeting mode, group-pick, the war map, the assistant console — keep their exact shipped precedence; the help overlay is ADDED to the ladder, ⛔ never re-orders it.**
+- ⛔ **Opening the overlay never mutates gameplay:** no order is issued, no group is cancelled, no card is played, no gold moves. **A help screen is READ-ONLY on the world.**
+- ✅ **M8 declaration:** client-local display only — ⛔ no replication, ⛔ no RPC, ⛔ no class-tier change.
+
+### HELP-§6 📌 ACCEPTANCE — MACHINE-PROVABLE PARTS AND JONATHAN'S PART, SEPARATED HONESTLY
+
+- ✅ **Machine-provable (automation tests, and they are required):** the row set is non-empty and covers every enumerated action · **every row's key label resolves through the layout accessor** (⛔ the test asserts *derivation*, not the letter `F`) · **the Dvorak case is exercised via the `KBD-§7` CVar** — the acceptance test flips the simulated layout and asserts the label CHANGES for a key that moves and HOLDS for one that does not · no row renders blank · `Escape` is not consumed.
+- 🧑 **Jonathan's part (⛔ not claimable by any agent):** it reads well, the descriptions are right, the detail pages are useful. **A clip through the footage lane (`FR-§`, `testvideo/` → `Tools/VideoReview/extract_frames.py` → `.claude/pipeline/footage/`) is a VALID instrument** for the acceptance sitting.
+- ⛔ **No agent may claim the overlay "looks right" from a property readback** (`AS-§6` A(e)).
