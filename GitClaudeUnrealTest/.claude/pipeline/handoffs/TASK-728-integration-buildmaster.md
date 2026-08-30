@@ -182,7 +182,8 @@ the file). All four match exactly. ⛔ **Size was never used as the test**; it i
 
 ## 7. The commit
 
-**ONE commit, explicit pathspecs only.** ⛔ `git add -A` was never used. ⛔ **No push.**
+**ONE commit — `3e4773a` — explicit pathspecs only.** ⛔ `git add -A` was never used. ⛔ **No push.**
+7 files exactly; `main` goes **3 → 4 ahead** of `origin/main`, ⛔ unpushed by design.
 
 **Cargo:** `Content/Data/DT_Cards.uasset` · `Content/Blueprints/Buildings/BP_Building_WatchTower.uasset` ·
 `Content/UI/CardArt/T_CardArt_WatchTower.uasset` · `Content/RawAssets/CardArt/WatchTower.png` ·
