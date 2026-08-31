@@ -822,3 +822,100 @@ to the real ini, fill it from the dashboard (Project Settings → API), and conf
 - Nothing is imported unseen; nothing unverifiable is claimed — report outages instead of faking.
 - When the human is present, closing the editor is his call — never force-kill.
 - Numbers over adjectives in every spec; acceptance criteria per mechanic.
+
+---
+
+## Appendix D — Claude permissions (what to enable on a fresh machine, and what NOT to)
+
+Claude Code gates tool calls. In **auto mode** an on-the-fly classifier judges each command, so on a new machine an agent chain will stall repeatedly until the recurring operations are pre-approved. Two mechanisms, and the difference matters:
+
+| Mechanism | Where it lives | Lifetime |
+|---|---|---|
+| **Approving from `/permissions` → "Recently denied"** (arrow to the row, press **Enter**) | in-memory | **This session only** — gone next launch |
+| **Allow-rules in a settings file** | `.claude/settings.local.json` (project, **gitignored**) | **Permanent** |
+
+⭐ **Shell allow-rules take precedence over the classifier** (the classifier is only consulted when no rule matches — unless `autoMode.classifyAllShell` is set true), so the settings-file rules below are what actually stop the stalls. Rules match by **command prefix**; `Tool(prefix*)` matches anything starting with that prefix, and a bare `"ToolName"` allows the whole tool.
+
+### D.1 The permanent allow-list (copy into `.claude/settings.local.json`)
+
+Merge into `permissions.allow` — never replace the array. Also set `enabledMcpjsonServers` for the local MCP servers from `.mcp.json`.
+
+```jsonc
+{
+  "permissions": {
+    "allow": [
+      // Subagent orchestration — the whole pipeline depends on it.
+      // Also immunizes dispatches against classifier outages.
+      "Agent",
+
+      // Editor process control — scoped to UnrealEditor BY NAME so it can
+      // never be used to kill anything else. Safe because the never-save law
+      // + a dirtiness-zero check precede every close (see Chapter 4).
+      "PowerShell(Stop-Process -Name UnrealEditor*)",
+      "PowerShell(Get-Process UnrealEditor | Stop-Process*)",
+
+      // Read-only probes (zero risk, highest frequency)
+      "PowerShell(Get-Process*)", "PowerShell(Get-FileHash*)",
+      "PowerShell(Test-Path*)",   "PowerShell(Get-ChildItem*)",
+      "PowerShell(Get-Content*)", "PowerShell(Select-String*)",
+
+      // Read-only git ONLY — enumerated deliberately. ⛔ NEVER "git *":
+      // that would swallow push/reset/clean and undo the never-push law.
+      "Bash(git status*)", "Bash(git log*)", "Bash(git diff*)", "Bash(git show*)",
+      "Bash(git check-ignore*)", "Bash(git ls-files*)", "Bash(git rev-parse*)",
+      "Bash(git rev-list*)", "Bash(git cat-file*)",
+      // …and the same nine as PowerShell(git …*) if that shell is used.
+
+      // The two UE batch files BY FULL PATH (compile + cook) — not "any exe"
+      "Bash(\"C:/Program Files/Epic Games/UE_5.8/Engine/Build/BatchFiles/Build.bat\"*)",
+      "PowerShell(& \"C:/Program Files/Epic Games/UE_5.8/Engine/Build/BatchFiles/Build.bat\"*)",
+      "Bash(\"C:/Program Files/Epic Games/UE_5.8/Engine/Build/BatchFiles/RunUAT.bat\"*)",
+      "PowerShell(& \"C:/Program Files/Epic Games/UE_5.8/Engine/Build/BatchFiles/RunUAT.bat\"*)",
+      // Add the backslash spellings too — prefix matching is literal.
+
+      // The headless editor commandlet lane (Chapter 4)
+      "Bash(\"C:/Program Files/Epic Games/UE_5.8/Engine/Binaries/Win64/UnrealEditor-Cmd.exe\" *)",
+      "PowerShell(& \"C:/Program Files/Epic Games/UE_5.8/Engine/Binaries/Win64/UnrealEditor-Cmd.exe\" *)",
+
+      // Python SCOPED TO THIS PROJECT'S Tools/ — our own scripts, not arbitrary code
+      "PowerShell(<python> \"<repo>/GitClaudeUnrealTest/Tools/*)",
+
+      // MCP surfaces used constantly
+      "mcp__unreal-mcp__call_tool",
+      "mcp__claude_ai_Slack__slack_read_channel"
+    ]
+  },
+  "enabledMcpjsonServers": ["unreal-mcp", "blender"]
+}
+```
+
+⛔ **Keep `.claude/settings.local.json` gitignored** (this repo does so at `GitClaudeUnrealTest/.gitignore:16`) — machine-specific paths, and permissions should never be inherited silently by a collaborator.
+
+### D.2 Session-only approvals (expected, and fine to re-grant each session)
+
+These are one-off operations the classifier stops. They recur because a prefix rule cannot express them cleanly; approving them per session is the intended workflow:
+
+- **Graceful editor quit over the Python remote-exec lane** (and its "wait for exit / enumerate windows" variants) — the polite counterpart to the `Stop-Process` rule above.
+- **Posting `Escape` to a "Save Content" modal** — the *recovery* action that un-wedges a stuck editor. Escape = Cancel, never Save; that direction is what makes it safe.
+- **Enabling Python remote execution on a live editor** — mostly redundant once `bRemoteExecution=True` is in `DefaultEngine.ini` (Chapter 4).
+- **Driving the shipped game for verification** (starting a match, reading its state) — blocked mainly because it takes over the screen while the human is at the machine.
+- **Parsing the gitignored cloud-config ini** — the key involved is the *publishable* one (the powerful service-role key is banned by law from ever being fetched), and the command is written not to echo it.
+- **Editing `.claude/settings.local.json` itself** — grant this for ONE session to write the permanent rules, then let it lapse so file-editing stays gated. (That is how the D.1 list above was installed.)
+
+### D.3 What to refuse — the triage rule
+
+> Approve if it **reads** anything, or if it **writes only inside this project through a named tool**. Refuse if it could reach the remote, delete recursively, or run arbitrary commands.
+
+⛔ Never allow: bare wildcards (`Bash(*)`, `PowerShell(*)`) · `git push` in any form (an allow-rule would silently undo the never-push law that keeps the human in control of the remote) · `git reset --hard`, `git clean -fdx`, `Remove-Item -Recurse`, `rm -rf` · anything writing outside the repo (registry, system folders, other drives) · arbitrary interpreter execution from temp directories.
+⚠️ **Judgment call, default no:** anything that relocates the human's own save/profile data for a test. Agents have a scratch-profile route for almost all of it; if it runs unattended and dies mid-test, real player data is what's at risk.
+
+### D.4 Adjacent grants that are not permission rules
+
+- **MCP connectors** (Slack, Supabase) are authorized once in the Claude client, not here (Chapters 9–10).
+- **Local MCP servers** (`unreal-mcp`, `blender`) are trusted via `enabledMcpjsonServers` above (Chapters 4–5).
+- **Repo hooks** in `.claude/settings.json` (secret guard + generated-dir guard) run on every Edit/Write and are checked in for the team — a different mechanism from permissions, but part of the same safety story.
+- **The editor-close law is a human policy, not a permission**: when the human is present, closing the editor is his call. The rules above exist for unattended runs; they never override his hand.
+
+### D.5 Fresh-machine order
+
+Install the tooling (Chapters 1–2) → clone → **write D.1's allow-list before the first agent chain**, or the first compile/cook will stall → run Appendix A's verification probes → grant D.2 items per session as they surface.

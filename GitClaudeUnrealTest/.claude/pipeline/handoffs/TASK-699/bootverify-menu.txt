@@ -1,0 +1,9 @@
+﻿00:09:38  EXE  = C:\GitProjects\GitHub\GitClaudeUnrealTesting\packagedZIPofGame\Windows\GitClaudeUnrealTest.exe
+00:09:38  ARGS = [-windowed -ResX=1280 -ResY=720]
+00:10:06  Launched shim PID = 18664
+00:10:18  REAL PID = 27688  WorkingSet = 755.9 MB
+00:10:18  WINDOW TITLE (verbatim) = [Siegebound  ]
+00:10:35  t=15s  title=[Siegebound  ]  rect=525x323  ram=1453.8MB  -> C:\GitProjects\GitHub\GitClaudeUnrealTesting\GitClaudeUnrealTest\.claude\pipeline\handoffs\TASK-699\shot-menu-t15s.png
+00:10:49  PROCESS DIED before t=30s
+00:10:49  PROCESS EXITED before end
+00:10:49  DONE

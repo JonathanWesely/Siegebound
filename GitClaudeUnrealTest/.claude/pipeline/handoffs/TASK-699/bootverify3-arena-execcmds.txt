@@ -1,0 +1,70 @@
+﻿00:19:57  EXE = C:\GitProjects\GitHub\GitClaudeUnrealTesting\packagedZIPofGame\Windows\GitClaudeUnrealTest\Binaries\Win64\GitClaudeUnrealTest-Win64-Shipping.exe
+00:19:57  ARGS = [-ExecCmds="open /Game/Maps/L_Arena" -windowed -ResX=1600 -ResY=900]
+00:19:57  launched PID = 34948
+00:19:58  t=1s  game PID = 34948
+00:20:00    (window moved/resized to 1600x950 for capture)
+00:20:00  t=2s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1427MB
+00:20:01  t=3s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1479MB
+00:20:01  t=4s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1466MB
+00:20:02  t=5s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1471MB
+00:20:03  t=6s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1476MB
+00:20:04  t=7s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1477MB
+00:20:05  t=8s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1477MB
+00:20:06  t=9s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1480MB
+00:20:07  t=10s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1480MB
+00:20:08  t=10s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1480MB
+00:20:09  t=11s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1481MB
+00:20:10  t=12s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1485MB
+00:20:11  t=13s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1483MB
+00:20:12  t=14s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1484MB
+00:20:13  t=15s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1484MB
+00:20:14  t=16s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1484MB
+00:20:14  t=17s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1484MB
+00:20:15  t=18s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1484MB
+00:20:16  t=19s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1484MB
+00:20:17  t=20s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1484MB
+00:20:18  t=21s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1485MB
+00:20:19  t=22s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1486MB
+00:20:20  t=23s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1486MB
+00:20:21  t=23s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1486MB
+00:20:22  t=24s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1486MB
+00:20:23  t=25s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1486MB
+00:20:24    --> C:\GitProjects\GitHub\GitClaudeUnrealTesting\GitClaudeUnrealTest\.claude\pipeline\handoffs\TASK-699\shot-arena-execcmds-t25s.png  (1600x950)
+00:20:25  t=28s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1486MB
+00:20:26  t=29s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1486MB
+00:20:27  t=30s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1486MB
+00:20:28  t=31s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1486MB
+00:20:29  t=32s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1486MB
+00:20:30  t=32s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1486MB
+00:20:31  t=33s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1486MB
+00:20:32  t=34s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1486MB
+00:20:33  t=35s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1487MB
+00:20:34  t=36s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1487MB
+00:20:35  t=37s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1487MB
+00:20:36  t=38s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1487MB
+00:20:36  t=39s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1487MB
+00:20:37  t=40s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1487MB
+00:20:38  t=41s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1487MB
+00:20:39  t=42s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1487MB
+00:20:40  t=43s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1487MB
+00:20:41  t=44s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1487MB
+00:20:42  t=45s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1487MB
+00:20:44    --> C:\GitProjects\GitHub\GitClaudeUnrealTesting\GitClaudeUnrealTest\.claude\pipeline\handoffs\TASK-699\shot-arena-execcmds-t45s.png  (1600x950)
+00:20:45  t=47s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1487MB
+00:20:45  t=48s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1487MB
+00:20:46  t=49s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1487MB
+00:20:47  t=50s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1487MB
+00:20:48  t=51s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1487MB
+00:20:49  t=52s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1487MB
+00:20:50  t=53s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1488MB
+00:20:51  t=54s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1488MB
+00:20:52  t=54s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1488MB
+00:20:53  t=55s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1488MB
+00:20:54  t=56s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1488MB
+00:20:55  t=57s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1488MB
+00:20:56  t=58s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1488MB
+00:20:57  t=59s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1488MB
+00:20:57  t=60s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1488MB
+00:20:58  t=61s  title=[Siegebound  ]  rect=1600x950 @(40,40)  ram=1488MB
+00:20:58  END: ALIVE PID 34948
+00:20:58  DONE
