@@ -52,12 +52,19 @@ ASiegeGameMode::ASiegeGameMode()
 	// construction — no load, no missing-asset log.
 	BotControllerClass = ASiegeBotController::StaticClass();
 
-	// Death ghost (TASK-750, GHOST-§5). ⛔ DELIBERATELY LEFT UNSET — no task in the
-	// GHOST batch produces a ghost blueprint, and authoring a path to an asset nobody
-	// creates would log a missing-asset warning on every match forever. The raw C++
-	// ASiegeGhostPawn IS the shipped ghost; the property exists so a designer can point
-	// at a blueprint later with no recompile (see the header for the two-case resolve).
-	// GhostPawnClassAsset = <unset>;
+	// Death ghost (TASK-750, GHOST-§5), authored by TASK-763 and pointed at here by
+	// TASK-764. ⛔ THIS LINE REPLACES A DELIBERATE UNSET, and the reason it was unset is
+	// now spent rather than forgotten: TASK-750 left it blank because no task in the
+	// GHOST batch produced a ghost blueprint, so a path to an asset nobody creates would
+	// have warned on every match forever. BP_SiegeGhostPawn now exists (parent
+	// ASiegeGhostPawn, all seven designer slots filled), so the resolver lands on its
+	// authored-and-loaded branch and NEITHER log fires. Without this line nothing spawns
+	// the blueprint: the property is EditDefaultsOnly and not config, DefaultEngine.ini
+	// names the raw C++ ASiegeGameMode as GlobalDefaultGameMode, and there is no
+	// BP_SiegeGameMode — so there is nowhere for an editor-side default to persist.
+	// ⚠️ The `_C` suffix is load-bearing: without it the path resolves to the Blueprint
+	// ASSET rather than its generated class, which fails at spawn while looking correct.
+	GhostPawnClassAsset = TSoftClassPtr<ASiegeGhostPawn>(FSoftObjectPath(TEXT("/Game/Blueprints/BP_SiegeGhostPawn.BP_SiegeGhostPawn_C")));
 
 	// Main-menu start-match target (GDD §7, TASK-047 → TASK-049). Soft world ref
 	// (CONVENTIONS map /Game/Maps/L_Arena) — read from the CDO by the static
@@ -283,7 +290,7 @@ UClass* ASiegeGameMode::ResolveGhostPawnClass()
 		{
 			bWarnedGhostClassMissing = true;
 			UE_LOG(LogGitClaudeUnrealTest, Log,
-				TEXT("[%s] No ghost pawn blueprint configured (GhostPawnClassAsset is unset — the shipped default, TASK-750) — using the raw C++ ASiegeGhostPawn."),
+				TEXT("[%s] No ghost pawn blueprint configured (GhostPawnClassAsset has been cleared — the shipped default is BP_SiegeGhostPawn, TASK-764) — using the raw C++ ASiegeGhostPawn."),
 				*GetNameSafe(this));
 		}
 		return ASiegeGhostPawn::StaticClass();

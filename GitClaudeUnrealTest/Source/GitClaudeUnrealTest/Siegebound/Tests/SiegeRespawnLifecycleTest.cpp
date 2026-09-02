@@ -650,13 +650,19 @@ bool FSiegeDeathMidRecallLeavesNothingDanglingTest::RunTest(const FString& Param
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  8. ⛔ THE GHOST CLASS REFERENCE IS TYPED, AND IT SHIPS UNSET ON PURPOSE
-//     (GHOST-§5 — missing asset ⇒ never a crash, never a dead 180 seconds)
+//  8. ⛔ THE GHOST CLASS REFERENCE IS TYPED, AND IT POINTS AT THE AUTHORED BLUEPRINT
+//     (GHOST-§5 — the TYPE is the safety; the `_C` suffix is what makes it SPAWN)
+//
+//     ⚠️ THIS SECTION USED TO ASSERT "IT SHIPS UNSET ON PURPOSE" AND THAT IS NOW
+//     FALSE BY CONSTRUCTION: TASK-763 authored BP_SiegeGhostPawn and TASK-764
+//     pointed the CDO at it (SiegeGameMode.cpp:67), so the deliberate blank is
+//     SPENT, not forgotten. Rewritten rather than left lying — the TASK-517 /
+//     HIGH-§1 idiom.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FSiegeGhostPawnClassAssetTest,
-	"Siegebound.RespawnLifecycle.GhostPawnClassAssetIsTypedToTheGhostAndShipsUnset",
+	"Siegebound.RespawnLifecycle.GhostPawnClassAssetIsTypedToTheGhostAndPointsAtTheGeneratedBlueprintClass",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FSiegeGhostPawnClassAssetTest::RunTest(const FString& Parameters)
@@ -686,23 +692,46 @@ bool FSiegeGhostPawnClassAssetTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("(a) ⭐ GhostPawnClassAsset is typed to ASiegeGhostPawn — a wrong asset can only fail to load, never spawn the wrong pawn"),
 		GhostClassProperty->MetaClass == ASiegeGhostPawn::StaticClass());
 
-	// ── (b) IT SHIPS UNSET, AND THAT IS THE CORRECT DEFAULT ─────────────────────────────
-	// No task in the GHOST batch produces a ghost blueprint. Pointing at an asset nobody
-	// creates would log a missing-asset warning on every match forever; the raw C++ class
-	// IS the shipped ghost and this property is the designer's future hook.
+	// ── (b) ⭐ IT POINTS AT THE BLUEPRINT'S **GENERATED CLASS**, PATH-EXACT ──────────────
+	// ⛔ THIS IS DELIBERATELY AN EQUALITY ON THE WHOLE PATH AND ⛔ NOT AN INVERTED
+	// `!IsNull()`, because "empty" is not the failure mode this property actually has.
+	// Its failure mode is NON-EMPTY AND SUBTLY WRONG: drop the `_C` suffix and the path
+	// resolves to the Blueprint ASSET instead of its generated class — non-null, looks
+	// authored in the editor and in any log line that prints it, and LoadSynchronous
+	// returns NULL for it through a TSoftClassPtr. The resolver then takes its
+	// authored-but-unresolvable branch, warns once, and falls back — so the player spends
+	// the full 180 s never seeing the blueprint ghost, with nothing red anywhere.
+	// ⇒ an inverted null check PASSES on exactly that defect. This assertion is the one
+	// that catches it, so it is pinned to the literal path and not to non-emptiness.
+	//
+	// (Case-insensitive TestEqual is the correct comparator, not a looseness: package and
+	// asset names are FNames, so the engine itself resolves them case-insensitively. The
+	// `_C` difference is a token, not a case, and is caught either way.)
 	const FSoftObjectPtr* const GhostValue = GhostClassProperty->ContainerPtrToValuePtr<FSoftObjectPtr>(ModeDefaults);
 	if (!GhostValue)
 	{
 		AddError(TEXT("SELF-CHECK FAILED: could not read GhostPawnClassAsset off the CDO."));
 		return false;
 	}
-	TestTrue(TEXT("(b) GhostPawnClassAsset ships UNSET — the raw C++ ASiegeGhostPawn is the shipped ghost, with no per-match missing-asset warning"),
-		GhostValue->IsNull());
 
-	// ── SELF-CHECK: THE READER CAN SEE A **SET** VALUE, AND A DIFFERENT METACLASS ───────
-	// HeroPawnClassAsset on the same class is authored to BP_HeroCharacter. If this read
-	// came back null too, "unset" above would be a property-reader failure wearing a
-	// finding's clothes.
+	const FString ExpectedGhostPath(TEXT("/Game/Blueprints/BP_SiegeGhostPawn.BP_SiegeGhostPawn_C"));
+
+	TestEqual(TEXT("(b) ⭐ GhostPawnClassAsset points at BP_SiegeGhostPawn's GENERATED CLASS, `_C` exact — a path that loses `_C` is non-null, reads as authored, and silently never spawns"),
+		GhostValue->ToString(), ExpectedGhostPath);
+
+	// ── SELF-CHECK: THE READER RESOLVES **TWO DISTINCT PROPERTIES**, BY PATH AND BY TYPE ─
+	// ⚠️⚠️ THE OLD DISCRIMINATOR HERE WAS "Hero is SET, Ghost is UNSET", AND TASK-764
+	// KILLED IT: the ghost is authored now, so BOTH are set and that contrast is dead.
+	// A dead contrast does not go red — it PASSES while testing nothing (the SHIP-§9 /
+	// SC-§37 shape this project has now hit four times), so it is RE-ARMED rather than
+	// deleted, on the two axes that genuinely still differ: the PATH and the TYPE.
+	//
+	// ⭐ AND THE RE-ARM IS NOT CEREMONIAL, BECAUSE 764 MADE THE TWO PROPERTIES NEARLY
+	// IDENTICAL IN SHAPE: both are TSoftClassPtr on the same CDO, both authored to
+	// /Game/Blueprints/BP_*_C. That is precisely the condition under which a reader that
+	// silently resolved BOTH names onto ONE storage slot would go unnoticed — and such a
+	// reader would make (b) above pass by reading the wrong field. Pinning the hero to
+	// its OWN exact path, and asserting the two reads DIFFER, is what rules that out.
 	const FSoftClassProperty* const HeroClassProperty =
 		CastField<FSoftClassProperty>(ModeClass->FindPropertyByName(TEXT("HeroPawnClassAsset")));
 	if (!HeroClassProperty)
@@ -712,10 +741,21 @@ bool FSiegeGhostPawnClassAssetTest::RunTest(const FString& Parameters)
 	}
 
 	const FSoftObjectPtr* const HeroValue = HeroClassProperty->ContainerPtrToValuePtr<FSoftObjectPtr>(ModeDefaults);
-	TestTrue(TEXT("SELF-CHECK: the SAME reader sees HeroPawnClassAsset as SET — 'unset' above is a reading, not a blind spot"),
-		HeroValue != nullptr && !HeroValue->IsNull());
-	TestTrue(TEXT("SELF-CHECK: …and it reads a DIFFERENT MetaClass for it (AHeroCharacter) — the type check discriminates"),
-		HeroClassProperty->MetaClass == AHeroCharacter::StaticClass());
+	if (!HeroValue)
+	{
+		AddError(TEXT("SELF-CHECK FAILED: could not read HeroPawnClassAsset off the CDO — the soft-class reader cannot be validated."));
+		return false;
+	}
+
+	TestEqual(TEXT("SELF-CHECK: the SAME reader returns a DIFFERENT, equally exact path for HeroPawnClassAsset — (b) read the ghost's OWN storage, not one canned value"),
+		HeroValue->ToString(), FString(TEXT("/Game/Blueprints/BP_HeroCharacter.BP_HeroCharacter_C")));
+
+	TestNotEqual(TEXT("SELF-CHECK: …and the two paths are genuinely different strings — these are two properties, not one property read twice"),
+		GhostValue->ToString(), HeroValue->ToString());
+
+	TestTrue(TEXT("SELF-CHECK: …and the reader still discriminates on TYPE — Hero's MetaClass is AHeroCharacter, and it is NOT the ghost's MetaClass"),
+		HeroClassProperty->MetaClass == AHeroCharacter::StaticClass()
+		&& HeroClassProperty->MetaClass != GhostClassProperty->MetaClass);
 
 	return true;
 }

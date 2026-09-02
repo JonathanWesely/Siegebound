@@ -466,15 +466,31 @@ protected:
 	 *  pattern above: resolved LAZILY and null-safely, missing/incompatible ⇒ warn once
 	 *  and fall back to the raw C++ ASiegeGhostPawn.
 	 *
-	 *  ⭐ IT SHIPS **UNSET**, AND THAT IS THE CORRECT DEFAULT RATHER THAN AN OVERSIGHT:
-	 *  ⛔ no task in the GHOST batch produces a ghost blueprint, so authoring a path to
-	 *  an asset nobody creates would fire a missing-asset warning on every single match
-	 *  forever. The raw C++ class IS the shipped ghost; this property exists so a
-	 *  designer can point at a BP_ ghost later with ⛔ no recompile. ⚠️ Consequently the
-	 *  resolver distinguishes UNSET (expected, logged at Log once) from AUTHORED-BUT-
-	 *  UNRESOLVABLE (a real mis-configuration, Warning once) — see ResolveGhostPawnClass.
+	 *  ⭐ IT SHIPS **SET**, to BP_SiegeGhostPawn's generated class — authored by TASK-763
+	 *  and pointed at in the constructor by TASK-764 (SiegeGameMode.cpp).
 	 *
-	 *  ⛔ A MISSING ASSET IS NEVER A CRASH AND NEVER A DEAD 180 SECONDS WITH NO PAWN.
+	 *  ⛔ THE OLD COMMENT HERE SAID "IT SHIPS **UNSET**, AND THAT IS THE CORRECT DEFAULT"
+	 *  AND IT IS REWRITTEN RATHER THAN LEFT LYING (the TASK-517 / HIGH-§1 idiom — a
+	 *  shipped comment that contradicts the shipped value is the drift defect this
+	 *  project keeps paying for). That blank was correct while it stood: no task in the
+	 *  GHOST batch produced a ghost blueprint, so a path to an asset nobody creates would
+	 *  have fired a missing-asset warning on every single match forever. ⇒ the reason is
+	 *  now SPENT, not forgotten — the asset exists, so the resolver lands on its
+	 *  authored-and-loaded branch and NEITHER log fires.
+	 *
+	 *  ⚠️ THE `_C` SUFFIX ON THE AUTHORED PATH IS LOAD-BEARING: without it the path names
+	 *  the Blueprint ASSET rather than its generated class, which is non-null, reads as
+	 *  correctly authored, and still fails to load through a TSoftClassPtr — i.e. the
+	 *  ghost silently never spawns. A test pins the full path literally, `_C` included,
+	 *  rather than merely asserting it is non-null.
+	 *
+	 *  ⚠️ The resolver nonetheless still distinguishes UNSET (logged at Log once — the
+	 *  designer clearing this field is a legitimate way back to the raw C++ ghost) from
+	 *  AUTHORED-BUT-UNRESOLVABLE (a real mis-configuration, Warning once) — see
+	 *  ResolveGhostPawnClass. Both branches remain live and neither is dead code.
+	 *
+	 *  ⛔ A MISSING ASSET IS NEVER A CRASH AND NEVER A DEAD 180 SECONDS WITH NO PAWN:
+	 *  the raw C++ ASiegeGhostPawn remains the fallback under both failure branches.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Classes")
 	TSoftClassPtr<ASiegeGhostPawn> GhostPawnClassAsset;
