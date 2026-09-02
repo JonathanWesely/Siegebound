@@ -13,6 +13,7 @@
 #include "Siegebound/SiegeAssistantVocabulary.h"
 #include "Siegebound/SiegeKeyboardLayoutStatics.h"
 #include "Siegebound/SiegeKeyboardLayoutSubsystem.h"
+#include "Siegebound/SiegeMapMark.h"   // TASK-746: FSiegeMapMark + MakeSymbol — the seam the snapshot and the war map must agree on
 #include "UObject/StrongObjectPtr.h"
 #include "UObject/UnrealType.h"
 #include "UObject/UObjectGlobals.h"
@@ -704,6 +705,361 @@ namespace SiegeAssistantSelectionTestFixture
 		}
 
 		return Scratch;
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	//  MAP MARKS (TASK-746 — CONVENTIONS MARK-§1 / MARK-§2 / MARK-§3 M-6)
+	//
+	//  ⭐ EVERY HELPER BELOW DRIVES THE SHIPPED `AppendMarkPlaces`. ⛔ Nothing here
+	//  re-implements the publication rule — a fixture that built the `places:` tail
+	//  itself would assert that the TEST can spell `circle_1`, which is not the
+	//  claim anybody needs.
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	/**
+	 *  Mark coordinates chosen to be UNMISTAKABLE in a prompt dump and DISTINCT
+	 *  from the region fixture's 91234 / 75319 — so an airlock assertion that finds
+	 *  one of these numbers in a zone can name which feature leaked it.
+	 *
+	 *  ⚠️ AND DISTINCT FROM ANY PLAUSIBLE COUNT. The roster prints counts, the
+	 *  stances line prints counts, and `COUNT = 1 to 30` is a real vocabulary — a
+	 *  probe coordinate of `9` would make the airlock test pass or fail for reasons
+	 *  that have nothing to do with marks.
+	 */
+	static constexpr double MarkProbeX = 63571.0;
+	static constexpr double MarkProbeY = -48293.0;
+	static constexpr float  MarkProbeRadius = 4173.0f;
+
+	/** The world XY the fixture gives mark N — a pure function of N, so an assertion can name the expected point without a lookup table. */
+	static FVector2D MarkProbeXYFor(int32 Number)
+	{
+		return FVector2D(MarkProbeX + Number, MarkProbeY - Number);
+	}
+
+	/**
+	 *  Marks carrying the given numbers, IN THE ORDER GIVEN — which is the STORE's
+	 *  order, deliberately.
+	 *
+	 *  ⭐ THE CALLER PASSES NUMBERS OUT OF ORDER ON PURPOSE IN AT LEAST ONE TEST.
+	 *  `M-1`'s lowest-free allocator leaves a store that has had a mark deleted
+	 *  holding its array out of numeric order (add 1,2,3 → delete 2 → add ⇒
+	 *  1,3,2), so "the fixture is already sorted" would make the ordering assertion
+	 *  vacuous.
+	 */
+	static TArray<FSiegeMapMark> MarksNumbered(const TArray<int32>& Numbers)
+	{
+		TArray<FSiegeMapMark> Marks;
+		Marks.Reserve(Numbers.Num());
+		for (const int32 Number : Numbers)
+		{
+			FSiegeMapMark Mark;
+			Mark.Number = Number;
+			Mark.WorldXY = MarkProbeXYFor(Number);
+			Mark.RadiusUU = MarkProbeRadius;
+			Marks.Add(Mark);
+		}
+		return Marks;
+	}
+
+	/** Marks 1..Count, in ascending store order. */
+	static TArray<FSiegeMapMark> MarksOneTo(int32 Count)
+	{
+		TArray<int32> Numbers;
+		Numbers.Reserve(Count);
+		for (int32 Number = 1; Number <= Count; ++Number)
+		{
+			Numbers.Add(Number);
+		}
+		return MarksNumbered(Numbers);
+	}
+
+	/**
+	 *  A board with a full roster, the seven fixed places WITH their geometry, and
+	 *  `Marks` published through the SHIPPED `USiegeAssistantSnapshot::
+	 *  AppendMarkPlaces`.
+	 *
+	 *  ⚠️ IT BUILDS ON `MakeSnapshotWithRegions(..., true)` AND THAT IS REQUIRED,
+	 *  NOT INCIDENTAL. `AppendMarkPlaces` REFUSES a de-synchronised place set, and
+	 *  `MakeSnapshotWithRoster` alone leaves 7 names against 0 locations — so
+	 *  building on it would make every mark test pass vacuously with nothing
+	 *  published. (That refusal is itself asserted, below.)
+	 *
+	 *  @param OutPublished  the shipped function's own return value — how many
+	 *                       marks actually reached the vocabulary.
+	 */
+	static FScratchSnapshot MakeSnapshotWithMarks(const TArray<FName>& Kinds, int32 PerKindTotal,
+		const TArray<FSiegeMapMark>& Marks, int32& OutPublished)
+	{
+		OutPublished = 0;
+
+		FScratchSnapshot Scratch = MakeSnapshotWithRegions(Kinds, PerKindTotal, /*bPublishRegions*/ true);
+		if (!Scratch.IsUsable())
+		{
+			return Scratch;
+		}
+
+		USiegeAssistantSnapshot* const Object = Scratch.Snapshot.Get();
+
+		TArray<FName>* const Places = FindNameArrayField(Object, TEXT("PlaceNames"));
+		TArray<FVector>* const Locations = FindVectorArrayField(Object, TEXT("PlaceLocations"));
+		TArray<FVector2D>* const HalfExtents = FindVector2DArrayField(Object, TEXT("PlaceHalfExtents"));
+
+		if (!Places)      { Scratch.MissingField = TEXT("PlaceNames (TArray<FName>)"); return Scratch; }
+		if (!Locations)   { Scratch.MissingField = TEXT("PlaceLocations (TArray<FVector>)"); return Scratch; }
+		if (!HalfExtents) { Scratch.MissingField = TEXT("PlaceHalfExtents (TArray<FVector2D>)"); return Scratch; }
+
+		// ⭐ THE SHIPPED FUNCTION, CALLED WITH THE LIVE MEMBERS — the same code path
+		// Capture() takes, minus the world it would need.
+		OutPublished = USiegeAssistantSnapshot::AppendMarkPlaces(Marks, *Places, *Locations, *HalfExtents);
+
+		return Scratch;
+	}
+
+	/** The value of Zone C's `places:` line, split into symbols. */
+	static TArray<FString> PrintedPlaceSymbols(const FString& ZoneC)
+	{
+		TArray<FString> Symbols;
+
+		const FString Value = ValueOfKey(ZoneC, TEXT("places"));
+		if (Value.IsEmpty() || Value.Equals(TEXT("none"), ESearchCase::CaseSensitive))
+		{
+			return Symbols;
+		}
+
+		Value.ParseIntoArray(Symbols, TEXT(", "), /*InCullEmpty*/ true);
+		return Symbols;
+	}
+
+	/**
+	 *  The full `places: …` line INCLUDING its key and its newline — the unit
+	 *  MARK-§2's 10-chars-per-mark cost is actually spent in, because BuildZoneC
+	 *  subtracts `Head.Len()` (which is this line plus `[FORCES]\n`) from the
+	 *  roster budget before the roster is given one.
+	 */
+	static int32 PlacesLineLength(const FString& ZoneC)
+	{
+		TArray<FString> Lines;
+		ZoneC.ParseIntoArrayLines(Lines, /*bCullEmpty*/ false);
+
+		for (const FString& Line : Lines)
+		{
+			if (Line.StartsWith(TEXT("places:"), ESearchCase::CaseSensitive))
+			{
+				return Line.Len() + 1;   // + the newline BuildZoneC appends
+			}
+		}
+		return INDEX_NONE;
+	}
+
+	/** The shipped operating point AS-§20.3 quotes: a 61-character `order:` line, single-digit counts, 13 kinds. */
+	static FString ShippedDefaultOrderLine()
+	{
+		return OrderLineOfLength(61);
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	//  ⭐⭐ HOW THE SHIPPED GRAMMAR ACTUALLY SPELLS A SYMBOL (TASK-762)
+	//
+	//  ⛔ THE DEFECT THIS REPLACES, STATED SO IT CANNOT BE REINTRODUCED. Three
+	//  tests below searched the emitted GBNF for the bare substring `"circle_1"` —
+	//  quote, symbol, quote. ⛔ THE EMITTER DOES NOT WRITE THAT AND NEVER HAS.
+	//  `USiegeAssistantGrammar::Build` sends every symbol through `GbnfJsonString`
+	//  → `GbnfTerminal` (SiegeAssistantGrammar.cpp:38-52 and :15-29), two
+	//  deliberate, self-documented escaping layers, and what lands in the grammar
+	//  is fourteen characters:
+	//
+	//      "  \  "  c  i  r  c  l  e  _  1  \  "  "        i.e.  "\"circle_1\""
+	//
+	//  The character after the `1` is a BACKSLASH, so the bare needle can never
+	//  match.
+	//
+	//  ⭐⭐ AND THE DECIDING EVIDENCE THAT THE SEARCH WAS WRONG RATHER THAN THE
+	//  GRAMMAR: the SHIPPED intents `guard` and `ambush` — which have been
+	//  translating Jonathan's sentences for months — fail the identical search.
+	//  A grammar that is parsing commands today is not newly broken; an instrument
+	//  that cannot find `guard` in it is broken by construction. (This same file
+	//  already gets it right at the `\"in\"` assertion in the region tests, which
+	//  is what the three mark tests drifted away from.)
+	//
+	//  ⭐⭐ AND THE COSTLIER HALF, WHICH IS WHY THIS HELPER IS NOT JUST A NEEDLE
+	//  FIX. The `TestFalse` asserting that an undrawn `circle_4` is ABSENT PASSED
+	//  FOR THE WRONG REASON: a needle that cannot match anything makes a TestFalse
+	//  unconditionally green, so it would have passed just as happily WITH
+	//  `circle_4` in the grammar. The guard protecting "a mark Jonathan never drew
+	//  is unsayable by the AI" was INERT, and a review did not catch it. Everything
+	//  below exists to make that guard able to fail again, and to make its
+	//  liveness ASSERTED rather than assumed.
+	//
+	//  ⛔ NOTHING HERE RE-IMPLEMENTS THE ESCAPING, AND THAT IS THE WHOLE DESIGN.
+	//  A mirror of `GbnfJsonString` living in this file would be a second copy free
+	//  to drift from the first, and a hand-typed `\"circle_1\"` would re-create
+	//  this exact defect the next time the escaping changes — wrong twice, for the
+	//  same reason, years apart. The wrapper is instead MEASURED off the shipped
+	//  emitter's own output, at run time, on every run. It is the same objection
+	//  this file's header raises against transcribing a builder's output into a
+	//  fixture (AS-§12g).
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	/** The only two characters GBNF/JSON quoting is built from — the alphabet a wrapper may consist of. */
+	static bool IsGrammarQuotingChar(const TCHAR Char)
+	{
+		return Char == TEXT('"') || Char == TEXT('\\');
+	}
+
+	/**
+	 *  The emitter's wrapper, MEASURED rather than assumed: the run of quoting
+	 *  characters the shipped grammar writes immediately before and after a symbol.
+	 */
+	struct FGrammarSpelling
+	{
+		FString Prefix;
+		FString Suffix;
+		FString CalibratedOn;
+		bool bCalibrated = false;
+
+		/** The exact bytes the SHIPPED emitter writes for Symbol. */
+		FString Of(const FString& Symbol) const
+		{
+			return Prefix + Symbol + Suffix;
+		}
+
+		/**
+		 *  ⛔ THE ANTI-VACUITY CHECK, ASSERTED BY EVERY CALLER. A zero-width wrapper
+		 *  would still satisfy every TestTrue below and would quietly slide every
+		 *  TestFalse back toward the bare-substring search this helper exists to
+		 *  replace. If calibration ever stops finding its symbol, this is what says
+		 *  so — ⛔ out loud, rather than by silently passing.
+		 */
+		bool IsWrapper() const
+		{
+			return bCalibrated && Prefix.Len() > 0 && Suffix.Len() > 0;
+		}
+
+		/**
+		 *  ⚠️ DELIBERATELY NOT GATED ON `bCalibrated`. An uncalibrated spelling
+		 *  degrades to the BARE symbol, which is a BROADER search — so a calibration
+		 *  failure makes an absence assertion MORE likely to fire, never less. Fail
+		 *  loud in both directions; ⛔ never fail silent.
+		 */
+		bool IsIn(const FString& Grammar, const FString& Symbol) const
+		{
+			return Grammar.Contains(Of(Symbol), ESearchCase::CaseSensitive);
+		}
+
+		/** Occurrences of Symbol's emitted form — `Contains` cannot tell one from two. */
+		int32 CountIn(const FString& Grammar, const FString& Symbol) const
+		{
+			const FString Needle = Of(Symbol);
+			if (Needle.IsEmpty())
+			{
+				return 0;
+			}
+
+			int32 Occurrences = 0;
+			int32 SearchFrom = 0;
+			for (;;)
+			{
+				const int32 Found = Grammar.Find(Needle, ESearchCase::CaseSensitive, ESearchDir::FromStart, SearchFrom);
+				if (Found == INDEX_NONE)
+				{
+					break;
+				}
+				++Occurrences;
+				SearchFrom = Found + Needle.Len();
+			}
+			return Occurrences;
+		}
+	};
+
+	/**
+	 *  Measures the wrapper off a symbol the grammar is GUARANTEED to contain.
+	 *
+	 *  ⭐ WHY AN INTENT AND NOT A PLACE. `intent` is the one generated-vocabulary
+	 *  rule `Build` emits UNCONDITIONALLY — `kind`, `where` and `zone` are all
+	 *  gated on the board actually having some — and its alternatives are derived
+	 *  from `ESiegeAssistantIntent` by reflection. So the calibration symbol is
+	 *  neither a string this test invented nor one that can go missing without the
+	 *  feature itself being gone.
+	 *
+	 *  ⚠️ THE WALK IS OVER THE QUOTING ALPHABET ONLY, which terminates on the
+	 *  space in JoinAlternatives' ` | ` and on the space in `::= `. It therefore
+	 *  captures the one alternative's wrapper and never bleeds into its neighbour.
+	 */
+	static FGrammarSpelling CalibrateGrammarSpelling(const FString& Grammar, const FString& KnownSymbol)
+	{
+		FGrammarSpelling Spelling;
+		Spelling.CalibratedOn = KnownSymbol;
+
+		if (Grammar.IsEmpty() || KnownSymbol.IsEmpty())
+		{
+			return Spelling;
+		}
+
+		const int32 Found = Grammar.Find(KnownSymbol, ESearchCase::CaseSensitive, ESearchDir::FromStart, 0);
+		if (Found == INDEX_NONE)
+		{
+			return Spelling;
+		}
+
+		int32 Start = Found;
+		while (Start > 0 && IsGrammarQuotingChar(Grammar[Start - 1]))
+		{
+			--Start;
+		}
+
+		const int32 After = Found + KnownSymbol.Len();
+		int32 End = After;
+		while (End < Grammar.Len() && IsGrammarQuotingChar(Grammar[End]))
+		{
+			++End;
+		}
+
+		Spelling.Prefix = Grammar.Mid(Start, Found - Start);
+		Spelling.Suffix = Grammar.Mid(After, End - After);
+		Spelling.bCalibrated = true;
+		return Spelling;
+	}
+
+	/** `guard` — read off the SHIPPED enum through the shipped mapper, ⛔ never typed here. The calibration symbol. */
+	static FString ShippedGuardSymbol()
+	{
+		return SiegeAssistantIntentToSymbol(ESiegeAssistantIntent::Guard);
+	}
+
+	/** `ambush` — a SECOND shipped intent, so the calibration is cross-checked against a symbol it was NOT measured on. */
+	static FString ShippedAmbushSymbol()
+	{
+		return SiegeAssistantIntentToSymbol(ESiegeAssistantIntent::Ambush);
+	}
+
+	/**
+	 *  ⭐⭐ THE ARMING CONTROL for every "this symbol is absent" claim: the same
+	 *  board, the same shipped emitter, with ONE extra place appended — a grammar
+	 *  in which the supposedly-absent symbol IS present.
+	 *
+	 *  If the needle used for the absence assertion finds the symbol HERE, that
+	 *  absence assertion is a live measurement. If it does not, the guard is inert
+	 *  and this file fails rather than reporting SAFE.
+	 */
+	static FString GrammarWithExtraPlace(const USiegeAssistantSnapshot& Snapshot, const FName ExtraPlace)
+	{
+		TArray<FName> Places = Snapshot.GetPlaceNames();
+		Places.AddUnique(ExtraPlace);
+
+		return USiegeAssistantGrammar::Build(Snapshot.GetUnitKinds(), Places, Snapshot.GetRegionPlaceNames());
+	}
+
+	/**
+	 *  ⭐⭐ THE ARMING CONTROL for the M-6 "a mark is a `where` and NEVER a `zone`"
+	 *  count: the same board with the mark ALSO declared region-bearing, which is
+	 *  precisely the leak the count exists to detect. The counter must read 2 here.
+	 */
+	static FString GrammarWithExtraRegion(const USiegeAssistantSnapshot& Snapshot, const FName ExtraRegion)
+	{
+		TArray<FName> Regions = Snapshot.GetRegionPlaceNames();
+		Regions.AddUnique(ExtraRegion);
+
+		return USiegeAssistantGrammar::Build(Snapshot.GetUnitKinds(), Snapshot.GetPlaceNames(), Regions);
 	}
 }
 
@@ -4089,6 +4445,1271 @@ bool FSiegeAssistantSelectionRegionRenderedInPlayerSummaryTest::RunTest(const FS
 	TestEqualSensitive(TEXT("⛔ An UNRESOLVABLE region is still described, not softened — the refusal belongs to the selector, which owns the arithmetic and the log (SC-§31)"),
 		Describe(ESiegeAssistantIntent::Send, TEXT("atlantis"), TEXT("mid")),
 		FString(TEXT("Send all in atlantis (mid)")));
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  ⭐⭐ THE MAP-MARK REFERENT (TASK-746 — CONVENTIONS MARK-§1 / §2 / §3 M-6,
+//  GHOST-§ G-8, WR-§6, SHIP-§9c)
+//
+//  Jonathan's directive, verbatim, is the thing every test below is ultimately
+//  about: *"I can make 3 different circles and then tell the commander something
+//  like 'move all units to hold 1' or 'move all units to ambush 2', and the AI can
+//  use that indicated circle on the map to carry out the command."*
+//
+//  ⭐⭐ THE HEADLINE THESE TESTS EXIST TO PROTECT, AND IT IS A STRUCTURAL CLAIM
+//  RATHER THAN A HOPE: the AI half of that feature is ⛔ NOT a new intent, ⛔ not a
+//  new `who` shape and ⛔ not one new byte of Zone A. It is ONE NEW `where` VALUE,
+//  published into a line the shipped prompt already defines `where` against. Five
+//  shipped readings make it true (MARK-§1), and the two a future edit could
+//  silently falsify are PINNED AS ASSERTIONS — one here (`hold` is already an
+//  alias of `guard`) and one in `Siegebound.Assistant.ZoneA.StaticPrefixContract`
+//  (Zone A still defines `where` by reference to `[FORCES]`).
+//
+//  ⛔ NAMESPACE NOTE: these live under `Siegebound.Assistant.Selection.<Name>`
+//  because AS-§20.7 pins THIS FILE's test names to that prefix. They are here,
+//  rather than in a new file, because every fixture they need — the 13-kind
+//  card-row roster, the seven-place head, the reflection writers, the Zone-C
+//  readers — already lives in this one, and a second copy of that frame is the
+//  duplication the task spec forbids.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  MARK TEST 1 — the symbol reaches the one line the model actually reads
+// ───────────────────────────────────────────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeAssistantSelectionMarkSymbolsReachThePlacesLineTest,
+	"Siegebound.Assistant.Selection.MarkSymbolsReachThePlacesLine",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+/**
+ *  ⭐ THE ONE-SENTENCE CLAIM OF THE WHOLE TASK, ASSERTED: a mark the player drew
+ *  becomes a symbol in Zone C's `places:` line and an entry in `GetPlaceNames()`,
+ *  and it is EXACTLY `FSiegeMapMark::MakeSymbol(N)` — ⛔ never a symbol this test
+ *  spelled for itself.
+ *
+ *  ⚠️ THE `MakeSymbol` COMPARISON IS THE POINT AND IT IS NOT CEREMONY. The war map
+ *  inserts `MakeSymbol(N)` into the console input box (TASK-745) and this object
+ *  answers for whatever it publishes. If the two ever spell it differently, the
+ *  player types a symbol the grammar cannot sample and the feature fails silently,
+ *  on his machine only, in the exact sentence he asked for. String equality
+ *  against the SHARED static is what makes that impossible.
+ */
+bool FSiegeAssistantSelectionMarkSymbolsReachThePlacesLineTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeAssistantSelectionTestFixture;
+
+	// ⚠️ EXPECTED TRAFFIC, ⛔ NOT A FAILURE — and the file's shipped idiom, copied
+	// rather than improvised. Publishing marks WIDENS Zone C's head, which can take
+	// the roster over budget; `BuildZoneC` reports every degradation at Warning BY
+	// DESIGN, and an unexpected Warning fails an automation test. ⛔ Occurrences -1
+	// ("silently ignore") rather than 0 ("must be seen"), because whether this
+	// particular board collapses is a live budget reading and ⛔ not this test's
+	// claim. ⛔ Scoped to this ONE message: a blanket suppression would also hide
+	// the two player-text truncation latches.
+	AddExpectedMessagePlain(TEXT("Snapshot roster TRUNCATED"), ELogVerbosity::Warning,
+		EAutomationExpectedMessageFlags::Contains, /*Occurrences*/ -1);
+
+	int32 Published = 0;
+	FScratchSnapshot Scratch = MakeSnapshotWithMarks(
+		ThirteenKindsInCardRowOrder(), /*PerKindTotal*/ 9, MarksOneTo(3), Published);
+
+	if (!TestTrue(*FString::Printf(TEXT("The scratch snapshot was built (missing field: '%s')"), *Scratch.MissingField), Scratch.IsUsable()))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("⭐ All three marks were published — the shipped AppendMarkPlaces' own return value, so a silent no-op cannot pass this file"),
+		Published, 3);
+
+	const TArray<FName>& PlaceNames = Scratch.Snapshot->GetPlaceNames();
+
+	TestEqual(TEXT("The vocabulary is the SEVEN fixed places plus the three marks"),
+		PlaceNames.Num(), SevenPlaces().Num() + 3);
+
+	// ── THE FIXED SEVEN COME FIRST, IN THE TABLE'S ORDER ────────────────────
+	// Zone A prints the fixed vocabulary in this order and the mirror is
+	// deliberate; marks ride on the TAIL. An implementation that interleaved them
+	// (say, sorted the whole list) would still "work" and would still pass every
+	// resolution test — and it would make the two prompt zones disagree about order
+	// for no reason anybody chose.
+	const TArray<FName> Fixed = SevenPlaces();
+	for (int32 Index = 0; Index < Fixed.Num(); ++Index)
+	{
+		TestEqualSensitive(*FString::Printf(TEXT("Fixed place %d is still `%s`, in table order, ahead of every mark"), Index, *Fixed[Index].ToString()),
+			PlaceNames.IsValidIndex(Index) ? PlaceNames[Index].ToString() : FString(),
+			Fixed[Index].ToString());
+	}
+
+	// ── AND THE MARKS ARE THE SHARED STATIC'S OUTPUT, CHARACTER FOR CHARACTER ─
+	for (int32 Number = 1; Number <= 3; ++Number)
+	{
+		const int32 Index = Fixed.Num() + Number - 1;
+		TestEqualSensitive(*FString::Printf(TEXT("⭐ Place %d is EXACTLY `FSiegeMapMark::MakeSymbol(%d)` — the ONE seam the war map and the snapshot must agree on"), Index, Number),
+			PlaceNames.IsValidIndex(Index) ? PlaceNames[Index].ToString() : FString(),
+			FSiegeMapMark::MakeSymbol(Number));
+	}
+
+	// ⛔ AND THE SYMBOL IS NOT A BARE DIGIT (MARK-§2). Zone A already ships
+	// `COUNT  = 1 to 30`, so a bare `1` in the `where` field is a token the model
+	// has been TAUGHT means a quantity — and this project's whole measured failure
+	// history is valid-shaped-wrong-command.
+	TestEqualSensitive(TEXT("⛔ The symbol is `circle_1`, ⛔ NOT the bare digit `1` — Zone A already teaches `COUNT = 1 to 30` (MARK-§2)"),
+		FSiegeMapMark::MakeSymbol(1), FString(TEXT("circle_1")));
+
+	// ── THE PROMPT ITSELF ───────────────────────────────────────────────────
+	const FString ZoneC = Scratch.Snapshot->BuildZoneC(ShippedDefaultOrderLine(), FString());
+	const TArray<FString> Printed = PrintedPlaceSymbols(ZoneC);
+
+	TestEqual(TEXT("Zone C's `places:` line prints all ten symbols"), Printed.Num(), 10);
+	TestTrue(TEXT("⭐ `circle_1` is printed into Zone C's `places:` line — the line Zone A defines `where` AGAINST (MARK-§1 reading 1)"),
+		Printed.Contains(FString(TEXT("circle_1"))));
+	TestTrue(TEXT("⭐ …and `circle_3`"), Printed.Contains(FString(TEXT("circle_3"))));
+
+	// ⭐ THE GRAMMAR HALF, FOR FREE AND PROVED RATHER THAN ASSERTED IN PROSE.
+	// USiegeAssistantGrammar::Build takes PlaceNames, so a published mark becomes a
+	// GBNF `where` alternative with ZERO grammar-code change (MARK-§1 reading 4).
+	const FString Grammar = USiegeAssistantGrammar::Build(
+		Scratch.Snapshot->GetUnitKinds(), PlaceNames, Scratch.Snapshot->GetRegionPlaceNames());
+
+	// ── ⭐⭐ THE INSTRUMENT IS CALIBRATED AND PROVED BEFORE IT IS TRUSTED (TASK-762) ──
+	// The wrapper is measured off the shipped emitter's own bytes. ⛔ No escaped
+	// literal is typed at any assertion below, so these searches cannot drift from
+	// `GbnfJsonString` the way the ones they replace did.
+	const FGrammarSpelling Spelling = CalibrateGrammarSpelling(Grammar, ShippedGuardSymbol());
+
+	TestTrue(*FString::Printf(TEXT("⭐⭐ POSITIVE CONTROL — the SHIPPED intent `%s` is FOUND in the grammar in the emitter's own spelling. It has been translating his sentences for months, so a search that cannot find it is a BROKEN SEARCH, ⛔ not a broken grammar"), *Spelling.CalibratedOn),
+		Spelling.IsIn(Grammar, ShippedGuardSymbol()));
+	TestTrue(*FString::Printf(TEXT("⭐⭐ POSITIVE CONTROL 2 — `%s` too, a symbol the wrapper was NOT measured on, so the calibration is cross-checked rather than self-confirming"), *ShippedAmbushSymbol()),
+		Spelling.IsIn(Grammar, ShippedAmbushSymbol()));
+	TestTrue(*FString::Printf(TEXT("⛔ …and the derived spelling is a real WRAPPER (prefix '%s', suffix '%s') — a zero-width one would make every absence assertion below vacuous"), *Spelling.Prefix, *Spelling.Suffix),
+		Spelling.IsWrapper());
+
+	TestTrue(TEXT("⭐⭐ The GBNF grammar built from this snapshot admits `circle_1` as a `where`, in the emitter's own spelling — samplable with ZERO grammar-code change (MARK-§1 reading 4)"),
+		Spelling.IsIn(Grammar, TEXT("circle_1")));
+	TestTrue(TEXT("⭐⭐ …and `circle_2`, which is the symbol in his second example sentence"),
+		Spelling.IsIn(Grammar, TEXT("circle_2")));
+
+	// ⛔ AND A MARK HE NEVER DREW IS UNSAYABLE. This is the property that makes the
+	// whole referent safe: the model physically cannot name a circle that does not
+	// exist, so "hold 4" on a three-circle board is a refusal rather than an order
+	// to somewhere plausible.
+	TestFalse(TEXT("⛔ `circle_4` — never drawn — is NOT in the grammar, so the model cannot even spell it"),
+		Spelling.IsIn(Grammar, TEXT("circle_4")));
+
+	// ⭐⭐ AND THAT ABSENCE IS A MEASUREMENT RATHER THAN AN UNMATCHABLE NEEDLE.
+	// ⛔ THIS IS THE ASSERTION TASK-762 EXISTS FOR. The TestFalse above previously
+	// searched for a byte sequence the emitter never writes, so it passed FOR THE
+	// WRONG REASON and would have passed just as happily WITH `circle_4` in the
+	// grammar — the guard was inert while reporting SAFE. Rebuilding the SAME board
+	// through the SAME shipped emitter with `circle_4` added, and finding it with
+	// the SAME needle, is what proves the guard can fail again.
+	{
+		const FString ArmedGrammar = GrammarWithExtraPlace(*Scratch.Snapshot.Get(), FName(TEXT("circle_4")));
+
+		TestTrue(TEXT("⭐⭐ ARMING PROOF — the SAME needle DOES find `circle_4` in a grammar built WITH it, so the absence assertion above is live (⛔ before TASK-762 it could not fail)"),
+			Spelling.IsIn(ArmedGrammar, TEXT("circle_4")));
+		TestFalse(TEXT("⛔ …and the control adds exactly the one symbol — `circle_5` is still absent from it, so the arming proof is not passing because the needle matches everything"),
+			Spelling.IsIn(ArmedGrammar, TEXT("circle_5")));
+	}
+
+	TestFalse(TEXT("⛔ …and it is not in Zone C's `places:` line either"),
+		Printed.Contains(FString(TEXT("circle_4"))));
+
+	return true;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  MARK TEST 2 — ascending number order, ⛔ NOT store order
+// ───────────────────────────────────────────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeAssistantSelectionMarkOrderIsAscendingTest,
+	"Siegebound.Assistant.Selection.MarkNumbersArePublishedInAscendingOrder",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+/**
+ *  ⚠️ THE FIXTURE HANDS THE MARKS OVER OUT OF ORDER ON PURPOSE, because that is
+ *  what the SHIPPED STORE looks like after any delete. `M-1`'s allocator gives a
+ *  new mark the LOWEST FREE number and never renumbers, so add 1,2,3 → delete 2 →
+ *  add leaves the store holding [1, 3, 2].
+ *
+ *  ⚖️ WHY IT MATTERS ENOUGH TO TEST: Zone C is allowed to vary between turns — it
+ *  contains the utterance — but it should not vary for a reason NOBODY CHOSE. A
+ *  store-order `places:` line makes the same board emit different bytes depending
+ *  on the order the player happened to create and delete circles in, which is
+ *  noise in every prompt diff anyone will ever read while debugging this feature.
+ */
+bool FSiegeAssistantSelectionMarkOrderIsAscendingTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeAssistantSelectionTestFixture;
+
+	// Store order [5, 1, 3] — a board where the player made five circles, deleted
+	// 2 and 4, and the array kept its holes exactly where M-1 says it must.
+	int32 Published = 0;
+	FScratchSnapshot Scratch = MakeSnapshotWithMarks(
+		ThirteenKindsInCardRowOrder(), /*PerKindTotal*/ 9, MarksNumbered({ 5, 1, 3 }), Published);
+
+	if (!TestTrue(*FString::Printf(TEXT("The scratch snapshot was built (missing field: '%s')"), *Scratch.MissingField), Scratch.IsUsable()))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("All three out-of-order marks were published"), Published, 3);
+
+	const TArray<FName>& PlaceNames = Scratch.Snapshot->GetPlaceNames();
+	const int32 First = SevenPlaces().Num();
+
+	TestEqualSensitive(TEXT("⭐ The first published mark is `circle_1`, ⛔ NOT `circle_5` (which is what the STORE handed over first)"),
+		PlaceNames.IsValidIndex(First) ? PlaceNames[First].ToString() : FString(), FString(TEXT("circle_1")));
+	TestEqualSensitive(TEXT("…then `circle_3`"),
+		PlaceNames.IsValidIndex(First + 1) ? PlaceNames[First + 1].ToString() : FString(), FString(TEXT("circle_3")));
+	TestEqualSensitive(TEXT("…then `circle_5`"),
+		PlaceNames.IsValidIndex(First + 2) ? PlaceNames[First + 2].ToString() : FString(), FString(TEXT("circle_5")));
+
+	// ⛔ AND THE HOLES ARE REAL HOLES, NOT CLOSED UP. This is M-1 seen from the
+	// snapshot's side: `circle_2` was DELETED, and the surviving marks kept their
+	// own numbers rather than sliding down. If a future "tidy" renumbered them, a
+	// symbol already sitting unsent in the player's input box would denote
+	// DIFFERENT GROUND — the worst failure this whole feature can have.
+	TestFalse(TEXT("⛔ `circle_2` is ABSENT — a deleted mark leaves a HOLE and the survivors are NOT renumbered (M-1)"),
+		PlaceNames.Contains(FName(TEXT("circle_2"))));
+	TestFalse(TEXT("⛔ …and so is `circle_4`"),
+		PlaceNames.Contains(FName(TEXT("circle_4"))));
+
+	return true;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  MARK TEST 3 — resolution, and the refusal at a hole
+// ───────────────────────────────────────────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeAssistantSelectionMarkResolvesTest,
+	"Siegebound.Assistant.Selection.MarkResolvesAndAHoleRefuses",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+/**
+ *  THE GAME-SIDE HALF OF THE AIRLOCK: the model names `circle_1`, and
+ *  `ResolvePlace` — the ONLY door an FVector leaves this object through — turns it
+ *  into the ground the player clicked.
+ *
+ *  ⚠️ THE REFUSAL IS ASSERTED WITH ITS OUT-PARAM UNTOUCHED, which is the shipped
+ *  contract and is the half that actually protects the player. A caller that
+ *  ignores the return value must keep ITS OWN initialised value, ⛔ never a
+ *  plausible-looking origin it might march an army to.
+ */
+bool FSiegeAssistantSelectionMarkResolvesTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeAssistantSelectionTestFixture;
+
+	// Marks 1 and 3 — M-1's hole at 2.
+	int32 Published = 0;
+	FScratchSnapshot Scratch = MakeSnapshotWithMarks(
+		ThirteenKindsInCardRowOrder(), /*PerKindTotal*/ 9, MarksNumbered({ 1, 3 }), Published);
+
+	if (!TestTrue(*FString::Printf(TEXT("The scratch snapshot was built (missing field: '%s')"), *Scratch.MissingField), Scratch.IsUsable()))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Two marks were published"), Published, 2);
+
+	// ── A LIVE MARK RESOLVES, TO THE POINT THE PLAYER CLICKED ───────────────
+	{
+		FVector Resolved = FVector::ZeroVector;
+		if (TestTrue(TEXT("⭐ `circle_1` RESOLVES — the AI can be told to use the circle he drew"),
+			Scratch.Snapshot->ResolvePlace(FName(TEXT("circle_1")), Resolved)))
+		{
+			const FVector2D Expected = MarkProbeXYFor(1);
+			TestEqual(TEXT("…to the mark's own world X"), Resolved.X, Expected.X);
+			TestEqual(TEXT("…and its world Y"), Resolved.Y, Expected.Y);
+			TestEqual(TEXT("…at MarkPlaceGroundZ, the arena's documented walk surface — ⛔ read from the named constant, never re-typed"),
+				Resolved.Z, static_cast<double>(USiegeAssistantSnapshot::MarkPlaceGroundZ));
+		}
+	}
+
+	// ── AND SO DOES THE OTHER ONE, AT ITS OWN POINT ─────────────────────────
+	// Two marks with DIFFERENT coordinates, both asserted, is what catches an
+	// implementation that published the right symbols against the wrong locations —
+	// which would read to the player as "the AI sent my units to the wrong circle".
+	{
+		FVector Resolved = FVector::ZeroVector;
+		if (TestTrue(TEXT("`circle_3` resolves"), Scratch.Snapshot->ResolvePlace(FName(TEXT("circle_3")), Resolved)))
+		{
+			const FVector2D Expected = MarkProbeXYFor(3);
+			TestEqual(TEXT("…to ITS point, not mark 1's — the symbol/location pairing is index-aligned"), Resolved.X, Expected.X);
+			TestEqual(TEXT("…on Y too"), Resolved.Y, Expected.Y);
+		}
+	}
+
+	// ── THE HOLE REFUSES, AND LEAVES THE CALLER'S VALUE ALONE ───────────────
+	{
+		const FVector Sentinel(-11111.0, 22222.0, -33333.0);
+		FVector Resolved = Sentinel;
+
+		TestFalse(TEXT("⛔ `circle_2` — the DELETED mark — does NOT resolve (M-1's hole is a real absence)"),
+			Scratch.Snapshot->ResolvePlace(FName(TEXT("circle_2")), Resolved));
+		TestEqual(TEXT("⛔ …and OutLocation is left UNTOUCHED on that refusal — ⛔ never a zero vector that reads as the map origin"),
+			Resolved, Sentinel);
+	}
+
+	// A number that was never in play at all, for the same reason.
+	{
+		FVector Resolved = FVector::ZeroVector;
+		TestFalse(TEXT("⛔ `circle_9` — never drawn — does not resolve"),
+			Scratch.Snapshot->ResolvePlace(FName(TEXT("circle_9")), Resolved));
+	}
+
+	// ⛔ AND THE SEVEN FIXED PLACES STILL RESOLVE. Marks are an APPEND; a mark
+	// implementation that reset or reordered the geometry arrays would break the
+	// shipped vocabulary while every mark assertion above still passed.
+	{
+		FVector Resolved = FVector::ZeroVector;
+		TestTrue(TEXT("⛔ `own_castle` still resolves — marks APPEND to the shipped vocabulary, they do not replace it"),
+			Scratch.Snapshot->ResolvePlace(FName(TEXT("own_castle")), Resolved));
+		TestTrue(TEXT("⛔ …and `hero` does"),
+			Scratch.Snapshot->ResolvePlace(FName(TEXT("hero")), Resolved));
+	}
+
+	return true;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  MARK TEST 4 — M-6: a mark is `where`-ONLY, ⛔ never a region
+// ───────────────────────────────────────────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeAssistantSelectionMarkIsNeverARegionTest,
+	"Siegebound.Assistant.Selection.MarkIsNeverARegion",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+/**
+ *  ⛔⛔ THE ONE SHAPE THAT WOULD COST REAL ZONE-A BYTES IS THE ONE v1 REFUSES, AND
+ *  THIS IS THE TEST THAT KEEPS IT REFUSED.
+ *
+ *  A circle trivially satisfies AS-§21.4's "is there a shipped IsPointInZone for
+ *  it" test — it has a centre and a radius sitting right there in
+ *  `FSiegeMapMark::RadiusUU` — so `{"in": circle_1}` is the most natural-looking
+ *  "improvement" anyone could make to this feature. It would also destroy the
+ *  byte-freeze: Zone A's `ZONE = ` line is GENERATED FROM THE FIXED TABLE's
+ *  `bHasRegion` column, so a per-match entry there makes Zone A VARY, and a
+ *  varying Zone A throws away the cached KV prefix on every board that has a mark
+ *  — a failure that surfaces as latency, never as a wrong answer.
+ *
+ *  ⇒ this test is the fence. Deleting it is the only way to take the shape.
+ */
+bool FSiegeAssistantSelectionMarkIsNeverARegionTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeAssistantSelectionTestFixture;
+
+	int32 PublishedNone = 0;
+	FScratchSnapshot WithoutMarks = MakeSnapshotWithMarks(
+		ThirteenKindsInCardRowOrder(), /*PerKindTotal*/ 9, TArray<FSiegeMapMark>(), PublishedNone);
+
+	int32 PublishedNine = 0;
+	FScratchSnapshot WithMarks = MakeSnapshotWithMarks(
+		ThirteenKindsInCardRowOrder(), /*PerKindTotal*/ 9, MarksOneTo(9), PublishedNine);
+
+	if (!TestTrue(*FString::Printf(TEXT("The no-mark snapshot was built (missing field: '%s')"), *WithoutMarks.MissingField), WithoutMarks.IsUsable())
+		|| !TestTrue(*FString::Printf(TEXT("The nine-mark snapshot was built (missing field: '%s')"), *WithMarks.MissingField), WithMarks.IsUsable()))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("An empty mark store publishes nothing"), PublishedNone, 0);
+	TestEqual(TEXT("Nine marks were published (so the comparison below is not vacuous)"), PublishedNine, 9);
+
+	// ── THE REGION LIST IS UNCHANGED BY ANY NUMBER OF MARKS ─────────────────
+	const TArray<FName>& RegionsWithout = WithoutMarks.Snapshot->GetRegionPlaceNames();
+	const TArray<FName>& RegionsWith = WithMarks.Snapshot->GetRegionPlaceNames();
+
+	TestEqual(TEXT("⛔ GetRegionPlaceNames() has the SAME LENGTH with nine marks as with none (M-6)"),
+		RegionsWith.Num(), RegionsWithout.Num());
+	TestEqual(TEXT("⛔ …and it is still exactly the THREE shipped region-bearing places"),
+		RegionsWith.Num(), ThreeRegionPlaces().Num());
+
+	for (int32 Index = 0; Index < RegionsWithout.Num(); ++Index)
+	{
+		TestEqualSensitive(*FString::Printf(TEXT("⛔ Region %d is unchanged by marks"), Index),
+			RegionsWith.IsValidIndex(Index) ? RegionsWith[Index].ToString() : FString(),
+			RegionsWithout[Index].ToString());
+	}
+
+	for (int32 Number = 1; Number <= 9; ++Number)
+	{
+		TestFalse(*FString::Printf(TEXT("⛔ `circle_%d` is NOT region-bearing (M-6 — the scope fence that protects the Zone-A freeze)"), Number),
+			RegionsWith.Contains(FName(*FSiegeMapMark::MakeSymbol(Number))));
+	}
+
+	// ── AND ResolvePlaceRegion REFUSES A MARK, LEAVING BOTH OUT-PARAMS ALONE ─
+	// The zero half-extent this file appends keeps the arrays PARALLEL; it is
+	// RegionPlaceNames — never "is this extent non-zero" — that answers here, which
+	// is the shipped rule and the reason a mark can never leak in as a region.
+	{
+		const FVector CentreSentinel(-4242.0, 4242.0, 42.0);
+		const FVector2D ExtentSentinel(-77.0, 88.0);
+		FVector Centre = CentreSentinel;
+		FVector2D Extent = ExtentSentinel;
+
+		TestFalse(TEXT("⛔ ResolvePlaceRegion REFUSES `circle_1` — a mark denotes a POINT, never an area (M-6)"),
+			WithMarks.Snapshot->ResolvePlaceRegion(FName(TEXT("circle_1")), Centre, Extent));
+		TestEqual(TEXT("⛔ …with the centre out-param untouched"), Centre, CentreSentinel);
+		TestEqual(TEXT("⛔ …and the extent out-param untouched"), Extent, ExtentSentinel);
+	}
+
+	// ⛔ AND THE SHIPPED REGIONS STILL ANSWER, so the assertion above is not
+	// passing because ResolvePlaceRegion broke for everyone.
+	{
+		FVector Centre = FVector::ZeroVector;
+		FVector2D Extent = FVector2D::ZeroVector;
+		TestTrue(TEXT("⛔ `mid` still resolves as a region on the SAME snapshot — the refusal above is about marks, not about a broken accessor"),
+			WithMarks.Snapshot->ResolvePlaceRegion(FName(TEXT("mid")), Centre, Extent));
+	}
+
+	// ⭐ THE GRAMMAR CONSEQUENCE, WHICH IS THE ONE THE MODEL ACTUALLY FEELS:
+	// `{"in": circle_1}` is UNSAMPLABLE, so the shape is refused at the sampler
+	// rather than refused later by a validator nobody can see.
+	const FString Grammar = USiegeAssistantGrammar::Build(
+		WithMarks.Snapshot->GetUnitKinds(), WithMarks.Snapshot->GetPlaceNames(), WithMarks.Snapshot->GetRegionPlaceNames());
+
+	TestTrue(TEXT("The grammar was produced"), Grammar.Len() > 0);
+	TestTrue(TEXT("⛔ The grammar still carries a `zone` rule — the region feature is intact"),
+		Grammar.Contains(TEXT("zone ::="), ESearchCase::CaseSensitive));
+
+	// ── ⭐⭐ THE INSTRUMENT IS CALIBRATED AND PROVED BEFORE IT IS TRUSTED (TASK-762) ──
+	const FGrammarSpelling Spelling = CalibrateGrammarSpelling(Grammar, ShippedGuardSymbol());
+
+	TestTrue(*FString::Printf(TEXT("⭐⭐ POSITIVE CONTROL — the SHIPPED intent `%s` is FOUND in the grammar in the emitter's own spelling; a counter that cannot find `%s` cannot be trusted to count `circle_1`"), *Spelling.CalibratedOn, *Spelling.CalibratedOn),
+		Spelling.IsIn(Grammar, ShippedGuardSymbol()));
+	TestTrue(*FString::Printf(TEXT("⭐⭐ POSITIVE CONTROL 2 — `%s` too, cross-checking the wrapper on a symbol it was NOT measured on"), *ShippedAmbushSymbol()),
+		Spelling.IsIn(Grammar, ShippedAmbushSymbol()));
+	TestTrue(*FString::Printf(TEXT("⛔ …and the derived spelling is a real WRAPPER (prefix '%s', suffix '%s')"), *Spelling.Prefix, *Spelling.Suffix),
+		Spelling.IsWrapper());
+
+	// A mark appears ONCE in the grammar (as a `where`), never twice (as a `zone`
+	// too). Counting is what makes this assertion able to fail — `Contains` would
+	// be true either way.
+	//
+	// ⭐ AND THE COUNTED NEEDLE IS THE EMITTER'S OWN WRAPPED FORM, which anchors
+	// the match on BOTH sides. That is a second, independent reason to prefer it
+	// here: a bare `circle_1` would also count occurrences sitting inside a
+	// `circle_10`, so the wrapped form is what makes "exactly once" mean what it
+	// says on a board with more than nine marks.
+	TestEqual(TEXT("⛔⛔ `circle_1` appears EXACTLY ONCE in the grammar — as a `where` alternative and ⛔ NOT also as a `zone` one (M-6)"),
+		Spelling.CountIn(Grammar, TEXT("circle_1")), 1);
+
+	// ⭐⭐ AND THE COUNTER IS ARMED, PROVED AGAINST THE EXACT LEAK IT GUARDS.
+	// ⛔ Before TASK-762 this counter searched a byte sequence the emitter never
+	// writes, so it could only ever return ZERO — it failed loudly here, but the
+	// sibling `TestFalse` guards built on the same needle passed while measuring
+	// nothing. Rebuilding the SAME board with `circle_1` ALSO declared
+	// region-bearing — which is precisely the M-6 violation this test exists to
+	// catch — must make the same counter read 2.
+	{
+		const FString LeakedGrammar = GrammarWithExtraRegion(*WithMarks.Snapshot.Get(), FName(TEXT("circle_1")));
+
+		TestEqual(TEXT("⭐⭐ ARMING PROOF — in a grammar where `circle_1` IS also a region, the SAME counter reads 2. `Exactly once` above is therefore a live measurement of the M-6 fence, ⛔ not a needle that can only return zero"),
+			Spelling.CountIn(LeakedGrammar, TEXT("circle_1")), 2);
+	}
+
+	return true;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  MARK TEST 5 — the coordinate airlock, as a BYTE property of all three zones
+// ───────────────────────────────────────────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeAssistantSelectionMarkAirlockTest,
+	"Siegebound.Assistant.Selection.MarkGeometryNeverEntersAnyZone",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+/**
+ *  ⛔⛔ THE AIRLOCK, CHECKED AS BYTES RATHER THAN RESTATED AS A PROMISE
+ *  (CONVENTIONS §3, MARK-§1, WR-§6).
+ *
+ *  A mark is the first place symbol in this game whose position comes from a
+ *  PLAYER'S MOUSE rather than from a level actor, so it is the first one where a
+ *  coordinate could plausibly be "helpfully" printed — `circle_1 at (63571,
+ *  -48293), r 4173` is a line a well-meaning edit could easily produce. The probe
+ *  numbers are deliberately unmistakable, so if one ever appears the failure
+ *  message points at the exact value that leaked.
+ *
+ *  ⚠️ THE RADIUS IS PROBED TOO, AND SEPARATELY. It is the field this object never
+ *  reads at all, and "we do not print it" is a weaker claim than "we never even
+ *  looked at it" — but it is the claim a test can make, so it is made here.
+ */
+bool FSiegeAssistantSelectionMarkAirlockTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeAssistantSelectionTestFixture;
+
+	// Expected traffic — see the note on MarkSymbolsReachThePlacesLine. Nine marks
+	// widen Zone C's head, and the roster collapse logs at Warning by design.
+	AddExpectedMessagePlain(TEXT("Snapshot roster TRUNCATED"), ELogVerbosity::Warning,
+		EAutomationExpectedMessageFlags::Contains, /*Occurrences*/ -1);
+
+	int32 Published = 0;
+	FScratchSnapshot Scratch = MakeSnapshotWithMarks(
+		ThirteenKindsInCardRowOrder(), /*PerKindTotal*/ 9, MarksOneTo(9), Published);
+
+	if (!TestTrue(*FString::Printf(TEXT("The scratch snapshot was built (missing field: '%s')"), *Scratch.MissingField), Scratch.IsUsable()))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Nine marks were published — otherwise this test passes for the wrong reason"), Published, 9);
+
+	TStrongObjectPtr<USiegeAssistantVocabulary> Vocabulary(NewObject<USiegeAssistantVocabulary>());
+	if (!TestTrue(TEXT("A default vocabulary object was created"), Vocabulary.IsValid()))
+	{
+		return false;
+	}
+
+	const FString ZoneA = Scratch.Snapshot->BuildZoneA(Vocabulary.Get());
+	const FString ZoneB = Scratch.Snapshot->BuildZoneB();
+	const FString ZoneC = Scratch.Snapshot->BuildZoneC(ShippedDefaultOrderLine(), FString());
+
+	struct FProbe
+	{
+		const TCHAR* Needle;
+		const TCHAR* What;
+	};
+
+	// ⚠️ THE X AND Y NEEDLES ARE THE SHARED FOUR-DIGIT PREFIX OF EVERY MARK
+	// COORDINATE THIS FIXTURE PRODUCES, ⛔ NOT the base constants — and the
+	// difference is the whole difference between a real probe and a vacuous one.
+	// `MarkProbeXYFor(N)` is (63571 + N, -48293 - N), so the literal strings
+	// "63571" and "48293" appear at NO mark; searching for them would pass for
+	// nothing. The nine marks span 63572…63580 and -48294…-48302, so "6357" and
+	// "4829" are present in every one of them.
+	const FProbe Probes[] =
+	{
+		{ TEXT("6357"), TEXT("a mark's world X (the prefix shared by all nine: 63572-63580)") },
+		{ TEXT("4829"), TEXT("a mark's world Y (the prefix shared by all nine: -48294--48302)") },
+		{ TEXT("4173"), TEXT("a mark's RADIUS - the field this object never reads at all") },
+	};
+
+	for (const FProbe& Probe : Probes)
+	{
+		TestFalse(*FString::Printf(TEXT("⛔ Zone A contains no trace of %s (`%s`)"), Probe.What, Probe.Needle),
+			ZoneA.Contains(Probe.Needle, ESearchCase::CaseSensitive));
+		TestFalse(*FString::Printf(TEXT("⛔ Zone B contains no trace of %s (`%s`)"), Probe.What, Probe.Needle),
+			ZoneB.Contains(Probe.Needle, ESearchCase::CaseSensitive));
+		TestFalse(*FString::Printf(TEXT("⛔⛔ Zone C contains no trace of %s (`%s`) — the model sees `circle_1`, never a number that means a position"), Probe.What, Probe.Needle),
+			ZoneC.Contains(Probe.Needle, ESearchCase::CaseSensitive));
+	}
+
+	// ⛔⛔ AND THE PROBES ARE PROVED REACHABLE, which is what separates this from a
+	// test that passes because nothing was ever published. The coordinate really IS
+	// in the object, and its PRINTED FORM really does contain the needles the three
+	// zones were searched for — so the nine assertions above are claims about the
+	// zones, ⛔ not about an empty snapshot or a mis-typed needle.
+	{
+		FVector Resolved = FVector::ZeroVector;
+		if (TestTrue(TEXT("⛔ The mark's coordinate IS held by the snapshot (so the airlock assertions above are non-vacuous)"),
+			Scratch.Snapshot->ResolvePlace(FName(TEXT("circle_1")), Resolved)))
+		{
+			TestEqual(TEXT("⛔ …and it is the fixture's own probe point"),
+				Resolved.X, MarkProbeXYFor(1).X);
+
+			const FString PrintedX = FString::Printf(TEXT("%.0f"), Resolved.X);
+			const FString PrintedY = FString::Printf(TEXT("%.0f"), Resolved.Y);
+			TestTrue(*FString::Printf(TEXT("⛔ …and its X prints as `%s`, which CONTAINS the needle `6357` the zones were searched for"), *PrintedX),
+				PrintedX.Contains(TEXT("6357"), ESearchCase::CaseSensitive));
+			TestTrue(*FString::Printf(TEXT("⛔ …and its Y prints as `%s`, which CONTAINS the needle `4829`"), *PrintedY),
+				PrintedY.Contains(TEXT("4829"), ESearchCase::CaseSensitive));
+		}
+	}
+
+	// The SYMBOL, by contrast, is exactly what Zone C is supposed to carry.
+	TestTrue(TEXT("✅ Zone C DOES carry the mark's SYMBOL — that is the whole airlock trick, applied a second time (WR-§6's click→symbol rule)"),
+		ZoneC.Contains(TEXT("circle_1"), ESearchCase::CaseSensitive));
+
+	return true;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  MARK TEST 6 — ⚠️ THE ZONE-C COST, MEASURED AND REPORTED (MARK-§2)
+// ───────────────────────────────────────────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeAssistantSelectionMarkZoneCCostTest,
+	"Siegebound.Assistant.Selection.MarkZoneCCostIsTenCharsPerMark",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+/**
+ *  ⚠️⚠️ READ WHAT THIS TEST ASSERTS AND WHAT IT DELIBERATELY DOES NOT.
+ *
+ *  IT ASSERTS the invariant: each published mark costs Zone C's head EXACTLY 10
+ *  characters (`, circle_N`), and that head is subtracted from the roster budget
+ *  before the roster is given one. That is a property of the SYMBOL FORMAT, and it
+ *  can only change if somebody changes the symbol — in which case this test should
+ *  and does go red.
+ *
+ *  ⛔ IT DOES NOT ASSERT THE OVERRUN POINT, AND THE REASON IS THIS FILE'S OWN
+ *  RECORDED LAW. `MakeSnapshotWithRoster`'s comment already states it for the
+ *  two-digit-count case: "⛔ The consequence — that an ordinary two-digit board is
+ *  ALREADY collapsing at the default sentence length — is deliberately NOT
+ *  asserted anywhere: it is a live measurement reported to TASK-525, and pinning
+ *  it as a test would make TASK-528's ZoneBCharReserve repair fail this file for
+ *  SUCCEEDING." The mark overrun sits against the identical budget and the
+ *  identical funded lever, so it gets the identical treatment: MEASURED, and
+ *  REPORTED through AddInfo.
+ *
+ *  ⇒ the number Jonathan's cap ruling turns on is PRINTED by this test on every
+ *  run, and it is never allowed to become a gate that punishes the repair.
+ */
+bool FSiegeAssistantSelectionMarkZoneCCostTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeAssistantSelectionTestFixture;
+
+	// ⚠️ EXPECTED TRAFFIC, ⛔ NOT A FAILURE. This test DELIBERATELY walks the mark
+	// count up until the trimmer bites — the collapse is the thing being measured —
+	// and `BuildZoneC` reports every degradation at Warning by design.
+	AddExpectedMessagePlain(TEXT("Snapshot roster TRUNCATED"), ELogVerbosity::Warning,
+		EAutomationExpectedMessageFlags::Contains, /*Occurrences*/ -1);
+
+	const FString Order = ShippedDefaultOrderLine();
+	const TArray<FName> Kinds = ThirteenKindsInCardRowOrder();
+
+	int32 BaselinePlacesLine = INDEX_NONE;
+	int32 BaselineRowsPrinted = 0;
+	int32 FirstCollapsingMarkCount = INDEX_NONE;
+
+	for (int32 MarkCount = 0; MarkCount <= 9; ++MarkCount)
+	{
+		int32 Published = 0;
+		FScratchSnapshot Scratch = MakeSnapshotWithMarks(Kinds, /*PerKindTotal*/ 9, MarksOneTo(MarkCount), Published);
+
+		if (!TestTrue(*FString::Printf(TEXT("The %d-mark snapshot was built (missing field: '%s')"), MarkCount, *Scratch.MissingField), Scratch.IsUsable()))
+		{
+			return false;
+		}
+		if (!TestEqual(*FString::Printf(TEXT("All %d mark(s) were published"), MarkCount), Published, MarkCount))
+		{
+			return false;
+		}
+
+		const FString ZoneC = Scratch.Snapshot->BuildZoneC(Order, FString());
+		const int32 PlacesLine = PlacesLineLength(ZoneC);
+
+		if (!TestTrue(*FString::Printf(TEXT("A `places:` line exists at %d mark(s)"), MarkCount), PlacesLine != INDEX_NONE))
+		{
+			return false;
+		}
+
+		const int32 RowsPrinted = PrintedRosterSymbols(ZoneC).Num();
+
+		if (MarkCount == 0)
+		{
+			BaselinePlacesLine = PlacesLine;
+			BaselineRowsPrinted = RowsPrinted;
+
+			// The shipped operating point AS-§20.3 quotes is `head 108`, and the head
+			// is `[FORCES]\n` (9 chars) plus this line. Pinned so the arithmetic below
+			// is anchored to the number the LAW states rather than to one this test
+			// invented for itself.
+			TestEqual(TEXT("⭐ At ZERO marks the `places:` line is 99 chars, which with `[FORCES]\\n` is exactly the 108-char head AS-§20.3 quotes"),
+				PlacesLine, 99);
+
+			// ⛔ THE BASELINE ROW COUNT IS RECORDED, ⛔ NOT ASSERTED — same law, same
+			// reason as the overrun point below. Whether the 13-kind roster prints in
+			// FULL at the 61-char operating point is a live budget reading (AS-§20.3
+			// puts it at 887 of 893), and pinning it here would make TASK-528's
+			// ZoneBCharReserve repair fail this file for succeeding. The comparison
+			// below is RELATIVE to whatever this board actually does, so it stays
+			// meaningful either way.
+			AddInfo(FString::Printf(
+				TEXT("BASELINE — at zero marks this board prints %d of %d roster kinds in full."),
+				RowsPrinted, Kinds.Num()));
+		}
+		else
+		{
+			TestEqual(*FString::Printf(TEXT("⭐⭐ %d mark(s) cost the `places:` line EXACTLY %d characters — `, circle_N` is 10 chars each (MARK-§2)"), MarkCount, MarkCount * 10),
+				PlacesLine, BaselinePlacesLine + MarkCount * 10);
+		}
+
+		if (FirstCollapsingMarkCount == INDEX_NONE && RowsPrinted < BaselineRowsPrinted)
+		{
+			FirstCollapsingMarkCount = MarkCount;
+		}
+
+		AddInfo(FString::Printf(
+			TEXT("MEASURED — %d mark(s): `places:` line %d chars, %d of %d roster kinds printed in full, %d collapsed into `other_kinds:`."),
+			MarkCount, PlacesLine, RowsPrinted, Kinds.Num(), Kinds.Num() - RowsPrinted));
+	}
+
+	// ── THE REPORT (⛔ A REPORT, NOT A GATE) ─────────────────────────────────
+	if (FirstCollapsingMarkCount == INDEX_NONE)
+	{
+		AddInfo(TEXT("MEASURED — the roster printed in full at every mark count from 0 to 9 on this board. The 10-char-per-mark cost is real but has not reached the trimmer here."));
+	}
+	else
+	{
+		AddInfo(FString::Printf(
+			TEXT("⚠️ MEASURED OVERRUN POINT — the FIRST mark count that collapses the roster tail, on a 13-kind single-digit-count board with the shipped 61-char `order:` line, is %d. ")
+			TEXT("This is MARK-§2's declared cost arriving exactly where it was predicted, ⛔ not a defect: the collapse is the shipped elastic trimmer, `other_kinds:` NAMES every kind it hides, ")
+			TEXT("and BuildZoneC logs at Warning each time it degrades. The funded lever is ZoneBCharReserve (TASK-528, MEASURE-FIRST) and this batch deliberately did NOT take it."),
+			FirstCollapsingMarkCount));
+	}
+
+	// ⛔ EXPECTED TRAFFIC, NOT A FAILURE: BuildZoneC reports every degradation at
+	// Warning by design, and this test drives it into that state on purpose.
+	AddInfo(TEXT("Any `Snapshot roster TRUNCATED` warnings above are EXPECTED — this test exercises the collapse deliberately."));
+
+	return true;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  MARK TEST 7 — the overrun DEGRADES GRACEFULLY rather than truncating
+// ───────────────────────────────────────────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeAssistantSelectionMarkOverrunIsGracefulTest,
+	"Siegebound.Assistant.Selection.MarkOverrunCollapsesGracefully",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+/**
+ *  ⭐⭐ THIS IS THE TEST THAT MAKES MARK-§2's "DECLARED COST, NOT A BLOCKER"
+ *  DEFENSIBLE — and it is the one that would catch the failure mode that WOULD be
+ *  a blocker.
+ *
+ *  The claim being defended is precise: the Zone-C overrun costs the model the
+ *  collapsed kinds' COUNTS and ⛔ never their EXISTENCE, ⛔ never a prompt key, and
+ *  ⛔ never one character of what the player actually typed. If any of those three
+ *  became untrue, "graceful degradation" would be a euphemism for silent data
+ *  loss — and it would look exactly like Jonathan's original Sorcerer defect,
+ *  which is what the rest of this file exists to make impossible.
+ */
+bool FSiegeAssistantSelectionMarkOverrunIsGracefulTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeAssistantSelectionTestFixture;
+
+	// ⚠️ EXPECTED TRAFFIC, ⛔ NOT A FAILURE — and here it is the POINT: this test
+	// drives the overrun on purpose to prove the degradation is graceful. The
+	// Warning is the shipped observability that makes it so.
+	AddExpectedMessagePlain(TEXT("Snapshot roster TRUNCATED"), ELogVerbosity::Warning,
+		EAutomationExpectedMessageFlags::Contains, /*Occurrences*/ -1);
+
+	const TArray<FName> Kinds = ThirteenKindsInCardRowOrder();
+	const FString Order = ShippedDefaultOrderLine();
+
+	// Nine marks — MARK-§ M-5's cap, i.e. the worst case the feature can produce.
+	int32 Published = 0;
+	FScratchSnapshot Scratch = MakeSnapshotWithMarks(Kinds, /*PerKindTotal*/ 9, MarksOneTo(9), Published);
+
+	if (!TestTrue(*FString::Printf(TEXT("The scratch snapshot was built (missing field: '%s')"), *Scratch.MissingField), Scratch.IsUsable()))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Nine marks were published — the M-5 cap, the widest `places:` line the feature can emit"), Published, 9);
+
+	const FString ZoneC = Scratch.Snapshot->BuildZoneC(Order, FString());
+
+	// ── (a) EVERY FIXED KEY IS STILL EMITTED ────────────────────────────────
+	// The fixed-key law: a missing key teaches the model that a key is OPTIONAL,
+	// and it shifts every downstream token. A trimmer that dropped a key to make
+	// room would be the failure this whole layout exists to prevent.
+	const TCHAR* const RequiredKeys[] = { TEXT("places"), TEXT("other_kinds"), TEXT("stances"), TEXT("hero"), TEXT("pending"), TEXT("order") };
+	for (const TCHAR* const Key : RequiredKeys)
+	{
+		TestTrue(*FString::Printf(TEXT("⛔ The `%s:` key is STILL emitted at nine marks — the fixed-key law survives the overrun"), Key),
+			HasKeyLine(ZoneC, Key));
+	}
+
+	// ── (b) THE PLAYER'S OWN SENTENCE IS NOT TOUCHED ────────────────────────
+	// CONVENTIONS §8: the roster absorbs the whole budget; the utterance is NEVER
+	// truncated by it. This is the assertion that separates "collapsed" from
+	// "truncated", which is the distinction the task spec names.
+	TestEqualSensitive(TEXT("⭐⭐ The `order:` line is BYTE-IDENTICAL to what the player typed — the ROSTER absorbed the mark cost, ⛔ the utterance did not (CONVENTIONS §8)"),
+		ValueOfKey(ZoneC, TEXT("order")), Order);
+
+	// ── (c) EVERY KIND IS STILL VISIBLE, BY NAME ────────────────────────────
+	// A collapse may hide a kind's NUMBERS; it may never hide its NAME. The union
+	// of the printed rows and the collapse line must be the whole board — that is
+	// the root-cause fix for the Sorcerer defect, re-asserted under mark pressure.
+	TArray<FString> Visible = PrintedRosterSymbols(ZoneC);
+	Visible.Append(CollapsedSymbols(ZoneC));
+
+	TestEqual(TEXT("⭐⭐ Printed rows + `other_kinds:` names = ALL THIRTEEN kinds — a collapse costs COUNTS, ⛔ never EXISTENCE"),
+		Visible.Num(), Kinds.Num());
+
+	for (const FName& Kind : Kinds)
+	{
+		TestTrue(*FString::Printf(TEXT("⭐ `%s` is still SHOWN to the model at nine marks (printed in full, or NAMED on the collapse line)"), *Kind.ToString()),
+			Visible.Contains(Kind.ToString()));
+	}
+
+	// And specifically the one Jonathan reported, which is the LAST card row and so
+	// is always the first kind any collapse reaches.
+	TestTrue(TEXT("⭐⭐ `sorcerer` — the LAST DT_Cards row, therefore the first kind any collapse reaches — is still visible to the model"),
+		Visible.Contains(FString(SorcererSymbol)));
+
+	// ── (d) THE GRAMMAR IS UNTOUCHED BY THE PROMPT COLLAPSE ─────────────────
+	// GetUnitKinds() is never trimmed, so a legitimate order stays SAYABLE even
+	// when its kind's counts were collapsed out of the prompt.
+	TestEqual(TEXT("⛔ GetUnitKinds() still holds all thirteen — the GRAMMAR is never trimmed by the character budget"),
+		Scratch.Snapshot->GetUnitKinds().Num(), Kinds.Num());
+
+	// ── (e) AND THE MARKS THEMSELVES ARE ALL STILL THERE ────────────────────
+	// The failure this rules out is a trimmer that "solved" the overrun by dropping
+	// marks — which would silently redefine the symbol sitting in the player's
+	// input box, the exact hazard M-1 exists to prevent.
+	const TArray<FString> PrintedPlaces = PrintedPlaceSymbols(ZoneC);
+	for (int32 Number = 1; Number <= 9; ++Number)
+	{
+		TestTrue(*FString::Printf(TEXT("⛔ `circle_%d` survived the overrun — the ROSTER is the elastic part, ⛔ the place list is not"), Number),
+			PrintedPlaces.Contains(FSiegeMapMark::MakeSymbol(Number)));
+	}
+
+	AddInfo(TEXT("Any `Snapshot roster TRUNCATED` warnings above are EXPECTED — this test drives the collapse on purpose."));
+
+	return true;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  MARK TEST 8 — the publication seam REFUSES bad input rather than repairing it
+// ───────────────────────────────────────────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeAssistantSelectionMarkPublicationRefusesTest,
+	"Siegebound.Assistant.Selection.MarkPublicationRefusesBadInput",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+/**
+ *  ⭐ THE SEAM IS A PURE STATIC, SO ITS DEGENERATE CASES ARE TESTABLE WITH ⛔ NO
+ *  WORLD, ⛔ NO WIDGET, ⛔ NO SUBSYSTEM AND ⛔ NO SNAPSHOT — which is exactly why
+ *  it was written as one (`WR-§6`'s unfunded-mandate lesson, applied at authoring
+ *  time rather than after a red gate).
+ *
+ *  Every case below is a REFUSAL rather than a repair, and the reason is uniform:
+ *  a place list where the symbol at index N does not describe the location at
+ *  index N reads to the player as "the AI sent my units to the wrong circle", and
+ *  a WRONG circle is strictly worse than an ABSENT one.
+ */
+bool FSiegeAssistantSelectionMarkPublicationRefusesTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeAssistantSelectionTestFixture;
+
+	// ⚠️ EXPECTED TRAFFIC, ⛔ NOT A FAILURE — and unlike the collapse suppressions
+	// elsewhere in this file, these two are the SUBJECT of the test. Both refusal
+	// paths log at Warning by design, because a mark store that silently published
+	// nothing would be indistinguishable from a player who drew nothing.
+	//
+	// ⭐ OCCURRENCES 1, ⛔ NOT -1: each of these MUST fire exactly once. A refusal
+	// that stopped logging would be a silent failure, and "silently ignore" would
+	// hide exactly the regression this test exists to catch.
+	AddExpectedMessagePlain(TEXT("Map marks NOT published"), ELogVerbosity::Warning,
+		EAutomationExpectedMessageFlags::Contains, /*Occurrences*/ 1);
+	AddExpectedMessagePlain(TEXT("published a symbol that is ALREADY in this turn's place list"), ELogVerbosity::Warning,
+		EAutomationExpectedMessageFlags::Contains, /*Occurrences*/ 1);
+
+	// ── (a) DE-SYNCHRONISED ARRAYS ⇒ NOTHING IS APPENDED ────────────────────
+	{
+		TArray<FName> Names{ FName(TEXT("own_castle")), FName(TEXT("hero")) };
+		TArray<FVector> Locations{ FVector::ZeroVector };                          // one short, deliberately
+		TArray<FVector2D> Extents{ FVector2D::ZeroVector, FVector2D::ZeroVector };
+
+		const int32 PublishedCount = USiegeAssistantSnapshot::AppendMarkPlaces(MarksOneTo(3), Names, Locations, Extents);
+
+		TestEqual(TEXT("⛔ A DE-SYNCHRONISED place set publishes NOTHING — the arrays are index-aligned by construction, and appending onto a broken one would mis-pair a symbol with a location"),
+			PublishedCount, 0);
+		TestEqual(TEXT("⛔ …and the names array is left exactly as it was"), Names.Num(), 2);
+		TestEqual(TEXT("⛔ …and the locations array too"), Locations.Num(), 1);
+		TestEqual(TEXT("⛔ …and the extents array too"), Extents.Num(), 2);
+	}
+
+	// ── (b) A NUMBER OUTSIDE THE NUMBERING LAW IS SKIPPED ───────────────────
+	// `FSiegeMapMark` default-constructs to Number = 0 and the law starts at
+	// `FirstMarkNumber` (1), so this rejects a default-constructed struct that
+	// reached the store. ⭐ The bound is READ from that shared constant on both
+	// sides — the store's allocator, the symbol seam and the snapshot's guard all
+	// spell it once, which is the drift that constant exists to prevent.
+	{
+		TestEqual(TEXT("⛔ The numbering law starts at 1 — read from the shared constant, so this test cannot drift away from the allocator"),
+			FSiegeMapMark::FirstMarkNumber, 1);
+		TestTrue(TEXT("⛔ `MakeSymbol` answers the EMPTY STRING below it — ⛔ never `circle_0`, which would look like a real symbol in the player's box and then resolve to nothing"),
+			FSiegeMapMark::MakeSymbol(FSiegeMapMark::FirstMarkNumber - 1).IsEmpty());
+
+		TArray<FName> Names;
+		TArray<FVector> Locations;
+		TArray<FVector2D> Extents;
+
+		FSiegeMapMark Zero;                 // Number == 0 by construction
+		FSiegeMapMark Negative;
+		Negative.Number = -3;
+		FSiegeMapMark Good;
+		Good.Number = 2;
+		Good.WorldXY = MarkProbeXYFor(2);
+
+		TArray<FSiegeMapMark> Marks;
+		Marks.Add(Zero);
+		Marks.Add(Negative);
+		Marks.Add(Good);
+
+		const int32 PublishedCount = USiegeAssistantSnapshot::AppendMarkPlaces(Marks, Names, Locations, Extents);
+
+		TestEqual(TEXT("⛔ Only the LEGAL mark is published — 0 and a negative number are not marks"), PublishedCount, 1);
+		TestEqual(TEXT("⛔ …so exactly one symbol was appended"), Names.Num(), 1);
+		TestEqualSensitive(TEXT("⛔ …and it is `circle_2`, the one that had a legal number"),
+			Names.Num() == 1 ? Names[0].ToString() : FString(), FString(TEXT("circle_2")));
+	}
+
+	// ── (c) A DUPLICATE NUMBER IS DROPPED, NOT PUBLISHED TWICE ──────────────
+	// Two marks sharing a number is a store-side defect (M-1 makes numbers
+	// permanent identities). Publishing the symbol twice would put a duplicate
+	// alternative in the grammar AND make ResolvePlace answer with whichever came
+	// first — one symbol denoting two pieces of ground, which is the hazard M-1's
+	// never-renumber ruling exists to prevent, arriving by another door.
+	{
+		TArray<FName> Names;
+		TArray<FVector> Locations;
+		TArray<FVector2D> Extents;
+
+		FSiegeMapMark First;
+		First.Number = 1;
+		First.WorldXY = MarkProbeXYFor(1);
+		FSiegeMapMark Clash;
+		Clash.Number = 1;
+		Clash.WorldXY = FVector2D(1.0, 1.0);
+
+		TArray<FSiegeMapMark> Marks;
+		Marks.Add(First);
+		Marks.Add(Clash);
+
+		const int32 PublishedCount = USiegeAssistantSnapshot::AppendMarkPlaces(Marks, Names, Locations, Extents);
+
+		TestEqual(TEXT("⛔ A duplicate number publishes ONE symbol, not two"), PublishedCount, 1);
+		TestEqual(TEXT("⛔ …and the arrays stay index-aligned (names vs locations)"), Names.Num(), Locations.Num());
+		TestEqual(TEXT("⛔ …and on the third array too"), Names.Num(), Extents.Num());
+	}
+
+	// ── (d) AN EMPTY STORE IS A NO-OP, NOT AN ERROR ─────────────────────────
+	// The overwhelmingly common case: the player has drawn nothing. It must cost
+	// the prompt exactly zero characters and leave the shipped vocabulary alone.
+	{
+		TArray<FName> Names{ FName(TEXT("own_castle")) };
+		TArray<FVector> Locations{ FVector(1.0, 2.0, 3.0) };
+		TArray<FVector2D> Extents{ FVector2D::ZeroVector };
+
+		const int32 PublishedCount = USiegeAssistantSnapshot::AppendMarkPlaces(TArray<FSiegeMapMark>(), Names, Locations, Extents);
+
+		TestEqual(TEXT("An EMPTY mark store publishes nothing — the default state of every match costs the prompt zero characters"), PublishedCount, 0);
+		TestEqual(TEXT("…and leaves the shipped vocabulary untouched"), Names.Num(), 1);
+	}
+
+	// ── (e) THE HALF-EXTENT IS ALWAYS ZERO (M-6, AT THE SEAM ITSELF) ────────
+	{
+		TArray<FName> Names;
+		TArray<FVector> Locations;
+		TArray<FVector2D> Extents;
+
+		const int32 PublishedCount = USiegeAssistantSnapshot::AppendMarkPlaces(MarksOneTo(4), Names, Locations, Extents);
+
+		TestEqual(TEXT("Four marks were published"), PublishedCount, 4);
+		TestEqual(TEXT("…with one half-extent each"), Extents.Num(), 4);
+
+		for (int32 Index = 0; Index < Extents.Num(); ++Index)
+		{
+			TestEqual(*FString::Printf(TEXT("⛔ Mark %d publishes a ZERO half-extent — it keeps the arrays parallel and it is ⛔ NOT a region (M-6). The fixture's RadiusUU (%.0f) never became one."), Index, MarkProbeRadius),
+				Extents[Index], FVector2D::ZeroVector);
+		}
+
+		// …and the Z came from the named constant, not from a literal typed twice.
+		for (int32 Index = 0; Index < Locations.Num(); ++Index)
+		{
+			TestEqual(*FString::Printf(TEXT("Mark %d resolves at MarkPlaceGroundZ — the arena's documented walk surface"), Index),
+				Locations[Index].Z, static_cast<double>(USiegeAssistantSnapshot::MarkPlaceGroundZ));
+		}
+	}
+
+	return true;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  MARK TEST 9 — GHOST-§ G-8: `hero` follows the GHOST while the player is dead
+// ───────────────────────────────────────────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeAssistantSelectionHeroAnchorTest,
+	"Siegebound.Assistant.Selection.HeroAnchorFollowsTheGhostWhileDead",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+/**
+ *  ⭐ GHOST-§ G-8 LIVES IN `SiegeAssistantSnapshot.cpp`, SO IT IS TESTED HERE —
+ *  and it is tested as a TRUTH TABLE over a pure decision function, with ⛔ no
+ *  world, ⛔ no pawn and ⛔ no possession flow.
+ *
+ *  ⚖️ THE RULING, IN ITS AUTHOR'S TERMS: `follow` and `rally` are HERO-RELATIVE
+ *  intents (Zone A teaches "follow = they follow the hero", "rally = hero rallies
+ *  units near him"). Resolving `hero` to a hidden CORPSE would silently walk the
+ *  player's army to where he died — a valid-shaped wrong command, the failure
+ *  class this entire assistant exists to prevent. Resolving it to the GHOST costs
+ *  ⛔ zero extra prompt characters: same symbol, different resolution.
+ *
+ *  ⛔ THE ROW THAT MATTERS MOST IS THE LAST ONE. "Dead, and no ghost" must be
+ *  `None` — the symbol is simply not published that turn — and ⛔ NEVER a zero
+ *  vector that reads as the map origin.
+ */
+bool FSiegeAssistantSelectionHeroAnchorTest::RunTest(const FString& Parameters)
+{
+	using ESource = USiegeAssistantSnapshot::EHeroAnchorSource;
+
+	struct FRow
+	{
+		bool bHeroExists;
+		bool bHeroIsDead;
+		bool bGhostAnchorAvailable;
+		ESource Expected;
+		const TCHAR* Why;
+	};
+
+	const FRow Rows[] =
+	{
+		{ false, false, false, ESource::None,
+			TEXT("No hero on the map at all ⇒ `hero` is not published — the shipped pre-match / no-hero state, unchanged") },
+
+		{ false, false, true,  ESource::None,
+			TEXT("⛔ No hero ACTOR, even though some pawn is being driven ⇒ still `None`. G-8 is scoped to \"while the hero is DEAD\", and the shipped death flow keeps the hero actor alive-but-IsDead(). Widening this would be re-ruling G-8") },
+
+		{ true,  false, false, ESource::LivingHero,
+			TEXT("A living hero anchors `hero` at his own location — the shipped behaviour, unchanged by TASK-746") },
+
+		{ true,  false, true,  ESource::LivingHero,
+			TEXT("⛔ A living hero WINS even if the controller is driving something else. The ghost branch may never outrank a hero who is alive") },
+
+		{ true,  true,  true,  ESource::Ghost,
+			TEXT("⭐⭐ GHOST-§ G-8: dead, with a ghost ⇒ `hero` resolves to THE GHOST, so `follow` and `rally` keep working and the army does not march to the corpse") },
+
+		{ true,  true,  false, ESource::None,
+			TEXT("⭐⭐ Dead, and NO ghost ⇒ `hero` is NOT PUBLISHED. ⛔ Never the corpse's location — that is the exact outcome G-8 was written to prevent — and ⛔ never a zero vector") },
+	};
+
+	for (const FRow& Row : Rows)
+	{
+		const ESource Actual = USiegeAssistantSnapshot::ChooseHeroAnchorSource(
+			Row.bHeroExists, Row.bHeroIsDead, Row.bGhostAnchorAvailable);
+
+		TestEqual(*FString::Printf(TEXT("hero=%s dead=%s ghost=%s ⇒ %s"),
+				Row.bHeroExists ? TEXT("yes") : TEXT("no"),
+				Row.bHeroIsDead ? TEXT("yes") : TEXT("no"),
+				Row.bGhostAnchorAvailable ? TEXT("yes") : TEXT("no"),
+				Row.Why),
+			static_cast<int32>(Actual), static_cast<int32>(Row.Expected));
+	}
+
+	// ⛔ AND THE THREE OUTCOMES ARE GENUINELY DISTINCT, so a degenerate enum (every
+	// value equal) cannot make the whole table above pass wholesale.
+	TestNotEqual(TEXT("⛔ `None` and `LivingHero` are distinct outcomes"),
+		static_cast<int32>(ESource::None), static_cast<int32>(ESource::LivingHero));
+	TestNotEqual(TEXT("⛔ `LivingHero` and `Ghost` are distinct outcomes — the whole of G-8 is that these two resolve to DIFFERENT ground"),
+		static_cast<int32>(ESource::LivingHero), static_cast<int32>(ESource::Ghost));
+	TestNotEqual(TEXT("⛔ `None` and `Ghost` are distinct outcomes"),
+		static_cast<int32>(ESource::None), static_cast<int32>(ESource::Ghost));
+
+	return true;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  MARK TEST 10 — ⭐⭐ "MOVE ALL UNITS TO HOLD 1" / "AMBUSH 2", END TO END
+// ───────────────────────────────────────────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeAssistantSelectionMarkSentencesParseTest,
+	"Siegebound.Assistant.Selection.MarkSentencesParseEndToEnd",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+/**
+ *  ⭐⭐ JONATHAN'S TWO EXAMPLE SENTENCES, WALKED THROUGH EVERY STAGE THEY ACTUALLY
+ *  PASS THROUGH — and the point of the test is how LITTLE had to be built.
+ *
+ *      "move all units to hold 1"   ⇒  {"intent":"guard","who":"all","where":"circle_1","when":"now"}
+ *      "move all units to ambush 2" ⇒  {"intent":"ambush","who":"all","where":"circle_2","when":"now"}
+ *
+ *  Stage 1  VOCABULARY  `hold` is ALREADY a shipped alias of the `guard` intent
+ *                       and `ambush` is ALREADY one of the seven intents. ⛔ No new
+ *                       intent was added by this task, and this test is what would
+ *                       notice if the alias were ever removed — at which point the
+ *                       feature's headline sentence stops working with no other
+ *                       symptom anywhere.
+ *  Stage 2  GRAMMAR     the mark symbols are `where` alternatives, produced from
+ *                       `GetPlaceNames()` with ⛔ zero grammar-code change.
+ *  Stage 3  PARSER      `ParseSiegeAssistantCommand` yields the command. It is PURE
+ *                       and already knew how to carry an arbitrary `where` symbol —
+ *                       ⛔ nothing in it was taught about circles.
+ *  Stage 4  RESOLUTION  the snapshot turns the symbol back into ground, game-side,
+ *                       through the ONE airlock door.
+ *
+ *  ⇒ four stages, ZERO of which needed a code change for the marks themselves.
+ *  That is MARK-§1's structural claim, EXECUTED rather than asserted in prose.
+ */
+bool FSiegeAssistantSelectionMarkSentencesParseTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeAssistantSelectionTestFixture;
+
+	int32 Published = 0;
+	FScratchSnapshot Scratch = MakeSnapshotWithMarks(
+		ThirteenKindsInCardRowOrder(), /*PerKindTotal*/ 9, MarksOneTo(3), Published);
+
+	if (!TestTrue(*FString::Printf(TEXT("The scratch snapshot was built (missing field: '%s')"), *Scratch.MissingField), Scratch.IsUsable()))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Three circles were drawn, exactly as his directive describes"), Published, 3);
+
+	// ── STAGE 1 — THE SHIPPED VOCABULARY ALREADY SPEAKS HIS WORDS ───────────
+	TStrongObjectPtr<USiegeAssistantVocabulary> Vocabulary(NewObject<USiegeAssistantVocabulary>());
+	if (!TestTrue(TEXT("A default vocabulary object was created"), Vocabulary.IsValid()))
+	{
+		return false;
+	}
+
+	const FString SynonymTable = Vocabulary->BuildSynonymTable();
+
+	// The emitted row shape is `guard <- garrison, hold, protect, station, watch`.
+	// The ROW is located and then searched, rather than searching the whole table
+	// for the word `hold` — which would also match a `[notes]` sentence and would
+	// keep passing after the alias itself had been deleted.
+	{
+		FString GuardRow;
+		TArray<FString> Lines;
+		SynonymTable.ParseIntoArrayLines(Lines, /*bCullEmpty*/ false);
+		for (const FString& Line : Lines)
+		{
+			if (Line.StartsWith(TEXT("guard <- "), ESearchCase::CaseSensitive))
+			{
+				GuardRow = Line;
+				break;
+			}
+		}
+
+		if (TestFalse(TEXT("The shipped vocabulary emits a `guard <- ` synonym row"), GuardRow.IsEmpty()))
+		{
+			TArray<FString> Aliases;
+			GuardRow.RightChop(FString(TEXT("guard <- ")).Len()).ParseIntoArray(Aliases, TEXT(", "), /*InCullEmpty*/ true);
+
+			TestTrue(TEXT("⭐⭐ `hold` is ALREADY an alias of the `guard` intent — which is why *\"move all units to hold 1\"* needed NO new intent (MARK-§1 reading 5)"),
+				Aliases.Contains(FString(TEXT("hold"))));
+		}
+	}
+
+	// `ambush` is one of the seven shipped intents, read from the shipped mapper
+	// rather than from a string this test typed for itself.
+	{
+		ESiegeAssistantIntent Intent = ESiegeAssistantIntent::Send;
+		TestTrue(TEXT("⭐⭐ `ambush` is ALREADY a shipped intent symbol — *\"ambush 2\"* needed NO new intent either"),
+			SiegeAssistantIntentFromSymbol(TEXT("ambush"), Intent));
+		TestEqual(TEXT("…and it maps to the Ambush intent"),
+			static_cast<int32>(Intent), static_cast<int32>(ESiegeAssistantIntent::Ambush));
+	}
+
+	// ── STAGE 2 — THE GRAMMAR ADMITS BOTH SENTENCES ─────────────────────────
+	const FString Grammar = USiegeAssistantGrammar::Build(
+		Scratch.Snapshot->GetUnitKinds(), Scratch.Snapshot->GetPlaceNames(), Scratch.Snapshot->GetRegionPlaceNames());
+
+	TestTrue(TEXT("The grammar was produced"), Grammar.Len() > 0);
+
+	// ── ⭐⭐ THE INSTRUMENT IS CALIBRATED AND PROVED BEFORE IT IS TRUSTED (TASK-762) ──
+	// ⭐ The two intent assertions below are BOTH the claim and the positive
+	// control, which is what makes this stage self-checking: `guard` and `ambush`
+	// are in EVERY grammar this project can emit, so if they are ever reported
+	// missing the search is what broke, ⛔ never the grammar.
+	const FGrammarSpelling Spelling = CalibrateGrammarSpelling(Grammar, ShippedGuardSymbol());
+
+	TestTrue(*FString::Printf(TEXT("⛔ The emitter's spelling was MEASURED off `%s` (prefix '%s', suffix '%s') — a zero-width wrapper would make the `circle_4` absence assertion at the end of this test vacuous"), *Spelling.CalibratedOn, *Spelling.Prefix, *Spelling.Suffix),
+		Spelling.IsWrapper());
+
+	TestTrue(TEXT("⭐ The grammar admits the intent `guard` (what `hold` normalises to) — ⭐⭐ POSITIVE CONTROL: a shipped intent, read off the enum, present by construction"),
+		Spelling.IsIn(Grammar, ShippedGuardSymbol()));
+	TestTrue(TEXT("⭐ …the intent `ambush` — ⭐⭐ POSITIVE CONTROL 2, and a symbol the wrapper was NOT measured on"),
+		Spelling.IsIn(Grammar, ShippedAmbushSymbol()));
+	TestTrue(TEXT("⭐ …the destination `circle_1`"),
+		Spelling.IsIn(Grammar, TEXT("circle_1")));
+	TestTrue(TEXT("⭐ …and the destination `circle_2`"),
+		Spelling.IsIn(Grammar, TEXT("circle_2")));
+
+	// ── STAGES 3 + 4 — PARSE, THEN RESOLVE TO GROUND ────────────────────────
+	struct FSentence
+	{
+		const TCHAR* Json;
+		ESiegeAssistantIntent Intent;
+		const TCHAR* Where;
+		int32 MarkNumber;
+		const TCHAR* Spoken;
+	};
+
+	const FSentence Sentences[] =
+	{
+		{ TEXT("{\"intent\":\"guard\",\"who\":\"all\",\"where\":\"circle_1\",\"when\":\"now\"}"),
+		  ESiegeAssistantIntent::Guard, TEXT("circle_1"), 1, TEXT("move all units to hold 1") },
+
+		{ TEXT("{\"intent\":\"ambush\",\"who\":\"all\",\"where\":\"circle_2\",\"when\":\"now\"}"),
+		  ESiegeAssistantIntent::Ambush, TEXT("circle_2"), 2, TEXT("move all units to ambush 2") },
+	};
+
+	for (const FSentence& Sentence : Sentences)
+	{
+		FSiegeAssistantCommand Command;
+		FString Error;
+
+		if (!TestTrue(*FString::Printf(TEXT("⭐⭐ *\"%s\"* parses into a command"), Sentence.Spoken),
+			ParseSiegeAssistantCommand(Sentence.Json, Command, Error)))
+		{
+			AddError(FString::Printf(TEXT("Parser error for \"%s\": %s"), Sentence.Spoken, *Error));
+			continue;
+		}
+
+		TestEqual(*FString::Printf(TEXT("*\"%s\"* ⇒ the right intent"), Sentence.Spoken),
+			static_cast<int32>(Command.Intent), static_cast<int32>(Sentence.Intent));
+		TestEqualSensitive(*FString::Printf(TEXT("*\"%s\"* ⇒ `where` is the mark symbol"), Sentence.Spoken),
+			Command.Where.ToString(), FString(Sentence.Where));
+		TestEqual(*FString::Printf(TEXT("*\"%s\"* ⇒ `who: \"all\"` leaves the kinds array EMPTY, which is what \"all units\" means here"), Sentence.Spoken),
+			Command.Kinds.Num(), 0);
+
+		// ⭐ AND THE GAME SIDE CLOSES THE LOOP: the symbol the model emitted becomes
+		// the ground the player clicked, through the ONE door an FVector leaves the
+		// snapshot by.
+		FVector Destination = FVector::ZeroVector;
+		if (TestTrue(*FString::Printf(TEXT("⭐⭐ …and the snapshot RESOLVES `%s` to a world position — \"the AI can use that indicated circle on the map to carry out the command\""), Sentence.Where),
+			Scratch.Snapshot->ResolvePlace(Command.Where, Destination)))
+		{
+			const FVector2D Expected = MarkProbeXYFor(Sentence.MarkNumber);
+			TestEqual(TEXT("…the CIRCLE HE MEANT, not another one"), Destination.X, Expected.X);
+			TestEqual(TEXT("…on Y too"), Destination.Y, Expected.Y);
+		}
+
+		// ⛔ AND THE COMMAND PASSES THE SHIPPED SNAPSHOT GUARD UNCHANGED — a mark
+		// destination is not a new validation case, because `Where` is not what that
+		// guard checks. Asserted so a future edit that DID teach it about places has
+		// to break a test rather than a playtest.
+		ESiegeAssistantRejectReason Reason = ESiegeAssistantRejectReason::None;
+		FName Offending = NAME_None;
+		TestTrue(*FString::Printf(TEXT("⛔ *\"%s\"* passes ValidateCommandAgainstSnapshot unchanged — a mark is a `where`, and `where` was never that guard's business"), Sentence.Spoken),
+			ValidateCommandAgainstSnapshot(Command, Scratch.Snapshot->GetRoster(), Reason, Offending));
+	}
+
+	// ── AND THE CIRCLE HE NEVER DREW IS REFUSED AT BOTH ENDS ────────────────
+	// This is what makes the feature safe to speak to: "hold 4" on a three-circle
+	// board cannot be SAMPLED, and if it somehow arrived it would not RESOLVE.
+	TestFalse(TEXT("⛔ `circle_4` is NOT in the grammar — a circle he never drew is UNSAYABLE"),
+		Spelling.IsIn(Grammar, TEXT("circle_4")));
+
+	// ⭐⭐ AND THAT ABSENCE IS ARMED (TASK-762). The same board through the same
+	// shipped emitter, with `circle_4` added, must be found by the SAME needle —
+	// otherwise the line above is a guard that reports SAFE without measuring
+	// anything, which is exactly what it was before this repair.
+	{
+		const FString ArmedGrammar = GrammarWithExtraPlace(*Scratch.Snapshot.Get(), FName(TEXT("circle_4")));
+
+		TestTrue(TEXT("⭐⭐ ARMING PROOF — the SAME needle DOES find `circle_4` in a grammar built WITH it, so the UNSAYABLE claim above can genuinely fail"),
+			Spelling.IsIn(ArmedGrammar, TEXT("circle_4")));
+	}
+	{
+		FVector Destination = FVector::ZeroVector;
+		TestFalse(TEXT("⛔ …and it would not resolve even if it arrived — a place named and not resolved is a REFUSAL, never an order to somewhere plausible (AS-§21.5)"),
+			Scratch.Snapshot->ResolvePlace(FName(TEXT("circle_4")), Destination));
+	}
 
 	return true;
 }

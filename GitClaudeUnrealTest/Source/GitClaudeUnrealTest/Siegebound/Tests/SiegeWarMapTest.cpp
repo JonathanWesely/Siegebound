@@ -8,9 +8,11 @@
 #include "Math/UnrealMathUtility.h"
 #include "Math/Vector2D.h"
 #include "Rendering/SlateLayoutTransform.h"
+#include "Siegebound/CombatantHealthBarComponent.h" // the W4-R5 team-palette accessors - the mark colour is measured AGAINST them, never beside them
 #include "Siegebound/CommanderNpc.h"
 #include "Siegebound/ScatterConfig.h"
 #include "Siegebound/SiegeAssistantConsoleWidget.h"
+#include "Siegebound/SiegeMapMark.h"                // TASK-744's MakeSymbol seam - the ONE thing the widget and the snapshot must agree on (MARK-§5)
 #include "Siegebound/WarMapWidget.h"
 #include "UObject/NameTypes.h"
 #include "UObject/StrongObjectPtr.h"
@@ -2384,6 +2386,975 @@ bool FSiegeWarMapBrightnessToRampColorTest::RunTest(const FString& Parameters)
 		Light.R >= Light.B);
 	TestTrue(TEXT("(f) …and the DARK end never inverts it either"),
 		Dark.R >= Dark.B);
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+//   ⭐⭐ MAP MARKS — the player's numbered circles (TASK-745; `MARK-§0..§6`)
+//
+//   Jonathan's directive: *"click on anywhere on the map, to create a circle on
+//   the map at that location. you can hover the mouse over it and use the mouse
+//   wheel scroll to make that circle larger or smaller. You can right click to
+//   delete that circle. Every time you make a new circle, it gets its own number
+//   in the middle of it."*
+//
+//   ───────────────────────────────────────────────────────────────────────────
+//   ⛔⛔ WHAT THESE SEVEN TESTS CAN AND CANNOT SEE — STATED FIRST, BECAUSE THE
+//   HONEST BOUNDARY IS WHAT MAKES THE GREEN WORTH ANYTHING (`SC-§32`)
+//   ───────────────────────────────────────────────────────────────────────────
+//
+//   ⛔ **THE STORE IS UNREACHABLE HEADLESSLY, AND THAT IS STRUCTURAL RATHER THAN
+//   INCONVENIENT.** `USiegeMapMarkSubsystem` is a `ULocalPlayerSubsystem`, so it
+//   exists only on a real `ULocalPlayer`; a `NewObject<UWarMapWidget>` has no
+//   owning local player at all. ⇒ ⛔ NO TEST BELOW ADDS, DELETES OR RESIZES A
+//   REAL MARK, and none pretends to.
+//
+//   ⭐ **THAT IS EXACTLY WHY TASK-745 PUT EVERY RULE ON A PURE SEAM** — `W4-R1`'s
+//   law applied at authoring time rather than after a red gate: *"a testability
+//   obligation without a testability seam is an unfunded mandate."* The symbol,
+//   the hit test, the wheel step, the rect refusal, the centring, the font size
+//   and the ring colour are all readable with ⛔ no world, ⛔ no Slate application
+//   and ⛔ no subsystem — so the DECISIONS are asserted here and the widget's
+//   handlers only look up and act.
+//
+//   ⛔ **WHAT REMAINS FOR PIE / JONATHAN'S EYE, NAMED RATHER THAN IMPLIED:** the
+//   actual `NativeOnMouseButtonDown` / `NativeOnMouseWheel` dispatch (both are
+//   `protected` and both need a realized Slate widget), the store's own
+//   lowest-free allocator and cap (TASK-744's suite owns those), and whether a
+//   magenta ring over a green map reads well to a human — a contrast ratio is a
+//   necessary condition, ⛔ never a sufficient one.
+//
+// ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
+
+namespace SiegeWarMapMarkTestFixture
+{
+	/**
+	 *  One mark circle, fully specified. ⛔ No defaulted parameter (`SC-§33`).
+	 *
+	 *  ⚠️ THE NUMBER AND THE INDEX ARE DELIBERATELY DIFFERENT IN EVERY FIXTURE BELOW, because
+	 *  `M-1` is the ruling most likely to be "improved" by a later reader: deleting circle 2 of
+	 *  3 LEAVES THE HOLE, so a fixture whose numbers happened to equal its indices would let an
+	 *  index-derived number pass every assertion here.
+	 */
+	static FSiegeWarMapMarkCircle MakeCircle(const int32 Number, const FVector2D& LocalCentre, const float LocalRadiusPx)
+	{
+		FSiegeWarMapMarkCircle Circle;
+		Circle.Number = Number;
+		Circle.LocalCentre = LocalCentre;
+		Circle.LocalRadiusPx = LocalRadiusPx;
+		return Circle;
+	}
+
+	/**
+	 *  Relative luminance of a TRUE-LINEAR colour (WCAG 2.x coefficients).
+	 *
+	 *  ⛔ THE INPUT MUST ALREADY BE LINEAR. `WarMapWidget.cpp` holds `FLinearColor` constants in
+	 *  TWO different colour spaces on purpose (`WM-§8e`), so a caller that hands this function a
+	 *  DISPLAY-encoded value gets a plausible number that is simply wrong — which is the whole
+	 *  hazard that section exists to name.
+	 */
+	static double LinearLuminance(const FLinearColor& LinearColor)
+	{
+		return 0.2126 * static_cast<double>(LinearColor.R)
+			+ 0.7152 * static_cast<double>(LinearColor.G)
+			+ 0.0722 * static_cast<double>(LinearColor.B);
+	}
+
+	/**
+	 *  One sRGB-encoded BYTE → linear light. The standard sRGB EOTF, ⛔ not a 2.2 power
+	 *  approximation: the ramp's dark end lands in the LINEAR segment of the curve (byte 16 is
+	 *  below the 0.04045 knee on two of three channels), where the approximation and the real
+	 *  transfer function disagree by enough to move a contrast ratio.
+	 */
+	static double SrgbByteToLinear(const uint8 Byte)
+	{
+		const double Value = static_cast<double>(Byte) / 255.0;
+		return (Value <= 0.04045) ? (Value / 12.92) : FMath::Pow((Value + 0.055) / 1.055, 2.4);
+	}
+
+	/** WCAG contrast ratio between two relative luminances. Order-independent. */
+	static double ContrastRatio(const double LuminanceA, const double LuminanceB)
+	{
+		const double Lighter = FMath::Max(LuminanceA, LuminanceB);
+		const double Darker = FMath::Min(LuminanceA, LuminanceB);
+		return (Lighter + 0.05) / (Darker + 0.05);
+	}
+
+	/**
+	 *  The shipped mark tunable DEFAULTS.
+	 *
+	 *  ⚠️ TRANSCRIBED, AND THE REASON IS THE `CanonicalPlaceSymbols` REASON RATHER THAN
+	 *  LAZINESS: they are `protected` `UPROPERTY`s on `UWarMapWidget`, so no test can read them,
+	 *  and reading the value under test FROM the code under test would assert nothing anyway.
+	 *  ⇒ These are the TEST'S EXPECTATION of the shipped defaults, and a designer retune that
+	 *  broke the min<max ordering SHOULD break a test that spells them.
+	 */
+	static constexpr float ShippedMarkMinRadiusPx = 12.f;
+	static constexpr float ShippedMarkMaxRadiusPx = 240.f;
+	static constexpr float ShippedMarkWheelStepPx = 6.f;
+	static constexpr float ShippedMarkNumberFontRadiusFraction = 0.6f;
+	static constexpr float ShippedMarkNumberFontMinSize = 10.f;
+	static constexpr float ShippedMarkNumberFontMaxSize = 28.f;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 28. ⭐⭐ THE SYMBOL — the map inserts EXACTLY `FSiegeMapMark::MakeSymbol(N)`,
+//     ⛔ never a bare digit, and the composition into the input box is byte-exact
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeWarMapMarkSymbolSeamTest,
+	"Siegebound.WarMap.MarkPickSymbolIsTheMakeSymbolSeamByteForByte",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeWarMapMarkSymbolSeamTest::RunTest(const FString& Parameters)
+{
+	// ═══════════════════════════════════════════════════════════════════════════
+	// ⭐⭐ THIS IS THE MOST IMPORTANT MARK TEST, AND IT IS THE ONE TASK-745's SPEC
+	// NAMES BY HAND: "the symbol composed into the input box for a mark is exactly
+	// `FSiegeMapMark::MakeSymbol(N)`."
+	//
+	// ⚖️ IT IS ASSERTABLE ONLY BECAUSE TWO SEPARATE `W4-R1` SEAMS EXIST — TASK-744's
+	// pure static `MakeSymbol`, and TASK-745's `MakeMarkPickSymbol` wrapper on the
+	// widget. Without the second one the claim would sit inside a `protected`
+	// mouse handler behind a realized Slate widget, a live local player and a
+	// populated subsystem, i.e. unassertable — the unfunded-mandate defect this
+	// law exists to stop happening a third time.
+	//
+	// ⛔ AND IT IS THE AIRLOCK'S OWN ASSERTION. The map's ENTIRE outbound surface
+	// is `FOnWarMapPlacePicked(FName)`. If the string this composes were wrong,
+	// the console would carry a name TASK-746 never published, the grammar would
+	// refuse it, and the feature would read to Jonathan as "the AI ignores my
+	// circles" — with nothing in any log to say why.
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	// ── (a) THE TWO SEAMS AGREE, BYTE FOR BYTE, AT EVERY NUMBER THE CAP ALLOWS ────────────
+	// ⛔ `TestEqualSensitive`, ⛔ never `TestEqual`: `TestEqual` on FString is CASE-INSENSITIVE
+	// in UE 5.8 and a shipped, QA-passed test in this project once asserted nothing because of
+	// exactly that. `FName` comparison is case-insensitive too, which is why every claim below
+	// is made on the STRING and never on the FName.
+	for (int32 Number = 1; Number <= 9; ++Number)
+	{
+		const FName PickSymbol = UWarMapWidget::MakeMarkPickSymbol(Number);
+
+		TestEqualSensitive(
+			*FString::Printf(TEXT("(a) ⭐ The widget's pick symbol for mark %d IS FSiegeMapMark::MakeSymbol(%d) — one seam, no second transcription"), Number, Number),
+			PickSymbol.ToString(), FSiegeMapMark::MakeSymbol(Number));
+
+		// ⛔ AND IT IS PINNED TO THE LITERAL TOO, which is deliberate belt-and-braces rather
+		// than duplication: leg (a) alone would stay green if BOTH sides drifted together
+		// (someone "improving" MakeSymbol to `mark_1`), and TASK-746 publishes into the place
+		// list from the same seam — so a silent rename would break the AI half with a fully
+		// green widget half. `circle_N` is Jonathan's own word and MARK-§2's ruling.
+		TestEqualSensitive(
+			*FString::Printf(TEXT("(a) …and it is literally `circle_%d` — the symbol MARK-§2 rules, in Jonathan's own word"), Number),
+			PickSymbol.ToString(), FString::Printf(TEXT("circle_%d"), Number));
+	}
+
+	// ── (b) ⛔⛔ ⛔ NEVER A BARE DIGIT, AND THE REASON IS A MEASURED COLLISION ──────────────
+	// Zone A already ships `COUNT = 1 to 30` (`SiegeAssistantSnapshot.cpp:1061`), so a bare `1`
+	// in the `where` field is a token the model has been TAUGHT means a QUANTITY — and this
+	// project's entire measured failure history is *valid-shaped-wrong-command*. ⇒ the symbol
+	// carries the underscore family the shipped vocabulary already uses.
+	TestTrue(TEXT("(b) ⛔ The pick symbol is NOT the bare digit the player sees drawn in the circle — the NUMBER is the player's, the SYMBOL is the model's (MARK-§2)"),
+		UWarMapWidget::MakeMarkPickSymbol(1).ToString() != FString(TEXT("1")));
+
+	TestTrue(TEXT("(b) …and it carries the shipped underscore family (own_castle / nearest_mine / ancient_ground_near), so the model reads it as a place"),
+		UWarMapWidget::MakeMarkPickSymbol(7).ToString().Contains(TEXT("_")));
+
+	// ── (c) A NON-POSITIVE NUMBER CAN NEVER BECOME A SYMBOL ──────────────────────────────
+	// `FSiegeMapMark::Number` is 1..9 by the store's contract, so 0 means an uninitialised
+	// entry reached the pick path. NAME_None is the right answer: the controller's binder
+	// already refuses `IsNone()` with a log, so a corrupt store degrades to a logged no-op and
+	// can ⛔ never write an empty token into the player's input box.
+	TestTrue(TEXT("(c) ⛔ Mark number 0 yields NAME_None — an uninitialised store entry can never reach the input box"),
+		UWarMapWidget::MakeMarkPickSymbol(0).IsNone());
+	TestTrue(TEXT("(c) ⛔ …and so does a negative number"),
+		UWarMapWidget::MakeMarkPickSymbol(-3).IsNone());
+
+	// ── (d) ⭐⭐ THE COMPOSITION INTO THE INPUT BOX, END TO END ───────────────────────────
+	// ⛔ THE MARK RIDES THE SHIPPED SEAM AND ⛔ NOTHING ABOUT IT CHANGED (`W4-R1`'s
+	// `ComposeAppendedInput`, byte-untouched by TASK-745). This is the assertion that proves
+	// Jonathan's own example sentence composes: he types "hold", clicks circle 2, and the box
+	// reads `hold circle_2 ` — ready for him to press Enter himself, which is the airlock.
+	TestEqualSensitive(TEXT("(d) ⭐ \"hold\" + a click on circle 2 composes EXACTLY \"hold circle_2 \" — Jonathan's own example sentence, byte for byte"),
+		USiegeAssistantConsoleWidget::ComposeAppendedInput(
+			TEXT("hold"), UWarMapWidget::MakeMarkPickSymbol(2).ToString()),
+		FString(TEXT("hold circle_2 ")));
+
+	TestEqualSensitive(TEXT("(d) …and \"move all units to ambush\" + circle 3 composes his SECOND example"),
+		USiegeAssistantConsoleWidget::ComposeAppendedInput(
+			TEXT("move all units to ambush"), UWarMapWidget::MakeMarkPickSymbol(3).ToString()),
+		FString(TEXT("move all units to ambush circle_3 ")));
+
+	TestEqualSensitive(TEXT("(d) An EMPTY box takes the symbol with no leading separator, and still gets its one trailing space"),
+		USiegeAssistantConsoleWidget::ComposeAppendedInput(
+			FString(), UWarMapWidget::MakeMarkPickSymbol(1).ToString()),
+		FString(TEXT("circle_1 ")));
+
+	// ⭐ THE SECOND CLICK IS IDEMPOTENT IN THE SEPARATOR SENSE — the shipped rule (2), now
+	// exercised across the MARK/marker boundary: a place symbol and a mark symbol compose
+	// together exactly as two place symbols do, with ⛔ never a double space.
+	TestEqualSensitive(TEXT("(d) ⭐ A marker click then a MARK click composes \"mid circle_4 \" — one space, ⛔ never two"),
+		USiegeAssistantConsoleWidget::ComposeAppendedInput(
+			TEXT("mid "), UWarMapWidget::MakeMarkPickSymbol(4).ToString()),
+		FString(TEXT("mid circle_4 ")));
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 29. ⭐ THE MARK HIT TEST — RADIAL (⛔ not a rect), last-match-wins, and it
+//     answers NOTHING on empty map, which is what "right-click does nothing" and
+//     "the wheel outside a mark does nothing" both mean
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeWarMapMarkHitTestTest,
+	"Siegebound.WarMap.MarkHitTestIsRadialAndEmptyMapAnswersNothing",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeWarMapMarkHitTestTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeWarMapMarkTestFixture;
+
+	// ── (a) ⛔⛔ EMPTY MAP ANSWERS NOTHING — THE ASSERTION BEHIND TWO SPEC LINES ───────────
+	// `FindMarkIndexAtLocal` is the SINGLE discriminator both the right-click delete and the
+	// wheel resize consume: INDEX_NONE is exactly what "the cursor is on empty map" means to
+	// both. ⇒ this block is the readable form of *"a right-click on empty map does nothing"*
+	// and *"the wheel outside a mark does nothing"*, and it can fail — an implementation that
+	// returned 0 on an empty array, or fell back to a nearest-circle guess, dies here.
+	{
+		const TArray<FSiegeWarMapMarkCircle> NoCircles;
+
+		int32 NonNoneAnswers = 0;
+		for (int32 Ix = 0; Ix < 40; ++Ix)
+		{
+			for (int32 Iy = 0; Iy < 30; ++Iy)
+			{
+				const FVector2D Point(static_cast<double>(Ix) * 48.0, static_cast<double>(Iy) * 36.0);
+				if (FSiegeWarMapProjection::FindMarkIndexAtLocal(NoCircles, Point) != INDEX_NONE)
+				{
+					++NonNoneAnswers;
+				}
+			}
+		}
+
+		TestEqual(TEXT("(a) ⭐⭐ With NO marks placed, 1,200 sample points across the panel answer INDEX_NONE every single time — a right-click deletes nothing and a wheel notch resizes nothing"),
+			NonNoneAnswers, 0);
+	}
+
+	// ── (b) ⭐ RADIAL, ⛔ NOT A RECT — the claim that catches a "simplification" ───────────
+	// A mark is DRAWN as a circle, so it must be HIT as a circle (`WR-§6`'s rendering ruling:
+	// what you see and what you click can never disagree). ⚠️ THE CORNERS ARE THE TEST. A rect
+	// hit box would answer for the corners of the bounding square — four regions where the
+	// player is visibly NOT pointing at the circle, and where a right-click would delete a mark
+	// he never touched. The corner of the bounding square is at r·√2 ≈ 1.414r from the centre.
+	{
+		const FVector2D Centre(500.0, 400.0);
+		constexpr double Radius = 60.0;
+
+		TArray<FSiegeWarMapMarkCircle> Circles;
+		Circles.Add(MakeCircle(/*Number=*/ 5, Centre, static_cast<float>(Radius)));
+
+		TestEqual(TEXT("(b) The centre hits"),
+			FSiegeWarMapProjection::FindMarkIndexAtLocal(Circles, Centre), 0);
+
+		// ⭐ BOUNDARY INCLUSIVE (<=) — the shipped IsPointInZone / FindMarkerIndexAtLocal idiom,
+		// so "on the edge" means the same thing everywhere in this codebase.
+		TestEqual(TEXT("(b) A point EXACTLY on the rim hits — the boundary is INCLUSIVE, matching every other hit test in this codebase"),
+			FSiegeWarMapProjection::FindMarkIndexAtLocal(Circles, Centre + FVector2D(Radius, 0.0)), 0);
+
+		TestEqual(TEXT("(b) A point just OUTSIDE the rim misses"),
+			FSiegeWarMapProjection::FindMarkIndexAtLocal(Circles, Centre + FVector2D(Radius + 1.0, 0.0)), INDEX_NONE);
+
+		// ⭐⭐ THE FOUR CORNERS OF THE BOUNDING SQUARE MUST ALL MISS. ⛔ A rect hit box passes
+		// every other assertion in this block and fails here — which is the whole reason the
+		// block exists.
+		const TArray<FVector2D> Corners = {
+			Centre + FVector2D( Radius,  Radius),
+			Centre + FVector2D(-Radius,  Radius),
+			Centre + FVector2D( Radius, -Radius),
+			Centre + FVector2D(-Radius, -Radius)
+		};
+
+		int32 CornerHits = 0;
+		for (const FVector2D& Corner : Corners)
+		{
+			if (FSiegeWarMapProjection::FindMarkIndexAtLocal(Circles, Corner) != INDEX_NONE)
+			{
+				++CornerHits;
+			}
+		}
+
+		TestEqual(TEXT("(b) ⭐⭐ ⛔ ZERO of the bounding square's four corners hit — the test is RADIAL, and a rect hit box dies exactly here"),
+			CornerHits, 0);
+
+		// ⛔ THE WHOLE DISC IS LIVE, not just the ring stroke: the ring is how a mark is DRAWN,
+		// the mark IS the area it encloses, and asking a player to hit a 3-px stroke with a
+		// mouse would be a worse map rather than a more honest one.
+		TestEqual(TEXT("(b) A point WELL INSIDE the ring hits too — the whole disc is live, ⛔ not just the stroke"),
+			FSiegeWarMapProjection::FindMarkIndexAtLocal(Circles, Centre + FVector2D(0.0, Radius * 0.25)), 0);
+	}
+
+	// ── (c) LAST MATCH WINS ON OVERLAP — the FindMarkerIndexAtLocal doctrine, verbatim ───
+	// Circles are painted in STORE ORDER, so the LAST one is the one drawn ON TOP. Scanning
+	// forwards would let the player right-click a circle he cannot see and delete it — a silent
+	// wrong answer, which is the one failure class this whole feature is shaped to avoid.
+	{
+		const FVector2D Shared(300.0, 300.0);
+
+		TArray<FSiegeWarMapMarkCircle> Circles;
+		Circles.Add(MakeCircle(/*Number=*/ 1, Shared, 80.f));  // painted FIRST  ⇒ underneath
+		Circles.Add(MakeCircle(/*Number=*/ 4, Shared, 30.f));  // painted SECOND ⇒ on top
+
+		const int32 HitIndex = FSiegeWarMapProjection::FindMarkIndexAtLocal(Circles, Shared);
+
+		TestEqual(TEXT("(c) Overlapping circles resolve to the LAST one in store order — the one actually drawn on top"),
+			HitIndex, 1);
+
+		if (Circles.IsValidIndex(HitIndex))
+		{
+			// ⭐⭐ THE NUMBER IS READ OFF THE CIRCLE, ⛔ NEVER DERIVED FROM THE INDEX (`M-1`).
+			// The fixture's numbers deliberately do not equal its indices, so an index-derived
+			// number — the exact "improvement" a later reader would make after a delete leaves a
+			// hole — fails right here instead of silently renaming every surviving mark.
+			TestEqual(TEXT("(c) ⭐⭐ …and its NUMBER is 4, ⛔ not its index 1 — numbers are permanent identities, ⛔ never positions in a list (M-1)"),
+				Circles[HitIndex].Number, 4);
+		}
+	}
+
+	// ── (d) A DEGENERATE CIRCLE IS UNHITTABLE, ⛔ NOT UNIVERSALLY HITTABLE ────────────────
+	// Fail closed. A zero or negative radius must not become a hit box that answers for every
+	// point on the panel — which is what a naive `distance <= radius` would do for a negative
+	// radius only by accident, and what a `<` on a squared term would do for zero.
+	{
+		TArray<FSiegeWarMapMarkCircle> Circles;
+		Circles.Add(MakeCircle(/*Number=*/ 2, FVector2D(100.0, 100.0), 0.f));
+		Circles.Add(MakeCircle(/*Number=*/ 6, FVector2D(200.0, 200.0), -25.f));
+
+		TestEqual(TEXT("(d) A ZERO-radius circle is unhittable even at its own centre — fail closed"),
+			FSiegeWarMapProjection::FindMarkIndexAtLocal(Circles, FVector2D(100.0, 100.0)), INDEX_NONE);
+		TestEqual(TEXT("(d) A NEGATIVE-radius circle is unhittable too — ⛔ never a hit box that answers for the whole panel"),
+			FSiegeWarMapProjection::FindMarkIndexAtLocal(Circles, FVector2D(200.0, 200.0)), INDEX_NONE);
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 30. ⛔ THE RECT REFUSAL — a click outside the DRAWN map is not a place, and
+//     LocalToMapUV refuses it rather than clamping a mark onto the rim
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeWarMapLocalToMapUvTest,
+	"Siegebound.WarMap.LocalToMapUVInvertsTheRectAndRefusesOutsideIt",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeWarMapLocalToMapUvTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeWarMapTestFixture;
+
+	// ⚖️ THE REFUSAL IS A CORRECTNESS GUARD, ⛔ NOT TIDINESS, AND IT IS THE ASYMMETRY WORTH
+	// UNDERSTANDING: `WorldToMapUV` CLAMPS because out-of-arena ACTORS are real and must pin
+	// visibly to the rim. This direction REFUSES because an out-of-rect CLICK is not a
+	// battlefield position at all — it is the letterbox, the padding, or the WBP's chrome.
+	// Clamping it would silently place a mark on ground the player never pointed at, and
+	// `ResolvePlace` would then answer a real order with that ground.
+
+	const FVector2D Arena = CleanArenaHalfExtent();
+	const FVector2D Panel(1920.0, 1080.0);
+
+	FVector2D RectOrigin = FVector2D::ZeroVector;
+	FVector2D RectSize = FVector2D::ZeroVector;
+	FSiegeWarMapProjection::ComputeMapRectLocal(Panel, static_cast<float>(ShippedMapPaddingPx), Arena, RectOrigin, RectSize);
+
+	if (!TestTrue(TEXT("PRECONDITION: the shipped panel + padding + arena yield a real, positive map rect"),
+		RectSize.X > 0.0 && RectSize.Y > 0.0))
+	{
+		return false;
+	}
+
+	// ── (a) THE ROUND TRIP IS EXACT ON THE INTERIOR ──────────────────────────────────────
+	// `LocalToMapUV` is declared the EXACT INVERSE of `MapUVToLocal`, and a placement click
+	// runs UV → world through `MapUVToWorld`, so a drift here would put every mark slightly off
+	// the pixel the player clicked. Nothing is transcribed: the expectation is the input.
+	{
+		const TArray<FVector2D> Probes = {
+			FVector2D(0.0, 0.0), FVector2D(1.0, 1.0), FVector2D(0.5, 0.5),
+			FVector2D(0.25, 0.75), FVector2D(0.9, 0.1), FVector2D(0.0, 1.0)
+		};
+
+		for (const FVector2D& ExpectedUV : Probes)
+		{
+			const FVector2D Local = FSiegeWarMapProjection::MapUVToLocal(ExpectedUV, RectOrigin, RectSize);
+
+			FVector2D RoundTripUV = FVector2D(-999.0, -999.0);
+			const bool bInside = FSiegeWarMapProjection::LocalToMapUV(Local, RectOrigin, RectSize, RoundTripUV);
+
+			TestTrue(*FString::Printf(TEXT("(a) UV (%.2f, %.2f) projects into the rect and comes back — including the CORNERS, which are boundary-inclusive"),
+				ExpectedUV.X, ExpectedUV.Y), bInside);
+
+			if (bInside)
+			{
+				TestTrue(*FString::Printf(TEXT("(a) …and it comes back as the SAME UV (%.2f, %.2f) — the exact inverse, ⛔ not an approximation"),
+					ExpectedUV.X, ExpectedUV.Y),
+					FMath::IsNearlyEqual(RoundTripUV.X, ExpectedUV.X, 1e-9)
+					&& FMath::IsNearlyEqual(RoundTripUV.Y, ExpectedUV.Y, 1e-9));
+			}
+		}
+	}
+
+	// ── (b) ⛔ OUTSIDE THE RECT IS REFUSED, AND THE OUT-PARAM IS LEFT UNTOUCHED ───────────
+	// ⚠️ THE OUT-PARAM CHECK IS THE HALF THAT MATTERS. A refusal that still wrote a clamped UV
+	// would be a trap for the next caller: it would compile, it would return false, and the
+	// first person to forget the return value would place a mark on the rim.
+	{
+		const TArray<FVector2D> Outside = {
+			FVector2D(0.0, 0.0),                                            // the panel's own corner - inside the padding
+			FVector2D(RectOrigin.X - 1.0, RectOrigin.Y + RectSize.Y * 0.5), // one px left of the map
+			FVector2D(RectOrigin.X + RectSize.X + 1.0, RectOrigin.Y),       // one px right of it
+			FVector2D(RectOrigin.X + RectSize.X * 0.5, RectOrigin.Y - 1.0), // one px above (the letterbox)
+			FVector2D(Panel.X, Panel.Y)                                     // the far panel corner
+		};
+
+		for (const FVector2D& Point : Outside)
+		{
+			const FVector2D Sentinel(-777.0, -777.0);
+			FVector2D OutUV = Sentinel;
+
+			TestFalse(*FString::Printf(TEXT("(b) ⛔ A click at local (%.0f, %.0f) is OUTSIDE the drawn map and is REFUSED — ⛔ never clamped onto the rim"),
+				Point.X, Point.Y),
+				FSiegeWarMapProjection::LocalToMapUV(Point, RectOrigin, RectSize, OutUV));
+
+			TestTrue(*FString::Printf(TEXT("(b) …and the out-param is LEFT UNTOUCHED at (%.0f, %.0f), so a caller that ignored the return value gets no plausible-looking lie"),
+				Point.X, Point.Y),
+				OutUV == Sentinel);
+		}
+	}
+
+	// ── (c) A DEGENERATE RECT REFUSES EVERYTHING — ⛔ no divide by zero, ever ─────────────
+	// `ComputeMapRectLocal` returns a ZERO size for a panel smaller than twice the padding, and
+	// that value reaches here on the very first frame of a map that has not been laid out yet.
+	{
+		FVector2D OutUV = FVector2D::ZeroVector;
+
+		TestFalse(TEXT("(c) A ZERO-size rect refuses every point — the MinArenaHalfExtentUu fail-closed doctrine, applied before any division"),
+			FSiegeWarMapProjection::LocalToMapUV(FVector2D(10.0, 10.0), FVector2D(0.0, 0.0), FVector2D::ZeroVector, OutUV));
+
+		TestFalse(TEXT("(c) …and so does a NEGATIVE-size one"),
+			FSiegeWarMapProjection::LocalToMapUV(FVector2D(10.0, 10.0), FVector2D(0.0, 0.0), FVector2D(-5.0, -5.0), OutUV));
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 31. ⭐ THE RADIUS SEAM — a world-space store, pixel-space tunables, ONE uniform
+//     scalar between them, and a circle that stays a circle
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeWarMapMarkRadiusScaleTest,
+	"Siegebound.WarMap.MarkRadiusScaleIsUniformOnBothAxes",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeWarMapMarkRadiusScaleTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeWarMapTestFixture;
+
+	// ⭐⭐ WHY THIS TEST EXISTS AT ALL — the reconciliation of two laws that touch:
+	//   • the PINNED CROSS-TASK REGISTRY stores `FSiegeMapMark::RadiusUU` in WORLD uu, and
+	//     TASK-744/746 compile against that field character-for-character;
+	//   • `MARK-§4` requires the WHEEL's tunables to be WIDGET-SPACE and separately named.
+	// ⇒ the store is world-space, the interaction is pixel-space, and this pair of functions is
+	// the ONLY crossing. Everything below is a claim about that crossing.
+
+	const FVector2D Arena = CleanArenaHalfExtent();
+
+	// ── (a) ⭐⭐ THE SCALE IS ONE SCALAR — SO A CIRCLE IS A CIRCLE, ⛔ NEVER AN ELLIPSE ────
+	// `MapWorldRadiusToLocalPx` reads the X axis only, and it is allowed to because
+	// `ComputeMapRectLocal` builds a rect of EXACTLY the arena's aspect. ⚠️ That is an assumption
+	// this test PROVES rather than repeats: if a future edit broke the aspect preservation, the
+	// two axes' scales would diverge and every mark would draw as an oval whose hit test is a
+	// circle — visible only as "clicking my circles feels wrong."
+	{
+		const TArray<FVector2D> Panels = {
+			FVector2D(1920.0, 1080.0), FVector2D(2560.0, 1440.0),
+			FVector2D(1280.0, 1024.0), FVector2D(3440.0, 1440.0)
+		};
+
+		for (const FVector2D& Panel : Panels)
+		{
+			FVector2D RectOrigin = FVector2D::ZeroVector;
+			FVector2D RectSize = FVector2D::ZeroVector;
+			FSiegeWarMapProjection::ComputeMapRectLocal(Panel, static_cast<float>(ShippedMapPaddingPx), Arena, RectOrigin, RectSize);
+
+			if (!(RectSize.X > 0.0 && RectSize.Y > 0.0))
+			{
+				continue;
+			}
+
+			const double ScaleX = RectSize.X / (2.0 * Arena.X);
+			const double ScaleY = RectSize.Y / (2.0 * Arena.Y);
+
+			TestTrue(*FString::Printf(TEXT("(a) ⭐ On a %.0fx%.0f panel the px-per-uu scale is IDENTICAL on both axes (%.9f vs %.9f) — the aspect preservation this seam depends on"),
+				Panel.X, Panel.Y, ScaleX, ScaleY),
+				FMath::IsNearlyEqual(ScaleX, ScaleY, 1e-9));
+		}
+	}
+
+	// ── (b) THE ROUND TRIP IS EXACT — the wheel writes uu and reads px back every notch ───
+	// A drift here would make a mark creep in size across repeated scrolls: hold the wheel and
+	// watch a circle you never told to move, slowly move.
+	{
+		const FVector2D Panel(1920.0, 1080.0);
+
+		FVector2D RectOrigin = FVector2D::ZeroVector;
+		FVector2D RectSize = FVector2D::ZeroVector;
+		FSiegeWarMapProjection::ComputeMapRectLocal(Panel, static_cast<float>(ShippedMapPaddingPx), Arena, RectOrigin, RectSize);
+
+		for (const float Px : { 12.f, 40.f, 97.5f, 240.f })
+		{
+			const float Uu = FSiegeWarMapProjection::MapLocalPxToWorldRadius(Px, Arena, RectSize);
+			const float BackToPx = FSiegeWarMapProjection::MapWorldRadiusToLocalPx(Uu, Arena, RectSize);
+
+			TestTrue(*FString::Printf(TEXT("(b) %0.1f px -> %.1f uu -> %0.4f px: the crossing is its own exact inverse, so a mark cannot creep in size across notches"), Px, Uu, BackToPx),
+				FMath::IsNearlyEqual(BackToPx, Px, 1e-3f));
+
+			TestTrue(*FString::Printf(TEXT("(b) …and %0.1f px is a POSITIVE world radius (%.1f uu), ⛔ never zero or negative"), Px, Uu),
+				Uu > 0.f);
+		}
+	}
+
+	// ── (c) DEGENERATE INPUTS FAIL CLOSED — 0, ⛔ never negative and ⛔ never NaN ──────────
+	// A negative radius would reach Slate as a negative line THICKNESS; a NaN would poison every
+	// point in the ring's polyline. Both directions are total.
+	{
+		const FVector2D RectSize(1000.0, 500.0);
+
+		TestEqual(TEXT("(c) A zero world radius maps to 0 px"),
+			FSiegeWarMapProjection::MapWorldRadiusToLocalPx(0.f, Arena, RectSize), 0.f);
+		TestEqual(TEXT("(c) A NEGATIVE world radius maps to 0 px — ⛔ never a negative one"),
+			FSiegeWarMapProjection::MapWorldRadiusToLocalPx(-500.f, Arena, RectSize), 0.f);
+		TestEqual(TEXT("(c) A ZERO-size rect maps any radius to 0 px — ⛔ no divide by zero"),
+			FSiegeWarMapProjection::MapWorldRadiusToLocalPx(500.f, Arena, FVector2D::ZeroVector), 0.f);
+		TestEqual(TEXT("(c) …and the inverse direction fails closed identically"),
+			FSiegeWarMapProjection::MapLocalPxToWorldRadius(40.f, Arena, FVector2D::ZeroVector), 0.f);
+
+		// ⛔ A DEGENERATE ARENA IS SAFE TOO — `ArenaHalfExtent` is an EditAnywhere field on a
+		// DataAsset a designer can clear, which is exactly why `MinArenaHalfExtentUu` exists.
+		const float FromZeroArena = FSiegeWarMapProjection::MapWorldRadiusToLocalPx(100.f, FVector2D::ZeroVector, RectSize);
+		TestTrue(TEXT("(c) A (0,0) arena extent yields a finite, non-negative px radius — ⛔ never a NaN in the ring's polyline"),
+			FMath::IsFinite(FromZeroArena) && FromZeroArena >= 0.f);
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 32. ⭐ THE WHEEL — one notch is one STEP, a zero delta does NOTHING, and both
+//     clamps hold (`MARK-§4`, the amended wheel law)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeWarMapMarkWheelStepTest,
+	"Siegebound.WarMap.MarkWheelStepClampsAndAZeroDeltaChangesNothing",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeWarMapMarkWheelStepTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeWarMapMarkTestFixture;
+
+	constexpr float Start = 100.f;
+
+	// ── (a) ⭐⭐ A ZERO DELTA CHANGES NOTHING — half of "the wheel does nothing" ───────────
+	// (The other half is test 29(a): `FindMarkIndexAtLocal` answering INDEX_NONE off a mark.)
+	// ⚠️ This is not defensive padding: platforms synthesize gesture events with zero deltas,
+	// and a resize that fired on one would make every circle on the map twitch while the player
+	// merely rested his hand on a trackpad.
+	TestEqual(TEXT("(a) ⭐ A ZERO wheel delta returns the radius UNCHANGED — the map does not twitch on a synthesized gesture event"),
+		FSiegeWarMapProjection::StepMarkRadiusPx(Start, 0.f, ShippedMarkWheelStepPx, ShippedMarkMinRadiusPx, ShippedMarkMaxRadiusPx),
+		Start);
+
+	// ── (b) ONE EVENT IS ONE STEP, IN THE DELTA'S DIRECTION ⛔ NOT ITS MAGNITUDE ──────────
+	// `FPointerEvent::GetWheelDelta()` is platform- and driver-dependent in magnitude: a
+	// free-spinning wheel or a trackpad can deliver fractional or multi-unit deltas. ⇒ the felt
+	// speed must be `MarkWheelStepPx`, a designer number, and ⛔ never the mouse driver's.
+	TestEqual(TEXT("(b) A POSITIVE notch grows the circle by exactly one step"),
+		FSiegeWarMapProjection::StepMarkRadiusPx(Start, 1.f, ShippedMarkWheelStepPx, ShippedMarkMinRadiusPx, ShippedMarkMaxRadiusPx),
+		Start + ShippedMarkWheelStepPx);
+
+	TestEqual(TEXT("(b) A NEGATIVE notch shrinks it by exactly one step"),
+		FSiegeWarMapProjection::StepMarkRadiusPx(Start, -1.f, ShippedMarkWheelStepPx, ShippedMarkMinRadiusPx, ShippedMarkMaxRadiusPx),
+		Start - ShippedMarkWheelStepPx);
+
+	TestEqual(TEXT("(b) ⭐ A delta of 12.0 is STILL exactly one step — the SIGN is read, ⛔ never the magnitude, so a free-spinning wheel cannot outrun the designer's number"),
+		FSiegeWarMapProjection::StepMarkRadiusPx(Start, 12.f, ShippedMarkWheelStepPx, ShippedMarkMinRadiusPx, ShippedMarkMaxRadiusPx),
+		Start + ShippedMarkWheelStepPx);
+
+	TestEqual(TEXT("(b) …and a delta of 0.05 is one step too, so a trackpad behaves like a wheel"),
+		FSiegeWarMapProjection::StepMarkRadiusPx(Start, 0.05f, ShippedMarkWheelStepPx, ShippedMarkMinRadiusPx, ShippedMarkMaxRadiusPx),
+		Start + ShippedMarkWheelStepPx);
+
+	// ── (c) BOTH CLAMPS HOLD, AND HOLDING IS AN OUTCOME ⛔ NOT AN ERROR ───────────────────
+	TestEqual(TEXT("(c) Scrolling DOWN at the floor pins at the floor — a circle can never shrink out of existence"),
+		FSiegeWarMapProjection::StepMarkRadiusPx(ShippedMarkMinRadiusPx, -1.f, ShippedMarkWheelStepPx, ShippedMarkMinRadiusPx, ShippedMarkMaxRadiusPx),
+		ShippedMarkMinRadiusPx);
+
+	TestEqual(TEXT("(c) Scrolling UP at the ceiling pins at the ceiling — one circle can never claim the whole battlefield"),
+		FSiegeWarMapProjection::StepMarkRadiusPx(ShippedMarkMaxRadiusPx, 1.f, ShippedMarkWheelStepPx, ShippedMarkMinRadiusPx, ShippedMarkMaxRadiusPx),
+		ShippedMarkMaxRadiusPx);
+
+	// A radius already outside the window is pulled back INTO it rather than left there — the
+	// case a panel resize creates, since the clamps are widget-space and the store is not.
+	TestEqual(TEXT("(c) A radius ABOVE the ceiling (a panel resize can create one) is pulled back INTO the window on the next notch"),
+		FSiegeWarMapProjection::StepMarkRadiusPx(ShippedMarkMaxRadiusPx + 500.f, 1.f, ShippedMarkWheelStepPx, ShippedMarkMinRadiusPx, ShippedMarkMaxRadiusPx),
+		ShippedMarkMaxRadiusPx);
+
+	// ── (d) DEGENERATE TUNABLES FAIL CLOSED — ⛔ never a negative radius ──────────────────
+	TestEqual(TEXT("(d) A ZERO step returns the radius unchanged — a mis-set tunable disables the wheel rather than snapping every circle to a clamp"),
+		FSiegeWarMapProjection::StepMarkRadiusPx(Start, 1.f, 0.f, ShippedMarkMinRadiusPx, ShippedMarkMaxRadiusPx),
+		Start);
+
+	{
+		// An INVERTED min/max pair collapses to a single fixed size. ⛔ The one outcome that is
+		// forbidden is a NEGATIVE radius, which would reach Slate as a negative line thickness
+		// and invert the hit test that consumes it.
+		const float Collapsed = FSiegeWarMapProjection::StepMarkRadiusPx(Start, -1.f, ShippedMarkWheelStepPx, /*Min=*/ 200.f, /*Max=*/ 50.f);
+		TestTrue(TEXT("(d) An INVERTED min/max pair collapses to a fixed POSITIVE size — ⛔ never a negative radius"),
+			Collapsed > 0.f);
+
+		const float BelowOne = FSiegeWarMapProjection::StepMarkRadiusPx(0.5f, -1.f, ShippedMarkWheelStepPx, /*Min=*/ 0.f, /*Max=*/ 100.f);
+		TestTrue(TEXT("(d) …and a ZEROED floor is still floored at 1 px, so a circle can never reach radius 0 and become invisible AND un-deletable"),
+			BelowOne >= 1.f);
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 33. ⭐ THE NUMBER — centred at every radius, and legible at every radius
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeWarMapMarkNumberLayoutTest,
+	"Siegebound.WarMap.MarkNumberIsCentredAndSizedForEveryRadius",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeWarMapMarkNumberLayoutTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeWarMapMarkTestFixture;
+
+	// ⭐ "Every time you make a new circle, it gets its own number in the middle of it." — his
+	// sentence, and therefore a contract rather than a layout preference. ⚠️ Note the CONTRAST
+	// with the seven place markers, whose labels are deliberately LEFT-ANCHORED because centring
+	// "needs the font measure service": this feature pays that cost because the spec demands the
+	// centre, and the rule is a pure function so the demand is assertable.
+
+	// ── (a) ⭐ CENTRED MEANS CENTRED — the text box's centre lands ON the circle's centre ──
+	{
+		const TArray<FVector2D> Centres = {
+			FVector2D(0.0, 0.0), FVector2D(960.0, 540.0), FVector2D(-120.5, 33.25)
+		};
+		const TArray<FVector2D> Sizes = {
+			FVector2D(7.0, 12.0), FVector2D(18.0, 31.0), FVector2D(1.0, 1.0)
+		};
+
+		for (const FVector2D& Centre : Centres)
+		{
+			for (const FVector2D& Size : Sizes)
+			{
+				const FVector2D TopLeft = FSiegeWarMapProjection::CentreTextTopLeft(Centre, Size);
+				const FVector2D MeasuredCentre = TopLeft + Size * 0.5;
+
+				TestTrue(*FString::Printf(TEXT("(a) ⭐ A %.0fx%.0f glyph box placed by CentreTextTopLeft has its CENTRE exactly on (%.2f, %.2f) — ⛔ not its corner, and ⛔ not offset by half a line"),
+					Size.X, Size.Y, Centre.X, Centre.Y),
+					FMath::IsNearlyEqual(MeasuredCentre.X, Centre.X, 1e-9)
+					&& FMath::IsNearlyEqual(MeasuredCentre.Y, Centre.Y, 1e-9));
+			}
+		}
+
+		// ⛔ TOTAL FOR A HAND-BUILT INPUT: the measure service never returns a negative size, but
+		// a negative one would push the glyph the WRONG way by half its width, which reads as a
+		// deliberate offset rather than a bug.
+		const FVector2D FromNegative = FSiegeWarMapProjection::CentreTextTopLeft(FVector2D(50.0, 50.0), FVector2D(-20.0, -20.0));
+		TestTrue(TEXT("(a) A negative measured size is clamped rather than mirrored — the glyph never lands on the wrong side of its own circle"),
+			FMath::IsNearlyEqual(FromNegative.X, 50.0, 1e-9) && FMath::IsNearlyEqual(FromNegative.Y, 50.0, 1e-9));
+	}
+
+	// ── (b) ⭐⭐ LEGIBLE AT **ANY** RADIUS — swept across the whole scrollable range ───────
+	// ⚠️ THIS IS THE ASSERTION BEHIND THE SPEC'S PHRASE "stays legible at any radius", and it is
+	// a sweep rather than three spot checks on purpose: the failure it guards against is a
+	// fraction/clamp combination that is fine in the middle and unreadable at one end, which is
+	// exactly the shape a spot check misses.
+	{
+		int32 BelowFloor = 0;
+		int32 AboveCeiling = 0;
+		float SmallestSize = TNumericLimits<float>::Max();
+		float LargestSize = TNumericLimits<float>::Lowest();
+
+		constexpr int32 Steps = 200;
+		for (int32 Step = 0; Step <= Steps; ++Step)
+		{
+			const float Radius = FMath::Lerp(ShippedMarkMinRadiusPx, ShippedMarkMaxRadiusPx,
+				static_cast<float>(Step) / static_cast<float>(Steps));
+
+			const float FontSize = FSiegeWarMapProjection::MarkNumberFontSizePx(
+				Radius, ShippedMarkNumberFontRadiusFraction, ShippedMarkNumberFontMinSize, ShippedMarkNumberFontMaxSize);
+
+			if (FontSize < ShippedMarkNumberFontMinSize) { ++BelowFloor; }
+			if (FontSize > ShippedMarkNumberFontMaxSize) { ++AboveCeiling; }
+
+			SmallestSize = FMath::Min(SmallestSize, FontSize);
+			LargestSize = FMath::Max(LargestSize, FontSize);
+		}
+
+		AddInfo(FString::Printf(
+			TEXT("Mark number font sweep: %d radii from %.0f to %.0f px produced sizes in [%.2f, %.2f] pt (window [%.0f, %.0f])."),
+			Steps + 1, ShippedMarkMinRadiusPx, ShippedMarkMaxRadiusPx, SmallestSize, LargestSize,
+			ShippedMarkNumberFontMinSize, ShippedMarkNumberFontMaxSize));
+
+		TestEqual(TEXT("(b) ⭐⭐ ⛔ NOT ONE radius in the scrollable range produces a font BELOW the floor — a circle scrolled all the way down still SAYS its number, which is the name the player speaks to his commander"),
+			BelowFloor, 0);
+
+		TestEqual(TEXT("(b) ⭐ …and none produces one ABOVE the ceiling — a maximum circle carries a digit, ⛔ not a billboard over the dots the map exists to show"),
+			AboveCeiling, 0);
+
+		// ⚠️ AND THE SIZE ACTUALLY MOVES. Without this, a broken fraction that pinned every
+		// circle to the floor would pass both clamps above and ship a map where a 240-px circle
+		// and a 12-px one carry the same tiny digit.
+		TestTrue(TEXT("(b) ⭐ The size genuinely FOLLOWS the radius — a big circle gets a bigger number than a small one (a fraction pinned to the floor would pass the clamps and still be wrong)"),
+			LargestSize > SmallestSize + 1.f);
+	}
+
+	// ── (c) DEGENERATE INPUTS RETURN A READABLE SIZE, ⛔ NEVER ZERO ───────────────────────
+	// A 0-pt font renders as an ABSENT number — a circle with no name, which is the one thing
+	// this feature cannot ship.
+	{
+		TestTrue(TEXT("(c) A zero radius returns the FLOOR, ⛔ never 0 pt (a 0-pt font is a circle with no name)"),
+			FSiegeWarMapProjection::MarkNumberFontSizePx(0.f, ShippedMarkNumberFontRadiusFraction, ShippedMarkNumberFontMinSize, ShippedMarkNumberFontMaxSize)
+			>= ShippedMarkNumberFontMinSize);
+
+		TestTrue(TEXT("(c) A zeroed fraction returns the floor too"),
+			FSiegeWarMapProjection::MarkNumberFontSizePx(100.f, 0.f, ShippedMarkNumberFontMinSize, ShippedMarkNumberFontMaxSize)
+			>= ShippedMarkNumberFontMinSize);
+
+		TestTrue(TEXT("(c) A zeroed min/max pair still returns a POSITIVE size — the whole function is total"),
+			FSiegeWarMapProjection::MarkNumberFontSizePx(100.f, 0.6f, 0.f, 0.f) >= 1.f);
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 34. ⭐⭐ THE MARK COLOUR — measured against BOTH ends of the green ramp and
+//     against the team palette, ⛔ never asserted in a comment
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeWarMapMarkRingColorTest,
+	"Siegebound.WarMap.MarkRingColorIsLegibleAtBothRampEnds",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeWarMapMarkRingColorTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeWarMapMarkTestFixture;
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	// ⭐⭐ THIS TEST EXISTS BECAUSE `WM-§8e` NAMES ITS HAZARD PRECISELY: "a
+	// plausible-looking value in the right-looking type that is wrong in a way
+	// review cannot see." `WarMapWidget.cpp` holds `FLinearColor` constants in TWO
+	// different colour spaces on purpose, and the failure mode of getting one
+	// wrong is SILENT in code review and SILENT in every property readback.
+	//
+	// ⇒ THE MARK RING'S COLOUR IS MEASURED, ⛔ NOT DESCRIBED. And ⛔ NOTHING IS
+	// TRANSCRIBED: both ramp ends are read through the SHIPPED
+	// `BrightnessToRampColor` seam and both team colours through the SHIPPED
+	// `W4-R5` accessors, so a future change to either automatically re-checks the
+	// overlay that has to survive it.
+	//
+	// ⭐⭐ AND IT CATCHES THE COLOUR-SPACE ERROR SPECIFICALLY: sRGB-encoding this
+	// constant — the exact "correction" `WM-§8e` forbids — would raise its
+	// luminance from ~0.175 to ~0.60 and collapse the light-end ratio from ~3.8:1
+	// to ~1.3:1, turning an invisible mistake into a red test.
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	// ── The background, read from the code under test ────────────────────────────────────
+	// ⚠️ The ramp's texels are sRGB-ENCODED BYTES (the bake's texture is created with
+	// SRGB = true), so they are decoded to linear light before any luminance is computed. The
+	// mark tint is ALREADY linear (Slate encodes at draw) and is used as-is. ⛔ That asymmetry
+	// IS `WM-§8e`, and getting it backwards here would make the test lie in the same direction
+	// as the bug it is guarding against.
+	const FColor RampDarkBytes = UWarMapWidget::BrightnessToRampColor(0.f);
+	const FColor RampLightBytes = UWarMapWidget::BrightnessToRampColor(1.f);
+
+	const double RampDarkLuminance =
+		0.2126 * SrgbByteToLinear(RampDarkBytes.R)
+		+ 0.7152 * SrgbByteToLinear(RampDarkBytes.G)
+		+ 0.0722 * SrgbByteToLinear(RampDarkBytes.B);
+
+	const double RampLightLuminance =
+		0.2126 * SrgbByteToLinear(RampLightBytes.R)
+		+ 0.7152 * SrgbByteToLinear(RampLightBytes.G)
+		+ 0.0722 * SrgbByteToLinear(RampLightBytes.B);
+
+	const FLinearColor MarkColor = UWarMapWidget::GetMarkRingColor();
+	const double MarkLuminance = LinearLuminance(MarkColor);
+
+	const double AgainstDark = ContrastRatio(MarkLuminance, RampDarkLuminance);
+	const double AgainstLight = ContrastRatio(MarkLuminance, RampLightLuminance);
+
+	AddInfo(FString::Printf(
+		TEXT("Mark ring (linear %.3f, %.3f, %.3f; Y=%.5f) vs the ramp: %.2f:1 at the dark end, %.2f:1 at the light end. Ramp span %.2f:1."),
+		MarkColor.R, MarkColor.G, MarkColor.B, MarkLuminance, AgainstDark, AgainstLight,
+		ContrastRatio(RampLightLuminance, RampDarkLuminance)));
+
+	// ── (a) ⭐⭐ ≥3:1 AT **BOTH** ENDS ────────────────────────────────────────────────────
+	// ⚠️ 3:1 is the WCAG non-text/graphical-object threshold, and it is the same gate `WM-§8c`
+	// used to move the ancient-ground icon. ⛔ The "at BOTH ends" half is the load-bearing half:
+	// the background is a 14.7:1 ramp, so a colour tuned to one end fails at the other, which is
+	// how the map ends up with an overlay that is invisible over exactly the hills.
+	TestTrue(*FString::Printf(TEXT("(a) ⭐⭐ The mark ring clears 3:1 against the ramp's DARK end (%.2f:1)"), AgainstDark),
+		AgainstDark >= 3.0);
+
+	TestTrue(*FString::Printf(TEXT("(a) ⭐⭐ …and against its LIGHT end too (%.2f:1) — ⛔ an sRGB-encoded 'correction' of this constant collapses this leg to ~1.3:1 (WM-§8e)"), AgainstLight),
+		AgainstLight >= 3.0);
+
+	// ── (b) IT IS TUNED TO THE FLAT-COLOUR CEILING, ⛔ NOT MERELY OVER THE LINE ───────────
+	// ⚖️ For a FLAT overlay the two ratios move in OPPOSITE directions, so the best any flat
+	// colour can do is where they meet — ~3.84:1 against this ramp (`WM-§8c`'s figure, and this
+	// test re-derives it from the ends rather than quoting it). ⇒ requiring the two ratios to be
+	// within 25% of each other pins the colour NEAR that optimum, so a future re-tint that
+	// bought the dark end by sacrificing the light one fails here even while it still clears (a).
+	{
+		const double Optimum = FMath::Sqrt((RampLightLuminance + 0.05) * (RampDarkLuminance + 0.05));
+		const double CeilingRatio = Optimum / (RampDarkLuminance + 0.05);
+		const double Balance = FMath::Abs(AgainstDark - AgainstLight) / FMath::Max(AgainstDark, AgainstLight);
+
+		AddInfo(FString::Printf(
+			TEXT("Flat-colour ceiling against this ramp: %.2f:1 (at Y=%.5f). The mark's two ratios differ by %.1f%%."),
+			CeilingRatio, Optimum - 0.05, Balance * 100.0));
+
+		TestTrue(*FString::Printf(TEXT("(b) The two ratios are BALANCED to within 25%% (%.1f%%) — the colour sits near the %.2f:1 flat-colour ceiling rather than trading one end for the other"),
+			Balance * 100.0, CeilingRatio),
+			Balance <= 0.25);
+	}
+
+	// ── (c) ⛔ DISTINCT FROM THE TEAM PALETTE, WHICH IS THE PAIR THAT COULD MOVE ──────────
+	// Ally dots and blue castle icons wear `GetDefaultBlueBarColor()`; enemy dots and red castle
+	// icons wear `GetDefaultRedBarColor()`. ⛔ A mark that read as either would be the worst
+	// possible confusion on a tactical map: the player's own annotation mistaken for a unit.
+	// ⚠️ HONEST LIMIT, STATED RATHER THAN GLOSSED: this is a channel-distance floor, ⛔ NOT a
+	// colour-blind simulation. The SHAPE tells carry that case — a mark is a hollow ring with a
+	// number in it; a dot is a small filled square.
+	{
+		const FLinearColor Blue = UCombatantHealthBarComponent::GetDefaultBlueBarColor();
+		const FLinearColor Red = UCombatantHealthBarComponent::GetDefaultRedBarColor();
+
+		const double FromBlue = FMath::Abs(MarkColor.R - Blue.R) + FMath::Abs(MarkColor.G - Blue.G) + FMath::Abs(MarkColor.B - Blue.B);
+		const double FromRed = FMath::Abs(MarkColor.R - Red.R) + FMath::Abs(MarkColor.G - Red.G) + FMath::Abs(MarkColor.B - Red.B);
+
+		AddInfo(FString::Printf(TEXT("Mark ring channel distance: %.2f from team BLUE, %.2f from team RED (linear, summed over RGB)."), FromBlue, FromRed));
+
+		TestTrue(*FString::Printf(TEXT("(c) The mark is well clear of team BLUE (%.2f summed linear channels) — an annotation must never read as an ally unit"), FromBlue),
+			FromBlue >= 0.75);
+
+		TestTrue(*FString::Printf(TEXT("(c) …and of team RED (%.2f) — the blue channel is the gap that separates magenta from red, and it is the largest single-channel gap in the palette"), FromRed),
+			FromRed >= 0.75);
+	}
+
+	// ── (d) ⛔ OPAQUE, AND A REAL COLOUR ──────────────────────────────────────────────────
+	// A translucent ring over a 14.7:1 background would blend toward whatever is beneath it and
+	// silently forfeit every ratio measured above.
+	TestEqual(TEXT("(d) The ring is fully OPAQUE — a translucent one would blend toward the background and forfeit every ratio above"),
+		MarkColor.A, 1.f);
+
+	TestTrue(TEXT("(d) …and it is chromatic, ⛔ not a gray that would disappear into a green ramp's own value range"),
+		FMath::Max3(MarkColor.R, MarkColor.G, MarkColor.B) - FMath::Min3(MarkColor.R, MarkColor.G, MarkColor.B) > 0.2f);
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 35. THE BUILDER — empty, ⛔ never partial, and it RESETS the caller's array
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeWarMapBuildMarkCirclesWithoutStoreTest,
+	"Siegebound.WarMap.BuildMarkCirclesYieldsNothingWithoutAMarkStore",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeWarMapBuildMarkCirclesWithoutStoreTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeWarMapTestFixture;
+	using namespace SiegeWarMapMarkTestFixture;
+
+	// ⚠️⚠️ WHAT THIS TEST CAN SEE, STATED BEFORE THE ASSERTIONS RATHER THAN AFTER THEM.
+	// `USiegeMapMarkSubsystem` is a `ULocalPlayerSubsystem`, so a `NewObject<UWarMapWidget>`
+	// with no owning local player can never reach one. ⇒ this test pins the DEGRADATION
+	// contract — the half that is reachable headlessly — and it is a real contract: a partial
+	// or stale circle list is strictly worse than an empty one, because it would hit-test at a
+	// position where nothing is drawn, and a right-click there would delete a circle the player
+	// cannot see.
+	//
+	// ⛔ THE POPULATED PATH IS NOT COVERED HERE AND IS NOT PRETENDED TO BE. Its geometry is
+	// covered by tests 29-31 (the same three pure functions `BuildMarkCircles` composes), the
+	// store's own allocator and cap belong to TASK-744's suite, and the live dispatch is PIE.
+	// (`SC-§32`: a mechanism never observed to function is not known to function — so it is
+	// NAMED as unobserved rather than decorated with a test that cannot see it.)
+
+	TStrongObjectPtr<UWarMapWidget> Map(NewObject<UWarMapWidget>(GetTransientPackageAsObject()));
+
+	if (!TestTrue(TEXT("A war-map widget object was created"), Map.IsValid()))
+	{
+		return false;
+	}
+
+	// Pre-populated with junk, so "returned empty" and "cleared the caller's array" are
+	// DISTINGUISHABLE outcomes rather than one indistinguishable pass.
+	TArray<FSiegeWarMapMarkCircle> Circles;
+	Circles.Add(MakeCircle(/*Number=*/ 3, FVector2D(10.0, 10.0), 40.f));
+	Circles.Add(MakeCircle(/*Number=*/ 7, FVector2D(20.0, 20.0), 55.f));
+
+	Map->BuildMarkCircles(MakePanel(1920.f, 1080.f), Circles);
+
+	TestEqual(TEXT("⛔ With no owning local player and therefore no mark store, BuildMarkCircles yields ZERO circles — empty, ⛔ never partial, and the caller's stale entries are GONE"),
+		Circles.Num(), 0);
+
+	TestEqual(TEXT("⭐ …so a right-click finds nothing to delete and a wheel notch finds nothing to resize — the two verbs degrade together, ⛔ never one without the other"),
+		FSiegeWarMapProjection::FindMarkIndexAtLocal(Circles, FVector2D(10.0, 10.0)), INDEX_NONE);
+
+	TestEqual(TEXT("⭐ And the widget reports ZERO marks through its own read-through accessor — ⛔ it holds no cached count that could disagree with the store"),
+		Map->GetMapMarkCount(), 0);
+
+	// A degenerate panel takes the same clean-empty path. ⚠️ Stated honestly, exactly as test 16
+	// does for its sibling: this passes on the NO-STORE return, ⛔ NOT on the degenerate-panel
+	// guard, which is unreachable headlessly and is covered arithmetically by test 8.
+	TArray<FSiegeWarMapMarkCircle> TinyPanelCircles;
+	TinyPanelCircles.Add(MakeCircle(/*Number=*/ 1, FVector2D(1.0, 1.0), 12.f));
+
+	Map->BuildMarkCircles(MakePanel(4.f, 4.f), TinyPanelCircles);
+	TestEqual(TEXT("A tiny panel also yields ZERO circles — ⚠️ but note this passes on the NO-STORE return, ⛔ not on the degenerate-panel guard"),
+		TinyPanelCircles.Num(), 0);
+
+	// ⛔ AND THE MARKS ARE **NOT** CLEARED BY CLOSING THE MAP (`M-4`) — the one place this
+	// feature deliberately does NOT copy the enemy reveal's clear-on-close rule beside it.
+	// ⚠️ Headlessly the count is 0 either way, so this leg cannot distinguish "persisted" from
+	// "never existed" — it is here as a TRIPWIRE on the shape: if a future edit added a
+	// `ClearMarks()` call to `CloseMap`, this line would still pass, but the reviewer reading it
+	// is pointed straight at `CloseMap`'s comment, which says in words why that call may not
+	// exist. Named as weak rather than presented as proof.
+	Map->OpenMap();
+	Map->CloseMap();
+	TestEqual(TEXT("⛔ Closing the map does not touch the mark count (M-4: marks persist across close/reopen — ⚠️ a WEAK leg headlessly; the real control is CloseMap's comment)"),
+		Map->GetMapMarkCount(), 0);
+	TestFalse(TEXT("…and the map really did close, so the open/close cycle above actually ran"), Map->IsMapOpen());
 
 	return true;
 }

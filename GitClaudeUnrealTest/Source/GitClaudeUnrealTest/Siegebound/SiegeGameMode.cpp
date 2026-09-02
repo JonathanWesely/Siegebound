@@ -2,6 +2,7 @@
 
 #include "Siegebound/SiegeGameMode.h"
 
+#include "Engine/LocalPlayer.h" // ULocalPlayer::GetSubsystem — the MARK-§ M-4 clear on PlayAgain (TASK-744's cross-task line)
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/GameStateBase.h"
@@ -17,6 +18,8 @@
 #include "Siegebound/Projectile.h"
 #include "Siegebound/SiegeBotController.h"
 #include "Siegebound/SiegeGameState.h"
+#include "Siegebound/SiegeGhostPawn.h" // TASK-750 — produced in parallel by TASK-749 (one module, one compile at TASK-754)
+#include "Siegebound/SiegeMapMarkSubsystem.h" // USiegeMapMarkSubsystem::ClearMarks — MARK-§ M-4's clear-on-reset (the class is TASK-744's; this file owns the ONE call site)
 #include "Siegebound/SiegePlayerController.h"
 #include "Siegebound/SiegePlayerState.h"
 #include "Siegebound/SiegeSessionSubsystem.h" // LogSiegeNet (CONVENTIONS M8)
@@ -48,6 +51,13 @@ ASiegeGameMode::ASiegeGameMode()
 	// with no asset dependency, so a direct StaticClass default is safe at
 	// construction — no load, no missing-asset log.
 	BotControllerClass = ASiegeBotController::StaticClass();
+
+	// Death ghost (TASK-750, GHOST-§5). ⛔ DELIBERATELY LEFT UNSET — no task in the
+	// GHOST batch produces a ghost blueprint, and authoring a path to an asset nobody
+	// creates would log a missing-asset warning on every match forever. The raw C++
+	// ASiegeGhostPawn IS the shipped ghost; the property exists so a designer can point
+	// at a blueprint later with no recompile (see the header for the two-case resolve).
+	// GhostPawnClassAsset = <unset>;
 
 	// Main-menu start-match target (GDD §7, TASK-047 → TASK-049). Soft world ref
 	// (CONVENTIONS map /Game/Maps/L_Arena) — read from the CDO by the static
@@ -159,6 +169,13 @@ void ASiegeGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 	HeroRespawnTimers.Empty();
 
+	// TASK-750: drop the ghost bookkeeping with the handles it shadows. ⛔ NO Destroy()
+	// and ⛔ no re-possession here — the world itself is ending, every actor in it is
+	// about to be torn down, and re-possessing a hero during EndPlay would be
+	// gameplay work on a world that no longer has a match. Weak pointers ⇒ emptying
+	// the map is the whole of this class's obligation.
+	ActiveGhosts.Empty();
+
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -193,6 +210,106 @@ UClass* ASiegeGameMode::ResolveHeroPawnClass()
 	}
 
 	return AHeroCharacter::StaticClass();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE DEATH LIFECYCLE'S TWO PURE SEAMS (TASK-750, GHOST-§2/§3)
+//
+// ⛔ NO WORLD, ⛔ NO MEMBER STATE, ⛔ NO SIDE EFFECTS — so the rules they encode
+// can be exercised headlessly across their whole truth tables, which is the only
+// way an assertion about them can actually FAIL (SHIP-§9c). Every call site in
+// this file passes live state into them; there is no second copy of either rule.
+// ─────────────────────────────────────────────────────────────────────────────
+
+bool ASiegeGameMode::ShouldEnterGhostState(bool bInMatchEnded, bool bHasOwningController)
+{
+	// ⛔ THE MATCH-END CLAUSE IS INHERITED, NOT INVENTED (GHOST-§2, and the spec is
+	// explicit that a second match-end rule would be the defect): the shipped header
+	// contract is "After match end no respawn is scheduled" and "the hero stays down;
+	// PlayAgain() revives it". A ghost is the visible half of a pending respawn, so
+	// where there is no respawn there is no ghost — the end screen goes up over the
+	// hero exactly as it did before this feature existed.
+	if (bInMatchEnded)
+	{
+		return false;
+	}
+
+	// The shipped no-controller guard, unchanged in effect: nobody to possess a ghost,
+	// nobody to respawn. (Death normally disables input WITHOUT unpossessing, so the
+	// controller is still attached — this is the defensive edge, not the usual path.)
+	return bHasOwningController;
+}
+
+AHeroCharacter* ASiegeGameMode::ResolveHeroToRestore(APawn* PossessedPawn, AHeroCharacter* TrackedHero)
+{
+	// Row 1 — the possessed pawn IS the hero. Every non-ghost path lands here and the
+	// result is byte-identical to the shipped Cast<AHeroCharacter>(Player->GetPawn()).
+	if (AHeroCharacter* PossessedHero = Cast<AHeroCharacter>(PossessedPawn))
+	{
+		return IsValid(PossessedHero) ? PossessedHero : nullptr;
+	}
+
+	// Row 2 — the GHOST is possessed, so the hero is the one recorded at death time.
+	// ⛔⛔ THIS ROW IS THE DOUBLE-APPLY GUARD. Without it the respawn sees a non-hero
+	// pawn and falls into RestoreHeroAtStart's defensive RestartPlayer branch, which
+	// spawns a SECOND hero: the original is orphaned in the world still carrying every
+	// upgrade stack, and ResetHero()'s cumulative re-apply (HeroCharacter.cpp — full HP
+	// at GetEffectiveMaxHP, the War Banner aura re-armed, the loadout re-broadcast)
+	// lands on the corpse rather than on the pawn the player is driving. ONE hero actor
+	// lives across the whole death ⇒ ResetHero() runs exactly once, on exactly one pawn.
+	//
+	// Row 3 — neither resolves ⇒ nullptr, which is precisely the signal
+	// RestoreHeroAtStart already handles by restarting the player with a fresh pawn.
+	// ⛔ The ghost can never be returned: the return type is AHeroCharacter*, and
+	// ASiegeGhostPawn is not an AHeroCharacter (GHOST-§1).
+	return IsValid(TrackedHero) ? TrackedHero : nullptr;
+}
+
+UClass* ASiegeGameMode::ResolveGhostPawnClass()
+{
+	if (ResolvedGhostPawnClass)
+	{
+		return ResolvedGhostPawnClass;
+	}
+
+	// ⭐ THE UNSET CASE IS THE EXPECTED, SHIPPED CASE AND IS NOT A WARNING (see the
+	// header): no task in this batch authors a ghost blueprint, so the raw C++ class is
+	// the ghost. Logged once at Log so a reader of a live log can still see which class
+	// is being spawned — the honest half of the HeroPawnClassAsset pattern, with the
+	// alarm removed from the case that is not alarming.
+	if (GhostPawnClassAsset.IsNull())
+	{
+		if (!bWarnedGhostClassMissing)
+		{
+			bWarnedGhostClassMissing = true;
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("[%s] No ghost pawn blueprint configured (GhostPawnClassAsset is unset — the shipped default, TASK-750) — using the raw C++ ASiegeGhostPawn."),
+				*GetNameSafe(this));
+		}
+		return ASiegeGhostPawn::StaticClass();
+	}
+
+	// TSoftClassPtr<ASiegeGhostPawn>::LoadSynchronous already returns nullptr for a
+	// class that is not an ASiegeGhostPawn subclass, so a successful load is guaranteed
+	// compatible. Only success is cached: a blueprint imported later in an editor
+	// session is picked up by the next death.
+	if (UClass* LoadedClass = GhostPawnClassAsset.LoadSynchronous())
+	{
+		ResolvedGhostPawnClass = LoadedClass;
+		return ResolvedGhostPawnClass;
+	}
+
+	// AUTHORED BUT UNRESOLVABLE — a real mis-configuration, and the one that deserves a
+	// Warning. ⛔ Still never fatal: the fallback below is a fully functional ghost.
+	if (!bWarnedGhostClassMissing)
+	{
+		bWarnedGhostClassMissing = true;
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("[%s] Ghost pawn blueprint '%s' is configured but could not be loaded (missing or not an ASiegeGhostPawn) — falling back to the raw C++ ASiegeGhostPawn."),
+			*GetNameSafe(this), *GhostPawnClassAsset.ToString());
+	}
+
+	return ASiegeGhostPawn::StaticClass();
 }
 
 FString ASiegeGameMode::InitNewPlayer(APlayerController* NewPlayerController, const FUniqueNetIdRepl& UniqueId, const FString& Options, const FString& Portal)
@@ -341,7 +458,57 @@ void ASiegeGameMode::SetPlayerDefaults(APawn* PlayerPawn)
 	if (AHeroCharacter* Hero = Cast<AHeroCharacter>(PlayerPawn))
 	{
 		Hero->OnHeroDied.AddUniqueDynamic(this, &ASiegeGameMode::HandleHeroDied);
+
+		// TASK-750 (discharging TASK-748's named contract — see the header): the
+		// destination owner binds here, at the SAME site and with the SAME idiom as the
+		// death seam above, because it is the same rule being reused. AddUniqueDynamic
+		// keeps repeated restarts idempotent exactly as it does for OnHeroDied.
+		Hero->OnHeroRecallArrived.AddUniqueDynamic(this, &ASiegeGameMode::HandleHeroRecallArrived);
 	}
+}
+
+void ASiegeGameMode::HandleHeroRecallArrived(AHeroCharacter* RecallingHero)
+{
+	if (!IsValid(RecallingHero))
+	{
+		return;
+	}
+
+	// ⛔ THE TELEPORT, AND ⛔ NOTHING ELSE (RECALL-§1: "Recall performs exactly two
+	// effects: the teleport, and the heal" — the heal is the hero's own, applied by
+	// EndRecall the moment this returns). ⛔ NO ResetHero() on this path: it is the
+	// DEATH-path restore, and on a live hero it double-applies every upgrade stack and
+	// re-arms a running War Banner aura. ⛔ No possession change, ⛔ no input change,
+	// ⛔ no cooldown reset, ⛔ no HP write.
+	// ⚠️ NAMED `RecallingController`, ⛔ NEVER `Owner` (TASK-761, C4458): AActor::Owner is an
+	// inherited member of this very class, and UE builds with C4458 (declaration hides class
+	// member) promoted to an ERROR. ⛔⛔ The rename is ALL-OR-NOTHING — a local left named
+	// `Owner` at any ONE of the three uses below would resolve to the GAME MODE'S OWN owner
+	// (null for a game mode), which COMPILES CLEAN and silently passes the wrong controller.
+	AController* RecallingController = RecallingHero->GetController();
+
+	FVector StartLocation = FVector::ZeroVector;
+	FRotator StartRotation = FRotator::ZeroRotator;
+
+	// ⭐ THE SAME RESOLVER THE RESPAWN USES — the whole reason this seam points at the
+	// game mode. "Back at the castle" is decided in exactly one place, so a channel that
+	// completes and a hero that respawns can never arrive at different homes (and the
+	// TASK-569 row (n) "hero spawns OUTSIDE the keep" defect cannot be reintroduced by a
+	// second, hand-typed destination).
+	GetHeroStartTransform(RecallingController, RecallingHero->GetTeamId(), StartLocation, StartRotation);
+
+	// Sweepless, like the respawn teleport: the resolved start is clear by design, and a
+	// blocked sweep would silently leave the hero where it stood after a 10 s channel.
+	RecallingHero->SetActorLocationAndRotation(StartLocation, StartRotation, /*bSweep*/ false, /*OutSweepHitResult*/ nullptr, ETeleportType::TeleportPhysics);
+
+	if (APlayerController* PC = Cast<APlayerController>(RecallingController))
+	{
+		PC->SetControlRotation(StartRotation);
+	}
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("[%s] Recall completed for hero '%s' — teleported home to (%.0f, %.0f, %.0f) through the SHARED respawn resolver (RECALL-§1; the heal is the hero's own)."),
+		*GetNameSafe(this), *GetNameSafe(RecallingHero), StartLocation.X, StartLocation.Y, StartLocation.Z);
 }
 
 void ASiegeGameMode::OnCastleDestroyedHandler(ACastle* DestroyedCastle, ETeamId CastleTeam)
@@ -368,6 +535,31 @@ void ASiegeGameMode::OnCastleDestroyedHandler(ACastle* DestroyedCastle, ETeamId 
 		GetWorldTimerManager().ClearTimer(RespawnPair.Value);
 	}
 	HeroRespawnTimers.Empty();
+
+	// ⭐ AND RETIRE EVERY LIVE GHOST, FOR EXACTLY THE SAME REASON AND UNDER EXACTLY THE
+	// SAME ALREADY-EXISTING RULE (TASK-750, GHOST-§2 — ⛔ this is NOT a new match-end
+	// rule): the shipped contract is "After match end the hero stays down; PlayAgain()
+	// revives it", so the ghost inherits it verbatim — the player is handed his (still
+	// dead, still hidden) hero back, the ghost leaves the field, and the end screen
+	// goes up over the same state it went up over before this feature existed.
+	// ⚠️ RUNS BEFORE the freeze and the end-screen push below, so no ghost is ever left
+	// standing under the Victory screen and no controller reaches HandleMatchEnd
+	// possessing a pawn that is about to be destroyed.
+	// Collected first — RetireGhostFor mutates ActiveGhosts, never iterate it live.
+	{
+		TArray<TWeakObjectPtr<AController>> GhostedControllers;
+		ActiveGhosts.GetKeys(GhostedControllers);
+		for (const TWeakObjectPtr<AController>& WeakGhosted : GhostedControllers)
+		{
+			if (AController* Ghosted = WeakGhosted.Get())
+			{
+				RetireGhostFor(Ghosted, TEXT("match ended"));
+			}
+		}
+		// Any entry whose controller has gone (disconnect) is dropped with it — the
+		// actor dies with the world, and leaving a stale key would outlive the match.
+		ActiveGhosts.Empty();
+	}
 
 	UE_LOG(LogGitClaudeUnrealTest, Log, TEXT("[%s] Castle '%s' (%s) destroyed — match over, winner: %s."),
 		*GetNameSafe(this), *GetNameSafe(DestroyedCastle),
@@ -545,26 +737,212 @@ void ASiegeGameMode::HandleHeroDied(AHeroCharacter* DeadHero)
 		UE_LOG(LogGitClaudeUnrealTest, Warning,
 			TEXT("[%s] Hero '%s' died with no owning controller — no respawn scheduled (PlayAgain still restores every player)."),
 			*GetNameSafe(this), *GetNameSafe(DeadHero));
-		return;
 	}
 
-	// After match end the hero stays down until PlayAgain() (GDD §3.9); the
-	// match-end handler also cancels any respawn already pending.
-	if (bMatchEnded)
+	// ⭐ THE ONE PREDICATE (TASK-750, GHOST-§2/§3) — it carries BOTH shipped guards
+	// with their behaviour unchanged: no owning controller ⇒ nothing to schedule (the
+	// warning above is the shipped message, kept verbatim), and after match end the
+	// hero stays down until PlayAgain() (GDD §3.9; OnCastleDestroyedHandler also
+	// cancels any respawn already pending). ⛔ Routing them through the predicate is
+	// what makes the ghost's existence and the timer's existence literally the same
+	// condition rather than two conditions that have to be kept in step by hand.
+	if (!ShouldEnterGhostState(bMatchEnded, OwningController != nullptr))
 	{
 		return;
 	}
 
-	// Exactly HeroRespawnDelay (5 s, §3.1: back within 5-6 s) later THIS player's
-	// hero is back at its own-castle side. One handle per controller
-	// (FindOrAdd + SetTimer-replaces), so respawns can never stack per player and
-	// two players' deaths never clobber each other's timers. The weak controller
-	// rides the delegate payload — a controller gone by fire time is a logged
-	// no-op (HandleHeroRespawnTimer).
+	// Exactly HeroRespawnDelay later THIS player's hero is back at its own-castle
+	// side (the number is Jonathan's 180 s — GHOST-§0; see the property's comment).
+	// One handle per controller (FindOrAdd + SetTimer-replaces), so respawns can never
+	// stack per player and two players' deaths never clobber each other's timers. The
+	// weak controller rides the delegate payload — a controller gone by fire time is a
+	// logged no-op (HandleHeroRespawnTimer). ⛔ POLICY AND SHAPE UNCHANGED (QA-binding).
 	FTimerHandle& RespawnHandle = HeroRespawnTimers.FindOrAdd(OwningController);
 	GetWorldTimerManager().SetTimer(RespawnHandle,
 		FTimerDelegate::CreateUObject(this, &ASiegeGameMode::HandleHeroRespawnTimer, TWeakObjectPtr<AController>(OwningController)),
 		HeroRespawnDelay, false);
+
+	// ⭐ AND THE PLAYER GETS SOMETHING TO DRIVE FOR THOSE THREE MINUTES (GHOST-§1).
+	// Armed AFTER the timer on purpose: the timer is the contract the player is owed,
+	// and a ghost that fails to spawn must never be able to cost anyone a respawn.
+	SpawnAndPossessGhost(OwningController, DeadHero);
+}
+
+void ASiegeGameMode::SpawnAndPossessGhost(AController* Player, AHeroCharacter* DeadHero)
+{
+	if (!Player || !IsValid(DeadHero))
+	{
+		return;
+	}
+
+	// ⛔ ONLY A PLAYER CONTROLLER GETS A GHOST. The bot (an AAIController) possesses no
+	// pawn at all and has nothing to look through; handing it a ghost would put an
+	// enemy-visible actor on the field that nobody is driving (G-4 makes that a lie
+	// told to the human observer). Logged, not silent — an unexpected controller class
+	// here is worth seeing.
+	APlayerController* PC = Cast<APlayerController>(Player);
+	if (!PC)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("[%s] Hero death on non-player controller '%s' — no ghost spawned (the respawn timer still runs)."),
+			*GetNameSafe(this), *GetNameSafe(Player));
+		return;
+	}
+
+	// ⛔ IDEMPOTENT PER CONTROLLER: a second ghost would strand the first one in the
+	// world and overwrite the hero reference the respawn needs. AHeroCharacter's own
+	// bDead latch already makes a double OnHeroDied broadcast impossible, so this is
+	// the belt for a future second death path rather than a live case.
+	const TWeakObjectPtr<AController> Key(Player);
+	if (ActiveGhosts.Contains(Key))
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("[%s] Ghost requested for '%s' which already has one — keeping the existing ghost."),
+			*GetNameSafe(this), *GetNameSafe(Player));
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// At the death location, facing the way the hero was facing — his words are
+	// "instead get a ghost creature", so the swap is meant to read as continuous.
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Owner = PC;
+	SpawnParams.Instigator = nullptr;
+
+	// ⛔ ALWAYS SPAWN. The hero just died where it was standing, which may be inside a
+	// unit blob or against a wall — and the collision-handling method that refuses a
+	// colliding spawn is exactly how a player once ended up with no pawn at all
+	// (the M8 BLOCKER-5 lesson, recorded at SpawnDefaultPawnAtTransform_Implementation).
+	// ⚠️ A ghost that fails to spawn is 180 seconds of nothing, which is the single
+	// worst outcome this feature can produce.
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	const FVector GhostLocation = DeadHero->GetActorLocation();
+	const FRotator GhostRotation = DeadHero->GetActorRotation();
+
+	ASiegeGhostPawn* Ghost = World->SpawnActor<ASiegeGhostPawn>(ResolveGhostPawnClass(), GhostLocation, GhostRotation, SpawnParams);
+	if (!IsValid(Ghost))
+	{
+		// ⛔ NEVER FATAL AND NEVER A CRASH: the player keeps the (hidden, input-disabled)
+		// hero possessed for the wait — exactly the pre-TASK-750 experience — and the
+		// respawn timer armed above still fires and still restores him.
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("[%s] Failed to spawn the death ghost for '%s' at (%.0f, %.0f, %.0f) — the player waits out the respawn on the dead hero (no ghost, no crash)."),
+			*GetNameSafe(this), *GetNameSafe(Player), GhostLocation.X, GhostLocation.Y, GhostLocation.Z);
+		return;
+	}
+
+	// ① THE GHOST'S OWN API, IN ITS SPECIFIED ORDER (TASK-749): InitializeGhost is
+	// called ONCE after SpawnActor and BEFORE Possess.
+	// ⛔⛔ THE TEAM PASSED HERE IS IDENTITY, NOT AFFILIATION, and it must never become
+	// affiliation: G-4 makes the ghost enemy-visible, so an observer needs to know
+	// WHOSE ghost it is — it feeds a material tint and nothing else. ⛔ There is no
+	// targeting, no friend/foe test and no collision channel behind it, and exposing it
+	// through ITeamAgent would destroy the entire untargetability design (GHOST-§1).
+	Ghost->InitializeGhost(DeadHero->GetTeamId());
+
+	// ⛔ POSSESS, AND LET THE ENGINE DO THE HAND-OFF. Possess() unpossesses the hero
+	// (which stays in the world, hidden and dead — RestoreHeroAtStart teleports and
+	// heals THAT SAME ACTOR later), rebuilds the pawn input plumbing on the ghost and
+	// moves the view target to it. ⛔ No camera code and no input-mode code here.
+	PC->Possess(Ghost);
+	PC->SetControlRotation(GhostRotation);
+
+	ActiveGhosts.Add(Key, FSiegeGhostState{ Ghost, DeadHero });
+
+	// ⛔⛔ THE POSTURE HAND-OFF GOES THROUGH THE CONTROLLER, WHICH ROUTES IT THROUGH
+	// ApplyCursorInputState() — THE ONE OWNER (HELP-§5 / GHOST-§4). ⛔ There is no
+	// SetInputMode and no bShowMouseCursor write in this class, and the ghost adds no
+	// term to the cursor-owner ladder (it is a free-look pawn exactly like the hero).
+	if (ASiegePlayerController* SiegePC = Cast<ASiegePlayerController>(PC))
+	{
+		SiegePC->HandleGhostPossessionChanged();
+	}
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("[%s] '%s' died — ghost '%s' spawned at (%.0f, %.0f, %.0f) and possessed; respawn in %.0f s (GHOST-§, Jonathan's ruling)."),
+		*GetNameSafe(this), *GetNameSafe(DeadHero), *GetNameSafe(Ghost),
+		GhostLocation.X, GhostLocation.Y, GhostLocation.Z, HeroRespawnDelay);
+}
+
+void ASiegeGameMode::RetireGhostFor(AController* Player, const TCHAR* Reason)
+{
+	if (!Player)
+	{
+		return;
+	}
+
+	// A controller with no ghost is a clean no-op, so every caller may call this
+	// unconditionally — which is what lets the four call sites sit beside the four
+	// places that already clear this class's own respawn handles.
+	FSiegeGhostState State;
+	if (!ActiveGhosts.RemoveAndCopyValue(TWeakObjectPtr<AController>(Player), State))
+	{
+		return;
+	}
+
+	ASiegeGhostPawn* Ghost = State.Ghost.Get();
+	AHeroCharacter* Hero = ResolveHeroToRestore(Player->GetPawn(), State.Hero.Get());
+
+	// ⛔ POSSESS FIRST, DESTROY SECOND — never the reverse. Destroying the possessed
+	// pawn would drive the controller through PawnPendingDestroy into the Inactive
+	// state and park the view target at the death spot; possessing the hero makes the
+	// engine unpossess the ghost cleanly and hands the camera straight back to the
+	// SAME hero actor the player died in. ⛔ No new pawn is spawned on this path.
+	// ⭐⭐ AND THE RESPAWN-SIDE INPUT-CONTEXT HAND-OFF IS SAFE **STRUCTURALLY** — checked
+	// at source, ⛔ not assumed, because TASK-749 found the outbound half of exactly this
+	// trap and it is the most dangerous thing in the batch (GHOST-§4):
+	//   • The Enhanced Input mapping context is added by the PAWN, never by
+	//     ASiegePlayerController (HeroCharacter.cpp:228-280 says so in its own comment).
+	//   • `APawn::NotifyControllerChanged()` fires on POSSESSION as well as on unpossess
+	//     ⇒ `AHeroCharacter::NotifyControllerChanged` re-adds IMC_Hero (with its KBD-§5
+	//     positional-layout resolve) the instant this Possess() lands. The reverse trap
+	//     therefore does NOT exist: the hero re-arms its own context, by the same
+	//     mechanism the ghost mirrors in the other direction.
+	//   • ⭐ Stronger still, there is no WINDOW to be caught in: ASiegeGhostPawn adds the
+	//     SAME context (IMC_Hero) at the SAME priority (GhostMappingContextPriority == 1
+	//     == HeroMappingContextPriority), and there is not one RemoveMappingContext call
+	//     in this entire module ⇒ the input composition is INVARIANT across the whole
+	//     death → ghost → respawn cycle, and AddMappingContext collapses the duplicate.
+	//   • ⛔ THEREFORE THIS FILE ADDS NO CONTEXT AND REMOVES NONE. Doing so would be a
+	//     second owner of a composition that already has exactly one per pawn.
+	// ⚠️ This is a compile-time/structural argument. It is NOT a substitute for GHOST-§4's
+	// PIE obligation, which may never be waived on a clean compile.
+	APlayerController* PC = Cast<APlayerController>(Player);
+	if (PC && Hero && PC->GetPawn() != Hero)
+	{
+		PC->Possess(Hero);
+	}
+
+	// ③ The ghost's own teardown (TASK-749) — ⛔ NOT a raw Destroy(). RetireGhost() is
+	// idempotent by contract, so the two legitimate callers (the respawn boundary and
+	// match end) can both fire for one ghost when a match ends near that boundary
+	// without this class needing a "did I already retire it?" flag. It logs loudly if
+	// it is ever reached while STILL POSSESSED — which is the possess-first ordering
+	// above being checked from the other side.
+	if (IsValid(Ghost))
+	{
+		Ghost->RetireGhost();
+	}
+
+	// Posture again through the ONE owner, for the same reason as the outbound
+	// hand-off. At match end this is a deliberate no-op — ApplyCursorInputState early-
+	// outs while the controller's bMatchEnded is latched, because HandleMatchEnd owns
+	// the end-screen posture and must not be overridden (HELP-§5).
+	if (ASiegePlayerController* SiegePC = Cast<ASiegePlayerController>(PC))
+	{
+		SiegePC->HandleGhostPossessionChanged();
+	}
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("[%s] Ghost retired for '%s' (%s) — hero '%s' %s."),
+		*GetNameSafe(this), *GetNameSafe(Player), Reason ? Reason : TEXT("unspecified"),
+		*GetNameSafe(Hero), Hero ? TEXT("re-possessed") : TEXT("MISSING — the restore path will hand out a fresh pawn"));
 }
 
 void ASiegeGameMode::HandleHeroRespawnTimer(TWeakObjectPtr<AController> WeakController)
@@ -576,10 +954,23 @@ void ASiegeGameMode::HandleHeroRespawnTimer(TWeakObjectPtr<AController> WeakCont
 
 	if (!Player)
 	{
+		// ⛔ The map entry for a gone controller must go too, or a ghost actor outlives
+		// the player it belonged to (weak pointers stop it leaking memory, they do not
+		// stop it standing on the battlefield). RemoveAndCopyValue inside RetireGhostFor
+		// needs a live AController*, so the entry is dropped directly here.
+		ActiveGhosts.Remove(WeakController);
+
 		UE_LOG(LogGitClaudeUnrealTest, Log,
 			TEXT("[%s] Hero respawn timer fired for a controller that no longer exists (disconnect) — skipped."), *GetNameSafe(this));
 		return;
 	}
+
+	// ⭐ THE THREE MINUTES ARE UP (TASK-750): give the hero back FIRST, then let the
+	// SHIPPED restore do the teleport + ResetHero() completely unchanged. After this
+	// call Player->GetPawn() is the hero again, so RestoreHeroAtStart resolves its
+	// team-keyed own-castle start exactly as it always has — "respawn back at the
+	// castle" is the shipped GetHeroStartTransform, ⛔ not re-implemented here.
+	RetireGhostFor(Player, TEXT("respawn timer expired"));
 
 	RestoreHeroAtStart(Player);
 }
@@ -590,6 +981,14 @@ void ASiegeGameMode::RestoreHeroAtStart(AController* Player)
 	// FindLocalSiegeController/TrackedHero pair assumed "first controller = THE
 	// player" (audit §1a#4/#5). In standalone the one caller passes the one
 	// controller, whose pawn is the same hero the old resolve found (§10).
+	//
+	// ⛔⛔ PRECONDITION (TASK-750): THIS FUNCTION IS UNCHANGED AND EXPECTS THE HERO TO
+	// BE THE POSSESSED PAWN. Both callers therefore run RetireGhostFor first —
+	// HandleHeroRespawnTimer immediately above, PlayAgain in its step 1b. ⛔ A future
+	// caller that reaches here with a ghost possessed will take the defensive
+	// RestartPlayer branch below and hand out a SECOND hero; retire the ghost first.
+	// (The teleport and the heal are deliberately NOT re-implemented anywhere in the
+	// ghost path — GHOST-§2: they already ship, and this is them.)
 	if (!Player)
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Error,
@@ -890,6 +1289,28 @@ void ASiegeGameMode::PlayAgain()
 	}
 	HeroRespawnTimers.Empty();
 
+	// 1b) Retire every live death ghost (TASK-750), beside the handles it belongs to.
+	//     ⛔⛔ THIS MUST PRECEDE STEP 5 AND IT IS LOAD-BEARING, NOT TIDINESS: step 5
+	//     reaches the hero through IterPC->GetPawn(), so a Play Again pressed while a
+	//     player is ghosted would find a non-hero pawn, SKIP ResetUpgrades() entirely,
+	//     and then RestoreHeroAtStart's ResetHero() would re-apply the OLD upgrade
+	//     stacks onto the "reset" hero — upgrade stacks surviving a full match reset,
+	//     which is exactly the §3.9 clearing that TASK-058 exists to guarantee. It also
+	//     keeps step 6's controller walk operating on the pawn it was written for.
+	//     Same collect-then-mutate discipline as the loops below.
+	{
+		TArray<TWeakObjectPtr<AController>> GhostedControllers;
+		ActiveGhosts.GetKeys(GhostedControllers);
+		for (const TWeakObjectPtr<AController>& WeakGhosted : GhostedControllers)
+		{
+			if (AController* Ghosted = WeakGhosted.Get())
+			{
+				RetireGhostFor(Ghosted, TEXT("Play Again"));
+			}
+		}
+		ActiveGhosts.Empty();
+	}
+
 	// 2) Zero summoned units (§3.9). Collected first — never Destroy() out of a
 	//    live TActorIterator.
 	TArray<ASummonedUnit*> Units;
@@ -1065,6 +1486,35 @@ void ASiegeGameMode::PlayAgain()
 		if (ASiegePlayerController* SiegePC = Cast<ASiegePlayerController>(It->Get()))
 		{
 			SiegePC->HandleMatchReset();
+		}
+	}
+
+	// 6b) THE WAR MAP'S MARKS (TASK-744, CONVENTIONS MARK-§ **M-4**: "Marks clear on
+	//     match reset / PlayAgain()"). ⭐⭐ THIS IS THE ONE CALL SITE `ClearMarks()` HAS,
+	//     AND IT HAS TO LIVE HERE: USiegeMapMarkSubsystem is a ULocalPlayerSubsystem, so
+	//     it OUTLIVES an in-place PlayAgain — the world resets around it and nothing in
+	//     it is touched. ⛔ Without this line last match's circles are still painted on
+	//     next match's map, still numbered, and still referenceable by name to the AI
+	//     commander ("hold 2" pointing at ground from a match that is over).
+	//     ⚠️ TASK-744 could not add it: this file is TASK-750's sole-owned surface, and
+	//     that fence is what let the two run in parallel at all. Reaching the subsystem
+	//     is the ordinary local-player route named in its handoff — ⛔ no custom getter.
+	//     Null-safe at every step: a remote client's server-side PC has no ULocalPlayer
+	//     and is skipped, which is correct — marks are per-player (M-2) and each machine
+	//     clears its own.
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		const APlayerController* const IterPC = It->Get();
+		if (!IterPC)
+		{
+			continue;
+		}
+		if (ULocalPlayer* LocalPlayer = IterPC->GetLocalPlayer())
+		{
+			if (USiegeMapMarkSubsystem* MarkSubsystem = LocalPlayer->GetSubsystem<USiegeMapMarkSubsystem>())
+			{
+				MarkSubsystem->ClearMarks();
+			}
 		}
 	}
 

@@ -31,6 +31,14 @@ Owned by the **manager** agent. All agents MUST follow these. If a needed patter
 ## Texture suffixes
 `T_<Name>_D` base color · `T_<Name>_N` normal · `T_<Name>_R` roughness · `T_<Name>_M` metallic · `T_<Name>_E` emissive · `T_<Name>_ORM` packed Occlusion/Roughness/Metallic (LINEAR — sRGB off; added 2026-07-07, TRELLIS pipeline)
 
+## Static-mesh SOCKET names — the artist↔programmer geometry contract (added 2026-09-01, `TOWER-§8`)
+
+**Pattern: `SM_*` sockets are named `<Purpose>` in PascalCase, ⛔ no prefix, ⛔ no underscores, ⛔ no unit suffix.** A socket name is a **cross-lane contract exactly like an asset path**: the artist authors it, C++ reads it by literal `FName`, and a typo is a silent failure. ⇒ **Every socket a code path reads is pinned in the law section that owns the feature, ⛔ never invented at the mesh.**
+
+- ⭐⭐ **WHY SOCKETS AT ALL, AND IT IS THE `TOWER-§7` PRINCIPLE APPLIED A SECOND TIME: geometry a code path needs comes FROM THE MESH, ⛔ never from a duplicated literal.** A number written in both the FBX and the `.cpp` is two numbers that will disagree the day the mesh is re-authored — which is precisely the change that just obsoleted this tower's ramp.
+- ⛔ **A CODE PATH THAT READS A SOCKET MUST DEGRADE OPEN**, per the house null-safety law: socket absent ⇒ fall back to the law-pinned literal, log **one** warning naming the missing socket, ⛔ never brick the feature. ⭐ **This is what makes the art lane and the code lane genuinely parallel-safe** — the programmer builds to the pinned numbers, the artist ships the sockets, and integration reconciles them without either lane blocking the other.
+- **Pinned sockets in force:** `LadderFoot` · `LadderTop` on `/Game/Meshes/SM_WatchTower` (`TOWER-§8`).
+
 ## C++ (Source/GitClaudeUnrealTest/)
 - Classes: `A` actors, `U` UObjects/components, `F` structs, `E` enums, `I` interfaces
 - One class per header/cpp pair; file name = class name without prefix
@@ -3402,9 +3410,35 @@ And his clarification of the NPC's role, verbatim: *"I think that I want the con
 5. ⛔⛔ **THE INSTRUMENT IS PIE, AND THERE IS NO SUBSTITUTE — `SC-§32` AT ITS SHARPEST.** This defect class is invisible to the compiler, to `warnings_as_errors`, to the automation suite and to code review: it needs a **live anim update on a spawned actor**. ⇒ ⭐ **A BATCH IN WHICH NO TASK RAN PIE HAS OBSERVED *NOTHING* ABOUT RUNTIME, however green its gates.** ✅ **STANDING RULE: any batch that spawns a NEW ACTOR CLASS into the world owes ONE PIE session with a MESSAGE-LOG READ, and that row may ⛔ NEVER be waived on the grounds that the compile is clean.**
 6. 📌 **AND THE CLASS-CONVERSION TEMPTATION IS REFUSED IN ADVANCE:** *"make the actor a Pawn so the ABP is happy"* is ⛔ **the wrong direction.** It inverts the dependency (the prop bends to the asset), and on this codebase it would additionally place the prop into every pawn-shaped query in the project — `GetPawnIterator`, AI perception, targeting — making a decorative NPC **acquirable as a target** to buy an idle animation. ⇒ ⛔ **Fix the assignment, ⛔ never the hierarchy.**
 
+### SC-§36 ⛔⛔ A COMMENT NAMING ANOTHER TASK AS THE BINDER IS A ***DEBT***, ⛔ NOT A WIRING (added 2026-09-01; bought by TASK-748 → TASK-750, caught by TASK-750)
+
+⛔ **THE MEASURED DEFECT THAT BOUGHT THIS LAW:** `AHeroCharacter` declared `OnHeroRecallArrived` and shipped a warning that reads *"The teleport-home owner must bind this delegate **(TASK-750)**"* (`HeroCharacter.cpp:1333`). ⭐ **The design was RIGHT** — the hero deliberately must not learn where home is (`HeroCharacter.h:146`) — **and the delegate was correctly declared, correctly broadcast (`:1348`) and correctly guarded (`IsBound()` at `:1310`, with `BuildArrival` refusing to move or heal when unbound).** ⚠️⚠️ **BUT ⛔ NOBODY BOUND IT.** ⇒ **a completed 10-second recall channel would have teleported and healed ⛔ NOTHING** — the player spends the channel, survives the interrupt window, and arrives **nowhere**. ✅ **TASK-750 caught it and bound it** (`SiegeGameMode.cpp:466`, handler `:470`, routed through the **same `GetHeroStartTransform` the respawn path uses** at `:493` — ⛔ never `ResetHero()`).
+
+1. ⛔⛔ **A COMMENT IS ⛔ NOT A BINDING. IT COMPILES, IT READS AS INTENT, AND IT WIRES ⛔ NOTHING.** ⚖️ **The naming of a future task inside a comment creates the *feeling* of a completed handoff while leaving the actual edge unbuilt** — and the task named may never have been told.
+2. ⛔⛔ **AND THE SHARPEST EDGE: ⛔ NOTHING FAILS IF THE DEBT IS NEVER HONOURED.** No compile error, no link error, no red test — a well-guarded unbound delegate degrades **quietly and correctly** into doing nothing. ⭐ **The better the guard, the more silent the omission.** ⚠️ *This is the `TOWER-§8.5` swept-stall class and the `MARK-§ M-4` `ClearMarks()`-with-no-caller class in a third costume: a correct mechanism that is never actually driven.*
+3. 📌 **THE DUTY, AND IT IS THE MANAGER'S AS MUCH AS THE PROGRAMMER'S:** a task that declares an extension point another task must fill ⇒ ⛔ **the obligation goes on the BOARD, in the named task's spec, as an explicit numbered item** — ⛔ **never only in a source comment.** ⭐ **If the consuming task's spec does not mention it, it is ⛔ not specified**, and the handoff must say so loudly enough that the manager boards it.
+4. ✅ **THE CONSUMING TASK MUST ASSERT THE BINDING EXISTS**, ⛔ not merely that the code path is correct when bound. **An `IsBound()` guard is a fail-safe, ⛔ not a wiring, and a test that only exercises the bound path proves nothing about the shipped game.**
+5. ⭐ **PRECEDENT — THREE IN ONE BATCH, WHICH IS WHY THIS IS A LAW AND ⛔ NOT A NOTE:** `OnHeroRecallArrived` (unbound delegate) · `USiegeMapMarkSubsystem::ClearMarks()` (**shipped with no caller**, TASK-744) · `AClimbableTower::CanTeamAscend()` (⭐ **written as a statement of the collision matrix with ⛔ NO caller and passed QA in that state** — it waited for `TOWER-§8.6` to give it one). ⚖️ **Three unwired-but-correct surfaces in one wave is a process signal, ⛔ not three coincidences.**
+
+### SC-§37 ⭐⭐ WHERE A VALUE'S CORRECTNESS IS INVISIBLE TO REVIEW, THE TEST MUST **MEASURE THE PROPERTY**, ⛔ NEVER RESTATE THE VALUE (added 2026-09-01; the pattern promoted from TASK-745)
+
+⚖️ **`SHIP-§9`'s standard — *"can this assertion actually FAIL?"* — applied to DATA rather than to gates.** ⛔ **A test that asserts `Colour == <the same literal the code holds>` proves ⛔ NOTHING: it restates the value and fails only if someone edits both halves inconsistently.** ⭐ **A test that measures the *property the value exists for* fails when the value stops doing its job — which is the only failure anyone cares about.**
+
+⭐ **THE WORKED EXAMPLE THAT BOUGHT IT — and it defends a trap `WM-§8e` could previously only WARN about:** `WM-§8e` records that `WarMapWidget.cpp` deliberately holds `FLinearColor` constants in **two different colour spaces**, and rules that a constant whose space is not named is not shippable. ⚠️ **But a comment cannot stop an "sRGB correction" — it can only reproach one afterwards.** TASK-745 instead wrote a test that **measures the mark colour's contrast against BOTH ends of the terrain ramp: 3.81:1 (dark) and 3.85:1 (light), against a 3.84:1 theoretical flat-colour ceiling** derived from `WM-§8c`. ⇒ ⭐⭐ **an sRGB "correction" of that constant collapses the light end to ~1.3:1 and turns a SILENT, INVISIBLE colour-space error into a RED TEST.**
+
+1. ✅ **THE RULE: if a value's wrongness would be invisible in a diff and invisible at review, the test asserts the MEASURED PROPERTY** — contrast ratio, clearance, ratio-to-a-ceiling, reachability — ⛔ **not the literal.**
+2. ⭐ **PREFER A PROPERTY WITH A DERIVED CEILING.** Measuring *"3.81 against a ceiling of 3.84 computed from the ramp"* is stronger than *"≥ 3.0"*: it re-derives the target from the same inputs the value was tuned against, so it survives a change to the thing being contrasted against.
+3. ⛔ **AND STATE THE LIMIT HONESTLY.** TASK-745 recorded that a contrast ratio and a channel distance are **necessary, ⛔ not sufficient** — this is ⛔ not a colour-blind simulation, a deuteranope may read magenta and red closer than the numbers do, and **the shape tells carry that case.** ⚖️ **A measured property is evidence, ⛔ not proof, and Jonathan's eye remains the acceptance** (`AS-§6 A(e)`).
+4. 📌 **SCOPE — ⛔ this is ⛔ NOT a mandate to test every constant.** It binds where **three** things hold: the value is tuned rather than arbitrary · a plausible "fix" would silently break it · and the breakage is invisible to compile, review and the naked eye at review time. ⚖️ *Those are exactly the conditions under which a comment is not enough.*
+
 ### WR-§9 ⚠️ KNOWN, DESIGNED OUTCOMES — ⛔ **NONE OF THESE IS A BUG**, and they go on Jonathan's playtest sheet so a report of one is read correctly
 
-1. ⛔ **A click on empty map area does nothing.** Only the seven place markers are clickable (`WR-§6`).
+1. ⚖️⭐ **AMENDED 2026-09-01 BY JONATHAN'S DIRECTIVE — ⛔ FOR THE LEFT BUTTON ONLY. ⛔ THE OLD RULE IS ⛔ NOT DELETED; IT IS NOW A REACHABLE DEGRADE PATH.**
+   **His words:** *"click on anywhere on the map, to create a circle at that location."* ⇒ ⭐ **A LEFT click on empty map now PLACES A NUMBERED MARK.** ⛔ **The previous ruling — *"a click on empty map area does nothing; only the seven place markers are clickable (`WR-§6`)"* — no longer describes the left button.**
+   - ⛔⛔ **HALF OF THE OLD RULE STANDS VERBATIM: the RIGHT button still does nothing on empty map**, and the wheel outside a mark still changes ⛔ no state. ⚠️ **TASK-745 handled right-click BEFORE the shipped non-left absorb specifically so that property stayed byte-intact.**
+   - ⭐⭐ **AND THE RETIRED BEHAVIOUR IS ⛔ NOT DEAD CODE — IT STILL FIRES IN TWO REAL CASES**, which is why it is recorded as an amendment rather than a replacement: **(a) no owning local player ⇒ no subsystem**, and **(b) the click landed in the LETTERBOX, outside the drawn map rect.** ⇒ the `W691-3` two-arm discriminator (`EmptyClickHintText` / `NoSnapshotStatusText`) **retains a genuine reason to run and stays auditable.** ⚖️ *A reader who finds the old rule needs to know it still fires — a straight deletion would have made two live paths look like debris.*
+   - ⭐ **WHY THIS COST ALMOST NOTHING, AND IT IS A PROPERTY OF THE ORIGINAL DESIGN, ⛔ NOT LUCK:** clicking an existing mark routes through the **already-shipped** `OnPlacePicked(FName)` → `HandleWarMapPlacePicked` → `ComposeAppendedInput`, so **`circle_2` reaches the input box with ⛔ ZERO controller change.** ⇒ ⭐⭐ **`WR-§`'s *"a click types a SYMBOL, ⛔ never a coordinate"* ruling absorbed an entire new referent class for free** (`MARK-§1`, the same trick applied a second time). ⚖️ *This is the dividend of that design, and it is the second time in one day the shipped architecture made a new feature nearly free — the other being `hold`/`ambush` already parsing.*
+   - 📌 **PRECEDENCE, PINNED AND DELIBERATE: THE SEVEN PLACE MARKERS OUTRANK MARKS IN ***BOTH*** HIT ORDER AND PAINT ORDER.** ⛔ **This is ⛔ not an implementation detail — inverting it would let a large circle drawn over `own_castle` make that marker PERMANENTLY UNCLICKABLE**, silently retiring a shipped referent. ⛔ **Do not "simplify" the ordering.**
 2. ⛔ **The map inserts a raw symbol like `ancient_ground_near` into the chat box**, not English. That is the ruling, and the reason is `DEV-01`.
 3. ⛔ **The map does not pause the match.** You can be attacked while reading it.
 4. ⛔ **Red dots vanish the moment the map closes, even one second after paying.** That is the mechanic.
@@ -5062,6 +5096,16 @@ Every ship ends with: the zip's **absolute path** + size · the config · **HEAD
 
 ### TOWER-§2a ⛔⛔ THE GEOMETRY LAW, **MEASURED** (2026-08-30, TASK-725's spike) — ⭐ **AND THE REASONS MATTER MORE THAN THE NUMBERS**
 
+> ### ⚠️⚠️ **RE-SCOPED 2026-09-01 BY `TOWER-§8` — ⛔ NOT STRUCK, ⛔ NOT DELETED, AND ⛔ NOT DEMOTED. READ THIS BOX BEFORE YOU READ THE TABLE.**
+>
+> **Jonathan replaced this tower's ramp with a LADDER.** ⇒ **The two rows that are ABOUT THIS TOWER'S RAMP — the `30.0°` slope and the `2,078 uu` run — are MOOT FOR `SM_WatchTower`.** There is no longer a ramp on that mesh for them to describe.
+>
+> ⭐⭐ **EVERYTHING ELSE IN THIS SUB-SECTION SURVIVES AT FULL FORCE, AND IT IS THE MOST VALUABLE THING THIS NAMESPACE PRODUCED.** The **32.005° ceiling**, its derivation, the **176 uu real capsule** vs the nav agent's 144, the **128 uu ledge+erosion tax**, the **solid-wedge / thin-deck** finding, the **flush-junction ≤ 40 uu** rule and the **serialized-`L_Arena` asymmetry** are **findings about THIS PROJECT'S NAVMESH, ⛔ not about one building.** ⇒ ⛔⛔ **THEY BIND EVERY FUTURE RAMP, HILL, SLOPE, PLATFORM AND WALKABLE SURFACE IN SIEGEBOUND, INCLUDING THE LADDER TOWER'S OWN PLATFORM DECK** (`TOWER-§8` sizes that deck from the 128 uu tax in this very table).
+>
+> ⚖️ ***A measurement is not invalidated by the design that prompted it being replaced.*** **The 10× arena silently dropped this project's walkable ceiling from 46.5° to 32° and nothing has hit it because every shipped hill sits at 27°. That trap is still armed, still undocumented anywhere else, and the next person to author a slope still needs this page.** ⛔ **Deleting it to tidy up after a redesign would re-arm the exact trap it was written to disarm.**
+>
+> 📌 **Citation rule from here on:** cite `TOWER-§2a` for **the navmesh constraints**; ⛔ do **not** cite it as the Watch Tower's build spec — that is now **`TOWER-§8`**.
+
 > ### ⭐⭐ **THE REAL WALKABLE CEILING IS `atan(20/32)` = **32.005°**, ⛔ NOT THE 44° `AgentMaxSlope` SUGGESTS.**
 > ### ⚠️ **`AgentMaxSlope` ONLY *MARKS* TRIANGLES (`rcMarkWalkableTriangles`). `rcFilterLedgeSpans` THEN RUNS ⛔ UNCONDITIONALLY, IN VOXELS, AND IT IS THE BINDING CONSTRAINT.**
 
@@ -5191,3 +5235,466 @@ Every ship ends with: the zip's **absolute path** + size · the config · **HEAD
 - ⭐ **THE SIZE MUST COME FROM THE MESH, ⛔ NEVER FROM A LITERAL.** A hardcoded `2700` would be wrong for the next large building and silently wrong the day `SM_WatchTower` is re-authored. **The placement ghost already spawns the real `SM_<CardID>` — its bounds ARE the footprint, and every existing small building keeps its shipped behaviour by construction because its bounds are small.**
 - ⚠️ **THE RISK THIS FIX CARRIES, NAMED SO IT IS NOT DISCOVERED IN PLAY: a footprint-sized refusal can make a large building feel UNPLACEABLE in a busy spawn box.** ⇒ **The refusal is the OWN-team unit-overlap case + a footprint-aware building clearance, ⛔ not a wholesale re-sampling of every gate across the footprint** (that is declared as a follow-on finding, ⛔ not smuggled into one task), and its threshold ships `EditDefaultsOnly` so 🧑 **T-6** is a one-word retune.
 - 📌 **This is ⛔ NOT a speculative fix for an unobserved symptom** (the standing anti-guessing law): the **mechanism** is measured — the validation has **no unit term in its enum** and its two clearances are **200/150 uu against a ~1,350 uu half-extent**. ⚖️ *A missing check is a measurement, not a symptom report.*
+- ⚠️ **AMENDED 2026-09-01 (`TOWER-§8`): the tower's footprint drops from ~2,700 uu to ~750 uu (half-extent ~375). ⭐ THIS TASK GETS EASIER, ⛔ NOT OBSOLETE, AND IT IS ⛔ NOT CANCELLED.** The finding was never *"the tower is big"* — it is *"**building placement has NO unit term at all** and its clearances are **point** tests."* **That is true of a 750 uu tower, of a 600 uu one, and of the next large building somebody adds.** ⭐ **What changes is URGENCY, ⛔ not validity:** `BuildingClearance = 200` against a ~375 uu half-extent is now the same order of magnitude instead of **6.75× short**, so the worst symptom (a tower legally intersecting another building) is much less likely. ⇒ **TASK-735 stays boarded, drops below the ladder batch in priority, and its spec is unchanged — ⭐ because it was correctly written to take the footprint FROM THE MESH and never from the literal `2700`, it needs ⛔ no edit at all to be correct against the new mesh.** ⚖️ *That is the dividend of the "size comes from the mesh" rule, collected one day after it was written.*
+
+---
+
+## ⚖️ THE LADDER REDESIGN — the Watch Tower's ascent becomes a climb (2026-09-01) — namespace **TOWER-§8**
+
+**Trigger — Jonathan's directive, verbatim (2026-09-01):** *"ok, I like what you did with the tower, but I was thinking instead of making it a ramp that you walk up it instead has a ladder you climb up"*
+
+> ### ⭐⭐ **READ THE FIRST FIVE WORDS BEFORE ANYTHING ELSE: *"I LIKE WHAT YOU DID."* ⛔ THIS IS ⛔ NOT A REJECTION.**
+> ### **THE FEATURE, THE CARD, THE 30-GOLD COST, THE HEIGHT-ADVANTAGE RULE, THE ×3, THE PLATFORM CONCEPT AND THE 1,200 uu RISE ARE ⛔ ALL UNTOUCHED AND ⛔ NOT RE-OPENED.** This namespace changes exactly one thing: **HOW a unit gets to the top.**
+
+### TOWER-§8.0 ⛔⛔ THE SCOPE FENCE, FIRST, BECAUSE A REDESIGN IS WHERE SETTLED DECISIONS GET QUIETLY RE-LITIGATED
+
+⛔ **`HIGH-§` in its entirety · the ×3 range · `Cost = 30` · `HP = 250` · `Damage/Range/Cadence = 0/0/0` · `bRanged = false` · `DeckCount = 0` · CardID `WatchTower` · `PlatformHeightUU = 1200` · the **600×600** deck · `AClimbableTower : public ABuilding` (⛔ never a subclass of `ATower`) · `TOWER-§5`'s fences · `TOWER-§4a`'s fall-damage finding · `TOWER-§4b`'s `bCanWalkOffLedges` ruling — ⛔ NOT RE-OPENED, ⛔ NOT RE-DERIVED, ⛔ NOT RE-TUNED BY THIS NAMESPACE.** Any task that touches one of them without a fresh directive from Jonathan is a **QA blocker on sight**.
+
+### TOWER-§8.1 ⭐⭐ THE MEASURED VERDICT — **A LADDER IS ⛔ NOT A GEOMETRY SWAP. IT IS A NEW TRAVERSAL SUBSYSTEM, AND HERE IS THE PROOF, READ AT THE SOURCE**
+
+> ### ⛔⛔ **A NAVMESH CANNOT PATH A VERTICAL LADDER. ⛔ `UCharacterMovementComponent` CANNOT CLIMB ONE. ⭐ BOTH HALVES WERE VERIFIED AT THE ENGINE AND IN OUR OWN TREE BEFORE THIS LAW WAS WRITTEN — ⛔ NOT TAKEN ON A RELAY (`TOWER-§4a`'s method ruling).**
+
+**The five measurements, each re-derivable from the cited file and line:**
+
+| # | Claim | ⭐ **MEASURED AT** | Verdict |
+|---|---|---|---|
+| **M-1** | Recast will not generate a walkable surface up a vertical face | `TOWER-§2a`'s own ceiling: `rcFilterLedgeSpans` nulls anything over **`atan(20/32)` = 32.005°**. A ladder is **90°** (this law pins **76.0°**) — **2.4× over the ceiling** | ✅ **CONFIRMED.** ⛔ **No amount of mesh authoring makes a ladder walkable. The ramp was chosen precisely because it dodged this, and that dodge is now spent.** |
+| **M-2** | Therefore the AI will not even *consider* the route unless an off-mesh connection exists | `ANavLinkProxy` (`Engine/Source/Runtime/AIModule/Classes/Navigation/NavLinkProxy.h`) ships **`PointLinks` (simple)** + **`SmartLinkComp` (`UNavLinkCustomComponent`)**; `IsNavigationRelevant()` = `PointLinks.Num() > 0 \|\| SegmentLinks.Num() > 0 \|\| bSmartLinkIsRelevant` (`NavLinkProxy.cpp:268-271`) | ✅ **CONFIRMED — a nav link is REQUIRED.** Without one the platform poly is an **island**: no path exists, so a unit ordered to the deck simply never goes. |
+| **M-3** | A **simple** link is not enough — it does not drive the unit, it only steers toward the far point | `UPathFollowingComponent::SetMoveSegment` calls `StartUsingCustomLink` **only when `PathPt0.CustomNavLinkId != FNavLinkId::Invalid`** (`PathFollowingComponent.cpp:959-963`). A simple link carries no such id ⇒ **ordinary steering, nothing else** | ✅ **CONFIRMED.** |
+| **M-4** | ⭐⭐ **AND ORDINARY STEERING PHYSICALLY CANNOT LIFT A WALKING PAWN** | `UCharacterMovementComponent::ConstrainInputAcceleration` (`CharacterMovementComponent.cpp:8121-8131`): *"walking or falling pawns ignore up/down sliding"* — it returns `FVector::VectorPlaneProject(InputAcceleration, -GetGravityDirection())` whenever `IsMovingOnGround() \|\| IsFalling()` | ✅⛔ **DECISIVE. THE VERTICAL COMPONENT OF THE STEERING VECTOR IS DELETED BY THE ENGINE, EVERY FRAME, BY DESIGN.** A unit handed a link whose far point is 1,200 uu overhead receives a horizontal input of ≈0 and **walks nowhere.** ⇒ **custom movement is REQUIRED; `CharacterMovement` does ⛔ not climb natively, and `EMovementMode` (`EngineTypes.h:1018-1045`) has ⛔ NO climb mode — `MOVE_None/Walking/NavWalking/Falling/Swimming/Flying/Custom`.** |
+| **M-5** | ⭐ **And this project has ⛔ NONE of it today** | Grepped `Source/GitClaudeUnrealTest/`: **`NavLink` = 0 hits · `SmartLink` = 0 · `MOVE_Custom` = 0 · `PhysCustom` = 0 · `CustomMovementMode` = 0.** The **only** `SetMovementMode` call in the entire project is `HeroCharacter.cpp:736` → `MOVE_Walking` | ✅ **CONFIRMED — this is greenfield.** ⛔ **Nothing is being extended; a subsystem is being introduced.** |
+
+**⇒ ⚖️ THE HONEST COST RESTATEMENT, AND IT INVERTS `TOWER-§0`'s:**
+
+- ⭐ **`TOWER-§0` said the rig is the cheap half and the ascent mechanic the expensive half. THAT IS STILL TRUE — and the ladder makes the expensive half BIGGER while making the cheap half MANDATORY.**
+- ⛔⛔ **THE CLIMB CLIP IS NO LONGER "POLISH, DEFERRABLE, GATED BEHIND HIS SITTING." IT IS REQUIRED, AND THE REASON IS A DIRECT CONSEQUENCE OF THE REDESIGN:** a unit **walking up a ramp** unanimated looks **fine** — the walk cycle is doing honest work. **A unit gliding up a ladder bolt upright reads as BROKEN.** ⇒ ⭐ **`TOWER-§1`'s ship-first law is SPENT: it bought a playable tower months early and it did its job. It does ⛔ not apply to the ladder, because there is no unanimated ladder that looks acceptable.**
+- ✅⭐ **THE GOOD NEWS FROM `TOWER-§0` STANDS UNCHANGED AND IS WORTH REPEATING: IT IS STILL **ONE** CLIP, ⛔ NOT THREE.** `SK_Archer` / `SK_Longbowman` / `SK_Wizard` all bind the single `/Game/Characters/SK_Footman_Skeleton`, the whole rigged fleet shares one `ABP_Footman`, and `IK_MeshyBiped → RTG_MeshyBiped_to_SiegeBiped → IK_SiegeBiped` ships. **`A_SiegeBiped_Climb` covers all three.**
+
+### TOWER-§8.2 ⚠️ WHAT THIS OBSOLETES — **STATED OUT LOUD, ⛔ NOT QUIETLY DISCARDED**
+
+| Artifact | Fate | ⚖️ Why, stated honestly |
+|---|---|---|
+| **`SM_WatchTower`'s ramp wedge** — the 2,078 uu run + the 14 hand-authored hulls tuned to it | ⛔ **RE-AUTHORED** (TASK-737) | There is no ramp any more. **The hulls were tuned to a shape that is being deleted; they go with it.** ⭐ **The platform at 1,200 uu, the 600×600 deck and the whole height-damage contract SURVIVE BYTE-FOR-BYTE** — this is a base-and-access rebuild, ⛔ not a new tower. |
+| **`TOWER-§2a`'s 30° / 32.005° derivation** | ⭐ **RE-SCOPED, ⛔ NOT STRUCK, ⛔ NOT DELETED** | The **30° slope** and **2,078 uu run** rows are moot **for this mesh**. ⛔ **Everything else binds every future ramp, hill and slope in the project** — and the deck this ladder lands on is sized from its 128 uu tax. **See the RE-SCOPED box at the head of `TOWER-§2a`.** |
+| **`ClimbableTower.cpp:106-107`'s ascent gate** — the elevation shell, and the known-open pivot-vs-mesh tuning item (pivot-centred ±1500 vs mesh x −600→+2458.46) | ⭐⭐ **DISSOLVES ENTIRELY — ⛔ DO NOT BOARD A FIX FOR IT** | The shell existed to stop an enemy **somewhere along a 2,078 uu approach nobody could locate in mesh-local space**. **A ladder has ONE discrete entry point**, so the gate becomes **one predicate at that point** (`TOWER-§8.6`). ⚖️ ***Fixing a tuning item that the next commit deletes is the purest form of wasted work.*** |
+| **The owed card-art re-render** (camera on the ramp's blind side) | ⛔⛔ **DO ⛔ NOT SPEND IT TWICE — the OLD one is RETIRED** | The mesh it was going to re-shoot **will not exist**. ⇒ **the re-render is re-boarded against the NEW mesh (TASK-740) and the old obligation is CLOSED, ⛔ not carried.** |
+| **`TOWER-§7` / TASK-735** — footprint-aware placement | ✅ **EASIER, ⛔ NOT OBSOLETE. KEPT.** | Footprint **~2,700 → ~750 uu**. ⭐ **The spec needs ⛔ zero edits because it takes the footprint FROM THE MESH.** See the amendment appended to `TOWER-§7`. |
+| **`TOWER-§1`'s ship-first law** | ✅ **SPENT, HONOURABLY** | It shipped a playable tower with zero animation and that was the right call. ⛔ **It does not survive contact with a ladder** (`TOWER-§8.1`). |
+
+### TOWER-§8.3 📌⛔ THE PINNED GEOMETRY — **BUILD TARGETS FOR *BOTH* LANES, ⛔ NOT A RANGE TO INTERPRET**
+
+> ### ⭐⭐ **THIS TABLE IS WHY THE ART LANE AND THE CODE LANE ARE `parallel-safe: yes`.** Neither waits for the other: **both build to these numbers**, and the sockets (`TOWER-§8.4`) let integration reconcile them without a re-spec. **This is the same move that let `TOWER-§2a` pin 2,078 uu before any mesh existed.**
+
+**Local space, `SM_WatchTower`'s own origin at the base centre. Project axes per "World axes (arena contract)".**
+
+| Property | ⭐ **Value** | Why this number, ⛔ and not the obvious one |
+|---|---|---|
+| **Platform rise** | **1,200 uu** | ⛔ **UNCHANGED** — `PlatformHeightUU`, `T-5`, and the whole `HIGH-§` contract (**×1.787** on the flat, **×2.44** from a hill) |
+| **Deck** | **600 × 600 uu** at Z **1,200** | ⛔ **UNCHANGED** — `TOWER-§4`'s "physical space is the cap", 4–6 bodies at `AgentRadius 34` |
+| **Body footprint** | ⭐ **600 × 600 uu**, X/Y ∈ [−300, +300] | **"Compact base", his word.** The deck's own footprint — ⛔ nothing wider. Total structure span **750 uu** (body + ladder reach) vs the ramp's ~2,700 ⇒ ⭐ **3.6× smaller** |
+| **`LadderFoot` socket** | ⭐ **(−450, 0, 0)** | ⛔ **NOT a style choice — it MUST sit on generated ground navmesh.** The body carves its 600×600 footprint and `rcErodeWalkableArea` takes **2 more cells (64 uu)** ⇒ ground nav starts at **X ≤ −364**. **−450 clears it by 86 uu.** |
+| **`LadderTop` socket** | ⭐ **(−150, 0, 1200)** | ⛔ **MUST sit on generated DECK navmesh.** A 600 uu deck loses **64 uu per side** to ledge-nulling + erosion (`TOWER-§2a`) ⇒ the surviving poly is **X ∈ [−236, +236]**. **−150 is 86 uu inside it.** ⚠️ **Placing it on the deck EDGE is the castle-floor defect class: every readback correct, nothing can use it.** |
+| **Climb line** | ⭐ **ONE STRAIGHT SEGMENT, `LadderFoot` → `LadderTop`.** Length **1,236.9 uu**, lean **76.0°** from horizontal | ⭐⭐ **A LEANING SIEGE LADDER, ⛔ NOT A VERTICAL ONE, AND THE REASON IS ENGINEERING, NOT TASTE:** a vertical ladder forces a **3-segment** traversal (step in · rise · step out), which is three times the code, three times the interruption cases, and three chances to desync from the mesh. **One straight segment cannot desync from itself.** ⭐ It also **animates far better** — a bolt-upright vertical climb is the exact thing that reads as broken — and a ladder leaning on a tower is on-theme for a siege game. **76° is 2.4× over the walkable ceiling, so Recast will never try to walk it** (⭐ that is a feature: ⛔ no ambiguity about which route the AI takes) |
+| **Ladder width** | **≥ 120 uu** | `AgentRadius` 34 ⇒ a 68 uu body plus visual margin. ⛔ Not a nav number — nothing walks it — purely so the climbing unit does not visibly clip the stiles |
+| ⭐⭐ **RUNG PLANE** ***(NEW 2026-09-01 — ⛔ this is a SECOND, DIFFERENT plane and the whole row exists to say so)*** | ⭐ **mid-plane at −22.0 uu** from the climb line, measured along the in-plane normal pointing AWAY from the tower. **Near face −12, far face −32 ⇒ 20 uu slab.** Stiles **±66 / ±86** ⇒ **132 clear / 172 overall** | ⛔⛔ **THE CLIMB LINE IS ⛔ NOT THE RUNG PLANE, AND CONFLATING THEM HAS ALREADY COST ONE DEFECT.** The climb line is where the **capsule** travels; the rung plane is where the **hands** must grip. ⚠️ **They differ by 22.0 uu because the ladder slab sits INBOARD of the socket line** — a unit stands *outboard* of the stiles. ⇒ **an animator who puts grips on the climb line authors hands that grip 22 uu short of the rungs** (TASK-739 F5, measured off the shipped FBX; the stile figures match TASK-737 exactly, which is what validates the parse). ⚖️ **The clip is re-exported to THIS number (TASK-733b); ⛔ the law is ⛔ NOT bent to absorb the clip** |
+| **Standoff** | **≥ 56 uu** clear between the capsule surface and the body face along the whole line | The capsule is **r 34 / half-height 88** (`SiegeSpawnConstants.h:9`; the project never calls `InitCapsuleSize`). ⛔ **The climb is swept movement — a unit dragged through the tower body is a depenetration explosion** |
+| **Deck parapet, if any** | **OUTSIDE the 600×600 deck** | ⛔ **UNCHANGED from `TOWER-§2a`** — a rail carved **out of** the deck seeds erosion from its own face and costs another 2 cells per side |
+| **`MI_WatchTower_PBR`** | ⛔ **REUSED, not re-authored** | Same material, same texture set. **A redesign of the silhouette is ⛔ not a reason to re-render textures** |
+
+> ### ⚠️⚠️ **THE MESH↔CLIP BINDING — ADDED 2026-09-01, AND IT IS THE SAME SHAPE AS `TOWER-§8.5a`'s VOIDING CONDITION, DELIBERATELY.**
+> ⭐⭐ **THE ROOT CAUSE, RECORDED BECAUSE THE RECURRENCE IS THE REAL RISK: the F5 defect existed ⛔ ONLY because `SM_WatchTower` WAS RE-AUTHORED AFTER THE CLIP, AND ⛔ NOTHING TIED THE TWO TOGETHER.** The clip was correct against the law it was given; the mesh was correct against the law it was given; **the law simply did not contain the number where they meet.** ⚖️ *That is a specification failure, ⛔ not an execution failure by either lane, and neither TASK-733 nor TASK-737 is at fault for it.*
+> ⇒ ⛔⛔ **BINDING ON EVERY FUTURE `SM_WatchTower` RE-AUTHOR: RE-MEASURE THE RUNG PLANE AND REPORT IT, AND IF IT MOVES, RE-EXPORT `A_SiegeBiped_Climb` TO MATCH.** ⭐ **A mesh change that moves the rungs and leaves the clip alone is a SILENT defect — the hands miss, and ⛔ every readback is still correct.** ⚖️ *A conditional whose condition nobody re-checks is an unconditional one.*
+> 📌 **The two lanes' shared checklist is therefore THREE numbers, ⛔ not one: the CLIMB LINE (`LadderFoot`→`LadderTop`) · the ≥56 uu STANDOFF (which licenses `§8.5a`) · the RUNG PLANE (−22.0 uu, which the animation grips).** ⛔ **A re-author handoff that reports fewer than all three is incomplete.**
+
+### TOWER-§8.4 ⛔⛔ THE TWO PINNED CONTRACTS — **the SOCKETS and the API SIGNATURE. ⛔ NEITHER LANE MAY INVENT ITS OWN.**
+
+**(A) THE SOCKETS — the artist↔programmer seam.** `SM_WatchTower` ships exactly two sockets, named per the new **Static-mesh SOCKET names** clause: **`LadderFoot`** and **`LadderTop`**, at the `TOWER-§8.3` coordinates.
+- ⭐ **The code reads them at `BeginPlay` and ⛔ NEVER hardcodes the geometry** — `TOWER-§7`'s *"the size must come from the MESH, ⛔ never from a literal"*, applied a second time.
+- ⛔ **AND IT DEGRADES OPEN:** socket missing ⇒ fall back to the `TOWER-§8.3` literals, **one** warning naming the missing socket, ⛔ never a broken tower. ⭐ **That fallback is exactly what makes the two lanes parallel-safe: the code is correct before the mesh exists and self-corrects the moment it lands.**
+
+**(B) THE API — the ONE new coupling surface between a tower and a unit.** ⚠️⚠️ **STATED HONESTLY BECAUSE IT IS A REAL LOSS: `TOWER-§`'s founding idea was that the tower is a PLACE that never learns a unit exists. A ladder ENDS that** — something must drive a specific unit up a specific line. ⭐ **What is preserved, and it is the part that actually mattered: `HIGH-§3`'s fence is UNTOUCHED.** The tower still ⛔ never calls `HeightAdvantageMultiplier`, ⛔ never reports elevation, ⛔ never includes a `HIGH-§` header. **A unit on a hill and a unit on a tower at the same Z still deal identical damage, and the damage rule still does not know towers exist.** ⚖️ *The coupling that was refused was gameplay coupling; this is movement coupling, and there is no way to move a unit without touching it.*
+
+⛔ **BOTH programmer tasks compile against this EXACT signature. Neither may change it unilaterally** — an implementer who measures a better shape says so in the handoff and it lands as a **law amendment**, ⛔ never as a silent divergence (the `AS-§21` pinned-signature precedent):
+
+```cpp
+// ─── ASummonedUnit, public. Declared by TASK-738; called by TASK-734. ───
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FSiegeLadderClimbEnded, ASummonedUnit*, Unit, bool, bReachedTop);
+
+/** Drives a scripted traversal along the ONE straight world-space segment FromWorld -> ToWorld. Returns false
+ *  and changes NOTHING if the unit is dead, match-end frozen (bAIFrozen), spell-frozen (bSpellFrozen), or
+ *  already climbing.
+ *  ⛔ NO Z-ORDERING IS ENFORCED OR IMPLIED, AND THAT IS THE CONTRACT: the link is BothWays (TOWER-§8.7), so a
+ *  DESCENT passes the same two points the other way round. Which end is the deck is resolved by Z inside
+ *  (TOWER-§8.5a clause 1), never by argument order. ⛔ Do not "fix" this into Foot-then-Top. */
+UFUNCTION(BlueprintCallable, Category = "Siegebound|Unit|Climb")
+bool BeginLadderClimb(const FVector& FromWorld, const FVector& ToWorld);
+
+/** Ends an in-flight climb WHEREVER the unit is: restores the movement mode and lets it drop. Idempotent. */
+UFUNCTION(BlueprintCallable, Category = "Siegebound|Unit|Climb")
+void AbortLadderClimb();
+
+/** True for the whole ascent. Read by ABP_Footman's climb state and by the TOWER-§9 disarm guards. */
+UFUNCTION(BlueprintPure, Category = "Siegebound|Unit|Climb")
+bool IsClimbing() const;
+
+/** Broadcast EXACTLY ONCE per successful BeginLadderClimb — on arrival, abort, death, or EndPlay.
+ *  The tower's ONLY completion signal, so AClimbableTower needs NO tick (TOWER-§ keeps its no-tick property). */
+UPROPERTY(BlueprintAssignable, Category = "Siegebound|Unit|Climb")
+FSiegeLadderClimbEnded OnLadderClimbEnded;
+```
+
+#### ⚖️ AMENDED 2026-09-01 — **THE TWO PARAMETER NAMES: `LadderFootWorld`/`LadderTopWorld` ⇒ `FromWorld`/`ToWorld`. PROPOSED BY TASK-734, TAKEN BY TASK-738, RULED HERE.**
+
+> ⭐ **This is the `AS-§21` / `§8.4(B)` pinned-signature process working exactly as written: an implementer MEASURED a better shape, said so in the handoff, and it lands as a LAW AMENDMENT — ⛔ never as a silent divergence.**
+
+- ⛔⛔ **THE TRAP IT REMOVES IS REAL, ⛔ NOT COSMETIC.** `Foot`/`Top` **implies a Z-ordering the implementation deliberately does not enforce** — and an implied ordering is an invitation. ⚖️ **A future "tidy-up" that made the names true (assert Foot below Top, or sort the two points by Z) would SILENTLY BREAK CLIMBING DOWN** and manufacture exactly the stranded unit `TOWER-§8.7` exists to prevent. **The names now say what the function does.**
+- ✅ **VERIFIED SAFE, ⛔ not assumed: parameter names are NOT part of a function's type.** ⇒ the three compile-time `static_assert`s on member-function-pointer identity are **unaffected**, and TASK-734's call site passes positionally from locals **already named `FromWorld`/`ToWorld`**. ⭐ **Types, count and order are UNTOUCHED — this amendment changes zero bytes of the signature's type.** The reflected UFUNCTION pin names change and **nothing binds them yet** (TASK-739 reads only `IsClimbing`).
+- ⭐ **The state's fields moved with them (`Foot`/`Top` ⇒ `Start`/`End`)** for the same reason, and the freedom is now **assertable**: TASK-738's test 13 admits both argument orders, proves the descent direction is the exact negation of the ascent's, and proves each arrives where it was **sent** rather than where Z would sort it.
+- ✅ **CONFIRMED AT SOURCE BEFORE THIS AMENDMENT WAS WRITTEN** (⛔ not on relay): `SummonedUnit.h:1027` declares `FromWorld`/`ToWorld`; `SummonedUnit.cpp:155` refuses a degenerate line with a **symmetric** `SizeSquared()` test that *cannot* express an ordering; `SummonedUnit.cpp:194` resolves the deck by **Z**. ⛔ **There is no Z-ordering anywhere in the shipped path.**
+
+### TOWER-§8.5 ⚖️ THE TRAVERSAL — **`MOVE_Flying` + interpolation along the pinned line. RULED, WITH THE MEASUREMENT THAT LICENSES IT.**
+
+- ✅ ⭐⭐ **`MOVE_Flying` IS THE ONE SHIPPED MODE THAT ACCEPTS VERTICAL MOTION WITHOUT NEW PHYSICS CODE, AND THIS IS MEASURED, ⛔ NOT ASSUMED:** `ConstrainInputAcceleration` plane-projects **only** when `IsMovingOnGround() || IsFalling()` (`CharacterMovementComponent.cpp:8125`). **Flying is neither** ⇒ the vertical component survives. **`MOVE_Flying` also disables gravity, which is exactly what a climb wants.**
+- ⛔ **`MOVE_Custom` + a `PhysCustom` override is REFUSED FOR THIS SHIP** — it is a **new physics surface** in a project that has **zero** lines of custom movement (M-5), for a behaviour `MOVE_Flying` already delivers. 🧑 A later upgrade is fine; ⛔ it is not the first ship.
+- ⛔⛔ **A RAW `SetActorLocation` / `TeleportTo` LERP *OF THE TRAVERSAL* IS REFUSED OUTRIGHT.** It bypasses the capsule, the sweep and depenetration — a unit driven through the tower body, through other units, or through the deck. ⚖️ *And it is the mechanism `NAV-§` refuses on principle.*
+  - ⚠️⚠️ **BUT READ `TOWER-§8.5a` BEFORE RULING AGAINST ANY NON-SWEPT MOVE ON THIS LINE.** ⭐ **This bullet was written on 2026-08-30, BEFORE the mesh existed and BEFORE `LadderTop` was measured to sit 150 uu inside a solid deck slab.** ⛔⛔ **A QA gate that reads this bullet alone and fails the shipped deck-breach window is failing CORRECT code against STALE law** — the exception below is ruled, scoped, and conditional, and it is what makes the feature work at all.
+- ⚠️⚠️ **THE NAMED REGRESSION RISK OF THIS ENTIRE REDESIGN, AND IT IS WORSE THAN ANYTHING THE RAMP COULD DO: `MOVE_Flying` IGNORES GRAVITY, SO AN ABORTED CLIMB THAT FAILS TO RESTORE THE MOVEMENT MODE LEAVES A UNIT HANGING IN MID-AIR, FOREVER.** ⇒ ⛔ **EVERY exit path restores the mode and broadcasts `OnLadderClimbEnded` EXACTLY ONCE: arrival · `AbortLadderClimb` · a new order · death (`HandleDeath`) · `FreezeAI` · `ApplyFreeze` · `EndPlay` · ⭐ and the tower being destroyed mid-climb (`ABuilding::HandleDestroyed` destroys the actor, so `AClimbableTower::EndPlay` must abort every climber it started).** **A QA gate that does not check all eight is not a gate.**
+- ⭐ **The climb rate is ONE `EditDefaultsOnly` float, and it is Jonathan's exposure lever (`TOWER-§9`):** `LadderClimbSpeedUU = 350.f`. ⚖️ **DERIVED, ⛔ not felt: 350 is the `Speed` cell of the fastest ranged units (Archer, Wizard) in `Docs/Data/cards.csv`** ⇒ **ascending costs a unit exactly the time walking the same distance would** — the ladder adds ⛔ **no speed penalty on top of the disarm**, so the whole cost of the ascent is the vulnerability he ruled and nothing smuggled in beside it.
+
+### TOWER-§8.5a ⚖️⭐⭐ THE DECK-BREACH WINDOW — **THE ONE SCOPED EXCEPTION TO `§8.5`'s LERP REFUSAL. GRANTED 2026-09-01, ⛔ NOT A LOOPHOLE — AND IT IS CONDITIONAL.**
+
+> ### ⚖️ **RULING: GRANTED.** ⭐⭐ **THE LAW PREDATES THE MEASUREMENT THAT REFUTES IT, AND THE MEASUREMENT WINS.** `§8.5`'s refusal was written against a tower nobody had built yet. **TASK-737 then measured the mesh and TASK-738 re-derived it independently, and both land on the same fact: a fully swept climb CANNOT REACH THE DECK.** ⛔ **Refusing the exception does not preserve a safe feature — it ships a feature that silently does nothing.**
+
+**⛔ WHAT WAS MEASURED, ⛔ NOT ASSERTED — the chain that bought this ruling, recorded because the reasoning is the ruling:**
+
+| # | Who | Measurement | Consequence |
+|---|---|---|---|
+| 1 | **TASK-737** (mesh, art lane) | `LadderTop` is pinned **150 uu inside a solid deck slab** (hull 07, Z[1160,1200]) and approached from below at **76°** ⇒ the climb line's final **40.832 uu (3.30%)** lies **inside deck geometry**. Capsule↔slab clearance **−53.95 uu** | ⭐ **And it ⛔ REFUSED TO PRESCRIBE THE FIX** — correctly. A deck hatch containing the line's last stretch also contains the socket, leaving `LadderTop` **over a hole** = the **castle-floor defect class** (every readback correct, nothing can use it). A thinner slab cannot help: the **176 uu capsule straddles it** from a bottom-Z of 964 regardless of thickness, and the slab is already a lean 40 uu |
+| 2 | **TASK-738** (code lane) | **Re-derived it rather than relaying it, and found it WORSE:** the capsule's own traverse of the deck plane is **176 × 1.03078 = 181.4 uu of line** | ⛔⛔ **THE SWEEP DOES NOT STALL AT THE SLAB — IT STALLS ~131 uu BELOW IT**, because the capsule's **top** reaches the slab's underside long before its centre nears it. **The unit stops roughly a capsule-height short of the deck, silently, with all eight `§8.5` exits still perfectly correct** |
+| 3 | ⭐⭐ **TASK-738, and NOBODY HAD FLAGGED IT** | **The sockets are SURFACE points (`§8.3`: generated navmesh), but the thing that travels the line is the CAPSULE CENTRE**, which stands one half-height above whatever it is on | ⇒ the first delivery drove the centre to the **bare socket**, so the unit would have arrived with its **feet 88 uu below the deck, buried in the slab**, and depenetration would have dropped it back down the tower. ⚠️⚠️ **THEREFORE A NON-SWEPT STRETCH *ALONE* WOULD NOT HAVE FIXED THE FEATURE — it would have teleported the unit INTO the slab.** ⛔ **Both halves are required, and neither is optional** |
+
+**⚖️ `§8.5`'s THREE NAMED HARMS, ANSWERED ONE BY ONE — ⛔ the exception is granted because each is individually refuted, ⛔ not because the feature is inconvenient:**
+
+| The harm `§8.5` names | Verdict | Why |
+|---|---|---|
+| *"through the tower body"* | ⛔ **STILL REFUSED — and structurally, ⛔ not by promise** | `TOWER-§8.3` pins **≥56 uu of standoff** between the capsule surface and the body face **along the WHOLE line** (TASK-737 measured **59.624 uu** worst case). ⇒ ⭐⭐ **the ONLY static geometry this window can cross is the deck slab itself** — the very thing it must |
+| *"through other units"* | ⛔ **STILL SWEPT for 78% of the line** | `TOWER-§10` L-1 is **one climber at a time**, and a unit already standing on the deck is resolved by the **same depenetration** `TOWER-§4` already relies on for the 4–6 bodies up there |
+| *"through the deck"* | ⭐ **NOW MEASURED TO BE *REQUIRED*** | Row 1 above. **This is the harm the law was protecting, and the mesh has since made it the objective** |
+
+**📌 THE EXCEPTION, SCOPED — ⛔ EVERY CLAUSE IS BINDING. A window that breaks any one of them is ⛔ NOT covered by this ruling and `§8.5`'s refusal applies to it in full:**
+
+1. ⭐ **IT RIDES THE LINE'S *ELEVATED END*, RESOLVED BY **Z** — ⛔ NEVER "the last stretch", ⛔ NEVER argument order.** ⚖️ **This is the clause that makes DESCENT work:** climbing down, the unit **starts standing on the deck** and must pass **down** through the slab it is standing on, where a swept move **jams on frame one**. ⭐⭐ **Resolving by Z makes the window a fact about GEOMETRY rather than an ordering constraint on the API** — which is exactly what keeps `TOWER-§8.7`'s `BothWays` link honest (`bDeckIsAtEnd`, `SummonedUnit.cpp:194`).
+2. 📏 **SIZE CEILING: ≤ 3 × the capsule half-height, measured in **Z**, converted to line length by the line's OWN slope** (⛔ never a hardcoded `sin 76°`). Shipped: **264 uu of Z ⇒ 272.1 uu of line = 22.0%** of the 1,236.9 uu ascent. **The three terms are named and each earns its place:** one half-height because the capsule's **top** breaches first · one for how far the slab hangs **below its own surface** (⚠️ **a declared ASSUMPTION — code cannot read the mesh — and at 88 uu it is 2.2× the ~40 uu that actually ships**) · one because the capsule's **bottom** must clear the deck **surface** before sweeping is safe again.
+3. ⛔ **IT IS A CONTINUOUS DRIVE AT THE CLIMB RATE — ⛔ NOT A TELEPORT AND ⛔ NOT A LERP OF THE TRAVERSAL.** Same rate, same straight segment, no visual discontinuity. ⚖️ *A unit that popped 272 uu up a ladder would read as broken — the exact failure `A_SiegeBiped_Climb` exists to prevent.*
+4. ⚠️ **VELOCITY IS ZEROED ON EVERY BREACH FRAME.** Otherwise the two drivers fight: `PhysFlying` keeps sweeping the capsule from residual velocity (`BrakingDecelerationFlying` is **0**, so it never decays) and **re-jams it against the slab being stepped through**.
+5. ⭐ **THE ARRIVAL SNAP IS PERMITTED ONLY ON A ***REAL*** ARRIVAL.** ⛔⛔ **A timed-out or aborted climb is ⛔ NEVER handed the deck it failed to reach** — it drops from where it actually is. ⚖️ *A watchdog that teleports its casualty to the destination is not a watchdog.*
+6. ⭐⭐ **THE ENDPOINT LIFT IS PART OF THE EXCEPTION, ⛔ NOT A SEPARATE CHANGE: both endpoints are lifted from SURFACE space into CAPSULE-CENTRE space by `GetScaledCapsuleHalfHeight()` — ⛔ READ FROM THE CAPSULE, ⛔ NEVER A LITERAL** (the third application of `TOWER-§7`'s *"geometry comes FROM the thing"*; a BP child that resizes its capsule stays correct for free). **The SAME lift at both ends**, so the length, the direction and the watchdog budget are unchanged.
+7. ⚠️ **A STALL BEFORE THE WINDOW OPENS MUST FAIL *LOUDLY*.** If the slab is ever thicker than one capsule half-height the sweep jams below the window — and the `§8.5` watchdog must **drop the unit with a warning**, ⛔ never leave it hanging. **That is the second failure the watchdog now catches, and it is why it exists.**
+8. ⛔⛔ **THIS EXCEPTION IS SCOPED TO THE LADDER CLIMB LINE AND TO NOTHING ELSE.** ⛔ **It is ⛔ NOT a general licence for `SetActorLocation` anywhere in Siegebound.** `NAV-§`'s refusal of teleport-style movement stands **everywhere else, unweakened**.
+
+> ### ⚠️⚠️ **THE CONDITION THAT CAN VOID THIS RULING — AND IT IS A LIVE OBLIGATION ON THE ART LANE, ⛔ NOT A FOOTNOTE.**
+> ⭐ **The exception is licensed by `TOWER-§8.3`'s ≥56 uu standoff and by NOTHING ELSE.** The standoff is the only reason a non-swept window cannot cross the tower **body**. ⇒ ⛔⛔ **ANY RE-AUTHOR OF `SM_WatchTower` MUST RE-MEASURE THE STANDOFF ALONG THE WHOLE LINE AND REPORT IT.** **If the standoff is ever broken, `TOWER-§8.5a` IS VOID and `§8.5`'s outright refusal applies again** — because the window would then be able to drag a capsule through solid tower. ⚖️ *A conditional exception whose condition nobody re-checks is an unconditional one.*
+
+**🔍 WHAT A QA GATE MUST DO WITH THIS SECTION — ⛔ stated so the gate cannot fail correct code, and cannot rubber-stamp a bad one either:**
+- ⛔ **DO NOT flag the non-swept window as a `§8.5` violation.** It is ruled. **Check the eight clauses above instead**, one by one.
+- ✅ **DO flag** a window that is not Z-resolved · that exceeds 3 half-heights · that is a single-step teleport rather than a continuous drive · that skips the velocity zero · that snaps on a **non**-arrival · that uses a **literal** half-height · that is silent when it stalls · or that appears **anywhere other than this climb line**.
+- ✅ **DO confirm the self-check survives:** the foot and the midpoint of the line **ARE** swept. ⛔ **A whole-line non-swept traversal is still refused outright, and it is exactly what `§8.5` was written to stop.**
+
+### TOWER-§8.6 ⭐ THE TEAM GATE MOVES — **and it gets STRONGER, CHEAPER, and it DISSOLVES the open tuning item** (`T-3` upheld)
+
+- ✅ **`T-3` STANDS: enemies may ⛔ NOT ascend.** ⛔ The ruling is unchanged; **only the mechanism moves.**
+- ⛔ **THE PHYSICAL ELEVATION SHELL IS REMOVED** — `AscentGateVolume` and its three tuning properties (`AscentGateFloorUU` · `AscentGateHeadroomUU` · `AscentGateHalfExtentXY`). ⚖️ **It had exactly one job — stop an enemy partway up a 2,078 uu ramp whose mouth nobody could locate in mesh-local space — and that job no longer exists.** ⭐ **And it could not do the new job anyway: a scripted `MOVE_Flying` traversal is not reliably stopped by a blocking volume.**
+- ✅⭐⭐ **THE GATE BECOMES ONE PREDICATE AT THE ONE ENTRY POINT — AND THE PREDICATE ALREADY SHIPS, ALREADY PASSED QA, AND UNTIL NOW HAD ⛔ NO CALLER: `AClimbableTower::CanTeamAscend(ETeamId TowerTeam, ETeamId ClimberTeam)`.** It was written as a *statement* of the collision matrix so `T-3` was assertable headlessly. **The ladder gives it a real caller and makes it the live rule.** ⛔ **Its signature and semantics are FROZEN** (⛔ no capacity term, ⛔ no unit-type term — there are none in the rule); its internals are the implementer's.
+- ⭐ **AN OPTIONAL SECOND LAYER, ALLOWED ⛔ NOT REQUIRED:** `INavLinkCustomInterface::IsLinkPathfindingAllowed(const UObject* Querier)` would stop an enemy **pathing** to the ladder at all. ⚠️ **UNVERIFIED BY THIS LAW — nobody has measured what `Querier` actually is here.** ⇒ **the entry predicate is the SHIPPED gate; the pathfinding layer lands only if the implementer MEASURES the querier and says so in the handoff.** ⛔ **Do not assert it on my word.**
+- ⭐ **AND NOTE WHAT THIS DOES ⛔ NOT REINTRODUCE:** the castle's `UNavModifierComponent` team-**area** lane stays refused, and `TOWER-§4`'s objection (a) — *"it would make the tower unattackable by enemy melee"* — ⛔ **does not apply to a link-level gate**, because a link excludes a **connection**, ⛔ never the ground around it. ✅ **Enemy melee still walks up to the tower and hits it.**
+
+### TOWER-§8.7 ⛔⛔ THE LINK IS **`ENavLinkDirection::BothWays`** — **DERIVED, ⛔ NOT PREFERRED**
+
+- ⛔ **A one-way ladder makes the deck a DEAD END WITH NO LEGAL PATH OFF IT** ⇒ a unit ordered back to the ground has **no path**, path following never starts, and it stands there permanently. ⚖️ **That is a manufactured stuck unit — the exact `NAV-§` failure class this whole namespace exists to avoid.**
+- ⭐ **Under the ramp, descent was free because Recast polys are UNDIRECTED (`TOWER-§2a` / TASK-725 §7.4). ⚠️ A ladder does ⛔ NOT inherit that property — it must be RE-ESTABLISHED EXPLICITLY.** ⇒ **`BothWays`, and it costs one enum value.**
+- ✅ **Walking off the deck edge stays legal and free** — `bCanWalkOffLedges` is `true` and stays `true` (`TOWER-§4b`: it is the pressure-release valve that makes a capacity-counter-free platform safe), and **there is ⛔ no fall damage in Siegebound** (`TOWER-§4a`, measured). ⇒ ⭐ **a unit has TWO ways down: climb, or step off and drop. ⛔ Neither costs anything.**
+
+---
+
+## ⚖️ THE CLIMB IS A TACTICAL COMMITMENT — attackable + disarmed (2026-09-01) — namespace **TOWER-§9**
+
+**Jonathan's ruling, verbatim (2026-09-01):** *"they should be attackable while climbing, but they can't attack back."*
+
+> ### ⛔⛔ **THIS IS A ⛔ DECIDED REQUIREMENT, ⛔ NOT A PROCEEDING DEFAULT. IT DOES ⛔ NOT GO ON THE FOR-JONATHAN SHEET, IT IS ⛔ NOT RE-OPENED, AND IT IS ⛔ NOT SOFTENED INTO A "VULNERABILITY MULTIPLIER" HE DID NOT ASK FOR.**
+
+### TOWER-§9.1 ⭐ THE DESIGN REASONING, RECORDED SO IT SURVIVES THE RULE
+
+⭐⭐ **The tower's height bonus now has to be PAID FOR with an exposed, helpless window.** Before this ruling the ×1.787 was free — walk up, shoot harder, no downside. **A climb that cannot answer fire is a real risk/reward trade, and it is what makes the card interesting rather than strictly-better.** ⚖️ *A 30-gold card that only ever improves your position is not a decision; a 30-gold card that asks you to spend a helpless window is.*
+
+### TOWER-§9.2 📌 WHAT EACH HALF ACTUALLY COSTS — **MEASURED IN OUR OWN TREE**
+
+- ✅⭐ **"ATTACKABLE" IS FREE — ⛔ LITERALLY ZERO WORK.** A climbing unit is an ordinary live `ASummonedUnit` at an ordinary world location. **Nothing in enemy target acquisition filters on movement mode, on Z, or on state.** ⇒ ⛔ **do not write code to "make it targetable"; write a test that proves it already is.**
+- ⛔ **"CANNOT ATTACK BACK" IS THE ONLY WORK, AND THE SEAM ALREADY EXISTS: `ASummonedUnit::CanEverAttack()` HAS THREE SHIPPED, PROVEN GUARD POINTS** — `EnterAttack()` stands the unit **down to Idle**, `UpdateStateGrouped()` **acquires nothing**, `PerformAttack()` **refuses** (the `ASorcererUnit` / `AMinerUnit` idiom, TASK-360/397). ⭐ **The disarm is a STATE term evaluated at those SAME three points — ⛔ NOT a new suppression mechanism, ⛔ not a fourth guard point, ⛔ not a new attack path.**
+- ⚠️ **BUT ⛔ NOT `CanEverAttack()` ITSELF: it is a `const` CLASS-IDENTITY seal** (*"this class can never attack"*), and a climber is a normal unit in a **transient** state. **Overriding it per-instance would tell `ASorcererUnit`'s and `AMinerUnit`'s permanent seal and a 3-second climb apart by nothing at all.** ⇒ **a distinct per-instance state, ⭐ read alongside the existing `bAIFrozen` / `bSpellFrozen` terms that already sit at those very lines** (`SummonedUnit.cpp:2844`, `:2513`, `:1349`).
+- ✅ **THE DISARM ENDS THE INSTANT THE UNIT REACHES THE DECK.** ⚖️ **The vulnerability is the CLIMB, ⛔ never a lingering penalty** — a debuff that outlives its cause is a second rule nobody asked for.
+
+### TOWER-§9.3 ⚠️⚠️ THE EXPOSURE, **MEASURED AND HANDED TO HIM RATHER THAN SOFTENED** — and it is the reason this ruling could go wrong in play
+
+**Inputs, all from the shipped `Docs/Data/cards.csv` (post-×3 `Range`), ⛔ nothing estimated:**
+
+| Unit | HP | Damage | Range | Cadence | Speed |
+|---|---|---|---|---|---|
+| **Archer** | **45** | 10 | 2,100 | 1.2 s | 350 |
+| **Longbowman** | **70** | **18** | **3,600** | **1.5 s** | 300 |
+| **Wizard** | **45** | 15 | 2,100 | 1.6 s | 350 |
+
+**Climb line = 1,236.9 uu (`TOWER-§8.3`). Shots landed by ONE defending Longbowman = `floor(T / 1.5)` (conservative, favours the climber) … `+1` (if it is already firing when the climb starts):**
+
+| Climb rate | Window **T** | Longbowman shots | Damage | vs **Archer/Wizard (45 HP)** | vs **Longbowman (70 HP)** |
+|---|---|---|---|---|---|
+| **350 uu/s** ⭐ *(the shipped default — walk speed)* | **3.53 s** | **2–3** | **36–54** | ⚠️ **survives at 9 HP, or DIES** | ✅ survives (16–34 HP) |
+| 250 uu/s | 4.95 s | 3–4 | 54–72 | ⛔ **DEAD** | ⚠️ survives at 16 HP, or dies |
+| 150 uu/s | 8.25 s | 5–6 | 90–108 | ⛔ **DEAD twice over** | ⛔ **DEAD** |
+| 100 uu/s | 12.4 s | 8–9 | 144–162 | ⛔ **DEAD** | ⛔ **DEAD** |
+
+- ⛔⛔ **THE HEADLINE, STATED PLAINLY RATHER THAN BURIED: FOR A CLIMBING ARCHER OR WIZARD TO SURVIVE ONE DEFENDING LONGBOWMAN, THE ASCENT MUST FINISH IN UNDER 3.0 s — WHICH NEEDS A CLIMB RATE OVER 412 uu/s, FASTER THAN THE FASTEST UNIT IN THE GAME RUNS (Footman, 400).** ⇒ **At every plausible climb rate, a single defender holding a Longbowman makes the ladder lethal to the two units most likely to want it.** ⚠️ And the Longbowman is shooting from **3,600 uu** — **4.8× the tower's entire 750 uu footprint** — so it is not even in the fight.
+- ✅⭐⭐ **AND THE COUNTERWEIGHT, WHICH IS GENUINELY REASSURING AND WOULD BE DISHONEST TO OMIT: THE LADDER'S EXPOSURE WINDOW IS *SHORTER* THAN THE RAMP'S WAS — BY HALF.** The ramp was **2,078 uu of run = 2,399 uu of surface at 30°**, walked at 350 uu/s = **6.86 s**. The ladder is **3.53 s**. ⇒ **The climber is exposed for 48% less time. What changed is not the duration — it is that it cannot answer.**
+- ✅ **A SECOND MITIGATION, MEASURED: THE SHOOTER GETS ⛔ NO HEIGHT BONUS.** `HIGH-§2` grants the bonus **only when the attacker is above the target**, and a climber is **above** the ground shooter. ⇒ **the climber is exposed, ⛔ but not double-punished.**
+- ✅ **A THIRD, AND IT IS THE PLAYER'S OWN LEVER: THE CLIMB CAN BE ABORTED** (`TOWER-§10` row L-4). A new order drops the unit **free** — ⛔ no fall damage (`TOWER-§4a`). **A player who sees the arrows coming can bail.**
+- ⛔ **NONE OF THIS SOFTENS THE RULING. The lever is `LadderClimbSpeedUU` (one `EditDefaultsOnly` float), the height, or `HIGH-§7` row `R-2` — ⭐ all three are his, and all three are one word.**
+- ⚠️ **AND THE QUEUE MULTIPLIES IT** (`TOWER-§10` row L-1): one-at-a-time means **three archers sent to a tower under Longbowman fire queue at the foot and are shot one after another.** ⛔ **Named, ⛔ not fixed** — no observation exists yet, and boarding a repair for an unobserved symptom is guessing.
+
+---
+
+## ⚖️ THE FIVE LADDER BEHAVIOUR RULINGS (2026-09-01) — namespace **TOWER-§10** — proceeding defaults, ⛔ NONE BLOCKING
+
+| Row | Question | ⚖️ **Ruling** | Why — and what it costs to have ruled this way |
+|---|---|---|---|
+| **L-1** | Two units on one ladder, or **one at a time**? | ✅ **ONE AT A TIME.** The second unit **waits at the foot in its ordinary walking state** — ⛔ no queue object, ⛔ no counter, ⛔ no UI, ⛔ no replication | ⛔ **Two capsules interpolated along one line WILL interpenetrate** — `bUseRVOAvoidance` is `false` (`TOWER-§4b`), so units physically jostle, and depenetration would shove one **off** the climb line mid-air. ⭐⭐ **AND THE OCCUPANCY LIST IS FREE, MEASURED: `UNavLinkCustomComponent` ALREADY tracks `MovingAgents` and exposes `HasMovingAgents()`** (`NavLinkCustomComponent.h:106-107`, `.cpp:200/213`). ⚠️ **VERIFY, ⛔ DO NOT ASSUME: I measured only that `OnLinkMoveFinished` removes an agent and that `OnPathFinished` / `StartUsingCustomLink` call it. Whether a unit DYING mid-climb reaches that path is UNMEASURED — the tower clears its own occupant defensively regardless.** ⚠️ Residual: a waiting unit must keep re-requesting, ⛔ never latch idle (`NAV-§`) |
+| **L-2** | Attackable / can it attack mid-climb? | ⛔⛔ **NOT A DEFAULT — JONATHAN RULED IT: attackable, cannot attack back.** See **`TOWER-§9`** | — |
+| **L-3** | Descend by ladder, or step off and fall? | ✅ **BOTH.** The link is **`BothWays`** (⛔ **required**, ⛔ not preferred — `TOWER-§8.7`) **and** walking off the edge stays legal | Falling is **free and already ruled** — ⛔ no fall damage anywhere in Siegebound (`TOWER-§4a`, measured). ⛔ A one-way link manufactures a stranded unit |
+| **L-4** | Selectable / orderable mid-ascent? | ✅ **Selectable YES. A new order ABORTS the climb and the unit DROPS from wherever it is.** ⛔ **NOT committed-once-started** | ⛔ Hiding a live unit from selection is new UI state nobody asked for. ⭐⭐ **And the abort is what keeps `TOWER-§9` from being a death sentence: it is the player's escape hatch, and it costs nothing because the drop is free.** ⚠️ It is also the traversal's **most likely** exit path ⇒ ⛔ **the movement-mode restore must be bulletproof there first** |
+| **L-5** | A unit mid-climb when the **tower dies**? | ✅ **The climb ABORTS and the unit FALLS and survives** — ⛔ no teleport, ⛔ no catch, ⛔ no death, consistent with `T-4` | ⚠️⚠️ **BUT ⛔ NOT FREE ANY MORE, AND THIS IS THE ONE PLACE THE REDESIGN GENUINELY ADDS RISK:** under the ramp the floor vanished and `CharacterMovement` dropped to `MOVE_Falling` **by itself**. **A `MOVE_Flying` climber will ⛔ NOT fall — it will HANG IN THE AIR** unless `AClimbableTower::EndPlay` explicitly aborts it. ⇒ ⛔ **an explicit abort-on-destroy is REQUIRED** (`TOWER-§8.5`). ⚠️ `TOWER-§4a`'s declared residual (landing in a footprint whose navmesh has not regenerated, with ⛔ no recovery lane) **still stands, unchanged and still unsolved by design** |
+
+### TOWER-§6 (AMENDED 2026-09-01) — the FOR-JONATHAN rows this namespace now owes
+
+| Row | Question | **Status / proceeding default** |
+|---|---|---|
+| **T-2** | Which ascent ships — ramp or climb clip? | ⛔⛔ **CLOSED BY DIRECTIVE 2026-09-01. He chose the ladder ⇒ the clip is REQUIRED, ⛔ no longer deferrable, and `TOWER-§1`'s ship-first law is spent.** ⛔ **Do not ask him this again.** |
+| **T-6** | May a tower be dropped on your own units? | ✅ Unchanged (⛔ refuse the placement). ⭐ **Footprint restated: ~750 uu, ⛔ not ~2,700** |
+| **T-7** ⭐ *NEW* | ⭐⭐ **The rig is now REQUIRED, ⛔ not polish — and the ×3 range makes a helpless climber very killable.** Retune `LadderClimbSpeedUU`, the height, or `R-2`? | ✅ **Ships at 350 uu/s** (= walk speed, ⇒ ⛔ no speed penalty on top of the disarm). ⚠️ **Full exposure table in `TOWER-§9.3` — read it before answering** |
+| **T-8** ⭐ *NEW* | One climber at a time (`L-1`)? | ✅ **One at a time**, second waits at the foot |
+| **T-9** ⭐ *NEW* | A leaning **76°** siege ladder (`TOWER-§8.3`) rather than a vertical one? | ✅ **Leaning** — ⭐ **⅓ the traversal code, animates far better, ⛔ still unwalkable by Recast** |
+| **T-10** ⭐ *NEW* | Abort-on-new-order (`L-4`) — escape hatch, or should a climb be a commitment? | ✅ **Abortable.** ⭐ **It is the counterweight to the disarm** |
+| **T-11** ⭐ *NEW* | ⚠️ **The tower is a REDESIGN of shipped, QA-passed, working content.** Card art is re-rendered against the new mesh; the OLD owed re-render is **retired, ⛔ not spent twice** | ✅ **Confirmed** — the mesh it would have shot will not exist |
+
+---
+
+## ⚖️ MAP MARKS — the player draws numbered circles and the AI can be told to use them (2026-09-01) — namespace **MARK-§**
+
+📌 **BORN WITH ITS NAMESPACE PREFIX (`MARK-§N`).** Cite as `MARK-§3`, never a bare `§3`.
+
+**Trigger — Jonathan's directive, verbatim:** *"With the map that you pull up when walking up to the commander, I want you to be able to click on anywhere on the map, to create a circle on the map at that location. you can hover the mouse over it and use the mouse wheel scroll to make that circle larger or smaller. You can right click to delete that circle. Every time you make a new circle, it gets its own number in the middle of it. The first circle you create is circle "1", the next number you create is circle "2". The next number you create is circle "3", etc. This number system will also us to then communicate with the AI about where exactly we want units to be. For example, I can make 3 different circles and then tell the commander something like "move all units to hold 1" or "move all units to ambush 2", and the AI can use that indicated circle on the map to carry out the command."*
+
+### MARK-§0 ⭐⭐ THE HEADLINE — **THIS IS ⛔ NOT A UI FEATURE. IT IS A NEW REFERENT CLASS IN THE AI COMMAND GRAMMAR, AND IT IS THE ANSWER TO `D8`.**
+
+> ### ⚖️⭐⭐ **`D8` IS CLOSED, DATED 2026-09-01, AGAINST THIS DIRECTIVE — AND THE ANSWER IS ⭐ BETTER THAN THE ONE `D8` ASKED FOR.**
+
+- **`D8` asked** (`WR-§6`, the `SM_POI_01..04` clause): *"whether 'points of interest' should become nameable places the AI can reason about is FLAGGED to him, ⛔ not assumed."*
+- ✅ **HIS ANSWER, ARRIVED AT SIDEWAYS AND BETTER: the nameable places are ⛔ NOT the decorative landmarks. They are PLAYER-DEFINED, DRAWN AT RUNTIME, AND NUMBERED BY THE PLAYER HIMSELF.**
+- ⭐ **WHY IT IS STRICTLY BETTER, recorded so the closure is not read as a shortcut:** a baked landmark symbol is **fixed at author time**, spends prompt characters **every single turn whether or not anyone cares about it**, and names a place the player may have no interest in. **A mark is created only when the player wants one, means exactly what he intends, and disappears when he deletes it.** ⇒ ⛔ **`SM_POI_01..04` STAY SCENERY WITH NO SYMBOL AND NO `ResolvePlace` ENTRY. That half of `D8` is refused on the record, not merely unbuilt.**
+- ⛔ **`D8` is ⛔ NOT re-opened by any agent.** A future ask for named landmarks is a NEW question with a NEW cost.
+
+### MARK-§1 ⭐⭐⭐ THE ZONE-A COST — **MEASURED BEFORE A TASK WAS WRITTEN, AND IT IS *ZERO*. THE BYTE-FREEZE SURVIVES.**
+
+> ### ✅⛔ **`Siegebound.Assistant.ZoneA.MeasuredCharCount` STAYS **5658**. THE MARK REFERENT SPENDS ⛔ **ZERO** ZONE-A CHARACTERS. ⛔ NO RE-BASE, ⛔ NO NEW BASELINE, ⛔ NO `AS-§21.7` CEILING SPEND.**
+
+⚠️ **THIS IS A DERIVATION FROM FIVE SOURCE READINGS, ALL TAKEN 2026-09-01, EACH CITED. ⛔ It is a structural argument about what the shipped prompt already says — ⛔ NOT an accuracy prediction, and ⛔ `AS-§12f` forbids attaching one.**
+
+1. ⭐⭐ **`SiegeAssistantSnapshot.cpp:1109` — `WHERE  = a place symbol from places in [FORCES], or "none"`.** ⇒ ⭐ **THE SHIPPED PROMPT DEFINES `where` BY REFERENCE TO `[FORCES]`, ⛔ NOT BY REFERENCE TO ZONE A'S FIXED LIST.** A symbol that appears in Zone C's `places:` line is, **by that line's own words, already a legal `where`.** ⇒ **nothing has to be added to teach it.**
+2. ✅ **`SiegeAssistantSnapshot.cpp:1081-1083`, the shipped comment:** *"ZONE A PRINTS THE FULL FIXED VOCABULARY, THE GRAMMAR ENFORCES WHAT EXISTS THIS MATCH."* ⇒ **the fixed/per-match split this feature needs ALREADY EXISTS and is already load-bearing** (it is why `ancient_ground_*` may be absent on a map without one).
+3. ✅ **`SiegeAssistantSnapshot.cpp:1813` — `Head += TEXT("places: ");` followed by the per-match `PlaceNames`.** ⇒ **the publication point exists**; marks append to it exactly as an ancient ground does.
+4. ✅ **`USiegeAssistantGrammar::Build(UnitKinds, PlaceNames, RegionPlaceNames)`** takes `PlaceNames`. ⇒ **appending mark symbols to `GetPlaceNames()` makes them GBNF-samplable with ⛔ ZERO grammar-code change.**
+5. ⭐⭐ **`SiegeAssistantVocabulary.cpp:223` — `hold` IS ALREADY A SHIPPED ALIAS OF THE `guard` INTENT**, and `ambush` is one of the seven shipped intents. ⇒ ⭐⭐ **JONATHAN'S TWO EXAMPLE SENTENCES ALREADY PARSE UNDER THE SHIPPED GRAMMAR IN EVERY PART EXCEPT THE PLACE.** ⛔ **No new intent. ⛔ No eighth `who` shape. ⛔ No new cross-field check. The entire AI half of this feature is ONE new `where` value.**
+
+- ⭐ **THIS IS `WR-§6`'s CLICK→SYMBOL TRICK, APPLIED A SECOND TIME AND FOR THE SAME REASON.** The map still writes **a place symbol string** into the console input box which the player sends himself. ⛔ **No coordinate, no radius, no dot, no count and no marker geometry enters any prompt zone.** ✅ **The airlock argument is UNCHANGED, ⛔ not weakened: a mark's centre is resolved on the GAME side by `ResolvePlace`, exactly as `nearest_mine` resolves to a world position today without ever printing one.**
+- 📌 **THE COSTED RESERVE, PRE-MEASURED SO IT IS ⛔ NEVER DISCOVERED AT A GATE:** *if* live play shows the model refusing a symbol that is absent from Zone A's `places` block, the fallback is **ONE line appended to that block** — e.g. `circle_1..9 = map circles the player drew` = **42 chars**, or the fuller `circle_N = a numbered circle the player drew on his map` = **56 chars**. ⛔ **That line is ⛔ NOT authored in this batch.** Taking it **breaks the 5658 freeze** and costs a named, dated re-base plus the component-by-component `ZoneATest.cpp:617-641` assertion idiom. ⚖️ **It is recorded here so the decision is a one-line edit against a known price, ⛔ never a mid-gate scramble.**
+
+### MARK-§2 ⚠️⚠️ THE COST THAT IS **NOT** ZERO — **ZONE C, MEASURED, AND IT MUST GO IN FRONT OF JONATHAN**
+
+> ### ⛔ **EACH PUBLISHED MARK COSTS `, circle_N` = **10 CHARACTERS** OF ZONE C. THE 13-KIND BOARD HAS **~6**. ⇒ ⛔ **ONE MARK ALREADY EXCEEDS THE HEADROOM.**
+
+- **The arithmetic, from the shipped header — ⛔ not from memory** (`SiegeAssistantSnapshot.h:290`, `:379-381`): Zone C's budget is `SnapshotTrimBudgetChars (1085) − ZoneBCharReserve (192)` = **893 chars**, less head and tail. **A 13-kind board measures 887** ⇒ **~6 chars of headroom**, and **~7 extra characters of typed `order:` text already re-collapses the tail.**
+- ✅⛔ **WHAT THE OVERRUN ACTUALLY DOES — AND IT IS ⛔ NOT AN OVERFLOW, A CRASH, OR A SILENT FAILURE:** the **shipped elastic trimmer** collapses the roster tail into `other_kinds:`, **which prints NAMES** ⇒ **the collapsed kinds keep their EXISTENCE and lose their COUNTS**, and `BuildZoneC` **logs every time it degrades.** ⇒ **the degradation is graceful, observable and already tested.** ⚖️ **That is why this finding is a DECLARED COST and ⛔ NOT a blocker — but it is his to price, ⛔ not an agent's to absorb quietly.**
+- ⭐ **THE FUNDED LEVER EXISTS AND IS ALREADY BOARDED:** `ZoneBCharReserve = 192` is a documented over-charge against a Zone B **measured at 68 / 71** ⇒ ⭐ **~121 characters recoverable.** **TASK-528 owns it, MEASURE-FIRST** (`AS-§20.3`), and it is blocked on a **printed** `zoneB_chars` reading. ⛔ **That constant may ⛔ NEVER be moved from a derived figure, and this section does ⛔ NOT move it.**
+- ⇒ **AT THE RECOMMENDED CAP OF 9: worst case 9 × 10 = 90 chars ≤ the ~121 the lever buys, with ~31 to spare.** ⛔ **Without the lever, 9 marks cost ~90 chars of roster DETAIL on a full board.**
+- ⛔ **THE SYMBOL IS `circle_1`, ⛔ NOT A BARE DIGIT — AND THE REASON IS A COLLISION, ⛔ NOT TASTE.** Zone A already ships **`COUNT  = 1 to 30`** (`SiegeAssistantSnapshot.cpp:1061`). ⇒ **a bare `1` in the `where` field is a token the model has been taught means a QUANTITY**, and this project's entire measured failure history is *valid-shaped-wrong-command*. ✅ **`circle_1` matches the shipped underscore family (`own_castle`, `ancient_ground_near`, `nearest_mine`), matches Jonathan's own word, and is verifiable by string equality.** 📌 **Costed alternative, recorded ⛔ not taken: `c1` saves 6 chars/mark and is opaque to a 3-B model — take it only if the budget ever genuinely bites.**
+- ⛔ **THE PLAYER STILL SEES `1`.** ⭐ **The NUMBER is the player's; the SYMBOL is the model's.** The map draws **`1`** in the circle's centre and inserts **`circle_1`** into the input box. **These are two renderings of one identity and ⛔ neither may be shown in the other's place.**
+
+### MARK-§3 ⚖️ THE RULINGS — decided, with reasons, ⛔ none blocking
+
+| # | Question | ⚖️ **Ruling (proceeding default)** | Why |
+|---|---|---|---|
+| **M-1** | Renumber on delete, or leave a hole? | ⭐⭐ **LEAVE THE HOLE. Numbers are PERMANENT IDENTITIES, ⛔ never positions in a list.** A new mark takes the **LOWEST FREE** number | ⛔⛔ **THE DECISIVE REASON IS THE AIRLOCK, ⛔ not ergonomics: `WR-§6` law is that the map writes a symbol into the input box and *the player sends it himself*** ⇒ **there is a window of arbitrary length between composing `circle_2` and pressing Enter.** **If deleting mark 1 renumbered 2→1, a symbol already sitting in the player's box would silently denote DIFFERENT GROUND.** ⚖️ **That is an order the player gave being quietly redirected — the worst failure this whole feature could have.** ⚠️ Lowest-free reuse keeps a smaller version of the hazard (delete-then-recreate) and is accepted because the cap is 9 and monotonic numbering exhausts it in one match |
+| **M-2** | Per-player or shared? | ✅ **PER-PLAYER, CLIENT-LOCAL** — structural, via `ULocalPlayerSubsystem` | ⛔ **Zero replication, zero bytes on the wire, M8-safe by construction ⛔ rather than by discipline.** They are the player's own tactical notation |
+| **M-3** | Visible to the enemy? | ⛔ **NO** | ⚠️ **Deliberately the OPPOSITE of the ghost (`GHOST-§`), which he explicitly ruled enemy-visible.** ⭐ **Say the contrast out loud so the two are never "made consistent" by a later reader.** A private notation that the enemy can read is not a notation |
+| **M-4** | Persist across map close/reopen? | ✅ **YES, for the match.** Cleared on match reset / `PlayAgain()`. ⛔ **Never written to a save game** | ⚠️ ⛔ **DO ⛔ NOT COPY `WR-§7`'s CLEAR-ON-CLOSE RULE — it governs PURCHASED enemy intel and its whole point is that the snapshot goes stale.** A mark is the player's own note about his own ground and does not decay |
+| **M-5** | Max count? | ✅ **9** (`MaxMapMarks`, `EditDefaultsOnly`) | ⭐ **Three independent reasons agree: (i) `MARK-§2`'s 90-char worst case fits the ~121 the `ZoneBCharReserve` lever buys; (ii) single digits stay legible drawn inside a circle at map scale; (iii) a spoken order stays unambiguous — *"hold 1"*, never *"hold 11"*.** ⚠️ **At the cap, a further click REFUSES with a status line naming the cap — ⛔ never a silent no-op** (the shipped refusal doctrine) |
+| **M-6** | Region-bearing — may a mark take `{"in": …}`? | ⛔⛔ **NO IN v1. `where` ONLY.** | ⚠️ **A circle trivially satisfies `AS-§21.4`'s test, so this is a SCOPE fence, ⛔ not a capability claim.** ⛔ **The `ZONE =` line is GENERATED FROM THE FIXED TABLE'S `bHasRegion` COLUMN** (`SiegeAssistantSnapshot.cpp:1088-1107`) **and a per-match entry there would make Zone A VARY — destroying the byte-freeze and the KV prefix.** ⇒ ⛔ **the one shape that would cost real Zone-A bytes is the one shape v1 refuses.** ✅ Available later at a stated price |
+
+### MARK-§4 ⛔ THE MOUSE-WHEEL LAW — **A SECOND NAMED CONSUMER, IN A DIFFERENT LANE, AND THE SHIPPED CLAUSE IS AMENDED BY NAME**
+
+- ⚠️ **THE SHIPPED CLAUSE THIS BATCH WOULD OTHERWISE BREACH, quoted so the amendment is honest** — "Group orders — 3-zone HOLD + AMBUSH", **Wheel law**: *"POLLED input, NO new InputAction. `WasInputKeyJustPressed(EKeys::MouseScrollUp/Down)` inside the pick branch of `PlayerTick`… **The wheel is verified globally unbound (no camera zoom exists) and must stay INERT outside the pick flow.**"*
+- ✅⭐ **THE AMENDMENT, AND IT COSTS ⛔ NO CODE COLLISION AT ALL: the map's wheel is a SLATE EVENT ON A FOCUSED WIDGET (`NativeOnMouseWheel`), ⛔ NOT the controller's polled `WasInputKeyJustPressed`.** ⇒ ⛔ **`ASiegePlayerController::PlayerTick`'s pick branch is ⛔ NOT TOUCHED, and its "inert outside the pick flow" property is ⛔ LITERALLY UNCHANGED — the war map consumes the wheel in a different mechanism, in a different lane, only while it holds mouse focus.**
+- ⛔ **THE AMENDED SENTENCE READS: the wheel has exactly TWO consumers — the controller's group-pick poll, and `UWarMapWidget` while the map is open and the cursor is over it. ⛔ It stays inert everywhere else, and ⛔ no third consumer may be added without amending this line.**
+- ⚠️⚠️ **THE CONFUSION HAZARD, NAMED BECAUSE IT IS REAL AND WILL REACH THE PLAYER: THE GAME NOW HAS *TWO* DIFFERENT THINGS CALLED "CIRCLES", BOTH RESIZED BY THE MOUSE WHEEL.** ⭐ The **group-pick circles** (`GroupSelectRadiusDefault` 1200 / `GroupPositionRadiusDefault` 700 / `GroupAttackRadiusDefault` 1500; step 100, min 200, max 5000) are a **transient world-space gesture that ISSUES AN ORDER**. **Map marks are PERSISTENT NAMED PLACES that issue nothing.** ⇒ ⛔ **`HELP-§`'s controls menu MUST distinguish them explicitly** (`HELP-§2` already pins a detail page for *"what the first, second, and third circles do"*) — ⛔ **a help screen that conflates them is worse than no help screen**, which is `HELP-§2`'s own standard.
+- ✅ **REUSE THE SHIPPED TUNABLES' SHAPE, ⛔ NOT THEIR VALUES:** marks are sized in **map/widget space**, the group-pick circles in **world uu**. ⛔ **Do ⛔ NOT reuse `GroupRadiusWheelStep`/`Min`/`Max` numerically** — they are world-space and would be meaningless. **New, separately named, `EditDefaultsOnly` tunables, each with its consequence written beside it** (`HIGH-§1`'s law).
+
+### MARK-§5 NAMING + FILE MAP (the cross-task contract)
+
+| thing | law |
+|---|---|
+| pure data | **`FSiegeMapMark`** — `Source/GitClaudeUnrealTest/Siegebound/SiegeMapMark.h`, **header-only**, the **`TeamId.h` / `UnitCommand.h` pure-data-type precedent** (both the widget and the snapshot include it, so it ⛔ must not live inside either heavy header). Fields: `int32 Number` · `FVector2D WorldXY` · `float RadiusUU`. |
+| ⭐ the symbol | **`static FString FSiegeMapMark::MakeSymbol(int32 Number);`** → `TEXT("circle_1")`. ⭐⭐ **A PURE STATIC ON PURPOSE — it is the ONE seam both the widget and the snapshot must agree on, and it is testable by string equality with ⛔ no world, ⛔ no widget and ⛔ no snapshot.** ⚖️ **This is `WR-§6`'s UNFUNDED-MANDATE lesson applied at authoring time rather than after a red gate: the spec says WHERE the rule is readable from, ⛔ not merely that it must be tested.** |
+| store | **`USiegeMapMarkSubsystem : public ULocalPlayerSubsystem`** — `SiegeMapMarkSubsystem.{h,cpp}`. Owns the array, the lowest-free-number allocator, the cap. ⭐ **`ULocalPlayerSubsystem` is chosen so `M-2` (per-player) and the M8 declaration are ⛔ STRUCTURAL rather than disciplinary.** |
+| tunables | **`MaxMapMarks = 9`** · the wheel step / min / max radius (widget-space) — all `EditDefaultsOnly`, **each with its consequence written beside it** (`HIGH-§1`). |
+| widget | **`UWarMapWidget`** (`WarMapWidget.{h,cpp}`) — ⚠️⚠️ **`NativePaint`, ⛔ NOT `NativeOnPaint`** (the UE 5.8 spelling trap already recorded in that header at `:350-354`; the symbol does not exist). Marks are drawn in C++ via `FSlateDrawElement` alongside the shipped markers/dots, ⛔ **never as UMG child widgets** (`WR-§6`'s rendering ruling — same source of truth for painting and hit-testing, so what you see and what you click can ⛔ never disagree). |
+| snapshot | **`USiegeAssistantSnapshot`** — marks appended to `GetPlaceNames()` (⇒ grammar-legal for free) and answered by `ResolvePlace`. ⛔ **`GetRegionPlaceNames()` is ⛔ NOT touched** (`M-6`). |
+| ⛔ the airlock | ⛔⛔ **UNCHANGED AND RE-ASSERTED: ⛔ no coordinate, radius, dot, count or marker geometry ever enters a prompt zone; the map writes ONLY a symbol into the input box and the PLAYER sends it.** ⛔ **The map must ⛔ NEVER trigger a prompt-building `Capture()` as a side effect of opening a UI panel** (`WR-§6`'s snapshot hazard — if the only reachable route is a fresh `Capture()`, **STOP AND REPORT: that is a FINDING, ⛔ not a workaround to code around**). |
+
+### MARK-§6 📌 M8 DECLARATION
+
+⛔ **NO replicated property, ⛔ NO RPC, ⛔ NO new relevancy tier.** Marks are **client-local display + client-local symbol resolution**, and `ULocalPlayerSubsystem` makes that structural. ⚠️ **`M-3` (not enemy-visible) is what keeps it free; if that is ever overruled, this declaration is void and the feature acquires a replication design.**
+
+---
+
+## ⚖️ RECALL — the 10-second channel home (2026-09-01) — namespace **RECALL-§**
+
+📌 **BORN WITH ITS NAMESPACE PREFIX (`RECALL-§N`).**
+
+**Trigger — Jonathan's directive, verbatim:** *"I want to add a recall feature. From anywhere on the map, you can press "b", and that will allow the player to starting a recall animation similar to league of legends where after 10 seconds they teleport back to their castle and they completely refill their health. During this recall animation the player cannot attack and if they get hit with an attack it interupts the channel and they would have to press "b" again to start it from the beginning."*
+
+### RECALL-§1 ⭐⭐ THE MEASUREMENT THAT SHRINKS THIS FEATURE — **THE TELEPORT AND THE FULL HEAL ALREADY SHIP**
+
+- ✅ **`ASiegeGameMode` ALREADY OWNS A TELEPORT-HOME-AND-FULL-HEAL PATH**, read at source 2026-09-01 (`SiegeGameMode.h:46-51`): the hero's `FOnHeroDied` schedules a respawn *"exactly `HeroRespawnDelay` (5 s) later: **teleport to the PlayerStart** (L_Arena places it on the Blue side) **or — when no PlayerStart exists — next to the hero's own castle**, then repossess and `ResetHero()` (**full HP**, input restored)."*
+- ⇒ ⭐ **RECALL IS ⛔ NOT A NEW DESTINATION RULE. It is a CHANNEL in front of a destination rule that already exists, and it must reuse that rule's resolution ⛔ rather than hand-type a location.** ⚠️ **`handoffs/TASK-569-buildmaster.md` row (n) — *"hero spawns OUTSIDE the keep"* — is the recorded precedent for getting exactly this wrong. Cite it; do not repeat it.**
+- ⛔⛔ **BUT ⛔ RECALL MAY ⛔ NEVER CALL `ResetHero()`. THIS IS THE BATCH'S SHARPEST TRAP AND IT IS PRE-EMPTED HERE RATHER THAN AT A GATE.** `ResetHero()` is a **DEATH-path** function: it **re-applies the hero's cumulative upgrade mods onto a freshly-restored base** (`HeroCharacter.cpp:711-722`), **re-arms the War Banner aura** (`:752`), and **restores input that `HandleDeath` disabled** (`:739`). ⇒ ⛔ **Calling it on a LIVE hero double-applies upgrades and re-arms a running aura.** ✅ **Recall performs exactly two effects: the teleport, and `CurrentHP = GetEffectiveMaxHP()`.**
+- ⛔⛔ **THE HEAL READS `GetEffectiveMaxHP()`, ⛔ NEVER `MaxHP`.** `HeroCharacter.h:337` names it *"the single source used by every HP clamp / regen cap / full-heal."* ⚖️ **A `MaxHP` read silently under-heals a Plate-Armor hero by up to 200 HP and looks completely correct in review** (`MaxHP` 200 + `MaxHPBonus` 100 × 2 stacks).
+
+### RECALL-§2 ⛔ INPUT — **`B` GOES THROUGH THE LAYOUT SYSTEM, ⛔ NEVER A HARDCODED KEY**
+
+- **New asset: `IA_Recall`** (`/Game/Input/Actions/IA_Recall`, Digital/bool) mapped to **B** in `/Game/Input/IMC_Hero`.
+- ⛔⛔ **`B` IS ⛔ NOT ASSUMED FREE — IT IS PROVEN FREE, IN THE ASSET, BEFORE IT IS CLAIMED.** This is **`HELP-§4`'s law, verbatim, in its second application**: `IMC_Hero` is a **binary asset** and the bindings live inside it. ⛔ **FLAG — ⛔ never stomp — any conflict** (the `IA_CmdAmbush`/**F** precedent). **A conflict is a FOR-JONATHAN row, ⛔ not an agent's call.**
+- ✅ **The append is the `KBD-§2a` EDITOR-TIME AUTHORING CARVE** — a scratchpad script, ⛔ never `Source/`, **ONE `MapKey`, ONE appended row**, ⛔ `UnmapKey`/`UnmapAll` stay banned, **EMPTY `Triggers` + EMPTY `Modifiers`**, and the survivors proven **by naming the modifier objects, ⛔ not the keys**.
+- ⭐ **`KBD-§4` TABLES ALL 26 LETTERS ⇒ `B` INHERITS DVORAK SUPPORT WITH ⛔ ZERO EXTRA CODE.** ⛔ **No `EKeys::B` literal on any shipped path.**
+- ✅ **Controller/hero side: soft-ref + null-safe resolve — a missing asset means `B` is INERT, ⛔ never a crash** (the `IA_Cmd*` pattern).
+
+### RECALL-§3 ⛔⛔ `Escape` IS UNTOUCHABLE — **AND THE CHANNEL ADDS ⛔ NO KEY HANDLER AT ALL**
+
+- ⛔ **`AS-§6` A-2 is PERMANENT.** ⛔ **The channel may ⛔ NOT absorb, re-route, consume or "harmlessly handle" `Escape`** — ⛔ not via `NativeOnKeyDown`, ⛔ not `NativeOnPreviewKeyDown`, ⛔ not an Enhanced Input action, ⛔ not a Slate `FReply::Handled()`, ⛔ not a viewport intercept. **Returning `Handled` for `Escape` is overturning a Jonathan ruling and is an AUTOMATIC QA FAIL.**
+- ✅ ⇒ **THE CHANNEL IS CANCELLED BY `B` OR BY MOVEMENT AND BY NOTHING ELSE. That is the complete list.** ⚠️ **The shipped cancel routes (placement, spell targeting, group-pick) must keep firing byte-identically while a channel runs.**
+
+### RECALL-§4 ⚖️ THE RULINGS — decided, with reasons, ⛔ none blocking
+
+| # | Question | ⚖️ **Ruling (proceeding default)** | Why |
+|---|---|---|---|
+| **R-1** | Does *any* damage interrupt, or only damage that LANDS? | ✅ **ONLY DAMAGE THAT LANDS** — a `TakeDamage` that reduces HP by **> 0 after mitigation**. ⛔ A miss / blocked / 0-damage event does ⛔ NOT interrupt | ⚖️ **"if they get hit with an attack" is the player's language for *taking damage*.** ⭐ **And it is the only version that is TESTABLE at a single seam:** `AHeroCharacter::TakeDamage` (`HeroCharacter.h:136`) already returns the applied amount. ⛔ Coupling to *attempted* attacks would need a new notification surface for a rule nobody asked for |
+| **R-2** | May the player cancel deliberately? | ✅ **YES — re-pressing `B`, or moving.** ⛔ **Never `Escape`** (`RECALL-§3`) | ⭐ **Movement-cancel is the League convention he invoked by name.** ⛔ A channel with no voluntary exit is a trap the player walks into once and never uses again |
+| **R-3** | Is the channel visible to the enemy? | ✅ **YES — a local visual tell ships.** ⛔ **The M8 replication shape is DECLARED and ⛔ NOT BUILT** | ⭐ **He named League; the tell is the mechanic's counterplay and the reason it has a duration at all.** ⚠️ **Honest limit: today's only opponent is `ASiegeBotController`, which does ⛔ not look at it** ⇒ **the tell is for the HUMAN observer and costs nothing now.** ⛔ **Do ⛔ not describe it as counterplay the bot exercises** (`ACC-§8`'s reserved-not-authored precedent) |
+| **R-4** | Restart-from-zero on re-press? | ✅ **YES, from zero. ⛔ No resume, ⛔ no partial credit** | ⛔ **His own words: *"start it from the beginning."*** ⛔ Not re-litigable |
+| **R-5** | Can the hero attack while channelling? | ⛔ **NO** — ride the hero's **shipped** attack entry point with a state term, ⛔ **never a new suppression mechanism** | ⭐ **`TOWER-§9.2`'s idiom, second application: a state term at an EXISTING guard point, ⛔ not a fourth guard point.** ⚠️ Movement is ⛔ NOT restricted — moving *cancels* (`R-2`), which is a different rule and must not be conflated |
+
+- **`RecallChannelSeconds = 10.f`**, `EditDefaultsOnly`, **with its consequence written beside it** (`HIGH-§1`'s law: a number whose consequence is not written next to it gets retuned by someone who does not know what they are changing).
+- ⛔ **EVERY EXIT IS ENUMERATED AND EACH CLEARS THE CHANNEL EXACTLY ONCE** — completion · re-press · movement · damage-that-landed · hero death · match end · `EndPlay`. ⚠️⚠️ **`TOWER-§8`'s hanging-unit lesson generalises: a timed state whose exits are not enumerated will strand the player in one of them.** **Name all seven in the handoff and say which test covers each.**
+
+### RECALL-§5 ⛔ THE HELP OBLIGATION IS PART OF THIS FEATURE, ⛔ NOT A FOLLOW-UP
+
+`HELP-§2` mechanism 2 is explicit: **a new action is made SURFACE-ABLE, ⛔ not automatically documented**, and *"a row whose text is missing renders as an explicit **(undocumented — TODO)**"*. ⇒ ⛔ **Recall ships with its `HELP-§` row AND its detail page in the same batch, or it ships visibly undocumented. There is no third option.** ⛔ **Every sentence in the detail page is traceable to a file:line the author actually read** (`HELP-§2` mechanism 3).
+
+### RECALL-§6 📌 M8 DECLARATION
+
+⛔ **NO replicated property and ⛔ NO RPC are AUTHORED in this batch.** ⚠️ **The channel is authority-relevant state and `R-3` names an enemy-visible tell** ⇒ **the M8 shape (`Server`/`Client` verb-noun, `ACC-§8`'s reserved-not-authored discipline) is DECLARED in a header comment and ⛔ NOT built.** ⛔ **"Nothing to declare" is false here and must not be copied from another batch's boilerplate** (`WR-§8`'s standing warning).
+
+---
+
+## ⚖️ DEATH, THE GHOST, AND THE 3-MINUTE TIMER (2026-09-01) — namespace **GHOST-§**
+
+📌 **BORN WITH ITS NAMESPACE PREFIX (`GHOST-§N`).**
+
+**Trigger — Jonathan's directive, verbatim:** *"I also want to add a respawn timer. If the player dies at any point during the match, they are dead for 3 minutes. During this time they instead get a ghost creature that they can control that is similar to their original body where it can command units, access the AI commander, and look at the map, it just cannot attack or be attacked. The enemy should be able to see this ghost as well. When the 3 minutes are up they respawn back at the castle."*
+
+### GHOST-§0 ⭐⭐⭐ THE MEASUREMENT HE MUST SEE BEFORE ANYONE BUILDS THIS — **THE SHIPPED DEATH PENALTY IS 5 SECONDS. HE IS ASKING FOR 180. THAT IS 36×.**
+
+> ### ⚠️⚠️ **`HeroRespawnDelay` SHIPS AT **5 s** (`SiegeGameMode.h:48`, GDD §3.1 *"back within 5-6 s"*). HIS ASK IS **180 s**. ⛔ THE NUMBER IS HIS AND ⛔ IT IS ⛔ NOT CHANGED BY ANY AGENT — BUT HE IS ⛔ NOT TOLD "3 MINUTES" IN ISOLATION. HE IS TOLD **36×**, BESIDE A MEASURED TIME-TO-LOSE.**
+
+- ⚠️⚠️ **AND THE SECOND HALF OF THE FLAG, WITH ITS RECORD CORRECTED RATHER THAN REPEATED:** this pipeline has recorded that **an unattended castle dies at ~T+4 min** — `TASKBOARD.md:9621` (CR-R5, the note that bought `SIE-§1`): *"SIE runs the full AI war unattended; **a castle dies ~T+4min** and takes its commander with it."*
+  - ⛔⛔ **THE COMMONLY-REPEATED "~3 MINUTES" IS A MIS-READING AND IS CORRECTED HERE: the 3-minute figure in `SIE-§1` is the *READ WINDOW*** (*"every live read lands in the first ~3 minutes of its session or the session restarts"*) — **a deliberate SAFETY MARGIN set BELOW the castle-death time. ⛔ It is ⛔ NOT the castle-death time.** ⚖️ **Reporting "3-minute respawn vs 3-minute raze" would be manufacturing alarm out of a margin, and `AS-§12g` forbids exactly this class of number-laundering.**
+  - ⚠️ **AND THE ~4 MIN FIGURE IS ITSELF WEAK EVIDENCE, STATED SO IT IS NOT LEANED ON:** it is an **incidental observation from an unattended SIE session**, ⛔ **never a deliberate measurement**, and it **pre-dates `HIGH-§` (×3 ranged range + the elevation damage bonus)** — **both of which make the attacker strictly stronger.** ⇒ ⛔ **the true current figure is UNKNOWN and is very likely LOWER.**
+- ⇒ ⭐⭐ **THEREFORE THE RAZE TIME IS RE-DERIVED AT THE CURRENT BUILD AND PUT BESIDE HIS NUMBER. ⛔ THE MEASUREMENT BLOCKS ⛔ NOTHING — his 180 s ships either way and the task is a one-line retune if he rules.** ⚖️ **A measured comparison is worth more than an opinion, and he can rule in one word.**
+- ✅ **THE LEVERS, NAMED FOR HIM SO THE RULING IS ONE WORD AND ⛔ NOT AN ESSAY:** **(a)** a shorter timer · **(b)** a timer that SCALES with match time (short early, long late) · **(c)** ⭐ **the ghost retains more influence — and `G-5` below is the concrete, already-identified lever** · **(d)** castle durability · **(e)** ⛔ **do nothing — a 3-minute death IS meant to be near-fatal.** ⚖️ **(e) is a legitimate answer and is listed so the question does not read as lobbying.**
+- 📌 **AND THE STANDING PARKED DATUM IS SPENT BY THIS, ⛔ not duplicated:** the board's **JR4** row parks *"the AI-razes-undefended-castle balance datum (659 §5.2)"*. ⇒ **this measurement DISCHARGES it; ⛔ do not board a second one.**
+
+### GHOST-§1 ⭐⭐ THE HEADLINE DESIGN RULING — **THE GHOST IS A NEW PAWN THAT DOES ⛔ NOT IMPLEMENT `ITeamAgent`, AND THAT ONE FACT DELIVERS "CANNOT BE ATTACKED" FOR FREE**
+
+> ### ✅⭐⭐ **`ASiegeGhostPawn : public APawn` — and it ⛔ DOES NOT implement `ITeamAgent`. ⇒ "CANNOT BE ATTACKED" IS ⛔ NOT A MECHANISM. IT IS A STRUCTURAL PROPERTY, AND IT COSTS ⛔ ZERO LINES OF SUPPRESSION CODE.**
+
+**MEASURED AT TWO INDEPENDENT SOURCES, 2026-09-01 — ⛔ this is a reading, ⛔ not an assumption:**
+- **`ASummonedUnit::AcquireTarget` (`SummonedUnit.cpp:1675`)** enumerates candidates with **`UGameplayStatics::GetAllActorsWithInterface(World, UTeamAgent::StaticClass(), TeamAgents)`**.
+- **`ATower` (`Tower.cpp:220` and `:378`)** does **the identical thing**.
+- ⇒ ⭐ **AN ACTOR THAT DOES NOT IMPLEMENT `ITeamAgent` IS ⛔ NEVER RETURNED TO EITHER, AND THEREFORE CAN ⛔ NEVER BE ACQUIRED BY THE UNIT FLEET OR BY ANY TOWER.**
+- ✅ ⇒ ⛔ **WRITE A **TEST** THAT PROVES IT, ⛔ NEVER A MECHANISM.** ⭐ **`TOWER-§9.2`'s "attackable is free" idiom, inverted and applied a second time.** ⚖️ **A structural property cannot be forgotten at a guard point; a flag can.**
+
+> ### ⭐⭐⭐ **AND THE SAME RULING IS THE PARALLELISM ARGUMENT — SAID OUT LOUD BECAUSE IT IS ⛔ NOT A COINCIDENCE:**
+> **The REJECTED alternative — a `bIsGhost` flag on `AHeroCharacter` — would force `ASummonedUnit::IsTargetAlive` (`SummonedUnit.h:1952`, `.cpp:3843`) to learn about it.** ⛔ **That file is `TASK-738`'s SOLE-OWNED surface in the LIVE ladder wave** ⇒ **the flag shape is a hard write-collision and ⛔ NOT parallel-safe.**
+> ⇒ ⭐ **The better-designed shape and the schedulable shape are the SAME shape.** ⛔ **The flag shape is refused on BOTH grounds and is recorded here so it is ⛔ not re-proposed as a "simpler" fix.**
+
+#### ⭐ AMENDED 2026-09-01 BY TASK-749's OWN MEASUREMENT — **THE RULING IS ⛔ NOT WEAKENED; IT IS *STRONGER* AND MORE LOAD-BEARING THAN THIS SECTION CLAIMED**
+
+- ⭐⭐ **THERE ARE ***EIGHT*** `ITeamAgent` ACQUISITION SITES, ⛔ NOT THE TWO CITED ABOVE** — TASK-749 enumerated them rather than trusting this section's two. ⚠️ **The one that matters most was missing from the law: `FSiegeCombatStatics::ApplyRadialDamage` (`SiegeCombatStatics.cpp:36`) enumerates by the SAME interface ⇒ ⭐ EVERY AoE IN THE GAME.** ✅ **Confirmed at source before this amendment was written** (⛔ not on relay). ⇒ **the ghost is free of splash damage for the same structural reason it is free of targeting, and `AGoldNode`'s shipped non-implementation is the precedent that proves the idiom already carries weight** (`SiegeCombatStatics.cpp:33-34` says so in its own comment).
+- ⛔⛔ **THE CONSTRAINT THIS BUYS, AND IT IS A REAL TRAP: THE GHOST CAPSULE'S OBJECT TYPE MAY ⛔ NOT BE RE-TYPED TO `WorldStatic`.** ⚠️ **TASK-749 measured that doing so would insert the ghost into the *projectile terrain trace*** ⇒ ⭐⭐ **a dead player would be handed a PROJECTILE SHIELD — his corpse's ghost soaking shots aimed at his own army.** ⚖️ *The `ITeamAgent` ruling makes the ghost unattackable; a careless object type would make it a fortification.* ⛔ **This is ⛔ NOT a style preference. Any change to `ASiegeGhostPawn`'s collision object type must re-measure the projectile trace and say so.**
+
+### GHOST-§2 ⭐ WHAT ALREADY SHIPS — **THE RESPAWN IS A RETUNE, ⛔ NOT A NEW MECHANIC**
+
+Read at source 2026-09-01, `SiegeGameMode.h:46-51` + `:243-251`:
+- ✅ **`FOnHeroDied` → `HandleHeroDied` → a per-controller `HeroRespawnTimers` entry → teleport (PlayerStart, else beside the hero's own castle) → repossess → `ResetHero()` (full HP, input restored).** ⭐ **All of it ships and all of it is QA-passed.**
+- ✅ **`HeroRespawnDelay` is already a `UPROPERTY` on `ASiegeGameMode`.** ⇒ ⭐ **HIS 3 MINUTES IS ONE NUMBER: `5.f → 180.f`.**
+- ✅⭐ **"WHAT HAPPENS IF THE MATCH ENDS WHILE DEAD" IS ⛔ ALREADY RULED AND NEEDS ⛔ NO NEW RULE:** *"After match end the hero stays down; `PlayAgain()` revives it"* and *"After match end no respawn is scheduled."* ⇒ ⛔ **The ghost inherits this exactly: match end retires the ghost, the end screen shows, `PlayAgain()` restores the hero.** ⛔ **Do ⛔ not invent a second match-end rule.**
+- ⛔ **THE `// GDD §3.1` COMMENT BESIDE `HeroRespawnDelay` IS REWRITTEN, ⛔ NOT LEFT LYING.** It currently encodes *"back within 5-6 s"*, which this change makes **false**. ⇒ **it must record WHOSE ruling this is, the new number, and the consequence** — the **`TASK-517` / `HIGH-§1` idiom** (a shipped comment that contradicts the shipped value is the drift defect this project keeps paying for).
+- ⚠️ **TIMER POLICY IS QA-BINDING AND UNCHANGED** (`SiegeGameMode.h:53-58`): `PlayAgain()` clears **ONLY** the specific handles this class owns (the `HeroRespawnTimers` map), **BEFORE `ResetGold()`** — ⛔ **never a world-wide clear, ⛔ never another system's timer.** ⚠️ **A 180-second timer makes a leaked handle survive far longer than a 5-second one did** ⇒ **the ghost's own teardown obeys the same policy.**
+
+### GHOST-§3 ⚖️ THE RULINGS — decided, with reasons, ⛔ none blocking
+
+| # | Question | ⚖️ **Ruling (proceeding default)** | Why |
+|---|---|---|---|
+| **G-1** | Movement speed + vision? | ✅ **THE HERO'S OWN** — ⛔ no flight, ⛔ no wall-pass, ⛔ no extended vision | ⛔ **His words: *"similar to their original body."*** ⭐ Anything else is a scouting buff granted as a reward for dying |
+| **G-2** | Collision? | ✅ **BLOCKS `WorldStatic` ONLY** (so it walks the ground and does ⛔ not fall through the world); ⛔ **ignores/overlaps `Pawn`** | ⚠️ **A ghost that BLOCKS pawns is a free body-block wall — a combat mechanic handed to a dead player.** ⚠️ A ghost with NO collision falls through the floor |
+| **G-3** | Can it capture, interact, or pick anything up? | ⛔ **NO.** It **issues orders, uses the AI commander, opens the map** — and ⛔ nothing else | ⛔ **His enumeration is CLOSED and it is short.** ⛔ Zone capture by a dead player is a win condition handed to a corpse |
+| **G-4** | Enemy-visible? | ✅ **YES** — ⛔ **his explicit words, ⛔ not a default** | ⚠️ **Deliberately the OPPOSITE of `MARK-§ M-3`. ⭐ Say the contrast out loud so nobody "makes them consistent."** ⚠️ Same honest limit as `RECALL-§ R-3`: the bot does ⛔ not look at it, so the tell is for the human observer |
+| **G-5** ⭐⭐ | **May the ghost PLAY CARDS?** | ⛔ **NO (default)** — ⚠️⚠️ **BUT THIS IS THE FOR-JONATHAN ROW THAT MATTERS MOST AFTER THE TIMER ITSELF** | ⛔ **Card play is ⛔ NOT in his enumeration, and a closed list is read as closed.** ⚠️⚠️ **BUT: no attacking + no cards + 180 s = the player is a spectator with a chat window for three minutes, while `GHOST-§0` says the castle may fall inside that window.** ⇒ ⭐⭐ **THIS IS THE CHEAPEST LEVER THAT SOFTENS THE PENALTY WITHOUT TOUCHING HIS NUMBER — which is exactly why he is asked rather than told** |
+| **G-6** | Hero dies mid-recall? | ✅ **The channel ABORTS** — it is one of `RECALL-§4`'s seven enumerated exits | ⛔ A channel that survives its own caster's death is the `TOWER-§8` hanging-unit class in a new costume |
+| **G-7** | Hero dies mid-**climb**? | ⛔⛔ **MOOT — AND SAID SO RATHER THAN TASKED.** ✅ **MEASURED: `BeginLadderClimb` is on `ASummonedUnit` (`TOWER-§8.4(B)`). The HERO ⛔ NEVER CLIMBS.** | ⚖️ **A question whose premise is false gets a stated refutation, ⛔ not a defensive task.** ⛔ **Do ⛔ not write ghost/climb interaction code** |
+| **G-8** | While dead, what does the `hero` place symbol resolve to? | ✅ **THE GHOST'S LOCATION** | ⭐⭐ **This costs ⛔ ZERO extra prompt characters — same symbol, different resolution.** ⚖️ **`follow` and `rally` are hero-relative intents** (Zone A: *"follow = they follow the hero"*, *"rally = hero rallies units near him"*) ⇒ **resolving `hero` to a hidden corpse would silently walk the player's army to where he died.** ⇒ ✅ **`rally` and `follow` keep working and the ghost is the anchor** |
+
+### GHOST-§4 ⛔⛔ THE POSSESSION + CURSOR LAW — **THE ONE PLACE THIS FEATURE CAN BOOT THE ARENA INPUT-DEAD**
+
+- ⛔⛔ **CURSOR AND INPUT-MODE OWNERSHIP GOES THROUGH `ApplyCursorInputState()` AND ⛔ NOWHERE ELSE** (`HELP-§5`, verbatim and binding). ⚠️ **A direct `SetInputMode` / `bShowMouseCursor` call is the defect that law exists to prevent — ⛔ it booted the arena input-dead once already and cost a playtest.**
+- ⚠️⚠️ **AND THIS FEATURE IS THE MOST DANGEROUS CONSUMER OF IT YET, because it changes the POSSESSED PAWN**: `HandleDeath()` calls **`DisableInput`** (`HeroCharacter.cpp:739` names the mirror) and `ResetHero()` restores it. ⇒ **the ghost possesses BETWEEN those two, so the enable/disable ordering must be exact or the player controls nothing for 180 seconds.**
+- ⛔ **The ghost is ADDED to the existing cursor-owner ladder and ⛔ NEVER re-orders it.** The shipped owners keep their exact precedence: placement mode · the Alt-held `IA_UICursor` · `HandleMatchEnd`'s end screen · targeting mode · group-pick · the war map · the assistant console · the `HELP-§` overlay.
+- ⚠️ **`ApplyCursorInputState()` normalizes at `BeginPlay`** because input-routing state **survives level travel on the persistent `UGameViewportClient`** (TASK-074, the level-travel law). ⛔ **Dying, ghosting and respawning must leave that composition in the same shape it started in.**
+- ⭐⭐ **AND THE INSTRUMENT IS PIE, WITH ⛔ NO SUBSTITUTE (`SC-§35` ruling 5, and it applies by its own terms): this batch SPAWNS A NEW ACTOR CLASS INTO THE WORLD** ⇒ **it owes ONE PIE session with a MESSAGE-LOG READ, and that row may ⛔ NEVER be waived on the grounds that the compile is clean.** ⚠️ **`SC-§35` is the law bought by 1,806 Blueprint runtime errors that compiled clean and cleared TWO QA gates.**
+- ⛔⛔⛔ **STANDING LAW, ADDED 2026-09-01 ON TASK-749's MEASUREMENT — ⭐ THIS IS A GENERAL POSSESSION-HAND-OFF TRAP, ⛔ NOT A GHOST-SPECIFIC ONE, AND IT BINDS EVERY FUTURE PAWN SWAP IN THIS PROJECT:**
+  > ### ⚠️⚠️ **`IMC_Hero` IS ADDED BY THE HERO ***PAWN***, ⛔ NOT BY THE CONTROLLER.**
+  **MEASURED AT SOURCE (`HeroCharacter.cpp:246-280`, `NotifyControllerChanged()` — ✅ re-read and confirmed 2026-09-01 before this line was written, ⛔ not taken on relay): the mapping context is added by `AHeroCharacter` itself, in its own `NotifyControllerChanged`, with its own comment saying `ASiegePlayerController` does ⛔ NOT add contexts the way the template controllers do.**
+  ⇒ ⛔⛔ **THEREFORE POSSESSING ANY PAWN THAT DOES NOT ADD ITS OWN CONTEXT LEAVES THE PLAYER CONTROLLING ***NOTHING***.** ⚠️ **A naive death→ghost hand-off does exactly that — and here it would last the FULL 180 SECONDS**, which is `GHOST-§4`'s named catastrophe arriving by a route nobody was watching. ⭐ **TASK-749 solved its own half; the respawn side is TASK-750's.**
+  ⇒ 📌 **THE DUTY, BINDING ON EVERY PAWN SWAP: a task that changes the possessed pawn must state, in its handoff, WHICH object adds the mapping context on EACH side of the swap and WHEN.** ⛔ **"The controller handles input" is a false premise in this codebase and may ⛔ never be assumed.**
+- ⛔ **`SC-§35`'s ANIM-OWNER LAW BINDS THE GHOST DIRECTLY.** If the ghost carries a `USkeletalMeshComponent`, **any `TSoftClassPtr<UAnimInstance>` assigned to it MUST state, in a comment at the assignment, WHICH OWNER CLASS THE ABP ASSUMES.** ✅ **`ASiegeGhostPawn` is an `APawn`, so `TryGetPawnOwner()` resolves — ⛔ but that must be STATED, ⛔ not left to luck**, and the sanctioned shape for a prop that merely idles is **single-node playback** (`SetAnimationMode(AnimationSingleNode)` + `PlayAnimation(..., /*bLooping=*/true)`), which is **structurally incapable** of that defect class.
+
+### GHOST-§5 NAMING + FILE MAP (the cross-task contract)
+
+| thing | law |
+|---|---|
+| the pawn | **`ASiegeGhostPawn`** — `Source/GitClaudeUnrealTest/Siegebound/SiegeGhostPawn.{h,cpp}`. ⛔⛔ **DOES ⛔ NOT implement `ITeamAgent`** (`GHOST-§1` — this is the whole design). ⛔ **Does ⛔ not implement `IHealthBarProvider`** (it has no health to show). |
+| the timer | **`ASiegeGameMode::HeroRespawnDelay`** — **`5.f → 180.f`**, `EditDefaultsOnly`, **comment rewritten** per `GHOST-§2`. ⛔ **The `HeroRespawnTimers` map, `HandleHeroDied` and the QA-binding timer policy are ⛔ NOT redesigned.** |
+| ghost class ref | **`TSoftClassPtr<ASiegeGhostPawn> GhostPawnClassAsset`** on `ASiegeGameMode`, mirroring the shipped **`HeroPawnClassAsset`** pattern (`SiegeGameMode.h:260`): **missing/incompatible ⇒ warn once and fall back to the raw C++ class.** ⛔ **A missing asset ⇒ ⛔ never a crash, ⛔ never a dead 180 seconds with no pawn.** |
+| ⛔ untouched | ⛔⛔ **`SummonedUnit.{h,cpp}` · `ClimbableTower.{h,cpp}` · `Tower.{h,cpp}` · `ABP_Footman` — ⛔ NOT TOUCHED BY ANY TASK IN THIS BATCH.** The first two are the LIVE ladder wave's sole-owned surfaces; the ruling in `GHOST-§1` is what makes that possible. |
+| ⭐ **the ghost's APPEARANCE — PINNED 2026-09-01, ⛔ the names exist BEFORE the art task** | ⚠️⚠️ **`G-4` MAKES THE MESH FUNCTIONALLY REQUIRED, ⛔ NOT COSMETIC: an unset mesh is an INVISIBLE ghost, which violates his explicit *"the enemy should be able to see this ghost as well."*** TASK-749 correctly ⛔ **refused to invent an asset path the Artist never agreed to** and left the slots unset with a loud `BeginPlay` warning. ⇒ **the three soft-refs resolve to exactly these, and ⛔ nothing else:** **`GhostMesh` ⇒ `/Game/Characters/Mannequins/Meshes/SKM_Quinn_Simple`** (⭐ **the HERO'S OWN shipped mesh — ⛔ zero new geometry, and it is the most faithful reading of `G-1`'s *"similar to their original body"***; the `SK_Sorcerer` avatar-reuse precedent) · **`GhostMaterial` ⇒ `/Game/Materials/MI_Ghost_Translucent`** (⭐ **the ONE new asset — a translucent instance, ⛔ not a new master material**) · **`GhostIdleAnimation` ⇒ a `UAnimationAsset`, ⛔ NEVER a `TSoftClassPtr<UAnimInstance>`** (`SC-§35` single-node playback, `GHOST-§4`). |
+| ⭐ the ghost BP | **`/Game/Blueprints/BP_SiegeGhostPawn`** — child of `ASiegeGhostPawn`, and the target of `GhostPawnClassAsset`. ⛔ **The C++ class leaves every appearance slot UNSET deliberately; the BP is where they are assigned** (the shipped `BP_HeroCharacter` pattern). ⚠️ **Its `MoveAction`/`MouseLookAction` input slots are a SEPARATE, DECLARED debt — ⛔ not the art lane's.** |
+
+### GHOST-§6 📌 M8 DECLARATION — ⛔ **DO ⛔ NOT COPY ANOTHER BATCH'S BOILERPLATE; IT IS FALSE HERE**
+
+⛔ **This batch adds a NEW PAWN CLASS that is POSSESSED BY A PLAYER CONTROLLER and that `G-4` requires the ENEMY TO SEE.** ⇒ ⛔ **it is unambiguously a replicated-relevant class in M8 and its TIER MUST BE DECLARED IN A HEADER COMMENT** — the standing duty is *"tier not declared is a QA FAIL"*, and a declaration is ⛔ not an exemption. ⛔ **No RPC and no replicated property are AUTHORED in this batch;** the shape is declared and reserved (`ACC-§8`'s discipline). ⚠️ **`HeroRespawnTimers` is already documented as the M8 per-controller shape (`SiegeGameMode.h:55`) — ⛔ that is not re-designed here.**

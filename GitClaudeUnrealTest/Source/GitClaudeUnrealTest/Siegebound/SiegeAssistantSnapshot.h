@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
 #include "Siegebound/SiegeAssistantCommand.h"   // TASK-441: FSiegeAssistantCommand + ESiegeAssistantIntent for the non-orderable-kind guard. Pure-data header by design (its own doc comment sanctions this) - no new weight.
+#include "Siegebound/SiegeMapMark.h"           // TASK-746 (MARK-§5): FSiegeMapMark. Header-only pure data on the TeamId.h precedent, included here BY LAW because AppendMarkPlaces takes it by reference - no new weight.
 #include "Siegebound/TeamId.h"
 #include "SiegeAssistantSnapshot.generated.h"
 
@@ -119,13 +120,35 @@ struct FSiegeAssistantRosterEntry
  *  ── WHAT THIS IS, AND THE ONE SENTENCE THAT DECIDES WHETHER IT WORKS ──
  *
  *  THE SNAPSHOT IS NOT A WORLD DUMP. It is the set of things the player can
- *  legally NAME (CONVENTIONS §8): unit KINDS with counts, a FIXED named-place
+ *  legally NAME (CONVENTIONS §8): unit KINDS with counts, a named-place
  *  vocabulary, and quantized match facts. There are no individually-addressable
  *  units in v1 - nobody says "Footman #7" - and there are no coordinates
  *  anywhere in any zone (§3): every resolved FVector stays GAME-SIDE behind
  *  ResolvePlace(). That single rule deletes the hallucinated-number failure
  *  class outright, because the model has no number in front of it that means a
  *  position.
+ *
+ *  ⚠️ THE WORD "FIXED" CAME OUT OF THAT SENTENCE ON 2026-09-01 AND THE REASON IS
+ *  RECORDED RATHER THAN LEFT AS A DIFF (TASK-746, MARK-§0). The place vocabulary
+ *  is now the seven FIXED symbols PLUS the local player's own map marks -
+ *  `circle_1` … - which he draws at runtime on the war map and which vanish when
+ *  he deletes them. ⭐ THAT IS A NEW REFERENT CLASS IN THE COMMAND GRAMMAR, ⛔ not
+ *  a UI feature: it is what makes "move all units to hold 1" and "ambush 2"
+ *  executable sentences.
+ *
+ *  ⭐⭐ AND IT COSTS THE PROMPT ⛔ NOTHING IN ZONE A, WHICH IS THE WHOLE DESIGN.
+ *  Zone A already defines `where` as "a place symbol from places in [FORCES]" -
+ *  BY REFERENCE to Zone C's per-match `places:` line - and it already carries the
+ *  comment "ZONE A PRINTS THE FULL FIXED VOCABULARY, THE GRAMMAR ENFORCES WHAT
+ *  EXISTS THIS MATCH". A mark therefore needs ⛔ no new Zone-A line, ⛔ no new
+ *  intent (`hold` already aliases `guard`, `ambush` already ships) and ⛔ no
+ *  grammar code. ⛔ THE 5658-BYTE ZONE-A FREEZE IS UNTOUCHED AND MUST STAY SO.
+ *  The cost that is NOT zero is Zone C's, and it is written beside
+ *  SnapshotTrimBudgetChars where the budget it spends actually lives.
+ *
+ *  ⛔ THE AIRLOCK IS UNCHANGED AND IS NOT WEAKENED BY MARKS. A mark's CENTRE and
+ *  RADIUS never enter any zone; only its SYMBOL does, and the centre is resolved
+ *  GAME-SIDE by ResolvePlace exactly as `nearest_mine` already is.
  *
  *  ⚠️ THE SELECTION IS MULTI-KIND (manager ruling 15, CONVENTIONS §9 as
  *  corrected 2026-08-02). "Send 10 footmen WITH A SORCERER to the nearest
@@ -297,7 +320,26 @@ public:
 	 *      head 108 + roster 621 + tail 158 = 887 of 893  ⇒  ~6 chars spare
 	 *
 	 *  counted on the t0-shaped 13-kind board with the default 61-char `order:`
-	 *  line. ⚠️ ~7 MORE CHARACTERS OF TYPED TEXT RE-COLLAPSE THE TAIL, and both
+	 *  line.
+	 *
+	 *  ⚠️⚠️ AND SINCE TASK-746 THE HEAD IS NO LONGER FIXED AT 108 - IT GROWS WITH
+	 *  THE PLAYER'S MAP MARKS, WHICH IS THE OTHER HALF OF THAT ~6-CHAR HEADROOM'S
+	 *  STORY AND IS RECORDED BESIDE IT RATHER THAN IN A HANDOFF (MARK-§2):
+	 *
+	 *      head(M marks) = 108 + 10*M          (`, circle_N` is exactly 10 chars)
+	 *      roster budget = 893 - head - tail = 627 - 10*M   (at the 158-char tail)
+	 *      13-kind roster block = 621
+	 *   ⇒  621 > 627 - 10*M  whenever  M >= 1
+	 *
+	 *  ⛔ THE FIRST MARK ALREADY COLLAPSES THE ROSTER TAIL ON A FULL BOARD. That is
+	 *  a DECLARED COST, ⛔ not a defect and ⛔ not a reason to trim marks: the
+	 *  collapse is the SHIPPED elastic trimmer doing its job, `other_kinds:` NAMES
+	 *  every kind it hid (so a collapse costs COUNTS, never EXISTENCE), and
+	 *  BuildZoneC logs at Warning every time it degrades. ⛔ DO NOT buy the room by
+	 *  raising this constant; the one honest lever is still ZoneBCharReserve, which
+	 *  TASK-528 owns and which may only move from a PRINTED zoneB_chars reading.
+	 *
+	 *  ⚠️ ~7 MORE CHARACTERS OF TYPED TEXT RE-COLLAPSE THE TAIL, and both
 	 *  player-text lines below can each spend up to MaxUtteranceBytes, so a deep
 	 *  collapse is NORMAL rather than exceptional. That is correct behaviour
 	 *  against a real budget rather than a defect - and it is exactly why
@@ -565,11 +607,25 @@ public:
 	const TArray<FSiegeAssistantRosterEntry>& GetRoster() const { return Roster; }
 
 	/**
-	 *  The place symbols that ACTUALLY RESOLVE this match, in fixed vocabulary
-	 *  order. This is what TASK-417's grammar generates its `where` alternation
-	 *  from - so a place that does not exist on this map cannot be emitted at
-	 *  all. Zone A still prints the FULL vocabulary (it must stay static); the
-	 *  grammar is what enforces existence.
+	 *  The place symbols that ACTUALLY RESOLVE this match. This is what TASK-417's
+	 *  grammar generates its `where` alternation from - so a place that does not
+	 *  exist on this map cannot be emitted at all. Zone A still prints the FULL
+	 *  FIXED vocabulary (it must stay static); the grammar is what enforces
+	 *  existence.
+	 *
+	 *  ⚠️ THE ORDER IS "FIXED VOCABULARY, THEN MARKS", AND THE COMMENT SAYS SO
+	 *  RATHER THAN STILL SAYING "fixed vocabulary order" (TASK-746). The seven
+	 *  shipped symbols come first, in the PlaceVocabulary table's order - which is
+	 *  the order Zone A prints them in, and that mirror is deliberate. The local
+	 *  player's map marks (`circle_1` …) are APPENDED after them, in ascending
+	 *  number order, by AppendMarkPlaces.
+	 *
+	 *  ⭐⭐ AND THAT APPEND IS THE ENTIRE AI HALF OF THE MAP-MARK FEATURE
+	 *  (MARK-§1). The shipped Zone A defines `where` as "a place symbol from places
+	 *  in [FORCES]" - BY REFERENCE TO THIS LIST, not to Zone A's own fixed one - so
+	 *  a mark published here is a legal `where` by that line's own words, and
+	 *  USiegeAssistantGrammar::Build makes it GBNF-samplable, both with ⛔ ZERO
+	 *  prompt bytes and ⛔ ZERO grammar code. ⛔ Zone A is NOT edited for it.
 	 */
 	const TArray<FName>& GetPlaceNames() const { return PlaceNames; }
 
@@ -581,6 +637,16 @@ public:
 	 *  order. A place is region-bearing IFF A SHIPPED `IsPointInZone` ANSWERS FOR
 	 *  IT - that is the whole ruling, and it admits exactly three of the seven:
 	 *  `mid` (ACaptureZone) and both ancient grounds (AAncientGround).
+	 *
+	 *  ⛔⛔ MAP MARKS ARE ⛔ NOT IN THIS LIST AND MAY ⛔ NEVER BE ADDED TO IT
+	 *  (TASK-746, MARK-§3 M-6). A circle trivially satisfies AS-§21.4's test, so
+	 *  this is a SCOPE FENCE rather than a capability claim - and it is the fence
+	 *  that protects the byte-freeze. The `ZONE = ` line Zone A prints is GENERATED
+	 *  FROM THE FIXED TABLE'S bHasRegion COLUMN (SiegeAssistantSnapshot.cpp
+	 *  :1088-1107); a per-match entry there would make ZONE A VARY, destroying the
+	 *  5658-byte freeze and the KV prefix with it. ⇒ the one shape that would cost
+	 *  real Zone-A bytes is the one shape v1 refuses. Available later at a stated
+	 *  price; ⛔ not by a tidying edit.
 	 *
 	 *  ⛔ THE OTHER FOUR ARE NOT MISSING FEATURES, THEY ARE A RULING. `own_castle`,
 	 *  `enemy_castle`, `nearest_mine` and `hero` have NO region primitive anywhere
@@ -698,6 +764,163 @@ public:
 	 *  @return false (leaving OutLocation UNTOUCHED) for an unknown or unresolved place
 	 */
 	bool ResolvePlace(FName Place, FVector& OutLocation) const;
+
+	// =========================================================================
+	//  MAP MARKS - THE REFERENT (TASK-746; CONVENTIONS MARK-§1 / §2 / §3 M-6)
+	//
+	//  ⭐⭐ READ MARK-§1 BEFORE EDITING ANYTHING BELOW. IT IS THE PROOF THAT THIS
+	//  FEATURE COSTS ZONE A **ZERO** BYTES, AND EVERY LINE HERE SHIPS INSIDE THAT
+	//  PROOF RATHER THAN RE-DERIVING IT. Re-verified at source 2026-09-01:
+	//
+	//    :1109  `WHERE  = a place symbol from places in [FORCES], or "none"`
+	//           ⇒ `where` is defined BY REFERENCE TO ZONE C's `places:` LINE, not
+	//             by reference to Zone A's fixed list. A symbol published there is
+	//             ALREADY a legal `where` by that line's own words.
+	//    :1081-1083  "ZONE A PRINTS THE FULL FIXED VOCABULARY, THE GRAMMAR
+	//           ENFORCES WHAT EXISTS THIS MATCH" - the fixed/per-match split this
+	//           feature needs already exists and is already load-bearing.
+	//    :1813  `Head += TEXT("places: ");` - the publication point.
+	//    USiegeAssistantGrammar::Build(UnitKinds, PlaceNames, RegionPlaceNames)
+	//           takes PlaceNames ⇒ appending here is GBNF-samplable with ZERO
+	//           grammar-code change.
+	//    SiegeAssistantVocabulary.cpp:223 - `hold` is ALREADY an alias of the
+	//           `guard` intent, and `ambush` is already one of the seven intents
+	//           ⇒ "move all units to hold 1" and "ambush 2" already parse in every
+	//           part EXCEPT the place. ⛔ No new intent, ⛔ no eighth `who` shape.
+	//
+	//  ⛔ THE ONE SHAPE THAT WOULD COST REAL ZONE-A BYTES IS THE ONE v1 REFUSES
+	//  (M-6): a mark is `where`-ONLY. RegionPlaceNames is NOT written below,
+	//  because the `ZONE = ` line is generated from the FIXED TABLE's bHasRegion
+	//  column (:1088-1107) and a per-match entry there would make Zone A VARY -
+	//  destroying the byte-freeze and the KV prefix.
+	// =========================================================================
+
+	/**
+	 *  THE WORLD Z A MARK'S SYMBOL RESOLVES AT.
+	 *
+	 *  `FSiegeMapMark` is 2D BY LAW (MARK-§5 pins `FVector2D WorldXY`, because the
+	 *  war map is a 2D projection and the widget that places a mark has no Z), so
+	 *  this file has to supply the third component from somewhere and the choice
+	 *  is written down rather than left as a literal.
+	 *
+	 *  ⚖️ 0 IS THE ARENA'S WALK SURFACE - READ, NOT GUESSED. CONVENTIONS:131 pins
+	 *  `SM_ArenaTerrain` as: "placed at (0,0,0) it reproduces the old ArenaGround
+	 *  slab's walk surface at Z=0, so every existing actor transform stays valid."
+	 *
+	 *  ⛔ THIS IS NOT THE "PLAUSIBLE-LOOKING ORIGIN" ResolvePlace's failure comment
+	 *  WARNS ABOUT, and the distinction matters. That warning is about an
+	 *  UNRESOLVED place leaving a caller with a zero VECTOR it might march an army
+	 *  to. This is a RESOLVED place whose X and Y are the player's own click; only
+	 *  the Z is supplied, and it is supplied from a documented level fact.
+	 *
+	 *  ⚠️ THE CONSEQUENCE, WRITTEN BESIDE THE NUMBER (HIGH-§1): a mark drawn over a
+	 *  hill resolves to the FLOOR beneath the hill, never the hill's surface. Unit
+	 *  movement projects onto the navmesh, so the ORDER still lands; the
+	 *  assistant's confirm-step decal (SiegeAssistantComponent's
+	 *  ConfirmPositionDecal / ConfirmAttackDecal) is placed at this exact Z and
+	 *  will sit under a hill face. That is a PREVIEW-COSMETICS degradation on hill
+	 *  marks - declared here rather than discovered in a playtest.
+	 *
+	 *  ⛔ A DOWN-TRACE PER MARK PER SENTENCE WAS CONSIDERED AND REFUSED. It would
+	 *  add world queries to Capture(), which AS-§21.4 already refused for regions
+	 *  ("a fresh TActorIterator for regions would be a QA FAIL"), and it would make
+	 *  the mark's meaning depend on when the sentence was typed. If hill-accurate
+	 *  marks are ever wanted, the Z belongs ON FSiegeMapMark, written by the widget
+	 *  that already traces the map - ⛔ never re-derived here.
+	 */
+	static constexpr float MarkPlaceGroundZ = 0.f;
+
+	/**
+	 *  ⭐⭐ THE MARK SEAM - AND IT IS A PURE STATIC ON PURPOSE, exactly as
+	 *  `FSiegeMapMark::MakeSymbol` is.
+	 *
+	 *  ⚖️ THIS IS `WR-§6`'s UNFUNDED-MANDATE LESSON APPLIED AT AUTHORING TIME: the
+	 *  publication rule is READABLE FROM ONE FUNCTION that needs ⛔ no world, ⛔ no
+	 *  widget, ⛔ no subsystem and ⛔ no Capture() to assert. `Capture()` calls it
+	 *  with the live arrays; the tests call it with local ones, and they exercise
+	 *  the SAME code rather than a re-implementation of it.
+	 *
+	 *  ⛔⛔ THE AIRLOCK, AT ITS TIGHTEST POINT IN THE WHOLE FEATURE. Only
+	 *  `MakeSymbol(Number)` reaches `InOutPlaceNames`, which is the ONE array
+	 *  BuildZoneC prints. `WorldXY` goes to `InOutPlaceLocations`, which carries
+	 *  the same GAME-SIDE-ONLY clause as every other resolved place (CONVENTIONS
+	 *  §3) and is never serialised into any zone. `RadiusUU` is ⛔ NOT READ AT ALL -
+	 *  a mark denotes a POINT to this object, and reading its radius would be the
+	 *  first step toward the `{"in": circle_1}` shape M-6 refuses.
+	 *
+	 *  ⛔ ZERO HALF-EXTENTS ARE APPENDED, AND THE ARRAY IS KEPT PARALLEL RATHER
+	 *  THAN SKIPPED (M-6). ResolvePlaceRegion asks `RegionPlaceNames.Contains`
+	 *  FIRST, so a mark can never answer as a region; the zero extent is what keeps
+	 *  the three arrays index-aligned, which is the invariant ResolvePlaceRegion's
+	 *  IsValidIndex pair defends.
+	 *
+	 *  ⭐ MARKS ARE PUBLISHED IN ASCENDING `Number` ORDER, ⛔ NOT IN STORE ORDER.
+	 *  M-1's lowest-free allocator means a store that has had a mark deleted holds
+	 *  its array out of numeric order (add 1,2,3 - delete 2 - add ⇒ 1,3,2), and an
+	 *  unstable `places:` line would make the same board emit different bytes on
+	 *  different turns. Zone C is allowed to vary, but ⛔ not for a reason nobody
+	 *  chose.
+	 *
+	 *  @param Marks                   the local player's marks, in store order. Numbers below FSiegeMapMark::FirstMarkNumber and duplicates are SKIPPED (see the body).
+	 *  @param InOutPlaceNames         appended to. ⚠️ THE ONLY ONE OF THE THREE THAT IS EVER PRINTED.
+	 *  @param InOutPlaceLocations     appended to, game-side only.
+	 *  @param InOutPlaceHalfExtents   appended to with FVector2D::ZeroVector, to keep the three parallel.
+	 *  @return how many marks were actually published - 0 on a de-synchronised input, which is REFUSED rather than repaired.
+	 */
+	static int32 AppendMarkPlaces(
+		const TArray<FSiegeMapMark>& Marks,
+		TArray<FName>& InOutPlaceNames,
+		TArray<FVector>& InOutPlaceLocations,
+		TArray<FVector2D>& InOutPlaceHalfExtents);
+
+	/**
+	 *  What the `hero` place symbol denotes this capture (GHOST-§ G-8).
+	 *
+	 *  ⭐ IT IS AN ENUM RATHER THAN A BOOL BECAUSE THERE ARE THREE OUTCOMES AND THE
+	 *  THIRD IS THE ONE THAT MATTERS: `None` means the `hero` slot is NOT
+	 *  published, so the symbol drops out of the vocabulary and the grammar cannot
+	 *  even spell it. ⛔ That is the correct degradation and it is NOT a zero
+	 *  vector - see ChooseHeroAnchorSource.
+	 */
+	enum class EHeroAnchorSource : uint8
+	{
+		/** Nothing anchors `hero` this capture ⇒ the symbol is not published at all. */
+		None,
+		/** The living hero's own location - the shipped behaviour, unchanged. */
+		LivingHero,
+		/** GHOST-§ G-8: the pawn the player drives while his hero is down. */
+		Ghost
+	};
+
+	/**
+	 *  ⭐ GHOST-§ G-8, AS A PURE DECISION FUNCTION - the whole rule, readable from
+	 *  one place and assertable with ⛔ no world, ⛔ no pawn and ⛔ no Capture().
+	 *  Same reasoning as AppendMarkPlaces above (`WR-§6`'s unfunded-mandate lesson).
+	 *
+	 *  ⚖️ WHY G-8 EXISTS AT ALL, in its author's terms: `follow` and `rally` are
+	 *  HERO-RELATIVE intents (Zone A teaches "follow = they follow the hero",
+	 *  "rally = hero rallies units near him"). Resolving `hero` to a hidden corpse
+	 *  would SILENTLY WALK THE PLAYER'S ARMY TO WHERE HE DIED - a valid-shaped
+	 *  wrong command, the exact failure class CONVENTIONS §1 exists to prevent.
+	 *  ⭐ It costs ZERO extra prompt characters: same symbol, different resolution.
+	 *
+	 *  ⛔ THE GHOST BRANCH IS GATED ON THE HERO BEING DEAD, DELIBERATELY AND
+	 *  NARROWLY. In normal play the controller possesses the hero itself, so
+	 *  `bGhostAnchorAvailable` is false and this function returns exactly what
+	 *  shipped before TASK-746. The branch can only fire in the one state
+	 *  GHOST-§ G-8 describes.
+	 *
+	 *  ⛔ AND "NEITHER EXISTS" IS `None`, ⛔ NEVER A ZERO VECTOR THAT READS AS THE
+	 *  MAP ORIGIN. The caller must leave the slot UNRESOLVED, which drops `hero`
+	 *  from PlaceNames, which drops it from the grammar's `where` alternation -
+	 *  the same fail-closed direction AS-§21.5 takes everywhere else: a place named
+	 *  and not resolved becomes a REFUSAL, never an order to somewhere plausible.
+	 *
+	 *  @param bHeroExists            an AHeroCharacter for the ordering team was found at all
+	 *  @param bHeroIsDead            ...and AHeroCharacter::IsDead() is true for it
+	 *  @param bGhostAnchorAvailable  the ordering controller currently drives a pawn that is NOT that hero
+	 */
+	static EHeroAnchorSource ChooseHeroAnchorSource(bool bHeroExists, bool bHeroIsDead, bool bGhostAnchorAvailable);
 
 private:
 
@@ -833,7 +1056,7 @@ private:
 	UPROPERTY(Transient)
 	TArray<FSiegeAssistantRosterEntry> Roster;
 
-	/** Resolvable place symbols, fixed vocabulary order. Parallel to PlaceLocations. */
+	/** Resolvable place symbols: the fixed vocabulary in table order, then the local player's map marks in ascending number order (TASK-746). Parallel to PlaceLocations and PlaceHalfExtents. */
 	UPROPERTY(Transient)
 	TArray<FName> PlaceNames;
 

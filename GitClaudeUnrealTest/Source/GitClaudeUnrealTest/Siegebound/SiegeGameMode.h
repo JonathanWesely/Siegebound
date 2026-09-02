@@ -11,7 +11,31 @@
 class ACastle;
 class AHeroCharacter;
 class ASiegeBotController;
+class ASiegeGhostPawn;
 class ASiegePlayerController;
+
+/**
+ *  Per-controller DEATH STATE (TASK-750, GHOST-§2/§3): the ghost this controller
+ *  is currently driving and the hero it stands in for.
+ *
+ *  ⛔ A PLAIN STRUCT, DELIBERATELY NOT A USTRUCT: nothing reflects it, nothing
+ *  saves it and nothing replicates it — it is transient by nature, exactly like
+ *  this class's bMatchEnded latch and its HeroRespawnTimers map (whose key type it
+ *  mirrors so the two maps can never drift apart in shape).
+ *
+ *  ⚠️ BOTH HALVES ARE WEAK ON PURPOSE. A strong pointer to the corpse would keep a
+ *  dead hero alive for the full three minutes and would HIDE the destroyed-pawn
+ *  case that RestoreHeroAtStart is explicitly written to survive; a strong pointer
+ *  to the ghost would do the same for a ghost swept by anything else.
+ */
+struct FSiegeGhostState
+{
+	/** The pawn the player is driving while dead. Spawned in SpawnAndPossessGhost, destroyed in RetireGhostFor. */
+	TWeakObjectPtr<ASiegeGhostPawn> Ghost;
+
+	/** The hero the ghost stands in for — the pawn the 180 s respawn re-possesses. Never re-spawned, never duplicated. */
+	TWeakObjectPtr<AHeroCharacter> Hero;
+};
 
 /**
  *  Siegebound game mode (GDD §3.9 / §3.1 / §3.2, M2 scope) — win condition,
@@ -43,12 +67,41 @@ class ASiegePlayerController;
  *  ASiegePlayerController via HandleMatchEnd. A bMatchEnded latch guarantees
  *  the match ends at most once, and NOTHING else can end a match.
  *
- *  Hero respawn (GDD §3.1): the hero's FOnHeroDied (bound in SetPlayerDefaults,
- *  which runs for every pawn this mode hands to a player) schedules a respawn
- *  exactly HeroRespawnDelay (5 s) later: teleport to the PlayerStart (L_Arena
- *  places it on the Blue side, TASK-015) or — when no PlayerStart exists — next
- *  to the hero's own castle, then repossess and ResetHero() (full HP, input
- *  restored). After match end the hero stays down; PlayAgain() revives it.
+ *  Hero respawn (GDD §3.1 → SUPERSEDED BY Jonathan's GHOST-§ ruling, TASK-750):
+ *  the hero's FOnHeroDied (bound in SetPlayerDefaults, which runs for every pawn
+ *  this mode hands to a player) schedules a respawn exactly HeroRespawnDelay later:
+ *  teleport to the PlayerStart (L_Arena places it on the Blue side, TASK-015) or —
+ *  when no PlayerStart exists — next to the hero's own castle, then repossess and
+ *  ResetHero() (full HP, input restored). After match end the hero stays down;
+ *  PlayAgain() revives it.
+ *
+ *  DEATH → GHOST → RESPAWN (TASK-750, CONVENTIONS GHOST-§1/§2/§3/§4 — Jonathan's
+ *  directive: "If the player dies at any point during the match, they are dead for
+ *  3 minutes. During this time they instead get a ghost creature ... When the 3
+ *  minutes are up they respawn back at the castle."). The respawn MECHANIC is
+ *  unchanged — this mode adds exactly one thing on top of it: while the respawn is
+ *  pending the player possesses an ASiegeGhostPawn instead of staring at a corpse.
+ *    - HandleHeroDied spawns the ghost at the death location and possesses it,
+ *      recording {ghost, hero} in ActiveGhosts (keyed exactly like HeroRespawnTimers).
+ *    - HandleHeroRespawnTimer retires the ghost (re-possess the SAME hero actor,
+ *      destroy the ghost) and then runs the SHIPPED RestoreHeroAtStart unchanged.
+ *    - ⭐ A GHOST EXISTS IF AND ONLY IF A RESPAWN IS PENDING. Both halves are gated
+ *      by the ONE pure predicate ShouldEnterGhostState, so "a permanent ghost" and
+ *      "180 seconds with no pawn at all" are unrepresentable rather than unlikely.
+ *    - ⛔ "CANNOT BE ATTACKED" IS NOT IMPLEMENTED HERE AND IS NOT IMPLEMENTED
+ *      ANYWHERE: ASiegeGhostPawn does not implement ITeamAgent, and both target
+ *      acquirers (ASummonedUnit::AcquireTarget, ATower) enumerate ONLY through
+ *      GetAllActorsWithInterface(UTeamAgent) — GHOST-§1. There is deliberately no
+ *      invulnerability flag, no damage guard and no targeting filter in this class.
+ *
+ *  M8 DECLARATION for the ghost (GHOST-§6 — "tier not declared is a QA FAIL", and a
+ *  declaration is not an exemption): ASiegeGhostPawn is a REPLICATED-RELEVANT class
+ *  — it is possessed by a player controller and G-4 requires the ENEMY to see it, so
+ *  in a P1 session it must be a server-spawned, replicated actor whose possession
+ *  travels the normal engine path (the same tier as the hero pawn). NO RPC and NO
+ *  replicated property are authored in this batch (ACC-§8's discipline): the shape is
+ *  declared and reserved. ActiveGhosts is the per-controller server-side shape — the
+ *  same shape HeroRespawnTimers already documents, for the same reason.
  *
  *  Timer policy (QA-BINDING, TASKBOARD TASK-006 qa-note from qa/TASK-005-report.md):
  *  in PlayAgain() this class clears ONLY the specific timer handles it owns
@@ -65,6 +118,11 @@ class ASiegePlayerController;
  *  destroys all buildings regardless. The invariant this policy protects is
  *  untouched: the income timer's owner is never targeted on any path — the
  *  match-end freeze pauses income through ASiegePlayerState's OWN PauseIncome().
+ *  TASK-750 rider: the policy is UNCHANGED and the ghost teardown OBEYS it —
+ *  RetireGhostFor is called from exactly the four sites that already clear this
+ *  class's own respawn handles, and it touches only actors this class spawned.
+ *  ⚠️ GHOST-§2's reason for restating it: at 180 s a leaked handle survives 36×
+ *  longer than it did at 5 s, so the policy matters 36× more than it used to.
  *
  *  Bot opponent (GDD §4 / §9-3, M3 — TASK-045): BeginPlay spawns EXACTLY ONE
  *  ASiegeBotController (an AAIController that possesses no pawn) and tags its
@@ -92,6 +150,12 @@ public:
 	 *  called by WBP_VictoryScreen's Play Again button (TASK-011). In order:
 	 *    1. clears this mode's own pending hero-respawn timer (BEFORE ResetGold —
 	 *       qa-note ordering; only our own handle, never other systems' timers),
+	 *    1b. retires every live death ghost (TASK-750) — re-possess the hero, destroy
+	 *        the ghost. ⛔ IT MUST PRECEDE STEP 5 AND THAT IS LOAD-BEARING, NOT TIDINESS:
+	 *        step 5 reaches the hero through IterPC->GetPawn(), so a Play Again pressed
+	 *        while a player is ghosted would otherwise miss ResetUpgrades() entirely and
+	 *        the very next ResetHero() would re-apply the OLD stacks onto the "reset"
+	 *        hero — upgrades surviving a full match reset,
 	 *    2. destroys every ASummonedUnit,
 	 *    2b. destroys every ABuilding (§3.9 "buildings"; ATower::EndPlay clears
 	 *        its own fire timer synchronously, and dead walls heal the navmesh),
@@ -109,7 +173,12 @@ public:
 	 *    6. ASiegePlayerController::HandleMatchReset() (removes the end screen,
 	 *       restores game-only input — TASK-007 contract), then a fresh deck +
 	 *       hand via the controller's UDeckComponent::ResetDeck() (§3.9 "deck,
-	 *       hand"; reached by component class, null-safe until TASK-023 lands).
+	 *       hand"; reached by component class, null-safe until TASK-023 lands),
+	 *    6b. USiegeMapMarkSubsystem::ClearMarks() per local player (TASK-744's
+	 *        MARK-§ M-4). ⛔ IT MUST BE DONE FROM HERE: that subsystem is a
+	 *        ULocalPlayerSubsystem and therefore OUTLIVES an in-place PlayAgain, so
+	 *        without this call last match's numbered circles are still on next
+	 *        match's map and still nameable to the AI commander,
 	 *  Safe against double invocation: re-entrant calls are dropped by a guard,
 	 *  and a second sequential call just re-runs steps that are all idempotent.
 	 */
@@ -157,6 +226,56 @@ public:
 	 *  declaration; virtual dispatch returns this latch to all callers.
 	 */
 	virtual bool HasMatchEnded() const override { return bMatchEnded; }
+
+	/**
+	 *  ⭐⭐ THE ONE DEATH-LIFECYCLE PREDICATE (TASK-750, GHOST-§2 / GHOST-§3) — PURE,
+	 *  STATIC, ⛔ no world, ⛔ no actors, ⛔ no member state. It answers ONE question
+	 *  for BOTH halves of the death transition: does this death put the player into
+	 *  the ghost state (and therefore also schedule the respawn that ends it)?
+	 *
+	 *  ⭐ ONE PREDICATE IS THE POINT, NOT AN ECONOMY. The ghost's existence and the
+	 *  respawn timer's existence are the SAME condition, so routing both through one
+	 *  function makes "a ghost with no timer" (a permanent ghost) and "a timer with no
+	 *  ghost" (three minutes of a hidden corpse and no pawn to drive) UNREPRESENTABLE
+	 *  rather than merely unlikely. A second copy of these two clauses is the drift
+	 *  defect this codebase keeps paying for.
+	 *
+	 *  false when bInMatchEnded — ⛔ GHOST-§2's ALREADY-RULED rule, inherited verbatim
+	 *  and ⛔ NOT a second match-end rule: "After match end no respawn is scheduled",
+	 *  so there is no ghost either; the hero stays down and PlayAgain() revives it.
+	 *  false with no owning controller — the shipped guard, unchanged in effect: there
+	 *  is nobody to possess a ghost and nobody to respawn.
+	 *
+	 *  ⚠️ It takes plain bools rather than reading members precisely so it can be
+	 *  exercised headlessly across the whole truth table (SHIP-§9c — every assertion
+	 *  must be able to FAIL). Every call site passes live state.
+	 */
+	static bool ShouldEnterGhostState(bool bInMatchEnded, bool bHasOwningController);
+
+	/**
+	 *  ⭐ WHICH HERO A RESPAWN RESTORES (TASK-750) — PURE, STATIC, ⛔ no world.
+	 *  Returns the hero actor the controller must be holding again, given the pawn it
+	 *  currently possesses and the hero recorded at death time.
+	 *
+	 *  - The possessed pawn IS the hero on every non-ghost path (a live hero at
+	 *    PlayAgain; any pre-TASK-750 flow) ⇒ returned unchanged, byte-identical to
+	 *    the shipped Cast<AHeroCharacter>(Player->GetPawn()).
+	 *  - The GHOST is possessed ⇒ the tracked hero is returned.
+	 *  - Neither resolves ⇒ nullptr, which is the signal RestoreHeroAtStart already
+	 *    handles by restarting the player with a fresh pawn.
+	 *
+	 *  ⛔⛔ THE MIDDLE ROW IS WHY THIS FUNCTION EXISTS, AND IT IS THE DOUBLE-APPLY
+	 *  GUARD. Without it a respawn taken while the ghost is possessed sees a non-hero
+	 *  pawn, falls into RestoreHeroAtStart's defensive RestartPlayer branch and spawns
+	 *  a SECOND hero — leaving the first one orphaned in the world still carrying every
+	 *  upgrade stack, while ResetHero() re-applies those stacks onto the corpse rather
+	 *  than onto the pawn the player is driving. One hero actor lives across the whole
+	 *  death, so ResetHero() runs EXACTLY ONCE per respawn on EXACTLY ONE pawn.
+	 *
+	 *  ⛔ It can never return the ghost: the return type is AHeroCharacter*, and
+	 *  ASiegeGhostPawn is not an AHeroCharacter (GHOST-§1).
+	 */
+	static AHeroCharacter* ResolveHeroToRestore(APawn* PossessedPawn, AHeroCharacter* TrackedHero);
 
 protected:
 
@@ -228,6 +347,9 @@ protected:
 	 *  Runs for every pawn this mode hands to a player (initial spawn and any
 	 *  RestartPlayer fallback) — binds FOnHeroDied on the new pawn and tracks it
 	 *  for respawn. AddUniqueDynamic keeps repeated restarts idempotent.
+	 *  TASK-750 also binds FOnHeroRecallArrived here: it is the same class of seam
+	 *  (the hero announces, this mode owns the destination), so it belongs at the same
+	 *  site rather than in a second binding pass that could drift out of step.
 	 */
 	virtual void SetPlayerDefaults(APawn* PlayerPawn) override;
 
@@ -242,13 +364,43 @@ protected:
 
 	/**
 	 *  FOnHeroDied handler (TASK-003 contract): schedules THAT hero's owning
-	 *  controller a respawn exactly HeroRespawnDelay seconds out (§3.1: back
-	 *  within 5-6 s; M8 doc §3.4.4 — per-controller timer map, the weak
-	 *  controller rides the delegate). After match end no respawn is scheduled —
-	 *  heroes stay down until PlayAgain().
+	 *  controller a respawn exactly HeroRespawnDelay seconds out (M8 doc §3.4.4 —
+	 *  per-controller timer map, the weak controller rides the delegate) and, in the
+	 *  same breath and under the same predicate, hands the player the ghost to drive
+	 *  while it waits (TASK-750). After match end no respawn is scheduled and no ghost
+	 *  is spawned — heroes stay down until PlayAgain().
+	 *
+	 *  ⛔ The "§3.1: back within 5-6 s" note that used to sit here is DELETED rather
+	 *  than left lying: HeroRespawnDelay is 180 s by Jonathan's ruling (GHOST-§0).
 	 */
 	UFUNCTION()
 	void HandleHeroDied(AHeroCharacter* DeadHero);
+
+	/**
+	 *  ⭐⭐ FOnHeroRecallArrived handler — **TASK-748's CROSS-TASK CONTRACT, DISCHARGED
+	 *  HERE BECAUSE THIS CLASS IS THE ONE THAT NAMES IT** (declared scope addition, see
+	 *  the TASK-750 handoff). `HeroCharacter.cpp`'s own unbound-destination warning
+	 *  reads, verbatim: *"The teleport-home owner must bind this delegate
+	 *  (TASK-750)."* — and until something does, a COMPLETED 10 s recall channel moves
+	 *  and heals nothing at all, so RECALL ships inert.
+	 *
+	 *  ⭐ THE REASON THE SEAM POINTS HERE IS THE POINT OF THE SEAM: "back at the
+	 *  castle" is ONE rule, and it is GetHeroStartTransform — the team-keyed
+	 *  PlayerStart when it lies on the hero's own side and outside its own castle's
+	 *  colliding bounds, else beside that castle. Recall is a channel in front of a
+	 *  destination rule that already exists. ⇒ the recall teleport and the 180 s
+	 *  respawn teleport now demonstrably resolve through the SAME function, so they
+	 *  can never disagree about where home is.
+	 *
+	 *  ⛔⛔ IT TELEPORTS AND DOES NOTHING ELSE — the binder contract is explicit and
+	 *  this is the trap it exists to stop: ⛔ it may NEVER call ResetHero(). ResetHero
+	 *  is the DEATH path; on a LIVE hero it re-applies every cumulative upgrade
+	 *  modifier onto a freshly restored base and re-arms a running War Banner aura —
+	 *  a double application. The heal is the hero's own and is applied by EndRecall
+	 *  immediately after this broadcast returns.
+	 */
+	UFUNCTION()
+	void HandleHeroRecallArrived(AHeroCharacter* RecallingHero);
 
 protected:
 
@@ -279,9 +431,53 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Match")
 	TSoftObjectPtr<UWorld> ArenaLevel;
 
-	/** Seconds between hero death and respawn (GDD §3.1: exactly 5). */
+	/**
+	 *  ⭐⭐ SECONDS BETWEEN HERO DEATH AND RESPAWN. **180 — THREE MINUTES — AND THE
+	 *  NUMBER IS JONATHAN'S** (CONVENTIONS GHOST-§0/§2, TASK-750). His words, verbatim:
+	 *  *"If the player dies at any point during the match, they are dead for 3 minutes
+	 *  ... When the 3 minutes are up they respawn back at the castle."*
+	 *
+	 *  ⛔ THE OLD COMMENT HERE SAID "GDD §3.1: exactly 5" AND IT IS REWRITTEN RATHER
+	 *  THAN LEFT LYING (the TASK-517 / HIGH-§1 idiom — a shipped comment that
+	 *  contradicts the shipped value is the drift defect this project keeps paying
+	 *  for). ⚠️ **GDD §3.1's sentence "back within 5-6 s" IS NOW FALSE**, and that is
+	 *  a deliberate, recorded divergence: ⛔ no agent edits Docs/GDD.md — the GDD is
+	 *  corrected by Jonathan, and the divergence rides as a FOR-JONATHAN row.
+	 *
+	 *  ⚠️⚠️ THE SCALE, STATED SO IT IS NEVER SOFTENED BY ACCIDENT: this is **36× the
+	 *  shipped 5 s death penalty**, and GHOST-§0 records that an unattended castle has
+	 *  been observed to fall inside a comparable window (~4 min, weak evidence and very
+	 *  likely LOWER at the current build — TASK-752 re-derives it). ⛔ NO AGENT MAY
+	 *  SOFTEN THIS VALUE: it is a design call he made explicitly.
+	 *
+	 *  ⭐ THIS IS THE **SINGLE TUNABLE** FOR THE WHOLE FEATURE AND THAT IS BY DESIGN.
+	 *  The ghost's lifetime is not a second number — the ghost lives exactly as long as
+	 *  this timer, because RetireGhostFor is what the timer's own callback runs. If
+	 *  TASK-752's measurement moves his ruling, editing THIS ONE VALUE moves the whole
+	 *  lifecycle, in the editor, with no recompile. A test asserts that no second
+	 *  property on this class or on ASiegePlayerController holds 180.
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Hero", meta = (ClampMin = "0"))
-	float HeroRespawnDelay = 5.0f;
+	float HeroRespawnDelay = 180.0f;
+
+	/**
+	 *  Soft class of the death ghost pawn (TASK-750, GHOST-§5) — the pawn the player
+	 *  drives for HeroRespawnDelay seconds after dying. Mirrors the HeroPawnClassAsset
+	 *  pattern above: resolved LAZILY and null-safely, missing/incompatible ⇒ warn once
+	 *  and fall back to the raw C++ ASiegeGhostPawn.
+	 *
+	 *  ⭐ IT SHIPS **UNSET**, AND THAT IS THE CORRECT DEFAULT RATHER THAN AN OVERSIGHT:
+	 *  ⛔ no task in the GHOST batch produces a ghost blueprint, so authoring a path to
+	 *  an asset nobody creates would fire a missing-asset warning on every single match
+	 *  forever. The raw C++ class IS the shipped ghost; this property exists so a
+	 *  designer can point at a BP_ ghost later with ⛔ no recompile. ⚠️ Consequently the
+	 *  resolver distinguishes UNSET (expected, logged at Log once) from AUTHORED-BUT-
+	 *  UNRESOLVABLE (a real mis-configuration, Warning once) — see ResolveGhostPawnClass.
+	 *
+	 *  ⛔ A MISSING ASSET IS NEVER A CRASH AND NEVER A DEAD 180 SECONDS WITH NO PAWN.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Classes")
+	TSoftClassPtr<ASiegeGhostPawn> GhostPawnClassAsset;
 
 	/**
 	 *  Castle-relative hero spawn offset, used when no PlayerStart serves this
@@ -367,6 +563,53 @@ private:
 	UClass* ResolveHeroPawnClass();
 
 	/**
+	 *  Resolves and caches the ghost pawn class from GhostPawnClassAsset (TASK-750);
+	 *  returns ASiegeGhostPawn when no blueprint is configured or the configured one
+	 *  cannot be loaded. Warn-once on each of the two cases, with DIFFERENT messages
+	 *  because they mean different things (see GhostPawnClassAsset). A failed resolve
+	 *  is NOT cached, mirroring ResolveHeroPawnClass exactly.
+	 */
+	UClass* ResolveGhostPawnClass();
+
+	/**
+	 *  Spawns the death ghost at the dead hero's transform and possesses it
+	 *  (TASK-750, GHOST-§1/§3/§4). Called from HandleHeroDied and ONLY after
+	 *  ShouldEnterGhostState has said yes.
+	 *
+	 *  ⛔ IT IS IDEMPOTENT PER CONTROLLER: a controller already in ActiveGhosts is left
+	 *  exactly as it is (a second ghost would strand the first and lose the hero
+	 *  reference the respawn needs).
+	 *
+	 *  ⛔ A FAILED SPAWN IS NEVER FATAL: the player simply keeps the dead hero
+	 *  possessed for the wait — the pre-TASK-750 experience — and the respawn timer,
+	 *  which was already armed, still fires. ⛔ Never a crash, ⛔ never a dead 180 s.
+	 *
+	 *  ⛔ CURSOR/INPUT POSTURE IS NOT TOUCHED HERE. The possession hand-off is reported
+	 *  to ASiegePlayerController::HandleGhostPossessionChanged, which routes it through
+	 *  ApplyCursorInputState() — the ONE owner (HELP-§5 / GHOST-§4). ⛔ There is no
+	 *  SetInputMode and no bShowMouseCursor write anywhere in this class.
+	 */
+	void SpawnAndPossessGhost(AController* Player, AHeroCharacter* DeadHero);
+
+	/**
+	 *  Ends the ghost state for one controller (TASK-750): re-possesses the SAME hero
+	 *  actor, destroys the ghost, and drops the ActiveGhosts entry. A controller with
+	 *  no ghost is a clean no-op, so every caller may call it unconditionally.
+	 *
+	 *  ⭐ CALLED FROM EXACTLY THE PLACES THAT ALREADY CLEAR THE RESPAWN TIMER, AND THAT
+	 *  IS THE INVARIANT: the respawn timer expiring, match end, PlayAgain and EndPlay.
+	 *  Ghost teardown obeys the SAME QA-binding policy as the timers it sits beside —
+	 *  only state this class owns, ⛔ never a world-wide sweep (GHOST-§2's warning: a
+	 *  180 s timer makes a leaked handle survive 36× longer than a 5 s one did).
+	 *
+	 *  ⛔ POSSESS FIRST, DESTROY SECOND — never the reverse. Destroying a possessed
+	 *  pawn drives the controller through PawnPendingDestroy into the Inactive state
+	 *  and moves the view target to the death spot; possessing the hero first makes the
+	 *  engine unpossess the ghost cleanly and hands the camera straight back.
+	 */
+	void RetireGhostFor(AController* Player, const TCHAR* Reason);
+
+	/**
 	 *  Match-end world freeze (§3.9 / M2 exit criteria, TASK-024) — runs once
 	 *  from OnCastleDestroyedHandler, BEFORE the end screen goes up, closing
 	 *  qa/TASK-006-report.md finding 2 and both M2 carry-forwards:
@@ -388,11 +631,13 @@ private:
 	 *  Respawn-timer callback (M8 per-player, TASK-356 doc §3.4.4): the weak
 	 *  controller captured at death time rides the timer delegate; a controller
 	 *  gone by fire time is a logged no-op. Cleans its own map entry.
+	 *  TASK-750: retires that controller's ghost FIRST (re-possessing the same hero
+	 *  actor), then runs the SHIPPED restore unchanged.
 	 */
 	void HandleHeroRespawnTimer(TWeakObjectPtr<AController> WeakController);
 
 	/**
-	 *  Shared by the 5 s respawn and PlayAgain — M8 (TASK-356 doc §3.4.4):
+	 *  Shared by the timed respawn and PlayAgain — M8 (TASK-356 doc §3.4.4):
 	 *  PARAMETERIZED on the owning controller (was: the single TrackedHero +
 	 *  first-controller resolve; both retired). Teleports that controller's hero
 	 *  to its team-keyed start (while still hidden, so the death spot never
@@ -468,6 +713,10 @@ private:
 	UPROPERTY(Transient)
 	TSubclassOf<APawn> ResolvedHeroPawnClass;
 
+	/** Resolved ghost pawn class (TASK-750) — only ever a SUCCESSFUL blueprint load; the raw-C++ fallback is deliberately not cached, so a blueprint imported later in the session is picked up by the next death. */
+	UPROPERTY(Transient)
+	TSubclassOf<APawn> ResolvedGhostPawnClass;
+
 	//~ TrackedHero + HeroRespawnTimerHandle RETIRED by TASK-356 (the TODO(M8) on
 	//~ this exact member, closed — doc §3.4.4/D10): a P1 session has TWO heroes
 	//~ (host + client), so death/respawn/Play-Again restore is now tracked
@@ -476,6 +725,17 @@ private:
 
 	/** Per-controller pending hero-respawn timers (M8 doc §3.4.4). The ONLY timers this class owns (timer policy unchanged — each entry cleared on fire/match-end/PlayAgain/EndPlay, never a world-wide clear). */
 	TMap<TWeakObjectPtr<AController>, FTimerHandle> HeroRespawnTimers;
+
+	/**
+	 *  Per-controller live death ghosts (TASK-750, GHOST-§2/§3) — the exact key type
+	 *  and the exact lifetime of HeroRespawnTimers above, on purpose: an entry is added
+	 *  where a timer is armed and removed where that timer is cleared (fire /
+	 *  match-end / PlayAgain / EndPlay). ⇒ ⭐ the two maps hold the same controllers at
+	 *  all times, which IS the "a ghost exists iff a respawn is pending" invariant.
+	 *  ⛔ Not a UPROPERTY, deliberately: FSiegeGhostState holds only WEAK pointers, so
+	 *  nothing here keeps a corpse or a ghost alive (see FSiegeGhostState).
+	 */
+	TMap<TWeakObjectPtr<AController>, FSiegeGhostState> ActiveGhosts;
 
 	/** The single Red bot opponent, spawned in SpawnBot and reset in PlayAgain (GDD §4, TASK-045). Null until spawned; one per match. */
 	UPROPERTY(Transient)
@@ -498,6 +758,9 @@ private:
 
 	/** One-shot guard for the missing-BP_HeroCharacter warning. */
 	bool bWarnedHeroClassMissing = false;
+
+	/** One-shot guard for the ghost-pawn-class resolve message (TASK-750) — covers BOTH the unset and the unresolvable case, so a match logs about the ghost class at most once. */
+	bool bWarnedGhostClassMissing = false;
 
 	/**
 	 *  M8 networked-match latch (TASK-356 doc §1.3/D2 — dual latch, signed as-is

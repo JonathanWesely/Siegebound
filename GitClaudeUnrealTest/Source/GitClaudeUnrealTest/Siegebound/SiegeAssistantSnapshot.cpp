@@ -4,7 +4,9 @@
 
 #include "EngineUtils.h"
 #include "Engine/DataTable.h"
+#include "Engine/LocalPlayer.h"   // TASK-746: ULocalPlayer::GetSubsystemFromController - the ONE null-safe hop from the ordering controller to the local player's mark store (M-2).
 #include "Engine/World.h"
+#include "GameFramework/Pawn.h"   // TASK-746 (GHOST-§ G-8): GetPawn() returns a forward-declared APawn* that this file DEREFERENCES (GetActorLocation) - the complete-type include law, not decoration.
 #include "UObject/SoftObjectPtr.h"
 
 #include "Siegebound/AncientGround.h"
@@ -15,6 +17,7 @@
 #include "Siegebound/SiegeAssistantCommand.h"     // TASK-417 (pinned link): LogSiegeAssistant - NEVER a second category
 #include "Siegebound/SiegeAssistantVocabulary.h"  // TASK-417 (pinned link): the Zone-A synonym block
 #include "Siegebound/SiegeGameState.h"
+#include "Siegebound/SiegeMapMarkSubsystem.h"     // TASK-746 (MARK-§5): USiegeMapMarkSubsystem - the local player's mark store, read-only from here
 #include "Siegebound/SiegePlayerController.h"
 #include "Siegebound/SiegePlayerState.h"
 #include "Siegebound/SummonedUnit.h"
@@ -361,14 +364,74 @@ void USiegeAssistantSnapshot::Capture(UWorld* World, ETeamId Team)
 
 	if (Hero)
 	{
-		// The hero-death ruling: a DEAD hero is not an anchor, so it is present
-		// but not a nameable place.
+		// The hero-death ruling, UNCHANGED: `hero: down` still prints for a dead
+		// hero. ⚠️ TASK-746 changes what the `hero` PLACE SYMBOL RESOLVES TO while
+		// he is down (GHOST-§ G-8, below); it deliberately does NOT change what the
+		// `hero:` KEY REPORTS. Those are two different statements to the model - one
+		// is "your hero is down", the other is "here is where `hero` points" - and
+		// only the second one was ruled on.
 		HeroPresence = Hero->IsDead() ? EHeroPresence::Down : EHeroPresence::Alive;
-		if (HeroPresence == EHeroPresence::Alive)
+	}
+
+	// ── GHOST-§ G-8 - WHAT `hero` DENOTES WHILE THE PLAYER IS DEAD ───────────
+	//
+	// ⭐ The rule itself is ChooseHeroAnchorSource (a pure static, assertable with
+	// no world). This block is only the EVIDENCE-GATHERING half.
+	//
+	// ⛔⛔ THE GHOST IS IDENTIFIED AS "THE PAWN THE ORDERING CONTROLLER IS DRIVING
+	// THAT IS NOT THE HERO", ⛔ NOT by casting to ASiegeGhostPawn - AND THE CHOICE
+	// IS DELIBERATE, DECLARED, AND NOT A SHORTCUT:
+	//   - TASK-750 SPAWNS AND POSSESSES the ghost on FOnHeroDied, so while the hero
+	//     is down the driven pawn IS the ghost. PASS 1 above proves it: the
+	//     Cast<AHeroCharacter>(GetPawn()) at the top of this function is exactly
+	//     what FAILS in that state, which is why the fallback iterator exists.
+	//   - ASiegeGhostPawn is TASK-749's sole-owned NEW class and is NOT in this
+	//     task's `names:` block. Hard-linking to it would couple the assistant's
+	//     one shipped prompt builder to a class that does not exist yet, for no
+	//     behavioural gain in the shipped flow.
+	//   - The gate is TIGHT rather than loose: the branch is unreachable unless the
+	//     hero is DEAD (see ChooseHeroAnchorSource), and in normal play the
+	//     controller possesses the hero itself.
+	// ⚠️ DECLARED FOR QA: if the gate is judged too loose, the one-line change is
+	// Cast<ASiegeGhostPawn>(DrivenPawn) != nullptr here, plus the include -
+	// nothing else in this file moves.
+	//
+	// 📌 `Cast` PROPAGATES THE CONST (Casts.h:89, TCopyQualifiersFromTo_T), so this
+	// yields a `const AHeroCharacter*` from a `const APawn*` - ⛔ do not "fix" it to
+	// Cast<const AHeroCharacter>, which is not the shipped idiom anywhere in this
+	// module.
+	const APawn* const DrivenPawn = OwningController ? OwningController->GetPawn() : nullptr;
+	const bool bGhostAnchorAvailable = (DrivenPawn != nullptr) && (Cast<AHeroCharacter>(DrivenPawn) == nullptr);
+
+	switch (ChooseHeroAnchorSource(Hero != nullptr, Hero != nullptr && Hero->IsDead(), bGhostAnchorAvailable))
+	{
+	case EHeroAnchorSource::LivingHero:
+		// The null-check is redundant against ChooseHeroAnchorSource's contract and
+		// is kept anyway, on both live branches: the decision and the dereference are
+		// separated by a function call, and a future edit to that function must not
+		// be able to turn this into a crash on the hero path.
+		if (Hero)
 		{
 			ResolvedLocations[static_cast<int32>(EPlaceSlot::Hero)] = Hero->GetActorLocation();
 			bSlotResolved[static_cast<int32>(EPlaceSlot::Hero)] = true;
 		}
+		break;
+
+	case EHeroAnchorSource::Ghost:
+		if (DrivenPawn)
+		{
+			ResolvedLocations[static_cast<int32>(EPlaceSlot::Hero)] = DrivenPawn->GetActorLocation();
+			bSlotResolved[static_cast<int32>(EPlaceSlot::Hero)] = true;
+		}
+		break;
+
+	case EHeroAnchorSource::None:
+	default:
+		// ⛔ THE SLOT IS LEFT UNRESOLVED ON PURPOSE. `hero` then never reaches
+		// PlaceNames, so the grammar cannot spell it and the model cannot name it -
+		// which is the fail-closed direction, and is strictly better than answering
+		// with a zero vector that reads as the map origin.
+		break;
 	}
 
 	// Every "nearest" below is measured from here. World origin is the deliberate
@@ -515,6 +578,41 @@ void USiegeAssistantSnapshot::Capture(UWorld* World, ETeamId Team)
 				RegionPlaceNames.Add(Symbol);
 			}
 		}
+	}
+
+	// ── THE PLAYER'S MAP MARKS, APPENDED TO THE SAME PER-MATCH PLACE LIST ─────
+	// (TASK-746; MARK-§1 / MARK-§2 / MARK-§3 M-6 / M-2. The full argument for why
+	// this costs Zone A nothing lives on AppendMarkPlaces' declaration.)
+	//
+	// ⭐ THEY GO AFTER THE FIXED VOCABULARY, NEVER INTERLEAVED WITH IT. The fixed
+	// seven print in the table's order, which Zone A also prints in; putting the
+	// per-match marks on the tail keeps that mirror intact and keeps the diff
+	// between two boards readable.
+	//
+	// ⛔⛔ M-2 IS ENFORCED STRUCTURALLY HERE, NOT BY DISCIPLINE. The store is a
+	// ULocalPlayerSubsystem, so GetSubsystemFromController returns NULL for a
+	// controller with no ULocalPlayer - i.e. for a bot, and for any remote
+	// controller. ⇒ Capture(World, ETeamId::Red) on a bot CANNOT publish the human
+	// player's private notation into the bot's prompt, and no code here has to
+	// remember not to. That is the same "structural rather than disciplinary"
+	// property the subsystem tier was chosen for (MARK-§5).
+	//
+	// ⚠️ THE COST IS DECLARED, NOT ABSORBED (MARK-§2): each published mark adds
+	// `, circle_N` = 10 chars to BuildZoneC's HEAD, and the head is subtracted from
+	// the roster budget BEFORE the roster is given one. On the shipped 13-kind
+	// board that head is 108 of a 893-char Zone C budget with a 158-char tail,
+	// leaving 627 for a roster that measures 621 - so THE FIRST MARK ALREADY
+	// CROSSES IT and the roster's tail collapses into `other_kinds:`. That is
+	// graceful (the collapse line NAMES the kinds it hid, so they keep their
+	// EXISTENCE and lose their COUNTS) and it is LOGGED every time it degrades.
+	// ⛔ Do NOT "fix" it here by trimming marks: the budget lever is
+	// ZoneBCharReserve, TASK-528 owns it, and it may only move from a PRINTED
+	// zoneB_chars reading (AS-§20.3).
+	int32 PublishedMarks = 0;
+	if (const USiegeMapMarkSubsystem* const MarkStore =
+			ULocalPlayer::GetSubsystemFromController<USiegeMapMarkSubsystem>(OwningController))
+	{
+		PublishedMarks = AppendMarkPlaces(MarkStore->GetMarks(), PlaceNames, PlaceLocations, PlaceHalfExtents);
 	}
 
 	// ── PASS 6 - THE ROSTER ──
@@ -726,9 +824,18 @@ void USiegeAssistantSnapshot::Capture(UWorld* World, ETeamId Team)
 	// artifact that can answer "did the snapshot publish any regions?".
 	// ⛔ It stays at Verbose with its neighbours: this fires on EVERY typed
 	// sentence, and TASK-542 owns the one line that had to be promoted to Log.
+	//
+	// ⚠️ THE MARK COUNT IS ON THIS LINE FOR THE IDENTICAL REASON THE REGION COUNT
+	// IS (TASK-746). "Did the snapshot publish the player's marks?" has exactly the
+	// same silent-failure shape: a mark store that returned nothing - because the
+	// controller had no ULocalPlayer, or because the player never drew one -
+	// produces a prompt that is CORRECT IN EVERY OTHER RESPECT and simply cannot
+	// answer "hold 1". ⛔ It is reported SEPARATELY from the place total rather than
+	// folded into it: `%d place(s)` now INCLUDES marks, so the split is what tells
+	// a reader whether a 9-place board is the seven-plus-two or something else.
 	UE_LOG(LogSiegeAssistant, Verbose,
-		TEXT("Snapshot: %d kind(s), %d roster row(s), %d place(s) (%d region-bearing), gold band %d."),
-		UnitKinds.Num(), Roster.Num(), PlaceNames.Num(), RegionPlaceNames.Num(), GoldBand);
+		TEXT("Snapshot: %d kind(s), %d roster row(s), %d place(s) (%d region-bearing, %d map mark(s)), gold band %d."),
+		UnitKinds.Num(), Roster.Num(), PlaceNames.Num(), RegionPlaceNames.Num(), PublishedMarks, GoldBand);
 }
 
 bool USiegeAssistantSnapshot::ResolvePlace(FName Place, FVector& OutLocation) const
@@ -744,6 +851,162 @@ bool USiegeAssistantSnapshot::ResolvePlace(FName Place, FVector& OutLocation) co
 
 	OutLocation = PlaceLocations[Index];
 	return true;
+}
+
+// ---------------------------------------------------------------------------
+//  MAP MARKS - THE REFERENT (TASK-746; MARK-§1 / MARK-§2 / MARK-§3 M-6)
+// ---------------------------------------------------------------------------
+
+int32 USiegeAssistantSnapshot::AppendMarkPlaces(
+	const TArray<FSiegeMapMark>& Marks,
+	TArray<FName>& InOutPlaceNames,
+	TArray<FVector>& InOutPlaceLocations,
+	TArray<FVector2D>& InOutPlaceHalfExtents)
+{
+	// ⛔ A DE-SYNCHRONISED INPUT IS REFUSED WHOLESALE, NEVER PATCHED UP. The three
+	// arrays are parallel BY CONSTRUCTION (one append site, one loop) and
+	// ResolvePlace / ResolvePlaceRegion index across them. Appending onto arrays
+	// that already disagree would put a mark's symbol at one index and its location
+	// at another - and the failure would read as "the AI sent my units to the wrong
+	// circle", which is the worst outcome this feature can have (M-1's reasoning,
+	// arrived at from the other direction).
+	if (InOutPlaceNames.Num() != InOutPlaceLocations.Num()
+		|| InOutPlaceNames.Num() != InOutPlaceHalfExtents.Num())
+	{
+		UE_LOG(LogSiegeAssistant, Warning,
+			TEXT("Map marks NOT published: the place arrays are de-synchronised (%d names, %d locations, %d half-extents). NOTHING was appended - `circle_N` will simply be absent from this turn's vocabulary."),
+			InOutPlaceNames.Num(), InOutPlaceLocations.Num(), InOutPlaceHalfExtents.Num());
+		return 0;
+	}
+
+	if (Marks.Num() == 0)
+	{
+		return 0;
+	}
+
+	// ⭐ ASCENDING `Number` ORDER, VIA AN INDEX SORT - see the declaration for why
+	// store order is not good enough (M-1's lowest-free allocator leaves the store
+	// out of numeric order after any delete).
+	//
+	// ⚠️ INDICES, NOT POINTERS, AND THAT IS NOT A STYLE CHOICE: TArray::Sort on an
+	// array of POINTERS silently dereferences them through TDereferenceWrapper, so
+	// a pointer version's predicate would take `const FSiegeMapMark&` while looking
+	// like it takes a pointer. An int32 array has no such trap, and the inline
+	// allocator means no heap traffic at the cap.
+	TArray<int32, TInlineAllocator<16>> Order;
+	Order.Reserve(Marks.Num());
+	for (int32 MarkIndex = 0; MarkIndex < Marks.Num(); ++MarkIndex)
+	{
+		Order.Add(MarkIndex);
+	}
+	Order.Sort([&Marks](int32 Lhs, int32 Rhs) { return Marks[Lhs].Number < Marks[Rhs].Number; });
+
+	int32 Published = 0;
+	for (const int32 MarkIndex : Order)
+	{
+		const FSiegeMapMark& Mark = Marks[MarkIndex];
+
+		// ⛔ A NUMBER BELOW THE FIRST LEGAL ONE IS NOT A MARK. FSiegeMapMark
+		// default-constructs to `Number = 0`, so this rejects a default-constructed
+		// struct that reached the store.
+		//
+		// ⭐ THE BOUND IS READ FROM `FSiegeMapMark::FirstMarkNumber`, ⛔ never typed
+		// as a literal `1` or `0` here - that constant exists precisely so the
+		// allocator, the symbol seam and every consumer agree about where numbering
+		// starts, and a third spelling of it in this file would be the drift it was
+		// created to prevent.
+		if (Mark.Number < FSiegeMapMark::FirstMarkNumber)
+		{
+			continue;
+		}
+
+		// ⭐ FORWARD ONLY: the symbol is PRODUCED by the shared static and stored
+		// index-aligned with its location, so ResolvePlace answers by array position
+		// and this file never has to turn a symbol back into a number. ⛔ There is no
+		// parser here and there must never be one - a parser would be a SECOND
+		// spelling of the naming rule, and the day the two disagreed the map would
+		// insert one string while the AI resolved another (SiegeMapMark.h's own
+		// warning, followed rather than merely cited).
+		const FString SymbolString = FSiegeMapMark::MakeSymbol(Mark.Number);
+		if (SymbolString.IsEmpty())
+		{
+			// Belt and braces against the guard above: MakeSymbol answers the empty
+			// string for an illegal number, and an empty FName would publish a symbol
+			// the model can neither read nor say.
+			continue;
+		}
+
+		const FName Symbol(*SymbolString);
+
+		// ⛔ ONE SYMBOL, ONE MEANING - a duplicate is DROPPED, never published
+		// twice. Two marks sharing a number is a store-side defect (M-1 makes
+		// numbers unique identities), but publishing the symbol twice would put a
+		// duplicate alternative into the grammar's `where` rule AND make
+		// ResolvePlace answer with whichever came first - a symbol that means two
+		// different pieces of ground, which is precisely the hazard M-1's
+		// never-renumber ruling exists to prevent.
+		if (InOutPlaceNames.Contains(Symbol))
+		{
+			UE_LOG(LogSiegeAssistant, Warning,
+				TEXT("Map mark %d published a symbol that is ALREADY in this turn's place list ('%s') - it was DROPPED. Two marks may not share a number (MARK-§ M-1)."),
+				Mark.Number, *SymbolString);
+			continue;
+		}
+
+		InOutPlaceNames.Add(Symbol);
+
+		// ⛔ THE COORDINATE AIRLOCK'S GAME-SIDE HALF. This FVector never leaves the
+		// object except through ResolvePlace, exactly as `nearest_mine`'s does; the
+		// model sees `circle_1` and can never see, or emit, a number that means a
+		// position (CONVENTIONS §3, MARK-§1).
+		// The cast is EXPLICIT rather than implicit: FVector is double-precision in
+		// UE 5 and MarkPlaceGroundZ is a float, so an implicit widening here is the
+		// kind of quiet conversion a warning level can start rejecting later.
+		InOutPlaceLocations.Add(FVector(Mark.WorldXY.X, Mark.WorldXY.Y, static_cast<double>(MarkPlaceGroundZ)));
+
+		// ⛔ M-6: `where`-ONLY. A zero extent keeps the arrays parallel; it does NOT
+		// make the mark a region, because ResolvePlaceRegion asks
+		// RegionPlaceNames.Contains FIRST and this function never writes that array.
+		// ⚠️ Mark.RadiusUU is deliberately NOT read here - see the declaration.
+		InOutPlaceHalfExtents.Add(FVector2D::ZeroVector);
+
+		++Published;
+	}
+
+	return Published;
+}
+
+USiegeAssistantSnapshot::EHeroAnchorSource USiegeAssistantSnapshot::ChooseHeroAnchorSource(
+	bool bHeroExists, bool bHeroIsDead, bool bGhostAnchorAvailable)
+{
+	if (!bHeroExists)
+	{
+		// ⛔ NO HERO ACTOR AT ALL ⇒ `None`, EVEN IF SOME PAWN IS BEING DRIVEN. G-8
+		// is scoped to "while the hero is DEAD", and the shipped death flow keeps
+		// the hero actor alive-but-IsDead() (the respawn path teleports and heals
+		// the SAME actor), so this branch is the pre-match / no-hero-on-the-map
+		// state - not the ghost state. ⛔ Widening it would be re-ruling G-8, which
+		// is not this file's call.
+		return EHeroAnchorSource::None;
+	}
+
+	if (!bHeroIsDead)
+	{
+		return EHeroAnchorSource::LivingHero;
+	}
+
+	// Dead. GHOST-§ G-8: the ghost is the anchor if there is one...
+	if (bGhostAnchorAvailable)
+	{
+		return EHeroAnchorSource::Ghost;
+	}
+
+	// ...and if there is not, `hero` is NOT PUBLISHED. ⛔ This is the shipped
+	// behaviour and G-8 does not change it: a dead hero with no ghost is not a
+	// follow anchor, and the honest answer is that the symbol does not exist this
+	// turn. ⛔ Never the corpse's location - that is the exact outcome G-8 was
+	// written to prevent ("silently walk the player's army to where he died").
+	return EHeroAnchorSource::None;
 }
 
 bool USiegeAssistantSnapshot::ResolvePlaceRegion(FName Place, FVector& OutCentre, FVector2D& OutHalfExtent) const

@@ -39,6 +39,7 @@
 #include "Siegebound/SiegeDeckSaveGame.h" // USiegeDeckSaveGame — active saved deck source (M6 TASK-114)
 #include "Siegebound/SiegeFeedbackLibrary.h" // M7 §6 audio hooks (TASK-179): card play/discard/spell/end-of-match
 #include "Siegebound/SiegeGameMode.h" // M8 (TASK-356): RequestPlayAgain resolves the server GameMode (doc §4.2)
+#include "Siegebound/SiegeGhostPawn.h" // ASiegeGhostPawn — complete type for the ONE IsA() the death-state gate is built on (TASK-750; the class is TASK-749's, landing in the same batch — the TASK-442 parallel-header precedent)
 #include "Siegebound/SiegePlayerState.h"
 #include "Siegebound/SiegeSessionSubsystem.h" // LogSiegeNet (CONVENTIONS M8)
 #include "Siegebound/SiegeSpawnConstants.h"
@@ -875,6 +876,24 @@ void ASiegePlayerController::PlayHandSlot(int32 Slot)
 		return;
 	}
 
+	// ⛔ THE DEATH-STATE CARD BAN (TASK-750, GHOST-§3 G-3/G-5): while the player is
+	// driving the ghost, cards are refused. ⭐ SEALING THIS *ENTRY* SEALS EVERY
+	// DOWNSTREAM CONFIRM — placement, spells, instants, hero upgrades, Masons — without
+	// touching any of them, exactly as the observer lockout above does.
+	// ⚠️ It is a player-facing REFUSAL, not a silent ignore: the player pressed a key
+	// and is owed the reason (the shipped refusal doctrine). The message is deliberately
+	// the SAME "Hero is down" string EnterPlacementMode already shows for a dead hero —
+	// it is the same fact, and the ghost must not make it read differently.
+	if (!CanPlayCardsWhilePossessing(GetPawn()))
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': PlayHandSlot(%d) refused — the hero is dead and the ghost cannot play cards (GHOST-§ G-5)."),
+			*GetNameSafe(this), Slot);
+		RefuseCardPlay(DeckComponent ? DeckComponent->GetHandCardID(Slot) : NAME_None,
+			NSLOCTEXT("Siegebound", "CardRefused_HeroDead", "Hero is down"));
+		return;
+	}
+
 	if (bInPlacementMode)
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Verbose,
@@ -1296,6 +1315,82 @@ void ASiegePlayerController::HandleHeroDied(AHeroCharacter* DeadHero)
 	CancelGroupPick();
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// THE DEATH GHOST (TASK-750, GHOST-§3/§4)
+//
+// ⚠️ ORDERING, MEASURED AT SOURCE RATHER THAN ASSUMED — it is what makes the
+// hand-off safe: AGameModeBase::FinishRestartPlayer calls Possess() (which runs
+// THIS class's OnPossess, binding HandleHeroDied) BEFORE SetPlayerDefaults()
+// (which is where ASiegeGameMode binds its own HandleHeroDied). Delegates fire in
+// binding order ⇒ on death the CONTROLLER's handler above runs FIRST and has
+// already cancelled placement / targeting / the group pick — each through its own
+// ApplyCursorInputState() call — by the time the game mode spawns the ghost.
+// ⇒ ⭐ the ghost never possesses under a live cursor mode. OnUnPossess then runs
+// the same three exits again as no-ops when the possession actually swaps.
+// ─────────────────────────────────────────────────────────────────────────────
+
+bool ASiegePlayerController::IsGhostPossessed() const
+{
+	// Live, from the pawn's class. ⛔ Never a latch — see the header.
+	const APawn* const CurrentPawn = GetPawn();
+	return IsValid(CurrentPawn) && CurrentPawn->IsA(ASiegeGhostPawn::StaticClass());
+}
+
+bool ASiegePlayerController::CanPlayCardsWhilePossessing(const APawn* PossessedPawn)
+{
+	// ⛔ THE GHOST MAY NOT PLAY CARDS (G-5's proceeding default — Jonathan's
+	// enumeration is closed and card play is not in it). ⚖️ FLAGGED to him: this
+	// single `return false` is the whole ban, and flipping it to `true` is the whole
+	// change if he rules the other way.
+	//
+	// ⭐ KEYED ON THE POSSESSED CLASS, NOT ON A DEATH FLAG. A flag can be forgotten at
+	// a guard point; "what am I driving?" cannot. It is also why this function needs
+	// no world, no controller and no member state, and can therefore be asserted
+	// headlessly across its whole truth table.
+	if (IsValid(PossessedPawn) && PossessedPawn->IsA(ASiegeGhostPawn::StaticClass()))
+	{
+		return false;
+	}
+
+	// ⛔ EVERY OTHER PAWN — INCLUDING NO PAWN AT ALL — KEEPS THE SHIPPED BEHAVIOUR
+	// BYTE-FOR-BYTE. A dead HERO is still refused downstream by EnterPlacementMode's
+	// own `Hero->IsDead()` clause, and re-deriving that rule here would be a second
+	// source of truth for something that already has one.
+	return true;
+}
+
+void ASiegePlayerController::HandleGhostPossessionChanged()
+{
+	// ⛔ END ANY IA_UICursor HOLD FIRST — the shipped HandleMatchEnd idiom, used here
+	// for the identical reason it was written for there: a possession swap tears down
+	// and rebuilds the pawn's input plumbing, and a RELEASE swallowed across that swap
+	// would leave bUICursorHeld latched AND the counter-based SetIgnoreLookInput
+	// unbalanced — a ghost that cannot look around for the whole 180 seconds.
+	//
+	// ⚠️ MEASURED, AND THE MEASUREMENT IS WHY THIS IS BELT RATHER THAN BRACES: the
+	// hold's binding lives on THIS controller's own input component
+	// (SetupInputComponent), and the KEY that reaches it is mapped by IMC_Hero, which
+	// AHeroCharacter::NotifyControllerChanged only ever ADDS and never removes (there
+	// is not one RemoveMappingContext in this module). ⇒ the release very probably
+	// still arrives. ⛔ "Very probably" is exactly what GHOST-§4 refuses to stake a
+	// three-minute input state on, and the cost of being wrong the other way is one
+	// re-press of Left Alt. ClearUICursorHold is itself guarded, so this cannot
+	// unbalance the counter.
+	ClearUICursorHold();
+
+	// ⛔⛔ THE ONE CURSOR/POSTURE OWNER, AND THE ONLY POSTURE CALL THIS ENTIRE FEATURE
+	// MAKES (HELP-§5 / GHOST-§4). Re-asserts the COMPOSED posture against the new pawn.
+	// ⛔ The ghost contributes NO term to that composition and the shipped owner ladder
+	// is not re-ordered: the ghost is a free-look pawn with the hero's own movement and
+	// vision (G-1), so with no owner live this re-applies FInputModeGameOnly — exactly
+	// what BeginPlay applies, which is the normalization TASK-074's level-travel law
+	// asks for after any state churn.
+	// ⛔ At match end this is a deliberate no-op: ApplyCursorInputState early-outs while
+	// bMatchEnded is latched, because HandleMatchEnd owns the UI-only end-screen
+	// posture and nothing may override it.
+	ApplyCursorInputState();
+}
+
 void ASiegePlayerController::EnterPlacementMode(FName CardID)
 {
 	if (bMatchEnded)
@@ -1404,6 +1499,24 @@ void ASiegePlayerController::EnterPlacementMode(FName CardID)
 			TEXT("ASiegePlayerController '%s': card '%s' refused — hero is dead (respawn pending, TASK-006)."),
 			*GetNameSafe(this), *CardID.ToString());
 		// broadcast like every other player-facing refusal (qa/TASK-007-report.md nit 2)
+		RefuseCardPlay(CardID, NSLOCTEXT("Siegebound", "CardRefused_HeroDead", "Hero is down"));
+		return;
+	}
+
+	// ⛔⛔ THE SAME REFUSAL, KEPT ALIVE ACROSS THE POSSESSION CHANGE (TASK-750,
+	// GHOST-§3 G-5). ⚠️ THIS IS A REGRESSION GUARD, NOT A NEW RULE: the clause directly
+	// above resolves the hero with `Cast<AHeroCharacter>(GetPawn())`, and the instant
+	// the ghost is possessed that cast returns NULL — so "Hero is down" would silently
+	// STOP FIRING and a dead player could place units for three minutes. Gating on the
+	// possessed CLASS restores exactly the shipped intent.
+	// ⚠️ THIS ENTRY IS REACHED INDEPENDENTLY OF PlayHandSlot: OnCard1Pressed falls back
+	// to EnterPlacementMode(Card1CardID) whenever hand slot 0 is empty (the M1
+	// preservation path), so gating only PlayHandSlot would leave key 1 open.
+	if (!CanPlayCardsWhilePossessing(GetPawn()))
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': card '%s' refused — the hero is dead and the ghost cannot play cards (GHOST-§ G-5)."),
+			*GetNameSafe(this), *CardID.ToString());
 		RefuseCardPlay(CardID, NSLOCTEXT("Siegebound", "CardRefused_HeroDead", "Hero is down"));
 		return;
 	}
@@ -3546,6 +3659,25 @@ AActor* ASiegePlayerController::GetFollowAnchor() const
 		}
 	}
 
+	// ⭐⭐ AND WHILE THE DEATH GHOST IS POSSESSED THIS RETURNS THE GHOST — DELIBERATELY,
+	// AND IT IS **RULED**, NOT INCIDENTAL (TASK-750, GHOST-§3 **G-8**): "while dead,
+	// the `hero` place symbol resolves to THE GHOST'S LOCATION ... `follow` and `rally`
+	// are hero-relative intents, so resolving `hero` to a hidden corpse would silently
+	// walk the player's army to where he died ⇒ `rally` and `follow` keep working and
+	// the ghost is the anchor." Jonathan's own words for the ghost are "it can command
+	// units", and an army that abandons its commander the moment he dies is not that.
+	//
+	// ⛔ ZERO LINES WERE ADDED TO MAKE THIS TRUE, AND THAT IS THE POINT: the live
+	// GetPawn() resolve above — the ruling that forbids caching — picks the ghost up on
+	// its own. It is written down HERE rather than left as a happy accident so that the
+	// day someone "tidies" this function by casting to AHeroCharacter first, they are
+	// told that doing so breaks a Jonathan-level ruling.
+	//
+	// ⚠️ THE HONEST LIMIT: `rally` still refuses while ghosted, and correctly —
+	// USiegeAssistantComponent::ExecuteRallyOrder casts this anchor to AHeroCharacter
+	// because Rally() is a HERO ability with its own cooldown. Following anchors on the
+	// ghost; the rally *ability* does not exist on it. (That file is TASK-746's lane and
+	// is deliberately untouched here.)
 	return HeroPawn;
 }
 

@@ -1165,6 +1165,73 @@ bool FSiegeAssistantZoneADeterminismTest::RunTest(const FString& Parameters)
 				First.Contains(TEXT("ZONE   = an area place symbol: "), ESearchCase::CaseSensitive));
 			TestTrue(TEXT("⛔ …and it names all THREE region-bearing symbols of the fixed vocabulary, not the one this snapshot published"),
 				First.Contains(TEXT("ZONE   = an area place symbol: mid, ancient_ground_near, ancient_ground_far\n"), ESearchCase::CaseSensitive));
+
+			// ══════════════════════════════════════════════════════════════════
+			//  ⭐⭐ ADDED TASK-746 — MAP MARKS SPEND ZERO ZONE-A BYTES (MARK-§1)
+			// ══════════════════════════════════════════════════════════════════
+			//
+			//  ⚠️ THIS IS A DIFFERENT CLAIM FROM `ZoneA.MeasuredCharCount`, AND THE
+			//  DIFFERENCE IS THE ONLY REASON IT EXISTS. That test measures Zone A on
+			//  a snapshot that has never had Capture() run, so it can only ever say
+			//  "the EMPTY-state Zone A is 5658". It structurally cannot see a Zone A
+			//  that grew a `circle_N` line, or one that started reading PlaceNames —
+			//  because in its fixture PlaceNames is empty either way.
+			//
+			//  ⭐ SO THE MARKS ARE PUBLISHED AND THE BYTES ARE COMPARED, reusing the
+			//  SAME populated snapshot the region case above already built. This is
+			//  the guardrail the whole map-mark referent is judged by: MARK-§1's
+			//  proof is that a mark is legal as a `where` BECAUSE Zone A defines
+			//  `where` by reference to Zone C's `places:` line, so nothing has to be
+			//  added to Zone A to teach it.
+			//
+			//  ⛔ IT CAN FAIL, AND HERE IS EXACTLY HOW. MARK-§1 pre-costs a fallback
+			//  line for the `places` block — `circle_1..9 = map circles the player
+			//  drew` (42 chars) or the fuller 56-char wording — explicitly NOT
+			//  authored in this batch. The day someone takes it, these three
+			//  assertions go red and name the price: a dated re-base of 5658 plus the
+			//  component-by-component idiom above. ⇒ a deliberate decision, never a
+			//  silent drift.
+			{
+				// The same seven the block above published, then the marks — because
+				// the shipped Capture() appends marks to the FIXED vocabulary rather
+				// than replacing it, and a marks-only place list is a board this game
+				// cannot produce.
+				TArray<FName> WithMarks{
+					TEXT("own_castle"), TEXT("enemy_castle"), TEXT("mid"),
+					TEXT("ancient_ground_near"), TEXT("ancient_ground_far"),
+					TEXT("nearest_mine"), TEXT("hero")
+				};
+				for (int32 Number = 1; Number <= 9; ++Number)
+				{
+					WithMarks.Add(FName(*FString::Printf(TEXT("circle_%d"), Number)));
+				}
+				*PlaceNames = WithMarks;
+
+				// ⛔ RegionPlaceNames is deliberately left at the ONE-region state the
+				// block above finished in: a mark must not reach it (MARK-§3 M-6), and
+				// re-filling it here would test a state Capture() cannot produce.
+				const FString ZoneAWithMarks = Populated->BuildZoneA(Vocabulary.Get());
+
+				TestEqualSensitive(TEXT("⭐⭐ A snapshot publishing NINE MAP MARKS emits a BYTE-IDENTICAL Zone A — the map-mark referent spends ZERO Zone-A characters (MARK-§1)"),
+					ZoneAWithMarks, First);
+
+				TestEqual(TEXT("⭐⭐ …and it is still EXACTLY the named, dated 5658-character baseline — the freeze this whole feature was designed inside"),
+					ZoneAWithMarks.Len(), ShippedZoneAChars);
+
+				// The direct form of the same claim, which fails LOUDER and sooner
+				// than a byte compare when someone appends a `places`-block line: a
+				// diff of two 5658-char strings is hard to read, `circle_` is not.
+				TestFalse(TEXT("⛔ The string `circle_` appears NOWHERE in Zone A — the marks live ONLY in Zone C's per-match `places:` line (MARK-§1 reading 1)"),
+					ZoneAWithMarks.Contains(TEXT("circle_"), ESearchCase::CaseSensitive));
+
+				// ⭐ AND THE READING THE WHOLE PROOF RESTS ON, PINNED AS A BYTE
+				// PROPERTY RATHER THAN QUOTED IN A COMMENT. If this line is ever
+				// reworded to define `where` against a FIXED list instead of against
+				// [FORCES], MARK-§1's argument collapses and every mark becomes
+				// unsamplable — and nothing else in the suite would notice.
+				TestTrue(TEXT("⭐⭐ Zone A still defines `where` BY REFERENCE TO [FORCES], not to a fixed list — the single reading MARK-§1's zero-cost proof rests on (SiegeAssistantSnapshot.cpp:1109)"),
+					ZoneAWithMarks.Contains(TEXT("WHERE  = a place symbol from places in [FORCES], or \"none\"\n"), ESearchCase::CaseSensitive));
+			}
 		}
 	}
 

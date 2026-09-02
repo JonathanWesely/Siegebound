@@ -22,6 +22,9 @@
 #include "EngineUtils.h"
 // FHitResult's own home since UE5 - the bake fills a TArray<FHitResult> (TASK-684).
 #include "Engine/HitResult.h"
+// ULocalPlayer::GetSubsystem<T>() - the mark store's ONLY reachable route from a widget
+// (TASK-745). Included by name, never inherited through UserWidget.h (the complete-type law).
+#include "Engine/LocalPlayer.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
@@ -41,6 +44,22 @@
 #include "Brushes/SlateColorBrush.h"
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
+// ⭐ TASK-745 - THE NUMBER IS CENTRED, AND CENTRING NEEDS A MEASUREMENT. All three headers are
+// SlateCore (already a public dependency; ⛔ no Build.cs change is owed) and all three are
+// included BY NAME rather than inherited:
+//   • SlateApplicationBase.h - FSlateApplicationBase::Get()/IsInitialized(). ⚠️ The BASE, ⛔ not
+//     FSlateApplication: the base lives in SlateCore beside everything else this painter uses,
+//     it exposes the renderer, and it is the narrower dependency of the two.
+//   • SlateRenderer.h        - FSlateRenderer::GetFontMeasureService().
+//   • FontMeasure.h          - FSlateFontMeasure::Measure(), whose result the pure
+//                              FSiegeWarMapProjection::CentreTextTopLeft turns into a top-left.
+#include "Application/SlateApplicationBase.h"
+#include "Fonts/FontMeasure.h"
+// FFontOutlineSettings is passed BY VALUE into FCoreStyle::GetDefaultFontStyle's third
+// parameter (CoreStyle.h:51), so the complete type is required. CoreStyle.h already pulls it in
+// transitively; named here anyway, per this file's standing complete-type-include law.
+#include "Fonts/SlateFontInfo.h"
+#include "Rendering/SlateRenderer.h"
 
 #include "Siegebound/AncientGround.h"               // TASK-684 SENTINEL fallback (identity only) + TASK-685 POI icon census (position, display-only)
 #include "Siegebound/Castle.h"                      // TASK-685 POI icon census - position + GetTeamId() for the W4-R5 tint + IsCastleDestroyed(); display-only (WM-§1)
@@ -50,6 +69,8 @@
 #include "Siegebound/ScatterConfig.h"               // USiegeScatterConfig::ArenaHalfExtent - the single owner
 #include "Siegebound/SiegeAssistantComponent.h"     // GetTurnSnapshot() - READ-ONLY (WR-§6 snapshot hazard)
 #include "Siegebound/SiegeAssistantSnapshot.h"      // GetPlaceNames() / ResolvePlace()
+#include "Siegebound/SiegeMapMark.h"                // TASK-744 - FSiegeMapMark + the MakeSymbol seam (MARK-§5)
+#include "Siegebound/SiegeMapMarkSubsystem.h"       // TASK-744 - the store; consumed through the PINNED registry ONLY
 #include "Siegebound/SiegePlayerController.h"
 #include "Siegebound/SiegePlayerState.h"
 #include "Siegebound/SummonedUnit.h"
@@ -206,6 +227,138 @@ namespace SiegeWarMap
 	static constexpr float MarkerLabelGapPx = 6.f;
 
 	static constexpr float MarkerLabelFontSize = 11.f;
+
+	// ── MAP MARKS - the player's numbered circles (TASK-745; MARK-§) ────────────
+
+	/**
+	 *  ⭐⭐ THE MARK RING'S COLOUR - THE ONE NEW COLOUR CONSTANT THIS WHOLE FEATURE ADDS.
+	 *
+	 *  ⚠️⚠️ COLOUR SPACE: **TRUE LINEAR**, because it is a SLATE TINT and Slate sRGB-ENCODES a
+	 *  tint at draw time. ⛔ It is the OPPOSITE space from ElevationGrassDark/Light below, which
+	 *  are DISPLAY-ENCODED sRGB in the same FLinearColor container because they become the raw
+	 *  bytes of an SRGB=true texture and never pass through Slate at all. ⛔⛔ NEVER copy a value
+	 *  between the two families and ⛔ never "correct" one into the other: BOTH readings compile,
+	 *  BOTH render, and only one is right at each site (WM-§8e). The full argument is at the POI
+	 *  tint block above; this line restates the SPACE because WM-§8e's closing clause is
+	 *  absolute - "a colour constant whose space is not written beside it is not shippable."
+	 *
+	 *  ── WHY MAGENTA, AND ⛔ NOT BY EYE (WM-§8b's method, applied to an overlay) ──
+	 *
+	 *  ⭐ FIVE THINGS WERE ALREADY ON THIS MAP AND ⛔ NONE OF THEM MAY BE COLLIDED WITH: the
+	 *  GREEN elevation ramp (the whole background), BLUE ally dots + blue castle icons
+	 *  (GetDefaultBlueBarColor), RED enemy dots + red castle icons (GetDefaultRedBarColor), GOLD
+	 *  mine icons and GOLD place-marker glyphs, and DEEP EMERALD ancient grounds (itself just
+	 *  re-tinted by TASK-722 to survive the green). ⇒ ⭐ MAGENTA IS THE ONE STRONG HUE THE
+	 *  TACTICAL PALETTE HAS NOT SPENT, and it is the EXACT COMPLEMENT of the map's green - the
+	 *  maximum possible hue separation from the background, at both of its ends at once. It also
+	 *  reads correctly as what a mark IS: a player's annotation over the game's own colours,
+	 *  rather than another faction, fixture or resource.
+	 *
+	 *  ── THE LUMINANCE, DERIVED ⛔ NOT PICKED, AGAINST THE RAMP THIS FILE ALREADY OWNS ──
+	 *
+	 *  The ramp spans Y = 0.008651 (dark) to Y = 0.814602 (light) in relative luminance, i.e.
+	 *  the 14.74:1 span WM-§8c records. For a FLAT overlay the two contrast ratios move in
+	 *  opposite directions, so the best any flat colour can do is where they meet:
+	 *      (Y+0.05)² = (0.814602+0.05)·(0.008651+0.05)  ⇒  Y = 0.17519, ratio 3.84:1
+	 *  - which is exactly the 3.84:1 theoretical ceiling WM-§8c states. ⇒ this constant is
+	 *  TUNED TO THAT OPTIMUM rather than to a look:
+	 *      Y = 0.2126·0.52 + 0.7152·0.035 + 0.0722·0.54 = 0.17457
+	 *      vs the ramp's DARK end : (0.17457+0.05)/(0.008651+0.05) = 3.83:1  ✅
+	 *      vs the ramp's LIGHT end: (0.814602+0.05)/(0.17457+0.05) = 3.85:1  ✅
+	 *  ⭐ Within 0.3% of the ceiling on BOTH ends - i.e. it clears the 3:1 gate everywhere on a
+	 *  background no flat colour can clear by more than 3.84:1. As display bytes, for the reader
+	 *  who wants them: (191, 53, 194).
+	 *
+	 *  ⚠️ AND THE RING IS STILL DRAWN OVER A DARK RIM, BECAUSE 3.84:1 IS A CEILING AND NOT A
+	 *  COMFORT. This file's own measured finding is that the three overlays failing the gate are
+	 *  EXACTLY the three drawn with NO OUTLINE, and that "no flat colour can clear 3:1 against
+	 *  BOTH ends of a 14.74:1 background by luminance alone, so the repair is an OUTLINE, ⛔ not
+	 *  another re-tint." ⇒ the mark ring reuses the SHIPPED MarkerOutlineColor as a rim (the
+	 *  same pairing that puts the marker glyph at 12.22:1) and the centred number carries a font
+	 *  OUTLINE in that same colour. ⛔ NO new rim colour is typed: reusing the proven one is one
+	 *  fewer constant, in a file where a constant's SPACE is the thing that goes wrong.
+	 *
+	 *  ⚠️ DISTINCTNESS FROM THE FOUR NEIGHBOURS, SPOT-CHECKED IN LINEAR CHANNELS RATHER THAN
+	 *  ASSERTED: vs BLUE (0.05, 0.30, 1.00) the red channel differs by 0.47; vs RED (1.00, 0.10,
+	 *  0.05) the blue channel differs by 0.49 - that gap IS the difference between magenta and
+	 *  red and it is the largest single-channel gap in the set; vs GOLD (1.00, 0.72, 0.18) the
+	 *  green channel differs by 0.69; vs DEEP EMERALD (0.04, 0.22, 0.09) every channel differs.
+	 *  ⚠️ HONEST LIMIT: this is a channel-distance check plus the luminance derivation above -
+	 *  ⛔ it is NOT a colour-blind simulation, and a deuteranope may read magenta and red closer
+	 *  together than the numbers suggest. The SHAPE tells carry it in that case: a mark is a
+	 *  HOLLOW RING WITH A NUMBER IN IT, an enemy dot is a 6-px filled square that only exists
+	 *  during a paid reveal. Flagged in the handoff rather than claimed as solved.
+	 */
+	static const FLinearColor MarkRingColor = FLinearColor(0.52f, 0.035f, 0.54f, 1.00f); // TRUE LINEAR (Slate tint) - magenta, the exact complement of the map's green; tuned to the 3.84:1 flat-colour ceiling so it clears 3:1 at BOTH ramp ends
+
+	/**
+	 *  Outline thickness for the centred number, in slate units (px at 1.0 font scale).
+	 *
+	 *  ⚠️ 2, ⛔ not 1: a 1-px outline on a 10-pt digit is eaten by antialiasing against the
+	 *  ramp's light end, which is the one place the off-white fill has no contrast of its own.
+	 */
+	static constexpr int32 MarkNumberOutlineSizePx = 2;
+
+	/** Extra ring thickness while a mark is hovered - the affordance that says "the wheel will resize THIS one". Cosmetic; no verb reads the hover state. */
+	static constexpr float MarkHoverThicknessBoostPx = 2.f;
+
+	/**
+	 *  Ring tessellation bounds. Segments scale with radius so a 12-px circle costs 24 points
+	 *  and a 240-px one costs 96 - ⛔ never a fixed count, which would either facet visibly at
+	 *  the top of the range or waste points at the bottom. At the cap of nine marks the whole
+	 *  layer is at most 9 × 2 rings × 97 points per frame, which is the same cost class as the
+	 *  POI icon loop beside it.
+	 */
+	static constexpr int32 MarkRingSegmentsMin = 24;
+	static constexpr int32 MarkRingSegmentsMax = 96;
+	static constexpr float MarkRingSegmentsPerPx = 0.4f;
+
+	/**
+	 *  MARK CHROME. ⛔ The ONLY player-visible words TASK-745 authors, kept in this namespace
+	 *  with the rest so the file's whole player-facing surface stays auditable in one place.
+	 *  ⛔ PURE ASCII, the NoSnapshotStatusText rule (4): non-ASCII inside TEXT() compiles, but
+	 *  these strings are RENDERED by Slate's default font and a glyph the font lacks is a
+	 *  visible defect rather than a build one. ⛔ None of them is a prompt string; nothing in
+	 *  this namespace is ever serialized into any zone (WR-§6), and Zone A stays byte-frozen at
+	 *  5658 chars.
+	 *
+	 *  ⚠️ THEY ARE FUNCTIONS RATHER THAN `const TCHAR*` CONSTANTS, AND THAT IS A HARD LANGUAGE
+	 *  CONSTRAINT, ⛔ NOT A STYLE CHOICE: `FString::Printf` takes a `UE::Core::
+	 *  TCheckedFormatString`, whose only constructor is `TCheckedFormatStringPrivate(const
+	 *  CharType (&Fmt)[N])` and is `consteval` under `UE_VALIDATE_FORMAT_STRINGS`
+	 *  (`String/FormatStringSan.h:486-520`). ⇒ a `const TCHAR*` format ⛔ WILL NOT COMPILE, and
+	 *  the format must be a literal ARRAY at the call site. Wrapping each line in a tiny builder
+	 *  keeps the words here AND the literal where Printf needs it.
+	 */
+
+	/**
+	 *  ⛔ THE PLACED LINE NAMES THE **NUMBER**, ⛔ NEVER THE SYMBOL (MARK-§2): the player sees
+	 *  `1`, the model sees `circle_1`, and neither may be shown in the other's place. It also
+	 *  teaches all three remaining verbs in one sentence, because a circle you cannot resize,
+	 *  delete or name is a circle that looks broken.
+	 */
+	static FString MakeMarkPlacedStatusLine(int32 Number)
+	{
+		return FString::Printf(
+			TEXT("Circle %d placed. Scroll on it to resize, right-click to delete, click it to name it to your commander."),
+			Number);
+	}
+
+	/** ⛔ THE REFUSAL IS LOUD AND IT NAMES THE CAP (M-5, the shipped refusal doctrine) - ⛔ never a silent no-op. The count is read from the store at the moment of refusal, so it cannot disagree with MaxMapMarks. */
+	static FString MakeMarkCapRefusedStatusLine(int32 ExistingCount)
+	{
+		return FString::Printf(
+			TEXT("Map circle limit reached - you already have %d. Right-click one to delete it before placing another."),
+			ExistingCount);
+	}
+
+	/** ⛔ THE DELETED LINE NAMES THE NUMBER THAT WENT, AND SAYS THE HOLE STAYS (M-1). A player who deletes 2 of 3 and sees 1 and 3 remain must be told that is deliberate, or he reports it as a renumbering bug - and the "fix" a future reader would reach for is the renumber that silently redirects an order already sitting unsent in his input box. */
+	static FString MakeMarkDeletedStatusLine(int32 Number)
+	{
+		return FString::Printf(
+			TEXT("Circle %d deleted. The other numbers do not change - your commander still knows them by the same names."),
+			Number);
+	}
 
 	/**
 	 *  ⛔ ONE WHITE BRUSH FOR EVERY QUAD, TINTED PER ELEMENT. FSlateColorBrush carries no
@@ -380,6 +533,78 @@ namespace SiegeWarMap
 	}
 
 	/**
+	 *  ONE HOLLOW RING centred on `LocalCentre` (TASK-745).
+	 *
+	 *  ⭐⛔ HOLLOW IS THE DESIGN, ⛔ NOT A SHORTCUT, AND IT IS ONE OF THE THREE TELLS THAT
+	 *  SEPARATE A MAP MARK FROM A GROUP-ORDER PICK ZONE (WarMapWidget.h §8(d)): the shipped
+	 *  order zones are FILLED world-space ground decals that ISSUE AN ORDER; a mark is a
+	 *  STROKED map-space ring that issues nothing and merely names ground. A filled disc would
+	 *  additionally hide the elevation, the icons and the dots underneath it - which is the
+	 *  content the player opened the map to read.
+	 *
+	 *  ⚠️ MakeLines takes its points in the PAINT GEOMETRY's local space, so this uses the
+	 *  IDENTITY ToPaintGeometry() and builds absolute widget-local points - ⛔ unlike PaintQuad
+	 *  above, which offsets the geometry instead. Both are correct; they are different Slate
+	 *  primitives with different conventions, and mixing them is how a layer ends up drawn at
+	 *  double its offset.
+	 *
+	 *  ⚠️ FVector2f AT THE SLATE BOUNDARY - the standing PaintQuad discipline, and MakeLines'
+	 *  FVector2f overload takes its array BY VALUE, so the local array is handed over directly.
+	 *
+	 *  ⛔ Degenerate radii draw NOTHING rather than a dot or a NaN-shaped smear: the
+	 *  ComputeMapRectLocal fail-closed direction, applied to a stroke. ⛔ No defaulted
+	 *  parameter (SC-§33).
+	 */
+	static void PaintCircleRing(
+		FSlateWindowElementList& OutDrawElements,
+		int32 Layer,
+		const FGeometry& AllottedGeometry,
+		const FVector2D& LocalCentre,
+		float RadiusPx,
+		float ThicknessPx,
+		const FLinearColor& Tint)
+	{
+		if (!(RadiusPx > 0.f) || !(ThicknessPx > 0.f))
+		{
+			return;
+		}
+
+		// Segments scale with the drawn size (see MarkRingSegmentsPerPx): smooth at 240 px,
+		// cheap at 12 px, and never a fixed count that is wrong at one end of the range.
+		const int32 Segments = FMath::Clamp(
+			FMath::CeilToInt(RadiusPx * MarkRingSegmentsPerPx),
+			MarkRingSegmentsMin,
+			MarkRingSegmentsMax);
+
+		TArray<FVector2f> Points;
+		Points.Reserve(Segments + 1);
+
+		const float CentreX = static_cast<float>(LocalCentre.X);
+		const float CentreY = static_cast<float>(LocalCentre.Y);
+
+		// ⚠️ Segments + 1 POINTS, NOT Segments: MakeLines JOINS consecutive points and does not
+		// close the loop itself, so the first point is repeated last. Omitting it leaves a
+		// visible notch in every ring - one wrong `<` and the circle has a bite taken out of it.
+		for (int32 Index = 0; Index <= Segments; ++Index)
+		{
+			const float Angle = (2.f * UE_PI * static_cast<float>(Index)) / static_cast<float>(Segments);
+			Points.Emplace(
+				CentreX + RadiusPx * FMath::Cos(Angle),
+				CentreY + RadiusPx * FMath::Sin(Angle));
+		}
+
+		FSlateDrawElement::MakeLines(
+			OutDrawElements,
+			Layer,
+			AllottedGeometry.ToPaintGeometry(),
+			MoveTemp(Points),
+			ESlateDrawEffect::None,
+			Tint,
+			/*bAntialias=*/ true,
+			ThicknessPx);
+	}
+
+	/**
 	 *  Resolves ONE icon soft ref into its hard pointer + brush (TASK-685). A plain static
 	 *  taking the members by reference - no `this`, no state of its own, three call sites.
 	 *
@@ -548,6 +773,205 @@ int32 FSiegeWarMapProjection::FindMarkerIndexAtLocal(const TArray<FSiegeWarMapMa
 }
 
 // ---------------------------------------------------------------------------
+// ═══ MAP MARK GEOMETRY (TASK-745; MARK-§) - still PURE ═══
+// ⛔ No world, no actor, no UObject, no state. The whole reason this block lives
+// on FSiegeWarMapProjection rather than inside the widget is that the widget's
+// mark handlers must be able to LOOK UP and ACT without DECIDING - so every rule
+// that can be stated as arithmetic is assertable headlessly (W4-R1).
+// ---------------------------------------------------------------------------
+
+bool FSiegeWarMapProjection::LocalToMapUV(
+	const FVector2D& LocalPoint,
+	const FVector2D& RectOrigin,
+	const FVector2D& RectSize,
+	FVector2D& OutMapUV)
+{
+	// ⛔ THE DEGENERATE RECT IS REJECTED BEFORE ANY DIVISION, not after - the
+	// MinArenaHalfExtentUu doctrine. ComputeMapRectLocal returns a ZERO size for a panel
+	// smaller than twice the padding, and that value reaches here on the very first frame of a
+	// map that has not been laid out yet.
+	if (!(RectSize.X > 0.0) || !(RectSize.Y > 0.0))
+	{
+		return false;
+	}
+
+	// ⛔⛔ THE CONTAINMENT TEST IS ON THE **RECT**, ⛔ NOT ON THE NORMALISED VALUE, AND THAT IS A
+	// CORRECTNESS CHOICE RATHER THAN A STYLE ONE. `(Origin + UV·Size) - Origin` is ⛔ NOT exactly
+	// `UV·Size` in floating point, so a point sitting EXACTLY on the rect's right or bottom edge
+	// - which is what MapUVToLocal(1,1) produces, and what a click on the map's last pixel column
+	// is - can normalise to 1.0000000000000002 and be REFUSED by a naive `U > 1.0`. ⇒ testing the
+	// geometry directly makes "inside the drawn map" mean exactly what it says, at the boundary
+	// too, and the round trip stays exact at the corners (pinned by
+	// `Siegebound.WarMap.LocalToMapUVInvertsTheRectAndRefusesOutsideIt`).
+	//
+	// ⛔ REFUSE, ⛔ DO NOT CLAMP. The declaration carries the argument: the forward map clamps
+	// because out-of-arena ACTORS are real and must pin visibly to the rim, while an
+	// out-of-rect CLICK is not a battlefield position at all - it is the letterbox, or the
+	// padding, or the WBP's chrome. Clamping it would silently place a mark on ground the
+	// player did not point at, and ResolvePlace would then answer an order with that ground.
+	//
+	// ⚠️ BOUNDARY INCLUSIVE (<=), the shipped IsPointInZone / FindMarkerIndexAtLocal idiom - so
+	// the map's outermost pixel row and column are map, not chrome.
+	if (LocalPoint.X < RectOrigin.X || LocalPoint.X > RectOrigin.X + RectSize.X
+		|| LocalPoint.Y < RectOrigin.Y || LocalPoint.Y > RectOrigin.Y + RectSize.Y)
+	{
+		return false;
+	}
+
+	const double U = (LocalPoint.X - RectOrigin.X) / RectSize.X;
+	const double V = (LocalPoint.Y - RectOrigin.Y) / RectSize.Y;
+
+	// ⚠️⚠️ THIS CLAMP IS ⛔ NOT THE ONE THE PARAGRAPH ABOVE FORBIDS, AND THE DIFFERENCE MATTERS:
+	// the point has ALREADY been proven inside the rect, so this removes a one-ulp overshoot from
+	// the division and nothing else. The forbidden clamp is the one that would ACCEPT an
+	// out-of-rect click and pin it to the rim; this one changes no click's meaning by more than a
+	// floating-point epsilon, and it guarantees callers a UV that is genuinely in [0,1] - which
+	// MapUVToWorld, by its own contract, does not range-check.
+	OutMapUV = FVector2D(FMath::Clamp(U, 0.0, 1.0), FMath::Clamp(V, 0.0, 1.0));
+	return true;
+}
+
+float FSiegeWarMapProjection::MapWorldRadiusToLocalPx(
+	float RadiusUU,
+	const FVector2D& ArenaHalfExtent,
+	const FVector2D& RectSize)
+{
+	if (!(RadiusUU > 0.f) || !(RectSize.X > 0.0))
+	{
+		// Fail closed: a zero-radius circle draws nothing and hit-tests nothing. ⛔ Never
+		// negative - a negative radius would make the radial hit test answer for every point
+		// on the panel at once (its `<=` would compare against a negative bound and always
+		// fail, which is the SAFE half; but a negative THICKNESS reaches Slate, which is not).
+		return 0.f;
+	}
+
+	// ⭐ ONE SCALAR, AND IT IS EXACT ON BOTH AXES BY CONSTRUCTION - the declaration's proof:
+	// ComputeMapRectLocal builds a rect of exactly the arena's aspect, so
+	// RectSize.X/(2·HalfX) == RectSize.Y/(2·HalfY). The X axis is read because it is the arena's
+	// LONG axis (26,000 of the shipped 26,000 x 12,000), i.e. the one with the most precision
+	// to give. `Siegebound.WarMap.MarkRadiusScaleIsUniformOnBothAxes` asserts the equality, so
+	// an edit that broke the aspect preservation is caught here rather than shipping oval marks.
+	const double HalfX = FMath::Max(ArenaHalfExtent.X, static_cast<double>(MinArenaHalfExtentUu));
+	const double PxPerUu = RectSize.X / (2.0 * HalfX);
+
+	return static_cast<float>(static_cast<double>(RadiusUU) * PxPerUu);
+}
+
+float FSiegeWarMapProjection::MapLocalPxToWorldRadius(
+	float RadiusPx,
+	const FVector2D& ArenaHalfExtent,
+	const FVector2D& RectSize)
+{
+	if (!(RadiusPx > 0.f) || !(RectSize.X > 0.0))
+	{
+		return 0.f;
+	}
+
+	// The EXACT inverse of the line above, same floor, same axis - so the wheel's px → uu →
+	// px round trip is stable and a mark does not creep in size across repeated notches.
+	const double HalfX = FMath::Max(ArenaHalfExtent.X, static_cast<double>(MinArenaHalfExtentUu));
+	const double UuPerPx = (2.0 * HalfX) / RectSize.X;
+
+	return static_cast<float>(static_cast<double>(RadiusPx) * UuPerPx);
+}
+
+int32 FSiegeWarMapProjection::FindMarkIndexAtLocal(
+	const TArray<FSiegeWarMapMarkCircle>& Circles,
+	const FVector2D& LocalPoint)
+{
+	// ⚠️ BACKWARDS, for the identical reason FindMarkerIndexAtLocal scans backwards: circles
+	// are painted in store order, so the LAST entry is the one drawn ON TOP. Scanning forwards
+	// would let the player right-click a circle he cannot see and delete it - a silent wrong
+	// answer, which is the one failure class this whole feature is shaped to avoid.
+	for (int32 Index = Circles.Num() - 1; Index >= 0; --Index)
+	{
+		const FSiegeWarMapMarkCircle& Circle = Circles[Index];
+
+		if (!(Circle.LocalRadiusPx > 0.f))
+		{
+			// A degenerate circle is unhittable rather than universally hittable - fail closed.
+			continue;
+		}
+
+		// ⛔ SQUARED DISTANCE, ⛔ never a Sqrt: same answer, no root, and no chance of a
+		// near-boundary float wobble that would make the edge hit-test disagree with itself
+		// between two frames.
+		const double DeltaX = LocalPoint.X - Circle.LocalCentre.X;
+		const double DeltaY = LocalPoint.Y - Circle.LocalCentre.Y;
+		const double RadiusSq = static_cast<double>(Circle.LocalRadiusPx) * static_cast<double>(Circle.LocalRadiusPx);
+
+		// Boundary INCLUSIVE (<=) - the shipped IsPointInZone / FindMarkerIndexAtLocal idiom,
+		// copied rather than re-decided so "on the edge" means the same thing everywhere.
+		if (DeltaX * DeltaX + DeltaY * DeltaY <= RadiusSq)
+		{
+			return Index;
+		}
+	}
+
+	return INDEX_NONE;
+}
+
+float FSiegeWarMapProjection::StepMarkRadiusPx(
+	float CurrentRadiusPx,
+	float WheelDelta,
+	float StepPx,
+	float MinPx,
+	float MaxPx)
+{
+	// ⛔ A ZERO DELTA CHANGES NOTHING, AND SO DOES A NON-POSITIVE STEP. This is half of "the
+	// wheel does nothing" (the other half is FindMarkIndexAtLocal returning INDEX_NONE), and
+	// it is checked FIRST so a degenerate tunable can never silently snap a mark to a clamp.
+	if (WheelDelta == 0.f || !(StepPx > 0.f))
+	{
+		return CurrentRadiusPx;
+	}
+
+	// Degenerate bounds collapse to a fixed size rather than producing a negative radius: a
+	// negative radius would invert every hit test that consumes it.
+	const float SafeMin = FMath::Max(MinPx, 1.f);
+	const float SafeMax = FMath::Max(MaxPx, SafeMin);
+
+	// ⭐ THE **SIGN**, ⛔ NOT THE MAGNITUDE. FPointerEvent::GetWheelDelta() is
+	// platform/driver-dependent in magnitude - a free-spinning wheel or a trackpad can deliver
+	// fractional or multi-unit deltas - so one EVENT is one STEP in the delta's direction and
+	// the felt speed is MarkWheelStepPx, a designer number, never the mouse driver's.
+	const float Signed = (WheelDelta > 0.f) ? StepPx : -StepPx;
+
+	return FMath::Clamp(CurrentRadiusPx + Signed, SafeMin, SafeMax);
+}
+
+float FSiegeWarMapProjection::MarkNumberFontSizePx(float RadiusPx, float RadiusFraction, float MinSize, float MaxSize)
+{
+	// Degenerate tunables collapse to a fixed READABLE size rather than to nothing: a zeroed
+	// or inverted pair must never produce a 0-pt font, which renders as an absent number - i.e.
+	// a circle with no name, which is the one thing this feature cannot ship.
+	const float SafeMin = FMath::Max(MinSize, 1.f);
+	const float SafeMax = FMath::Max(MaxSize, SafeMin);
+
+	if (!(RadiusPx > 0.f) || !(RadiusFraction > 0.f))
+	{
+		return SafeMin;
+	}
+
+	// ⭐ THE SIZE FOLLOWS THE RING, CLAMPED AT BOTH ENDS - the HeightToBrightness relationship,
+	// verbatim: the clamp is the NORMALIZATION LAW rather than a safety net. Floor ⇒ a circle
+	// scrolled to its minimum still carries a readable digit; ceiling ⇒ one scrolled to its
+	// maximum carries a digit instead of a billboard.
+	return FMath::Clamp(RadiusPx * RadiusFraction, SafeMin, SafeMax);
+}
+
+FVector2D FSiegeWarMapProjection::CentreTextTopLeft(const FVector2D& Centre, const FVector2D& MeasuredTextSize)
+{
+	// Jonathan's contract - "it gets its own number in the middle of it" - as arithmetic, so a
+	// test can read it (W4-R1). ⚠️ A NEGATIVE measured size would push the glyph the wrong way;
+	// the measure service never returns one, but the max costs nothing and makes the function
+	// total for a hand-built test input.
+	return FVector2D(
+		Centre.X - FMath::Max(MeasuredTextSize.X, 0.0) * 0.5,
+		Centre.Y - FMath::Max(MeasuredTextSize.Y, 0.0) * 0.5);
+}
+
+// ---------------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------------
 
@@ -650,6 +1074,10 @@ void UWarMapWidget::NativeConstruct()
 	AncientGroundPoiWorldXY.Reset();
 	BlueCastlePoiWorldXY.Reset();
 	RedCastlePoiWorldXY.Reset();
+	// TASK-745: the hover HIGHLIGHT starts clear (the cursor has not moved over this instance
+	// yet). ⛔ The MARKS are not touched - they live in the local player's subsystem and outlive
+	// every widget construct/destruct cycle by design (M-4).
+	HoveredMarkNumber = 0;
 	SetVisibility(ESlateVisibility::Collapsed);
 }
 
@@ -679,6 +1107,9 @@ void UWarMapWidget::NativeDestruct()
 	AncientGroundPoiWorldXY.Reset();
 	BlueCastlePoiWorldXY.Reset();
 	RedCastlePoiWorldXY.Reset();
+	// TASK-745: the highlight, ⛔ never the marks (M-4 - the store outlives this widget on
+	// purpose, so a torn-down and rebuilt map still shows the plan the player drew).
+	HoveredMarkNumber = 0;
 
 	Super::NativeDestruct();
 }
@@ -781,6 +1212,18 @@ void UWarMapWidget::CloseMap()
 	AncientGroundPoiWorldXY.Reset();
 	BlueCastlePoiWorldXY.Reset();
 	RedCastlePoiWorldXY.Reset();
+
+	// ⭐ TASK-745 - ONLY THE **HIGHLIGHT** DIES WITH THE OPEN. The cursor is no longer over
+	// anything, so a surviving hover would highlight a circle on the next open before the first
+	// mouse move.
+	//
+	// ⛔⛔ AND THE MARKS THEMSELVES ARE **NOT** CLEARED HERE - ⛔ THIS OMISSION IS THE FEATURE,
+	// NOT AN OVERSIGHT (MARK-§ M-4). ⛔ DO NOT COPY THE ENEMY-REVEAL RULE BELOW ONTO THEM: that
+	// rule governs PURCHASED enemy intel and its whole point is that the snapshot goes stale.
+	// A mark is the player's own note about his own ground and does not decay - he opens the
+	// map, draws his plan, closes it, plays, and reopens to the SAME plan. Clearing on match
+	// reset is the STORE's job (USiegeMapMarkSubsystem::ClearMarks), ⛔ never this widget's.
+	HoveredMarkNumber = 0;
 
 	// ⛔⛔ ALWAYS, UNCONDITIONALLY, AND ⛔ NOT BEHIND ANY FLAG (WR-§7 / WR-§9 outcome 4).
 	// Closing the map DISCARDS the paid reveal; re-opening shows nothing until the player
@@ -1520,6 +1963,306 @@ void UWarMapWidget::BuildMarkerRects(const FGeometry& AllottedGeometry, TArray<F
 }
 
 // ---------------------------------------------------------------------------
+// ═══ MAP MARKS - the player's numbered circles (TASK-745; MARK-§) ═══
+//
+// ⛔ THIS WIDGET OWNS NO MARK STATE. Everything below either READS
+// USiegeMapMarkSubsystem::GetMarks() or calls exactly one of the four mutating
+// methods on the PINNED registry. There is no cached array, no shadow count and
+// no second copy of a number - so nothing here can go stale across an open, a
+// panel resize, a match reset or a delete.
+//
+// ⛔ AND NOTHING HERE READS, CREATES OR REACHES A SNAPSHOT. The mark lane never
+// touches USiegeAssistantSnapshot at all: no Capture(), no EnsureSnapshot(), not
+// even a GetPlaceNames() read. The airlock is untouched by every line of it
+// (WR-§6, MARK-§5) - and TASK-746, in a file this task does not own, is what
+// makes a mark answerable as a place.
+// ---------------------------------------------------------------------------
+
+FName UWarMapWidget::MakeMarkPickSymbol(int32 Number)
+{
+	// ⛔ A NON-POSITIVE NUMBER CAN NEVER BECOME A SYMBOL. FSiegeMapMark::Number is 1..9 by the
+	// store's own contract, so 0 here means the store handed back an uninitialised entry - and
+	// the correct answer to that is NAME_None, which the controller's binder already refuses
+	// with a log (`war-map place pick carried no symbol - ignored`). ⇒ a corrupt store degrades
+	// to a logged no-op and can ⛔ never write an empty token into the player's input box.
+	if (Number <= 0)
+	{
+		return NAME_None;
+	}
+
+	// ⛔⛔ DELEGATED, ⛔ NEVER SPELLED. FSiegeMapMark::MakeSymbol is the ONE seam this widget and
+	// USiegeAssistantSnapshot must agree on (MARK-§5). A literal `circle_` here would be a
+	// second transcription, and its drift would be silent in the worst possible way: the map
+	// would insert a name TASK-746 never published, the grammar would refuse it, and the
+	// feature would read to Jonathan as "the AI ignores my circles."
+	return FName(*FSiegeMapMark::MakeSymbol(Number));
+}
+
+FLinearColor UWarMapWidget::GetMarkRingColor()
+{
+	// ⛔ TRUE LINEAR (Slate tint). The whole colour-space argument, the magenta derivation and
+	// the 3.84:1 flat-colour ceiling live at the constant's declaration above; the declaration
+	// comment in the header explains why this accessor exists (so a test can MEASURE the
+	// legibility claim instead of a comment asserting it).
+	return SiegeWarMap::MarkRingColor;
+}
+
+USiegeMapMarkSubsystem* UWarMapWidget::GetMarkSubsystem() const
+{
+	// ⛔ A LOOKUP, ⛔ NEVER A CREATE - GetSubsystem<T>() returns the collection's existing
+	// instance. No owning local player (a headless widget, a viewport teardown, a widget built
+	// before possession) ⇒ null ⇒ every mark verb degrades to "unavailable" and the SHIPPED
+	// pre-TASK-745 behaviour runs instead. ⛔ Never a crash, ⛔ never a silent half-state.
+	const ULocalPlayer* const LocalPlayer = GetOwningLocalPlayer();
+	if (LocalPlayer == nullptr)
+	{
+		return nullptr;
+	}
+
+	return LocalPlayer->GetSubsystem<USiegeMapMarkSubsystem>();
+}
+
+int32 UWarMapWidget::GetMapMarkCount() const
+{
+	const USiegeMapMarkSubsystem* const Marks = GetMarkSubsystem();
+	return (Marks != nullptr) ? Marks->GetMarks().Num() : 0;
+}
+
+void UWarMapWidget::BuildMarkCircles(const FGeometry& AllottedGeometry, TArray<FSiegeWarMapMarkCircle>& OutCircles) const
+{
+	// ⛔ RESET FIRST, BEFORE EVERY EARLY RETURN - the BuildMarkerRects contract, verbatim: the
+	// caller must never be left holding LAST frame's circles because this frame had no store.
+	// A stale circle is worse than no circle: it would hit-test at a position nothing is drawn.
+	OutCircles.Reset();
+
+	const USiegeMapMarkSubsystem* const Marks = GetMarkSubsystem();
+	if (Marks == nullptr)
+	{
+		return;
+	}
+
+	const FVector2f PanelSizeF = AllottedGeometry.GetLocalSize();
+	const FVector2D PanelSize(PanelSizeF.X, PanelSizeF.Y);
+	const FVector2D ArenaHalfExtent = ResolveArenaHalfExtent();
+
+	FVector2D RectOrigin = FVector2D::ZeroVector;
+	FVector2D RectSize = FVector2D::ZeroVector;
+	FSiegeWarMapProjection::ComputeMapRectLocal(PanelSize, MapPaddingPx, ArenaHalfExtent, RectOrigin, RectSize);
+
+	if (RectSize.X <= 0.0 || RectSize.Y <= 0.0)
+	{
+		return;
+	}
+
+	// ⭐ STORE ORDER IS PAINT ORDER IS HIT ORDER. FindMarkIndexAtLocal scans BACKWARDS
+	// (last-match-wins) and the painter draws forwards, so preserving the store's order here is
+	// what makes "the topmost circle is the one you hit" true rather than hoped.
+	const TArray<FSiegeMapMark>& StoredMarks = Marks->GetMarks();
+	OutCircles.Reserve(StoredMarks.Num());
+
+	for (const FSiegeMapMark& Mark : StoredMarks)
+	{
+		FSiegeWarMapMarkCircle& Circle = OutCircles.AddDefaulted_GetRef();
+
+		// ⛔ THE NUMBER IS COPIED, ⛔ NEVER RE-DERIVED FROM THE LOOP INDEX. `M-1`: deleting
+		// circle 2 of 3 leaves the hole, so index 1 holds number 3 - and an index-derived
+		// number would silently rename every surviving mark the moment one was deleted, which
+		// is precisely the order-redirection the no-renumber rule exists to prevent.
+		Circle.Number = Mark.Number;
+
+		// ⛔ THE SHIPPED PROJECTION CHAIN, ⛔ NEVER RE-DERIVED (WM-§7's single-owner law): the
+		// same WorldToMapUV → MapUVToLocal the markers, dots, icons and elevation bake all use,
+		// so a mark and a dot can never disagree about where the arena is.
+		Circle.LocalCentre = FSiegeWarMapProjection::MapUVToLocal(
+			FSiegeWarMapProjection::WorldToMapUV(Mark.WorldXY, ArenaHalfExtent),
+			RectOrigin,
+			RectSize);
+
+		Circle.LocalRadiusPx = FSiegeWarMapProjection::MapWorldRadiusToLocalPx(
+			Mark.RadiusUU, ArenaHalfExtent, RectSize);
+	}
+}
+
+bool UWarMapWidget::TryPlaceMarkAtLocal(const FGeometry& InGeometry, const FVector2D& LocalPoint)
+{
+	USiegeMapMarkSubsystem* const Marks = GetMarkSubsystem();
+	if (Marks == nullptr)
+	{
+		// ⛔ NOT CONSUMED. The caller then runs the SHIPPED empty-click arm verbatim, which is
+		// how WR-§9 outcome 1's retired behaviour survives as a real degrade path rather than
+		// as deleted code.
+		return false;
+	}
+
+	const FVector2f PanelSizeF = InGeometry.GetLocalSize();
+	const FVector2D PanelSize(PanelSizeF.X, PanelSizeF.Y);
+	const FVector2D ArenaHalfExtent = ResolveArenaHalfExtent();
+
+	FVector2D RectOrigin = FVector2D::ZeroVector;
+	FVector2D RectSize = FVector2D::ZeroVector;
+	FSiegeWarMapProjection::ComputeMapRectLocal(PanelSize, MapPaddingPx, ArenaHalfExtent, RectOrigin, RectSize);
+
+	// ⛔⛔ OUTSIDE THE DRAWN RECT IS ⛔ NOT A PLACE. The map is letterboxed inside the panel, so
+	// a click in the padding or the letterbox is chrome, not battlefield - and LocalToMapUV
+	// REFUSES rather than clamping, because a clamped mark would sit on ground the player never
+	// pointed at and ResolvePlace would later answer an order with that ground.
+	FVector2D MapUV = FVector2D::ZeroVector;
+	if (!FSiegeWarMapProjection::LocalToMapUV(LocalPoint, RectOrigin, RectSize, MapUV))
+	{
+		return false;
+	}
+
+	// ⚠️⚠️ THIS IS THE ONE LINE IN THE FILE THAT PRODUCES A WORLD COORDINATE, AND ITS THREE
+	// SAFETY PROPERTIES ARE STRUCTURAL (WarMapWidget.h §8(a)):
+	//   1. it goes into a CLIENT-LOCAL ULocalPlayerSubsystem and nowhere else - the map's entire
+	//      outbound surface is still FOnWarMapPlacePicked(FName);
+	//   2. MARK-§1 sanctions exactly this shape - "a mark's centre is resolved on the GAME side
+	//      by ResolvePlace, exactly as nearest_mine resolves to a world position today without
+	//      ever printing one";
+	//   3. ⛔ it does NOT come from the elevation bake. It comes from the projection pair's
+	//      exact X/Y inverse, and an FVector2D HAS NO Z - so the 1,000-uu-clamped display buffer
+	//      this same class owns is structurally unreachable from a mark (WM-§8d's firewall, and
+	//      the SHIP-§9 fake-instrument class it exists to prevent).
+	const FVector2D WorldXY = FSiegeWarMapProjection::MapUVToWorld(MapUV, ArenaHalfExtent);
+
+	// The birth radius is a WIDGET-SPACE tunable (MARK-§4) converted through the one crossing.
+	const float RadiusUU = FSiegeWarMapProjection::MapLocalPxToWorldRadius(
+		FMath::Clamp(MarkDefaultRadiusPx, MarkMinRadiusPx, FMath::Max(MarkMaxRadiusPx, MarkMinRadiusPx)),
+		ArenaHalfExtent,
+		RectSize);
+
+	FSiegeMapMark Placed;
+	if (!Marks->AddMark(WorldXY, RadiusUU, Placed))
+	{
+		// ⛔⛔ THE CAP REFUSES **LOUDLY** (M-5, the shipped refusal doctrine) - ⛔ never a silent
+		// no-op, which would read as a broken map. ⚠️ THE COUNT IS READ FROM THE STORE at the
+		// moment of refusal rather than transcribed: AddMark only refuses at MaxMapMarks, so
+		// Num() IS the cap by definition, and a line built this way cannot drift the day the
+		// cap is retuned on the subsystem's EditDefaultsOnly property.
+		SetStatusLine(SiegeWarMap::MakeMarkCapRefusedStatusLine(Marks->GetMarks().Num()));
+
+		// ⭐ CONSUMED. The click was answered - with a refusal the player can read and act on -
+		// so the shipped empty-click hint must NOT also fire and overwrite it.
+		return true;
+	}
+
+	// ⛔ THE LINE NAMES THE **NUMBER**, ⛔ NEVER THE SYMBOL (MARK-§2): the player sees `1`, the
+	// model sees `circle_1`, and neither may be shown in the other's place.
+	SetStatusLine(SiegeWarMap::MakeMarkPlacedStatusLine(Placed.Number));
+
+	// The newly placed circle is under the cursor by construction, so the hover highlight is
+	// correct immediately rather than one mouse-move later.
+	HoveredMarkNumber = Placed.Number;
+
+	UE_LOG(LogSiegeWarMap, Verbose,
+		TEXT("[WarMap] Map mark placed: number %d (the symbol is only ever composed at pick time; no coordinate leaves this widget)."),
+		Placed.Number);
+
+	return true;
+}
+
+bool UWarMapWidget::TryDeleteMarkAtLocal(const FGeometry& InGeometry, const FVector2D& LocalPoint)
+{
+	USiegeMapMarkSubsystem* const Marks = GetMarkSubsystem();
+	if (Marks == nullptr)
+	{
+		return false;
+	}
+
+	// ⭐ THE SAME BUILDER THE PAINTER USES, against the geometry Slate just handed this event -
+	// so the circle the player is pointing at is the circle that dies.
+	TArray<FSiegeWarMapMarkCircle> Circles;
+	BuildMarkCircles(InGeometry, Circles);
+
+	const int32 HitIndex = FSiegeWarMapProjection::FindMarkIndexAtLocal(Circles, LocalPoint);
+	if (HitIndex == INDEX_NONE)
+	{
+		// ⛔ A RIGHT-CLICK ON EMPTY MAP DOES NOTHING. No mark is deleted, no status line is
+		// written, no coordinate is invented and no nearest-circle guess is made - deleting the
+		// closest circle to a miss is exactly the silent wrong answer this feature must not have.
+		return false;
+	}
+
+	// ⛔ ADDRESSED BY **NUMBER**, ⛔ NEVER BY INDEX (M-1). The store's array order is its own
+	// business and holes make index ≠ number; RemoveMark(Number) is the pinned contract.
+	const int32 Number = Circles[HitIndex].Number;
+	if (!Marks->RemoveMark(Number))
+	{
+		return false;
+	}
+
+	if (HoveredMarkNumber == Number)
+	{
+		// ⛔ A HIGHLIGHT THAT OUTLIVES ITS CIRCLE IS A LIE ABOUT WHAT THE WHEEL WILL RESIZE.
+		HoveredMarkNumber = 0;
+	}
+
+	// ⛔ THE LINE SAYS THE HOLE STAYS, AND THAT SENTENCE IS LOAD-BEARING (M-1): a player who
+	// deletes 2 of 3 and then sees 1 and 3 remain will otherwise report it as a numbering bug -
+	// and the "fix" a future reader would reach for is the renumber that would silently
+	// redirect an order already sitting unsent in his input box.
+	SetStatusLine(SiegeWarMap::MakeMarkDeletedStatusLine(Number));
+
+	UE_LOG(LogSiegeWarMap, Verbose,
+		TEXT("[WarMap] Map mark deleted: number %d. The hole is LEFT - surviving marks keep their numbers (MARK-M-1)."),
+		Number);
+
+	return true;
+}
+
+bool UWarMapWidget::TryResizeMarkAtLocal(const FGeometry& InGeometry, const FVector2D& LocalPoint, float WheelDelta)
+{
+	USiegeMapMarkSubsystem* const Marks = GetMarkSubsystem();
+	if (Marks == nullptr)
+	{
+		return false;
+	}
+
+	TArray<FSiegeWarMapMarkCircle> Circles;
+	BuildMarkCircles(InGeometry, Circles);
+
+	// ⭐ THE TARGET IS THIS EVENT'S OWN CURSOR POSITION, ⛔ NOT HoveredMarkNumber. That state is
+	// a cosmetic highlight updated by a different event on a different cadence; resizing off it
+	// would let a stale hover silently resize a circle the cursor had already left.
+	const int32 HitIndex = FSiegeWarMapProjection::FindMarkIndexAtLocal(Circles, LocalPoint);
+	if (HitIndex == INDEX_NONE)
+	{
+		// ⛔ THE WHEEL OUTSIDE A MARK CHANGES NOTHING, ANYWHERE. ⛔ Not the nearest circle, ⛔ not
+		// the last-touched one, ⛔ not a map zoom (there is none). MARK-§4's "INERT" in full.
+		return false;
+	}
+
+	const FSiegeWarMapMarkCircle& Circle = Circles[HitIndex];
+
+	// ⛔ THE STEP AND THE CLAMP ARE IN **PIXELS** (MARK-§4: widget-space tunables, ⛔ never the
+	// world-space GroupRadiusWheelStep/Min/Max), and the STORE is written in uu - the one
+	// crossing lives in MapLocalPxToWorldRadius and its inverse, and nowhere else.
+	const float NewRadiusPx = FSiegeWarMapProjection::StepMarkRadiusPx(
+		Circle.LocalRadiusPx, WheelDelta, MarkWheelStepPx, MarkMinRadiusPx, MarkMaxRadiusPx);
+
+	if (NewRadiusPx == Circle.LocalRadiusPx)
+	{
+		// Pinned at a clamp, or a zero delta ⇒ nothing to write. ⛔ Not an error and ⛔ not a
+		// status line: the player is holding the wheel against a limit, which the ring's own
+		// size already tells him.
+		return false;
+	}
+
+	const FVector2f PanelSizeF = InGeometry.GetLocalSize();
+	const FVector2D PanelSize(PanelSizeF.X, PanelSizeF.Y);
+	const FVector2D ArenaHalfExtent = ResolveArenaHalfExtent();
+
+	FVector2D RectOrigin = FVector2D::ZeroVector;
+	FVector2D RectSize = FVector2D::ZeroVector;
+	FSiegeWarMapProjection::ComputeMapRectLocal(PanelSize, MapPaddingPx, ArenaHalfExtent, RectOrigin, RectSize);
+
+	const float NewRadiusUU = FSiegeWarMapProjection::MapLocalPxToWorldRadius(NewRadiusPx, ArenaHalfExtent, RectSize);
+
+	// ⛔ BY NUMBER, not by index - the M-1 discipline again, on the third verb.
+	return Marks->SetMarkRadius(Circle.Number, NewRadiusUU);
+}
+
+// ---------------------------------------------------------------------------
 // The painter (WR-§6's rendering row)
 // ---------------------------------------------------------------------------
 
@@ -1571,12 +2314,26 @@ int32 UWarMapWidget::NativePaint(
 	// precedent. The SEVEN ResolvePlace markers stay the topmost solids, so a marker draws
 	// ON TOP of any coincident POI icon (spec item 3) - and stay the ONLY thing the hit test
 	// reads: nothing painted on PoiIconLayer exists to NativeOnMouseButtonDown.
+	// ⭐ TASK-745 TAKES **TWO** SLOTS AND SPLITS THEM, WHICH IS THE ONE PLACE THIS FEATURE
+	// DEPARTS FROM THE ONE-LAYER-PER-WAVE PRECEDENT - so the reason is written down:
+	//   • THE RING is ground ANNOTATION and belongs UNDER the content it annotates. Drawn above
+	//     the elevation but below the icons and the dots, so a circle can never hide the units
+	//     and fixtures the player opened the map to read.
+	//   • THE NUMBER is the mark's IDENTITY - it is literally the name the player speaks to his
+	//     commander ("hold 1") - so it may NOT be buried under a unit dot that happens to sit at
+	//     a circle's centre. It is drawn above every dot.
+	// ⛔ BOTH stay BELOW MarkerLayer, and that is not a preference: it keeps the paint order and
+	// the HIT order identical (markers are tested first, §8(c)), so the seven place markers
+	// remain both the topmost solids AND the first thing a click finds. Every shipped layer
+	// above each inserted slot moves up - ORDER PRESERVED, the TASK-684/685 precedent.
 	const int32 ElevationLayer = MaxLayer + 1;
-	const int32 PoiIconLayer = MaxLayer + 2;
-	const int32 AllyLayer = MaxLayer + 3;
-	const int32 EnemyLayer = MaxLayer + 4;
-	const int32 MarkerLayer = MaxLayer + 5;
-	const int32 LabelLayer = MaxLayer + 6;
+	const int32 MarkRingLayer = MaxLayer + 2;
+	const int32 PoiIconLayer = MaxLayer + 3;
+	const int32 AllyLayer = MaxLayer + 4;
+	const int32 EnemyLayer = MaxLayer + 5;
+	const int32 MarkNumberLayer = MaxLayer + 6;
+	const int32 MarkerLayer = MaxLayer + 7;
+	const int32 LabelLayer = MaxLayer + 8;
 
 	// Null ⇒ never baked or bake failed ⇒ this frame looks exactly like the pre-TASK-684 map
 	// (the WBP's flat panel shows through). ⛔ The painter never bakes - it is const, and the
@@ -1594,6 +2351,37 @@ int32 UWarMapWidget::NativePaint(
 			&ElevationBrush,
 			ESlateDrawEffect::None,
 			FLinearColor::White);
+	}
+
+	// ═══ MAP MARKS - the rings (TASK-745; MARK-§) ════════════════════════════════════════
+	// ⭐ THE SAME BUILDER EVERY MARK VERB CALLS. What is drawn here is exactly what a click, a
+	// right-click and a wheel notch will hit, because all four come out of BuildMarkCircles
+	// against the same geometry (WR-§6's rendering ruling, on a feature with four verbs).
+	// ⛔ Built ONCE and reused by the number pass below - one store read, not two.
+	TArray<FSiegeWarMapMarkCircle> MarkCircles;
+	BuildMarkCircles(AllottedGeometry, MarkCircles);
+
+	for (const FSiegeWarMapMarkCircle& Circle : MarkCircles)
+	{
+		// ⭐ THE HOVER BOOST IS THE ONLY THING THAT MAKES "hover + wheel" VISIBLE. Without it the
+		// player cannot tell which of two overlapping circles the wheel will resize, and the
+		// first thing he learns is that the wheel picks one at random. ⛔ Cosmetic only - the
+		// resize target is recomputed from the wheel event's own cursor position.
+		const float Thickness = MarkRingThicknessPx
+			+ ((Circle.Number == HoveredMarkNumber) ? SiegeWarMap::MarkHoverThicknessBoostPx : 0.f);
+
+		// ⭐⛔ RIM FIRST, COLOUR ON TOP - the marker glyph's shipped pattern, and the file's own
+		// measured finding applied: a FLAT colour cannot clear 3:1 against BOTH ends of this
+		// ramp's 14.74:1 span (3.84:1 is the ceiling for any of them), so the repair is an
+		// OUTLINE and ⛔ not another re-tint. The rim is the SHIPPED MarkerOutlineColor - reused,
+		// ⛔ never re-typed, so there is one fewer colour constant whose SPACE could be wrong.
+		SiegeWarMap::PaintCircleRing(
+			OutDrawElements, MarkRingLayer, AllottedGeometry, Circle.LocalCentre,
+			Circle.LocalRadiusPx, Thickness + 2.f, SiegeWarMap::MarkerOutlineColor);
+
+		SiegeWarMap::PaintCircleRing(
+			OutDrawElements, MarkRingLayer, AllottedGeometry, Circle.LocalCentre,
+			Circle.LocalRadiusPx, Thickness, SiegeWarMap::MarkRingColor);
 	}
 
 	// ═══ The POI icon layer (TASK-685; WM-§1) ════════════════════════════════════════════
@@ -1675,6 +2463,101 @@ int32 UWarMapWidget::NativePaint(
 			SiegeWarMap::DotDrawHalfSizePx, EnemyColor);
 	}
 
+	// ═══ MAP MARKS - the centred numbers (TASK-745; MARK-§2) ═════════════════════════════
+	//
+	// ⭐⭐ "Every time you make a new circle, it gets its own number in the middle of it" - his
+	// sentence, and the whole feature's identity. ⛔ THE PLAYER SEES `1`; THE MODEL SEES
+	// `circle_1`; ⛔ NEITHER MAY EVER BE SHOWN IN THE OTHER'S PLACE (MARK-§2). Nothing in this
+	// block ever renders a symbol, and nothing in the pick path ever inserts a bare digit.
+	//
+	// ── HOW IT STAYS LEGIBLE AT **ANY** RADIUS, WHICH IS TWO INDEPENDENT MECHANISMS ──
+	//  (1) SIZE follows the ring: FontSize = Radius x MarkNumberFontRadiusFraction, CLAMPED to
+	//      [MarkNumberFontMinSize, MarkNumberFontMaxSize]. ⇒ a circle scrolled to its 12-px
+	//      floor still carries a readable 10-pt digit, and one scrolled to its 240-px ceiling
+	//      carries a 28-pt digit instead of a 144-pt one stamped across the battlefield.
+	//  (2) CONTRAST comes from an OUTLINE, ⛔ not from the fill colour, and that is this file's
+	//      OWN measured finding rather than a guess: the three overlays that fail the 3:1 gate
+	//      are EXACTLY the three drawn with no outline, and "no flat colour can clear 3:1
+	//      against BOTH ends of a 14.74:1 background by luminance alone, so the repair is an
+	//      OUTLINE." ⇒ the fill is the shipped MarkerLabelColor and the outline the shipped
+	//      MarkerOutlineColor - the identical pairing that puts the marker GLYPH at 12.22:1 -
+	//      and the digit therefore reads over the ramp's dark end, its light end, a castle
+	//      shell clamped white, and its own magenta ring alike.
+	if (!MarkCircles.IsEmpty())
+	{
+		// ⚠️ THE MEASURE SERVICE IS THE ONLY WAY TO CENTRE TEXT IN SLATE, and the seven place
+		// markers' labels are deliberately LEFT-ANCHORED beside their glyph precisely to avoid
+		// needing it. This feature pays that cost because "in the middle of it" is Jonathan's
+		// contract, ⛔ not a layout preference.
+		//
+		// ⛔ THE GUARD IS DEFENSIVE AND STRUCTURALLY UNREACHABLE FROM A PAINT PASS - said
+		// plainly rather than dressed up as a real degrade path: NativePaint is invoked only by
+		// SObjectWidget::OnPaint, which cannot run without a live Slate application and a
+		// renderer. It is here because FSlateApplicationBase::Get() check()s, and a check() in
+		// a painter is a crash where a missing digit would do.
+		const FSlateRenderer* const Renderer =
+			FSlateApplicationBase::IsInitialized() ? FSlateApplicationBase::Get().GetRenderer() : nullptr;
+
+		if (Renderer != nullptr)
+		{
+			const TSharedRef<FSlateFontMeasure> FontMeasure = Renderer->GetFontMeasureService();
+
+			for (const FSiegeWarMapMarkCircle& Circle : MarkCircles)
+			{
+				if (Circle.Number <= 0 || !(Circle.LocalRadiusPx > 0.f))
+				{
+					// A degenerate circle draws no ring (PaintCircleRing refuses it) and must
+					// draw no number either - a floating digit with nothing around it would be
+					// the picture disagreeing with the hit test.
+					continue;
+				}
+
+				// ⭐ THE SIZE RULE IS THE PURE, TESTED SEAM - ⛔ not a clamp inlined here where
+				// no test could sweep it across the radius range (W4-R1, the same reason
+				// CentreTextTopLeft below is a function).
+				const float FontSize = FSiegeWarMapProjection::MarkNumberFontSizePx(
+					Circle.LocalRadiusPx, MarkNumberFontRadiusFraction,
+					MarkNumberFontMinSize, MarkNumberFontMaxSize);
+
+				// ⚠️ "Bold", ⛔ not the markers' "Regular": a single digit inside a ring has no
+				// neighbouring letters to give it word-shape, so weight is what carries it at
+				// the 10-pt floor. The FFontOutlineSettings overload is FCoreStyle's own
+				// (CoreStyle.h:51) - ⛔ the outline is part of the FONT, never a second MakeText
+				// pass offset by a pixel, which is the hand-rolled shadow trick that shows its
+				// seams at large sizes.
+				const FSlateFontInfo NumberFont = FCoreStyle::GetDefaultFontStyle(
+					TEXT("Bold"),
+					FontSize,
+					FFontOutlineSettings(SiegeWarMap::MarkNumberOutlineSizePx, SiegeWarMap::MarkerOutlineColor));
+
+				// ⛔ THE NUMBER, ⛔ NOT THE SYMBOL. FString::FromInt, so `1` - never `circle_1`.
+				const FString NumberText = FString::FromInt(Circle.Number);
+
+				// FVector2f at the Slate boundary - Measure returns a FDeprecateVector2DResult,
+				// which IS an FVector2f (the GetLocalSize() idiom above, verbatim).
+				const FVector2f MeasuredF = FontMeasure->Measure(NumberText, NumberFont);
+
+				// ⭐ THE CENTRING RULE IS THE PURE, TESTED SEAM - ⛔ not arithmetic inlined here
+				// where no test could ever read it (W4-R1).
+				const FVector2D TopLeft = FSiegeWarMapProjection::CentreTextTopLeft(
+					Circle.LocalCentre, FVector2D(MeasuredF.X, MeasuredF.Y));
+
+				FSlateDrawElement::MakeText(
+					OutDrawElements,
+					MarkNumberLayer,
+					AllottedGeometry.ToPaintGeometry(
+						PanelSizeF,
+						FSlateLayoutTransform(FVector2f(
+							static_cast<float>(TopLeft.X),
+							static_cast<float>(TopLeft.Y)))),
+					NumberText,
+					NumberFont,
+					ESlateDrawEffect::None,
+					SiegeWarMap::MarkerLabelColor);
+			}
+		}
+	}
+
 	// ⭐ THE SAME BUILDER THE HIT TEST CALLS. What is painted below is exactly what
 	// NativeOnMouseButtonDown will test against, because both come out of this one function.
 	TArray<FSiegeWarMapMarker> Markers;
@@ -1731,17 +2614,35 @@ FReply UWarMapWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const
 		return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 	}
 
-	// ⚠️ EVERY BUTTON IS ABSORBED WHILE THE MAP IS OPEN. The map fills the screen, so a
-	// fall-through click would land on the WORLD behind it and issue a real order at a real
-	// position - which the player would read as "the map made my army walk somewhere".
-	// Absorbing is the fail-safe direction; only the LEFT button picks a symbol.
+	const FVector2f LocalPointF = InGeometry.AbsoluteToLocal(InMouseEvent.GetScreenSpacePosition());
+	const FVector2D LocalPoint(LocalPointF.X, LocalPointF.Y);
+
+	// ⭐ TASK-745 - THE RIGHT BUTTON NOW DELETES A MAP MARK (MARK-§; Jonathan: "You can right
+	// click to delete that circle").
+	//
+	// ⛔ IT IS HANDLED **BEFORE** THE NON-LEFT ABSORB BELOW AND ⛔ NEVER INSTEAD OF IT: a
+	// right-click that hits no circle still returns Handled and still does nothing, so the
+	// shipped "every button is absorbed while the map is open" property is byte-for-byte intact.
+	// ⚠️ The absorb is what stops a click falling through a full-screen panel and issuing a real
+	// order at a real world position - "the map made my army walk somewhere" - and it is also
+	// why the RIGHT button is safe to spend here: it already went nowhere.
+	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
+	{
+		// ⛔ ITS RETURN VALUE IS DELIBERATELY DISCARDED. There is exactly one behaviour for a
+		// right-click on empty map, on a mark-less map, and on a map with no store at all:
+		// NOTHING, silently. ⛔ No status line, ⛔ no hint, ⛔ no nearest-circle guess.
+		TryDeleteMarkAtLocal(InGeometry, LocalPoint);
+		return FReply::Handled();
+	}
+
+	// ⚠️ EVERY OTHER BUTTON IS ABSORBED WHILE THE MAP IS OPEN - shipped, unchanged. The map
+	// fills the screen, so a fall-through click would land on the WORLD behind it and issue a
+	// real order at a real position. Absorbing is the fail-safe direction; only the LEFT button
+	// names or places anything.
 	if (InMouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
 	{
 		return FReply::Handled();
 	}
-
-	const FVector2f LocalPointF = InGeometry.AbsoluteToLocal(InMouseEvent.GetScreenSpacePosition());
-	const FVector2D LocalPoint(LocalPointF.X, LocalPointF.Y);
 
 	// ⭐ ONE SOURCE OF TRUTH: the same builder, against the geometry Slate just handed this
 	// event. What the player can SEE and what the player can CLICK cannot disagree.
@@ -1752,12 +2653,78 @@ FReply UWarMapWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const
 
 	if (HitIndex == INDEX_NONE)
 	{
+		// ⭐⭐ TASK-745 - THE MARK LANE, AND ITS PRECEDENCE IS DELIBERATE AND LOAD-BEARING.
+		//
+		// ⛔ THE SEVEN PLACE MARKERS WERE TESTED FIRST, ABOVE, AND THEY WIN. TASK-745's spec
+		// lists "the seven place markers' hit-testing and symbol insertion" among the shipped
+		// things it may not disturb - and a mark is an arbitrarily large disc the player can
+		// drop anywhere, so if marks won, one big circle over `own_castle` would silently make
+		// that marker unclickable for the rest of the match. The PAINT order matches (marks
+		// below markers), so what you see and what you click still agree.
+		//
+		// ⇒ Only now, on ground that named no marker:
+		//    (a) inside an existing MARK  ⇒ insert `circle_N` - the whole point of the feature;
+		//    (b) on genuinely empty map   ⇒ PLACE a new mark at the lowest free number;
+		//    (c) mark lane unavailable    ⇒ the SHIPPED empty-click arm, verbatim.
+		{
+			TArray<FSiegeWarMapMarkCircle> MarkCircles;
+			BuildMarkCircles(InGeometry, MarkCircles);
+
+			const int32 MarkIndex = FSiegeWarMapProjection::FindMarkIndexAtLocal(MarkCircles, LocalPoint);
+			if (MarkIndex != INDEX_NONE)
+			{
+				// ⛔⛔ THE SYMBOL, AND ONLY THE SYMBOL, LEAVES THIS CLASS - on the SAME delegate
+				// the seven markers already use, so TASK-563's binder needs ⛔ not one line of
+				// change and the console seam (ComposeAppendedInput) is untouched. ⛔ No
+				// position, no radius, no count and no circle geometry rides along.
+				const int32 PickedNumber = MarkCircles[MarkIndex].Number;
+				const FName PickedMarkSymbol = MakeMarkPickSymbol(PickedNumber);
+
+				if (!PickedMarkSymbol.IsNone())
+				{
+					OnPlacePicked.Broadcast(PickedMarkSymbol);
+
+					// ⛔ THE STATUS LINE ECHOES THE SYMBOL, ⛔ not the number - and that is the
+					// ONE place the two renderings deliberately swap roles (MARK-§2). The line
+					// is telling the player what was just written into his input box, so it must
+					// show him exactly the text he is about to send; the NUMBER is what is drawn
+					// on the map. Same identity, two renderings, each in its own place.
+					SetStatusLine(PickedMarkSymbol.ToString());
+
+					UE_LOG(LogSiegeWarMap, Verbose,
+						TEXT("[WarMap] Map mark picked: number %d -> symbol '%s' (symbol only - no coordinate leaves this widget)."),
+						PickedNumber, *PickedMarkSymbol.ToString());
+				}
+
+				return FReply::Handled();
+			}
+
+			if (TryPlaceMarkAtLocal(InGeometry, LocalPoint))
+			{
+				// Placed, or refused at the cap with a line naming the cap. Either way the
+				// click was ANSWERED, so the shipped hint below must not overwrite it.
+				return FReply::Handled();
+			}
+		}
+
 		// ⛔ A CLICK ON EMPTY MAP DOES NOTHING beyond one line of static chrome naming what IS
 		// clickable (WR-§9 outcome 1 - a DESIGNED outcome, on Jonathan's playtest sheet, so a
 		// report of it is read correctly). ⛔ It does NOT invent a coordinate, a grid cell, a
 		// snap radius or a nearest-marker guess: the vocabulary has no primitive for an
 		// arbitrary point, and manufacturing one is the exact thing AS-§21.4 reserves for
 		// Jonathan.
+		//
+		// ⚠️⚠️ TASK-745 (MARK-§) DEMOTED THIS ARM TO A **DEGRADE PATH**, AND THE CHANGE IS
+		// DECLARED RATHER THAN SLIPPED IN (SC-§15; WarMapWidget.h §2's amendment block): by
+		// Jonathan's own directive an empty-map LEFT click now PLACES A NUMBERED MARK, so
+		// WR-§9 outcome 1 is no longer true of the LEFT button. ⛔ IT IS STILL TRUE OF THE
+		// RIGHT BUTTON, and it is still true HERE - this arm is now reached only when the mark
+		// lane is UNAVAILABLE (no owning local player ⇒ no USiegeMapMarkSubsystem) or the click
+		// landed OUTSIDE the drawn map rect (the letterbox, where LocalToMapUV refuses rather
+		// than clamping a mark onto ground the player never pointed at). ⇒ the retired
+		// behaviour survives as REACHABLE CODE with a real reason to run, ⛔ not as a deleted
+		// branch nobody can audit - and the airlock argument above is untouched either way,
+		// because the mark lane also emits a SYMBOL and never a coordinate.
 		//
 		// ⚠️ TASK-579 MOVED THIS DISCRIMINATOR FROM Markers.Num() TO THE SNAPSHOT POINTER;
 		// ⭐ TASK-685 (ruling W691-3) RE-POINTS IT TO "DID ANY PLACE RESOLVE". The pointer
@@ -1799,6 +2766,91 @@ FReply UWarMapWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const
 	UE_LOG(LogSiegeWarMap, Verbose, TEXT("[WarMap] Place marker picked: '%s' (symbol only - no coordinate leaves this widget)."), *PickedSymbol.ToString());
 
 	return FReply::Handled();
+}
+
+// ---------------------------------------------------------------------------
+// ═══ THE WHEEL - hover + scroll resizes a mark (TASK-745; MARK-§4) ═══
+//
+// ⛔⛔ READ MARK-§4 BEFORE TOUCHING THIS FUNCTION. The shipped clause it amends
+// says the wheel "must stay INERT outside the pick flow", and the amendment is
+// safe for ONE structural reason, verified at the source rather than assumed:
+//
+//   • THE CONTROLLER'S WHEEL IS A **POLL** - WasInputKeyJustPressed(EKeys::
+//     MouseScrollUp/Down) inside ASiegePlayerController::ApplyGroupPickWheel,
+//     whose ONLY call site is PlayerTick's `GroupPickStage != EGroupPickStage::
+//     None` branch (SiegePlayerController.cpp:647-657 and :2843-2876).
+//   • THIS ONE IS A **SLATE EVENT** on a focused widget.
+//
+// ⇒ ⛔ NOT ONE LINE, ⛔ NOT ONE SYMBOL AND ⛔ NOT ONE FILE OF THE CONTROLLER'S
+// PATH IS TOUCHED, and its "inert outside the pick flow" property is LITERALLY
+// unchanged. ⛔ THE WHEEL NOW HAS EXACTLY TWO CONSUMERS AND ⛔ NO THIRD MAY BE
+// ADDED WITHOUT AMENDING MARK-§4 BY NAME.
+// ---------------------------------------------------------------------------
+
+FReply UWarMapWidget::NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (!bMapOpen)
+	{
+		// ⛔ CLOSED ⇒ THIS WIDGET IS Collapsed AND THE EVENT NEVER REACHES IT AT ALL, so this is
+		// belt and braces in the NativePaint sense. It matters anyway: it is the line that
+		// guarantees, in code a reviewer can point at, that a closed map cannot consume a wheel
+		// notch the controller's group-pick poll is waiting for.
+		return Super::NativeOnMouseWheel(InGeometry, InMouseEvent);
+	}
+
+	const FVector2f LocalPointF = InGeometry.AbsoluteToLocal(InMouseEvent.GetScreenSpacePosition());
+	const FVector2D LocalPoint(LocalPointF.X, LocalPointF.Y);
+
+	// ⛔ ITS RETURN VALUE IS DELIBERATELY DISCARDED, exactly as the right-click's is: a wheel
+	// notch that is not over a mark changes NO state anywhere - ⛔ not the nearest circle, ⛔ not
+	// the last-touched one, ⛔ not a map zoom (there is none, and adding one would be the third
+	// consumer MARK-§4 forbids). That is "INERT" in full.
+	TryResizeMarkAtLocal(InGeometry, LocalPoint, InMouseEvent.GetWheelDelta());
+
+	// ⚠️⚠️ ABSORBED WHILE OPEN, EVEN ON A MISS, AND IT IS A DECISION RATHER THAN AN OVERSIGHT.
+	// ⚖️ It is the SAME fail-safe direction and the SAME argument as the shipped
+	// NativeOnMouseButtonDown, which already absorbs every mouse BUTTON while the map is up: the
+	// map fills the screen, so letting input fall through would drive something the player
+	// cannot see - here, a group-pick circle sitting behind a full-screen panel. MARK-§4's own
+	// wording contemplates it ("UWarMapWidget while the map is open and the cursor is over it")
+	// and it adds ⛔ NO third consumer: absorbing is the same one consumer declining to act.
+	// ⚠️ THE ALTERNATIVE, RECORDED SO IT IS NOT RE-ARGUED FROM SCRATCH: returning Unhandled on a
+	// miss would let the notch reach the controller's poll. It was refused because it makes the
+	// map's WHEEL behave differently from the map's CLICKS - the same gesture over the same
+	// pixels falling through or not depending on which button it is - and inconsistency here is
+	// exactly how a player learns to distrust a UI.
+	return FReply::Handled();
+}
+
+FReply UWarMapWidget::NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (bMapOpen)
+	{
+		// ⭐ THE HOVER HIGHLIGHT - the affordance that makes "hover + wheel" visible. ⛔ A
+		// NUMBER, ⛔ not an index (M-1: indices shift when a mark is deleted, numbers never do).
+		TArray<FSiegeWarMapMarkCircle> Circles;
+		BuildMarkCircles(InGeometry, Circles);
+
+		const FVector2f LocalPointF = InGeometry.AbsoluteToLocal(InMouseEvent.GetScreenSpacePosition());
+		const int32 HitIndex = FSiegeWarMapProjection::FindMarkIndexAtLocal(
+			Circles, FVector2D(LocalPointF.X, LocalPointF.Y));
+
+		HoveredMarkNumber = (HitIndex != INDEX_NONE) ? Circles[HitIndex].Number : 0;
+	}
+
+	// ⛔ NOT ABSORBED, and that is the opposite decision from the wheel and the buttons above -
+	// deliberately. A MOVE is not a command: swallowing moves would break hover, tooltips and
+	// button highlighting on every optional child WBP_WarMap supplies, to buy nothing at all
+	// (a move that falls through to the world drives nothing).
+	return Super::NativeOnMouseMove(InGeometry, InMouseEvent);
+}
+
+void UWarMapWidget::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)
+{
+	// ⛔ A HIGHLIGHT THAT OUTLIVES THE CURSOR IS A LIE ABOUT WHAT THE WHEEL WOULD RESIZE.
+	HoveredMarkNumber = 0;
+
+	Super::NativeOnMouseLeave(InMouseEvent);
 }
 
 // ---------------------------------------------------------------------------

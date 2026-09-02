@@ -16,6 +16,7 @@ class UDataTable;
 class UCombatantHealthBarComponent;
 class UInputAction;
 class UInputMappingContext;
+class UNiagaraComponent;
 class UNiagaraSystem;
 class USiegeHitFlashComponent;
 class AHeroCharacter;
@@ -66,6 +67,195 @@ enum class EHeroUpgradeResult : uint8
 	RefusedInvalidCard
 };
 
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+//  RECALL — the 10-second channel home (TASK-748, CONVENTIONS `RECALL-§`)
+//
+//  Jonathan, verbatim (2026-09-01): "you can press 'b', and that will allow the player to
+//  starting a recall animation similar to league of legends where after 10 seconds they
+//  teleport back to their castle and they completely refill their health. During this recall
+//  animation the player cannot attack and if they get hit with an attack it interupts the
+//  channel and they would have to press 'b' again to start it from the beginning."
+//
+//  ⭐⭐ WHY THE CHANNEL'S EVERY DECISION LIVES IN `FSiegeRecallStatics` AND NOT IN THE ACTOR,
+//  AND IT IS A MEASUREMENT RATHER THAN A STYLE CHOICE:
+//    • Every automation test in this project is HEADLESS — there is not one `UWorld::CreateWorld`
+//      and not one `SpawnActor` in `Siegebound/Tests/` (stated at `SiegeLadderClimbTest.cpp:39`).
+//    • A world-less `AHeroCharacter` cannot be driven through these paths at all: the channel
+//      reads the world clock, broadcasts dynamic delegates and spawns a component.
+//    ⇒ so the RULES are pure statics (the `FSiegeLadderClimbStatics` / `FSiegeStuckStatics` /
+//      `HeightAdvantageMultiplier` seam precedent — a testability obligation gets a testability
+//      seam) and the WIRING of each call site is the QA gate's diff read (`SC-§32`: a mechanism
+//      never observed to function is not known to function; that split is stated, not hidden).
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ *  ⛔ EVERY WAY A RUNNING RECALL CHANNEL CAN END — the SEVEN enumerated exits of `RECALL-§4`,
+ *  in one closed list. `TOWER-§8`'s hanging-unit lesson generalises to any timed state: a
+ *  channel whose exits are not enumerated WILL strand the player in one of them.
+ *
+ *  ⭐ EXACTLY ONE of these grants the arrival effects (`ExitGrantsArrival`). The other six end
+ *  the channel with NOTHING applied — the hero stays where it stands at the HP it had.
+ */
+UENUM(BlueprintType)
+enum class ESiegeRecallExit : uint8
+{
+	/** 1. The full RecallChannelSeconds elapsed uninterrupted ⇒ teleport home + heal to the effective max. */
+	Completed,
+	/** 2. The player re-pressed the recall key (`R-2`). ⛔ Never Escape — the channel adds NO key handler (`RECALL-§3`). */
+	CancelledByInput,
+	/** 3. The hero left its anchor (`R-2` — the League convention he invoked by name). Movement itself is NEVER restricted. */
+	CancelledByMovement,
+	/** 4. A `TakeDamage` that LANDED (> 0 after mitigation, `R-1`). A miss / blocked / 0-damage event does NOT reach here. */
+	InterruptedByDamage,
+	/** 5. The hero died (`GHOST-§ G-6`) — combat death or KillZ. A channel that survives its own caster is the hanging-unit class in a new costume. */
+	InterruptedByDeath,
+	/** 6. The match ended under the channel. Inherits the shipped match-end rule; ⛔ invents no second one. */
+	CancelledByMatchEnd,
+	/** 7. The actor left play (level teardown / travel / destroy). */
+	CancelledByEndPlay
+};
+
+/**
+ *  ⭐ THE COMPLETE, CLOSED LIST OF WHAT A RECALL ARRIVAL DOES — and it is TWO THINGS
+ *  (`RECALL-§1`: *"Recall performs exactly two effects: the teleport, and the heal."*).
+ *
+ *  ⛔⛔ THIS STRUCT IS THE FIREBREAK IN FRONT OF THE BATCH'S SHARPEST TRAP. The death-path
+ *  restore function on this class does FIVE further things — it re-applies the cumulative
+ *  upgrade mods onto a freshly-restored base, re-arms the War Banner aura, resets the Rally
+ *  cooldown, restores input that death disabled and re-broadcasts the upgrade loadout. On a
+ *  LIVE hero that DOUBLE-APPLIES upgrades and re-arms a running aura. ⇒ NONE of those five is
+ *  expressible in this payload, and `SiegeRecallTest.cpp` enumerates this struct's properties
+ *  by reflection and fails the day a sixth field appears.
+ */
+USTRUCT(BlueprintType)
+struct FSiegeRecallArrival
+{
+	GENERATED_BODY()
+
+	/**
+	 *  HP to write into CurrentHP on arrival, or 0 when this exit grants nothing.
+	 *  ⛔⛔ SOURCED FROM `GetEffectiveMaxHP()` AT THE CALL SITE — the single source the header
+	 *  names for *"every HP clamp / regen cap / full-heal"*. Reading the raw base field instead
+	 *  silently under-heals a Plate-Armor hero by up to 200 HP and looks correct in review.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|Recall")
+	float HealTargetHP = 0.f;
+
+	/**
+	 *  True when the destination owner must be asked to teleport the hero home.
+	 *  ⛔ The hero does NOT own the destination and must never learn it (see `OnHeroRecallArrived`).
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|Recall")
+	bool bTeleportHome = false;
+};
+
+/**
+ *  The channel's ENTIRE mutable state — ONE struct, so there is exactly ONE thing for each of
+ *  the seven exits to clear, and clearing it is a single assignment that cannot half-succeed.
+ *  ⛔ Deliberately NOT a timer handle: a timer is a second thing to leak, and `GHOST-§0`'s
+ *  180-second respawn is the standing reminder that a leaked handle outlives its own feature.
+ */
+struct FSiegeRecallState
+{
+	/** True while the channel is running. ⭐ TRANSIENT per-instance state — ⛔ never a class-identity seal. */
+	bool bChannelling = false;
+
+	/** World time the CURRENT channel started. `R-4`: a re-press builds a fresh state, so this always restarts from zero. */
+	double StartTimeSeconds = 0.0;
+
+	/** Where the hero stood when the channel began — the movement-cancel datum (`R-2`). */
+	FVector AnchorLocation = FVector::ZeroVector;
+};
+
+/**
+ *  ⭐ THE CHANNEL'S RULES, AS PURE FUNCTIONS — no `UWorld`, no `AActor`, no `UObject`, no
+ *  allocation, no clock read, no RNG. Every clock value and every location arrives as an
+ *  argument, which is what lets `SiegeRecallTest.cpp` drive a 10-second channel to 9.9 s and
+ *  to 10.0 s in a headless suite with no PIE session.
+ *
+ *  ⚠️ If a rule here ever starts needing a world, this purity has been broken and that is a
+ *  FINDING, not a reason to add a fixture.
+ */
+struct FSiegeRecallStatics
+{
+	/** May a channel start? Alive, not already channelling, match still running. All three terms are load-bearing (see the test's truth table). */
+	static bool CanBegin(const FSiegeRecallState& State, bool bDead, bool bMatchEnded);
+
+	/** ⭐ `R-4` — a FRESH state from the clock, ⛔ never a resume and ⛔ never partial credit. His words: "start it from the beginning." */
+	static FSiegeRecallState Begin(double NowSeconds, const FVector& AnchorLocation);
+
+	/** The not-channelling state. The one value every exit assigns. */
+	static FSiegeRecallState Cleared();
+
+	/** Seconds the current channel has run (0 when not channelling; never negative even if the clock is handed back to it). */
+	static float ElapsedSeconds(const FSiegeRecallState& State, double NowSeconds);
+
+	/** Channel progress in [0, 1] — the HUD tell's datum (`R-3`). 0 when not channelling, and 0 on the frame a re-press restarts it. */
+	static float Progress01(const FSiegeRecallState& State, double NowSeconds, float ChannelSeconds);
+
+	/** True once the FULL ChannelSeconds have elapsed. At 9.9 s of a 10 s channel this is FALSE — which is the interrupt test's whole point. */
+	static bool IsComplete(const FSiegeRecallState& State, double NowSeconds, float ChannelSeconds);
+
+	/** `R-2` movement-cancel: the hero has left its anchor by more than the tolerance. ⛔ Movement is NEVER restricted — moving CANCELS, which is a different rule. */
+	static bool HasLeftAnchor(const FSiegeRecallState& State, const FVector& CurrentLocation, float ToleranceUU);
+
+	/** ⛔ `R-1` — ONLY DAMAGE THAT LANDS INTERRUPTS. A miss / blocked / 0-damage / friendly-fire event returns 0 applied and does NOT interrupt. */
+	static bool DamageInterrupts(float AppliedDamage);
+
+	/**
+	 *  ⛔ `R-5` — the attack disarm, AS A FUNCTION OF STATE.
+	 *  ⭐⭐ THAT SIGNATURE IS THE RULING: it takes the channel's state, so the same hero answers
+	 *  TRUE and then FALSE ten seconds later. A permanent class-identity seal (a `const` "can
+	 *  this thing ever attack" query) structurally cannot do that, and using one here would make
+	 *  a 10-second channel indistinguishable from a unit that can never attack.
+	 */
+	static bool IsAttackDisarmed(const FSiegeRecallState& State);
+
+	/**
+	 *  ⭐ EXACTLY ONE of the seven exits grants the arrival, AND ONLY WHEN A DESTINATION OWNER
+	 *  IS BOUND. The second term is the ATOMICITY ruling: with nobody to resolve the teleport
+	 *  there is no teleport, and therefore NO HEAL — otherwise a missing integration would
+	 *  quietly become a free full heal anywhere on the map, which is a worse bug than an inert key.
+	 */
+	static bool ExitGrantsArrival(ESiegeRecallExit Exit, bool bDestinationOwnerBound);
+
+	/** The arrival payload for an exit. Non-granting exits yield {0, false} — nothing applied, hero unmoved, HP unchanged. */
+	static FSiegeRecallArrival BuildArrival(ESiegeRecallExit Exit, bool bDestinationOwnerBound, float EffectiveMaxHP);
+};
+
+/**
+ *  Broadcast the instant a recall channel COMPLETES — immediately before the heal (TASK-748).
+ *
+ *  ⭐ THE HERO DOES NOT OWN THE DESTINATION AND MUST NOT LEARN IT. `ASiegeGameMode` already
+ *  ships the teleport-home rule (`SiegeGameMode.h:46-51`: the team-keyed PlayerStart when it
+ *  lies on the hero's own side and outside its own castle's colliding bounds, else beside that
+ *  castle offset toward the centerline). Recall is a CHANNEL IN FRONT OF A DESTINATION RULE
+ *  THAT ALREADY EXISTS — it reuses that resolution instead of hand-typing a location, and this
+ *  delegate is the seam, exactly as `OnHeroDied` is the seam for respawn TIMING (the loose-coupling
+ *  law this class already ships). `handoffs/TASK-569-buildmaster.md` row (n) — "hero spawns
+ *  OUTSIDE the keep" — is the recorded precedent for getting this exact thing wrong.
+ *
+ *  ⛔⛔ THE BINDER TELEPORTS AND DOES NOTHING ELSE. ⛔ IT MAY NEVER CALL THIS CLASS'S DEATH-PATH
+ *  RESTORE FUNCTION: on a LIVE hero that double-applies every upgrade stack and re-arms a
+ *  running aura. The heal is the hero's own and is already applied here.
+ *
+ *  ⚠️ NOT BOUND ⇒ NO ARRIVAL AT ALL (the atomicity ruling above): the channel ends, one warning
+ *  is logged, and the hero is neither moved nor healed.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnHeroRecallArrived, AHeroCharacter*, RecallingHero);
+
+/**
+ *  Broadcast on every recall channel start and on every one of the seven ends (`R-3`, the
+ *  visible tell). Carries whether a channel is now running and its full duration, so a HUD can
+ *  seed a countdown ring without polling. Two plain params keep it MCP-authorable (the
+ *  CONVENTIONS MCP-param rule) — ⛔ no enum, ⛔ no struct.
+ *
+ *  ⚠️ HONEST LIMIT, STATED SO NOBODY OVERSELLS IT: today's only opponent is `ASiegeBotController`,
+ *  which does NOT look at this. The tell is for the HUMAN observer and costs nothing now — ⛔ it
+ *  is not counterplay the bot exercises.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnHeroRecallStateChanged, bool, bChannelling, float, ChannelSeconds);
+
 /**
  *  Siegebound player hero (GDD §3.1).
  *
@@ -91,10 +281,39 @@ enum class EHeroUpgradeResult : uint8
  *    the standard 5 s respawn brings the hero back (TASK-024, M1 carry-over).
  *  - SetMeleeSuppressed(true) disables melee while the placement mode owns
  *    the LMB (TASK-007).
+ *  - RECALL (TASK-748, GDD-adjacent — CONVENTIONS `RECALL-§`): IA_Recall starts a
+ *    RecallChannelSeconds channel; on completion the destination owner teleports
+ *    the hero home (OnHeroRecallArrived) and the hero heals to its EFFECTIVE max.
+ *    Melee is disarmed for the duration by a state term at the EXISTING melee
+ *    guard — ⛔ not a new suppression mechanism and ⛔ not a fourth guard point.
+ *    Movement is NOT restricted; moving CANCELS. Seven exits, one clear.
  *
  *  Input assets (IMC_Hero, IA_Sprint, IA_Attack) are assigned on the derived
  *  blueprint BP_HeroCharacter in TASK-009; every input reference is null-safe
  *  so the raw C++ class also runs (game mode fallback pawn, TASK-006).
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  📌 M8 DECLARATION FOR THE RECALL CHANNEL (`RECALL-§6`) — DECLARED, ⛔ NOT BUILT.
+ *  ⛔ "Nothing to declare" is FALSE here and this is NOT copied boilerplate: the
+ *  channel is authority-relevant state (it ends in a teleport and a full heal) and
+ *  `R-3` names an ENEMY-VISIBLE tell, so it acquires a replication design the day
+ *  M8 combat authority lands. The RESERVED shape, in `ACC-§8`'s reserved-not-authored
+ *  discipline (⛔ no RPC and ⛔ no replicated property is AUTHORED in this batch):
+ *    • `ServerBeginRecall()` / `ServerCancelRecall()` — Server, Reliable, WithValidation.
+ *      The client PREDICTS the local tell; the server owns the clock, the teleport and
+ *      the heal. ⛔ A client-authored heal is the flicker-then-snap lie the melee
+ *      authority gate (`DoMeleeAttack`'s HasAuthority early-out) already refuses.
+ *    • Replicated `bRecallChannelling` + `RecallStartTimeSeconds` (server clock), so a
+ *      remote observer can draw `R-3`'s tell from the same two values the local HUD uses.
+ *    • RELEVANCY TIER: ⛔ NO new tier — it rides the hero's existing Tier B
+ *      (`SetNetCullDistanceSquared` from `SiegeNet::ArenaRelevancyDistanceSquared`).
+ *      An enemy already in relevancy to be seen is already in relevancy to be seen
+ *      CHANNELLING; the tell needs no extra reach.
+ *    • ⚠️ KNOWN P1 GAP, NAMED RATHER THAN PAPERED OVER: the match-end exit reads
+ *      `UWorld::GetAuthGameMode()`, which is NULL on a client. On a listen-server host
+ *      and in standalone (every shipped configuration today) it is authoritative; a
+ *      future client build must move that exit onto replicated match state.
+ *  ─────────────────────────────────────────────────────────────────────────────
  */
 UCLASS()
 class GITCLAUDEUNREALTEST_API AHeroCharacter : public AGitClaudeUnrealTestCharacter, public ITeamAgent, public IHealthBarProvider
@@ -116,6 +335,19 @@ public:
 	/** Fired whenever the Instant-upgrade loadout changes (TASK-058). The §7 HUD row (TASK-064) binds here. */
 	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Hero")
 	FOnHeroUpgradesChanged OnHeroUpgradesChanged;
+
+	/**
+	 *  Fired exactly once per COMPLETED recall, immediately before the heal (TASK-748).
+	 *  ⭐ THE DESTINATION OWNER BINDS HERE and teleports this hero to the start it already
+	 *  resolves for respawn — see FOnHeroRecallArrived's own comment for the full contract and
+	 *  for the one thing the binder may never do. ⚠️ Nothing bound ⇒ no teleport AND no heal.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Recall")
+	FOnHeroRecallArrived OnHeroRecallArrived;
+
+	/** Fired on every recall start and on every one of the seven ends (`R-3`). The HUD binds here for the channel tell — mirrors OnRallyStateChanged. */
+	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Recall")
+	FOnHeroRecallStateChanged OnRecallStateChanged;
 
 	//~ Begin ITeamAgent Interface
 	virtual ETeamId GetTeamId() const override { return Team; }
@@ -233,6 +465,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Combat")
 	float GetEffectiveMeleeDamage() const { return MeleeDamage + (MeleeDamageBonus * SharpenedBladeStacks); }
 
+	/**
+	 *  EFFECTIVE base walk speed in u/s: base WalkSpeed (§3.1: 500) scaled by the Swift Boots
+	 *  bonus (§3.10). The PUBLIC read of the protected GetEffectiveWalkSpeed() — exactly the
+	 *  GetMaxHP()/GetEffectiveMaxHP() pairing above, for the speed half of the stat block.
+	 *  ⛔ NOT unused: ASiegeGhostPawn::BeginPlay derives the ghost's MaxWalkSpeed from this on
+	 *  the CDO (GHOST-§3 G-1 "the hero's OWN speed"), and SiegeGhostPawnTest test (d) asserts it
+	 *  is > 0. Deleting it as dead code re-duplicates the 500.f literal it exists to prevent.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Movement")
+	float GetWalkSpeed() const { return GetEffectiveWalkSpeed(); }
+
 	/** Current stacks of Sharpened Blade (0..cap). HUD-seed getter (TASK-064). */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Hero")
 	int32 GetSharpenedBladeStacks() const { return SharpenedBladeStacks; }
@@ -261,9 +504,60 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Hero")
 	bool IsDead() const { return bDead; }
 
+	//~ ─── RECALL (TASK-748, `RECALL-§`) — the 10-second channel home ────────────────────────
+
+	/**
+	 *  THE RECALL KEY'S ONE ENTRY POINT — bound to IA_Recall (`B`, TASK-747) and callable from
+	 *  blueprint/UI. Channelling ⇒ CANCEL (`R-2`, his deliberate exit); otherwise ⇒ BEGIN.
+	 *
+	 *  ⛔⛔ THE KEY IS NEVER NAMED IN CODE. IA_Recall is mapped to `B` inside IMC_Hero, and the
+	 *  whole context goes through `USiegeKeyboardLayoutSubsystem::GetPositionalContext` in
+	 *  NotifyControllerChanged — so `B` inherits Dvorak support with ZERO extra code
+	 *  (`KBD-§4` tables all 26 letters). ⛔ There is no hard-coded key constant for `B` anywhere
+	 *  on a shipped path — the test asserts the engine's key-constant namespace appears in
+	 *  neither of this class's two files — and
+	 *  ⛔ the subsystem's SINGLE-KEY positional lookup is NOT called for it: that API is for RAW POLLED keys, and calling
+	 *  it on a key already remapped inside the context would DOUBLE-TRANSLATE
+	 *  (`SiegePlayerController.h:1223-1225`) — wrong only on non-QWERTY layouts, i.e. invisible
+	 *  to every reviewer here and immediately visible to Jonathan.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Recall")
+	void HandleRecallInput();
+
+	/**
+	 *  Starts the channel from ZERO if allowed (alive, not already channelling, match running).
+	 *  Returns true when a channel actually started. ⛔ `R-4`: a re-press ALWAYS restarts from
+	 *  the beginning — there is no resume and no partial credit (his words).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Recall")
+	bool BeginRecall();
+
+	/** The player's deliberate cancel (`R-2`). A no-op when no channel is running. ⛔ Escape is NOT a cancel route here and the channel adds no key handler at all (`RECALL-§3`). */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Recall")
+	void CancelRecall();
+
+	/** True while the channel is running. ⭐ TRANSIENT state — this is the same hero that could attack a moment ago and can again the instant it ends. */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Recall")
+	bool IsRecalling() const { return RecallState.bChannelling; }
+
+	/** The channel's full duration in seconds — the value the `HELP-§` row DERIVES rather than restating in prose. */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Recall")
+	float GetRecallChannelSeconds() const { return RecallChannelSeconds; }
+
+	/** Channel progress in [0, 1] for the `R-3` tell (0 when not channelling). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Recall")
+	float GetRecallProgress01() const;
+
+	/** Seconds left before arrival (0 when not channelling). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Recall")
+	float GetRecallRemainingSeconds() const;
+
 protected:
 
 	virtual void BeginPlay() override;
+
+	/** Recall exit 7 of 7 (`RECALL-§4`): a channel running when the actor leaves play is cleared here — the tell is torn down and no arrival fires. */
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/**
 	 *  M8 hero team assignment (TASK-356 doc §2.3/D4 — closes audit §1b#4:
@@ -371,6 +665,29 @@ protected:
 	/** Broadcasts OnHeroUpgradesChanged with the four current stack counts. */
 	void BroadcastUpgradesChanged();
 
+	//~ ─── RECALL internals (TASK-748) ───────────────────────────────────────────────────────
+
+	/**
+	 *  ⭐⭐ THE ONE PLACE A CHANNEL EVER ENDS, AND ALL SEVEN EXITS COME THROUGH IT.
+	 *  Idempotent by its first line, so an exit that fires twice (damage-that-kills reaches
+	 *  both the damage exit and the death exit in one call stack) still clears EXACTLY ONCE.
+	 *  Clears the state, tears the tell down, broadcasts the state change — and then, for the
+	 *  ONE granting exit only, performs the arrival.
+	 */
+	void EndRecall(ESiegeRecallExit Exit);
+
+	/** Per-frame channel service, driven from Tick — checks exits 6 (match end), 3 (movement) and 1 (completion), in that order. Self-guards on the channel state. */
+	void TickRecall(double NowSeconds);
+
+	/** True when the match has been decided. ⚠️ Reads GetAuthGameMode(), which is NULL on a client — see the M8 declaration in the class comment. */
+	bool IsMatchOver() const;
+
+	/** Spawns the `R-3` channel tell attached to the hero, if an emitter is wired. Null-safe and idempotent — no asset means no tell, never a crash. */
+	void StartRecallChannelEffect();
+
+	/** Destroys the `R-3` channel tell. Called from the single EndRecall choke point, so it cannot outlive the channel on any of the seven exits. Idempotent. */
+	void StopRecallChannelEffect();
+
 protected:
 
 	/** Team this hero fights for. M8 (TASK-356, doc §2.3/D4 — retires "the local player is always Blue"): ASSIGNED from the owning ASiegePlayerState in PossessedBy (host=Blue / client=Red seat), replicated so every machine's proxy reads the truth (OnRep_Team re-stamps the CASTLE-3X capsule channel — addendum §1). Default Blue = the standalone identity. */
@@ -400,6 +717,19 @@ protected:
 	/** Input action slot for /Game/Input/Actions/IA_Rally (key Q) — assigned + bound on BP_HeroCharacter in TASK-048. Null-safe until then. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> RallyAction;
+
+	/**
+	 *  IA_Recall slot (mapped to `B` inside IMC_Hero by TASK-747). Left unset, it soft-resolves
+	 *  from RecallActionAsset — a missing asset skips the binding, logs ONE line and leaves the
+	 *  key completely INERT (⛔ never a crash). ⭐ THAT IS THE DESIGNED COMPILE-TIME STATE and it
+	 *  is why this feature does not serialize behind the asset: the shipped `IA_Cmd*` pattern.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> RecallAction;
+
+	/** Soft path for IA_Recall (/Game/Input/Actions/IA_Recall, created in TASK-747). Null-safe — see RecallAction. */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TSoftObjectPtr<UInputAction> RecallActionAsset;
 
 	/** Base movement speed in u/s (GDD §3.1: 500). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Movement", meta = (ClampMin = "0"))
@@ -533,6 +863,53 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Upgrades")
 	TSoftObjectPtr<UDataTable> CardTableAsset;
 
+	//~ Recall tunables (TASK-748, `RECALL-§4`) — `HIGH-§1`: a number whose CONSEQUENCE is not
+	//~ written beside it gets retuned by someone who does not know what they are changing.
+
+	/**
+	 *  Seconds the channel must run UNINTERRUPTED before the hero teleports home and heals to
+	 *  full. Jonathan, verbatim: *"after 10 seconds."*
+	 *
+	 *  ⚠️ CONSEQUENCE OF CHANGING IT, IN BOTH DIRECTIONS:
+	 *    • SHORTER turns recall into a near-free repositioning tool and deletes the counterplay
+	 *      window that is the entire reason the League mechanic he named HAS a duration — the
+	 *      enemy's chance to walk over and interrupt it IS the mechanic.
+	 *    • LONGER makes it unusable under any pressure at all, since a single landed hit from
+	 *      any source resets it to zero (`R-1`/`R-4`).
+	 *  ⛔ And it must be re-read against the hero respawn delay (`GHOST-§0`) before any retune:
+	 *  recall is the only way to spend accumulated HP loss WITHOUT paying that death timer.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Recall", meta = (ClampMin = "0.1"))
+	float RecallChannelSeconds = 10.f;
+
+	/**
+	 *  How far the hero may drift from where it started channelling before the movement-cancel
+	 *  (`R-2`) fires, in unreal units.
+	 *
+	 *  ⚠️ CONSEQUENCE: at 0 the channel would cancel on animation settle, capsule
+	 *  penetration-resolve and knockback jitter — i.e. it would look broken and random. Made
+	 *  LARGE it becomes a free repositioning budget, which is the defect the cancel exists to
+	 *  prevent. 25 uu is a quarter of the capsule radius: no walk input can stay inside it and
+	 *  no idle hero can leave it.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Recall", meta = (ClampMin = "0"))
+	float RecallMoveCancelToleranceUU = 25.f;
+
+	/**
+	 *  `R-3` THE CHANNEL TELL — spawned attached to the hero for the channel's life and
+	 *  destroyed on every one of the seven exits. World-space and therefore visible to an enemy
+	 *  observer, which is the ruling.
+	 *
+	 *  ⛔ DELIBERATELY UNSET AND WITH ⛔ NO DEFAULT ASSET PATH: no task in this batch produces a
+	 *  recall emitter, and naming a content path the Artist is not making would be an invented
+	 *  asset reference (CONVENTIONS: code names must match exactly what the spec says the Artist
+	 *  will produce). ⇒ FOR THE MANAGER: `R-3`'s world-space tell needs an art task; until then
+	 *  the shipped tell is the HUD's, driven by OnRecallStateChanged + GetRecallProgress01.
+	 *  Null-safe: unset means no emitter, and the channel is otherwise byte-identical.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Siegebound|Recall")
+	TObjectPtr<UNiagaraSystem> RecallChannelEffect;
+
 private:
 
 	/** Current hit points. Mutated only by TakeDamage, Tick (regen), and ResetHero. */
@@ -586,4 +963,17 @@ private:
 
 	/** Drives PulseWarBannerAura every WarBannerPulseInterval while War Banner is owned and the hero is alive. */
 	FTimerHandle WarBannerAuraTimerHandle;
+
+	//~ Recall channel state (TASK-748). ⭐ ONE struct and ONE spawned component — the complete
+	//~ list of what the seven exits have to undo, and both are undone in EndRecall and nowhere else.
+
+	/** The running channel, or the cleared state. ⛔ Not a UPROPERTY: pure transient runtime state, never authored and never saved. */
+	FSiegeRecallState RecallState;
+
+	/** The live `R-3` tell component while channelling (null otherwise). Transient so a PIE inspect shows it and no save ever carries it. */
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> RecallChannelEffectComponent;
+
+	/** One-shot latch so a missing destination binding warns ONCE per hero instead of on every completed channel. */
+	bool bWarnedRecallDestinationUnbound = false;
 };

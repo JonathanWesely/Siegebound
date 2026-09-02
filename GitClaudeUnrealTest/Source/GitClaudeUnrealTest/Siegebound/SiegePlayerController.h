@@ -389,6 +389,13 @@ public:
 	 *  pawn. Rejected and recorded: marching to the corpse; falling back to
 	 *  Defend (that would make them fight, breaking "following units never
 	 *  attack").
+	 *
+	 *  ⭐⭐ WHILE THE DEATH GHOST IS POSSESSED THIS RETURNS **THE GHOST** (TASK-750,
+	 *  GHOST-§3 **G-8**) — a RULING, not an accident: `follow` is a hero-relative
+	 *  intent, and anchoring it on a hidden corpse would silently walk the player's
+	 *  army to where he died. ⛔ It cost ZERO new lines because the "resolve live,
+	 *  never cache" ruling above already does it; see the .cpp for why that is
+	 *  written down rather than left to be "tidied" away.
 	 */
 	AActor* GetFollowAnchor() const;
 
@@ -573,6 +580,71 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Match")
 	void HandleMatchEnd(ETeamId Winner);
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// THE DEATH GHOST (TASK-750, CONVENTIONS GHOST-§3/§4)
+	//
+	// ⭐ THREE SMALL MEMBERS AND NOT ONE BYTE OF STATE. Everything about the ghost
+	// state is DERIVED LIVE from the possessed pawn's class, so this controller can
+	// never disagree with what the player is actually driving — the same reasoning
+	// GetFollowAnchor's "resolve live, never cache" ruling is built on.
+	// ─────────────────────────────────────────────────────────────────────────
+
+	/**
+	 *  True while this controller is driving the death ghost (GHOST-§3).
+	 *
+	 *  ⛔ DERIVED, NEVER LATCHED. A bool set on death and cleared on respawn is a
+	 *  second source of truth that a failed ghost spawn, a destroyed ghost or a
+	 *  mid-death Play Again can each falsify independently; the possessed pawn's class
+	 *  cannot lie. ⇒ ⛔ do not "optimise" this into a member.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Hero")
+	bool IsGhostPossessed() const;
+
+	/**
+	 *  ⭐⭐ THE CARD-PLAY GATE FOR THE DEATH STATE (GHOST-§3 G-3/G-5) — PURE, STATIC,
+	 *  ⛔ no world, ⛔ no member state, and the ONLY place the ghost's card ban lives.
+	 *
+	 *  ⛔⛔ IT EXISTS BECAUSE THE GHOST SILENTLY *UNDOES* A SHIPPED REFUSAL, AND THAT
+	 *  IS THE WHOLE POINT. EnterPlacementMode's shipped guard is
+	 *  `Cast<AHeroCharacter>(GetPawn())` → `Hero->IsDead()` → "Hero is down". The
+	 *  moment the ghost is possessed that cast returns NULL, the guard stops firing,
+	 *  and a dead player can place units for three minutes — a regression this feature
+	 *  would introduce, not a rule this feature invents. Gating on the POSSESSED CLASS
+	 *  restores the shipped intent across the possession change.
+	 *
+	 *  ⚖️ G-5 IS THE FLAGGED-FOR-JONATHAN ROW and this is the one line he changes: the
+	 *  proceeding default is NO (his enumeration — "command units, access the AI
+	 *  commander, look at the map" — is closed and card play is not in it), and
+	 *  allowing it is a `return true` here with no other edit anywhere.
+	 *
+	 *  Every other pawn — INCLUDING no pawn at all — returns true, so every
+	 *  pre-TASK-750 path is byte-identical. ⛔ A dead HERO is still refused downstream
+	 *  by EnterPlacementMode's own IsDead() clause; re-deriving that here would be a
+	 *  second source of truth for a rule that already has one.
+	 */
+	static bool CanPlayCardsWhilePossessing(const APawn* PossessedPawn);
+
+	/**
+	 *  ⛔⛔ THE POSSESSION HAND-OFF SEAM (GHOST-§4 — the one place this feature can
+	 *  boot the arena input-dead). ASiegeGameMode calls this immediately AFTER
+	 *  Possess() in BOTH directions: hero → ghost at death, ghost → hero at respawn,
+	 *  at match end and on Play Again.
+	 *
+	 *  ⛔ IT EXISTS SO THE GAME MODE NEVER TOUCHES THE CURSOR. Posture goes through
+	 *  ApplyCursorInputState() and NOWHERE ELSE (HELP-§5, verbatim and binding) — a
+	 *  direct SetInputMode/bShowMouseCursor call from outside that function is the
+	 *  defect the law exists to prevent, and it booted the arena input-dead once
+	 *  already. ASiegeGameMode contains neither call; grep it.
+	 *
+	 *  ⛔ THE CURSOR-OWNER LADDER IS NOT TOUCHED AND NOT RE-ORDERED. The ghost is a
+	 *  free-look pawn with the hero's own movement and vision (G-1), so it wants the
+	 *  posture the hero wanted — it adds NO term to ApplyCursorInputState's
+	 *  composition. Placement / the Alt-held IA_UICursor / the end screen / targeting /
+	 *  group-pick / the war map / the assistant console / the help overlay keep their
+	 *  exact shipped precedence.
+	 */
+	void HandleGhostPossessionChanged();
 
 	/**
 	 *  Play Again support (GDD §3.9) — called by ASiegeGameMode::PlayAgain
