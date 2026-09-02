@@ -4,9 +4,15 @@
 
 #include "AI/Navigation/NavLinkDefinition.h"
 #include "Containers/UnrealString.h"
+#include "GameFramework/Character.h" // TASK-777 (CONTACT-§4.4): ACharacter::StaticClass() is the widened delegate's pinned first parameter type
+#include "Misc/FileHelper.h" // TASK-787 (CONTACT-§12): tests 14/15 read the shipped .cpp — a Cast<> leaves NOTHING in the reflection tables, so "the tower names no concrete climber class" is unaskable any other way
+#include "Misc/Paths.h"
 #include "NavLinkCustomComponent.h"
 #include "Siegebound/Building.h"
 #include "Siegebound/ClimbableTower.h"
+#include "Siegebound/HeroCharacter.h" // TASK-787 (CONTACT-§12.3): test 15 asserts the HERO and the UNIT share ONE completion delegate type — the property the whole widening turns on
+#include "Siegebound/LadderClimber.h" // TASK-787: ULadderClimber::StaticClass() for the ImplementsInterface rows, and FSiegeLadderClimbEnded's new home
+#include "Siegebound/SiegeLadderClimbStatics.h" // TASK-777 (CONTACT-§4.1): FSiegeLadderContactState / FSiegeLadderContactStatics, and CanBegin for the second no-double-fire belt
 #include "Siegebound/SiegeNavAreas.h"
 #include "Siegebound/SummonedUnit.h"
 #include "Siegebound/TeamId.h"
@@ -238,16 +244,279 @@ namespace SiegeClimbableTowerTestFixture
 	 *  expectation is what the manager pinned and the artist is building to, so a
 	 *  typo in `AClimbableTower::LadderFootDefaultRelative` fails HERE instead of
 	 *  shipping a link whose foot sits inside the tower's own eroded nav carve.
+	 *
+	 *  ⭐⭐ AND IT ⛔ HAS NOW FIRED — 2026-09-02, WHICH IS WHY THESE TWO LINES ARE ⛔ NOT
+	 *  DECORATION. `TOWER-§8.3` was amended to **−460 / −160** on Jonathan's `CONTACT-§7`
+	 *  `K-1` = option `A` (TASK-783 translated the ladder west by `δ = 10 uu` to buy the
+	 *  hero's standoff back — `dist(spine, geometry)` 93.619 → 103.320 vs a ≥ 98.0 gate).
+	 *  These pins went **RED** against the still-shipped `−450 / −150` fallback literals —
+	 *  ⛔ the exact line whose hero clearance is **51.6 against a required 56**, i.e. the
+	 *  line `TOWER-§8.5a` is VOID on. ⭐ A degrade-open fallback would have restored it
+	 *  SILENTLY, with a fully functional tower and every readback correct; this assertion
+	 *  is the only thing that said so out loud. ⛔ Do not weaken it, and ⛔ never "sync" it
+	 *  by reading the constants back off the class under test — that is the whole point of
+	 *  the direction.
 	 */
-	const FVector PinnedLadderFootRelative(-450.f, 0.f, 0.f);
-	const FVector PinnedLadderTopRelative(-150.f, 0.f, 1200.f);
+	const FVector PinnedLadderFootRelative(-460.f, 0.f, 0.f);
+	const FVector PinnedLadderTopRelative(-160.f, 0.f, 1200.f);
 
-	/** `TOWER-§8.3`'s two DERIVED figures for the same segment. ⭐ Recomputed from the shipped pair, so they catch a typo the raw-coordinate pin could not explain. */
+	/**
+	 *  `TOWER-§8.3`'s two DERIVED figures for the same segment. ⭐ Recomputed from the shipped pair, so they catch a typo the raw-coordinate pin could not explain.
+	 *  ⭐ ⛔ UNCHANGED by the 2026-09-02 move, and that is the ⛔ PURE translation paying out: both endpoints shifted by the SAME `δ`, so `Δ = (300, 0, 1200)` is invariant and the length and lean cannot notice.
+	 */
 	constexpr float PinnedClimbLineLengthUU = 1236.9f;
 	constexpr float PinnedClimbLeanDegrees = 76.0f;
 
 	/** The law quotes both figures rounded to one decimal, so the band has to admit the rounding (~0.04 on each) and nothing else. */
 	constexpr float GeometryTolerance = 0.1f;
+
+	// ═════════════════════════════════════════════════════════════════════════════
+	//  THE CONTACT TRIGGER'S FIXTURE (TASK-777, CONTACT-§4)
+	// ═════════════════════════════════════════════════════════════════════════════
+
+	/**
+	 *  ⛔ THE THREE FEEL NUMBERS, TYPED FROM `CONTACT-§7` AND ⛔ NEVER READ BACK OFF THE
+	 *  CLASS UNDER TEST — the same direction the pinned socket coordinates above are
+	 *  typed in. ⚠️ The cone and the dwell are DECLARED INVENTED numbers and Jonathan may
+	 *  overrule either in one word; when he does, the row that reads them off the CDO
+	 *  fails HERE and names the drift, which is the only way a "feel" value and a test
+	 *  can be kept honest about each other.
+	 *
+	 *  ⚠️⚠️ THE RADIUS MOVED `K-5` 150 → `K-6` 300 (TASK-784) → **350** (TASK-786, which
+	 *  also moves this pin). ⭐ IT IS THE ONE OF THE THREE THAT IS ⛔ NOT INVENTED — both
+	 *  bounds are DERIVED, and they are ⛔ NOT the same arithmetic:
+	 *
+	 *      UNITS  poll at 0.25 s, each poll crediting a WHOLE 0.25 s of dwell for one
+	 *             sampled instant ⇒ the bar is "TWO samples inside the window":
+	 *             R >= 2 × 0.25 × 600 (Cavalry)      = 300 uu   [test 16(a) derives this]
+	 *      HERO   polls PER FRAME in Tick, so dwell accrues DeltaSeconds and the model is
+	 *             ⭐ EXACT rather than probabilistic:
+	 *             R >= 0.35 × 937.5 (sprint + Boots) = **328.125 uu**
+	 *
+	 *  ⇒ ⭐⭐ **THE HERO BINDS, ⛔ NOT THE ROSTER**, and 350 clears 328.125 by **6.67%**.
+	 *  ⚠️⚠️ THAT IS EXACTLY WHY 300 LOOKED SUFFICIENT AND WAS ⛔ NOT: `SiegeLadderClimbTest`
+	 *  test 16 derives the radius from the UNIT poll and the UNIT roster, so it is
+	 *  unit-shaped by construction and ⛔ cannot see the hero's per-frame requirement.
+	 *  ⛔ It is ⛔ NOT wrong and ⛔ must NOT be weakened — it is simply answering a
+	 *  different question, and this pin is the one that carries the hero's answer.
+	 *
+	 *  ⛔⛔ AND NEITHER OLD VALUE MERELY FAILED — 150 FAILED **INTERMITTENTLY**, WHICH IS
+	 *  WORSE THAN A DEAD FEATURE BECAUSE IT READS TO A PLAYER AS "sometimes it works":
+	 *  at 150 the unit phase counts were Ogre 16/16 · Knight 16/16 · Archer **11/16** ·
+	 *  Footman **8/16** · Sapper **3/16** · Cavalry **0/16**. From 300 up, every roster
+	 *  card is 16/16 — ⚠️ so the units were already fixed at 300 and the 300 → 350 step
+	 *  buys ⛔ nothing for them. It is bought ENTIRELY for the hero's fourth speed
+	 *  (sprint + Swift Boots, 937.5 uu/s), which at 300 fails at EVERY offset and every
+	 *  frame rate, and at 350 holds on every phase down to ~20 fps.
+	 *  ⚠️ The price is the abduction window, and it grows SUPER-linearly — see
+	 *  `WalkPastAndSeeIfAdmitted` below, which is why its passer-by offset had to move too.
+	 */
+	constexpr float PinnedContactRadiusUU = 350.f;
+	constexpr float PinnedContactIntentCos = 0.5f;   // = a 60° half-cone
+	constexpr float PinnedContactDwellSeconds = 0.35f;
+
+	/** The half-height the ladder scenarios stand a pawn on — `SiegeSpawnConstants.h:9`'s 88, used as this file's SCENARIO exactly as the socket coordinates are. */
+	constexpr float ScenarioCapsuleHalfHeightUU = 88.f;
+
+	/** A 60 Hz frame. ⛔ Not a tunable — it is the step the dwell is INTEGRATED at, and stepping the predicate rather than handing it one big delta is what proves the accumulation is continuous. */
+	constexpr float FrameStepSeconds = 1.f / 60.f;
+
+	/** A walk speed to drive the scenarios at. ⭐ Chosen as the shipped ladder rate (`LadderClimbSpeedUU` = 350) rounded DOWN to 300, so every timing expectation below is a round number that can be checked by hand. */
+	constexpr float ScenarioWalkSpeedUU = 300.f;
+
+	/**
+	 *  Steps the pure predicate for `TotalSeconds` at `FrameStepSeconds`, holding the pawn
+	 *  STILL at one place with one velocity, and returns the LAST verdict.
+	 *  ⚠️ A fixed location is a deliberate simplification for the rows that are about the
+	 *  CLOCK; the rows that are about the geometry (`WalkPastAndSeeIfAdmitted`) actually
+	 *  move the pawn, because a bearing that never swings would let a broken cone pass.
+	 */
+	static ESiegeLadderContactVerdict HoldContact(FSiegeLadderContactState& State,
+		const FVector& Location, const FVector& Velocity, float TotalSeconds, bool& bOutAscending)
+	{
+		ESiegeLadderContactVerdict Verdict = ESiegeLadderContactVerdict::TooFar;
+		const int32 Steps = FMath::Max(1, FMath::RoundToInt(TotalSeconds / FrameStepSeconds));
+		for (int32 Step = 0; Step < Steps; ++Step)
+		{
+			Verdict = FSiegeLadderContactStatics::WantsToClimb(State, Location, Velocity,
+				PinnedLadderFootRelative, PinnedLadderTopRelative,
+				PinnedContactRadiusUU, PinnedContactIntentCos, PinnedContactDwellSeconds,
+				FrameStepSeconds, bOutAscending);
+		}
+		return Verdict;
+	}
+
+	/**
+	 *  ⭐⭐ THE ABDUCTION TEST, AND IT IS THE ONE THAT ACTUALLY MOVES A PAWN: walks a body
+	 *  in a straight line along +X, `PerpendicularOffsetY` uu to the side of the ladder
+	 *  foot, from well outside the trigger disc to well past it — and reports whether the
+	 *  predicate ever admitted it.
+	 *
+	 *  ⭐ THE ARITHMETIC THE TWO SHIPPED ROWS ARE DERIVED FROM, so neither expectation is
+	 *  a transcription of the code: with the cone measured PAWN → ENDPOINT, a pawn passing
+	 *  at offset `d` holds the cone only while it is still `d / tan 60° = d / 1.732` short
+	 *  of its closest approach, so it can accumulate `(sqrt(R² − d²) − d/1.732) / v`
+	 *  seconds.
+	 *
+	 *  ⚠️⚠️ RE-DERIVED AT `K-6`'s R = **350** BY TASK-786, AND THE OLD PASSER-BY OFFSET HAD
+	 *  TO MOVE — ⛔ this is ⛔ NOT a weakened row, it is the same claim re-sited onto a disc
+	 *  that grew. At v = 300 the dwell only ever eats a FIXED `v × 0.35 = 105 uu` of
+	 *  approach, and that is a SMALLER FRACTION of a bigger disc, so the grab window grows
+	 *  **super-linearly** at every step:
+	 *      R = 150 → ±57.8    R = 300 → ±202.1    R = 350 → **±247.2**
+	 *  i.e. **3.5× for the first doubling, then +22% for a +17% radius rise.** ⛔ A linear
+	 *  model understates it at BOTH steps: "~0.4 · R" first put `K-6`'s cost at ±125 when it
+	 *  was ±204, and scaling ±204 by 350/300 would guess ±238 rather than the real ±247.
+	 *  ⇒ the old d = 100 row (REFUSED at 150 with 0.180 s) banks **0.895 s** at 350 and would
+	 *  be ADMITTED. ⚠️ d = 250 is ⛔ ALSO too tight now — it refuses by only **0.015 s**,
+	 *  which is a coin-flip dressed as an assertion. The refusal row is taken at **d = 300**:
+	 *    • d = 0   → 350/300             = **1.167 s** (≥ 0.35 ⇒ ADMITTED — walking straight
+	 *                                      at the ladder IS the intent)
+	 *    • d = 300 → (180.3 − 173.2)/300 = **0.024 s** (< 0.35 ⇒ REFUSED, by a 0.326 s margin)
+	 *  ⭐ AND d = 300 IS A **STRONGER** STATEMENT THAN d = 100 EVER WAS: at 300 the pawn is
+	 *  inside the radius for **1.202 s — nearly FOUR dwells** — and is still refused, so the
+	 *  row now isolates the CONE as the thing doing the refusing. At the old offset the
+	 *  proximity term was helping.
+	 */
+	static bool WalkPastAndSeeIfAdmitted(float PerpendicularOffsetY)
+	{
+		FSiegeLadderContactState State;
+		FVector Location(PinnedLadderFootRelative.X - 700.f, PerpendicularOffsetY, ScenarioCapsuleHalfHeightUU);
+		const FVector Velocity(ScenarioWalkSpeedUU, 0.f, 0.f);
+
+		bool bAscending = false;
+		// ⚠️ The run was widened with the radius (was 200 frames from −400): at R = 300 a −400
+		// start is only 100 uu clear of the disc. ⭐ Extra travel can only ever ADD chances to
+		// be admitted, so a longer run makes the REFUSAL row strictly harder to pass and can
+		// never flatter the admission row.
+		for (int32 Step = 0; Step < 300; ++Step) // 300 frames × 5 uu = 1,500 uu of travel: in at −700, out at +800
+		{
+			const ESiegeLadderContactVerdict Verdict = FSiegeLadderContactStatics::WantsToClimb(
+				State, Location, Velocity, PinnedLadderFootRelative, PinnedLadderTopRelative,
+				PinnedContactRadiusUU, PinnedContactIntentCos, PinnedContactDwellSeconds,
+				FrameStepSeconds, bAscending);
+			if (Verdict == ESiegeLadderContactVerdict::Climb)
+			{
+				return true;
+			}
+			Location += Velocity * FrameStepSeconds;
+		}
+		return false;
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════════════════════
+	//  ⭐ TASK-787's SOURCE-SCAN INSTRUMENT (CONTACT-§12) — the `SiegeHeroLadderClimbTest.cpp`
+	//  helpers, same shape, ⛔ not a new mechanism.
+	// ═══════════════════════════════════════════════════════════════════════════════════════
+	//
+	// ⚠️⚠️ WHY THIS FILE — WHICH IS OTHERWISE PURE REFLECTION AND PURE STATICS — NOW READS SOURCE
+	// TEXT, AND IT IS A ⛔ MEASUREMENT RATHER THAN A PREFERENCE: the claim TASK-787 has to prove is
+	// *"the tower names ⛔ NO concrete climber class on the climb path"*, and a CAST IS NOT
+	// REFLECTED. `Cast<ASummonedUnit>` leaves ⛔ nothing in the UClass, ⛔ nothing in a UFunction and
+	// ⛔ nothing in a property — it is invisible to every instrument this file already owns.
+	// ⇒ the only headless way to assert it is to read the shipped `.cpp`. ⭐ Each probe below
+	// carries a POSITIVE CONTROL that requires the scanner to FIND something, so a scan that went
+	// blind fails loudly instead of reporting a clean bill of health.
+	//
+	// ⛔ AND IT IS ⛔ NOT A SUBSTITUTE FOR THE PURE TRUTH TABLES ABOVE. It answers "which TYPE does
+	// this line name", which is exactly the question a truth table over bools cannot ask.
+
+	/** Loads one of the shipped source files this suite reads. Reports and returns false rather than passing quietly — a probe that cannot read its subject must FAIL, ⛔ never report SAFE. */
+	static bool LoadProjectSource(FAutomationTestBase& Test, const TCHAR* RelativePath, FString& OutText)
+	{
+		const FString FullPath = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / FString(RelativePath));
+		if (!FPaths::FileExists(FullPath))
+		{
+			Test.AddError(FString::Printf(
+				TEXT("⛔ Could not find '%s'. This probe reads the SHIPPED source because a Cast<> leaves nothing in the reflection tables; a probe that cannot read its subject FAILS."),
+				*FullPath));
+			return false;
+		}
+
+		if (!FFileHelper::LoadFileToString(OutText, *FullPath))
+		{
+			Test.AddError(FString::Printf(TEXT("⛔ Could not read '%s' — see above; a stale probe fails."), *FullPath));
+			return false;
+		}
+
+		return true;
+	}
+
+	/** Convenience: the tower's implementation file — the subject of the "no concrete climber class" claim. */
+	static bool LoadClimbableTowerCpp(FAutomationTestBase& Test, FString& OutText)
+	{
+		return LoadProjectSource(Test, TEXT("Source/GitClaudeUnrealTest/Siegebound/ClimbableTower.cpp"), OutText);
+	}
+
+	/** Non-overlapping occurrence count of Needle in Haystack (the `SiegeHeroLadderClimbTest` helper, same shape). */
+	static int32 CountOccurrences(const FString& Haystack, const TCHAR* Needle)
+	{
+		const int32 NeedleLength = FCString::Strlen(Needle);
+		if (NeedleLength <= 0)
+		{
+			return 0;
+		}
+
+		int32 Count = 0;
+		int32 From = 0;
+		for (;;)
+		{
+			const int32 Found = Haystack.Find(Needle, ESearchCase::CaseSensitive, ESearchDir::FromStart, From);
+			if (Found == INDEX_NONE)
+			{
+				break;
+			}
+			++Count;
+			From = Found + NeedleLength;
+		}
+		return Count;
+	}
+
+	/**
+	 *  ⭐⭐ OCCURRENCES IN **CODE**, WITH COMMENT-ONLY LINES SKIPPED — and this is ⛔ NOT
+	 *  fastidiousness, it is what makes the "⛔ zero concrete climber casts" claim POSSIBLE.
+	 *
+	 *  ⚠️⚠️ THIS CODEBASE DELIBERATELY WRITES THE REFUSED SHAPES INTO ITS COMMENTS — *"a
+	 *  `Cast<ASummonedUnit>` / `Cast<AHeroCharacter>` branch pair was REFUSED"*, *"what used to be
+	 *  here was a `CastChecked<ASummonedUnit>`"* — because `CONTACT-§12.4` exists so ⛔ nobody
+	 *  re-proposes them as "simpler". ⇒ a scanner that counted comments would force the file to
+	 *  CHOOSE between explaining what it refuses and passing its own test, and it would resolve
+	 *  that by deleting the explanation. ⚖️ That is exactly backwards: the prose is the guard.
+	 *
+	 *  ⚠️ DECLARED LIMITATION, ⛔ not hidden: a comment TRAILING a line of code is still scanned
+	 *  (there is no tokenizer here). ⭐ Every probe in tests 14/15 is either a whole-line construct
+	 *  or a statement, so none of them is exposed to that — and each carries a positive control.
+	 */
+	static int32 CountOccurrencesInCode(const FString& Source, const TCHAR* Needle)
+	{
+		TArray<FString> Lines;
+		Source.ParseIntoArrayLines(Lines, /*bCullEmpty=*/ false);
+
+		int32 Count = 0;
+		for (const FString& Line : Lines)
+		{
+			const FString Trimmed = Line.TrimStart();
+
+			// ⚠️ `*` is qualified rather than bare on purpose: a doc-comment continuation is `* text`
+			// or `*/`, while `*GetNameSafe(Foo)` — a dereferenced FString in a UE_LOG argument list —
+			// starts a CODE line with the same character. Skipping those would be a silent blind spot
+			// in the middle of the file this test is about.
+			const bool bIsCommentLine =
+				Trimmed.StartsWith(TEXT("//"), ESearchCase::CaseSensitive)
+				|| Trimmed.StartsWith(TEXT("* "), ESearchCase::CaseSensitive)
+				|| Trimmed.StartsWith(TEXT("*/"), ESearchCase::CaseSensitive)
+				|| Trimmed.StartsWith(TEXT("/*"), ESearchCase::CaseSensitive)
+				|| Trimmed.Equals(TEXT("*"), ESearchCase::CaseSensitive);
+
+			if (bIsCommentLine)
+			{
+				continue;
+			}
+
+			Count += CountOccurrences(Line, Needle);
+		}
+		return Count;
+	}
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -742,13 +1011,17 @@ bool FSiegeClimbableTowerLadderLinkTest::RunTest(const FString& Parameters)
 
 	// ── (c) THE PINNED GEOMETRY (TOWER-§8.3), EXPECTED FROM THE **LAW** ─────────────────
 	// ⚠️ NEITHER COORDINATE IS A STYLE CHOICE AND MOVING EITHER "A BIT" SEVERS THE FEATURE
-	// SILENTLY: the foot at X −450 clears the body's eroded nav carve (which starts at
-	// X ≤ −364) by 86 uu, and the top at X −150 sits 86 uu inside the deck's surviving poly
+	// SILENTLY: the foot at X −460 clears the body's eroded nav carve (which starts at
+	// X ≤ −364) by 96 uu, and the top at X −160 sits 76 uu inside the deck's surviving poly
 	// (X ∈ [−236, +236]) after ledge-nulling and erosion take 64 uu per side. A socket on the
 	// deck EDGE is the castle-floor defect class: every readback correct, nothing can use it.
-	TestEqual(TEXT("(c) The link's START is the pinned LadderFoot (−450, 0, 0) — 86 uu clear of the body's eroded nav carve"),
+	// ⚠️ Both margins were RE-MEASURED by TASK-783, ⛔ not predicted from the old pair: the
+	// foot's IMPROVED (86 → 96) and the top's is the ONE thing the 2026-09-02 move SPENDS
+	// (86 → 76). ⭐ And this pair is now licence-bearing as well as navmesh arithmetic — it is
+	// the geometry TOWER-§8.5a's ≥ 98.0 uu standoff was measured on.
+	TestEqual(TEXT("(c) The link's START is the pinned LadderFoot (−460, 0, 0) — 96 uu clear of the body's eroded nav carve"),
 		LeftPoint, PinnedLadderFootRelative);
-	TestEqual(TEXT("(c) The link's END is the pinned LadderTop (−150, 0, 1200) — 86 uu inside the deck's surviving navmesh poly"),
+	TestEqual(TEXT("(c) The link's END is the pinned LadderTop (−160, 0, 1200) — 76 uu inside the deck's surviving navmesh poly"),
 		RightPoint, PinnedLadderTopRelative);
 
 	// ── (d) THE TWO DERIVED FIGURES, RECOMPUTED FROM THE SHIPPED PAIR ───────────────────
@@ -919,13 +1192,21 @@ bool FSiegeClimbableTowerLadderEntryTest::RunTest(const FString& Parameters)
 		AClimbableTower::EvaluateLadderEntry(ETeamId::Blue, ETeamId::Red, true, true) == EVerdict::WrongTeam);
 
 	// ── (e) ⛔ IDENTITY OUTRANKS EVERYTHING ────────────────────────────────────────────
-	// Anything that is not an ASummonedUnit cannot be driven by the TOWER-§8.4(B) API at
-	// all — most obviously the player's own hero. Both rows pass a team value that would
-	// otherwise change the answer, which is what proves the short-circuit is real.
-	TestTrue(TEXT("(e) ⛔ A non-unit on a free own-team ladder is NotASummonedUnit"),
-		AClimbableTower::EvaluateLadderEntry(ETeamId::Blue, ETeamId::Blue, false, false) == EVerdict::NotASummonedUnit);
-	TestTrue(TEXT("(e) ⛔ …and an enemy non-unit at a busy ladder is STILL NotASummonedUnit — identity outranks both other terms"),
-		AClimbableTower::EvaluateLadderEntry(ETeamId::Blue, ETeamId::Red, false, true) == EVerdict::NotASummonedUnit);
+	// Anything that does not implement `ILadderClimber` can be neither driven nor heard from by
+	// the tower, so admitting it would claim the occupancy slot for a body that could never
+	// release it. Both rows pass a team value that would otherwise change the answer, which is
+	// what proves the short-circuit is real.
+	//
+	// ⚠️⚠️ THE **RULE** IS UNCHANGED HERE AND THE **SET** IS NOT (TASK-787, CONTACT-§12): this
+	// argument used to mean *"not an `ASummonedUnit`, most obviously the player's own hero"*, and
+	// the hero is now ADMITTED (test 15 row (a)). ⛔ These two rows were ⛔ NOT weakened to follow
+	// it — they still assert that identity outranks team AND occupancy, which is what would catch
+	// somebody reordering the ifs. ⭐ What they now describe is a body that implements ⛔ nothing:
+	// a future spectator, or anything else that could be handed to this gate by mistake.
+	TestTrue(TEXT("(e) ⛔ A pawn that is not an admitted climber, on a free own-team ladder, is NotAnAdmittedClimber"),
+		AClimbableTower::EvaluateLadderEntry(ETeamId::Blue, ETeamId::Blue, false, false) == EVerdict::NotAnAdmittedClimber);
+	TestTrue(TEXT("(e) ⛔ …and an enemy non-climber at a busy ladder is STILL NotAnAdmittedClimber — identity outranks both other terms"),
+		AClimbableTower::EvaluateLadderEntry(ETeamId::Blue, ETeamId::Red, false, true) == EVerdict::NotAnAdmittedClimber);
 
 	// ── (f) THE TWO GATES AGREE, BUT ARE NOT THE SAME FUNCTION ────────────────────────
 	// EvaluateLadderEntry must DELEGATE the team question to CanTeamAscend rather than
@@ -1058,14 +1339,44 @@ bool FSiegeClimbableTowerCompletionLaneTest::RunTest(const FString& Parameters)
 		CompletionHandler);
 
 	// ── (b) ITS SHAPE MATCHES THE PINNED DELEGATE, FROM THIS SIDE OF THE SEAM ─────────
-	// FSiegeLadderClimbEnded is pinned as TWO parameters (ASummonedUnit*, bool) in
-	// TOWER-§8.4(B). ⚠️ TASK-734 and TASK-738 were written IN PARALLEL and could not see
-	// each other, so the only thing keeping the handler and the delegate in step is that
-	// both transcribed the same law. This is the cheapest possible check that they did.
+	// FSiegeLadderClimbEnded is pinned as TWO parameters in TOWER-§8.4(B), and CONTACT-§4.4
+	// AMENDED the first one's TYPE from ASummonedUnit* to ACharacter* (TASK-777). ⚠️ TASK-734
+	// and TASK-738 were written IN PARALLEL and could not see each other, so the only thing
+	// keeping the handler and the delegate in step is that both transcribed the same law. This
+	// is the cheapest possible check that they did.
+	//
+	// ⭐⭐ AND THE ARITY CHECK ALONE WOULD HAVE SLEPT THROUGH THE WHOLE AMENDMENT — the count
+	// is 2 before and after — so the parameter TYPE is asserted here too. ⛔ Without this row
+	// the handler could drift back to ASummonedUnit* (or to APawn*, the shape that was ruled
+	// AGAINST) and this test would stay green while AddUniqueDynamic silently refused to bind,
+	// leaving ActiveClimber permanently occupied after the first climb of the match.
 	if (CompletionHandler)
 	{
-		TestEqual(TEXT("(b) …taking exactly the 2 parameters FSiegeLadderClimbEnded declares (ASummonedUnit*, bool)"),
+		TestEqual(TEXT("(b) …taking exactly the 2 parameters FSiegeLadderClimbEnded declares (ACharacter*, bool)"),
 			static_cast<int32>(CompletionHandler->NumParms), 2);
+
+		int32 ParameterIndex = 0;
+		bool bSawFirstParameter = false;
+		for (TFieldIterator<FProperty> ParamIt(CompletionHandler); ParamIt && ParamIt->HasAnyPropertyFlags(CPF_Parm); ++ParamIt, ++ParameterIndex)
+		{
+			if (ParameterIndex != 0)
+			{
+				continue;
+			}
+			bSawFirstParameter = true;
+
+			const FObjectProperty* const ClimberParam = CastField<FObjectProperty>(*ParamIt);
+			if (TestNotNull(TEXT("(b) The handler's first parameter is an object property"), ClimberParam))
+			{
+				TestTrue(TEXT("(b) ⭐ …and it is an ACharacter* — CONTACT-§4.4's ruled widening, WITHOUT which a HERO climber is invisible to TOWER-§10 L-1 and to EndPlay's abort (the tower falls and the hero hangs in MOVE_Flying forever)"),
+					ClimberParam->PropertyClass == ACharacter::StaticClass());
+			}
+		}
+
+		// ⚠️ SELF-CHECK: a parameter walk that found nothing would let the type claim above
+		// pass by never running — the vacuous pass this whole file is written against.
+		TestTrue(TEXT("SELF-CHECK: the parameter walk actually reached the handler's first parameter"),
+			bSawFirstParameter);
 	}
 
 	// ── (c) ⛔ AND NOTHING POLLS ───────────────────────────────────────────────────────
@@ -1088,9 +1399,685 @@ bool FSiegeClimbableTowerCompletionLaneTest::RunTest(const FString& Parameters)
 			{
 				AddError(*FString::Printf(
 					TEXT("⛔ AClimbableTower declares '%s', which names a POLL ('%s'). Both edges of a climb are PUSHED to this class — ")
-					TEXT("entry through the link's FOnMoveReachedLink, completion through ASummonedUnit::OnLadderClimbEnded — so there is nothing to poll (TOWER-§8 (4))."),
+					TEXT("entry through the link's FOnMoveReachedLink, completion through ILadderClimber::GetOnLadderClimbEnded() — so there is nothing to poll (TOWER-§8 (4))."),
 					*MemberName, Token));
 			}
+		}
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 11. ⭐⭐ THE CONTACT TRIGGER'S THREE TERMS — AND THE ONE THAT STOPS A UNIT BEING
+//     ABDUCTED AS IT MARCHES PAST ITS OWN TOWER (TASK-777, CONTACT-§4.1 / K-C)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// ⛔⛔ THE MEASUREMENT THAT SHAPES EVERY ROW BELOW: **THE LADDER HAS ZERO COLLISION**
+// (TASK-737 — no hull anywhere over LadderFoot). ⇒ there is ⛔ nothing to walk
+// *against*, and a trigger that waited for a blocking hit would ⛔ NEVER fire. The
+// mechanism is therefore PROXIMITY + INTENT + DWELL, and these rows are what stop
+// that from meaning "anything near the tower gets grabbed".
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeClimbableTowerContactTermsTest,
+	"Siegebound.ClimbableTower.ContactNeedsProximityIntentAndDwellAndRefusesAPasserBy",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeClimbableTowerContactTermsTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeClimbableTowerTestFixture;
+	using EContact = ESiegeLadderContactVerdict;
+
+	// A pawn standing on the ground, 100 uu WEST of the ladder foot — inside the 350 uu
+	// disc — and the two velocities that make it either walk into the ladder or away.
+	//
+	// ⚠️⚠️ `FarFromFoot` MOVED −300 → −600 WITH `K-6` (TASK-786), AND IT IS ⛔ NOT COSMETIC:
+	// the old value is ⛔ no longer outside the disc at all. At R = 300 a pawn 300 uu out sat
+	// EXACTLY on the rim and the shipped proximity test is `DistSquared2D <= R²` — an
+	// inclusive `<=` — so it read as IN RANGE; at R = 350 it is 50 uu INSIDE. ⇒ every row
+	// below that leans on it (the self-check, (e), and (i)'s first re-arm condition) would
+	// have silently changed meaning instead of failing. ⭐ 600 uu clears even 350 by 250 uu,
+	// so this fixture does not need revisiting on the next retune.
+	const FVector AtFoot = PinnedLadderFootRelative + FVector(-100.f, 0.f, ScenarioCapsuleHalfHeightUU);
+	const FVector FarFromFoot = PinnedLadderFootRelative + FVector(-600.f, 0.f, ScenarioCapsuleHalfHeightUU);
+	const FVector Inward(ScenarioWalkSpeedUU, 0.f, 0.f);
+	const FVector Outward(-ScenarioWalkSpeedUU, 0.f, 0.f);
+
+	bool bAscending = false;
+
+	// ── SELF-CHECK: THE PREDICATE IS NOT A CONSTANT ────────────────────────────────────
+	// ⚠️⚠️ A predicate that returned one value for everything would make every row below a
+	// long list of agreeable assertions carrying no information at all — the trap the top
+	// of this file is written against. Prove two DIFFERENT verdicts first.
+	{
+		FSiegeLadderContactState Admitted;
+		FSiegeLadderContactState Refused;
+		const EContact A = HoldContact(Admitted, AtFoot, Inward, 1.f, bAscending);
+		const EContact B = HoldContact(Refused, FarFromFoot, Inward, 1.f, bAscending);
+		TestTrue(TEXT("SELF-CHECK: the contact predicate is NOT a constant — a pawn pressing into the ladder and a pawn 600 uu away get different answers"),
+			A != B);
+		TestTrue(TEXT("SELF-CHECK: …and the admitting case really is Climb, so every 'refused' row below is refusing something that could otherwise have succeeded"),
+			A == EContact::Climb);
+	}
+
+	// ── (a) ⛔ INSIDE THE RADIUS, MOVING **AWAY** ⇒ NEVER CLIMBS ───────────────────────
+	// The proximity term alone is not the trigger. ⭐ This is the row that fails if somebody
+	// "simplifies" the cone away — and its failure mode in the world is a pawn being yanked
+	// 1,200 uu into the air while walking in the opposite direction.
+	{
+		FSiegeLadderContactState State;
+		TestTrue(TEXT("(a) ⛔ A pawn INSIDE the radius walking AWAY from the ladder is NotHeadingIn, however long it does it"),
+			HoldContact(State, AtFoot, Outward, 5.f, bAscending) == EContact::NotHeadingIn);
+		TestEqual(TEXT("(a) …and its dwell clock is held at zero, so it cannot bank credit for a later approach"),
+			State.DwellSeconds, 0.f);
+	}
+
+	// ── (b) ⛔ TOWARD IT, BUT FOR **LESS** THAN THE DWELL ⇒ DOES NOT CLIMB ─────────────
+	// ⭐ The two halves of this row differ ONLY in elapsed time, which is what makes it a
+	// test of the DWELL rather than of the other two terms.
+	{
+		FSiegeLadderContactState State;
+		TestTrue(TEXT("(b) ⛔ 0.30 s of pressing into the ladder is not enough — the verdict is Dwelling, ⛔ not Climb"),
+			HoldContact(State, AtFoot, Inward, 0.30f, bAscending) == EContact::Dwelling);
+		TestTrue(TEXT("(b) ✅ …and continuing past 0.35 s on the SAME state admits it — the only thing that changed is the clock"),
+			HoldContact(State, AtFoot, Inward, 0.10f, bAscending) == EContact::Climb);
+	}
+
+	// ── (c) ⛔ THE DWELL MUST BE **CONTINUOUS** ────────────────────────────────────────
+	// ⭐ Two thirds of a dwell, interrupted by one frame of steering away, is worth nothing —
+	// ⛔ not two thirds. A dwell that survived interruption would let a pawn accumulate
+	// credit by loitering, which is the abduction defect with extra steps.
+	{
+		FSiegeLadderContactState State;
+		HoldContact(State, AtFoot, Inward, 0.30f, bAscending);
+		HoldContact(State, AtFoot, Outward, FrameStepSeconds, bAscending);
+		TestTrue(TEXT("(c) ⛔ ONE frame of steering away resets the dwell — 0.30 s banked + 0.30 s more is still Dwelling, ⛔ not Climb"),
+			HoldContact(State, AtFoot, Inward, 0.30f, bAscending) == EContact::Dwelling);
+	}
+
+	// ── (d) ⛔ STANDING STILL IS NOT WALKING INTO IT ───────────────────────────────────
+	// MinContactSpeedUU is a derived degeneracy floor (⛔ not a fourth feel number): below
+	// 1 uu/s a pawn covers less than 0.35 uu across the whole dwell. ⚠️ Without it, braking
+	// residue or a depenetration nudge pointed at the ladder reads as intent.
+	{
+		FSiegeLadderContactState Still;
+		FSiegeLadderContactState Creeping;
+		TestTrue(TEXT("(d) ⛔ A pawn STANDING STILL inside the radius never climbs, however long it stands there"),
+			HoldContact(Still, AtFoot, FVector::ZeroVector, 5.f, bAscending) == EContact::NotHeadingIn);
+		TestTrue(TEXT("(d) ⛔ …and neither does one creeping at 0.5 uu/s — below the derived MinContactSpeedUU floor"),
+			HoldContact(Creeping, AtFoot, FVector(0.5f, 0.f, 0.f), 5.f, bAscending) == EContact::NotHeadingIn);
+	}
+
+	// ── (e) ⛔ OUTSIDE THE RADIUS, WALKING STRAIGHT AT IT ⇒ TooFar ─────────────────────
+	{
+		FSiegeLadderContactState State;
+		TestTrue(TEXT("(e) ⛔ A pawn 600 uu out, walking straight at the ladder, is TooFar — intent alone does not reach across the map"),
+			HoldContact(State, FarFromFoot, Inward, 5.f, bAscending) == EContact::TooFar);
+	}
+
+	// ── (f) ⭐⭐ THE ABDUCTION BOUNDARY, WITH THE PAWN ACTUALLY WALKING ────────────────
+	// ⚠️⚠️ THIS IS THE ROW THE DWELL EXISTS FOR, AND IT IS THE ONE `CONTACT-§4.1` NAMES:
+	// *"a friendly unit marching past its own tower toward the enemy castle clips the cone
+	// for two frames and is yanked 1,200 uu into the air."* Both expectations are DERIVED
+	// (see WalkPastAndSeeIfAdmitted): 1.167 s of in-cone time dead-on vs 0.024 s at 300 uu
+	// offset, against a 0.35 s dwell.
+	//
+	// ⚠️⚠️ THE PASSER-BY OFFSET MOVED 100 → 300 WITH `K-6` (TASK-786) BECAUSE THE GEOMETRY
+	// MOVED UNDER IT, ⛔ NOT TO MAKE A RED ROW GREEN: at R = 350 a pawn 100 uu to the side
+	// banks 0.895 s and IS abducted, so leaving the row at 100 would have shipped a genuine
+	// FAILURE. ⚠️ 250 was ⛔ also rejected — it refuses by only 0.015 s, and an assertion
+	// that close to its own boundary is a coin flip, ⛔ not a test. 300 refuses by 0.326 s.
+	// ⭐ THE COST IS DECLARED RATHER THAN ABSORBED: `K-6` buys reachability by WIDENING this
+	// window from ±57.8 (R=150) to ±202.1 (R=300) to ±247.2 uu (R=350), because the dwell
+	// only ever eats a fixed 105 uu of a disc that keeps growing.
+	// ⭐ The two rows must DISAGREE, which is also this pair's own self-check: if they ever
+	// agree, the walk has stopped discriminating and both claims are worthless.
+	{
+		const bool bAimedAtIt = WalkPastAndSeeIfAdmitted(0.f);
+		const bool bMarchingPast = WalkPastAndSeeIfAdmitted(300.f);
+
+		TestTrue(TEXT("(f) ✅ A pawn walking STRAIGHT AT the ladder foot is admitted — 1.167 s of in-cone approach against a 0.35 s dwell"),
+			bAimedAtIt);
+		TestFalse(TEXT("(f) ⛔⛔ A pawn marching PAST 300 uu to the side is ⛔ NOT abducted — it is INSIDE the 350 uu disc for 1.202 s, nearly FOUR whole dwells, and the 60° cone still refuses it after 0.024 s. ⭐ At K-6's radius this row isolates the CONE: proximity is no longer helping"),
+			bMarchingPast);
+		TestTrue(TEXT("SELF-CHECK: the two walks DISAGREE — a walk that admitted (or refused) everything would make both rows above vacuous"),
+			bAimedAtIt != bMarchingPast);
+	}
+
+	// ── (g) ⭐ BOTH ENDPOINTS ARM, AND THE END IS RESOLVED BY **Z** (K-C) ──────────────
+	// ⚠️⚠️ THE Z RULE IS ARITHMETIC, ⛔ NOT TASTE: the endpoints are 1,200 uu apart in Z but
+	// only 300 uu apart in XY, so a pawn on the GROUND can sit inside the TOP's XY disc.
+	//
+	// ⚠️⚠️ RE-CHECKED AT `K-6`'s R = **350** BY TASK-786, AND THE PREMISE GOT **STRONGER** AT
+	// EVERY STEP, ⛔ not weaker. The XY separation is fixed at 300 uu, so the discs go:
+	//     R = 150 → exactly TANGENT      (a ground pawn merely GRAZED the foot's rim)
+	//     R = 300 → OVERLAP, 300-uu lens (each endpoint's centre lands ON the other's rim)
+	//     R = 350 → OVERLAP, 400-uu lens (each centre is 50 uu INSIDE the other's disc)
+	// ⭐ **Each endpoint's XY centre now lies well inside the OTHER endpoint's disc.** ⇒ the
+	// Z resolution is no longer merely tidy, it is the ONLY thing keeping a pawn at the foot
+	// from being range-eligible for the deck and vice versa.
+	// ⭐ AND IT SURVIVES THE WIDENING BY CONSTRUCTION, WHICH IS WHY THIS ROW STILL PASSES:
+	// `IsAtTopEndpoint` (SiegeLadderClimbStatics.cpp:213) compares |P.z − Top.z| against
+	// |P.z − Foot.z| and takes ⛔ NO radius term at all, so no radius can perturb it.
+	// ⛔ WHAT WOULD ACTUALLY BREAK IT, NAMED RATHER THAN LEFT TO BE DISCOVERED: the rule is a
+	// midplane test at Z = PlatformHeightUU / 2 = **600 uu**. A ground pawn stands at 88, i.e.
+	// 512 uu of margin. It fails only if a pawn can stand ABOVE 600 uu at the foot — a deck
+	// lowered under ~176 uu, or a second structure tall enough to stand on beside the ladder.
+	// ⚠️ ⛔ A radius change can never cause it; a `PlatformHeightUU` change can.
+	//
+	// ⚠️ THE THIRD ROW'S EXPECTATION MOVED `TooFar` → `Climb` WITH THE RADIUS, AND ⛔ NOT TO
+	// DODGE A RED: under the deck socket the pawn is EXACTLY 300 uu from the foot, which at
+	// `K-5` was out of range and from `K-6` on is INSIDE it. ⭐ At 350 it is inside by a
+	// clean **50 uu**, so this row ⛔ no longer rests on the inclusive `<=` at 300² == 300²
+	// the way it briefly did at R = 300 — the boundary case is gone, ⛔ not merely tolerated.
+	// ⭐ Its velocity is turned to `Outward` so the row keeps DISCRIMINATING rather than
+	// merely refusing: resolving by
+	// **Z** picks the foot, which the pawn is walking straight at ⇒ Climb + ASCENT; resolving
+	// by **XY** would pick the top, whose 2D bearing from directly underneath is degenerate
+	// ⇒ NotHeadingIn + descent. ⛔ The two hypotheses now differ in BOTH outputs. Had the
+	// expectation simply been relaxed to `NotHeadingIn`, BOTH hypotheses would have produced
+	// it and the row would have proved exactly nothing.
+	{
+		const FVector OnDeck = PinnedLadderTopRelative + FVector(100.f, 0.f, ScenarioCapsuleHalfHeightUU);
+		FSiegeLadderContactState Descending;
+		FSiegeLadderContactState UnderTheDeck;
+		bool bDescendAscending = true;
+
+		TestTrue(TEXT("(g) ✅ Walking into the ladder ON THE DECK admits a climb — both endpoints arm the trigger"),
+			HoldContact(Descending, OnDeck, Outward, 1.f, bDescendAscending) == EContact::Climb);
+		TestFalse(TEXT("(g) ⭐ …and it reports a DESCENT, so the driver is handed the line the right way round"),
+			bDescendAscending);
+
+		bool bUnderAscending = false;
+		TestTrue(TEXT("(g) ⭐⭐ A pawn on the GROUND under the deck socket resolves to the FOOT by Z — at K-6's radius the two discs OVERLAP and it is 300 uu from the foot, so walking west it CLIMBS the foot. An XY resolution would have picked the top, whose bearing from directly underneath is degenerate, and refused as NotHeadingIn"),
+			HoldContact(UnderTheDeck, FVector(PinnedLadderTopRelative.X, 0.f, ScenarioCapsuleHalfHeightUU), Outward, 1.f, bUnderAscending) == EContact::Climb);
+		TestTrue(TEXT("(g) …and it is reported as an ASCENT, which is the half that proves the Z resolution picked the FOOT — this flag is written on every path, including refusals, and is a pure function of Z with ⛔ no radius term"),
+			bUnderAscending);
+	}
+
+	// ── (h) ⛔⛔ K-C's RE-ARM LATCH — THE YO-YO, AND IT IS A CERTAIN DEFECT ────────────
+	// A pawn that finishes a DESCENT stands at the foot, inside the radius, still supplying
+	// the input that brought it there. ⛔ Without the latch it re-climbs on the very next
+	// frame and the player is stuck in a loop.
+	{
+		FSiegeLadderContactState State;
+		TestTrue(TEXT("SELF-CHECK: the pawn is admitted BEFORE the latch is armed — otherwise the refusal below proves nothing"),
+			HoldContact(State, AtFoot, Inward, 1.f, bAscending) == EContact::Climb);
+
+		FSiegeLadderContactStatics::Disarm(State, /*bAtTop=*/ false);
+
+		TestTrue(TEXT("(h) ⛔ Standing where the climb ended, still pressing into the ladder, is REFUSED as Disarmed — ⛔ no instant re-ascent"),
+			HoldContact(State, AtFoot, Inward, 5.f, bAscending) == EContact::Disarmed);
+		TestEqual(TEXT("(h) …and no dwell accumulates while latched, so the re-arm cannot be paid for in advance"),
+			State.DwellSeconds, 0.f);
+	}
+
+	// ── (i) ⭐ …AND THE LATCH RE-ARMS ON **EITHER** OF ITS TWO CONDITIONS ──────────────
+	// ⚖️ A latch that never cleared would be a pawn permanently unable to use a ladder — the
+	// opposite defect, and a worse one because nothing logs it.
+	{
+		FSiegeLadderContactState LeavesRadius;
+		FSiegeLadderContactState SteersAway;
+		HoldContact(LeavesRadius, AtFoot, Inward, 1.f, bAscending);
+		HoldContact(SteersAway, AtFoot, Inward, 1.f, bAscending);
+		FSiegeLadderContactStatics::Disarm(LeavesRadius, /*bAtTop=*/ false);
+		FSiegeLadderContactStatics::Disarm(SteersAway, /*bAtTop=*/ false);
+
+		// Condition 1 — it walks out of the radius.
+		HoldContact(LeavesRadius, FarFromFoot, Inward, FrameStepSeconds, bAscending);
+		TestTrue(TEXT("(i) ✅ Leaving the radius re-arms the trigger — the pawn can climb again on its next approach"),
+			HoldContact(LeavesRadius, AtFoot, Inward, 1.f, bAscending) == EContact::Climb);
+
+		// Condition 2 — it steers out of the cone without leaving the radius.
+		HoldContact(SteersAway, AtFoot, Outward, FrameStepSeconds, bAscending);
+		TestTrue(TEXT("(i) ✅ Steering out of the cone re-arms it too — ⛔ the pawn is not trapped at the foot of its own ladder"),
+			HoldContact(SteersAway, AtFoot, Inward, 1.f, bAscending) == EContact::Climb);
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 12. ⛔⛔ THE CONTACT PATH RUNS THE **SAME** ENTRY GATE — SO IT IS NOT A BACK DOOR
+//     AROUND T-3, AND THE TWO PATHS CANNOT DOUBLE-FIRE
+//     (TASK-777, CONTACT-§4.3 / K-D / K-E, TOWER-§8.6, TOWER-§10 L-1)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// ⚠️⚠️ THIS IS THE TEST A REVIEWER WOULD HAVE ⛔ NO REASON TO LOOK FOR. A contact
+// trigger that quietly skipped CanTeamAscend would overturn a JONATHAN RULING from
+// inside a task whose stated purpose was something else entirely, and it would look
+// perfectly correct in review.
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeClimbableTowerContactEntryGateTest,
+	"Siegebound.ClimbableTower.ContactEntryStillRefusesEnemiesAndASecondClimber",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeClimbableTowerContactEntryGateTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeClimbableTowerTestFixture;
+	using EContact = AClimbableTower::ELadderContactVerdict;
+
+	const FVector AtFoot = PinnedLadderFootRelative + FVector(-100.f, 0.f, ScenarioCapsuleHalfHeightUU);
+	// ⚠️ −600, ⛔ not −300, for the same reason as test 11's copy: at `K-6`'s 350 uu radius a
+	// pawn 300 uu out is 50 uu INSIDE the disc, which would have turned row (e)'s
+	// "out-of-range enemy" into an in-range one and quietly deleted the ORDERING claim that
+	// row exists to make.
+	const FVector FarFromFoot = PinnedLadderFootRelative + FVector(-600.f, 0.f, ScenarioCapsuleHalfHeightUU);
+	const FVector Inward(ScenarioWalkSpeedUU, 0.f, 0.f);
+	const FVector Outward(-ScenarioWalkSpeedUU, 0.f, 0.f);
+
+	// Steps the COMPOSED gate for one second — long enough that the dwell is never what
+	// refuses a row below, so every refusal is attributable to the gate it names.
+	const auto RunGate = [](FSiegeLadderContactState& State, const FVector& Location, const FVector& Velocity,
+		ETeamId TowerTeam, ETeamId ClimberTeam, bool bIsUnit, bool bBusy, float TotalSeconds) -> EContact
+	{
+		EContact Verdict = EContact::TooFar;
+		bool bAscending = false;
+		const int32 Steps = FMath::Max(1, FMath::RoundToInt(TotalSeconds / FrameStepSeconds));
+		for (int32 Step = 0; Step < Steps; ++Step)
+		{
+			Verdict = AClimbableTower::EvaluateContactEntry(State, Location, Velocity,
+				PinnedLadderFootRelative, PinnedLadderTopRelative,
+				PinnedContactRadiusUU, PinnedContactIntentCos, PinnedContactDwellSeconds, FrameStepSeconds,
+				TowerTeam, ClimberTeam, bIsUnit, bBusy, bAscending);
+		}
+		return Verdict;
+	};
+
+	// ── SELF-CHECK: THE COMPOSED GATE IS NOT A CONSTANT ────────────────────────────────
+	{
+		FSiegeLadderContactState Friend;
+		FSiegeLadderContactState Enemy;
+		const EContact A = RunGate(Friend, AtFoot, Inward, ETeamId::Blue, ETeamId::Blue, true, false, 1.f);
+		const EContact B = RunGate(Enemy, AtFoot, Inward, ETeamId::Blue, ETeamId::Red, true, false, 1.f);
+		TestTrue(TEXT("SELF-CHECK: the composed gate is NOT a constant — a friend and an enemy in identical circumstances get different answers"),
+			A != B);
+		TestTrue(TEXT("SELF-CHECK: …and the friendly case really is Climb, so every refusal below refuses something that would otherwise have succeeded"),
+			A == EContact::Climb);
+	}
+
+	// ── (a) ⛔⛔ AN ENEMY SATISFYING **ALL THREE** CONTACT TERMS IS STILL REFUSED ──────
+	// ⭐ `CanTeamAscend` gains a SECOND CALLER here, ⛔ never an exception (CONTACT-§4.3).
+	// Both team directions, so a hardcoded team branch cannot hide behind one of them.
+	{
+		FSiegeLadderContactState RedAtBlue;
+		FSiegeLadderContactState BlueAtRed;
+		TestTrue(TEXT("(a) ⛔ A RED pawn walking into a BLUE tower's ladder is WrongTeam — T-3 is not weakened by the new path"),
+			RunGate(RedAtBlue, AtFoot, Inward, ETeamId::Blue, ETeamId::Red, true, false, 1.f) == EContact::WrongTeam);
+		TestTrue(TEXT("(a) ⛔ …and the BLUE-at-RED mirror, so the gate is not one team's special case"),
+			RunGate(BlueAtRed, AtFoot, Inward, ETeamId::Red, ETeamId::Blue, true, false, 1.f) == EContact::WrongTeam);
+	}
+
+	// ── (b) ⛔ TOWER-§10 L-1 — A SECOND PAWN IS REFUSED WHILE ONE IS CLIMBING ──────────
+	// ⭐⭐ AND THIS IS ALSO HALF OF `K-E`'s "THE TWO PATHS CANNOT DOUBLE-FIRE", ASSERTED
+	// RATHER THAN PROMISED: the contact path reads the SAME single occupancy slot the
+	// nav-link path does, so whichever arrives second is LadderBusy.
+	{
+		FSiegeLadderContactState Second;
+		TestTrue(TEXT("(b) ⛔ An own-team pawn pressing into an OCCUPIED ladder is LadderBusy — it waits in its ordinary walking state (K-D)"),
+			RunGate(Second, AtFoot, Inward, ETeamId::Blue, ETeamId::Blue, true, true, 1.f) == EContact::LadderBusy);
+	}
+
+	// ── (c) ⭐ THE OTHER HALF OF THE NO-DOUBLE-FIRE CLAIM, AS AN INDEPENDENT BELT ──────
+	// Even if a gate were bypassed, the climber's own admission predicate refuses a unit
+	// that is already climbing. ⛔ Two belts, ⛔ not one restated twice.
+	{
+		FSiegeLadderClimbState Active;
+		Active.bActive = true;
+		TestFalse(TEXT("(c) ⭐ FSiegeLadderClimbStatics::CanBegin refuses an ALREADY-CLIMBING pawn — the second, independent belt behind K-E's no-double-fire claim"),
+			FSiegeLadderClimbStatics::CanBegin(Active, false, false, false, PinnedLadderFootRelative, PinnedLadderTopRelative));
+		TestTrue(TEXT("SELF-CHECK: …and it ADMITS the same line for a pawn that is not climbing, so the refusal above is about bActive and not about the line"),
+			FSiegeLadderClimbStatics::CanBegin(FSiegeLadderClimbState(), false, false, false, PinnedLadderFootRelative, PinnedLadderTopRelative));
+	}
+
+	// ── (d) ⛔ IDENTITY OUTRANKS TEAM AND OCCUPANCY, EXACTLY AS ON THE LINK PATH ───────
+	// ⚖️⭐ THIS ROW USED TO SAY *"the verdict `AHeroCharacter` lands on until the identity term
+	// widens"*. ⭐ IT DID WIDEN (TASK-787, `CONTACT-§12`) — and ⛔ BOTH HALVES SHIPPED TOGETHER,
+	// which is the only way it may be closed: a slot claimed for a climber that could be STARTED
+	// but never HEARD FROM would brick the ladder for the rest of the match, which is ⛔ worse than
+	// the refusal it replaced. ⇒ the hero is now ADMITTED (test 15), and this row keeps the claim
+	// that ⛔ SURVIVES the widening: a pawn implementing ⛔ nothing is refused, and refused ⛔ BY
+	// IDENTITY — before team, before occupancy.
+	{
+		FSiegeLadderContactState NotAClimber;
+		TestTrue(TEXT("(d) ⛔ A pawn that is not an admitted climber is NotAnAdmittedClimber even at a free own-team ladder — identity outranks both other terms"),
+			RunGate(NotAClimber, AtFoot, Inward, ETeamId::Blue, ETeamId::Blue, false, true, 1.f) == EContact::NotAnAdmittedClimber);
+	}
+
+	// ── (e) ⭐⭐ THE ORDER IS PART OF THE CONTRACT: CONTACT TERMS FIRST, ENTRY GATE SECOND
+	// A pawn that is out of range is TooFar, ⛔ NOT WrongTeam — even when it is an enemy at a
+	// busy ladder and both of those refusals would also apply.
+	{
+		FSiegeLadderContactState Distant;
+		TestTrue(TEXT("(e) ⭐ An out-of-range enemy at a BUSY ladder is TooFar — the contact terms are evaluated first, and that ordering is load-bearing"),
+			RunGate(Distant, FarFromFoot, Inward, ETeamId::Blue, ETeamId::Red, true, true, 1.f) == EContact::TooFar);
+	}
+
+	// ── (f) ⛔⛔ …AND HERE IS **WHY** THAT ORDER IS LOAD-BEARING, AS A FAILING-ABLE ROW ─
+	// ⚠️⚠️ If the entry gate ran first, a pawn latched by K-C while SOMEBODY ELSE held the
+	// ladder would be short-circuited out on LadderBusy every single frame, never observed
+	// leaving the cone, and would carry that latch FOR THE REST OF THE MATCH — a pawn
+	// permanently unable to climb, for a reason nothing logs. This row walks exactly that
+	// sequence and requires the latch to have cleared.
+	{
+		FSiegeLadderContactState State;
+		RunGate(State, AtFoot, Inward, ETeamId::Blue, ETeamId::Blue, true, false, 1.f);
+		FSiegeLadderContactStatics::Disarm(State, /*bAtTop=*/ false);
+
+		// The whole re-arm happens while the ladder is BUSY — the case that would be
+		// short-circuited away under the tidier ordering.
+		TestTrue(TEXT("(f) SELF-CHECK: while latched and pressing in, the verdict is Disarmed — so the clear below is a real state change"),
+			RunGate(State, AtFoot, Inward, ETeamId::Blue, ETeamId::Blue, true, true, 0.5f) == EContact::Disarmed);
+		RunGate(State, AtFoot, Outward, ETeamId::Blue, ETeamId::Blue, true, true, FrameStepSeconds);
+
+		// ⚠️ WORDED PRECISELY: the re-arm frames returned Disarmed then NotHeadingIn, ⛔ NOT
+		// LadderBusy — because the contact terms short-circuit BEFORE the entry gate. That IS
+		// the property under test: under the gate-first ordering those same frames WOULD have
+		// returned LadderBusy, the latch would never have been touched, and this row goes red.
+		TestTrue(TEXT("(f) ⭐⭐ The latch cleared across frames the ladder was OCCUPIED for — under a gate-first ordering those frames would have short-circuited as LadderBusy and the latch would have survived the match"),
+			RunGate(State, AtFoot, Inward, ETeamId::Blue, ETeamId::Blue, true, false, 1.f) == EContact::Climb);
+	}
+
+	// ── (g) ⛔ THE THREE FEEL NUMBERS SHIP AS EditDefaultsOnly FLOATS AT THEIR LAW VALUES ──
+	// ⚠️ Expectations typed from `CONTACT-§7` — the RADIUS from `K-6`, the cone and dwell
+	// from `K-5` — ⛔ never read back off the class, the same direction the pinned socket
+	// coordinates are typed in. 🧑 The cone and dwell are DECLARED INVENTED and the feel is
+	// Jonathan's; when he retunes one, this row fails and NAMES the drift rather than letting
+	// a test quietly mean something else.
+	//
+	// ⭐⭐ THIS PIN WAS DELIBERATELY LEFT **ARMED AND RED** BY TASK-785, WHICH DID NOT OWN THE
+	// RADIUS: rather than weaken a test for a change outside its fence, it let the row stand
+	// and fail. TASK-784 then shipped `LadderContactRadiusUU = 300.f`, and TASK-786 moves the
+	// pin, its label and the citation TOGETHER — ⛔ never one without the others, because a
+	// pin whose LABEL still cites the superseded law is worse than no pin at all.
+	// ⛔ AND IT IS STILL TYPED FROM THE LAW, ⛔ never read back off the CDO: a row that read
+	// the class and compared it to itself would pass forever and mean nothing. That is the
+	// whole reason `SiegeLadderClimbTest.cpp` DERIVES the radius instead of re-pinning it —
+	// the two files deliberately approach the same number from opposite directions.
+	{
+		const AClimbableTower* const TowerDefaults = GetDefault<AClimbableTower>();
+		UClass* const ClimbableTowerClass = AClimbableTower::StaticClass();
+		if (!TowerDefaults || !ClimbableTowerClass)
+		{
+			AddError(TEXT("SELF-CHECK FAILED: the AClimbableTower class default object returned null."));
+			return false;
+		}
+
+		float RadiusUU = 0.f;
+		float IntentCos = 0.f;
+		float DwellSeconds = 0.f;
+		const bool bReadRadius = TryReadDefaultFloat(ClimbableTowerClass, TowerDefaults, TEXT("LadderContactRadiusUU"), RadiusUU);
+		const bool bReadIntent = TryReadDefaultFloat(ClimbableTowerClass, TowerDefaults, TEXT("LadderContactIntentCos"), IntentCos);
+		const bool bReadDwell = TryReadDefaultFloat(ClimbableTowerClass, TowerDefaults, TEXT("LadderContactDwellSeconds"), DwellSeconds);
+
+		// ⛔ A missing property is a HARD ERROR and ⛔ never a substituted guess: the whole
+		// mechanism is unreachable if the tower stopped shipping its own tuning.
+		if (!bReadRadius || !bReadIntent || !bReadDwell)
+		{
+			AddError(TEXT("⛔ One of LadderContactRadiusUU / LadderContactIntentCos / LadderContactDwellSeconds did not resolve as a float UPROPERTY on AClimbableTower — WR-§5 puts the radius and the test on the OWNING actor, and the contact trigger cannot be tuned without them."));
+			return false;
+		}
+
+		TestEqual(TEXT("(g) ⭐⭐ LadderContactRadiusUU ships at K-6's 350 uu — the HERO's per-frame requirement (0.35 s × 937.5 uu/s sprint+Boots = 328.125) plus 6.67% margin, which BINDS ABOVE the unit roster's 2 × 0.25 × 600 = 300. ⛔ At 300 the fastest hero could never climb at any offset or frame rate; at 150 the trigger fired for only part of the roster and only on part of the sampling phases"),
+			RadiusUU, PinnedContactRadiusUU, Tolerance);
+		TestEqual(TEXT("(g) LadderContactIntentCos ships at K-5's 0.5 (a 60° half-cone)"), IntentCos, PinnedContactIntentCos, Tolerance);
+		TestEqual(TEXT("(g) ⭐ LadderContactDwellSeconds ships at K-5's 0.35 s — the term that stops a unit being abducted as it marches past its own tower"),
+			DwellSeconds, PinnedContactDwellSeconds, Tolerance);
+
+		// ⭐⭐ AND THE TUNING IS THE **TOWER'S**, WHICH IS THE HALF `WR-§5` IS ABOUT: the
+		// radius lives on the owning actor and the pawn only asks. ⛔ A second copy on
+		// ASummonedUnit would be two numbers that eventually disagree.
+		TArray<FString> UnitMemberNames;
+		CollectDeclaredMemberNames(ASummonedUnit::StaticClass(), UnitMemberNames);
+		TestTrue(TEXT("SELF-CHECK: the reflection walk over ASummonedUnit is live (it found the shipped LadderClimbSpeedUU)"),
+			UnitMemberNames.Contains(TEXT("LadderClimbSpeedUU")));
+		for (const FString& MemberName : UnitMemberNames)
+		{
+			if (MemberName.Contains(TEXT("LadderContact"), ESearchCase::IgnoreCase))
+			{
+				AddError(*FString::Printf(
+					TEXT("⛔ ASummonedUnit declares '%s'. The contact trigger's radius, cone and dwell live on the OWNING TOWER and the pawn only ASKS (WR-§5, third application — ACommanderNpc::IsPlayerInRange reading InteractRadius). A second copy on the pawn is two tuning numbers that eventually disagree."),
+					*MemberName));
+			}
+		}
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 14. ⭐⭐ THE TOWER NAMES ⛔ NO CONCRETE CLIMBER CLASS ON THE CLIMB PATH
+//     (TASK-787, `CONTACT-§12.2` / `§12.3` / `§12.4` row 1)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// ⚖️⭐ THE PROPERTY `CONTACT-§4.4` WAS CREATED TO BUY AND DID ⛔ NOT FINISH BUYING. TASK-777
+// widened the occupancy SLOT to `ACharacter` and reached the climber through `ILadderClimber` in
+// `EndPlay` — correctly — but the ENTRY GATE still asked `Cast<ASummonedUnit>`, the START still
+// went through `CastChecked<ASummonedUnit>`, and the completion lane was bound through a delegate
+// that existed on that one class. ⇒ a COMPLETE, TESTED hero climb (TASK-778) could ⛔ never fire.
+//
+// ⛔⛔ AND THE ONE THAT LOOKED INNOCENT IS THE ONE THAT MATTERED MOST: a SINGLE
+// `Cast<ASummonedUnit>` guarding the bind/unbind pair, with a comment explaining it was *"not a
+// class-list branch"*. `CONTACT-§12.4` row 1 names that exactly — ***the class list with one entry
+// hidden***. ⇒ this test scans for ⛔ ALL of them, ⛔ including that one.
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeClimbableTowerNoConcreteClimberClassTest,
+	"Siegebound.ClimbableTower.TheClimbPathNamesNoConcreteClimberClass",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeClimbableTowerNoConcreteClimberClassTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeClimbableTowerTestFixture;
+
+	FString TowerSource;
+	if (!LoadClimbableTowerCpp(*this, TowerSource))
+	{
+		return false;
+	}
+
+	// ── SELF-CHECK: THE SCANNER CAN FIND A CAST IN THIS FILE AT ALL ───────────────────
+	// ⚠️⚠️ ⛔ NOT OPTIONAL. Every row below is an ABSENCE, and an absence over a file that failed
+	// to load, or over a scanner that matches nothing, is the vacuous pass this whole file is
+	// written against. The tower is FULL of interface casts now — requiring at least two proves
+	// the instrument is live on the exact syntax it is about to report missing.
+	const int32 InterfaceCasts = CountOccurrencesInCode(TowerSource, TEXT("Cast<ILadderClimber>"));
+	TestTrue(TEXT("SELF-CHECK: the scanner finds Cast<ILadderClimber> in ClimbableTower.cpp — so the absences below are MEASUREMENTS, ⛔ not a broken probe"),
+		InterfaceCasts >= 2);
+
+	// ── (a) ⛔ ZERO CONCRETE CLIMBER CASTS, IN EVERY SPELLING ─────────────────────────
+	// ⭐ `CastChecked` is listed separately and deliberately: the START used exactly that form,
+	// and a scan for `Cast<` alone would ⛔ miss it (it is a different identifier, not a prefix
+	// match — `CastChecked<X>` does not contain the substring `Cast<`).
+	static const TCHAR* const RefusedCastForms[] =
+	{
+		TEXT("Cast<ASummonedUnit>"),
+		TEXT("CastChecked<ASummonedUnit>"),
+		TEXT("Cast<AHeroCharacter>"),
+		TEXT("CastChecked<AHeroCharacter>")
+	};
+
+	for (const TCHAR* const Form : RefusedCastForms)
+	{
+		TestEqual(*FString::Printf(
+			TEXT("(a) ⛔ ClimbableTower.cpp contains ZERO '%s' — CONTACT-§12.4 row 1: a concrete climber cast is the class list, and ONE hidden entry is what made a finished hero climb unable to fire"),
+			Form),
+			CountOccurrencesInCode(TowerSource, Form), 0);
+	}
+
+	// ── (b) ⛔ AND NO CONCRETE CLIMBER HEADER IS EVEN INCLUDED ────────────────────────
+	// ⭐ THE STRUCTURAL VERSION OF (a), AND IT IS STRICTLY STRONGER: without the include, a
+	// `Cast<ASummonedUnit>` cannot be re-introduced without ALSO re-introducing the coupling —
+	// which is a visible, reviewable line rather than a quiet one buried mid-function.
+	// ⚠️ `TOWER-§8.4(B)` declared that include as this redesign's ONE new coupling surface. It is
+	// ⛔ not denied here; it is NARROWED to a capability interface (TASK-787).
+	TestEqual(TEXT("(b) ⛔ ClimbableTower.cpp no longer includes SummonedUnit.h — the ONE declared coupling surface is now the ILadderClimber seam, and ⛔ nothing else"),
+		CountOccurrencesInCode(TowerSource, TEXT("#include \"Siegebound/SummonedUnit.h\"")), 0);
+	TestEqual(TEXT("(b) ⛔ …and it never included HeroCharacter.h — the widening admits the hero WITHOUT the tower learning that class exists"),
+		CountOccurrencesInCode(TowerSource, TEXT("#include \"Siegebound/HeroCharacter.h\"")), 0);
+	TestEqual(TEXT("(b) SELF-CHECK: it DOES include the capability seam — so (b) is about which header, ⛔ not about a scanner that cannot see includes"),
+		CountOccurrencesInCode(TowerSource, TEXT("#include \"Siegebound/LadderClimber.h\"")), 1);
+
+	// ── (c) ⭐ BOTH ENTRY PATHS START THE CLIMB THROUGH THE INTERFACE ─────────────────
+	// ⛔ TWO paths (the nav-link callback and the contact poll), ⛔ ONE rule and ⛔ ONE seam. A
+	// widening that reached only one of them would leave the OTHER admitting units only, which is
+	// the same defect with a smaller blast radius.
+	TestEqual(TEXT("(c) ⭐ EXACTLY TWO BeginLadderClimb call sites — the link path and the contact path — and BOTH go through the ILadderClimber pointer the identity term was derived from"),
+		CountOccurrencesInCode(TowerSource, TEXT("ClimberApi->BeginLadderClimb(")), 2);
+
+	// ── (d) ⭐⭐ THE COMPLETION LANE IS BOUND **AND** UNBOUND THROUGH THE ACCESSOR ─────
+	// ⚠️⚠️ THE ASYMMETRIC CASE IS THE DANGEROUS ONE, AND IT IS WHY BOTH SIDES ARE COUNTED: a bind
+	// through the interface with an unbind still keyed to a concrete class would leave the tower
+	// subscribed to a hero it had already released — and the next climb would fire a handler for
+	// the WRONG climber.
+	TestEqual(TEXT("(d) ⭐ two binds through GetOnLadderClimbEnded() — one per entry path"),
+		CountOccurrencesInCode(TowerSource, TEXT("GetOnLadderClimbEnded().AddUniqueDynamic(")), 2);
+	TestEqual(TEXT("(d) ⭐ and ONE unbind through the same accessor, in the ONE release path both entry paths and EndPlay funnel into"),
+		CountOccurrencesInCode(TowerSource, TEXT("GetOnLadderClimbEnded().RemoveDynamic(")), 1);
+	TestEqual(TEXT("(d) ⛔ and ZERO direct member accesses left — `->OnLadderClimbEnded.` would be a concrete-class reach in interface clothing"),
+		CountOccurrencesInCode(TowerSource, TEXT("->OnLadderClimbEnded.")), 0);
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 15. ⭐⭐⭐ THE SLOT IS **RELEASED** FOR A NON-UNIT CLIMBER — ⛔ THE LADDER IS NOT
+//     BRICKED (TASK-787, `CONTACT-§12.1` / `§12.3` / `§12.5`)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// ⛔⛔ THE SENTENCE THIS TEST EXISTS FOR: **A START-ONLY WIDENING IS WORSE THAN NO WIDENING AT
+// ALL.** It converts *"the hero cannot climb"* into *"the FIRST hero attempt disables the tower
+// for EVERYONE — hero and unit alike — for the rest of the match."* The tower learns a climb ended
+// through ⛔ exactly one channel, so a climber it can START but not HEAR FROM holds the single
+// occupancy slot forever and every later admission returns `LadderBusy`.
+//
+// ⭐ WHAT IS PROVEN HERE AND WHAT IS ⛔ NOT (`SC-§32`, stated rather than implied): the RELEASE
+// CYCLE is proven as a rule (the pure gate), the MECHANISM that drives it is proven as a shape
+// (the delegate both pawns share, and the belt behind it). ⛔ The live sequence — admit → end →
+// admit again on a real tower — needs a world, a spawned tower and a spawned pawn, which this
+// suite may ⛔ not create (see this file's header on why faking it would crash rather than catch).
+// ⇒ that row is TASK-780's PIE session, and it is boarded there in exactly those words.
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeClimbableTowerSlotReleaseTest,
+	"Siegebound.ClimbableTower.TheSlotIsReleasedForANonUnitClimberSoTheLadderIsNotBricked",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeClimbableTowerSlotReleaseTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeClimbableTowerTestFixture;
+	using EVerdict = AClimbableTower::ELadderEntryVerdict;
+
+	// ── (a) ⭐⭐ THE HEADLINE: AN ADMITTED CLIMBER THAT IS **NOT** AN `ASummonedUnit` CLIMBS ──
+	// ⚠️ THE IDENTITY ARGUMENT IS A `bool` AND THAT IS THE POINT OF THE SPLIT: this row asserts
+	// the RULE — "an admitted climber on a free own-team ladder gets `Climb`, ⛔ never
+	// `NotAnAdmittedClimber`" — while test 14 asserts the DERIVATION, i.e. that the caller now
+	// computes that bool from `Cast<ILadderClimber>` rather than from a concrete class. ⛔ Neither
+	// half is the claim on its own; together they are.
+	TestTrue(TEXT("(a) ⭐⭐ an admitted climber (the widened ILadderClimber term — a HERO qualifies) is admitted to a free own-team ladder: Climb, ⛔ NOT NotAnAdmittedClimber"),
+		AClimbableTower::EvaluateLadderEntry(ETeamId::Blue, ETeamId::Blue, /*bClimberIsAdmittedClimber=*/ true, /*bBusy=*/ false) == EVerdict::Climb);
+
+	// ⭐ AND THE HERO REALLY DOES SATISFY THAT TERM — asserted against the reflection tables, so
+	// this is ⛔ not an argument about a bool: `AHeroCharacter` implements the interface the
+	// caller casts to, which is what makes row (a) about the player's own body.
+	TestTrue(TEXT("(a) ⭐ AHeroCharacter implements ILadderClimber — so the widened identity term admits the PLAYER'S OWN BODY, ⛔ not merely 'some hypothetical climber'"),
+		AHeroCharacter::StaticClass()->ImplementsInterface(ULadderClimber::StaticClass()));
+	TestTrue(TEXT("(a) SELF-CHECK: …and so does ASummonedUnit, so the widening ADDED a class rather than swapping one for another"),
+		ASummonedUnit::StaticClass()->ImplementsInterface(ULadderClimber::StaticClass()));
+
+	// ── (b) ⛔⛔ THE RELEASE CYCLE — **THE BRICK SEQUENCE** ───────────────────────────────
+	// Admit → the slot is HELD → the climb ENDS → a SECOND climber is admitted.
+	//
+	// ⚠️⚠️ SAY WHAT THIS DOES AND DOES ⛔ NOT PROVE, BECAUSE ROW ③ CALLS THE SAME EXPRESSION AS ROW
+	// ① AND A READER WHO MISSES THAT WILL READ IT AS A TAUTOLOGY — IT IS ⛔ NOT ONE, BUT ⛔ ONLY
+	// BECAUSE OF WHAT IT ASSERTS: ⭐ **THE GATE CARRIES ⛔ NO STATE ACROSS CALLS.** A refusal does
+	// ⛔ not latch, and "this pawn was once refused" is ⛔ not remembered. ⇒ ③ goes RED the day
+	// somebody gives `EvaluateLadderEntry` a cache, a cooldown, or a "has been refused" flag —
+	// which is one of the two ways a ladder gets bricked, the other being a slot that never clears.
+	// ⛔ WHAT IT DOES ⛔ NOT PROVE, and it is proven elsewhere rather than left implied: that the
+	// tower's `bLadderOccupied` argument actually GOES back to false. That is the completion
+	// delegate's job — rows (c)/(d) — and the live sequence is TASK-780's PIE row.
+	TestTrue(TEXT("(b) ① the first climber is ADMITTED to a free ladder"),
+		AClimbableTower::EvaluateLadderEntry(ETeamId::Blue, ETeamId::Blue, true, /*bBusy=*/ false) == EVerdict::Climb);
+	TestTrue(TEXT("(b) ② while it holds the slot, a SECOND climber is refused — TOWER-§10 L-1, one ladder one climber"),
+		AClimbableTower::EvaluateLadderEntry(ETeamId::Blue, ETeamId::Blue, true, /*bBusy=*/ true) == EVerdict::LadderBusy);
+	TestTrue(TEXT("(b) ③ ⭐⭐ AND THE REFUSAL DOES ⛔ NOT LATCH: with the slot free again the very next admission is Climb. The gate is PURE — it remembers ⛔ nothing about ②, so a released ladder is usable on the NEXT attempt, ⛔ not the next match"),
+		AClimbableTower::EvaluateLadderEntry(ETeamId::Blue, ETeamId::Blue, true, /*bBusy=*/ false) == EVerdict::Climb);
+
+	// ── (c) ⭐ THE MECHANISM BEHIND ③ — **ONE DELEGATE TYPE, REACHED THROUGH THE INTERFACE** ──
+	// ⚠️⚠️ THIS IS THE ROW THAT MAKES ③ MORE THAN ARITHMETIC. `bBusy=false` in ③ is only reachable
+	// in the shipped game if the tower is actually TOLD the climb ended — and it is told through
+	// `ILadderClimber::GetOnLadderClimbEnded()`, which returns the implementer's OWN instance.
+	// ⇒ if the hero broadcast a DIFFERENT delegate type, `AddUniqueDynamic` would be binding to
+	// something the hero never fires, and ③ would be unreachable in the world while staying green
+	// here. Pointer identity on the signature function is what forbids that.
+	const FMulticastDelegateProperty* const HeroClimbEnded =
+		CastField<FMulticastDelegateProperty>(AHeroCharacter::StaticClass()->FindPropertyByName(FName(TEXT("OnLadderClimbEnded"))));
+	const FMulticastDelegateProperty* const UnitClimbEnded =
+		CastField<FMulticastDelegateProperty>(ASummonedUnit::StaticClass()->FindPropertyByName(FName(TEXT("OnLadderClimbEnded"))));
+
+	TestNotNull(TEXT("(c) ⭐ the HERO owns a completion delegate instance — TASK-787 added it; before that this class had NONE and could not release the slot at all"),
+		HeroClimbEnded);
+	TestNotNull(TEXT("(c) SELF-CHECK: the UNIT still owns its own — this row compares two live properties"),
+		UnitClimbEnded);
+
+	if (HeroClimbEnded && UnitClimbEnded)
+	{
+		TestTrue(TEXT("(c) ⛔⛔ both pawns' delegates are the SAME type (FSiegeLadderClimbEnded, now in LadderClimber.h) — ⛔ NOT two lookalikes. A second, hero-only delegate type is REFUSED (CONTACT-§12.4) precisely because the tower binds ONE handler"),
+			HeroClimbEnded->SignatureFunction == UnitClimbEnded->SignatureFunction);
+		// ⚠️ `FMulticastDelegateProperty::SignatureFunction` is a `TObjectPtr<UFunction>`, and both
+		// `TestNotNull` overloads DEDUCE `const ValueType*`. ⛔ Template argument deduction does NOT
+		// run TObjectPtr's implicit conversion-to-raw, so the value must already BE a raw pointer at
+		// the call site (the `==` row above and `operator->` below are unaffected — neither deduces).
+		// ⭐ Same idiom as `SiegeLadderClimbTest.cpp:1061`, which asserts non-null on this very field.
+		// ⛔ The row itself is UNCHANGED: it still fails on a null, which is the whole point of it.
+		const UFunction* const SharedSignature = HeroClimbEnded->SignatureFunction;
+		TestNotNull(TEXT("(c) SELF-CHECK: the shared signature function exists — comparing two nulls would 'pass' while proving nothing"),
+			SharedSignature);
+	}
+
+	// ── (d) ⭐ THE HERO'S HALF OF THE RELEASE, READ IN THE SHIPPED SOURCE ────────────────
+	// ⛔ Reflection cannot see a Broadcast. The hero's ordering (last, after the restore, exactly
+	// once, from the ONE teardown all ten exits route through) is asserted in full by
+	// `SiegeHeroLadderClimbTest` test 24; this row is the cheapest possible check that the SITE
+	// exists at all, so a reader of THIS file is not left assuming it.
+	{
+		FString HeroSource;
+		if (LoadProjectSource(*this, TEXT("Source/GitClaudeUnrealTest/Siegebound/HeroCharacter.cpp"), HeroSource))
+		{
+			TestEqual(TEXT("(d) ⭐ the hero broadcasts the completion signal EXACTLY ONCE in its whole implementation — ten exits, ONE teardown, ONE signal, and that is what frees this tower's slot"),
+				CountOccurrencesInCode(HeroSource, TEXT("OnLadderClimbEnded.Broadcast(")), 1);
+		}
+	}
+
+	// ── (e) ⭐ THE INDEPENDENT BELT (`CONTACT-§12.5`) — ⛔ A BELT, ⛔ NOT THE MECHANISM ────
+	// The occupancy term additionally requires the held climber to still be CLIMBING, read through
+	// `ILadderClimber::IsClimbing()`. ⇒ a completion signal that is ever MISSED degrades the worst
+	// case from "the tower is dead for the match" to "one admission is late by one poll".
+	//
+	// ⛔⛔ IT IS ⛔ NOT A SUBSTITUTE FOR (c)/(d) AND MUST NEVER BE SHIPPED INSTEAD OF THEM: without
+	// the eager release the tower keeps a STALE `ActiveClimber`, and the two pawn classes would get
+	// DIVERGENT release semantics — two mechanisms for one traversal, which is what `CONTACT-§2`
+	// refused for the driver. ⇒ TWO independent mechanisms, TWO independent assertions.
+	{
+		FString TowerSource;
+		if (LoadClimbableTowerCpp(*this, TowerSource))
+		{
+			TestEqual(TEXT("(e) ⭐ the occupancy term is spelled ONCE, in IsLadderSlotOccupied() — ⛔ not copied per entry path, because two copies is how the link path and the contact path come to disagree about when a ladder is free"),
+				CountOccurrencesInCode(TowerSource, TEXT("bool AClimbableTower::IsLadderSlotOccupied() const")), 1);
+			TestEqual(TEXT("(e) ⭐ and BOTH entry paths feed the gate from it"),
+				CountOccurrencesInCode(TowerSource, TEXT("IsLadderSlotOccupied()")), 3); // the definition + two call sites
+			TestTrue(TEXT("(e) ⭐ the belt asks the HELD climber whether it is still climbing, through the interface — ⛔ the slot alone is not the whole term"),
+				TowerSource.Contains(TEXT("HeldApi->IsClimbing()"), ESearchCase::CaseSensitive));
+			// ⛔⛔ AND THE EAGER PATH IS STILL THERE — the belt did ⛔ NOT replace it. TWO clears:
+			// `ReleaseClimber`'s (every completion, both entry paths) and `EndPlay`'s (the tower
+			// dying under a climber, TOWER-§10 L-5). ⚖️ Shipping the belt INSTEAD of the completion
+			// seam is ruled out by CONTACT-§12.5's closing clause, and this row is what would go
+			// red if a future task "simplified" it that way.
+			TestEqual(TEXT("(e) ⛔ the eager release is INTACT: ActiveClimber is cleared in EXACTLY TWO places — ReleaseClimber (every completion) and EndPlay (L-5). The belt is a SECOND mechanism, ⛔ never a replacement for the first"),
+				CountOccurrencesInCode(TowerSource, TEXT("ActiveClimber.Reset()")), 2);
 		}
 	}
 

@@ -11,6 +11,7 @@
 #include "Engine/GameInstance.h" // TASK-512: complete type for GetGameInstance()->GetSubsystem<>() (Actor.h:3772 forward-declares UGameInstance)
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
+#include "EngineUtils.h" // TASK-778: TActorIterator<AClimbableTower> — the cadence-limited tower scan the contact poll walks (the shipped ABuilding-iteration idiom, SiegeGameMode.cpp:1342 / SummonedUnit.cpp:2474)
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/DamageType.h"
@@ -25,6 +26,7 @@
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "Siegebound/CardRow.h"
+#include "Siegebound/ClimbableTower.h" // TASK-778 (CONTACT-§4.1): the contact gate the hero POLLS — the tower owns the radius, the cone, the dwell and K-C's latch; this class owns ⛔ none of them
 #include "Siegebound/CombatantHealthBarComponent.h"
 #include "Siegebound/SiegeFeedbackLibrary.h"
 #include "Siegebound/SiegeHitFlashComponent.h"
@@ -33,8 +35,10 @@
 #include "Siegebound/SiegeNetLimits.h" // M8 (TASK-356 loop-1): the ONE arena relevancy constant (Tier B)
 #include "Siegebound/SiegePlayerState.h" // M8 (TASK-356): PossessedBy team resolve (doc §2.3)
 #include "Siegebound/SiegeSessionSubsystem.h" // LogSiegeNet (CONVENTIONS M8)
+#include "Siegebound/SiegeSpawnConstants.h" // TASK-778: SiegeSpawn::DefaultCapsuleHalfHeight — used ONLY as a null-capsule fallback (⛔ it is NOT the hero's dimension; its own comment calls it a fallback)
 #include "Siegebound/SummonedUnit.h"
 #include "TimerManager.h"
+#include "UObject/UnrealType.h" // TASK-778: FindFProperty<FFloatProperty> — the ONE shipped ladder rate is READ, ⛔ never copied onto this class
 
 namespace
 {
@@ -47,6 +51,34 @@ namespace
 
 	/** Height above the hero origin for its floating damage number. */
 	constexpr float HeroDamageNumberHeightZ = 110.f;
+
+	//~ ─── Ladder climb (TASK-778, `CONTACT-§3`) ─────────────────────────────────────────────
+	//~ ⛔ NEITHER OF THESE IS A GAMEPLAY TUNABLE AND NEITHER IS AUTHORED: `CONTACT-§7` `K-5` names
+	//~ exactly THREE tunables for this feature (radius, cone, dwell) and ALL THREE live on
+	//~ `AClimbableTower`. These two are file-scope implementation constants — the
+	//~ `FSiegeLadderContactStatics::MinContactSpeedUU` idiom: a mechanism's own cadence, ⛔ not a
+	//~ rule anybody tunes. They are `constexpr` here rather than UPROPERTYs precisely so that
+	//~ nothing on this class can be mistaken for a second copy of a tower's number.
+
+	/**
+	 *  How often the watchdog wakes while a climb runs (`CONTACT-§3.5`).
+	 *  ⭐ 0.25 s is the cadence `ASummonedUnit`'s always-on `StateTimerHandle` already runs at, so
+	 *  the two drivers are watched at the same resolution — ⛔ not a felt number.
+	 *  ⚠️ CONSEQUENCE: raising it lengthens how long a hero whose Tick has stopped hangs in
+	 *  `MOVE_Flying` past its budget; lowering it buys nothing, because the budget itself
+	 *  (~14.1 s at the shipped line and rate) is what decides when a climb is abandoned.
+	 */
+	constexpr float LadderClimbWatchdogIntervalSeconds = 0.25f;
+
+	/**
+	 *  How often the hero rebuilds its `AClimbableTower` list.
+	 *  ⚠️ CONSEQUENCE, and it is the whole reason the number is written down: a tower built while
+	 *  the hero is already standing at its ladder is not pollable until the next scan, so this is
+	 *  the WORST-CASE delay before a brand-new tower can be walked into. At 1 s that is invisible
+	 *  next to the 0.35 s dwell the player must then hold anyway. ⛔ Lowering it toward a per-frame
+	 *  `TActorIterator` is the thing to avoid: the scan is O(actors in the level).
+	 */
+	constexpr double LadderTowerScanIntervalSeconds = 1.0;
 
 	//~ Instant hero-upgrade CardIDs (TASK-058) — must match the DT_Cards row names (CONVENTIONS: CardID = row name).
 	const FName UpgradeCardID_SharpenedBlade(TEXT("SharpenedBlade"));
@@ -164,6 +196,17 @@ void AHeroCharacter::Tick(float DeltaSeconds)
 	{
 		TickRecall(RecallWorld->GetTimeSeconds());
 	}
+
+	// TASK-778 (CONTACT-§3): drive an in-flight climb, then — only when none is running — ask the
+	// towers whether this body is walking into one of their ladders. Both self-guard, so a frame
+	// with no climb and no tower costs one bool test and one empty array walk.
+	//
+	// ⚠️ ORDER IS DELIBERATE: the DRIVER runs BEFORE the poll, so a climb that ends on this frame
+	// (arrival, release, match end) cannot be re-entered by the poll in the SAME frame. The
+	// tower's own K-C re-arm latch is the rule that keeps it out on later frames; this ordering is
+	// what keeps it out on THIS one.
+	TickLadderClimb(DeltaSeconds);
+	PollLadderContact(DeltaSeconds);
 
 	// out-of-combat regen (GDD §3.1): 5 HP/s starting 8 s after last taking OR dealing damage, stops at max.
 	// Cap is the EFFECTIVE max (base + Plate Armor bonus, TASK-058) — never the raw base.
@@ -398,7 +441,19 @@ void AHeroCharacter::DoMeleeAttack()
 	// permanent class-identity seal — a const "can this thing ever attack" query on the class —
 	// structurally cannot say that, and using one would make a 10-second channel
 	// indistinguishable from a unit that can never attack for as long as it exists.
-	if (bDead || bMeleeSuppressed || FSiegeRecallStatics::IsAttackDisarmed(RecallState))
+	// ⛔ TASK-778 (`CONTACT-§7` K-4) ADDS ITS ONE TERM TO THIS SAME EXISTING GUARD — the
+	// TOWER-§9.2 / RECALL-§ R-5 idiom, THIRD application, and ⛔ still no new guard point and ⛔ no
+	// new suppression mechanism. A climbing hero cannot attack; it is attackable throughout, and
+	// that half gets ⛔ NO code by design (a climber is an ordinary live hero at an ordinary world
+	// location, and nothing here narrows anyone's acquisition).
+	//
+	// ⭐ THE DISARM TERM IS THE SAME BOOL THE DRIVER RUNS ON, so it ends on the exact frame
+	// the climb does — ⛔ no decay timer, ⛔ no grace window, ⛔ no lingering penalty. And a
+	// refused swing still does not consume the cooldown, so nothing is carried out of the climb.
+	//
+	// ⚠️ DECLARED FOR QA: `TOWER-§9` was ruled about UNITS. Extending the disarm to the HERO is a
+	// PROCEEDING DEFAULT (`CONTACT-§7` K-4), ⛔ not Jonathan's own ruling — flagged in the handoff.
+	if (bDead || bMeleeSuppressed || FSiegeRecallStatics::IsAttackDisarmed(RecallState) || IsClimbing())
 	{
 		return;
 	}
@@ -758,6 +813,19 @@ void AHeroCharacter::HandleDeath()
 	// still clears exactly once (EndRecall's first line is the latch).
 	EndRecall(ESiegeRecallExit::InterruptedByDeath);
 
+	// ⛔ LADDER EXIT H-4 of 10 (TASK-778, `CONTACT-§3.1`) — the hero died mid-climb.
+	//
+	// ⚠️⚠️ AND IT IS ⛔ NOT ALREADY COVERED BY THE `DisableMovement()` A FEW LINES BELOW, WHICH IS
+	// EXACTLY THE TRAP: that call meets the MOVEMENT-MODE half of the hazard and ⛔ nothing else.
+	// The climb STATE would stay armed, the driver would keep steering a dead, hidden body up a
+	// ladder line every frame, the watchdog timer would keep firing on the world, and `IsClimbing()`
+	// would keep the melee guard disarmed into the respawn. ⇒ the abort goes HERE, beside the
+	// recall's own death exit, and it runs BEFORE `DisableMovement()` so the final resting state of
+	// a corpse is `MOVE_None` (this restores the mode; the line below then disables it).
+	// ⭐ Idempotent with H-5: a death that also un-possesses reaches both, and the teardown's
+	// exactly-once latch makes the second one inert.
+	AbortLadderClimb();
+
 	// Push the 0-HP to the overhead bar, then HIDE it (TASK-130 push model): a screen-space
 	// widget component does NOT follow SetActorHiddenInGame (ACastle::HandleDestroyed parity),
 	// so hide explicitly. ResetHero re-shows it on respawn.
@@ -793,6 +861,16 @@ void AHeroCharacter::HandleDeath()
 void AHeroCharacter::ResetHero()
 {
 	bDead = false;
+
+	// ⛔ LADDER EXIT H-6 of 10 (TASK-778) — THE BACKSTOP, AND IT IS DECLARED AS ONE.
+	// ⚠️ This function already writes `MOVE_Walking` below, so the MODE half would self-heal here
+	// — ⛔ but leaning on that would be wrong twice over: it is ~180 s downstream of the death
+	// (`GHOST-§0`'s respawn delay), so a hero rescued only here has been broken for three minutes;
+	// and it would leave the state, the driver and the watchdog running for that whole time.
+	// ⭐ H-4 and H-5 are the real exits. This one is belt, and it costs one bool test.
+	// ⚠️ BEFORE the respawn's own deliberate walking-mode write below, so the restore this abort
+	// performs is then overwritten by it — ⛔ never the other way round.
+	AbortLadderClimb();
 
 	// Upgrades PERSIST through death (GDD §3.10, TASK-058): the stack counts were NOT cleared
 	// by HandleDeath, so re-apply their cumulative mods onto the freshly-restored base here —
@@ -1342,6 +1420,23 @@ void AHeroCharacter::EndRecall(ESiegeRecallExit Exit)
 		return;
 	}
 
+	// ⛔ LADDER EXIT H-7 of 10 (TASK-778, `CONTACT-§3.4` bullet 2) — A CLIMB MAY ⛔ NOT SURVIVE A
+	// RECALL TELEPORT, and this is the one recall end that teleports.
+	//
+	// ⚠️ IT MUST RUN ***BEFORE*** THE BROADCAST BELOW, not after: the destination owner MOVES this
+	// actor inside that call, and a live `MOVE_Flying` drive would then keep interpolating toward a
+	// ladder 500 m away — dragging the hero back out of its own keep along a line whose endpoints
+	// are now nonsense. Ending first means the body arrives home walking.
+	//
+	// ⭐⭐ NEAR-UNREACHABLE, AND ⛔ KEPT ANYWAY. `CONTACT-§3.4` MEASURED the third direction:
+	// the recall's own cancel reads ⛔ neither input ⛔ nor velocity — it reads POSITION
+	// (`HasLeftAnchor`, a full 3D `DistSquared` vs `RecallMoveCancelToleranceUU` = 25 uu, ticked
+	// unconditionally), so a scripted climb leaves the anchor ball within ~0.07 s at 350 uu/s and
+	// CANCELS the channel long before it can complete. ⇒ reaching this line needs a completion and
+	// a climb-start on the same frame, ahead of the cancel. ⚖️ An exit you cannot reach is free;
+	// an exit you removed is a hang.
+	AbortLadderClimb();
+
 	// (1 of 2) THE TELEPORT — performed by the destination owner, which resolves the same start
 	// transform the respawn path already uses. ⛔ The hero deliberately learns nothing about
 	// where that is.
@@ -1432,7 +1527,666 @@ void AHeroCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	// still valid to destroy.
 	EndRecall(ESiegeRecallExit::CancelledByEndPlay);
 
+	// ⛔ LADDER EXIT H-9 of 10 (TASK-778) — this actor is leaving play (level travel, teardown,
+	// destroy). ⚠️ BEFORE Super, while the movement component and the world timer manager are both
+	// still valid: the teardown restores the mode and clears the watchdog, and a timer left armed
+	// on a destroyed actor is the dangling-handle class this class already clears elsewhere.
+	AbortLadderClimb();
+
 	Super::EndPlay(EndPlayReason);
 }
 
 // ═════════════ RECALL REGION END ═════════════
+
+// ═════════════ LADDER CLIMB REGION BEGIN ═════════════
+//
+//  ⭐⭐ THE HERO'S LADDER CLIMB (TASK-778; CONVENTIONS `CONTACT-§3`, `TOWER-§8.4(B)`/`§8.5`/`§8.5a`)
+//
+//  Jonathan, verbatim (2026-09-01): "lets just make sure the playable character and any units can
+//  climb the ladder by simplying walking up to it and walking against it."
+//
+//  ⛔⛔ WHAT THIS REGION IS ***NOT***, SO THE SHAPE IS NOT MISREAD:
+//    • ⛔ It authors ⛔ NO rules. Every decision — admission, the endpoint lift, the deck-breach
+//      window, arrival, the budget, the exactly-once latch — is `FSiegeLadderClimbStatics`,
+//      CONSUMED UNCHANGED (`CONTACT-§2`'s ruling: a statics LIFT plus a PER-CLASS DRIVER, ⛔ not a
+//      component and ⛔ not a shared base class, because the EXITS are the risk surface and a
+//      component cannot intercept `HandleDeath`, `UnPossessed`, `EndRecall` or `EndPlay`).
+//    • ⛔ It owns ⛔ NO contact tunable. The radius, the intent cone, the dwell and `K-C`'s re-arm
+//      latch are `AClimbableTower`'s (`WR-§5`) and this class asks a question rather than
+//      answering one.
+//    • ⛔ It adds ⛔ NO key, ⛔ no binding, ⛔ no prompt and ⛔ no cancel-key handler of any kind
+//      (`K-A`: it is AUTOMATIC — *"simply by walking against it"* — and `AS-§6` A-2 is
+//      untouchable). ⚠️ The suite asserts all four of those absences over this region by name,
+//      which is why they are described here rather than quoted.
+//    • ⛔ It adds ⛔ NO animation (`CONTACT-§5` — Jonathan's explicit waiver) and ⛔ REMOVES none:
+//      the units' shipped climb clip stays imported, committed and wired to their ABP, and UNITS
+//      KEEP IT. ⭐ The waiver is a licence ⛔ not to build; it is ⛔ not an instruction to remove.
+//
+//  ⚠️⚠️ AND THE NUMBERS ARE ***RE-DERIVED FROM THIS HERO'S OWN CAPSULE***, ⛔ NEVER INHERITED FROM
+//  THE UNIT (`CONTACT-§3.3`). They differ, and the difference is the whole reason the law demands
+//  it: hero capsule r 42 / hh 96 (`GitClaudeUnrealTestCharacter.cpp:18`) vs the unit's 34 / 88.
+//    · endpoint lift        96.0 uu   (⛔ never 88, ⛔ never `SiegeSpawn::DefaultCapsuleHalfHeight`,
+//                                      which its own comment calls a FALLBACK)
+//    · deck-breach ceiling  3 × 96 = 288 uu of Z ⇒ 296.86 uu of line = 24.00% of the 1,236.9 uu
+//                                      ascent (the unit's row is 264 ⇒ 272.13 ⇒ 22.00%)
+//    · watchdog budget      4 × 1,236.9 / 350 = 14.14 s against a 3.53 s ascent
+//  ⛔ ⛔ NONE of these is typed as a literal anywhere below: the half-height is read from the
+//  capsule and everything else is derived from it inside the shipped statics.
+//
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+
+bool AHeroCharacter::IsClimbing() const
+{
+	// ONE bool backs the climb AND the K-4 disarm — see the header. There is no second flag
+	// anybody could forget to clear and no timer that could outlive the cause.
+	return LadderClimb.bActive;
+}
+
+bool AHeroCharacter::BeginLadderClimb(const FVector& FromWorld, const FVector& ToWorld)
+{
+	UCharacterMovementComponent* const Movement = GetCharacterMovement();
+	if (!Movement)
+	{
+		// ⛔ Refuse rather than arm: with no movement component there is no MOVE_Flying to enter
+		// and no mode to restore, so an "active" climb would be a hero that never moves and never
+		// ends. Unreachable for a spawned ACharacter; guarded because the alternative is the hang.
+		return false;
+	}
+
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		// ⛔ NO WATCHDOG, NO CLIMB. The 0.25 s belt is an FTimerManager entry and the timer manager
+		// lives on the WORLD — so a world-less hero could be armed into MOVE_Flying with nothing
+		// able to abandon it. Refusing here is the only honest answer.
+		return false;
+	}
+
+	// ⛔ THE FIFTH REFUSAL REASON, HERO-ONLY AND DECLARED IN THE HEADER (`CONTACT-§3.4` bullet 1):
+	// a hero may ⛔ NOT START a climb while a recall channel is running. ⚠️ This is ⛔ NOT provided
+	// by the measured position-cancel — that rule ends a CHANNEL when a climb moves the body; it
+	// says nothing about starting one, and a climb that began mid-channel would be relying on a
+	// cancel landing first to be correct. ⭐ Checked BEFORE `Begin`, so a refusal still changes
+	// NOTHING.
+	if (IsRecalling())
+	{
+		return false;
+	}
+
+	// ⛔ THE ONE SHIPPED RATE, READ — ⛔ never a second copy on this class (`CONTACT-§8`).
+	float ClimbSpeedUU = 0.f;
+	if (!TryResolveLadderClimbSpeedUU(ClimbSpeedUU))
+	{
+		return false;
+	}
+
+	// ⭐⭐ THE CAPSULE HALF-HEIGHT COMES FROM ***THIS HERO'S*** CAPSULE, ⛔ NEVER FROM A LITERAL AND
+	// ⛔ NEVER FROM THE UNIT'S 88 (`TOWER-§8.5a` clause 6 / `CONTACT-§3.3` #1 — `TOWER-§7`'s
+	// "geometry comes FROM the thing" applied again). It is what lifts the SURFACE-space sockets
+	// into CAPSULE-CENTRE space so the hero finishes STANDING ON the deck instead of buried one
+	// half-height inside the slab. ⭐ A BP child that resizes its capsule stays correct for free.
+	// ⚠️ `SiegeSpawn::DefaultCapsuleHalfHeight` appears ONLY as the null-capsule fallback — its own
+	// comment calls it a fallback, and this diagnosis proved it is 8 uu wrong for this pawn.
+	const float CapsuleHalfHeightUU = GetCapsuleComponent()
+		? GetCapsuleComponent()->GetScaledCapsuleHalfHeight()
+		: SiegeSpawn::DefaultCapsuleHalfHeight;
+
+	// ⛔ "CHANGES NOTHING ON REFUSAL" is enforced inside the pure half, in ONE place, so it cannot
+	// be half-kept. ⚠️⚠️ THE TWO FROZEN TERMS ARE ***MAPPED***, ⛔ NEVER PASSED THROUGH
+	// (`CONTACT-§3.2` — typing `false` is ⛔ not neutral: it asserts no such freeze can exist for
+	// this pawn, and a pawn entering MOVE_Flying mid-freeze is the exact hang this machinery
+	// prevents):
+	//
+	//   bAIFrozen    ⇒ `IsMatchOver()` (`HeroCharacter.cpp`, this file). ⭐ A REAL mapping, ⛔ not
+	//                  a stand-in: `ASiegeGameMode::FreezeWorldAtMatchEnd` (`SiegeGameMode.cpp:616`)
+	//                  is what sets `bAIFrozen` on units (`:632`), and the hero's shipped
+	//                  equivalent of that same event is this predicate — the one the recall
+	//                  channel's own match-end exit already reads. ⛔ A hero that could start a
+	//                  climb during the end screen is `GHOST-§4`'s input-dead catastrophe with a
+	//                  new cause.
+	//   bSpellFrozen ⇒ ⛔ NOTHING CORRESPONDS, AND THAT IS ***MEASURED***, ⛔ not assumed. Frost is
+	//                  the only freeze in the game and it applies `ApplyFreeze` to `ASummonedUnit`
+	//                  and `ABuilding` ONLY — `SpellLibrary.cpp:304-320` ends with the shipped
+	//                  comment *"every other ITeamAgent (castle, hero) is excluded by ruling 5 — no
+	//                  branch on purpose"*, and `SpellLineSweep.cpp:240-249` has the same two
+	//                  branches. Grepped: `HeroCharacter.{h,cpp}` contain ZERO occurrences of
+	//                  Freeze / Frozen / Stun. ⇒ `false` here is a REPORTED FINDING with its
+	//                  evidence, ⛔ not a value typed in to make the call compile. ⚠️ The day a
+	//                  spell CAN freeze the hero, this argument acquires that state — and the
+	//                  handoff says so.
+	if (!FSiegeLadderClimbStatics::Begin(LadderClimb, bDead, /*bAIFrozen=*/ IsMatchOver(),
+		/*bSpellFrozen=*/ false, FromWorld, ToWorld, ClimbSpeedUU, CapsuleHalfHeightUU))
+	{
+		return false;
+	}
+
+	// ══ FROM HERE ON IsClimbing() IS TRUE — THE K-4 DISARM IS LIVE ═══════════════════════════
+	// ⭐ The hero is ATTACKABLE throughout and that half gets ⛔ NO code, deliberately: a climber is
+	// an ordinary live hero at an ordinary world location, and nothing in this region narrows any
+	// acquisition gate anywhere.
+
+	LadderClimbResolvedSpeedUU = ClimbSpeedUU;
+
+	// ⭐ MOVE_Flying — the ONE shipped mode that accepts vertical motion without new physics code,
+	// and the licence is MEASURED (`TOWER-§8.5`): `ConstrainInputAcceleration` plane-projects
+	// steering input ONLY when `IsMovingOnGround() || IsFalling()`, and flying is neither, so the
+	// vertical component of our steer SURVIVES. Flying also disables gravity, which is what a climb
+	// wants. MaxFlySpeed caps the ascent at the shipped rate; it is saved and restored EXACTLY.
+	LadderClimbSavedMaxFlySpeed = Movement->MaxFlySpeed;
+	Movement->MaxFlySpeed = FMath::Max(ClimbSpeedUU, FSiegeLadderClimbStatics::MinClimbSpeedUU);
+	Movement->StopMovementImmediately(); // ⛔ no inherited walk/sprint velocity carried into the ascent
+	Movement->SetMovementMode(MOVE_Flying);
+
+	// ⭐ SEED THE HOLD-TO-CLIMB READ, or exit H-3 would fire on frame one and the climb would be
+	// unstartable. This is honest rather than convenient: the tower admitted this body only after
+	// the INTENT term held CONTINUOUSLY for the full dwell, so "the player is steering into the
+	// ladder" is a fact that was just measured — the seed carries it across the one frame before
+	// the next `DoMove` arrives, and nothing sustains it after that except real input.
+	LadderClimbSteerWorld = FSiegeLadderClimbStatics::ClimbDirection(LadderClimb);
+	LadderClimbSteerWorld.Z = 0.f;
+	LadderClimbSteerFrame = GFrameCounter;
+
+	// ⭐⭐ THE WATCHDOG THIS CLASS DOES NOT OTHERWISE HAVE (`CONTACT-§3.5`) — armed HERE and
+	// cleared by every one of the ten exits. The deadline is the climb's OWN budget expressed on
+	// the WORLD clock, so a Tick that stops (a disabled actor tick, a paused component, a driver
+	// nobody re-asserts) cannot postpone it: an FTimerManager entry lives on the world and ⛔ cannot
+	// be killed by an actor tick-flag write.
+	LadderClimbWatchdogDeadlineSeconds = World->GetTimeSeconds() + static_cast<double>(LadderClimb.TimeoutSeconds);
+	GetWorldTimerManager().SetTimer(LadderClimbWatchdogTimerHandle, this,
+		&AHeroCharacter::OnLadderClimbWatchdog, LadderClimbWatchdogIntervalSeconds, /*bLoop=*/ true);
+
+	UE_LOG(LogGitClaudeUnrealTest, Verbose,
+		TEXT("AHeroCharacter '%s': ladder climb STARTED — %.1f uu of line, budget %.2f s, capsule half-height %.1f (read from the capsule), deck-breach window %.1f uu."),
+		*GetNameSafe(this), LadderClimb.LengthUU, LadderClimb.TimeoutSeconds, LadderClimb.CapsuleHalfHeightUU, LadderClimb.DeckBreachUU);
+
+	return true;
+}
+
+void AHeroCharacter::AbortLadderClimb()
+{
+	// ⛔ LADDER EXIT H-2 of 10 — and H-10 as well: `AClimbableTower::EndPlay` reaches this exact
+	// function through `ILadderClimber` when the tower dies under a climber it started. Under the
+	// old ramp that case was FREE (the floor vanished and CharacterMovement dropped the occupant to
+	// MOVE_Falling by itself); a MOVE_Flying hero will ⛔ NOT fall, so the abort is REQUIRED there.
+	// ⛔ TAKES NO REASON, AND THAT IS PINNED (`TOWER-§8.4(B)`): the teardown is REASON-AGNOSTIC.
+	// Idempotent — the teardown's latch makes a call on a non-climbing hero a silent no-op.
+	EndLadderClimb(/*bReachedTop=*/ false, ESiegeHeroLadderExit::Abort);
+}
+
+void AHeroCharacter::EndLadderClimb(bool bReachedTop, ESiegeHeroLadderExit Reason)
+{
+	// ⭐⭐ THE EXACTLY-ONCE LATCH IS CONSUMED FIRST, BEFORE ANY EFFECT. That ordering is what makes
+	// a double exit inert — death then EndPlay is the ORDINARY case, ⛔ not an edge one — and what
+	// makes a re-entrant call from anything this function touches return immediately.
+	if (!FSiegeLadderClimbStatics::End(LadderClimb))
+	{
+		return;
+	}
+
+	// ⛔ THE WATCHDOG DIES WITH THE CLIMB, ON EVERY EXIT. A looping timer that outlived its climb
+	// would fire on a walking hero forever — and would eventually abort a climb it did not start.
+	GetWorldTimerManager().ClearTimer(LadderClimbWatchdogTimerHandle);
+	LadderClimbWatchdogDeadlineSeconds = 0.0;
+
+	// ⛔⛔ THE RESTORE. THIS IS THE LINE THE WHOLE FEATURE TURNS ON: MOVE_Flying ignores gravity, so
+	// an exit that skips it leaves the PLAYER'S OWN BODY hanging in mid-air forever.
+	// `SetDefaultMovementMode` is this project's shipped idiom for exactly this
+	// (`ASummonedUnit::EndLadderClimb`, `EndSpellFreeze`), and it does the right thing in mid-air:
+	// with no movement base it goes straight to MOVE_Falling rather than spending a frame
+	// pretending to walk. ⇒ the hero DROPS from wherever it is and survives — there is ⛔ no fall
+	// damage anywhere in Siegebound (`TOWER-§4a`, measured).
+	if (UCharacterMovementComponent* const Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+		Movement->MaxFlySpeed = LadderClimbSavedMaxFlySpeed; // EXACT restore, zero residual
+		Movement->SetDefaultMovementMode();
+	}
+
+	// WHOLE-STATE reset, never a bare flag clear: a stale steer or a stale saved speed left behind
+	// is exactly the residue the TASK-020 zero-drift contract forbids. (`LadderClimb` itself was
+	// whole-struct reset inside `End` above.)
+	LadderClimbSavedMaxFlySpeed = 0.f;
+	LadderClimbResolvedSpeedUU = 0.f;
+	LadderClimbSteerWorld = FVector::ZeroVector;
+	LadderClimbSteerFrame = 0;
+
+	if (Reason == ESiegeHeroLadderExit::Watchdog)
+	{
+		// ⚠️ THE WATCHDOG IS THE ONE EXIT THAT MEANS SOMETHING IS WRONG — every other reason is
+		// ordinary gameplay, so this is the only one that logs at Warning (`TOWER-§8.5a` clause 7:
+		// a stall before the window opens must fail LOUDLY). The hero has just been DROPPED rather
+		// than stranded, so this is a diagnosis rather than a failure.
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("AHeroCharacter '%s': ladder climb ABANDONED by the watchdog — it did not reach the top inside its budget. The hero has been DROPPED (movement mode restored), ⛔ not stranded and ⛔ not handed the deck it failed to reach. Check for geometry blocking the climb line, or a LadderTop the capsule cannot reach."),
+			*GetNameSafe(this));
+	}
+
+	// ⭐ WHICH OF THE TEN ENDED IT, AND WHETHER IT ARRIVED — at Verbose, because every reason except
+	// the watchdog above is ordinary gameplay. ⚠️ This is ⛔ not decoration: the ten exits cannot be
+	// driven headlessly (a world-less hero crashes in the movement component), so TASK-780's PIE
+	// session has ⛔ no other way to see WHICH exit fired. ⭐ The shipped `StaticEnum` +
+	// null-guard idiom (`SiegeAssistantCommand.cpp:338`), so a stripped enum degrades to a number
+	// rather than crashing a log line.
+	const UEnum* const ExitEnum = StaticEnum<ESiegeHeroLadderExit>();
+	UE_LOG(LogGitClaudeUnrealTest, Verbose,
+		TEXT("AHeroCharacter '%s': ladder climb ENDED — reason %s, reached the top: %s. Movement mode restored, state cleared, watchdog killed."),
+		*GetNameSafe(this),
+		ExitEnum ? *ExitEnum->GetNameStringByValue(static_cast<int64>(Reason)) : *FString::FromInt(static_cast<int32>(Reason)),
+		bReachedTop ? TEXT("YES") : TEXT("no"));
+
+	// ⭐⭐ THE COMPLETION SIGNAL — **LAST, AND EXACTLY ONCE** (TASK-787, `CONTACT-§12.3`).
+	//
+	// ⚖️ THIS COMMENT REPLACES TASK-778's DECLARED BLOCKER RATHER THAN DELETING IT, BECAUSE THE
+	// BLOCKER IS WHAT BOUGHT THE FIX. It read: *"⛔ NO COMPLETION DELEGATE IS BROADCAST, AND THAT IS
+	// DECLARED RATHER THAN FORGOTTEN … the tower's completion signal is
+	// `ASummonedUnit::OnLadderClimbEnded`, which this class does ⛔ not have."* That was TRUE when
+	// written and it was the honest half of a refusal to self-start; `CONTACT-§12` ratified the
+	// refusal as LAW and closed the seam properly — the delegate moved to `LadderClimber.h`, the
+	// interface gained an accessor, and this class gained the INSTANCE.
+	//
+	// ⛔⛔ WHY IT IS HERE AND ⛔ NOWHERE ELSE, AND WHY THE ORDER IS THE WHOLE POINT: the tower binds
+	// this delegate BEFORE it calls `BeginLadderClimb` and releases the occupancy slot when it
+	// fires. ⇒ a hero that never broadcast would hold that slot FOREVER and BRICK the ladder for
+	// every later climber, hero or unit (`CONTACT-§12.1`).
+	//   • LAST — after the movement mode is restored and after every field is cleared, so a listener
+	//     that inspects this hero never sees it mid-teardown. The unit's own pinned ordering.
+	//   • AFTER THE LATCH — `FSiegeLadderClimbStatics::End` above already consumed it and returned,
+	//     so a listener that re-enters `AbortLadderClimb()` from inside this broadcast is INERT
+	//     rather than recursive. ⭐ Exactly-once is INHERITED from the ten-exits-one-teardown
+	//     property, ⛔ NOT re-latched here: there is deliberately ⛔ no second flag.
+	// ⭐ `this` converts implicitly to the delegate's `ACharacter*` — the `CONTACT-§4.4` widening,
+	// cashed in. ⛔ ONE delegate TYPE serves both pawns; a hero-only one is refused (`§12.4`).
+	OnLadderClimbEnded.Broadcast(this, bReachedTop);
+}
+
+void AHeroCharacter::TickLadderClimb(float DeltaSeconds)
+{
+	if (!LadderClimb.bActive)
+	{
+		return;
+	}
+
+	// ⛔ LADDER EXIT H-8 of 10 — the match ended under the climb. ⭐ Checked FIRST, exactly as the
+	// recall channel checks its own match-end exit first: nothing should still be driving a body up
+	// a tower under the end screen, and this inherits the shipped rule rather than inventing a
+	// second one. (`bAIFrozen`'s hero mapping, `CONTACT-§3.2`.)
+	if (IsMatchOver())
+	{
+		EndLadderClimb(/*bReachedTop=*/ false, ESiegeHeroLadderExit::MatchEnd);
+		return;
+	}
+
+	// ⛔ LADDER EXIT H-3 of 10 — `K-B` HOLD-TO-CLIMB, and it is the hero's MOST FREQUENT exit, so
+	// it is checked before anything can move the body this frame. ⭐ The verb that STARTS the climb
+	// is the verb that SUSTAINS it, which is what makes the rule self-documenting; releasing (or
+	// steering away) ends it and the hero DROPS — free, because there is no fall damage.
+	if (!IsLadderClimbInputHeld())
+	{
+		EndLadderClimb(/*bReachedTop=*/ false, ESiegeHeroLadderExit::InputReleased);
+		return;
+	}
+
+	const FVector Here = GetActorLocation();
+
+	bool bReachedTop = false;
+	bool bTimedOut = false;
+	if (!FSiegeLadderClimbStatics::Advance(LadderClimb, Here, DeltaSeconds, bReachedTop, bTimedOut))
+	{
+		if (bReachedTop)
+		{
+			// ⭐ LAND EXACTLY ON THE DECK, ⛔ NOT WHEREVER THIS FRAME'S STEP HAPPENED TO STOP.
+			// `ArrivalTarget` is the destination surface plus one capsule half-height — THIS hero's
+			// half-height — so it finishes STANDING ON the deck. Non-swept for the same reason the
+			// last stretch was: the target is on the far side of the slab.
+			// ⛔⛔ ONLY ON A REAL ARRIVAL (`TOWER-§8.5a` clause 5): a timed-out climb drops from
+			// where it actually is and is ⛔ NEVER handed the deck it failed to reach. ⚖️ A watchdog
+			// that teleports its casualty to the destination is not a watchdog.
+			SetActorLocation(FSiegeLadderClimbStatics::ArrivalTarget(LadderClimb), /*bSweep=*/ false);
+		}
+
+		// ⛔ LADDER EXIT H-1 of 10 (arrival) — or the declared watchdog reached through the state's
+		// own budget. Arrival is the ONLY exit that reports bReachedTop, and it is also where the
+		// K-4 disarm releases: the same `End()` that clears bActive clears `IsClimbing()`, so the
+		// hero can swing again on this very frame. ⛔ No decay timer, ⛔ no grace window.
+		EndLadderClimb(bReachedTop, bReachedTop ? ESiegeHeroLadderExit::Arrival : ESiegeHeroLadderExit::Watchdog);
+		return;
+	}
+
+	const FVector Direction = FSiegeLadderClimbStatics::ClimbDirection(LadderClimb);
+
+	if (FSiegeLadderClimbStatics::ShouldSweep(LadderClimb, Here))
+	{
+		// ── THE ORDINARY ~76% OF THE LINE: SWEPT MOVEMENT THROUGH THE MOVEMENT COMPONENT ───────
+		// The capsule, the sweep and depenetration all still apply. ⛔ NOT a SetActorLocation lerp
+		// of the traversal: that would drag the capsule through the tower body and through other
+		// bodies, and it is the mechanism `NAV-§` refuses on principle (`TOWER-§8.5`).
+		// ⚠️ bForce = true, for the same measured reason the unit's driver passes it:
+		// `Internal_AddMovementInput` DROPS the vector whenever `IsMoveInputIgnored()`, and a
+		// scripted traversal whose completion the tower is waiting on must ⛔ not be silently
+		// suppressible — the body would float until the watchdog dropped it.
+		AddMovementInput(Direction, 1.f, /*bForce=*/ true);
+		return;
+	}
+
+	// ── ⚠️⚠️ THE DECK-BREACH WINDOW — A NON-SWEPT ***CONTINUOUS DRIVE***, AND IT IS THE ONLY WAY
+	//    THE FEATURE REACHES THE DECK AT ALL (`TOWER-§8.5a`, granted on TASK-737's measurement:
+	//    `LadderTop` is pinned 150 uu INSIDE a solid deck slab, so a swept move stalls ~131 uu
+	//    BELOW it — silently, with every exit still perfectly correct) ─────────────────────────
+	//
+	// ⛔⛔ ITS LICENCE IS `TOWER-§8.3`'s ≥56 uu STANDOFF AND ⛔ NOTHING ELSE, AND FOR THIS CAPSULE
+	// THAT LICENCE WAS ***VOID***: r 42 leaves 51.624 uu, 4.376 SHORT (`CONTACT-§3.3` #4). ⚖️ That
+	// is `K-1`, and Jonathan ruled ⭐ OPTION A — the LADDER MOVES OUTWARD (TASK-783), which restores
+	// the standoff for the hero without touching this code.
+	// ⇒ ⛔⛔ NOTHING BELOW HARDCODES A SOCKET, AN ENDPOINT, A DISTANCE OR THE SIZE OF THAT MOVE, and
+	// ⛔ this comment deliberately quotes ⛔ no figure for it either: the first estimate was ~4.6 uu
+	// and the art lane is building a different one, so a number written here would be `CONTACT-§10.1`
+	// cite-rot on delivery. Both world points arrive as PARAMETERS, read at runtime from the link the
+	// tower armed from the mesh's own sockets ⇒ the translation is INVISIBLE here, whatever its size,
+	// which is exactly why option A costs this file zero lines.
+	//
+	// ⭐ SAME RATE, SAME LINE, JUST NO SWEEP: a CONTINUOUS drive, ⛔ not a teleport and ⛔ not a lerp
+	// of the traversal. ⚠️ Velocity is zeroed first or the two drivers fight: `PhysFlying` would
+	// keep sweeping the capsule from residual velocity (`BrakingDecelerationFlying` is 0, so it
+	// never decays) and re-jam it against the slab being stepped through.
+	if (UCharacterMovementComponent* const Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+	}
+
+	const float StepUU = FMath::Max(LadderClimbResolvedSpeedUU, FSiegeLadderClimbStatics::MinClimbSpeedUU)
+		* FMath::Max(DeltaSeconds, 0.f);
+	SetActorLocation(Here + Direction * StepUU, /*bSweep=*/ false);
+}
+
+bool AHeroCharacter::IsLadderClimbInputHeld() const
+{
+	// ── (1) IS THERE A STEER AT ALL THIS FRAME? ───────────────────────────────────────────────
+	// ⚠️ ENHANCED INPUT NEVER DELIVERS A "RELEASED" CALL FOR AN AXIS: on release, `DoMove` simply
+	// STOPS ARRIVING. So the release is detected by AGE, and the age is measured in FRAMES rather
+	// than seconds deliberately — ⛔ a seconds threshold would be a fourth tunable nobody ruled,
+	// and this needs none.
+	// ⭐ ONE frame of tolerance, and it is load-bearing: the player controller's input processing
+	// and this pawn's Tick are both in TG_PrePhysics and their relative order is ⛔ NOT guaranteed,
+	// so a strict same-frame test would end climbs at random on whichever ordering ran the pawn
+	// first. Two frames (~33 ms at 60 Hz) is the worst-case lag before a real release is honoured.
+	if (GFrameCounter > LadderClimbSteerFrame + 1)
+	{
+		return false;
+	}
+
+	// ── (2) IS THAT STEER STILL INTO THE LADDER? ──────────────────────────────────────────────
+	// ⛔⛔ A ***SIGN TEST***, ⛔ NOT A CONE — AND THAT IS DELIBERATE, ⛔ not laziness: the intent
+	// cone is `AClimbableTower::LadderContactIntentCos` and `CONTACT-§8` forbids a second copy of a
+	// tower tunable on this class. A dot > 0 needs ⛔ no number at all, so there is nothing here to
+	// drift from the tower's cone. ⚖️ It is also the right RULE for a SUSTAIN as opposed to an
+	// ENTRY: entering should be deliberate (a 60° cone held for 0.35 s); staying on a ladder should
+	// only require that the player has not turned away from it.
+	// ⭐ Measured against the CLIMB LINE's own horizontal direction, which is correct in BOTH
+	// directions by construction: on an ascent it points at the tower, on a descent it points back
+	// out at the ladder foot — the same two ends the `BothWays` link and `bDeckIsAtEnd` resolve.
+	FVector LineHorizontal = FSiegeLadderClimbStatics::ClimbDirection(LadderClimb);
+	LineHorizontal.Z = 0.f;
+	if (LineHorizontal.IsNearlyZero())
+	{
+		// A perfectly vertical line has no horizontal bearing to steer at, so ANY steer sustains
+		// it. ⛔ The alternative (refusing) would make a vertical ladder unclimbable for a reason no
+		// player could see. The pinned line is 76°, so this is a guard, ⛔ not the shipped path.
+		return true;
+	}
+
+	FVector SteerHorizontal = LadderClimbSteerWorld;
+	SteerHorizontal.Z = 0.f;
+	if (SteerHorizontal.IsNearlyZero())
+	{
+		return false;
+	}
+
+	return FVector::DotProduct(LineHorizontal.GetSafeNormal(), SteerHorizontal.GetSafeNormal()) > 0.f;
+}
+
+void AHeroCharacter::DoMove(float Right, float Forward)
+{
+	if (LadderClimb.bActive)
+	{
+		// ⛔⛔ CAPTURED AND ⛔ NOT FORWARDED — see the header for why this is two requirements in one
+		// override. The world-space frame is rebuilt exactly as `Super::DoMove` builds it (control
+		// yaw ⇒ forward/right), so what is captured is the SAME vector the movement component would
+		// have received, ⛔ not an approximation of it.
+		if (const AController* const OwningController = GetController())
+		{
+			const FRotator YawRotation(0.f, OwningController->GetControlRotation().Yaw, 0.f);
+			const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+			const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+
+			LadderClimbSteerWorld = (ForwardDirection * Forward) + (RightDirection * Right);
+			LadderClimbSteerFrame = GFrameCounter;
+		}
+
+		// ⛔ NO `Super::DoMove` — ONE STEERING AUTHORITY (`NAV-§3`). In MOVE_Flying the template's
+		// two `AddMovementInput` calls are unconstrained 3D flight and would pull the capsule off
+		// the pinned line, where there is no deck-breach window and no arrival.
+		return;
+	}
+
+	Super::DoMove(Right, Forward);
+}
+
+void AHeroCharacter::OnLadderClimbWatchdog()
+{
+	// ⭐ THE BELT, AND IT IS INDEPENDENT OF EVERYTHING THAT DRIVES THE CLIMB: this runs off the
+	// WORLD's timer manager, so it survives an actor tick that is disabled, starved or never
+	// re-asserted — the exact failure a driver copied from the unit's would have no answer to,
+	// because the unit's cover comes from an always-on 0.25 s poll this class does not have.
+	if (!LadderClimb.bActive)
+	{
+		// Belt for the belt: a handle that somehow outlived its climb clears itself rather than
+		// looping forever on a walking hero.
+		GetWorldTimerManager().ClearTimer(LadderClimbWatchdogTimerHandle);
+		return;
+	}
+
+	if (bDead)
+	{
+		// ⚠️ A DEAD HERO STILL IN A CLIMB MEANS EXIT H-4 DID NOT RUN — a death path that bypassed
+		// `HandleDeath` entirely. ⛔ Do not trust that it never happens; end it here. Reported as
+		// the death exit because that is what it IS, ⛔ not as a timeout.
+		EndLadderClimb(/*bReachedTop=*/ false, ESiegeHeroLadderExit::Death);
+		return;
+	}
+
+	const UWorld* const World = GetWorld();
+	if (World && World->GetTimeSeconds() < LadderClimbWatchdogDeadlineSeconds)
+	{
+		return;
+	}
+
+	// ⛔ THE BUDGET IS SPENT (or the world is gone). Drop the hero WHERE IT IS — `TOWER-§8.5a`
+	// clause 5 — with the one Warning this feature ever logs.
+	EndLadderClimb(/*bReachedTop=*/ false, ESiegeHeroLadderExit::Watchdog);
+}
+
+bool AHeroCharacter::TryResolveLadderClimbSpeedUU(float& OutClimbSpeedUU)
+{
+	// ⛔⛔ THERE IS DELIBERATELY ⛔ NO `LadderClimbSpeedUU` ON THIS CLASS. `CONTACT-§8` pins it:
+	// *"`LadderClimbSpeedUU` is READ FROM the shipped value, ⛔ never a second copy on the hero"* —
+	// ⚖️ two speed properties is how they drift, and this one is Jonathan's exposure lever
+	// (`TOWER-§9.3` prices the whole climb in Longbowman shots against it).
+	//
+	// ⚠️⚠️ AND THE READ IS BY REFLECTION FOR A ***MEASURED*** REASON, ⛔ not for cleverness: the ONE
+	// shipped value is `protected` on `ASummonedUnit` (`SummonedUnit.h:1115`, re-grepped by TASK-787
+	// after its delegate move shortened that file — `CONTACT-§10.1`), and widening its access would
+	// be an edit to another task's file. Reflection reads the CDO's authored default without
+	// touching it. ⭐ Once per climb, ⛔ never per frame (the value is cached for the climb).
+	//
+	// ⚖️⭐ THE MANAGER RULED ON THIS, AND THE RULING IS RECORDED HERE RATHER THAN LEFT AS THE OLD
+	// SUGGESTION (`CONTACT-§10.1`, applied to my own comment): TASK-778 wrote that `CONTACT-§8`'s
+	// *"read from the TOWER's shipped value"* was wrong — ✅ the finding was CORRECT and the law was
+	// REPAIRED to match the code. ⛔⛔ BUT THE "CLEAN LANDING" THIS COMMENT USED TO PROPOSE — *move
+	// the property onto `AClimbableTower`* — IS ⛔ RULED **OUT** (`CONTACT-§12.4`): it would make the
+	// climb rate PER-TOWER, a design change nobody asked for (a climb rate is a PAWN stat), and it
+	// would spend 🧑 Jonathan's `TOWER-§9.3` exposure lever, which prices the whole climb in
+	// Longbowman shots against the UNIT's value. ⇒ ⛔ do ⛔ not re-propose it; this reflection read
+	// is the shipped answer and the suite guards it.
+	static const FName ShippedRatePropertyName(TEXT("LadderClimbSpeedUU"));
+
+	const FFloatProperty* const RateProperty =
+		FindFProperty<FFloatProperty>(ASummonedUnit::StaticClass(), ShippedRatePropertyName);
+	const ASummonedUnit* const UnitDefaults = GetDefault<ASummonedUnit>();
+
+	if (!RateProperty || !UnitDefaults)
+	{
+		// ⛔ REFUSE THE CLIMB. ⛔ No fallback number is invented, and that is the whole design of
+		// this function: a made-up rate would either crawl (a 1 uu/s "safe" default turns a 3.5 s
+		// ascent into a 20-minute one that no watchdog would cut short, because the budget scales
+		// with the rate) or silently become a SECOND copy of the tunable — the exact thing the law
+		// forbids. ⚠️ The suite guards this: `SiegeHeroLadderClimbTest` asserts the property exists
+		// under this exact name, so a rename goes RED there rather than going quiet here.
+		if (!bWarnedLadderRateUnresolved)
+		{
+			bWarnedLadderRateUnresolved = true;
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("AHeroCharacter '%s': the shipped ladder rate ('%s' on ASummonedUnit) could not be resolved, so hero ladder climbs are REFUSED. ⛔ No rate is invented here — see CONTACT-§8. Restore the property on ASummonedUnit under that exact name; do NOT move it onto AClimbableTower (ruled out at CONTACT-§12.4) and never add a second copy."),
+				*GetNameSafe(this), *ShippedRatePropertyName.ToString());
+		}
+		return false;
+	}
+
+	OutClimbSpeedUU = RateProperty->GetPropertyValue_InContainer(UnitDefaults);
+	return true;
+}
+
+void AHeroCharacter::RefreshNearbyClimbableTowers()
+{
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const double NowSeconds = World->GetTimeSeconds();
+	if (NowSeconds < NextClimbableTowerScanSeconds)
+	{
+		return;
+	}
+	NextClimbableTowerScanSeconds = NowSeconds + LadderTowerScanIntervalSeconds;
+
+	// ⭐ The shipped building-iteration idiom (`SiegeGameMode.cpp:1342`, `SummonedUnit.cpp:2474`),
+	// rate-limited because this one is reached from a Tick rather than from an event. ⛔ There is
+	// deliberately ⛔ NO distance filter here: filtering would need a radius, the radius belongs to
+	// the tower, and a second copy of it on this class is exactly what `CONTACT-§8` forbids. The
+	// tower's own cheap 2D term costs one squared-distance compare per tower per frame and drops a
+	// passer-by immediately — which is what it was built to do.
+	NearbyClimbableTowers.Reset();
+	for (TActorIterator<AClimbableTower> It(World); It; ++It)
+	{
+		NearbyClimbableTowers.Add(*It);
+	}
+}
+
+void AHeroCharacter::PollLadderContact(float DeltaSeconds)
+{
+	// ⭐⭐ WHY THIS POLL LIVES IN `Tick` AND ⛔ NOT ON A TIMER — ***MEASURED***, ⛔ NOT ASSUMED,
+	// BECAUSE THE UNIT SIDE HAS EXACTLY THIS TRAP AND IT IS INVISIBLE IN REVIEW.
+	//
+	// ⚠️⚠️ `ASummonedUnit` ships `PrimaryActorTick.bCanEverTick = true` WITH
+	// `bStartWithTickEnabled = FALSE` (`SummonedUnit.cpp:140-141`), and its ONLY tick-flag writer is
+	// `RefreshActorTickEnabled` — `WantsActorTick(bLungeActive, LadderClimb.bActive)`
+	// (`SummonedUnit.cpp:3662`). ⇒ a unit that is neither lunging nor climbing is ⛔ NOT TICKING, i.e.
+	// ⛔ NOT TICKING IN EXACTLY THE STATE A CLIMB MUST START FROM: a poll placed in its `::Tick`
+	// would compile, review clean, pass the suite and ⛔ NEVER RUN.
+	//
+	// ✅⭐ THE HERO IS THE OPPOSITE CASE, AND HERE IS THE EVIDENCE RATHER THAN THE ASSUMPTION:
+	//   • this class sets `PrimaryActorTick.bCanEverTick = true` in its constructor and ⛔ never
+	//     sets `bStartWithTickEnabled = false` ⇒ it ticks from spawn;
+	//   • grepped `Source/`: the ONLY runtime `SetActorTickEnabled` call in the entire project is
+	//     `SummonedUnit.cpp:3662`, where a UNIT writes its OWN flag ⇒ ⛔ NOTHING anywhere can
+	//     disable a hero's tick — ⛔ not death (it hides, disables input and collision, and stops
+	//     movement, but ⛔ never the tick), ⛔ not the ghost hand-off, ⛔ not match end;
+	//   • and it is proven by shipped behaviour rather than only by grep: the RECALL channel's
+	//     movement-cancel is serviced from this same `Tick` UNCONDITIONALLY (`R-2`) and Jonathan has
+	//     played it.
+	// ⇒ ✅ `Tick` is the correct home for BOTH the driver (which must be per-frame to move a capsule
+	// smoothly) and this poll. ⚠️ And the case the evidence cannot cover — a tick that stops for a
+	// reason none of us predicted — is exactly what the watchdog is for, and the watchdog is an
+	// `FTimerManager` entry on the WORLD precisely so it cannot be taken down with the tick.
+
+	// ⛔ A dead hero asks nothing, and a climbing hero has nothing to ask: the tower's own occupancy
+	// slot would refuse the second entry anyway (`TOWER-§10` L-1), so this is cheaper AND it keeps
+	// this class from touching contact bookkeeping it does not own.
+	if (bDead || LadderClimb.bActive)
+	{
+		return;
+	}
+
+	// ⛔ `CONTACT-§3.4` bullet 1, expressed where it costs nothing: a hero may not START a climb
+	// while a recall channel is running, so it does not ask. ⭐ `BeginLadderClimb` carries the same
+	// rule as a REFUSAL (defence in depth — a caller that is not this poll still cannot get in).
+	if (IsRecalling())
+	{
+		return;
+	}
+
+	RefreshNearbyClimbableTowers();
+
+	for (int32 Index = NearbyClimbableTowers.Num() - 1; Index >= 0; --Index)
+	{
+		AClimbableTower* const Tower = NearbyClimbableTowers[Index].Get();
+		if (!Tower)
+		{
+			// Prune on use, exactly as the tower prunes its own contact table: a tower destroyed
+			// mid-match must ⛔ not be polled, and a list that only grows is a leak nobody notices.
+			NearbyClimbableTowers.RemoveAtSwap(Index);
+			continue;
+		}
+
+		// ⭐⭐ THE ONE LINE THIS WHOLE CALL SITE EXISTS FOR — **THE PAWN ASKS, THE TOWER DECIDES**.
+		// ⛔ Everything that could be a tunable is on the other side of this call: the radius, the
+		// 60° cone, the 0.35 s dwell, `K-C`'s re-arm latch, `CanTeamAscend` (`T-3` — ⛔ no hero
+		// exemption, an ENEMY hero may not climb your tower either) and the single occupancy slot.
+		// ⛔ This class holds ⛔ NONE of them, and the suite asserts that by reflection.
+		const AClimbableTower::ELadderContactVerdict Verdict = Tower->TryBeginContactClimb(this, DeltaSeconds);
+
+		if (Verdict == AClimbableTower::ELadderContactVerdict::Climb)
+		{
+			// The traversal is ALREADY RUNNING and that tower ALREADY holds the occupancy slot.
+			// ⛔ Nothing to do here and ⛔ nothing to start — asking a second tower on the same
+			// frame could only produce a LadderBusy.
+			break;
+		}
+
+		// ⭐⭐ EVERY OTHER VERDICT IS A REFUSAL THIS CLASS ACCEPTS IN SILENCE, AND THAT IS THE WHOLE
+		// SHAPE OF THE CALL SITE: **THE PAWN ASKS, THE TOWER DECIDES.** ⛔ No log line — this runs
+		// out of `Tick`, so one line per refusal is one per frame forever.
+		//
+		// ⚖️ TASK-787 REMOVED A `NotAnAdmittedClimber` BRANCH THAT USED TO LIVE HERE, AND ITS
+		// REMOVAL IS A ⛔ CONSEQUENCE, ⛔ NOT A TIDY-UP. TASK-778 could only ASK and be refused: the
+		// tower's identity term admitted `ASummonedUnit` ONLY, so it latched a one-shot Warning
+		// naming the closed seam. `CONTACT-§12` widened that term to `ILadderClimber` — which
+		// `AHeroCharacter` implements as a COMPILE-TIME BASE — so a hero can no longer produce that
+		// verdict at all. ⚖️ `SC-§36` INVERTED: a warning that ⛔ cannot fire is indistinguishable
+		// from one that works, and this one would have read as a live diagnostic forever. ⛔ The
+		// reasoning is not lost; it is `CONTACT-§12`, which is where a cross-file law belongs.
+		// ⚠️ The verdict itself is ⛔ NOT gone from the enum and ⛔ must not be: an `ACharacter` that
+		// is not an `ILadderClimber` — a future spectator body — is still refused BY IDENTITY.
+		//
+		// 📌 AND THIS PARAGRAPH IS SAFE TO WRITE, WHICH TOOK A CHANGE TO THE **PROBE** RATHER THAN
+		// TO THE PROSE: `SiegeHeroLadderClimbTest` test 20 row (d) asserts this function no longer
+		// BRANCHES on that verdict, and it now counts occurrences in CODE ONLY
+		// (`CountOccurrencesInCode`). ⚖️ A scanner that counted comments would have forced this call
+		// site to choose between explaining why the branch went and passing its own test — and the
+		// explanation would have lost. The prose is the guard; the instrument got smarter.
+	}
+}
+
+void AHeroCharacter::UnPossessed()
+{
+	// ⛔ LADDER EXIT H-5 of 10 — THE INDEPENDENT BELT (see the header for why it is ⛔ not a
+	// duplicate of H-4). ⚠️ BEFORE Super, while `GetController()` and the movement component are
+	// both still coherent. Idempotent with every other exit by the teardown's latch, and it costs
+	// one bool test on every ordinary possession change.
+	AbortLadderClimb();
+
+	Super::UnPossessed();
+}
+
+// ═════════════ LADDER CLIMB REGION END ═════════════

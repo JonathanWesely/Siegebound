@@ -6,7 +6,9 @@
 
 #include "Containers/UnrealString.h"
 #include "Math/UnrealMathUtility.h"
+#include "Siegebound/ClimbableTower.h" // TASK-784 (CONTACT-§4.1): the contact trigger's three tunables are read off THIS class's CDO — the pawn keeps no copy, and tests 15/16/18 re-derive the call site's cadence against whatever actually ships
 #include "Siegebound/MinerUnit.h"
+#include "Siegebound/SiegeLadderClimbStatics.h" // TASK-776 (CONTACT-§2): FSiegeLadderClimbState / FSiegeLadderClimbStatics moved here from SummonedUnit.h, byte-identically. ⛔ The ONLY change to this file — not one test was renamed, deleted, re-ordered or altered, and the suite delta is EXACTLY ZERO
 #include "Siegebound/SorcererUnit.h"
 #include "Siegebound/SummonedUnit.h"
 #include "UObject/Class.h"
@@ -80,9 +82,17 @@ namespace SiegeLadderClimbTestFixture
 	const float ClimbLineLengthUU = static_cast<float>((LadderTop - LadderFoot).Size());
 
 	/**
-	 *  The shipped capsule: r 34 / half-height 88 (`SiegeSpawnConstants.h:9`; TOWER-§8.3 quotes it,
-	 *  and the project never calls InitCapsuleSize). Used here as the test's scenario, exactly as
-	 *  the socket coordinates are.
+	 *  The half-height this file drives its scenarios with: 88 (`SiegeSpawnConstants.h:9`, which
+	 *  TOWER-§8.3 quotes). Used here as the test's scenario, exactly as the socket coordinates are.
+	 *
+	 *  ⚠️⚠️ COMMENT CORRECTED 2026-09-01 (TASK-777, CONTACT-§10.1's stale-cite rule): this comment
+	 *  used to read *"and the project never calls InitCapsuleSize"*, and that claim is ⛔ FALSE and
+	 *  has been REFUTED at the source — `GitClaudeUnrealTestCharacter.cpp:18` calls
+	 *  `InitCapsuleSize(42.f, 96.0f)` on the HERO's own direct base, so the hero ships r 42 /
+	 *  hh 96. **34 is the NAV AGENT radius** (`DefaultEngine.ini:290`), ⛔ not a capsule radius —
+	 *  two different 34s, which is exactly how the wrong one got quoted. ⛔ COMMENT ONLY: what
+	 *  this file ASSERTS is unchanged, because 88 is still the correct scenario for the UNIT these
+	 *  tests are about.
 	 */
 	constexpr float CapsuleHalfHeightUU = 88.f;
 
@@ -216,6 +226,169 @@ namespace SiegeLadderClimbTestFixture
 
 	static_assert(std::is_same_v<decltype(&ASummonedUnit::IsClimbing), bool (ASummonedUnit::*)() const>,
 		"TOWER-§8.4(B): IsClimbing must be `bool IsClimbing() const` — ABP_Footman (TASK-739) and the TOWER-§9 disarm guards both read it.");
+
+	// ── ⛔⛔ TASK-784: THE TWO COMPILE-TIME PINS THAT KEEP THE CALL SITE OFF THE ACTOR TICK ────
+	//
+	// ⚠️⚠️ `SC-§36.1` asks for a test that goes RED if the contact poll is ever moved onto
+	// `ASummonedUnit::Tick`. ⭐ A RUNTIME row cannot see a call site — but the MOVE is not
+	// possible without first widening the tick predicate, and THAT is catchable at compile time,
+	// in this module, with a message naming the law. ⇒ the pin below is the enforcement, and
+	// test 15(e) is its readable twin.
+	//
+	// ⛔ THE TRAP, RESTATED SO THE PIN IS NOT MISTAKEN FOR PEDANTRY: `RefreshActorTickEnabled` is
+	// the ONE writer of this actor's tick flag and its value is exactly this function, so a unit
+	// that is neither mid-lunge nor ALREADY CLIMBING does not tick — which is precisely the state
+	// every contact climb must begin in. A poll in `::Tick` would compile, review clean, pass this
+	// whole suite and NEVER RUN.
+	static_assert(std::is_same_v<decltype(&FSiegeLadderClimbStatics::WantsActorTick), bool (*)(bool, bool)>,
+		"CONTACT-§11.5 / SC-§33: WantsActorTick is PINNED at exactly two inputs (bLungeActive, bClimbActive). "
+		"A third term would be the 'obvious repair' that puts the contact poll back on the actor tick — and it "
+		"would restore a permanent per-frame tick to the ENTIRE unit fleet, which TASK-738 and TASK-760 spent "
+		"two tasks removing. TASK-784's poll rides StateTimerHandle instead; if you are here to add a parameter, "
+		"that is the decision you are reversing.");
+
+	// ⭐ THE CALLEE'S SIGNATURE, PINNED FROM THE CALLER'S SIDE — the `BeginLadderClimb` idiom of
+	// this fixture, applied in the other direction. `ASummonedUnit::TryContactClimbAtNearestLadder`
+	// (TASK-784) compiles against exactly this; a drift in `ClimbableTower.h` would otherwise
+	// surface as an error inside SummonedUnit.cpp with nothing naming why.
+	// ⚠️ It is also the closest a headless suite can get to "the caller EXISTS": the wiring itself
+	// is still a diff read (this file's test 14(e) states that split), but the CONTRACT the wiring
+	// depends on now fails HERE, by name, rather than silently.
+	static_assert(std::is_same_v<decltype(&AClimbableTower::TryBeginContactClimb),
+		AClimbableTower::ELadderContactVerdict (AClimbableTower::*)(ACharacter*, float)>,
+		"CONTACT-§4.1: TryBeginContactClimb must stay `ELadderContactVerdict (ACharacter*, float)`. "
+		"ASummonedUnit::TryContactClimbAtNearestLadder (TASK-784) is its caller and passes `this` plus the "
+		"state poll's real world-clock delta.");
+
+	// ═════════════════════════════════════════════════════════════════════════════════════════
+	//  ⭐⭐ TASK-784's FIXTURE — THE CONTACT TRIGGER'S **CADENCE**
+	// ═════════════════════════════════════════════════════════════════════════════════════════
+	//
+	// ⚠️⚠️ WHY THESE ROWS EXIST AT ALL, GIVEN THIS FILE'S OWN RULE THAT WIRING IS QA'S AND NOT THE
+	// SUITE'S (test 14(e)): TASK-784 adds a CALL SITE, and a call site has exactly one property
+	// that is decidable without a world — **the RATE it is called at**. That rate is the whole
+	// engineering content of the task: the tower integrates a 0.35 s DWELL out of the deltas its
+	// caller hands it, so how often the caller asks decides whether the feature works, whether it
+	// works by luck, and whether the dwell still refuses the passers-by it was built to refuse.
+	// ⇒ these rows drive the SHIPPED predicate at two cadences and show the answers differ. ⛔ They
+	// do not claim the wiring is correct; that is still TASK-785's diff read.
+
+	/** A 60 Hz frame — the cadence `ASummonedUnit::Tick` actually asks at. ⛔ Not a tunable: it is the STEP the dwell is integrated at. */
+	constexpr float FrameStepSeconds = 1.f / 60.f;
+
+	/**
+	 *  Every UNIT row's `Speed` cell, typed from `Docs/Data/cards.csv` — the same direction the
+	 *  Longbowman/Archer numbers above are typed in, and ⛔ never read back off a DataTable (this
+	 *  file loads ⛔ no assets). Duplicates collapsed: 250 Ogre · 300 Knight/Longbowman ·
+	 *  350 Archer/Pikeman/Cleric/Wizard/Sorcerer · 400 Footman/MilitiaMob · 500 Sapper · 600 Cavalry.
+	 */
+	constexpr float ShippedUnitSpeedsUU[] = { 250.f, 300.f, 350.f, 400.f, 500.f, 600.f };
+
+	/** Index-locked names for the failure messages, so a red row NAMES the card rather than a number. */
+	static const TCHAR* const ShippedUnitSpeedNames[] =
+	{
+		TEXT("Ogre (250)"),
+		TEXT("Knight / Longbowman (300)"),
+		TEXT("Archer / Pikeman / Cleric / Wizard / Sorcerer (350)"),
+		TEXT("Footman / Militia Mob (400)"),
+		TEXT("Sapper (500)"),
+		TEXT("Cavalry (600)")
+	};
+
+	static_assert(UE_ARRAY_COUNT(ShippedUnitSpeedsUU) == UE_ARRAY_COUNT(ShippedUnitSpeedNames),
+		"The roster speed table and its name table must stay index-locked.");
+
+	/** The roster table's length as an int32 — the SiegeLadderClimbTest.cpp:717 idiom, so no loop below compares a signed index against an unsigned count. */
+	constexpr int32 RosterSpeedCount = static_cast<int32>(UE_ARRAY_COUNT(ShippedUnitSpeedsUU));
+
+	/**
+	 *  ⭐ WALKS A PAWN IN A STRAIGHT LINE PAST THE LADDER FOOT AND REPORTS WHETHER THE **SHIPPED**
+	 *  PREDICATE EVER ADMITTED IT — the tower's own `WalkPastAndSeeIfAdmitted` idiom, generalised
+	 *  over the two things TASK-784 is actually about: the SAMPLING STEP and its PHASE.
+	 *
+	 *  The pawn starts 4 radii short of the foot, walks +X at `SpeedUU`, and is sampled every
+	 *  `SampleStepSeconds` starting `PhaseSeconds` into the first step. ⛔ Nothing here re-implements
+	 *  a term: the radius, the cone, the dwell and the endpoint resolution are all the arguments the
+	 *  caller read off the shipped CDOs.
+	 *
+	 *  ⚠️ THE PHASE IS THE POINT AND IT IS ⛔ NOT PADDING: a sampler whose verdict depends on WHEN
+	 *  its first sample happens to land is a feature that works by luck, and that is precisely what
+	 *  the 0.25 s state poll turns this trigger into.
+	 */
+	static bool ApproachIsAdmitted(float SpeedUU, float PerpendicularOffsetY, float SampleStepSeconds,
+		float PhaseSeconds, float RadiusUU, float IntentCos, float DwellSeconds)
+	{
+		const float SafeSpeedUU = FMath::Max(SpeedUU, 1.f);
+		const float SafeStepSeconds = FMath::Max(SampleStepSeconds, 1.e-4f);
+		const float TotalTravelUU = 8.f * FMath::Max(RadiusUU, 1.f);
+
+		FSiegeLadderContactState State;
+		float TravelledUU = (-4.f * FMath::Max(RadiusUU, 1.f)) + (SafeSpeedUU * PhaseSeconds);
+		const int32 Steps = FMath::Max(1, FMath::CeilToInt(TotalTravelUU / (SafeSpeedUU * SafeStepSeconds)));
+
+		bool bAscending = false;
+		for (int32 Step = 0; Step < Steps; ++Step)
+		{
+			const FVector Location(LadderFoot.X + TravelledUU, PerpendicularOffsetY, CapsuleHalfHeightUU);
+			const FVector Velocity(SafeSpeedUU, 0.f, 0.f);
+
+			if (FSiegeLadderContactStatics::WantsToClimb(State, Location, Velocity, LadderFoot, LadderTop,
+				RadiusUU, IntentCos, DwellSeconds, SafeStepSeconds, bAscending) == ESiegeLadderContactVerdict::Climb)
+			{
+				return true;
+			}
+
+			TravelledUU += SafeSpeedUU * SafeStepSeconds;
+		}
+		return false;
+	}
+
+	/** How many evenly-spaced sampling phases (out of PhaseCount, spanning ONE sample step) admit the same approach. */
+	static int32 CountAdmittingPhases(float SpeedUU, float PerpendicularOffsetY, float SampleStepSeconds,
+		float RadiusUU, float IntentCos, float DwellSeconds, int32 PhaseCount)
+	{
+		const int32 SafePhaseCount = FMath::Max(PhaseCount, 1);
+		int32 Admitted = 0;
+		for (int32 Index = 0; Index < SafePhaseCount; ++Index)
+		{
+			const float PhaseSeconds = SampleStepSeconds * (static_cast<float>(Index) / static_cast<float>(SafePhaseCount));
+			if (ApproachIsAdmitted(SpeedUU, PerpendicularOffsetY, SampleStepSeconds, PhaseSeconds, RadiusUU, IntentCos, DwellSeconds))
+			{
+				++Admitted;
+			}
+		}
+		return Admitted;
+	}
+
+	/** Sixteen phases across one sample step — enough that a 1-in-8 phase window cannot be missed, cheap enough to run per row. */
+	constexpr int32 PhaseSweepCount = 16;
+
+	/** Perpendicular offsets a "marching past" pawn is tried at, in uu. ⭐ A SET rather than one number: the row that matters is *some* offset the two cadences disagree about, not a pre-chosen one. */
+	constexpr float PasserByOffsetsUU[] = { 25.f, 50.f, 75.f, 100.f };
+
+	/**
+	 *  Reads the three CONTACT tunables off `AClimbableTower`'s CDO. ⛔ They are read rather than
+	 *  typed here on purpose, and it is the OPPOSITE direction from the pinned geometry above:
+	 *  `SiegeClimbableTowerTest.cpp` test 12(g) already pins their VALUES against `K-5`, so pinning
+	 *  them again here would be a second copy of the same expectation. What THIS file needs is
+	 *  whatever actually ships, so that when 🧑 Jonathan retunes one the cadence rows below
+	 *  re-derive against his number instead of quietly meaning something else.
+	 */
+	static bool TryReadContactTunables(float& OutRadiusUU, float& OutIntentCos, float& OutDwellSeconds)
+	{
+		UClass* const TowerClass = AClimbableTower::StaticClass();
+		const AClimbableTower* const TowerDefaults = GetDefault<AClimbableTower>();
+		return TryReadDefaultFloat(TowerClass, TowerDefaults, TEXT("LadderContactRadiusUU"), OutRadiusUU)
+			&& TryReadDefaultFloat(TowerClass, TowerDefaults, TEXT("LadderContactIntentCos"), OutIntentCos)
+			&& TryReadDefaultFloat(TowerClass, TowerDefaults, TEXT("LadderContactDwellSeconds"), OutDwellSeconds);
+	}
+
+	/** The unit's shipped state-poll period — the cadence TASK-784 measured and REFUSED to run the dwell on. */
+	static bool TryReadStatePollSeconds(float& OutPollSeconds)
+	{
+		return TryReadDefaultFloat(ASummonedUnit::StaticClass(), GetDefault<ASummonedUnit>(),
+			TEXT("StateCheckInterval"), OutPollSeconds);
+	}
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -890,7 +1063,7 @@ bool FSiegeLadderClimbPinnedApiTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	TestEqual(TEXT("(b) ⛔ FSiegeLadderClimbEnded takes EXACTLY two parameters (ASummonedUnit* Unit, bool bReachedTop) — TASK-734 binds a handler of this shape"),
+	TestEqual(TEXT("(b) ⛔ FSiegeLadderClimbEnded takes EXACTLY two parameters (ACharacter* Climber, bool bReachedTop) — TASK-734 binds a handler of this shape"),
 		static_cast<int32>(Signature->NumParms), 2);
 
 	// The parameter TYPES, in order — a delegate with two params of the wrong types would pass
@@ -900,11 +1073,20 @@ bool FSiegeLadderClimbPinnedApiTest::RunTest(const FString& Parameters)
 	{
 		if (ParameterIndex == 0)
 		{
-			const FObjectProperty* const UnitParam = CastField<FObjectProperty>(*ParamIt);
-			if (TestNotNull(TEXT("(b) Parameter 1 is an object property"), UnitParam))
+			// ⚖️⭐ RETARGETED 2026-09-01 (TASK-777, CONTACT-§4.4 — TOWER-§8.4(B)'s second
+			// amendment). ⛔⛔ THIS ASSERTION WENT **RED** ON THE WIDENING, WHICH IS THE
+			// EVIDENCE THAT THE PINNING MECHANISM WORKS — ⛔ it is NOT collateral damage,
+			// and it is ⛔ NOT a reason to weaken it to a null check. The first parameter
+			// is now ACharacter*, the narrowest type that admits BOTH ASummonedUnit and
+			// AHeroCharacter and the only one carrying GetCharacterMovement() /
+			// GetCapsuleComponent(). ⭐ It still discriminates exactly as hard: an APawn*
+			// (the proposal that was ruled against) and an ASummonedUnit* (what shipped
+			// before) BOTH fail this line.
+			const FObjectProperty* const ClimberParam = CastField<FObjectProperty>(*ParamIt);
+			if (TestNotNull(TEXT("(b) Parameter 1 is an object property"), ClimberParam))
 			{
-				TestTrue(TEXT("(b) …and it is an ASummonedUnit* — a delegate of the right arity but the wrong first type would still fail to bind in TASK-734"),
-					UnitParam->PropertyClass == ASummonedUnit::StaticClass());
+				TestTrue(TEXT("(b) …and it is an ACharacter* — CONTACT-§4.4's ruled widening. ⛔ An APawn* (refused: no GetCharacterMovement/GetCapsuleComponent) or the pre-amendment ASummonedUnit* (refused: a hero climber would be invisible to L-1 and to EndPlay) both fail HERE"),
+					ClimberParam->PropertyClass == ACharacter::StaticClass());
 			}
 		}
 		else if (ParameterIndex == 1)
@@ -1313,6 +1495,427 @@ bool FSiegeLadderClimbSelfHealingDriverTest::RunTest(const FString& Parameters)
 	// RefreshActorTickEnabled are private, LadderClimb is private, and BeginLadderClimb reaches
 	// GetWorldTimerManager() ⇒ GetWorld()->GetTimerManager(), which CRASHES a world-less unit
 	// rather than failing it. Instantiating one here would take the suite down, not test it.
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 15. ⭐⭐ THE CALL SITE'S **CADENCE**, AND THE TWO THINGS IT COSTS
+//     (TASK-784, CONTACT-§4.1)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// ⚠️⚠️ WHY THESE ROWS EXIST AT ALL, GIVEN THIS FILE'S OWN RULE THAT WIRING IS QA'S AND
+// NOT THE SUITE'S (test 14(e)): TASK-784 adds a CALL SITE, and a call site has exactly
+// one property that is decidable without a world — **the RATE it is called at**. That
+// rate is the whole engineering content of the task, because the tower INTEGRATES its
+// dwell out of the deltas its caller hands it.
+//
+// ⭐ THE CALL SITE SHIPPED ON THE 0.25 s `StateTimerHandle` POLL, AND THE ALTERNATIVE WAS
+// MEASURED AND REFUSED: `ASummonedUnit`'s actor tick is written by exactly one function
+// whose value is `WantsActorTick(bLungeActive, LadderClimb.bActive)`, so it is OFF for a
+// unit that is neither mid-lunge nor ALREADY climbing — precisely the state a contact
+// climb starts from. ⛔ A poll in `::Tick` would have compiled, reviewed clean, passed
+// this suite and NEVER RUN.
+//
+// ⚠️ THAT CHOICE IS ⛔ NOT FREE, AND THESE ROWS ARE THE PRICE TAG RATHER THAN A PASS MARK.
+// The tuning was designed against a 60 Hz sampler (the tower's own test file steps at
+// 1/60); a 0.25 s sampler is 15× coarser and it distorts the dwell in BOTH directions.
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeLadderContactCadenceCostTest,
+	"Siegebound.LadderClimb.TheShippedContactPollIsCoarserThanTheDwellItIntegratesAndBothCostsAreMeasured",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeLadderContactCadenceCostTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeLadderClimbTestFixture;
+
+	float RadiusUU = 0.f;
+	float IntentCos = 0.f;
+	float DwellSeconds = 0.f;
+	float PollSeconds = 0.f;
+
+	// ⛔ A missing property is a HARD ERROR and ⛔ never a substituted guess — the cadence question
+	// is meaningless without the numbers it is a question about.
+	if (!TestTrue(TEXT("SELF-CHECK: the three CONTACT tunables read back off AClimbableTower's CDO (WR-§5 — they live on the TOWER, and the pawn only asks)"),
+		TryReadContactTunables(RadiusUU, IntentCos, DwellSeconds))
+		|| !TestTrue(TEXT("SELF-CHECK: ASummonedUnit's StateCheckInterval reads back off its CDO — it is the rate the contact ask actually runs at"),
+			TryReadStatePollSeconds(PollSeconds)))
+	{
+		return false;
+	}
+
+	if (!TestTrue(TEXT("SELF-CHECK: all four numbers are usable (a zero radius, dwell or poll would make every row below vacuous)"),
+		RadiusUU > 0.f && DwellSeconds > 0.f && PollSeconds > 0.f && IntentCos >= -1.f && IntentCos <= 1.f))
+	{
+		return false;
+	}
+
+	const float SlowestRosterSpeedUU = ShippedUnitSpeedsUU[0];
+
+	// ── (a) SELF-CHECK: THE WALKER DISCRIMINATES BEFORE ANY CLAIM IS MADE ────────────────
+	// ⭐ Both rows are structural rather than tuned, so they hold at ANY radius Jonathan picks:
+	// walking dead-on at the endpoint is the intent the trigger exists for, and a pawn skimming
+	// the very edge of the disc can never satisfy a 60° cone at all (the bearing to the endpoint
+	// is almost perpendicular to its heading for the whole crossing).
+	{
+		TestEqual(TEXT("(a) SELF-CHECK: at the 60 Hz reference cadence a pawn walking DEAD-ON at the foot at the roster's slowest speed is admitted on EVERY phase — the walker is live"),
+			CountAdmittingPhases(SlowestRosterSpeedUU, 0.f, FrameStepSeconds, RadiusUU, IntentCos, DwellSeconds, PhaseSweepCount), PhaseSweepCount);
+		TestEqual(TEXT("(a) SELF-CHECK: …and the same pawn skimming the disc's edge is refused on EVERY phase, so the walker is not simply returning `admitted` for everything"),
+			CountAdmittingPhases(SlowestRosterSpeedUU, 0.95f * RadiusUU, FrameStepSeconds, RadiusUU, IntentCos, DwellSeconds, PhaseSweepCount), 0);
+	}
+
+	// ── (b) THE PREMISE, ASSERTED RATHER THAN ASSUMED: THE SHIPPED POLL IS COARSE ────────
+	{
+		TestTrue(*FString::Printf(TEXT("(b) The shipped %.2f s poll is more than an order of magnitude coarser than the 60 Hz cadence the contact tuning was designed against — the premise of every row below, and it goes red the day the poll is made fine"),
+			PollSeconds), PollSeconds > (FrameStepSeconds * 10.f));
+
+		const int32 PollsNeeded = FMath::CeilToInt(DwellSeconds / PollSeconds);
+		TestTrue(*FString::Printf(TEXT("(b) ⭐ The dwell cannot be earned in ONE poll (%d needed at %.2f s for a %.2f s dwell) — ⛔ this is what makes the trigger's reachability depend on a pawn's SPEED at all"),
+			PollsNeeded, PollSeconds, DwellSeconds), PollsNeeded >= 2);
+
+		TestTrue(*FString::Printf(TEXT("(b) ⚠️ …and the dwell is LONGER than one poll (%.2f s > %.2f s), which is the precondition for the over-credit hazard (d) measures. ⛔ If this ever goes red the hazard is GONE and (d) should be retired with it, ⛔ not weakened"),
+			DwellSeconds, PollSeconds), DwellSeconds > PollSeconds);
+	}
+
+	// ── (c) ⭐⭐ COST 1 — THE VERDICT DEPENDS ON THE PAWN'S SPEED, AND FOR PART OF THE
+	//     ROSTER ON THE SAMPLING **PHASE** (i.e. on luck) ──────────────────────────────────
+	// ⚠️ The law behind every row: a pawn walking dead-on holds proximity AND intent for exactly
+	// `RadiusUU / Speed` seconds, and a sampler of period P needs TWO samples inside that window.
+	//   • window >= 2P  ⇒ two samples ALWAYS fit ⇒ admitted on every phase (RELIABLE)
+	//   • window <= P   ⇒ two samples can NEVER fit ⇒ admitted on no phase (UNREACHABLE)
+	//   • in between    ⇒ it depends on where the samples happen to land (BY LUCK)
+	// ⭐ Derived from the two shipped numbers, ⛔ never a transcribed table — so it stays true and
+	// stays meaningful at whatever radius `K-5`/`K-6` settle on.
+	int32 ReliableCards = 0;
+	{
+		const float ReliableCeilingUU = RadiusUU / (2.f * PollSeconds);
+		const float ReachableCeilingUU = RadiusUU / PollSeconds;
+		const float CeilingTolerance = 1.e-3f;
+
+		for (int32 Index = 0; Index < RosterSpeedCount; ++Index)
+		{
+			const float SpeedUU = ShippedUnitSpeedsUU[Index];
+			const float WindowSeconds = RadiusUU / SpeedUU;
+			const int32 AdmittingPhases = CountAdmittingPhases(SpeedUU, 0.f, PollSeconds, RadiusUU, IntentCos, DwellSeconds, PhaseSweepCount);
+
+			if (SpeedUU <= ReliableCeilingUU + CeilingTolerance)
+			{
+				++ReliableCards;
+				TestEqual(*FString::Printf(TEXT("(c) ✅ %s holds the terms for %.3f s, at least two poll periods, so it climbs on ALL %d phases — RELIABLE at the shipped %.0f uu radius"),
+					ShippedUnitSpeedNames[Index], WindowSeconds, PhaseSweepCount, RadiusUU), AdmittingPhases, PhaseSweepCount);
+			}
+			else if (SpeedUU >= ReachableCeilingUU - CeilingTolerance)
+			{
+				TestEqual(*FString::Printf(TEXT("(c) ⛔🧑 %s crosses the whole %.0f uu disc in %.3f s — no longer than ONE %.2f s poll, so two samples can never both land inside it and it can NEVER contact-climb. ⛔ Not a code defect and ⛔ not fixable from the pawn: the radius is AClimbableTower's and `K-5` makes it Jonathan's"),
+					ShippedUnitSpeedNames[Index], RadiusUU, WindowSeconds, PollSeconds), AdmittingPhases, 0);
+			}
+			else
+			{
+				TestTrue(*FString::Printf(TEXT("(c) ⚠️🧑 %s holds the terms for %.3f s — longer than one %.2f s poll but shorter than two, so it climbs on %d of %d phases and the trigger fires BY LUCK for this card"),
+					ShippedUnitSpeedNames[Index], WindowSeconds, PollSeconds, AdmittingPhases, PhaseSweepCount),
+					AdmittingPhases > 0 && AdmittingPhases < PhaseSweepCount);
+			}
+		}
+
+		TestTrue(TEXT("(c) SELF-CHECK: at least one roster card is RELIABLE — a table with none would mean the feature is dead rather than coarsely sampled, and the split above would be a constant"),
+			ReliableCards > 0);
+	}
+
+	// ── (d) ⭐⭐ COST 2 — THE COARSE SAMPLER **MANUFACTURES** DWELL ───────────────────────
+	// ⚠️⚠️ THIS IS THE HALF A REVIEWER WOULD NOT GO LOOKING FOR, AND IT IS THE WORSE ONE. Each
+	// sample credits a FULL poll period of dwell for ONE INSTANT that satisfied the terms, so a
+	// coarse sampler does not merely miss climbs — it invents them. The dwell's entire job
+	// (CONTACT-§4.1: "without it a friendly unit marching past its own tower toward the enemy
+	// castle clips the intent cone for two frames and is YANKED 1,200 uu INTO THE AIR") is
+	// partially undone by the very driver that was the only one available.
+	//
+	// ⭐ The offset sweep is derived from the shipped radius rather than a fixed list of uu, so it
+	// keeps finding the band at whatever radius ships.
+	{
+		bool bFoundOverCredit = false;
+		float OverCreditOffsetUU = 0.f;
+		float OverCreditSpeedUU = 0.f;
+		const TCHAR* OverCreditSpeedName = TEXT("<none>");
+		int32 OverCreditPhases = 0;
+
+		constexpr int32 OffsetSweepCount = 40;
+		for (int32 OffsetIndex = 0; OffsetIndex < OffsetSweepCount && !bFoundOverCredit; ++OffsetIndex)
+		{
+			const float OffsetUU = RadiusUU * (static_cast<float>(OffsetIndex) / static_cast<float>(OffsetSweepCount));
+			for (int32 SpeedIndex = 0; SpeedIndex < RosterSpeedCount; ++SpeedIndex)
+			{
+				const float SpeedUU = ShippedUnitSpeedsUU[SpeedIndex];
+				if (CountAdmittingPhases(SpeedUU, OffsetUU, FrameStepSeconds, RadiusUU, IntentCos, DwellSeconds, PhaseSweepCount) != 0)
+				{
+					continue; // the tuning genuinely admits this line — it is not a passer-by
+				}
+
+				const int32 PollAdmitting = CountAdmittingPhases(SpeedUU, OffsetUU, PollSeconds, RadiusUU, IntentCos, DwellSeconds, PhaseSweepCount);
+				if (PollAdmitting > 0)
+				{
+					bFoundOverCredit = true;
+					OverCreditOffsetUU = OffsetUU;
+					OverCreditSpeedUU = SpeedUU;
+					OverCreditSpeedName = ShippedUnitSpeedNames[SpeedIndex];
+					OverCreditPhases = PollAdmitting;
+					break;
+				}
+			}
+		}
+
+		TestTrue(*FString::Printf(
+			TEXT("(d) ⭐⭐ THE %.2f s POLL ADMITS A PAWN THE TUNING REFUSES: %s at %.0f uu from the endpoint is refused on every 60 Hz phase and CLIMBS on %d of %d poll-sampled ones (speed %.0f uu/s). ⇒ the coarse cadence does not only MISS climbs, it MANUFACTURES them — the abduction the dwell exists to prevent, re-opened by the sampling rate rather than by the tuning"),
+			PollSeconds, OverCreditSpeedName, OverCreditOffsetUU, OverCreditPhases, PhaseSweepCount, OverCreditSpeedUU),
+			bFoundOverCredit);
+	}
+
+	// ── (e) ⛔⛔ THE ROW THAT GOES RED IF THE POLL IS EVER MOVED ONTO THE ACTOR TICK ──────
+	// ⚠️⚠️ `SC-§36.1` asks for exactly this guard, and this is its READABLE half — the ENFORCING
+	// half is the `WantsActorTick` arity pin in the fixture above, which makes the move a compile
+	// error. Together they state the trap as machine-checked fact rather than as a comment
+	// somebody has to read.
+	{
+		TestFalse(TEXT("(e) ⛔⛔ THE TRAP, AS AN ASSERTION: a unit that is neither mid-lunge nor ALREADY CLIMBING does NOT tick — and that is precisely the state every contact climb must begin in. ⇒ a poll in ASummonedUnit::Tick would compile, review clean, pass this whole suite and NEVER RUN. The poll rides StateTimerHandle for this reason and ⛔ no other"),
+			FSiegeLadderClimbStatics::WantsActorTick(/*bLungeActive=*/ false, /*bClimbActive=*/ false));
+
+		TestTrue(TEXT("(e) SELF-CHECK: …and the predicate is not simply always-false — it wants the tick once a climb IS active, so the row above is about the STARTING state and ⛔ not about a dead function"),
+			FSiegeLadderClimbStatics::WantsActorTick(/*bLungeActive=*/ false, /*bClimbActive=*/ true));
+
+		TestTrue(*FString::Printf(TEXT("(e) ⭐ …and the driver the poll DOES ride is shipped and live: StateCheckInterval = %.2f s, strictly positive. ⛔ A zero here would silently delete the whole feature — which is exactly what it does to AMinerUnit (test 17(c))"),
+			PollSeconds), PollSeconds > 0.f);
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 16. 🧑⚠️ THE RADIUS THE SHIPPED CADENCE ACTUALLY NEEDS — DERIVED, NOT PROPOSED
+//     (TASK-784, CONTACT-§7 `K-5` / the `K-6` row)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// ⚠️⚠️ THIS ROW IS A FINDING, ⛔ NOT A REGRESSION GUARD, AND TASK-784 IS THE FIRST TASK
+// THAT COULD HAVE PRODUCED IT: the trigger only meets the roster once something calls it.
+// ⭐ Test 15(c) established that a card is RELIABLE only while `RadiusUU / Speed >= 2 ×
+// Poll`. Turned around, that is a statement about the RADIUS: the smallest radius at
+// which EVERY shipped card is reliable is `2 × Poll × FastestSpeed`. This test computes
+// that number from the two shipped values and the roster, and ⛔ does not assert that the
+// current radius equals it — the radius is `AClimbableTower`'s and `K-5` makes it 🧑
+// Jonathan's. What it asserts is the ARITHMETIC, so the recommendation cannot rot.
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeLadderContactRequiredRadiusTest,
+	"Siegebound.LadderClimb.TheRadiusEveryRosterCardNeedsAtTheShippedPollIsTwicePollTimesTheFastestSpeed",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeLadderContactRequiredRadiusTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeLadderClimbTestFixture;
+
+	float RadiusUU = 0.f;
+	float IntentCos = 0.f;
+	float DwellSeconds = 0.f;
+	float PollSeconds = 0.f;
+	if (!TestTrue(TEXT("SELF-CHECK: the three CONTACT tunables read back off AClimbableTower's CDO"),
+		TryReadContactTunables(RadiusUU, IntentCos, DwellSeconds))
+		|| !TestTrue(TEXT("SELF-CHECK: ASummonedUnit's StateCheckInterval reads back off its CDO"),
+			TryReadStatePollSeconds(PollSeconds))
+		|| !TestTrue(TEXT("SELF-CHECK: the numbers are usable"), RadiusUU > 0.f && PollSeconds > 0.f && DwellSeconds > 0.f))
+	{
+		return false;
+	}
+
+	float FastestRosterSpeedUU = 0.f;
+	const TCHAR* FastestRosterSpeedName = TEXT("<none>");
+	for (int32 Index = 0; Index < RosterSpeedCount; ++Index)
+	{
+		if (ShippedUnitSpeedsUU[Index] > FastestRosterSpeedUU)
+		{
+			FastestRosterSpeedUU = ShippedUnitSpeedsUU[Index];
+			FastestRosterSpeedName = ShippedUnitSpeedNames[Index];
+		}
+	}
+
+	if (!TestTrue(TEXT("SELF-CHECK: the roster table yielded a fastest speed"), FastestRosterSpeedUU > 0.f))
+	{
+		return false;
+	}
+
+	// ── (a) THE REQUIRED RADIUS, FROM THE SHIPPED POLL AND THE SHIPPED ROSTER ────────────
+	const float RequiredRadiusUU = 2.f * PollSeconds * FastestRosterSpeedUU;
+
+	TestEqual(*FString::Printf(TEXT("(a) ⭐ Every shipped card becomes reliable at 2 × %.2f s × %.0f uu/s (%s) = %.0f uu. ⚠️ This is DERIVED from the poll and the roster, ⛔ not transcribed — it goes red the day either changes, which is exactly when the recommendation needs revisiting"),
+		PollSeconds, FastestRosterSpeedUU, FastestRosterSpeedName, RequiredRadiusUU),
+		RequiredRadiusUU, 300.f, 0.1f);
+
+	// ── (b) SELF-CHECK: THE REQUIREMENT IS A REAL CONSTRAINT, NOT A TAUTOLOGY ────────────
+	// ⭐ Proven by driving the SHIPPED predicate rather than restating (a): at the required radius
+	// the fastest card is admitted on every phase, and one poll-period of radius less it is not.
+	// ⛔ Neither row reads the currently shipped radius, so both stay honest whichever way `K-6`
+	// is ruled.
+	{
+		const float JustBelowUU = RequiredRadiusUU - (PollSeconds * FastestRosterSpeedUU);
+
+		TestEqual(*FString::Printf(TEXT("(b) SELF-CHECK: at %.0f uu the fastest card climbs on every phase — the required radius really is sufficient"),
+			RequiredRadiusUU),
+			CountAdmittingPhases(FastestRosterSpeedUU, 0.f, PollSeconds, RequiredRadiusUU, IntentCos, DwellSeconds, PhaseSweepCount), PhaseSweepCount);
+
+		TestTrue(*FString::Printf(TEXT("(b) SELF-CHECK: at %.0f uu — one poll-period of travel less — it does NOT climb on every phase, so (a) is a genuine threshold and ⛔ not a number that would have passed anyway"),
+			JustBelowUU),
+			CountAdmittingPhases(FastestRosterSpeedUU, 0.f, PollSeconds, JustBelowUU, IntentCos, DwellSeconds, PhaseSweepCount) < PhaseSweepCount);
+	}
+
+	// ── (c) ⚠️🧑 THE PRICE OF THAT RADIUS — AND IT IS **SUPER-LINEAR**, WHICH IS WHY THE
+	//     FIRST ESTIMATE OF `K-6`'s COST WAS TOO SMALL ──────────────────────────────────────
+	// ⛔ A wider disc is ⛔ NOT free: it IS the abduction window, and the dwell is the only thing
+	// refusing a passer-by. `K-6` was first costed with a linear "~0.4 × R" model giving ±60 → ±125
+	// uu. ⭐ THAT MODEL IS WRONG, and this row proves it by DRIVING THE SHIPPED PREDICATE rather
+	// than evaluating a closed form: the dwell only ever eats a FIXED `v × DwellSeconds` of
+	// approach, which is a smaller fraction of a bigger disc, so the window grows FASTER than the
+	// radius. Measured: ±62 → ±204 uu at 300 uu/s — a 3.3× widening for a 2× radius.
+	//
+	// ⭐ Both radii are DERIVED (the required one, and half of it), so this row never transcribes
+	// a shipped value and keeps meaning the same thing after any retune.
+	{
+		const auto MeasureAbductionHalfWidthUU = [&](float TestRadiusUU) -> float
+		{
+			// The largest offset (to a 1/40th-of-radius resolution) still admitted at the 60 Hz
+			// reference cadence, driving the SHIPPED predicate — ⛔ never a closed form of it.
+			float WidestUU = 0.f;
+			constexpr int32 Resolution = 40;
+			for (int32 Index = 0; Index <= Resolution; ++Index)
+			{
+				const float OffsetUU = TestRadiusUU * (static_cast<float>(Index) / static_cast<float>(Resolution));
+				if (CountAdmittingPhases(ShippedUnitSpeedsUU[0], OffsetUU, FrameStepSeconds, TestRadiusUU, IntentCos, DwellSeconds, PhaseSweepCount) > 0)
+				{
+					WidestUU = OffsetUU;
+				}
+			}
+			return WidestUU;
+		};
+
+		const float HalfRadiusUU = RequiredRadiusUU * 0.5f;
+		const float NarrowHalfWidthUU = MeasureAbductionHalfWidthUU(HalfRadiusUU);
+		const float WideHalfWidthUU = MeasureAbductionHalfWidthUU(RequiredRadiusUU);
+
+		TestTrue(TEXT("(c) SELF-CHECK: the abduction window is measurable and non-zero at the narrower radius — a zero would mean the probe never admitted anything and the comparison below would be meaningless"),
+			NarrowHalfWidthUU > 0.f);
+
+		TestTrue(*FString::Printf(
+			TEXT("(c) ⚠️🧑 THE COST OF THE WIDER DISC IS SUPER-LINEAR: DOUBLING the radius (%.0f → %.0f uu) MORE THAN DOUBLES how far to the side a pawn can march and still be grabbed (%.0f → %.0f uu). ⛔ A linear '~0.4 × R' estimate understates it, which is how `K-6` was first costed at ±125 uu when the measured figure is ~±204 uu at 300 uu/s. 🧑 The trade is Jonathan's (`K-5`/`K-6`), ⛔ not this task's — but it must be made against the real number"),
+			HalfRadiusUU, RequiredRadiusUU, NarrowHalfWidthUU, WideHalfWidthUU),
+			WideHalfWidthUU > (2.f * NarrowHalfWidthUU));
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 17. ⛔⛔ THE PAWN KEEPS **NO COPY** OF THE TOWER'S TUNING — ASSERTED FROM THE
+//     PAWN'S OWN SIDE, WITH A TWO-SIDED PROBE (TASK-784, WR-§5 / CONTACT-§4.1)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// ⚠️ `SiegeClimbableTowerTest.cpp` test 12(g) already scans `ASummonedUnit` for a
+// "LadderContact" member. This row is ⛔ NOT that assertion restated: it is TWO-SIDED
+// (each probe is validated against the class that DOES have the member, so it cannot go
+// blind on a rename), it covers the tokens a duplicate could hide behind under ANOTHER
+// name, and — the reason it belongs HERE — TASK-784 is the task that could have copied
+// one, so the guard against its own most likely mistake lives in its own file.
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeLadderContactNoDuplicatedTuningTest,
+	"Siegebound.LadderClimb.TheContactTuningLivesOnlyOnTheTowerAndTheProbeIsValidatedAgainstTheClassThatHasIt",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeLadderContactNoDuplicatedTuningTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeLadderClimbTestFixture;
+
+	UClass* const UnitClass = ASummonedUnit::StaticClass();
+	UClass* const TowerClass = AClimbableTower::StaticClass();
+	if (!TestNotNull(TEXT("SELF-CHECK: ASummonedUnit::StaticClass() resolves"), UnitClass)
+		|| !TestNotNull(TEXT("SELF-CHECK: AClimbableTower::StaticClass() resolves"), TowerClass))
+	{
+		return false;
+	}
+
+	// ── (a) THE TWO-SIDED PROBE — THE HALF THAT KEEPS IT FROM GOING BLIND ────────────────
+	static const TCHAR* const ContactTuningPropertyNames[] =
+	{
+		TEXT("LadderContactRadiusUU"),
+		TEXT("LadderContactIntentCos"),
+		TEXT("LadderContactDwellSeconds")
+	};
+
+	for (const TCHAR* const PropertyName : ContactTuningPropertyNames)
+	{
+		// ⭐ FIRST against the class that MUST have it. A rename on the tower would otherwise make
+		// the absence check below pass while proving nothing at all — the exact blind-instrument
+		// failure this project has paid for twice.
+		TestNotNull(*FString::Printf(TEXT("(a) SELF-CHECK: '%s' resolves on AClimbableTower — the probe is live, so the absence asserted below is a real absence"), PropertyName),
+			TowerClass->FindPropertyByName(FName(PropertyName)));
+
+		TestNull(*FString::Printf(TEXT("(a) ⛔ '%s' does NOT exist on ASummonedUnit. WR-§5: the radius and the test live on the OWNING TOWER and the pawn only ASKS — two copies of a tuning number is how they drift"), PropertyName),
+			UnitClass->FindPropertyByName(FName(PropertyName)));
+	}
+
+	// ── (b) …AND NO DUPLICATE HIDING UNDER ANOTHER NAME ──────────────────────────────────
+	// ⭐ Tokens a re-implemented radius / cone / dwell could not plausibly avoid. ⚠️ "Radius"
+	// alone is deliberately NOT on this list — ASummonedUnit legitimately ships AggroRadius and
+	// friends, and a token list that banned correct, specified code would be a list nobody could
+	// keep (the tower file's own "Fall"/"Fallback" lesson, applied in the other direction).
+	static const TCHAR* const DuplicatedTuningTokens[] =
+	{
+		TEXT("LadderContact"), TEXT("Dwell"), TEXT("IntentCos"), TEXT("ContactRadius")
+	};
+
+	TArray<FString> UnitMemberNames;
+	for (TFieldIterator<FProperty> PropertyIt(UnitClass, EFieldIteratorFlags::ExcludeSuper); PropertyIt; ++PropertyIt)
+	{
+		UnitMemberNames.Add(PropertyIt->GetName());
+	}
+	for (TFieldIterator<UFunction> FunctionIt(UnitClass, EFieldIteratorFlags::ExcludeSuper); FunctionIt; ++FunctionIt)
+	{
+		UnitMemberNames.Add(FunctionIt->GetName());
+	}
+
+	if (!TestTrue(TEXT("(b) SELF-CHECK: the reflection walk over ASummonedUnit is live (it found the shipped LadderClimbSpeedUU) — a walk that found nothing would let every token below pass vacuously"),
+		UnitMemberNames.Contains(TEXT("LadderClimbSpeedUU"))))
+	{
+		return false;
+	}
+
+	for (const FString& MemberName : UnitMemberNames)
+	{
+		for (const TCHAR* const Token : DuplicatedTuningTokens)
+		{
+			if (MemberName.Contains(Token, ESearchCase::IgnoreCase))
+			{
+				AddError(*FString::Printf(
+					TEXT("⛔ ASummonedUnit declares '%s', which names a CONTACT tunable ('%s'). The radius, the cone and the dwell are AClimbableTower's (CONTACT-§4.1) and the pawn only ASKS — TASK-784 adds a CALL SITE and ⛔ no second copy of any decision."),
+					*MemberName, Token));
+			}
+		}
+	}
+
+	// ── (c) ⭐ THE DECLARED NON-COVERAGE, AS A DISCRIMINATING TEST ───────────────────────
+	// The contact ask rides `StateTimerHandle`, so a class that seals its poll never asks at all.
+	// ⚠️ That is AMinerUnit, and this row proves the seal really does separate the two shipped
+	// classes rather than being true or false for both — a non-coverage claim nobody can check is
+	// just a sentence.
+	float UnitPollSeconds = 0.f;
+	float MinerPollSeconds = -1.f;
+	if (TestTrue(TEXT("(c) SELF-CHECK: both classes' StateCheckInterval read back"),
+		TryReadStatePollSeconds(UnitPollSeconds)
+		&& TryReadDefaultFloat(AMinerUnit::StaticClass(), GetDefault<AMinerUnit>(), TEXT("StateCheckInterval"), MinerPollSeconds)))
+	{
+		TestTrue(TEXT("(c) ⭐ ASummonedUnit's poll is STRICTLY POSITIVE — it is the ONLY driver the contact ask runs on, and a zero here would silently delete the whole feature"),
+			UnitPollSeconds > 0.f);
+		TestTrue(TEXT("(c) ⚠️ AMinerUnit SEALS it to 0 (MinerUnit.cpp:62 seal #1, and FTimerManager::SetTimer with a rate <= 0 arms nothing), so a miner can NEVER contact-climb — DECLARED non-coverage, the same limit TASK-760's self-heal records, and here it is also the WANTED answer (qa/TASK-741 W-5: a miner should never be admitted to a ladder)"),
+			MinerPollSeconds <= 0.f);
+		TestTrue(TEXT("(c) ⭐⭐ …and the two DISAGREE, which is what makes the seal a discriminating test rather than a constant that happens to read true"),
+			(UnitPollSeconds > 0.f) != (MinerPollSeconds > 0.f));
+	}
 
 	return true;
 }

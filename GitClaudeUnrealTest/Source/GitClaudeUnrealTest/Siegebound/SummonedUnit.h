@@ -7,15 +7,22 @@
 #include "UObject/SoftObjectPtr.h"
 #include "Siegebound/CardRow.h"
 #include "Siegebound/HealthBarProvider.h"
+#include "Siegebound/LadderClimber.h" // TASK-777 (CONTACT-§4.4): ILadderClimber is a BASE of the UCLASS below — complete type required here, ⛔ not a forward declaration. It is how AClimbableTower::EndPlay aborts a climber it now holds as an ACharacter. ⭐ TASK-787 (CONTACT-§12.3): it ALSO carries FSiegeLadderClimbEnded now, which moved here from this file — so the by-value UPROPERTY below still has its complete type and ⛔ no include was added anywhere
+#include "Siegebound/SiegeLadderClimbStatics.h" // TASK-776 (CONTACT-§2): FSiegeLadderClimbState is a BY-VALUE member (LadderClimb) and FSiegeLadderClimbStatics is named by this header's doc comments — complete type required here, not a forward declaration. The types MOVED out of this header unchanged; ⛔ nothing about the driver below changed with them
 #include "Siegebound/SiegeStuckStatics.h" // TASK-532: FSiegeStuckState / FSiegeStuckTuning are BY-VALUE members and ESiegeStuckAction is a parameter type — complete types required here, not a forward declaration
 #include "Siegebound/TeamId.h"
 #include "SummonedUnit.generated.h"
 
 class AAIController;
 class ACastle;
+class AClimbableTower; // TASK-784 (CONTACT-§4.1): the contact trigger's OWNER. ⭐ A forward declaration is ALL this header needs, and that is the shape of the whole feature — the unit stores ⛔ nothing about a tower and only ASKS the nearest one, per poll, from the .cpp
 class AProjectile;
 class ASiegePlayerController;
-class ASummonedUnit; // TASK-738: named by FSiegeLadderClimbEnded below, which UHT parses before the UCLASS
+//~ TASK-787: the self-forward-declaration that used to sit here is GONE WITH ITS REASON. It read
+//~ *"named by FSiegeLadderClimbEnded below, which UHT parses before the UCLASS"* — `CONTACT-§4.4`
+//~ retyped that parameter to `ACharacter*` and `CONTACT-§12.3` moved the delegate to
+//~ `LadderClimber.h`, so ⛔ nothing above the UCLASS names this class any more. ⚖️ A declaration
+//~ kept after its stated reason expires is exactly the `CONTACT-§10.1` defect, one line long.
 class UAnimInstance;
 class UAnimSequence;
 class UDataTable;
@@ -44,34 +51,6 @@ enum class ESummonedUnitState : uint8
 	/** Acquired target within Range: dealing Damage (melee) or firing a homing projectile (bRanged rows) every Cadence seconds. */
 	Attack
 };
-
-//~ ═══════════════════════════════════════════════════════════════════════════════════════
-//~  THE LADDER CLIMB — the Watch Tower's ascent (TASK-738; CONVENTIONS TOWER-§8/§9/§10)
-//~ ═══════════════════════════════════════════════════════════════════════════════════════
-//~
-//~ Jonathan, verbatim (2026-09-01): "instead of making it a ramp that you walk up it instead
-//~ has a ladder you climb up" — and, the same day, the DECIDED requirement this whole block
-//~ is shaped around: "they should be attackable while climbing, but they can't attack back."
-//~
-//~ ⭐⭐ WHY A LADDER IS A TRAVERSAL SUBSYSTEM RATHER THAN A MESH SWAP, MEASURED AT THE ENGINE
-//~ (TOWER-§8.1, re-read at the source rather than relayed): a 76° face is 2.4× over Recast's
-//~ 32.005° walkable ceiling, so a nav LINK is the only way a path to the deck exists at all
-//~ (TASK-734's half) — and UCharacterMovementComponent::ConstrainInputAcceleration
-//~ PLANE-PROJECTS steering input whenever IsMovingOnGround() || IsFalling()
-//~ (CharacterMovementComponent.cpp:8121-8131), so the vertical component of any steer handed
-//~ to a walking pawn is DELETED by the engine, every frame, by design. A link alone therefore
-//~ steers a unit that then walks nowhere. EMovementMode has no climb mode
-//~ (EngineTypes.h:1018-1045), MOVE_Custom is refused for this ship (a new physics surface in
-//~ a project with zero lines of it), and a raw SetActorLocation/TeleportTo lerp is refused
-//~ outright (it bypasses the capsule, the sweep and depenetration — the mechanism NAV-§
-//~ refuses on principle). ⇒ MOVE_Flying + swept AddMovementInput along ONE straight line.
-//~
-//~ ⚠️⚠️ AND THE ONE THING THIS FEATURE CAN SHIP BROKEN, WORSE THAN ANYTHING THE RAMP COULD
-//~ DO: MOVE_Flying IGNORES GRAVITY. AN EXIT PATH THAT FORGETS TO RESTORE THE MOVEMENT MODE
-//~ LEAVES A UNIT HANGING IN MID-AIR, FOREVER. Under the ramp the tower-destroyed case was
-//~ FREE — the floor vanished and CharacterMovement dropped to MOVE_Falling by itself. It is
-//~ explicitly NOT free now. That is why the teardown is ONE function reached from EVERY exit,
-//~ and why End() below is an exactly-once latch rather than a flag anybody may clear.
 
 /**
  *  Why an in-flight ladder climb ended (TASK-738). Passed to the ONE teardown so the log can
@@ -114,281 +93,16 @@ enum class ESiegeLadderExit : uint8
 	Timeout
 };
 
-/**
- *  Transient per-unit state of an in-flight ladder climb (TASK-738). ⛔ Deliberately
- *  UNREFLECTED (the FSiegeStuckState precedent, NAV-§8/§11): nothing here is a UPROPERTY, so
- *  it cannot be replicated by accident — the property that makes this batch's "no replicated
- *  property" declaration survive a later refactor instead of merely being true today.
- *
- *  ⭐ A DEFAULT-CONSTRUCTED VALUE IS THE "NOT CLIMBING" STATE, and End() restores exactly
- *  that — a whole-struct reset, never a bActive = false with residue left behind (the TASK-020
- *  zero-drift discipline: state that outlives its episode is the next bug).
- */
-struct FSiegeLadderClimbState
-{
-	/** True for the whole ascent. THIS IS ALSO THE TOWER-§9 DISARM TERM — see IsAttackAllowed. */
-	bool bActive = false;
-
-	/**
-	 *  Where the climb starts, in CAPSULE-CENTRE space.
-	 *  ⚠️⚠️ NAMED Start/End AND ⛔ NOT Foot/Top ON PURPOSE (TASK-734's finding, taken): the API
-	 *  is From -> To and DESCENT passes them the other way round. A field called "Foot" invites a
-	 *  future "fix" to enforce an ordering, which would silently break climbing DOWN.
-	 */
-	FVector Start = FVector::ZeroVector;
-
-	/** Where the climb ends, in CAPSULE-CENTRE space. On a descent this is the ladder's FOOT. */
-	FVector End = FVector::ZeroVector;
-
-	/** |End - Start| at Begin. Cached so the watchdog budget is fixed at the start and cannot drift. */
-	float LengthUU = 0.f;
-
-	/** Seconds since Begin. */
-	float ElapsedSeconds = 0.f;
-
-	/** Watchdog budget, computed once at Begin from the length and the shipped rate. */
-	float TimeoutSeconds = 0.f;
-
-	/**
-	 *  ⚠️⚠️ HOW MUCH OF THE LINE, MEASURED FROM ITS **ELEVATED** END, MUST BE DRIVEN WITHOUT A
-	 *  COLLISION SWEEP — because that stretch passes THROUGH THE DECK SLAB (TASK-737's measurement;
-	 *  see FSiegeLadderClimbStatics::ShouldSweep for the full reasoning and the arithmetic).
-	 *  0 means the whole line is swept.
-	 */
-	float DeckBreachUU = 0.f;
-
-	/**
-	 *  Which end of the line is the elevated one (the deck), i.e. where DeckBreachUU applies.
-	 *  ⭐⭐ THIS IS A FACT ABOUT THE GEOMETRY, ⛔ NOT AN ORDERING CONSTRAINT ON THE API. Both
-	 *  argument orders are legal and both work: on an ASCENT the deck is at End, on a DESCENT it
-	 *  is at Start, and Begin resolves it by comparing Z. ⛔ Nothing anywhere requires the caller
-	 *  to pass the foot first.
-	 */
-	bool bDeckIsAtEnd = true;
-
-	/** The capsule half-height the line was offset by at Begin — the same value the teardown's arrival snap uses. */
-	float CapsuleHalfHeightUU = 0.f;
-};
-
-/**
- *  ═══ THE CLIMB'S DECIDABLE LOGIC, AS PURE FUNCTIONS (TASK-738) ═══
- *
- *  ⛔ EVERYTHING HERE IS PURE. No UWorld, no AActor, no UObject, no component, no clock read,
- *  no allocation, no logging. Every input is a parameter; every output is a return value or a
- *  write to the caller's FSiegeLadderClimbState. The precedents are FSiegeStuckStatics
- *  (SiegeStuckStatics.h) and HIGH-§3's HeightAdvantageMultiplier seam — "a testability
- *  obligation gets a testability seam".
- *
- *  ⭐⭐ AND HERE PURITY IS NOT STYLE, IT IS THE ONLY INSTRUMENT AVAILABLE, MEASURED:
- *  every automation test in this project is headless (there is not one UWorld::CreateWorld or
- *  SpawnActor in Source/GitClaudeUnrealTest/Siegebound/Tests/), and a world-less ASummonedUnit
- *  CANNOT be driven through these paths — UCharacterMovementComponent::SetDefaultMovementMode
- *  reaches UMovementComponent::GetPhysicsVolume, which dereferences GetWorld() unconditionally
- *  when UpdatedComponent is null (MovementComponent.cpp:290-298) and would crash the suite.
- *  ⇒ The eight exits are proven against THIS state machine, and the wiring of each call site
- *  is TASK-741's diff read. That split is stated rather than hidden.
- *
- *  ⛔ Not a UObject, not reflected, no Build.cs change, no new file (TASK-738 owns
- *  SummonedUnit.{h,cpp} only) — it shares this header with its consumer for the same reason
- *  NAV-§7 licenses FSiegeStuckState sharing SiegeStuckStatics.h: pure data types forming ONE
- *  concept with the statics that consume them. ⛔ QA must not flag it as a
- *  one-class-per-header violation.
- */
-struct FSiegeLadderClimbStatics
-{
-	/**
-	 *  Shortest line worth climbing. ⛔ A math guard, ⛔ NOT a policy: ClimbDirection would
-	 *  have to normalise a zero vector, and every subsequent frame would steer nowhere while
-	 *  the unit sat in MOVE_Flying waiting for a watchdog. Refusing at the door is cheaper and
-	 *  honest. This is the ONE refusal reason beyond the four TOWER-§8.4(B) pins.
-	 */
-	static constexpr float MinClimbLineUU = 1.f;
-
-	/**
-	 *  How close the CAPSULE CENTRE must come to LadderTop to count as arrived.
-	 *  ⭐ DERIVED, ⛔ not felt: 16 uu is HALF a Recast cell (TOWER-§2a's 32 uu cell — its
-	 *  erosion tax is quoted as "2 more cells (64 uu)"), i.e. below the navmesh's own spatial
-	 *  resolution, so the deck poly the unit lands on cannot tell the difference.
-	 *  ⚠️ It is deliberately NOT the only arrival test: Advance also ends the climb the moment
-	 *  the unit has travelled the full line length along the climb axis, so a low frame rate
-	 *  that steps straight past this radius still arrives on that frame rather than sailing on.
-	 */
-	static constexpr float ArrivalToleranceUU = 16.f;
-
-	/**
-	 *  Watchdog budget = TimeoutScale × the climb's OWN expected duration (length ÷ rate).
-	 *  ⭐ 4× is deliberately generous — this must NEVER end a healthy climb early; it exists
-	 *  only so a unit whose sweep is blocked by geometry drops instead of hanging in MOVE_Flying
-	 *  forever. At the shipped 1,236.9 uu / 350 uu/s that is 14.1 s against a 3.53 s ascent.
-	 */
-	static constexpr float TimeoutScale = 4.f;
-
-	/** Floor for the watchdog, so a very short ladder still gets a sane budget. */
-	static constexpr float MinTimeoutSeconds = 1.f;
-
-	/** Divisor floor: a mis-tuned LadderClimbSpeedUU of 0 must produce a finite watchdog, never a division by zero and never an immortal climb. */
-	static constexpr float MinClimbSpeedUU = 1.f;
-
-	/**
-	 *  ⚠️⚠️ HOW MANY CAPSULE HALF-HEIGHTS OF **Z** AT THE ELEVATED END MUST BE DRIVEN WITHOUT A
-	 *  SWEEP, AND THE ARITHMETIC IS WRITTEN OUT BECAUSE THE ALTERNATIVE IS A SILENTLY DEAD FEATURE.
-	 *
-	 *  ⭐ THE MEASUREMENT (TASK-737, the ladder mesh): `LadderTop` is pinned **150 uu inside a
-	 *  SOLID deck slab** and is approached from below at 76°, so **the last 40.8 uu of the climb
-	 *  line lies INSIDE the deck geometry** (40.8 × sin 76° = 39.6 uu of Z ⇒ a ~40 uu slab).
-	 *  ⛔ THE MESH CANNOT FIX IT: a hatch would put the socket over a HOLE — the castle-floor
-	 *  defect class that cost this project a whole repair wave — and a thinner slab cannot help
-	 *  because the 176 uu capsule straddles it regardless. ⛔ AND THE SOCKETS MAY NOT MOVE: both
-	 *  are navmesh arithmetic (the top sits 86 uu inside the deck's surviving polygon, the foot
-	 *  clears the body's eroded carve by 86 uu), so moving either can sever the traversal link.
-	 *
-	 *  ⇒ ⛔⛔ A SWEPT MOVE COLLIDES WITH THE UNDERSIDE OF THE DECK AND **STALLS** — with no error,
-	 *  no log line, and every one of the eight exits still perfectly "correct". The unit simply
-	 *  stops short forever and the card does nothing. **That is the same silent class as the
-	 *  StopAttackLunge tick bug this file already caught: a working state machine, driven by a
-	 *  mechanism that quietly cannot run.**
-	 *
-	 *  THE THREE HALF-HEIGHTS, EACH EARNING ITS PLACE (in Z, at the elevated end):
-	 *    1 × 88  the capsule's TOP reaches the slab's underside before its centre does
-	 *    1 × 88  an allowance for how far the slab hangs BELOW its own surface. ⚠️ This file
-	 *            cannot read the mesh, so it is an ASSUMPTION — and it is 2.2× the ~40 uu the
-	 *            mesh actually ships. A slab thicker than a capsule half-height would stall the
-	 *            sweep before this window opens; that fails LOUDLY through the watchdog's warning
-	 *            rather than silently, which is the whole point of having one.
-	 *    1 × 88  the capsule's BOTTOM must clear the deck SURFACE before sweeping is safe again
-	 *
-	 *  ⭐ AND WHY BEING GENEROUS HERE IS **FREE**, WHICH IS THE PART THAT MAKES THIS SAFE RATHER
-	 *  THAN JUST NECESSARY: `TOWER-§8.3` pins **≥56 uu of standoff between the capsule surface and
-	 *  the tower body face ALONG THE WHOLE LINE**. So the only static geometry a non-swept stretch
-	 *  anywhere on this line can pass through is the deck slab itself — the very thing it must.
-	 *  The sweep's remaining job is pawn-vs-pawn, and that is covered: `TOWER-§10` L-1 is
-	 *  one-climber-at-a-time, and a unit already standing on the deck is resolved by the same
-	 *  depenetration that resolves any two of the 4-6 bodies `TOWER-§4` expects up there.
-	 */
-	static constexpr float DeckBreachCapsuleHalfHeights = 3.f;
-
-	/**
-	 *  ⭐⭐ THE TOWER-§9 ATTACK GATE, AND THE WHOLE POINT IS THAT IT TAKES **TWO INDEPENDENT
-	 *  TERMS**. bCanEverAttack is the `const` CLASS-IDENTITY seal (ASorcererUnit / AMinerUnit:
-	 *  "this class can NEVER attack"); bClimbing is a TRANSIENT PER-INSTANCE state that lasts
-	 *  ~3.5 seconds. ⛔ The disarm is deliberately NOT implemented by overriding
-	 *  CanEverAttack(): doing so would make a Sorcerer's permanent inability and a Footman's
-	 *  three-second climb indistinguishable in the code, and the distinction is exactly what
-	 *  TOWER-§9.2 requires to survive.
-	 *
-	 *  Read at the THREE shipped CanEverAttack() guard points and nowhere else (TOWER-§9.2):
-	 *  EnterAttack() stands down to Idle · UpdateStateGrouped() acquires nothing ·
-	 *  PerformAttack() refuses. ⛔ NOT a fourth guard point, ⛔ not a new suppression mechanism.
-	 */
-	static bool IsAttackAllowed(bool bCanEverAttack, bool bClimbing) { return bCanEverAttack && !bClimbing; }
-
-	/**
-	 *  ⭐⭐ THE COMPOSED TICK PREDICATE, AS A PURE TWO-TERM GATE (TASK-760) — the DECISION half of
-	 *  ASummonedUnit::RefreshActorTickEnabled, lifted here for exactly the reason IsAttackAllowed
-	 *  above was lifted here: the actor's writer stays WIRING, and the decision becomes a truth
-	 *  table a headless test can drive. ⛔ The expression is character-for-character the one that
-	 *  shipped (bLungeActive || bClimbActive) — TASK-760 changed WHERE it can be observed, ⛔ never
-	 *  WHAT it decides. This actor cannot be instantiated in a headless test (its teardown
-	 *  dereferences GetWorld() unconditionally), so a pure gate is the only instrument there is.
-	 *
-	 *  ⚠️⚠️ THE ROW THE SELF-HEAL TURNS ON IS (lunge FALSE, climb TRUE) ⇒ TRUE. That row is what
-	 *  makes UpdateState's 0.25 s re-assert SAFE IN BOTH DIRECTIONS: re-asserting through this
-	 *  predicate can never switch the tick OFF under a live climb (the StopAttackLunge regression
-	 *  TASK-738 fixed), and can never switch it ON for a unit that has neither driver — which is
-	 *  why the self-heal calls RefreshActorTickEnabled and ⛔ NEVER a bare
-	 *  SetActorTickEnabled(true), which would fight whatever legitimately disabled the tick and
-	 *  re-introduce the very coupling TASK-738 removed.
-	 */
-	static bool WantsActorTick(bool bLungeActive, bool bClimbActive) { return bLungeActive || bClimbActive; }
-
-	/**
-	 *  The admission predicate — TOWER-§8.4(B)'s pinned contract, character for character:
-	 *  false for a DEAD, match-end-frozen (bAIFrozen), spell-frozen (bSpellFrozen) or ALREADY
-	 *  CLIMBING unit, plus the degenerate/NaN line guard above. ⛔ Deliberately does NOT read
-	 *  bStatsLoaded: the pinned doc comment enumerates four refusal reasons and adding a fifth
-	 *  policy reason would be a silent divergence from a contract TASK-734 compiles against.
-	 */
-	static bool CanBegin(const FSiegeLadderClimbState& State, bool bDead, bool bAIFrozen, bool bSpellFrozen,
-		const FVector& FromWorld, const FVector& ToWorld);
-
-	/**
-	 *  Arms the state, or ⛔ CHANGES NOTHING and returns false (the pinned "returns false and
-	 *  changes NOTHING" guarantee lives HERE, in one place, so it cannot be half-kept).
-	 *
-	 *  ⭐⭐ THE ENDPOINTS ARRIVE AS **SURFACE** POINTS AND ARE STORED IN **CAPSULE-CENTRE** SPACE:
-	 *  both are lifted by CapsuleHalfHeightUU. The sockets sit on generated navmesh (`TOWER-§8.3`)
-	 *  — i.e. on the ground and on the deck SURFACE — but the thing that travels the line is the
-	 *  capsule's CENTRE, which stands one half-height above whatever it is on. ⛔ Without the lift
-	 *  the unit "arrives" with its FEET 88 uu below the deck, i.e. buried in the slab, and
-	 *  depenetration drops it back down the tower. The lift is the same at both ends, so
-	 *  LengthUU, the direction and the watchdog budget are all unchanged by it.
-	 */
-	static bool Begin(FSiegeLadderClimbState& State, bool bDead, bool bAIFrozen, bool bSpellFrozen,
-		const FVector& FromWorld, const FVector& ToWorld, float ClimbSpeedUU, float CapsuleHalfHeightUU);
-
-	/** Unit vector Start -> End; ZeroVector for a degenerate line (which CanBegin already refuses). */
-	static FVector ClimbDirection(const FSiegeLadderClimbState& State);
-
-	/**
-	 *  ⭐⭐ WHETHER THIS FRAME'S MOVE MAY BE SWEPT — false only inside the DECK BREACH window at
-	 *  the line's elevated end, where the capsule must pass THROUGH the deck slab.
-	 *
-	 *  ⚠️⚠️ THIS IS A SCOPED, MEASURED EXCEPTION TO `TOWER-§8.5`, WHICH REFUSES A RAW
-	 *  `SetActorLocation` LERP **OUTRIGHT** — and it is DECLARED, ⛔ not smuggled. That refusal
-	 *  names three harms: driving a unit through the tower BODY (⛔ still refused — the standoff
-	 *  contract keeps the whole line clear of it), through OTHER UNITS (⛔ still swept for ~78% of
-	 *  the line, and depenetration covers the rest), and **through the DECK** — which TASK-737 has
-	 *  since measured to be REQUIRED, because the pinned socket is 150 uu inside a solid slab.
-	 *  ⇒ The law was written before that measurement existed. `DeckBreachCapsuleHalfHeights`
-	 *  carries the full reasoning; the handoff requests the amendment.
-	 *
-	 *  ⭐ It is a NON-SWEPT CONTINUOUS DRIVE at the same LadderClimbSpeedUU — ⛔ NOT a teleport
-	 *  and ⛔ not a lerp of the whole line. Same rate, same straight line, no visual discontinuity:
-	 *  a unit that popped 270 uu up a ladder would read as broken, which is the exact failure the
-	 *  climb clip exists to prevent.
-	 */
-	static bool ShouldSweep(const FSiegeLadderClimbState& State, const FVector& CurrentWorld);
-
-	/**
-	 *  The EXACT capsule-centre position the climb ends at — `End`, i.e. the destination surface
-	 *  plus one capsule half-height. ⭐ The driver snaps here on arrival so the unit finishes
-	 *  standing ON the deck rather than wherever the last frame's step happened to land.
-	 */
-	static FVector ArrivalTarget(const FSiegeLadderClimbState& State);
-
-	/**
-	 *  Advances the clock and asks whether the climb CONTINUES.
-	 *  Returns true  — keep steering along ClimbDirection this frame.
-	 *  Returns false — the climb is over; exactly one of bOutReachedTop / bOutTimedOut is set
-	 *                  (both false only when the state was not active to begin with).
-	 *  ⚠️ ARRIVAL IS TESTED BEFORE THE WATCHDOG, ON PURPOSE: a unit that reaches the deck on
-	 *  the same frame its budget expires has ARRIVED, and must not be reported as a failure.
-	 */
-	static bool Advance(FSiegeLadderClimbState& State, const FVector& CurrentWorld, float DeltaSeconds,
-		bool& bOutReachedTop, bool& bOutTimedOut);
-
-	/**
-	 *  ⭐⭐ THE EXACTLY-ONCE LATCH — the single most load-bearing function in this feature.
-	 *  Returns true EXACTLY ONCE per successful Begin, and resets the state to its default.
-	 *  Every one of the eight exits routes through it, so "restore the movement mode and
-	 *  broadcast OnLadderClimbEnded exactly once" is a property of ONE branch rather than a
-	 *  promise repeated at eight call sites — and a double exit (death then EndPlay, or a
-	 *  listener that aborts from inside the broadcast) is inert by construction.
-	 */
-	static bool End(FSiegeLadderClimbState& State);
-};
-
-/**
- *  Fired EXACTLY ONCE per successful BeginLadderClimb — on arrival, abort, a new order, death,
- *  either freeze, EndPlay, or the watchdog (TOWER-§8.5's eight exits). bReachedTop is true ONLY
- *  for arrival.
- *
- *  ⭐ This is AClimbableTower's ONLY completion signal, which is what lets that class keep its
- *  no-tick property: ⛔ no tick and ⛔ no timer is added there to watch a climber.
- *
- *  ⛔ SIGNATURE PINNED CHARACTER-FOR-CHARACTER IN TOWER-§8.4(B). TASK-734 compiles against it.
- */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FSiegeLadderClimbEnded, ASummonedUnit*, Unit, bool, bReachedTop);
+//~ ⚖️⭐ `FSiegeLadderClimbEnded` **MOVED OUT OF THIS FILE** on 2026-09-02 (TASK-787,
+//~ `CONTACT-§12.3`) — it now lives with the interface it belongs to, in
+//~ `Siegebound/LadderClimber.h`, which this header already includes (see the include note above).
+//~ ⛔ A MOVE, ⛔ NOT AN AMENDMENT: the TYPE NAME and the SIGNATURE are UNCHANGED
+//~ (`ACharacter*, Climber, bool, bReachedTop`), so `TOWER-§8.4(B)`'s second amendment is INTACT and
+//~ the `Broadcast(this, bReachedTop)` in this class's teardown compiles UNTOUCHED. ⭐ WHY: the
+//~ delegate is CLIMBER vocabulary, ⛔ not UNIT vocabulary — it only lived here because the unit was
+//~ the only climber, and `AClimbableTower` must now reach `AHeroCharacter` through the same type.
+//~ ⚠️ The full doc comment moved WITH it rather than being duplicated here; ⛔ this breadcrumb is
+//~ deliberately not a second copy of it (a record that can drift is worse than a pointer).
 
 /**
  *  Siegebound summoned unit — Standard, Siege, and Support targeting profiles
@@ -470,7 +184,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FSiegeLadderClimbEnded, ASummonedUn
  *  after a plain SpawnActor (it late-binds the stats if BeginPlay found no CardID).
  */
 UCLASS()
-class GITCLAUDEUNREALTEST_API ASummonedUnit : public ACharacter, public ITeamAgent, public IHealthBarProvider
+class GITCLAUDEUNREALTEST_API ASummonedUnit : public ACharacter, public ITeamAgent, public IHealthBarProvider, public ILadderClimber
 {
 	GENERATED_BODY()
 
@@ -1081,6 +795,19 @@ public:
 	 */
 	UPROPERTY(BlueprintAssignable, Category = "Siegebound|Unit|Climb")
 	FSiegeLadderClimbEnded OnLadderClimbEnded;
+
+	/**
+	 *  ⭐ `ILadderClimber`'s completion accessor (TASK-787, `CONTACT-§12.3`) — how `AClimbableTower`
+	 *  binds and unbinds WITHOUT naming this class. ⛔ The INSTANCE above is untouched: an interface
+	 *  declares no state, so the implementer owns the delegate and the interface owns only the way
+	 *  to reach it.
+	 *
+	 *  ⚠️ INLINE AND ⛔ NOT IN THE `.cpp` DELIBERATELY: it is a member return, there is nothing to
+	 *  test in it, and TASK-787's fence keeps `SummonedUnit.cpp` closed. ⛔ It is ⛔ NOT a
+	 *  `UFUNCTION` — a reflected function cannot return a delegate reference, and `ILadderClimber`'s
+	 *  methods are plain C++ pure virtuals by design (the `IHealthBarProvider` precedent).
+	 */
+	virtual FSiegeLadderClimbEnded& GetOnLadderClimbEnded() override { return OnLadderClimbEnded; }
 
 protected:
 
@@ -1915,8 +1642,82 @@ private:
 	 *  in MOVE_Flying with the watchdog stranded on its dead driver. The decision itself is
 	 *  FSiegeLadderClimbStatics::WantsActorTick, which is what makes the re-assert testable and
 	 *  what keeps it from EVER writing a value this function would not have written anyway.
+	 *
+	 *  ⭐ TASK-784 LOOKED HARD AT ADDING A **THIRD** TERM HERE AND DID ⛔ NOT: the contact trigger's
+	 *  poll rides StateTimerHandle instead, precisely so this expression stays what TASK-760 pinned.
+	 *  ⛔ The expression is UNCHANGED — still exactly `bLungeActive || LadderClimb.bActive`.
 	 */
 	void RefreshActorTickEnabled();
+
+	// ═════════════════════════════════════════════════════════════════════════════════════════
+	//  ⭐⭐ THE CONTACT TRIGGER'S **CALL SITE** (TASK-784, CONTACT-§4.1 / WR-§5)
+	//  "just walking up to it and walking against it" — Jonathan, 2026-09-01
+	// ═════════════════════════════════════════════════════════════════════════════════════════
+	//
+	// ⛔⛔ THIS UNIT OWNS ⛔ NONE OF THE RULE AND ⛔ NONE OF THE TUNING. The radius (2D), the intent
+	// cone (read as a DIRECTION and ⛔ never a key), the dwell, the endpoint resolution by Z and
+	// the K-C re-arm latch ALL live on AClimbableTower and are tested there (TASK-777). ⭐ `WR-§5`'s
+	// idiom, fourth application — ACommanderNpc owns InteractRadius + IsPlayerInRange, ships
+	// bCanEverTick = false, and is POLLED BY ITS CALLER (SiegePlayerController.cpp:4970). ⇒ **THE
+	// PAWN ONLY ASKS.** ⛔ A second copy of any of those numbers here is a hard failure of
+	// SiegeClimbableTowerTest.cpp test 12(g), by name — and ⛔ there is not one float in this
+	// feature's call site.
+	//
+	// ⚠️⚠️ AND IT RIDES THE 0.25 s `StateTimerHandle` POLL, ⛔ NOT THE ACTOR TICK — WHICH IS ⛔ NOT
+	// A PREFERENCE, IT IS THE ONLY DRIVER THAT RUNS IN THE STATE A CLIMB STARTS FROM. MEASURED:
+	// `RefreshActorTickEnabled` (SummonedUnit.cpp) is the ONE writer of this actor's tick flag and
+	// its value is `WantsActorTick(bLungeActive, LadderClimb.bActive)` ⇒ a unit that is neither
+	// mid-lunge nor ALREADY climbing has its actor tick **OFF** (`bStartWithTickEnabled = false`,
+	// SummonedUnit.cpp:139). ⛔ A poll in `::Tick` would compile, review clean, pass the whole
+	// suite — AND NEVER RUN, which is the same silent class as the zero-caller gap this task
+	// exists to close. ⭐ StateTimerHandle is an FTimerManager entry on the WORLD and knows nothing
+	// about PrimaryActorTick, which is exactly why TASK-760's self-heal rides it too.
+	//
+	// ⚠️ THE DECLARED COST OF THAT CADENCE, MEASURED AND ⛔ NOT PAPERED OVER (full table in
+	// Tests/SiegeLadderClimbTest.cpp tests 15 and 16): a pawn walking dead-on at an endpoint holds
+	// proximity AND intent for only `LadderContactRadiusUU / Speed` seconds, and a 0.25 s sampler
+	// needs TWO samples inside that window. ⇒ at the CURRENTLY shipped 150 uu the trigger is
+	// reliable only up to 300 uu/s, is PHASE-DEPENDENT for the Archer (350) and Footman (400), and
+	// is UNREACHABLE for Cavalry (600). ⛔ Not fixable from here — the radius is the tower's and
+	// `K-5`/`K-6` make it 🧑 Jonathan's. This call site is correct at any radius he picks.
+	//
+	// ⚠️ A UNIT WITH ⛔ NO STATE POLL NEVER ASKS: AMinerUnit seals `StateCheckInterval = 0`
+	// (MinerUnit.cpp:62), and FTimerManager::SetTimer with a rate <= 0 arms NOTHING ⇒ a miner can
+	// never contact-climb. ⭐ DECLARED non-coverage — the same limit TASK-760's self-heal records,
+	// and here it is also the WANTED answer (qa/TASK-741 W-5: a miner should never be admitted to
+	// a ladder in the first place).
+
+	/**
+	 *  ⭐⭐ THE WHOLE CALL SITE: find the nearest live ladder and ASK it. Returns true iff a climb
+	 *  STARTED, which is the caller's signal to stop running the state machine this poll.
+	 *
+	 *  Called from UpdateState, one line below TickStuckWatchdog and ABOVE the sidestep-lease
+	 *  early-out, so Standard, Siege, Support, Follow and Hold/Ambush are all covered from ONE
+	 *  line (the TrackChargeMovement / TickStuckWatchdog placement precedent). ⛔ It is BELOW the
+	 *  death/freeze/IsClimbing fence, which is what keeps it from ever asking on behalf of a unit
+	 *  that could not climb anyway.
+	 *
+	 *  ⛔ THE FIND IS ⛔ NOT A SCAN OF ALL ACTORS (the .cpp carries the measurement): a class-hash
+	 *  bucket lookup over the live AClimbableTowers, which is ZERO work in every match where
+	 *  nobody played the card — ⛔ never the TActorIterator level walk the five other finders in
+	 *  this file pay.
+	 *
+	 *  ⛔ NO TEAM TEST, ⛔ NO ELIGIBILITY TEST AND ⛔ NO PROXIMITY TEST OF ITS OWN. Every one of
+	 *  those is `AClimbableTower::EvaluateContactEntry`'s, and a pawn-side copy of the team gate
+	 *  would be the silent back door around Jonathan's T-3 ruling that CONTACT-§4.3 exists to
+	 *  forbid. This function chooses WHOM to ask and ⛔ nothing else.
+	 *
+	 *  ⛔⛔ IT CREATES ⛔ NO NINTH EXIT: it never ends a climb, never writes a movement mode, never
+	 *  touches LadderClimb and never calls EndLadderClimb / AbortLadderClimb. It also adds ⛔ NO
+	 *  SECOND STEERING AUTHORITY — BeginLadderClimb's own step (4) calls
+	 *  AAIController::StopMovement() before it takes the capsule, and ⛔ no second stop is issued
+	 *  here (NAV-§3's no-double-driver law).
+	 *
+	 *  @param DeltaSeconds  the poll's own world-clock delta, from ConsumeStuckDeltaSeconds().
+	 *                       ⛔ NEVER StateCheckInterval — AMinerUnit seals that to 0, and the dwell
+	 *                       the tower integrates out of this value must be real elapsed time.
+	 */
+	bool TryContactClimbAtNearestLadder(float DeltaSeconds);
 
 	/**
 	 *  Per-frame climb driver (TASK-738), runs only while a climb is active. Advances the pure
