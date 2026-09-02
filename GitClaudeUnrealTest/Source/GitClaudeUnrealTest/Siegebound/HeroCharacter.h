@@ -782,6 +782,28 @@ public:
 	 */
 	virtual void DoMove(float Right, float Forward) override;
 
+	/**
+	 *  ⭐⭐ TASK-790 (`VIS-§3`) — THE WHOLE ARITHMETIC OF THE CAMERA FIX, AS A ***PURE FUNCTION***.
+	 *
+	 *  Returns the LOCAL-X offset to place on the follow camera so a spring arm that the engine's
+	 *  own collision probe has collapsed still stands at least `MinArmLengthUU` off the pawn.
+	 *  ⭐ Negative or zero, ⛔ never positive: the boom's socket rotation is `DesiredRot`, and
+	 *  `SpringArmComponent.cpp:185` places the camera at `ArmOrigin - DesiredRot.Vector() * Len`
+	 *  ⇒ socket **+X points at the pawn**, so pushing AWAY from the pawn is **−X**. `0` means
+	 *  "leave the engine's answer exactly alone", which is the ordinary frame.
+	 *
+	 *  ⛔ It is `static` and takes only floats ON PURPOSE: every automation test in this project is
+	 *  headless (`SiegeLadderClimbTest.cpp:39`), so the decision has to be reachable without a
+	 *  world, a pawn or a component — the `FSiegeLadderClimbStatics` discipline, applied to a camera.
+	 *
+	 *  @param FixedArmLengthUU    distance the boom ACTUALLY placed the camera at this frame (post-probe).
+	 *  @param NaturalArmLengthUU  the boom's uncollided `TargetArmLength` — ⛔ a hard ceiling: this
+	 *                             function may undo a collapse, it may ⛔ NEVER lengthen the camera
+	 *                             beyond where it would sit in open ground.
+	 *  @param MinArmLengthUU      the floor being enforced (`MinCameraArmLengthUU`). `<= 0` disables.
+	 */
+	static float ComputeCameraPushOutLocalX(float FixedArmLengthUU, float NaturalArmLengthUU, float MinArmLengthUU);
+
 protected:
 
 	virtual void BeginPlay() override;
@@ -879,6 +901,30 @@ protected:
 	 *  BOTH the constructor and BeginPlay (mirrors ApplyMovementSpeed) so a BP_HeroCharacter tweak survives.
 	 */
 	void ApplyTerrainMovementTuning();
+
+	/**
+	 *  TASK-790 (`VIS-§3`): pushes `HeroCameraProbeSize` onto the INHERITED `CameraBoom`'s
+	 *  `ProbeSize`. Null-safe. Called from BOTH the constructor and BeginPlay — the
+	 *  `ApplyMovementSpeed` / `ApplyTerrainMovementTuning` idiom, third application — so a
+	 *  `BP_HeroCharacter` edit of the tunable actually reaches the component (a ctor-only write
+	 *  would bake the C++ default into the CDO and silently ignore the Blueprint's value).
+	 *  ⛔ It does ⛔ NOT touch `bDoCollisionTest` — see `TickHeroCameraCollision`.
+	 */
+	void ApplyHeroCameraTuning();
+
+	/**
+	 *  TASK-790 (`VIS-§3`) — the per-frame half of the V2 fix, driven from `Tick`.
+	 *
+	 *  ⭐ SELF-GUARDING AND ⛔ STATELESS: it assigns the follow camera's relative location on
+	 *  EVERY frame, `FVector::ZeroVector` included, so its output is a pure function of THIS
+	 *  frame's camera geometry. ⇒ ⛔ there is ⛔ nothing for a climb exit to unwind, and ⛔ no
+	 *  entry in the ten-exit teardown is owed one (the `TASK-790` fence's explicit preference).
+	 *
+	 *  ⛔ The trace it runs is TRIPLE-GATED — the boom must report a collision fix, the fix must be
+	 *  shorter than `MinCameraArmLengthUU`, and `bIgnoreClimbableGeometryForCamera` must be on —
+	 *  so an ordinary frame in open ground costs ⛔ one bool read and ⛔ no query at all.
+	 */
+	void TickHeroCameraCollision();
 
 	/** Stack cap (MaxCopies) for an upgrade CardID read from DT_Cards; 0 when the table/row is unavailable (caller refuses — never guesses). */
 	int32 GetStackCapForUpgrade(FName UpgradeCardID) const;
@@ -1079,6 +1125,84 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Movement", meta = (ClampMin = "0"))
 	float HeroJumpZVelocity = 600.f;
 
+	//~ ═══════════════════════════════════════════════════════════════════════════════════════
+	//~  THE THIRD-PERSON CAMERA AT THE LADDER — TASK-790 / VID-004 `V2` (`VIS-§3`)
+	//~ ═══════════════════════════════════════════════════════════════════════════════════════
+	//~
+	//~ THE DEFECT, from Jonathan's own capture at 01:12.0–01:13.5: the camera collapsed into the
+	//~ pawn for ≈2 s at the ladder approach — back and hips at 60–70 % of frame, world view GONE —
+	//~ at the exact moment the player commits to a climb.
+	//~
+	//~ ⭐ THE MECHANISM IS ⛔ NOT CLIMB CODE AND ⛔ NOT LADDER GEOMETRY. It is the stock spring arm:
+	//~ `GitClaudeUnrealTestCharacter.cpp:39-42` builds `CameraBoom` with `TargetArmLength = 400`
+	//~ and configures ⛔ nothing else, so `bDoCollisionTest`/`ProbeSize`/`ProbeChannel` sit at the
+	//~ engine defaults (`true` / `12` / `ECC_Camera` — `SpringArmComponent.cpp:84-86`), and
+	//~ `SpringArmComponent.cpp:197` sphere-sweeps origin→desired every frame while `:201`
+	//~ (`BlendLocations`) hands the socket STRAIGHT TO THE HIT LOCATION. Stand a 400 uu boom
+	//~ against a 1200 uu tower face with the view pointing into it and the arm resolves to the
+	//~ standoff distance — tens of uu — which IS the camera sitting in the pawn.
+	//~ ⇒ ⭐⭐ IT IS ⛔ GENERIC, ⛔ NOT CLIMB-SPECIFIC: `AHeroCharacter` contained ⛔ zero camera code
+	//~ before this block, so walking up to ANY tall blocking geometry does the same thing. The
+	//~ ladder is merely the one place the player is REQUIRED to stand flush against a tall wall.
+	//~
+	//~ ⛔⛔ AND THE ENGINE HAS ⛔ NO IGNORE-ACTOR LIST TO ADD THE TOWER TO — MEASURED, ⛔ not assumed:
+	//~ `SpringArmComponent.cpp:194` builds its query as
+	//~ `FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(SpringArm), false, GetOwner())`, i.e. it
+	//~ ignores the OWNER and ⛔ nothing else, and exposes no hook to extend that. So "add
+	//~ AClimbableTower to the boom's ignore set" is ⛔ not implementable on a stock
+	//~ `USpringArmComponent`, and the two ways to fake it are both refused: mutating the TOWER's
+	//~ collision responses is cross-actor state that ten climb exits would have to unwind (exactly
+	//~ the class of bug `TASK-790` was fenced against), and a blanket `bDoCollisionTest = false`
+	//~ was refused outright — it puts the camera inside every wall in the map.
+	//~ ⇒ the fix keeps the engine's probe ON and enforces a FLOOR under its answer, on the hero's
+	//~ own camera only. See `TickHeroCameraCollision` / `ComputeCameraPushOutLocalX`.
+	//~
+	//~ ⛔ FENCE (`VIS-R2`): all three live on `AHeroCharacter` and configure the INHERITED boom.
+	//~ `GitClaudeUnrealTestCharacter.{h,cpp}` is the UE TEMPLATE base — also inherited by
+	//~ `Variant_Combat/CombatCharacter` and `Variant_Platforming/PlatformingCharacter` — and is
+	//~ ⛔ untouched: one game's hero camera may ⛔ never be paid by three template characters.
+	//~
+	//~ 🧑 ⛔⛔ ALL THREE VALUES ARE ⛔ FLAGGED FOR JONATHAN'S FEEL PASS AND ⛔ NONE IS FINAL. They are
+	//~ `EditDefaultsOnly` precisely so the feel pass is a defaults edit and ⛔ not a recompile.
+
+	/**
+	 *  Radius in uu of the boom's collision probe sphere, pushed onto the inherited
+	 *  `CameraBoom->ProbeSize` by `ApplyHeroCameraTuning()`. Engine default is `12`.
+	 *  ⭐ SMALLER = the camera may approach nearer to an edge before the probe pushes it in, so
+	 *  this is the half of the fix that helps EVERYWHERE and costs ⛔ nothing per frame.
+	 *  ⛔ On its own it does ⛔ NOT cure the collapse — a sphere of any radius still collapses
+	 *  against a flat wall; `MinCameraArmLengthUU` is what stops that. 🧑 Feel pass owns the number.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Camera", meta = (ClampMin = "0"))
+	float HeroCameraProbeSize = 8.f;
+
+	/**
+	 *  ⭐ THE SCOPE SWITCH, AND ALSO THE OFF-SWITCH. When true (default) the `MinCameraArmLengthUU`
+	 *  floor is applied ⛔ ONLY when the thing that collapsed the arm is climbable geometry (an
+	 *  `AClimbableTower`); every other blocker in the map keeps the engine's answer BYTE-FOR-BYTE.
+	 *  ⛔ Set false and `TickHeroCameraCollision` becomes a no-op returning today's exact behaviour
+	 *  everywhere — the regression guard, so this can be backed out mid-playtest without a build.
+	 *  ⚠️ The name is `VIS-§3`-pinned. It reads "ignore" because that is the INTENT (the tower stops
+	 *  dictating the camera); the ⛔ implementation is a floor, ⛔ not an engine ignore list, because
+	 *  the engine has none — see the block comment above. 🧑 Flagged for the feel pass.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Camera")
+	bool bIgnoreClimbableGeometryForCamera = true;
+
+	/**
+	 *  Shortest arm in uu the camera is allowed to be pushed to by a climbable-geometry blocker.
+	 *  `<= 0` disables the floor entirely (a second off-switch, by number).
+	 *  ⚠️⚠️ THE TRADE, STATED PLAINLY BECAUSE IT IS REAL: enforcing a floor puts the camera up to
+	 *  this many uu INSIDE the tower it is standing against. `150` is chosen deliberately low —
+	 *  enough that the hero stops filling the frame and the world is visible again, small enough
+	 *  that the camera barely enters the stone. ⭐ Larger = more world view but a deeper near-clip
+	 *  into the tower; that judgement is 🧑 JONATHAN'S, ⛔ not this task's.
+	 *  ⛔ It is a FLOOR, ⛔ never a target: `ComputeCameraPushOutLocalX` clamps to the boom's own
+	 *  `TargetArmLength`, so it can ⛔ never place the camera further out than open ground would.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Camera", meta = (ClampMin = "0"))
+	float MinCameraArmLengthUU = 150.f;
+
 	/** Damage per melee swing (GDD §3.1: 20). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|Combat", meta = (ClampMin = "0"))
 	float MeleeDamage = 20.f;
@@ -1254,6 +1378,17 @@ private:
 
 	/** Drives OnRallyReady once RallyCooldown elapses after a successful Rally, to broadcast the ready state. */
 	FTimerHandle RallyCooldownTimerHandle;
+
+	/**
+	 *  TASK-790 (`VIS-§3`): the follow camera's AUTHORED relative location, captured ONCE at
+	 *  BeginPlay — the zero point `TickHeroCameraCollision` offsets the min-arm push from.
+	 *  ⛔ It is ⛔ NOT runtime state and ⛔ nothing unwinds it: it is a constant read of a
+	 *  design-time value, taken before this feature has ever written to the camera, and it exists
+	 *  so a `BP_HeroCharacter` over-the-shoulder framing is ⛔ not silently clobbered — and so that
+	 *  `bIgnoreClimbableGeometryForCamera = false` returns the camera to EXACTLY where the
+	 *  Blueprint put it rather than to an assumed zero.
+	 */
+	FVector HeroCameraBaseRelativeLocation = FVector::ZeroVector;
 
 	//~ Hero-upgrade state (TASK-058). Stack counts are the ONLY mutated state — every effective
 	//~ stat derives live from them, so they persist through respawn (ResetHero does not clear them)

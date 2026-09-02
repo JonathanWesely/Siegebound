@@ -3,12 +3,16 @@
 #include "Siegebound/HeroCharacter.h"
 
 #include "Animation/AnimMontage.h"
+#include "Camera/CameraComponent.h" // TASK-790 (VIS-§3): complete type for GetFollowCamera()->SetRelativeLocation — the min-arm floor's ONE write
 #include "Camera/CameraShakeBase.h"
+#include "CollisionQueryParams.h" // TASK-790: FCollisionQueryParams / SCENE_QUERY_STAT for the blocker-identity sweep (the Projectile.cpp:431 idiom)
+#include "CollisionShape.h" // TASK-790: FCollisionShape::MakeSphere — the sweep reproduces SpringArmComponent.cpp:197 exactly
 #include "Components/CapsuleComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h" // TASK-512: complete type for GetGameInstance()->GetSubsystem<>() (Actor.h:3772 forward-declares UGameInstance)
+#include "Engine/HitResult.h" // TASK-790: FHitResult for the camera blocker-identity sweep
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "EngineUtils.h" // TASK-778: TActorIterator<AClimbableTower> — the cadence-limited tower scan the contact poll walks (the shipped ABuilding-iteration idiom, SiegeGameMode.cpp:1342 / SummonedUnit.cpp:2474)
@@ -17,6 +21,7 @@
 #include "GameFramework/DamageType.h"
 #include "GameFramework/GameModeBase.h" // TASK-748: HasMatchEnded() — the recall channel's match-end exit
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/SpringArmComponent.h" // TASK-790 (VIS-§3): complete type for the INHERITED CameraBoom — ProbeSize, IsCollisionFixApplied, SocketName
 #include "GitClaudeUnrealTest.h"
 #include "InputAction.h" // TASK-748: complete type for the IA_Recall soft-resolve
 #include "InputMappingContext.h"
@@ -113,6 +118,13 @@ AHeroCharacter::AHeroCharacter()
 	// so a BP_HeroCharacter tweak survives — mirrors the WalkSpeed pattern above / ApplyMovementSpeed.
 	ApplyTerrainMovementTuning();
 
+	// TASK-790 (VIS-§3): push HeroCameraProbeSize onto the INHERITED CameraBoom. Same ctor+BeginPlay
+	// re-apply idiom as the two lines above. ⛔ The base class's CameraBoom already EXISTS here —
+	// AGitClaudeUnrealTestCharacter's constructor ran to completion before this body started — so
+	// GetCameraBoom() is valid, and the value it writes is what the CDO (and therefore every
+	// automation-test readback of "survives construction") reports.
+	ApplyHeroCameraTuning();
+
 	// Overhead health bar (TASK-130 castle-parity REBUILD): one screen-space, team-tinted PUSH
 	// bar. ADDITIVE to the hero's own WBP_HUD HP (M1) — the component binds this hero's OnHPChanged
 	// delegate (GetMaxHP() is already the EFFECTIVE Plate-Armor max), and the widget class
@@ -179,6 +191,20 @@ void AHeroCharacter::BeginPlay()
 	// (mirrors ApplyMovementSpeed's ctor->BeginPlay re-apply pattern directly above).
 	ApplyTerrainMovementTuning();
 
+	// TASK-790 (VIS-§3): and the camera probe for the same reason — a ctor-only write would bake the
+	// C++ default into the CDO and silently ignore a BP_HeroCharacter feel-pass edit of the tunable.
+	ApplyHeroCameraTuning();
+
+	// TASK-790: capture the follow camera's AUTHORED relative location ONCE, here, before
+	// TickHeroCameraCollision has ever run (Tick cannot precede BeginPlay). It is the zero point
+	// the min-arm floor offsets from, so a BP-authored over-the-shoulder framing survives the fix
+	// and switching the fix off returns the camera to EXACTLY where the Blueprint put it.
+	// ⛔ Not runtime state and ⛔ nothing unwinds it: it is a constant read of a design-time value.
+	if (const UCameraComponent* const HeroFollowCamera = GetFollowCamera())
+	{
+		HeroCameraBaseRelativeLocation = HeroFollowCamera->GetRelativeLocation();
+	}
+
 	// far in the past: the first swing is never cooldown-blocked and a below-max hero regens immediately
 	LastMeleeTime = -1.0e9;
 	LastCombatTime = -1.0e9;
@@ -207,6 +233,14 @@ void AHeroCharacter::Tick(float DeltaSeconds)
 	// what keeps it out on THIS one.
 	TickLadderClimb(DeltaSeconds);
 	PollLadderContact(DeltaSeconds);
+
+	// TASK-790 (VIS-§3): keep the third-person camera off the pawn's back when the spring arm's
+	// collision probe collapses against climbable geometry. ⛔ Placed AFTER the climb pair and
+	// deliberately OUTSIDE any climb guard — the collapse is NOT climb-specific (this class had no
+	// camera code at all before it, so the defect is the inherited boom meeting tall geometry) and
+	// scoping it to a climb would leave the identical blindness on the walk-up that VID-004 caught.
+	// Self-guarding and stateless; on a frame with no collision fix it is one bool read.
+	TickHeroCameraCollision();
 
 	// out-of-combat regen (GDD §3.1): 5 HP/s starting 8 s after last taking OR dealing damage, stops at max.
 	// Cap is the EFFECTIVE max (base + Plate Armor bonus, TASK-058) — never the raw base.
@@ -1029,6 +1063,124 @@ void AHeroCharacter::ApplyTerrainMovementTuning()
 		MoveComp->SetWalkableFloorAngle(HeroWalkableFloorAngle);
 		MoveComp->JumpZVelocity = HeroJumpZVelocity;
 	}
+}
+
+void AHeroCharacter::ApplyHeroCameraTuning()
+{
+	// TASK-790 (VIS-§3): the CONFIGURATION half of the V2 fix — one field on the INHERITED boom.
+	// ⛔ bDoCollisionTest is deliberately LEFT ALONE (true): turning the probe off would let the
+	// camera sit inside every wall in the map, and that shape was refused outright. ⛔ ProbeChannel
+	// is likewise left at ECC_Camera — retargeting it would need a new collision channel in
+	// DefaultEngine.ini, which is outside this task's fence and would change what EVERY camera in
+	// the project collides with.
+	if (USpringArmComponent* const Boom = GetCameraBoom())
+	{
+		Boom->ProbeSize = HeroCameraProbeSize;
+	}
+}
+
+float AHeroCharacter::ComputeCameraPushOutLocalX(float FixedArmLengthUU, float NaturalArmLengthUU, float MinArmLengthUU)
+{
+	// ⭐ THE WHOLE DECISION, AND IT IS FOUR LINES OF ARITHMETIC WITH NO ENGINE IN IT (TASK-790).
+	//
+	// ⛔ TWO CEILINGS, AND BOTH ARE LOAD-BEARING RATHER THAN DEFENSIVE:
+	//   • MinArmLengthUU <= 0 disables the floor by NUMBER (the second off-switch), and a
+	//     non-positive natural arm means there is no arm to reason about at all.
+	//   • The floor is CLAMPED TO THE NATURAL ARM. Without that clamp, a feel pass that set
+	//     MinCameraArmLengthUU above the boom's TargetArmLength would push the camera FURTHER
+	//     from the hero than open ground ever does — a fix that breaks the uncollided case.
+	if (MinArmLengthUU <= 0.f || NaturalArmLengthUU <= 0.f)
+	{
+		return 0.f;
+	}
+
+	const float Floor = FMath::Min(NaturalArmLengthUU, MinArmLengthUU);
+
+	// ⭐ The ordinary frame returns EXACTLY zero: the arm is already at or beyond the floor, so the
+	// engine's answer is passed through untouched and the camera carries no offset at all.
+	if (FixedArmLengthUU >= Floor)
+	{
+		return 0.f;
+	}
+
+	// Negative: socket +X points AT the pawn (SpringArmComponent.cpp:185 places the camera at
+	// ArmOrigin - DesiredRot.Vector() * Len), so away-from-the-pawn is -X.
+	return -(Floor - FixedArmLengthUU);
+}
+
+void AHeroCharacter::TickHeroCameraCollision()
+{
+	USpringArmComponent* const Boom = GetCameraBoom();
+	UCameraComponent* const Camera = GetFollowCamera();
+	if (!Boom || !Camera)
+	{
+		return;
+	}
+
+	// ⭐⭐ ONE LOCAL, ONE WRITE, ONE EXIT — AND THAT SHAPE IS THE ANSWER TO "WHAT UNWINDS THIS?".
+	// The offset is a LOCAL that starts at zero on EVERY frame and is written to the camera on
+	// EVERY frame, so the "not pushing" state is re-established unconditionally the moment any
+	// condition below stops holding. ⇒ ⛔ there is ⛔ NOTHING for a climb exit to revert, ⛔ no
+	// entry owed in the ten-exit teardown, and ⛔ no way to leave the camera stuck pushed. That is
+	// deliberate: a camera left permanently ignoring the tower is exactly the class of bug this
+	// wave has been fighting, and the cure is to have no persistent decision at all.
+	float PushOutX = 0.f;
+	const UWorld* const World = GetWorld();
+
+	// ⛔ THE GATES, CHEAPEST FIRST. `bIgnoreClimbableGeometryForCamera == false` is the OFF-SWITCH
+	// and short-circuits everything ⇒ today's exact behaviour, restorable mid-playtest without a
+	// build. `IsCollisionFixApplied()` is the boom's own report that its probe displaced the
+	// camera this frame; in open ground it is false and this whole function is one bool read.
+	// ⚠️ THE BOOM TICKS IN TG_PostPhysics (SpringArmComponent.cpp:22) and this actor ticks in
+	// TG_PrePhysics, so the reads below are LAST frame's resolved arm. That one-frame latency is
+	// accepted and STATED rather than hidden: the defect it answers lasted ≈2 s, and the offset is
+	// re-based onto the CURRENT socket transform by the boom's own update either way.
+	if (World && bIgnoreClimbableGeometryForCamera && Boom->bDoCollisionTest && Boom->IsCollisionFixApplied())
+	{
+		// The two ends of the boom's own sweep, READ FROM THE COMPONENT rather than re-derived, so
+		// this cannot drift from SpringArmComponent.cpp:190-197 if TargetOffset/SocketOffset are
+		// ever used. GetSocketLocation is where the probe actually left the camera.
+		const FVector ArmOrigin = Boom->GetComponentLocation() + Boom->TargetOffset;
+		const FVector UnfixedLoc = Boom->GetUnfixedCameraPosition();
+		const FVector FixedLoc = Boom->GetSocketLocation(USpringArmComponent::SocketName);
+
+		const float NaturalArm = static_cast<float>(FVector::Dist(ArmOrigin, UnfixedLoc));
+		const float FixedArm = static_cast<float>(FVector::Dist(ArmOrigin, FixedLoc));
+
+		// Is the collapse even bad enough to matter? A wall that trims 400 to 260 is the spring arm
+		// doing its job and is left alone. Computed through the PURE function so the suite asserts
+		// the same arithmetic the runtime uses — ⛔ never a second copy of it.
+		const float Candidate = ComputeCameraPushOutLocalX(FixedArm, NaturalArm, MinCameraArmLengthUU);
+		if (!FMath::IsNearlyZero(Candidate))
+		{
+			// ⛔ AND ONLY NOW DO WE PAY FOR A QUERY. The boom does not record WHAT it hit, so the
+			// only way to answer "was it climbable geometry?" is to reproduce its sweep: same
+			// origin, same endpoint, same sphere, same channel, same single ignored actor
+			// (SpringArmComponent.cpp:194 ignores GetOwner() and nothing else). ⭐ Reaching this
+			// line requires a LIVE collision fix that is ALSO shorter than the floor — the state
+			// VID-004 caught — so in ordinary play this runs zero times per frame, which is the
+			// reason it is allowed to live in Tick at all.
+			FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(HeroCameraProbe), /*bTraceComplex=*/ false, this);
+			FHitResult Hit;
+			World->SweepSingleByChannel(Hit, ArmOrigin, UnfixedLoc, FQuat::Identity, Boom->ProbeChannel,
+				FCollisionShape::MakeSphere(Boom->ProbeSize), QueryParams);
+
+			// ⛔ THE NARROWNESS IS THE WHOLE RULING: only an AClimbableTower buys the floor. A rock,
+			// a castle wall or a crate collapses the arm EXACTLY as it does today, so this change
+			// cannot regress a camera situation that was not the reported defect. A miss (possible
+			// on the one-frame-stale read, or if the blocker moved) also leaves PushOutX at zero.
+			if (Hit.bBlockingHit && Hit.GetActor() && Hit.GetActor()->IsA(AClimbableTower::StaticClass()))
+			{
+				PushOutX = Candidate;
+			}
+		}
+	}
+
+	// ⛔ OFFSET FROM THE AUTHORED LOCATION, ⛔ never from an assumed zero: BP_HeroCharacter may have
+	// moved the follow camera off the socket (over-the-shoulder framing), and clobbering that would
+	// be a silent art regression. HeroCameraBaseRelativeLocation is captured ONCE at BeginPlay,
+	// before this function has ever written, so PushOutX == 0 restores the authored value EXACTLY.
+	Camera->SetRelativeLocation(HeroCameraBaseRelativeLocation + FVector(PushOutX, 0.f, 0.f));
 }
 
 void AHeroCharacter::StartWarBannerAura()

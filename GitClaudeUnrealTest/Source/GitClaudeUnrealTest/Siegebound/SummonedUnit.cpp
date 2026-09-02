@@ -4249,7 +4249,14 @@ void ASummonedUnit::HandleDeath()
 		SetActorEnableCollision(false);
 		if (HPBarWidget)
 		{
-			HPBarWidget->SetVisibility(false);
+			// ⛔ HideBar(), ⛔ NEVER SetVisibility() — qa/TASK-801 B-1, and this is the ONE line of this
+			// file TASK-791 owns. Since TASK-791 this component has a SECOND visibility writer (the
+			// occlusion poll, running on the tick it was already required to run). HideBar() LATCHES the
+			// owner's intent, which is the outer AND that poll composes with; a raw SetVisibility(false)
+			// leaves the latch reading "shown", so the next poll ≈150 ms later recomputes visible and
+			// puts a 0-HP bar back over the corpse for the whole death-anim hold. ⛔ Do not "simplify"
+			// this back to SetVisibility — the two calls looked equivalent before TASK-791 and are not now.
+			HPBarWidget->HideBar();
 		}
 		GetWorldTimerManager().SetTimer(DeathDestroyTimerHandle, this, &ASummonedUnit::FinishDeathDestroy, DeathHoldSeconds, /*bLoop=*/ false);
 		return;
