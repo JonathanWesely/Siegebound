@@ -1,31 +1,34 @@
-# TASK-202 fleet retexture reimport — BOTH WAVES (TASK-201 units wave + buildings wave 2).
-# One CardID per line. This sidecar WINS over DEFAULT_CARD_IDS in reimport_meshes.py.
-# 19 assets: 11 units + 6 building refreshes + Wall/DeepMine (FIRST textured import
-# over the blockout SM_ paths via the building box-UCX branch — authored manifest boxes).
-# CrystalTower: slot-1 stays MI_CrystalGlow (TASK-190 law) — finalized over MCP post-relaunch.
-# GoldNode: all slots M_GoldGlow variant law — finalized over MCP post-relaunch.
+# reimport_cards.txt -- the CardID scope for Tools/reimport_meshes.py.
+# One CardID per line. '#' comments and blank lines are ignored.
+# THIS SIDECAR WINS over DEFAULT_CARD_IDS in reimport_meshes.py; if it is deleted
+# or contains no CardIDs, the script falls back to DEFAULT_CARD_IDS (10 cards).
+#
+# TASK-768 (2026-09-02): scoped to WATCHTOWER ALONE for the translated-mesh
+# reimport. It previously held the 19-card TASK-202 fleet list (preserved at the
+# bottom), which means running the script in that state was a FLEET SWEEP, not
+# the single-asset run intended. Re-widen it deliberately or not at all.
+#
+# Expected outcome of this run, from the WatchTower manifest `_acceptance`:
+#   /Game/Meshes/SM_WatchTower -> 8 convex hulls, box_count 0,
+#   bIsGenerated False on all 8. ZERO hulls is a STOP (the script now enforces
+#   this and sets ok=False rather than reporting DONE).
+#   Sockets LadderFoot (-460,0,0) / LadderTop (-160,0,1200) are read back and
+#   compared against the manifest. The LADDER KEEPS ZERO COLLISION BY DESIGN --
+#   nearest hull ~126 uu from LadderFoot; that gap is the nav cell a pawn stands
+#   in to start climbing. Do not add a hull there.
 
-# --- Units wave (11) — 2-slot [TeamRegion, <CardID>PBR], <=4 convex hulls ---
-Ogre
-Footman
-Archer
-Knight
-Miner
-Cavalry
-Cleric
-Longbowman
-MilitiaMob
-Pikeman
-Sapper
+WatchTower
 
-# --- Buildings wave 2 refreshes (6) — 2-slot, manifest UCX boxes ---
-ArrowTower
-BombTower
-BallistaTower
-Barracks
-CrystalTower
-GoldNode
-
-# --- Roster closers (first textured import over blockout SM_, box-UCX branch) ---
-Wall
-DeepMine
+# ---------------------------------------------------------------------------
+# ARCHIVED -- TASK-202 fleet retexture reimport (BOTH WAVES). Restore ONLY for a
+# deliberate fleet sweep; do not uncomment alongside a single-asset run.
+#   Units wave (11) -- 2-slot [TeamRegion, <CardID>PBR], <=4 convex hulls:
+#     Ogre  Footman  Archer  Knight  Miner  Cavalry
+#     Cleric  Longbowman  MilitiaMob  Pikeman  Sapper
+#   Buildings wave 2 refreshes (6) -- 2-slot, manifest UCX boxes:
+#     ArrowTower  BombTower  BallistaTower  Barracks  CrystalTower  GoldNode
+#   Roster closers (first textured import over blockout SM_, box-UCX branch):
+#     Wall  DeepMine
+#   CrystalTower: slot-1 stays MI_CrystalGlow (TASK-190 law) -- finalized over
+#     MCP post-relaunch. GoldNode: all slots M_GoldGlow variant law -- ditto.
+# ---------------------------------------------------------------------------

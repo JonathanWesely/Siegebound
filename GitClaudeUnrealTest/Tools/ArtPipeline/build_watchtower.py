@@ -23,8 +23,8 @@ WHAT WAS DELETED
 THE PINNED GEOMETRY (TOWER-8.3) -- BUILD TARGETS, NOT A RANGE TO INTERPRET
 -------------------------------------------------------------------------
     body footprint   600 x 600, X/Y in [-300, +300], rising to the deck at z 1200
-    LadderFoot       (-450, 0, 0)      86 uu clear of the body's eroded nav carve
-    LadderTop        (-150, 0, 1200)   86 uu inside the deck's surviving nav poly
+    LadderFoot       (-460, 0, 0)      96 uu clear of the body's eroded nav carve
+    LadderTop        (-160, 0, 1200)   76 uu inside the deck's surviving nav poly
     climb line       ONE straight segment, length 1236.9 uu, lean 76.0 deg
     ladder width     >= 120 uu clear
     standoff         >= 56 uu between the capsule surface and the body face
@@ -32,6 +32,38 @@ THE PINNED GEOMETRY (TOWER-8.3) -- BUILD TARGETS, NOT A RANGE TO INTERPRET
 
 BOTH SOCKET COORDINATES ARE NAVMESH ARITHMETIC, NOT STYLE. Nothing in this file
 re-derives them; they are literals and every measurement is taken AGAINST them.
+
+TASK-783 (2026-09-02) -- THE LADDER MOVED 10.0 uu FURTHER OUT. A PURE TRANSLATION.
+---------------------------------------------------------------------------------
+Jonathan's K-1 ruling. TOWER-8.5a's non-swept deck-breach window is licensed by
+TOWER-8.3's >= 56 uu standoff AND BY NOTHING ELSE, and TASK-775 measured the HERO
+capsule at r 42 / hh 96 (GitClaudeUnrealTestCharacter.cpp:18 InitCapsuleSize(42,96);
+BP_HeroCharacter overrides nothing).  34 is the NAV-AGENT radius
+(DefaultEngine.ini:290) and is NOT any pawn's capsule -- two different 34s had been
+conflated.  Re-measured here against the authored hulls, the worst-case standoff at
+the OLD coordinates was:
+
+    spine-to-plinth 93.61875 uu, at t = 244.0 on the line, spine s = -54
+      unit r34 -> 59.61875   (TASK-737 published 59.624 off a 420-sample grid)
+      HERO r42 -> 51.61875   SHORT OF 56 BY 4.38125  => 8.5a VOID for the hero
+
+The fix is a TRANSLATION OF THE LADDER AND BOTH SOCKETS BY (-10, 0, 0). The body,
+all 8 hulls and every dressing box DO NOT MOVE.  Because both endpoints shift by
+the SAME vector, Delta = (300, 0, 1200) is unchanged, so the length, the lean, the
+sin(theta), the 8.5a window percentage and the climb watchdog budget are all
+unchanged; and because LADDER_OFF is measured along W_AXIS RELATIVE TO THE LINE,
+the -22.0 uu rung plane is unchanged too => A_SiegeBiped_Climb needs NO re-export.
+
+delta = 10.0 is PINNED by CONTACT-7a's ruling banner and is NOT this script's to
+choose.  Break-even is 4.516088 (clearance margin EXACTLY zero) and row A's own
+"~4.6" clears by 0.076 uu, which the banner refuses as a build target.  10.0 clears
+the 8.3 line by +5.32 AND the hero's clause-6 lifted line by +7.44 -- robust in the
+same way the failure was.  Measured after:  spine 103.3201, hero 61.3201.
+
+    ANY further change to these two literals MUST re-measure and report all THREE
+    pinned numbers -- the CLIMB LINE, the STANDOFF (both capsules) and the RUNG
+    PLANE.  A conditional exception whose condition nobody re-checks is an
+    unconditional one.
 
 THE SHAPE THE PINNED NUMBERS FORCE, AND WHY
 -------------------------------------------
@@ -98,8 +130,21 @@ RISE = 1200.0                   # platform / deck height  -- UNCHANGED by the re
 DECK_HALF = 300.0               # 600 x 600 deck          -- UNCHANGED by the redesign
 BODY_HALF = 300.0               # 600 x 600 body footprint, X/Y in [-300, +300]
 
-LADDER_FOOT = (-450.0, 0.0, 0.0)
-LADDER_TOP = (-150.0, 0.0, 1200.0)
+# TASK-783: both endpoints moved by the SAME (-6, 0, 0). A PURE TRANSLATION -- see
+# the module docstring. Delta stays (300, 0, 1200), so length / lean / sin(theta) /
+# the 8.5a window percentage / the watchdog budget are ALL unchanged, and the rung
+# plane (measured along W_AXIS relative to the line) is unchanged with them.
+LADDER_OUTWARD_SHIFT = 10.0     # uu, along -X. PINNED by CONTACT-7a's ruling
+#                                 banner -- NOT chosen here. Break-even is 4.516088
+#                                 (zero margin) and row A's "~4.6" clears by 0.076,
+#                                 which the banner refuses as a build target. 10.0
+#                                 clears BOTH the 8.3 line (+5.32) and the hero's
+#                                 clause-6 lifted line (+7.44), and keeps both
+#                                 socket literals INTEGERS -- they are hand-copied
+#                                 into ClimbableTower.cpp's degrade-open fallback,
+#                                 where a decimal is a transcription risk.
+LADDER_FOOT = (-450.0 - LADDER_OUTWARD_SHIFT, 0.0, 0.0)
+LADDER_TOP = (-150.0 - LADDER_OUTWARD_SHIFT, 0.0, 1200.0)
 SOCKETS = {"LadderFoot": LADDER_FOOT, "LadderTop": LADDER_TOP}
 
 CLIMB_LEN_PINNED = 1236.9       # law's stated length
@@ -107,8 +152,17 @@ CLIMB_LEAN_PINNED = 76.0        # law's stated lean, degrees from horizontal
 LADDER_CLEAR_W_MIN = 120.0      # clear width between the stiles
 STANDOFF_MIN = 56.0             # capsule surface -> body face, along the whole line
 
-CAPSULE_R = 34.0                # SiegeSpawnConstants.h:9 -- never InitCapsuleSize'd
+# THE TWO CAPSULES THAT USE THIS LINE. Both are measured, because TOWER-8.5a's
+# voiding condition is TWO-SIDED: re-check on a mesh re-author AND on any new pawn
+# class admitted to the line. 34 here is a CAPSULE radius (SiegeSpawnConstants.h:9),
+# NOT the nav-agent 34 of DefaultEngine.ini:290 -- conflating them cost K-1.
+CAPSULE_R = 34.0                # ASummonedUnit
 CAPSULE_HALF_H = 88.0           # => a 176 uu tall unit; the nav agent is only 144
+HERO_CAPSULE_R = 42.0           # AHeroCharacter, via GitClaudeUnrealTestCharacter.cpp:18
+HERO_CAPSULE_HALF_H = 96.0      # InitCapsuleSize(42.f, 96.0f); BP overrides nothing
+# Both capsules share the SAME 108 uu spine (88-34 == 96-42 == 54), so the hero's
+# clearance is the unit's minus exactly (42 - 34) at every point on the line. That
+# is an EQUALITY, not a bound -- which is why one sweep answers for both.
 
 # derived from the two sockets ONLY (never typed twice)
 _D = (LADDER_TOP[0] - LADDER_FOOT[0], LADDER_TOP[1] - LADDER_FOOT[1],
@@ -1088,25 +1142,73 @@ def measure_ladder_contract(hulls, hull_objs, render_obj, report):
     # ---- 3. THE STANDOFF: capsule vs every hull, along the WHOLE pinned line ----
     # two capsule models, because the law does not say which point of the unit the
     # line describes. Reported per hull so nothing is averaged away.
+    #
+    # TASK-783: measured for BOTH pawns. The distance from the spine to a solid is
+    # ONE number; each capsule's clearance is that number minus its own radius,
+    # because the unit and the hero share the same 108 uu spine. So the sweep is
+    # run once and reported twice, and the GATE is the HERO -- it is the wider
+    # capsule, so it is the one that can void TOWER-8.5a.
+    #
+    # The grid is a coordinate descent off a dense start, NOT a bare sample: the
+    # distance from a point of an affine-parameterised spine to a CONVEX solid is
+    # convex in (t, s), so the refine converges on the true continuous minimum.
+    # The bare 420 x 9 grid this replaces is what reported 59.624 where the exact
+    # answer is 59.61875 -- harmless then, but the margin is now the whole point.
+    spine_half = CAPSULE_HALF_H - CAPSULE_R          # == HERO_CAPSULE_HALF_H - HERO_CAPSULE_R
+    assert abs(spine_half - (HERO_CAPSULE_HALF_H - HERO_CAPSULE_R)) < 1e-9, \
+        "the two capsules no longer share a spine -- the one-sweep-two-radii shortcut is VOID"
+
+    def _spine_dist(probe, t, s):
+        P = climb_point(float(t))
+        return probe.sdf(np.array([P.x, P.y, P.z + s]))
+
+    def _worst_spine_dist(probe):
+        best = (1e9, 0.0, 0.0)
+        for t in np.linspace(0.0, CLIMB_LEN, 421):
+            for s in np.linspace(-spine_half, spine_half, 25):
+                d = _spine_dist(probe, float(t), float(s))
+                if d < best[0]:
+                    best = (d, float(t), float(s))
+        d, t, s = best
+        ht, hs = CLIMB_LEN / 420.0, spine_half / 12.0
+        for _ in range(90):
+            moved = False
+            for dt, ds in ((ht, 0.0), (-ht, 0.0), (0.0, hs), (0.0, -hs),
+                           (ht, hs), (ht, -hs), (-ht, hs), (-ht, -hs)):
+                tt = min(max(t + dt, 0.0), CLIMB_LEN)
+                sn = min(max(s + ds, -spine_half), spine_half)
+                dd = _spine_dist(probe, tt, sn)
+                if dd < d - 1e-9:
+                    d, t, s, moved = dd, tt, sn, True
+            if not moved:
+                ht *= 0.5
+                hs *= 0.5
+                if ht < 1e-6 and hs < 1e-6:
+                    break
+        return d, t, s
+
     per_solid = {}
     ts = np.linspace(0.0, CLIMB_LEN, 420)
-    dzs = np.linspace(-(CAPSULE_HALF_H - CAPSULE_R), (CAPSULE_HALF_H - CAPSULE_R), 9)
     for role, probe, is_hull in probes:
-        worst_sphere, worst_caps, at_t = 1e9, 1e9, None
+        worst_sphere = 1e9
         for t in ts:
             P = climb_point(float(t))
-            base = np.array([P.x, P.y, P.z])
-            worst_sphere = min(worst_sphere, probe.sdf(base) - CAPSULE_R)
-            d_c = min(probe.sdf(base + np.array([0.0, 0.0, dz])) for dz in dzs) - CAPSULE_R
-            if d_c < worst_caps:
-                worst_caps, at_t = d_c, float(t)
+            worst_sphere = min(worst_sphere,
+                               probe.sdf(np.array([P.x, P.y, P.z])) - CAPSULE_R)
+        spine_d, at_t, at_s = _worst_spine_dist(probe)
+        worst_caps = spine_d - CAPSULE_R
+        worst_hero = spine_d - HERO_CAPSULE_R
         per_solid[probe.name] = {
             "role": role,
             "collides": is_hull,
+            "min_spine_dist_uu": round(spine_d, 5),
             "min_clearance_sphere_uu": round(worst_sphere, 3),
-            "min_clearance_capsule_uu": round(worst_caps, 3),
-            "at_t_uu": round(at_t, 1),
+            "min_clearance_capsule_uu": round(worst_caps, 5),
+            "min_clearance_hero_capsule_uu": round(worst_hero, 5),
+            "at_t_uu": round(at_t, 3),
+            "at_spine_s_uu": round(at_s, 3),
             "pass_56": bool(worst_caps >= STANDOFF_MIN),
+            "hero_pass_56": bool(worst_hero >= STANDOFF_MIN),
         }
 
     # the same sweep, restricted to everything EXCEPT the deck slab
@@ -1114,10 +1216,12 @@ def measure_ladder_contract(hulls, hull_objs, render_obj, report):
     hull_names = [p.name for _, p, is_hull in probes if is_hull]
     body_only = {k: v for k, v in per_solid.items() if k in hull_names and k != deck_name}
     body_min = min(v["min_clearance_capsule_uu"] for v in body_only.values())
+    body_min_hero = min(v["min_clearance_hero_capsule_uu"] for v in body_only.values())
     body_min_sphere = min(v["min_clearance_sphere_uu"] for v in body_only.values())
     body_min_at = min(body_only.items(), key=lambda kv: kv[1]["min_clearance_capsule_uu"])
     deco = {k: v for k, v in per_solid.items() if k not in hull_names}
     deco_min = min(v["min_clearance_capsule_uu"] for v in deco.values())
+    deco_min_hero = min(v["min_clearance_hero_capsule_uu"] for v in deco.values())
 
     # how much of the climb line is inside the deck slab (the declared consequence)
     deck_probe = next(p for _, p, _ in probes if p.name == deck_name)
@@ -1128,6 +1232,55 @@ def measure_ladder_contract(hulls, hull_objs, render_obj, report):
     # ---- 4. the ladder as built vs the pinned line -----------------------------
     stile_inner = 2.0 * (STILE_CY - STILE_HY)
     stile_outer = 2.0 * (STILE_CY + STILE_HY)
+
+    # ---- 4b. THE RUNG PLANE -- the THIRD pinned number, and the one that decides
+    # whether A_SiegeBiped_Climb must be re-exported (TOWER-8.3's mesh<->clip
+    # binding). It is MEASURED off the built vertices in the CLIMB LINE'S OWN
+    # frame (u along the line, v = +Y, w = the in-plane normal pointing AWAY from
+    # the tower), never asserted from LADDER_OFF -- because "the clip is fine" is
+    # exactly the claim that has to be earned rather than repeated.
+    #
+    # A pure translation of the line AND the ladder leaves every w and v here
+    # unchanged BY CONSTRUCTION; this block is what proves the construction held.
+    origin = Vector(LADDER_FOOT)
+    lad_w, lad_v, lad_u = [], [], []
+    for vtx in render_obj.data.vertices:
+        rel = Vector((vtx.co.x * UE, vtx.co.y * UE, vtx.co.z * UE)) - origin
+        w = rel.dot(W_AXIS)
+        if -40.0 < w < -5.0 and abs(rel.dot(V_AXIS)) < 100.0:   # the ladder slab only
+            lad_w.append(w)
+            lad_v.append(rel.dot(V_AXIS))
+            lad_u.append(rel.dot(U_AXIS))
+    rung_plane = {
+        "frame": "u along the climb line from LadderFoot; v = +Y; w = in-plane "
+                 "normal pointing AWAY from the tower. The ladder sits at NEGATIVE "
+                 "w, i.e. INBOARD of the line -- a unit stands OUTBOARD of the "
+                 "stiles, which is the 22 uu the F5 defect was made of.",
+        "ladder_vertices": len(lad_w),
+        "mid_plane_w_uu": round(0.5 * (max(lad_w) + min(lad_w)), 4) if lad_w else None,
+        "near_face_w_uu": round(max(lad_w), 4) if lad_w else None,
+        "far_face_w_uu": round(min(lad_w), 4) if lad_w else None,
+        "slab_thickness_uu": round(max(lad_w) - min(lad_w), 4) if lad_w else None,
+        "stile_inner_abs_v_uu": round(min(abs(x) for x in lad_v), 4) if lad_v else None,
+        "stile_outer_abs_v_uu": round(max(abs(x) for x in lad_v), 4) if lad_v else None,
+        "u_range_uu": ([round(min(lad_u), 4), round(max(lad_u), 4)] if lad_u else None),
+        "pinned": {"mid_plane_w_uu": -22.0, "near_face_w_uu": -12.0,
+                   "far_face_w_uu": -32.0, "slab_thickness_uu": 20.0,
+                   "stile_inner_abs_v_uu": 66.0, "stile_outer_abs_v_uu": 86.0},
+        "clip_reexport_required": None,     # filled below
+    }
+    rp_ok = (lad_w and
+             abs(rung_plane["mid_plane_w_uu"] + 22.0) < 0.01 and
+             abs(rung_plane["near_face_w_uu"] + 12.0) < 0.01 and
+             abs(rung_plane["far_face_w_uu"] + 32.0) < 0.01 and
+             abs(rung_plane["stile_inner_abs_v_uu"] - 66.0) < 0.01 and
+             abs(rung_plane["stile_outer_abs_v_uu"] - 86.0) < 0.01)
+    rung_plane["clip_reexport_required"] = not bool(rp_ok)
+    rung_plane["verdict"] = ("rung plane UNMOVED vs the pinned -22.0 -> "
+                             "A_SiegeBiped_Climb needs NO re-export"
+                             if rp_ok else
+                             "RUNG PLANE MOVED -- TOWER-8.3's mesh<->clip binding "
+                             "FIRES: A_SiegeBiped_Climb MUST be re-exported")
 
     # ---- 5. clearance ABOVE the deck (collision AND render) ---------------------
     clr_rend, head_xs, head_ys = [], [], []
@@ -1184,6 +1337,7 @@ def measure_ladder_contract(hulls, hull_objs, render_obj, report):
             "deck_nav_poly_dev_from_1200_uu_max": round(float(np.max(np.abs(dev_nav))), 6),
             "ladder_clear_width_uu": stile_inner,
             "ladder_overall_width_uu": stile_outer,
+            "rung_plane": rung_plane,
             "body_ground_collision_half_extent_uu": [round(ground_extent[0], 3),
                                                      round(ground_extent[1], 3)],
             "clearance_above_deck_collision": ("unbounded" if min(clr_deck) > 1e8
@@ -1215,13 +1369,30 @@ def measure_ladder_contract(hulls, hull_objs, render_obj, report):
             "model": "EXACT signed distance (BVH nearest surface + convex inside "
                      "test). Two unit models, because the law does not say which "
                      "point of the unit the line describes: a sphere r=34 on the "
-                     "line, and a vertical capsule r=34 h=176 centred on it.",
-            "min_clearance_body_only_capsule_uu": round(body_min, 3),
+                     "line, and a vertical capsule r=34 h=176 centred on it. "
+                     "TASK-783: the capsule sweep is now a convex coordinate "
+                     "descent (the true continuous minimum, not a grid sample) and "
+                     "is reported for BOTH pawns off the ONE spine distance.",
+            "capsules": {
+                "unit_ASummonedUnit": [CAPSULE_R, CAPSULE_HALF_H],
+                "hero_AHeroCharacter": [HERO_CAPSULE_R, HERO_CAPSULE_HALF_H],
+                "shared_spine_half_length_uu": CAPSULE_HALF_H - CAPSULE_R,
+                "note": "TOWER-8.5a's voiding condition is TWO-SIDED: re-check on a "
+                        "mesh re-author AND on any new pawn admitted to the line. "
+                        "The HERO is the gate -- it is the wider capsule.",
+            },
+            "min_clearance_body_only_capsule_uu": round(body_min, 5),
+            "min_clearance_body_only_HERO_capsule_uu": round(body_min_hero, 5),
             "min_clearance_body_only_sphere_uu": round(body_min_sphere, 3),
             "min_clearance_body_only_at": body_min_at[0],
             "body_only_pass_56": bool(body_min >= STANDOFF_MIN),
+            "body_only_HERO_pass_56": bool(body_min_hero >= STANDOFF_MIN),
+            "hero_margin_over_56_uu": round(body_min_hero - STANDOFF_MIN, 5),
+            "ladder_outward_shift_uu": LADDER_OUTWARD_SHIFT,
             "min_clearance_render_dressing_capsule_uu": round(deco_min, 3),
+            "min_clearance_render_dressing_HERO_capsule_uu": round(deco_min_hero, 3),
             "render_dressing_pass_56": bool(deco_min >= STANDOFF_MIN),
+            "render_dressing_HERO_pass_56": bool(deco_min_hero >= STANDOFF_MIN),
             "per_solid": per_solid,
             "deck_slab_hull": deck_name,
             "climb_line_length_inside_deck_slab_uu": round(line_in_deck, 3),
@@ -1576,10 +1747,19 @@ def main():
 
     log("measure the pinned contract against the authored surfaces")
     lc = measure_ladder_contract(hulls, hull_objs, obj, report)
-    log("deck z dev max=%.6f | body standoff min=%.2f uu | foot standable=%s"
+    log("deck z dev max=%.6f | body standoff unit=%.4f HERO=%.4f (%s) | foot standable=%s"
         % (lc["as_built"]["deck_collision_dev_from_1200_uu"]["max_abs"],
            lc["standoff"]["min_clearance_body_only_capsule_uu"],
+           lc["standoff"]["min_clearance_body_only_HERO_capsule_uu"],
+           "PASS" if lc["standoff"]["body_only_HERO_pass_56"] else "FAIL",
            lc["socket_arithmetic"]["LadderFoot_is_standable"]))
+    log("rung plane mid=%s near=%s far=%s stiles=%s/%s -> %s"
+        % (lc["as_built"]["rung_plane"]["mid_plane_w_uu"],
+           lc["as_built"]["rung_plane"]["near_face_w_uu"],
+           lc["as_built"]["rung_plane"]["far_face_w_uu"],
+           lc["as_built"]["rung_plane"]["stile_inner_abs_v_uu"],
+           lc["as_built"]["rung_plane"]["stile_outer_abs_v_uu"],
+           lc["as_built"]["rung_plane"]["verdict"]))
 
     report["mesh"] = measure(obj)
     report["mesh"]["tri_budget"] = 20000

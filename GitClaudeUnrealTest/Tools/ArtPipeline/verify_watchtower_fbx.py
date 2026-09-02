@@ -32,7 +32,15 @@ UE = 100.0
 # the pinned contract, restated here ONLY so the probe is independent of the build
 # script's own constants -- a verifier that imports the thing it verifies proves
 # nothing.
-EXPECT_SOCKETS = {"LadderFoot": (-450.0, 0.0, 0.0), "LadderTop": (-150.0, 0.0, 1200.0)}
+#
+# TASK-783 (2026-09-02): both sockets moved OUTWARD by (-10, 0, 0) on Jonathan's K-1
+# ruling (option A), at the magnitude CONTACT-7a's banner pins. The hero capsule is
+# r 42 (NOT the nav agent's 34), which left only 51.61875 uu of standoff at the old
+# coordinates and VOIDED TOWER-8.5a for the hero. This is a PURE TRANSLATION: Delta
+# stays (300, 0, 1200), so the length, the lean and the -22.0 uu rung plane are all
+# untouched. Re-measured after: spine 103.3201, hero 61.3201.
+EXPECT_SOCKETS = {"LadderFoot": (-460.0, 0.0, 0.0), "LadderTop": (-160.0, 0.0, 1200.0)}
+EXPECT_CLIMB_DELTA = (300.0, 0.0, 1200.0)   # the property the translation preserves
 EXPECT_HULLS = 8
 EXPECT_SLOTS = ["TeamRegion", "WatchTowerPBR"]
 EXPECT_UV = ["UVMap"]
@@ -99,6 +107,27 @@ def main():
           all(e.parent is not None and e.parent.name == NODE for e in empties
               if e.name.startswith("SOCKET_")),
           "a socket node must be a CHILD of the mesh node or UE ignores it")
+
+    # TASK-783: the climb line is the DIFFERENCE of the two sockets, and it is what
+    # the traversal, the watchdog budget and the clip all actually depend on. A
+    # translation that moved only ONE socket would pass every row above and silently
+    # change the length, the lean and the 8.5a window percentage. Read it from the
+    # FILE and check the vector itself.
+    fs = got_sockets.get("LadderFoot")
+    tsk = got_sockets.get("LadderTop")
+    if fs and tsk:
+        dlt = [tsk[i] - fs[i] for i in range(3)]
+        length = math.sqrt(sum(c * c for c in dlt))
+        lean = math.degrees(math.atan2(dlt[2], math.hypot(dlt[0], dlt[1])))
+        check("climb_delta_uu", [round(c, 4) for c in dlt],
+              max(abs(dlt[i] - EXPECT_CLIMB_DELTA[i]) for i in range(3)) < 0.01,
+              "Delta is the invariant a PURE TRANSLATION must preserve: move both "
+              "sockets by the same vector or the length, the lean, sin(theta) and "
+              "TOWER-8.5a's window percentage all change")
+        check("climb_length_uu", round(length, 4), abs(length - 1236.9317) < 0.01)
+        check("climb_lean_deg", round(lean, 4), abs(lean - 75.9638) < 0.01)
+    else:
+        check("climb_delta_uu", None, False, "both sockets are required")
 
     # ---- 3. mesh identity -------------------------------------------------------
     mesh = obj.data
