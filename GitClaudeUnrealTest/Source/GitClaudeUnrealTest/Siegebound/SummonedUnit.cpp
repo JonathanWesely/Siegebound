@@ -650,6 +650,27 @@ void ASummonedUnit::InitUnit(ETeamId InTeam, FName InCardID)
 	// current Team. Idempotent and null-safe; runs even on the stats-already-bound path.
 	// TASK-349: the team gating profile (capsule channel + nav filter) tracks the
 	// same late-team rule — a re-teamed body must swap gate sides too.
+	//
+	// ⚠️⚠️ TASK-923 — A ⛔ FORWARD HAZARD ON THIS BRANCH, ⛔ PLACED HERE BECAUSE THIS IS WHERE THE
+	// NEXT EDITOR WILL BE STANDING. ⛔ Prose only; ⛔ nothing below changed. ApplyTeamMaterial
+	// writes an ⛔ OPAQUE MI_TeamColor_<Team> to slot 0, so running it on a ⛔ VEILED unit would
+	// punch an opaque patch through the veil — ⛔ exactly WITCH-§5's "opaque chrome hat over a
+	// ghostly body", arriving through a door nobody was watching.
+	// ✅ ⛔ UNREACHABLE TODAY, ⛔ MEASURED rather than assumed: BOTH shipped InitUnit callers
+	// (ABarracks::SpawnUnit and ASiegePlayerController's deferred spawn) are
+	// SpawnActorDeferred → InitUnit → FinishSpawning, so HasActorBegunPlay() is ⛔ FALSE and this
+	// branch has ⛔ ZERO reachable call sites. A veil additionally requires a 3-second witch cast,
+	// which cannot land before the unit exists. ⇒ ⛔ no guard is shipped: one here would be a
+	// ⛔ THIRD site at which the veil changes a unit's look, which WITCH-§6 refuses.
+	// ⛔⛔ IF A "re-team a LIVE unit" PATH IS EVER ADDED, ⛔ THIS IS THE LINE THAT NEEDS THE VEIL
+	// CONSULT — ⛔ and it is a WITCH-§ amendment (the third site has to be RULED), ⛔ never a quiet
+	// `if (IsInvisible())` dropped in here.
+	// ⚠️ THE ACCESSOR SPELLING ABOVE IS ⛔ DELIBERATE AND ⛔ LOAD-BEARING, ⛔ not a style choice:
+	// SiegeAcquisitionFunnelTest pins a PROSE-IMMUNITY row over this file asserting that its veil
+	// needles read IDENTICALLY with comment-skipping on and off. One of those needles is an open
+	// paren immediately followed by the raw flag name — so writing the RAW FLAG inside parentheses
+	// ⛔ anywhere in this file, ⛔ including in a comment like this one, turns a suite row RED with
+	// nothing in the behaviour to explain it. ⛔ Name the accessor in prose, never the field.
 	if (HasActorBegunPlay())
 	{
 		ApplyTeamMaterial();
@@ -2839,13 +2860,23 @@ void ASummonedUnit::ApplyHealing(float Amount)
 }
 
 // ═════════════════════════════════════════════════════════════════════════════════════════
-//  THE VEIL — the two doors (TASK-829; law WITCH-§3 / WITCH-§6)
+//  THE VEIL — the two doors (TASK-829; law WITCH-§3 / WITCH-§6), and since TASK-923 the two
+//  EDGES THEY PAINT ON (law WITCH-§5's application clause)
 //
-//  ⛔⛔ TWO FUNCTIONS, ⛔ ZERO LOGIC. Every RULE about the veil lives in
-//  FSiegeInvisibilityStatics, where a headless test can hold it; these are the seams that
-//  bind that rule to an actor's `bIsInvisible`. ⛔ Do not add a condition, a timer, a
-//  cooldown or a "was visible" cache to either — WITCH-§6 forbids the cache by name, and
-//  ApplyBreak's true-exactly-once edge is what makes one unnecessary.
+//  ⛔⛔ ZERO RULES LIVE HERE. Every RULE about the veil lives in FSiegeInvisibilityStatics,
+//  where a headless test can hold it; these are the seams that bind that rule to an actor's
+//  `bIsInvisible`. ⛔ Do not add a condition, a timer, a cooldown or a "was visible" cache to
+//  either — WITCH-§6 forbids the cache by name, and ApplyBreak's true-exactly-once edge is
+//  what makes one unnecessary.
+//
+//  ⭐⭐ WHAT TASK-923 ADDED, AND WHY IT IS ⛔ NOT "logic" CREEPING BACK IN: each door now hands
+//  its EDGE to one material helper (ApplyVeilMaterial / ClearVeilMaterial, below). The edge was
+//  ALREADY computed — ApplyVeil returns the false→true transition and ApplyBreak the true→false
+//  one — so the swap needed ⛔ no new state, ⛔ no cache and ⛔ no tick. It reads `bIsInvisible`
+//  exactly ⛔ zero times: the doors' own return values ARE the signal.
+//  ⛔⛔ THE MATERIAL IS A ⛔ CONSEQUENCE OF THE FLAG AND ⛔ NEVER AN INPUT TO IT. ⛔ Nothing
+//  anywhere may ask "which material is on slot 0" to decide whether a unit is veiled, and a
+//  material that fails to resolve ⛔ does not change what GrantInvisibility returns.
 //
 //  ⭐ THE PLACEMENT OF THE *CALLS* IS THE WHOLE FEATURE, AND IT IS ⛔ NOT HERE. WITCH-§3a
 //  measured that for THREE of the six verbs the obvious wiring point is the WRONG one; each
@@ -2854,9 +2885,24 @@ void ASummonedUnit::ApplyHealing(float Amount)
 
 bool ASummonedUnit::GrantInvisibility()
 {
-	// The ONLY write-true door on this class. ⛔ No caller ships with TASK-829 — TASK-830's
-	// witch calls it on cast COMPLETION (see the header for why it lands now rather than then).
-	return FSiegeInvisibilityStatics::ApplyVeil(bIsInvisible);
+	// The ONLY write-true door on this class. TASK-830's witch calls it on cast COMPLETION
+	// (see the header for why it landed with 829 rather than with 830).
+	const bool bNewlyVeiled = FSiegeInvisibilityStatics::ApplyVeil(bIsInvisible);
+
+	// ⭐⭐ TASK-923 (WITCH-§5): the FALSE→TRUE edge — and ⛔ only the edge — paints the veil.
+	// ⛔ Guarded rather than unconditional on purpose: a second cast on an ALREADY-veiled unit
+	// must be a total no-op (WITCH-§4's "never target an already-invisible unit" belt), and an
+	// unguarded repaint would quietly make the wasted cast cost a full material re-stamp.
+	if (bNewlyVeiled)
+	{
+		ApplyVeilMaterial();
+	}
+
+	// ⛔ The RETURN IS THE FLAG'S EDGE, ⛔ never the material's. A missing MI_Unit_Invisible
+	// leaves a unit that is genuinely veiled to enemy acquisition and merely LOOKS normal —
+	// which is the ruled failure direction (see ApplyVeilMaterial). Reporting false here would
+	// make the material a second source of truth about the veil, which WITCH-§6 forbids.
+	return bNewlyVeiled;
 }
 
 void ASummonedUnit::BreakInvisibility(ESiegeVeilBreakReason Reason)
@@ -2876,12 +2922,125 @@ void ASummonedUnit::BreakInvisibility(ESiegeVeilBreakReason Reason)
 	// ⚠️ VERBOSE, ⛔ not Log: a fleet-wide veil break would otherwise spam the match log, and this
 	// line's job is forensic — it turns the bug report "invisibility is broken" into "the Sapper's
 	// blast un-veiled it", which is the difference between a hunt and a fix.
-	// 📌 The MATERIAL swap (MI_Unit_Invisible, WITCH-§5) hangs off this same edge and is ⛔ NOT
-	// TASK-829's — it is the art/render lane. ⛔ Do not add a mesh or material call here without it.
 	UE_LOG(LogGitClaudeUnrealTest, Verbose,
 		TEXT("ASummonedUnit '%s' (CardID '%s', team %d): the veil BROKE — reason '%s' (WITCH-§3; permanent, only a NEW witch cast can re-veil it)."),
 		*GetNameSafe(this), *CardID.ToString(), static_cast<int32>(Team),
 		FSiegeInvisibilityStatics::ToString(Reason));
+
+	// ⭐⭐ TASK-923 (WITCH-§5 / WITCH-§6's restore row) — THE MATERIAL SWAP-BACK, ⛔ WIRED.
+	// ⛔ This line is HALF the feature, ⛔ not a postscript. ⚖️ A veil that never REVERTS is worse
+	// than one that never applies: Jonathan's rule is that it reverts PERMANENTLY on any act other
+	// than walking, so a stuck veil makes all SIX break reasons above silently dead — every one of
+	// them would clear the flag and change ⛔ nothing the player can see.
+	// ⛔ It sits on THIS branch and nowhere else, so it inherits the edge's exactly-once guarantee
+	// for free. ⛔ Do ⛔ not hoist it above the early-out: an unveiled unit taking its ordinary
+	// per-cadence attack would then re-stamp its own materials on every swing.
+	ClearVeilMaterial();
+}
+
+// ═════════════════════════════════════════════════════════════════════════════════════════
+//  THE VEIL'S LOOK — one helper per EDGE (TASK-923; law WITCH-§5's application clause,
+//  WITCH-§6's swap-seam + restore rows)
+//
+//  ⛔⛔ ONE THING TO KEEP STRAIGHT BEFORE EDITING EITHER: NEITHER OF THESE DECIDES ANYTHING.
+//  `bIsInvisible` is the one source of truth; these two only paint the decision the two doors
+//  above already made, and they are called from ⛔ those two places and ⛔ nowhere else.
+//  ⇒ ⛔ NO tick, ⛔ NO timer, ⛔ NO BeginPlay branch, ⛔ NO second bool, ⛔ NO third site.
+// ═════════════════════════════════════════════════════════════════════════════════════════
+
+void ASummonedUnit::ApplyVeilMaterial()
+{
+	// The ACTIVE visual: the skeletal runtime once the M7 swap took, else the static VisualMesh
+	// — both UMeshComponent, so ONE code path covers both. Null-safe exactly like
+	// ApplyTeamMaterial above; the shape is deliberately copied rather than reinvented.
+	UMeshComponent* ActiveMesh = GetActiveVisualMesh();
+	if (!ActiveMesh)
+	{
+		return;
+	}
+
+	// Cached static resolve — the SHIPPED idiom from ApplyTeamMaterial, 30-odd lines up: ONE
+	// TSoftObjectPtr resolved once per process and shared by every veiled unit in the match, never
+	// a per-cast load. LoadSynchronous re-resolves through the soft path if GC ever unloaded it.
+	// ⛔ The path is WITCH-§6's pinned name, character-for-character.
+	static const TSoftObjectPtr<UMaterialInterface> VeilMaterial(FSoftObjectPath(TEXT("/Game/Materials/MI_Unit_Invisible.MI_Unit_Invisible")));
+
+	UMaterialInterface* const ResolvedVeil = VeilMaterial.LoadSynchronous();
+	if (!ResolvedVeil)
+	{
+		// ⛔⛔ THE FAILURE DIRECTION IS ⛔ RULED, AND IT IS ⛔ RESOLVE-BEFORE-WRITE THAT ENFORCES IT.
+		// Returning HERE — before a single slot has been touched — is what guarantees the unit
+		// stays fully VISIBLE rather than half-painted. ⛔ Never hide the mesh, ⛔ never blank a
+		// slot, ⛔ never SetVisibility(false) as a fallback. ⚖️ A veil that fails to a VISIBLE unit
+		// is a missing effect; one that fails to an INVISIBLE-BUT-SOLID unit is an unkillable ghost
+		// that still blocks placement and still deals damage — WITCH-§0 refuses exactly that.
+		// ⚠️ Warning, ⛔ not Verbose, and it names the path so the fix is the message. It cannot
+		// spam: a veil costs a 3-second cast and one witch veils one unit at a time (his sentence),
+		// so this fires at most once per completed cast, never on a per-tick or per-attack path.
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASummonedUnit '%s' (CardID '%s'): veil material '%s' did not resolve — the unit is VEILED to enemy acquisition but LOOKS NORMAL (WITCH-§5; the ruled failure direction is a visible unit, never a hidden solid one)."),
+			*GetNameSafe(this), *CardID.ToString(), *VeilMaterial.ToString());
+		return;
+	}
+
+	// ⛔⛔ EVERY SLOT. ⛔ NEVER SLOT 1. ⛔ THIS LOOP IS THE ONE THING THAT, GOT WRONG, SHIPS A
+	// VISIBLY BROKEN FEATURE RATHER THAN A MISSING ONE. ApplyTeamMaterial writes
+	// MI_TeamColor_<Team> to ⛔ SLOT 0 of the two-slot [TeamRegion, <CardID>PBR] contract, so a
+	// slot-1-only swap leaves slot 0 ⛔ fully OPAQUE. TASK-833 measured team_region at 1.7–4.1% of
+	// a normal unit — ⛔ but ⛔ 18% ON THE WITCH, ⛔ and it is her ⛔ HAT BRIM ⇒ an ⛔ opaque chrome
+	// hat floating over a ghostly body. ⚖️ The unit whose entire card is invisibility is the unit
+	// the naive implementation breaks WORST.
+	// ⛔ DRIVEN BY GetNumMaterials(), ⛔ never by a hard-coded index and ⛔ never assuming the count
+	// is 2 — the same whole-body conclusion TASK-756 reached for the ghost, for the same reason
+	// (ASiegeGhostPawn's team step, and ASiegePlayerController's placement ghost, both loop here).
+	const int32 SlotCount = ActiveMesh->GetNumMaterials();
+	for (int32 SlotIndex = 0; SlotIndex < SlotCount; ++SlotIndex)
+	{
+		ActiveMesh->SetMaterial(SlotIndex, ResolvedVeil);
+	}
+}
+
+void ASummonedUnit::ClearVeilMaterial()
+{
+	// ⛔⛔ RE-DERIVED, ⛔ NEVER CACHED — and the SECOND reason is the one that is easy to miss:
+	// GetActiveVisualMesh() can return a ⛔ DIFFERENT COMPONENT than it did at veil time, because
+	// ResolveSkeletalVisual latches bUsingSkeletalVisual. A cached component pointer, or a cached
+	// TArray<UMaterialInterface*> of "the originals", would be restored onto the ⛔ WRONG mesh.
+	// (The first reason is the ordinary one: a cache is a second source of truth about something
+	// already derivable — the same species WITCH-§6 bans as the "was visible" cache.)
+	if (UMeshComponent* ActiveMesh = GetActiveVisualMesh())
+	{
+		// ⛔ STEP 1 — drop the veil override on EVERY slot the apply could have written, so each
+		// falls back to the ⛔ ASSET's authored material.
+		// ⭐ MEASURED, ⛔ not assumed, because a setter's silence is not evidence (SC-§39.1):
+		// UMeshComponent::SetMaterial(i, nullptr) writes OverrideMaterials[i] = nullptr rather than
+		// removing the entry, and BOTH readers treat a NULL entry as "no override" —
+		// FStaticMeshComponentHelper::GetMaterial and FSkinnedMeshComponentHelper::GetMaterial each
+		// test `OverrideMaterials.IsValidIndex(i) && OverrideMaterials[i]` and fall through to the
+		// static mesh's / skinned asset's own material. ⇒ GetMaterial(i) after this loop returns the
+		// ASSET's authored material, on either component type.
+		// ⚠️ WHY NOT EmptyOverrideMaterials(): it ALSO resets MaterialSlotsOverlayMaterial, a
+		// different array this feature never wrote. ⛔ Clearing state we did not set is how a fix
+		// grows a side effect. This loop touches exactly what the apply loop touched, and it is
+		// visibly its mirror image, which is worth more here than one fewer line.
+		const int32 SlotCount = ActiveMesh->GetNumMaterials();
+		for (int32 SlotIndex = 0; SlotIndex < SlotCount; ++SlotIndex)
+		{
+			ActiveMesh->SetMaterial(SlotIndex, nullptr);
+		}
+	}
+
+	// ⛔⛔ STEP 2 — ⛔ NOT OPTIONAL, AND ⛔ NOT A REPAINT FOR TIDINESS. Step 1 alone is a blanket
+	// restore-to-default, which ⛔ DROPS THE TEAM COLOUR: slot 0's MI_TeamColor_<Team> is a RUNTIME
+	// override (TASK-044 — the bot reuses the player's Blue-authored BP_Unit_* assets), so a RED
+	// unit would come back BLUE. ⚖️ A blue enemy standing in your half reads as a far worse bug
+	// than the one this function is fixing.
+	// ⛔ Through the SHIPPED ApplyTeamMaterial and ⛔ never a second implementation: it recomputes
+	// the instance from the CURRENT Team, which is precisely why re-deriving beats any cache — a
+	// unit re-teamed while veiled comes back in its NEW colour with nothing here knowing about it.
+	// ⛔ Called UNCONDITIONALLY (it takes its own null-safe GetActiveVisualMesh early-out), so slot
+	// 0 can never be skipped by a guard that only the clear loop above needed.
+	ApplyTeamMaterial();
 }
 
 // ═════════════════════════════════════════════════════════════════════════════════════════

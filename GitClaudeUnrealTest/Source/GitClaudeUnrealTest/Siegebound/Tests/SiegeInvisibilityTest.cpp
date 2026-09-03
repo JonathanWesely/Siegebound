@@ -3194,4 +3194,255 @@ bool FSiegeInvisibilityInterruptIsDistinguishableAtTheCastSurfaceTest::RunTest(c
 	return true;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+//  33. ⭐⭐⭐ TASK-923 — THE MATERIAL SWAP: ⛔ BOTH EDGES, ⛔ EVERY SLOT, ⛔ NEVER SLOT 1.
+//
+//  ⛔⛔⛔ READ THIS BEFORE TRUSTING A GREEN, BECAUSE THE HONESTY IS THE DELIVERABLE HERE AND
+//  ⛔ NOT THE COUNT (`TASK-923(7)`):
+//
+//  ⛔ WHAT THIS TEST ⛔ CANNOT DO: it ⛔ CANNOT prove the veil LOOKS like anything. A material
+//  swap is a RENDERING fact — it needs a mesh, a material that has actually compiled, a scene
+//  and a frame. There is ⛔ not one `UWorld::CreateWorld` and ⛔ not one `SpawnActor` anywhere in
+//  `Siegebound/Tests/` (the house rule), and even with one, `TASK-832` measured that this exact
+//  effect is invisible to every instrument except a ⛔ REGION-RESTRICTED FRAME DIFF AGAINST A
+//  STRENGTH-0 CONTROL — a thumbnail could not see it, and neither could the artist by eye.
+//  ⇒ ⛔⛔ **THIS ROW IS ⛔ PIXEL-GATED AND IS ⛔ DECLARED AS SUCH.** ⛔ Green here must ⛔ NEVER be
+//  reported as "the veil works" (`SC-§32`). It is reported as "the swap is WIRED, on both edges,
+//  on every slot, and nobody has quietly removed it".
+//
+//  ⭐⭐ WHAT IT ⛔ CAN DO, AND WHY IT IS ⛔ NOT THE SIXTH BLIND INSTRUMENT: `TASK-923(7)` demands
+//  at least one row that goes ⛔ RED IF THE SWAP IS REMOVED, and forbids a test that merely
+//  asserts the material PATH STRING and calls that coverage. Every row below is built against a
+//  ⛔ NAMED WRONG IMPLEMENTATION that a reviewer could plausibly ship:
+//    · ⛔ the swap deleted            → rows (1a)/(1b) go red
+//    · ⛔ the RESTORE deleted         → row (2a) goes red   ⚖️ the failure that is WORSE than no veil
+//    · ⛔ restore-to-default, no team → row (2b)/(2c) go red ⚖️ a RED unit comes back BLUE
+//    · ⛔ a slot index hard-coded     → rows (3a)/(3b)/(3c) go red ⚖️ the opaque chrome hat
+//    · ⛔ `SetVisibility(false)` used → row (4) goes red     ⚖️ the unkillable invisible solid
+//    · ⛔ a cached "originals" array  → row (5) goes red
+//    · ⛔ a THIRD painting site added → row (6) goes red
+//  ⛔ Each of those is a defect that ⛔ COMPILES, ⛔ reviews plausibly and would ship silently.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeInvisibilityVeilMaterialSwapTest,
+	"Siegebound.Invisibility.TheVeilMaterialIsSwappedOnBothEdgesAndOnEverySlot",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeInvisibilityVeilMaterialSwapTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeInvisibilityTestFixture;
+
+	FString UnitCpp;
+	if (!LoadProjectSource(*this, SummonedUnitCpp, UnitCpp))
+	{
+		return false;
+	}
+
+	// ══ (1) ⛔ THE APPLY EDGE — the row TASK-923(7) demands ═══════════════════════════════════
+	FString GrantBody;
+	if (ExtractFunctionBody(*this, UnitCpp, TEXT("bool ASummonedUnit::GrantInvisibility()"), GrantBody))
+	{
+		// ⛔ SELF-CHECK FIRST: an empty or truncated extraction would make every count below a
+		//    meaningless zero, and a zero is exactly what "the swap was deleted" also looks like.
+		TestTrue(
+			TEXT("SELF-CHECK: the extracted GrantInvisibility body is substantial. ⛔ Without this, a stale ")
+			TEXT("signature would report the swap as ABSENT — the same red as a real defect, for the wrong reason."),
+			GrantBody.Len() > 200);
+
+		// (1a) ⭐⭐ THE ROW THAT GOES RED IF THE SWAP IS REMOVED.
+		TestEqual(
+			TEXT("⭐⭐⭐ (1a) THE VEIL IS PAINTED ON THE GRANT EDGE: GrantInvisibility calls ApplyVeilMaterial ")
+			TEXT("EXACTLY ONCE. ⛔ ZERO HERE IS THE STATE TASK-923 EXISTED TO END — six green tasks, a material ")
+			TEXT("measured at 13x the background noise floor, and NOTHING applying it, so the witch did not look ")
+			TEXT("invisible in play. ⚖️ An edge is nobody's deliverable, which is exactly why it went unwired."),
+			CountOccurrencesInCode(GrantBody, TEXT("ApplyVeilMaterial();")), 1);
+
+		// (1b) ⛔ AND IT IS BEHIND THE EDGE, not run unconditionally. ApplyVeil returns the
+		//      false->true transition; re-painting an already-veiled unit would make WITCH-§4's
+		//      "never target an already-invisible unit" belt cost a full material re-stamp.
+		TestEqual(
+			TEXT("⛔ (1b) …and it is GUARDED by the edge ApplyVeil returned, never run unconditionally. The one ")
+			TEXT("branch in this function is that guard."),
+			CountOccurrencesInCode(GrantBody, TEXT("if (bNewlyVeiled)")), 1);
+	}
+
+	// ══ (2) ⛔⛔ THE RESTORE EDGE — HALF THE TASK, ⛔ NOT A POSTSCRIPT ═════════════════════════
+	FString BreakBody;
+	if (ExtractFunctionBody(*this, UnitCpp, TEXT("void ASummonedUnit::BreakInvisibility(ESiegeVeilBreakReason Reason)"), BreakBody))
+	{
+		TestTrue(
+			TEXT("SELF-CHECK: the extracted BreakInvisibility body is substantial."),
+			BreakBody.Len() > 200);
+
+		// (2a) ⚖️ A VEIL THAT NEVER REVERTS IS WORSE THAN ONE THAT NEVER APPLIES. His rule is that
+		//      it reverts PERMANENTLY on any act other than walking (WITCH-§3), so a missing
+		//      restore makes ALL SIX break reasons silently dead: each would clear the flag and
+		//      change nothing the player can see.
+		TestEqual(
+			TEXT("⭐⭐⭐ (2a) THE VEIL IS TAKEN OFF ON THE BREAK EDGE: BreakInvisibility calls ClearVeilMaterial ")
+			TEXT("EXACTLY ONCE. ⛔ A zero here ships a unit that goes invisible and NEVER comes back — which is ")
+			TEXT("worse than no feature, because it silently kills all six of the break reasons above it."),
+			CountOccurrencesInCode(BreakBody, TEXT("ClearVeilMaterial();")), 1);
+
+		// ⛔ AND IT IS BELOW THE EARLY-OUT. ApplyBreak returns true only on the true->false edge;
+		//    hoisted above it, every ordinary attack by an UNVEILED unit would re-stamp its own
+		//    materials on every swing. ⛔ Ordering probe on CODE LINES ONLY — the prose around
+		//    both lines names the other, and a comment-blind probe would be fooled by it.
+		// ⛔ NEEDLE DISCIPLINE (SC-§39): the early-out needle ends at the SEMICOLON and never
+		//    includes trailing whitespace. `CodeLinesOnly` drops whole comment LINES but does NOT
+		//    strip a trailing `//` from a code line, so a `"return; "` needle would be matching the
+		//    presence of SummonedUnit.cpp's end-of-line comment rather than the return itself —
+		//    deleting that unrelated comment would turn this row red with nothing in the behaviour
+		//    to explain it. Every other ordering needle in this file is terminator-anchored; so is
+		//    this one. ⚖️ `return;` cannot match a value-returning statement (`return true;` has a
+		//    token between), so shortening it costs no discrimination.
+		const FString BreakCode = CodeLinesOnly(BreakBody);
+		const int32 EarlyOutAt = BreakCode.Find(TEXT("return;"), ESearchCase::CaseSensitive);
+		const int32 ClearAt = BreakCode.Find(TEXT("ClearVeilMaterial();"), ESearchCase::CaseSensitive);
+		TestTrue(
+			TEXT("⛔ (2a-ii) …and the restore sits BELOW the no-edge early-out, so it runs EXACTLY ONCE PER VEIL ")
+			TEXT("rather than on every attack of every unveiled unit in the fleet. ⛔ This is an ORDER claim on ")
+			TEXT("code lines only."),
+			EarlyOutAt != INDEX_NONE && ClearAt != INDEX_NONE && EarlyOutAt < ClearAt);
+	}
+
+	FString ClearBody;
+	if (ExtractFunctionBody(*this, UnitCpp, TEXT("void ASummonedUnit::ClearVeilMaterial()"), ClearBody))
+	{
+		// (2b) ⛔⛔ SLOT 0 GOES BACK THROUGH THE SHIPPED TEAM RECOLOR. WITCH-§6 states this as law:
+		//      a blanket restore-to-default DROPS the team colour, because MI_TeamColor_<Team> is a
+		//      RUNTIME override (TASK-044 — the bot reuses the player's Blue-authored BP_Unit_*).
+		//      ⚖️ A RED bot unit would come back BLUE: an enemy standing in your half wearing your
+		//      colour, which reads as a far worse bug than the one the restore was fixing.
+		TestEqual(
+			TEXT("⭐⭐ (2b) THE TEAM COLOUR IS RE-DERIVED, NOT DROPPED: ClearVeilMaterial calls the SHIPPED ")
+			TEXT("ApplyTeamMaterial() exactly once, which recomputes MI_TeamColor_<Team> from the CURRENT Team ")
+			TEXT("and re-writes slot 0. ⛔ Zero here and a veiled RED unit comes back BLUE."),
+			CountOccurrencesInCode(ClearBody, TEXT("ApplyTeamMaterial();")), 1);
+
+		// (2c) ⛔ …and it CALLS that function rather than re-implementing the resolve. A second
+		//      copy of the team-material paths is a second thing to keep in sync, and the two
+		//      would disagree the first time either moved.
+		TestEqual(
+			TEXT("⛔ (2c) …and it does NOT re-implement the resolve: the team instance names appear ZERO times ")
+			TEXT("inside ClearVeilMaterial. ⛔ WITCH-§6 says CALL the shipped ApplyTeamMaterial, never mirror it."),
+			CountOccurrencesInCode(ClearBody, TEXT("MI_TeamColor")), 0);
+
+		// (3c) ⛔ the clear loop is count-driven and index-free, exactly like the apply loop.
+		TestEqual(
+			TEXT("⛔ (3c) THE CLEAR IS THE APPLY'S MIRROR IMAGE: it iterates GetNumMaterials() and writes ")
+			TEXT("SetMaterial(SlotIndex, nullptr) — so every slot the apply could have painted is dropped back to ")
+			TEXT("the ASSET's authored material. A clear that covered fewer slots than the apply would strand the ")
+			TEXT("veil on the ones it missed."),
+			CountOccurrencesInCode(ClearBody, TEXT("SetMaterial(SlotIndex, nullptr)")), 1);
+
+		TestEqual(
+			TEXT("⛔ (3d) …and the clear hard-codes NO slot index either (neither 0 nor 1)."),
+			CountOccurrencesInCode(ClearBody, TEXT("SetMaterial(0,"))
+			+ CountOccurrencesInCode(ClearBody, TEXT("SetMaterial(1,")), 0);
+	}
+
+	// ══ (3) ⛔⛔⛔ THE SLOT-1 TRAP — the clause that, got wrong, ships a VISIBLY BROKEN feature ══
+	//    rather than a missing one. ApplyTeamMaterial writes MI_TeamColor_<Team> to SLOT 0 of the
+	//    two-slot [TeamRegion, <CardID>PBR] contract, so a slot-1-only swap leaves slot 0 FULLY
+	//    OPAQUE. TASK-833 measured team_region at 1.7-4.1% of a normal unit — but 18% ON THE WITCH,
+	//    and it is her HAT BRIM. ⚖️ The unit whose entire card is invisibility is the unit the
+	//    naive implementation breaks WORST.
+	FString ApplyBody;
+	if (ExtractFunctionBody(*this, UnitCpp, TEXT("void ASummonedUnit::ApplyVeilMaterial()"), ApplyBody))
+	{
+		TestTrue(
+			TEXT("SELF-CHECK: the extracted ApplyVeilMaterial body is substantial."),
+			ApplyBody.Len() > 200);
+
+		TestEqual(
+			TEXT("⭐⭐⭐ (3a) EVERY SLOT: the apply loop is driven by GetNumMaterials() on the ACTIVE visual mesh. ")
+			TEXT("⛔ The count is never assumed to be 2 — a re-baked mesh with three slots must still veil whole."),
+			CountOccurrencesInCode(ApplyBody, TEXT("GetNumMaterials()")), 1);
+
+		TestEqual(
+			TEXT("⭐⭐⭐ (3b) ⛔ NEVER SLOT 1, AND NEVER SLOT 0 EITHER: NO hard-coded slot index appears anywhere in ")
+			TEXT("the apply. ⛔ A `SetMaterial(1, …)` here is the single highest-consequence defect in this feature ")
+			TEXT("— it leaves an OPAQUE CHROME HAT floating over a ghostly witch, and it would read to a player as ")
+			TEXT("'invisibility is broken' rather than as a slot bug."),
+			CountOccurrencesInCode(ApplyBody, TEXT("SetMaterial(0,"))
+			+ CountOccurrencesInCode(ApplyBody, TEXT("SetMaterial(1,")), 0);
+
+		TestEqual(
+			TEXT("⛔ (3b-ii) …the ONE write in the apply is the index-free loop body."),
+			CountOccurrencesInCode(ApplyBody, TEXT("SetMaterial(SlotIndex, ResolvedVeil)")), 1);
+
+		// (4) ⛔⛔ THE RULED FAILURE DIRECTION: a material that will not resolve leaves the unit
+		//     VISIBLE. ⚖️ A veil that fails to a visible unit is a missing effect; one that fails to
+		//     an INVISIBLE-BUT-SOLID unit is an unkillable ghost that still blocks placement and
+		//     still deals damage — WITCH-§0 refuses exactly that.
+		TestEqual(
+			TEXT("⭐⭐ (4) ⛔ THE MESH IS NEVER HIDDEN. No SetVisibility / SetHiddenInGame anywhere in the apply: ")
+			TEXT("the ONLY mechanism is a material swap. ⛔ Hiding the mesh as a 'fallback' when the material is ")
+			TEXT("missing would ship an UNKILLABLE INVISIBLE SOLID that still blocks placement and still deals ")
+			TEXT("damage. ⚖️ Failing to a VISIBLE unit is the ruled direction."),
+			CountOccurrencesInCode(ApplyBody, TEXT("SetVisibility"))
+			+ CountOccurrencesInCode(ApplyBody, TEXT("SetHiddenInGame")), 0);
+	}
+
+	// ══ (5) ⛔⛔ NO CACHE — banned for TWO independent reasons, and the second is the subtle one ══
+	//    (a) it is the same species as the "was visible" cache WITCH-§6 bans by name; (b)
+	//    GetActiveVisualMesh() can return a DIFFERENT COMPONENT than it did at veil time, because
+	//    ResolveSkeletalVisual latches bUsingSkeletalVisual — so a cached pointer, or a material
+	//    list keyed to the static component, would be restored onto the WRONG mesh.
+	FString CacheWhere;
+	const int32 CachedMaterialArrays = CountAcrossShippingSource(*this, TEXT("TArray<UMaterialInterface*>"), CacheWhere);
+	TestEqual(
+		FString::Printf(
+			TEXT("⭐⭐ (5) ⛔ NO CACHED 'ORIGINALS' ARRAY ANYWHERE IN SHIPPING SOURCE. The restore RE-DERIVES ")
+			TEXT("through ApplyTeamMaterial on the CURRENTLY-active mesh. ⛔ A remembered TArray<UMaterialInterface*> ")
+			TEXT("would be restored onto the wrong component the moment the skeletal swap had taken. Sites:%s"),
+			CacheWhere.IsEmpty() ? TEXT(" (none)") : *CacheWhere),
+		CachedMaterialArrays, 0);
+
+	// ══ (6) ⛔⛔ NO THIRD SITE — the property that makes a grep for the two doors COMPLETE ══════
+	//    TASK-923(1): "a grep for these two symbols must remain the COMPLETE list of ways a unit's
+	//    look can change for the veil." These two rows are what make that checkable rather than
+	//    merely promised. ⛔ 3 = one declaration + one definition + one call, each.
+	const struct { const TCHAR* Symbol; const TCHAR* Door; } Painters[] =
+	{
+		{ TEXT("ApplyVeilMaterial"), TEXT("GrantInvisibility") },
+		{ TEXT("ClearVeilMaterial"), TEXT("BreakInvisibility") }
+	};
+
+	for (const auto& Painter : Painters)
+	{
+		FString Where;
+		const int32 Mentions = CountAcrossShippingSource(*this, Painter.Symbol, Where);
+		TestEqual(
+			FString::Printf(
+				TEXT("⭐⭐ (6) `%s` appears EXACTLY THREE TIMES in shipping source — its declaration, its ")
+				TEXT("definition, and the ONE call inside %s. ⛔ A FOURTH is a second place a unit's look can ")
+				TEXT("change for the veil, which breaks the completeness property the whole design rests on ")
+				TEXT("(⛔ no tick, ⛔ no timer, ⛔ no BeginPlay branch, ⛔ no second bool). ⛔ Do NOT fix a red here ")
+				TEXT("by bumping the number: route the new caller through the door. Sites:%s"),
+				Painter.Symbol, Painter.Door, *Where),
+			Mentions, 3);
+	}
+
+	// ══ (7) ⛔ THE PINNED ASSET PATH — WITCH-§6's name, character-for-character, resolved ONCE ══
+	//    ⚠️ This row on its own would be exactly the "asserts the material path string and calls it
+	//    coverage" that TASK-923(7) forbids. It is here as the SIXTH row of seven, not the first,
+	//    and it carries a claim the string alone does not: that there is only ONE of it.
+	FString PathWhere;
+	const int32 VeilPathMentions = CountAcrossShippingSource(
+		*this, TEXT("/Game/Materials/MI_Unit_Invisible.MI_Unit_Invisible"), PathWhere);
+	TestEqual(
+		FString::Printf(
+			TEXT("⛔ (7) The veil material is referenced by WITCH-§6's pinned soft path EXACTLY ONCE tree-wide ")
+			TEXT("(a function-local static, resolved once per process and shared by every veiled unit — the ")
+			TEXT("ApplyTeamMaterial idiom). ⛔ A second mention is a second copy of the path to keep in sync. ")
+			TEXT("⚠️ THIS ROW PROVES A REFERENCE, ⛔ NEVER A PIXEL. Sites:%s"),
+			PathWhere.IsEmpty() ? TEXT(" (none)") : *PathWhere),
+		VeilPathMentions, 1);
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

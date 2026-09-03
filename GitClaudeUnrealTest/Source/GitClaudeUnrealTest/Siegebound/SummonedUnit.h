@@ -441,6 +441,13 @@ public:
 	//~ a TIME. ⭐ "Permanently" (his word, WITCH-§3) is enforced by the ⛔ SHAPE of this API rather
 	//~ than by a comment: a cooldown is ⛔ UNREPRESENTABLE, so a future reader cannot drift into
 	//~ one without adding a signature, which is a review event.
+	//~
+	//~ 📌 TASK-923 kept every word of that true and is recorded here so the count above is not read
+	//~ as stale: the material swap added ⛔ NO public function, ⛔ NO state and ⛔ NO signature
+	//~ taking a time. It added ⛔ TWO ⛔ PRIVATE painters — `ApplyVeilMaterial` / `ClearVeilMaterial`,
+	//~ declared beside `GetActiveVisualMesh` far below — each called from ⛔ exactly one of the two
+	//~ doors here, on the edge that door ⛔ already returns. ⇒ ⛔ still no fourth way to veil or
+	//~ un-veil a unit, and ⛔ still nothing anywhere that can make a veil expire.
 
 	/**
 	 *  True while this unit is VEILED (TASK-829). ⛔ Read-only — the ⛔ ONE source of truth is
@@ -1550,6 +1557,58 @@ private:
 
 	/** The active runtime visual mesh — SkeletalVisualMesh when the skeletal swap took, else the static VisualMesh (team recolor + spawn squash target). */
 	UMeshComponent* GetActiveVisualMesh() const;
+
+	//~ ══ TASK-923 — THE VEIL'S ⛔ LOOK. Two helpers, one per EDGE, and ⛔ no third ══════════════
+	//~ ⛔ These are ⛔ CONSEQUENCES of `bIsInvisible`, ⛔ never inputs to it. ⛔ Nothing anywhere may
+	//~ ask "which material is on slot 0" to decide whether a unit is veiled — the flag is the one
+	//~ source of truth and these two only paint what it already decided (`WITCH-§5`).
+	//~ ⛔ NO STATE, ⛔ NO CACHE, ⛔ NO TICK, ⛔ NO TIMER. Both are called from exactly one place
+	//~ each — the two doors above — and both are idempotent, so a stray second call is inert.
+	//~ ⭐ THE ONLY TWO CALLERS ARE `GrantInvisibility` AND `BreakInvisibility`, which is what makes
+	//~ a grep for those two names the COMPLETE list of ways a unit's look can change for the veil.
+
+	/**
+	 *  ⭐⭐ TASK-923 (`WITCH-§5`'s APPLICATION clause): paints `/Game/Materials/MI_Unit_Invisible`
+	 *  over ⛔ EVERY material slot of `GetActiveVisualMesh()`. Called from `GrantInvisibility` on
+	 *  `ApplyVeil`'s ⛔ false→true edge, and ⛔ nowhere else.
+	 *
+	 *  ⛔⛔ EVERY SLOT, ⛔ NEVER SLOT 1, AND THIS IS THE CLAUSE THAT SHIPS A ⛔ VISIBLY BROKEN
+	 *  FEATURE RATHER THAN A MISSING ONE IF IT IS GOT WRONG. `ApplyTeamMaterial` above writes
+	 *  `MI_TeamColor_<Team>` to ⛔ SLOT 0 of the two-slot `[TeamRegion, <CardID>PBR]` contract, so a
+	 *  slot-1-only swap leaves slot 0 ⛔ fully OPAQUE. `TASK-833` measured `team_region` at 1.7–4.1%
+	 *  of a normal unit — ⛔ but ⛔ 18% ON THE WITCH, ⛔ and it is her ⛔ HAT BRIM ⇒ ⛔ an opaque
+	 *  chrome hat floating over a ghostly body. ⇒ ⛔ the loop is driven by `GetNumMaterials()`;
+	 *  ⛔ no slot index is hard-coded and the count is ⛔ never assumed to be 2.
+	 *
+	 *  ⛔ THE FAILURE DIRECTION IS ⛔ RULED, ⛔ NOT A CHOICE: if the material fails to resolve the
+	 *  unit stays ⛔ VISIBLE. ⛔ Never hide the mesh, ⛔ never blank a slot, ⛔ never
+	 *  `SetVisibility(false)`. ⚖️ A veil that fails to a VISIBLE unit is a missing effect; one that
+	 *  fails to an INVISIBLE-BUT-SOLID unit is an unkillable ghost that still blocks placement and
+	 *  still deals damage — which is exactly what `WITCH-§0` refuses.
+	 */
+	void ApplyVeilMaterial();
+
+	/**
+	 *  ⭐⭐ TASK-923 (`WITCH-§6`'s restore row): puts the unit's look back, ⛔ BY RE-DERIVING IT.
+	 *  Called from `BreakInvisibility`'s post-early-out edge branch — `ApplyBreak`'s ⛔ true→false
+	 *  transition, which fires ⛔ exactly once per veil — and ⛔ nowhere else.
+	 *
+	 *  ⛔⛔ RE-DERIVE, ⛔ NEVER CACHE, and there are ⛔ TWO independent reasons — the second is the
+	 *  non-obvious one: ⛔ (a) a remembered `TArray<UMaterialInterface*>` of "the originals" is the
+	 *  same species as the "was visible" cache `WITCH-§6` bans by name — a second source of truth
+	 *  about something already derivable; ⛔ (b) `GetActiveVisualMesh()` can return a ⛔ DIFFERENT
+	 *  COMPONENT than it did at veil time (`ResolveSkeletalVisual` latches `bUsingSkeletalVisual`),
+	 *  so a cached pointer — or a cached material list keyed to the static component — would be
+	 *  restored onto the ⛔ WRONG mesh.
+	 *
+	 *  ⛔ TWO STEPS, ⛔ AND STEP 2 IS ⛔ NOT OPTIONAL: (i) clear the veil override on every slot so
+	 *  each falls back to the ⛔ ASSET's authored material; (ii) call the ⛔ SHIPPED
+	 *  `ApplyTeamMaterial()`, which recomputes `MI_TeamColor_<Team>` from the ⛔ CURRENT `Team` and
+	 *  re-writes slot 0. ⛔⛔ A blanket restore-to-default DROPS THE TEAM COLOUR and the unit comes
+	 *  back ⛔ the wrong team's colour — on a RED bot unit that is a ⛔ blue enemy standing in your
+	 *  half, which reads as a far worse bug than the one it was fixing.
+	 */
+	void ClearVeilMaterial();
 
 	/** Periodic state check (every StateCheckInterval): leash/Reacquire, Acquire, then Attack or Advance. */
 	void UpdateState();
