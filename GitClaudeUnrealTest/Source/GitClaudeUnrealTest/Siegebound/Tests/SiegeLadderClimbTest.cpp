@@ -1920,4 +1920,736 @@ bool FSiegeLadderContactNoDuplicatedTuningTest::RunTest(const FString& Parameter
 	return true;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// ⭐⭐ EVERYTHING BELOW THIS BANNER IS **TASK-803** (`CONTACT-§14`) — THE CROSS-TRACK TERM.
+//    ⛔ Tests 1–18 above are UNTOUCHED: ⛔ not one was renamed, deleted, re-ordered or altered.
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+//
+// ⚠️⚠️ THE DEFECT THESE FIVE TESTS ARE POINTED AT, AND IT IS **ONE** DEFECT WEARING TWO NAMES —
+// which is the finding, and which is why there is one fix and not two: the contact trigger admits
+// from a **350 uu 2D DISC**, the climb driver had ⛔ NO cross-track term, and ⛔ nothing snaps the
+// pawn onto the line ⇒ **a pawn admitted off-line stayed off-line for the ENTIRE climb**, then paid
+// its whole accumulated offset in ⛔ ONE UNSWEPT FRAME at the arrival snap. `CONTACT-§14.2`'s
+// admitted band is **±277.8 uu** at 150 uu/s and **±247.2 uu** at the 300 uu/s walk — and that
+// second figure reproduces `TASK-798`'s independently-boarded ABDUCTION number to three figures,
+// which is the arithmetic that MERGED the two rows. Both exceed the hero's **24.0 uu** side margin
+// at ⛔ every shipped speed. It is invisible because the ladder carries ⛔ ZERO collision hulls, so
+// ⛔ nothing depenetrates and ⛔ no frame ever shows a body clipping a stile.
+//
+// ⛔⛔ AND THE TRAP THESE TESTS EXIST TO CATCH IS ⛔ NOT THE FIX — IT IS THE **SHAPE** OF THE FIX.
+// `ClimbDirection` is read by THREE sites that must keep TODAY'S meaning (`CONTACT-§14.5`), and
+// re-pointing it at the new steer would change ARRIVAL and SUSTAIN semantics with ⛔ no compile
+// error and ⛔ no test failure. ⇒ **test 19 is the most important test in this batch** and it is
+// deliberately first.
+//
+// ⚠️⚠️ AND THE TRIVIALITY THIS BATCH IS WRITTEN AGAINST, BECAUSE A STEERING FIX HAS AN OBVIOUS ONE
+// (`SHIP-§9c`): **a convergence test passes vacuously if the pawn was never off-line to begin
+// with.** ⇒ EVERY convergence row below is paired with (i) a SELF-CHECK that the starting offset is
+// genuinely non-zero and larger than the margin it must beat, and (ii) a NEGATIVE CONTROL that runs
+// the identical march on `ClimbDirection` and asserts the offset survives UNCHANGED — i.e. the
+// defect itself, reproduced, on the shipped pre-fix code path.
+
+namespace SiegeLadderCrossTrackFixture
+{
+	using namespace SiegeLadderClimbTestFixture;
+
+	// ── ⛔⛔ THE ADDITIVE FENCE, PINNED AT COMPILE TIME (`CONTACT-§14.5`) ────────────────────────
+	// ⚠️ A runtime row cannot see a SIGNATURE. This can, and it fails in THIS module with a message
+	// naming the law rather than as a mystery error somewhere downstream. ⭐ The single most likely
+	// way to break the fence is to "improve" `ClimbDirection` by giving it the pawn's position —
+	// which is exactly the edit this line refuses.
+	static_assert(std::is_same_v<decltype(&FSiegeLadderClimbStatics::ClimbDirection),
+		FVector (*)(const FSiegeLadderClimbState&)>,
+		"CONTACT-§14.5: ClimbDirection is PINNED at `FVector ClimbDirection(const FSiegeLadderClimbState&)` — it takes "
+		"NO pawn position and it never will. It is read by Advance's arrival dot test, by BOTH drivers' deck-breach "
+		"step and by the hero's IsLadderClimbInputHeld sustain sign test, and all three must keep today's meaning. "
+		"TASK-803's cross-track term is SteerDirection, which is ADDED ALONGSIDE it. If you are here to add a "
+		"parameter, that is the fence you are breaching.");
+
+	static_assert(std::is_same_v<decltype(&FSiegeLadderClimbStatics::SteerDirection),
+		FVector (*)(const FSiegeLadderClimbState&, const FVector&)>,
+		"CONTACT-§14.5: SteerDirection is the ONE additive pure function TASK-803 adds, and it takes the pawn's "
+		"CAPSULE-CENTRE position — the closed loop. A signature without it would be dead reckoning.");
+
+	/** The hero's own capsule half-height (`GitClaudeUnrealTestCharacter.cpp:18` — `InitCapsuleSize(42.f, 96.0f)`). ⛔ Never the unit's 88: the hero has the SHORTER swept stretch and is therefore the binding case for convergence. */
+	constexpr float HeroCapsuleHalfHeightUU = 96.f;
+
+	/** The hero's side margin inside the ladder's measured 132.0 uu clear opening: `66 − 42`. `CONTACT-§14.2`. */
+	constexpr float HeroSideMarginUU = 24.f;
+
+	/** The unit's, for the same opening: `66 − 34`. */
+	constexpr float UnitSideMarginUU = 32.f;
+
+	/** `CONTACT-§14.2`, the 150 uu/s row — the WIDEST lateral offset the shipped trigger will admit, and therefore the worst case any fix must survive. */
+	constexpr float WorstAdmittedOffsetUU = 277.8f;
+
+	/** `CONTACT-§14.2`, the 300 uu/s WALK row — ⭐ the figure that reproduces `TASK-798`'s abduction number to three figures and merged the two boarded rows into one defect. */
+	constexpr float WalkAdmittedOffsetUU = 247.2f;
+
+	/** A quiet NaN by bit pattern — `SiegeStuckStaticsTest.cpp:97`'s idiom, borrowed rather than re-invented. ⚠️ Every use below is paired with an `FMath::IsNaN` guard, because a "NaN" that is not one makes its row vacuous. */
+	static double MakeQuietNaN()
+	{
+		const uint64 Bits = 0x7FF8000000000000ull;
+		double Value = 0.0;
+		FMemory::Memcpy(&Value, &Bits, sizeof(Value));
+		return Value;
+	}
+
+	/** A freshly armed ASCENT on the pinned geometry with the HERO's capsule. ⭐ Same sockets as `ArmPinnedClimb`, different lift and therefore a different (larger) deck-breach window. */
+	static bool ArmPinnedHeroClimb(FSiegeLadderClimbState& OutState, float ClimbSpeedUU)
+	{
+		OutState = FSiegeLadderClimbState();
+		return FSiegeLadderClimbStatics::Begin(OutState, /*bDead=*/ false, /*bAIFrozen=*/ false,
+			/*bSpellFrozen=*/ false, LadderFoot, LadderTop, ClimbSpeedUU, HeroCapsuleHalfHeightUU);
+	}
+
+	/** The horizontal unit vector ACROSS the climb line — the axis `CONTACT-§14.1` proves the whole defect lives on. ⛔ Derived from the line, ⛔ never typed as world Y (the castles ship ROTATED). */
+	static FVector CrossAxis(const FSiegeLadderClimbState& State)
+	{
+		return FVector::CrossProduct(FVector::UpVector,
+			FSiegeLadderClimbStatics::ClimbDirection(State)).GetSafeNormal();
+	}
+
+	/** SIGNED cross-track error of a world point against the armed line, in uu. This IS the number the whole defect is measured in. */
+	static double CrossTrackUU(const FSiegeLadderClimbState& State, const FVector& Point)
+	{
+		return FVector::DotProduct(Point - State.Start, CrossAxis(State));
+	}
+
+	/** How far ALONG the line a world point has got, from `Start`, in uu. */
+	static double AlongUU(const FSiegeLadderClimbState& State, const FVector& Point)
+	{
+		return FVector::DotProduct(Point - State.Start, FSiegeLadderClimbStatics::ClimbDirection(State));
+	}
+
+	/** A world point at a given along-track distance and a given SIGNED cross-track offset. ⭐ How every "admitted off-line" scenario below is constructed. */
+	static FVector PointOffLine(const FSiegeLadderClimbState& State, double Along, double Cross)
+	{
+		return State.Start
+			+ FSiegeLadderClimbStatics::ClimbDirection(State) * Along
+			+ CrossAxis(State) * Cross;
+	}
+
+	/** Which steer a simulated frame uses. ⭐ `LineOnly` is ⛔ NOT a strawman — it is character-for-character what BOTH drivers shipped before TASK-803, so it reproduces the defect rather than modelling it. */
+	enum class ESimSteer : uint8
+	{
+		/** TASK-803: the swept branch's new steer. */
+		CrossTrack,
+		/** ⛔ THE DEFECT: `ClimbDirection` only, exactly as the swept branch drove before this task. */
+		LineOnly,
+		/** ⭐ THE SHIPPED COMPOSITION: `ShouldSweep` picks — cross-track while swept, `ClimbDirection` inside the deck-breach window. ⛔ Nothing here re-implements that decision; the shipped predicate makes it. */
+		AsShipped
+	};
+
+	/** What one simulated climb produced. Every field is something a wrong steer would visibly change. */
+	struct FSimResult
+	{
+		FVector Final = FVector::ZeroVector;
+		int32 Steps = 0;
+		/** ⛔ True means the march never finished — an assertable failure, ⛔ never a silently truncated pass. */
+		bool bHitStepCap = false;
+		bool bReachedTop = false;
+		bool bTimedOut = false;
+		/** The largest single-step INCREASE in |cross-track|. ⭐ Must be <= 0 for a monotonically converging steer. */
+		double WorstCrossTrackIncreaseUU = 0.0;
+		/** The smallest single-step ALONG-track advance. ⛔ A crabbing or backwards steer shows up HERE and nowhere else. */
+		double MinAlongAdvanceUU = 1.e9;
+		/** |cross-track| where the march stopped. */
+		double FinalCrossTrackUU = 0.0;
+	};
+
+	static FVector PickSteer(const FSiegeLadderClimbState& State, const FVector& Here, ESimSteer Steer)
+	{
+		switch (Steer)
+		{
+		case ESimSteer::CrossTrack:
+			return FSiegeLadderClimbStatics::SteerDirection(State, Here);
+		case ESimSteer::LineOnly:
+			return FSiegeLadderClimbStatics::ClimbDirection(State);
+		default:
+			// ⭐ The shipped driver composition, assembled out of the shipped predicate.
+			return FSiegeLadderClimbStatics::ShouldSweep(State, Here)
+				? FSiegeLadderClimbStatics::SteerDirection(State, Here)
+				: FSiegeLadderClimbStatics::ClimbDirection(State);
+		}
+	}
+
+	/**
+	 *  ⭐ MARCHES A POINT UP THE ARMED LINE ONE FIXED-LENGTH STEP AT A TIME — `unit steer × step`,
+	 *  which is exactly the shape of both drivers' swept move.
+	 *
+	 *  ⚠️ It runs on a COPY of the state so `Advance`'s clock cannot leak between rows, and it
+	 *  terminates on `Advance` OR on a step cap derived from the shipped `TimeoutScale` — a steer
+	 *  that stalled would otherwise hang the suite instead of failing it.
+	 */
+	static FSimResult SimulateClimb(const FSiegeLadderClimbState& ArmedState, const FVector& StartWorld,
+		ESimSteer Steer, double RateUU, double StepUU, double StopAtAlongUU)
+	{
+		FSiegeLadderClimbState State = ArmedState;
+		FSimResult Result;
+		Result.Final = StartWorld;
+		Result.FinalCrossTrackUU = FMath::Abs(CrossTrackUU(State, StartWorld));
+
+		const double SafeStepUU = FMath::Max(StepUU, 1.e-3);
+
+		// The frame length that produces this step at the shipped rate, so `Advance`'s watchdog is
+		// charged the same clock the movement is. ⛔ Not a free parameter: step ÷ rate.
+		const double DeltaSeconds = SafeStepUU / FMath::Max(RateUU, 1.e-3);
+
+		// ⭐ The cap mirrors the shipped watchdog's own generosity (`TimeoutScale` = 4×), so a
+		// healthy climb can never reach it and a stalled one always does.
+		const int32 StepCap = FMath::Max(1, FMath::CeilToInt(
+			FSiegeLadderClimbStatics::TimeoutScale * static_cast<float>(State.LengthUU / SafeStepUU)));
+
+		double PreviousCross = Result.FinalCrossTrackUU;
+		double PreviousAlong = AlongUU(State, Result.Final);
+
+		while (Result.Steps < StepCap)
+		{
+			if (AlongUU(State, Result.Final) >= StopAtAlongUU)
+			{
+				return Result;
+			}
+
+			if (!FSiegeLadderClimbStatics::Advance(State, Result.Final, static_cast<float>(DeltaSeconds),
+				Result.bReachedTop, Result.bTimedOut))
+			{
+				return Result;
+			}
+
+			Result.Final += PickSteer(State, Result.Final, Steer) * SafeStepUU;
+			++Result.Steps;
+
+			const double Cross = FMath::Abs(CrossTrackUU(State, Result.Final));
+			const double Along = AlongUU(State, Result.Final);
+			Result.WorstCrossTrackIncreaseUU = FMath::Max(Result.WorstCrossTrackIncreaseUU, Cross - PreviousCross);
+			Result.MinAlongAdvanceUU = FMath::Min(Result.MinAlongAdvanceUU, Along - PreviousAlong);
+			Result.FinalCrossTrackUU = Cross;
+			PreviousCross = Cross;
+			PreviousAlong = Along;
+		}
+
+		Result.bHitStepCap = true;
+		return Result;
+	}
+
+	/** The shipped climb rate, read off the CDO so a retune re-derives every step length below rather than quietly meaning something else. Falls back to nothing — the caller FAILS instead of guessing. */
+	static bool TryReadShippedClimbRateUU(float& OutRateUU)
+	{
+		return TryReadDefaultFloat(ASummonedUnit::StaticClass(), GetDefault<ASummonedUnit>(),
+			TEXT("LadderClimbSpeedUU"), OutRateUU);
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 19. ⛔⛔ THE ADDITIVE FENCE — `ClimbDirection` IS BYTE-IDENTICAL, AND ITS THREE
+//     OTHER READERS STILL READ THE **LINE**. The most important test in this task.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeLadderCrossTrackFenceTest,
+	"Siegebound.LadderClimb.ClimbDirectionIsByteIdenticalAndItsThreeOtherReadersStillReadTheLine",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeLadderCrossTrackFenceTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeLadderClimbTestFixture;
+	using namespace SiegeLadderCrossTrackFixture;
+
+	FSiegeLadderClimbState State;
+	if (!TestTrue(TEXT("SELF-CHECK: the pinned ascent armed"), ArmPinnedHeroClimb(State, 350.f)))
+	{
+		return false;
+	}
+
+	const FVector Line = FSiegeLadderClimbStatics::ClimbDirection(State);
+
+	// ── (a) BYTE-IDENTICAL TO ITS OWN SHIPPED EXPRESSION ────────────────────────────────
+	// ⛔ An EXACT compare, ⛔ not a tolerance: the claim is that this function returns the SAME
+	// BITS it returned before TASK-803, and a tolerance would hide a re-pointing that merely
+	// happened to be close. `FVector::operator==` compares components exactly.
+	TestTrue(TEXT("(a) ⛔⛔ ClimbDirection is EXACTLY `(End - Start).GetSafeNormal()` — byte-identical, ⛔ not merely close. TASK-803 is ADDITIVE (`CONTACT-§14.5`): the new steer is a SECOND function, ⛔ never a redefinition of this one"),
+		Line == (State.End - State.Start).GetSafeNormal());
+
+	// …and independently re-derived from the SOCKETS, which also catches a change to `Begin`'s
+	// lift (a lift that stopped being equal at both ends would tilt this vector).
+	TestTrue(TEXT("(a) ⭐ …and it still equals the direction re-derived from the two SOCKETS, so `Begin`'s capsule lift is still EQUAL AT BOTH ENDS — an unequal lift would tilt the line and every claim below with it"),
+		Line.Equals((LadderTop - LadderFoot).GetSafeNormal(), Tolerance));
+
+	// ── (b) IT IGNORES THE PAWN — AND THE SECOND HALF IS WHAT MAKES THE FIRST NON-VACUOUS ──
+	// ⚠️ If `SteerDirection` also ignored the pawn, row (b1) would pass while TASK-803 did
+	// nothing at all. (b2) is therefore mandatory, ⛔ not decoration.
+	const FVector Probes[] =
+	{
+		PointOffLine(State, 0.0, 0.0),
+		PointOffLine(State, 300.0, WorstAdmittedOffsetUU),
+		PointOffLine(State, 600.0, -WalkAdmittedOffsetUU),
+		PointOffLine(State, 900.0, 120.0)
+	};
+
+	int32 SteerDisagreements = 0;
+	for (const FVector& Probe : Probes)
+	{
+		TestTrue(TEXT("(b1) ⛔ ClimbDirection returns the IDENTICAL vector wherever the pawn is — it is a property of the LINE. The arrival dot test, the deck-breach step and the sustain sign test all depend on exactly that"),
+			FSiegeLadderClimbStatics::ClimbDirection(State) == Line);
+
+		const FVector Steer = FSiegeLadderClimbStatics::SteerDirection(State, Probe);
+		if (FVector::DotProduct(Steer, Line) < FMath::Cos(FMath::DegreesToRadians(5.0)))
+		{
+			++SteerDisagreements;
+		}
+	}
+
+	TestEqual(TEXT("(b2) ⭐⭐ SELF-CHECK, AND WITHOUT IT (b1) PROVES NOTHING: at the THREE off-line probes `SteerDirection` DISAGREES with the line by more than 5°, and at the on-line probe it does not. ⇒ the two functions really are different functions, and (b1) is a fence rather than a tautology"),
+		SteerDisagreements, 3);
+
+	// ── (c) READER 1 — `Advance`'s ARRIVAL DOT TEST STILL READS THE LINE ────────────────
+	// ⭐⭐ THE ROW THAT WOULD FLIP. A pawn level with the top ALONG the line but 200 uu off it:
+	//   · against the LINE   — dot(ToTop, Line) == 0 ⇒ `<= 0` ⇒ ARRIVED (today's meaning)
+	//   · against the STEER  — the steer points AT the top, so the dot is +200 ⇒ NOT arrived
+	// ⇒ if anybody re-points `Advance`, this row goes red. That is the whole design of it.
+	{
+		const FVector LevelButOffLine = PointOffLine(State, static_cast<double>(State.LengthUU), 200.0);
+		const FVector ToTop = State.End - LevelButOffLine;
+
+		TestTrue(TEXT("(c) SELF-CHECK: the two candidate directions genuinely DISAGREE at this probe — dot against the STEER is strictly positive (⇒ 'not arrived') while dot against the LINE is not. A probe where they agreed would make the row below meaningless"),
+			FVector::DotProduct(ToTop, FSiegeLadderClimbStatics::SteerDirection(State, LevelButOffLine)) > 1.0);
+
+		FSiegeLadderClimbState Arriving;
+		ArmPinnedHeroClimb(Arriving, 350.f);
+		bool bReachedTop = false;
+		bool bTimedOut = false;
+		TestFalse(TEXT("(c) ⛔⛔ READER 1: a pawn level with the top but 200 uu OFF the line still ARRIVES — because `Advance` dots against `ClimbDirection`, exactly as it does today. A re-pointed `Advance` would report 'still climbing' here and the climb would run to the watchdog"),
+			FSiegeLadderClimbStatics::Advance(Arriving, LevelButOffLine, 1.f / 60.f, bReachedTop, bTimedOut));
+		TestTrue(TEXT("(c) …reporting ARRIVAL"), bReachedTop);
+		TestFalse(TEXT("(c) …and ⛔ not a timeout"), bTimedOut);
+	}
+
+	// ── (d) READER 3 — THE HERO'S SUSTAIN SIGN TEST STILL READS THE LINE ────────────────
+	// `IsLadderClimbInputHeld` dots the player's steer against `ClimbDirection`'s HORIZONTAL and
+	// requires `> 0`. That rule is only correct because the horizontal is a constant bearing that
+	// FLIPS between an ascent and a descent. A position-dependent vector would make "am I still
+	// pressing into the ladder?" depend on where the hero drifted to — and would end climbs at
+	// random for a player doing nothing wrong.
+	{
+		FSiegeLadderClimbState Descent;
+		if (TestTrue(TEXT("(d) SELF-CHECK: the DESCENT arms (the API is From -> To and nothing enforces foot-first)"),
+			ArmPinnedDescent(Descent, 350.f)))
+		{
+			FVector AscentHorizontal = Line;
+			AscentHorizontal.Z = 0.f;
+			FVector DescentHorizontal = FSiegeLadderClimbStatics::ClimbDirection(Descent);
+			DescentHorizontal.Z = 0.f;
+
+			TestTrue(TEXT("(d) SELF-CHECK: the ascent's horizontal bearing is non-zero — a vertical line would make the sustain test's guard branch the shipped path and this row vacuous"),
+				!AscentHorizontal.IsNearlyZero());
+			TestTrue(TEXT("(d) ⛔⛔ READER 3: the ascent's and the descent's horizontal bearings point OPPOSITE ways (dot < 0) — the property the sustain sign test is built on, and it holds because the vector is a property of the LINE and of nothing else"),
+				FVector::DotProduct(AscentHorizontal.GetSafeNormal(), DescentHorizontal.GetSafeNormal()) < -0.99);
+		}
+	}
+
+	// ── (e) READER 2 — ⚠️ THE DECLARED SPLIT, STATED RATHER THAN FAKED ──────────────────
+	// The deck-breach step lives in `AHeroCharacter::TickLadderClimb` and
+	// `ASummonedUnit::TickLadderClimb`, and ⛔ neither actor can be instantiated headlessly (the
+	// teardown dereferences `GetWorld()` unconditionally — this file's opening block measures it).
+	// ⇒ that reader is verified by TASK-804's DIFF READ, ⛔ not here, and saying so is the whole
+	// point (`SC-§32`: a mechanism never observed is not known to function). ⭐ What IS assertable
+	// is that the two functions are DISTINGUISHABLE at the position that step runs at — so a diff
+	// reader who finds `SteerDirection` on that line is looking at a real behaviour change and
+	// ⛔ not at a cosmetic rename.
+	{
+		const double DeckBreachStartAlongUU = static_cast<double>(State.LengthUU - State.DeckBreachUU);
+		TestTrue(TEXT("(e) SELF-CHECK: the hero's deck-breach window is a real, non-empty stretch of the line — a zero window would make the declared split below describe nothing"),
+			State.DeckBreachUU > 0.f && DeckBreachStartAlongUU > 0.0);
+
+		const FVector InsideBreachOffLine = PointOffLine(State, DeckBreachStartAlongUU + 50.0, 60.0);
+		TestFalse(TEXT("(e) SELF-CHECK: that probe really is inside the NON-SWEPT window (`ShouldSweep` says so) — i.e. it is the position reader 2 actually runs at"),
+			FSiegeLadderClimbStatics::ShouldSweep(State, InsideBreachOffLine));
+		TestTrue(TEXT("(e) ⚠️ READER 2 IS A **DECLARED DIFF READ** (TASK-804), ⛔ not covered here — but the two directions are DISTINGUISHABLE at that exact position, so the diff is a real check rather than a rename hunt"),
+			FSiegeLadderClimbStatics::SteerDirection(State, InsideBreachOffLine) != Line);
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 20. ⭐⭐ AN OFF-LINE PAWN **CONVERGES** — with the defect reproduced as the control
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeLadderCrossTrackConvergenceTest,
+	"Siegebound.LadderClimb.APawnAdmittedOffLineConvergesOntoItBeforeTheDeckBreachWindowOpens",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeLadderCrossTrackConvergenceTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeLadderClimbTestFixture;
+	using namespace SiegeLadderCrossTrackFixture;
+
+	float ShippedRateUU = 0.f;
+	if (!TestTrue(TEXT("SELF-CHECK: the shipped climb rate reads off the CDO — every step length below is derived from it, so a retune re-derives this test instead of quietly meaning something else"),
+		TryReadShippedClimbRateUU(ShippedRateUU)) || !TestTrue(TEXT("SELF-CHECK: the shipped rate is strictly positive"), ShippedRateUU > 0.f))
+	{
+		return false;
+	}
+
+	FSiegeLadderClimbState State;
+	if (!TestTrue(TEXT("SELF-CHECK: the HERO's ascent armed (r 42 / hh 96 — the SHORTER swept stretch, so the binding case)"),
+		ArmPinnedHeroClimb(State, ShippedRateUU)))
+	{
+		return false;
+	}
+
+	// One 60 Hz frame of the shipped rate — the real step the swept branch takes.
+	const double StepUU = static_cast<double>(ShippedRateUU) / 60.0;
+
+	// Convergence has ONLY the swept stretch to finish in: the deck-breach window at the top is
+	// driven along `ClimbDirection` and `CONTACT-§14.5` forbids changing that.
+	const double SweptStretchUU = static_cast<double>(State.LengthUU - State.DeckBreachUU);
+
+	const FVector EntryWorld = PointOffLine(State, 0.0, WorstAdmittedOffsetUU);
+
+	// ── (a) ⭐⭐ THE ANTI-TRIVIALITY GUARD, AND IT IS FIRST ON PURPOSE ──────────────────
+	// ⛔ A steering fix's test passes for free if the pawn was never off-line. Assert the scenario
+	// before asserting anything about the outcome.
+	const double EntryCrossUU = FMath::Abs(CrossTrackUU(State, EntryWorld));
+	TestTrue(*FString::Printf(TEXT("(a) ⭐⭐ SELF-CHECK: the pawn STARTS genuinely off-line — %.1f uu of cross-track error, which is %.1f× the hero's %.1f uu side margin. ⛔ Without this row every claim below could pass on a pawn that was dead centre all along"),
+		EntryCrossUU, EntryCrossUU / HeroSideMarginUU, HeroSideMarginUU),
+		EntryCrossUU > 10.0 * HeroSideMarginUU);
+	TestEqual(TEXT("(a) …and it is exactly `CONTACT-§14.2`'s widest admitted offset, ⛔ not a number invented here"),
+		static_cast<float>(EntryCrossUU), WorstAdmittedOffsetUU, 1.e-2f);
+
+	// ── (b) ⛔⛔ THE NEGATIVE CONTROL — THE DEFECT, REPRODUCED ON THE PRE-FIX CODE PATH ──
+	// ⭐ `LineOnly` is character-for-character what BOTH drivers ran before this task. If this row
+	// ever goes green-by-converging, the control has stopped being a control and every convergence
+	// claim below is measuring nothing.
+	const FSimResult Control = SimulateClimb(State, EntryWorld, ESimSteer::LineOnly,
+		static_cast<double>(ShippedRateUU), StepUU, SweptStretchUU);
+	TestFalse(TEXT("(b) SELF-CHECK: the control march completed without hitting its step cap"), Control.bHitStepCap);
+	TestTrue(TEXT("(b) SELF-CHECK: the control march actually moved (more than one step)"), Control.Steps > 1);
+	TestEqual(*FString::Printf(TEXT("(b) ⛔⛔ THE DEFECT, REPRODUCED: driven on `ClimbDirection` alone the pawn arrives at the deck-breach window STILL %.1f uu off the line — the entry offset SURVIVES THE WHOLE CLIMB, unchanged, which is precisely `CONTACT-§14`'s mechanism"),
+		Control.FinalCrossTrackUU),
+		static_cast<float>(Control.FinalCrossTrackUU), WorstAdmittedOffsetUU, 1.e-2f);
+
+	// ── (c) ⭐⭐ THE FIX — CONVERGENCE, MONOTONIC, AND FINISHED IN TIME ─────────────────
+	const FSimResult Fixed = SimulateClimb(State, EntryWorld, ESimSteer::CrossTrack,
+		static_cast<double>(ShippedRateUU), StepUU, SweptStretchUU);
+	TestFalse(TEXT("(c) SELF-CHECK: the fixed march completed without hitting its step cap — a stalled steer fails HERE rather than hanging the suite"), Fixed.bHitStepCap);
+	TestTrue(TEXT("(c) SELF-CHECK: both marches reached the SAME along-track target, and the converging one needed AT LEAST as many steps (correcting laterally costs path length, it cannot save any) — so the two are comparable and neither cheated"),
+		Fixed.Steps >= Control.Steps && Control.Steps > 1);
+
+	TestTrue(TEXT("(c) ⭐⭐ THE CROSS-TRACK ERROR IS MONOTONICALLY NON-INCREASING — ⛔ not one step of the climb makes it worse. A steer that overshot and oscillated would show up here as a positive increase"),
+		Fixed.WorstCrossTrackIncreaseUU <= 1.e-6);
+
+	TestTrue(*FString::Printf(TEXT("(c) ⭐⭐ …and by the time the deck-breach window opens the error is %.3f uu — INSIDE the hero's %.1f uu side margin by more than 10×, so the pawn is genuinely between the stiles before the last unswept stretch begins"),
+		Fixed.FinalCrossTrackUU, HeroSideMarginUU),
+		Fixed.FinalCrossTrackUU < (HeroSideMarginUU / 10.0));
+
+	// ── (d) ⛔ THE FLOOR — IT CONVERGES WITHOUT **CRABBING** ────────────────────────────
+	// ⚠️ A short look-ahead would satisfy (c) beautifully and ship a pawn that slides sideways with
+	// almost no rise. `SteerLookAheadUU`'s derivation names this as its FLOOR; this is that floor,
+	// asserted. At the shipped 150 the along-component from the worst entry is 0.475.
+	{
+		const FVector Steer = FSiegeLadderClimbStatics::SteerDirection(State, EntryWorld);
+		const double AlongComponent = FVector::DotProduct(Steer, FSiegeLadderClimbStatics::ClimbDirection(State));
+		TestTrue(*FString::Printf(TEXT("(d) ⛔ Even at the WORST admitted entry offset the steer keeps %.3f of its magnitude ON the line (≥ 0.40 required) — the pawn CLIMBS while it converges instead of crabbing sideways. This row is what a too-short look-ahead fails"),
+			AlongComponent),
+			AlongComponent >= 0.40);
+		TestTrue(TEXT("(d) …and the steer is a UNIT vector, so the swept call's `Scale = 1.f` still means the shipped rate"),
+			FMath::IsNearlyEqual(Steer.Size(), 1.0, 1.e-4));
+	}
+
+	TestTrue(TEXT("(d) ⛔ ALONG-TRACK PROGRESS IS STRICTLY POSITIVE ON EVERY SINGLE STEP — the pawn never stalls and never slides back down the line while correcting"),
+		Fixed.MinAlongAdvanceUU > 0.0);
+
+	// ── (e) THE UNIT'S CAPSULE TOO — a different lift, a different window, the same answer ──
+	{
+		FSiegeLadderClimbState UnitState;
+		if (TestTrue(TEXT("(e) SELF-CHECK: the UNIT's ascent armed (hh 88 — a different deck-breach window)"),
+			ArmPinnedClimb(UnitState, ShippedRateUU)))
+		{
+			const FVector UnitEntry = PointOffLine(UnitState, 0.0, WalkAdmittedOffsetUU);
+			const FSimResult UnitFixed = SimulateClimb(UnitState, UnitEntry, ESimSteer::CrossTrack,
+				static_cast<double>(ShippedRateUU), StepUU,
+				static_cast<double>(UnitState.LengthUU - UnitState.DeckBreachUU));
+
+			TestTrue(TEXT("(e) SELF-CHECK: the unit's deck-breach window really is SMALLER than the hero's (3 × 88 of Z against 3 × 96), so this is a genuinely different scenario"),
+				UnitState.DeckBreachUU < State.DeckBreachUU);
+			TestTrue(*FString::Printf(TEXT("(e) ⭐ A unit admitted at `CONTACT-§14.2`'s 300 uu/s WALK offset (%.1f uu — ⭐ the figure that reproduces `TASK-798`'s abduction number and MERGED the two rows) converges to %.3f uu, inside its own %.1f uu margin by more than 10×"),
+				WalkAdmittedOffsetUU, UnitFixed.FinalCrossTrackUU, UnitSideMarginUU),
+				!UnitFixed.bHitStepCap && UnitFixed.FinalCrossTrackUU < (UnitSideMarginUU / 10.0));
+		}
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 21. ⭐ A PAWN **ON** THE LINE STAYS ON IT — the no-wobble regression guard
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeLadderCrossTrackNoWobbleTest,
+	"Siegebound.LadderClimb.APawnAlreadyOnTheLineClimbsExactlyAsItDidBeforeWithNoWobbleIntroduced",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeLadderCrossTrackNoWobbleTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeLadderClimbTestFixture;
+	using namespace SiegeLadderCrossTrackFixture;
+
+	float ShippedRateUU = 0.f;
+	if (!TestTrue(TEXT("SELF-CHECK: the shipped climb rate reads off the CDO"), TryReadShippedClimbRateUU(ShippedRateUU)))
+	{
+		return false;
+	}
+
+	FSiegeLadderClimbState State;
+	if (!TestTrue(TEXT("SELF-CHECK: the hero's ascent armed"), ArmPinnedHeroClimb(State, ShippedRateUU)))
+	{
+		return false;
+	}
+
+	const FVector Line = FSiegeLadderClimbStatics::ClimbDirection(State);
+
+	// ── (a) ON THE LINE, THE NEW STEER **IS** THE OLD ONE ──────────────────────────────
+	// ⭐ Sampled the whole way up rather than at one point: a look-ahead that mishandled the
+	// end-clamp would agree at the bottom and drift at the top.
+	int32 AgreeingSamples = 0;
+	constexpr int32 SampleCount = 25;
+	for (int32 Index = 0; Index <= SampleCount; ++Index)
+	{
+		const double Along = static_cast<double>(State.LengthUU) * (static_cast<double>(Index) / static_cast<double>(SampleCount));
+		const FVector OnLine = PointOffLine(State, Along, 0.0);
+		if (FSiegeLadderClimbStatics::SteerDirection(State, OnLine).Equals(Line, 1.e-5))
+		{
+			++AgreeingSamples;
+		}
+	}
+	TestEqual(TEXT("(a) ⭐⭐ At EVERY sample from the foot to the top — the end-clamp included — a pawn ON the line is steered along `ClimbDirection`, to 1e-5. ⇒ a centred climb is unchanged by TASK-803, which is the regression guarantee"),
+		AgreeingSamples, SampleCount + 1);
+
+	// ── (b) ⭐⭐ …AND THAT IS **NOT** BECAUSE THE FUNCTION ALWAYS RETURNS THE LINE ──────
+	// ⛔ Without this row, (a) would pass just as happily on a `SteerDirection` that did nothing
+	// at all — which is exactly the shape of the six assertions that stopped discriminating this
+	// week. One margin's worth of offset must already bend the steer measurably.
+	{
+		const FVector OneMarginOff = PointOffLine(State, 400.0, HeroSideMarginUU);
+		const FVector Steer = FSiegeLadderClimbStatics::SteerDirection(State, OneMarginOff);
+		const double AngleDegrees = FMath::RadiansToDegrees(FMath::Acos(
+			FMath::Clamp(FVector::DotProduct(Steer, Line), -1.0, 1.0)));
+		TestTrue(*FString::Printf(TEXT("(b) ⭐⭐ SELF-CHECK: at just ONE side-margin off the line (%.1f uu) the steer already leans %.2f° off it (> 5° required). ⇒ (a) above is a real agreement, ⛔ not a function that ignores its second argument"),
+			HeroSideMarginUU, AngleDegrees),
+			AngleDegrees > 5.0);
+	}
+
+	// ── (c) A FULL CENTRED CLIMB INTRODUCES NO LATERAL DRIFT AT ALL ────────────────────
+	const double StepUU = static_cast<double>(ShippedRateUU) / 60.0;
+	const FSimResult Centred = SimulateClimb(State, State.Start, ESimSteer::AsShipped,
+		static_cast<double>(ShippedRateUU), StepUU, static_cast<double>(State.LengthUU));
+
+	TestFalse(TEXT("(c) SELF-CHECK: the centred march completed without hitting its step cap"), Centred.bHitStepCap);
+	TestTrue(TEXT("(c) SELF-CHECK: it actually climbed (more than 100 steps of a ~1,237 uu line at ~5.8 uu a frame)"), Centred.Steps > 100);
+	TestTrue(*FString::Printf(TEXT("(c) ⭐ A pawn that entered DEAD CENTRE finishes %.6f uu off the line — ⛔ no wobble, ⛔ no drift, ⛔ no new lateral behaviour anywhere on the ascent, deck-breach window included"),
+		Centred.FinalCrossTrackUU),
+		Centred.FinalCrossTrackUU < 1.e-3);
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 22. ⛔ THE DEGENERATE CASES — still refused, still ZeroVector, ⛔ still never NaN
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeLadderCrossTrackDegenerateTest,
+	"Siegebound.LadderClimb.TheCrossTrackSteerRefusesTheDegenerateLineExactlyAsClimbDirectionDoes",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeLadderCrossTrackDegenerateTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeLadderClimbTestFixture;
+	using namespace SiegeLadderCrossTrackFixture;
+
+	// ── (a) AN UN-ARMED STATE — THE SAME VALUE `ClimbDirection` RETURNS ────────────────
+	// ⭐ The claim is not merely "it is safe": it is that the two functions REFUSE IDENTICALLY, so
+	// a call site that swapped one for the other cannot acquire a new failure mode at the door.
+	{
+		const FSiegeLadderClimbState Unarmed;
+		TestTrue(TEXT("(a) SteerDirection on a state that was never armed is ZeroVector — the identical refusal ClimbDirection makes"),
+			FSiegeLadderClimbStatics::SteerDirection(Unarmed, FVector(1000.0, -400.0, 250.0)).IsZero());
+		TestTrue(TEXT("(a) …and identical to what ClimbDirection returns for that same state, bit for bit"),
+			FSiegeLadderClimbStatics::SteerDirection(Unarmed, FVector(1000.0, -400.0, 250.0))
+				== FSiegeLadderClimbStatics::ClimbDirection(Unarmed));
+	}
+
+	// ── (b) THE ZERO-LENGTH LINE IS STILL REFUSED AT THE DOOR ─────────────────────────
+	// ⛔ TASK-803 must not have widened the admission predicate. `MinClimbLineUU` is the ONE math
+	// guard beyond the four pinned refusals.
+	{
+		FSiegeLadderClimbState Degenerate;
+		const FVector Point(10.0, 20.0, 30.0);
+		TestFalse(TEXT("(b) ⛔ A zero-length line is STILL refused by CanBegin — TASK-803 widened nothing"),
+			FSiegeLadderClimbStatics::CanBegin(Degenerate, false, false, false, Point, Point));
+		TestFalse(TEXT("(b) ⛔ …and Begin still refuses it and changes NOTHING"),
+			FSiegeLadderClimbStatics::Begin(Degenerate, false, false, false, Point, Point, 350.f, 96.f));
+		TestTrue(TEXT("(b) …leaving the state byte-for-byte pristine"), IsPristine(Degenerate));
+		const double NaNValue = MakeQuietNaN();
+		TestTrue(TEXT("(b) SELF-CHECK: the fixture's NaN really is a NaN — a 'NaN' that is not one makes every row below vacuous (`SiegeStuckStaticsTest.cpp:1350`'s guard, borrowed)"),
+			FMath::IsNaN(NaNValue));
+		TestFalse(TEXT("(b) ⛔ …and a NaN endpoint is still refused too"),
+			FSiegeLadderClimbStatics::CanBegin(Degenerate, false, false, false,
+				FVector(NaNValue, 0.0, 0.0), FVector(0.0, 0.0, 1200.0)));
+	}
+
+	// ── (c) UNIT-OR-ZERO, ⛔ NEVER NaN, ⛔ NEVER PARTIAL — OVER A HOSTILE GRID ─────────
+	// ⚠️ A NaN or a non-unit steer handed to `AddMovementInput` corrupts the movement component,
+	// and the four exits would all still be perfectly "correct" while the pawn hung in MOVE_Flying.
+	// The grid deliberately includes positions the shipped feature should never produce — behind
+	// the start, far past the top, and a NaN — because "should never" is not "cannot".
+	{
+		FSiegeLadderClimbState State;
+		if (!TestTrue(TEXT("(c) SELF-CHECK: the hero's ascent armed"), ArmPinnedHeroClimb(State, 350.f)))
+		{
+			return false;
+		}
+
+		const double AlongProbesUU[] = { -900.0, -1.0, 0.0, 1.0, 400.0, 1200.0, static_cast<double>(State.LengthUU), 4000.0 };
+		const double CrossProbesUU[] = { -5000.0, -277.8, -24.0, 0.0, 24.0, 277.8, 5000.0 };
+
+		int32 Checked = 0;
+		int32 BadSteers = 0;
+		int32 BackwardsAims = 0;
+		for (const double Along : AlongProbesUU)
+		{
+			for (const double Cross : CrossProbesUU)
+			{
+				const FVector Probe = PointOffLine(State, Along, Cross);
+				const FVector Steer = FSiegeLadderClimbStatics::SteerDirection(State, Probe);
+				++Checked;
+
+				if (Steer.ContainsNaN() || !FMath::IsNearlyEqual(Steer.Size(), 1.0, 1.e-4))
+				{
+					++BadSteers;
+				}
+
+				// ⛔ THE BACKWARD-EXTENSION GUARD: a pawn admitted BELOW the start must never be
+				// aimed at a point behind `Start`, which would drive it DOWN and away from the
+				// ladder it just asked to climb. The clamp at 0 is what prevents it.
+				if (Along < 0.0 && FVector::DotProduct(Steer, FSiegeLadderClimbStatics::ClimbDirection(State)) <= 0.0)
+				{
+					++BackwardsAims;
+				}
+			}
+		}
+
+		TestEqual(TEXT("(c) SELF-CHECK: the grid really ran (8 along-track × 7 cross-track probes)"), Checked, 56);
+		TestEqual(TEXT("(c) ⛔ EVERY steer over the grid is a finite UNIT vector — ⛔ no NaN, ⛔ no zero, ⛔ no partial magnitude, including behind the start and far past the top"),
+			BadSteers, 0);
+		TestEqual(TEXT("(c) ⛔ …and ⛔ NOT ONE of them aims BACKWARDS down the line, even from 900 uu below the start — the aim point is clamped ONTO the segment at both ends"),
+			BackwardsAims, 0);
+
+		// A NaN position is the one input `GetSafeNormal` would propagate rather than refuse.
+		const double NaNValue = MakeQuietNaN();
+		const FVector NaNLocation(NaNValue, NaNValue, NaNValue);
+		TestTrue(TEXT("(c) SELF-CHECK: the fixture's NaN location really contains a NaN — otherwise the row below passes for the wrong reason"),
+			NaNLocation.ContainsNaN());
+		TestFalse(TEXT("(c) ⛔⛔ A NaN pawn position yields a NaN-FREE steer — `GetSafeNormal`'s size test is `NaN < tolerance`, which is FALSE, so it would otherwise pass the NaN straight through to the movement component and corrupt it, with every exit still perfectly 'correct' and the pawn hanging in MOVE_Flying"),
+			FSiegeLadderClimbStatics::SteerDirection(State, NaNLocation).ContainsNaN());
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 23. ⚠️⚠️ THE ARRIVAL POP (`CONTACT-§14.3`) — the consequence nobody looked for
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeLadderCrossTrackArrivalPopTest,
+	"Siegebound.LadderClimb.TheUnsweptArrivalSnapNoLongerTeleportsThePawnSidewaysByItsWholeEntryOffset",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeLadderCrossTrackArrivalPopTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeLadderClimbTestFixture;
+	using namespace SiegeLadderCrossTrackFixture;
+
+	float ShippedRateUU = 0.f;
+	if (!TestTrue(TEXT("SELF-CHECK: the shipped climb rate reads off the CDO"), TryReadShippedClimbRateUU(ShippedRateUU)))
+	{
+		return false;
+	}
+
+	FSiegeLadderClimbState State;
+	if (!TestTrue(TEXT("SELF-CHECK: the hero's ascent armed"), ArmPinnedHeroClimb(State, ShippedRateUU)))
+	{
+		return false;
+	}
+
+	const double StepUU = static_cast<double>(ShippedRateUU) / 60.0;
+	const FVector Line = FSiegeLadderClimbStatics::ClimbDirection(State);
+	const FVector EntryWorld = PointOffLine(State, 0.0, WorstAdmittedOffsetUU);
+	const FVector ArrivalWorld = FSiegeLadderClimbStatics::ArrivalTarget(State);
+
+	// ── (a) THE SNAP TARGET IS **ON** THE LINE — which is WHY an off-line pawn pops ────
+	TestTrue(TEXT("(a) `ArrivalTarget` is `State.End`, a point ON the climb line — so its cross-track error is zero and ANY residual the pawn still carries is paid, laterally, in ONE UNSWEPT frame (`CONTACT-§14.3`)"),
+		FMath::Abs(CrossTrackUU(State, ArrivalWorld)) < 1.e-6);
+
+	// ── (b) ⛔⛔ THE DEFECT, REPRODUCED END-TO-END ─────────────────────────────────────
+	// ⭐ The whole shipped driver, pre-TASK-803: `ClimbDirection` on BOTH branches.
+	const FSimResult Control = SimulateClimb(State, EntryWorld, ESimSteer::LineOnly,
+		static_cast<double>(ShippedRateUU), StepUU, /*StopAtAlongUU=*/ 1.e9);
+	TestFalse(TEXT("(b) SELF-CHECK: the control climb completed without hitting its step cap"), Control.bHitStepCap);
+	TestTrue(TEXT("(b) SELF-CHECK: it reached the top (so there really IS an arrival snap to measure)"), Control.bReachedTop);
+
+	// ⭐ THE POP IS MEASURED ON THE **CROSS-TRACK** AXIS — the axis the defect lives on
+	// (`CONTACT-§14.1`) — with the full horizontal displacement reported alongside it, because that
+	// is what the shipped `SetActorLocation` actually moves the body by.
+	const double ControlPopUU = FMath::Abs(CrossTrackUU(State, Control.Final));
+	const double ControlPopHorizontalUU = FVector::Dist2D(ArrivalWorld,Control.Final);
+	TestTrue(*FString::Printf(TEXT("(b) ⛔⛔ THE DEFECT: driven the old way the pawn is teleported **%.1f uu SIDEWAYS IN ONE UNSWEPT FRAME** on arrival (%.1f uu of total horizontal displacement) — its entire entry offset, paid at once. ⭐ Unresolvable at VID-004's 0.4–0.5 s sampling cadence, which is exactly why no frame of the footage shows it"),
+		ControlPopUU, ControlPopHorizontalUU),
+		ControlPopUU > (0.99 * WorstAdmittedOffsetUU));
+
+	// ── (c) ⭐⭐ THE FIX — THE POP IS GONE, AND `CONTACT-§14.3` DISAPPEARS WITH IT ─────
+	const FSimResult Fixed = SimulateClimb(State, EntryWorld, ESimSteer::AsShipped,
+		static_cast<double>(ShippedRateUU), StepUU, /*StopAtAlongUU=*/ 1.e9);
+	TestFalse(TEXT("(c) SELF-CHECK: the fixed climb completed without hitting its step cap"), Fixed.bHitStepCap);
+	TestTrue(TEXT("(c) SELF-CHECK: it reached the top too — ⛔ the fix must not cost the climb its arrival"), Fixed.bReachedTop);
+	TestFalse(TEXT("(c) SELF-CHECK: …and ⛔ not by timing out"), Fixed.bTimedOut);
+
+	const double FixedPopUU = FMath::Abs(CrossTrackUU(State, Fixed.Final));
+	const double FixedPopHorizontalUU = FVector::Dist2D(ArrivalWorld,Fixed.Final);
+	TestTrue(*FString::Printf(TEXT("(c) ⭐⭐ WITH THE CROSS-TRACK TERM the arrival snap moves the pawn %.3f uu sideways instead of %.1f — a **%.0f× reduction**, and far below one frame of ordinary walking. `CONTACT-§14.3`'s pop is gone as a SIDE EFFECT of climbing the line properly, ⛔ not by special-casing the snap"),
+		FixedPopUU, ControlPopUU, ControlPopUU / FMath::Max(FixedPopUU, 1.e-6)),
+		FixedPopUU < 2.0);
+	// ⭐ THE BOUND IS **DERIVED**, ⛔ not a round number: the snap legitimately closes up to
+	// `ArrivalToleranceUU` of ALONG-track remainder as well, and that remainder's horizontal share
+	// is `16 × cos(76°) = 3.88 uu` — present in a PERFECTLY CENTRED climb too, so it is ⛔ not the
+	// defect and must ⛔ not be asserted away. 2 uu is added for the cross-track residual itself.
+	const double LineHorizontalFraction = FVector(Line.X, Line.Y, 0.0).Size();
+	const double AlongTrackRemainderUU = static_cast<double>(FSiegeLadderClimbStatics::ArrivalToleranceUU) * LineHorizontalFraction;
+	TestTrue(*FString::Printf(TEXT("(c) ⭐ …and the TOTAL horizontal displacement of the unswept snap — the cross-track residual PLUS the legitimate along-track remainder (%.2f uu, which a dead-centre climb also pays) — is %.3f uu against the old %.1f"),
+		AlongTrackRemainderUU, FixedPopHorizontalUU, ControlPopHorizontalUU),
+		FixedPopHorizontalUU < (AlongTrackRemainderUU + 2.0));
+
+	// ⚖️ The two must DISAGREE by orders of magnitude, or the rows above are measuring the same
+	// thing twice — the parity-check failure this file's opening block names.
+	TestTrue(TEXT("(c) ⭐ …and the control and the fix DISAGREE by more than 50× on the same scenario, which is what makes this a measurement rather than two spellings of one number"),
+		ControlPopUU > (50.0 * FMath::Max(FixedPopUU, 1.e-6)));
+
+	// ── (d) ⛔ THE FIX DOES NOT BUY ITS CONVERGENCE WITH THE WATCHDOG'S BUDGET ─────────
+	// ⚠️ Converging costs extra PATH length — the pawn has to travel the ~278 uu sideways as well as
+	// the 1,237 uu up. If that cost enough to matter, a slow frame would start timing climbs out: a
+	// NEW failure bought with the old one's fix, which is exactly the kind of trade that must be
+	// MEASURED rather than assumed. ⭐ The measured cost is ~8 %; the bound is 15 %, and the watchdog
+	// allows **300 %** (`TimeoutScale` = 4×) — ⇒ two full orders of headroom remain.
+	TestTrue(*FString::Printf(TEXT("(d) ⛔ Converging from the WORST admitted offset costs %d extra frames against the straight climb's %d — under 15%%, against a watchdog that allows 300%% (`TimeoutScale` 4×). ⇒ the fix does ⛔ NOT spend the budget it was given for blocked geometry"),
+		Fixed.Steps - Control.Steps, Control.Steps),
+		(Fixed.Steps - Control.Steps) * 100 < (Control.Steps * 15));
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

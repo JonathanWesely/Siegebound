@@ -301,6 +301,101 @@ struct FSiegeLadderClimbStatics
 	/** Unit vector Start -> End; ZeroVector for a degenerate line (which CanBegin already refuses). */
 	static FVector ClimbDirection(const FSiegeLadderClimbState& State);
 
+	//~ ═══════════════════════════════════════════════════════════════════════════════════════
+	//~  ⭐⭐ TASK-803 (`CONTACT-§14`) — THE CROSS-TRACK TERM. ⛔ **ADDITIVE**: THE DECLARATION
+	//~  ABOVE IS UNTOUCHED, AND SO IS ITS DEFINITION.
+	//~ ═══════════════════════════════════════════════════════════════════════════════════════
+	//~
+	//~ ⛔⛔ THE FENCE, WRITTEN WHERE THE EDIT WOULD HAPPEN (`CONTACT-§14.5`): `ClimbDirection`
+	//~ above is ALSO read by ⛔ THREE sites that must keep ⛔ TODAY'S meaning —
+	//~   1. `Advance`'s ARRIVAL DOT TEST (`SiegeLadderClimbStatics.cpp`, the `bPassedTheTop` line)
+	//~   2. each driver's DECK-BREACH STEP (`HeroCharacter.cpp` / `SummonedUnit.cpp`, the non-swept
+	//~      `SetActorLocation(Here + Direction * StepUU)`)
+	//~   3. the hero's `IsLadderClimbInputHeld` SUSTAIN SIGN TEST (`HeroCharacter.cpp`)
+	//~ ⇒ `SteerDirection` is ⛔ ADDED ALONGSIDE it and is swapped in at the ⛔ TWO SWEPT movement
+	//~ calls and ⛔ NOWHERE ELSE.
+	//~ ⚖️⚠️ RE-POINTING `ClimbDirection` AT THIS FUNCTION WOULD CHANGE ARRIVAL AND SUSTAIN
+	//~ SEMANTICS WITH ⛔ NO COMPILE ERROR AND ⛔ NO TEST FAILURE. That is the whole reason the law
+	//~ exists, and it is why `SiegeLadderClimbTest.cpp` test 19 asserts `ClimbDirection` is
+	//~ BYTE-IDENTICAL and that `Advance` still reads the LINE rather than the steer.
+	//~
+	//~ ⚠️ WHAT THE DEFECT ACTUALLY IS, IN ONE SENTENCE (`CONTACT-§14`, which merged two boarded
+	//~ symptoms into one): the contact trigger admits a pawn from a **350 uu 2D DISC**, the climb
+	//~ driver had ⛔ NO cross-track term, and ⛔ nothing snaps the pawn onto the line ⇒ a pawn
+	//~ admitted off-line stayed off-line for the ⛔ ENTIRE climb, and then paid the whole offset in
+	//~ ⛔ ONE UNSWEPT FRAME at the arrival snap (`§14.3`). ⛔ It is invisible in footage because the
+	//~ ladder carries ⛔ ZERO collision hulls, so nothing depenetrates and no body ever clips.
+
+	/**
+	 *  ⭐⭐ HOW FAR ALONG THE LINE THE STEER AIMS — the ONE number that sets the convergence rate,
+	 *  and it is ⛔ DERIVED, ⛔ not felt (the `ArrivalToleranceUU` / `MinContactSpeedUU` discipline).
+	 *
+	 *  THE STEERING LAW, so the arithmetic below is checkable rather than asserted: with the aim
+	 *  point `L` uu ahead ON the line and the pawn `e` uu off it, the steer's cross-track component
+	 *  is `−e / sqrt(L² + e²)` ⇒ `de/ds = −e / sqrt(L² + e²)`, whose closed form is
+	 *  `s = F(e₀) − F(e)` with `F(u) = sqrt(L² + u²) − L·ln((L + sqrt(L² + u²)) / u)`.
+	 *  ⭐ It is LINEAR while `e ≫ L` (the error falls ~1 uu per uu travelled) and EXPONENTIAL with
+	 *  length constant `L` once `e ≪ L` — i.e. it kills a large offset fast and settles gently.
+	 *
+	 *  ⛔ THE CEILING IS SET BY THE FENCE, ⛔ NOT BY TASTE: the DECK-BREACH stretch at the top is
+	 *  driven along `ClimbDirection` (reader 2 above, which may ⛔ not change), so convergence has
+	 *  only the SWEPT stretch to finish in — `1236.93 − 296.86 = 940.07 uu` for the hero
+	 *  (`3 × 96` of Z ⇒ 296.86 of line) and `1236.93 − 272.13 = 964.80 uu` for the unit. The hero's
+	 *  is shorter, so it is the binding case.
+	 *
+	 *  THE ARITHMETIC, from the WORST entry error `CONTACT-§14.2` admits (**±277.8 uu**, the
+	 *  150 uu/s row) over that 940.07 uu:
+	 *    · `L = 150` ⇒ **1.03 uu** left at the window ⇒ **23× inside** the hero's 24.0 uu side
+	 *      margin and **15× inside** `ArrivalToleranceUU`. ⇒ `CONTACT-§14.3`'s arrival pop lands
+	 *      at ~1 uu instead of ~247 — ⛔ below what one frame of ordinary movement moves anyway.
+	 *      ⭐ AND THAT FIGURE IS A **CONSERVATIVE BOUND**, ⛔ not the expected value: it spends
+	 *      940.07 uu of *path*, whereas covering 940.07 uu *along the line* takes ~1,041 uu of path
+	 *      (converging costs ~8 % extra path, ⛔ well inside the 4× watchdog). The suite measures
+	 *      the real figure at **~0.5 uu**. ⚖️ The bound errs toward MORE residual, which is the
+	 *      only direction it is safe to be wrong in.
+	 *    · `L ≈ 179` is the largest value still meeting a 10× margin (2.4 uu); ⭐ 150 sits 16 %
+	 *      under it, which is the headroom, ⛔ not a coincidence.
+	 *  THE FLOOR, and it is a REAL bound rather than padding: `L` must stay well above
+	 *  `ArrivalToleranceUU` (16). At `L = 16` and `e = 247` the cross component is **0.998** ⇒ the
+	 *  pawn CRABS almost purely sideways with no rise for the better part of a second, which reads
+	 *  as broken — the same failure the deck-breach window's "⛔ not a teleport" clause guards.
+	 *
+	 *  ⚠️ THE HONEST CAVEAT, DECLARED: the arithmetic above assumes the driver realises the
+	 *  commanded unit vector EXACTLY. It does not — the swept call goes through
+	 *  `AddMovementInput`, acceleration and `MaxFlySpeed`, so the real convergence LAGS this bound.
+	 *  ⇒ these are the steering law's numbers, ⛔ not a promise about the movement component, and
+	 *  the entry / arrival-pop log lines this task also ships are what MEASURE the truth in PIE
+	 *  (`TASK-805`). ⭐ The bound is the right side of conservative: it is the best case, and the
+	 *  margin it leaves is 23×.
+	 */
+	static constexpr float SteerLookAheadUU = 150.f;
+
+	/**
+	 *  ⭐⭐ THE CROSS-TRACK TERM: the unit vector from `CurrentWorld` toward a look-ahead point
+	 *  **ON** the climb line, so a pawn admitted OFF the line CONVERGES onto it as it climbs
+	 *  instead of riding its entry offset all the way to the deck.
+	 *
+	 *  ⭐ IT IS A **CLOSED LOOP**, AND THAT IS THE DESIGN DECISION RATHER THAN AN IMPLEMENTATION
+	 *  DETAIL (`CONTACT-§14.5` offered an open-loop alternative — "carry the entry error in the
+	 *  state and lerp it to zero"): this reads the pawn's REAL position every frame, so a sweep, a
+	 *  depenetration, a `MaxFlySpeed` clamp or a dropped `AddMovementInput` cannot desync it. A
+	 *  seeded offset decayed by dead reckoning would be a SECOND source of truth about where the
+	 *  pawn is, and the first thing that moved the capsule by any other means would silently make
+	 *  it wrong — with, once again, no compile error and no test failure. ⇒ refused, and the
+	 *  handoff says so.
+	 *
+	 *  ⭐ ON THE LINE IT RETURNS `ClimbDirection`. That is not a coincidence to be tidied away
+	 *  later — it is the REGRESSION GUARANTEE: a pawn that entered dead centre climbs EXACTLY as
+	 *  it does today, with ⛔ no wobble and ⛔ no new steering behaviour to review.
+	 *
+	 *  ⛔ ZeroVector for a degenerate line — the SAME refusal and the SAME value `ClimbDirection`
+	 *  returns, so swapping one for the other at a call site cannot acquire a new failure mode.
+	 *
+	 *  @param CurrentWorld  the pawn's CAPSULE-CENTRE location this frame, in the same space
+	 *                       `Advance` and `ShouldSweep` already take it.
+	 */
+	static FVector SteerDirection(const FSiegeLadderClimbState& State, const FVector& CurrentWorld);
+
 	/**
 	 *  ⭐⭐ WHETHER THIS FRAME'S MOVE MAY BE SWEPT — false only inside the DECK BREACH window at
 	 *  the line's elevated end, where the capsule must pass THROUGH the deck slab.

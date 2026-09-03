@@ -12033,7 +12033,7 @@ public:
 
 #### TASK-803 — [MERGE-1] ⚙️⭐⭐ **THE CROSS-TRACK TERM — ⛔ ADDITIVE ONLY. ⛔ THE FENCE IS THE TASK.** (gameplay-programmer)
 - assignee: gameplay-programmer
-- status: backlog
+- status: **done** — ⭐ QA **PASS** (`qa/TASK-804.md`, 0 blockers) · compiled `Result: Succeeded` and committed at `TASK-805`. ⛔⛔ **THE PIE ROWS ARE ⛔ OWED, ⛔ NOT OBSERVED — the instrumentation shipped, but ⛔ nothing has read it yet** (`handoffs/TASK-805-buildmaster.md` §5). Handoff `handoffs/TASK-803-programmer.md`. ⭐ **VARIANT A (closed-loop look-ahead), ⛔ A2 REFUSED WITH A REASON** (it is open-loop dead reckoning ⇒ a ⛔ SECOND source of truth about where the pawn is, and it ⛔ cannot be seeded without widening `Begin`'s pinned signature). ⭐ **A2's prize is delivered anyway: the arrival pop falls `277.8 → ~0.5 uu`.** ⛔⛔ **`ClimbDirection` UNCHANGED — 0 deleted lines in `SiegeLadderClimbStatics.{h,cpp}`, and its ⛔ FOUR readers (the spec named three; the hero's hold-to-climb SEED at `HeroCharacter.cpp:1837` is a fourth) are all untouched.** `SteerDirection` is called at ⛔ EXACTLY TWO sites (`HeroCharacter.cpp:2088` / `SummonedUnit.cpp:4052`). ⭐ Suite **301 → 306 (+5)**. ⚠️ **4 deleted lines total, ⛔ all declared**: the 2 mandated swaps + 2 `ArrivalTarget` hoists (same pure call, once instead of twice). ⛔ **`LADDER_OUTWARD_SHIFT` VERIFIED STILL `10.0`** (`CONTACT-§14.4` — ⛔ no revert). ⚠️ **QA's one uncoverable row is READER 2** (the deck-breach step, `HeroCharacter.cpp:2119` / `SummonedUnit.cpp:4078`) — ⛔ declared as a DIFF READ in test 19(e), ⛔ not faked.
 - blocked-by: **TASK-802** — ⛔⛔ **A ⛔ FILE-COLLISION BLOCK, ⛔ NOT A LOGICAL ONE, AND IT IS ⛔ REAL: `TASK-790` owns `HeroCharacter.{h,cpp}` ⛔ SOLE and its commit lands at `TASK-802`.** ⇒ ⛔ **starting earlier collides in the ⛔ same file.**
 - parallel-safe: **no** — ⛔ it writes `HeroCharacter.cpp` **and** `SummonedUnit.cpp` **and** `SiegeLadderClimbStatics.{h,cpp}`
 - spec: >
@@ -12050,7 +12050,7 @@ public:
 
 #### TASK-804 — [MERGE-2] 🔍 **THE QA GATE OVER `TASK-803` — ⭐ THE ADDITIVE FENCE IS THE ⛔ ONE THING TO VERIFY** (qa-reviewer)
 - assignee: qa-reviewer
-- status: backlog
+- status: **done** — ⭐ **PASS, 0 BLOCKER · 4 WARN · 5 NIT** (`qa/TASK-804.md`). ⭐ **The additive fence HOLDS: `ClimbDirection` byte-identical, and `SiegeLadderClimbStatics.{h,cpp}` are ⛔ PURE ADDITIONS (0 deletions) — re-confirmed on the diffstat at `TASK-805`.** ⭐ Suite `306`, reconciled two ways. ⚠️ **`W-1` is the warn that ⛔ would have silently voided the measurement — carried into `TASK-805`'s handoff as the FIRST line of the owed PIE session.**
 - blocked-by: **TASK-803** (`ready-for-qa`)
 - parallel-safe: no
 - spec: >
@@ -12066,7 +12066,7 @@ public:
 
 #### TASK-805 — [MERGE-3] 🔧 **ONE compile · the suite · ⭐⭐ THE PIE ROWS `TASK-800` DEFERRED · ONE commit** (build-master)
 - assignee: build-master
-- status: backlog
+- status: **done (⛔ PARTIAL — the PIE half is ⛔ NOT done and is ⛔ OWED TO JONATHAN, exactly as at `TASK-802`)** — ✅ `Result: Succeeded` (0 errors, 0 warnings; all four edited files recompiled + DLL relinked, ⛔ not a no-op) · ✅ suite **306**, declared == actual, ⭐ **all five anchors exact incl. the moved one (`SiegeLadderClimbTest` 17 → 22)** · ✅ ONE commit on `main`, ⛔ NOT pushed. ⛔⛔ **(3) THE PIE ROWS WERE ⛔ NOT RUN — the editor was DOWN by the orchestrator's own hand and ⛔ every row needs a HUMAN AT THE KEYBOARD (walk in off-line); the remote interface can start/stop a play session but has ⛔ NO key, axis or pawn-input tool in any of its 19 toolsets.** ⇒ ⛔ **recorded VERBATIM as OWED, ⛔ not observed, ⛔ not simulated** (`handoffs/TASK-805-buildmaster.md` §5) — ⛔ **and `TASK-802`'s five rows ride forward UNPAID alongside them.** ⭐⭐ **THE PRECONDITION THAT WOULD HAVE VOIDED IT ALL (`W-1`): `Log LogGitClaudeUnrealTest Verbose` must be run FIRST — ⛔ a silent log is ⛔ NOT evidence of a centred climb.**
 - blocked-by: **TASK-804 (PASS)**
 - parallel-safe: no
 - spec: >

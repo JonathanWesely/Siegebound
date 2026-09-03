@@ -190,6 +190,63 @@ bool FSiegeLadderClimbStatics::End(FSiegeLadderClimbState& State)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════
+//  ⭐⭐ THIS ONE FUNCTION IS **TASK-803** (CONTACT-§14), ⛔ NOT TASK-776'S MOVE AND ⛔ NOT
+//  TASK-777'S TRIGGER. THE CROSS-TRACK TERM — the fix for the MERGED defect.
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+//
+// ⛔⛔ ATTRIBUTION, WRITTEN INTO THE SOURCE FOR THE THIRD TIME AND FOR THE SAME REASON: everything
+// ABOVE this banner is TASK-776's byte-identical lift out of SummonedUnit.cpp:129-302 and is
+// ⛔ UNTOUCHED by TASK-803 — ⛔ not one expression, default, parameter name or comment of it
+// changed, `ClimbDirection` INCLUDED and `ClimbDirection` MOST OF ALL. The new function is
+// APPENDED between the two existing regions precisely so BOTH stay contiguous and diffable.
+//
+// ⛔ AND THE PURITY BAR IS UNCHANGED BY THIS ADDITION: still ⛔ no include beyond the header,
+// still FVector and FMath and nothing else — which is what lets the convergence claim below be
+// asserted headlessly, in a suite with ⛔ not one SpawnActor.
+
+FVector FSiegeLadderClimbStatics::SteerDirection(const FSiegeLadderClimbState& State, const FVector& CurrentWorld)
+{
+	// ⛔⛔ `ClimbDirection` IS **READ** HERE, ⛔ NEVER REDEFINED (CONTACT-§14.5). This function is
+	// the only NEW reader of it; its three existing readers keep today's meaning exactly.
+	const FVector Along = ClimbDirection(State);
+
+	// ⛔ A degenerate line, or a non-finite position, yields the SAME ZeroVector ClimbDirection
+	// yields — the identical refusal and the identical value, so a call site that swapped one for
+	// the other cannot acquire a new failure mode at the door. CanBegin already refuses degenerate
+	// lines, so the first term is belt; the second is NOT — GetSafeNormal propagates a NaN input
+	// straight through (its size test is `NaN < tolerance`, which is false), and a NaN steer handed
+	// to the movement component corrupts it.
+	if (Along.IsZero() || CurrentWorld.ContainsNaN())
+	{
+		return Along;
+	}
+
+	// WHERE THE PAWN ACTUALLY IS, measured ALONG the line from Start. ⭐ THE CLOSED LOOP: the real
+	// position is re-read every frame, so a sweep, a depenetration or a MaxFlySpeed clamp cannot
+	// desync this from the world the way a dead-reckoned entry offset would.
+	const double AlongUU = FVector::DotProduct(CurrentWorld - State.Start, Along);
+
+	// THE AIM POINT — ⛔ ON the line, and ⛔ ON the segment. Clamped at BOTH ends deliberately:
+	//   · at LengthUU, so the aim never runs off the far end (and, at the very top, becomes `End`
+	//     itself — which is exactly where the arrival snap is going, so the last stretch of
+	//     convergence is aimed at the same point the teardown will use);
+	//   · at 0, so a pawn admitted BELOW Start is never aimed at a point on the line's BACKWARD
+	//     extension, which would drive it down and away from the ladder it just asked to climb.
+	const double AimUU = FMath::Clamp(AlongUU + static_cast<double>(SteerLookAheadUU),
+		0.0, static_cast<double>(State.LengthUU));
+	const FVector Aim = State.Start + Along * AimUU;
+
+	const FVector Steer = (Aim - CurrentWorld).GetSafeNormal();
+
+	// ⭐ ON the line the aim point sits exactly SteerLookAheadUU ahead ALONG it, so this returns
+	// `Along` and a centred climb is unchanged — the regression guarantee, not an accident.
+	// ⛔ The fallback covers the one degenerate case left: a pawn standing exactly ON its own aim
+	// point, reachable only when the clamp collapsed at an endpoint. There is no direction to take
+	// there, and the line's own is the right answer.
+	return Steer.IsZero() ? Along : Steer;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
 //  ⭐⭐ EVERYTHING BELOW THIS BANNER IS **TASK-777** (CONTACT-§4.1), ⛔ NOT TASK-776'S MOVE.
 //  THE CONTACT TRIGGER — the pure half: PROXIMITY + INTENT + DWELL
 // ═══════════════════════════════════════════════════════════════════════════════════════════

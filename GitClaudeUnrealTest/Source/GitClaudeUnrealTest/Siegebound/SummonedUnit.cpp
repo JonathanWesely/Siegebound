@@ -3878,6 +3878,37 @@ bool ASummonedUnit::BeginLadderClimb(const FVector& FromWorld, const FVector& To
 	Movement->StopMovementImmediately(); // no inherited walk velocity carried into the ascent
 	Movement->SetMovementMode(MOVE_Flying);
 
+	// ⭐⭐ TASK-803 INSTRUMENTATION (1 of 2) — **THE ENTRY CROSS-TRACK OFFSET**, the number
+	// `TASK-805`'s PIE row exists to read and which ⛔ nothing in this project logged before.
+	// ⭐ The unit's twin of `AHeroCharacter::BeginLadderClimb`'s block — the same measurement, kept
+	// on BOTH pawns because `CONTACT-§14`'s merged defect admits BOTH from the same 350 uu disc.
+	//
+	// ⛔⛔ IT IS **ONE** SAMPLE, AND THE BOARD'S ORIGINAL ROW ("Y at 3–4 points up the line") IS
+	// ⛔ WITHDRAWN RATHER THAN SHIPPED SHORT: `CONTACT-§14.1` proves — five ways — that
+	// `Y(top) == Y(entry)` EXACTLY, so four samples would return the identical number four times.
+	// The OTHER end of the signal is the arrival-pop line in `TickLadderClimb` below.
+	//
+	// ⭐ MEASURED AS A SIGNED PERPENDICULAR DISTANCE FROM THE **CLIMB LINE**, ⛔ not as a raw world
+	// Y (the castles ship ROTATED, so world Y is not tower-local Y in general; the line's own
+	// horizontal normal is correct in every frame). For the shipped watchtower the two coincide.
+	// ⛔ LOG-ONLY: every local below is read by the log line and by ⛔ nothing else — deleting this
+	// whole block changes ⛔ no behaviour. ⛔ Verbose, ⛔ never Warning and ⛔ never on-screen.
+	// ⭐ THE FREE CONTACT-vs-LINK DISCRIMINATOR: `AClimbableTower::TryBeginContactClimb` logs
+	// `"CONTACT climb started"` immediately after this function returns true and the ordered nav-LINK
+	// path logs ⛔ nothing on start ⇒ this line WITH that follow-up is contact, WITHOUT it is the
+	// link. ⛔ No new log is needed on either, and none is added.
+	{
+		const FVector EntryWorld = GetActorLocation();
+		const FVector ClimbAlong = FSiegeLadderClimbStatics::ClimbDirection(LadderClimb);
+		const FVector CrossAxis = FVector::CrossProduct(FVector::UpVector, ClimbAlong).GetSafeNormal();
+
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASummonedUnit '%s': ladder climb ENTRY OFFSET — cross-track %+.2f uu (signed, across the ladder's clear opening: 0 = dead centre, the stiles are at ±66.0, this capsule's side margin is 32.0). Entry %s, line start %s. ⭐ CONTACT-§14.2 admits up to ±277.8 uu here; TASK-803's steer is what nulls it — see the ARRIVAL POP line for whether it did."),
+			*GetNameSafe(this),
+			FVector::DotProduct(EntryWorld - LadderClimb.Start, CrossAxis),
+			*EntryWorld.ToString(), *LadderClimb.Start.ToString());
+	}
+
 	RefreshActorTickEnabled();
 	return true;
 }
@@ -3961,7 +3992,24 @@ void ASummonedUnit::TickLadderClimb(float DeltaSeconds)
 		// must drop from where it actually is, never be handed the deck it failed to reach.
 		if (bReachedTop)
 		{
-			SetActorLocation(FSiegeLadderClimbStatics::ArrivalTarget(LadderClimb), /*bSweep=*/ false);
+			// ⭐⭐ TASK-803 INSTRUMENTATION (2 of 2) — **THE ARRIVAL POP, MEASURED ⛔ BEFORE IT
+			// HAPPENS.** `ArrivalTarget` is `State.End`, a point ⛔ ON the climb line, and this snap
+			// is ⛔ UNSWEPT ⇒ before TASK-803 a unit admitted off-line paid its ENTIRE accumulated
+			// cross-track offset — up to ~247 uu — LATERALLY, in ONE FRAME (`CONTACT-§14.3`).
+			// ⭐ WHAT TASK-805 READS THIS FOR: with the cross-track term live the HORIZONTAL figure
+			// should be ~1 uu or less; tens or hundreds means the steer did ⛔ not converge.
+			// ⛔ LOG-ONLY: `ArrivalPop` is read by the log line and by nothing else, and
+			// `ArrivalTarget` is a pure function called ONCE here instead of twice — ⛔ no behaviour
+			// change, ⛔ Verbose, ⛔ never Warning and ⛔ never on-screen.
+			const FVector ArrivalWorld = FSiegeLadderClimbStatics::ArrivalTarget(LadderClimb);
+			const FVector ArrivalPop = ArrivalWorld - Here;
+
+			UE_LOG(LogGitClaudeUnrealTest, Verbose,
+				TEXT("ASummonedUnit '%s': ladder climb ARRIVAL POP — horizontal %.3f uu (this is the residual CROSS-TRACK error), |ΔY(world)| %.3f uu, total %.3f uu. From %s to %s, UNSWEPT. ⭐ CONTACT-§14.3: under ~1 uu means TASK-803's steer converged; tens or hundreds means it did not."),
+				*GetNameSafe(this), ArrivalPop.Size2D(), FMath::Abs(ArrivalPop.Y), ArrivalPop.Size(),
+				*Here.ToString(), *ArrivalWorld.ToString());
+
+			SetActorLocation(ArrivalWorld, /*bSweep=*/ false);
 		}
 
 		// EXIT 1 of 8 (arrival) — or the declared watchdog. Arrival is the ONLY exit that reports
@@ -3990,7 +4038,18 @@ void ASummonedUnit::TickLadderClimb(float DeltaSeconds)
 		// AutoPossessAI possession can land after BeginPlay (the miner's controller poll exists for
 		// exactly that reason). A scripted traversal whose completion the tower is WAITING ON must
 		// not be silently suppressible: the unit would float until the watchdog dropped it.
-		AddMovementInput(Direction, 1.f, /*bForce=*/ true);
+		//
+		// ⭐⭐ TASK-803 (`CONTACT-§14`) — **THE CROSS-TRACK TERM, AND IT IS SWAPPED IN HERE AND AT
+		// EXACTLY ONE OTHER PLACE IN THE PROJECT** (`AHeroCharacter::TickLadderClimb`'s twin of this
+		// line). `SteerDirection` aims at a look-ahead point ON the climb line, so a unit the
+		// contact trigger admitted from anywhere in its **350 uu 2D disc** CONVERGES onto the line
+		// as it climbs instead of riding its entry offset to the deck and paying the whole thing in
+		// one unswept frame at the arrival snap (`§14.2`/`§14.3`). The unit's side margin is 32.0 uu
+		// (r 34 against a 132.0 uu clear opening) and the admitted band reaches ±277.8.
+		// ⛔⛔ `Direction` ABOVE IS **NOT** REASSIGNED AND **NOT** REDEFINED: it is still
+		// `ClimbDirection`, and the DECK-BREACH step below still uses it, exactly as `§14.5`
+		// requires. ⭐ A unit that entered dead centre gets a BYTE-IDENTICAL climb.
+		AddMovementInput(FSiegeLadderClimbStatics::SteerDirection(LadderClimb, Here), 1.f, /*bForce=*/ true);
 		return;
 	}
 
