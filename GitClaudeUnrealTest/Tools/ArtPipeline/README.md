@@ -72,7 +72,7 @@ unset · 3 quota exhausted · 4 Space API drift · 5 concept image missing ·
 ### Stage 2 — Refine (headless Blender; script lands in TASK-083)
 
 ```powershell
-& "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" --background --python refine_trellis_glb.py -- --asset Footman
+& "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" --background --python refine_trellis_glb.py -- --card-id Footman
 ```
 
 Cleanup → remesh/decimate to the `pipeline_manifest.json` tri budget → Smart-UV

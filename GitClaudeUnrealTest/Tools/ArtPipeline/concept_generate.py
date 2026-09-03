@@ -23,14 +23,43 @@ Session law:
     Each run uses ONE InferenceClient. `--all` drives every CardID through that
     single client instance; a single-card run makes exactly one text->image call.
 
-Exit codes (identical to trellis_generate.py so the orchestration reads them 1:1):
+Artefact law (CONVENTIONS.md SC-§39.1, added TASK-864):
+    "The API returned 200" / "the file was written" / "the call did not throw" are
+    NOT success. This tool VALIDATES the artefact it produced before it reports
+    success, and it NEVER destroys a prior good roll with an unvalidated one:
+
+      write (to a temp file BESIDE the target)  ->  validate (re-read from disk)
+      ->  swap (os.replace) only if the artefact passed
+
+    A degenerate frame (fully black / fully uniform / no lit content) is REJECTED
+    with exit code 6, the existing Inbox/<CardID>.png is left byte-for-byte
+    untouched, and the rejected frame is kept under Inbox/_rejected/ for
+    inspection rather than discarded. Rationale, recorded because it was measured:
+    the pre-TASK-864 tool printed "SUCCESS -> Witch.png (3,129 bytes)" for a fully
+    black 1024x1024 frame and replaced an 837,664-byte good roll with it.
+
+    The guard ships with its own POSITIVE CONTROL (SC-§39 / SHIP-§9): `--check`
+    runs the degeneracy assessment against synthesised degenerate AND synthesised
+    legitimately-dark-but-valid fixtures, and FAILS if the guard does not go red
+    on the former or does go red on the latter. A guard only ever observed passing
+    is indistinguishable from no guard. The wider corpus sweep lives in the
+    sibling `test_concept_guard.py`.
+
+Exit codes (0-5/64 identical to trellis_generate.py so the orchestration reads
+them 1:1; 6 is NEW in TASK-864 and is unused by the sibling tools):
     0  success (or --check passed)
-    1  generic failure (network/generation/output errors after retries)
+    1  generic failure (network/generation/output errors after retries; also a
+       --check that detects the degeneracy guard itself is broken)
     2  HF_TOKEN not set in the environment
     3  quota / rate-limit exhausted (surfaced verbatim + resume guidance)
     4  API drift: the model/endpoint this client targets is gone or changed shape
     5  prompts missing/unreadable (concept_prompts.json absent, malformed, or the
        requested CardID has no valid prompt entry)
+    6  DEGENERATE ARTEFACT: the model answered, but the frame it returned has no
+       usable content (black / uniform / unlit). The call SUCCEEDED and the model
+       is FINE - the roll is not. Distinct from 5 ("input missing", nothing to
+       read) and from 4 ("API drift", the endpoint changed shape). The existing
+       Inbox PNG is untouched; re-roll with a DIFFERENT --seed.
     64 CLI usage error (argparse default of 2 is remapped so exit code 2 uniquely
        means "HF_TOKEN unset")
 """
@@ -108,6 +137,9 @@ DEFAULT_GUIDANCE: float | None = 3.5
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 INBOX_DIR = SCRIPT_DIR / "Inbox"
+# Rejected (degenerate) frames are kept here instead of being deleted, so the
+# operator can LOOK at what came back. Inside Inbox/ => gitignored like Inbox/.
+REJECTED_DIR_NAME = "_rejected"
 PROMPTS_PATH = SCRIPT_DIR / "concept_prompts.json"
 
 DEFAULT_SEED = 0
@@ -118,6 +150,45 @@ BACKOFF_BASE_SECONDS = 10       # 10s, 30s, 90s ...
 # CardIDs are PascalCase alnum (cards.csv row names). Enforced so a CardID can
 # never smuggle a path separator / traversal into the Inbox write target.
 CARD_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*$")
+
+# ---------------------------------------------------------------------------
+# Degeneracy thresholds (TASK-864). MEASURED, not guessed - see the ledger below.
+# ---------------------------------------------------------------------------
+# All statistics are taken on the 8-bit sRGB luminance channel (PIL "L"),
+# normalised to 0.0-1.0. Every figure below was measured on 2026-09-02 over the
+# 49 real shipped concepts (Tools/ArtPipeline/Inbox/*.png +
+# Content/RawAssets/Concepts/*.png) and a set of synthesised fixtures. Re-derive
+# with `uv run test_concept_guard.py`, which prints the same ledger.
+#
+#                              real corpus       synth degenerate    synth dark-
+#                              (n=49, WORST)     (WORST i.e. least   but-VALID
+#                                                obviously bad)      (WORST)
+#   p99.9 luminance            0.741             0.031               0.435
+#   luminance stddev           0.084             0.0069              0.035
+#
+# PICKED: each floor sits near the geometric mid-point of the gap it straddles,
+# so the guard has a comparable margin against BOTH failure directions
+# (SC-§39's "a count-based guard has two failure directions").
+#
+# DELIBERATELY NOT USED AS GATES, and why - both were the obvious first guesses:
+#   * PNG BYTE SIZE. The 12,444-byte black frame in TASK-833 makes a size floor
+#     look attractive, but it does not generalise IN EITHER DIRECTION: a
+#     near-black NOISE frame compresses to 610 KB (passes a size floor while
+#     being 100% degenerate), and a legitimately dark frame compresses to 7 KB
+#     (fails a size floor while being perfectly usable). Size is reported as
+#     diagnostic context only.
+#   * DISTINCT LUMINANCE LEVELS. Inverted on the hardest case: the degenerate
+#     noise fixture occupies 13 levels while a legitimate very-dark frame
+#     occupies 3. Reported as context; never gated on.
+#
+# The 99.9th percentile (not max) is used so a handful of stuck/hot pixels cannot
+# talk the guard out of a rejection: at 1024x1024 it demands ~1,049 lit pixels
+# (a ~32x32 patch), which is far less than any usable TRELLIS reference has.
+MIN_HIGHLIGHT_P999 = 0.12   # "is ANYTHING in this frame lit?"
+MIN_LUMA_STDDEV = 0.010     # "does this frame have ANY structure?" (catches
+                            # uniform frames of any brightness, incl. white/grey)
+NEAR_BLACK_LEVEL = 8        # 8/255 - the "near black" bucket, diagnostic only
+MIN_ARTEFACT_EDGE_PX = 64   # smaller than this is not a concept, it is a glitch
 
 # ---------------------------------------------------------------------------
 # Secret-safe output. EVERY print in this script goes through redact().
@@ -169,6 +240,21 @@ class QuotaExceededError(RuntimeError):
 
 class PromptsError(RuntimeError):
     """concept_prompts.json missing/malformed, or the CardID has no valid entry."""
+
+
+class DegenerateArtefactError(RuntimeError):
+    """The model answered, but the frame it returned has no usable content.
+
+    NOT an API failure and NOT a missing input - the call succeeded and the model
+    is fine. Carries its own exit code so the orchestration can tell "re-roll with
+    a different seed" apart from "the endpoint moved" (4) and "there is nothing to
+    read" (5).
+    """
+
+
+# Exit code for DegenerateArtefactError. 6 is unused by trellis_generate.py and
+# meshy_generate.py (both stop at 5 + 64), so the shipped family stays 1:1.
+EXIT_DEGENERATE = 6
 
 
 def _looks_like_quota_error(text: str) -> bool:
@@ -301,37 +387,424 @@ def build_negative_prompt(entry: dict) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Safe, confined, atomic Inbox write
+# Artefact validation - the degeneracy guard (TASK-864, law SC-§39.1)
 # ---------------------------------------------------------------------------
+
+
+def _percentile_from_histogram(hist: list[int], total: int, fraction: float) -> float:
+    """Luminance (0.0-1.0) at the given cumulative fraction of an "L" histogram."""
+    if total <= 0:
+        return 0.0
+    target = fraction * total
+    cumulative = 0
+    for level, count in enumerate(hist):
+        cumulative += count
+        if cumulative >= target:
+            return level / 255.0
+    return 1.0
+
+
+def measure_image(image) -> dict:
+    """Compute the degeneracy statistics for a PIL image. Never raises on shape."""
+    from PIL import ImageStat
+
+    luma = image.convert("L")
+    total = luma.width * luma.height
+    hist = luma.histogram()
+    try:
+        stat = ImageStat.Stat(luma)
+        mean = stat.mean[0] / 255.0
+        # A 1-pixel image (or any pathological one) can make PIL's variance go
+        # very slightly negative; treat an unmeasurable spread as ZERO, which
+        # fails the structure check. The failsafe direction is REJECT.
+        stddev = stat.stddev[0] / 255.0
+    except Exception:  # noqa: BLE001 - statistics must never mask the artefact
+        mean = 0.0
+        stddev = 0.0
+
+    # An RGBA frame whose alpha is entirely zero is "written but empty": the
+    # luminance channel cannot see it, because convert("L") ignores alpha.
+    alpha_max = None
+    if "A" in image.getbands():
+        alpha_max = image.getchannel("A").getextrema()[1] / 255.0
+
+    return {
+        "width": image.width,
+        "height": image.height,
+        "mean": mean,
+        "stddev": stddev,
+        "p999": _percentile_from_histogram(hist, total, 0.999),
+        "max": (luma.getextrema()[1] / 255.0) if total else 0.0,
+        "levels": sum(1 for count in hist if count > 0),
+        "near_black_fraction": (sum(hist[: NEAR_BLACK_LEVEL + 1]) / total) if total else 1.0,
+        "alpha_max": alpha_max,
+    }
+
+
+# The four independent degeneracy checks. Each one has its OWN isolated fixture
+# in build_guard_fixtures(), so no check can silently stop working behind another.
+CHECK_SIZE = "degenerate-size"
+CHECK_UNLIT = "no-lit-content"
+CHECK_FLAT = "no-structure"
+CHECK_TRANSPARENT = "fully-transparent"
+CHECK_UNREADABLE = "unreadable-artefact"
+
+
+def assess_degeneracy(stats: dict) -> list[tuple[str, str]]:
+    """Return the FAILED checks as (name, detail); an empty list means usable.
+
+    `detail` is self-explaining - the value measured and the threshold it missed -
+    so the operator never has to open this file to understand a rejection.
+    """
+    failed: list[tuple[str, str]] = []
+    if stats["width"] < MIN_ARTEFACT_EDGE_PX or stats["height"] < MIN_ARTEFACT_EDGE_PX:
+        failed.append((
+            CHECK_SIZE,
+            f"image is {stats['width']}x{stats['height']}; each edge must be "
+            f">= {MIN_ARTEFACT_EDGE_PX}px to be a usable concept",
+        ))
+    if stats["p999"] < MIN_HIGHLIGHT_P999:
+        failed.append((
+            CHECK_UNLIT,
+            f"99.9th-percentile luminance {stats['p999']:.4f} < "
+            f"{MIN_HIGHLIGHT_P999:.4f} floor - essentially nothing in this frame "
+            "is lit; this is the fully-black-frame case",
+        ))
+    if stats["stddev"] < MIN_LUMA_STDDEV:
+        failed.append((
+            CHECK_FLAT,
+            f"luminance stddev {stats['stddev']:.4f} < {MIN_LUMA_STDDEV:.4f} floor "
+            "- the frame is near-uniform, i.e. a flat fill rather than a subject "
+            "on a background",
+        ))
+    if stats["alpha_max"] is not None and stats["alpha_max"] <= 0.0:
+        failed.append((
+            CHECK_TRANSPARENT,
+            "every pixel has alpha 0 - the file exists but there is nothing "
+            "visible in it (the luminance channel cannot see this)",
+        ))
+    return failed
+
+
+def describe_stats(stats: dict) -> str:
+    """One-line measurement summary, printed on BOTH success and rejection."""
+    alpha = "" if stats["alpha_max"] is None else f" alphaMax={stats['alpha_max']:.3f}"
+    return (
+        f"{stats['width']}x{stats['height']} mean={stats['mean']:.4f} "
+        f"stddev={stats['stddev']:.4f} p99.9={stats['p999']:.4f} "
+        f"max={stats['max']:.4f} levels={stats['levels']} "
+        f"nearBlack={stats['near_black_fraction']:.4f}{alpha}"
+    )
+
+
+def validate_png_file(path: Path) -> tuple[dict, list[tuple[str, str]]]:
+    """Re-READ the staged PNG from disk and assess it.
+
+    Reading it back (rather than assessing the in-memory object we just saved) is
+    deliberate: it is the only way this tool can catch a write that reported
+    success while producing an unreadable or empty file - the save_asset failure
+    mode named alongside this one in SC-§39.1.
+
+    Raises DegenerateArtefactError if the file cannot be opened or decoded.
+    """
+    from PIL import Image
+
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        raise DegenerateArtefactError(
+            f"the artefact was reported written but is not on disk: {path} ({exc})"
+        ) from None
+    if size <= 0:
+        raise DegenerateArtefactError(
+            f"the artefact was written as a ZERO-BYTE file: {path}"
+        )
+    try:
+        with Image.open(path) as image:
+            image.load()           # force a full decode, not just the header
+            stats = measure_image(image)
+    except Exception as exc:  # noqa: BLE001 - any decode failure is degeneracy
+        raise DegenerateArtefactError(
+            f"the artefact was written but does not decode as an image: {path} "
+            f"({type(exc).__name__}: {exc})"
+        ) from None
+    stats["bytes"] = size
+    return stats, assess_degeneracy(stats)
+
+
+# ---------------------------------------------------------------------------
+# Safe, confined Inbox write: STAGE -> VALIDATE -> SWAP
+# ---------------------------------------------------------------------------
+# ORDER IS THE WHOLE FIX (SC-§39.1 cl. 3). The staged file is written BESIDE the
+# target and the target is not touched until validation passes, so a rejected
+# roll costs a delay and never the previous good artefact.
 
 
 def inbox_path_for(card_id: str) -> Path:
     return INBOX_DIR / f"{card_id}.png"
 
 
-def atomic_write_png(image, dest: Path) -> None:
-    """Write PNG to a temp file then atomically rename; refuse to escape Inbox/."""
-    dest = dest.resolve()
+def _require_inside_inbox(path: Path, allow_subdir: bool = False) -> Path:
+    """Confinement guard: refuse any write that escapes Inbox/.
+
+    Defence in depth on top of CARD_ID_RE. `allow_subdir` is granted ONLY to the
+    quarantine directory, whose name is a module constant and never user input.
+    """
+    resolved = path.resolve()
     inbox = INBOX_DIR.resolve()
-    if dest.parent != inbox:
-        # Confinement guard: writes are restricted to Inbox/ (defence in depth on
-        # top of the CardID regex).
-        raise RuntimeError(f"Refusing to write outside Inbox/: {dest}")
-    inbox.mkdir(parents=True, exist_ok=True)
-    tmp = dest.parent / f".{dest.name}.tmp-{os.getpid()}"
+    inside = (
+        resolved.parent == inbox
+        if not allow_subdir
+        else resolved.parent in (inbox, inbox / REJECTED_DIR_NAME)
+    )
+    if not inside:
+        raise RuntimeError(f"Refusing to write outside Inbox/: {resolved}")
+    return resolved
+
+
+def stage_png(image, dest: Path) -> Path:
+    """PHASE 1 - write the image to a temp file BESIDE dest. dest is NOT touched.
+
+    Returns the staged path. The caller MUST either commit_staged() it or dispose
+    of it; nothing here can overwrite an existing artefact.
+    """
+    dest = _require_inside_inbox(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    staged = dest.parent / f".{dest.name}.tmp-{os.getpid()}"
     try:
-        image.save(str(tmp), format="PNG")
-        os.replace(str(tmp), str(dest))  # atomic on the same filesystem
-    finally:
-        if tmp.exists():
-            try:
-                tmp.unlink()
-            except OSError:
-                pass
+        image.save(str(staged), format="PNG")
+    except Exception:
+        _discard_staged(staged)
+        raise
+    return staged
+
+
+def commit_staged(staged: Path, dest: Path) -> None:
+    """PHASE 3 - atomically swap a VALIDATED staged file into place.
+
+    Call this ONLY after validate_png_file() came back with no failed checks.
+    """
+    _require_inside_inbox(dest)
+    os.replace(str(staged), str(dest))  # atomic on the same filesystem
+
+
+def _discard_staged(staged: Path) -> None:
+    if staged.exists():
+        try:
+            staged.unlink()
+        except OSError:
+            pass
+
+
+def quarantine_staged(staged: Path, card_id: str) -> Path | None:
+    """Move a REJECTED staged frame to Inbox/_rejected/ instead of deleting it.
+
+    Best-effort by contract: a quarantine failure must never turn a clean
+    rejection into a crash, and must never leave the temp file behind.
+    """
+    try:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        folder = INBOX_DIR.resolve() / REJECTED_DIR_NAME
+        target = folder / f"{card_id}.{stamp}.png"
+        # Two rejections inside the same second (a retry loop does exactly that)
+        # must not overwrite each other - losing evidence is the habit this whole
+        # task exists to break.
+        suffix = 1
+        while target.exists():
+            target = folder / f"{card_id}.{stamp}-{suffix}.png"
+            suffix += 1
+        _require_inside_inbox(target, allow_subdir=True)
+        folder.mkdir(parents=True, exist_ok=True)
+        os.replace(str(staged), str(target))
+        return target
+    except Exception as exc:  # noqa: BLE001 - quarantine is a convenience
+        warn(f"{card_id}: could not quarantine the rejected frame ({exc}); "
+             "discarding it. The existing artefact is still untouched.")
+        _discard_staged(staged)
+        return None
 
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+# ---------------------------------------------------------------------------
+# The guard's POSITIVE CONTROL (SC-§39 / SHIP-§9)
+# ---------------------------------------------------------------------------
+# These fixtures are the reason this guard is allowed to exist. They are defined
+# HERE, not in the test file, so that `--check` and test_concept_guard.py assert
+# against the SAME set - a control that lives only in a test nobody runs is not a
+# control. Every statistic is scale-invariant (mean/stddev/percentile), so the
+# small default size behaves exactly like a 1024x1024 frame.
+
+
+def _pseudo_noise_bytes(count: int, low: int, high: int, seed: int) -> bytes:
+    """Deterministic 8-bit noise in [low, high]. No numpy, no RNG seeding."""
+    state = seed & 0xFFFFFFFF
+    span = high - low + 1
+    out = bytearray(count)
+    for i in range(count):
+        state = (1664525 * state + 1013904223) & 0xFFFFFFFF
+        out[i] = low + ((state >> 16) % span)
+    return bytes(out)
+
+
+def _checkerboard(size: int, cell: int, dark=(20, 20, 20), light=(240, 240, 240),
+                  mode: str = "RGB", alpha: int | None = None):
+    """A high-contrast checker: lots of structure AND lots of lit content.
+
+    Used to ISOLATE the checks that are not about brightness or variance, so a
+    fixture for (say) the size check cannot accidentally be caught by the flatness
+    check instead - which would leave the size check with no control of its own.
+    """
+    from PIL import Image
+
+    image = Image.new(mode, (size, size))
+    px = image.load()
+    for y in range(size):
+        for x in range(size):
+            colour = light if ((x // cell) + (y // cell)) % 2 == 0 else dark
+            px[x, y] = colour if alpha is None else (*colour, alpha)
+    return image
+
+
+def build_guard_fixtures(size: int = 256) -> list[tuple[str, object, set[str], str]]:
+    """(name, image, expected_failed_check_names, why) for every control case.
+
+    The expectation is the exact SET of checks that must fire - not merely
+    "rejected" - so every check owns at least one fixture where it is the ONLY
+    one firing. Without that, a broken check hides behind a working one and the
+    control goes green while the check is dead (SC-§39's blind-instrument case,
+    one level in).
+
+    BOTH directions are represented on purpose. A guard proven only against black
+    frames could be `return True`; the legitimately-dark fixtures are what stop
+    this from becoming "reject everything", which is the same defect in a new hat.
+    """
+    from PIL import Image
+
+    fixtures: list[tuple[str, object, set[str], str]] = []
+    full = (size, size)
+
+    # ---- MUST BE REJECTED --------------------------------------------------
+    fixtures.append((
+        "pure-black", Image.new("RGB", full, (0, 0, 0)), {CHECK_UNLIT, CHECK_FLAT},
+        "the exact TASK-833 failure: a frame with nothing in it (fires both)",
+    ))
+    # TASK-833's measured shape: mean ~0.01, ~100% near-black, faint sensor-like
+    # noise rather than a perfectly flat fill. This is the HARD degenerate case -
+    # it has non-zero variance, so a naive "stddev == 0" test would miss it.
+    fixtures.append((
+        "near-black-noise",
+        Image.frombytes("L", full, _pseudo_noise_bytes(size * size, 0, 5, 71031)).convert("RGB"),
+        {CHECK_UNLIT, CHECK_FLAT},
+        "TASK-833's measured shape (mean ~0.01, ~100% near-black, faint noise)",
+    ))
+    # ISOLATES the lit-content check: enough variance to clear the flatness floor,
+    # but nothing in the frame is actually lit.
+    fixtures.append((
+        "dark-noise-unlit",
+        Image.frombytes("L", full, _pseudo_noise_bytes(size * size, 0, 20, 4242)).convert("RGB"),
+        {CHECK_UNLIT},
+        "ISOLATES no-lit-content: real variance, but max luminance ~0.08",
+    ))
+    fixtures.append((
+        "pure-white", Image.new("RGB", full, (255, 255, 255)), {CHECK_FLAT},
+        "ISOLATES no-structure: uniform but BRIGHT - the guard is not a darkness test",
+    ))
+    fixtures.append((
+        "flat-mid-grey", Image.new("RGB", full, (128, 128, 128)), {CHECK_FLAT},
+        "a mid-brightness flat fill: passes any brightness test, has no content",
+    ))
+    fixtures.append((
+        "fully-transparent",
+        _checkerboard(size, max(1, size // 8), mode="RGBA", alpha=0),
+        {CHECK_TRANSPARENT},
+        "ISOLATES fully-transparent: rich, lit RGB but alpha 0 everywhere, which "
+        "the luminance channel cannot see",
+    ))
+    fixtures.append((
+        "tiny-glitch", _checkerboard(16, 4), {CHECK_SIZE},
+        "ISOLATES degenerate-size: perfect statistics, but a 16x16 stub is not a "
+        "concept",
+    ))
+
+    # ---- MUST BE ACCEPTED --------------------------------------------------
+    # A dim subject lit by a small highlight. Mean luminance ~0.05: DARKER than
+    # anything in the shipped corpus, and it must still pass.
+    dark = Image.new("RGB", full, (6, 6, 8))
+    dpx = dark.load()
+    mid, body_r, glint_r = size // 2, int(size * 0.293), int(size * 0.059)
+    for y in range(size):
+        for x in range(size):
+            dx, dy = x - mid, y - mid
+            dist2 = dx * dx + dy * dy
+            if dist2 < body_r * body_r:
+                falloff = 1.0 - (dist2 ** 0.5) / body_r
+                v = int(10 + 70 * falloff)
+                dpx[x, y] = (v, int(v * 0.85), int(v * 0.6))
+            if dist2 < glint_r * glint_r:
+                dpx[x, y] = (210, 200, 170)
+    fixtures.append((
+        "dark-subject-dim-rim", dark, set(),
+        "legitimately dark (mean ~0.05) with a real subject - MUST NOT fire",
+    ))
+
+    # The hardest legitimate case: mean luminance ~0.018, i.e. LOWER than some
+    # black frames, saved only by a thin lit edge. This fixture is what forces the
+    # guard to key on "is anything lit" rather than on mean brightness.
+    very_dark = Image.new("RGB", full, (2, 2, 3))
+    vpx = very_dark.load()
+    silhouette_r, edge_w, edge_h = int(size * 0.254), max(1, int(size * 0.031)), int(size * 0.195)
+    for y in range(size):
+        for x in range(size):
+            dx, dy = x - mid, y - mid
+            if dx * dx + dy * dy < silhouette_r * silhouette_r:
+                vpx[x, y] = (14, 12, 10)
+            if abs(dx) < edge_w and abs(dy) < edge_h:
+                vpx[x, y] = (120, 110, 90)
+    fixtures.append((
+        "very-dark-thin-lit-edge", very_dark, set(),
+        "mean ~0.02 - darker than some black frames; only the lit edge saves it",
+    ))
+
+    # A stand-in for an ordinary roll: subject on the prompt suffix's flat grey.
+    typical = Image.new("RGB", full, (158, 158, 160))
+    tpx = typical.load()
+    for y in range(size):
+        for x in range(size):
+            dx, dy = x - mid, y - mid
+            if dx * dx + dy * dy < body_r * body_r:
+                tpx[x, y] = (70, 90, 130)
+            if dx * dx + dy * dy < glint_r * glint_r:
+                tpx[x, y] = (250, 245, 230)
+    fixtures.append((
+        "typical-concept", typical, set(),
+        "an ordinary subject-on-grey roll - the everyday case",
+    ))
+    return fixtures
+
+
+def run_guard_self_test() -> list[str]:
+    """Run every control fixture through the guard; return the DISAGREEMENTS.
+
+    An empty list means the guard both goes RED on degenerate frames and stays
+    green on legitimately dark ones. Any entry means the guard is broken and
+    must not be trusted with a real roll.
+    """
+    problems: list[str] = []
+    for name, image, expected, why in build_guard_fixtures():
+        stats = measure_image(image)
+        fired = {check for check, _ in assess_degeneracy(stats)}
+        if fired != expected:
+            problems.append(
+                f"fixture '{name}' fired {sorted(fired) or ['(nothing)']}, "
+                f"expected {sorted(expected) or ['(nothing)']} - {why}; "
+                f"measured {describe_stats(stats)}"
+            )
+        say(f"--check: guard control [{'RED  ' if fired else 'green'}] "
+            f"{name:24s} {','.join(sorted(fired)) or '-':38s} {describe_stats(stats)}")
+    return problems
 
 
 # ---------------------------------------------------------------------------
@@ -386,18 +859,26 @@ def generate_one(client, card_id: str, entry: dict, args: argparse.Namespace) ->
         + (f", seed={seed}" if seed is not None else "") + ")")
 
     attempts = args.attempts
+    # A PINNED seed makes the model deterministic, so a degenerate frame from a
+    # pinned seed WILL reproduce - retrying it is a guaranteed waste of quota.
+    # This is not a guess: TASK-833 recorded seed 71031 returning black TWICE on
+    # identical input. With no seed pinned every attempt draws a fresh one, so a
+    # retry is worth taking.
+    seed_is_pinned = seed is not None
     last_error: Exception | None = None
     for attempt in range(1, attempts + 1):
         say(f"{card_id}: attempt {attempt}/{attempts}")
         started = time.monotonic()
+        staged: Path | None = None
+
+        # --- PHASE 1: generate, then STAGE the PNG BESIDE the target. ---------
+        # `dest` is NOT touched anywhere in this phase.
         try:
             image = client.text_to_image(positive, **kwargs)
-            atomic_write_png(image, dest)
-            size = dest.stat().st_size
-            say(f"{card_id}: SUCCESS -> {dest} ({size:,} bytes) in "
-                f"{time.monotonic() - started:.1f}s")
-            return 0
+            staged = stage_png(image, dest)
         except Exception as exc:  # noqa: BLE001 - hub raises many HTTP/timeout types
+            if staged is not None:
+                _discard_staged(staged)
             text = redact(f"{type(exc).__name__}: {exc}")
             if _looks_like_quota_error(text):
                 _print_quota_guidance(text)
@@ -412,9 +893,74 @@ def generate_one(client, card_id: str, entry: dict, args: argparse.Namespace) ->
                 delay = BACKOFF_BASE_SECONDS * (3 ** (attempt - 1))
                 warn(f"{card_id}: attempt failed ({text}); retrying in {delay}s")
                 time.sleep(delay)
+            continue
+
+        # --- PHASE 2: VALIDATE the artefact, re-read from disk. ---------------
+        # `dest` STILL holds the previous roll while this runs. Nothing has been
+        # overwritten, and nothing will be unless `failed_checks` comes back empty.
+        try:
+            stats, failed_checks = validate_png_file(staged)
+        except DegenerateArtefactError as exc:
+            stats, failed_checks = None, [(CHECK_UNREADABLE, redact(str(exc)))]
+
+        if not failed_checks:
+            # --- PHASE 3: the artefact passed - only NOW is `dest` replaced. --
+            commit_staged(staged, dest)
+            say(f"{card_id}: SUCCESS -> {dest} ({stats['bytes']:,} bytes) in "
+                f"{time.monotonic() - started:.1f}s")
+            say(f"{card_id}: validated OK - {describe_stats(stats)}")
+            return 0
+
+        # --- REJECTED. `dest` was never opened for writing. -------------------
+        quarantined = quarantine_staged(staged, card_id)
+        _print_degenerate_report(card_id, dest, stats, failed_checks, quarantined)
+        # An UNREADABLE artefact is a write/disk failure, not a model output: the
+        # seed says nothing about whether it would recur, so it stays retryable
+        # even when the seed is pinned. Only CONTENT degeneracy is deterministic.
+        deterministic = seed_is_pinned and not any(
+            name == CHECK_UNREADABLE for name, _ in failed_checks
+        )
+        if deterministic:
+            fail(f"{card_id}: seed {seed} is PINNED, so every retry would return "
+                 "this same frame - not retrying (TASK-833 recorded seed 71031 "
+                 "going black twice on identical input).")
+            fail(f"{card_id}: Fix: re-run with a DIFFERENT --seed, or reword the "
+                 f"prompt for '{card_id}' in {PROMPTS_PATH.name}.")
+            return EXIT_DEGENERATE
+        if attempt < attempts:
+            warn(f"{card_id}: no seed pinned - re-rolling with a fresh seed "
+                 f"(attempt {attempt + 1}/{attempts}).")
+            continue
+        fail(f"{card_id}: all {attempts} attempts returned a degenerate frame. "
+             f"Fix: reword the prompt for '{card_id}' in {PROMPTS_PATH.name}, or "
+             "pin a known-good --seed.")
+        return EXIT_DEGENERATE
+
     fail(f"{card_id}: failed after {attempts} attempts: "
          f"{redact(f'{type(last_error).__name__}: {last_error}')}")
     return 1
+
+
+def _print_degenerate_report(
+    card_id: str,
+    dest: Path,
+    stats: dict | None,
+    failed_checks: list[tuple[str, str]],
+    quarantined: Path | None,
+) -> None:
+    """Say exactly what was measured, what it missed, and what was NOT lost."""
+    fail(f"{card_id}: DEGENERATE ARTEFACT REJECTED - the model answered, but the "
+         "frame it returned has no usable content.")
+    if stats is not None:
+        fail(f"  measured: {describe_stats(stats)} ({stats.get('bytes', 0):,} bytes)")
+    for name, detail in failed_checks:
+        fail(f"  FAILED [{name}]: {detail}")
+    if dest.exists():
+        fail(f"  NOT OVERWRITTEN: {dest} still holds the PREVIOUS roll, byte for byte.")
+    else:
+        fail(f"  NOT WRITTEN: {dest} does not exist (there was nothing to lose).")
+    if quarantined is not None:
+        fail(f"  The rejected frame was KEPT for inspection at: {quarantined}")
 
 
 # ---------------------------------------------------------------------------
@@ -442,13 +988,17 @@ def require_token() -> str | None:
 
 
 def run_check(args: argparse.Namespace) -> int:
-    """--check: TOKENLESS smoke test - deps + client signature + prompts schema.
+    """--check: TOKENLESS smoke test - deps, client signature, prompts, GUARD.
 
     Validates that the tool WIRES UP without making any GPU call or spending any
     quota: dependencies import, the HF InferenceClient still exposes the endpoint
-    this script drives, concept_prompts.json parses against the schema, and it
+    this script drives, concept_prompts.json parses against the schema, the
+    degeneracy guard still behaves correctly on its control fixtures, and it
     reports whether HF_TOKEN is present (presence only - never the value, and
     never fails on absence: --check is tokenless by contract).
+
+    Step 5 is the guard's POSITIVE CONTROL and it is the reason --check is worth
+    running after any edit to the thresholds: it proves the guard can go RED.
 
     With --probe it additionally makes a tokenless PUBLIC metadata call
     (model_info) to check the endpoint is reachable - best-effort, informational
@@ -456,7 +1006,7 @@ def run_check(args: argparse.Namespace) -> int:
     """
     import inspect
 
-    # ---- 1/4 dependency import -------------------------------------------------
+    # ---- 1/5 dependency import -------------------------------------------------
     try:
         from huggingface_hub import InferenceClient
         import PIL  # noqa: F401 - presence check only (Pillow saves the PNG)
@@ -466,7 +1016,7 @@ def run_check(args: argparse.Namespace) -> int:
         return 1
     say("--check: dependencies import OK (huggingface_hub, pillow).")
 
-    # ---- 2/4 offline endpoint/signature drift guard ---------------------------
+    # ---- 2/5 offline endpoint/signature drift guard ---------------------------
     init_params = inspect.signature(InferenceClient.__init__).parameters
     if "token" not in init_params:
         fail("huggingface_hub drift: InferenceClient.__init__ no longer accepts "
@@ -486,7 +1036,7 @@ def run_check(args: argparse.Namespace) -> int:
     say("--check: InferenceClient signature OK "
         "(accepts token; text_to_image accepts prompt/model).")
 
-    # ---- 3/4 prompts schema ---------------------------------------------------
+    # ---- 3/5 prompts schema ---------------------------------------------------
     if not PROMPTS_PATH.is_file():
         warn(f"--check: {PROMPTS_PATH.name} not found (the art-director authors it in "
              "TASK-185). The tool is wired; generation will exit 5 until it exists.")
@@ -502,7 +1052,25 @@ def run_check(args: argparse.Namespace) -> int:
             f"prompt entr{'y' if len(prompts) == 1 else 'ies'} "
             f"({', '.join(sorted(prompts))}).")
 
-    # ---- 4/4 token presence (report only; tokenless by contract) --------------
+    # ---- 4/5 degeneracy guard POSITIVE CONTROL (SC-§39 / SHIP-§9) -------------
+    # This step is the whole reason TASK-864 is closed rather than merely coded:
+    # it proves the guard goes RED on a synthesised degenerate frame AND stays
+    # green on a legitimately dark one. A guard only ever observed passing is
+    # indistinguishable from no guard - which is the exact defect being fixed.
+    guard_problems = run_guard_self_test()
+    if guard_problems:
+        fail("--check: the DEGENERACY GUARD IS BROKEN - it disagreed with its own "
+             "control fixtures. Generation is NOT safe to run: an unverified "
+             "verifier is the defect it exists to prevent (SC-§39.1).")
+        for problem in guard_problems:
+            fail(f"  {problem}")
+        fail("Fix: MIN_HIGHLIGHT_P999 / MIN_LUMA_STDDEV / assess_degeneracy() at "
+             "the top of concept_generate.py. Re-run `--check` until this passes.")
+        return 1
+    say("--check: degeneracy guard control PASSED - RED on every degenerate "
+        "fixture, green on every legitimately-dark one.")
+
+    # ---- 5/5 token presence (report only; tokenless by contract) --------------
     if os.environ.get("HF_TOKEN"):
         say("--check: HF_TOKEN is present in the environment (value not read/echoed).")
     else:
@@ -565,6 +1133,7 @@ def run_all(args: argparse.Namespace) -> int:
     say(f"--all: {len(card_ids)} CardID(s): {', '.join(card_ids)}")
     worst = 0
     ok = skipped = 0
+    degenerate: list[str] = []
     for card_id in card_ids:
         try:
             entry = validate_entry(card_id, prompts[card_id])
@@ -586,10 +1155,24 @@ def run_all(args: argparse.Namespace) -> int:
         elif rc == 4:
             fail("--all: stopping - model/API drift (systemic). Fix MODEL_ID/PROVIDER.")
             return 4
+        elif rc == EXIT_DEGENERATE:
+            # A degenerate roll is a per-card prompt/seed interaction, NOT a
+            # systemic outage: keep going so one bad card cannot stall the batch.
+            # Every skipped card keeps its previous PNG, untouched.
+            degenerate.append(card_id)
+            worst = worst or EXIT_DEGENERATE
         else:
             worst = worst or rc  # remember the first generic failure, keep going
     say(f"--all done: {ok} generated, {skipped} skipped, "
         f"{len(card_ids) - ok - skipped} failed.")
+    if degenerate:
+        # Named, not just counted - otherwise the batch summary buries the very
+        # thing the operator has to act on.
+        fail(f"--all: {len(degenerate)} CardID(s) returned a DEGENERATE frame and "
+             f"were REJECTED (their existing PNGs are untouched): "
+             f"{', '.join(degenerate)}")
+        fail("--all: re-roll just those with a different --seed, e.g. "
+             f"`uv run concept_generate.py {degenerate[0]} --force --seed <new>`.")
     return worst
 
 
@@ -622,7 +1205,9 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "HF_TOKEN is read from the environment ONLY (never argv/file/log). Exit "
             "codes: 0 success, 1 failure, 2 HF_TOKEN unset, 3 quota/rate-limit, 4 API "
-            "drift, 5 prompts missing, 64 CLI usage. Examples: "
+            "drift, 5 prompts missing, 6 DEGENERATE ARTEFACT (the model answered but "
+            "the frame is black/uniform/unlit - the existing PNG is left untouched; "
+            "re-roll with a different --seed), 64 CLI usage. Examples: "
             "`uv run concept_generate.py Knight`, "
             "`uv run concept_generate.py --all --force`, "
             "`uv run concept_generate.py --check`."
@@ -657,7 +1242,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--force", action="store_true",
         help="Overwrite an existing Inbox/<CardID>.png (default: skip if present, so "
-             "manual drops/edits are never clobbered).",
+             "manual drops/edits are never clobbered). --force is NOT destructive on "
+             "failure: the new frame is staged and validated first, and a degenerate "
+             "roll (exit 6) leaves the existing PNG byte-for-byte intact.",
     )
     parser.add_argument(
         "--seed", type=int, default=None,

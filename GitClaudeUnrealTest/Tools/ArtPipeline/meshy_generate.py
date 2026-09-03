@@ -40,6 +40,28 @@ SSL_CERT_FILE, so the proven combined-CA-bundle fallback (TASK-185/195
 Norton precedent) works unchanged if Norton MITMs *.meshy.ai; surface
 TLS/cert failures verbatim and escalate for a Norton exclusion instead.
 
+Artefact law (CONVENTIONS.md SC-39.1, TASK-876):
+    A tool that produces an artefact VALIDATES that artefact before reporting
+    success. This script ALREADY staged its download (.part -> replace), so a
+    FAILED download could never destroy the prior artefact - but nothing
+    inspected the file between the completed download and the swap, so a
+    SUCCESSFUL download of a degenerate payload destroyed it just as
+    thoroughly. TASK-876 MEASURED exactly that, by driving this function with a
+    scripted CDN socket and zero credits: a 132-byte 0-mesh GLB (a WELL-FORMED
+    container with an empty `meshes` array) replaced a real 23,434,424-byte
+    Knight mesh, and the tool printed `SUCCESS: ... (132 bytes)` and returned 0.
+
+    ⇒ Staging protects against a FAILED transfer. Only validation protects
+    against a SUCCESSFUL transfer of a degenerate payload. The staging was
+    correct and is UNCHANGED. What was added is PHASE 2:
+
+        PHASE 1  download   -> <name>.glb.part   (pre-existing; dest untouched)
+        PHASE 2  validate_glb_file(.part)         (NEW; dest still the old file)
+        PHASE 3  commit_staged()                  os.replace, only if PHASE 2 passed
+
+    A rejected GLB is QUARANTINED to Cache/<CardID>/_rejected/, never deleted.
+    Cache/ is gitignored, so quarantined artefacts never enter git.
+
 Exit codes (board-spec contract, mirrors trellis_generate.py):
     0  success (or --check passed)
     1  generic failure (network/task/download errors after retries)
@@ -48,6 +70,12 @@ Exit codes (board-spec contract, mirrors trellis_generate.py):
        an EXPECTED PAUSE, surfaced verbatim, never retried, never faked
     4  API drift: endpoint/response no longer matches the documented schema
     5  input missing (donor GLB and/or style/concept PNG) or unreadable
+    6  DEGENERATE ARTEFACT: the task SUCCEEDED and the download completed, but
+       the GLB is unreadable, a truncated container, mesh-less, geometry-less
+       or collapsed to a plane/point. The prior artefact is UNTOUCHED and the
+       rejected GLB is in Cache/<CardID>/_rejected/. Credits were already spent
+       on the task, so this is reported, never silently retried.
+       (Same value and meaning as trellis_generate.py and concept_generate.py.)
     64 CLI usage error (argparse default of 2 is remapped so that exit code
        2 uniquely means "API key unset")
 """
@@ -61,7 +89,9 @@ import json
 import os
 import re
 import shutil
+import struct
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -96,6 +126,61 @@ POLL_HTTP_TIMEOUT = 60.0
 DOWNLOAD_HTTP_TIMEOUT = 600.0
 
 TERMINAL_STATUSES = ("SUCCEEDED", "FAILED", "CANCELED")
+
+# --- Artefact guard (SC-39.1, TASK-876) ------------------------------------
+# Kept byte-identical in meaning to trellis_generate.py's guard so the two
+# engines cannot drift apart on what "a usable mesh" means. See the FINDINGS
+# note in handoffs/TASK-876-programmer.md: the right long-term home is a shared
+# Tools/ArtPipeline/artefact_guard.py, which is outside this task's fence.
+EXIT_DEGENERATE = 6                  # measured absent from BOTH siblings
+REJECTED_DIR_NAME = "_rejected"
+
+GLB_MAGIC = 0x46546C67               # 'glTF' little-endian
+GLB_CHUNK_JSON = 0x4E4F534A          # 'JSON'
+GLB_CHUNK_BIN = 0x004E4942           # 'BIN\0'
+GLB_HEADER_BYTES = 12
+
+# THRESHOLDS ARE DERIVED, NOT PICKED (SC-40 cl. 10):
+#   MIN_MESH_VERTICES / MIN_MESH_TRIANGLES = the tetrahedron, the smallest
+#   closed solid in 3-space. A floor of "is it a solid at all", not a quality
+#   bar - quality is Stage 2's tri_budget.
+#   FLAT_ASPECT_FLOOR = a relative epsilon; a collapsed mesh has aspect EXACTLY
+#   0.0, and 1e-4 is ~3 orders of magnitude above float32 noise at unit scale.
+# MEASURED HEADROOM over the 126 real GLBs under Cache/ (TASK-876 sweep, of
+# which 33 are this script's own meshy_raw.glb / meshy_retex.glb output):
+#   vertices  11,820 (Sapper_gameready_nobomb) -> 2,955x above the floor
+#   triangles  9,461 (Sapper_Attack)           -> 2,365x
+#   aspect    0.2652 (Footman_gameready)       -> 2,652x
+#   126/126 accepted by this guard. The floors are ~3 orders of magnitude below
+#   the worst REAL asset, so they gate "is this a solid at all", never quality.
+MIN_MESH_VERTICES = 4
+MIN_MESH_TRIANGLES = 4
+FLAT_ASPECT_FLOOR = 1e-4
+
+# BYTE SIZE IS DELIBERATELY *NOT* A GATE. `SUCCESS: {dest} ({size:,} bytes)` is
+# precisely the line that reported a destroyed 20 MB mesh as a success in the
+# TASK-876 repro. Size stays a printed diagnostic and decides nothing.
+
+CHECK_UNREADABLE = "unreadable-artefact"
+CHECK_TRUNCATED = "truncated-container"
+CHECK_NO_MESH = "no-mesh"
+CHECK_NO_GEOMETRY = "no-geometry"
+CHECK_FLAT_BOUNDS = "degenerate-bounds"
+
+ALL_GLB_CHECKS = (
+    CHECK_UNREADABLE,
+    CHECK_TRUNCATED,
+    CHECK_NO_MESH,
+    CHECK_NO_GEOMETRY,
+    CHECK_FLAT_BOUNDS,
+)
+
+# Only these two are worth a re-request: they describe the TRANSPORT, and the
+# CDN can serve the same signed URL correctly on a second attempt. A
+# content-shaped rejection (no-mesh / no-geometry / degenerate-bounds) is a
+# fact about the model Meshy generated - the same URL returns the same bytes,
+# so retrying spends time for a guaranteed repeat.
+RETRYABLE_GLB_CHECKS = frozenset({CHECK_UNREADABLE, CHECK_TRUNCATED})
 
 # ---------------------------------------------------------------------------
 # Secret-safe output. EVERY print in this script goes through redact().
@@ -158,6 +243,16 @@ class MeshyHttpError(RuntimeError):
         self.body = body
         self.context = context
         super().__init__(f"{context}: HTTP {status}: {body}")
+
+
+class DegenerateArtefactError(RuntimeError):
+    """The download completed, and what arrived is not a usable mesh (exit 6)."""
+
+    def __init__(self, checks: list[str], stats: dict, path: Path | None = None):
+        self.checks = list(checks)
+        self.stats = stats
+        self.path = path
+        super().__init__(", ".join(self.checks) or "degenerate")
 
 
 def _looks_like_credit_error(text: str) -> bool:
@@ -349,23 +444,329 @@ def _strip_query(url: str) -> str:
     return url.split("?", 1)[0]
 
 
-def download_file(url: str, dest: Path, attempts: int) -> int:
-    """Stream a (signed) result URL to dest; returns byte size."""
+# ---------------------------------------------------------------------------
+# THE ARTEFACT GUARD (SC-39.1 cl. 1 + cl. 3, TASK-876)
+#
+# Deliberately kept the SAME SHAPE as trellis_generate.py's guard so the two
+# mesh engines cannot drift apart on what "a usable mesh" means. See the
+# FINDINGS section of handoffs/TASK-876-programmer.md: the right long-term home
+# is one shared Tools/ArtPipeline/artefact_guard.py, and creating a new module
+# is outside this task's fence, so it is REPORTED rather than done.
+# ---------------------------------------------------------------------------
+
+
+def measure_glb(data: bytes) -> dict:
+    """Parse a GLB byte string into the statistics the checks are computed on.
+
+    PURE: no I/O, and no exceptions for degenerate input - a malformed container
+    is RECORDED in the stats (`unreadable_reason` / `truncated_reason`) so that
+    assess_degeneracy() stays a total function of the stats. That split is what
+    lets the positive control drive every check deterministically.
+    """
+    stats: dict = {
+        "bytes": len(data),
+        "declared_bytes": None,
+        "version": None,
+        "meshes": 0,
+        "primitives": 0,
+        "vertices": 0,
+        "triangles": 0,
+        "images": 0,
+        "materials": 0,
+        "bounds_known": False,
+        "extent": None,
+        "max_extent": None,
+        "min_extent": None,
+        "aspect": None,
+        "unreadable_reason": None,
+        "truncated_reason": None,
+    }
+
+    if len(data) < GLB_HEADER_BYTES:
+        stats["unreadable_reason"] = f"file is {len(data)} bytes; a GLB header is 12"
+        return stats
+    magic, version, declared = struct.unpack("<III", data[:GLB_HEADER_BYTES])
+    stats["version"] = version
+    stats["declared_bytes"] = declared
+    if magic != GLB_MAGIC:
+        stats["unreadable_reason"] = (
+            f"not a GLB: magic 0x{magic:08X}, expected 0x{GLB_MAGIC:08X} ('glTF')"
+        )
+        return stats
+    if declared != len(data):
+        # The transfer completed but the payload is not the whole file. THIS is
+        # the truncation `.part` staging cannot see: the stream simply ended
+        # early, `copyfileobj` returned normally and nothing raised.
+        stats["truncated_reason"] = (
+            f"header declares {declared:,} bytes, file is {len(data):,}"
+        )
+
+    document = None
+    offset = GLB_HEADER_BYTES
+    while offset + 8 <= len(data):
+        chunk_length, chunk_type = struct.unpack("<II", data[offset:offset + 8])
+        body = data[offset + 8:offset + 8 + chunk_length]
+        if len(body) < chunk_length:
+            if chunk_type == GLB_CHUNK_JSON:
+                stats["unreadable_reason"] = (
+                    f"JSON chunk truncated: declared {chunk_length:,} bytes, "
+                    f"{len(body):,} present"
+                )
+                return stats
+            stats["truncated_reason"] = stats["truncated_reason"] or (
+                f"chunk 0x{chunk_type:08X} truncated: declared {chunk_length:,} "
+                f"bytes, {len(body):,} present"
+            )
+            break
+        if chunk_type == GLB_CHUNK_JSON and document is None:
+            try:
+                document = json.loads(body.decode("utf-8"))
+            except Exception as exc:  # noqa: BLE001 - any decode failure is one verdict
+                stats["unreadable_reason"] = (
+                    f"JSON chunk is not decodable glTF: {type(exc).__name__}: {exc}"
+                )
+                return stats
+        # chunkLength already includes the mandatory 4-byte padding; round up
+        # anyway so a non-conforming writer cannot desynchronise the walk.
+        offset += 8 + chunk_length + ((4 - chunk_length % 4) % 4)
+
+    if not isinstance(document, dict):
+        stats["unreadable_reason"] = "no JSON chunk in the GLB container"
+        return stats
+
+    accessors = document.get("accessors") or []
+    meshes = document.get("meshes") or []
+    stats["meshes"] = len(meshes)
+    stats["images"] = len(document.get("images") or [])
+    stats["materials"] = len(document.get("materials") or [])
+
+    low = [float("inf")] * 3
+    high = [float("-inf")] * 3
+    for mesh in meshes:
+        for primitive in (mesh.get("primitives") or []):
+            stats["primitives"] += 1
+            # mode 4 == TRIANGLES (the glTF default). Point/line primitives
+            # contribute vertices but no triangles, which is exactly right.
+            mode = primitive.get("mode", 4)
+            position = (primitive.get("attributes") or {}).get("POSITION")
+            vertex_count = 0
+            if isinstance(position, int) and 0 <= position < len(accessors):
+                accessor = accessors[position]
+                vertex_count = int(accessor.get("count") or 0)
+                stats["vertices"] += vertex_count
+                minimum, maximum = accessor.get("min"), accessor.get("max")
+                if (isinstance(minimum, list) and len(minimum) == 3
+                        and isinstance(maximum, list) and len(maximum) == 3):
+                    stats["bounds_known"] = True
+                    for axis in range(3):
+                        low[axis] = min(low[axis], float(minimum[axis]))
+                        high[axis] = max(high[axis], float(maximum[axis]))
+            indices = primitive.get("indices")
+            if isinstance(indices, int) and 0 <= indices < len(accessors):
+                element_count = int(accessors[indices].get("count") or 0)
+            else:
+                element_count = vertex_count
+            if mode == 4:
+                stats["triangles"] += element_count // 3
+
+    if stats["bounds_known"]:
+        extent = [high[axis] - low[axis] for axis in range(3)]
+        stats["extent"] = extent
+        stats["max_extent"] = max(extent)
+        stats["min_extent"] = min(extent)
+        stats["aspect"] = (
+            (stats["min_extent"] / stats["max_extent"]) if stats["max_extent"] > 0 else 0.0
+        )
+    return stats
+
+
+def assess_degeneracy(stats: dict) -> list[str]:
+    """PURE: stats -> the list of checks that FAILED (empty list == usable).
+
+    Order is stable so the positive control can assert an EXACT SET rather than
+    a boolean - with a boolean, a dead check hides behind a live one.
+    """
+    failed: list[str] = []
+    if stats.get("unreadable_reason"):
+        # Nothing else can be judged about bytes we could not parse.
+        return [CHECK_UNREADABLE]
+    if stats.get("truncated_reason"):
+        failed.append(CHECK_TRUNCATED)
+    if stats.get("primitives", 0) <= 0:
+        # SKIP RULE: geometry and bounds have no domain without a primitive.
+        failed.append(CHECK_NO_MESH)
+        return failed
+    if (stats.get("vertices", 0) < MIN_MESH_VERTICES
+            or stats.get("triangles", 0) < MIN_MESH_TRIANGLES):
+        failed.append(CHECK_NO_GEOMETRY)
+    if stats.get("bounds_known"):
+        if not stats.get("max_extent") or stats["max_extent"] <= 0.0:
+            failed.append(CHECK_FLAT_BOUNDS)
+        elif stats.get("aspect", 0.0) < FLAT_ASPECT_FLOOR:
+            failed.append(CHECK_FLAT_BOUNDS)
+    return failed
+
+
+def describe_glb(stats: dict) -> str:
+    """One-line human summary; byte size appears here as a DIAGNOSTIC only."""
+    if stats.get("unreadable_reason"):
+        return f"{stats['bytes']:,} bytes, unreadable ({stats['unreadable_reason']})"
+    extent = stats.get("extent")
+    extent_text = (
+        "x".join(f"{value:.3f}" for value in extent) if extent else "bounds unknown"
+    )
+    return (
+        f"{stats['bytes']:,} bytes, {stats['meshes']} mesh(es)/"
+        f"{stats['primitives']} primitive(s), {stats['vertices']:,} verts, "
+        f"{stats['triangles']:,} tris, bounds {extent_text}, "
+        f"aspect {stats.get('aspect') if stats.get('aspect') is None else round(stats['aspect'], 4)}, "
+        f"{stats['images']} image(s)"
+    )
+
+
+def validate_glb_file(path: Path, quiet: bool = False) -> dict:
+    """PHASE 2 - re-read the artefact FROM DISK and assess it.
+
+    Reading from disk (rather than trusting the bytes we just streamed) is what
+    catches the `save_asset` shape named beside this defect in SC-39.1: a write
+    that "succeeded" while producing a zero-byte or unreadable file.
+
+    `quiet` suppresses the skip-rule warning only; it never changes a verdict.
+    The positive control sets it, because several fixtures are SUPPOSED to be
+    unparseable and a warning per fixture would bury the real output.
+
+    Raises DegenerateArtefactError; returns the stats on success.
+    """
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        # A file that vanished, was never created, or cannot be read at all.
+        # CONTROLLED by run_guard_self_test()'s missing-file fixture - deleting
+        # this except clause turns the control RED (SC-39.1 cl. 6).
+        stats = {"bytes": -1, "unreadable_reason": f"{type(exc).__name__}: {exc}"}
+        raise DegenerateArtefactError([CHECK_UNREADABLE], stats, path) from None
+    stats = measure_glb(data)
+    failed = assess_degeneracy(stats)
+    if not failed and not stats.get("bounds_known") and not quiet:
+        warn(f"{path.name}: no POSITION accessor carries min/max, so the "
+             "degenerate-bounds check was SKIPPED (glTF requires them; every "
+             "one of the 126 reference GLBs has them). Inspect this mesh.")
+    if failed:
+        raise DegenerateArtefactError(failed, stats, path)
+    return stats
+
+
+# ---------------------------------------------------------------------------
+# stage -> validate -> swap. The overwrite exists at EXACTLY ONE call site.
+#
+# The STAGING half was ALREADY CORRECT here and is UNCHANGED (board TASK-876
+# item 2 - do not re-plumb a path that already exists). What was missing is
+# PHASE 2. Measured, not assumed: the TASK-876 repro drove the PRISTINE tool
+# with a scripted CDN and the `.part` staging did NOT save the prior artefact,
+# because the download SUCCEEDED - a 132-byte 0-mesh GLB replaced a real
+# 23,434,424-byte mesh and the tool printed SUCCESS and returned 0. Staging
+# protects against a FAILED transfer; only validation protects against a
+# SUCCESSFUL transfer of a degenerate payload.
+# ---------------------------------------------------------------------------
+
+
+def _require_inside_cache(path: Path) -> Path:
+    """Write confinement: this script only ever writes under Cache/."""
+    resolved = Path(path).resolve()
+    root = Path(CACHE_DIR).resolve()
+    if not (resolved == root or root in resolved.parents):
+        raise RuntimeError(f"Refusing to write outside Cache/: {resolved}")
+    return resolved
+
+
+def commit_staged(staged: Path, dest: Path) -> None:
+    """PHASE 3 - atomically swap a VALIDATED staged file into place.
+
+    THE ONLY place in this script that writes the output GLB. Call it ONLY
+    after validate_glb_file() returned without raising.
+    """
+    _require_inside_cache(dest)
+    os.replace(str(staged), str(dest))  # atomic on the same filesystem
+
+
+def _discard_staged(staged: Path) -> None:
+    if staged.exists():
+        try:
+            staged.unlink()
+        except OSError:
+            pass
+
+
+def quarantine_staged(staged: Path, asset: str, dest: Path) -> Path | None:
+    """Move a REJECTED staged GLB to Cache/<asset>/_rejected/ - never delete it.
+
+    A rejected mesh has ALREADY CONSUMED Meshy credits; deleting it deletes the
+    evidence of what those credits bought. Best-effort by contract: a quarantine
+    failure must never turn a clean rejection into a crash, and must never leave
+    the temp file behind.
+    """
+    try:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        folder = _require_inside_cache(dest).parent / REJECTED_DIR_NAME
+        target = folder / f"{dest.stem}.{stamp}{dest.suffix}"
+        # Two rejections inside the same second (a retry loop does exactly
+        # that) must not overwrite each other.
+        suffix = 1
+        while target.exists():
+            target = folder / f"{dest.stem}.{stamp}-{suffix}{dest.suffix}"
+            suffix += 1
+        _require_inside_cache(target)
+        folder.mkdir(parents=True, exist_ok=True)
+        os.replace(str(staged), str(target))
+        return target
+    except Exception as exc:  # noqa: BLE001 - quarantine is a convenience
+        warn(f"{asset}: could not quarantine the rejected GLB ({exc}); discarding "
+             "it. The existing artefact is still untouched.")
+        _discard_staged(staged)
+        return None
+
+
+def download_file(url: str, dest: Path, attempts: int) -> tuple[Path, dict]:
+    """PHASE 1+2 - stream a (signed) result URL to `<dest>.part` and VALIDATE it.
+
+    Returns (STAGED path, the validated stats). It deliberately does NOT return
+    a byte size and deliberately does NOT touch `dest`: reporting a size was the
+    entire evidence base of the defect this function used to carry, and the swap
+    now belongs to the caller so it can exist at exactly one guarded call site.
+
+    A TRANSPORT-shaped rejection (unreadable / truncated) is retried, because a
+    CDN can serve the same signed URL correctly on a second attempt. A
+    CONTENT-shaped rejection (no-mesh / no-geometry / degenerate-bounds) is NOT:
+    the same URL returns the same bytes, so a retry spends time for a guaranteed
+    repeat. Raises DegenerateArtefactError carrying the staged path.
+    """
     import urllib.request
 
+    staged = dest.with_suffix(dest.suffix + ".part")
     last_error: Exception | None = None
+    last_degenerate: DegenerateArtefactError | None = None
     for attempt in range(1, attempts + 1):
         try:
-            say(f"Downloading {_strip_query(url)} -> {dest.name} "
+            say(f"Downloading {_strip_query(url)} -> {staged.name} "
                 f"(attempt {attempt}/{attempts})")
             request = urllib.request.Request(url)
-            tmp = dest.with_suffix(dest.suffix + ".part")
             with urllib.request.urlopen(
                 request, timeout=DOWNLOAD_HTTP_TIMEOUT, context=_ssl_context()
-            ) as response, open(tmp, "wb") as sink:
+            ) as response, open(staged, "wb") as sink:
                 shutil.copyfileobj(response, sink)
-            tmp.replace(dest)
-            return dest.stat().st_size
+            # PHASE 2: dest is STILL the previous good artefact at this point.
+            stats = validate_glb_file(staged)
+            say(f"Downloaded and validated: {describe_glb(stats)}")
+            return staged, stats
+        except DegenerateArtefactError as exc:
+            last_degenerate = exc
+            if set(exc.checks) & RETRYABLE_GLB_CHECKS and attempt < attempts:
+                delay = BACKOFF_BASE_SECONDS * (3 ** (attempt - 1))
+                warn(f"Downloaded GLB failed {', '.join(exc.checks)} "
+                     f"(transport-shaped); re-requesting in {delay}s")
+                time.sleep(delay)
+                continue
+            raise
         except Exception as exc:  # noqa: BLE001
             last_error = exc
             if attempt < attempts:
@@ -374,6 +775,9 @@ def download_file(url: str, dest: Path, attempts: int) -> int:
                      f"({redact(f'{type(exc).__name__}: {exc}')}); "
                      f"retrying in {delay}s")
                 time.sleep(delay)
+    if last_degenerate is not None:
+        raise last_degenerate
+    _discard_staged(staged)
     raise RuntimeError(
         f"Download failed after {attempts} attempts: "
         f"{redact(f'{type(last_error).__name__}: {last_error}')}"
@@ -610,6 +1014,211 @@ def write_failed_state(asset_dir: Path, record: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# The guard's POSITIVE CONTROL (SC-39 / SC-39.1 cl. 4 + cl. 6 / SHIP-9)
+#
+# It lives HERE and runs inside --check, not in a separate file somebody has to
+# remember to run. Every fixture is a REAL FILE ON DISK driven through
+# validate_glb_file(), so the on-disk checks are controlled exactly like the
+# in-memory ones - clause 6 exists because concept_generate.py's fifth check
+# was the one whose fixture cost four more lines, and this is those four lines.
+# ---------------------------------------------------------------------------
+
+
+def _synth_glb(
+    vertices: int,
+    triangles: int,
+    bounds_min=(0.0, 0.0, 0.0),
+    bounds_max=(1.0, 1.0, 1.0),
+    meshes: int = 1,
+    declared_delta: int = 0,
+    json_override: bytes | None = None,
+) -> bytes:
+    """Build a syntactically valid GLB 2.0 carrying the requested degeneracy.
+
+    SYNTHESISED, never a real artefact and never a re-request: proving the guard
+    goes RED must cost zero Meshy credits (SC-39.1 cl. 4).
+    """
+    position_bytes = vertices * 12
+    index_bytes = triangles * 3 * 2
+    index_bytes += (4 - index_bytes % 4) % 4
+    buffer = bytes(max(position_bytes + index_bytes, 4))
+
+    document = {
+        "asset": {"version": "2.0"},
+        "scene": 0,
+        "scenes": [{"nodes": list(range(meshes))}],
+        "nodes": [{"mesh": index} for index in range(meshes)],
+        "meshes": [
+            {"primitives": [
+                {"attributes": {"POSITION": 0}, "indices": 1, "mode": 4}
+            ]} for _ in range(meshes)
+        ],
+        "accessors": [
+            {"bufferView": 0, "componentType": 5126, "count": vertices,
+             "type": "VEC3", "min": list(bounds_min), "max": list(bounds_max)},
+            {"bufferView": 1, "componentType": 5123, "count": triangles * 3,
+             "type": "SCALAR"},
+        ],
+        "bufferViews": [
+            {"buffer": 0, "byteOffset": 0, "byteLength": max(position_bytes, 1)},
+            {"buffer": 0, "byteOffset": position_bytes,
+             "byteLength": max(index_bytes, 1)},
+        ],
+        "buffers": [{"byteLength": len(buffer)}],
+        "images": [{"uri": "synthetic.png"}],
+        "materials": [{"name": "synthetic"}],
+    }
+    payload = json_override if json_override is not None else json.dumps(
+        document, separators=(",", ":")
+    ).encode("utf-8")
+    payload += b" " * ((4 - len(payload) % 4) % 4)
+    body = (
+        struct.pack("<II", len(payload), GLB_CHUNK_JSON) + payload
+        + struct.pack("<II", len(buffer), GLB_CHUNK_BIN) + buffer
+    )
+    total = GLB_HEADER_BYTES + len(body)
+    return struct.pack("<III", GLB_MAGIC, 2, total + declared_delta) + body
+
+
+def guard_fixtures() -> list[tuple[str, bytes | None, tuple[str, ...]]]:
+    """(name, GLB bytes or None, the EXACT set of checks that must fire).
+
+    A payload of None means THE FILE IS NEVER CREATED - that fixture exercises
+    validate_glb_file()'s OSError branch, which is a DISTINCT raise site from
+    the byte-level ones and is otherwise never reached by any fixture.
+
+    EVERY check owns a fixture where it fires ALONE (SC-39.1 cl. 6):
+        unreadable-artefact  <- missing-file / empty-file / not-a-glb /
+                                json-chunk-garbage
+        truncated-container  <- truncated-container
+        no-mesh              <- no-mesh
+        no-geometry          <- single-triangle
+        degenerate-bounds    <- flat-plane
+
+    AND BOTH DIRECTIONS ARE CONTROLLED - a guard that rejects everything must
+    fail this suite just as loudly as one that accepts everything:
+        minimal-tetrahedron has FEWER vertices (4) than the REJECTED flat-plane
+        (6), so nothing keyed on size or count alone can pass one and fail the
+        other. thin-but-legitimate is 26x thinner than the thinnest real asset
+        in the 126-GLB corpus (aspect 0.010 vs 0.265) and must still be
+        ACCEPTED, which is what forces the bounds check to key on "collapsed"
+        rather than on "thin".
+    """
+    return [
+        # ---- must be REJECTED ------------------------------------------------
+        ("missing-file", None, (CHECK_UNREADABLE,)),
+        ("empty-file", b"", (CHECK_UNREADABLE,)),
+        ("not-a-glb", b"\xab" * 64, (CHECK_UNREADABLE,)),
+        ("json-chunk-garbage",
+         _synth_glb(64, 32, json_override=b"<<<not json at all>>>"),
+         (CHECK_UNREADABLE,)),
+        ("truncated-container",
+         _synth_glb(64, 32, declared_delta=64), (CHECK_TRUNCATED,)),
+        ("no-mesh", _synth_glb(0, 0, meshes=0), (CHECK_NO_MESH,)),
+        ("single-triangle", _synth_glb(3, 1), (CHECK_NO_GEOMETRY,)),
+        ("flat-plane",
+         _synth_glb(6, 4, bounds_min=(0.0, 0.0, 0.0), bounds_max=(1.0, 1.0, 0.0)),
+         (CHECK_FLAT_BOUNDS,)),
+        # ---- must be ACCEPTED (the other direction) --------------------------
+        ("minimal-tetrahedron", _synth_glb(4, 4), ()),
+        ("thin-but-legitimate",
+         _synth_glb(2048, 1024, bounds_min=(0.0, 0.0, 0.0),
+                    bounds_max=(1.0, 1.0, 0.01)), ()),
+        ("dense-healthy",
+         _synth_glb(100_000, 60_000, bounds_min=(-0.5, -0.5, -0.5),
+                    bounds_max=(0.5, 0.5, 0.5)), ()),
+    ]
+
+
+def _run_fixture_suite(directory: Path) -> list[str]:
+    """Drive every fixture through validate_glb_file() from a REAL FILE.
+
+    Returns the list of disagreements (empty == the guard behaves exactly as
+    specified). Used both by the control and by the control's own meta-check.
+    """
+    disagreements: list[str] = []
+    for name, payload, expected in guard_fixtures():
+        path = directory / f"{name}.glb"
+        if payload is None:
+            # The missing-file fixture: ensure it does NOT exist.
+            if path.exists():
+                path.unlink()
+        else:
+            path.write_bytes(payload)
+        try:
+            validate_glb_file(path, quiet=True)
+            fired: tuple[str, ...] = ()
+        except DegenerateArtefactError as exc:
+            fired = tuple(exc.checks)
+        except Exception as exc:  # noqa: BLE001
+            # The guard must REJECT, never explode. An unexpected exception is
+            # a disagreement in its own right, reported rather than raised so
+            # the control names the fixture instead of dying on it.
+            disagreements.append(
+                f"{name}: expected {list(expected) or 'ACCEPT'}, but the guard "
+                f"RAISED {type(exc).__name__}: {exc}"
+            )
+            continue
+        if fired != tuple(expected):
+            disagreements.append(
+                f"{name}: expected {list(expected) or 'ACCEPT'}, got "
+                f"{list(fired) or 'ACCEPT'}"
+            )
+    return disagreements
+
+
+def run_guard_self_test(verbose: bool = True) -> int:
+    """0 == the guard is alive and behaves exactly as its fixtures specify.
+
+    OFFLINE and KEYLESS by construction, so it runs before the API-key check
+    and cannot be skipped by an unset MESHY_API_KEY - which is the state this
+    machine is actually in (TASK-876). A control that only runs when a
+    credential is present is a control with a known failure mode.
+    """
+    with tempfile.TemporaryDirectory(prefix="meshy-guard-") as scratch:
+        scratch_dir = Path(scratch)
+        disagreements = _run_fixture_suite(scratch_dir)
+        if disagreements:
+            for line in disagreements:
+                fail(f"guard control: {line}")
+            fail("GUARD CONTROL FAILED - the degeneracy guard does not behave as "
+                 "specified. Generation is BLOCKED until this is fixed: an "
+                 "unverified guard is indistinguishable from no guard.")
+            return 1
+
+        # ---- the control's OWN control: prove this suite can go RED ---------
+        # A control only ever seen green is the same defect one level up. Both
+        # directions are injected, because a guard that rejects everything is
+        # the same bug wearing different clothes.
+        original = globals()["assess_degeneracy"]
+        try:
+            globals()["assess_degeneracy"] = lambda stats: []
+            never_rejects = len(_run_fixture_suite(scratch_dir))
+            globals()["assess_degeneracy"] = lambda stats: list(ALL_GLB_CHECKS)
+            always_rejects = len(_run_fixture_suite(scratch_dir))
+        finally:
+            globals()["assess_degeneracy"] = original
+        restored = len(_run_fixture_suite(scratch_dir))
+
+        if never_rejects <= 0 or always_rejects <= 0 or restored != 0:
+            fail(f"guard control is not a live instrument: never-rejects gave "
+                 f"{never_rejects} disagreements, always-rejects gave "
+                 f"{always_rejects}, restored gave {restored} (expected >0, >0, 0).")
+            return 1
+
+    if verbose:
+        fixtures = guard_fixtures()
+        rejected = sum(1 for _, _, expected in fixtures if expected)
+        say(f"--check: degeneracy guard control PASSED - {len(fixtures)} fixtures "
+            f"({rejected} rejected, {len(fixtures) - rejected} accepted), all "
+            f"{len(ALL_GLB_CHECKS)} checks fire in isolation, and the control "
+            f"itself goes RED when the guard is broken ({never_rejects} "
+            f"disagreements with a never-rejects guard, {always_rejects} with an "
+            "always-rejects one).")
+    return 0
+
+
 def run_check() -> int:
     """--check: key + reachability + schema smoke test. Spends NO credits.
 
@@ -618,6 +1227,13 @@ def run_check() -> int:
     '--check passes with key present / exits 2 without' - so --check REQUIRES
     the key. It calls only free read endpoints (balance + task lists).
     """
+    # STEP 1, and deliberately FIRST - AHEAD of the key check, not merely ahead
+    # of the network calls. MESHY_API_KEY is unset on this machine, so a control
+    # placed after require_api_key() would exit 2 and NEVER RUN (SC-39.1 cl. 6:
+    # the control belongs in the ALWAYS-RUN tier).
+    if run_guard_self_test() != 0:
+        return 1
+
     api_key = require_api_key()
     if not api_key:
         return 2
@@ -707,7 +1323,61 @@ def _finish_task_common(
             f"{sorted(model_urls.keys()) if isinstance(model_urls, dict) else model_urls})."
         )
     dest = asset_dir / output_name
-    size = download_file(glb_url, dest, args.attempts)
+
+    # ---- stage -> validate -> swap (SC-39.1 cl. 3) ------------------------
+    # PHASE 1+2 happen inside download_file(): the payload lands in
+    # <dest>.part and is validated FROM DISK. Whatever happens in there, the
+    # previous artefact at `dest` is still untouched.
+    try:
+        staged, glb_stats = download_file(glb_url, dest, args.attempts)
+    except DegenerateArtefactError as exc:
+        quarantined = quarantine_staged(exc.path or dest, asset_dir.name, dest)
+        state_record["status"] = "degenerate-artefact"
+        state_record["finished_utc"] = _utc_now()
+        state_record["task_id"] = task_id
+        state_record["failed_checks"] = exc.checks
+        state_record["artefact_stats"] = exc.stats
+        state_record["quarantined_to"] = str(quarantined) if quarantined else None
+        state_record["prior_artefact_preserved"] = dest.is_file()
+        state_record["consumed_credits"] = task.get("consumed_credits")
+        write_failed_state(asset_dir, state_record)
+        fail(f"DEGENERATE ARTEFACT: task {task_id} SUCCEEDED and the download "
+             f"completed, but the GLB is not a usable mesh. Failed checks: "
+             f"{', '.join(exc.checks)}.")
+        fail(f"  measured: {describe_glb(exc.stats)}")
+        if exc.stats.get("unreadable_reason"):
+            fail(f"  reason: {exc.stats['unreadable_reason']}")
+        if exc.stats.get("truncated_reason"):
+            fail(f"  reason: {exc.stats['truncated_reason']}")
+        if dest.is_file():
+            fail(f"  The PREVIOUS {dest.name} is UNTOUCHED "
+                 f"({dest.stat().st_size:,} bytes) - nothing was destroyed.")
+        else:
+            fail(f"  No previous {dest.name} existed; nothing was written.")
+        if quarantined:
+            fail(f"  The rejected GLB is kept for inspection: {quarantined}")
+        fail(f"  Credits for task {task_id} were ALREADY SPENT "
+             f"({task.get('consumed_credits')}); this is reported, never "
+             "silently re-requested.")
+        return EXIT_DEGENERATE
+
+    # PHASE 3: the ONLY write to the output GLB in this script, reached only
+    # because PHASE 2 raised nothing.
+    try:
+        commit_staged(staged, dest)
+    except OSError as exc:
+        # A locked destination (an open viewer on Windows) must not escape as a
+        # traceback and must not leave the staged file behind.
+        _discard_staged(staged)
+        state_record["status"] = "failed"
+        state_record["finished_utc"] = _utc_now()
+        state_record["error"] = redact(f"commit failed: {type(exc).__name__}: {exc}")
+        write_failed_state(asset_dir, state_record)
+        fail(f"Validated GLB could not be swapped into place: "
+             f"{type(exc).__name__}: {exc}. The previous {dest.name} is "
+             "untouched; close anything holding the file and re-run.")
+        return 1
+    size = dest.stat().st_size
 
     consumed = task.get("consumed_credits")
     balance_after = fetch_balance(api_key)
@@ -722,6 +1392,8 @@ def _finish_task_common(
         "output_glb": str(dest),
         "output_glb_bytes": size,
         "output_glb_sha256": _sha256(dest),
+        "artefact_stats": glb_stats,
+        "artefact_checks_passed": list(ALL_GLB_CHECKS),
         "consumed_credits": consumed,
         "credits_before": balance_before,
         "credits_after": balance_after,
@@ -736,7 +1408,10 @@ def _finish_task_common(
            if balance_before is not None and balance_after is not None else "")
         + "." if consumed is not None else ""
     )
-    say(f"SUCCESS: {dest} ({size:,} bytes).{credits_note} "
+    # The measurement beside the word SUCCESS is now the measurement that was
+    # CHECKED, not decoration (SC-39.1's durable sentence). `{size:,} bytes`
+    # alone is exactly what reported a destroyed 23 MB mesh as a success.
+    say(f"SUCCESS: {dest} - validated: {describe_glb(glb_stats)}.{credits_note} "
         "Next: Stage 2 headless refine consumes this donor (INVARIANT: "
         "Meshy output never lands in Content/ directly).")
     return 0
@@ -963,9 +1638,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--check", action="store_true",
-        help="Smoke test: resolve the key (exit 2 if unset), then hit free "
-             "read endpoints (balance + task lists) to verify auth + schema. "
-             "No credit spend.",
+        help="Smoke test: FIRST run the degeneracy guard's positive control "
+             "(offline AND KEYLESS, so it runs even with no API key set; "
+             "synthetic GLB fixtures giving every check a case where it fires "
+             "ALONE, plus must-ACCEPT cases so a reject-everything guard fails "
+             "too - the live fixture count is printed), then resolve the key "
+             "(exit 2 if unset) and hit free read endpoints (balance + task "
+             "lists) to verify auth + schema. A broken guard exits 1 and BLOCKS "
+             "generation. No credit spend.",
     )
     return parser
 
