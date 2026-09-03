@@ -2622,9 +2622,14 @@ void ASiegePlayerController::UpdatePlacementGhost()
 	//     RETIRED here by TASK-349 (plinth-retirement law): it would refuse
 	//     exactly the interior placement Jonathan asked for. Placement truth =
 	//     nav projection + collision + the existing clearances below;
-	// (4) Building cards only (M4.5 ruling 7): ground slope at the candidate
-	//     <= MaxPlacementSlopeDegrees, measured by a straight-down trace
-	//     (fail-closed on a miss) — hill flanks refuse, crowns (<=10°) pass;
+	// (4) Building cards only (M4.5 ruling 7): ground slope <=
+	//     MaxPlacementSlopeDegrees, measured by straight-down traces
+	//     (fail-closed on a miss at the CENTRE) — hill flanks refuse, crowns
+	//     (<=10°) pass. ⭐ FOOTPRINT-AWARE since TASK-871: the candidate point AND
+	//     its four footprint corners are sampled, so a building whose centre sits
+	//     on a crown can no longer OVERHANG a steep flank and pass. ⛔ The gate is
+	//     tightened IN PLACE — it is not moved, and every rule below still runs
+	//     after it (see the order note);
 	// (5) Building cards only (M4.5 ruling 7, Fab amendment): >=
 	//     ObstaclePlacementClearance (2D) from every "Obstacle"-tagged actor
 	//     (trees AND rocks);
@@ -2641,12 +2646,18 @@ void ASiegePlayerController::UpdatePlacementGhost()
 	// reason ("Too steep" / "Too close to obstacles" get their own messages).
 	//
 	// ⭐⛔ THE FOOTPRINT IS READ ONCE PER FRAME, HERE, AND FROM THE GHOST'S MESH —
-	// ⛔ never from a literal (TOWER-§7). Reading it once also means the two gates
-	// below cannot disagree about how big the building is.
+	// ⛔ never from a literal (TOWER-§7). Reading it once also means the THREE gates
+	// below cannot disagree about how big the building is. ⭐ TASK-871 added the
+	// THIRD consumer (the slope probe) as a new CONSUMER of this one measurement,
+	// ⛔ not as a second measurement of its own — a second definition of "how wide
+	// is this building" is exactly how the ghost and the validated footprint drift.
 	//
-	// ⛔ DEGRADE-OPEN, AND THE TWO GATES DEGRADE DIFFERENTLY ON PURPOSE:
+	// ⛔ DEGRADE-OPEN, AND THE THREE GATES DEGRADE DIFFERENTLY ON PURPOSE:
 	//   • the building clearance takes the radius by VALUE and gets 0 on the
 	//     degrade path ⇒ max(200, 0) = 200 = the shipped rule, byte-for-byte;
+	//   • the SLOPE probe also takes it by VALUE and gets 0 ⇒ its sample count
+	//     collapses to ONE and it is the shipped single straight-down trace at the
+	//     cursor, byte-for-byte (TASK-871 spec (4): the degrade is KEPT);
 	//   • the unit gate is SKIPPED entirely (bFootprintKnown) rather than run at
 	//     radius 0 ⇒ a card whose ghost mesh is missing behaves exactly as it did
 	//     before this task, with ONE warning and no new refusal.
@@ -2673,7 +2684,7 @@ void ASiegePlayerController::UpdatePlacementGhost()
 	{
 		bValid = IsPointOnNavmesh(PlacementLocation);
 	}
-	if (bValid && bPendingIsBuilding && !IsGroundSlopePlaceable(PlacementLocation))
+	if (bValid && bPendingIsBuilding && !IsGroundSlopePlaceable(PlacementLocation, FootprintRadius))
 	{
 		bValid = false;
 		PlacementInvalidReason = EPlacementInvalidReason::Slope;
@@ -4958,7 +4969,7 @@ bool ASiegePlayerController::HasBuildingClearance(const FVector& Point, float Fo
 	return true;
 }
 
-bool ASiegePlayerController::IsGroundSlopePlaceable(const FVector& Point) const
+bool ASiegePlayerController::IsGroundSlopePlaceable(const FVector& Point, float FootprintRadius) const
 {
 	UWorld* World = GetWorld();
 	if (!World)
@@ -4968,7 +4979,7 @@ bool ASiegePlayerController::IsGroundSlopePlaceable(const FVector& Point) const
 	}
 
 	// M4.5 ruling 7 slope gate (TASK-093): straight-down line trace bracketing
-	// the candidate point by ±500 Z (the spec's window; max terrain height is
+	// each sample by ±500 Z (the spec's window; max terrain height is
 	// 250, so the surface is always inside it). Channel choice (flagged
 	// decision): ECC_Visibility — the SAME channel as the cursor trace
 	// (TraceCursorToGround), so the surface that positioned the ghost is the
@@ -4978,32 +4989,86 @@ bool ASiegePlayerController::IsGroundSlopePlaceable(const FVector& Point) const
 	// per-triangle normals (bTraceComplex stays false, matching the cursor
 	// trace). Pawn capsules ignore Visibility and the ghost's collision is
 	// fully disabled (ignored anyway, belt-and-braces below).
-	const FVector TraceStart = Point + FVector(0.f, 0.f, 500.f);
-	const FVector TraceEnd = Point - FVector(0.f, 0.f, 500.f);
+	//
+	// ⭐⭐ TASK-871 (qa/TASK-816.md W-4 / R-3) — THE TRACE IS NOW A FOOTPRINT
+	// PROBE RATHER THAN A POINT PROBE, AND THE REASON IS WORTH STATING PLAINLY:
+	// a single trace at the cursor answers for an INFINITELY THIN building. The
+	// real one is wide, and since TASK-815 the player can widen it by half again
+	// with the wheel — so a structure whose CENTRE sat on a flat crown could
+	// overhang a steep flank and PASS. ⭐ The wheel did not create that; it
+	// widened an exposure that was already there. TOWER-§7 declared it as a
+	// follow-on rather than smuggling it into TASK-735, and this is that
+	// follow-on.
+	//
+	// ⛔ THE SAMPLE SET COMES FROM THE ⛔ SAME FootprintRadius THE TWO CLEARANCE
+	// GATES BELOW ARE FED — read ONCE per frame, from the ghost's ⭐ SCALED
+	// bounds (STACK-§6), one line above the gate chain. ⛔ Nothing here
+	// re-derives the footprint: a second definition is exactly how the ghost the
+	// player sees and the footprint the click is validated against drift apart.
+	//
+	// ⛔ THE QUERY PARAMS AND THE ±Z BRACKET ARE BUILT ⛔ ONCE AND SHARED BY EVERY
+	// SAMPLE — five traces with five independently-spelled brackets is five
+	// chances for one of them to be edited alone.
+	const FVector TraceBracket(0.f, 0.f, 500.f);
 	FCollisionQueryParams SlopeQueryParams(SCENE_QUERY_STAT(SiegeboundPlacementSlope), /*bInTraceComplex=*/ false);
 	if (GhostActor)
 	{
 		SlopeQueryParams.AddIgnoredActor(GhostActor);
 	}
 
-	FHitResult SlopeHit;
-	if (!World->LineTraceSingleByChannel(SlopeHit, TraceStart, TraceEnd, ECC_Visibility, SlopeQueryParams) || !SlopeHit.bBlockingHit)
+	const int32 NumSamples = NumPlacementSlopeSamples(FootprintRadius);
+	for (int32 SampleIndex = 0; SampleIndex < NumSamples; ++SampleIndex)
 	{
-		// fail-closed (spec): a point the world cannot answer for is not
-		// placeable. Verbose per the task block — the per-frame ghost update
-		// would otherwise spam the log from empty space.
-		UE_LOG(LogGitClaudeUnrealTest, Verbose,
-			TEXT("ASiegePlayerController '%s': placement slope trace missed at (%.0f, %.0f, %.0f) — refusing (fail-closed, GDD §5 M4.5)."),
-			*GetNameSafe(this), Point.X, Point.Y, Point.Z);
-		return false;
+		// ⭐ INDEX 0 IS THE CENTRE BY CONSTRUCTION (PlacementSlopeSampleOffset
+		// answers the zero vector for it), so the shipped trace is still the
+		// FIRST thing this function does and still at exactly the shipped point.
+		const bool bIsCentreSample = (SampleIndex == 0);
+		const FVector SamplePoint = Point + PlacementSlopeSampleOffset(SampleIndex, FootprintRadius);
+
+		FHitResult SlopeHit;
+		const bool bHit = World->LineTraceSingleByChannel(
+			SlopeHit, SamplePoint + TraceBracket, SamplePoint - TraceBracket, ECC_Visibility, SlopeQueryParams)
+			&& SlopeHit.bBlockingHit;
+
+		if (!bHit)
+		{
+			if (bIsCentreSample)
+			{
+				// fail-closed (spec): a point the world cannot answer for is not
+				// placeable. Verbose per the task block — the per-frame ghost update
+				// would otherwise spam the log from empty space. ⛔ UNCHANGED by
+				// TASK-871: this is the shipped refusal, at the shipped point.
+				UE_LOG(LogGitClaudeUnrealTest, Verbose,
+					TEXT("ASiegePlayerController '%s': placement slope trace missed at (%.0f, %.0f, %.0f) — refusing (fail-closed, GDD §5 M4.5)."),
+					*GetNameSafe(this), Point.X, Point.Y, Point.Z);
+				return false;
+			}
+
+			// ⛔⛔ A CORNER OVER NOTHING IS ⛔ SKIPPED, ⛔ NEVER REFUSED, AND THIS IS
+			// THE ⛔ ONE PLACE THE NEW GATE DELIBERATELY DECLINES TO BITE. A corner
+			// with no surface under it has no slope to measure; refusing on it would
+			// invent a brand-new refusal class out of an ABSENT measurement — the
+			// house null-safety law — and would silently make every arena edge and
+			// every gap unbuildable with nothing in any log to explain it. ⭐ The
+			// centre above is still mandatory, so this can ⛔ never let a placement
+			// through that refuses today.
+			UE_LOG(LogGitClaudeUnrealTest, Verbose,
+				TEXT("ASiegePlayerController '%s': placement slope corner sample %d found no surface at (%.0f, %.0f, %.0f) — SKIPPED, not refused (TASK-871)."),
+				*GetNameSafe(this), SampleIndex, SamplePoint.X, SamplePoint.Y, SamplePoint.Z);
+			continue;
+		}
+
+		if (!IsSurfaceNormalWithinSlopeLimit(SlopeHit.ImpactNormal, MaxPlacementSlopeDegrees))
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Verbose,
+				TEXT("ASiegePlayerController '%s': placement slope sample %d of %d at (%.0f, %.0f, %.0f) reads %.2f deg (limit %.2f, footprint radius %.1f) — refusing (GDD §5 M4.5, TASK-871)."),
+				*GetNameSafe(this), SampleIndex, NumSamples, SamplePoint.X, SamplePoint.Y, SamplePoint.Z,
+				PlacementSurfaceSlopeDegrees(SlopeHit.ImpactNormal), MaxPlacementSlopeDegrees, FootprintRadius);
+			return false;
+		}
 	}
 
-	// slope = angle between the surface normal and world up (+Z). ImpactNormal
-	// is unit-length, so the angle is acos of its Z component (clamped for
-	// float safety); a sideways or downward-facing normal reads >= 90° and
-	// refuses naturally.
-	const double SlopeDegrees = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(SlopeHit.ImpactNormal.Z, -1.0, 1.0)));
-	return SlopeDegrees <= MaxPlacementSlopeDegrees;
+	return true;
 }
 
 bool ASiegePlayerController::HasObstacleClearance(const FVector& Point) const
@@ -5318,6 +5383,122 @@ bool ASiegePlayerController::CanCardActorScaleFootprint(const UClass* CardActorC
 	// rule — ⛔ no separate card-type test is invented for the wheel.
 	const ABuilding* const Defaults = Cast<ABuilding>(CardActorClass->GetDefaultObject());
 	return Defaults != nullptr && Defaults->CanScaleFootprint();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  ⭐⭐ TASK-871 — THE FOUR-CORNER FOOTPRINT SLOPE PROBE'S FOUR PURE SEAMS
+//  (qa/TASK-816.md W-4 / ruling R-3 — the follow-on TOWER-§7 DECLARED rather
+//  than smuggled into TASK-735)
+//
+//  They sit beside TASK-735's four, TASK-813's three and TASK-815's three for
+//  the same reason all ten exist: IsGroundSlopePlaceable needs a UWorld and a
+//  live trace, so it can never be reached headlessly — but the GEOMETRY it
+//  traces is the whole feature, and geometry nobody can test is geometry that
+//  drifts. ⛔ No world, ⛔ no member state, ⛔ no allocation, ⛔ no parameter
+//  defaulted (SC-§33).
+// ═══════════════════════════════════════════════════════════════════════════════
+
+int32 ASiegePlayerController::NumPlacementSlopeSamples(float FootprintRadius)
+{
+	// ⛔ THE ONE-SAMPLE ANSWER IS THE ⛔ SHIPPED DEGRADE, ⛔ NOT A NEW BEHAVIOUR
+	// (spec (4)): TryGetPlacementFootprintRadius yields 0 when the ghost, its mesh
+	// component or its bounds are missing, and 0 arrives here as "fall back to the
+	// single trace" — the exact rule that has shipped since TASK-093. ⚖️ A gate that
+	// HARD-REFUSED on a missing measurement would make an art-pipeline hiccup
+	// unplayable, which is a far worse failure than the one this task closes.
+	const bool bRadiusUsable = FMath::IsFinite(FootprintRadius) && FootprintRadius > 0.f;
+
+	// ⭐ THE FOUR IS THE ⛔ SHAPE OF THE FIX, ⛔ NOT A TUNABLE: a rectangle has four
+	// corners. A fifth sample would have no footprint feature to stand on, and a
+	// third would leave one diagonal of every building unmeasured. ⛔ Deliberately
+	// NOT EditDefaultsOnly — a "number of corners" the designer can retune is a
+	// second, silent definition of what a footprint is (the HIGH-§1 booby trap).
+	constexpr int32 CentreSamples = 1;
+	constexpr int32 CornerSamples = 4;
+	return bRadiusUsable ? (CentreSamples + CornerSamples) : CentreSamples;
+}
+
+FVector ASiegePlayerController::PlacementSlopeSampleOffset(int32 SampleIndex, float FootprintRadius)
+{
+	// Degrade to a zero displacement rather than propagating a NaN or a negative
+	// into a trace endpoint: a non-finite offset makes the trace's own start and end
+	// uncomputable, and the caller's sample count has already collapsed to the
+	// centre for exactly these inputs — so this and NumPlacementSlopeSamples agree
+	// about "unusable" by construction rather than by coincidence.
+	const float SafeRadius = (FMath::IsFinite(FootprintRadius) && FootprintRadius > 0.f) ? FootprintRadius : 0.f;
+
+	// ⭐⭐ EVERY OFFSET IS BUILT OUT OF SafeRadius AND ⛔ NOTHING ELSE (SC-§37).
+	// There is ⛔ no transcribed corner here, which is what makes the whole probe
+	// scale with the wheel for free: doubling the radius doubles every offset
+	// EXACTLY, so a ×1.5 ghost is validated at ×1.5 with ⛔ zero further edits —
+	// the same payoff STACK-§6 bought by reading the ghost's SCALED bounds.
+	//
+	// ⚖️ WHY (±R, ±R) AND ⛔ NOT DISTANCE R ON THE DIAGONAL, flagged rather than
+	// assumed: PlacementFootprintRadiusFromBounds returns a ⭐ HALF-EXTENT
+	// (max(|X|, |Y|)), ⛔ not a circumradius. The thing it half-describes is a BOX,
+	// and a box of half-extent R has its corners at (±R, ±R) — deriving the samples
+	// from what the value IS is the reading that cannot drift away from it.
+	// ⚠️ THE PRICE, DECLARED: for a round or strongly oblong footprint the corners on
+	// the short axis are sampled beyond the mesh, over-refusing by up to ~41% of the
+	// radius. That is the mirror of the residual PlacementFootprintRadiusFromBounds
+	// already declares in the other direction, and it is accepted HERE and refused
+	// THERE on purpose — the unit gate over-refusing costs playability against a
+	// dense, mobile hazard in a busy spawn box, while steep terrain is sparse and
+	// static, and this is the one gate in the family that already FAILS CLOSED.
+	// 🧑 One word flips it; it is one line.
+	//
+	// ⛔ Z IS ALWAYS EXACTLY 0 — a sample is a PLANAR displacement, and finding the
+	// surface is the trace's ±Z bracket's job. An offset carrying a Z would move the
+	// bracket instead of the sample and would silently shorten the search window.
+	switch (SampleIndex)
+	{
+	case 1:  return FVector(+SafeRadius, +SafeRadius, 0.f);
+	case 2:  return FVector(+SafeRadius, -SafeRadius, 0.f);
+	case 3:  return FVector(-SafeRadius, +SafeRadius, 0.f);
+	case 4:  return FVector(-SafeRadius, -SafeRadius, 0.f);
+	default: return FVector::ZeroVector;
+	}
+}
+
+float ASiegePlayerController::PlacementSurfaceSlopeDegrees(const FVector& ImpactNormal)
+{
+	// FVector is double-precision in UE5; the arithmetic stays in double and narrows
+	// once, at the end, so the answer is compared in the precision of the float
+	// tunable it will be measured against (SC-§37.1).
+	const double NormalZ = static_cast<double>(ImpactNormal.Z);
+	if (!FMath::IsFinite(NormalZ))
+	{
+		// ⛔ A NORMAL THE MATHS CANNOT ANSWER FOR READS AS THE STEEPEST SURFACE THERE
+		// IS — facing straight DOWN. ⭐ 180 is acos's OWN range ceiling (acos(-1) in
+		// degrees), ⛔ not an invented sentinel: it is legible in a log AND refused by
+		// every finite limit, which is the fail-closed direction this gate has taken
+		// since TASK-093. (A NaN would also refuse, but only through comparison
+		// semantics that nobody reading this should have to know.)
+		return 180.f;
+	}
+
+	// slope = angle between the surface normal and world up (+Z). ImpactNormal
+	// is unit-length, so the angle is acos of its Z component (clamped for
+	// float safety); a sideways or downward-facing normal reads >= 90° and
+	// refuses naturally.
+	return static_cast<float>(FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(NormalZ, -1.0, 1.0))));
+}
+
+bool ASiegePlayerController::IsSurfaceNormalWithinSlopeLimit(const FVector& ImpactNormal, float MaxSlopeDegrees)
+{
+	// ⛔ A NON-FINITE LIMIT REFUSES rather than admitting everything. ClampMin guards
+	// only the editor FIELD; a hand-edited .uasset, a Blueprint default or a bad
+	// merge can still deliver a NaN, and a NaN limit must ⛔ not silently switch off
+	// a shipped gate — the StepPlacementFootprintScale standard, applied to the
+	// other end of the same problem.
+	if (!FMath::IsFinite(MaxSlopeDegrees))
+	{
+		return false;
+	}
+
+	// ⭐ THE ⛔ ONE PLACE THE SLOPE COMPARISON IS WRITTEN. Both the gate and its test
+	// call this, so they can ⛔ never disagree about what "flat enough" means.
+	return PlacementSurfaceSlopeDegrees(ImpactNormal) <= MaxSlopeDegrees;
 }
 
 bool ASiegePlayerController::TryGetPlacementFootprintRadius(float& OutRadius)

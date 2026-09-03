@@ -5,6 +5,9 @@
 #include "Engine/GameInstance.h"
 #include "InputCoreTypes.h"
 #include "Math/NumericLimits.h"
+#include "Misc/FileHelper.h"   // TASK-874: the derived roster reads the shipped card data off disk
+#include "Misc/Paths.h"        // TASK-874: ditto — FPaths::ProjectDir()
+#include "Siegebound/CardRow.h"              // TASK-874: ECardType — the SHIPPED spawn-category enum, read by reflection rather than transcribed
 #include "Siegebound/SiegeAssistantCommand.h"
 #include "Siegebound/SiegeAssistantComponent.h"
 #include "Siegebound/SiegeAssistantGrammar.h"
@@ -14,6 +17,8 @@
 #include "Siegebound/SiegeKeyboardLayoutStatics.h"
 #include "Siegebound/SiegeKeyboardLayoutSubsystem.h"
 #include "Siegebound/SiegeMapMark.h"   // TASK-746: FSiegeMapMark + MakeSymbol — the seam the snapshot and the war map must agree on
+#include "Siegebound/SiegePlayerController.h"   // TASK-874: BuildingEconomyCardIDs — the Economy-vs-building exception, read off the shipped CDO
+#include "UObject/Class.h"
 #include "UObject/StrongObjectPtr.h"
 #include "UObject/UnrealType.h"
 #include "UObject/UObjectGlobals.h"
@@ -35,12 +40,19 @@
  *
  *  He reported: "whenever I say all units, it doesn't seem to include sorcerers
  *  even when they were spawned." AS-§20.2 found the cause in the PROMPT: the
- *  roster is elastic, `Sorcerer` is the LAST DT_Cards commandable row, so it is
- *  ALWAYS the first kind the trimmer collapses — and the collapse line used to
+ *  roster is elastic, `Sorcerer` WAS THEN the last DT_Cards commandable row, so it
+ *  was always the first kind the trimmer collapsed — and the collapse line used to
  *  print COUNTS WITH NO SYMBOLS (`other_kinds: 5 kinds, 9 units`). The token
  *  `sorcerer` therefore never reached the model, and Zone A's "if the unit named
  *  is not a kind in [FORCES], answer unsupported" rule then refused a unit that
  *  was standing on the board.
+ *
+ *  ⚠️ THE TENSE IN THAT PARAGRAPH IS DELIBERATE (TASK-874). `TASK-831` appended a
+ *  `Witch` card row, so the tail the trimmer reaches first is `witch` today. The
+ *  MECHANISM is unchanged and the fix is unchanged — a collapse may hide a kind's
+ *  NUMBERS, never its NAME — but ⛔ WHICH kind sits in the tail is DATA, and this
+ *  file no longer states it in prose or transcribes it into a fixture. It derives
+ *  it, and prints what it found on every run.
  *
  *  ⛔ THE EVALUATION CORPUS STRUCTURALLY CANNOT ASSERT THIS, AND TASK-524 HIT
  *  THAT WALL AND REPORTED IT (its finding F-1). The correct model answer to an
@@ -117,33 +129,387 @@ namespace SiegeAssistantSelectionTestFixture
 	// ═══════════════════════════════════════════════════════════════════════════
 
 	/**
-	 *  THE 13 COMMANDABLE KINDS, IN DT_Cards ROW ORDER — read off Docs/Data/cards.csv
-	 *  and lower-cased exactly as `USiegeAssistantSnapshot`'s `CanonicalKind` does
-	 *  (`FName(*CardID.ToString().ToLower())`).
+	 *  ═══════════════════════════════════════════════════════════════════════════
+	 *  ⭐⭐ THE COMMANDABLE ROSTER — ⛔ DERIVED FROM THE SHIPPED CARD DATA,
+	 *      ⛔ NEVER TRANSCRIBED (TASK-874)
+	 *  ═══════════════════════════════════════════════════════════════════════════
 	 *
-	 *  ⛔ THE ORDER IS THE TEST, NOT DECORATION. `Sorcerer` is the LAST commandable
-	 *  row in the table, which is the entire mechanism of Jonathan's defect: the
-	 *  shrink loop always drops from the TAIL, so the Sorcerer is the first kind
-	 *  hidden on every board, every time. Sorting this array alphabetically (or
-	 *  "tidying" it) would move `sorcerer` to the middle and quietly convert the
-	 *  collapse tests into tests of a case that cannot happen.
+	 *  ⛔⛔ WHAT USED TO BE HERE, AND WHY IT HAD TO GO. This was a hand-typed
+	 *  `ThirteenKindsInCardRowOrder` returning thirteen literal symbols, with a
+	 *  comment stating that `sorcerer` is the LAST commandable DT_Cards row and
+	 *  that "a roster can hold exactly these 13". ⛔ BOTH SENTENCES ARE NOW FALSE.
+	 *  `TASK-831` appended a `Witch` row (CardType `Unit`), so the shipped data
+	 *  holds FOURTEEN commandable kinds and `witch` — not `sorcerer` — is the tail.
 	 *
-	 *  ⚠️ The buildings and spells between these rows (ArrowTower, Wall, BombTower,
-	 *  Barracks, the spell cards…) are deliberately absent: `Capture()` only ever
-	 *  tallies live `ASummonedUnit`s, so a roster can hold exactly these 13.
+	 *  ⛔ NO TEST WENT RED WHEN THAT HAPPENED, AND THAT IS THE WHOLE POINT
+	 *  (`SC-§37`): a transcribed fixture cannot notice that the world moved. The
+	 *  array kept passing while it quietly began exercising a case the shipped game
+	 *  no longer produces — the trimmer dropping the SORCERER, when it now drops the
+	 *  WITCH first.
+	 *
+	 *  ⛔⛔ AND BUMPING `13` TO `14` WOULD HAVE BEEN THE WRONG FIX: it buys one card
+	 *  of correctness and re-arms the identical trap for the next unit card. ⇒ the
+	 *  roster below is DERIVED, at run time, from the same two sources the shipped
+	 *  spawn path uses. Nothing here has to be remembered when unit #15 lands.
+	 *
+	 *  ── ⭐ THE DERIVATION, AND WHY EACH HALF IS READ RATHER THAN TYPED ─────────
+	 *
+	 *  `USiegeAssistantSnapshot::Capture` walks `TActorIterator<ASummonedUnit>` and
+	 *  filters on ONLY validity, team and death — ⛔ there is NO profile filter and
+	 *  NO card-type filter — then takes `CanonicalKind(Unit->GetCardID())`, a TOTAL
+	 *  lower-casing of any non-`None` CardID. Its row ORDER comes from the card
+	 *  table's own `GetRowNames()`. ⇒ the set a roster can hold is exactly
+	 *  "every card row whose actor is an `ASummonedUnit`, in card-table row order",
+	 *  and that predicate lives in `ASiegePlayerController::ResolveCardActorClass`:
+	 *
+	 *      Building                                  -> ABuilding
+	 *      Economy AND in BuildingEconomyCardIDs      -> ABuilding   (Deep Mine)
+	 *      Unit, or Economy and NOT in that list      -> ASummonedUnit   ⭐ THESE
+	 *      anything else (Spell/HeroUpgrade/Utility)  -> never spawned
+	 *
+	 *  ⛔⛔ SCOPE — READ THIS BEFORE TRUSTING THE WORD "AUTOMATICALLY" (`qa/TASK-889.md`
+	 *  WARN-1). What is mirrored below is `ResolveCardActorClass` + `IsBuildingCard`,
+	 *  i.e. ⛔ WHICH ACTOR CLASS A CARD SPAWNS. It is ⛔ NOT a mirror of `Capture()`'s
+	 *  own filter. The two agree TODAY only because `Capture()` has no card-type or
+	 *  profile filter at all. ⇒ ⛔ IF A TYPE OR PROFILE FILTER IS EVER ADDED TO
+	 *  `USiegeAssistantSnapshot::Capture` — the repair route this file's §4 argument
+	 *  names for the Witch question — this derivation would ⛔ NOT follow it. It would
+	 *  keep returning the wider board, silently diverge from the shipped roster, and
+	 *  ⛔ NOTHING HERE WOULD GO RED: the same defect class TASK-874 deleted, one level
+	 *  up. ⛔ BINDING RIDER: such a filter must be mirrored in `BuildDerivedRoster` in
+	 *  the SAME commit that adds it.
+	 *
+	 *   (a) THE ROWS AND THEIR ORDER come from `Docs/Data/cards.csv`, the file
+	 *       `/Game/Data/DT_Cards` is imported from, read off disk — the same
+	 *       technique `SiegeFogClampTest` already ships for card data, and for the
+	 *       same reason: an EditorContext SIMPLE test has no world and must not
+	 *       depend on a cooked asset being mounted.
+	 *       ⚠️ DECLARED RESIDUAL: the CSV is the DataTable's SOURCE, not the
+	 *       DataTable. A row written into the asset without being mirrored into the
+	 *       CSV would be invisible here. That gap is a REIMPORT gap, it is checkable
+	 *       (`TASK-849` diffed every comparable column and found 0 mismatches — the
+	 *       header carries 30 named columns beside the row name, 31 fields in all;
+	 *       ⚠️ the "29" this comment used to cite was corrected by `qa/TASK-849.md`
+	 *       NIT-3 and again by `qa/TASK-889.md` NIT-1),
+	 *       and it is strictly narrower than the gap a hand-typed array carries.
+	 *   (b) THE TWO CARD-TYPE SYMBOLS come from `StaticEnum<ECardType>()`, not from
+	 *       the literals `"Unit"`/`"Economy"` (`SC-§38`: the SYMBOL is the key).
+	 *   (c) THE ECONOMY-BUILDING EXCEPTION comes from the shipped controller's own
+	 *       `BuildingEconomyCardIDs` default, read off the CDO by reflection because
+	 *       the property is `protected`. ⛔ Hard-typing `DeepMine` here would put a
+	 *       second copy of that list in the tree, free to drift from the first.
+	 *
+	 *  ── ⛔ AND EVERY WAY THIS PROBE CAN DIE IS A FAILURE, NEVER AN EMPTY ARRAY ──
+	 *  A derived fixture that silently returns nothing converts every downstream
+	 *  assertion into a VACUOUS PASS — the exact "guardrail that reports SAFE" shape
+	 *  this file's header rules worse than no test at all. So the parse carries
+	 *  self-checks with a POSITIVE CONTROL (`SC-§39`): it is not enough to find
+	 *  `Unit` rows, the discriminator must be shown to WORK, which means `Building`
+	 *  rows must come back too. If they do not, the CardType column is not being
+	 *  read as enum names and the whole filter is meaningless.
 	 */
-	static TArray<FName> ThirteenKindsInCardRowOrder()
-	{
-		return TArray<FName>{
-			TEXT("footman"), TEXT("archer"), TEXT("knight"), TEXT("miner"),
-			TEXT("militiamob"), TEXT("pikeman"), TEXT("sapper"), TEXT("cavalry"),
-			TEXT("longbowman"), TEXT("cleric"), TEXT("ogre"), TEXT("wizard"),
-			TEXT("sorcerer")
-		};
-	}
+	static const TCHAR* const CardsCsvPath = TEXT("Docs/Data/cards.csv");
 
 	/** The canonical symbol the whole defect is about. Spelled once so a typo cannot make a test pass by testing the wrong noun. */
 	static const TCHAR* const SorcererSymbol = TEXT("sorcerer");
+
+	/** Defined with the other reflection helpers below; the CDO read needs it here. */
+	static TArray<FName>* FindNameArrayField(UObject* Object, const TCHAR* FieldName);
+
+	/**
+	 *  The derived roster plus everything a reader needs to judge whether the
+	 *  derivation actually ran. ⛔ `Failure` non-empty means the probe is DEAD and
+	 *  no claim built on `Kinds` means anything.
+	 */
+	struct FDerivedRoster
+	{
+		/** Canonical (lower-cased) symbols, in card-table row order. */
+		TArray<FName> Kinds;
+
+		/** Non-empty ⇒ the probe could not read its subject. */
+		FString Failure;
+
+		int32 RowsRead = 0;
+		int32 UnitRows = 0;
+		int32 EconomyRows = 0;
+		int32 BuildingRows = 0;
+
+		/** The shipped Economy-that-is-really-a-building list, as read off the CDO. */
+		TArray<FName> BuildingEconomyCardIDs;
+	};
+
+	/** ⛔ Strips any `EnumName::` qualifier `UEnum` may return for a scoped entry — the shipped idiom (`SiegeAssistantCommand.cpp`'s `ShortEnumEntryName`). */
+	static FString ShortEnumEntry(const FString& EntryName)
+	{
+		int32 SeparatorIndex = INDEX_NONE;
+		if (EntryName.FindLastChar(TEXT(':'), SeparatorIndex))
+		{
+			return EntryName.RightChop(SeparatorIndex + 1);
+		}
+		return EntryName;
+	}
+
+	static FDerivedRoster BuildDerivedRoster()
+	{
+		FDerivedRoster Out;
+
+		// ── (b) THE CARD-TYPE SYMBOLS, OFF THE SHIPPED ENUM ──────────────────
+		const UEnum* const CardTypeEnum = StaticEnum<ECardType>();
+		if (!CardTypeEnum)
+		{
+			Out.Failure = TEXT("StaticEnum<ECardType>() returned null — the card-type enum's reflection data is unreachable.");
+			return Out;
+		}
+
+		const FString UnitTypeName     = ShortEnumEntry(CardTypeEnum->GetNameStringByValue(static_cast<int64>(ECardType::Unit)));
+		const FString EconomyTypeName  = ShortEnumEntry(CardTypeEnum->GetNameStringByValue(static_cast<int64>(ECardType::Economy)));
+		const FString BuildingTypeName = ShortEnumEntry(CardTypeEnum->GetNameStringByValue(static_cast<int64>(ECardType::Building)));
+		if (UnitTypeName.IsEmpty() || EconomyTypeName.IsEmpty() || BuildingTypeName.IsEmpty())
+		{
+			Out.Failure = FString::Printf(TEXT("ECardType did not yield its entry names (Unit '%s', Economy '%s', Building '%s') — the filter below would match nothing."),
+				*UnitTypeName, *EconomyTypeName, *BuildingTypeName);
+			return Out;
+		}
+
+		// ── (c) THE ECONOMY-BUILDING EXCEPTION, OFF THE SHIPPED CDO ──────────
+		// ⚠️ Reflection rather than a member read: `BuildingEconomyCardIDs` is
+		// `protected`. A rename or a retype makes this return null, which is
+		// reported BY NAME — the same discipline the snapshot writes below use.
+		UObject* const ControllerDefaults = ASiegePlayerController::StaticClass()->GetDefaultObject();
+		const TArray<FName>* const BuildingEconomy =
+			ControllerDefaults ? FindNameArrayField(ControllerDefaults, TEXT("BuildingEconomyCardIDs")) : nullptr;
+		if (!BuildingEconomy)
+		{
+			Out.Failure = TEXT("ASiegePlayerController::BuildingEconomyCardIDs (TArray<FName>) was not reachable on the CDO — it was RENAMED or RETYPED, and the Economy-vs-building split cannot be derived.");
+			return Out;
+		}
+		Out.BuildingEconomyCardIDs = *BuildingEconomy;
+
+		// ── (a) THE ROWS AND THEIR ORDER, OFF THE SHIPPED CARD DATA ──────────
+		const FString FullPath = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / FString(CardsCsvPath));
+		FString Csv;
+		if (!FPaths::FileExists(FullPath) || !FFileHelper::LoadFileToString(Csv, *FullPath))
+		{
+			Out.Failure = FString::Printf(TEXT("Could not read '%s' — a probe that cannot read its subject FAILS rather than reporting SAFE."), *FullPath);
+			return Out;
+		}
+
+		TArray<FString> Lines;
+		Csv.ParseIntoArrayLines(Lines, /*bCullEmpty*/ true);
+		if (Lines.Num() < 10)
+		{
+			Out.Failure = FString::Printf(TEXT("'%s' parsed to %d line(s) — the probe is dead."), *FullPath, Lines.Num());
+			return Out;
+		}
+
+		TArray<FString> Header;
+		Lines[0].ParseIntoArray(Header, TEXT(","), /*InCullEmpty*/ false);
+
+		// ⛔ COLUMNS BY NAME, NEVER BY INDEX. `IndexOfByKey` is EXACT equality, so
+		// `SpawnCardID` cannot be mistaken for `CardType` the way a substring
+		// search would allow (`SC-§41`: pin the role, not a loose token).
+		const int32 CardTypeColumn = Header.IndexOfByKey(FString(TEXT("CardType")));
+		const int32 NotesColumn    = Header.IndexOfByKey(FString(TEXT("Notes")));
+		if (CardTypeColumn == INDEX_NONE || NotesColumn == INDEX_NONE)
+		{
+			Out.Failure = FString::Printf(TEXT("'%s' has no `CardType` column (%d) or no `Notes` column (%d) — the probe is STALE, so it FAILS."),
+				*FullPath, CardTypeColumn, NotesColumn);
+			return Out;
+		}
+
+		// ⛔⛔ THE COMMA-SAFETY PRECONDITION, ASSERTED RATHER THAN ASSUMED — AND IT
+		// IS WHY THIS PARSE DELIBERATELY DIFFERS FROM `SiegeFogClampTest`'s.
+		// `Notes` is free text and may carry an embedded comma, which pushes every
+		// LATER column right. FogClamp reads `AoERadius`, which sits AFTER `Notes`,
+		// so it must SKIP a mis-aligned row. ⛔ THIS probe must NOT skip: skipping a
+		// row would silently drop a commandable kind, which is precisely the
+		// "stops testing without saying so" failure the whole file exists to
+		// prevent. It is safe not to skip only because BOTH columns it reads sit
+		// BEFORE `Notes` — so that ordering is checked here, by name.
+		if (CardTypeColumn >= NotesColumn)
+		{
+			Out.Failure = FString::Printf(TEXT("`CardType` (column %d) is no longer BEFORE `Notes` (column %d) — an embedded comma in the free-text Notes cell could now mis-index it, so this parse is unsafe and FAILS rather than guessing."),
+				CardTypeColumn, NotesColumn);
+			return Out;
+		}
+
+		// The DataTable CSV convention gives the ROW-NAME column an EMPTY header,
+		// which is what makes the CardID field index 0. Checked, because a header
+		// that grew a name here would shift every field by one.
+		if (!Header.IsValidIndex(0) || !Header[0].IsEmpty())
+		{
+			Out.Failure = FString::Printf(TEXT("'%s' column 0 is '%s', not the empty row-name header the DataTable CSV convention requires — CardID would be mis-read."),
+				*FullPath, Header.IsValidIndex(0) ? *Header[0] : TEXT("<absent>"));
+			return Out;
+		}
+
+		for (int32 Index = 1; Index < Lines.Num(); ++Index)
+		{
+			TArray<FString> Fields;
+			Lines[Index].ParseIntoArray(Fields, TEXT(","), /*InCullEmpty*/ false);
+
+			// ⛔ A SHORT row is malformed and is a FAILURE, not something to skip:
+			// see the comma note above. A LONG row is the legal embedded-comma case
+			// and its first three fields are still correctly placed.
+			if (Fields.Num() < Header.Num())
+			{
+				Out.Failure = FString::Printf(TEXT("'%s' line %d has %d field(s) against a %d-field header — the row is truncated and a commandable kind could be lost silently."),
+					*FullPath, Index + 1, Fields.Num(), Header.Num());
+				return Out;
+			}
+
+			++Out.RowsRead;
+
+			const FString CardID   = Fields[0].TrimStartAndEnd();
+			const FString CardType = Fields[CardTypeColumn].TrimStartAndEnd();
+
+			// The POSITIVE-CONTROL tallies (`SC-§39`). Counted for every row,
+			// including the ones the filter rejects, because "I found no Building
+			// rows" and "I could not read the column" are otherwise the same
+			// answer.
+			if (CardType.Equals(UnitTypeName, ESearchCase::CaseSensitive))     { ++Out.UnitRows; }
+			if (CardType.Equals(EconomyTypeName, ESearchCase::CaseSensitive))  { ++Out.EconomyRows; }
+			if (CardType.Equals(BuildingTypeName, ESearchCase::CaseSensitive)) { ++Out.BuildingRows; }
+
+			if (CardID.IsEmpty())
+			{
+				continue;
+			}
+
+			// ⭐ THE SHIPPED PREDICATE, MIRRORED FROM `ResolveCardActorClass` +
+			// `IsBuildingCard` — the ONLY two functions that decide whether playing
+			// a card produces an `ASummonedUnit`.
+			const bool bBuildingEconomy = Out.BuildingEconomyCardIDs.Contains(FName(*CardID));
+			const bool bSpawnsSummonedUnit =
+				CardType.Equals(UnitTypeName, ESearchCase::CaseSensitive)
+				|| (CardType.Equals(EconomyTypeName, ESearchCase::CaseSensitive) && !bBuildingEconomy);
+
+			if (bSpawnsSummonedUnit)
+			{
+				// `CanonicalKind`'s own transform: FName(*CardID.ToString().ToLower()).
+				Out.Kinds.Add(FName(*CardID.ToLower()));
+			}
+		}
+
+		// ── ⛔ THE SELF-CHECKS. A GREEN BAR ON A DEAD PROBE IS THE FAILURE MODE ──
+		if (Out.RowsRead < 10)
+		{
+			Out.Failure = FString::Printf(TEXT("only %d card row(s) were read from '%s' — the probe is dead."), Out.RowsRead, *FullPath);
+			return Out;
+		}
+
+		// ⭐⭐ THE POSITIVE CONTROL. Unit rows coming back proves nothing on its
+		// own: a column read as an empty string would also yield zero Building
+		// rows and zero Unit rows, and a column that always matched would yield
+		// every row. Requiring BOTH SIDES of the discriminator is what makes the
+		// filter's liveness ASSERTED rather than assumed (`SC-§39`).
+		if (Out.UnitRows <= 0 || Out.BuildingRows <= 0)
+		{
+			Out.Failure = FString::Printf(TEXT("the CardType discriminator is not live: %d row(s) read as `%s` and %d as `%s`. Both must be non-zero, or the column is not being read as enum names and the roster filter means nothing."),
+				Out.UnitRows, *UnitTypeName, Out.BuildingRows, *BuildingTypeName);
+			return Out;
+		}
+
+		if (Out.Kinds.Num() < 10)
+		{
+			Out.Failure = FString::Printf(TEXT("the derived roster holds only %d kind(s) — far below any shipped board, so the filter is wrong rather than the data."), Out.Kinds.Num());
+			return Out;
+		}
+
+		// A duplicate symbol would make every printed-vs-collapsed set comparison
+		// in this file arithmetically wrong while still looking sane.
+		{
+			TSet<FName> Seen;
+			for (const FName& Kind : Out.Kinds)
+			{
+				bool bAlready = false;
+				Seen.Add(Kind, &bAlready);
+				if (bAlready)
+				{
+					Out.Failure = FString::Printf(TEXT("the derived roster contains `%s` twice — every printed/collapsed count in this file would be wrong."), *Kind.ToString());
+					return Out;
+				}
+			}
+		}
+
+		// ⭐ THE OTHER POSITIVE CONTROL, AND IT IS SPECIFIC TO THIS FILE. Jonathan's
+		// reported defect is about the SORCERER, and a dozen assertions below name
+		// that symbol. If the card ever leaves the game they would become claims
+		// about a unit that does not exist — silently true, or silently vacuous. So
+		// its presence is a PRECONDITION of the fixture, not an assumption inside it.
+		if (!Out.Kinds.Contains(FName(SorcererSymbol)))
+		{
+			Out.Failure = TEXT("the derived roster does not contain `sorcerer` — this file's whole premise (Jonathan's reported defect) no longer holds, and every `sorcerer` assertion below would be meaningless.");
+			return Out;
+		}
+
+		return Out;
+	}
+
+	/** Parsed ONCE per process; the shipped card data does not move mid-run. */
+	static const FDerivedRoster& DerivedRoster()
+	{
+		static const FDerivedRoster Roster = BuildDerivedRoster();
+		return Roster;
+	}
+
+	/**
+	 *  ⭐ THE COMMANDABLE KINDS, IN CARD-TABLE ROW ORDER — the full live board.
+	 *
+	 *  ⛔ THE ORDER IS THE TEST, NOT DECORATION, and it is now derived rather than
+	 *  typed: the shrink loop always drops from the TAIL, so `Kinds.Last()` is the
+	 *  first kind hidden on every board, every time. Sorting this (or "tidying" it)
+	 *  would quietly convert the collapse tests into tests of a case that cannot
+	 *  happen — which is exactly what a stale transcription did, without sorting.
+	 *
+	 *  ⛔ A DEAD PROBE RAISES AN ERROR AND RETURNS AN EMPTY BOARD. The error is what
+	 *  fails the test; the empty board is a second line of defence, because every
+	 *  roster assertion in this file compares against `Kinds.Num()` and an empty
+	 *  board fails them rather than satisfying them.
+	 */
+	static TArray<FName> CommandableKindsInCardRowOrder(FAutomationTestBase& Test)
+	{
+		const FDerivedRoster& Roster = DerivedRoster();
+		if (!Roster.Failure.IsEmpty())
+		{
+			Test.AddError(FString::Printf(
+				TEXT("⛔ THE DERIVED COMMANDABLE ROSTER IS DEAD, so every roster claim in this test would be VACUOUS: %s"),
+				*Roster.Failure));
+			return TArray<FName>();
+		}
+		return Roster.Kinds;
+	}
+
+	/**
+	 *  ⭐⭐ THE SAME ROSTER, CLAMPED TO THE SHIPPED `MaxRosterKinds` CAP — the board
+	 *  the UNCOLLAPSED cases need, and the reason NO case in this file became
+	 *  unreachable when the fourteenth kind arrived.
+	 *
+	 *  ⛔ `BuildZoneC` starts its shrink loop at `min(UnitKinds.Num(), MaxRosterKinds)`,
+	 *  so on a board with MORE kinds than the cap it is STRUCTURALLY impossible for
+	 *  every kind to print in full — `other_kinds:` can never read `none` there, at
+	 *  any sentence length. That is designed behaviour (the cap is Jonathan's
+	 *  ruling 1), ⛔ not a defect: the collapse line NAMES what it hid.
+	 *
+	 *  ⇒ "the roster prints in full" is a claim about a board WITHIN the cap, and
+	 *  this is that board. ⚠️ It is a PREFIX in card-table row order, so on today's
+	 *  data it is symbol-for-symbol identical to the thirteen that used to be typed
+	 *  here — the uncollapsed cases did not merely survive the change, their input
+	 *  did not move at all.
+	 *
+	 *  ⚠️ The cap is NECESSARY but not SUFFICIENT for an uncollapsed print: the
+	 *  character budget can still bite on a long sentence. Every caller therefore
+	 *  ASSERTS that its board printed in full rather than assuming it.
+	 */
+	static TArray<FName> BoardWithinRosterCap(FAutomationTestBase& Test)
+	{
+		TArray<FName> Kinds = CommandableKindsInCardRowOrder(Test);
+		if (Kinds.Num() > USiegeAssistantSnapshot::MaxRosterKinds)
+		{
+			Kinds.SetNum(USiegeAssistantSnapshot::MaxRosterKinds);
+		}
+		return Kinds;
+	}
 
 	/**
 	 *  The seven place symbols of AS-§9a's pinned v1 vocabulary. Present so
@@ -219,11 +585,16 @@ namespace SiegeAssistantSelectionTestFixture
 	 *  ⚠️⚠️ THE MAGNITUDE OF THIS NUMBER IS PART OF THE MEASUREMENT, AND IT IS THE
 	 *  ONE THING A READER WILL GET WRONG. Every roster row prints the count THREE
 	 *  TIMES (total / orderable / followable), so a board with TWO-DIGIT counts is
-	 *  3 chars wider PER ROW — 39 chars across 13 kinds — than the same board with
+	 *  3 chars wider PER ROW — 39 chars across the thirteen kinds AS-§20.3 measured —
+	 *  than the same board with
 	 *  single-digit counts. AS-§20.3's famous "~6 chars of headroom" (887 of 893)
 	 *  is the SINGLE-DIGIT figure: head 108 / roster 621 / tail 158. At
-	 *  PerKindTotal >= 10 the same 13-kind block measures 660, and 660 does NOT fit
+	 *  PerKindTotal >= 10 that same 13-kind block measures 660, and 660 does NOT fit
 	 *  the 627-char budget left by the shipped 61-char `order:` line.
+	 *  ⚠️ THOSE ARE DATED READINGS OF A THIRTEEN-KIND BOARD (TASK-874). They are the
+	 *  numbers AS-§20.3 records and are kept as the historical anchor; the LIVE
+	 *  figures for whatever board the derived roster produces are printed by
+	 *  TEST 1's two AddInfo readings on every run.
 	 *
 	 *  ⇒ 9 IS USED WHEREVER A TEST NEEDS THE UNCOLLAPSED CASE, so those tests
 	 *  reproduce AS-§20.3's own operating point rather than a wider one, and their
@@ -851,7 +1222,7 @@ namespace SiegeAssistantSelectionTestFixture
 		return INDEX_NONE;
 	}
 
-	/** The shipped operating point AS-§20.3 quotes: a 61-character `order:` line, single-digit counts, 13 kinds. */
+	/** The shipped operating point AS-§20.3 quotes: a 61-character `order:` line, single-digit counts (it measured it on a thirteen-kind board). */
 	static FString ShippedDefaultOrderLine()
 	{
 		return OrderLineOfLength(61);
@@ -1069,6 +1440,22 @@ namespace SiegeAssistantSelectionTestFixture
 //  THE TEST JONATHAN'S FIRST COMPLAINT MAPS ONTO, AND THE ONE THE CORPUS CANNOT
 //  WRITE. Before it, nothing anywhere asserted that a board holding a Sorcerer
 //  shows the model the token `sorcerer`.
+//
+//  ⚠️⚠️ THE AUTOMATION PATH STILL SAYS "Thirteen" AND THAT IS DELIBERATE (TASK-874).
+//  The board is now DERIVED and there are fourteen commandable kinds, so the name
+//  no longer describes the count. It is kept anyway because it is a SYMBOL three
+//  shipped records cite by name — `handoffs/TASK-523-programmer.md` (twice),
+//  `handoffs/TASK-524-programmer.md` and `handoffs/TASK-526-buildmaster.md` — and
+//  renaming it would rot every one of those citations to buy a cosmetic. ⛔ The
+//  COUNT is not claimed anywhere below; what is claimed is that the board within
+//  the shipped cap prints IN FULL, and that is asserted against the board's own
+//  derived size.
+//  ⭐ READ THE "Thirteen" AS `USiegeAssistantSnapshot::MaxRosterKinds`, ⛔ NOT AS THE
+//  ROSTER SIZE — the two were the same number until a fourteenth card row separated
+//  them, and this test runs on the CAPPED board, so the name is still accurate about
+//  the thing it actually names.
+//  ⚖️ RULED BY `qa/TASK-889.md` (RULING 3): KEEP the name; if it is ever renamed, all
+//  four citing records move in the SAME commit.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -1091,16 +1478,59 @@ bool FSiegeAssistantSelectionRosterShowsAllThirteenKindsTest::RunTest(const FStr
 	AddExpectedMessagePlain(TEXT("Snapshot roster TRUNCATED"), ELogVerbosity::Warning,
 		EAutomationExpectedMessageFlags::Contains, /*Occurrences*/ -1);
 
-	const TArray<FName> Kinds = ThirteenKindsInCardRowOrder();
+	// ⭐⭐ TWO BOARDS, BECAUSE THE SHIPPED WORLD SPLIT THEM APART (TASK-874).
+	// `Roster` is the WHOLE commandable set, derived from the card data. `Kinds` is
+	// that set clamped to `MaxRosterKinds` — the board an uncollapsed print is
+	// possible on at all. ⛔ Until the Witch card landed these were the SAME
+	// thirteen symbols, which is why one hand-typed array could serve both and why
+	// nothing went red when they diverged.
+	const TArray<FName> Roster = CommandableKindsInCardRowOrder(*this);
+	const TArray<FName> Kinds = BoardWithinRosterCap(*this);
 
 	// The cap is HIS ruling (AS-§20, ruling 1) and half the fix. Asserted here
 	// because a silent revert to 8 would make every other assertion in this file
 	// pass while the defect came back.
 	TestEqual(TEXT("MaxRosterKinds is 13 — Jonathan's ruling 1, the D2 escalation he spent by name"),
 		USiegeAssistantSnapshot::MaxRosterKinds, 13);
-	TestEqual(TEXT("The fixture board holds all 13 commandable DT_Cards kinds"), Kinds.Num(), 13);
-	TestEqualSensitive(TEXT("`sorcerer` is the LAST kind in DT_Cards row order — the mechanism of the defect"),
-		Kinds.Last().ToString(), FString(SorcererSymbol));
+
+	// ⛔ ANTI-VACUITY FLOOR, ⛔ NOT A COUNT PIN (`TL-§5b`: pin the RELATIONSHIP,
+	// never the NUMBER). Pinning `== 13` here is exactly the transcription this
+	// task removed; pinning `>= 10` still fails a dead or half-read probe, which
+	// is the only failure a count pin was ever really catching.
+	TestTrue(*FString::Printf(TEXT("⛔ The derived commandable roster holds a plausible number of kinds (%d) — a dead probe cannot pass this file quietly"), Roster.Num()),
+		Roster.Num() >= 10);
+
+	// ⭐ THE MEASUREMENT, REPORTED RATHER THAN PINNED — this is the line that would
+	// have said "14, tail = witch" on the day TASK-831 landed, with nobody having
+	// to remember to look. ⛔ The PROVENANCE goes with it (`SC-§40`: a count without
+	// its instrument is a citation, not a measurement), so a reader can tell a real
+	// roster from a half-read column without re-deriving anything.
+	if (Roster.Num() > 0)
+	{
+		const FDerivedRoster& Provenance = DerivedRoster();
+
+		FString ExcludedEconomy;
+		for (const FName& Excluded : Provenance.BuildingEconomyCardIDs)
+		{
+			ExcludedEconomy += (ExcludedEconomy.IsEmpty() ? TEXT("") : TEXT(", "));
+			ExcludedEconomy += Excluded.ToString();
+		}
+
+		AddInfo(FString::Printf(
+			TEXT("DERIVED ROSTER — %d commandable kind(s) in card-table row order; the TAIL (the first kind every collapse reaches) is `%s`. The board within the MaxRosterKinds cap holds %d. PROVENANCE: %d card row(s) read from `%s`; %d typed Unit, %d Economy, %d Building; the Economy-that-is-really-a-building exclusion list (read off ASiegePlayerController's CDO) is [%s]."),
+			Roster.Num(), *Roster.Last().ToString(), Kinds.Num(),
+			Provenance.RowsRead, CardsCsvPath,
+			Provenance.UnitRows, Provenance.EconomyRows, Provenance.BuildingRows,
+			ExcludedEconomy.IsEmpty() ? TEXT("<empty>") : *ExcludedEconomy));
+	}
+
+	// ⛔ THE PRECONDITION FOR EVERY `sorcerer` CLAIM BELOW. The Sorcerer is the unit
+	// Jonathan reported, and the assertions that name it are only meaningful while
+	// the card is on the board a full print can reach. Stated rather than assumed:
+	// if a future card row pushes it past the cap, this row goes red and a human
+	// decides where the claim moves — it does not quietly stop testing.
+	TestTrue(TEXT("⛔ `sorcerer` is on the within-cap board, so the roster-row claim below is about a kind that can actually print in full"),
+		Kinds.Contains(FName(SorcererSymbol)));
 
 	// PerKindTotal 9 — AS-§20.3's own single-digit operating point. See
 	// MakeSnapshotWithRoster's comment for why the magnitude is load-bearing.
@@ -1116,8 +1546,8 @@ bool FSiegeAssistantSelectionRosterShowsAllThirteenKindsTest::RunTest(const FStr
 	// A short, ordinary sentence: the operating point a player actually types.
 	const FString ZoneC = Scratch.Snapshot->BuildZoneC(TEXT("send all units to the middle"), FString());
 
-	AddInfo(FString::Printf(TEXT("Zone C on a 13-kind board with a 28-char order: %d chars (SnapshotTrimBudgetChars %d, ZoneBCharReserve %d ⇒ Zone C budget %d)."),
-		ZoneC.Len(), USiegeAssistantSnapshot::SnapshotTrimBudgetChars, USiegeAssistantSnapshot::ZoneBCharReserve,
+	AddInfo(FString::Printf(TEXT("Zone C on a %d-kind board with a 28-char order: %d chars (SnapshotTrimBudgetChars %d, ZoneBCharReserve %d ⇒ Zone C budget %d)."),
+		Kinds.Num(), ZoneC.Len(), USiegeAssistantSnapshot::SnapshotTrimBudgetChars, USiegeAssistantSnapshot::ZoneBCharReserve,
 		USiegeAssistantSnapshot::SnapshotTrimBudgetChars - USiegeAssistantSnapshot::ZoneBCharReserve));
 
 	// ⚠️ THE HEADROOM, MEASURED AND REPORTED RATHER THAN ASSERTED. AS-§20.3
@@ -1137,7 +1567,8 @@ bool FSiegeAssistantSelectionRosterShowsAllThirteenKindsTest::RunTest(const FStr
 			const FString RealisticZoneC = Realistic.Snapshot->BuildZoneC(DefaultOrder, FString());
 
 			AddInfo(FString::Printf(
-				TEXT("HEADROOM READING at the shipped 61-char `order:` line — single-digit counts: Zone C %d chars, %d row(s) printed, %d collapsed. TWO-digit counts (an ordinary mid-match board): Zone C %d chars, %d row(s) printed, %d collapsed. ⚠️ Every roster row carries the count THREE times, so two-digit counts widen the 13-kind block by ~39 chars against a ~6-char headroom."),
+				TEXT("HEADROOM READING on the %d-kind within-cap board at the shipped 61-char `order:` line — single-digit counts: Zone C %d chars, %d row(s) printed, %d collapsed. TWO-digit counts (an ordinary mid-match board): Zone C %d chars, %d row(s) printed, %d collapsed. ⚠️ Every roster row carries the count THREE times, so two-digit counts widen the block by ~3 chars per kind against a ~6-char headroom."),
+				Kinds.Num(),
 				ShippedZoneC.Len(), PrintedRosterSymbols(ShippedZoneC).Num(), CollapsedSymbols(ShippedZoneC).Num(),
 				RealisticZoneC.Len(), PrintedRosterSymbols(RealisticZoneC).Num(), CollapsedSymbols(RealisticZoneC).Num()));
 
@@ -1146,6 +1577,25 @@ bool FSiegeAssistantSelectionRosterShowsAllThirteenKindsTest::RunTest(const FStr
 			// not a failure.
 			TestTrue(TEXT("⭐ `sorcerer` is visible on a two-digit board too, collapsed or not — the names fix is what makes the headroom survivable"),
 				RealisticZoneC.Contains(SorcererSymbol, ESearchCase::CaseSensitive));
+		}
+
+		// ⭐⭐ AND THE SAME READING ON THE **WHOLE** DERIVED ROSTER — the board the
+		// shipped game actually produces once every kind is alive. ⛔ This is the
+		// number the old transcription made unobtainable: at 14 kinds the cap alone
+		// guarantees a collapse, so "how much headroom is left" and "how many kinds
+		// never print" are different questions and both belong in the run log.
+		if (Roster.Num() > Kinds.Num())
+		{
+			FScratchSnapshot Full = MakeSnapshotWithRoster(Roster, /*PerKindTotal*/ 9);
+			if (Full.IsUsable())
+			{
+				const FString FullZoneC = Full.Snapshot->BuildZoneC(OrderLineOfLength(61), FString());
+				AddInfo(FString::Printf(
+					TEXT("FULL-ROSTER READING at the shipped 61-char `order:` line — %d commandable kind(s) against a MaxRosterKinds cap of %d: Zone C %d chars, %d row(s) printed, %d collapsed into `other_kinds:`. ⛔ At least %d of those are the CAP, not the character budget."),
+					Roster.Num(), USiegeAssistantSnapshot::MaxRosterKinds, FullZoneC.Len(),
+					PrintedRosterSymbols(FullZoneC).Num(), CollapsedSymbols(FullZoneC).Num(),
+					Roster.Num() - USiegeAssistantSnapshot::MaxRosterKinds));
+			}
 		}
 	}
 
@@ -1156,7 +1606,14 @@ bool FSiegeAssistantSelectionRosterShowsAllThirteenKindsTest::RunTest(const FStr
 		ZoneC.Contains(SorcererSymbol, ESearchCase::CaseSensitive));
 
 	const TArray<FString> Printed = PrintedRosterSymbols(ZoneC);
-	TestEqual(TEXT("All 13 kinds print as FULL roster rows at this operating point"), Printed.Num(), 13);
+
+	// ⛔ THE EXPECTATION IS THE BOARD'S OWN DERIVED SIZE, ⛔ NOT A TYPED `13`. The
+	// claim is unchanged — "at this operating point the roster prints IN FULL" —
+	// and on today's data this is the identical comparison against the identical
+	// thirteen symbols. What changed is that it can no longer be right about a
+	// board the game stopped producing.
+	TestEqual(*FString::Printf(TEXT("All %d kinds on the within-cap board print as FULL roster rows at this operating point"), Kinds.Num()),
+		Printed.Num(), Kinds.Num());
 
 	// Row-by-row, in order — a set comparison would pass on a roster that printed
 	// the right symbols in the wrong order, and the ORDER is what makes the
@@ -1167,6 +1624,11 @@ bool FSiegeAssistantSelectionRosterShowsAllThirteenKindsTest::RunTest(const FStr
 			Printed[Index], Kinds[Index].ToString());
 	}
 
+	// ⛔ STILL REACHABLE, AND THAT IS THE POINT OF RUNNING THIS ON THE WITHIN-CAP
+	// BOARD. On the FULL roster `other_kinds:` can never read `none` — the cap
+	// collapses the tail before the character budget is even consulted — so a
+	// naive "derive the roster and use it everywhere" would have deleted this case
+	// rather than moved it.
 	TestEqualSensitive(TEXT("Nothing collapsed, so `other_kinds:` reads exactly `none`"),
 		ValueOfKey(ZoneC, TEXT("other_kinds")), FString(TEXT("none")));
 
@@ -1187,8 +1649,13 @@ bool FSiegeAssistantSelectionRosterShowsAllThirteenKindsTest::RunTest(const FStr
 //  TASK-524's finding F-5: the eval lane's fixture prints all 13 kinds
 //  unconditionally, so the collapse has NEVER happened there and a green eval row
 //  says nothing about this leg. AS-§20.2: at 13 kinds the roster measures ~887 of
-//  ~893, so roughly SEVEN extra typed characters re-collapse the tail — and the
-//  tail is the Sorcerer.
+//  ~893, so roughly SEVEN extra typed characters re-collapse the tail.
+//
+//  ⚠️ THIS RUNS ON THE **WHOLE** DERIVED ROSTER (TASK-874), because the tail IS the
+//  mechanism and a within-cap prefix would test a tail the shipped game no longer
+//  has. The "the last card row is last on the collapse line" assertion below is
+//  now derived from the board rather than typed as `sorcerer` — which is exactly
+//  the claim that had gone stale: it reads `witch` today.
 //
 //  ⛔ THE ASSERTION IS ON THE NAME, NOT THE COUNT. The shipped defect had the
 //  right count (`other_kinds: 5 kinds, 9 units`) and no name.
@@ -1212,7 +1679,7 @@ bool FSiegeAssistantSelectionCollapseNamesTheHiddenKindsTest::RunTest(const FStr
 	AddExpectedMessagePlain(TEXT("Snapshot roster TRUNCATED"), ELogVerbosity::Warning,
 		EAutomationExpectedMessageFlags::Contains, /*Occurrences*/ 0);
 
-	const TArray<FName> Kinds = ThirteenKindsInCardRowOrder();
+	const TArray<FName> Kinds = CommandableKindsInCardRowOrder(*this);
 
 	FScratchSnapshot Scratch = MakeSnapshotWithRoster(Kinds, /*PerKindTotal*/ 9);
 	if (!TestTrue(*FString::Printf(TEXT("The roster fields were reachable by reflection (missing: %s)"), *Scratch.MissingField),
@@ -1261,11 +1728,18 @@ bool FSiegeAssistantSelectionCollapseNamesTheHiddenKindsTest::RunTest(const FStr
 	TestTrue(TEXT("⭐⭐ `sorcerer` is named BY NAME on the `other_kinds:` line, not merely counted"),
 		Collapsed.Contains(FString(SorcererSymbol)));
 
-	// The Sorcerer is last in card-row order and the trimmer drops from the tail,
-	// so it must be the LAST symbol on the collapse line: the line reproduces the
-	// roster's own order rather than an arbitrary one.
-	TestEqualSensitive(TEXT("The collapse line preserves DT_Cards row order — `sorcerer`, the last row, is last"),
-		Collapsed.Last(), FString(SorcererSymbol));
+	// ⭐⭐ THE TAIL CLAIM, ⛔ NOW DERIVED (TASK-874). The trimmer drops from the tail,
+	// so the LAST commandable card row must be the LAST symbol on the collapse
+	// line: the line reproduces the roster's own order rather than an arbitrary
+	// one. ⛔ This assertion used to read the literal `sorcerer` and it kept
+	// passing after a fourteenth card row moved the tail to `witch` — because the
+	// board it ran on was a hand-typed copy of the old data. Comparing against
+	// `Kinds.Last()` is what makes it notice the next time the tail moves.
+	if (Kinds.Num() > 0)
+	{
+		TestEqualSensitive(*FString::Printf(TEXT("The collapse line preserves card-table row order — `%s`, the last commandable row, is last"), *Kinds.Last().ToString()),
+			Collapsed.Last(), Kinds.Last().ToString());
+	}
 
 	// ⛔ EVERY collapsed kind, not just the one the bug was reported on. A fix that
 	// named only the newest kind would pass the assertion above and still hide
@@ -1291,6 +1765,159 @@ bool FSiegeAssistantSelectionCollapseNamesTheHiddenKindsTest::RunTest(const FStr
 	// would spend characters out of a ~6-char headroom.
 	TestTrue(TEXT("The collapse line still carries the aggregate unit count in the pinned `(<N> units)` shape"),
 		ValueOfKey(ZoneC, TEXT("other_kinds")).EndsWith(TEXT(" units)"), ESearchCase::CaseSensitive));
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  TEST 2b — ⭐⭐ Siegebound.Assistant.Selection.RosterCapCollapsesTheTail
+//
+//  ⛔⛔ A PRODUCTION BRANCH THAT WAS UNREACHABLE WHEN IT WAS WRITTEN AND IS
+//  REACHABLE NOW — AND IT SAYS SO IN ITS OWN COMMENT. `BuildZoneC` names the
+//  cause of every collapse it logs, and the `MaxRosterKinds` half carries this
+//  note (TASK-517):
+//
+//      "AT MaxRosterKinds = 13 THE CAP BRANCH IS UNREACHABLE TODAY, AND IT IS
+//       KEPT RATHER THAN DELETED. DT_Cards has exactly 13 commandable kinds, so
+//       CapKinds == UnitKinds.Num() on every live board and the ONLY reachable
+//       cause is the character budget... The branch survives because a
+//       FOURTEENTH kind makes it reachable again on the same day it is added."
+//
+//  ⭐ THE FOURTEENTH KIND ARRIVED (`TASK-831`'s Witch), so the day that comment
+//  predicted is TODAY, and this is the test it asked for. ⛔ It is NOT a defect
+//  row: the cap is Jonathan's ruling 1 and the collapse line NAMES what it hid,
+//  so the cost is the tail kind's COUNTS and never its EXISTENCE.
+//
+//  ⚠️ WHAT MAKES IT DIFFERENT FROM TEST 2: Test 2 forces a collapse with a
+//  240-byte sentence, i.e. through the CHARACTER BUDGET. This one uses an
+//  ORDINARY short sentence — the budget has room to spare — so the only thing
+//  that can collapse anything is the cap itself.
+//
+//  ⛔ AND ITS PRE-CONDITION IS DERIVED, NOT ASSUMED: if the commandable roster
+//  ever fits inside the cap again the case stops existing, and this test says so
+//  in the run log rather than reporting a pass for a path that never ran.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeAssistantSelectionRosterCapCollapsesTheTailTest,
+	"Siegebound.Assistant.Selection.RosterCapCollapsesTheTail",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeAssistantSelectionRosterCapCollapsesTheTailTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeAssistantSelectionTestFixture;
+
+	const TArray<FName> Kinds = CommandableKindsInCardRowOrder(*this);
+	if (Kinds.Num() == 0)
+	{
+		// CommandableKindsInCardRowOrder already raised the error naming the cause.
+		return false;
+	}
+
+	// ⛔ THE PRE-CONDITION, MEASURED. Reported either way, because "the case did
+	// not run" and "the case passed" must never look the same in a log.
+	if (Kinds.Num() <= USiegeAssistantSnapshot::MaxRosterKinds)
+	{
+		AddInfo(FString::Printf(
+			TEXT("⛔ NOT EXERCISED — the commandable roster holds %d kind(s) and MaxRosterKinds is %d, so the CAP branch is unreachable on today's data and NOTHING below was measured. This is a report, ⛔ not a pass for the cap path."),
+			Kinds.Num(), USiegeAssistantSnapshot::MaxRosterKinds));
+		return true;
+	}
+
+	// ⭐ Occurrences == 0 means "one or more": this is an ASSERTION that the shipped
+	// visibility latch FIRED, not a suppression. Registered only on the branch that
+	// actually drives a collapse — on the skip path above no warning is expected and
+	// demanding one would fail the test for the wrong reason.
+	AddExpectedMessagePlain(TEXT("Snapshot roster TRUNCATED"), ELogVerbosity::Warning,
+		EAutomationExpectedMessageFlags::Contains, /*Occurrences*/ 0);
+
+	FScratchSnapshot Scratch = MakeSnapshotWithRoster(Kinds, /*PerKindTotal*/ 9);
+	if (!TestTrue(*FString::Printf(TEXT("The roster fields were reachable by reflection (missing: %s)"), *Scratch.MissingField),
+		Scratch.IsUsable()))
+	{
+		return false;
+	}
+
+	// An ORDINARY sentence — the same 28-char order Test 1 uses. The budget is not
+	// the lever here; the cap is.
+	const FString ZoneC = Scratch.Snapshot->BuildZoneC(TEXT("send all units to the middle"), FString());
+
+	const TArray<FString> Printed = PrintedRosterSymbols(ZoneC);
+	const TArray<FString> Collapsed = CollapsedSymbols(ZoneC);
+
+	AddInfo(FString::Printf(
+		TEXT("CAP READING — %d commandable kind(s), MaxRosterKinds %d, ordinary 28-char order: %d row(s) printed, %d collapsed. Zone C is %d chars. Collapse line: `other_kinds: %s`."),
+		Kinds.Num(), USiegeAssistantSnapshot::MaxRosterKinds, Printed.Num(), Collapsed.Num(),
+		ZoneC.Len(), *ValueOfKey(ZoneC, TEXT("other_kinds"))));
+
+	// ⭐ THE CAP IS RESPECTED. `KindsToPrint` starts at min(kinds, cap) and only ever
+	// decreases, so this holds at every sentence length — it is the property that
+	// makes an uncollapsed print impossible on an over-cap board.
+	TestTrue(*FString::Printf(TEXT("⭐ No more than MaxRosterKinds (%d) rows ever print — %d did"), USiegeAssistantSnapshot::MaxRosterKinds, Printed.Num()),
+		Printed.Num() <= USiegeAssistantSnapshot::MaxRosterKinds);
+
+	// ⛔ AND THEREFORE `other_kinds:` CANNOT READ `none` HERE. Stated as its own row
+	// because it is the case Test 1 can no longer reach, and a reader comparing the
+	// two files' claims needs to see WHY rather than infer it.
+	// ⛔ `TestFalse` over an explicit case-sensitive `Equals`, ⛔ never `TestNotEqual`
+	// — the file's own SC-§13 rule: the FString comparison the automation base
+	// offers is CASE-INSENSITIVE, and this is a claim about prompt bytes.
+	TestFalse(TEXT("⛔ `other_kinds:` is NOT `none` on an over-cap board — the tail is collapsed before the character budget is even consulted"),
+		ValueOfKey(ZoneC, TEXT("other_kinds")).Equals(TEXT("none"), ESearchCase::CaseSensitive));
+
+	// ⛔ THE PRE-CONDITION IS ASSERTED FATALLY, ⛔ NOT MERELY REPORTED — the same form
+	// TEST 2 uses at `CollapseNamesTheHiddenKinds`, and for a second reason on top of
+	// that one.
+	//   (i) As there: if this row goes red, everything below it measures a collapse
+	//       that did not happen and must not be read as a pass.
+	//   (ii) ⛔ AND `Collapsed.Last()` BELOW WOULD ABORT THE WHOLE AUTOMATION RUN.
+	//       `CollapsedSymbols` returns an EMPTY array when `other_kinds:` reads `none`
+	//       or the key is missing, and `TArray::Last()` on an empty array trips
+	//       `RangeCheck`'s `checkf` — `DO_CHECK` is ON in an Editor Development build.
+	//       A non-fatal check here would let execution fall through and kill the
+	//       runner, losing every other test's result, in EXACTLY the Zone-C
+	//       collapse-line format regression this test exists to CATCH. A test whose
+	//       response to finding its defect is to take down the suite is worse than no
+	//       test at that moment, so the guard STOPS execution rather than colouring
+	//       one row.
+	// ⚠️ `Kinds.Last()` needs no such guard: `Kinds.Num() == 0` returned above, and
+	// this branch only runs when `Kinds.Num() > MaxRosterKinds`.
+	if (!TestTrue(*FString::Printf(TEXT("⛔ PRE-CONDITION: at least %d kind(s) are collapsed by the cap alone — %d were. If this fails, NOTHING below proves anything and it must not be read as a pass."),
+			Kinds.Num() - USiegeAssistantSnapshot::MaxRosterKinds, Collapsed.Num()),
+		Collapsed.Num() >= Kinds.Num() - USiegeAssistantSnapshot::MaxRosterKinds))
+	{
+		return false;
+	}
+
+	// ⭐⭐ THE INVARIANT THAT MATTERS, AND THE REASON THIS IS A DEGRADATION RATHER
+	// THAN JONATHAN'S DEFECT COMING BACK: a collapse may hide a kind's NUMBERS, it
+	// may never hide its NAME.
+	TestEqual(TEXT("Printed rows + named collapsed kinds account for the WHOLE roster — nothing vanished"),
+		Printed.Num() + Collapsed.Num(), Kinds.Num());
+
+	for (const FName& Kind : Kinds)
+	{
+		const FString Symbol = Kind.ToString();
+		TestTrue(*FString::Printf(TEXT("⭐ `%s` is SHOWN to the model (printed in full, or NAMED on the collapse line)"), *Symbol),
+			Printed.Contains(Symbol) || Collapsed.Contains(Symbol));
+	}
+
+	// The tail is what the cap reaches first, and the collapse line reproduces the
+	// roster's own order — so the LAST card row is the LAST symbol on that line.
+	TestEqualSensitive(*FString::Printf(TEXT("⭐⭐ `%s` — the LAST commandable card row — is the one the cap hides, and it is NAMED"), *Kinds.Last().ToString()),
+		Collapsed.Last(), Kinds.Last().ToString());
+
+	// ⛔ AND THE GRAMMAR IS UNTOUCHED. `GetUnitKinds()` is never trimmed, so an order
+	// naming the capped-out kind stays SAYABLE — which is what keeps this a
+	// clarification rather than the "unsupported" refusal Jonathan hit.
+	TestEqual(TEXT("⛔ GetUnitKinds() still holds the WHOLE roster — the cap trims the PROMPT, never the grammar"),
+		Scratch.Snapshot->GetUnitKinds().Num(), Kinds.Num());
+
+	// ⛔ THE RETIRED COUNTS-ONLY FORMAT IS STILL GONE ON THIS PATH TOO. The cap
+	// branch and the budget branch build the same line, but that is an implementation
+	// fact and this is the path nobody had ever run.
+	TestFalse(TEXT("⛔ The retired counts-only format (`N kinds, M units`) is GONE on the cap path as well"),
+		ZoneC.Contains(TEXT(" kinds, "), ESearchCase::CaseSensitive));
 
 	return true;
 }
@@ -1329,9 +1956,14 @@ bool FSiegeAssistantSelectionFixedKeyOrderSurvivesTest::RunTest(const FString& P
 		FString Pending;
 	};
 
+	// ⚠️ CASE 1 USES THE **WITHIN-CAP** BOARD AND CASE 2 THE **WHOLE** DERIVED
+	// ROSTER (TASK-874), because the three shapes are the subject: on a board with
+	// more kinds than `MaxRosterKinds` the cap collapses the tail unconditionally,
+	// so the UNCOLLAPSED shape would simply cease to exist here if both cases used
+	// the full roster. ⛔ That would be deleting a case, not deriving a fixture.
 	TArray<FCase> Cases;
-	Cases.Add({ TEXT("13 kinds, short order (nothing collapses)"), ThirteenKindsInCardRowOrder(), TEXT("send all units to the middle"), FString() });
-	Cases.Add({ TEXT("13 kinds, maximal order (the trimmer bites)"), ThirteenKindsInCardRowOrder(),
+	Cases.Add({ TEXT("within-cap board, short order (nothing collapses)"), BoardWithinRosterCap(*this), TEXT("send all units to the middle"), FString() });
+	Cases.Add({ TEXT("the whole commandable roster, maximal order (the trimmer bites)"), CommandableKindsInCardRowOrder(*this),
 		OrderLineOfLength(USiegeAssistantSnapshot::MaxUtteranceBytes), OrderLineOfLength(USiegeAssistantSnapshot::MaxUtteranceBytes) });
 	Cases.Add({ TEXT("empty roster (match start / null-world capture)"), TArray<FName>(), TEXT("send everyone"), FString() });
 
@@ -1417,10 +2049,10 @@ bool FSiegeAssistantSelectionShrinkLoopNeverHidesASymbolTest::RunTest(const FStr
 	AddExpectedMessagePlain(TEXT("Snapshot roster TRUNCATED"), ELogVerbosity::Warning,
 		EAutomationExpectedMessageFlags::Contains, /*Occurrences*/ -1);
 
-	const TArray<FName> Kinds = ThirteenKindsInCardRowOrder();
+	const TArray<FName> Kinds = CommandableKindsInCardRowOrder(*this);
 
 	// BOTH board magnitudes. A roster row prints its count THREE times, so a
-	// two-digit board is 39 chars wider across 13 kinds and reaches every rung of
+	// two-digit board is ~3 chars wider PER KIND and reaches every rung of
 	// the ladder at a SHORTER sentence. Sweeping both means the invariant is
 	// measured on the operating point AS-§20.3 recorded AND on the one an
 	// ordinary mid-match board actually produces.
@@ -2198,7 +2830,7 @@ bool FSiegeAssistantSelectionGrammarAdmitsExceptOnlyWithKindsTest::RunTest(const
 
 	// ── A POPULATED ROSTER — the `except` alternative is emitted ───────────────
 	{
-		const FString Grammar = USiegeAssistantGrammar::Build(ThirteenKindsInCardRowOrder(), Places);
+		const FString Grammar = USiegeAssistantGrammar::Build(CommandableKindsInCardRowOrder(*this), Places);
 
 		TestTrue(TEXT("A non-empty roster defines the `except` rule"), !RuleRhs(Grammar, TEXT("except")).IsEmpty());
 		TestTrue(TEXT("A non-empty roster defines the `exceptlist` rule"), !RuleRhs(Grammar, TEXT("exceptlist")).IsEmpty());
@@ -2266,7 +2898,7 @@ bool FSiegeAssistantSelectionGrammarAdmitsExceptOnlyWithKindsTest::RunTest(const
 		// grammar out. This is what keeps the sampler's constraint stable across
 		// turns, and *Sensitive is required because it is a byte claim.
 		TestEqualSensitive(TEXT("The grammar is still byte-deterministic with the exclusion rules present"),
-			USiegeAssistantGrammar::Build(ThirteenKindsInCardRowOrder(), Places), Grammar);
+			USiegeAssistantGrammar::Build(CommandableKindsInCardRowOrder(*this), Places), Grammar);
 	}
 
 	// ── A ONE-KIND ROSTER — degradation to REFUSABLE, not to UNREACHABLE ───────
@@ -3372,7 +4004,7 @@ bool FSiegeAssistantSelectionRegionResolvesFromSnapshotGeometryTest::RunTest(con
 {
 	using namespace SiegeAssistantSelectionTestFixture;
 
-	FScratchSnapshot Scratch = MakeSnapshotWithRegions(ThirteenKindsInCardRowOrder(), /*PerKindTotal*/ 9, /*bPublishRegions*/ true);
+	FScratchSnapshot Scratch = MakeSnapshotWithRegions(CommandableKindsInCardRowOrder(*this), /*PerKindTotal*/ 9, /*bPublishRegions*/ true);
 	if (!TestTrue(*FString::Printf(
 			TEXT("The snapshot's Capture()-owned geometry fields were reachable by reflection (missing: %s). ⛔ If this fails, a field was RENAMED or RETYPED and every assertion below would otherwise pass VACUOUSLY on an empty snapshot."),
 			*Scratch.MissingField),
@@ -3448,7 +4080,7 @@ bool FSiegeAssistantSelectionRegionResolvesFromSnapshotGeometryTest::RunTest(con
 	// FAIL CLOSED: every region symbol becomes unresolvable, the executor refuses,
 	// and the grammar never offered the shape in the first place.
 	{
-		FScratchSnapshot Bare = MakeSnapshotWithRegions(ThirteenKindsInCardRowOrder(), /*PerKindTotal*/ 9, /*bPublishRegions*/ false);
+		FScratchSnapshot Bare = MakeSnapshotWithRegions(CommandableKindsInCardRowOrder(*this), /*PerKindTotal*/ 9, /*bPublishRegions*/ false);
 		if (TestTrue(*FString::Printf(TEXT("A region-free snapshot was built (missing: %s)"), *Bare.MissingField), Bare.IsUsable()))
 		{
 			TestEqual(TEXT("A region-free snapshot publishes an EMPTY region list — a legal state, not an error"),
@@ -3503,7 +4135,7 @@ bool FSiegeAssistantSelectionRegionGrammarShapesTest::RunTest(const FString& Par
 {
 	using namespace SiegeAssistantSelectionTestFixture;
 
-	const TArray<FName> Kinds = ThirteenKindsInCardRowOrder();
+	const TArray<FName> Kinds = CommandableKindsInCardRowOrder(*this);
 	const TArray<FName> Places = SevenPlaces();
 	const TArray<FName> Regions = ThreeRegionPlaces();
 
@@ -3703,7 +4335,7 @@ bool FSiegeAssistantSelectionRegionRuleNamesAreCharsetLegalTest::RunTest(const F
 {
 	using namespace SiegeAssistantSelectionTestFixture;
 
-	const TArray<FName> Kinds = ThirteenKindsInCardRowOrder();
+	const TArray<FName> Kinds = CommandableKindsInCardRowOrder(*this);
 	const TArray<FName> Places = SevenPlaces();
 	const TArray<FName> Regions = ThreeRegionPlaces();
 
@@ -3848,7 +4480,7 @@ bool FSiegeAssistantSelectionRegionGrammarCompositionCarriesRegionsTest::RunTest
 {
 	using namespace SiegeAssistantSelectionTestFixture;
 
-	FScratchSnapshot Scratch = MakeSnapshotWithRegions(ThirteenKindsInCardRowOrder(), /*PerKindTotal*/ 9, /*bPublishRegions*/ true);
+	FScratchSnapshot Scratch = MakeSnapshotWithRegions(CommandableKindsInCardRowOrder(*this), /*PerKindTotal*/ 9, /*bPublishRegions*/ true);
 	if (!TestTrue(*FString::Printf(TEXT("A snapshot publishing regions was built (missing: %s)"), *Scratch.MissingField), Scratch.IsUsable()))
 	{
 		return false;
@@ -3903,7 +4535,7 @@ bool FSiegeAssistantSelectionRegionGrammarCompositionCarriesRegionsTest::RunTest
 	// required, because an empty alternation would leave `zone` undefined and make
 	// the WHOLE grammar unparseable. The snapshot decides; the caller only relays.
 	{
-		FScratchSnapshot Bare = MakeSnapshotWithRegions(ThirteenKindsInCardRowOrder(), /*PerKindTotal*/ 9, /*bPublishRegions*/ false);
+		FScratchSnapshot Bare = MakeSnapshotWithRegions(CommandableKindsInCardRowOrder(*this), /*PerKindTotal*/ 9, /*bPublishRegions*/ false);
 		if (TestTrue(*FString::Printf(TEXT("A region-free snapshot was built (missing: %s)"), *Bare.MissingField), Bare.IsUsable()))
 		{
 			const USiegeAssistantSnapshot* const BareSnapshot = Bare.Snapshot.Get();
@@ -3939,7 +4571,7 @@ bool FSiegeAssistantSelectionRegionGrammarCompositionCarriesRegionsTest::RunTest
 //  — which nothing could check after the batch landed — because it fails the day
 //  ANY per-region datum, occupancy count or half-extent reaches the roster block.
 //
-//  ⛔ AT 13 KINDS AND AT `PerKindTotal` 9 AND 12, because the roster block is
+//  ⛔ ON THE WHOLE DERIVED ROSTER AND AT `PerKindTotal` 9 AND 12, because the roster block is
 //  ELASTIC: the collapse path is a different code path from the uncollapsed one,
 //  and a leak on the collapsed path only would be invisible at 9.
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -3958,7 +4590,7 @@ bool FSiegeAssistantSelectionZoneCIsByteUnchangedByRegionsTest::RunTest(const FS
 	AddExpectedMessagePlain(TEXT("Snapshot roster TRUNCATED"), ELogVerbosity::Warning,
 		EAutomationExpectedMessageFlags::Contains, /*Occurrences*/ -1);
 
-	const TArray<FName> Kinds = ThirteenKindsInCardRowOrder();
+	const TArray<FName> Kinds = CommandableKindsInCardRowOrder(*this);
 	const FString Order = TEXT("send everyone in the ancient ground to the enemy castle");
 
 	// The two operating points AS-§20.3 and TASK-549's spec both name: 9 is the
@@ -4019,21 +4651,29 @@ bool FSiegeAssistantSelectionZoneCIsByteUnchangedByRegionsTest::RunTest(const FS
 		TestFalse(*FString::Printf(TEXT("⛔ [PerKindTotal %d] Zone C has no `regions:` key"), PerKindTotal),
 			HasKeyLine(ZoneCWith, TEXT("regions")));
 
-		AddInfo(FString::Printf(TEXT("Zone C at 13 kinds, PerKindTotal %d: %d chars, %d roster row(s) printed, %d collapsed. Byte-identical with and without region data."),
-			PerKindTotal, ZoneCWith.Len(), PrintedRosterSymbols(ZoneCWith).Num(), CollapsedSymbols(ZoneCWith).Num()));
+		AddInfo(FString::Printf(TEXT("Zone C at %d kinds, PerKindTotal %d: %d chars, %d roster row(s) printed, %d collapsed. Byte-identical with and without region data."),
+			Kinds.Num(), PerKindTotal, ZoneCWith.Len(), PrintedRosterSymbols(ZoneCWith).Num(), CollapsedSymbols(ZoneCWith).Num()));
 	}
 
-	// ── ⭐ AND THE 13-KIND ROSTER STILL BEHAVES AS IT DID ─────────────────────
+	// ── ⭐ AND THE UNCOLLAPSED ROSTER STILL BEHAVES AS IT DID ─────────────────
 	// The elastic trimmer is the part of Zone C most likely to be disturbed by a
 	// snapshot change, so its shipped operating point is re-asserted rather than
 	// assumed intact.
+	//
+	// ⚠️ THE WITHIN-CAP BOARD, ⛔ NOT THE FULL ROSTER (TASK-874) — the byte-parity
+	// sweep above deliberately runs on the whole commandable set (the collapsed
+	// path is a different code path and a region leak there would be invisible at
+	// 9), but "prints in FULL / `other_kinds: none`" is only reachable on a board
+	// within `MaxRosterKinds`. Two different boards for two different claims,
+	// rather than one board that can only make one of them.
 	{
-		FScratchSnapshot Scratch = MakeSnapshotWithRegions(Kinds, /*PerKindTotal*/ 9, /*bPublishRegions*/ true);
+		const TArray<FName> WithinCap = BoardWithinRosterCap(*this);
+		FScratchSnapshot Scratch = MakeSnapshotWithRegions(WithinCap, /*PerKindTotal*/ 9, /*bPublishRegions*/ true);
 		if (TestTrue(*FString::Printf(TEXT("A 9-unit board was built (missing: %s)"), *Scratch.MissingField), Scratch.IsUsable()))
 		{
 			const FString ZoneC = Scratch.Snapshot->BuildZoneC(TEXT("send all units to the middle"), FString());
-			TestEqual(TEXT("All 13 kinds still print as FULL roster rows at the single-digit operating point"),
-				PrintedRosterSymbols(ZoneC).Num(), 13);
+			TestEqual(*FString::Printf(TEXT("All %d kinds on the within-cap board still print as FULL roster rows at the single-digit operating point"), WithinCap.Num()),
+				PrintedRosterSymbols(ZoneC).Num(), WithinCap.Num());
 			TestEqualSensitive(TEXT("Nothing collapsed, so `other_kinds:` still reads exactly `none`"),
 				ValueOfKey(ZoneC, TEXT("other_kinds")), FString(TEXT("none")));
 			TestTrue(TEXT("⭐ `sorcerer` is still visible — TASK-517's fix survives the region batch"),
@@ -4133,7 +4773,7 @@ bool FSiegeAssistantSelectionZoneAWhoLineMirrorsGrammarTest::RunTest(const FStri
 	// ── (b) THE GRAMMAR'S OWN `who` ALTERNATION, READ OFF THE REAL EMITTER ────
 	{
 		const FString Grammar = USiegeAssistantGrammar::Build(
-			ThirteenKindsInCardRowOrder(), SevenPlaces(), ThreeRegionPlaces());
+			CommandableKindsInCardRowOrder(*this), SevenPlaces(), ThreeRegionPlaces());
 		const TArray<FString> WhoAlternatives = GrammarAlternatives(GrammarRuleRhs(Grammar, TEXT("who")));
 
 		if (TestEqual(TEXT("The grammar's `who` offers five alternatives"), WhoAlternatives.Num(), static_cast<int32>(UE_ARRAY_COUNT(Shapes))))
@@ -4469,7 +5109,7 @@ bool FSiegeAssistantSelectionRegionRenderedInPlayerSummaryTest::RunTest(const FS
 //
 //  ⛔ NAMESPACE NOTE: these live under `Siegebound.Assistant.Selection.<Name>`
 //  because AS-§20.7 pins THIS FILE's test names to that prefix. They are here,
-//  rather than in a new file, because every fixture they need — the 13-kind
+//  rather than in a new file, because every fixture they need — the commandable
 //  card-row roster, the seven-place head, the reflection writers, the Zone-C
 //  readers — already lives in this one, and a second copy of that frame is the
 //  duplication the task spec forbids.
@@ -4514,7 +5154,7 @@ bool FSiegeAssistantSelectionMarkSymbolsReachThePlacesLineTest::RunTest(const FS
 
 	int32 Published = 0;
 	FScratchSnapshot Scratch = MakeSnapshotWithMarks(
-		ThirteenKindsInCardRowOrder(), /*PerKindTotal*/ 9, MarksOneTo(3), Published);
+		CommandableKindsInCardRowOrder(*this), /*PerKindTotal*/ 9, MarksOneTo(3), Published);
 
 	if (!TestTrue(*FString::Printf(TEXT("The scratch snapshot was built (missing field: '%s')"), *Scratch.MissingField), Scratch.IsUsable()))
 	{
@@ -4650,7 +5290,7 @@ bool FSiegeAssistantSelectionMarkOrderIsAscendingTest::RunTest(const FString& Pa
 	// 2 and 4, and the array kept its holes exactly where M-1 says it must.
 	int32 Published = 0;
 	FScratchSnapshot Scratch = MakeSnapshotWithMarks(
-		ThirteenKindsInCardRowOrder(), /*PerKindTotal*/ 9, MarksNumbered({ 5, 1, 3 }), Published);
+		CommandableKindsInCardRowOrder(*this), /*PerKindTotal*/ 9, MarksNumbered({ 5, 1, 3 }), Published);
 
 	if (!TestTrue(*FString::Printf(TEXT("The scratch snapshot was built (missing field: '%s')"), *Scratch.MissingField), Scratch.IsUsable()))
 	{
@@ -4708,7 +5348,7 @@ bool FSiegeAssistantSelectionMarkResolvesTest::RunTest(const FString& Parameters
 	// Marks 1 and 3 — M-1's hole at 2.
 	int32 Published = 0;
 	FScratchSnapshot Scratch = MakeSnapshotWithMarks(
-		ThirteenKindsInCardRowOrder(), /*PerKindTotal*/ 9, MarksNumbered({ 1, 3 }), Published);
+		CommandableKindsInCardRowOrder(*this), /*PerKindTotal*/ 9, MarksNumbered({ 1, 3 }), Published);
 
 	if (!TestTrue(*FString::Printf(TEXT("The scratch snapshot was built (missing field: '%s')"), *Scratch.MissingField), Scratch.IsUsable()))
 	{
@@ -4806,11 +5446,11 @@ bool FSiegeAssistantSelectionMarkIsNeverARegionTest::RunTest(const FString& Para
 
 	int32 PublishedNone = 0;
 	FScratchSnapshot WithoutMarks = MakeSnapshotWithMarks(
-		ThirteenKindsInCardRowOrder(), /*PerKindTotal*/ 9, TArray<FSiegeMapMark>(), PublishedNone);
+		CommandableKindsInCardRowOrder(*this), /*PerKindTotal*/ 9, TArray<FSiegeMapMark>(), PublishedNone);
 
 	int32 PublishedNine = 0;
 	FScratchSnapshot WithMarks = MakeSnapshotWithMarks(
-		ThirteenKindsInCardRowOrder(), /*PerKindTotal*/ 9, MarksOneTo(9), PublishedNine);
+		CommandableKindsInCardRowOrder(*this), /*PerKindTotal*/ 9, MarksOneTo(9), PublishedNine);
 
 	if (!TestTrue(*FString::Printf(TEXT("The no-mark snapshot was built (missing field: '%s')"), *WithoutMarks.MissingField), WithoutMarks.IsUsable())
 		|| !TestTrue(*FString::Printf(TEXT("The nine-mark snapshot was built (missing field: '%s')"), *WithMarks.MissingField), WithMarks.IsUsable()))
@@ -4952,7 +5592,7 @@ bool FSiegeAssistantSelectionMarkAirlockTest::RunTest(const FString& Parameters)
 
 	int32 Published = 0;
 	FScratchSnapshot Scratch = MakeSnapshotWithMarks(
-		ThirteenKindsInCardRowOrder(), /*PerKindTotal*/ 9, MarksOneTo(9), Published);
+		CommandableKindsInCardRowOrder(*this), /*PerKindTotal*/ 9, MarksOneTo(9), Published);
 
 	if (!TestTrue(*FString::Printf(TEXT("The scratch snapshot was built (missing field: '%s')"), *Scratch.MissingField), Scratch.IsUsable()))
 	{
@@ -5071,7 +5711,7 @@ bool FSiegeAssistantSelectionMarkZoneCCostTest::RunTest(const FString& Parameter
 		EAutomationExpectedMessageFlags::Contains, /*Occurrences*/ -1);
 
 	const FString Order = ShippedDefaultOrderLine();
-	const TArray<FName> Kinds = ThirteenKindsInCardRowOrder();
+	const TArray<FName> Kinds = CommandableKindsInCardRowOrder(*this);
 
 	int32 BaselinePlacesLine = INDEX_NONE;
 	int32 BaselineRowsPrinted = 0;
@@ -5114,7 +5754,7 @@ bool FSiegeAssistantSelectionMarkZoneCCostTest::RunTest(const FString& Parameter
 				PlacesLine, 99);
 
 			// ⛔ THE BASELINE ROW COUNT IS RECORDED, ⛔ NOT ASSERTED — same law, same
-			// reason as the overrun point below. Whether the 13-kind roster prints in
+			// reason as the overrun point below. Whether the full roster prints in
 			// FULL at the 61-char operating point is a live budget reading (AS-§20.3
 			// puts it at 887 of 893), and pinning it here would make TASK-528's
 			// ZoneBCharReserve repair fail this file for succeeding. The comparison
@@ -5148,7 +5788,7 @@ bool FSiegeAssistantSelectionMarkZoneCCostTest::RunTest(const FString& Parameter
 	else
 	{
 		AddInfo(FString::Printf(
-			TEXT("⚠️ MEASURED OVERRUN POINT — the FIRST mark count that collapses the roster tail, on a 13-kind single-digit-count board with the shipped 61-char `order:` line, is %d. ")
+			TEXT("⚠️ MEASURED OVERRUN POINT — the FIRST mark count that collapses the roster tail, on the full derived commandable board at single-digit counts with the shipped 61-char `order:` line, is %d. ")
 			TEXT("This is MARK-§2's declared cost arriving exactly where it was predicted, ⛔ not a defect: the collapse is the shipped elastic trimmer, `other_kinds:` NAMES every kind it hides, ")
 			TEXT("and BuildZoneC logs at Warning each time it degrades. The funded lever is ZoneBCharReserve (TASK-528, MEASURE-FIRST) and this batch deliberately did NOT take it."),
 			FirstCollapsingMarkCount));
@@ -5192,7 +5832,7 @@ bool FSiegeAssistantSelectionMarkOverrunIsGracefulTest::RunTest(const FString& P
 	AddExpectedMessagePlain(TEXT("Snapshot roster TRUNCATED"), ELogVerbosity::Warning,
 		EAutomationExpectedMessageFlags::Contains, /*Occurrences*/ -1);
 
-	const TArray<FName> Kinds = ThirteenKindsInCardRowOrder();
+	const TArray<FName> Kinds = CommandableKindsInCardRowOrder(*this);
 	const FString Order = ShippedDefaultOrderLine();
 
 	// Nine marks — MARK-§ M-5's cap, i.e. the worst case the feature can produce.
@@ -5232,7 +5872,7 @@ bool FSiegeAssistantSelectionMarkOverrunIsGracefulTest::RunTest(const FString& P
 	TArray<FString> Visible = PrintedRosterSymbols(ZoneC);
 	Visible.Append(CollapsedSymbols(ZoneC));
 
-	TestEqual(TEXT("⭐⭐ Printed rows + `other_kinds:` names = ALL THIRTEEN kinds — a collapse costs COUNTS, ⛔ never EXISTENCE"),
+	TestEqual(*FString::Printf(TEXT("⭐⭐ Printed rows + `other_kinds:` names = ALL %d commandable kinds — a collapse costs COUNTS, ⛔ never EXISTENCE"), Kinds.Num()),
 		Visible.Num(), Kinds.Num());
 
 	for (const FName& Kind : Kinds)
@@ -5241,15 +5881,28 @@ bool FSiegeAssistantSelectionMarkOverrunIsGracefulTest::RunTest(const FString& P
 			Visible.Contains(Kind.ToString()));
 	}
 
-	// And specifically the one Jonathan reported, which is the LAST card row and so
-	// is always the first kind any collapse reaches.
-	TestTrue(TEXT("⭐⭐ `sorcerer` — the LAST DT_Cards row, therefore the first kind any collapse reaches — is still visible to the model"),
+	// And specifically the one Jonathan reported.
+	//
+	// ⚠️ THE PARENTHETICAL THIS LINE USED TO CARRY — *"the LAST DT_Cards row,
+	// therefore the first kind any collapse reaches"* — IS NO LONGER TRUE OF THE
+	// SORCERER (TASK-874). It was true when it was written; a fourteenth card row
+	// moved the tail. ⛔ The CLAIM is untouched and still valuable (his unit stays
+	// visible under the worst mark pressure the feature can produce); only the
+	// reason attached to it was stale, and the tail is now asserted separately,
+	// against the board.
+	TestTrue(TEXT("⭐⭐ `sorcerer` — the unit Jonathan reported — is still visible to the model at nine marks"),
 		Visible.Contains(FString(SorcererSymbol)));
+
+	if (Kinds.Num() > 0)
+	{
+		TestTrue(*FString::Printf(TEXT("⭐⭐ `%s` — the LAST card row, therefore the FIRST kind any collapse reaches — is still visible to the model"), *Kinds.Last().ToString()),
+			Visible.Contains(Kinds.Last().ToString()));
+	}
 
 	// ── (d) THE GRAMMAR IS UNTOUCHED BY THE PROMPT COLLAPSE ─────────────────
 	// GetUnitKinds() is never trimmed, so a legitimate order stays SAYABLE even
 	// when its kind's counts were collapsed out of the prompt.
-	TestEqual(TEXT("⛔ GetUnitKinds() still holds all thirteen — the GRAMMAR is never trimmed by the character budget"),
+	TestEqual(*FString::Printf(TEXT("⛔ GetUnitKinds() still holds all %d — the GRAMMAR is never trimmed by the character budget"), Kinds.Num()),
 		Scratch.Snapshot->GetUnitKinds().Num(), Kinds.Num());
 
 	// ── (e) AND THE MARKS THEMSELVES ARE ALL STILL THERE ────────────────────
@@ -5550,7 +6203,7 @@ bool FSiegeAssistantSelectionMarkSentencesParseTest::RunTest(const FString& Para
 
 	int32 Published = 0;
 	FScratchSnapshot Scratch = MakeSnapshotWithMarks(
-		ThirteenKindsInCardRowOrder(), /*PerKindTotal*/ 9, MarksOneTo(3), Published);
+		CommandableKindsInCardRowOrder(*this), /*PerKindTotal*/ 9, MarksOneTo(3), Published);
 
 	if (!TestTrue(*FString::Printf(TEXT("The scratch snapshot was built (missing field: '%s')"), *Scratch.MissingField), Scratch.IsUsable()))
 	{

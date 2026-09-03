@@ -951,6 +951,113 @@ public:
 	 */
 	static bool CanCardActorScaleFootprint(const UClass* CardActorClass);
 
+	//~ ─────────────────────────────────────────────────────────────────────────
+	//~  THE FOUR-CORNER FOOTPRINT SLOPE PROBE — the FOUR PINNED PURE SEAMS
+	//~  (TASK-871; qa/TASK-816.md W-4 / ruling R-3)
+	//~
+	//~  ⛔⛔ THE DEFECT THEY CLOSE, STATED ONCE: the slope gate was a SINGLE
+	//~  straight-down trace AT THE CURSOR, while the ghost is wide and — since
+	//~  TASK-815 — player-adjustable up to ×1.5. ⇒ a structure whose CENTRE sits
+	//~  on a flat crown could OVERHANG A STEEP FLANK AND PASS, and the wheel
+	//~  widened that overhang by up to half again.
+	//~
+	//~  ⭐ THE WHEEL DID NOT CREATE THAT BUG — it widened an exposure that was
+	//~  already there. TOWER-§7 declared it ("⛔ not a wholesale re-sampling of
+	//~  every gate across the footprint … declared as a follow-on finding, ⛔ not
+	//~  smuggled into one task"); this is that follow-on, boarded and paid.
+	//~
+	//~  ⭐ SAME CONTRACT AS THE TEN SEAMS ABOVE: the geometry IS the feature, and
+	//~  geometry locked inside a world-bound member function is geometry nobody
+	//~  can test — IsGroundSlopePlaceable needs a UWorld and a live trace, so the
+	//~  arithmetic it calls is what gets the seam. ⛔ No world, ⛔ no actor, ⛔ no
+	//~  member state, ⛔ no allocation, ⛔ no parameter defaulted (SC-§33).
+	//~ ─────────────────────────────────────────────────────────────────────────
+
+	/**
+	 *  How many points the slope probe samples for a footprint of this radius:
+	 *  ⭐ FIVE (the candidate point + its four footprint corners) when the radius
+	 *  is usable, ⛔ ONE (the shipped single straight-down trace) when it is not.
+	 *
+	 *  ⛔⛔ THE ONE-SAMPLE ANSWER IS THE SHIPPED DEGRADE, ⛔ NOT A NEW BEHAVIOUR
+	 *  (TASK-871 spec (4)): TryGetPlacementFootprintRadius yields 0 when the
+	 *  ghost, its mesh component or its bounds are missing, and 0 lands here as
+	 *  "fall back to the single trace" — the exact rule that has shipped since
+	 *  TASK-093. ⚖️ A gate that HARD-REFUSED on a missing measurement would turn
+	 *  an art-pipeline hiccup into an unplayable match.
+	 *
+	 *  Total function: non-finite and non-positive radii both take the one-sample
+	 *  path, so ⛔ no configuration can make this return a count whose samples are
+	 *  not all well defined.
+	 */
+	static int32 NumPlacementSlopeSamples(float FootprintRadius);
+
+	/**
+	 *  The planar displacement of sample `SampleIndex` from the candidate point.
+	 *  Index 0 is the CENTRE (the zero vector — the shipped trace, unmoved);
+	 *  indices 1–4 are the four corners of the footprint square, one per
+	 *  quadrant. Any other index answers the centre, so the function is total.
+	 *
+	 *  ⭐⭐ EVERY OFFSET IS DERIVED FROM FootprintRadius AND ⛔ NOTHING ELSE
+	 *  (SC-§37): there is ⛔ no transcribed corner in this function, so doubling
+	 *  the radius doubles every offset exactly — which is what makes the wheel's
+	 *  ×1.5 move the probe with ⛔ zero further edits, exactly as STACK-§6 made
+	 *  the SCALED bounds read carry the wheel for free.
+	 *
+	 *  ⚖️⚠️ THE FLAGGED DECISION — WHY THE CORNERS SIT AT (±R, ±R) AND ⛔ NOT AT
+	 *  DISTANCE R ON THE DIAGONAL. PlacementFootprintRadiusFromBounds returns a
+	 *  ⭐ HALF-EXTENT (max(|X|, |Y|)), ⛔ not a circumradius — the thing it half
+	 *  describes is a BOX, and a box of half-extent R has its corners at (±R, ±R).
+	 *  Deriving the samples from what the value IS is the choice that cannot
+	 *  drift. ⚠️ The price, declared rather than discovered in play: for a ROUND
+	 *  or strongly OBLONG footprint the two corners on the short axis are sampled
+	 *  beyond the mesh, so this over-refuses by up to ~41% of the radius — the
+	 *  mirror of the residual PlacementFootprintRadiusFromBounds already declares
+	 *  in the other direction. ⚖️ It is accepted HERE and refused THERE on purpose:
+	 *  the unit gate over-refusing costs playability against a dense, mobile
+	 *  hazard in a busy spawn box, while steep terrain is sparse and static — and
+	 *  this is the one gate in the family that already FAILS CLOSED, so
+	 *  over-refusing is its declared direction and under-refusing is the defect it
+	 *  exists to prevent. 🧑 One word flips it, and it is a one-line change here.
+	 *
+	 *  ⛔ Z IS ALWAYS EXACTLY 0. A sample is a PLANAR displacement; finding the
+	 *  surface is the trace's own ±Z bracket's job, and an offset carrying a Z
+	 *  would move the bracket instead of the sample.
+	 */
+	static FVector PlacementSlopeSampleOffset(int32 SampleIndex, float FootprintRadius);
+
+	/**
+	 *  The angle in DEGREES between a sampled surface normal and world +Z — the
+	 *  shipped M4.5 arithmetic (TASK-093), moved into a seam rather than
+	 *  rewritten, so the gate and its test can ⛔ never disagree about what
+	 *  "slope" means. ImpactNormal is unit length, so the angle is acos of its Z
+	 *  component (clamped for float safety); a sideways or downward-facing normal
+	 *  reads >= 90° and is refused naturally by every sane limit.
+	 *
+	 *  ⛔ A NON-FINITE NORMAL READS 180° — the steepest surface there is, i.e.
+	 *  facing straight DOWN. ⭐ That is acos's OWN range ceiling (acos(-1)), ⛔ not
+	 *  an invented sentinel: it is legible in a log AND refused by every finite
+	 *  limit, which is the fail-closed direction this gate has always taken.
+	 */
+	static float PlacementSurfaceSlopeDegrees(const FVector& ImpactNormal);
+
+	/**
+	 *  True when a sampled surface is flat enough to build on — the whole slope
+	 *  verdict for ONE sample, and the ⛔ only place the comparison is written.
+	 *
+	 *  ⛔ A NON-FINITE LIMIT REFUSES rather than admitting everything: a
+	 *  hand-edited .uasset or a bad merge delivering a NaN must ⛔ not silently
+	 *  disable a shipped gate (the StepPlacementFootprintScale standard, applied
+	 *  to the other end of the same problem).
+	 *
+	 *  ⚠️ DECLARED PRECISION NOTE (SC-§37.1): the comparison is float-to-float,
+	 *  matching the precision of the MaxPlacementSlopeDegrees tunable it is
+	 *  compared against. The shipped line promoted that float to double instead;
+	 *  the two disagree only within ~1e-5 degrees of the threshold, which is far
+	 *  below any terrain-authoring tolerance (the shipped hills are authored to
+	 *  ~27.5° against a 20° limit).
+	 */
+	static bool IsSurfaceNormalWithinSlopeLimit(const FVector& ImpactNormal, float MaxSlopeDegrees);
+
 	/**
 	 *  Starts targeting mode for the given SPELL card (M5 ruling 8, TASK-100)
 	 *  — placement mode's sibling. Reads the card's row from /Game/Data/
@@ -2765,15 +2872,35 @@ private:
 	bool HasBuildingClearance(const FVector& Point, float FootprintRadius) const;
 
 	/**
-	 *  True when the ground at Point is flat enough for a BUILDING (M4.5
-	 *  ruling 7, TASK-093): a straight-down line trace (Point ± 500 Z,
-	 *  ECC_Visibility — the cursor-trace channel, documented flagged decision)
+	 *  True when the ground UNDER THE WHOLE FOOTPRINT is flat enough for a
+	 *  BUILDING (M4.5 ruling 7, TASK-093; widened from a point to a footprint by
+	 *  TASK-871). Straight-down line traces (sample ± 500 Z, ECC_Visibility — the
+	 *  cursor-trace channel, documented flagged decision) at every point
+	 *  NumPlacementSlopeSamples/PlacementSlopeSampleOffset name, each of which
 	 *  must produce a blocking hit whose ImpactNormal is within
-	 *  MaxPlacementSlopeDegrees of +Z. A trace miss returns false (fail-closed,
-	 *  Verbose log) — a point the world cannot answer for is not placeable.
+	 *  MaxPlacementSlopeDegrees of +Z.
+	 *
+	 *  ⭐⭐ THE TWO SAMPLE CLASSES DEGRADE DIFFERENTLY, AND THAT IS THE WHOLE
+	 *  NON-REGRESSION ARGUMENT:
+	 *    • the CENTRE keeps its shipped semantics BYTE-FOR-BYTE — a miss returns
+	 *      false (fail-closed, one Verbose line), because a point the world
+	 *      cannot answer for is not placeable;
+	 *    • a CORNER that misses is ⛔ SKIPPED, ⛔ never refused. It has no surface,
+	 *      so it has no slope, and refusing on an absent measurement would invent
+	 *      a NEW refusal class out of nothing (the house null-safety law) —
+	 *      turning every arena edge and every gap into unbuildable ground with
+	 *      ⛔ nothing in any log to say why.
+	 *  ⇒ ⭐ the gate can only ever become stricter WHERE IT MEASURED SOMETHING,
+	 *  and ⛔ nothing that refuses today can start passing.
+	 *
+	 *  ⛔ FootprintRadius is NOT defaulted (SC-§33). Pass the ghost's mesh-derived
+	 *  radius; pass 0 — which is exactly what the degrade path already holds — and
+	 *  the probe collapses to the single shipped trace. The one shipped call site
+	 *  passes the same bare FootprintRadius its HasBuildingClearance sibling does,
+	 *  deliberately rather than re-deciding the degrade with a second expression.
 	 *  // GDD §5 (M4.5)
 	 */
-	bool IsGroundSlopePlaceable(const FVector& Point) const;
+	bool IsGroundSlopePlaceable(const FVector& Point, float FootprintRadius) const;
 
 	/**
 	 *  True when Point is >= ObstaclePlacementClearance (2D) from every actor

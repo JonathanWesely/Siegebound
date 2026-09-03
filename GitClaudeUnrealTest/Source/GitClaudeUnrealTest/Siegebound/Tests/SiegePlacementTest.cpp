@@ -2933,4 +2933,526 @@ bool FSiegePlacementGhostAndSpawnAgreeOnOneScaleTest::RunTest(const FString& Par
 	return true;
 }
 
+// ███████████████████████████████████████████████████████████████████████████████████████████
+//  TASK-871 — THE FOUR-CORNER FOOTPRINT SLOPE PROBE (tests 29–31).
+//  `qa/TASK-816.md` W-4 / ruling `R-3` · `STACK-§6` · `SC-§37` · `SC-§39` · `SC-§41`.
+//
+//  ⭐ IN THE PLACEMENT FRAME BY RIGHT, ⛔ not as a lodger: the subject is the slope gate of
+//  the very validity chain this file was created for, fed by the very footprint radius
+//  tests 1–3 already measure.
+//
+//  ⛔⛔ THE DEFECT, SO NOBODY HAS TO GO AND FIND IT: the slope gate was ONE straight-down
+//  trace AT THE CURSOR, while the ghost is wide and — since TASK-815 — player-adjustable up
+//  to ×1.5. ⇒ a structure whose CENTRE sat on a flat crown could OVERHANG A STEEP FLANK AND
+//  PASS, and the wheel widened that overhang by up to half again. ⭐ The wheel did not create
+//  the bug; it widened an exposure that was already there.
+//
+//  ⛔⛔ WHAT WOULD MAKE THESE TESTS WORTHLESS, NAMED FIRST (the file's charter, applied):
+//  ⭐⭐ **"IT REFUSED" IS ALSO WHAT A GATE THAT REFUSES EVERYTHING REPORTS.** A tightened
+//  gate is the one change where a test can be green for the worst possible reason. ⇒ every
+//  refusal claim below is paired with an ADMISSION on the same fixture with one term moved,
+//  and the headline pairing is `SC-§39`'s and `TASK-872` row (c)'s by name:
+//    • ⭐ THE NEGATIVE CONTROL — a genuinely FLAT pad, wheeled to the shipped MAXIMUM, with
+//      all five samples really taken, must ⛔ still PASS (test 30(b));
+//    • ⭐ THE POSITIVE CLAIM — the same probe, one corner moved onto a flank, must REFUSE
+//      while the CENTRE ALONE would still admit (test 30(c)). A gate that refuses everything
+//      fails (b); a gate that refuses nothing fails (c); ⛔ neither can pass this block.
+//
+//  ⛔ WHAT THESE TESTS DO **NOT** COVER (`SC-§32`, stated so nobody mistakes green for done):
+//    • ⛔ **`IsGroundSlopePlaceable` IS NEVER CALLED HERE.** It is private, needs a `UWorld`
+//      and runs live `LineTraceSingleByChannel` sweeps. ⇒ test 30 drives the SAME PURE SEAMS
+//      it drives and reproduces its ANY-SAMPLE-FAILS-REFUSES rule, and **test 31 proves the
+//      shipped body really has that shape** by reading the source. ⛔ The two halves are only
+//      worth anything TOGETHER, and that is why neither is omitted.
+//    • ⛔ **NO REAL TERRAIN IS TRACED.** That the arena's hill flanks really read past the
+//      limit closes on the shipped `SM_Hill_0N` authoring (≤30° faces, ≤8° crowns) and on
+//      🧑 Jonathan's playtest — ⛔ never on this suite.
+// ███████████████████████████████████████████████████████████████████████████████████████████
+
+namespace SiegeSlopeProbeFixture
+{
+	/**
+	 *  ⛔ A RADIUS THAT IS NOBODY'S SHIPPED NUMBER, so no claim below can accidentally agree
+	 *  with a mesh, a clearance or a tunable. Deliberately not round.
+	 */
+	constexpr float FixtureRadius = 137.5f;
+
+	/** The four seams under test, spelled once so no test re-types them. */
+	static int32 NumSamples(float Radius)
+	{
+		return ASiegePlayerController::NumPlacementSlopeSamples(Radius);
+	}
+
+	static FVector SampleOffset(int32 Index, float Radius)
+	{
+		return ASiegePlayerController::PlacementSlopeSampleOffset(Index, Radius);
+	}
+
+	static float SlopeDegrees(const FVector& Normal)
+	{
+		return ASiegePlayerController::PlacementSurfaceSlopeDegrees(Normal);
+	}
+
+	static bool WithinLimit(const FVector& Normal, float MaxDegrees)
+	{
+		return ASiegePlayerController::IsSurfaceNormalWithinSlopeLimit(Normal, MaxDegrees);
+	}
+
+	/**
+	 *  A unit surface normal tilted `Degrees` away from world +Z, in the +X direction.
+	 *  ⭐ Built from the ANGLE the caller wants rather than transcribed, so `SlopeDegrees`
+	 *  can be round-tripped against it and a radians/degrees or sign error goes RED.
+	 */
+	static FVector NormalTiltedBy(float Degrees)
+	{
+		const double Radians = FMath::DegreesToRadians(static_cast<double>(Degrees));
+		return FVector(FMath::Sin(Radians), 0.0, FMath::Cos(Radians));
+	}
+
+	/**
+	 *  ⛔⛔ THE SHIPPED LOOP'S RULE, REPRODUCED RATHER THAN CALLED, AND DECLARED AS SUCH:
+	 *  `IsGroundSlopePlaceable` admits a point only when EVERY sample it took is within the
+	 *  limit. That rule needs a world to exercise for real — ⇒ **test 31 is what proves the
+	 *  shipped body has this shape**, and this helper is what lets the GEOMETRY be measured.
+	 *  ⛔ Neither half is a substitute for the other.
+	 */
+	static bool AllSamplesAdmitted(const TArray<FVector>& SampleNormals, float MaxDegrees)
+	{
+		for (const FVector& Normal : SampleNormals)
+		{
+			if (!WithinLimit(Normal, MaxDegrees))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+//  29. ⭐⭐ EVERY SAMPLE OFFSET IS **DERIVED FROM `FootprintRadius`** — ⛔ NOT ONE OF THEM IS
+//      A TRANSCRIBED CORNER (`SC-§37`; `TASK-872` row (c) / `TASK-914` (c))
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegePlacementSlopeSampleOffsetsAreDerivedFromTheRadiusTest,
+	"Siegebound.Placement.TheSlopeProbeSampleOffsetsAreDerivedFromTheFootprintRadiusAndNeverTranscribed",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegePlacementSlopeSampleOffsetsAreDerivedFromTheRadiusTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegePlacementTestFixture;   // Exact / Tolerance / MakeQuietNaN
+	using namespace SiegeSlopeProbeFixture;
+
+	// (a) ⭐ THE CONTROL FIRST, so every "one sample" below means the DEGRADE and ⛔ not a
+	//     feature that was never wired: a usable radius really does widen the probe.
+	const int32 WideCount = NumSamples(FixtureRadius);
+	TestTrue(TEXT("(a) ⭐ CONTROL — a usable footprint radius takes MORE than one sample, so the probe is genuinely live"),
+		WideCount > 1);
+	TestEqual(TEXT("(a) ⭐ …and it is the centre plus FOUR corners — a rectangle has four, and a probe that lost one would leave a diagonal unmeasured"),
+		WideCount, 5);
+
+	// (b) ⛔ THE SHIPPED DEGRADE IS KEPT (spec (4)): an unknown footprint falls back to the
+	//     SINGLE straight-down trace, ⛔ never to a hard refusal. A gate that refused on a
+	//     missing measurement would make an art-pipeline hiccup unplayable.
+	const float NaNValue = MakeQuietNaN();
+	TestTrue(TEXT("(b) SELF-CHECK: the NaN fixture really is non-finite, so the degrade row below is measuring what it claims"),
+		FMath::IsNaN(NaNValue) && !FMath::IsFinite(NaNValue));
+	const float PositiveInfinity = BitsToFloat(0x7F800000u);
+	TestTrue(TEXT("(b) SELF-CHECK: the infinity fixture really is non-finite and positive, so the row it feeds is measuring what it claims"),
+		!FMath::IsFinite(PositiveInfinity) && !FMath::IsNaN(PositiveInfinity) && PositiveInfinity > 0.f);
+	for (const float Unusable : { 0.f, -1.f, -FixtureRadius, NaNValue, PositiveInfinity })
+	{
+		TestEqual(TEXT("(b) ⛔ an unusable footprint radius takes exactly ONE sample — the shipped single trace at the cursor"),
+			NumSamples(Unusable), 1);
+	}
+
+	// (c) ⭐⭐ THE ROW THAT A TRANSCRIBED CORNER **CANNOT** SATISFY, AND IT IS THE WHOLE POINT
+	//     OF THIS TEST: every offset is LINEAR IN THE RADIUS. Doubling the footprint doubles
+	//     every sample offset EXACTLY. A hardcoded `FVector(200, 200, 0)` passes every other
+	//     row in this file and fails this one — which is precisely how the wheel's ×1.5 is
+	//     carried for free (`STACK-§6`'s payout, a second time).
+	for (const float BaseRadius : { FixtureRadius, 1.f, 4321.75f })
+	{
+		for (int32 Index = 0; Index < NumSamples(BaseRadius); ++Index)
+		{
+			const FVector AtBase = SampleOffset(Index, BaseRadius);
+			const FVector AtDouble = SampleOffset(Index, BaseRadius * 2.f);
+			TestTrue(FString::Printf(TEXT("(c) ⭐⭐ sample %d at radius %.2f scales EXACTLY linearly: Offset(2R) == 2 * Offset(R) — a transcribed corner cannot do this"), Index, BaseRadius),
+				AtDouble.Equals(AtBase * 2.0, Tolerance));
+			TestTrue(FString::Printf(TEXT("(c) ⭐ …and sample %d is the UNIT-radius offset scaled by R, so R is genuinely the only input"), Index),
+				AtBase.Equals(SampleOffset(Index, 1.f) * static_cast<double>(BaseRadius), Tolerance));
+		}
+	}
+
+	// (d) ⭐ SAMPLE 0 IS THE CENTRE, EXACTLY. This is what makes the shipped trace survive the
+	//     change unmoved: the FIRST thing the gate still does is the trace it always did, at
+	//     the point it always did it.
+	TestTrue(TEXT("(d) ⭐ sample 0 is the ZERO vector — the shipped trace, at the shipped point, unmoved"),
+		SampleOffset(0, FixtureRadius).Equals(FVector::ZeroVector, Exact));
+	TestTrue(TEXT("(d) ⭐ …and it stays the centre for an unusable radius too, so the degrade path traces the same point"),
+		SampleOffset(0, NaNValue).Equals(FVector::ZeroVector, Exact));
+
+	// (e) ⭐ EACH CORNER IS THE FOOTPRINT'S OWN HALF-EXTENT ON BOTH AXES, AND ⛔ FLAT IN Z.
+	//     A sample carrying a Z would move the trace's ±Z bracket instead of the sample and
+	//     would silently shorten the search window.
+	int32 CornersSeen = 0;
+	TSet<FVector> DistinctCorners;
+	bool bSawPlusPlus = false, bSawPlusMinus = false, bSawMinusPlus = false, bSawMinusMinus = false;
+	for (int32 Index = 1; Index < NumSamples(FixtureRadius); ++Index)
+	{
+		const FVector Corner = SampleOffset(Index, FixtureRadius);
+		++CornersSeen;
+		DistinctCorners.Add(Corner);
+		TestEqual(FString::Printf(TEXT("(e) corner %d displaces the footprint's half-extent on X"), Index),
+			static_cast<float>(FMath::Abs(Corner.X)), FixtureRadius, Tolerance);
+		TestEqual(FString::Printf(TEXT("(e) corner %d displaces the footprint's half-extent on Y"), Index),
+			static_cast<float>(FMath::Abs(Corner.Y)), FixtureRadius, Tolerance);
+		TestEqual(FString::Printf(TEXT("(e) ⛔ corner %d carries NO Z — a sample is a PLANAR displacement"), Index),
+			static_cast<float>(Corner.Z), 0.f, Exact);
+
+		bSawPlusPlus   = bSawPlusPlus   || (Corner.X > 0.0 && Corner.Y > 0.0);
+		bSawPlusMinus  = bSawPlusMinus  || (Corner.X > 0.0 && Corner.Y < 0.0);
+		bSawMinusPlus  = bSawMinusPlus  || (Corner.X < 0.0 && Corner.Y > 0.0);
+		bSawMinusMinus = bSawMinusMinus || (Corner.X < 0.0 && Corner.Y < 0.0);
+	}
+
+	// (f) ⭐ THE FOUR CORNERS ARE FOUR **DIFFERENT** CORNERS, asserted as a PROPERTY (all four
+	//     quadrants covered, all four distinct) rather than as a transcription of a table. A
+	//     copy-paste that repeated one quadrant leaves a whole side of every building
+	//     unmeasured and would pass (c), (d) and (e) untouched.
+	TestEqual(TEXT("(f) ⭐ four corner samples were offered"), CornersSeen, 4);
+	TestEqual(TEXT("(f) ⭐⭐ …and all four are DISTINCT — a duplicated quadrant leaves one side of every building unmeasured"),
+		DistinctCorners.Num(), 4);
+	TestTrue(TEXT("(f) ⭐⭐ …and they cover ALL FOUR quadrants (+ +, + -, - +, - -), which is what makes them the footprint's corners"),
+		bSawPlusPlus && bSawPlusMinus && bSawMinusPlus && bSawMinusMinus);
+
+	// (g) ⛔ TOTAL FUNCTION: an index nobody offers answers the CENTRE rather than a garbage
+	//     displacement. The loop can never produce these, so this guards the seam against its
+	//     NEXT caller, not against its current one.
+	for (const int32 OutOfRange : { -1, 5, 99 })
+	{
+		TestTrue(FString::Printf(TEXT("(g) ⛔ out-of-range sample index %d answers the centre, ⛔ never a garbage offset"), OutOfRange),
+			SampleOffset(OutOfRange, FixtureRadius).Equals(FVector::ZeroVector, Exact));
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+//  30. ⭐⭐ THE SHAPE: A CENTRE-ON-CROWN / CORNER-ON-FLANK PLACEMENT THAT **PASSES TODAY**
+//      MUST **FAIL AFTER** — carried by the ⭐ NEGATIVE CONTROL that a FLAT pad at the
+//      shipped MAXIMUM wheel scale ⛔ still passes (`SC-§39`; `TASK-914` (c))
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegePlacementSlopeProbeRefusesAnOverhangingFootprintAndAdmitsAFlatPadTest,
+	"Siegebound.Placement.TheSlopeProbeRefusesACornerOnAFlankWhileAFlatPadAtTheMaximumWheelScaleStillPasses",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegePlacementSlopeProbeRefusesAnOverhangingFootprintAndAdmitsAFlatPadTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegePlacementTestFixture;   // TryReadShippedFloat / Tolerance / MakeQuietNaN
+	using namespace SiegeSlopeProbeFixture;
+
+	// (a) SELF-CHECK: the shipped tunables are read off the CDO BY REFLECTION and ⛔ never
+	//     transcribed, so every threshold below survives 🧑 a retune of any of them. A tunable
+	//     that cannot be found FAILS rather than defaulting to a number this file invented.
+	float SlopeLimit = 0.f, WheelMax = 0.f, WheelMin = 0.f;
+	const bool bReadTunables =
+		TryReadShippedFloat(TEXT("MaxPlacementSlopeDegrees"), SlopeLimit)
+		&& TryReadShippedFloat(TEXT("PlacementFootprintMax"), WheelMax)
+		&& TryReadShippedFloat(TEXT("PlacementFootprintMin"), WheelMin);
+	if (!bReadTunables)
+	{
+		AddError(TEXT("SELF-CHECK FAILED: MaxPlacementSlopeDegrees / PlacementFootprintMax / PlacementFootprintMin are not all reflected floats on ASiegePlayerController — every claim in this test rests on them and none can be made."));
+		return false;
+	}
+	TestTrue(TEXT("(a) SELF-CHECK: the shipped slope limit is a usable angle (strictly between flat and vertical), so 'below' and 'above' it both exist"),
+		FMath::IsFinite(SlopeLimit) && SlopeLimit > 0.f && SlopeLimit < 90.f);
+	TestTrue(TEXT("(a) SELF-CHECK: the wheel really can WIDEN a footprint (max > min), so the ×max control below is not the ×min case wearing a different name"),
+		FMath::IsFinite(WheelMax) && FMath::IsFinite(WheelMin) && WheelMax > WheelMin && WheelMin > 0.f);
+
+	// (b) ⭐⭐⭐ **THE NEGATIVE CONTROL** (`TASK-914` (c), verbatim): *"a genuinely flat pad at
+	//     the maximum wheel scale must STILL PASS. A gate that refuses everything is ⛔ not a
+	//     gate, and a test that only ever sees a refusal ⛔ cannot tell the two apart."*
+	const float WheeledRadius = FixtureRadius * WheelMax;
+	const int32 WheeledSamples = NumSamples(WheeledRadius);
+	TestTrue(TEXT("(b) SELF-CHECK: the wheeled pad really takes the WIDE sample set, so 'the flat pad passed' is ⛔ not one trace passing on its own"),
+		WheeledSamples > 1 && WheeledSamples == NumSamples(FixtureRadius));
+
+	TArray<FVector> FlatPadNormals;
+	FVector WidestFlatCorner = FVector::ZeroVector;
+	for (int32 Index = 0; Index < WheeledSamples; ++Index)
+	{
+		FlatPadNormals.Add(FVector::UpVector);
+		const FVector Offset = SampleOffset(Index, WheeledRadius);
+		if (Offset.Size2D() > WidestFlatCorner.Size2D())
+		{
+			WidestFlatCorner = Offset;
+		}
+	}
+	TestTrue(TEXT("(b) ⭐⭐ **A GENUINELY FLAT PAD AT THE MAXIMUM WHEEL SCALE IS STILL ADMITTED** — the gate did ⛔ not become a refusal machine"),
+		AllSamplesAdmitted(FlatPadNormals, SlopeLimit));
+
+	// (b2) ⭐ AND THE CONTROL IS ⛔ NOT VACUOUS: the probe really did reach further at ×max
+	//      than at ×min. Without this, "the flat pad passed" would also be what a probe whose
+	//      corners never left the centre reports.
+	const FVector UnwheeledCorner = SampleOffset(1, FixtureRadius * WheelMin);
+	const FVector WheeledCorner = SampleOffset(1, WheeledRadius);
+	TestTrue(TEXT("(b2) ⭐ the wheel genuinely widened the probe — the corner sample sits FURTHER out at the maximum scale than at the minimum"),
+		WheeledCorner.Size2D() > UnwheeledCorner.Size2D() && WidestFlatCorner.Size2D() > 0.0);
+
+	// (c) ⭐⭐⭐ **THE CLAIM** (spec (5)): a centre-on-crown / corner-on-flank configuration
+	//     that PASSES TODAY must FAIL AFTER. Both angles are DERIVED from the shipped limit —
+	//     ⛔ neither is transcribed — so a retune of `MaxPlacementSlopeDegrees` keeps this row
+	//     meaningful instead of quietly making it vacuous.
+	const float CrownDegrees = SlopeLimit * 0.5f;
+	const float FlankDegrees = FMath::Min(SlopeLimit * 2.f, (SlopeLimit + 90.f) * 0.5f);
+	TestTrue(TEXT("(c) SELF-CHECK: the derived crown is genuinely BELOW the limit and the derived flank genuinely ABOVE it, so the pair discriminates"),
+		CrownDegrees < SlopeLimit && FlankDegrees > SlopeLimit && FlankDegrees < 90.f);
+
+	const FVector CrownNormal = NormalTiltedBy(CrownDegrees);
+	const FVector FlankNormal = NormalTiltedBy(FlankDegrees);
+
+	// (c1) ⭐⭐ **TODAY'S GATE ADMITS IT.** The single centre trace sees only the crown — which
+	//      is exactly why the defect shipped: the building's far side was never measured.
+	TArray<FVector> CentreOnly;
+	CentreOnly.Add(CrownNormal);
+	TestTrue(TEXT("(c1) ⭐⭐ the CENTRE ALONE admits this placement — this is the configuration that PASSES TODAY, and it is the defect"),
+		AllSamplesAdmitted(CentreOnly, SlopeLimit));
+
+	// (c2) ⭐⭐ **THE FOOTPRINT PROBE REFUSES IT.** Same centre, same crown, one corner hanging
+	//      over the flank. ⇒ the thing that passed above fails here, which is spec (5)'s whole
+	//      sentence expressed as an assertion.
+	//      ⛔ The fixture is BUILT from the probe's own sample count rather than typed out, so
+	//      it cannot silently desync from it the day the count changes.
+	const int32 OverhangingCorner = WheeledSamples - 1;
+	TArray<FVector> CrownWithOverhang;
+	for (int32 Index = 0; Index < WheeledSamples; ++Index)
+	{
+		CrownWithOverhang.Add(Index == OverhangingCorner ? FlankNormal : CrownNormal);
+	}
+	TestTrue(TEXT("(c2) SELF-CHECK: the overhang really sits on a CORNER (⛔ not the centre) and the fixture carries one sample per probe point"),
+		OverhangingCorner > 0 && CrownWithOverhang.Num() == WheeledSamples);
+	TestFalse(TEXT("(c2) ⭐⭐⭐ **A CENTRE ON A CROWN WITH ONE CORNER ON A FLANK IS NOW REFUSED** — the overhang the wheel widened is closed"),
+		AllSamplesAdmitted(CrownWithOverhang, SlopeLimit));
+
+	// (c3) ⭐ ANY corner does it, ⛔ not just one privileged index — otherwise three sides of
+	//      every building would still be unguarded and (c2) would be green anyway.
+	for (int32 FlankIndex = 1; FlankIndex < WheeledSamples; ++FlankIndex)
+	{
+		TArray<FVector> OneFlank;
+		for (int32 Index = 0; Index < WheeledSamples; ++Index)
+		{
+			OneFlank.Add(Index == FlankIndex ? FlankNormal : CrownNormal);
+		}
+		TestFalse(FString::Printf(TEXT("(c3) ⭐ a flank under corner %d alone is enough to refuse — every side of the footprint is guarded"), FlankIndex),
+			AllSamplesAdmitted(OneFlank, SlopeLimit));
+	}
+
+	// (d) ⭐ THE BOUNDARY IS `<=`, ⛔ NOT `<` — the SHIPPED comparison, preserved.
+	//     ⚠️ Asserted WITHOUT relying on an `acos(cos(θ)) == θ` round-trip landing on the exact
+	//     side of the threshold: that would be a test whose colour depends on the last bit of a
+	//     trig call. ⭐ Instead the DISCRIMINATOR is exact by construction — a perfectly FLAT
+	//     surface against a limit of exactly zero is admitted under `<=` and refused under `<`,
+	//     with ⛔ no trigonometry between the fixture and the answer.
+	TestTrue(TEXT("(d) ⭐⭐ a FLAT surface against a limit of exactly zero is ADMITTED — the comparison is `<=`, ⛔ not `<` (exact, ⛔ no trig round-trip)"),
+		WithinLimit(FVector::UpVector, 0.f));
+	TestFalse(TEXT("(d) ⭐ …and any tilt at all against that same zero limit is refused, so the row above is ⛔ not a predicate that admits everything"),
+		WithinLimit(NormalTiltedBy(1.f), 0.f));
+	TestFalse(TEXT("(d) ⭐ a hair PAST the shipped limit is refused, so the shipped boundary genuinely bites"),
+		WithinLimit(NormalTiltedBy(SlopeLimit + 1.f), SlopeLimit));
+	TestTrue(TEXT("(d) ⭐ …and a hair UNDER it is admitted, so (d) is ⛔ not one comparison agreeing with itself"),
+		WithinLimit(NormalTiltedBy(SlopeLimit - 1.f), SlopeLimit));
+
+	// (d2) ⭐⭐ AND THE PREDICATE IS ⛔ EXACTLY "measured degrees <= the limit" — the seam and the
+	//      gate cannot hold two different opinions about what "flat enough" means. Checked as an
+	//      AGREEMENT across the whole probe range rather than at one point, so a predicate that
+	//      quietly grew an extra term (a fudge factor, a second threshold) goes RED.
+	for (const float Degrees : { 0.f, CrownDegrees, SlopeLimit, FlankDegrees, 89.f, 90.f, 179.f })
+	{
+		const FVector Probe = NormalTiltedBy(Degrees);
+		TestTrue(FString::Printf(TEXT("(d2) ⭐ at %.2f deg the predicate agrees with the measured angle — it is `degrees <= limit` and ⛔ nothing else"), Degrees),
+			WithinLimit(Probe, SlopeLimit) == (SlopeDegrees(Probe) <= SlopeLimit));
+	}
+
+	// (e) ⭐ THE ANGLE SEAM ROUND-TRIPS. Building the normal FROM an angle and reading the
+	//      angle back OUT of it is what catches a radians/degrees slip or a sign error — both
+	//      of which would leave every other row in this test green.
+	for (const float Degrees : { 0.f, CrownDegrees, SlopeLimit, FlankDegrees, 89.f })
+	{
+		TestEqual(FString::Printf(TEXT("(e) ⭐ a normal built at %.2f deg reads back as %.2f deg — ⛔ no radians/degrees slip, ⛔ no sign error"), Degrees, Degrees),
+			SlopeDegrees(NormalTiltedBy(Degrees)), Degrees, 1.e-2f);
+	}
+
+	// (f) ⛔ FAIL-CLOSED, THE SHIPPED DIRECTION, ON EVERY DEGENERATE INPUT. ⭐ Each row is
+	//     paired with the FLAT normal being admitted under the same limit, so a "false" here
+	//     is the guard firing and ⛔ not a predicate that stopped answering true at all.
+	const float NaNValue = MakeQuietNaN();
+	TestTrue(TEXT("(f) SELF-CHECK: the NaN fixture really is non-finite"), !FMath::IsFinite(NaNValue));
+	TestTrue(TEXT("(f) ⭐ CONTROL — a flat normal IS admitted under this limit, so the refusals below mean something"),
+		WithinLimit(FVector::UpVector, SlopeLimit));
+	TestFalse(TEXT("(f) ⛔ a NaN surface normal is REFUSED (fail-closed), ⛔ never admitted"),
+		WithinLimit(FVector(0.0, 0.0, NaNValue), SlopeLimit));
+	TestFalse(TEXT("(f) ⛔ a straight-DOWN normal is refused"), WithinLimit(-FVector::UpVector, SlopeLimit));
+	TestFalse(TEXT("(f) ⛔ a sideways (vertical wall) normal is refused"), WithinLimit(FVector(1.0, 0.0, 0.0), SlopeLimit));
+	TestFalse(TEXT("(f) ⛔ a degenerate ZERO normal is refused — it reads 90 deg, not 0"),
+		WithinLimit(FVector::ZeroVector, SlopeLimit));
+	TestFalse(TEXT("(f) ⛔⛔ a NaN LIMIT refuses rather than silently DISABLING a shipped gate — a hand-edited .uasset must not switch this off"),
+		WithinLimit(FVector::UpVector, NaNValue));
+	TestEqual(TEXT("(f) ⛔ a non-finite normal reads acos's own range ceiling (180 deg — straight down), which every finite limit refuses"),
+		SlopeDegrees(FVector(0.0, 0.0, NaNValue)), 180.f, Tolerance);
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+//  31. ⭐⭐ THE SHIPPED BODY REALLY HAS THAT SHAPE — it consumes the **ONE** footprint, it
+//      re-derives **NOTHING**, the gate chain is **UNREORDERED**, and the trace sits
+//      **DOWNSTREAM OF THE SIZING** (`TASK-914` (d); `STACK-§6`; `SC-§41`)
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegePlacementSlopeProbeConsumesTheOneFootprintAndTheChainIsUnreorderedTest,
+	"Siegebound.Placement.TheSlopeProbeConsumesTheOneFootprintMeasurementAndTheGateChainIsUnreordered",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegePlacementSlopeProbeConsumesTheOneFootprintAndTheChainIsUnreorderedTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegePlacementUpgradeFixture;  // LoadProjectSource / CountOccurrencesInCode / ControllerSourcePath
+	using namespace SiegeDiscardAllFixture;        // ExtractControllerFunctionBody / CodeLinesOnly / CheckPrecedes
+
+	FString SourceText;
+	if (!LoadProjectSource(*this, ControllerSourcePath, SourceText))
+	{
+		return false;
+	}
+
+	// ⛔ `ExtractControllerFunctionBody` terminates on the next `void ASiegePlayerController::`
+	// and so cannot bound a `bool` definition. Rather than widen a shipped helper that four
+	// other tests depend on, the slope gate's body is bounded by BRACE MATCHING here, and the
+	// result is SELF-CHECKED below — ⛔ a stale or empty probe must report RED, never SAFE.
+	FString SlopeBody;
+	{
+		const TCHAR* const SlopeSignature = TEXT("bool ASiegePlayerController::IsGroundSlopePlaceable(");
+		const int32 Start = SourceText.Find(SlopeSignature, ESearchCase::CaseSensitive);
+		const int32 Open = (Start == INDEX_NONE)
+			? INDEX_NONE
+			: SourceText.Find(TEXT("{"), ESearchCase::CaseSensitive, ESearchDir::FromStart, Start);
+		if (Open == INDEX_NONE)
+		{
+			AddError(TEXT("⛔ 'bool ASiegePlayerController::IsGroundSlopePlaceable(' was not found in SiegePlayerController.cpp — it was renamed, removed or given a different return type, and every shape claim below is unmakeable."));
+			return false;
+		}
+		int32 Depth = 0;
+		for (int32 At = Open; At < SourceText.Len(); ++At)
+		{
+			const TCHAR Character = SourceText[At];
+			Depth += (Character == TEXT('{')) ? 1 : ((Character == TEXT('}')) ? -1 : 0);
+			if (Depth == 0)
+			{
+				SlopeBody = SourceText.Mid(Start, At - Start + 1);
+				break;
+			}
+		}
+	}
+
+	// SELF-CHECKS: the extracted body really IS the slope gate. Without these, every "exactly
+	// one" and every "zero" below would report SAFE on an empty string.
+	TestTrue(TEXT("SELF-CHECK: the brace matcher bounded a non-empty body"), !SlopeBody.IsEmpty());
+	TestEqual(TEXT("SELF-CHECK: the extracted body really is the slope gate (its ONE trace call is there)"),
+		CountOccurrencesInCode(SlopeBody, TEXT("LineTraceSingleByChannel(")), 1);
+	TestTrue(TEXT("SELF-CHECK: …and it reads a surface normal, which is what a slope gate is for"),
+		CountOccurrencesInCode(SlopeBody, TEXT("ImpactNormal")) > 0);
+	TestEqual(TEXT("SELF-CHECK: …and the matcher stopped INSIDE this function — it did not swallow the next definition"),
+		CountOccurrencesInCode(SlopeBody, TEXT("ASiegePlayerController::HasObstacleClearance")), 0);
+
+	// (a) ⭐ THE GATE CONSUMES THE THREE SEAMS, EACH EXACTLY ONCE. One trace call serving all
+	//     five samples is the loop working; a second would be a corner probed by hand.
+	TestEqual(TEXT("(a) ⭐ the sample COUNT comes from the seam, exactly once"),
+		CountOccurrencesInCode(SlopeBody, TEXT("NumPlacementSlopeSamples(")), 1);
+	TestEqual(TEXT("(a) ⭐ the sample OFFSET comes from the seam, exactly once"),
+		CountOccurrencesInCode(SlopeBody, TEXT("PlacementSlopeSampleOffset(")), 1);
+	TestEqual(TEXT("(a) ⭐ the slope VERDICT comes from the seam, exactly once"),
+		CountOccurrencesInCode(SlopeBody, TEXT("IsSurfaceNormalWithinSlopeLimit(")), 1);
+	TestEqual(TEXT("(a) ⭐⭐ ONE trace call serves all five samples — a second would be a corner probed by hand, outside the seam"),
+		CountOccurrencesInCode(SlopeBody, TEXT("LineTraceSingleByChannel(")), 1);
+
+	// (b) ⛔⛔ THE GATE RE-DERIVES **NOTHING**. It takes the footprint the frame already
+	//     measured; it does ⛔ not read the ghost's bounds again. ⭐ A second definition of
+	//     "how wide is this building" is exactly how the ghost the player sees and the
+	//     footprint the click is validated against drift apart. Each zero is paired with a
+	//     SELF-CHECK proving the scanner finds that same token elsewhere in this file
+	//     (`SC-§39`: an absent token and an unreadable probe report the same zero).
+	for (const TCHAR* Forbidden : { TEXT("CalcBounds("), TEXT("TryGetPlacementFootprintRadius("), TEXT("GetStaticMeshComponent(") })
+	{
+		TestTrue(FString::Printf(TEXT("(b) SELF-CHECK: '%s' IS findable on code lines elsewhere in this file, so the zero below means separation"), Forbidden),
+			CountOccurrencesInCode(SourceText, Forbidden) > 0);
+		TestEqual(FString::Printf(TEXT("(b) ⛔⛔ the slope gate never re-derives the footprint via '%s' — it consumes the ONE measurement"), Forbidden),
+			CountOccurrencesInCode(SlopeBody, Forbidden), 0);
+	}
+
+	// (c) ⛔ THE SLOPE ARITHMETIC LIVES IN THE SEAM AND ⛔ NOWHERE ELSE, so the gate and its
+	//     test can never disagree about what "flat enough" means.
+	TestTrue(TEXT("(c) SELF-CHECK: 'FMath::Acos(' IS findable on code lines in this file, so the zero below means separation"),
+		CountOccurrencesInCode(SourceText, TEXT("FMath::Acos(")) > 0);
+	TestEqual(TEXT("(c) ⛔ the gate body holds NO slope arithmetic of its own — the comparison has exactly one home"),
+		CountOccurrencesInCode(SlopeBody, TEXT("FMath::Acos(")), 0);
+	TestEqual(TEXT("(c) ⭐ and file-wide there is exactly ONE acos — a second would be a second definition of 'slope'"),
+		CountOccurrencesInCode(SourceText, TEXT("FMath::Acos(")), 1);
+
+	// (d) ⛔⛔ THE CALL SITE PASSES THE FOOTPRINT, AND THE OLD POINT-ONLY SHAPE IS GONE.
+	//     ⚠️⚠️ `SC-§41` IN ITS EXACT SHAPE: `IsGroundSlopePlaceable(PlacementLocation` is a
+	//     SUBSTRING of the new call, so a needle without the CLOSING PAREN would count the new
+	//     call as if it were the old one and this row would be a LIE that reads green. ⭐ The
+	//     `)` is the discriminator, and the pair below is the positive control that proves it:
+	//     the same needle reads ZERO with the paren and ONE without it.
+	FString GhostBody;
+	if (!ExtractControllerFunctionBody(*this, SourceText, TEXT("void ASiegePlayerController::UpdatePlacementGhost()"), GhostBody))
+	{
+		return false;
+	}
+	TestTrue(TEXT("(d) SELF-CHECK: the ghost body really is UpdatePlacementGhost (its shipped GhostColor write is there)"),
+		CountOccurrencesInCode(GhostBody, TEXT("SetVectorParameterValue(GhostColorParamName")) == 1);
+	TestEqual(TEXT("(d) ⭐ the ONE call site passes the frame's footprint radius, exactly once"),
+		CountOccurrencesInCode(GhostBody, TEXT("IsGroundSlopePlaceable(PlacementLocation, FootprintRadius)")), 1);
+	TestEqual(TEXT("(d) ⛔⛔ the OLD point-only call shape is GONE file-wide — note the CLOSING PAREN, which is the whole discriminator (SC-§41)"),
+		CountOccurrencesInCode(SourceText, TEXT("IsGroundSlopePlaceable(PlacementLocation)")), 0);
+	TestEqual(TEXT("(d) ⭐⭐ POSITIVE CONTROL for the row above: the SAME needle WITHOUT the closing paren reads ONE — so the zero is separation, ⛔ not a blind probe"),
+		CountOccurrencesInCode(SourceText, TEXT("IsGroundSlopePlaceable(PlacementLocation")), 1);
+
+	// (e) ⭐⭐ **THE GATE CHAIN IS UNREORDERED** (`TASK-914` (d)). `first-failing-rule-wins` is
+	//     a shipped property: every pre-existing rule is still evaluated in its shipped order
+	//     and the `Units` gate is still LAST. ⛔ This task tightened a gate IN PLACE; it did
+	//     ⛔ not move one, and a reordering would silently change WHICH message a refusal shows.
+	const FString GhostCode = CodeLinesOnly(GhostBody);
+	CheckPrecedes(*this, GhostCode, TEXT("EPlacementInvalidReason::Slope;"), TEXT("EPlacementInvalidReason::Obstacle;"));
+	CheckPrecedes(*this, GhostCode, TEXT("EPlacementInvalidReason::Obstacle;"), TEXT("EPlacementInvalidReason::Clearance;"));
+	CheckPrecedes(*this, GhostCode, TEXT("EPlacementInvalidReason::Clearance;"), TEXT("EPlacementInvalidReason::Units;"));
+
+	// (f) ⭐⭐ **THE TWO ORDERINGS THIS TASK DEPENDS ON**, and the second is NEW. `TASK-815`
+	//     bought the first with `CheckPrecedes` because no behavioural test can catch it; the
+	//     slope probe now rides the same footprint, so it inherits the same obligation —
+	//     written above the sizing, the trace would validate THIS frame's click against LAST
+	//     frame's size: an intermittent refusal with a green suite.
+	CheckPrecedes(*this, GhostCode, TEXT("SetActorScale3D("), TEXT("TryGetPlacementFootprintRadius("));
+	CheckPrecedes(*this, GhostCode, TEXT("TryGetPlacementFootprintRadius("), TEXT("IsGroundSlopePlaceable("));
+
+	// (g) ⛔ THE FENCE, RE-MEASURED AFTER THIS DIFF RATHER THAN PROMISED (`TASK-914` (d)):
+	//     `max`-not-sum is untouched — it is `TASK-735`'s entire non-regression argument — and
+	//     there is ⛔ NO second clamp on `PlacementFootprintScale` (`R-4c`: a second copy of
+	//     the range is the `HIGH-§1` booby trap).
+	TestEqual(TEXT("(g) ⛔ EffectiveBuildingClearance still composes as a MAX, exactly once"),
+		CountOccurrencesInCode(SourceText, TEXT("FMath::Max(SafeBase, SafeRadius)")), 1);
+	TestEqual(TEXT("(g) ⛔ …and never as a SUM"),
+		CountOccurrencesInCode(SourceText, TEXT("SafeBase + SafeRadius")), 0);
+	TestEqual(TEXT("(g) ⛔ the wheel's range still has exactly ONE clamp site — its definition plus its ONE caller (R-4c)"),
+		CountOccurrencesInCode(SourceText, TEXT("StepPlacementFootprintScale(")), 2);
+	TestEqual(TEXT("(g) ⛔ …and the ghost/spawn scale still comes from ONE expression with TWO consumers, undisturbed by this diff"),
+		CountOccurrencesInCode(SourceText, TEXT("MakePlacementFootprintScale3D(")), 3);
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

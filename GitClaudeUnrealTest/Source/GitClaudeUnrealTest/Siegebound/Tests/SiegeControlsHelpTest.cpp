@@ -26,6 +26,19 @@
  *  related-controls blocks and its way back. ⛔ ONE FILE for the whole feature, by `HELP-§6`.
  *  Law: `HELP-§1`/`§2`/`§4`/`§5`/`§6`. QA gate: TASK-708. Compile + suite gate: TASK-709.
  *
+ *  ⭐⭐ TEST 18 = TASK-852: the `RelatedActionIds` GRAPH INTEGRITY WALK — every row's outbound
+ *  edges resolve to real rows, with the negative control that proves it can go red. ⛔ IT IS AN
+ *  EXTRACTION FROM TEST 9, ⛔ NOT A NEW CHECK: the walk shipped inside `EveryRowHasAuthoredDetail`
+ *  for months, was correct and green the whole time, and was READ AS ABSENT BY TWO INDEPENDENT
+ *  READERS because its name said "detail authoring". A law was written declaring it missing and a
+ *  task boarded to duplicate it. ⇒ if you are looking for a claim in this file, ⛔ SEARCH FOR THE
+ *  SYMBOL, ⛔ not for the test name you would have chosen (`SC-§40` cl. 11(b), `HELP-§7`).
+ *
+ *  ⭐ TEST 17 = TASK-870 (POST-GATE batch): the RIGHT-CLICK half of `CARDBAR-§8`/`STACK-§4`, and
+ *  the guard on the one sentence Jonathan refuted by observation. It is test 16's shape applied to
+ *  a SECOND gesture, and it is deliberately filed under a name that says what it checks
+ *  (`HELP-§7`'s "a test's NAME is its discoverability surface").
+ *
  *  ⭐ TEST 14 = TASK-821 (CARDBAR batch): the rewritten `Cards.Discard` row. It is the FIRST
  *  test in this file to carry `HELP-§6`'s changes/holds pair on TWO SHIPPED ROWS AT ONCE — the
  *  discard-all LETTER must move under a layout flip while the card DIGITS hold, in one test,
@@ -1076,6 +1089,12 @@ bool FSiegeControlsHelpChipTest::RunTest(const FString& Parameters)
  *  ⭐ IT ALSO MACHINE-CHECKS THE TRANSFER RULES from handoffs/TASK-704-programmer.md §4 that a
  *  human would otherwise have to eyeball across 24 strings: ⛔ no `file:line` citation and ⛔ no
  *  markdown markup may reach the player's screen (rules T1 and T2). Those live in C++ comments.
+ *
+ *  ⛔⛔ WHAT THIS TEST NO LONGER DOES, ⛔ SAID IN THE DOCSTRING BECAUSE THE DOCSTRING IS WHERE THE
+ *  LAST TWO READERS LOOKED AND FOUND NOTHING: it used to ALSO carry the registry-wide
+ *  `RelatedActionIds` graph walk, which is nowhere in its name and was nowhere in this comment.
+ *  ⇒ TASK-852 MOVED it to TEST 18, `EveryRelatedActionIdResolvesToARealRow`. ⛔ It was not
+ *  weakened and it was not duplicated — it was made findable, and given a negative control.
  */
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FSiegeControlsHelpAuthoredDetailTest,
@@ -1120,16 +1139,18 @@ bool FSiegeControlsHelpAuthoredDetailTest::RunTest(const FString& Parameters)
 				*RowName, Forbidden), Detail.Contains(Forbidden, ESearchCase::CaseSensitive));
 		}
 
-		// ⛔ EVERY RELATED ID IS A REAL ROW AND NEVER THE ROW ITSELF. ComposeDetailContent drops
-		// both cases at runtime, but a dropped entry is a silently missing control on Jonathan's
-		// page — the data itself must be right.
-		for (const FName RelatedId : Row.RelatedActionIds)
-		{
-			TestNotNull(*FString::Printf(TEXT("Row '%s' related id '%s' resolves in the registry"),
-				*RowName, *RelatedId.ToString()), FSiegeControlsHelpRegistry::FindAction(RelatedId));
-			TestNotEqual(*FString::Printf(TEXT("Row '%s' does not list itself as a related control"), *RowName),
-				RelatedId, Row.ActionId);
-		}
+		// ⛔⛔ MOVED OUT 2026-09-03 (TASK-852) — ⛔ NOT DELETED. The registry-wide
+		// `RelatedActionIds` walk that used to live here is now TEST 18,
+		// `Siegebound.ControlsHelp.EveryRelatedActionIdResolvesToARealRow`. It walks the SAME
+		// `GetActions()` set, resolves through the SAME `FSiegeControlsHelpRegistry::FindAction`,
+		// and now carries a NEGATIVE CONTROL proving it can go red.
+		// ⚖️ WHY IT MOVED, because it is the instructive part: it was CORRECT and it was
+		// INVISIBLE. Filed under a name that says "detail authoring", it was read as absent by
+		// TWO independent readers — `HELP-§7` was written declaring it did not exist, and
+		// `TASK-852` was boarded to build a duplicate of it. ⇒ `SC-§40` cl. 11(b) and
+		// `HELP-§7`'s own closing clause: A TEST'S NAME IS ITS DISCOVERABILITY SURFACE, and an
+		// assertion filed under an unrelated name is operationally an assertion that does not
+		// exist. ⛔ Do not re-add an edge loop here — the walk lives in exactly ONE place.
 	}
 
 	return true;
@@ -2198,6 +2219,404 @@ bool FSiegeControlsHelpWheelMeaningsTest::RunTest(const FString& Parameters)
 		}
 		AddInfo(FString::Printf(TEXT("Wheel meanings documented: %s"), *Found));
 	}
+
+	return true;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════
+//  TEST 17 — Siegebound.ControlsHelp.RightClickIsTaughtOnlyByTheRowsThatOwnIt   ⭐⭐
+// ════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ *  ⭐⭐ TASK-870. TEST 16's SHAPE, APPLIED TO THE SECOND GESTURE — and carrying the guard on the
+ *  one sentence a PLAYER, not a reader, proved false.
+ *
+ *  ⛔ THE DEFECT IT EXISTS TO KEEP DEAD. `Interface.WarMap`'s detail SHIPPED claiming the map is
+ *  "closed by right-click or Escape, polled every frame", while `Interface.MapMarks` said "a
+ *  right-click that hits no circle does nothing at all". Both were on screen at once and one of
+ *  them was false. 🧑 Jonathan settled it in one click: "opening the war map and right clicking
+ *  empty ground does not cause it to close, the map seems to function exactly as it should"
+ *  ⇒ `Interface.MapMarks` is TRUE and the war-map page's right-click claim was the false one.
+ *
+ *  ⭐⭐ AND THE REASON THIS HAS TO BE A TEST RATHER THAN A REVIEW NOTE — `SC-§42`: THREE careful
+ *  readers each opened `WarMapWidget.cpp`, each saw `NativeOnMouseButtonDown` return
+ *  `FReply::Handled()` on every right button, and each reasoned to the RIGHT answer with an
+ *  instrument that COULD NOT CONFIRM IT. A HANDLED EVENT IS NOT AN ACTIONED EVENT. ⇒ nothing in
+ *  the source can re-derive this; what a test CAN do is refuse to let the sentence come back.
+ *
+ *  ⭐ THE REMEDY IS THE SHIPPED ONE, ⛔ NOT AN INVENTED ONE: test 14 keeps a scrapped right-click
+ *  route off `Cards.Discard` by asserting the page NEVER NAMES IT, rather than by asserting a
+ *  denial sentence. Same here — the war-map page is SILENT on right-click and DELEGATES to the
+ *  row that owns the gesture, which is `HELP-§2`'s "one definition, two renderings".
+ *
+ *  ⛔ `SC-§37` — IT MEASURES PROPERTIES. The right-click rows are found by SCANNING every row's
+ *  reference keys; the expected ids are then checked against what the scan found. ⇒ it goes red
+ *  on a right-click row that is missing, on one nobody documented, and on two meanings collapsed
+ *  into one row.
+ *
+ *  ⚠️⚠️ THE CEILING IS DELIBERATE, ⛔ not incidental — the same way test 16's three is.
+ *  `CARDBAR-§8` is the right-click CONSUMER REGISTRY and its standing rule is that "the next
+ *  proposal to consume RMB starts from THIS TABLE, not from memory". A fourth right-click row
+ *  appearing here SHOULD turn this red: that is the law firing and asking for the table to be
+ *  amended, ⛔ not the test being brittle.
+ *
+ *  ⚠️ WHAT IT CANNOT PROVE (`SC-§32`): nothing here clicks a mouse, opens PIE or paints a row.
+ *  That right-click behaves as documented closed on Jonathan's own observation and on nothing
+ *  else — which is precisely `SC-§42`'s point.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeControlsHelpRightClickMeaningsTest,
+	"Siegebound.ControlsHelp.RightClickIsTaughtOnlyByTheRowsThatOwnIt",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeControlsHelpRightClickMeaningsTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeControlsHelpTestUtils;
+
+	// ── (a) FIND THE RIGHT-CLICK ROWS BY SCANNING, ⛔ NEVER BY A HAND-TYPED LIST ─────────
+	auto CarriesTheRightButton = [](const FSiegeControlsHelpAction& Row) -> bool
+	{
+		return Row.QwertyReferenceKeys.Contains(EKeys::RightMouseButton);
+	};
+
+	TArray<const FSiegeControlsHelpAction*> RightClickRows;
+	for (const FSiegeControlsHelpAction& Row : FSiegeControlsHelpRegistry::GetActions())
+	{
+		if (CarriesTheRightButton(Row))
+		{
+			RightClickRows.Add(&Row);
+		}
+	}
+
+	// ⭐ THE CEILING, FROM `CARDBAR-§8` AS IT STANDS AFTER JONATHAN'S OBSERVATION. Its table
+	// lists consumers 1 (group-pick cancel), 2 (spell-targeting cancel), 3 (war-map close),
+	// 4 (placement cancel) and 4b (mark delete), with row 5 struck when he cut right-click
+	// discard. THREE rows cover them: consumers 1, 2 and 4 are ONE BOUND ACTION serving three
+	// mutually-exclusive modes and are documented as one row each side of the pick boundary
+	// (Cards.Cancel + PickMode.Cancel), and 4b is Interface.MapMarks. ⛔ CONSUMER 3 HAS NO ROW
+	// ON THIS LANE ON PURPOSE — it is the poll Jonathan's right-click never reaches.
+	TestEqual(TEXT("⭐⭐ The screen teaches EXACTLY THREE right-click meanings (CARDBAR-§8's registry, after the war-map close was refuted by observation)"),
+		RightClickRows.Num(), 3);
+
+	// ── (b) AND THEY ARE THE THREE THE REGISTRY NAMES ───────────────────────────────────
+	// ⚠️ Checked against what the SCAN found, so this cannot pass by describing rows that are
+	// not there: a missing row fails here AND in (a).
+	const TCHAR* ExpectedRightClickIds[] =
+	{
+		TEXT("Cards.Cancel"),       // consumers 2 + 4 - back out of placing or targeting
+		TEXT("PickMode.Cancel"),    // consumer 1      - abandon a group-order pick
+		TEXT("Interface.MapMarks")  // consumer 4b     - delete one of your own map circles
+	};
+
+	for (const TCHAR* ExpectedId : ExpectedRightClickIds)
+	{
+		const bool bFound = RightClickRows.ContainsByPredicate(
+			[ExpectedId](const FSiegeControlsHelpAction* Row) { return Row->ActionId == FName(ExpectedId); });
+
+		TestTrue(*FString::Printf(TEXT("Right-click meaning '%s' has a row of its own"), ExpectedId), bFound);
+	}
+
+	// ── (c) ⭐⭐ THEY ARE TOLD APART — the claim `HELP-§2` actually cares about ──────────
+	// Rows that read identically would satisfy (a) and (b) and still be exactly the conflation
+	// the law forbids. ⇒ id, headline, one-liner and detail must all be pairwise DISTINCT, and
+	// the three must sit in DIFFERENT CATEGORIES, which is the STRUCTURAL form of "each says
+	// WHEN its gesture applies": three headings, three modes, no run of look-alike rows.
+	for (int32 Left = 0; Left < RightClickRows.Num(); ++Left)
+	{
+		for (int32 Right = Left + 1; Right < RightClickRows.Num(); ++Right)
+		{
+			const FSiegeControlsHelpAction& A = *RightClickRows[Left];
+			const FSiegeControlsHelpAction& B = *RightClickRows[Right];
+
+			const FString Pair = FString::Printf(TEXT("'%s' vs '%s'"), *A.ActionId.ToString(), *B.ActionId.ToString());
+
+			TestNotEqual(*FString::Printf(TEXT("%s: different ids"), *Pair),
+				A.ActionId.ToString(), B.ActionId.ToString());
+
+			TestNotEqual(*FString::Printf(TEXT("%s: different headlines"), *Pair),
+				A.DisplayName.ToString(), B.DisplayName.ToString());
+
+			TestNotEqual(*FString::Printf(TEXT("%s: ⭐ different one-liners - each says WHEN its right-click applies"), *Pair),
+				FSiegeControlsHelpRegistry::ComposeOneLineForDisplay(A).ToString(),
+				FSiegeControlsHelpRegistry::ComposeOneLineForDisplay(B).ToString());
+
+			TestNotEqual(*FString::Printf(TEXT("%s: different detail pages"), *Pair),
+				FSiegeControlsHelpRegistry::ComposeDetailForDisplay(A).ToString(),
+				FSiegeControlsHelpRegistry::ComposeDetailForDisplay(B).ToString());
+
+			TestNotEqual(*FString::Printf(TEXT("%s: ⭐ different categories, so they land under different headings"), *Pair),
+				A.Category.ToString(), B.Category.ToString());
+		}
+	}
+
+	// ── (d) ⛔⛔ THE REPAIR ITSELF — THE WAR-MAP PAGE TEACHES NO RIGHT-CLICK AT ALL ──────
+	const FSiegeControlsHelpAction* const WarMapRow =
+		FSiegeControlsHelpRegistry::FindAction(FName(TEXT("Interface.WarMap")));
+
+	if (!TestNotNull(TEXT("The war-map row is still in the registry (it is named in test 1's RequiredIds)"), WarMapRow))
+	{
+		return false;
+	}
+
+	// (d1) DATA: it never carried the right button and it must not acquire one. A chip claiming
+	// the right button OPENS the map would be the same falsehood one field over.
+	TestFalse(TEXT("⛔ The war-map row carries NO right-button reference key"),
+		CarriesTheRightButton(*WarMapRow));
+
+	// (d2) PROSE: the fragment scan, the same instrument test 14 uses to keep the scrapped
+	// discard route off `Cards.Discard`. ⛔ Checked on the COMPOSED text (so a future TODO
+	// fallback cannot smuggle anything past it), and on the one-liner as well as the detail.
+	const FString WarMapOneLine = FSiegeControlsHelpRegistry::ComposeOneLineForDisplay(*WarMapRow).ToString();
+	const FString WarMapDetail  = FSiegeControlsHelpRegistry::ComposeDetailForDisplay(*WarMapRow).ToString();
+
+	const TCHAR* RefutedRouteFragments[] = { TEXT("right-click"), TEXT("right click"), TEXT("right button") };
+	for (const TCHAR* Fragment : RefutedRouteFragments)
+	{
+		TestFalse(*FString::Printf(TEXT("⛔ The war-map one-liner does not mention '%s'"), Fragment),
+			WarMapOneLine.Contains(Fragment, ESearchCase::IgnoreCase));
+		TestFalse(*FString::Printf(TEXT("⛔ The war-map detail page does not mention '%s' - Jonathan measured that it does not close the map"), Fragment),
+			WarMapDetail.Contains(Fragment, ESearchCase::IgnoreCase));
+	}
+
+	// ⭐⭐ THE POSITIVE CONTROL FOR (d2), AND IT IS A SAME-ROLE ONE (`SC-§39`): the identical
+	// scan, run over the COMPOSED DETAIL OF A REAL REGISTRY ROW, must find the fragment where
+	// one legitimately exists. `Interface.MapMarks` is the row that OWNS right-click on the war
+	// map and its page says so out loud. ⛔ Without this, the six zeros above would be
+	// indistinguishable from a scanner that matches nothing.
+	const FSiegeControlsHelpAction* const MarksRow =
+		FSiegeControlsHelpRegistry::FindAction(FName(TEXT("Interface.MapMarks")));
+
+	if (TestNotNull(TEXT("The map-marks row is in the registry (it is the positive control's subject)"), MarksRow))
+	{
+		TestTrue(TEXT("⭐ POSITIVE CONTROL: the SAME scan DOES find 'right-click' on the row that owns the gesture, so the zeros above are a measurement and not a blind instrument"),
+			FSiegeControlsHelpRegistry::ComposeDetailForDisplay(*MarksRow).ToString()
+				.Contains(TEXT("right-click"), ESearchCase::IgnoreCase));
+	}
+
+	// (d3) ⭐ AND IT DELEGATES RATHER THAN GOING SILENT. Removing a false sentence without
+	// putting the true owner on the page would answer the player with nothing. The related
+	// block renders `Interface.MapMarks`'s own chip and prose underneath this page, so the
+	// gesture is explained exactly once in the whole registry.
+	TestTrue(TEXT("⭐ The war-map page DELEGATES right-click to the row that owns it (Interface.MapMarks is a related control)"),
+		WarMapRow->RelatedActionIds.Contains(FName(TEXT("Interface.MapMarks"))));
+
+	// ⛔ THE EDGE MUST RESOLVE, or it renders NOTHING and logs nothing (ComposeDetailContent
+	// `continue`s past a dangling id). Test 9 walks the whole registry for this; the claim is
+	// repeated here because THIS test is the one that would be read if the delegation broke.
+	for (const FName RelatedId : WarMapRow->RelatedActionIds)
+	{
+		TestNotNull(*FString::Printf(TEXT("War-map related id '%s' resolves to a REAL row"), *RelatedId.ToString()),
+			FSiegeControlsHelpRegistry::FindAction(RelatedId));
+	}
+
+	// ── (e) FIXTURE SELF-CHECKS: both scanners can answer BOTH ways ─────────────────────
+	// ⛔ Without these, (a) would be satisfied by a key scanner that matched everything or
+	// nothing, and (d2) by a fragment scanner that could never say yes.
+	// (Claims about the SCANNERS, ⛔ not about the registry.)
+	TestTrue(TEXT("FIXTURE SELF-CHECK: the right-button scanner says YES to a synthetic right-click row"),
+		CarriesTheRightButton(MakeRow(ESiegeInputLane::RawNonLetter, { EKeys::RightMouseButton, EKeys::Escape }, false, false)));
+	TestFalse(TEXT("FIXTURE SELF-CHECK: ...and NO to a synthetic row with only the LEFT button"),
+		CarriesTheRightButton(MakeRow(ESiegeInputLane::RawNonLetter, { EKeys::LeftMouseButton }, false, false)));
+
+	// ⛔ THE NEGATIVE CONTROL FOR (d3): the same lookup answers NULL for an id that is not in
+	// the registry, so "the edge resolves" is provably able to go red.
+	TestNull(TEXT("NEGATIVE CONTROL: a fabricated related id does NOT resolve"),
+		FSiegeControlsHelpRegistry::FindAction(FName(TEXT("Interface.NoSuchMapRow"))));
+
+	if (RightClickRows.Num() > 0)
+	{
+		FString Found;
+		for (const FSiegeControlsHelpAction* Row : RightClickRows)
+		{
+			if (!Found.IsEmpty())
+			{
+				Found += TEXT(", ");
+			}
+			Found += Row->ActionId.ToString();
+		}
+		AddInfo(FString::Printf(TEXT("Right-click meanings documented: %s"), *Found));
+	}
+
+	return true;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════
+//  TEST 18 — Siegebound.ControlsHelp.EveryRelatedActionIdResolvesToARealRow   ⭐⭐
+// ════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ *  ⭐⭐ TASK-852. `HELP-§7`'s TRIPWIRE, ⛔ FILED UNDER A NAME THAT SAYS WHAT IT CHECKS — and the
+ *  ONE thing it never had: a proof that it can go RED.
+ *
+ *  ⛔⛔ THIS IS AN EXTRACTION, ⛔ NOT A NEW CHECK. The walk below is the one that used to sit
+ *  inside test 9 (`EveryRowHasAuthoredDetail`). It was MOVED here, ⛔ not copied — the registry
+ *  edge walk exists in exactly ONE place in this file, and test 9 now carries a pointer to it.
+ *
+ *  ⚖️⭐⭐ WHY THE MOVE WAS WORTH A TASK, because it is the reusable lesson and it cost real work:
+ *  the walk was CORRECT, SHIPPED and GREEN — and it was READ AS ABSENT BY TWO INDEPENDENT
+ *  READERS, because it lived under a name about detail authoring and its own docstring never
+ *  mentioned it. `HELP-§7` was written declaring *"there is no referential-integrity check on
+ *  this field"*; a QA verdict ruled a new test in on that premise; `TASK-852` was boarded to
+ *  build it. A third reader found it in TEN SECONDS — and only because he was handed the symbol.
+ *  ⇒ `SC-§40` cl. 11(b): AN ASSERTION FILED UNDER AN UNRELATED NAME IS, OPERATIONALLY, AN
+ *  ASSERTION THAT DOES NOT EXIST. It will be re-implemented, or a LAW will be written declaring
+ *  it missing and a TASK boarded on that law. Both happened here.
+ *
+ *  ⛔ WHAT IT GUARDS, and why the runtime cannot be trusted to tell you: a `RelatedActionIds`
+ *  entry naming a row that does not exist renders NOTHING and logs NOTHING. The composer does
+ *  `const FSiegeControlsHelpAction* const RelatedRow = FindAction(RelatedId); if (RelatedRow ==
+ *  nullptr) { continue; }` — so a dead link is a control silently missing from Jonathan's page,
+ *  with no warning anywhere. ⇒ the DATA must be right, because nothing downstream will complain.
+ *  (⚠️ That half of `HELP-§7` is TRUE and was re-measured at source; only the "no check exists"
+ *  half was struck.)
+ *
+ *  ⛔ `SC-§37` — DERIVED, ⛔ NEVER TRANSCRIBED. There is no hand-typed edge list anywhere below.
+ *  The rows come from `GetActions()` and the ids come from the live `Row.RelatedActionIds`
+ *  field, so this test covers edges added AFTER it was written without anyone remembering to
+ *  come back. ⛔ It does not know, and must not know, how many edges there are.
+ *
+ *  ⭐⭐ AND THE PART THAT WAS GENUINELY MISSING — THE NEGATIVE CONTROL (`SC-§39` / `SHIP-§9`).
+ *  Every edge in the registry resolves today and always has, so this walk had NEVER been
+ *  observed failing: a green from an instrument that cannot go red is indistinguishable from no
+ *  test at all. Section (c) drives a fabricated id and a self-edge through the SAME lambda and
+ *  the SAME equality this walk uses, and asserts each condition fires exactly once.
+ *  ⭐ The precedent is shipped, ⛔ not invented: test 15(f) and test 17 already `TestNull` a
+ *  fabricated id. This generalises that from one task's rows to the whole graph.
+ *
+ *  ⚠️ WHAT IT CANNOT PROVE (`SC-§32`): nothing here renders a page. That a resolved edge
+ *  actually PAINTS its related block closes on pixels or Jonathan's eyes (`HELP-§3`). This test
+ *  proves the graph is sound, ⛔ not that the screen drew it.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeControlsHelpRelatedEdgeIntegrityTest,
+	"Siegebound.ControlsHelp.EveryRelatedActionIdResolvesToARealRow",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeControlsHelpRelatedEdgeIntegrityTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeControlsHelpTestUtils;
+
+	// ⭐⭐ THE ONE PREDICATE, AND IT IS ONE ON PURPOSE. The registry walk in (a) and the negative
+	// control in (c) both run through THIS lambda and through nothing else. ⇒ "the walk can go
+	// red" is a claim about the code that ACTUALLY WALKS, ⛔ not about a lookalike written
+	// beside it — which is the failure mode `SC-§39` exists to catch.
+	auto EdgeResolves = [](const FName RelatedId) -> bool
+	{
+		return FSiegeControlsHelpRegistry::FindAction(RelatedId) != nullptr;
+	};
+
+	const TArray<FSiegeControlsHelpAction>& Rows = FSiegeControlsHelpRegistry::GetActions();
+
+	if (!TestTrue(TEXT("The registry is non-empty (there is a graph to check at all)"), Rows.Num() > 0))
+	{
+		return false;
+	}
+
+	// ⛔ BY VALUE, ⛔ not through `Rows` — see the closing assertion for why the distinction is
+	// load-bearing rather than stylistic.
+	const int32 RowCountBefore = Rows.Num();
+
+	// ── (a) THE WALK — ⛔ EVERY ROW, ⛔ EVERY OUTBOUND EDGE ──────────────────────────────
+	// ⚠️ This loop is `GetActions()` and NOT test 1's `RequiredIds[]`. That array is a required
+	// SUBSET of rows and validates no edges at all — naming it as though it were this check is
+	// exactly how "the wrong test does not do it" got written down as "no test does it".
+	int32 EdgesWalked   = 0;
+	int32 RowsWithEdges = 0;
+
+	for (const FSiegeControlsHelpAction& Row : Rows)
+	{
+		const FString RowName = Row.ActionId.ToString();
+
+		if (Row.RelatedActionIds.Num() > 0)
+		{
+			++RowsWithEdges;
+		}
+
+		for (const FName RelatedId : Row.RelatedActionIds)
+		{
+			++EdgesWalked;
+
+			// ⭐ THE FAILURE MESSAGE NAMES BOTH ENDS — the OWNING ROW and the MISSING ID — and
+			// says what the player loses. The old message was one line among a page of
+			// detail-authoring failures; a reader who saw it had to go and find out which row
+			// and which id, which is half of why nobody knew this check was here.
+			TestTrue(*FString::Printf(
+				TEXT("⛔ DANGLING EDGE - row '%s' lists related control '%s', and NO SUCH ROW IS REGISTERED. ComposeDetailContent will 'continue' past it: that block renders NOTHING and logs NOTHING, so the player silently loses a control off this page."),
+				*RowName, *RelatedId.ToString()),
+				EdgeResolves(RelatedId));
+
+			// ⛔ AND THE SECOND DEFECT, which a resolve check ALONE cannot see: a row pointing at
+			// ITSELF resolves perfectly and still renders nothing (the composer drops it), so it
+			// needs its own condition rather than riding on the one above.
+			TestNotEqual(*FString::Printf(
+				TEXT("⛔ SELF-REFERENCE - row '%s' lists ITSELF as a related control; it resolves, and the composer still drops it."),
+				*RowName),
+				RelatedId, Row.ActionId);
+		}
+	}
+
+	// ── (b) ⛔ THE VACUITY GUARD — a walk over ZERO edges is green and proves nothing ────
+	// ⚠️ Deliberately NOT a count: `SC-§37`. It asserts that edges EXIST, never how many, so
+	// adding or removing a related control cannot turn this red for no reason.
+	TestTrue(TEXT("⭐ At least one row carries an outbound edge, so (a) is a measurement and not a loop over an empty list"),
+		EdgesWalked > 0);
+
+	AddInfo(FString::Printf(TEXT("Walked %d outbound edge(s) across %d of %d registry rows. ⛔ Derived from GetActions() - this test does not know the number and must not."),
+		EdgesWalked, RowsWithEdges, Rows.Num()));
+
+	// ── (c) ⭐⭐ THE NEGATIVE CONTROL — ⛔ THE POINT OF THIS TASK ────────────────────────
+	// ⛔ DERIVED, ⛔ NOT PICKED (`SC-§40` cl. 10): the fabricated id is BUILT FROM a real row's
+	// id by appending a suffix, so it cannot quietly become a real id the day somebody ships a
+	// row whose name a previous author happened to guess. And the proof of its absence is asked
+	// of the LIVE REGISTRY below, ⛔ not of a text scan that could go stale.
+	const FName   RealId          = Rows[0].ActionId;
+	const FString FabricatedText  = RealId.ToString() + TEXT(".NoSuchRelatedRow");
+	const FName   FabricatedId(*FabricatedText);
+
+	// ⭐ POSITIVE CONTROL FIRST, same lambda, same call (`SC-§39`): without it, a "does not
+	// resolve" answer would be indistinguishable from a lookup that resolves NOTHING.
+	TestTrue(*FString::Printf(TEXT("⭐ POSITIVE CONTROL: the SAME lookup DOES resolve a real registry id ('%s'), so the rejection below is a measurement and not a blind instrument"),
+		*RealId.ToString()), EdgeResolves(RealId));
+
+	TestFalse(*FString::Printf(TEXT("⭐⭐ NEGATIVE CONTROL: ...and the SAME lookup REJECTS the fabricated id '%s'"),
+		*FabricatedText), EdgeResolves(FabricatedId));
+
+	// ⭐⭐ AND THE CONTROL AT FULL STRENGTH — a SYNTHETIC ROW carrying BOTH defects, driven
+	// through the walk's OWN two conditions. ⛔ The self-edge is deliberately an id that
+	// RESOLVES, so the two conditions are shown to fire on DIFFERENT edges: neither is masking
+	// the other, and a self-reference is caught even though the lookup is happy with it.
+	FSiegeControlsHelpAction Dangler = MakeRow(ESiegeInputLane::MappedAction, { EKeys::F }, false, false);
+	Dangler.ActionId         = RealId;
+	Dangler.RelatedActionIds = { RealId, FabricatedId };
+
+	int32 Unresolved = 0;
+	int32 SelfEdges  = 0;
+	for (const FName RelatedId : Dangler.RelatedActionIds)
+	{
+		if (!EdgeResolves(RelatedId))
+		{
+			++Unresolved;
+		}
+		if (RelatedId == Dangler.ActionId)
+		{
+			++SelfEdges;
+		}
+	}
+
+	TestEqual(TEXT("⭐⭐ NEGATIVE CONTROL: the walk's RESOLVE condition rejects exactly the one fabricated edge on the synthetic row - so a dangling edge in the real registry WOULD turn (a) red"),
+		Unresolved, 1);
+	TestEqual(TEXT("⭐⭐ NEGATIVE CONTROL: the walk's SELF-REFERENCE condition catches exactly the one self-edge - on a DIFFERENT edge, so the two conditions are independent"),
+		SelfEdges, 1);
+
+	// ⛔ THE SYNTHETIC ROW NEVER ENTERED THE REGISTRY — it is a local, and `GetActions()` is a
+	// function-local static built once. Stated because a control that mutated the thing it is
+	// controlling would poison every test that runs after it.
+	// ⚠️ Compared against a COUNT SNAPSHOTTED BY VALUE at the top, ⛔ never against `Rows.Num()`:
+	// `Rows` is a REFERENCE to that same static array, so `GetActions().Num() == Rows.Num()` is
+	// `X == X` and could never go red. That would be this test's own `SC-§39` defect, written
+	// into the very section that exists to prove an assertion CAN fail.
+	TestEqual(TEXT("⛔ The negative control left the registry untouched (row count unchanged from the snapshot taken before it ran)"),
+		FSiegeControlsHelpRegistry::GetActions().Num(), RowCountBefore);
 
 	return true;
 }

@@ -81,10 +81,19 @@ enum class ESiegeInputLane : uint8
 	MappedAction,
 
 	/**
-	 *  A RAW-polled key that is NOT a letter — a mouse button, Escape, or the wheel.
+	 *  A RAW-polled key that is NOT a letter — a mouse button, Escape, or the wheel — ⭐ or a
+	 *  Slate-delivered mouse gesture: the lane selects the VERBATIM-LABEL algorithm, not the
+	 *  delivery route.
 	 *  ⛔ No call needed: the translation table is A..Z ONLY
 	 *  (SiegeKeyboardLayoutStatics.cpp:57-63), so GetPositionalKey on these is a PROVABLE
 	 *  identity. The reference key is labelled directly.
+	 *
+	 *  ⚠️ THE SECOND CLAUSE IS ADDITIVE AND IT DESCRIBES A SHIPPED MEMBER, ⛔ not a new rule
+	 *  (TASK-870, from qa/TASK-816.md N-1): Interface.MapMarks sits on this lane and its four
+	 *  gestures arrive as Slate events on a focused widget, ⛔ not as controller polls. The lane
+	 *  ruling was measured and UPHELD; what was stale was this sentence, which described the
+	 *  lane's DELIVERY ROUTE as though that were its membership test. ⛔ No enum value and ⛔ no
+	 *  row's Lane is changed by that task.
 	 */
 	RawNonLetter,
 

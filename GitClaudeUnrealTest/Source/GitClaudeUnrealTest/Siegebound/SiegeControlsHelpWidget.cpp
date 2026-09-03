@@ -1246,8 +1246,35 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			// :4744-4765 and CommanderNpc.h:274-295; the gate checked BEFORE the posture = :4781-4791;
 			// the out-of-range HUD line = :4797; the gate is the map's only = :4786-4790; the posture
 			// rollback = :4820-4854; ⭐ the reveal discarded on close, Jonathan's words = :4857-4873;
-			// the right-click/Escape poll and WHY it exists = :643-671.
-			// ⚠️ "right-click" and "Escape" stay LITERAL — non-letters, provably immovable.
+			// the POLLED close and WHY it exists = ASiegePlayerController::PlayerTick's
+			// `if (bWarMapOpen)` branch -> CloseWarMap(), located BY SYMBOL (`SC-§38`). ⚠️ The line
+			// range this comment used to carry (`:643-671`) had already ROTTED — the branch now sits
+			// near :744-755, and that number is a DATED HINT rather than the key.
+			//
+			// ⛔⛔ TASK-870 — THE REPAIR, AND WHAT BOUGHT IT. This page SHIPPED (in the commit that
+			// carried this file wholesale) claiming the map is "closed by right-click or Escape".
+			// 🧑 JONATHAN OBSERVED THE OPPOSITE, in his own words, in one click: "opening the war map
+			// and right clicking empty ground does not cause it to close, the map seems to function
+			// exactly as it should". ⇒ the RIGHT-CLICK half is FALSE and it is GONE. ⛔ The ESCAPE
+			// half is UNTOUCHED: it was not in question, and it is deliberately NOT re-derived here.
+			//
+			// ⭐⭐ WHY NOBODY COULD SETTLE THIS BY READING — now law as `SC-§42`, written for this
+			// exact event: UWarMapWidget::NativeOnMouseButtonDown returns FReply::Handled() on EVERY
+			// right button while the map is open, and THREE independent readers reasoned from that to
+			// the RIGHT answer with an instrument that COULD NOT CONFIRM IT. A HANDLED EVENT IS NOT
+			// AN ACTIONED EVENT — `Handled` is a ROUTING declaration, never a behavioural one.
+			// ⛔ THE POLL ITSELF IS NOT TOUCHED BY THIS TASK. The controller still polls RMB/Escape in
+			// that branch; this is a TEXT repair, and whether the CODE should change is a separate
+			// ruling that belongs to whoever owns the widget's FReply.
+			//
+			// ⭐ THE REMEDY'S SHAPE IS COPIED, ⛔ NOT INVENTED: TASK-821 repaired the same defect
+			// class on Cards.Discard by REMOVING the false sentence rather than writing a denial, and
+			// this file's test 14 keeps it removed. Silence + a related-controls edge is this
+			// registry's own mechanism: Interface.MapMarks — the row that OWNS right-click on the war
+			// map, and the row Jonathan's same sentence ruled TRUE — is rendered underneath this page
+			// and answers the question in exactly one place (`HELP-§2`: one definition, two
+			// renderings, nothing to drift).
+			// ⚠️ "Escape" stays LITERAL — a non-letter, provably immovable (the table is A..Z only).
 			Row.Detail = FText::FromString(FString(
 				TEXT("A toggle, and close is asked first and never gated, for the same reason as the chat box.\n\n")
 				TEXT("THE PROXIMITY GATE — and it is proximity to YOUR OWN commander. The team is resolved from ")
@@ -1264,12 +1291,24 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 				TEXT("fails to report itself open, the posture is rolled back rather than left as a cursor owner ")
 				TEXT("with no UI.\n\n")
 				TEXT("Closing the map DISCARDS the paid reveal, unconditionally — \"red dots vanish the moment the ")
-				TEXT("map closes, even one second after paying — that is the mechanic\". The map can also be ")
-				TEXT("closed by right-click or Escape, polled every frame; that poll exists because a marker click ")
-				TEXT("opens the chat box, whose focused text field would otherwise swallow the toggle key and type ")
-				TEXT("it into your sentence instead.")));
+				TEXT("map closes, even one second after paying — that is the mechanic\". Escape closes it too, ")
+				TEXT("polled every frame; that poll exists because a marker click opens the chat box, whose focused ")
+				TEXT("text field would otherwise swallow the toggle key and type it into your sentence instead.")));
 			// Everything you can DO on the map, on the page for opening it (704 R-22, R-23).
-			Row.RelatedActionIds = { FName(TEXT("Interface.WarMapReveal")), FName(TEXT("Interface.WarMapMarker")) };
+			// ⛔⛔ TASK-870 EDGE CHANGE, DECLARED (`HELP-§7`): Interface.MapMarks is APPENDED, and the
+			// two shipped ids are kept in their shipped order. ⭐ It is this row's OWN OUTBOUND edge —
+			// ⛔ no other row's RelatedActionIds is touched by this task, and ⛔ nothing points INTO
+			// this row that did not already. REASON: with the false close-sentence gone, this edge is
+			// what puts the TRUE owner of right-click-on-the-war-map on this page, so a player who
+			// arrives looking for that gesture is answered by the row that owns it rather than by a
+			// second copy of its prose. ⚠️ Every id here resolves to a real row — a dangling entry
+			// renders NOTHING and logs nothing (ComposeDetailContent `continue`s past it), and the
+			// registry-wide walk that would catch it lives in test 9, EveryRowHasAuthoredDetail.
+			Row.RelatedActionIds = {
+				FName(TEXT("Interface.WarMapReveal")),
+				FName(TEXT("Interface.WarMapMarker")),
+				FName(TEXT("Interface.MapMarks"))
+			};
 		}
 
 		{
