@@ -144,6 +144,132 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Building")
 	FName GetCardID() const { return CardID; }
 
+	//~ ══════════════════════════════════════════════════════════════════════════════════════
+	//~  STACK-§ — TOWER STACKING: the two series, the exclusion predicate, the upgrade
+	//~  (TASK-812). ⛔ NO placement code lives here — the ghost, the blue state, the cost and
+	//~  the wheel are TASK-813 / TASK-815 and stay in ASiegePlayerController.
+	//~ ══════════════════════════════════════════════════════════════════════════════════════
+
+	/**
+	 *  ⭐⭐ THE HEIGHT SERIES — ⛔ ADDITIVE, ⛔ NOT DOUBLING, AND THE ARITHMETIC IS **RULED**
+	 *  (STACK-§1, ruling J-0): returns `min(1 + UpgradeCount, MaxStackHeightMultiplier)`.
+	 *  Every upgrade adds ⭐ ONE MORE COPY OF THE **ORIGINAL** height — ×2, ×3, ×4, ×5 — and
+	 *  the series SATURATES at the cap.
+	 *
+	 *  ⚠️⚠️ DO ⛔ NOT "CORRECT" THIS TOWARD JONATHAN'S SUMMARY SENTENCE ("it basically gains
+	 *  **twice the current height** every upgrade"). That is not a taste call, and the
+	 *  argument is his own cap:
+	 *
+	 *    ⛔ Under DOUBLING the reachable heights are ×2, ×4, ×8, ×16 — his stated maximum of
+	 *       ⭐ "5 times taller" is ⛔ **NEVER REACHED**, so the cap sentence he wrote would
+	 *       describe a state the game can ⛔ never enter.
+	 *    ✅ Under THIS series ×5 lands ⛔ EXACTLY, on the 4th upgrade, and it matches all four
+	 *       terms he enumerated one sentence earlier ("twice as tall … 3 times taller … 4
+	 *       times taller … and so on").
+	 *
+	 *  ⇒ one reading makes his cap sentence mean something and the other makes it dead text.
+	 *  🧑 The loose sentence is FLAGGED to him as `J-0` rather than silently discarded — one
+	 *  word switches height to doubling if that is what he meant. ⭐ Note precisely: the
+	 *  HEALTH half of that same summary sentence is CORRECT under both readings and is
+	 *  shipped verbatim — see StackHealthMultiplier.
+	 *
+	 *  ⭐ INTEGER ARITHMETIC, then ONE widening to float: the cap must land on the ruled
+	 *  multiple exactly, and a float accumulation cannot promise that. A negative
+	 *  UpgradeCount is not a state the game can enter (StackUpgradeCount only ever
+	 *  increments from 0) but this seam is public and pure, so it answers for the whole
+	 *  int32 domain instead of trusting its callers: no upgrades ⇒ exactly 1.0.
+	 *
+	 *  ⛔ public, plain C++ static, ⛔ NOT a UFUNCTION, exactly ONE parameter, ⛔ none
+	 *  defaulted (SC-§33, STACK-§7). No world, no actor INSTANCE — the cap is read off this
+	 *  class's CDO, which is what the one-parameter signature and an EditDefaultsOnly cap
+	 *  jointly force (see MaxStackHeightMultiplier). ⇒ headlessly testable with ⛔ no PIE,
+	 *  the ASummonedUnit::HeightAdvantageMultiplier / FSiegeMapMark::MakeSymbol precedent.
+	 *  Tested in Tests/SiegeBuildingStackTest.cpp.
+	 */
+	static float StackHeightMultiplier(int32 UpgradeCount);
+
+	/**
+	 *  ⭐ THE HEALTH SERIES — ⛔ MULTIPLICATIVE and ⛔ UNCAPPED (STACK-§1): returns
+	 *  `StackHealthStep ^ UpgradeCount`, i.e. ×1.5 of the CURRENT health per upgrade.
+	 *
+	 *  ✅ THIS HALF NEEDED NO RULING — HIS OWN NUMBERS CONFIRM IT TO THE DIGIT: he wrote
+	 *  "2.25 times the original health" (= 1.5²) and "3.375 times the health" (= 1.5³), and
+	 *  ⭐ BOTH readings of his sentence agree here. It is shipped verbatim.
+	 *
+	 *  ⛔⛔ AND IT IS ⛔ DELIBERATELY A DIFFERENT KIND OF SERIES FROM THE HEIGHT ONE — one
+	 *  saturates, one does not, and his closing sentence is what says so: "at some point if
+	 *  they keep upgrading it would only upgrade health by 1.5 times and not height." ⇒ at
+	 *  the height cap this keeps climbing, which is exactly what makes the click still worth
+	 *  making (STACK-§5 `J-6`).
+	 *
+	 *  ⭐ COMPUTED BY REPEATED MULTIPLICATION, ⛔ NOT FMath::Pow: 1.5 and its low powers are
+	 *  EXACTLY representable in binary32 (numerator 3ⁿ, denominator 2ⁿ ⇒ exact through
+	 *  n = 15), so the shipped terms are his numbers bit-for-bit rather than powf's rounding
+	 *  of them. The loop stops early on a non-finite accumulator so a pathological
+	 *  UpgradeCount can never spin.
+	 *
+	 *  ⛔ public, plain C++ static, ⛔ NOT a UFUNCTION, exactly ONE parameter, ⛔ none
+	 *  defaulted (SC-§33, STACK-§7). Tested in Tests/SiegeBuildingStackTest.cpp.
+	 */
+	static float StackHealthMultiplier(int32 UpgradeCount);
+
+	/**
+	 *  May this building's footprint/height be scaled by the STACK-§ upgrade and the
+	 *  placement wheel? Default true. ⛔ AClimbableTower overrides FALSE: any non-uniform
+	 *  scale of SM_WatchTower moves the LadderFoot/LadderTop sockets and the rung plane,
+	 *  which fires TOWER-§8.5a's voiding condition ⇒ the deck-breach licence dies and the
+	 *  climb stops working entirely (STACK-§2). ⛔ NOT a style choice, ⛔ NOT a name check.
+	 *
+	 *  ⛔⛔ A `CardID == "WatchTower"` STRING COMPARE ANYWHERE IN THE PLACEMENT PATH IS AN
+	 *  AUTOMATIC FAIL. ⚖️ The next climbable building must be protected by ⛔ INHERITING,
+	 *  ⛔ not by somebody remembering a paragraph — which is the entire reason this is a
+	 *  virtual on the base rather than a check at the call site.
+	 *
+	 *  ⭐ ONE PREDICATE COVERS BOTH CONSUMERS, and that is not a convenience — it is the
+	 *  measurement: the STACK upgrade scales Z and the placement wheel scales X/Y, and
+	 *  TOWER-§8.5a's voiding condition fires on ⛔ ANY non-uniform scale, so the two
+	 *  consumers have ⛔ exactly one exclusion rule between them.
+	 */
+	virtual bool CanScaleFootprint() const { return true; }
+
+	/** Upgrades applied to this building (STACK-§1's `n`) — the ⛔ ONE source of truth both multipliers derive from. 0 on a freshly placed building. */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Building")
+	int32 GetStackUpgradeCount() const { return StackUpgradeCount; }
+
+	/**
+	 *  ⭐⭐ THE UPGRADE, APPLIED — the ⛔ ONE mutator of StackUpgradeCount, and the ⛔ ONE
+	 *  place a stacked building's height and health change. Returns true if the upgrade
+	 *  landed. Called by the server-side confirm path (TASK-813); ⛔ this class starts
+	 *  nothing and polls nothing.
+	 *
+	 *  WHAT IT DOES, IN ORDER:
+	 *    1. ⛔ REFUSES on !HasAuthority(), on a destroyed building, and on
+	 *       ⛔ !CanScaleFootprint(). ⭐ The predicate is re-asked HERE as well as in the
+	 *       placement path on purpose: a future caller that forgets STACK-§2 must ⛔ still
+	 *       be unable to scale a climbable tower. Two independent mechanisms, not one.
+	 *    2. HEIGHT — VisualMesh's ⛔ **Z ONLY** (STACK-§5 `J-4`, his own words "keeping the
+	 *       same width and length": X/Y belong to the placement wheel and are inherited
+	 *       VERBATIM), recomputed as `AuthoredHeightScaleZ × StackHeightMultiplier(n)` from
+	 *       the AUTHORED baseline ⇒ ⛔ no float accumulation, and the cap lands on the ruled
+	 *       multiple exactly however many times this runs.
+	 *    3. HEALTH (STACK-§5 `J-10`) — `MaxHP ×= 1.5`, then `CurrentHP += (NewMax − OldMax)`.
+	 *       ⭐ It grants the ⛔ NEW hit points; it does ⛔ NOT repair existing damage. ⚖️ A
+	 *       full heal would make the upgrade a repair tool, which is the Masons card's job,
+	 *       and would make upgrading strictly better than defending.
+	 *    4. Pushes the result through the ⛔ EXISTING OnHPChanged delegate — ⛔ no second
+	 *       push, ⛔ no direct widget call (the TASK-130 push model, unchanged).
+	 *
+	 *  ⭐ COLLISION AND NAVMESH COME FOR FREE and are ⛔ not re-derived here: VisualMesh is
+	 *  the root with BlockAll + bCanEverAffectNavigation(true), so a scaled component carves
+	 *  a scaled hole with ⛔ zero new code (STACK-§3, measured).
+	 *
+	 *  ⛔ DELIBERATELY ⛔ NOT A UFUNCTION, unlike this class's other mutators. M8 (STACK-§7):
+	 *  StackUpgradeCount is ⛔ AUTHORITATIVE GAME STATE — it drives MaxHP — so it is
+	 *  SERVER-SET at confirm and ⛔ the client may ⛔ never author it. The HasAuthority guard
+	 *  is the belt; ⛔ not shipping a Blueprint-callable entry point onto it is the braces.
+	 */
+	bool ApplyStackUpgrade();
+
 protected:
 
 	/** Binds the card stats from DT_Cards (HP; subclasses hook OnStatsLoaded for more). */
@@ -193,6 +319,50 @@ protected:
 	/** Card stat table (GDD §3.0). Resolved null-safe at BeginPlay — same soft path as ASummonedUnit (TASK-004). */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Building")
 	TSoftObjectPtr<UDataTable> CardTableAsset;
+
+	/**
+	 *  ⭐ THE HEIGHT CEILING, IN MULTIPLES OF THE AUTHORED HEIGHT (STACK-§1 / STACK-§7) —
+	 *  Jonathan's "the maximum height it can reach is 5 times taller", as a number he can
+	 *  retune rather than a literal buried in the series.
+	 *
+	 *  ⛔ INTEGER on purpose, and the reason is the whole ruling: the height series is
+	 *  ADDITIVE, so the cap is REACHED EXACTLY — on the (Cap − 1)ᵗʰ upgrade — and an integer
+	 *  ceiling is the only kind that can promise "exactly".
+	 *
+	 *  ⚠️ THE CONSEQUENCE OF RETUNING IT (HIGH-§1): this moves the upgrade at which height
+	 *  STOPS growing and health starts being the whole purchase. Raising it to 8 makes a
+	 *  ×8 tower legal — with the ×5 UV stretch (STACK-§3 `J-11`, shipped as-is and named)
+	 *  getting proportionally worse — and moves the HUD cap note TASK-813 shows. Lowering it
+	 *  to 1 disables stacked HEIGHT entirely while leaving the health ladder untouched, which
+	 *  is a coherent state, ⛔ not a broken one.
+	 *
+	 *  ⚠️⚠️ READ OFF THIS CLASS'S **CDO** BY StackHeightMultiplier, because STACK-§7 pins that
+	 *  seam at ⛔ ONE parameter while pinning this tunable EditDefaultsOnly — the conjunction
+	 *  leaves no other implementation. ⇒ the cap is a ⭐ GAME-WIDE rule (his sentence is about
+	 *  the game, ⛔ not a per-card stat): a BP child that re-authored this value would be
+	 *  IGNORED by the series. Declared here rather than discovered later.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Building", meta = (ClampMin = "1"))
+	int32 MaxStackHeightMultiplier = 5;
+
+	/**
+	 *  ⭐ THE HEALTH STEP PER UPGRADE (STACK-§1 / STACK-§7) — his "1.5 times the health",
+	 *  compounding. ⛔⛔ **UNCAPPED BY DESIGN, AND THAT IS HIS EXPLICIT WORD**: "there is no
+	 *  maximum on the health." ⇒ there is deliberately ⛔ NO MaxStackHealthMultiplier beside
+	 *  this, and inventing one would be silently softening his number.
+	 *
+	 *  ⚠️ THE CONSEQUENCE OF RETUNING IT (HIGH-§1): it compounds, so a small nudge is not
+	 *  small far up the ladder — 1.5 gives ×3.375 at three upgrades, 2.0 gives ×8. Because
+	 *  the height cap saturates and this does not, this number alone decides whether stacking
+	 *  stays worth its gold past the cap. Setting it to 1.0 makes upgrades past the cap
+	 *  literally free of effect, which is a design choice, ⛔ not a crash.
+	 *
+	 *  ⚠️ READ OFF THE CDO by StackHealthMultiplier for the same pinned-signature reason as
+	 *  MaxStackHeightMultiplier above; the same "game-wide, ⛔ not per-card" declaration
+	 *  applies.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Building", meta = (ClampMin = "1.0"))
+	float StackHealthStep = 1.5f;
 
 private:
 
@@ -251,6 +421,36 @@ private:
 	/** True while a FrostNova spell freeze is active (TASK-099) — the state TASK-101's tower fire-gate reads through IsFrozen(). */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Building", meta = (AllowPrivateAccess = "true"))
 	bool bSpellFrozen = false;
+
+	/**
+	 *  ⭐⭐ STACK-§1's `n` — upgrades applied to THIS building, and the ⛔ ONE SOURCE OF TRUTH
+	 *  both series derive from. ⛔ NO second copy of the height scale or the health scale is
+	 *  stored anywhere, and ⛔ nothing caches a multiplier: everything is recomputed from this
+	 *  integer, which is why the cap can be reached exactly and why a retune of either tunable
+	 *  moves live buildings' arithmetic rather than only new ones'.
+	 *
+	 *  ⛔ M8 (STACK-§7): AUTHORITATIVE GAME STATE — it drives MaxHP — so ONLY the server-side
+	 *  ApplyStackUpgrade writes it, and ⛔ the client may ⛔ never author it. ⛔ No new RPC and
+	 *  ⛔ no new relevancy tier are added: the resulting HP travels on the ALREADY-SHIPPED
+	 *  OnHPChanged push, and the ghost/blue state/wheel are client-local PRE-gate.
+	 */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Building", meta = (AllowPrivateAccess = "true"))
+	int32 StackUpgradeCount = 0;
+
+	/**
+	 *  The building's ORIGINAL VisualMesh Z scale — the baseline StackHeightMultiplier
+	 *  multiplies. ⛔ NOT a cached multiplier and ⛔ not a second copy of the height scale:
+	 *  it is the "original height" the ruled series is defined AGAINST ("+1× the ORIGINAL per
+	 *  upgrade"), without which an additive series cannot be expressed as a transform at all.
+	 *
+	 *  ⭐ CAPTURED LAZILY, ON THE FIRST UPGRADE (StackUpgradeCount == 0), ⛔ not at BeginPlay —
+	 *  and that is deliberate rather than lazy: it makes the baseline independent of the
+	 *  spawn/scale ordering the placement path happens to use, and it is safe because the
+	 *  placement wheel scales ⛔ X/Y ONLY (STACK-§4), so Z at the first upgrade IS the
+	 *  authored Z. 1.0 until then, so an un-upgraded building never depends on it.
+	 */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Building", meta = (AllowPrivateAccess = "true"))
+	float AuthoredHeightScaleZ = 1.f;
 
 	/**
 	 *  Drives EndSpellFreeze once the freeze elapses; re-armed at

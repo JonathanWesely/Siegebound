@@ -10,6 +10,7 @@
 #include "Siegebound/UnitCommand.h" // ESiegeUnitCommand — the latched unit-command stance (CurrentCommand member + FOnUnitCommandChanged param; TASK-274)
 #include "SiegePlayerController.generated.h"
 
+class ABuilding; // TASK-813 (STACK-§2/§5): the BLUE upgrade state's hover target — READ ONLY here except for the ONE ApplyStackUpgrade() call at confirm; the series, the cap and the private MaxHP/StackUpgradeCount state are all ABuilding's (TASK-812)
 class ACastle;
 class ACommanderNpc; // TASK-563: the own-team war-room avatar (class authored by TASK-559) — READ ONLY here: InteractRadius / IsPlayerInRange / EnemyRevealCost
 class ADecalActor;
@@ -128,6 +129,25 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCommandPromptChanged, const FStri
  *  ruling 7). The ghost projects to the traced SURFACE height under the
  *  cursor (hill crowns and flanks included — the terrain blocks Visibility)
  *  and stays upright: yaw-only rotation, NO normal alignment.
+ *
+ *  Placement v5 — FOOTPRINT AWARENESS (TASK-735, TOWER-§7 + row T-6):
+ *  everything above is a POINT test, so before this the FAR END of a large
+ *  structure was entirely unvalidated and the reason enum had NO unit term at
+ *  all — a player could drop a building on top of their own army and nothing
+ *  refused it. BUILDING cards now derive a 2D footprint radius from the ghost's
+ *  ⭐ SCALED mesh bounds (⛔ never a literal, ⛔ never the LOCAL bounds —
+ *  STACK-§6, so a wheel-scaled ghost is validated at the size it is drawn) and:
+ *  - compose it with BuildingClearance as a MAX, so a structure wider than the
+ *    shipped 200 is separated by its own real size while every existing small
+ *    building answers EXACTLY as it did before (max(200, r) == 200 for r <= 200
+ *    — the non-regression is structural, not a promise). The 200 is UNCHANGED;
+ *  - refuse (red ghost, "Your units are in the way", NO gold) when a live
+ *    OWN-TEAM unit stands inside that footprint — the enum's first unit term.
+ *  ⛔ IT REFUSES; IT NEVER MOVES A UNIT (NAV-§). ⛔ Slope, navmesh projection,
+ *  the spawn box and obstacle clearance are still sampled at the POINT — that
+ *  general form is a declared follow-on finding, deliberately NOT widened into
+ *  this rule. A missing/degenerate ghost mesh degrades OPEN to the point rules
+ *  with one warning.
  *
  *  Targeting mode (GDD §3.5/§3.11/§7, M5 ruling 8, TASK-100) — the SIBLING of
  *  placement mode for Spell cards; the two modes are mutually exclusive (each
@@ -512,9 +532,57 @@ public:
 	 *  (qa/TASK-022-report.md WARN-1 guard) — or SpendGold refusal at 0 gold.
 	 *  Ignored after match end; refused during placement mode (discarding the
 	 *  slot being placed would desync the pending confirm).
+	 *
+	 *  ⚠️ RETIRED AS OF THE CARDBAR BATCH (TASK-819, `CARDBAR-§6`) — ⛔ NOT DELETED, AND THE
+	 *  DISTINCTION IS DELIBERATE. TASK-809 removes the six per-card discard buttons that were
+	 *  its ONLY shipped UI route, so nothing in the game reaches this any more; the per-card
+	 *  discard is replaced wholesale by DiscardEntireHand (flat DiscardAllCost, the whole hand,
+	 *  the `H` key). It stays because deleting a BlueprintCallable a WBP may still reference is
+	 *  this project's silent-runtime-break class, and because `HELP-§`'s `Cards.Discard` row and
+	 *  Tests/SiegeControlsHelpTest.cpp still speak this vocabulary until TASK-821 rewrites it.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Cards")
 	void DiscardHandSlot(int32 Slot);
+
+	/**
+	 *  ⭐⭐ THE DISCARD-ALL MECHANIC (`CARDBAR-§6`) — bins EVERY occupied hand slot for ONE
+	 *  flat DiscardAllCost charge and draws a full replacement hand immediately.
+	 *
+	 *  Jonathan's ask, verbatim: *"discard all the current cards at a cost of 20 gold"*, on the
+	 *  `H` key. ⭐ **`H` IS THE ONLY ROUTE.** The right-click alternative was boarded and then
+	 *  SCRAPPED BY HIM mid-implementation (2026-09-03) with a measured reason: right-click is
+	 *  already the placement-cancel gesture (IA_CancelPlace + four polled PlayerTick consumers),
+	 *  and a 20-gold accident on a cancel is exactly the collision the law was fencing. ⇒ ⛔ NO
+	 *  pointer surface exists for this anywhere, and ⛔ none may be added back without his word.
+	 *
+	 *  THE GUARD LADDER, in DiscardHandSlot's order and with ITS approved refusal strings (a
+	 *  second, differently-worded copy of a shipped refusal is a UI regression, not a feature):
+	 *    1. observer lockout (!HasAuthority)   -> OnCardRefused, the shipped lockout text
+	 *    2. bMatchEnded                        -> SILENT ignore (no broadcast), as every card path
+	 *    3. bInPlacementMode                   -> "Cannot discard while placing a card"
+	 *    4. bInTargetingMode                   -> "Cannot discard while targeting a spell"
+	 *    5. no DeckComponent                   -> Error, no broadcast
+	 *    6. ⭐ the hand is ENTIRELY empty      -> refuse, ⛔ BEFORE any gold moves
+	 *    7. no ASiegePlayerState               -> Error, no broadcast
+	 *    8. SpendGold(DiscardAllCost)          -> "Not enough gold" on refusal; NOTHING moved
+	 *
+	 *  ⛔⛔ THE FEE IS CHARGED **ONCE** AND THE LOOP IS **NOT** DiscardHandSlot. Exactly one
+	 *  SpendGold call, then DeckComponent->DiscardFromHand(Slot) per occupied slot. Looping the
+	 *  per-slot entry point would re-run this whole ladder six times AND charge six extra
+	 *  DiscardCost on top of the flat fee — the failure mode that looks perfectly correct in a
+	 *  screenshot, which is why it is called out here and asserted in the suite.
+	 *
+	 *  ⭐ THE REFILL IS NOT NEW BEHAVIOUR: DiscardFromHand moves the card to the discard pile and
+	 *  redraws that slot in the SAME call (GDD §3.4), so the hand is full again on return. With a
+	 *  legal 50-card deck (44 left after the deal) no reshuffle can fire mid-loop, so none of the
+	 *  binned cards can come back — except deep in a long match with a short draw pile, where the
+	 *  eager reshuffle CAN return one. ⛔ That is the physical card rule, not a bug to "fix".
+	 *
+	 *  ⚠️ A FLAT FEE MEANS A ONE-CARD HAND ALSO COSTS DiscardAllCost. That is intended
+	 *  (`CARDBAR-§10`): the mechanic prices a hand RESET, not a per-card cycle.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Cards")
+	void DiscardEntireHand();
 
 	/** Deck & hand model (TASK-022). Never null (default subobject). TASK-029/033 widgets seed-then-bind from it. */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Deck")
@@ -541,6 +609,347 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Cards")
 	void ExitPlacementMode();
+
+	//~ ─────────────────────────────────────────────────────────────────────────
+	//~  FOOTPRINT-AWARE PLACEMENT — the four PINNED PURE SEAMS (TASK-735,
+	//~  TOWER-§7 + TOWER-§6 row T-6; scaled-bounds requirement STACK-§6)
+	//~
+	//~  ⛔⛔ THE FINDING THESE CLOSE, AND IT IS A MEASUREMENT RATHER THAN A SYMPTOM
+	//~  REPORT: every shipped building-placement gate is a POINT test, and
+	//~  EPlacementInvalidReason had NO unit term at all. A structure whose
+	//~  footprint is larger than the point therefore had its FAR END entirely
+	//~  unvalidated, and a player could drop a building on top of their own army
+	//~  with nothing refusing it.
+	//~
+	//~  ⭐ ALL FOUR ARE `public`, PLAIN C++ STATICS, ⛔ NOT UFUNCTIONs — test
+	//~  seams, not a Blueprint API (the ComposeAppendedInput / HeightToBrightness
+	//~  precedent: "a testability obligation gets a testability seam"). No world,
+	//~  no actor, no member state, no allocation, no clock, no RNG ⇒ the whole
+	//~  footprint rule runs headlessly with NO PIE session. ⛔ NO parameter is
+	//~  defaulted (SC-§33). ⚠️ If a test of these ever needs a world, the purity
+	//~  they exist for has been broken — that is a FINDING, not a reason to add
+	//~  a fixture.
+	//~ ─────────────────────────────────────────────────────────────────────────
+
+	/**
+	 *  ⭐⛔⛔ THE FOOTPRINT SIZE COMES FROM THE MESH, ⛔ NEVER FROM A LITERAL
+	 *  (TOWER-§7, restated as law because a hardcoded 2700 would be wrong for the
+	 *  next large building and silently wrong the day SM_WatchTower is
+	 *  re-authored — which it then was, 2,700 → ~750 uu, one day later).
+	 *
+	 *  ScaledBoxExtent is the placement ghost's ⭐ SCALED box half-extent — see
+	 *  TryGetPlacementFootprintRadius for the exact bounds call and why it is the
+	 *  scaled one and ⛔ never the local one (STACK-§6: a wheel-scaled ghost
+	 *  differs from its mesh by up to ×1.5, and a local read would validate a
+	 *  1.5× building at 1.0×).
+	 *
+	 *  Returns the 2D (XY) footprint radius = max(|X|, |Y|) — the half-extent of
+	 *  the LARGER horizontal axis, matching the shipped family's 2D-radius idiom
+	 *  (every placement clearance in this class is a planar distance; the arena
+	 *  floor makes Z irrelevant).
+	 *
+	 *  ⚠️ THE RESIDUAL, NAMED RATHER THAN HIDDEN: a circle of that radius covers
+	 *  the whole rectangle EXCEPT its four corners, so a unit sitting in a corner
+	 *  of a strongly oblong footprint is not refused. The alternative
+	 *  (circumscribing, i.e. hypot) over-refuses by up to 41% on a square and
+	 *  runs straight into the risk TOWER-§7 names — "a footprint-sized refusal
+	 *  can make a large building feel unplaceable in a busy spawn box". The
+	 *  under-covering choice is deliberate and the shortfall is the tunable's job.
+	 *
+	 *  Total function: a non-finite extent (a mesh with degenerate bounds) yields
+	 *  0, which composes to today's exact behaviour everywhere downstream.
+	 */
+	static float PlacementFootprintRadiusFromBounds(const FVector& ScaledBoxExtent);
+
+	/**
+	 *  ⭐ THE NON-REGRESSION, PROVED BY CONSTRUCTION RATHER THAN PROMISED
+	 *  (TASK-735 spec (4)): the shipped BuildingClearance is measured point to
+	 *  point, so a large structure could legally INTERSECT another building. This
+	 *  composes it with the footprint radius as a MAX, ⛔ not a sum:
+	 *
+	 *    max(BaseClearance, FootprintRadius)
+	 *
+	 *  ⇒ every shipped small building (footprint radius <= BuildingClearance)
+	 *  gets back BuildingClearance BYTE-FOR-BYTE — its behaviour cannot change —
+	 *  while a structure wider than the clearance is separated by its own real
+	 *  size instead of by a number sized for a wall.
+	 *
+	 *  ⛔ THE SHIPPED 200.f DEFAULT IS NOT CHANGED and must not be: that number
+	 *  is every existing building's feel, and retuning it is out of fence.
+	 *
+	 *  ⚠️ DECLARED LIMIT (TASK-735 spec (5), follow-on ⛔ NOT fixed here): this
+	 *  accounts for the GHOST's footprint only. The OTHER building's footprint is
+	 *  still a point, so two large buildings are separated by one radius, not two.
+	 *
+	 *  Non-finite or negative inputs sanitise to 0 before the max.
+	 */
+	static float EffectiveBuildingClearance(float BaseClearance, float FootprintRadius);
+
+	/**
+	 *  The unit-overlap predicate, in the shipped 2D-distance idiom
+	 *  (FVector::DistSquared2D against a squared radius — HasBuildingClearance /
+	 *  HasObstacleClearance use exactly this, so no new validation idiom is
+	 *  invented).
+	 *
+	 *  True when CandidatePoint lies inside the footprint the building would
+	 *  occupy at PlacementPoint, i.e. planar distance < FootprintRadius +
+	 *  BodyRadius + ExtraClearance:
+	 *    • FootprintRadius — from the ghost mesh (above), ⛔ never a literal;
+	 *    • BodyRadius      — the unit's OWN scaled capsule radius, read off the
+	 *                        unit, ⛔ never a literal (a unit is refused when the
+	 *                        building would materialise through its body, not
+	 *                        when its infinitely-thin centre is covered);
+	 *    • ExtraClearance  — UnitPlacementClearance, the EditDefaultsOnly retune
+	 *                        lever T-6 is owed (ships at 0 = refuse real overlap
+	 *                        and nothing more).
+	 *
+	 *  A total radius of <= 0 returns false — a zero-size footprint can contain
+	 *  nothing, which is exactly the degrade-open answer.
+	 */
+	static bool IsInsidePlacementFootprint(const FVector& CandidatePoint, const FVector& PlacementPoint,
+		float FootprintRadius, float BodyRadius, float ExtraClearance);
+
+	/**
+	 *  ⭐ THE ONE DEFINITION of the new refusal's player-facing wording, consumed
+	 *  by TryConfirmPlacement's switch so the shipped message and the tested
+	 *  message can ⛔ never drift apart.
+	 *
+	 *  It exists because the claim "the new refusal is its OWN reason, ⛔ not
+	 *  Clearance reused" is otherwise unobservable from a test: the reason enum
+	 *  is private and deliberately STAYS private (widening it so a test could
+	 *  read it would be the tail wagging the dog, and TASK-813/815 are about to
+	 *  edit that same switch — a smaller diff is worth more to them than a
+	 *  refactor). The message is the part the PLAYER can tell apart, so the
+	 *  message is what gets the seam.
+	 */
+	static FText UnitFootprintRefusalText();
+
+	//~ ─────────────────────────────────────────────────────────────────────────
+	//~  THE BLUE UPGRADE STATE — the THIRD ghost state (TASK-813; STACK-§0/§2/§5)
+	//~
+	//~  Jonathan, verbatim (2026-09-02): "if you hover directly on another tower, the
+	//~  outline instead appears blue, which means you can place it there, and instead
+	//~  of placing a new tower, it will instead double the height of the old one."
+	//~
+	//~  ⭐⭐ THE GHOST IS NOT REBUILT FOR THIS. STACK-§0 measured that the green/red
+	//~  ghost, its five validity gates and its M_Ghost "GhostColor" MID already ship —
+	//~  so BLUE is a THIRD FLinearColor written into the SAME parameter. ⛔ No new
+	//~  material, ⛔ no new MID, ⛔ no second ghost actor, ⛔ no new render path.
+	//~
+	//~  ⭐ THE SEAM FOLLOWS TASK-735's FOUR PINNED PURE STATICS ABOVE, for the same
+	//~  reason and by the same precedent ("a testability obligation gets a testability
+	//~  seam"): the DECISION is a pure static of six values, so "the state machine
+	//~  picks BLUE only for own-team + same-CardID + scalable" is a headless assertion
+	//~  rather than a PIE session nobody can run. ⛔ No world, ⛔ no member state, ⛔ no
+	//~  parameter defaulted (SC-§33).
+	//~ ─────────────────────────────────────────────────────────────────────────
+
+	/**
+	 *  What the cursor is over, as far as the STACK-§ upgrade is concerned. ⛔ This is
+	 *  deliberately NOT a second copy of EPlacementInvalidReason: that enum answers
+	 *  "why may no building stand at this POINT", and this one answers "what would the
+	 *  click do to the building UNDER the cursor" — two different questions, and the
+	 *  upgrade branch overrides the point verdict rather than joining it.
+	 *
+	 *  PUBLIC (unlike EPlacementInvalidReason, which TASK-735 deliberately kept
+	 *  private) because the resolver below is the whole feature and a private return
+	 *  type would make it uncallable from a test — the enum IS the observable.
+	 */
+	enum class EPlacementUpgradeState : uint8
+	{
+		/**
+		 *  ⛔ NOT AN UPGRADE HOVER AT ALL ⇒ today's behaviour, byte-for-byte: the five
+		 *  shipped gates decide, and the ghost is green or red exactly as it is now.
+		 *  This is the answer for empty ground, a unit card, a DIFFERENT card's
+		 *  building, a destroyed building — and for an ENEMY building (J-7: "it is not
+		 *  a valid placement point today either — no new refusal is invented").
+		 */
+		None,
+
+		/** ⭐ BLUE. The click UPGRADES the hovered building instead of placing a new one. */
+		Ready,
+
+		/**
+		 *  ⛔ RED, with its own message. The hovered building is the player's own, of
+		 *  the card in hand, and refuses to be scaled (STACK-§2 — CanScaleFootprint()
+		 *  is false, which today means AClimbableTower/SM_WatchTower: any non-uniform
+		 *  scale moves the LadderFoot/LadderTop sockets and the rung plane, fires
+		 *  TOWER-§8.5a's voiding condition, and the climb stops working ENTIRELY).
+		 *  ⚖️ It reads as NOT-A-TARGET, ⛔ never as an error — Log severity, the shipped
+		 *  RefuseCardPlay vocabulary, and no exceptional path anywhere.
+		 */
+		NotStackable,
+
+		/**
+		 *  ⛔ RED, with the SHIPPED "Not enough gold" line (J-5). ⭐ The colour may never
+		 *  promise a click the player cannot pay for: ":2946-2947" already holds this
+		 *  standard in its own words — "what the player sees is what the click does".
+		 */
+		Unaffordable
+	};
+
+	/**
+	 *  ⭐⭐ THE WHOLE BLUE DECISION, as a pure function of six values (TASK-813).
+	 *
+	 *  ⛔⛔ THE EXCLUSION IS STRUCTURAL AND IT IS THE LINE THIS FUNCTION EXISTS TO
+	 *  PROTECT: the WatchTower is kept out by asking HoveredBuilding->
+	 *  CanScaleFootprint() — a VIRTUAL on ABuilding, overridden false on
+	 *  AClimbableTower (TASK-812). ⛔ There is NO CardID string compare anywhere on
+	 *  this path and there must never be one (STACK-§2: "a CardID == 'WatchTower'
+	 *  string comparison anywhere in the placement path is an automatic QA fail" —
+	 *  the next climbable building must be protected by INHERITING, not by somebody
+	 *  remembering a paragraph).
+	 *
+	 *  DECISION ORDER, and every step of it is a ruling rather than a preference:
+	 *    1. not a Building card / no pending card        ⇒ None  (units never upgrade)
+	 *    2. nothing hovered, or the hovered actor is not an ABuilding, or it is
+	 *       already destroyed                            ⇒ None  (ACastle is
+	 *       class-disjoint from ABuilding, so the castle can never be a target)
+	 *    3. ⛔ ENEMY building                             ⇒ None  (J-7 — own-team only,
+	 *       and it stays RED through the SHIPPED clearance gate: ⛔ no new refusal is
+	 *       invented for a case the game already refuses)
+	 *    4. a DIFFERENT CardID                           ⇒ None  (spec (2): today's
+	 *       behaviour, unchanged — an ArrowTower does not grow a BombTower)
+	 *    5. ⛔ !CanScaleFootprint()                       ⇒ NotStackable
+	 *    6. CurrentGold < UpgradeCost                    ⇒ Unaffordable (J-5)
+	 *    7. otherwise                                    ⇒ ⭐ Ready (BLUE)
+	 *
+	 *  ⚠️ 5 IS ASKED BEFORE 6 ON PURPOSE: "this building can never be stacked" is a
+	 *  permanent truth the player can act on; "you are 4 gold short" is a temporary
+	 *  one that would be a misleading thing to say about a WatchTower.
+	 *
+	 *  ⭐ THE HEIGHT CAP IS DELIBERATELY ABSENT FROM THIS LIST. At the cap the answer
+	 *  is STILL Ready (J-6 — "it would only upgrade health by 1.5 times and not
+	 *  height"): the click still buys MaxHP ×1.5, so a refusal there would be the
+	 *  silent behaviour change STACK-§5 refused. The cap is surfaced as a HUD NOTE at
+	 *  confirm (StackHeightCapNoticeText), ⛔ never as a colour change and ⛔ never as
+	 *  a promise of height the click will not deliver.
+	 *
+	 *  UpgradeCost is the card's own DT_Cards Cost (J-2 — ⛔ never a literal), which
+	 *  the caller already holds in PendingCost.
+	 */
+	static EPlacementUpgradeState ResolvePlacementUpgradeState(
+		const ABuilding* HoveredBuilding,
+		ETeamId OwnTeam,
+		FName PendingCard,
+		bool bPendingCardIsBuilding,
+		int32 CurrentGold,
+		int32 UpgradeCost);
+
+	/**
+	 *  ⭐ THE ONE DEFINITION of the non-stackable refusal's wording — the
+	 *  UnitFootprintRefusalText precedent, and it exists for the same reason: the
+	 *  reason enum is private, so the MESSAGE is the part a test (and the player) can
+	 *  tell apart from the four shipped refusals.
+	 *
+	 *  ⚖️ It names the building rather than the card, because the offending thing is
+	 *  the thing under the cursor — and it says WHY, because "a feature that quietly
+	 *  does nothing on one card is a bug report waiting to happen; one that says why
+	 *  is a design" (STACK-§2).
+	 */
+	static FText StackNotStackableRefusalText();
+
+	/**
+	 *  ⭐ THE CAP NOTE (J-6): a one-line HUD note so the height ceiling is VISIBLE the
+	 *  moment it starts biting. ⛔ It is NOT a refusal — the click SUCCEEDED and bought
+	 *  MaxHP ×1.5 — and its wording must not read as one; it rides the shared
+	 *  OnCardRefused HUD surface only because that is the one shipped single-line
+	 *  channel (the WR-§7 reveal pre-check uses it the same way).
+	 *
+	 *  ⛔ It says HEALTH, ⛔ never "taller": at the cap the feedback may not claim a
+	 *  height gain the upgrade will not deliver.
+	 */
+	static FText StackHeightCapNoticeText();
+
+	//~ ─────────────────────────────────────────────────────────────────────────
+	//~  THE PLACEMENT FOOTPRINT WHEEL — the THREE PINNED PURE SEAMS (TASK-815,
+	//~  STACK-§4; MARK-§4's THIRD named wheel consumer)
+	//~
+	//~  ⭐ SAME CONTRACT AS THE SEVEN ABOVE and for the same reason: the whole
+	//~  feature is three decisions — how far one notch moves, what a scale factor
+	//~  means as a 3D scale, and WHICH cards may be scaled at all — and a decision
+	//~  locked inside a world-bound member function is a decision nobody can test.
+	//~  ⛔ No world, ⛔ no actor, ⛔ no member state, ⛔ no allocation, ⛔ no
+	//~  parameter defaulted (SC-§33).
+	//~ ─────────────────────────────────────────────────────────────────────────
+
+	/**
+	 *  ⭐ ONE SCROLL NOTCH = ONE STEP, CLAMPED — the whole wheel arithmetic, and
+	 *  ⛔ nothing else in this class computes a footprint scale.
+	 *
+	 *  NotchDelta is the frame's net wheel movement (+1 up, -1 down, 0 when
+	 *  nothing moved OR both fired in the same frame — the ApplyGroupPickWheel
+	 *  shape, where a += and a -= cancel). Returns the NEW scale, clamped to
+	 *  [MinScale, MaxScale].
+	 *
+	 *  ⭐ ACCUMULATES-AND-CLAMPS RATHER THAN COUNTING NOTCHES, and that is the
+	 *  template's shape rather than a shortcut: ApplyGroupPickWheel accumulates
+	 *  GroupPickRadius the same way, and it is what makes "scroll down once at the
+	 *  maximum" shrink IMMEDIATELY. A notch COUNTER would need its own clamp or
+	 *  the wheel would feel dead for as many notches as the player over-scrolled.
+	 *  ⚠️ The price, declared: float drift of order 1e-7 accumulates across many
+	 *  notches. Both ENDPOINTS are still exact — the clamp pins them — so the ×1.5
+	 *  ceiling STACK-§5 J-3 ruled is hit bit-exactly however the player gets there.
+	 *
+	 *  Total function (the house degrade-open law, applied to a hand-edited
+	 *  .uasset that ClampMin cannot guard): a non-finite or non-positive Step is
+	 *  INERT, a non-finite MinScale falls back to the identity 1.0, a MaxScale
+	 *  below MinScale collapses to MinScale, and a non-finite CurrentScale is
+	 *  re-seeded from MinScale. ⛔ No configuration can make this return a scale
+	 *  that would grow a building without bound.
+	 */
+	static float StepPlacementFootprintScale(float CurrentScale, int32 NotchDelta, float Step, float MinScale, float MaxScale);
+
+	/**
+	 *  ⭐⭐ THE ⛔ ONE EXPRESSION THAT TURNS THE WHEEL'S SCALE INTO A 3D SCALE, and
+	 *  it exists to make spec (4) STRUCTURAL rather than disciplinary: the GHOST
+	 *  and the SPAWNED BUILDING must agree, so they call ⛔ this same function on
+	 *  ⛔ the same member — there is deliberately no second place where an
+	 *  FVector is built out of PlacementFootprintScale.
+	 *
+	 *  ⚖️ A ghost that lies about the thing it previews is the defect the whole
+	 *  placement path exists to avoid; two call sites building "the same" vector
+	 *  independently is exactly how that lie gets introduced later.
+	 *
+	 *  ⛔ X AND Y ONLY — Z is ALWAYS 1 (STACK-§4 spec (3)). The Z axis belongs to
+	 *  the STACK upgrade (ABuilding::ApplyStackUpgrade recomputes VisualMesh's Z
+	 *  from its authored baseline and touches ⛔ neither X nor Y), so the two
+	 *  features compose on one component with ⛔ no coordination: the wheel sets
+	 *  the width and length ONCE at spawn, and every later upgrade inherits them
+	 *  VERBATIM — STACK-§5 J-4, his own words, "keeping the same width and length".
+	 *
+	 *  Non-finite or non-positive input yields FVector::OneVector — the unscaled
+	 *  identity, i.e. today's exact behaviour.
+	 */
+	static FVector MakePlacementFootprintScale3D(float FootprintScale);
+
+	/**
+	 *  ⛔⛔ THE WHEEL'S EXCLUSION, AND IT IS THE ⛔ SAME PREDICATE THE UPGRADE USES
+	 *  (STACK-§2, TASK-815 spec (6): "same CanScaleFootprint() predicate, same
+	 *  reason — ⛔ not a second check, ⛔ not a name compare").
+	 *
+	 *  ⛔⛔ THERE IS NO CardID STRING COMPARE HERE AND THERE MUST NEVER BE ONE. A
+	 *  scaled SM_WatchTower moves the LadderFoot/LadderTop sockets and the rung
+	 *  plane, fires TOWER-§8.5a's voiding condition, and the climb stops working
+	 *  ENTIRELY while every readback still reports correct — so the next climbable
+	 *  building must be protected by INHERITING, not by somebody remembering a
+	 *  paragraph.
+	 *
+	 *  ⭐ ASKED OF THE CLASS's CDO, AND THAT IS A MEASURED CHOICE RATHER THAN A
+	 *  CONVENIENCE: the wheel runs BEFORE anything is spawned, so there is no
+	 *  instance to ask. ABuilding::CanScaleFootprint() is a const virtual that
+	 *  reads ⛔ no instance state on either implementation (ABuilding returns true,
+	 *  AClimbableTower returns false), so the class default object answers for
+	 *  every instance that class will ever make. ⚠️ If a subclass ever makes it
+	 *  depend on per-instance state, THIS is the seam that becomes wrong — that
+	 *  would be a FINDING, and the test asserts the virtual through this function
+	 *  so it goes red rather than silent.
+	 *
+	 *  False for nullptr and for any class that is not an ABuilding — so a UNIT
+	 *  card's class, a spell, and a failed BP resolve are all inert for free,
+	 *  with ⛔ no separate "is this a building" rule invented for the wheel.
+	 */
+	static bool CanCardActorScaleFootprint(const UClass* CardActorClass);
 
 	/**
 	 *  Starts targeting mode for the given SPELL card (M5 ruling 8, TASK-100)
@@ -1146,9 +1555,35 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Cards")
 	TArray<FName> BuildingEconomyCardIDs = { FName(TEXT("DeepMine")) };
 
-	/** Fixed discard charge — discarding costs 1 gold and is refused below it (GDD §3.6). Mechanic rule, not a CSV column (CONVENTIONS registry). */
+	/**
+	 *  Fixed PER-CARD discard charge — discarding ONE slot costs 1 gold and is refused below it
+	 *  (GDD §3.6). Mechanic rule, not a CSV column (CONVENTIONS registry).
+	 *
+	 *  ⚠️ RETIRED WITH DiscardHandSlot AS OF THE CARDBAR BATCH (TASK-819, `CARDBAR-§6`) — ⛔ NOT
+	 *  DELETED, and ⛔ NEVER to be reused as the discard-all fee: the two mean different things
+	 *  (one card vs the whole hand) and aliasing them would silently retune both at once.
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Cards", meta = (ClampMin = "0"))
 	int32 DiscardCost = 1;
+
+	/**
+	 *  ⭐ THE DISCARD-ALL FEE (`CARDBAR-§6`) — Jonathan's number, 20 gold, flat.
+	 *
+	 *  ⛔ A NEW PROPERTY, ⛔ never DiscardCost re-used. DiscardEntireHand charges this ONCE for
+	 *  the whole hand and refuses below it with NOTHING moved (net-zero: ASiegePlayerState has
+	 *  no refund API, so the ladder never spends on a no-op).
+	 *
+	 *  ⚠️ THE CONSEQUENCE OF RETUNING IT (`HIGH-§1`): this is the ONLY price of cycling a dead
+	 *  hand now that the 1-gold per-card lever is gone (`CARDBAR-§10`). Lower it and hand-fixing
+	 *  becomes routine; raise it and a bricked hand becomes unrecoverable. ⛔ It is also charged
+	 *  in FULL for a hand holding a single card — that is deliberate, not an oversight.
+	 *
+	 *  ⛔ IF IT IS EVER SHOWN TO THE PLAYER IT IS READ FROM HERE, ⛔ NEVER TYPED (`HELP-§2`'s
+	 *  M7.7 precedent: a prose "20" rots the moment this line changes). TASK-821's help row is
+	 *  written to that rule.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Cards", meta = (ClampMin = "0"))
+	int32 DiscardAllCost = 20;
 
 	/** Card stat table (GDD §3.0). Imported in TASK-008 — resolved null-safe at play time. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Cards")
@@ -1294,6 +1729,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> ControlsHelpAction;
 
+	/** IA_DiscardAll slot (the discard-the-whole-hand key, TASK-819; asset + the ONE appended IMC_Hero row created in TASK-820 at the `H` position). Left unset, it soft-resolves from DiscardAllActionAsset — a missing asset skips the binding and leaves the key inert (never a crash). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> DiscardAllAction;
+
 	/** Soft path for IA_Card1 (/Game/Input/Actions/IA_Card1, created in TASK-009). */
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TSoftObjectPtr<UInputAction> Card1ActionAsset;
@@ -1414,6 +1853,34 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TSoftObjectPtr<UInputAction> ControlsHelpActionAsset;
+
+	/**
+	 *  Soft path for IA_DiscardAll (/Game/Input/Actions/IA_DiscardAll, created in TASK-820 and
+	 *  mapped in /Game/Input/IMC_Hero at the `H` position by the same task — ⭐ TASK-818 proved
+	 *  `H` free from the ASSET BYTES on both layouts before a single byte was written).
+	 *
+	 *  ⛔ NULL-SAFE IS THE DESIGNED STATE AT COMPILE TIME — the IA_CmdAmbush (TASK-345) /
+	 *  IA_CmdFollow (TASK-399) / IA_AssistantConsole (TASK-445) / IA_WarMap (TASK-568) /
+	 *  IA_ControlsHelp (TASK-705) precedent, followed character-for-character: an unresolved
+	 *  asset skips the binding, logs ONE line through ResolveInputAction, and leaves the key
+	 *  completely inert. Never a crash, and ⛔ every other key untouched.
+	 *
+	 *  ⭐⭐ WHY THIS IS A **MAPPED** ACTION AND ⛔ NOT A POLLED KEY, WHICH IS THE ONE DECISION
+	 *  IN THIS FEATURE THAT NOBODY ON A QWERTY MACHINE COULD REVIEW (`CARDBAR-§7`):
+	 *  WasInputKeyJustPressed is the dominant idiom in this very file (RMB/Esc, the wheel, LMB),
+	 *  and copying it here would be WRONG. Jonathan plays US-Dvorak, and his own words pin the
+	 *  intent: *"when I said 'H', I am talking about 'H' on QWERTY, on Dvorak it would be 'D'."*
+	 *  ⇒ he means the physical KEY POSITION. USiegeKeyboardLayoutSubsystem already rewrites
+	 *  IMC_Hero's .Key fields wholesale, so a MAPPED action inherits that for free and lands on
+	 *  the position he means. ⛔ A raw `EKeys::H` poll would fire on the physical `J` position on
+	 *  his keyboard — invisible on every reviewer's machine and on every screenshot.
+	 *
+	 *  ⇒ ⛔ NO RAW `EKeys::H` POLL MAY EXIST ANYWHERE for this action — ⛔ not as a fallback,
+	 *  ⛔ not as a "double cover" — and ⛔ NO GetPositionalKey call either: that API is for RAW
+	 *  polled keys, and a second remap on a mapped action double-applies it (`HELP-§1`).
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TSoftObjectPtr<UInputAction> DiscardAllActionAsset;
 
 	/**
 	 *  Half-extent (XY) of the player's spawn box — a 2D square centered on the
@@ -1538,6 +2005,35 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement", meta = (ClampMin = "0"))
 	float ObstaclePlacementClearance = 150.f; // GDD §5 (M4.5)
 
+	/**
+	 *  ⭐ EXTRA breathing room, ON TOP of the mesh-derived footprint radius and
+	 *  the unit's own capsule radius, demanded between a BUILDING placement and
+	 *  every LIVE OWN-TEAM unit (TASK-735, TOWER-§7 / TOWER-§6 row T-6). Closer
+	 *  shows the red ghost and refuses the confirm click ("Your units are in the
+	 *  way") with NO gold spent — the building is ⛔ never placed and the units
+	 *  are ⛔ never moved.
+	 *
+	 *  ⛔⛔ SHIPS AT 0, AND THE 0 IS A DECISION RATHER THAN AN OMISSION: the two
+	 *  terms it is added to already express "the building would materialise
+	 *  THROUGH this unit's body" exactly, so 0 refuses real overlap and nothing
+	 *  more — the smallest new refusal that closes the finding.
+	 *
+	 *  ⚠️ THE CONSEQUENCE OF RAISING IT, WRITTEN HERE BECAUSE HIGH-§1 SAYS A
+	 *  NUMBER WHOSE CONSEQUENCE IS NOT BESIDE IT GETS RETUNED BY SOMEBODY WHO
+	 *  DOES NOT KNOW WHAT THEY ARE CHANGING: this is added to a radius that
+	 *  already grows with the mesh, so every uu here costs placement room around
+	 *  EVERY unit at once. In a busy spawn box a large building can become
+	 *  genuinely unplaceable until the army is ordered elsewhere — a refusal the
+	 *  player cannot act on except by moving units, since placement REFUSES and
+	 *  never pushes (NAV-§: nothing in this project moves a unit it does not own).
+	 *  🧑 T-6 is Jonathan's row and one word retunes this; it is EditDefaultsOnly
+	 *  precisely so that costs no code change. Mechanic rule, not a CSV column
+	 *  (CONVENTIONS registry). Units/miners placing UNITS are exempt — this gate
+	 *  is building-only, like the slope and obstacle gates beside it.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement", meta = (ClampMin = "0"))
+	float UnitPlacementClearance = 0.f; // TASK-735 (TOWER-§7)
+
 	/** Ghost tint for a valid point (M_Ghost "GhostColor", TASK-012). */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement")
 	FLinearColor ValidGhostColor = FLinearColor(0.f, 1.f, 0.f);
@@ -1545,6 +2041,85 @@ protected:
 	/** Ghost tint for an invalid point. */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement")
 	FLinearColor InvalidGhostColor = FLinearColor(1.f, 0.f, 0.f);
+
+	/**
+	 *  ⭐ TASK-813 (STACK-§0/§7): ghost tint while the click would UPGRADE the building
+	 *  under the cursor instead of placing a new one — his "the outline instead appears
+	 *  blue". ⛔ THE THIRD VALUE ON THE EXISTING "GhostColor" PARAMETER, written into the
+	 *  SAME MID by the SAME line — ⛔ no new material, ⛔ no new MID, ⛔ no second ghost
+	 *  actor, ⛔ no new render path.
+	 *
+	 *  ⚠️ THE CONSEQUENCE OF RETUNING IT (HIGH-§1): this is the ONLY signal that the click
+	 *  has changed meaning. Move it toward green and the player cannot tell an upgrade from
+	 *  a placement; move it toward red and a legal, affordable click reads as refused.
+	 *  Blue is chosen because the shipped pair already owns both halves of the
+	 *  valid/invalid axis, so a third HUE — not a third shade — is what makes the state
+	 *  legible at a glance.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement")
+	FLinearColor UpgradeGhostColor = FLinearColor(0.f, 0.4f, 1.f); // TASK-813 (STACK-§0)
+
+	//~ ─────────────────────────────────────────────────────────────────────────
+	//~  ⭐ THE PLACEMENT FOOTPRINT WHEEL's THREE TUNABLES (TASK-815, STACK-§4)
+	//~
+	//~  ⛔⛔ DELIBERATELY ⛔ NOT GroupRadiusWheelStep/Min/Max, AND MARK-§4 SAYS SO
+	//~  IN ITS OWN CLAUSE: those three are WORLD-SPACE RADII IN uu (100 / 200 /
+	//~  5000) and are ⛔ meaningless as a scale factor — reusing them would grow a
+	//~  building to ×5000. Separately named, separately EditDefaultsOnly, each with
+	//~  its consequence written beside it (HIGH-§1).
+	//~ ─────────────────────────────────────────────────────────────────────────
+
+	/**
+	 *  How much ONE scroll notch changes the placement footprint scale
+	 *  (ApplyPlacementFootprintWheel).
+	 *
+	 *  ⚠️ THE CONSEQUENCE OF RETUNING IT (HIGH-§1): this is the whole FEEL of the
+	 *  wheel and it trades reach against resolution. At 0.1 the ×1.0 → ×1.5 span
+	 *  is FIVE notches — STACK-§4's "small enough that the max is reachable in a
+	 *  few notches" — and every notch is a visibly different building. Halve it and
+	 *  the player scrolls ten times for the same range while several sizes become
+	 *  indistinguishable on screen; double it and the range collapses to two
+	 *  usable sizes plus the ends. ⛔ A value of 0 or below makes the wheel INERT
+	 *  rather than broken (StepPlacementFootprintScale sanitises it) — inert is the
+	 *  honest failure, not a silent ×1.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement", meta = (ClampMin = "0"))
+	float PlacementFootprintWheelStep = 0.1f; // TASK-815 (STACK-§4)
+
+	/**
+	 *  The SMALLEST footprint scale the wheel can reach — ⛔ and the reason it is
+	 *  1.0 rather than something below it is a RULING, not a default.
+	 *
+	 *  ⚖️ STACK-§5 J-3: ⛔ NO SHRINKING. Jonathan gave only a maximum, and
+	 *  shrinking below the authored footprint is a ⛔ new balance lever he did not
+	 *  ask for — it would let a player hide a building inside a gap the mesh was
+	 *  never meant to fit, and it would make every shipped building's collision
+	 *  and navmesh hole smaller than the art the player is looking at.
+	 *
+	 *  ⚠️ THE CONSEQUENCE OF RETUNING IT (HIGH-§1): every placement session STARTS
+	 *  here (EnterPlacementMode seeds the live scale from this property, ⛔ never
+	 *  from a literal 1.0), so lowering it changes the size a building spawns at
+	 *  when the player never touches the wheel at all — i.e. it silently retunes
+	 *  EVERY existing building's footprint, clearance and navmesh hole.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement", meta = (ClampMin = "0.01"))
+	float PlacementFootprintMin = 1.0f; // TASK-815 (STACK-§4, J-3: no shrinking)
+
+	/**
+	 *  The LARGEST footprint scale the wheel can reach (STACK-§4's range, from
+	 *  Jonathan's own "up to one and a half times").
+	 *
+	 *  ⚠️ THE CONSEQUENCE OF RETUNING IT (HIGH-§1): the footprint the placement
+	 *  gates validate is read from the ghost's ⭐ SCALED bounds (STACK-§6), so this
+	 *  number is simultaneously the biggest building the player can build AND the
+	 *  biggest clearance any placement must satisfy — raise it and large buildings
+	 *  become progressively unplaceable in a busy spawn box, refused by their own
+	 *  size. It also multiplies the UV stretch J-11 already accepts on the height
+	 *  axis. ⛔ A value below PlacementFootprintMin collapses the range to the
+	 *  minimum (the wheel goes inert) rather than inverting it.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement", meta = (ClampMin = "0.01"))
+	float PlacementFootprintMax = 1.5f; // TASK-815 (STACK-§4, J-3)
 
 	/** Yaw applied to the ghost so raw SM_<CardID> meshes face +X — the whole family shares SM_Footman's export orientation and -90° fix (TASK-014/037/038 handoffs). */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Placement")
@@ -1563,7 +2138,25 @@ private:
 		Point,     // no ground hit / outside the spawn box+zone / off the navmesh (plinth keep-out retired, TASK-349)
 		Slope,     // building on ground steeper than MaxPlacementSlopeDegrees ("Too steep", M4.5)
 		Obstacle,  // building within ObstaclePlacementClearance of an "Obstacle"-tagged actor ("Too close to obstacles", M4.5)
-		Clearance  // building within BuildingClearance of another building
+		Clearance, // building within BuildingClearance of another building (footprint-composed since TASK-735)
+		Units,     // ⭐ TASK-735 (TOWER-§7): a LIVE OWN-TEAM unit stands inside the building's mesh-derived footprint ("Your units are in the way"). ⛔ NOT a reuse of Clearance — that one names another BUILDING and says so to the player; this one is the enum's FIRST unit term, and its absence was the whole finding.
+
+		/**
+		 *  ⭐ TASK-813 (STACK-§2/§7): the cursor is over one of the player's OWN buildings of
+		 *  the card in hand, but the UPGRADE cannot happen — the building refuses to be scaled
+		 *  (EPlacementUpgradeState::NotStackable) or the player cannot afford it
+		 *  (::Unaffordable). Appended LAST, after Units, exactly as TASK-735 asked.
+		 *
+		 *  ⛔ NOT a reuse of Clearance (TASK-735's precedent, restated): "too close to another
+		 *  building" would be an actively wrong thing to say to a player who is standing ON the
+		 *  building on purpose. ⛔ And NOT the height cap either — the cap is not a refusal at
+		 *  all (J-6: the click still buys health), so it never reaches this enum.
+		 *
+		 *  ⚠️ ONE VALUE, TWO MESSAGES: the confirm switch reads PlacementUpgradeState to pick
+		 *  between them. That is the SAME mechanism as this enum itself — both members are
+		 *  recomputed together every frame by UpdatePlacementGhost — so the two can never drift.
+		 */
+		Upgrade
 	};
 
 	/**
@@ -1595,8 +2188,60 @@ private:
 	 */
 	void TryConfirmPlacement();
 
+	/**
+	 *  ⭐⭐ THE BLUE CLICK (TASK-813; STACK-§2/§5). Called by TryConfirmPlacement — and
+	 *  ⛔ only by it — when PlacementUpgradeState is Ready: it grows the building already
+	 *  under the cursor instead of spawning a new one, so ⛔ NOTHING in here spawns, and it
+	 *  runs BEFORE the miner cap / BP-class resolve / spawn path those rules exist for.
+	 *
+	 *  THE ORDER, and it is the shipped confirm's order rather than a new one:
+	 *    re-validate the target (it can die between the frame that painted BLUE and this
+	 *    click) → re-ask CanScaleFootprint() → SpendGold → ⭐ ONE call to
+	 *    ABuilding::ApplyStackUpgrade() → the J-6 cap note → the card leaves the hand.
+	 *
+	 *  ⛔⛔ IT CALLS ApplyStackUpgrade() AND DUPLICATES ⛔ NONE OF ITS MATHS. MaxHP,
+	 *  CurrentHP and StackUpgradeCount are PRIVATE on ABuilding by design (TASK-812), the
+	 *  two series are ABuilding's pinned statics, and this controller is deliberately
+	 *  unable to author any of them. ⇒ this function knows the COST and the CLICK; the
+	 *  ladder itself is entirely the building's.
+	 *
+	 *  ⛔ NET-ZERO ON FAILURE (§3.0): gold is spent before the mutator because the mutator
+	 *  cannot be un-applied (StackUpgradeCount has no decrement, on purpose) — so a false
+	 *  return REFUNDS through AddGold rather than leaving the player paying for nothing.
+	 */
+	void ConfirmStackUpgrade(ASiegePlayerState& SiegeState);
+
 	/** Per-frame: cursor-to-ground trace, validity v4 (ground, spawn box / captured zone, navmesh projection — plinth keep-out retired, TASK-349; buildings add slope, obstacle clearance, building clearance — TASK-093), ghost position + color. */
 	void UpdatePlacementGhost();
+
+	/**
+	 *  ⭐⭐ THE PLACEMENT FOOTPRINT WHEEL (TASK-815; STACK-§4, MARK-§4's THIRD and
+	 *  FINAL named wheel consumer) — the ⛔ SIBLING of ApplyGroupPickWheel, in the
+	 *  same file, in the same function, with the same mechanism: POLLED
+	 *  WasInputKeyJustPressed(EKeys::MouseScrollUp/Down), ⛔ NO new InputAction.
+	 *  ⛔ Its shape is COPIED, ⛔ not reinvented.
+	 *
+	 *  Called from ⛔ ONE place: the PLACEMENT branch of PlayerTick, immediately
+	 *  BEFORE UpdatePlacementGhost() — the same order the pick branch uses
+	 *  (ApplyGroupPickWheel then UpdateGroupPickReticle). ⚠️ THAT ORDER IS
+	 *  LOAD-BEARING, ⛔ not cosmetic: the ghost's footprint radius is read from its
+	 *  SCALED bounds inside UpdatePlacementGhost, so a wheel that ran AFTER it
+	 *  would validate this frame's click against LAST frame's size and paint a
+	 *  green that the confirm could refuse.
+	 *
+	 *  ✅ THE COLLISION WITH CONSUMER 1 IS ⛔ IMPOSSIBLE, ⛔ MEASURED RATHER THAN
+	 *  MITIGATED: PlayerTick's four cursor modes are mutually exclusive
+	 *  STRUCTURALLY — the group pick, targeting and war-map branches each `return`,
+	 *  and placement is reached only past `if (!bInPlacementMode) { return; }`.
+	 *  ⇒ ⛔ NO GUARD IS ADDED HERE for a state that cannot exist (STACK-§4: "if you
+	 *  believe it can, that is a FINDING, ⛔ not a patch").
+	 *
+	 *  ⛔ INERT unless bPendingCardCanScaleFootprint — the SAME CanScaleFootprint()
+	 *  predicate the upgrade uses, resolved once per session (STACK-§2, spec (6)).
+	 *  ⛔ Inert on a clamped end, and inert on a frame with no notch: it writes
+	 *  nothing and touches the ghost only when the scale actually changed.
+	 */
+	void ApplyPlacementFootprintWheel();
 
 	/** Spawns the ghost actor (movable, collision off, per-card SM_<CardID> or the fallback sphere + M_Ghost MID) — every asset null-safe. */
 	void SpawnPlacementGhost();
@@ -1912,6 +2557,26 @@ private:
 	 */
 	void OnControlsHelpPressed();
 
+	//~ ─── THE DISCARD-ALL KEY (TASK-819, `CARDBAR-§6`) ───
+
+	/**
+	 *  IA_DiscardAll pressed (the `H` position; asset + IMC_Hero row land in TASK-820).
+	 *
+	 *  ⛔⛔ IT CARRIES **ZERO** LOGIC AND THAT IS THE WHOLE POINT — it forwards to
+	 *  DiscardEntireHand, which owns the entire guard ladder, the single charge and the loop.
+	 *  `CARDBAR-§6`: a second copy of that ladder is an automatic QA fail, so there is exactly
+	 *  ONE implementation and this handler adds not one line to it.
+	 *
+	 *  ⭐ AND IT IS NOW THE **ONLY** ROUTE INTO THAT FUNCTION FROM THE PLAYER. The right-click
+	 *  alternative was scrapped by Jonathan on 2026-09-03 (it would have collided with the
+	 *  placement-cancel gesture and cost 20 gold by accident), so ⛔ no widget-facing surface
+	 *  exists — deliberately, and it may not be re-added without his word.
+	 *
+	 *  PRIVATE per the CONVENTIONS §7 pin — the binding is taken inside SetupInputComponent, so
+	 *  the access level costs nothing.
+	 */
+	void OnDiscardAllPressed();
+
 	/**
 	 *  Bound to USiegeControlsHelpWidget::OnHelpOpenChanged at creation — the exact role
 	 *  HandleWarMapOpenChanged plays for the map. ⛔ THE WHOLE REASON IT EXISTS: the overlay
@@ -2085,8 +2750,19 @@ private:
 	 */
 	bool IsPointOnNavmesh(const FVector& Point);
 
-	/** True when Point is >= BuildingClearance (2D) from every live ABuilding (§3.5 building rule; dying buildings skipped via IsBuildingDestroyed). */
-	bool HasBuildingClearance(const FVector& Point) const;
+	/**
+	 *  True when Point is >= EffectiveBuildingClearance(BuildingClearance,
+	 *  FootprintRadius) (2D) from every live ABuilding (§3.5 building rule;
+	 *  dying buildings skipped via IsBuildingDestroyed).
+	 *
+	 *  ⭐ FootprintRadius IS THE ONLY CHANGE TASK-735 MAKES HERE (spec (4)): pass
+	 *  the placement ghost's mesh-derived 2D radius and a structure wider than
+	 *  the shipped clearance is separated by its own real size. ⛔ Pass 0 — which
+	 *  is exactly what the degrade path does — and the composition collapses to
+	 *  the shipped BuildingClearance, byte-for-byte. ⛔ NOT defaulted (SC-§33):
+	 *  the one shipped call site passes it explicitly.
+	 */
+	bool HasBuildingClearance(const FVector& Point, float FootprintRadius) const;
 
 	/**
 	 *  True when the ground at Point is flat enough for a BUILDING (M4.5
@@ -2108,6 +2784,63 @@ private:
 	 *  // GDD §5 (M4.5)
 	 */
 	bool HasObstacleClearance(const FVector& Point) const;
+
+	/**
+	 *  ⭐ THE ONE NEW REFUSAL (TASK-735 spec (2), TOWER-§7): true when NO live
+	 *  OWN-TEAM ASummonedUnit stands inside the footprint the pending building
+	 *  would occupy at Point — i.e. the placement is clear of the player's own
+	 *  army. Same shape as HasBuildingClearance / HasObstacleClearance beside it:
+	 *  a plain TActorIterator, a planar distance, no caching (it runs only during
+	 *  placement mode, and the unit count is the same order as the obstacle
+	 *  count those two already iterate).
+	 *
+	 *  ⛔ OWN-TEAM ONLY. An ENEMY standing in your spawn box is a DIFFERENT
+	 *  problem with a different answer and is deliberately ⛔ not this rule's.
+	 *  ⛔ The HERO, the ghost pawn and ACommanderNpc are ⛔ NOT units for this
+	 *  rule either — refusing because the player's own body is under the cursor
+	 *  would fight the player rather than protect them.
+	 *
+	 *  ⛔⛔ IT REFUSES. IT ⛔ NEVER MOVES A UNIT — a placement sweep that pushed
+	 *  units would be the first code in this project to move a unit it does not
+	 *  own (NAV-§), and it needs a direction choice nobody has ruled. 🧑 T-6 is
+	 *  Jonathan's and one word overrules the whole refusal.
+	 *
+	 *  ⛔ FootprintRadius is NOT defaulted (SC-§33), and the caller must pass a
+	 *  KNOWN radius: on the degrade path the gate is skipped entirely rather
+	 *  than run at radius 0 (see TryGetPlacementFootprintRadius).
+	 */
+	bool HasUnitClearance(const FVector& Point, float FootprintRadius) const;
+
+	/**
+	 *  ⭐⛔ THE BOUNDS READ — the ONE place the footprint size enters this class,
+	 *  and it comes from the ghost's MESH, ⛔ never from a literal (TOWER-§7).
+	 *
+	 *  ⭐⭐ THE CALL IS `GhostMesh->CalcBounds(GhostMesh->GetComponentTransform())`
+	 *  — the ⭐ SCALED bounds, ⛔ NEVER UStaticMesh::GetBounds()'s LOCAL ones
+	 *  (STACK-§6, and the requirement is load-bearing): CalcBounds applies the
+	 *  component's live world transform, INCLUDING GetScale3D(), so the day
+	 *  TASK-815 lets the player wheel the ghost to ×1.5 this reads ×1.5 with ⛔
+	 *  ZERO further edits. A local read would validate a 1.5× building at 1.0×,
+	 *  silently, in exactly the class of defect TOWER-§7 exists to close. At the
+	 *  shipped scale of 1 the two are equal, so this is ⛔ not speculative work.
+	 *  ⚠️ CalcBounds also applies ROTATION: the ghost's only rotation is the
+	 *  yaw-only GhostYawOffset (-90°, an exact quarter turn that swaps X and Y
+	 *  and leaves max(|X|,|Y|) invariant), and UpdatePlacementGhost never touches
+	 *  rotation again. Should a future ghost carry an off-axis yaw, the world AABB
+	 *  grows, so the radius is CONSERVATIVE — it over-refuses, ⛔ never under-
+	 *  refuses. Recorded as a follow-on, ⛔ not fixed here.
+	 *
+	 *  Returns false — with OutRadius set to 0 and ONE warning per placement
+	 *  session (bWarnedNoFootprintBounds) — when the ghost actor, its mesh
+	 *  component or its static mesh is missing. ⛔ HOUSE NULL-SAFETY LAW: that
+	 *  degrades OPEN to today's exact behaviour (the unit gate is SKIPPED and the
+	 *  building clearance composes with 0 ⇒ the shipped 200), it ⛔ never bricks
+	 *  placement, and it ⛔ never refuses on a missing asset.
+	 *
+	 *  Non-const only for the warn-once latch (mirrors IsPointOnNavmesh and
+	 *  IsPointInOwnSpawnBox).
+	 */
+	bool TryGetPlacementFootprintRadius(float& OutRadius);
 
 	//~ IsPointInsideCastlePlinth RETIRED by TASK-349 (plinth-retirement law — see
 	//~ the CastlePlinthClearance retirement note above; no placement path may
@@ -2227,11 +2960,84 @@ private:
 	/** Reason the latest traced point is invalid (None while bPlacementValid; recomputed with it every frame in placement mode). */
 	EPlacementInvalidReason PlacementInvalidReason = EPlacementInvalidReason::Point;
 
+	/**
+	 *  ⭐ TASK-813: what the click under the cursor would do to the building it is over —
+	 *  recomputed EVERY FRAME by UpdatePlacementGhost, in the same block and by the same
+	 *  rule as PlacementInvalidReason beside it. That shared cadence is the whole
+	 *  "what the player sees is what the click does" guarantee: the colour, the reason
+	 *  and the confirm all read one member written once per frame.
+	 *
+	 *  ⛔ NOT replicated and ⛔ not authoritative — it is client-local PRE-gate presentation
+	 *  (STACK-§7 M8). The one authoritative write, StackUpgradeCount, happens on the SERVER
+	 *  inside ABuilding::ApplyStackUpgrade, which refuses a client outright.
+	 */
+	EPlacementUpgradeState PlacementUpgradeState = EPlacementUpgradeState::None;
+
+	/**
+	 *  ⭐ The building a BLUE click would upgrade. Set ⛔ ONLY in the Ready state and cleared
+	 *  on every other frame, so no other state can act on a stale target — the state is the
+	 *  DECISION and this is merely the object the decision was made about.
+	 *
+	 *  ⚠️ WEAK ON PURPOSE: a building can be destroyed between the frame that painted the
+	 *  ghost blue and the frame the player clicks (a siege is happening around it). A raw
+	 *  pointer would dangle; the weak pointer makes ConfirmStackUpgrade's re-validation a
+	 *  real check rather than a formality.
+	 */
+	TWeakObjectPtr<ABuilding> PlacementUpgradeTarget;
+
+	/**
+	 *  ⭐⭐ TASK-815 (STACK-§4): the footprint scale the WHEEL has set for THIS
+	 *  placement session — the ⛔ ONE number both the ghost and the spawned
+	 *  building are sized from, and the ⛔ only session state the wheel owns.
+	 *
+	 *  ⛔ THE INITIALISER IS THE IDENTITY, ⛔ NOT A SECOND COPY OF
+	 *  PlacementFootprintMin: 1.0 here means "no scaling has been applied to a
+	 *  controller that has never placed anything", which is a property of the
+	 *  absence of a session rather than a value of the tunable. Every real session
+	 *  seeds it FROM PlacementFootprintMin in EnterPlacementMode, and
+	 *  ExitPlacementMode returns it there — so retuning the tunable retunes the
+	 *  game with ⛔ no second literal to find (HIGH-§1).
+	 *
+	 *  ⚠️ RESET IN BOTH EnterPlacementMode AND ExitPlacementMode — the pattern
+	 *  TASK-813's two upgrade members established in exactly those two functions.
+	 *  A wheel setting that outlived its card would size the NEXT building the
+	 *  player placed, with nothing on screen to explain why.
+	 */
+	float PlacementFootprintScale = 1.f;
+
+	/**
+	 *  ⭐ Whether the card in hand may be footprint-scaled at all — resolved ONCE
+	 *  per placement session in EnterPlacementMode, ⛔ never per frame.
+	 *
+	 *  ⛔⛔ IT IS THE ⛔ SAME STRUCTURAL PREDICATE THE UPGRADE USES, ⛔ NEVER A NAME
+	 *  COMPARE (STACK-§2, spec (6)): CanCardActorScaleFootprint asks the resolved
+	 *  card class's CDO for ABuilding::CanScaleFootprint(), which AClimbableTower
+	 *  overrides false. ⇒ the WatchTower is excluded from the wheel by INHERITANCE,
+	 *  and so is the next climbable building nobody has written yet.
+	 *
+	 *  ⚠️ CACHED RATHER THAN ASKED PER FRAME BECAUSE THE ANSWER COSTS A CLASS
+	 *  LOAD: ResolveCardActorClass performs a LoadSynchronous, which is fine once
+	 *  per placement but ⛔ not once per tick. It is short-circuited by
+	 *  bPendingIsBuilding, so a UNIT card never pays for a class resolve at all —
+	 *  the same short-circuit TryGetPlacementFootprintRadius uses, and for the same
+	 *  reason.
+	 */
+	bool bPendingCardCanScaleFootprint = false;
+
 	/** One-shot latch for the no-navmesh degrade-open warning (IsPointOnNavmesh). */
 	bool bWarnedNoNavData = false;
 
 	/** One-shot latch for the missing-Blue-castle spawn-box warning (IsPointInOwnSpawnBox, TASK-261). */
 	bool bWarnedMissingSpawnCastle = false;
+
+	/**
+	 *  One-shot latch for the no-ghost-bounds degrade-open warning
+	 *  (TryGetPlacementFootprintRadius, TASK-735). ⛔ Reset per PLACEMENT SESSION
+	 *  rather than per process — EnterPlacementMode clears it — because the
+	 *  missing piece is the CARD's ghost mesh, so the next card deserves its own
+	 *  one warning. Without the latch a per-frame gate would spam the log.
+	 */
+	bool bWarnedNoFootprintBounds = false;
 
 	/**
 	 *  Hand slot the active placement came from (set by PlayHandSlot just

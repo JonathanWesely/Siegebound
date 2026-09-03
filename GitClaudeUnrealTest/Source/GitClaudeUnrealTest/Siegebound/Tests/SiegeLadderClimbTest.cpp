@@ -2204,23 +2204,36 @@ bool FSiegeLadderCrossTrackFenceTest::RunTest(const FString& Parameters)
 		SteerDisagreements, 3);
 
 	// ── (c) READER 1 — `Advance`'s ARRIVAL DOT TEST STILL READS THE LINE ────────────────
-	// ⭐⭐ THE ROW THAT WOULD FLIP. A pawn level with the top ALONG the line but 200 uu off it:
-	//   · against the LINE   — dot(ToTop, Line) == 0 ⇒ `<= 0` ⇒ ARRIVED (today's meaning)
+	// ⭐⭐ THE ROW THAT WOULD FLIP. A pawn 1 uu PAST the top ALONG the line but 200 uu off it:
+	//   · against the LINE   — dot(ToTop, Line) == -1.0 ⇒ `<= 0` ⇒ ARRIVED (today's meaning)
 	//   · against the STEER  — the steer points AT the top, so the dot is +200 ⇒ NOT arrived
 	// ⇒ if anybody re-points `Advance`, this row goes red. That is the whole design of it.
 	{
-		const FVector LevelButOffLine = PointOffLine(State, static_cast<double>(State.LengthUU), 200.0);
-		const FVector ToTop = State.End - LevelButOffLine;
+		// ⛔⛔ THE ALONG-TRACK DISTANCE IS RE-DERIVED IN **DOUBLE** — ⛔ NEVER from `State.LengthUU`,
+		// which is a float32 OF a double length (`1236.931640625` against a true
+		// `1236.9316876852981`). That round-trip places the probe 4.706e-05 uu SHORT of the top,
+		// which is a POSITIVE arrival dot reading "not arrived" — and it is what made this row red
+		// from the day it was written, before it had ever been executed (LADDER-REGRESSION).
+		// ⭐ AND THE `+ 1.0` MARGIN IS DELIBERATE, ⛔ not belt: the true length ALONE lands the dot
+		// on exactly `+0.0`, arriving only through the `<=`, which a socket move or a capsule
+		// half-height retune would flip straight back to `+1e-13` — red again, "already fixed once".
+		// With the margin the row tests a SIGN (dot = -1.000000). ⛔ Do NOT shrink it to rescue a
+		// name; the local was renamed off `LevelButOffLine` precisely so the margin could stay.
+		// ⚠️ The 200 uu CROSS offset contributes EXACTLY ZERO to this dot — the cross axis is
+		// perpendicular to the line by construction. It is here to remove the `ArrivalToleranceUU`
+		// SPHERE path, so that this row measures the arrival PLANE and nothing else.
+		const FVector JustPastTopOffLine = PointOffLine(State, (State.End - State.Start).Size() + 1.0, 200.0);
+		const FVector ToTop = State.End - JustPastTopOffLine;
 
 		TestTrue(TEXT("(c) SELF-CHECK: the two candidate directions genuinely DISAGREE at this probe — dot against the STEER is strictly positive (⇒ 'not arrived') while dot against the LINE is not. A probe where they agreed would make the row below meaningless"),
-			FVector::DotProduct(ToTop, FSiegeLadderClimbStatics::SteerDirection(State, LevelButOffLine)) > 1.0);
+			FVector::DotProduct(ToTop, FSiegeLadderClimbStatics::SteerDirection(State, JustPastTopOffLine)) > 1.0);
 
 		FSiegeLadderClimbState Arriving;
 		ArmPinnedHeroClimb(Arriving, 350.f);
 		bool bReachedTop = false;
 		bool bTimedOut = false;
 		TestFalse(TEXT("(c) ⛔⛔ READER 1: a pawn level with the top but 200 uu OFF the line still ARRIVES — because `Advance` dots against `ClimbDirection`, exactly as it does today. A re-pointed `Advance` would report 'still climbing' here and the climb would run to the watchdog"),
-			FSiegeLadderClimbStatics::Advance(Arriving, LevelButOffLine, 1.f / 60.f, bReachedTop, bTimedOut));
+			FSiegeLadderClimbStatics::Advance(Arriving, JustPastTopOffLine, 1.f / 60.f, bReachedTop, bTimedOut));
 		TestTrue(TEXT("(c) …reporting ARRIVAL"), bReachedTop);
 		TestFalse(TEXT("(c) …and ⛔ not a timeout"), bTimedOut);
 	}

@@ -461,6 +461,48 @@ public:
 	const UClimbableTowerLadderLink* GetLadderLink() const { return LadderLink; }
 
 	/**
+	 *  ⛔⛔⛔ STACK-§2 — THIS TOWER IS EXCLUDED FROM THE STACK UPGRADE **AND** FROM THE
+	 *  PLACEMENT WHEEL, AND IT IS ⛔ NOT A STYLE CHOICE AND ⛔ NOT A NAME CHECK.
+	 *
+	 *  ⚠️⚠️ AND THE COST OF LETTING IT SCALE IS WORSE THAN "THE DECK GETS TOO HIGH" — the
+	 *  climb does not DEGRADE, it ⛔ STOPS WORKING ENTIRELY:
+	 *
+	 *    ⛔ A Z SCALE MOVES THE SOCKETS WITH THE MESH. The climb line is pinned by
+	 *       LadderFoot (−460, 0, 0) → LadderTop (−160, 0, 1200) — `Δ = (300, 0, 1200)`,
+	 *       length 1,236.93, lean **76.0°** (TOWER-§8.3). At ×2 the deck stands at 2,400 and
+	 *       `Δ = (300, 0, 2400)` ⇒ lean **82.87°**; at ×5, **88.1°**. The ladder does not
+	 *       merely get longer — it gets STEEPER, and its RUNG PITCH scales with it.
+	 *    ⛔⛔ THAT FIRES TOWER-§8.5a's OWN **VOIDING CONDITION**. The deck-breach exception —
+	 *       the only thing that lets §8.5 permit a swept move through the deck slab at all —
+	 *       is licensed by TOWER-§8.3's standoff and by NOTHING ELSE, and it voids when the
+	 *       geometry on the line changes. ⇒ the licence dies and §8.5's OUTRIGHT REFUSAL
+	 *       applies. ⚖️ We would ship a card that breaks itself when used as designed.
+	 *    ⛔ AND THE RUNG PLANE DIES WITH IT — the F5 defect class, verbatim. TOWER-§8.3 pins
+	 *       the rung mid-plane at −22.0 uu along the in-plane normal and states that a PURE
+	 *       TRANSLATION preserves it (which is why the δ = 10 amendment was free). A
+	 *       non-uniform SCALE is not a translation and preserves nothing ⇒
+	 *       A_SiegeBiped_Climb's hands grip AIR, and ⭐ every property readback stays correct
+	 *       while they do.
+	 *
+	 *  ⭐⭐ ONE PREDICATE COVERS BOTH CONSUMERS BECAUSE THE VOIDING CONDITION DOES: the STACK
+	 *  upgrade scales Z and the placement wheel scales X/Y, and TOWER-§8.5a voids on ⛔ ANY
+	 *  non-uniform scale. ⇒ there is ⛔ no second check to write and ⛔ no second place to
+	 *  forget.
+	 *
+	 *  ⭐ AND IT COSTS JONATHAN NOTHING HE ASKED FOR: he wrote "the tower button", and the
+	 *  family he has played for weeks is ArrowTower / BombTower / BallistaTower / CrystalTower
+	 *  — all of which keep stacking. WatchTower shipped three days ago and is the ⛔ only one
+	 *  carrying a pinned socket contract. 🧑 Row `J-9`; the full price of reversing it (four
+	 *  height variants × the three-number TOWER-§8.3 checklist, four A_SiegeBiped_Climb
+	 *  re-exports, a CONTACT-§13 UV repack) is written out in STACK-§2 so his answer costs no
+	 *  thinking.
+	 *
+	 *  ⛔ The refusal is VISIBLE, ⛔ never silent: TASK-813 shows the shipped RED plus a
+	 *  RefuseCardPlay message, ⛔ never a blue that does nothing.
+	 */
+	virtual bool CanScaleFootprint() const override { return false; }
+
+	/**
 	 *  ⭐ THE ARTIST↔PROGRAMMER SEAM, BY NAME (CONVENTIONS "Static-mesh SOCKET
 	 *  names", `TOWER-§8.4(A)`). TASK-737 authors these two sockets on
 	 *  /Game/Meshes/SM_WatchTower at the `TOWER-§8.3` coordinates; this class reads

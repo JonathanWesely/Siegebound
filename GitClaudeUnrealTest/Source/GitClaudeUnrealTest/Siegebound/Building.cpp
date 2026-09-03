@@ -284,6 +284,184 @@ void ABuilding::OnStatsLoaded(const FCardRow& Row)
 	// cadence loop behind the Cadence > 0 guard (TASK-027 spec item 2).
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+//  STACK-§ — TOWER STACKING (TASK-812). Deliberately parked directly beneath the MaxHP bind
+//  above: the health half of an upgrade is a mutation of the very two lines LoadStats writes,
+//  and STACK-§5 J-10 asked for it HERE rather than in the placement path — MaxHP/CurrentHP are
+//  private, and a caller reaching around that is how two rules for one number get shipped.
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+
+float ABuilding::StackHeightMultiplier(int32 UpgradeCount)
+{
+	// ⛔ THE CAP IS READ FROM THIS CLASS'S CDO, ⛔ never written as a literal here:
+	// MaxStackHeightMultiplier is EditDefaultsOnly precisely so Jonathan can retune it, and a
+	// second `5` in this function would be the HIGH-§1 booby trap the day he does. The CDO
+	// read is FORCED, not chosen — STACK-§7 pins this seam at ONE parameter while pinning the
+	// cap EditDefaultsOnly, and nothing else satisfies both. It costs no world and no actor
+	// instance, so the seam stays headlessly testable.
+	const ABuilding* const Defaults = GetDefault<ABuilding>();
+	if (!Defaults)
+	{
+		// A null CDO means this class's module has not loaded, in which case NOTHING here
+		// works. Return the IDENTITY: it is the one answer that cannot invent a height, and
+		// it deliberately does NOT restate the cap as a fallback literal.
+		return 1.f;
+	}
+
+	// The tunable, defended against a hand-edited 0 or negative in a .uasset (ClampMin only
+	// guards the editor field). A cap below 1 would mean "shrink every building", which is a
+	// state no ruling contemplates.
+	const int32 Cap = FMath::Max(1, Defaults->MaxStackHeightMultiplier);
+
+	// ⛔ Negative is not a state the game can enter (StackUpgradeCount only ever increments
+	// from 0), but this seam is public and pure, so it answers for the whole int32 domain
+	// rather than trusting its callers: no upgrades applied ⇒ the AUTHORED height, exactly 1.0.
+	// ⚠️ The UPPER clamp is not decoration either — it is what makes the `1 +` below unable to
+	// OVERFLOW on a pathological count (INT32_MAX + 1 wraps NEGATIVE, i.e. an inverted mesh).
+	// Clamping to the cap first is free, because everything at or above it saturates anyway.
+	const int32 Upgrades = FMath::Clamp(UpgradeCount, 0, Cap);
+
+	// ⭐⭐ ADDITIVE — `+1 ×` the ORIGINAL per upgrade (STACK-§1, ruling J-0), ⛔ NOT `2ⁿ`.
+	// Under the doubling reading Jonathan's own "5 times taller" ceiling is UNREACHABLE
+	// (2, 4, 8, 16 …), so his cap sentence would describe a state the game can never enter;
+	// under this one ×5 lands EXACTLY, on the 4th upgrade. ⛔ Do not "fix" this toward his
+	// summary sentence — it is flagged to him as J-0 instead.
+	//
+	// ⭐ INTEGER MIN, then ONE widening: "the cap is reached exactly" is a promise only integer
+	// arithmetic can keep, and it is the single property that falsifies the wrong series. The
+	// saturated value is therefore bit-identical to the tunable rather than a float that merely
+	// rounds to it.
+	return static_cast<float>(FMath::Min(1 + Upgrades, Cap));
+}
+
+float ABuilding::StackHealthMultiplier(int32 UpgradeCount)
+{
+	// Same CDO read, same reason (see StackHeightMultiplier) — StackHealthStep is
+	// EditDefaultsOnly and this function must not be a second copy of its value.
+	const ABuilding* const Defaults = GetDefault<ABuilding>();
+	if (!Defaults)
+	{
+		return 1.f;
+	}
+
+	// ⛔ THE GUARD, NaN-SAFE AND APPLIED BEFORE THE LOOP (the HeightAdvantageMultiplier /
+	// HeightToBrightness doctrine): StackHealthStep is an EditDefaultsOnly float, and a
+	// hand-edited 0, negative or NaN would put a zeroed — or NaN — MaxHP into a live building,
+	// which is a silent one-hit-kill rather than a visible bug. Written as !(Step >= 1.f) so
+	// NaN, which fails EVERY comparison, lands here too. Below 1 would mean "shrink", which no
+	// ruling contemplates (J-3's no-shrinking principle, applied to the other series). A
+	// disabled step means NO gain — exactly 1.0 — ⛔ never an explosion.
+	const float Step = Defaults->StackHealthStep;
+	if (!(Step >= 1.f))
+	{
+		return 1.f;
+	}
+
+	const int32 Upgrades = FMath::Max(0, UpgradeCount);
+
+	// ⭐ REPEATED MULTIPLICATION, ⛔ NOT FMath::Pow. 1.5 and its low powers are EXACTLY
+	// representable in binary32 (3ⁿ / 2ⁿ, exact through n = 15), so this returns Jonathan's own
+	// numbers bit-for-bit — 1.5² = 2.25 and 1.5³ = 3.375, both of which he wrote out — where
+	// powf would return something that merely prints as them.
+	//
+	// ⛔ UNCAPPED, and that is his explicit word ("there is no maximum on the health"): the
+	// loop has no ceiling term. The !IsFinite break is a runaway guard, ⛔ not a cap — it can
+	// only trigger once the value has already overflowed float (n ≈ 1,750 at a step of 1.5),
+	// a state no match can reach, and it stops a pathological UpgradeCount from spinning.
+	float Multiplier = 1.f;
+	for (int32 Index = 0; Index < Upgrades; ++Index)
+	{
+		Multiplier *= Step;
+		if (!FMath::IsFinite(Multiplier))
+		{
+			break;
+		}
+	}
+
+	return Multiplier;
+}
+
+bool ABuilding::ApplyStackUpgrade()
+{
+	// ⛔ M8 (STACK-§7): StackUpgradeCount is AUTHORITATIVE GAME STATE — it drives MaxHP — so it
+	// is SERVER-SET at confirm and the client may NEVER author it. ⛔ No new RPC and no new
+	// relevancy tier are introduced: the resulting HP rides the already-shipped OnHPChanged
+	// push, and the ghost / blue state / wheel are client-local PRE-gate.
+	if (!HasAuthority())
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ABuilding '%s': ApplyStackUpgrade refused — the client may never author StackUpgradeCount (STACK-§7 M8). The upgrade is applied on the SERVER at confirm."),
+			*GetNameSafe(this));
+		return false;
+	}
+
+	// A dying building takes no upgrade (the same-frame window before Destroy lands — the
+	// ApplyFreeze / TakeDamage guard, unchanged).
+	if (bDestroyed)
+	{
+		return false;
+	}
+
+	// ⛔⛔ STACK-§2, RE-ASKED AT THE BUILDING ITSELF. The placement path also gates on this
+	// predicate (TASK-813), and that is the point: a future caller that forgets the paragraph
+	// must still be UNABLE to scale a climbable tower, because a scaled SM_WatchTower moves the
+	// LadderFoot/LadderTop sockets and the rung plane, fires TOWER-§8.5a's voiding condition,
+	// and the climb stops working ENTIRELY. ⛔ Structural — there is deliberately no CardID
+	// string compare anywhere on this path.
+	if (!CanScaleFootprint())
+	{
+		return false;
+	}
+
+	// ⭐ THE BASELINE, CAPTURED ONCE, ⛔ BEFORE the first increment. The wheel scales X/Y ONLY
+	// (STACK-§4), so the Z standing here is the AUTHORED height the additive series is defined
+	// against. Capturing lazily rather than at BeginPlay makes this independent of whatever
+	// spawn/scale ordering the placement path uses.
+	if (StackUpgradeCount == 0 && VisualMesh)
+	{
+		// FVector is double-precision in UE5 and the series are float — the narrowing is spelled
+		// out rather than left implicit.
+		AuthoredHeightScaleZ = static_cast<float>(VisualMesh->GetRelativeScale3D().Z);
+	}
+
+	++StackUpgradeCount;
+
+	// ── HEIGHT: Z ONLY, RECOMPUTED FROM THE BASELINE ─────────────────────────────────────────
+	// ⛔ X and Y are NOT touched: STACK-§5 J-4 is his own sentence, "keeping the same width and
+	// length" — they belong to the placement wheel (TASK-815) and an upgrade inherits them
+	// VERBATIM. ⭐ And the Z is RECOMPUTED rather than multiplied in place, so the series is a
+	// pure function of StackUpgradeCount: no float accumulates, and the cap lands on the ruled
+	// multiple exactly however many times this runs.
+	// ⭐ Collision and navmesh follow for free — VisualMesh is the root with BlockAll +
+	// bCanEverAffectNavigation(true), so a scaled component carves a scaled hole (STACK-§3).
+	if (VisualMesh)
+	{
+		FVector Scale = VisualMesh->GetRelativeScale3D();
+		Scale.Z = AuthoredHeightScaleZ * StackHeightMultiplier(StackUpgradeCount);
+		VisualMesh->SetRelativeScale3D(Scale);
+	}
+
+	// ── HEALTH: GRANT THE NEW HIT POINTS, ⛔ DO NOT REPAIR THE OLD DAMAGE (STACK-§5 J-10) ─────
+	// The step is taken through the SERIES rather than off StackHealthStep directly, so the
+	// number a HUD preview shows and the number the building actually gains can ⛔ never
+	// disagree — one rule, one expression of it.
+	// ⚖️ CurrentHP moves by the DELTA, never to the new maximum: a full heal would make the
+	// upgrade a repair tool, which is the Masons card's job, and would make upgrading strictly
+	// better than defending. A damaged tower stays damaged, and is simply damaged out of a
+	// bigger pool. (A statless building — MaxHP 0, the missing-row failure mode — stays at 0
+	// through this, which is correct: 0 × anything is still 0.)
+	const float OldMaxHP = MaxHP;
+	MaxHP = OldMaxHP * StackHealthMultiplier(1);
+	CurrentHP += (MaxHP - OldMaxHP);
+
+	// The EXISTING push (TASK-130), ⛔ not a second one: the overhead bar and every
+	// IHealthBarProvider consumer already listen here, so the new pool reaches the UI with no
+	// new lane and no direct widget call.
+	OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
+
+	return true;
+}
+
 float ABuilding::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
 	// a dying building absorbs nothing further (same-frame window before the
