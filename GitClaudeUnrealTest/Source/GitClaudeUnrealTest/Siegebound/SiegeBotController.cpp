@@ -20,6 +20,7 @@
 #include "Siegebound/DeckLibrary.h" // UDeckLibrary::IsDeckLegal / GetDeckAverageCost — validate + log the chosen curated bot deck (M6 TASK-114)
 #include "Siegebound/GoldNode.h"
 #include "Siegebound/HeroCharacter.h"
+#include "Siegebound/SiegeCombatStatics.h" // TASK-851 (WITCH-§8): FSiegeCombatStatics::IsAgentVisibleTo — the ONE veil rule, shared with the acquisition funnel. ⛔ NOT a second implementation.
 #include "Siegebound/SiegeGameMode.h"
 #include "Siegebound/SiegePlayerController.h"
 #include "Siegebound/SiegePlayerState.h"
@@ -985,6 +986,23 @@ AActor* ASiegeBotController::FindNearestEnemyIntruderOnBotHalf() const
 		{
 			continue;
 		}
+
+		// ⭐⭐ TASK-851 (WITCH-§8), SCAN 1 of 5 — THE VEIL, ASKED WITH THE ⛔ SAME RULE THE FUNNEL USES.
+		// This iterator NEVER touches FSiegeCombatStatics::GatherHostileAgents: it is CLASS-based
+		// (ASummonedUnit) with a half-of-map term, while the funnel is INTERFACE-based (ITeamAgent)
+		// and returns towers and heroes too. ⛔ Routing it through the gather would CHANGE WHAT THE
+		// BOT REACTS TO — a behaviour change wearing a refactor's clothes (TASK-851(4)). So the scan
+		// stays, and honours the veil by calling the ONE shipped predicate instead.
+		// ⛔ DO NOT read the veil flag inline here and DO NOT re-express the rule: two implementations
+		// of "can this side see that unit" is exactly the divergence WITCH-§1 exists to prevent, and
+		// IsAgentVisibleTo's one-team/one-actor signature makes an argument SWAP untypeable.
+		// ⚠️ HIDDEN, ⛔ NOT INVULNERABLE (J-W2): this drops the unit from ACQUISITION only. A veiled
+		// unit the bot has already engaged stays attackable, and a blast still catches it.
+		if (!FSiegeCombatStatics::IsAgentVisibleTo(BotTeam, Unit))
+		{
+			continue;
+		}
+
 		const FVector UnitLocation = Unit->GetActorLocation();
 		if (!IsOnOwnHalf(UnitLocation.X))
 		{
@@ -1001,6 +1019,15 @@ AActor* ASiegeBotController::FindNearestEnemyIntruderOnBotHalf() const
 	// The enemy hero also counts as pushing onto the bot half — so "player pushes
 	// onto the bot half → a defensive play" holds whether they advance with units
 	// OR their own hero (flagged decision; see handoffs/TASK-046.md). Alive only.
+	//
+	// ⛔⛔ TASK-851 (WITCH-§8), SCAN 2 of 5 — ⭐ THE OMISSION HERE IS ⛔ DECIDED, ⛔ NOT AN OVERSIGHT,
+	// AND THAT IS WHY THIS COMMENT EXISTS. 🧑 `J-W10` rules the HERO ⛔ NOT VEILABLE — "invisible
+	// units" are UNITS only, because WITCH-§4 targets "nearest friendly UNIT" and nothing can reach
+	// the hero. ⇒ an IsAgentVisibleTo call in THIS loop would be ⛔ DEAD CODE THAT CONTRADICTS A LIVE
+	// RULING: the predicate casts to ASummonedUnit and returns TRUE for everything else, so the
+	// branch could never once be false, while reading as if the hero could be hidden.
+	// ⚠️ IF J-W10 IS EVER REVERSED, this loop is the FIRST place to change — and it is a MANAGER
+	// amendment to WITCH-§3, never a quiet edit here.
 	for (TActorIterator<AHeroCharacter> It(World); It; ++It)
 	{
 		AHeroCharacter* Hero = *It;
@@ -1042,19 +1069,31 @@ bool ASiegeBotController::FindFireballClusterTarget(float ClusterRadius, int32 M
 	// Units ONLY — the enemy hero is not a "player unit" (GDD §4 M5: "3+ clustered
 	// player units"); miners ARE summoned units and deliberately count (a mining
 	// cluster is a legitimate Fireball target — flagged decision).
+	//
+	// ⭐⭐ TASK-851 (WITCH-§8), SCAN 3 of 5 — ⛔ AND THIS IS WHERE THE DESIGN IS, SO READ THE WHOLE
+	// PARAGRAPH BEFORE "SIMPLIFYING" IT. ⚖️ CHOOSING WHERE TO THROW A FIREBALL IS AN ⛔ ACT OF
+	// SEEING; ⛔ THE EXPLOSION IS NOT (`WITCH-§2`, 🧑 `J-W2`). ⇒ the veiled unit is dropped from the
+	// snapshot the bot AIMS with — it cannot be picked as a cluster, and it cannot pad a cluster
+	// centred on somebody else — ⛔ BUT THE BLAST ITSELF IS UNTOUCHED. FSiegeCombatStatics::
+	// ApplyRadialDamage asks its gather for ESiegeVeilPolicy::IncludeVeiled, so a Fireball the bot
+	// aimed at something else ⛔ STILL CATCHES a veiled unit standing in it.
+	// ⛔⛔ A DIFF THAT ALSO MADE THE BLAST MISS VEILED UNITS WOULD HAVE DELETED THE CARD'S ONLY
+	// COUNTER. That exemption lives in SiegeCombatStatics.cpp and is ⛔ NOT this task's to touch —
+	// the suppression here is purely about the AIM POINT.
 	const ETeamId EnemyTeam = (BotTeam == ETeamId::Red) ? ETeamId::Blue : ETeamId::Red;
 	TArray<FVector> EnemyLocations;
 	for (TActorIterator<ASummonedUnit> It(World); It; ++It)
 	{
 		const ASummonedUnit* Unit = *It;
-		if (IsValid(Unit) && !Unit->IsUnitDead() && Unit->GetTeamId() == EnemyTeam)
+		if (IsValid(Unit) && !Unit->IsUnitDead() && Unit->GetTeamId() == EnemyTeam
+			&& FSiegeCombatStatics::IsAgentVisibleTo(BotTeam, Unit))
 		{
 			EnemyLocations.Add(Unit->GetActorLocation());
 		}
 	}
 	if (EnemyLocations.Num() < MinUnits)
 	{
-		return false; // not enough player units alive anywhere — no cluster possible
+		return false; // not enough VISIBLE player units alive anywhere — no cluster possible
 	}
 
 	// Cluster algorithm (TASK-102 spec: "cluster = any unit having >=2 other player
@@ -1117,19 +1156,41 @@ AActor* ASiegeBotController::FindLightningTowerTarget(float SearchRadius, int32 
 
 	// Snapshot alive PLAYER-team unit locations once (shared across the tower loop;
 	// same unit semantics as the Fireball scan — summoned units only, hero excluded).
+	//
+	// ⭐⭐⭐ TASK-851 (WITCH-§8), SCAN 4 of 5 — ⛔⛔ AND THIS ONE IS ⛔ NOT IN `WITCH-§8`'s TABLE.
+	// ⚠️⚠️ MEASURED BY TASK-851, DECLARED IN ITS HANDOFF §3, AND FLAGGED FOR QA AS THE ONE SCOPE
+	// JUDGEMENT IN THE PASS. The law counted THREE scans across TWO functions and boarded the fix
+	// for two of them. ⛔ MEASURED TOTAL: ⛔ FOUR ASummonedUnit scans across ⛔ FOUR functions plus one
+	// AHeroCharacter scan — ⛔ THREE of the five are threat/aiming reads, and this is the third of
+	// those (the fourth ASummonedUnit scan is IsBotHalfPointClear's PHYSICAL clearance test, which
+	// is deliberately ⛔ not suppressed — its own comment says why).
+	// ⇒ leaving this one alone would have shipped a bot that honours the veil when it aims
+	// FIREBALL and detects veiled units when it aims LIGHTNING — from ⛔ the same rule, ⛔ in the
+	// same file, ⛔ five lines apart in shape.
+	// ⚖️ IT IS THE SAME CATEGORY AS SCAN 3, ⛔ NOT A NEW ONE: rule 3b counts enemy units around a
+	// tower to CHOOSE where the bolt goes. Choosing is seeing (`WITCH-§2`, 🧑 `J-W2`) — the identical
+	// sentence that justifies suppressing the Fireball cluster.
+	// ⚠️ AND IT WAS THE WORSE HALF OF THE LEAK: Lightning RESOLVES through SpellLibrary's gather,
+	// which is ⛔ ALREADY veil-suppressed (`FOG-§7` row 3). So an unsuppressed count here would have
+	// made the bot spend 40 gold aiming a bolt at units the resolver ⛔ cannot damage — detecting
+	// them AND whiffing on them.
+	// ⭐ THE STANDING LESSON, ⛔ FROM `WITCH-§8`'s OWN CLOSING LINE, WHICH ITS TABLE THEN BROKE:
+	// AN ACQUISITION SURFACE IS SIZED BY ⛔ WHO ENUMERATES UNITS, ⛔ NEVER BY A COUNT SOMEBODY ELSE
+	// TOOK. Re-measure by SYMBOL (`SC-§38`), including when the count is in a law.
 	const ETeamId EnemyTeam = (BotTeam == ETeamId::Red) ? ETeamId::Blue : ETeamId::Red;
 	TArray<FVector> EnemyLocations;
 	for (TActorIterator<ASummonedUnit> It(World); It; ++It)
 	{
 		const ASummonedUnit* Unit = *It;
-		if (IsValid(Unit) && !Unit->IsUnitDead() && Unit->GetTeamId() == EnemyTeam)
+		if (IsValid(Unit) && !Unit->IsUnitDead() && Unit->GetTeamId() == EnemyTeam
+			&& FSiegeCombatStatics::IsAgentVisibleTo(BotTeam, Unit))
 		{
 			EnemyLocations.Add(Unit->GetActorLocation());
 		}
 	}
 	if (EnemyLocations.Num() < MinUnits)
 	{
-		return nullptr; // not enough player units alive — no tower can qualify
+		return nullptr; // not enough VISIBLE player units alive — no tower can qualify
 	}
 
 	// "A player tower" (GDD §4 M5: "Lightning at a tower adjacent to 2+ units") = a
@@ -1492,6 +1553,22 @@ bool ASiegeBotController::IsBotHalfPointClear(const FVector& Point, bool bIsBuil
 	// slot. Buildings deliberately keep the BuildingClearance rule below and are
 	// NOT subject to this one (a tower may sit next to friendly bodies). 0 disables.
 	// Mirrors the BuildingClearance loop's shape exactly (precomputed square, 2D).
+	//
+	// ⛔⛔ TASK-851 (WITCH-§8), SCAN 5 of 5 — ⭐ THE SECOND ⛔ DECIDED OMISSION, WRITTEN DOWN FOR THE
+	// SAME REASON AS THE HERO ARM: ⛔ an omission a reader cannot tell from an oversight will be
+	// "fixed" by the next person. This scan is ⛔ NOT a threat read and ⛔ NOT an act of seeing — it
+	// is a ⛔ PHYSICAL OCCUPANCY test, the anti-stacking rule of TASK-265. Three reasons it stays:
+	//   (1) ⚖️ SAME CATEGORY AS THE BLAST (🧑 `J-W2`): a veiled unit still has a CAPSULE. Presence is
+	//       not perception, and the veil hides a unit — ⛔ it does not make it incorporeal.
+	//   (2) ⛔ IT IS NOT TEAM-FILTERED — the loop rejects a point near a live unit of ⛔ EITHER team.
+	//       IsAgentVisibleTo always returns true for the viewer's OWN team, so a consult here would
+	//       suppress ⛔ only enemies and turn a symmetric physics rule into an asymmetric one.
+	//   (3) ⛔ IT WOULD BE AN EXPLOIT, NOT A FIX: park a veiled unit in the bot's spawn box and the
+	//       bot would spawn its wave ⛔ INSIDE it — re-opening the identical-XY pile-up TASK-265 fixed.
+	// ⚠️ The residual is real and tiny, and is declared rather than denied: the bot's ring search
+	// silently steps around a veiled body, so a rejected candidate point is a hair of information.
+	// ⛔ It is unobservable to the player (only the CHOSEN point is ever rendered) and it costs a
+	// physics regression to close.
 	if (!bIsBuilding && UnitSpawnClearance > 0.f)
 	{
 		const double UnitClearanceSq = FMath::Square(static_cast<double>(UnitSpawnClearance));

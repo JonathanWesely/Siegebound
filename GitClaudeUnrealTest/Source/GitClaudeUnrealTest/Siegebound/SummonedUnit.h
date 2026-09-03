@@ -8,6 +8,7 @@
 #include "Siegebound/CardRow.h"
 #include "Siegebound/HealthBarProvider.h"
 #include "Siegebound/LadderClimber.h" // TASK-777 (CONTACT-§4.4): ILadderClimber is a BASE of the UCLASS below — complete type required here, ⛔ not a forward declaration. It is how AClimbableTower::EndPlay aborts a climber it now holds as an ACharacter. ⭐ TASK-787 (CONTACT-§12.3): it ALSO carries FSiegeLadderClimbEnded now, which moved here from this file — so the by-value UPROPERTY below still has its complete type and ⛔ no include was added anywhere
+#include "Siegebound/SiegeInvisibilityStatics.h" // TASK-829 (WITCH-§6): ESiegeVeilBreakReason is the PARAMETER TYPE of BreakInvisibility below — complete type required here, ⛔ not a forward declaration (an enum class could be forward-declared, but the closed break-set's absence comment is the law a reader of this header needs, and the same file carries the ApplyVeil/ApplyBreak the .cpp calls)
 #include "Siegebound/SiegeLadderClimbStatics.h" // TASK-776 (CONTACT-§2): FSiegeLadderClimbState is a BY-VALUE member (LadderClimb) and FSiegeLadderClimbStatics is named by this header's doc comments — complete type required here, not a forward declaration. The types MOVED out of this header unchanged; ⛔ nothing about the driver below changed with them
 #include "Siegebound/SiegeStuckStatics.h" // TASK-532: FSiegeStuckState / FSiegeStuckTuning are BY-VALUE members and ESiegeStuckAction is a parameter type — complete types required here, not a forward declaration
 #include "Siegebound/TeamId.h"
@@ -224,6 +225,19 @@ public:
 	virtual float GetDamageBoostPercent() const override { return 100.f * PermanentDamageBonusPerStack * static_cast<float>(PermanentDamageStacks); }
 	/** ANCIENT GROUNDS (TASK-360): units ARE boostable, so this is never null (the interface default returns nullptr = "not boostable" — ABuilding and AHeroCharacter keep it). */
 	virtual FOnCombatantDamageBoostChanged* GetDamageBoostChangedDelegate() override { return &OnDamageBoostChanged; }
+
+	//~ ⭐⭐ THE WITCH'S CAST TELL (TASK-830 item (8); law WITCH-§9.3). ⛔ ASummonedUnit is the ONLY
+	//~ class in the game that overrides these — every other IHealthBarProvider keeps the interface
+	//~ default and renders exactly as it does today (WITCH-§9.6's pixel-identical REQUIREMENT).
+	//~ ⛔ Bodies live in the .cpp rather than inline here, and that is not style: they read the LIVE
+	//~ cast timer through the timer manager, and they carry the class default object guard that
+	//~ keeps a world-less caller from dereferencing a null world. See ResolveCastClockOwner.
+
+	/** ⭐ How far the veil cast on/by this unit has run, in PERCENT (0..100, ⛔ never 0..1 — the GetDamageBoostPercent convention). Derived from the live timer per call; ⛔ nothing stores it. */
+	virtual float GetCastProgressPercent() const override;
+
+	/** ⭐⭐ True while a veil cast is channelling BY this unit or ⛔ ONTO it — the TWO-ENDED bar (WITCH-§9.2), i.e. the two actors you can attack to break the cast. ⛔ Not derivable from the percent: a just-begun cast reads 0%. */
+	virtual bool IsCastInProgress() const override;
 	//~ End IHealthBarProvider Interface
 
 	/** Applies incoming damage (no friendly fire, GDD §3.0) and destroys the unit at 0 HP. */
@@ -416,6 +430,80 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Unit")
 	bool IsUnitDead() const { return bDead; }
 
+	//~ ─── THE VEIL (TASK-829; law WITCH-§2 / WITCH-§3 / WITCH-§6) ────────────────────────────
+	//~
+	//~ ⚠️ THIS BLOCK IS `public:` FOR THE SAME OUTSIDE-CALLER REASON AS THE ANCIENT-GROUNDS BLOCK
+	//~ BELOW: `AAncientGround`'s boost tick and `FSiegeCombatStatics`' acquisition funnel both
+	//~ reach these from OUTSIDE this class. ⛔ Protected would not link.
+	//~
+	//~ ⛔⛔ THREE FUNCTIONS, AND THERE IS DELIBERATELY ⛔ NO FOURTH. There is ⛔ no RestoreVeil,
+	//~ ⛔ no TickVeil, ⛔ no RefreshVeil, ⛔ no veil timer handle and ⛔ no function here that takes
+	//~ a TIME. ⭐ "Permanently" (his word, WITCH-§3) is enforced by the ⛔ SHAPE of this API rather
+	//~ than by a comment: a cooldown is ⛔ UNREPRESENTABLE, so a future reader cannot drift into
+	//~ one without adding a signature, which is a review event.
+
+	/**
+	 *  True while this unit is VEILED (TASK-829). ⛔ Read-only — the ⛔ ONE source of truth is
+	 *  `bIsInvisible` below and the ⛔ only two writers are the two functions under this one.
+	 *
+	 *  ⚠️ WHAT THIS DOES ⛔ NOT MEAN. A veiled unit is ⛔ NOT invulnerable and ⛔ NOT untargetable
+	 *  by a player who knows where it is (Jonathan's ruling; `WITCH-§0` records that the ghost's
+	 *  leave-the-interface mechanism is ⛔ unavailable here precisely because his own interruption
+	 *  rule requires a veiled unit to stay ATTACKABLE). It is ⛔ dropped from ENEMY ACQUISITION and
+	 *  ⛔ nothing else — it is still caught by every blast (`WITCH-§2`, `J-W2`), still hit by an
+	 *  arrow already in the air, and still fully visible to ⛔ its own side (`WITCH-§2` lane 4).
+	 *
+	 *  ⛔ NOT a `UFUNCTION`: the consumers are C++ (the funnel, the boost tick, the tests), and
+	 *  `WITCH-§6`'s M8 declaration keeps this state off every reflected surface — a naively
+	 *  replicated veil ⛔ leaks the veiled unit's position to the enemy client's renderer.
+	 */
+	bool IsInvisible() const { return bIsInvisible; }
+
+	/**
+	 *  ⭐ GRANTS the veil. ⛔ THE ONLY WRITE-TRUE DOOR ON THIS CLASS, and it does nothing but
+	 *  delegate to `FSiegeInvisibilityStatics::ApplyVeil` — the ⛔ one write-true site in the
+	 *  project (`WITCH-§6`).
+	 *
+	 *  ⚠️⚠️ DECLARED FOR QA, ⛔ NOT HIDDEN: this has ⛔ NO shipped caller as of TASK-829. It is
+	 *  `TASK-830`'s landing pad — the witch's 3-second cast calls it on COMPLETION (⛔ never at
+	 *  start; an interrupted cast produces ⛔ no veil, ⛔ no partial state, ⛔ no cost, `WITCH-§4`).
+	 *  ⭐ IT SHIPS NOW RATHER THAN WITH 830 FOR A ⛔ STRUCTURAL REASON: without a write-true door
+	 *  `bIsInvisible` could ⛔ never be true, which would make the suppression consult in
+	 *  `FSiegeCombatStatics::GatherHostileAgents` ⛔ unreachable code — i.e. the feature would be
+	 *  inert and a reviewer would (correctly) flag the dead branch instead. Same precedent as
+	 *  `ESiegeVeilBreakReason::Cast`, which `TASK-827` shipped with no site by the same argument.
+	 *
+	 *  @return true if THIS call did the veiling; false if the unit was ⛔ already veiled — which
+	 *          is `WITCH-§4`'s "never target an already-invisible unit" belt, and it makes a
+	 *          wasted cast ⛔ measurable rather than silent.
+	 */
+	bool GrantInvisibility();
+
+	/**
+	 *  ⭐⭐ BREAKS the veil, permanently. ⛔ THE ⛔ ONE BREAK DOOR — `WITCH-§6`: ***an inlined
+	 *  `bIsInvisible = false` ⛔ ANYWHERE is an automatic QA FAIL.*** Every one of `WITCH-§3`'s
+	 *  acts routes through here, so a grep for this name is the ⛔ complete list of ways a unit
+	 *  can lose its veil.
+	 *
+	 *  ⛔ `Reason` IS A ⛔ LABEL, ⛔ NOT A CONDITION. `WITCH-§3`'s break-set is CLOSED at six and
+	 *  ⛔ every enumerator breaks by construction — an action that does ⛔ not break has ⛔ no
+	 *  enumerator to pass, so the type system ⛔ is the predicate. It is carried ⛔ solely so the
+	 *  log can say WHICH act un-veiled the unit: the difference between a bug report reading
+	 *  "invisibility is broken" and one reading "the Sapper's blast un-veiled it".
+	 *
+	 *  ⛔ IDEMPOTENT AND ⛔ MONOTONE: safe to call on an unveiled unit (the common case — every
+	 *  unit in the game is unveiled for its whole life unless a witch acts), safe to call twice,
+	 *  and ⛔ nothing here can turn the flag back ON. The ⛔ only route back to veiled is a ⛔ NEW
+	 *  witch cast through `GrantInvisibility` — his parenthetical, exactly.
+	 *
+	 *  ⚠️ CALL IT ⛔ AT THE ACT, ⛔ NOT AT THE DECISION. Acquiring a target is ⛔ NOT acting
+	 *  (`WITCH-§3a`): a veiled unit may pick a target, cross the field, close to range and raise
+	 *  its weapon — and ⛔ stay veiled. A break on acquisition un-veils the ⛔ entire approach and
+	 *  ⛔ deletes the card. Likewise ⛔ taking damage, ⛔ being healed, ⛔ being buffed, ⛔ being
+	 *  ordered, ⛔ walking and ⛔ climbing are ⛔ NOT breaks — his rule breaks on ⛔ ACTING.
+	 */
+	void BreakInvisibility(ESiegeVeilBreakReason Reason);
+
 	/** Card row this unit's stats were (or will be) bound from. */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Unit")
 	FName GetCardID() const { return CardID; }
@@ -568,8 +656,17 @@ public:
 	 *  20×/s. That is the exact trap the
 	 *  Miner's structural seal exists for (qa/TASK-021 WARN-1). The Miner's seal is
 	 *  unavailable here: a COMMANDABLE unit must keep its state timer.
+	 *
+	 *  ⭐ TASK-830 (`WITCH-§4`): the ⛔ WITCH is sealed here too, and it is the ⛔ same seal rather
+	 *  than a second one. She has row Damage 0 and ⛔ no attack path of her own, and the seal is
+	 *  what makes a ZONE-ORDERED witch behave: `UpdateStateGrouped`'s guard 2 forces her target
+	 *  null and she falls through to tier-3 station-keeping ⛔ inside her position circle — the
+	 *  ⛔ shipped sorcerer path, reached with ⛔ zero new code in that function.
+	 *  ⚠️ The base CDO is ⛔ unaffected: `IsVeilCaster()` reads the bound `CardID`, which is
+	 *  `NAME_None` on a class default object ⇒ `ASummonedUnit`'s default stays ⛔ true (the
+	 *  `SiegeLadderClimbTest` CDO row pins exactly that).
 	 */
-	virtual bool CanEverAttack() const { return true; }
+	virtual bool CanEverAttack() const { return !IsVeilCaster(); }
 
 	/**
 	 *  ANCIENT GROUNDS (CONVENTIONS §3): true only for ASorcererUnit — the unit whose
@@ -580,6 +677,29 @@ public:
 	 *  Public for the same outside-caller reason as CanEverAttack().
 	 */
 	virtual bool IsAncientGroundEmpowerer() const { return false; }
+
+	/**
+	 *  ⭐⭐ THE WITCH (TASK-830; law `WITCH-§4`) — true only for the ⛔ veil-casting unit, the one
+	 *  that channels a 3-second cast and hands another unit its veil.
+	 *
+	 *  ⛔⛔ WHY THIS READS THE ROW NAME RATHER THAN BEING A `return true;` ON A SUBCLASS, SAID OUT
+	 *  LOUD BECAUSE `CanEverAttack()` DIRECTLY ABOVE IS THE ⛔ OPPOSITE IDIOM: every other mechanic
+	 *  identity in this class has a C++ subclass to hang it on (`ASorcererUnit`, `AMinerUnit`).
+	 *  ⛔ The witch has ⛔ none — `WITCH-§6`'s file map names ⛔ `SummonedUnit.{h,cpp}` and ⛔ no
+	 *  `AWitchUnit`, and `TASK-830`'s names list is that same pair, so a new class file would be
+	 *  ⛔ outside this task. ⇒ identity resolves off the ⛔ ONE name that already selects her
+	 *  Blueprint (`BP_Unit_<CardID>`), which is the ⛔ same key `ASiegePlayerController::MinerCardID`
+	 *  uses for a shipped gameplay branch, and `AMinerUnit`'s constructor writes for its own class.
+	 *
+	 *  ⭐ IT IS `virtual` FOR EXACTLY ONE REASON: the day a `AWitchUnit` exists (a rig, a cast
+	 *  montage, a bespoke body) it overrides this with `return true;` and ⛔ nothing here changes.
+	 *  ⛔ Do ⛔ NOT add a `bVeilCaster` CSV column — the mechanic-rules-aren't-card-stats law
+	 *  (`CanEverAttack()`'s own note) applies to this predicate exactly as it does to that one.
+	 *
+	 *  ⚠️ `NAME_None` (an unbound unit, and every class default object) ⇒ ⛔ false. Public for the
+	 *  same outside-caller reason as `CanEverAttack()`.
+	 */
+	virtual bool IsVeilCaster() const;
 
 	/**
 	 *  ANCIENT GROUNDS (CONVENTIONS §4) — occupant eligibility, read by AAncientGround's
@@ -993,6 +1113,50 @@ protected:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|AI", meta = (ClampMin = "0.05"))
 	float SupportHealInterval = 0.1f;
+
+	/**
+	 *  ⭐⭐ THE WITCH'S CAST WINDOW (TASK-830; law `WITCH-§4`, Jonathan's own number).
+	 *  Seconds the veil cast channels before it lands. ⛔ 3.0 is ⛔ HIS figure — *"this spell has
+	 *  an animation that lasts 3 seconds"* — ⛔ not a tuning guess.
+	 *
+	 *  ⚠️ THE CONSEQUENCE, IN ⛔ ARITHMETIC (`HIGH-§1`), because this number ⛔ IS the card's
+	 *  counterplay: the witch re-checks her subject on the ⛔ 0.25 s state poll, so a 3.0 s cast is
+	 *  ⛔ 12 validation passes — 12 chances for the subject to die, to leave the position circle,
+	 *  or for either of them to be hit. ⛔ Drop this to 0.25 and the cast becomes effectively
+	 *  ⛔ instant and ⛔ uninterruptible in practice (one poll), which ⛔ deletes his interruption
+	 *  rule without deleting a line of code. ⭐ Raise it and a witch under any pressure ⛔ never
+	 *  finishes a cast at all.
+	 *
+	 *  ⛔⛔ THIS IS THE ⛔ CAST'S DURATION AND ⛔ NEVER THE VEIL'S. `WITCH-§3`: the veil is
+	 *  ⛔ PERMANENT — ⛔ no timer, ⛔ no cooldown, ⛔ no self-restore. ⛔ Nothing anywhere reads this
+	 *  value after `CompleteWitchCast` fires. ⭐ The two are kept apart ⛔ structurally: this is the
+	 *  ⛔ only float in the veil feature and it is consumed by ⛔ one `SetTimer` call, ⛔ one-shot.
+	 *
+	 *  Floored at 0.05 s at arm time as well as here — `SetTimer` with a non-positive rate ⛔ CLEARS
+	 *  rather than schedules (the qa/TASK-021 WARN-1 rule), which would ship a witch who ⛔ starts a
+	 *  cast that ⛔ can never complete and ⛔ therefore never releases her "one at a time" latch.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Keywords", meta = (ClampMin = "0.05"))
+	float WitchCastSeconds = 3.f;
+
+	/**
+	 *  ⭐ THE UNGROUPED WITCH'S VEIL RADIUS (TASK-830; law `WITCH-§4`, ruling `J-W5`).
+	 *
+	 *  `WITCH-§4` rules the targeting circle is the group order's ⛔ POSITION zone
+	 *  (`FSiegeUnitGroup::PositionCenter` / `PositionRadius`). ⚠️ But the ⛔ COMMON case his
+	 *  sentence does ⛔ not cover is a witch you ⛔ just played: ⛔ no zone order ⇒ ⛔ no position
+	 *  circle at all. `J-W5`'s fallback is ⛔ the card's own `Range` column, centred on ⛔ herself —
+	 *  the Cleric's shipped shape exactly (*"heals nearest damaged friendly … in 400"*).
+	 *
+	 *  ⛔ SO THIS VALUE IS THE ⛔ BACKSTOP BENEATH THAT FALLBACK, ⛔ NOT THE FALLBACK ITSELF:
+	 *  `ResolveWitchPositionCircle` uses the bound `AttackRange` (the row `Range`) whenever it is
+	 *  positive and only reaches this constant when the row says ⛔ 0. ⚠️ THE CONSEQUENCE OF ⛔ NOT
+	 *  HAVING IT: a `Range`-0 row would give radius 0 ⇒ ⛔ zero candidates ⇒ a 50-gold card that
+	 *  ⛔ silently does nothing, with ⛔ nothing in any log. 400 matches the Cleric's shipped ring
+	 *  and is the number `TASK-831` writes into the `Witch` row's `Range` cell.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Keywords", meta = (ClampMin = "0"))
+	float WitchVeilRadiusFallbackUU = 400.f;
 
 	/**
 	 *  CHARGE keyword (TASK-055, GDD §3.0 — Cavalry): seconds of uninterrupted movement
@@ -1545,6 +1709,135 @@ private:
 
 	/** Heal-timer callback (Support): re-validates SupportHealTarget (friendly, alive, damaged, in range) then heals row Damage × SupportHealInterval, clamped to MaxHP. */
 	void PerformHeal();
+
+	//~ ─── THE WITCH'S CAST (TASK-830; law WITCH-§4 / WITCH-§6) ────────────────────────────────
+	//~
+	//~ ⛔⛔ EVERY FUNCTION BELOW IS AN ⛔ IMMEDIATE NO-OP FOR A NON-WITCH, so the whole feature
+	//~ costs the shipped fleet ⛔ one `IsVeilCaster()` compare on the 0.25 s poll and ⛔ two on a
+	//~ damage event. ⛔ That is the entire integration cost, and it is deliberate: `WITCH-§4` is a
+	//~ ONE-CARD mechanic and it must not be a tax on the other twenty.
+	//~
+	//~ ⛔ THERE IS ⛔ NO FUNCTION HERE THAT RESTORES, REFRESHES OR EXPIRES A ⛔ VEIL. `WitchCastSeconds`
+	//~ is consumed by ⛔ one one-shot timer and by ⛔ nothing else; once `CompleteWitchCast` has
+	//~ called `GrantInvisibility`, ⛔ no clock in this class can ever reach that flag again
+	//~ (`WITCH-§3` "permanently", enforced by the ⛔ shape of the API — see the veil block above).
+
+	/**
+	 *  Witch-only movement body (TASK-830). Reached from `UpdateState` when a veil caster carries
+	 *  ⛔ no live ZONE order — a grouped witch is station-kept by the ⛔ shipped `UpdateStateGrouped`
+	 *  tier-3 path instead (`CanEverAttack()` false ⇒ its guard 2 forces her target null).
+	 *
+	 *  ⛔ NEVER ATTACKS AND ⛔ NEVER ACQUIRES: this body calls ⛔ none of AcquireTarget /
+	 *  AcquireEnemyNearPoint / EnterAttack, exactly like `UpdateStateFollow`'s per-BODY seal.
+	 *  Goal ladder: the unit she is ⛔ currently veiling → the nearest friendly combat unit (escort
+	 *  — the Cleric's shipped shape, and his *"walk up to nearby units"*) → the latched T/E stance's
+	 *  castle → Idle.
+	 */
+	void UpdateStateWitch();
+
+	/**
+	 *  ⭐⭐ THE CAST DRIVER (TASK-830). ⛔ ONE call, from `UpdateState`, ⛔ above every dispatch —
+	 *  the `TickStuckWatchdog` / `TryContactClimbAtNearestLadder` placement idiom, and for the
+	 *  ⛔ same stated reason: Standard, Siege, Support, Follow and Hold/Ambush are ⛔ all covered
+	 *  from one line, so his *"controllable by all commands"* costs ⛔ zero per-body wiring.
+	 *  ⛔ Adds ⛔ NO timer of its own — it rides the existing 0.25 s `StateTimerHandle` poll.
+	 *
+	 *  Does exactly two things: ⛔ validates an in-flight cast (cancelling it the tick its subject
+	 *  stops qualifying), or — ⛔ only when none is in flight — acquires and begins one.
+	 *  ⭐ "ONE AT A TIME" (his words, `J-W7`) IS THAT `else`: a witch mid-cast ⛔ cannot start a
+	 *  second, and the latch is the ⛔ live timer itself rather than a second bool that could drift.
+	 */
+	void UpdateWitchCast();
+
+	/** True while this witch is channelling a veil cast — the "one at a time" latch, read off the LIVE timer so there is ⛔ no second copy of the state. */
+	bool IsCastingVeil() const;
+
+	/**
+	 *  Begins a 3-second cast on Subject (TASK-830). Arms the ⛔ one-shot `WitchCastTimerHandle`
+	 *  and marks the subject as ⛔ spoken-for, so a second witch never double-casts the same unit.
+	 *  ⛔ NO VEIL, ⛔ NO BREAK AND ⛔ NO COST HAPPEN HERE — `WITCH-§4`: an interrupted cast produces
+	 *  ⛔ no partial state, so ⛔ everything observable is deferred to `CompleteWitchCast`.
+	 */
+	void BeginWitchCast(ASummonedUnit* Subject);
+
+	/**
+	 *  Cast-timer callback (TASK-830) — reached ⛔ only when the full `WitchCastSeconds` elapsed
+	 *  ⛔ uninterrupted. Re-validates the subject one last time, then does the ⛔ two things that
+	 *  make the card real: `Subject->GrantInvisibility()` (the ⛔ ONLY caller of that door in the
+	 *  project) and `BreakInvisibility(ESiegeVeilBreakReason::Cast)` on ⛔ herself (`J-W3` — she is
+	 *  acting, and `WITCH-§0` refuses a permanently untargetable witch).
+	 */
+	void CompleteWitchCast();
+
+	/**
+	 *  Aborts the cast ⛔ THIS unit is performing, if any (TASK-830). Idempotent, and safe on every
+	 *  unit in the game that is not a witch mid-cast. ⛔ Reason is a ⛔ LABEL for the log only —
+	 *  the same discipline as `ESiegeVeilBreakReason` — so the difference between "the witch was
+	 *  attacked" and "her subject walked out of the circle" survives into a bug report.
+	 *
+	 *  ⛔⛔ THIS IS ⛔ NOT A VEIL BREAK AND THE TWO MUST ⛔ NEVER BE MERGED (`WITCH-§3`'s own note):
+	 *  damage ⛔ INTERRUPTS A CAST; it ⛔ does not break an existing veil. Merging them would make
+	 *  every veiled unit clipped by a stray AoE permanently visible, which is ⛔ not what he wrote.
+	 */
+	void CancelWitchCast(const TCHAR* Reason);
+
+	/**
+	 *  Aborts the cast being channelled ⛔ ON this unit by someone else, if any (TASK-830) — the
+	 *  ⛔ subject half of his *"can be interupted if the witch ⛔ OR unit that is turning invisible
+	 *  are attacked"*. ⛔ His sentence names ⛔ both actors, so there are ⛔ two calls at every
+	 *  interrupt site and ⛔ neither is redundant: one witch, one subject, ⛔ different objects.
+	 */
+	void InterruptIncomingWitchCast(const TCHAR* Reason);
+
+	/**
+	 *  Clears the cast channel — the timer and ⛔ both ends of the caster/subject link — with ⛔ no
+	 *  log and ⛔ no side effect. ⛔ The ⛔ ONE teardown, shared by the cancel and the complete
+	 *  paths so a future edit ⛔ cannot leave one of the two pointers dangling on one of them.
+	 */
+	void ClearWitchCastChannel();
+
+	/**
+	 *  ⭐⭐ THE ⛔ ONE CLOCK BOTH ENDS OF THE CAST BAR READ (TASK-830 item (8); law `WITCH-§9.3`).
+	 *
+	 *  Returns the unit whose `WitchCastTimerHandle` is the ⛔ truth for ⛔ THIS actor's cast tell:
+	 *    · ⛔ `this`, when this unit is the ⛔ WITCH channelling;
+	 *    · ⛔ the witch channelling ⛔ ONTO this unit, reached through its ⛔ own `IncomingWitchCaster`;
+	 *    · ⛔ `nullptr` when nothing is being channelled — which is ⛔ every unit, ⛔ almost always.
+	 *
+	 *  ⛔⛔ IT EXISTS SO THE ⛔ TWO ACCESSORS CAN ⛔ NEVER DISAGREE. `IsCastInProgress()` and
+	 *  `GetCastProgressPercent()` are asked ⛔ independently by the widget lane, and a bar whose
+	 *  ⛔ gate and ⛔ fill answered off two different derivations is the ⛔ stranded-bar failure
+	 *  `WITCH-§9.3` names — arriving from the ⛔ inside of one actor instead of across two.
+	 *
+	 *  ⛔ THE SUBJECT ⛔ PULLS; the witch ⛔ NEVER PUSHES a percent onto the subject's widget
+	 *  (`WITCH-§9.3` forbids that by name). ⭐ Both pointers are ⛔ WEAK, so a witch destroyed
+	 *  mid-cast takes her subject's bar down on the ⛔ same frame, for ⛔ free — and that is the
+	 *  ⛔ COMMON case, because the interrupt rule makes killing the caster the counterplay.
+	 */
+	const ASummonedUnit* ResolveCastClockOwner() const;
+
+	/**
+	 *  Resolves this witch's ⛔ POSITION CIRCLE (TASK-830; law `WITCH-§4`).
+	 *  ⛔ Returns true when the ⛔ REAL group zone was used, false when the `J-W5` fallback was
+	 *  (⛔ self-centred, row `Range`) — the out-params are ⛔ always written either way.
+	 *
+	 *  ⚠️⚠️ A ⛔ FOLLOW GROUP IS ⛔ NOT A POSITION CIRCLE, and this is the ⛔ trap: `FSiegeUnitGroup`
+	 *  is ⛔ reused unchanged for Follow, which carries `PositionRadius == 0` and
+	 *  `PositionCenter == ZeroVector`. ⛔ Follow is also the ⛔ SPAWN DEFAULT for every
+	 *  follow-eligible Blue unit, so ⛔ the ⛔ overwhelmingly common witch ⛔ HAS a group — and a
+	 *  reader who tested only `Group != nullptr` would centre her circle on the ⛔ WORLD ORIGIN.
+	 */
+	bool ResolveWitchPositionCircle(FVector& OutCenter, float& OutRadius) const;
+
+	/**
+	 *  `WITCH-§4`'s targeting predicate, in ⛔ one place so the ⛔ acquire pass and the ⛔ two
+	 *  re-validation passes can ⛔ never disagree: friendly · alive · ⛔ not the witch herself ·
+	 *  ⛔ not already veiled · ⛔ not already being veiled by another witch · inside the circle.
+	 */
+	bool IsWitchVeilCandidate(const ASummonedUnit* Candidate, const FVector& CircleCenter, float CircleRadius) const;
+
+	/** Nearest qualifying veil subject inside the circle — his *"the ⛔ NEAREST visible unit that is within their position circle"*, ranked from the ⛔ WITCH (the Cleric's shipped `FindNearestDamagedFriendly` shape). */
+	ASummonedUnit* FindWitchVeilTarget(const FVector& CircleCenter, float CircleRadius) const;
 
 	/** Enters/keeps Attack: stops moving and runs the attack timer at Cadence (first hit respects the elapsed cooldown). */
 	void EnterAttack();
@@ -2159,6 +2452,44 @@ private:
 	/** Drives PerformHeal every SupportHealInterval while a damaged friendly is in range (Support profile). Cleared by StopHealing / FreezeAI / HandleDeath / EndPlay. */
 	FTimerHandle HealTimerHandle;
 
+	/**
+	 *  ⭐ THE WITCH'S SUBJECT (TASK-830) — the friendly unit this witch is ⛔ currently channelling
+	 *  a veil onto. ⛔ WEAK, the `SupportHealTarget` idiom verbatim: a caster ⛔ never owns its
+	 *  subject's lifetime, and a subject destroyed mid-cast ⛔ self-heals to null, which the very
+	 *  next validation pass reads as "cancel".
+	 *  ⛔ Non-null ⛔ only between `BeginWitchCast` and `ClearWitchCastChannel`.
+	 */
+	TWeakObjectPtr<ASummonedUnit> WitchCastTarget;
+
+	/**
+	 *  ⭐⭐ THE ⛔ OTHER END OF THE SAME LINK (TASK-830) — the witch currently channelling ⛔ onto
+	 *  this unit. ⛔ It is ⛔ NOT a duplicate of the pointer above: it is what makes ⛔ TWO of his
+	 *  rules expressible at all, and ⛔ neither is reachable from the caster side alone —
+	 *    (1) `WITCH-§4`'s *"⛔ not-currently-being-veiled"* candidate term: a ⛔ SECOND witch must be
+	 *        able to see that this unit is already spoken for, and she can only ask ⛔ the subject;
+	 *    (2) his *"interupted if the witch ⛔ OR unit that is turning invisible are attacked"*: the
+	 *        subject's own `TakeDamage` has to reach ⛔ back to a caster it otherwise cannot name.
+	 *  ⛔ WEAK for the mirror reason: a witch destroyed mid-cast leaves this ⛔ null, so a stale
+	 *  link can ⛔ never make a unit permanently un-targetable by every future witch.
+	 *  ⛔ This is ⛔ NOT veil state and carries ⛔ no veil bit — `WITCH-§6`'s one-source-of-truth
+	 *  law is about `bIsInvisible`, which ⛔ nothing here reads or writes.
+	 */
+	TWeakObjectPtr<ASummonedUnit> IncomingWitchCaster;
+
+	/**
+	 *  ⛔ ONE-SHOT. Fires `CompleteWitchCast` once, `WitchCastSeconds` after `BeginWitchCast`
+	 *  (TASK-830). ⛔ Never looping, ⛔ never re-armed while live, and its ⛔ liveness ⛔ IS the
+	 *  "one cast at a time" latch (`IsCastingVeil`) — so there is ⛔ no second bool to drift.
+	 *  Cleared by `ClearWitchCastChannel`, and therefore by every cancel: damage to either actor,
+	 *  the subject dying or leaving the circle, a new order, freeze, death and `EndPlay`.
+	 *
+	 *  ⛔⛔ THIS TIMER TIMES A ⛔ CAST, ⛔ NEVER A VEIL. ⛔ Nothing it can do turns `bIsInvisible`
+	 *  ⛔ off — the ⛔ only write-false in the project is `ApplyBreak`, reached ⛔ only through
+	 *  `BreakInvisibility`. ⛔ Do ⛔ not "reuse" this handle to expire a veil: that is the cooldown
+	 *  `WITCH-§3` forbids, and it would arrive looking exactly like a tidy-up.
+	 */
+	FTimerHandle WitchCastTimerHandle;
+
 	/** True while a temporary move-speed buff is active (TASK-042 Rally). */
 	bool bMoveSpeedBuffActive = false;
 
@@ -2235,4 +2566,28 @@ private:
 
 	/** True once the bSuicide detonation has fired (TASK-055) — guarantees exactly ONE blast (contact OR death, never both). */
 	bool bDetonated = false;
+
+	/**
+	 *  ⭐⭐ THE VEIL (TASK-829; law WITCH-§6). ⛔ THE ⛔ ONE SOURCE OF TRUTH for this unit's
+	 *  invisibility — ⛔ no second copy, ⛔ no mirrored bool on any other class, and ⛔ NO
+	 *  "was visible" cache anywhere (`WITCH-§6` bans one explicitly; `ApplyBreak` returns true
+	 *  ⛔ exactly once, on the true→false edge, which is what removes the need for one).
+	 *
+	 *  ⛔ WRITTEN BY EXACTLY TWO FUNCTIONS, BOTH IMMEDIATELY ABOVE IN THIS FILE'S PUBLIC BLOCK,
+	 *  and each of those does nothing but hand this reference to `FSiegeInvisibilityStatics`:
+	 *  `GrantInvisibility` → `ApplyVeil` (the only write-TRUE in the project) and
+	 *  `BreakInvisibility` → `ApplyBreak` (the only write-FALSE). ⛔ A third writer — an inlined
+	 *  `bIsInvisible = false` at a call site — is an ⛔ AUTOMATIC QA FAIL (`WITCH-§6`).
+	 *
+	 *  ⛔ NOT a `UPROPERTY`, and that is the M8 declaration rather than an oversight: `WITCH-§6`
+	 *  records that `bIsInvisible` is ⛔ AUTHORITATIVE, ⛔ ASYMMETRIC-PER-CLIENT state — the owning
+	 *  client must see its unit, the enemy client must ⛔ not — so a naive `Replicated` broadcast
+	 *  would ⛔ LEAK the veiled unit's position to the enemy client's renderer. An unreflected bool
+	 *  ⛔ cannot be replicated by accident. A true competitive implementation is relevancy-based
+	 *  and is a real M8 cost, ⛔ recorded, ⛔ not designed on this batch.
+	 *
+	 *  ⛔ NO SERIALIZED DEFAULT AND ⛔ NO EDITOR SURFACE: a unit is born VISIBLE, always. The only
+	 *  way to a veiled unit is a witch's completed cast (TASK-830).
+	 */
+	bool bIsInvisible = false;
 };

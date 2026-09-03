@@ -96,4 +96,66 @@ public:
 	virtual FOnCombatantDamageBoostChanged* GetDamageBoostChangedDelegate() { return nullptr; }
 
 	//~ End permanent damage boost
+
+	//~ Begin CAST PROGRESS (TASK-830 item (8); law WITCH-§9.1 / §9.3 / §9.6) — DEFAULTED, NOT pure
+	//  virtual, for the SAME reason the two boost methods above are: the defaults ARE the contract
+	//  for "nothing is being channelled on me". ⛔ ABuilding, AHeroCharacter and every non-witch
+	//  unit therefore need ZERO changes and render PIXEL-IDENTICALLY to today — WITCH-§9.6 states
+	//  that is a REQUIREMENT, not an expectation. ⛔ Do not add overrides there. This is the boost
+	//  bar's own plumbing pattern REUSED, deliberately not reinvented.
+	//
+	//  ⭐⭐ WHY THIS SURFACE EXISTS AT ALL, IN ONE SENTENCE: SK_Witch does not exist, so the witch
+	//  spawns STATIC, and on a 3-second INTERRUPTIBLE channel "starting", "running" and "broken"
+	//  are currently IDENTICAL PIXELS (WITCH-§9). An interruption the player cannot perceive is
+	//  not counterplay, and the interruption IS the card's counterplay.
+	//
+	//  ⭐⭐ TWO ACTORS ANSWER TRUE FOR ONE CAST, AND THAT IS THE DESIGN RATHER THAN A DEFECT.
+	//  WITCH-§9.2 rules the tell is a TWO-ENDED bar — the SAME bar, the SAME fill, on the WITCH
+	//  AND on her TARGET — because Jonathan's sentence names both actors ("...interupted if the
+	//  witch OR unit that is turning invisible are attacked") and the bar must therefore appear on
+	//  EXACTLY the two actors you can attack to break the cast. The cheap default (one bar on the
+	//  caster, which is what every game ships) fails that requirement.
+	//
+	//  ⛔⛔ AND THE RULE THAT KEEPS IT HONEST: EACH END ANSWERS ABOUT ITSELF. ⛔ A caster must
+	//  NEVER push a percent onto another actor's widget (WITCH-§9.3 forbids it by name) — that is
+	//  a second source of truth, and it STRANDS A BAR on the target the moment the caster dies
+	//  mid-cast, which the interrupt rule makes the COMMON case rather than an edge one.
+
+	/**
+	 *  Progress of the cast being channelled BY or ON this actor, in PERCENT.
+	 *
+	 *  ⛔⛔ THE RANGE IS 0..100, ⛔ NEVER 0..1 — the shipped GetDamageBoostPercent convention
+	 *  directly above, reused so one widget never carries two scales (WITCH-§9.3 pins it). The
+	 *  consuming widget divides by 100 on its side, exactly as the HP row already does.
+	 *  ⚠️ THE CONSEQUENCE OF GETTING IT BACKWARDS, in arithmetic (HIGH-§1): a 0..1 producer read
+	 *  by a /100 consumer paints 0.03 of a bar for a cast that is 3% done and 0.01 of one for a
+	 *  cast that is finished — i.e. a tell that never visibly moves, on a 3-second window whose
+	 *  whole job is answering "how much LONGER".
+	 *
+	 *  ⛔ DERIVED PER CALL, ⛔ never a stored field, in every implementation: an interrupted cast
+	 *  must leave NO partial state (WITCH-§4), and a remembered percent is partial state that
+	 *  survives the cancel and freezes the bar mid-flight.
+	 *
+	 *  Default 0 ⇒ a non-casting owner's cast row seeds empty and stays collapsed.
+	 */
+	virtual float GetCastProgressPercent() const { return 0.f; }
+
+	/**
+	 *  True while a cast is running BY this actor (it is the caster) or ON it (it is the subject).
+	 *
+	 *  ⛔ A SEPARATE QUESTION FROM THE PERCENT, and it must NOT be derived from one: a cast that
+	 *  has just begun reads 0%, so "percent > 0" would hide the bar for the first poll of every
+	 *  cast — the exact moment WITCH-§9.1 requirement 1 ("a cast is RUNNING, on THIS one") exists
+	 *  to serve. This is the flag the cast row's collapse is driven from.
+	 *
+	 *  ⭐ AND IT IS WHAT MAKES *BROKEN* DISTINGUISHABLE FROM *COMPLETED* (WITCH-§9.1 row 4, the
+	 *  requirement with no tell at all today): an INTERRUPT drives this false while the percent is
+	 *  still mid-flight, whereas a COMPLETION drives it false only after the percent has run the
+	 *  full window. The pair is the signal; neither half carries it alone.
+	 *
+	 *  Default false ⇒ an owner with no cast concept never shows the row.
+	 */
+	virtual bool IsCastInProgress() const { return false; }
+
+	//~ End cast progress
 };

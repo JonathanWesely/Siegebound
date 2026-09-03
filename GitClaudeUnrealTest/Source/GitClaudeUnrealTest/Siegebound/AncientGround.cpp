@@ -8,6 +8,7 @@
 #include "EngineUtils.h"
 #include "GitClaudeUnrealTest.h"
 #include "Materials/MaterialInterface.h"
+#include "Siegebound/SiegeInvisibilityStatics.h" // TASK-829 (WITCH-§3a): ESiegeVeilBreakReason at the COUNTED-sorcerer break site (also reached via SummonedUnit.h, which needs the complete enum for BreakInvisibility's parameter — explicit per IWYU)
 #include "Siegebound/SummonedUnit.h"
 #include "Siegebound/TeamId.h"
 #include "TimerManager.h"
@@ -235,6 +236,27 @@ void AAncientGround::ApplyBoostTick()
 			// A sorcerer is a SOURCE, never a sink — it NEVER self-boosts and
 			// never boosts a fellow sorcerer (class identity, not a CSV flag).
 			++SorcererCount[TeamBucketIndex(Unit->GetTeamId())];
+
+			// ══ VEIL BREAK — `Empower` (TASK-829; ⛔ WITCH-§3a TRAP 2 of 3) ═══════════════════
+			// ⛔⛔⛔ THE ACTOR THAT ACTS ⛔ EXECUTES NO CODE, WHICH IS WHY THIS TRAP EXISTS.
+			// Jonathan's "power up something" refers to the SORCERER — and the sorcerer is
+			// ⛔ PASSIVE in this mechanic: it is merely COUNTED here, and THIS GROUND'S tick does
+			// the granting in a ⛔ SEPARATE loop over the RECIPIENTS below.
+			// ⇒ ⛔ A NAIVE BREAK AT THE `Unit->AddPermanentDamageStacks(Grant)` CALL WOULD UN-VEIL
+			// ⛔ THE RECIPIENTS — ⛔ EXACTLY THE WRONG ACTORS. They are being ⛔ acted upon (the
+			// same category as being healed, buffed or frozen) and they ⛔ STAY VEILED.
+			// ⭐ THE BREAK BELONGS ON THE ⛔ COUNTED SORCERER, and this arm — which `continue`s
+			// before `Occupants` — is the only place in the shipped game where a sorcerer's act
+			// of empowering is observable at all.
+			// ⚠️⚠️ DECLARED RESIDUAL, ⛔ stated rather than hidden: this fires for a sorcerer
+			// standing on an ancient ground even on a tick where the Occupants list is EMPTY, so a
+			// lone veiled sorcerer un-veils itself with nobody to boost. ⭐ That is the correct
+			// reading — the ground's power is what it is channelling, and standing in it IS the
+			// act — and it is also the only reading available: WITCH-§3a names THIS arm as the
+			// site, and the alternative (break only when a grant lands) is the recipient-side
+			// trap above wearing a disguise. ⛔ If Jonathan rules otherwise it is a WITCH-§3
+			// amendment, ⛔ not an edit here.
+			Unit->BreakInvisibility(ESiegeVeilBreakReason::Empower);
 			continue;
 		}
 
@@ -262,6 +284,12 @@ void AAncientGround::ApplyBoostTick()
 	// a captured one. PER-SORCERER STACKING: 2 friendly sorcerers => 2 stacks
 	// this tick. Authority for the mutation is by construction — this gated tick
 	// is AddPermanentDamageStacks' sole caller.
+	// ⛔⛔ TASK-829 / WITCH-§3a — ⛔ THERE IS ⛔ NO VEIL BREAK IN THIS LOOP, AND THE ABSENCE IS A
+	// ⛔ RULING, ⛔ NOT AN OVERSIGHT. These are the ⛔ RECIPIENTS. They are being ⛔ ACTED UPON —
+	// the same category as being healed, buffed or frozen — and his rule breaks the veil on
+	// ⛔ ACTING. A `BreakInvisibility` here would un-veil ⛔ exactly the wrong actors, and it is
+	// the single most attractive wrong place in the whole feature because it is where the code is.
+	// ⭐ The break lives on the ⛔ COUNTED SORCERER in the sweep above. ⛔ Do not add one here.
 	for (ASummonedUnit* Unit : Occupants)
 	{
 		const int32 Grant = SorcererCount[TeamBucketIndex(Unit->GetTeamId())];

@@ -98,6 +98,14 @@ void UCombatantHealthBarComponent::BeginPlay()
 	// override of BarHeightZ — which lands before BeginPlay — is honored.
 	SetRelativeLocation(FVector(0.f, 0.f, BarHeightZ));
 
+	// ⭐ CAPTURE THE NOT-CASTING GEOMETRY (TASK-860) — read from the LIVE component for the same reason
+	// BarHeightZ is read one line up rather than baked into the constructor: a BP override lands before
+	// BeginPlay, and a cast must restore the bar to THIS actor's size and pivot, not to the C++ default.
+	// ⛔ Captured BEFORE the widget-class early-out below, so the pair is always valid even on the
+	// logged-once no-bar path.
+	CastBarBaseDrawSize = GetDrawSize();
+	CastBarBasePivot = GetPivot();
+
 	// WBP_CombatantHealthBar is built in TASK-131 and may not exist yet — a missing/unset
 	// class is a SILENT no-bar (LoadSynchronous returns nullptr for unset paths and absent
 	// assets alike). Log ONCE across the run so 60+ actors don't spam.
@@ -168,6 +176,20 @@ void UCombatantHealthBarComponent::BeginPlay()
 				BoostDelegate->AddUniqueDynamic(this, &UCombatantHealthBarComponent::HandleOwnerDamageBoostChanged);
 			}
 		}
+
+		// --- Cast row (TASK-860): SEED UNCONDITIONALLY. There is nothing to bind. ---
+		// UNCONDITIONALLY, for the boost row's own reason two blocks up (qa/TASK-005 major 2): this push
+		// is what drives a non-casting owner's cast row to its COLLAPSED state instead of leaving it at
+		// whatever design-time state WBP_CombatantHealthBar happens to carry. The widget half authors
+		// CastBarRoot Collapsed, so this seed AGREES with the asset today — and it is the line that
+		// keeps WITCH-§9.6's pixel-identical guarantee true if that ever stops being so.
+		// ⛔ AND THERE IS NO BIND HALF: the cast surface carries NO delegate by design (TASK-830) — a
+		// cast advances continuously, so a push model would need a per-frame broadcast from the unit.
+		// The updates arrive from UpdateCastProgress() on this component's own poll instead.
+		// ⭐ Both getters are read TOGETHER: they share ONE resolver on the owner, so asking them in the
+		// same breath is what makes a bar's GATE and its FILL incapable of disagreeing.
+		const bool bSeedCasting = Provider ? Provider->IsCastInProgress() : false;
+		PushCastProgress(bSeedCasting, Provider ? Provider->GetCastProgressPercent() : 0.f);
 	}
 
 	// Always-visible while alive (reversed hide-at-full law); an opted-out owner stays hidden.
@@ -187,6 +209,23 @@ void UCombatantHealthBarComponent::TickComponent(float DeltaTime, ELevelTick Tic
 	// the bar's screen projection, which is the TASK-130 render bug this component already survived
 	// once. Everything below is additive and runs after.
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	// ── THE CAST POLL (TASK-860) — ABOVE THE OCCLUSION BLOCK, AND THAT PLACEMENT IS DELIBERATE ──────
+	// ⛔ IT MUST NOT SIT UNDER ANY OF THE THREE EARLY-OUTS BELOW. Under the first it would be switched
+	// off by bOccludeHealthBarWhenBlocked, a flag about STONEWORK that has nothing to say about casts.
+	// Under the second (!bBarShownByOwner) a unit that DIES MID-CAST would stop polling with its row
+	// latched OPEN, and its bar would come back from a respawn still painting the cast that killed it.
+	// Under the third it would inherit the cull's 0.15 s period, which is measurably too slow here (see
+	// CastProgressPollIntervalSeconds). ⭐ The two features share a tick and nothing else.
+	//
+	// ⛔ NOT A READ PER FRAME: one add and one compare per frame per actor, and on the ~20 Hz frames
+	// that do fire, an idle owner costs one interface cast plus two virtual calls that return
+	// false/0 and then RETURNS WITHOUT TOUCHING THE WIDGET (ShouldPushCastRow). Every building, the
+	// hero and every non-witch unit take that path for their entire life — zero Blueprint calls.
+	if (ShouldPollCastProgress(CastPollAccumulator, DeltaTime, CastProgressPollIntervalSeconds))
+	{
+		UpdateCastProgress();
+	}
 
 	if (!bOccludeHealthBarWhenBlocked)
 	{
@@ -471,6 +510,167 @@ FLinearColor UCombatantHealthBarComponent::GetBoostBandColor(int32 Band) const
 	case 3:  return BoostBand3Color;
 	default: return BoostBand4Color;
 	}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+//  THE CAST ROW (TASK-860 — law WITCH-§9; the Witch's two-ended interruptible channel)
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+
+bool UCombatantHealthBarComponent::ShouldPollCastProgress(float& InOutAccumulatedSeconds, float DeltaSeconds, float ConfiguredIntervalSeconds)
+{
+	// ⭐ ONE GATE, TWO CALLERS — see the header for why this forwards rather than restating six lines.
+	// The gate is generic by construction (an accumulator, a delta and a period; it knows nothing about
+	// traces), and its 30 Hz floor is a guarantee a Blueprint cannot lower. A copy of it here would be
+	// a second implementation of that guarantee, and two copies of a guarantee drift.
+	return ShouldPollOcclusion(InOutAccumulatedSeconds, DeltaSeconds, ConfiguredIntervalSeconds);
+}
+
+bool UCombatantHealthBarComponent::ShouldPushCastRow(bool bCasting, bool bRowAlreadyDriven)
+{
+	// ⛔ AN `OR`, ⛔ NOT `bCasting`. The second term is the FALLING EDGE and it is the whole tell: the
+	// poll on which a cast ENDS reads bCasting == false, and it is the ONLY poll that can ever report
+	// an INTERRUPT. Dropping it strands the row open — a cast bar frozen mid-flight for the rest of the
+	// match on a unit doing nothing, with the bar left 8 px too tall.
+	// ⭐ And the ONE false case is the one that matters for cost: (not casting, row already down) is
+	// every building, the hero and every non-witch unit, for the whole game ⇒ zero Blueprint calls.
+	return bCasting || bRowAlreadyDriven;
+}
+
+float UCombatantHealthBarComponent::SanitizeCastPercent(bool bCasting, float ProviderCastPercent)
+{
+	if (!bCasting)
+	{
+		// ⛔ EXACTLY 0, whatever the provider answered. The gate and the fill travel as ONE atomic
+		// event, so "collapsed row carrying a stale 87%" is made unreachable rather than unlikely.
+		return 0.f;
+	}
+
+	if (!FMath::IsFinite(ProviderCastPercent))
+	{
+		// ⚠️ THE CLAMP BELOW CANNOT DO THIS. FMath::Clamp is a pair of `<` / `>` tests and EVERY
+		// comparison against NaN is false, so a NaN passes straight through a clamp and into Slate's
+		// SetPercent. Cheap insurance on a value this component does not produce and cannot audit.
+		return 0.f;
+	}
+
+	// ⭐⭐ 0..100, ⛔ NEVER 0..1 — the shipped BoostPercent convention (WITCH-§9.3 pins it); the widget
+	// divides by 100, exactly as its HP row already divides CurrentHP by MaxHP.
+	// ⛔ THE CEILING IS THE GUARANTEE THAT THE TELL CANNOT LIE IN THE ONE DIRECTION THAT MATTERS:
+	// "the fill reached the ends" must be producible ONLY by a cast that ran its window, because that
+	// is the sole difference between COMPLETED and BROKEN (WITCH-§9.1 row 4).
+	return FMath::Clamp(ProviderCastPercent, 0.f, 100.f);
+}
+
+float UCombatantHealthBarComponent::ComputeCastBarHeightPixels(float BaseBarHeightPixels, float CastRowHeightPixels)
+{
+	// A negative row height would SHRINK the bar at cast time — a health bar that gets smaller when a
+	// witch starts channelling, which is worse than no tell. Floored, not trusted.
+	const float RowHeightPixels = FMath::Max(CastRowHeightPixels, 0.f);
+
+	// ⛔ ROUNDED HERE, NOT LEFT TO THE ENGINE — SetDrawSize TRUNCATES into an FIntPoint, so an
+	// un-rounded 30.5 would be laid out at 30 while ComputeCastPivotY compensated for 30.5.
+	return FMath::RoundToFloat(BaseBarHeightPixels + RowHeightPixels);
+}
+
+float UCombatantHealthBarComponent::ComputeCastPivotY(float BaseBarHeightPixels, float BasePivotY, float GrownBarHeightPixels)
+{
+	if (GrownBarHeightPixels <= 0.f)
+	{
+		// Nothing to hold in place, and nothing to divide by. Unreachable through the shipping path
+		// (the row height is floored at 0, so the grown height is at least the base height).
+		return BasePivotY;
+	}
+
+	// ⭐⭐ HOLD THE BOTTOM EDGE STILL AND THE HEALTH BAR NEVER MOVES. The engine feeds Pivot to the
+	// screen-space canvas slot as its ALIGNMENT, and an alignment A offsets a box of height H by -A*H,
+	// so the bottom edge sits (1 - A) * H below the projected anchor. Keeping that product equal to the
+	// NOT-CASTING state's is the entire mechanism — the +8 px is then spent ENTIRELY UPWARD, into the
+	// empty sky above the unit, which is the only direction with room for it.
+	const float BottomOffsetPixels = (1.f - BasePivotY) * BaseBarHeightPixels;
+
+	return 1.f - (BottomOffsetPixels / GrownBarHeightPixels);
+}
+
+void UCombatantHealthBarComponent::UpdateCastProgress()
+{
+	// ⛔ THE OWNER'S OWN PROVIDER, ALWAYS — the target answers "is anything being channelled on me, and
+	// how far along" about ITSELF. WITCH-§9.3 forbids the witch pushing a percent onto another actor's
+	// widget by name: that is a second source of truth, and it STRANDS A BAR on the subject the moment
+	// the witch dies mid-cast — which the interrupt rule makes the COMMON case, since killing the
+	// caster IS the counterplay. Pulled, both ends, from the one clock the unit already owns.
+	const IHealthBarProvider* const Provider = Cast<IHealthBarProvider>(GetOwner());
+
+	// ⭐ BOTH GETTERS ON ONE POLL. They share a single resolver on the owner, so asking them together is
+	// what makes a bar's GATE and its FILL incapable of disagreeing; reading one this poll and the other
+	// next poll would reintroduce that disagreement by hand.
+	const bool bCasting = Provider ? Provider->IsCastInProgress() : false;
+
+	if (!ShouldPushCastRow(bCasting, bCastRowDriven))
+	{
+		// Nothing is casting and the row is already down. THE FLEET'S WHOLE-LIFE PATH.
+		return;
+	}
+
+	PushCastProgress(bCasting, Provider ? Provider->GetCastProgressPercent() : 0.f);
+}
+
+void UCombatantHealthBarComponent::PushCastProgress(bool bCasting, float RawCastPercent)
+{
+	// The latch records what the row is being driven TO, unconditionally and before anything can early
+	// out. ⛔ It is NOT "is a cast running" — that question is only ever answered by the owner, on the
+	// poll that asks it. This exists solely so the falling edge is detected once (ShouldPushCastRow).
+	bCastRowDriven = bCasting;
+
+	// Geometry BEFORE the value: the widget should be laid out into the box it is about to fill, so a
+	// cast's first frame is never a full-height fill inside a 22 px box.
+	ApplyCastRowGeometry(bCasting);
+
+	// Drive the CURRENT on-screen widget instance — the HandleOwnerHPChanged / PushDamageBoost
+	// identity-proof: the live widget is the one FWorldWidgetScreenLayer took, which is not necessarily
+	// the instance cached in BarWidget at BeginPlay.
+	UCombatantHealthBarWidget* const LiveBar = Cast<UCombatantHealthBarWidget>(GetWidget());
+	if (!LiveBar)
+	{
+		// No widget (unresolved class / not yet created) — nothing to push. Never a crash. ⛔ The latch
+		// above is still written, so if a widget appears later the next real edge still pushes.
+		return;
+	}
+
+	// ⛔ ONE ATOMIC EVENT, the SetDamageBoost precedent: splitting the gate from the fill leaves a frame
+	// where a collapsed row carries a stale percent, or a shown row carries a stale zero.
+	LiveBar->OnCastProgressChanged(SanitizeCastPercent(bCasting, RawCastPercent), bCasting);
+
+	// Same rationale as PushDamageBoost: a no-op for live Screen-space Slate, required if this
+	// component is ever hosted World-space on a render target.
+	RequestRedraw();
+}
+
+void UCombatantHealthBarComponent::ApplyCastRowGeometry(bool bCasting)
+{
+	const float GrownBarHeightPixels = ComputeCastBarHeightPixels(CastBarBaseDrawSize.Y, CastBarRowHeightPixels);
+
+	const FVector2D TargetDrawSize = bCasting
+		? FVector2D(CastBarBaseDrawSize.X, GrownBarHeightPixels)
+		: CastBarBaseDrawSize;
+
+	// ⛔ SELF-GATING, WHICH IS WHAT MAKES "TWICE PER CAST, NEVER PER POLL" TRUE without a second latch
+	// to keep in step with the first. The ~60 polls in between all land here and leave immediately.
+	if (GetDrawSize().Equals(TargetDrawSize))
+	{
+		return;
+	}
+
+	// ⛔⛔ THE TWO WRITES ARE ONE CHANGE AND MUST NOT BE SEPARATED. Growing the box about the engine's
+	// default centred pivot pushes 4 px UP and 4 px DOWN — dropping the health bar into the unit's head
+	// for the whole cast. And moving the pivot alone would resize nothing while shifting the bar. Both,
+	// together, on the cast's two edges: the bar grows upward and the HP row does not move by a pixel
+	// (WITCH-§9.6). ⛔ Neither may migrate to the constructor — a constructor bump renders Bar at
+	// 19.33 px instead of 14.00 on every actor in the game, casting or not.
+	SetDrawSize(TargetDrawSize);
+
+	SetPivot(bCasting
+		? FVector2D(CastBarBasePivot.X, ComputeCastPivotY(CastBarBaseDrawSize.Y, CastBarBasePivot.Y, GrownBarHeightPixels))
+		: CastBarBasePivot);
 }
 
 void UCombatantHealthBarComponent::ShowBarIfEnabled()

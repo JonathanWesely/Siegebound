@@ -18,6 +18,7 @@
 #include "Siegebound/HealthBarProvider.h"
 #include "Siegebound/SiegeAssistantCommand.h"     // LogSiegeAssistant — the dump logs beside the assistant, never under the generic category
 #include "Siegebound/SiegeAssistantComponent.h"   // DebugCaptureAndComposePrompt (TASK-479's one addition)
+#include "Siegebound/SiegeCombatStatics.h"        // TASK-828 (WITCH-§1): GatherHostileAgents — the ONE acquisition funnel
 #include "Siegebound/SiegePlayerController.h"
 #include "Siegebound/SiegePlayerState.h"
 #include "Siegebound/SummonedUnit.h"
@@ -119,29 +120,32 @@ namespace
 		return ViewLocation;
 	}
 
-	/** Nearest alive ITeamAgent whose team differs from MyTeam, measured from RefLocation. */
+	/**
+	 *  Nearest alive ITeamAgent whose team differs from MyTeam, measured from RefLocation.
+	 *
+	 *  ⭐ SITE 9 of 9 (TASK-828, WITCH-§1) — the CHEAT lane, and it is routed through the
+	 *  same funnel rather than exempted. WITCH-§1 allows an exemption "explicitly named in a
+	 *  comment"; ⛔ it is NOT taken, and the reason is worth a sentence: `SummonTestUnit` /
+	 *  `ApplyTestDamage` exist to let a human verify SHIPPING behaviour headlessly, so a
+	 *  cheat that saw a DIFFERENT candidate set from the game would be an instrument that
+	 *  lies. Once TASK-829 lands, `ApplyTestDamage` will correctly refuse to auto-target an
+	 *  invisible enemy — which is the honest answer, because a unit is the only thing that
+	 *  could target it either.
+	 */
 	AActor* FindNearestEnemy(UWorld* World, ETeamId MyTeam, const FVector& RefLocation)
 	{
 		if (!World)
 		{
 			return nullptr;
 		}
-		TArray<AActor*> TeamAgents;
-		UGameplayStatics::GetAllActorsWithInterface(World, UTeamAgent::StaticClass(), TeamAgents);
+		TArray<AActor*> HostileAgents;
+		FSiegeCombatStatics::GatherHostileAgents(World, MyTeam, HostileAgents);
 
 		AActor* Best = nullptr;
 		float BestDistSq = TNumericLimits<float>::Max();
-		for (AActor* Candidate : TeamAgents)
+		for (AActor* Candidate : HostileAgents)
 		{
-			if (!IsValid(Candidate))
-			{
-				continue;
-			}
-			const ITeamAgent* Agent = Cast<ITeamAgent>(Candidate);
-			if (!Agent || Agent->GetTeamId() == MyTeam)
-			{
-				continue;
-			}
+			// the funnel supplied IsValid + the cast + the team term; LIVENESS stays here
 			if (!IsCombatActorAlive(Candidate))
 			{
 				continue;

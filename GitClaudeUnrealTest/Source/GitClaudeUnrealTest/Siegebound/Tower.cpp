@@ -11,6 +11,7 @@
 #include "Siegebound/DamageTypes.h"
 #include "Siegebound/HeroCharacter.h"
 #include "Siegebound/Projectile.h"
+#include "Siegebound/SiegeCombatStatics.h" // TASK-828 (WITCH-§1): GatherHostileAgents — the ONE acquisition funnel
 #include "Siegebound/SiegeFeedbackLibrary.h"
 #include "Siegebound/SiegeMeshJuiceComponent.h"
 #include "Siegebound/SummonedUnit.h"
@@ -213,13 +214,29 @@ AActor* ATower::AcquireTarget() const
 		return nullptr;
 	}
 
-	// house acquisition pattern (ASummonedUnit::AcquireTarget, TASK-004):
-	// interface-wide gather, then filter. A couple of towers scanning a dozen
-	// agents on a 1.5 s cadence — trivially cheap.
-	TArray<AActor*> TeamAgents;
-	UGameplayStatics::GetAllActorsWithInterface(World, UTeamAgent::StaticClass(), TeamAgents);
-
+	// ⭐ SITE 3 of 9 (TASK-828, WITCH-§1). House acquisition pattern
+	// (ASummonedUnit::AcquireTarget, TASK-004): gather, then filter — except the
+	// gather is now the ONE shared funnel and it has already applied the enemy-only
+	// term. IsAcquirableEnemy below is UNCHANGED and still re-applies it; that is
+	// idempotent, not a duplicate filter, and it keeps the chain-bounce path (which
+	// calls the same gate on a candidate it did not gather itself) honest.
+	// A couple of towers scanning a dozen agents on a 1.5 s cadence — trivially cheap.
 	const FVector MyLocation = GetActorLocation();
+
+	// ⭐⭐ TASK-838 (FOG-§7 ROW 1 — VISION / ACQUISITION), AND THIS IS WHERE THE PLAYER FEELS THE
+	// CARD. A tower is the longest-reaching acquirer in the game, so it is where a 609.6 ceiling
+	// does its real work: ArrowTower 900 -> -32.3%, BombTower/CrystalTower 800 -> -23.8%, and
+	// BallistaTower 1400 -> -56.5% with its MinRange 300 STILL APPLYING, which collapses its
+	// usable band to a 300-609.6 ANNULUS (FOG-§2, disclosed and not softened).
+	// ⛔ The MinRange blind spot is untouched by this: it is this site's own filtering (MinRangeSq
+	// below) and fog only ever shortens the OUTER bound.
+	// ⛔ This site performs no clamp and names no fog symbol — it hands over where it looks from
+	// and the reach it looks with; the ceiling is applied once, inside the funnel (FOG-§6).
+	const FSiegeVisionQuery Vision = FSiegeVisionQuery::SeeingFrom(MyLocation, AttackRange);
+
+	TArray<AActor*> HostileAgents;
+	FSiegeCombatStatics::GatherHostileAgents(World, Team, HostileAgents, ESiegeVeilPolicy::SuppressVeiled, &Vision);
+
 	const double RangeSq = FMath::Square(static_cast<double>(AttackRange));
 	// TASK-056 blind-spot lower bound (BallistaTower 300): 0 for Arrow/Bomb, so
 	// their MinRangeSq is 0 and the DistSq < MinRangeSq term below is never true —
@@ -229,7 +246,7 @@ AActor* ATower::AcquireTarget() const
 	AActor* Best = nullptr;
 	double BestDistSq = TNumericLimits<double>::Max();
 
-	for (AActor* Candidate : TeamAgents)
+	for (AActor* Candidate : HostileAgents)
 	{
 		// valid + alive + §3.7 class gate + enemy-only — the shared tower
 		// targeting gate (factored out for the TASK-101 chain bounce search;
@@ -304,6 +321,18 @@ bool ATower::IsAcquirableEnemy(const AActor* Candidate) const
 	return Agent && Agent->GetTeamId() != Team;
 }
 
+// ⛔⛔ TASK-829 / WITCH-§3 — ⛔ THE TWO TOWER FIRE SITES BELOW CARRY ⛔ NO VEIL BREAK, AND THE
+// OMISSION IS ⛔ DECIDED RATHER THAN FORGOTTEN. WITCH-§3's Attack row lists `ATower::FireProjectileAt`
+// and `ATower::FireChainZapAt` ⛔ for completeness, and WITCH-§7 rules that ⛔ TOWERS ARE NOT
+// VEILABLE TODAY: the witch targets "nearest friendly ⛔ UNIT", and WITCH-§6 forbids a mirrored
+// `bIsInvisible` on ⛔ any class other than ASummonedUnit. ⇒ a tower ⛔ cannot hold a veil, so a
+// break here would be ⛔ dead code that contradicts a live ruling.
+// ⭐ NAMED HERE ANYWAY, because an unwritten exclusion is indistinguishable from an oversight and
+// the next reader "fixes" it. ⚠️ IF a future card ever veils a tower, this is the site list it
+// inherits — and it is a WITCH-§3 amendment, ⛔ not an edit.
+// ⭐ ACQUISITION IS ⛔ ALREADY COVERED and needs nothing here: both towers acquire through
+// FSiegeCombatStatics::GatherHostileAgents, which honours the veil for free (WITCH-§1). A tower
+// ⛔ cannot shoot a veiled enemy, ⛔ without one line of tower code knowing the veil exists.
 void ATower::FireProjectileAt(AActor* Target)
 {
 	UWorld* World = GetWorld();
@@ -374,8 +403,24 @@ void ATower::FireChainZapAt(AActor* PrimaryTarget)
 	// Deterministic by construction: nearest-first with FVector::DistSquared,
 	// same gather-then-filter pattern as AcquireTarget (a handful of bounces
 	// over a dozen agents on a 1.5 s cadence — trivially cheap).
-	TArray<AActor*> TeamAgents;
-	UGameplayStatics::GetAllActorsWithInterface(World, UTeamAgent::StaticClass(), TeamAgents);
+	// ⭐ SITE 4 of 9 (TASK-828, WITCH-§1) — the fire-time snapshot is now taken through
+	// the shared funnel. Snapshot semantics are unchanged: ONE gather, read once, at
+	// fire time, so a mid-chain cascade death can never re-shape a zap that
+	// conceptually already happened.
+	//
+	// ⭐⭐ TASK-838 (FOG-§7 ROW 1) — ⛔ UNBOUNDED, for the same forced reason as
+	// ASummonedUnit::AcquireEnemyNearPoint: this gather has NO tower-range gate to hand over.
+	// Bounces are measured from the PREVIOUS target and may legally step outside the tower's own
+	// ring (M5 ruling 9), so passing AttackRange here would narrow the chain ⛔ WITH FOG OFF —
+	// a live behaviour change under a fog card. Unbounded is bit-identical with fog off.
+	// ⚠️ DECLARED CONSEQUENCE, ⛔ not an accident: under fog the chain's candidate pool is what
+	// the TOWER can see (609.6 from itself), so a bounce can no longer walk out into the fog.
+	// The bounce rule itself is untouched — ChainBounceRadius from the previous target still
+	// decides every hop, and this only narrows the pool it hops within.
+	const FSiegeVisionQuery Vision = FSiegeVisionQuery::SeeingFromUnbounded(GetActorLocation());
+
+	TArray<AActor*> HostileAgents;
+	FSiegeCombatStatics::GatherHostileAgents(World, Team, HostileAgents, ESiegeVeilPolicy::SuppressVeiled, &Vision);
 
 	// bounce candidates: everything the tower may target (§3.7 class gate +
 	// liveness + enemy-only — the SAME IsAcquirableEnemy gate as the primary
@@ -385,8 +430,8 @@ void ATower::FireChainZapAt(AActor* PrimaryTarget)
 	// by ChainBounceRadius from the PREVIOUS target (ruling 9), so a chain may
 	// legally step outside the tower's own 800 ring.
 	TArray<AActor*> Candidates;
-	Candidates.Reserve(TeamAgents.Num());
-	for (AActor* Candidate : TeamAgents)
+	Candidates.Reserve(HostileAgents.Num());
+	for (AActor* Candidate : HostileAgents)
 	{
 		if (Candidate != PrimaryTarget && IsAcquirableEnemy(Candidate))
 		{

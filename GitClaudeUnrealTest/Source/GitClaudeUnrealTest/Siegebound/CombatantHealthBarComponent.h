@@ -39,6 +39,44 @@ class UCombatantHealthBarWidget;
  *  owner provides one, and it does ALL the banding math before pushing the single atomic
  *  SetDamageBoost BIE. DrawSize is (90, 22): ~8 px boost row + the original ~12 px health
  *  bar. Still NO poll, still no gameplay tick.
+ *  ⚠️ THAT SPLIT SENTENCE IS STALE AND IS LEFT STANDING ONLY BECAUSE IT IS SHIPPED PROSE
+ *  (TASK-861 re-measured the live slots): 22 px less BoostOutline's 1 px bottom pad leaves 21 px
+ *  split Fill 1:2, i.e. BoostOutline 7.00 px and Bar 14.00 px — the law's "~8 / ~12" predates
+ *  TASK-368's Fill 1.0 → 2.0 fix and was never re-derived. Nothing is broken; anyone budgeting
+ *  pixels from the old numbers is 2 px out. The cast row below budgets from 7.00 / 1 / 14.00.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────────
+ *  THE CAST ROW (TASK-860 — law WITCH-§9; the WITCH'S TWO-ENDED, INTERRUPTIBLE CHANNEL)
+ *  ─────────────────────────────────────────────────────────────────────────────────
+ *  SK_Witch does not exist, so the witch spawns STATIC, and on a 3-second INTERRUPTIBLE cast
+ *  "starting", "running" and "broken" are IDENTICAL PIXELS. Jonathan did not ask for a 3-second
+ *  cast; he asked for one THAT CAN BE INTERRUPTED — and counterplay the player cannot perceive
+ *  is not counterplay. WITCH-§9.2 rules the tell is a THIRD segment in THIS SAME widget, driven
+ *  on BOTH the witch AND her target, because his sentence names both actors and the bar must
+ *  therefore appear on EXACTLY the two units you can attack to break the cast.
+ *
+ *  ⛔ EXTENDED, NEVER DUPLICATED. A new WBP_WitchCastBar / a second UWidgetComponent on the
+ *  unit is an automatic QA fail (WITCH-§9.3): two worldspace widgets on one actor fight for
+ *  screen space, sort against each other, and double the per-unit widget cost on a 50,000-uu
+ *  field. The boost row is the shipped precedent for exactly this shape, down to the DrawSize.
+ *
+ *  ⛔⛔ IT IS A POLL, AND THAT IS THE CONTRACT RATHER THAN A SHORTCUT. IHealthBarProvider's cast
+ *  surface is two DEFAULTED getters and carries NO delegate by design (TASK-830): a cast
+ *  progresses CONTINUOUSLY, so a push model would need a per-frame broadcast from the unit —
+ *  strictly worse than one read on the bar's own update. ⭐ Both getters are read TOGETHER on
+ *  one poll because they share ONE resolver on the owner and therefore cannot disagree; reading
+ *  the gate this poll and the fill the next would reintroduce that disagreement by hand.
+ *
+ *  ⛔⛔ AND THE OWNER ANSWERS ABOUT ITSELF, ALWAYS. The witch NEVER pushes a percent onto her
+ *  target's widget (WITCH-§9.3 forbids it by name) — the subject PULLS the same live timer
+ *  through its own weak back-pointer. That is what makes the target's bar vanish on the SAME
+ *  FRAME the witch dies, which the interrupt rule makes the COMMON case rather than an edge one.
+ *
+ *  ⛔ THE PIXEL-IDENTICAL GUARANTEE IS A REQUIREMENT (WITCH-§9.6), NOT AN EXPECTATION, AND IT IS
+ *  WHY DrawSize GROWS AT CAST TIME RATHER THAN IN THE CONSTRUCTOR: BoostOutline and Bar are Fill
+ *  slots and absorb every spare pixel, so a constructor bump to (90, 30) would render Bar at
+ *  19.33 px instead of 14.00 on EVERY building, the hero and all 20+ units, casting or not — a
+ *  permanent, silent, game-wide health-bar resize shipped by a witch task. See ApplyCastRowGeometry.
  *
  *  ─────────────────────────────────────────────────────────────────────────────────
  *  OCCLUSION CULL (TASK-791, VIS-§2 / ruling VIS-R1) — WHY THE BAR CAN NOW HIDE ITSELF
@@ -203,6 +241,106 @@ public:
 	 */
 	static bool ComputeOcclusionFromTraceResult(bool bTraceBlocked, bool bTraceStartedInsideGeometry, float HitDistanceUU);
 
+	//~ ── Begin THE CAST ROW'S FOUR PURE SEAMS (TASK-860; law WITCH-§9) ────────────────────────────
+	//  The ComputeDesiredBarVisibility / ShouldPollOcclusion / ComputeOcclusionFromTraceResult
+	//  tradition, and for the same reason: bools and floats in, ONE value out — no UWorld, no AActor,
+	//  no widget, no Slate, no clock ⇒ the WHOLE cast-row rule runs headless.
+	//
+	//  ⭐⭐ AND HERE THAT IS NOT MERELY TIDY, IT IS THE ONLY WAY THE TASK CAN BE GATED AT ALL. The
+	//  question SHIP-§9 makes this feature answer is "can the suite tell a BROKEN cast from a
+	//  COMPLETED one?" — a question about a SEQUENCE OF EVENTS OVER TIME, not about one value. It can
+	//  only be asked of a test that can replay a whole cast, and a test can only replay a whole cast
+	//  if the decisions are reachable without a world. ⚖️ This feature exists because "completed" and
+	//  "broken" were indistinguishable ON SCREEN; a suite that cannot tell them apart IN CODE has
+	//  reproduced the defect one layer down.
+	//  ⛔ These are the SHIPPING implementations, not accessors added so a test could reach something:
+	//  UpdateCastProgress / PushCastProgress / ApplyCastRowGeometry are their only game-code callers.
+
+	/**
+	 *  Fires on exactly the frames a cast poll is due — the cast row's own accumulator and its own
+	 *  interval, so it never inherits the occlusion cull's 0.15 s period (see the interval's comment
+	 *  for why that period would be visibly wrong here).
+	 *
+	 *  ⛔ IT FORWARDS TO ShouldPollOcclusion RATHER THAN RESTATING IT, DELIBERATELY. That function is
+	 *  a GENERIC fixed-period gate whose name records only its first caller: accumulator, delta and
+	 *  interval in, "is a tick due?" out — nothing in it knows what a trace is. Duplicating its six
+	 *  lines would create a SECOND implementation of one shipped guarantee (the ≤30 polls/second
+	 *  floor a Blueprint cannot lower), and two copies of a guarantee drift.
+	 *  ⚠️ Renaming the shared gate to match both callers would be the tidier fix and is deliberately
+	 *  NOT done here: the name is bound by SiegeHealthBarOcclusionTest, which is not this task's file.
+	 *  Flagged for QA rather than done quietly.
+	 */
+	static bool ShouldPollCastProgress(float& InOutAccumulatedSeconds, float DeltaSeconds, float ConfiguredIntervalSeconds);
+
+	/**
+	 *  Does this poll have anything to say to the widget? ⭐ THE WHOLE RULE, AND IT IS THE REASON THIS
+	 *  FEATURE IS FREE FOR THE FLEET: every building, the hero and every non-witch unit answers
+	 *  (false, false) for the entire match and therefore makes ZERO Blueprint calls, ever.
+	 *
+	 *  ⛔⛔ THE FALLING EDGE IS THE HIGHEST-CONSEQUENCE HALF AND IT IS THE ONE AN "if (bCasting)" WOULD
+	 *  DROP: when a cast ends — completed OR interrupted — bCasting is false while the row is still
+	 *  driven open, and that poll MUST push. Without it the last frame of every cast is the last thing
+	 *  the widget is ever told: a cast bar frozen mid-flight forever, on a unit doing nothing, with
+	 *  DrawSize left 8 px tall for the rest of the match. ⭐ It is also the ONLY event that reports an
+	 *  INTERRUPT, which is the counterplay this entire feature exists to make visible.
+	 */
+	static bool ShouldPushCastRow(bool bCasting, bool bRowAlreadyDriven);
+
+	/**
+	 *  Turns the provider's raw answer into the number the widget is allowed to see.
+	 *
+	 *  ⛔ NOT CASTING ⇒ EXACTLY 0.f, whatever the provider said. The gate and the fill are pushed as
+	 *  ONE atomic event, so a collapsed row carrying a stale 87% is a state this makes unreachable
+	 *  rather than merely unlikely.
+	 *  ⛔ CASTING ⇒ CLAMPED TO 0..100 (⛔ never 0..1 — the shipped BoostPercent convention, WITCH-§9.3).
+	 *  The clamp is not defensive padding: it is the guarantee the surface CANNOT LIE in the one
+	 *  direction that matters, because "the fill reached the ends" must be producible ONLY by a cast
+	 *  that actually ran its window (WITCH-§9.1 row 4 — completed vs BROKEN, the perception with no
+	 *  tell at all in the shipped game).
+	 *  ⚠️ A NON-FINITE INPUT RESOLVES TO 0, AND FMath::Clamp CANNOT DO THAT JOB: Clamp is a pair of
+	 *  `<` / `>` comparisons and every comparison against NaN is false, so a NaN would pass straight
+	 *  through the clamp and into Slate's SetPercent.
+	 */
+	static float SanitizeCastPercent(bool bCasting, float ProviderCastPercent);
+
+	/**
+	 *  The DrawSize height (in screen pixels) the bar grows to while a cast is running.
+	 *
+	 *  ⛔ ROUNDED TO A WHOLE PIXEL HERE rather than left to the engine, and that matters because the
+	 *  pivot below is computed FROM this number: UWidgetComponent stores DrawSize as an FIntPoint and
+	 *  SetDrawSize TRUNCATES (`FIntPoint((int32)Size.X, (int32)Size.Y)`, UE 5.8 WidgetComponent.cpp).
+	 *  An un-rounded 30.5 would be laid out as 30 while the pivot compensated for 30.5 — a half-pixel
+	 *  disagreement between the two halves of ONE geometry change, i.e. a bar that creeps.
+	 */
+	static float ComputeCastBarHeightPixels(float BaseBarHeightPixels, float CastRowHeightPixels);
+
+	/**
+	 *  ⭐⭐ THE PIXEL-IDENTICAL GUARANTEE, EXPRESSED AS ARITHMETIC — the Pivot the grown bar must use so
+	 *  that the HP row does NOT MOVE when a cast starts.
+	 *
+	 *  ⛔ THE PROBLEM THIS SOLVES IS INVISIBLE FROM THE CALL SITE. This component never set Pivot, so
+	 *  it is the engine default (0.5, 0.5) — the widget is CENTRED on its projected anchor. Growing
+	 *  DrawSize by 8 px about a centred pivot therefore grows 4 px UP and 4 px DOWN, dropping the
+	 *  health bar 4 px into the unit's head for the whole cast. ⛔ And the obvious fix — setting
+	 *  Pivot=(0.5,1.0) in the constructor — is WORSE: it would move every bar in the game up by half
+	 *  its height, permanently, which is the fleet-wide regression WITCH-§9.6 forbids.
+	 *
+	 *  ⇒ the pivot is recomputed WITH the size, at cast time, to hold the BOTTOM EDGE exactly where
+	 *  the default state puts it. In the screen-space path the engine feeds Pivot to the canvas slot
+	 *  as its ALIGNMENT (SWorldWidgetScreenLayer.cpp — `CanvasSlot->SetAlignment(ComponentPivot)`, read
+	 *  fresh every frame alongside GetDrawSize), and a canvas alignment A offsets a box of height H by
+	 *  -A*H ⇒ the bottom edge sits (1 - A) * H BELOW the anchor. Holding that product constant is the
+	 *  whole trick, and it makes the +8 px grow ENTIRELY UPWARD — into the empty sky above the unit,
+	 *  which is the only direction with room.
+	 *
+	 *  ⚠️ Domain: GrownBarHeightPixels >= (1 - BasePivotY) * BaseBarHeightPixels, which the shipped
+	 *  path guarantees (the row height is floored at 0, so grown >= base). A non-positive grown height
+	 *  returns the base pivot unchanged rather than dividing by zero.
+	 */
+	static float ComputeCastPivotY(float BaseBarHeightPixels, float BasePivotY, float GrownBarHeightPixels);
+
+	//~ ── End the cast row's pure seams ────────────────────────────────────────────────────────────
+
 protected:
 
 	/**
@@ -288,6 +426,30 @@ protected:
 
 	/** Band index (1-4) → its EditDefaultsOnly tint. Out-of-range clamps to band 4 (the strongest). */
 	FLinearColor GetBoostBandColor(int32 Band) const;
+
+	/**
+	 *  ONE cast poll (TASK-860). Reads the OWNER'S OWN IHealthBarProvider — both getters together,
+	 *  because they share one resolver on the owner and so cannot disagree — and pushes only when
+	 *  ShouldPushCastRow says there is something to say. ⛔ A non-provider owner is not a special case:
+	 *  it reads as "not casting" and takes the same free path every building already takes.
+	 */
+	void UpdateCastProgress();
+
+	/**
+	 *  Latches what the row was last driven to, applies the geometry, and pushes the single atomic
+	 *  OnCastProgressChanged BIE to the CURRENT on-screen GetWidget() (the HandleOwnerHPChanged
+	 *  identity-proof), then RequestRedraw()s. The seed at BeginPlay and every poll both come here, so
+	 *  there is exactly ONE place that decides what the widget is told.
+	 */
+	void PushCastProgress(bool bCasting, float RawCastPercent);
+
+	/**
+	 *  Grows the bar to fit the cast row while a cast runs and restores the shipped size when it ends —
+	 *  DrawSize AND Pivot together, because applying either alone moves the health bar (see
+	 *  ComputeCastPivotY). ⛔ Idempotent and self-gating: it early-outs when the size is already right,
+	 *  so the pair is written on the cast's two EDGES and never on a poll in between.
+	 */
+	void ApplyCastRowGeometry(bool bCasting);
 
 	/**
 	 *  Widget class shown by this bar (default /Game/UI/WBP_CombatantHealthBar, built
@@ -402,6 +564,53 @@ protected:
 
 	//~ End permanent damage boost row
 
+	//~ Begin cast row (TASK-860, the Witch's interruptible channel — law WITCH-§9).
+
+	/**
+	 *  Seconds between cast polls (default 0.05 ⇒ 20 reads/second/actor). ⛔ NOT A COSMETIC SMOOTHNESS
+	 *  KNOB — IT IS LOAD-BEARING FOR WITCH-§9.1 REQUIREMENT 4, AND THE ARITHMETIC IS WHY IT IS NOT THE
+	 *  OCCLUSION CULL'S 0.15 s:
+	 *
+	 *  The unit derives the percent from the LIVE timer, and the timer's callback CLEARS the handle —
+	 *  so the last value the bar can ever observe on a COMPLETED cast is the one sampled one poll
+	 *  before the end: 100 * (Duration - Interval) / Duration. At the shipped 3 s cast that is 98.3%
+	 *  here (a 1.5 px shortfall on an 88 px bar — invisible), and 95.0% at a 0.15 s period (a 4.4 px
+	 *  shortfall — visible, and directly confusable with an interrupt at 95%). ⇒ THE SLOWER PERIOD
+	 *  WOULD MAKE "COMPLETED" AND "BROKEN-AT-THE-END" LOOK THE SAME, which is the precise defect this
+	 *  whole feature exists to remove. Asserted in SiegeCastBarTest.
+	 *
+	 *  ⚠️ THE RESIDUAL, STATED RATHER THAN GLOSSED: an interrupt landing inside the FINAL poll window
+	 *  (≤50 ms of a 3 s cast) still paints as "nearly full". That is 1.7% of the window and it is
+	 *  disambiguated by the other half of the signal — a COMPLETED cast also turns the target
+	 *  translucent (MI_Unit_Invisible), and a broken one changes nothing.
+	 *  ⛔ 0 does NOT mean "every frame": this shares the occlusion gate's 30 Hz floor. 🧑 Feel tunable.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|HealthBar|Cast")
+	float CastProgressPollIntervalSeconds = 0.05f;
+
+	/**
+	 *  Screen pixels the bar GROWS BY while a cast runs (default 8 ⇒ DrawSize 22 → 30). ⛔ NOT the
+	 *  height of the amber fill: it is one whole BoostOutline-shaped row — 7.00 px of row plus its
+	 *  1 px bottom pad — so the arithmetic lands on whole pixels in both states.
+	 *
+	 *  ⭐ THE BUDGET, RE-DERIVED RATHER THAN QUOTED (TASK-861 measured the live slots; CastBarRoot's
+	 *  slot MIRRORS BoostOutline's — Fill 1.0, pad-bottom 1, inserted at index 0):
+	 *    · NOT casting: 22 px, CastBarRoot Collapsed ⇒ its slot is SKIPPED ⇒ (22 - 1) split Fill 1:2 ⇒
+	 *      BoostOutline 7.00 · Bar 14.00 — byte-identical to today, on every actor in the game.
+	 *    · CASTING:     30 px ⇒ (30 - 1 - 1) split Fill 1:1:2 ⇒ CastBarRoot 7.00 · BoostOutline 7.00 ·
+	 *      Bar 14.00. ⭐ BoostOutline and Bar keep their EXACT current heights in BOTH states — the
+	 *      health bar does not shrink to make room, which is stronger than the spec asked for.
+	 *    · CastBarFill = 7.00 - (2 x 1.5 padding) = 4.00 px, identical to BoostBar's 4.00 px.
+	 *
+	 *  🧑 THIS IS THE ONE NUMBER TASK-861 SAID IT WAS LEAST CONFIDENT IN and it is exposed on purpose:
+	 *  if 4 px of amber does not read at gameplay distance, the artist re-slots CastBarRoot to Fill 1.5
+	 *  (≈9 px of row) and this becomes 10 — no code change, and the pivot arithmetic follows it.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|HealthBar|Cast")
+	float CastBarRowHeightPixels = 8.f;
+
+	//~ End cast row
+
 private:
 
 	/** The widget instance cached from GetWidget() after SetWidgetClass; used for the seed-then-bind + team-tint setup in BeginPlay. */
@@ -431,4 +640,36 @@ private:
 	float OcclusionPollAccumulator = 0.f;
 
 	//~ End occlusion cull runtime state
+
+	//~ Begin cast row runtime state (TASK-860). Plain members, deliberately NOT UPROPERTY — three PODs
+	//  holding no references, exactly like the occlusion trio above.
+
+	/**
+	 *  ⛔ WHAT THIS COMPONENT LAST TOLD THE WIDGET — ⛔ NOT whether a cast is running. The difference is
+	 *  the whole reason this is not a second source of truth: the ANSWER always comes from the owner's
+	 *  provider on the poll that asks; this only remembers whether the row is currently driven OPEN, so
+	 *  the falling edge can be detected and pushed exactly once (see ShouldPushCastRow).
+	 *
+	 *  ⛔⛔ AND THERE IS DELIBERATELY NO CACHED PERCENT ANYWHERE IN THIS COMPONENT. WITCH-§4 requires an
+	 *  interrupt to leave NO partial state, and the unit already honours that by DERIVING the percent
+	 *  per call from the live timer; caching it here would reintroduce, one layer up, exactly the
+	 *  remembered value that survives a cancel and freezes the bar mid-flight. Re-pushing an unchanged
+	 *  percent costs one Blueprint call at 20 Hz on at most two actors in the world, and buys the
+	 *  guarantee that nothing in this file can go stale.
+	 */
+	bool bCastRowDriven = false;
+
+	/** Seconds banked toward the next cast poll. Its own accumulator — the cast row and the cull run on different periods. */
+	float CastPollAccumulator = 0.f;
+
+	/**
+	 *  The bar's NOT-CASTING geometry, captured once at BeginPlay from the live component rather than
+	 *  from the constructor's constant — so a Blueprint that legitimately retunes DrawSize or Pivot is
+	 *  restored to ITS values when a cast ends, not to the C++ defaults. (The BarHeightZ read directly
+	 *  above BeginPlay's capture exists for exactly the same reason.)
+	 */
+	FVector2D CastBarBaseDrawSize = FVector2D::ZeroVector;
+	FVector2D CastBarBasePivot = FVector2D(0.5f, 0.5f);
+
+	//~ End cast row runtime state
 };

@@ -13,6 +13,7 @@
 #include "Siegebound/GoldNode.h"
 #include "Siegebound/SiegeFeedbackLibrary.h"
 #include "Siegebound/SiegeGameState.h"
+#include "Siegebound/SiegeInvisibilityStatics.h" // TASK-829 (WITCH-§3a): ESiegeVeilBreakReason at the arrival-claim break site (also reached via MinerUnit.h -> SummonedUnit.h, which needs the complete enum for BreakInvisibility's parameter — explicit per IWYU, the SiegeStuckStatics.h precedent below)
 #include "Siegebound/SiegePlayerController.h" // TASK-397 command seam: FindControllerForTeam / FindUnitGroup / HasIssuedCommand
 #include "Siegebound/SiegePlayerState.h"
 #include "Siegebound/SiegeStuckStatics.h" // TASK-533: FSiegeStuckStatics::ComputeSidestepGoal + ESiegeStuckAction at the rung switch (also reached via MinerUnit.h, which needs the complete enum for the override's parameter — explicit per IWYU)
@@ -513,6 +514,23 @@ void AMinerUnit::UpdateMining()
 			// unchanged (TASK-024/179 contract); refusal is WAIT MODE.
 			if (Node->TryRegisterArrivedMiner(this))
 			{
+				// ══ VEIL BREAK — `Mine` (TASK-829; ⛔ WITCH-§3a TRAP 3 of 3) ══════════════════
+				// ⛔⛔⛔ THE BREAK BELONGS AT THE ⛔ ARRIVAL, ⛔ NOT AT THE PAYOUT — and the
+				// obvious wiring point is not merely wrong, it is ⛔ catastrophic. ⛔ GOLD IS
+				// ⛔ NEVER GRANTED ON THE MINER'S CALL STACK: the node's reserve drains on the
+				// NODE's timer (AGoldNode::HandleDrainTick) and the player's +gold/s is granted
+				// on the PLAYER STATE's 1 s timer (ASiegePlayerState::HandleGoldTick → SetGold).
+				// ⇒ a hook on "where the gold appears" would break the veil of ⛔ EVERY MINER THE
+				// PLAYER OWNS, ⛔ including ones still walking across the field.
+				// ⭐ THIS arm fires ⛔ ONCE PER TENURE, on the ⛔ ACTING miner, at the atomic claim
+				// — the exact moment his sentence means by "mine". ⭐ It is inside the SUCCESS
+				// branch: a miner REFUSED by an enemy-claimed node falls to WAIT MODE below and
+				// ⛔ stays veiled, because waiting is standing still.
+				// ⚠️ Walking to the node is ⛔ NOT mining (his carve-out), and the per-second
+				// income tick that follows needs ⛔ no belt of its own — ApplyBreak is idempotent,
+				// and this arm already fired for this tenure.
+				BreakInvisibility(ESiegeVeilBreakReason::Mine);
+
 				bLoggedWaitingAtMine = false; // tenure starts — re-arm for any later queue
 
 				// per-tenure latch (TASK-254; was one-way per lifetime in

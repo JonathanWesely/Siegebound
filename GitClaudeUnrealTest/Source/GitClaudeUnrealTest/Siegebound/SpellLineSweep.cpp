@@ -12,6 +12,7 @@
 #include "Siegebound/Castle.h"
 #include "Siegebound/DamageTypes.h"
 #include "Siegebound/HeroCharacter.h"
+#include "Siegebound/SiegeCombatStatics.h" // TASK-828 (WITCH-§1): GatherHostileAgents — the ONE acquisition funnel
 #include "Siegebound/SiegeGameMode.h"
 #include "Siegebound/SummonedUnit.h"
 
@@ -125,25 +126,23 @@ void ASpellLineSweep::ApplyLineEffectUpTo(float FrontDistance)
 
 	const FVector SegmentEnd = LineOrigin + AimDirection * FrontDistance;
 
-	// same candidate universe as the M5 resolvers / ApplyRadialDamage: every
-	// ITeamAgent in the world (AGoldNode deliberately opts out by not
-	// implementing it). Re-gathered per tick — a handful of frames over a
-	// ~30-actor roster; fresh gathers make mid-sweep deaths/spawns trivially safe.
-	TArray<AActor*> TeamAgents;
-	UGameplayStatics::GetAllActorsWithInterface(World, UTeamAgent::StaticClass(), TeamAgents);
+	// ⭐ SITE 7 of 9 (TASK-828, WITCH-§1). Same candidate universe as the M5
+	// resolvers / ApplyRadialDamage — every ITeamAgent in the world (AGoldNode
+	// deliberately opts out by not implementing it) — now reached through the ONE
+	// funnel, which also applies the enemies-only term (§3.0: the team filter is the
+	// friendly-fire authority, never the instigator chain).
+	// Re-gathered per tick — a handful of frames over a ~30-actor roster; fresh
+	// gathers make mid-sweep deaths/spawns trivially safe.
+	// ⛔ The REACH test (the segment-nearest-point + LineHalfWidth measure) and the
+	// once-only AppliedTargets bookkeeping stay here — only the enumerate-and-team-
+	// filter step was lifted. AppliedTargets only ever held enemies, so testing it
+	// against the pre-filtered set yields exactly the same members it did before.
+	TArray<AActor*> HostileAgents;
+	FSiegeCombatStatics::GatherHostileAgents(World, CasterTeam, HostileAgents);
 
-	for (AActor* Candidate : TeamAgents)
+	for (AActor* Candidate : HostileAgents)
 	{
-		if (!IsValid(Candidate) || AppliedTargets.Contains(Candidate))
-		{
-			continue;
-		}
-
-		// enemies only (§3.0 — the team filter is the friendly-fire authority,
-		// never the instigator chain; native cast valid — UTeamAgent is
-		// NotBlueprintable, the SpellLibrary precedent)
-		const ITeamAgent* Agent = Cast<ITeamAgent>(Candidate);
-		if (!Agent || Agent->GetTeamId() == CasterTeam)
+		if (AppliedTargets.Contains(Candidate))
 		{
 			continue;
 		}

@@ -29,6 +29,10 @@
  *    UCombatantHealthBarComponent: it owns the banding math and the seed-then-bind on the
  *    owner's FOnCombatantDamageBoostChanged. This widget deliberately holds NO boost state
  *    and does NOT bind that delegate — one push path, no second source of truth.
+ *  - OnCastProgressChanged (TASK-860, the cast row — law WITCH-§9) is driven the SAME way and
+ *    for the same reason: the component POLLS the owner's own IHealthBarProvider and pushes one
+ *    atomic event. This widget holds NO cast state and binds NO cast delegate — there is no cast
+ *    delegate to bind (WITCH-§9.3's contract is float/bool ONLY, deliberately poll-shaped).
  */
 UCLASS()
 class GITCLAUDEUNREALTEST_API UCombatantHealthBarWidget : public UUserWidget
@@ -94,6 +98,42 @@ public:
 	 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Siegebound|UI")
 	void SetDamageBoost(float FillFraction, float R, float G, float B, float RowOpacity);
+
+	/**
+	 *  Implemented by WBP_CombatantHealthBar (TASK-861): drive the CAST row that sits ABOVE the boost
+	 *  row (BarStack ▸ CastBarRoot ▸ CastBarFill) — the two-ended tell for the Witch's interruptible
+	 *  3-second channel. ⛔ THE SIGNATURE IS PINNED CHARACTER-FOR-CHARACTER BY LAW (WITCH-§9.3) so the
+	 *  C++ half and the widget half never negotiate it; ⛔ float/bool ONLY, ⛔ never an enum (the MCP
+	 *  BP-param rule — an enum pin is not authorable through the tooling that builds this asset).
+	 *
+	 *  ⭐⭐ CastPercent IS 0..100, ⛔ NEVER 0..1 — the shipped BoostPercent/SetDamageBoost convention one
+	 *  row down, reused so one widget never carries two scales. ⛔ THE WIDGET DIVIDES BY 100 on its side,
+	 *  exactly as the OnHPChanged row already divides CurrentHP by MaxHP.
+	 *  ⚠️ THE COST OF GETTING THAT BACKWARDS, IN ARITHMETIC (HIGH-§1): a 0..100 producer read WITHOUT the
+	 *  divide pins the bar full from the first frame of every cast, and a 0..1 producer read WITH it
+	 *  paints 0.03 of a bar for a cast that is 3% done — i.e. a tell that never visibly moves, on a
+	 *  3-second window whose entire job is answering "how much LONGER".
+	 *
+	 *  ⛔ bCasting IS THE GATE, AND IT IS A SEPARATE QUESTION FROM THE PERCENT — never derived from it.
+	 *  A cast that has just begun reads 0%, so "CastPercent > 0" would hide the row for the first poll
+	 *  of every cast, which is the exact moment WITCH-§9.1 requirement 1 exists to serve.
+	 *  ⛔⛔ bCasting == false ⇒ CastBarRoot is COLLAPSED, ⛔ NOT merely hidden and ⛔ NOT merely
+	 *  RenderOpacity 0: a hidden-but-laid-out element still occupies its slot and would move the HP bar
+	 *  on EVERY building, the hero and all 20+ units in the game (WITCH-§9.6 makes a pixel-identical
+	 *  non-casting bar a REQUIREMENT, not an expectation). ⚠️ THAT COLLAPSE IS THE WIDGET'S JOB AND
+	 *  DELIBERATELY NOT THE COMPONENT'S — the component supplies the DATA, the widget decides what is
+	 *  SHOWN. The C++ side names neither CastBarRoot nor CastBarFill anywhere in code.
+	 *
+	 *  ⭐ ONE ATOMIC EVENT, NOT TWO, for the SetDamageBoost reason: splitting the gate from the fill
+	 *  would leave a frame where a collapsed row carries a stale 87% or a shown row carries a stale 0%.
+	 *
+	 *  ⚠️ Like the three events above, this MUST be authored as a TRUE override (bOverrideFunction =
+	 *  true). A K2Node_CustomEvent of the same name is DSL-indistinguishable, reports bIsImplemented =
+	 *  true, and NEVER fires from C++ — the exact defect that hid the health-bar bug five times
+	 *  (TASK-131). Assert the node's object CLASS, never bIsImplemented.
+	 */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Siegebound|UI")
+	void OnCastProgressChanged(float CastPercent, bool bCasting);
 
 protected:
 

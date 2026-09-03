@@ -57,13 +57,24 @@ namespace
 		return Distance;
 	}
 
-	/** All ITeamAgent actors in the world — the same candidate universe as ApplyRadialDamage (AGoldNode deliberately opts out by not implementing it). */
-	TArray<AActor*> GatherTeamAgents(UWorld* World)
-	{
-		TArray<AActor*> TeamAgents;
-		UGameplayStatics::GetAllActorsWithInterface(World, UTeamAgent::StaticClass(), TeamAgents);
-		return TeamAgents;
-	}
+	/**
+	 *  ⭐ SITE 6 of 9 (TASK-828, WITCH-§1) — and the site that produced the audit's real
+	 *  finding, recorded here because a reader counting `GetAllActorsWithInterface` calls
+	 *  will otherwise mis-count what this file does.
+	 *
+	 *  ⚠️ THIS FILE HAD **ONE** ENUMERATION FEEDING **THREE** TEAM-FILTER LOOPS —
+	 *  `ResolveFreeze` and `ResolveTopTargetsDamage` want ENEMIES, but `ResolveAllyBuff`
+	 *  (Battle Cry) wants FRIENDLIES. So "nine sites" is nine ENUMERATIONS and eleven
+	 *  team-filter consumers, ten hostile and one friendly. ⛔ Routing all three through
+	 *  GatherHostileAgents would have silently made Battle Cry buff nobody — a behaviour
+	 *  change hiding inside a "pure refactor".
+	 *
+	 *  ⇒ the file-local `GatherTeamAgents` helper is GONE (it was the unfiltered universe,
+	 *  which is exactly the shape WITCH-§1 forbids). Each resolver now names the lane it
+	 *  actually wants: FSiegeCombatStatics::GatherHostileAgents or ::GatherFriendlyAgents.
+	 *  The candidate universe is unchanged — AGoldNode still opts out by not implementing
+	 *  ITeamAgent, so mining nodes are never frozen, struck or buffed.
+	 */
 
 	/**
 	 *  VFX contract (M5 ruling 11): spawn /Game/VFX/NS_Spell_<CardID> at
@@ -281,21 +292,14 @@ namespace
 			return false;
 		}
 
+		// enemies only (§3.0 no friendly fire) — the funnel applies IsValid + the cast + the
+		// team term; the RADIUS gate and the ruling-5 type exclusions stay right here.
+		TArray<AActor*> HostileAgents;
+		FSiegeCombatStatics::GatherHostileAgents(World, CasterTeam, HostileAgents);
+
 		int32 FrozenCount = 0;
-		for (AActor* Candidate : GatherTeamAgents(World))
+		for (AActor* Candidate : HostileAgents)
 		{
-			if (!IsValid(Candidate))
-			{
-				continue;
-			}
-
-			// enemies only (§3.0 no friendly fire; native cast valid — UTeamAgent is NotBlueprintable)
-			const ITeamAgent* Agent = Cast<ITeamAgent>(Candidate);
-			if (!Agent || Agent->GetTeamId() == CasterTeam)
-			{
-				continue;
-			}
-
 			if (DistanceToTargetCollision(TargetPoint, Candidate) > Row.AoERadius)
 			{
 				continue;
@@ -356,19 +360,13 @@ namespace
 		};
 		TArray<FStrikeCandidate> Candidates;
 
-		for (AActor* Candidate : GatherTeamAgents(World))
+		// friendlies never selected (§3.0) — the funnel is the team authority. The castle
+		// exclusion, the per-type liveness gates and the reticle radius stay here.
+		TArray<AActor*> HostileAgents;
+		FSiegeCombatStatics::GatherHostileAgents(World, CasterTeam, HostileAgents);
+
+		for (AActor* Candidate : HostileAgents)
 		{
-			if (!IsValid(Candidate))
-			{
-				continue;
-			}
-
-			const ITeamAgent* Agent = Cast<ITeamAgent>(Candidate);
-			if (!Agent || Agent->GetTeamId() == CasterTeam)
-			{
-				continue; // friendlies never selected (§3.0)
-			}
-
 			// castle EXCLUDED from selection entirely (ruling 4 anti-sniping intent)
 			if (Candidate->IsA<ACastle>())
 			{
@@ -469,18 +467,24 @@ namespace
 			return false;
 		}
 
+		// ⛔⛔ THE FRIENDLY LANE, AND IT IS THE REASON GatherFriendlyAgents EXISTS.
+		// Battle Cry buffs the caster's OWN units. Routing this through the hostile gather
+		// would have made it buff nobody — the exact class of silent regression a "pure
+		// refactor" is supposed to be incapable of. Friendly acquisition is ALSO never
+		// veil-suppressed (WITCH-§2, fourth lane): a player must always be able to buff a
+		// unit their own witch made invisible.
+		TArray<AActor*> FriendlyAgents;
+		FSiegeCombatStatics::GatherFriendlyAgents(World, CasterTeam, FriendlyAgents);
+
 		int32 BuffedCount = 0;
-		for (AActor* Candidate : GatherTeamAgents(World))
+		for (AActor* Candidate : FriendlyAgents)
 		{
-			if (!IsValid(Candidate))
+			// friendly live UNITS only (GDD §4 "friendly units") — the funnel supplied
+			// IsValid and the same-team term; the UNIT type gate and liveness stay here.
+			ASummonedUnit* Unit = Cast<ASummonedUnit>(Candidate);
+			if (!Unit || Unit->IsUnitDead())
 			{
 				continue;
-			}
-
-			ASummonedUnit* Unit = Cast<ASummonedUnit>(Candidate);
-			if (!Unit || Unit->GetTeamId() != CasterTeam || Unit->IsUnitDead())
-			{
-				continue; // friendly live UNITS only (GDD §4 "friendly units")
 			}
 
 			if (DistanceToTargetCollision(TargetPoint, Unit) > Row.AoERadius)

@@ -33,6 +33,7 @@
 #include "Siegebound/CardRow.h"
 #include "Siegebound/ClimbableTower.h" // TASK-778 (CONTACT-§4.1): the contact gate the hero POLLS — the tower owns the radius, the cone, the dwell and K-C's latch; this class owns ⛔ none of them
 #include "Siegebound/CombatantHealthBarComponent.h"
+#include "Siegebound/SiegeCombatStatics.h" // TASK-828 (WITCH-§1): GatherHostileAgents — the ONE acquisition funnel
 #include "Siegebound/SiegeFeedbackLibrary.h"
 #include "Siegebound/SiegeHitFlashComponent.h"
 #include "Siegebound/SiegeKeyboardLayoutSubsystem.h" // TASK-512: USiegeKeyboardLayoutSubsystem::GetPositionalContext — the positional remap's ONE call site
@@ -460,6 +461,20 @@ void AHeroCharacter::StopSprint()
 	ApplyMovementSpeed();
 }
 
+// ⛔⛔ TASK-829 / WITCH-§3 — ⛔ NO VEIL BREAK IN THIS FUNCTION, AND THE OMISSION IS ⛔ RULED.
+// WITCH-§3's Attack row names `AHeroCharacter::DoMeleeAttack` ⛔ for completeness; ruling ⛔ J-W10
+// says the ⛔ HERO IS NOT VEILABLE — WITCH-§4 targets "nearest friendly ⛔ UNIT", and WITCH-§6
+// forbids a mirrored `bIsInvisible` on any class other than ASummonedUnit. ⇒ the hero ⛔ cannot
+// hold a veil, so a break here would be ⛔ dead code contradicting a live ruling.
+// ⭐ WHAT J-W10 ALSO KEEPS DORMANT, named so nobody re-derives it: the hero's ⛔ RECALL CHANNEL
+// (BeginRecall / TickRecall / EndRecall) fits ⛔ NONE of the six enumerators, and ⛔ Rally / the
+// ⛔ WAR BANNER pulse would map to `Empower`. ⚠️ If Jonathan ever rules the hero veilable, recall
+// needs its own ruling and that is a ⛔ MANAGER AMENDMENT to WITCH-§3, ⛔ never a quiet 7th
+// enumerator (TASK-827's absence gate turns red on one, by design).
+// ⭐ THE HERO'S ⛔ ACQUISITION is already covered and needs nothing here: the swing's candidate
+// set comes from FSiegeCombatStatics::GatherHostileAgents, which honours the veil for free
+// (WITCH-§1) ⇒ the hero ⛔ cannot auto-swing at a veiled enemy. ⚠️ He can still hit one he aims
+// at manually if he knows where it is — veiled units are ⛔ hidden, ⛔ not invulnerable.
 void AHeroCharacter::DoMeleeAttack()
 {
 	// placement mode owns the LMB (TASK-007); a suppressed swing must not consume the cooldown.
@@ -547,8 +562,26 @@ void AHeroCharacter::DoMeleeAttack()
 	const float MinCosAngle = FMath::Cos(FMath::DegreesToRadians(MeleeHalfAngleDegrees));
 
 	// hit ALL enemy team agents within MeleeRange and inside the ±MeleeHalfAngleDegrees cone (GDD §3.1)
-	TArray<AActor*> TeamAgents;
-	UGameplayStatics::GetAllActorsWithInterface(World, UTeamAgent::StaticClass(), TeamAgents);
+	// ⭐ SITE 8 of 9 (TASK-828, WITCH-§1): the world enumeration + the Cast<ITeamAgent> +
+	// the `GetTeamId() == Team` compare are now FSiegeCombatStatics::GatherHostileAgents,
+	// applied in the same order. ⛔ The RANGE test and the CONE test — the two things that
+	// make this a melee swing rather than a world-wide smite — did not move.
+	//
+	// ⭐⭐ TASK-838 (FOG-§7 ROW 1 — VISION / ACQUISITION): the swing hands the funnel where it is
+	// looking FROM and the reach it is looking WITH. ⛔ No clamp, no ceiling and no fog symbol
+	// lives here — the ceiling is applied once, inside the funnel (FOG-§6).
+	// 📌 MEASURED AND SAID PLAINLY: MeleeRange is 150 uu, far INSIDE the 609.6 ceiling, so fog
+	// changes this swing by ⛔ NOTHING — "every melee unit: unaffected" is FOG-§2's own row, and
+	// the fog rule is a `min`, ⛔ never a `clamp`, so a short reach is ⛔ never RAISED to the
+	// ceiling. The query is handed over anyway because the site's CATEGORY is what decides this,
+	// ⛔ not today's number: a site exempted because the arithmetic happens to be inert is the
+	// coincidence-not-design failure FOG-§7 exists to record.
+	// ⚠️ Unrelated and untouched: the hero can still MANUALLY aim a hero-line spell past the
+	// ceiling (J-F9 — a hero spell is not a unit). That lane hands over no vision query at all.
+	const FSiegeVisionQuery Vision = FSiegeVisionQuery::SeeingFrom(MyLocation, MeleeRange);
+
+	TArray<AActor*> HostileAgents;
+	FSiegeCombatStatics::GatherHostileAgents(World, Team, HostileAgents, ESiegeVeilPolicy::SuppressVeiled, &Vision);
 
 	bool bDealtDamage = false;
 
@@ -557,16 +590,12 @@ void AHeroCharacter::DoMeleeAttack()
 	// bDealtDamage, which stays byte-identical to M1 for the regen re-arm below.
 	bool bAnyEnemyDamaged = false;
 
-	for (AActor* Target : TeamAgents)
+	for (AActor* Target : HostileAgents)
 	{
-		if (!IsValid(Target) || Target == this)
-		{
-			continue;
-		}
-
-		// no friendly fire (GDD §3.0)
-		const ITeamAgent* TargetAgent = Cast<ITeamAgent>(Target);
-		if (!TargetAgent || TargetAgent->GetTeamId() == Team)
+		// IsValid is applied by the gatherer. `Target == this` is now provably redundant —
+		// the hero is on its own Team, so the gatherer already dropped it — and is KEPT as a
+		// one-compare guard for the day "hostile" is redefined (the AcquireTarget precedent).
+		if (Target == this)
 		{
 			continue;
 		}
@@ -828,6 +857,10 @@ bool AHeroCharacter::IsFriendlyDamage(AController* EventInstigator, AActor* Dama
 	return false;
 }
 
+// ⛔ TASK-829 / WITCH-§3 — ⛔ NO `Death` VEIL BREAK HERE, for the same ⛔ J-W10 reason as
+// DoMeleeAttack above: the hero ⛔ cannot be veiled, so there is ⛔ nothing to clear. WITCH-§3's
+// Death row names this function ⛔ for completeness only. ⭐ ASummonedUnit::HandleDeath ⛔ does
+// carry the break — units are the only veilable actors in the game.
 void AHeroCharacter::HandleDeath()
 {
 	// death side effects run exactly once per death
