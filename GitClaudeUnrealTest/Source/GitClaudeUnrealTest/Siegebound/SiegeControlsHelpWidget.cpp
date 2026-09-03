@@ -210,9 +210,16 @@ namespace
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════
-//  THE ACTION REGISTRY — handoffs/TASK-704-programmer.md §4, 24 rows, in category order.
+//  THE ACTION REGISTRY — handoffs/TASK-704-programmer.md §4, in category order.
 //
-//  ⛔ THE ROW SET AND THE LANE COLUMN ARE 704's, NOT THIS TASK'S. Every lane assignment below
+//  ⚠️ THE ROW COUNT IS DELIBERATELY NOT STATED HERE ANY MORE. It read "24 rows" until TASK-823
+//     appended three (Cards.StackUpgrade, Cards.PlacementResize, Interface.MapMarks); a count
+//     transcribed into a comment is a fact that rots the next time the registry grows, and
+//     GetActions().Num() is the answer that cannot. ⭐ Rows 25-27 are TASK-823's own prose,
+//     authored at SOURCE from the shipped stack/wheel/mark code (`HELP-§2` mechanism 3) — every
+//     sentence's citation rides in the comment above its string, exactly as 704's do.
+//
+//  ⛔ THE ORIGINAL ROW SET AND THE LANE COLUMN ARE 704's. Every lane assignment below
 //     traces to that file's §1.1 audit, and every one-liner is its §4 text VERBATIM.
 //  ⛔ THE QWERTY COLUMN IS A FALLBACK AND A TEST FIXTURE, ⛔ NEVER THE DISPLAYED TRUTH while
 //     the action resolves in an active context (§1.2 / ResolveRowDisplayKeys).
@@ -475,23 +482,92 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 		}
 
 		{
-			// R-09. Lane D — reached ONLY from the HUD (CardHandWidget.h:49, :103-107); ⛔ no
-			// key binding exists, so the row carries a pointer chip and no key.
-			FSiegeControlsHelpAction& Row = AddRow(TEXT("Cards.Discard"), CategoryCards, TEXT("Discard a card"),
-				TEXT("Click a hand card's discard button to bin it and draw a replacement — it costs gold."), ESiegeInputLane::PointerOnly);
-			Row.bPointerOnly = true;
-			// 704 §4 R-09 detail. Citations (T1): the HUD route = CardHandWidget.h:49, :103-107;
-			// DiscardCost = SiegePlayerController.h:1007; the net-zero refusal =
-			// SiegePlayerController.cpp:1035-1044; the immediate redraw = :1060-1062.
-			// ⛔ The fee stays NAMED, ⛔ never re-typed as a number (704 U-5).
+			// R-09. ⭐⭐ REWRITTEN IN PLACE BY TASK-821 (`CARDBAR-§9`), ⛔ NOT deleted and ⛔ NOT
+			// replaced by a new row beside it. THE ROW ID IS LOAD-BEARING:
+			// Tests/SiegeControlsHelpTest.cpp names "Cards.Discard" in its RequiredIds[] subset, so
+			// a deletion or a rename turns the suite red. Rewriting keeps it green with zero test
+			// edits, because that list asserts a REQUIRED SUBSET rather than an exact set.
+			// ⚠️ MEASURED 2026-09-02 while doing this edit, and recorded because the law states a
+			// SECOND reason that is not true as built: ⛔ NO other row carries "Cards.Discard" in
+			// its RelatedActionIds (the 13 RelatedActionIds assignments in this file were read),
+			// so the "a new id orphans its referrers" argument is currently hypothetical. The test
+			// is the whole live reason — which is a stronger reason, not a weaker one.
+			//
+			// ⛔⛔ THE THREE SHIPPED FALSEHOODS THIS EDIT KILLS, named so a reader can check them off:
+			//   1. the one-liner "Click a hand card's discard button…" — TASK-809 removes the six
+			//      per-slot discard buttons, so the button it names stops existing;
+			//   2. the PointerOnly lane and the "Mouse click" chip it renders — there is no pointer
+			//      route AT ALL. Jonathan scrapped right-click on 2026-09-03 in his own words
+			//      ("lets just scrap that right click feature to discard cards and keep it just to
+			//      the 'H' key"), because right-click is already the placement-cancel gesture;
+			//   3. the comment claiming no key binding exists — one does now: IA_DiscardAll, bound
+			//      on ETriggerEvent::Started at SiegePlayerController.cpp:650-652.
+			//
+			// ⛔ LANE A, AND THE LANE *IS* THE LAYOUT STORY. The key is an Enhanced Input MAPPED
+			// action, so the chip is READ BACK from the applied (already-retargeted) IMC_Hero
+			// duplicate and the letter follows the player's layout with ⛔ zero conditional code
+			// here. EKeys::H below is the FALLBACK and the test fixture ONLY
+			// (SiegeControlsHelpWidget.h:188-194) — ⛔ never the displayed truth while the action
+			// resolves, and ⛔ never typed into prose. On US-Dvorak this row's chip reads `D`
+			// while the Cards.Play digits above it hold, and BOTH answers come out of the SAME
+			// ResolveRowDisplayKeys call: the digits do not move because the 26-letter table has
+			// no digit entry, ⛔ not because anything special-cases them.
+			FSiegeControlsHelpAction& Row = AddRow(TEXT("Cards.Discard"), CategoryCards, TEXT("Discard your whole hand"),
+				TEXT("Bin every card in your hand at once and draw a full replacement — one flat fee, however many cards you were holding."), ESiegeInputLane::MappedAction);
+			Row.Actions = { MakeActionRef(TEXT("IA_DiscardAll")) };
+			Row.QwertyReferenceKeys = { EKeys::H };
+			// ⛔ bPointerOnly is deliberately NOT assigned any more: the struct default is false
+			// (SiegeControlsHelpWidget.h:210-211) and every other MappedAction row leaves it alone.
+			// The line that read `Row.bPointerOnly = true;` was falsehood 2 and it is GONE.
+			//
+			// TASK-821 detail. Citations (T1) — ⛔ every one of these was opened and read for this
+			// edit, ⛔ none is copied from the task board:
+			//   • the entry point, its guard ladder and its flat-fee rule = SiegePlayerController.h:
+			//     547-585, implemented at SiegePlayerController.cpp:1172-1316;
+			//   • the whole hand goes at once = the loop over DeckComponent->DiscardFromHand at
+			//     :1287-1302, whose domain is the occupied-slot scan at :1237-1246;
+			//   • ONE charge for the whole hand = the single SpendGold at :1269;
+			//   • the net-zero refusal = :1269-1276 (SpendGold refuses below the fee with no change
+			//     and no broadcast) reusing the shipped "Not enough gold" line at :1274;
+			//   • the empty hand refuses BEFORE any gold moves = :1248-1255;
+			//   • refused while placing / targeting = :1202-1220;
+			//   • the replacement hand is drawn IMMEDIATELY = DeckComponent.cpp:206-240, where
+			//     :231-232 push the card to the discard pile and redraw that slot in the SAME call;
+			//   • the fee property itself = SiegePlayerController.h:1479-1496;
+			//   • the key route = SiegePlayerController.cpp:235 (soft ref), :515 (resolve),
+			//     :650-652 (bind) — mapped, ⛔ never a raw poll.
+			// ⛔⛔ THE FEE IS NAMED AND NEVER TYPED. DiscardAllCost's own header comment pins this
+			// rule for this very row ("if it is ever shown to the player it is READ from here,
+			// never typed") — a prose number rots the moment that line is retuned, which is the
+			// M7.7 "in 400"/AoERadius-700 lesson. ⇒ there is ⛔ not one digit character in the
+			// strings below, and the suite asserts exactly that for this row.
+			// ⛔ AND THERE IS NO RIGHT-CLICK SENTENCE, nor the Alt-cursor caveat that would have
+			// travelled with it: nothing in this gesture needs a cursor, and a help page teaching a
+			// control that does not exist is the one defect this whole screen exists to remove.
 			Row.Detail = FText::FromString(FString(
-				TEXT("Reached only from the HUD: UCardHandWidget::RequestDiscardSlot → ")
-				TEXT("ASiegePlayerController::DiscardHandSlot.\n\n")
-				TEXT("The fee is the fixed DiscardCost and it is charged before the pile moves; below the fee ")
-				TEXT("SpendGold refuses with no change and no broadcast, and you get the \"Not enough gold\" line. ")
-				TEXT("A replacement is drawn immediately.")));
-			// The discard button lives on the HUD, and the HUD is unclickable without the cursor hold.
-			Row.RelatedActionIds = { FName(TEXT("Cards.CursorHold")) };
+				TEXT("Pressing {Cards.Discard} bins every card in your hand in one gesture and deals a full ")
+				TEXT("replacement hand immediately: each card goes to the discard pile and its slot redraws in ")
+				TEXT("the same step, so you are never left holding an empty hand.\n\n")
+				TEXT("The fee is DiscardAllCost and it is charged once for the whole hand, flat. Dumping a ")
+				TEXT("single dead card costs exactly what dumping a full hand costs, because this prices a hand ")
+				TEXT("RESET rather than a per-card cycle — there is no longer any way to bin one card on its own ")
+				TEXT("at any price.\n\n")
+				TEXT("If you cannot afford it, nothing happens at all: no gold leaves you, no card moves, and you ")
+				TEXT("get the same \"Not enough gold\" line every other card refusal uses. An empty hand is refused ")
+				TEXT("before the fee is taken, so you can never pay to discard nothing.\n\n")
+				TEXT("It is refused while you are placing a card or targeting a spell — binning the card you are ")
+				TEXT("half-way through committing would hand the confirm a different one. Back out first with ")
+				TEXT("{Cards.Cancel}, then discard.")));
+			// ⭐ THE RELATED CONTROL CHANGED WITH THE FEATURE, and the swap is the point:
+			// Cards.CursorHold was listed because the discard USED to be a HUD button you had to
+			// raise the cursor to click. There is no button and no cursor in this gesture any more,
+			// so that block would now teach an irrelevance. Cards.Cancel is where the last
+			// paragraph sends the player, and it is the only control this page still needs.
+			// ⛔ This is DATA ON THIS ROW — Cards.Cancel's own page is ⛔ NOT touched (its
+			// "right-click or Escape cancels" text is correct again now that right-click gained no
+			// fifth meaning, and editing a correct page is how a help screen acquires its next
+			// falsehood).
+			Row.RelatedActionIds = { FName(TEXT("Cards.Cancel")) };
 		}
 
 		{
@@ -522,6 +598,189 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 				TEXT("exits are idempotent.\n\n")
 				TEXT("Nothing has been spent at the moment you cancel: cards leave the hand only at confirm. ")
 				TEXT("Escape is a shipped, bound cancel key.")));
+		}
+
+		{
+			// ⭐⭐ R-25 — THE STACK UPGRADE (TASK-823, the TOWER half of `CARDBAR-§9`; `STACK-§1`,
+			// `STACK-§2`, `STACK-§5`). ⛔ A NEW ROW APPENDED AFTER THE SHIPPED CARD ROWS — ⛔ not
+			// one shipped row above it is edited, re-indented or reordered by this task.
+			//
+			// ⛔ LANE B, AND THE LANE IS A MEASUREMENT RATHER THAN A GUESS: the gesture that
+			// performs an upgrade is the placement CONFIRM, which is a RAW POLL of the left button
+			// inside PlayerTick's placement branch — `if (WasInputKeyJustPressed(
+			// EKeys::LeftMouseButton)) { TryConfirmPlacement(); }` — i.e. the identical lane and
+			// the identical key as PickMode.Confirm. ⛔ No IA_* asset is named because none exists
+			// on this path, and naming one would put a raw key on the Enhanced Input query lane.
+			//
+			// Citations (T1) — ⛔ EVERY ONE OF THESE WAS OPENED AND READ AT SOURCE FOR THIS ROW,
+			// ⛔ none is taken from the task board and ⛔ none from another agent's handoff
+			// (`HELP-§2` mechanism 3). Located by SYMBOL, ⛔ not by line number (`SC-§38`):
+			//   • WHEN it turns blue = ASiegePlayerController::ResolvePlacementUpgradeState — seven
+			//     ordered gates: a BUILDING card -> a live building under the cursor -> own team ->
+			//     the SAME CardID -> CanScaleFootprint() -> gold -> Ready;
+			//   • what blue DOES to the click = UpdatePlacementGhost's
+			//     `case EPlacementUpgradeState::Ready:` arm (`bPlacementValid = true;`) and
+			//     TryConfirmPlacement's `if (PlacementUpgradeState == EPlacementUpgradeState::Ready)
+			//     { ConfirmStackUpgrade(*SiegeState); return; }` — it returns BEFORE every spawn
+			//     rule, so nothing is built;
+			//   • the colour = the ordered ternary `(PlacementUpgradeState == ...::Ready) ?
+			//     UpgradeGhostColor : (bPlacementValid ? ValidGhostColor : InvalidGhostColor)`,
+			//     written into the SAME "GhostColor" parameter as green and red;
+			//   • the enemy case = gate (3)'s `HoveredBuilding->GetTeamId() != OwnTeam` -> None, so
+			//     an enemy building keeps the SHIPPED clearance refusal and gains no new vocabulary;
+			//   • the castle case = gate (2)'s `Cast<ABuilding>` (ACastle is class-disjoint);
+			//   • the HEIGHT series = ABuilding::StackHeightMultiplier, whose whole answer is
+			//     `FMath::Min(1 + Upgrades, Cap)` with Cap read off the CDO's
+			//     MaxStackHeightMultiplier ⇒ ⭐ ADDITIVE and SATURATING, ⛔ never doubling;
+			//   • the HEALTH series = ABuilding::StackHealthMultiplier, repeated multiplication by
+			//     the CDO's StackHealthStep with ⛔ NO ceiling term in the loop;
+			//   • Z only, X/Y inherited = ApplyStackUpgrade's `Scale.Z = AuthoredHeightScaleZ *
+			//     StackHeightMultiplier(StackUpgradeCount);` with X and Y untouched (`J-4`);
+			//   • GRANTED, ⛔ never healed = the same function's `MaxHP = OldMaxHP *
+			//     StackHealthMultiplier(1);` followed by `CurrentHP += (MaxHP - OldMaxHP);`;
+			//   • the cap notice = ConfirmStackUpgrade's `if (ABuilding::StackHeightMultiplier(
+			//     UpgradesAfter) <= ABuilding::StackHeightMultiplier(UpgradesBefore))` ->
+			//     BroadcastRefusal(StackHeightCapNoticeText()) — at CONFIRM, ⛔ never per frame;
+			//   • the COST = PendingCost, taken from the card's own data-table row at
+			//     EnterPlacementMode (`PendingCost = Row->Cost;`) and spent by ConfirmStackUpgrade's
+			//     `SiegeState.SpendGold(PendingCost)` (`J-2`: ⛔ never a literal);
+			//   • the two refusals = TryConfirmPlacement's `case EPlacementInvalidReason::Upgrade:`,
+			//     choosing between the shipped "Not enough gold" line and
+			//     StackNotStackableRefusalText() ("That building cannot be stacked");
+			//   • the card leaves the hand at confirm = ConfirmStackUpgrade's
+			//     `DeckComponent->ConfirmPlayFromHand(PendingHandSlot)` block.
+			//
+			// ⛔⛔ THE EXCLUSION IS TAUGHT AS A BEHAVIOUR, ⛔ NEVER AS A NAME LIST — and that is the
+			// same law the CODE obeys: the shipped path asks ABuilding::CanScaleFootprint()
+			// (AClimbableTower overrides it false) and a CardID string compare there is an
+			// automatic QA fail. ⇒ naming a card in this prose would teach a rule the game does not
+			// have and would go stale the day a second climbable building ships. ⭐ The PLAYER'S
+			// reason is given ("it is the one you climb"); ⛔ no socket, ⛔ no rung plane and ⛔ no
+			// standoff appears anywhere on screen.
+			//
+			// ⛔ NO TUNABLE'S VALUE IS TYPED — MaxStackHeightMultiplier and StackHealthStep are
+			// NAMED, exactly as PickMode.Resize names its three radii (the M7.7 "in 400" lesson).
+			// ⚠️ The jargon cost F-3 already flags for that row applies here too and is declared in
+			// this task's handoff rather than solved by inventing a number.
+			FSiegeControlsHelpAction& Row = AddRow(TEXT("Cards.StackUpgrade"), CategoryCards, TEXT("Stack a tower taller"),
+				TEXT("While you are placing a building, hover one you already own of the same card: the outline turns blue and the click makes that one taller instead of building a new one."), ESiegeInputLane::RawNonLetter);
+			Row.QwertyReferenceKeys = { EKeys::LeftMouseButton };
+			Row.Detail = FText::FromString(FString(
+				TEXT("Hover one of your OWN buildings while holding the card that built it and the placement outline ")
+				TEXT("turns BLUE. Blue means the click will UPGRADE that building instead of putting a new one down: ")
+				TEXT("nothing is built and nothing moves.\n\n")
+				TEXT("WHEN IT TURNS BLUE — all of these have to be true, and if any one is missing the outline stays ")
+				TEXT("green or red exactly as it always has. You are placing a BUILDING card; the thing under the ")
+				TEXT("cursor is a building rather than open ground, a unit or your castle; it belongs to YOU; and it ")
+				TEXT("was built from the SAME card you are holding. An enemy building never turns blue — it stays red ")
+				TEXT("on the ordinary too-close-to-another-building rule, with the message it has always given.\n\n")
+				TEXT("WHAT AN UPGRADE BUYS. Height: each upgrade adds one more copy of the building's ORIGINAL ")
+				TEXT("height, and it stops at MaxStackHeightMultiplier times that original. Its width and length are ")
+				TEXT("not touched. Health: each upgrade multiplies the building's maximum health by StackHealthStep, ")
+				TEXT("compounding, and that half has no ceiling at all — it keeps climbing after the height has ")
+				TEXT("stopped. The health is GRANTED rather than repaired: a damaged tower stays exactly as damaged, ")
+				TEXT("it is simply damaged out of a bigger pool.\n\n")
+				TEXT("AT THE HEIGHT LIMIT the click still buys health, the outline stays blue, and one line on the ")
+				TEXT("HUD tells you the height has maxed out the moment you confirm — the click never quietly stops ")
+				TEXT("doing what it did the time before.\n\n")
+				TEXT("WHAT IT COSTS is the card's own cost, the same gold placing it would have cost, and the card ")
+				TEXT("leaves your hand at confirm exactly as a placement does. If you cannot afford it the outline is ")
+				TEXT("RED rather than blue and the click answers with the same \"Not enough gold\" line every other ")
+				TEXT("card refusal uses. Blue never promises a click that will be refused.\n\n")
+				TEXT("ONE KIND OF BUILDING REFUSES TO BE STACKED, AND IT IS THE ONE YOU CAN CLIMB. Its ladder is ")
+				TEXT("fixed to the shape of the mesh, so stretching the building would take the ladder with it and ")
+				TEXT("the climb would stop working. The game therefore asks each building whether it may be scaled at ")
+				TEXT("all, rather than checking it against a list of names — so any climbable building added later is ")
+				TEXT("protected by the same one rule. Hovering one shows RED with \"That building cannot be ")
+				TEXT("stacked\".\n\n")
+				TEXT("A refusal of either kind costs nothing and leaves you in placement mode, so another building — ")
+				TEXT("or another patch of ground — still works. Back out entirely with {Cards.Cancel}.\n\n")
+				TEXT("The size you dial in with the wheel applies to what you PLACE, not to what you GROW: an ")
+				TEXT("upgrade keeps the building's existing width and length.")));
+			// Jonathan's "all the controls with it": getting INTO placement is one row, sizing what
+			// you are about to put down is another, and backing out is a third. ⛔ These are this
+			// row's OWN outbound edges (`HELP-§7`) — ⛔ no other row's RelatedActionIds is touched
+			// by this task, and every id here resolves to a real row.
+			Row.RelatedActionIds = {
+				FName(TEXT("Cards.Play")), FName(TEXT("Cards.PlacementResize")), FName(TEXT("Cards.Cancel"))
+			};
+		}
+
+		{
+			// ⭐⭐ R-26 — THE PLACEMENT FOOTPRINT WHEEL (TASK-823; `STACK-§4`, `MARK-§4` as amended).
+			//
+			// ⛔ LANE B: a RAW POLL of the wheel — `WasInputKeyJustPressed(EKeys::MouseScrollUp)` /
+			// `...MouseScrollDown` inside ASiegePlayerController::ApplyPlacementFootprintWheel, the
+			// same mechanism and the same keys as PickMode.Resize. ⛔ NO new InputAction exists for
+			// it and none may be added (`MARK-§4`).
+			//
+			// Citations (T1) — read at SOURCE, located by SYMBOL (`SC-§38`):
+			//   • the gesture and WHERE it lives = the `ApplyPlacementFootprintWheel();` call in
+			//     PlayerTick's PLACEMENT branch, reached only past `if (!bInPlacementMode) {
+			//     return; }` — the group-pick, targeting and war-map branches all `return` above it,
+			//     so at most one of the wheel's three meanings can run in a frame;
+			//   • one notch = one step, clamped = ASiegePlayerController::StepPlacementFootprintScale
+			//     (`SafeCurrent + SafeStep * NotchDelta`, then `FMath::Clamp(..., SafeMin, SafeMax)`)
+			//     driven by PlacementFootprintWheelStep / PlacementFootprintMin /
+			//     PlacementFootprintMax;
+			//   • ⛔ NO SHRINKING is a RULING, not a rounding = PlacementFootprintMin's own header
+			//     comment (`J-3`), which also records that shrinking would let a building hide in a
+			//     gap its mesh was never meant to fit;
+			//   • WIDTH AND LENGTH ONLY = ASiegePlayerController::MakePlacementFootprintScale3D,
+			//     which returns `FVector(SafeScale, SafeScale, 1.f)` — the Z axis belongs to the
+			//     stack upgrade and the wheel never writes it;
+			//   • every session starts at the floor = EnterPlacementMode's
+			//     `PlacementFootprintScale = PlacementFootprintMin;` (⛔ never a literal);
+			//   • the ghost and the spawned building are ONE value = UpdatePlacementGhost's
+			//     `GhostActor->SetActorScale3D(MakePlacementFootprintScale3D(PlacementFootprintScale));`
+			//     and TryConfirmPlacement's `const FTransform SpawnTransform(FRotator::ZeroRotator,
+			//     PlacementLocation, MakePlacementFootprintScale3D(PlacementFootprintScale));`;
+			//   • the room checks measure the SCALED ghost = TryGetPlacementFootprintRadius's
+			//     CalcBounds through the component's live transform (`STACK-§6`), consumed by the
+			//     clearance, obstacle and own-unit gates;
+			//   • units and spells ignore it = EnterPlacementMode's `bPendingCardCanScaleFootprint =
+			//     bPendingIsBuilding && CanCardActorScaleFootprint(...)`;
+			//   • the climbable building is INERT rather than refused per notch =
+			//     ApplyPlacementFootprintWheel's leading `if (!bPendingCardCanScaleFootprint) {
+			//     return; }` and its comment ("the refusal already has a voice ... on the click").
+			//
+			// ⭐⭐ THE DISAMBIGUATION `STACK-§4` DEMANDS IS IN THE FIRST PARAGRAPH, ⛔ not buried:
+			// the game now has THREE wheel meanings on one physical gesture, and `HELP-§2`'s
+			// standard is that a help screen conflating them is worse than no help screen. ⇒ this
+			// page says WHICH MODE it belongs to before it says what it does, and names the other
+			// two. ⛔ NO tunable value is typed.
+			FSiegeControlsHelpAction& Row = AddRow(TEXT("Cards.PlacementResize"), CategoryCards, TEXT("Resize what you are placing"),
+				TEXT("While a building's placement outline is up, scroll the mouse wheel to make it wider and longer — the wheel only does this during placement."), ESiegeInputLane::RawNonLetter);
+			Row.QwertyReferenceKeys = { EKeys::MouseScrollUp, EKeys::MouseScrollDown };
+			Row.Detail = FText::FromString(FString(
+				TEXT("This is the mouse wheel's PLACEMENT meaning, and the game has three different ones. Here it ")
+				TEXT("changes the SIZE of the building you are about to put down, and it does nothing at all unless a ")
+				TEXT("building's placement outline is on screen. While you are drawing an army order the same wheel ")
+				TEXT("resizes the order circles; on the war map it resizes one of your own map circles. One mode at a ")
+				TEXT("time, never two.\n\n")
+				TEXT("One notch changes the size by PlacementFootprintWheelStep, between PlacementFootprintMin and ")
+				TEXT("PlacementFootprintMax. It will not go below the floor: you can make a building bigger than it ")
+				TEXT("was drawn, never smaller. That is a decision rather than an oversight — shrinking would let a ")
+				TEXT("building hide in a gap its shape was never meant to fit, and it would shrink the ground the ")
+				TEXT("building blocks along with the art.\n\n")
+				TEXT("IT CHANGES WIDTH AND LENGTH ONLY. Height belongs to the stack upgrade, and the wheel never ")
+				TEXT("touches it.\n\n")
+				TEXT("Every placement starts back at the floor, so a size you dialled in for one building does not ")
+				TEXT("follow you to the next card.\n\n")
+				TEXT("WHAT YOU SEE IS WHAT YOU GET. The outline and the building that appears are the same size, and ")
+				TEXT("the room checks — the gap from other buildings, from obstacles, and from your own units ")
+				TEXT("standing on the spot — are all measured against the size ON SCREEN. A building you have ")
+				TEXT("scrolled up is genuinely harder to fit and will be refused for want of room rather than ")
+				TEXT("appearing on top of something.\n\n")
+				TEXT("Unit and spell cards ignore the wheel completely. So does the one building you can climb: its ")
+				TEXT("ladder is fixed to the shape of the mesh, so it cannot be resized, and the wheel is simply dead ")
+				TEXT("on it rather than nagging you once per notch — that refusal speaks once, at the click.")));
+			// ⭐ THE TWO OTHER WHEEL MEANINGS, LINKED RATHER THAN RE-DESCRIBED (`HELP-§2`: one
+			// definition, two renderings), plus the other thing a placement outline can do. ⛔ This
+			// row's OWN outbound edges only (`HELP-§7`).
+			Row.RelatedActionIds = {
+				FName(TEXT("Cards.StackUpgrade")), FName(TEXT("PickMode.Resize")), FName(TEXT("Interface.MapMarks"))
+			};
 		}
 
 		// ─── CATEGORY: ORDERS ──────────────────────────────────────────────────────────────
@@ -1075,6 +1334,109 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 		}
 
 		{
+			// ⭐⭐ R-27 — THE MAP MARKS (TASK-823; `MARK-§0`..`MARK-§5`, and it is the HOLE the
+			// `CARDBAR-§9` decomposition FOUND rather than a nice-to-have).
+			//
+			// ⛔⛔ WHY IT EXISTS AT ALL, stated so nobody reads it as scope creep: `STACK-§4` orders
+			// that this screen distinguish all THREE wheel meanings, and the third one — the map's
+			// numbered circles — had ⛔ NO ROW OF ANY KIND. The three shipped Interface.WarMap*
+			// rows cover the map's own PLACE-NAME markers and ⛔ nothing of this feature: ⛔ not
+			// placing a circle, ⛔ not resizing it, ⛔ not deleting it. ⇒ `STACK-§4`'s instruction
+			// was ⛔ UNSATISFIABLE until this row existed. ⭐ This is `HELP-§2` mechanism 2's own
+			// honest limit paying out exactly as it predicted: the marks feature shipped after this
+			// screen was written, it was SURFACE-ABLE, and nobody surfaced it.
+			//
+			// ⚠️⚠️ THE LANE IS A JUDGMENT CALL AND IT IS DECLARED, ⛔ not slipped in (handoff
+			// TASK-823, ruling H-1). These four gestures are SLATE EVENTS on a focused widget
+			// (UWarMapWidget::NativeOnMouseButtonDown / ::NativeOnMouseWheel), ⛔ not controller
+			// polls, and ESiegeInputLane's own comment describes RawNonLetter as a "RAW-polled key".
+			// It is nevertheless the CORRECT lane, for the reason the lane actually encodes:
+			//   (a) what the resolver must do here is "label the reference keys VERBATIM, with ZERO
+			//       GetPositionalKey calls", which is Lane B's algorithm exactly — and the identity
+			//       is PROVABLE, because the translation table holds A..Z and nothing else, so a
+			//       mouse button and a wheel notch can never move;
+			//   (b) ⛔ PointerOnly would be actively WRONG here even though these are UI clicks:
+			//       ComposeKeyChipLabel answers the single "Mouse click" affordance for that lane
+			//       REGARDLESS of the keys it is handed, so the WHEEL — the one gesture this row
+			//       was boarded to make visible — would be structurally unable to appear on the
+			//       row. ⇒ the row would silently fail the very requirement it exists to satisfy.
+			// ⚖️ Lane D stays right for Interface.WarMapReveal and Interface.WarMapMarker, which
+			// really are one click on one button, and neither of them is touched by this task.
+			//
+			// Citations (T1) — read at SOURCE, located by SYMBOL (`SC-§38`):
+			//   • PLACE = UWarMapWidget::TryPlaceMarkAtLocal, reached from the left-button arm of
+			//     NativeOnMouseButtonDown only after the map's own markers have been tested and
+			//     missed; the number comes from USiegeMapMarkSubsystem::FindLowestFreeNumber;
+			//   • RESIZE = UWarMapWidget::TryResizeMarkAtLocal from ::NativeOnMouseWheel, whose hit
+			//     test is THIS event's cursor position and whose miss arm changes ⛔ nothing
+			//     ("⛔ not the nearest circle, ⛔ not the last-touched one, ⛔ not a map zoom");
+			//   • DELETE = the `InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton` arm ->
+			//     TryDeleteMarkAtLocal, whose INDEX_NONE arm deletes nothing and says nothing;
+			//   • NAME = the mark arm's `OnPlacePicked.Broadcast(PickedMarkSymbol)` — the SAME
+			//     delegate the seven place markers use, so the chat box opens through the proper
+			//     open path and then the symbol is appended, and ⛔ nothing is submitted;
+			//   • MARKERS WIN = NativeOnMouseButtonDown's ordering comment and structure (the mark
+			//     lane is entered only on `HitIndex == INDEX_NONE` from the marker hit test);
+			//   • the hole stays = `M-1` implemented as RemoveMark(Number) plus
+			//     FindLowestFreeNumber, and stated to the player by the shipped deleted-status line;
+			//   • the cap = USiegeMapMarkSubsystem::MaxMapMarks, refused LOUDLY by the
+			//     AddMark-failed arm, whose count is read from the store at the moment of refusal;
+			//   • client-local and never replicated = `class USiegeMapMarkSubsystem : public
+			//     ULocalPlayerSubsystem` and its M8 declaration;
+			//   • survives map close, cleared at match reset = WarMapWidget's own note that reset is
+			//     the store's job, and ASiegeGameMode's single ClearMarks() call site;
+			//   • they are real places to the commander = USiegeAssistantSnapshot reading the mark
+			//     store and publishing FSiegeMapMark::MakeSymbol(Number) into the place list.
+			//
+			// ⛔ NO NUMBER IS TYPED: MaxMapMarks is NAMED. ⛔ And ⛔ no coordinate, radius or count
+			// is described — the airlock is a property of the feature, not something this page needs
+			// to explain.
+			FSiegeControlsHelpAction& Row = AddRow(TEXT("Interface.MapMarks"), CategoryInterface, TEXT("Draw circles on the map"),
+				TEXT("On the war map: left-click empty ground to drop a numbered circle, scroll on one to resize it, right-click one to delete it, and click one to name it to your commander."), ESiegeInputLane::RawNonLetter);
+			Row.QwertyReferenceKeys = {
+				EKeys::LeftMouseButton, EKeys::RightMouseButton, EKeys::MouseScrollUp, EKeys::MouseScrollDown
+			};
+			Row.Detail = FText::FromString(FString(
+				TEXT("Your own numbered circles, drawn on the war map. A circle is how you name a piece of ground to ")
+				TEXT("your commander: it carries a number, that number is published to him as a place, and an order ")
+				TEXT("can then point at exactly the ground you meant.\n\n")
+				TEXT("THE FOUR GESTURES, and all four work on the war map and nowhere else. Open it with ")
+				TEXT("{Interface.WarMap}.\n\n")
+				TEXT("• LEFT-CLICK EMPTY MAP drops a new circle there. It takes the lowest number not currently in ")
+				TEXT("use.\n\n")
+				TEXT("• SCROLL ON A CIRCLE resizes that circle. The wheel anywhere else on the map does nothing ")
+				TEXT("whatsoever — not the nearest circle, not the last one you touched, and there is no map zoom for ")
+				TEXT("it to fall into.\n\n")
+				TEXT("• RIGHT-CLICK A CIRCLE deletes it. A right-click that hits no circle does nothing at all, ")
+				TEXT("deliberately: it never guesses at the closest one.\n\n")
+				TEXT("• LEFT-CLICK A CIRCLE writes its name into the chat box, opening the box first if it is not ")
+				TEXT("already up. Nothing is sent — you still send the sentence yourself, exactly as when you click ")
+				TEXT("one of the map's named places.\n\n")
+				TEXT("THE MAP'S OWN PLACE MARKERS WIN. A click that lands on one of the places the map already draws ")
+				TEXT("names that place, even if one of your circles is sitting underneath it. Without that rule one ")
+				TEXT("big circle dropped over a landmark would quietly make it unclickable for the rest of the ")
+				TEXT("match.\n\n")
+				TEXT("NUMBERS ARE PERMANENT NAMES, NOT POSITIONS IN A LIST. Deleting a circle leaves a hole and the ")
+				TEXT("survivors keep their numbers. That is deliberate: the map writes a name into your input box and ")
+				TEXT("you send it in your own time, so renumbering would silently point a sentence you had already ")
+				TEXT("typed at different ground.\n\n")
+				TEXT("You can hold MaxMapMarks circles at once. At the limit a further click refuses out loud and ")
+				TEXT("tells you how many you are already holding, rather than doing nothing and looking broken.\n\n")
+				TEXT("The circles are yours alone. They live on your own machine, the enemy never sees them, they ")
+				TEXT("survive closing and re-opening the map, and they are cleared when the match resets. They are ")
+				TEXT("never saved.")));
+			// You cannot reach any of this without opening the map, and the map's own place markers
+			// are the OTHER clickable thing on the same screen — the one a player will confuse these
+			// with, and the one that wins a contested click. PickMode.Resize is the wheel's other
+			// meaning, named here for the same reason it is named in the prose above (`STACK-§4`).
+			// ⛔ This row's OWN outbound edges only (`HELP-§7`); ⛔ no existing row's edges are
+			// touched, and every id here resolves to a real row.
+			Row.RelatedActionIds = {
+				FName(TEXT("Interface.WarMap")), FName(TEXT("Interface.WarMapMarker")), FName(TEXT("PickMode.Resize"))
+			};
+		}
+
+		{
 			// R-24. ⭐ THE MENU DOCUMENTS ITS OWN KEY (`HELP-§4`). This row is also what the
 			// hint line reads its chip from, so the overlay never types its own key either.
 			FSiegeControlsHelpAction& Row = AddRow(TEXT("Interface.ControlsHelp"), CategoryInterface, TEXT("Controls"),
@@ -1299,8 +1661,10 @@ FText FSiegeControlsHelpRegistry::ResolveDetailTokens(const FText& DetailText, T
 	FString Working = DetailText.ToString();
 
 	// ⚠️ THE CHEAP GATE FIRST, AND IT IS NOT MICRO-OPTIMISATION: without it, every detail page
-	// would run a live Enhanced Input query for all 24 registry rows even though 20 of the 24
-	// pages contain no token at all. With it, a page pays only for the tokens it actually has.
+	// would run a live Enhanced Input query for EVERY registry row even though most pages contain
+	// no token at all. With it, a page pays only for the tokens it actually has.
+	// ⚠️ The counts this comment used to carry ("all 24 … 20 of the 24") were removed by TASK-823
+	// rather than re-typed: the registry grows, and a transcribed count is a fact that rots.
 	if (!Working.Contains(SiegeControlsHelpText::ActionTokenOpen, ESearchCase::CaseSensitive))
 	{
 		return DetailText;

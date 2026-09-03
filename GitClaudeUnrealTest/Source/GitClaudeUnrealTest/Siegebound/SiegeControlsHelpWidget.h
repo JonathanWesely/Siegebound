@@ -282,8 +282,11 @@ struct FSiegeControlsDetailContent
 struct GITCLAUDEUNREALTEST_API FSiegeControlsHelpRegistry
 {
 	/**
-	 *  The 24 rows of handoffs/TASK-704-programmer.md §4, in category order
-	 *  (Hero -> Cards -> Orders -> PickMode -> Interface). Function-local static: the FKey
+	 *  The registry rows, in category order (Hero -> Cards -> Orders -> PickMode -> Interface):
+	 *  handoffs/TASK-704-programmer.md §4's original set plus every row a later feature has
+	 *  appended (TASK-823 added the stack upgrade, the placement wheel and the map marks).
+	 *  ⚠️ THE COUNT IS DELIBERATELY NOT WRITTEN HERE — it said "24" until the registry grew, and
+	 *  a transcribed count rots silently; ask GetActions().Num(). Function-local static: the FKey
 	 *  constants resolve long after InputCore's own statics exist (the
 	 *  SiegeKeyboardLayoutStatics.cpp:22-30 precedent — no cross-module static-init order
 	 *  question).

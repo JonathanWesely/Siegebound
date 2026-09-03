@@ -4,6 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "InputCoreTypes.h"      // FKey — TASK-807's key-label seam speaks the help registry's currency
+#include "Templates/Function.h"  // TFunctionRef — the injected live lane (ComposeDetailContent's shape)
 #include "UObject/SoftObjectPtr.h"
 #include "CardHandWidget.generated.h"
 
@@ -12,7 +14,9 @@ class ASiegePlayerState;
 class UDataTable;
 class UDeckComponent;
 class UTexture2D;
+class USiegeKeyboardLayoutSubsystem;
 struct FCardRow;
+struct FSiegeControlsHelpAction;
 
 /**
  *  C++ base for /Game/UI/WBP_CardHand (TASK-033 reparents the UMG duplicate to
@@ -171,6 +175,56 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|UI")
 	UTexture2D* GetNextCardArtTexture();
 
+	/** Display label for the key that plays this slot (e.g. "1"). Derived from IA_Card{Slot+1}'s
+	 *  APPLIED IMC_Hero key via the shipped help-registry resolver — ⛔ never typed, ⛔ never
+	 *  GetPositionalKey (KBD-§4 excludes digits; HELP-§1's double-translate exception). Empty
+	 *  FString on any fault ⇒ the WBP hides the chip (degrade-open, ⛔ never a broken bar). */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|UI")
+	FString GetSlotKeyLabel(int32 SlotIndex);
+
+	/**
+	 *  ⭐⭐ THE PURE HALF OF GetSlotKeyLabel — the WHOLE composition with both LIVE parts
+	 *  INJECTED, and the ONLY reason it exists as a separate symbol (TASK-807 flagged
+	 *  decision 1, declared in handoffs/TASK-807-programmer.md).
+	 *
+	 *  ⛔ PLAIN C++ STATIC, ⛔ NOT A UFUNCTION and ⛔ NOT a second Blueprint surface: the
+	 *  `FSiegeMapMark::MakeSymbol` / `ASummonedUnit::HeightAdvantageMultiplier` idiom. Its ONLY
+	 *  caller is GetSlotKeyLabel, six lines below it in the .cpp (`SC-§36.1`'s checkable tell).
+	 *
+	 *  ⚖️ WHY THE SPLIT IS NOT OPTIONAL: the defect this feature exists to avoid — a SECOND
+	 *  key translation — is INVISIBLE on QWERTY, and `KBD-§4` deliberately leaves DIGITS
+	 *  untranslated, so a digit label reads "1" on US-Dvorak whether the code is right or
+	 *  wrong. The only instrument that can tell the two implementations apart is a fixture
+	 *  that feeds a LETTER through the applied lane on a simulated Dvorak layout, and that
+	 *  needs the applied keys and the layout subsystem INJECTED — exactly what
+	 *  FSiegeControlsHelpRegistry::ComposeDetailContent does for the same reason
+	 *  (SiegeControlsHelpWidget.h:371-394). ⭐ Without this seam the suite could only assert
+	 *  "1 == 1", which is `SC-§37`'s definition of an assertion that proves nothing.
+	 *
+	 *  ⛔ ZERO KEY-RESOLUTION CODE LIVES HERE. It narrows the SHIPPED `Cards.Play` registry
+	 *  row to one slot and hands it to the SHIPPED resolver (ResolveRowDisplayKeys →
+	 *  ComposeKeyChipLabel). ⛔ GetPositionalKey is not called — not here, not anywhere in
+	 *  this file.
+	 *
+	 *  ⛔ Three parameters, ⛔ none defaulted (`SC-§33`).
+	 *
+	 *  @param SlotIndex          0..5. Out of range ⇒ EMPTY, and the provider is never called.
+	 *  @param LayoutSubsystem    the layout subsystem, or NULL (`KBD-§5`'s fail-safe — a null
+	 *                            subsystem degrades to the reference key UNCHANGED, ⛔ never a
+	 *                            crash and ⛔ never a blank bar).
+	 *  @param AppliedKeyProvider answers QueryKeysMappedToAction for the NARROWED row —
+	 *                            ⚠️ ALREADY-RETARGETED keys. The live caller passes
+	 *                            USiegeControlsHelpWidget::QueryAppliedKeysForRow; the suite
+	 *                            passes a lambda, which is what makes the Dvorak claim testable
+	 *                            with ⛔ no world, ⛔ no PIE and ⛔ no Dvorak hardware.
+	 *  @return the chip text, or an EMPTY FString on every fault. ⛔ NEVER "(not bound)",
+	 *          ⛔ never the pointer chip, ⛔ never "?", ⛔ never a guessed digit (`CARDBAR-§3`).
+	 */
+	static FString ComposeSlotKeyLabel(
+		int32 SlotIndex,
+		const USiegeKeyboardLayoutSubsystem* LayoutSubsystem,
+		TFunctionRef<TArray<FKey>(const FSiegeControlsHelpAction&)> AppliedKeyProvider);
+
 protected:
 
 	/** FOnDeckHandChanged handler — payload-less coarse refresh: re-pulls ALL hand slots (TASK-022 contract). */
@@ -230,6 +284,15 @@ private:
 
 	/** CardIDs whose unset/unresolvable CardArt was already logged (once-per-CardID spam guard, mirrors WarnedMissingRowIDs). */
 	TSet<FName> WarnedCardArtIDs;
+
+	/**
+	 *  Slot indices whose unresolvable key label was already logged (TASK-807; the
+	 *  WarnedCardArtIDs spam-guard shape, cloned rather than re-invented).
+	 *  ⚠️ THIS IS NOT TIDINESS: the WBP calls GetSlotKeyLabel from its OnHandSlotUpdated
+	 *  handler, and every slot re-pushes on EVERY gold tick — a per-call warning would be a
+	 *  log-flood bug, not a diagnostic.
+	 */
+	TSet<int32> WarnedKeyLabelSlots;
 
 	/** Last CardID pushed through PushNextCardPreview — GetNextCardArtTexture's source (OnNextCardUpdated carries no CardID by BIE law). NAME_None = no next card. */
 	FName LastNextCardID;

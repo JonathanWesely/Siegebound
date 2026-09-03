@@ -5,6 +5,12 @@
 #include "Engine/GameInstance.h"
 #include "InputCoreTypes.h"
 #include "Siegebound/SiegeControlsHelpWidget.h"
+// TASK-821 test 14: FSiegeKeyboardLayoutStatics::GetQwertyLetterScanCodes() +
+// FSiegePositionalKeyProbe. The digit-holds half is asserted against the SHIPPED positional
+// table rather than against this file's hand-built fixture — the table is what any real
+// translation map is built from, so "a digit can never move" is read from the source of that
+// fact instead of from the fixture's silence about digits.
+#include "Siegebound/SiegeKeyboardLayoutStatics.h"
 #include "Siegebound/SiegeKeyboardLayoutSubsystem.h"
 #include "UObject/Class.h"
 #include "UObject/StrongObjectPtr.h"
@@ -18,7 +24,14 @@
  *  (CONTROLS-MENU batch. Tests 1-8 = TASK-706: FSiegeControlsHelpRegistry + the row click seam.
  *  Tests 9-13 = TASK-707: the full-screen detail view — its prose, its token-spliced keys, its
  *  related-controls blocks and its way back. ⛔ ONE FILE for the whole feature, by `HELP-§6`.
- *  Law: `HELP-§1`/`§2`/`§4`/`§5`/`§6`. QA gate: TASK-708. Compile + suite gate: TASK-709.)
+ *  Law: `HELP-§1`/`§2`/`§4`/`§5`/`§6`. QA gate: TASK-708. Compile + suite gate: TASK-709.
+ *
+ *  ⭐ TEST 14 = TASK-821 (CARDBAR batch): the rewritten `Cards.Discard` row. It is the FIRST
+ *  test in this file to carry `HELP-§6`'s changes/holds pair on TWO SHIPPED ROWS AT ONCE — the
+ *  discard-all LETTER must move under a layout flip while the card DIGITS hold, in one test,
+ *  through one code path. ⛔ No test above it was edited to accommodate the rewrite, and in
+ *  particular test 1's `RequiredIds[]` still names `Cards.Discard` and was NOT touched: the row
+ *  was rewritten in place precisely so it would not have to be.)
  *
  *  ⭐⭐ THE PROPERTY THAT MAKES THIS FILE POSSIBLE, AND THE FIRST THING TO CHECK IF ONE OF
  *      THESE EVER GOES RED: EVERY TEST BELOW PASSES ON A QWERTY MACHINE, WITH NO DVORAK
@@ -95,6 +108,13 @@ namespace SiegeControlsHelpTestUtils
 		Translation.Add(EKeys::W, EKeys::Comma);       // IA_Move forward
 		Translation.Add(EKeys::S, EKeys::O);           // IA_Move back
 		Translation.Add(EKeys::D, EKeys::E);           // IA_Move right
+		// ⭐ TASK-821: the discard-all key's POSITION (IA_DiscardAll, the Cards.Discard row).
+		// ⛔ Taken from the SHIPPED table at Tests/SiegeKeyboardLayoutTest.cpp:211 ({ EKeys::H,
+		// 0x44, 'D' }) rather than re-derived — this file's whole fixture rule.
+		// ⭐⭐ AND IT INHERITS THE DOUBLE-TRANSLATE TRAP FOR FREE, which is why test 14 can detect
+		// one: `D` already has an onward hop of its own two lines above (`D` -> `E`), so
+		// `H` -> `D` -> `E` is a THREE-DISTINCT-KEY chain exactly like `F` -> `U` -> `G`.
+		Translation.Add(EKeys::H, EKeys::D);
 		Translation.Add(EKeys::Z, EKeys::Semicolon);   // ⭐ the assistant accept key's POSITION
 		// ⛔ `A` and `M` are ABSENT ON PURPOSE — they are the two identities, and an entry for
 		// either would make the "this key HOLDS" assertions vacuous.
@@ -1575,6 +1595,609 @@ bool FSiegeControlsHelpDetailFailSafeTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("...and whitespace-only detail is treated identically"),
 		FSiegeControlsHelpRegistry::ComposeDetailContent(Undocumented, Qwerty.Layout.Get(), NoAppliedKeys).Body.ToString(),
 		FString(FSiegeControlsHelpRegistry::GetUndocumentedText()));
+
+	return true;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════
+//  TEST 14 — Siegebound.ControlsHelp.DiscardAllLetterMovesWhileCardDigitsHold
+//            ⭐⭐ TASK-821, and `HELP-§6`'s ACCEPTANCE SENTENCE WITH BOTH OPERANDS SHIPPED
+// ════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ *  ⭐⭐ `HELP-§6`, VERBATIM: "flip the simulated layout and assert the label CHANGES for a key
+ *  that moves and HOLDS for one that does not." Test 3 already does that per-key on SYNTHETIC
+ *  rows. ⭐ THIS IS THE FIRST TIME THE PAIR CAN BE MADE ON TWO SHIPPED ROWS AT ONCE, because
+ *  the card bar only just acquired a LETTER (`Cards.Discard` -> IA_DiscardAll) to sit beside
+ *  its DIGITS (`Cards.Play` -> IA_Card1..6) — and both are on the SAME lane, resolved by the
+ *  SAME function, in the SAME call shape.
+ *
+ *  ⛔⛔ WHY THE "ONE CODE PATH" PART IS THE REAL CLAIM: the two rows must produce OPPOSITE
+ *  outcomes with ⛔ no conditional layout logic anywhere. The letter moves because the shipped
+ *  positional table has an entry for it; the digits hold because that table carries the 26
+ *  letters and ⛔ nothing else. ⇒ an `if (bIsDigit)` or any per-key special case would be a
+ *  second copy of a fact the table already owns, and this test asserts the property (both rows
+ *  through one resolver) rather than the outcome alone.
+ *
+ *  ⛔ `SC-§37` GOVERNS EVERY ASSERTION BELOW. A test asserting the chip `== "H"` would be a
+ *  transcription of the registry: it would pass on an implementation that hardcoded `H`, which
+ *  is the exact defect this feature exists to prevent, and it could never fail on the machine
+ *  that matters. ⇒ every claim here is made against WHAT THE ACCESSOR ANSWERS, against the
+ *  SHIPPED TABLE, or against a DIFFERENCE between two layouts.
+ *
+ *  ⚠️ WHAT IT CANNOT PROVE (`SC-§32`): nothing here presses a key or opens PIE. That `H`
+ *  actually reaches ASiegePlayerController::OnDiscardAllPressed is TASK-811's pixel row; that
+ *  the page READS well is Jonathan's part of `HELP-§6` and no agent may claim it.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeControlsHelpDiscardAllLayoutTest,
+	"Siegebound.ControlsHelp.DiscardAllLetterMovesWhileCardDigitsHold",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeControlsHelpDiscardAllLayoutTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeControlsHelpTestUtils;
+
+	FScratchLayout Qwerty = MakeScratchLayout(TMap<FKey, FKey>());   // an EMPTY map IS the QWERTY state
+	FScratchLayout Dvorak = MakeScratchLayout(MakeDvorakTranslation());
+
+	if (!Qwerty.IsValid() || !Dvorak.IsValid())
+	{
+		AddError(TEXT("Could not construct the two scratch layout subsystems - the changes/holds pair is untested."));
+		return false;
+	}
+
+	const FSiegeControlsHelpAction* const DiscardRow =
+		FSiegeControlsHelpRegistry::FindAction(FName(TEXT("Cards.Discard")));
+	const FSiegeControlsHelpAction* const PlayRow =
+		FSiegeControlsHelpRegistry::FindAction(FName(TEXT("Cards.Play")));
+
+	if (DiscardRow == nullptr || PlayRow == nullptr)
+	{
+		// ⛔ A null Cards.Discard means the row was DELETED rather than rewritten in place - the
+		// failure test 1's RequiredIds[] also catches, said again here in the task's own words.
+		AddError(TEXT("Cards.Discard and/or Cards.Play is missing from the registry - the row must be REWRITTEN in place, never removed."));
+		return false;
+	}
+
+	// ── (a) THE LANE FLIP, ASSERTED AS THE PRECONDITION IT IS ───────────────────────────
+	// ⛔ Not decoration. On the PointerOnly lane this row shipped as, ComposeKeyChipLabel
+	// answers the pointer affordance REGARDLESS of the keys it is handed
+	// (SiegeControlsHelpWidget.cpp:1205-1208) — so its label could not move with the layout at
+	// all, and (d) below would be unreachable rather than merely red.
+	TestEqual(TEXT("Cards.Discard is on the MAPPED lane - a pointer row's chip can never follow the layout"),
+		static_cast<int32>(DiscardRow->Lane), static_cast<int32>(ESiegeInputLane::MappedAction));
+	TestFalse(TEXT("...and it is no longer flagged pointer-only"), DiscardRow->bPointerOnly);
+	TestTrue(TEXT("...and it names an IA_* asset, so its chip is READ BACK from the applied context rather than translated here"),
+		DiscardRow->Actions.Num() > 0);
+	TestEqual(TEXT("⭐ Cards.Play is on the SAME lane - the two OPPOSITE outcomes below come out of ONE code path"),
+		static_cast<int32>(PlayRow->Lane), static_cast<int32>(ESiegeInputLane::MappedAction));
+
+	// ── (b) ⭐⭐ THE PROPERTY BEHIND "THE DIGITS HOLD", READ FROM THE SHIPPED TABLE ───────
+	// ⛔ `SC-§37`: "the digits held" measured against THIS FILE'S fixture would be a
+	// transcription of my own omission — the fixture is a TMap written by hand, and it has no
+	// digit in it because nobody put one there. The load-bearing fact is structural and lives
+	// one layer down: the positional table that every real translation map is BUILT from
+	// carries A..Z and nothing else. ⇒ ask the table, not the fixture.
+	const TArray<FSiegePositionalKeyProbe> Probes = FSiegeKeyboardLayoutStatics::GetQwertyLetterScanCodes();
+
+	auto TableCarries = [&Probes](const FKey& Key) -> bool
+	{
+		return Probes.ContainsByPredicate(
+			[&Key](const FSiegePositionalKeyProbe& Probe) { return Probe.QwertyKey == Key; });
+	};
+
+	TestTrue(TEXT("FIXTURE SELF-CHECK: the shipped positional table is non-empty, so asking it means something"),
+		Probes.Num() > 0);
+
+	for (const FKey& ReferenceKey : DiscardRow->QwertyReferenceKeys)
+	{
+		TestTrue(*FString::Printf(
+			TEXT("⭐ The discard-all row's reference key %s IS in the positional table - it is a letter, so it CAN move"),
+			*Describe(ReferenceKey)), TableCarries(ReferenceKey));
+	}
+
+	for (const FKey& ReferenceKey : PlayRow->QwertyReferenceKeys)
+	{
+		TestFalse(*FString::Printf(
+			TEXT("⛔ The card row's reference key %s is NOT in the positional table - a digit is immune BY CONSTRUCTION, never by a special case"),
+			*Describe(ReferenceKey)), TableCarries(ReferenceKey));
+	}
+
+	// ── (c) FIXTURE SELF-CHECK ON THE INJECTED MAP ──────────────────────────────────────
+	// ⚠️ A claim about the FIXTURE, ⛔ not about a label. Without a map that genuinely moves
+	// this row's key, "the chip changed" would be vacuous; without a DISTINCT onward hop, a
+	// DOUBLE translation would be undetectable. (Test 2's idiom, reused rather than reinvented.)
+	if (DiscardRow->QwertyReferenceKeys.Num() != 1)
+	{
+		AddError(FString::Printf(TEXT("Cards.Discard carries %d reference keys; this test is written for exactly one."),
+			DiscardRow->QwertyReferenceKeys.Num()));
+		return false;
+	}
+
+	const FKey DiscardReference = DiscardRow->QwertyReferenceKeys[0];
+	const FKey OneHop  = Dvorak.Layout->GetPositionalKey(DiscardReference);
+	const FKey TwoHops = Dvorak.Layout->GetPositionalKey(OneHop);
+
+	TestTrue(*FString::Printf(TEXT("FIXTURE: the injected map moves the discard-all key once (%s -> %s)"),
+		*Describe(DiscardReference), *Describe(OneHop)), OneHop != DiscardReference);
+	TestTrue(*FString::Printf(TEXT("FIXTURE: it moves AGAIN from there (%s -> %s), so a double translation is DETECTABLE"),
+		*Describe(OneHop), *Describe(TwoHops)), TwoHops != OneHop);
+
+	// ── (d) ⭐⭐ THE CHANGES / HOLDS PAIR, IN ONE TEST, THROUGH ONE RESOLVER ─────────────
+	auto ChipFor = [](const FSiegeControlsHelpAction& Row, const USiegeKeyboardLayoutSubsystem* Layout) -> FString
+	{
+		// The FALLBACK lane deliberately (an EMPTY applied-key array): with no world there is no
+		// active context, which is also the real state on a machine where IA_DiscardAll has not
+		// landed. ⛔ ONE lambda serves BOTH rows — there is no branch here to get wrong.
+		return FSiegeControlsHelpRegistry::ComposeKeyChipLabel(
+			Row, FSiegeControlsHelpRegistry::ResolveRowDisplayKeys(Row, TArray<FKey>(), Layout)).ToString();
+	};
+
+	const FString DiscardOnQwerty = ChipFor(*DiscardRow, Qwerty.Layout.Get());
+	const FString DiscardOnDvorak = ChipFor(*DiscardRow, Dvorak.Layout.Get());
+	const FString PlayOnQwerty    = ChipFor(*PlayRow,    Qwerty.Layout.Get());
+	const FString PlayOnDvorak    = ChipFor(*PlayRow,    Dvorak.Layout.Get());
+
+	TestFalse(TEXT("The discard-all chip is non-empty on QWERTY"), DiscardOnQwerty.IsEmpty());
+	TestFalse(TEXT("The discard-all chip is non-empty on Dvorak"), DiscardOnDvorak.IsEmpty());
+	TestFalse(TEXT("The card-play chip is non-empty on QWERTY"), PlayOnQwerty.IsEmpty());
+
+	// ⭐ HALF ONE — THE LETTER MOVES.
+	TestNotEqual(*FString::Printf(TEXT("⭐ THE LETTER MOVES: Cards.Discard's chip CHANGES across the layout flip (%s -> %s)"),
+		*DiscardOnQwerty, *DiscardOnDvorak), DiscardOnQwerty, DiscardOnDvorak);
+
+	// ⛔ And it moved to the ACCESSOR'S OWN ANSWER, ⛔ not to a letter anyone typed.
+	TestEqual(TEXT("...and the Dvorak chip IS GetPositionalKey's one-hop answer, asked of the accessor itself"),
+		DiscardOnDvorak, OneHop.GetDisplayName(/*bLongDisplayName=*/false).ToString());
+	TestNotEqual(TEXT("⛔ ...and it is NOT the two-hop answer a double translation would produce"),
+		DiscardOnDvorak, TwoHops.GetDisplayName(/*bLongDisplayName=*/false).ToString());
+	TestEqual(TEXT("...while the QWERTY chip is the accessor's answer on an empty map - the reference key, unchanged"),
+		DiscardOnQwerty, Qwerty.Layout->GetPositionalKey(DiscardReference).GetDisplayName(/*bLongDisplayName=*/false).ToString());
+
+	// ⭐ HALF TWO — THE DIGITS HOLD. ⛔ Same lane, same resolver, same lambda, opposite outcome.
+	TestEqual(*FString::Printf(TEXT("⭐ THE DIGITS HOLD: Cards.Play's chip is IDENTICAL on both layouts (%s)"), *PlayOnQwerty),
+		PlayOnQwerty, PlayOnDvorak);
+
+	// ⭐⭐ AND THE PAIR IS ASSERTED AS A PAIR: both halves must hold in the SAME run, or one of
+	// them is being satisfied by an implementation that translates nothing (or everything).
+	TestTrue(TEXT("⭐⭐ ONE FLIP, TWO OPPOSITE OUTCOMES, ZERO CONDITIONAL LAYOUT LOGIC"),
+		DiscardOnQwerty != DiscardOnDvorak && PlayOnQwerty == PlayOnDvorak);
+
+	// ⛔ THE DETAIL PAGE MOVES WITH THE CHIP, because its prose names the key as a {Cards.Discard}
+	// token rather than as a typed letter. A page that held still here would mean a letter had
+	// been typed into the prose one line below the chip that exists to avoid exactly that.
+	auto NoAppliedKeys = [](const FSiegeControlsHelpAction&) -> TArray<FKey> { return TArray<FKey>(); };
+	const FString PageOnQwerty =
+		FSiegeControlsHelpRegistry::ComposeDetailContent(*DiscardRow, Qwerty.Layout.Get(), NoAppliedKeys).Body.ToString();
+	const FString PageOnDvorak =
+		FSiegeControlsHelpRegistry::ComposeDetailContent(*DiscardRow, Dvorak.Layout.Get(), NoAppliedKeys).Body.ToString();
+
+	TestNotEqual(TEXT("⭐ The discard-all DETAIL PAGE changes with the layout too - the key inside its prose is derived, not typed"),
+		PageOnQwerty, PageOnDvorak);
+
+	// ⛔ AND THE DIFFERENCE IS THE TOKEN MECHANISM, NOT AN ACCIDENT — asserted at the source
+	// rather than by hunting the composed letter in the output. ⚠️ A `Body.Contains("D")` here
+	// would be VACUOUS: the prose also names DiscardAllCost, so that letter is present whatever
+	// the implementation does. The claim that can actually fail is that the RAW prose names the
+	// key as a {ActionId} token — i.e. that no letter was typed into the sentence at all.
+	TestTrue(TEXT("⛔ The page names its own key as a {ActionId} token, never as a typed letter (HELP-§1 in the detail lane)"),
+		DiscardRow->Detail.ToString().Contains(
+			FSiegeControlsHelpRegistry::MakeActionToken(DiscardRow->ActionId), ESearchCase::CaseSensitive));
+
+	// ── (e) ⛔ THE FEE IS NAMED, ⛔ NEVER TYPED (`HELP-§2`'s M7.7 rule) ──────────────────
+	// ⚠️ SCOPED TO THIS ROW ON PURPOSE: other rows legitimately carry digits in prose (Cards.Play
+	// names key 1's legacy quirk, and a digit provably cannot move). The claim here is narrower
+	// and exact — the discard-all fee has ONE definition, DiscardAllCost, and this page must not
+	// hold a second copy of its VALUE. A typed number rots the moment that property is retuned,
+	// and neither the compiler nor a reviewer would notice.
+	const FString DiscardOneLine = FSiegeControlsHelpRegistry::ComposeOneLineForDisplay(*DiscardRow).ToString();
+	const FString DiscardDetail  = FSiegeControlsHelpRegistry::ComposeDetailForDisplay(*DiscardRow).ToString();
+
+	TestTrue(TEXT("⭐ The page NAMES its fee property instead of restating its value"),
+		DiscardDetail.Contains(TEXT("DiscardAllCost"), ESearchCase::CaseSensitive));
+
+	// ⛔ THE WRONG FEE, ASSERTED AGAINST DIRECTLY. "DiscardAllCost" does NOT contain the
+	// substring "DiscardCost" (the `C` never follows the `d`), so this is a real, independent
+	// claim: the per-card fee — retired with DiscardHandSlot — must not be named here.
+	const TCHAR* RetiredVocabulary[] = { TEXT("DiscardCost"), TEXT("DiscardHandSlot"), TEXT("RequestDiscardSlot") };
+	for (const TCHAR* Retired : RetiredVocabulary)
+	{
+		TestFalse(*FString::Printf(TEXT("⛔ The page does not name the retired per-card route '%s'"), Retired),
+			DiscardDetail.Contains(Retired, ESearchCase::CaseSensitive));
+	}
+
+	auto CarriesADigit = [](const FString& Prose) -> bool
+	{
+		for (const TCHAR Character : Prose)
+		{
+			if (FChar::IsDigit(Character))
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+
+	// FIXTURE SELF-CHECK first: a scanner that can never answer true would make both claims
+	// below vacuous. (A claim about the SCANNER, not about the prose.)
+	TestTrue(TEXT("FIXTURE SELF-CHECK: the digit scanner does find a digit when one is present"),
+		CarriesADigit(FString(TEXT("a fee of 20 gold"))));
+
+	TestFalse(TEXT("⛔ The discard-all one-liner types NO number"), CarriesADigit(DiscardOneLine));
+	TestFalse(TEXT("⛔ ...and neither does its detail page - the fee is read from DiscardAllCost, never typed"),
+		CarriesADigit(DiscardDetail));
+
+	// ── (f) ⛔ THE PAGE TEACHES THE KEY AND NOTHING ELSE ────────────────────────────────
+	// Jonathan cut the right-click route on 2026-09-03, BEFORE it was written. A surviving
+	// right-click sentence would teach a control that does not exist — which `HELP-§2` calls
+	// worse than no help screen, and which is the one defect this whole row exists to remove.
+	const TCHAR* ScrappedRouteFragments[] = { TEXT("right-click"), TEXT("right click"), TEXT("discard button") };
+	for (const TCHAR* Fragment : ScrappedRouteFragments)
+	{
+		TestFalse(*FString::Printf(TEXT("⛔ The discard-all one-liner does not mention '%s'"), Fragment),
+			DiscardOneLine.Contains(Fragment, ESearchCase::IgnoreCase));
+		TestFalse(*FString::Printf(TEXT("⛔ The discard-all detail page does not mention '%s'"), Fragment),
+			DiscardDetail.Contains(Fragment, ESearchCase::IgnoreCase));
+	}
+
+	// ⭐ THE ALT-CURSOR CAVEAT WENT WITH IT, ASSERTED AS DATA RATHER THAN AS A SUBSTRING GAMBLE:
+	// Cards.CursorHold was this row's related control ONLY because the discard used to be a HUD
+	// button you had to raise the cursor to click. Nothing in this gesture needs a cursor now.
+	TestFalse(TEXT("⛔ The Alt-cursor row is no longer a related control here - nothing in this gesture needs a cursor"),
+		DiscardRow->RelatedActionIds.Contains(FName(TEXT("Cards.CursorHold"))));
+
+	AddInfo(FString::Printf(
+		TEXT("Layout flip: discard-all chip %s -> %s (MOVED); card chips %s (HELD). Both rows: lane MappedAction, one resolver, no per-key branch."),
+		*DiscardOnQwerty, *DiscardOnDvorak, *PlayOnQwerty));
+
+	return true;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════
+//  TEST 15 — Siegebound.ControlsHelp.TowerAndMapMarkRowsAreAuthoredAndRawLaned
+// ════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ *  ⭐ TASK-823 (the TOWER half of `CARDBAR-§9`): the three rows this task appended —
+ *  Cards.StackUpgrade, Cards.PlacementResize and Interface.MapMarks — exist, are AUTHORED, and
+ *  sit on the lane their gestures actually belong to.
+ *
+ *  ⛔ WHY A NEW TEST RATHER THAN THREE ENTRIES IN TEST 1's `RequiredIds[]`: that array is a
+ *  SHIPPED assertion two other tasks are currently serialised against, and `CARDBAR-§9` makes
+ *  editing it to accommodate a row change an automatic fail. Appending a test costs it nothing
+ *  and keeps the failure legible — a red here names THIS task's rows and no one else's.
+ *
+ *  ⛔ `SC-§37` GOVERNS EVERY ASSERTION BELOW. There is no `TestEqual(Chip, "LMB")` anywhere: a
+ *  transcription of the registry passes on an implementation that hardcoded the letter, which is
+ *  the defect the whole feature exists to prevent. The claims here are made against WHAT THE
+ *  ACCESSOR ANSWERS and against a DIFFERENCE between two simulated layouts.
+ *
+ *  ⭐ THE `GetPositionalKey`-FREE CLAIM IS ASSERTED AS A BEHAVIOUR, ⛔ NOT AS A GREP: these rows
+ *  must label their keys VERBATIM on every layout. If someone later routes them through the
+ *  translator, or flips one to the mapped lane, block (d) goes red — a grep of the diff cannot
+ *  say that, and a grep is what a reviewer would otherwise be relying on.
+ *
+ *  ⚠️ WHAT IT CANNOT PROVE (`SC-§32`): nothing here scrolls a wheel, opens PIE or paints a row.
+ *  That the pages READ well is Jonathan's part of `HELP-§6` and no agent may claim it.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeControlsHelpTowerRowsTest,
+	"Siegebound.ControlsHelp.TowerAndMapMarkRowsAreAuthoredAndRawLaned",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeControlsHelpTowerRowsTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeControlsHelpTestUtils;
+
+	FScratchLayout Dvorak = MakeScratchLayout(MakeDvorakTranslation());
+	if (!Dvorak.IsValid())
+	{
+		AddError(TEXT("Could not construct the scratch layout subsystem - the raw-lane claim is untested."));
+		return false;
+	}
+
+	// FIXTURE SELF-CHECK FIRST: without a map that genuinely moves SOMETHING, "these keys did not
+	// move" is vacuous — it would hold on a layout system that translated nothing at all.
+	// (A claim about the FIXTURE, ⛔ not about a row.)
+	TestTrue(TEXT("FIXTURE SELF-CHECK: the injected map really does move a letter, so 'unchanged' means something"),
+		Dvorak.Layout->GetPositionalKey(EKeys::F) != EKeys::F);
+
+	const FString UndocumentedString(FSiegeControlsHelpRegistry::GetUndocumentedText());
+
+	// ⭐ The three rows and the keys each one's gesture is REALLY made of, read off the shipped
+	// paths: the upgrade is the placement CONFIRM (a polled left button), the placement wheel is
+	// the polled wheel, and the map marks are all four mouse gestures on the war map widget.
+	struct FExpectedRow
+	{
+		const TCHAR*  ActionId;
+		const TCHAR*  Category;
+		TArray<FKey>  Keys;
+	};
+
+	const TArray<FExpectedRow> NewRows =
+	{
+		{ TEXT("Cards.StackUpgrade"),     TEXT("Cards"),     { EKeys::LeftMouseButton } },
+		{ TEXT("Cards.PlacementResize"),  TEXT("Cards"),     { EKeys::MouseScrollUp, EKeys::MouseScrollDown } },
+		{ TEXT("Interface.MapMarks"),     TEXT("Interface"), { EKeys::LeftMouseButton, EKeys::RightMouseButton,
+		                                                       EKeys::MouseScrollUp, EKeys::MouseScrollDown } }
+	};
+
+	// ⛔ NO TUNABLE'S VALUE MAY BE TYPED INTO THESE PAGES (`HELP-§2`, the M7.7 "in 400" lesson).
+	// ⚠️ SCOPED TO THIS TASK'S THREE ROWS ON PURPOSE: other rows legitimately carry digits — the
+	// war map's 30 gold is quoted from Jonathan's own sentence at its property. The claim here is
+	// exact: the height cap, the health step, the wheel step, the wheel's two ends and the mark
+	// cap have ONE definition each, and these pages must not hold a second copy of any VALUE. A
+	// typed number rots the moment one is retuned, and neither the compiler nor a reviewer notices.
+	auto CarriesADigit = [](const FString& Prose) -> bool
+	{
+		for (const TCHAR Character : Prose)
+		{
+			if (FChar::IsDigit(Character))
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+
+	// FIXTURE SELF-CHECK: a scanner that can never answer true would make every claim below it
+	// vacuous. (A claim about the SCANNER, ⛔ not about the prose.)
+	TestTrue(TEXT("FIXTURE SELF-CHECK: the digit scanner finds a digit when one is present"),
+		CarriesADigit(FString(TEXT("up to 5 times taller"))));
+
+	for (const FExpectedRow& Expected : NewRows)
+	{
+		const FSiegeControlsHelpAction* const Row = FSiegeControlsHelpRegistry::FindAction(FName(Expected.ActionId));
+
+		// ── (a) IT EXISTS ───────────────────────────────────────────────────────────────
+		if (Row == nullptr)
+		{
+			AddError(FString::Printf(
+				TEXT("Row '%s' is missing from the registry - the tower half of the controls menu is not shipped."),
+				Expected.ActionId));
+			continue;
+		}
+
+		TestEqual(*FString::Printf(TEXT("Row '%s' is filed under the category its gesture belongs to"), Expected.ActionId),
+			Row->Category.ToString(), FString(Expected.Category));
+
+		// ── (b) IT IS AUTHORED, ⛔ NOT THE TODO FALLBACK (`HELP-§2` mechanism 2) ─────────
+		// ⚠️ Both halves, and BOTH are needed: an empty one-liner and an empty detail render the
+		// same pinned string, so "the row exists" says nothing about whether anyone wrote it.
+		const FString OneLine = FSiegeControlsHelpRegistry::ComposeOneLineForDisplay(*Row).ToString();
+		const FString Detail  = FSiegeControlsHelpRegistry::ComposeDetailForDisplay(*Row).ToString();
+
+		TestFalse(*FString::Printf(TEXT("Row '%s' renders a non-empty one-liner"), Expected.ActionId), OneLine.IsEmpty());
+		TestFalse(*FString::Printf(TEXT("Row '%s' renders non-empty detail"), Expected.ActionId), Detail.IsEmpty());
+		TestNotEqual(*FString::Printf(TEXT("⛔ Row '%s' one-liner does NOT render the pinned '(undocumented - TODO)' string"), Expected.ActionId),
+			OneLine, UndocumentedString);
+		TestNotEqual(*FString::Printf(TEXT("⛔ Row '%s' detail page does NOT render the pinned '(undocumented - TODO)' string"), Expected.ActionId),
+			Detail, UndocumentedString);
+
+		// ⭐ EACH ROW SAYS **WHEN** ITS GESTURE APPLIES, and that is the whole reason these three
+		// rows are separable at all (`STACK-§4` / `HELP-§2`: a screen that conflates the modes is
+		// worse than no screen). Asserted as a PROPERTY of the pair rather than as a substring
+		// hunt: the detail page must add real material to the one-liner, not repeat it.
+		TestNotEqual(*FString::Printf(TEXT("Row '%s' detail is not just its one-liner again"), Expected.ActionId),
+			Detail, OneLine);
+		TestTrue(*FString::Printf(TEXT("Row '%s' detail is substantially longer than its one-liner (%d vs %d chars)"),
+			Expected.ActionId, Detail.Len(), OneLine.Len()), Detail.Len() > OneLine.Len());
+
+		// ── (c) THE LANE AND ITS KEYS ───────────────────────────────────────────────────
+		// ⛔ RawNonLetter, ⛔ never PointerOnly: on the pointer lane ComposeKeyChipLabel answers
+		// the single "Mouse click" affordance REGARDLESS of the keys it is handed, so the WHEEL
+		// could not appear on the row at all — and making the wheel visible in the LIST is the
+		// entire reason two of these rows were boarded.
+		TestEqual(*FString::Printf(TEXT("Row '%s' is on the RAW non-letter lane (its keys are labelled verbatim)"), Expected.ActionId),
+			static_cast<int32>(Row->Lane), static_cast<int32>(ESiegeInputLane::RawNonLetter));
+		TestFalse(*FString::Printf(TEXT("⛔ Row '%s' is NOT pointer-only - a pointer chip cannot show a wheel"), Expected.ActionId),
+			Row->bPointerOnly);
+		TestEqual(*FString::Printf(TEXT("⛔ Row '%s' names NO input action - naming one would put a raw key on the Enhanced Input lane"), Expected.ActionId),
+			Row->Actions.Num(), 0);
+
+		TestEqual(*FString::Printf(TEXT("Row '%s' carries exactly the keys its shipped gesture is made of (got %s)"),
+			Expected.ActionId, *DescribeKeys(Row->QwertyReferenceKeys)),
+			Row->QwertyReferenceKeys.Num(), Expected.Keys.Num());
+
+		for (const FKey& RequiredKey : Expected.Keys)
+		{
+			TestTrue(*FString::Printf(TEXT("Row '%s' carries %s"), Expected.ActionId, *Describe(RequiredKey)),
+				Row->QwertyReferenceKeys.Contains(RequiredKey));
+		}
+
+		// ── (d) ⭐⭐ ZERO TRANSLATION, ASSERTED AS A BEHAVIOUR ───────────────────────────
+		// The chip must be the reference keys themselves on a Dvorak layout: a mouse button and a
+		// wheel notch are absent from the 26-letter table, so this is a PROVABLE identity — and
+		// the accessor is asked to agree, which is what turns "we skip the call because it would
+		// be a no-op" into a fact rather than a hope.
+		const TArray<FKey> Resolved =
+			FSiegeControlsHelpRegistry::ResolveRowDisplayKeys(*Row, TArray<FKey>(), Dvorak.Layout.Get());
+
+		TestEqual(*FString::Printf(TEXT("Row '%s' labels every one of its keys"), Expected.ActionId),
+			Resolved.Num(), Row->QwertyReferenceKeys.Num());
+
+		for (int32 Index = 0; Index < Resolved.Num() && Index < Row->QwertyReferenceKeys.Num(); ++Index)
+		{
+			TestTrue(*FString::Printf(TEXT("Row '%s': %s is UNCHANGED on Dvorak"),
+				Expected.ActionId, *Describe(Row->QwertyReferenceKeys[Index])),
+				Resolved[Index] == Row->QwertyReferenceKeys[Index]);
+
+			TestTrue(*FString::Printf(TEXT("Row '%s': ...and GetPositionalKey agrees it is an identity (%s)"),
+				Expected.ActionId, *Describe(Row->QwertyReferenceKeys[Index])),
+				Dvorak.Layout->GetPositionalKey(Row->QwertyReferenceKeys[Index]) == Row->QwertyReferenceKeys[Index]);
+		}
+
+		// The chip therefore renders SOMETHING for every one of these rows - never the "(not
+		// bound)" fallback, which is what a keyless row would produce.
+		const FString Chip = FSiegeControlsHelpRegistry::ComposeKeyChipLabel(*Row, Resolved).ToString();
+		TestFalse(*FString::Printf(TEXT("Row '%s' composes a non-empty key chip"), Expected.ActionId), Chip.IsEmpty());
+
+		// ── (e) ⛔ NO TUNABLE'S VALUE IS TYPED INTO THIS PROSE (see the scanner above) ───
+		TestFalse(*FString::Printf(TEXT("⛔ Row '%s' one-liner types NO number - the tunables are NAMED"), Expected.ActionId),
+			CarriesADigit(OneLine));
+		TestFalse(*FString::Printf(TEXT("⛔ Row '%s' detail page types NO number either"), Expected.ActionId),
+			CarriesADigit(Detail));
+
+		// ── (f) EVERY OUTBOUND EDGE RESOLVES (`HELP-§7`) ────────────────────────────────
+		// ⚠️ SCOPED TO THIS TASK'S OWN ROWS. The registry-wide walk with its negative control is
+		// TASK-852's, and this is deliberately NOT a substitute for it: a dangling id renders
+		// NOTHING and logs nothing, so the graph needs a total check, not three local ones.
+		TestTrue(*FString::Printf(TEXT("Row '%s' carries at least one related control (Jonathan's 'all the controls with it')"),
+			Expected.ActionId), Row->RelatedActionIds.Num() > 0);
+
+		for (const FName RelatedId : Row->RelatedActionIds)
+		{
+			TestNotNull(*FString::Printf(TEXT("Row '%s' related id '%s' resolves to a REAL row"),
+				Expected.ActionId, *RelatedId.ToString()),
+				FSiegeControlsHelpRegistry::FindAction(RelatedId));
+			TestNotEqual(*FString::Printf(TEXT("Row '%s' does not list itself"), Expected.ActionId),
+				RelatedId, Row->ActionId);
+		}
+	}
+
+	// ⭐ THE NEGATIVE CONTROL FOR (f), so the resolution claim above is provably able to go red:
+	// the same lookup answers NULL for an id that is not in the registry.
+	TestNull(TEXT("NEGATIVE CONTROL: a fabricated related id does NOT resolve, so (f) can actually fail"),
+		FSiegeControlsHelpRegistry::FindAction(FName(TEXT("Cards.NoSuchUpgradeRow"))));
+
+	return true;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════
+//  TEST 16 — Siegebound.ControlsHelp.TheThreeWheelMeaningsAreThreeDistinctRows   ⭐⭐
+// ════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ *  ⭐⭐ `STACK-§4`'s INSTRUCTION, MADE MACHINE-CHECKABLE: *"`HELP-§`'s controls screen MUST
+ *  distinguish all three [wheel meanings]"* — the group-pick circles (world-space radii), the war
+ *  map's numbered circles (widget space), and the placement footprint (a scale factor).
+ *
+ *  ⛔ THE STANDARD IT ENFORCES IS `HELP-§2`'s OWN: a help screen that conflates them is WORSE
+ *  than no help screen. One physical gesture with three meanings and one row to cover them would
+ *  teach the player that the wheel does something it does not do in the mode he is in.
+ *
+ *  ⭐ `SC-§37` — IT MEASURES THE PROPERTY, ⛔ IT DOES NOT TRANSCRIBE A LIST. The wheel-bearing
+ *  rows are found by SCANNING every row's reference keys for a wheel key; the expected ids are
+ *  then checked against what the scan found. ⇒ it goes red on a wheel row that is missing, on a
+ *  wheel row nobody documented, and on two meanings collapsed into one row.
+ *
+ *  ⚠️⚠️ AND THE CEILING IS DELIBERATE, ⛔ not incidental: `MARK-§4` (as amended by `STACK-§4`)
+ *  pins the wheel at EXACTLY THREE consumers and says no fourth may be added without amending
+ *  that line again. A fourth wheel row appearing here SHOULD turn this red — that is the law
+ *  firing, ⛔ not the test being brittle.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeControlsHelpWheelMeaningsTest,
+	"Siegebound.ControlsHelp.TheThreeWheelMeaningsAreThreeDistinctRows",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeControlsHelpWheelMeaningsTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeControlsHelpTestUtils;
+
+	// ── (a) FIND THE WHEEL ROWS BY SCANNING, ⛔ NEVER BY A HAND-TYPED LIST ───────────────
+	auto CarriesAWheelKey = [](const FSiegeControlsHelpAction& Row) -> bool
+	{
+		return Row.QwertyReferenceKeys.Contains(EKeys::MouseScrollUp)
+			|| Row.QwertyReferenceKeys.Contains(EKeys::MouseScrollDown);
+	};
+
+	TArray<const FSiegeControlsHelpAction*> WheelRows;
+	for (const FSiegeControlsHelpAction& Row : FSiegeControlsHelpRegistry::GetActions())
+	{
+		if (CarriesAWheelKey(Row))
+		{
+			WheelRows.Add(&Row);
+		}
+	}
+
+	// ⭐ THE CEILING, FROM `MARK-§4` AS AMENDED. Three consumers, three meanings, three rows.
+	TestEqual(TEXT("⭐⭐ The screen teaches EXACTLY THREE wheel meanings (MARK-§4's pinned ceiling of three consumers)"),
+		WheelRows.Num(), 3);
+
+	// ── (b) AND THEY ARE THE THREE THE LAW NAMES ────────────────────────────────────────
+	// ⚠️ Checked against what the SCAN found, so this cannot pass by describing rows that are not
+	// there: a missing row fails here AND in (a).
+	const TCHAR* ExpectedWheelIds[] =
+	{
+		TEXT("PickMode.Resize"),        // 1 - the group-pick circles, world uu
+		TEXT("Cards.PlacementResize"),  // 2 - the placement footprint, a scale factor
+		TEXT("Interface.MapMarks")      // 3 - the war map's numbered circles, widget space
+	};
+
+	for (const TCHAR* ExpectedId : ExpectedWheelIds)
+	{
+		const bool bFound = WheelRows.ContainsByPredicate(
+			[ExpectedId](const FSiegeControlsHelpAction* Row) { return Row->ActionId == FName(ExpectedId); });
+
+		TestTrue(*FString::Printf(TEXT("Wheel meaning '%s' has a row of its own"), ExpectedId), bFound);
+	}
+
+	// ── (c) ⭐⭐ THEY ARE TOLD APART — the claim `HELP-§2` actually cares about ──────────
+	// Three rows that read identically would satisfy (a) and (b) and still be exactly the
+	// conflation the law forbids. ⇒ id, headline, one-liner and detail must all be pairwise
+	// DISTINCT, and the three must sit in DIFFERENT CATEGORIES, which is what puts them under
+	// three different headings on screen instead of in one indistinguishable run.
+	for (int32 Left = 0; Left < WheelRows.Num(); ++Left)
+	{
+		for (int32 Right = Left + 1; Right < WheelRows.Num(); ++Right)
+		{
+			const FSiegeControlsHelpAction& A = *WheelRows[Left];
+			const FSiegeControlsHelpAction& B = *WheelRows[Right];
+
+			const FString Pair = FString::Printf(TEXT("'%s' vs '%s'"), *A.ActionId.ToString(), *B.ActionId.ToString());
+
+			TestNotEqual(*FString::Printf(TEXT("%s: different ids"), *Pair),
+				A.ActionId.ToString(), B.ActionId.ToString());
+
+			TestNotEqual(*FString::Printf(TEXT("%s: different headlines"), *Pair),
+				A.DisplayName.ToString(), B.DisplayName.ToString());
+
+			TestNotEqual(*FString::Printf(TEXT("%s: ⭐ different one-liners - each says WHEN its wheel applies"), *Pair),
+				FSiegeControlsHelpRegistry::ComposeOneLineForDisplay(A).ToString(),
+				FSiegeControlsHelpRegistry::ComposeOneLineForDisplay(B).ToString());
+
+			TestNotEqual(*FString::Printf(TEXT("%s: different detail pages"), *Pair),
+				FSiegeControlsHelpRegistry::ComposeDetailForDisplay(A).ToString(),
+				FSiegeControlsHelpRegistry::ComposeDetailForDisplay(B).ToString());
+
+			TestNotEqual(*FString::Printf(TEXT("%s: ⭐ different categories, so they land under different headings"), *Pair),
+				A.Category.ToString(), B.Category.ToString());
+		}
+	}
+
+	// ── (d) ⛔ AND NONE OF THEM IS A POINTER ROW ────────────────────────────────────────
+	// A wheel meaning on the pointer lane would render the single "Mouse click" affordance and the
+	// wheel would be invisible in the list - the conflation happening in the CHIP rather than in
+	// the prose, which is the version of this defect nobody would spot in a diff.
+	for (const FSiegeControlsHelpAction* Row : WheelRows)
+	{
+		TestFalse(*FString::Printf(TEXT("⛔ Wheel row '%s' is not pointer-only"), *Row->ActionId.ToString()),
+			Row->bPointerOnly || Row->Lane == ESiegeInputLane::PointerOnly);
+	}
+
+	// ── (e) FIXTURE SELF-CHECK: the scanner can answer BOTH ways ────────────────────────
+	// ⛔ Without this, (a) would be satisfied by a scanner that matched everything or nothing.
+	// (A claim about the SCANNER, ⛔ not about the registry.)
+	TestTrue(TEXT("FIXTURE SELF-CHECK: the wheel scanner says YES to a synthetic wheel row"),
+		CarriesAWheelKey(MakeRow(ESiegeInputLane::RawNonLetter, { EKeys::MouseScrollUp }, false, false)));
+	TestFalse(TEXT("FIXTURE SELF-CHECK: ...and NO to a synthetic row with no wheel key"),
+		CarriesAWheelKey(MakeRow(ESiegeInputLane::RawNonLetter, { EKeys::LeftMouseButton }, false, false)));
+
+	if (WheelRows.Num() > 0)
+	{
+		FString Found;
+		for (const FSiegeControlsHelpAction* Row : WheelRows)
+		{
+			if (!Found.IsEmpty())
+			{
+				Found += TEXT(", ");
+			}
+			Found += Row->ActionId.ToString();
+		}
+		AddInfo(FString::Printf(TEXT("Wheel meanings documented: %s"), *Found));
+	}
 
 	return true;
 }

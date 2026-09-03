@@ -3,10 +3,14 @@
 #include "Siegebound/CardHandWidget.h"
 
 #include "Engine/DataTable.h"
+#include "Engine/GameInstance.h"
 #include "Engine/Texture2D.h"
+#include "Engine/World.h"
 #include "GitClaudeUnrealTest.h"
 #include "Siegebound/CardRow.h"
 #include "Siegebound/DeckComponent.h"
+#include "Siegebound/SiegeControlsHelpWidget.h"      // ⭐ THE ONE RESOLVER (CARDBAR-§2): FSiegeControlsHelpRegistry + QueryAppliedKeysForRow
+#include "Siegebound/SiegeKeyboardLayoutSubsystem.h" // passed THROUGH to the resolver — ⛔ GetPositionalKey is never called in this file
 #include "Siegebound/SiegePlayerController.h"
 #include "Siegebound/SiegePlayerState.h"
 
@@ -288,6 +292,154 @@ UTexture2D* UCardHandWidget::GetNextCardArtTexture()
 	}
 
 	return ResolveCardArtTexture(LastNextCardID);
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════
+//  THE KEY-LABEL PULL SEAM  (TASK-807; `CARDBAR-§2` + `CARDBAR-§3`)
+// ════════════════════════════════════════════════════════════════════════════════════════
+//
+//  ⛔⛔ THE ONE THING TO KNOW BEFORE EDITING EITHER FUNCTION BELOW, AND IT IS INVISIBLE ON
+//      EVERY MACHINE THIS PROJECT IS DEVELOPED ON:
+//
+//      `USiegeKeyboardLayoutSubsystem::GetPositionalKey` MUST NOT BE CALLED ON THIS PATH.
+//
+//  It is wrong TWICE. (i) `KBD-§4` deliberately excludes DIGITS from the translation table
+//  (SiegeKeyboardLayoutStatics.cpp:57-63 tables the 26 LETTERS and nothing else), so it would
+//  buy nothing for `1`..`6` anyway — "the hotkeys weren't remapped" is answered by that clause
+//  and is ⛔ not a defect. (ii) `IA_Card1..6` are Enhanced-Input-MAPPED, and the layout
+//  subsystem rewrites the APPLIED IMC duplicate's `.Key` fields wholesale
+//  (SiegeKeyboardLayoutStatics.cpp:236, applied at HeroCharacter.cpp:271-275) — so
+//  QueryKeysMappedToAction's answer IS ALREADY TRANSLATED. A second call applies the map
+//  twice: on US-Dvorak `F` -> `U` -> `G`, printing a key that is bound to nothing. That is
+//  `HELP-§1`'s named exception, recorded at SiegePlayerController.h:1222-1226.
+//
+//  ⭐ SO THE LABEL RIDES THE SHIPPED RESOLVER, ⛔ NOT A SECOND ONE: the same
+//  QueryAppliedKeysForRow -> ResolveRowDisplayKeys -> ComposeKeyChipLabel chain the TAB
+//  controls screen's `Cards.Play` row already renders. ⭐ ONE resolver ⇒ the card bar and the
+//  help screen can never disagree, and a rebind of IMC_Hero moves BOTH with zero code edits.
+//
+//  ⚠️ Guarded by Tests/SiegeCardHandKeyLabelTest.cpp test 2, which drives a LETTER through the
+//  applied lane on a simulated US-Dvorak map. A digit fixture would pass either way — that
+//  test asserts the digit blindness explicitly so nobody "simplifies" it back.
+
+FString UCardHandWidget::ComposeSlotKeyLabel(
+	int32 SlotIndex,
+	const USiegeKeyboardLayoutSubsystem* LayoutSubsystem,
+	TFunctionRef<TArray<FKey>(const FSiegeControlsHelpAction&)> AppliedKeyProvider)
+{
+	// ⛔ ONE ROW, NAMED ONCE. Function-local static so the FName never participates in
+	// static-init order (the SiegeKeyboardLayoutStatics.cpp:22-30 caution, applied even where
+	// it is not strictly required).
+	static const FName CardsPlayRowId(TEXT("Cards.Play"));
+
+	const FSiegeControlsHelpAction* const PlayRow = FSiegeControlsHelpRegistry::FindAction(CardsPlayRowId);
+	if (PlayRow == nullptr)
+	{
+		// The registry row was renamed or removed. Degrade-open: the chip disappears, the bar
+		// keeps working, and GetSlotKeyLabel says so once per slot.
+		return FString();
+	}
+
+	// ⛔ RANGE CHECKED AGAINST THE SHIPPED ROW, ⛔ never against a typed 6: the hand size and
+	// the action list are one fact, and this way they cannot drift apart. Checked BEFORE the
+	// provider runs, so an out-of-range slot never reaches Enhanced Input at all.
+	if (SlotIndex < 0 || !PlayRow->Actions.IsValidIndex(SlotIndex))
+	{
+		return FString();
+	}
+
+	// ⭐⭐ COPIED AND NARROWED, ⛔ NOT REBUILT — and the difference is load-bearing. Copying
+	// carries `Lane`, `bLiteralKeyLabel` and `bPointerOnly` over from the ONE row the TAB
+	// screen resolves, so a future edit to Cards.Play moves the card bar with it. A
+	// hand-built synthetic row would silently stop tracking on the first such edit, which is
+	// the exact "second copy of the truth" failure `CARDBAR-§2` exists to prevent.
+	FSiegeControlsHelpAction SlotRow = *PlayRow;
+	SlotRow.Actions = { PlayRow->Actions[SlotIndex] };
+	SlotRow.QwertyReferenceKeys = PlayRow->QwertyReferenceKeys.IsValidIndex(SlotIndex)
+		? TArray<FKey>{ PlayRow->QwertyReferenceKeys[SlotIndex] }
+		: TArray<FKey>();
+
+	// ⛔ THE PLACEHOLDER FENCE, HALF ONE — STRUCTURAL. ComposeKeyChipLabel answers the pointer
+	// affordance ("Mouse click") for a pointer-only row REGARDLESS of the keys it is handed,
+	// and it is right to: a TAB row with no key must say so out loud (`HELP-§2` mechanism 2).
+	// A CARD CHIP must not — `CARDBAR-§3` says empty, and the WBP hides it. Refusing the lane
+	// here means that prose can never leak onto the bar, whatever Cards.Play becomes later.
+	if (SlotRow.bPointerOnly || SlotRow.Lane != ESiegeInputLane::MappedAction)
+	{
+		return FString();
+	}
+
+	// ⛔⛔ THE ONE TRANSLATION, AND IT HAPPENED BEFORE THIS LINE. The provider returns
+	// QueryKeysMappedToAction's answer over the ACTIVE (already-retargeted) context;
+	// ResolveRowDisplayKeys' Lane-A primary branch hands it through VERBATIM with zero
+	// GetPositionalKey calls. When nothing maps the action, that same call takes its single
+	// fallback translation over the reference key — which is the FIRST translation, not a
+	// second one, because nothing had touched that key.
+	const TArray<FKey> AppliedKeys = AppliedKeyProvider(SlotRow);
+	const TArray<FKey> DisplayKeys =
+		FSiegeControlsHelpRegistry::ResolveRowDisplayKeys(SlotRow, AppliedKeys, LayoutSubsystem);
+
+	if (DisplayKeys.Num() == 0)
+	{
+		// Nothing mapped AND no reference key. ⛔ Never a guessed digit (`CARDBAR-§3`).
+		return FString();
+	}
+
+	const FString Composed = FSiegeControlsHelpRegistry::ComposeKeyChipLabel(SlotRow, DisplayKeys).ToString();
+
+	// ⛔ THE PLACEHOLDER FENCE, HALF TWO — DERIVED, ⛔ NEVER TYPED. Ask the SAME composer what
+	// it says when it has nothing ("(not bound)"), and refuse exactly that answer. Typing the
+	// string here would be a second copy of a constant that lives in
+	// SiegeControlsHelpWidget.cpp and would rot the moment it is reworded; deriving it cannot.
+	// ⚠️ Structurally unreachable today (an FKey's ToString is never empty), and it stays
+	// because "empty on every fault" is then a property of the code rather than of an argument.
+	const FString EmptyAnswer =
+		FSiegeControlsHelpRegistry::ComposeKeyChipLabel(SlotRow, TArray<FKey>()).ToString();
+
+	return (Composed == EmptyAnswer) ? FString() : Composed;
+}
+
+FString UCardHandWidget::GetSlotKeyLabel(int32 SlotIndex)
+{
+	// ⛔ RESOLVED EVERY CALL, ⛔ NEVER CACHED — `KBD-§0` ruling 2's shape: a cached key string
+	// is how a label survives a rebind or a layout change and starts lying. Cloned from
+	// USiegeControlsHelpWidget::ResolveKeyboardLayoutSubsystem (SiegeControlsHelpWidget.cpp:
+	// 2890-2907) rather than re-invented. A null subsystem is `KBD-§5`'s FAIL-SAFE, ⛔ not an
+	// error: the label degrades to the reference key unchanged.
+	const UWorld* const World = GetWorld();
+	UGameInstance* const GameInstance = World ? World->GetGameInstance() : nullptr;
+	const USiegeKeyboardLayoutSubsystem* const LayoutSubsystem =
+		GameInstance ? GameInstance->GetSubsystem<USiegeKeyboardLayoutSubsystem>() : nullptr;
+
+	const ASiegePlayerController* const Controller = ObservedController.Get();
+
+	const FString Label = ComposeSlotKeyLabel(SlotIndex, LayoutSubsystem,
+		[Controller](const FSiegeControlsHelpAction& SlotRow)
+		{
+			// ⛔ THE SHIPPED LIVE QUERY, UNWRAPPED AND UNASSISTED. It is null-safe by contract
+			// (no controller / no local player / no subsystem ⇒ EMPTY, never a crash), and it
+			// calls GetPositionalKey ZERO times — that is what makes the key arriving here
+			// already-translated-exactly-once.
+			return USiegeControlsHelpWidget::QueryAppliedKeysForRow(SlotRow, Controller);
+		});
+
+	if (Label.IsEmpty() && !WarnedKeyLabelSlots.Contains(SlotIndex))
+	{
+		// ONCE PER SLOT, ⛔ never per call: the WBP calls this from its OnHandSlotUpdated
+		// handler and every slot re-pushes on EVERY gold tick, so a per-call log is a flood.
+		// Same guard shape as WarnedCardArtIDs.
+		WarnedKeyLabelSlots.Add(SlotIndex);
+
+		// ⛔ THE SLOT INDEX IS PRINTED RAW AND NOTHING IS DERIVED FROM IT. An earlier draft
+		// printed "IA_Card%d" from SlotIndex + 1, which is signed-overflow UB on MIN_int32 —
+		// a diagnostic must not be the one line in the function that can misbehave on the
+		// input it exists to report.
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("UCardHandWidget::GetSlotKeyLabel: slot %d has no resolvable key — the slot is out of range, or no active context maps its IA_Card action and the Cards.Play row carries no reference key for it. The chip is hidden (logged once per slot)."),
+			SlotIndex);
+	}
+
+	return Label;
 }
 
 UTexture2D* UCardHandWidget::ResolveCardArtTexture(FName CardID)
