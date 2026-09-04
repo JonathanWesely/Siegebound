@@ -2251,11 +2251,17 @@ void ASiegePlayerController::TryConfirmPlacement()
 			}
 			else
 			{
-				// ⚖️ Log, ⛔ NOT Warning and ⛔ NOT Error: a WatchTower under the cursor is a
+				// ⚖️ Log, ⛔ NOT Warning and ⛔ NOT Error: a building that refuses to grow is a
 				// NOT-A-TARGET, not a fault. Nothing here is exceptional — it is the fifth
 				// entry in a family of four shipped refusals.
+				// ⚠️ THE PREDICATE THIS LINE NAMES CHANGED ON 2026-09-03 (STACK-§8) and the
+				// message was updated with it: a log line naming the WRONG predicate is how the
+				// next playtest report gets misdiagnosed, which is exactly what happened here.
 				UE_LOG(LogGitClaudeUnrealTest, Log,
-					TEXT("ASiegePlayerController '%s': upgrade click refused for '%s' — the hovered building refuses footprint scaling (CanScaleFootprint() is false; STACK-§2 — a scaled climbable tower voids TOWER-§8.5a and the climb stops working entirely)."),
+					// ⛔ Predicate named WITHOUT its parentheses — see ConfirmStackUpgrade's own
+					// note: a literal carrying the call shape would satisfy the gate census by
+					// itself (`SC-§41`).
+					TEXT("ASiegePlayerController '%s': upgrade click refused for '%s' — the hovered building refuses to be grown in HEIGHT (its CanStackHeight predicate is false; STACK-§8 — ⛔ this is NOT the placement wheel's)."),
 					*GetNameSafe(this), *PendingCardID.ToString());
 				RefuseCardPlay(PendingCardID, StackNotStackableRefusalText());
 			}
@@ -2475,26 +2481,44 @@ void ASiegePlayerController::ConfirmStackUpgrade(ASiegePlayerState& SiegeState)
 	// is happening around it — which is exactly why PlacementUpgradeTarget is weak. The
 	// refusal STAYS in placement mode: another building of the same card is still a legal
 	// target, so a different click can succeed.
+	// ⭐ THE RIDER, STACK-§9(2): this branch reused StackNotStackableRefusalText() until
+	// 2026-09-03 and the sentence was FALSE — the building it names can be stacked perfectly
+	// well; it simply is not there any more. ⚖️ A message that is wrong on a rare path is how
+	// the NEXT playtest report gets misdiagnosed, which is the whole reason this batch exists.
 	ABuilding* const Target = PlacementUpgradeTarget.Get();
 	if (!IsValid(Target) || Target->IsBuildingDestroyed())
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Log,
 			TEXT("ASiegePlayerController '%s': upgrade click refused for '%s' — the hovered building is gone or destroyed (it died between the ghost frame and the click)."),
 			*GetNameSafe(this), *PendingCardID.ToString());
-		RefuseCardPlay(PendingCardID, StackNotStackableRefusalText());
+		RefuseCardPlay(PendingCardID, StackTargetGoneRefusalText());
 		return;
 	}
 
-	// ⛔⛔ THE STACK-§2 PREDICATE, ASKED A SECOND TIME. UpdatePlacementGhost asked it a frame
-	// ago and ABuilding::ApplyStackUpgrade asks it a third time inside itself — three
-	// independent mechanisms, on purpose. The thing being prevented is not a cosmetic glitch:
-	// a scaled SM_WatchTower fires TOWER-§8.5a's voiding condition and the climb stops working
-	// ENTIRELY, with every readback still reporting correct. ⛔ Structural (a virtual on
-	// ABuilding), ⛔ never a CardID string compare (an automatic QA fail by STACK-§2).
-	if (!Target->CanScaleFootprint())
+	// ⛔⛔ THE STACK (Z) PREDICATE, ASKED A SECOND TIME — the SECOND of the three gates
+	// STACK-§8 cl. 3 repointed. UpdatePlacementGhost asked it a frame ago and
+	// ABuilding::ApplyStackUpgrade asks it a third time inside itself — three independent
+	// mechanisms, on purpose. ⛔ Structural (a virtual on ABuilding), ⛔ never a CardID string
+	// compare (an automatic QA fail by STACK-§2).
+	//
+	// ⛔⛔ `CanStackHeight()`, ⛔ NOT `CanScaleFootprint()` — the wheel's predicate answering
+	// this question is the shipped defect Jonathan filmed, and asking it here again would
+	// reintroduce the refusal at the click even with the hover gate fixed.
+	if (!Target->CanStackHeight())
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Log,
-			TEXT("ASiegePlayerController '%s': upgrade click refused for '%s' — CanScaleFootprint() is false on the target (STACK-§2)."),
+			// ⛔⛔ THE PREDICATE IS NAMED ⛔ WITHOUT ITS PARENTHESES, AND THAT IS ⛔ NOT A TYPO —
+			// it is `SC-§41` used the way `SC-§41` is meant to be used. SiegeBuildingStackTest's
+			// gate census counts the CALL SHAPE `CanStackHeight(` on code lines of this
+			// function, and a UE_LOG literal is a CODE line. ⇒ a message quoting the call
+			// WITH its parens would satisfy the gate ⛔ ALL BY ITSELF: delete the consult four
+			// lines up and the census would still read 1 and still report GREEN.
+			// ⚖️ *A gate cannot honestly scan a file whose MESSAGES quote the thing it counts* —
+			// and the open paren is exactly the discriminator that lets it, so the diagnostic
+			// value of naming the predicate is kept and the false hit is not.
+			// ⛔ The wheel's predicate is not named here at all; that contrast lives in the
+			// comment above, where the scanner correctly ignores it.
+			TEXT("ASiegePlayerController '%s': upgrade click refused for '%s' — the target's CanStackHeight predicate is false (STACK-§8: the HEIGHT gate, ⛔ not the placement wheel's)."),
 			*GetNameSafe(this), *PendingCardID.ToString());
 		RefuseCardPlay(PendingCardID, StackNotStackableRefusalText());
 		return;
@@ -2528,11 +2552,15 @@ void ASiegePlayerController::ConfirmStackUpgrade(ASiegePlayerState& SiegeState)
 		// un-applied: gold moved and nothing grew, so the gold comes back. Reaching this means
 		// a refusal INSIDE ApplyStackUpgrade that the three checks above do not cover — today
 		// that is the authority guard alone, and a Warning is the right volume for it.
+		// ⭐ THE RIDER, STACK-§9(2), second site: this branch also reused
+		// StackNotStackableRefusalText() and that sentence was FALSE too — the building is
+		// stackable, the SERVER refused the mutation. The player did nothing wrong and cannot
+		// act on "that building cannot be stacked"; the gold is already back.
 		SiegeState.AddGold(PendingCost);
 		UE_LOG(LogGitClaudeUnrealTest, Warning,
 			TEXT("ASiegePlayerController '%s': ApplyStackUpgrade refused on '%s' after the spend — %d gold REFUNDED (net-zero, §3.0). The building is unchanged; check the STACK-§7 authority guard."),
 			*GetNameSafe(this), *GetNameSafe(Target), PendingCost);
-		RefuseCardPlay(PendingCardID, StackNotStackableRefusalText());
+		RefuseCardPlay(PendingCardID, StackUpgradeFailedRefusalText());
 		return;
 	}
 
@@ -2545,7 +2573,13 @@ void ASiegePlayerController::ConfirmStackUpgrade(ASiegePlayerState& SiegeState)
 	// ghost (which would spam the HUD for as long as the cursor rested on a maxed tower).
 	// ⭐ The test is DERIVED FROM THE SERIES, ⛔ not from the number 5: the height did not move,
 	// therefore the cap bit. Retune MaxStackHeightMultiplier and this still tells the truth.
-	if (ABuilding::StackHeightMultiplier(UpgradesAfter) <= ABuilding::StackHeightMultiplier(UpgradesBefore))
+	// ⭐⭐ AND THE CEILING COMES FROM **THE TARGET**, ⛔ not from ABuilding's CDO (STACK-§10
+	// cl. 2): it is per class now, so a tower with a lower ceiling than the base class must see
+	// this note fire at ITS cap and not at the base's. ⛔ Reading it off the CDO here would put
+	// the note on the wrong upgrade for every subclass that sets its own — silently, and only
+	// for the one building whose ceiling anybody cared about.
+	const int32 TargetHeightCap = Target->GetMaxStackHeightMultiplier();
+	if (ABuilding::StackHeightMultiplier(UpgradesAfter, TargetHeightCap) <= ABuilding::StackHeightMultiplier(UpgradesBefore, TargetHeightCap))
 	{
 		BroadcastRefusal(StackHeightCapNoticeText());
 	}
@@ -2568,7 +2602,7 @@ void ASiegePlayerController::ConfirmStackUpgrade(ASiegePlayerState& SiegeState)
 		TEXT("ASiegePlayerController '%s': UPGRADED '%s' with card '%s' for %d gold — stack %d -> %d (height ×%.2f, health ×%.3f of the original)."),
 		*GetNameSafe(this), *GetNameSafe(Target), *PendingCardID.ToString(), PendingCost,
 		UpgradesBefore, UpgradesAfter,
-		ABuilding::StackHeightMultiplier(UpgradesAfter), ABuilding::StackHealthMultiplier(UpgradesAfter));
+		ABuilding::StackHeightMultiplier(UpgradesAfter, TargetHeightCap), ABuilding::StackHealthMultiplier(UpgradesAfter));
 
 	// same exit as the spawn confirm — releases the melee suppression (qa-note)
 	ExitPlacementMode();
@@ -5239,16 +5273,26 @@ ASiegePlayerController::EPlacementUpgradeState ASiegePlayerController::ResolvePl
 	}
 
 	// (5) ⛔⛔ THE EXCLUSION, AND IT IS THE REASON THIS FUNCTION EXISTS. ⭐ STRUCTURAL: a
-	// virtual on ABuilding, overridden false on AClimbableTower (TASK-812), so the NEXT
-	// climbable building inherits the protection instead of depending on somebody remembering
-	// STACK-§2. ⛔ THERE IS NO CardID STRING COMPARE ON THIS PATH AND THERE MUST NEVER BE ONE
-	// — a scaled SM_WatchTower moves the LadderFoot/LadderTop sockets and the rung plane,
-	// fires TOWER-§8.5a's voiding condition, and the climb stops working ENTIRELY while every
-	// readback still reports correct.
+	// virtual on ABuilding, so the NEXT building that refuses to grow inherits the protection
+	// instead of depending on somebody remembering STACK-§2. ⛔ THERE IS NO CardID STRING
+	// COMPARE ON THIS PATH AND THERE MUST NEVER BE ONE.
+	//
+	// ⛔⛔⛔ IT IS `CanStackHeight()` — THE **HEIGHT (Z)** PREDICATE — AND ⛔ NOT
+	// `CanScaleFootprint()`, WHICH IS THE **WHEEL (X/Y)**'s (STACK-§8 cl. 3, the FIRST of the
+	// three gates it repointed). ⚠️⚠️ THIS GATE ASKED THE WHEEL'S PREDICATE UNTIL 2026-09-03
+	// AND THAT IS THE ⛔ DEFECT 🧑 JONATHAN FILMED: one virtual answered both questions, so the
+	// single building in the project that refuses the wheel also refused to be stacked — and
+	// gates (3) and (4) above mean that was reachable in normal play by ⛔ exactly one
+	// combination, which is precisely the one he tried. ⛔ Restoring the wheel predicate here
+	// restores the bug, and it would look like a tidy-up in the diff.
+	//
 	// ⚠️ ASKED BEFORE THE GOLD CHECK ON PURPOSE: "this can never be stacked" is permanent and
 	// actionable; "you are short 4 gold" would be a misleading thing to say about a building
 	// that will refuse at any price.
-	if (!HoveredBuilding->CanScaleFootprint())
+	// ⭐ AND THE CEILING IS DELIBERATELY NOT CONSULTED HERE either — a building AT its height
+	// cap still answers true and still turns BLUE, because the click still buys health (J-6,
+	// see gate (7)). ⛔ This gate is "may this building grow at all", ⛔ never "how far".
+	if (!HoveredBuilding->CanStackHeight())
 	{
 		return EPlacementUpgradeState::NotStackable;
 	}
@@ -5278,6 +5322,32 @@ FText ASiegePlayerController::StackNotStackableRefusalText()
 	// inherit this message too.
 	static const FText NotStackableText = NSLOCTEXT("Siegebound", "CardRefused_NotStackable", "That building cannot be stacked");
 	return NotStackableText;
+}
+
+FText ASiegePlayerController::StackTargetGoneRefusalText()
+{
+	// ⭐ STACK-§9(2), site 1 — the target died between the ghost frame and the click. Function-
+	// local static, same reason as the refusals above.
+	// ⚖️ ITS OWN KEY BECAUSE IT IS ITS OWN CONDITION: this branch reused
+	// CardRefused_NotStackable, and that told the player a PERMANENT rule about a building
+	// ("that one can never be stacked") when what actually happened was TEMPORARY and not
+	// about the rule at all — the siege killed it mid-click. The wording says the transient
+	// thing so the player clicks again instead of giving up on the card.
+	static const FText TargetGoneText = NSLOCTEXT("Siegebound", "CardRefused_StackTargetGone", "That building is gone");
+	return TargetGoneText;
+}
+
+FText ASiegePlayerController::StackUpgradeFailedRefusalText()
+{
+	// ⭐ STACK-§9(2), site 2 — the mutator refused AFTER the spend, and the gold is already
+	// refunded by the caller. Today the only way to reach it is the M8 authority guard.
+	// ⚖️ ITS OWN KEY, and deliberately NOT phrased as a rule about the building: nothing the
+	// player can see or do produced this, so a sentence implying they picked a bad target
+	// would send them hunting for a rule that does not exist. ⛔ It also must not promise the
+	// refund in words the other refusals do not — every refusal in this game is net-zero, so
+	// saying so here would imply the others are not.
+	static const FText UpgradeFailedText = NSLOCTEXT("Siegebound", "CardRefused_StackUpgradeFailed", "The upgrade could not be applied");
+	return UpgradeFailedText;
 }
 
 FText ASiegePlayerController::StackHeightCapNoticeText()

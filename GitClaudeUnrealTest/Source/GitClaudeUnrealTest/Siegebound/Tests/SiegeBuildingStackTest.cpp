@@ -102,10 +102,33 @@ namespace SiegeBuildingStackTestFixture
 	/** Loose enough that float32 rounding never fires it, far tighter than any wrong series' gap (the smallest of which is a whole 1.0). */
 	constexpr float Tolerance = 1.e-4f;
 
-	/** The height series, spelled once so no test re-types its argument list. */
+	/**
+	 *  ⭐ THE HEIGHT SERIES **AT `ABuilding`'s OWN CEILING** — spelled once so no test re-types
+	 *  its argument list, and reading that ceiling off `ABuilding`'s CDO exactly as every row
+	 *  below already does (`ReadInt(..., "MaxStackHeightMultiplier", ...)`).
+	 *
+	 *  ⚠️⚠️ THE SECOND ARGUMENT IS NOT DECORATION AND THIS HELPER MUST NOT HIDE IT FROM THE
+	 *  READER: `StackHeightMultiplier` took ⛔ ONE parameter until 2026-09-03 and read the cap
+	 *  off `GetDefault<ABuilding>()` — ⛔ always the BASE class's CDO, ⛔ never the caller's
+	 *  class. A subclass ceiling was therefore ⛔ DISCARDED SILENTLY. ⇒ every row using this
+	 *  helper is asking about `ABuilding` and is ⛔ blind to the per-class shape by
+	 *  construction; that shape is asserted separately, with `HeightWithCap` below.
+	 */
 	static float Height(int32 UpgradeCount)
 	{
-		return ABuilding::StackHeightMultiplier(UpgradeCount);
+		const ABuilding* const Defaults = GetDefault<ABuilding>();
+		return ABuilding::StackHeightMultiplier(UpgradeCount, Defaults ? Defaults->GetMaxStackHeightMultiplier() : 1);
+	}
+
+	/**
+	 *  ⭐⭐ THE SERIES AT AN **ARBITRARY** CEILING — the shape the amended signature exists to
+	 *  make askable at all. ⛔ Nothing in the project has to ship a given cap for a row built
+	 *  on this to mean something, which is precisely `SC-§37`: the test measures the PROPERTY
+	 *  (saturation at whatever ceiling it is handed) rather than restating a shipped VALUE.
+	 */
+	static float HeightWithCap(int32 UpgradeCount, int32 MaxMultiplier)
+	{
+		return ABuilding::StackHeightMultiplier(UpgradeCount, MaxMultiplier);
 	}
 
 	/** The health series, likewise. */
@@ -325,10 +348,104 @@ namespace SiegeBuildingStackTestFixture
 		return Count;
 	}
 
+	/**
+	 *  ⭐ ONE FUNCTION BODY, BY SIGNATURE — the `SiegeCastBarTest` / `SiegeHealthBarOcclusion-
+	 *  Test` helper, adopted rather than reinvented. ⛔ Deliberately NOT a parser: it takes the
+	 *  text from the signature to the first column-0 `}`, and a signature that stops matching
+	 *  ⛔ FAILS the test rather than silently scanning an empty string — which is the ⛔ only
+	 *  way a "the call is present" row could report SAFE while the call was gone.
+	 */
+	static bool ExtractFunctionBody(FAutomationTestBase& Test, const FString& Source, const TCHAR* Signature, FString& OutBody)
+	{
+		const int32 SignatureIndex = Source.Find(Signature, ESearchCase::CaseSensitive, ESearchDir::FromStart, 0);
+		if (SignatureIndex == INDEX_NONE)
+		{
+			Test.AddError(FString::Printf(TEXT("⛔ '%s' was not found in the source — the probe is STALE, so it FAILS rather than scanning an empty string (SC-§38: locate by SYMBOL, and a symbol that moved is a finding)."), Signature));
+			return false;
+		}
+
+		const int32 BodyEnd = Source.Find(TEXT("\n}"), ESearchCase::CaseSensitive, ESearchDir::FromStart, SignatureIndex);
+		if (BodyEnd == INDEX_NONE)
+		{
+			Test.AddError(FString::Printf(TEXT("⛔ Could not find the end of '%s' — the probe is STALE, so it FAILS."), Signature));
+			return false;
+		}
+
+		OutBody = Source.Mid(SignatureIndex, BodyEnd - SignatureIndex);
+		return true;
+	}
+
+	/**
+	 *  ⭐⭐ ONE **INLINE** DEFINITION — the signature to the end of ITS OWN LINE, and ⛔ not one
+	 *  character further.
+	 *
+	 *  ⚠️⚠️ WHY THIS EXISTS RATHER THAN REUSING ExtractFunctionBody ABOVE, WRITTEN DOWN SO THE
+	 *  MISTAKE IS NOT MADE AGAIN: that helper ends at the first column-0 `}`, which in a `.cpp`
+	 *  is the function's own close and in a **HEADER** is the ⛔ CLASS's close. ⇒ pointed at a
+	 *  one-line `virtual bool Foo() const { return true; }` it would return ⛔ THE WHOLE REST OF
+	 *  THE CLASS, and a "this body does not call X" row built on it would be measuring every
+	 *  member declared after it. ⛔ That version still catches the exact defect it was written
+	 *  for (a delegation ON the declaration line is inside the window either way) — but it
+	 *  could ALSO go red for a completely unrelated member, and a gate that fires for reasons
+	 *  it did not name is a gate nobody will believe the next time (`SC-§41`).
+	 */
+	static bool ExtractInlineBody(FAutomationTestBase& Test, const FString& Source, const TCHAR* Signature, FString& OutBody)
+	{
+		const int32 SignatureIndex = Source.Find(Signature, ESearchCase::CaseSensitive, ESearchDir::FromStart, 0);
+		if (SignatureIndex == INDEX_NONE)
+		{
+			Test.AddError(FString::Printf(TEXT("⛔ '%s' was not found — the probe is STALE, so it FAILS rather than scanning an empty string."), Signature));
+			return false;
+		}
+
+		int32 LineEnd = Source.Find(TEXT("\n"), ESearchCase::CaseSensitive, ESearchDir::FromStart, SignatureIndex);
+		if (LineEnd == INDEX_NONE)
+		{
+			LineEnd = Source.Len();
+		}
+
+		OutBody = Source.Mid(SignatureIndex, LineEnd - SignatureIndex);
+
+		// ⛔ A one-liner that no longer closes on its own line is ⛔ not this helper's subject
+		// any more — it FAILS rather than silently measuring half a body.
+		if (!OutBody.Contains(TEXT("}"), ESearchCase::CaseSensitive))
+		{
+			Test.AddError(FString::Printf(TEXT("⛔ '%s' is no longer defined INLINE on one line — this probe measures a single line and cannot honestly answer for a multi-line body. It FAILS so the row is rewritten rather than quietly narrowed."), Signature));
+			return false;
+		}
+
+		return true;
+	}
+
 	static const TCHAR* const BuildingHeaderPath = TEXT("Source/GitClaudeUnrealTest/Siegebound/Building.h");
 	static const TCHAR* const BuildingSourcePath = TEXT("Source/GitClaudeUnrealTest/Siegebound/Building.cpp");
 	static const TCHAR* const ClimbableTowerHeaderPath = TEXT("Source/GitClaudeUnrealTest/Siegebound/ClimbableTower.h");
 	static const TCHAR* const ClimbableTowerSourcePath = TEXT("Source/GitClaudeUnrealTest/Siegebound/ClimbableTower.cpp");
+
+	/** The controller carrying TWO of the three stack gates (the hover resolver and the confirm re-ask). */
+	static const TCHAR* const ControllerSourcePath = TEXT("Source/GitClaudeUnrealTest/Siegebound/SiegePlayerController.cpp");
+
+	/**
+	 *  ⭐⭐ THE THREE STACK GATES, BY **SIGNATURE**, ⛔ never by line number (`SC-§38` — a
+	 *  `file:line` in a law is a dated annotation and the SYMBOL is the key). Each entry is the
+	 *  signature of the function whose body must consult the STACK predicate.
+	 */
+	struct FStackGate
+	{
+		const TCHAR* SourcePath;
+		const TCHAR* Signature;
+		const TCHAR* What;
+	};
+
+	static const FStackGate StackGates[] =
+	{
+		{ ControllerSourcePath, TEXT("ASiegePlayerController::EPlacementUpgradeState ASiegePlayerController::ResolvePlacementUpgradeState("),
+		  TEXT("gate 1/3 — the HOVER resolver (this is the one that paints the ghost, so it is the one Jonathan filmed)") },
+		{ ControllerSourcePath, TEXT("void ASiegePlayerController::ConfirmStackUpgrade("),
+		  TEXT("gate 2/3 — the CONFIRM re-ask (a building can change between the ghost frame and the click)") },
+		{ BuildingSourcePath,   TEXT("bool ABuilding::ApplyStackUpgrade()"),
+		  TEXT("gate 3/3 — the MUTATOR's own guard (a future caller that forgets STACK-§2 must still be unable to grow a refusing building)") },
+	};
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════
@@ -1062,19 +1179,29 @@ bool FSiegeBuildingStackAtTheCapTest::RunTest(const FString& Parameters)
 
 	return true;
 }
-
 // ═══════════════════════════════════════════════════════════════════════════════════════════
-//  10. ⛔⛔ THE REFUSAL IS ENFORCED **AT THE BUILDING**, NOT ONLY IN THE PLACEMENT PATH — two
-//      independent mechanisms, so a future caller that forgets `STACK-§2` still cannot scale a
-//      climbable tower.
+//  10. ⭐⭐⭐ THE CLIMBABLE TOWER **ACCEPTS** THE UPGRADE AND THEN **STOPS AT ITS OWN CEILING**
+//      — the whole of `STACK-§8`'s split and `STACK-§10`'s number, observed on one instance.
+//
+//  ⚠️⚠️ THIS TEST USED TO ASSERT THE OPPOSITE. Until 2026-09-03 it read
+//  "AClimbableTowerRefusesTheUpgradeAtTheBuildingItselfNotOnlyInThePlacementPath" and it was
+//  ⛔ GREEN THE WHOLE TIME 🧑 JONATHAN COULD NOT STACK A TOWER. ⇒ ⚖️ *a passing test is a
+//  statement about the code, ⛔ never about the design being right* — the suite was faithfully
+//  protecting the defect. The row is kept, inverted, so the next reader sees that the refusal
+//  was DELIBERATE and was REVERSED by a measurement, ⛔ not that it was never there.
+//
+//  ⛔ WHAT IS ⛔ NOT ASSERTED HERE (`SC-§32`): ⛔ nothing about the CLIMB. This file has no
+//  world, no navmesh and no pawn; the licence for a ×2 tower is `TASK-941`'s measurement, ruled
+//  as `STACK-§10`, and its live half rides 🧑 the acceptance playtest. What IS asserted is that
+//  the CODE now does what that ruling said, and that it stops where the ruling said.
 // ═══════════════════════════════════════════════════════════════════════════════════════════
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FSiegeBuildingStackClimbableTowerRefusalTest,
-	"Siegebound.BuildingStack.AClimbableTowerRefusesTheUpgradeAtTheBuildingItselfNotOnlyInThePlacementPath",
+	FSiegeBuildingStackClimbableTowerCeilingTest,
+	"Siegebound.BuildingStack.AClimbableTowerAcceptsTheHeightUpgradeAndSaturatesAtItsOwnPerClassCeiling",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FSiegeBuildingStackClimbableTowerRefusalTest::RunTest(const FString& Parameters)
+bool FSiegeBuildingStackClimbableTowerCeilingTest::RunTest(const FString& Parameters)
 {
 	using namespace SiegeBuildingStackTestFixture;
 
@@ -1095,56 +1222,480 @@ bool FSiegeBuildingStackClimbableTowerRefusalTest::RunTest(const FString& Parame
 
 	Root->SetRelativeScale3D(FVector(1.f, 1.f, 1.f));
 
-	// ── SELF-CHECK ⭐⭐: THE SAME CALL SUCCEEDS ON A PLAIN BUILDING ───────────────────────────
-	// ⚠️⚠️ WITHOUT THIS ROW THE TEST BELOW IS WORTHLESS. "ApplyStackUpgrade returned false"
-	// would also be the answer if the mutator were broken, unreachable, or refused everything.
-	// Proving the identical call succeeds on a scalable building is what turns a false into a
-	// STATEMENT ABOUT THE TOWER.
-	{
-		TStrongObjectPtr<ABuilding> Control = MakeScratchBuilding<ABuilding>();
-		if (!Control.IsValid())
-		{
-			AddError(TEXT("SELF-CHECK FAILED: the control building could not be created."));
-			return false;
-		}
-		TestTrue(TEXT("SELF-CHECK ⭐⭐: the IDENTICAL call SUCCEEDS on a plain ABuilding — so a refusal below is about the TOWER and not about a broken mutator"),
-			Control->ApplyStackUpgrade());
-	}
+	// ⚠️⚠️ EXPECTED TRAFFIC, AND IT IS A ⛔ CONSEQUENCE OF THIS VERY TASK — DECLARED RATHER THAN
+	// DISCOVERED BY THE NEXT PERSON TO SEE A RED BAR. A successful upgrade now re-arms the
+	// ladder link (`AClimbableTower::OnStackUpgradeApplied` → `ConfigureLadderLink`), and a
+	// world-free scratch tower has ⛔ no SM_WatchTower on its VisualMesh, so the socket read
+	// degrades open to the `TOWER-§8.3` pinned literals and says so at Warning — ⛔ by design
+	// (`TOWER-§8.4(A)`: ⛔ never a broken tower, and ⛔ never silent).
+	// ⛔ SCOPED TO THIS ONE MESSAGE. A blanket warning suppression here would also hide the M8
+	// authority refusal and the statless-building path, both of which this file relies on being
+	// loud. ⛔ Occurrences -1 ("any number, including none") rather than a count, because the
+	// walk below runs the re-arm once per upgrade and that count is not this row's subject.
+	AddExpectedMessagePlain(TEXT("ladder line taken from the TOWER-§8.3 pinned literals"), ELogVerbosity::Warning,
+		EAutomationExpectedMessageFlags::Contains, /*Occurrences*/ -1);
 
-	// ── (a) THE REFUSAL ─────────────────────────────────────────────────────────────────────
-	TestFalse(TEXT("(a) ⛔⛔ ApplyStackUpgrade REFUSES on a climbable tower — the predicate is re-asked at the building itself, so a caller that forgets STACK-§2 still cannot fire TOWER-§8.5a's voiding condition"),
+	// ── (a) ⭐⭐ THE CLAIM 🧑 JONATHAN'S PLAYTEST BOUGHT: THE UPGRADE **LANDS** ────────────────
+	TestTrue(TEXT("(a) ⭐⭐ ApplyStackUpgrade SUCCEEDS on a climbable tower — the height (Z) question is CanStackHeight()'s now, and this class answers it TRUE (STACK-§8 / STACK-§10)"),
 		Tower->ApplyStackUpgrade());
+	TestEqual(TEXT("(a) the upgrade count advanced"),
+		Tower->GetStackUpgradeCount(), 1);
 
-	// ── (b) AND IT IS A **NO-OP**, not a partial application ────────────────────────────────
-	// ⚠️ A refusal that had already incremented the count or already scaled the mesh would be
-	// worse than no refusal at all — it would leave a tower that reads as un-upgraded while
-	// standing at the wrong height.
-	TestEqual(TEXT("(b) ⛔ the upgrade count did NOT advance"),
-		Tower->GetStackUpgradeCount(), 0);
-	TestEqual(TEXT("(b) ⛔ the mesh Z was NOT scaled — the LadderFoot/LadderTop sockets and the rung plane are exactly where TOWER-§8.3 pinned them"),
-		ScaleComponentAsFloat(Root->GetRelativeScale3D().Z), 1.f, Exact);
+	// ── (b) ⭐⭐ AND THE MESH ACTUALLY GREW, ⛔ Z ONLY ────────────────────────────────────────
+	// ⚠️ WITHOUT THIS ROW (a) IS HALF A TEST: "returned true" is also what a mutator that
+	// incremented a counter and forgot the transform would report, and that failure mode looks
+	// perfect from every readback the placement path makes.
+	const FVector ScaleAfterOne = Root->GetRelativeScale3D();
+	TestTrue(TEXT("(b) ⭐⭐ the Z scale actually GREW — the tower is taller, ⛔ not merely counted as taller"),
+		ScaleComponentAsFloat(ScaleAfterOne.Z) > 1.f);
+	TestEqual(TEXT("(b) ⛔ X is untouched — the WHEEL owns X/Y and this class still refuses IT (J-4, and STACK-§8 did NOT reopen the wheel)"),
+		ScaleComponentAsFloat(ScaleAfterOne.X), 1.f, Exact);
+	TestEqual(TEXT("(b) ⛔ Y is untouched"),
+		ScaleComponentAsFloat(ScaleAfterOne.Y), 1.f, Exact);
 
-	float MaxHPAfter = 0.f;
-	float CurrentHPAfter = 0.f;
-	if (ReadFloat(*this, Tower.Get(), TEXT("MaxHP"), MaxHPAfter)
-		&& ReadFloat(*this, Tower.Get(), TEXT("CurrentHP"), CurrentHPAfter))
+	// ── (c) ⭐⭐⭐ THE CEILING — WALKED, ⛔ NEVER TRANSCRIBED ──────────────────────────────────
+	// ⛔ THE NUMBER 2 APPEARS NOWHERE IN THIS ROW (`SC-§37`). The loop walks until the tower's
+	// OWN series stops moving and then asserts the SHAPE: it saturated, it saturated where its
+	// own tunable says, and it did so STRICTLY BEFORE a plain ABuilding would have.
+	const int32 TowerCap = Tower->GetMaxStackHeightMultiplier();
+	int32 Guard = 0;
+	while (HeightWithCap(Tower->GetStackUpgradeCount() + 1, TowerCap) > HeightWithCap(Tower->GetStackUpgradeCount(), TowerCap)
+		&& Guard++ < 64)
 	{
-		TestEqual(TEXT("(b) ⛔ and it gained NO health either — the refusal is total, ⛔ not 'height only'"),
-			MaxHPAfter, SeedMaxHP, Exact);
-		TestEqual(TEXT("(b) ⛔ CurrentHP untouched"),
-			CurrentHPAfter, SeedCurrentHP, Exact);
-	}
-
-	// ── (c) REPEATED CLICKS CHANGE NOTHING ──────────────────────────────────────────────────
-	// The placement path will let a player click a WatchTower as often as they like; the
-	// refusal must be stable, ⛔ not a one-shot latch that opens on the second press.
-	for (int32 Attempt = 0; Attempt < 5; ++Attempt)
-	{
-		TestFalse(*FString::Printf(TEXT("(c) attempt %d is refused too — the exclusion is a PROPERTY of the class, ⛔ not a latch"), Attempt + 2),
+		TestTrue(*FString::Printf(TEXT("(c) below its own ceiling (n = %d) the tower keeps accepting upgrades"), Tower->GetStackUpgradeCount()),
 			Tower->ApplyStackUpgrade());
 	}
-	TestEqual(TEXT("(c) …and after six attempts the tower is still exactly as it was authored"),
-		Tower->GetStackUpgradeCount(), 0);
+
+	TestTrue(TEXT("(c) SELF-CHECK: the walk terminated on the CEILING and ⛔ not on the guard"), Guard < 64);
+	const float TowerCappedHeight = HeightWithCap(Tower->GetStackUpgradeCount(), TowerCap);
+	TestEqual(TEXT("(c) ⭐ the tower's series has SATURATED — one more upgrade moves the height ⛔ not at all (tolerance ZERO)"),
+		HeightWithCap(Tower->GetStackUpgradeCount() + 1, TowerCap), TowerCappedHeight, Exact);
+	TestEqual(TEXT("(c) ⭐⭐ …and the applied MESH Z agrees with the series at the ceiling — the transform and the arithmetic cannot drift apart"),
+		ScaleComponentAsFloat(Root->GetRelativeScale3D().Z), TowerCappedHeight, Tolerance);
+
+	// ── (d) ⭐⭐⭐ THE ROW THAT MAKES THE CEILING **PER CLASS** RATHER THAN GAME-WIDE ──────────
+	// ⚠️⚠️ THIS IS THE LOAD-BEARING ONE. The shipped resolver read `GetDefault<ABuilding>()`
+	// until 2026-09-03, so a subclass ceiling was DISCARDED SILENTLY: the tower would have
+	// climbed all the way to the BASE class's cap while `GetMaxStackHeightMultiplier()` kept
+	// reporting the smaller number the constructor set. ⇒ every readback would have agreed and
+	// the tower's deck would have been unreachable (`STACK-§10` cl. 1). ⛔ Asserted as a
+	// RELATION between two classes, ⛔ never as a literal.
+	const ABuilding* const BaseDefaults = GetDefault<ABuilding>();
+	const AClimbableTower* const TowerDefaults = GetDefault<AClimbableTower>();
+	if (BaseDefaults && TowerDefaults)
+	{
+		TestTrue(TEXT("(d) SELF-CHECK: the two classes really do carry DIFFERENT ceilings — if they were equal every row below would pass vacuously against the old base-CDO resolver"),
+			TowerDefaults->GetMaxStackHeightMultiplier() < BaseDefaults->GetMaxStackHeightMultiplier());
+
+		// The plain building, walked the same way, must go FURTHER. ⭐ This is the row the old
+		// one-parameter signature could not have passed: it would have given both classes the
+		// base cap and the two totals would have been EQUAL.
+		TStrongObjectPtr<ABuilding> Plain = MakeScratchBuilding<ABuilding>();
+		USceneComponent* const PlainRoot = ScaleRootOf(*this, Plain.Get());
+		if (Plain.IsValid() && PlainRoot)
+		{
+			PlainRoot->SetRelativeScale3D(FVector(1.f, 1.f, 1.f));
+			const int32 PlainCap = Plain->GetMaxStackHeightMultiplier();
+			int32 PlainGuard = 0;
+			while (HeightWithCap(Plain->GetStackUpgradeCount() + 1, PlainCap) > HeightWithCap(Plain->GetStackUpgradeCount(), PlainCap)
+				&& PlainGuard++ < 64)
+			{
+				Plain->ApplyStackUpgrade();
+			}
+
+			TestTrue(TEXT("(d) SELF-CHECK: the plain building's walk terminated on ITS ceiling, ⛔ not on the guard"), PlainGuard < 64);
+			TestTrue(TEXT("(d) ⭐⭐⭐ the plain building ends up STRICTLY TALLER than the climbable tower — the tower's own, LOWER ceiling was OBEYED. ⛔ Under the pre-2026-09-03 resolver these two were equal and this row is the only thing that can tell the difference"),
+				ScaleComponentAsFloat(PlainRoot->GetRelativeScale3D().Z) > ScaleComponentAsFloat(Root->GetRelativeScale3D().Z));
+			TestTrue(TEXT("(d) ⭐ …and it took MORE upgrades to get there, so the difference is the CEILING and ⛔ not a difference in the series' shape"),
+				Plain->GetStackUpgradeCount() > Tower->GetStackUpgradeCount());
+		}
+	}
+
+	// ── (e) ⭐ PAST THE CEILING THE CLICK STILL BUYS HEALTH (`J-6`), ON THIS CLASS TOO ────────
+	// A tower that started REFUSING once it was tall would be the silent behaviour change
+	// STACK-§5 refused, and it is a genuinely available wrong implementation here.
+	float MaxBefore = 0.f;
+	float MaxAfter = 0.f;
+	if (ReadFloat(*this, Tower.Get(), TEXT("MaxHP"), MaxBefore))
+	{
+		TestTrue(TEXT("(e) ⭐ the click AT the ceiling still SUCCEEDS — ⛔ not a refusal (J-6)"),
+			Tower->ApplyStackUpgrade());
+		if (ReadFloat(*this, Tower.Get(), TEXT("MaxHP"), MaxAfter))
+		{
+			TestTrue(TEXT("(e) ⭐ …and it bought HEALTH — blue at the ceiling is not an empty promise"),
+				MaxAfter > MaxBefore);
+		}
+		TestEqual(TEXT("(e) ⛔ …while the HEIGHT did not move at all (tolerance ZERO) — the ceiling freezes the height and ⛔ nothing else"),
+			ScaleComponentAsFloat(Root->GetRelativeScale3D().Z), TowerCappedHeight, Tolerance);
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+//  11. ⛔⛔⭐⭐ THE **SPLIT** ITSELF — TWO VIRTUALS, TWO ⛔ INDEPENDENT ANSWERS, AND THE PROOF
+//      IS THAT THEY **DISAGREE** (`STACK-§8` cl. 3).
+//
+//  ⛔⛔ THE DEFECT THIS ROW EXISTS TO CATCH IS ⛔ NOT "THE PREDICATE IS WRONG" — it is
+//  `bool AClimbableTower::CanStackHeight() const { return CanScaleFootprint(); }`, i.e. the
+//  split written as a WRAPPER. ⚠️ That version compiles, reads as a tidy delegation, passes
+//  every behavioural row about `ABuilding` (both answer `true` there), and ⛔ REPRODUCES THE
+//  ENTIRE SHIPPED BUG on the one class anybody cares about. ⇒ ⭐ the discriminator is the ⛔
+//  DISAGREEMENT on the subclass, which an alias can ⛔ never produce.
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeBuildingStackHeightAndFootprintAreIndependentTest,
+	"Siegebound.BuildingStack.CanStackHeightIsASiblingOfCanScaleFootprintAndTheTwoDisagreeOnTheClimbableTower",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeBuildingStackHeightAndFootprintAreIndependentTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeBuildingStackTestFixture;
+
+	const ABuilding* const BuildingDefaultsObject = GetDefault<ABuilding>();
+	const AClimbableTower* const TowerDefaults = GetDefault<AClimbableTower>();
+	const ATower* const FiringTowerDefaults = GetDefault<ATower>();
+	if (!BuildingDefaultsObject || !TowerDefaults || !FiringTowerDefaults)
+	{
+		AddError(TEXT("SELF-CHECK FAILED: a GetDefault<>() returned null — the predicates cannot be asked."));
+		return false;
+	}
+
+	// ── (a) ⭐⭐⭐ THE ANTI-ALIAS ROW, ASKED THROUGH AN `ABuilding*` ──────────────────────────
+	// ⚠️ THROUGH THE BASE POINTER because that is the only pointer the placement path ever
+	// holds: a SHADOWED non-virtual would pass a concrete-typed row and fail this one.
+	const ABuilding* const TowerThroughBasePointer = TowerDefaults;
+	TestFalse(TEXT("(a) the climbable tower refuses the WHEEL (X/Y) — CanScaleFootprint() is still false, and STACK-§8 did ⛔ NOT reopen that"),
+		TowerThroughBasePointer->CanScaleFootprint());
+	TestTrue(TEXT("(a) ⭐⭐ …and ACCEPTS the STACK (Z) — CanStackHeight() is true (STACK-§10's measured licence)"),
+		TowerThroughBasePointer->CanStackHeight());
+	TestTrue(TEXT("(a) ⭐⭐⭐ THE TWO VIRTUALS DISAGREE ON THIS CLASS. ⛔ An ALIAS or a WRAPPER — `{ return CanScaleFootprint(); }` — could ⛔ never produce this, whatever it was named"),
+		TowerThroughBasePointer->CanStackHeight() != TowerThroughBasePointer->CanScaleFootprint());
+
+	// ── (b) ⭐ AND ON THE BASE THEY AGREE, WHICH IS WHY (a) HAD TO BE ASKED ON THE SUBCLASS ──
+	// ⚠️ THIS FILE STATES ITS OWN BLIND SPOT RATHER THAN HIDING INSIDE IT (the `n <= 1`
+	// discipline at the top of this file, applied to a predicate): a wrapper is INDISTINGUISH-
+	// ABLE from a split anywhere both answers are `true`, so ⛔ no row about `ABuilding` or
+	// `ATower` can discriminate and none is counted as if it could.
+	TestTrue(TEXT("(b) a plain ABuilding accepts BOTH — the defaults are permissive, so a future building inherits stacking AND the wheel for free"),
+		BuildingDefaultsObject->CanScaleFootprint() && BuildingDefaultsObject->CanStackHeight());
+	TestTrue(TEXT("(b) ⭐ ATower — the Arrow/Bomb/Ballista/Crystal family — likewise, unchanged by the split"),
+		FiringTowerDefaults->CanScaleFootprint() && FiringTowerDefaults->CanStackHeight());
+
+	// ── (c) ⛔ THE SOURCE-LEVEL HALF: neither implementation may CALL the other ──────────────
+	// ⚠️ A `virtual` returning a literal leaves ⛔ NOTHING in the reflection tables, so the
+	// shipped source is the only place "this body does not delegate" can be asked at all.
+	FString BuildingHeader;
+	FString ClimbableTowerHeader;
+	const bool bLoadedBuildingHeader = LoadProjectSource(*this, BuildingHeaderPath, BuildingHeader);
+	const bool bLoadedTowerHeader = LoadProjectSource(*this, ClimbableTowerHeaderPath, ClimbableTowerHeader);
+
+	if (bLoadedBuildingHeader && bLoadedTowerHeader)
+	{
+		// ⭐⭐ SELF-CHECK ON THE SCANNER FIRST, and it is a REAL one: both needles below are
+		// CALL SHAPES ending in an open paren (`SC-§41` — the open paren is the discriminator,
+		// and it is what lets this gate honestly scan a file that discusses both names in
+		// prose). Proving the scanner finds a genuine declaration is what makes the zeroes
+		// findings rather than blindness.
+		TestEqual(TEXT("(c) SELF-CHECK ⭐: Building.h declares CanStackHeight() exactly once on a code line — so the zeroes below are findings and ⛔ not a blind scanner"),
+			CountOccurrencesInCode(BuildingHeader, TEXT("CanStackHeight()")), 1);
+		TestEqual(TEXT("(c) SELF-CHECK ⭐: ClimbableTower.h overrides it exactly once"),
+			CountOccurrencesInCode(ClimbableTowerHeader, TEXT("CanStackHeight()")), 1);
+		TestEqual(TEXT("(c) SELF-CHECK ⭐: and the WHEEL predicate is still spelled exactly once per class — two copies is how a rule and its exception come to disagree"),
+			CountOccurrencesInCode(BuildingHeader, TEXT("CanScaleFootprint()")) + CountOccurrencesInCode(ClimbableTowerHeader, TEXT("CanScaleFootprint()")), 2);
+
+		// ⛔⛔ THE CLAIM. `CanStackHeight`'s bodies are one-liners in these headers, so a
+		// delegation would put a SECOND call shape on the SAME line as the declaration.
+		// ⇒ counting `CanScaleFootprint(` on the tower header at exactly its own declaration
+		// count (1) is what says the override's body does ⛔ not call the wheel predicate.
+		FString TowerStackBody;
+		if (ExtractInlineBody(*this, ClimbableTowerHeader, TEXT("virtual bool CanStackHeight() const override"), TowerStackBody))
+		{
+			TestEqual(TEXT("(c) ⛔⛔ the tower's CanStackHeight() body calls CanScaleFootprint() ZERO times — ⛔ a WRAPPER is ⛔ NOT a SPLIT (STACK-§8 cl. 3, AUTOMATIC FAIL)"),
+				CountOccurrencesInCode(TowerStackBody, TEXT("CanScaleFootprint(")), 0);
+		}
+
+		FString BaseStackBody;
+		if (ExtractInlineBody(*this, BuildingHeader, TEXT("virtual bool CanStackHeight() const"), BaseStackBody))
+		{
+			TestEqual(TEXT("(c) ⛔ and the BASE's does not delegate either — ABuilding's two answers are two literals, ⛔ not one literal read twice"),
+				CountOccurrencesInCode(BaseStackBody, TEXT("CanScaleFootprint(")), 0);
+		}
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+//  12. ⛔⛔⭐⭐ **ALL THREE** STACK GATES CONSULT THE STACK PREDICATE, AND ⛔ NONE OF THEM
+//      CONSULTS THE WHEEL'S (`STACK-§8` cl. 3 — "locate all three ⛔ BY SYMBOL").
+//
+//  ⛔ WHY THIS IS A SOURCE PROBE AND ⛔ NOT A BEHAVIOURAL ONE: two of the three gates live on
+//  `ASiegePlayerController` and one of those needs a world, a cursor and a live
+//  `ASiegePlayerState`. ⛔ There is no headless path to either, and this file does ⛔ not
+//  pretend otherwise (`SC-§32`). The DECISION each gate makes is asserted elsewhere; what is
+//  asserted here is that all three ask the ⛔ SAME, ⛔ CORRECT question — which is exactly the
+//  property that was ⛔ FALSE in the shipped build 🧑 Jonathan played.
+//
+//  ⭐ `SHIP-§9` — VALIDATED AGAINST THE FAILURE IT DETECTS: delete the consult from any ONE of
+//  the three signatures below and this test goes ⛔ RED naming that gate, because each gate is
+//  asserted INDIVIDUALLY rather than as a total.
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeBuildingStackAllThreeGatesAskTheStackPredicateTest,
+	"Siegebound.BuildingStack.AllThreeStackGatesConsultCanStackHeightAndNoneConsultsTheWheelPredicate",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeBuildingStackAllThreeGatesAskTheStackPredicateTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeBuildingStackTestFixture;
+
+	FString BuildingSource;
+	FString ControllerSource;
+	const bool bLoadedBuilding = LoadProjectSource(*this, BuildingSourcePath, BuildingSource);
+	const bool bLoadedController = LoadProjectSource(*this, ControllerSourcePath, ControllerSource);
+	if (!bLoadedBuilding || !bLoadedController)
+	{
+		return false;
+	}
+
+	// ⭐⭐ SELF-CHECK ON THE SCANNER, AND IT IS THE ⛔ NEGATIVE-CONTROL HALF THAT MATTERS: the
+	// controller genuinely still CONTAINS `CanScaleFootprint(` — the WHEEL's own seam,
+	// `CanCardActorScaleFootprint`, is built on it and must survive this refactor untouched.
+	// ⇒ a zero inside a gate body below is the ⛔ gate not calling it, ⛔ never the token being
+	// absent from the file, which is the ⛔ one way this test could report SAFE while the bug
+	// had been reinstated.
+	TestTrue(TEXT("SELF-CHECK ⭐⭐: 'CanScaleFootprint(' IS still present on code lines of the controller — the WHEEL keeps it (STACK-§8: the wheel exclusion is ⛔ NOT reopened), so the per-gate zeroes below are real findings"),
+		CountOccurrencesInCode(ControllerSource, TEXT("CanScaleFootprint(")) > 0);
+	TestTrue(TEXT("SELF-CHECK ⭐: 'CanStackHeight(' IS present on code lines of the controller — the scanner can find the needle it is about to count"),
+		CountOccurrencesInCode(ControllerSource, TEXT("CanStackHeight(")) > 0);
+
+	// ── THE THREE GATES, ⛔ ONE ASSERTION PAIR EACH ──────────────────────────────────────────
+	for (const FStackGate& Gate : StackGates)
+	{
+		// ⛔ Compared by CONTENT, ⛔ not by pointer identity: two `const TCHAR*` literals are only
+		// guaranteed to share an address by string pooling, which is a compiler setting rather
+		// than a language promise — and the failure mode would be silently scanning the WRONG
+		// file and reporting green.
+		const bool bIsBuildingFile = FCString::Strcmp(Gate.SourcePath, BuildingSourcePath) == 0;
+		const FString& GateSource = bIsBuildingFile ? BuildingSource : ControllerSource;
+
+		FString Body;
+		if (!ExtractFunctionBody(*this, GateSource, Gate.Signature, Body))
+		{
+			// ExtractFunctionBody already reported by name. ⛔ Continue rather than return, so
+			// a second broken signature reports itself instead of hiding behind the first.
+			continue;
+		}
+
+		// ⛔⛔ `== 1`, ⛔ NOT `>= 1`, AND THE DIFFERENCE IS A DEFECT THIS ROW ALREADY CAUGHT
+		// ONCE (`SC-§41`): a `>=` count is satisfied by a UE_LOG literal that quotes the call
+		// WITH its parentheses, because a string literal sits on a CODE line. ⇒ under `>=` you
+		// could DELETE a gate's consult, leave its refusal message untouched, and this row
+		// would still read 1 and still report GREEN. ⚖️ *A gate cannot honestly scan a file
+		// whose MESSAGES quote the thing it counts.* The shipped refusal messages therefore
+		// name the predicate WITHOUT its parens, and this exact count is what holds them to it.
+		// ⚠️ A future gate that legitimately needs two consults must change THIS NUMBER
+		// deliberately — which is the point, not an inconvenience.
+		TestEqual(*FString::Printf(TEXT("⭐⭐ %s CONSULTS CanStackHeight() exactly once — remove it and this row goes RED naming this gate"), Gate.What),
+			CountOccurrencesInCode(Body, TEXT("CanStackHeight(")), 1);
+		TestEqual(*FString::Printf(TEXT("⛔⛔ %s consults the WHEEL's CanScaleFootprint() ZERO times — ⛔ a fourth stack-site consult of it is an AUTOMATIC FAIL (STACK-§7's amended row)"), Gate.What),
+			CountOccurrencesInCode(Body, TEXT("CanScaleFootprint(")), 0);
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+//  13. ⛔⛔⭐⭐ THE **NAV-LINK RE-ARM** IS ON THE STACK-UPGRADE PATH — the ⛔ ONE part of this
+//      feature that a 🧑 HUMAN PLAYTEST WOULD ⛔ REPORT AS WORKING WHILE IT WAS BROKEN.
+//
+//  ⛔ THE MECHANISM (`STACK-§10` cl. 5, `TOWER-§8.5a` side (iii)): `UNavLinkCustomComponent` is
+//  a `UActorComponent`, ⛔ not a `USceneComponent`, so rescaling the root refreshes the MESH's
+//  navigation octree entry and ⛔ not the LINK's. The registered off-mesh connection keeps
+//  describing the pre-upgrade tower and Recast can drop it ⇒ ⛔ AI units stop being handed a
+//  path to the ladder.
+//
+//  ⚠️⚠️ AND THE PART THAT MAKES IT DANGEROUS: ⛔ THE HERO IS ⛔ UNAFFECTED — the contact climb
+//  reads the link's endpoints LIVE and ⛔ never consults the navmesh. ⇒ ⚖️ *a green playtest by
+//  a human is ⛔ not evidence about this line*, and this source probe is the ⛔ ONLY automated
+//  instrument that can see the re-arm at all. The BEHAVIOURAL half is ⛔ not machine-observable
+//  here (no PIE, no navmesh, no input lane) and rides 🧑 the acceptance row instead.
+//
+//  ⭐ `SC-§41` — PINNED BY **CALL SHAPE**, ⛔ NEVER A BARE TOKEN: the needle carries its open
+//  paren, so the paragraphs above and in the shipped source that merely NAME the function
+//  cannot satisfy it.
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeBuildingStackLadderLinkIsReArmedAfterAnUpgradeTest,
+	"Siegebound.BuildingStack.TheClimbableTowerReArmsItsLadderLinkOnTheStackUpgradePath",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeBuildingStackLadderLinkIsReArmedAfterAnUpgradeTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeBuildingStackTestFixture;
+
+	FString BuildingSource;
+	FString TowerSource;
+	const bool bLoadedBuilding = LoadProjectSource(*this, BuildingSourcePath, BuildingSource);
+	const bool bLoadedTower = LoadProjectSource(*this, ClimbableTowerSourcePath, TowerSource);
+	if (!bLoadedBuilding || !bLoadedTower)
+	{
+		return false;
+	}
+
+	// ── (a) ⭐ THE HOOK IS ACTUALLY CALLED, AND ⛔ ONLY FROM THE SUCCESS PATH ─────────────────
+	// ⚠️ WITHOUT THIS ROW (b) IS WORTHLESS: an override nothing invokes is dead code that reads
+	// exactly like a fix. `ApplyStackUpgrade`'s three refusals all `return false` ABOVE the
+	// point this call sits, so its presence in the body is its presence on the success path.
+	FString UpgradeBody;
+	if (ExtractFunctionBody(*this, BuildingSource, TEXT("bool ABuilding::ApplyStackUpgrade()"), UpgradeBody))
+	{
+		TestEqual(TEXT("(a) ⭐ ApplyStackUpgrade CALLS the subclass hook exactly once — remove it and every subclass re-arm silently stops running"),
+			CountOccurrencesInCode(UpgradeBody, TEXT("OnStackUpgradeApplied()")), 1);
+		TestTrue(TEXT("(a) SELF-CHECK: the extracted body really is the mutator — its shipped Z write is in it"),
+			CountOccurrencesInCode(UpgradeBody, TEXT("Scale.Z =")) == 1);
+	}
+
+	// ── (b) ⭐⭐⭐ THE CLAIM. THE OVERRIDE RE-ARMS THE LINK ───────────────────────────────────
+	// ⛔ SELF-CHECK FIRST, and this one is load-bearing: `ConfigureLadderLink(` legitimately
+	// appears elsewhere in this file (its own definition, and the BeginPlay call). Proving the
+	// scanner finds those is what makes a ZERO inside the override a finding rather than a
+	// blind needle.
+	TestTrue(TEXT("(b) SELF-CHECK ⭐⭐: 'ConfigureLadderLink(' IS found elsewhere on code lines of ClimbableTower.cpp (its definition and the BeginPlay call) — so a zero inside the override below would be a real finding"),
+		CountOccurrencesInCode(TowerSource, TEXT("ConfigureLadderLink(")) >= 2);
+
+	FString ReArmBody;
+	if (ExtractFunctionBody(*this, TowerSource, TEXT("void AClimbableTower::OnStackUpgradeApplied()"), ReArmBody))
+	{
+		TestEqual(TEXT("(b) ⭐⭐⭐ the override CALLS ConfigureLadderLink() — ⛔ delete this one line and the AI ascent breaks on every stacked tower while the HERO's climb keeps working perfectly (STACK-§10 cl. 5)"),
+			CountOccurrencesInCode(ReArmBody, TEXT("ConfigureLadderLink()")), 1);
+		TestEqual(TEXT("(b) ⭐ …and it chains to Super, so a future base-class consequence is ⛔ not silently dropped"),
+			CountOccurrencesInCode(ReArmBody, TEXT("Super::OnStackUpgradeApplied()")), 1);
+	}
+
+	// ── (c) ⛔ AND THE RE-ARM LIVES ON THE **SUBCLASS**, ⛔ NEVER IN `ABuilding` ──────────────
+	// ⚖️ The base class must not learn what a ladder is: `STACK-§10` cl. 5 puts the nav-link
+	// knowledge on the class that owns the component, so the next building with a different
+	// kind of actor-component element writes its OWN override instead of extending a growing
+	// switch in the base.
+	TestEqual(TEXT("(c) ⛔ Building.cpp names ConfigureLadderLink ZERO times on a code line — the base class holds ⛔ no navigation call of any kind"),
+		CountOccurrencesInCode(BuildingSource, TEXT("ConfigureLadderLink")), 0);
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+//  14. ⛔⛔⭐⭐ THE CEILING IS A **PARAMETER**, AND THE SERIES SATURATES AT ⛔ WHATEVER IT IS
+//      HANDED — the SHAPE, ⛔ never the shipped literal (`SC-§37`).
+//
+//  ⚠️⚠️ THE DEFECT THIS ROW IS POINTED AT IS ⛔ INVISIBLE TO EVERY OTHER TEST IN THIS FILE.
+//  Until 2026-09-03 the resolver read `GetDefault<ABuilding>()->MaxStackHeightMultiplier` —
+//  ⛔ the BASE class's CDO, ⛔ whatever instance was calling — so a subclass ceiling set in a
+//  constructor was read STRAIGHT PAST. ⇒ every row that only ever asks about `ABuilding`
+//  passes identically under both implementations, and ⛔ so would a "the tunable reads 2"
+//  readback. ⭐ The only thing that can tell them apart is handing the function a ceiling and
+//  checking it OBEYED THAT ONE.
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeBuildingStackCeilingIsAParameterTest,
+	"Siegebound.BuildingStack.TheHeightSeriesSaturatesAtTheCeilingItIsHandedRatherThanAtTheBaseClassCDOs",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeBuildingStackCeilingIsAParameterTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeBuildingStackTestFixture;
+
+	const ABuilding* const Defaults = BuildingDefaults(*this);
+	if (!Defaults)
+	{
+		return false;
+	}
+
+	const int32 ShippedCap = Defaults->GetMaxStackHeightMultiplier();
+
+	// ── (a) ⭐⭐ THREE CEILINGS, ⛔ NONE OF WHICH THE PROJECT HAS TO SHIP ─────────────────────
+	// ⚠️ Deliberately including one BELOW and one ABOVE the shipped cap, so neither direction
+	// can be satisfied by a function that had quietly kept reading a CDO.
+	const int32 ProbeCaps[] = { 1, 2, 3, 7, ShippedCap };
+	for (const int32 Cap : ProbeCaps)
+	{
+		if (Cap < 1)
+		{
+			continue;
+		}
+
+		// The series must SATURATE at exactly this ceiling, and it must LAND on it rather than
+		// jump over it — the additive series' defining property, re-asserted per ceiling.
+		TestEqual(*FString::Printf(TEXT("(a) ⭐ at a ceiling of %d the series saturates AT that ceiling"), Cap),
+			HeightWithCap(Cap * 4 + 7, Cap), static_cast<float>(Cap), Exact);
+		TestEqual(*FString::Printf(TEXT("(a) ⭐ …and it is REACHED EXACTLY, on the (%d-1)th upgrade — an integer ceiling is the only kind that can promise 'exactly'"), Cap),
+			HeightWithCap(Cap - 1, Cap), static_cast<float>(Cap), Exact);
+		TestEqual(TEXT("(a) ⛔ …and zero upgrades is still exactly the AUTHORED height, at every ceiling"),
+			HeightWithCap(0, Cap), 1.f, Exact);
+	}
+
+	// ── (b) ⭐⭐⭐ THE ROW THE OLD SIGNATURE COULD NOT HAVE PASSED ────────────────────────────
+	// Two DIFFERENT ceilings, the SAME upgrade count, and the answers must DIFFER. A function
+	// still reading `GetDefault<ABuilding>()` would return the same number for both.
+	// ⛔ Derived from the shipped cap rather than typed, so this row cannot go stale.
+	const int32 LowCap = FMath::Max(1, ShippedCap - 1);
+	const int32 HighCap = ShippedCap + 1;
+	const int32 FarCount = HighCap * 4 + 3;
+	TestTrue(TEXT("(b) SELF-CHECK: the two probe ceilings really are different, or the row below would pass vacuously"),
+		LowCap != HighCap);
+	TestTrue(TEXT("(b) ⭐⭐⭐ the SAME upgrade count at a HIGHER ceiling gives a STRICTLY GREATER height — ⛔ the parameter is OBEYED, and a resolver that had kept reading ABuilding's CDO would return the same number twice"),
+		HeightWithCap(FarCount, HighCap) > HeightWithCap(FarCount, LowCap));
+
+	// ── (c) ⛔ A GARBAGE CEILING DEGRADES TO THE **IDENTITY**, ⛔ never to a restated literal ─
+	// ClampMin only guards the editor field; a hand-edited .uasset or a bad merge can still
+	// deliver a 0 or a negative. ⚖️ The one answer that cannot invent a height is 1.0, and it
+	// is what a caller holding a broken tunable gets.
+	TestEqual(TEXT("(c) ⛔ a ceiling of 0 collapses the series to the identity — ⛔ not to the shipped cap, which would be the HIGH-§1 booby trap"),
+		HeightWithCap(9, 0), 1.f, Exact);
+	TestEqual(TEXT("(c) ⛔ a NEGATIVE ceiling likewise"),
+		HeightWithCap(9, -4), 1.f, Exact);
+	TestTrue(TEXT("(c) ⭐ SELF-CHECK: that 1.0 is the IDENTITY and ⛔ not a coincidence equal to the shipped cap"),
+		ShippedCap != 1);
+
+	// ── (d) ⛔ AND THE SEAM IS STILL A PLAIN STATIC, ⛔ NOT A UFUNCTION (`STACK-§7`, `SC-§33`) ─
+	// The signature grew a parameter; it must ⛔ not have grown a reflection surface with it.
+	UClass* const BuildingClass = ABuilding::StaticClass();
+	if (BuildingClass)
+	{
+		TestNull(TEXT("(d) ⛔ StackHeightMultiplier is a PLAIN C++ static — no world, no actor instance, and now ⛔ not even a CDO read"),
+			BuildingClass->FindFunctionByName(TEXT("StackHeightMultiplier")));
+		TestNull(TEXT("(d) ⛔ CanStackHeight is a plain C++ virtual too — ⛔ no Blueprint entry point was opened by the split"),
+			BuildingClass->FindFunctionByName(TEXT("CanStackHeight")));
+	}
+
+	// ── (e) ⛔ THE SOURCE-LEVEL HALF: the resolver holds ⛔ no CDO read and ⛔ no second copy ──
+	FString BuildingSource;
+	if (LoadProjectSource(*this, BuildingSourcePath, BuildingSource))
+	{
+		FString SeriesBody;
+		if (ExtractFunctionBody(*this, BuildingSource, TEXT("float ABuilding::StackHeightMultiplier(int32 UpgradeCount, int32 MaxMultiplier)"), SeriesBody))
+		{
+			TestEqual(TEXT("(e) ⛔⛔ the HEIGHT series performs ZERO GetDefault<> reads — that call is exactly what pinned the cap to ABuilding's CDO and discarded every subclass ceiling"),
+				CountOccurrencesInCode(SeriesBody, TEXT("GetDefault<")), 0);
+			TestEqual(TEXT("(e) ⛔ …and it names MaxStackHeightMultiplier ZERO times — the ONE storage of the ceiling is the UPROPERTY, and a second copy anywhere is a FAIL"),
+				CountOccurrencesInCode(SeriesBody, TEXT("MaxStackHeightMultiplier")), 0);
+		}
+
+		// ⭐ SELF-CHECK / NEGATIVE CONTROL: the HEALTH series DOES still read the CDO, on
+		// purpose (its step is game-wide and uncapped — see StackHealthStep). ⇒ the zero above
+		// is this function's shape, ⛔ not a scanner that cannot see `GetDefault<`.
+		FString HealthBody;
+		if (ExtractFunctionBody(*this, BuildingSource, TEXT("float ABuilding::StackHealthMultiplier(int32 UpgradeCount)"), HealthBody))
+		{
+			TestTrue(TEXT("(e) SELF-CHECK ⭐⭐: the HEALTH series still DOES read GetDefault<> — so the zero above is a property of the height resolver and ⛔ not a blind scanner. ⛔ The asymmetry is deliberate: only the HEIGHT ceiling was measured to be per class"),
+				CountOccurrencesInCode(HealthBody, TEXT("GetDefault<")) >= 1);
+		}
+	}
 
 	return true;
 }

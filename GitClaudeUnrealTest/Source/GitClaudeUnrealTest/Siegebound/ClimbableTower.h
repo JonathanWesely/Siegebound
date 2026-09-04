@@ -461,8 +461,19 @@ public:
 	const UClimbableTowerLadderLink* GetLadderLink() const { return LadderLink; }
 
 	/**
-	 *  ⛔⛔⛔ STACK-§2 — THIS TOWER IS EXCLUDED FROM THE STACK UPGRADE **AND** FROM THE
-	 *  PLACEMENT WHEEL, AND IT IS ⛔ NOT A STYLE CHOICE AND ⛔ NOT A NAME CHECK.
+	 *  ⛔⛔⛔ STACK-§2 — THIS TOWER IS EXCLUDED FROM THE PLACEMENT **WHEEL** (X/Y), AND IT IS
+	 *  ⛔ NOT A STYLE CHOICE AND ⛔ NOT A NAME CHECK.
+	 *
+	 *  ⚠️⚠️⚠️ AMENDED 2026-09-03 (STACK-§8, STACK-§10) — READ THIS BEFORE THE PARAGRAPHS
+	 *  BELOW, WHICH WERE WRITTEN WHEN ⛔ ONE VIRTUAL ANSWERED ⛔ BOTH QUESTIONS: this override
+	 *  now excludes the tower from the ⛔ WHEEL ⛔ ONLY. The **HEIGHT** (Z) question moved to
+	 *  its own sibling, CanStackHeight(), which this class answers ⭐ TRUE with a MEASURED
+	 *  ceiling. ⇒ ⛔ everything below about a Z scale is the ARGUMENT THAT WAS TESTED AND
+	 *  ⛔ DID NOT SURVIVE CONTACT WITH THE NUMBERS — kept because it is the reasoning the
+	 *  measurement had to beat, ⛔ not because it still binds the Z axis. What it ⛔ still
+	 *  binds, unchanged and unreopened, is X/Y: ⛔ nobody measured a sideways scale, Jonathan
+	 *  reported ⛔ stacking and ⛔ never resizing, and an X/Y scale moves the sockets ⛔ off
+	 *  the climb line rather than ⛔ along it.
 	 *
 	 *  ⚠️⚠️ AND THE COST OF LETTING IT SCALE IS WORSE THAN "THE DECK GETS TOO HIGH" — the
 	 *  climb does not DEGRADE, it ⛔ STOPS WORKING ENTIRELY:
@@ -484,23 +495,56 @@ public:
 	 *       A_SiegeBiped_Climb's hands grip AIR, and ⭐ every property readback stays correct
 	 *       while they do.
 	 *
-	 *  ⭐⭐ ONE PREDICATE COVERS BOTH CONSUMERS BECAUSE THE VOIDING CONDITION DOES: the STACK
-	 *  upgrade scales Z and the placement wheel scales X/Y, and TOWER-§8.5a voids on ⛔ ANY
-	 *  non-uniform scale. ⇒ there is ⛔ no second check to write and ⛔ no second place to
-	 *  forget.
+	 *  ⛔⛔ THE PARAGRAPH THAT USED TO SIT HERE — "ONE PREDICATE COVERS BOTH CONSUMERS BECAUSE
+	 *  THE VOIDING CONDITION DOES" — IS THE ⛔ EXACT SENTENCE STACK-§8 OVERTURNED, so it is
+	 *  recorded as overturned rather than deleted: it was an ⛔ ANALYTIC claim ("§8.5a voids on
+	 *  ANY non-uniform scale ⇒ one rule serves both axes"), ⛔ never a computation, and when
+	 *  TASK-941 finally computed the Z case ⭐ the standoff IMPROVED and the rung depth
+	 *  SURVIVED. ⇒ ⚖️ *the one-predicate economy was buying its tidiness with an untested
+	 *  assumption, and the bill arrived as 🧑 Jonathan's playtest.*
 	 *
-	 *  ⭐ AND IT COSTS JONATHAN NOTHING HE ASKED FOR: he wrote "the tower button", and the
-	 *  family he has played for weeks is ArrowTower / BombTower / BallistaTower / CrystalTower
-	 *  — all of which keep stacking. WatchTower shipped three days ago and is the ⛔ only one
-	 *  carrying a pinned socket contract. 🧑 Row `J-9`; the full price of reversing it (four
-	 *  height variants × the three-number TOWER-§8.3 checklist, four A_SiegeBiped_Climb
-	 *  re-exports, a CONTACT-§13 UV repack) is written out in STACK-§2 so his answer costs no
-	 *  thinking.
+	 *  ⭐ AND THE WHEEL EXCLUSION STILL COSTS JONATHAN NOTHING HE ASKED FOR: he wrote "the
+	 *  tower button", and the family he has played for weeks is ArrowTower / BombTower /
+	 *  BallistaTower / CrystalTower — all of which keep both the wheel and the stack.
+	 *  🧑 Row `J-9`; the price of reversing the X/Y half (four footprint variants × the
+	 *  three-number TOWER-§8.3 checklist, four A_SiegeBiped_Climb re-exports, a CONTACT-§13 UV
+	 *  repack) is written out in STACK-§2 so his answer costs no thinking.
 	 *
-	 *  ⛔ The refusal is VISIBLE, ⛔ never silent: TASK-813 shows the shipped RED plus a
-	 *  RefuseCardPlay message, ⛔ never a blue that does nothing.
+	 *  ⛔ The refusal is VISIBLE, ⛔ never silent: the wheel simply goes inert on this card
+	 *  (ApplyPlacementFootprintWheel's leading bPendingCardCanScaleFootprint guard).
 	 */
 	virtual bool CanScaleFootprint() const override { return false; }
+
+	/**
+	 *  ⭐⭐⭐ THE HEIGHT (Z) ANSWER — **TRUE**, AND IT IS A ⛔ MEASUREMENT, ⛔ NOT A REVERSAL OF
+	 *  TASTE (STACK-§8 cl. 4 outcome row 2; STACK-§10; measured by TASK-941).
+	 *
+	 *  ⛔⛔ THIS IS ⛔ NOT `{ return CanScaleFootprint(); }` AND IT ⛔ NEVER MAY BE. The two
+	 *  virtuals answer ⛔ DIFFERENTLY on this class — the wheel is refused, the stack is
+	 *  granted — and that divergence IS the proof they are two decisions rather than one
+	 *  decision with two spellings (STACK-§8 cl. 3).
+	 *
+	 *  ⭐ WHAT WAS MEASURED, at `VisualMesh->SetRelativeScale3D(1, 1, n)` for `n ∈ {1..5}`,
+	 *  with `n = 1` reproducing TOWER-§8.3's published `1236.93169` / `75.96376°` / `103.32`
+	 *  as its positive control:
+	 *    ⭐ STANDOFF — the ⛔ BLOCKING number, `dist(spine, geometry) ≥ 98.0` — ⛔ IMPROVES
+	 *       monotonically: `103.32 → 112.38 → 115.10 → 116.40 → 117.15`. It clears the gate at
+	 *       ALL FIVE `n`, and at ×2 it is ⭐ 9.06 uu BETTER than the tower shipping today.
+	 *    ⭐ RUNG PLANE DEPTH — the thing the hands actually grip — SURVIVES: `22.000 → 22.502`
+	 *       at ×2, bounded above by `22 / Uz = 22.677` at ANY `n`, i.e. ⛔ a +3.0 % ceiling on
+	 *       the drift. ⇒ ⛔ TOWER-§8.3's mesh↔clip binding does NOT fire and A_SiegeBiped_Climb
+	 *       needs ⛔ no re-export.
+	 *    ⚠️ RUNG PITCH stretches (`40 → 78.22` at ×2) and is ⛔ COSMETIC: the rung COUNT is
+	 *       unchanged and the pitch as a FRACTION of the line is invariant, so the hands still
+	 *       land in the ladder slab. ⛔ Conflating pitch with depth is how a shippable feature
+	 *       gets refused.
+	 *
+	 *  ⛔⛔ AND THE CEILING IS **NOT** SET BY ANY OF THOSE — see MaxStackHeightMultiplier in
+	 *  this class's constructor. It is set by a term no clause of STACK-§2, STACK-§8 or
+	 *  TOWER-§8.5a had named, and it is why the answer here is "true, but only so far" rather
+	 *  than "true".
+	 */
+	virtual bool CanStackHeight() const override { return true; }
 
 	/**
 	 *  ⭐ THE ARTIST↔PROGRAMMER SEAM, BY NAME (CONVENTIONS "Static-mesh SOCKET
@@ -568,6 +612,37 @@ protected:
 	 *  true of the HERO too — which is exit `H-10`, i.e. the PLAYER'S OWN BODY.
 	 */
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	/**
+	 *  ⭐⭐⭐ THE STACK RE-ARM — ⛔ THE ONE THING A Z UPGRADE DOES ⛔ NOT GET FOR FREE, AND
+	 *  THE ⛔ ONLY PART OF IT A HERO-ONLY PLAYTEST WOULD ⛔ MISS (STACK-§10 cl. 5,
+	 *  TOWER-§8.5a side (iii)).
+	 *
+	 *  ⛔⛔ THE MECHANISM, MEASURED IN THE ENGINE SOURCE RATHER THAN ASSUMED:
+	 *  `UNavLinkCustomComponent` is a `UActorComponent` (via `UNavRelevantComponent`),
+	 *  ⛔ **NOT** a `USceneComponent`. When `ApplyStackUpgrade` rescales the root,
+	 *  `USceneComponent::PropagateTransformUpdate` calls `UpdateNavigationData()` for ⛔ that
+	 *  scene component ⛔ only, so the MESH's octree entry is refreshed and the LINK's is
+	 *  ⛔ not: the off-mesh connection stays registered against the owner transform captured
+	 *  at gather time, and Recast can drop a connection whose endpoint now sits ~1,200 uu
+	 *  below the new deck poly. ⇒ ⛔ AI units stop being handed a path to the ladder.
+	 *
+	 *  ⚠️⚠️ AND THE REASON THIS CANNOT BE LEFT TO A PLAYTEST TO CATCH: ⛔ THE HERO IS
+	 *  ⛔ UNAFFECTED. The contact-climb path reads `GetStartPoint()` / `GetEndPoint()` LIVE
+	 *  and ⛔ never consults the navmesh, so a human climbing a stacked tower would find it
+	 *  working perfectly while every AI unit silently stopped using it. ⛔ A green playtest
+	 *  is ⛔ not evidence about this line.
+	 *
+	 *  ⭐ THE FIX IS ⛔ ONE CALL, AND IT IS FREE OF ANY CACHE PROBLEM: `ConfigureLadderLink()`
+	 *  re-reads the sockets in `RTS_Actor` space — which divides the owner transform, scale
+	 *  included, straight back out — so it stores the SAME scale-free relatives it stored at
+	 *  BeginPlay, and `SetLinkData` drives `UpdateNavigationBounds()` +
+	 *  `RefreshNavigationModifiers()`. ⛔ There is ⛔ NO cached world line to invalidate:
+	 *  `UNavLinkCustomComponent::GetStartPoint()` re-applies the LIVE owner transform on every
+	 *  read, and all four read sites in this file consume it directly.
+	 *  ⇒ ⭐ what is being re-armed is the ⛔ REGISTRATION, ⛔ not the geometry.
+	 */
+	virtual void OnStackUpgradeApplied() override;
 
 	/**
 	 *  ⭐ THE HEIGHT OF THE PLATFORM, AND WHAT IT BUYS IN HIGH-§ TERMS — written

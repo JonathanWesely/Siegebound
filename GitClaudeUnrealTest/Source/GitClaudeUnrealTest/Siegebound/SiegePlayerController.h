@@ -771,12 +771,20 @@ public:
 
 		/**
 		 *  ⛔ RED, with its own message. The hovered building is the player's own, of
-		 *  the card in hand, and refuses to be scaled (STACK-§2 — CanScaleFootprint()
-		 *  is false, which today means AClimbableTower/SM_WatchTower: any non-uniform
-		 *  scale moves the LadderFoot/LadderTop sockets and the rung plane, fires
-		 *  TOWER-§8.5a's voiding condition, and the climb stops working ENTIRELY).
+		 *  the card in hand, and refuses to be grown in HEIGHT (ABuilding::
+		 *  CanStackHeight() is false).
 		 *  ⚖️ It reads as NOT-A-TARGET, ⛔ never as an error — Log severity, the shipped
 		 *  RefuseCardPlay vocabulary, and no exceptional path anywhere.
+		 *
+		 *  ⚠️⚠️ AS OF 2026-09-03 (STACK-§8/§10) ⛔ NO SHIPPED CLASS PRODUCES THIS STATE.
+		 *  It was reachable by exactly one combination — a WatchTower card on your own
+		 *  WatchTower — and that was the DEFECT: the gate asked CanScaleFootprint(),
+		 *  the WHEEL's predicate. The height question now has its own virtual, the
+		 *  climbable tower answers TRUE, and it is held instead by a per-class CEILING
+		 *  (which does ⛔ NOT come through here — at the cap the state is still Ready,
+		 *  see below). ⛔ Do NOT delete this value: a future building that refuses
+		 *  height outright is a coherent design and this is the state it lands in, and
+		 *  the RED-plus-message path it drives is already built and tested.
 		 */
 		NotStackable,
 
@@ -792,13 +800,18 @@ public:
 	 *  ⭐⭐ THE WHOLE BLUE DECISION, as a pure function of six values (TASK-813).
 	 *
 	 *  ⛔⛔ THE EXCLUSION IS STRUCTURAL AND IT IS THE LINE THIS FUNCTION EXISTS TO
-	 *  PROTECT: the WatchTower is kept out by asking HoveredBuilding->
-	 *  CanScaleFootprint() — a VIRTUAL on ABuilding, overridden false on
-	 *  AClimbableTower (TASK-812). ⛔ There is NO CardID string compare anywhere on
-	 *  this path and there must never be one (STACK-§2: "a CardID == 'WatchTower'
-	 *  string comparison anywhere in the placement path is an automatic QA fail" —
-	 *  the next climbable building must be protected by INHERITING, not by somebody
+	 *  PROTECT: a building is kept out by asking HoveredBuilding->CanStackHeight() —
+	 *  a VIRTUAL on ABuilding. ⛔ There is NO CardID string compare anywhere on this
+	 *  path and there must never be one (STACK-§2: "a CardID == 'WatchTower' string
+	 *  comparison anywhere in the placement path is an automatic QA fail" — the next
+	 *  building that refuses must be protected by INHERITING, not by somebody
 	 *  remembering a paragraph).
+	 *
+	 *  ⚠️⚠️ IT ASKED CanScaleFootprint() — the placement WHEEL's X/Y predicate — until
+	 *  2026-09-03, and that was the shipped defect (STACK-§8): ONE virtual answered
+	 *  the HEIGHT question and the FOOTPRINT question, so the single class in the
+	 *  project that refuses the wheel also refused to be stacked. ⛔ Repointing this
+	 *  gate back at CanScaleFootprint() would restore it and would read as a cleanup.
 	 *
 	 *  DECISION ORDER, and every step of it is a ruling rather than a preference:
 	 *    1. not a Building card / no pending card        ⇒ None  (units never upgrade)
@@ -810,13 +823,14 @@ public:
 	 *       invented for a case the game already refuses)
 	 *    4. a DIFFERENT CardID                           ⇒ None  (spec (2): today's
 	 *       behaviour, unchanged — an ArrowTower does not grow a BombTower)
-	 *    5. ⛔ !CanScaleFootprint()                       ⇒ NotStackable
+	 *    5. ⛔ !CanStackHeight()                          ⇒ NotStackable
 	 *    6. CurrentGold < UpgradeCost                    ⇒ Unaffordable (J-5)
 	 *    7. otherwise                                    ⇒ ⭐ Ready (BLUE)
 	 *
 	 *  ⚠️ 5 IS ASKED BEFORE 6 ON PURPOSE: "this building can never be stacked" is a
 	 *  permanent truth the player can act on; "you are 4 gold short" is a temporary
-	 *  one that would be a misleading thing to say about a WatchTower.
+	 *  one that would be a misleading thing to say about a building that will refuse
+	 *  at any price.
 	 *
 	 *  ⭐ THE HEIGHT CAP IS DELIBERATELY ABSENT FROM THIS LIST. At the cap the answer
 	 *  is STILL Ready (J-6 — "it would only upgrade health by 1.5 times and not
@@ -848,6 +862,30 @@ public:
 	 *  is a design" (STACK-§2).
 	 */
 	static FText StackNotStackableRefusalText();
+
+	/**
+	 *  ⭐ STACK-§9(2), SITE 1 — the upgrade target DIED between the ghost frame and the
+	 *  click. ⛔ ITS OWN KEY, ⛔ not a reuse of StackNotStackableRefusalText().
+	 *
+	 *  ⚖️ WHY THIS IS A CORRECTNESS FIX AND NOT POLISH: both of these branches used to
+	 *  say "That building cannot be stacked", and BOTH sentences were FALSE. The
+	 *  building in this one is stackable — it is simply not there any more, which is a
+	 *  TRANSIENT fact the player answers by clicking a different tower. Being told a
+	 *  PERMANENT rule instead teaches them the card does not work. ⛔ A message that is
+	 *  wrong on a rare path is how the next playtest report gets misdiagnosed — which
+	 *  is exactly what these two lines nearly did to this batch's own diagnosis.
+	 */
+	static FText StackTargetGoneRefusalText();
+
+	/**
+	 *  ⭐ STACK-§9(2), SITE 2 — ApplyStackUpgrade refused AFTER the gold was spent, so
+	 *  the caller has already refunded it (net-zero, §3.0). Today the only reachable
+	 *  cause is the M8 authority guard. ⛔ ITS OWN KEY, and deliberately phrased about
+	 *  the ACTION rather than about the building: nothing the player did or could see
+	 *  produced it, so a sentence implying they picked a bad target would send them
+	 *  hunting for a rule that does not exist.
+	 */
+	static FText StackUpgradeFailedRefusalText();
 
 	/**
 	 *  ⭐ THE CAP NOTE (J-6): a one-line HUD note so the height ceiling is VISIBLE the
@@ -924,16 +962,20 @@ public:
 	static FVector MakePlacementFootprintScale3D(float FootprintScale);
 
 	/**
-	 *  ⛔⛔ THE WHEEL'S EXCLUSION, AND IT IS THE ⛔ SAME PREDICATE THE UPGRADE USES
-	 *  (STACK-§2, TASK-815 spec (6): "same CanScaleFootprint() predicate, same
-	 *  reason — ⛔ not a second check, ⛔ not a name compare").
+	 *  ⛔⛔ THE WHEEL'S EXCLUSION — AND SINCE 2026-09-03 IT IS THE WHEEL'S AND ⛔ NOTHING
+	 *  ELSE'S. ⚠️⚠️ TASK-815 spec (6) said "same CanScaleFootprint() predicate as the
+	 *  upgrade, same reason", and STACK-§8 ⛔ OVERTURNED that: the height (Z) question
+	 *  moved to ABuilding::CanStackHeight() because the Z case was finally MEASURED and
+	 *  survived, while the X/Y case was ⛔ never measured and is ⛔ not reopened. ⇒ ⛔ this
+	 *  function must keep asking CanScaleFootprint(), and ⛔ pointing it at the stack
+	 *  predicate would silently hand the wheel to a class that has no licence for it.
 	 *
-	 *  ⛔⛔ THERE IS NO CardID STRING COMPARE HERE AND THERE MUST NEVER BE ONE. A
-	 *  scaled SM_WatchTower moves the LadderFoot/LadderTop sockets and the rung
-	 *  plane, fires TOWER-§8.5a's voiding condition, and the climb stops working
-	 *  ENTIRELY while every readback still reports correct — so the next climbable
-	 *  building must be protected by INHERITING, not by somebody remembering a
-	 *  paragraph.
+	 *  ⛔⛔ THERE IS NO CardID STRING COMPARE HERE AND THERE MUST NEVER BE ONE. An X/Y
+	 *  scale of a climbable tower's mesh moves the LadderFoot/LadderTop sockets
+	 *  SIDEWAYS, off the climb line TOWER-§8.3 pinned, fires TOWER-§8.5a's voiding
+	 *  condition, and the climb stops working ENTIRELY while every readback still
+	 *  reports correct — so the next climbable building must be protected by
+	 *  INHERITING, not by somebody remembering a paragraph.
 	 *
 	 *  ⭐ ASKED OF THE CLASS's CDO, AND THAT IS A MEASURED CHOICE RATHER THAN A
 	 *  CONVENIENCE: the wheel runs BEFORE anything is spawned, so there is no
@@ -2250,8 +2292,8 @@ private:
 
 		/**
 		 *  ⭐ TASK-813 (STACK-§2/§7): the cursor is over one of the player's OWN buildings of
-		 *  the card in hand, but the UPGRADE cannot happen — the building refuses to be scaled
-		 *  (EPlacementUpgradeState::NotStackable) or the player cannot afford it
+		 *  the card in hand, but the UPGRADE cannot happen — the building refuses to be grown
+		 *  in HEIGHT (EPlacementUpgradeState::NotStackable) or the player cannot afford it
 		 *  (::Unaffordable). Appended LAST, after Units, exactly as TASK-735 asked.
 		 *
 		 *  ⛔ NOT a reuse of Clearance (TASK-735's precedent, restated): "too close to another
@@ -2303,8 +2345,10 @@ private:
 	 *
 	 *  THE ORDER, and it is the shipped confirm's order rather than a new one:
 	 *    re-validate the target (it can die between the frame that painted BLUE and this
-	 *    click) → re-ask CanScaleFootprint() → SpendGold → ⭐ ONE call to
+	 *    click) → re-ask CanStackHeight() → SpendGold → ⭐ ONE call to
 	 *    ABuilding::ApplyStackUpgrade() → the J-6 cap note → the card leaves the hand.
+	 *  ⚠️ The re-ask is the STACK predicate, ⛔ not the wheel's CanScaleFootprint() — those
+	 *  were one virtual until 2026-09-03 and that was the defect (STACK-§8).
 	 *
 	 *  ⛔⛔ IT CALLS ApplyStackUpgrade() AND DUPLICATES ⛔ NONE OF ITS MATHS. MaxHP,
 	 *  CurrentHP and StackUpgradeCount are PRIVATE on ABuilding by design (TASK-812), the
@@ -2343,8 +2387,9 @@ private:
 	 *  ⇒ ⛔ NO GUARD IS ADDED HERE for a state that cannot exist (STACK-§4: "if you
 	 *  believe it can, that is a FINDING, ⛔ not a patch").
 	 *
-	 *  ⛔ INERT unless bPendingCardCanScaleFootprint — the SAME CanScaleFootprint()
-	 *  predicate the upgrade uses, resolved once per session (STACK-§2, spec (6)).
+	 *  ⛔ INERT unless bPendingCardCanScaleFootprint — the wheel's OWN X/Y predicate,
+	 *  resolved once per session. ⚠️ It was "the same predicate the upgrade uses" until
+	 *  2026-09-03; STACK-§8 split them and the upgrade now asks CanStackHeight().
 	 *  ⛔ Inert on a clamped end, and inert on a frame with no notch: it writes
 	 *  nothing and touches the ghost only when the scale actually changed.
 	 */
@@ -3136,11 +3181,17 @@ private:
 	 *  ⭐ Whether the card in hand may be footprint-scaled at all — resolved ONCE
 	 *  per placement session in EnterPlacementMode, ⛔ never per frame.
 	 *
-	 *  ⛔⛔ IT IS THE ⛔ SAME STRUCTURAL PREDICATE THE UPGRADE USES, ⛔ NEVER A NAME
-	 *  COMPARE (STACK-§2, spec (6)): CanCardActorScaleFootprint asks the resolved
-	 *  card class's CDO for ABuilding::CanScaleFootprint(), which AClimbableTower
-	 *  overrides false. ⇒ the WatchTower is excluded from the wheel by INHERITANCE,
-	 *  and so is the next climbable building nobody has written yet.
+	 *  ⛔⛔ A STRUCTURAL PREDICATE, ⛔ NEVER A NAME COMPARE (STACK-§2):
+	 *  CanCardActorScaleFootprint asks the resolved card class's CDO for
+	 *  ABuilding::CanScaleFootprint(), which AClimbableTower overrides false. ⇒ the
+	 *  climbable tower is excluded from the wheel by INHERITANCE, and so is the next
+	 *  climbable building nobody has written yet.
+	 *
+	 *  ⚠️⚠️ THIS IS ⛔ NO LONGER THE PREDICATE THE UPGRADE USES (STACK-§8, 2026-09-03).
+	 *  The upgrade asks ABuilding::CanStackHeight() on the hovered INSTANCE; this flag
+	 *  is about the card in HAND and the wheel only. ⇒ they now legitimately disagree
+	 *  for the climbable tower — wheel refused, stack granted — and that divergence is
+	 *  the feature, ⛔ not drift to be reconciled.
 	 *
 	 *  ⚠️ CACHED RATHER THAN ASKED PER FRAME BECAUSE THE ANSWER COSTS A CLASS
 	 *  LOAD: ResolveCardActorClass performs a LoadSynchronous, which is fine once

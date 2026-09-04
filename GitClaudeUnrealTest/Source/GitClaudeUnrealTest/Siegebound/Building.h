@@ -152,7 +152,7 @@ public:
 
 	/**
 	 *  ⭐⭐ THE HEIGHT SERIES — ⛔ ADDITIVE, ⛔ NOT DOUBLING, AND THE ARITHMETIC IS **RULED**
-	 *  (STACK-§1, ruling J-0): returns `min(1 + UpgradeCount, MaxStackHeightMultiplier)`.
+	 *  (STACK-§1, ruling J-0): returns `min(1 + UpgradeCount, MaxMultiplier)`.
 	 *  Every upgrade adds ⭐ ONE MORE COPY OF THE **ORIGINAL** height — ×2, ×3, ×4, ×5 — and
 	 *  the series SATURATES at the cap.
 	 *
@@ -179,14 +179,32 @@ public:
 	 *  increments from 0) but this seam is public and pure, so it answers for the whole
 	 *  int32 domain instead of trusting its callers: no upgrades ⇒ exactly 1.0.
 	 *
-	 *  ⛔ public, plain C++ static, ⛔ NOT a UFUNCTION, exactly ONE parameter, ⛔ none
-	 *  defaulted (SC-§33, STACK-§7). No world, no actor INSTANCE — the cap is read off this
-	 *  class's CDO, which is what the one-parameter signature and an EditDefaultsOnly cap
-	 *  jointly force (see MaxStackHeightMultiplier). ⇒ headlessly testable with ⛔ no PIE,
-	 *  the ASummonedUnit::HeightAdvantageMultiplier / FSiegeMapMark::MakeSymbol precedent.
-	 *  Tested in Tests/SiegeBuildingStackTest.cpp.
+	 *  ⛔⛔ THE CEILING IS A **PARAMETER**, AND THAT IS ⛔ NOT A TIDY-UP (STACK-§7's amended
+	 *  row, STACK-§10, ruling J-13). ⚠️⚠️ THIS SIGNATURE WAS ⛔ ONE PARAMETER UNTIL 2026-09-03
+	 *  AND THE OLD SHAPE HAD A DEFECT THAT ⛔ NOTHING COULD SEE: it read the cap off
+	 *  `GetDefault<ABuilding>()`, i.e. ⛔ ALWAYS `ABuilding`'s CDO and ⛔ never the calling
+	 *  instance's class. ⇒ a subclass that set `MaxStackHeightMultiplier` in its constructor
+	 *  would have been ⛔ READ RIGHT PAST — the series would have kept climbing to the base
+	 *  class's ceiling while every readback of the subclass's own tunable reported the number
+	 *  the designer typed. ⭐ For `AClimbableTower` that is not a cosmetic slip: past its
+	 *  MEASURED ceiling the deck-breach window can no longer cross the deck slab and the tower
+	 *  becomes ⛔ unclimbable (STACK-§10 cl. 1). ⇒ ⛔ **the second parameter is the ⛔ ONLY
+	 *  thing that makes a per-class ceiling REAL**, and collapsing it back to one parameter
+	 *  silently restores the defect.
+	 *
+	 *  ⭐ THE CAP IS STILL STORED IN EXACTLY ⛔ ONE PLACE — the `MaxStackHeightMultiplier`
+	 *  UPROPERTY below, reached by callers through GetMaxStackHeightMultiplier(). ⛔ This
+	 *  function holds ⛔ no copy of it and ⛔ no fallback literal: passing a garbage cap
+	 *  degrades to the identity series, ⛔ never to a restated `5`.
+	 *
+	 *  ⛔ public, plain C++ static, ⛔ NOT a UFUNCTION, exactly TWO parameters, ⛔ none
+	 *  defaulted (SC-§33, STACK-§7). ⛔ No world, ⛔ no actor INSTANCE and now ⛔ not even a
+	 *  CDO read ⇒ headlessly testable with ⛔ no PIE, the
+	 *  ASummonedUnit::HeightAdvantageMultiplier / FSiegeMapMark::MakeSymbol precedent, and
+	 *  ⭐ a test can now pass a cap the project does not ship and assert the SHAPE rather than
+	 *  the literal (SC-§37). Tested in Tests/SiegeBuildingStackTest.cpp.
 	 */
-	static float StackHeightMultiplier(int32 UpgradeCount);
+	static float StackHeightMultiplier(int32 UpgradeCount, int32 MaxMultiplier);
 
 	/**
 	 *  ⭐ THE HEALTH SERIES — ⛔ MULTIPLICATIVE and ⛔ UNCAPPED (STACK-§1): returns
@@ -214,23 +232,65 @@ public:
 	static float StackHealthMultiplier(int32 UpgradeCount);
 
 	/**
-	 *  May this building's footprint/height be scaled by the STACK-§ upgrade and the
-	 *  placement wheel? Default true. ⛔ AClimbableTower overrides FALSE: any non-uniform
-	 *  scale of SM_WatchTower moves the LadderFoot/LadderTop sockets and the rung plane,
-	 *  which fires TOWER-§8.5a's voiding condition ⇒ the deck-breach licence dies and the
-	 *  climb stops working entirely (STACK-§2). ⛔ NOT a style choice, ⛔ NOT a name check.
+	 *  ⛔⛔ THE **WHEEL** (X/Y) PREDICATE, AND ⛔ NOTHING ELSE SINCE 2026-09-03 (STACK-§8).
+	 *  May this building's FOOTPRINT be scaled in X and Y by the placement wheel
+	 *  (ASiegePlayerController::ApplyPlacementFootprintWheel / CanCardActorScaleFootprint)?
+	 *  Default true. ⛔ AClimbableTower overrides FALSE and ⛔ that exclusion is NOT reopened:
+	 *  an X/Y scale of SM_WatchTower moves the LadderFoot/LadderTop sockets ⛔ sideways, off
+	 *  the climb line TOWER-§8.3 pinned, and fires TOWER-§8.5a's voiding condition ⇒ the climb
+	 *  stops working entirely (STACK-§2). ⛔ NOT a style choice, ⛔ NOT a name check.
+	 *
+	 *  ⛔⛔⛔ THIS PREDICATE IS ⛔ NO LONGER THE STACK GATE, AND CONSULTING IT FROM A STACK
+	 *  SITE IS AN ⛔ AUTOMATIC FAIL (STACK-§7's amended row, STACK-§8 cl. 3). ⚠️⚠️ IT WAS THE
+	 *  STACK GATE UNTIL 2026-09-03, AND THAT IS THE ⛔ DEFECT 🧑 JONATHAN FILMED: the height
+	 *  (Z) question and the footprint (X/Y) question were ⛔ ONE virtual answering ⛔ BOTH, so
+	 *  the ⛔ one building in the project that refuses the wheel also refused to be stacked,
+	 *  and the ONLY combination that could reach the refusal in normal play was ⛔ exactly the
+	 *  one he tried: a WatchTower card on his own WatchTower. ⇒ ⭐ the height question now has
+	 *  its OWN virtual — see CanStackHeight() below.
 	 *
 	 *  ⛔⛔ A `CardID == "WatchTower"` STRING COMPARE ANYWHERE IN THE PLACEMENT PATH IS AN
 	 *  AUTOMATIC FAIL. ⚖️ The next climbable building must be protected by ⛔ INHERITING,
 	 *  ⛔ not by somebody remembering a paragraph — which is the entire reason this is a
 	 *  virtual on the base rather than a check at the call site.
-	 *
-	 *  ⭐ ONE PREDICATE COVERS BOTH CONSUMERS, and that is not a convenience — it is the
-	 *  measurement: the STACK upgrade scales Z and the placement wheel scales X/Y, and
-	 *  TOWER-§8.5a's voiding condition fires on ⛔ ANY non-uniform scale, so the two
-	 *  consumers have ⛔ exactly one exclusion rule between them.
 	 */
 	virtual bool CanScaleFootprint() const { return true; }
+
+	/**
+	 *  ⭐⭐ THE **STACK** (Z) PREDICATE — ⛔ BORN 2026-09-03 (STACK-§8 cl. 3, STACK-§7's new
+	 *  row). May this building's HEIGHT be grown by the STACK-§ upgrade? Default true.
+	 *
+	 *  ⛔⛔⛔ IT IS A ⛔ SIBLING OF CanScaleFootprint(), ⛔ NEVER AN ALIAS AND ⛔ NEVER A
+	 *  WRAPPER. `{ return CanScaleFootprint(); }` here would reproduce the shipped defect
+	 *  behind a new name and is an ⛔ AUTOMATIC FAIL (STACK-§8 cl. 3). ⛔ Two virtuals, ⛔ two
+	 *  INDEPENDENT answers — and the proof that they are independent is that they ⛔ DISAGREE
+	 *  on AClimbableTower, which refuses the wheel and ⭐ ACCEPTS the stack.
+	 *
+	 *  ⛔ WHY THE TWO QUESTIONS ARE GENUINELY DIFFERENT, MEASURED AND ⛔ NOT ASSERTED
+	 *  (TASK-941, ruled as STACK-§10): a Z-only scale is ⛔ not the same transform as an X/Y
+	 *  one for a ladder that is a VERTICAL feature. The climb line's STANDOFF — the number
+	 *  TOWER-§8.3 gates on — was measured at Z-scale n ∈ {1..5} and it ⭐ IMPROVES
+	 *  monotonically (103.32 → 117.15 uu, clearing the ≥ 98.0 gate at every n), and the rung
+	 *  PLANE's −22.0 uu depth — the thing the hands grip — survives with a bounded +3.0 %
+	 *  drift. ⇒ ⛔ STACK-§2's "a non-uniform scale preserves nothing" is MEASURED FALSE for
+	 *  the Z axis. An X/Y scale has ⛔ no such measurement and is ⛔ not reopened.
+	 *
+	 *  ⚠️⚠️ WHAT DOES BIND IS THE ⛔ CEILING, ⛔ NOT THE PREDICATE, and it lives in
+	 *  MaxStackHeightMultiplier per class rather than in a second `false` here — see
+	 *  AClimbableTower's override and the tunable's own comment for the arithmetic.
+	 *
+	 *  ⛔ Same structural discipline as its sibling: a virtual on the base, so the NEXT
+	 *  climbable building inherits the answer, and ⛔ no CardID string compare anywhere.
+	 */
+	virtual bool CanStackHeight() const { return true; }
+
+	/**
+	 *  This building's own height ceiling, in multiples of its AUTHORED height — the ⛔ ONE
+	 *  storage of it (the MaxStackHeightMultiplier UPROPERTY), read through one accessor so
+	 *  callers never need a second copy. Passed to StackHeightMultiplier by every consumer,
+	 *  which is what makes the ceiling PER CLASS rather than game-wide (STACK-§10 cl. 2).
+	 */
+	int32 GetMaxStackHeightMultiplier() const { return MaxStackHeightMultiplier; }
 
 	/** Upgrades applied to this building (STACK-§1's `n`) — the ⛔ ONE source of truth both multipliers derive from. 0 on a freshly placed building. */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Building")
@@ -244,20 +304,27 @@ public:
 	 *
 	 *  WHAT IT DOES, IN ORDER:
 	 *    1. ⛔ REFUSES on !HasAuthority(), on a destroyed building, and on
-	 *       ⛔ !CanScaleFootprint(). ⭐ The predicate is re-asked HERE as well as in the
-	 *       placement path on purpose: a future caller that forgets STACK-§2 must ⛔ still
-	 *       be unable to scale a climbable tower. Two independent mechanisms, not one.
+	 *       ⛔ !CanStackHeight() — ⛔ the STACK (Z) predicate, ⛔ NOT CanScaleFootprint(),
+	 *       which is the WHEEL's since STACK-§8. ⭐ The predicate is re-asked HERE as well
+	 *       as in the placement path on purpose: a future caller that forgets STACK-§2 must
+	 *       ⛔ still be unable to grow a building that refuses it. Two independent
+	 *       mechanisms, not one.
 	 *    2. HEIGHT — VisualMesh's ⛔ **Z ONLY** (STACK-§5 `J-4`, his own words "keeping the
 	 *       same width and length": X/Y belong to the placement wheel and are inherited
-	 *       VERBATIM), recomputed as `AuthoredHeightScaleZ × StackHeightMultiplier(n)` from
-	 *       the AUTHORED baseline ⇒ ⛔ no float accumulation, and the cap lands on the ruled
-	 *       multiple exactly however many times this runs.
+	 *       VERBATIM), recomputed as `AuthoredHeightScaleZ × StackHeightMultiplier(n, cap)`
+	 *       from the AUTHORED baseline ⇒ ⛔ no float accumulation, and the cap lands on the
+	 *       ruled multiple exactly however many times this runs. ⭐ The cap passed is ⛔ THIS
+	 *       INSTANCE'S own MaxStackHeightMultiplier, which is what makes the ceiling PER
+	 *       CLASS (STACK-§10 cl. 2).
 	 *    3. HEALTH (STACK-§5 `J-10`) — `MaxHP ×= 1.5`, then `CurrentHP += (NewMax − OldMax)`.
 	 *       ⭐ It grants the ⛔ NEW hit points; it does ⛔ NOT repair existing damage. ⚖️ A
 	 *       full heal would make the upgrade a repair tool, which is the Masons card's job,
 	 *       and would make upgrading strictly better than defending.
 	 *    4. Pushes the result through the ⛔ EXISTING OnHPChanged delegate — ⛔ no second
 	 *       push, ⛔ no direct widget call (the TASK-130 push model, unchanged).
+	 *    5. Calls the OnStackUpgradeApplied() subclass hook — ⛔ ONLY on the success path,
+	 *       ⛔ after the transform is written. This base class knows ⛔ nothing about what a
+	 *       subclass needs to re-arm; see that hook's own comment.
 	 *
 	 *  ⭐ COLLISION AND NAVMESH COME FOR FREE and are ⛔ not re-derived here: VisualMesh is
 	 *  the root with BlockAll + bCanEverAffectNavigation(true), so a scaled component carves
@@ -286,6 +353,30 @@ protected:
 	 *  Damage/Range/Cadence and arm its fire loop behind the Cadence > 0 guard.
 	 */
 	virtual void OnStatsLoaded(const FCardRow& Row);
+
+	/**
+	 *  ⭐⭐ SUBCLASS HOOK, CALLED BY ApplyStackUpgrade ⛔ ONLY WHEN AN UPGRADE ACTUALLY
+	 *  LANDED, ⛔ after the Z transform and the HP push. The base implementation is EMPTY on
+	 *  purpose — the OnStatsLoaded precedent directly above, same shape and same reason.
+	 *
+	 *  ⛔⛔ WHY A HOOK RATHER THAN LETTING A SUBCLASS OVERRIDE ApplyStackUpgrade ITSELF:
+	 *  ApplyStackUpgrade is the ⛔ ONE authoritative mutator of StackUpgradeCount/MaxHP and
+	 *  its M8 discipline (server-only, ⛔ deliberately not a UFUNCTION, ⛔ deliberately not
+	 *  virtual) is the belt and braces STACK-§7 asked for. ⇒ a subclass extends the
+	 *  CONSEQUENCES of an upgrade and ⛔ never its RULES.
+	 *
+	 *  ⚠️⚠️ AND THE REASON THIS HOOK EXISTS AT ALL, SO NOBODY DELETES IT AS DEAD WEIGHT: a
+	 *  runtime rescale of the root scene component refreshes ⛔ that component's navigation
+	 *  octree entry and ⛔ nothing else. A subclass carrying a `UActorComponent`-derived
+	 *  navigation element — which is ⛔ NOT a USceneComponent and therefore ⛔ NOT reached by
+	 *  USceneComponent::PropagateTransformUpdate — has to re-arm it itself, or the element
+	 *  stays registered at the pre-upgrade geometry. ⛔ That failure is ⛔ INVISIBLE to a
+	 *  player-controlled test: only the AI path consults the navmesh.
+	 *
+	 *  ⛔ This base class names ⛔ no navigation type and holds ⛔ no navigation call — the
+	 *  knowledge belongs to whichever subclass has the element (STACK-§10 cl. 5).
+	 */
+	virtual void OnStackUpgradeApplied();
 
 	/**
 	 *  Root, collision, and visual slot in one (§3.7 "physically collides").
@@ -336,11 +427,25 @@ protected:
 	 *  to 1 disables stacked HEIGHT entirely while leaving the health ladder untouched, which
 	 *  is a coherent state, ⛔ not a broken one.
 	 *
-	 *  ⚠️⚠️ READ OFF THIS CLASS'S **CDO** BY StackHeightMultiplier, because STACK-§7 pins that
-	 *  seam at ⛔ ONE parameter while pinning this tunable EditDefaultsOnly — the conjunction
-	 *  leaves no other implementation. ⇒ the cap is a ⭐ GAME-WIDE rule (his sentence is about
-	 *  the game, ⛔ not a per-card stat): a BP child that re-authored this value would be
-	 *  IGNORED by the series. Declared here rather than discovered later.
+	 *  ⭐⭐ PER **CLASS**, ⛔ NO LONGER GAME-WIDE (STACK-§7's amended row, STACK-§10 cl. 2,
+	 *  ruling J-13) — AMENDED 2026-09-03. Each class sets its own value in its CONSTRUCTOR
+	 *  and StackHeightMultiplier is HANDED that value by its callers, which read it from the
+	 *  instance through GetMaxStackHeightMultiplier(). ⛔ There is still exactly ONE storage
+	 *  of the ceiling — this UPROPERTY — and ⛔ a second copy of it anywhere is a FAIL.
+	 *
+	 *  ⚠️⚠️ THE OLD COMMENT HERE SAID THE SERIES READ THIS OFF "THIS CLASS'S CDO" AND WOULD
+	 *  IGNORE A SUBCLASS'S VALUE. ⛔ THE FIRST HALF WAS ⛔ FALSE AS WRITTEN AND THE SECOND WAS
+	 *  ⛔ TRUE BY ACCIDENT: the series read `GetDefault<ABuilding>()` — ⛔ ALWAYS the BASE
+	 *  class's CDO — so a subclass ceiling was silently discarded. That is fixed, and the
+	 *  fix is the whole reason StackHeightMultiplier took a second parameter.
+	 *
+	 *  ⛔⛔ AND THE HAZARD THE PER-CLASS SHAPE OPENS, DECLARED RATHER THAN DEFENDED WITH A
+	 *  SECOND LITERAL (HIGH-§1): this stays `EditDefaultsOnly`, so a **Blueprint child can
+	 *  now RAISE it and be OBEYED**. For an ordinary building that is a balance knob. For a
+	 *  CLIMBABLE one it is ⛔ not: past the ceiling its own class measured, the deck-breach
+	 *  window can no longer cross the deck slab, the ascent sweep jams below it, and the deck
+	 *  becomes UNREACHABLE (STACK-§10 cl. 1). ⇒ ⛔ **a climbable class's ceiling is DERIVED
+	 *  from STACK-§10's arithmetic, ⛔ never bumped by hand and ⛔ never raised in a .uasset.**
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Building", meta = (ClampMin = "1"))
 	int32 MaxStackHeightMultiplier = 5;
@@ -357,9 +462,16 @@ protected:
 	 *  stays worth its gold past the cap. Setting it to 1.0 makes upgrades past the cap
 	 *  literally free of effect, which is a design choice, ⛔ not a crash.
 	 *
-	 *  ⚠️ READ OFF THE CDO by StackHealthMultiplier for the same pinned-signature reason as
-	 *  MaxStackHeightMultiplier above; the same "game-wide, ⛔ not per-card" declaration
-	 *  applies.
+	 *  ⚠️⚠️ READ OFF `ABuilding`'s **CDO** by StackHealthMultiplier, which keeps its ⛔ ONE
+	 *  parameter — ⭐ and that asymmetry with MaxStackHeightMultiplier above is ⛔ deliberate,
+	 *  ⛔ not an oversight left behind by the 2026-09-03 amendment. The HEIGHT ceiling went
+	 *  per class because a MEASUREMENT forced it: past a climbable tower's own ceiling its
+	 *  deck stops being reachable (STACK-§10). ⛔ Nothing analogous exists for health — it is
+	 *  UNCAPPED by his explicit word, it touches ⛔ no geometry, and ⛔ no measurement asked
+	 *  for a per-class step. ⇒ this one stays ⭐ GAME-WIDE ("there is no maximum on the
+	 *  health" is a sentence about the game, ⛔ not a per-card stat), and a BP child that
+	 *  re-authored it would be IGNORED by the series. ⛔ Do ⛔ not "finish the refactor" by
+	 *  making this per class as well — that would be inventing a rule ⛔ nobody ruled.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Building", meta = (ClampMin = "1.0"))
 	float StackHealthStep = 1.5f;

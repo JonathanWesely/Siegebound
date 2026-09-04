@@ -782,13 +782,20 @@ bool FSiegePlacementShippedTunablesAreUnchangedTest::RunTest(const FString& Para
 //     • the CONTROL THAT MUST COME OUT **GREEN** (⇒ None, i.e. the shipped green/red path
 //       decides and nothing new happened): nothing hovered · a unit card · an ENEMY building ·
 //       a DIFFERENT card's building · a destroyed one — tests 11(b)..(g);
-//     • the CONTROL THAT MUST COME OUT **RED**: a climbable tower ⇒ NotStackable (12a) and one
-//       gold short ⇒ Unaffordable (13a);
+//     • the CONTROL THAT MUST COME OUT **RED**: one gold short ⇒ Unaffordable (13a), and a
+//       climbable tower ALSO one gold short ⇒ Unaffordable (12e);
 //     • and every RED claim is paired with the SAME fixture coming out **BLUE** when the one
-//       term under test is put back — 12(b), 13(b).
-//   A resolver that answers None for everything fails 11(a), 12(b), 13(b), 14(a).
-//   A resolver that answers Ready for everything fails 11(b)..(g), 12(a), 13(a).
+//       term under test is put back — 12(a), 13(b).
+//   A resolver that answers None for everything fails 11(a), 12(a), 13(b), 14(a).
+//   A resolver that answers Ready for everything fails 11(b)..(g), 12(b), 12(f), 13(a).
 //   ⛔ Neither can pass this file.
+//
+//   ⚠️⚠️ TEST 12 CHANGED POLARITY ON 2026-09-03 AND THIS PARAGRAPH CHANGED WITH IT (STACK-§8).
+//   It used to read "a climbable tower ⇒ NotStackable" as the red control — and that control
+//   was ⛔ GREEN THE WHOLE TIME 🧑 Jonathan could not stack a tower. ⇒ ⚖️ *when a test's
+//   polarity flips, its ANTI-FAKE ARGUMENT has to be re-derived, ⛔ not merely re-signed*: the
+//   old (a) guarded against "a resolver that says Ready to everything", and the new (a) needs a
+//   DIFFERENT partner — 12(b)/(f), the fixtures the resolver must ⛔ still turn away.
 //
 //   ⭐ AND THE SECOND ANTI-FAKE MEASURE: ⛔ no expectation here is transcribed from the spec.
 //   The gold boundaries are expressed as cost ± 1 for THREE different costs (so a hardcoded
@@ -1064,62 +1071,94 @@ bool FSiegePlacementUpgradeStateIsBlueOnlyForOwnTeamSameCardTest::RunTest(const 
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════
-//  12. ⛔⛔ A CLIMBABLE TOWER ⛔ NEVER YIELDS BLUE — and the exclusion is STRUCTURAL, so the
-//      firing-tower family it was never about is ⛔ unaffected (STACK-§2)
+//  12. ⭐⭐⭐ A CLIMBABLE TOWER **DOES** YIELD BLUE — the hover half of 🧑 JONATHAN'S BUG,
+//      asserted on the very resolver that produced his refusal.
+//
+//  ⚠️⚠️ THIS TEST ASSERTED THE EXACT OPPOSITE UNTIL 2026-09-03, AND IT WAS ⛔ GREEN THE WHOLE
+//  TIME HE COULD NOT STACK A TOWER. Its old name was
+//  "AClimbableTowerNeverYieldsTheBlueUpgradeStateAndTheTowerFamilyStillDoes" and every row in
+//  it passed. ⇒ ⚖️ *a suite measures what the code DOES, ⛔ never whether that is what was
+//  wanted* — this file was faithfully protecting the defect, which is why the row is kept and
+//  INVERTED rather than deleted.
+//
+//  ⭐ AND THE TINT FOLLOWS FOR FREE, WITH ⛔ ZERO TINT EDITS (`STACK-§9`): the shipped ternary
+//  paints `UpgradeGhostColor` on `Ready` and nothing else changed. ⇒ the row below asserting
+//  `Ready` IS the assertion that the ghost is now BLUE on his hover.
 // ═══════════════════════════════════════════════════════════════════════════════════════════
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FSiegePlacementClimbableTowerNeverYieldsBlueTest,
-	"Siegebound.Placement.AClimbableTowerNeverYieldsTheBlueUpgradeStateAndTheTowerFamilyStillDoes",
+	FSiegePlacementClimbableTowerYieldsBlueTest,
+	"Siegebound.Placement.AClimbableTowerYieldsTheBlueUpgradeStateWhileStillRefusingTheFootprintWheel",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FSiegePlacementClimbableTowerNeverYieldsBlueTest::RunTest(const FString& Parameters)
+bool FSiegePlacementClimbableTowerYieldsBlueTest::RunTest(const FString& Parameters)
 {
 	using namespace SiegePlacementUpgradeFixture;
 
 	TStrongObjectPtr<AClimbableTower> Climbable = MakeScratchBuilding<AClimbableTower>(ETeamId::Blue, HeldCard);
 	TStrongObjectPtr<ABuilding> Plain = MakeScratchBuilding<ABuilding>(ETeamId::Blue, HeldCard);
 	TStrongObjectPtr<ATower> Firing = MakeScratchBuilding<ATower>(ETeamId::Blue, HeldCard);
-	if (!Climbable.IsValid() || !Plain.IsValid() || !Firing.IsValid())
+
+	// ⭐ THE "STILL REFUSES SOMETHING" CONTROL — a building of a DIFFERENT card, which gate (4)
+	// must keep turning away. ⛔ Its own fixture rather than a borrow from test 11: this test's
+	// whole polarity now depends on it, and a control that lives in another test's scope is a
+	// control nobody maintains.
+	TStrongObjectPtr<ABuilding> Different = MakeScratchBuilding<ABuilding>(ETeamId::Blue, OtherCard);
+	if (!Climbable.IsValid() || !Plain.IsValid() || !Firing.IsValid() || !Different.IsValid())
 	{
 		AddError(TEXT("SELF-CHECK FAILED: a scratch building could not be created."));
 		return false;
 	}
 
-	// (a) ⛔ THE CLAIM. A climbable tower under the cursor is RED with its own reason — ⛔ never
-	//     blue. A scaled SM_WatchTower fires TOWER-§8.5a's voiding condition and the climb stops
-	//     working ENTIRELY, so this is not a polish rule.
-	CheckState(*this, TEXT("(a) ⛔ an own-team, same-card, AFFORDABLE AClimbableTower ⇒ NotStackable — ⛔ never BLUE"),
-		ResolveBlueBaseline(Climbable.Get()), EUpgradeState::NotStackable);
+	// (a) ⭐⭐⭐ THE CLAIM, AND IT IS 🧑 THE PLAYTEST BUG IN ONE LINE. This is the exact hover he
+	//     performed — his own team, the same card, gold to spare, cursor on his own climbable
+	//     tower — and the shipped resolver answered `NotStackable`, which the ternary painted
+	//     RED and the click turned into "That building cannot be stacked". It now answers
+	//     `Ready`, which the SAME ternary paints ⭐ BLUE with ⛔ zero tint edits (`STACK-§9`).
+	CheckState(*this, TEXT("(a) ⭐⭐⭐ an own-team, same-card, AFFORDABLE AClimbableTower ⇒ Ready (BLUE). ⛔ This row read 'NotStackable' until 2026-09-03 and was GREEN throughout the bug"),
+		ResolveBlueBaseline(Climbable.Get()), EUpgradeState::Ready);
 
-	// (b) ⭐⭐ THE CONTROL THAT MUST COME OUT **BLUE**, AND WITHOUT IT (a) IS WORTHLESS.
-	//     "It was not Ready" is also the answer a resolver that refuses everything gives.
-	//     Proving the IDENTICAL call comes out Ready on a plain building is what turns (a) into
-	//     a statement about the TOWER rather than about a broken resolver.
-	CheckState(*this, TEXT("(b) ⭐⭐ CONTROL — the IDENTICAL call on a plain ABuilding ⇒ BLUE, so (a) is about the tower and ⛔ not about a resolver that refuses everything"),
+	// (b) ⭐⭐ THE CONTROL THAT MUST STILL COME OUT **RED**, AND WITHOUT IT (a) IS WORTHLESS.
+	//     ⚠️ THE POLARITY OF THIS TEST FLIPPED, SO ITS ANTI-FAKE ARGUMENT HAD TO FLIP WITH IT:
+	//     "it was Ready" is also the answer a resolver that has ⛔ stopped refusing ANYTHING
+	//     gives — including one where somebody deleted gate (5) outright. ⇒ the discriminating
+	//     control is now a fixture that must ⛔ STILL be refused, and gate (3) supplies one that
+	//     needs no new machinery: an ENEMY building. (f) below carries the same weight.
+	CheckState(*this, TEXT("(b) ⭐⭐ CONTROL — this resolver still REFUSES things: an own-team building of a DIFFERENT card ⇒ None. Without this row, (a) would pass against a resolver that had lost gate (5) entirely"),
+		ResolveBlueBaseline(Different.Get()), EUpgradeState::None);
+
+	// (c) ⭐ THE FAMILY HE WAS NEVER POINTING AT IS UNCHANGED. `ATower` is the
+	//     ArrowTower/BombTower/BallistaTower/CrystalTower family, and it stacked before this
+	//     change and stacks after it — the split moved ⛔ one class's answer, ⛔ not the rule.
+	CheckState(*this, TEXT("(c) ⭐ an ATower (the Arrow/Bomb/Ballista/Crystal family) ⇒ BLUE, exactly as before — the split changed ⛔ nothing for them"),
+		ResolveBlueBaseline(Firing.Get()), EUpgradeState::Ready);
+	CheckState(*this, TEXT("(c) ⭐ …and a plain ABuilding likewise"),
 		ResolveBlueBaseline(Plain.Get()), EUpgradeState::Ready);
 
-	// (c) ⭐ THE EXCLUSION COSTS HIM NOTHING HE ASKED FOR. `ATower` is the
-	//     ArrowTower/BombTower/BallistaTower/CrystalTower family — the towers he has played
-	//     with for weeks and almost certainly meant — and it stacks.
-	CheckState(*this, TEXT("(c) ⭐ an ATower (the Arrow/Bomb/Ballista/Crystal family) ⇒ BLUE — the exclusion catches ⛔ only the climbable one"),
-		ResolveBlueBaseline(Firing.Get()), EUpgradeState::Ready);
-
-	// (d) ⭐ ASKED THROUGH AN `ABuilding*`. The resolver's parameter is `const ABuilding*`, so
-	//     this row is really asking whether the predicate is VIRTUAL: a shadowed non-virtual
-	//     `CanScaleFootprint` on AClimbableTower would pass every other row and fail this one.
+	// (d) ⭐⭐⭐ THE SPLIT, OBSERVED ON ONE INSTANCE THROUGH THE ⛔ ONE POINTER TYPE THE
+	//     PLACEMENT PATH EVER HOLDS. The resolver's parameter is `const ABuilding*`, so asking
+	//     both predicates through that pointer is the only way to see virtual dispatch at all —
+	//     a SHADOWED non-virtual would pass every other row and fail these.
+	//
+	//     ⛔⛔ AND THE PAIR IS THE POINT: the tower refuses the WHEEL and accepts the STACK.
+	//     ⛔ A WRAPPER — `CanStackHeight() { return CanScaleFootprint(); }` — could ⛔ never
+	//     produce this pair, whatever it was named (`STACK-§8` cl. 3).
 	const ABuilding* const AsBase = Climbable.Get();
-	TestFalse(TEXT("(d) ⭐ CanScaleFootprint() is false when asked through an ABuilding* — the predicate is VIRTUAL, ⛔ not shadowed"),
+	TestFalse(TEXT("(d) ⛔ CanScaleFootprint() is STILL false through an ABuilding* — the WHEEL exclusion was ⛔ NOT reopened (he reported stacking, ⛔ never resizing)"),
 		AsBase->CanScaleFootprint());
-	CheckState(*this, TEXT("(d) …and the resolver, which only ever sees an ABuilding*, still refuses it"),
-		ResolveBlueBaseline(AsBase), EUpgradeState::NotStackable);
+	TestTrue(TEXT("(d) ⭐⭐ …while CanStackHeight() is TRUE through the same pointer — two virtuals, two INDEPENDENT answers"),
+		AsBase->CanStackHeight());
+	CheckState(*this, TEXT("(d) ⭐ …and the resolver, which only ever sees an ABuilding*, now says Ready"),
+		ResolveBlueBaseline(AsBase), EUpgradeState::Ready);
 
-	// (e) ⚠️ THE ORDERING RULING, MADE FAILABLE: a climbable tower the player ALSO cannot afford
-	//     must still say "cannot be stacked", ⛔ not "not enough gold". "You are short 4 gold" is
-	//     a misleading thing to say about a building that will refuse at any price.
-	CheckState(*this, TEXT("(e) ⚠️ a climbable tower the player cannot afford ⇒ still NotStackable — the PERMANENT truth beats the temporary one"),
+	// (e) ⚠️ THE ORDERING RULING SURVIVES THE SPLIT, AND IT IS NOW ASKED THE OTHER WAY ROUND:
+	//     with gate (5) no longer refusing this class, a climbable tower the player cannot
+	//     afford must fall through to `Unaffordable` — the same answer any other building gives.
+	//     ⛔ A resolver still refusing the tower at gate (5) would answer `NotStackable` here
+	//     and this row would catch it even if (a) somehow did not.
+	CheckState(*this, TEXT("(e) ⚠️ a climbable tower the player cannot afford ⇒ Unaffordable, exactly like every other building — it is no longer a special case at all"),
 		Resolve(Climbable.Get(), ETeamId::Blue, HeldCard, /*bIsBuilding=*/ true, /*Gold=*/ 0, FixtureCost),
-		EUpgradeState::NotStackable);
+		EUpgradeState::Unaffordable);
 
 	// (f) ⛔ AND AN ENEMY CLIMBABLE TOWER IS STILL JUST "None" — the team gate is asked BEFORE
 	//     the predicate, so hovering the enemy's watch tower does not leak our refusal text.
@@ -1228,9 +1267,13 @@ bool FSiegePlacementUpgradeStaysBlueAtTheHeightCapTest::RunTest(const FString& P
 	// ── WALK TO THE CAP. ⛔ NO NUMBER FROM THE SPEC IS USED: the loop stops when the HEIGHT
 	// SERIES STOPS MOVING, whatever MaxStackHeightMultiplier happens to be. ⇒ ⭐ a retune of the
 	// cap moves this test with the code instead of against it.
+	// ⭐ THE CEILING COMES OFF **THIS INSTANCE** (STACK-§10 cl. 2 — it is per class now, and
+	// `StackHeightMultiplier` is HANDED it rather than reading a CDO). ⛔ Still no number from
+	// the spec: the loop stops when this building's own series stops moving.
+	const int32 OwnHeightCap = Own->GetMaxStackHeightMultiplier();
 	int32 Guard = 0;
-	while (ABuilding::StackHeightMultiplier(Own->GetStackUpgradeCount() + 1)
-		 > ABuilding::StackHeightMultiplier(Own->GetStackUpgradeCount())
+	while (ABuilding::StackHeightMultiplier(Own->GetStackUpgradeCount() + 1, OwnHeightCap)
+		 > ABuilding::StackHeightMultiplier(Own->GetStackUpgradeCount(), OwnHeightCap)
 		&& Guard++ < 64)
 	{
 		// ⭐ THE STATE MUST BE BLUE ALL THE WAY UP — a "refuse once it is tall" implementation
@@ -1249,9 +1292,9 @@ bool FSiegePlacementUpgradeStaysBlueAtTheHeightCapTest::RunTest(const FString& P
 	TestTrue(TEXT("SELF-CHECK: the walk actually took at least two upgrades (n <= 1 discriminates nothing about a cap)"),
 		Own->GetStackUpgradeCount() >= 2);
 	TestTrue(TEXT("SELF-CHECK: the walk terminated on the CAP and not on the guard"), Guard < 64);
-	const float CappedHeight = ABuilding::StackHeightMultiplier(Own->GetStackUpgradeCount());
+	const float CappedHeight = ABuilding::StackHeightMultiplier(Own->GetStackUpgradeCount(), OwnHeightCap);
 	TestEqual(TEXT("SELF-CHECK: the height series really has saturated — one more upgrade would move it ⛔ not at all"),
-		ABuilding::StackHeightMultiplier(Own->GetStackUpgradeCount() + 1), CappedHeight, 0.f);
+		ABuilding::StackHeightMultiplier(Own->GetStackUpgradeCount() + 1, OwnHeightCap), CappedHeight, 0.f);
 
 	// (b) ⭐⭐ THE CLAIM: AT the cap, the state is STILL BLUE. His own sentence — "at some point
 	//     if they keep upgrading it would only upgrade health by 1.5 times and not height" —
@@ -1271,7 +1314,7 @@ bool FSiegePlacementUpgradeStaysBlueAtTheHeightCapTest::RunTest(const FString& P
 
 	TestTrue(TEXT("(c) ⭐ MaxHP STILL GREW past the cap — blue at the cap is not an empty promise"), MaxAfter > MaxBefore);
 	TestEqual(TEXT("(c) ⭐ …while the HEIGHT did ⛔ not move at all (tolerance ZERO)"),
-		ABuilding::StackHeightMultiplier(Own->GetStackUpgradeCount()), CappedHeight, 0.f);
+		ABuilding::StackHeightMultiplier(Own->GetStackUpgradeCount(), OwnHeightCap), CappedHeight, 0.f);
 	TestTrue(TEXT("(c) …and the count still advanced, so the cap freezes the HEIGHT and ⛔ nothing else"),
 		Own->GetStackUpgradeCount() > CountBefore);
 
@@ -1280,9 +1323,9 @@ bool FSiegePlacementUpgradeStaysBlueAtTheHeightCapTest::RunTest(const FString& P
 	//     — ⛔ never by comparing the count to 5. This row proves that expression is true here and
 	//     ⛔ false below the cap, which is the whole content of "the note fires only when it bit".
 	TestTrue(TEXT("(d) ⭐ the shipped cap test fires AT the cap"),
-		ABuilding::StackHeightMultiplier(Own->GetStackUpgradeCount()) <= ABuilding::StackHeightMultiplier(CountBefore));
+		ABuilding::StackHeightMultiplier(Own->GetStackUpgradeCount(), OwnHeightCap) <= ABuilding::StackHeightMultiplier(CountBefore, OwnHeightCap));
 	TestFalse(TEXT("(d) ⭐⭐ …and it is FALSE at n = 0 → 1, so the note cannot fire on a first upgrade"),
-		ABuilding::StackHeightMultiplier(1) <= ABuilding::StackHeightMultiplier(0));
+		ABuilding::StackHeightMultiplier(1, OwnHeightCap) <= ABuilding::StackHeightMultiplier(0, OwnHeightCap));
 
 	return true;
 }

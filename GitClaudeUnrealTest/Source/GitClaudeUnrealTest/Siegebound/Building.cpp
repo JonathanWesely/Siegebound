@@ -291,27 +291,31 @@ void ABuilding::OnStatsLoaded(const FCardRow& Row)
 //  private, and a caller reaching around that is how two rules for one number get shipped.
 // ═══════════════════════════════════════════════════════════════════════════════════════════
 
-float ABuilding::StackHeightMultiplier(int32 UpgradeCount)
+float ABuilding::StackHeightMultiplier(int32 UpgradeCount, int32 MaxMultiplier)
 {
-	// ⛔ THE CAP IS READ FROM THIS CLASS'S CDO, ⛔ never written as a literal here:
-	// MaxStackHeightMultiplier is EditDefaultsOnly precisely so Jonathan can retune it, and a
-	// second `5` in this function would be the HIGH-§1 booby trap the day he does. The CDO
-	// read is FORCED, not chosen — STACK-§7 pins this seam at ONE parameter while pinning the
-	// cap EditDefaultsOnly, and nothing else satisfies both. It costs no world and no actor
-	// instance, so the seam stays headlessly testable.
-	const ABuilding* const Defaults = GetDefault<ABuilding>();
-	if (!Defaults)
-	{
-		// A null CDO means this class's module has not loaded, in which case NOTHING here
-		// works. Return the IDENTITY: it is the one answer that cannot invent a height, and
-		// it deliberately does NOT restate the cap as a fallback literal.
-		return 1.f;
-	}
+	// ⛔⛔ THE CAP IS **HANDED IN**, ⛔ never read here and ⛔ never written as a literal here
+	// (STACK-§7's amended row, STACK-§10 cl. 2, ruling J-13). MaxStackHeightMultiplier is
+	// EditDefaultsOnly precisely so Jonathan can retune it, and a second `5` in this function
+	// would be the HIGH-§1 booby trap the day he does.
+	//
+	// ⚠️⚠️ THIS FUNCTION READ `GetDefault<ABuilding>()->MaxStackHeightMultiplier` UNTIL
+	// 2026-09-03, AND THE COMMENT SITTING HERE CLAIMED IT READ "THIS CLASS'S CDO". ⛔ IT DID
+	// NOT — `GetDefault<ABuilding>()` is the BASE class's CDO unconditionally, whatever
+	// instance is calling. ⇒ a subclass ceiling set in a constructor was read STRAIGHT PAST
+	// and the series kept climbing to ABuilding's `5`, while every readback of the subclass's
+	// own tunable reported the number the designer typed. ⭐ For AClimbableTower that is the
+	// difference between a stackable tower and one whose deck cannot be reached at all
+	// (STACK-§10 cl. 1), so the parameter is LOAD-BEARING, ⛔ not a tidy-up.
+	//
+	// ⭐ The cap being a parameter also makes this seam completely free of the reflection
+	// system: no CDO, no world, no actor instance — and a test can pass a ceiling the project
+	// does not ship and assert the SHAPE of the series rather than its literal (SC-§37).
 
 	// The tunable, defended against a hand-edited 0 or negative in a .uasset (ClampMin only
-	// guards the editor field). A cap below 1 would mean "shrink every building", which is a
-	// state no ruling contemplates.
-	const int32 Cap = FMath::Max(1, Defaults->MaxStackHeightMultiplier);
+	// guards the editor field) and against a caller that read it off a null pointer. A cap
+	// below 1 would mean "shrink every building", which is a state no ruling contemplates.
+	// ⛔ The degrade is the IDENTITY series, ⛔ never a restated `5`.
+	const int32 Cap = FMath::Max(1, MaxMultiplier);
 
 	// ⛔ Negative is not a state the game can enter (StackUpgradeCount only ever increments
 	// from 0), but this seam is public and pure, so it answers for the whole int32 domain
@@ -336,8 +340,13 @@ float ABuilding::StackHeightMultiplier(int32 UpgradeCount)
 
 float ABuilding::StackHealthMultiplier(int32 UpgradeCount)
 {
-	// Same CDO read, same reason (see StackHeightMultiplier) — StackHealthStep is
-	// EditDefaultsOnly and this function must not be a second copy of its value.
+	// ⛔ A CDO read, and — since 2026-09-03 — ⛔ NOT the same shape as StackHeightMultiplier
+	// above. StackHealthStep is EditDefaultsOnly and this function must not be a second copy
+	// of its value, but the step stays GAME-WIDE: the height ceiling went per class because a
+	// MEASUREMENT forced it (a climbable tower's deck stops being reachable past its own
+	// ceiling — STACK-§10), and ⛔ nothing analogous exists for health, which is uncapped by
+	// Jonathan's explicit word and touches no geometry. ⇒ ⛔ do not "finish the refactor" by
+	// parameterising this one; that would invent a rule nobody ruled (see StackHealthStep).
 	const ABuilding* const Defaults = GetDefault<ABuilding>();
 	if (!Defaults)
 	{
@@ -381,6 +390,19 @@ float ABuilding::StackHealthMultiplier(int32 UpgradeCount)
 	return Multiplier;
 }
 
+void ABuilding::OnStackUpgradeApplied()
+{
+	// intentionally empty: a plain building's whole upgrade is the transform and the HP push
+	// ApplyStackUpgrade already did, exactly as OnStatsLoaded is empty because a plain
+	// building binds nothing beyond HP. AClimbableTower overrides this to re-arm the
+	// navigation element its rescaled root does not reach.
+	//
+	// ⛔ Defined ABOVE ApplyStackUpgrade on purpose, ⛔ not below it: SiegePlacementTest's J-4
+	// probe extracts ApplyStackUpgrade's body as "the text from its signature to the next
+	// `\nfloat ABuilding::`", so a definition inserted between it and TakeDamage would silently
+	// widen what that probe reads (SC-§41 — a gate's needle is only as honest as its window).
+}
+
 bool ABuilding::ApplyStackUpgrade()
 {
 	// ⛔ M8 (STACK-§7): StackUpgradeCount is AUTHORITATIVE GAME STATE — it drives MaxHP — so it
@@ -402,13 +424,18 @@ bool ABuilding::ApplyStackUpgrade()
 		return false;
 	}
 
-	// ⛔⛔ STACK-§2, RE-ASKED AT THE BUILDING ITSELF. The placement path also gates on this
-	// predicate (TASK-813), and that is the point: a future caller that forgets the paragraph
-	// must still be UNABLE to scale a climbable tower, because a scaled SM_WatchTower moves the
-	// LadderFoot/LadderTop sockets and the rung plane, fires TOWER-§8.5a's voiding condition,
-	// and the climb stops working ENTIRELY. ⛔ Structural — there is deliberately no CardID
-	// string compare anywhere on this path.
-	if (!CanScaleFootprint())
+	// ⛔⛔ THE STACK (Z) PREDICATE, RE-ASKED AT THE BUILDING ITSELF — the THIRD of the three
+	// gates STACK-§8 cl. 3 repointed. The placement path gates on the same virtual at hover
+	// and again at the click, and that is the point: a future caller that forgets the
+	// paragraph must still be UNABLE to grow a building that refuses it. ⛔ Structural — there
+	// is deliberately no CardID string compare anywhere on this path.
+	//
+	// ⛔⛔ IT IS CanStackHeight(), ⛔ NOT CanScaleFootprint(). Those were ONE virtual until
+	// 2026-09-03, which is the defect Jonathan filmed: the height question and the footprint
+	// question had one answer between them, so the one building that refuses the placement
+	// wheel also refused to be stacked. ⛔ Asking the wheel's predicate here again would
+	// restore the bug behind a passing test suite (STACK-§8 cl. 1).
+	if (!CanStackHeight())
 	{
 		return false;
 	}
@@ -434,10 +461,18 @@ bool ABuilding::ApplyStackUpgrade()
 	// multiple exactly however many times this runs.
 	// ⭐ Collision and navmesh follow for free — VisualMesh is the root with BlockAll +
 	// bCanEverAffectNavigation(true), so a scaled component carves a scaled hole (STACK-§3).
+	// ⚠️⚠️ "FOR FREE" IS TRUE OF THIS **SCENE COMPONENT** AND OF NOTHING ELSE: the rescale
+	// refreshes VisualMesh's own navigation octree entry (USceneComponent::PropagateTransform-
+	// Update -> UpdateNavigationData) and no other component's. A subclass carrying a
+	// UActorComponent-derived navigation element re-arms it in OnStackUpgradeApplied below.
+	//
+	// ⛔⛔ THE CAP HANDED IN IS **THIS INSTANCE'S OWN** (STACK-§10 cl. 2). ⛔ Not
+	// GetDefault<ABuilding>()'s, which is what the one-parameter signature used to force and
+	// which discarded every subclass ceiling silently.
 	if (VisualMesh)
 	{
 		FVector Scale = VisualMesh->GetRelativeScale3D();
-		Scale.Z = AuthoredHeightScaleZ * StackHeightMultiplier(StackUpgradeCount);
+		Scale.Z = AuthoredHeightScaleZ * StackHeightMultiplier(StackUpgradeCount, MaxStackHeightMultiplier);
 		VisualMesh->SetRelativeScale3D(Scale);
 	}
 
@@ -459,6 +494,31 @@ bool ABuilding::ApplyStackUpgrade()
 	// new lane and no direct widget call.
 	OnHPChanged.Broadcast(CurrentHP, GetMaxHP());
 
+	// ⭐⭐ THE SUBCLASS HOOK, ⛔ LAST AND ⛔ ONLY ON SUCCESS. Everything a subclass might need
+	// to re-derive from the new height — a navigation element, a marker, a bar — is valid only
+	// once the transform above has actually been written, and must ⛔ never run on a path that
+	// refused. ⛔ This class knows nothing about what the override does; see the declaration.
+	OnStackUpgradeApplied();
+
+	// ⚠️⚠️⚠️ A TRAP PARKED HERE DELIBERATELY, BECAUSE THIS IS THE FUNCTION SOMEBODY WOULD EDIT
+	// TO SET IT OFF — ⛔ REPORTED, ⛔ NOT REPAIRED, AND THERE IS ⛔ NOTHING TO FIX TODAY
+	// (STACK-§10 cl. 6a):
+	//
+	//   USiegeMeshJuiceComponent::SetTargetMesh SNAPSHOTS `BaseScale = InMesh->
+	//   GetRelativeScale3D()`, and the squash channel's terminal branch writes
+	//   `TargetMesh->SetRelativeScale3D(BaseScale)` VERBATIM.
+	//
+	// ⇒ ⛔ A "juicy little squash on upgrade" added HERE would, at the end of its animation,
+	// restore the mesh to the scale that component snapshotted — SILENTLY UN-STACKING the
+	// building: its height AND, on a climbable one, its whole climb line, with ⛔ every
+	// readback still reporting the correct StackUpgradeCount and the correct MaxHP.
+	//
+	// ✅ MEASURED SAFE AS SHIPPED, which is why this is a comment and not a change:
+	// SetTargetMesh/PlaySpawnSquash are called exactly ONCE, from ABuilding::BeginPlay, the
+	// scale channel runs only while that one squash is active, and AClimbableTower derives
+	// ABuilding rather than ATower so ATower::PlayRecoil (a LOCATION channel anyway) cannot
+	// reach it. ⛔ Do NOT "harden" the juice component for this — the hazard is the CALL that
+	// does not exist, and adding one is what would create it.
 	return true;
 }
 

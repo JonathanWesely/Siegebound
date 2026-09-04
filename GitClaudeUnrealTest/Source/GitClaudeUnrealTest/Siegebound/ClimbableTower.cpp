@@ -187,6 +187,63 @@ AClimbableTower::AClimbableTower()
 	// (NavLinkCustomComponent.cpp:518-526). Attaching it is not "tidier" — it does
 	// not compile.
 	LadderLink = CreateDefaultSubobject<UClimbableTowerLadderLink>(TEXT("LadderLink"));
+
+	// ⭐⭐⭐ THIS CLASS'S OWN STACK CEILING (STACK-§10, ruling J-13). ⛔ The base class and
+	// every other building are UNCHANGED — this line moves ⛔ only the climbable tower.
+	//
+	// ⛔⛔ IT IS A **MEASURED SHORTFALL AGAINST WHAT JONATHAN ASKED FOR, ⛔ NOT A DESIGN
+	// CHOICE, AND ⛔ NOT A BALANCE DECISION.** His spec was ×2 → ×3 → ×4 → ×5. This tower
+	// stops at ×2 because of a term the whole feature was designed without noticing:
+	//
+	//     the DECK SLAB scales with the mesh (UCX_SM_WatchTower_07 is Z[1160, 1200] ⇒ 40·n uu
+	//     thick), while FSiegeLadderClimbStatics::Begin sizes the non-swept deck-breach window
+	//     as DeckBreachCapsuleHalfHeights × HalfHeight — a property of the ⛔ PAWN, invariant
+	//     in n. ⇒
+	//         window OPENS at capsule-centre Z = 1200n − 2·HH
+	//         sweep  JAMS  at capsule-centre Z = 1160n − HH
+	//         need OPEN <= JAM   <=>   40n <= HH   <=>   n <= HH / 40
+	//     unit HH = 88 -> n <= 2.2 (⛔ BINDING)      hero HH = 96 -> n <= 2.4
+	//
+	// ⇒ ⛔ at ×3/×4/×5 the ascending capsule's TOP meets the slab underside 32/72/112 uu of Z
+	// BEFORE the window opens. The climber cannot advance, hangs in MOVE_Flying, and
+	// TOWER-§8.5a cl. 7's watchdog eventually DROPS it — a tower whose deck cannot be reached,
+	// which is exactly the outcome the original ban existed to prevent.
+	//
+	// ⛔ The AI UNIT binds, ⛔ not the hero — which inverts TOWER-§8.5a's standing intuition
+	// that the hero's fatter capsule is the hazard; here the hero's TALLER capsule buys it
+	// MORE window. ⭐ And the headroom was declared in the source all along:
+	// DeckBreachCapsuleHalfHeights' own doc comment says it is "2.2× the ~40 uu the mesh
+	// actually ships". A Z stack spends exactly that headroom, linearly in n.
+	//
+	// ⛔⛔ DO ⛔ NOT RAISE THIS NUMBER BY HAND, and do not raise it in a .uasset either — it is
+	// EditDefaultsOnly, so a Blueprint child CAN now raise it and WOULD be obeyed. If the
+	// deck-breach window is ever re-engineered to be SLAB-derived rather than PAWN-derived,
+	// this ceiling is RE-DERIVED from the arithmetic above (STACK-§10 cl. 2, last bullet).
+	// ⛔ It is not a knob.
+	MaxStackHeightMultiplier = 2;
+}
+
+void AClimbableTower::OnStackUpgradeApplied()
+{
+	// ⭐⭐ THE RE-ARM. ABuilding::ApplyStackUpgrade has just written the new Z onto VisualMesh
+	// — which is the ROOT — so the mesh's own navigation octree entry has been refreshed by
+	// USceneComponent::PropagateTransformUpdate. ⛔ THE LINK'S HAS NOT: LadderLink is a
+	// UActorComponent, ⛔ not a USceneComponent, so no transform propagation reaches it and its
+	// registered off-mesh connection would keep describing the PRE-UPGRADE tower.
+	//
+	// ⭐ Re-running the whole configure is deliberate rather than reaching in and poking
+	// SetLinkData: ConfigureLadderLink re-reads the sockets in RTS_Actor space (⇒ the SAME
+	// scale-free relatives, because that space divides the owner transform straight back out),
+	// re-applies the team gate and re-binds the entry callback, and its SetLinkData call is
+	// what drives UpdateNavigationBounds() + RefreshNavigationModifiers(). ⇒ ⛔ one call, ⛔ no
+	// duplicated knowledge, and ⛔ nothing here needs to know the new height.
+	//
+	// ⚠️ Idempotent by construction — it is the same function BeginPlay runs, and running it
+	// twice on a tower produces the same link data twice. ⛔ Its degrade-open fallback and its
+	// one-warning discipline are unchanged; a tower already on the pinned literals simply logs
+	// the same line again, which is the honest outcome for a tower whose sockets are missing.
+	Super::OnStackUpgradeApplied();
+	ConfigureLadderLink();
 }
 
 void AClimbableTower::BeginPlay()
