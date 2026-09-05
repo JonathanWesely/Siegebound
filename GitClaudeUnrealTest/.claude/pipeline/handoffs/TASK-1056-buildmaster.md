@@ -222,6 +222,25 @@ possible on a clean tree. A red here would have been a real finding. There was n
 
 ---
 
+## 9. THE COMMIT — written back after it existed
+
+**`2c58460`** — `TASK-1056: the trailing-comment false red is closed AT THE BASIS — and the pin is
+named as still incomplete (TASK-1045, gated by TASK-1046)`. 10 files, 2400 insertions / 14 deletions.
+
+**Post-commit verification, all four re-measured rather than assumed:**
+
+| check | result |
+|---|---|
+| `Source/` paths **in the commit** | ⭐ **exactly 1** — `…/Tests/SiegeFogRetentionWiringTest.cpp` |
+| `.claude/agents/qa-reviewer.md` in commit | ✅ **0** — and still dirty in the worktree |
+| `FogVolume.h` / `FogVolume.cpp` in commit | ✅ **0 / 0** — both still dirty, still `TASK-1055`'s |
+| ahead of `origin/main` | **24 → 25**, `origin/main` still `f1c32d8` ⇒ ⛔ **NOT PUSHED** |
+
+**Residual dirt after this commit — exactly the three NAMED-AND-LEFT paths, plus this file and
+`TASKBOARD.md` re-dirtied by writing the hash back.** That is the **normal end state**, not a defect.
+
+---
+
 ## 7. cl. 7 — PUSH
 
 ⛔ **NOT PUSHED.** Jonathan has not asked in Claude Code, and a Slack post is not authorization.

@@ -15,10 +15,19 @@
  *  ⛔⛔⛔ THIS ACTOR IS **STATE ONLY**, AND THE DISTINCTION IS THE WHOLE REASON IT EXISTS.
  *  `AFogVolume` **THE STATE OBJECT** is not `AFogVolume` **THE RENDERED VOLUME**. It holds TWO
  *  scalars and nothing else: ⛔ NO mesh, ⛔ NO material, ⛔ NO decal, ⛔ NO Niagara, ⛔ NO
- *  collision, ⛔ NO component of any kind, ⛔ NO tick. The fog you can SEE is `TASK-841`'s and it
- *  is still premise-blocked on `TASK-836`; the fog the GAME can ask about is this, and the class
- *  had to exist for the timer to have a home. ⚠️ A future reader looking for the visual should
- *  stop looking here — its absence is the design, not an omission.
+ *  collision, ⛔ NO component of any kind, ⛔ NO tick. The fog you can SEE is `TASK-841`'s and
+ *  it ⛔ HAS SHIPPED: 2026-09-05, as `/Game/Blueprints/BP_SiegeFog` (integration-checked under
+ *  `TASK-1043`, committed `ef2c901`) — a child of the ⛔ VENDOR `BP_FogArea`, with ⛔ no C++
+ *  spawner yet. The `TASK-836` measurement that once premise-blocked it is ✅ DONE (2026-09-03).
+ *  The fog the GAME can ask about is this, and the class had to exist for the timer to have a
+ *  home. ⚠️ A future reader looking for the visual should stop looking here — its absence is
+ *  the design, not an omission.
+ *  ⛔⛔ CORRECTED 2026-09-05 (`TASK-1053`, from `qa/TASK-1051.md`), AND THE REASON IT LASTED IS
+ *  THE REUSABLE PART: this sentence said the visual was *"still premise-blocked on `TASK-836`"*
+ *  and ⛔ SURVIVED A DELIBERATE SWEEP OF THIS VERY FILE, because that sweep's predicate was the
+ *  ⛔ CLAIM (*"sentences asserting the wrong parent"*) while this sentence was stale on a
+ *  ⛔ DIFFERENT AXIS. ⇒ ⭐ `SC-§91`: sweep by ⛔ SUBJECT (*every sentence in this file*),
+ *  ⛔ never by the shape of the error you already know about.
  *
  *  ⭐⭐ WHY A SEPARATE ACTOR AND NOT A FIELD ON `ASiegeGameState` OR A SUBSYSTEM: `FOG-§10.1`
  *  pins the state to "the SAME ONE authoritative fog-state object (`AFogVolume`)", and
@@ -89,11 +98,28 @@
  *  `ASiegeGameState::ClockBaseServerTime` already does — a raw `GetTimeSeconds()` value
  *  replicated verbatim would expire at a different wall-clock instant on every client.
  *
- *  ⛔ SPAWNED AT RUNTIME, NEVER LEVEL-PLACED. `FindOrSpawn` creates the single instance the first
+ *  ⛔ THE NATIVE ACTOR IS SPAWNED AT RUNTIME AND IS NEVER LEVEL-PLACED BY US — ⚠️ a statement
+ *  about how the ⛔ ONE instance ARRIVES, ⛔ NOT a guarantee that nothing of this class can be
+ *  placed in a map; the two paragraphs below are about exactly that case (heading narrowed
+ *  2026-09-05, `TASK-1053` from `qa/TASK-1051.md`: the old *"NEVER LEVEL-PLACED"* read as a
+ *  guarantee sitting directly above them). `FindOrSpawn` creates the single instance the first
  *  time the `Fog` card resolves, so the card cannot be dead in a level nobody remembered to place
  *  a volume in — the exact failure mode `TASK-998`'s row names ("a green suite and a 50-gold fog
- *  card that renders and clamps nobody"). ⛔ A level-placed `BP_SiegeFog` (`FOG-§6`'s BP child)
- *  would ALSO be found by `Find`, so placing one later is safe and changes nothing here.
+ *  card that renders and clamps nobody").
+ *  ⛔⛔ CORRECTED 2026-09-05 (`TASK-1050`) — THE PREVIOUS SENTENCE HERE WAS FALSE, AND IT WAS FALSE
+ *  IN THE DIRECTION THAT READS AS REASSURANCE. It said a level-placed `BP_SiegeFog` "would ALSO be
+ *  found by `Find`, so placing one later is safe". `Find` iterates `TActorIterator<AFogVolume>`,
+ *  which matches THIS CLASS AND ITS SUBCLASSES — and `BP_SiegeFog` is not one of them: its parent
+ *  was read back LIVE as `BP_FogArea_C` (`TASK-1043`, committed `ef2c901`).
+ *  ⇒ A level-placed `BP_SiegeFog` is INVISIBLE to `Find`. It cannot reach fog STATE — ⛔ and
+ *  that is the NARROW claim, ⛔ about ONE FUNCTION, ⛔ not a licence to place one (narrowed
+ *  2026-09-05, `TASK-1053` from `qa/TASK-1051.md`: the earlier *"harmless here"* read as *"fine
+ *  to do"*, six lines below the paragraph naming *"a 50-gold fog card that renders and clamps
+ *  nobody"* as the failure mode — and a level-placed visual with NO state actor behind it is
+ *  that same failure mode inverted). ⛔ The mechanism is the OPPOSITE of the one this comment
+ *  used to give: it is not "found too", it is never found at all. ⚠️ What WOULD be found is a
+ *  level-placed Blueprint child of `AFogVolume` itself — see the `CoreRedirects` paragraph
+ *  below, because that is the same fact wearing its other face.
  *
  *  ⚠️⚠️ SERIALISATION / `CoreRedirects` — DECLARED 2026-09-04, because this class is where the
  *  answer changes. BOTH deadlines (`FogActiveUntilTimeSeconds`, `FogPreventedUntilTimeSeconds`)
@@ -101,12 +127,102 @@
  *  orphan a saved value. The FIVE tunables — `FogDurationSeconds`, `BrightSunBaseDurationSeconds`,
  *  `BrightSunBonusSecondsPerStep`, `BrightSunHeightStepUU`, `ArenaGroundReferenceZUU` — are
  *  `EditDefaultsOnly` and therefore ARE serialised, into this class's CDO and into any Blueprint
- *  child (`/Game/Blueprints/BP_SiegeFog`). ⛔ RENAMING OR RETIRING ANY OF THE FIVE AFTER A BP
- *  CHILD EXISTS NEEDS A `CoreRedirects` ENTRY, or a designer's saved override is silently dropped
- *  on load with no error anywhere. ⚠️ The hazard GREW with `TASK-982` (1 property ⇒ 5) and it is
- *  restated rather than assumed: four of the five are new as of 2026-09-04.
- *  `FSiegeFogTuning` is deliberately NOT a member of this actor — see the handoff for why, and
- *  for what that keeps open.
+ *  child OF THIS CLASS. ⛔ RENAMING OR RETIRING ANY OF THE FIVE AFTER SUCH A CHILD EXISTS NEEDS A
+ *  `CoreRedirects` ENTRY, or a designer's saved override is silently dropped on load with no error
+ *  anywhere. ⚠️ The hazard GREW with `TASK-982` (1 property ⇒ 5) and it is restated rather than
+ *  assumed: four of the five are new as of 2026-09-04.
+ *
+ *  ⛔⛔ WHAT THE 2026-09-04 WORDING GOT WRONG — CORRECTED 2026-09-05 (`TASK-1050`), AND STATED
+ *  BLUNTLY BECAUSE IT WAS FALSE RATHER THAN MERELY STALE: it named `/Game/Blueprints/BP_SiegeFog`
+ *  as that Blueprint child. ⛔ IT IS NOT ONE. That asset's parent was read back LIVE via
+ *  `get_parent` as `/Game/FogArea/Blueprints/BP_FogArea.BP_FogArea_C` (`TASK-1043`) and committed
+ *  in `ef2c901`, and a Blueprint has EXACTLY ONE parent.
+ *  ⇒ MEASURED 2026-09-05: `AFogVolume` has ZERO Blueprint children in this project — ⛔ AND THE
+ *  METHOD IS RECORDED HERE (`TASK-1053`, from `qa/TASK-1051.md`), because an unmethoded
+ *  *"MEASURED"* carries the AUTHORITY of a measurement and the EVIDENCE of an opinion, and
+ *  nobody re-derives it precisely BECAUSE it already says *"measured"*:
+ *    • WHAT: a byte scan of ⛔ every `.uasset` and `.umap` under `Content/` for the FName
+ *      `FogVolume` — the string a Blueprint child ⛔ MUST carry, because its parent class is an
+ *      import (`/Script/GitClaudeUnrealTest.FogVolume`) and an UNCOOKED package stores its
+ *      import names in a ⛔ PLAIN name table. ⇒ ⛔ NOTHING matched. (Nothing matched on the
+ *      `.umap` side either, which corroborates the heading above from the map direction: no
+ *      ⛔ NATIVE `AFogVolume` is level-placed anywhere either.)
+ *    • ⭐ WHY THE INSTRUMENT IS BELIEVED — it was validated against the ⛔ FAILURE it detects,
+ *      ⛔ not merely against success: `BP_HeroCharacter` DOES carry `HeroCharacter` and
+ *      `BP_CommanderNpc` DOES carry `CommanderNpc` (native parents), and `BP_SiegeFog` DOES
+ *      carry `BP_FogArea` (Blueprint parent). ⇒ A null result from THIS scan is ⛔ EVIDENCE,
+ *      ⛔ not silence — which a bare text grep over `.uasset` files is not entitled to be.
+ *    • WHEN: 2026-09-05, against the working tree at `c79bf5b`.
+ *    • ⛔ WHAT WOULD FALSIFY IT: any asset under `Content/` — or under a NEW content root, e.g.
+ *      a plugin, of which this project has none today — whose package bytes contain `FogVolume`.
+ *    • ⛔ WHAT IT CANNOT SEE: the scan reads ⛔ DISK ONLY. A child created in an open editor and
+ *      not yet saved is invisible to it, and so is anything outside `Content/`. ⛔ It is also not
+ *      a live engine query — `SC-§78` still applies, and an MCP `get_parent` sweep would be the
+ *      stronger instrument the next time the editor is open for another reason.
+ *    ⛔ NOT re-run since. ⛔ Re-run it rather than trusting this line whenever the answer is
+ *    load-bearing — which, per the ruling below, it is.
+ *
+ *  ⇒ ⭐⭐ THE CONSEQUENCE, WHICH IS THE HALF WORTH READING: WITH NO BLUEPRINT CHILD, A DESIGNER
+ *  OVERRIDE OF THE FIVE CANNOT EXIST TODAY — there is nowhere to put one. `EditDefaultsOnly` is
+ *  archetype-only by definition (⛔ NOT editable on a placed instance); the `.ini` route is
+ *  barred by ⛔ EXACTLY ONE MISSING SPECIFIER, ⛔ not by two — `config=Engine` is declared on the
+ *  very `AActor` `UCLASS` line the ruling below quotes, and it is ⛔ INHERITED, so this class
+ *  ALREADY has a config home; what is absent is the ⛔ PER-PROPERTY `Config` specifier on each of
+ *  the five (stated precisely 2026-09-05, `TASK-1053` from `qa/TASK-1051.md`, and it
+ *  ⛔ STRENGTHENS the DORMANT ruling below rather than weakening it: that is a ⛔ SECOND live
+ *  wire, ⛔ not a closed door); and the native CDO takes its values from the
+ *  constructor, not from a package anybody edits. Blueprint class defaults are the ONLY writable
+ *  home, and there is no Blueprint to hold them. ⇒ Nothing serialised exists for a rename to
+ *  orphan, so the hazard CANNOT FIRE TODAY.
+ *
+ *  ⚖️⛔⛔ AND THE RULING, BECAUSE "MOOT" IS NOT AN ANSWER: THE HAZARD IS **DORMANT**, ⛔ NOT
+ *  **RETIRED** (`TASK-1050` cl. 2). RETIRED would mean it can NEVER apply, which would require
+ *  `AFogVolume` to be incapable of having a Blueprint child. ⛔ It is not: `AActor` is declared
+ *  `UCLASS(BlueprintType, Blueprintable, …)`, `Blueprintable` is INHERITED by subclasses unless a
+ *  subclass says `NotBlueprintable`, and this class says no such thing — it is a bare `UCLASS()`.
+ *  ⇒ Right-click ⇒ Blueprint Class ⇒ `AFogVolume` SUCCEEDS TODAY, in one gesture, with no code
+ *  change and no review. The instant that child is saved with any of the five changed, a serialised
+ *  override exists and the full hazard is back.
+ *  ⛔ AND NOTHING WOULD WARN THE PERSON WHO DOES IT: `Config/` contains ZERO `CoreRedirects`
+ *  entries (measured 2026-09-05) and no test asserts on any of this.
+ *  ⚠️⚠️ WORSE THAN ORDINARY DORMANCY — IT IS DORMANT WITH A LIVE WIRE ATTACHED: `Find` matches
+ *  SUBCLASSES, and `FindOrSpawn` calls `Find` BEFORE it spawns. So a level-placed Blueprint child
+ *  would not merely sit there holding overrides — it would be RETURNED AS THE ONE AUTHORITATIVE
+ *  FOG-STATE ACTOR, its tuned five in force, and the native spawn would never happen.
+ *  ⭐ Note what the wrong name cost, since it is the reusable lesson: an auditor asking "does a BP
+ *  child exist yet?" would have found `BP_SiegeFog`, answered YES, and been wrong — in EITHER
+ *  direction. Believing the hazard already live invites a pointless redirect; believing it already
+ *  handled invites a free rename. ⛔ DO NOT DELETE THIS PARAGRAPH ON THE STRENGTH OF "no child
+ *  exists". That absence IS the dormancy; it is not a refutation of it.
+ *
+ *  ⚠️ THE BLUEPRINT SEAM — MEASURED 2026-09-05 under `TASK-841` (artist) AND RE-COUNTED HERE.
+ *  ⛔ A DATED FACT, ⛔ NOT A BAN: `AFogVolume` exposes NO `UFUNCTION` AT ALL. `Find`, `FindOrSpawn`,
+ *  `IsFogActive`, `IsFogPrevented`, `GetFogPreventionSecondsRemaining` and the rest are plain C++,
+ *  and `FSiegeFogStatics` is a non-reflected static library. (⛔ A grep for `UFUNCTION` in this
+ *  header returns ⛔ PROSE ONLY — this paragraph and the comment on `BrightSunWindowSeconds`
+ *  saying it is NOT one are among the hits — and ⛔ ZERO of them is a DECLARATION. ⛔ The zero is
+ *  the whole finding. ⛔ Stated as a PREDICATE rather than as a COUNT on purpose: the wording
+ *  that stood here before 2026-09-05 asserted a specific NUMBER of textual hits and was
+ *  ⛔ FALSIFIED BY THE ACT OF WRITING IT — the same diff added further occurrences, one of them
+ *  INSIDE the sentence itself (`qa/TASK-1051.md`; ⭐ `SC-§91`). ⛔ A count in a comment goes
+ *  stale on the next edit, ⛔ including its own; a predicate does not.)
+ *  ⇒ A BLUEPRINT CANNOT POLL FOG STATE TODAY, and C++ LIFETIME CONTROL — spawn the visual when fog
+ *  rises, destroy it when fog expires — IS THE ONLY AVAILABLE SEAM. Corroborated from the other
+ *  side: `list_variables` on `BP_SiegeFog` returned `[]`, so the visual holds no state either.
+ *  ⛔ Read this as a measurement carrying a date: if someone later adds a `UFUNCTION`, this sentence
+ *  EXPIRES rather than forbids. Until then it constrains every fog-visual row.
+ *
+ *  🚩 OPEN — ROUTED, ⛔ DELIBERATELY NOT SETTLED HERE (`FOG-§6a`, `TASK-1050` cl. 4): is the
+ *  TWO-OBJECT SPLIT (`AFogVolume` = C++ rules + lifetime · `BP_SiegeFog` = vendor visual) THE
+ *  DESIGN, or is a real Blueprint child of `AFogVolume` MISSING? ⛔ A comment is the wrong
+ *  instrument for that answer and this one does not pretend to give it — it is 🧑 Jonathan's / the
+ *  manager's call. ⚠️ Until it is made, the paragraph above tells you the hazard's status; it does
+ *  NOT tell you whether the current shape is intended.
+ *
+ *  `FSiegeFogTuning` is deliberately NOT a member of this actor — see
+ *  `handoffs/TASK-998-programmer.md` (its *"STILL NOT a serialized member"* section) for why,
+ *  and for what that keeps open. ⛔ Named rather than left as *"the handoff"* (`TASK-1053`'s
+ *  sweep): an unnamed cross-reference is a pointer the next reader cannot follow.
  */
 UCLASS()
 class GITCLAUDEUNREALTEST_API AFogVolume : public AActor
@@ -136,8 +252,14 @@ public:
 	/**
 	 *  THE WRITE DOOR — finds the one fog-state actor, creating it if this is the first cast.
 	 *
-	 *  ⛔ The ONLY `SpawnActor<AFogVolume>` in the project. Its caller is the `FogCover` arm of
-	 *  `USpellLibrary::ResolveSpell`. A null world, or a spawn the world refuses, answers nullptr
+	 *  ⛔ The ONLY `SpawnActor<AFogVolume>` in the project. ⛔ CALLERS: ⛔ EVERY arm of
+	 *  `USpellLibrary::ResolveSpell` that touches fog state comes through this door — today the
+	 *  `FogCover` arm and the `FogClear` (`BrightSun`) arm, the latter through the WRITE door
+	 *  ON PURPOSE because a pre-emptive `BrightSun` is legal with no fog up (`J-F17`) and may be
+	 *  the first cast of the match. ⛔ Corrected 2026-09-05 by `TASK-1053`'s SUBJECT-shaped sweep:
+	 *  this line named the `FogCover` arm ALONE — true when it was written, and it stopped being
+	 *  true when `TASK-982` landed the second arm. A null world, or a spawn the world refuses,
+	 *  answers nullptr
 	 *  and the card REFUSES (the caller refunds) rather than reporting a fog nobody can see —
 	 *  that refusal is `TASK-839`'s loud arm, INVERTED rather than deleted: it survives as the
 	 *  exceptional path instead of the only path.
@@ -241,10 +363,12 @@ public:
 	 *  single-click test cannot tell a live read from a cached one — the gate needs TWO refusals
 	 *  separated in time.
 	 *
-	 *  ⭐ CALLERS (both boarded, so this is not dead surface — `SC-§40` cl. 2): `TASK-989` (the
-	 *  `Fog`-during-prevention refusal, one value) and `TASK-991` (the sun-on-sun refusal, where
-	 *  it is the `X` of "would reduce prevention from X to Y"). ⛔ This row ships it with no caller
-	 *  of its own, on purpose.
+	 *  ⭐ CALLERS — ⛔ LIVE, ⛔ no longer merely boarded (`SC-§40` cl. 2): `TASK-989`'s
+	 *  `Fog`-during-prevention refusal, and `TASK-991`'s sun-on-sun refusal (where this is the `X`
+	 *  of "would reduce prevention from X to Y") — both in `SiegePlayerController.cpp`'s card-play
+	 *  path. ⛔ Corrected 2026-09-05 by `TASK-1053`'s SUBJECT-shaped sweep: this block said the
+	 *  callers were *"both boarded"* and that *"this row ships it with no caller of its own"* —
+	 *  ⛔ true of the ROW that wrote it, ⛔ false of the FILE a reader is holding.
 	 */
 	float GetFogPreventionSecondsRemaining() const;
 
@@ -315,7 +439,10 @@ protected:
 	 *  DELETED SO A READER WHO REMEMBERS THEM FINDS THEIR REPLACEMENT (`SC-§53` cl. 3): this block
 	 *  said ⛔ ~~*"every RANGED unit … cut to 609.6 uu from `2000` — a 69.5% reduction"*~~. All
 	 *  three parts were false. 🧑 `J-F28` raised the universal notice radius to `5000`
-	 *  (`SummonedUnit.h:895`), and ⭐⭐⭐ `FOG-§9.11` retired the notice==firing identity, so the
+	 *  (`ASummonedUnit::UnitEngagementRadiusUU` in `SummonedUnit.h` — ⛔ LOCATE BY TEXT; the old
+	 *  `SummonedUnit.h:895` pointer had drifted off the declaration by 2026-09-05, so `TASK-1053`'s
+	 *  sweep replaced the line number with the symbol), and ⭐⭐⭐ `FOG-§9.11` retired the
+	 *  notice==firing identity, so the
 	 *  cut applies to every class rather than to the ranged ones. `69.5%` is `1 − 609.6 / 2000`,
 	 *  i.e. the arithmetic of the retired default. Authority: ⛔ **`qa/TASK-1014.md`** Ruling B.
 	 *  ⛔⛔⛔ AND THE TRAP, RECORDED BECAUSE IT IS THE DANGEROUS PART: `qa/TASK-1011.md` NIT-2
@@ -401,9 +528,11 @@ protected:
 	 *  ⛔ EARNS the height, exactly as he earns the elevation DAMAGE bonus there.
 	 *
 	 *  ⛔ `0` IS NOT A GUESS AND MUST NOT BE "TIDIED" — a bare `0.f` reads as a placeholder, so the
-	 *  derivation is quoted here: `CONVENTIONS:131` pins `SM_ArenaTerrain` as *"placed at (0,0,0)
-	 *  it reproduces the old ArenaGround slab's WALK SURFACE at Z=0"*. That walk surface IS the
-	 *  flat grass terrain of his sentence.
+	 *  derivation is quoted here: `CONVENTIONS.md`'s ⛔ **Terrain** bullet (⛔ LOCATE BY TEXT —
+	 *  the old `CONVENTIONS:131` pointer had already drifted off its line by 2026-09-05, so
+	 *  `TASK-1053`'s sweep replaced the line number with the anchor) pins `SM_ArenaTerrain` as
+	 *  *"placed at (0,0,0) it reproduces the old ArenaGround slab's WALK SURFACE at Z=0"*. That
+	 *  walk surface IS the flat grass terrain of his sentence.
 	 *
 	 *  ⭐⭐ ONE CONSTANT, TWO CONSUMERS, AND THE SECOND ONE IS AN **ASSERTION** RATHER THAN A CALL
 	 *  (`FOG-§10.7` (D) rules 3 + 4). His sentence joined two numbers that were never joined:

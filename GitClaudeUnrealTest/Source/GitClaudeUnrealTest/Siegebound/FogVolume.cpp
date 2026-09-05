@@ -37,10 +37,27 @@ AFogVolume* AFogVolume::Find(const UWorld* World)
 		AFogVolume* const Volume = *It;
 		if (IsValid(Volume))
 		{
-			// Exactly one instance exists by construction — FindOrSpawn is the only spawn site
-			// in the project and it looks before it creates. TActorIterator's order is stable for
-			// a fixed world, so a level that ALSO placed a BP_SiegeFog answers the same actor on
-			// every call rather than churning between two.
+			// Exactly one instance exists by construction — FindOrSpawn is the ONLY spawn site in the
+			// project and it LOOKS BEFORE IT CREATES, so the first valid hit is the whole answer.
+			//
+			// ⛔⛔ CORRECTED 2026-09-05 (TASK-1053) — THE INVARIANT ABOVE IS TRUE; THE GROUND THIS
+			// COMMENT USED TO GIVE FOR IT WAS FALSE. It said TActorIterator's order is stable "so a
+			// level that ALSO placed a BP_SiegeFog answers the same actor on every call rather than
+			// churning between two" — i.e. it TIE-BROKE BETWEEN TWO CANDIDATES IN A WORLD WHERE THE
+			// SECOND ONE CANNOT EXIST. This loop is TActorIterator<AFogVolume>, and BP_SiegeFog's
+			// parent is BP_FogArea_C (read back live under TASK-1043, committed ef2c901) ⇒ it is NOT
+			// an AFogVolume subclass and THIS ITERATOR NEVER SEES IT. ⛔ There is no tie to break —
+			// not a tie that happens to break stably.
+			//
+			// ⚠️⚠️ WHAT WOULD COMPETE, AND IT IS THE HALF WORTH READING: a Blueprint child of
+			// AFogVolume ITSELF. TActorIterator matches SUBCLASSES, and FindOrSpawn calls Find BEFORE
+			// it spawns ⇒ a level-placed child would be RETURNED FROM HERE AS THE ONE AUTHORITATIVE
+			// FOG-STATE ACTOR, with its own overrides of the five EditDefaultsOnly tunables IN FORCE,
+			// and the native spawn in FindOrSpawn would never run.
+			// ⛔ The AUTHORITATIVE statement of the parent fact and of the DORMANT-with-a-live-wire
+			// ruling over that hazard is the `CoreRedirects` paragraph in the FogVolume.h class doc —
+			// read it THERE rather than re-deriving it here, and ⛔ IF THIS COMMENT AND THAT PARAGRAPH
+			// EVER DISAGREE, THE HEADER WINS.
 			return Volume;
 		}
 	}
