@@ -356,54 +356,44 @@ namespace SiegeboundCardGlossary
 
 		// HOW it is delivered decides HOW its area reads, so resolve it first — through
 		// the ONE delivery brain (it owns the sparse Auto default), never re-derived
-		// here. The resolver only BRANCHES on delivery for the two area effects; the
-		// others are reticle-placed whatever their cell says, so a line reading is only
-		// ever taken for an effect that can actually be delivered as one.
+		// here.
 		//
-		// ⚠️ bLineCapableEffect NAMES EFFECTS, but it is NOT the blacklist this row came
-		// to kill, and the difference is worth stating because they LOOK identical. It
-		// MIRRORS the resolver's own branch set (USpellLibrary::ResolveSpell branches on
-		// delivery under `case AoEDamage` and `case Freeze` and nowhere else), and it
-		// fails CLOSED: a new effect is not line-capable, so it can only ever be
-		// described as ground-placed or as nothing. The guard below failed OPEN — a new
-		// effect silently claimed a reticle it did not have.
+		// ⛔ COLLAPSED BY TASK-1018, AND THE EQUIVALENCE IS EXACT RATHER THAN
+		// APPROXIMATE — say it here because it looks like a behaviour change and is not.
+		// This used to be `bLineCapableEffect && ResolvedDelivery == HeroLine`, where
+		// `bLineCapableEffect` was `SpellEffect == AoEDamage || == Freeze` (a mirror of
+		// USpellLibrary::ResolveSpell's own branch set). ⭐ THE ONLY TWO PLACES THIS
+		// FLAG IS READ ARE `case ESpellEffect::AoEDamage:` AND `case ESpellEffect::Freeze:`
+		// BELOW — inside which `bLineCapableEffect` is TRUE BY CONSTRUCTION, since the
+		// switch has already established the effect. ⇒ the conjunction was a tautology at
+		// both of its use sites, and dropping it changes no output for any row.
+		// ⇒ WHY IT MATTERS: the mirror now lives in ONE place
+		// (USpellLibrary::SpellRequiresAiming), so it cannot drift between two files, and
+		// what remains here is exactly USpellLibrary::IsLineDeliverySpell's question —
+		// the same question ASiegePlayerController's targeting aim pass asks.
 		const ESpellDelivery ResolvedDelivery = USpellLibrary::GetEffectiveDelivery(Row);
-		const bool bLineCapableEffect =
-			(Row.SpellEffect == ESpellEffect::AoEDamage || Row.SpellEffect == ESpellEffect::Freeze);
-		const bool bDeliversAsLine = bLineCapableEffect && ResolvedDelivery == ESpellDelivery::HeroLine;
+		const bool bDeliversAsLine = (ResolvedDelivery == ESpellDelivery::HeroLine);
 
-		// ⛔⛔ THE AIM GATE — DERIVED, NOT LISTED. It replaces
-		// `if (Row.SpellEffect != ESpellEffect::GoldSteal)`, which was correct only until
-		// the next value and had already failed TWICE, once per new no-reticle spell.
+		// ⛔⛔ THE AIM GATE — DERIVED, NOT LISTED, and as of TASK-1018 it is CALLED
+		// rather than spelled out here. The three local bools that used to live at this
+		// spot moved VERBATIM into USpellLibrary::SpellRequiresAiming; nothing about the
+		// derivation changed, and the header there carries the full rationale (why it is
+		// not `ResolvedDelivery == GroundCircle`, why ESpellDelivery cannot answer the
+		// question alone, and the cell-then-aim-evidence precedence order).
 		//
-		// ⛔ AND IT IS NOT `ResolvedDelivery == GroundCircle` EITHER, WHICH IS THE TRAP
-		// SITTING RIGHT NEXT TO THE FIX: GetEffectiveDelivery answers a DIFFERENT
-		// question. Its `Auto` arm returns GroundCircle for every effect that is not
-		// AoEDamage/Freeze — GoldSteal, FogCover and FogClear included — so a guard
-		// written on it would reprint the very sentence this row is deleting. Delivery
-		// says WHICH aiming sentence; it cannot say WHETHER there is one, because
-		// ESpellDelivery has no value meaning "no aim at all".
+		// ⛔⛔ WHY IT MOVED, IN ONE SENTENCE, BECAUSE THE NEXT READER WILL WANT TO INLINE
+		// IT BACK: ASiegePlayerController's card-play routing asks THIS EXACT QUESTION to
+		// decide between targeting mode and an instant resolve, and it used to answer it
+		// with its own hard-coded `== ESpellEffect::GoldSteal`. ⚖️ TWO DERIVATIONS OF ONE
+		// FACT DO NOT STAY EQUAL — the divergence would present as this panel and the
+		// game DISAGREEING, i.e. as two bugs instead of one. ⇒ one definition, two
+		// consumers. ⛔ Do not re-inline it, and do not "simplify" it to a delivery
+		// comparison that looks equivalent.
 		//
-		// ⇒ THE DERIVATION, in the same precedence order GetEffectiveDelivery itself
-		// uses (the cell first, the row's own data second):
-		//   1. an AUTHORED SpellDelivery cell is the per-card override lever this column
-		//      exists to be — an author who pins a delivery has DECLARED an aim, and the
-		//      glossary agrees with the data rather than second-guessing it;
-		//   2. otherwise the cell is `Auto` (every row but Fireball and FrostNova), and
-		//      the row's own aim evidence answers it: a ground-placed spell resolves
-		//      INSIDE AoERadius, so a positive radius IS the reticle's footprint, and a
-		//      zero radius means there is nothing on the ground to place.
 		// Measured against the shipped roster, by CardID: Lightning (700) and BattleCry
-		// (400) keep the reticle line; Pickpocket (0), Fog (0) and BrightSun lose it —
-		// Pickpocket by CONSTRUCTION rather than by being named, and BrightSun before its
-		// card row exists at all.
-		//
-		// ⚖️ IT FAILS CLOSED, WHICH IS THE POINT: an effect this derivation cannot place
-		// gets NO aiming line — a gap, never a lie — and a new global spell is correct
-		// with nobody remembering to come here.
-		const bool bDeliveryAuthored = (Row.SpellDelivery != ESpellDelivery::Auto);
-		const bool bRowCarriesAnAimPoint = (Row.AoERadius > 0.f);
-		const bool bAimed = bDeliversAsLine || bDeliveryAuthored || bRowCarriesAnAimPoint;
+		// (400) keep the reticle line; Pickpocket (0), Fog (0) and BrightSun (0) lose it
+		// — Pickpocket by CONSTRUCTION rather than by being named.
+		const bool bAimed = USpellLibrary::SpellRequiresAiming(Row);
 
 		// Each effect prints ONLY when the row carries the magnitudes that effect needs —
 		// the same well-formedness the resolver demands before it will resolve at all, so
@@ -502,6 +492,20 @@ namespace SiegeboundCardGlossary
 		// The aiming line, from the same resolved delivery — printed only for a row that
 		// is actually AIMED (see the derivation above). A spell that resolves globally
 		// gets NO delivery line rather than a wrong one.
+		//
+		// ⛔⛔ THE ONE-LINE REPAIR NAMED IN `qa/TASK-1013.md` WARN-1, MADE BY TASK-1018 AS
+		// THE SECOND CONSUMER OF THIS DERIVATION. The selector used to carry an extra
+		// LINE-CAPABLE-EFFECT conjunct, and it was wrong for exactly one shape: an
+		// AUTHORED `HeroLine` cell on a non-line-capable effect printed the GROUND-CIRCLE
+		// sentence — ⚖️ THE COMPOSER CONTRADICTING THE CELL IN PRECISELY THE CASE WHOSE
+		// WHOLE RATIONALE IS "AGREE WITH THE DATA". ⛔ Unreachable by shipped data today
+		// (no row authors that combination), which is exactly why it was worth closing
+		// before card authoring turned the lock: an edge that only DATA can reach is a
+		// defect with a data-shaped lock on it, not a hypothetical.
+		// ⭐ AND IT NOW AGREES WITH THE GAME AS WELL AS WITH THE CELL: this is
+		// `USpellLibrary::IsLineDeliverySpell`'s question, the same one
+		// ASiegePlayerController's targeting aim pass gates on — so the sentence the
+		// player reads and the confirm behaviour they get cannot disagree for any row.
 		if (bAimed)
 		{
 			OutLines.Add(bDeliversAsLine ? DeliveryHeroLine : DeliveryGroundCircle);

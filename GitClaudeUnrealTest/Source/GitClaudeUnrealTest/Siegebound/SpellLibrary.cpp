@@ -805,3 +805,46 @@ bool USpellLibrary::IsLineDeliverySpell(const FCardRow& Row)
 {
 	return GetEffectiveDelivery(Row) == ESpellDelivery::HeroLine;
 }
+
+// ---------------------------------------------------------------------------
+// ⭐⭐ THE AIM PREDICATE — ⛔ MOVED HERE BY TASK-1018, ⛔ NOT WRITTEN HERE.
+//
+// TASK-999 derived this inside DeckBuilderWidget.cpp's spell composer, as three
+// local bools feeding a local `bAimed`. It was CORRECT and it is reproduced
+// below term for term, name for name, so the two can be diffed character for
+// character — the ONLY edit is that a local is now a return value.
+//
+// ⛔⛔ WHY IT MOVED AT ALL, AND IT IS THE WHOLE POINT OF TASK-1018: the routing
+// in ASiegePlayerController asks the SAME question the glossary asks, and it was
+// answering it with a hard-coded `== ESpellEffect::GoldSteal`. Re-deriving the
+// answer there would have put TWO derivations of "has a reticle" in the tree,
+// and ⚖️ TWO DERIVATIONS OF ONE FACT DO NOT STAY EQUAL — the divergence would
+// present as the deck panel and the game DISAGREEING, which reads as two bugs
+// instead of one. ⇒ ONE definition, TWO consumers, and the composer keeps using
+// it exactly as before.
+//
+// ⛔ It is deliberately here rather than in DeckBuilderWidget.cpp: the routing
+// must not depend on a widget translation unit, and this is already the ONE
+// delivery brain (GetEffectiveDelivery / IsLineDeliverySpell live directly
+// above). A caller that needs the aim answer includes SpellLibrary.h, which both
+// consumers already did.
+// ---------------------------------------------------------------------------
+bool USpellLibrary::SpellRequiresAiming(const FCardRow& Row)
+{
+	// The line term. ⛔ bLineCapableEffect NAMES EFFECTS but is NOT a blacklist:
+	// it MIRRORS this file's own branch set — ResolveSpell branches on delivery
+	// under `case AoEDamage` and `case Freeze` and nowhere else — and it fails
+	// CLOSED, since a new effect is simply not line-capable. The banned guard
+	// failed OPEN: a new effect silently claimed a property it did not have.
+	const ESpellDelivery ResolvedDelivery = GetEffectiveDelivery(Row);
+	const bool bLineCapableEffect =
+		(Row.SpellEffect == ESpellEffect::AoEDamage || Row.SpellEffect == ESpellEffect::Freeze);
+	const bool bDeliversAsLine = bLineCapableEffect && ResolvedDelivery == ESpellDelivery::HeroLine;
+
+	// The cell first (an authored delivery is a DECLARED aim), then the row's own
+	// aim evidence (a positive radius IS the reticle's footprint).
+	const bool bDeliveryAuthored = (Row.SpellDelivery != ESpellDelivery::Auto);
+	const bool bRowCarriesAnAimPoint = (Row.AoERadius > 0.f);
+
+	return bDeliversAsLine || bDeliveryAuthored || bRowCarriesAnAimPoint;
+}

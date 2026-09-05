@@ -137,4 +137,45 @@ public:
 	 *  keep the M5 confirm gate byte-for-byte.
 	 */
 	static bool IsLineDeliverySpell(const FCardRow& Row);
+
+	/**
+	 *  ⭐⭐ THE ONE DERIVATION OF *"DOES THIS SPELL HAVE A RETICLE?"* IN THE WHOLE
+	 *  TREE (TASK-999 authored it, TASK-1018 MOVED it here). True when the row is
+	 *  AIMED — the deck-builder prints an aiming sentence for it and
+	 *  ASiegePlayerController routes it into TARGETING mode. False means the spell
+	 *  resolves INSTANTLY, with no reticle and no cursor: the `Pickpocket`
+	 *  precedent (M5 ruling 7), which `Fog` and `BrightSun` now share
+	 *  (`FOG-§10.1`: "NO RETICLE").
+	 *
+	 *  ⛔⛔ IT IS NOT `GetEffectiveDelivery(Row) == GroundCircle`, AND THAT TRAP
+	 *  SITS RIGHT NEXT TO THIS FUNCTION: the `Auto` arm above returns
+	 *  `GroundCircle` for EVERY effect that is not AoEDamage/Freeze — GoldSteal,
+	 *  FogCover AND FogClear included — so a guard written that way would claim a
+	 *  reticle for all three. ⭐ THE STRUCTURAL REASON: `ESpellDelivery` has no
+	 *  value meaning "no aim at all". Delivery says WHICH aiming sentence; it can
+	 *  never say WHETHER there is one. That is why this is a separate predicate
+	 *  rather than a comparison (`SC-§75`(B): when no field can express the
+	 *  negative answer, the honest repair is a NEW predicate).
+	 *
+	 *  ⛔ AND IT IS NOT A BLACKLIST. The shipped `!= ESpellEffect::GoldSteal`
+	 *  guard was correct only until the next value and had ALREADY FAILED TWICE,
+	 *  once per new no-reticle spell. This derivation is correct for a spell whose
+	 *  enum value does not exist yet, and it fails CLOSED — an effect it cannot
+	 *  place gets NO aim, which is a gap rather than a lie.
+	 *
+	 *  The derivation, in the same precedence order GetEffectiveDelivery uses:
+	 *    1. an AUTHORED SpellDelivery cell — the per-card override lever the
+	 *       column exists to be: an author who pins a delivery has DECLARED an
+	 *       aim, and we agree with the data rather than second-guessing it;
+	 *    2. otherwise the cell is `Auto`, and the row's own AIM EVIDENCE answers:
+	 *       a ground-placed spell resolves INSIDE AoERadius, so a positive radius
+	 *       IS the reticle's footprint and a zero radius means there is nothing on
+	 *       the ground to place;
+	 *    3. plus the line case, for a line spell whose corridor is its own rather
+	 *       than the row's radius.
+	 *  Pure row math — safe on any row, spell or not (a non-spell row simply
+	 *  answers for its own columns; every caller gates on CardType/SpellEffect
+	 *  before it ever asks).
+	 */
+	static bool SpellRequiresAiming(const FCardRow& Row);
 };

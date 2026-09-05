@@ -503,6 +503,50 @@ bool FSiegeCardGlossaryAuthoredDeliveryWinsTest::RunTest(const FString& Paramete
 		TEXT("other shows it is not being ignored in favour of printing the sentence regardless."),
 		LinesContain(SparseLines, ReticleProbe));
 
+	// ═══════════════════════════════════════════════════════════════════════════════
+	// ⭐⭐ THE OTHER AUTHORED CELL — ADDED BY ⭐ TASK-1018, WHICH INHERITED THIS EDGE
+	// FROM `qa/TASK-1013.md` WARN-1 AS THE SECOND CONSUMER OF THE DERIVATION.
+	//
+	// ⛔ THE DEFECT, MEASURED BEFORE THE FIX: an AUTHORED `HeroLine` cell on a
+	// NON-line-capable effect printed the GROUND-CIRCLE sentence. The selector carried
+	// an extra "…and the effect is AoEDamage/Freeze" conjunct, so the cell said one
+	// thing and the composer said another — ⚖️ THE COMPOSER CONTRADICTING THE CELL IN
+	// PRECISELY THE CASE WHOSE WHOLE RATIONALE, ASSERTED BY THE ROWS ABOVE, IS "AGREE
+	// WITH THE DATA". The rows above could not see it: they author `GroundCircle`,
+	// which happens to be the sentence the broken selector printed anyway.
+	//
+	// ⛔ IT IS UNREACHABLE BY SHIPPED DATA (no row authors this combination) AND THAT
+	// IS EXACTLY WHY IT IS PINNED: ⚖️ AN EDGE UNREACHABLE BY TODAY'S DATA IS NOT A
+	// HYPOTHETICAL — IT IS A DEFECT WITH A DATA-SHAPED LOCK ON IT, AND CARD AUTHORING
+	// IS THE KEY. One `SpellDelivery` cell turns it live.
+	//
+	// ⭐ AND THE FIX AGREES WITH THE GAME, NOT ONLY WITH THE CELL: the selector is now
+	// `USpellLibrary::IsLineDeliverySpell`'s question, which is what
+	// ASiegePlayerController's targeting aim pass gates on — so this sentence and the
+	// confirm behaviour the player actually gets cannot disagree for any row.
+	// ═══════════════════════════════════════════════════════════════════════════════
+	FCardRow AuthoredLineRow;
+	AuthoredLineRow.CardType = ECardType::Spell;
+	AuthoredLineRow.SpellEffect = ESpellEffect::FogCover; // ⛔ deliberately NOT line-capable
+	AuthoredLineRow.SpellDelivery = ESpellDelivery::HeroLine;
+	AuthoredLineRow.AoERadius = 0.f;
+
+	TArray<FString> AuthoredLineLines;
+	SiegeboundCardGlossary::AppendSpellLines(AuthoredLineRow, AuthoredLineLines);
+
+	TestTrue(
+		TEXT("⭐⭐ An AUTHORED `HeroLine` cell prints the HERO-LINE sentence even on a non-line-capable effect — the ")
+		TEXT("composer agrees with the column, which is the same rule the `GroundCircle` rows above assert. ⛔ Before ")
+		TEXT("TASK-1018 this printed the GROUND-CIRCLE sentence instead: the ONE case where the composer contradicted ")
+		TEXT("the cell, in the derivation whose whole justification is \"agree with the data\"."),
+		LinesContain(AuthoredLineLines, HeroLineProbe));
+
+	TestFalse(
+		TEXT("⛔ PAIRED CONTROL for the row above, and it is the half that actually goes RED on the old behaviour: the ")
+		TEXT("GROUND-CIRCLE sentence is ABSENT. ⛔ Without it, a composer that printed BOTH sentences would satisfy the ")
+		TEXT("assertion above while still shipping the contradiction."),
+		LinesContain(AuthoredLineLines, ReticleProbe));
+
 	return true;
 }
 

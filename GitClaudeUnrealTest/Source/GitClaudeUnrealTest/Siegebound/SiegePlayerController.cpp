@@ -1160,13 +1160,47 @@ void ASiegePlayerController::PlayHandSlot(int32 Slot)
 		break;
 
 	case ECardType::Spell:
-		// M5 spell routing (GDD §3.11, TASK-100): GoldSteal resolves INSTANTLY on
-		// play — no reticle for a global effect (manager ruling 7; recorded §3.5
-		// deviation, CardType stays Spell). Every other SpellEffect enters
-		// TARGETING mode, placement mode's sibling: the card leaves the hand only
-		// at LMB CONFIRM (M2 law), so cancel costs nothing. Affordability was
-		// pre-checked above; SiegeState is non-null here (checked above).
-		if (Row->SpellEffect == ESpellEffect::GoldSteal)
+		// ⭐⭐⭐ M5 spell routing (GDD §3.11, TASK-100), ⛔ REPAIRED BY TASK-1018 — the
+		// gate is now DERIVED (`SC-§75`(B)) instead of naming one effect.
+		//
+		// 📌 Jonathan, verbatim (2026-09-04): *"bright sun and fog seemed to have a
+		// placement circle for them, which is totally unnecessary, playing fog or bright
+		// sun should be instant and not have any placement circle (like the pickpocket
+		// card)."*
+		//
+		// ⛔⛔ WHAT THIS LINE USED TO BE, AND WHY IT MUST NEVER GO BACK:
+		// `if (Row->SpellEffect == ESpellEffect::GoldSteal)`. A BLACKLIST OF ONE. It was
+		// correct only until the next global spell and it FAILS OPEN — a new no-reticle
+		// effect silently gets a reticle — and it had ALREADY FAILED TWICE by the time he
+		// saw it, once for `Fog` and once for `BrightSun`. ⛔ ADDING THE TWO FOG EFFECTS
+		// TO IT WOULD HAVE BEEN THE SAME DEFECT WITH A LONGER LIST, and it would
+		// GUARANTEE a third occurrence.
+		//
+		// ⛔⛔ AND IT IS NOT `GetEffectiveDelivery(Row) == GroundCircle` EITHER: that
+		// arm returns GroundCircle for GoldSteal, FogCover AND FogClear, so the "obvious"
+		// derivation would have printed a reticle for THREE cards — strictly worse than
+		// the blacklist, which at least got `Pickpocket` right. `ESpellDelivery` has no
+		// value meaning "no aim at all" (see USpellLibrary::SpellRequiresAiming).
+		//
+		// ⛔ THE PREDICATE IS TASK-999's, CONSUMED, ⛔ NOT RE-DERIVED. The deck builder's
+		// glossary asks the SAME question to decide whether to print an aiming sentence.
+		// ⚖️ A SECOND DERIVATION WOULD DIVERGE, and the divergence would present as the
+		// panel and the game disagreeing — two bugs where there was one.
+		//
+		// ⇒ NOT aimed ⇒ resolve INSTANTLY on play, no reticle, no cursor (the
+		// `Pickpocket` precedent, manager ruling 7; recorded §3.5 deviation, CardType
+		// stays Spell) — today `Pickpocket`, `Fog` and `BrightSun`, and tomorrow's global
+		// spell with nobody remembering to come here. Aimed ⇒ TARGETING mode, placement
+		// mode's sibling: the card leaves the hand only at LMB CONFIRM (M2 law), so
+		// cancel costs nothing.
+		//
+		// ⛔ BOTH REFUSAL GATES ABOVE ARE UNAFFECTED, AND THAT IS BY DESIGN, NOT BY LUCK:
+		// the `FogCover` prevention refusal and the `FogClear` sun-on-sun refusal both
+		// gate on `Row->SpellEffect` and both `return` BEFORE this switch is reached, so
+		// they fire identically on either side of this branch (`qa/TASK-990.md` verified
+		// that independence at source). Affordability was pre-checked above; SiegeState
+		// is non-null here (checked above).
+		if (!USpellLibrary::SpellRequiresAiming(*Row))
 		{
 			ResolveSpellInstant(Slot, CardID, *Row, *SiegeState);
 		}
@@ -3236,12 +3270,26 @@ void ASiegePlayerController::EnterTargetingMode(FName CardID)
 		return;
 	}
 
-	// GoldSteal never targets (ruling 7): a direct call with a GoldSteal card
-	// reroutes to the instant resolve — hand-less on this path (INDEX_NONE skips
-	// the draw step; PlayHandSlot routes hand plays before ever reaching here).
-	// Placed BEFORE the hero-dead gate so BOTH GoldSteal entries behave alike:
+	// ⛔ AN UNAIMED SPELL NEVER TARGETS (ruling 7; `FOG-§10.1`): a direct call with
+	// one reroutes to the instant resolve — hand-less on this path (INDEX_NONE
+	// skips the draw step; PlayHandSlot routes hand plays before ever reaching
+	// here). Placed BEFORE the hero-dead gate so BOTH entries behave alike:
 	// instants are not hero-gated (the Masons/instant-play precedent).
-	if (Row->SpellEffect == ESpellEffect::GoldSteal)
+	//
+	// ⛔⛔ SITE 2 OF 2 OF THE SAME BLACKLIST, REPAIRED IN THE SAME DIFF AS SITE 1
+	// (TASK-1018). This read `if (Row->SpellEffect == ESpellEffect::GoldSteal)` —
+	// a SECOND copy of PlayHandSlot's routing question, which is why fixing only
+	// the other one would have left a card that is instant from the hand and
+	// targeted from a direct call. ⛔ It asks the ONE predicate now, exactly as its
+	// sibling does; ⛔ do not re-spell it here.
+	//
+	// ✅ RULED (board TASK-1018 item (2b)): the hero-dead gate below applies to
+	// TARGETING MODE, so once `Fog`/`BrightSun` take this early return it never
+	// applies to them and AFogVolume's DELIBERATE no-living-hero degradation
+	// governs instead (`J-F15` samples height at cast; a dead hero has no height,
+	// so the window is the BASE one). ⛔ That is the intended behaviour, not a
+	// side effect: `BrightSun` is playable with a dead hero for the base window.
+	if (!USpellLibrary::SpellRequiresAiming(*Row))
 	{
 		ResolveSpellInstant(INDEX_NONE, CardID, *Row, *SiegeState);
 		return;
@@ -4660,11 +4708,13 @@ void ASiegePlayerController::BroadcastCommandPrompt(const FString& Prompt)
 
 void ASiegePlayerController::ResolveSpellInstant(int32 Slot, FName CardID, const FCardRow& Row, ASiegePlayerState& SiegeState)
 {
-	// GoldSteal resolves INSTANTLY on play (M5 ruling 7 — no reticle for a
-	// global effect; recorded §3.5 deviation, CardType stays Spell). The
-	// ruling-8 confirm shape applied at PLAY time: deduct THEN resolve,
-	// refusal-safe — a resolver false FULLY refunds (§3.0 net-zero) and keeps
-	// the card in hand.
+	// An UNAIMED spell resolves INSTANTLY on play (M5 ruling 7 — no reticle for a
+	// global effect; recorded §3.5 deviation, CardType stays Spell). ⛔ WIDENED BY
+	// TASK-1018 from "GoldSteal" to the derived answer: the two callers gate on
+	// `USpellLibrary::SpellRequiresAiming`, so `Pickpocket`, `Fog` and `BrightSun`
+	// all arrive here today (`FOG-§10.1`: "NO RETICLE"). The ruling-8 confirm shape
+	// applied at PLAY time: deduct THEN resolve, refusal-safe — a resolver false
+	// FULLY refunds (§3.0 net-zero) and keeps the card in hand.
 	UWorld* World = GetWorld();
 	if (!World)
 	{
@@ -4690,11 +4740,28 @@ void ASiegePlayerController::ResolveSpellInstant(int32 Slot, FName CardID, const
 	const AHeroCharacter* Hero = Cast<AHeroCharacter>(GetPawn());
 	const ETeamId CasterTeam = IsValid(Hero) ? Hero->GetTeamId() : ETeamId::Blue;
 
-	// TargetPoint is only the VFX anchor for a global GoldSteal (SpellLibrary
+	// TargetPoint is only the VFX anchor for an UNAIMED, global spell (SpellLibrary
 	// contract) — the hero's feet when we have one, world origin otherwise.
-	// TASK-236 call-site flag: only GoldSteal reaches this instant path (its
-	// delivery is neither GroundCircle nor HeroLine — the aim-point semantics
-	// shift does not apply here).
+	//
+	// ⛔⛔ SITE 3 OF 3 (TASK-1018) — AND IT IS A COMMENT, WHICH IS EXACTLY WHY IT IS
+	// PART OF THE FIX. It used to assert that GoldSteal was the sole effect able to
+	// reach this instant path. ⛔ The old wording is DELIBERATELY NOT QUOTED here:
+	// Tests/SiegeSpellRoutingTest.cpp asserts that sentence's ABSENCE with a
+	// COMMENT-AWARE scanner (a code-only one is blind to a lie that lives in prose),
+	// so reproducing it — even to explain it — would re-fail the very gate that
+	// guards it. ⛔ Do not paste it back in.
+	// That sentence was true when it was written and the two routing repairs above
+	// make it FALSE: `Fog` (FogCover) and `BrightSun` (FogClear) reach here now, and
+	// so will every future spell the aim predicate answers `false` for. ⚖️ REPAIRING
+	// THE CODE AND LEAVING THE PROSE WOULD SHIP A CONFIDENT EXPLANATION OF BEHAVIOUR
+	// THAT NO LONGER EXISTS — the stale-prose class (`SC-§77`) arriving inside the
+	// fix for a different defect.
+	//
+	// TASK-236 call-site flag, restated correctly: every caller of this path is a
+	// spell for which `USpellLibrary::SpellRequiresAiming` is FALSE, so there is no
+	// aim point to shift — the resolver's FogCover, FogClear and GoldSteal arms all
+	// state in place that TargetPoint plays no gameplay role for them. The anchor
+	// below feeds the ruling-11 VFX spawn and the world one-shot, nothing else.
 	const FVector AnchorPoint = IsValid(Hero) ? Hero->GetActorLocation() : FVector::ZeroVector;
 
 	if (!USpellLibrary::ResolveSpell(World, CardID, Row, CasterTeam, AnchorPoint))
@@ -4703,6 +4770,15 @@ void ASiegePlayerController::ResolveSpellInstant(int32 Slot, FName CardID, const
 		// has no Red economy to steal from, so the play refuses net-zero with
 		// the card still in hand. (A 0-gold victim, by contrast, RESOLVES for
 		// min(GoldSteal, 0) = 0 — the spell is spent, per the resolver contract.)
+		// ⛔ TASK-1018: this is now ALSO the fog cards' fizzle site, and it is a
+		// DIFFERENT call site from the targeted confirm's refund — the fog arms
+		// return false for real, reachable reasons (no AFogVolume could be spawned;
+		// `RaiseFog` refused under a live prevention window, J-F19; `ApplyBrightSun`
+		// refused a window-shortening cast, J-F18), so both refunds stay live and
+		// both keep the card in hand. The entry gates above catch the two common
+		// cases FIRST with a specific, numbered message; this is the backstop that
+		// still refunds net-zero when they do not (the bot's and the hand-less
+		// direct entry's only protection).
 		// The >0 guard only skips the no-op refund of a 0-cost card (AddGold
 		// refuses non-positive grants with a log) — net-zero holds either way.
 		if (Row.Cost > 0)
@@ -4721,7 +4797,9 @@ void ASiegePlayerController::ResolveSpellInstant(int32 Slot, FName CardID, const
 	USiegeFeedbackLibrary::PlayWorldSound(this, SpellCastSoundPath, AnchorPoint);
 
 	// hand step (§3.4): resolution IS the confirm for an instant — discard +
-	// redraw. INDEX_NONE = a direct hand-less EnterTargetingMode(GoldSteal) call.
+	// redraw. INDEX_NONE = a direct hand-less EnterTargetingMode call with an
+	// unaimed spell (TASK-1018 widened the routing; the slot semantics are
+	// unchanged).
 	if (Slot != INDEX_NONE)
 	{
 		ConfirmInstantDraw(Slot, CardID);

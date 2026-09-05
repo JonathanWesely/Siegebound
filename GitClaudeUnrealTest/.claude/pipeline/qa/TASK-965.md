@@ -1,305 +1,365 @@
-# QA Report — TASK-965 — THE GATE OVER THE OWED COMPILED RED
+# QA Report — TASK-965 (gate over TASK-964)
 
-**Verdict: ✅ PASS — ⛔ 0 BLOCKERS** · 4 WARN · 6 NIT
-**Gates:** `TASK-964` ⛔ **ALONE** (`SC-§29` ledger at §9)
-**Subject:** `Source/GitClaudeUnrealTest/Siegebound/Tests/SiegeCardRosterTest.cpp` (MODIFIED, 817 lines, 2 test declarations, sole deliverable) + `handoffs/TASK-964-programmer.md`
-**Date:** 2026-09-03 · qa-reviewer · read-only
-
----
-
-## 0. ⛔⛔ WHAT I COULD AND COULD NOT EXECUTE — ⛔ ABOVE THE VERDICT (`TL-§5c` cl. 5(a))
-
-⛔ **I HAVE NO SHELL, NO GIT, NO COMPILE, NO EDITOR AND NO MCP.** My tool set is read/grep/glob/write + Slack. ⛔ **I did not compile this file, I did not run the suite, and I could not run `git status` or `sha256sum`.** Reporting a green I did not watch, or a `git status` I did not run, would be this batch's own defect one level up.
-
-⚠️ **`SC-§55` APPLIED TO MYSELF, FIRST THING.** My environment preamble carries a `gitStatus` block listing **Castle-era files with `A ` staged entries** (`MI_Castle_Interior_*`, `Castle.fbx`, `TASK-626`/`629`–`634` handoffs). ⛔ **It is stale, it is not this batch, and I did not use one byte of it.** Every zero below is from an instrument I ran at my own instant, with its own positive control.
-
-| | what it is | who owes it |
-|---|---|---|
-| ✅ **RE-DERIVED BY ME** | the `default:` census + its positive control · the `-Wswitch` site census · the `/Game/Blueprints` copy census · the `AddError` census · the declaration census (worktree endpoint) · the synthetic's absence in `DT_Cards` + its positive control · the substring hazard · the 22-row join · the git-root location · the Witch digest in the LFS object store | this report |
-| ⛔ **DECLARED (the author's, unwatched by me)** | `git status` over `Source/` and `Content/` · the `09b9b50` endpoint of the delta · "the include block is byte-identical" · the shell-mirror transcript | ⭐ **`TASK-961`** |
-| ⛔ **STILL OWED BY ANYONE** | ⛔ **a compiled RED BAR** | ⭐ **`TASK-961`** — §4 |
+**Verdict: PASS — 0 BLOCKERS** · 4 WARN · 5 NIT
+**Subject:** `Source/GitClaudeUnrealTest/Siegebound/Tests/SiegeCardRosterTest.cpp`
+**Date:** 2026-09-04 · **Reviewer instrument:** working tree + Read/Grep/Glob only
 
 ---
 
-## 1. ⛔⛔ ITEM (1) — THE METHOD QUESTION. ⛔ THE BLOCKER-GRADE ONE. ⛔ ADJUDICATED: ⭐ **SYNTHETIC INPUT. ⛔ NO ASSET WAS DISTURBED.**
+## ⛔⛔ THIS IS A **POST-HOC** GATE OVER **ALREADY-COMMITTED** CODE — `1a457df`
 
-⛔ **I hold no Git, so I cannot reproduce a `git status`. ⭐ What I CAN measure I did, and the three measurements below are mine, not relayed:**
+⛔ **Read this before you read the verdict.** `TASK-964` reached `ready-for-qa` on 2026-09-03, this
+gate was **never dispatched**, and `TASK-987`'s (correct) `git status`-derived pathspec swept the
+then-untracked file into **`1a457df`**. ⇒ **the code was in the repository before it was reviewed.**
+This verdict is written **after** the commit and **names it deliberately**, so no future reader
+mistakes it for a normal pre-commit gate.
 
-**(a) ⭐⭐ THE DIGEST IS CORROBORATED FROM AN INSTRUMENT THE AUTHOR DID NOT USE.** `*.uasset` is LFS-tracked (`.gitattributes:1`, `filter=lfs`) ⇒ an LFS object is **named by the sha256 of its own content**. I globbed the object store:
+⚖️ **NONE OF THIS IS THE AUTHOR'S FAULT AND THE GRADE DOES NOT REFLECT IT.** `TASK-964` declared both
+of its judgement calls *explicitly and in bold, above its own claim*, flipped its row correctly, and
+waited. The gate was not sent. **I graded the work, not the process failure.**
 
-```
-.git/lfs/objects/b4/f3/b4f375305aea3ea812e25fb0e30bfabd39f82d21a64fe52b02298c3223fec2ab   <- EXISTS
-```
-
-⇒ ⛔ **the digest `TASK-949` recorded at four points before the refusal, the digest `TASK-964` re-read, and a real object in the LFS store are the SAME 64 hex characters.** ⭐ **This is the oid-vs-sha256 discipline, not a size check.**
-
-**(b) ⛔ NO RESIDUE OF A MOVE ANYWHERE IN THE REPO.** `**/BP_Unit_Witch*` globbed from the **repo root** (`C:/GitProjects/GitHub/GitClaudeUnrealTesting`, i.e. above the project dir) returns ⛔ **EXACTLY ONE PATH**: `Content/Blueprints/Units/BP_Unit_Witch.uasset`. ⛔ No `.bak`, no `.orig`, no temp copy, no second location. ⭐ **A move that was performed and reversed would have had to leave nothing — but a move that was performed and NOT fully reversed is exactly what this glob would catch, and it caught nothing.**
-
-**(c) ⛔ THE ASSET IS PRESENT AND THE ROSTER JOINS PERFECTLY — see §3, which is the strongest single piece of evidence in this report that nothing was moved aside.**
-
-⚖️ **RULING: ⭐ THE RED WAS SOUGHT FROM A SYNTHETIC ABSENT INPUT, ⛔ NOT FROM A DISTURBED REAL ASSET.** ⛔ **No `Content/**` write, no move, no rename, no stub, no restore is visible to any instrument I hold.** ⭐ **`SC-§54` cl. 3 is satisfied by METHOD, and the fence that produced this row is intact.**
-⚠️ **The binding `git status` half is NOT mine and I do not claim it** — it transfers to `TASK-961` (§8.1).
+⇒ **A FAIL here would have produced a FOLLOW-UP COMMIT — never an amend, never a revert.** It is a
+PASS, so no repair commit is owed; the WARNs below are boardable comment-only improvements.
 
 ---
 
-## 2. ⛔⛔ ITEMS (3) + (4) — ⛔ THE SAME SYMBOLS, AND ⛔ IT INVERTS RATHER THAN RE-RUNS. ⭐ **BOTH SATISFIED, MEASURED.**
+## 0. ⛔ MY INSTRUMENT, DECLARED ABOVE THE FINDINGS (`TL-§5c` cl. 5(a), `SC-§54` cl. 4)
 
-### (a) ⛔ THE SYMBOLS — ⛔ THE SAME ONES THE GREEN TEST CALLS (`SC-§38`)
+**I have `Edit` but no `Bash` (`SC-§78`) ⇒ ⛔ ZERO GIT.** No `show`, no `diff`, no `ls-tree`, no
+`log`. **I cannot read `1a457df` directly.** The **working tree is my only instrument**, and I say so
+rather than letting a reader assume I read the commit.
 
-I traced the new test's call order at source (`:713`–`:797`) rather than taking §2 of the handoff:
+⛔ **`SC-§55` APPLIED TO MYSELF FIRST.** My session's `gitStatus` snapshot is **STALE**: its `HEAD`
+was **`84eec02`** and it lists the *entire fog batch* (`DT_Cards.uasset`, `cards.csv`,
+`T_CardArt_Fog/BrightSun`, `SiegeFogStatics.*`, **and `Tests/SiegeCardRosterTest.cpp` itself**) as
+**uncommitted** — that batch **is** `1a457df`. ⇒ **I used not one byte of it as current state.** I
+used it only to attribute *which lane* each path belongs to, which is time-invariant.
 
-`FindSoftObjectField` (`:690`) → `FindNameArrayField` (`:706`) → `FindRow<FCardRow>` (`:723`/`:725`) → **`ClassifyRow`** (`:742`/`:752`) → **`ComposeActorClassPath`** (`:763`/`:764`) → **`FPackageName::DoesPackageExist`** (`:787`/`:788`)
+| claim class | status |
+|---|---|
+| ⛔ **the working tree == `1a457df`** | ⛔ **ACCEPTED AS DECLARED** (build-master's `git diff HEAD` empty for the atomic three). ⛔ **Declared to me, not measured by me.** |
+| ⛔ `1a457df`'s hash, file count, suite figures | ⛔ **ACCEPTED AS DECLARED** — `handoffs/TASK-987-buildmaster.md` §5 |
+| ⭐ everything under **§2 MEASURED BY ME** | ⭐ **measured in the working tree at my instant** |
 
-⛔ **Every one is the same fixture symbol the sibling walk calls** (`:364`, `:396`, `:424`, `:443`, `:464`, `:472`). ⛔ **It hand-builds no path.** ⭐ **MEASURED, not asserted:**
+### ⭐ THE ONE INDEPENDENT CORROBORATION OF WORKTREE-vs-COMMIT I *CAN* OFFER
 
-```
-grep -n '/Game/'  SiegeCardRosterTest.cpp
-   123 198 199 297 298 309 310 315 316 374    <- ALL pre-existing, ALL above the new test (starts :589)
-   626                                        <- the ONLY hit in the new region, and it is the COMMENT
-                                                 SAYING there is no /Game/ literal
-grep -c '/Game/Blueprints'  ->  9   (123 198 199 297 298 309 310 315 316)  -> ⛔ ZERO in the new test
-```
+⭐ Anchored census, **mine, at my instant**: `^IMPLEMENT_SIMPLE_AUTOMATION_TEST` across `Source/**` =
+**475** across 38 files, and `IMPLEMENT_(COMPLEX|CUSTOM)_AUTOMATION_TEST` = **0** (so one declaration
+== one test case; no macro fans out).
+The suite **EXECUTED** at `1a457df` reported **`Result={Success}` = 475 · `Result={Fail}` = 0**.
 
-⇒ ⛔⛔ **ZERO path-composer copies were added. ⭐ `TASK-959` — that is your number, re-measured by me at my instant: the composition still lives in exactly ONE function (`ComposeActorClassPath`, `:302`–`:321`), and the new test CONSUMES it.**
+⇒ ⭐ **475 declared == 475 succeeded == 0 failed.** Every declared test **ran** and **passed**, and
+the tree has neither gained nor lost a declaration since that run. ⛔ **That is corroboration at
+test-declaration granularity, NOT byte equality** — I state the limit rather than overselling it.
 
-### (b) ⛔⛔ IT INVERTS. ⛔ IT DOES NOT `AddError` ON THE EXPECTED ABSENCE. ⭐ **CENSUSED.**
+---
 
-```
-grep -n 'AddError'  SiegeCardRosterTest.cpp
-  sibling walk : 358 367 374 381 387 399 429 450 481          (9)
-  doc comments : 614 (x2), 784                                (3 — prose, not calls)
-  NEW TEST     : 685 693 701 709 733 747 758                  (7)
-```
+## 1. ⭐⭐ WHERE I RELY ON THE EXECUTED SUITE — NAMED, AS THE DISPATCH REQUIRED
 
-⛔ **I opened all seven.** Every one is a **SELF-CHECK** failure — CDO unreachable (`:685`) · `CardTableAsset` renamed/retyped (`:693`) · table failed to load (`:701`) · `BuildingEconomyCardIDs` unreachable (`:709`) · **row probe blind** (`:733`) · synthetic not routed spawnable (`:747`) · positive control no longer spawnable (`:758`). ⛔ **Every one is followed by `return false`.** ⛔ **NOT ONE fires on the expected absence.**
+The pre-compile gate this row was meant to be could not have had this. I use it in **exactly four
+places** and nowhere else:
 
-⛔ **The load-bearing line is `TestFalse(…, bAbsentResolves)` at `:790` where `bAbsentResolves = FPackageName::DoesPackageExist(SyntheticComposed.PackageName)` (`:787`) — the IDENTICAL expression the sibling asserts TRUE at `:472`/`:474`.**
+1. **`SiegeCardRosterTest.cpp` contributes exactly 2 of the 475** (my own count of that file). ⇒
+   **BOTH tests compiled, ran against the real `DT_Cards.uasset`, and PASSED on the real binary.**
+   The entire *compile-risk* class (deprecated UE 5.8 API, signature drift, missing include,
+   const-correctness on `ContainerPtrToValuePtr`, `EAutomationTestFlags` enum-class form) is
+   **retired by execution, not by my reading.**
+2. **`bAbsentResolves == false` and `bPresentResolves == true` were measured BY THE ENGINE.** The new
+   test cannot pass otherwise (lines 790, 793). ⇒ the red-producing **value** is compiler-observed.
+3. **No asset was left disturbed.** The walk probes all 22 spawnable rows *including `Witch`*; had a
+   red been synthesised by moving `BP_Unit_Witch.uasset` and imperfectly restored, the walk would be
+   **RED**. It is green. ⇒ **item (1)'s blocker question is answered by measurement, not by trust.**
+4. **No residual inversion shipped.** A left-in `TestTrue(bAbsentResolves)` would have produced
+   **474/1**, not 475/0.
 
-⇒ ⛔⛔ **THE SUITE STAYS GREEN, AND IT IS GREEN ⛔ BECAUSE THE PROBE ANSWERED ABSENT.** ⭐ **Item (4) satisfied: this is a control, not a bug wearing a control's clothes.** ⛔ **It will not block `TASK-961`.**
+⛔⛔ **AND THE LIMIT, STATED PLAINLY: A GREEN SUITE PROVES THE TESTS *PASS*, NOT THAT THEY ASSERT THE
+RIGHT THING.** Every judgement in §3–§5 below is mine, from reading the source. **W-1, W-3 and W-4
+are all findings the green bar actively conceals.**
 
-### (c) ⭐ THE TWO LEDGERS, AUDITED SEPARATELY (`SC-§51` cl. 4)
+---
 
-| ledger | assertion | line | the world in which it ALONE fires |
+## 2. ⭐ MEASURED BY ME, IN THE WORKING TREE, AT MY INSTANT
+
+| # | measurement | result | positive control |
 |---|---|---|---|
-| **(a) reachability / premise** | `SyntheticCategory == UnitActor` | `:744` | `ClassifyRow` stops routing `Unit` → an actor path ⇒ the control would stand for a red that could never happen |
-| **(a)** | positive control routes spawnable | `:754` | `Sorcerer` is retired or retyped |
-| **(a)** | the two composed names DIFFER | `:775` | a composer that ignores its argument ⇒ discrimination below goes vacuous |
-| **(b) instrument — row probe** | `SyntheticRow == nullptr` | `:727` | the synthetic becomes a real card (liveness) |
-| **(b) instrument — row probe** | `PositiveRow` non-null | `:730` | `FindRow` answers null for **everything** |
-| **(b) instrument — existence probe** | `TestFalse(bAbsentResolves)` | `:790` | the probe goes blind and answers PRESENT for everything |
-| **(b) instrument — existence probe** | `TestTrue(bPresentResolves)` | `:793` | ⛔ **the probe goes blind and answers ABSENT for everything — the ONLY mode in which `:790` could pass vacuously** |
-| **(b) discrimination** | `bAbsentResolves != bPresentResolves` | `:796` | both probes stuck at the same polarity in one run |
-
-⛔ **Two ledgers, kept apart, each tell with a world it alone fires in.** ⭐ **`SC-§51` cl. 1–4 satisfied — and unlike `TASK-947`'s handoff, this author did not merge them into one headline number.**
+| M-1 | `^\s*default\s*:` in `SiegeCardRosterTest.cpp` | ⭐ **0** | **7** in `SiegePlayerController.cpp` (the regex *can* see one) |
+| M-2 | `-Wswitch` **symbol** census under `Source/` | ⭐ **2** — `SiegeCardRosterTest.cpp:94` + `:254`, **both in this file, both amended** | — |
+| M-3 | `/Game/Blueprints` occurrences in the subject file | ⭐ **9** (author declared 9 at `09b9b50` and 9 after) ⇒ **0 new composer copies** | 46 repo-wide across 19 files |
+| M-4 | `DeckCount` in the subject file | ⭐ **0** | 48 hits across 9 production files |
+| M-5 | `NoticeRange` in the subject file | ⭐ **0** | 24 hits in `SiegeFogClampTest.cpp` (3) + `SiegeUnitNoticeRangeTest.cpp` (21) |
+| M-6 | actor Blueprints on disk | ⭐ **22** = 14 `BP_Unit_*` + 8 `BP_Building_*`; **`BP_Unit_Sorcerer` PRESENT**, **`BP_Unit_Witch` PRESENT**, **no `ZzNoSuchCardZz` asset** | — |
+| M-7 | `Docs/Data/cards.csv` roster | ⭐ **34 rows** — **22 spawnable** (13 Unit + 2 Economy + 7 Building), **12 excluded** (7 Spell + 4 HeroUpgrade + 1 Utility) | exact **22 ↔ 22** bijection with M-6 |
+| M-8 | `Fog` / `BrightSun` `CardType` | ⭐ **both `Spell`** (`cards.csv:34`, `:35`) ⇒ **NotSpawnable** | — |
+| M-9 | `ZzNoSuchCard*` outside the subject file | **2 hits, `SiegeCardArtRosterTest.cpp` comment only** — that file uses its **own** distinct synthetic `QqSyntheticAbsentQq` and explicitly checks non-substring **in both directions** | ⇒ ⭐ **no second copy of the constant, no drift surface** |
 
 ---
 
-## 3. ⭐⭐ THE FINDING I WEIGHED MOST — ⛔ THE SUGGESTED SYNTHETIC WAS ITSELF A TRAP. ⛔ **THE REJECTION IS CORRECT AND I PROVED IT BOTH WAYS.**
+## 3. ⚖️⭐⭐ RULING ON FLAGGED ITEM (a) — THE UNOBSERVED COMPILED RED AND ITS STRUCTURAL SUBSTITUTE
 
-**The board suggested `ZzNoSuchCard`. It is a strict SUBSTRING of the fixture's existing `ZzNoSuchCardZz`.** ⛔ **I did not take that on the author's word — I ran both patterns over the whole project at my own instant:**
+### ⭐ RULING: THE SUBSTITUTE IS **ADEQUATE**. Board item (2)'s BLOCKER clause is **SATISFIED IN SUBSTANCE**. ⛔ NOT A BLOCKER.
 
-```
-grep -rc 'ZzNoSuchCardZz'  ->  22 matches / 5 files   TASKBOARD 1 · qa/TASK-948 4 · SiegeCardRosterTest.cpp 4 · TASK-964 handoff 6 · TASK-947 handoff 7
-grep -rc 'ZzNoSuchCard'    ->  25 matches / 5 files   ⛔ THE SAME FIVE FILES
-```
+**What was owed** (`TASK-964` item (3)): invert your own new assertion, observe a compiled RED, paste
+the verbatim transcript, revert.
+**What was delivered** (handoff §3.2): a **verbatim, two-polarity, harness-self-controlled**
+transcript from a **shell mirror of the predicate** — RUN 1 GREEN, RUN 2 **RED**, RUN 3 proving the
+harness can print `FAIL` — **declared, in bold, as a substitute and never dressed up as the compiled
+run.**
 
-⇒ ⛔⛔ **A grep establishing the "absence" of `ZzNoSuchCard` returns 22 hits that belong to the EXISTING constant.** ⭐ **Its measured absence would have been UNMEASURABLE BY THE INSTRUMENT ESTABLISHING IT — the substring hazard sitting inside the synthetic value chosen to prove an absence.** ⛔ **Taking the board's suggestion would have shipped a negative control whose "measured absent" was a false zero.** ⚖️ **The refusal to adopt a relayed value and re-measure instead is `SC-§40` cl. 3 working exactly as written, and it is the best thing in this row.**
+**Five reasons I rule it in, in the order they carry weight:**
 
-### ⛔ AND THE SUBSTITUTION ITSELF, RE-MEASURED BY ME WITH A POSITIVE CONTROL ON EVERY INSTRUMENT (`SC-§39`)
+1. ⛔⛔ **THE SPEC CONTRADICTED ITSELF AND THE AUTHOR RESOLVED IT THE RIGHT WAY.** `TASK-964` item (3)
+   demands an observed compiled red while item (5) says *"You are ⛔ NOT compiling"* and item (6)
+   fences *"any compile"* **out of scope**. ⛔ **An author cannot be failed for an internally
+   inconsistent dispatch**, and of the two available readings it chose the one that **preserved the
+   fence** rather than the one that breached it — which is this project's own `SC-§54` cl. 1.
+2. ⭐ **THE PURPOSE OF `SHIP-§9` IS DISCHARGED, AND PERMANENTLY.** The one-off inverted-source
+   transcript would have proven **once** that the probe can answer `false`. The shipped test proves
+   it **on every run, forever** (lines 787–797). ⭐ `SC-§54` cl. 3(c) taken literally: *a disturbed
+   asset buys one transcript that decays into a screenshot; a synthetic absent input buys an
+   assertion that re-proves the probe can say NO.* **This is the stronger artefact and I say so.**
+3. ⭐⭐ **THE OBSERVATION THAT WAS MISSING WHEN THE HANDOFF WAS WRITTEN HAS SINCE BEEN MADE.** The
+   compile **has** run and the suite **is** green (475/475, §1). ⇒ `bAbsentResolves == false` and
+   `bPresentResolves == true` are now **engine-measured on the real binary**, not shell-mirrored.
+   **The mirror's central claim was subsequently confirmed by the instrument it was standing in for.**
+4. ⭐ **THE MIRROR'S MAPPING WAS VALIDATED AGAINST THE COMPILED INSTRUMENT** — 22 composed paths on
+   disk vs the compiled gate's `22 SPAWNABLE probed / 0 unresolved`, **22 = 22 on both sides**. I
+   **independently reproduced that 22** (M-6/M-7, exact bijection). Unlike `TASK-947`'s mirror, this
+   one is anchored to the compiled answer at every point.
+5. ⭐ **IT WAS DECLARED ABOVE THE CLAIM, TWICE** (§0 and §3.2), and named as *the one judgement call
+   in this row*. **A dropped-and-declared item passes; what fails is silence** — and this is the
+   opposite of silence.
 
-| instrument (mine, this instant) | `ZzNoSuchCardZz` | ⭐ `Sorcerer` (positive control) |
+### ⛔ THE RESIDUAL, STATED PRECISELY — AND IT IS **REAL**, WHICH IS WHY IT IS **W-3**
+
+⛔ **What is still unobserved on any compiled run is not "a red value" — it is the walk's FAILURE
+PATH.** These lines have **never executed** and the green bar is exactly why:
+
+- **`:477–484`** — the `!bPackageExists` branch: `++UnresolvedRows`, `UnresolvedCardIDs.Add(...)`,
+  and a 3-substitution `AddError` `Printf`.
+- **`:580–584`** — the unresolved report, including `FString::Join`.
+
+⛔ **The new test does not close this, because it never enters the walk.** A `%s`/`%d` mismatch in a
+never-executed `FString::Printf` is a live UE crash class, and it would surface **only** on the day a
+card is missing — i.e. **the exact day the gate is needed.** ⛔ **This is not a defect in the diff and
+it is not repairable by its author** (who cannot compile) ⇒ **it is a build-master follow-up row, not
+a blocker.** See §7.
+
+---
+
+## 4. ⚖️⭐ RULING ON FLAGGED ITEM (b) — THE ONE AMENDMENT BEYOND THE NAMED RIDER
+
+### ⭐ RULING: **IN SCOPE. IT SHOULD HAVE BEEN FOLDED IN. ⛔ NO REVERT.** It was **correct** to declare it, and **correct** not to leave it.
+
+The header's `THIS TEST IS RED TODAY` paragraph read *"`BP_Unit_Witch` is absent as this file is
+written… The row for `Witch` MUST fail."* — **a present-tense claim that `09b9b50` made false.**
+
+**Why it is in scope:**
+- The row's `names:` line puts **this exact file** in scope as the **only** file it may touch; the
+  paragraph is **inside it**.
+- Item (6)'s out-of-scope list does **not** name it.
+- The row **cites `SC-§53` cl. 3 among its own laws.** ⛔ **Leaving a source file asserting its own
+  gate is expected to be RED — when it is green — is a lie in the tree**, and the very next reader
+  would have concluded the walk was *supposed* to fail. ⛔ **Leaving it would have been worse than
+  fixing it.**
+- **It is comment-only.** ⭐ I verified the mechanism was untouched: the *"do not weaken the
+  assertion"* prohibition survives verbatim at `:146–148`, and **M-1 confirms `default:` is still 0.**
+
+**Quality of the amendment:** `:138–148` is **past tense** ✅, **dated `2026-09-03`** ✅, **hash-pinned
+`09b9b50`** ✅, and it records the actual `32 / 22 / 10` figures. ⭐ Correct `SC-§53` cl. 3 shape.
+
+⚠️ **BUT THE SAME PARAGRAPH REINTRODUCES THE DEFECT IT WAS WRITTEN TO REMOVE — see W-2.** That is why
+this ruling is *"in scope and correct"* rather than *"in scope and clean"*.
+
+⛔ **Should it have been declared as a deviation rather than folded in?** It **was** declared — handoff
+§5, under its own heading, with the revert offered. ⭐ **That is precisely the `SC-§29` shape and it is
+what let this gate rule on it in one read.** ⛔ **No further declaration was owed.**
+
+---
+
+## 5. ⛔ THE TRANSCRIBED-COUNT QUESTION — CONFIRMED BY **REASON**, NOT INFERRED FROM THE PASS
+
+⭐ **CONFIRMED: this file contains ZERO hard-coded roster counts in ANY assertion.** All five COUNT
+assertions are **relational**, and not one contains a numeric literal:
+
+| line | assertion | literal? |
 |---|---|---|
-| `Content/Data/DT_Cards.uasset` (binary) | ⛔ **0** | **3** — ⛔ the instrument is proven able to return non-zero **on the same binary** |
-| `Docs/Data/cards.csv` | ⛔ **0** | **1** (`:31`) |
-| `Content/Blueprints/**` filenames | ⛔ **0** | **1** (`BP_Unit_Sorcerer.uasset`) |
-| files under `Source/` | **1** ⚠️ | the test file itself, which DECLARES it — correct and expected |
-| ⛔ anywhere under `Content/**` or `Docs/**` | ⛔ **0** | — |
+| `:534` | `TotalRows > 0` | none |
+| `:537` | `SpawnableRows > 0` | none |
+| `:540` | `SpawnableRows + ExcludedRows == TotalRows` | none |
+| `:548` | `ProbesExecuted == SpawnableRows` | none |
+| `:551` | `DistinctComposedPackages.Num() == SpawnableRows` | none |
 
-✅ **The zero is MEASURED, on an instrument shown able to return non-zero before I trusted it.**
+⛔ **THE REASON, WHICH IS THE THING THE PASS CANNOT TELL YOU:** the file states the design at
+`:527–532` — *"a `TestEqual(SpawnableRows, 22)` would be the `TASK-874` trap rebuilt inside the very
+gate written to close it: card #23 would turn this file red for the wrong reason, and the obvious
+'fix' would be to bump the number."* ⇒ **the 33rd and 34th cards could not have reddened this file BY
+CONSTRUCTION.** The green is a **consequence** of that design, not the evidence for it.
 
-### ⭐⭐ AND THE JOIN THAT VALIDATES THE MIRROR'S MAPPING FAR HARDER THAN `22 = 22`
+**The only two numeric roster literals in the file, and their status:**
 
-The handoff argues its mapping is validated because the compiled gate published **22 spawnable / 0 unresolved** and it finds **22** Blueprints on disk. ⛔ **Cardinality alone would also match with one extra and one missing.** ⭐ **So I ran the JOIN, by name, both directions:**
+- **`:145`** — `32 row(s) read; 22 SPAWNABLE probed; 10 EXCLUDED`, **hash-pinned to `09b9b50`,
+  past tense.** ⭐ **Correct as written.** ⛔ **DO NOT "CORRECT" IT** (`SC-§53` cl. 3) — see N-5.
+- **`:812`** — an **`AddInfo`**, **present tense**, **undated**, **unhashed**: *"all 22 spawnable
+  rows"*. ⛔ **This is W-1**, and it is the single best example in this file of a claim the suite
+  **states** without **asserting**.
 
-- **My own `cards.csv` census (all 32 rows):** 13 `Unit` · 2 `Economy` · 7 `Building` · 10 excluded (5 `Spell` + 4 `HeroUpgrade` + 1 `Utility`) = **32**, spawnable **22** ⇒ ⛔ **character-for-character the compiled run's own `32 read / 22 probed (13 Unit, 2 Economy, 7 Building) / 10 EXCLUDED`.**
-- **Building-path CardIDs** (7 `Building` + `DeepMine`, the `BuildingEconomyCardIDs` exception) = **8** ⇒ disk has **exactly 8** `BP_Building_*`, and the **name sets are identical**: ArrowTower · Wall · BombTower · BallistaTower · Barracks · CrystalTower · WatchTower · DeepMine.
-- **Unit-path CardIDs** (13 `Unit` + `Miner`, the Economy card NOT in the exception list) = **14** ⇒ disk has **exactly 14** `BP_Unit_*`, and the **name sets are identical**: Footman · Archer · Knight · MilitiaMob · Pikeman · Sapper · Cavalry · Longbowman · Cleric · Ogre · Wizard · Sorcerer · **Witch** · Miner.
+### `sum(DeckCount) == 50` and `NoticeRange` — NO DUPLICATION, NO CONTRADICTION
 
-⇒ ⛔⛔ **22 composed paths, 22 assets, ⛔ ZERO missing and ⛔ ZERO extra, on a one-for-one name join I performed myself.** ⭐ **This does four things at once: it validates the mirror's mapping (item 3's substitute), it independently reproduces the compiled gate's `0 unresolved`, it confirms `BP_Unit_Witch.uasset` is present and joined (item 1), and it confirms `DT_Cards` had NOT drifted from `cards.csv` at `09b9b50` — which is `qa/TASK-948.md` `W-4`'s predicted false-red, ⛔ still not materialising.**
+⭐ **M-4/M-5: `DeckCount` = 0 occurrences and `NoticeRange` = 0 occurrences in this file.** ⇒ it
+**cannot** duplicate or contradict either. **Clean separation of concerns; nothing to fix.**
 
 ---
 
-## 4. ⛔⛔⭐⭐ ITEM (2) — THE OWED COMPILED RED. ⛔ **RULED: NOT A BLOCKER. ⛔ AND ⛔ NOT DISCHARGED EITHER. ⛔ IT STAYS OWED, AND IT TRANSFERS BY NAME.**
+## 6. Findings
 
-### 4.1 ⛔ WHY IT IS NOT A BLOCKER, AND THE REASONING IS THE JUDGEMENT CALL IN THIS ROW
+### BLOCKERS — ⭐ **NONE (0)**
 
-Item (2) of my spec: *"IS THERE A VERBATIM RED TRANSCRIPT FROM THE INVERTED ASSERTION? A description of a red is not a red. Absent ⇒ BLOCKER."*
+Every blocker-grade question in this row's spec is cleared, each by my own measurement:
 
-- ✅ **A verbatim transcript EXISTS** (handoff §3.2): RUN 1 GREEN on the shipped polarity, **RUN 2 RED on the inverted polarity** (`INVERTED — the absent card's composed path DOES resolve (expected 1, got 0)`), plus ⭐ **RUN 3, a self-control proving the harness can print `FAIL`** — so RUN 2's red is a measured failure and not a printer that cannot print anything else.
-- ⛔ **It is a SHELL MIRROR, not the compiled binary, and the author says so ABOVE the claim** (handoff §0 and §3.2, both before any result). ⭐ **That is `SC-§54` cl. 4's required shape exactly: declared AS a substitute, in the same breath as the claim and above it, never folded into it.**
-- ⛔⛔ **AND THE DECIDING POINT, WHICH IS ABOUT THE SPEC AND NOT ABOUT THE AUTHOR: `TASK-964` item (3) demanded an OBSERVED red while item (6) fenced *"any compile · any editor/MCP"*.** ⛔ **The row asked for an observation and forbade the only instrument that can produce one.** ⭐ **The author named the contradiction rather than papering over it (`TL-§5c` cl. 5(a)), and did not quietly redefine item (3).** ⚖️ **Failing a row for not executing what its own spec forbade would punish the exact honesty `SC-§54` was written to buy — and would teach the next agent to fold the substitute into the claim instead of declaring it.**
-
-⇒ ⛔ **NOT A BLOCKER.**
-
-### 4.2 ⛔ WHAT IS ⛔ ACTUALLY DISCHARGED, AND ⛔ WHAT IS NOT — ⛔ STATED SEPARATELY BECAUSE THEY ARE DIFFERENT DEBTS
-
-| debt | status | why |
+| spec item | question | ruling |
 |---|---|---|
-| ⭐ **THE METHOD** (`SC-§54` cl. 2/3 — a method that does not require the refused move) | ✅ ⛔ **DISCHARGED** | measured-absent synthetic input, zero assets touched (§1) |
-| ⭐ **PERMANENCE** (`SC-§54` cl. 3(c)) | ✅ ⛔ **DISCHARGED, AND BETTER THAN THE ALTERNATIVE** | a moved asset buys ONE transcript that decays into a screenshot; this buys an assertion that re-proves the probe can say NO on **every** run |
-| ⭐ **"PROVE YOUR CONTROL CAN FAIL" FOR THE NEW TEST** (`SHIP-§9`, `SC-§51` cl. 6) | ✅ ⛔ **DISCHARGED STRUCTURALLY** | ⛔ the positive control at `:793` **IS** the inverted assertion, through the SAME symbol, in the SAME run ⇒ **a probe stuck at EITHER polarity takes this test red**, and `:796` closes the remaining direction. ⭐ This is a compiled, permanent, re-runnable form of the one-off source-edit transcript |
-| ⛔⛔ **A COMPILED RED ⛔ BAR** | ⛔ **NOT DISCHARGED. ⛔ STILL OWED.** | see below |
+| **(1)** | synthetic input, or a **disturbed real asset**? | ⭐ **SYNTHETIC. CLEAR.** `BP_Unit_Witch.uasset` present (M-6); the walk probes it and the suite is green (§1.3); the synthetic is a `TEXT()` constant, never an asset. ⛔ **The permission fence was respected and this gate rewards that.** |
+| **(2)** | verbatim RED transcript · no residual inversion | ⭐ **CLEAR.** Verbatim two-polarity transcript with a harness self-control (handoff §3.2), **declared as a mirror**. Polarities in the tree read `TestFalse(bAbsentResolves)` / `TestTrue(bPresentResolves)` / `TestTrue(!=)` at `:790`/`:793`/`:796` — **read by me**, and corroborated by 475/0. **§3 rules the substitute adequate; residual → W-3.** |
+| **(3)** | shipped symbols, or a **copy**? | ⭐ **CLEAR — SAME SYMBOLS, NAMED.** `FindSoftObjectField` · `FindNameArrayField` · **`ClassifyRow`** · **`ComposeActorClassPath`** · **`FPackageName::DoesPackageExist`**, in the same order the walk calls them. **M-3: `/Game/Blueprints` = 9, unchanged ⇒ zero hand-built paths, zero new composer copies.** |
+| **(4)** | inverts rather than re-runs; suite green in intent | ⭐ **CLEAR — AND GREEN IN FACT.** All 7 `AddError` sites in the new test are **self-check** failures (CDO, table rename/retype, load failure, exception-list unreachable, blind row probe, synthetic not spawnable, control no longer spawnable) — **verified by reading `:672–815`.** ⛔ **Not one fires on the expected absence.** |
+| **(5)(c)** | ⛔ was a `default:` label added? | ⭐ **NO — 0, POSITIVE-CONTROLLED AT 7 (M-1).** The overriding blocker is **CLEAR**. The preservation comment at `:245–251` was **strengthened**, citing `qa/TASK-948.md` §(c) by name. |
+| **(6)** | `TL-§5b`/`§5c` cl. 5(a) | ⭐ **CLEAR.** Delta declared **`+1` → 434/32 files** and declared **UNEXECUTED** in capitals: *"`434` IS A DECLARATION CENSUS, NOT A PASS COUNT. I DID NOT RUN THE SUITE."* ⛔ **No suite absolute is carried as an expectation** — the last executed figures are correctly attributed to `TASK-949` at `09b9b50`. |
 
-⛔⛔ **AND I AM GOING TO BE PRECISE ABOUT THE LAST ROW, BECAUSE THE HANDOFF'S STRONGEST CLAIM IS ALSO ITS SOFTEST.** The handoff says the compiled run will now print `DoesPackageExist(…ZzNoSuchCardZz) = ABSENT` on every pass, so *"the red-producing condition is now observed and printed on every compiled green pass."*
+⭐ **AND A CREDIT THAT BELONGS IN THE LEDGER (`TL-§5b`):** the author **caught its own instrument
+failing** — a `git ls-tree` / `git show` path-relativity mismatch that printed a confident
+`declarations: 0` for all 32 files — **only because it positive-controlled the pipeline against a
+file it knew contained a declaration before trusting the total.** ⛔ **That is the exact
+silently-confident-zero this project keeps getting burned by, caught by the author, unprompted.**
 
-⚠️ **I checked what that is actually worth, and it is worth LESS than it reads — because the sibling walk ALREADY did the load-bearing half at `09b9b50`.** `:564`–`:566` composes the **same** synthetic path through the **same** symbol and already asserts `TestFalse(DoesPackageExist(...))` — ⛔ **and that line compiled and ran GREEN in `TASK-949`'s executed suite.** ⇒ ⛔ **the compiled binary has ALREADY been observed evaluating `DoesPackageExist` to FALSE on a composed unit path.** ⭐ **What `TASK-964` adds on top of that is real and it is not nothing — the opposite polarity on the same symbol in the same run, the discrimination assertion, the reachability premise, the `FindRow` control, and the two published `AddInfo` lines — but it is ⛔ NOT a red bar, and it was never going to be one.**
+### WARN
 
-⚖️ **RULING: ⛔ THE COMPILED RED BAR REMAINS OWED. ⛔ It does NOT evaporate with this row** (`SC-§54` cl. 2). ⛔ **It transfers BY NAME to `TASK-961`'s executed run** (`TL-§5c` cl. 5(c)) — see §8.
-⭐ **AND THE ROW HAS BOUGHT SOMETHING THAT MAKES THE REMAINING DEBT CHEAP: the red is now reachable WITHOUT touching an asset and WITHOUT a permission fence** — `:793`, `:790` and `:796` are three lines whose polarity a future row can flip in `Source/` alone, which is exactly the shape `TASK-964` item (3) wanted and could not execute.
+- **[WARN] `SiegeCardRosterTest.cpp:812` — a transcribed roster count in a LIVE output string, present tense, undated, unhashed.**
+  `AddInfo(... "The sibling walk asserts that same expression is TRUE for all 22 spawnable rows ...")`.
+  It is an `AddInfo`, **not an assertion**, so it **cannot redden** — it will simply print a false
+  number into the suite log forever. ⛔ **It is correct today only by coincidence:** the roster went
+  **32 → 34** while spawnable stayed **22**, because `Fog` and `BrightSun` are **both `CardType
+  Spell`** (M-8, verified in `cards.csv:34`/`:35`). ⛔ **The next Unit / Building / Economy card makes
+  this line lie on every green run.** ⭐ This is the **same `SC-§53` cl. 1 shape the author's own §5
+  amendment repaired 660 lines above, missed 660 lines below.**
+  **Fix (comment-only):** drop the count, or date+hash it — *"…is TRUE for every spawnable row (22 as
+  measured at `1a457df`, 2026-09-04)."*
 
-⛔ **ONE THING I CHECKED SPECIFICALLY BECAUSE IT WOULD BE THE WORST FAILURE HERE: is there a RESIDUAL INVERSION left in the tree?** ⛔ **No.** The three polarities at `:790`/`:793`/`:796` are `TestFalse(bAbsentResolves)` / `TestTrue(bPresentResolves)` / `TestTrue(bAbsentResolves != bPresentResolves)` — ⛔ **read at source, character by character, and they are the SHIPPED polarity, not the inverted one.** ⛔ **And the sibling walk's eight count/control assertions (`:534` `:537` `:540` `:548` `:551` `:555` `:558` `:561` `:565`) are all present and NONE is weakened** — I diffed them against `qa/TASK-948.md` §1's enumeration line by line; the only change is a uniform line-number shift from the header growing.
+- **[WARN] `SiegeCardRosterTest.cpp:146` — the amended paragraph REINTRODUCES a present-tense claim.**
+  *"⇒ ⛔ THE GATE IS GREEN **TODAY** AND MUST STAY THAT WAY."* — undated *"TODAY"*, inside the very
+  paragraph rewritten to eliminate present-tense claims, in an edit whose **entire stated rationale**
+  was eliminating this shape (`SC-§53` cl. 3). ⛔ It happens to be **true** right now (475/0 at
+  `1a457df`) and it **rots identically to the sentence it replaced.**
+  **Fix (comment-only):** *"THE GATE WAS GREEN AT `1a457df` (2026-09-04, `475 Success / 0 Fail`) AND MUST STAY THAT WAY."*
 
----
+- **[WARN] `SiegeCardRosterTest.cpp:150–166` — the DURABLE artefact does not carry the residual its handoff states plainly.**
+  The header presents the method change as **the answer** to the never-seen-red debt. ⛔ **The handoff
+  §3.3 says it plainly** — *"Nobody has yet seen this file's assertions RED on a compiled run"* — ⛔
+  **but a future reader of this test opens the test, not a handoff from 2026-09-03.** Concretely
+  still-unexecuted on any compiled run: **`:477–484`** (the `!bPackageExists` branch — `AddError` +
+  `UnresolvedRows` + `UnresolvedCardIDs`) and **`:580–584`** (the unresolved report incl.
+  `FString::Join`). ⛔ **A `Printf` substitution defect there surfaces only on the day a card is
+  missing — the exact day the gate is needed.**
+  **Fix:** a two-line `SC-§40` cl. 1 residual note in the header **plus** the `TASK-965-A` follow-up
+  row in §7. ⛔ **Not repairable by this row's author, who cannot compile.**
 
-## 5. ⛔ ITEM (5) — ⛔ A ⛔ SEPARATE, ⛔ NON-BLOCKING LEDGER LINE: ⛔ THE `-Wswitch` RIDER
+- **[WARN] `SiegeCardRosterTest.cpp:796–797` — the DISCRIMINATION assertion is logically IMPLIED by the two above it and adds zero discriminating power.**
+  `!bAbsentResolves && bPresentResolves` ⇒ `bAbsentResolves != bPresentResolves`, necessarily. It
+  **cannot fail unless `:790` or `:793` has already failed.** Its comment claims *"a probe stuck at
+  EITHER polarity fails HERE"* — ⛔ **it fails one line earlier.** Harmless as a mechanism; the
+  **claim** overstates it. ⭐ The same file is **scrupulously honest about exactly this** 250 lines
+  above (`:543–547`: *"as the loop is written TODAY these two counters cannot diverge, so this
+  assertion discriminates NOTHING on this diff. It is a TRIPWIRE FOR THE NEXT EDIT"*) — **the same
+  sentence is owed here.** ⛔ **Do not delete the assertion; it is a fine tripwire.** Label it as one.
 
-⚖️ **RIDER VERDICT: ✅ COLLECTED — with one WARN. ⛔ This CANNOT change `TASK-964`'s verdict** (`SC-§29`), except through (c), which is blocker-grade and passes.
+### NIT
 
-### (a) ⛔ ALL SITES BY ⛔ SYMBOL CENSUS, ⛔ NOT BY THE BOARD'S COUNT. ✅ **2 — AND I AGREE.**
-
-```
-grep -rn '\-Wswitch'  Source/
-  Tests/SiegeCardRosterTest.cpp:94    <- file header, item (b)
-  Tests/SiegeCardRosterTest.cpp:254   <- the ClassifyRow doc comment
-  ⇒ 2 sites, 1 file, ZERO elsewhere under Source/
-```
-✅ **Agrees with the board's count and with the author's. Censused by symbol, as required.**
-
-### (b) ⛔ IS THE AMENDED SENTENCE `SC-§53` cl. 3 SHAPED — ⛔ PAST TENSE + ⛔ DATE + ⛔ TOOLCHAIN? ✅ **YES, AT BOTH SITES.**
-
-Both carry **"AS MEASURED 2026-09-03 AT `09b9b50`"** + the hash + **"MSVC 14.50"** named + the `Build.cs` zero-warning-configuration measurement + ⭐ **"THE RUN-TIME TELL IS THE LOAD-BEARING HALF HERE."** ⛔ **The claim moved; the mechanism did not** — see (c).
-
-### (c) ⛔⛔ WAS A `default:` LABEL ADDED? ⛔ **NO. ⛔ ZERO. ⛔ MEASURED AND POSITIVE-CONTROLLED.**
-
-```
-grep -c '^\s*default\s*:'  Tests/SiegeCardRosterTest.cpp      ->  ⭐ 0
-grep -c '^\s*default\s*:'  SiegePlayerController.cpp          ->     7   ⛔ THE INSTRUMENT'S OWN POSITIVE CONTROL
-```
-⭐ **My regex is proven able to SEE a `default:` label before I trusted its zero.**
-
-⚠️⚠️ **AND I FELL INTO THE TRAP THE HANDOFF NAMED, WHICH IS WHY IT WAS WORTH NAMING:** a bare `grep -n 'default:'` on the file returns hits at **`:91`, `:245`, `:247`** — ⛔ **all three are COMMENTS, and two of them are the prose DOCUMENTING THE ABSENCE** (`:245` *"NOTE THE ABSENT `default:` LABEL"*, `:247` the forbidden `default: Category = NotSpawnable;` quoted inside the prohibition). ⛔ **A reviewer who ran the bare grep and stopped would report a violation that does not exist.** ⛔ **THE LABEL COUNT IS 0.**
-
-⛔ **AND THE MECHANISM IS INTACT, WHICH IS THE HALF THAT MATTERS.** I re-read `CardRow.h:17-25` myself: `ECardType` still declares **SIX** enumerators (`Unit` `Building` `Economy` `Spell` `HeroUpgrade` `Utility`). The switch at `:268`–`:289` names **all six**, carries **no `default:`**, and `Category` is still initialised to `Unclassified` at `:266` ⇒ the run-time path (`:445`–`:453` `AddError` + `continue`, and the partition assertion at `:540` as the second independent tell) is **unchanged**. ✅ **`qa/TASK-948.md` §(c)'s preservation ruling is ENFORCED, not reopened** — and the author went further and cited that ruling BY NAME at `:246`, so the next tidy-up meets the ruling instead of the temptation. ⭐ **That is the right instinct and I am recording it as a credit.**
-
----
-
-## 6. ⛔ ITEM (6) — `TL-§5b` / `TL-§5c`. ✅ **COMPLIANT. ⛔ AND THE EQUATION BALANCES TO THE UNIT.**
-
-⛔ **I ran the census myself at the mandated scope and needle:**
-```
-scope  Source/GitClaudeUnrealTest/Siegebound/Tests/*.cpp   needle  ^IMPLEMENT_SIMPLE_AUTOMATION_TEST
-   ->  434 across 32 files      (SiegeCardRosterTest.cpp contributes exactly 2, both at line-start: :341, :667)
-```
-
-| | figure | source |
-|---|---|---|
-| last **EXECUTED** | **433 `Result={Success}` / 0 `Result={Fail}`** at `09b9b50` | ⛔ **not mine — declared by `TASK-949`, unwatched by me** |
-| author's declared delta | **`+1`, UNEXECUTED** | handoff §6 |
-| **my fresh census** | **434 across 32 files** | ⛔ **mine, this instant** |
-
-⇒ ⛔⛔ **`433 + 1 = 434`. ⭐ THE `TL-§5b` cl. 3 EQUATION BALANCES ⇒ ⛔ NO UNDECLARED TEST FILE LANDED, AND THE FILE COUNT DID NOT MOVE (32 → 32) ⇒ the new declaration is in an EXISTING file, as specified.**
-
-✅ **`TL-§5c` cl. 5(a): the handoff labels `434` a DECLARATION CENSUS and says ⛔ in capitals that it did NOT run the suite; the board row status line repeats it.** ✅ **`TL-§5b`: no absolute is carried as an expectation — both figures are published with scope, file count and endpoint.** ⛔ **Item (6) does NOT fail.**
-
-### ⚠️ THE FOURTH OCCURRENCE OF THE GIT-ROOT TRAP — ⛔ CONFIRMED, AND ⛔ WHETHER I HIT IT
-
-⛔ **I could not hit the git-root trap itself, because I hold no Git — and I will not claim a hazard I could not meet.** ⭐ **But its PREMISE is measurable without Git and I measured it two independent ways:**
-
-```
-glob  C:/GitProjects/GitHub/GitClaudeUnrealTesting/.git/HEAD          -> EXISTS
-glob  C:/GitProjects/GitHub/GitClaudeUnrealTesting/GitClaudeUnrealTest/.git/**  -> ⛔ NO FILES FOUND
-glob  C:/GitProjects/GitHub/GitClaudeUnrealTesting/.gitattributes     -> EXISTS (9 LFS patterns)
-```
-⇒ ⛔⛔ **THE GIT ROOT IS ⛔ ONE LEVEL ABOVE THE `.uproject`, CONFIRMED BY ME.** ⛔ **`git ls-tree` prints cwd-relative paths and `git show HEAD:<path>` demands root-relative ones ⇒ the 32 silent failures summing to a confident `0` are fully explained, and `--full-name` is the correct fix.** ✅ **I accept the corrected `+1 → 434/32` — and note that my own independent census of the worktree endpoint lands on the same 434, which is a second instrument agreeing with the corrected run.**
-⭐ **AND I DID MEET THE FAMILY, TWICE, IN THIS REVIEW:** the `default:` comment false-positive (§5(c)) and the `/Game/` comment false-positive at `:626` (§2(a)) — ⛔ **both are "the sentence documenting an absence reads as a presence", both would have produced a confident wrong answer, and both were caught only because I opened the hits instead of counting them.** ⚠️ **That is now the same class of instrument failure five times in one day; the general rule it keeps re-teaching is `SC-§39.1` — ⛔ report a census's CARDINALITY beside its result, and open the hits.**
-
----
-
-## 7. ⚠️ THE AMENDMENT BEYOND THE NAMED RIDER — ⛔ **RULED: ⛔ IN SCOPE. ⛔ IT STAYS.**
-
-**What it is:** the file header's `THIS TEST IS RED TODAY` paragraph, rewritten to `THIS TEST WAS RED WHEN IT WAS WRITTEN` (`:138`–`:166`).
-
-⚖️ **RULING — ⛔ IN SCOPE, ⛔ CORRECT, AND ⛔ IT WOULD HAVE BEEN A FINDING IF IT HAD BEEN LEFT:**
-1. ⛔ **The old text was a present-tense claim that is now measurably FALSE.** It read *"`BP_Unit_Witch` is absent as this file is written… The row for `Witch` MUST fail."* ⛔ **`BP_Unit_Witch.uasset` is on disk (I globbed it), it is joined to its row (§3), and the gate went GREEN at `09b9b50`.** ⇒ ⭐ **`SC-§53` cl. 1 VERBATIM: the repair landed in one commit and the paragraph describing the pre-repair state did not — ⛔ in the very file this row edits, with `SC-§53` among its cited laws.**
-2. ⛔ **`SC-§53` cl. 2 makes it a DUTY, not a liberty:** the description must be amended in the same batch or boarded as a named row. ⛔ **This row is the only writer of this file in the batch, and `TASK-959` rewrites it next.** ⇒ **leaving it would have orphaned it.**
-3. ✅ **It is comment-only, it is inside the row's SOLE permitted file, and it was DECLARED rather than discovered** (`SC-§29`).
-4. ⛔⛔ **I checked the two things that would have made it a BLOCKER, and both are clean:**
-   - ⭐ **THE VERBATIM PREDICATE QUOTE AT `:48`–`:49` IS UNPERTURBED.** I diffed it against the board's own words at `TASKBOARD.md:17190` (`TASK-947` item (1)): *"WALK EVERY `DT_Cards` ROW OF A SPAWNABLE `CardType` (Unit · Economy · Building) AND ASSERT ITS COMPOSED CONVENTIONS PATH RESOLVES."* ⛔ **Identical. `SC-§49` cl. 4(a) intact — the paraphrase IS the defect and there still isn't one.**
-   - ⭐ **THE PROHIBITION SURVIVED AND WAS NOT SOFTENED** (`:146`–`:148`): *"IF IT GOES RED AGAIN, DO NOT 'FIX' IT BY WEAKENING THE ASSERTION, SKIPPING THE ROW OR ALLOWLISTING A CARD ID — the only correct repair is the missing asset."*
-5. ⭐⭐ **AND THE PART THAT DECIDED IT FOR ME: at `:658`–`:665` the author was ALSO offered a stale-looking number — the header's `950d8c5` reading of `0` under `Source/`, which now reads `1` — and ⛔ REFUSED to "correct" it, on the grounds that a past-tense, correctly-dated measurement is NOT stale.** ⛔ **That is `SC-§53` cl. 3's explicit warning applied against the author's own interest, in the same diff.** ⚖️ **An author who amends the false present-tense sentence AND declines to touch the true past-tense one has understood the law rather than pattern-matched it.**
-
-⚠️ **One defect survives inside the cure — see `W-1`. It is a NIT-grade sentence in a WARN-grade position and it does not change this ruling.**
+- **[NIT] `:551–552`** — `DistinctComposedPackages.Num() == SpawnableRows` is, like its declared
+  neighbour at `:548`, **structurally always true today**: DataTable row names are unique `FName`s
+  (case-insensitive keys) and `ComposeActorClassPath` is injective on `CardID`. A good tripwire;
+  **unlike `:543–547` it is not declared as one.**
+- **[NIT] `:491–497` vs `:582`** — a row whose **package exists** but whose `_C` **fails to load** is
+  pushed into `UnresolvedCardIDs`, and the report then describes it as having *"NO actor Blueprint at
+  their composed CONVENTIONS path"* — **which is not what happened.** Two distinct failure modes
+  collapse into one message. (Never yet executed — see W-3.)
+- **[NIT] `:85–87`** — *"This is the SAME `UDataTable` object `ResolveCardRow` loads"* is measured on
+  the **C++ CDO's** default. A **Blueprint subclass** or instance override of `CardTableAsset` would
+  make the run-time object differ, and nothing checks that. ⭐ **Low risk** — 8 C++ classes all
+  hard-default to `/Game/Data/DT_Cards.DT_Cards` — but the sentence is one notch stronger than what
+  is measured (`SC-§49`).
+- **[NIT] `:135–136` vs `:660–661`** — the same instrument (`Sorcerer` in the `DT_Cards.uasset`
+  binary) is recorded as **3** in the header and **4** in the sibling comment. ⛔ **Both are dated to
+  different hashes (`950d8c5` / `09b9b50`) and both are CORRECT AS WRITTEN** under `SC-§53` cl. 3.
+  Recorded **only** so a future tidy-up does not "reconcile" two correct measurements into one wrong
+  one.
+- **[NIT] `:145`** — the dated `32 / 22 / 10` record is now **superseded** (measured today: **34 rows
+  / 22 spawnable / 12 excluded**, M-7). ⛔⛔ **IT MUST NOT BE EDITED** — it is hash-pinned to
+  `09b9b50` and true as written. ⭐ **A NEW dated line is the only correct way to record the current
+  figures.**
 
 ---
 
-## 8. ⛔ FINDINGS
+## 7. ⛔ SEPARATE, NON-BLOCKING LEDGER LINE — THE `-Wswitch` RIDER (`qa/TASK-948.md` `W-2`)
 
-### ⛔ BLOCKERS — **NONE**
+### **RIDER VERDICT: ⭐ COLLECTED AND DISCHARGED — 3 of 3. ⛔ It does NOT change TASK-964's verdict (`SC-§29`).**
 
-### ⚠️ WARN
+| check | result |
+|---|---|
+| **(a) ALL sites found by SYMBOL census, not by the board's count** | ⭐ **PASS.** My own `-Wswitch` census under `Source/` returns **2** — `:94` and `:254`, **both in this file**. The author's independently-run census also returned **2** and it **agreed with the board** rather than adopting it. **Both amended.** |
+| **(b) amended sentence is `SC-§53` cl. 3 shaped** | ⭐ **PASS.** Both sites read **PAST TENSE + DATE (`2026-09-03`) + HASH (`09b9b50`) + TOOLCHAIN NAMED (`MSVC 14.50`, `Build.cs` sets no warning configuration)**, and both then name **the run-time tell as the load-bearing half.** |
+| **(c) ⛔ NO `default:` LABEL ADDED** | ⭐⭐ **PASS — 0 labels, positive-controlled at 7** (M-1). ⛔ **The blocker that would have overridden everything is CLEAR.** |
 
-- **[WARN W-1]** `SiegeCardRosterTest.cpp:146` — ⛔ **the cure re-introduces a milder form of the disease.** The rewritten paragraph closes with **"⇒ THE GATE IS GREEN TODAY AND MUST STAY THAT WAY"** — ⛔ **an undated present-tense claim, in the paragraph rewritten to remove an undated present-tense claim, in a file whose cited law is `SC-§53`.** ⭐ The measured half immediately above it (`:143`–`:145`) is correctly past-tense, hashed (`09b9b50`) and dated, so the damage is confined to one clause. **Fix (future edit, comment-only):** *"as measured at `09b9b50` it was GREEN, and it must stay that way."* ⛔ **Non-blocking; ⛔ do NOT re-open the file for this alone — fold it into `TASK-959`'s rewrite of this file.**
-- **[WARN W-2]** `SiegeCardRosterTest.cpp:94` + `:254` — ⛔ **the amended `-Wswitch` sentence still overstates the compile-time half by one notch, which is the exact thing the rider was collected to stop.** Both sites say a 7th enumerator is a **"COMPILE error"/"COMPILE failure"** under Clang. ⛔ **`-Wswitch` is a default-ON *warning*; it is an *error* only under `-Werror` / `-Werror=switch`** — and this project was measured (by `qa/TASK-948.md` `W-2`, re-cited here) to set **no** warning configuration at all, so neither `-Werror` nor MSVC `4062`/`4061` is in play. ⇒ ⛔ **on the standing toolchain the compile-time half does not merely "MAY NOT FIRE" — it would not be an error even on Clang.** ⭐ **The conclusion the sentence draws is UNAFFECTED and correct** (*the run-time tell is the load-bearing half*), which is why this is a WARN and not a blocker. **Fix:** *"under Clang `-Wswitch` (on by default) WARNS on a 7th enumerator, and is a compile error only under `-Werror`."*
-- **[WARN W-3]** ⛔ **THE COMPILED RED BAR IS STILL OWED AND IT IS NOW `TASK-961`'s** (§4). ⛔ The transcript in hand is a **shell mirror**, correctly declared as a substitute above the claim. ⛔ **Nobody has yet seen any assertion in this file go RED on a compiled run, and this row did not change that.** **Fix:** §8.1 item 2 — it costs `TASK-961` nothing but attention.
-- **[WARN W-4]** ⛔ **FOR `TASK-961`, AND IT IS A LIVE TRAP TWICE OVER:** the binding `git status` proving ⛔ `Content/**` clean and ⛔ only `Tests/SiegeCardRosterTest.cpp` modified under `Source/**` is **NOT provable by me** (no Git). ⛔ **Derive it from your OWN live `git status`** — ⛔ **not from the handoff's spelling** (the git root is one level above the project ⇒ repo-relative pathspecs carry a `GitClaudeUnrealTest/` prefix, `qa/TASK-948.md` `W-3`), and ⛔ **not from your context's `gitStatus` snapshot** (`SC-§55` — mine was Castle-era and carried `A ` staged entries; ⛔ **assume yours is too**).
+⭐ **AND IT CAUGHT AN INSTRUMENT TRAP WORTH KEEPING:** a bare `grep -c "default:"` on this file reads
+**1** — that hit is **the comment at `:245` documenting the absence.** ⛔ **The label count is 0.** The
+anchored form `^\s*default\s*:` is the correct instrument, and I re-ran it myself rather than
+adopting the number.
 
-### 📌 NIT
-
-- **[NIT N-1]** `handoffs/TASK-964-programmer.md` §4 — the recorded instrument trap says *"a bare `grep -c 'default:'` on the file reads **1**… that hit is the comment at **line 213**."* ⛔ **My instrument reads 3 matching lines (`:91`, `:245`, `:247`), and `:213` in the delivered file carries no `default:` at all.** ⭐ **The trap is REAL and naming it was right; its numbers are stale (pre-final-edit) and they UNDERSTATE the false-positive count.** ⛔ Harmless direction — the label count is `0` on both readings — but a reader reproducing the "1" will conclude their instrument is wrong.
-- **[NIT N-2]** `SiegeCardRosterTest.cpp:626` — the new test's doc comment contains the string **`/Game/...`** inside the sentence *"contains NO `/Game/...` literal"*. ⛔ **A `/Game/` grep over the new region returns exactly one hit, and that hit is the denial itself** — the same self-referential-comment false positive as the `default:` case, in the same diff, on a different needle. **Fix (optional):** write it as *"no `/Game`-rooted literal"*.
-- **[NIT N-3]** `SiegeCardRosterTest.cpp:661` publishes `Sorcerer` in `DT_Cards.uasset` as **4**, while `:136` publishes **3** for the same asset and **my own instrument reads 3**. ⛔ **Almost certainly matching-lines vs occurrences on a binary blob, not an asset change** (nothing in this batch may touch `DT_Cards`, and `:136` is hash-pinned to a different tree). ⚠️ **But two different numbers for one measurement of one asset, 500 lines apart in one file, invite a reader to infer the asset changed.** Both are non-zero ⇒ the control holds either way. **Fix:** name the counting mode (*"4 occurrences / 3 matching lines"*).
-- **[NIT N-4]** `SiegeCardRosterTest.cpp:697`–`:703` — the new test omits two of the sibling's self-checks: `CardTablePath.IsNull()` (`:372`) and `GetRowStruct() == FCardRow::StaticStruct()` (`:385`). ⛔ **Neither is a hole:** an unset path falls to the load failure at `:701` (RED, with an empty path in the message), and a wrong row struct makes `FindRow<FCardRow>` return null for **everything**, which the ⭐ ROW-PROBE POSITIVE CONTROL at `:730` catches by design and reports as *"the row probe is blind"*. ⇒ **a message-precision loss, not a detection loss.** ⛔ **Recorded so a future reader does not "fix" it by pasting the sibling's checks in and quietly duplicating what the control already does.**
-- **[NIT N-5]** ⛔ **The absence half of the new test OVERLAPS the sibling's existing negative control at `:564`–`:566`**, which composes the same synthetic path through the same symbol and already ran **compiled and green** at `09b9b50`. ⭐ **The new test is a strict superset and is NOT redundant** — the positive polarity, the discrimination assertion, the reachability premise, the `FindRow` control and the published `AddInfo` lines are all new. ⚠️ **Recorded because it bounds what the row bought** (§4.2) and because a future tidy-up that deletes one as "duplicate" must delete the SIBLING'S one-liner, ⛔ never the controlled version.
-- **[NIT N-6]** `handoffs/TASK-964-programmer.md` §7 reports the file as **817 lines**; my reader shows content through `:817` with a trailing line at `818`. Trailing-newline / counting-mode difference, no action.
+⛔ **I did NOT re-litigate the `default:` ruling** — `qa/TASK-948.md` §(c) **RULED** it; I **enforced**
+it (spec item (7)).
 
 ---
 
-## 8.1 ⛔ NOTES FOR BUILD-MASTER (`TASK-961`)
+## 8. Notes for build-master / manager
 
-1. ⛔⛔ **YOU OWE THE `git status`.** ⛔ `Content/**` must be **clean of any move/delete/modify attributable to this row** — and per `TASK-964`'s own sweep the only `Content/` dirt should be the **pre-existing `Content/FogArea/**` set** (`TASK-927`, ⛔ **not this row's, ⛔ and not yours to stage**; the author measured 27 paths where `TASK-949` measured 24 — different instant, ⛔ report your own number). ⛔ `Source/**` must show **ONLY** `Tests/SiegeCardRosterTest.cpp` as `M`. ⛔ **Derive both from your own live status — `SC-§55`, your snapshot lies.**
-2. ⭐⭐ **THE OWED COMPILED RED IS NOW YOURS (`W-3`), AND YOUR RUN CAN PAY MOST OF IT FOR FREE.** ⛔ **Capture and paste, verbatim, the two `AddInfo` lines the new test prints:**
-   ```
-   NEGATIVE CONTROL — DoesPackageExist('/Game/Blueprints/Units/BP_Unit_ZzNoSuchCardZz') = ABSENT   [synthetic, measured absent]
-   NEGATIVE CONTROL — DoesPackageExist('/Game/Blueprints/Units/BP_Unit_Sorcerer') = PRESENT   [positive control]
-   ```
-   ⛔ **If BOTH read the same value, or if either line is absent from the log, the test did not run or the probe is stuck — ⛔ that is a finding, ⛔ not a formatting detail.** ⛔ **This is still NOT a red bar; say so in your handoff rather than letting the log stand in for one.**
-3. ⛔ **`Build.bat` returns 0 on a FAILED build. ⛔ PARSE THE LOG for `Result: Failed`. ⛔ NEVER trust `$LASTEXITCODE`.** ⛔ **And check the log's SIZE and content before trusting any zero in it** — `TASK-949` recorded that discipline and it is why its zero was believable.
-4. ⛔ **EXPECT `434` DECLARATIONS / 32 FILES, and expect the executed figure to be `434 Success / 0 Fail`.** ⛔ **`434` is a DECLARATION CENSUS in every document you have been handed, ⛔ NOT a pass count — re-census at your instant, ⛔ do not reconcile to it** (`TL-§5b`).
-5. ⚠️ **The compile risk on this diff is LOW and here is why, so you can weigh a failure correctly:** the new test adds **no `#include`**, introduces **no new API**, and every call it makes (`FindRow<FCardRow>`, `TestTrue/TestFalse/TestNotNull`, `FPackageName::DoesPackageExist`, `FString::Contains`, `GetNameSafe`, `StaticEnum<ECardType>`) **already exists in the compiled-and-executed sibling in the same file**. ⛔ **A compile failure here would therefore most likely be a UNITY-BUILD or macro-name collision, not an API error** — the new fixture class `FSiegeCardRosterAbsentCardIDNegativeControlTest` is unique across `Source/` (I censused it: 2 occurrences, 1 file) and both test-name strings differ.
-6. ⛔ **If a card goes red that is NOT in `cards.csv`, that is a REIMPORT gap, ⛔ not a missing Blueprint — do not burn a QA loop on it** (`qa/TASK-948.md` `W-4`). ⭐ **It did not materialise at `09b9b50` and my own `cards.csv`↔disk join (§3) still balances 22/22 today.**
+⛔ **NO REPAIR COMMIT IS OWED.** `1a457df` stands: **not amended, not reverted.** The subject compiles,
+runs, and passes; every WARN is comment-only.
 
-## 8.2 ⛔ NOTE FOR `TASK-959` (the path-composer extraction)
+**Two follow-up rows I recommend the manager board — ⛔ neither blocks anything:**
 
-⭐ **Re-measured by me at my instant, since this is the number your row turns on:** `/Game/Blueprints` appears **9** times in `SiegeCardRosterTest.cpp`, ⛔ **all 9 above line 316**, ⛔ **ZERO in the new test (`:667`–`:815`)**. The composition still lives in exactly ONE function, `ComposeActorClassPath` (`:302`–`:321`). ⛔ **`TASK-964` added no sixth copy and your *"a sixth copy is a FINDING"* clause is not tripped.** ⚠️ **The file is now 817 lines with TWO test declarations — ⛔ your rewrite must re-point BOTH consumers, and the second one (`:763`/`:764`) calls the composer TWICE in one line pair.**
+- **`TASK-965-A` (build-master) — ⭐⭐ BUY THE COMPILED RED THAT `TASK-964` COULD NOT.** ⛔ **The only
+  agent who can: the author is fenced from compiling and this needs a suite run.** Temporarily invert
+  **`SiegeCardRosterTest.cpp:790`** (`TestFalse` → `TestTrue` on `bAbsentResolves`), run the suite,
+  **paste the verbatim RED**, revert, show `git status` clean. ⭐ **Expected `474 Success / 1 Fail`,
+  and that exact pair is itself the assertion** (`SHIP-§9`: validate the gate against the failure it
+  detects). ⛔ **Second, more valuable half: also exercise the WALK's failure path** by pointing the
+  probe at one absent synthetic row, so **`:477–484` and `:580–584` execute at least once** and their
+  `Printf` substitutions are proven before the day they are needed (W-3).
+- **`TASK-965-B` (gameplay-programmer) — the four comment-only repairs:** **W-1** (`:812` transcribed
+  `22`), **W-2** (`:146` undated *"TODAY"*), **W-3** (header residual note), **W-4** (`:796` label the
+  implied assertion as a tripwire). ⛔ **Zero mechanism changes. ⛔ `default:` stays absent. ⛔ `:145`
+  and `:135–136` must NOT be touched** (N-4, N-5 — dated records, correct as written). ⚠️ **Sequence
+  after `TASK-959`**, which rewrites this same file's composer copy.
+
+**One observation OUTSIDE this row's scope, surfaced because it is the class of gap this batch keeps
+finding — ⛔ NOT counted against `TASK-964`:**
+
+- ⚠️ **`sum(DeckCount) == 50` APPEARS TO BE ASSERTED NOWHERE IN CODE.** My dispatch told me it is
+  *"asserted elsewhere"*; I could not locate it. **`DeckCount` = 0 occurrences under
+  `Source/**/Tests/` and 0 in any `*.py`** — it appears **only** in production `.h`/`.cpp` (48 hits,
+  9 files). ⭐ I **hand-summed `Docs/Data/cards.csv` and the invariant HOLDS: exactly 50** (Footman 9
+  + Archer 8 + Knight 3 + Miner 3 + ArrowTower 3 + Wall 4 + MilitiaMob 3 + Pikeman 3 + Cavalry 3 +
+  Longbowman 2 + Cleric 2 + Ogre 2 + Fireball 2 + FrostNova 1 + Sorcerer 2; `Fog` and `BrightSun`
+  both carry `DeckCount 0`, so the fog batch was **deck-neutral**). ⛔ **But it holds UNMECHANISED —
+  prose, not a gate**, which is `SC-§50` cl. 4's exact shape. ⭐ **`NoticeRange` by contrast IS
+  mechanised** (`SiegeUnitNoticeRangeTest.cpp`, 21 hits) **and this file correctly duplicates
+  neither.**
 
 ---
 
-## 8.3 ⚖️ ⛔ NOT A RULING — ⛔ ONE MEASUREMENT THAT FELL OUT OF MY JOIN, ⛔ FOR `TASK-967`'s OWNER
+## 9. ⚖️ CLOSING — WHAT THIS POST-HOC GATE ACTUALLY COST
 
-⛔ **`TASK-967` is explicitly out of my scope (item (7)) and I am not adjudicating it.** ⛔ **But §3's name join answers its premise in one line, so it would be `SC-§29`-noncompliant to sit on it:** `handoffs/TASK-949-buildmaster.md` §7(2) flags *"14 unit Blueprints on disk vs 13 `CardType Unit` rows"*. ⛔ **The fourteenth is `BP_Unit_Miner`, whose row is `CardType` `Economy` (`cards.csv:5`) and which `ClassifyRow` routes down the UNIT path because it is NOT in `BuildingEconomyCardIDs`.** ⇒ **the sets join exactly 14↔14 and 8↔8 with zero orphans on either side.** ⛔ **Whether that fully closes `TASK-967` is ⛔ that row's call, ⛔ not mine, and this line ⛔ cannot change any verdict in this report.**
-
----
-
-## 9. ⛔ `SC-§29` COVERAGE LEDGER
-
-**THIS REPORT COVERS: ⛔ `TASK-964` ⛔ ALONE** — the single modified file `Source/GitClaudeUnrealTest/Siegebound/Tests/SiegeCardRosterTest.cpp` and `handoffs/TASK-964-programmer.md`.
-
-**THIS REPORT DOES ⛔ NOT COVER:** ⛔ any compile, any suite execution, any Git state (⛔ **I hold none of the three**) · ⛔ `TASK-946`/`BP_Unit_Witch` as an asset · ⛔ `TASK-957` · ⛔ `TASK-959` as an implementation · ⛔ `TASK-962`/`963` · ⛔ `TASK-967` (§8.3 is a measurement, ⛔ not a ruling) · ⛔ the stack lane · ⛔ `Content/FogArea/**` (`TASK-927`) · ⛔ the `TASK-927` unaccounted staged set · ⛔ re-litigating the `default:` ruling (⛔ **ENFORCED, ⛔ not reopened**).
-
-**READ-ONLY, MEASURED BY ME:** `Tests/SiegeCardRosterTest.cpp` (⛔ **all 817 lines**) · `SiegePlayerController.cpp` (`default:` control only) · `CardRow.h:17-25` · `Docs/Data/cards.csv` (⛔ **all 32 rows, typed and joined**) · `Content/Data/DT_Cards.uasset` (binary probe, both polarities) · `Content/Blueprints/Units/**` + `Buildings/**` (globbed, ⛔ **named and joined**) · `.gitattributes` · `.git/lfs/objects/b4/f3/…` · `TASKBOARD.md` `TASK-963`–`966` + `:17190` · `qa/TASK-948.md` (full) · `handoffs/TASK-964-programmer.md` (full) · `handoffs/TASK-949-buildmaster.md` (§1/§4/§7) · `CONVENTIONS.md` `SC-§51`–`SC-§55` · `SLACK.md` registry.
-
-⛔ **NO FILE WAS EDITED except this report. ⛔ NO ROW WAS FLIPPED BY ME — ⛔ I hold no line-editing tool and I will ⛔ NOT whole-file `Write` a board taking concurrent writes; ⛔ the exact status lines were returned to the orchestrator.** ⛔ **NO GIT OPERATION. ⛔ NO COMPILE. ⛔ THE EDITOR WAS NOT TOUCHED AND NO MCP CALL WAS MADE** (⛔ it is wedged on a modal awaiting Jonathan; ⛔ **a zero from a wedged instrument is not a measurement**).
-
----
-
-*qa-reviewer · 2026-09-03 · ⛔ read-only · ⛔ no shell, no Git, no compile, no editor, no MCP · gates `TASK-964` ALONE · ⛔ 0 blockers · method ruled ⭐ SYNTHETIC · `default:` labels ⭐ 0 (control 7) · `-Wswitch` sites ⭐ 2 · path-composer copies added ⭐ 0 · declarations ⭐ 434/32 (⛔ UNEXECUTED) · roster join ⭐ 22↔22, 0 orphans · ⛔ the compiled RED BAR remains OWED to `TASK-961`*
+⭐ **Nothing, in the end — and that is luck, not process.** The code was correct, so running the gate
+a day late cost one review cycle instead of an unreviewed artefact living in the repository forever.
+⛔ **Had it been wrong, `1a457df` would already have shipped it.** The mechanism that swept it in
+(`TASK-987`'s derived pathspec) is **strictly better** than a hand-written list and **must not be
+reverted** — it must be **paired with the gate audit** (`TASK-987` cl. 6e), which is the clause that
+found this. ⭐ **The audit worked. The dispatch is what failed, and the record says so.**

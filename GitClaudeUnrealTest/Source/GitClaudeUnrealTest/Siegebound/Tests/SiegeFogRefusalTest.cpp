@@ -597,13 +597,38 @@ bool FSiegeFogRefusalScopeTest::RunTest(const FString& Parameters)
 	// predicate, because `TASK-1018` must fix it by CONSUMING `TASK-999`'s delivery-derived
 	// answer rather than re-deriving one here. This row is that promise, kept in a form the gate
 	// can check instead of taking on trust.
-	// ⭐⭐ TO ⭐ `TASK-1018`: THIS ROW IS YOURS TO MOVE, AND IT DOES NOT GET DELETED. When the
-	// routing stops asking the effect enum and starts asking the DELIVERY, re-point this
-	// assertion at the new predicate — the claim being made is "the routing is derived in exactly
-	// one place", and that claim outlives the spelling.
+	//
+	// ⛔⛔ RE-POINTED BY ⭐ `TASK-1018` (2026-09-04) — ⛔ MOVED, ⛔ NEVER DELETED, exactly as the
+	// instruction that used to sit here demanded. ⛔ A DELETED PIN IS A GUARD THAT SILENTLY STOPS
+	// GUARDING, and this file's own suite would have gone GREENER for the deletion.
+	//   ⛔ OLD NEEDLE: `if (Row->SpellEffect == ESpellEffect::GoldSteal)`  — ⛔ OLD VALUE 1
+	//   ✅ NEW NEEDLE: `USpellLibrary::SpellRequiresAiming(*Row)`          — ✅ NEW VALUE 1
+	// ⭐ THE CLAIM IS UNCHANGED, WHICH IS THE WHOLE REASON IT MOVES INSTEAD OF DYING: "the spell
+	// routing decision is made in EXACTLY ONE PLACE inside this entry, and this row dies if a
+	// second one appears or the only one disappears." Only the SPELLING of that one place changed
+	// — from an effect-enum comparison (a blacklist of one, which had already failed twice) to a
+	// call into the ONE derivation of "does this spell have a reticle?".
+	// ⛔ THE COUNT IS STILL 1, NOT 2, AND THAT IS LOAD-BEARING: `EnterTargetingMode` holds the
+	// OTHER call to the same predicate, but it is a DIFFERENT function and is therefore outside
+	// `PlayBody`. A 2 here would mean this entry asks the routing question twice.
+	// ⛔ The comment lines above quoting the OLD guard cost nothing: `CountOccurrencesInCode`
+	// skips comment lines, which is exactly why the old needle now measures 0 and this one is the
+	// live claim.
 	TestEqual(
-		TEXT("⭐ the `GoldSteal` routing predicate is UNTOUCHED by this row — one occurrence, exactly as shipped (⛔ TASK-1018 moves this row, it does not delete it)"),
-		CountOccurrencesInCode(PlayBody, TEXT("if (Row->SpellEffect == ESpellEffect::GoldSteal)")), 1);
+		TEXT("⭐⭐ the spell routing predicate is DERIVED and lives in exactly ONE place in this entry — ")
+		TEXT("`USpellLibrary::SpellRequiresAiming(*Row)`, once (⛔ TASK-1018 re-pointed this row from the ")
+		TEXT("`== ESpellEffect::GoldSteal` blacklist it replaced; ⛔ a second occurrence means the question ")
+		TEXT("is being asked twice, a zero means the derivation was inlined back into a list)"),
+		CountOccurrencesInCode(PlayBody, TEXT("USpellLibrary::SpellRequiresAiming(*Row)")), 1);
+
+	// ⛔⛔ AND THE BAN, PAIRED WITH IT — a re-point alone would pass if somebody kept BOTH: the
+	// derived call for the fog cards and the old blacklist beside it for something else.
+	// ⛔ `SC-§75`(B): an exclusion list anywhere in this routing is an automatic fail.
+	TestEqual(
+		TEXT("⛔⛔ THE BLACKLIST IS GONE, NOT MERELY BYPASSED: not one executable `ESpellEffect::GoldSteal` ")
+		TEXT("comparison survives in the whole controller. ⛔ It failed OPEN and had ALREADY failed TWICE — ")
+		TEXT("once per new no-reticle spell — so a THIRD occurrence is what this row exists to prevent."),
+		CountOccurrencesInCode(ControllerSource, TEXT("SpellEffect == ESpellEffect::GoldSteal")), 0);
 
 	// ⚠️ DELIBERATELY NOT PINNED, and the reason is recorded so a future reader does not "complete"
 	// the census: neither the total `ESpellEffect::` count in this function nor a zero for

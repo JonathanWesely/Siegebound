@@ -822,7 +822,14 @@ bool FSiegeBrightSunRefusalIsNetZeroTest::RunTest(const FString& Parameters)
 	if (ExtractFunctionBody(*this, ControllerCpp, TEXT("void ASiegePlayerController::TryConfirmSpellTarget("), ConfirmBody))
 	{
 		TestEqual(
-			TEXT("⭐ PROPERTY 1 (targeting path — where `Fog` and `BrightSun` resolve today): a resolver refusal ")
+			// ⛔ PROSE RE-POINTED BY TASK-1018, ⛔ ASSERTION UNTOUCHED (the count is still 1 and it is still
+			// the only refund site in this function). This used to read "— where `Fog` and `BrightSun`
+			// resolve today"; that clause went FALSE the moment the routing stopped naming `GoldSteal`, and
+			// both fog cards now take the INSTANT path above. ⛔ The row is kept because this path still
+			// carries every AIMED spell (`Fireball`, `FrostNova`, `Lightning`, `BattleCry`) and losing the
+			// refund would bill a player for a refusal on any of them.
+			TEXT("⭐ PROPERTY 1 (targeting path — every AIMED spell; ⛔ `Fog`/`BrightSun` moved to the ")
+			TEXT("INSTANT path in TASK-1018 and are covered by PROPERTY 1 above): a resolver refusal ")
 			TEXT("refunds the FULL cost, `AddGold(TargetingCost)`, exactly once. ⛔ MEASURED at 1, not 2: the ")
 			TEXT("confirm-time affordability guard above it never SPENT, so it has nothing to give back — the only ")
 			TEXT("refund site is the resolver refusal, and losing it bills a player for a refusal."),
@@ -831,8 +838,12 @@ bool FSiegeBrightSunRefusalIsNetZeroTest::RunTest(const FString& Parameters)
 		const int32 RefusalIndex = ConfirmBody.Find(TEXT("USpellLibrary::ResolveSpell("), ESearchCase::CaseSensitive, ESearchDir::FromStart, 0);
 		const int32 ConsumeIndex = ConfirmBody.Find(TEXT("ConfirmPlayFromHand("), ESearchCase::CaseSensitive, ESearchDir::FromStart, 0);
 		TestTrue(
+			// ⛔ Same TASK-1018 re-point: "a refused Fog/BrightSun" named the wrong path after the routing
+			// fix. ⛔ Assertion and ordering claim UNCHANGED — this is still the aimed spells' only
+			// card-consumption guard, and `J-F19`'s own guarantee is now proven on the INSTANT path by
+			// PROPERTY 2 above (`ConfirmInstantDraw` after the refund-and-return).
 			TEXT("⭐⭐ PROPERTY 2 (targeting path): THE CARD IS NOT CONSUMED. `ConfirmPlayFromHand` sits AFTER the ")
-			TEXT("`ResolveSpell` refusal's refund-and-exit, so a refused Fog/BrightSun leaves the slot untouched — ")
+			TEXT("`ResolveSpell` refusal's refund-and-exit, so a refused AIMED spell leaves the slot untouched — ")
 			TEXT("the M2 \"the card leaves the hand at CONFIRM\" law doing exactly what J-F19 asks for."),
 			RefusalIndex != INDEX_NONE && ConsumeIndex != INDEX_NONE && RefusalIndex < ConsumeIndex);
 	}

@@ -1150,9 +1150,14 @@ public:
 	 *  — placement mode's sibling. Reads the card's row from /Game/Data/
 	 *  DT_Cards (GDD §3.0 — never hardcoded) and refuses (log + both refusal
 	 *  delegates) when the data is missing, the CardType is not Spell, the
-	 *  player can't afford it, or the hero is dead; a GoldSteal card never
+	 *  player can't afford it, or the hero is dead; an UNAIMED card never
 	 *  targets and reroutes to the ruling-7 instant resolve instead (hand-less
-	 *  on this direct path — PlayHandSlot owns hand plays). Post-match /
+	 *  on this direct path — PlayHandSlot owns hand plays). ⛔ TASK-1018: the
+	 *  reroute test is USpellLibrary::SpellRequiresAiming, ⛔ not a GoldSteal
+	 *  comparison — it sits BEFORE the hero-dead gate, so an unaimed spell is
+	 *  never hero-gated (which is what makes `BrightSun` playable with a dead
+	 *  hero for its BASE window, AFogVolume's deliberate degradation).
+	 *  Post-match /
 	 *  already-placing / already-targeting calls are silent ignores (the M1
 	 *  early-out pattern). Gold moves ONLY at LMB confirm.
 	 */
@@ -2882,12 +2887,18 @@ private:
 	void BroadcastCommandPrompt(const FString& Prompt);
 
 	/**
-	 *  Instant spell resolution (M5 ruling 7 — GoldSteal/Pickpocket): NO
-	 *  reticle for a global effect. Deduct Cost THEN ResolveSpell,
-	 *  refusal-safe: resolver false ⇒ FULL refund + HUD reason with the card
-	 *  kept (§3.0 net-zero). Slot INDEX_NONE = hand-less direct entry (no
-	 *  draw step). SiegeState is the already-resolved player state
-	 *  (affordability pre-checked by the caller in the same call stack).
+	 *  Instant spell resolution (M5 ruling 7): NO reticle for a global effect.
+	 *  ⛔ WIDENED BY TASK-1018 — this used to say "GoldSteal/Pickpocket", and
+	 *  that sentence went false when the routing stopped naming one effect. Both
+	 *  callers now gate on USpellLibrary::SpellRequiresAiming, so EVERY unaimed
+	 *  spell arrives here: today `Pickpocket`, `Fog` and `BrightSun`
+	 *  (`FOG-§10.1`: "NO RETICLE"), tomorrow whatever the predicate answers
+	 *  false for. Deduct Cost THEN ResolveSpell, refusal-safe: resolver false ⇒
+	 *  FULL refund + HUD reason with the card kept (§3.0 net-zero) — ⛔ this is
+	 *  a DIFFERENT refund site from the targeting path's, and both are live.
+	 *  Slot INDEX_NONE = hand-less direct entry (no draw step). SiegeState is
+	 *  the already-resolved player state (affordability pre-checked by the
+	 *  caller in the same call stack).
 	 */
 	void ResolveSpellInstant(int32 Slot, FName CardID, const FCardRow& Row, ASiegePlayerState& SiegeState);
 
