@@ -142,6 +142,103 @@ namespace SiegeFogRetentionWiringFixture
 	}
 
 	/**
+	 *  ⛔⛔⛔ THE ENGINE DEFECT THAT HUNG THIS FILE, RECORDED WHERE THE NEXT AUTHOR WILL HIT IT.
+	 *
+	 *  `FString::Find(…, ESearchDir::FromStart, StartPosition)` clamps `StartPosition` to
+	 *  ⛔ `Len() - 1`, ⛔ NOT to `Len()` —
+	 *  `Engine/Source/Runtime/Core/Private/Containers/String.cpp.inl:475` (UE 5.8):
+	 *
+	 *      Start += FMath::Clamp(StartPosition, 0, RemainingLength - 1);
+	 *
+	 *  ⇒ a scan-forward loop whose cursor reaches ⛔ EXACTLY `Len()` does not get `INDEX_NONE`.
+	 *  It gets a ⛔ one-character search window over the LAST character and re-finds it. In
+	 *  `CountOccurrencesInCode` above, `From = Found + NeedleLength` then recomputes the SAME
+	 *  value, and the `for (;;)` ⛔ NEVER TERMINATES. No crash, no failure, no allocation — the
+	 *  game thread simply stops returning. (Measured: TASK-1041 loop 1 burned >10 h on one test.)
+	 *
+	 *  ⭐⭐ THE TRIGGER IS EXACT, AND IT IS WHY THE HOUSE HELPER SURVIVED 566 CALLS: the loop only
+	 *  pins when a match ⛔ ENDS AT THE END of a trimmed line, which for a re-find requires the
+	 *  needle to be ⛔ EXACTLY ONE CHARACTER equal to that last character. Every other needle in
+	 *  this tree is ≥ 2 characters — the fixture doc above says so in its own words ("a call shape
+	 *  carrying an open paren, never a bare token") — and a ≥ 2-character needle cannot re-match a
+	 *  1-character window. ⛔ `TEXT(";")` was the FIRST single-character needle ever passed, and a
+	 *  `;` is by construction the last character of a C++ statement line, so it pinned on contact.
+	 *
+	 *  ⛔ DO NOT "fix" `CountOccurrencesInCode` here. It is copied VERBATIM into at least four test
+	 *  files by the law stated above, and this file may repair only itself — a 3-of-N edit is
+	 *  precisely the divergence that law forbids. ⇒ the two helpers below take the character case
+	 *  ⛔ OUT of the string-needle helper entirely, and neither one calls `Find` with a
+	 *  `StartPosition` at all. A tree-wide sweep is a MANAGER's row, not a smuggled one.
+	 */
+
+	/**
+	 *  The source with every COMMENT LINE dropped — the same predicate `CountOccurrencesInCode`
+	 *  applies, hoisted into a projection so that ⛔ index arithmetic can be comment-aware too.
+	 *
+	 *  ⭐⭐ THIS IS THE OTHER HALF OF THE FIX, AND IT CLOSES A ⛔ FALSE GREEN. The ordering anchor
+	 *  below is a plain `Find`, which is ⛔ COMMENT-BLIND, while the count is comment-AWARE. Run
+	 *  both over the same span and a commented-out `// return;` between the dispatch and its real
+	 *  return would ⛔ ANCHOR the pin on a line that CANNOT EXECUTE, while the count — which skips
+	 *  that line — still read a comfortable 1. ⇒ the exact fall-through this row exists to catch
+	 *  could ship green, wearing a comment as camouflage. Projecting FIRST and measuring
+	 *  ⛔ ONLY on the projection makes the two passes agree ⛔ BY CONSTRUCTION rather than by care.
+	 *
+	 *  ⚠️ Line endings are normalised to `\n` on the way out, so the projection is identical
+	 *  whether the file on disk is CRLF or LF. No needle here contains a line terminator.
+	 */
+	static FString CodeLinesOnly(const FString& Source)
+	{
+		TArray<FString> Lines;
+		Source.ParseIntoArrayLines(Lines, /*bCullEmpty=*/ false);
+
+		FString Out;
+		Out.Reserve(Source.Len());
+		for (const FString& Line : Lines)
+		{
+			const FString Trimmed = Line.TrimStart();
+
+			// ⛔ The five clauses are the house predicate, character for character. If the helper
+			//    above ever learns a sixth, this MUST learn it in the same commit or the anchor
+			//    and the count go back to disagreeing about which lines are real.
+			const bool bIsCommentLine =
+				Trimmed.StartsWith(TEXT("//"), ESearchCase::CaseSensitive)
+				|| Trimmed.StartsWith(TEXT("* "), ESearchCase::CaseSensitive)
+				|| Trimmed.StartsWith(TEXT("*/"), ESearchCase::CaseSensitive)
+				|| Trimmed.StartsWith(TEXT("/*"), ESearchCase::CaseSensitive)
+				|| Trimmed.Equals(TEXT("*"), ESearchCase::CaseSensitive);
+
+			if (!bIsCommentLine)
+			{
+				Out += Line;
+				Out += TEXT("\n");
+			}
+		}
+		return Out;
+	}
+
+	/**
+	 *  Occurrences of ONE character. ⛔ Deliberately not expressible through the string-needle
+	 *  helper: a single-character needle is the one input that hangs it (see the note above).
+	 *
+	 *  ⭐ Termination is ⛔ STRUCTURAL, not argued: a counted `for` over `Len()` that never
+	 *  consults `Find`, so the engine clamp has no way in. ⛔ Feed it a COMMENT-FREE projection —
+	 *  it is a raw character scan and knows nothing about comments by itself.
+	 */
+	static int32 CountCharacter(const FString& Source, const TCHAR Character)
+	{
+		int32 Count = 0;
+		const int32 Length = Source.Len();
+		for (int32 Index = 0; Index < Length; ++Index)
+		{
+			if (Source[Index] == Character)
+			{
+				++Count;
+			}
+		}
+		return Count;
+	}
+
+	/**
 	 *  Extracts one function body by signature, ending at the first column-0 closing brace —
 	 *  the house helper, copied verbatim. ⛔ Deliberately NOT a parser: a signature that stops
 	 *  matching FAILS rather than silently scanning nothing and reporting a comfortable zero.
@@ -682,11 +779,19 @@ bool FSiegeFogRetentionOneDoorAndTheAmbushExemptionIsStructuralTest::RunTest(con
 	FString UpdateStateBody;
 	if (ExtractFunctionBody(*this, UnitSource, TEXT("void ASummonedUnit::UpdateState()"), UpdateStateBody))
 	{
-		const int32 RetentionIndex = UpdateStateBody.Find(RetentionExpression, ESearchCase::CaseSensitive);
+		// ⛔ EVERY index below is taken on the COMMENT-FREE PROJECTION, never on the raw body —
+		//    see `CodeLinesOnly`. Mixing a comment-blind `Find` with a comment-aware count over
+		//    the same span is what let a commented-out `// return;` anchor this pin on a line that
+		//    cannot execute. ⭐ One input, one notion of "a real line", for all four rows.
+		const FString UpdateStateCode = CodeLinesOnly(UpdateStateBody);
+
+		const int32 RetentionIndex = UpdateStateCode.Find(RetentionExpression, ESearchCase::CaseSensitive);
 
 		TestTrue(
 			TEXT("(c) ⭐ PRECONDITION — UpdateState really does contain the retention line the two dispatches must ")
-			TEXT("return before. ⛔ If it did not, every ordering row below would be vacuously true."),
+			TEXT("return before. ⛔ If it did not, every ordering row below would be vacuously true. ⛔ Taken on the ")
+			TEXT("comment-free projection, so a retention call that survives only inside a COMMENT reads as ABSENT ")
+			TEXT("— which is a red here, and correctly so: a commented call clamps nothing."),
 			RetentionIndex != INDEX_NONE);
 
 		const TCHAR* const ExemptDispatches[] =
@@ -697,24 +802,53 @@ bool FSiegeFogRetentionOneDoorAndTheAmbushExemptionIsStructuralTest::RunTest(con
 
 		for (const TCHAR* Dispatch : ExemptDispatches)
 		{
-			const int32 DispatchIndex = UpdateStateBody.Find(Dispatch, ESearchCase::CaseSensitive);
+			const int32 DispatchIndex = UpdateStateCode.Find(Dispatch, ESearchCase::CaseSensitive);
 			const int32 ReturnIndex = (DispatchIndex == INDEX_NONE)
 				? INDEX_NONE
-				: UpdateStateBody.Find(TEXT("return;"), ESearchCase::CaseSensitive, ESearchDir::FromStart, DispatchIndex);
+				: UpdateStateCode.Find(TEXT("return;"), ESearchCase::CaseSensitive, ESearchDir::FromStart, DispatchIndex);
+
+			// ⛔⛔⛔ THE OWNERSHIP TERM (TASK-1041, from `qa/TASK-1039.md` W-1) — AND WITHOUT IT THIS
+			//    ROW WAS ⛔ GREEN AGAINST THE ⛔ EXACT REGRESSION ITS OWN MESSAGE NAMES.
+			//    `Find(TEXT("return;"), …, DispatchIndex)` returns the FIRST `return;` ⛔ ANYWHERE
+			//    after the dispatch — and `UpdateState` holds ⛔ THREE MORE of them before the
+			//    retention line (the Siege, the Support and the Witch dispatches). ⇒ ⛔ delete THIS
+			//    dispatch's own `return;` and the ordering below is STILL SATISFIED, because it
+			//    finds somebody else's return and that one is also before the retention line.
+			//    ⛔ Measured twice, independently (qa/TASK-1039 W-1, re-derived at the `12b8707` audit).
+			//    ⭐⭐ THE FIX IS ⛔ OWNERSHIP, NOT ORDERING: exactly ⛔ ONE `;` — the dispatch call's
+			//    own — may sit between the dispatch and the `return;` claimed for it. A fall-through
+			//    puts a whole branch into that gap (the `}` `else` `ClearCommandGroup();` tail plus
+			//    the next dispatch), so the count leaves 1 on the FIRST statement that appears.
+			//    ⚠️ Counted on CODE lines only (`SC-§80`) — here because the SPAN itself is already
+			//    comment-free, so the paragraphs that EXPLAIN this dispatch cannot inflate it; and
+			//    `Between` is EMPTY when either index is stale, which reads 0 — ⛔ never a
+			//    comfortable 1.
+			//    ⛔ TASK-1041 loop 2: this count is ⛔ NOT `CountOccurrencesInCode(Between, TEXT(";"))`.
+			//    A ONE-CHARACTER needle hangs that helper outright on the UE 5.8 `Find` clamp — the
+			//    mechanism is written out in full beside the helper, and it cost a >10 h run.
+			const FString Between = (DispatchIndex != INDEX_NONE && ReturnIndex != INDEX_NONE && ReturnIndex > DispatchIndex)
+				? UpdateStateCode.Mid(DispatchIndex, ReturnIndex - DispatchIndex)
+				: FString();
 
 			TestTrue(
 				FString::Printf(
-					TEXT("(c) ⭐⭐⭐ `%s` is followed by a `return;` that comes ⛔ BEFORE the retention line, so that ")
-					TEXT("lane can NEVER execute a leash read. ⛔ THIS IS THE ASSERTION THAT MAKES \"AMBUSH IS ")
+					TEXT("(c) ⭐⭐⭐ `%s` is followed by ⛔ ITS OWN `return;` — exactly ONE statement sits between them ")
+					TEXT("— and that `return;` comes ⛔ BEFORE the retention line, so that lane can NEVER execute a ")
+					TEXT("leash read. ⛔ THIS IS THE ASSERTION THAT MAKES \"AMBUSH IS ")
 					TEXT("EXEMPT\" A STRUCTURAL FACT RATHER THAN A CONVENTION — and it is the reason no `if` guards ")
 					TEXT("the two drop sites. ⛔ If a future refactor lets this dispatch FALL THROUGH instead of ")
 					TEXT("returning, an AMBUSH unit silently acquires a fog leash and abandons its chase, with ")
-					TEXT("nothing in the diff naming fog. That is exactly the regression this row is here to catch."),
+					TEXT("nothing in the diff naming fog. That is exactly the regression this row is here to catch. ")
+					TEXT("⛔ The OWNERSHIP half is the load-bearing one: without it the deleted `return;` is replaced ")
+					TEXT("by the next dispatch's return and this row stays green through the whole regression. ")
+					TEXT("⛔ And it is measured on CODE ONLY, so a commented-out `// return;` cannot stand in for the ")
+					TEXT("real one."),
 					Dispatch),
 				DispatchIndex != INDEX_NONE
 				&& ReturnIndex != INDEX_NONE
 				&& RetentionIndex != INDEX_NONE
-				&& ReturnIndex < RetentionIndex);
+				&& ReturnIndex < RetentionIndex
+				&& CountCharacter(Between, TEXT(';')) == 1);
 		}
 	}
 

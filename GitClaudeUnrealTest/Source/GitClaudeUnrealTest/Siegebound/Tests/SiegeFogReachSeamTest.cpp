@@ -175,6 +175,31 @@ namespace SiegeFogReachSeamFixture
 	}
 
 	/**
+	 *  ⛔⛔ BARE references to the ceiling MEMBER, with the DOOR's spelling discounted (TASK-1041).
+	 *
+	 *  ⭐⭐ THE COLLISION, AND IT IS A SUBSTRING ONE: `ApplyFogVisionCeilingUU` ⛔ CONTAINS
+	 *  `FogVisionCeilingUU`. ⇒ a plain census of the member's name cannot tell *"this body READS the
+	 *  tuning member"* — the thing `FOG-§9.5`/`FOG-§7b` forbid — from *"this body routes a reach
+	 *  through the ONE unit-side door"*, which is legal everywhere. ⛔ TASK-1008 shipped that door
+	 *  AFTER these pins were written, so the collision arrived under a green suite.
+	 *
+	 *  ⚠️ The failure mode is a ⛔ FALSE RED, not a false green — the pin over-counts, so nothing is
+	 *  hidden today. ⛔ It is hardened anyway because the RED lands on a FUTURE row that did nothing
+	 *  wrong, and the cheapest way out of a false red is to weaken the pin.
+	 *
+	 *  ⭐ THE SUBTRACTION IS ⛔ EXACT, NOT AN APPROXIMATION, and both halves are needed to say so:
+	 *  the door's spelling contains the member's spelling ⛔ EXACTLY ONCE, and
+	 *  `CountOccurrencesInCode` counts ⛔ NON-OVERLAPPING matches ⇒ every door call contributes
+	 *  exactly one false hit and exactly one is removed. ⛔ The result therefore can never go
+	 *  negative, and ⛔ adding door calls can never mask a bare reference.
+	 */
+	static int32 CountBareCeilingMemberReferences(const FString& Source)
+	{
+		return CountOccurrencesInCode(Source, TEXT("FogVisionCeilingUU"))
+			- CountOccurrencesInCode(Source, TEXT("ApplyFogVisionCeilingUU"));
+	}
+
+	/**
 	 *  Extracts one function body by signature, ending at the first column-0 closing brace —
 	 *  the house helper. ⛔ Deliberately NOT a parser: a signature that stops matching FAILS
 	 *  rather than silently scanning nothing (`SC-§38`).
@@ -372,11 +397,15 @@ bool FSiegeFogReachSeamIsPureDelegationTest::RunTest(const FString& Parameters)
 		TEXT("would diverge silently the day the band grows a term."),
 		CountOccurrencesInCode(SeamBody, TEXT("FMath::Min")), 0);
 
+	// ⛔ TASK-1041: the needle is the BARE member, with the door's spelling discounted — see
+	//    `CountBareCeilingMemberReferences`. The seam is UPSTREAM of the door and cannot legally
+	//    call it, so this row is not expected to move; it is swept with the other three because a
+	//    ⛔ PARTIAL sweep re-creates the same blindness one file over.
 	TestEqual(
 		TEXT("⛔ …and it never reads the ceiling member directly. A seam that touched `FogVisionCeilingUU` itself would ")
 		TEXT("have re-implemented the rule's guard clauses by omission (`FOG-§7b`: a zero ceiling must degrade to NO ")
 		TEXT("FOG, never to no vision)."),
-		CountOccurrencesInCode(SeamBody, TEXT("FogVisionCeilingUU")), 0);
+		CountBareCeilingMemberReferences(SeamBody), 0);
 
 	// ⛔ THE POSITIVE CONTROL (`SC-§39`) — a dead extraction must not read as a clean set of zeros.
 	// This exercises the FALSE-NEGATIVE direction with a needle that IS present in the same body.

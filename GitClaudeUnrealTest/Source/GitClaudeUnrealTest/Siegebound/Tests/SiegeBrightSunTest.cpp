@@ -158,6 +158,31 @@ namespace SiegeBrightSunFixture
 	}
 
 	/**
+	 *  ⛔⛔ BARE references to the ceiling MEMBER, with the DOOR's spelling discounted (TASK-1041).
+	 *
+	 *  ⭐⭐ THE COLLISION, AND IT IS A SUBSTRING ONE: `ApplyFogVisionCeilingUU` ⛔ CONTAINS
+	 *  `FogVisionCeilingUU`. ⇒ a plain census of the member's name cannot tell *"this file READS the
+	 *  vision ceiling"* — the coupling `FOG-§9.5` calls an AUTOMATIC FAIL — from *"this file routes
+	 *  a reach through the ONE unit-side door"*, which is legal everywhere. ⛔ TASK-1008 shipped
+	 *  that door AFTER these pins were written, so the collision arrived under a green suite.
+	 *
+	 *  ⚠️ The failure mode is a ⛔ FALSE RED, not a false green — the pin over-counts, so nothing is
+	 *  hidden today. ⛔ It is hardened anyway because the RED lands on a FUTURE row that did nothing
+	 *  wrong, and the cheapest way out of a false red is to weaken the pin.
+	 *
+	 *  ⭐ THE SUBTRACTION IS ⛔ EXACT, NOT AN APPROXIMATION, and both halves are needed to say so:
+	 *  the door's spelling contains the member's spelling ⛔ EXACTLY ONCE, and
+	 *  `CountOccurrencesInCode` counts ⛔ NON-OVERLAPPING matches ⇒ every door call contributes
+	 *  exactly one false hit and exactly one is removed. ⛔ The result therefore can never go
+	 *  negative, and ⛔ adding door calls can never mask a bare reference.
+	 */
+	static int32 CountBareCeilingMemberReferences(const FString& Source)
+	{
+		return CountOccurrencesInCode(Source, TEXT("FogVisionCeilingUU"))
+			- CountOccurrencesInCode(Source, TEXT("ApplyFogVisionCeilingUU"));
+	}
+
+	/**
 	 *  Extracts one function body by signature, ending at the first column-0 closing brace — the
 	 *  house helper. ⛔ Deliberately NOT a parser: a signature that stops matching FAILS rather than
 	 *  silently scanning nothing (`SC-§38` — a probe pinned to a stale coordinate must go RED,
@@ -424,14 +449,18 @@ bool FSiegeBrightSunDatumIsFlatAndDecoupledTest::RunTest(const FString& Paramete
 	//    NOT the hazard, because J-F12's remedy for over-strong fog is still "lower the ceiling".
 	//    ⚠️ Counted on CODE lines only — `FogVolume.h`'s own doc EXPLAINS this rule by naming the
 	//    symbol, which is precisely the case CountOccurrencesInCode exists to survive.
+	//    ⛔ TASK-1041: the needle is now the BARE member, with `ApplyFogVisionCeilingUU` — which
+	//    CONTAINS it — discounted. See `CountBareCeilingMemberReferences`. A volume that one day
+	//    routes a reach through the unit-side door is not the coupling this row forbids, and the
+	//    unhardened needle would have RED-lit it while naming a rule it had not broken.
 	TestEqual(
 		TEXT("⛔⛔ ZERO code references to `FogVisionCeilingUU` in FogVolume.cpp (FOG-§9.5). Coupling the card's height ")
 		TEXT("step to the VISION ceiling would let J-F12's own named remedy — \"lower the ceiling\" — silently retune ")
 		TEXT("BrightSun as a side effect of a vision decision."),
-		CountOccurrencesInCode(FogCpp, TEXT("FogVisionCeilingUU")), 0);
+		CountBareCeilingMemberReferences(FogCpp), 0);
 	TestEqual(
 		TEXT("⛔ …and zero in FogVolume.h's declarations too (the header explains the rule in COMMENTS, which are skipped)."),
-		CountOccurrencesInCode(FogH, TEXT("FogVisionCeilingUU")), 0);
+		CountBareCeilingMemberReferences(FogH), 0);
 
 	// ── (c) ⛔ AND NOT VIA THE TUNING STRUCT EITHER — the indirect spelling of the same coupling.
 	TestEqual(
@@ -915,24 +944,43 @@ bool FSiegeBrightSunPlayAgainClearsBothTimersTest::RunTest(const FString& Parame
 		TEXT("BYTE-UNCHANGED by TASK-982 — one entry point for a state object that now holds two timers."),
 		CountOccurrencesInCode(PlayAgainBody, TEXT("It->ResetFog();")), 1);
 
-	const TCHAR* const PolicyNeedles[] =
+	// ⛔ TASK-1041 — THE SUBSTRING SWEEP, AND THE REASON THE DISCOUNT IS ⛔ PER-ENTRY.
+	//    Each needle now carries an optional PERMITTED SUPERSTRING: a LONGER spelling that CONTAINS
+	//    the needle and is ⛔ NOT the violation. ⛔ Exactly one entry needs it, and it is the one
+	//    TASK-1008's door created — `ApplyFogVisionCeilingUU` CONTAINS `FogVisionCeilingUU`.
+	//    ⛔⛔ NEVER a blanket "strip superstrings" rule: `FogPrevent` is a PREFIX needle ⛔ ON PURPOSE
+	//    (it exists to catch `FogPreventedUntilTimeSeconds`, and TEST 7 above depends on that), so a
+	//    generic version of this fix would have DELETED a live guard while looking identical.
+	struct FPolicyNeedle
 	{
-		TEXT("BrightSun"),
-		TEXT("FogPrevent"),
-		TEXT("FogDurationSeconds"),
-		TEXT("FogVisionCeilingUU"),
-		TEXT("FSiegeFogTuning"),
+		/** The forbidden spelling. */
+		const TCHAR* Needle;
+		/** A longer spelling that CONTAINS `Needle` and is legal — discounted. `nullptr` = none. */
+		const TCHAR* PermittedSuperstring;
 	};
-	for (const TCHAR* const Needle : PolicyNeedles)
+
+	const FPolicyNeedle PolicyNeedles[] =
 	{
+		{ TEXT("BrightSun"),          nullptr },
+		{ TEXT("FogPrevent"),         nullptr },
+		{ TEXT("FogDurationSeconds"), nullptr },
+		{ TEXT("FogVisionCeilingUU"), TEXT("ApplyFogVisionCeilingUU") },
+		{ TEXT("FSiegeFogTuning"),    nullptr },
+	};
+	for (const FPolicyNeedle& Policy : PolicyNeedles)
+	{
+		const int32 PermittedCount = (Policy.PermittedSuperstring != nullptr)
+			? CountOccurrencesInCode(GameMode, Policy.PermittedSuperstring)
+			: 0;
+
 		TestEqual(
 			*FString::Printf(
 				TEXT("⭐⭐⭐ SC-§62 CONDITION HELD: ZERO `%s` anywhere in SiegeGameMode.cpp. The game mode may TELL the ")
 				TEXT("volume to clear; it may NOT know a duration, a ceiling, a density or a window. ⛔ TASK-982 doubled ")
 				TEXT("the state and leaked none of it here — which is the whole reason the second zero lives inside ")
 				TEXT("ResetFog rather than in a second loop up there."),
-				Needle),
-			CountOccurrencesInCode(GameMode, Needle), 0);
+				Policy.Needle),
+			CountOccurrencesInCode(GameMode, Policy.Needle) - PermittedCount, 0);
 	}
 
 	return true;
