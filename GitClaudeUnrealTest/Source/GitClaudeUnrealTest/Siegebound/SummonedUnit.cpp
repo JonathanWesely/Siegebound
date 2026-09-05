@@ -1740,7 +1740,16 @@ void ASummonedUnit::UpdateState()
 	// keeps the ORDERING (leash > notice) at any notice radius, which is what makes those two
 	// `if`s safe to leave adjacent — ⛔ and it keeps it by DERIVATION, so a future card with a
 	// NoticeRange above 5333.33 uu is covered here with no edit to this site.
-	if (CurrentTarget && (!IsTargetAlive(CurrentTarget) || GetDistanceToTarget(MyLocation, CurrentTarget) > GetEffectiveLeashRangeUU()))
+	// ⭐⭐⭐ RETENTION SITE 1 of 2 IS NOW FOG-CLAMPED (TASK-1008). 🧑 "yes clamp retention under
+	// fog" (FOG-§9.11): the bound handed to the compare is the effective leash passed through the
+	// ONE unit-side ceiling — ⛔ BIT-IDENTICAL in clear weather (8000 today) and ⛔ 609.6 with the
+	// fog up. ⛔ It is ⛔ NOT `min(LeashRange, effective notice)`: that form was MEASURED to cut
+	// the CLEAR-WEATHER leash to the notice radius and to put leash EQUAL to notice, re-creating
+	// the drop-then-re-acquire thrash the effective leash exists to close.
+	// ⭐ AND THIS IS THE HALF THAT CARRIES MELEE. A Footman's AttackRange is 120, so the firing
+	// gate below is a NO-OP for him in both fog states — only this line can stop a melee unit
+	// charging 1500 uu at something the fog says it cannot see (FOG-§9.7a).
+	if (CurrentTarget && (!IsTargetAlive(CurrentTarget) || GetDistanceToTarget(MyLocation, CurrentTarget) > ApplyFogVisionCeilingUU(GetEffectiveLeashRangeUU())))
 	{
 		CurrentTarget = nullptr;
 	}
@@ -1768,7 +1777,12 @@ void ASummonedUnit::UpdateState()
 		return;
 	}
 
-	if (CurrentTarget && GetDistanceToTarget(MyLocation, CurrentTarget) <= AttackRange)
+	// ⭐⭐ FIRING GATE 1 of 6, FOG-CLAMPED (TASK-1008). 🧑 "no ranged units will be able to fire
+	// onto anything above 20 feet away" — applied as a SHARED CEILING via `min` against this
+	// unit's OWN AttackRange, ⛔ never by collapsing notice and firing into one number
+	// (FOG-§9.10a). ⛔ `min(120, 609.6) = 120` at every melee site, in both fog states: that
+	// no-op is the CORRECT answer here and the reason retention above is a separate gate.
+	if (CurrentTarget && GetDistanceToTarget(MyLocation, CurrentTarget) <= ApplyFogVisionCeilingUU(AttackRange))
 	{
 		EnterAttack();
 	}
@@ -1797,9 +1811,18 @@ AActor* ASummonedUnit::AcquireTarget() const
 	// ⭐⭐ TASK-838 (FOG-§7 ROW 1 — VISION / ACQUISITION): this gather is an ACT OF SEEING, so it
 	// hands the funnel the two facts only this unit knows — where it is looking FROM, and the
 	// reach it is looking WITH. ⛔ It performs no clamp, consults no ceiling and names no fog
-	// symbol: the ceiling is applied at the ONE place, inside the funnel (FOG-§6). A per-site
+	// symbol: for an ACQUISITION the ceiling is applied inside the funnel (FOG-§6). A per-site
 	// clamp here would be the forgotten-guard-point failure the funnel exists to prevent, and
 	// SiegeAcquisitionFunnelTest test 9 fails the build over it.
+	// ⚠️⚠️ AND THIS SITE IS ⛔ DELIBERATELY NOT ROUTED THROUGH THE UNIT-SIDE CEILING TASK-1008
+	// ADDED — its ABSENCE here is the design, not an omission. This gather already receives the
+	// ceiling from the funnel, so calling the unit-side door as well would clamp the same reach
+	// TWICE: harmless arithmetically (`min` is idempotent) and ⛔ fatal structurally, because it
+	// makes the funnel look optional and puts a second guard point on the acquisition path.
+	// ⇒ ⭐ THE RULE THE WHOLE FILE OBEYS: ⛔ a reach the FUNNEL can see is clamped by the FUNNEL;
+	// ⛔ only reaches the funnel structurally cannot see — FIRING, RETENTION, and the commanded
+	// lane's self-notice bound, which gathers UNBOUNDED around a point — go through the unit-side
+	// chokepoint. ⛔ The exemption is expressed by WHICH FUNCTION a site calls, never by an `if`.
 	// ⚠️⚠️ AMENDED 2026-09-04 (TASK-979, re-valued by TASK-1003) — AND THE AMENDMENT IS THE
 	// POINT. This paragraph read *"AggroRadius is the GDD §3.8 PROFILE CONSTANT 600 … so this
 	// site already sits INSIDE the 609.6 ceiling and fog does not narrow it."* ⛔ THAT IS NOW
@@ -1811,8 +1834,8 @@ AActor* ASummonedUnit::AcquireTarget() const
 	// ⭐⭐ THE OLD PARAGRAPH'S CLOSING SENTENCE IS WHY NOTHING HAD TO BE REWIRED: it kept handing
 	// the query over anyway, *"because it must stay correct if AggroRadius is ever retuned above
 	// the ceiling"*. It was — ⛔ TWICE on 2026-09-04, 600 → 2000 → 5000 — and the site needed
-	// ⛔ zero fog code on either occasion, because the ceiling arrives through the ONE chokepoint
-	// (FOG-§7). ⭐ That is the argument being VERIFIED rather than merely re-asserted: a site
+	// ⛔ zero fog code on either occasion, because the ceiling arrives through the ACQUISITION
+	// chokepoint (FOG-§7). ⭐ That is the argument being VERIFIED rather than merely re-asserted: a site
 	// that had opted out "because the numbers happen to line up today" would have had to be
 	// found and repaired twice in one day, and nothing here moved at all.
 	// 📌 MEASURED CONSEQUENCE, recorded beside the cause: at 600 the funnel's per-candidate cut
@@ -1942,7 +1965,11 @@ void ASummonedUnit::UpdateStateStandardCommanded(const ASiegePlayerController& P
 
 		if (CurrentTarget)
 		{
-			if (GetDistanceToTarget(MyLocation, CurrentTarget) <= AttackRange)
+			// ⭐⭐ FIRING GATE 2 of 6, FOG-CLAMPED (TASK-1008) — the DEFEND stance. ⛔ NOT exempted:
+			// exempting one stance would make clear weather and fog differ on that stance alone,
+			// which is the split item 6b exists to prevent. The ORDER is untouched — a defender
+			// under fog stays assigned, holds its ground and goes blind; it never walks home.
+			if (GetDistanceToTarget(MyLocation, CurrentTarget) <= ApplyFogVisionCeilingUU(AttackRange))
 			{
 				EnterAttack();
 			}
@@ -1989,7 +2016,12 @@ void ASummonedUnit::UpdateStateStandardCommanded(const ASiegePlayerController& P
 		// body EXACTLY", and that includes the drop-then-re-acquire adjacency — so fixing only
 		// UpdateState would have fixed half the game: every Blue Standard unit under a player
 		// command runs THIS copy instead. Same reasoning, same accessor; see site 1.
-		if (CurrentTarget && (!IsTargetAlive(CurrentTarget) || GetDistanceToTarget(MyLocation, CurrentTarget) > GetEffectiveLeashRangeUU()))
+		// ⭐⭐⭐ RETENTION SITE 2 of 2 IS NOW FOG-CLAMPED (TASK-1008), for the same reason and
+		// through the same one ceiling. ⛔ This is the ONLY commanded lane that reads a leash at
+		// all: HOLD / AMBUSH / FOLLOW return from UpdateState before either site and therefore
+		// cannot execute one on any path, which is why AMBUSH's unbounded chase survives this row
+		// ⛔ WITHOUT an exemption branch (FOG-§9.11 — a structural exception, never an `if`).
+		if (CurrentTarget && (!IsTargetAlive(CurrentTarget) || GetDistanceToTarget(MyLocation, CurrentTarget) > ApplyFogVisionCeilingUU(GetEffectiveLeashRangeUU())))
 		{
 			CurrentTarget = nullptr;
 		}
@@ -2012,7 +2044,9 @@ void ASummonedUnit::UpdateStateStandardCommanded(const ASiegePlayerController& P
 			break;
 		}
 
-		if (CurrentTarget && GetDistanceToTarget(MyLocation, CurrentTarget) <= AttackRange)
+		// ⭐⭐ FIRING GATE 3 of 6, FOG-CLAMPED (TASK-1008) — the commanded ATTACK path, which
+		// "mirrors the legacy Standard body EXACTLY" and therefore mirrors its ceiling too.
+		if (CurrentTarget && GetDistanceToTarget(MyLocation, CurrentTarget) <= ApplyFogVisionCeilingUU(AttackRange))
 		{
 			EnterAttack();
 		}
@@ -2036,6 +2070,13 @@ void ASummonedUnit::UpdateStateGrouped(const FSiegeUnitGroup& Group)
 	// goal can never flip every 0.25 s tick the way the retired box-first search
 	// did. There is deliberately NO LeashRange here: the zones ARE the leash for
 	// HOLD, and AMBUSH's whole point is the unbounded chase.
+	// ⭐⭐ AND TASK-1008 DID ⛔ NOT CHANGE THAT, WHICH IS THE POINT WORTH WRITING DOWN. That row
+	// wired 🧑 "yes clamp retention under fog" at the TWO leash sites — ⛔ neither of which is
+	// here. This body still holds ⛔ ZERO distance-from-self drop terms, so a HOLD unit keeps its
+	// zone leash and an AMBUSH unit keeps its unbounded chase ⛔ in fog exactly as in sunshine.
+	// ⛔ The exemption needed ⛔ NO branch: UpdateState returns into this function before either
+	// leash site, so this lane structurally CANNOT execute one. ⛔ Do not "complete" the fog work
+	// by adding a drop term here — 🧑 "commanded units DO NOT LOSE THEIR COMMANDS."
 	const FVector MyLocation = GetActorLocation();
 
 	// a dead/destroyed target is dropped for BOTH types
@@ -2117,7 +2158,13 @@ void ASummonedUnit::UpdateStateGrouped(const FSiegeUnitGroup& Group)
 
 	if (CurrentTarget)
 	{
-		if (GetDistanceToTarget(MyLocation, CurrentTarget) <= AttackRange)
+		// ⭐⭐ FIRING GATE 4 of 6, FOG-CLAMPED (TASK-1008) — and this is the ONE fog term the
+		// zone-ordered lane receives. ⛔ NOTHING ELSE HERE MOVES: this body still has ⛔ zero
+		// distance-drop terms, so a HOLD unit keeps its zone leash and an AMBUSH unit keeps its
+		// deliberately unbounded chase. 🧑 "commanded units DO NOT LOSE THEIR COMMANDS" — under
+		// fog a grouped unit holds its target and its station and simply cannot SHOOT past
+		// 609.6, which is the card without the order being abandoned (FOG-§9.11).
+		if (GetDistanceToTarget(MyLocation, CurrentTarget) <= ApplyFogVisionCeilingUU(AttackRange))
 		{
 			EnterAttack();
 		}
@@ -2421,7 +2468,9 @@ AActor* ASummonedUnit::AcquireEnemyNearPoint(const FVector& Center, float Radius
 	// IS: it warned against a behaviour change *wearing a fog card's commit message*. So the bound
 	// is a SITE-LOCAL distance cut on a COMBAT row (TASK-979), applied below the loop and ⛔ NOT by
 	// changing this query — the funnel still receives `SeeingFromUnbounded` and the fog lane is
-	// untouched. TASK-980 later routes that already-existing bound through the fog-aware accessor.
+	// untouched. ✅ TASK-1008 has now routed that already-existing bound through the unit-side
+	// ceiling; ⛔ THIS QUERY IS STILL UNBOUNDED and must stay that way — the clamp is on the
+	// self-distance cut below, never on the gather.
 	const FSiegeVisionQuery Vision = FSiegeVisionQuery::SeeingFromUnbounded(MyLocation);
 
 	TArray<AActor*> HostileAgents;
@@ -2437,8 +2486,9 @@ AActor* ASummonedUnit::AcquireEnemyNearPoint(const FVector& Center, float Radius
 	// ⛔⛔ "OR ANYTHING" IS WHY THIS LIVES HERE AND NOT ON THE FOG ROW: the bound is a property of
 	// the ENGAGEMENT RADIUS, so it must hold in CLEAR WEATHER too. Boarded on the fog card alone,
 	// a commanded unit would see its whole circle in sunshine and part of it in fog for no reason
-	// a future reader could reconstruct. TASK-980 routes THIS existing read through the fog-aware
-	// accessor; it does not add the bound.
+	// a future reader could reconstruct. ✅ TASK-1008 routed THIS existing read through the
+	// unit-side ceiling; it did ⛔ not add the bound, and the bound must ⛔ never be re-added
+	// beside it — one term, ceilinged, not two terms racing.
 	// ⛔ THE ORDER ASSIGNMENT IS UNTOUCHED — this cuts TARGET ACQUISITION only. A unit told to
 	// guard a circle stays assigned, holds its station and goes blind; it does not abandon the
 	// zone. (UpdateStateGrouped's deliberate absence of a distance-drop path is likewise
@@ -2479,7 +2529,19 @@ AActor* ASummonedUnit::AcquireEnemyNearPoint(const FVector& Center, float Radius
 	// ASorcererUnit carry AggroRadius 0, so this cut rejects everything — and their real seal
 	// (CanEverAttack(), guard 2 in UpdateStateGrouped) already forces the target null before this
 	// function is ever reached for them.
-	const float NoticeRadiusUU = GetEngagementRadiusUU();
+	// ⭐⭐⭐ NOTICE BOUND — THE NINTH AND LAST FOG-CLAMPED REACH (TASK-1008). The bound itself was
+	// INTRODUCED by TASK-979 and is unconditional ("due to fog OR ANYTHING"); this row does the
+	// one thing both paragraphs above promised and routes THAT EXISTING READ through the ceiling.
+	// ⛔ It does not add the bound, and it must never be re-added beside this one.
+	// ⛔ HOISTED ABOVE THE LOOP DELIBERATELY: one ceiling evaluation per call, ⛔ not per
+	// candidate — the reach is a property of the UNIT, so recomputing it per candidate would buy
+	// nothing and pay a fog-state read for every hostile on the field.
+	// ⭐⭐ THIS IS THE HALF THAT REFUSES THE INTRUDER: an enemy standing INSIDE a commanded unit's
+	// guard circle but beyond 609.6 uu from that unit is not acquired under fog, while the ORDER
+	// itself survives untouched (🧑 "commanded units DO NOT LOSE THEIR COMMANDS in fog, however
+	// if an enemy unit walks into the circle … outside the range in which they can notice them
+	// due to fog OR ANYTHING, the commanded unit still will not be able to detect them").
+	const float NoticeRadiusUU = ApplyFogVisionCeilingUU(GetEngagementRadiusUU());
 
 	// Identical bucketing/tie-break to AcquireTarget — the eligibility gate is now TWO terms:
 	// the 2D disc anchored on Center (the zone order) AND the notice bound from self above.
@@ -2686,7 +2748,13 @@ void ASummonedUnit::UpdateStateSiege()
 		return;
 	}
 
-	if (GetDistanceToTarget(MyLocation, CurrentTarget) <= AttackRange)
+	// ⭐⭐ FIRING GATE 5 of 6, FOG-CLAMPED (TASK-1008) — and it is ROUTED rather than exempted
+	// even though it is INERT on shipped data (Sapper/Ogre Range 120 ⇒ `min(120, 609.6) = 120`).
+	// ⛔ Exempting an inert site turns a structural rule into a LIST, and the next Siege card
+	// with a longer reach would be the hole. ⚠️ It is also the SUICIDE trigger, so a clamp that
+	// ever did bite here would delay a detonation rather than merely a swing — one more reason it
+	// goes through the same ceiling as everything else instead of being reasoned about locally.
+	if (GetDistanceToTarget(MyLocation, CurrentTarget) <= ApplyFogVisionCeilingUU(AttackRange))
 	{
 		// SUICIDE (TASK-055, Sapper): reaching attack range triggers a SINGLE AoE detonation
 		// (row Damage over AoERadius, Siege-typed) instead of the normal Siege melee — then the
@@ -4067,8 +4135,17 @@ void ASummonedUnit::PerformAttack()
 	// range re-check also yields the contact point for the impact VFX (TASK-020):
 	// the closest point on the target's collision to us, already fallen back to the
 	// target's actor location when it has no usable collision
+	// ⭐⭐⭐ FIRING GATE 6 of 6, FOG-CLAMPED (TASK-1008) — ⛔ AND THIS IS THE ONE THAT ACTUALLY
+	// STOPS THE ARROW. The five gates above decide whether to ENTER the attack state; this one
+	// runs on the attack CADENCE timer and is the last thing between a held target and a shot.
+	// 🧑 "no ranged units will be able to fire onto anything above 20 feet away" is enforced HERE
+	// on every cadence tick, which is what makes fog a STANDING CONDITION rather than an
+	// acquisition-time filter (FOG-§9.7) — an implementation that filtered only acquisition would
+	// pass every ordinary-case test while leaving engaged units shooting through the fog.
+	// ⚠️ DECLARED RESIDUAL (FOG-§9.7a, unchanged): an arrow ALREADY IN THE AIR still lands. The
+	// gate is the decision to FIRE, never the projectile.
 	FVector ImpactPoint = FVector::ZeroVector;
-	if (GetDistanceToTarget(GetActorLocation(), Target, ImpactPoint) > AttackRange)
+	if (GetDistanceToTarget(GetActorLocation(), Target, ImpactPoint) > ApplyFogVisionCeilingUU(AttackRange))
 	{
 		return; // drifted out of range between checks — no hit, the state check re-chases
 	}
@@ -4526,6 +4603,42 @@ float ASummonedUnit::ResolveEffectiveLeashRangeUU(float LeashRangeUU, float Noti
 float ASummonedUnit::GetEffectiveLeashRangeUU() const
 {
 	return ResolveEffectiveLeashRangeUU(LeashRange, AggroRadius, LeashMarginMultiplier);
+}
+
+// ---------------------------------------------------------------------------
+// ═══ THE ONE UNIT-SIDE FOG CHOKEPOINT (TASK-1008) ═══
+// 🧑 Jonathan, verbatim 2026-09-04: "fog should make units DROP existing targets if they are
+// outside the 609 range" and "yes clamp retention under fog" (FOG-§9.11's retention clause).
+// ⛔ Before this row the fog ceiling bound ACQUISITION ONLY: a unit that already held a target
+// chased it to the full 8000 leash and fired at its full card Range, in fog it provably could
+// not see through. ⛔ That is not a number bug — the funnel runs at GATHER time and is
+// structurally incapable of being asked "do I STILL hold this?" between gathers.
+// ⛔ THE ONE FUNCTION BELOW IS THE WHOLE ANSWER, and its shape is the argument: it names the
+// fog rule ONCE for this entire class, does no arithmetic, holds no state and takes no branch.
+// ⛔ Nine reach sites call it; NONE of them may clamp for itself (FOG-§9.6 / FOG-§7's structural
+// law — the exemption is expressed by WHICH FUNCTION a site calls, never by an `if`).
+// ---------------------------------------------------------------------------
+
+float ASummonedUnit::ApplyFogVisionCeilingUU(float RequestedReachUU) const
+{
+	// ⛔⛔ THE ONLY FOG-RULE CALL IN THIS FILE, AND IT IS PINNED AT ONE BY A MACHINE:
+	// Tests/SiegeAcquisitionFunnelTest.cpp test 9 counts the seam's name here and requires
+	// EXACTLY ONE occurrence, INSIDE this body, via an authorised-chokepoint table that carries a
+	// written reason per entry. ⛔ A second call anywhere in ASummonedUnit is the forgotten-
+	// guard-point failure the whole funnel exists to prevent, and it turns that row RED.
+	// ⛔ Do NOT "fix" such a red by relaxing the token list — route the new site through HERE.
+	//
+	// ⛔ NO LOCAL `min`, NO ceiling literal, NO fog-state read, NO bRangedAttack gate (that flag
+	// is PROJECTILE DELIVERY, so CrystalTower ships bRanged=false at Range 800 and would walk
+	// straight through such a gate — FOG-§9.8c). The seam owns all of it and hands back a REACH:
+	// the state itself never crosses its boundary in either direction, so no caller here can
+	// learn the weather, branch on it, or become a second door.
+	//
+	// ⛔ NEVER CACHE THE RETURN (FOG-§9.6). Fog rises and clears between polls, so the value must
+	// be asked for again every evaluation. The measured cost of that liveness is one
+	// TActorIterator<AFogVolume> walk per call inside AFogVolume::Find; if it ever bites, the
+	// cache belongs THERE, never here.
+	return FSiegeCombatStatics::ResolveFogClampedReachUU(GetWorld(), RequestedReachUU);
 }
 
 float ASummonedUnit::GetClassDefaultEngagementRadiusUU() const

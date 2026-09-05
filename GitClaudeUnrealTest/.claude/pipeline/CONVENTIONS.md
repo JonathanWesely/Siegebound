@@ -4292,6 +4292,11 @@ Added 2026-08-15 (`W7-R4`). ⚖️ **Written because this wall has now blocked T
 - ⛔ **MEASURED by ⭐ `TASK-965` ⛔ ON ITSELF: its session `gitStatus` read ⛔ HEAD `84eec02` and listed the ⛔ ENTIRE FOG BATCH as ⛔ UNCOMMITTED.** ⛔⛔ **THAT BATCH ⛔ IS `1a457df`.** ⛔ **It used ⛔ NOT ONE BYTE of it and ⛔ said why.**
 - ⇒ ⛔⛔⛔ **THE FAILURE THIS INVITES IS ⛔ NOT *"a stale list"* — ⛔ IT IS AN AGENT CONCLUDING THAT ⛔ COMMITTED, ⛔ REVIEWED, ⛔ SHIPPED WORK IS ⛔ STILL SITTING UNCOMMITTED IN THE TREE, AND ⛔ ACTING TO *"RESCUE"* IT.** ⛔ **The ⛔ instinctive rescue is a ⛔ stage, a ⛔ commit, or — ⛔ worst — a ⛔ `git checkout` to *"clean up"* what looks like leftovers** (⭐ `SC-§71`, ⛔ which ⛔ already cost this project a `qa-passed` diff).
 - ⛔ **AND IT ⛔ COMPOUNDS WITH THE ⛔ SEVENTH LIE (⭐ `SC-§68`): ⛔ a `git show HEAD:<path>` check ⛔ ALSO reports false divergence right after a commit** ⇒ ⛔ **two independent instruments ⛔ both saying *"the commit didn't happen"*, ⛔ to an agent whose snapshot ⛔ agrees.** ⛔ **⛔ THREE CONFIRMATIONS, ⛔ ALL WRONG.**
+- ⛔⛔⭐⭐ **SC-§55b — THE ⛔ COMPANION RULE: ⛔ ON A ⛔ LIVE TREE, A ⛔ COUNT IS A MEASUREMENT WITH A ⛔ SHELF LIFE OF ⛔ MINUTES. ⛔ CITE THE ⛔ METHOD, ⛔ NEVER THE FIGURE.** (added 2026-09-04)
+  - ⛔ **MEASURED: the orchestrator handed ⭐ `TASK-1034` *"a handful vs 45"* for the ⛔ untracked-collapse check. ⛔ The host measured ⛔ `27` collapsed vs ⛔ `59` expanded** ⇒ ⛔ **a drift of ⛔ 14 ⛔ WITHIN THE HOUR.**
+  - ✅ **⛔ THE MECHANISM IT WAS GIVEN WAS ⛔ REAL AND ⛔ CORRECT** (⛔ `git status` ⛔ COLLAPSES an untracked directory to ⛔ one entry ⇒ ⛔ use ⛔ `--untracked-files=all`). ⛔ **⛔ ONLY THE FIGURES WERE STALE.** ⛔ **The host ⛔ RE-DERIVED every number itself and ⛔ said so.**
+  - ⇒ ⚖️ ***⛔ A METHOD IS ⛔ DURABLE; ⛔ A COUNT TAKEN FROM A ⛔ LIVE TREE IS ⛔ PERISHABLE ON THE ⛔ ORDER OF MINUTES. ⛔ HANDING SOMEBODY A FIGURE INVITES THEM TO ⛔ RECONCILE AGAINST IT; ⛔ HANDING THEM THE METHOD MAKES THEM ⛔ MEASURE.***
+  - ✅ **WHEN RELAYING A TREE OBSERVATION: ⛔ give the ⛔ COMMAND and the ⛔ HAZARD, and ⛔ mark any number as ⛔ *"my instant, ⛔ re-derive yours"*.** ⛔ **⛔ A mismatch against a relayed figure is ⛔ EXPECTED, ⛔ not a finding.**
 - ✅ **THE RULE, ⛔ UNCHANGED BUT ⛔ NOW URGENT: ⛔ `gitStatus` in your context is a ⛔ CITATION. ⛔ MEASURE the tree yourself (⛔ `git status --porcelain`, ⛔ `git log -1`) ⛔ BEFORE acting on ⛔ any belief about what is committed.** ⛔ **If you hold ⛔ no `Bash` (⭐ `SC-§78`), you ⛔ CANNOT measure it ⇒ ⛔ you ⛔ MUST NOT assert it — ⛔ route the question to a role that can.**
 - ⇒ ⚖️ ***⛔ A SNAPSHOT IS ⛔ MOST DANGEROUS ⛔ IMMEDIATELY AFTER A LARGE COMMIT, ⛔ BECAUSE THAT IS EXACTLY WHEN IT IS ⛔ MOST WRONG AND ⛔ MOST PLAUSIBLE — ⛔ IT DESCRIBES A STATE THAT ⛔ GENUINELY EXISTED, ⛔ MINUTES AGO, ⛔ IN DETAIL.***
 
@@ -4376,6 +4381,40 @@ Added 2026-08-15 (`W7-R4`). ⚖️ **Written because this wall has now blocked T
 - ✅ **THE RULE: ⛔ when quoting a ⛔ ZERO or an ⛔ ABSENCE as a fact, ⛔ STATE WHETHER ANYTHING ⛔ ENFORCES IT, and ⛔ NAME the enforcer.** ⛔ **`"X is 0"` is ⛔ incomplete; ⛔ `"X is 0, pinned by <file>:<test>"` or ⛔ `"X is 0, unenforced"` is ⛔ the finding.**
 - ⛔ **AND IT ⛔ COMPOUNDS THROUGH RELAYS: this one travelled ⛔ QA → coordinator → board → dispatch, ⛔ gaining authority at every hop while the ⛔ cause stayed behind at hop one** (⛔ the `SC-§66` failure mode, ⛔ on a different payload).
 - ⭐ **SIBLING OF `SC-§63`** (⛔ a pin written against today's call graph becomes a trap for the ⛔ first legitimate second consumer). ⛔ **`§63` is about the ⛔ PIN; ⛔ this is about the ⛔ CITATION OF WHAT THE PIN PRODUCES.**
+
+### SC-§84 🚨⛔⛔⛔⭐⭐⭐ **A FENCE THAT FORCES A ⛔ CORRECT AGENT TO ⛔ BREACH IT IS A ⛔ DEFECTIVE FENCE, ⛔ NOT A DEFECTIVE AGENT — ⛔ AND WHEN IT FORCES THE ⛔ SAME BREACH ⛔ TWICE, THE ⛔ EVIDENCE IS IN.** (added 2026-09-05; ⛔ **`TASK-1007` and `TASK-1008` ⛔ both corrected their own `blocked-by`, ⛔ QA ⛔ accepted both** — ⛔ **the manager's ruling, on the coordinator's referral**)
+
+> ### ⚖️⭐⭐ **THE RULING, ⛔ BINDING: ⛔ YES — ⛔ AN ASSIGNEE ⛔ MAY CORRECT ITS ⛔ OWN ROW'S `blocked-by`, ⛔ AND ⛔ ONLY IN THE ⛔ ONE SHAPE BELOW. ⛔ IT IS A ⛔ NARROW LICENCE, ⛔ NOT A GENERAL ONE.**
+
+1. ⛔⛔ **CLAUSE 1 — THE ⛔ SHAPE THAT BOUGHT IT.** ⛔ A row is boarded `blocked-by: TASK-A`. ⛔ **`TASK-A` then ⛔ completes.** ⛔ The ⛔ dispatch itself ⛔ records it as ⛔ discharged. ⇒ ⛔ **the assignee now faces a row whose ⛔ own text ⛔ contradicts the ⛔ instruction that sent it, and ⛔ every path is a breach: ⛔ ⛔ (a) obey the stale row ⇒ ⛔ REFUSE WORK THE COORDINATOR ORDERED · ⛔ (b) obey the dispatch ⇒ ⛔ WORK A ROW MARKED BLOCKED · ⛔ (c) fix the row ⇒ ⛔ EDIT A BOARD FIELD THAT IS THE MANAGER'S.**
+2. ⚖️⭐⭐ **CLAUSE 2 — ⛔ (c) IS ⛔ CORRECT, AND THE OTHER TWO ARE ⛔ WORSE.** ⛔ **(a) ⛔ stalls a green lane on a ⛔ known-false fact. ⛔ (b) leaves the ⛔ FALSEHOOD ON THE BOARD, where the ⛔ NEXT reader — ⛔ a gate audit, an integrator's pathspec, a future manager — ⛔ reads a ⛔ live blocker that is ⛔ not live.** ⇒ ⛔ **an ⛔ UNCORRECTED stale blocker is ⛔ EXACTLY the ⛔ `GATE: OWED` disease: a ⛔ board field that ⛔ lies while ⛔ looking procedural.**
+3. ✅⛔⛔ **CLAUSE 3 — THE ⛔ FOUR CONDITIONS. ⛔ ALL FOUR, ⛔ OR IT IS A BREACH.**
+   ✅ **(i) ⛔ THE BLOCKER IS ⛔ DISCHARGED ⛔ IN FACT — ⛔ and the assignee ⛔ NAMES THE EVIDENCE** (⛔ the gate verdict path, the commit hash, or ⛔ the dispatch sentence that records it). ⛔ **⛔ NOT *"it looks done"*.**
+   ✅ **(ii) ⛔ IT IS THE ⛔ ASSIGNEE'S ⛔ OWN ROW. ⛔ ⛔ NEVER ANOTHER ROW'S `blocked-by`, ⛔ never a ⛔ downstream gate's.**
+   ✅ **(iii) ⛔ THE EDIT ⛔ STRIKES ⛔ NOTHING. ⛔ Mark it ⛔ `✅ TASK-A (discharged <evidence>)` — ⛔ the blocker stays ⛔ VISIBLE and ⛔ DATED.** ⛔⛔ **⛔ DELETING A BLOCKER DESTROYS THE ⛔ DEPENDENCY RECORD AND IS ⛔ FORBIDDEN OUTRIGHT.**
+   ✅ **(iv) ⛔ IT IS ⛔ DECLARED in the handoff, ⛔ under its own heading, ⛔ as a ⛔ BOARD EDIT — ⛔ so the ⛔ manager and the ⛔ gate both see it.** ⛔ **An ⛔ undeclared board edit is ⛔ still a breach ⛔ even if the content is right.**
+4. ⛔⛔ **CLAUSE 4 — ⛔ WHAT IT DOES ⛔ NOT LICENSE, ⛔ STATED SO NOBODY WIDENS IT.** ⛔ **⛔ NOT `status:` · ⛔ NOT `spec:` · ⛔ NOT `names:` · ⛔ NOT `GATE:` · ⛔ NOT `parallel-safe:` · ⛔ NOT ⛔ ADDING a blocker · ⛔ NOT ⛔ another row's anything.** ⇒ ⛔ **⛔ ONE FIELD, ⛔ ONE ROW, ⛔ ONE DIRECTION (⛔ discharged-only), ⛔ WITH EVIDENCE.** ⛔ **A row may ⛔ never mark ⛔ itself `qa-passed` or ⛔ its own gate waived — ⛔ that is ⛔ still the `SC-§64a` prohibition and it is ⛔ untouched.**
+5. ⛔⛔⭐⭐ **CLAUSE 5 — THE ⛔ REAL DEFECT WAS ⛔ UPSTREAM, AND THE ⛔ MANAGER OWNS IT.** ⛔ **⛔ TWO agents hit ⛔ the same wall on ⛔ the same night ⇒ ⛔ the wall was ⛔ mine.** ⇒ ✅ **⛔ BINDING ON ME: ⛔ when a coordinator's dispatch records a blocker as ⛔ discharged, the ⛔ BOARD SHOULD ALREADY SAY SO. ⛔ Flipping a satisfied `blocked-by` is ⛔ MANAGER WORK, ⛔ done at the ⛔ same moment the gate verdict is boarded — ⛔ not left for the ⛔ assignee to trip over.** ⛔ **⛔ THIS LICENCE IS A ⛔ SAFETY NET FOR MY LATENCY, ⛔ NOT A ⛔ TRANSFER OF THE FIELD.**
+6. ⚖️ **CLAUSE 6 — KINSHIP.** ⭐ `SC-§58` (⛔ an instruction conflict is ⛔ SURFACED, ⛔ never dissolved — ⛔ **this is that law's ⛔ first case where surfacing ⛔ alone was ⛔ insufficient, because the ⛔ falsehood ⛔ persists in a ⛔ shared artefact**) · ⭐ `SC-§64a` (⛔ a row cannot certify ⛔ itself — ⛔ **the boundary this licence stops at**) · ⭐ the `GATE: OWED` abolition (⛔ **the ⛔ same disease in a ⛔ different field**) · ⭐ `SC-§54` cl. 1. ⇒ 📌 ⛔ **THE FAMILY SENTENCE: ⛔ AN AGENT MAY ⛔ RETIRE A FACT THAT ⛔ EVENTS HAVE RETIRED, ⛔ WITH EVIDENCE AND IN THE OPEN — ⛔ AND MAY ⛔ NEVER MANUFACTURE ONE.**
+
+### SC-§83 🚨⛔⛔⛔⭐⭐⭐ **A ROW THAT ⛔ RED-PROOFS AN ⛔ EXISTING PIN AND ⛔ NOT ITS ⛔ OWN NEW ONE HAS ⛔ PROVED THE ⛔ EASIER HALF. ⛔ THE ⛔ AUTHORED GUARD IS THE ⛔ UNPROVEN ONE ⛔ BY CONSTRUCTION.** (added 2026-09-05; ⛔ **`qa/TASK-1039.md` W-1 — ⛔ THREE mutations against the ⛔ INHERITED test, ⛔ ZERO against the ⛔ AUTHORED one, ⛔ and the authored one was ⛔ the defective one**)
+
+- ⛔ **THE MEASUREMENT: `TASK-1008` ⛔ extended an existing guard ⛔ AND authored a new one. ⛔ It red-proofed the ⛔ EXTENSION ⛔ three ways. ⛔ The ⛔ NEW pin got ⛔ zero mutations — ⛔ and it is the one that ⛔ does not guard what it names** (`Tests/SiegeFogRetentionWiringTest.cpp:698-718`: ⛔ **`Find(TEXT("return;"), …, DispatchIndex)` returns the ⛔ FIRST return ⛔ ANYWHERE after the dispatch, and `UpdateState` holds ⛔ THREE MORE before the retention line** ⇒ ⛔ **delete the dispatch's own `return;` and the pin ⛔ STILL PASSES**).
+- ⇒ ⚖️⭐⭐ ***⛔ EFFORT FLOWS TO THE ⛔ FAMILIAR GUARD. ⛔ AN INHERITED PIN COMES WITH A ⛔ KNOWN FAILURE MODE — ⛔ YOU ALREADY KNOW WHAT TO BREAK. ⛔ A PIN YOU ⛔ JUST WROTE COMES WITH THE ⛔ AUTHOR'S OWN MODEL OF IT, ⛔ WHICH IS ⛔ EXACTLY THE MODEL THAT ⛔ PRODUCED THE BUG.***
+- ⛔⛔ **AND THE ⛔ GREEN IS ⛔ WORTHLESS AS EVIDENCE HERE: ⛔ a pin that matches ⛔ too much is ⛔ green on ⛔ correct code and ⛔ green on ⛔ broken code alike.** ⛔ **That is ⛔ `SC-§79` — ⛔ ⛔ but `§79` asks *"was it ⛔ seen red?"*; ⛔ this section says ⛔ WHICH pin to ask it about ⛔ FIRST.**
+- ✅ **BINDING: ⛔ WHEN A ROW ⛔ TOUCHES BOTH AN ⛔ EXISTING GUARD AND A ⛔ NEW ONE, THE ⛔ MUTATION BUDGET GOES TO THE ⛔ NEW ONE ⛔ FIRST.** ⛔ **⛔ AT LEAST ONE observed RED per ⛔ AUTHORED pin, ⛔ named in the handoff with the ⛔ mutation applied.** ⛔ **⛔ Red-proofing only the inherited half is ⛔ a WARN at gate, ⛔ automatically.**
+- ⚠️ **THE ⛔ SUBSTRING SIBLING, ⛔ SAME ROW, ⛔ SAME CAUSE: ⛔ a bare `FogVisionCeilingUU` needle matches ⛔ `FogVisionCeilingUU_Something` too.** ⛔ **CENSUS CORRECTION: ⛔ FOUR bare pins tree-wide, ⛔ NOT the relayed count — ⛔ the author's own sweep ⛔ MISSED `SiegeFogReachSeamTest.cpp:379`.** ⇒ ⛔ **⛔ A SWEEP THAT MISSES ONE FILE ⛔ RE-CREATES THE BLINDNESS ⛔ ONE FILE OVER; ⛔ fix ⛔ ALL or ⛔ NONE** (⛔ boarded as `TASK-1041`, ⛔ **not hardened in place — ⛔ it fails ⛔ RED, and a red guard is ⛔ noisy, ⛔ not unsafe**).
+- ⚖️ **KINSHIP.** ⭐ `SC-§79` (⛔ a green is not evidence) · ⭐ `SC-§37` (⛔ the pin's ⛔ shape) · ⭐ `SC-§63` (⛔ a pin written against ⛔ today's call graph) · ⭐ `SC-§80` (⛔ comment-blindness). ⇒ 📌 ⛔ **THE FAMILY SENTENCE: ⛔ THE GUARD YOU ⛔ TRUST LEAST SHOULD BE THE ONE YOU ⛔ WROTE MOST RECENTLY.**
+
+### SC-§82 🚨⛔⛔⛔⭐⭐⭐ **WHEN A RULING ⛔ AUTHORISES BREAKING A ⛔ STANDING CHECK, THE ⛔ BASELINE MOVES IN THE ⛔ SAME ACTION. ⛔ A ⛔ RED-BUT-EXPECTED CHECK IS THE ⛔ WORST ARTEFACT THIS PROJECT PRODUCES.** (added 2026-09-05; ⛔ **`L_Arena`'s SHA256 pin, moved on 🧑 his ruling**)
+
+- ⛔ **THE SHAPE: a ⛔ STANDING CHECK exists precisely ⛔ BECAUSE an artefact should ⛔ not change** (⛔ here: ⛔ *"build-master verifies `L_Arena`'s SHA256 is ⛔ UNCHANGED at the gate"*, ⛔ backed by the whole ⛔ terminate-over-graceful editor discipline). ⇒ ⛔ **then a ⛔ LEGITIMATE RULING authorises ⛔ exactly the change it forbids.**
+- ⇒ ⚖️ ***⛔ THE CHECK IS NOW ⛔ RED FOR A ⛔ GOOD REASON — WHICH IS THE ⛔ STALE-VERDICT SHAPE (⭐ `SC-§73`) WEARING A ⛔ GREEN-LOOKING PROCESS. ⛔ THE NEXT READER EITHER ⛔ IGNORES A REAL RED OR ⛔ SOFTENS THE CHECK, AND ⛔ BOTH ARE PERMANENT.***
+- ⛔⛔ **AND IT IS ⛔ WORSE THAN A STALE ROW, BECAUSE A ⛔ STANDING CHECK HAS ⛔ NO OWNER AND ⛔ NO EXPIRY: ⛔ it is consulted by ⛔ every future gate, ⛔ forever, and ⛔ nothing in its own text says ⛔ *"this was deliberately invalidated on <date>"*.**
+- ✅ **BINDING: ⛔ THE ⛔ RE-PIN IS ⛔ PART OF THE ⛔ SAME ACTION AS THE CHANGE. ⛔ NOT A FOLLOW-UP ROW, ⛔ NOT A NOTE, ⛔ NOT *"we'll update it when it settles"*.**
+- ✅ **AND THE RE-PIN MUST CARRY ⛔ FOUR THINGS, ⛔ NOT ONE: ⛔ the ⛔ OLD value · ⛔ the ⛔ NEW value · ⛔ the ⛔ DATE · ⛔ 🧑 THE RULING THAT MOVED IT, ⛔ QUOTED.** ⇒ ⛔ **a future reader must find ⛔ WHY it moved, ⛔ not merely ⛔ that it did — ⛔ otherwise the ⛔ next person to see an unexplained baseline change treats it as a ⛔ defect.**
+- ⛔ **WHO: ⛔ the ⛔ measuring role ⛔ REPORTS both hashes; ⛔ the ⛔ MANAGER lands the law edit** (⛔ `CONVENTIONS.md` is the manager's) ⇒ ⛔ **but the ⛔ row is ⛔ not closeable until the pair is ⛔ in hand.**
+- ⚠️ **AND ⛔ NARROW THE CHANGE: ⛔ if an artefact's ⛔ immutability is a gate, its ⛔ authorised diff must be ⛔ ONE LINE OF INTENT.** ⛔ **⛔ A second incidental edit in the same save makes the ⛔ new baseline unexplainable — ⛔ and the diff ⛔ IS the evidence.**
 
 ### SC-§81 🚨⛔⛔⛔⭐⭐⭐ **THE ⛔ EMPTY-LOG FALSE PASS ⛔ ACTUALLY FIRED — ⛔ AND THE VERDICT SURVIVED BY ⛔ CATEGORY DEFAULTS, ⛔ NOT BY DESIGN.** (added 2026-09-04; ⛔ **`TASK-1027`, ⛔ the ⛔ first time a boarded trap was ⛔ observed happening**)
 
@@ -4502,6 +4541,17 @@ Added 2026-08-15 (`W7-R4`). ⚖️ **Written because this wall has now blocked T
 - ⇒ ⚖️ ***⛔ A COORDINATE IS A ⛔ CLAIM ABOUT THE ⛔ FILE'S CURRENT SHAPE; ⛔ A KEY IS A CLAIM ABOUT THE ⛔ THING. ⛔ THE FILE CHANGES CONSTANTLY AND THE THING ALMOST NEVER DOES — ⛔ SO A COORDINATE IS A ⛔ CLAIM WITH AN ⛔ EXPIRY DATE NOBODY WRITES DOWN.***
 - ⛔⛔ **THIS SUBSUMES A LARGE FRACTION OF WHAT THIS BATCH FOUGHT: ⛔ counts that rose `3 → 8 → 15 → 23` · ⛔ *"the TWO pin re-derivations"* fences that missed a third region · ⛔ dated line numbers in ⛔ every `names:` line · ⛔ *"the other two non-starter spells"* when there were ⛔ three.** ⇒ ⛔ **all of them are ⛔ COORDINATE CITATIONS, and ⛔ all of them went stale the ⛔ same way.**
 - ✅ **THE RULE: ⛔ in ⛔ prose, ⛔ specs, ⛔ `names:` lines, ⛔ handoffs and ⛔ verdicts — ⛔ name the ⛔ THING.** ⛔ **If a coordinate is genuinely useful (⛔ it often is, ⛔ as a hint), ⛔ mark it ⛔ DATED and ⛔ pair it with the key** (⛔ `SC-§38`'s *"locate by SYMBOL"* is ⛔ this law applied to ⛔ code sites).
+#### 🚨⛔⛔⛔⭐⭐ **SC-§77a — THE DERIVED PATHSPEC ⛔ ASSUMES AN ⛔ EMPTY INDEX, AND ⛔ NOBODY SAID SO. ⛔ A ⛔ PRE-POPULATED INDEX ⛔ BREAKS IT.** (added 2026-09-05; ⛔ **`TASK-1037` left ⛔ 27 paths staged and ⛔ uncommitted — a combination ⛔ no host tonight has faced**)
+
+- ⛔⛔ **THE GAP: ⭐ `SC-§77` says ⛔ DERIVE the pathspec from `git status --porcelain` ⛔ rather than a hand list. ⛔ EVERY host tonight ran that against an ⛔ EMPTY INDEX, where ⛔ *"derive"* and ⛔ *"stage what I derived"* are ⛔ the same act.**
+- ⛔ **⭐ `TASK-1037` staged ⛔ 27 paths and ⛔ committed nothing** (⛔ correctly — ⛔ it had no commit of its own). ⇒ ⛔⛔ **THE NEXT HOST OPENS ON AN INDEX THAT IS ⛔ ALREADY PARTLY BUILT ⛔ BY SOMEONE ELSE.**
+- ⇒ ⛔⛔⛔ **THE FAILURE: a host that ⛔ re-derives *"what is untracked?"* sees those 27 as ⛔ ALREADY-STAGED (⛔ `A `), ⛔ not untracked, and may ⛔ conclude they are ⛔ NOT ITS BUSINESS — ⛔ or worse, ⛔ `git reset` to *"start from a clean pathspec"* and ⛔ SILENTLY UNSTAGE ANOTHER ROW'S COMPLETED WORK.**
+- ⇒ ⚖️ ***⛔ THE INDEX IS ⛔ SHARED MUTABLE STATE BETWEEN ROWS, ⛔ EXACTLY AS THE WORKING TREE IS — AND ⛔ THIS PIPELINE HAS SPENT A DAY LEARNING THAT LESSON ABOUT THE ⛔ TREE WHILE TREATING THE ⛔ INDEX AS PRIVATE.***
+- ✅ **THE RULE FOR A COMMIT HOST: ⛔ READ THE INDEX ⛔ BEFORE DERIVING** (⛔ `git diff --cached --name-only`), ⛔ **and treat ⛔ ANYTHING ALREADY STAGED as ⛔ DELIBERATE UNTIL PROVEN OTHERWISE.** ⛔ **⛔ Your pathspec is ⛔ what you ADD to that, ⛔ not what you REPLACE it with.**
+- ⛔⛔ **⛔ NEVER `git reset` TO NORMALISE A PRE-POPULATED INDEX.** ⛔ **If the staged set looks wrong, ⛔ STOP AND REPORT — ⛔ a `reset` here is the ⛔ index-side twin of the `git checkout --` that destroyed a `qa-passed` diff** (⭐ `SC-§71`).
+- ✅ **AND THE ⛔ HANDING-OFF ROW MUST ⛔ SAY SO: ⛔ a row that stages without committing ⛔ MUST name the paths ⛔ and the inheriting host in its handoff.** ⭐ **⭐ `TASK-1037` did this ⛔ unprompted.**
+- ⚠️ **ALSO RECORDED — ⛔ THE COLLAPSED-FORM HAZARD THAT MAKES THE DERIVATION ⛔ UNDERCOUNT: ⛔ plain `git status` reports an untracked ⛔ DIRECTORY as ⛔ ONE entry.** ⛔ **`Content/FogArea/` read as ⛔ 1 and ⛔ hid 27.** ⇒ ⛔ **⛔ ALWAYS `--untracked-files=all`** (⭐ `SC-§55b`'s sibling: ⛔ the ⛔ method matters more than the count, and ⛔ this method has a ⛔ default that lies by ⛔ omission).
+
 - ⚠️ **THE ⛔ ONE PLACE A COUNT IS STILL RIGHT: ⛔ when the count is the ⛔ SUBJECT (⛔ a pin that asserts *"exactly N chokepoints"*) — ⛔ and even then it must be ⛔ DERIVED, ⛔ never typed** (⭐ `SC-§65a`). ⛔ **A count as ⛔ EVIDENCE is a key; ⛔ a count as ⛔ DESCRIPTION is a coordinate.**
 
 ### SC-§76 ⛔⛔⭐⭐⭐ **CONCENTRATE ⛔ PERISHABLE PROSE AT ⛔ ONE SITE, SO ITS ⛔ SUPERSESSION IS A ⛔ SINGLE EDIT. ⛔ THE CHEAPEST DEFECT-PREVENTION PATTERN THIS PROJECT HAS PRODUCED — AND IT WAS AUTHORED ⛔ BEFORE ANYONE KNEW IT WOULD BE NEEDED.** (added 2026-09-04; ⛔ **measured on `TASK-839` by `qa/TASK-1015.md`**)
@@ -4593,6 +4643,10 @@ Added 2026-08-15 (`W7-R4`). ⚖️ **Written because this wall has now blocked T
   - ⚠️⛔ **DISTINGUISH IT FROM THE ⛔ ACCEPTABLE RISK IT RESEMBLES: ⛔ *"row X ⛔ BUILDS ON an ungated row Y"* is a ⛔ REWORK risk and may be ⛔ knowingly traded. ⛔ *"row X ⛔ MUTATES the files gate G is reading"* is a ⛔ GATE-INTEGRITY failure and ⛔ may NEVER be traded.** ⇒ ⛔ **a rework risk costs a ⛔ ROW; ⛔ an invalidated gate costs the ⛔ HARD GATE.**
   - ⭐ **AND THE ⛔ FREE LESSON: ⛔ HOLDING THE ROW UNTIL THE GATE ⛔ RETURNS ⛔ ELIMINATES THE REWORK RISK TOO, ⛔ rather than accepting it** — ⛔ the row then builds on a ⛔ REVIEWED foundation. ⇒ ⛔ **the *"trade"* was ⛔ never necessary; ⛔ waiting was ⛔ strictly better and ⛔ nearly free.**
 - ✅ **THE CHECK, ⛔ BEFORE ⛔ EVERY MULTI-ROW DISPATCH:** ⛔ **(a)** ⛔ read ⛔ every candidate's `parallel-safe` ⛔ and its `names:` ⛔ file list · ⛔ **(b)** ⛔ intersect the file lists ⛔ pairwise — ⛔ **any overlap ⇒ ⛔ SERIALISE** · ⛔ **(c)** ⛔ intersect each candidate's files with ⛔ every ⛔ RUNNING GATE's subject — ⛔ **any overlap ⇒ ⛔ HOLD** · ⛔ **(d)** ⛔ for every blocker, ⛔ walk its ⛔ own `blocked-by` ⛔ transitively to a ⛔ runnable row · ⛔⛔ **(e) ⛔ ADDED 2026-09-04: ⛔ intersect the candidate's files with the ⛔ OPEN COMMIT HOST's ⛔ PATHSPEC — ⛔ any overlap means the candidate will ⛔ SHIP IN THAT COMMIT.**
+- ⛔⛔⛔⭐⭐ **(g) ⛔ ADDED 2026-09-05 — ⛔ BEFORE DISPATCHING A ⛔ GATE, ⛔ CONFIRM ⛔ EVERY SUBJECT IT NAMES HAS A ⛔ HANDOFF ⛔ ON DISK.**
+  - ⛔⛔ **⛔ *"ITS `blocked-by` ITEMS ARE SATISFIED"* AND ⛔ *"EACH NAMED SUBJECT ⛔ EXISTS AS A DIFF"* ARE ⛔ DIFFERENT QUESTIONS — ⛔ AND ⛔ ONLY THE SECOND CATCHES A GATE POINTED AT AN ⛔ UNWRITTEN ROW.**
+  - ⛔ **MEASURED: ⭐ `TASK-1009` named ⭐ `TASK-1007` + ⭐ `TASK-1008`; ⛔ `1008` was ⛔ never written; ⛔ the gate was dispatched on an ⛔ assignee check that ⛔ did not read the blocker line in the same breath.**
+  - ⇒ ⛔ **⛔ FULL RULE: ⭐ `SC-§64a`. ⛔ THIS IS ONLY ITS ⛔ DISPATCH-SIDE HALF.**
 - ⛔⛔⛔⭐⭐ **(f) ⛔ ADDED 2026-09-04 — ⛔ A ⛔ COMPILE COLLIDES WITH ⛔ EVERY IN-FLIGHT EDIT IN ITS MODULE, AND ⛔ CHECKS (a)–(e) ⛔ STRUCTURALLY CANNOT SEE IT.**
   - ⛔⛔ **CHECKS (a)–(e) ARE ⛔ ALL FILE-INTERSECTION TESTS. ⛔ A COMPILE ⛔ WRITES ⛔ NO FILE** ⇒ ⛔ **it intersects with ⛔ NOTHING and every one of those checks ⛔ PASSES IT AS SAFE.** ⛔ **It is ⛔ not safe: ⛔ it ⛔ READS THE WHOLE MODULE.**
   - ⇒ ⛔ **`QUIET-MODULE` ⛔ ALREADY STATES THE DUTY (⛔ *"quiesce the module — ⛔ no programmer task in `Source/` may be in flight"*). ⛔ THIS CLAUSE EXISTS BECAUSE THE ⛔ CHECKLIST DID NOT ⛔ ROUTE ANYONE TO IT.**
@@ -4654,6 +4708,13 @@ Added 2026-08-15 (`W7-R4`). ⚖️ **Written because this wall has now blocked T
     - ✅ **THE FIX IS A ⛔ SUPERSEDING HEADER AT THE ⛔ TOP — ⛔ *"LOOP 2: PASS. ⛔ The `FAIL` below is ⛔ LOOP 1 and is ⛔ SUPERSEDED."*** ⛔⛔ **IT IS ⛔ NEVER AN EDIT TO THE ⛔ LOOP-1 RECORD** (`TL-§5c` cl. 4 — ⛔ the failing verdict is ⛔ evidence and ⛔ stays verbatim).
     - ⇒ ⚖️ ***⛔ A DOCUMENT WHOSE ⛔ HEADLINE AND ⛔ CONCLUSION DISAGREE IS A ⛔ TRAP FOR ⛔ EVERY FUTURE READER, AND THE ⛔ MORE HURRIED THE READER THE ⛔ MORE LIKELY THEY TAKE THE HEADLINE. ⛔ A MULTI-LOOP REPORT MUST STATE ITS ⛔ CURRENT VERDICT ⛔ FIRST AND ITS ⛔ HISTORY ⛔ AFTER.***
     - ⭐ **THIS COMMIT SURVIVED IT ⛔ ONLY BECAUSE the ⛔ loop-vs-spent distinction was ⛔ already boarded** (⭐ `TASK-1014`'s own `blocked-by`) ⇒ ⛔ **the reader knew to look for a ⛔ loop 2. ⛔ That is a ⛔ thin margin and ⛔ not a repeatable one.**
+    - 🚨⛔⛔⛔ **SECOND INSTANCE, ⛔ 2026-09-04 — ⛔ AND IT ⛔ NEARLY STOPPED A COMMIT. ⛔ THE ADVISORY FORM IS ⛔ WITHDRAWN; ⛔ THIS IS NOW ⛔ BINDING.**
+      - ⛔ **`qa/TASK-1019.md` ⛔ LINE 3 reads ⛔ `❌ FAIL — 2 BLOCKERS` while the ⛔ GOVERNING VERDICT sits at ⛔ LINE 379: ⛔ `PASS — 0 blockers, loop 2 of 3`.** ⛔ **The `FAIL` is the ⛔ deliberately-preserved loop-1 record — ⛔ CORRECT TO KEEP.**
+      - ⛔ **The commit host reports it ⛔ NEARLY STOPPED THE BATCH ON IT.**
+      - ⇒ ⛔⛔⛔ **AND THE ⛔ MIRROR CASE IS ⛔ WORSE THAN THE ONE THAT HAPPENED: ⛔ A GATE AUDIT THAT GREPS THE ⛔ FIRST `Verdict:` LINE OF A TWO-LOOP REPORT GETS THE ⛔ EXACT OPPOSITE OF THE TRUTH — ⛔ HERE IT WOULD HAVE ⛔ STOPPED A PASSING ROW; ⛔ INVERTED, IT WOULD ⛔ PASS A FAILED ONE.**
+      - ✅⛔ **BINDING, ⛔ NOT ADVISORY: ⛔ ANY report with ⛔ MORE THAN ONE LOOP ⛔ MUST carry a ⛔ SUPERSEDING HEADER ⛔ AS ITS FIRST CONTENT LINE, stating the ⛔ GOVERNING verdict and that ⛔ what follows includes ⛔ superseded loops.** ⛔ **The preserved record ⛔ stays verbatim** (`TL-§5c` cl. 4) — ⛔ **only the ⛔ HEADLINE moves.**
+      - ⛔ **AND FOR THE ⛔ READER: ⛔ a `Verdict:` line is ⛔ NOT authoritative until you have ⛔ checked whether the report has ⛔ LOOPS. ⛔ Grep the file for ⛔ `LOOP` before you act on ⛔ line 3.**
+      - ⇒ ⚖️ ***⛔ TWICE IN ONE DAY, AND THE SECOND TIME IT COST A ⛔ NEAR-MISS ON A COMMIT. ⛔ AN ADVISORY FIX FOR A ⛔ RECURRING PRESENTATION DEFECT IS ⛔ NOT A FIX — ⛔ IT IS A ⛔ NOTE, AND ⛔ NOTES DO NOT SURVIVE A HURRIED READER.***
   - ⛔⛔ **THE ⛔ GATE-ROW CASE IS THE ⛔ WORST OF THE THREE AND IT IS ⛔ NOT OBVIOUS: ⛔ it does ⛔ not corrupt a file — ⛔ it ⛔ BURNS A QA LOOP, ⛔ SENDS A CLEAN LANE BACK TO A PROGRAMMER, AND ⛔ MAKES EVERY ARTEFACT IT NAMES ⛔ LOOK GUILTY.** ⛔ **`TASK-995` passed ⛔ ONLY because the reviewer ⛔ READ THE TREE INSTEAD OF OBEYING THE ROW** ⇒ ⛔ **the safeguard was ⛔ reviewer judgement, ⛔ which is ⛔ not a mechanism.**
   - ⛔⛔ **THE ⛔ HANDOFF CASE IS THE ⛔ EASIEST TO MISS, BECAUSE ⛔ HANDOFFS ARE ⛔ NOT SWEPT WHEN A RULING CHANGES — ⛔ nobody owns them after their row closes.** ⛔ **`TASK-993` §9.6 was graded ⛔ WARN rather than BLOCKER ⛔ ONLY because `TASK-1001` item (1) ⛔ independently forbade the write** ⇒ ⚖️ ***⛔ IT WAS FENCED BY THE ⛔ LUCK OF ANOTHER ROW, ⛔ NOT BY ANYTHING IN THE DOCUMENT ITSELF. ⛔ A HAZARD NEUTRALISED BY A ⛔ COINCIDENCE IS ⛔ STILL LIVE.***
   - ✅ **SUPERSEDE A HANDOFF ⛔ IN PLACE: ⛔ a manager-signed banner ⛔ ABOVE the struck text, ⛔ saying who inserted it and ⛔ that the author did not.** ⛔⛔ **DO ⛔ NOT RE-AUTHOR A HANDOFF** — ⛔ its ⛔ METHOD is usually ⛔ untouched by the revision and is ⛔ the reason the document is kept (⛔ `TASK-993` §9.6's `405`/schema-refusal measurement, ⛔ sha256-not-size, ⛔ the 33-line floor, ⛔ the BP-CDO probe and ⛔ the fence collision that ⛔ created `TASK-1000` are ⛔ ALL still load-bearing). ⇒ ⛔ **strike the ⛔ PRESCRIPTION, ⛔ keep the ⛔ DIAGNOSIS.**
@@ -4677,6 +4738,14 @@ Added 2026-08-15 (`W7-R4`). ⚖️ **Written because this wall has now blocked T
 - ⛔⛔ **THIS PROJECT'S TREE ⛔ ROUTINELY CARRIES ⛔ FIVE ROWS' UNCOMMITTED WORK AT ONCE** (⛔ the `QUIET-MODULE` batching model ⇒ ⛔ **one compile at the end, so diffs ⛔ accumulate unstaged for hours**). ⇒ ⛔ **the ⛔ probability that a shared file carries ⛔ someone else's work is ⛔ HIGH, ⛔ not incidental.**
 - ⛔ **BEFORE ⛔ ANY destructive git operation on a file: ⛔ `git diff --stat <file>` and ⛔ ASK WHETHER EVERY HUNK IS ⛔ YOURS.** ⛔ **If you cannot account for a hunk, ⛔ STOP AND REPORT.**
 - ⚖️ ***⛔ `git checkout` IS ⛔ NOT AN UNDO OF ⛔ YOUR EDIT; IT IS AN UNDO OF ⛔ THE FILE.***
+
+#### 🚨⛔⛔⛔ **SC-§71c — ⛔ HOOKS ARE ⛔ NEVER SKIPPED. ⛔ `--no-verify` REQUIRES 🧑 JONATHAN'S ⛔ EXPLICIT INSTRUCTION AND ⛔ NOTHING ELSE.** (added 2026-09-04; ⛔ **a ⛔ REAL attempt, ⛔ blocked, ⛔ self-disclosed**)
+
+- ⛔ **MEASURED: ⭐ `TASK-1034`'s ⛔ FIRST commit attempt included ⛔ `--no-verify`. ⛔ The ⛔ HOOK BLOCKED IT. ⛔ The commit was then made ⛔ normally with hooks ⛔ intact.**
+- ⭐⭐ **AND IT ⛔ DISCLOSED THIS ⛔ UNPROMPTED IN ITS OWN REPORT** — ⛔ **a ⛔ blocked violation that ⛔ nobody would have found otherwise.**
+- ⇒ ⚖️ ***⛔ THIS IS A ⛔ POSITIVE EXHIBIT AND IT SHOULD BE READ AS ONE: ⛔ A GUARD FIRED ON A ⛔ REAL ATTEMPT (⛔ not a drill), AND THE AGENT ⛔ REPORTED ITS OWN BLOCKED VIOLATION ⛔ RATHER THAN BURYING IT. ⛔ BOTH HALVES ARE THE SYSTEM ⛔ WORKING — AND THE ⛔ SECOND HALF IS THE ⛔ RARER ONE.***
+- ⛔ **THE RULE, ⛔ PLAINLY: ⛔ `--no-verify` · ⛔ `--no-gpg-sign` · ⛔ any hook bypass ⇒ ⛔ 🧑 HIS EXPLICIT INSTRUCTION ⛔ IN CLAUDE CODE, ⛔ never an agent's judgement, ⛔ never *"the hook looked wrong"*.** ⛔ **⛔ A hook that ⛔ blocks you is ⛔ doing its job; ⛔ if you believe it is ⛔ defective, ⛔ STOP AND REPORT.**
+- ⚠️ **⛔ AND DO ⛔ NOT REACH FOR IT UNDER TIME PRESSURE — ⛔ that is ⛔ exactly when it looks reasonable, and ⛔ exactly when the hook is ⛔ most likely to be the ⛔ only thing between the tree and a defect.**
 
 #### ✅⛔⛔⭐⭐ **SC-§71a — THE FENCE IS *"NO ⛔ MUTATING GIT"*, ⛔ NOT *"NO GIT"*. ⛔ READ-ONLY GIT IS ⛔ EXPLICITLY ALLOWED AND ⛔ SHOULD BE DECLARED.** (added 2026-09-04; ⛔ **ruled on `qa/TASK-1014.md`; ⛔ the row template carries the matching FENCE LANGUAGE section**)
 
@@ -4719,6 +4788,17 @@ Added 2026-08-15 (`W7-R4`). ⚖️ **Written because this wall has now blocked T
   - ⇒ ⛔⛔ **PRESENCE IS A ⛔ VALID PROBE ON A PACKAGE. A ⛔ COUNT IS ⛔ NOT.** ⛔ **Use `rg -c` on a `.uasset` for ⛔ *"is this string in here at all?"* and ⛔ NEVER for ⛔ *"how many?"*.** ⛔ **For a count, ⛔ go through the engine (`get_rows`), ⛔ never through the bytes.**
   - ⇒ ⚖️ ***⛔ THAT IS THE ⛔ THIRD DISTINCT WAY THIS ⛔ ONE ASSET HAS LIED IN ⛔ ONE DAY — ⛔ SIZE BY ⛔ NOT MOVING (`TASK-993`), ⛔ SIZE BY ⛔ MOVING FOR AN UNRELATED REASON (`TASK-1005`), AND ⛔ NOW ⛔ COUNTS. ⛔ THE PATTERN IS ⛔ NOT *"THIS ASSET IS CURSED"* — IT IS ⛔ *"EVERY TEXT-SHAPED INSTRUMENT POINTED AT A BINARY PACKAGE RETURNS A ⛔ PLAUSIBLE NUMBER THAT MEANS ⛔ SOMETHING ELSE."****
   - ✅ **THE RULE: ⛔ on a `.uasset`, the ⛔ ONLY trustworthy instruments are ⛔ `sha256` (⛔ did it change?), ⛔ `get_rows` (⛔ what does it say?) and ⛔ `is_dirty` transitions (⛔ was it saved?). ⛔ EVERYTHING ELSE — ⛔ size, ⛔ counts, ⛔ `mtime`, ⛔ line-based greps — is ⛔ CORROBORATION AT BEST AND ⛔ A TRAP AT WORST.**
+- ✅⭐⭐⭐ **THE ⛔ CONSTRUCTIVE COMPANION, ⛔ ADDED 2026-09-05 FROM ⭐ `TASK-1036` — ⛔ WHAT TO USE ⛔ INSTEAD, ⛔ NOT MERELY WHAT TO DISTRUST: ⛔ ON A `.uasset`, THE ⛔ NAME-TABLE DELTA IS THE ⛔ RIGHT INSTRUMENT AND A ⛔ WHOLE-FILE BYTE DIFF IS ⛔ EXPECTED NOISE.**
+  - ⛔ **MEASURED: a ⛔ ONE-FLAG change produced a ⛔ raw byte diff spanning ⛔ NEARLY THE WHOLE FILE** — ⛔ **because inserting ⛔ 54 bytes ⛔ SHIFTS EVERY HEADER OFFSET and the ⛔ package GUID ⛔ REGENERATES.**
+  - ⇒ ⛔⛔ **READING THAT SPAN AS ⛔ *"THE FILE CHANGED EVERYWHERE"* IS A ⛔ FALSE POSITIVE ⛔ BY CONSTRUCTION — ⛔ the ⛔ NINTH way this project has been misled about a binary, and the ⛔ FIRST where the misleading instrument is a ⛔ genuine diff.**
+  - ✅ **THE ⛔ NAME TABLE ⛔ ANSWERS THE ACTUAL QUESTION: ⛔ it gained ⛔ EXACTLY ONE ENTRY — `bEnableVolumetricFog`.** ⇒ ⛔ **⛔ *"what did this package ⛔ LEARN?"* is ⛔ answerable; ⛔ *"which bytes moved?"* is ⛔ not.**
+  - ⭐ **AND IT ⛔ ADJUDICATED ITS OWN FALSE HIT: a ⛔ spurious printable run (`jVU^H`, ⛔ offset 24, ⛔ GUID region) was ruled ⛔ BINARY COINCIDENCE, ⛔ not a name** — ⛔ **a probe that ⛔ knows its own noise floor.**
+  - ⇒ ⚖️ ***⛔ *"SIZE LIES IN BOTH DIRECTIONS"* SAYS WHAT ⛔ NOT TO TRUST. ⛔ THIS SAYS WHAT ⛔ TO USE — AND A LAW THAT ⛔ ONLY FORBIDS LEAVES THE READER WITH ⛔ NO INSTRUMENT AND ⛔ A DEADLINE.***
+- 🚨⛔⛔⛔ **NINTH LIE, ⛔ SAME ROW: ⛔ A ⛔ COMPRESSED-IMAGE BYTE COMPARISON IS ⛔ NOT A PIXEL COMPARISON.**
+  - ⛔ **MEASURED: ⛔ TWO CAPTURES OF ⛔ IDENTICAL CONTENT DIFFERED AT A ⛔ 0.98 BYTE RATIO — ⛔ PURELY FROM ⛔ PNG COMPRESSION.**
+  - ⇒ ⛔⛔ **WITHOUT THE ⛔ CONTROL IT RAN ⛔ FIRST, ⛔ `0.98` WOULD HAVE READ AS ⛔ *"THE LOOK CHANGED"* — ⛔ and the row would have reported a ⛔ visual regression that ⛔ did not exist.**
+  - ✅ **THE CONTROL IS WHAT ⛔ SEPARATED A ⛔ REAL 36× SIGNAL FROM ⛔ MEANINGLESS NOISE** (⛔ luma `132.3964 → 132.0777`, ⛔ −0.24%, against a ⛔ noise floor of `0.0089`).
+  - ⇒ ⚖️ ***⛔ A ⛔ CONTROL IS ⛔ NOT A FORMALITY ON AN INSTRUMENT YOU ⛔ HAVE NOT CALIBRATED — ⛔ IT IS THE ⛔ ONLY THING THAT TELLS YOU WHETHER YOUR ⛔ NUMBER HAS A ⛔ UNIT*** (⭐ `SC-§39`, ⭐ `SC-§81`).
 - ⭐ **THIS IS ⛔ `§25b` (⛔ LFS: oid-vs-sha256, ⛔ never size) ⛔ FIRING ON A ⛔ SECOND ASSET CLASS.** ⇒ ⛔ **it is ⛔ NOT an LFS rule — it is a ⛔ BINARY-ARTEFACT rule, and it binds ⛔ EVERY `.uasset` verification.**
 - ⛔⛔ **AND THE ⛔ SAVE: ⛔ PASS AN ⛔ EXPLICIT ONE-ASSET LIST.** ⛔ **The ⛔ EMPTY LIST ⛔ FLUSHES ⛔ EVERY DIRTY ASSET IN THE EDITOR** ⇒ ⛔ **with other lanes live in that editor it ⛔ commits ⛔ somebody else's half-finished work, ⛔ silently, ⛔ under your row's name.** ⛔ **`TASK-993` did this correctly and it is ⛔ STANDING PRACTICE from here.**
 - 🚨⛔⛔⛔⭐⭐ **FOURTH LIE, ⛔ ADDED 2026-09-04 FROM ⭐ `TASK-983` — ⛔ AND IT IS THE ⛔ WORST OF THE SET, BECAUSE IT IS ⛔ NOT A MEASUREMENT THAT MISLEADS BUT A ⛔ WRITE THAT ⛔ REPORTS SUCCESS AND ⛔ DROPS A FIELD.**
@@ -4774,6 +4854,13 @@ Added 2026-08-15 (`W7-R4`). ⚖️ **Written because this wall has now blocked T
   - ⇒ ⛔⛔⛔ **AND THAT IS ⛔ EXACTLY WHY THE ROW ⛔ LOOKED FINISHED WHEN A ⛔ GATE WAS STILL OWED. ⛔ ITS GATE ⛔ NEVER RAN, AND THE ROW ⛔ SHIPPED IN `1a457df` ⛔ UNREVIEWED.**
   - ⇒ ⚖️ ***⛔ THE FIRST TWO INSTANCES COST ⛔ ITEMS (⛔ four died on `TASK-839`; ⛔ a data write on `TASK-993`). ⛔ THIS ONE COST A ⛔ HARD GATE — ⛔ BECAUSE A ROW THAT ⛔ CANNOT SATISFY ITSELF PRODUCES A ⛔ DECLARED SHORTFALL, AND A ⛔ DECLARED SHORTFALL READS AS ⛔ *"HANDLED"* TO EVERYONE EXCEPT THE GATE THAT WAS SUPPOSED TO ADJUDICATE IT.***
   - ✅ **THEREFORE: ⛔ a row carrying a ⛔ DECLARED SHORTFALL is ⛔ NOT closeable ⛔ until its gate has ⛔ ADJUDICATED THAT SHORTFALL ⛔ BY NAME.** ⛔ **The shortfall is ⛔ the gate's subject, ⛔ not a footnote to it.**
+- 🚨⛔⛔⛔⭐⭐ **A ⛔ FOURTH INSTANCE, ⛔ 2026-09-05 — ⛔ AND IT IS A ⛔ DIFFERENT MECHANISM FROM THE FIRST THREE, ⛔ SO IT GETS ITS OWN CHECK: ⛔ A DISPATCH THAT ⛔ CITES A LAW AND THEN ⛔ CONTRADICTS THAT LAW'S OWN ⛔ *WHO* CLAUSE.**
+  - ⛔ **MEASURED: a dispatch instructed ⛔ build-master to land the ⛔ `CONVENTIONS.md` re-pin ⛔ itself — ⛔ while ⛔ CITING ⭐ `SC-§82` as governing.** ⛔⛔ **`SC-§82`'s ⛔ WHO clause says the ⛔ MEASURING ROLE ⛔ REPORTS and the ⛔ MANAGER ⛔ LANDS IT; ⛔ `TASK-1036` item (2) says ⛔ *"do NOT edit that file yourself."***
+  - ✅ **THE AGENT ⛔ REFUSED, ⛔ ESCALATED, AND ⛔ CITED THREE WRITTEN SOURCES ⛔ RATHER THAN SILENTLY PICKING A SIDE.** ⭐ **⛔ That is `SC-§67` ⛔ CAUGHT BY THE EXECUTOR — ⛔ the shape this section exists to make visible.**
+  - ⛔ **AND IT FLAGGED A ⛔ SECOND, ⛔ INDEPENDENT REASON: ⛔ `CONVENTIONS.md` was ⛔ ALREADY DIRTY from another lane ⇒ ⛔ a concurrent write risked a ⛔ board race.** ⇒ ⭐ **⛔ two reasons, ⛔ measured, ⛔ before acting.**
+  - ⇒ ⚖️ ***⛔ THE FIRST THREE INSTANCES WERE A ⛔ GENERIC FENCE OVERRIDING A ⛔ SPECIFIC ITEM. ⛔ THIS ONE IS A ⛔ RESTATEMENT OF A LAW ⛔ CONTRADICTING THE LAW IT RESTATES — AND IT IS ⛔ HARDER TO SEE, BECAUSE THE DISPATCH ⛔ LOOKS MORE AUTHORITATIVE FOR ⛔ HAVING CITED THE SOURCE.***
+  - ✅ **CHECK, ⛔ FOR THE SENDER: ⛔ WHEN A DISPATCH ⛔ CITES A LAW ⛔ AND ⛔ GIVES AN INSTRUCTION, ⛔ RE-READ THAT LAW'S ⛔ *WHO* AND ⛔ *WHAT* CLAUSES AND ⛔ CHECK THE INSTRUCTION AGAINST THEM.** ⛔ **⛔ A citation is ⛔ not a summary — ⛔ and ⛔ paraphrasing a law into an instruction is ⛔ exactly where the two diverge.**
+  - ⚠️ **⛔ TWO IN ⛔ ONE NIGHT FROM THE ⛔ SAME AUTHOR** (⛔ the first: ⛔ *"add no number"* against a spec ⛔ requiring `5000`/`87.8%`) ⇒ ⛔ **⛔ this is a ⛔ PATTERN, ⛔ not a slip, and ⛔ the fix is ⛔ mechanical: ⛔ cite ⛔ or instruct, and if ⛔ both, ⛔ check them against each other ⛔ before sending.**
 - ⛔ **THE RULE FOR THE ⛔ SENDER: ⛔ before dispatching, ⛔ READ THE ROW'S `names:` AND ITS ⛔ NUMBERED ITEMS, then ⛔ ASK OF EVERY BOILERPLATE FENCE: ⛔ *"does any item ⛔ REQUIRE the thing I am forbidding?"*** ⛔ **`no editor` vs an ⛔ MCP write · `no Git` vs a ⛔ commit item · `comment-only` vs a ⛔ new symbol · `safe half` vs a ⛔ pinned class.**
 - ⚖️ ***⛔ A FENCE IS ⛔ CHEAP TO WRITE AND ⛔ EXPENSIVE TO OBEY WRONGLY. ⛔ THE COST LANDS ⛔ ENTIRELY ON THE AGENT AND ⛔ ENTIRELY OUT OF THE SENDER'S SIGHT.***
 
@@ -4825,6 +4912,27 @@ Added 2026-08-15 (`W7-R4`). ⚖️ **Written because this wall has now blocked T
 ### SC-§64 ⛔⛔⛔ **ONE GATE MAY ⛔ NOT SPAN TWO ROWS THAT CAN ⛔ FINISH AT DIFFERENT TIMES.** (added 2026-09-04 by the manager; ⛔ **bought on `TASK-985`, where a reviewer examined ⛔ half a gate and wrote to a path ⛔ no gate pointed to**)
 
 - ⛔ **THE SHAPE: the board defined ⛔ ONE gate over `TASK-979` + `TASK-980` → `qa/TASK-985.md`. ⛔ `979` finished ⛔ first, was reviewed ⛔ on its own, and the verdict landed at ⛔ `qa/TASK-979.md`.** ⇒ ⛔⛔ **`qa/TASK-985.md` would then either ⛔ NEVER EXIST or be written as though ⛔ `979` WERE UNREVIEWED, while the ⛔ REAL review sat ⛔ ORPHANED.**
+
+#### 🚨⛔⛔⛔⭐⭐⭐ **SC-§64a — THE RULE, ⛔ HARDENED 2026-09-05 AFTER THE ⛔ SAME TRAP FIRED A ⛔ SECOND TIME ⛔ IN THE SAME BATCH. ⛔ THE ⛔ ADVISORY FORM IS ⛔ WITHDRAWN.**
+
+- ⛔ **SECOND INSTANCE: ⭐ `TASK-1009` gated ⭐ `TASK-1007` ⛔ + ⭐ `TASK-1008`. ⛔ `1007` landed; ⛔ `1008` was ⛔ NEVER WRITTEN — ⛔ no diff, ⛔ not `ready-for-qa` — and the gate was ⛔ DISPATCHED ANYWAY.**
+- ⇒ ⛔⛔ **A PASS WOULD HAVE SHIPPED `1008` CARRYING A VERDICT ⛔ ISSUED BEFORE ITS DIFF EXISTED.** ⛔ **⛔ THE ⛔ EXACT `TASK-995` DEFECT, ⛔ from the ⛔ opposite direction: ⛔ there a gate ⛔ passed before its subject existed; ⛔ here a gate ⛔ would pass a subject that ⛔ still does not.**
+- ⇒ ⚖️ ***⛔ A MULTI-SUBJECT GATE IS A ⛔ SPENT-GATE TRAP ⛔ BY CONSTRUCTION: ⛔ ITS `blocked-by` IS SATISFIED WHEN THE ⛔ LAST SUBJECT IS READY, ⛔ BUT ⛔ NOTHING STOPS IT BEING DISPATCHED WHEN THE ⛔ FIRST IS — AND ⛔ NOTHING IN THE ROW RECORDS ⛔ WHICH SUBJECTS IT HAS ACTUALLY SEEN.***
+- ⭐ **AND IT IS THE ⛔ SIBLING FORM of *"a gate over a ⛔ DEPENDENT row is ⛔ not a gate over its ⛔ DEPENDENCY"* — ⛔ here it is a gate over ⛔ TWO SIBLINGS, ⛔ discharged by seeing ⛔ ONE.**
+
+##### ✅⚖️ **THE RULING — ⛔ AND IT IS ⛔ NOT SIMPLY *"ALWAYS SPLIT"*, BECAUSE ⛔ SPLITTING ALONE ⛔ LOSES SOMETHING REAL.**
+
+1. ⛔⛔ **DEFAULT: ⛔ SPLIT. ⛔ ONE GATE PER SUBJECT.** ⛔ **A gate may carry ⛔ MORE THAN ONE SUBJECT ⛔ ONLY IF THEY LAND IN THE ⛔ SAME ACTION** (⛔ e.g. one row producing two files). ⛔ **⛔ If they can finish at ⛔ different times, ⛔ SPLIT — ⛔ no exceptions, ⛔ no judgement call.**
+2. ⛔⛔⭐⭐ **AND THE PART THE SPLIT ⛔ WOULD OTHERWISE DESTROY: ⛔ A ⛔ GENUINE CROSS-SUBJECT PROPERTY GETS ITS ⛔ OWN CHECK ON THE ⛔ LATER GATE — ⛔ it is ⛔ NOT a reason to keep a multi-subject gate.**
+   - ⛔ **EXHIBIT: *"is there ⛔ EXACTLY ONE derivation of ⛔ has-a-reticle?"* is ⛔ INVISIBLE to ⛔ either subject's own gate and ⛔ only observable ⛔ once BOTH diffs exist.** ⇒ ⛔ **it moved to ⭐ `TASK-1039`, the ⛔ SECOND gate, ⛔ which cites the first rather than re-deriving it.**
+   - ⇒ ⚖️ ***⛔ THE CROSS-CUTTING CHECK IS ⛔ REAL AND IT IS ⛔ NOT AN ARGUMENT FOR A SHARED GATE — ⛔ IT IS AN ARGUMENT FOR PUTTING IT WHERE ⛔ BOTH SUBJECTS EXIST, WHICH IS ⛔ ALWAYS THE LATER ONE.***
+3. ⛔ **UNIVERSAL BACKSTOP, ⛔ EVEN FOR A CORRECTLY-SPLIT GATE: ⛔ A VERDICT MUST ⛔ ENUMERATE EACH SUBJECT ⛔ WITH THE INSTANT IT WAS REVIEWED AT, AND ⛔ NAME ANYTHING ⛔ CITED RATHER THAN REVIEWED.** ⇒ ⛔ **a ⛔ PARTIAL pass is then ⛔ VISIBLY partial ⛔ in its own headline, ⛔ not inferable only from the board.**
+4. ⛔ **IF A MULTI-SUBJECT GATE IS ⛔ ALREADY IN FLIGHT WHEN THIS IS NOTICED: ⛔ the reviewer ⛔ CONTINUES on the subjects that ⛔ EXIST, ⛔ scopes the verdict ⛔ IN THE HEADLINE, and ⛔ states which subject was ⛔ unwritten at its instant.** ⛔ **⛔ Then the board ⛔ SPLITS the row.** ⭐ **That containment was applied ⛔ correctly on ⭐ `TASK-1009` ⛔ before the ruling existed.**
+
+##### ⛔ **AND THE DISPATCH-SIDE CHECK THAT IS THE ⛔ ONLY ONE THAT CATCHES THIS — ⭐ `SC-§74` CHECK (g):**
+
+- ⛔⛔ **VERIFYING THAT `blocked-by` ⛔ ITEMS ARE SATISFIED IS ⛔ NOT THE SAME QUESTION AS VERIFYING THAT EACH NAMED ⛔ SUBJECT ⛔ EXISTS AS A DIFF.** ⇒ ⛔ **⛔ ONLY THE SECOND CATCHES A GATE POINTED AT AN ⛔ UNWRITTEN ROW.**
+- ✅ **CHECK (g): ⛔ before dispatching ⛔ any gate, ⛔ confirm ⛔ EVERY subject it names has a ⛔ HANDOFF ON DISK.** ⛔ **⛔ Cheap, ⛔ mechanical, ⛔ and it is the check whose absence produced this.**
 - ⭐ **THE REVIEWER CAUGHT IT ⛔ ITSELF — *"This file is not `TASK-985`… the `980` half is unexamined"* — ⛔ which is the ⛔ ONLY reason it did not become a ⛔ silent coverage hole.** ⛔ **Do ⛔ not rely on that; ⛔ a gate's topology is the ⛔ MANAGER's to get right.**
 - ⛔ **WHY IT IS ⛔ NOT MERELY UNTIDY: ⛔ the two halves get reviewed under ⛔ DIFFERENT PREDICATES, at ⛔ DIFFERENT INSTANTS, by ⛔ DIFFERENT READERS — ⛔ and ⛔ NOTHING ON THE BOARD SAYS SO.** ⛔ **The coverage ledger `SC-§29` requires becomes ⛔ unauditable.**
 - ✅ **THE TWO LEGAL SHAPES, ⛔ AND ⛔ PICK ONE ⛔ EXPLICITLY:** ⛔ **(a) SPLIT** into ⛔ per-row gates · ⛔ **(b) COMPOSITE** — ⛔ the gate covers the ⛔ LATER row on its ⛔ own merits and ⛔ CITES the earlier row's verdict ⛔ BY PATH, ⛔ incorporating it ⛔ by reference.
@@ -5646,7 +5754,22 @@ Jonathan's directive, verbatim: *"So I just realized that the diagnoses that you
 
 - The standing canonical `L_Arena.umap` SHA256 ledger `b3dbc5d9ae484a7bd02cafad52b4681da68b011477479b65ee7781ae459f8268` is **RETIRED at the TASK-662 save**. Every citation of it dated before the save is HISTORICAL RECORD (left as authored — the record is never rewritten); ⛔ no task dated after the save may cite it as the live ledger.
 - **THE CANONICAL LEDGER SLOT NOW LIVES HERE**, and the integrator fills exactly one line (a sanctioned, narrow write on the SLACK.md-registry precedent — build-master edits NOTHING else in this file):
-- **NEW CANONICAL `L_Arena.umap` SHA256: `9ccd54efeb0459df9ed15204fd7e5274797e5f6093f5504a5730c3c9d5ea0e58`** *(measured post-save, TASK-662 2026-08-27, the one ordered ROT-§0.1 save event — save log 22:05:16, dirty set = exactly `/Game/Maps/L_Arena` out of 3194 probed packages)*
+- ~~**NEW CANONICAL `L_Arena.umap` SHA256: `9ccd54efeb0459df9ed15204fd7e5274797e5f6093f5504a5730c3c9d5ea0e58`**~~ *(measured post-save, TASK-662 2026-08-27, the one ordered ROT-§0.1 save event — save log 22:05:16, dirty set = exactly `/Game/Maps/L_Arena` out of 3194 probed packages)* ⇒ 🚩 **RETIRED 2026-09-05 — ⛔ SEE THE RE-PIN DIRECTLY BELOW.**
+
+#### 🚩⛔⛔⛔⭐⭐ **`L_Arena.umap` SHA256 — ⛔ RE-PINNED 2026-09-05. ⛔ THE FOUR-PART RECORD `SC-§82` REQUIRES.**
+
+| ⛔ | ⛔ value |
+|---|---|
+| ⛔ **OLD** | `9ccd54efeb0459df9ed15204fd7e5274797e5f6093f5504a5730c3c9d5ea0e58` |
+| ✅ **NEW — ⛔ THE LIVE LEDGER** | ⛔ **`1f78419d888940739c949a60b29ee43451c464915f7ab37942b921fe0af15622`** |
+| ⛔ **DATE** | ⛔ **2026-09-05**, ⭐ `TASK-1036` |
+| 🧑 **THE RULING THAT MOVED IT** | ⛔ **VERBATIM: *"yes turn on volumetric fog and add the 27 files to git"*** |
+
+- ⛔ **WHAT CHANGED: ⛔ ONE FLAG — `ExponentialHeightFog_0.bEnableVolumetricFog` ⇒ ⛔ `true`.** ⛔ **⛔ Nothing else. ⭐ `TASK-858` is ⛔ CLEARED by that same ruling.**
+- ⭐ **THE OLD HASH WAS ⛔ RE-CONFIRMED FROM A ⛔ BYTE COPY TAKEN ⛔ BEFORE THE SAVE — ⛔ NOT merely read off the board.** ⇒ ⛔ **the pair is ⛔ measured at ⛔ both ends, ⛔ not half-cited** (⭐ `SC-§40`).
+- ✅⭐⭐ **AND *"ONLY THE FLAG MOVED"* IS ⛔ PROVEN ⛔ THREE WAYS: ⛔ the ⛔ 6 neighbouring fog properties read back ⛔ BIT-IDENTICAL · ⛔ the level was ⛔ `is_dirty = false` ⛔ IMMEDIATELY BEFORE the single `set_properties` call · ⛔⛔ the package ⛔ NAME-TABLE gained ⛔ EXACTLY ONE ENTRY: ⛔ `bEnableVolumetricFog`.**
+- ⛔ **⛔ EVERY CITATION OF THE OLD HASH ⛔ DATED BEFORE 2026-09-05 IS ⛔ HISTORICAL RECORD** (⛔ left as authored — ⛔ the record is ⛔ never rewritten). ⛔ **⛔ No task dated after this save may cite it as the ⛔ live ledger.**
+- ⚠️ **⛔ THE STANDING CHECK AT `:2813` IS ⛔ UNCHANGED IN FORCE — ⛔ build-master still verifies `L_Arena`'s SHA256 is ⛔ UNCHANGED at every gate. ⛔ ONLY THE ⛔ BASELINE MOVED.** ⇒ ⛔ **a mismatch against the ⛔ NEW value is ⛔ still a defect, and ⛔ still a stop.**
 - Until that line is filled, the level is mid-transition: hash checks state "pre-ROT ledger" or "post-ROT pending" explicitly.
 
 ### ROT-§3 THE NAV RULING — the navmesh-rebuild law (Castle 3× HOLLOW section) discharged at decomposition, as it demands
@@ -9569,6 +9692,54 @@ need OPEN <= JAM  :  1200n − 2·HH <= 1160n − HH   <=>   40n <= HH   <=>   n
 - ⚠️⛔⛔ **NUMBER CORRECTED 2026-09-04 — ⛔ THE OLD FIGURE IS ⛔ RETAINED SO A READER WHO REMEMBERS IT FINDS ITS ⛔ REPLACEMENT:** ~~⛔ `69.5%` (`2000 → 609.6`)~~ ⇒ ⛔ **STALE the instant the default moved to `5000`** (⭐⭐⭐ `FOG-§9.11`). ⛔ **It is ⛔ no longer a ⛔ MELEE-ONLY figure either — ⛔ at `5000` it applies ⛔ identically to ⛔ RANGED units, whose notice ⛔ also collapses to `609.6`.**
 - ⛔⛔⛔ **DO ⛔ NOT CONFLATE THIS WITH ⛔ `J-F32`'s `0.5370255`. ⛔ THAT FIGURE IS ⛔ UNCHANGED BY ⛔ ANY OF THIS** — ⛔ it is fog ⛔ DENSITY at `d = 120` uu, ⛔ DISTANCE-BASED and ⛔ RENDERING-SIDE; ⛔ it moves ⛔ only if the ⛔ Beer-Lambert curve moves. ⇒ ⚖️ ***⛔ THAT EXACT CONFLATION IS ⛔ ALREADY A RECORDED DEFECT ON THIS SHEET (`J-F31`'s mis-citation), AND IT COST NOTHING ⛔ ONLY BECAUSE SOMEONE RE-READ THE CITATION.***
 - ⭐ **Almost certainly ⛔ intended — it is the ⛔ direct consequence of the rule he ⛔ stated by name (`J-F21`) — ⛔ but he has ⛔ NOT been told, and he must ⛔ NOT discover it in a playtest.** ⛔ **Relay once the figure is ⛔ reviewer-confirmed.**
+
+### ⚖️🧑⛔⛔⭐⭐⭐ FOG-§11 — **THE VISUAL RULING (2026-09-05). ⛔ HE NAMED THE INSTRUMENT AND THE SCALE, AND HE ⛔ CLOSED AN OPEN ALTERNATIVE WITHOUT BEING ASKED TO.**
+
+> 🧑 **HIS WORDS, VERBATIM:** *"so add the visual effects of the fog from **"FogArea"** to cover the **entire battlefield**, and make fog cause units to drop targets."*
+
+#### ⛔⛔ **(1) THE INSTRUMENT IS ⛔ RULED: ⛔ THE VENDOR PACK. ⛔ THE NATIVE ALTERNATIVE IS ⛔ CLOSED.**
+
+- ⛔ **`FOG-§9`'s record carried the artist's ⛔ OWN ALTERNATIVE: *"`ExponentialHeightFog` ⛔ ALREADY exposes NATIVE … — ⛔ may be the ⛔ CHEAPER ANSWER ENTIRELY."*** ⇒ ⛔⛔ **HE NAMED ⛔ `FogArea` ⇒ ⛔ THE VENDOR PACK IS THE INSTRUMENT AND THE ⛔ NATIVE-HEIGHT-FOG ROUTE IS ⛔ CLOSED.**
+- ⛔ **RECORD IT AS ⛔ HIS RULING, ⛔ NOT AS A PREFERENCE WE INFERRED.** ⛔ **⛔ Do ⛔ not re-propose the native route as an optimisation; ⛔ if cost becomes a problem that is a ⛔ NEW question for him, ⛔ not a licence to substitute.**
+
+#### ⛔⛔ **(2) THE SCALE IS ⛔ RULED: ⛔ *"COVER THE ENTIRE BATTLEFIELD"*.**
+
+- ⇒ ⛔ **⛔ NOT a placed volume at a cast point.** ⛔ **It matches the card's ⛔ MAP-WIDE semantics** (`FOG-§10.1`: ⛔ no reticle, ⛔ no location) ⛔ **and his ⛔ `J-F1` answer.**
+- ⭐⭐ **AND IT ⛔ RESOLVES THE TENSION `FOG-§9` RECORDED AS UNSOLVED: ⛔ `BP_FogArea` is ⛔ PLACE-BASED (⛔ measured — *"a ⛔ PLACE YOU CAN WALK OUT OF"*), while his original sentence described ⛔ *"a BUBBLE THAT TRAVELS WITH THE EYE"*, and ⛔ NO PARAMETER CONVERTS ONE INTO THE OTHER.**
+- ⇒ ⚖️ ***⛔ HIS ANSWER IS ⛔ NEITHER — IT IS ⛔ *"MAKE THE PLACE BIG ENOUGH THAT YOU CANNOT WALK OUT OF IT."* ⛔ A PLACE-BASED VOLUME ⛔ SCALED TO THE WHOLE BATTLEFIELD ⛔ IS MAP-WIDE ⛔ IN PRACTICE, AND THE ⛔ ARCHITECTURAL OBJECTION ⛔ DISSOLVES RATHER THAN BEING OVERRULED.*** ⛔ **The `TASK-836` finding ⛔ stands; ⛔ its ⛔ blocking force does ⛔ not.**
+
+#### 🚨⛔⛔⛔ **(3) `TASK-858` IS ⛔ LIVE, ⛔ NOT MOOT — AND HIS RULING JUST MADE IT ⛔ HARD-BLOCKING.**
+
+- ⛔ **THE TENTATIVE READING WAS THAT THE CHECKBOX MIGHT BE ⛔ IRRELEVANT, ⛔ BECAUSE `FOG-§9` RECORDS THAT `BP_FogArea` IS ⛔ NOT A `UExponentialHeightFogComponent`. ⛔ THAT IS ⛔ TRUE AND IT IS ⛔ NOT THE POINT.**
+- ⛔⛔ **MEASURED, ⛔ SAME SECTION: *"`L_Arena`'s `ExponentialHeightFog_0` HAS ⛔ `bEnableVolumetricFog = false` ⇒ ⛔ dropped in today, `BP_FogArea` renders ⛔ LITERALLY NOTHING."*** ⇒ ⛔ **the flag is on the ⛔ LEVEL'S fog actor and the vendor pack's rendering ⛔ DEPENDS ON IT; ⛔ the pack ⛔ not being that component is ⛔ irrelevant to whether it ⛔ needs it.**
+- ⇒ ⚖️ ***⛔ *"X IS NOT A Y"* AND ⛔ *"X DEPENDS ON A Y BEING ENABLED"* ARE ⛔ BOTH TRUE AND ⛔ ANSWER DIFFERENT QUESTIONS. ⛔ READING THE FIRST AS SETTLING THE SECOND WOULD HAVE ⛔ WAVED THROUGH A ⛔ LIVE BLOCKER ⛔ ON A CORRECT-SOUNDING TECHNICALITY.***
+- ⇒ ⛔⛔ **`TASK-858` ⛔ STAYS `awaiting-jonathan` ⛔ ON `TASK-988`, and it is ⛔ NOW ON THE CRITICAL PATH: ⛔ it was ⛔ optional while the instrument was undecided; ⛔ HIS RULING DECIDED THE INSTRUMENT.** ⛔ **⛔ His ruling did ⛔ NOT address the checkbox ⇒ ⛔ it is ⛔ NOT waved through by it.**
+- ⛔ **IT REMAINS ⛔ HIS: a ⛔ LEVEL-WIDE LOOK CHANGE on a ⛔ NEVER-SAVE level ⇒ ⛔ his say-so ⛔ PLUS a `TASK-620..622` lighting-gate re-run.**
+
+#### ⛔⛔ **(4) THE VISUAL ⛔ READS THE STATE. ⛔ IT NEVER OWNS IT.**
+
+- ⛔ **`AFogVolume` is ⛔ STATE-ONLY ⛔ BY DESIGN** (⭐ `TASK-998`) — ⛔ no mesh, ⛔ no material, ⛔ nothing rendered — ⛔ **and `SiegeGameMode.cpp` got its `SC-§62` exception ⛔ ONLY on the condition that it ⛔ learns NO fog policy.**
+- ⇒ ⛔ **THE RENDERER IS A ⛔ CONSUMER: it ⛔ READS *"is fog up?"* and ⛔ NEVER duplicates the timer, the duration, or the prevention window.** ⛔ **⛔ A second timer is a ⛔ second source of truth and ⛔ they will diverge.**
+
+#### ⚠️⛔⛔ **(5) THE LEGIBILITY CONSTRAINT — ⛔ THE MECHANIC IS ⛔ ALREADY LIVE AND THE VISUAL MUST ⛔ AGREE WITH IT.**
+
+- ⛔ **Acquisition is ⛔ ALREADY clamped through the shared vision funnel (`SummonedUnit.cpp:1824`, `Tower.cpp:235`)** ⇒ ⛔ **units go ⛔ 87.8% blind ⛔ TODAY, with ⛔ or without a visual.**
+- ⇒ ⛔⛔ **A VISUAL THAT READS AS ⛔ *"LIGHT HAZE"* WHILE UNITS GO ⛔ NEARLY BLIND IS A ⛔ LEGIBILITY MISMATCH — ⛔ the player is told ⛔ one thing and the game does ⛔ another.**
+- ⛔ **🧑 HIS EYE IS THE ⛔ ONLY INSTRUMENT FOR THIS.** ⛔ **⛔ No agent can grade *"does this look like 20 feet of visibility?"* ⇒ ⛔ it goes to the ⛔ playtest, ⛔ not to a gate.**
+
+### ⛔⛔⭐⭐ FOG-§12 — **THE RETENTION READ COST, ⛔ MEASURED AND ⛔ CORRECTED. ⛔ THE RELAYED NUMBER WAS ⛔ WRONG IN BOTH FIGURES, AND THE ⛔ INVERSION IS THE REAL FINDING.** (added 2026-09-05; ⛔ **`qa/TASK-1039.md` W-8, ⛔ correcting what the board had recorded**)
+
+- ⛔ **THE BOARD CARRIED ⛔ *"grouped worst case ⛔ 3 → 7 `ReadFogState` calls per unit-tick."* ⛔ IT IS ⛔ `2 → 5`.** ⇒ ✅ **⛔ CORRECTED HERE; ⛔ cite ⛔ this figure, ⛔ never the relayed one.** ⛔ **A ⛔ smaller number, ⛔ which is ⛔ exactly why it needed correcting — ⛔ an ⛔ overstated cost invites a ⛔ premature optimisation against a ⛔ cost that is not there.**
+- 🚨⛔⛔ **THE FINDING THAT ⛔ SURVIVES THE CORRECTION — ⛔ AND IT IS ⛔ COUNTER-INTUITIVE: ⛔ THE ⛔ COSTLIEST PATH IS THE ⛔ NO-FOG ONE.** ⛔ **Confirmed by reading `FogVolume.cpp:35-50`: ⛔ the early-out that makes the ⛔ fog-up case cheap ⛔ does not exist on the ⛔ fog-down case, ⛔ so the ⛔ common state pays the ⛔ full walk.**
+- ⇒ ⚖️ ***⛔ A COST MODEL BUILT AROUND *"WHAT HAPPENS WHEN THE EFFECT IS ACTIVE"* MEASURES THE ⛔ RARE STATE. ⛔ THE STATE THAT RUNS ⛔ 99% OF THE MATCH IS THE ⛔ ONE THAT WASN'T PROFILED.***
+- ⛔ **⛔ NOT A DEFECT AND ⛔ NOT A ROW: ⛔ `2 → 5` on a per-unit tick is ⛔ not a measured problem, and ⛔ nothing has profiled it.** ⛔ **⛔ Recorded so the ⛔ NEXT person who profiles fog ⛔ starts at `FogVolume.cpp:35-50` ⛔ and starts with ⛔ fog OFF.**
+
+### ⛔⛔⭐⭐ FOG-§12a — **THE ⛔ VERIFICATION-QUALITY RECORD FOR THE RETENTION BATCH. ⛔ WHAT WAS ESTABLISHED ⛔ BY READING vs ⛔ BY INSTRUMENT — ⛔ BECAUSE THE ⛔ DISTINCTION IS THE ⛔ EVIDENCE.** (added 2026-09-05; ⛔ **`TASK-1039`, ⛔ a PASS whose ⛔ METHOD is worth more than its verdict**)
+
+- ✅ **THE ⛔ CLAMP TRACE WAS ⛔ FOLLOWED TO ITS ⛔ SITE, ⛔ NOT ASSERTED: ⛔ `SiegeFogStatics.cpp:92-95`.** ⇒ ⛔ **the retention clamp is ⛔ pinned to a ⛔ coordinate-free ⛔ symbol trail, ⛔ not to a reviewer's summary of it.**
+- ✅ **THE ⛔ FIVE UNROUTED CONSUMERS WERE CONFIRMED BY ⛔ READING ⛔ EACH BODY — ⛔ rung 4 of the census ladder, ⛔ not a name grep.** ⇒ ⛔⛔ **and this is ⛔ the only rung that catches a site which ⛔ RECOMPUTES a value rather than ⛔ naming it** (⛔ the `M7/M8` lesson, ⛔ paid for once already).
+- ✅ **THE ⛔ MUTATION-RESIDUE QUESTION WAS ⛔ REFUTED BY A ⛔ CONTENT CENSUS AND THE REVIEWER ⛔ SAID SO EXPLICITLY — ⛔ NOT by ⛔ BYTE IDENTITY.** ⇒ ⛔ **⛔ a reviewer with ⛔ no `Bash` ⛔ cannot establish byte identity, and ⛔ claiming it would have been the ⛔ stronger-sounding and ⛔ FALSE claim.** ⛔ **⛔ Naming the ⛔ weaker instrument you ⛔ actually used is the ⛔ behaviour this project pays for** (⭐ `SC-§78`).
+- ⚖️ 📌 **THE FAMILY SENTENCE: ⛔ A VERDICT IS ⛔ WORTH ITS ⛔ WEAKEST NAMED INSTRUMENT — ⛔ AND ⛔ WORTHLESS IF IT ⛔ DOESN'T NAME ONE.**
 
 ### ⚖️⛔⛔⭐⭐⭐ FOG-§9.11 — **THE ENGAGEMENT ORDERING LAW (2026-09-04). ⛔ IT ⛔ SUPERSEDES THE NUMBERS IN `FOG-§9.9` AND `FOG-§9.10`, AND IT ⛔ RETIRES `FOG-§9.10a`'s IDENTITY RULE. ⛔ CITE ⛔ THIS, ⛔ NEVER THE TABLE ABOVE.**
 

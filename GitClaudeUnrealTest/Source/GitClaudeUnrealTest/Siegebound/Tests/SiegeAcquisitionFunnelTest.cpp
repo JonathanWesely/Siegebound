@@ -1090,6 +1090,13 @@ bool FSiegeAcquisitionFunnelFriendlyLaneTest::RunTest(const FString& Parameters)
 //  is the moment everyone is most tempted to loosen it.
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ⚠️ ON THE REGISTERED NAME, RAISED BY TASK-1008 RATHER THAN QUIETLY CHANGED. Since that row the
+// fog clamp lives at ⛔ TWO chokepoints, not one: the acquisition FUNNEL, and the unit-side reach
+// door the funnel structurally cannot stand in for. ⇒ read "the funnel" below as "THE CHOKEPOINT",
+// which is the property this test has always actually defended — the DECISION is never made at a
+// call site. ⛔ The identifier is left alone deliberately: an automation test's registered name is
+// referenced from outside this file, and renaming it is a different kind of change from extending
+// a token list. Routed as a finding.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FSiegeAcquisitionFunnelSuppressionLivesOnlyInTheFunnelTest,
 	"Siegebound.Acquisition.VeilAndFogSuppressionLiveOnlyInTheFunnel",
@@ -1114,8 +1121,15 @@ bool FSiegeAcquisitionFunnelSuppressionLivesOnlyInTheFunnelTest::RunTest(const F
 	//   • `FSiegeInvisibilityStatics` / `IsVisibleTo(`  — SiegeInvisibilityStatics.h (TASK-827)
 	//   • `bIsInvisible`                                — the per-instance veil state (TASK-829)
 	//   • `FSiegeFogStatics` / `EffectiveVisionRadius`  — SiegeFogStatics.h (TASK-837)
+	//   • `ResolveFogClampedReachUU(`                   — SiegeCombatStatics.h (TASK-1007), the fog
+	//                                                     REACH seam. ⛔ ADDED BY TASK-1008, which
+	//                                                     is the row that gave it its first caller.
 	// ⛔ If a future task renames one of these, this list is updated in the SAME commit — a
 	// renamed symbol must never be allowed to silently retire its own guard.
+	// ⛔⛔ AND THE SAME RULE BINDS A ⛔ NEW DOOR, WHICH IS THE HARDER HALF AND THE ONE THIS FILE
+	// LEARNED IN 2026-09: a symbol nobody thought to add is INDISTINGUISHABLE, from inside this
+	// test, from a symbol that is genuinely absent. The seam above matched none of the three
+	// needles that preceded it, so this row was ⛔ GREEN over its own subject for a full day.
 	//
 	// ⚠️ `SpellLibrary.cpp` is deliberately NOT in the file list below: it is a spell resolver
 	// and may legitimately gain a "reveal" spell that reads veil state for its own effect,
@@ -1132,18 +1146,100 @@ bool FSiegeAcquisitionFunnelSuppressionLivesOnlyInTheFunnelTest::RunTest(const F
 	// exists to prevent) — but `SummonedUnit.cpp` does not decide anything. It HOLDS the state and
 	// exposes the two doors that mutate it. `IsVisibleTo(` — the DECISION — still reads ZERO there,
 	// and that is the assertion that was actually load-bearing all along.
-	// ⇒ the tokens are split into DECISION tokens (zero in all five, unchanged) and STATE tokens
-	// (zero in four, with the owner exempted BY NAME), and the exemption is ⛔ NOT a hole: it is
-	// replaced below by a STRICTER, EXACT, ENUMERATED census of the owner's write-doors.
+	// ⇒ the tokens are split into DECISION tokens and STATE tokens (zero in four, with the owner
+	// exempted BY NAME), and the exemption is ⛔ NOT a hole: it is replaced below by a STRICTER,
+	// EXACT, ENUMERATED census of the owner's write-doors.
+	// ⚠️⚠️ AMENDED BY TASK-1008 — THE DECISION HALF IS ⛔ NO LONGER "ZERO IN ALL FIVE", AND THAT
+	// SENTENCE IS ⛔ RETIRED RATHER THAN LEFT LYING. Jonathan ruled fog must clamp RETENTION and
+	// FIRING, not only acquisition, and a gather-time funnel structurally cannot answer either —
+	// so `SummonedUnit.cpp` now legitimately names the fog REACH seam ⛔ exactly once, inside one
+	// function. ⭐ THE REPAIR IS THE SAME SHAPE TASK-868 CHOSE AND FOR THE SAME REASON, ⛔ one
+	// generation stricter: the DECISION half is now zero ⛔ EXCEPT where an AUTHORISED-CHOKEPOINT
+	// TABLE names a file, a token, a FUNCTION and a REASON — and every expected count is ⛔ DERIVED
+	// from that table. ⇒ ⛔ nothing was exempted; a door was ⛔ described.
 
-	// ── DECISION tokens: ⛔ ZERO IN ALL FIVE FILES. Unchanged from TASK-828, and this is the half
-	//    that carries the permanent law. Suppression is DECIDED inside the funnel and nowhere else.
+	// ── DECISION tokens: the suppression/clamp DECISION is made at a CHOKEPOINT and nowhere else.
+	//    ⛔ ZERO in all five files — ⛔ EXCEPT where the AUTHORISED-CHOKEPOINT TABLE below says
+	//    otherwise, and there the expected count is ⛔ DERIVED FROM THAT TABLE, ⛔ never typed.
+	//
+	// ⛔⛔⛔ TASK-1008 ADDED THE FOURTH TOKEN, AND WHY IT HAD TO IS THE WHOLE LESSON OF THIS BLOCK.
+	// Until that row this list named exactly three needles — `IsVisibleTo(`, `FSiegeFogStatics`
+	// and `EffectiveVisionRadius`. TASK-1007 then shipped the fog REACH seam,
+	// `FSiegeCombatStatics::ResolveFogClampedReachUU`, whose name matches ⛔ NONE OF THE THREE.
+	// ⇒ ⛔⛔ THIS ROW WOULD HAVE GONE GREEN OVER A DIFF THAT WIRED FOG INTO ⛔ NINE REACH SITES IN
+	// `SummonedUnit.cpp`, ⛔ WHILE BELIEVING IT WAS WATCHING — measured, not predicted, and
+	// recorded as OWED in `qa/TASK-1009.md` W-5 before the wiring was written.
+	// ⚖️ ⛔ A GUARD THAT PASSES A CHANGE BY ⛔ ACCIDENT IS ⛔ WORSE THAN NO GUARD: it does not merely
+	// fail to catch, it ⛔ CERTIFIES. `SHIP-§9` — ⛔ validate a gate against the FAILURE it detects,
+	// ⛔ never merely against success. (This one was seen RED before it was trusted; the handoff
+	// records the two mutations and both counts.)
+	// ⭐ AND THE SYMBOL WAS NAMED HERE IN THE ⛔ SAME COMMIT THAT CREATED ITS CALLER — the rule the
+	// paragraph above already states for a RENAME, applied identically to a ⛔ NEW DOOR. A guard is
+	// extended by the row that makes it extendable, or ⛔ nobody ever extends it.
 	const TCHAR* const DecisionTokens[] =
 	{
 		TEXT("IsVisibleTo("),
 		TEXT("FSiegeFogStatics"),
 		TEXT("EffectiveVisionRadius"),
+		TEXT("ResolveFogClampedReachUU("),
 	};
+
+	// ═══════════════════════════════════════════════════════════════════════════════════════════
+	//  ⭐⭐⭐ THE AUTHORISED-CHOKEPOINT TABLE — ⛔ THE ONLY WAY A DECISION TOKEN MAY READ NON-ZERO.
+	//
+	//  ⛔⛔ IT IS ⛔ NOT AN EXEMPTION LIST, AND THAT DIFFERENCE IS THE ENTIRE DESIGN. A bare
+	//  exemption ("`SummonedUnit.cpp` may name the reach seam") would license ⛔ NINE calls as
+	//  happily as one, and would say ⛔ NOTHING about WHERE they live — which is exactly the
+	//  per-site-clamp failure this whole test exists to prevent, re-admitted through the door
+	//  marked "allowed". Every entry below therefore carries ⛔ THREE things:
+	//    (a) the ⛔ ONE function in that file that may hold the token (matched by SIGNATURE, so a
+	//        call that moves to another function goes RED even though the file count is right);
+	//    (b) a ⛔ WRITTEN-DOWN WHY, printed into every failure message this table produces;
+	//    (c) an implied count of ⛔ EXACTLY ONE — asserted per entry, below the file loop.
+	//  ⛔ The per-file expectation is DERIVED by counting the entries naming that file and token,
+	//  ⛔ never typed (`handoffs/TASK-980-programmer.md` §4(f), the method TASK-1007 applied to the
+	//  sibling pin in `Tests/SiegeFogClampTest.cpp`).
+	//
+	//  ⇒ ⭐⭐ AN AUTHORISED CONSUMER IS ADDED BY ⛔ WRITING DOWN A REASON. ⛔ The number follows.
+	//  ⛔ Bumping a number to clear a red is the move this shape is built to make impossible, and
+	//  relaxing the token list is an ⛔ AUTOMATIC QA FAIL by this row's own message below.
+	// ═══════════════════════════════════════════════════════════════════════════════════════════
+
+	struct FAuthorisedFogCeilingChokepoint
+	{
+		/** The call-site file permitted to hold the token — ⛔ one of CallSiteFiles above. */
+		const TCHAR* File;
+		/** ⛔ WHICH decision token this entry authorises. An entry licenses ONE, ⛔ never all. */
+		const TCHAR* Token;
+		/** The ⛔ ONE function that may hold it, by signature (ExtractFunctionBody's needle). */
+		const TCHAR* ChokepointSignature;
+		/** ⛔ Printed into every message below. ⛔ An entry with no reason is not an entry. */
+		const TCHAR* WhyThisChokepointIsAuthorised;
+	};
+
+	const FAuthorisedFogCeilingChokepoint AuthorisedFogCeilingChokepoints[] =
+	{
+		{
+			SummonedUnitCpp,
+			TEXT("ResolveFogClampedReachUU("),
+			TEXT("float ASummonedUnit::ApplyFogVisionCeilingUU(float RequestedReachUU) const"),
+			TEXT("THE UNIT-REACH CHOKEPOINT (TASK-1008; law FOG-§9.11's retention clause, FOG-§9.6). ")
+			TEXT("The acquisition funnel runs at GATHER time, so it is STRUCTURALLY incapable of ")
+			TEXT("bounding what an ALREADY-ACQUIRED unit keeps chasing, what it shoots at between ")
+			TEXT("gathers, or what it notices from inside a commanded zone it gathered UNBOUNDED. ")
+			TEXT("Jonathan's 'yes clamp retention under fog' is a question the funnel cannot be asked. ")
+			TEXT("NINE reach sites in that file hand their OWN reach to THIS one function — six firing ")
+			TEXT("gates, two leash drops and the commanded notice bound — and it is the ONLY place in ")
+			TEXT("ASummonedUnit permitted to name the fog rule."),
+		},
+	};
+
+	TestTrue(
+		TEXT("⭐ SELF-CHECK: the authorised-chokepoint table is NOT EMPTY. ⛔ An emptied table would make ")
+		TEXT("every derived expectation below ZERO — which is still the SAFE direction (a live call would go ")
+		TEXT("red), but it would silently retire the per-entry assertions, which are the half that pins WHERE ")
+		TEXT("the call lives. A vacuous table must fail here rather than pass quietly."),
+		static_cast<int32>(UE_ARRAY_COUNT(AuthorisedFogCeilingChokepoints)) > 0);
 
 	// ── STATE tokens: ⛔ ZERO IN THE FOUR NON-OWNER FILES. A mirrored veil flag on ATower, on
 	//    AHeroCharacter, in the line sweep or in the cheat manager is a SECOND source of truth for
@@ -1178,17 +1274,86 @@ bool FSiegeAcquisitionFunnelSuppressionLivesOnlyInTheFunnelTest::RunTest(const F
 
 		for (const TCHAR* Token : DecisionTokens)
 		{
+			// ⛔ DERIVED, ⛔ NEVER TYPED: how many table entries authorise THIS token in THIS file.
+			// ⛔ Zero for every (file, token) pair nobody wrote a reason for — which is still all
+			// twenty of them but one — and EXACTLY ONE where a reason exists. ⭐ THAT ONE IS THE
+			// PER-FILE CAP, and it is what keeps "one door" a PROPERTY rather than an aspiration:
+			// the nine reach sites in SummonedUnit.cpp can never clamp individually, because the
+			// second of them would make this count 2 against a derived 1.
+			int32 AuthorisedHere = 0;
+			for (const FAuthorisedFogCeilingChokepoint& Entry : AuthorisedFogCeilingChokepoints)
+			{
+				if (FCString::Strcmp(Entry.File, File) == 0 && FCString::Strcmp(Entry.Token, Token) == 0)
+				{
+					++AuthorisedHere;
+				}
+			}
+
 			TestEqual(
 				FString::Printf(
-					TEXT("⭐⭐ %s contains no `%s`. THIS IS THE PERMANENT LAW, not a TASK-828 snapshot: the veil ")
-					TEXT("SUPPRESSION DECISION and the fog range clamp are applied INSIDE ")
-					TEXT("FSiegeCombatStatics::GatherHostileAgents and NOWHERE ELSE (WITCH-§1). A per-site check ")
-					TEXT("is the forgotten-guard-point failure the whole funnel exists to prevent, and it is an ")
-					TEXT("automatic QA FAIL. ⛔ Do NOT fix a red here by relaxing this row: route the site through ")
-					TEXT("the funnel instead."),
-					*FPaths::GetCleanFilename(FString(File)), Token),
-				CountOccurrencesInCode(Text, Token), 0);
+					TEXT("⭐⭐ %s names `%s` EXACTLY %d time(s) — a count DERIVED from the authorised-chokepoint ")
+					TEXT("table, ⛔ never typed. THIS IS THE PERMANENT LAW, not a TASK-828 snapshot: the veil ")
+					TEXT("SUPPRESSION DECISION and the fog range clamp are applied at a CHOKEPOINT — inside ")
+					TEXT("FSiegeCombatStatics::GatherHostileAgents for ACQUISITION (WITCH-§1), and for the ")
+					TEXT("reaches a gather-time funnel structurally cannot see (FIRING / RETENTION / the ")
+					TEXT("commanded notice bound) at the ONE unit-side door named in that table. A per-SITE ")
+					TEXT("check is the forgotten-guard-point failure the whole funnel exists to prevent, and it ")
+					TEXT("is an automatic QA FAIL. ⛔ Do NOT fix a red here by relaxing this row and ⛔ do NOT fix ")
+					TEXT("it by bumping a number — route an acquisition through the funnel, or route a reach ")
+					TEXT("through the authorised chokepoint. A NEW chokepoint is added by writing its REASON ")
+					TEXT("into the table, and then the count moves by itself.%s"),
+					*FPaths::GetCleanFilename(FString(File)), Token, AuthorisedHere,
+					(AuthorisedHere > 0)
+						? TEXT("\n  ⭐ AUTHORISED HERE BECAUSE: see the table entry's own reason, asserted per entry below.")
+						: TEXT("")),
+				CountOccurrencesInCode(Text, Token), AuthorisedHere);
 		}
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════════════════════════
+	//  ⭐⭐⭐ THE PER-ENTRY HALF — ⛔ AND WITHOUT IT THE TABLE IS ARITHMETIC RATHER THAN A CLAIM.
+	//
+	//  ⛔ The file-scoped count above says HOW MANY. It says ⛔ NOTHING about ⛔ WHERE. A diff that
+	//  deleted the chokepoint's body and clamped at ⛔ one reach site instead would satisfy it
+	//  exactly — one call, right file, ⛔ wrong place, and the "one door" property gone with
+	//  nothing red. ⇒ each entry is re-asserted ⛔ INSIDE the ONE function it names.
+	//  ⛔ A stale signature FAILS here (ExtractFunctionBody AddErrors) rather than scanning nothing
+	//  and passing, which is the failure mode a body-scoped probe has to be built against.
+	// ═══════════════════════════════════════════════════════════════════════════════════════════
+
+	for (const FAuthorisedFogCeilingChokepoint& Entry : AuthorisedFogCeilingChokepoints)
+	{
+		FString EntryFileText;
+		if (!LoadProjectSource(*this, Entry.File, EntryFileText))
+		{
+			continue;
+		}
+
+		FString ChokepointBody;
+		if (!ExtractFunctionBody(*this, EntryFileText, Entry.ChokepointSignature, ChokepointBody))
+		{
+			continue; // already an AddError — a stale probe FAILS rather than reporting safe
+		}
+
+		TestEqual(
+			FString::Printf(
+				TEXT("⭐⭐⭐ THE AUTHORISED CALL IS ⛔ INSIDE ITS OWN CHOKEPOINT: `%s` appears EXACTLY ONCE in ")
+				TEXT("`%s`, in %s. ⛔ The file-level count above cannot see this: one call in the RIGHT file but ")
+				TEXT("the WRONG function passes it and destroys the property it was protecting. ⛔ WHY THIS ")
+				TEXT("CHOKEPOINT IS AUTHORISED AT ALL: %s"),
+				Entry.Token, *FPaths::GetCleanFilename(FString(Entry.File)),
+				Entry.ChokepointSignature, Entry.WhyThisChokepointIsAuthorised),
+			CountOccurrencesInCode(ChokepointBody, Entry.Token), 1);
+
+		TestEqual(
+			FString::Printf(
+				TEXT("⭐⭐ PROSE-IMMUNITY of `%s` inside %s: the count reads IDENTICALLY with the comment-skip ")
+				TEXT("on and off, so the pin reads STRUCTURE and not DOCUMENTATION. ⛔ A red here means the ")
+				TEXT("needle is now being WRITTEN INSIDE A COMMENT in that body, which makes both numbers above ")
+				TEXT("untrustworthy in BOTH directions — fix the comment, ⛔ do NOT adjust the pin."),
+				Entry.Token, Entry.ChokepointSignature),
+			CountOccurrencesIncludingComments(ChokepointBody, Entry.Token),
+			CountOccurrencesInCode(ChokepointBody, Entry.Token));
 	}
 
 	for (const TCHAR* File : NonOwnerCallSiteFiles)
@@ -1349,11 +1514,18 @@ bool FSiegeAcquisitionFunnelSuppressionLivesOnlyInTheFunnelTest::RunTest(const F
 		// ⛔ This is what makes the numbers above safe to pin in a file that is under active edit:
 		// none of them can be moved by writing, reflowing or deleting a COMMENT. Contrast the bare
 		// tokens, which demonstrably can — the row after this one measures exactly that.
+		// ⭐ TASK-1008 adds the fog reach seam's needle here for the SAME reason the three above are
+		// here: its file-scoped count is now PINNED (at the table-derived 1), and a pinned number
+		// in a file under active edit must be provably immune to somebody writing, reflowing or
+		// deleting a COMMENT. ⛔ The consequence, stated so it is a choice and not a surprise: the
+		// shipped comments in `SummonedUnit.cpp` deliberately name the seam WITHOUT its open paren,
+		// so that a paragraph explaining the rule can never be counted as an application of it.
 		const TCHAR* const ImmuneNeedles[] =
 		{
 			TEXT("FSiegeInvisibilityStatics::ApplyVeil("),
 			TEXT("FSiegeInvisibilityStatics::ApplyBreak("),
 			TEXT("(bIsInvisible"),
+			TEXT("ResolveFogClampedReachUU("),
 		};
 
 		for (const TCHAR* Needle : ImmuneNeedles)

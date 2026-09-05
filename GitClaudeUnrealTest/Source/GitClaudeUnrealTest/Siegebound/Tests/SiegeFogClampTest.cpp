@@ -243,6 +243,76 @@ namespace SiegeFogClampFixture
 		return Total;
 	}
 
+	/**
+	 *  ⭐⭐⭐ THE AUTHORISED-READER TABLE — ⛔ THE POPULATION TESTS 4(a) AND 8(a) DERIVE THEIR
+	 *  COUNTS FROM, ⛔ SO THAT NEITHER PIN IS EVER A TYPED NUMBER (TASK-1007;
+	 *  `handoffs/TASK-980-programmer.md` §4(f)).
+	 *
+	 *  ⛔⛔ WHY A TABLE AND NOT `3 → 4`. Both pins guard ⛔ UNAUTHORISED GROWTH, not a quantity.
+	 *  Bumping the literal when a legitimate consumer lands converts a ⛔ GUARD into a ⛔ COUNTER:
+	 *  the next author bumps it too, and the row goes on passing while the rule it was written for
+	 *  quietly dies. ⭐ Here an authorised consumer is added by ⛔ WRITING DOWN WHY — the count
+	 *  follows from `UE_ARRAY_COUNT`, and a per-site clamp that nobody justified still goes RED.
+	 *
+	 *  ⭐⭐ ONE TABLE SERVES BOTH PINS ON PURPOSE, BECAUSE THE PAIRING IS ITSELF THE INVARIANT
+	 *  (`FOG-§9.6`): every authorised site reads the state ⛔ EXACTLY ONCE and hands it to the
+	 *  ceiling ⛔ EXACTLY ONCE. ⇒ a reader that consults the fog state and does ⛔ NOT route it
+	 *  into `EffectiveVisionRadius` is a site that has learned the WEATHER and is branching on it,
+	 *  which is the second door this whole design exists to make unrepresentable — and it turns
+	 *  these rows red rather than passing as "one more read".
+	 *
+	 *  ⛔ EVERY ENTRY MUST BE INSIDE `FSiegeCombatStatics`. `ReadFogState` is `private:`, so a
+	 *  reader anywhere else could not compile — which is the point: the table records a judgement
+	 *  the compiler already enforces, so the two cannot drift apart.
+	 */
+	struct FAuthorisedFogStateReader
+	{
+		/** Shipping file the reader lives in. */
+		const TCHAR* File;
+
+		/** ⛔ The DEFINITION signature, matched by `ExtractFunctionBody` — a stale one FAILS (`SC-§38`). */
+		const TCHAR* FunctionSignature;
+
+		/** ⛔ Written-down WHY. An entry without a reason is an entry that should not exist. */
+		const TCHAR* WhyThisReaderIsAuthorised;
+	};
+
+	static const FAuthorisedFogStateReader AuthorisedFogStateReaders[] =
+	{
+		{
+			CombatStaticsCpp,
+			TEXT("void FSiegeCombatStatics::GatherHostileAgents("),
+			TEXT("THE ACQUISITION FUNNEL (FOG-§7 row 1, WITCH-§1): the one place that decides what a unit, ")
+			TEXT("tower or hero may SEE and acquire. One read per gather — never one per candidate.")
+		},
+		{
+			CombatStaticsCpp,
+			TEXT("float FSiegeCombatStatics::ResolveFogClampedReachUU("),
+			TEXT("THE REACH SEAM (TASK-1007; FOG-§9.11's retention clause, 🧑 \"yes clamp retention under fog\"). ")
+			TEXT("⛔ The funnel STRUCTURALLY cannot serve this question: it runs only at GATHER time, so it ")
+			TEXT("cannot bound what an ALREADY-ACQUIRED unit keeps chasing or shoots at between gathers. ")
+			TEXT("⛔ It returns a REACH and never the state — bFogActive and FSiegeFogTuning do not cross its ")
+			TEXT("signature in either direction, so it cannot become a second door.")
+		},
+	};
+
+	/** ⛔ DERIVED, never typed: how many CALL sites of the fog state are authorised today. */
+	static int32 AuthorisedFogStateReaderCount()
+	{
+		return static_cast<int32>(UE_ARRAY_COUNT(AuthorisedFogStateReaders));
+	}
+
+	/** Every authorised reader's WHY, for a failure message that explains itself. */
+	static FString DescribeAuthorisedFogStateReaders()
+	{
+		FString Description;
+		for (const FAuthorisedFogStateReader& Reader : AuthorisedFogStateReaders)
+		{
+			Description += FString::Printf(TEXT("\n    • %s — %s"), Reader.FunctionSignature, Reader.WhyThisReaderIsAuthorised);
+		}
+		return Description;
+	}
+
 	/** The shipped tuning — a default-constructed band IS the band the game runs with. */
 	static FSiegeFogTuning ShippedTuning()
 	{
@@ -705,17 +775,32 @@ bool FSiegeFogClampLivesOnlyInTheFunnelTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+
+	// ⛔⛔ RE-DERIVED 2026-09-04 (TASK-1007) — ⛔ AND THE NUMBER WAS **NOT** RENUMBERED. This pin
+	// stood at a typed `2`. The reach seam adds a THIRD legitimate qualified call, and bumping the
+	// literal to `3` would have converted a GUARD into a COUNTER (the next author bumps it to 4).
+	// ⇒ the expectation is now DERIVED: the rule's own DEFINITION, plus ONE call per entry in the
+	// AUTHORISED-READER TABLE, each of which had to be written down WITH A REASON to exist at all.
+	// ⭐ A per-site clamp nobody justified still turns this red, which is the thing the old pin was
+	// actually protecting (`handoffs/TASK-980-programmer.md` §4(f)).
+	const int32 ExpectedQualifiedHits = 1 /* the definition in SiegeFogStatics.cpp */ + AuthorisedFogStateReaderCount();
+
 	TestEqual(
 		FString::Printf(
-			TEXT("⭐⭐ THE CEILING IS NAMED EXACTLY TWICE IN SHIPPING SOURCE, AND ONLY ONE OF THOSE IS A CALL: its ")
-			TEXT("own DEFINITION in SiegeFogStatics.cpp, and the ONE call inside the funnel. (`IsVisibleThroughFog` ")
+			TEXT("⭐⭐ THE CEILING IS NAMED, QUALIFIED, EXACTLY ONCE PER AUTHORISED CONSUMER PLUS ONCE FOR ITS OWN ")
+			TEXT("DEFINITION — %d today, and the number is DERIVED FROM THE TABLE, never typed. (`IsVisibleThroughFog` ")
 			TEXT("reaches it UNQUALIFIED from inside the same class, so it is deliberately not counted here — the ")
 			TEXT("qualified needle counts EXTERNAL consumers, which is the population this gate is about.) ")
-			TEXT("⛔ A THIRD hit is a per-site clamp, which is the forgotten-guard-point failure the funnel exists ")
-			TEXT("to prevent and an automatic QA FAIL. ⛔ Do NOT fix a red here by clamping at a new site: route ")
-			TEXT("the site through the funnel with a vision query. Found:%s"),
+			TEXT("⛔ AN EXTRA hit is a per-site clamp, which is the forgotten-guard-point failure the funnel exists ")
+			TEXT("to prevent and an automatic QA FAIL. ⛔ Do NOT fix a red here by bumping a number and do NOT fix ")
+			TEXT("it by clamping at a new site: route an acquisition through the funnel with a vision query, or — if ")
+			TEXT("it is a RETENTION or FIRING reach, which the gather-time funnel structurally cannot answer — call ")
+			TEXT("`FSiegeCombatStatics::ResolveFogClampedReachUU`, which is already counted below.%s%sFound:%s"),
+			ExpectedQualifiedHits,
+			*DescribeAuthorisedFogStateReaders(),
+			TEXT("\n  "),
 			Where.IsEmpty() ? TEXT(" (nowhere — the needle is broken)") : *Where),
-		QualifiedHits, 2);
+		QualifiedHits, ExpectedQualifiedHits);
 
 	FString CombatCpp;
 	if (!LoadProjectFile(*this, CombatStaticsCpp, CombatCpp))
@@ -735,11 +820,37 @@ bool FSiegeFogClampLivesOnlyInTheFunnelTest::RunTest(const FString& Parameters)
 		TEXT("every assertion below pass vacuously."),
 		FunnelBody.Len() > 400);
 
-	TestEqual(
-		TEXT("⭐⭐ The funnel applies the vision ceiling exactly once. ⛔ If this is ZERO, fog does nothing to any ")
-		TEXT("unit, tower or hero in the game and the card is inert — while every arithmetic row in ")
-		TEXT("SiegeFogTest.cpp stays green, because the rules would still be correct and unused."),
-		CountOccurrencesInCode(FunnelBody, TEXT("FSiegeFogStatics::EffectiveVisionRadius(")), 1);
+	// ⛔⛔ THE PER-ENTRY HALF OF THE DERIVATION, AND IT IS NOT OPTIONAL: the tree-wide total above
+	// could be satisfied by ONE authorised function calling the ceiling TWICE while another never
+	// calls it at all. ⭐ This loop is what makes the table a claim about each site rather than an
+	// arithmetic coincidence — and it is the row that goes red when a reader consults the fog state
+	// and then branches on it instead of routing it into the ceiling (`FOG-§9.6`).
+	for (const FAuthorisedFogStateReader& Reader : AuthorisedFogStateReaders)
+	{
+		FString ReaderBody;
+		if (!ExtractFunctionBody(*this, CombatCpp, Reader.FunctionSignature, ReaderBody))
+		{
+			continue; // ExtractFunctionBody already errored — a stale probe FAILS, it does not pass quietly.
+		}
+
+		TestTrue(
+			*FString::Printf(
+				TEXT("SELF-CHECK: '%s' yielded a substantial body — an empty extraction would make the assertion ")
+				TEXT("below pass vacuously."),
+				Reader.FunctionSignature),
+			ReaderBody.Len() > 100);
+
+		TestEqual(
+			*FString::Printf(
+				TEXT("⭐⭐ '%s' applies the vision ceiling EXACTLY ONCE. ⛔ If this is ZERO for the FUNNEL, fog does ")
+				TEXT("nothing to any unit, tower or hero in the game and the card is inert — while every arithmetic ")
+				TEXT("row in SiegeFogTest.cpp stays green, because the rules would still be correct and unused. ")
+				TEXT("⛔ If it is ZERO for any OTHER authorised reader, that reader has learned the weather and does ")
+				TEXT("something else with it, which is the second door the private state seam exists to prevent. ")
+				TEXT("WHY THIS READER IS AUTHORISED: %s"),
+				Reader.FunctionSignature, Reader.WhyThisReaderIsAuthorised),
+			CountOccurrencesInCode(ReaderBody, TEXT("FSiegeFogStatics::EffectiveVisionRadius(")), 1);
+	}
 
 	TestEqual(
 		TEXT("⭐ …and the per-candidate comparison is the SHIPPED predicate, not a hand-rolled `<=`. ")
@@ -1236,14 +1347,36 @@ bool FSiegeFogClampStateSeamTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+
+	// ⛔⛔⭐⭐ RE-DERIVED 2026-09-04 (TASK-1007) — ⛔ AND THE `3` WAS **NOT** RENUMBERED TO `4`.
+	// This row stood at a typed `3` with the message *"a FOURTH is a second fog-state read"*. The
+	// reach seam adds a fourth, LEGITIMATELY, and typing `4` here would have been the worst
+	// available outcome: ⛔ it converts a GUARD into a COUNTER. The next author bumps it to 5, and
+	// the row keeps passing long after the rule it encodes has stopped being enforced.
+	// ⇒ ⭐ THE EXPECTATION IS DERIVED: the DECLARATION + the DEFINITION + ONE call per entry in the
+	// AUTHORISED-READER TABLE, where an entry exists only because somebody WROTE DOWN WHY
+	// (`handoffs/TASK-980-programmer.md` §4(f)). ⛔ An unjustified read still goes RED, which is
+	// what the old pin was actually protecting, and adding one is now a deliberate act with a
+	// reason attached rather than an edit to a number.
+	const int32 ExpectedSeamHits =
+		1 /* the declaration in SiegeCombatStatics.h */
+		+ 1 /* the definition in SiegeCombatStatics.cpp */
+		+ AuthorisedFogStateReaderCount();
+
 	TestEqual(
 		FString::Printf(
-			TEXT("⭐⭐ `ReadFogState` is named exactly THREE times in shipping source: its declaration in the ")
-			TEXT("header, its definition, and the ONE call inside the funnel. ⛔ A FOURTH is a second fog-state ")
-			TEXT("read — which is how a symmetric, world-global card starts answering differently in two places. ")
-			TEXT("Found:%s"),
+			TEXT("⭐⭐ `ReadFogState` is named exactly %d times in shipping source: its declaration in the header, ")
+			TEXT("its definition, and ONE call per AUTHORISED READER — and that last term is DERIVED FROM A TABLE, ")
+			TEXT("never typed. ⛔ AN EXTRA hit is an unauthorised fog-state read, which is how a symmetric, ")
+			TEXT("world-global card starts answering differently in two places. ⛔ Do NOT clear a red here by ")
+			TEXT("raising the number: either the new reader belongs in the table WITH A WRITTEN REASON, or it does ")
+			TEXT("not belong in the tree. ⛔ And it must be inside `FSiegeCombatStatics` — `ReadFogState` is ")
+			TEXT("`private:` and stays private, so a reader anywhere else could not compile.")
+			TEXT("%s\n  Found:%s"),
+			ExpectedSeamHits,
+			*DescribeAuthorisedFogStateReaders(),
 			Where.IsEmpty() ? TEXT(" (nowhere — the needle is broken)") : *Where),
-		SeamHits, 3);
+		SeamHits, ExpectedSeamHits);
 
 	FString CombatCpp;
 	if (!LoadProjectFile(*this, CombatStaticsCpp, CombatCpp))
@@ -1251,13 +1384,25 @@ bool FSiegeFogClampStateSeamTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	FString FunnelBody;
-	if (ExtractFunctionBody(*this, CombatCpp, TEXT("void FSiegeCombatStatics::GatherHostileAgents("), FunnelBody))
+	// ⛔ THE PER-ENTRY HALF: each authorised reader consults the state EXACTLY ONCE. Without this,
+	// the derived total above could be met by one function reading twice and another not at all —
+	// and the funnel's own "once per GATHER, not once per CANDIDATE" property would be unpinned.
+	for (const FAuthorisedFogStateReader& Reader : AuthorisedFogStateReaders)
 	{
+		FString ReaderBody;
+		if (!ExtractFunctionBody(*this, CombatCpp, Reader.FunctionSignature, ReaderBody))
+		{
+			continue; // ExtractFunctionBody already errored — a stale probe FAILS, it does not pass quietly.
+		}
+
 		TestEqual(
-			TEXT("⭐ …and the ONE call is inside the funnel, once per gather — ⛔ not once per candidate, which on a ")
-			TEXT("0.25 s acquisition poll over every agent on the field would be a world query per unit pair."),
-			CountOccurrencesInCode(FunnelBody, TEXT("ReadFogState(")), 1);
+			*FString::Printf(
+				TEXT("⭐ '%s' reads the fog state EXACTLY ONCE. ⛔ For the funnel that means once per GATHER — ⛔ not ")
+				TEXT("once per candidate, which on a 0.25 s acquisition poll over every agent on the field would be a ")
+				TEXT("world query per unit pair. ⛔ For the reach seam it means once per ASK, which is why the unit ")
+				TEXT("side routes ONE chokepoint through it rather than nine reach sites. WHY: %s"),
+				Reader.FunctionSignature, Reader.WhyThisReaderIsAuthorised),
+			CountOccurrencesInCode(ReaderBody, TEXT("ReadFogState(")), 1);
 	}
 
 	// ── (b) ⛔⛔ THE ROW THAT WAS INVERTED RATHER THAN DELETED — and the inversion has HAPPENED.

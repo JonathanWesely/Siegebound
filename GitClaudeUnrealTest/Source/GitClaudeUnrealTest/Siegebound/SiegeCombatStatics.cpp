@@ -142,8 +142,22 @@ bool FSiegeCombatStatics::ReadFogState(const UWorld* World, FSiegeFogTuning& Out
 	// it does (the reasoning is written out in FogVolume.h's class doc).
 	OutTuning = FSiegeFogTuning();
 
-	// A gather with no world can never be under fog. Kept live rather than folded into the
-	// return below so the shape TASK-839 inherits is already the correct one.
+	// A gather with no world can never be under fog. ⛔ REFUSAL PATH 1 OF 2, and it is kept as its
+	// own statement rather than folded into the read below because `AFogVolume::Find` would have
+	// to be handed the null world to answer the same question — an early-out is the honest place
+	// to say "there is nothing to ask".
+	//
+	// ⛔⛔ RE-DERIVED 2026-09-04 (TASK-1007) TOGETHER WITH THE PARAGRAPH SEVEN LINES BELOW, BECAUSE
+	// THE TWO CONTRADICTED EACH OTHER IN THE SAME FUNCTION. This comment framed the early-out as a
+	// shape being kept correct for a LATER TASK STILL TO ARRIVE — a FUTURE framing — while the
+	// block below announced "THE SEAM IS WIRED" — a PAST one. ⛔ TASK-839 DECLINED this seam;
+	// TASK-998 wired it, and the lower paragraph was the true one. ⚠️ The retired sentence is
+	// described rather than quoted, deliberately: a comment-aware absence probe cannot tell a
+	// QUOTED retirement from a LIVE claim, so quoting it here would make its own guard unpassable
+	// (`SC-§80`; the same trade-off `Tests/SiegeSpellRoutingTest.cpp` records for its blacklist).
+	// ⚖️ Fixing one of two contradictory adjacent sentences is WORSE than fixing neither: it leaves
+	// a reader two confident statements and no way to tell which is current. ⇒ they move together
+	// or not at all (`SC-§60`, `SC-§77`).
 	if (!World)
 	{
 		return false;
@@ -162,6 +176,12 @@ bool FSiegeCombatStatics::ReadFogState(const UWorld* World, FSiegeFogTuning& Out
 	//
 	// ⛔ Do NOT add a second read anywhere else — a second read is a second guard point, which is
 	// the exact failure WITCH-§1 and this whole file exist to prevent.
+	// ⚠️ PRECISION ADDED 2026-09-04 (TASK-1007), because this sentence now has two CALLERS above it
+	// and a reader could mistake that for the thing it forbids: what must stay at ONE is the read
+	// of the SOURCE — this `Find`, in this function. ReadFogState itself has two authorised callers
+	// (the funnel and ResolveFogClampedReachUU), both inside this class, both handing the state
+	// straight to the ceiling and returning a REACH. That is one door with two users, not two
+	// doors — and the difference is pinned by a DERIVED table in Tests/SiegeFogClampTest.cpp.
 	const AFogVolume* const FogVolume = AFogVolume::Find(World);
 	if (FogVolume && FogVolume->IsFogActive())
 	{
@@ -175,6 +195,41 @@ bool FSiegeCombatStatics::ReadFogState(const UWorld* World, FSiegeFogTuning& Out
 	// request bit-identically and the acquisition surface is byte-for-byte the pre-fog game
 	// whenever the fog is not up.
 	return false;
+}
+
+float FSiegeCombatStatics::ResolveFogClampedReachUU(const UWorld* World, float RequestedReachUU)
+{
+	// ⭐⭐ THE WHOLE FUNCTION IS TWO LINES, AND THAT IS THE DESIGN RATHER THAN THE ABSENCE OF ONE
+	// (TASK-1007; law FOG-§9.11's retention clause, FOG-§9.6, FOG-§9.10a). Its value is entirely
+	// in WHAT IT REFUSES TO HAND BACK: the state goes in, a REACH comes out, and bFogActive and
+	// FSiegeFogTuning never cross this function's boundary in either direction. ⇒ no caller can
+	// learn the fog state, so no caller can branch on it, so no caller can become a second door.
+	// ⛔ A future edit that returns, stores or out-parameters either of them deletes that property
+	// silently — the signature above is the guard, and it is asserted at the DECLARATION in
+	// Tests/SiegeFogReachSeamTest.cpp because that is where the impossibility lives.
+	//
+	// ⛔⛔ WHY THIS EXISTS AT ALL, given the funnel already clamps: the funnel runs at GATHER time.
+	// It decides what a unit may ACQUIRE and is structurally incapable of bounding what an
+	// already-acquired unit keeps CHASING or shoots at between gathers — 🧑 "yes clamp retention
+	// under fog" (FOG-§9.11) is a question the funnel cannot be asked. ⭐ This is the second
+	// authorised reader, and there are exactly two; the count is DERIVED from an authorised-reader
+	// table in Tests/SiegeFogClampTest.cpp, never typed, so a THIRD still goes RED.
+	//
+	// ⭐ ONE READ, ONE CEILING, PER CALL. FOG-§9.6: what is shared is the CEILING, never the
+	// RESULT — notice, firing and retention each hand their OWN reach to this SAME function, and
+	// ⛔ a caller that caches one answer and re-uses it for a different question has collapsed
+	// three gates into one number.
+	FSiegeFogTuning FogTuning;
+	const bool bFogActive = ReadFogState(World, FogTuning);
+
+	// ⛔⛔ CALLED UNCONDITIONALLY, exactly as the funnel calls it, and for the same reason: with fog
+	// off EffectiveVisionRadius returns RequestedReachUU BIT-IDENTICALLY — no clamp, no sanitising,
+	// not one ulp of drift — so wrapping this in a hand-written state check would re-introduce the
+	// branch TASK-837 built the seam to delete AND would be weaker, sailing past every degenerate
+	// tuning. ⛔ It is a `min` with NO FLOOR (FOG-§9.10a): min(120, 609.6) == 120, so a melee reach
+	// comes back UNCHANGED in BOTH fog states and no firing gate built on this can ever drop a
+	// Footman mid-charge. Not an assignment. Not a clamp-to-fog.
+	return FSiegeFogStatics::EffectiveVisionRadius(RequestedReachUU, bFogActive, FogTuning);
 }
 
 void FSiegeCombatStatics::GatherHostileAgents(const UWorld* World, ETeamId ViewerTeam, TArray<AActor*>& Out,

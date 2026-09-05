@@ -222,14 +222,25 @@ public:
 	 *     and ⛔ STILL FULLY VISIBLE TO THE BOT'S BRAIN. ⭐ That is ⛔ TASK-851, and `IsAgentVisibleTo`
 	 *     below is the seam it calls — ⛔ one function, ⛔ not a re-expressed rule.
 	 *  ⭐⭐ LANDED BY TASK-838 (`FOG-§4(a)`, `FOG-§6`, `FOG-§7`): `FSiegeFogStatics::
-	 *     EffectiveVisionRadius(...)` is applied HERE and ⛔ NOWHERE ELSE, exactly as the veil is.
-	 *     It needs a RADIUS, which this signature did not take — so the SECOND optional parameter
+	 *     EffectiveVisionRadius(...)` is applied HERE — the ⛔ ONLY acquisition site that applies
+	 *     it, exactly as the veil is. It needs a RADIUS, which this signature did not take — so the
+	 *     SECOND optional parameter
 	 *     below carries it, and it carries the ONE other thing only the site knows: where it is
 	 *     looking FROM. ⛔ The two optional parameters are INDEPENDENT and neither may be folded
 	 *     into the other: fog clamps by DISTANCE (per-query, team-blind), the veil by a
 	 *     per-instance FLAG (per-actor, per-viewer). ⛔ Do NOT add a per-site clamp instead —
 	 *     that is the failure this whole file exists to prevent, and it is an automatic FAIL
 	 *     (`SiegeAcquisitionFunnelTest.cpp` test 9 pins it at ZERO in all five call-site files).
+	 *  ⛔⛔ AMENDED 2026-09-04 (TASK-1007) — THE SENTENCE ABOVE USED TO END *"and NOWHERE ELSE"*,
+	 *     AND THAT WORD IS NOW WRONG BY ⛔ EXACTLY ONE SITE. `ResolveFogClampedReachUU` above also
+	 *     applies the ceiling. ⇒ the clause is narrowed to ⛔ ACQUISITION, which is the claim that
+	 *     was always load-bearing, and a doc block asserting a uniqueness the code no longer has
+	 *     is worse than no doc block (`SC-§60`).
+	 *     ⭐ WHAT SURVIVES INTACT IS THE ACTUAL RULE: the ceiling is applied ⛔ NOWHERE OUTSIDE
+	 *     `FSiegeCombatStatics`, the count is ⛔ DERIVED from an authorised-reader table rather
+	 *     than typed (`Tests/SiegeFogClampTest.cpp`), and ⛔ a per-site clamp is still an automatic
+	 *     FAIL. ⛔ The SECOND site exists because a gather-time funnel ⛔ CANNOT bound what an
+	 *     ALREADY-ACQUIRED unit keeps chasing or shoots at — ⛔ not because the rule was relaxed.
 	 *  ⛔ THE ONE LANE THAT MUST SEE THROUGH THE VEIL: `ApplyRadialDamage` passes
 	 *     `ESiegeVeilPolicy::IncludeVeiled` (WITCH-§2 / J-W2 — a blast is not an act of seeing,
 	 *     and it is the card's counter). ⛔ That is the ONLY `IncludeVeiled` call site in shipping
@@ -377,6 +388,55 @@ public:
 		float Damage,
 		TSubclassOf<UDamageType> DamageTypeClass);
 
+	// ═══════════════════════════════════════════════════════════════════════════
+	//  ⭐⭐ THE FOG-CLAMPED **REACH** SEAM (TASK-1007; law `FOG-§9.11`'s retention
+	//  clause, `FOG-§9.6`, `FOG-§9.10a`, `FOG-§7`)
+	// ═══════════════════════════════════════════════════════════════════════════
+	/**
+	 *  ⭐⭐ THE ONE WAY A CALLER OUTSIDE THIS CLASS MAY ASK THE FOG ANYTHING: hand over a reach,
+	 *  get back the SAME reach with the fog ceiling applied as a `min`. 🧑 `FOG-§9.11`:
+	 *  *"yes clamp retention under fog"* — fog binds RETENTION, not only acquisition, and the
+	 *  funnel above structurally cannot serve that question because it runs only at GATHER time
+	 *  and knows nothing about what a unit may keep chasing or shoot at between gathers.
+	 *
+	 *  ⛔⛔⛔ WHAT THIS SIGNATURE **REFUSES TO SAY**, AND IT IS THE ENTIRE SAFETY ARGUMENT.
+	 *  Neither `bFogActive` nor `FSiegeFogTuning` appears here, ⛔ in EITHER direction — no
+	 *  parameter, no return, no out-parameter. ⇒ a caller ⛔ cannot learn the fog state, ⛔ cannot
+	 *  branch on it, and therefore ⛔ cannot grow into a second fog-state door. That is a
+	 *  ⛔ STRUCTURAL property, not a discouragement: the door is ⛔ unrepresentable in this
+	 *  signature rather than merely unused. `ReadFogState` below stays ⛔ `private:` and there is
+	 *  ⛔ no wrapper that re-exports it and ⛔ no `friend`.
+	 *  ⚠️ If a future row finds itself wanting the state at a call site, ⛔ the answer is another
+	 *  CEILING-SHAPED function here — ⛔ never a widening of this one.
+	 *
+	 *  ⭐⭐ IT SHARES THE **CEILING**, ⛔ NEVER THE **RESULT** (`FOG-§9.6`). Notice, firing and
+	 *  retention are ⛔ different reaches asked by ⛔ different sites; each hands its ⛔ OWN number
+	 *  to the ⛔ SAME ceiling. ⛔ Do NOT cache a returned value and re-use it for a second
+	 *  question — that is how three gates become one number and the melee case starts lying.
+	 *
+	 *  ⛔ IT IS A `min` WITH ⛔ NO FLOOR, AT EVERY SITE, FOREVER (`FOG-§9.10a`). `min(120, 609.6)`
+	 *  is `120`: a Footman's melee reach comes back ⛔ UNCHANGED in ⛔ BOTH fog states, so ⛔ no
+	 *  firing gate built on this can ever drop a melee unit mid-charge. ⛔ Not an assignment,
+	 *  ⛔ not a clamp-to-fog. ⚠️ That is also why the firing gate alone is ⛔ NECESSARY BUT NOT
+	 *  SUFFICIENT for 🧑 `J-F23`, and why the RETENTION path has to carry it.
+	 *
+	 *  ⭐ TOTAL, and it fails toward NO FOG rather than toward no vision: a null World, no
+	 *  `AFogVolume`, an expired timer, a NaN / negative / zero ceiling all return the request
+	 *  ⛔ BIT-IDENTICALLY (`FSiegeFogStatics::EffectiveVisionRadius`'s own totality guarantee,
+	 *  `FOG-§7b`). ⇒ with fog down this function is indistinguishable from not calling it, which
+	 *  is what keeps any fog regression attributable to fog.
+	 *
+	 *  ⚠️ ONE STATE READ PER CALL, so a caller that needs a ceiling on a tick routes ⛔ ONE
+	 *  chokepoint through here rather than nine sites (that chokepoint is `ASummonedUnit`'s, and
+	 *  it is the ⛔ only unit-side caller — `Tests/SiegeAcquisitionFunnelTest.cpp` test 9 is the
+	 *  guard that keeps it at one).
+	 *
+	 *  @param World            world whose fog state decides the ceiling; null is never under fog
+	 *  @param RequestedReachUU the reach this site is asking for, ⛔ BEFORE fog
+	 *  @return                 `RequestedReachUU` with the fog ceiling applied as a `min`
+	 */
+	static float ResolveFogClampedReachUU(const UWorld* World, float RequestedReachUU);
+
 private:
 
 	/**
@@ -390,23 +450,40 @@ private:
 	static void GatherTeamAgentsFiltered(const UWorld* World, ETeamId ViewerTeam, bool bWantHostile, TArray<AActor*>& Out);
 
 	/**
-	 *  ⭐⭐ THE ⛔ ONE FOG-STATE READ IN THE ENTIRE ACQUISITION SURFACE (TASK-838, `FOG-§6`'s M8
-	 *  clause: *"the ceiling is derived from ONE replicated 'fog is active until T' scalar, ⛔ never
-	 *  from per-actor visibility"*). PRIVATE, so it cannot become a second door.
+	 *  ⭐⭐ THE ⛔ ONE FOG-STATE READ IN THE PROJECT (TASK-838, `FOG-§6`'s M8 clause: *"the ceiling
+	 *  is derived from ONE replicated 'fog is active until T' scalar, ⛔ never from per-actor
+	 *  visibility"*). ⛔ PRIVATE, so it cannot become a second door — and ⛔ it stays private:
+	 *  ⛔ no access-specifier move, ⛔ no wrapper that re-exports it, ⛔ no `friend`.
 	 *
-	 *  ⛔⛔ THIS IS A SEAM, ⛔ NOT A STUB, AND THE DIFFERENCE IS WHO IS SUPPOSED TO FILL IT.
-	 *  `AFogVolume` — the authoritative "fog is active until T" actor — is ⛔ TASK-839's, and
-	 *  TASK-839 is BLOCKED BY THIS TASK. So the wiring lands first and the source lands second,
-	 *  which is the same order `TASK-837` shipped in: ⛔ a landed file is not a landed feature.
-	 *  ⇒ ⚠️ TODAY THIS RETURNS FALSE, so the ceiling never fires and the acquisition surface is
-	 *  BYTE-FOR-BYTE the game that shipped. ⛔ Say that out loud rather than let a green suite
-	 *  imply otherwise.
+	 *  ⛔⛔ RE-DERIVED 2026-09-04 (TASK-1007) BECAUSE THE BLOCK THAT STOOD HERE DESCRIBED A GAME
+	 *  THAT HAD STOPPED EXISTING, AND ⛔ NOTHING RED SAID SO (`SC-§60`). Its three claims were:
+	 *  that the state source was still OWED and blocked on this task, that this function always
+	 *  answered "no fog" as of that day, and that the acquisition surface was therefore unchanged
+	 *  from the pre-fog game. ⛔ All three went false when `AFogVolume` landed and `TASK-998` wired
+	 *  the body to it. ⭐ The block is re-derived against the landed seam rather than patched
+	 *  sentence by sentence, because the three sentences were ⛔ one claim wearing three shapes.
+	 *  ⚠️ They are DESCRIBED above rather than QUOTED, deliberately: a comment-aware absence probe
+	 *  cannot tell a QUOTED retirement from a LIVE claim (`SC-§80`), so quoting them here would
+	 *  make the guard that keeps them from coming back unpassable — see
+	 *  `Tests/SiegeFogReachSeamTest.cpp`.
 	 *
-	 *  ⭐ WHAT TASK-839 DOES WITH IT: replaces the body's final `return false` with the
-	 *  `AFogVolume` read (its ONE scalar + its tuning) and changes ⛔ nothing else — ⛔ not this
-	 *  signature, ⛔ not its single call site, ⛔ not one line in any of the five vision sites.
-	 *  ⛔ It does NOT add a second read somewhere else; a second read is a second guard point,
-	 *  which is the failure `WITCH-§1` and this whole file exist to prevent.
+	 *  ✅ WHAT IS TRUE NOW: `AFogVolume` is the authoritative *"fog is active until T"* object, the
+	 *  body consults it through its ⛔ READ-ONLY door (`Find`, ⛔ never `FindOrSpawn` — the write
+	 *  door belongs to the card, once per CAST, not to a 0.25 s acquisition poll), and ⛔ the cut
+	 *  CAN fire. ⇒ a green suite no longer implies an inert card, and the honest residual is the
+	 *  opposite one: the SUITE proves the WIRING, ⛔ not the runtime behaviour.
+	 *
+	 *  ⭐⭐ THERE ARE EXACTLY ⛔ TWO AUTHORISED READERS, ⛔ BOTH IN THIS CLASS, AND THE COUNT IS
+	 *  ⛔ DERIVED RATHER THAN TYPED (`Tests/SiegeFogClampTest.cpp`'s authorised-reader table):
+	 *    ⭐ `GatherHostileAgents` — the ACQUISITION funnel (`FOG-§7` row 1), once per gather;
+	 *    ⭐ `ResolveFogClampedReachUU` — the public REACH seam above (`FOG-§9.11`'s retention
+	 *      clause), which the funnel structurally ⛔ cannot serve: it runs only at GATHER time and
+	 *      so cannot bound what an already-acquired unit ⛔ keeps chasing or ⛔ shoots at.
+	 *  ⛔ A THIRD reader is a second guard point, which is the failure `WITCH-§1` and this whole
+	 *  file exist to prevent — and it goes ⛔ RED, because the pin counts the table, not a literal.
+	 *  ⭐ AND THE TWO READERS ARE NOT A WIDENING OF THE DOOR: the state ⛔ never leaves this class.
+	 *  Both readers hand it straight to `FSiegeFogStatics::EffectiveVisionRadius` and return a
+	 *  ⛔ REACH; ⛔ neither returns, stores or exposes `bFogActive` or the tuning.
 	 *
 	 *  @param World      world whose fog state is being asked about; null is never under fog
 	 *  @param OutTuning  ⭐ ALWAYS assigned, on every path, so no caller can read an

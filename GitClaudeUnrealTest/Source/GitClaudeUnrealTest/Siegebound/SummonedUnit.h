@@ -134,6 +134,14 @@ enum class ESiegeLadderExit : uint8
  *      Reacquire — target dead/destroyed or beyond the EFFECTIVE leash
  *                  (GetEffectiveLeashRangeUU(), TASK-979 — ⛔ NOT the raw
  *                  LeashRange member, which is only its FLOOR): resume Advance.
+ *    ⭐⭐ AND SINCE TASK-1008 BOTH OF THOSE REACHES PASS THROUGH FOG'S VISION
+ *    CEILING (ApplyFogVisionCeilingUU — 🧑 "yes clamp retention under fog",
+ *    FOG-§9.11): the Attack gate is `min(Range, 609.6)` and the Reacquire
+ *    bound is `min(effective leash, 609.6)` while fog is up, and ⛔ BOTH are
+ *    bit-identical to the line above with it down. ⇒ fog is a ⛔ STANDING
+ *    CONDITION on this machine, ⛔ not an acquisition-time filter: a unit that
+ *    already holds a target ⛔ DROPS it when the fog lands, ⛔ including a melee
+ *    unit mid-charge, whose 120 firing gate could never have expressed it.
  *  - No friendly fire in either direction (GDD §3.0); incoming TakeDamage
  *    mirrors ACastle's instigator-chain team resolution.
  *  - Destructible: at 0 HP the actor is destroyed (units don't respawn).
@@ -869,9 +877,20 @@ public:
 	 *  (the tower-stacking pair, SC-§60).
 	 *
 	 *  ⇒ ⭐ THE ONE UNIVERSAL CEILING IN THIS SYSTEM IS FOG'S 609.6 uu vision ceiling, applied as
-	 *  a `min` at the ONE chokepoint inside the acquisition funnel (FOG-§7). ⛔ Never a second
-	 *  ceiling, and ⛔ never one here. ResolveNoticeRadiusUU is written so a row value ABOVE this
-	 *  constant survives it intact — and so that one BELOW it survives too, unraised.
+	 *  a `min`. ⛔ Never a second ceiling, and ⛔ NEVER ONE HERE — that half is the load-bearing
+	 *  one and it is UNCHANGED: ResolveNoticeRadiusUU is written so a row value ABOVE this
+	 *  constant survives it intact, and so that one BELOW it survives too, unraised.
+	 *  ⚠️⚠️ WHAT DID MOVE, AND IT IS THIS FILE'S OWN DIFF THAT MOVED IT (TASK-1008): this
+	 *  paragraph used to say the ceiling is applied "at the ONE chokepoint INSIDE THE ACQUISITION
+	 *  FUNNEL", and that word is now short by exactly one place. ⛔ The funnel runs at GATHER
+	 *  time, so it can only ever answer "what may this unit ACQUIRE"; 🧑 his retention ruling
+	 *  ("yes clamp retention under fog", FOG-§9.11) asks a question the funnel structurally
+	 *  cannot be asked. ⇒ there are ⛔ TWO chokepoints and ⛔ exactly two:
+	 *    • ACQUISITION — inside FSiegeCombatStatics::GatherHostileAgents (FOG-§7), unchanged;
+	 *    • FIRING / RETENTION / the commanded NOTICE bound — ApplyFogVisionCeilingUU above, the
+	 *      ONE unit-side door, which names the rule ONCE for this whole class.
+	 *  ⛔ The RULE is still that no site clamps for itself, the counts are DERIVED from tables
+	 *  rather than typed, and a THIRD chokepoint is added by writing down WHY — never quietly.
 	 *
 	 *  📌 COST, stated with the number beside it (HIGH-§1) and in BOTH directions, because each
 	 *  half alone is misleading: the ENUMERATION delta of raising 600 → 5000 is `1.00×` —
@@ -982,12 +1001,21 @@ public:
 	 *  so under fog a unit ACQUIRES at the 609.6 ceiling and RETAINS/CHASES to 8000 — it will
 	 *  chase ~7390 uu on sight it provably does not have. ⚠️ The gap is not new (it was 900/600 =
 	 *  1.5× before TASK-979) but the two rulings together widened it to ~13.1×.
-	 *  ✅⚖️ IT IS ⛔ NO LONGER AN OPEN QUESTION: 🧑 he ruled *"yes clamp retention under fog"*
-	 *  (FOG-§9.11), so the bound becomes the fog-clamped effective leash — ⛔ bit-identical in
-	 *  clear weather, 609.6 under fog. ⛔ IT IS ⛔ NOT IMPLEMENTED HERE AND ⛔ MUST NOT BE: this
-	 *  file is pinned at ZERO fog symbols by SiegeAcquisitionFunnelTest test 9, and the clamp
-	 *  lands with its own guard extension on its own row (TASK-1008), ⛔ not as a "while I am
-	 *  here" edit on a constants change.
+	 *  ✅⚖️ IT IS ⛔ NO LONGER AN OPEN QUESTION AND IT IS ⛔ NO LONGER UNBUILT: 🧑 he ruled *"yes
+	 *  clamp retention under fog"* (FOG-§9.11) and TASK-1008 ⛔ WIRED IT. The bound applied at both
+	 *  drop sites is now `ApplyFogVisionCeilingUU(GetEffectiveLeashRangeUU())` — ⛔ bit-identical
+	 *  in clear weather (8000), ⛔ 609.6 under fog. ⇒ the ~7390 uu of blind chase described above
+	 *  is ⛔ HISTORY with the fog up, and ⛔ UNCHANGED with it down.
+	 *  ⛔⛔ IT IS STILL ⛔ NOT IMPLEMENTED *HERE*, AND THAT HALF ⛔ MUST NEVER CHANGE: this function
+	 *  is a PURE three-float rule with ⛔ no world access, and the notice radius fed into it stays
+	 *  the RAW member. The ceiling is applied by the CALLER, at the site, against the site's own
+	 *  reach — ⛔ what is shared is the CEILING, never the RESULT (FOG-§9.6). Folding fog in here
+	 *  would clamp every consumer of the effective leash at once, ⛔ including ones that are not
+	 *  retention decisions, and would make this function untestable without a world.
+	 *  ⚠️ AND THE ZERO-FOG-SYMBOLS SENTENCE THAT USED TO SIT HERE IS ⛔ RETIRED, NOT WEAKENED:
+	 *  SiegeAcquisitionFunnelTest test 9 no longer pins this file at zero — it pins it at
+	 *  ⛔ EXACTLY ONE seam call, ⛔ inside ApplyFogVisionCeilingUU, through an authorised-
+	 *  chokepoint table with a written reason. ⛔ A per-site clamp still turns that row RED.
 	 *
 	 *  A non-positive or non-finite multiplier is floored to 1.0 (the degenerate-safe reading:
 	 *  the leash may never be SHORTER than the notice radius) and a non-finite notice radius
@@ -1003,6 +1031,11 @@ public:
 	 *  row and the class seal have had their say. ⛔ This is the symbol the commanded-lane bound
 	 *  consumes; it must ⛔ never introduce a second one, and ⛔ never a global "ceiling"
 	 *  constant (a symbol named "ceiling" invites the `min` this whole block refuses).
+	 *  ⚠️ AND `ApplyFogVisionCeilingUU` BELOW IS ⛔ NOT THAT THING, DESPITE ITS NAME (TASK-1008):
+	 *  it is ⛔ not a constant, ⛔ not a notice value and ⛔ not applied here — it is FOG'S
+	 *  ceiling, the one `min` this block has always ENDORSED (see UnitEngagementRadiusUU), and it
+	 *  is applied by the CONSUMER against the consumer's own reach. ⛔ What stays banned is a
+	 *  second NOTICE number and any clamp of this accessor's own return.
 	 *
 	 *  ⚠️ It is the LIVE member rather than the class default ON PURPOSE, and the argument
 	 *  ⛔ SURVIVES the retirement of the example it used to be written from. It no longer reads
@@ -1031,6 +1064,54 @@ public:
 	 */
 	float GetLeashRangeFloorUU() const { return LeashRange; }
 	float GetLeashMarginMultiplier() const { return LeashMarginMultiplier; }
+
+	/**
+	 *  ⭐⭐⭐ THE ONE UNIT-SIDE FOG CHOKEPOINT (TASK-1008; law ⭐⭐⭐ FOG-§9.11's RETENTION clause,
+	 *  ⭐⭐ FOG-§9.6, FOG-§9.7/§9.7a, FOG-§9.10a). Hands ONE requested reach to fog's vision
+	 *  ceiling and returns what survives it: `RequestedReachUU` ⛔ BIT-IDENTICALLY with the fog
+	 *  down, `min(RequestedReachUU, 609.6)` with it up.
+	 *
+	 *  ⛔⛔ IT IS A `min`, ⛔ NEVER AN ASSIGNMENT — and the MELEE case is why that is a design
+	 *  fact rather than pedantry: a Footman's AttackRange is 120, so `min(120, 609.6) = 120` in
+	 *  ⛔ BOTH fog states and ⛔ EVERY melee firing site is a provable NO-OP. ⇒ ⛔ no value of
+	 *  the fog term can make a 120-range gate drop a Footman charging across 1500 uu; ⛔ the
+	 *  unit is not firing, it is WALKING. ⭐ That is precisely why the RETENTION sites are routed
+	 *  through this SAME function and not only the firing ones (FOG-§9.7a) — a diff that routes
+	 *  only the firing gate fixes ranged units and leaves the melee charge fully intact, ⛔ with
+	 *  every ranged-only test still green.
+	 *
+	 *  ⛔⛔ WHAT IS SHARED IS THE ⛔ CEILING, ⛔ NEVER THE RESULT (FOG-§9.6). Notice, firing and
+	 *  retention each hand their ⛔ OWN reach to this ⛔ ONE function; they never share a computed
+	 *  number. ⛔ Collapsing them into a single value would give every melee unit a 609.6 attack
+	 *  range — an ⛔ AUTOMATIC FAIL, spelled out by name in FOG-§9.10a.
+	 *
+	 *  ⛔⛔ NINE CALL SITES, ⛔ ONE SEAM CALL. This is the ⛔ ONLY place in ASummonedUnit that
+	 *  names the fog rule: it forwards to FSiegeCombatStatics' clamped-reach seam and performs
+	 *  ⛔ no arithmetic, ⛔ no branch and ⛔ no state read of its own. That "one door" property is
+	 *  ⛔ ENFORCED, not promised — Tests/SiegeAcquisitionFunnelTest.cpp test 9 caps this whole
+	 *  file at ⛔ EXACTLY ONE seam call and requires it to sit ⛔ inside this body, and
+	 *  Tests/SiegeFogRetentionWiringTest.cpp ⛔ DERIVES the nine call sites from a table with a
+	 *  written-down reason per entry. ⛔ A tenth site is added by writing down WHY, ⛔ never by
+	 *  bumping a number.
+	 *
+	 *  ⛔⛔ THE ANSWER IS ⛔ NEVER CACHED (FOG-§9.6): fog can rise or clear between two polls, so
+	 *  every evaluation asks again. ⚠️ The cost is real and is stated rather than hidden — the
+	 *  state read walks a TActorIterator<AFogVolume> per call (AFogVolume::Find). ⛔ If that ever
+	 *  bites, the fix is a cache ⛔ INSIDE Find, ⛔ never a cached reach here: one stored number
+	 *  would freeze three different gates onto one stale answer and silently re-collapse notice,
+	 *  firing and retention into the single value FOG-§9.10a bans.
+	 *
+	 *  ⛔ HOLD / AMBUSH / FOLLOW need ⛔ no exemption branch and ⛔ must not be given one: the
+	 *  UpdateState dispatches to UpdateStateFollow and UpdateStateGrouped both `return`
+	 *  UNCONDITIONALLY before either leash site, so those lanes ⛔ cannot execute a retention
+	 *  read at all (FOG-§9.11, confirmed in the CALL GRAPH by TASK-1006 item (5) and re-confirmed
+	 *  at source by TASK-1008). ⭐ The exception is structural; an `if` would be a second one.
+	 *
+	 *  ⛔ public rather than private on purpose — it sits with the reach accessors above, which
+	 *  are public for the same reason (the reach rules are asserted from OUTSIDE the class).
+	 *  Null-world safe: the seam answers "no fog" and returns the request untouched.
+	 */
+	float ApplyFogVisionCeilingUU(float RequestedReachUU) const;
 
 	/**
 	 *  ⭐⭐ THIS INSTANCE'S CLASS DEFAULT for AggroRadius — `GetClass()->GetDefaultObject<>()`,
@@ -1324,10 +1405,16 @@ protected:
 	 *
 	 *  ⚠️ FOG IS FREE HERE AND THIS SITE WRITES NO FOG CODE FOR IT: AcquireTarget hands this
 	 *  value to FSiegeVisionQuery::SeeingFrom and the funnel applies the 609.6 uu vision ceiling
-	 *  as a `min` at the ONE chokepoint ⇒ `min(5000, 609.6) = 609.6` arrives automatically
-	 *  (FOG-§7) — an ⛔ 87.8% cut, and the steepest it has ever been.
+	 *  as a `min` at the ACQUISITION chokepoint ⇒ `min(5000, 609.6) = 609.6` arrives
+	 *  automatically (FOG-§7) — an ⛔ 87.8% cut, and the steepest it has ever been.
 	 *  ⛔ A second fog read here would be the forgotten-guard-point failure the funnel exists to
-	 *  prevent.
+	 *  prevent, and it is ⛔ STILL BANNED — ⛔ this member is never clamped by hand.
+	 *  ⚠️ PRECISION (TASK-1008), because a reader will otherwise think the sentence above was
+	 *  falsified: the COMMANDED lane reads this same radius through GetEngagementRadiusUU and
+	 *  DOES pass it to the unit-side ceiling in AcquireEnemyNearPoint — because that lane gathers
+	 *  UNBOUNDED around a commanded POINT, so the funnel has no self-reach to clamp and cannot
+	 *  answer for it. ⛔ That is ONE routed read at ONE door, ⛔ not a second read of the fog
+	 *  state and ⛔ not a clamp of this member.
 	 *
 	 *  ⚠️ HAZARD, RECORDED RATHER THAN GUARDED: this is EditAnywhere, so a Blueprint CDO
 	 *  override silently WINS over the C++ default. That is deliberate and is why the resolver
@@ -2022,8 +2109,16 @@ private:
 	 *        measured FROM SELF with AcquireTarget's bounds-aware metric.
 	 *  ⭐ (2) is the GENERAL FORM and it is deliberately UNCONDITIONAL — it holds in CLEAR
 	 *  WEATHER, because 🧑 Jonathan's ruling makes the bound a property of the ENGAGEMENT
-	 *  RADIUS (*"due to fog OR ANYTHING"*). ⛔ TASK-980 routes THIS EXISTING READ through
-	 *  the fog-aware accessor; it does ⛔ NOT add the bound, and must ⛔ NOT re-add it.
+	 *  RADIUS (*"due to fog OR ANYTHING"*).
+	 *  ✅ ROUTED 2026-09-05 (TASK-1008, inheriting TASK-980's split): term (2) reads
+	 *  `ApplyFogVisionCeilingUU(GetEngagementRadiusUU())` — ⛔ the SAME bound, ⛔ bit-identical in
+	 *  clear weather, ⛔ 609.6 under fog. ⛔ The bound itself was ⛔ NOT added by that row and must
+	 *  ⛔ NOT be re-added beside it. ⭐⭐ THIS IS THE HALF THAT REFUSES THE INTRUDER: an enemy
+	 *  standing INSIDE the guarded circle but beyond 609.6 uu from the unit is not acquired under
+	 *  fog — while the ORDER itself is untouched, which is the other half of his sentence
+	 *  (*"commanded units DO NOT LOSE THEIR COMMANDS"*). ⛔ Each half alone passes against a
+	 *  DIFFERENT broken design, so Tests/SiegeFogRetentionWiringTest.cpp asserts them in that
+	 *  ORDER and the order IS the assertion (SC-§37).
 	 *
 	 *  ⚠️⚠️ FOUR CALLERS, ⛔ TWO FAMILIES, ⛔ AND THEY ARE SIZED DIFFERENTLY (qa/TASK-979
 	 *  WARN-1). Term (2) lands on every one of them:

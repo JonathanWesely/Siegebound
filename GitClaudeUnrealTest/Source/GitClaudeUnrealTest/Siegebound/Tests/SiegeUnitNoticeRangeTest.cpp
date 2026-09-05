@@ -666,10 +666,23 @@ bool FSiegeUnitNoticeLeashOrderingTest::RunTest(const FString& Parameters)
 	FString UnitSource;
 	if (LoadProjectFile(*this, SummonedUnitCpp, UnitSource))
 	{
+		// ⚠️⚠️ THE NEEDLE MOVED WITH THE CODE IT WATCHES (TASK-1008), AND IT MOVED ⛔ STRICTER, NOT
+		// LOOSER. It read `"> GetEffectiveLeashRangeUU()"`; Jonathan then ruled *"yes clamp
+		// retention under fog"* (FOG-§9.11) and both drop sites became
+		// `> ApplyFogVisionCeilingUU(GetEffectiveLeashRangeUU())`. ⛔ Leaving the old needle would
+		// have read ZERO against ⛔ CORRECT code — the TASK-868 failure shape, arriving again — and
+		// bumping it to 0 would have deleted the assertion entirely.
+		// ⭐ THE REPLACEMENT PINS ⛔ BOTH CLAIMS AT ONCE, which is why it is a strengthening: the
+		// site must still read the EFFECTIVE leash (never the raw floor) ⛔ AND must pass it through
+		// the ONE unit-side fog ceiling. Dropping either half turns this red.
 		TestEqual(
-			TEXT("⭐⭐ EXACTLY TWO drop sites read the EFFECTIVE leash. ⛔ Both, or the fix covers only units with no ")
-			TEXT("player command — and a Blue Standard unit under any command runs the OTHER copy."),
-			CountOccurrencesInCode(UnitSource, TEXT("> GetEffectiveLeashRangeUU()")), 2);
+			TEXT("⭐⭐ EXACTLY TWO drop sites bound retention by the FOG-CLAMPED EFFECTIVE leash. ⛔ Both, or the fix ")
+			TEXT("covers only units with no player command — and a Blue Standard unit under any command runs the ")
+			TEXT("OTHER copy. ⛔ The expression is `ApplyFogVisionCeilingUU(GetEffectiveLeashRangeUU())` and it is ")
+			TEXT("NOT `min(LeashRange, effective notice)`: that form was MEASURED to cut the CLEAR-WEATHER leash and ")
+			TEXT("to put leash EQUAL to notice, re-creating the drop-then-re-acquire thrash. ⛔ Bit-identical with ")
+			TEXT("the fog down, 609.6 with it up."),
+			CountOccurrencesInCode(UnitSource, TEXT("> ApplyFogVisionCeilingUU(GetEffectiveLeashRangeUU())")), 2);
 
 		TestEqual(
 			TEXT("⛔⛔ …and ZERO sites still compare against the RAW `LeashRange` member. The raw value is a FLOOR ")
