@@ -4,6 +4,7 @@
 
 #include "Containers/UnrealString.h"
 #include "Math/UnrealMathUtility.h"
+#include "Misc/Char.h"                  // FChar::IsWhitespace — named EXPLICITLY rather than leaned on transitively
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Siegebound/SiegeFogStatics.h" // FSiegeFogStatics::EffectiveVisionRadius + FSiegeFogTuning — the rule behind the ceiling
@@ -212,6 +213,78 @@ namespace SiegeFogRetentionWiringFixture
 				Out += Line;
 				Out += TEXT("\n");
 			}
+		}
+		return Out;
+	}
+
+	/**
+	 *  ⭐⭐ THE SECOND PROJECTION STAGE (TASK-1045, from `qa/TASK-1042.md` W-4): the same lines with
+	 *  the TAIL a trailing `//` comment leaves on a CODE line removed.
+	 *
+	 *  ⛔ WHY `CodeLinesOnly` ABOVE IS NOT ENOUGH — and this is the whole reason this exists:
+	 *  that projection drops WHOLE COMMENT LINES ⛔ ONLY. A ⛔ TRAILING comment sits on a ⛔ CODE
+	 *  line, so the line survives ⛔ VERBATIM, `;` tail and all, and the ownership count in test
+	 *  4 (c) reads a comment's punctuation as though it were a statement. ⛔ BOTH directions were
+	 *  ⛔ MEASURED on `ASummonedUnit::UpdateState()` before this stage existed (TASK-1045):
+	 *    ⛔ FALSE ⛔ RED — `UpdateStateFollow(*FollowGroup); // dispatch; then return` counts ⛔ 2
+	 *       on a ⛔ CORRECT tree. Loud — but ⛔ THE CHEAPEST WAY OUT OF A FALSE RED IS TO ⛔ WEAKEN
+	 *       THE PIN, which is the failure the whole TASK-1041 sweep exists to prevent.
+	 *    ⛔ FALSE ⛔ GREEN — `UpdateStateFollow(*FollowGroup); // return;` with the ⛔ REAL `return;`
+	 *       ⛔ DELETED anchors `ReturnIndex` ⛔ INSIDE THE COMMENT and counts a comfortable ⛔ 1.
+	 *       ⛔ THAT ONE IS ⛔ SILENT. ⭐ It is the SAME false green loop 2 closed for whole comment
+	 *       LINES, ⛔ surviving in TRAILING form — the projection sealed the basis for lines and
+	 *       this seals it for tails.
+	 *
+	 *  ⛔ DELIBERATELY ⛔ NOT A PARSER, in this fixture's house style. A `//` opens a comment ⛔ ONLY
+	 *  at column 0 or when ⛔ PRECEDED BY WHITESPACE (`FChar::IsWhitespace`, the same predicate
+	 *  `TrimStart` uses — ⛔ not `== ' '`, because a tab must count). ⭐ THAT QUALIFICATION IS THE
+	 *  POINT, not decoration: it is what leaves `TEXT("http://…")` and `TEXT("a//b")` INTACT,
+	 *  because truncating a ⛔ STRING LITERAL would delete ⛔ REAL CODE and could only ever ⛔ LOWER
+	 *  the count — ⛔ a FALSE GREEN, the silent direction.
+	 *  ⛔ TWO DECLARED RESIDUALS, and ⛔ BOTH FAIL LOUD (false RED), never silent:
+	 *    (i) a tight `Foo();// x` is ⛔ NOT stripped — the house style always spaces the slashes;
+	 *    (ii) an ⛔ INLINE C-style block comment is ⛔ NOT stripped. ⛔ Truncating at a block-comment
+	 *         OPENER is ⛔ REFUSED on purpose: one that CLOSES and then resumes code on the SAME
+	 *         line would lose the statement after it — a ⛔ REAL statement — and that trades this
+	 *         row's loud residual for a ⛔ silent one.
+	 *         (⛔ The opener is spelled in WORDS here, never as the token: a literal one inside a
+	 *          block comment is a `-Wcomment` diagnostic on Clang, and this file must not buy a
+	 *          warning with a doc comment.)
+	 *
+	 *  ⭐ Termination is ⛔ STRUCTURAL, exactly as `CountCharacter` below argues it: a counted `for`
+	 *  over `Len()` that ⛔ NEVER consults `Find`, so the UE 5.8 `StartPosition` clamp documented
+	 *  above ⛔ has no way in. ⛔ This helper is ⛔ NOT a third copy of the house comment predicate —
+	 *  it answers a ⛔ DIFFERENT question (where does a comment ⛔ START on a code line) and it must
+	 *  ⛔ NOT be kept in step with the five clauses; only `CodeLinesOnly` carries that duty.
+	 *
+	 *  ⛔ FEED IT THE OUTPUT OF `CodeLinesOnly`, ⛔ NEVER the raw body. This stage knows nothing
+	 *  about whole comment lines, and that ORDER is what keeps ⛔ ONE notion of "a real line" for
+	 *  all four rows of test 4 (c).
+	 */
+	static FString CodeWithoutTrailingComments(const FString& Source)
+	{
+		TArray<FString> Lines;
+		Source.ParseIntoArrayLines(Lines, /*bCullEmpty=*/ false);
+
+		FString Out;
+		Out.Reserve(Source.Len());
+		for (const FString& Line : Lines)
+		{
+			const int32 Length = Line.Len();
+			int32 Cut = Length;
+			for (int32 Index = 0; Index + 1 < Length; ++Index)
+			{
+				if (Line[Index] == TEXT('/')
+					&& Line[Index + 1] == TEXT('/')
+					&& (Index == 0 || FChar::IsWhitespace(Line[Index - 1])))
+				{
+					Cut = Index;
+					break;
+				}
+			}
+
+			Out += Line.Left(Cut);
+			Out += TEXT("\n");
 		}
 		return Out;
 	}
@@ -783,7 +856,12 @@ bool FSiegeFogRetentionOneDoorAndTheAmbushExemptionIsStructuralTest::RunTest(con
 		//    see `CodeLinesOnly`. Mixing a comment-blind `Find` with a comment-aware count over
 		//    the same span is what let a commented-out `// return;` anchor this pin on a line that
 		//    cannot execute. ⭐ One input, one notion of "a real line", for all four rows.
-		const FString UpdateStateCode = CodeLinesOnly(UpdateStateBody);
+		// ⛔ TASK-1045 added the SECOND stage, and the ORDER is load-bearing: `CodeLinesOnly` drops
+		//    whole comment LINES, then `CodeWithoutTrailingComments` drops the TAIL a comment
+		//    leaves on a CODE line. ⛔ Without it this same span was BOTH false-RED (a trailing
+		//    `// dispatch;` counts 2 on a CORRECT tree) and false-GREEN (a trailing `// return;`
+		//    anchored the pin with the real `return;` DELETED) — both MEASURED on this body.
+		const FString UpdateStateCode = CodeWithoutTrailingComments(CodeLinesOnly(UpdateStateBody));
 
 		const int32 RetentionIndex = UpdateStateCode.Find(RetentionExpression, ESearchCase::CaseSensitive);
 
@@ -841,8 +919,9 @@ bool FSiegeFogRetentionOneDoorAndTheAmbushExemptionIsStructuralTest::RunTest(con
 					TEXT("nothing in the diff naming fog. That is exactly the regression this row is here to catch. ")
 					TEXT("⛔ The OWNERSHIP half is the load-bearing one: without it the deleted `return;` is replaced ")
 					TEXT("by the next dispatch's return and this row stays green through the whole regression. ")
-					TEXT("⛔ And it is measured on CODE ONLY, so a commented-out `// return;` cannot stand in for the ")
-					TEXT("real one."),
+					TEXT("⛔ And it is measured on CODE ONLY — a projection that drops whole comment LINES and then ")
+					TEXT("the TRAILING tail a comment leaves on a code line — so no commented-out `// return;` can ")
+					TEXT("stand in for the real one, and no comment's punctuation can inflate the count."),
 					Dispatch),
 				DispatchIndex != INDEX_NONE
 				&& ReturnIndex != INDEX_NONE
