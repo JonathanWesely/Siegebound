@@ -10,58 +10,77 @@
 // ⛔ In particular: this file must never learn what a TEAM is. Fog is symmetric (J-F3) and the
 // enforcement is that the concept is absent, not that a branch is written carefully.
 
+// ⛔⛔⛔ THE VISUAL'S CURVE ONLY. ⛔ NOTHING MECHANICAL MAY CALL THIS — see the header's banner
+// and FOG-§9.2. It is ASYMPTOTIC, so "is it opaque here?" has no true answer; the mechanical
+// question belongs to EffectiveVisionRadius / IsVisibleThroughFog, which are a HARD CUT.
+//
+// ⭐ REWRITTEN 2026-09-04 (TASK-981) from a quadratic ease-in to BEER-LAMBERT EXTINCTION. ⛔ The
+// old curve was SUPERSEDED, not bugged: it returned EXACTLY 0 at the onset, and Jonathan then
+// ruled ~86% obscured there, on purpose, after being shown the arithmetic.
 float FSiegeFogStatics::FogDensityAt(float DistanceUU, const FSiegeFogTuning& Tuning)
 {
-	const float Onset   = Tuning.FogVisionOnsetUU;
-	const float Ceiling = Tuning.FogVisionCeilingUU;
+	const float Ceiling       = Tuning.FogVisionCeilingUU;
+	const float Transmittance = Tuning.FogTransmittanceAtCeiling;
+
+	// ⛔ NOTE WHAT IS ABSENT: `FogVisionOnsetUU` IS NOT READ. Under Beer-Lambert there is no knee
+	// and no clear bubble, so the onset has no part in the picture any more. It keeps its value
+	// and its two other jobs (the ceiling's ClampMin floor, and the reporting point) — FOG-§9.2.
 
 	// ── DEGENERATE INPUTS FAIL TOWARD *CLEAR* ────────────────────────────────────────────
 	// A NaN distance or a broken tuning yields to the shipped game rather than fogging it.
 	// ⛔ The alternative — returning 1.0 on garbage — would render an opaque screen from a
 	// single bad float, which is the failure nobody would be able to diagnose.
-	if (!FMath::IsFinite(DistanceUU) || !FMath::IsFinite(Onset) || !FMath::IsFinite(Ceiling))
+	if (!FMath::IsFinite(DistanceUU) || !FMath::IsFinite(Ceiling) || !FMath::IsFinite(Transmittance))
 	{
 		return 0.f;
 	}
 
-	// ── THE ZERO-WIDTH / INVERTED BAND, HANDLED BEFORE ANYTHING CAN DIVIDE BY IT ─────────
-	// onset == ceiling is the continuous limit of the ramp as its width goes to zero, and that
-	// limit is a HARD STEP at the ceiling. An inverted band (someone swaps the two defaults)
-	// lands on the same answer rather than on a negative t. ⛔ This branch is why the division
-	// below cannot divide by zero — it is not defence in depth, it is the guard.
-	if (Ceiling <= Onset)
-	{
-		return (DistanceUU >= Ceiling) ? 1.f : 0.f;
-	}
-
-	// ── THE CLEAR BUBBLE: at and inside the onset the world is untouched ─────────────────
-	// EXACTLY 0, not near-zero: everything closer than 10 ft must render bit-identically to the
-	// unfogged game, and the melee band (120 uu) lives entirely in here.
-	if (DistanceUU <= Onset)
+	// ── ⛔⛔ THE CEILING IS σ's DENOMINATOR NOW, SO ZERO IS A DIVIDE BY ZERO ──────────────
+	// ⚠️ THIS GUARD IS NEW AND IT IS NOT DEFENCE IN DEPTH — IT IS THE GUARD. The retired ramp
+	// divided by `(ceiling − onset)` and was protected by the `Ceiling <= Onset` branch, which
+	// no longer exists because the band no longer exists. `!(X > 0.f)` rather than `X <= 0.f`
+	// is deliberate: it also catches NaN, though the finite check above already has.
+	// ⭐ Same shape and same reasoning as EffectiveVisionRadius' `Ceiling <= 0.f` (FOG-§7b half
+	// (b)): a broken tuning degrades to NO FOG, ⛔ never to a whiteout the player cannot see past.
+	if (!(Ceiling > 0.f))
 	{
 		return 0.f;
 	}
 
-	// ── THE HARD CUT: at and beyond the ceiling it is EXACTLY opaque ─────────────────────
-	// "they really cannot see anything beyond 20 feet" — an asymptote would leave a few percent
-	// of visibility here forever, and at Longbowman range a few percent is still a lethal shot.
-	if (DistanceUU >= Ceiling)
+	// ── THE TRANSMITTANCE MUST BE A REAL RATIO, STRICTLY INSIDE (0, 1) ───────────────────
+	// ⛔ At `<= 0` the log diverges and σ is INFINITE — an opaque screen everywhere, including at
+	// the camera. ⛔ At `>= 1` the log is zero or positive, i.e. no fog (or a NEGATIVE σ, which
+	// would make the world get CLEARER with distance). Both degenerate to CLEAR, which is this
+	// module's totality law: fail toward no fog, never toward no vision.
+	if (!(Transmittance > 0.f) || !(Transmittance < 1.f))
 	{
-		return 1.f;
+		return 0.f;
 	}
 
-	// ── THE RAMP: onset < d < ceiling, so t is strictly inside (0, 1) ────────────────────
-	const float T = (DistanceUU - Onset) / (Ceiling - Onset);
+	// ── AT AND BEHIND THE CAMERA THE WORLD IS EXACTLY CLEAR ─────────────────────────────
+	// EXACTLY 0, and it is the only exact value the new curve has. ⛔ It is also the guard that
+	// stops a NEGATIVE distance producing a NEGATIVE density: `1 − exp(+x)` is unbounded below,
+	// and for a large negative distance `exp` overflows to +inf.
+	if (!(DistanceUU > 0.f))
+	{
+		return 0.f;
+	}
 
-	// The quadratic ease-in (see FSiegeFogTuning::FogDensityExponent for the full ruling).
-	// ⛔ A non-positive or non-finite exponent falls back to LINEAR rather than to Pow(t, 0),
-	// which is 1 everywhere and would paint a wall of fog at the onset. The `!(X > 0.f)` shape
-	// is deliberate: it catches NaN, which `X <= 0.f` does not.
-	const float RawExponent = Tuning.FogDensityExponent;
-	const float Exponent = (FMath::IsFinite(RawExponent) && RawExponent > 0.f) ? RawExponent : 1.f;
+	// ── BEER-LAMBERT: σ IS ⛔ DERIVED FROM THE TUNABLES, ⛔ NEVER TYPED ───────────────────
+	//
+	//     σ = −ln(FogTransmittanceAtCeiling) / FogVisionCeilingUU
+	//       = −ln(0.02) / 609.6 = 3.9120230 / 609.6 = 0.0064174 per uu
+	//
+	// ⭐ Deriving it is what makes BOTH tunables live: retuning either moves the whole curve, and
+	// the suite asserts exactly that, so a hardcoded σ goes RED. Transmittance is strictly inside
+	// (0, 1) by the guard above ⇒ Loge is strictly negative ⇒ σ is strictly positive.
+	const float Sigma = -FMath::Loge(Transmittance) / Ceiling;
 
-	// Clamp is belt-and-braces — t is in (0, 1) and the exponent is positive, so Pow is too.
-	return FMath::Clamp(FMath::Pow(T, Exponent), 0.f, 1.f);
+	// The obscuration — what the player cannot see through. ⛔ Asymptotic: it approaches 1 and
+	// never arrives, which is precisely why nothing mechanical may consult it. Clamp is
+	// belt-and-braces (Sigma > 0 and DistanceUU > 0 already put Exp in (0, 1)); it also absorbs
+	// the underflow-to-zero case at very large distances, where the result is exactly 1.
+	return FMath::Clamp(1.f - FMath::Exp(-Sigma * DistanceUU), 0.f, 1.f);
 }
 
 float FSiegeFogStatics::EffectiveVisionRadius(float RequestedRadiusUU, bool bFogActive, const FSiegeFogTuning& Tuning)

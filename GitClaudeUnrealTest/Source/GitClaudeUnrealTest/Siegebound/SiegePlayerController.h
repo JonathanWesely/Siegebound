@@ -507,7 +507,26 @@ public:
 	 *  Plays the card in hand slot 0..5 (GDD §3.5; keys 1..6 / TASK-033 card
 	 *  buttons). Refuses (log + OnCardRefused, play refusals also
 	 *  OnCardPlayRefused) on: empty/out-of-range slot, missing DT_Cards row, or
-	 *  gold < Cost (grey-out is the widget's job). Routing by CardType:
+	 *  gold < Cost (grey-out is the widget's job). ⭐ AND, since TASK-989 (law
+	 *  `FOG-§10.6`, ruling ✅ `J-F19`): a `FogCover` card played while a `BrightSun`
+	 *  prevention window is up — refused HERE, at the click, with the LIVE seconds
+	 *  remaining in the message ("Bright Sun is still up for 143 seconds"), read
+	 *  from AFogVolume::GetFogPreventionSecondsRemaining() at that instant and
+	 *  ⛔ never cached. ⛔ NO gold moves and the card is ⛔ NOT consumed — by
+	 *  construction rather than by refund, because this entry has not spent or
+	 *  confirmed anything yet. ⛔ `Fog` ONLY (`J-F26`): prevention refuses nothing
+	 *  else.
+	 *  ⭐⭐ AND, since TASK-991 (law `FOG-§10.7` (A), ruling ✅ `J-F18`): a `FogClear`
+	 *  card (`BrightSun`) played while a prevention window is up, ⛔ BUT ONLY WHEN
+	 *  the window this cast WOULD open is ⛔ STRICTLY SHORTER than what is left —
+	 *  ⛔ it is a BRANCH, ⛔ never a blanket refuse. A LONGER (or EQUAL) window falls
+	 *  through and casts normally, RESETTING the expiry in
+	 *  `AFogVolume::ApplyBrightSun`. ⛔ The refusal carries ⛔ TWO live values
+	 *  ("would reduce fog prevention time from 143 seconds to 83 seconds"): the
+	 *  live remainder and a full would-be window computed from
+	 *  AFogVolume::GetBrightSunWindowSeconds() — which re-samples HERO HEIGHT at
+	 *  the click, so it changes as he climbs. ⛔ NO gold moves and the card is
+	 *  ⛔ NOT consumed, by the same construction. Routing by CardType:
 	 *  Unit/Building/Economy → placement mode for the slot's CardID (entry can
 	 *  additionally refuse a dead hero "Hero is down" or a capped Miner "Miner
 	 *  limit reached", §3.3 — TASK-030); the card leaves the hand ONLY at placement
@@ -898,6 +917,32 @@ public:
 	 *  height gain the upgrade will not deliver.
 	 */
 	static FText StackHeightCapNoticeText();
+
+	/**
+	 *  ⭐⭐ THE SECONDS→`FText` FORMATTER (TASK-989 item (5)/(5a); ✅ `J-F24`, closed) — ⛔ ONE
+	 *  scalar in, ⛔ ONE `FText` out, and the ⛔ ONLY place in the project that decides how a
+	 *  countdown is spelled.
+	 *
+	 *  📌 Jonathan (2026-09-04): *"a message telling them bright sun is still up for 'x' amount of
+	 *  SECONDS."* ⇒ ⛔ WHOLE SECONDS, ⛔ ROUNDED, ⛔ EVEN PAST 60 — "143 seconds", ⛔ never
+	 *  "2 minutes 23 seconds". ⭐ A ONE-WORD retune if he disagrees, and it is one word ONLY
+	 *  because the units live in here rather than at each call site.
+	 *
+	 *  ⛔⛔ IT IS A FORMATTER, ⛔ NEVER A MESSAGE BUILDER. The two prevention refusals differ in
+	 *  ARITY — this row's carries ONE value ("still up for X"), TASK-991's carries TWO ("would
+	 *  reduce prevention from X to Y") — so the shared thing is the SCALAR, called once here and
+	 *  twice there. A builder spanning both arities would carry an optional second value that is
+	 *  dead half the time, which is exactly the dead surface `SC-§40` cl. 2 bans (`FOG-§10.7` (A)).
+	 *
+	 *  ⛔ THE UNIT WORD IS INSIDE, ⛔ not at the call site: `J-F24` rules UNITS *and* ROUNDING and
+	 *  the two must move together. It also lets the singular be handled ONCE, and keeps
+	 *  TASK-991's sentence readable ("from 143 seconds to 83 seconds").
+	 *
+	 *  ⛔ TOTAL: non-finite ⇒ "0 seconds"; zero or negative ⇒ "0 seconds"; and a STRICTLY POSITIVE
+	 *  input can ⛔ never render "0 seconds" — see the definition for why that floor is a display
+	 *  rule and not a change to his rounding.
+	 */
+	static FText WholeSecondsText(float Seconds);
 
 	//~ ─────────────────────────────────────────────────────────────────────────
 	//~  THE PLACEMENT FOOTPRINT WHEEL — the THREE PINNED PURE SEAMS (TASK-815,

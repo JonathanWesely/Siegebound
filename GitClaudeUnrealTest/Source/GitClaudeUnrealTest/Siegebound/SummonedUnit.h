@@ -122,14 +122,18 @@ enum class ESiegeLadderExit : uint8
  *    missing table or row is logged and the unit idles.
  *  - State machine runs on a ~0.25 s timer (not per-tick):
  *      Advance   — MoveToActor toward the nearest standing enemy castle.
- *      Acquire   — nearest alive enemy ITeamAgent within AggroRadius (600);
+ *      Acquire   — nearest alive enemy ITeamAgent within AggroRadius, which is
+ *                  a PER-UNIT value since TASK-979 (UnitEngagementRadiusUU by
+ *                  default, raised per card by the NoticeRange cell — NEVER a
+ *                  hardcoded profile constant; see the member's own doc);
  *                  if the best unit/hero stands within TieBreakDistance (100)
  *                  of the nearest building/castle, the unit/hero is preferred.
  *      Attack    — within Range: apply Damage every Cadence, with this unit
  *                  as DamageCauser and its controller as EventInstigator so
  *                  receivers can attribute the team (TASK-002 castle contract).
- *      Reacquire — target dead/destroyed or beyond LeashRange (900): resume
- *                  Advance.
+ *      Reacquire — target dead/destroyed or beyond the EFFECTIVE leash
+ *                  (GetEffectiveLeashRangeUU(), TASK-979 — ⛔ NOT the raw
+ *                  LeashRange member, which is only its FLOOR): resume Advance.
  *  - No friendly fire in either direction (GDD §3.0); incoming TakeDamage
  *    mirrors ACastle's instigator-chain team resolution.
  *  - Destructible: at 0 HP the actor is destroyed (units don't respawn).
@@ -147,8 +151,12 @@ enum class ESiegeLadderExit : uint8
  *    target's collision; fallback: target location). Purely visual — damage
  *    numbers/timing are untouched.
  *  - Ranged delivery (TASK-028): rows with bRanged true (Archer) run the SAME
- *    state machine (aggro 600, leash 900, Range gate from the row — Archer
- *    700), but each cadence hit SPAWNS a homing AProjectile at the unit
+ *    state machine (aggro = AggroRadius, leash = GetEffectiveLeashRangeUU(),
+ *    Range gate from the row — ⛔ all three are PER-UNIT and none may be quoted
+ *    as a constant here; the three numbers this line used to carry — "aggro
+ *    600, leash 900, Archer 700" — were ALL stale, and the Archer's Range had
+ *    been 2100 in cards.csv since long before TASK-979 touched the other two),
+ *    but each cadence hit SPAWNS a homing AProjectile at the unit
  *    (InitProjectile: own team, current target, row Damage,
  *    USiegeDamageType_Projectile — the castle halves projectile damage on ITS
  *    side, GDD §3.0/TASK-026) instead of applying melee damage. NO lunge and
@@ -791,6 +799,261 @@ public:
 	int32 GetMaxPermanentDamageStacks() const { return MaxPermanentDamageStacks; }
 
 	//~ ---------------------------------------------------------------------
+	//~ ⭐⭐ NOTICE / ENGAGEMENT RADIUS (TASK-979, re-valued by TASK-1003; law
+	//~ FOG-§9.6, §9.6b, §9.8b, §9.9 — and ⭐⭐⭐ FOG-§9.11, which SUPERSEDES the
+	//~ NUMBERS in every one of them). ONE symbol serves BOTH halves of Jonathan's
+	//~ ruling — how far a unit NOTICES an enemy, and how far it may ENGAGE one.
+	//~ He unified them on 2026-09-04, so there is deliberately no second
+	//~ "notice" name to drift against a "firing" one.
+	//~
+	//~ ⛔⛔ THE LIVE RULING, VERBATIM, 2026-09-04: "lets fix it by changing the
+	//~ notice radius for all units to 5000 with no fog and still 609 under fog"
+	//~ (J-F28), and "lets make the leash radius 8000" (J-F27).
+	//~
+	//~ ⛔ BOTH SUPERSEDE HIS OWN EARLIER SENTENCES FROM THE SAME DAY, retained
+	//~ here rather than deleted so a reader who remembers the old numbers finds
+	//~ their replacement instead of concluding the file is stale: "lets also
+	//~ increase the units to notice enemies within 2000 units instead of 600
+	//~ units" … "make the 3600 the NOTICE range for the longbowman. All other
+	//~ units still only have a notice range of 2000."
+	//~
+	//~ ⚠️⚠️ AND THE LONGBOWMAN EXCEPTION IS RETIRED BY THE SAME RULING, WHICH IS
+	//~ EASY TO MISS BECAUSE HE NEVER MENTIONED THAT CARD AGAIN: against a 5000
+	//~ class default its 3600 would make it the ONE unit in the game that
+	//~ notices LESS than everyone else — inverting the exception it was written
+	//~ for — so TASK-1004 blanks its NoticeRange cell and the column ships
+	//~ ENTIRELY SPARSE. ⛔ The CHANNEL below is the deliverable, never the cell:
+	//~ a future card opts in from its own row with zero code (FOG-§9.9).
+	//~ ---------------------------------------------------------------------
+
+	/**
+	 *  ⭐⭐ THE DEFAULT unit notice/engagement radius, and deliberately the ⛔ ONLY `5000` on a
+	 *  CODE line in shipped source that means A UNIT'S OWN NOTICE REACH (FOG-§1's one-literal
+	 *  discipline; TASK-985 gate item 1a). AggroRadius below is initialised FROM it, the
+	 *  commanded-lane notice bound CONSUMES it, and the automation tests READ it rather than
+	 *  re-typing the number.
+	 *
+	 *  📌 THE CENSUS IS ⛔ RE-MEASURED FOR THIS VALUE (TASK-1003) AND ⛔ NOT INHERITED — the old
+	 *  one enumerated the other `2000`s (ACastle::MaxHP, two BrakingDecelerationWalking values)
+	 *  and ⛔ none of that transfers. The OTHER `5000`s on code lines in Source/ are
+	 *  USiegePlayerController::GroupRadiusMax and a −5000 uu downward trace length in
+	 *  SiegeBotController.cpp. ⛔ Neither is a copy of this one.
+	 *
+	 *  ⛔⛔⭐ AND THE FIRST OF THOSE NEEDS ITS OWN SENTENCE, BECAUSE IT IS THE EXACT TRAP `FOG-§9.5`
+	 *  NAMES AND IT ARRIVED HERE BY DESIGN, NOT BY COINCIDENCE: `GroupRadiusMax` is ALSO 5000 uu,
+	 *  is ALSO a reach in the same units, and is 5000 for a REASON — his ruling sizes unit notice
+	 *  to cover a maximum-size guard circle EXACTLY (that is the J-F28 resolution, and it is why
+	 *  the number is 5000 and not a rounder one). ⛔ THEY ARE STILL NOT THE SAME NUMBER. The test
+	 *  is never "do they match" but ⛔ "WHEN ONE MOVES, MUST THE OTHER?" — and here the answer is
+	 *  ⛔ NO: he can widen the legal guard circle without re-ruling unit eyesight, or retune
+	 *  eyesight without touching the command UI. ⇒ ⛔ sharing a symbol between them would be a
+	 *  DEFECT however DRY it looks, and Tests/SiegeUnitNoticeRangeTest.cpp READS GroupRadiusMax
+	 *  structurally out of its own header rather than substituting this constant for it.
+	 *
+	 *  ⛔⛔ IT IS A **DEFAULT**, ⛔ NOT A CAP — `FOG-§9.9`'s clause SURVIVES the number change
+	 *  ⛔ intact, and the channel below is the entire reason it can. ⚠️⚠️ WHAT DID CHANGE IS
+	 *  ⛔ WHICH MISREADING IS DANGEROUS, AND IT ⛔ INVERTED — so the old warning alone is no longer
+	 *  sufficient and re-signing it would have been the whole defect:
+	 *    • at the retired 2000 the live danger was a CEILING. `FMath::Min(Range, this)` clamped
+	 *      the Longbowman's 3600 back to 2000 — a −44.4% nerf to the one card he had protected;
+	 *    • at 5000 ⛔ NO SHIPPED CARD SITS ABOVE THIS NUMBER AT ALL (the largest reach in the data
+	 *      is the Longbowman's 3600 FIRING range, and its notice cell is blank). ⇒ a `min` here is
+	 *      ⛔ INERT against today's roster and would go ⛔ GREEN against every data-derived row.
+	 *      The refusal is therefore carried by a ⛔ SYNTHETIC value above the default and by a
+	 *      structural probe — ⛔ never by a card, and ⛔ never again by the Longbowman;
+	 *    • and the ⛔ NEW live danger is the ⛔ OPPOSITE SPELLING: an `FMath::Max(Row, this)`, or
+	 *      any "normalise the sparse cell up to the default" pass, would ⛔ WIDEN a card that
+	 *      asked for LESS. ⛔ Both spellings are asserted ABSENT from the resolver, structurally.
+	 *  ⛔ Nothing errors and nothing logs for either, which is why the refusal is written into the
+	 *  code and not just onto the board. This project has already shipped that exact shape twice
+	 *  (the tower-stacking pair, SC-§60).
+	 *
+	 *  ⇒ ⭐ THE ONE UNIVERSAL CEILING IN THIS SYSTEM IS FOG'S 609.6 uu vision ceiling, applied as
+	 *  a `min` at the ONE chokepoint inside the acquisition funnel (FOG-§7). ⛔ Never a second
+	 *  ceiling, and ⛔ never one here. ResolveNoticeRadiusUU is written so a row value ABOVE this
+	 *  constant survives it intact — and so that one BELOW it survives too, unraised.
+	 *
+	 *  📌 COST, stated with the number beside it (HIGH-§1) and in BOTH directions, because each
+	 *  half alone is misleading: the ENUMERATION delta of raising 600 → 5000 is `1.00×` —
+	 *  FSiegeCombatStatics::GatherTeamAgentsFiltered takes ⛔ no radius parameter at all and
+	 *  enumerates with UGameplayStatics::GetAllActorsWithInterface (SiegeCombatStatics.cpp:48),
+	 *  so widening the reach does ⛔ not widen the search (an earlier "11.1× search area" figure
+	 *  was an AREA quoted as a COST and is ⛔ REFUTED). ⛔ BUT IT IS NOT FREE: at 600 the funnel's
+	 *  per-candidate fog cut was provably SKIPPED (`min(600, 609.6) == 600`, and the guard at
+	 *  SiegeCombatStatics.cpp:207 is a strict `<`), and at 5000 it ⛔ RUNS — an
+	 *  ActorGetDistanceToCollision per candidate, per unit, at 4 Hz, whenever fog is up. That
+	 *  work has never executed on this path in this game. The GAMEPLAY load (far more units
+	 *  simultaneously engaged ⇒ pathing/AI/animation) is ⛔ SEPARATELY UNMEASURED and needs a
+	 *  profiled match; it is declared unmeasured rather than guessed.
+	 *
+	 *  📌 AND THE FOG CUT IS NOW STEEPER THAN ANY FIGURE PREVIOUSLY RECORDED IN THIS FILE:
+	 *  `609.6 / 5000` ⇒ fog costs a unit ⛔ 87.8% of its notice RADIUS. ⛔ The 69.5% that used to
+	 *  be quoted was measured at 2000 and is STALE (FOG-§9.10d), and it is ⛔ no longer a
+	 *  melee-only figure — every ranged unit's notice collapses to the same 609.6. ⭐ That is his
+	 *  ruling read straight back, ⛔ not a side effect: "5000 with no fog and still 609 under fog".
+	 */
+	static constexpr float UnitEngagementRadiusUU = 5000.f;
+
+	/**
+	 *  ⭐⭐ THE PER-UNIT NOTICE CHANNEL, as a pure function — the HIGH-§3 /
+	 *  HeightAdvantageMultiplier precedent (a testability obligation gets a testability seam).
+	 *  Two floats in, the radius the unit will actually notice with out:
+	 *
+	 *      ClassDefaultRadiusUU <= 0 (or NaN)  ⇒  ClassDefaultRadiusUU  ⛔ THE SEAL, see below
+	 *      RowNoticeRangeUU     >  0 (finite)  ⇒  RowNoticeRangeUU      ⛔ NO min, NO cap
+	 *      otherwise (the sparse 0/blank cell) ⇒  ClassDefaultRadiusUU
+	 *
+	 *  ⛔⛔ THERE IS NO `FMath::Min(RowNoticeRangeUU, UnitEngagementRadiusUU)` HERE AND THERE
+	 *  MUST NEVER BE ONE — see the constant above. ⛔ AND SINCE TASK-1003 THERE MUST NEVER BE AN
+	 *  `FMath::Max` EITHER: the middle branch is a ⛔ PASS-THROUGH IN BOTH DIRECTIONS. A finite
+	 *  positive cell comes back out UNCHANGED whether it is ABOVE the class default (the anti-cap
+	 *  property, which at 5000 no shipped card can demonstrate — only a synthetic can) or BELOW it
+	 *  (the anti-widen property, which is the one his 5000 made reachable: a card that asks for a
+	 *  SHORTER reach than the class must get it, or the column stops being an opt-in channel and
+	 *  becomes a floor nobody voted for).
+	 *
+	 *  ⛔⛔ THE SEAL, WHICH IS WHY THE FIRST BRANCH EXISTS AND WHY IT IS FIRST: AMinerUnit and
+	 *  ASorcererUnit write `AggroRadius = 0.f` in their CONSTRUCTORS as a CLASS CONTRACT — the
+	 *  "never attacks" quieting (MinerUnit.cpp seal #2; SorcererUnit.cpp's behavioural
+	 *  quieting). A channel that let a card CELL write over that zero would un-seal a unit that
+	 *  is sealed by design, from DATA, with no code change for anyone to review. A non-positive
+	 *  class default therefore ⛔ ignores the row entirely and returns itself.
+	 *
+	 *  A non-finite row value falls back to the class default. That is a ⛔ MATH GUARD against a
+	 *  corrupt cell, ⛔ not a ceiling: it can only ever return a number the class already had,
+	 *  and it can never lower a finite value.
+	 *
+	 *  ⛔ public, plain C++ static, ⛔ NOT a UFUNCTION, exactly two parameters, none defaulted
+	 *  (SC-§33). No world access, no actor access. Tested headlessly in
+	 *  Tests/SiegeUnitNoticeRangeTest.cpp.
+	 */
+	static float ResolveNoticeRadiusUU(float ClassDefaultRadiusUU, float RowNoticeRangeUU);
+
+	/**
+	 *  ⭐⭐ THE LEASH, DERIVED FROM THE NOTICE RADIUS RATHER THAN TYPED (TASK-979 item 6a,
+	 *  FOG-§9.8b). Returns `max(LeashRangeUU, NoticeRadiusUU × MarginMultiplier)`.
+	 *
+	 *  ⛔⛔ WHY THIS EXISTS AT ALL — THE ORDERING INVERSION, WHICH IS A REAL SHIPPED-BEHAVIOUR
+	 *  BUG THE MOMENT AggroRadius PASSES LeashRange, NOT A STYLE POINT. UpdateState drops a
+	 *  target beyond the leash and then, with ⛔ no intervening return or branch, calls
+	 *  AcquireTarget() in the SAME 0.25 s poll — which reaches to the notice radius. Against the
+	 *  retired flat leash of 900 a notice radius of 2000 (let alone today's 5000) made every
+	 *  target released immediately re-takeable, so ⛔ units never disengaged and the leash
+	 *  silently stopped being a leash. The identical shape recurs in
+	 *  UpdateStateStandardCommanded's ATTACK case; BOTH read through this function, which is the
+	 *  only reason one fix covers two sites.
+	 *
+	 *  ⛔⛔⭐⭐ THE MULTIPLIER'S ORIGINAL JUSTIFICATION IS ⛔ DEAD AT THE SHIPPED VALUES, AND IT IS
+	 *  ⛔ RE-ARGUED HERE RATHER THAN QUIETLY KEPT — because a term that looks inert is a term the
+	 *  next reader deletes (FOG-§9.11):
+	 *    • WHERE 1.5 CAME FROM (⛔ history, ⛔ not the current reason): it was **MEASURED**, not
+	 *      chosen. The game shipped LeashRange 900 against AggroRadius 600 — exactly 1.5× — so
+	 *      the default reproduced the shipped ORDERING and returned `max(900, 900) = 900`
+	 *      BIT-IDENTICALLY at the old pair. That provenance is still checkable and still true.
+	 *    • WHAT IT DOES TODAY: ⛔ NOTHING, for every card in the game. At his 8000 floor against
+	 *      a 5000 notice radius the product is `7500` and ⛔ THE FLOOR WINS — `max(8000, 7500)`
+	 *      = ⛔ 8000, his number exactly. The multiplier is ⛔ INERT for the entire shipped roster,
+	 *      and it is ⛔ SUPPOSED to be.
+	 *    • ⛔ ITS ONE REMAINING JOB, WHICH IS WHY DELETING IT WOULD BE A DEFECT AND NOT A CLEANUP:
+	 *      the FUTURE-CARD case. The crossover is `LeashRange / MarginMultiplier` = `8000 / 1.5`
+	 *      = ⛔ **5333.33 uu**. A card with a NoticeRange above that flips the `max` to the
+	 *      PRODUCT and the ordering ⛔ re-derives itself with zero edits (a 6000 cell yields
+	 *      `max(8000, 9000)` = 9000). ⛔ Hard-code a bare 8000 here and that same card inverts the
+	 *      ordering ⛔ SILENTLY, with `FOG-§9.8b`'s drop-at-one-line / re-acquire-at-the-next
+	 *      thrash back and ⛔ no diff to point at.
+	 *  ⇒ ⚖️ ⛔ THE DERIVATION IS THE PROPERTY. HIS `8000` SETS THE FIRST TERM; ⛔ IT DOES NOT
+	 *  REPLACE THE EXPRESSION.
+	 *
+	 *  ⭐ AND IT IS SIZED AGAINST THE DATA, ⛔ NOT AGAINST THE DEFAULT: because the leash is
+	 *  computed FROM whatever this unit's notice radius actually is, a future card with a larger
+	 *  notice range inherits the ordering for free. A hand-typed leash would have had to be
+	 *  re-derived by hand on every card that exceeds it, which is the drift this project has
+	 *  paid for repeatedly.
+	 *
+	 *  ⚠️ THE CONSEQUENCE, STATED (HIGH-§1): a melee unit now disengages at 8000 uu instead of
+	 *  900 — an 8.9× widening, and the largest single behaviour change in this lane. ✅ It is
+	 *  ⛔ HIS NUMBER, ruled verbatim ("lets make the leash radius 8000", J-F27) after he was shown
+	 *  that a 900 leash under a 2000+ notice radius meant units never disengage at all. ⛔ A leash
+	 *  EQUAL to notice would thrash (drop and re-take at the boundary), which is why the ordering
+	 *  is strict and why the margin floors at 1.0 below.
+	 *
+	 *  ⛔⛔ AND THE RIDER THAT NUMBER NEEDS — 🧑 J-F27 IS A **CLEAR-WEATHER** FIGURE (qa/TASK-979
+	 *  WARN-2). The notice radius fed in below is the RAW member, ⛔ never the fog-effective one,
+	 *  so under fog a unit ACQUIRES at the 609.6 ceiling and RETAINS/CHASES to 8000 — it will
+	 *  chase ~7390 uu on sight it provably does not have. ⚠️ The gap is not new (it was 900/600 =
+	 *  1.5× before TASK-979) but the two rulings together widened it to ~13.1×.
+	 *  ✅⚖️ IT IS ⛔ NO LONGER AN OPEN QUESTION: 🧑 he ruled *"yes clamp retention under fog"*
+	 *  (FOG-§9.11), so the bound becomes the fog-clamped effective leash — ⛔ bit-identical in
+	 *  clear weather, 609.6 under fog. ⛔ IT IS ⛔ NOT IMPLEMENTED HERE AND ⛔ MUST NOT BE: this
+	 *  file is pinned at ZERO fog symbols by SiegeAcquisitionFunnelTest test 9, and the clamp
+	 *  lands with its own guard extension on its own row (TASK-1008), ⛔ not as a "while I am
+	 *  here" edit on a constants change.
+	 *
+	 *  A non-positive or non-finite multiplier is floored to 1.0 (the degenerate-safe reading:
+	 *  the leash may never be SHORTER than the notice radius) and a non-finite notice radius
+	 *  returns LeashRangeUU untouched.
+	 *
+	 *  ⛔ public, plain C++ static, ⛔ NOT a UFUNCTION, exactly three parameters, none defaulted
+	 *  (SC-§33). Tested headlessly in Tests/SiegeUnitNoticeRangeTest.cpp.
+	 */
+	static float ResolveEffectiveLeashRangeUU(float LeashRangeUU, float NoticeRadiusUU, float MarginMultiplier);
+
+	/**
+	 *  ⭐ THIS UNIT'S per-unit engagement radius — the resolved notice reach, after the card
+	 *  row and the class seal have had their say. ⛔ This is the symbol the commanded-lane bound
+	 *  consumes; it must ⛔ never introduce a second one, and ⛔ never a global "ceiling"
+	 *  constant (a symbol named "ceiling" invites the `min` this whole block refuses).
+	 *
+	 *  ⚠️ It is the LIVE member rather than the class default ON PURPOSE, and the argument
+	 *  ⛔ SURVIVES the retirement of the example it used to be written from. It no longer reads
+	 *  "a Longbowman's 3600 arrives here" — his 5000 ruling retired that cell (TASK-1004) — but
+	 *  the divergence itself is ⛔ still live from THREE sources: a bound card row (the channel is
+	 *  intact and sparse, not removed), a Blueprint CDO override on a subclass, and the two class
+	 *  seals that carry 0. ⛔ A caller that read `GetDefault<ASummonedUnit>()` instead would
+	 *  answer 5000 for a MINER. ⇒ the accessor is per-unit, and TASK-979's own test asserts that
+	 *  as a DIFFERENCE between two classes rather than as `x == x`.
+	 */
+	float GetEngagementRadiusUU() const { return AggroRadius; }
+
+	/**
+	 *  ⭐ The leash actually applied by both drop sites: ResolveEffectiveLeashRangeUU fed with
+	 *  this unit's OWN LeashRange, notice radius and margin. ⛔ Read this, never LeashRange
+	 *  directly — the raw member is now a FLOOR, not the leash.
+	 */
+	float GetEffectiveLeashRangeUU() const;
+
+	/**
+	 *  The raw leash FLOOR (`LeashRange`) and the ordering margin, exposed read-only because the
+	 *  members themselves are `protected` and the leash rule is asserted from outside the class.
+	 *  ⛔ `GetLeashRangeFloorUU()` is ⛔ NOT the leash — it is the lower bound the effective leash
+	 *  can never go under. Anything deciding whether to DROP a target reads
+	 *  GetEffectiveLeashRangeUU().
+	 */
+	float GetLeashRangeFloorUU() const { return LeashRange; }
+	float GetLeashMarginMultiplier() const { return LeashMarginMultiplier; }
+
+	/**
+	 *  ⭐⭐ THIS INSTANCE'S CLASS DEFAULT for AggroRadius — `GetClass()->GetDefaultObject<>()`,
+	 *  ⛔ NEVER `GetDefault<ASummonedUnit>()`.
+	 *
+	 *  ⛔⛔ THE DISTINCTION IS A DEFECT THIS PROJECT HAS ALREADY SHIPPED, NOT A HYPOTHETICAL:
+	 *  Building.cpp:302 reads its per-class stacking ceiling off the BASE CDO, so every
+	 *  subclass ceiling is read straight past — and the comment beside it claiming it reads
+	 *  "THIS CLASS'S CDO" is false. Here the base CDO says 5000 while AMinerUnit's and
+	 *  ASorcererUnit's say 0, so reading the base would overwrite both seals with 5000 and
+	 *  un-seal two unit classes with ⛔ nothing in the diff to hint at it. ⚠️ The stake GREW with
+	 *  his ruling and did not merely move: an un-sealed miner would now acquire at 5000 uu
+	 *  instead of 2000, i.e. over ⛔ 6× the area it would have swept a day earlier.
+	 *
+	 *  ⭐ It is also what makes a Blueprint CDO override SURVIVE: a BP that sets AggroRadius
+	 *  reports that value here, so the sparse card cell resolves back to the BP's own number
+	 *  instead of stamping the C++ default over it.
+	 *
+	 *  Null-safe: an impossible null class returns the live member unchanged.
+	 */
+	float GetClassDefaultEngagementRadiusUU() const;
+
+	//~ ---------------------------------------------------------------------
 	//~ ⭐ HIGH GROUND (TASK-724, HIGH-§1/§2/§3) — the elevation damage bonus.
 	//~ Jonathan, verbatim: "make their attacks deal more damage the higher
 	//~ elevation they are. I would say that for every 5 feet that their
@@ -1034,13 +1297,90 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Siegebound|Unit")
 	TSubclassOf<AProjectile> ProjectileClass;
 
-	/** Acquisition radius in units (GDD §3.8 profile constant: 600 — not a card stat). */
+	/**
+	 *  ⭐⭐ THIS UNIT'S NOTICE (ACQUISITION) RADIUS IN UNITS — the reach AcquireTarget and the
+	 *  commanded-lane bound both measure with. Defaults to UnitEngagementRadiusUU (5000).
+	 *
+	 *  ⚠️⚠️ THE DOC LINE THAT USED TO SIT HERE SAID *"GDD §3.8 profile constant: 600 — not a
+	 *  card stat"*, AND BOTH HALVES ARE NOW FALSE (TASK-979 item 6d-v, re-valued by TASK-1003;
+	 *  the TASK-517 / HIGH-§1 idiom — a shipped comment contradicting the shipped value is the
+	 *  drift defect this project keeps paying for, so it is rewritten rather than left lying):
+	 *    • the number is 5000 — 🧑 Jonathan, 2026-09-04, verbatim: *"lets fix it by changing the
+	 *      notice radius for all units to 5000 with no fog and still 609 under fog"* (J-F28,
+	 *      which ⛔ SUPERSEDES the 2000 he ruled earlier the SAME DAY) — and it applies to
+	 *      ⛔ EVERY unit including MELEE; he ruled that in by name ("Make sure that the noticing
+	 *      range is reduced to 609 in fog for NON-RANGED UNITS as well", J-F21);
+	 *    • it ⛔ IS a card stat now. FCardRow::NoticeRange is bound over this member in
+	 *      LoadStatsAndStart, exactly beside `AttackRange = Row->Range`, so a card can carry
+	 *      its own reach with zero code. ⚠️ The column ships ⛔ ENTIRELY SPARSE (TASK-1004): the
+	 *      Longbowman's 3600 cell was the only populated one and his 5000 retired it, because at
+	 *      a 5000 default a 3600 cell would make that card notice LESS than everyone else.
+	 *      ⛔ The CHANNEL is the deliverable, ⛔ not the cell.
+	 *
+	 *  ⛔ 5000 IS A DEFAULT, NOT A CAP — a bound row value ABOVE it is intended and survives, and
+	 *  one BELOW it is honoured rather than widened. See UnitEngagementRadiusUU and
+	 *  ResolveNoticeRadiusUU for the full refusal, ⛔ including which half of it his ruling
+	 *  INVERTED.
+	 *
+	 *  ⚠️ FOG IS FREE HERE AND THIS SITE WRITES NO FOG CODE FOR IT: AcquireTarget hands this
+	 *  value to FSiegeVisionQuery::SeeingFrom and the funnel applies the 609.6 uu vision ceiling
+	 *  as a `min` at the ONE chokepoint ⇒ `min(5000, 609.6) = 609.6` arrives automatically
+	 *  (FOG-§7) — an ⛔ 87.8% cut, and the steepest it has ever been.
+	 *  ⛔ A second fog read here would be the forgotten-guard-point failure the funnel exists to
+	 *  prevent.
+	 *
+	 *  ⚠️ HAZARD, RECORDED RATHER THAN GUARDED: this is EditAnywhere, so a Blueprint CDO
+	 *  override silently WINS over the C++ default. That is deliberate and is why the resolver
+	 *  reads GetClassDefaultEngagementRadiusUU() (this class's CDO) instead of the base one —
+	 *  but a number in a .uasset is un-greppable and un-diffable, so the card ROW is the
+	 *  sanctioned channel and a BP override is not.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|AI", meta = (ClampMin = "0"))
-	float AggroRadius = 600.f;
+	float AggroRadius = UnitEngagementRadiusUU;
 
-	/** Leash: a target beyond this distance is dropped and Advance resumes (GDD §3.8: 900). */
+	/**
+	 *  ⛔⛔ THE LEASH **FLOOR** — ⛔ NOT THE LEASH. The lower bound the effective leash can never
+	 *  go under; the leash a drop site actually applies is GetEffectiveLeashRangeUU().
+	 *
+	 *  ✅ 8000 is 🧑 Jonathan's, verbatim 2026-09-04: *"lets make the leash radius 8000"* (J-F27),
+	 *  ruled after he was shown that the shipped 900 was silently inert. ⚠️ The old value (GDD
+	 *  §3.8: 900) is recorded here rather than dropped, because a reader who remembers it must
+	 *  find its replacement instead of assuming this doc is stale.
+	 *
+	 *  ⭐⭐ AT TODAY'S VALUES ⛔ THIS FLOOR IS WHAT SHIPS, AND THAT IS THE INTENDED OUTCOME, ⛔ NOT
+	 *  A SIGN THE DERIVATION IS POINTLESS: `max(8000, 5000 × 1.5 = 7500)` = ⛔ **8000**, his
+	 *  number exactly. The product only takes over above a NoticeRange of 5333.33 uu — see
+	 *  ResolveEffectiveLeashRangeUU, which carries the ⛔ full re-argument for why a term that is
+	 *  inert today must ⛔ not be deleted.
+	 *
+	 *  ⛔⛔ DO NOT READ THIS MEMBER DIRECTLY AT A DROP SITE — read GetEffectiveLeashRangeUU().
+	 *  Against a 5000 notice radius the retired flat 900 was not a leash at all: the target was
+	 *  dropped and re-acquired inside one 0.25 s poll.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|AI", meta = (ClampMin = "0"))
-	float LeashRange = 900.f;
+	float LeashRange = 8000.f;
+
+	/**
+	 *  ⭐ The leash's ordering margin over the notice radius (TASK-979 item 6a). The effective
+	 *  leash is `max(LeashRange, AggroRadius × this)`.
+	 *
+	 *  ⛔⛔ 1.5 STAYS — BUT ⛔ ITS ORIGINAL JUSTIFICATION IS ⛔ DEAD AND THE REPLACEMENT ARGUMENT
+	 *  IS WHAT KEEPS IT ALIVE (FOG-§9.11; the full version sits on ResolveEffectiveLeashRangeUU):
+	 *    • ⛔ HISTORY: 1.5 was MEASURED, not chosen — the shipped pair was LeashRange 900 /
+	 *      AggroRadius 600 = exactly 1.5, so the default reproduced the shipped 900
+	 *      bit-identically at the old 600. ⛔ That is provenance, ⛔ no longer a reason.
+	 *    • ⛔ TODAY: at 8000 / 5000 the FLOOR WINS (`max(8000, 7500)` = 8000) and this multiplier
+	 *      is ⛔ INERT for every card in the game.
+	 *    • ⭐ WHY IT IS STILL HERE: the FUTURE-CARD case. Above a NoticeRange of
+	 *      `8000 / 1.5` = ⛔ 5333.33 uu the `max` flips to the product and the ordering re-derives
+	 *      itself with ⛔ zero edits. ⛔ Delete it as "dead code" and the next big-reach card
+	 *      re-opens the never-disengage inversion ⛔ silently.
+	 *  ⛔ Never set it below 1.0 — a leash at or under the notice radius re-creates the
+	 *  drop-then-re-acquire inversion this exists to close, and the resolver floors it at 1.0 for
+	 *  exactly that reason.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|AI", meta = (ClampMin = "1.0"))
+	float LeashMarginMultiplier = 1.5f;
 
 	/** If the best unit/hero stands within this distance of the nearest building/castle, prefer the unit/hero (GDD §3.8: 100). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Siegebound|AI", meta = (ClampMin = "0"))
@@ -1667,10 +2007,68 @@ private:
 
 	/**
 	 *  Shield Wall HOLD/DEFEND target search (W1 TASK-275): AcquireTarget's exact
-	 *  team-filtered ITeamAgent iteration + pawn/building tie-break, but the eligibility
-	 *  gate is a 2D disc — a candidate's LOCATION must lie within Radius of Center —
-	 *  instead of AggroRadius-from-self. Nearest-to-self selection + the TieBreakDistance
-	 *  rule are kept identical for behavior consistency. Null-safe (no world ⇒ nullptr).
+	 *  team-filtered ITeamAgent iteration + pawn/building tie-break. Nearest-to-self
+	 *  selection + the TieBreakDistance rule are kept identical for behavior
+	 *  consistency. Null-safe (no world ⇒ nullptr).
+	 *
+	 *  ⛔⛔ THE ELIGIBILITY GATE IS **TWO TERMS** SINCE TASK-979 (item 6b), AND THIS LINE
+	 *  USED TO SAY THE OPPOSITE. It read *"a 2D disc … INSTEAD OF AggroRadius-from-self"*,
+	 *  which TASK-979 falsified in the DEFINITION (SummonedUnit.cpp, ASummonedUnit::
+	 *  AcquireEnemyNearPoint) while leaving this declaration standing — ⛔ a stale doc in a
+	 *  DIFFERENT FILE from the code that falsified it, which is why neither a diff read nor a
+	 *  grep for the changed value found it. A candidate must now satisfy BOTH:
+	 *    (1) the 2D disc — its LOCATION within Radius of Center (the zone/stance order);
+	 *    (2) the NOTICE bound — GetDistanceToTarget(self, candidate) <= AggroRadius,
+	 *        measured FROM SELF with AcquireTarget's bounds-aware metric.
+	 *  ⭐ (2) is the GENERAL FORM and it is deliberately UNCONDITIONAL — it holds in CLEAR
+	 *  WEATHER, because 🧑 Jonathan's ruling makes the bound a property of the ENGAGEMENT
+	 *  RADIUS (*"due to fog OR ANYTHING"*). ⛔ TASK-980 routes THIS EXISTING READ through
+	 *  the fog-aware accessor; it does ⛔ NOT add the bound, and must ⛔ NOT re-add it.
+	 *
+	 *  ⚠️⚠️ FOUR CALLERS, ⛔ TWO FAMILIES, ⛔ AND THEY ARE SIZED DIFFERENTLY (qa/TASK-979
+	 *  WARN-1). Term (2) lands on every one of them:
+	 *    • UpdateStateStandardCommanded, the DEFEND stance — Center = own castle centre,
+	 *      Radius = ResolveDefendEngagementRadius() = castle colliding half-width +
+	 *      DefendRadius ⇒ ≈3656.85 + 1281 ≈ **4937.9 uu** at the shipped 9× castle (the
+	 *      function logs both operands; DefendRadius = 1281 above).
+	 *    • UpdateStateGrouped, THREE call sites — tier 1 (attack zone), tier 2 (position
+	 *      zone), AND the position→attack MONOTONE UPGRADE, which is the one that is not a
+	 *      "tier": term (2) gates the upgrade too, so a held position-tier target can no
+	 *      longer be upgraded to an attack-zone enemy that is beyond this unit's reach.
+	 *      Radius bounded by USiegePlayerController::GroupRadiusMax = 5000.
+	 *  ⇒ ✅⭐⭐ RE-MEASURED AT HIS 5000 (TASK-1003) — AND THE FINDING THIS PARAGRAPH USED TO
+	 *  CARRY IS ⛔ RESOLVED, ⛔ NOT MERELY RE-NUMBERED. It read *"both discs are ≈2.5× the default
+	 *  notice radius, so a unit at the centre of either covers ≈16% of its own circle's AREA"*.
+	 *  At 5000 the GROUPED disc is ⛔ 1.00× (5000/5000) and the DEFEND disc is ⛔ 0.99×
+	 *  (≈4937.9/5000) ⇒ a unit at the centre of EITHER covers ⛔ 100% of it, in clear weather.
+	 *  ⭐ That is exactly why his number is 5000 and ⛔ not a rounder one: J-F28 is resolved
+	 *  EXACTLY (FOG-§9.11).
+	 *  ⚠️⚠️ ⛔ BUT ONLY FOR THE DISCS. The OPPOSITE-FACE case below is ⛔ NOT resolved: the
+	 *  castle's colliding footprint is ≈7313.7 uu across, i.e. ⛔ 1.46× this radius, so a
+	 *  defender at one face still does not acquire a besieger at the far one. ⛔ Do not read
+	 *  "J-F28 is resolved" as "the DEFEND gap is closed" — they are two different measurements
+	 *  and only the first one moved into the clear.
+	 *
+	 *  ⛔⛔ THE CONSEQUENCE ON THE DEFEND LANE, WRITTEN DOWN BECAUSE IT TOUCHES A NAMED
+	 *  PRIOR REPAIR AND ⛔ MUST NOT BE REDISCOVERED AS A BUG: TASK-574 exists because
+	 *  *"DEFEND acquired nothing, ever: every defender walked home while the castle was
+	 *  battered"* (DefendRadius' doc above). Term (2) re-introduces a NARROWER version of
+	 *  that shape — ⛔ not the same one. The castle's own colliding footprint is
+	 *  ≈7313.7 x 7384.5 uu, so **two units on OPPOSITE faces are ≈7313.7 uu apart ⇒ 1.46×
+	 *  the default notice radius** (⛔ RE-MEASURED at his 5000, TASK-1003 — it was 3.66× at the
+	 *  retired 2000), and a defender at one face still does not acquire a besieger at another.
+	 *  ⭐ The gap NARROWED sharply and did ⛔ not close.
+	 *  ⭐ WHAT TASK-574 REPAIRED IS INTACT: its defect was that the disc lay
+	 *  ENTIRELY INSIDE THE KEEP so besiegers at the gate were unreachable AT ANY RANGE;
+	 *  a defender that walks to the battered face still acquires there, and the fallback is
+	 *  unchanged (EnterAdvance(OwnCastle) — ⛔ nothing bricks, no unit idles).
+	 *  ⛔ NOT "FIXED" HERE, AND THE REFUSAL IS DELIBERATE: exempting DEFEND from term (2)
+	 *  would make clear weather differ from fog on one stance for no reason a later reader
+	 *  could reconstruct, and re-pointing a defender at the battered face is a MOVEMENT
+	 *  change on a commanded lane — ⛔ item 6b cuts ACQUISITION ONLY and the order
+	 *  assignment is untouched. ⇒ 🧑 J-F28 carries it as a NUMBER FOR JONATHAN, and
+	 *  TASK-987 carries *"DEFEND acquires nothing while the castle is hit on a face the
+	 *  defender is not standing on"* as a REGRESSION WATCH — ⛔ a finding, ⛔ never "flaky".
 	 */
 	AActor* AcquireEnemyNearPoint(const FVector& Center, float Radius) const;
 

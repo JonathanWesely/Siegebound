@@ -41,6 +41,17 @@ enum class ECardProfile : uint8
  *  CONVENTIONS "Spells & Set III (M5)"). None for non-spell cards.
  *  USpellLibrary::ResolveSpell (TASK-098) dispatches on this column; CSV cells
  *  use these value names character-for-character.
+ *
+ *  ⛔⛔ APPEND-ONLY, AND IT IS A SERIALISATION CONTRACT RATHER THAN A STYLE RULE.
+ *  This is a reflected `uint8` UENUM held as a UPROPERTY by FCardRow below, and
+ *  FCardRow is the row type of the SAVED asset /Game/Data/DT_Cards. Inserting a
+ *  value in the MIDDLE renumbers every value after it, so every already-saved
+ *  cell (and every Blueprint pin holding one) silently re-reads as the NEXT
+ *  effect along: a Pickpocket row would resolve as whatever took index 5. ⛔ That
+ *  is a data corruption with no compile error, no log line and no red test —
+ *  the DataTable would simply start resolving the wrong spells. ⇒ ⭐ NEW VALUES
+ *  GO AT THE END, always, and a RETIRED one needs a CoreRedirect rather than a
+ *  deletion.
  */
 UENUM(BlueprintType)
 enum class ESpellEffect : uint8
@@ -50,7 +61,85 @@ enum class ESpellEffect : uint8
 	Freeze,           // FrostNova: freezes enemy units/towers for EffectDuration
 	TopTargetsDamage, // Lightning: Damage to the MaxTargets highest-current-HP enemies in AoERadius
 	AllyBuff,         // BattleCry: friendly units in AoERadius buffed for EffectDuration
-	GoldSteal         // Pickpocket: steals GoldSteal gold, instant resolve (M5 ruling 7)
+	GoldSteal,        // Pickpocket: steals GoldSteal gold, instant resolve (M5 ruling 7)
+
+	/**
+	 *  ⭐⭐ Fog: raises the WORLD-GLOBAL fog, which then lifts on its own.
+	 *  ⛔ CORRECTED 2026-09-04 (TASK-982 item (0)): this line used to read "for
+	 *  EffectDuration", which is FALSE AS A MECHANISM — the duration is
+	 *  AFogVolume::FogDurationSeconds, read off the CDO by RaiseFog(), which
+	 *  takes NO argument; the row's own `EffectDuration` cell is NOT read by the
+	 *  fog arm at all. The old sentence was true only by the COINCIDENCE that
+	 *  both values are `300`. ⭐ TASK-1016 is the row that makes the cell
+	 *  AUTHORITATIVE; until it lands the cell is inert and this comment is the
+	 *  only place that inertness is visible.
+	 *  TASK-839 item (4) — the ONE new value the Fog card dispatches on, and the
+	 *  value TASK-840's `Fog` row writes into its SpellEffect cell
+	 *  character-for-character. Law FOG-§6 (the card), FOG-§9.4 (the duration is
+	 *  `300` — "fog is up for exactly 5 minutes"), FOG-§10.3 (the state machine).
+	 *
+	 *  ⛔⛔ NOT "fog near the caster". Jonathan's ruling (J-F1, FOG-§9.1) is that
+	 *  fog is "completely universal … it will cover the ENTIRE battlefield", so
+	 *  there is no radius on this effect and no AoERadius cell to read. A future
+	 *  reader looking for the missing radius should stop looking: its absence IS
+	 *  the design.
+	 *
+	 *  ⭐⭐ THE EFFECT IS LIVE (TASK-998, 2026-09-04). The paragraph that stood
+	 *  here declared the opposite — that the actor half was held, that
+	 *  `AFogVolume` had zero declarations in Source/, and that ResolveSpell
+	 *  refused this effect out loud — and every sentence of it died the instant
+	 *  the arm inverted. ⛔ It is STRUCK rather than left standing, because a
+	 *  shipped mechanic carrying a comment saying it does not work is exactly the
+	 *  drift defect SC-§65 exists to stop.
+	 *  ⇒ WHAT IS TRUE NOW: `AFogVolume` (Siegebound/FogVolume.h) holds the ONE
+	 *  "fog is active until T" scalar; USpellLibrary::ResolveSpell stamps a
+	 *  `FogDurationSeconds` expiry on it and REFRESHES rather than stacks on a
+	 *  re-cast (J-F16); FSiegeCombatStatics::ReadFogState consults it, so the
+	 *  vision ceiling really fires. The refusal path survives for the one case
+	 *  that still warrants it — a state actor that cannot be found or spawned.
+	 *
+	 *  ⭐ SIBLING, ⛔ KEPT RATHER THAN TIDIED (qa/TASK-1015 NIT-2 asked for exactly
+	 *  that): `BrightSun` has its OWN value — `FogClear`, appended below on
+	 *  2026-09-04 (FOG-§10.1, TASK-982 item (9)). It clears fog and opens a
+	 *  prevention window, which is a DIFFERENT effect, not this one inverted.
+	 *  ⛔ Only the TENSE moved when it landed; the sentence's job — stopping the
+	 *  two effects being overloaded onto one value — is why it is still here.
+	 */
+	FogCover,
+
+	/**
+	 *  ⭐⭐ BrightSun: CLEARS the world-global fog and then PREVENTS new fog for
+	 *  a height-scaled window. TASK-982 item (9) — the ONE new value the
+	 *  `BrightSun` card dispatches on, and the value TASK-983's `BrightSun` row
+	 *  writes into its SpellEffect cell character-for-character. Law FOG-§10.1
+	 *  (the card and its names), FOG-§10.3 (the three-state machine), FOG-§10.7
+	 *  (the 2026-09-04 rulings).
+	 *
+	 *  ⛔⛔ APPENDED AT THE END, ⛔ NOT placed beside `FogCover` for tidiness —
+	 *  and the append-only rule at the top of this enum is aimed squarely at
+	 *  this value. Landing it ABOVE `FogCover` would renumber `FogCover` from 6
+	 *  to 7 and silently re-read every saved `Fog` cell in /Game/Data/DT_Cards as
+	 *  this effect instead. ⭐ THE TIDIEST-LOOKING EDIT IS THE CORRUPTING ONE,
+	 *  and nothing in the toolchain reports it: no compile error, no log line, no
+	 *  red test — except Tests/SiegeFogVolumeTest.cpp test 1, which now pins THIS
+	 *  value as the append point.
+	 *
+	 *  ⛔ THE NAME IS NARROWER THAN THE EFFECT, SAID PLAINLY SO NOBODY "FIXES" IT:
+	 *  `FogClear` names the visible half; the PREVENTION WINDOW is the half that
+	 *  actually decides matches. Both halves resolve through
+	 *  AFogVolume::ApplyBrightSun, and the window is
+	 *  `BrightSunBaseDurationSeconds + BrightSunBonusSecondsPerStep ×
+	 *  floor(height / BrightSunHeightStepUU)` — 120 s + 1 min per 50 ft above the
+	 *  flat-grass datum, sampled ONCE at the cast (J-F15) and UNCAPPED (J-F14).
+	 *  ⛔ Renaming it now needs a CoreRedirect, exactly like a retirement.
+	 *
+	 *  ⛔⛔ AND IT IS THE ONE-WAY DOOR, WHICH IS THE EASIEST THING HERE TO GET
+	 *  WRONG (his sentence, verbatim): "Even when the 'bright sun' fog prevention
+	 *  timer ends, the fog that was cleared STILL REMAINS CLEAR." ⇒ the shield
+	 *  expires to CLEAR, ⛔ NEVER back to FOGGED. There is no suspended fog and no
+	 *  remembered remainder anywhere in the implementation.
+	 */
+	FogClear
 };
 
 /**
@@ -66,14 +155,20 @@ enum class ESpellEffect : uint8
  *  future card can pin GroundCircle or HeroLine in its cards.csv cell
  *  regardless of its effect.
  *
- *  CSV note (flagged, TASK-236): cards.csv is FROZEN this wave outside
- *  TASK-237's single Lightning cell (git-diff confinement at TASK-240), so the
- *  SpellDelivery column header is NOT yet appended to the CSV — every row
- *  deserializes/imports to Auto (the C++ struct default), which reproduces the
- *  directive with zero cell edits. The header append + CONVENTIONS registry
- *  entry ride the next cards.csv wave (manager flagged in
- *  handoffs/TASK-236.md); until then a DT_Cards reimport may log a
- *  missing-column notice for this property — benign, rows keep Auto.
+ *  CSV note — ⛔ CORRECTED 2026-09-04 (TASK-1000). It used to say the column
+ *  header was *"NOT yet appended to the CSV"* because cards.csv was frozen for
+ *  the TASK-236/TASK-240 wave. ⛔ That wave is long over and the sentence went
+ *  false with it: the `SpellDelivery` header IS in Docs/Data/cards.csv today,
+ *  appended at the END (the importer maps by header NAME, not order). ⛔ And TWO
+ *  CELLS ARE POPULATED — `Fireball` and `FrostNova` each pin `HeroLine`
+ *  explicitly, which is REDUNDANT with what `Auto` already resolves for their
+ *  AoEDamage/Freeze effects and is therefore a LIVE TRAP: GetEffectiveDelivery
+ *  branches on the CELL FIRST, so those two never reach the per-effect
+ *  resolution below and retuning it will NOT move them — every OTHER row is
+ *  blank and takes the struct default `Auto`.
+ *  ⚠️ This is the SAME claim shape as the one repaired on `NoticeRange` below,
+ *  and it rotted the same way: *"the header is not in the CSV yet"* is a
+ *  sentence about a FILE THAT MOVES, written in a file that does not.
  */
 UENUM(BlueprintType)
 enum class ESpellDelivery : uint8
@@ -178,6 +273,82 @@ struct GITCLAUDEUNREALTEST_API FCardRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Stats")
 	float MinRange = 0.0f;
 
+	/**
+	 *  ⭐⭐ PER-UNIT NOTICE (ENGAGEMENT) RADIUS in world units — how far this card's unit
+	 *  notices an enemy, bound over ASummonedUnit::AggroRadius in LoadStatsAndStart beside
+	 *  `AttackRange = Row->Range` and applied through ASummonedUnit::ResolveNoticeRadiusUU
+	 *  (TASK-979; FOG-§9.6b, FOG-§9.9, ⭐⭐⭐ FOG-§9.11).
+	 *
+	 *  ⛔⛔ RE-DERIVED WHOLE 2026-09-04 (TASK-1000), ⛔ not patched. Every premise the previous
+	 *  text stood on moved on the same day: 🧑 J-F28 raised the class default, TASK-1004 blanked
+	 *  the one populated cell, and FOG-§9.11 retired the notice==firing identity. The retired
+	 *  numbers appear below ⛔ only where a reader who remembers them must find their
+	 *  replacement, and ⛔ nowhere as live values.
+	 *
+	 *  ⭐ SPARSE BY DESIGN: 0 (or a blank cell) means *"use the class default"*, which is
+	 *  ASummonedUnit::UnitEngagementRadiusUU = 5000 — 🧑 J-F28, *"changing the notice radius for
+	 *  all units to 5000 with no fog and still 609 under fog"*, which SUPERSEDES his own earlier
+	 *  *"2000"* of the same day. ⛔ Do NOT hand-type the default into row after row; that is one
+	 *  number copied thirty-odd times and exactly the drift surface this column exists to avoid.
+	 *
+	 *  ⛔⛔ AND THE COLUMN SHIPS ENTIRELY SPARSE — ⛔ NOT ONE ROW CARRIES A CELL TODAY. TASK-993's
+	 *  Longbowman 3600 was the only populated one and the same 5000 ruling retired it (TASK-1004
+	 *  blanks it: under a 5000 default a 3600 cell would make that card notice LESS than every
+	 *  other unit, inverting the exception it existed for). ⭐ An entirely sparse column is the
+	 *  CORRECT shape, ⛔ not an unfinished one — what ships is the CHANNEL, and a future card
+	 *  opts into its own reach from its own row with zero code (FOG-§9.9).
+	 *
+	 *  ⛔⛔ IT IS NEITHER CAPPED NOR WIDENED — AND ⛔ WHICH MISREADING IS DANGEROUS HAS INVERTED,
+	 *  WHICH IS WHY RE-SIGNING THE OLD WARNING WOULD HAVE BEEN THE WHOLE DEFECT. 5000 is a
+	 *  DEFAULT: ⛔ never a ceiling, and ⛔ never a floor either.
+	 *    • ⛔ AT THE RETIRED 2000 the danger was a CEILING — `FMath::Min(NoticeRange, 2000)` clamped
+	 *      the Longbowman's 3600 back down, silently. ⚠️ At 5000 ⛔ NO SHIPPED CARD SITS ABOVE THE
+	 *      DEFAULT AT ALL, so a `min` is now INERT against today's roster and would go GREEN
+	 *      against every data-derived assertion. ⇒ warning a data author about it FIRST spends
+	 *      their vigilance on the safe operation.
+	 *    • ⛔⛔ THE LIVE DANGER IS THE OPPOSITE SPELLING: an `FMath::Max(NoticeRange, 5000)`, or any
+	 *      *"normalise the blank cell up to the default"* pass, would WIDEN a card that asked for
+	 *      LESS — and the column would stop being an opt-in channel and become a floor nobody
+	 *      voted for. This is the spelling his 5000 made reachable.
+	 *  ⛔ Nothing errors and nothing logs for either, so the refusal is EXECUTED, not described:
+	 *  ResolveNoticeRadiusUU's middle branch is a PASS-THROUGH IN BOTH DIRECTIONS, and both
+	 *  spellings are asserted ABSENT by Tests/SiegeUnitNoticeRangeTest.cpp — the anti-cap half by
+	 *  a SYNTHETIC value above the default and by a structural probe, ⛔ never by a card, because
+	 *  no card can demonstrate it any more.
+	 *  ⇒ ⭐ THE ONE UNIVERSAL CEILING IN THIS SYSTEM IS FOG'S VISION CEILING
+	 *  (FSiegeFogTuning::FogVisionCeilingUU, 609.6 uu by default), applied as a `min` at the ONE
+	 *  chokepoint inside the acquisition funnel (FOG-§7) and ⛔ nowhere else. ⛔ Never a second
+	 *  ceiling, and ⛔ never one here.
+	 *
+	 *  ⛔ IT IS NOT `Range`. `Range` is the FIRING reach (the Longbowman keeps 3600 there,
+	 *  untouched); this is the reach at which a target may be ACQUIRED at all. ⛔⛔ THE IDENTITY
+	 *  RULE IS RETIRED FOR EVERY CLASS (⭐⭐⭐ FOG-§9.11): notice and firing are now DIFFERENT
+	 *  numbers on every ranged card in the game — Longbowman 5000/3600, Archer 5000/2100, Wizard
+	 *  5000/2100 — so they must NOT be collapsed into one column, and melee fires at 120 and
+	 *  would never chase anything if it only noticed at 120.
+	 *
+	 *  ⚠️ A CELL HAS A LEASH CONSEQUENCE, said here because the author of the cell is who needs
+	 *  it: the leash a drop site applies is ASummonedUnit::ResolveEffectiveLeashRangeUU =
+	 *  max(LeashRange, notice × LeashMarginMultiplier). Below the crossover (`LeashRange /
+	 *  LeashMarginMultiplier` — ⛔ DERIVED there, never typed here, and pinned by test 3(f) in
+	 *  Tests/SiegeUnitNoticeRangeTest.cpp) the floor wins and a cell moves nothing; ⛔ above it a
+	 *  cell lengthens the leash too, automatically and with no edit at any drop site.
+	 *
+	 *  ⛔ A NON-COMBAT CLASS IGNORES THIS CELL ENTIRELY. AMinerUnit/ASorcererUnit seal
+	 *  themselves with AggroRadius 0 in their constructors, and ResolveNoticeRadiusUU refuses to
+	 *  write over a non-positive class default — a card cell can never un-seal a sealed unit.
+	 *
+	 *  CSV note: the `NoticeRange` header IS in Docs/Data/cards.csv (appended at the END, like
+	 *  CardArt and SpellDelivery before it — the DataTable importer maps by header NAME, not
+	 *  order), and the property is present in /Game/Data/DT_Cards' row schema, measured there at
+	 *  this struct default on every row (TASK-993 authored the column; TASK-1005 measured the
+	 *  asset half). ⛔ What is empty is every CELL: every row deserializes to 0.0 ⇒ every unit
+	 *  resolves to its class default ⇒ ⛔ zero behaviour change from the column's existence,
+	 *  which is the point rather than a caveat.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Stats")
+	float NoticeRange = 0.0f;
+
 	/** Spawner building: CardID spawned every SpawnInterval seconds (GDD 4). Barracks = Footman. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spawner")
 	FName SpawnCardID = NAME_None;
@@ -216,9 +387,14 @@ struct GITCLAUDEUNREALTEST_API FCardRow : public FTableRowBase
 	 *  HOW the spell effect is delivered (TASK-236, CONVENTIONS "Spell delivery
 	 *  overhaul (2026-07-21)"). Auto (the sparse default — see the enum doc)
 	 *  resolves per-effect: AoEDamage/Freeze -> HeroLine, others ->
-	 *  GroundCircle; the explicit values are the per-card data override. Column
-	 *  header not yet in cards.csv (frozen this wave — flagged); rows default
-	 *  to Auto.
+	 *  GroundCircle; the explicit values are the per-card data override. The
+	 *  column header IS in cards.csv, where Fireball and FrostNova each pin
+	 *  HeroLine in their own cell — a populated cell OUTRANKS the per-effect
+	 *  map, so retuning that map will NOT move those two — while every OTHER
+	 *  row is blank and takes Auto
+	 *  (⛔ corrected 2026-09-04, TASK-1000 — this tooltip is REFLECTED into
+	 *  the DataTable schema a designer reads in the editor, and it was still
+	 *  saying *"header not yet in cards.csv (frozen this wave)"*).
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Spell")
 	ESpellDelivery SpellDelivery = ESpellDelivery::Auto;

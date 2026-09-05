@@ -38,18 +38,42 @@
  *  exactly ONE `609.6` and ONE `304.8` in the codebase, and both are in FSiegeFogTuning.
  *
  *  ───────────────────────────────────────────────────────────────────────────────────────
+ *  ⛔⛔⭐⭐ AMENDED 2026-09-04 (TASK-981, law FOG-§9.2) — THE CURVE UNDER TEST **CHANGED SIDES**,
+ *  AND THIS BLOCK IS RE-DERIVED RATHER THAN RE-SIGNED (`SC-§60`)
+ *  ───────────────────────────────────────────────────────────────────────────────────────
+ *
+ *  ⚠️⚠️ READ THIS BEFORE TRUSTING ANY "…AND THIS KILLS X" COMMENT BELOW. Until 2026-09-04 the
+ *  shipped curve was a QUADRATIC EASE-IN and **BEER-LAMBERT WAS ONE OF THE RED CONTROLS** — the
+ *  midpoint row was written precisely because linear, smoothstep AND Beer-Lambert all fail it.
+ *  ⛔ Jonathan has now ruled Beer-Lambert IN, so that assertion is not merely stale: **the old
+ *  red control is the very fixture that just changed sides.** ⇒ every discriminator in this file
+ *  was RE-DERIVED against the new curve, and the list of shapes each row kills is restated from
+ *  scratch below. ⛔ A row inherited unchanged would now be asserting the losing side of a
+ *  ruling while looking like coverage.
+ *
+ *  ⛔⛔ AND THE OLD CURVE IS NOW ITSELF A RED CONTROL, BY NAME. Test 3 asserts the shipped values
+ *  are far from what `t²` returns at the same distances — including at the onset, where the two
+ *  disagree by **0.859 out of 1.0**, which is the entire substance of his ruling.
+ *
+ *  ───────────────────────────────────────────────────────────────────────────────────────
  *  ⭐ WHY EVERY ASSERTION HERE CAN ACTUALLY FAIL — the standing worry, answered concretely
  *  ───────────────────────────────────────────────────────────────────────────────────────
  *
- *  ⚠️ A falloff test passes TRIVIALLY if every sample it takes happens to sit inside the clear
- *  onset — the function returns 0, the sweep is monotonic, and the suite reports green over a
- *  curve nobody exercised. ⛔ That failure mode is defused explicitly, not hoped away:
- *    • test 2 asserts the two BOUNDARIES and four distances BEYOND the ceiling;
- *    • test 3 samples three points strictly BETWEEN them and asserts values that a LINEAR ramp
- *      (and a smoothstep, and a Beer-Lambert curve) all FAIL — the between-rows discriminate
- *      the shipped shape from its plausible alternatives, they do not merely observe it;
- *    • test 4's sweep COUNTS its samples by category and asserts that all three categories are
- *      non-empty, so a sweep that never left the clear bubble fails the sweep test itself.
+ *  ⚠️ A falloff test passes TRIVIALLY if every sample it takes happens to sit somewhere the
+ *  curve is flat — the suite reports green over a shape nobody exercised. ⛔ That failure mode is
+ *  defused explicitly, not hoped away:
+ *    • test 2 asserts the camera, HIS TWO QUOTED NUMBERS (86% at 10 ft, 98% at 20 ft), and the
+ *      asymptotic tail beyond the ceiling;
+ *    • ⭐ test 3 asserts three ABSOLUTE values derived from his ratio by a DIFFERENT arithmetic
+ *      route than the implementation uses (`Sqrt` here vs `Exp`/`Loge` there), so the two can
+ *      only agree if σ really is derived from the ceiling. It then names the shapes each row
+ *      kills — the retired `t²`, linear-in-distance, smoothstep and `sqrt(d/ceiling)`;
+ *    • ⭐⭐ test 4's sweep counts a NEW category re-derived for this curve: samples INSIDE the
+ *      old onset that are strictly positive. Under the retired curve every one of those was
+ *      exactly 0, so that counter is the sweep-level embodiment of his ruling and it goes RED
+ *      against any curve that still carries a clear bubble;
+ *    • ⭐ test 10 RETUNES both tunables and asserts the curve moves with them, so a hardcoded σ
+ *      — the single most plausible wrong implementation — cannot pass.
  *
  *  ───────────────────────────────────────────────────────────────────────────────────────
  *  ⛔⛔ WHAT THESE TESTS DO **NOT** COVER — stated so nobody mistakes green for done
@@ -142,6 +166,68 @@ namespace SiegeFogTestFixture
 		return Result;
 	}
 
+	// ═══════════════════════════════════════════════════════════════════════════════
+	//  ⭐⭐ THE BEER-LAMBERT EXPECTATIONS (TASK-981, FOG-§9.2) — DERIVED FROM **HIS RATIO**
+	//  BY A ⛔ DIFFERENT ARITHMETIC ROUTE THAN THE IMPLEMENTATION USES
+	// ═══════════════════════════════════════════════════════════════════════════════
+
+	/**
+	 *  ⭐ HIS NUMBER, from his own sentence: *"Tuned to 98% obscured at 20 feet"* ⇒ 2% of the
+	 *  light still arrives. ⛔ Written here as the RATIO he named, not transcribed from the
+	 *  header's `FogTransmittanceAtCeiling` — an expectation copied from its subject agrees with
+	 *  a wrong subject by construction and reports SAFE forever (`SHIP-§9c`).
+	 */
+	constexpr float HisTransmittanceAtCeiling = 0.02f;
+
+	/**
+	 *  ⭐⭐⭐ THE LOAD-BEARING TRICK IN THIS FILE, AND IT IS WHY THESE ROWS ARE EVIDENCE RATHER
+	 *  THAN A RESTATEMENT: the three expectations below are built with **`FMath::Sqrt`**, while
+	 *  `FogDensityAt` computes its answer with **`FMath::Loge` + `FMath::Exp`**. Two different
+	 *  functions, two different code paths, one agreed answer.
+	 *
+	 *  ⛔⛔ THIS IS ⛔ NOT THE BANNED √ TEST. `FOG-§9.2` and `TASK-981(3)` forbid asserting the
+	 *  RELATION `f(d/2) == √f(d)` — a THEOREM of the model, true for every σ and every d, which
+	 *  could therefore never fail and would report SAFE forever. ⭐ What is asserted here is
+	 *  something entirely different: three **ABSOLUTE NUMBERS**. They depend on σ being derived
+	 *  from `FogVisionCeilingUU` specifically, so they go RED against a hardcoded σ, against a σ
+	 *  derived from the ONSET instead (which reads 0.9996 at the ceiling, not 0.98), against a
+	 *  base-10 log, and against a sign error. ⛔ The √ is the DERIVATION PATH, never the CLAIM.
+	 *
+	 *      T(ceiling)     = 0.02            ⇒ obscuration 0.9800   ⭐ his "98% at 20 feet"
+	 *      T(ceiling/2)   = √0.02           ⇒ obscuration 0.8586   ⭐ his "86% at 10 feet"
+	 *      T(ceiling/4)   = √√0.02          ⇒ obscuration 0.6239
+	 */
+	static float ExpectedObscurationAtCeiling()
+	{
+		return 1.f - HisTransmittanceAtCeiling;
+	}
+
+	static float ExpectedObscurationAtHalfTheCeiling()
+	{
+		return 1.f - FMath::Sqrt(HisTransmittanceAtCeiling);
+	}
+
+	static float ExpectedObscurationAtAQuarterOfTheCeiling()
+	{
+		return 1.f - FMath::Sqrt(FMath::Sqrt(HisTransmittanceAtCeiling));
+	}
+
+	/**
+	 *  ⛔⛔ THE RETIRED CURVE, KEPT ALIVE **ONLY AS A RED CONTROL** (`SC-§60`). This is the `t²`
+	 *  ease-in TASK-981 deleted from the shipping header, reimplemented here so test 3 can assert
+	 *  the shipped function is NOT it. ⭐ Keeping the loser computable is what turns "we changed
+	 *  the curve" into a measurement instead of a claim.
+	 *  ⛔ It is deliberately NOT reachable from shipping code and must never be promoted out of
+	 *  this fixture.
+	 */
+	static float RetiredQuadraticDensityAt(float DistanceUU)
+	{
+		if (DistanceUU <= DerivedOnsetUU)   { return 0.f; }
+		if (DistanceUU >= DerivedCeilingUU) { return 1.f; }
+		const float T = (DistanceUU - DerivedOnsetUU) / (DerivedCeilingUU - DerivedOnsetUU);
+		return T * T;
+	}
+
 	/** The shipped ranges this feature is measured against, read from Docs/Data/cards.csv. */
 	constexpr float LongbowmanRange    = 3600.f;
 	constexpr float ArcherRange        = 2100.f; // == the Wizard's
@@ -206,21 +292,36 @@ bool FSiegeFogConversionTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("(d) The ceiling is exactly twice the onset — 20 ft is twice 10 ft, and the pair must stay coherent"),
 		Tuning.FogVisionCeilingUU, Tuning.FogVisionOnsetUU * 2.f, Tolerance);
 
-	// ── (e) The shipped falloff shape is the CURVE that was ruled, not linear ────────────
-	TestEqual(TEXT("(e) ⭐ The shipped exponent is 2 — the quadratic ease-in ruled for \"a LIGHT amount … thicker and thicker\""),
-		Tuning.FogDensityExponent, 2.f, Exact);
+	// ── (e) ⭐⭐ THE SHAPE KNOB IS HIS RATIO — 2% transmittance = "98% obscured at 20 feet" ──
+	// ⛔ REPLACED 2026-09-04 (TASK-981). This row used to assert `FogDensityExponent == 2` for the
+	// quadratic ease-in; that tunable is RETIRED and the ruling it encoded is overturned.
+	// ⭐ The expectation is HIS PERCENTAGE re-derived (1 − 0.98), never transcribed from the
+	// header, so it disagrees with a wrong header the moment the header is wrong.
+	TestEqual(TEXT("(e) ⭐⭐ The shipped transmittance at the ceiling is 0.02 — his \"98% obscured at 20 feet\", written as the 2% that still gets through"),
+		Tuning.FogTransmittanceAtCeiling, 1.f - 0.98f, Tolerance);
+
+	// ⛔ And it is a RATIO, so it must live strictly inside (0, 1). At 0 the extinction
+	// coefficient is INFINITE (an opaque screen at the camera); at 1 it is ZERO (a 50-gold card
+	// that does nothing). Both are game-breaking values and this row is the tripwire for a retune
+	// that lands on either.
+	TestTrue(TEXT("(e) ⛔ The transmittance is strictly inside (0, 1) — 0 makes σ infinite (whiteout), 1 makes σ zero (no fog at all)"),
+		Tuning.FogTransmittanceAtCeiling > 0.f && Tuning.FogTransmittanceAtCeiling < 1.f);
 
 	return true;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  2. ⭐ THE TWO BOUNDARIES — exactly clear at the onset, exactly opaque at the
-//     ceiling, and a HARD CUT (not an asymptote) everywhere beyond it
+//  2. ⭐⭐ HIS TWO QUOTED NUMBERS, AS ASSERTIONS — 86% obscured at 10 ft and 98% at
+//     20 ft — plus the asymptotic tail that REPLACED the hard cut on the picture
+//
+//  ⛔⛔ REWRITTEN 2026-09-04 (TASK-981, FOG-§9.2). This test used to assert "EXACTLY
+//  0 at the onset, EXACTLY 1 at the ceiling". ⛔ BOTH HALVES ARE NOW FALSE, and not
+//  because they were wrong — because Jonathan overruled the curve they described.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FSiegeFogBoundariesTest,
-	"Siegebound.Fog.DensityIsExactlyZeroAtTheOnsetAndExactlyOneAtAndBeyondTheCeiling",
+	"Siegebound.Fog.DensityIsExactlyZeroAtTheCameraAndIsHisEightySixPercentAtTenFeetAndNinetyEightAtTwenty",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FSiegeFogBoundariesTest::RunTest(const FString& Parameters)
@@ -231,46 +332,51 @@ bool FSiegeFogBoundariesTest::RunTest(const FString& Parameters)
 	const float Onset   = Tuning.FogVisionOnsetUU;
 	const float Ceiling = Tuning.FogVisionCeilingUU;
 
-	// ── (a) THE CLEAR BUBBLE is EXACTLY clear — 0, not near-0 ───────────────────────────
-	// Everything closer than 10 ft must render bit-identically to the unfogged game. A curve
-	// that leaked 0.001 of density at the camera would haze the entire melee band, which
-	// FOG-§2 lists as UNAFFECTED.
-	TestEqual(TEXT("(a) At the camera (0 uu) the world is EXACTLY clear"),
+	// ── (a) THE CAMERA IS EXACTLY CLEAR — the ONE exact value the new curve still has ────
+	// `1 − exp(0)` is 0 identically, so this is a real bit-level claim rather than a rounding
+	// hope. ⛔ It is also the guard that stops a negative distance producing a NEGATIVE density.
+	TestEqual(TEXT("(a) At the camera (0 uu) the world is EXACTLY clear — 1 − exp(0) = 0, to the bit"),
 		FSiegeFogStatics::FogDensityAt(0.f, Tuning), 0.f, Exact);
 
-	TestEqual(TEXT("(a) At melee range (120 uu — every melee unit in the game) EXACTLY clear"),
-		FSiegeFogStatics::FogDensityAt(MeleeRange, Tuning), 0.f, Exact);
+	TestEqual(TEXT("(a) ⛔ A NEGATIVE distance is EXACTLY clear too — `1 − exp(+x)` is unbounded BELOW and must never leak a negative density to the renderer"),
+		FSiegeFogStatics::FogDensityAt(-500.f, Tuning), 0.f, Exact);
 
-	TestEqual(TEXT("(a) ⭐ AT the onset itself the fog has not yet begun — EXACTLY 0, the boundary is closed on the clear side"),
-		FSiegeFogStatics::FogDensityAt(Onset, Tuning), 0.f, Exact);
+	// ── (b) ⭐⭐⭐ HIS TWO NUMBERS. THIS IS THE WHOLE RULING, AS TWO ROWS ─────────────────
+	// ⛔ Both expectations are derived from his RATIO by `Sqrt`, while the subject computes with
+	// `Loge`/`Exp`. They can only agree if σ is genuinely −ln(T)/ceiling.
+	TestEqual(TEXT("(b) ⭐⭐ AT the ceiling (20 ft / 609.6 uu) the fog is 98.00% obscured — HIS \"98% obscured at 20 feet\", asserted as 1 − 0.02"),
+		FSiegeFogStatics::FogDensityAt(Ceiling, Tuning), ExpectedObscurationAtCeiling(), Tolerance);
 
-	// One unit PAST the onset is already non-zero: the ramp starts immediately, it does not have
-	// a dead band. Fails against an implementation that floored or quantised the ramp.
-	TestTrue(TEXT("(a) ⭐ ONE uu past the onset is already non-zero — the fog begins where he said, with no dead band"),
-		FSiegeFogStatics::FogDensityAt(Onset + 1.f, Tuning) > 0.f);
+	TestEqual(TEXT("(b) ⭐⭐ AT the onset (10 ft / 304.8 uu) the fog is 85.86% obscured — HIS \"it forces 86% at 10\", asserted as 1 − √0.02"),
+		FSiegeFogStatics::FogDensityAt(Onset, Tuning), ExpectedObscurationAtHalfTheCeiling(), Tolerance);
 
-	// …and it is still only a WHISPER there — his "LIGHT amount of fog starting at about 10 ft".
-	// ⛔ This row FAILS against a linear ramp, which reads 0.0033 here against the quadratic's
-	// 0.0000108. It is asserted as an upper bound so it also fails against anything steeper.
-	//
-	// ⚠️⛔ THE RATIO, CORRECTED BY TASK-838 (qa/TASK-847.md NIT-2). This comment used to say
-	// linear was "~3×" the quadratic. ⛔ It is ⛔ ~305× — and the arithmetic is exact rather than
-	// approximate, which is why the wrong figure was worth fixing in a project that treats its
-	// comments as law: at d = onset + 1, t = 1/(ceiling − onset) = 1/304.8, so linear reads t and
-	// quadratic reads t², and the ratio is 1/t = ⛔ the band width itself, 304.8. FOG-§7a states
-	// the same fact as "300×". ⛔ The ASSERTION below was always correct and does kill linear
-	// (0.0033 is 3.3× the 0.001 bound); ⛔ only the prose was wrong.
-	TestTrue(TEXT("(a) ⭐ …and it is a WHISPER, not an edge — density one uu past the onset is under 0.001 (linear reads ~305× more)"),
-		FSiegeFogStatics::FogDensityAt(Onset + 1.f, Tuning) < 0.001f);
+	// ── (c) ⛔⛔ THE INVERSION, ASSERTED BY NAME — the row that fails against what shipped ─
+	// Until 2026-09-04 this exact distance returned EXACTLY 0. His ruling moved it to 0.859. ⇒ a
+	// tree that still carried the retired curve fails HERE, by 0.859 out of 1.0, which is the
+	// largest single disagreement anywhere in this suite.
+	TestTrue(TEXT("(c) ⛔⛔ At the onset the fog is THICK, not absent — the retired t² curve returned EXACTLY 0 here and this row is what kills it"),
+		FSiegeFogStatics::FogDensityAt(Onset, Tuning) > 0.5f);
 
-	// ── (b) ⛔⛔ THE HARD CUT — EXACTLY 1.0 AT the ceiling ───────────────────────────────
-	// This is the row an ASYMPTOTE fails. Beer-Lambert, an exponential decay, or any curve
-	// approaching 1 without reaching it reads 0.9x here and this assertion is EXACT.
-	TestEqual(TEXT("(b) ⭐⛔ AT the ceiling (20 ft) the fog is EXACTLY opaque — 1.0 to the bit. An asymptote reads 0.9x here and FAILS"),
-		FSiegeFogStatics::FogDensityAt(Ceiling, Tuning), 1.f, Exact);
+	// ── (d) ⛔⛔ THE PICTURE IS NOT A HARD CUT ANY MORE — asymptotic, by his choice ───────
+	// ⛔ THE MECHANIC STILL IS ONE, and that divergence is deliberate (FOG-§9.2): at the ceiling
+	// the picture says "you can just barely make something out" while acquisition says ZERO.
+	// Nobody harmonises them. This row is the one a hard-cut density fails.
+	TestTrue(TEXT("(d) ⛔⛔ AT the ceiling the picture is strictly LESS than fully obscured — Beer-Lambert never arrives, and a curve that reads 1.0 here is the retired hard cut"),
+		FSiegeFogStatics::FogDensityAt(Ceiling, Tuning) < 1.f);
 
-	// ── (c) ⛔ BEYOND THE CEILING — and these are the rows a curve sampled only inside the
-	//     onset can never reach. Each is a real distance from FOG-§2's table.
+	// ── (e) ⚠️ THE DECLARED CONSEQUENCE: THE MELEE BAND IS NOW HAZED ────────────────────
+	// The old curve rendered 120 uu perfectly clear and FOG-§2 listed melee as UNAFFECTED. Under
+	// his ruling it is ~53.7% obscured. ⭐ Asserted rather than left to be discovered — and the
+	// row immediately after proves the MECHANIC is untouched, which is the half that matters.
+	TestTrue(TEXT("(e) ⚠️ At melee range (120 uu) the picture is now over HALF obscured — the retired curve rendered it perfectly clear. Declared consequence of his ruling, not a regression"),
+		FSiegeFogStatics::FogDensityAt(MeleeRange, Tuning) > 0.5f);
+
+	TestEqual(TEXT("(e) ⭐⭐ …and the MECHANIC is untouched: a melee unit's 120-uu reach is returned bit-identically under fog. THE LOOK CHANGED; THE GAME DID NOT"),
+		FSiegeFogStatics::EffectiveVisionRadius(MeleeRange, /*bFogActive=*/true, Tuning), MeleeRange, Exact);
+
+	// ── (f) BEYOND THE CEILING — monotone, bounded, and approaching 1 without a step ─────
+	// Each is a real distance from FOG-§2's table. ⛔ These are the samples a curve exercised only
+	// near the camera can never reach.
 	const float BeyondTheCeiling[] = {
 		Ceiling + 1.f,        // one unit past
 		ArrowTowerRange,      //  900 — the Arrow Tower's reach
@@ -283,26 +389,55 @@ bool FSiegeFogBoundariesTest::RunTest(const FString& Parameters)
 	{
 		const float Density = FSiegeFogStatics::FogDensityAt(Distance, Tuning);
 
-		TestEqual(*FString::Printf(TEXT("(c) ⛔ At %.0f uu — beyond the ceiling — the fog is EXACTLY opaque, never 'nearly'"), Distance),
-			Density, 1.f, Exact);
+		TestTrue(*FString::Printf(TEXT("(f) ⛔ At %.0f uu — beyond the ceiling — the fog is at least as thick as his 98%%"), Distance),
+			Density >= ExpectedObscurationAtCeiling());
 
 		// ⛔ And it never OVERSHOOTS. An unclamped linear ramp reads 10.8 at 3600 uu and would
 		// hand the renderer a density far outside [0, 1].
-		TestTrue(*FString::Printf(TEXT("(c) ⛔ …and never exceeds 1.0 at %.0f uu — an unclamped ramp reads 10.8 at Longbowman range"), Distance),
+		TestTrue(*FString::Printf(TEXT("(f) ⛔ …and never exceeds 1.0 at %.0f uu — an unclamped ramp reads 10.8 at Longbowman range"), Distance),
 			Density <= 1.f);
 	}
+
+	// ⭐ ONE uu past the ceiling the picture is still essentially the ceiling's picture — the
+	// curve is smooth THERE, which is exactly where the mechanic is a cliff. ⛔ This row is the
+	// evidence for the "picture and mechanic disagree on purpose" claim in the header.
+	TestTrue(TEXT("(f) ⭐⭐ One uu past the ceiling the PICTURE barely changes (still ~0.98) while ACQUISITION has already gone to zero — the divergence, measured"),
+		FSiegeFogStatics::FogDensityAt(Ceiling + 1.f, Tuning) - FSiegeFogStatics::FogDensityAt(Ceiling, Tuning) < 0.01f);
+
+	TestFalse(TEXT("(f) ⭐⭐ …and the MECHANIC at that same one uu is already absolute — a Longbowman cannot see 609.6 + 1"),
+		FSiegeFogStatics::IsVisibleThroughFog(Ceiling + 1.f, LongbowmanRange, /*bFogActive=*/true, Tuning));
 
 	return true;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  3. ⭐⭐ THE DISCRIMINATING TEST — the falloff ACCELERATES, and these rows fail
-//     against a LINEAR ramp, against smoothstep, and against Beer-Lambert
+//  3. ⭐⭐⭐ THE DISCRIMINATING TEST — **INVERTED 2026-09-04 (TASK-981)**, AND ITS
+//     ANTI-FAKE ARGUMENT IS RE-DERIVED FROM SCRATCH RATHER THAN RE-SIGNED
+//
+//  ⛔⛔ THE RULING THIS ROW'S POLARITY NOW SERVES: `FOG-§9.2`, from Jonathan's
+//  *"Tuned to 98% obscured at 20 feet, it forces 86% at 10 … so lets do that."*
+//
+//  ⛔⛔⭐⭐ WHY THIS BANNER IS LONG (`SC-§60` cl. 2/cl. 3 — the row is KEPT AND
+//  INVERTED, never deleted, WITH ITS HISTORY):
+//
+//  This test used to be titled "…AcceleratesAndIsNotLinear" and it asserted the
+//  midpoint reads **0.25**. Its stated red controls were linear (0.50), smoothstep
+//  (0.50) and ⛔ **BEER-LAMBERT (~0.63)**. ⇒ **THE CURVE THIS ROW EXISTED TO KILL IS
+//  THE CURVE THAT NOW SHIPS.** That is the exact hazard `SC-§60` cl. 3 names: *the
+//  old red control is frequently the very fixture that just changed sides.*
+//
+//  ⛔ SO NOTHING BELOW IS INHERITED. Re-derived, and each row says what it kills:
+//    • the THREE ANCHORS kill every alternative SHAPE, including `sqrt(d/ceiling)`,
+//      which passes the concavity rows but misses 0.8586 by 0.15;
+//    • the RETIRED `t²` CURVE is now itself a red control, computed in the fixture;
+//    • CONCAVITY replaces acceleration — and it is a genuine flip, not a rewording:
+//      the old row demanded the second half gain MORE, this one demands it gain LESS.
+//      ⛔ A tree still carrying the old curve fails it in the opposite direction.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FSiegeFogFalloffAcceleratesTest,
-	"Siegebound.Fog.TheFalloffAcceleratesBetweenTheOnsetAndTheCeilingAndIsNotLinear",
+	"Siegebound.Fog.TheFalloffIsBeerLambertExtinctionAndDeceleratesAndIsNotTheRetiredQuadratic",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FSiegeFogFalloffAcceleratesTest::RunTest(const FString& Parameters)
@@ -310,75 +445,87 @@ bool FSiegeFogFalloffAcceleratesTest::RunTest(const FString& Parameters)
 	using namespace SiegeFogTestFixture;
 
 	const FSiegeFogTuning Tuning = ShippedTuning();
-	const float Onset     = Tuning.FogVisionOnsetUU;
-	const float Ceiling   = Tuning.FogVisionCeilingUU;
-	const float BandWidth = Ceiling - Onset; // = 304.8 uu — the ramp his sentence describes
+	const float Ceiling = Tuning.FogVisionCeilingUU;
 
-	// Three points STRICTLY BETWEEN the boundaries. ⛔ These are the samples that make this file
-	// a test of the CURVE rather than of two if-statements.
-	const float QuarterPoint = Onset + 0.25f * BandWidth; // t = 0.25  (381.0 uu)
-	const float MidPoint     = Onset + 0.50f * BandWidth; // t = 0.50  (457.2 uu)
-	const float ThreeQuarter = Onset + 0.75f * BandWidth; // t = 0.75  (533.4 uu)
+	// ⛔ THE ANCHORS ARE FRACTIONS OF THE CEILING, NOT POINTS IN A BAND. The old test sampled
+	// `onset + t × (ceiling − onset)` because the curve lived in that band. Beer-Lambert has no
+	// band — it is defined from the CAMERA — so the natural anchors are ceiling/4, ceiling/2
+	// (which is the onset) and the ceiling itself.
+	const float QuarterOfCeiling = Ceiling * 0.25f; // 152.4 uu —  5 ft
+	const float HalfOfCeiling    = Ceiling * 0.50f; // 304.8 uu — 10 ft, == FogVisionOnsetUU
+	const float ThreeQuarters    = Ceiling * 0.75f; // 457.2 uu — 15 ft
 
-	const float AtQuarter = FSiegeFogStatics::FogDensityAt(QuarterPoint, Tuning);
-	const float AtMid     = FSiegeFogStatics::FogDensityAt(MidPoint,     Tuning);
-	const float AtThree   = FSiegeFogStatics::FogDensityAt(ThreeQuarter, Tuning);
+	const float AtQuarter = FSiegeFogStatics::FogDensityAt(QuarterOfCeiling, Tuning);
+	const float AtHalf    = FSiegeFogStatics::FogDensityAt(HalfOfCeiling,    Tuning);
+	const float AtCeiling = FSiegeFogStatics::FogDensityAt(Ceiling,          Tuning);
 
-	// ── (a) ⭐⭐ THE MIDPOINT IS THE WHOLE ARGUMENT ──────────────────────────────────────
-	// quadratic  t² at t=0.50  ->  0.2500   <- what must ship
-	// LINEAR     t  at t=0.50  ->  0.5000   <- FAILS this row by 0.25, i.e. 2,500× the tolerance
-	// smoothstep 3t²-2t³       ->  0.5000   <- FAILS it identically
-	// Beer-Lambert (concave)   ->  ~0.63    <- FAILS it in the other direction
-	// ⇒ this single assertion separates the shipped shape from every plausible alternative.
-	TestEqual(TEXT("(a) ⭐⭐ HALFWAY through the band the fog is only a QUARTER thick (t² at t=0.5 = 0.25). ⛔ A LINEAR ramp reads 0.50 and FAILS here — so does smoothstep"),
-		AtMid, 0.25f, Tolerance);
+	// ── (a) ⭐⭐⭐ THE THREE ANCHORS. THIS IS THE WHOLE MODEL, AS THREE NUMBERS ────────────
+	// ⛔ Each expectation is built with `Sqrt` from HIS ratio; the subject computes with
+	// `Loge`/`Exp`. ⇒ agreement is a falsifiable coincidence, not a transcription.
+	// ⛔⛔ AND THIS IS NOT THE BANNED √ TEST: the claim is three ABSOLUTE values, not the
+	// relation `f(d/2) == √f(d)` (which is a theorem and could never fail).
+	TestEqual(TEXT("(a) ⭐⭐ At the CEILING (20 ft): 0.9800 — his \"98% obscured at 20 feet\", derived as 1 − 0.02"),
+		AtCeiling, ExpectedObscurationAtCeiling(), Tolerance);
 
-	TestTrue(TEXT("(a) ⛔ …asserted as a bound as well, so any shape at or above linear fails: midpoint density is well UNDER 0.5"),
-		AtMid < 0.4f);
+	TestEqual(TEXT("(a) ⭐⭐ At HALF the ceiling (10 ft): 0.8586 — his \"it forces 86% at 10\", derived as 1 − √0.02"),
+		AtHalf, ExpectedObscurationAtHalfTheCeiling(), Tolerance);
 
-	// ── (b) The other two between-points, same discrimination ───────────────────────────
-	// quadratic 0.0625 vs linear 0.25 — a 4× separation.
-	TestEqual(TEXT("(b) A QUARTER of the way in, density is 0.0625 (t² at t=0.25). ⛔ Linear reads 0.25 — a 4× separation"),
-		AtQuarter, 0.0625f, Tolerance);
+	TestEqual(TEXT("(a) ⭐ At a QUARTER of the ceiling (5 ft): 0.6239 — derived as 1 − √√0.02"),
+		AtQuarter, ExpectedObscurationAtAQuarterOfTheCeiling(), Tolerance);
 
-	// quadratic 0.5625 vs linear 0.75.
-	TestEqual(TEXT("(b) THREE QUARTERS of the way in, density is 0.5625 (t² at t=0.75). ⛔ Linear reads 0.75"),
-		AtThree, 0.5625f, Tolerance);
+	// ⛔ σ derived from the ONSET instead of the ceiling — the single most plausible wrong
+	// derivation — reads 0.9996 at the ceiling. This bound kills it without naming it.
+	TestTrue(TEXT("(a) ⛔ The ceiling reads 0.98 and NOT ~0.9996 — a σ derived from the ONSET instead of the CEILING fails here"),
+		AtCeiling < 0.99f);
 
-	// ── (c) ⭐ "THICKER AND THICKER", AS AN ASSERTION ABOUT THE SECOND DERIVATIVE ────────
-	// His doubled comparative is an ACCELERATION claim, and this is what it means numerically:
-	// the band's second half must deliver strictly MORE density than its first half.
-	// ⛔ A LINEAR ramp delivers exactly 0.5 in each half and fails this row flat.
-	const float GainedInFirstHalf  = AtMid - 0.f;
-	const float GainedInSecondHalf = 1.f - AtMid;
+	// ── (b) ⛔⛔ THE RETIRED `t²` CURVE, AS AN EXPLICIT RED CONTROL ──────────────────────
+	// ⭐ Keeping the loser computable is what turns "we changed the curve" into a measurement.
+	// Measured separations: 0.624 at 5 ft · 0.859 at 10 ft · 0.020 at 20 ft.
+	TestTrue(TEXT("(b) ⛔⛔ At the ONSET the shipped curve and the RETIRED t² curve disagree by more than 0.5 — t² returned EXACTLY 0 here and this is the substance of his ruling"),
+		FMath::Abs(AtHalf - RetiredQuadraticDensityAt(HalfOfCeiling)) > 0.5f);
 
-	TestTrue(TEXT("(c) ⭐⭐ The SECOND half of the band thickens more than the first (0.75 vs 0.25) — that is \"thicker and thicker\". ⛔ A LINEAR ramp splits it 0.5/0.5 and FAILS"),
-		GainedInSecondHalf > GainedInFirstHalf);
+	TestTrue(TEXT("(b) ⛔ …and at a quarter of the ceiling they disagree by more than 0.5 too — t² is still inside its clear bubble there"),
+		FMath::Abs(AtQuarter - RetiredQuadraticDensityAt(QuarterOfCeiling)) > 0.5f);
 
-	// And the gap is decisive, not marginal — it fails against anything close to linear.
-	TestTrue(TEXT("(c) ⛔ …and the acceleration is decisive: the second half delivers at least twice the first"),
-		GainedInSecondHalf > GainedInFirstHalf * 2.f);
+	// ⛔ At the ceiling the two are only 0.02 apart — small, but 200× the tolerance, and it is
+	// the row that kills the retired HARD CUT on the picture specifically.
+	TestTrue(TEXT("(b) ⛔ At the ceiling the retired curve read EXACTLY 1.0 and the shipped one reads 0.98 — a difference of 0.02, which is 200× the tolerance"),
+		FMath::Abs(AtCeiling - RetiredQuadraticDensityAt(Ceiling)) > Tolerance * 100.f);
 
-	// The rate itself rises across the band: three equal steps must gain progressively more.
-	const float StepGainEarly  = AtQuarter - FSiegeFogStatics::FogDensityAt(Onset, Tuning);
-	const float StepGainMiddle = AtMid     - AtQuarter;
-	const float StepGainLate   = AtThree   - AtMid;
+	// ── (c) ⛔ LINEAR-IN-DISTANCE IS KILLED TOO, and it is a DIFFERENT curve from the old
+	//     band-normalised linear the retired test spoke about ─────────────────────────────
+	// `d / ceiling` reads 0.25 / 0.50 / 1.00 at these three anchors against 0.62 / 0.86 / 0.98.
+	TestTrue(TEXT("(c) ⛔ NOT linear-in-distance: at a quarter of the ceiling `d/ceiling` reads 0.25 and the shipped curve reads 0.62"),
+		AtQuarter > 0.5f);
 
-	TestTrue(TEXT("(c) Equal steps of DISTANCE buy increasing amounts of density — early < middle"),
-		StepGainEarly < StepGainMiddle);
+	TestTrue(TEXT("(c) ⛔ …and NOT sqrt(d/ceiling) either, which reads 0.707 at half the ceiling against the shipped 0.8586"),
+		AtHalf > 0.80f);
 
-	TestTrue(TEXT("(c) …and middle < late. ⛔ A LINEAR ramp makes all three equal; a CONCAVE (Beer-Lambert) curve reverses them"),
-		StepGainMiddle < StepGainLate);
+	// ── (d) ⭐⭐ CONCAVITY — THE POLARITY FLIP, STATED AS THE OPPOSITE OF WHAT SHIPPED ───
+	// ⛔ THE OLD ROW: "the SECOND half of the band thickens MORE than the first (0.75 vs 0.25)".
+	// ⛔ THE NEW ROW: the FIRST half thickens more. Measured 0.8586 vs 0.1214 — a 7.07× ratio.
+	// ⇒ ⛔ a tree still carrying `t²` fails this by asserting the reverse, and LINEAR (which
+	// splits any interval 50/50) and SMOOTHSTEP (symmetric about the midpoint) both fail it flat.
+	const float GainedInFirstHalf  = AtHalf - 0.f;
+	const float GainedInSecondHalf = AtCeiling - AtHalf;
 
-	// ── (d) The exponent is a real tunable, and 1.0 really does yield linear ────────────
-	// This is the "one-word retune to linear" claim in the header, asserted rather than
-	// promised. It also proves tests (a)-(c) above are measuring the EXPONENT and not an
-	// accident of the boundary code.
-	FSiegeFogTuning LinearTuning = ShippedTuning();
-	LinearTuning.FogDensityExponent = 1.f;
+	TestTrue(TEXT("(d) ⭐⭐ The FIRST half of the distance thickens MORE than the second — Beer-Lambert is CONCAVE. ⛔ The retired t² curve asserted the exact opposite, and LINEAR splits it 50/50 and FAILS"),
+		GainedInFirstHalf > GainedInSecondHalf);
 
-	TestEqual(TEXT("(d) ⭐ Retuning the exponent to 1.0 yields a LINEAR ramp — 0.5 at the midpoint, with no code change"),
-		FSiegeFogStatics::FogDensityAt(MidPoint, LinearTuning), 0.5f, Tolerance);
+	TestTrue(TEXT("(d) ⛔ …and the deceleration is decisive, not marginal: the first half delivers at least twice the second (measured 7.07×)"),
+		GainedInFirstHalf > GainedInSecondHalf * 2.f);
+
+	// Four EQUAL steps of distance buy strictly DECREASING amounts of density. ⛔ The retired
+	// test asserted strictly INCREASING; this is the same instrument with its sign reversed.
+	const float StepOne   = AtQuarter - FSiegeFogStatics::FogDensityAt(0.f, Tuning);
+	const float StepTwo   = AtHalf    - AtQuarter;
+	const float StepThree = FSiegeFogStatics::FogDensityAt(ThreeQuarters, Tuning) - AtHalf;
+
+	TestTrue(TEXT("(d) Equal steps of DISTANCE buy DECREASING amounts of density — first > second. ⛔ The retired curve made this ascending"),
+		StepOne > StepTwo);
+
+	TestTrue(TEXT("(d) …and second > third. ⛔ A LINEAR ramp makes all three equal and fails both rows"),
+		StepTwo > StepThree);
 
 	return true;
 }
@@ -404,20 +551,30 @@ bool FSiegeFogMonotonicTest::RunTest(const FString& Parameters)
 
 	float PreviousDensity = -1.f;
 
-	// ⛔ THE ANTI-TRIVIALITY COUNTERS. A sweep that never left the clear bubble would be
-	// monotonic, in range, and completely meaningless — so the sweep asserts its own coverage.
-	int32 ClearSamples   = 0; // density == 0 exactly
-	int32 RampSamples    = 0; // strictly between 0 and 1 — the curve under test
-	int32 OpaqueSamples  = 0; // density == 1 exactly
+	// ⛔⛔ THE ANTI-TRIVIALITY COUNTERS, **RE-DERIVED 2026-09-04 (TASK-981)** — the old three
+	// categories were `== 0` / strictly-between / `== 1`, and TWO of them are now wrong for this
+	// curve: Beer-Lambert is exactly 0 at ONE sample (the camera) and is NEVER exactly 1 inside
+	// this sweep (it needs d > 16,201 uu before `exp` underflows). ⇒ the old
+	// `OpaqueSamples > 0` row would go RED against a CORRECT implementation.
+	//
+	// ⭐⭐ THE REPLACEMENT IS STRONGER THAN WHAT IT REPLACES, and this is the point: the first
+	// counter is the sweep-level embodiment of HIS RULING. Under the retired `t²` curve every
+	// sample inside the onset was EXACTLY 0; under his ruling every one of them is positive.
+	// ⇒ a tree that still carries a CLEAR BUBBLE fails the sweep test itself.
+	int32 PositiveInsideTheOldOnset = 0; // 0 < d <= onset AND density > 0  — ⭐ the anti-bubble counter
+	int32 LiveCurveSamples          = 0; // strictly between 0 and 1        — the curve under test
+	int32 BeyondHisNinetyEight      = 0; // density >= 0.98                 — the far field
+
+	const float Onset = Tuning.FogVisionOnsetUU;
 
 	for (int32 Index = 0; Index < SampleCount; ++Index)
 	{
 		const float Distance = static_cast<float>(Index) * StepUU;
 		const float Density  = FSiegeFogStatics::FogDensityAt(Distance, Tuning);
 
-		if (Density <= 0.f)      { ++ClearSamples;  }
-		else if (Density >= 1.f) { ++OpaqueSamples; }
-		else                     { ++RampSamples;   }
+		if (Distance > 0.f && Distance <= Onset && Density > 0.f) { ++PositiveInsideTheOldOnset; }
+		if (Density > 0.f && Density < 1.f)                       { ++LiveCurveSamples;          }
+		if (Density >= ExpectedObscurationAtCeiling())            { ++BeyondHisNinetyEight;      }
 
 		if (!(Density >= 0.f && Density <= 1.f))
 		{
@@ -435,21 +592,26 @@ bool FSiegeFogMonotonicTest::RunTest(const FString& Parameters)
 		PreviousDensity = Density;
 	}
 
-	// ── ⛔⛔ THE SWEEP MUST HAVE ACTUALLY VISITED ALL THREE REGIONS ──────────────────────
-	// Without these three rows the loop above is a test that proves nothing, which is exactly
-	// the trap TASK-837 named. With them, a curve sampled only inside the onset FAILS.
-	TestTrue(TEXT("⛔ ANTI-TRIVIALITY: the sweep visited the CLEAR bubble"),
-		ClearSamples > 0);
+	// ── ⛔⛔ THE SWEEP MUST HAVE ACTUALLY EXERCISED THE CURVE ────────────────────────────
+	// Without these rows the loop above is a test that proves nothing. Measured on the shipped
+	// tuning: 50 · 200 · 99.
+	TestTrue(TEXT("⛔⛔⭐ ANTI-TRIVIALITY (the row that encodes his ruling): at least 20 samples INSIDE the old onset carry STRICTLY POSITIVE density. ⛔ The retired t² curve returned EXACTLY 0 at every one of them, so a clear bubble FAILS here"),
+		PositiveInsideTheOldOnset >= 20);
 
-	TestTrue(TEXT("⛔⛔ ANTI-TRIVIALITY: the sweep actually entered the RAMP — at least 20 samples strictly between 0 and 1. A sweep that never left the onset would pass every other row in this test and prove nothing"),
-		RampSamples >= 20);
+	TestTrue(TEXT("⛔⛔ ANTI-TRIVIALITY: at least 20 samples land strictly between 0 and 1 — a sweep that only ever saw a flat region would pass every other row and prove nothing"),
+		LiveCurveSamples >= 20);
 
-	TestTrue(TEXT("⛔ ANTI-TRIVIALITY: the sweep reached full OPACITY beyond the ceiling"),
-		OpaqueSamples > 0);
+	TestTrue(TEXT("⛔ ANTI-TRIVIALITY: the sweep reached the far field — at least one sample at or beyond his 98%"),
+		BeyondHisNinetyEight > 0);
 
-	// The sweep ends beyond the ceiling, so the last sample must be fully opaque.
-	TestEqual(TEXT("The sweep's far end (1200 uu — twice the ceiling) is EXACTLY opaque"),
-		PreviousDensity, 1.f, Exact);
+	// ⛔ The sweep ends at twice the ceiling. ⭐ REPLACED: this used to assert EXACTLY 1.0, which
+	// only a hard cut can satisfy. Beer-Lambert reads 0.99955 there — thicker than his ceiling
+	// figure, and still strictly short of opaque, which is the asymptote asserted directly.
+	TestTrue(TEXT("The sweep's far end (1200 uu — twice the ceiling) is thicker than his 98%…"),
+		PreviousDensity > ExpectedObscurationAtCeiling());
+
+	TestTrue(TEXT("⛔ …and STILL not fully opaque — Beer-Lambert approaches 1 and never arrives. A hard cut reads exactly 1.0 here and FAILS"),
+		PreviousDensity < 1.f);
 
 	return true;
 }
@@ -748,55 +910,169 @@ bool FSiegeFogDegenerateInputsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("(b) ⛔⛔ A NEGATIVE ceiling returns the request UNCHANGED — a bare min() here would clamp every unit in the game to a negative range and stop all combat"),
 		FSiegeFogStatics::EffectiveVisionRadius(LongbowmanRange, /*bFogActive=*/true, NegativeCeiling), LongbowmanRange, Exact);
 
-	// ── (c) THE ZERO-WIDTH AND INVERTED BANDS — no divide by zero, no NaN ───────────────
-	FSiegeFogTuning ZeroWidth = ShippedTuning();
-	ZeroWidth.FogVisionOnsetUU   = 400.f;
-	ZeroWidth.FogVisionCeilingUU = 400.f;
+	// ── (c) ⭐⭐ THE ONSET IS **IGNORED** BY THE CURVE NOW — asserted, not assumed ────────
+	// ⛔ REPLACED 2026-09-04 (TASK-981). These rows used to exercise the ZERO-WIDTH and INVERTED
+	// BANDS, because the retired `t²` ramp normalised distance over `(ceiling − onset)` and could
+	// divide by zero there. ⛔ Beer-Lambert has NO BAND: `FogDensityAt` does not read the onset at
+	// all. ⇒ the old rows are not merely stale, they test a parameter the function stopped having.
+	//
+	// ⭐ THE REPLACEMENT IS THE STRONGER CLAIM, and it is `FOG-§9.2` item (6) as an assertion:
+	// two tunings differing ONLY in their onset must produce a BIT-IDENTICAL curve.
+	FSiegeFogTuning AbsurdOnset = ShippedTuning();
+	AbsurdOnset.FogVisionOnsetUU = 5.f; // as far from 304.8 as anyone could plausibly type
 
-	TestEqual(TEXT("(c) A ZERO-WIDTH band is a hard step: clear one uu before it"),
-		FSiegeFogStatics::FogDensityAt(399.f, ZeroWidth), 0.f, Exact);
+	FSiegeFogTuning HugeOnset = ShippedTuning();
+	HugeOnset.FogVisionOnsetUU = 5000.f; // inverted against the ceiling, which used to be a branch
 
-	TestEqual(TEXT("(c) …and EXACTLY opaque at and past it — the continuous limit of the ramp, not a divide by zero"),
-		FSiegeFogStatics::FogDensityAt(400.f, ZeroWidth), 1.f, Exact);
+	const float ProbeDistances[] = { 1.f, 120.f, DerivedOnsetUU, 457.2f, DerivedCeilingUU, 3000.f };
 
-	FSiegeFogTuning Inverted = ShippedTuning();
-	Inverted.FogVisionOnsetUU   = DerivedCeilingUU; // the two defaults, swapped
-	Inverted.FogVisionCeilingUU = DerivedOnsetUU;
-
-	const float InvertedNear = FSiegeFogStatics::FogDensityAt(100.f, Inverted);
-	const float InvertedFar  = FSiegeFogStatics::FogDensityAt(1000.f, Inverted);
-
-	TestTrue(TEXT("(c) An INVERTED band still returns finite values in [0, 1] — it degenerates to a step, it does not produce a negative t"),
-		FMath::IsFinite(InvertedNear) && FMath::IsFinite(InvertedFar)
-		&& InvertedNear >= 0.f && InvertedNear <= 1.f && InvertedFar >= 0.f && InvertedFar <= 1.f);
-
-	TestTrue(TEXT("(c) …and it is still non-decreasing with distance"),
-		InvertedFar >= InvertedNear);
-
-	// ── (d) THE EXPONENT'S DEGENERATE VALUES FALL BACK TO LINEAR ───────────────────────
-	// ⛔ Pow(t, 0) is 1 for every t, which would paint a WALL of fog at the onset. The fallback
-	// is to the neutral shape instead, and these rows are what stop that regression.
-	const float MidPoint = DerivedOnsetUU + 0.5f * (DerivedCeilingUU - DerivedOnsetUU);
-
-	const float DegenerateExponents[] = { 0.f, -2.f, NaN, Infinity };
-
-	for (const float BadExponent : DegenerateExponents)
+	for (const float Distance : ProbeDistances)
 	{
-		FSiegeFogTuning BadTuning = ShippedTuning();
-		BadTuning.FogDensityExponent = BadExponent;
+		const float Shipped = FSiegeFogStatics::FogDensityAt(Distance, ShippedTuning());
 
-		const float Density = FSiegeFogStatics::FogDensityAt(MidPoint, BadTuning);
+		TestEqual(*FString::Printf(TEXT("(c) ⭐⭐ At %.1f uu a TINY onset (5) gives a BIT-IDENTICAL density — the onset is not read by the curve any more"), Distance),
+			FSiegeFogStatics::FogDensityAt(Distance, AbsurdOnset), Shipped, Exact);
 
-		TestEqual(TEXT("(d) ⛔ A degenerate exponent falls back to LINEAR (0.5 at the midpoint), NOT to Pow(t, 0) == 1, which would be a wall of fog at the onset"),
-			Density, 0.5f, Tolerance);
+		TestEqual(*FString::Printf(TEXT("(c) ⭐⭐ …and so does a HUGE, INVERTED onset (5000 > the ceiling) at %.1f uu. ⛔ The retired ramp branched on exactly this and produced a hard step"), Distance),
+			FSiegeFogStatics::FogDensityAt(Distance, HugeOnset), Shipped, Exact);
 	}
 
-	// The onset stays clear under every degenerate exponent — the wall, asserted directly.
-	FSiegeFogTuning ZeroExponent = ShippedTuning();
-	ZeroExponent.FogDensityExponent = 0.f;
+	// ⛔⛔ …AND THE ONSET'S SURVIVING ROLE IS STILL LIVE, so nobody reads the rows above as
+	// licence to delete the constant: it is the CEILING's `ClampMin` floor (FOG-§7b half (a)).
+	TestEqual(TEXT("(c) ⛔ The onset KEEPS ITS VALUE — it lost a role, not its existence. FOG-§7b still uses it as the ceiling's slider floor"),
+		ShippedTuning().FogVisionOnsetUU, DerivedOnsetUU, Tolerance);
 
-	TestEqual(TEXT("(d) ⛔⛔ …and one uu past the onset is still nearly clear under a zero exponent — the wall never appears"),
-		FSiegeFogStatics::FogDensityAt(DerivedOnsetUU + 1.f, ZeroExponent), 0.f, 0.01f);
+	// ── (c2) ⛔⛔ THE NEW DIVIDE-BY-ZERO: THE CEILING IS σ's DENOMINATOR ─────────────────
+	// ⛔ THIS HAZARD DID NOT EXIST UNDER THE OLD CURVE, which divided by `(ceiling − onset)` and
+	// was protected by the `Ceiling <= Onset` branch. Beer-Lambert divides by the ceiling itself.
+	// ⭐ Degenerate ⇒ CLEAR, never a whiteout — the module's own totality law.
+	FSiegeFogTuning ZeroCeilingTuning = ShippedTuning();
+	ZeroCeilingTuning.FogVisionCeilingUU = 0.f;
+
+	TestEqual(TEXT("(c2) ⛔⛔ A ZERO ceiling yields EXACTLY CLEAR — it is σ's DENOMINATOR now, and an unguarded divide would hand the renderer a NaN or an infinite σ (a total whiteout)"),
+		FSiegeFogStatics::FogDensityAt(400.f, ZeroCeilingTuning), 0.f, Exact);
+
+	FSiegeFogTuning NegativeCeilingCurve = ShippedTuning();
+	NegativeCeilingCurve.FogVisionCeilingUU = -DerivedCeilingUU;
+
+	TestEqual(TEXT("(c2) ⛔ A NEGATIVE ceiling yields EXACTLY CLEAR — a negative σ would make the world get CLEARER with distance"),
+		FSiegeFogStatics::FogDensityAt(400.f, NegativeCeilingCurve), 0.f, Exact);
+
+	FSiegeFogTuning NaNCeilingCurve = ShippedTuning();
+	NaNCeilingCurve.FogVisionCeilingUU = NaN;
+
+	TestEqual(TEXT("(c2) ⛔ A NaN ceiling yields EXACTLY CLEAR"),
+		FSiegeFogStatics::FogDensityAt(400.f, NaNCeilingCurve), 0.f, Exact);
+
+	// ── (d) ⛔⛔ THE TRANSMITTANCE'S DEGENERATE VALUES FAIL TOWARD **CLEAR** ─────────────
+	// ⛔ REPLACED 2026-09-04: these rows used to guard `FogDensityExponent`, which is RETIRED.
+	// ⭐ The failure they now guard is WORSE than the one they replaced. `Pow(t, 0) == 1` painted
+	// a wall of fog inside the BAND; here a transmittance of 0 makes σ INFINITE, which paints an
+	// opaque screen AT THE CAMERA — the failure nobody could diagnose from a screenshot.
+	const float DegenerateTransmittances[] = {
+		0.f,        // σ = +infinity  ⇒ total whiteout if unguarded
+		-0.5f,      // log of a negative ⇒ NaN
+		1.f,        // σ = 0          ⇒ no fog (degenerate but harmless)
+		2.f,        // σ < 0          ⇒ the world would get CLEARER with distance
+		NaN,
+		Infinity
+	};
+
+	for (const float BadTransmittance : DegenerateTransmittances)
+	{
+		FSiegeFogTuning BadTuning = ShippedTuning();
+		BadTuning.FogTransmittanceAtCeiling = BadTransmittance;
+
+		// ⭐ Probed AT THE CEILING, i.e. where a broken σ does the most damage.
+		TestEqual(*FString::Printf(TEXT("(d) ⛔⛔ A degenerate transmittance (%f) yields EXACTLY CLEAR at the ceiling — degenerate inputs fail toward NO FOG, ⛔ never toward a whiteout"), BadTransmittance),
+			FSiegeFogStatics::FogDensityAt(DerivedCeilingUU, BadTuning), 0.f, Exact);
+
+		// …and at the camera too, which is the pixel a whiteout would ruin first.
+		TestEqual(*FString::Printf(TEXT("(d) ⛔ …and EXACTLY CLEAR one uu from the camera under the same tuning (%f)"), BadTransmittance),
+			FSiegeFogStatics::FogDensityAt(1.f, BadTuning), 0.f, Exact);
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  10. ⭐⭐⭐ σ IS **DERIVED FROM THE TUNABLES**, NOT HARDCODED — the row that kills
+//      the single most plausible wrong implementation
+//
+//  ⛔ NEW 2026-09-04 (TASK-981; ruling `FOG-§9.2`). It is the structural replacement
+//  for the retired test 3(d) ("retuning the exponent to 1.0 really does yield
+//  linear"), which proved the same thing about the tunable that just died.
+//
+//  ⛔⛔ WHY IT IS NEEDED AND IS NOT CEREMONY: every absolute anchor in tests 2 and 3
+//  is satisfied *equally well* by `Sigma = 0.0064174f` typed as a literal. ⛔ Such an
+//  implementation is correct today, passes the whole suite, and silently DECOUPLES the
+//  picture from both `EditDefaultsOnly` knobs — so Jonathan's "one-word retune" (the
+//  entire argument for `J-F2`) would stop working with nothing going red.
+//  ⇒ ⭐ this test moves the tunables and demands the curve move with them.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeFogSigmaIsDerivedTest,
+	"Siegebound.Fog.TheExtinctionCoefficientIsDerivedFromTheTunablesAndIsNotHardcoded",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeFogSigmaIsDerivedTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeFogTestFixture;
+
+	// ── (a) RETUNE THE TRANSMITTANCE — the ceiling's obscuration must follow it exactly ──
+	// ⛔ `0.5` is a PROBE VALUE, not a design number: the shipped tuning is `0.02` and this
+	// tunable has exactly one shipped value, so there is nothing for it to collide with
+	// (`SC-§40` cl. 10). ⭐ It is chosen because 1 − 0.5 is exact in binary32, so the expectation
+	// carries no rounding of its own.
+	FSiegeFogTuning HalfTransmittance = ShippedTuning();
+	HalfTransmittance.FogTransmittanceAtCeiling = 0.5f;
+
+	TestEqual(TEXT("(a) ⭐⭐ With the transmittance retuned to 0.5, the CEILING reads exactly 0.50 obscured. ⛔ A HARDCODED σ still reads 0.98 here and FAILS"),
+		FSiegeFogStatics::FogDensityAt(DerivedCeilingUU, HalfTransmittance), 0.5f, Tolerance);
+
+	// …and the √ structure follows the new σ too: at half the ceiling, 1 − √0.5 = 0.2929.
+	// ⛔ NOT a test of the √ theorem — it is a second ABSOLUTE value under a DIFFERENT σ, which
+	// is what proves the derivation rather than the algebra.
+	TestEqual(TEXT("(a) ⭐ …and half the ceiling reads 1 − √0.5 = 0.2929 under that same retune — a SECOND absolute value under a DIFFERENT σ"),
+		FSiegeFogStatics::FogDensityAt(DerivedCeilingUU * 0.5f, HalfTransmittance), 1.f - FMath::Sqrt(0.5f), Tolerance);
+
+	// ── (b) RETUNE THE CEILING — σ's anchor moves, so the whole curve stretches ──────────
+	// ⛔ Doubling the ceiling must halve σ. ⇒ the OLD ceiling distance now reads what HALF the
+	// ceiling used to read (1 − √0.02 = 0.8586), and the NEW ceiling reads his 0.98.
+	// ⭐ Derived from the fixture (`× 2`), never typed — a ceiling retune cannot stale it.
+	FSiegeFogTuning DoubledCeiling = ShippedTuning();
+	DoubledCeiling.FogVisionCeilingUU = DerivedCeilingUU * 2.f;
+
+	TestEqual(TEXT("(b) ⭐⭐ With the ceiling DOUBLED, the NEW ceiling reads his 0.98 — the anchor travelled with the tunable"),
+		FSiegeFogStatics::FogDensityAt(DerivedCeilingUU * 2.f, DoubledCeiling), ExpectedObscurationAtCeiling(), Tolerance);
+
+	TestEqual(TEXT("(b) ⭐⭐ …and the OLD ceiling distance now reads 0.8586, because it is exactly HALF the new ceiling. ⛔ A HARDCODED σ reads 0.98 here and FAILS"),
+		FSiegeFogStatics::FogDensityAt(DerivedCeilingUU, DoubledCeiling), ExpectedObscurationAtHalfTheCeiling(), Tolerance);
+
+	// ── (c) THE TIGHTEST LEGAL CEILING — FOG-§7b's own ClampMin floor ───────────────────
+	// ⭐ Derived from the ONSET rather than typed, which is exactly what `FOG-§7b` half (a) made
+	// the slider's floor. ⇒ this row also proves the floor is a usable fog rather than a
+	// degenerate one: at the floor, the ceiling still reads his 98%.
+	FSiegeFogTuning TightestCeiling = ShippedTuning();
+	TightestCeiling.FogVisionCeilingUU = DerivedOnsetUU;
+
+	TestEqual(TEXT("(c) ⭐ At FOG-§7b's tightest legal ceiling (the onset's own 304.8) that distance reads his 0.98 — the slider floor is still a real fog, not a degenerate one"),
+		FSiegeFogStatics::FogDensityAt(DerivedOnsetUU, TightestCeiling), ExpectedObscurationAtCeiling(), Tolerance);
+
+	// ── (d) ⛔⛔ THE MECHANIC IS UNMOVED BY ANY OF IT — the picture and the clamp are
+	//     SEPARATE, and this row is what stops a future "harmonisation" ──────────────────
+	// ⛔ Retuning the LOOK must not touch acquisition. `EffectiveVisionRadius` reads the ceiling
+	// and NEVER the transmittance, so the 0.5-transmittance tuning above must clamp identically.
+	TestEqual(TEXT("(d) ⛔⛔ Retuning the TRANSMITTANCE does not move the CLAMP by one ulp — the look and the mechanic are separate surfaces and nobody harmonises them"),
+		FSiegeFogStatics::EffectiveVisionRadius(LongbowmanRange, /*bFogActive=*/true, HalfTransmittance),
+		FSiegeFogStatics::EffectiveVisionRadius(LongbowmanRange, /*bFogActive=*/true, ShippedTuning()), Exact);
+
+	// ⛔ …whereas retuning the CEILING moves the clamp, because the ceiling IS the mechanic's
+	// own number. This is the positive control for the row above: it proves that comparison
+	// could have detected a difference at all.
+	TestEqual(TEXT("(d) ⭐ POSITIVE CONTROL: retuning the CEILING *does* move the clamp — so the row above is a real measurement, not a comparison that could never differ"),
+		FSiegeFogStatics::EffectiveVisionRadius(LongbowmanRange, /*bFogActive=*/true, DoubledCeiling), DerivedCeilingUU * 2.f, Tolerance);
 
 	return true;
 }

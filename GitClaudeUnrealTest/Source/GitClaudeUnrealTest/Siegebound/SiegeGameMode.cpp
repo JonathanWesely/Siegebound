@@ -14,6 +14,7 @@
 #include "Siegebound/Building.h"
 #include "Siegebound/CaptureZone.h"
 #include "Siegebound/Castle.h"
+#include "Siegebound/FogVolume.h" // AFogVolume::ResetFog — FOG-§10.3's reset clause (the class is TASK-998's; this file owns the ONE call site, the SiegeMapMarkSubsystem precedent)
 #include "Siegebound/HeroCharacter.h"
 #include "Siegebound/Projectile.h"
 #include "Siegebound/SiegeBotController.h"
@@ -1387,6 +1388,20 @@ void ASiegeGameMode::PlayAgain()
 	for (TActorIterator<ACaptureZone> It(GetWorld()); It; ++It)
 	{
 		It->ResetCaptureZone();
+	}
+
+	// 3a3) Fog back to CLEAR, timer zeroed (TASK-998; FOG-§10.3's reset clause: "Play Again /
+	//      match reset => CLEAR, both timers zeroed"). ⛔ THE FOG IS NOT CLEARED FOR FREE BY THE
+	//      STEPS ABOVE, AND THAT IS THE WHOLE REASON THIS LOOP EXISTS: the fog's "active until T"
+	//      deadline lives on AFogVolume, which is none of the three classes step 2 destroys
+	//      (ASummonedUnit / ABuilding / AProjectile) — so without this, fog raised at 4:59 of
+	//      match 1 is still up in match 2 and the next player inherits a 69.5% acquisition cut
+	//      nobody paid 50 gold for. Same collect-free TActorIterator pattern as the ResetCastle
+	//      and ResetCaptureZone loops above. Null-safe: no fog volume in the world (the card was
+	//      never played this match) is a clean no-op, since the actor is spawned on first cast.
+	for (TActorIterator<AFogVolume> It(GetWorld()); It; ++It)
+	{
+		It->ResetFog();
 	}
 
 	// 3b) Match clock back to 0:00, overtime latch cleared, clock running again

@@ -13,6 +13,7 @@
 #include "Siegebound/Building.h"
 #include "Siegebound/Castle.h"
 #include "Siegebound/DamageTypes.h"
+#include "Siegebound/FogVolume.h" // TASK-998 (FOG-§10.1): AFogVolume — the ONE fog-state object; this file owns the WRITE door (FindOrSpawn + RaiseFog), the acquisition seam owns the read
 #include "Siegebound/HeroCharacter.h"
 #include "Siegebound/SiegeCombatStatics.h"
 #include "Siegebound/SiegeGameState.h"
@@ -631,6 +632,127 @@ bool USpellLibrary::ResolveSpell(UWorld* World, FName CardID, const FCardRow& Ro
 		// it is only the VFX anchor the caller chose.
 		bResolved = ResolveGoldSteal(World, CardID, Row, CasterTeam);
 		break;
+	case ESpellEffect::FogCover:
+	{
+		// ⭐⭐⭐ THE FOG SEAM, **INVERTED** (TASK-998, 2026-09-04) — ⛔ INVERTED, NOT
+		// DELETED, which is the distinction TASK-839 wrote this arm to preserve.
+		// `AFogVolume` — the authoritative "fog is active until T" object (FOG-§6's M8
+		// clause, FOG-§10.1's "the state") — now exists, so the 300 s expiry has a place
+		// to be stamped and the acquisition seam has a source to read back.
+		//
+		// ⭐ WHAT SURVIVES OF THE REFUSAL, AND WHY IT MATTERS THAT IT DID: the loud arm
+		// is still here, demoted from THE path to the EXCEPTIONAL path. If the state
+		// actor cannot be found or spawned the card refuses exactly as before and the
+		// caller refunds. TASK-839's argument still holds word for word — a quiet
+		// `bResolved = true` on a missing state object would spend 50 gold, spawn
+		// NS_Spell_Fog, log "resolved", and clamp NOBODY, leaving no red anywhere.
+		//
+		// ⛔⛔ THE WRITE DOOR IS `FindOrSpawn`, AND THE READ DOOR (`Find`, used by
+		// FSiegeCombatStatics::ReadFogState) IS A DIFFERENT FUNCTION ON PURPOSE. This
+		// runs ONCE PER CAST, so creating the state holder here is cheap and correct;
+		// the seam runs once per gather on a 0.25 s poll and must never mutate anything.
+		//
+		// ⚠️ REFRESH, NEVER STACK is RaiseFog's own guarantee (J-F16, ruled: "if fog is
+		// played during fog then the timer is reset to 5 minutes"), not a rule this call
+		// site enforces — there is deliberately no `IsFogActive()` check here to get
+		// backwards. See AFogVolume::RaiseFog.
+		//
+		// ⭐⭐ THE PREVENTION WINDOW HAS LANDED (TASK-982, 2026-09-04) — and the refusal it
+		// owes lives INSIDE RaiseFog rather than as an `if` here, on purpose: the ONE
+		// writer of the deadline is also the ONE place that can decide fog is refused,
+		// which is what makes FOG-§10.3's fourth state ("fogged AND shielded")
+		// unreachable by construction instead of by a rule each call site remembers.
+		// ⛔ The PLAYER-FACING message carrying the LIVE seconds remaining is still owed
+		// and is NOT this file's: it is TASK-989, in SiegePlayerController.cpp, and it
+		// reads AFogVolume::GetFogPreventionSecondsRemaining() at CLICK time.
+		AFogVolume* const FogVolume = AFogVolume::FindOrSpawn(World);
+		if (!FogVolume)
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("USpellLibrary: FogCover '%s' refused — the fog-state actor (AFogVolume) could not be found ")
+				TEXT("or spawned in this world. No fog was raised, nothing is clamped, and the caller refunds."),
+				*CardID.ToString());
+			return false;
+		}
+
+		// The whole mechanic: stamp the expiry on the ONE state object. Everything the
+		// fog DOES is downstream of this line — ReadFogState reads it, and the vision
+		// ceiling in GatherHostileAgents does the rest.
+		// ⛔⛔ AND THE ONE CASE THAT MUST NOT SPEND GOLD (J-F19, FOG-§10.6): false means a
+		// BrightSun prevention window is up and NOTHING was written. Returning false here
+		// hands the caller the shipped net-zero refusal doctrine — ASiegePlayerController
+		// refunds the full cost AND never reaches ConfirmInstantDraw — so ⛔ ZERO gold
+		// moves AND ⛔ the card stays in hand. ⛔ TWO properties, never one: a build that
+		// refunded the gold but ate the card would satisfy exactly half his ruling.
+		// ⛔ It returns rather than falling through, so a REFUSED fog also spawns no VFX:
+		// NS_Spell_Fog blooming over a battlefield that never fogged is the "resolved"
+		// lie in visual form.
+		if (!FogVolume->RaiseFog())
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("USpellLibrary: FogCover '%s' refused — BrightSun's prevention window is up (J-F19). ")
+				TEXT("No fog raised, no VFX, and the caller refunds net-zero with the card kept."),
+				*CardID.ToString());
+			return false;
+		}
+
+		// The GoldSteal precedent (ruling 7), reused rather than re-decided: fog is an
+		// INSTANT GLOBAL effect, so TargetPoint plays no gameplay role — it is only the
+		// VFX anchor the caller chose. ⛔ Falling through to the shared tail rather than
+		// returning true keeps FogCover inside ruling 11 (every successful resolve spawns
+		// /Game/VFX/NS_Spell_<CardID>, null-safe and log-once) and inside the shared
+		// success log, instead of making this the ONE effect that skips both.
+		bResolved = true;
+		break;
+	}
+	case ESpellEffect::FogClear:
+	{
+		// ⭐⭐⭐ `BrightSun` (TASK-982; FOG-§10.1, FOG-§10.3, FOG-§10.7) — CLEARS the fog and
+		// opens the PREVENTION WINDOW. It is the exact sibling of the FogCover arm above and
+		// deliberately shaped like it: same ONE state object, same WRITE door, same
+		// refuse-on-false contract. ⛔ It is NOT "FogCover inverted" — it does two things,
+		// and the second one is the one that decides matches.
+		//
+		// ⛔⛔ THE WRITE DOOR IS `FindOrSpawn`, NOT `Find`, EVEN THOUGH THIS CARD MIGHT LOOK
+		// LIKE IT ONLY EVER *REMOVES* STATE. `BrightSun` is LEGAL with no fog up (J-F17,
+		// ruled) — the prevention window ALONE is a good, pre-emptive play — so the very
+		// first cast of the match may be this card, with no AFogVolume in the world yet. A
+		// `Find` here would make a 60-gold pre-emptive cast a silent no-op, which is the
+		// failure mode FOG-§10.3's own diagram (CLEAR ──BrightSun──► SHIELDED) forbids.
+		AFogVolume* const FogVolume = AFogVolume::FindOrSpawn(World);
+		if (!FogVolume)
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("USpellLibrary: FogClear '%s' refused — the fog-state actor (AFogVolume) could not be found ")
+				TEXT("or spawned in this world. No window opened, nothing cleared, and the caller refunds."),
+				*CardID.ToString());
+			return false;
+		}
+
+		// ⛔⛔ J-F18 IS CONDITIONAL AND THE BRANCH LIVES IN ApplyBrightSun, NOT HERE — the
+		// same one-writer rule as the fog above. false means the cast from THIS height
+		// would SHORTEN the live window, so nothing was written and the player must not be
+		// billed: the caller refunds net-zero and the card stays in hand.
+		// ⛔ The TWO-VALUE message ("would reduce fog prevention time from X to Y") is
+		// TASK-991's, in SiegePlayerController.cpp; it calls TASK-982's DURATION accessor
+		// (AFogVolume::GetBrightSunWindowSeconds) rather than duplicating the formula, and
+		// ⛔ it must never CAST THE CARD to find out whether to cast it.
+		if (!FogVolume->ApplyBrightSun(CasterTeam))
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("USpellLibrary: FogClear '%s' refused — a cast from this height would SHORTEN the live ")
+				TEXT("prevention window (J-F18). Nothing changed, no VFX, and the caller refunds net-zero with the card kept."),
+				*CardID.ToString());
+			return false;
+		}
+
+		// Same GoldSteal/FogCover precedent: an instant global effect, so TargetPoint is
+		// only the VFX anchor. ⛔ Falls through to the shared tail so BrightSun spawns
+		// /Game/VFX/NS_Spell_BrightSun (null-safe, log-once) and takes the shared success
+		// log, exactly like every other resolved spell.
+		bResolved = true;
+		break;
+	}
 	case ESpellEffect::None:
 	default:
 		UE_LOG(LogGitClaudeUnrealTest, Warning,

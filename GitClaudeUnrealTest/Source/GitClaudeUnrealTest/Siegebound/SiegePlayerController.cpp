@@ -30,6 +30,7 @@
 #include "Siegebound/CommanderNpc.h" // ACommanderNpc — the war map's proximity gate + the EnemyRevealCost the authority prices the reveal from (TASK-563; the class is TASK-559's). ⛔ READ ONLY: this controller never spawns, mutates or destroys one (TASK-562's ACastle owns that lifecycle).
 #include "Siegebound/DeckComponent.h"
 #include "Siegebound/DeckLibrary.h" // UDeckLibrary::IsDeckLegal — gate the active saved deck before SetPendingDeckList (M6 TASK-114)
+#include "Siegebound/FogVolume.h" // AFogVolume — TASK-989 reads the LIVE prevention remainder at CLICK time (FOG-§10.6), and TASK-991 additionally reads the LIVE would-be window (the DURATION accessor, FOG-§10.7 (A)) to explain the sun-on-sun refusal. ⛔ READ ONLY: the READ door `Find` (⛔ never `FindOrSpawn`) and two `const` accessors; this controller never spawns, mutates or resets one — TASK-982's state machine owns every write, the height formula included.
 #include "Siegebound/HeroCharacter.h"
 #include "Siegebound/SiegeAccountSubsystem.h" // TASK-602: USiegeAccountSubsystem — the ACC-§4 deck-slot seam (the class is TASK-600's, landing in the same batch — the TASK-442 parallel-header precedent)
 #include "Siegebound/SiegeAssistantComponent.h" // USiegeAssistantComponent — complete type for the constructor's CreateDefaultSubobject (TASK-440; the class BODY is TASK-442's, so this header does not exist until that task lands — see the handoff's compile-order note)
@@ -1003,6 +1004,137 @@ void ASiegePlayerController::PlayHandSlot(int32 Slot)
 			*GetNameSafe(this), Slot, *CardID.ToString(), Row->Cost, SiegeState->GetGold());
 		RefuseCardPlay(CardID, NSLOCTEXT("Siegebound", "CardRefused_CantAfford", "Not enough gold"));
 		return;
+	}
+
+	// ⭐⭐ THE `Fog`-DURING-PREVENTION REFUSAL (TASK-989; law FOG-§10.6, FOG-§10.3, ruling J-F19).
+	// 📌 Jonathan, verbatim (2026-09-04): "the player should not lose gold, not have the card get
+	// casted, and instead get a message telling them bright sun is still up for 'x' amount of
+	// seconds, where the 'x' is the ACTUAL amount of time left for the fog prevention."
+	//
+	// ⛔⛔ THE VALUE IS READ HERE, AT THE CLICK, AND IT IS NEVER CACHED. This is the first refusal
+	// in the game whose number CHANGES BETWEEN TWO CLICKS ONE SECOND APART: a remainder captured
+	// when `BrightSun` was PLAYED would be stale by exactly the elapsed duration, so the message
+	// would count down from the wrong number or never change at all. The accessor recomputes from
+	// the world clock on every call, and this is its only call in this file.
+	// ⭐ ONE READ, NOT TWO: the refusal is gated on the REMAINDER ITSELF rather than on
+	// `IsFogPrevented()`, so the number the player is shown is bit-for-bit the number the refusal
+	// was decided on. The accessor returns 0 whenever the machine is not SHIELDED, so `> 0` IS the
+	// SHIELDED predicate, and the two can never disagree about which state the machine is in.
+	//
+	// ⭐ WHY THE ENTRY AND NOT THE RESOLVER (the one judgement call in this diff, declared):
+	// refusing HERE moves NO gold and consumes NO card BY CONSTRUCTION rather than by refund —
+	// this function neither spends nor confirms; `SpendGold`, `ConfirmInstantDraw` and
+	// `ConfirmPlayFromHand` all live BEYOND the routing switch below, which this `return` never
+	// reaches. That is his two default properties held without a compensating transaction.
+	// ⛔ It is also ROUTING-AGNOSTIC on purpose: the switch below currently sends `Fog` into
+	// TARGETING mode (a known defect boarded as TASK-1018, ⛔ NOT touched by this row), and after
+	// that row lands it will resolve INSTANTLY instead. This gate fires identically either way.
+	// ⛔ TASK-982's guard inside `AFogVolume::RaiseFog()` is NOT made redundant by this one and is
+	// deliberately left alone: it is the STATE object's own rule and it still covers the bot,
+	// which reaches `USpellLibrary::ResolveSpell` without ever passing through this entry.
+	//
+	// ⛔ `Fog` ONLY (J-F26, closed): prevention refuses nothing else in the game. The gate is the
+	// DATA — the `FogCover` effect, the one thing that raises fog — never a CardID literal.
+	// ⛔ The READ door `Find` (never `FindOrSpawn`): a refusal pre-check may not spawn a state
+	// actor. No volume in the world means no prevention window, which is the honest answer.
+	if (Row->SpellEffect == ESpellEffect::FogCover)
+	{
+		if (const AFogVolume* const FogState = AFogVolume::Find(GetWorld()))
+		{
+			const float PreventionSecondsRemaining = FogState->GetFogPreventionSecondsRemaining();
+			if (PreventionSecondsRemaining > 0.f)
+			{
+				UE_LOG(LogGitClaudeUnrealTest, Log,
+					TEXT("ASiegePlayerController '%s': hand slot %d ('%s') refused — the BrightSun prevention window has %.2f s left (read live at the click, FOG-§10.6); no gold spent, card kept."),
+					*GetNameSafe(this), Slot, *CardID.ToString(), PreventionSecondsRemaining);
+				// ⛔ The shipped `CardRefused_MaxStacks` idiom, verbatim: `FText::Format` at the
+				// call site into the SAME `RefuseCardPlay` surface every other refusal uses
+				// (J-F25 — ⛔ no new path, ⛔ no new widget, ⛔ no new toast).
+				RefuseCardPlay(CardID, FText::Format(
+					NSLOCTEXT("Siegebound", "CardRefused_BrightSunActive", "Bright Sun is still up for {0}"),
+					WholeSecondsText(PreventionSecondsRemaining)));
+				return;
+			}
+		}
+	}
+
+	// ⭐⭐⭐ THE SUN-ON-SUN CONDITIONAL REFUSAL (TASK-991; law FOG-§10.7 (A), FOG-§10.6, ruling J-F18).
+	// 📌 Jonathan, verbatim (2026-09-04): "If bright sun is played during the bright sun window, then
+	// the timer gets RESET to whatever the new time would be under the new cast, UNLESS that new time
+	// would be LESS than the current time, then the player will just get a message that says 'using
+	// bright sun right now would reduce fog prevention time from "x" time to "y" time' … and the
+	// player is basically prevented from playing the card."
+	//
+	// ⛔⛔ IT IS A BRANCH, ⛔ NOT A POLICY — ⛔ not `max`, ⛔ not a refresh, ⛔ not a blanket refuse.
+	// ⭐ THE LONGER (and EQUAL) HALF IS NOT HERE AND MUST NOT BE: it belongs to
+	// `AFogVolume::ApplyBrightSun`, which RESETS the stored expiry on a normal, paid, consumed cast.
+	// This guard owns exactly the SHORTER half, and it owns it by SKIPPING — falling through to the
+	// routing switch below is what makes the card still playable. ⛔ An unconditional refusal here
+	// would satisfy his sentence word for word while destroying the card, because `BrightSun` could
+	// then never be re-cast at all.
+	//
+	// ⭐⭐⭐ AND THIS IS THE FIRST MESSAGE IN THIS GAME THAT MUST COMPUTE A FULL CARD EFFECT PURELY TO
+	// EXPLAIN WHY IT REFUSES TO APPLY IT. His `Y` is "the new fog prevention time UNDER THE CURRENT
+	// HEIGHT CALCULATION", so deciding whether to refuse requires working out the window this cast
+	// WOULD have opened — and then throwing that result away while reporting it.
+	// ⛔⛔ THE FORMULA IS NOT DUPLICATED AND THE CARD IS NOT CAST TO FIND OUT WHETHER TO CAST IT:
+	// `GetBrightSunWindowSeconds` is TASK-982's DURATION accessor, shipped public, const and
+	// side-effect-free precisely so this refusal can reach it from OUTSIDE the cast path. A second
+	// copy of the height formula would drift from the real one, and the message would start lying.
+	//
+	// ⛔⛔ BOTH VALUES ARE LIVE, READ HERE, AT THE CLICK, AND NEITHER IS CACHED: `X` is the live
+	// remainder (FOG-§10.6's law) and `Y` re-samples HERO HEIGHT at this instant — so `Y` changes as
+	// he climbs, and two refusals from two perches show two different numbers.
+	//
+	// ⭐⭐ THE PREDICATE IS BIT-IDENTICAL TO `ApplyBrightSun`'s — same two accessors, same operand
+	// order, same STRICT `<` — and that identity is the point rather than a coincidence: this entry
+	// gate may never refuse a cast the state object would have accepted, nor wave through one it will
+	// then refuse. ⛔ There is deliberately NO extra "only while a window is up" pre-gate: the
+	// remainder is already 0 when the machine is not SHIELDED, and a window is always at least the
+	// base duration, so the comparison alone is the whole condition. A second, differently-spelled
+	// condition here is exactly how the two halves would come to disagree.
+	// ⚠️ STRICT `<`, and the boundary is a DECLARED DEFAULT rather than his word: he wrote "LESS
+	// than", so EQUAL RESETS (a legal, if pointless, cast). A float-equal window is unreachable in
+	// practice, which is why the reading has to be the literal one rather than the convenient one.
+	//
+	// ⛔ The READ door `Find` (⛔ never `FindOrSpawn`): a refusal pre-check may not spawn a state
+	// actor. No volume in the world means no prevention window, which is the honest answer — and the
+	// resolver's own `FindOrSpawn` still covers the pre-emptive first cast of a match (J-F17).
+	// ⛔ The gate is the DATA — the `FogClear` effect, the one thing that opens the window — never a
+	// CardID literal, exactly as its `FogCover` sibling above.
+	if (Row->SpellEffect == ESpellEffect::FogClear)
+	{
+		if (const AFogVolume* const FogState = AFogVolume::Find(GetWorld()))
+		{
+			// The caster team, derived the way BOTH shipped spell resolvers derive it (the controlled
+			// hero, falling back to the local player's Blue) — deliberately the shipped idiom rather
+			// than a second convention, so the `Y` shown here is the `Y` the cast would have used.
+			const AHeroCharacter* const CasterHero = Cast<AHeroCharacter>(GetPawn());
+			const ETeamId CasterTeam = IsValid(CasterHero) ? CasterHero->GetTeamId() : ETeamId::Blue;
+
+			// `X` — the live remainder, and `Y` — the window this cast WOULD open right now. Read in
+			// the order the sentence reads them ("from X to Y"); both are live, so the order is a
+			// readability choice and nothing else.
+			const float RemainingWindowSeconds = FogState->GetFogPreventionSecondsRemaining();
+			const float WouldBeWindowSeconds = FogState->GetBrightSunWindowSeconds(CasterTeam);
+
+			if (WouldBeWindowSeconds < RemainingWindowSeconds)
+			{
+				UE_LOG(LogGitClaudeUnrealTest, Log,
+					TEXT("ASiegePlayerController '%s': hand slot %d ('%s') refused — a BrightSun cast from this height would SHORTEN the prevention window from %.2f s to %.2f s (both read live at the click, J-F18); no gold spent, card kept, the stored expiry untouched."),
+					*GetNameSafe(this), Slot, *CardID.ToString(), RemainingWindowSeconds, WouldBeWindowSeconds);
+				// ⛔ The same shipped `RefuseCardPlay` + `FText::Format` idiom its `FogCover` sibling
+				// uses (J-F25 — ⛔ no new path, ⛔ no new widget, ⛔ no new toast), and the SAME shared
+				// scalar formatter, called TWICE. ⛔ NOT a generalised message builder: the two
+				// refusals differ in ARITY, and a builder spanning both would carry an optional second
+				// value that is dead half the time (SC-§40 cl. 2).
+				RefuseCardPlay(CardID, FText::Format(
+					NSLOCTEXT("Siegebound", "CardRefused_BrightSunWouldShorten", "Using Bright Sun right now would reduce fog prevention time from {0} to {1}"),
+					WholeSecondsText(RemainingWindowSeconds),
+					WholeSecondsText(WouldBeWindowSeconds)));
+				return;
+			}
+		}
 	}
 
 	// §6 card-play click (TASK-179): the play is ACCEPTED past every refusal gate above
@@ -5357,6 +5489,48 @@ FText ASiegePlayerController::StackHeightCapNoticeText()
 	// feedback must ⛔ not claim a height gain the upgrade did not deliver (J-6).
 	static const FText HeightCapText = NSLOCTEXT("Siegebound", "StackUpgrade_HeightCapped", "Maximum height reached - the upgrade added health only");
 	return HeightCapText;
+}
+
+FText ASiegePlayerController::WholeSecondsText(float Seconds)
+{
+	// ⭐⭐ THE ONE PLACE A COUNTDOWN IS SPELLED (TASK-989 item (5)/(5a); J-F24, closed).
+	// 📌 He wrote "x amount of SECONDS" ⇒ ⛔ WHOLE SECONDS, ⛔ ROUNDED, ⛔ EVEN PAST 60:
+	// "143 seconds", ⛔ never "2 minutes 23 seconds". A countdown is more legible in ONE unit,
+	// and keeping the units HERE rather than at each call site is what makes his retune one word.
+	//
+	// ⛔ IT IS A FORMATTER, ⛔ NOT A MESSAGE BUILDER — one scalar in, one FText out. TASK-991's
+	// sun-on-sun refusal calls it TWICE (its "from X to Y"); this row calls it once. A builder
+	// spanning both would need an optional second value that is dead half the time, which is the
+	// exact dead surface SC-§40 cl. 2 bans (FOG-§10.7 (A)).
+
+	// ⛔ TOTAL BY CONSTRUCTION, in the order that matters. A non-finite input must never reach
+	// FMath::RoundToInt (its result would be meaningless, and a "-2147483648 seconds" toast is
+	// worse than no message at all). Zero and negative render as a plain zero: the accessor
+	// already clamps at 0, and a NEGATIVE countdown must never be spelled out.
+	if (!FMath::IsFinite(Seconds) || Seconds <= 0.f)
+	{
+		return NSLOCTEXT("Siegebound", "SecondsCount_Zero", "0 seconds");
+	}
+
+	// ⛔ THE DISPLAY FLOOR, AND IT IS ⛔ NOT A CHANGE TO HIS ROUNDING: it can only fire in the
+	// (0, 0.5) band, where rounding alone would print "0 seconds" WHILE the caller is refusing the
+	// card for that very window — a message that contradicts its own refusal in the same breath.
+	// ⛔ It never invents time out of a zero (that case returned above) and it never touches any
+	// value at or above half a second.
+	const int32 WholeSeconds = FMath::Max(1, FMath::RoundToInt(Seconds));
+
+	// ⛔ The singular gets its OWN key rather than an ICU plural form: this project ships no
+	// localisation and no plural-form string anywhere, so a hand-rolled `|plural(…)` would be the
+	// one instance of an untested idiom in the codebase. Two keys are legible to a future
+	// translator and cannot mis-parse at runtime.
+	if (WholeSeconds == 1)
+	{
+		return NSLOCTEXT("Siegebound", "SecondsCount_One", "1 second");
+	}
+
+	return FText::Format(
+		NSLOCTEXT("Siegebound", "SecondsCount_Many", "{0} seconds"),
+		FText::AsNumber(WholeSeconds));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -7,6 +7,7 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/DamageType.h"
 #include "Kismet/GameplayStatics.h"
+#include "Siegebound/FogVolume.h"                // TASK-998 (FOG-§10.1): AFogVolume — the ONE fog-state object, READ here (never spawned here) by ReadFogState below
 #include "Siegebound/SiegeInvisibilityStatics.h" // TASK-829 (WITCH-§2): FSiegeInvisibilityStatics::IsVisibleTo — the ONE suppression predicate, called from IsAgentVisibleTo below and NOWHERE else
 // ⚠️ The trailing note below deliberately does NOT spell the veil flag's name: a comment TRAILING
 // a line of CODE is still scanned by the house source-text probes, and the one-source-of-truth gate
@@ -119,8 +120,26 @@ bool FSiegeCombatStatics::IsAgentVisibleTo(ETeamId ViewerTeam, const AActor* Can
 bool FSiegeCombatStatics::ReadFogState(const UWorld* World, FSiegeFogTuning& OutTuning)
 {
 	// Assigned on EVERY path, before any early-out, so "no fog" never hands back an
-	// uninitialised band. A default-constructed tuning IS the shipped tuning (609.6 / 304.8 /
-	// exponent 2), which is also what AFogVolume's instance will default to.
+	// uninitialised band. A default-constructed tuning IS the shipped tuning — every member at
+	// the value FSiegeFogTuning itself declares, which is the ONE home for those numbers.
+	//
+	// ⛔⛔ CORRECTED 2026-09-04 (TASK-839, timer half). This comment used to enumerate that tuning
+	// as "(609.6 / 304.8 / exponent 2)", and THE THIRD TERM NAMED A CURVE THAT NO LONGER EXISTS:
+	// TASK-981 replaced the t^n falloff with Beer-Lambert and retired FogDensityExponent to zero
+	// references (FOG-§9.2). ⛔ The enumeration is DELETED rather than re-typed with whichever
+	// member replaced it — a transcribed copy of a tuning struct is exactly the thing that went
+	// stale here once, and FOG-§9.4 already pins every one of those values in exactly one place.
+	//
+	// ⭐⭐ CORRECTED AGAIN 2026-09-04 (TASK-998): AFogVolume below IS THE BUILD NOW. The sentence
+	// that stood here — "STILL A FORWARD REFERENCE ... ZERO declarations in Source/" — went false
+	// the moment Siegebound/FogVolume.h landed, so it is retired rather than left to read as
+	// current (SC-§65).
+	// ⚠️⚠️ AND THE DEFAULT STILL REACHES EVERY CALLER, WHICH IS DELIBERATE RATHER THAN UNFINISHED:
+	// AFogVolume holds the fog's TIMER, not its TUNING. It carries NO FSiegeFogTuning member, so
+	// there is nothing per-instance to read back here and FOG-§9.4's numbers keep living in
+	// exactly one place — the struct's own member declarations. ⛔ A future row that gives the
+	// actor a tuning override changes THIS line, and it takes on a CoreRedirects duty the moment
+	// it does (the reasoning is written out in FogVolume.h's class doc).
 	OutTuning = FSiegeFogTuning();
 
 	// A gather with no world can never be under fog. Kept live rather than folded into the
@@ -130,17 +149,31 @@ bool FSiegeCombatStatics::ReadFogState(const UWorld* World, FSiegeFogTuning& Out
 		return false;
 	}
 
-	// ⛔⛔ THIS LINE IS THE SEAM, AND IT IS THE ONLY LINE TASK-839 REPLACES.
-	// `AFogVolume` — the authoritative "fog is active until T" scalar (FOG-§6) — does not exist
-	// in the tree yet: it is TASK-839's, and TASK-839 is blocked by THIS task. ⇒ the clamp is
-	// wired now, at the one place FOG-§6 says it must live, and the state arrives next.
-	// ⚠️⚠️ CONSEQUENCE, STATED SO A GREEN SUITE DOES NOT IMPLY MORE THAN IT PROVES: while this
-	// returns false, EffectiveVisionRadius returns every request bit-identically, the vision cut
-	// below can never shorten anything, and the acquisition surface is byte-for-byte the game
-	// that shipped. ⛔ Fog does not exist at runtime until TASK-839 lands.
-	// ⭐ TASK-839: iterate AFogVolume, take its active flag and its FSiegeFogTuning, return here.
+	// ⭐⭐⭐ THE SEAM IS WIRED (TASK-998, 2026-09-04). This was the ONE line TASK-838 left for the
+	// state to arrive at, and the state has arrived: AFogVolume is the authoritative
+	// "fog is active until T" object (FOG-§6's M8 clause, FOG-§10.1's "the state").
+	//
+	// ⛔⛔ THE READ NEVER CREATES. `Find` is deliberately the read-only door — the write door
+	// (`FindOrSpawn`) belongs to the card, in USpellLibrary::ResolveSpell, and it is called once
+	// per CAST. This function runs once per GATHER, on a 0.25 s acquisition poll, for every unit
+	// on the field: a finder that spawned here would mutate the world from inside a query, forever.
+	// ⇒ NO fog volume is a perfectly good answer meaning exactly "no fog", and it degrades to the
+	// pre-fog game rather than to a blind field.
+	//
 	// ⛔ Do NOT add a second read anywhere else — a second read is a second guard point, which is
 	// the exact failure WITCH-§1 and this whole file exist to prevent.
+	const AFogVolume* const FogVolume = AFogVolume::Find(World);
+	if (FogVolume && FogVolume->IsFogActive())
+	{
+		return true;
+	}
+
+	// ⭐ THE SURVIVING `return false` — and it is NOT the old stub. It now means "there is no fog
+	// volume, or its timer has run out", which is a REAL answer about a REAL source, not a
+	// placeholder standing in for one. ⚠️ It is still reached constantly (every gather with fog
+	// down), so it stays the totality guarantee it always was: EffectiveVisionRadius returns every
+	// request bit-identically and the acquisition surface is byte-for-byte the pre-fog game
+	// whenever the fog is not up.
 	return false;
 }
 

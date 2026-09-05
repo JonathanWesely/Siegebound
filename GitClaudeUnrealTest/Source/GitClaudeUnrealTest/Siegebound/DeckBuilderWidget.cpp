@@ -178,6 +178,69 @@ namespace SiegeboundCardGlossary
 	/** GoldSteal; %d = row GoldSteal. */
 	constexpr TCHAR SpellGoldStealFmt[] = TEXT("Steals %d gold from your opponent the instant you play it - no aiming, no target. If they hold less than that, you take everything they have.");
 
+	/**
+	 *  ⭐⭐ FogCover — the `Fog` card (TASK-999; FOG-§9.1 "completely universal … it will cover the
+	 *  ENTIRE battlefield", FOG-§10.3 the state machine, J-F16 refresh-never-stack, J-F19 the
+	 *  net-zero refusal). ⛔ UNCONDITIONAL: it names no row magnitude, so this clause CANNOT come
+	 *  out blank — which is the whole failure this row exists to close (a card that renders with an
+	 *  empty effect line describes nothing to the one person reading it).
+	 *
+	 *  ⛔⛔ NO NUMBER FOR THE VISION CUT, AND THAT IS DELIBERATE (`SC-§65` — pin the SHAPE, not the
+	 *  magnitude). The cut is `FSiegeFogStatics::EffectiveVisionRadius` = min(requested,
+	 *  FSiegeFogTuning::FogVisionCeilingUU), and that ceiling is `EditDefaultsOnly` precisely so
+	 *  Jonathan can retune it "with no code change and no recompile" (SiegeFogStatics.h says so in
+	 *  those words). ⇒ a literal "609.6 units" baked here would go false on a retune that is
+	 *  DESIGNED to touch no code, and nothing would report it. The SHAPE — ranged reach collapses,
+	 *  melee is untouched — holds for every ceiling the editor will accept (its ClampMin is the
+	 *  10 ft onset, still far above the 120 uu melee request), so it is what is stated.
+	 *  ⛔ And this file does NOT include SiegeFogStatics.h to interpolate the value:
+	 *  SiegeCombatStatics.cpp's own include comment asserts that header is "consumed HERE and in
+	 *  no other translation unit", and a second consumer would falsify a claim in a file this row
+	 *  does not own.
+	 */
+	const TCHAR SpellFogCover[] = TEXT("Raises fog over the ENTIRE battlefield the instant you play it - there is no spot to aim at and no radius. While it hangs, every unit on BOTH sides, yours included, only notices enemies close to it: ranged units and towers lose their reach and the fight collapses to arm's length, while melee units are barely affected. Playing it again while it is already up resets the clock rather than adding to it. While the sky is being held clear against fog, playing it is refused outright and costs you nothing.");
+
+	/**
+	 *  FogCover's duration; %s = row EffectDuration.
+	 *  ⚠️ DECLARED, because it is a real seam rather than a detail: the MECHANISM reads
+	 *  AFogVolume::FogDurationSeconds off the CDO and does NOT read this cell today (CardRow.h's
+	 *  ESpellEffect::FogCover block says so, and TASK-1016 is the row that makes the cell
+	 *  authoritative). The two agree at 300 by CONTRACT, not by coincidence — FogVolume.h states
+	 *  "`EffectDuration` on the `Fog` card row MUST match this" — so printing the ROW's own cell is
+	 *  both the data-driven branch (GDD §3.0: never hardcode a magnitude this widget can read) and
+	 *  the value that stays right when TASK-1016 wires the cell up. ⛔ Its own clause, gated on the
+	 *  cell, so a blank cell costs a SENTENCE and never the whole description.
+	 */
+	constexpr TCHAR SpellFogCoverDurationFmt[] = TEXT("The fog lifts on its own after %s seconds.");
+
+	/**
+	 *  ⭐⭐ FogClear — the `BrightSun` card (TASK-999; FOG-§10.1 the card, FOG-§10.3 the three-state
+	 *  machine, J-F17 legal with no fog up, J-F14 uncapped, J-F15 sampled once at the cast, J-F18
+	 *  the shortening cast is refused, and his one-way door: "even when the … timer ends, the fog
+	 *  that was cleared STILL REMAINS CLEAR"). ⛔ UNCONDITIONAL, for the same reason as FogCover.
+	 *
+	 *  ⛔⛔ NO HEIGHT NUMBERS, AND THE EVIDENCE IS ALREADY ON THE RECORD RATHER THAN THEORETICAL:
+	 *  the step was AMENDED BY JONATHAN ON 2026-09-04 FROM 20 ft TO 50 ft (FogVolume.h's
+	 *  BrightSunHeightStepUU block). A glossary line that had said "20 feet" would already be a
+	 *  lie, in a file nobody would have thought to re-read. `SC-§65`: state the shape - higher is
+	 *  longer, read once, no cap - which survives every retune of the three EditDefaultsOnly
+	 *  levers that compose the window.
+	 */
+	const TCHAR SpellFogClear[] = TEXT("Clears every trace of fog the instant you play it - there is no spot to aim at and no radius - and then holds the sky clear, refusing any new fog for a while afterwards. It is worth playing with no fog up at all: that refusal window on its own is half the card.");
+
+	/**
+	 *  FogClear's window rules — the half that decides matches, kept as its own line so it reads
+	 *  as rules rather than as one long paragraph. ⛔ UNCONDITIONAL (no row magnitude).
+	 */
+	const TCHAR SpellFogClearWindowRules[] = TEXT("The higher above the flat ground you stand at the moment you cast it, the longer that window runs - your height is read once, at the cast, and there is no upper limit. When the window finally ends the battlefield STAYS clear: fog never returns on its own. Casting it again from lower ground while a window is still running would shorten it, so that play is refused outright and costs you nothing.");
+
+	/**
+	 *  FogClear's floor; %s = row EffectDuration. Same seam as SpellFogCoverDurationFmt: the
+	 *  MECHANISM reads AFogVolume::BrightSunBaseDurationSeconds, and FOG-§10.1 pins the card row's
+	 *  EffectDuration to the same 120 from a second sentence of his. Gated on the cell.
+	 */
+	constexpr TCHAR SpellFogClearBaseFmt[] = TEXT("Cast from the flat ground it holds fog off for %s seconds, before any height on top of that.");
+
 	/** HeroLine delivery. // mirrors ASpellLineSweep::LineRange (900) + ASpellLineSweep::LineHalfWidth (100 to either side) */
 	const TCHAR DeliveryHeroLine[] = TEXT("Aimed from your hero: it flies out as a bolt roughly 900 units long, catching anything within 100 units to either side, and passes straight through walls and bodies. A bolt that catches nothing is still spent.");
 
@@ -257,6 +320,191 @@ namespace
 		case ECardType::HeroUpgrade: return TEXT("Hero Upgrade");
 		case ECardType::Utility:     return TEXT("Utility");
 		default:                     return TEXT("Card");
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ⭐⭐ THE SPELL COMPOSER (TASK-999). Two defects were repaired here at once, and
+// they are the SAME defect wearing two faces: the effect `switch` had no arm for
+// the fog effects (a BLANK line), and the aiming guard was a BLACKLIST that then
+// printed a reticle sentence anyway (a FALSE line).
+//
+// ⚖️ A BLANK LINE IS A GAP; A WRONG LINE IS A LIE. `Fog` read, verbatim, as
+// "Aimed at a spot on the ground: it goes off where you place the reticle." for a
+// no-reticle, map-wide fog, in the one surface Jonathan reads while building a
+// deck.
+//
+// ⛔⛔ WHY IT IS A FREE FUNCTION IN THIS NAMESPACE RATHER THAN A MEMBER: it is
+// pure row-in / lines-out — it touches no member of UDeckBuilderWidget — and
+// AppendRuleLines, its only shipping caller, is `private:` in a header this row
+// does not own. External linkage here is what lets Tests/SiegeCardGlossaryTest.cpp
+// forward-declare and CALL the real composer, so the assertion item (3) demands
+// tests behaviour instead of source text. ⛔ It is deliberately NOT in the
+// anonymous namespace directly above for exactly that reason: internal linkage
+// there would make it unreachable from any other translation unit, and the gate
+// would come back as a link error somebody "fixes" by deleting the test.
+// ---------------------------------------------------------------------------
+namespace SiegeboundCardGlossary
+{
+	void AppendSpellLines(const FCardRow& Row, TArray<FString>& OutLines)
+	{
+		if (Row.SpellEffect == ESpellEffect::None)
+		{
+			return; // not a spell row: the card's other clauses describe it
+		}
+
+		// HOW it is delivered decides HOW its area reads, so resolve it first — through
+		// the ONE delivery brain (it owns the sparse Auto default), never re-derived
+		// here. The resolver only BRANCHES on delivery for the two area effects; the
+		// others are reticle-placed whatever their cell says, so a line reading is only
+		// ever taken for an effect that can actually be delivered as one.
+		//
+		// ⚠️ bLineCapableEffect NAMES EFFECTS, but it is NOT the blacklist this row came
+		// to kill, and the difference is worth stating because they LOOK identical. It
+		// MIRRORS the resolver's own branch set (USpellLibrary::ResolveSpell branches on
+		// delivery under `case AoEDamage` and `case Freeze` and nowhere else), and it
+		// fails CLOSED: a new effect is not line-capable, so it can only ever be
+		// described as ground-placed or as nothing. The guard below failed OPEN — a new
+		// effect silently claimed a reticle it did not have.
+		const ESpellDelivery ResolvedDelivery = USpellLibrary::GetEffectiveDelivery(Row);
+		const bool bLineCapableEffect =
+			(Row.SpellEffect == ESpellEffect::AoEDamage || Row.SpellEffect == ESpellEffect::Freeze);
+		const bool bDeliversAsLine = bLineCapableEffect && ResolvedDelivery == ESpellDelivery::HeroLine;
+
+		// ⛔⛔ THE AIM GATE — DERIVED, NOT LISTED. It replaces
+		// `if (Row.SpellEffect != ESpellEffect::GoldSteal)`, which was correct only until
+		// the next value and had already failed TWICE, once per new no-reticle spell.
+		//
+		// ⛔ AND IT IS NOT `ResolvedDelivery == GroundCircle` EITHER, WHICH IS THE TRAP
+		// SITTING RIGHT NEXT TO THE FIX: GetEffectiveDelivery answers a DIFFERENT
+		// question. Its `Auto` arm returns GroundCircle for every effect that is not
+		// AoEDamage/Freeze — GoldSteal, FogCover and FogClear included — so a guard
+		// written on it would reprint the very sentence this row is deleting. Delivery
+		// says WHICH aiming sentence; it cannot say WHETHER there is one, because
+		// ESpellDelivery has no value meaning "no aim at all".
+		//
+		// ⇒ THE DERIVATION, in the same precedence order GetEffectiveDelivery itself
+		// uses (the cell first, the row's own data second):
+		//   1. an AUTHORED SpellDelivery cell is the per-card override lever this column
+		//      exists to be — an author who pins a delivery has DECLARED an aim, and the
+		//      glossary agrees with the data rather than second-guessing it;
+		//   2. otherwise the cell is `Auto` (every row but Fireball and FrostNova), and
+		//      the row's own aim evidence answers it: a ground-placed spell resolves
+		//      INSIDE AoERadius, so a positive radius IS the reticle's footprint, and a
+		//      zero radius means there is nothing on the ground to place.
+		// Measured against the shipped roster, by CardID: Lightning (700) and BattleCry
+		// (400) keep the reticle line; Pickpocket (0), Fog (0) and BrightSun lose it —
+		// Pickpocket by CONSTRUCTION rather than by being named, and BrightSun before its
+		// card row exists at all.
+		//
+		// ⚖️ IT FAILS CLOSED, WHICH IS THE POINT: an effect this derivation cannot place
+		// gets NO aiming line — a gap, never a lie — and a new global spell is correct
+		// with nobody remembering to come here.
+		const bool bDeliveryAuthored = (Row.SpellDelivery != ESpellDelivery::Auto);
+		const bool bRowCarriesAnAimPoint = (Row.AoERadius > 0.f);
+		const bool bAimed = bDeliversAsLine || bDeliveryAuthored || bRowCarriesAnAimPoint;
+
+		// Each effect prints ONLY when the row carries the magnitudes that effect needs —
+		// the same well-formedness the resolver demands before it will resolve at all, so
+		// a malformed row describes nothing rather than promising an effect that refuses.
+		//
+		// ⛔⛔ THERE IS NO `default:` ARM, AND ITS ABSENCE IS THE STRUCTURAL HALF OF THIS
+		// ROW. ⚖️ A `default:` CONVERTS A COMPILER ERROR INTO A USER-VISIBLE BLANK — it
+		// trades a failure the BUILD catches for one only a PLAYER catches, which is
+		// exactly how `Fog` shipped describing nothing. Every declared value is listed,
+		// `None` included, so appending an ESpellEffect value is a diagnostic on every
+		// toolchain that warns on an unhandled enumerator. ⭐ The belt for the toolchains
+		// that do not warn is Tests/SiegeCardGlossaryTest.cpp, which iterates
+		// StaticEnum<ESpellEffect>() and fails on the first value that composes nothing.
+		switch (Row.SpellEffect)
+		{
+		case ESpellEffect::None:
+			break; // unreachable (guarded above); listed so the switch stays exhaustive
+
+		case ESpellEffect::AoEDamage:
+			// on the LINE path the row's radius plays no part at all (the corridor is
+			// the bolt's own), so the circle wording would be a lie there
+			if (Row.Damage > 0.f && bDeliversAsLine)
+			{
+				OutLines.Add(FString::Printf(SpellAoEDamageLineFmt,
+					*FormatStatValue(Row.Damage)));
+			}
+			else if (Row.Damage > 0.f && Row.AoERadius > 0.f)
+			{
+				OutLines.Add(FString::Printf(SpellAoEDamageCircleFmt,
+					*FormatStatValue(Row.Damage), *FormatStatValue(Row.AoERadius)));
+			}
+			break;
+
+		case ESpellEffect::Freeze:
+			if (Row.EffectDuration > 0.f && bDeliversAsLine)
+			{
+				OutLines.Add(FString::Printf(SpellFreezeLineFmt,
+					*FormatStatValue(Row.EffectDuration)));
+			}
+			else if (Row.AoERadius > 0.f && Row.EffectDuration > 0.f)
+			{
+				OutLines.Add(FString::Printf(SpellFreezeCircleFmt,
+					*FormatStatValue(Row.AoERadius), *FormatStatValue(Row.EffectDuration)));
+			}
+			break;
+
+		case ESpellEffect::TopTargetsDamage:
+			if (Row.MaxTargets > 0 && Row.AoERadius > 0.f && Row.Damage > 0.f)
+			{
+				OutLines.Add(FString::Printf(SpellTopTargetsFmt,
+					Row.MaxTargets, *FormatStatValue(Row.AoERadius), *FormatStatValue(Row.Damage)));
+			}
+			break;
+
+		case ESpellEffect::AllyBuff:
+			if (Row.AoERadius > 0.f && Row.EffectDuration > 0.f)
+			{
+				OutLines.Add(FString::Printf(SpellAllyBuffFmt,
+					*FormatStatValue(Row.AoERadius), *FormatStatValue(Row.EffectDuration)));
+			}
+			break;
+
+		case ESpellEffect::GoldSteal:
+			if (Row.GoldSteal > 0)
+			{
+				OutLines.Add(FString::Printf(SpellGoldStealFmt, Row.GoldSteal));
+			}
+			break;
+
+		case ESpellEffect::FogCover:
+			// ⛔ THE LEAD CLAUSE IS UNCONDITIONAL, ON PURPOSE. Every arm above gates on a
+			// magnitude and can therefore compose NOTHING; this effect reads no magnitude
+			// to resolve (AFogVolume owns its duration), so gating it on the row would
+			// reintroduce the blank line this row exists to delete.
+			OutLines.Add(SpellFogCover);
+			if (Row.EffectDuration > 0.f)
+			{
+				OutLines.Add(FString::Printf(SpellFogCoverDurationFmt,
+					*FormatStatValue(Row.EffectDuration)));
+			}
+			break;
+
+		case ESpellEffect::FogClear:
+			// Unconditional for the same reason, and the window RULES are a separate
+			// clause from the window LENGTH because only the length lives in the row.
+			OutLines.Add(SpellFogClear);
+			OutLines.Add(SpellFogClearWindowRules);
+			if (Row.EffectDuration > 0.f)
+			{
+				OutLines.Add(FString::Printf(SpellFogClearBaseFmt,
+					*FormatStatValue(Row.EffectDuration)));
+			}
+			break;
+		}
+
+		// The aiming line, from the same resolved delivery — printed only for a row that
+		// is actually AIMED (see the derivation above). A spell that resolves globally
+		// gets NO delivery line rather than a wrong one.
+		if (bAimed)
+		{
+			OutLines.Add(bDeliversAsLine ? DeliveryHeroLine : DeliveryGroundCircle);
 		}
 	}
 }
@@ -1324,88 +1572,14 @@ void UDeckBuilderWidget::AppendRuleLines(FName CardID, const FCardRow& Row, TArr
 	}
 
 	// --- spell effect + delivery ---------------------------------------------
-	// Each effect prints ONLY when the row carries the magnitudes that effect needs —
-	// the same well-formedness the resolver demands before it will resolve at all, so
-	// a malformed row describes nothing rather than promising an effect that refuses.
-	if (Row.SpellEffect != ESpellEffect::None)
-	{
-		// HOW it is delivered decides HOW its area reads, so resolve it first — through
-		// the ONE delivery brain (it owns the sparse Auto default), never re-derived
-		// here. The resolver only BRANCHES on delivery for the two area effects; the
-		// others are reticle-placed whatever their cell says, so a line reading is only
-		// ever taken for an effect that can actually be delivered as one.
-		const bool bLineCapableEffect =
-			(Row.SpellEffect == ESpellEffect::AoEDamage || Row.SpellEffect == ESpellEffect::Freeze);
-		const bool bDeliversAsLine = bLineCapableEffect
-			&& USpellLibrary::GetEffectiveDelivery(Row) == ESpellDelivery::HeroLine;
-
-		switch (Row.SpellEffect)
-		{
-		case ESpellEffect::AoEDamage:
-			// on the LINE path the row's radius plays no part at all (the corridor is
-			// the bolt's own), so the circle wording would be a lie there
-			if (Row.Damage > 0.f && bDeliversAsLine)
-			{
-				OutLines.Add(FString::Printf(SiegeboundCardGlossary::SpellAoEDamageLineFmt,
-					*FormatStatValue(Row.Damage)));
-			}
-			else if (Row.Damage > 0.f && Row.AoERadius > 0.f)
-			{
-				OutLines.Add(FString::Printf(SiegeboundCardGlossary::SpellAoEDamageCircleFmt,
-					*FormatStatValue(Row.Damage), *FormatStatValue(Row.AoERadius)));
-			}
-			break;
-
-		case ESpellEffect::Freeze:
-			if (Row.EffectDuration > 0.f && bDeliversAsLine)
-			{
-				OutLines.Add(FString::Printf(SiegeboundCardGlossary::SpellFreezeLineFmt,
-					*FormatStatValue(Row.EffectDuration)));
-			}
-			else if (Row.AoERadius > 0.f && Row.EffectDuration > 0.f)
-			{
-				OutLines.Add(FString::Printf(SiegeboundCardGlossary::SpellFreezeCircleFmt,
-					*FormatStatValue(Row.AoERadius), *FormatStatValue(Row.EffectDuration)));
-			}
-			break;
-
-		case ESpellEffect::TopTargetsDamage:
-			if (Row.MaxTargets > 0 && Row.AoERadius > 0.f && Row.Damage > 0.f)
-			{
-				OutLines.Add(FString::Printf(SiegeboundCardGlossary::SpellTopTargetsFmt,
-					Row.MaxTargets, *FormatStatValue(Row.AoERadius), *FormatStatValue(Row.Damage)));
-			}
-			break;
-
-		case ESpellEffect::AllyBuff:
-			if (Row.AoERadius > 0.f && Row.EffectDuration > 0.f)
-			{
-				OutLines.Add(FString::Printf(SiegeboundCardGlossary::SpellAllyBuffFmt,
-					*FormatStatValue(Row.AoERadius), *FormatStatValue(Row.EffectDuration)));
-			}
-			break;
-
-		case ESpellEffect::GoldSteal:
-			if (Row.GoldSteal > 0)
-			{
-				OutLines.Add(FString::Printf(SiegeboundCardGlossary::SpellGoldStealFmt, Row.GoldSteal));
-			}
-			break;
-
-		default:
-			break;
-		}
-
-		// The aiming line, from the same resolved delivery. GoldSteal resolves instantly
-		// with no aim and no reticle at all, so it gets NO delivery line rather than a
-		// wrong one.
-		if (Row.SpellEffect != ESpellEffect::GoldSteal)
-		{
-			OutLines.Add(bDeliversAsLine
-				? SiegeboundCardGlossary::DeliveryHeroLine
-				: SiegeboundCardGlossary::DeliveryGroundCircle);
-		}
-	}
+	// ⭐ EXTRACTED 2026-09-04 (TASK-999) into SiegeboundCardGlossary::AppendSpellLines,
+	// with its behaviour repaired there. It moved for ONE reason: this member is
+	// `private:` in DeckBuilderWidget.h, so the assertion TASK-999 item (3) requires —
+	// every ESpellEffect value resolves to non-empty text — had no way to reach the
+	// composer at all, and the header is another row's file this wave. The free function
+	// keeps the logic in this translation unit and gives Tests/SiegeCardGlossaryTest.cpp
+	// a door that costs the header nothing.
+	SiegeboundCardGlossary::AppendSpellLines(Row, OutLines);
 
 	// --- targeting profile ----------------------------------------------------
 	if (Row.Profile == ECardProfile::Siege)

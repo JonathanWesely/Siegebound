@@ -9,6 +9,7 @@
 #include "Misc/Paths.h"
 #include "Siegebound/SiegeCombatStatics.h"
 #include "Siegebound/SiegeFogStatics.h"
+#include "Siegebound/SummonedUnit.h" // TASK-979 (item 6f, SC-§60): test 7's unit rows now read the LIVE AggroRadius off the CDO instead of a hand-typed literal — see the re-derivation there for why a literal made this file green against a change it describes
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -17,11 +18,16 @@
  *      `FOG-§6`, `FOG-§7`, `FOG-§7a`, `FOG-§7b`, ruling 🧑 `J-F9`) ═══
  *
  *  ⛔⛔ THIS FILE DELIBERATELY DOES **NOT** RE-ASSERT `TASK-837`'s ARITHMETIC. `SiegeFogTest.cpp`
- *  already pins the conversion, the quadratic falloff, the hard cut, the fog-off bit-identity,
- *  the never-lengthens sweep and `FOG-§2`'s whole consequence table, in nine tests. Re-running
- *  those here would grow the suite without growing its coverage, and a second copy of a table is
- *  a second place for it to rot. ⇒ **every row below asserts WHICH LANE IS WIRED TO THE CEILING
- *  AND WHICH IS NOT** — the one thing `TASK-838` actually decided.
+ *  already pins the conversion, the falloff curve, the fog-off bit-identity, the never-lengthens
+ *  sweep and `FOG-§2`'s whole consequence table. Re-running those here would grow the suite
+ *  without growing its coverage, and a second copy of a table is a second place for it to rot.
+ *  ⇒ **every row below asserts WHICH LANE IS WIRED TO THE CEILING AND WHICH IS NOT** — the one
+ *  thing `TASK-838` actually decided.
+ *
+ *  ⚠️ AMENDED 2026-09-04 (TASK-981): this paragraph used to say *"the QUADRATIC falloff, the HARD
+ *  CUT … in NINE tests"*. ⛔ The falloff is BEER-LAMBERT now and the density curve is no longer a
+ *  hard cut (the ACQUISITION clamp still is — `FOG-§9.2`). ⛔ The test count is deliberately not
+ *  restated: a count in prose is a citation that rots (`SC-§40` cl. 9).
  *
  *  ⭐⭐ THE CLAIM THESE TESTS DEFEND, in one sentence: `WITCH-§1` made ONE chokepoint, so the
  *  chokepoint is now the shared road for consumers that are ⛔ NOT acts of seeing, and a BLIND
@@ -55,11 +61,15 @@
  *  `SiegeLadderClimbTest.cpp:39`). ⛔ **Green here is NOT "fog works".** It is "the ceiling is
  *  wired to exactly five lanes and to no others". The live behaviour needs `TASK-850`'s PIE pass.
  *
- *  ⚠️⚠️ AND THE HONEST HEADLINE, said here rather than left for a reader to discover: **fog does
- *  not exist at runtime yet.** `FSiegeCombatStatics::ReadFogState` — the one fog-state seam —
- *  returns `false` until `TASK-839` lands `AFogVolume`, so the cut can never fire and the
- *  acquisition surface is byte-for-byte the game that shipped. Test 8 pins that as a DECISION so
- *  it cannot be mistaken for coverage, and names the row `TASK-839` must INVERT.
+ *  ⚠️⚠️ AND THE HONEST HEADLINE, said here rather than left for a reader to discover — ⛔ REWRITTEN
+ *  2026-09-04 (TASK-1000) BECAUSE IT WENT FALSE AND ⛔ NOTHING RED SAID SO. It used to read *"fog
+ *  does not exist at runtime yet … `ReadFogState` returns `false` until `TASK-839` lands
+ *  `AFogVolume`"*. ⛔ **The seam is WIRED now** (`TASK-839`/`TASK-998`): `AFogVolume` exists,
+ *  `FSiegeCombatStatics::ReadFogState` consults it, and the cut CAN fire — so that paragraph
+ *  described a game that had stopped existing, in a file whose whole job is to say which lane is
+ *  wired to what. Test 8 was INVERTED IN PLACE rather than deleted, exactly as it asked to be.
+ *  ⚠️ What is STILL true, and is the honest part worth keeping: **green here is not "fog works"**
+ *  — every row in this file is a wiring claim, not a runtime one (see the `(b)` note above).
  */
 
 namespace SiegeFogClampFixture
@@ -1001,10 +1011,42 @@ bool FSiegeFogClampIsInertWithFogOffTest::RunTest(const FString& Parameters)
 
 	const FSiegeFogTuning Tuning = ShippedTuning();
 
-	// ⛔ These are the numbers the FIVE vision sites actually hand over — the unit's GDD §3.8
-	// profile AggroRadius, the tower ranges from cards.csv, the hero's MeleeRange, and the
-	// UNBOUNDED sentinel the two sites with no self-range use. ⚠️ NOT FOG-§2's card table:
-	// SiegeFogTest.cpp already owns that, and this row is about the WIRING's operands.
+	// ⛔ These are the numbers the FIVE vision sites actually hand over — the unit's notice
+	// radius, the tower ranges from cards.csv, the hero's MeleeRange, and the UNBOUNDED sentinel
+	// the two sites with no self-range use. ⚠️ NOT FOG-§2's card table: SiegeFogTest.cpp already
+	// owns that, and this row is about the WIRING's operands.
+	//
+	// ⭐⭐ RE-DERIVED 2026-09-04 (TASK-979 item 6f; SC-§60) — AND THE FIX IS THE READ, NOT THE
+	// NUMBER. The unit row used to be a hand-typed `600.f`, so this table asserted a literal
+	// against itself: when TASK-979 raised the shipped AggroRadius to 2000 the row went on
+	// passing while describing a value the game no longer has. ⛔ Re-typing `2000.f` here would
+	// be the identical defect one change later, so the operand is READ OFF THE CDO and the test
+	// now tracks whatever the game actually ships.
+	// ✅⭐⭐ AND THAT PREDICTION WAS ⛔ VERIFIED WITHIN HOURS, WHICH IS WHY IT IS RECORDED RATHER
+	// THAN CONGRATULATED: 🧑 Jonathan moved the same operand AGAIN the SAME DAY (2000 → 5000,
+	// J-F28 / FOG-§9.11, TASK-1003). ⛔ This table needed ⛔ ZERO edits for that — the row simply
+	// reports 5000 now. ⭐ A hand-typed `2000.f` would have been the SECOND stale literal at this
+	// exact site in one day.
+	const ASummonedUnit* const UnitDefaults = GetDefault<ASummonedUnit>();
+	if (!UnitDefaults)
+	{
+		AddError(TEXT("⛔ SELF-CHECK FAILED: GetDefault<ASummonedUnit>() returned null — every unit-radius claim below ")
+			TEXT("would be asserted against a fabricated number, which is worse than no claim at all."));
+		return false;
+	}
+	// ⛔ Through the public accessor: `AggroRadius` is a PROTECTED member, and every non-member CDO
+	// read in this codebase goes through an accessor (the `UnitCDO->GetCapsuleComponent()` idiom at
+	// Barracks.cpp:128).
+	// ⛔⛔ WHAT THIS OPERAND IS, STATED EXACTLY (qa/TASK-979 WARN-3 — the sentence that stood here
+	// claimed it "tracks a Blueprint override and a bound card row, exactly as the game does", and
+	// ⛔ ON THE BASE CDO IT TRACKS NEITHER): this is the shipped CLASS DEFAULT for ASummonedUnit,
+	// which is the operand this table's unit row is about. A Blueprint override lives on a
+	// DIFFERENT class's CDO, which GetDefault<ASummonedUnit>() never reaches — that is the whole
+	// reason GetClassDefaultEngagementRadiusUU() exists — and a bound card row is written onto the
+	// SPAWNED INSTANCE by LoadStatsAndStart, which touches no CDO at all. ⭐ The claim being made
+	// here needs neither: it is that the SHIPPED DEFAULT, whatever it is, exceeds the fog ceiling.
+	const float UnitNoticeRadiusUU = UnitDefaults->GetEngagementRadiusUU();
+
 	struct FSiteRadius
 	{
 		const TCHAR* Label;
@@ -1013,12 +1055,15 @@ bool FSiegeFogClampIsInertWithFogOffTest::RunTest(const FString& Parameters)
 
 	const FSiteRadius SiteRadii[] =
 	{
-		{ TEXT("ASummonedUnit::AcquireTarget — AggroRadius (GDD §3.8 profile constant)"), 600.f },
+		{ TEXT("ASummonedUnit::AcquireTarget — the per-unit notice radius, READ FROM THE CDO"), UnitNoticeRadiusUU },
 		{ TEXT("ATower::AcquireTarget — ArrowTower AttackRange"), 900.f },
 		{ TEXT("ATower::AcquireTarget — BallistaTower AttackRange"), 1400.f },
 		{ TEXT("ATower::AcquireTarget — BombTower / CrystalTower AttackRange"), 800.f },
 		{ TEXT("AHeroCharacter::DoMeleeAttack — MeleeRange"), 150.f },
-		{ TEXT("the UNBOUNDED sentinel (AcquireEnemyNearPoint, FireChainZapAt)"), TNumericLimits<float>::Max() },
+		// ⛔ "UNBOUNDED" names the RADIUS HANDED TO THE VISION QUERY (SeeingFromUnbounded), ⛔ NOT the
+		// function's eligibility gate. Since TASK-979 item (6b) AcquireEnemyNearPoint applies its own
+		// per-candidate notice bound AFTER the gather, so the GATHER is unbounded and the PICK is not.
+		{ TEXT("the UNBOUNDED gather sentinel (AcquireEnemyNearPoint's vision query, FireChainZapAt)"), TNumericLimits<float>::Max() },
 	};
 
 	for (const FSiteRadius& Site : SiteRadii)
@@ -1055,26 +1100,127 @@ bool FSiegeFogClampIsInertWithFogOffTest::RunTest(const FString& Parameters)
 		TEXT("appearing to honour it, and it would silently BUFF every melee unit in the game."),
 		FSiegeFogStatics::EffectiveVisionRadius(150.f, /*bFogActive=*/ true, Tuning), 150.f, Exact);
 
+	// ══════════════════════════════════════════════════════════════════════════════════════════
+	// ⭐⭐ RETIRED AND INVERTED 2026-09-04 (TASK-979 item 6f; qa/TASK-996.md WARN-4; SC-§60).
+	//
+	// ⛔⛔ WHAT USED TO BE HERE, AND WHY IT IS GONE RATHER THAN RENUMBERED: this row asserted
+	// `EffectiveVisionRadius(600.f, fog ON) == 600.f` under the stated rationale *"the unit
+	// AggroRadius of 600 … so this site is essentially untouched by fog."* TASK-979 made that
+	// description FALSE for the shipped game — and the row would have STAYED GREEN, because it
+	// passed the literal `600.f` rather than the unit's actual AggroRadius. A permanently-green
+	// test certifying an obsolete design property is exactly the tower-stacking failure this
+	// project has already shipped twice, and landing the new fog-ON row beside the old one would
+	// have left the suite holding TWO green tests giving contradictory accounts of ONE site.
+	//
+	// ⭐ THE ARGUMENT IS RE-DERIVED, ⛔ NOT RE-SIGNED. The old claim rested on `600 < 609.6`, an
+	// arithmetic coincidence between a profile constant and a fog ceiling. That coincidence is
+	// over: the notice radius is now the LARGEST vision request any unit site makes, so this is
+	// the site where fog bites HARDEST — which is precisely what Jonathan asked for when he
+	// ruled the 609.6 reduction applies to NON-RANGED units as well (J-F21).
+	//
+	// ⛔ EVERY OPERAND BELOW IS READ (CDO / tuning). Nothing is typed, so nothing can go stale
+	// the way the retired row did — and each claim can FAIL: revert AggroRadius to 600 and the
+	// premise row goes red first, naming the reason, instead of the suite quietly re-certifying
+	// a description of a game that no longer exists.
+	// ══════════════════════════════════════════════════════════════════════════════════════════
+
+	// (a) THE PREMISE, ASSERTED SEPARATELY so a future retune fails HERE with an explanation
+	//     rather than failing (b) with a bare number mismatch.
+	TestTrue(
+		FString::Printf(
+			TEXT("⭐⭐ THE PREMISE OF EVERYTHING BELOW: the shipped unit notice radius (%.1f uu) is ABOVE the fog ")
+			TEXT("ceiling (%.1f uu), so fog GENUINELY narrows unit acquisition. ⛔ This inverts the retired row, ")
+			TEXT("which asserted the opposite from a hand-typed 600. If this goes red, the notice radius fell back ")
+			TEXT("under the ceiling and the whole argument below must be RE-DERIVED, not the numbers re-signed."),
+			UnitNoticeRadiusUU, Tuning.FogVisionCeilingUU),
+		UnitNoticeRadiusUU > Tuning.FogVisionCeilingUU);
+
+	// (b) THE VALUE — TASK-979 spec item (5)(c): with fog ON the effective notice radius is the
+	//     ceiling, ⛔ not the notice radius.
 	TestEqual(
-		TEXT("⭐⭐ …and so is the unit AggroRadius of 600, because it already sits INSIDE the 609.6 ceiling. ")
-		TEXT("📌 MEASURED FINDING, recorded here rather than buried: FOG-§2's -83.1% Longbowman figure is about the ")
-		TEXT("card ROW's Range, which gates FIRING — the unit's ACQUISITION is the GDD §3.8 profile constant 600, ")
-		TEXT("so this site is essentially untouched by fog. The tower sites are where the card bites."),
-		FSiegeFogStatics::EffectiveVisionRadius(600.f, /*bFogActive=*/ true, Tuning), 600.f, Exact);
+		FString::Printf(
+			TEXT("⭐⭐ With fog ON the unit's effective notice radius is the CEILING (%.1f uu), ⛔ not its own %.1f. ")
+			TEXT("⭐ And no fog code was written at the acquisition site to achieve it: AcquireTarget hands the raw ")
+			TEXT("radius to SeeingFrom and the `min` happens at the ONE chokepoint inside the funnel (FOG-§7). A ")
+			TEXT("second clamp at the site would pass this row too, which is why test 6 asserts the chokepoint's ")
+			TEXT("uniqueness separately."),
+			Tuning.FogVisionCeilingUU, UnitNoticeRadiusUU),
+		FSiegeFogStatics::EffectiveVisionRadius(UnitNoticeRadiusUU, /*bFogActive=*/ true, Tuning),
+		Tuning.FogVisionCeilingUU, Exact);
+
+	// (c) THE COST THE INVERSION BUYS, asserted rather than left in a handoff — this is the exact
+	//     predicate the funnel branches on, so a green row here is the statement that the loop runs.
+	TestTrue(
+		FString::Printf(
+			TEXT("⚠️⚠️ …and the consequence, asserted because it is a REAL COST and not a caveat: at a request of %.1f uu ")
+			TEXT("the effective radius is STRICTLY SHORTER, which is precisely SiegeCombatStatics.cpp's cut predicate ")
+			TEXT("(`EffectiveRadiusUU < Vision->RequestedRadiusUU`). ⛔ At the old 600 that compared FALSE and the ")
+			TEXT("per-candidate loop was skipped entirely; it now RUNS — an ActorGetDistanceToCollision per candidate, ")
+			TEXT("per unit, at 4 Hz, whenever fog is up. ⛔ The ENUMERATION is still 1.00× (the funnel takes no radius), ")
+			TEXT("so neither 'free' nor '11.1×' is a true account of this change."),
+			UnitNoticeRadiusUU),
+		FSiegeFogStatics::EffectiveVisionRadius(UnitNoticeRadiusUU, /*bFogActive=*/ true, Tuning) < UnitNoticeRadiusUU);
+
+	// ── ⭐⭐ (d) A CARD-SPECIFIC NOTICE RADIUS IS CUT BY FOG EXACTLY LIKE THE DEFAULT IS.
+	//    ⚠️⚠️ ⛔ THIS ROW'S JUSTIFICATION IS ⛔ RE-AUTHORED, ⛔ NOT RE-SIGNED (TASK-1003, SHIP-§9).
+	//    It used to be titled *"THE ROW THAT PROVES 2000 IS A DEFAULT AND NOT A CAP"*, and its
+	//    message claimed *"a `FMath::Min(Range, UnitEngagementRadiusUU)` anywhere in the channel
+	//    returns 2000 here and this goes RED."* ⛔ THAT CLAIM IS NOW FALSE, and silently so:
+	//    🧑 his 5000 ruling (J-F28, FOG-§9.11) put the default ABOVE this 3600, so
+	//    `min(3600, 5000) = 3600` and ⛔ a clamp would leave BOTH rows below GREEN. ⇒ ⛔ A GUARD
+	//    THAT PASSES THE CHANGE IT WAS WRITTEN TO CATCH IS WORSE THAN NO GUARD — so the anti-clamp
+	//    DISCRIMINATION is ⛔ moved out of this file entirely, onto a SYNTHETIC value above the
+	//    default in `Tests/SiegeUnitNoticeRangeTest.cpp` test 2, where the channel is owned.
+	//    ⭐ WHAT SURVIVES HERE, AND IT IS STILL WORTH ASSERTING: a per-card notice radius reaches
+	//    the fog seam through the SHIPPED CHANNEL and is treated by fog identically to the
+	//    default — 🧑 "it still gets reduced down to 609 in fog". ⛔ That is a FOG claim, which is
+	//    this file's subject; the CHANNEL claim never was.
+	//    ⚠️ The 3600 is supplied directly rather than read from `cards.csv`: TASK-1004 BLANKS the
+	//    Longbowman's cell (at a 5000 default a 3600 would make it notice LESS than everyone
+	//    else), so the value here is a CHANNEL INPUT and no longer a shipped card's number.
+	const float PerCardNoticeUU =
+		ASummonedUnit::ResolveNoticeRadiusUU(UnitNoticeRadiusUU, /*RowNoticeRangeUU=*/ 3600.f);
+
+	TestEqual(
+		FString::Printf(
+			TEXT("⭐ WITH FOG OFF a card-specific notice radius of 3600 is returned BIT-IDENTICALLY — ⛔ neither ")
+			TEXT("clamped nor widened to the %.1f default on its way through the channel. ⚠️ ⛔ THIS IS NO LONGER AN ")
+			TEXT("ANTI-CLAMP ROW: at a %.1f default, `min(3600, %.1f) = 3600`, so a clamp would PASS this. The ")
+			TEXT("anti-clamp discrimination lives on a SYNTHETIC value in SiegeUnitNoticeRangeTest test 2 ⇒ what this ")
+			TEXT("row still proves is that fog is INERT when it is off, for a per-card reach as much as a default one."),
+			UnitNoticeRadiusUU, UnitNoticeRadiusUU, UnitNoticeRadiusUU),
+		FSiegeFogStatics::EffectiveVisionRadius(PerCardNoticeUU, /*bFogActive=*/ false, Tuning), 3600.f, Exact);
+
+	TestEqual(
+		FString::Printf(
+			TEXT("⭐⭐ …and WITH FOG ON it is cut to the same %.1f ceiling as every other unit — 🧑 his words, \"it ")
+			TEXT("still gets reduced down to 609 in fog\". ⛔ A per-card reach is an exception to the DEFAULT, never ")
+			TEXT("to the fog ceiling: one `min` at one chokepoint treats a card-specific radius and a Footman ")
+			TEXT("identically. ⭐ THIS is the row that survived his number change intact, because it was always a ")
+			TEXT("claim about FOG rather than about the channel."),
+			Tuning.FogVisionCeilingUU),
+		FSiegeFogStatics::EffectiveVisionRadius(PerCardNoticeUU, /*bFogActive=*/ true, Tuning),
+		Tuning.FogVisionCeilingUU, Exact);
 
 	return true;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  TEST 8 ⭐⭐ — THE FOG-STATE SEAM: ONE READ, AND IT IS **NOT LIVE YET**.
-//  ⛔ Written so a green suite cannot be mistaken for a shipped feature, and so
-//  `TASK-839` inherits a row it must INVERT rather than delete (the TASK-828 →
-//  TASK-829 idiom, which is the one that worked).
+//  TEST 8 ⭐⭐ — THE FOG-STATE SEAM: ONE READ, AND IT IS **LIVE**.
+//  ⛔ INVERTED IN PLACE 2026-09-04 (TASK-1000, prose half) NOW THAT `TASK-839` /
+//  `TASK-998` HAVE LANDED `AFogVolume` AND THE SEAM CONSULTS IT. The row was
+//  written to be inverted rather than deleted (the TASK-828 → TASK-829 idiom,
+//  which is the one that worked) — and this is that inversion arriving.
+//  ⛔⛔ THE ASSERTIONS AND THEIR NUMBERS ARE UNCHANGED, DELIBERATELY: what moved
+//  was the MEANING of the surviving `return false`, not its count. A wiring
+//  change that leaves every number identical is precisely the change a test
+//  cannot notice, and `SC-§60` is the law that it must still not be allowed to
+//  leave the words behind.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FSiegeFogClampStateSeamTest,
-	"Siegebound.Fog.TheFogStateIsReadInExactlyOnePlaceAndIsNotLiveUntilTask839",
+	"Siegebound.Fog.TheFogStateIsReadInExactlyOnePlaceAndTheSeamConsultsAFogVolume",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FSiegeFogClampStateSeamTest::RunTest(const FString& Parameters)
@@ -1114,9 +1260,14 @@ bool FSiegeFogClampStateSeamTest::RunTest(const FString& Parameters)
 			CountOccurrencesInCode(FunnelBody, TEXT("ReadFogState(")), 1);
 	}
 
-	// ── (b) ⛔⛔ THE HONEST ROW, AND IT IS THE ROW `TASK-839` MUST **INVERT, NOT DELETE**.
-	//    `AFogVolume` is TASK-839's and TASK-839 is BLOCKED BY TASK-838, so the wiring lands first
-	//    and the state lands second. While the seam returns false the clamp can never fire.
+	// ── (b) ⛔⛔ THE ROW THAT WAS INVERTED RATHER THAN DELETED — and the inversion has HAPPENED.
+	//    `AFogVolume` landed (TASK-839/TASK-998) and the seam now consults it, so the clamp CAN
+	//    fire. ⛔ The pinned count did NOT move, and that is the interesting part: the seam still
+	//    holds exactly TWO `return false;` because the second one was never only a stub — it now
+	//    means "there is no fog volume, or its timer has run out", a real answer about a real
+	//    source. ⇒ the NUMBER stayed while its MEANING changed underneath it, which is why the
+	//    message below had to be rewritten by hand (TASK-1000): nothing red would ever have
+	//    reported it.
 	FString SeamBody;
 	if (ExtractFunctionBody(*this, CombatCpp, TEXT("bool FSiegeCombatStatics::ReadFogState("), SeamBody))
 	{
@@ -1126,12 +1277,15 @@ bool FSiegeFogClampStateSeamTest::RunTest(const FString& Parameters)
 			SeamBody.Len() > 200);
 
 		TestEqual(
-			TEXT("⚠️⚠️ THE SEAM IS NOT WIRED TO A FOG SOURCE YET, AND THIS ROW SAYS SO OUT LOUD RATHER THAN LETTING ")
-			TEXT("A GREEN SUITE IMPLY OTHERWISE: it always answers \"no fog\", so the ceiling never fires and the ")
-			TEXT("acquisition surface is byte-for-byte the game that shipped. ⛔ TASK-839 lands `AFogVolume` and ")
-			TEXT("REPLACES the seam's final `return false` with the volume read. ⭐ WHEN IT DOES, **INVERT THIS ROW, ")
-			TEXT("DO NOT DELETE IT** — it becomes \"the seam really consults AFogVolume\", which is the assertion ")
-			TEXT("that would catch a fog card that renders beautifully and blinds nobody."),
+			TEXT("⭐⭐ THE SEAM IS WIRED, AND THIS IS A CENSUS OF ITS **REFUSAL PATHS**: `ReadFogState` may answer ")
+			TEXT("\"no fog\" in exactly TWO ways — (1) there is no world, and (2) there is no `AFogVolume`, or its ")
+			TEXT("timer has run out. ⛔ A THIRD `return false;` is a NEW silent \"no fog\" path, which is how a ")
+			TEXT("shipped fog card starts blinding nobody while every test stays green. ⛔ THE COUNT IS ")
+			TEXT("DELIBERATELY UNCHANGED FROM WHEN THE SEAM WAS A STUB: what moved was the MEANING of the second ")
+			TEXT("one — it is now a real answer about a real source, not a placeholder — which is exactly the ")
+			TEXT("class of change no assertion can report. ⭐ That the seam CONSULTS the volume at all is asserted ")
+			TEXT("separately, in Tests/SiegeFogVolumeTest.cpp; this row guards the other half, that it never grows ")
+			TEXT("a quiet way to say no."),
 			CountOccurrencesInCode(SeamBody, TEXT("return false;")), 2);
 	}
 
@@ -1144,6 +1298,132 @@ bool FSiegeFogClampStateSeamTest::RunTest(const FString& Parameters)
 			TEXT("untouched would push an uninitialised band into EffectiveVisionRadius, and a garbage ceiling in ")
 			TEXT("the funnel is a global combat outage rather than a local glitch."),
 			CountOccurrencesInCode(SeamBody, TEXT("OutTuning = FSiegeFogTuning();")), 1);
+	}
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  TEST 9 ⛔⛔⭐⭐ — `FogDensityAt` IS **THE VISUAL'S CURVE ONLY**, AND THE BAN IS
+//  ENFORCED BY A SOURCE-TEXT CENSUS RATHER THAN BY A COMMENT
+//
+//  ⛔ NEW 2026-09-04 (TASK-981; ruling `FOG-§9.2`, which demotes the function and
+//  says: *"⛔ NOTHING mechanical may consult it, ⛔ ever. A gameplay site that reads
+//  `FogDensityAt` is an ⛔ AUTOMATIC QA FAIL."*).
+//
+//  ⛔⛔ WHY A CENSUS AND NOT A COMMENT: the curve is now ASYMPTOTIC. It NEVER reaches
+//  1, so a mechanic built on it would leave a permanent sliver of visibility — 2% at
+//  the ceiling, and at Longbowman range 2% is a LETHAL SHOT. ⇒ the ban is not style;
+//  it is the thing standing between the picture and a live combat defect. ⭐ And a
+//  future caller would be a plausible-looking one-liner ("dim the target's aggro by
+//  the fog density…"), which is exactly the class of edit a comment does not stop.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeFogDensityIsVisualOnlyTest,
+	"Siegebound.Fog.FogDensityAtIsTheVisualsCurveOnlyAndNoGameplaySiteCallsIt",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeFogDensityIsVisualOnlyTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeFogClampFixture;
+
+	// ── (a) ⛔⛔ THE TREE-WIDE PIN ───────────────────────────────────────────────────────
+	// ⛔ The needle is a CALL SHAPE (`FogDensityAt(`), never a bare token — `SC-§40` cl. 12: a
+	// bare token is moved by a substring or a trailing comment. Automation tests are excluded by
+	// `CountAcrossShippingSource`, so `SiegeFogTest.cpp`'s own exercise of the curve is correctly
+	// outside this population.
+	//
+	// ⭐ MEASURED 2026-09-04, and the two hits are named so a future reader knows WHICH two are
+	// legitimate rather than having to re-derive it:
+	//     SiegeFogStatics.h   — the DECLARATION
+	//     SiegeFogStatics.cpp — the DEFINITION
+	// ⇒ ⛔ A THIRD HIT IS A GAMEPLAY CALLER AND IS AN AUTOMATIC QA FAIL.
+	FString Where;
+	const int32 TreeWideHits = CountAcrossShippingSource(*this, TEXT("FogDensityAt("), Where);
+
+	TestEqual(
+		FString(TEXT("(a) ⛔⛔ `FogDensityAt(` occurs EXACTLY TWICE in shipping source — its own declaration and its own "))
+		+ TEXT("definition, and NOTHING ELSE. ⭐ A THIRD hit means a gameplay site is reading the VISUAL's curve, ")
+		+ TEXT("which FOG-§9.2 makes an AUTOMATIC QA FAIL: the curve is ASYMPTOTIC, so a mechanic built on it ")
+		+ TEXT("leaves 2% visibility at the ceiling forever, and at Longbowman range 2% is a LETHAL SHOT. ")
+		+ TEXT("⛔ Do NOT 'fix' this by raising the number — route the question to EffectiveVisionRadius, which ")
+		+ TEXT("is the HARD CUT. Sites found:") + Where,
+		TreeWideHits, 2);
+
+	// ⛔ THE POSITIVE CONTROL (`SC-§39`) — a dead scanner must not read as a clean pin. This
+	// exercises the FALSE-NEGATIVE direction: a needle that IS present, in the same files, with
+	// the same helper. If the instrument were blind, this row goes red first.
+	// ⚠️ Asserted as `>= 3`, ⛔ NOT `== 3`: the exact tree-wide `EffectiveVisionRadius(` count is
+	// already pinned by test 4 and by `handoffs/TASK-867-programmer.md`'s pin table. ⛔ A second
+	// `== N` on the same needle would be a duplicate pin that two different tasks could break.
+	FString ControlWhere;
+	const int32 ControlHits = CountAcrossShippingSource(*this, TEXT("EffectiveVisionRadius("), ControlWhere);
+
+	TestTrue(
+		FString(TEXT("(a) ⛔ POSITIVE CONTROL: the same scanner, over the same tree, finds `EffectiveVisionRadius(` "))
+		+ TEXT("(declaration + definition + the one funnel call). ⭐ Without this row a count of 2 above would be ")
+		+ TEXT("indistinguishable from a DEAD SCANNER reporting a reassuring number. Sites found:") + ControlWhere,
+		ControlHits >= 3);
+
+	// ── (b) ⛔ THE ACQUISITION LANES DO NOT NAME THE CURVE ──────────────────────────────
+	// ⭐ Per-file zeros, each with its own positive control, so a file that failed to LOAD cannot
+	// read as a file that is clean. This is the FALSE-NEGATIVE direction again, per file.
+	const TCHAR* AcquisitionLaneFiles[] = { SummonedUnitCpp, TowerCpp, HeroCpp, SpellLibraryCpp, CheatManagerCpp };
+
+	for (const TCHAR* File : AcquisitionLaneFiles)
+	{
+		FString Text;
+		if (!LoadProjectFile(*this, File, Text))
+		{
+			continue; // LoadProjectFile already errored — a stale probe FAILS, it does not pass quietly.
+		}
+
+		TestEqual(*FString::Printf(TEXT("(b) ⛔ '%s' never calls `FogDensityAt(` — the acquisition lanes read the CLAMP, never the picture"), File),
+			CountOccurrencesInCode(Text, TEXT("FogDensityAt(")), 0);
+
+		// ⛔ POSITIVE CONTROL, per file: the scanner must be able to find SOMETHING here, or the
+		// zero above is a statement about the reader rather than about the file.
+		// ⭐ Measured 2026-09-04, so the control is known to be a real discriminator and not a
+		// row that happens to pass: 113 · 4 · 47 · 8 · 16 across the five files.
+		TestTrue(*FString::Printf(TEXT("(b) ⛔ POSITIVE CONTROL for '%s': the file loaded and the scanner is alive — it finds at least one `float` on a code line"), File),
+			CountOccurrencesInCode(Text, TEXT("float")) > 0);
+	}
+
+	// ── (c) ⛔⛔ THE FUNNEL ITSELF — the one place a "harmonisation" would land ──────────
+	// ⭐ `GatherHostileAgents` is the chokepoint every acquisition routes through. If anyone ever
+	// tries to make the picture and the mechanic agree, THIS is the function they will edit.
+	FString CombatCpp;
+	if (LoadProjectFile(*this, CombatStaticsCpp, CombatCpp))
+	{
+		FString FunnelBody;
+		if (ExtractFunctionBody(*this, CombatCpp, TEXT("void FSiegeCombatStatics::GatherHostileAgents("), FunnelBody))
+		{
+			TestEqual(
+				TEXT("(c) ⛔⛔ The acquisition funnel does NOT consult `FogDensityAt(`. ⭐ FOG-§9.2 declares the ")
+				TEXT("divergence DELIBERATE: at the ceiling the picture says 98% obscured while the mechanic says ")
+				TEXT("ZERO acquisition. ⛔ NOBODY HARMONISES THEM — he chose the look, and the hard cut is what ")
+				TEXT("makes the card assertable and non-lethal."),
+				CountOccurrencesInCode(FunnelBody, TEXT("FogDensityAt(")), 0);
+
+			// ⛔ POSITIVE CONTROL for the extraction: the body must contain the clamp it DOES use.
+			// Without this, an ExtractFunctionBody that silently returned the wrong span would
+			// make the zero above meaningless.
+			TestEqual(
+				TEXT("(c) ⛔ POSITIVE CONTROL: the SAME extracted body still contains its ONE `EffectiveVisionRadius(` ")
+				TEXT("call — so the zero above was measured over the real funnel, not over an empty string."),
+				CountOccurrencesInCode(FunnelBody, TEXT("FSiegeFogStatics::EffectiveVisionRadius(")), 1);
+		}
+	}
+
+	// ── (d) ⭐ AND THE HEADER SAYS SO, so a reader meets the ban before the signature ────
+	FString FogHeader;
+	if (LoadProjectFile(*this, FogStaticsHeader, FogHeader))
+	{
+		TestTrue(
+			TEXT("(d) ⭐ `SiegeFogStatics.h` carries the demotion banner in prose — the census above is the ")
+			TEXT("enforcement, and this row is what keeps the REASON discoverable at the seam itself."),
+			FogHeader.Contains(TEXT("THE VISUAL'S CURVE ONLY"), ESearchCase::CaseSensitive));
 	}
 
 	return true;

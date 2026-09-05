@@ -88,10 +88,21 @@
  *       neighbouring `SiegeAssistantSelectionTest` reads the CSV and declares
  *       that reimport gap as a residual; this file does not inherit it.)
  *   (b) THE SPAWNABLE/EXCLUDED SPLIT is a switch over `ECardType` with EVERY
- *       enumerator named, so adding a seventh card type is a COMPILE-TIME
- *       `-Wswitch` failure here, and an out-of-range byte deserialized from the
- *       asset lands in `Unclassified` and goes RED at run time. ⛔ There is no
- *       silent third outcome.
+ *       enumerator named and NO `default:` label, so a seventh card type cannot
+ *       be silently swallowed. ⛔ WHICH HALF OF THAT GUARD IS LOAD-BEARING IS
+ *       TOOLCHAIN-DEPENDENT, and this project sits on the pessimistic side:
+ *       under Clang `-Wswitch` makes a 7th enumerator a COMPILE error, but AS
+ *       MEASURED 2026-09-03 AT `09b9b50` this project's `Build.cs` sets NO
+ *       warning configuration (zero hits for `CppCompileWarnings` /
+ *       `bWarningsAsErrors` / `4062` anywhere under `Source/` — `qa/TASK-948.md`
+ *       `W-2`) and `TASK-949` built it on MSVC 14.50 ⇒ ON THIS TOOLCHAIN THE
+ *       COMPILE-TIME HALF MAY NOT FIRE AT ALL. ⭐ THE RUN-TIME TELL IS THE
+ *       LOAD-BEARING HALF HERE, and it is UNAFFECTED: an enumerator nobody
+ *       routed, and equally an out-of-range byte deserialized from the asset,
+ *       BOTH fall to the `Unclassified` initializer, are reported BY NAME, and
+ *       take the partition assertion red as a second independent tell. ⛔ There
+ *       is no silent third outcome — but do not credit the compiler for that
+ *       (`SC-§51` cl. 5).
  *   (c) THE ECONOMY-BUILDING EXCEPTION (Deep Mine: `CardType` Economy, actor
  *       `ABuilding`) comes from the shipped controller's own
  *       `BuildingEconomyCardIDs` default, read off the CDO by reflection.
@@ -124,14 +135,35 @@
  *       filenames and 0 files under `Source/`; the positive control `Sorcerer`
  *       run through the same four instruments returns 1 / 3 / 1 / 27.
  *
- *  ── ⛔⛔ THIS TEST IS **RED TODAY**, AND THAT IS THE PROOF, NOT A DEFECT ────
+ *  ── ⛔⛔ THIS TEST WAS **RED WHEN IT WAS WRITTEN**, AND THAT WAS THE PROOF ──
  *
- *  `BP_Unit_Witch` is absent as this file is written (`TASK-946` is authoring it
- *  in parallel). The row for `Witch` MUST fail, by name, until that asset lands.
- *  ⛔⛔ DO NOT "FIX" THIS BY WEAKENING THE ASSERTION, SKIPPING THE ROW, OR
- *  ALLOWLISTING A CARD ID. The only correct repair is the missing asset.
- *  ⭐ `TASK-949` owns the RED → GREEN transition and it is the machine-checkable
- *  proof that the authored Blueprint actually resolves at the composed path.
+ *  ⛔ PAST TENSE ON PURPOSE (`SC-§53` cl. 3 — a dated measurement cannot rot; a
+ *  present-tense one starts lying the moment the repair lands in another commit).
+ *  `BP_Unit_Witch` was ABSENT when this file was authored (`TASK-947`), so the
+ *  `Witch` row failed BY NAME. `TASK-946` authored the asset and `TASK-949`
+ *  committed both at `09b9b50` (2026-09-03), where this gate compiled and went
+ *  GREEN over `32 row(s) read; 22 SPAWNABLE probed; 10 EXCLUDED`.
+ *  ⇒ ⛔ THE GATE IS GREEN TODAY AND MUST STAY THAT WAY. ⛔⛔ IF IT GOES RED
+ *  AGAIN, DO NOT "FIX" IT BY WEAKENING THE ASSERTION, SKIPPING THE ROW OR
+ *  ALLOWLISTING A CARD ID — the only correct repair is the missing asset.
+ *
+ *  ── ⛔ THE HALF `09b9b50` COULD NOT BUY, RECORDED SO IT IS NOT RE-LOST ──────
+ *
+ *  The RED → GREEN transition was observed only on `TASK-947`'s SHELL MIRROR — a
+ *  different program, in a different language, reading `cards.csv` rather than
+ *  `DT_Cards.uasset`. ⛔ THE COMPILED GATE HAD BEEN SEEN ONLY PASSING.
+ *  Synthesising a compiled red by moving the staged `BP_Unit_Witch.uasset` aside
+ *  was REFUSED by the permission system and — correctly — NOT worked around
+ *  (⭐ `SC-§54` cl. 1: a refusal that is routed around is worse than no permission
+ *  system at all, because the next reader cannot tell which of the two happened).
+ *  ⇒ `TASK-964` answered it with a METHOD CHANGE rather than a retry: the SIBLING
+ *  TEST AT THE FOOT OF THIS FILE,
+ *  `Siegebound.CardRoster.AnAbsentCardIDFailsToResolveItsComposedActorClassPath`,
+ *  a PERMANENT negative control driven by a MEASURED-ABSENT SYNTHETIC CardID that
+ *  touches no asset at all. It drives the SAME `ClassifyRow` →
+ *  `ComposeActorClassPath` → `FPackageName::DoesPackageExist` chain this walk
+ *  uses and INVERTS the assertion, so it is GREEN precisely BECAUSE the
+ *  resolution fails. ⛔ Do not "simplify" the two into one.
  *
  *  ── MECHANISM — read-only; ⛔ zero writes, ⛔ no world, ⛔ no PIE, ⛔ no spawns
  *
@@ -210,12 +242,24 @@ namespace SiegeCardRosterTestFixture
 	 *  The shipped split, mirrored from `ASiegePlayerController::IsBuildingCard` +
 	 *  `ResolveCardActorClass`.
 	 *
-	 *  ⛔ NOTE THE ABSENT `default:` LABEL — that is deliberate, not an omission.
-	 *  Every enumerator is named, so ADDING a seventh `ECardType` fails to COMPILE
-	 *  here (`-Wswitch`) instead of being silently swallowed as non-spawnable; and
-	 *  a value outside the enum entirely (a byte deserialized from the asset)
-	 *  falls straight through to the `Unclassified` initializer and goes red at
-	 *  run time. Both directions are covered and neither is silent.
+	 *  ⛔⛔ NOTE THE ABSENT `default:` LABEL — deliberate, not an omission, and
+	 *  `qa/TASK-948.md` §(c) RULED that it must be PRESERVED. Adding
+	 *  `default: Category = NotSpawnable;` would SILENTLY SWALLOW every unrouted
+	 *  card type into the excluded bucket: the partition would still balance, the
+	 *  walk would still look healthy, and a whole card family would be invisible
+	 *  to the gate written to find exactly that. ⛔ BOTH halves of the guard would
+	 *  be disarmed by one "cleanup". ⛔ DO NOT ADD ONE (`SC-§51` cl. 5).
+	 *
+	 *  ⚠️ WHAT THE ABSENT LABEL BUYS, STATED PER TOOLCHAIN RATHER THAN
+	 *  ABSOLUTELY. Under Clang, `-Wswitch` makes a seventh `ECardType` a COMPILE
+	 *  failure here. ⛔ AS MEASURED 2026-09-03 AT `09b9b50` this project sets no
+	 *  warning configuration and `TASK-949` built on MSVC 14.50, so on the
+	 *  standing Win64 toolchain that compile-time half MAY NOT FIRE. ⭐ THE
+	 *  RUN-TIME HALF IS WHAT ACTUALLY PROTECTS THIS SWITCH and it needs no
+	 *  toolchain support: an enumerator nobody routed — and equally a byte
+	 *  outside the enum entirely, deserialized from the asset — falls straight
+	 *  through to the `Unclassified` initializer, is reported BY NAME, and takes
+	 *  the partition assertion red as a second independent tell.
 	 */
 	static ESpawnCategory ClassifyRow(FName CardID, ECardType CardType, const TArray<FName>& BuildingEconomyCardIDs)
 	{
@@ -538,6 +582,234 @@ bool FSiegeCardRosterSpawnableActorClassPathTest::RunTest(const FString& Paramet
 		AddInfo(FString::Printf(TEXT("⛔ UNRESOLVED: %d of %d spawnable card(s) have NO actor Blueprint at their composed CONVENTIONS path: %s"),
 			UnresolvedRows, SpawnableRows, *FString::Join(UnresolvedCardIDs, TEXT(", "))));
 	}
+
+	return true;
+}
+
+/**
+ *  ═══ THE PERMANENT NEGATIVE CONTROL (TASK-964; law: CONVENTIONS `SC-§54`,
+ *      `SHIP-§9`/`§9c` cl. 1, `SC-§51` cl. 3 + cl. 6, `SC-§39`, `SC-§38`,
+ *      `SC-§40` cl. 10, `SC-§49`) ═══
+ *
+ *  ⛔⛔ WHY THIS TEST EXISTS: THE GATE ABOVE HAD NEVER BEEN SEEN **RED** ON A
+ *  COMPILED RUN. `TASK-949` compiled it and ran it and it PASSED — but a gate
+ *  only ever seen passing is `SHIP-§9c` cl. 1's *"a status line wearing a gate's
+ *  clothes"*. The obvious way to buy a red was to move the staged
+ *  `BP_Unit_Witch.uasset` aside; ⛔ THE PERMISSION SYSTEM REFUSED, and `TASK-949`
+ *  correctly DID NOT WORK AROUND IT. ⭐ `SC-§54` cl. 3 supplies the answer, and it
+ *  is a **METHOD**, not a retry with a new task ID: a negative control is
+ *  synthesised against a MEASURED-ABSENT SYNTHETIC INPUT — ⛔ NEVER by moving,
+ *  renaming, deleting or editing a REAL deliverable. ⛔ This test touches no
+ *  asset, and it must never be rewritten into one that does.
+ *
+ *  ⭐ AND IT IS **PERMANENT**, WHICH IS THE WHOLE POINT (`SC-§54` cl. 3(c)): a
+ *  disturbed asset buys ONE transcript that decays into a screenshot; a synthetic
+ *  absent input buys an assertion that RE-PROVES, ON EVERY SINGLE RUN, that the
+ *  probe is still capable of answering NO.
+ *
+ *  ── ⛔⛔ THE TRAP THIS TEST IS WRITTEN AROUND — READ BEFORE EDITING ─────────
+ *
+ *  The sibling walk reports a missing actor Blueprint BY FAILING. This test
+ *  EXPECTS that condition, so it INVERTS THE ASSERTION rather than re-running the
+ *  walk. ⛔ IT MUST NEVER `AddError` ON THE EXPECTED ABSENCE — every `AddError`
+ *  below is a SELF-CHECK failure, i.e. the instrument could not reach its
+ *  subject, which is a real failure. ⛔ A control that turns the suite RED is a
+ *  BUG wearing a control's clothes and it would block the commit host.
+ *  ⭐ THIS TEST IS GREEN, AND IT IS GREEN **BECAUSE** THE RESOLUTION FAILS.
+ *
+ *  ── ⛔ THE SAME SYMBOLS, NOT A COPY OF THEM (`SC-§38`) ──────────────────────
+ *
+ *  A hand-built path string asserted not to resolve would prove NOTHING about the
+ *  gate — it would be a test of its own scratch work. This test therefore calls
+ *  the SAME symbols the walk calls, in the SAME order:
+ *      `ClassifyRow` → `ComposeActorClassPath` → `FPackageName::DoesPackageExist`
+ *  ⛔ It composes NO path of its own and contains NO `/Game/...` literal. The
+ *  CONVENTIONS string lives in exactly ONE place in this file
+ *  (`ComposeActorClassPath`); this test CONSUMES it and adds no second copy.
+ *
+ *  ── ⭐ WHY IT CANNOT PASS VACUOUSLY — TWO LEDGERS, KEPT APART (`SC-§51` cl. 4)
+ *
+ *  ⛔ (a) REACHABILITY — the synthetic row is asserted to CLASSIFY **SPAWNABLE**.
+ *         This is the assertion easiest to omit and most expensive to omit: a
+ *         CardID the walk would route `NotSpawnable` is never probed at all, so a
+ *         "negative control" built on one would stand for a red THAT COULD NEVER
+ *         HAPPEN. Reachability is not decoration; it is the premise.
+ *  ⛔ (b) INSTRUMENT CONTROLS (`SC-§39`) — the negative half alone is worthless: a
+ *         probe stuck at ABSENT satisfies it for entirely the wrong reason. So
+ *         the POSITIVE half runs the IDENTICAL call on a measured-PRESENT card
+ *         and requires PRESENT, and a DISCRIMINATION assertion requires the two
+ *         answers to DIFFER. ⇒ a probe stuck at EITHER polarity turns this test
+ *         red. ⭐⭐ THAT PAIR IS THE COMPILED, PERMANENT FORM OF *"PROVE YOUR
+ *         CONTROL CAN FAIL"*: the positive control IS the inverted assertion,
+ *         running live on every pass, rather than a one-off source edit whose
+ *         transcript nobody can re-run. The same discipline is applied a second
+ *         time to `FindRow` — a lookup that answered null for EVERYTHING would
+ *         satisfy the liveness check below for the wrong reason too.
+ *  ⛔ (c) LIVENESS — the synthetic CardID is re-measured against the CDO-derived
+ *         table AT RUN TIME. If it ever becomes a real card, this control is DEAD
+ *         and says so BY FAILING, rather than passing quietly forever.
+ *
+ *  ── ⛔ `SC-§40` cl. 10 — THE SYNTHETIC WAS **MEASURED** ABSENT, NOT ASSUMED ──
+ *
+ *  It REUSES the fixture's single `NegativeControlCardID` rather than minting a
+ *  second constant free to drift from the first. ⚠️ A near-miss name such as
+ *  `ZzNoSuchCard` was REJECTED precisely because it is a SUBSTRING of the
+ *  existing constant, so its "absence" would have been unmeasurable by grep.
+ *  Re-measured 2026-09-03 over the tree at `09b9b50`: `ZzNoSuchCardZz` returns
+ *  0 hits in `Docs/Data/cards.csv`, 0 in `Content/Data/DT_Cards.uasset` (binary)
+ *  and 0 `Content/Blueprints/**` filenames, while the positive control `Sorcerer`
+ *  through those same three instruments returns 1 / 4 / 1. ⚠️ Under `Source/` the
+ *  synthetic now reads 1 FILE — THIS one, which declares it — and that is its
+ *  intended and only home. (The file-header's `950d8c5` reading of `0` under
+ *  `Source/` was taken before this test file was tracked; it is dated, it is
+ *  correct as written, and per `SC-§53` cl. 3 it must NOT be "corrected".)
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeCardRosterAbsentCardIDNegativeControlTest,
+	"Siegebound.CardRoster.AnAbsentCardIDFailsToResolveItsComposedActorClassPath",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeCardRosterAbsentCardIDNegativeControlTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeCardRosterTestFixture;
+
+	// ══ SELF-CHECKS ═════════════════════════════════════════════════════════
+	// ⛔ Same discipline as the sibling walk, and for the same reason: a control
+	//    that cannot reach its subject must FAIL, never report SAFE. An
+	//    unreachable CDO and a correctly-absent asset would otherwise produce the
+	//    identical green bar.
+
+	const UObject* const ControllerDefaults = ASiegePlayerController::StaticClass()->GetDefaultObject();
+	if (!ControllerDefaults)
+	{
+		AddError(TEXT("⛔ SELF-CHECK FAILED: ASiegePlayerController's CDO is null — both the card table and the Economy exception derive from it, so neither the absence re-measurement nor the classification below would mean anything."));
+		return false;
+	}
+
+	const FSoftObjectPtr* const CardTableValue =
+		FindSoftObjectField(ControllerDefaults, TEXT("CardTableAsset"), UDataTable::StaticClass());
+	if (!CardTableValue)
+	{
+		AddError(TEXT("⛔ SELF-CHECK FAILED: ASiegePlayerController::CardTableAsset (TSoftObjectPtr<UDataTable>) was not reachable on the CDO — it was RENAMED or RETYPED. The synthetic CardID's absence cannot be re-measured against the shipped roster, and a negative control that cannot confirm its own input is absent proves NOTHING."));
+		return false;
+	}
+
+	const FSoftObjectPath CardTablePath = CardTableValue->ToSoftObjectPath();
+	const UDataTable* const CardTable = TSoftObjectPtr<UDataTable>(CardTablePath).LoadSynchronous();
+	if (!CardTable)
+	{
+		AddError(FString::Printf(TEXT("⛔ SELF-CHECK FAILED: the card table '%s' — the exact asset the shipped ResolveCardRow loads — did not load as a UDataTable."), *CardTablePath.ToString()));
+		return false;
+	}
+
+	const TArray<FName>* const BuildingEconomyCardIDs =
+		FindNameArrayField(ControllerDefaults, TEXT("BuildingEconomyCardIDs"));
+	if (!BuildingEconomyCardIDs)
+	{
+		AddError(TEXT("⛔ SELF-CHECK FAILED: ASiegePlayerController::BuildingEconomyCardIDs (TArray<FName>) was not reachable on the CDO — ClassifyRow cannot be called with the SHIPPED exception list, and calling it with a hand-made one would make this a test of a COPY (`SC-§38`)."));
+		return false;
+	}
+
+	const FName SyntheticCardID(NegativeControlCardID);
+	const FName PositiveCardID(PositiveControlCardID);
+	const TCHAR* const LookupContext = TEXT("Siegebound.CardRoster.AnAbsentCardIDFailsToResolveItsComposedActorClassPath");
+
+	// ══ (c) LIVENESS — THE SYNTHETIC IS STILL ABSENT FROM THE SHIPPED ROSTER ══
+	// ⛔ Re-measured at run time against the CDO-derived table, never assumed from
+	//    the header's grep (`SC-§40` cl. 10). ⚠️ And `FindRow` gets its OWN
+	//    positive control: a lookup answering null for EVERYTHING would satisfy
+	//    the absence assertion for entirely the wrong reason (`SC-§39`).
+	const FCardRow* const SyntheticRow =
+		CardTable->FindRow<FCardRow>(SyntheticCardID, LookupContext, /*bWarnIfRowMissing=*/ false);
+	const FCardRow* const PositiveRow =
+		CardTable->FindRow<FCardRow>(PositiveCardID, LookupContext, /*bWarnIfRowMissing=*/ false);
+
+	TestTrue(FString::Printf(TEXT("LIVENESS — the synthetic CardID '%s' is NOT a row in the shipped card table (if it ever becomes a real card this control is DEAD and must be RE-CHOSEN, never weakened)"), NegativeControlCardID),
+		SyntheticRow == nullptr);
+
+	if (!TestNotNull(FString::Printf(TEXT("⭐ ROW-PROBE POSITIVE CONTROL — the known-present row '%s' IS found by the same FindRow<FCardRow> call (without it, 'the synthetic is absent' and 'FindRow answers null for everything' are the same result)"), PositiveControlCardID),
+		PositiveRow))
+	{
+		AddError(TEXT("⛔ SELF-CHECK FAILED: the row probe is blind, so the absence it just reported is not a measurement. Nothing below would be evidence."));
+		return false;
+	}
+
+	// ══ (a) REACHABILITY — THE SYNTHETIC ROUTES *SPAWNABLE* ═════════════════
+	// ⛔ THE PREMISE OF THE WHOLE TEST. The walk only probes rows ClassifyRow
+	//    routes to an ACTOR category; a control routed NotSpawnable would stand
+	//    for a red that could never occur. Same symbol, same CDO-derived list.
+	const ESpawnCategory SyntheticCategory =
+		ClassifyRow(SyntheticCardID, ECardType::Unit, *BuildingEconomyCardIDs);
+
+	if (!TestTrue(FString::Printf(TEXT("REACHABILITY — ClassifyRow routes a synthetic CardType::Unit row ('%s') down the SPAWNABLE unit-actor path, i.e. the walk WOULD have probed it"), NegativeControlCardID),
+		SyntheticCategory == ESpawnCategory::UnitActor))
+	{
+		AddError(TEXT("⛔ SELF-CHECK FAILED: the synthetic row is not routed to an actor path, so it cannot demonstrate the walk's failure mode. This is a defect in the control, not in the roster."));
+		return false;
+	}
+
+	const ESpawnCategory PositiveCategory =
+		ClassifyRow(PositiveCardID, PositiveRow->CardType, *BuildingEconomyCardIDs);
+
+	if (!TestTrue(FString::Printf(TEXT("REACHABILITY — the positive control '%s' (CardType %s) also routes SPAWNABLE, so both halves of the probe below travel the same code path"),
+			PositiveControlCardID, *CardTypeSymbol(PositiveRow->CardType)),
+		PositiveCategory == ESpawnCategory::UnitActor || PositiveCategory == ESpawnCategory::BuildingActor))
+	{
+		AddError(TEXT("⛔ SELF-CHECK FAILED: the positive control is no longer a spawnable card. It must be re-chosen (see the fixture comment) — that cost is deliberate and is what a control is for."));
+		return false;
+	}
+
+	// ══ COMPOSE — THE SHIPPED FIXTURE SYMBOL, NEVER A LITERAL ═══════════════
+	const FComposedActorClassPath SyntheticComposed = ComposeActorClassPath(SyntheticCardID, SyntheticCategory);
+	const FComposedActorClassPath PositiveComposed  = ComposeActorClassPath(PositiveCardID,  PositiveCategory);
+
+	// ⛔ Asserted STRUCTURALLY, from the CardID — writing the expected string here
+	//    would put a second copy of the CONVENTIONS contract in this file, which
+	//    is the exact drift the header warns about.
+	TestTrue(FString::Printf(TEXT("COMPOSE — the composed package name '%s' is DERIVED from the CardID (a composer that ignored its argument would probe one fixed path forever)"), *SyntheticComposed.PackageName),
+		SyntheticComposed.PackageName.Contains(SyntheticCardID.ToString(), ESearchCase::CaseSensitive));
+
+	TestTrue(FString::Printf(TEXT("COMPOSE — the synthetic unit card requires base %s, the class ResolveCardActorClass demands before it will spawn (the SYMBOL, never a name)"), *GetNameSafe(ASummonedUnit::StaticClass())),
+		SyntheticComposed.RequiredBase == ASummonedUnit::StaticClass());
+
+	TestTrue(TEXT("COMPOSE — the two controls composed DIFFERENT package names (identical strings would make the discrimination assertion below vacuous)"),
+		SyntheticComposed.PackageName != PositiveComposed.PackageName);
+
+	// ══ (b) THE ASSERTION THIS TEST EXISTS FOR — INVERTED, NOT RE-RUN ═══════
+	//
+	// ⛔⛔ `bAbsentResolves` IS THE **IDENTICAL EXPRESSION** the sibling walk
+	//    asserts TRUE for every spawnable row. Here it is asserted FALSE.
+	// ⭐⭐ THAT IS THE COMPILED OBSERVATION OF THE RED-PRODUCING CONDITION WHICH
+	//    `TASK-949` COULD NOT BUY: on a spawnable card with no actor Blueprint the
+	//    walk's `TestTrue` receives `false` and its `AddError` fires. This test
+	//    watches that happen without ever entering the walk, so the suite records
+	//    the failure mode on every green pass instead of only when one is broken.
+	const bool bAbsentResolves  = FPackageName::DoesPackageExist(SyntheticComposed.PackageName);
+	const bool bPresentResolves = FPackageName::DoesPackageExist(PositiveComposed.PackageName);
+
+	TestFalse(FString::Printf(TEXT("⭐ NEGATIVE CONTROL — the composed path for a MEASURED-ABSENT card ('%s') does NOT resolve. This is the sibling walk's own assertion expression, evaluated on an absent asset: it is FALSE here, which is precisely the value that takes that walk RED"), *SyntheticComposed.PackageName),
+		bAbsentResolves);
+
+	TestTrue(FString::Printf(TEXT("⭐ POSITIVE CONTROL — the SAME FPackageName::DoesPackageExist call returns PRESENT for '%s'. Without this, a probe that had gone blind and answered ABSENT for everything would satisfy the assertion above for entirely the wrong reason"), *PositiveComposed.PackageName),
+		bPresentResolves);
+
+	TestTrue(TEXT("⭐⭐ DISCRIMINATION — ONE probe symbol returned DIFFERENT answers for a measured-absent and a measured-present card in the SAME run. ⛔ This is the assertion that would have to be inverted for this control to lie, and a probe stuck at EITHER polarity fails HERE"),
+		bAbsentResolves != bPresentResolves);
+
+	// ══ THE REPORT ══════════════════════════════════════════════════════════
+	// ⛔ Published so the COMPILED suite log carries the evidence verbatim rather
+	//    than resting on this file's prose (`SC-§49`, `SHIP-§9c` cl. 5: a gate a
+	//    reader cannot reach must at minimum ANNOUNCE ITSELF in the output).
+	AddInfo(FString::Printf(TEXT("NEGATIVE CONTROL — card table derived from the shipped CDO: '%s'; Economy-building exception: %d CardID(s)."),
+		*CardTablePath.ToString(), BuildingEconomyCardIDs->Num()));
+
+	AddInfo(FString::Printf(TEXT("NEGATIVE CONTROL — DoesPackageExist('%s') = %s   [synthetic, measured absent]"),
+		*SyntheticComposed.PackageName, bAbsentResolves ? TEXT("PRESENT") : TEXT("ABSENT")));
+
+	AddInfo(FString::Printf(TEXT("NEGATIVE CONTROL — DoesPackageExist('%s') = %s   [positive control]"),
+		*PositiveComposed.PackageName, bPresentResolves ? TEXT("PRESENT") : TEXT("ABSENT")));
+
+	AddInfo(TEXT("⭐ ⇒ the resolver said NO to an absent card and YES to a present one, through ONE symbol, in ONE run. The sibling walk asserts that same expression is TRUE for all 22 spawnable rows; this run demonstrates it is capable of being FALSE."));
 
 	return true;
 }
