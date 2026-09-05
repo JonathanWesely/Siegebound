@@ -241,15 +241,55 @@ namespace SiegeFogRetentionWiringFixture
 	 *  POINT, not decoration: it is what leaves `TEXT("http://…")` and `TEXT("a//b")` INTACT,
 	 *  because truncating a ⛔ STRING LITERAL would delete ⛔ REAL CODE and could only ever ⛔ LOWER
 	 *  the count — ⛔ a FALSE GREEN, the silent direction.
-	 *  ⛔ TWO DECLARED RESIDUALS, and ⛔ BOTH FAIL LOUD (false RED), never silent:
-	 *    (i) a tight `Foo();// x` is ⛔ NOT stripped — the house style always spaces the slashes;
-	 *    (ii) an ⛔ INLINE C-style block comment is ⛔ NOT stripped. ⛔ Truncating at a block-comment
+	 *  ⛔⛔ BUT READ THAT QUALIFICATION ⛔ EXACTLY (TASK-1057, from `qa/TASK-1046.md` W-1). It spares
+	 *  ⛔ ONLY the literals with ⛔ NO whitespace before the slashes. `TEXT("http://…")` and
+	 *  `TEXT("a//b")` survive ⛔ BECAUSE OF HOW THEY ARE SPELLED, ⛔ NOT because they are literals —
+	 *  and a literal that ⛔ DOES carry whitespace before the slashes, `TEXT("a // b")`, ⛔ IS cut.
+	 *  ⚠️ The paragraph above is a ⛔ GOOD-FAITH NEAR-MISS, recorded as one: it names the ⛔ DIRECTION
+	 *  correctly and then reads the whitespace qualification as covering string literals ⛔ IN
+	 *  GENERAL. ⛔ It does not. ⇒ that gap is residual ⛔ (iii) below, and it is ⛔ SILENT.
+	 *
+	 *  ⛔⛔ THREE DECLARED RESIDUALS — and ⛔ NOT all of them loud. ⛔ An earlier version of this
+	 *  block certified ⛔ "TWO … and ⛔ BOTH FAIL LOUD (false RED), never silent". ⛔⛔ BOTH HALVES
+	 *  OF THAT WERE WRONG: there are ⛔ THREE, and ⛔ TWO of them have a ⛔ SILENT direction.
+	 *    (i) a tight `Foo();// x` — ⛔ NO whitespace before the slashes — is ⛔ NOT stripped: the
+	 *        opener predicate demands column 0 or whitespace, and here the preceding character is
+	 *        the `;` itself. ⛔⛔ IT CUTS ⛔ BOTH WAYS, and the flat "loud" label it used to carry
+	 *        was ⛔ WRONG (`qa/TASK-1046.md` W-2):
+	 *          ⛔ LOUD (false RED) — a `;`-bearing tail, `Foo();// dispatch;`, leaves a COMMENT's
+	 *            `;` inside the span and ⛔ INFLATES the ownership count to 2 on a CORRECT tree.
+	 *          ⛔ SILENT (false GREEN) — a `return;`-bearing tail, `Foo();// return;`, with the
+	 *            ⛔ REAL `return;` ⛔ DELETED anchors `ReturnIndex` ⛔ INSIDE the comment, leaves the
+	 *            dispatch call ⛔ ALONE in `Between`, counts a comfortable ⛔ 1 and ⛔ PASSES.
+	 *        ⛔ Live exposure ⛔ MEASURED ZERO: `[^ \t/]//` matches ⛔ NOWHERE in the 5,763 lines of
+	 *        `SummonedUnit.cpp` — ⛔ all 64 of its trailing comments space the slashes.
+	 *    (ii) an ⛔ INLINE C-style block comment is ⛔ NOT stripped. ⛔ LOUD ONLY (false RED) — it can
+	 *         only ever ADD a comment's punctuation to the span. ⛔ Truncating at a block-comment
 	 *         OPENER is ⛔ REFUSED on purpose: one that CLOSES and then resumes code on the SAME
 	 *         line would lose the statement after it — a ⛔ REAL statement — and that trades this
 	 *         row's loud residual for a ⛔ silent one.
 	 *         (⛔ The opener is spelled in WORDS here, never as the token: a literal one inside a
 	 *          block comment is a `-Wcomment` diagnostic on Clang, and this file must not buy a
 	 *          warning with a doc comment.)
+	 *    (iii) ⛔⛔ a ⛔ STRING LITERAL carrying a ⛔ WHITESPACE-PRECEDED `//` — `Log(TEXT("a // b"));`
+	 *          — ⛔ IS cut, and the cut deletes ⛔ REAL CODE: the rest of the literal, the closing
+	 *          paren, and the statement's ⛔ OWN `;`. ⛔⛔ SILENT (false GREEN), and it is the ⛔ ONLY
+	 *          residual here that ⛔ LOWERS a count: a span whose honest ownership count is ⛔ 2
+	 *          reads ⛔ 1 and ⛔ GOES GREEN. ⛔ This is the direction that must never be traded for.
+	 *          ⛔ Live exposure ⛔ MEASURED ZERO: `UpdateState()`'s body holds ⛔ NOT ONE string
+	 *          literal — the `TEXT(` census of `SummonedUnit.cpp` steps straight ⛔ OVER the body —
+	 *          and this helper has ⛔ EXACTLY ONE caller, over ⛔ THAT ONE body, in ⛔ THIS ONE file.
+	 *          ⇒ the hole is ⛔ ENUMERABLE, ⛔ ENUMERATED, and ⛔ EMPTY. ⛔ It is ⛔ NOT a licence to
+	 *          introduce the first such literal without re-reading this block.
+	 *
+	 *  ⭐⭐ AND THE PIN IS ⛔ STRONGER THAN IT WAS — ⛔ read this BEFORE "simplifying" anything above.
+	 *  The surviving hole is a ⛔ STRICT SUBSET of the one closed: before this stage existed, ⛔ BOTH
+	 *  the spaced ⛔ AND the tight `// return;` were false greens; ⛔ now ⛔ ONLY the tight one is.
+	 *  ⇒ the pin is ⛔ MONOTONICALLY STRONGER, and ⛔ NO regression the pre-stage pin caught can pass
+	 *  now. ⛔ A residual list that reads as a ⛔ RETREAT is exactly how the next author talks
+	 *  themself into ⛔ WEAKENING the pin — and ⛔ "the cheapest way out of a false red is to weaken
+	 *  the pin" is the ⛔ WHOLE REASON this lineage exists. ⛔ Three residuals, two of them silent,
+	 *  ⛔ and still strictly stronger than the pin that had none of this.
 	 *
 	 *  ⭐ Termination is ⛔ STRUCTURAL, exactly as `CountCharacter` below argues it: a counted `for`
 	 *  over `Len()` that ⛔ NEVER consults `Find`, so the UE 5.8 `StartPosition` clamp documented
@@ -920,8 +960,12 @@ bool FSiegeFogRetentionOneDoorAndTheAmbushExemptionIsStructuralTest::RunTest(con
 					TEXT("⛔ The OWNERSHIP half is the load-bearing one: without it the deleted `return;` is replaced ")
 					TEXT("by the next dispatch's return and this row stays green through the whole regression. ")
 					TEXT("⛔ And it is measured on CODE ONLY — a projection that drops whole comment LINES and then ")
-					TEXT("the TRAILING tail a comment leaves on a code line — so no commented-out `// return;` can ")
-					TEXT("stand in for the real one, and no comment's punctuation can inflate the count."),
+					TEXT("the TRAILING tail a comment leaves on a code line — so no ⛔ SPACED `// return;` can stand ")
+					TEXT("in for the real one, and no comment's punctuation can inflate the count. ⛔ THAT WORD ")
+					TEXT("\"SPACED\" IS LOAD-BEARING, not a hedge (TASK-1057, from `qa/TASK-1046.md` W-2): a ⛔ TIGHT ")
+					TEXT("`);// return;` — ⛔ no whitespace before the slashes — is ⛔ NOT stripped, so that ONE form ")
+					TEXT("⛔ WOULD still stand in. It is residual (i) on `CodeWithoutTrailingComments`, its exposure ")
+					TEXT("is ⛔ MEASURED ZERO, and the pin is still STRICTLY STRONGER than before the tail stage."),
 					Dispatch),
 				DispatchIndex != INDEX_NONE
 				&& ReturnIndex != INDEX_NONE
