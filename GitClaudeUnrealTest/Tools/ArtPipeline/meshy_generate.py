@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stage 1.5 / Stage-1-alternative of the Siegebound art pipeline: Meshy client (TASK-198).
 
-Second engine per CONVENTIONS.md "Meshy second engine (M7.5)". Two modes:
+Second engine per CONVENTIONS.md "Meshy second engine (M7.5)". Three modes:
 
   --mode retexture <CardID>
       Upload the dense donor Cache/<CardID>/trellis_raw.glb (or meshy_raw.glb)
@@ -12,7 +12,25 @@ Second engine per CONVENTIONS.md "Meshy second engine (M7.5)". Two modes:
       Upload the concept Inbox/<CardID>.png to the Meshy Image-to-3D API
       -> download Cache/<CardID>/meshy_raw.glb.
 
-Both modes MERGE engine provenance into Cache/<CardID>/state.json (engine,
+  --mode multiimage <CardID>            (TASK-1088, law CHAR-§3 Branch A)
+      Upload EVERY concept view - Inbox/<CardID>_Front.png, _Side.png and
+      _Back.png (CHAR-§2's pinned pattern; overridable with --views, 1-4
+      images per the documented Meshy cap) - to the Meshy Multi-Image-to-3D
+      API in ONE task -> download Cache/<CardID>/meshy_raw.glb.
+
+      WHY IT EXISTS: image3d sends `image_url` - ONE image - so a character
+      reconstructed through it has never been shown its own back, and the
+      solver invents that surface. The multi-image endpoint sends `image_urls`,
+      an ORDERED array, so every authored view constrains the result.
+
+      A view that is named and absent is exit 5. This mode NEVER degrades to
+      the views that happen to exist and NEVER falls back to --mode image3d:
+      a single-view run is a DIFFERENT job with a demonstrably different
+      output, and substituting it silently would spend credits, return 0, and
+      hand back the wrong character while every gate stayed green. Branch B
+      (CHAR-§3) is a decision a human makes on the command line, out loud.
+
+All three modes MERGE engine provenance into Cache/<CardID>/state.json (engine,
 Meshy task id, input shas, consumed credits) without clobbering the existing
 TRELLIS success record. Meshy output NEVER lands in Content/ - everything
 re-enters through Stage 2 (refine_trellis_glb.py); the Stage-2/3 laws are
@@ -104,6 +122,7 @@ API_BASE = "https://api.meshy.ai"
 EP_BALANCE = "/openapi/v1/balance"
 EP_RETEXTURE = "/openapi/v1/retexture"
 EP_IMAGE3D = "/openapi/v1/image-to-3d"
+EP_MULTIIMAGE = "/openapi/v1/multi-image-to-3d"
 
 ENV_CANONICAL = "MESHY_TOKEN"       # recorded deviation: Jonathan's real HKCU var
 ENV_ALIAS = "MESHY_API_KEY"         # board-specced name, kept as documented alias
@@ -111,6 +130,16 @@ ENV_ALIAS = "MESHY_API_KEY"         # board-specced name, kept as documented ali
 SCRIPT_DIR = Path(__file__).resolve().parent
 INBOX_DIR = SCRIPT_DIR / "Inbox"
 CACHE_DIR = SCRIPT_DIR / "Cache"
+
+# --- multi-image mode (TASK-1088) -------------------------------------------
+# CHAR-§2's pinned view pattern: Inbox/<CardID>_Front.png / _Side.png / _Back.png.
+# The ORDER of this tuple is the order the payload's `image_urls` array carries,
+# and it is recorded in state.json as `view_order` - so "which file was at which
+# index" is provenance rather than a thing to be re-derived from a log.
+MULTIVIEW_DEFAULT_VIEWS = ("Front", "Side", "Back")
+# Documented Meshy cap, verbatim from the Multi-Image to 3D API reference:
+# "Provide 1 to 4 images for Meshy to use in model creation."
+MULTIVIEW_MAX_IMAGES = 4
 
 DEFAULT_AI_MODEL = "latest"
 DEFAULT_POLYCOUNT = 300_000         # image3d dense-donor target (API max, standard)
@@ -126,6 +155,15 @@ POLL_HTTP_TIMEOUT = 60.0
 DOWNLOAD_HTTP_TIMEOUT = 600.0
 
 TERMINAL_STATUSES = ("SUCCEEDED", "FAILED", "CANCELED")
+
+# state.json `engine` tag per mode. multiimage is tagged DISTINCTLY from
+# image3d on purpose: after the fact, "was this body built from one view or
+# three?" must be answerable from the provenance alone.
+ENGINE_BY_MODE = {
+    "retexture": "meshy-retex",
+    "image3d": "meshy-i23d",
+    "multiimage": "meshy-mi23d",
+}
 
 # --- Artefact guard (SC-39.1, TASK-876) ------------------------------------
 # Kept byte-identical in meaning to trellis_generate.py's guard so the two
@@ -836,6 +874,98 @@ def model_data_uri(path: Path) -> str:
     return f"data:application/octet-stream;base64,{encoded}"
 
 
+def parse_views(raw: str) -> tuple[str, ...]:
+    """Normalise --views into an ORDERED tuple, or raise ValueError.
+
+    The caller maps ValueError to exit 64 (CLI usage), which is why the cap and
+    the duplicate check live here rather than in argparse: both are properties
+    of the ENDPOINT, not of the string, and the message has to say so.
+    """
+    views = tuple(v.strip() for v in str(raw).split(",") if v.strip())
+    if not views:
+        raise ValueError(
+            "--views must name at least one view, e.g. --views Front,Side,Back."
+        )
+    if len(views) > MULTIVIEW_MAX_IMAGES:
+        raise ValueError(
+            f"--views names {len(views)} views ({', '.join(views)}); the Meshy "
+            f"multi-image endpoint accepts at most {MULTIVIEW_MAX_IMAGES} "
+            "images per task, so the extra views would be dropped by the API "
+            "rather than by you."
+        )
+    duplicates = [v for v in dict.fromkeys(views) if views.count(v) > 1]
+    if duplicates:
+        raise ValueError(
+            f"--views repeats {', '.join(duplicates)}; each view may appear "
+            "once (a repeated view spends an image slot without adding "
+            "information)."
+        )
+    return views
+
+
+def resolve_multiview_images(
+    asset: str, views: tuple[str, ...]
+) -> list[tuple[str, Path]]:
+    """Resolve Inbox/<CardID>_<View>.png for EVERY requested view (CHAR-§2).
+
+    Returns [(view, path), ...] in the REQUESTED ORDER - which is the order
+    build_multiimage_payload() builds `image_urls` in.
+
+    A missing view raises FileNotFoundError naming EVERY absent path, which
+    _run_mode maps to exit 5. It is DELIBERATELY not a fallback to the views
+    that do exist:
+
+        a run that quietly dropped _Back.png would upload two images, spend
+        credits, print SUCCESS, return 0 - and hand back a character generated
+        without the surface the back view existed to specify. Nothing in the
+        exit code, the log or state.json would say so.
+
+    That is the "a success return is not evidence" shape, and this is the one
+    place in the mode where it could enter. So the missing-view path is loud
+    or it is nothing.
+    """
+    resolved: list[tuple[str, Path]] = []
+    missing: list[Path] = []
+    for view in views:
+        path = INBOX_DIR / f"{asset}_{view}.png"
+        if path.is_file():
+            resolved.append((view, path))
+        else:
+            missing.append(path)
+    if missing:
+        lines = [
+            f"--mode multiimage requires ALL {len(views)} requested view(s) of "
+            f"{asset}; {len(missing)} missing:"
+        ]
+        lines += [f"    MISSING: {p}" for p in missing]
+        lines.append(
+            "    present: "
+            + (", ".join(p.name for _v, p in resolved) if resolved else "(none)")
+        )
+        lines.append(
+            "  This is exit 5, NOT a run on the views that happen to exist: "
+            "generating from a subset silently drops the surface that view was "
+            "there to specify. Produce the missing crop(s) with the CHAR-2 "
+            "names, or ask for a smaller set EXPLICITLY with --views."
+        )
+        raise FileNotFoundError("\n".join(lines))
+    return resolved
+
+
+def build_multiimage_payload(
+    params: dict, resolved: list[tuple[str, Path]]
+) -> dict:
+    """params + one data URI per view, in the RESOLVED ORDER (`image_urls`).
+
+    Split out of _run_mode so the ORDER is assertable with no network and no
+    credits: the gate decodes each element back to bytes and matches it against
+    the sha256 of the file at the same index (test_meshy_multiimage.py).
+    """
+    payload = dict(params)
+    payload["image_urls"] = [image_data_uri(path) for _view, path in resolved]
+    return payload
+
+
 def resolve_donor_glb(asset_dir: Path, preference: str) -> Path:
     """Pick the dense donor for retexture: trellis_raw.glb (default) or
     meshy_raw.glb, per CONVENTIONS Stage 1.5."""
@@ -1248,7 +1378,11 @@ def run_check() -> int:
                 f"(keys: {sorted(result.keys())})."
             )
         say(f"  {EP_BALANCE} - OK (credits remaining: {balance})")
-        for endpoint in (EP_RETEXTURE, EP_IMAGE3D):
+        # EP_MULTIIMAGE is probed here so --check IS the TASK-1088 clause-0
+        # preflight, permanently: if the multi-image route ever stops being
+        # available on this account, the smoke test says so BEFORE a run
+        # spends credits discovering it.
+        for endpoint in (EP_RETEXTURE, EP_IMAGE3D, EP_MULTIIMAGE):
             probe = api_request("GET", f"{endpoint}?page_size=1", api_key)
             # Live API returns a bare JSON array for task lists (observed
             # 2026-07-18); tolerate an object wrapper too.
@@ -1430,7 +1564,7 @@ def _run_mode(args: argparse.Namespace) -> int:
     state_record: dict = {
         "asset": asset,
         "mode": args.mode,
-        "engine": "meshy-retex" if args.mode == "retexture" else "meshy-i23d",
+        "engine": ENGINE_BY_MODE[args.mode],
         "api_base": API_BASE,
         "started_utc": _utc_now(),
         "params": {},
@@ -1469,6 +1603,57 @@ def _run_mode(args: argparse.Namespace) -> int:
             return _finish_task_common(
                 args, EP_RETEXTURE, payload, api_key,
                 output_name="meshy_retex.glb", engine="meshy-retex",
+                inputs_block=inputs_block, asset_dir=asset_dir,
+                state_record=state_record,
+            )
+
+        if args.mode == "multiimage":
+            # Resolution FIRST, before the key is even used for anything and
+            # long before a task exists: a missing view must cost nothing.
+            resolved = resolve_multiview_images(asset, args.views)
+            if len(resolved) < len(MULTIVIEW_DEFAULT_VIEWS):
+                warn(f"--views asked for only {len(resolved)} view(s) "
+                     f"({', '.join(v for v, _p in resolved)}) - fewer than the "
+                     f"{len(MULTIVIEW_DEFAULT_VIEWS)} pinned by CHAR-2 "
+                     f"({', '.join(MULTIVIEW_DEFAULT_VIEWS)}). That is your "
+                     "explicit choice and it is recorded in state.json, but "
+                     "the views you did not send cannot constrain the result.")
+            view_metas = []
+            for index, (view, path) in enumerate(resolved, start=1):
+                meta = validate_image(path, f"{view} view")
+                meta["view"] = view
+                meta["index"] = index
+                view_metas.append(meta)
+                say(f"View {index}/{len(resolved)} {view}: {path.name} "
+                    f"({meta['width']}x{meta['height']}, "
+                    f"sha256 {meta['sha256'][:12]}...)")
+            params = {
+                "ai_model": args.ai_model,
+                "topology": args.topology,
+                "target_polycount": args.target_polycount,
+                "should_remesh": True,
+                "should_texture": True,
+                "enable_pbr": not args.no_pbr,
+            }
+            state_record["params"] = params
+            inputs_block = {
+                "view_count": len(resolved),
+                "view_order": [v for v, _p in resolved],
+                "view_images": view_metas,
+            }
+            say(f"Encoding {len(resolved)} view(s) as data URIs and creating "
+                f"the multi-image task (order: "
+                f"{' -> '.join(v for v, _p in resolved)}); the upload may take "
+                "a while.")
+            payload = build_multiimage_payload(params, resolved)
+            # Same output name as image3d ON PURPOSE: Stage 2 consumes
+            # Cache/<CardID>/meshy_raw.glb whatever produced it (THE
+            # INVARIANT - nothing here goes near Content/). Re-running over an
+            # earlier donor shelves that run into state.json's meshy_history
+            # rather than erasing it.
+            return _finish_task_common(
+                args, EP_MULTIIMAGE, payload, api_key,
+                output_name="meshy_raw.glb", engine=ENGINE_BY_MODE["multiimage"],
                 inputs_block=inputs_block, asset_dir=asset_dir,
                 state_record=state_record,
             )
@@ -1524,6 +1709,28 @@ def _run_mode(args: argparse.Namespace) -> int:
         state_record["status"] = "failed"
         state_record["finished_utc"] = _utc_now()
         state_record["error"] = redact(str(exc))
+        if args.mode == "multiimage" and exc.status in (403, 404):
+            # SCOPED TO multiimage DELIBERATELY: retexture and image3d keep
+            # their shipped exit-1 behaviour for these statuses byte-for-byte.
+            # For THIS mode the meaning is specific - the multi-image route was
+            # reachable on this account when the mode was added (TASK-1088
+            # clause-0 preflight, re-run by --check), so a 403/404 is
+            # endpoint/plan drift, which is what exit 4 means.
+            state_record["status"] = "api-drift"
+            write_failed_state(asset_dir, state_record)
+            fail(f"{exc.context} failed. HTTP {exc.status}, body verbatim: "
+                 f"{exc.body}")
+            fail("The multi-image endpoint refused this account "
+                 f"(HTTP {exc.status}). It answered 200 to a free read when "
+                 "this mode was added, so treat this as endpoint/plan drift "
+                 "and re-run `--check`, which probes it.")
+            fail("NOTHING was generated and NOTHING fell back to --mode "
+                 "image3d. A single-view run cannot see the back of the "
+                 "subject, so it is a different job with a different result; "
+                 "it is never substituted for this one silently. Re-run with "
+                 "--mode image3d yourself if you accept that loss "
+                 "(CHAR-3 Branch B).")
+            return 4
         write_failed_state(asset_dir, state_record)
         fail(f"{exc.context} failed. HTTP {exc.status}, body verbatim: {exc.body}")
         return 1
@@ -1563,9 +1770,10 @@ def build_parser() -> argparse.ArgumentParser:
         prog="meshy_generate.py",
         description=(
             "Meshy second engine for the Siegebound art pipeline (Stage 1.5 "
-            "retexture / Stage-1-alternative image-to-3D). Outputs "
-            "Cache/<CardID>/meshy_retex.glb or meshy_raw.glb + state.json "
-            "provenance; Stage 2 consumes the result unchanged."
+            "retexture / Stage-1-alternative image-to-3D, single- or "
+            "multi-view). Outputs Cache/<CardID>/meshy_retex.glb or "
+            "meshy_raw.glb + state.json provenance; Stage 2 consumes the "
+            "result unchanged."
         ),
         epilog=(
             f"The API key is read from the environment ONLY - canonical "
@@ -1573,8 +1781,9 @@ def build_parser() -> argparse.ArgumentParser:
             "Windows) - never accepted as an argument, never written or "
             "logged. Exit codes: 0 success, 1 failure, 2 key unset, "
             "3 credits exhausted (expected pause), 4 API drift, 5 input "
-            "missing, 64 CLI usage error. Examples: "
+            "missing, 6 degenerate artefact, 64 CLI usage error. Examples: "
             "`uv run meshy_generate.py --mode retexture Ogre`, "
+            "`uv run meshy_generate.py --mode multiimage MainCharacter`, "
             "`uv run meshy_generate.py --check`."
         ),
     )
@@ -1587,11 +1796,25 @@ def build_parser() -> argparse.ArgumentParser:
              "reads Inbox/<CardID>.png. Required unless --check.",
     )
     parser.add_argument(
-        "--mode", choices=("retexture", "image3d"),
+        "--mode", choices=("retexture", "image3d", "multiimage"),
         help="retexture: Stage 1.5 - repaint the dense donor GLB using the "
              "concept as style ref -> meshy_retex.glb. image3d: Stage-1 "
-             "alternative - concept PNG -> meshy_raw.glb. Required unless "
-             "--check.",
+             "alternative - ONE concept PNG -> meshy_raw.glb. multiimage: "
+             "Stage-1 alternative - EVERY authored view "
+             "(Inbox/<CardID>_Front.png, _Side.png, _Back.png) in one task -> "
+             "meshy_raw.glb; a named view that is absent is exit 5, never a "
+             "quiet single-image run. Required unless --check.",
+    )
+    parser.add_argument(
+        "--views", default=",".join(MULTIVIEW_DEFAULT_VIEWS),
+        metavar="Front,Side,Back",
+        help="multiimage only - comma-separated view suffixes, read as "
+             f"Inbox/<CardID>_<View>.png (default "
+             f"\"{','.join(MULTIVIEW_DEFAULT_VIEWS)}\", the CHAR-2 "
+             f"pattern). 1-{MULTIVIEW_MAX_IMAGES} views (the documented Meshy "
+             "cap). The order given is the order the images are sent in and is "
+             "recorded in state.json. EVERY named view must exist or the run "
+             "is exit 5 - views are never silently dropped.",
     )
     parser.add_argument(
         "--ai-model", default=DEFAULT_AI_MODEL,
@@ -1615,11 +1838,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--topology", choices=("triangle", "quad"), default=DEFAULT_TOPOLOGY,
-        help=f"image3d only - output topology (default {DEFAULT_TOPOLOGY}).",
+        help=f"image3d/multiimage only - output topology (default "
+             f"{DEFAULT_TOPOLOGY}).",
     )
     parser.add_argument(
         "--target-polycount", type=int, default=DEFAULT_POLYCOUNT,
-        help=f"image3d only - dense-donor polycount target (default "
+        help=f"image3d/multiimage only - dense-donor polycount target (default "
              f"{DEFAULT_POLYCOUNT}; Stage 2 does the real budget cut).",
     )
     parser.add_argument(
@@ -1667,9 +1891,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         return run_check()
     if not args.mode:
-        build_parser().error("--mode {retexture,image3d} is required unless --check.")
+        build_parser().error(
+            "--mode {retexture,image3d,multiimage} is required unless --check."
+        )
     if not args.asset:
         build_parser().error("CardID is required unless --check.")
+    if args.mode == "multiimage":
+        try:
+            args.views = parse_views(args.views)
+        except ValueError as exc:
+            build_parser().error(str(exc))
     return _run_mode(args)
 
 
