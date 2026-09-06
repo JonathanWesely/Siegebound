@@ -475,6 +475,32 @@ FTransform AFogVolume::FogVisualTransform(const FVector2D& ArenaHalfExtentUU, fl
 	return FTransform(FRotator::ZeroRotator, FVector(0.0, 0.0, CentreZUU), Scale3D);
 }
 
+bool AFogVolume::FogVisualScaleMatches(const FVector& RequestedScale3D, const FVector& AchievedScale3D)
+{
+	// ⛔⛔⛔ THE WHOLE POINT OF THIS FUNCTION IS THAT A TEST CAN RUN IT (`SC-§79`). The comparison
+	// it makes is trivial; the fact that it is REACHABLE FROM A TEST is not. Written inline at the
+	// spawn site, this same expression would be a check nothing could ever exercise — and the
+	// defect it guards was invisible for three of 🧑 Jonathan's reports precisely because the only
+	// instrument that could have seen it was unreachable. ⇒ `Tests/SiegeFogVisualTest.cpp` hands
+	// this the MEASURED vendor substitute and asserts it answers NO. ⛔ A detector nobody has ever
+	// seen say NO is not a detector.
+
+	// ⛔ NaN ON EITHER SIDE IS A MISMATCH, AND IT IS STATED RATHER THAN INHERITED. `FVector::Equals`
+	// compares with `Abs(A - B) <= Tolerance`, and every comparison against a NaN is false — so a
+	// NaN would already fall out as "does not match" without this branch. It is written anyway, in
+	// the same `!(X)` form `BrightSunWindowSeconds` and `ASummonedUnit::HeightAdvantageMultiplier`
+	// use, so the REASON is on the page instead of resting on an operator's behaviour a future
+	// editor would have to know to preserve.
+	if (RequestedScale3D.ContainsNaN() || AchievedScale3D.ContainsNaN())
+	{
+		return false;
+	}
+
+	// ⛔ ACHIEVED against REQUESTED, in that order, because that is the direction the caller cares
+	// about: "is what the world gave me the thing I asked for?".
+	return AchievedScale3D.Equals(RequestedScale3D, static_cast<double>(FogVisualScaleTolerance));
+}
+
 void AFogVolume::RefreshFogVisual()
 {
 	UWorld* const World = GetWorld();
@@ -588,18 +614,88 @@ void AFogVolume::SpawnFogVisual()
 		return;
 	}
 
+	// Derived ONCE and then referred to BY NAME three times — the set, the comparison and the log.
+	// ⛔ Re-spelling `SpawnTransform.GetScale3D()` at each of those sites is how the log below came
+	// to print the REQUEST in the first place, so the expression is spent here and never again.
+	const FVector RequestedScale3D = SpawnTransform.GetScale3D();
+
+	// ⛔⛔⛔ THE REPAIR, AND THIS ONE LINE IS WHY 🧑 JONATHAN COULD NOT SEE HIS FOG (TASK-1071).
+	// The scale carried by the spawn transform above is ⛔ DISCARDED BY THE ENGINE before this
+	// line runs: `BP_SiegeFog`'s root is the INHERITED SCS `Mesh` component rather than a native
+	// root, so the non-deferred `SpawnActor` path reaches `SCS_Node.cpp:147` with
+	// `bIsDefaultTransform == true` and substitutes the VENDOR component template's own
+	// `RelativeScale3D`. ⇒ a world-sized fog box silently became a small slab parked thousands of
+	// units above the battlefield, outside the volumetric froxel grid in every direction, and
+	// rendered EXACTLY NOTHING for anyone, always.
+	// ⛔⛔ DO NOT "SIMPLIFY" THIS TO `SpawnParams.TransformScaleMethod` — the substitution runs
+	// AFTER that switch is consulted and overwrites the scale whichever method was chosen. The
+	// artist checked it; the test file reds on that reach BY NAME.
+	// ⛔⛔ AND DO NOT SWAP IT FOR `SpawnActorDeferred` + `FinishSpawning`, which also dodges the
+	// clobber: the engine's own comment beside that line says `bIsDefaultTransform` is FALSE IN A
+	// COOKED BUILD. ⇒ the deferred form behaves DIFFERENTLY in the editor and in the packaged
+	// game, so this defect could return ONLY IN THE SHIPPED PRODUCT — where nobody is watching.
+	// The explicit set is correct in BOTH, and that symmetry is the entire reason for the form.
+	// ⛔ Scale only: the LOCATION survives the spawn intact (measured), and re-setting a transform
+	// that arrived correctly would be inventing work whose failure nobody would notice.
+	Spawned->SetActorScale3D(RequestedScale3D);
+
+	// ⭐⭐⭐ NOW MEASURE WHAT WE GOT, ⛔ NEVER WHAT WE ASKED FOR — AND THIS IS THE MORE IMPORTANT
+	// HALF OF THE ROW. The log below USED to print `SpawnTransform`, i.e. the REQUEST, and never
+	// once read `GetActorScale3D()`. ⇒ every claim it made was true, the one number that mattered
+	// was never taken, and a box the engine had shrunk by a factor of 32 read as a CLEAN SPAWN in
+	// the log, passed the gate, and was reported to him as "spawned at the right transform".
+	// ⛔⛔ AN INSTRUMENT THAT ECHOES THE REQUEST INSTEAD OF MEASURING THE RESULT IS NOT AN
+	// INSTRUMENT — it is the failure wearing the evidence's clothes, and this project has now hit
+	// that class of lie eleven times.
+	// ⚠️ THE LOCATION IS READ BACK FOR THE SAME REASON, even though it is not the value that broke:
+	// the old line asserted a Z it had likewise never looked at, and half a readback is the same
+	// bug with better odds.
+	const FVector AchievedScale3D = Spawned->GetActorScale3D();
+	const FVector AchievedLocation = Spawned->GetActorLocation();
+
+	// ⛔⛔ AND A DISAGREEMENT IS **LOUD**. Reaching this branch means the correction above did not
+	// take, which is a fog box of the wrong size — i.e. 🧑 the same invisible fog, again, with the
+	// mechanic still blinding both armies behind it.
+	// ⚖️ Error level, ⛔ never a refusal: the fog MECHANIC keeps working with no visual and an art
+	// failure may NEVER refuse a 50-gold card, consume-and-abort, or change one vision clamp —
+	// the boundary the two loaders above already hold.
+	if (!FogVisualScaleMatches(RequestedScale3D, AchievedScale3D))
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Error,
+			TEXT("[%s] ⛔⛔ THE FOG VISUAL IS AT THE WRONG SCALE — requested (%.3f, %.3f, %.3f), ACHIEVED (%.3f, %.3f, %.3f). ")
+			TEXT("This is the TASK-1071 defect: the visual's root is an INHERITED SCS component, so the engine substitutes the ")
+			TEXT("vendor component template's own scale for the one the spawn transform carries (SCS_Node.cpp, bIsDefaultTransform). ")
+			TEXT("SpawnFogVisual corrects that with SetActorScale3D immediately after the spawn ⇒ SEEING THIS LINE MEANS THE ")
+			TEXT("CORRECTION ITSELF FAILED, and the box on screen is the wrong size or nowhere to be seen. ")
+			TEXT("The fog MECHANIC is unaffected and the card is NOT refused: every unit on both sides is still clamped to the ")
+			TEXT("fog vision ceiling, so the field will LOOK clearer than the army can see. ")
+			TEXT("Check that the visual's root component still accepts a scale change, and that nothing on the Blueprint's own ")
+			TEXT("BeginPlay or Tick writes the scale back after this line."),
+			*GetNameSafe(this),
+			RequestedScale3D.X, RequestedScale3D.Y, RequestedScale3D.Z,
+			AchievedScale3D.X, AchievedScale3D.Y, AchievedScale3D.Z);
+	}
+
 	// ⛔ HOLD THE REFERENCE. BP_SiegeFog's parent is the VENDOR BP_FogArea_C (read back LIVE under
 	// TASK-1043), so it is NOT an AFogVolume subclass and TActorIterator<AFogVolume> will NEVER
 	// see it: a Find-style sweep for it later returns NOTHING, SILENTLY. There is no re-finding
 	// this actor — if the handle is lost, the box is unreachable forever.
 	FogVisualActor = Spawned;
 
+	// ⛔⛔ ACHIEVED VALUES ONLY. The parenthesised request is kept beside them so a human reading
+	// one line can see a disagreement even if the predicate's tolerance were itself ever wrong —
+	// but the FIRST numbers on the line are the ones read back off the actor, because those are
+	// the ones that describe what is actually in the world.
 	UE_LOG(LogGitClaudeUnrealTest, Log,
-		TEXT("[%s] Fog VISUAL spawned: '%s' at Z=%.0f, scale (%.0f, %.0f, %.0f) — derived from ArenaHalfExtent + a %.0f uu margin ")
-		TEXT("(TASK-841 §5.2: sized to the arena exactly, the CORNER rendered clear)."),
+		TEXT("[%s] Fog VISUAL spawned: '%s' — ACHIEVED Z=%.0f, ACHIEVED scale (%.0f, %.0f, %.0f), read back from the actor ")
+		TEXT("with GetActorLocation/GetActorScale3D (requested (%.0f, %.0f, %.0f), derived from ArenaHalfExtent + a %.0f uu margin; ")
+		TEXT("TASK-841 §5.2: sized to the arena exactly, the CORNER rendered clear). ")
+		TEXT("⛔ These are the MEASURED values, never the spawn transform — echoing the request is what let an engine-substituted ")
+		TEXT("scale read as a clean spawn for three of his reports (TASK-1071 §4)."),
 		*GetNameSafe(this), *GetNameSafe(Spawned),
-		SpawnTransform.GetLocation().Z,
-		SpawnTransform.GetScale3D().X, SpawnTransform.GetScale3D().Y, SpawnTransform.GetScale3D().Z,
+		AchievedLocation.Z,
+		AchievedScale3D.X, AchievedScale3D.Y, AchievedScale3D.Z,
+		RequestedScale3D.X, RequestedScale3D.Y, RequestedScale3D.Z,
 		FogVisualHorizontalMarginUU);
 }
 

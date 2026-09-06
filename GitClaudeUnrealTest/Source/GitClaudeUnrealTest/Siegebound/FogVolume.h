@@ -555,6 +555,47 @@ public:
 	static FTransform FogVisualTransform(const FVector2D& ArenaHalfExtentUU, float GroundReferenceZUU);
 
 	/**
+	 *  ⭐⭐⭐ THE READBACK PREDICATE — *"did the engine actually give us the scale we asked for?"* —
+	 *  and it is a pure static for exactly the reason `BrightSunWindowSeconds` and
+	 *  `FogVisualTransform` are: ⛔ A COMPARISON WRITTEN INLINE AT THE CALL SITE IS A COMPARISON
+	 *  ⛔ NO TEST CAN EXECUTE, and `TASK-1071` measured what an unexecutable check costs.
+	 *
+	 *  ⛔⛔⛔ THE DEFECT IT DETECTS, MEASURED (`TASK-1071` §1/§2) AND WORTH READING IN FULL,
+	 *  BECAUSE 🧑 JONATHAN REPORTED *"NO FOG"* ⛔ THREE TIMES BEFORE IT WAS FOUND:
+	 *  `SpawnFogVisual` asked for a scale of `(640, 360, 260)` and the engine handed back
+	 *  `(20, 20, 5)` — the ⛔ VENDOR component template's ⛔ OWN scale, read live from
+	 *  `/Game/FogArea/Blueprints/BP_FogArea.BP_FogArea_C:Mesh_GEN_VARIABLE`.
+	 *  ⚠️ THE MECHANISM, read from engine source rather than inferred: `BP_SiegeFog`'s root is the
+	 *  ⛔ INHERITED SCS `Mesh` component and ⛔ NOT a native root, so
+	 *  `AActor::PostSpawnInitialize`'s `FixupNativeActorComponents()` finds nothing and the root
+	 *  transform is applied down the SCS path instead. `Actor.cpp:4360` — the ⛔ NON-DEFERRED spawn
+	 *  path — calls `FinishSpawning(UserSpawnTransform, true)`, and `SCS_Node.cpp:147` then runs
+	 *  `if (bIsDefaultTransform) { WorldTransform.SetScale3D(NewSceneComp->GetRelativeScale3D()); }`.
+	 *  ⇒ his fog was a `2,000 × 2,000 × 500` uu slab `6,750` uu ⛔ ABOVE the field and ~`21,200` uu
+	 *  from his hero, against `L_Arena`'s `6000` uu `VolumetricFogDistance` froxel grid — ⛔ IT
+	 *  NEVER INTERSECTED THE GRID AT ANY CAMERA ANGLE, even looking straight up. Measured against a
+	 *  zero-control at his own gameplay vantage: `+0.04 %` mean luma at the ACHIEVED scale (inside
+	 *  the pixel noise floor) vs `+73 %` at the INTENDED one. ⛔ THAT IS NOT FAINT FOG; IT IS NO FOG.
+	 *
+	 *  ⚠️⚠️ THE TRAP FOR ANYONE *"SIMPLIFYING"* THE REPAIR, AND THE ARTIST CHECKED IT:
+	 *  ⛔ `SpawnParams.TransformScaleMethod` ⛔ DOES NOT HELP. The `bIsDefaultTransform` block runs
+	 *  ⛔ AFTER the `ESpawnActorScaleMethod` switch and overwrites the scale ⛔ REGARDLESS of which
+	 *  method was chosen. `Tests/SiegeFogVisualTest.cpp` reds on that reach BY NAME.
+	 *  ⚠️ AND WHY THE REPAIR IS AN EXPLICIT `SetActorScale3D` RATHER THAN `SpawnActorDeferred` +
+	 *  `FinishSpawning` (which also dodges the clobber): the engine's own comment beside that line
+	 *  says `bIsDefaultTransform` is ⛔ **`false` IN A COOKED BUILD**. ⇒ the deferred variant would
+	 *  behave ⛔ DIFFERENTLY in the editor and in the packaged game, and this bug could come back
+	 *  ⛔ ONLY IN THE SHIPPED PRODUCT, where nobody is looking. ⛔ The explicit set is correct in
+	 *  ⛔ BOTH, and that symmetry is the whole reason for the form.
+	 *
+	 *  ⭐ IT IS A PREDICATE, ⛔ NOT AN ASSERT AND ⛔ NOT A FIX: the caller decides what a mismatch
+	 *  means. Today the caller LOGS LOUDLY and carries on, because an art failure may ⛔ NEVER
+	 *  refuse a 50-gold card or change one vision clamp.
+	 *  ⛔ NaN on either side is a MISMATCH — a scale that cannot be compared has not been achieved.
+	 */
+	static bool FogVisualScaleMatches(const FVector& RequestedScale3D, const FVector& AchievedScale3D);
+
+	/**
 	 *  ⛔ THE MARGIN, AND IT IS **NOT** A DESIGN NUMBER — it is `L_Arena`'s `ExponentialHeightFog_0`
 	 *  `VolumetricFogDistance`, read live as `6000` under `TASK-841` §3.2. That is the radius
 	 *  within which the pack can render AT ALL, so it is exactly how far outside the play area the
@@ -592,6 +633,19 @@ public:
 	 *  rides the SPAWN TRANSFORM instead of living in the asset.
 	 */
 	static constexpr float FogVisualUnitCubeEdgeUU = 100.f;
+
+	/**
+	 *  ⛔ THE TOLERANCE `FogVisualScaleMatches` COMPARES WITH, and it is deliberately ⛔ TIGHT
+	 *  rather than generous. The defect it exists to catch is a scale wrong by a factor of ⛔ 32
+	 *  on X, ⛔ 18 on Y and ⛔ 52 on Z, so a loose epsilon buys ⛔ NOTHING and a tight one cannot
+	 *  hide it — while a generous one would be the first place a future *"the test is flaky"*
+	 *  edit went, and would quietly restore the exact silence this class just came out of.
+	 *  ⚠️ It is an ABSOLUTE tolerance on a COMPONENT SCALE — ⛔ not a world distance, hence ⛔ no
+	 *  `UU` suffix — sized only to absorb the float round-trip a scale takes through
+	 *  `USceneComponent::UpdateComponentToWorld`. Against the smallest shipped axis it is a
+	 *  relative slack of well under a thousandth of a percent.
+	 */
+	static constexpr float FogVisualScaleTolerance = 0.01f;
 
 	/**
 	 *  ⛔⛔ TEARDOWN — THE FOURTH WAY OUT OF FOGGED, AND IT IS NOT A STATE TRANSITION.

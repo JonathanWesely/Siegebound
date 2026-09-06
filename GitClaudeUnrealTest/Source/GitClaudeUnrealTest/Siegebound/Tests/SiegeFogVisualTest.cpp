@@ -3,6 +3,7 @@
 #include "Misc/AutomationTest.h"
 
 #include "Containers/UnrealString.h"
+#include "HAL/UnrealMemory.h" // FMemory::Memcpy — the sanctioned bit-pattern NaN (SiegeCastBarTest.cpp:129, via SiegeBrightSunTest.cpp)
 #include "Math/Transform.h"
 #include "Math/UnrealMathUtility.h"
 #include "Math/Vector.h"
@@ -31,6 +32,32 @@
  *  both sides was cut to the fog vision ceiling — an ⛔ 87.8% reduction in acquisition reach — and
  *  ⛔ THE SCREEN DID NOT CHANGE. ⭐ An asset with no caller is not a feature; it is a file.
  *
+ *  ⛔⛔⛔ AND THE SECOND DEFECT, `TASK-1072` — READ THIS ONE TOO, BECAUSE THE FILE ABOVE WENT FULLY
+ *  GREEN WHILE IT WAS LIVE AND 🧑 JONATHAN REPORTED *"NO FOG"* ⛔ THREE MORE TIMES:
+ *  `TASK-1068` gave the visual a caller and the caller worked — and the box was still invisible.
+ *  `SpawnFogVisual` asked for a scale of `(640, 360, 260)` and the ⛔ ENGINE HANDED BACK
+ *  `(20, 20, 5)`, the vendor component template's own scale, substituted at `SCS_Node.cpp:147`
+ *  because `BP_SiegeFog`'s root is an ⛔ INHERITED SCS component rather than a native one.
+ *  ⇒ a `64,000 × 36,000 × 26,000` uu volume ⛔ AROUND the battlefield became a
+ *  `2,000 × 2,000 × 500` uu slab `6,750` uu ⛔ ABOVE it — `0.17 %` of the intended plan area —
+ *  outside `L_Arena`'s `6000` uu froxel grid at ⛔ EVERY camera angle. Measured against a
+ *  zero-control at his own vantage: ⛔ `+0.04 %` mean luma, inside the pixel noise floor, against
+ *  `+73 %` at the intended scale. ⛔ THAT IS NOT FAINT FOG; IT IS NO FOG.
+ *
+ *  ⛔⛔⛔ **AND THE REASON IT SURVIVED A GREEN SUITE AND A PASSED GATE — THE PART THAT MATTERS MORE
+ *  THAN THE SCALE.** The spawn log printed `SpawnTransform`, i.e. ⛔ THE VALUE IT ASKED FOR. It
+ *  ⛔ NEVER ONCE CALLED `GetActorScale3D()`. Every sentence that log wrote was TRUE — the actor
+ *  really spawned, was really held, was really destroyed on time — and ⛔ the one number that
+ *  mattered was never taken. ⇒ a box the engine had shrunk by a factor of 32 read as a ⛔ CLEAN
+ *  SPAWN, the gate passed, and he was told the actor had spawned *"at the right transform"*.
+ *  ⭐⭐⭐ THE STANDING LAW, and this file's tests 6 and 7 are its executable form:
+ *  ⛔ **AN INSTRUMENT THAT ECHOES THE REQUEST INSTEAD OF MEASURING THE RESULT IS NOT AN
+ *  INSTRUMENT.** It is the failure wearing the evidence's clothes — the eleventh time this project
+ *  has hit that class of lie. ⭐ *A success return is not evidence.*
+ *  ⇒ ⛔ TEST 6 (Lane A, ⭐ EXECUTED) hands the shipped detector the MEASURED vendor substitute and
+ *  asserts it answers ⛔ NO — *a test that passes when the scale is clobbered is not a test.*
+ *  ⇒ ⛔ TEST 7 (Lane B) pins the correction, the readback, and the ⛔ ABSENCE of the old echo.
+ *
  *  ⛔⛔ **SPAWN AND DESPAWN ARE ONE SUBJECT HERE, NEVER TWO.** A build that spawns and never
  *  destroys is ⛔ NOT a smaller increment — it is ⛔ PERMANENT FOG, FOREVER, with a green suite
  *  and nothing red anywhere. *"A seam that can be entered and not left is half a seam."* ⇒ every
@@ -41,12 +68,17 @@
  *  ⛔⛔ *"A CALLER EXISTS"* AND *"THE CALLER IS REACHED"* ARE ⛔ DIFFERENT CLAIMS, and this file
  *  answers them with different instruments. ⛔ It says so rather than letting one green imply
  *  both:
- *    • ⭐ **LANE A — GENUINELY EXECUTED.** Tests 1 and 2 CALL `AFogVolume::FogVisualTransform`
- *      and `AFogVolume::FogVisualClassPath` and assert on the values that come back. These are
- *      pure statics with no world, no actor and no asset load, exactly like the shipped
- *      `BrightSunWindowSeconds` testability seam. ⛔ A wrong number here is a wrong number in
- *      game.
- *    • ⚠️ **LANE B — SOURCE-TEXT STRUCTURE.** Tests 3-6 read `FogVolume.h` / `FogVolume.cpp` /
+ *    • ⭐ **LANE A — GENUINELY EXECUTED.** Tests 1, 2 and 6 CALL `AFogVolume::FogVisualTransform`,
+ *      `AFogVolume::FogVisualClassPath` and `AFogVolume::FogVisualScaleMatches` and assert on the
+ *      values that come back. These are pure statics with no world, no actor and no asset load,
+ *      exactly like the shipped `BrightSunWindowSeconds` testability seam. ⛔ A wrong number here
+ *      is a wrong number in game.
+ *      ⚠️⚠️ AND THE LIMIT OF TEST 6, STATED SO NO GREEN IS MISTAKEN FOR MORE THAN IT IS: it proves
+ *      the ⛔ DETECTOR rejects the engine's substitution. ⛔ IT DOES NOT SPAWN AN ACTOR, so it does
+ *      ⛔ NOT prove the substitution is actually corrected in a running game — that claim rests on
+ *      test 7's structural pin plus 🧑 his eye. ⛔ The two are different claims and this file will
+ *      not let one stand in for the other; that conflation is the whole subject of `TASK-1072`.
+ *    • ⚠️ **LANE B — SOURCE-TEXT STRUCTURE.** Tests 3-5 and 7 read `FogVolume.h` / `FogVolume.cpp` /
  *      `SpellLibrary.cpp` / `SiegeGameMode.cpp` off disk and count constructs on ⛔ CODE LINES
  *      ONLY. ⛔⛔ A SOURCE CENSUS PROVES A CALLER **EXISTS**; ⛔ IT CANNOT PROVE IT IS
  *      **REACHED**. A call sitting inside `if (false)` passes every one of tests 3-6. ⇒ what
@@ -239,6 +271,30 @@ namespace SiegeFogVisualFixture
 	static FVector HalfExtentFromTransform(const FTransform& Transform)
 	{
 		return Transform.GetScale3D() * static_cast<double>(AFogVolume::FogVisualUnitCubeEdgeUU) * 0.5;
+	}
+
+	/**
+	 *  A quiet NaN built from its IEEE-754 bit pattern — copied ⛔ VERBATIM from
+	 *  `SiegeBrightSunTest.cpp` / `SiegeCastBarTest.cpp:129`, which already paid for this lesson.
+	 *  ⛔ NOT `0.f / 0.f`, ⛔ NOT `FMath::Sqrt(-1.f)` and ⛔ NOT the bare `NAN` macro: all three are
+	 *  constant-foldable, and a fast-math build may evaluate them into something that is no longer
+	 *  non-finite — which would make test 6's NaN clauses pass while testing ⛔ NOTHING. ⭐ Each use
+	 *  is paired with a `ContainsNaN` self-check for exactly that reason.
+	 *
+	 *  ⚠️⚠️ AND THE FIXTURE HAZARD, DECLARED BECAUSE THIS BUILD RUNS WITH `ENABLE_NAN_DIAGNOSTIC == 1`
+	 *  (`SiegeLadderClimbTest.cpp` measured it): ⛔ NEVER DO ARITHMETIC WITH A NaN VECTOR HERE.
+	 *  `TVector`'s operators call `DiagnosticCheckNaN()` and raise an engine error, which would fail
+	 *  the test ⛔ ON ITS OWN FIXTURE rather than on its subject. ⭐ CONSTRUCTING one and READING it
+	 *  is safe and is proven green in this very suite (`SiegeLadderClimbTest.cpp`'s `NaNLocation`),
+	 *  and that is the only thing test 6 does with it: `FogVisualScaleMatches` short-circuits on
+	 *  `ContainsNaN()` ⛔ BEFORE it ever reaches the subtraction inside `FVector::Equals`.
+	 */
+	static float MakeQuietNaN()
+	{
+		const uint32 NaNBits = 0x7FC00000u;
+		float Result = 0.f;
+		FMemory::Memcpy(&Result, &NaNBits, sizeof(Result));
+		return Result;
 	}
 }
 
@@ -564,8 +620,16 @@ bool FSiegeFogVisualLifetimeShapeTest::RunTest(const FString& Parameters)
 
 		// ⛔⛔ LOUD IN THE LOG, NEVER IN THE GAMEPLAY. 🧑 His spell VFX were INVISIBLE rather than
 		// ERRORING because the cards' spawn is null-safe — that silence is why nobody noticed.
-		TestEqual(TEXT("⭐⭐ A missing or refused visual is announced at Error level, twice: once for a class that will not load and once for a world that refuses the spawn"),
-			CountOccurrencesInCode(SpawnBody, TEXT("LogGitClaudeUnrealTest, Error,")), 2);
+		// ⚠️⚠️ THIS EXPECTATION MOVED FROM 2 TO 3 UNDER `TASK-1072`, AND THE MOVE IS DECLARED RATHER
+		// THAN QUIETLY MADE (`TL-§5b` — ⛔ a red is a finding to route, never a number to overwrite;
+		// this one is a THIRD ERROR SITE THIS DIFF DELIBERATELY ADDS, not a probe drifting off its
+		// subject). The third site is the ⛔ SCALE-READBACK MISMATCH: `SpawnFogVisual` now reads
+		// `GetActorScale3D()` back off the spawned actor and screams if the engine did not give it
+		// what it asked for. ⭐ The mismatch could have been hidden from this count by moving it into
+		// a private helper — ⛔ and that is exactly what a probe counting error sites exists to stop,
+		// so it stays inline and the number is corrected in the open.
+		TestEqual(TEXT("⭐⭐ A missing, refused OR WRONGLY-SCALED visual is announced at Error level, three times: a class that will not load, a world that refuses the spawn, and a scale the engine substituted"),
+			CountOccurrencesInCode(SpawnBody, TEXT("LogGitClaudeUnrealTest, Error,")), 3);
 
 		// ⚖️ AND THE BOUNDARY OF "LOUD": the fog MECHANIC keeps working with no visual. An art
 		// failure may never refuse a 50-gold card, consume-and-abort, or change one clamp.
@@ -738,6 +802,241 @@ bool FSiegeFogVisualOwnershipTest::RunTest(const FString& Parameters)
 		CountOccurrencesInCode(FogH, TEXT("FogVisualHorizontalMarginUU = 6000.f;")), 1);
 	TestEqual(TEXT("⭐ The 20,000 uu ceiling (a tuned choice with no owner in code) is written once, in the header"),
 		CountOccurrencesInCode(FogH, TEXT("FogVisualCeilingAboveGroundUU = 20000.f;")), 1);
+
+	return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// ⭐ LANE A (EXECUTED) — TEST 6: the scale the ENGINE substituted, rejected by the shipped detector
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeFogVisualScaleReadbackTest,
+	"Siegebound.Fog.TheScaleReadbackRejectsTheEngineSubstitutionThatMadeTheFogInvisibleThreeTimes",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeFogVisualScaleReadbackTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeFogVisualFixture;
+
+	// ⛔⛔⛔ THE DEFECT THIS TEST EXISTS TO MAKE UNREPEATABLE, AND IT IS THE ONE THAT ACTUALLY COST
+	// 🧑 JONATHAN THREE *"NO FOG"* REPORTS (`TASK-1071`): `AFogVolume::SpawnFogVisual` asked for a
+	// scale of `(640, 360, 260)` and the ENGINE handed back `(20, 20, 5)` — the vendor component
+	// template's own scale, substituted at `SCS_Node.cpp:147` because `BP_SiegeFog`'s root is an
+	// INHERITED SCS component rather than a native one. ⇒ a `64,000 × 36,000 × 26,000` uu volume
+	// around the battlefield silently became a `2,000 × 2,000 × 500` uu slab `6,750` uu ABOVE it
+	// and `~21,200` uu from his hero, outside the `6000` uu froxel grid in every direction.
+	// ⭐ MEASURED against a zero-control at his own gameplay vantage: `+0.04 %` mean luma at the
+	// achieved scale — INSIDE the pixel noise floor — against `+73 %` at the intended one.
+	// ⛔⛔ AND THE EVERY-EXISTING-TEST-STAYED-GREEN PART, WHICH IS WHY THIS FILE NEEDED A SIXTH
+	// TEST AT ALL: `FogVisualTransform` was RIGHT, and test 1 above proves it is right, in detail,
+	// on five separate relations. ⛔ NONE OF THAT MATTERED, because nothing asserted the number
+	// ever reached the actor. *"A test that passes when the scale is clobbered is not a test."*
+
+	// ── ⭐ THE MEASURED SUBSTITUTE ────────────────────────────────────────────────────────────
+	// ⚠️ TYPED HERE ON PURPOSE, AND ONLY HERE: this is ⛔ NOT a design number we own and ⛔ NOT
+	// something derivable from our code. It is a VENDOR fact — `RelativeScale3D` read live off
+	// `/Game/FogArea/Blueprints/BP_FogArea.BP_FogArea_C:Mesh_GEN_VARIABLE` under `TASK-1071` §2 —
+	// and it belongs in the TEST rather than in the production file, which is why `SC-§34`'s
+	// no-literals rule (enforced against `FogVolume.cpp` in test 5) does not reach it.
+	// ⚠️ IF THE VENDOR PACK IS EVER UPDATED this constant goes stale. ⛔ That direction is SAFE:
+	// a stale donor value makes this test assert the detector rejects some OTHER wrong scale,
+	// which it still must. The claim degrades, it does not invert.
+	const FVector VendorTemplateScale(20.0, 20.0, 5.0);
+
+	// ── The intended scale, ⛔ DERIVED from the shipped function, never transcribed ────────────
+	const FVector IntendedScale = AFogVolume::FogVisualTransform(ShippedArenaHalfExtent(), 0.f).GetScale3D();
+
+	TestTrue(TEXT("The derived scale is strictly positive on every axis (a degenerate one would make every claim below vacuous)"),
+		IntendedScale.X > 0.0 && IntendedScale.Y > 0.0 && IntendedScale.Z > 0.0);
+
+	// ⛔ THE PREMISE, ASSERTED RATHER THAN ASSUMED: the substitute really is a different box. If a
+	// future arena resize ever made the two coincide, the `TestFalse` below would be asserting
+	// nothing at all — and it would still be GREEN, which is the shape this whole row is about.
+	TestTrue(TEXT("⛔ PREMISE: the vendor template's scale really does differ from the derived one on every axis (otherwise the rejection below proves nothing)"),
+		!FMath::IsNearlyEqual(IntendedScale.X, VendorTemplateScale.X, 1.0)
+		&& !FMath::IsNearlyEqual(IntendedScale.Y, VendorTemplateScale.Y, 1.0)
+		&& !FMath::IsNearlyEqual(IntendedScale.Z, VendorTemplateScale.Z, 1.0));
+
+	// ── ⭐⭐⭐ THE ASSERTION THE OLD BUILD COULD NOT HAVE MADE ─────────────────────────────────
+	// ⛔ THIS IS THE ONE. Hand the shipped detector exactly what the engine actually handed the
+	// shipped code, and it must answer NO. A build in which this returns `true` is a build in
+	// which 🧑 he plays a 50-gold card, the army goes 87.8% blind, and the screen does not change
+	// — with a fully green suite, which is precisely what happened.
+	TestFalse(TEXT("⭐⭐⭐ THE ENGINE'S SUBSTITUTION IS REJECTED: the shipped detector says NO when handed the vendor template scale the engine really substituted (TASK-1071 §2). ⛔ A build where this is YES is a build with no fog and a green suite"),
+		AFogVolume::FogVisualScaleMatches(IntendedScale, VendorTemplateScale));
+
+	// ⭐ AND THE POSITIVE CONTROL, so the NO above is a JUDGEMENT rather than a detector that
+	// refuses everything (`SC-§79`, `SHIP-§9`: validate a gate against the failure it detects
+	// ⛔ AND against the success it must not block).
+	TestTrue(TEXT("⭐ POSITIVE CONTROL: the detector says YES when the achieved scale IS the derived one — it is a judgement, not a blanket refusal"),
+		AFogVolume::FogVisualScaleMatches(IntendedScale, IntendedScale));
+
+	// ── The tolerance is real, and it is TIGHT ────────────────────────────────────────────────
+	// ⛔ A future *"the test is flaky"* edit that widened this by orders of magnitude would be the
+	// first step back toward the silence, so both directions are pinned.
+	const double Tolerance = static_cast<double>(AFogVolume::FogVisualScaleTolerance);
+	TestTrue(TEXT("The scale tolerance is strictly positive (a zero tolerance would fail on the float round-trip through UpdateComponentToWorld)"),
+		Tolerance > 0.0);
+
+	const FVector JustInsideTolerance = IntendedScale + FVector(Tolerance * 0.25, 0.0, 0.0);
+	const FVector WellOutsideTolerance = IntendedScale + FVector(Tolerance * 100.0, 0.0, 0.0);
+	TestTrue(TEXT("⭐ A perturbation well inside the tolerance still MATCHES — the float round-trip a scale takes through the component hierarchy must not cry wolf"),
+		AFogVolume::FogVisualScaleMatches(IntendedScale, JustInsideTolerance));
+	TestFalse(TEXT("⭐ …and a perturbation well outside it does NOT — the tolerance is a rounding allowance, not a blindfold"),
+		AFogVolume::FogVisualScaleMatches(IntendedScale, WellOutsideTolerance));
+
+	// ⛔ EVERY AXIS IS CHECKED, not just the first: a substitution that got X right and Z wrong
+	// would still be a box of the wrong shape, and Z is the axis the vendor template misses by the
+	// widest factor.
+	TestFalse(TEXT("⛔ A mismatch on Y ALONE is caught (a per-axis check, never a magnitude comparison)"),
+		AFogVolume::FogVisualScaleMatches(IntendedScale, FVector(IntendedScale.X, VendorTemplateScale.Y, IntendedScale.Z)));
+	TestFalse(TEXT("⛔ A mismatch on Z ALONE is caught — Z is the axis the vendor template misses by the widest factor, and a short box is a fog ceiling nobody asked for"),
+		AFogVolume::FogVisualScaleMatches(IntendedScale, FVector(IntendedScale.X, IntendedScale.Y, VendorTemplateScale.Z)));
+
+	// ⛔ NaN IS A MISMATCH. A scale that cannot be compared has not been achieved, and the
+	// fail-toward-loud direction is the one every degenerate input in this class takes.
+	// ⚠️ CONSTRUCTED AND READ, ⛔ NEVER ARITHMETIC'D — see `MakeQuietNaN`'s ENABLE_NAN_DIAGNOSTIC
+	// note. `FogVisualScaleMatches` short-circuits on `ContainsNaN()` before `FVector::Equals`
+	// would subtract anything, which is what makes these two rows safe to run at all.
+	const double NaNValue = MakeQuietNaN();
+	const FVector NaNScale(NaNValue, NaNValue, NaNValue);
+	TestTrue(TEXT("SELF-CHECK: the fixture's NaN really is a NaN. ⛔ A folded constant here would make both rows below vacuous — which is exactly how a totality guard gets certified without ever being exercised"),
+		NaNScale.ContainsNaN());
+	TestFalse(TEXT("⛔ A NaN achieved scale is a MISMATCH — a value that cannot be compared has not been achieved"),
+		AFogVolume::FogVisualScaleMatches(IntendedScale, NaNScale));
+	TestFalse(TEXT("⛔ …and so is a NaN REQUEST, from the other side"),
+		AFogVolume::FogVisualScaleMatches(NaNScale, IntendedScale));
+
+	return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠️ LANE B (SOURCE-TEXT) — TEST 7: the spawn site FORCES the scale, then logs what it GOT
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeFogVisualAchievedTransformTest,
+	"Siegebound.Fog.TheSpawnSiteForcesTheScaleAndLogsWhatItGotRatherThanWhatItAsked",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeFogVisualAchievedTransformTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeFogVisualFixture;
+
+	FString FogCpp;
+	FString FogH;
+	if (!LoadProjectFile(*this, FogVolumeCpp, FogCpp) || !LoadProjectFile(*this, FogVolumeH, FogH))
+	{
+		return false;
+	}
+
+	FString SpawnBody;
+	if (!ExtractFunctionBody(*this, FogCpp, SpawnFogVisualSignature, SpawnBody))
+	{
+		return false;
+	}
+
+	// ── ⭐⭐⭐ (a) THE REPAIR ITSELF ───────────────────────────────────────────────────────────
+	// ⛔ Delete this line and the engine's substitution stands: the fog box goes back to being a
+	// small slab thousands of units above the field, invisible from every camera angle.
+	TestEqual(TEXT("⭐⭐⭐ THE REPAIR: the spawn site FORCES the derived scale onto the actor after spawning it, exactly once. ⛔ Without it the engine substitutes the vendor template's scale and there is NO FOG (TASK-1071)"),
+		CountOccurrencesInCode(SpawnBody, TEXT("Spawned->SetActorScale3D(RequestedScale3D);")), 1);
+
+	// ⛔⛔ THE TRAP, PINNED BY NAME. `SpawnParams.TransformScaleMethod` is the obvious reach and it
+	// ⛔ CHANGES NOTHING — the `bIsDefaultTransform` block runs AFTER that switch is consulted and
+	// overwrites the scale whichever method was chosen. A future editor "simplifying" the explicit
+	// set into that flag would restore the bug in full, so the reach itself goes RED here.
+	TestEqual(TEXT("⛔⛔ The fix is NOT spelled as SpawnParams.TransformScaleMethod — that switch is consulted BEFORE the clobber and changes nothing (TASK-1071 §2's named trap)"),
+		CountOccurrencesInCode(FogCpp, TEXT("TransformScaleMethod")), 0);
+
+	// ── ⭐⭐⭐ (b) THE INSTRUMENT — AND THIS IS THE HALF THAT LET THE BUG SURVIVE ──────────────
+	// ⛔⛔ THE OLD LOG PRINTED `SpawnTransform`, i.e. THE REQUEST. It never once read the actor.
+	// ⇒ every sentence it wrote was true, the one number that mattered was never taken, and a box
+	// the engine had shrunk by a factor of 32 read as a CLEAN SPAWN — which is how a gate passed
+	// and 🧑 he was told the actor had spawned "at the right transform".
+	// ⭐ THE STANDING LAW, now executable: ⛔ AN INSTRUMENT THAT ECHOES THE REQUEST INSTEAD OF
+	// MEASURING THE RESULT IS NOT AN INSTRUMENT.
+	TestTrue(TEXT("⭐⭐⭐ THE INSTRUMENT: the spawn site READS THE SCALE BACK off the spawned actor. ⛔ The old line echoed the request and never called this"),
+		CountOccurrencesInCode(SpawnBody, TEXT("Spawned->GetActorScale3D()")) >= 1);
+	TestTrue(TEXT("⭐⭐ …and the LOCATION too — the old line asserted a Z it had likewise never looked at, and half a readback is the same bug with better odds"),
+		CountOccurrencesInCode(SpawnBody, TEXT("Spawned->GetActorLocation()")) >= 1);
+
+	// ⛔⛔ AND THE REQUEST IS NEVER RE-SPELLED AT A REPORTING SITE. `SpawnTransform.GetScale3D()`
+	// is spent EXACTLY ONCE, deriving the named local; every later use is the local. ⇒ restoring
+	// `SpawnTransform.GetScale3D().X` into the log's argument list — the literal old bug — pushes
+	// this count to 4 and goes RED.
+	TestEqual(TEXT("⭐⭐⭐ The requested scale is derived ONCE and never re-spelled at a reporting site. ⛔ Putting SpawnTransform.GetScale3D().X back into the log args is the original defect, and it reds HERE"),
+		CountOccurrencesInCode(SpawnBody, TEXT("SpawnTransform.GetScale3D()")), 1);
+	TestEqual(TEXT("⭐⭐ …and the LOCATION half of that lie is gone entirely: the log's Z comes from the ACTOR, never from the spawn transform"),
+		CountOccurrencesInCode(SpawnBody, TEXT("SpawnTransform.GetLocation()")), 0);
+
+	// ⭐ The achieved values really reach the log, rather than being read and discarded — a
+	// readback nobody prints is a readback nobody can act on.
+	TestTrue(TEXT("⭐ The ACHIEVED scale reaches the log line"),
+		CountOccurrencesInCode(SpawnBody, TEXT("AchievedScale3D.X")) >= 1);
+	TestTrue(TEXT("⭐ …and the ACHIEVED Z does too"),
+		CountOccurrencesInCode(SpawnBody, TEXT("AchievedLocation.Z")) >= 1);
+
+	// ── ⭐⭐ (c) A DISAGREEMENT IS COMPARED, NOT MERELY PRINTED ───────────────────────────────
+	// ⛔ Printing both numbers and trusting a human to diff them is not a gate: nobody reads a
+	// `Log`-level line until something is already wrong. The comparison is made in code, and it is
+	// LOUD, which is what the artist's note asks for.
+	TestEqual(TEXT("⭐⭐ The readback is COMPARED against the request in code, exactly once — printing both and hoping a human diffs them is not a gate"),
+		CountOccurrencesInCode(SpawnBody, TEXT("FogVisualScaleMatches(RequestedScale3D, AchievedScale3D)")), 1);
+	TestEqual(TEXT("⭐⭐ …and the MISMATCH is the branch that fires (a NEGATED predicate — a match must stay silent, or the loud case stops meaning anything)"),
+		CountOccurrencesInCode(SpawnBody, TEXT("if (!FogVisualScaleMatches(")), 1);
+
+	// ⚖️ AND THE BOUNDARY OF "LOUD", RESTATED FOR THE NEW SITE: a wrong scale is an ART failure,
+	// and an art failure may ⛔ NEVER refuse a 50-gold card or change one vision clamp. Test 4
+	// pins the `return false` and deadline counts at zero for this whole body; this is the same
+	// ruling applied to the branch this row adds.
+	// ⚠️ THREE, and the number is DERIVED rather than guessed: the spawn path's early exits are
+	// (1) no world, (2) the class would not load, (3) the world refused the spawn. ⛔ A FOURTH
+	// `return;` would mean the mismatch branch had learned to abort — which would hand an ART
+	// failure the power to leave the visual UNHELD, i.e. an opaque box nobody can ever destroy.
+	TestEqual(TEXT("⚖️ ⛔ The mismatch branch REPORTS and carries on — the spawn path still has exactly its three original early exits, so a wrong scale can never leave the visual unheld and undestroyable"),
+		CountOccurrencesInCode(SpawnBody, TEXT("return;")), 3);
+
+	// ── ⭐⭐ (d) ORDERING — the two ways to get this exactly backwards ────────────────────────
+	// ⛔ A readback taken BEFORE the correction measures the clobber and screams on every single
+	// cast, forever; a correction attempted BEFORE the spawn has no actor to apply to. Both
+	// compile, both review clean, and both are silent about which one happened.
+	FString BeforeReadback;
+	if (SubstringBefore(*this, SpawnBody, TEXT("Spawned->GetActorScale3D()"), BeforeReadback))
+	{
+		TestEqual(TEXT("⭐⭐ THE CORRECTION HAPPENS BEFORE THE MEASUREMENT — a readback taken first would measure the engine's substitute and scream on every cast forever"),
+			CountOccurrencesInCode(BeforeReadback, TEXT("SetActorScale3D(")), 1);
+	}
+
+	FString BeforeCorrection;
+	if (SubstringBefore(*this, SpawnBody, TEXT("Spawned->SetActorScale3D(RequestedScale3D);"), BeforeCorrection))
+	{
+		TestEqual(TEXT("⭐ …and the SPAWN happens before the correction — the clobber is applied during SpawnActor, so a scale set any earlier is the value that gets discarded"),
+			CountOccurrencesInCode(BeforeCorrection, TEXT("SpawnActor<AActor>(")), 1);
+	}
+
+	// ── ⭐ (e) THE DETECTOR IS A REACHABLE SEAM, not an inline expression ─────────────────────
+	// ⛔⛔ THIS IS WHY TEST 6 CAN EXIST AT ALL. The same comparison written inline at the spawn
+	// site would be a check ⛔ NO TEST COULD EVER RUN — and an unrunnable check is the exact shape
+	// of the thing this row is repairing, one layer up.
+	TestEqual(TEXT("⭐⭐ The comparison is a PUBLIC STATIC SEAM a test can execute (the BrightSunWindowSeconds precedent). ⛔ Inlined at the call site it would be a check nothing could ever run — which is the defect, one layer up"),
+		CountOccurrencesInCode(FogH, TEXT("static bool FogVisualScaleMatches(const FVector& RequestedScale3D, const FVector& AchievedScale3D);")), 1);
+	TestEqual(TEXT("⭐ …declared once, defined once"),
+		CountOccurrencesInCode(FogCpp, TEXT("bool AFogVolume::FogVisualScaleMatches(")), 1);
+	TestEqual(TEXT("⭐ The tolerance is a NAMED constant carrying its derivation, never a bare epsilon at the comparison"),
+		CountOccurrencesInCode(FogH, TEXT("static constexpr float FogVisualScaleTolerance = 0.01f;")), 1);
+
+	// ⛔ AND THE ROW'S STANDING FENCES SURVIVE IT: no second deadline, no bool, no tick. The
+	// readback stores NOTHING — it is read, compared, logged and dropped inside one function.
+	// ⚠️ THE NEEDLE CARRIES ITS SEMICOLON ON PURPOSE. `AchievedScale3D` DOES appear in the header —
+	// it is the second PARAMETER NAME on the seam's declaration — so a bare needle would be 1 and
+	// this row would assert nothing it means. `AchievedScale3D;` is the shape a MEMBER FIELD takes
+	// and the parameter list (`AchievedScale3D);`) can never wear.
+	TestEqual(TEXT("⛔ The readback introduces NO stored state — the achieved scale is read, compared, logged and dropped inside one function; it is never a member (the TObjectPtr stays the only thing this class remembers about the visual)"),
+		CountOccurrencesInCode(FogH, TEXT("AchievedScale3D;")), 0);
+	TestEqual(TEXT("⛔ …and IsFogActive() is still the one predicate: the spawn site learns nothing about fog STATE from a scale"),
+		CountOccurrencesInCode(SpawnBody, TEXT("IsFogActive()")), 0);
 
 	return true;
 }
