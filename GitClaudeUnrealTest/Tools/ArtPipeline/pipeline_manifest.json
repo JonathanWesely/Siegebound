@@ -756,6 +756,31 @@
       "ucx": null,
       "_ucx_source": "COLLISIONLESS ON PURPOSE - see Castle_ToeRock01._ucx_source."
     },
+    "MainCharacter": {
+      "category": "unit",
+      "_category_note": "'unit' is the CATEGORY the Stage-2 script understands (it gates ONLY the building-UCX requirement, refine_trellis_glb.py:1540). This asset is the PLAYER HERO (BP_HeroCharacter), NOT a summonable roster unit - there is no card, no cost and no Barracks spawn. The value is a script contract, not a design claim.",
+      "mode": "bake",
+      "tri_budget": 24000,
+      "bake_resolution": 2048,
+      "origin": "feet-center",
+      "fit_mode": "height",
+      "target_dims_ue": [191.0, 50.8, 192.0],
+      "_dims_source": "TASK-1091 (2026-09-06) PRE-GENERATION ESTIMATE, measured - not guessed - off the TASK-1087 view crops. Z=192.0 is DERIVED FROM THE HERO'S OWN CAPSULE: r42 / half-height 96 (GitClaudeUnrealTestCharacter.cpp:18, quoted in HeroCharacter.cpp:1752), so 2 x 96 = 192.0 fills the capsule exactly. It is DELIBERATELY NOT the 180-190 roster humanoid band: CONTACT-3.3 law is that the hero's numbers are re-derived from the hero's capsule and NEVER inherited from the unit (the unit is 34/88). X/Y come from the non-background pixel bbox of the crops, which all three share one 640px window and therefore one scale (measured heights 944/938/938 px, i.e. consistent within 0.6%): Front W939/H944 -> X/Z 0.9947 -> 191.0 (T-pose span, gauntlet fingertip to fingertip); Side W248/H938 -> Y/Z 0.2644 -> 50.8 (depth, sabaton toe to cloak fall). X/Y are WARN-ONLY under fit_mode=height (only Z is enforced) - RETUNE to the mesh-measured conformed dims after this first Stage-2 run, per the shipped Wizard/Sorcerer _tuned precedent.",
+      "pre_rotate_z_deg": 0.0,
+      "voxel_size_ue": 1.5,
+      "albedo_delight": {
+        "_note": "TASK-1091 first pass: STARTING at the Knight/Ogre-proven armored-humanoid values, because this subject is that archetype. WATCH FOR THE OPPOSITE FAILURE THIS TIME: gamma<1 and gain>1 both BRIGHTEN, and this character's surcoat and cloak are ALREADY near-white, so the risk here is CLIPPING the grime and tatter texture that carry his silhouette - not the usual too-dark result. Stage 2 costs ZERO credits to re-run, so this is tuned empirically against the preview renders, not argued.",
+        "ao_divide_strength": 1.0,
+        "ao_floor": 0.25,
+        "gamma": 0.45,
+        "gain": 1.45
+      },
+      "team_region": {
+        "_note": "TASK-1091 MEASURED, then CORRECTED - and left as an OPEN QUESTION for the TASK-1092 approval gate. FIRST PASS used a helm_dome box [0.34-0.66 x, 0.3-0.7 y, 0.88-1.0 z] on the theory that the great-helm CROWN is the one broad piece of bare steel a team tint could use. THE RENDER REFUTED IT: that box selected the WHOLE HELMET (281 faces, 1.7% of area - the fraction stayed well under the cap, so the cap did NOT catch it), and because the TeamRegion slot carries the team colour rather than the baked albedo, the hero previewed as a solid BLUE BUCKET HEAD with no visor, no cross and no geometry visible at all. The cap is an AREA guard; it cannot tell you that the faces you took were the ones carrying the character's face. SELECTORS ARE NOW EMPTY, deliberately, for two reasons: (1) it is the honest default for this character - he is the PLAYER hero, his identity is the Templar red cross, and the concept helm is bare polished steel with a GOLD cross, not a team colour; (2) an empty region lets Jonathan judge the actual generated helmet at TASK-1092 instead of judging a coloured block that hides it. CONSEQUENCE, STATED SO IT IS NOT READ AS A DEFECT: refine_report.json now carries the warning 'TeamRegion selectors matched ZERO faces' on every run. That warning is EXPECTED AND CORRECT here. The slot contract [TeamRegion, MainCharacterPBR] is still honoured - the slot exists and is empty. If Jonathan wants the hero team-tinted after all, add selectors and re-run Stage 2: it costs ZERO credits, because Stage 2 never calls the API.",
+        "max_fraction": 0.35,
+        "selectors": []
+      }
+    },
     "WatchTower": {
       "category": "building",
       "_comment_task737": "TASK-737 (2026-09-01) RE-AUTHORED for the LADDER REDESIGN, superseding TASK-727's ramp build. Jonathan changed the ascent: the 2078 uu / 30-degree walkable ramp wedge and the 14 hulls tuned to it are DELETED; a leaning 76-degree siege ladder replaces them. What did NOT change: the 1200 uu rise, the 600x600 deck, the material MI_WatchTower_PBR, and the paths. Still authored PROCEDURALLY and HEADLESS by Tools/ArtPipeline/build_watchtower.py - NOT a TRELLIS/Meshy asset; there is no Inbox concept and no Cache/WatchTower/trellis_raw.glb, the build script IS the source. Verify any re-export with Tools/ArtPipeline/verify_watchtower_fbx.py (13-row round-trip gate).",
