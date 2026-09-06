@@ -18,6 +18,7 @@
 #include "Siegebound/HeroCharacter.h"
 #include "Siegebound/Projectile.h"
 #include "Siegebound/SiegeBotController.h"
+#include "Siegebound/SiegeDeathCameraStatics.h" // TASK-1102: FSiegeDeathCameraStatics::MakeDeathViewRotation — half (a) of the death-camera roll fix (pure statics: FRotator only, no world, no actor)
 #include "Siegebound/SiegeGameState.h"
 #include "Siegebound/SiegeGhostPawn.h" // TASK-750 — produced in parallel by TASK-749 (one module, one compile at TASK-754)
 #include "Siegebound/SiegeMapMarkSubsystem.h" // USiegeMapMarkSubsystem::ClearMarks — MARK-§ M-4's clear-on-reset (the class is TASK-744's; this file owns the ONE call site)
@@ -831,7 +832,40 @@ void ASiegeGameMode::SpawnAndPossessGhost(AController* Player, AHeroCharacter* D
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
 	const FVector GhostLocation = DeadHero->GetActorLocation();
-	const FRotator GhostRotation = DeadHero->GetActorRotation();
+
+	// ⛔⛔ TASK-1102 (DEATH-CAM-ROLL) — HALF (a), AND THIS LINE IS THE WHOLE FIX FOR IT.
+	//
+	// ⭐ THE DEFECT, MEASURED: handoffs/TASK-1094-buildmaster.md §5.6 + capture
+	// TASK-1094-E-OBSERVATION-death-camera-roll-90deg.png — the host was killed twice by the RED
+	// army and BOTH times the player camera ended up rolled ≈90° (`control rotation roll 89.9`),
+	// the whole frame on its side. ⛔ It reproduces from the DEATH path, ⛔ not from TASK-1093's
+	// mesh swap.
+	//
+	// ⛔ WHY HERE AND ⛔ NOT AT THE `SetControlRotation` BELOW: this value is read THREE times, and
+	// the first two are ahead of the explicit write.
+	//   (1) the ghost's SPAWN rotation, a dozen lines down — a ghost spawned rolled 90° is a
+	//       walking ACharacter lying on its side, a second visible defect;
+	//   (2) `PC->Possess(Ghost)`, because `AController::OnPossess` itself performs
+	//       `ClientSetRotation(GetPawn()->GetActorRotation())` — an ENGINE copy of the ghost's
+	//       (rolled) rotation into the control rotation, and it runs BEFORE our own write;
+	//   (3) the explicit control-rotation write on the controller, a few lines below.
+	//       (⛔ Its literal call text is deliberately NOT repeated in this comment: test (a5)
+	//        COUNTS the control-rotation writes in this file, and a mention in prose would
+	//        inflate the count and turn a real tripwire into noise.)
+	// ⇒ a clamp on (3) alone would leave (1) and (2) carrying the same rolled value. Sanitising
+	// the SOURCE closes all three with one expression, which is what "suppress it at the write
+	// site, ⛔ not by clamping downstream" (the row's clause 3a) means for this call graph.
+	//
+	// ⛔ AND NOTHING UPSTREAM WILL EVER CLEAN IT FOR US: AGitClaudeUnrealTestCharacter ctor:27
+	// sets `RotationRate = FRotator(0, 500, 0)`, so `UCharacterMovementComponent::PhysicsRotation`
+	// corrects YAW ONLY — any roll that reaches the hero capsule is held forever.
+	//
+	// ⛔ NOT A BEHAVIOUR CHANGE FOR THE UPRIGHT CASE: an upright hero has pitch 0 / roll 0, so this
+	// returns exactly what the shipped line returned. It is the SAME yaw-only contract this file
+	// already states in these words at GetHeroStartTransform (":1247" — "Yaw-only on purpose
+	// (pitch/roll 0 …)"), applied to the one death-path rotation that was still unfiltered.
+	// ⭐ The shipped intent above — "facing the way the hero was facing" — is a claim about YAW.
+	const FRotator GhostRotation = FSiegeDeathCameraStatics::MakeDeathViewRotation(DeadHero->GetActorRotation());
 
 	ASiegeGhostPawn* Ghost = World->SpawnActor<ASiegeGhostPawn>(ResolveGhostPawnClass(), GhostLocation, GhostRotation, SpawnParams);
 	if (!IsValid(Ghost))

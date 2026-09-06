@@ -34,6 +34,7 @@
 #include "Siegebound/ClimbableTower.h" // TASK-778 (CONTACT-§4.1): the contact gate the hero POLLS — the tower owns the radius, the cone, the dwell and K-C's latch; this class owns ⛔ none of them
 #include "Siegebound/CombatantHealthBarComponent.h"
 #include "Siegebound/SiegeCombatStatics.h" // TASK-828 (WITCH-§1): GatherHostileAgents — the ONE acquisition funnel
+#include "Siegebound/SiegeDeathCameraStatics.h" // TASK-1102: FSiegeDeathCameraStatics::LevelViewRoll — half (b), the ONE call site in this file (pure statics: FRotator only, no world, no actor)
 #include "Siegebound/SiegeFeedbackLibrary.h"
 #include "Siegebound/SiegeHitFlashComponent.h"
 #include "Siegebound/SiegeKeyboardLayoutSubsystem.h" // TASK-512: USiegeKeyboardLayoutSubsystem::GetPositionalContext — the positional remap's ONE call site
@@ -965,6 +966,38 @@ void AHeroCharacter::ResetHero()
 
 	// restore input (mirrors HandleDeath's DisableInput)
 	EnableInput(Cast<APlayerController>(GetController()));
+
+	// ⛔⛔ TASK-1102 (DEATH-CAM-ROLL) — HALF (b): ⛔ A RESET THAT DOES NOT RESET IS THE ACTUAL
+	// COMPLAINT. `handoffs/TASK-1094-buildmaster.md` §5.6 measured the player camera at
+	// `control rotation roll 89.9` after death and recorded that it ⛔ STAYED rolled through a
+	// forced `ResetHero()`. Everything above this line restores HP, the bar, visibility,
+	// collision, movement and input — and ⛔ nothing restored where the player is LOOKING, because
+	// until now this function touched ⛔ zero rotation state.
+	//
+	// ⚠️ IT IS ⛔ NOT REDUNDANT WITH `ASiegeGameMode::RestoreHeroAtStart`'s
+	// `PC->SetControlRotation(StartRotation)`, and the distinction is the whole row (`SC-§90`):
+	// that line lives in a DIFFERENT function, one caller away, and it is the ⛔ respawn's
+	// business, not the reset's. `ResetHero()` is a public restore primitive
+	// (`HeroCharacter.h:504`) whose contract is "the hero is whole again"; a caller that is ⛔ not
+	// `RestoreHeroAtStart` — which is exactly the caller that produced the recorded observation —
+	// gets no levelling at all. ⭐ The levelling belongs where the name promises it.
+	//
+	// ⛔ ROLL ONLY. Pitch and yaw are preserved EXACTLY (see FSiegeDeathCameraStatics::LevelViewRoll):
+	// snapping the player's look direction on respawn would be a new defect wearing this one's name.
+	//
+	// ⚠️ DECLARED LIMIT, ⛔ not hidden: this reaches the controller through `GetController()`, the
+	// same resolution the `EnableInput` line directly above already uses. While the death ghost is
+	// possessed the hero is UNPOSSESSED and this is a no-op — which is correct, because there is
+	// no way from here to know WHICH player controller owns a controller-less corpse, and guessing
+	// one would be worse than doing nothing. ⭐ On the shipped path the ghost is retired and
+	// `PC->Possess(Hero)` has already run — `ASiegeGameMode::RestoreHeroAtStart`'s own comment
+	// says it in these words, "Repossess BEFORE ResetHero" — so the controller is present.
+	// ⭐ And half (a) means the roll is never introduced in the first place; this is the belt.
+	if (AController* const OwningControllerForCamera = GetController())
+	{
+		OwningControllerForCamera->SetControlRotation(
+			FSiegeDeathCameraStatics::LevelViewRoll(OwningControllerForCamera->GetControlRotation()));
+	}
 
 	// fresh cooldown/regen state: can swing immediately; full HP so regen is idle anyway
 	LastMeleeTime = -1.0e9;

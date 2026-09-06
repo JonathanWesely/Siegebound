@@ -4,7 +4,11 @@
 
 #include "Containers/UnrealString.h"
 #include "GameFramework/Pawn.h"
+#include "Math/Rotator.h"            // TASK-1102: FRotator — the two death-camera claims are stated in rotations
+#include "Misc/FileHelper.h"         // TASK-1102: FFileHelper::LoadFileToString — the CALL-SITE CENSUS half (SC-§36.1)
+#include "Misc/Paths.h"              // TASK-1102: FPaths::ProjectDir — ditto
 #include "Siegebound/HeroCharacter.h"
+#include "Siegebound/SiegeDeathCameraStatics.h" // TASK-1102: the two pure rules under test
 #include "Siegebound/SiegeGameMode.h"
 #include "Siegebound/SiegeGhostPawn.h"
 #include "Siegebound/SiegePlayerController.h"
@@ -820,6 +824,277 @@ bool FSiegeGhostInputContextOwnershipTest::RunTest(const FString& Parameters)
 	// the pawns arm themselves.
 	TestFalse(TEXT("(c) ⛔ ASiegeGameMode declares no mapping context — it possesses; the pawns arm themselves"),
 		DeclaresMemberContaining(ASiegeGameMode::StaticClass(), TEXT("MappingContext")));
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//  ⭐⭐ TASK-1102 (DEATH-CAM-ROLL) — THE TWO CAMERA-ROLL CLAIMS
+//
+//  ⛔ THE MEASURED DEFECT: handoffs/TASK-1094-buildmaster.md §5.6 + capture
+//  playtest-evidence/2026-09-06/TASK-1094-E-OBSERVATION-death-camera-roll-90deg.png — the host
+//  walked the hero into the RED army at 500 uu/s, died TWICE, and both times the player camera
+//  ended up at `control rotation roll 89.9` with the whole frame on its side, and it ⛔ STAYED
+//  rolled through a forced `AHeroCharacter::ResetHero()`.
+//
+//  ⛔ THE WRITE SITE: `SiegeGameMode.cpp:862` `PC->SetControlRotation(GhostRotation)`, fed at
+//  `:833` by `DeadHero->GetActorRotation()` — the only site in the module that can transport a
+//  non-zero roll into the control rotation on the death path.
+//
+//  ⚠️⚠️ WHY THESE TWO TESTS ARE SHAPED THE WAY THEY ARE (`SC-§79` + `SC-§36.1`): each has TWO
+//  halves that fail for DIFFERENT reasons.
+//    • the BEHAVIOUR half CALLS the shipped rule with the measured `roll 89.9` — so a rule that
+//      stops removing roll goes red, and (the other direction) a rule that lazily returns
+//      `FRotator::ZeroRotator` ALSO goes red, because pitch/yaw are asserted to survive EXACTLY;
+//    • the CALL-SITE CENSUS half reads the SHIPPED source and requires the rule to actually be
+//      CALLED — because this project has already shipped a built-and-tested trigger with ⛔ ZERO
+//      callers and nothing failed. A green behaviour half over a dead function is ⛔ not evidence.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+namespace SiegeDeathCameraRollTestFixture
+{
+	/** The roll the host actually measured on the rolled frame. ⛔ Not a round 90: the test uses the OBSERVED number so nobody can claim the case was invented. */
+	constexpr double MeasuredDeathRollDegrees = 89.9;
+
+	/** A pitch and a yaw that are BOTH non-zero and BOTH unlike each other — so a function that swapped or zeroed either one cannot pass. */
+	constexpr double ProbePitchDegrees = -17.5;
+	constexpr double ProbeYawDegrees = 133.25;
+
+	/** Exact-equality comparison. Tolerance 0 is the claim: "preserved EXACTLY" means bit-for-bit, not "close enough". */
+	static bool ExactlyEquals(double A, double B)
+	{
+		return FMath::IsNearlyEqual(A, B, 0.0);
+	}
+
+	/** Asserts all three components at once with a failure message that PRINTS the numbers — a red here must say what the rule returned, not merely that it was wrong. */
+	static void CheckRotator(FAutomationTestBase& Test, const TCHAR* What, const FRotator& Actual,
+		double ExpectedPitch, double ExpectedYaw, double ExpectedRoll)
+	{
+		Test.TestTrue(
+			FString::Printf(TEXT("%s — got (pitch %.4f, yaw %.4f, roll %.4f), expected (pitch %.4f, yaw %.4f, roll %.4f)"),
+				What, Actual.Pitch, Actual.Yaw, Actual.Roll, ExpectedPitch, ExpectedYaw, ExpectedRoll),
+			ExactlyEquals(Actual.Pitch, ExpectedPitch)
+			&& ExactlyEquals(Actual.Yaw, ExpectedYaw)
+			&& ExactlyEquals(Actual.Roll, ExpectedRoll));
+	}
+
+	/** Loads a shipped source file. ⛔ A probe that cannot read its subject FAILS — it never reports SAFE. (Same shape as SiegeHeroLadderClimbTest.cpp:107.) */
+	static bool LoadProjectSource(FAutomationTestBase& Test, const TCHAR* RelativePath, FString& OutText)
+	{
+		const FString FullPath = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / FString(RelativePath));
+		if (!FPaths::FileExists(FullPath))
+		{
+			Test.AddError(FString::Printf(TEXT("⛔ Could not find '%s'. The CALL-SITE CENSUS cannot be run, so it FAILS rather than passing quietly."), *FullPath));
+			return false;
+		}
+		if (!FFileHelper::LoadFileToString(OutText, *FullPath))
+		{
+			Test.AddError(FString::Printf(TEXT("⛔ Could not read '%s' — a stale probe fails."), *FullPath));
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 *  Extracts ONE function body: signature → the first line closing at column 0 (`\n}`), which is
+	 *  how every function in this codebase ends. ⛔ Deliberately not a brace-matcher (it would walk
+	 *  into comments and string literals and fail for reasons unrelated to the claim).
+	 *  ⭐ Carries its own positive control: a renamed/deleted function is an ERROR naming it, and a
+	 *  body too small to contain anything is an ERROR — so a census can never pass by finding nothing.
+	 *  (Same shape as SiegeHeroLadderClimbTest.cpp:143.)
+	 */
+	static bool ExtractFunctionBody(FAutomationTestBase& Test, const FString& Source, const TCHAR* Signature, FString& OutBody)
+	{
+		const int32 SignatureIndex = Source.Find(Signature, ESearchCase::CaseSensitive);
+		if (SignatureIndex == INDEX_NONE)
+		{
+			Test.AddError(FString::Printf(TEXT("⛔ '%s' is not in the shipped source — the site this census names either moved or was deleted, and ⛔ neither is a pass."), Signature));
+			return false;
+		}
+		const int32 BodyEnd = Source.Find(TEXT("\n}"), ESearchCase::CaseSensitive, ESearchDir::FromStart, SignatureIndex);
+		if (BodyEnd == INDEX_NONE)
+		{
+			Test.AddError(FString::Printf(TEXT("⛔ Could not find the end of '%s' — the probe is stale, so it fails."), Signature));
+			return false;
+		}
+		OutBody = Source.Mid(SignatureIndex, BodyEnd - SignatureIndex);
+		if (OutBody.Len() < 40)
+		{
+			Test.AddError(FString::Printf(TEXT("⛔ '%s' extracted only %d characters — the probe is broken, ⛔ not the subject."), Signature, OutBody.Len()));
+			return false;
+		}
+		return true;
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  10. ⭐⭐ HALF (a) — THE DEATH PATH HANDS THE CONTROLLER A YAW-ONLY ROTATION,
+//      SO A ROLLED CORPSE CAN NEVER ROLL THE CAMERA (TASK-1102, SiegeGameMode.cpp:833/862)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeDeathPathNeverTransportsRollTest,
+	"Siegebound.RespawnLifecycle.TheDeathPathHandsTheControllerAYawOnlyRotation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeDeathPathNeverTransportsRollTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeDeathCameraRollTestFixture;
+
+	// ── (a1) BEHAVIOUR: the measured case ───────────────────────────────────────────────
+	// The exact rotation the defect produces — a corpse carrying the observed roll — must come
+	// back as facing-only. ⛔ Two sides that are NOT equal by construction: the input roll is
+	// 89.9 and the expected output roll is 0.
+	CheckRotator(*this,
+		TEXT("(a1) a corpse rolled by the MEASURED 89.9° yields a yaw-only view rotation"),
+		FSiegeDeathCameraStatics::MakeDeathViewRotation(FRotator(ProbePitchDegrees, ProbeYawDegrees, MeasuredDeathRollDegrees)),
+		0.0, ProbeYawDegrees, 0.0);
+
+	// ── (a2) BEHAVIOUR: the YAW IS THE PAYLOAD, and it survives ─────────────────────────
+	// ⛔ This is the assertion that kills a lazy `return FRotator::ZeroRotator;` — the shipped
+	// intent at SiegeGameMode.cpp:828 is "facing the way the hero was facing", so losing the yaw
+	// would be a DIFFERENT defect with the same green suite.
+	TestTrue(TEXT("(a2) ⛔ the yaw is CARRIED THROUGH, not zeroed — 'facing the way the hero was facing' is a claim about yaw"),
+		ExactlyEquals(FSiegeDeathCameraStatics::MakeDeathViewRotation(FRotator(0.0, ProbeYawDegrees, 0.0)).Yaw, ProbeYawDegrees));
+
+	// ── (a3) BEHAVIOUR: the negative roll, and the upright no-op ────────────────────────
+	// Roll is removed whichever way it leans, and an already-upright corpse is returned unchanged
+	// — i.e. this is ⛔ NOT a behaviour change for the case that was already correct.
+	CheckRotator(*this, TEXT("(a3) a NEGATIVE roll is removed too"),
+		FSiegeDeathCameraStatics::MakeDeathViewRotation(FRotator(0.0, ProbeYawDegrees, -MeasuredDeathRollDegrees)),
+		0.0, ProbeYawDegrees, 0.0);
+
+	CheckRotator(*this, TEXT("(a3) an UPRIGHT corpse is returned unchanged — the fix is a no-op on the healthy case"),
+		FSiegeDeathCameraStatics::MakeDeathViewRotation(FRotator(0.0, ProbeYawDegrees, 0.0)),
+		0.0, ProbeYawDegrees, 0.0);
+
+	// ── (a4) ⛔ THE CALL-SITE CENSUS (SC-§36.1) ──────────────────────────────────────────
+	// A rule nobody calls is a landed FILE, not a landed FIX. This half fails if the write site
+	// stops routing through it, even while every assertion above stays green.
+	FString GameModeSource;
+	if (!LoadProjectSource(*this, TEXT("Source/GitClaudeUnrealTest/Siegebound/SiegeGameMode.cpp"), GameModeSource))
+	{
+		return false;
+	}
+
+	FString GhostBody;
+	if (!ExtractFunctionBody(*this, GameModeSource,
+		TEXT("void ASiegeGameMode::SpawnAndPossessGhost(AController* Player, AHeroCharacter* DeadHero)"), GhostBody))
+	{
+		return false;
+	}
+
+	// POSITIVE CONTROL FIRST: the extractor really has the death-ghost body in hand. Without this,
+	// every "contains" below could be vacuously false against an empty or wrong extraction.
+	// ⚠️ Every token this census matches is written WITH ITS TRAILING SEMICOLON or with an argument
+	// list no comment repeats, ⛔ deliberately: a census that a PROSE MENTION could satisfy is a
+	// census that passes over deleted code. That is the same class of blindness `SC-§36.1` records.
+	TestTrue(TEXT("SELF-CHECK: the extracted body really is SpawnAndPossessGhost — it contains the possession statement itself"),
+		GhostBody.Contains(TEXT("PC->Possess(Ghost);"), ESearchCase::CaseSensitive));
+
+	TestTrue(TEXT("(a4) ⛔ GhostRotation is PRODUCED BY the rule — the dead pawn's rotation reaches nothing until it has been through MakeDeathViewRotation"),
+		GhostBody.Contains(TEXT("const FRotator GhostRotation = FSiegeDeathCameraStatics::MakeDeathViewRotation(DeadHero->GetActorRotation());"), ESearchCase::CaseSensitive));
+
+	// ⛔ AND THE SANITISED VALUE IS WHAT IS ACTUALLY HANDED OVER — both to the ghost's SPAWN
+	// (which `AController::OnPossess` then copies into the control rotation on its own) and to the
+	// explicit control-rotation write at :862. Naming both is the point: clamping only the second
+	// would leave the first still carrying the roll.
+	TestTrue(TEXT("(a4) the sanitised rotation is the GHOST'S SPAWN rotation — AController::OnPossess copies the pawn's rotation into the control rotation by itself, ahead of any explicit write"),
+		GhostBody.Contains(TEXT("GhostLocation, GhostRotation, SpawnParams);"), ESearchCase::CaseSensitive));
+
+	TestTrue(TEXT("(a4) the sanitised rotation is what reaches the WRITE SITE — the explicit control-rotation write named by TASK-1102"),
+		GhostBody.Contains(TEXT("PC->SetControlRotation(GhostRotation);"), ESearchCase::CaseSensitive));
+
+	// ── (a5) ⛔ NEGATIVE CONTROL ON THE OTHER TWO CONTROL-ROTATION WRITES ────────────────
+	// There are exactly three SetControlRotation sites in the module; the other two are fed by
+	// GetHeroStartTransform, which is yaw-only at every return. If a fourth ever appears, the count
+	// changes and this fires — a new death-adjacent write is exactly how this defect got in.
+	int32 WriteSiteCount = 0;
+	int32 SearchFrom = 0;
+	for (;;)
+	{
+		const int32 Found = GameModeSource.Find(TEXT("SetControlRotation("), ESearchCase::CaseSensitive, ESearchDir::FromStart, SearchFrom);
+		if (Found == INDEX_NONE)
+		{
+			break;
+		}
+		++WriteSiteCount;
+		SearchFrom = Found + 1;
+	}
+
+	TestEqual(TEXT("(a5) ⛔ ASiegeGameMode still has EXACTLY THREE control-rotation writes (recall :514, death-ghost :862, respawn :1051) — a fourth is a new roll transport and must be reviewed, ⛔ not absorbed"),
+		WriteSiteCount, 3);
+
+	return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  11. 🚨⭐⭐ HALF (b) — `ResetHero()` RETURNS CONTROL-ROTATION ROLL TO 0.
+//      ⛔ THE PLAYER-VISIBLE COMPLAINT IS "A RESET THAT DOES NOT RESET" (TASK-1102)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeResetHeroLevelsTheCameraRollTest,
+	"Siegebound.RespawnLifecycle.ResetHeroReturnsControlRotationRollToZero",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeResetHeroLevelsTheCameraRollTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeDeathCameraRollTestFixture;
+
+	// ── (b1) BEHAVIOUR: the measured case, both sides asserted ──────────────────────────
+	// ⛔ ROLL GOES TO 0 **and** PITCH AND YAW SURVIVE EXACTLY. Those are two independent failures:
+	// a rule that stops zeroing roll fails on the third component; a rule that returns
+	// FRotator::ZeroRotator — the obvious lazy "fix" — fails on the first two. Neither can hide.
+	CheckRotator(*this,
+		TEXT("(b1) the MEASURED rolled camera (roll 89.9) is levelled, and the player's look direction is untouched"),
+		FSiegeDeathCameraStatics::LevelViewRoll(FRotator(ProbePitchDegrees, ProbeYawDegrees, MeasuredDeathRollDegrees)),
+		ProbePitchDegrees, ProbeYawDegrees, 0.0);
+
+	// ── (b2) BEHAVIOUR: the other lean, and idempotence ─────────────────────────────────
+	CheckRotator(*this, TEXT("(b2) a NEGATIVE roll is levelled too"),
+		FSiegeDeathCameraStatics::LevelViewRoll(FRotator(ProbePitchDegrees, ProbeYawDegrees, -MeasuredDeathRollDegrees)),
+		ProbePitchDegrees, ProbeYawDegrees, 0.0);
+
+	CheckRotator(*this, TEXT("(b2) an ALREADY-LEVEL camera is returned unchanged — a respawn must not snap a player who was looking somewhere valid"),
+		FSiegeDeathCameraStatics::LevelViewRoll(FRotator(ProbePitchDegrees, ProbeYawDegrees, 0.0)),
+		ProbePitchDegrees, ProbeYawDegrees, 0.0);
+
+	// ── (b3) ⛔ THE CALL-SITE CENSUS — THE HALF THE ROW'S GATE ASKS FOR BY NAME ──────────
+	// TASK-1103 cl. 2: "is (b) — ResetHero() zeroes roll — ACTUALLY IN THE DIFF?" This is that
+	// question, asked by the suite, of the shipped source, every run.
+	FString HeroSource;
+	if (!LoadProjectSource(*this, TEXT("Source/GitClaudeUnrealTest/Siegebound/HeroCharacter.cpp"), HeroSource))
+	{
+		return false;
+	}
+
+	FString ResetBody;
+	if (!ExtractFunctionBody(*this, HeroSource, TEXT("void AHeroCharacter::ResetHero()"), ResetBody))
+	{
+		return false;
+	}
+
+	// POSITIVE CONTROL FIRST: the body really is ResetHero's. Two shipped tokens that must be there.
+	// ⚠️ As in (a4), the tokens below are whole STATEMENTS. `ResetHero`'s own comment block names
+	// both `LevelViewRoll` and `SetControlRotation` in prose, so a loose `Contains` here would stay
+	// green with the code deleted and only the comment left — the exact failure this census exists
+	// to catch. ⛔ Do not relax these to bare identifiers.
+	TestTrue(TEXT("SELF-CHECK: the extracted body really is ResetHero — it contains the shipped input restore statement"),
+		ResetBody.Contains(TEXT("EnableInput(Cast<APlayerController>(GetController()));"), ESearchCase::CaseSensitive));
+
+	TestTrue(TEXT("(b3) 🚨 `ResetHero()` LEVELS THE CAMERA — it resolves a controller and writes back FSiegeDeathCameraStatics::LevelViewRoll of its current control rotation. ⛔ Without this the reset restores HP, visibility, collision, movement and input, and leaves the player looking sideways"),
+		ResetBody.Contains(TEXT("FSiegeDeathCameraStatics::LevelViewRoll(OwningControllerForCamera->GetControlRotation())"), ESearchCase::CaseSensitive));
+
+	TestTrue(TEXT("(b3) …and it WRITES the levelled value back through that controller — computing it and dropping it would be the SC-§36.1 zero-caller failure in miniature"),
+		ResetBody.Contains(TEXT("OwningControllerForCamera->SetControlRotation("), ESearchCase::CaseSensitive));
+
+	// ── (b4) ⛔ (b) IS NOT MERELY (a) IN DISGUISE ────────────────────────────────────────
+	// The gate is told to reject "a row that fixes only (a) and describes (b) as no longer
+	// reachable". So the two halves are asserted to be in DIFFERENT FILES: the reset's levelling
+	// must not quietly migrate into the game mode's death path and leave the primitive bare.
+	TestFalse(TEXT("(b4) ⛔ the reset's levelling lives in ResetHero itself, ⛔ not only in the game mode's respawn — the row forbids shipping (a) alone"),
+		ResetBody.Contains(TEXT("MakeDeathViewRotation"), ESearchCase::CaseSensitive));
 
 	return true;
 }
