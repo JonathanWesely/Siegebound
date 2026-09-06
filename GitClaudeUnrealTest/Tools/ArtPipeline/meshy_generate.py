@@ -140,6 +140,10 @@ MULTIVIEW_DEFAULT_VIEWS = ("Front", "Side", "Back")
 # Documented Meshy cap, verbatim from the Multi-Image to 3D API reference:
 # "Provide 1 to 4 images for Meshy to use in model creation."
 MULTIVIEW_MAX_IMAGES = 4
+# TASK-1095: the pinned three are an IDENTITY, not a number. --views may ADD
+# a view (the endpoint's documented 4th slot) but may never DROP Front, Side
+# or Back - see require_pinned_views(). A deliberately single-view job is
+# `--mode image3d` (CHAR-3 Branch B), said out loud, never a narrowed --views.
 
 DEFAULT_AI_MODEL = "latest"
 DEFAULT_POLYCOUNT = 300_000         # image3d dense-donor target (API max, standard)
@@ -874,12 +878,56 @@ def model_data_uri(path: Path) -> str:
     return f"data:application/octet-stream;base64,{encoded}"
 
 
+def require_pinned_views(views: tuple[str, ...]) -> tuple[str, ...]:
+    """THE FENCE (TASK-1095, CHAR-2): `views` must be a SUPERSET of
+    MULTIVIEW_DEFAULT_VIEWS. Returns `views` unchanged, or raises ValueError.
+
+    This is an IDENTITY check, deliberately NOT a count. The check it replaced
+    was `len(resolved) < len(MULTIVIEW_DEFAULT_VIEWS)` - pure cardinality - and
+    under it `--views Front,Side,ThreeQuarter` was three views, fired nothing,
+    and never sent Back. CHAR-2 pins WHICH views are the reconstruction input
+    (Front, Side, Back - every other tile has a different job), not how many.
+
+    Only the NARROWING direction is fenced: a 4th view is the endpoint's
+    documented slot and is allowed. A deliberately single-view job has a
+    legitimate route - `--mode image3d` (CHAR-3 Branch B) - and the message
+    names it, so the refusal is a redirection rather than a dead end.
+
+    ONE definition, two call sites (parse_views for the CLI, _run_mode for the
+    deciding path). Do not add a second copy (SC-39.1).
+    """
+    absent = tuple(v for v in MULTIVIEW_DEFAULT_VIEWS if v not in views)
+    if not absent:
+        return views
+    lines = [
+        f"--views {','.join(views)} drops {', '.join(absent)}. --mode "
+        f"multiimage always sends the CHAR-2 pinned views "
+        f"({', '.join(MULTIVIEW_DEFAULT_VIEWS)}); a 4th view may be ADDED but "
+        "none of the three may be dropped - the view you leave out cannot "
+        "constrain the result, and nothing downstream could tell."
+    ]
+    # A case slip is the likeliest honest way to land here; say so rather than
+    # leaving the operator to diff two spellings by eye.
+    lowered = {v.lower(): v for v in views}
+    for pinned in absent:
+        given = lowered.get(pinned.lower())
+        if given is not None:
+            lines.append(f"  (view names are exact: {given!r} is not {pinned!r})")
+    lines.append(
+        "  For a deliberately single-view job use `--mode image3d <CardID>` "
+        "(CHAR-3 Branch B) - that route states its loss out loud. This is "
+        "exit 64."
+    )
+    raise ValueError("\n".join(lines))
+
+
 def parse_views(raw: str) -> tuple[str, ...]:
     """Normalise --views into an ORDERED tuple, or raise ValueError.
 
-    The caller maps ValueError to exit 64 (CLI usage), which is why the cap and
-    the duplicate check live here rather than in argparse: both are properties
-    of the ENDPOINT, not of the string, and the message has to say so.
+    The caller maps ValueError to exit 64 (CLI usage), which is why the cap,
+    the duplicate check and the pinned-views fence live here rather than in
+    argparse: all are properties of the ENDPOINT and of CHAR-2, not of the
+    string, and the message has to say so.
     """
     views = tuple(v.strip() for v in str(raw).split(",") if v.strip())
     if not views:
@@ -900,7 +948,7 @@ def parse_views(raw: str) -> tuple[str, ...]:
             "once (a repeated view spends an image slot without adding "
             "information)."
         )
-    return views
+    return require_pinned_views(views)
 
 
 def resolve_multiview_images(
@@ -946,7 +994,8 @@ def resolve_multiview_images(
             "  This is exit 5, NOT a run on the views that happen to exist: "
             "generating from a subset silently drops the surface that view was "
             "there to specify. Produce the missing crop(s) with the CHAR-2 "
-            "names, or ask for a smaller set EXPLICITLY with --views."
+            "names. --views cannot drop a pinned view (exit 64); a deliberately "
+            "single-view job is `--mode image3d` (CHAR-3 Branch B)."
         )
         raise FileNotFoundError("\n".join(lines))
     return resolved
@@ -1120,6 +1169,13 @@ def write_success_state(asset_dir: Path, engine: str, meshy_block: dict) -> None
     write state_failed.json instead (trellis QA WARN-2 scheme) so a failed
     run can never clobber the success record of an artifact that survived.
     """
+    dest = asset_dir / "state.json"
+    # Write confinement (TASK-1096, SC-39.1) - a PRE-EXISTING gap in all three
+    # modes, not from the multi-view diff: the SAME guard commit_staged()
+    # applies to the GLB, applied to the state file at its write site. It goes
+    # BEFORE _load_state(), whose state_pre_meshy.json copy is also a write
+    # under asset_dir.
+    _require_inside_cache(dest)
     state = _load_state(asset_dir)
     previous = state.get("meshy")
     if isinstance(previous, dict):
@@ -1127,14 +1183,14 @@ def write_success_state(asset_dir: Path, engine: str, meshy_block: dict) -> None
     state["engine"] = engine
     state["meshy"] = meshy_block
     asset_dir.mkdir(parents=True, exist_ok=True)
-    dest = asset_dir / "state.json"
     dest.write_text(json.dumps(state, indent=2, default=str), encoding="utf-8")
     say(f"State merged: {dest} (engine={engine})")
 
 
 def write_failed_state(asset_dir: Path, record: dict) -> None:
-    asset_dir.mkdir(parents=True, exist_ok=True)
     dest = asset_dir / "state_failed.json"
+    _require_inside_cache(dest)  # TASK-1096: the GLB's fence, on the failure record
+    asset_dir.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps(record, indent=2, default=str), encoding="utf-8")
     say(f"Failure record written: {dest} (state.json untouched)")
 
@@ -1542,10 +1598,25 @@ def _finish_task_common(
            if balance_before is not None and balance_after is not None else "")
         + "." if consumed is not None else ""
     )
+    # TASK-1095 cl. 4: for a multi-image run the SUCCESS line carries the one
+    # fact the mode exists to guarantee - how many views were sent, in what
+    # order. The COUNT is read from the request body that create_task() posted
+    # (`payload["image_urls"]`, the same object); the ORDER from the resolved
+    # set that built that body (`inputs_block["view_order"]`, the provenance
+    # written to state.json). NEITHER is `args.views`: an instrument that
+    # echoes argv is not a measurement (SC-94 cl. A). Other modes' line is
+    # byte-for-byte unchanged.
+    sent_images = payload.get("image_urls")
+    views_note = (
+        f" Views sent: {len(sent_images)} "
+        f"({' -> '.join(inputs_block.get('view_order') or ())})."
+        if isinstance(sent_images, list) else ""
+    )
     # The measurement beside the word SUCCESS is now the measurement that was
     # CHECKED, not decoration (SC-39.1's durable sentence). `{size:,} bytes`
     # alone is exactly what reported a destroyed 23 MB mesh as a success.
-    say(f"SUCCESS: {dest} - validated: {describe_glb(glb_stats)}.{credits_note} "
+    say(f"SUCCESS: {dest} - validated: {describe_glb(glb_stats)}.{views_note}"
+        f"{credits_note} "
         "Next: Stage 2 headless refine consumes this donor (INVARIANT: "
         "Meshy output never lands in Content/ directly).")
     return 0
@@ -1559,6 +1630,25 @@ def _run_mode(args: argparse.Namespace) -> int:
 
     asset = args.asset
     asset_dir = CACHE_DIR / asset
+    # Write confinement at the EARLIEST site (TASK-1096, SC-39.1). This gap is
+    # PRE-EXISTING and mode-independent - it predates the multi-view work and
+    # was NOT introduced by TASK-1088: a traversal-shaped CardID
+    # (`..\..\Content\X`) would have mkdir'd OUTSIDE Cache/ right here, before
+    # any mode ran (even on an exit-5 path that never reaches a state writer),
+    # and the state writers would then have followed it. The GLB was always
+    # confined (commit_staged / quarantine_staged); the state file was not.
+    # Same guard, same RuntimeError, same exit 1 the catch-all tail already
+    # maps that exception to - returned HERE, outside the tail, because the
+    # tail's own write_failed_state() has no confined place to write for this
+    # CardID. Nothing is created and nothing is written.
+    try:
+        _require_inside_cache(asset_dir)
+    except RuntimeError as exc:
+        fail(str(exc))
+        fail(f"CardID {asset!r} does not name a folder under Cache/. Nothing "
+             "was created and no state file was written - there is no "
+             "confined place to put one.")
+        return 1
     asset_dir.mkdir(parents=True, exist_ok=True)
 
     state_record: dict = {
@@ -1608,16 +1698,23 @@ def _run_mode(args: argparse.Namespace) -> int:
             )
 
         if args.mode == "multiimage":
-            # Resolution FIRST, before the key is even used for anything and
+            # THE FENCE FIRST (TASK-1095): the requested set must contain the
+            # CHAR-2 pinned three, checked by IDENTITY - the same function the
+            # CLI already ran in main(), applied here on the deciding path so
+            # no caller of _run_mode can reach the endpoint with a Back-less
+            # set. This REPLACES the former cardinality warn (`len(resolved) <
+            # len(MULTIVIEW_DEFAULT_VIEWS)`), which `Front,Side,ThreeQuarter`
+            # sailed through. Before any file is probed, so the refusal is
+            # about the SET, never confused with a missing crop (exit 5).
+            try:
+                views = (parse_views(args.views) if isinstance(args.views, str)
+                         else require_pinned_views(tuple(args.views)))
+            except ValueError as exc:
+                fail(str(exc))
+                return 64
+            # Resolution NEXT, before the key is even used for anything and
             # long before a task exists: a missing view must cost nothing.
-            resolved = resolve_multiview_images(asset, args.views)
-            if len(resolved) < len(MULTIVIEW_DEFAULT_VIEWS):
-                warn(f"--views asked for only {len(resolved)} view(s) "
-                     f"({', '.join(v for v, _p in resolved)}) - fewer than the "
-                     f"{len(MULTIVIEW_DEFAULT_VIEWS)} pinned by CHAR-2 "
-                     f"({', '.join(MULTIVIEW_DEFAULT_VIEWS)}). That is your "
-                     "explicit choice and it is recorded in state.json, but "
-                     "the views you did not send cannot constrain the result.")
+            resolved = resolve_multiview_images(asset, views)
             view_metas = []
             for index, (view, path) in enumerate(resolved, start=1):
                 meta = validate_image(path, f"{view} view")
@@ -1720,10 +1817,14 @@ def _run_mode(args: argparse.Namespace) -> int:
             write_failed_state(asset_dir, state_record)
             fail(f"{exc.context} failed. HTTP {exc.status}, body verbatim: "
                  f"{exc.body}")
-            fail("The multi-image endpoint refused this account "
-                 f"(HTTP {exc.status}). It answered 200 to a free read when "
-                 "this mode was added, so treat this as endpoint/plan drift "
-                 "and re-run `--check`, which probes it.")
+            # The "refused this account" narrative is true of the CREATE only
+            # (TASK-1095 cl. 8 / qa/TASK-1089 WARN-4): a 404 on the poll GET
+            # is a vanished task, not a plan refusal. Exit 4 is unchanged.
+            if str(exc.context).startswith("POST"):
+                fail("The multi-image endpoint refused this account "
+                     f"(HTTP {exc.status}). It answered 200 to a free read "
+                     "when this mode was added, so treat this as endpoint/plan "
+                     "drift and re-run `--check`, which probes it.")
             fail("NOTHING was generated and NOTHING fell back to --mode "
                  "image3d. A single-view run cannot see the back of the "
                  "subject, so it is a different job with a different result; "
@@ -1811,14 +1912,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="multiimage only - comma-separated view suffixes, read as "
              f"Inbox/<CardID>_<View>.png (default "
              f"\"{','.join(MULTIVIEW_DEFAULT_VIEWS)}\", the CHAR-2 "
-             f"pattern). 1-{MULTIVIEW_MAX_IMAGES} views (the documented Meshy "
-             "cap). The order given is the order the images are sent in and is "
-             "recorded in state.json. EVERY named view must exist or the run "
-             "is exit 5 - views are never silently dropped.",
+             f"pattern). The pinned three are REQUIRED; a 4th view may be "
+             f"added (the documented Meshy cap is {MULTIVIEW_MAX_IMAGES}). "
+             "Dropping Front, Side or Back is exit 64 - a deliberately "
+             "single-view job is --mode image3d. The order given is the order "
+             "the images are sent in and is recorded in state.json. EVERY "
+             "named view must exist or the run is exit 5 - views are never "
+             "silently dropped.",
     )
     parser.add_argument(
         "--ai-model", default=DEFAULT_AI_MODEL,
-        help=f"Meshy model id: meshy-5, meshy-6, or latest (default "
+        help=f"Meshy model id: meshy-5, meshy-6, meshy-7, or latest (default "
              f"\"{DEFAULT_AI_MODEL}\"). Recorded in state.json.",
     )
     parser.add_argument(

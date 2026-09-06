@@ -26,6 +26,23 @@ WHAT THIS FILE IS FOR, stated before the tests so the reason survives:
          "scoped to multiimage" is a measurement rather than a claim).
       4. THE INHERITED LAWS still hold on the new path - the redactor scrubs,
          the degeneracy guard still rejects, writes stay confined to Cache/.
+      5. THE PINNED-THREE FENCE (TASK-1095, CHAR-2) - --views may ADD a view
+         but may never DROP Front, Side or Back. The test that earns that
+         row is `--views Front,Side,ThreeQuarter`: THREE views, so a count
+         floor passes it, and it never sends Back. It must be REFUSED (exit
+         64, naming --mode image3d) at the parser AND on the deciding path,
+         with no network and no task. The other direction is controlled: a
+         4-view superset and any permutation still run.
+      6. THE SUCCESS LINE carries the view count and order READ FROM THE SET
+         SENT - the request body and the resolved provenance - never from
+         argv (SC-94 cl. A). Controlled by handing it an argv that disagrees
+         with the body: the line must report the body.
+      7. THE STATE-FILE FENCE (TASK-1096) - state.json / state_failed.json go
+         through the SAME _require_inside_cache() as the GLB. A traversal-
+         shaped CardID (../../Content/X) is refused BEFORE any file or
+         directory is written ANYWHERE, in all three modes; a normal CardID
+         still writes both files where it always did. PRE-EXISTING - it
+         predates the multi-view work and is not a regression from it.
 
     Both directions are controlled where it matters: a mode that refused every
     run would pass (2) trivially, so (1) and (3) assert that a COMPLETE view
@@ -643,12 +660,681 @@ def test_mode_and_exit_code_contract() -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# 11-16. THE PINNED-THREE FENCE and the SUCCESS-line instrument (TASK-1095)
+# ---------------------------------------------------------------------------
+
+
+class RecordingRun:
+    """Stands in for _run_mode: records the args it was handed, returns 0."""
+
+    def __init__(self) -> None:
+        self.args: argparse.Namespace | None = None
+        self.calls = 0
+
+    def __call__(self, args) -> int:
+        self.calls += 1
+        self.args = args
+        return 0
+
+
+def run_main(argv: list[str], run_mode) -> tuple[int | None, str, str]:
+    """mg.main(argv) with the run replaced by `run_mode` and every remote
+    call tripwired. Returns (code, kind, text): kind is 'usage' for the
+    parser's SystemExit, 'return' for a plain return, and 'reached' when a
+    Tripwire standing in for _run_mode was hit - i.e. the CLI fence FAILED
+    and the run would have started. A real _run_mode is never reached from
+    here, so MESHY_TOKEN is never read."""
+    with patched(_run_mode=run_mode, api_request=Tripwire(),
+                 create_task=Tripwire(), require_api_key=lambda: FAKE_KEY):
+        with captured_output() as (out, err):
+            try:
+                code, kind = mg.main(argv), "return"
+            except SystemExit as exc:
+                code, kind = exc.code, "usage"
+            except AssertionError:
+                code, kind = None, "reached"
+    return code, kind, out.getvalue() + err.getvalue()
+
+
+def _no_state_written(box: Sandbox) -> tuple[bool, str]:
+    asset_dir = box.cache / ASSET
+    wrote = (sorted(p.name for p in asset_dir.glob("*"))
+             if asset_dir.exists() else [])
+    return (not wrote), (f"found {wrote}" if wrote else "asset dir empty or absent")
+
+
+def test_fence_refuses_three_views_that_drop_a_pinned_one() -> None:
+    section("11. THE ROW'S TEST: --views Front,Side,ThreeQuarter is REFUSED "
+            "(three views - a COUNT check passes it)")
+    narrowed = ("Front", "Side", "ThreeQuarter")
+    # Every crop the request names EXISTS, so resolution alone would succeed,
+    # and the request has exactly as many views as the pinned set, so a
+    # cardinality floor is satisfied. Only an IDENTITY check can stop this.
+    with Sandbox(views=("Front", "Side", "Back", "ThreeQuarter")) as box:
+        check(
+            all(box.paths[v].is_file() for v in narrowed),
+            "CONTROL: every requested crop exists on disk (resolution alone "
+            "would pass)",
+            ", ".join(box.paths[v].name for v in narrowed),
+        )
+        check(
+            len(narrowed) == len(mg.MULTIVIEW_DEFAULT_VIEWS),
+            "CONTROL: the request has exactly as many views as the pinned set",
+            f"{len(narrowed)} == {len(mg.MULTIVIEW_DEFAULT_VIEWS)} - a count "
+            "floor cannot see this case",
+        )
+        # (i) the parser-level fence
+        msg = ""
+        try:
+            mg.parse_views(",".join(narrowed))
+            check(False, "parse_views REFUSES Front,Side,ThreeQuarter",
+                  "it was ACCEPTED")
+        except ValueError as exc:
+            msg = str(exc)
+            check(True, "parse_views REFUSES Front,Side,ThreeQuarter",
+                  msg.splitlines()[0][:80])
+        check("Back" in msg, "the refusal NAMES the dropped pinned view (Back)")
+        check(
+            "--mode image3d" in msg,
+            "the refusal names --mode image3d as the legitimate single-view "
+            "route",
+        )
+        # (ii) the CLI: exit 64, and the run is never entered
+        run = Tripwire()
+        code, kind, text = run_main(
+            ["--mode", "multiimage", ASSET, "--views", ",".join(narrowed)], run
+        )
+        check(
+            kind == "usage" and code == 64,
+            "main() exits 64 (CLI usage) for Front,Side,ThreeQuarter",
+            f"{kind} {code}",
+        )
+        check(not run.calls, "the run was never entered from the CLI",
+              f"{len(run.calls)} call(s) - must be 0")
+        check("Back" in text and "image3d" in text,
+              "the CLI message names Back and --mode image3d")
+        # (iii) THE DECIDING PATH: _run_mode itself, handed the same set,
+        #       refuses before the network. A caller that skipped main()
+        #       gains nothing.
+        wire = Tripwire()
+        finish = CapturedFinish()
+        with patched(api_request=wire, create_task=wire,
+                     _finish_task_common=finish,
+                     require_api_key=lambda: FAKE_KEY):
+            with captured_output() as (out, err):
+                rc = mg._run_mode(make_args(views=narrowed))
+        text = out.getvalue() + err.getvalue()
+        check(rc == 64, "_run_mode returns 64 for Front,Side,ThreeQuarter",
+              f"got {rc}")
+        check(
+            finish.calls == 0,
+            "no task was created (the shared tail was never entered)",
+            f"{finish.calls} call(s) - must be 0",
+        )
+        check(not wire.calls, "the network was never reached",
+              f"{len(wire.calls)} call(s) - must be 0")
+        check("Back" in text and "--mode image3d" in text,
+              "the deciding-path message names Back and --mode image3d")
+        check(
+            "asked for only" not in text,
+            "the old cardinality warn is GONE - replaced, not stacked under "
+            "the fence",
+        )
+        ok, detail = _no_state_written(box)
+        check(ok, "no state.json / state_failed.json was written for a "
+                  "refused set", detail)
+
+
+def test_fence_refuses_narrowed_sets() -> None:
+    section("12. a NARROWED --views (Front,Side / Front / Side,Back) is exit "
+            "64, no network, no task")
+    for raw, dropped in (
+        ("Front,Side", ("Back",)),
+        ("Front", ("Side", "Back")),
+        ("Side,Back", ("Front",)),
+    ):
+        msg = ""
+        try:
+            mg.parse_views(raw)
+            check(False, f"parse_views refuses {raw!r}", "it was ACCEPTED")
+        except ValueError as exc:
+            msg = str(exc)
+            check(True, f"parse_views refuses {raw!r}",
+                  msg.splitlines()[0][:70])
+        check(
+            all(d in msg for d in dropped),
+            f"{raw!r}: the refusal names every dropped view",
+            ", ".join(dropped),
+        )
+    with Sandbox() as box:
+        run = Tripwire()
+        code, kind, text = run_main(
+            ["--mode", "multiimage", ASSET, "--views", "Front,Side"], run
+        )
+        check(kind == "usage" and code == 64,
+              "main() exits 64 for --views Front,Side", f"{kind} {code}")
+        check(not run.calls, "the run is never entered from the CLI",
+              f"{len(run.calls)} call(s) - must be 0")
+        check("--mode image3d" in text,
+              "the CLI message names --mode image3d")
+        wire = Tripwire()
+        finish = CapturedFinish()
+        with patched(api_request=wire, create_task=wire,
+                     _finish_task_common=finish,
+                     require_api_key=lambda: FAKE_KEY):
+            with captured_output():
+                rc = mg._run_mode(make_args(views=("Front", "Side")))
+        check(rc == 64, "_run_mode returns 64 for (Front, Side)", f"got {rc}")
+        check(finish.calls == 0 and not wire.calls,
+              "no task, no network for the narrowed set",
+              f"{finish.calls} tail call(s), {len(wire.calls)} wire call(s)")
+        ok, detail = _no_state_written(box)
+        check(ok, "no state file was written for the narrowed set", detail)
+    # A case slip is refused too - and the message says which spelling.
+    try:
+        mg.parse_views("front,Side,Back")
+        check(False, "a case-slipped view ('front') is refused",
+              "it was ACCEPTED")
+    except ValueError as exc:
+        check(
+            "'front' is not 'Front'" in str(exc),
+            "a case-slipped view ('front') is refused AND the message names "
+            "the exact spelling",
+            [ln for ln in str(exc).splitlines() if "exact" in ln][:1],
+        )
+
+
+def test_fence_accepts_supersets_and_permutations() -> None:
+    section("13. the OTHER direction: a 4-view superset and any order still "
+            "PASS (the flag survives)")
+    four = ("Front", "Side", "Back", "ThreeQuarter")
+    check(
+        mg.parse_views(",".join(four)) == four,
+        "parse_views accepts a 4-view superset in the order given",
+        str(four),
+    )
+    check(
+        mg.parse_views("ThreeQuarter,Front,Side,Back")
+        == ("ThreeQuarter", "Front", "Side", "Back"),
+        "the 4th slot may come FIRST - the fence is a set check, not a "
+        "prefix check",
+    )
+    check(
+        mg.parse_views("Back,Front,Side") == ("Back", "Front", "Side"),
+        "a permutation of the pinned three is accepted in the order given",
+    )
+    with Sandbox(views=four) as box:
+        finish = CapturedFinish()
+        wire = Tripwire()
+        with patched(_finish_task_common=finish, api_request=wire,
+                     require_api_key=lambda: FAKE_KEY):
+            with captured_output():
+                rc = mg._run_mode(make_args(views=four))
+        check(rc == 0, "a 4-view run returns 0", f"got {rc}")
+        check(finish.calls == 1,
+              "the 4-view run reaches the shared tail exactly once",
+              f"{finish.calls} call(s)")
+        seen = finish.seen or {}
+        urls = (seen.get("payload") or {}).get("image_urls") or []
+        check(len(urls) == 4, "four images are in the payload", f"{len(urls)}")
+        check(
+            (seen.get("inputs_block") or {}).get("view_order") == list(four),
+            "provenance records all four, in order",
+            str((seen.get("inputs_block") or {}).get("view_order")),
+        )
+        mismatches = (
+            [f"index {i} ({v})" for i, v in enumerate(four)
+             if hashlib.sha256(decode_data_uri(urls[i])).hexdigest()
+             != sha256_of(box.paths[v])]
+            if len(urls) == 4 else ["payload short"]
+        )
+        check(
+            not mismatches,
+            "each of the four image_urls[i] is the view at index i, byte "
+            "for byte",
+            ("mismatched: " + ", ".join(mismatches)) if mismatches
+            else "sha256-matched 0..3",
+        )
+        finish2 = CapturedFinish()
+        with patched(_finish_task_common=finish2, api_request=wire,
+                     require_api_key=lambda: FAKE_KEY):
+            with captured_output():
+                rc2 = mg._run_mode(make_args(views=("Back", "Front", "Side")))
+        order2 = ((finish2.seen or {}).get("inputs_block") or {}).get("view_order")
+        check(
+            rc2 == 0 and order2 == ["Back", "Front", "Side"],
+            "a permuted pinned set runs and keeps the REQUESTED order",
+            f"rc {rc2}, order {order2}",
+        )
+
+
+def test_default_views_unchanged_through_main() -> None:
+    section("14. the DEFAULT (no --views) is still the pinned three and "
+            "still exit 0")
+    with Sandbox():
+        run = RecordingRun()
+        code, kind, _text = run_main(["--mode", "multiimage", ASSET], run)
+        check(kind == "return" and code == 0,
+              "main() with no --views returns 0", f"{kind} {code}")
+        got = tuple(getattr(run.args, "views", ()) or ())
+        check(
+            run.calls == 1 and got == mg.MULTIVIEW_DEFAULT_VIEWS,
+            "the run receives exactly the CHAR-2 pinned three, in order",
+            str(got),
+        )
+        run2 = RecordingRun()
+        code2, kind2, _ = run_main(
+            ["--mode", "multiimage", ASSET, "--views", "Front,Side,Back"], run2
+        )
+        got2 = tuple(getattr(run2.args, "views", ()) or ())
+        check(
+            kind2 == "return" and code2 == 0 and got2 == mg.MULTIVIEW_DEFAULT_VIEWS,
+            "--views Front,Side,Back (the default, spelled out) is identical",
+            f"{kind2} {code2} {got2}",
+        )
+
+
+def _accepted_glb_bytes() -> bytes:
+    for _name, payload, expected in mg.guard_fixtures():
+        if not expected and payload is not None:
+            return payload
+    raise RuntimeError("guard_fixtures() offers no must-ACCEPT fixture")
+
+
+@contextlib.contextmanager
+def offline_task_tail(glb_bytes: bytes):
+    """Stubs every REMOTE call _finish_task_common makes so the REAL tail
+    (validate -> commit -> state.json -> the SUCCESS line) runs with no
+    network, no key use and no credits."""
+
+    def fake_download(url, dest, attempts):
+        staged = dest.with_suffix(dest.suffix + ".part")
+        staged.write_bytes(glb_bytes)
+        return staged, mg.validate_glb_file(staged, quiet=True)
+
+    with patched(
+        api_request=Tripwire(),
+        fetch_balance=lambda api_key: 100.0,
+        create_task=lambda endpoint, payload, api_key, attempts: "task-offline-1",
+        poll_task=lambda endpoint, task_id, api_key, **kw: {
+            "id": task_id, "status": "SUCCEEDED",
+            "model_urls": {"glb": "https://example.invalid/offline.glb"},
+            "consumed_credits": 30,
+        },
+        download_file=fake_download,
+    ):
+        yield
+
+
+def _success_line(text: str) -> str:
+    for line in text.splitlines():
+        if "SUCCESS:" in line:
+            return line
+    return ""
+
+
+def _views_clause(line: str) -> str:
+    """The `Views sent: N (...)` clause of a SUCCESS line, or ''."""
+    start = line.find("Views sent:")
+    if start < 0:
+        return ""
+    end = line.find(")", start)
+    return line[start:end + 1] if end > 0 else line[start:]
+
+
+def test_success_line_carries_views_sent_not_argv() -> None:
+    section("15. the SUCCESS line carries the view COUNT and ORDER - read from "
+            "the set SENT, never from argv")
+    glb = _accepted_glb_bytes()
+    with Sandbox() as box:
+        asset_dir = box.cache / ASSET
+        asset_dir.mkdir(parents=True, exist_ok=True)
+        resolved = mg.resolve_multiview_images(ASSET, mg.MULTIVIEW_DEFAULT_VIEWS)
+        params = {"ai_model": "latest"}
+        payload = mg.build_multiimage_payload(params, resolved)
+        inputs = {
+            "view_count": len(resolved),
+            "view_order": [v for v, _p in resolved],
+            "view_images": [],
+        }
+
+        def record(mode: str = "multiimage") -> dict:
+            return {
+                "asset": ASSET, "mode": mode, "engine": mg.ENGINE_BY_MODE[mode],
+                "api_base": mg.API_BASE, "started_utc": mg._utc_now(),
+                "params": params, "status": "in-progress",
+            }
+
+        def finish(args, body, inputs_block, endpoint=mg.EP_MULTIIMAGE,
+                   mode="multiimage"):
+            with offline_task_tail(glb):
+                with captured_output() as (out, err):
+                    rc = mg._finish_task_common(
+                        args, endpoint, body, FAKE_KEY, "meshy_raw.glb",
+                        mg.ENGINE_BY_MODE[mode], inputs_block, asset_dir,
+                        record(mode),
+                    )
+            return rc, _success_line(out.getvalue() + err.getvalue())
+
+        rc, line = finish(make_args(), payload, inputs)
+        check(rc == 0, "the offline tail returns 0", f"got {rc}")
+        check(line.startswith("[meshy] SUCCESS:"), "a SUCCESS line was printed",
+              line[:60])
+        check("Views sent: 3" in line, "the SUCCESS line carries the view COUNT",
+              _views_clause(line) or "ABSENT")
+        check("(Front -> Side -> Back)" in line,
+              "the SUCCESS line carries the view ORDER", _views_clause(line))
+        # SC-94 cl. A CONTROL 1: argv claims FOUR views including one that
+        # was never sent. The line must report the BODY. An instrument that
+        # echoes args.views prints 4 and 'Phantom'.
+        rc, line = finish(
+            make_args(views=("Front", "Side", "Back", "Phantom")), payload, inputs
+        )
+        check(
+            rc == 0 and "Views sent: 3" in line and "Phantom" not in line,
+            "CONTROL (SC-94): argv says 4 views incl. 'Phantom'; the line "
+            "reports the 3 that were SENT",
+            _views_clause(line) or "ABSENT",
+        )
+        # CONTROL 2 - the 'delete the operation' test: send TWO images and
+        # the instrument must move with the body.
+        two = resolved[:2]
+        rc, line = finish(
+            make_args(), mg.build_multiimage_payload(params, two),
+            {"view_count": 2, "view_order": [v for v, _p in two],
+             "view_images": []},
+        )
+        clause = _views_clause(line)
+        check(
+            rc == 0 and clause == "Views sent: 2 (Front -> Side)",
+            "CONTROL: a 2-image body prints exactly 'Views sent: 2 (Front -> "
+            "Side)' - the instrument follows the body",
+            clause or "ABSENT",
+        )
+        # CONTROL 3: the shipped image3d SUCCESS line is UNCHANGED.
+        concept = write_png(box.inbox / f"{ASSET}.png", (5, 5, 5))
+        body3 = dict(params)
+        body3["image_url"] = mg.image_data_uri(concept)
+        rc3, line3 = finish(
+            make_args(mode="image3d"), body3,
+            {"concept_image": concept.name, "concept_image_sha256": "n/a"},
+            endpoint=mg.EP_IMAGE3D, mode="image3d",
+        )
+        check(
+            rc3 == 0 and line3.startswith("[meshy] SUCCESS:")
+            and "Views sent" not in line3,
+            "CONTROL: the image3d SUCCESS line carries no Views clause "
+            "(unchanged)",
+            line3[:70],
+        )
+
+
+def test_clause8_one_liners() -> None:
+    section("16. qa/TASK-1089 WARN-4/5/7: poll-404 narrative, retexture "
+            "control, --ai-model help")
+    # WARN-5: retexture + 403 -> exit 1 (shipped, unchanged); nothing of the
+    # multi-image narrative leaks into it.
+    with Sandbox() as box:
+        (box.cache / ASSET).mkdir(parents=True, exist_ok=True)
+        (box.cache / ASSET / "trellis_raw.glb").write_bytes(_accepted_glb_bytes())
+        write_png(box.inbox / f"{ASSET}.png", (10, 10, 10))
+        err_obj = mg.MeshyHttpError(
+            403, '{"message":"forbidden"}', f"POST {mg.EP_RETEXTURE} (create task)"
+        )
+        finish = CapturedFinish(raise_error=err_obj)
+        with patched(_finish_task_common=finish,
+                     require_api_key=lambda: FAKE_KEY):
+            with captured_output() as (out, err):
+                rc = mg._run_mode(make_args(mode="retexture"))
+        text = out.getvalue() + err.getvalue()
+        check(rc == 1,
+              "CONTROL: --mode retexture still exits 1 on a 403 (shipped, "
+              "unchanged)", f"got {rc}")
+        check(finish.calls == 1,
+              "the retexture tail was actually entered (the control is live, "
+              "not vacuous)", f"{finish.calls} call(s)")
+        check(
+            "fell back" not in text and "refused this account" not in text,
+            "no multi-image narrative leaks into retexture",
+        )
+    # WARN-4: a POLL 404 keeps exit 4 (safety) but must not claim the
+    # endpoint refused the account (narrative).
+    with Sandbox():
+        poll = mg.MeshyHttpError(
+            404, '{"message":"task not found"}',
+            f"GET {mg.EP_MULTIIMAGE}/task-x (poll)",
+        )
+        finish = CapturedFinish(raise_error=poll)
+        with patched(_finish_task_common=finish,
+                     require_api_key=lambda: FAKE_KEY):
+            with captured_output() as (out, err):
+                rc = mg._run_mode(make_args())
+        text = out.getvalue() + err.getvalue()
+        check(rc == 4, "a poll 404 is STILL exit 4 (safety unchanged)",
+              f"got {rc}")
+        check(
+            "refused this account" not in text,
+            "a poll 404 does NOT say the endpoint refused the account",
+        )
+        check(
+            "task not found" in text and "fell back" in text,
+            "the verbatim body and the no-fallback sentence still print",
+        )
+    with Sandbox():
+        create = mg.MeshyHttpError(
+            404, '{"message":"no route"}', f"POST {mg.EP_MULTIIMAGE} (create task)"
+        )
+        finish = CapturedFinish(raise_error=create)
+        with patched(_finish_task_common=finish,
+                     require_api_key=lambda: FAKE_KEY):
+            with captured_output() as (out, err):
+                rc = mg._run_mode(make_args())
+        text = out.getvalue() + err.getvalue()
+        check(
+            rc == 4 and "refused this account" in text,
+            "CONTROL: a CREATE 404 still says the endpoint refused the account",
+            f"rc {rc}",
+        )
+    # WARN-7 and the --views help.
+    parser = mg.build_parser()
+    ai_help = next((a.help for a in parser._actions if a.dest == "ai_model"), "")  # noqa: SLF001
+    check("meshy-7" in ai_help, "--ai-model help lists meshy-7 (the live enum)",
+          ai_help[:60])
+    views_help = next((a.help for a in parser._actions if a.dest == "views"), "")  # noqa: SLF001
+    check(
+        "image3d" in views_help and "64" in views_help,
+        "--views help names the fence (exit 64) and the image3d route",
+    )
+
+
+# ---------------------------------------------------------------------------
+# 17. THE STATE-FILE FENCE (TASK-1096) - PRE-EXISTING, all three modes
+# ---------------------------------------------------------------------------
+
+
+def _tree(root: Path) -> set[str]:
+    """Every path under `root`, relative - so 'nothing appeared' is a set
+    equality over the whole sandbox, not a spot check on the one place a
+    write is expected."""
+    return {str(p.relative_to(root)) for p in root.rglob("*")}
+
+
+def test_state_files_are_confined_to_cache() -> None:
+    section("17. THE STATE-FILE FENCE (TASK-1096, PRE-EXISTING, all three "
+            "modes): a traversal-shaped CardID is refused BEFORE any file or "
+            "directory is written ANYWHERE - and a normal CardID still writes "
+            "BOTH state files where it always did")
+    glb = _accepted_glb_bytes()
+    with Sandbox() as box:
+        # Nest CACHE_DIR two levels down so the row's exact shape
+        # (..\..\Content\X) escapes Cache/ but lands INSIDE the sandbox root.
+        # Under a mutation that bypasses the fence the stray mkdir then lands
+        # where this test can see it and the sandbox can delete it - never in
+        # the real %TEMP%, never in the real Content/. Sandbox.__exit__
+        # restores the module's CACHE_DIR.
+        deep_cache = box.root / "deep" / "deeper" / "Cache"
+        deep_cache.mkdir(parents=True)
+        mg.CACHE_DIR = deep_cache
+        row_shape = "..\\..\\Content\\X"
+        shapes = (
+            ("the row's shape, backslashes", row_shape, "multiimage"),
+            ("forward slashes", "../../Content/X", "multiimage"),
+            ("a real-looking prefix then ..", ASSET + "/../../../Content/X",
+             "multiimage"),
+            # No '..' at all: pathlib's '/' REPLACES the left operand when the
+            # right one is absolute, so CACHE_DIR / "C:\\..." IS "C:\\...".
+            ("an ABSOLUTE path", str(box.root / "Content" / "X"), "multiimage"),
+            ("the row's shape, --mode retexture", row_shape, "retexture"),
+            ("the row's shape, --mode image3d", row_shape, "image3d"),
+        )
+        for label, evil, mode in shapes:
+            target = (deep_cache / evil).resolve()
+            # CONTROLS: the shape genuinely escapes Cache/ - and stays inside
+            # the sandbox. Without the first, every refusal below tests nothing.
+            check(deep_cache.resolve() not in target.parents
+                  and target != deep_cache.resolve(),
+                  f"CONTROL: {label} resolves OUTSIDE Cache/", str(target))
+            check(box.root.resolve() in target.parents,
+                  f"CONTROL: {label} stays inside the sandbox", str(target))
+            before = _tree(box.root)
+            wire, finish = Tripwire(), CapturedFinish()
+            with patched(_finish_task_common=finish, api_request=wire,
+                         create_task=wire, require_api_key=lambda: FAKE_KEY):
+                with captured_output() as (out, err):
+                    rc = mg._run_mode(make_args(asset=evil, mode=mode))
+            text = out.getvalue() + err.getvalue()
+            new = sorted(_tree(box.root) - before)
+            check(rc == 1, f"{label}: _run_mode returns 1 (the guard's "
+                  "RuntimeError -> the exit 1 the tail already maps it to)",
+                  f"got {rc}")
+            check(not new, f"{label}: NOTHING appeared anywhere under the "
+                  "sandbox (outside Cache/ or inside it)",
+                  f"new: {new}" if new else "tree unchanged")
+            check(not target.exists(),
+                  f"{label}: the escaped path was not created")
+            check(not any(deep_cache.iterdir()),
+                  f"{label}: Cache/ itself is still empty")
+            check(finish.calls == 0 and not wire.calls,
+                  f"{label}: no task, no network",
+                  f"{finish.calls} tail call(s), {len(wire.calls)} wire call(s)")
+            check("Refusing to write outside Cache/" in text
+                  and "no state file was written" in text,
+                  f"{label}: the refusal names the fence and says no state "
+                  "file was written")
+
+        # The CLI path: main() with the REAL _run_mode returns 1 - a clean
+        # return, not a traceback and not a SystemExit.
+        before = _tree(box.root)
+        with patched(api_request=Tripwire(), create_task=Tripwire(),
+                     require_api_key=lambda: FAKE_KEY):
+            with captured_output():
+                try:
+                    code, kind = mg.main(["--mode", "image3d", row_shape]), "return"
+                except SystemExit as exc:
+                    code, kind = exc.code, "usage"
+                except Exception as exc:  # noqa: BLE001
+                    code, kind = None, f"raised {type(exc).__name__}"
+        check(code == 1 and kind == "return",
+              "main() returns 1 for the row's shape - a return, not a "
+              "traceback", f"{kind} {code}")
+        new = sorted(_tree(box.root) - before)
+        check(not new, "main(): still nothing anywhere",
+              f"new: {new}" if new else "tree unchanged")
+
+        # The WRITERS refuse on their own, independent of _run_mode: the same
+        # guard commit_staged() applies to the GLB, at the write site - so a
+        # future direct caller cannot escape either.
+        escaped_dir = deep_cache / row_shape
+        before = _tree(box.root)
+        writers = (
+            ("write_failed_state",
+             lambda: mg.write_failed_state(escaped_dir, {"status": "failed"})),
+            ("write_success_state",
+             lambda: mg.write_success_state(
+                 escaped_dir, mg.ENGINE_BY_MODE["multiimage"],
+                 {"status": "success"})),
+        )
+        for name, call in writers:
+            try:
+                with captured_output():
+                    call()
+                check(False, f"{name} refuses an escaped asset_dir", "it WROTE")
+            except RuntimeError as exc:
+                check("Refusing to write outside Cache/" in str(exc),
+                      f"{name} refuses an escaped asset_dir", str(exc)[:70])
+        new = sorted(_tree(box.root) - before)
+        check(not new, "the direct writer calls created nothing anywhere",
+              f"new: {new}" if new else "tree unchanged")
+
+        # (b) A NORMAL CardID still writes BOTH state files where it always
+        # did - in ALL THREE modes for the failure record (the shared tail's
+        # except-clauses), and via the real offline tail for state.json.
+        mg.CACHE_DIR = box.cache
+        asset_dir = box.cache / ASSET
+        write_png(box.inbox / f"{ASSET}.png", (10, 10, 10))  # concept / style ref
+        asset_dir.mkdir(parents=True, exist_ok=True)
+        (asset_dir / "trellis_raw.glb").write_bytes(glb)     # retexture donor
+        failed = asset_dir / "state_failed.json"
+        for mode in ("retexture", "image3d", "multiimage"):
+            if failed.exists():
+                failed.unlink()
+            err_obj = mg.MeshyHttpError(
+                500, '{"message":"boom"}', f"POST {mg.EP_MULTIIMAGE} (create task)"
+            )
+            with patched(_finish_task_common=CapturedFinish(raise_error=err_obj),
+                         require_api_key=lambda: FAKE_KEY):
+                with captured_output():
+                    rc = mg._run_mode(make_args(mode=mode))
+            present = failed.is_file()
+            record = json.loads(failed.read_text(encoding="utf-8")) if present else {}
+            check(rc == 1 and present and record.get("asset") == ASSET
+                  and record.get("mode") == mode
+                  and record.get("status") == "failed",
+                  f"--mode {mode}: state_failed.json is still written at "
+                  "Cache/<CardID>/state_failed.json with the run's record",
+                  f"rc {rc}, {'present' if present else 'ABSENT'}, "
+                  f"mode={record.get('mode')}")
+        check(not (asset_dir / "state.json").exists(),
+              "a failure still never writes state.json")
+        resolved = mg.resolve_multiview_images(ASSET, mg.MULTIVIEW_DEFAULT_VIEWS)
+        params = {"ai_model": "latest"}
+        with offline_task_tail(glb):
+            with captured_output():
+                rc = mg._finish_task_common(
+                    make_args(), mg.EP_MULTIIMAGE,
+                    mg.build_multiimage_payload(params, resolved), FAKE_KEY,
+                    "meshy_raw.glb", mg.ENGINE_BY_MODE["multiimage"],
+                    {"view_count": len(resolved),
+                     "view_order": [v for v, _p in resolved],
+                     "view_images": []},
+                    asset_dir,
+                    {"asset": ASSET, "mode": "multiimage",
+                     "engine": mg.ENGINE_BY_MODE["multiimage"],
+                     "api_base": mg.API_BASE, "started_utc": mg._utc_now(),
+                     "params": params, "status": "in-progress"},
+                )
+        state = asset_dir / "state.json"
+        merged = (json.loads(state.read_text(encoding="utf-8"))
+                  if state.is_file() else {})
+        check(rc == 0 and state.is_file()
+              and merged.get("engine") == mg.ENGINE_BY_MODE["multiimage"],
+              "state.json is still written at Cache/<CardID>/state.json with "
+              "the merged provenance",
+              f"rc {rc}, {'present' if state.is_file() else 'ABSENT'}, "
+              f"engine={merged.get('engine')}")
+        check((asset_dir / "meshy_raw.glb").is_file(),
+              "CONTROL: the GLB path is untouched - meshy_raw.glb committed "
+              "beside it")
+
+
 def main() -> int:
-    print("TASK-1088 - meshy_generate.py --mode multiimage gate")
+    print("TASK-1088 / TASK-1095 / TASK-1096 - meshy_generate.py --mode multiimage gate")
     print(f"tool: {SCRIPT_DIR / 'meshy_generate.py'}")
     print(f"endpoint under test: {mg.EP_MULTIIMAGE}")
     print(f"pinned views: {', '.join(mg.MULTIVIEW_DEFAULT_VIEWS)} "
-          f"(max {mg.MULTIVIEW_MAX_IMAGES})")
+          f"(max {mg.MULTIVIEW_MAX_IMAGES}; the pinned three are an IDENTITY, "
+          "a 4th may be added, none may be dropped)")
 
     test_payload_carries_every_view_in_declared_order()
     test_missing_view_is_exit_5_and_sends_nothing()
@@ -660,6 +1346,13 @@ def main() -> int:
     test_views_parsing_rejects_what_the_endpoint_cannot_take()
     test_check_probes_the_multi_image_endpoint()
     test_mode_and_exit_code_contract()
+    test_fence_refuses_three_views_that_drop_a_pinned_one()
+    test_fence_refuses_narrowed_sets()
+    test_fence_accepts_supersets_and_permutations()
+    test_default_views_unchanged_through_main()
+    test_success_line_carries_views_sent_not_argv()
+    test_clause8_one_liners()
+    test_state_files_are_confined_to_cache()
 
     failures = [(label, detail) for ok, label, detail in _RESULTS if not ok]
     print(f"\n{'=' * 72}")
@@ -670,8 +1363,10 @@ def main() -> int:
             print(f"  - {label}  ({detail})")
         return 1
     print("ALL GREEN - every requested view reaches the multi-image endpoint in "
-          "order, a missing view stops before the network, and a refused "
-          "endpoint never becomes a quiet single-image run.")
+          "order, a missing view stops before the network, a refused endpoint "
+          "never becomes a quiet single-image run, and --views can add a view "
+          "but never drop Front, Side or Back - and a state file can never "
+          "land outside Cache/.")
     return 0
 
 
