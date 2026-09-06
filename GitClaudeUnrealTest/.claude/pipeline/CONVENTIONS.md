@@ -31,6 +31,16 @@ Owned by the **manager** agent. All agents MUST follow these. If a needed patter
 ## Texture suffixes
 `T_<Name>_D` base color · `T_<Name>_N` normal · `T_<Name>_R` roughness · `T_<Name>_M` metallic · `T_<Name>_E` emissive · `T_<Name>_ORM` packed Occlusion/Roughness/Metallic (LINEAR — sRGB off; added 2026-07-07, TRELLIS pipeline)
 
+## Non-`Content/` pipeline artefacts (added 2026-09-06)
+
+These are **not** game assets, so they are not in the prefix table above — but they are **cross-lane contracts exactly like an asset path**, and each is pinned in the law section that owns it.
+
+| Pattern | What | Owning law |
+|---|---|---|
+| `Tools/ArtPipeline/Inbox/<AssetName>.png` | 🧑 the concept as Jonathan dropped it — ⛔ **NEVER modified, deleted or overwritten** | `CHAR-§2` |
+| `Tools/ArtPipeline/Inbox/<AssetName>_Front.png` · `_Side.png` · `_Back.png` | single-subject views **extracted** from a multi-view concept sheet (caption text cropped out, flat bg, square, ≥512 px) — the only legal generator input when the drop is a sheet | `CHAR-§2` |
+| `.claude/pipeline/playtest-evidence/<date>/RosterSheet_<Layer>.png` | numbered contact sheet of a scatter layer's rostered meshes; **the number IS the 0-based index in `DA_BattlefieldScatter → Layers[<Layer>].Meshes`** — regenerated on every roster change, with the index→path table repeated in **text** in the handoff | `FIELD-§5` |
+
 ## Static-mesh SOCKET names — the artist↔programmer geometry contract (added 2026-09-01, `TOWER-§8`)
 
 **Pattern: `SM_*` sockets are named `<Purpose>` in PascalCase, ⛔ no prefix, ⛔ no underscores, ⛔ no unit suffix.** A socket name is a **cross-lane contract exactly like an asset path**: the artist authors it, C++ reads it by literal `FName`, and a typo is a silent failure. ⇒ **Every socket a code path reads is pinned in the law section that owns the feature, ⛔ never invented at the mesh.**
@@ -4438,6 +4448,15 @@ Added 2026-08-15 (`W7-R4`). ⚖️ **Written because this wall has now blocked T
   - ⇒ ✅⛔⛔ ***⛔ THE TABLE IS THE ⛔ INSTRUMENT. ⛔ A PROXY GUARD'S WORTH IS THE ⛔ SET OF MUTATIONS IT CATCHES, ⛔ NOT ITS ⛔ RESEMBLANCE TO A REAL TEST*** — ⛔ **and enumerating the set converts ⛔ *"is this a real test?"* (⛔ unanswerable, ⛔ argued forever, ⛔ settled by ⛔ vibe) into ⛔ *"which rows are ⛔ EMPTY?"* (⛔ answerable, ⛔ and the ⛔ EMPTY ROWS ⛔ ARE THE SCOPE STATEMENT ⭐ `SC-§79` asks for).**
   - ⭐ **⛔ AND THE ⛔ AGREEMENT THAT ⛔ NOBODY CLAIMED, ⛔ WHICH IS THE ⛔ STRONGEST PART** (⭐ `SC-§92`): ⛔ **the ⛔ EMPTY ROWS and the ⛔ RUNG ABOVE turned out to be the ⛔ SAME BOUNDARY — ⛔ derived ⛔ TWICE, ⛔ by ⛔ different means (⛔ a mutation census vs ⛔ a ladder position), ⛔ landing on ⛔ *"nothing here spawns an actor."*** ⇒ ⛔ **⛔ that coincidence was ⛔ never asserted by its author, ⛔ which is ⛔ precisely why it is worth more than the assertion would have been.**
 
+- ✅🚨⭐⭐⭐ **INSTANCE 2 OF CL. B — ⛔ 2026-09-06, `qa/TASK-1089.md` ⛔ RULING 1 + §7. ⛔ THE SAME ASYMMETRY WITH THE ⛔ SIGN FLIPPED: ⛔ NOT A GATE THAT ⛔ STOPPED TOO LOW, BUT A ⛔ TRUE FINDING ⛔ READ AS REACHING ⛔ ONE RUNG HIGHER THAN IT DOES — ⛔ AND THE ⛔ MANAGER RELAYED IT TO 🧑 JONATHAN ⛔ IN THAT HIGHER FORM.** (⛔ **marker `SC-94-CLB-INSTANCE-2`**)
+  - ⛔ **THE CLAIM: ⭐ `TASK-1088`'s preflight POSTed an ⛔ EMPTY BODY to `/openapi/v1/multi-image-to-3d` and got ⛔ `400 "Either image_urls or input_task_id must be provided"` — ⛔ the route's ⛔ OWN FIELD VALIDATOR. The handoff concluded ⛔ *"Not 404 (absent), ⛔ not 403 (plan-gated)."* ⛔ I relayed to him: ⛔ *"the preflight proved the endpoint AVAILABLE."***
+  - ✅ **WHAT IT ⛔ GENUINELY EARNED, AND IT IS ⛔ A LOT: ⛔ 404 ruled out · ⛔ 401 ruled out · ⛔⛔ ROUTE-LEVEL 403 ⛔ RULED OUT — because an ⛔ authorization layer runs ⛔ BEFORE body validation in ⛔ essentially every middleware stack, so a reply from the ⛔ handler's own required-field check ⛔ proves no earlier layer refused.** ⛔ **The second probe (`{"image_urls":[],"ai_model":"nope"}` → `400 AIModel must be one of […]`) reaches ⛔ PER-FIELD validation, ⛔ deeper still. ⛔ ZERO CREDITS. ⛔ This is a ⛔ GOOD PROBE.**
+  - ⛔⛔ **WHAT IT ⛔ CANNOT REACH ⛔ BY CONSTRUCTION: ⛔ CREATE-TIME ENTITLEMENT GATING — a ⛔ plan check that runs ⛔ AFTER body validation, ⛔ at enqueue.** ⇒ ⛔ **an ⛔ EMPTY BODY ⛔ NEVER BECOMES A VALID CREATE, so it can ⛔ never arrive at that layer. ⛔ NO NUMBER OF EMPTY-BODY PROBES MOVES THIS RUNG.**
+  - 🚨⛔⛔⭐⭐⭐ **THE SHARP PART, AND THE REASON IT IS FILED ⛔ HERE: ⛔ ⛔ THE UNTESTED RUNG IS ⛔ LOWER THAN THE AUTHOR'S ⛔ OWN STATED LIMIT.** ⛔ **He declared the gap as ⛔ *"that a VALID create returns 200 and a ⛔ mesh comes back"*. ⛔ The real gap is ⛔ one below that: ⛔⛔ *"does a ⛔ VALID CREATE GET PAST ENTITLEMENT ⛔ AT ALL."*** ⇒ ⚖️ ***⛔ A DECLARED LIMIT IS ⛔ ITSELF A CLAIM ABOUT REACH, AND IT CAN BE ⛔ WRONG IN THE ⛔ SAME DIRECTION AS THE FINDING. ⛔ READING THE CAVEAT IS ⛔ NOT A SUBSTITUTE FOR ⛔ LOCATING IT.***
+  - ✅⭐⭐ **AND THE ⛔ CREDITABLE HALF, ⛔ WHICH IS WHY THIS IS A ⛔ WARN AND ⛔ NOT A DEFECT: ⛔ the residual uncertainty the preflight ⛔ cannot remove is ⛔ PRECISELY the case the ⛔ `exit 4` BRANCH WAS WRITTEN FOR — a 403/404 on the create is ⛔ loud, ⛔ verbatim, ⛔ scoped to `multiimage`, and ⛔ explicitly states that ⛔ nothing fell back.** ⇒ ⛔ **⛔ A PREFLIGHT WHOSE BLIND SPOT IS COVERED BY A ⛔ NAMED FAILURE PATH IS A PREFLIGHT ⛔ DOING ITS JOB.**
+  - ✅ **THE CORRECTION, and it is ⛔ MINE to carry ⛔ because I am the one who ⛔ RELAYED IT: the sentence is ⛔ *"not ROUTE-LEVEL gated; ⛔ CREATE-TIME ENTITLEMENT remains ⛔ UNTESTED, and ⛔ that is what the ⛔ exit-4 branch exists for."*** ⛔ **⛔ *"The endpoint is available"* is ⛔ RETIRED as a phrasing.** ⛔ **⛔ OWNER OF THE UNREACHED RUNG, ⛔ WITH AN ADDRESS (cl. B property 2): ⭐ `TASK-1091` — ⛔ it spends the credits, and it is the ⛔ ONLY place this is answerable.**
+  - ⇒ ⚖️⛔⛔⛔ ***⛔ A TRUE FINDING IS READ AT THE HEIGHT ITS ⛔ AUTHOR SUMMARISES IT, ⛔ NOT AT THE HEIGHT IT WAS ⛔ MEASURED — ⛔ SO THE ⛔ SUMMARY, NOT THE ⛔ PROBE, IS WHERE THIS FAILS.*** ⛔ **cl. A = a value ⛔ never read back · ⛔ cl. B instance 1 = a gate that ⛔ never named its ceiling · ⛔⛔ THIS = a ceiling ⛔ NAMED, ⛔ AND NAMED ⛔ TOO HIGH.**
+
 ### SC-§93 🚨⛔⛔⛔⭐⭐⭐ **CLASSIFY BY WHAT THE ⛔ COMPILER SEES, ⛔ NEVER BY HOW THE ⛔ TEXT READS. ⛔ *"COMMENT-ONLY"* AND ⛔ *"BEHAVIOUR-NEUTRAL"* ARE ⛔ DIFFERENT PROPERTIES — AND THIS BOARD ⛔ CONFLATED THEM ⛔ THREE TIMES IN ⛔ ONE NIGHT.** (added 2026-09-05 by the manager; ⛔ **bought in `qa/TASK-1058.md` §2.2-2.3 + ⛔ F-1 — ⛔ AND THE DEFECT WAS IN A ROW ⛔ THE MANAGER WROTE · marker `SC-93-COMPILER-SEES`**)
 
 > ### ⭐⭐ **THE ONE SENTENCE, ⛔ QUOTED FROM THE GATE THAT BOUGHT IT, SO THE NEXT AUTHOR CAN APPLY IT ⛔ WITHOUT ASKING ANYBODY:**
@@ -4540,6 +4559,14 @@ Added 2026-08-15 (`W7-R4`). ⚖️ **Written because this wall has now blocked T
   - ⛔ **The ⭐ `TASK-1056` dispatch wrote ⛔ *"dirty tracked files — ⛔ FIVE"* and then ⛔ ENUMERATED ⛔ SIX. ⛔ Build-master ⛔ MEASURED ⛔ SIX, filed it as a ⛔ FINDING rather than a ⛔ STOP, and ruled the ⛔ NAMED SET ⛔ INTACT AND AUTHORITATIVE with ⛔ only the scalar wrong.**
   - ⇒ ⚖️⛔⛔⛔ ***⛔ THE BARE COUNT FAILED AND THE NAMED SET HELD — ⛔ IN THE SAME SENTENCE, ⛔ WRITTEN BY THE ROLE THAT OWNS THE RULE, ⛔ ONE ROW AFTER WRITING IT. ⇒ ⛔ THIS IS ⛔ NOT A LAW ABOUT CARELESSNESS. ⛔ A CAREFUL AUTHOR MISCOUNTS A LIST THEY ARE ⛔ LOOKING DIRECTLY AT; ⛔ THE NAMES SURVIVE BECAUSE ⛔ EACH ONE CARRIES ITS OWN CHECK AND A ⛔ TOTAL CARRIES NONE.***
   - ✅ **THE PRACTICAL CLAUSE, ⛔ SO THE NEXT DISAGREEMENT COSTS NOTHING: ⛔ WHERE A ROW STATES ⛔ BOTH A COUNT AND A LIST, THE ⛔ LIST GOVERNS AND THE COUNT IS ⛔ COMMENTARY — ⛔ and the row ⛔ SAYS SO.** ⇒ ⛔ **a reader who finds them disagreeing ⛔ FILES A FINDING AND ⛔ KEEPS WORKING, instead of ⛔ halting a healthy run on an ⛔ arithmetic slip** (⛔ which is this law's ⛔ own failure mode, ⛔ one level up).
+
+- ⛔⛔⭐⭐⭐ **INSTANCE 5 — ⛔ 2026-09-06, `qa/TASK-1089.md` ⛔ RULING 2, ⛔ AND IT IS THIS LAW'S ⛔ OWN MIRROR: ⛔ THE ⛔ SAME SUBSTITUTION — ⛔ A ⛔ COUNT WHERE AN ⛔ IDENTITY WAS MEANT — ⛔ BUT IT FAILS ⛔ OPEN INSTEAD OF ⛔ SHUT.** (⛔ **marker `SC-89-COUNT-FAILS-OPEN`**)
+  - ⛔ **THE SITE: `meshy_generate.py:1614` fences the multi-view input set with ⛔ `len(resolved) < len(MULTIVIEW_DEFAULT_VIEWS)` — ⛔ PURE CARDINALITY.**
+  - 🚨⛔⛔ **THE NEAR-MISS IT ⛔ CANNOT SEE: ⛔ `--views Front,Side,ThreeQuarter` is ⛔ THREE VIEWS, fires ⛔ NO WARNING AT ALL, and ⛔ NEVER SENDS `Back`** — ⛔ **the view carrying the ⛔ tattered cloak and its ⛔ RED CROSS, i.e. the character's ⛔ single most distinctive surface.** ⛔ **⭐ `CHAR-§2` pins an ⛔ IDENTITY (`FRONT · SIDE · BACK` are the ⛔ reconstruction input; ⛔ every other tile has a ⛔ different job), ⛔ NOT A NUMBER.**
+  - ⇒ ⚖️⛔⛔⛔ ***⛔ INSTANCES 1–4 SHOW A COUNT CONVERTING A ⛔ CORRECT STATE INTO A ⛔ STOP. ⛔ THIS ONE SHOWS A COUNT LETTING A ⛔ WRONG STATE THROUGH ⛔ SILENTLY. ⛔ SAME DEFECT, ⛔ OPPOSITE FAILURE DIRECTION — WHICH IS WHY ⛔ "PREFER A NAMED SET" IS ⛔ NOT A STYLE PREFERENCE: ⛔ THE COUNT IS SIMPLY ⛔ NOT MEASURING THE PROPERTY.***
+  - ✅ **THE REMEDY, ⛔ BOARDED AS ⭐ `TASK-1095`: ⛔ require the resolved set to be a ⛔ SUPERSET of `MULTIVIEW_DEFAULT_VIEWS` — ⛔ the ⛔ NAMED SET GOVERNS; ⛔ adding a 4th view is ⛔ legal, ⛔ dropping one of the pinned three is ⛔ exit `64`.**
+  - ⛔⛔ **AND THE ⛔ DIRECTION IS ⛔ HALF THE RULING: the fence goes on ⛔ NARROWING ⛔ ONLY. ⛔ Deleting `--views` outright would ⛔ also kill the documented ⛔ 4th SLOT — ⛔ the direction that ⛔ SERVES 🧑 his instruction.** ⇒ ⛔ **⛔ A FENCE THAT REMOVES THE ⛔ MISUSE BY REMOVING THE ⛔ CAPABILITY IS ⛔ NOT A FENCE, IT IS A ⛔ RETREAT.**
+  - ⛔ **⛔ LATENT, ⛔ NOT LIVE, ⛔ AND MEASURED RATHER THAN ASSERTED (⭐ `SC-§90`): ⛔ today ⛔ no substitute view name resolves — the ⛔ detail crops sit in a ⛔ SUBDIRECTORY and `path.is_file()` ⛔ rejects a directory ⇒ ⛔ `--views Front,Side,Detail` is ⛔ exit `5`.** ⛔ **⛔ That measurement is ⛔ why it is a WARN and ⛔ not a BLOCKER — ⛔ not the adjective ⛔ *"theoretical"*.**
 
 ### SC-§87 🚨⛔⛔⛔⭐⭐⭐ **A TEST THAT ⛔ HANGS IS ⛔ INVISIBLE TO ⛔ EVERY INSTRUMENT WE OWN. ⛔ BOUND EVERY SUITE RUN, ⛔ OR A NON-TERMINATING TEST COSTS A ⛔ NIGHT AND REPORTS ⛔ NOTHING.** (added 2026-09-05; ⛔ **bought at ⛔ TEN HOURS on `TASK-1043`'s executed suite**)
 
@@ -4717,6 +4744,13 @@ Added 2026-08-15 (`W7-R4`). ⚖️ **Written because this wall has now blocked T
   - ⛔ **Deleting the directive converted a ⛔ MISSED QUALIFICATION from an ⛔ AMBIGUITY into an ⛔ UNDECLARED-IDENTIFIER ⛔ HARD ERROR — ⛔ at ⛔ 43 SITES.**
   - ⇒ ⛔⛔ **THE ⛔ OLD FAILURE MODE WAS ⛔ *"IT MIGHT RESOLVE TO THE WRONG SYMBOL"*; ⛔ THE ⛔ NEW ONE IS ⛔ *"IT DOES NOT COMPILE"*.** ⛔ **A reviewer re-checking the ⛔ OLD hazard would find it ⛔ GONE and call the repair ⛔ complete.**
   - ⇒ ⚖️ ***⛔ CHECKING THAT THE ⛔ OLD FAILURE IS GONE IS ⛔ NOT EVIDENCE THE REPAIR IS SOUND. ⛔ A REPAIR MOVES THE FAILURE; ⛔ ONLY CHECKING THE ⛔ NEW ONE IS EVIDENCE.*** ⇒ ⛔ **after any repair, ⛔ ask ⛔ *"what does this now fail as?"*, ⛔ not ⛔ *"is the old thing fixed?"*.**
+- ⭐⭐⭐ **A ⛔ FOURTH APPLICATION, 2026-09-06 (`qa/TASK-1089.md`) — ⛔ AND IT IS THE ⛔ FURTHEST THIS METHOD HAS BEEN CARRIED: ⛔⛔ AN ⛔ EXECUTION-FREE GATE REACHING ⛔ ESTABLISHED-BY-CONSEQUENCE ON THE ⛔ TEST RESULTS THEMSELVES — ⛔ THE ARCHETYPAL ⛔ ACCEPTED-AS-DECLARED CLAIM.** (⛔ **marker `SC-78-DERIVED-RED`**)
+  - ⛔ **THE PROBLEM: ⛔ no `Bash`, ⛔ no interpreter, ⛔ no network, ⛔ no engine ⛔ AND no `git`** ⇒ ⛔ **it could ⛔ not run the suite, ⛔ not apply a mutation, ⛔ not witness a red.**
+  - ✅⭐⭐ **WHAT IT DID INSTEAD: ⛔⛔ IT ⛔ DERIVED ⛔ BOTH DECLARED REDS ⛔ BY HAND ⛔ FROM SOURCE.** ⛔ **MUTATION A (`if missing:` → `if False:`) ⇒ ⛔ `51/55` ⛔ AND it ⛔ NAMED THE ⛔ FOUR FAILING LABELS — ⛔ matching the author's four. ⛔ MUTATION B (`sorted(resolved)`) ⇒ ⛔ `53/55` ⛔ WITH THE ⛔ EXACT DETAIL STRING `index 0 (Front), index 1 (Side), index 2 (Back)`, ⛔ derived from the sort order against the requested order.**
+  - ✅ **AND IT ⛔ RECONCILED THE WHOLE LEDGER: ⛔ counting `check(...)` calls per group — ⛔ `6+7+10+9+5+3+2+6+3+4 = 55` — against a declared ⛔ 55 ⛔⛔ WITH ⛔ NO SLACK.** ⛔ **It also censused the ⛔ MUTATION ANCHOR as ⛔ 1 OF 1 IN 1909 LINES** ⇒ ⛔ **the instruction handed to the host is unambiguous ⛔ to apply ⛔ AND to find.**
+  - ⇒ ⚖️⛔⛔⛔ ***⛔ A DECLARED TEST RESULT IS NORMALLY ⛔ RUN-IT-OR-TRUST-IT. ⛔ THIS GATE FOUND A ⛔ THIRD OPTION: ⛔ RE-DERIVE WHAT THE SUITE ⛔ WOULD PRINT AND ⛔ COMPARE. ⛔ AGREEMENT ON A ⛔ NUMBER ⛔ AND ON ⛔ FOUR LABELS ⛔ AND ON A ⛔ FORMATTED STRING IS NOT SOMETHING A ⛔ FABRICATED OR ⛔ MISREMEMBERED RESULT SURVIVES.***
+  - ⭐ **THE ⛔ STRONGEST PART COST THE ⛔ LEAST: the reconciliation ⛔ HAD NO SLACK. ⛔ 55 counted, ⛔ 55 declared.** ⇒ ⛔ **a count that lands ⛔ EXACTLY is a ⛔ far narrower claim than one that lands ⛔ *"about right"* — ⛔ and the narrowness is ⛔ free.**
+  - ✅ **THE COPYABLE RULE: ⛔ WHEN YOU CANNOT ⛔ RUN THE SUITE, ⛔ ASK WHAT THE SUITE ⛔ WOULD PRINT ⛔ AND COMPUTE IT.** ⛔ **⛔ A RED IS A ⛔ PREDICTION ABOUT ⛔ TEXT, AND ⛔ PREDICTIONS ABOUT TEXT ARE ⛔ CHECKABLE BY ⛔ READING.**
 - ✅ **THE RULE: ⛔ BEFORE DECLARING A REQUIREMENT ⛔ UNDISCHARGEABLE, ⛔ ASK WHETHER ITS ⛔ CONSEQUENCES ARE REACHABLE WITH THE TOOLS YOU ⛔ DO HOLD.** ⛔ **Then ⛔ SAY WHICH YOU DID** — ⛔ *"established by consequence"* is ⛔ honest ⛔ and useful; ⛔ *"verified"* would have been ⛔ neither.
 
 #### ⛔⛔ **(3) THE SAME DEFECT, ⛔ STILL LIVE, IN ANOTHER ROLE**
@@ -10270,6 +10304,157 @@ need OPEN <= JAM  :  1200n − 2·HH <= 1160n − HH   <=>   40n <= HH   <=>   n
 - ⛔ **MEASURED 2026-09-03: ⛔ `Content/FogArea/**` is ⛔ **27 FILES** (⛔ not 49 — ⛔ a circulated figure ⛔ corrected here at source by glob).** ⛔ It ⛔ HAS a host row — ⛔ `TASK-927` — and that row ⛔ correctly ⛔ awaits his ruling.
 - ⛔⛔ **WHAT CHANGED: `TASK-927` option ⛔ (b) GITIGNORE was the ⛔ executor's recommendation ⛔ when the pack might not be used at all.** ⛔ **`J-F1`/`J-F11` are now ⛔ ANSWERED and the pack is ⛔ THE INSTRUMENT.** ⇒ ⭐ **the recommendation flips to ⛔ (a) COMMIT IT** — ⛔ a clean clone that ⛔ cannot build the fog lane is now a ⛔ real cost, ⛔ not a hypothetical one. 🧑 **Still ⛔ his call; ⛔ still no agent's.**
 - ⛔ **`TASK-858` (`L_Arena`'s `bEnableVolumetricFog = false`) is ⛔ NOW ON THE CRITICAL PATH.** ⛔ Until it flips, ⛔ the fog renders ⛔ literally nothing and ⛔ every pixel observation is ⛔ uninterpretable. ⛔ **Still his checkbox ⛔ plus a `TASK-620..622` lighting-gate re-run. ⛔ No agent flips it.**
+
+---
+
+## ⚖️ THE BATTLEFIELD FOLIAGE PASS — tree variety, ground detail, and the VRAM ceiling that binds them (2026-09-06) — namespace **`FIELD-§`**
+
+**Trigger — 🧑 Jonathan's directive, verbatim (2026-09-06, from a playtest screenshot):** *"all the trees on the battlefield are way too dark. I like the light yellow ones in the background but we need to change the ones that are on the battlefield. Lets add some trees from the `Megaplant_Library` and `Tree_Pack_1`. Remove all those dark trees we have and add a large variety of trees from those two folders (still keeping their locations random every single match) and when I playtest I will tell you which ones I like and don't like."* · *"use `Realistic_Grass_and_plant` as a thin layer above the current ground, to give the ground a little more detail."*
+
+⛔⛔ **THE FOG LANE IS ⛔ CLOSED BY HIM IN THE SAME BREATH — *"the fog works good, let's move on."* ⛔ NO FURTHER `FOG-§` WORK IS BOARDED. ⛔ Do not read any row below as reopening it.**
+
+### FIELD-§1 ⛔⛔⭐⭐ **THE MEASUREMENT THAT CHANGES BOTH ASKS — ⛔ I READ THE DATAASSET BEFORE WRITING A ROW, AND ⛔ BOTH NAIVE READINGS ARE WRONG**
+
+⛔ **Measured by the manager at `Content/Data/DA_BattlefieldScatter.uasset` (string census of the serialised name table, 2026-09-06) — ⛔ evidence, ⛔ not a verdict; the ⛔ in-editor read-back is `TASK-1079`'s and it ⛔ OVERRULES this on conflict (`SC-§94` cl. A: ⛔ a file census is ⛔ not the engine's own query):**
+
+| ⛔ the naive reading | ⛔ what the asset actually contains |
+|---|---|
+| *"the dark trees are Megaplant, swap the pack"* | ⛔ **`Megaplant_Library` appears ⛔ ZERO times.** The `Trees` layer references ⛔ **`Tree_Pack_1`** (`Meches/…`). ⇒ ⛔ **the dark trees are `Tree_Pack_1`'s `SM_Highpoly_Tree_*`, and `Megaplant_Library` is ⛔ NOT IN THE GAME AT ALL.** |
+| *"add `Realistic_Grass_and_plant` as a new ground layer"* | ⛔ **`Realistic_Grass_and_plant` is ⛔ ALREADY WIRED — ⛔ TWICE:** the `Grass` layer (`SM_Grass_*`) and the `Plants` layer (`SM_Plant_*`). ⇒ ⛔ **ASK 2 IS ⛔ NOT AN ADD. ⛔ The pack is shipped and ⛔ he cannot see it.** |
+
+- ⛔ **Layer names present in the asset: `Trees` · `Rocks` · `Hills` · `Grass` · `Plants`.** Also `Cylinder` (the tree collision proxy, `FScatterLayer::CollisionProxyMesh`) and `SM_Hill_01..03` / `SM_Rock*`.
+- ⛔ **Pack inventory, measured by glob:** `Content/Tree_Pack_1/Meches/Highpoly_Tree_1/SM_Highpoly_Tree_1..12` = ⛔ **12 meshes, ⛔ all named "Highpoly"** · `Content/Megaplant_Library/` = ⛔ **199 assets across ⛔ TWO species — `Tree_Norway_Spruce` and `Tree_Japanese_Cypress`, ⛔ BOTH DARK CONIFERS**, most of them ⛔ `Branch_`/`Twig_`/`Decoration_` parts and ⛔ `SK_`/`SKM_` **SKELETAL** variants, ⛔ not whole static trees.
+- 🚨⛔⛔⭐⭐ **⇒ THE CONSEQUENCE HE WILL NOT HAVE ANTICIPATED, AND IT MUST REACH HIM RATHER THAN BE SOLVED AROUND: ⛔ `Megaplant_Library` IS ⛔ TWO DARK CONIFER SPECIES. ⛔ SOURCING "A LARGE VARIETY" OF ⛔ NON-DARK TREES FROM IT MAY BE ⛔ IMPOSSIBLE.** ⇒ ⛔ **`TASK-1080` ⛔ MEASURES the tone of every candidate and ⛔ REPORTS the honest answer; ⛔ it does ⛔ NOT quietly ship two spruces and call it variety.**
+- ⛔ **`FScatterLayer::Meshes` is `TArray<TSoftObjectPtr<UStaticMesh>>` ⇒ ⛔ a ⛔ SKELETAL Megaplant variant (`SK_`/`SKM_`) ⛔ CANNOT be rostered. ⛔ Only whole `UStaticMesh` trees are candidates.** (`ScatterConfig.h:94`.)
+
+### FIELD-§2 ✅⛔ **RANDOM-PER-MATCH IS ⛔ NOT REBUILT, IT IS ⛔ INHERITED — AND THAT IS WHY THIS WHOLE LANE IS ⛔ ZERO C++**
+
+- ⛔ **`ScatterConfig.h:75`, verbatim: *"All fields are content, editor-populated on the DataAsset instance (`/Game/Data/DA_BattlefieldScatter`, TASK-137) — ⛔ none is hardcoded in C++."*** ⇒ ⛔ **the roster is ⛔ DATA. ⛔ Changing it is a ⛔ `.uasset` edit, ⛔ NOT a diff.**
+- ⛔ **Per-instance mesh choice is already random (`ScatterConfig.h:88-90`: *"each placed instance picks a random entry, so more meshes = more variety"*), placement is already per-match random off the replicated seed, and `SymmetryMode = Rotational180` is ⛔ LAW.** ⇒ ✅ **swapping the `Meshes` array ⛔ preserves his *"still keeping their locations random every single match"* ⛔ BY CONSTRUCTION. ⛔ No row may "add randomisation" — ⛔ it exists, and touching it is out of scope.**
+- ⛔ **⛔ WHAT MUST SURVIVE A ROSTER SWAP, ⛔ ENUMERATED, because each is a shipped guarantee a careless array edit silently breaks:** ⛔ `CollisionProxyMesh` (the `Cylinder` trunk proxy — ⛔ without it a canopy becomes an 8 m nav-blob, ⛔ the defect that killed `TASK-137`) · ⛔ `CollisionProxyScale` / `CollisionProxyZOffset` · ⛔ `ZOffset` (⛔ **per-mesh pivot correction — ⛔ a NEW mesh set means the OLD `ZOffset` is ⛔ WRONG, and a wrong one ⛔ floats or ⛔ buries every tree**) · ⛔ `FootprintRadius` (`0` = auto-derive from bounds — ⛔ prefer auto for a mixed roster) · ⛔ `CullStartDistance`/`CullEndDistance` · ⛔ `bCastShadows` · ⛔ `MinSpacing` · ⛔ `bBlocking`.
+
+### FIELD-§3 🚨⛔⛔⛔⭐⭐⭐ **THE VRAM CEILING — ⛔ HE DID NOT MENTION IT, ⛔ HIS OWN SCREENSHOT DOES, AND IT ⛔ BINDS BOTH ASKS**
+
+**⛔ Verbatim, from his 2026-09-06 screenshot: `Video memory has been exhausted (828.144 MB over budget). Expect extremely poor performance.`**
+
+- 🚨⛔⛔⭐⭐⭐ **THE ⛔ DELTA IS THE FINDING, AND IT ⛔ REFUTES THE PRIOR CONCLUSION ⛔ BY NAME. ⛔ `VIS-§8` (VID-004) recorded `0.922 MB` over and read it — ⛔ correctly, ⛔ for that number — as *"the signature of a ⛔ POOL-SIZE SETTING, ⛔ not an asset blowout."* ⛔ `828.144 MB` is ⛔ ~898× that.** ⇒ ⛔⛔ **`VIS-§8`'s ⛔ METHOD transfers. ⛔ ITS ⛔ CONCLUSION DOES ⛔ NOT. ⛔ Nobody may cite `VIS-§8` to argue this is *"just the pool size"* — ⛔ that argument was ⛔ about a hair, and ⛔ this is not a hair.**
+- ⛔ **⛔ AND NEITHER MAY ANYONE ASSUME THE OPPOSITE. ⛔ `828 MB` over is ⛔ CONSISTENT WITH ⛔ BOTH a genuine content blowout ⛔ AND a pool sized for a smaller scene. ⛔ `TASK-1079` ⛔ MEASURES; ⛔ no row before it may name a cause.** (⭐ `VIS-§7`: ⛔ a finding below high confidence buys a ⛔ VERIFICATION, ⛔ never a fix.)
+- 🚨⛔⛔ **⛔ BOTH ASKS ⛔ SPEND THE THING THAT IS ⛔ ALREADY OVERDRAWN.** ⛔ *"a large variety of trees"* = ⛔ more ⛔ UNIQUE meshes + ⛔ their texture sets ⛔ resident. ⛔ The pack he named is ⛔ literally called ⛔ **`Highpoly`**. ⛔ A denser/further-culled grass layer adds ⛔ more. ⇒ ⚖️ ***⛔ VARIETY IS ⛔ NOT FREE HERE, AND ⛔ PRETENDING IT IS WOULD SHIP HIM A ⛔ PRETTIER FIELD AT ⛔ WORSE FRAMERATE — ⛔ WHICH IS ⛔ NOT WHAT HE ASKED FOR.***
+- ✅⛔⛔ **THE LAW: ⛔ THE ROSTER IS SELECTED ⛔ WITHIN A ⛔ MEASURED BUDGET, AND *"LARGE VARIETY"* IS ⛔ BOUNDED BY WHAT FITS.**
+  1. ⛔ **`TASK-1079` measures ⛔ BEFORE** — ⛔ at ⛔ his own gameplay vantage, ⛔ same discipline as `SC-§88` (⛔ let it converge, ⛔ report the best-converged reading, ⛔ never a single unsettled frame).
+  2. ⛔ **`TASK-1083` measures ⛔ AFTER, ⛔ same vantage, ⛔ same commands, ⛔ same units.** ⛔ **A before with ⛔ no after is ⛔ half an instrument** (⭐ `SC-§94` cl. A).
+  3. 🧑⛔⛔ **IF VARIETY AND BUDGET ⛔ GENUINELY CONFLICT, THAT IS ⛔ HIS TRADE-OFF, ⛔ SURFACED WITH ⛔ NUMBERS.** ⛔ **⛔ NO AGENT SILENTLY PICKS ONE.** ⛔ The escalation carries: ⛔ MB per candidate, ⛔ the count that fits, ⛔ the count that does not, ⛔ and ⛔ what he loses either way.
+- ⛔⛔ **⛔ WHAT NO ROW IN THIS LANE MAY DO ⛔ WITHOUT A FRESH RULING FROM HIM** (⛔ carried ⛔ verbatim in force from `VIS-§8`/`TASK-789` cl. 3): ⛔ **downsize a texture · ⛔ edit an `.ini` · ⛔ change `r.Streaming.PoolSize` · ⛔ touch a vendor asset.** ⛔ **Vendor packs are ⛔ READ-ONLY. ⛔ The roster edit is on ⛔ `DA_BattlefieldScatter`, ⛔ never on the donors.**
+
+### FIELD-§4 ✅⛔ **THE LIGHT-YELLOW BACKGROUND TREES ARE ⛔ HIS, AND THEY ARE ⛔ OUT OF SCOPE**
+
+- 🧑 **His words: *"I ⛔ LIKE the light yellow ones in the background."*** ⇒ ⛔⛔ **⛔ NOTHING IN THIS LANE MAY REMOVE, RESTYLE, RECOLOUR OR RE-ROSTER THEM. ⛔ Deleting something he ⛔ explicitly praised is the ⛔ worst outcome this lane can produce, and it is ⛔ reachable by a ⛔ single careless *"remove all the trees"* reading of ask 1.**
+- ⛔⛔ **⛔ AND THE PROVENANCE IS ⛔ UNKNOWN, ⛔ SO IT IS ⛔ ESTABLISHED BEFORE ANYTHING IS REMOVED, ⛔ NOT AFTER.** ⛔ They may be ⛔ (a) the ⛔ same `Trees` layer read at distance under different light, ⛔ (b) a ⛔ different scatter layer, ⛔ (c) ⛔ hand-placed actors in `L_Arena`, or ⛔ (d) ⛔ a skybox/backdrop. ⇒ ⛔ **`TASK-1079` ⛔ ANSWERES WHICH, ⛔ by name, ⛔ before `TASK-1081` empties any array.**
+- 🚨⛔⛔⭐ **⛔ IF THE ANSWER IS ⛔ (a) — ⛔ THE SAME LAYER — THEN ⛔ EMPTYING THE `Trees` ARRAY ⛔ DESTROYS THE THING HE PRAISED, AND THE ASK ⛔ CANNOT BE EXECUTED AS WORDED.** ⇒ ⛔ **that is a ⛔ STOP-AND-ASK, ⛔ not a judgement call.**
+
+### FIELD-§5 ⭐⭐ **THE IDENTIFICATION RULING — ⛔ HE TOLD US THE ITERATION LOOP IS COMING, SO THE ROSTER SHIPS ⛔ ADDRESSABLE**
+
+🧑 **His words: *"when I playtest I will ⛔ tell you which ones I ⛔ like and ⛔ don't like."*** ⛔ **From a hero's-eye distance ⛔ every tree is *"the dark spiky one"*. ⛔ Without an instrument, his feedback ⛔ cannot be executed and ⛔ somebody re-derives the whole set to guess what he meant.**
+
+- ✅⛔ **THE RULING: the deliverable is a ⛔ NUMBERED CONTACT SHEET, and ⛔ THE NUMBER ⛔ IS THE ROSTER INDEX.**
+  - ⛔ **New artefact, ⛔ pattern pinned here: `.claude/pipeline/playtest-evidence/<date>/RosterSheet_<Layer>.png`** — ⛔ one rendered thumbnail per rostered mesh, ⛔ each tile ⛔ captioned with ⛔ its index ⛔ AND ⛔ its asset name.
+  - ⛔ **The index is the ⛔ 0-based position in ⛔ `DA_BattlefieldScatter → Layers[Trees].Meshes`.** ⇒ ⛔ **🧑 *"drop 7 and 11"* becomes ⛔ TWO ARRAY REMOVALS ⛔ with ⛔ zero re-derivation, ⛔ by anyone, ⛔ in any later session.**
+  - ⛔ **The sheet is ⛔ REGENERATED whenever the roster changes, ⛔ and the handoff carries the ⛔ index→path table in ⛔ TEXT as well ⛔ — ⛔ a PNG is not greppable and ⛔ this pipeline runs on files.**
+- ⛔ **⛔ WHAT WAS ⛔ CONSIDERED AND ⛔ REFUSED, ⛔ recorded so it is not re-proposed: a ⛔ runtime in-game debug overlay naming each tree.** ⛔ It is a ⛔ C++ task + ⛔ QA + ⛔ compile + ⛔ commit, ⛔ and it spends ⛔ frame time on a field already ⛔ 828 MB over budget — ⛔ to answer a question a ⛔ static PNG answers ⛔ for free. ⇒ ⛔ **it is the ⛔ ESCALATION if the sheet proves insufficient, ⛔ not the first move.** (⛔ Same reasoning as `TASK-789`'s refusal of a bespoke velocity readout when `showdebug character` already existed.)
+
+### FIELD-§6 ⛔⛔ **THE TWO DATAASSET ROWS ARE ⛔ SERIALISED, AND ⛔ NOT FOR A DESIGN REASON**
+
+- ⛔ **`TASK-1081` (trees) and `TASK-1082` (ground detail) ⛔ BOTH EDIT ⛔ `Content/Data/DA_BattlefieldScatter.uasset` — ⛔ ONE BINARY FILE.** ⇒ ⛔⛔ **⛔ RUNNING THEM IN PARALLEL IS A ⛔ LOST WRITE WITH ⛔ NO ERROR — ⛔ the second save simply ⛔ discards the first layer's work, ⛔ and the board would say both are done.**
+- ⇒ ✅ **`parallel-safe: no` ⛔ between them, ⛔ stated on both rows ⛔ with this reason.** ⚖️ *⛔ This is the ⛔ TASKBOARD write-race law applied to a `.uasset`: ⛔ a shared mutable artefact with ⛔ no lock. ⛔ The board at least ⛔ diffs; ⛔ a binary does not.*
+
+---
+
+## ⚖️ THE MAIN CHARACTER — the hero stops being a grey mannequin (2026-09-06) — namespace **`CHAR-§`**
+
+**Trigger — 🧑 Jonathan's directive, verbatim (2026-09-06):** *"create the visual art for the main controllable character, I have added some concept art in the 'ArtPipeline' 'Inbox' folder. It is an image in that folder titled 'MainCharacter.png'. This image features several small images that show different views of the art for the main character. I want you to use the Meshy pipeline to create the 3D asset for the main character, it obviously still needs to have the walking and fighting animations as well. Please make sure the art agent takes its time and follows all the different views from the concept art."*
+
+### CHAR-§1 ✅⛔ **THE FILE, AND ⛔ WHAT IS ACTUALLY IN IT — ⛔ READ BY THE MANAGER, ⛔ NOT ASSUMED**
+
+- ⛔ **PATH: `Tools/ArtPipeline/Inbox/MainCharacter.png`.** ⛔ **⛔ NOT `ArtPipeline/Inbox/` — ⛔ the `Tools/` prefix is ⛔ load-bearing and ⛔ nobody hunts for it.**
+- ⛔ **SUBJECT: a ⛔ crusader/templar knight** — ⛔ full plate over mail, ⛔ great helm, ⛔ **white tattered surcoat + cloak bearing a ⛔ RED CROSS**, ⛔ arming sword, ⛔ heater shield.
+- ⛔ **IT IS A ⛔ 16-TILE CONTACT SHEET WITH ⛔ TEXT CAPTIONS, ⛔ enumerated here so *"all the views"* is ⛔ a checklist and ⛔ not a mood:**
+
+| ⛔ band | ⛔ tiles |
+|---|---|
+| ⛔ **ORTHOGRAPHIC BODY VIEWS** (⛔ T-pose) | ⛔ `FRONT` · ⛔ `SIDE` · ⛔ `BACK` |
+| ⛔ **HELMET column** | ⛔ 4 stacked sub-tiles: ⛔ front · ⛔ ¾ · ⛔ side · ⛔ back |
+| ⛔ **DETAIL tiles** | ⛔ `GAUNTLET` · ⛔ `SHOULDER` · ⛔ `CHEST` · ⛔ `HIP / TASSETS` · ⛔ `LEG` · ⛔ `SABATON` · ⛔ `REAR DETAIL` · ⛔ `CLOAK DETAIL` |
+| ⛔ **PROPS** | ⛔ `SWORD (SIDE)` · ⛔ `SWORD DETAIL` · ⛔ `SHIELD (FRONT)` · ⛔ `SHIELD (BACK)` |
+
+### CHAR-§2 🚨⛔⛔⛔⭐⭐⭐ **THE SHEET ⛔ CANNOT BE FED TO THE PIPELINE AS-IS, AND THE PIPELINE'S ⛔ OWN README SAYS SO**
+
+- ⛔ **`Tools/ArtPipeline/README.md` §*"Concept image guidance"*, verbatim: *"⛔ ONE SINGLE SUBJECT — ⛔ no scenes, props, companions, or ⛔ text"* · *"Plain or transparent background… ⛔ clutter confuses the cutout"* · *"square ~1024×1024 PNG recommended."***
+- ⇒ 🚨⛔⛔ **`MainCharacter.png` is ⛔ 16 SUBJECTS, ⛔ 2 PROPS AND ⛔ 16 TEXT CAPTIONS ON ⛔ ONE CANVAS. ⛔ IT IS THE ⛔ EXACT OPPOSITE OF WHAT THE GENERATOR WANTS.** ⛔ **Handing it to Stage 1 ⛔ unmodified produces a ⛔ mangled blob, ⛔ spends credits, ⛔ and would look like a ⛔ model failure rather than an ⛔ input failure.**
+- ✅⛔ **THE LAW, AND THE ⛔ NEW ARTEFACT PATTERN, ⛔ PINNED: a ⛔ MULTI-VIEW concept sheet is ⛔ SPLIT before it is ⛔ generated from.**
+  - ⛔ **`Tools/ArtPipeline/Inbox/<AssetName>.png`** = ⛔ the ⛔ SHEET as 🧑 he dropped it. ⛔ **NEVER modified, ⛔ never deleted, ⛔ never overwritten** — ⛔ it is ⛔ his input and the ⛔ acceptance reference.
+  - ⛔ **`Tools/ArtPipeline/Inbox/<AssetName>_Front.png` · `_Side.png` · `_Back.png`** = ⛔ the ⛔ EXTRACTED single-subject views: ⛔ one figure, ⛔ caption text ⛔ cropped out, ⛔ flat background, ⛔ square, ⛔ ≥512 px.
+  - ⛔ **Precedent, ⛔ not an invention: `Inbox/Ogre_original_4view.png` sits beside `Inbox/Ogre.png` in this very folder — ⛔ this project has ⛔ met a multi-view sheet before.**
+- 🚨⛔⛔⭐⭐ **⛔ AND THE DISTINCTION THAT PROTECTS THE GENERATION: ⛔ THE ⛔ THREE BODY VIEWS ARE ⛔ RECONSTRUCTION INPUT. ⛔ THE ⛔ TWELVE DETAIL TILES ARE ⛔ NOT.**
+  - ⛔ **⛔ Feeding a ⛔ GAUNTLET CLOSE-UP into a multi-view reconstruction slot tells the model the ⛔ character IS A HAND. ⛔ That is ⛔ not a hypothetical — ⛔ multi-view solvers assume ⛔ every input frames the ⛔ SAME subject at the ⛔ SAME scale.**
+  - ✅ **⛔ THE DETAIL TILES ARE THE ⛔ ACCEPTANCE CHECKLIST at ⛔ `CHAR-§5`, ⛔ and (optionally) the ⛔ STYLE REFERENCE for a ⛔ `--mode retexture` pass. ⛔ They are ⛔ USED — ⛔ just ⛔ not as geometry.**
+  - ⇒ ⚖️ ***⛔ THAT IS HOW 🧑 *"FOLLOWS ALL THE DIFFERENT VIEWS"* IS ⛔ HONOURED ⛔ RATHER THAN ⛔ OBEYED LITERALLY INTO A GARBAGE MESH: ⛔ EVERY TILE HAS A JOB, ⛔ AND THE JOBS ARE ⛔ DIFFERENT.***
+
+### CHAR-§3 ⛔⛔ **THE SHIPPED MESHY TOOL SENDS ⛔ ONE IMAGE — ⛔ MEASURED AT SOURCE, ⛔ AND IT IS THE ⛔ GATING FACT OF THIS LANE**
+
+- ⛔ **`Tools/ArtPipeline/meshy_generate.py` ⛔ EXISTS and is the ⛔ project's Meshy route** (⛔ *"Second engine per CONVENTIONS.md ⛔ 'Meshy second engine (M7.5)'"*), with ⛔ two modes: ⛔ `--mode retexture` and ⛔ `--mode image3d`.
+- 🚨⛔⛔ **`--mode image3d` reads ⛔ `Inbox/<CardID>.png` — ⛔ SINGULAR — and the payload is ⛔ `payload["image_url"] = image_data_uri(concept_path)` (⛔ `:1496`), against ⛔ `EP_IMAGE3D = "/openapi/v1/image-to-3d"` (⛔ `:106`).** ⇒ ⛔⛔ **⛔ THERE IS ⛔ NO MULTI-IMAGE PATH IN THE SHIPPED TOOL. ⛔ A row that says *"run Meshy with all the views"* would be ⛔ UNEXECUTABLE, and the assignee would ⛔ discover that ⛔ after the dispatch.**
+- ✅⛔ **⇒ THE ROUTE IS ⛔ DECIDED ⛔ BY MEASUREMENT, ⛔ NOT BY PREFERENCE, AND ⛔ BOTH BRANCHES ARE BOARDED:**
+  - ⛔ **BRANCH A (⛔ preferred, ⛔ honours the ask fully): ⛔ add a ⛔ `--mode multiimage` to the ⛔ existing tool** — ⛔ `TASK-1088`, ⛔ a ⛔ CODE row with a ⛔ QA gate, ⛔ inheriting ⛔ every shipped law of that file ⛔ UNCHANGED: ⛔ the ⛔ ENV-ONLY `MESHY_TOKEN` secret law · ⛔ the ⛔ never-disable-TLS law · ⛔ the ⛔ 3-phase ⛔ download→validate→commit artefact guard (`SC-39.1`) · ⛔ the ⛔ exit-code contract (⛔ `0/1/2/3/4/5/6/64`) · ⛔ `Cache/` staging + ⛔ `_rejected/` quarantine · ⛔ **⛔ output ⛔ NEVER lands in `Content/` — ⛔ everything re-enters through ⛔ Stage 2 (⛔ THE INVARIANT).**
+  - ⛔ **BRANCH B (⛔ the declared fallback, ⛔ boarded ⛔ in advance so the lane ⛔ cannot brick): ⛔ single-image `--mode image3d` from ⛔ `MainCharacter_Front.png`, ⛔ with the ⛔ loss stated in the handoff** — ⛔ the ⛔ BACK is where the ⛔ tattered cloak and its ⛔ red cross live, so ⛔ Branch B ⛔ demonstrably loses ⛔ the character's ⛔ most distinctive surface.
+  - 🚨⛔⛔ **⛔ `TASK-1088` cl. 0 is a ⛔ PREFLIGHT PROBE (⛔ endpoint + balance), ⛔ BEFORE a line is written.** ⇒ ⛔ **⛔ if the endpoint is ⛔ not on his plan, the row ⛔ STOPS AND REPORTS — ⛔ it does ⛔ not write speculative code against an API nobody can call.** (⛔ `--check` is the ⛔ shipped precedent for exactly this.)
+
+### CHAR-§4 🚨⛔⛔⛔⭐⭐⭐ **THE WALKING AND FIGHTING ANIMATIONS ⛔ ALREADY EXIST. ⛔ THE DELIVERABLE IS THAT THEY ⛔ KEEP BINDING — ⛔ NOT THAT THEY ARE AUTHORED.**
+
+**⛔ MEASURED at `Content/Blueprints/BP_HeroCharacter.uasset` (⛔ name-table census, 2026-09-06):**
+
+| ⛔ slot | ⛔ live value |
+|---|---|
+| ⛔ skeletal mesh | ⛔ **`SKM_Quinn_Simple`** (⛔ `/Game/Characters/Mannequins/Meshes/`) — 🧑 ⛔ **THE GREY MANNEQUIN IN HIS SCREENSHOT** |
+| ⛔ anim blueprint | ⛔ **`ABP_Unarmed`** / ⛔ `ABP_Unarmed_C` — ⛔ **the ⛔ WALK/run/idle/jump locomotion** |
+| ⛔ attack montage | ⛔ **`AM_ComboAttack`** (⛔ `HeroCharacter.h:1242`: *"Wired on BP_HeroCharacter in TASK-017 (`/Game/Variant_Combat/Anims/AM_ComboAttack`)"*) — ⛔ **the ⛔ FIGHT** |
+
+- 🚨⛔⛔⛔⭐⭐⭐ **⇒ 🧑 HIS *"it ⛔ obviously still needs to have the ⛔ walking and ⛔ fighting animations as well"* IS ⛔ NOT A REQUEST TO ⛔ AUTHOR TWO ANIMATION SETS. ⛔ IT IS A ⛔ REQUIREMENT THAT THE ⛔ MESH SWAP ⛔ NOT BREAK THE ONES HE ⛔ ALREADY HAS.** ⇒ ⛔ **⛔ read as *"author"*, this lane is ⛔ weeks and needs a ⛔ rigger. ⛔ Read as *"preserve"*, it is a ⛔ MESH + ⛔ SKINNING job. ⛔ THE SECOND READING IS THE ⛔ MEASURED ONE.**
+- ✅⛔⛔ **⇒ THE BINDING LAW, AND IT IS THE ⛔ SINGLE MOST IMPORTANT SENTENCE IN THIS NAMESPACE: ⛔ THE NEW KNIGHT ⛔ BINDS TO THE ⛔ HERO'S EXISTING SKELETON — ⛔ `SK_Mannequin`, THE RIG ⛔ `SKM_Quinn_Simple` RIDES.** ⛔ **⛔ Bind it to anything else and ⛔ `ABP_Unarmed` and ⛔ `AM_ComboAttack` ⛔ STOP BINDING, and ⛔ both of the things he named ⛔ disappear.**
+- ⛔⛔ **⛔ THE TRAP, ⛔ NAMED SO IT IS ⛔ NOT WALKED INTO: ⛔ THIS PROJECT HAS ⛔ TWO SKELETONS, AND THE ⛔ WELL-TRODDEN ONE IS THE ⛔ WRONG ONE HERE.**
+  - ⛔ **The ⛔ UNITS ride ⛔ `/Game/Characters/SK_Footman_Skeleton` (⛔ the 21-bone ⛔ SiegeBiped), share ⛔ `ABP_Footman`, and have a ⛔ SHIPPED retarget chain: ⛔ `IK_MeshyBiped` → ⛔ `RTG_MeshyBiped_to_SiegeBiped` → ⛔ `IK_SiegeBiped`.**
+  - ⛔ **The ⛔ HERO does ⛔ NOT.** ⛔ Recorded ⛔ verbatim in this file: *"⛔ NO retarget from `SK_Footman_Skeleton` to the ⛔ hero's mannequin skeleton · ⛔ no hero ABP state machine."*
+  - ⇒ 🚨⛔⛔ **⛔ REACHING FOR `RTG_MeshyBiped_to_SiegeBiped` BECAUSE IT ⛔ EXISTS WOULD BIND THE HERO TO THE ⛔ UNITS' RIG AND ⛔ DETACH HIM FROM ⛔ HIS OWN LOCOMOTION, HIS ⛔ COMBAT MONTAGE AND ⛔ EVERY HERO-SPECIFIC ANIM PATH ⛔ AT ONCE. ⛔ IT IS THE ⛔ OBVIOUS MOVE AND IT IS ⛔ WRONG.**
+  - ✅ **⛔ The ⛔ SiegeBiped chain is the ⛔ PROOF THE TECHNIQUE WORKS on Meshy output (⛔ a shipped precedent worth having), ⛔ NOT the retargeter to use.** ⛔ **A ⛔ `RTG_MeshyBiped_to_Mannequin` is the ⛔ hero's own asset if a retargeter is needed at all** (⛔ `RTG_` → ⛔ `Content/Characters/`).
+- ⭐ **⛔ THE SHAPE OF THIS JOB IS ⛔ ALREADY IN THE LAW, ⛔ under a different feature: *"Anims + ABP are ⛔ PRESERVED, ⛔ NOT regenerated: the remaster changes ⛔ ONLY the mesh + textures + material instance… the anims ⛔ already exist, are ⛔ good, and must ⛔ keep binding after the SK is overwritten in place."*** ⇒ ⛔ **⛔ this is a ⛔ REMASTER-shaped row, ⛔ not the ⛔ Wizard-batch anim-authoring shape. ⛔ Grade it as one.**
+- 🧑⛔ **⛔ FLAGGED, ⛔ NOT DECIDED — `J-C1`: ⛔ THE ⛔ SWORD AND ⛔ SHIELD.** ⛔ The sheet gives them ⛔ four dedicated tiles, but ⛔ `ABP_Unarmed` is ⛔ named for what it is, and the hero ⛔ today holds ⛔ nothing. ⇒ ⛔ **⛔ PROCEEDING DEFAULT: ⛔ generate them as ⛔ PART OF THE BODY MESH ⛔ only if the concept's ⛔ T-pose shows them held (⛔ it does ⛔ NOT — ⛔ both hands are ⛔ empty in ⛔ FRONT and ⛔ BACK) ⇒ ⛔ **⛔ THE BODY SHIPS ⛔ UNARMED, ⛔ matching ⛔ both the T-pose ⛔ and `ABP_Unarmed`.** ⛔ Sword/shield as ⛔ socketed props is a ⛔ SEPARATE, ⛔ LATER row and ⛔ needs 🧑 his word. ⛔ **⛔ Do ⛔ not silently fuse a sword to a hand — ⛔ it would ⛔ clip through every existing animation.**
+
+### CHAR-§5 🚨⛔⛔⛔⭐⭐⭐ **THE MESH-APPROVAL CHECKPOINT — 🧑 HIS EYE ⛔ BEFORE THE SKINNING, ⛔ NOT AFTER**
+
+- ⛔ **`TASK-1092` is a ⛔ HARD STOP: ⛔ the mesh is ⛔ generated, ⛔ refined and ⛔ rendered to previews, and ⛔ THEN IT WAITS.** ⛔ **⛔ NO import, ⛔ no skinning, ⛔ no retarget, ⛔ no `BP_HeroCharacter` edit ⛔ until 🧑 he approves the body.**
+- ⇒ ⚖️ ***⛔ SKINNING AND RETARGETING ARE THE ⛔ MOST EXPENSIVE STEPS IN THIS LANE AND THE ⛔ LEAST REUSABLE. ⛔ DOING THEM TO A BODY HE THEN REJECTS ⛔ THROWS AWAY ⛔ EXACTLY THE WORK THAT ⛔ CANNOT BE SALVAGED — ⛔ THE MESH CAN BE ⛔ REROLLED FOR CREDITS; ⛔ THE RIG WORK CANNOT BE ⛔ REROLLED AT ALL.***
+- ⛔ **⛔ WHAT HE IS SHOWN AT THE CHECKPOINT, ⛔ so the ask is ⛔ answerable in ⛔ one sentence: ⛔ turntable/preview renders at ⛔ FRONT, ⛔ SIDE and ⛔ BACK ⛔ placed ⛔ BESIDE the corresponding ⛔ concept tiles, ⛔ plus the ⛔ `CHAR-§1` ⛔ detail-tile checklist ⛔ ticked or ⛔ declared-missing ⛔ item by item.** ⛔ **⛔ A checklist with ⛔ honest ⛔ MISSING rows is ⛔ worth more than a ⛔ uniformly ticked one** — ⛔ and 🧑 he asked ⛔ twice for the ⛔ views to be followed, ⇒ ⛔ **⛔ *"the ⛔ REAR DETAIL cross is ⛔ absent"* is ⛔ exactly the sentence this checkpoint exists to surface.**
+- ⛔ **⛔ THE REROLL LEVER IS ⛔ NAMED ON THE ROW: ⛔ `--seed`, ⛔ quota permitting, ⛔ BEFORE Stage 2 — ⛔ the shipped `README` procedure, ⛔ not an improvisation.**
+
+### CHAR-§6 ⛔ **THE CLOSING RUNG IS A ⛔ BEHAVIOUR, ⛔ NOT A PROPERTY** (⭐ `SC-§94` cl. B · ⭐ `SC-§36.1`)
+
+- ⛔ **⛔ *"the mesh imported"* is ⛔ RUNG 1 (⛔ properties). ⛔ *"`BP_HeroCharacter` references it"* is ⛔ RUNG 2 (⛔ reachability). ⛔ BOTH CAN BE ⛔ TRUE WHILE THE HERO ⛔ T-POSES ACROSS THE FIELD.**
+- ✅⛔ **⛔ THE OUTCOME CHECK, ⛔ NAMED ON `TASK-1094` ⛔ WITH ITS OWNER: ⛔ (i) he ⛔ WALKS — ⛔ `ABP_Unarmed` ⛔ drives the new mesh, ⛔ observed ⛔ in motion, ⛔ not inferred from a reference · ⛔ (ii) he ⛔ FIGHTS — ⛔ `AM_ComboAttack` ⛔ plays on the new mesh · ⛔ (iii) ⛔ NO T-pose, ⛔ no exploded skinning, ⛔ no inverted normals · ⛔ (iv) the ⛔ VRAM delta (`FIELD-§3`) — ⛔ **a ⛔ NEW textured character is ⛔ NEW resident memory on a budget that is ⛔ ALREADY 828 MB OVERDRAWN.**
+- ⛔ **⛔ AND THE ⛔ VRAM CROSS-LINK IS ⛔ DELIBERATE: ⛔ `FIELD-§` and ⛔ `CHAR-§` are ⛔ INDEPENDENT LANES that ⛔ SPEND THE SAME BUDGET. ⛔ Neither may report its delta as if it were the ⛔ only claimant.**
+
+---
+
+## ⚖️ THE OVAL OVER THE CARD BAR — `CARDBAR-§11a` gets its ruling from 🧑 his own eye (2026-09-06)
+
+**Trigger — 🧑 Jonathan, verbatim (2026-09-06):** *"there seems to be a bit of a visual bug where the oval that is used for the 'play again' button appears above the cards wrapped around the numbers 2 through 6 during play, get rid of that oval so it doesn't appear before the match ends."*
+
+- 🚨⛔⛔⛔⭐⭐⭐ **⛔ THE PRIME SUSPECT WAS ⛔ ALREADY ON THE BOOKS, ⛔ WITH ⛔ ITS MEASUREMENTS, ⛔ ITS FIX, AND ⛔ A ROW WAITING FOR ⛔ HIS EYE — AND HE HAS NOW ⛔ INDEPENDENTLY REPORTED IT.** ⛔ **`CARDBAR-§11a`, verbatim: `Btn_Jump` *"is currently ⛔ `Visible`, its `SizeBox_0` is ⛔ **240×80 bottom-centre pad B40** — i.e. ⛔ **overlapping the hand bar's own bottom-centre B24 attach** — and its donor `OnClicked` (→ `EnterPlacementMode "Footman"`) is ⛔ present but ⛔ UNBOUND. 🧑 A row for Jonathan's pixel eye at `TASK-811`, ⛔ not an agent's fix."***
+- ⛔ **⛔ IT IS A ⛔ UE-TEMPLATE ⛔ BUTTON. ⛔ A Slate button at ⛔ 240×80 with the ⛔ default rounded brush reads ⛔ exactly as a ⛔ thin oval outline ⛔ arcing over the ⛔ bottom-centre of the card bar. ⛔ Its click does ⛔ NOTHING (⛔ unbound).**
+- ⭐⭐ **⛔ AND 🧑 HIS ⛔ ATTRIBUTION IS ⛔ WRONG WHILE HIS ⛔ OBSERVATION IS ⛔ RIGHT — ⛔ which is ⛔ GOOD NEWS, ⛔ and it ⛔ answers his own regression worry ⛔ structurally: ⛔ the ⛔ Play Again button lives in ⛔ `/Game/UI/WBP_VictoryScreen`. ⛔ `Btn_Jump` lives in ⛔ `/Game/UI/WBP_CardHand`. ⇒ ⛔⛔ ⛔ THEY ARE ⛔ DIFFERENT ASSETS, SO ⛔ *"it must still work when the match ends"* is ⛔ SATISFIED BY ⛔ NOT TOUCHING THE OTHER FILE.**
+- ⛔⛔ **⛔ BUT IT IS A ⛔ SUSPECT, ⛔ NOT A VERDICT. ⛔ `TASK-1085` ⛔ CONFIRMS-OR-REFUTES ⛔ AT THE ASSET ⛔ BEFORE CHANGING ANYTHING.** ⛔ **⛔ THE NAMED ALTERNATIVE: the ⛔ `KeyChip` / `KeyChips` widgets (⛔ both present in `WBP_CardHand`'s name table) carrying a ⛔ rounded border brush ⛔ per chip.** ⛔ **⛔ THE DISCRIMINATOR IS IN ⛔ HIS OWN SENTENCE: he says ⛔ *"2 through 6"*, ⛔ NOT *"1 through 6"*. ⛔ ONE 240-wide button ⛔ spanning part of the bar fits a ⛔ partial range; ⛔ a ⛔ per-chip brush would appear on ⛔ ALL SIX.** ⇒ ⛔ **⛔ that ⛔ asymmetry is ⛔ evidence, ⛔ and the row must ⛔ account for it ⛔ either way.**
+- 🚨⛔⛔⛔ **⛔ THE FIX IS ⛔ ONE PROPERTY AND IT IS ⛔ ALREADY THE ⛔ ONLY LEGAL ONE: ⛔ `SetVisibility(Btn_Jump, Collapsed)`.** ⛔ **⛔ `GetParent` ⛔ RESOLVES ON A ⛔ COLLAPSED WIDGET, so ⛔ `BuildHandTree`'s ⛔ `CastToOverlay(GetParent(GetParent(Btn_Jump)))` ⛔ attach is ⛔ UNHARMED (`TASK-808` §8).**
+- ⛔⛔⛔ **⛔ AND THE ⛔ CATASTROPHIC ADJACENT MOVE, ⛔ RESTATED BECAUSE IT IS ⛔ ONE KEYSTROKE AWAY AND ⛔ FAILS SILENTLY: ⛔ `Btn_Jump` IS ⛔ NEVER DELETED, ⛔ NEVER REPARENTED, ⛔ NEVER RENAMED. ⛔ DELETING IT ⛔ SILENTLY DELETES THE ⛔ ENTIRE CARD BAR — ⛔ no compile error, ⛔ no warning, ⛔ no design-time clue, ⛔ just an ⛔ empty hand at runtime.** ⛔ **🧑 He asked to *"get rid of that oval"*; ⛔ *"get rid of"* ⛔ MEANS ⛔ COLLAPSE, ⛔ NOT DELETE.**
+- ✅⭐ **⛔ THE `§11a` *"optional/cosmetic"* CLAUSE IS ⛔ HEREBY ⛔ DISCHARGED: ⛔ it left `Collapsed` optional ⛔ pending his eye. ⛔ HIS EYE HAS ⛔ RULED. ⇒ ⛔ `Collapsed` is ⛔ now ⛔ REQUIRED.** ⚖️ *⛔ A flag raised, ⛔ carried unresolved across ⛔ three batches, and ⛔ closed by the ⛔ user noticing it ⛔ unprompted — ⛔ the registry ⛔ did its job; ⛔ it simply ⛔ took his ⛔ playtest to ⛔ spend the sentence.*
+- ⛔ **⛔ AND THE ⛔ STAGING HAZARD IS ⛔ NAMED, ⛔ BECAUSE THIS ⛔ EXACT ASSET HAS ⛔ ALREADY DONE IT ⛔ ONCE: at ⛔ `TASK-811`, ⛔ `WBP_CardHand` was ⛔ STALE IN THE GIT INDEX (⛔ blob `5c3ce72e`) and was ⛔ flagged by ⛔ NOBODY — a commit as-found would have shipped the ⛔ old widget ⛔ while looking ⛔ fully staged.** ⇒ ⛔ **⛔ `TASK-1086` verifies by ⛔ oid-vs-`sha256`, ⛔ NEVER by size (⭐ `SC-§68`).**
 
 
 
