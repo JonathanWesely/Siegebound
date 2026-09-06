@@ -3,8 +3,10 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/TimerHandle.h"    // FTimerHandle — TASK-1068's visual-expiry WAKE-UP (⛔ NOT a second deadline; see the one-way-door paragraph)
 #include "GameFramework/Actor.h"
-#include "Siegebound/TeamId.h" // ETeamId — the DURATION accessor samples the CASTER TEAM's hero (TASK-982 item 5a)
+#include "Siegebound/TeamId.h"     // ETeamId — the DURATION accessor samples the CASTER TEAM's hero (TASK-982 item 5a)
+#include "UObject/SoftObjectPath.h" // FSoftClassPath — the return type of the ONE fog-visual class reference; the PATH itself lives in the .cpp (TASK-1068 cl. 6)
 #include "FogVolume.generated.h"
 
 /**
@@ -12,16 +14,27 @@
  *  `FOG-§10.6`, `FOG-§10.7`) — the ONE authoritative answer to "is the battlefield fogged right
  *  now, is new fog PREVENTED right now, and until when in each case?".
  *
- *  ⛔⛔⛔ THIS ACTOR IS **STATE ONLY**, AND THE DISTINCTION IS THE WHOLE REASON IT EXISTS.
- *  `AFogVolume` **THE STATE OBJECT** is not `AFogVolume` **THE RENDERED VOLUME**. It holds TWO
- *  scalars and nothing else: ⛔ NO mesh, ⛔ NO material, ⛔ NO decal, ⛔ NO Niagara, ⛔ NO
- *  collision, ⛔ NO component of any kind, ⛔ NO tick. The fog you can SEE is `TASK-841`'s and
- *  it ⛔ HAS SHIPPED: 2026-09-05, as `/Game/Blueprints/BP_SiegeFog` (integration-checked under
- *  `TASK-1043`, committed `ef2c901`) — a child of the ⛔ VENDOR `BP_FogArea`, with ⛔ no C++
- *  spawner yet. The `TASK-836` measurement that once premise-blocked it is ✅ DONE (2026-09-03).
- *  The fog the GAME can ask about is this, and the class had to exist for the timer to have a
- *  home. ⚠️ A future reader looking for the visual should stop looking here — its absence is
- *  the design, not an omission.
+ *  ⛔⛔⛔ THIS ACTOR RENDERS **NOTHING**, AND THE DISTINCTION IS THE WHOLE REASON IT EXISTS.
+ *  `AFogVolume` **THE STATE OBJECT** is not `AFogVolume` **THE RENDERED VOLUME**. Its own body
+ *  holds TWO scalars and draws nothing: ⛔ NO mesh, ⛔ NO material, ⛔ NO decal, ⛔ NO Niagara,
+ *  ⛔ NO collision, ⛔ NO component of any kind, ⛔ NO tick. The fog you can SEE is `TASK-841`'s
+ *  and it ⛔ HAS SHIPPED: 2026-09-05, as `/Game/Blueprints/BP_SiegeFog` (integration-checked
+ *  under `TASK-1043`, committed `ef2c901`) — a child of the ⛔ VENDOR `BP_FogArea`.
+ *  The `TASK-836` measurement that once premise-blocked it is ✅ DONE (2026-09-03).
+ *  ⛔⛔ CORRECTED 2026-09-05 (`TASK-1068`) — THE HEADING USED TO SAY **"STATE ONLY"** AND THE
+ *  PARAGRAPH USED TO END *"a future reader looking for the visual should stop looking here — its
+ *  absence is the design, not an omission"*. ⛔ BOTH WERE TRUE WHEN WRITTEN AND ⛔ BOTH ARE NOW
+ *  FALSE, and the second one was ⛔ ACTIVELY HARMFUL: it sent the one reader who came here asking
+ *  the right question ("who spawns the fog?") back out of the only file that could answer.
+ *  ⇒ ⭐ THIS CLASS NOW OWNS THE VISUAL'S **LIFETIME** — ⛔ never its LOOK, ⛔ never its
+ *  material, ⛔ never its density. It spawns `BP_SiegeFog` when fog rises and destroys it when
+ *  fog ends, through the ONE reconciler `RefreshFogVisual()`. ⛔ The visual holds ⛔ NO state of
+ *  its own (`list_variables` ⇒ `[]`, `TASK-841` §4), so "the volume is in the world" IS "fog is
+ *  up", and there is still exactly ⛔ ONE source of truth for that: `FogActiveUntilTimeSeconds`.
+ *  ⚠️ Why lifetime and not a Blueprint poll: see THE BLUEPRINT SEAM below — a Blueprint
+ *  ⛔ CANNOT read fog state today, so C++ lifetime control was the only seam available.
+ *  The fog the GAME can ask about is this, and the class had to exist for the deadline to have a
+ *  home.
  *  ⛔⛔ CORRECTED 2026-09-05 (`TASK-1053`, from `qa/TASK-1051.md`), AND THE REASON IT LASTED IS
  *  THE REUSABLE PART: this sentence said the visual was *"still premise-blocked on `TASK-836`"*
  *  and ⛔ SURVIVED A DELIBERATE SWEEP OF THIS VERY FILE, because that sweep's predicate was the
@@ -72,6 +85,18 @@
  *  `0.0` and answers false forever. ⛔ There is NO suspended fog, NO paused timer and NO
  *  remembered remainder anywhere in this class, and a "resume the fog" implementation would be a
  *  FAIL against his words rather than a missing feature.
+ *  ⚠️⚠️ NARROWED 2026-09-05 (`TASK-1068`), BECAUSE THAT ROW ADDED A TIMER HANDLE TO THIS CLASS
+ *  AND THE SENTENCE ABOVE WOULD OTHERWISE READ AS ITS REFUTATION: *"there is no handler, and
+ *  there is nothing to handle"* is a statement about **THE STATE MACHINE**, and it is ⛔ STILL
+ *  TRUE OF IT — the three states are derived from two deadlines by a lazy comparison and need no
+ *  expiry event at all. ⛔ A **VISUAL** does, because an actor does not despawn itself at a
+ *  deadline nobody reads. ⇒ `FogVisualExpiryTimerHandle` is a ⛔ WAKE-UP, ⛔ NOT AN AUTHORITY:
+ *  its fire-time is DERIVED from `FogActiveUntilTimeSeconds` (never from `FogDurationSeconds`,
+ *  which is ⛔ never re-typed into a second call), it stores no deadline anybody reads back, and
+ *  the function it wakes RE-ASKS `IsFogActive()` rather than acting on the fact that it fired.
+ *  ⇒ ⭐ A timer that fires EARLY re-arms; one that fires LATE destroys a hair late. ⛔ Neither
+ *  can make the machine answer differently in two places, which is the property the ban exists
+ *  to protect.
  *
  *  ⭐ REFRESH, NEVER STACK — AND IT IS TRUE **BY CONSTRUCTION**, NOT BY A GUARD. Jonathan's
  *  ruling `J-F16`: *"If fog is played during fog then the timer is reset to 5 minutes."*
@@ -124,13 +149,25 @@
  *  ⚠️⚠️ SERIALISATION / `CoreRedirects` — DECLARED 2026-09-04, because this class is where the
  *  answer changes. BOTH deadlines (`FogActiveUntilTimeSeconds`, `FogPreventedUntilTimeSeconds`)
  *  are `Transient`: they are never written to a package, so retiring or renaming either can never
- *  orphan a saved value. The FIVE tunables — `FogDurationSeconds`, `BrightSunBaseDurationSeconds`,
- *  `BrightSunBonusSecondsPerStep`, `BrightSunHeightStepUU`, `ArenaGroundReferenceZUU` — are
- *  `EditDefaultsOnly` and therefore ARE serialised, into this class's CDO and into any Blueprint
- *  child OF THIS CLASS. ⛔ RENAMING OR RETIRING ANY OF THE FIVE AFTER SUCH A CHILD EXISTS NEEDS A
- *  `CoreRedirects` ENTRY, or a designer's saved override is silently dropped on load with no error
- *  anywhere. ⚠️ The hazard GREW with `TASK-982` (1 property ⇒ 5) and it is restated rather than
- *  assumed: four of the five are new as of 2026-09-04.
+ *  orphan a saved value. ⛔⛔ THE HAZARD IS STATED AS A **PREDICATE**, ⛔ NOT AS A COUNT
+ *  (`SC-§91`, re-shaped 2026-09-05 by `TASK-1068` — a count in a comment goes stale on the next
+ *  edit, including its own, and the neighbouring paragraph was falsified by exactly that):
+ *  ⭐ **EVERY `EditDefaultsOnly` PROPERTY ON THIS CLASS, whatever their number, IS serialised**
+ *  — into this class's CDO and into any Blueprint child OF THIS CLASS. ⛔ RENAMING OR RETIRING
+ *  ANY OF THEM AFTER SUCH A CHILD EXISTS NEEDS A `CoreRedirects` ENTRY, or a designer's saved
+ *  override is silently dropped on load with no error anywhere.
+ *  Today that predicate selects exactly these, NAMED so a reader can find them (⛔ the names are
+ *  the useful part; ⛔ the arithmetic is not): `FogDurationSeconds`,
+ *  `BrightSunBaseDurationSeconds`, `BrightSunBonusSecondsPerStep`, `BrightSunHeightStepUU`,
+ *  `ArenaGroundReferenceZUU`. ⚠️ The hazard GREW with `TASK-982` (1 property ⇒ 5) and it is
+ *  restated rather than assumed: four of those are new as of 2026-09-04.
+ *  ✅ RE-CHECKED 2026-09-05 (`TASK-1068`, its clause 6a): that row added a class REFERENCE
+ *  (`FogVisualClassPath()`, a plain static — ⛔ not a `UPROPERTY`), three geometry constants
+ *  (`static constexpr` — ⛔ not `UPROPERTY`s), a `Transient` visual handle and a timer handle.
+ *  ⛔ NONE of them is `EditDefaultsOnly`, so the list above is unchanged BY MEASUREMENT rather
+ *  than by omission. ⭐ That was a deliberate design choice and its grounds are on
+ *  `FogVisualClassPath()` — an `EditDefaultsOnly` class pointer would have ADDED a serialisation
+ *  hazard to buy an override that, per the consequence paragraph below, has nowhere to live.
  *
  *  ⛔⛔ WHAT THE 2026-09-04 WORDING GOT WRONG — CORRECTED 2026-09-05 (`TASK-1050`), AND STATED
  *  BLUNTLY BECAUSE IT WAS FALSE RATHER THAN MERELY STALE: it named `/Game/Blueprints/BP_SiegeFog`
@@ -209,15 +246,35 @@
  *  ⇒ A BLUEPRINT CANNOT POLL FOG STATE TODAY, and C++ LIFETIME CONTROL — spawn the visual when fog
  *  rises, destroy it when fog expires — IS THE ONLY AVAILABLE SEAM. Corroborated from the other
  *  side: `list_variables` on `BP_SiegeFog` returned `[]`, so the visual holds no state either.
+ *  ✅ THAT SEAM IS NOW **TAKEN**, ⛔ not merely available (`TASK-1068`, 2026-09-05): it is
+ *  `RefreshFogVisual()` and the three writers that call it. ⭐ AND THE MEASUREMENT ABOVE IS WHAT
+ *  CHOSE THE SHAPE — with no `UFUNCTION` to poll, a Blueprint-side "am I still up?" tick was
+ *  never on the table, which is lucky: it would have put a SECOND opinion about fog liveness in
+ *  an asset nobody reviews. ⚠️ If someone later adds a `UFUNCTION`, that does ⛔ NOT license one.
  *  ⛔ Read this as a measurement carrying a date: if someone later adds a `UFUNCTION`, this sentence
  *  EXPIRES rather than forbids. Until then it constrains every fog-visual row.
  *
- *  🚩 OPEN — ROUTED, ⛔ DELIBERATELY NOT SETTLED HERE (`FOG-§6a`, `TASK-1050` cl. 4): is the
- *  TWO-OBJECT SPLIT (`AFogVolume` = C++ rules + lifetime · `BP_SiegeFog` = vendor visual) THE
- *  DESIGN, or is a real Blueprint child of `AFogVolume` MISSING? ⛔ A comment is the wrong
- *  instrument for that answer and this one does not pretend to give it — it is 🧑 Jonathan's / the
- *  manager's call. ⚠️ Until it is made, the paragraph above tells you the hazard's status; it does
- *  NOT tell you whether the current shape is intended.
+ *  ⚖️✅ **RULED 2026-09-05 — THE QUESTION IS KEPT BECAUSE A RULING THAT ERASES ITS OWN QUESTION
+ *  TEACHES NOBODY** (`FOG-§6a`, raised by `TASK-1050` cl. 4, ⛔ ANSWERED BY THE MANAGER on
+ *  `TASK-1068` cl. 7).
+ *  🚩 THE QUESTION, PRESERVED VERBATIM: is the TWO-OBJECT SPLIT (`AFogVolume` = C++ rules +
+ *  lifetime · `BP_SiegeFog` = vendor visual) THE DESIGN, or is a real Blueprint child of
+ *  `AFogVolume` MISSING?
+ *  ⚖️ **THE ANSWER: THE TWO-OBJECT SPLIT IS THE DESIGN.** ⭐ THE GROUNDS ARE RECORDED SO IT CAN
+ *  BE ARGUED WITH RATHER THAN MERELY OBEYED:
+ *    (a) `BP_SiegeFog`'s ENTIRE VALUE **IS** its vendor parentage — the volumetric material, the
+ *        box mesh and the noise all belong to `BP_FogArea`, and a Blueprint has ⛔ EXACTLY ONE
+ *        parent ⇒ reparenting it to `AFogVolume` would ⛔ DISCARD THE VISUAL, which is the only
+ *        thing it contributes;
+ *    (b) `AFogVolume` must remain the ⛔ ONE state owner regardless, and a state owner that is
+ *        ALSO a vendor visual is strictly harder to keep honest;
+ *    (c) the split is exactly what makes *"the visual READS state, it never OWNS it"*
+ *        enforceable ⛔ BY CONSTRUCTION rather than by review — the visual literally cannot hold
+ *        a deadline, because it holds no variables at all.
+ *  🧑 ⚠️ JONATHAN MAY OVERTURN THIS. It is the manager's ruling, ⛔ not his word, and the
+ *  paragraph is left here (rather than deleted) so that overturning it starts from the argument
+ *  instead of from scratch. ⚠️ It settles the SHAPE only: the `CoreRedirects` paragraph above
+ *  still governs the hazard's STATUS, and the two answers are independent.
  *
  *  `FSiegeFogTuning` is deliberately NOT a member of this actor — see
  *  `handoffs/TASK-998-programmer.md` (its *"STILL NOT a serialized member"* section) for why,
@@ -287,6 +344,12 @@ public:
 	 *
 	 *  ⚠️ SIGNATURE CHANGED 2026-09-04 (`void` ⇒ `bool`, `TASK-982`). Structural probes that
 	 *  extract this body by signature were moved in the same diff.
+	 *
+	 *  ⭐ THE VISUAL — `TASK-1068`, EXIT/ENTRY (i): the SUCCESS path calls `RefreshFogVisual()`
+	 *  immediately after stamping the deadline, which spawns `BP_SiegeFog` and arms the expiry
+	 *  wake-up. ⛔ The REFUSAL path calls ⛔ NOTHING, deliberately: *"nothing is written on this
+	 *  path"* is a property this function's callers depend on, and a reconciler call there would
+	 *  be a no-op that reads like an effect.
 	 */
 	bool RaiseFog();
 
@@ -314,6 +377,13 @@ public:
 	 *  ⚠️ The two-value refusal MESSAGE ("would reduce prevention from X to Y") is ⛔ NOT this
 	 *  function's — it is `TASK-991`, in `SiegePlayerController.cpp`, and it computes `Y` by
 	 *  calling `GetBrightSunWindowSeconds` rather than by casting the card to find out.
+	 *
+	 *  ⭐⭐ THE VISUAL — `TASK-1068`, EXIT (ii), and it is ⛔ REQUIRED RATHER THAN NICE: 🧑 his
+	 *  `FogClear` card is LIVE. A visual that only cleared on natural EXPIRY would mean ⛔ PAYING
+	 *  60 GOLD TO BURN OFF FOG THAT IS STILL ON SCREEN — the card would look broken while working
+	 *  perfectly. The success path calls `RefreshFogVisual()` after zeroing the fog deadline, so
+	 *  the box goes away in the same instant the mechanic says it did. ⛔ The `J-F18` refusal path
+	 *  calls NOTHING: the stored expiry stays bit-identical, so there is nothing to reconcile.
 	 */
 	bool ApplyBrightSun(ETeamId CasterTeam);
 
@@ -330,6 +400,14 @@ public:
 	 *  to clear; it may not know a duration, a ceiling, a density or a window. `TASK-982` added a
 	 *  second timer and the game mode's call site is ⛔ byte-unchanged — which is the whole point
 	 *  of resetting BOTH scalars from in here rather than exposing a second reset entry point.
+	 *  ⭐ `TASK-1068` KEEPS THAT PROPERTY TOO: the visual's despawn is added ⛔ HERE, so
+	 *  `ASiegeGameMode::PlayAgain` stays byte-unchanged AGAIN and still learns no fog policy —
+	 *  it does not know a duration, a ceiling, a density, a window, ⛔ or an asset path.
+	 *
+	 *  ⭐⭐ THE VISUAL — `TASK-1068`, EXIT (iii). ⛔ MISS THIS AND A **FOG CORPSE SURVIVES INTO
+	 *  THE NEXT MATCH**: the deadlines would be zeroed while a fully opaque box stayed in the
+	 *  world with nothing left that would ever destroy it, i.e. a match-2 player blinded by
+	 *  match-1 fog that the simulation believes is gone.
 	 */
 	void ResetFog();
 
@@ -415,6 +493,120 @@ public:
 	 *  never a divide by zero (the same `!(X > 0.f)` shape, which also catches NaN).
 	 */
 	static float BrightSunWindowSeconds(float HeroZUU, float GroundReferenceZUU, float BaseSeconds, float BonusSecondsPerStep, float HeightStepUU);
+
+	//~ ─── ⭐⭐⭐ THE FOG **VISUAL** — `TASK-1068`, `SC-§36.1` instance 2 ─────────────────────
+	//~ ⛔⛔ THE DEFECT THIS SECTION REPAIRS, NAMED SO IT IS NOT REPEATED: `BP_SiegeFog` shipped
+	//~ CORRECT, integration-checked and COMMITTED (`ef2c901`) with ⛔ ZERO CALLERS. Every
+	//~ `BP_SiegeFog` reference in all of `Source/` was ⛔ INSIDE A COMMENT and `L_Arena.umap`
+	//~ held ⛔ ZERO occurrences ⇒ 🧑 he paid 50 gold, the army went 87.8% blind, and ⛔ NOTHING
+	//~ APPEARED. ⭐ An asset with no caller is not a feature; it is a file.
+	//~ ⛔ SPAWN AND DESPAWN ARE ⛔ ONE SEAM: a spawn-only build is ⛔ PERMANENT FOG, FOREVER,
+	//~ with a green suite and nothing red anywhere — *"a seam that can be entered and not left
+	//~ is half a seam"*.
+
+	/**
+	 *  ⭐⭐ THE **ONE** REFERENCE TO THE FOG VISUAL ASSET IN THE WHOLE PROJECT, and it is a
+	 *  FUNCTION rather than a raw literal at a call site precisely so a test can hold it.
+	 *
+	 *  ⛔⛔ THE HAZARD IT IS SHAPED AGAINST: a hardcoded `/Game/` path is a CONTENT DEPENDENCY
+	 *  ⛔ NO TEST CAN SEE BREAK. Rename the asset and every line still compiles, every test still
+	 *  passes, and the fog silently stops appearing — which is ⛔ VERBATIM the failure this row
+	 *  exists to repair, one layer up. ⇒ `Tests/SiegeFogVisualTest.cpp` calls THIS function and
+	 *  asserts the package it names is really on disk, so the rename goes ⛔ RED.
+	 *
+	 *  ⛔ WHY NOT AN `EditDefaultsOnly` `TSoftClassPtr` (the obvious alternative, rejected on
+	 *  measurement rather than taste): `EditDefaultsOnly` is ARCHETYPE-ONLY, `AFogVolume` has
+	 *  ⛔ ZERO Blueprint children (measured — see the `CoreRedirects` paragraph), and the
+	 *  per-property `Config` specifier is absent ⇒ ⛔ THERE IS NOWHERE FOR AN OVERRIDE TO LIVE.
+	 *  It would have bought ⛔ nothing and ⛔ ADDED a `CoreRedirects` obligation to this class.
+	 *  ⛔ WHY NOT A `Config` (`.ini`) PATH: an ini is a SECOND live wire no test reads and no
+	 *  reviewer sees, on a class whose whole doctrine is one source of truth.
+	 *  ⛔ WHY NOT DATA-DRIVEN (a `DT_Cards` column): the visual's lifetime is owned by the STATE,
+	 *  not by the card — `ResetFog` and natural expiry have no card behind them at all — so a
+	 *  card row would be the wrong owner for two of the three exits.
+	 *
+	 *  ⚠️ THE `_C` SUFFIX IS LOAD-BEARING: `/Game/Blueprints/BP_SiegeFog.BP_SiegeFog_C` is the
+	 *  GENERATED CLASS. Without it the path resolves to the `UBlueprint` ASSET, which is not a
+	 *  `UClass` and cannot be spawned — and it fails by returning null, ⛔ silently, which is why
+	 *  the loader below logs at `Error` and the test pins the suffix.
+	 */
+	static const FSoftClassPath& FogVisualClassPath();
+
+	/**
+	 *  ⭐⭐ THE SPAWN TRANSFORM, ⛔ DERIVED — a pure static so the RELATION can be asserted
+	 *  headlessly (the `BrightSunWindowSeconds` testability-seam precedent, followed on purpose).
+	 *  ⛔ Plain C++ static, ⛔ NOT a `UFUNCTION`, ⛔ no defaulted parameters (`SC-§33`).
+	 *
+	 *  ⛔⛔ WHY THE BOX **OVERHANGS** THE ARENA, AND WHY A LITERAL HERE WOULD BE A DEFECT:
+	 *  `TASK-841` §5.2 MEASURED it — sized to the arena EXACTLY, the fog was ⛔ NOT THERE AT THE
+	 *  ARENA EDGE (mean luma `0.6249`, green grass and a crisp castle visible from
+	 *  `(24000, 11000, 1200)`); with the overhang the same camera reads `0.6454`, a total
+	 *  white-out. ⇒ ⛔ A PLAYER STANDING AT THE WALL WOULD HAVE BEEN THE ONLY ONE WHO COULD SEE.
+	 *  The cause is the box mask's feather plus the froxel range: a camera near the boundary has
+	 *  a near-field neighbourhood that is mostly OUTSIDE the dense core.
+	 *
+	 *  ⭐ WHAT IS DERIVED (`SC-§34`) — the arena half-extent comes from its ONE owner,
+	 *  `USiegeScatterConfig::ArenaHalfExtent`, and the ground datum from `ArenaGroundReferenceZUU`
+	 *  (`J-F13`). ⇒ resize the arena and the fog box follows; ⛔ a hand-typed `640` goes RED.
+	 *  ⚠️ WHAT IS **NOT** DERIVABLE and is therefore a NAMED CONSTANT carrying its derivation
+	 *  (⛔ never a bare number at a call site): the horizontal margin lives on a LEVEL ACTOR and
+	 *  the ceiling is a TUNED CHOICE with no owner in code. Both are below.
+	 */
+	static FTransform FogVisualTransform(const FVector2D& ArenaHalfExtentUU, float GroundReferenceZUU);
+
+	/**
+	 *  ⛔ THE MARGIN, AND IT IS **NOT** A DESIGN NUMBER — it is `L_Arena`'s `ExponentialHeightFog_0`
+	 *  `VolumetricFogDistance`, read live as `6000` under `TASK-841` §3.2. That is the radius
+	 *  within which the pack can render AT ALL, so it is exactly how far outside the play area the
+	 *  dense core must start for a camera ON the boundary to be inside it.
+	 *  ⛔ IT CANNOT BE DERIVED FROM CODE: its owner is an actor placed in a map this project may
+	 *  ⛔ NEVER SAVE. ⇒ transcribed ONCE, here, with its source — ⛔ never at a call site.
+	 *  ⚠️ WHAT FALSIFIES IT: anyone changing `VolumetricFogDistance` in `L_Arena`. The failure is
+	 *  a CLEAR CORNER, and it is invisible from the centre of the map — which is where every
+	 *  screenshot gets taken.
+	 *
+	 *  ⭐ IT IS ALSO THE **BELOW-GROUND DEPTH**, deliberately reusing one number rather than
+	 *  inventing a second: the volume must start below the walk surface or a camera at ground
+	 *  level sits on the box's own face, where the same feather thins it out.
+	 */
+	static constexpr float FogVisualHorizontalMarginUU = 6000.f;
+
+	/**
+	 *  ⛔ THE CEILING — a TUNED CHOICE with ⛔ NO OWNER IN CODE, `20000` uu above the ground
+	 *  datum (`TASK-841` §2, read back live as the box's `max Z`). ⛔ Named rather than typed,
+	 *  because a bare `20000` at a call site is the shape `SC-§34` exists to prevent.
+	 *  ⚠️ CONSEQUENCE (`HIGH-§1`): this is the altitude above which the battlefield is clear.
+	 *  ⛔ Lowered under the hero's reachable height, a player on a ×2 Watch Tower (~2,400 uu)
+	 *  pokes out of the fog and sees the whole map while everyone below is blind — an
+	 *  ⛔ ASYMMETRY the fog mechanic is explicitly not allowed to have. ⛔ Raised without limit it
+	 *  costs froxel resolution for volume nobody can ever occupy.
+	 */
+	static constexpr float FogVisualCeilingAboveGroundUU = 20000.f;
+
+	/**
+	 *  ⛔ `/Engine/BasicShapes/Cube` is `100` uu on an edge, so a component scale of `1` spans
+	 *  ±50. ⇒ `Scale = FullExtent / 100`. ⛔ An ENGINE fact, not a design one; it is named so the
+	 *  division at the call site reads as a unit conversion rather than as a magic constant.
+	 *  ⚠️ The mesh is INHERITED from the vendor `BP_FogArea` and cannot be overridden on the child
+	 *  through MCP (`TASK-841` §2's declared tooling gap), which is exactly why the arena scale
+	 *  rides the SPAWN TRANSFORM instead of living in the asset.
+	 */
+	static constexpr float FogVisualUnitCubeEdgeUU = 100.f;
+
+	/**
+	 *  ⛔⛔ TEARDOWN — THE FOURTH WAY OUT OF FOGGED, AND IT IS NOT A STATE TRANSITION.
+	 *  `TASK-1068` cl. 3a enumerates THREE exits from the fog STATE (expiry · `BrightSun` ·
+	 *  `ResetFog`) and that enumeration is complete. This is not a fourth one: the state does not
+	 *  change here, ⛔ THE STATE'S OWNER CEASES TO EXIST.
+	 *  ⭐ WHY IT IS WORTH THE OVERRIDE EVEN THOUGH A WORLD TEARDOWN IS FREE: `EndPlay` also fires
+	 *  for `Destroyed` and `LevelTransition`, where the WORLD SURVIVES. Without this, destroying
+	 *  the state actor would leave the visual behind with ⛔ NOBODY LEFT HOLDING THE REFERENCE —
+	 *  a fog box no code can ever find again, i.e. ⛔ permanent fog with a green suite, which is
+	 *  the exact failure this row exists to prevent, arriving through the back door.
+	 *  ⛔ It is ⛔ NOT relying on `SpawnParams.Owner`: UE does not cascade `Destroy()` to owned
+	 *  actors, and building on that belief is how the orphan happens.
+	 */
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 protected:
 
@@ -599,4 +791,77 @@ private:
 	 */
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|BrightSun", meta = (AllowPrivateAccess = "true"))
 	double FogPreventedUntilTimeSeconds = 0.0;
+
+	//~ ─── ⭐⭐⭐ THE VISUAL'S LIFETIME — `TASK-1068` ──────────────────────────────────────────
+
+	/**
+	 *  ⭐⭐⭐ **THE ONE RECONCILER.** ⛔ It makes the WORLD agree with `IsFogActive()`, and it is
+	 *  the ⛔ ONLY function in the project that spawns or destroys the fog visual.
+	 *
+	 *  ⛔⛔ IT READS STATE; IT NEVER OWNS IT. It stores ⛔ NO deadline, keeps ⛔ NO `bool`, and
+	 *  ⛔ NEVER re-types `FogDurationSeconds` — its wake-up delay is
+	 *  `FogActiveUntilTimeSeconds − now`, i.e. DERIVED from the one scalar every time.
+	 *  ⭐ `IsFogActive()` stays the ⛔ ONE predicate: this function ASKS it rather than
+	 *  remembering what it was told, which is what makes an early or late timer harmless.
+	 *
+	 *  ⭐⭐ WHY A RECONCILER RATHER THAN A "SPAWN HERE / DESPAWN THERE" PAIR — this is the
+	 *  design decision of the row and it is written down so nobody "simplifies" it back:
+	 *  ⛔ a pair has to be CORRECT AT EVERY CALL SITE and there are three of them plus a timer;
+	 *  ⭐ a reconciler is IDEMPOTENT, so every writer of the deadline can call the SAME line
+	 *  unconditionally, immediately after it writes, and a FOURTH writer added later gets the
+	 *  visual right by copying one call rather than by understanding the mechanic.
+	 *
+	 *  ⛔ CALLERS — and this list is the whole safety argument, so it is exhaustive by
+	 *  construction: the three functions that write either deadline (`RaiseFog`,
+	 *  `ApplyBrightSun`, `ResetFog`) and the expiry wake-up. ⛔ There is ⛔ NO `Tick` and
+	 *  ⛔ NO poll; `PrimaryActorTick.bCanEverTick` stays `false`.
+	 */
+	void RefreshFogVisual();
+
+	/**
+	 *  Loads `FogVisualClassPath()` and spawns it at `FogVisualTransform(...)`.
+	 *  ⛔⛔ A MISSING OR FAILED CLASS LOAD IS **LOUD** — `Error`, naming the exact path AND the
+	 *  function that produced it — ⛔ NEVER silently null. 🧑 The cards' own VFX spawn is
+	 *  null-safe, and that is ⛔ PRECISELY why his missing spell VFX were INVISIBLE rather than
+	 *  ERRORING (`TASK-1025`). ⛔ Do not reproduce that failure one layer up.
+	 *  ⚖️⛔ AND THE BOUNDARY OF *"LOUD"*: ⛔ LOUD IN THE LOG, ⛔ NEVER IN THE GAMEPLAY. A visual
+	 *  that fails to load must ⛔ NOT refuse the card, ⛔ not consume-and-abort, and ⛔ not change
+	 *  one clamp — the fog MECHANIC keeps working with no visual, because an art failure may
+	 *  ⛔ never brick a 50-gold card.
+	 */
+	void SpawnFogVisual();
+
+	/**
+	 *  Destroys the visual if one is up, and clears the handle. ⛔ Idempotent and safe to call
+	 *  when nothing was ever spawned — which is why every exit can call it unconditionally.
+	 */
+	void DestroyFogVisual();
+
+	/**
+	 *  ⭐⭐ THE SPAWNED VISUAL — ⛔ **NOT A STATE DUPLICATE**, and the distinction is exactly the
+	 *  one `FogVolume.h`'s *"do not add a companion `bool bFogActive`"* ban is about.
+	 *  ⛔ A flag is a SECOND ANSWER to "is fog up?" that can disagree with the first. This is not
+	 *  an answer to anything — it is ⛔ THE ACTOR'S OWN PRESENCE, the handle you need in order to
+	 *  `Destroy()` the thing you spawned. ⭐ Nothing ever BRANCHES on fog state by reading it:
+	 *  the only question asked of it is *"is there an actor to destroy / do I need to make one?"*,
+	 *  and `IsFogActive()` remains the sole predicate above it.
+	 *  ⛔ REQUIRED, not optional: `BP_SiegeFog` is ⛔ NOT an `AFogVolume` subclass (parent
+	 *  `BP_FogArea_C`, read back LIVE under `TASK-1043`) ⇒ `TActorIterator<AFogVolume>` will
+	 *  ⛔ NEVER see it and a `Find`-style sweep returns ⛔ NOTHING, ⛔ SILENTLY. ⇒ ⛔ HOLD the
+	 *  reference; ⛔ do NOT re-find it later.
+	 *  `Transient` for the same reason both deadlines are: per-match runtime state that must
+	 *  never be written into a package.
+	 */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Fog", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<AActor> FogVisualActor;
+
+	/**
+	 *  ⭐ THE EXPIRY WAKE-UP. ⛔ NOT a second deadline and ⛔ not a second source of truth — see
+	 *  the one-way-door paragraph in the class doc, which states the whole argument. Its rate is
+	 *  computed from `FogActiveUntilTimeSeconds` at every arming, it is read back by nobody, and
+	 *  the function it calls re-asks `IsFogActive()` instead of trusting that it fired.
+	 *  ⛔ It exists because natural expiry is the ⛔ ONE exit with ⛔ NO WRITER: the deadline
+	 *  simply passes, and an actor does not despawn itself at an instant nobody reads.
+	 */
+	FTimerHandle FogVisualExpiryTimerHandle;
 };
