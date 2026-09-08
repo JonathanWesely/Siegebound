@@ -131,6 +131,27 @@ public:
 	void ConfirmTogglePressed(bool bChecked);
 
 	/**
+	 *  TASK-1115 [GFX-PANEL] — the "Graphics" entry in the settings tree, and the
+	 *  ONLY route into USiegeGraphicsMenuWidget.
+	 *
+	 *  It CreateWidget + AddToViewport(ZOrder 20) — ABOVE this panel's own 10 —
+	 *  and DELIBERATELY DOES NOT remove this panel, which is the TASK-438
+	 *  navigation shape cloned one level deeper:
+	 *      WBP_MainMenu --(Btn_Settings)--> USettingsMenuWidget @ 10
+	 *      USettingsMenuWidget --(GraphicsButton)--> Graphics   @ 20
+	 *  ⇒ the Graphics panel's Back is RemoveFromParent() on ITSELF and nothing
+	 *  else, and the player lands back here on a panel that was never destroyed.
+	 *
+	 *  🚨 /Game/UI/WBP_MainMenu IS NEVER OPENED by this lane (GFX-§1 / board
+	 *  cl. 6): the entry lives in THIS code-authored tree, so the whole graphics
+	 *  feature costs ZERO .uasset writes and ZERO Jonathan UMG minutes.
+	 *
+	 *  Null-safe: no owning player controller ⇒ logged, no panel, never fatal.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Settings")
+	void GraphicsPressed();
+
+	/**
 	 *  Fired at the widget for presentation on top of what C++ already does to
 	 *  the bound controls - once when the row is SEEDED (so a future
 	 *  WBP_SettingsMenu never opens stale: the qa/TASK-005 major-2 lesson) and
@@ -173,6 +194,10 @@ protected:
 	/** OnClicked thunk for BackButton. Forwards to BackPressed. */
 	UFUNCTION()
 	void HandleBackClicked();
+
+	/** OnClicked thunk for GraphicsButton (TASK-1115). Forwards to GraphicsPressed. */
+	UFUNCTION()
+	void HandleGraphicsClicked();
 
 	/**
 	 *  USiegeSettingsSubsystem::OnSettingsChanged handler. Re-reads the confirm
@@ -242,6 +267,20 @@ protected:
 	/** The toggle's explanatory hint - and the surface that says WHY the row is disabled when the subsystem is missing. */
 	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|Settings", meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> ConfirmToggleHintText;
+
+	/**
+	 *  TASK-1115 [GFX-PANEL] — opens the Graphics submenu. GFX-§10 pins BOTH names
+	 *  character-for-character (`GraphicsButton` + `GraphicsLabelText`), and board
+	 *  cl. (6) pins the position: ABOVE BackButton, so Back stays last.
+	 *  BindWidgetOptional like every other child — a future WBP_SettingsMenu using
+	 *  these names binds here and the code-authored branch never runs.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|Settings", meta = (BindWidgetOptional))
+	TObjectPtr<UButton> GraphicsButton;
+
+	/** "Graphics" — the button's content text. */
+	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|Settings", meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> GraphicsLabelText;
 
 	/** Dismisses this panel only. */
 	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|Settings", meta = (BindWidgetOptional))

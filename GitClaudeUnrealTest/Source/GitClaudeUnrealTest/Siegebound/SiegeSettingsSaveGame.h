@@ -72,4 +72,35 @@ public:
 	 */
 	UPROPERTY()
 	bool bAssistantConfirmBeforeExecute = true;
+
+	/**
+	 *  ⭐ SETTING #2 (TASK-1120, `GFX-§7`): show the in-match FPS / frame-time
+	 *  counter. The player opts in from Settings → Graphics.
+	 *
+	 *  ⛔ DEFAULT IS false (OFF), AND THAT IS A RULING, NOT TIMIDITY (board cl. 4).
+	 *  A permanent counter on a shipped game's HUD is debug UI; it is on screen for
+	 *  every second of every match, over the battlefield, forever. The player who
+	 *  wants to tune asks for it — and the moment they ask, they get a number
+	 *  measured in `L_Arena` rather than in the menu, which is the whole point of
+	 *  `GFX-§7`'s second clause.
+	 *
+	 *  ⛔ AND THIS IS THE ONE NAMED EXCEPTION TO `GFX-§3` (per-machine, not
+	 *  per-profile). Every OTHER graphics value lives in `UGameUserSettings`
+	 *  because it describes HARDWARE; this one describes a PREFERENCE about UI, so
+	 *  it belongs to the person and follows them across machines with their
+	 *  account. `GFX-§3` names this field as the exception in so many words — it is
+	 *  not an inconsistency to be tidied away later.
+	 *
+	 *  ⚠️ THE VERSIONING STORY IS THE SAME ONE THE CLASS COMMENT ALREADY PAID FOR:
+	 *  tagged-property serialization means a `.sav` written before this field
+	 *  existed simply does not carry it, so it loads at the C++ default above.
+	 *  ⛔ NO version int32 was added and NO migration code was written; adding
+	 *  either would be the defect, not the safeguard.
+	 *
+	 *  ⚠️ AND, LIKE ITS NEIGHBOUR, THIS DEFAULT IS THE SINGLE SOURCE OF TRUTH FOR
+	 *  THE FALLBACK. `USiegeSettingsSubsystem` reads it off the CDO rather than
+	 *  repeating the literal; an automation test asserts the two agree.
+	 */
+	UPROPERTY()
+	bool bShowFrameRateCounter = false;
 };

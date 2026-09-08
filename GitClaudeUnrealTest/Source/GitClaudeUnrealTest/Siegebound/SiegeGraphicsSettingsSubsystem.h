@@ -122,7 +122,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSiegeGraphicsSettingsChanged, FNa
  *  ⚠️ THE FALLBACKS DELIBERATELY PRESERVE THE AUTHORED BASELINE (Epic / full
  *  density / fog on). A lookup failure must never silently DOWNGRADE the game —
  *  a thinner scatter caused by a failed subsystem lookup would also be a
- *  server-vs-client determinism hazard (see GetFoliageDensityScale).
+ *  server-vs-client determinism hazard (see GetFoliageQualityScale).
  *
  *  ─────────────────────────────────────────────────────────────────────────
  *  HOW CONSUMERS RESOLVE IT (the USiegeSettingsSubsystem snippet, unchanged)
@@ -130,12 +130,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSiegeGraphicsSettingsChanged, FNa
  *      UGameInstance* GI = GetGameInstance();          // or Actor->GetGameInstance()
  *      USiegeGraphicsSettingsSubsystem* Graphics =
  *          GI ? GI->GetSubsystem<USiegeGraphicsSettingsSubsystem>() : nullptr;
- *      const float Density = Graphics ? Graphics->GetFoliageDensityScale() : 1.0f;
+ *      const float Density = Graphics ? Graphics->GetFoliageQualityScale() : 1.0f;
  *
  *  M8 DECLARATION: adds no replicated property, no new replicated class, no new
  *  relevancy tier. Every value here is per-machine by construction (GFX-§3) and
  *  governs LOCAL presentation only. ⚠️ THAT IS ALSO A CONSTRAINT ON CONSUMERS:
- *  see the determinism warning on GetFoliageDensityScale().
+ *  see the determinism warning on GetFoliageQualityScale().
  */
 UCLASS()
 class GITCLAUDEUNREALTEST_API USiegeGraphicsSettingsSubsystem : public UGameInstanceSubsystem
@@ -553,6 +553,16 @@ public:
 	 *  simply DIFFERS from the last confirmed one. Every save in this facade is
 	 *  refused while it is true.
 	 *
+	 *  🚨 IT IS AN `||` WITH A **LATCH** ON THE LEFT, NOT A COMPARISON. The first
+	 *  successful ApplyVideoModeProvisional() sets bVideoModeChangePending and
+	 *  ONLY CloseVideoModeWindow (i.e. Confirm or Revert) clears it — so once
+	 *  anything has been applied this stays true even after the staged fields come
+	 *  back to the confirmed ones. ⛔ DO NOT read this name as "the staged mode
+	 *  differs": that reading shipped a dead branch in the menu
+	 *  (qa/TASK-1119.md BLOCKER-1). If you want the comparison ALONE — "has the
+	 *  player stepped back to where they started?" — call
+	 *  HasUnconfirmedVideoModeDifference() below.
+	 *
 	 *  ⚠️ IT DELIBERATELY DOES NOT USE THE ENGINE'S IsScreenResolutionDirty() /
 	 *  IsFullscreenModeDirty(). Those compare the staged value against the LIVE
 	 *  VIEWPORT (GSystemResolution / Viewport->GetWindowMode()) and BOTH RETURN
@@ -565,6 +575,30 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Graphics")
 	bool IsVideoModeChangePending() const;
+
+	/**
+	 *  ⭐ THE RIGHT-HAND HALF OF IsVideoModeChangePending(), ON ITS OWN AND WITH
+	 *  NO LATCH: TRUE only while the STAGED resolution / window mode actually
+	 *  DIFFERS from the last confirmed one.
+	 *
+	 *  It exists because those are two different questions and one name was
+	 *  answering both. "Is a confirmation window open?" is the latched one and it
+	 *  governs the save refusal. "Is there still a difference to confirm?" is this
+	 *  one, and it is the only one that can see a player STEP BACK to the mode
+	 *  they started in (three ">" presses on Window Mode wrap all the way round).
+	 *
+	 *  ⛔ DO NOT SUBSTITUTE THIS FOR IsVideoModeChangePending() AT THE SAVE
+	 *  REFUSAL OR IN DiscardStagedVideoMode's GUARD. Those need the latch: a
+	 *  provisional apply that has already reached the display must still be closed
+	 *  when the staged fields come back to the confirmed ones, or the facade
+	 *  refuses every save for the rest of the session with nothing left to revert.
+	 *
+	 *  ⚠️ Same instrument as IsVideoModeChangePending(): staged-vs-LastConfirmed,
+	 *  NOT the engine's IsScreenResolutionDirty()/IsFullscreenModeDirty(), which
+	 *  read "clean" whenever there is no GameViewport.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Graphics")
+	bool HasUnconfirmedVideoModeDifference() const;
 
 	/** The player pressed "Keep": ConfirmVideoMode() stamps the LastConfirmed* fields, then the save is released and flushed. */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Graphics")
@@ -640,7 +674,14 @@ public:
 	// (:322) and the client mirror (:360) pass through, before any placement.
 
 	/**
-	 *  Foliage/scatter density multiplier derived from the Foliage group:
+	 *  ⛔ RENAMED FROM GetFoliageDensityScale() BY GFX-§9's NAME RULING 2026-09-07
+	 *  (executed by TASK-1118 cl. 10a). The old name cited `foliage.DensityScale`,
+	 *  an ENGINE CVar this project does not read — a false citation of a lever that
+	 *  section STRUCK — while the ladder below is PROJECT-INVENTED. Nothing was lost
+	 *  by the rename, and a struck lever lost the name it would have come back under.
+	 *  ⛔ The determinism prohibition further down is UNCHANGED and STAYS.
+	 *
+	 *  The scatter-quality scale derived from the Foliage group:
 	 *      Low 0.25 · Medium 0.50 · High 0.75 · Epic 1.00 · Cinematic 1.00
 	 *
 	 *  Epic is 1.00 because DA_BattlefieldScatter's AUTHORED values ARE the Epic
@@ -666,7 +707,7 @@ public:
 	 *  ruling; this getter owes the warning, and here it is.
 	 */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Graphics")
-	float GetFoliageDensityScale() const;
+	float GetFoliageQualityScale() const;
 
 	/**
 	 *  THE PROJECT-SIDE cull-band multiplier derived from the View Distance group.
@@ -777,7 +818,26 @@ public:
 	/** How many times the facade decided to call UGameUserSettings::SaveSettings. ⛔ Must stay 0 across a provisional video-mode change. */
 	int32 SaveSettingsCallCount = 0;
 
-	/** How many saves were REFUSED because a video-mode change was still unconfirmed (GFX-§4). */
+	/**
+	 *  How many OPERATIONS were refused because a video-mode change was still
+	 *  unconfirmed (GFX-§4) — a save at RequestSaveSettings, OR the hardware
+	 *  benchmark at AutoDetectQuality.
+	 *
+	 *  ⛔ THE WORD "OPERATIONS" IS THE CORRECTION, NOT A FLOURISH (gate
+	 *  qa/TASK-1114.md § LOOP 1 NIT-8, executed by TASK-1118 cl. 10b). The doc
+	 *  used to say "saves", which is narrower than what the counter counts: the
+	 *  AutoDetectQuality refusal added by that loop's blocker fix bumps it too,
+	 *  and that refusal is a BENCHMARK refusal, not a save.
+	 *
+	 *  ⚠️ AND IT IS NOT A DIAGNOSTIC LIKE THE THREE ABOVE — IT IS THE LOAD-BEARING
+	 *  INSTRUMENT OF THIS WHOLE LANE. SaveSettingsCallCount reads 0 on a broken
+	 *  build AND a fixed one (the engine's own save inside
+	 *  ApplyHardwareBenchmarkResults is not at a counted facade call site), and
+	 *  under the automation seam so does the bool AutoDetectQuality() returns.
+	 *  This counter is the only thing that tells those two zeroes apart, which is
+	 *  why M13, TASK-1115's Back test and TASK-1118's countdown tests all assert
+	 *  it rather than a boolean.
+	 */
 	int32 RefusedSaveWhileVideoModePendingCount = 0;
 
 	// ──────────────────────── AUTOMATION-ONLY SEAMS ────────────────────────

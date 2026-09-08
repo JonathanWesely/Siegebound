@@ -67,7 +67,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSiegeSettingsChanged, FName, Sett
  *  ⛔ AND IT GATES NO KEY. §2 of the assistant law is unchanged: every keyboard
  *  command still works byte-identically and no setting may ever gate one.
  *
- *  ─── HOW TO ADD SETTING #2 (this is deliberately not a one-setting class) ───
+ *  ─── HOW TO ADD A SETTING (this is deliberately not a one-setting class) ───
  *   1. Add a UPROPERTY to USiegeSettingsSaveGame (tagged-property serialization
  *      means old .sav files load it at its C++ default — no version field, no
  *      migration code).
@@ -77,7 +77,23 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSiegeSettingsChanged, FName, Sett
  *      one-line forward to ApplyBoolSetting(...) (or its typed sibling), which
  *      already owns the no-op check, the save and the broadcast.
  *   4. Extend LoadSettingsFromSlot()'s apply block by one line.
- *  Nothing in steps 1-4 touches the slot contract, the delegate, or any consumer.
+ *   5. 🚨⭐ EXTEND SaveSettingsToSlot() BY ONE LINE — `SaveObj-><Field> = <Field>;`.
+ *
+ *  🚨⭐ STEP 5 WAS MISSING FROM THIS RECIPE UNTIL TASK-1120 (which is setting #2)
+ *  FOLLOWED IT AND FOUND THE HOLE. It is recorded here rather than quietly fixed,
+ *  because the failure it produces is the nastiest shape a settings bug has:
+ *  SaveSettingsToSlot() copies the in-memory values onto a FRESHLY CONSTRUCTED
+ *  SaveGame object field by field, so a setting added by steps 1-4 alone would
+ *  be written to disk AT ITS C++ DEFAULT, every time, forever. In the running
+ *  session everything looks perfect — the getter returns the new value, the
+ *  delegate fires, the UI updates, the save reports SUCCESS — and the preference
+ *  silently evaporates on the next launch, with no error and nothing in the log
+ *  to point at. ⛔ A steps-1-4 setting is not "unfinished", it is WRONG WHILE
+ *  APPEARING CORRECT (SC-§94 cl. A). An automation test now pins it: the
+ *  round-trip test below loads into a SECOND store rather than re-reading the
+ *  first, which is what makes step 5's absence a red instead of a green.
+ *
+ *  Nothing in steps 1-5 touches the slot contract, the delegate, or any consumer.
  *
  *  M8 DECLARATION (§8, verbatim): adds no replicated property, no new replicated
  *  class, no new relevancy tier. The settings value is client-local by
@@ -119,6 +135,22 @@ public:
 	static const FName SettingName_AssistantConfirmBeforeExecute;
 
 	/**
+	 *  ⭐ SETTING #2's delegate payload (TASK-1120, `GFX-§7`, pinned by `GFX-§10`)
+	 *  == FName(TEXT("bShowFrameRateCounter")) — the same token as the SaveGame
+	 *  field, exactly as its neighbour above, so the payload, the field and the law
+	 *  stay one greppable word.
+	 *
+	 *  ⛔ IT IS A DIFFERENT NAME FROM ITS NEIGHBOUR AND THAT IS THE POINT: a
+	 *  consumer that filters on the payload (the in-match counter does not; the
+	 *  Graphics panel's row does) must be able to tell the two settings apart. An
+	 *  automation test asserts the payload of a frame-counter change is THIS name
+	 *  and not the confirm toggle's — a broadcast COUNT could not tell them apart,
+	 *  and this lane has already shipped one counter that read identically under a
+	 *  correct and a broken branch (qa/TASK-1119.md § LOOP 1, the M21 coincidence).
+	 */
+	static const FName SettingName_ShowFrameRateCounter;
+
+	/**
 	 *  PURE IN-MEMORY READ — no disk, no allocation, safe on the order path.
 	 *  True (the default) means the assistant shows the parsed order + ghost
 	 *  circles for a HUMAN review step before executing.
@@ -138,6 +170,29 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Settings")
 	void SetAssistantConfirmEnabled(bool bEnabled);
+
+	/**
+	 *  ⭐ SETTING #2 (TASK-1120): does the player want the in-match FPS /
+	 *  frame-time counter on screen? PURE IN-MEMORY, no disk — it is read once
+	 *  when the in-match counter is created and again on every broadcast, never
+	 *  per frame.
+	 *
+	 *  ⛔ AND THE FALLBACK WHEN THIS SUBSYSTEM DOES NOT RESOLVE IS false, which is
+	 *  the OPPOSITE polarity to IsAssistantConfirmEnabled()'s true — deliberately.
+	 *  There the fail-safe direction is MORE human review; here it is LESS debug
+	 *  UI. A lookup failure must never put a diagnostic overlay on a shipped
+	 *  player's battlefield.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Settings")
+	bool IsFrameRateCounterEnabled() const;
+
+	/**
+	 *  Writes the in-memory value AND saves the slot — but only on a real change,
+	 *  through the same one mutation path as its neighbour. A same-value write is
+	 *  a complete no-op: no disk write, no broadcast.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Settings")
+	void SetFrameRateCounterEnabled(bool bEnabled);
 
 	/**
 	 *  Broadcast on every ACTUAL value change, never on a no-op write. UI
@@ -236,6 +291,9 @@ private:
 
 	/** In-memory confirm-toggle value. Mirrors USiegeSettingsSaveGame's C++ default; LoadSettingsFromSlot re-derives the fallback from that class's CDO so the two cannot drift (an automation test asserts they agree). */
 	bool bAssistantConfirmBeforeExecute = true;
+
+	/** ⭐ In-memory in-match FPS-counter preference (TASK-1120). Same drift guard as its neighbour: the literal below and USiegeSettingsSaveGame's C++ default are asserted equal by an automation test, and only the SaveGame's is ever used as the load fallback. */
+	bool bShowFrameRateCounter = false;
 
 	/** ⛔ Automation only (SetSlotNameForAutomationTests). Empty in every shipped path. */
 	FString SlotNameOverride;

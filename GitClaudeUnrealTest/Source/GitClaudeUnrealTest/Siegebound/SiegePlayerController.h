@@ -29,6 +29,7 @@ class UStaticMesh;
 class UUserWidget;
 class UWarMapWidget; // TASK-563: the battlefield war map (class authored by TASK-560) — created LAZILY on the first successful open, never at BeginPlay
 class USiegeControlsHelpWidget; // TASK-706: the TAB controls overlay (`HELP-§3`) — created LAZILY on the first open, never at BeginPlay
+class USiegeFrameRateCounterWidget; // TASK-1120 (`GFX-§7`): the in-match FPS/frame-time counter — created EAGERLY beside the HUD and COLLAPSED unless the player opted in
 
 /**
  *  Broadcast whenever a card play is refused for a player-facing reason
@@ -3505,6 +3506,56 @@ private:
 
 	/** Retry counter for TryInitHUD (client PS-proxy arrival wait). */
 	int32 HUDInitAttempts = 0;
+
+	// ── TASK-1120 [GFX-FPS] — THE IN-MATCH FPS / FRAME-TIME COUNTER (`GFX-§7`) ──
+
+	/**
+	 *  🚨⭐⭐ THE SITE THAT MAKES `GFX-§7` TRUE, AND IT IS DELIBERATELY *HERE* AND
+	 *  NOT IN THE GRAPHICS MENU. A readout that only ever appeared in the Graphics
+	 *  panel would be measured in `L_MainMenu` — ⛔ no ~340 scatter trees, ⛔ no
+	 *  ~24k grass instances, ⛔ no volumetric fog, ⛔ no Lumen-lit battlefield. The
+	 *  number would be flattering, the tuning loop built on it would be fake, and
+	 *  🧑 Jonathan's "decide what to adjust for performance versus visual quality"
+	 *  would be a guess wearing a number. ⛔ THE COST IS IN `L_Arena`, SO THE
+	 *  INSTRUMENT IS CREATED BY THE MATCH'S OWN CONTROLLER.
+	 *
+	 *  ⚠️ CREATED EAGERLY, beside the HUD, and NOT lazily like the console / war
+	 *  map / help overlay — a deliberate departure from those three. They are
+	 *  opened by a keypress, so "create on first open" has an event to hang on.
+	 *  This one is driven by a PERSISTED PREFERENCE that may already be on when
+	 *  the match starts, and a lazy path would need a second creation site for the
+	 *  mid-match toggle — which is exactly the shape that ships "works on a fresh
+	 *  match, silently dead after Play Again" (`SC-§94`; `TASK-1122` found the
+	 *  same class of defect in the scatter's reuse path).
+	 *
+	 *  ⛔ WITH THE PREFERENCE OFF — THE DEFAULT — THIS COSTS ESSENTIALLY NOTHING:
+	 *  the widget collapses itself in NativeConstruct and starts no timer, and it
+	 *  never ticks in either state. It is not gated on the preference here on
+	 *  purpose: one creation site, one visibility writer (the widget's own
+	 *  ApplyFrameRateCounterPreference).
+	 *
+	 *  Local-controller only, like the HUD: this is local player UI and a
+	 *  server-side copy of a remote client's PC must never create one.
+	 */
+	void TryInitFrameRateCounter();
+
+	/**
+	 *  ZOrder for the in-match counter. ⛔ ABOVE the HUD (0), the victory screen
+	 *  (10) and the war map (25): a counter the victory screen covers is a counter
+	 *  that disappears at the exact moment a player is comparing this match's
+	 *  frame rate to the last one's. It is `HitTestInvisible`, so sitting on top
+	 *  of everything costs no input.
+	 */
+	static constexpr int32 FrameRateCounterZOrder = 30;
+
+	/**
+	 *  The in-match counter instance (TASK-1120). Non-null for the whole match on
+	 *  the owning machine once TryInitFrameRateCounter has run, whether or not the
+	 *  player opted in — COLLAPSED and timer-less when they did not. Torn down in
+	 *  EndPlay like every other viewport widget this controller owns.
+	 */
+	UPROPERTY(Transient)
+	TObjectPtr<USiegeFrameRateCounterWidget> FrameRateCounterWidget;
 
 	/** Victory screen instance (created by HandleMatchEnd). */
 	UPROPERTY(Transient)

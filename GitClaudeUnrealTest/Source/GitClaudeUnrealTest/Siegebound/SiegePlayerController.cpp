@@ -38,6 +38,7 @@
 #include "Siegebound/SiegeCheatManager.h" // TASK-121 — CheatClass complete-type (constructor assignment below)
 #include "Siegebound/SiegeCombatStatics.h" // TASK-1132 (WITCH-§8): FSiegeCombatStatics — the ONE shipped veil predicate, consulted by the 30-gold enemy-reveal survey. ⛔ READ ONLY: this controller adds no rule and owns none.
 #include "Siegebound/SiegeControlsHelpWidget.h" // USiegeControlsHelpWidget — complete type for CreateAndAddToViewport / OpenHelp / CloseHelp / the OnHelpOpenChanged binding (TASK-706, `HELP-§3`)
+#include "Siegebound/SiegeGraphicsMenuWidget.h" // USiegeFrameRateCounterWidget — complete type for CreateAndAddToViewport (TASK-1120, `GFX-§7`); the counter class ships in the graphics lane's own file pair
 #include "Siegebound/SiegeDeckSaveGame.h" // USiegeDeckSaveGame — active saved deck source (M6 TASK-114)
 #include "Siegebound/SiegeFeedbackLibrary.h" // M7 §6 audio hooks (TASK-179): card play/discard/spell/end-of-match
 #include "Siegebound/SiegeGameMode.h" // M8 (TASK-356): RequestPlayAgain resolves the server GameMode (doc §4.2)
@@ -340,6 +341,12 @@ void ASiegePlayerController::BeginPlay()
 	// above, widgets after; doc §10).
 	TryInitHUD();
 
+	// ⭐⭐ TASK-1120 (`GFX-§7`): the in-match FPS / frame-time counter, created
+	// beside the HUD. ⛔ It is NOT gated on the preference here — the widget reads
+	// the preference itself and collapses when it is off, so there is exactly ONE
+	// creation site and ONE visibility writer. See TryInitFrameRateCounter.
+	TryInitFrameRateCounter();
+
 	// Group-order maintenance (TASK-344): the 1 s reaper removes all-dead groups
 	// and their markers (the CONVENTIONS ≤1 s marker-removal law). Armed once for
 	// the controller's lifetime — trivially cheap at 1 Hz while no groups exist.
@@ -397,6 +404,60 @@ void ASiegePlayerController::TryInitHUD()
 			TEXT("ASiegePlayerController '%s': HUD widget class '%s' not found (built in TASK-011) — continuing without a HUD."),
 			*GetNameSafe(this), *HUDWidgetClass.ToString());
 	}
+}
+
+void ASiegePlayerController::TryInitFrameRateCounter()
+{
+	// Local player UI, exactly like the HUD above: a server-side copy of a REMOTE
+	// client's PC must never create one. (The counter is a per-machine reading of
+	// a per-machine frame rate, so a server-drawn copy would be meaningless as
+	// well as invisible.)
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	// ⛔ NO PlayerState RETRY, unlike TryInitHUD. That retry exists because the HUD
+	// seeds gold and team from the PS proxy; this widget reads NOTHING from the
+	// world, the match or the player — only a preference off the game instance's
+	// settings subsystem. Waiting on a PS would be waiting on something it never
+	// touches.
+	if (FrameRateCounterWidget != nullptr)
+	{
+		// Already built (a re-entry through a second BeginPlay would otherwise
+		// stack two counters on the viewport, each with its own 0.5 s timer).
+		return;
+	}
+
+	// ⛔ CreateAndAddToViewport takes THREE parameters, none defaulted (`SC-§33`):
+	// a null class falls back to USiegeFrameRateCounterWidget itself, which is the
+	// shipping state — there is no WidgetBlueprint for the counter and none is
+	// reserved (`GFX-§2` is about the MENU; this widget needs no asset at all).
+	// ⚠️ A NAMED `UClass*` LOCAL RATHER THAN A BARE `nullptr`, and it is not
+	// fussiness: TSubclassOf carries both a non-explicit TSubclassOf(UClass*)
+	// constructor and a non-explicit operator UClass*(), which is the same
+	// two-equally-good-conversions trap that produced the C2445 documented at
+	// USiegeGraphicsMenuWidget::CreateAndAddToViewport. The
+	// USiegeControlsHelpWidget call site above spells its class argument out the
+	// same way, for the same reason.
+	UClass* const NoAuthoredCounterClass = nullptr;
+
+	FrameRateCounterWidget = USiegeFrameRateCounterWidget::CreateAndAddToViewport(
+		this,
+		TSubclassOf<USiegeFrameRateCounterWidget>(NoAuthoredCounterClass),
+		FrameRateCounterZOrder);
+
+	if (FrameRateCounterWidget == nullptr)
+	{
+		// CreateAndAddToViewport already logged why. ⛔ Never fatal: a match with no
+		// frame-rate readout is a match; a match that fails to start because a
+		// diagnostic overlay could not be created is not.
+		return;
+	}
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASiegePlayerController '%s': in-match FPS/frame-time counter created at ZOrder %d (TASK-1120, GFX-§7). It obeys the profile preference bShowFrameRateCounter and is COLLAPSED with no timer when that is off (the default)."),
+		*GetNameSafe(this), FrameRateCounterZOrder);
 }
 
 void ASiegePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -461,6 +522,18 @@ void ASiegePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		ControlsHelpWidget = nullptr;
 	}
 	SetControlsHelpOpen(false); // never refused; no-op when it was already closed
+
+	// ⭐ TASK-1120: the in-match counter. ⛔ SIMPLER THAN THE THREE ABOVE ON
+	// PURPOSE — it owns no posture, no cursor, no melee suppression and no paid
+	// reveal, so there is nothing to release and no delegate of ITS OWN pointing
+	// back at this controller. Its own NativeDestruct unbinds it from the settings
+	// subsystem and clears its timer, and RemoveFromParent is what causes that to
+	// run. ⛔ Nothing here can cancel an order or refund a card.
+	if (FrameRateCounterWidget)
+	{
+		FrameRateCounterWidget->RemoveFromParent();
+		FrameRateCounterWidget = nullptr;
+	}
 
 	Super::EndPlay(EndPlayReason);
 }

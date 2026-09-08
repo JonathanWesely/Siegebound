@@ -5,6 +5,7 @@
 #include "CollisionQueryParams.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
+#include "Engine/GameInstance.h" // TASK-1122: the graphics facade is a UGameInstanceSubsystem
 #include "Engine/HitResult.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -20,6 +21,7 @@
 #include "Siegebound/Castle.h"
 #include "Siegebound/GoldNode.h"
 #include "Siegebound/ScatterConfig.h"
+#include "Siegebound/SiegeGraphicsSettingsSubsystem.h" // TASK-1122 (GFX-§9): the Tier-D Foliage read that drives the CULL BAND — render-side only, never the layout
 #include "Siegebound/SiegeNavAreas.h" // TASK-349: team object channels — re-typed combatant capsules must keep blocking scatter
 #include "Siegebound/SiegeNavDiagnostics.h" // TASK-535/529 (NAV-§9 Stage 0): the three telemetry call sites
 
@@ -364,6 +366,47 @@ void ASiegeBattlefieldScatter::RunScatterPasses(int32 Seed, bool bAuthoritativeG
 {
 	FRandomStream Stream(Seed);
 
+	// ═══ TASK-1122 · THE FOLIAGE QUALITY LEVER — READ ONCE, HERE (GFX-§9) ═══════
+	// This is the SINGLE FUNNEL: both the authority path (GenerateScatter, which
+	// calls this with bAuthoritativeGenerate=true) and the CLIENT MIRROR
+	// (OnRep_GenerationIndex, false) pass through it, and ScatterLayer is only ever
+	// reached from here. ⛔ NOT inside ScatterLayer and NOT at the OuterTarget
+	// computation — those run once PER LAYER and would re-answer the same question
+	// seven times. No tick, no per-frame poll, no CVar sink: RunScatterPasses has
+	// exactly two callers and both are once per match (BeginPlay:202), which is why
+	// the panel's "these apply at the next match start" sentence is literally true.
+	//
+	// ⛔⛔ THE VALUE READ HERE MUST NEVER REACH THE PLACEMENT ALGORITHM. It is
+	// PER-MACHINE (GFX-§3) and the layout is a replicated contract (M8/D9): a
+	// client never self-generates, it reproduces the authority's field from the
+	// authority's seed. This read consumes ZERO draws from `Stream` — the object
+	// above is constructed before it and untouched by it — and the value flows to
+	// exactly one place, ApplyFoliageCullBands(), which runs AFTER both placement
+	// passes and calls nothing but SetCullDistances. ⛔ Do NOT multiply
+	// Layer.InstanceCount / OuterTarget by it: that would shift the shared stream
+	// and desync EVERY SUBSEQUENT LAYER, and would make a low-spec client's
+	// obstacle set a SUBSET where the authority-only traversability residual
+	// (:339-340) was accepted on it being a SUPERSET. DENSITY IS STRUCK (GFX-§9).
+	//
+	// ⚠️ `bAuthoritativeGenerate` is in scope and is DELIBERATELY NOT CONSULTED.
+	// The cull band is a per-client RENDER choice; branching on authority would
+	// push the SERVER's quality level into the CLIENT's picture, which is the exact
+	// inversion this lane exists to avoid. Both machines read their OWN setting and
+	// still place identical instances.
+	FoliageCullScaleCached = 1.0f;
+	if (const UGameInstance* OwningGameInstance = GetGameInstance())
+	{
+		if (const USiegeGraphicsSettingsSubsystem* Graphics = OwningGameInstance->GetSubsystem<USiegeGraphicsSettingsSubsystem>())
+		{
+			// ⛔ NAME: GetFoliageQualityScale(), never GetFoliageDensityScale() —
+			// GFX-§9's NAME RULING. The DENSITY lever is STRUCK, and a call site
+			// still spelling it "density" is precisely how a struck lever comes
+			// back: the doc comment lives at the declaration, but the hazard
+			// arrives HERE, where the only thing the next reader sees is the name.
+			FoliageCullScaleCached = Graphics->GetFoliageQualityScale();
+		}
+	}
+
 	// Build the keep-clear discs (castles/nodes/PlayerStart) + cache the corridor
 	// half-width for this generate. Deterministic inputs on both machines: the
 	// castles are level-placed at identical transforms and the config is the same
@@ -405,6 +448,15 @@ void ASiegeBattlefieldScatter::RunScatterPasses(int32 Seed, bool bAuthoritativeG
 			ScatterLayer(Layer, Stream);
 		}
 	}
+
+	// TASK-1122 (GFX-§9): the Foliage cull band, applied AFTER both passes so every
+	// HISM exists — and so a Play-Again RE-SCATTER is covered. ClearScatter keeps
+	// the components (:471-479) and ResolveComponentForMesh returns early on the
+	// reuse path (:902-908, above every render-profile call), so the creation-site
+	// application alone would only ever work on the FIRST generate. Placement is
+	// already complete and untouched by this: it calls SetCullDistances and nothing
+	// else, and it consumes NO FRandomStream draws — `Stream` is not passed to it.
+	ApplyFoliageCullBands();
 
 	// W1-PREP rotated depleting mines (TASK-255): AFTER pass 2 — the hill surfaces
 	// + hill-riding props exist AND (TASK-358) the hill field is already complete
@@ -891,6 +943,211 @@ void ASiegeBattlefieldScatter::ScatterLayer(const FScatterLayer& Layer, FRandomS
 	}
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// TASK-1122 · THE FOLIAGE QUALITY LEVER — CULL BAND ONLY (GFX-§9)
+//
+// ⛔ EVERYTHING IN THIS BLOCK IS RENDER-SIDE. Nothing here draws from an
+// FRandomStream, adds or removes an instance, moves a transform, or reads
+// Layer.InstanceCount / OuterTarget. That is not a stylistic preference: a
+// per-machine value entering the layout would desync the battlefield (see the
+// header block and the read site in RunScatterPasses).
+// ═════════════════════════════════════════════════════════════════════════════
+
+float ASiegeBattlefieldScatter::FoliageQualityScaleToCullDistanceFactor(float FoliageQualityScale)
+{
+	// ⛔ NON-FINITE FIRST, BECAUSE Clamp CANNOT CATCH IT. FMath::Clamp is a pair of
+	// comparisons, and every comparison against a NaN is false — so a NaN would
+	// pass straight through, survive sqrt, fail the `>= 1.0f` test, and reach
+	// FMath::RoundToInt, where a float-to-int conversion of a NaN is undefined
+	// behaviour on its way into SetCullDistances. Full distance is the right
+	// fallback for the same reason it is the facade's: it means "the authored
+	// DA_BattlefieldScatter bands, unchanged".
+	if (!FMath::IsFinite(FoliageQualityScale))
+	{
+		return 1.0f;
+	}
+
+	// Clamped into [0,1] rather than trusted: >1 would LENGTHEN the band above the
+	// authored DA baseline, which GFX-§9 forbids ("Cinematic never exceeds Epic"),
+	// and a negative would produce a nonsense distance.
+	const float ClampedQuality = FMath::Clamp(FoliageQualityScale, 0.0f, 1.0f);
+
+	// ⛔ THE SQUARE ROOT IS THE WHOLE RULING, SO IT GETS THE WHOLE REASON:
+	// the facade's ladder (0.25/0.50/0.75/1.00/1.00) is a COUNT scalar — it was
+	// authored for the density lever GFX-§9 struck, where "0.25" means "a quarter
+	// of the instances". Drawn instances under a cull band scale with the AREA of
+	// the disc the band covers, ≈ end², so using 0.25 as a DISTANCE would draw
+	// 0.25² = 6.25 % of them: a 16× overshoot, and grass ending 22.5 m from the
+	// camera. sqrt(q) is the distance that draws exactly q of the instances — the
+	// intended trade, delivered through the only mechanism that is
+	// determinism-safe. sqrt(1) == 1 exactly in IEEE-754, which is what makes the
+	// Epic identity below exact rather than approximate.
+	return FMath::Sqrt(ClampedQuality);
+}
+
+void ASiegeBattlefieldScatter::ComputeFoliageScaledCullBand(
+	int32 AuthoredStartUU,
+	int32 AuthoredEndUU,
+	float FoliageQualityScale,
+	int32& OutStartUU,
+	int32& OutEndUU)
+{
+	// The pre-lever behaviour, preserved exactly: this function's baseline IS the
+	// old call, SetCullDistances(Max(Start,0), Max(End,0)).
+	const int32 BaseStartUU = FMath::Max(AuthoredStartUU, 0);
+	const int32 BaseEndUU = FMath::Max(AuthoredEndUU, 0);
+
+	OutStartUU = BaseStartUU;
+	OutEndUU = BaseEndUU;
+
+	// ⛔ GUARD 1 — NEVER-CULLED STAYS NEVER-CULLED, EXPLICITLY.
+	// End == 0 is the engine's "never cull" sentinel (ScatterConfig.h:259-269); the
+	// HILLS layer rides it because its silhouette has to read across the 10× field.
+	// A multiply would convert "never culled" into "culled at ZERO distance" — a
+	// layer that renders NOWHERE, at every quality level below Epic. ⛔ The
+	// arithmetic below would also yield 0 today, and that is NOT why this branch is
+	// here: it is here so a later edit to the floor or the clamp cannot silently
+	// take the sentinel with it. Do not "simplify" it away.
+	if (BaseEndUU <= 0)
+	{
+		return;
+	}
+
+	// ⛔ GUARD 2 — EPIC / CINEMATIC / FALLBACK IS BYTE-IDENTICAL, STRUCTURALLY.
+	// Returning before any arithmetic (rather than relying on `x * 1.0f` and a
+	// round-trip through float) is what makes "today's battlefield is unchanged at
+	// the default" a property of the control flow instead of a property of IEEE
+	// rounding. The facade's null/dedicated-server fallback is also 1.0, so a
+	// machine with no graphics subsystem renders the authored field.
+	const float DistanceFactor = FoliageQualityScaleToCullDistanceFactor(FoliageQualityScale);
+	if (DistanceFactor >= 1.0f)
+	{
+		return;
+	}
+
+	// The near-field floor, itself capped by the authored end. Capping it there is
+	// what makes the lever monotone: it can SHORTEN a band and can never LENGTHEN
+	// one, so a layer whose author already chose a band tighter than 35 m is simply
+	// exempt rather than stretched out to meet our floor.
+	const int32 EffectiveFloorUU = FMath::Min(FoliageCullNearFieldFloorUU, BaseEndUU);
+
+	OutEndUU = FMath::Clamp(FMath::RoundToInt(BaseEndUU * DistanceFactor), EffectiveFloorUU, BaseEndUU);
+
+	if (BaseStartUU >= BaseEndUU)
+	{
+		// AUTHORED HARD POP (ScatterConfig.h:252-255: a start >= end is treated by
+		// the engine as a hard pop at the end distance). Preserve the SEMANTICS,
+		// not the number: a scaled start that happened to land below a floored end
+		// would silently convert an authored pop into a fade.
+		OutStartUU = OutEndUU;
+	}
+	else
+	{
+		// The fade edge scales by the same factor, then is held at or below the new
+		// end so a floor-lifted end can never invert the pair.
+		OutStartUU = FMath::Min(FMath::RoundToInt(BaseStartUU * DistanceFactor), OutEndUU);
+	}
+}
+
+void ASiegeBattlefieldScatter::ApplyFoliageCullBands()
+{
+	const float DistanceFactor = FoliageQualityScaleToCullDistanceFactor(FoliageCullScaleCached);
+
+	int32 NumApplied = 0;
+	int32 NumChanged = 0;
+	int32 NumNeverCulled = 0;
+	int32 NumReadBackOk = 0;
+	int32 NumReadBackMismatch = 0;
+	int32 ShortestAppliedEndUU = MAX_int32;
+	int32 LongestAppliedEndUU = 0;
+
+	for (const FScatterCullBandRecord& Record : CullBandRecords)
+	{
+		UHierarchicalInstancedStaticMeshComponent* Comp = Record.Component.Get();
+		if (!Comp)
+		{
+			continue;
+		}
+
+		int32 ScaledStartUU = 0;
+		int32 ScaledEndUU = 0;
+		ComputeFoliageScaledCullBand(Record.AuthoredStartUU, Record.AuthoredEndUU, FoliageCullScaleCached, ScaledStartUU, ScaledEndUU);
+		Comp->SetCullDistances(ScaledStartUU, ScaledEndUU);
+		++NumApplied;
+
+		// ⛔ SC-§94 cl. B — READ THE STATE BACK, DO NOT ECHO THE REQUEST. The numbers
+		// logged below are the ones the COMPONENT is holding after the call, not the
+		// ones we asked for. TASK-1109 is the standing proof that a request can be
+		// accepted and the result still be wrong on one path.
+		int32 ReadBackStartUU = 0;
+		int32 ReadBackEndUU = 0;
+		Comp->GetCullDistances(ReadBackStartUU, ReadBackEndUU);
+
+		const bool bReadBackMatches = (ReadBackStartUU == ScaledStartUU && ReadBackEndUU == ScaledEndUU);
+		if (bReadBackMatches)
+		{
+			++NumReadBackOk;
+		}
+		else
+		{
+			++NumReadBackMismatch;
+		}
+
+		const int32 BaseStartUU = FMath::Max(Record.AuthoredStartUU, 0);
+		const int32 BaseEndUU = FMath::Max(Record.AuthoredEndUU, 0);
+		if (BaseEndUU <= 0)
+		{
+			++NumNeverCulled;
+		}
+		else
+		{
+			ShortestAppliedEndUU = FMath::Min(ShortestAppliedEndUU, ReadBackEndUU);
+			LongestAppliedEndUU = FMath::Max(LongestAppliedEndUU, ReadBackEndUU);
+			if (ReadBackStartUU != BaseStartUU || ReadBackEndUU != BaseEndUU)
+			{
+				++NumChanged;
+			}
+		}
+
+		if (!bReadBackMatches)
+		{
+			UE_LOG(LogSiegeTerrain, Warning,
+				TEXT("[BattlefieldScatter '%s'] CullBand READ-BACK MISMATCH on layer '%s' mesh '%s': asked %d/%d uu, component holds %d/%d uu. The Foliage lever did NOT take on this component."),
+				*GetNameSafe(this), *Record.LayerName.ToString(), *GetNameSafe(Comp->GetStaticMesh()),
+				ScaledStartUU, ScaledEndUU, ReadBackStartUU, ReadBackEndUU);
+		}
+		else if (DistanceFactor < 1.0f && BaseEndUU > 0)
+		{
+			// Only when the lever actually moved something — at Epic/Cinematic this
+			// stays silent and the summary line below carries the whole (unchanged)
+			// story, so the default path adds no per-match log noise. 1 uu = 1 cm.
+			UE_LOG(LogSiegeTerrain, Log,
+				TEXT("[BattlefieldScatter '%s']   CullBand layer='%s' mesh='%s' authored %d/%d uu (%.0f/%.0f m) -> applied %d/%d uu (%.0f/%.0f m), read back from the component."),
+				*GetNameSafe(this), *Record.LayerName.ToString(), *GetNameSafe(Comp->GetStaticMesh()),
+				BaseStartUU, BaseEndUU, BaseStartUU / 100.0f, BaseEndUU / 100.0f,
+				ReadBackStartUU, ReadBackEndUU, ReadBackStartUU / 100.0f, ReadBackEndUU / 100.0f);
+		}
+	}
+
+	if (ShortestAppliedEndUU == MAX_int32)
+	{
+		ShortestAppliedEndUU = 0;
+	}
+
+	// ⛔ THE ONE GREP-ABLE LINE, AND IT PRINTS ON EVERY PATH INCLUDING EPIC. An
+	// instrument that only speaks when something changed cannot distinguish "the
+	// lever is at Epic" from "the lever never ran" — and an empty log reading as a
+	// pass is exactly how a silent regression ships. `changed=0` at Epic is the
+	// no-regression MEASUREMENT; `changed>0` at Low is the lever working.
+	UE_LOG(LogSiegeTerrain, Log,
+		TEXT("[BattlefieldScatter '%s'] FoliageCullBand q=%.2f factor=%.3f floor=%d uu (%.0f m) components=%d changed=%d neverCulled=%d readBackOk=%d readBackMismatch=%d appliedEndRange=%d..%d uu (%.0f..%.0f m). PLACEMENT UNAFFECTED: zero RNG consumed, zero instances added or removed — the same seed lays out the same field on every machine (GFX-§9 / M8-D9)."),
+		*GetNameSafe(this), FoliageCullScaleCached, DistanceFactor,
+		FoliageCullNearFieldFloorUU, FoliageCullNearFieldFloorUU / 100.0f,
+		NumApplied, NumChanged, NumNeverCulled, NumReadBackOk, NumReadBackMismatch,
+		ShortestAppliedEndUU, LongestAppliedEndUU,
+		ShortestAppliedEndUU / 100.0f, LongestAppliedEndUU / 100.0f);
+}
+
 UHierarchicalInstancedStaticMeshComponent* ASiegeBattlefieldScatter::ResolveComponentForMesh(UStaticMesh* Mesh, const FScatterLayer& Layer)
 {
 	if (!Mesh)
@@ -1000,7 +1257,22 @@ UHierarchicalInstancedStaticMeshComponent* ASiegeBattlefieldScatter::ResolveComp
 	// instances' shadow casting from the layer flag (hills ON for the silhouette,
 	// grass/plants OFF once the DA sets it) — its default true matches today's
 	// implicit component default, so behavior is unchanged until Phase 3.
-	Comp->SetCullDistances(FMath::Max(Layer.CullStartDistance, 0), FMath::Max(Layer.CullEndDistance, 0));
+	//
+	// TASK-1122 (GFX-§9): the band handed to the engine is the authored band scaled
+	// by the FOLIAGE quality group. At Epic/Cinematic — and on a dedicated server,
+	// in a test, or whenever the graphics facade cannot be resolved — the factor is
+	// exactly 1.0 and ComputeFoliageScaledCullBand returns `Max(Start,0)`/`Max(End,0)`
+	// with no arithmetic at all, i.e. the identical pair this line passed before the
+	// lever existed. A regression at Epic is a FAIL, so that identity is structural
+	// rather than a rounding accident. The authored pair is RECORDED below so a
+	// Play-Again re-scatter (which reuses this component and returns above) can
+	// re-apply the CURRENT quality level without re-reading a `Layer` that may
+	// belong to a different layer than the one that created this HISM.
+	int32 ScaledCullStart = 0;
+	int32 ScaledCullEnd = 0;
+	ComputeFoliageScaledCullBand(Layer.CullStartDistance, Layer.CullEndDistance, FoliageCullScaleCached, ScaledCullStart, ScaledCullEnd);
+	Comp->SetCullDistances(ScaledCullStart, ScaledCullEnd);
+	CullBandRecords.Add(FScatterCullBandRecord{ Comp, Layer.LayerName, Layer.CullStartDistance, Layer.CullEndDistance });
 	Comp->SetCastShadow(Layer.bCastShadows);
 
 	// LWC render-precision fix (TASK-292c): keep every scatter HISM OUT of the
@@ -1089,7 +1361,18 @@ UHierarchicalInstancedStaticMeshComponent* ASiegeBattlefieldScatter::ResolveProx
 	// keeps the visual/proxy pair consistent if a proxy is ever un-hidden for debug.
 	// SetCastShadow stays false above (the proxy contract), so ONLY the cull band is
 	// mirrored from the layer here, never the shadow flag.
-	Proxy->SetCullDistances(FMath::Max(Layer.CullStartDistance, 0), FMath::Max(Layer.CullEndDistance, 0));
+	// TASK-1122 (GFX-§9): scaled by the Foliage group exactly like the visual HISM,
+	// for the SAME reason the band is mirrored here at all — a uniform pair state.
+	// Still functionally moot (the proxy is SetVisibility(false), so it never
+	// renders or culls as geometry, and nav/collision are untouched by a cull
+	// distance) — so this cannot change blocking, navmesh, or the authority-only
+	// traversability/corridor culls that read these instances. It is recorded like
+	// the visual so the pair stays consistent across a Play-Again re-apply.
+	int32 ProxyScaledCullStart = 0;
+	int32 ProxyScaledCullEnd = 0;
+	ComputeFoliageScaledCullBand(Layer.CullStartDistance, Layer.CullEndDistance, FoliageCullScaleCached, ProxyScaledCullStart, ProxyScaledCullEnd);
+	Proxy->SetCullDistances(ProxyScaledCullStart, ProxyScaledCullEnd);
+	CullBandRecords.Add(FScatterCullBandRecord{ Proxy, Layer.LayerName, Layer.CullStartDistance, Layer.CullEndDistance });
 	Proxy->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	Proxy->SetCollisionObjectType(ECC_WorldStatic);
 	Proxy->SetCollisionResponseToAllChannels(ECR_Ignore);

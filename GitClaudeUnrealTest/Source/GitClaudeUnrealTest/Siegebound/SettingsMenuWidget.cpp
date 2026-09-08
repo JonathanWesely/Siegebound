@@ -12,6 +12,12 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
+// TASK-1115 [GFX-PANEL]: complete type for CreateAndAddToViewport. This is the
+// ONE new dependency this row adds to the settings screen, and it points at C++
+// rather than at a .uasset because /Game/UI/WBP_GraphicsMenu is RESERVED and
+// UNAUTHORED (GFX-§2).
+#include "SiegeGraphicsMenuWidget.h"
 #include "SiegeSettingsSubsystem.h"
 
 namespace SiegeSettingsMenuText
@@ -48,6 +54,14 @@ namespace SiegeSettingsMenuText
 		TEXT("Settings are unavailable right now, so AI orders will always be shown for review.");
 
 	static const TCHAR* Back = TEXT("Back");
+
+	/**
+	 *  TASK-1115 [GFX-PANEL]. GFX-§10 pins the widget NAMES; the label text is
+	 *  this row's, and it is 🧑 Jonathan's own word for the submenu, verbatim:
+	 *  "Make all of these graphics sliders a sub menu within 'Settings' called
+	 *  'Graphics'".
+	 */
+	static const TCHAR* Graphics = TEXT("Graphics");
 }
 
 // The CONVENTIONS section 2 / section 8 pinned FIELD name. See the header for
@@ -264,6 +278,58 @@ void USettingsMenuWidget::ConstructSettingsTree()
 		}
 	}
 
+	// ---- GraphicsButton (TASK-1115) -----------------------------------------
+	// ⛔ board cl. (6): ABOVE BackButton, so Back stays last. Same button idiom as
+	// Back below (font 28, MakeMargin(24,12,24,12), HAlign_Fill) — the two entries
+	// have to read as one list, not as a control and an afterthought.
+	//
+	// 🚨 THIS IS THE WHOLE ENTRY POINT FOR THE GRAPHICS FEATURE, AND IT COSTS ZERO
+	// .uasset WRITES. /Game/UI/WBP_MainMenu is never opened: the Settings screen is
+	// already code-authored, so the submenu hangs off C++ that this project owns
+	// (GFX-§1 / GFX-§2).
+	if (GraphicsLabelText == nullptr)
+	{
+		GraphicsLabelText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("GraphicsLabelText"));
+		if (GraphicsLabelText != nullptr)
+		{
+			GraphicsLabelText->SetText(FText::FromString(FString(SiegeSettingsMenuText::Graphics)));
+			GraphicsLabelText->SetFontSize(28.f);
+		}
+	}
+
+	if (GraphicsButton == nullptr)
+	{
+		GraphicsButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("GraphicsButton"));
+		if (GraphicsButton != nullptr)
+		{
+			if (GraphicsLabelText != nullptr)
+			{
+				if (UButtonSlot* GraphicsContentSlot = Cast<UButtonSlot>(GraphicsButton->SetContent(GraphicsLabelText)))
+				{
+					GraphicsContentSlot->SetPadding(FMargin(24.f, 12.f, 24.f, 12.f));
+					GraphicsContentSlot->SetHorizontalAlignment(HAlign_Center);
+					GraphicsContentSlot->SetVerticalAlignment(VAlign_Center);
+				}
+			}
+
+			if (UVerticalBoxSlot* GraphicsSlot = RootPanel->AddChildToVerticalBox(GraphicsButton))
+			{
+				GraphicsSlot->SetPadding(FMargin(24.f, 12.f, 24.f, 8.f));
+				GraphicsSlot->SetHorizontalAlignment(HAlign_Fill);
+				GraphicsSlot->SetVerticalAlignment(VAlign_Top);
+			}
+		}
+	}
+
+	if (GraphicsButton == nullptr)
+	{
+		// Not fatal — Back must still work, so the panel is never a trap. The
+		// player simply has no graphics screen, which is exactly the state the
+		// game shipped in before this row.
+		UE_LOG(LogSiegeSettings, Error,
+			TEXT("[SettingsMenu] Could not construct GraphicsButton - the Graphics submenu cannot be opened from this screen."));
+	}
+
 	// ---- BackButton ---------------------------------------------------------
 	// Geometry lifted from the shipped WBP_MainMenu button idiom this panel sits
 	// on top of (font 28, MakeMargin(24,12,24,12), HAlign_Fill) rather than
@@ -387,6 +453,15 @@ void USettingsMenuWidget::SeedAndBind()
 		ConfirmToggleCheckBox->OnCheckStateChanged.AddUniqueDynamic(this, &USettingsMenuWidget::HandleConfirmToggleChanged);
 	}
 
+	// TASK-1115: bound unconditionally, for the same reason as Back. The graphics
+	// panel reads USiegeGraphicsSettingsSubsystem, not USiegeSettingsSubsystem, so
+	// a missing assistant-settings subsystem must not take the graphics screen
+	// down with it — the two are unrelated (GFX-§3).
+	if (GraphicsButton != nullptr)
+	{
+		GraphicsButton->OnClicked.AddUniqueDynamic(this, &USettingsMenuWidget::HandleGraphicsClicked);
+	}
+
 	// Back is bound unconditionally and last: it must work even when the
 	// settings subsystem is missing and the row above is dead. A panel you
 	// cannot leave is worse than a panel that cannot change anything.
@@ -408,6 +483,11 @@ void USettingsMenuWidget::UnbindAll()
 	if (ConfirmToggleCheckBox != nullptr)
 	{
 		ConfirmToggleCheckBox->OnCheckStateChanged.RemoveDynamic(this, &USettingsMenuWidget::HandleConfirmToggleChanged);
+	}
+
+	if (GraphicsButton != nullptr)
+	{
+		GraphicsButton->OnClicked.RemoveDynamic(this, &USettingsMenuWidget::HandleGraphicsClicked);
 	}
 
 	if (BackButton != nullptr)
@@ -458,6 +538,39 @@ void USettingsMenuWidget::HandleConfirmToggleChanged(bool bIsChecked)
 void USettingsMenuWidget::HandleBackClicked()
 {
 	BackPressed();
+}
+
+void USettingsMenuWidget::GraphicsPressed()
+{
+	// ⛔ ZOrder 20 — ABOVE this panel's own 10 (TASK-438 adds this one at 10), and
+	// ⛔ this panel is NOT removed. That is the whole navigation contract: the
+	// graphics panel's Back is RemoveFromParent() on ITSELF, and the player lands
+	// back on a settings panel that was never destroyed and is already correct.
+	//
+	// ⚠️ nullptr for the class parameter is the SHIPPING state, not an oversight:
+	// /Game/UI/WBP_GraphicsMenu is RESERVED and UNAUTHORED (GFX-§2), so
+	// CreateAndAddToViewport falls back to the C++ class and the code-authored
+	// tree renders the panel. If that asset is ever authored, this one argument is
+	// the only line that changes.
+	USiegeGraphicsMenuWidget* Panel = USiegeGraphicsMenuWidget::CreateAndAddToViewport(
+		GetOwningPlayer(), nullptr, /*ZOrder*/ 20);
+
+	if (Panel == nullptr)
+	{
+		// Never fatal — the settings screen is untouched and the player is exactly
+		// where they were. The reason is already logged by CreateAndAddToViewport.
+		UE_LOG(LogSiegeSettings, Warning,
+			TEXT("[SettingsMenu] Graphics pressed but no panel was created - the settings screen is unchanged."));
+		return;
+	}
+
+	UE_LOG(LogSiegeSettings, Log,
+		TEXT("[SettingsMenu] Graphics pressed - the graphics panel is open ON TOP of this one (ZOrder 20); this panel was NOT removed."));
+}
+
+void USettingsMenuWidget::HandleGraphicsClicked()
+{
+	GraphicsPressed();
 }
 
 void USettingsMenuWidget::HandleSettingsChanged(FName SettingName)

@@ -22,6 +22,11 @@ const TCHAR* USiegeSettingsSubsystem::SettingsSlotName = TEXT("SiegeSettings");
 // and as CONVENTIONS §2's name for the setting, so all three stay greppable.
 const FName USiegeSettingsSubsystem::SettingName_AssistantConfirmBeforeExecute(TEXT("bAssistantConfirmBeforeExecute"));
 
+// ⭐ SETTING #2 (TASK-1120, recipe step 2). Same token as the SaveGame field, and
+// DIFFERENT from its neighbour above — which is what lets a consumer, and an
+// automation test, tell one setting's broadcast from the other's.
+const FName USiegeSettingsSubsystem::SettingName_ShowFrameRateCounter(TEXT("bShowFrameRateCounter"));
+
 void USiegeSettingsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
@@ -47,8 +52,10 @@ void USiegeSettingsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	LoadSettingsFromSlot();
 
 	UE_LOG(LogSiegeSettings, Log,
-		TEXT("[SiegeSettings] Subsystem initialized — slot '%s' (user %d), bAssistantConfirmBeforeExecute=%s."),
-		*ResolveSlotName(), SettingsUserIndex, bAssistantConfirmBeforeExecute ? TEXT("true") : TEXT("false"));
+		TEXT("[SiegeSettings] Subsystem initialized — slot '%s' (user %d), bAssistantConfirmBeforeExecute=%s, bShowFrameRateCounter=%s."),
+		*ResolveSlotName(), SettingsUserIndex,
+		bAssistantConfirmBeforeExecute ? TEXT("true") : TEXT("false"),
+		bShowFrameRateCounter ? TEXT("true") : TEXT("false"));
 }
 
 bool USiegeSettingsSubsystem::IsAssistantConfirmEnabled() const
@@ -63,6 +70,22 @@ void USiegeSettingsSubsystem::SetAssistantConfirmEnabled(bool bEnabled)
 	// Everything (the no-op check, the save, the broadcast) lives in the one
 	// mutation path so setting #2 cannot re-derive it slightly differently.
 	ApplyBoolSetting(bAssistantConfirmBeforeExecute, bEnabled, SettingName_AssistantConfirmBeforeExecute, /*bPersistToDisk*/ true);
+}
+
+bool USiegeSettingsSubsystem::IsFrameRateCounterEnabled() const
+{
+	// PURE IN-MEMORY (recipe step 3). Read at counter creation and on each
+	// broadcast — ⛔ never per frame, and never from a paint or tick path.
+	return bShowFrameRateCounter;
+}
+
+void USiegeSettingsSubsystem::SetFrameRateCounterEnabled(bool bEnabled)
+{
+	// Recipe step 3: a ONE-LINE FORWARD, on purpose. The no-op check, the save and
+	// the broadcast all live in ApplyBoolSetting so setting #2 cannot re-derive
+	// any of the three slightly differently from setting #1 — which is precisely
+	// the class of divergence a second setter would introduce.
+	ApplyBoolSetting(bShowFrameRateCounter, bEnabled, SettingName_ShowFrameRateCounter, /*bPersistToDisk*/ true);
 }
 
 void USiegeSettingsSubsystem::LoadSettingsFromSlot()
@@ -102,6 +125,16 @@ void USiegeSettingsSubsystem::LoadSettingsFromSlot()
 	// correct anyway if a later caller reloads.
 	ApplyBoolSetting(bAssistantConfirmBeforeExecute, Source->bAssistantConfirmBeforeExecute,
 		SettingName_AssistantConfirmBeforeExecute, /*bPersistToDisk*/ false);
+
+	// ⭐ RECIPE STEP 4 — ONE LINE, and it reads from the SAME `Source`, which is
+	// what makes the tagged-property story true in code rather than in a comment:
+	// when the slot predates this field, `Loaded` still casts fine, the archive
+	// simply carries no `bShowFrameRateCounter` tag, and the loaded object holds
+	// the C++ default — so this line applies `false` and no migration is needed.
+	// When the slot is missing or foreign, `Source` IS the CDO and the same
+	// default arrives by the other door.
+	ApplyBoolSetting(bShowFrameRateCounter, Source->bShowFrameRateCounter,
+		SettingName_ShowFrameRateCounter, /*bPersistToDisk*/ false);
 }
 
 void USiegeSettingsSubsystem::SetSlotNameForAutomationTests(const FString& InSlotName)
@@ -158,6 +191,15 @@ bool USiegeSettingsSubsystem::SaveSettingsToSlot() const
 
 	SaveObj->bAssistantConfirmBeforeExecute = bAssistantConfirmBeforeExecute;
 
+	// 🚨⭐ RECIPE STEP 5 (TASK-1120) — AND THE STEP THE RECIPE DID NOT USED TO
+	// HAVE. `SaveObj` is a FRESHLY CONSTRUCTED SaveGame: every field it holds is at
+	// its C++ default until a line here copies the in-memory value onto it.
+	// Omitting this line writes `false` to disk on every save no matter what the
+	// player chose — while the session's getter, delegate, UI and success log all
+	// keep reporting the chosen value. The preference would simply be gone on the
+	// next launch. The header's recipe now names this step; see the note there.
+	SaveObj->bShowFrameRateCounter = bShowFrameRateCounter;
+
 	if (!UGameplayStatics::SaveGameToSlot(SaveObj, SlotName, SettingsUserIndex))
 	{
 		UE_LOG(LogSiegeSettings, Warning,
@@ -166,9 +208,15 @@ bool USiegeSettingsSubsystem::SaveSettingsToSlot() const
 		return false;
 	}
 
+	// ⚠️ THE LOG NAMES EVERY FIELD IT WROTE, not just the first. A save line that
+	// lists one of two settings is the line a reader trusts when the OTHER one
+	// silently did not persist (SC-§94: the report must describe what actually
+	// happened, not what the first version of this function did).
 	UE_LOG(LogSiegeSettings, Log,
-		TEXT("[SiegeSettings] Saved slot '%s' (user %d): bAssistantConfirmBeforeExecute=%s."),
-		*SlotName, SettingsUserIndex, bAssistantConfirmBeforeExecute ? TEXT("true") : TEXT("false"));
+		TEXT("[SiegeSettings] Saved slot '%s' (user %d): bAssistantConfirmBeforeExecute=%s, bShowFrameRateCounter=%s."),
+		*SlotName, SettingsUserIndex,
+		bAssistantConfirmBeforeExecute ? TEXT("true") : TEXT("false"),
+		bShowFrameRateCounter ? TEXT("true") : TEXT("false"));
 	return true;
 }
 

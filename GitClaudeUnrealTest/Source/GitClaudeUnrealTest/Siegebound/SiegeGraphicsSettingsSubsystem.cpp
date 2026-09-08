@@ -878,8 +878,21 @@ bool USiegeGraphicsSettingsSubsystem::ApplyVideoModeProvisional()
 
 bool USiegeGraphicsSettingsSubsystem::IsVideoModeChangePending() const
 {
-	return bVideoModeChangePending
-		|| SiegeGraphicsInternal::HasUnconfirmedVideoModeDifference(ResolveSettings());
+	// ⛔ THE LEFT-HAND OPERAND IS A LATCH, AND THE HEADER SAYS SO IN CAPITALS.
+	// bVideoModeChangePending goes up on the first provisional apply and comes
+	// down ONLY in CloseVideoModeWindow, so this stays true after the staged mode
+	// has come back to the confirmed one. That is CORRECT for the save refusal —
+	// an applied mode still has to be closed — and WRONG for anyone asking "is
+	// there still a difference?". The second question now has its own name below.
+	return bVideoModeChangePending || HasUnconfirmedVideoModeDifference();
+}
+
+bool USiegeGraphicsSettingsSubsystem::HasUnconfirmedVideoModeDifference() const
+{
+	// ⛔ THE COMPARISON ALONE — no latch, nothing sticky. This is the ONE place
+	// the staged-vs-LastConfirmed test is computed; IsVideoModeChangePending()
+	// above ors it with the latch rather than repeating it.
+	return SiegeGraphicsInternal::HasUnconfirmedVideoModeDifference(ResolveSettings());
 }
 
 bool USiegeGraphicsSettingsSubsystem::ConfirmVideoModeChange()
@@ -1082,7 +1095,7 @@ void USiegeGraphicsSettingsSubsystem::SetFrameRateLimitByIndex(int32 Index)
 // TIER D — THIS PROJECT'S OWN LEVERS (pure, side-effect-free; GFX-§9)
 // ═════════════════════════════════════════════════════════════════════════════
 
-float USiegeGraphicsSettingsSubsystem::GetFoliageDensityScale() const
+float USiegeGraphicsSettingsSubsystem::GetFoliageQualityScale() const
 {
 	const UGameUserSettings* Settings = ResolveSettings();
 	if (!Settings)

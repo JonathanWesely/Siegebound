@@ -449,4 +449,295 @@ bool FSiegeSettingsDelegateTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+//  ⭐⭐ TASK-1120 [GFX-FPS] — SETTING #2: bShowFrameRateCounter (GFX-§7 / GFX-§3)
+//
+//  ⛔ WHY THESE LIVE HERE AND NOT IN Tests/SiegeGraphicsSettingsTest.cpp (which
+//  is what the board's `names:` line says): the code under test is
+//  USiegeSettingsSubsystem, and this file already owns its harness — the scratch
+//  slot NAME, MakeScratchStore(), the throwaway UGameInstance and, decisively,
+//  FScratchSlotGuard. Duplicating that harness elsewhere would give the SAME
+//  scratch slot string two independent owners and two independent guards, which
+//  is a hazard rather than a tidiness question. This is the qa/TASK-1119.md F-6
+//  ruling applied unchanged ("the harness is there … duplicating it would be
+//  strictly worse"), and it is declared as a flagged decision in the handoff
+//  rather than left for the gate to notice.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/**
+ *  🚨⭐ THE STEP-5 CATCHER, AND IT IS THE MOST IMPORTANT TEST THIS ROW ADDS.
+ *
+ *  USiegeSettingsSubsystem::SaveSettingsToSlot() copies the in-memory values onto
+ *  a FRESHLY CONSTRUCTED SaveGame object FIELD BY FIELD. A setting added by the
+ *  header recipe's steps 1-4 alone — UPROPERTY, FName, getter/setter, loader —
+ *  compiles, runs, broadcasts, updates the UI and reports a SUCCESSFUL save,
+ *  while writing its C++ default to disk every single time. The preference then
+ *  evaporates on the next launch with nothing in the log to point at.
+ *
+ *  ⛔ THE SHAPE THAT MAKES THIS DETECTABLE IS "LOAD INTO A **SECOND** STORE". A
+ *  test that set the value and re-read the SAME store would pass with the save
+ *  line missing, because the in-memory value is correct either way — it would be
+ *  a test that cannot fail for the reason it exists.
+ *
+ *  ⭐ AND IT ASSERTS BOTH SETTINGS ACROSS ONE ROUND TRIP, which is the other half:
+ *  a save that wrote setting #2 by clobbering setting #1 (or a load that applied
+ *  one field's value to the other's member) would satisfy either assertion alone
+ *  and fails this pair.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeSettingsFrameRateCounterRoundTripTest,
+	"Siegebound.Settings.FrameRateCounterSaveLoadRoundTrip",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeSettingsFrameRateCounterRoundTripTest::RunTest(const FString& Parameters)
+{
+	SiegeSettingsTestUtils::FScratchSlotGuard SlotGuard;
+
+	SiegeSettingsTestUtils::FScratchStore Writer = SiegeSettingsTestUtils::MakeScratchStore();
+	if (!Writer.IsValid())
+	{
+		AddError(TEXT("Could not construct the writing USiegeSettingsSubsystem."));
+		return false;
+	}
+
+	// BOTH settings moved OFF their compiled defaults, so neither value a reader
+	// returns can be its own default arriving by accident.
+	Writer.Settings->SetFrameRateCounterEnabled(true);   // default is false
+	Writer.Settings->SetAssistantConfirmEnabled(false);  // default is true
+
+	TestTrue(TEXT("Setting the FPS-counter preference wrote the slot to disk"),
+		UGameplayStatics::DoesSaveGameExist(SiegeSettingsTestUtils::ScratchSlotName, USiegeSettingsSubsystem::SettingsUserIndex));
+
+	SiegeSettingsTestUtils::FScratchStore Reader = SiegeSettingsTestUtils::MakeScratchStore();
+	if (!Reader.IsValid())
+	{
+		AddError(TEXT("Could not construct the reading USiegeSettingsSubsystem."));
+		return false;
+	}
+
+	TestFalse(TEXT("Pre-condition: a fresh reader starts at the compiled default (counter OFF)"),
+		Reader.Settings->IsFrameRateCounterEnabled());
+	TestTrue(TEXT("Pre-condition: a fresh reader starts at the compiled default (confirm ON)"),
+		Reader.Settings->IsAssistantConfirmEnabled());
+
+	Reader.Settings->LoadSettingsFromSlot();
+
+	// ⛔ THE ASSERTION THAT REDDENS IF SaveSettingsToSlot() FORGETS THE FIELD.
+	TestTrue(TEXT("save(counter=true) → a SEPARATE store loads true (recipe step 5 is present)"),
+		Reader.Settings->IsFrameRateCounterEnabled());
+
+	// ⛔ AND THE ONE THAT REDDENS IF SETTING #2 CLOBBERED SETTING #1.
+	TestFalse(TEXT("The confirm toggle survived the same round trip unharmed"),
+		Reader.Settings->IsAssistantConfirmEnabled());
+
+	// Both changed, so the load broadcast twice — once per field, never once for
+	// two fields and never three times for two.
+	TestEqual(TEXT("A load that changes BOTH settings broadcasts exactly twice"),
+		Reader.Settings->SettingsChangeBroadcastCount, 2);
+
+	// Re-loading the identical file changes nothing and must broadcast nothing.
+	Reader.Settings->LoadSettingsFromSlot();
+	TestTrue(TEXT("Re-loading the same file keeps the counter preference"),
+		Reader.Settings->IsFrameRateCounterEnabled());
+	TestEqual(TEXT("A load that changes NOTHING broadcasts nothing"),
+		Reader.Settings->SettingsChangeBroadcastCount, 2);
+
+	// ⭐ THE OTHER DIRECTION, and its pre-condition is the load-bearing half: a
+	// store already sitting at `true` is the only one for which "loads false" can
+	// possibly have come from the slot rather than from never loading at all.
+	// (This is WARN-436-2's lesson, applied to the new field on purpose.)
+	SiegeSettingsTestUtils::FScratchStore SecondReader = SiegeSettingsTestUtils::MakeScratchStore();
+	if (!SecondReader.IsValid())
+	{
+		AddError(TEXT("Could not construct the second reading USiegeSettingsSubsystem."));
+		return false;
+	}
+
+	SecondReader.Settings->SetFrameRateCounterEnabled(true);
+	TestTrue(TEXT("Pre-condition: the second reader sits at true, NOT at its compiled default"),
+		SecondReader.Settings->IsFrameRateCounterEnabled());
+
+	// The writer's save now overwrites what the line above just wrote to the same
+	// scratch slot — which is exactly the disk state this direction needs.
+	Writer.Settings->SetFrameRateCounterEnabled(false);
+
+	SecondReader.Settings->LoadSettingsFromSlot();
+	TestFalse(TEXT("save(counter=false) → a store sitting at true loads false"),
+		SecondReader.Settings->IsFrameRateCounterEnabled());
+
+	return true;
+}
+
+/**
+ *  ⛔ DEFAULT OFF (board cl. 4), AND THE TWO COMPILED DEFAULTS AGREE.
+ *
+ *  The second half is the drift guard, and it is not decorative: the subsystem
+ *  carries its own `bShowFrameRateCounter = false` member initialiser AND the
+ *  SaveGame carries one, and only the SaveGame's is ever used as the load
+ *  fallback. Retuning one and not the other would ship a store whose pre-load
+ *  value disagrees with its post-fallback value — visible to a player as a
+ *  counter that appears, then vanishes the first time anything reloads.
+ *
+ *  ⚠️ SCOPE, STATED RATHER THAN IMPLIED (`SC-§79`): board cl. (5) asks for "an
+ *  ABSENT field in an older .sav loads at the C++ default", and ⛔ THAT EXACT
+ *  CASE IS NOT PROVABLE IN THIS PROCESS. Producing a `.sav` that carries
+ *  `bAssistantConfirmBeforeExecute` and NOT `bShowFrameRateCounter` requires a
+ *  build in which the second UPROPERTY does not exist; any file this test can
+ *  write carries both tags. What IS proved here is every reachable neighbour of
+ *  it: the CDO default, the two defaults agreeing, the MISSING-slot fallback and
+ *  the FOREIGN-class fallback — all three of which funnel through the same
+ *  `Source = Loaded ? Loaded : GetDefault<>()` line the absent-field case would
+ *  use. The tagged-property behaviour itself is UE's, asserted by UE, and is
+ *  recorded in the handoff as an ACCEPTED PREMISE rather than a covered one.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeSettingsFrameRateCounterDefaultsTest,
+	"Siegebound.Settings.FrameRateCounterDefaultsOffAndAgree",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeSettingsFrameRateCounterDefaultsTest::RunTest(const FString& Parameters)
+{
+	SiegeSettingsTestUtils::FScratchSlotGuard SlotGuard;
+
+	const USiegeSettingsSaveGame* SaveDefaults = GetDefault<USiegeSettingsSaveGame>();
+	if (SaveDefaults == nullptr)
+	{
+		AddError(TEXT("GetDefault<USiegeSettingsSaveGame>() returned null."));
+		return false;
+	}
+
+	TestFalse(TEXT("⛔ The SaveGame's compiled default is OFF — a counter is opt-in, never opt-out"),
+		SaveDefaults->bShowFrameRateCounter);
+
+	SiegeSettingsTestUtils::FScratchStore Store = SiegeSettingsTestUtils::MakeScratchStore();
+	if (!Store.IsValid())
+	{
+		AddError(TEXT("Could not construct a USiegeSettingsSubsystem inside a UGameInstance."));
+		return false;
+	}
+
+	TestEqual(TEXT("The subsystem's compiled default AGREES with the SaveGame's (drift guard)"),
+		Store.Settings->IsFrameRateCounterEnabled(), SaveDefaults->bShowFrameRateCounter);
+
+	// ---- the MISSING-slot fallback -----------------------------------------
+	// The guard deleted the scratch slot on the way in, so nothing is on disk.
+	Store.Settings->LoadSettingsFromSlot();
+	TestFalse(TEXT("A missing slot leaves the counter preference at the C++ default"),
+		Store.Settings->IsFrameRateCounterEnabled());
+	TestEqual(TEXT("A missing-slot load changes nothing and therefore broadcasts nothing"),
+		Store.Settings->SettingsChangeBroadcastCount, 0);
+
+	// ---- the FOREIGN-class fallback ----------------------------------------
+	// ⛔ THE PRE-CONDITION IS THE TEST. Driving the store to `true` FIRST is what
+	// makes the `false` below have to come from the CDO fallback: on a store still
+	// at its default, "loads false" would be satisfied by a load that did nothing
+	// whatsoever — the same defect shape WARN-436-2 named.
+	SiegeSettingsTestUtils::FScratchStore ForeignReader = SiegeSettingsTestUtils::MakeScratchStore();
+	if (!ForeignReader.IsValid())
+	{
+		AddError(TEXT("Could not construct the foreign-slot reading USiegeSettingsSubsystem."));
+		return false;
+	}
+
+	ForeignReader.Settings->SetFrameRateCounterEnabled(true);
+	TestTrue(TEXT("Pre-condition: the foreign-slot reader sits at true, NOT at its default"),
+		ForeignReader.Settings->IsFrameRateCounterEnabled());
+
+	if (!SiegeSettingsTestUtils::WriteForeignSaveGameToScratchSlot())
+	{
+		AddError(TEXT("Could not write a foreign SaveGame class into the scratch slot."));
+		return false;
+	}
+
+	ForeignReader.Settings->LoadSettingsFromSlot();
+	TestFalse(TEXT("A FOREIGN-class slot falls back to the C++ default (counter OFF), never a crash"),
+		ForeignReader.Settings->IsFrameRateCounterEnabled());
+
+	return true;
+}
+
+/**
+ *  ⭐⭐ THE DELEGATE NAMES **WHICH** SETTING CHANGED — ASSERTED AS STATE, NOT AS A
+ *  TALLY, AND THAT CHOICE IS THIS LANE'S OWN LESSON.
+ *
+ *  🚨 `qa/TASK-1119.md` § LOOP 1 found `M21` reading GREEN under both the fixed
+ *  and the broken branch by arithmetic coincidence, and `qa/TASK-1114.md` found a
+ *  facade counter reading `0` on broken and fixed alike. ⛔ A BROADCAST COUNT
+ *  CANNOT DISCRIMINATE A SWAPPED PAYLOAD: a setter that forwarded the CONFIRM
+ *  toggle's FName while writing the frame-counter member would produce exactly
+ *  the same count as the correct code, and every count-based assertion below
+ *  would stay green — while the Graphics panel's row and the in-match counter,
+ *  both of which FILTER on this token, silently stopped updating.
+ *  ⇒ every discriminating assertion here reads `LastBroadcastSettingName`.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeSettingsFrameRateCounterDelegateTest,
+	"Siegebound.Settings.FrameRateCounterDelegateNamesTheRightSetting",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeSettingsFrameRateCounterDelegateTest::RunTest(const FString& Parameters)
+{
+	SiegeSettingsTestUtils::FScratchSlotGuard SlotGuard;
+
+	// The pinned token, character-for-character (`GFX-§10`). A changed string
+	// silently unhooks every consumer that filters on it, with nothing failing.
+	TestEqualSensitive(TEXT("SettingName_ShowFrameRateCounter is exactly \"bShowFrameRateCounter\""),
+		USiegeSettingsSubsystem::SettingName_ShowFrameRateCounter.ToString(),
+		FString(TEXT("bShowFrameRateCounter")));
+
+	TestNotEqual(TEXT("⛔ The two settings carry DIFFERENT payload names"),
+		USiegeSettingsSubsystem::SettingName_ShowFrameRateCounter.ToString(),
+		USiegeSettingsSubsystem::SettingName_AssistantConfirmBeforeExecute.ToString());
+
+	SiegeSettingsTestUtils::FScratchStore Store = SiegeSettingsTestUtils::MakeScratchStore();
+	if (!Store.IsValid())
+	{
+		AddError(TEXT("Could not construct a USiegeSettingsSubsystem inside a UGameInstance."));
+		return false;
+	}
+
+	// STATE, not a tally: nothing has been broadcast, so there is no last name.
+	TestTrue(TEXT("A fresh store has broadcast nothing (LastBroadcastSettingName is None)"),
+		Store.Settings->LastBroadcastSettingName.IsNone());
+
+	// ---- a NO-OP write ------------------------------------------------------
+	// false → false. ⛔ The state assertion is what makes this row honest: if the
+	// setter broadcast on a no-op, the NAME would stop being None even though the
+	// value did not move.
+	Store.Settings->SetFrameRateCounterEnabled(false);
+	TestTrue(TEXT("A same-value write broadcasts NOTHING (still no last name)"),
+		Store.Settings->LastBroadcastSettingName.IsNone());
+	TestFalse(TEXT("A same-value write leaves the value alone"),
+		Store.Settings->IsFrameRateCounterEnabled());
+
+	// ---- a REAL change ------------------------------------------------------
+	Store.Settings->SetFrameRateCounterEnabled(true);
+	TestTrue(TEXT("A real change actually changed the value"),
+		Store.Settings->IsFrameRateCounterEnabled());
+	TestEqualSensitive(TEXT("⭐ The broadcast names the FRAME-COUNTER setting, not the confirm toggle"),
+		Store.Settings->LastBroadcastSettingName.ToString(),
+		USiegeSettingsSubsystem::SettingName_ShowFrameRateCounter.ToString());
+
+	// ---- the other setting still speaks for itself --------------------------
+	// ⛔ THIS PAIR IS THE DISCRIMINATOR. Moving the OTHER setting must move the
+	// name to the OTHER token; a store that answered "frame counter" to both would
+	// pass every count-based assertion in this file and fail here.
+	Store.Settings->SetAssistantConfirmEnabled(false);
+	TestEqualSensitive(TEXT("⭐ Moving the confirm toggle names the CONFIRM setting"),
+		Store.Settings->LastBroadcastSettingName.ToString(),
+		USiegeSettingsSubsystem::SettingName_AssistantConfirmBeforeExecute.ToString());
+
+	Store.Settings->SetFrameRateCounterEnabled(false);
+	TestEqualSensitive(TEXT("⭐ And moving the counter back names the counter again"),
+		Store.Settings->LastBroadcastSettingName.ToString(),
+		USiegeSettingsSubsystem::SettingName_ShowFrameRateCounter.ToString());
+
+	// Four writes, three of them real: the tally is a CORROBORATION of the names
+	// above, deliberately not the thing being relied on.
+	TestEqual(TEXT("Three real changes and one no-op ⇒ exactly three broadcasts"),
+		Store.Settings->SettingsChangeBroadcastCount, 3);
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -210,6 +210,111 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Siegebound|Terrain")
 	bool bReRandomizeOnMatchReset = true;
 
+	// ═══════════════════════════════════════════════════════════════════════════
+	// THE FOLIAGE QUALITY LEVER — CULL BAND ONLY (TASK-1122, GFX-§9)
+	// ═══════════════════════════════════════════════════════════════════════════
+	//
+	// ⛔⛔ THE ONE SENTENCE THAT GOVERNS EVERYTHING BELOW: this lever may move what
+	// is DRAWN and may NEVER move what is PLACED. A quality level is PER-MACHINE
+	// (GFX-§3); the layout is a REPLICATED CONTRACT (M8/D9). The client never
+	// self-generates (BeginPlay:230) — it mirrors the authority's seed through
+	// OnRep_GenerationIndex and must reproduce the SAME field. `InstanceCount` /
+	// `OuterTarget` drive the iteration count of a loop that draws from a SHARED
+	// FRandomStream, so thinning instances would shift the stream and desync EVERY
+	// SUBSEQUENT LAYER, not merely the thinned one — and it would make a low-spec
+	// client's obstacle set a SUBSET where the authority-only traversability
+	// residual (BattlefieldScatter.cpp:339-340) was signed off on it being a
+	// SUPERSET. ⛔ DENSITY IS STRUCK. Cull distances are render-side state applied
+	// AFTER placement and consume ZERO RNG ⇒ per-client-safe BY CONSTRUCTION.
+	//
+	// ⛔⛔ AND THE SECOND TRAP, WHICH IS WHY A BARE `Band × Scale` IS REFUSED:
+	// USiegeGraphicsSettingsSubsystem's ladder (0.25 / 0.50 / 0.75 / 1.00 / 1.00)
+	// was authored for the STRUCK density lever, where it is a COUNT multiplier.
+	// A count multiplier applied to a DISTANCE is wrong by a square: drawn
+	// instances scale with the AREA of the annulus, ≈ end², so a naive
+	// `0.25 × band` would draw 0.0625 of them — SIXTEEN TIMES the intended cut —
+	// and would pull the grass band from 90 m to 22.5 m, i.e. grass materialising
+	// in the player's lap. That reads as a BROKEN GAME at Low, not a scaled one.
+	// ⇒ the translation is `factor = sqrt(quality)`, which reproduces EXACTLY the
+	// drawn-instance reduction the ladder was designed to deliver, through the one
+	// mechanism that is determinism-safe. See FoliageQualityScaleToCullDistanceFactor.
+
+	/**
+	 *  ⛔ THE NEAR-FIELD FLOOR, IN UNREAL UNITS (1 uu = 1 cm) — a cull end may
+	 *  never be pulled below this by the quality lever. 3,500 uu = 35 m, and that
+	 *  number is MEASURED rather than picked: the castle keep-clear disc
+	 *  (CastleKeepClearRadius 4,500 uu, DA-serialised) puts the nearest possible
+	 *  scattered tuft ≈35 m from the hero's spawn (`handoffs/TASK-1084-buildmaster.md`
+	 *  §0b item 3). A cull end shorter than that renders the layer INVISIBLE from
+	 *  spawn — the lever would be switching the layer OFF, and a quality level that
+	 *  turns a layer off is the "control that lies" GFX-§9 exists to forbid.
+	 *
+	 *  ⚠️ HONEST SCOPE: with today's authored bands this floor NEVER BINDS (the
+	 *  shortest applied end is grass at Low, 45 m). It is a bound on FUTURE
+	 *  DA_BattlefieldScatter edits — the DA is content and can change without a
+	 *  code review — and it is exercised by a synthetic layer in the tests, not by
+	 *  any shipped layer. Stated so nobody reads its presence as evidence it fired.
+	 */
+	static constexpr int32 FoliageCullNearFieldFloorUU = 3500;
+
+	/**
+	 *  Translates the graphics facade's Foliage QUALITY scalar (a normalized
+	 *  0..1 value; the shipped ladder is 0.25 / 0.50 / 0.75 / 1.00 / 1.00 for
+	 *  Low..Cinematic) into a CULL-DISTANCE factor.
+	 *
+	 *  ⛔ `sqrt`, NOT identity. The scalar is a COUNT scalar by origin and cull
+	 *  cost scales with the AREA the band covers (≈ end²), so `sqrt(q)` is the
+	 *  distance that draws exactly `q` of the instances. Ruled mapping, in metres,
+	 *  against the MEASURED authored bands (engine read-backs recorded in
+	 *  `handoffs/TASK-1083-buildmaster.md` §Trees and `TASK-1084-buildmaster.md` §0b):
+	 *
+	 *      level        q      factor   Trees 240/320 m   Grass 60/90 m   Plants 80/120 m   drawn
+	 *      Low       0.25      0.500     120 / 160 m       30 / 45 m       40 /  60 m        25 %
+	 *      Medium    0.50      0.707     170 / 226 m       42 / 64 m       57 /  85 m        50 %
+	 *      High      0.75      0.866     208 / 277 m       52 / 78 m       69 / 104 m        75 %
+	 *      Epic      1.00      1.000     240 / 320 m       60 / 90 m       80 / 120 m       100 %
+	 *      Cinematic 1.00      1.000     ⛔ IDENTICAL TO EPIC — never above the authored baseline
+	 *
+	 *  ⚠️ Those are the AUTHORED metres handed to SetCullDistances. The engine's
+	 *  own ViewDistance group multiplies `r.ViewDistanceScale` (0.4 @Low → 1.0
+	 *  @Epic) on top at draw time, and GFX-§9 STRUCK any compensation for it — so
+	 *  Foliage=Low + ViewDistance=Low compounds to ≈18 m of grass. That is two
+	 *  honestly-labelled Low sliders doing what they say; it is flagged for the
+	 *  gate rather than silently corrected.
+	 *
+	 *  Pure: no world, no UObject, no allocation, no RNG, no clock (the
+	 *  HIGH-§3 / `HeightAdvantageMultiplier` testability idiom).
+	 */
+	static float FoliageQualityScaleToCullDistanceFactor(float FoliageQualityScale);
+
+	/**
+	 *  Applies the Foliage quality factor to ONE layer's authored cull band and
+	 *  returns the pair to hand to UInstancedStaticMeshComponent::SetCullDistances.
+	 *
+	 *  Guarantees, each of them a named test in `Tests/SiegeScatterCullBandTest.cpp`:
+	 *   (1) ⛔ `AuthoredEnd == 0` (the engine's NEVER-CULLED sentinel, which the
+	 *       HILLS layer rides so its silhouette reads across the 10× field) comes
+	 *       back UNTOUCHED. A multiply would turn "never culled" into "culled at
+	 *       zero distance", i.e. a layer that renders nowhere.
+	 *   (2) ⛔ Scale >= 1.0 (Epic, Cinematic, AND the facade's null fallback)
+	 *       returns today's EXACT pair — `Max(Start,0)`, `Max(End,0)` — with no
+	 *       arithmetic performed at all, so the default battlefield cannot regress
+	 *       by so much as a rounding step. A regression at Epic is a FAIL.
+	 *   (3) The band never goes negative and never collapses to zero (the floor
+	 *       above, itself capped by the authored end so the lever can only ever
+	 *       SHORTEN a band, never lengthen one).
+	 *   (4) An authored HARD POP (`Start >= End`, ScatterConfig.h:252-255) stays a
+	 *       hard pop — the semantics are preserved, not just the numbers.
+	 *
+	 *  Pure, exactly like the factor above.
+	 */
+	static void ComputeFoliageScaledCullBand(
+		int32 AuthoredStartUU,
+		int32 AuthoredEndUU,
+		float FoliageQualityScale,
+		int32& OutStartUU,
+		int32& OutEndUU);
+
 protected:
 
 	/** Scatters once at match start. */
@@ -580,6 +685,75 @@ private:
 
 	/** Cached corridor half-width for this generate (from the config). */
 	float CorridorHalfWidthCached = 0.f;
+
+	/**
+	 *  TASK-1122 (GFX-§9): the Foliage quality scalar read ONCE per generate, at
+	 *  the top of RunScatterPasses beside `FRandomStream Stream(Seed)` — the single
+	 *  funnel for both the authority path and the client mirror. Follows
+	 *  CorridorHalfWidthCached's idiom exactly (cache-per-generate, no tick, no
+	 *  per-frame poll, no CVar sink).
+	 *
+	 *  ⛔ 1.0 IS THE FAIL-SAFE and it is the value on a dedicated server, in a
+	 *  test, and whenever the graphics facade cannot be resolved: 1.0 means "the
+	 *  authored DA_BattlefieldScatter bands, unchanged".
+	 *  ⛔ THIS FIELD IS READ AT EXACTLY ONE PLACE — ApplyFoliageCullBands() — and
+	 *  that function calls nothing but SetCullDistances. It must never be read
+	 *  inside ScatterLayer, never near an FRandomStream draw, and never by
+	 *  anything that decides WHERE or HOW MANY.
+	 */
+	float FoliageCullScaleCached = 1.0f;
+
+	/**
+	 *  TASK-1122: one record per HISM this actor has ever created, holding the
+	 *  AUTHORED cull band of the layer that created it.
+	 *
+	 *  ⛔ WHY THIS EXISTS RATHER THAN JUST READING `Layer` AT THE CALL SITE — the
+	 *  defect it closes is real and was found by reading ClearScatter: a re-scatter
+	 *  (Play Again) CLEARS INSTANCES BUT KEEPS THE COMPONENTS (ClearScatter:471-479),
+	 *  and ResolveComponentForMesh RETURNS EARLY on the reuse path (:902-908) —
+	 *  above every render-profile call. So without a re-apply pass, a quality change
+	 *  followed by Play Again would move NOTHING, while a quality change followed by
+	 *  a fresh match would work: a lever live on one path and silently dead on the
+	 *  other, which is exactly the shape TASK-1109 / SC-§94 was bought on, and it
+	 *  would make the panel's "applies at the next match start" sentence a lie for
+	 *  half the ways a match starts.
+	 *
+	 *  ⛔ AND WHY THE AUTHORED BAND IS RECORDED RATHER THAN RE-READ: re-applying
+	 *  from whatever `Layer` happens to be in scope would hand a mesh SHARED by two
+	 *  layers the LAST layer's band, where the one-HISM-per-mesh law (:894-908,
+	 *  OverrideMaterial comment) gives it the FIRST layer's. Recording at creation
+	 *  preserves first-layer-wins EXACTLY, including at Epic where any drift would
+	 *  be a regression on the default battlefield.
+	 *
+	 *  Weak pointers, and deliberately NOT a UPROPERTY: every component here is
+	 *  already rooted by ScatterComponents (a UPROPERTY) — this is a secondary
+	 *  index in the VisualToProxy / HillSurfaceComponents idiom — and a weak
+	 *  pointer self-invalidates rather than dangling. Appended ONLY on the creation
+	 *  path, so it is bounded by the unique-mesh count (~59 today) for the actor's
+	 *  whole life, not by re-scatter count.
+	 */
+	struct FScatterCullBandRecord
+	{
+		TWeakObjectPtr<UHierarchicalInstancedStaticMeshComponent> Component;
+		FName LayerName = NAME_None;
+		int32 AuthoredStartUU = 0;
+		int32 AuthoredEndUU = 0;
+	};
+	TArray<FScatterCullBandRecord> CullBandRecords;
+
+	/**
+	 *  TASK-1122 (GFX-§9): re-applies the Foliage-scaled cull band to every
+	 *  recorded HISM, then READS IT BACK off the component and logs both numbers
+	 *  (SC-§94 cl. B — read the state, never echo the request; FIELD-§7 / the
+	 *  GFX-§9 "verify by pixels AND the engine log" obligation).
+	 *
+	 *  Called from RunScatterPasses AFTER both placement passes, so (a) every
+	 *  component exists, (b) it costs one pass over ~59 components rather than a
+	 *  lookup inside the per-instance rejection loop, and (c) the reuse path of a
+	 *  Play-Again re-scatter is covered. ⛔ It calls SetCullDistances and NOTHING
+	 *  else: no AddInstance, no RemoveInstance, no FRandomStream, no transform.
+	 */
+	void ApplyFoliageCullBands();
 
 	/** Seed used by the most recent GenerateScatter (re-used when bReRandomizeOnMatchReset is false). */
 	int32 LastSeed = 0;

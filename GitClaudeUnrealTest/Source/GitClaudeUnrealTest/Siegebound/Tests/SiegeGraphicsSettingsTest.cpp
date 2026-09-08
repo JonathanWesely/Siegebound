@@ -126,7 +126,7 @@
  *   M10 In ShouldEnableVolumetricFog, read GroupName_EffectsQuality instead of
  *       GroupName_ShadowQuality (i.e. follow GFX-§9's text over the engine's
  *       measured ownership).                       ⇒ RED: VolumetricFogFollowsShadowNotEffects
- *   M11 In GetFoliageDensityScale, change the Epic (case 3) return to 0.9f.
+ *   M11 In GetFoliageQualityScale, change the Epic (case 3) return to 0.9f.
  *                                                  ⇒ RED: TierDFoliageDensityTable
  *   M12 In ResolveSettings, return GEngine->GetGameUserSettings() before checking
  *       bForceNullSettingsForAutomationTests.      ⇒ RED: NullSettingsDegradesToFallbacks
@@ -137,10 +137,20 @@
  *       SaveSettings() at GameUserSettings.cpp:1142 persists an unconfirmed
  *       ResolutionSizeX/Y + FullscreenMode entirely around RequestSaveSettings'
  *       guard.       ⇒ RED: AutoDetectRefusedDuringUnconfirmedVideoMode
- *       ⚠️ It reddens on the REFUSAL COUNTER and the return value, ⛔ never on
- *       SaveSettingsCallCount — the engine's save is not at a counted facade
- *       call site, which is exactly why M1-M12 could not see this failure class
- *       at all (SC-§79).
+ *       ✅⭐ CORRECTED 2026-09-07 FROM A **WITNESSED RED** — TASK-1117 EXECUTED
+ *       THIS MUTATION AND IT REDDENED **EXACTLY ONE ASSERTION**: the REFUSAL
+ *       COUNTER row, with the TestFalse above it GREEN. The claim struck from
+ *       here said "the counter AND the return value"; qa/TASK-1114.md § LOOP 1
+ *       WARN-8 derived that to be over-broad and TASK-1117's run then MEASURED
+ *       it: under AUTOMATION the deleted guard falls into the SUPPRESSION
+ *       branch, which returns false anyway, so the bool cannot discriminate.
+ *       ⇒ ONE red row is the EXPECTED result here, not a half-failure — and TWO
+ *       reds would mean the suppression branch MOVED.
+ *       ⛔ It never reddens SaveSettingsCallCount: the engine's save is not at a
+ *       counted facade call site, which is exactly why M1-M12 could not see this
+ *       failure class at all (SC-§79). ⛔ This is the SECOND prediction in this
+ *       lane measured narrower than written (M4 was the first) — a mutation table
+ *       is evidence only where it has been RUN.
  *       ⚠️ A SECOND, WEAKER MUTATION WORTH THE HOST'S EYE: move the refusal
  *       BELOW the suppression branch instead of deleting it. The first TestFalse
  *       still passes (suppression returns false), and only the counter
@@ -712,7 +722,7 @@ bool FSiegeGraphicsNullSettingsDegradesTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Frame rate limit falls back to 0 (Unlimited)"), Graphics->GetFrameRateLimit(), 0.0f, 0.01f);
 
 	// Tier D degrades toward the AUTHORED baseline, never toward less content.
-	TestEqual(TEXT("Foliage density falls back to 1.0 (full density)"), Graphics->GetFoliageDensityScale(), 1.0f, 0.001f);
+	TestEqual(TEXT("Foliage density falls back to 1.0 (full density)"), Graphics->GetFoliageQualityScale(), 1.0f, 0.001f);
 	TestEqual(TEXT("View distance scale falls back to 1.0"), Graphics->GetViewDistanceScale(), 1.0f, 0.001f);
 	TestTrue(TEXT("Volumetric fog falls back to ON (the shipped look)"), Graphics->ShouldEnableVolumetricFog());
 
@@ -1221,15 +1231,15 @@ bool FSiegeGraphicsTierDDerivationsTest::RunTest(const FString& Parameters)
 	{
 		Graphics->SetFoliageQuality(Level);
 		TestEqual(*FString::Printf(TEXT("Foliage density at level %d"), Level),
-			Graphics->GetFoliageDensityScale(), ExpectedDensity[Level], 0.001f);
+			Graphics->GetFoliageQualityScale(), ExpectedDensity[Level], 0.001f);
 	}
 
 	Graphics->SetFoliageQuality(3);
 	TestEqual(TEXT("⛔ Epic is EXACTLY 1.0 — the authored baseline must be byte-for-byte unchanged"),
-		Graphics->GetFoliageDensityScale(), 1.0f, 0.0001f);
+		Graphics->GetFoliageQualityScale(), 1.0f, 0.0001f);
 	Graphics->SetFoliageQuality(4);
 	TestTrue(TEXT("⛔ Cinematic never exceeds the authored baseline"),
-		Graphics->GetFoliageDensityScale() <= 1.0f);
+		Graphics->GetFoliageQualityScale() <= 1.0f);
 
 	// VIEW DISTANCE. 1.0 at every level in v1 — a MEASUREMENT, not a stub: the
 	// engine's own r.ViewDistanceScale (0.4 at @0 -> 1.0 at @3) already moves the
@@ -1333,7 +1343,7 @@ bool FSiegeGraphicsTierDIsPureTest::RunTest(const FString& Parameters)
 	float DensitySum = 0.0f;
 	for (int32 Iteration = 0; Iteration < 32; ++Iteration)
 	{
-		DensitySum += Graphics->GetFoliageDensityScale();
+		DensitySum += Graphics->GetFoliageQualityScale();
 		DensitySum += Graphics->GetViewDistanceScale();
 		Graphics->ShouldEnableVolumetricFog();
 	}
@@ -1345,10 +1355,10 @@ bool FSiegeGraphicsTierDIsPureTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("⛔ Tier-D reads broadcast NOTHING"), Graphics->GraphicsSettingsChangeBroadcastCount, 0);
 
 	// And repeated reads are stable — a getter that mutated what it read would drift.
-	const float FirstDensity = Graphics->GetFoliageDensityScale();
+	const float FirstDensity = Graphics->GetFoliageQualityScale();
 	for (int32 Iteration = 0; Iteration < 8; ++Iteration)
 	{
-		TestEqual(TEXT("Repeated Tier-D reads are stable"), Graphics->GetFoliageDensityScale(), FirstDensity, 0.0001f);
+		TestEqual(TEXT("Repeated Tier-D reads are stable"), Graphics->GetFoliageQualityScale(), FirstDensity, 0.0001f);
 	}
 
 	return true;
