@@ -36,6 +36,7 @@
 #include "Siegebound/SiegeAssistantComponent.h" // USiegeAssistantComponent — complete type for the constructor's CreateDefaultSubobject (TASK-440; the class BODY is TASK-442's, so this header does not exist until that task lands — see the handoff's compile-order note)
 #include "Siegebound/SiegeAssistantConsoleWidget.h" // USiegeAssistantConsoleWidget — complete type for CreateAndAddToViewport / Open / Close / the OnConsoleOpenChanged binding (TASK-449; the widget itself is TASK-444's)
 #include "Siegebound/SiegeCheatManager.h" // TASK-121 — CheatClass complete-type (constructor assignment below)
+#include "Siegebound/SiegeCombatStatics.h" // TASK-1132 (WITCH-§8): FSiegeCombatStatics — the ONE shipped veil predicate, consulted by the 30-gold enemy-reveal survey. ⛔ READ ONLY: this controller adds no rule and owns none.
 #include "Siegebound/SiegeControlsHelpWidget.h" // USiegeControlsHelpWidget — complete type for CreateAndAddToViewport / OpenHelp / CloseHelp / the OnHelpOpenChanged binding (TASK-706, `HELP-§3`)
 #include "Siegebound/SiegeDeckSaveGame.h" // USiegeDeckSaveGame — active saved deck source (M6 TASK-114)
 #include "Siegebound/SiegeFeedbackLibrary.h" // M7 §6 audio hooks (TASK-179): card play/discard/spell/end-of-match
@@ -7097,15 +7098,52 @@ void ASiegePlayerController::PerformEnemyReveal()
 	// first set went stale. Flipping to live-until-close is one re-push on a timer
 	// and changes nothing in the widget.
 	//
-	// The survey mirrors UWarMapWidget::RefreshAllyDots exactly, with the team
-	// comparison inverted — same actor classes, same alive tests, same order — so the
-	// red dots and the blue dots can never mean different things.
+	// The survey mirrors UWarMapWidget::RefreshAllyDots with the team comparison
+	// inverted — same actor classes, same alive tests, same order — so the red dots and
+	// the blue dots can never mean different things.
+	//
+	// ⚠️⚠️ CORRECTED BY TASK-1132: THAT MIRROR IS NO LONGER EXACT, AND THE ONE PLACE IT
+	// BREAKS IS DELIBERATE, ONE-SIDED, AND NAMED HERE SO NOBODY "RESTORES SYMMETRY".
+	// The UNIT loop below additionally consults FSiegeCombatStatics::IsAgentVisibleTo —
+	// the ONE shipped veil predicate (WITCH-§8's raw-scan rule: a TActorIterator that
+	// bypasses the acquisition funnel must call the funnel's own predicate, ⛔ never
+	// re-read the flag). Without it, a paying player's map published a VEILED enemy
+	// unit's exact world (X, Y) at full precision across the whole arena — the very
+	// information the 50-gold veil exists to withhold, sold for 30.
+	//
+	// ⛔ AND THE ASYMMETRY IS CORRECT RATHER THAN AN OVERSIGHT, IN BOTH DIRECTIONS:
+	//   • RefreshAllyDots gets NO consult. It filters to the viewer's OWN team, and
+	//     IsAgentVisibleTo returns TRUE for every own-team actor (WITCH-§2's fourth
+	//     lane: a unit its own player cannot see is a BUG, not a feature; the ally scan
+	//     in SiegeBotController.cpp records the identical finding in place). ⇒ a consult
+	//     there is dead code that would imply a player can lose sight of his own army.
+	//   • The HERO loop below gets NO consult. J-W10 / WITCH-§6: ASummonedUnit is the
+	//     ONLY veilable class. ⇒ a consult there is dead code that would imply a hero
+	//     can be veiled.
+	// ⇒ FALSIFIABLE, and pinned in BOTH directions rather than described: exactly ONE
+	// veil consult in this whole function, and exactly ZERO in RefreshAllyDots. Test 36
+	// in Tests/SiegeWarMapTest.cpp asserts both numbers; there is no third state.
+	//
+	// 🧑 DECLARED CONSEQUENCE (TASK-1135, J-W18): 30 gold can now return FEWER dots —
+	// possibly ZERO. That is the shipping default, because "undetectable to enemy
+	// AI/players" is Jonathan's own sentence and the war map is a player instrument. If
+	// he ever rules that the PAID reveal should PIERCE the veil (gold as counterplay),
+	// it is a one-line inversion at this exact site. ⛔ There is deliberately no toggle.
 	TArray<FVector2D> EnemyWorldXY;
 
 	for (TActorIterator<ASummonedUnit> UnitIt(World); UnitIt; ++UnitIt)
 	{
 		const ASummonedUnit* const Unit = *UnitIt;
-		if (!IsValid(Unit) || Unit->IsUnitDead() || Unit->GetTeamId() != EnemyTeam)
+
+		// ⭐ THE VEIL TERM IS LAST ON PURPOSE, and it is not a style choice: || short-
+		// circuits, so the three cheap filters run first and the predicate is only ever
+		// asked about a LIVE ENEMY unit — which is the only case where it can answer
+		// anything but true. ⚠️ ITS FIRST ARGUMENT IS THE VIEWER'S TEAM (OwnTeam), ⛔ NOT
+		// EnemyTeam: IsAgentVisibleTo(ViewerTeam, Candidate) asks "can THIS side see
+		// that actor", and passing EnemyTeam would ask whether the veiled unit's own
+		// side can see it — always TRUE — making this guard silently dead.
+		if (!IsValid(Unit) || Unit->IsUnitDead() || Unit->GetTeamId() != EnemyTeam
+			|| !FSiegeCombatStatics::IsAgentVisibleTo(OwnTeam, Unit))
 		{
 			continue;
 		}

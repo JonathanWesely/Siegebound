@@ -5424,12 +5424,41 @@ float ASummonedUnit::TakeDamage(float DamageAmount, const FDamageEvent& DamageEv
 	// never reach here). Flash the active visual white ~0.1 s; float the dealt amount
 	// over the unit, tinted by team. Both null-safe (no art = no-op) and run before
 	// HandleDeath so the killing blow still flashes/pops.
-	if (HitFlashComponent)
+	//
+	// ⭐⭐⭐ TASK-931 (WITCH-§2, WITCH-§3, 🧑 J-W18) — ⛔ ONE PER-VIEWER CONSULT, ⛔ TWO TELLS.
+	// ⛔⛔ WHY THE CONSULT IS HERE AND ⛔ NOT INSIDE EITHER FEEDBACK CALL, AND IT IS A MEASUREMENT
+	// RATHER THAN A PREFERENCE: TriggerFlash and ShowDamageNumber each have ⛔ FOUR callers —
+	// ABuilding, ACastle, AHeroCharacter and this one — and WITCH-§6 rules ASummonedUnit the ⛔ ONLY
+	// veilable class. ⇒ a consult written ⛔ inside either helper would ⛔ silently reach buildings,
+	// castles and the hero, i.e. it would suppress feedback for three actor kinds that ⛔ cannot be
+	// veiled and whose viewers therefore have nothing to be protected from. ⛔ The veilable SITE is
+	// the only place the question is even well-posed, and putting it here leaves both helpers
+	// exactly as their other three callers found them.
+	// ⭐ ONE `if` FOR BOTH TELLS, ⛔ NOT TWO ONE-LINE HIDES. They fire on the same edge, in the same
+	// block, on the same condition; two independent guards would be two things to keep in agreement
+	// and the second one is the one somebody forgets when the predicate moves.
+	//
+	// ⛔⛔ THIS IS ⛔ NOT A VEIL BREAK AND ⛔ NOT A DAMAGE CHANGE. `ActualDamage` was already applied
+	// above, `CurrentHP` is already reduced, `OnHPChanged` has already fired and every consumer
+	// downstream is untouched: a veiled unit still ⛔ takes the hit, still ⛔ dies from it and still
+	// ⛔ stays veiled (WITCH-§3 — being hit is not acting). ⛔ Only the two COSMETICS a viewer who
+	// cannot see the unit has no business receiving are withheld.
+	// ⚖️ AND THEY ARE THE WORST TWO IN THE GAME: the AoE lane is the ⛔ one lane WITCH-§2 deliberately
+	// leaves un-suppressed (J-W2), so this fires ⛔ exactly when a hidden push is being flushed — the
+	// moment the veil is doing its most important work — and the damage number is worse than the
+	// flash, because it outlasts it, it is UI-bright, its tint leaks ⛔ WHOSE unit it is and its
+	// digits leak ⛔ HOW MUCH HP IT JUST LOST.
+	// ⭐ The OWNER keeps both: the predicate answers TRUE for every same-team query (WITCH-§2 lane
+	// 4), so his own veiled unit still flashes and still floats its numbers.
+	if (FSiegeCombatStatics::IsAgentVisibleToLocalViewer(GetWorld(), this))
 	{
-		HitFlashComponent->TriggerFlash();
+		if (HitFlashComponent)
+		{
+			HitFlashComponent->TriggerFlash();
+		}
+		USiegeFeedbackLibrary::ShowDamageNumber(this, ActualDamage,
+			GetActorLocation() + FVector(0.f, 0.f, UnitDamageNumberHeightZ), USiegeFeedbackLibrary::TeamTint(Team));
 	}
-	USiegeFeedbackLibrary::ShowDamageNumber(this, ActualDamage,
-		GetActorLocation() + FVector(0.f, 0.f, UnitDamageNumberHeightZ), USiegeFeedbackLibrary::TeamTint(Team));
 
 	// ══ ⭐⭐ THE WITCH-CAST INTERRUPT (TASK-830; WITCH-§4) — ⛔ AND IT IS ⛔ NOT A VEIL BREAK ═════
 	// ⛔⛔ READ THE DISTINCTION BEFORE EDITING EITHER LINE, BECAUSE WITCH-§3 STATES IT AND THEN

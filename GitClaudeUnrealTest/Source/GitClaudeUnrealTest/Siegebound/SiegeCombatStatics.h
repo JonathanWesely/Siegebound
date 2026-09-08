@@ -302,6 +302,56 @@ public:
 	static bool IsAgentVisibleTo(ETeamId ViewerTeam, const AActor* Candidate);
 
 	/**
+	 *  ⭐⭐ TASK-931 (`WITCH-§2` / `WITCH-§9.1` row 4 / 🧑 `J-W18`) — THE ⛔ RENDER LANE'S ADAPTER
+	 *  ONTO THE ⛔ ONE PREDICATE ABOVE. True when the ⛔ VIEWER SITTING AT THIS MACHINE may see
+	 *  Candidate.
+	 *
+	 *  ⛔⛔ THIS IS ⛔ NOT A SECOND PREDICATE, AND THE DISTINCTION IS THE WHOLE REASON IT IS
+	 *  ALLOWED TO EXIST. It states the veil rule ⛔ ZERO times: its entire body resolves ⛔ WHO IS
+	 *  LOOKING and then ⛔ asks `IsAgentVisibleTo` above. ⇒ the rule still has ⛔ ONE home, and this
+	 *  function has ⛔ nothing to keep in sync with it. ⛔ A future edit that inlines a veil test
+	 *  here — the flag, `ESiegeVeilPolicy`, or a direct `FSiegeInvisibilityStatics` call — makes it
+	 *  a ⛔ THIRD source of truth and is an ⛔ automatic QA FAIL (`WITCH-§1`; asserted by
+	 *  `Tests/SiegeInvisibilityTest.cpp`).
+	 *
+	 *  ⭐⭐ WHY A RENDER SITE NEEDS ITS OWN ENTRY POINT AT ALL, rather than calling the predicate
+	 *  directly the way `TASK-851`'s bot scans do: an ACQUISITION site ⛔ already knows whose eyes
+	 *  it is — the acquirer's team is the input to the whole query. A ⛔ RENDER site does ⛔ not: a
+	 *  health bar, a hit flash and a damage number are drawn ⛔ for whoever is watching, and the
+	 *  watcher is ⛔ nowhere in the owning actor's state. ⇒ ⛔ WITHOUT THIS FUNCTION EVERY RENDER
+	 *  SITE WOULD RESOLVE THE VIEWER ⛔ ITSELF, WHICH IS THE ⛔ N-INDEPENDENT-HIDES SHAPE `TASK-931`
+	 *  EXISTS TO REFUSE — ⛔ three sites that each answer *"whose eyes?"* separately will disagree
+	 *  the first time that answer moves (a spectator, a replay, a second local viewer).
+	 *
+	 *  ⭐ THE VIEWER RESOLVE IS THE ⛔ SHIPPED M8 LOCAL-VIEWER IDIOM, ⛔ COPIED RATHER THAN
+	 *  REINVENTED — `USiegeFeedbackLibrary::PlayLocalCameraShake`'s `GetPlayerControllerIterator` +
+	 *  `IsLocalController()` walk (TASK-356 doc §3.7). ⛔ It is ⛔ NOT `GetFirstPlayerController()`
+	 *  and it is ⛔ not index 0: the iteration carries ⛔ local-viewer semantics, which is the one
+	 *  question a render site is entitled to ask, and it is why the M8 TEAM LAW's ban does ⛔ not
+	 *  reach it. The team then comes off that controller's `ASiegePlayerState` — ⛔ NEVER GUESSED
+	 *  (the shipped `ResolveOrderingTeam` doctrine: a defaulted `Blue` on a `Red` client would
+	 *  suppress the ⛔ owner's own feedback and show the ⛔ enemy's, i.e. exactly backwards).
+	 *
+	 *  ⛔⛔ FAIL-OPEN, AND IT IS A ⛔ RULING RATHER THAN A FALLBACK. No world, no local controller,
+	 *  or a controller whose `ASiegePlayerState` has not arrived ⇒ ⛔ TRUE (visible). ⚖️ *"nobody
+	 *  is looking"* has no viewer to hide from, so the ⛔ shipped behaviour is the ⛔ correct answer:
+	 *  this function may only ever ⛔ SUBTRACT a tell from a viewer we ⛔ POSITIVELY IDENTIFIED as
+	 *  unable to see the unit. ⛔ The other direction is far worse and much harder to notice — a
+	 *  resolve that quietly broke would blank ⛔ every health bar, flash and damage number in the
+	 *  match, for ⛔ everyone (the same fail-open ledger `UCombatantHealthBarComponent`'s occlusion
+	 *  cull already keeps, for the same reason: a missing camera must never blank the HUD).
+	 *
+	 *  ⚠️ M8 (`WITCH-§6`'s per-client asymmetry): a dedicated server has ⛔ no local viewer and
+	 *  therefore suppresses nothing, which is correct — it renders nothing either. ⛔ When the veil
+	 *  becomes per-client, ⛔ THIS FUNCTION IS THE ONE THING THAT CHANGES; every consult site keeps
+	 *  its single line. That is the entire point of the shape.
+	 *
+	 *  @param World      the world whose LOCAL viewer is asking; null yields true
+	 *  @param Candidate  the actor being looked at
+	 */
+	static bool IsAgentVisibleToLocalViewer(const UWorld* World, const AActor* Candidate);
+
+	/**
 	 *  The SAME-TEAM half of the funnel, and it is named rather than left as an unexplained
 	 *  second enumeration (WITCH-§2, fourth lane).
 	 *

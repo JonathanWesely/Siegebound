@@ -6,6 +6,10 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/DamageType.h"
+// TASK-931: the LOCAL-viewer walk IsAgentVisibleToLocalViewer performs. ⛔ The named idiom is
+// IsLocalController() on the player-controller iterator — deliberately NOT the M8 TEAM LAW's
+// banned "first = the player" resolve, whose name is spelled nowhere on a code line in this file.
+#include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Siegebound/FogVolume.h"                // TASK-998 (FOG-§10.1): AFogVolume — the ONE fog-state object, READ here (never spawned here) by ReadFogState below
 #include "Siegebound/SiegeInvisibilityStatics.h" // TASK-829 (WITCH-§2): FSiegeInvisibilityStatics::IsVisibleTo — the ONE suppression predicate, called from IsAgentVisibleTo below and NOWHERE else
@@ -14,6 +18,7 @@
 // (Siegebound.Invisibility.TheVeilHasOneSourceOfTruthAndOneWriteDoor) would read this file as a
 // second copy of it. See the veil flag's declaration in SummonedUnit.h.
 #include "Siegebound/SiegeFogStatics.h"          // TASK-838 (FOG-§6): the fog rule — consumed HERE and in no other translation unit
+#include "Siegebound/SiegePlayerState.h"         // TASK-931 (WITCH-§9.1 row 4): ASiegePlayerState carries the VIEWER's team — read by IsAgentVisibleToLocalViewer below, never guessed
 #include "Siegebound/SummonedUnit.h"             // TASK-829 (WITCH-§6): ASummonedUnit is the ONLY veilable class — complete type required for the Cast in IsAgentVisibleTo
 #include "Siegebound/TeamId.h"
 
@@ -115,6 +120,58 @@ bool FSiegeCombatStatics::IsAgentVisibleTo(ETeamId ViewerTeam, const AActor* Can
 	// make the guard ⛔ INVISIBLE TO THE VERY TEST THAT ENFORCES IT — an assertion that reads zero
 	// and a "fix" that bumps the expectation to zero. ⇒ ⛔ do not re-wrap this call.
 	return FSiegeInvisibilityStatics::IsVisibleTo(/*ViewerTeam=*/ ViewerTeam, /*TargetTeam=*/ Unit->GetTeamId(), /*bTargetIsInvisible=*/ Unit->IsInvisible());
+}
+
+bool FSiegeCombatStatics::IsAgentVisibleToLocalViewer(const UWorld* World, const AActor* Candidate)
+{
+	// ⛔⛔ ZERO RULES LIVE IN THIS FUNCTION, AND THAT IS ITS ENTIRE LICENCE TO EXIST (TASK-931).
+	// It answers ONE question the render lane cannot answer for itself — ⛔ WHOSE EYES? — and then
+	// hands the actual decision to IsAgentVisibleTo above. ⛔ Nothing here reads the veil flag, a
+	// policy enum or the symmetric predicate; if it ever does, the rule has two homes and the two
+	// will disagree the first time either moves (WITCH-§1, and the header says so at length).
+	//
+	// ⛔ FAIL-OPEN ON EVERY EARLY-OUT BELOW, DELIBERATELY: "we could not tell who is watching"
+	// resolves to VISIBLE, i.e. to the behaviour that shipped before this function existed. A
+	// suppression that fires on an UNKNOWN viewer would blank the whole match's feedback for
+	// everyone, which is both worse and far less noticeable than the leak it would be fixing.
+	if (!World)
+	{
+		return true;
+	}
+
+	// ⭐ THE SHIPPED M8 LOCAL-VIEWER RESOLVE, COPIED FROM USiegeFeedbackLibrary::PlayLocalCameraShake
+	// rather than reinvented (TASK-356 doc §3.7). ⛔ NOT GetFirstPlayerController() and ⛔ not index
+	// 0: exactly one LOCAL controller exists per machine (no splitscreen), and the iteration says
+	// "the viewer at this machine" rather than "the first player", which is the whole reason the
+	// M8 TEAM LAW's ban does not reach it. On a listen server this is the HOST's own view; on a
+	// client it is that client's; on a dedicated server there is none and nothing is suppressed.
+	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+	{
+		const APlayerController* const Viewer = It->Get();
+		if (!Viewer || !Viewer->IsLocalController())
+		{
+			continue;
+		}
+
+		// ⛔⛔ NEVER GUESS A TEAM — the shipped ResolveOrderingTeam doctrine, applied to a viewer
+		// instead of to an order. A defaulted Blue on a Red client would suppress that player's own
+		// units' feedback and show him the enemy's: the defect this row exists to remove, inverted
+		// and doubled. An unresolved state means the match has not finished handing this machine its
+		// identity yet, so we fall through to the fail-open return below and change nothing.
+		const ASiegePlayerState* const ViewerState = Cast<ASiegePlayerState>(Viewer->PlayerState);
+		if (!ViewerState)
+		{
+			continue;
+		}
+
+		// ⭐ THE ONE CONSULT. Note it also carries WITCH-§2's fourth lane for free: the predicate
+		// returns TRUE unconditionally for a same-team query, so the OWNER always keeps every tell
+		// on his own veiled unit — "translucent and blurred TO THE OWNER" is not a special case
+		// here, it is what asking the shipped predicate already answers.
+		return IsAgentVisibleTo(ViewerState->GetTeam(), Candidate);
+	}
+
+	return true;
 }
 
 bool FSiegeCombatStatics::ReadFogState(const UWorld* World, FSiegeFogTuning& OutTuning)

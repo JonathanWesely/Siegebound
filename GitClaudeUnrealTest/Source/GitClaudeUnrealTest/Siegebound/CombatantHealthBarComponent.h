@@ -184,8 +184,21 @@ public:
 	 *  SUBTRACT visibility. There is deliberately NO path by which an unoccluded trace shows a bar
 	 *  the owner hid — resurrecting a dead unit's health bar would be a worse defect than the one
 	 *  this cull exists to fix.
+	 *
+	 *  ⭐⭐ TASK-931 ADDED THE FOURTH BOOL (`WITCH-§2` / 🧑 `J-W17`), AND IT IS A ⛔ THIRD SUBTRACTIVE
+	 *  TERM, ⛔ NEVER AN ADDITIVE ONE — the contract above is unchanged, it now has one more way to
+	 *  say no. ⛔ A fully-opaque, camera-facing, unoccluded bar hovering over a veiled unit is the
+	 *  single most legible positional tell in the game — ⛔ better than a silhouette — and before
+	 *  this term the enemy got one.
+	 *  ⚠️ IT IS DEFAULTED, AND THE DEFAULT IS ⛔ NOT A CONVENIENCE: `Tests/SiegeHealthBarOcclusionTest.cpp`
+	 *  holds ELEVEN three-argument calls to this seam and is ⛔ OUTSIDE TASK-931's `names:` line. The
+	 *  default of `false` is what makes every one of those assertions mean ⛔ EXACTLY what it meant
+	 *  before, rather than being silently re-scoped by a row that is not allowed to edit them.
+	 *  ⛔ `ApplyBarVisibility()` — the ONE game-code caller — passes it ⛔ EXPLICITLY, and a test in
+	 *  `Tests/SiegeInvisibilityTest.cpp` pins that, so the default can never become the shipped path.
 	 */
-	static bool ComputeDesiredBarVisibility(bool bOwnerWantsBarShown, bool bCullEnabled, bool bOccluded);
+	static bool ComputeDesiredBarVisibility(bool bOwnerWantsBarShown, bool bCullEnabled, bool bOccluded,
+		bool bHiddenFromLocalViewer = false);
 
 	/**
 	 *  ⭐ THE POLL GATE, ALSO PURE (one float& and two floats in, one bool out — no world, no clock:
@@ -389,6 +402,31 @@ protected:
 	 *  alone cannot tell a wall from a camera standing inside one.
 	 */
 	void UpdateHealthBarOcclusion();
+
+	/**
+	 *  ⭐⭐ TASK-931 (`WITCH-§2` / 🧑 `J-W17`) — asks the ⛔ ONE per-viewer consult whether the viewer
+	 *  at this machine may see the owning actor, and calls `ApplyBarVisibility()` ⛔ only on the
+	 *  edge. ⛔ It decides nothing: `FSiegeCombatStatics::IsAgentVisibleToLocalViewer` is the whole
+	 *  answer, and this function's entire content is the change-detect around it.
+	 *
+	 *  ⛔⛔ IT IS INERT FOR EVERY NON-VEILABLE OWNER, AND THAT IS THE PREDICATE'S DOING, ⛔ NOT A
+	 *  BRANCH HERE (`WITCH-§6`: `ASummonedUnit` is the only veilable class, so the hero, buildings,
+	 *  towers and castles are answered `true` by the predicate itself). ⇒ ⛔ this component needs
+	 *  ⛔ no idea which owners can be veiled, which is precisely why the rule stays in one place.
+	 *
+	 *  ⚠️ POLLED, ⛔ NOT PUSHED FROM THE VEIL'S EDGE, and the reason is the VIEWER rather than the
+	 *  veil: the local viewer's `ASiegePlayerState` can arrive AFTER a unit is already veiled, so an
+	 *  answer latched at veil time would be wrong with nothing to re-trigger it. ⛔ Two moving parts,
+	 *  only one of which has an edge this component can see.
+	 *
+	 *  ⚠️ COST, STATED STRUCTURALLY RATHER THAN AS A NUMBER NOBODY MEASURED: per owner per frame this
+	 *  is one walk of the player-controller list (⛔ ONE entry in the shipped single-client match),
+	 *  two casts and two compares — ⛔ no trace, ⛔ no allocation, ⛔ no Blueprint call, and the
+	 *  `SetVisibility` write happens only on a change. If a profile ever disagrees, the fix is to
+	 *  wrap this call in the shipped `ShouldPollOcclusion(...)` gate with its own accumulator — ⛔ one
+	 *  line, and the behaviour is unchanged at any period.
+	 */
+	void UpdateViewerSuppression();
 
 	/**
 	 *  ⛔ THE ONE WRITER of this component's visibility. ShowBarIfEnabled(), HideBar() and the
@@ -640,6 +678,20 @@ private:
 	float OcclusionPollAccumulator = 0.f;
 
 	//~ End occlusion cull runtime state
+
+	/**
+	 *  ⭐⭐ TASK-931 (`WITCH-§2`, 🧑 `J-W17`) — WHAT THE ⛔ LAST VIEWER POLL FOUND: true when the
+	 *  viewer at this machine may ⛔ NOT see the owning actor. ⛔ FALSE UNTIL THE FIRST POLL, which
+	 *  is the same fail-open rest state as `bHealthBarOccluded` above and for the same reason.
+	 *
+	 *  ⛔⛔ IT IS ⛔ NOT A COPY OF THE VEIL FLAG AND IT IS ⛔ NOT A "WAS VISIBLE" CACHE (`WITCH-§6`
+	 *  bans that by name). It remembers ⛔ THIS COMPONENT'S OWN LAST ANSWER so the edge can be
+	 *  detected and `ApplyBarVisibility()` called ⛔ once per change instead of once per frame —
+	 *  exactly the job `bCastRowDriven` below does for the cast row. ⛔ The ANSWER always comes
+	 *  fresh from `FSiegeCombatStatics::IsAgentVisibleToLocalViewer`; nothing here is authoritative
+	 *  about anything, so nothing here can go stale in a way that outlives one poll.
+	 */
+	bool bHiddenFromLocalViewer = false;
 
 	//~ Begin cast row runtime state (TASK-860). Plain members, deliberately NOT UPROPERTY — three PODs
 	//  holding no references, exactly like the occlusion trio above.

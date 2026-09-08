@@ -14,6 +14,7 @@
 #include "GitClaudeUnrealTest.h"
 #include "Siegebound/CombatantHealthBarWidget.h"
 #include "Siegebound/HealthBarProvider.h"
+#include "Siegebound/SiegeCombatStatics.h" // TASK-931 (WITCH-§2): IsAgentVisibleToLocalViewer — the ONE per-viewer consult, asked here and decided nowhere in this file
 #include "Siegebound/TeamId.h"
 
 namespace
@@ -227,6 +228,23 @@ void UCombatantHealthBarComponent::TickComponent(float DeltaTime, ELevelTick Tic
 		UpdateCastProgress();
 	}
 
+	// ── ⭐⭐ THE VIEWER POLL (TASK-931, WITCH-§2 / J-W17) — ABOVE THE THREE EARLY-OUTS, AND FOR THE
+	//    SAME REASON THE CAST POLL IS ABOVE THEM, ⛔ NOT AS A STYLE ECHO.
+	// ⛔ UNDER THE FIRST (`!bOccludeHealthBarWhenBlocked`) THE VEIL SUPPRESSION WOULD BE SWITCHED OFF
+	//    BY A FLAG ABOUT STONEWORK — and that toggle is a shipped, designer-facing kill switch whose
+	//    documented promise is "false restores today's occlusion behaviour EXACTLY". ⛔ Letting it
+	//    also decide whether an enemy can see a veiled unit would silently make a rendering
+	//    preference into a gameplay one, and the 50-gold card would stop working on a Blueprint edit
+	//    nobody connected to it.
+	// ⛔ UNDER THE SECOND (`!bBarShownByOwner`) a dead unit would stop polling with the suppression
+	//    LATCHED, and its bar would come back from a respawn still hidden from a viewer whose reason
+	//    to hide it died with the corpse.
+	// ⛔ UNDER THE THIRD it would inherit the cull's ~6.7 Hz period, so a unit could keep announcing
+	//    itself for a fifth of a second after the veil took — on the exact frames the veil exists to
+	//    cover (WITCH-§2's AoE lane is when a hidden push is being flushed).
+	// ⭐ THE TWO POLLS SHARE A TICK AND NOTHING ELSE, exactly as the cast row does.
+	UpdateViewerSuppression();
+
 	if (!bOccludeHealthBarWhenBlocked)
 	{
 		// ⛔ CULL OFF ⇒ ONE BOOL TEST PER FRAME AND NOTHING ELSE: no accumulate, no trace, no
@@ -284,14 +302,22 @@ bool UCombatantHealthBarComponent::ShouldPollOcclusion(float& InOutAccumulatedSe
 	return true;
 }
 
-bool UCombatantHealthBarComponent::ComputeDesiredBarVisibility(bool bOwnerWantsBarShown, bool bCullEnabled, bool bOccluded)
+bool UCombatantHealthBarComponent::ComputeDesiredBarVisibility(bool bOwnerWantsBarShown, bool bCullEnabled, bool bOccluded,
+	bool bHiddenFromLocalViewer)
 {
 	// ⭐ THE OWNER'S INTENT IS THE OUTER AND — never an OR, and never a plain `!bOccluded`. The cull
 	// may only SUBTRACT visibility; there is no path here by which a clear trace shows a bar the
 	// owner hid, because that would resurrect dead units' health bars.
 	// With bCullEnabled false this collapses to `bOwnerWantsBarShown`, which is bit-for-bit the
 	// pre-TASK-791 behaviour of ShowBarIfEnabled()/HideBar().
-	return bOwnerWantsBarShown && !(bCullEnabled && bOccluded);
+	//
+	// ⭐⭐ TASK-931: the fourth term is a THIRD SUBTRACTION and is deliberately NOT gated on
+	// bCullEnabled. The occlusion cull is a RENDERING preference with a designer kill switch; the
+	// veil is a 50-gold GAMEPLAY promise, and the two must not share a switch. ⛔ With the cull off
+	// this now collapses to `bOwnerWantsBarShown && !bHiddenFromLocalViewer`, which is bit-for-bit
+	// the pre-TASK-931 behaviour for EVERY unit that is not veiled from the asking viewer — the flag
+	// is false for the whole roster the whole match unless a witch completed a cast.
+	return bOwnerWantsBarShown && !(bCullEnabled && bOccluded) && !bHiddenFromLocalViewer;
 }
 
 void UCombatantHealthBarComponent::UpdateHealthBarOcclusion()
@@ -427,9 +453,34 @@ void UCombatantHealthBarComponent::ApplyBarVisibility()
 	const bool bDesiredVisibility = ComputeDesiredBarVisibility(
 		bBarShownByOwner,
 		bOccludeHealthBarWhenBlocked,
-		bHealthBarOccluded);
+		bHealthBarOccluded,
+		bHiddenFromLocalViewer);
 
 	SetVisibility(bDesiredVisibility, /*bPropagateToChildren=*/true);
+}
+
+void UCombatantHealthBarComponent::UpdateViewerSuppression()
+{
+	// ⛔ THE WHOLE ANSWER COMES FROM THE ONE CONSULT (TASK-931). This function contributes a change
+	// detect and nothing else — there is no branch here on team, on owner class or on the veil, and
+	// adding one would be a second expression of a rule that has exactly one home.
+	const bool bHiddenNow = !FSiegeCombatStatics::IsAgentVisibleToLocalViewer(GetWorld(), GetOwner());
+	if (bHiddenNow == bHiddenFromLocalViewer)
+	{
+		// ⛔ THE OVERWHELMINGLY COMMON PATH, and it is why this may run per frame: for every unit in
+		// every match with no witch on the field this is one compare and a return. ⛔ The early-out
+		// is on the ANSWER, never on a cached input — nothing here decides not to ask.
+		return;
+	}
+
+	bHiddenFromLocalViewer = bHiddenNow;
+
+	// ⛔ THROUGH THE SINGLE WRITER, never a SetVisibility of our own: ApplyBarVisibility() composes
+	// this term with the owner's intent and the cull, so a veiled unit that is ALSO dead stays
+	// hidden when its veil breaks, and an occluded one stays culled. A raw write here would be the
+	// exact qa/TASK-801 B-1 defect (a caller that bypassed the latch) reintroduced by a second
+	// feature.
+	ApplyBarVisibility();
 }
 
 void UCombatantHealthBarComponent::HandleOwnerHPChanged(float CurrentHP, float MaxHP)

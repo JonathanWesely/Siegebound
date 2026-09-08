@@ -11,6 +11,10 @@
 //~ line is still a pure-rules / source-probe lane — no world, no actor, no SpawnActor (the house
 //~ rule), and a CDO is precisely the world-less caller the defaulted virtuals must survive.
 #include "Siegebound/Building.h"
+//~ TASK-931 item (7): test 35 CALLS UCombatantHealthBarComponent::ComputeDesiredBarVisibility — the
+//~ pure four-bool decision seam the veil's third subtractive term now lives in. ⛔ Still world-less:
+//~ it is a static taking four bools, so the whole visibility rule runs headless (HIGH-§3).
+#include "Siegebound/CombatantHealthBarComponent.h"
 #include "Siegebound/HealthBarProvider.h"
 #include "Siegebound/HeroCharacter.h"
 #include "Siegebound/SiegeInvisibilityStatics.h"
@@ -175,6 +179,13 @@ namespace SiegeInvisibilityTestFixture
 	const TCHAR* HeroCpp = TEXT("Source/GitClaudeUnrealTest/Siegebound/HeroCharacter.cpp");
 	/** TASK-851 (WITCH-§8): the bot's brain — the ONE acquisition surface that is NOT behind the funnel. */
 	const TCHAR* BotControllerCpp = TEXT("Source/GitClaudeUnrealTest/Siegebound/SiegeBotController.cpp");
+
+	/**
+	 *  TASK-931 (`WITCH-§9.1` row 4, 🧑 `J-W17`): the floating health bar — the RENDER surface that
+	 *  became the game's most legible positional tell the moment TASK-923 made a veiled body ghost
+	 *  out. ⛔ A bar is UI-bright, camera-facing and unoccluded; it is BETTER than a silhouette.
+	 */
+	const TCHAR* HealthBarComponentCpp = TEXT("Source/GitClaudeUnrealTest/Siegebound/CombatantHealthBarComponent.cpp");
 
 	/** Reads a shipped project source file. ⛔ A probe that cannot read its subject FAILS. */
 	static bool LoadProjectSource(FAutomationTestBase& Test, const TCHAR* RelativePath, FString& OutText)
@@ -3289,22 +3300,57 @@ bool FSiegeInvisibilityVeilMaterialSwapTest::RunTest(const FString& Parameters)
 		//    hoisted above it, every ordinary attack by an UNVEILED unit would re-stamp its own
 		//    materials on every swing. ⛔ Ordering probe on CODE LINES ONLY — the prose around
 		//    both lines names the other, and a comment-blind probe would be fooled by it.
-		// ⛔ NEEDLE DISCIPLINE (SC-§39): the early-out needle ends at the SEMICOLON and never
-		//    includes trailing whitespace. `CodeLinesOnly` drops whole comment LINES but does NOT
-		//    strip a trailing `//` from a code line, so a `"return; "` needle would be matching the
-		//    presence of SummonedUnit.cpp's end-of-line comment rather than the return itself —
-		//    deleting that unrelated comment would turn this row red with nothing in the behaviour
-		//    to explain it. Every other ordering needle in this file is terminator-anchored; so is
-		//    this one. ⚖️ `return;` cannot match a value-returning statement (`return true;` has a
-		//    token between), so shortening it costs no discrimination.
+		// ⛔ NEEDLE DISCIPLINE — THE MECHANISM IS `SC-§40` cl. 12, THE NEEDLE FORM IS `SC-§41`.
+		//    (⛔ CORRECTED by TASK-931's item (10) rider from qa/TASK-934.md `W-3`: this block was
+		//    headed `SC-§39`, which is the POSITIVE-CONTROL law and says nothing about needles. The
+		//    mis-citation had already propagated one hop into a task prompt. ⛔ `SC-§39` is cited
+		//    below only where a positive control is actually meant.)
+		//    The early-out needle ends at the SEMICOLON and never includes trailing whitespace:
+		//    `CodeLinesOnly` drops whole comment LINES but does NOT strip a trailing `//` from a
+		//    code line, so a `"return; "` needle would be matching the presence of SummonedUnit.cpp's
+		//    end-of-line comment rather than the return itself — deleting that unrelated comment
+		//    would turn this row red with nothing in the behaviour to explain it. That is exactly
+		//    `SC-§40` cl. 12's *a trailing `//` on a code line MANUFACTURES a false hit*.
+		// ⛔ THE SCOPE OF THAT CENSUS, RESTATED AS IT WAS MEASURED (qa/TASK-934.md `W-1`; this block
+		//    previously claimed *"every other ordering needle in this file is terminator-anchored"*,
+		//    which is ⛔ FALSE and had its counterexample 2,192 lines above it). ⛔ RE-MEASURED FOR
+		//    TASK-931 over all 19 ordering needles in this file: ⛔ NO OTHER NEEDLE HERE DEPENDS ON A
+		//    COMMENT FOR ITS FINAL CHARACTER — which is the property that was actually surveyed —
+		//    and `AttackCode.Find(TEXT("FireProjectileAt(Target"))` above is ⛔ NOT terminator-anchored:
+		//    it ends on an ARGUMENT NAME, ⛔ which is code, so it is a different species and safe.
+		//    ⚖️ `SC-§49`: a census is published under the SAME predicate it was measured under.
+		// ⚠️⚠️ AND WHAT THE SHORTENING ACTUALLY COSTS (qa/TASK-934.md `W-2`; this block previously
+		//    said it *"costs no discrimination"*, which is ⛔ TRUE ONLY AGAINST VALUE-RETURNING
+		//    STATEMENTS). `return;` cannot match `return true;` — there is a token between — ⛔ but it
+		//    matches a SECOND VOID `return;` perfectly, and the widening is in the ⛔ FAIL-OPEN
+		//    direction: a reader who adds a top-of-function guard on its own lines ⛔ AND deletes the
+		//    edge early-out leaves `EarlyOutAt < ClearAt` still true, and this row would go ⛔ GREEN
+		//    over a deleted guard. ⇒ ⛔ THE BARE TOKEN IS NOT PINNED ALONE. `SC-§41` — pin a CALL
+		//    SHAPE — supplies the identity below, and the order claim is widened to THREE terms so
+		//    the early-out has to sit between the guard that produces it and the restore it protects.
 		const FString BreakCode = CodeLinesOnly(BreakBody);
+		const int32 GuardAt = BreakCode.Find(TEXT("if (!FSiegeInvisibilityStatics::ApplyBreak("), ESearchCase::CaseSensitive);
 		const int32 EarlyOutAt = BreakCode.Find(TEXT("return;"), ESearchCase::CaseSensitive);
 		const int32 ClearAt = BreakCode.Find(TEXT("ClearVeilMaterial();"), ESearchCase::CaseSensitive);
+
+		// ⛔ SC-§39 — HERE, AND HERE ONLY, A POSITIVE CONTROL IS WHAT IS MEANT: the three-term order
+		//    claim below is vacuously satisfiable by an absent symbol, so the identity is asserted as
+		//    a COUNT first. A zero here means the guard was deleted or reshaped, which is precisely
+		//    the mutation the bare `return;` needle could not see.
+		TestEqual(
+			TEXT("⛔ (2a-i) THE EDGE GUARD EXISTS AND IS ITSELF: BreakInvisibility opens with exactly ONE ")
+			TEXT("`if (!FSiegeInvisibilityStatics::ApplyBreak(` — the call shape that PRODUCES the early-out. ")
+			TEXT("⛔ Zero here and the row below is comparing a `return;` that belongs to something else (SC-§41)."),
+			CountOccurrencesInCode(BreakBody, TEXT("if (!FSiegeInvisibilityStatics::ApplyBreak(")), 1);
+
 		TestTrue(
 			TEXT("⛔ (2a-ii) …and the restore sits BELOW the no-edge early-out, so it runs EXACTLY ONCE PER VEIL ")
-			TEXT("rather than on every attack of every unveiled unit in the fleet. ⛔ This is an ORDER claim on ")
-			TEXT("code lines only."),
-			EarlyOutAt != INDEX_NONE && ClearAt != INDEX_NONE && EarlyOutAt < ClearAt);
+			TEXT("rather than on every attack of every unveiled unit in the fleet. ⛔ THREE terms, not two: the ")
+			TEXT("early-out must sit BETWEEN the ApplyBreak guard and the restore, so a deleted edge-guard with ")
+			TEXT("an unrelated `return;` elsewhere in the body can no longer satisfy this row. ⛔ This is an ")
+			TEXT("ORDER claim on code lines only."),
+			GuardAt != INDEX_NONE && EarlyOutAt != INDEX_NONE && ClearAt != INDEX_NONE
+				&& GuardAt < EarlyOutAt && EarlyOutAt < ClearAt);
 	}
 
 	FString ClearBody;
@@ -3441,6 +3487,310 @@ bool FSiegeInvisibilityVeilMaterialSwapTest::RunTest(const FString& Parameters)
 			TEXT("⚠️ THIS ROW PROVES A REFERENCE, ⛔ NEVER A PIXEL. Sites:%s"),
 			PathWhere.IsEmpty() ? TEXT(" (none)") : *PathWhere),
 		VeilPathMentions, 1);
+
+	return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+//  34. ⭐⭐⭐ TASK-931 — ⛔ ONE PER-VIEWER PREDICATE, ⛔ CONSULTED FROM N SITES.
+//      ⛔⛔ THE SHAPE IS THE DELIVERABLE, ⛔ NOT THE HIDES. Three one-line hides written separately
+//      will disagree the first time the predicate moves; one predicate consulted from three sites
+//      will not — and three independent hides is how the FOURTH tell gets missed.
+//      ⛔ `IsAgentVisibleToLocalViewer` is an ADAPTER: it answers "whose eyes?" — the one question a
+//      render site cannot answer for itself — and then asks the shipped predicate. ⛔ THE MOMENT IT
+//      STATES A VEIL RULE OF ITS OWN, THE PROJECT HAS TWO, AND `WITCH-§1` EXISTS TO HOLD IT AT ONE.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeInvisibilityOnePerViewerConsultTest,
+	"Siegebound.Invisibility.TheRenderLaneAsksTheOnePredicateAndNeverRestatesIt",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeInvisibilityOnePerViewerConsultTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeInvisibilityTestFixture;
+
+	FString CombatText;
+	if (!LoadProjectSource(*this, CombatStaticsCpp, CombatText))
+	{
+		return false;
+	}
+
+	// ══ (a) ⛔ THE ADAPTER RESTATES NOTHING — IT ASKS ═══════════════════════════════════════════
+	FString AdapterBody;
+	if (!ExtractFunctionBody(*this, CombatText, TEXT("bool FSiegeCombatStatics::IsAgentVisibleToLocalViewer("), AdapterBody))
+	{
+		return false; // ExtractFunctionBody has already failed the test — a stale probe never passes quietly
+	}
+
+	TestTrue(
+		TEXT("SELF-CHECK: the extracted IsAgentVisibleToLocalViewer body is substantial. ⛔ A body that ")
+		TEXT("extracted as a few characters would make every count below a meaningless zero (SC-§39)."),
+		AdapterBody.Len() > 200);
+
+	TestEqual(
+		TEXT("⭐⭐ (a-i) THE ADAPTER ASKS THE ONE PREDICATE EXACTLY ONCE. ⛔ Zero here and it has stopped ")
+		TEXT("delegating — which means it is deciding, which means the veil rule has a second home and the ")
+		TEXT("two will disagree the first time either moves (WITCH-§1)."),
+		CountOccurrencesInCode(AdapterBody, TEXT("IsAgentVisibleTo(")), 1);
+
+	// ⛔ AND IT READS NOTHING ABOUT THE VEIL ITSELF. Same four tokens test 20 bans in the bot's brain,
+	//    for the same reason and against the same failure: an inline flag read IS a second rule.
+	//    ⚠️ These zeros are meaningful ONLY because (a-i) above proved the same scanner sees this body.
+	const TCHAR* const SecondRuleTokens[] =
+	{
+		TEXT("bIsInvisible"),
+		TEXT("IsInvisible()"),
+		TEXT("FSiegeInvisibilityStatics"),
+		TEXT("ESiegeVeilPolicy")
+	};
+
+	for (const TCHAR* Token : SecondRuleTokens)
+	{
+		TestEqual(
+			*FString::Printf(
+				TEXT("⛔⛔ (a-ii) IsAgentVisibleToLocalViewer contains no `%s`. It resolves WHO IS LOOKING and ")
+				TEXT("hands the question on — ⛔ no flag, no policy, no second copy of the rule."),
+				Token),
+			CountOccurrencesInCode(AdapterBody, Token), 0);
+	}
+
+	// ⛔ AND THE VIEWER IS RESOLVED, NEVER GUESSED (the shipped ResolveOrderingTeam doctrine). A
+	//    defaulted team on the wrong client would suppress the OWNER's feedback and show the ENEMY's
+	//    — this row's defect, inverted and doubled — and it would look like nothing at all in a log.
+	TestEqual(
+		TEXT("⭐ (a-iii) …and it reads the viewer's team off an ASiegePlayerState rather than assuming one. ")
+		TEXT("⛔ Zero here means a team was guessed, and a guessed team is wrong on exactly half the clients."),
+		CountOccurrencesInCode(AdapterBody, TEXT("Cast<ASiegePlayerState>(")), 1);
+
+	// ⛔ AND IT IS THE LOCAL-VIEWER RESOLVE, ⛔ NOT the banned GetFirstPlayerController() (M8 TEAM LAW).
+	//    The iteration carries local-viewer semantics; "first = the player" is the thing that is banned.
+	TestEqual(
+		TEXT("⛔ (a-iv) …through IsLocalController(), the shipped M8 local-viewer walk copied from ")
+		TEXT("USiegeFeedbackLibrary::PlayLocalCameraShake — ⛔ never GetFirstPlayerController()."),
+		CountOccurrencesInCode(AdapterBody, TEXT("IsLocalController()")), 1);
+
+	TestEqual(
+		TEXT("⛔ (a-v) …and GetFirstPlayerController() appears ZERO times in it (M8 TEAM LAW's gameplay ban). ")
+		TEXT("⚠️ This zero is meaningful only because (a-iv) proved the scanner sees this body."),
+		CountOccurrencesInCode(AdapterBody, TEXT("GetFirstPlayerController(")), 0);
+
+	// ══ (b) ⛔⛔ THE CONSULT CENSUS — WHERE THE N SITES ARE, AND THAT THERE ARE ONLY N ═════════
+	//    The WITCH-§1 leaf-grep idiom used as a GATE, exactly as test 19 uses it for the predicate
+	//    itself: the adapter has a KNOWN set of consumers, so there is a known, small number of
+	//    places it can be forgotten — and a NEW one that nobody ruled is the fourth tell.
+	FString Where;
+	const int32 QualifiedHits = CountAcrossShippingSource(
+		*this, TEXT("FSiegeCombatStatics::IsAgentVisibleToLocalViewer("), Where);
+	if (QualifiedHits < 0)
+	{
+		return false;
+	}
+
+	TestEqual(
+		*FString::Printf(
+			TEXT("⭐⭐ (b) THE PER-VIEWER ADAPTER IS NAMED EXACTLY THREE TIMES IN SHIPPING SOURCE, AND ONLY TWO ")
+			TEXT("OF THOSE ARE CALLS: its own DEFINITION in SiegeCombatStatics.cpp, the damage-feedback consult ")
+			TEXT("in ASummonedUnit::TakeDamage, and the health-bar consult in ")
+			TEXT("UCombatantHealthBarComponent::UpdateViewerSuppression. ⛔ A FOURTH hit is a render surface ")
+			TEXT("nobody ruled in writing — board it and rule it, ⛔ never bump this number. ⛔ A count of TWO ")
+			TEXT("means one of the two shipped tells stopped consulting and is announcing veiled units again. ")
+			TEXT("Found:%s"),
+			Where.IsEmpty() ? TEXT(" (nowhere — the needle is broken)") : *Where),
+		QualifiedHits, 3);
+
+	return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+//  35. ⭐⭐⭐ TASK-931 — THE THREE TELLS, ⛔ EACH GATED AT ITS OWN SITE BY THE ⛔ SAME CONSULT.
+//      ⛔ And the half that is easy to lose: the suppression is ⛔ COSMETIC-ONLY. A veiled unit
+//      still takes the hit, still loses the HP, still dies and ⛔ STAYS VEILED (WITCH-§3 — being
+//      hit is not acting). ⛔ If this row ever widens to cover the damage, the card stops being
+//      "hidden, not gone" and becomes WITCH-§0's unkillable ghost.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeInvisibilityTellsAreSuppressedPerViewerTest,
+	"Siegebound.Invisibility.TheBarTheFlashAndTheDamageNumberAreGatedPerViewerAndTheDamageIsNot",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeInvisibilityTellsAreSuppressedPerViewerTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeInvisibilityTestFixture;
+
+	// ══ (a) ⭐⭐ THE ONE BEHAVIOURAL ROW — THE DECISION SEAM, CALLED, NOT READ ══════════════════
+	//    Everything else in this test is a source probe (a weak instrument, honestly labelled).
+	//    THIS one runs the shipped rule: four bools in, one bool out, no world, no actor, no clock.
+	//    ⛔ It is the row that goes red if somebody writes `||` instead of `&&`, or negates the term,
+	//    or lets the veil term become ADDITIVE — none of which any grep in this file would notice.
+	TestFalse(
+		TEXT("⭐⭐⭐ (a-i) A VEILED-FROM-THIS-VIEWER UNIT'S BAR IS HIDDEN even when the owner wants it shown ")
+		TEXT("and nothing is occluding it. ⛔ TRUE here is the shipped J-W17 defect: a fully-opaque, ")
+		TEXT("camera-facing, unoccluded bar hovering over a body the enemy's sword cannot even reach."),
+		UCombatantHealthBarComponent::ComputeDesiredBarVisibility(
+			/*bOwnerWantsBarShown=*/true, /*bCullEnabled=*/true, /*bOccluded=*/false, /*bHiddenFromLocalViewer=*/true));
+
+	TestTrue(
+		TEXT("⭐⭐ (a-ii) …and the OWNER still sees his own veiled unit's bar. WITCH-§2 lane 4: an invisible ")
+		TEXT("unit its own player cannot see is a BUG, not a feature. ⛔ FALSE here and the 50-gold card ")
+		TEXT("blinds the man who paid for it."),
+		UCombatantHealthBarComponent::ComputeDesiredBarVisibility(
+			/*bOwnerWantsBarShown=*/true, /*bCullEnabled=*/true, /*bOccluded=*/false, /*bHiddenFromLocalViewer=*/false));
+
+	TestFalse(
+		TEXT("⛔ (a-iii) THE VEIL TERM IS NOT GATED BY THE CULL'S KILL SWITCH. With bCullEnabled FALSE the ")
+		TEXT("bar is STILL hidden from a viewer who may not see the unit. ⛔ TRUE here means a designer ")
+		TEXT("turning off a STONEWORK preference silently switched off a 50-gold gameplay promise."),
+		UCombatantHealthBarComponent::ComputeDesiredBarVisibility(
+			/*bOwnerWantsBarShown=*/true, /*bCullEnabled=*/false, /*bOccluded=*/false, /*bHiddenFromLocalViewer=*/true));
+
+	TestFalse(
+		TEXT("⛔ (a-iv) …and the term only ever SUBTRACTS: a bar the OWNER hid (dead, or a miner opting out) ")
+		TEXT("stays hidden regardless. ⛔ The death path outranks every cull, always (qa/TASK-801 B-1)."),
+		UCombatantHealthBarComponent::ComputeDesiredBarVisibility(
+			/*bOwnerWantsBarShown=*/false, /*bCullEnabled=*/false, /*bOccluded=*/false, /*bHiddenFromLocalViewer=*/false));
+
+	// ══ (b) ⛔ THE BAR'S CONSULT IS WIRED, AND IT REACHES THE SINGLE WRITER ═════════════════════
+	FString BarText;
+	if (!LoadProjectSource(*this, HealthBarComponentCpp, BarText))
+	{
+		return false;
+	}
+
+	FString SuppressionBody;
+	if (ExtractFunctionBody(*this, BarText, TEXT("void UCombatantHealthBarComponent::UpdateViewerSuppression("), SuppressionBody))
+	{
+		TestEqual(
+			TEXT("⛔ (b-i) UpdateViewerSuppression asks the ONE adapter exactly once and decides nothing itself."),
+			CountOccurrencesInCode(SuppressionBody, TEXT("FSiegeCombatStatics::IsAgentVisibleToLocalViewer(")), 1);
+
+		TestEqual(
+			TEXT("⛔⛔ (b-ii) …and it writes visibility THROUGH ApplyBarVisibility(), never with a SetVisibility ")
+			TEXT("of its own. ⛔ A raw write here is qa/TASK-801's B-1 defect reintroduced by a second feature: ")
+			TEXT("it would out-rank the owner's death latch and put a bar back over a corpse."),
+			CountOccurrencesInCode(SuppressionBody, TEXT("ApplyBarVisibility();")), 1);
+
+		TestEqual(
+			TEXT("⛔ (b-iii) …and it contains ZERO SetVisibility( calls. ⚠️ Meaningful only because (b-ii) ")
+			TEXT("proved the same scanner reads this body (SC-§39)."),
+			CountOccurrencesInCode(SuppressionBody, TEXT("SetVisibility(")), 0);
+	}
+
+	FString ApplyBody;
+	if (ExtractFunctionBody(*this, BarText, TEXT("void UCombatantHealthBarComponent::ApplyBarVisibility("), ApplyBody))
+	{
+		// ⛔⛔ THE DEFAULTED PARAMETER MUST NEVER BECOME THE SHIPPED PATH. ComputeDesiredBarVisibility's
+		//    fourth argument defaults to false ONLY so that the eleven three-argument calls in
+		//    Tests/SiegeHealthBarOcclusionTest.cpp — a file outside this row's names: line — keep
+		//    meaning what they meant. ⛔ The ONE game-code caller passes it explicitly, and this row is
+		//    what stops a future edit from silently dropping it and shipping the default.
+		TestEqual(
+			TEXT("⭐⭐ (b-iv) ApplyBarVisibility passes the viewer term EXPLICITLY. ⛔ Zero here and the seam ")
+			TEXT("falls back to its DEFAULT of false — every tell returns, the suite stays green, and nothing ")
+			TEXT("anywhere says so. That is the single most likely way this feature silently dies."),
+			CountOccurrencesInCode(ApplyBody, TEXT("bHiddenFromLocalViewer")), 1);
+	}
+
+	// ⛔ AND THE POLL IS ABOVE THE CULL'S THREE EARLY-OUTS. Under the first, a STONEWORK preference
+	//    would switch the veil off; under the second a corpse would latch it; under the third it would
+	//    inherit a ~0.15 s lag on the exact frames the veil is doing its work (WITCH-§2's AoE lane).
+	//    ⛔ ORDER CLAIM ON CODE LINES ONLY (SC-§40 cl. 12): TickComponent's prose names all three
+	//    tokens well above the statements that test them, and a raw-text index would read backwards.
+	FString TickBody;
+	if (ExtractFunctionBody(*this, BarText, TEXT("void UCombatantHealthBarComponent::TickComponent("), TickBody))
+	{
+		const FString TickCode = CodeLinesOnly(TickBody);
+		const int32 ViewerPollAt = TickCode.Find(TEXT("UpdateViewerSuppression();"), ESearchCase::CaseSensitive);
+		const int32 CullFlagAt = TickCode.Find(TEXT("bOccludeHealthBarWhenBlocked"), ESearchCase::CaseSensitive);
+		const int32 OwnerLatchAt = TickCode.Find(TEXT("bBarShownByOwner"), ESearchCase::CaseSensitive);
+		const int32 OcclusionGateAt = TickCode.Find(TEXT("ShouldPollOcclusion("), ESearchCase::CaseSensitive);
+
+		if (ViewerPollAt == INDEX_NONE || CullFlagAt == INDEX_NONE || OwnerLatchAt == INDEX_NONE || OcclusionGateAt == INDEX_NONE)
+		{
+			AddError(*FString::Printf(
+				TEXT("⛔ POSITIVE CONTROL FAILED (SC-§39): viewer poll %d · cull flag %d · owner latch %d · ")
+				TEXT("occlusion gate %d (INDEX_NONE = -1). A missing symbol makes the ordering vacuously true."),
+				ViewerPollAt, CullFlagAt, OwnerLatchAt, OcclusionGateAt));
+		}
+		else
+		{
+			TestTrue(
+				*FString::Printf(
+					TEXT("⛔⛔ (b-v) the viewer poll (%d) precedes ALL THREE of the cull's early-outs — the master ")
+					TEXT("switch (%d), the owner-intent latch (%d) and the 0.15 s gate (%d). ⛔ Under the first, a ")
+					TEXT("Blueprint flag about STONEWORK would switch off the veil."),
+					ViewerPollAt, CullFlagAt, OwnerLatchAt, OcclusionGateAt),
+				ViewerPollAt < CullFlagAt && ViewerPollAt < OwnerLatchAt && ViewerPollAt < OcclusionGateAt);
+		}
+	}
+
+	// ══ (c) ⛔⛔ THE FLASH AND THE DAMAGE NUMBER — ⛔ ONE CONSULT, ⛔ BOTH TELLS, ⛔ AND THE
+	//        DAMAGE ITSELF LEFT ALONE ═══════════════════════════════════════════════════════════
+	FString UnitText;
+	if (!LoadProjectSource(*this, SummonedUnitCpp, UnitText))
+	{
+		return false;
+	}
+
+	FString DamageBody;
+	if (!ExtractFunctionBody(*this, UnitText, TEXT("float ASummonedUnit::TakeDamage("), DamageBody))
+	{
+		return false;
+	}
+
+	TestEqual(
+		TEXT("⭐⭐⭐ (c-i) ⛔ ONE CONSULT, ⛔ NOT TWO ONE-LINE HIDES. The flash and the damage number fire on the ")
+		TEXT("same edge, in the same block, on the same condition — so they are gated by ONE `if`. ⛔ TWO here ")
+		TEXT("is two things to keep in agreement, and the second is the one somebody forgets."),
+		CountOccurrencesInCode(DamageBody, TEXT("FSiegeCombatStatics::IsAgentVisibleToLocalViewer(")), 1);
+
+	{
+		const FString DamageCode = CodeLinesOnly(DamageBody);
+		const int32 HpWriteAt = DamageCode.Find(TEXT("OnHPChanged.Broadcast("), ESearchCase::CaseSensitive);
+		const int32 ConsultAt = DamageCode.Find(TEXT("IsAgentVisibleToLocalViewer("), ESearchCase::CaseSensitive);
+		const int32 FlashAt = DamageCode.Find(TEXT("HitFlashComponent->TriggerFlash();"), ESearchCase::CaseSensitive);
+		const int32 NumberAt = DamageCode.Find(TEXT("USiegeFeedbackLibrary::ShowDamageNumber("), ESearchCase::CaseSensitive);
+
+		if (HpWriteAt == INDEX_NONE || ConsultAt == INDEX_NONE || FlashAt == INDEX_NONE || NumberAt == INDEX_NONE)
+		{
+			AddError(*FString::Printf(
+				TEXT("⛔ POSITIVE CONTROL FAILED (SC-§39): hp broadcast %d · consult %d · flash %d · number %d ")
+				TEXT("(INDEX_NONE = -1). A missing symbol makes every ordering below vacuously true."),
+				HpWriteAt, ConsultAt, FlashAt, NumberAt));
+		}
+		else
+		{
+			TestTrue(
+				*FString::Printf(
+					TEXT("⭐⭐ (c-ii) BOTH TELLS SIT INSIDE THE ONE CONSULT: consult (%d) → flash (%d) → number (%d). ")
+					TEXT("⛔ A flash that escaped the guard paints a veiled unit white for 0.1 s; a number that ")
+					TEXT("escaped leaks WHOSE unit it is (the tint) and HOW MUCH HP IT LOST (the digits), and it ")
+					TEXT("outlasts the flash."),
+					ConsultAt, FlashAt, NumberAt),
+				ConsultAt < FlashAt && ConsultAt < NumberAt);
+
+			TestTrue(
+				*FString::Printf(
+					TEXT("⛔⛔⛔ (c-iii) THE SUPPRESSION IS COSMETIC-ONLY: the HP broadcast (%d) happens BEFORE the ")
+					TEXT("consult (%d), so ⛔ NOTHING about the damage is inside the branch. A veiled unit still ")
+					TEXT("takes the hit, still loses the HP, still dies and still STAYS VEILED (WITCH-§3 — being ")
+					TEXT("hit is not acting). ⛔ If this ever reads backwards, the guard has grown over the damage ")
+					TEXT("and a 50-gold card has become WITCH-§0's unkillable-but-solid ghost."),
+					HpWriteAt, ConsultAt),
+				HpWriteAt < ConsultAt);
+		}
+	}
+
+	// ⛔ AND THE CONSULT DID NOT SMUGGLE IN A VEIL BREAK. WITCH-§3 states it and then warns, in
+	//    writing, not to merge them — a "for symmetry" break here would make every veiled unit
+	//    clipped by an AoE it cannot see coming permanently visible, which is not what he wrote.
+	//    (Test 6 already pins the tree-wide break census; this is the same claim scoped to the
+	//    function this row edited, which is the one that could have grown one.)
+	TestEqual(
+		TEXT("⛔⛔ (c-iv) ASummonedUnit::TakeDamage still contains ZERO BreakInvisibility calls. ⛔ TASK-931 ")
+		TEXT("touched this function; a break added here would silently kill the card on the first stray blast."),
+		CountOccurrencesInCode(DamageBody, TEXT("BreakInvisibility(")), 0);
 
 	return true;
 }

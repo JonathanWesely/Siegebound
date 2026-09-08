@@ -4,9 +4,12 @@
 
 #include "Containers/Array.h"
 #include "Containers/Set.h"
+#include "Containers/UnrealString.h" // TASK-1132: test 36's source-text probes
 #include "Layout/Geometry.h"
 #include "Math/UnrealMathUtility.h"
 #include "Math/Vector2D.h"
+#include "Misc/FileHelper.h" // TASK-1132: test 36 reads the shipped survey's own text - the veil consult is a CALL GRAPH claim, and a call graph cannot be seen from a running function
+#include "Misc/Paths.h"      // TASK-1132: ditto
 #include "Rendering/SlateLayoutTransform.h"
 #include "Siegebound/CombatantHealthBarComponent.h" // the W4-R5 team-palette accessors - the mark colour is measured AGAINST them, never beside them
 #include "Siegebound/CommanderNpc.h"
@@ -3355,6 +3358,348 @@ bool FSiegeWarMapBuildMarkCirclesWithoutStoreTest::RunTest(const FString& Parame
 	TestEqual(TEXT("⛔ Closing the map does not touch the mark count (M-4: marks persist across close/reopen — ⚠️ a WEAK leg headlessly; the real control is CloseMap's comment)"),
 		Map->GetMapMarkCount(), 0);
 	TestFalse(TEXT("…and the map really did close, so the open/close cycle above actually ran"), Map->IsMapOpen());
+
+	return true;
+}
+
+// ═════════════════════════════════════════════════════════════════════════════════════════════════
+//  TASK-1132 (WITCH-§8) — ⛔ THE 30-GOLD ENEMY REVEAL AND THE VEIL.
+//
+//  ⛔⛔ WHY THIS TEST EXISTS, IN ONE SENTENCE: `ASiegePlayerController::PerformEnemyReveal` filled
+//  `EnemyWorldXY` from a bare `TActorIterator<ASummonedUnit>` whose only filters were `IsValid`,
+//  `IsUnitDead()` and a team comparison — ⛔ zero veil consult — so a VEILED enemy unit's exact
+//  world (X, Y) was published, at full precision, across the whole arena, to a paying human. That
+//  is `WITCH-§8`'s own raw-scan defect class, in the one system whose entire purpose is publishing
+//  positions, and it is the FIRST member of that class to leak to a PLAYER rather than to the bot.
+//
+//  ⚠️⚠️ WHAT THIS TEST CAN AND CANNOT SEE — STATED BEFORE THE ASSERTIONS RATHER THAN AFTER THEM
+//  (`SC-§79`: "verified" must name the failure class the check can detect).
+//    ✅ CAN DETECT: the consult being ⛔ absent · being in the ⛔ wrong loop (hero instead of unit)
+//       · being ⛔ after the `Emplace` and therefore unreachable · being called with its arguments
+//       ⛔ SWAPPED (`EnemyTeam` instead of `OwnTeam` — which is ALWAYS TRUE and therefore a guard
+//       that is silently dead) · a ⛔ SECOND, hand-rolled veil rule appearing at this site · the
+//       ally survey ⛔ growing a consult it must never have.
+//    ⛔ CANNOT DETECT: that a real veiled `ASummonedUnit` in a real match is really absent from a
+//       real `EnemyWorldXY`. `PerformEnemyReveal` needs authority, a world, an `ASiegePlayerState`,
+//       an own-team `ACommanderNpc` and gold — and there is ⛔ not one `SpawnActor` or
+//       `UWorld::CreateWorld` anywhere under `Siegebound/Tests/` (this file's own header says so
+//       for the whole gold lane). ⇒ the END-TO-END claim is ⛔ NOT executed here and is ⛔ not
+//       pretended to be (`SC-§32`); it belongs to a PIE row / Jonathan's playtest.
+//  ⚖️ So what is proved below is a REACHABILITY claim over the shipped source: there is no path
+//  through the unit loop that reaches `EnemyWorldXY.Emplace` without first asking the ONE shipped
+//  veil predicate about the VIEWER'S team. That is the strongest form of this claim available to a
+//  headless test, and it is the form that goes RED when the guard is removed.
+// ═════════════════════════════════════════════════════════════════════════════════════════════════
+
+namespace SiegeWarMapVeilTestFixture
+{
+	/** Shipping source (⛔ NOT `Tests/`) — the two files test 36 makes claims about. */
+	const TCHAR* PlayerControllerCpp = TEXT("Source/GitClaudeUnrealTest/Siegebound/SiegePlayerController.cpp");
+	const TCHAR* WarMapWidgetCpp = TEXT("Source/GitClaudeUnrealTest/Siegebound/WarMapWidget.cpp");
+
+	/** The two signatures this test reads. ⛔ A stale one FAILS rather than scanning nothing. */
+	const TCHAR* RevealSignature = TEXT("void ASiegePlayerController::PerformEnemyReveal()");
+	const TCHAR* AllyDotsSignature = TEXT("void UWarMapWidget::RefreshAllyDots()");
+
+	/** Reads a shipped project file. ⛔ A probe that cannot read its subject FAILS. */
+	static bool LoadProjectSource(FAutomationTestBase& Test, const TCHAR* RelativePath, FString& OutText)
+	{
+		const FString FullPath = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / FString(RelativePath));
+		if (!FPaths::FileExists(FullPath) || !FFileHelper::LoadFileToString(OutText, *FullPath))
+		{
+			Test.AddError(FString::Printf(TEXT("⛔ Could not read '%s' — a stale probe FAILS rather than reporting safe."), *FullPath));
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 *  Occurrences of Needle on CODE lines only — the house helper, copied verbatim from
+	 *  `SiegeFogRefusalTest.cpp` / `SiegeInvisibilityTest.cpp` / `SiegeFogClampTest.cpp` so every
+	 *  file that counts the same source agrees character for character. ⛔ Do not "improve" it here.
+	 *
+	 *  ⚠️⚠️ LOAD-BEARING IN THIS TEST ABOVE ALL: `PerformEnemyReveal`'s corrected block comment
+	 *  NAMES `FSiegeCombatStatics::IsAgentVisibleTo`, `RefreshAllyDots` and the hero loop in the
+	 *  paragraphs that explain the asymmetry. A scanner that counted comments would force that code
+	 *  to choose between EXPLAINING the rule and PASSING the test, and the ZEROes below would be
+	 *  broken by the very prose that makes the rule reviewable.
+	 *  ⚠️ DECLARED LIMITATION, inherited and restated: a comment TRAILING a line of code IS still
+	 *  scanned. Every needle below is a call or a statement.
+	 */
+	static int32 CountOccurrencesInCode(const FString& Source, const TCHAR* Needle)
+	{
+		const int32 NeedleLength = FCString::Strlen(Needle);
+		if (NeedleLength <= 0)
+		{
+			return 0;
+		}
+
+		TArray<FString> Lines;
+		Source.ParseIntoArrayLines(Lines, /*bCullEmpty=*/ false);
+
+		int32 Count = 0;
+		for (const FString& Line : Lines)
+		{
+			const FString Trimmed = Line.TrimStart();
+
+			// `*` is qualified rather than bare on purpose: a doc-comment continuation is `* text`
+			// or `*/`, while `*GetNameSafe(Foo)` starts a CODE line with the same character.
+			const bool bIsCommentLine =
+				Trimmed.StartsWith(TEXT("//"), ESearchCase::CaseSensitive)
+				|| Trimmed.StartsWith(TEXT("* "), ESearchCase::CaseSensitive)
+				|| Trimmed.StartsWith(TEXT("*/"), ESearchCase::CaseSensitive)
+				|| Trimmed.StartsWith(TEXT("/*"), ESearchCase::CaseSensitive)
+				|| Trimmed.Equals(TEXT("*"), ESearchCase::CaseSensitive);
+
+			if (bIsCommentLine)
+			{
+				continue;
+			}
+
+			int32 From = 0;
+			for (;;)
+			{
+				const int32 Found = Trimmed.Find(Needle, ESearchCase::CaseSensitive, ESearchDir::FromStart, From);
+				if (Found == INDEX_NONE)
+				{
+					break;
+				}
+				++Count;
+				From = Found + NeedleLength;
+			}
+		}
+		return Count;
+	}
+
+	/**
+	 *  Extracts one function body by signature, ending at the first column-0 closing brace — the
+	 *  house helper. ⛔ Deliberately NOT a parser: a signature that stops matching FAILS rather than
+	 *  silently scanning nothing (`SC-§38` / `SC-§40` cl. 9 — a probe pinned to a stale coordinate
+	 *  must go RED, ⛔ never quietly green).
+	 */
+	static bool ExtractFunctionBody(FAutomationTestBase& Test, const FString& Source, const TCHAR* Signature, FString& OutBody)
+	{
+		const int32 SignatureIndex = Source.Find(Signature, ESearchCase::CaseSensitive, ESearchDir::FromStart, 0);
+		if (SignatureIndex == INDEX_NONE)
+		{
+			Test.AddError(FString::Printf(TEXT("⛔ '%s' not found — the probe is stale, so it FAILS."), Signature));
+			return false;
+		}
+
+		const int32 BodyEnd = Source.Find(TEXT("\n}"), ESearchCase::CaseSensitive, ESearchDir::FromStart, SignatureIndex);
+		if (BodyEnd == INDEX_NONE)
+		{
+			Test.AddError(FString::Printf(TEXT("⛔ Could not find the end of '%s' — the probe is stale, so it FAILS."), Signature));
+			return false;
+		}
+
+		OutBody = Source.Mid(SignatureIndex, BodyEnd - SignatureIndex);
+		return true;
+	}
+
+	/**
+	 *  ⭐⭐ THE ORDERING LANE, AND ORDER IS THE WHOLE ASSERTION IN THIS TEST. Returns everything in
+	 *  Body BEFORE the first occurrence of Marker, so the caller can prove what has already
+	 *  happened by the time execution reaches it. ⛔ A missing Marker FAILS: an ordering claim about
+	 *  a statement that is not there is not a weaker claim, it is a meaningless one.
+	 */
+	static bool TextBefore(FAutomationTestBase& Test, const FString& Body, const TCHAR* Marker, FString& OutPrefix)
+	{
+		const int32 MarkerIndex = Body.Find(Marker, ESearchCase::CaseSensitive, ESearchDir::FromStart, 0);
+		if (MarkerIndex == INDEX_NONE)
+		{
+			Test.AddError(FString::Printf(TEXT("⛔ '%s' not found in the extracted body — the ordering probe is stale, so it FAILS."), Marker));
+			return false;
+		}
+
+		OutPrefix = Body.Left(MarkerIndex);
+		return true;
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+//  36. ⭐⭐⭐ TASK-1132 (WITCH-§8) — A VEILED ENEMY UNIT CANNOT REACH `EnemyWorldXY`, AND THE
+//      ASYMMETRY WITH THE ALLY SURVEY IS PINNED IN **BOTH** DIRECTIONS.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeWarMapEnemyRevealHonoursTheVeilTest,
+	"Siegebound.WarMap.ThePaidEnemyRevealHonoursTheVeil",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeWarMapEnemyRevealHonoursTheVeilTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeWarMapVeilTestFixture;
+
+	FString ControllerText;
+	if (!LoadProjectSource(*this, PlayerControllerCpp, ControllerText))
+	{
+		return false;
+	}
+
+	FString RevealBody;
+	if (!ExtractFunctionBody(*this, ControllerText, RevealSignature, RevealBody))
+	{
+		return false;
+	}
+
+	// ══ (a) ⛔⛔ THE POSITIVE CONTROL COMES FIRST, AND IT IS ⛔ NOT CEREMONY (`SC-§39`).
+	//    Every assertion below is a COUNT taken with a scanner that has a MEASURED blind spot (it
+	//    skips comment lines). A needle that cannot see a token that IS there reports the same ZERO
+	//    as a clean tree — and this test's most important assertions ARE zeroes. ⇒ prove the
+	//    instrument can see this body's most characteristic statement before trusting one number.
+	//    TWO emplaces: the unit loop's and the hero loop's. A THREE means a third survey was added
+	//    to this function and it needs its own veil ruling before it ships.
+	if (!TestEqual(
+		TEXT("SELF-CHECK + CENSUS: `PerformEnemyReveal` contains exactly TWO `EnemyWorldXY.Emplace(` statements — ")
+		TEXT("the UNIT survey's and the HERO survey's. ⛔ If this is ZERO the scanner is blind and every count ")
+		TEXT("below is vacuous. ⛔ If it is THREE, a new position source was added to the paid reveal and nobody ")
+		TEXT("ruled whether the veil applies to it."),
+		CountOccurrencesInCode(RevealBody, TEXT("EnemyWorldXY.Emplace(")), 2))
+	{
+		return false;
+	}
+
+	// ══ (b) ⛔⛔⭐⭐ THE GUARD ITSELF — ⛔ THIS IS THE ROW THAT GOES RED WHEN THE CONSULT IS REMOVED,
+	//    and it is the row TASK-1132 AUTHORED (`SC-§83`: the authored guard is the unproven one by
+	//    construction, so it is the one the mutation is aimed at).
+	//    ⛔ ONE consult, ⛔ not zero (the leak) and ⛔ not two (a second guard point is exactly the
+	//    pattern `WITCH-§1` exists to hold at one).
+	TestEqual(
+		TEXT("⭐⭐⭐ `PerformEnemyReveal` consults the ONE shipped veil predicate EXACTLY ONCE. ⛔ If this is ZERO, ")
+		TEXT("a VEILED enemy unit's exact world (X, Y) is published to a paying human at full precision across the ")
+		TEXT("whole arena — i.e. 30 gold BUYS the information the 50-gold veil exists to withhold. ⛔ If it is TWO, ")
+		TEXT("this site has grown a second guard point, which is the hand-edited-guards pattern WITCH-§1 refused."),
+		CountOccurrencesInCode(RevealBody, TEXT("FSiegeCombatStatics::IsAgentVisibleTo(")), 1);
+
+	// ══ (c) ⛔⛔⭐⭐ AND ITS FIRST ARGUMENT IS THE **VIEWER'S** TEAM. This is a REAL failure mode, not
+	//    a hypothetical: `IsAgentVisibleTo(ViewerTeam, Candidate)` returns TRUE for every actor on
+	//    the viewer's OWN team, so `IsAgentVisibleTo(EnemyTeam, Unit)` — asking whether the veiled
+	//    unit's own side can see it — is ⛔ ALWAYS TRUE. A swapped call would compile, review clean,
+	//    keep row (b) GREEN at exactly one consult, and leak every dot anyway.
+	//    ⚖️ This is the same class of defect `TASK-829(3b)` paid for inside the predicate, arriving
+	//    one level up: a guard that is present, correct-looking and inert.
+	TestEqual(
+		TEXT("⭐⭐ …and it asks about the VIEWER'S team (`OwnTeam`) — the local resolved 18 lines above the loop. ")
+		TEXT("⛔ A ZERO here with row (b) still GREEN is the SILENTLY DEAD GUARD: present, plausible, and always true."),
+		CountOccurrencesInCode(RevealBody, TEXT("IsAgentVisibleTo(OwnTeam,")), 1);
+
+	TestEqual(
+		TEXT("⛔ …and it NEVER asks about the target's own team. `IsAgentVisibleTo(EnemyTeam, …)` is the swap, and ")
+		TEXT("the swap is undetectable from the outside because it returns TRUE for every input the survey can hand it."),
+		CountOccurrencesInCode(RevealBody, TEXT("IsAgentVisibleTo(EnemyTeam,")), 0);
+
+	// ══ (d) ⛔⛔⭐⭐⭐ REACHABILITY — ⛔ THE ASSERTION THIS WHOLE TEST IS FOR, AND THE ONE THAT IS
+	//    ACTUALLY ABOUT `EnemyWorldXY` RATHER THAN ABOUT A FLAG BEING READ.
+	//    A consult that ran AFTER the emplace, or in a branch that did not `continue`, would satisfy
+	//    every count above and still publish the position. ⇒ take everything BEFORE the FIRST
+	//    `EnemyWorldXY.Emplace(` — which is the unit survey's — and prove that both the consult and
+	//    the `continue` that acts on it have already happened by the time execution gets there.
+	FString BeforeFirstEmplace;
+	if (TextBefore(*this, RevealBody, TEXT("EnemyWorldXY.Emplace("), BeforeFirstEmplace))
+	{
+		TestEqual(
+			TEXT("⭐⭐⭐ THE VEIL CONSULT HAPPENS **BEFORE** THE FIRST `EnemyWorldXY.Emplace(`. ⛔ A guard that runs ")
+			TEXT("after the position is already in the array is not a guard, and it would pass every count above."),
+			CountOccurrencesInCode(BeforeFirstEmplace, TEXT("FSiegeCombatStatics::IsAgentVisibleTo(")), 1);
+
+		TestEqual(
+			TEXT("⭐⭐⭐ …and its verdict is acted on by a `continue`, so there is NO PATH from a veiled unit to ")
+			TEXT("`EnemyWorldXY`. ⛔ A consult whose result was computed and discarded — assigned to an unused local, ")
+			TEXT("or logged — reads identically to a working guard in every other assertion in this file."),
+			CountOccurrencesInCode(BeforeFirstEmplace, TEXT("continue;")), 1);
+	}
+
+	// ══ (e) ⛔⛔ THE HERO LOOP GETS **NO** CONSULT — pinned so its ABSENCE reads as a DECIDED
+	//    OMISSION rather than as the same oversight one level down (`WITCH-§9.1` row 4's lesson:
+	//    an undecided absence and a decided one are indistinguishable until one of them is written
+	//    down). `J-W10` / `WITCH-§6`: `ASummonedUnit` is the ONLY veilable class, so a consult in the
+	//    hero loop is DEAD CODE THAT IMPLIES A HERO CAN BE VEILED.
+	//    ⛔ Measured as the WHOLE-BODY count (1, row (b)) minus the pre-emplace count (1, row (d)):
+	//    if the hero loop grew one, row (b) would read TWO. Row (e) states the claim in its own
+	//    right, over the hero survey's own region.
+	FString AfterFirstEmplace;
+	{
+		const int32 FirstEmplace = RevealBody.Find(TEXT("EnemyWorldXY.Emplace("), ESearchCase::CaseSensitive, ESearchDir::FromStart, 0);
+		if (FirstEmplace != INDEX_NONE)
+		{
+			AfterFirstEmplace = RevealBody.Mid(FirstEmplace);
+			TestEqual(
+				TEXT("⛔ THE HERO SURVEY IS DELIBERATELY UNTOUCHED — ZERO veil consults after the unit loop. ")
+				TEXT("`ASummonedUnit` is the only veilable class (J-W10, WITCH-§6), so a consult here would be dead ")
+				TEXT("code asserting that a hero can be veiled. ⛔ Its absence is DECIDED; this row is what makes it so."),
+				CountOccurrencesInCode(AfterFirstEmplace, TEXT("IsAgentVisibleTo(")), 0);
+		}
+	}
+
+	// ══ (f) ⛔⛔⭐⭐ ZERO NEW HIDES (TASK-1132 item 3). The fix is that a RAW SCAN ENTERS THE FUNNEL —
+	//    ⛔ it is NOT "add a veil check here". A local flag read at this site would be a SECOND
+	//    implementation of "can this side see that unit", and two implementations is the divergence
+	//    `WITCH-§1` exists to prevent: it would present in play as a unit hidden from the map and
+	//    visible to every tower, or the reverse, with both halves looking correct in isolation.
+	const TCHAR* const SecondRuleTokens[] =
+	{
+		TEXT("bIsInvisible"),              // the flag itself — WITCH-§6: one source of truth, read through the door
+		TEXT("IsInvisible()"),             // the actor-side reader — an inline read IS a second rule
+		TEXT("FSiegeInvisibilityStatics"), // the symmetric predicate — its ONE call lives in SiegeCombatStatics.cpp
+		TEXT("ESiegeVeilPolicy"),          // the blast opt-out — this survey opts nothing in or out
+		TEXT("MI_Unit_Invisible")          // ⛔ inferring a veil from the MATERIAL (TASK-931 item 4c) — a look is not a rule
+	};
+
+	for (const TCHAR* const Token : SecondRuleTokens)
+	{
+		TestEqual(
+			*FString::Printf(
+				TEXT("⛔ `PerformEnemyReveal` names `%s` ZERO times. It consults the shipped predicate and re-implements ")
+				TEXT("nothing — ⛔ do NOT fix a red here by reading the flag directly; route the site through the funnel."),
+				Token),
+			CountOccurrencesInCode(RevealBody, Token), 0);
+	}
+
+	// ══ (g) ⛔ THE GOLD LANE IS BYTE-UNCHANGED IN SHAPE (TASK-1132 item 4c). The row changes WHICH
+	//    UNITS ENTER THE ARRAY and nothing else — and in particular it must NOT have introduced an
+	//    early-out after the spend, which would be exactly the partial spend `WR-§7` forbids.
+	//    ⚠️ NAMED AS WEAK, honestly: this is a SHAPE pin on pre-existing behaviour, not a proof that
+	//    the refusal doctrine still holds (`SC-§83` — the inherited half is the easier half). It is
+	//    here because the gate checks the diff in BOTH directions, and a widened diff should be
+	//    visible from a test rather than only from a reviewer's diligence.
+	TestEqual(
+		TEXT("⛔ Exactly ONE `SpendGold(` — the reveal still charges once, and the veil guard did not move the spend"),
+		CountOccurrencesInCode(RevealBody, TEXT("SpendGold(")), 1);
+
+	TestEqual(
+		TEXT("⛔ …and exactly ONE `ClientReceiveEnemyReveal(` — every path after the spend still reaches the client, ")
+		TEXT("including the now-more-likely EMPTY survey, which is a legitimate paid-for answer and is sent as one"),
+		CountOccurrencesInCode(RevealBody, TEXT("ClientReceiveEnemyReveal(")), 1);
+
+	// ══ (h) ⛔⛔⭐⭐ THE OTHER HALF OF THE ASYMMETRY, AND WITHOUT IT THE CORRECTED COMMENT IS UNTESTED
+	//    PROSE. `PerformEnemyReveal`'s block comment now claims, in words, that the ally survey does
+	//    NOT get this consult and that the one-sidedness is CORRECT (`IsAgentVisibleTo` returns true
+	//    for every own-team actor, so a consult there is dead code implying a player can lose sight
+	//    of his own army — `WITCH-§2`'s fourth lane, which calls that a BUG rather than a feature).
+	//    ⛔ A claim about a SECOND file, made in a comment in a FIRST file, is exactly the sentence
+	//    that rots silently. ⇒ it is pinned here, over the second file's own text.
+	FString WidgetText;
+	if (LoadProjectSource(*this, WarMapWidgetCpp, WidgetText))
+	{
+		FString AllyBody;
+		if (ExtractFunctionBody(*this, WidgetText, AllyDotsSignature, AllyBody))
+		{
+			// Positive control for the SECOND file — the same reasoning as row (a): the zero below
+			// is meaningful only if the scanner can see this body at all.
+			TestEqual(
+				TEXT("SELF-CHECK: `RefreshAllyDots` contains exactly TWO `AllyDotsWorldXY.Emplace(` statements (unit + hero) ")
+				TEXT("— so the ZERO asserted next is a real absence, ⛔ not a blind scanner."),
+				CountOccurrencesInCode(AllyBody, TEXT("AllyDotsWorldXY.Emplace(")), 2);
+
+			TestEqual(
+				TEXT("⭐⭐ THE ALLY SURVEY NEVER CONSULTS THE VEIL, AND THAT IS THE CORRECT ASYMMETRY — ⛔ not a second ")
+				TEXT("instance of the same defect. It filters to the viewer's OWN team, and the predicate is inert for ")
+				TEXT("allies (WITCH-§2 lane 4: a unit its own player cannot see is a BUG). ⛔ A non-zero here means ")
+				TEXT("somebody 'restored symmetry' and made a player's own veiled units vanish from his own map."),
+				CountOccurrencesInCode(AllyBody, TEXT("IsAgentVisibleTo(")), 0);
+		}
+	}
 
 	return true;
 }
