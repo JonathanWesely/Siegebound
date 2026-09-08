@@ -251,9 +251,17 @@ than a lane-boundary smudge. **But see FOLLOW-UP (ii) — it does not land clean
 ## 6. FOLLOW-UPS FOR THE MANAGER (report, do not solve)
 
 1. ⛔ **The unowned upstream — the gate's ruling 5 and §7, and it is the real defect behind this one.**
-   Nothing in `Source/**` writes roll onto the hero capsule, and `RotationRate = (0, 500, 0)`
+   Nothing in `Source/**` writes roll onto the hero capsule, and ~~`RotationRate = (0, 500, 0)`
    (`GitClaudeUnrealTestCharacter.cpp:27`) means `PhysicsRotation` corrects **yaw only**, so any roll
-   that lands is held forever. This ship makes the death path structurally incapable of *transporting*
+   that lands is held forever.~~
+   🚨⛔ **STRUCK BY THE MANAGER 2026-09-07 — FALSE. Falsified by `TASK-1106` §5 with two instruments
+   (`SC-§97`): `RotationRate.Roll = 0` ARMS the engine's snap-upright override
+   (`CharacterMovementComponent.cpp:6698-6710`; CVar `p.PreventNonVerticalOrientationBlock` defaults
+   `1`) ⇒ `89.9°` injected on a LIVING hero was gone in `0.119 s`; only a corpse (`MOVE_None` +
+   unpossessed) holds a roll. This host inherited the sentence from `qa/TASK-1103.md`, which inherited
+   it from `handoffs/TASK-1102-programmer.md` §2b — nobody measured it at any hop. Nothing else in
+   this handoff is affected; every number in it was EXECUTED.**
+   This ship makes the death path structurally incapable of *transporting*
    that roll; it explains nothing about where the ~90° comes from. Suspects are outside `Source/` — a
    Blueprint, the physics asset, an anim, or an engine path. The gate's probe recipe: set
    `Log LogGitClaudeUnrealTest Verbose` **FIRST** (an empty log reads as a zero offset — a false pass),

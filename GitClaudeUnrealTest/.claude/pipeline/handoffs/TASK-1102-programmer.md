@@ -74,13 +74,27 @@ required me to report which it was. **It is not ragdoll.** `SetSimulatePhysics` 
 
 **It is the *other* half of that sentence:** the camera copies the *pawn's* rotation, roll included.
 
-### 2b. WHY A ROLL, ONCE PRESENT ON THE HERO, IS NEVER SELF-CORRECTED
+### 2b. ~~WHY A ROLL, ONCE PRESENT ON THE HERO, IS NEVER SELF-CORRECTED~~ 🚨⛔ **THIS SECTION IS THE ORIGIN OF A FALSE LAW. STRUCK IN PLACE 2026-09-07 BY THE MANAGER.**
 
-`AGitClaudeUnrealTestCharacter` ctor `:27` — `RotationRate = FRotator(0.0f, 500.0f, 0.0f)`.
+~~`AGitClaudeUnrealTestCharacter` ctor `:27` — `RotationRate = FRotator(0.0f, 500.0f, 0.0f)`.
 `UCharacterMovementComponent::PhysicsRotation()` turns each axis toward its desired value **at that
 axis's rate**, so with Pitch-rate and Roll-rate both `0` it corrects **YAW ONLY**. Any roll that ever
 reaches the hero capsule is held indefinitely, with nothing in any log. The death path is therefore
-handed a value that nothing upstream will ever clean, and it has to clean it itself.
+handed a value that nothing upstream will ever clean, and it has to clean it itself.~~
+
+🚨⛔⭐⭐ **CORRECTION — `SC-§97`, and the strike keeps the history because the reasoning above was
+honest, plausible, and once true (it is the pre-5.x behaviour).** Measured by **`TASK-1106` §5**
+(gameplay-programmer, 2026-09-07) with **two independent instruments**: `RotationRate.Roll = 0` does
+**not** freeze roll — it **ARMS** the engine's snap-upright override.
+`CharacterMovementComponent.cpp:6698-6710` overrides a `IsNearlyZero(DeltaRot.Roll)` to `360.0` when
+`bWantsToBeVertical`, and `FMath::FixedTurn` at a rate `>= 360` returns the desired value outright ⇒
+**upright in one tick**; CVar `p.PreventNonVerticalOrientationBlock` defaults to `1` (`:337`). Live:
+an injected `89.9°` on a **living, possessed** hero was **gone in `0.119 s`**; the same injection on
+the **corpse HELD**, because `MOVE_None` + unpossessed fails both `PhysicsRotation` guards.
+⇒ **A roll cannot survive on a living hero.** ⛔ **Nothing else in this handoff is affected — the fix
+this row shipped (`eeb29c4`) is correct and its call-graph derivation stands. What is retracted is
+only the claim in this subsection, which travelled to `qa/TASK-1103.md`, to
+`handoffs/TASK-1104-buildmaster.md`, into `TASK-1106`'s board row, and twice to Jonathan.**
 
 ### 2c. ⛔ AND WHY THE RESET DOES NOT UNDO IT — the recorded fact, explained
 
