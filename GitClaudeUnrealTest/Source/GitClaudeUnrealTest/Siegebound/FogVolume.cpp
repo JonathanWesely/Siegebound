@@ -86,20 +86,27 @@ namespace SiegeFogDevTrigger
 			return false;
 		}
 
-		// ⛔⛔ THE EDITOR-WORLD HAZARD, SAID OUT LOUD RATHER THAN REFUSED. Spawning into the world
-		// the editor currently has open marks that MAP DIRTY, and this project's standing law is
-		// that `L_Arena` is ⛔ NEVER saved (`GFX-§11`). ⛔ Refusing here would be worse: it would
-		// make the ONE headless channel we have measured ourselves using — the editor commandlet,
-		// whose world is an editor world — dead on arrival, which is the very defect this block
-		// repairs. ⇒ ⛔ ACT, and make the consequence impossible to miss.
+		// ⛔⛔ THE EDITOR-WORLD HAZARD, SAID OUT LOUD RATHER THAN REFUSED. Creating or destroying
+		// actors in the world the editor currently has open can leave that MAP MODIFIED, and this
+		// project's standing law is that `L_Arena` is ⛔ NEVER saved (`GFX-§11`). ⛔ The hazard is a
+		// PREDICATE, ⛔ never one command's behaviour: it holds for whatever command is routed through
+		// this gate, and it does ⛔ not depend on which of them can spawn. ⛔ Refusing here would be
+		// worse: it would make the ONE headless channel we have measured ourselves using — the editor
+		// commandlet, whose world is an editor world — dead on arrival, which is the very defect this
+		// block repairs. ⇒ ⛔ ACT, and make the consequence impossible to miss.
 		// ⭐ The visual itself carries `RF_Transient` (see `SpawnFogVisual`), so the box cannot be
 		// baked in even if somebody did save; the state actor is what would persist.
 		if (!World->IsGameWorld())
 		{
 			UE_LOG(LogGitClaudeUnrealTest, Warning,
-				TEXT("[%s] ⚠️⚠️ ACTING ON AN ⛔ EDITOR WORLD ('%s'), not a game/PIE world. The fog-state actor is spawned ")
-				TEXT("into the map you currently have OPEN, which ⛔ MARKS IT DIRTY. ⛔ DO NOT SAVE THE MAP (`GFX-§11`): ")
-				TEXT("discard, or close the editor without saving. Prefer PIE for anything you intend to look at."),
+				TEXT("[%s] ⚠️⚠️ ACTING ON AN ⛔ EDITOR WORLD ('%s'), not a game/PIE world. ⛔ ANYTHING THIS ")
+				TEXT("COMMAND CREATES OR DESTROYS LANDS IN THE MAP YOU CURRENTLY HAVE OPEN, which can leave it ")
+				TEXT("MODIFIED. ⛔ THIS SENTENCE IS THE ⛔ HAZARD AND ⛔ NEVER THE OUTCOME: it is the SAME text for ")
+				TEXT("every command routed through this gate, and it is printed ⛔ BEFORE that command acts — so it ")
+				TEXT("can tell you ⛔ NOTHING about what was created, found or destroyed. ⛔ THE PREFIX NAMES THE ")
+				TEXT("COMMAND; ⛔ THE PER-COMMAND LINE PRINTED BELOW THIS ONE IS WHAT ACTUALLY HAPPENED. Read that ")
+				TEXT("line — ⛔ do not infer an outcome from this one. ⛔ DO NOT SAVE THE MAP (`GFX-§11`): discard, ")
+				TEXT("or close the editor without saving. Prefer PIE for anything you intend to look at."),
 				CommandName, *World->GetName());
 		}
 

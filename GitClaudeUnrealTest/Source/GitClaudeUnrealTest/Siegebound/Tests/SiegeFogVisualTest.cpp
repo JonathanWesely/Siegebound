@@ -94,10 +94,24 @@
  *      the failure mode `TASK-1068` cl. 3a names, and it is the one a running test could not see
  *      either, because two of the three exits (`ResetFog`, natural expiry) have no card behind
  *      them to press.
- *    • ⛔ **WHAT NEITHER LANE COVERS, STATED SO NO GREEN IS MISTAKEN FOR IT:** there is not one
+ *    • ⛔ **WHAT NEITHER LANE COVERS, STATED SO NO GREEN IS MISTAKEN FOR IT:** ~~there is not one
  *      `SpawnActor` anywhere in `Siegebound/Tests/`, so ⛔ NOTHING HERE RUNS THE ACTUAL SPAWN. The
  *      end-to-end claim — play `Fog`, a box appears; wait 300 s, it goes — is ⛔ NOT EXECUTED by
- *      this file and is ⛔ NOT executed by the suite.
+ *      this file and is ⛔ NOT executed by the suite.~~
+ *      🚨 **⛔ STRUCK — ⛔ FALSE, AND THE FILE THAT FALSIFIED IT IS ⛔ THIS ONE.** Kept verbatim
+ *      rather than deleted (`SC-§53` cl. 3) so the mistake stays readable. ⭐ **LANE C EXISTS NOW —
+ *      TEST 10 at the bottom of this file creates a real `UWorld` and spawns real actors, so the
+ *      SPAWN and the DESPAWN ⛔ ARE executed by the suite** (`TASK-1173`; the correction is
+ *      `TASK-1178`, from `TASK-1174` W2).
+ *    • ⭐⭐ **AND THE REPLACEMENT IS A ⛔ PREDICATE, ⛔ NOT A CENSUS** (`SC-§104`): a count of
+ *      `SpawnActor` sites in a directory is true the day it is typed and false the day after —
+ *      which is precisely how the struck sentence came to lie in its own file. ⛔ The durable form:
+ *      **MOST tests under `Siegebound/Tests/` are headless — pure statics, CDOs and reflection —
+ *      and ⛔ THIS FILE IS ONE OF THE ONES THAT IS NOT.** ⛔ Do ⛔ NOT write a fresher number here;
+ *      if you need to know whether some OTHER file is headless, ⛔ read that file.
+ *    • ⛔ **WHAT IS STILL ⛔ NOT COVERED, WHICH IS THE HALF THAT MATTERED:** the 300-second WAIT is
+ *      executed ⛔ nowhere, and ⛔ nothing here says the fog ⛔ LOOKS right — 🧑 his eye remains the
+ *      ⛔ ONLY instrument for legibility (`AS-§6 A(e)`).
  *
  *  ─── 🧑🚨 AND THE HONEST SCOPE OF EVERY GREEN THIS FILE CAN PRODUCE ──────────────────────────
  *  ⛔⛔ **AN AUTOMATED TEST CAN PROVE THE SPAWN HAPPENS. ⛔ IT CANNOT PROVE THE FOG LOOKS RIGHT.**
@@ -1447,8 +1461,13 @@ bool FSiegeFogRenderFloorWiringTest::RunTest(const FString& Parameters)
 //  THAT (`SC-§113` cl. 3(c)).
 //
 //  ⭐⭐⭐ AND THE PART THAT IS ⛔ NOT MINE, WHICH IS THE BEST PART: ⛔ I ASSERT ALMOST NOTHING ABOUT
-//  THE FOG'S CORRECTNESS HERE, ⛔ ON PURPOSE. `FogVolume.cpp` already contains ⛔ SEVEN `Error`
-//  sites, and the automation framework routes ⛔ EVERY `UE_LOG(..., Error, ...)` raised during a
+//  THE FOG'S CORRECTNESS HERE, ⛔ ON PURPOSE. `FogVolume.cpp` already ships ⛔ ITS OWN `Error`
+//  sites — ⛔ A PREDICATE, ⛔ NEVER A COUNT (`SC-§104`). The number that stood here said ⛔ SEVEN
+//  and was ⛔ SIX on the day it was typed (`TASK-1174` W3, corrected by `TASK-1178`); a fresher
+//  number would go stale on the next added or reverted site and lie again, silently.
+//  ⛔ IF YOU NEED THE SET, GREP THE FILE for `UE_LOG(LogGitClaudeUnrealTest, Error,` — ⛔ do not
+//  trust a tally in a comment, this one included. The automation framework routes
+//  ⛔ EVERY `UE_LOG(..., Error, ...)` raised during a
 //  test into `AddError` ⇒ ⛔ THE SHIPPED INSTRUMENTS BECOME THIS TEST'S ASSERTIONS, for free, and
 //  they redden on ⛔ their own terms rather than on a paraphrase of them I typed here. That is
 //  worth more than any predicate I could add: the visual failing to load, the world refusing the
@@ -1471,13 +1490,21 @@ namespace SiegeFogRealWorldFixture
 	/**
 	 *  ⛔⛔ A REAL, PLAYING `UWorld` — ⛔ THE FIRST ONE IN THIS PROJECT'S SUITE, AND THAT IS A
 	 *  ⛔ DELIBERATE PRECEDENT BREAK RATHER THAN AN OVERSIGHT BEING CORRECTED.
-	 *  ⛔ Nine files under `Siegebound/Tests/` currently assert, in their own headers, that
+	 *  ⛔ OTHER FILES assert, in their own headers, that
 	 *  *"every automation test in this project is HEADLESS — there is not one `UWorld::CreateWorld`
 	 *  and not one `SpawnActor` anywhere in `Siegebound/Tests/`"*. ⇒ ⛔ THOSE SENTENCES ARE NOW
 	 *  STALE (`SC-§91`), and this comment is where a reader who trusted one of them lands.
+	 *  ⛔⛔ HOW MANY IS DELIBERATELY ⛔ NOT WRITTEN HERE (`SC-§104`): the number that stood in this
+	 *  sentence said ⛔ NINE and was ⛔ already wrong (`TASK-1174` W4). ⛔ A FRESHER NUMBER WOULD GO
+	 *  STALE THE SAME WAY, so `TASK-1178` replaced it with the ⛔ GREP THAT REGENERATES THE ANSWER:
+	 *  search `Source/` for ``not one `SpawnActor` `` and ``not one `UWorld::CreateWorld` ``.
+	 *  ⛔ THAT CENSUS WAS RUN (`TASK-1178` cl. 5) and its two load-bearing results are: the set is
+	 *  ⛔ MANY files, ⛔ not nine — and it is ⛔ NOT confined to `Tests/`: `Siegebound/HeroCharacter.h`
+	 *  and `Siegebound/SiegeLadderClimbStatics.h` carry the same universal claim. ⛔ The list went to
+	 *  the manager; ⛔ sweeping it is a row of its own (`SC-§100`).
 	 *  ⛔ They are ⛔ NOT edited here: they are PROSE in files this row does not own, the claim they
-	 *  each make is about their ⛔ OWN reasoning, and a nine-file sweep inside a capability row is
-	 *  how a capability row becomes a refactor. ⛔ The divergence is DECLARED to the gate instead.
+	 *  each make is about their ⛔ OWN reasoning, and an N-file prose sweep inside a capability row
+	 *  is how a capability row becomes a refactor. ⛔ The divergence is DECLARED to the gate instead.
 	 *
 	 *  ⭐ THE SHAPE IS ⛔ NOT INVENTED — it is the engine's own `FActorTestSpawner`
 	 *  (`Developer/CQTest/Private/Components/ActorTestSpawner.cpp`), copied step for step:
@@ -1491,9 +1518,34 @@ namespace SiegeFogRealWorldFixture
 	 *  ⚠️ `BeginPlay()` IS CALLED, and the reason is measured rather than assumed: this project has
 	 *  ⛔ ZERO `UWorldSubsystem`s (all six of its subsystems are `UGameInstanceSubsystem`s, and this
 	 *  world has no game instance), so `UWorld::BeginPlay` runs ⛔ no project code — it is null-safe
-	 *  on the absent game mode (`World.cpp`, `GetAuthGameMode()` branch). ⛔ Without it the world
+	 *  on the absent game mode (`World.cpp`, `GetAuthGameMode()` branch). ~~⛔ Without it the world
 	 *  never sets `bBegunPlay`, so `AActor::RouteEndPlay` would be a ⛔ NO-OP at teardown and
-	 *  `AFogVolume::EndPlay` — which is what RELEASES the integrity floor — would ⛔ never run.
+	 *  `AFogVolume::EndPlay` — which is what RELEASES the integrity floor — would ⛔ never run.~~
+	 *
+	 *  🚨🚨 ⛔ THE STRUCK SENTENCE IS ⛔ FALSE. It is kept verbatim rather than deleted (`SC-§53`
+	 *  cl. 3) because the belief it records is the one a reader arrives with. ⛔ MEASURED off the
+	 *  installed 5.8 source (`TASK-1174` W1, corrected by `TASK-1178`):
+	 *    • `UWorld::BeginPlay()` does ⛔ NOT set `bBegunPlay`. The ⛔ ONLY writer is
+	 *      `AWorldSettings::NotifyBeginPlay` (`WorldSettings.cpp`, `World->SetBegunPlay(true)`),
+	 *      reached ⛔ only through `AGameModeBase::StartPlay` → `AGameStateBase::HandleBeginPlay`.
+	 *    • `InitializeActorsForPlay(FURL())` spawns ⛔ NO game mode, and this world has none.
+	 *  ⇒ ⛔ `World->HasBegunPlay()` IS FALSE FOR THIS WORLD'S WHOLE LIFETIME, so `AActor::RouteEndPlay`
+	 *  returns ⛔ without dispatching and ⛔ `AFogVolume::EndPlay` ⛔ NEVER RUNS HERE. ⛔ The teardown
+	 *  loop below is therefore ⛔ INERT — it is labelled as such at the loop itself, which also
+	 *  ⛔ NAMES THE RELEASE THAT ACTUALLY HAPPENS. ⛔ READ THAT LABEL BEFORE DELETING ANYTHING.
+	 *  ⭐ `BeginPlay()` is ⛔ KEPT: it is `FActorTestSpawner`'s own shape, it runs no project code
+	 *  (measured above), and it is half of what a future game-mode-bearing rig needs. ⛔ Removing it
+	 *  would buy nothing and would have to be re-derived.
+	 *  ⚖️ ⛔ WHY THIS IS ⛔ LABELLED RATHER THAN ⛔ CONNECTED (`TASK-1178` cl. 1, branch (b)):
+	 *  connecting it means calling `NotifyBeginPlay`/`SetBegunPlay(true)` here, which would start
+	 *  ⛔ DISPATCHING `BeginPlay` to every actor this fixture spawns — including the `BP_SiegeFog`
+	 *  Blueprint's own event graph — and would run `AFogVolume::EndPlay` at teardown ⛔ in addition
+	 *  to the `ResetFog()` the test already performs. ⛔ THAT IS A REAL RIG BEHAVIOUR CHANGE, and its
+	 *  own acceptance test (`TASK-1178` cl. 1(a)) demands a ⛔ QUOTED LOG LINE proving `EndPlay` ran
+	 *  — which needs the compile and suite run that row ⛔ forbids. ⛔ An unproven connection is
+	 *  exactly the guess this warning was born from (`SC-§113` cl. 3(c): ⛔ an empty log is NOT a
+	 *  pass), so the measured truth is written down instead and the connection is left to a row
+	 *  that can run it.
 	 */
 	struct FScopedPlayWorld
 	{
@@ -1538,11 +1590,24 @@ namespace SiegeFogRealWorldFixture
 				return;
 			}
 
-			// ⛔ `RouteEndPlay` FIRST, and it is the reason `BeginPlay` was called above: this is
-			// what fires `AFogVolume::EndPlay`, which RELEASES the integrity floor. ⛔ A teardown
-			// that skipped it would leave `r.VolumetricFog` pinned at `SetByCode` for the ⛔ REST
-			// OF THE SUITE PROCESS — 553 other tests running under a console variable this one
-			// stranded, with nothing red anywhere.
+			// ⛔⛔ INERT UNDER THIS WORLD — ⛔ MEASURED, ⛔ NOT A READING (`TASK-1174` W1; the full
+			// derivation is in the `FScopedPlayWorld` doc comment above). `bBegunPlay` is written
+			// ⛔ ONLY by `AWorldSettings::NotifyBeginPlay`, which needs a game mode this world does
+			// not have. ⇒ `AreActorsInitialized()` is TRUE, the loop runs, and `AActor::RouteEndPlay`
+			// returns ⛔ WITHOUT dispatching ⇒ ⛔ `AFogVolume::EndPlay` NEVER RUNS HERE.
+			// ⭐⭐ ⛔ THE RELEASE THAT ACTUALLY HAPPENS IS `Volume->ResetFog();` IN STEP (5) OF
+			// `FSiegeFogRaisePathActuallyExecutesTest::RunTest` (line 1764 as this was
+			// written — ⛔ the SYMBOL is the durable name, the number is a courtesy that goes stale).
+			// ⛔ IT IS UNCONDITIONAL, with ⛔ no `return` between it and the raise that engaged the
+			// floor. ⛔ THAT is the line that must never be deleted — ⛔ this loop is not.
+			// ⛔ THE LOOP IS ⛔ KEPT, ⛔ NOT DELETED: it becomes ⛔ LIVE the instant this world is given
+			// a game mode (or `SetBegunPlay(true)`), it is `FActorTestSpawner`'s own teardown shape,
+			// and deleting it means re-inventing it blind on the day the rig grows one.
+			// ⚠️ WHAT IT WOULD BUY WHEN LIVE, as a predicate rather than a tally (`SC-§104`): a
+			// teardown that released nothing would leave `r.VolumetricFog` pinned at `SetByCode` for
+			// ⛔ EVERY REMAINING TEST IN THIS PROCESS — a whole suite running under a console variable
+			// this one test stranded, with nothing red anywhere. (The count that stood here said 553
+			// and was already drifting; ⛔ the hazard does not depend on the number.)
 			if (World->AreActorsInitialized())
 			{
 				for (AActor* const Actor : FActorRange(World))

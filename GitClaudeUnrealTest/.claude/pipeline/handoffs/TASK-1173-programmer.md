@@ -50,10 +50,23 @@ Three, registered in `FogVolume.cpp` behind `#if !UE_BUILD_SHIPPING`:
 **Reached from an agent's seat by substituting the command list in the runner we already own:**
 
 ```
-UnrealEditor-Cmd.exe "<uproject>" -ExecCmds="Siege.Fog.Raise;Siege.Fog.Status;Quit" -nullrhi -unattended -nopause -nosplash -NoLiveCoding -log -abslog=<log>
+~~ -ExecCmds="Siege.Fog.Raise;Siege.Fog.Status;Quit" ~~     ⛔ STRUCK — RUNS NOTHING, SILENTLY. SEE BELOW.
+
+UnrealEditor-Cmd.exe "<uproject>" -ExecCmds="Siege.Fog.Raise,Siege.Fog.Clear,Siege.Fog.Status,QUIT_EDITOR" -nullrhi -unattended -nopause -nosplash -NoLiveCoding -log -abslog=<log>
 ```
 
-⚠️ **`-ExecCmds` MUST BE ONE POWERSHELL ARGUMENT.** `TASK-1104`'s first two attempts ran **zero** tests because PowerShell split the value on its spaces and the engine idled to the boot bound with **no error and no warning** (`CONVENTIONS.md:4814`). The commands above are deliberately **space-free** for exactly that reason.
+🚨🚨 **CORRECTED 2026-09-09 BY THE MANAGER (W9) — struck, not overwritten (`SC-§53` cl. 3).** The
+semicolon form above was **measured by `TASK-1175`** taking the whole string as **one command name**:
+no fog line, **no `Command not recognized`**, no warning, and the process **never exited**. Two
+independent defects: `-ExecCmds` splits on **comma**, never `;` (`ParseExecCommands.cpp:29`), and
+`Quit` does not quit an **editor** commandlet — that is **`QUIT_EDITOR`** (`EditorServer.cpp:5993`).
+✅ The comma + `QUIT_EDITOR` form is **measured working and self-terminates in 12 s.**
+
+⛔ **This does NOT generalise backwards:** the *suite* line `Automation RunTests Siegebound;Quit` is
+**correct** — that `;` is split by the `Automation` handler's own parser and never reaches
+`-ExecCmds`. **Do not "fix" it.** Pinned recipe for both lanes: `CONVENTIONS.md` → **`SC-§116`**.
+
+⚠️ **`-ExecCmds` MUST ALSO BE ONE POWERSHELL ARGUMENT.** `TASK-1104`'s first two attempts ran **zero** tests because PowerShell split the value on its spaces and the engine idled to the boot bound with **no error and no warning** (`SC-§95` cl. 1). The commands above are deliberately **space-free** for exactly that reason — that is a **third** way to run nothing silently on this one flag.
 
 ⚠️ **The world a commandlet gives these is an EDITOR world.** `Siege.Fog.Raise` therefore spawns the state actor into whatever map is open and **marks it dirty**. The command **acts anyway and warns loudly** — refusing would kill the one headless channel we have measured ourselves using, which is the defect this row repairs. **`GFX-§11` still binds the operator: never save.** The visual itself already carries `RF_Transient`, so it cannot be baked in even if somebody did.
 
@@ -145,10 +158,20 @@ git diff --stat 20c1bea HEAD -- <the three files>   ->  EMPTY
 **Run either lane, then run the grep. The grep is the discharge, not the lines.**
 
 ```
-UnrealEditor-Cmd.exe "<uproject>" -ExecCmds="Siege.Fog.Raise;Siege.Fog.Status;Quit" -nullrhi -unattended -nopause -nosplash -NoLiveCoding -log -abslog=<log>
+~~ -ExecCmds="Siege.Fog.Raise;Siege.Fog.Status;Quit" ~~     ⛔ STRUCK 2026-09-09 (W9) — RUNS NOTHING, SILENTLY. SEE §1(b).
 
-grep -cE "AFogVolume|Siege\.Fog\." <log>
+UnrealEditor-Cmd.exe "<uproject>" -ExecCmds="Siege.Fog.Raise,Siege.Fog.Clear,Siege.Fog.Status,QUIT_EDITOR" -nullrhi -unattended -nopause -nosplash -NoLiveCoding -log -abslog=<log>
+
+grep -cE "AFogVolume|Siege\.Fog\." <log>          ⛔ CONFOUNDED — DO NOT USE BARE. SEE BELOW.
+grep "LogGitClaudeUnrealTest:" <log> | grep -cE "AFogVolume|Siege\.Fog\."     ✅ THE DISCRIMINATOR
 ```
+
+🚨 **CORRECTED 2026-09-09 BY THE MANAGER (W8) — the bare count is a confounded instrument.** On the
+suite log it returned **8**, and **7 of those 8** are a **pre-existing test name** containing the
+substring `AFogVolume` (`TheFogStateIsReadInExactlyOnePlaceAndTheSeamConsultsAFogVolume`, measured
+present at `20c1bea`). ⇒ **a bare non-zero would have read as proof of execution while proving
+nothing.** Only the `LogGitClaudeUnrealTest:`-filtered form (which returned **1**, from production
+code) discriminates. Law: `SC-§113` cl. 6.
 
 ⭐⭐ **`SC-§113` cl. 2 recorded that this grep returned `0` over the entire editor log.** A **non-zero** count is the positive control that ends the law's instance. **`0` after this diff means the trigger did not fire — report it as a BLOCKER, never as "clean".**
 
@@ -244,11 +267,13 @@ I discharged **none** of these, as instructed. I made them **possible**:
 
 ⛔ **`PATH NEVER EXECUTED`.** ⛔ **`COOKED TARGET NOT COMPILED`.** ⛔ **No `Build.bat`, no suite, no editor, no MCP, no Git write.**
 
-Unverified, in descending order of how much it would hurt:
+✅🚨 **DISCHARGED 2026-09-09 BY `TASK-1175`'s CODE CASE (`4a3da63`) — annotated, not deleted (`TL-§5c` cl. 4), because a reader who remembers this honest list must find its resolution rather than re-derive it.** Items 1-4 below **all landed green**: compile `Result: Succeeded` (0 errors, 0 warnings, DLL relinked) · test 10 `Result={Success}` in a **555 / 555** suite with **zero** `LogGitClaudeUnrealTest: Error` lines · the commandlet **resolved a non-null world** · the §4 log lines printed **as transcribed**. ⛔ **The list was still correct to write** — `PATH NEVER EXECUTED` was the truthful state at authoring time, and saying so is what let the gate transfer the duty instead of guessing (`SC-§113` cl. 3(b)).
+
+Unverified **at authoring time**, in descending order of how much it would hurt:
 
 1. **That any of it compiles.** UHT's handling of `#if WITH_EDITOR` around `UFUNCTION`s inside `GENERATED_BODY()` is standard and engine-native, but I did not run UHT.
 2. **That test 10 passes.** See §6.1 and §6.2 — a red may be a real finding.
-3. **That `-ExecCmds="Siege.Fog.Raise;Quit"` resolves a non-null world in the editor commandlet.** The delegate is `WithWorldAndArgs` and the console resolves the world itself; if it hands back null, the command says so **loudly** rather than silently doing nothing — which is the design, but it is **`NOT MEASURED`**.
+3. **That `-ExecCmds="Siege.Fog.Raise,QUIT_EDITOR"` resolves a non-null world in the editor commandlet.** *(⛔ corrected 2026-09-09 from the struck `"Siege.Fog.Raise;Quit"` — W9, `SC-§116`. ✅ **AND IT IS NO LONGER `NOT MEASURED`: `TASK-1175` ran it and the world resolved — `[FogVolume_0] AFogVolume spawned` on an editor world, with the loud `⚠️ ACTING ON AN EDITOR WORLD ('L_Arena')` warning firing exactly as designed.**)* The delegate is `WithWorldAndArgs` and the console resolves the world itself; if it hands back null, the command says so **loudly** rather than silently doing nothing — which is the design, ~~but it is **`NOT MEASURED`**~~ **and it is now MEASURED: it resolved, and the loud editor-world warning fired.**
 4. **Every log line in §4.** Transcribed from the format strings, never observed.
 5. **That the suite total becomes 555.** Derived from `554 + 1`; `TASK-1175` reports the **executed** `N/M` (`CONVENTIONS.md:5773` — a suite total cites the execution, never a macro count).
 6. **The `CallInEditor` buttons rendering in the Details panel.** No editor was running.

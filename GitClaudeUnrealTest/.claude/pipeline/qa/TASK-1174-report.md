@@ -25,16 +25,38 @@ behaviour and is the reason this is a deferral rather than a FAIL.
 1. Compile, and **parse the log for `Result:`** — `Build.bat` returns exit 0 on a failed build.
 2. Run **either** lane and produce a log:
    - `UnrealEditor-Cmd.exe "<uproject>" -ExecCmds="Automation RunTests Siegebound;Quit" -nullrhi -unattended -nopause -nosplash -NoLiveCoding -log -abslog=<log>`
-   - or `-ExecCmds="Siege.Fog.Raise;Siege.Fog.Status;Quit"` (same flags).
-     ⚠️ `-ExecCmds` must be **one** PowerShell argument (`CONVENTIONS.md:4814`). The three command
-     names are deliberately space-free, so this is safe as written.
+   - ~~or `-ExecCmds="Siege.Fog.Raise;Siege.Fog.Status;Quit"` (same flags).~~
+     🚨🚨 **STRUCK 2026-09-09 BY THE MANAGER — THIS LINE DOES NOT WORK AND IT FAILS SILENTLY (W9).**
+     Struck, not overwritten (`SC-§53` cl. 3): the semicolon form was **measured** running *nothing* —
+     the engine takes the whole string as one command name, prints **no** `Command not recognized`,
+     and **never exits**. `-ExecCmds` splits on **comma**, never `;` (`ParseExecCommands.cpp:29`), and
+     `Quit` does not quit an editor commandlet (that is `QUIT_EDITOR`, `EditorServer.cpp:5993`).
+     ✅ **USE, measured, self-terminates in 12 s:**
+     `-ExecCmds="Siege.Fog.Raise,Siege.Fog.Clear,Siege.Fog.Status,QUIT_EDITOR"` (same flags).
+     ⛔ The **suite** line above (`Automation RunTests Siegebound;Quit`) is **CORRECT — do not "fix" it**:
+     its `;` is split by the `Automation` handler's own parser and never reaches `-ExecCmds`.
+     Full law + pinned recipe for both lanes: **`CONVENTIONS.md` → `SC-§116`**. This report's own §W9
+     (below the PASS line, appended by `TASK-1175`) carries the raw measurement.
+     ⚠️ `-ExecCmds` must also be **one** PowerShell argument (`SC-§95` cl. 1) — a third, independent
+     way to run nothing silently on this same flag.
 3. Run the discharge count and **quote the matching lines into this report**:
-   - Bash: `grep -cE "AFogVolume|Siege\.Fog\." <log>`
-   - PowerShell: `(Select-String -Path <log> -Pattern 'AFogVolume|Siege\.Fog\.').Count`
+   - ~~Bash: `grep -cE "AFogVolume|Siege\.Fog\." <log>`~~ ⛔ **BARE FORM — CONFOUNDED, DO NOT USE ALONE (W8)**
+   - ✅ Bash: `grep "LogGitClaudeUnrealTest:" <log> | grep -cE "AFogVolume|Siege\.Fog\."`
+   - ✅ PowerShell: `(Select-String -Path <log> -Pattern 'LogGitClaudeUnrealTest:' | Select-String -Pattern 'AFogVolume|Siege\.Fog\.').Count`
 
 🚨 **`SC-§113` cl. 2 measured this count at `0` over the entire editor log. A `0` after this diff is a
 BLOCKER, never "clean."** A non-zero count with at least one quoted `LogGitClaudeUnrealTest:` line is
 the positive control that ends the law's instance.
+
+🚨🚨 **ANNOTATED 2026-09-09 BY THE MANAGER — W8, and THE SECOND HALF OF THAT SENTENCE IS WHAT SAVED IT.**
+`TASK-1175` measured the **bare** count at **8** on the suite log — and **7 of those 8** are a
+**pre-existing test name** containing the substring `AFogVolume`
+(`TheFogStateIsReadInExactlyOnePlaceAndTheSeamConsultsAFogVolume`, present at `20c1bea`, i.e. **before
+the remedy existed**). ⇒ **a bare non-zero would have read as proof of execution while proving nothing**
+— a false green of exactly the class `SC-§113` was written about. The **filtered** form returns **1**,
+from production code. ⚠️ It is **not a tally either**: `*GetNameSafe(this)` yields `FogVolume_0`, so
+`Fog INTEGRITY FLOOR engaged` matches **neither** alternative — **read the lines, do not score them.**
+⛔ **cl. 2's `0` was a BARE count and is NOT comparable to a filtered one.** Law: `SC-§113` cl. 6.
 
 ✅ **I verified the grep can actually match** (a discharge that cannot match is a false green waiting to
 happen):
@@ -88,10 +110,21 @@ Also verified for this lane:
 
 ⭐ **The author's argument checks out.** `-ExecCmds` is this repo's proven execution lane — every suite
 run in its history is `UnrealEditor-Cmd.exe <uproject> -ExecCmds="Automation RunTests Siegebound;Quit"`,
-and the board's own `TASK-1175` cl. (0) prescribes that same invocation. A console command reaches it by
-substituting the command list. **No new tooling, and the channel is one this project has measured itself
+and the board's own `TASK-1175` cl. (0) prescribes that same invocation. ~~A console command reaches it by
+substituting the command list.~~ **No new tooling, and the channel is one this project has measured itself
 using** — which is exactly what cl. 4 demands and exactly what a bare `UFUNCTION` would not have given
 (MCP has no function-invocation tool).
+
+🚨 **ANNOTATED 2026-09-09 BY THE MANAGER — the VERDICT stands, one INFERENCE inside it does not (W9).**
+Recorded without blame: this is **prose, not code**, and the code it blessed turned out **correct**.
+**"Substituting the command list" DOES NOT WORK.** `-ExecCmds` splits on **comma**, never `;`
+(`ParseExecCommands.cpp:29`) — the `;` in the suite line is split by the **`Automation` handler's own**
+parser and never reaches `-ExecCmds`, so the idiom **does not generalise**. And `Quit` does not quit an
+editor commandlet (`QUIT_EDITOR` does). ✅ **The lane IS reachable and `SC-§113` IS discharged** — the
+correct substitution is `-ExecCmds="Siege.Fog.Raise,Siege.Fog.Clear,Siege.Fog.Status,QUIT_EDITOR"`,
+**measured, self-terminating in 12 s**. Law + pinned recipe: `CONVENTIONS.md` → **`SC-§116`**.
+⚖️ The near-miss worth keeping: the available wrong conclusion was *"the console lane does not work"* —
+i.e. this row's own deliverable declared dead on the strength of **a typo in its own instructions**.
 
 Mechanically verified against the installed 5.8 headers:
 - `FAutoConsoleCommandWithWorldAndArgs(const TCHAR* Name, const TCHAR* Help, const FConsoleCommandWithWorldAndArgsDelegate&, uint32 Flags = ECVF_Default)` — `IConsoleManager.h:2423`. The four call arguments at `FogVolume.cpp:225-241` match in order and type. ✅
@@ -512,7 +545,10 @@ moment `TASK-1175` runs the grep in §0.**
 
 - **cl. 4 asked for a channel this project has MEASURED ITSELF USING.** ✅ `-ExecCmds` is that channel:
   every suite run in this repository's history uses it, and the board's own `TASK-1175` cl. (0)
-  prescribes it. Deliverable (b) reaches it by substituting the command list — **no new tooling**.
+  prescribes it. ~~Deliverable (b) reaches it by substituting the command list~~ — **no new tooling**.
+  🚨 **Corrected 2026-09-09 (W9, `SC-§116`): the substitution needs COMMAS and `QUIT_EDITOR`, not `;`
+  and `Quit`. The conclusion is UNCHANGED and now EVIDENTIAL — the lane ran, all three commands
+  dispatched, and `Status` read the state back after `Clear`.** See the annotation at §1(b).
 - **cl. 4's trap — "a `UFUNCTION` alone would not have fixed it, because the tool that would call one
   does not exist."** ✅ Not walked into. The row does not count the `UFUNCTION`s as an agent lane; it says
   so in its own header (`FogVolume.cpp:696-700`) and in the handoff (§1(c)). **The two agent-reachable
