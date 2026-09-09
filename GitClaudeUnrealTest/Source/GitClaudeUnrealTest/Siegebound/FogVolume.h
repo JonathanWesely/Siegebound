@@ -324,6 +324,27 @@ struct FFogRenderFloorPriorState
  *  ⛔ Read this as a measurement carrying a date: if someone later adds a `UFUNCTION`, this sentence
  *  EXPIRES rather than forbids. Until then it constrains every fog-visual row.
  *
+ *  🚨⭐⭐⭐ **AMENDED 2026-09-09 (`TASK-1173`) — THE SENTENCE ABOVE HAS NOW ⛔ EXPIRED, ⛔ EXACTLY
+ *  AS IT SAID IT WOULD, AND IT IS ⛔ KEPT RATHER THAN DELETED SO THE EXPIRY IS ⛔ LEGIBLE**
+ *  (`SC-§53` cl. 3 — a struck claim is NAMED, never quietly removed; the paragraph above is also
+ *  the record of ⛔ WHY the two-object split was chosen, which is still live).
+ *  ⛔ **WHAT CHANGED, EXACTLY:** this class now declares ⛔ THREE `UFUNCTION`s — `DevRaiseFog`,
+ *  `DevClearFog`, `DevLogFogState` — ⛔ ALL of them `CallInEditor`-only, ⛔ ALL of them inside
+ *  `#if WITH_EDITOR`, and ⛔ NONE of them `BlueprintCallable`. ⇒ the count above is no longer
+ *  zero, ⛔ and the predicate the paragraph really cared about is ⛔ STILL TRUE:
+ *  ⭐⭐ **A BLUEPRINT ⛔ STILL CANNOT POLL FOG STATE.** Nothing reflected here answers *"is fog
+ *  up?"* to a Blueprint graph: `IsFogActive`, `IsFogPrevented` and
+ *  `GetFogPreventionSecondsRemaining` remain ⛔ plain C++, the three new functions are
+ *  ⛔ unreachable from a cooked build at all, and the visual still holds ⛔ no variables.
+ *  ⇒ ⛔ **THE CONSTRAINT ON FOG-VISUAL ROWS STANDS UNCHANGED: C++ owns the lifetime, the visual
+ *  READS state and never OWNS it, and a Blueprint-side *"am I still up?"* tick is ⛔ STILL BANNED.**
+ *  ⛔ The three additions are ⛔ DEV TRIGGERS, not a seam — see their own block below for why the
+ *  class needed one at all (`SC-§113`: until they landed, ⛔ nobody in this pipeline could execute
+ *  ⛔ one line of this class, so every gate ever run on it was ⛔ partly ceremony).
+ *  ⚠️ **AND THE NEXT READER'S DUTY IS THE SAME AS THIS ONE'S:** if somebody adds a
+ *  `BlueprintCallable` or a non-editor `UFUNCTION` here, ⛔ THIS amendment expires too, and the
+ *  *"a Blueprint cannot poll"* sentence above must be ⛔ RE-MEASURED rather than inherited.
+ *
  *  ⚖️✅ **RULED 2026-09-05 — THE QUESTION IS KEPT BECAUSE A RULING THAT ERASES ITS OWN QUESTION
  *  TEACHES NOBODY** (`FOG-§6a`, raised by `TASK-1050` cl. 4, ⛔ ANSWERED BY THE MANAGER on
  *  `TASK-1068` cl. 7).
@@ -875,6 +896,60 @@ public:
 	 *  actors, and building on that belief is how the orphan happens.
 	 */
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+#if WITH_EDITOR
+
+	// ═════════════════════════════════════════════════════════════════════════════════════════
+	//  ⭐⭐ THE DEV TRIGGERS — DETAILS-PANEL LANE (`TASK-1173`; law `SC-§113`)
+	// ═════════════════════════════════════════════════════════════════════════════════════════
+	//
+	//  ⛔⛔ THESE ARE THE ⛔ FIRST `UFUNCTION`s THIS CLASS HAS EVER HAD, and the Blueprint-seam
+	//  paragraph in this file's class doc ⛔ EXPIRES ON THEM ⛔ BY ITS OWN TERMS — see the
+	//  amendment there. ⛔ Read that before concluding anything about what a Blueprint may now do.
+	//
+	//  ⛔ WHY THEY EXIST: ⭐ `SC-§113` — until `TASK-1173`, ⛔ no agent in this pipeline could
+	//  execute ⛔ one line of this class, so every gate run on it was ⛔ partly ceremony and every
+	//  `Error` site in `FogVolume.cpp` was silent ⛔ for the wrong reason. ⛔ These are ⛔ ONE of
+	//  three channels shipped together; the other two (a console command and an automation test
+	//  that drives `RaiseFog` in a real world) are the ones an ⛔ AGENT can actually reach.
+	//
+	//  ⛔ WHAT THEY ARE ⛔ NOT: ⛔ not gameplay, ⛔ not a second opinion about fog liveness, ⛔ not a
+	//  policy holder. ⛔ Each one is a ⛔ THIN CALL to a door that already exists plus a log line.
+	//  ⛔ Adding logic to one of these is how this class grows a second source of truth.
+	//
+	//  ⛔ THE FENCE: `#if WITH_EDITOR`, ⛔ symmetrically on declaration and definition. ⛔ There is
+	//  ⛔ no `BlueprintCallable` here on purpose — a Blueprint node bound to an editor-only
+	//  function would fail the cook, and these are ⛔ not for Blueprints. ⛔ The `CallInEditor`
+	//  button is the ⛔ entire surface.
+
+	/**
+	 *  🧑 HIS BUTTON — raises the fog on ⛔ THIS actor through `RaiseFog()`, the card's own door.
+	 *  ⛔ Refused by a live `BrightSun` window exactly as the card is (`J-F19`); the log line says
+	 *  which happened, because a button that could ⛔ never be refused would be a different path.
+	 *  ⚠️ It cannot CREATE the fog-state actor — a button needs an instance to live on. Before the
+	 *  first cast of a match, use the `Siege.Fog.Raise` console command (it goes through
+	 *  `FindOrSpawn`) or play the card.
+	 */
+	UFUNCTION(CallInEditor, Category = "Siegebound|Fog|Dev")
+	void DevRaiseFog();
+
+	/**
+	 *  🧑 HIS BUTTON — takes the fog down through `ResetFog()`, the match-reset door.
+	 *  ⛔ Zeroes ⛔ BOTH deadlines and opens ⛔ NO prevention window: this is ⛔ NOT the `BrightSun`
+	 *  card, and reading it as one would misattribute the absence of a shield.
+	 */
+	UFUNCTION(CallInEditor, Category = "Siegebound|Fog|Dev")
+	void DevClearFog();
+
+	/**
+	 *  🧑 HIS BUTTON — ⛔ READ-ONLY. Logs fog state, prevention state, the seconds remaining and
+	 *  whether the visual actor is present. ⛔ Writes nothing and creates nothing, so it is safe
+	 *  to press ⛔ BEFORE a change as the before-picture as well as after it (`SC-§107`).
+	 */
+	UFUNCTION(CallInEditor, Category = "Siegebound|Fog|Dev")
+	void DevLogFogState();
+
+#endif // WITH_EDITOR
 
 protected:
 

@@ -3,6 +3,14 @@
 #include "Misc/AutomationTest.h"
 
 #include "Containers/UnrealString.h"
+#include "Engine/EngineBaseTypes.h"      // TASK-1173: FURL — InitializeActorsForPlay's argument
+#include "Engine/ExponentialHeightFog.h" // TASK-1173: the height-fog actor AFogVolume::FindHeightFogComponent looks for — a world without one makes EnforceFogRenderFloor log an Error, i.e. a RED for a property of the RIG
+#include "Engine/Engine.h"               // TASK-1173: GEngine — CreateNewWorldContext / DestroyWorldContext / ShutdownWorldNetDriver
+#include "Engine/World.h"                // TASK-1173: UWorld::CreateWorld — ⛔ the FIRST real world in this project's suite
+#include "EngineUtils.h"                 // TASK-1173: TActorIterator / FActorRange — finding the spawned visual and routing EndPlay on teardown
+#include "GameFramework/Actor.h"         // TASK-1173: AActor::RouteEndPlay (explicit IWYU — no compile verifies a transitive pull)
+#include "GitClaudeUnrealTest.h"         // TASK-1173: LogGitClaudeUnrealTest — the category whose Log lines ARE this row's proof of execution
+#include "HAL/IConsoleManager.h"         // TASK-1173: reading r.VolumetricFog BACK, to prove the integrity floor was RELEASED and not left stranded across the suite
 #include "HAL/UnrealMemory.h" // FMemory::Memcpy — the sanctioned bit-pattern NaN (SiegeCastBarTest.cpp:129, via SiegeBrightSunTest.cpp)
 #include "Math/Transform.h"
 #include "Math/UnrealMathUtility.h"
@@ -1411,6 +1419,311 @@ bool FSiegeFogRenderFloorWiringTest::RunTest(const FString& Parameters)
 	// still asks it nothing.
 	TestEqual(TEXT("⛔ The integrity floor never reaches the fog MECHANIC — zero FSiegeFogStatics anywhere in FogVolume.cpp"),
 		CountOccurrencesInCode(FogCpp, TEXT("FSiegeFogStatics")), 0);
+
+	return true;
+}
+
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+//  ⭐⭐⭐ LANE C — ⛔ **GENUINELY EXECUTED, IN A REAL WORLD** (`TASK-1173`; law ⭐ `SC-§113`)
+//  TEST 10: `AFogVolume::RaiseFog()` IS ⛔ ACTUALLY CALLED, THE VISUAL ⛔ ACTUALLY SPAWNS, AND
+//           `ResetFog()` ⛔ ACTUALLY TAKES IT AWAY AGAIN.
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+//
+//  ⛔⛔⛔ READ THE FILE HEADER'S *"WHAT NEITHER LANE COVERS"* PARAGRAPH FIRST — ⛔ THIS TEST IS THE
+//  THING IT SAYS DOES NOT EXIST. Verbatim, and true until this test landed:
+//      *"there is not one `SpawnActor` anywhere in `Siegebound/Tests/`, so ⛔ NOTHING HERE RUNS
+//       THE ACTUAL SPAWN. The end-to-end claim — play `Fog`, a box appears; wait, it goes — is
+//       ⛔ NOT EXECUTED by this file and is ⛔ NOT executed by the suite."*
+//  ⇒ ⛔ THAT SENTENCE IS NOW ⛔ HALF FALSE, and ⛔ ONLY half: the ⛔ SPAWN and the ⛔ DESPAWN are
+//  executed here. ⛔ The 300-second WAIT is not, and ⛔ neither is anything about how the fog
+//  ⛔ LOOKS — 🧑 his eye remains the only instrument for legibility (`AS-§6 A(e)`).
+//
+//  ⛔⛔ WHY IT MATTERS MORE THAN AN ORDINARY TEST, said plainly: ⭐ `SC-§113` recorded that
+//  ⛔ NOBODY IN THIS PIPELINE COULD EXECUTE ⛔ ONE LINE of `AFogVolume`. `ApplyFogVisualMaterial`
+//  and `VerifyFogVisualMaterial` were built, reviewed, mutation-tested and ⛔ NEVER RUN. A `grep`
+//  over the entire editor log for `AFogVolume` returned ⛔ ZERO lines — and ⛔ an error that
+//  ⛔ CANNOT fire and one that ⛔ CHOSE not to fire ⛔ produce byte-identical logs. ⇒ every gate
+//  this lane ever passed was, in part, ⛔ ceremony. ⛔ THIS TEST IS THE POSITIVE CONTROL THAT ENDS
+//  THAT (`SC-§113` cl. 3(c)).
+//
+//  ⭐⭐⭐ AND THE PART THAT IS ⛔ NOT MINE, WHICH IS THE BEST PART: ⛔ I ASSERT ALMOST NOTHING ABOUT
+//  THE FOG'S CORRECTNESS HERE, ⛔ ON PURPOSE. `FogVolume.cpp` already contains ⛔ SEVEN `Error`
+//  sites, and the automation framework routes ⛔ EVERY `UE_LOG(..., Error, ...)` raised during a
+//  test into `AddError` ⇒ ⛔ THE SHIPPED INSTRUMENTS BECOME THIS TEST'S ASSERTIONS, for free, and
+//  they redden on ⛔ their own terms rather than on a paraphrase of them I typed here. That is
+//  worth more than any predicate I could add: the visual failing to load, the world refusing the
+//  spawn, ⛔ THE `TASK-1071` SCALE SUBSTITUTION RETURNING, and the integrity floor not taking are
+//  ⛔ ALL now suite-visible. ⛔ DO NOT ADD `AddExpectedError` TO THIS TEST — that would restore the
+//  exact silence `SC-§113` was written about.
+//
+//  ⚠️⚠️ DECLARED, BECAUSE IT IS A REAL COST AND A REVIEWER MUST WEIGH IT: this test ⛔ LOADS
+//  `/Game/Blueprints/BP_SiegeFog` and, through it, the ⛔ READ-ONLY VENDOR PACK it is parented to.
+//  `TASK-841` §5.3 measured that loading a vendor package ⛔ DIRTIES it. ⛔ Nothing here saves
+//  anything, and the sanctioned runner (`UnrealEditor-Cmd.exe … -unattended … ;Quit`) never
+//  saves either ⇒ safe in the lane we actually use. 🚨 ⛔ IT IS ⛔ NOT SAFE TO RUN THIS FROM THE
+//  SESSION FRONTEND IN A LIVE EDITOR AND THEN PRESS *SAVE ALL* (`FOG-§6`, `GFX-§11`). ⛔ The world
+//  itself is created inside `GetTransientPackage()`, so ⛔ no map is touched — the hazard is the
+//  vendor asset chain only, and it is disclosed rather than dodged.
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+
+namespace SiegeFogRealWorldFixture
+{
+	/**
+	 *  ⛔⛔ A REAL, PLAYING `UWorld` — ⛔ THE FIRST ONE IN THIS PROJECT'S SUITE, AND THAT IS A
+	 *  ⛔ DELIBERATE PRECEDENT BREAK RATHER THAN AN OVERSIGHT BEING CORRECTED.
+	 *  ⛔ Nine files under `Siegebound/Tests/` currently assert, in their own headers, that
+	 *  *"every automation test in this project is HEADLESS — there is not one `UWorld::CreateWorld`
+	 *  and not one `SpawnActor` anywhere in `Siegebound/Tests/`"*. ⇒ ⛔ THOSE SENTENCES ARE NOW
+	 *  STALE (`SC-§91`), and this comment is where a reader who trusted one of them lands.
+	 *  ⛔ They are ⛔ NOT edited here: they are PROSE in files this row does not own, the claim they
+	 *  each make is about their ⛔ OWN reasoning, and a nine-file sweep inside a capability row is
+	 *  how a capability row becomes a refactor. ⛔ The divergence is DECLARED to the gate instead.
+	 *
+	 *  ⭐ THE SHAPE IS ⛔ NOT INVENTED — it is the engine's own `FActorTestSpawner`
+	 *  (`Developer/CQTest/Private/Components/ActorTestSpawner.cpp`), copied step for step:
+	 *  context ⇒ world ⇒ root ⇒ `SetCurrentWorld` ⇒ `InitializeActorsForPlay` ⇒ (ours) `BeginPlay`.
+	 *  ⛔ Writing a bespoke one would be inventing a rig whose failure modes nobody has paid for.
+	 *
+	 *  ⛔ `GetTransientPackage()` AS THE WORLD PACKAGE IS LOAD-BEARING, ⛔ not tidiness: it is what
+	 *  guarantees this test can ⛔ NEVER dirty or save a map, which is the one thing `GFX-§11`
+	 *  cares about.
+	 *
+	 *  ⚠️ `BeginPlay()` IS CALLED, and the reason is measured rather than assumed: this project has
+	 *  ⛔ ZERO `UWorldSubsystem`s (all six of its subsystems are `UGameInstanceSubsystem`s, and this
+	 *  world has no game instance), so `UWorld::BeginPlay` runs ⛔ no project code — it is null-safe
+	 *  on the absent game mode (`World.cpp`, `GetAuthGameMode()` branch). ⛔ Without it the world
+	 *  never sets `bBegunPlay`, so `AActor::RouteEndPlay` would be a ⛔ NO-OP at teardown and
+	 *  `AFogVolume::EndPlay` — which is what RELEASES the integrity floor — would ⛔ never run.
+	 */
+	struct FScopedPlayWorld
+	{
+		UWorld* World = nullptr;
+
+		FScopedPlayWorld()
+		{
+			if (!GEngine)
+			{
+				return;
+			}
+
+			const FName WorldName = MakeUniqueObjectName(
+				nullptr, UWorld::StaticClass(), NAME_None, EUniqueObjectNameOptions::GloballyUnique);
+
+			// ⛔ THE WORLD IS CREATED ⛔ BEFORE THE CONTEXT, which is the ONE place this deviates
+			// from `FActorTestSpawner` and it is deliberate: `DestroyWorldContext` is keyed BY
+			// WORLD, so a context created first and then orphaned by a failed `CreateWorld` could
+			// not be cleaned up at all. ⛔ Creating the world first makes the failure path a plain
+			// early return with nothing leaked. The ORDER of the two calls is otherwise immaterial
+			// — `SetCurrentWorld` is what binds them, and it still runs after both.
+			World = UWorld::CreateWorld(
+				EWorldType::Game, /*bInformEngineOfWorld=*/ false, WorldName, GetTransientPackage());
+
+			if (!World)
+			{
+				return;
+			}
+
+			FWorldContext& WorldContext = GEngine->CreateNewWorldContext(EWorldType::Game);
+
+			World->AddToRoot();
+			WorldContext.SetCurrentWorld(World);
+			World->InitializeActorsForPlay(FURL());
+			World->BeginPlay();
+		}
+
+		~FScopedPlayWorld()
+		{
+			if (!World || !GEngine)
+			{
+				return;
+			}
+
+			// ⛔ `RouteEndPlay` FIRST, and it is the reason `BeginPlay` was called above: this is
+			// what fires `AFogVolume::EndPlay`, which RELEASES the integrity floor. ⛔ A teardown
+			// that skipped it would leave `r.VolumetricFog` pinned at `SetByCode` for the ⛔ REST
+			// OF THE SUITE PROCESS — 553 other tests running under a console variable this one
+			// stranded, with nothing red anywhere.
+			if (World->AreActorsInitialized())
+			{
+				for (AActor* const Actor : FActorRange(World))
+				{
+					if (Actor)
+					{
+						Actor->RouteEndPlay(EEndPlayReason::LevelTransition);
+					}
+				}
+			}
+
+			GEngine->ShutdownWorldNetDriver(World);
+			World->DestroyWorld(/*bInformEngineOfWorld=*/ true);
+			World->SetPhysicsScene(nullptr);
+			GEngine->DestroyWorldContext(World);
+			World->RemoveFromRoot();
+			World = nullptr;
+		}
+
+		FScopedPlayWorld(const FScopedPlayWorld&) = delete;
+		FScopedPlayWorld& operator=(const FScopedPlayWorld&) = delete;
+	};
+
+	/**
+	 *  The fog visual, found the way the shipped code makes it findable: `SpawnFogVisual` sets
+	 *  `SpawnParams.Owner = this`, so the visual is the state actor's ⛔ ONE owned actor.
+	 *  ⛔ Deliberately ⛔ NOT a class-name match and ⛔ NOT a second `TryLoadClass`: asking the
+	 *  OWNERSHIP measures the wiring the production code actually established, whereas a class
+	 *  sweep would answer *"an actor of that class exists"* — a ⛔ weaker and different claim that
+	 *  would stay green if the handle were never attached to anything.
+	 */
+	static AActor* FindOwnedVisual(UWorld* World, const AActor* Owner)
+	{
+		if (!World || !Owner)
+		{
+			return nullptr;
+		}
+
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			AActor* const Candidate = *It;
+			if (IsValid(Candidate) && Candidate->GetOwner() == Owner)
+			{
+				return Candidate;
+			}
+		}
+
+		return nullptr;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeFogRaisePathActuallyExecutesTest,
+	"Siegebound.Fog.RaiseFogIsActuallyExecutedInARealWorldAndTheVisualAppearsThenGoes",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeFogRaisePathActuallyExecutesTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeFogRealWorldFixture;
+
+	FScopedPlayWorld Scoped;
+	if (!Scoped.World)
+	{
+		AddError(TEXT("⛔ The test world could not be created, so NOTHING below ran. ⛔ Read this as 'NOT MEASURED', never as a pass."));
+		return false;
+	}
+
+	UWorld* const World = Scoped.World;
+
+	// ── ⭐ (0) THE HEIGHT-FOG ACTOR — ⛔ FIDELITY, ⛔ NOT A WORKAROUND ────────────────────────────
+	//  `L_Arena` has an `AExponentialHeightFog`; `AFogVolume::EnforceFogRenderFloor` looks for one
+	//  and logs an ⛔ `Error` when there is none, because in a real match its absence means terms
+	//  5-7 of `ShouldRenderVolumetricFog` are unsatisfiable. ⇒ a bare world would red this test on
+	//  a condition that is ⛔ TRUE OF THE RIG rather than of the code — ⛔ exactly the artefact
+	//  `SC-§112` is about. Spawning one makes the world resemble the shipping world; it does
+	//  ⛔ NOT suppress the check, and a floor that failed for any OTHER reason still reds.
+	AExponentialHeightFog* const HeightFog = World->SpawnActor<AExponentialHeightFog>();
+	TestNotNull(TEXT("⭐ (0) The test world has an AExponentialHeightFog, as L_Arena does — without one the integrity floor errors on a property of the RIG"), HeightFog);
+
+	// ── ⛔ (1) THE BEFORE-PICTURE, TAKEN BEFORE THE FIX EXISTS (`SC-§107`) ──────────────────────
+	//  ⛔ A negative control on the finder itself: if `Find` answered non-null here, every
+	//  non-null below would be meaningless.
+	TestNull(TEXT("⛔ (1) NEGATIVE CONTROL: a fresh world holds NO fog-state actor, so the non-null below is evidence rather than noise"),
+		AFogVolume::Find(World));
+
+	// ── ⭐⭐⭐ (2) THE WRITE DOOR — ⛔ THE CARD'S OWN, ⛔ NOT A RE-IMPLEMENTATION ──────────────────
+	//  `AFogVolume::FindOrSpawn(World)` is character-for-character what `USpellLibrary::ResolveSpell`'s
+	//  `FogCover` arm calls. ⛔ Nothing here constructs a volume by hand.
+	AFogVolume* const Volume = AFogVolume::FindOrSpawn(World);
+	TestNotNull(TEXT("⭐⭐ (2) AFogVolume::FindOrSpawn EXECUTED and produced the one fog-state actor (FOG-§10.1) — this is the card's own write door"), Volume);
+	if (!Volume)
+	{
+		return false;
+	}
+
+	TestFalse(TEXT("⛔ (2) …and a freshly spawned volume starts CLEAR — 0.0 is an unambiguous 'no fog'"), Volume->IsFogActive());
+	TestFalse(TEXT("⛔ (2) …and unshielded, so RaiseFog below cannot be refused by J-F19 for a reason the rig invented"), Volume->IsFogPrevented());
+	TestNull(TEXT("⛔ (2) …and it owns NO actor yet, so the visual found in (4) can only have come from the raise"),
+		FindOwnedVisual(World, Volume));
+
+	// ── ⭐⭐⭐ (3) THE REAL ENTRY POINT — ⛔ THIS LINE IS THE WHOLE ROW ────────────────────────────
+	//  ⛔ Everything `SC-§113` describes was true right up to this call: `RaiseFog` had never been
+	//  executed by anything in this pipeline. From here on, `RefreshFogVisual`, `EnforceFogRenderFloor`
+	//  and `SpawnFogVisual` all run — and every `Error` any of them raises reddens this test.
+	const bool bRaised = Volume->RaiseFog();
+	TestTrue(TEXT("⭐⭐⭐ (3) AFogVolume::RaiseFog() EXECUTED and returned TRUE — the fog path has now genuinely run (SC-§113 cl. 3(c))"), bRaised);
+
+	// ── ⭐⭐ (4) STATE, ⛔ NOT TALLIES (`SC-§104`) ────────────────────────────────────────────────
+	TestTrue(TEXT("⭐⭐ (4) The MACHINE says fog is UP — asked of IsFogActive(), the one predicate, rather than counted"), Volume->IsFogActive());
+
+	AActor* const Visual = FindOwnedVisual(World, Volume);
+	TestNotNull(TEXT("⭐⭐⭐ (4) THE VISUAL ACTUALLY SPAWNED — an actor OWNED by the fog volume now exists in the world. ⛔ This is the end-to-end claim the file header says the suite does not make; it makes it now"), Visual);
+
+	if (Visual)
+	{
+		// ⭐ …and it is the class the shipped path names. `ResolveClass()` rather than
+		// `TryLoadClass()` on purpose: after a successful raise the class is ALREADY loaded, so a
+		// null here would mean `SpawnFogVisual` produced an owned actor WITHOUT loading the
+		// visual class — a contradiction worth catching, and asking this way adds no second load.
+		UClass* const VisualClass = AFogVolume::FogVisualClassPath().ResolveClass();
+		TestNotNull(TEXT("⭐ (4) The fog visual class is RESOLVED in memory after the raise — SpawnFogVisual really loaded it"), VisualClass);
+		if (VisualClass)
+		{
+			TestTrue(TEXT("⭐⭐ (4) …and the actor the volume owns IS that class — the owned actor is the fog visual, not something incidental"),
+				Visual->IsA(VisualClass));
+		}
+
+		// ⛔⛔ THE `TASK-1071` SCALE, ⛔ REPORTED AND ⛔ NOT RE-ASSERTED, AND THE REASON IS
+		// DELIBERATE: `SpawnFogVisual` ⛔ ALREADY tests exactly this and raises an `Error` when it
+		// disagrees, which this test's own capture turns into a FAILURE. ⇒ writing a second
+		// predicate here would be a ⛔ PARAPHRASE of the shipped one that could drift away from it,
+		// and if it ever disagreed nobody could say which was right. ⛔ The numbers are surfaced so
+		// a human reading the run has them; ⛔ the judgement stays where the code makes it.
+		// ⛔⛔ ⛔ MEASURED VALUES ⛔ ONLY. The REQUEST is deliberately ⛔ NOT recomputed here: this
+		// test has no access to the volume's `ArenaGroundReferenceZUU` (it is `protected`), so any
+		// "request" it printed would be a ⛔ RECONSTRUCTION that could silently disagree with the
+		// real one — an ⛔ ECHO of a guess, which is the eleventh-time-lucky lie this file exists
+		// to refuse. ⛔ The spawn log already prints ACHIEVED beside REQUESTED from inside the
+		// function that owns both.
+		const FVector AchievedScale3D = Visual->GetActorScale3D();
+		AddInfo(FString::Printf(
+			TEXT("⭐ (4) MEASURED off the spawned actor — ACHIEVED scale (%.3f, %.3f, %.3f), ACHIEVED Z %.1f. ")
+			TEXT("⛔ Read back with GetActorScale3D/GetActorLocation, never echoed from a request. ")
+			TEXT("⛔ The VERDICT on scale is SpawnFogVisual's own Error site, ⛔ not a predicate in this test — ")
+			TEXT("if the TASK-1071 substitution ever returns, this test reds through THAT instrument."),
+			AchievedScale3D.X, AchievedScale3D.Y, AchievedScale3D.Z,
+			Visual->GetActorLocation().Z));
+	}
+
+	// ── ⭐⭐⭐ (5) THE OTHER HALF OF THE SEAM — ⛔ ENTERED ⛔ AND LEFT ─────────────────────────────
+	//  ⛔ *"A seam that can be entered and not left is HALF A SEAM."* A build that spawns and never
+	//  destroys is ⛔ PERMANENT FOG with a green suite, so the despawn carries the same weight here
+	//  as the spawn — the file's own standing rule, now executed instead of counted.
+	Volume->ResetFog();
+
+	TestFalse(TEXT("⭐⭐ (5) AFogVolume::ResetFog() EXECUTED — the machine now says fog is DOWN"), Volume->IsFogActive());
+	TestFalse(TEXT("⭐ (5) …and prevention is down too: ResetFog zeroes BOTH deadlines (FOG-§10.3)"), Volume->IsFogPrevented());
+	TestNull(TEXT("⭐⭐⭐ (5) THE VISUAL IS GONE — the volume owns no actor again. ⛔ A fog corpse surviving here is match-1 fog blinding a match-2 player"),
+		FindOwnedVisual(World, Volume));
+
+	// ── ⭐⭐ (6) THE FLOOR WAS ⛔ RELEASED, ⛔ NOT MERELY ENGAGED ──────────────────────────────────
+	//  ⛔ This one protects the ⛔ REST OF THE SUITE, not the fog: `EnforceFogRenderFloor` writes
+	//  `r.VolumetricFog` at `ECVF_SetByCode`, which is ⛔ PROCESS-GLOBAL. A release that failed
+	//  would leave every later test in this run under a console variable this test pinned — and
+	//  ⛔ nothing would go red anywhere. ⇒ read the priority BACK off the machine.
+	//  ⛔ The cvar NAME is asked of the shipped constant, never retyped: a second copy of that
+	//  string is a second thing that can drift.
+	if (IConsoleVariable* const VolumetricFogCVar =
+			IConsoleManager::Get().FindConsoleVariable(AFogVolume::FogRenderFloorCVarVolumetricFog))
+	{
+		// ⛔ The priority read is the house spelling, copied from `ReleaseFogRenderFloor` character
+		// for character — two spellings of one predicate is two things that can drift apart.
+		const bool bStillPinnedByCode =
+			(static_cast<EConsoleVariableFlags>(VolumetricFogCVar->GetFlags() & ECVF_SetByMask) == ECVF_SetByCode);
+		TestFalse(TEXT("⭐⭐ (6) The integrity floor was RELEASED — the volumetric-fog console variable is no longer held at SetByCode. ⛔ A true here means this test stranded a process-global cvar across the whole suite run"),
+			bStillPinnedByCode);
+	}
+	else
+	{
+		AddInfo(TEXT("ℹ️ (6) The volumetric-fog console variable does not exist in this build, so the release could not be read back. ⛔ NOT MEASURED — never a pass."));
+	}
 
 	return true;
 }

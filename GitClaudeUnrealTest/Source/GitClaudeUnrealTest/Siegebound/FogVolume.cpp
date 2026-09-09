@@ -14,6 +14,234 @@
 #include "TimerManager.h"              // TASK-1068: the visual-expiry WAKE-UP (⛔ not a second deadline — see FogVolume.h's one-way-door paragraph)
 #include "UObject/UObjectGlobals.h"    // TASK-1068: GetDefault<> and LoadClass<> (explicit IWYU — no compile verifies transitive pulls; the SessionMenuWidget.cpp precedent)
 
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+//  ⭐⭐⭐ THE DEV TRIGGERS — CONSOLE LANE (`TASK-1173`; law `SC-§113`, `SC-§36.1`, `SC-§111`)
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+//
+//  ⛔⛔⛔ WHY THIS BLOCK EXISTS, AND IT IS NOT A CONVENIENCE. Until it landed, ⛔ NOBODY IN THIS
+//  PIPELINE COULD EXECUTE ONE LINE OF THIS FILE. Measured, four ways, by `TASK-1167` §5 and
+//  written up as `SC-§113` cl. 1: this class exposed ⛔ NO reflected function; its only runtime
+//  caller (`USpellLibrary::ResolveSpell`) is a ⛔ plain static; the editor bridge has ⛔ NO
+//  function-invocation tool at all (get / set / list properties only); and the one writable
+//  `UPROPERTY` deadline is ⛔ polled by nothing. ⇒ every `Error` site in this file was silent, and
+//  ⛔ NOBODY COULD SAY WHETHER THAT WAS GOOD NEWS — an error that ⛔ CANNOT fire and one that
+//  ⛔ CHOSE not to fire produce ⛔ byte-identical logs, and the default reading of an empty log is
+//  *"fine"*.
+//
+//  ⛔⛔ AND THE TRAP THAT SHAPED THE CHOICE (`SC-§113` cl. 4): ⛔ A `UFUNCTION` ALONE WOULD NOT
+//  HAVE FIXED IT, because the tool that would call one ⛔ does not exist. ⇒ the channel had to be
+//  one this project has ⛔ MEASURED ITSELF USING. It is: ⭐ every suite run in this repository's
+//  history has been `UnrealEditor-Cmd.exe <uproject> -ExecCmds="Automation RunTests Siegebound;Quit"`
+//  — i.e. ⛔ THE CONSOLE IS ALREADY OUR EXECUTION LANE, and a console command reaches it by
+//  substituting the command list. See `handoffs/TASK-1173-programmer.md` for the exact invocation.
+//
+//  ⛔ SHIPPING FENCE — ⛔ TWO OF THEM, DELIBERATELY, BECAUSE EACH COVERS A CONFIGURATION THE
+//  OTHER MISSES (the house *"non-shipping by construction"* rule from `USiegeCheatManager`,
+//  ⛔ not a second pattern):
+//    (1) `#if !UE_BUILD_SHIPPING` — the registration itself ⛔ does not exist in a Shipping build;
+//    (2) `ECVF_Cheat` — `IConsoleObject::IsEnabled()` refuses cheat objects wherever
+//        `DISABLE_CHEAT_CVARS` is set, which is `UE_BUILD_SHIPPING || (UE_BUILD_TEST &&
+//        !ALLOW_CHEAT_CVARS_IN_TEST)` (`Misc/Build.h`) ⇒ it also covers ⛔ TEST, which (1) does not.
+//  ⚠️ `SC-§111` DISCLOSURE: (1) is a ⛔ deliberate target divergence and it runs in the ⛔ SAFE
+//  direction — the shipped game loses a developer trigger and ⛔ no gameplay mechanism. That is
+//  the narrow case cl. 3(c) permits; ⛔ nothing in the fog's own mechanism is guarded.
+//
+//  ⛔⛔ SCOPE — READ THIS BEFORE EDITING: these commands ⛔ RE-IMPLEMENT NOTHING. They call the
+//  SAME two doors `USpellLibrary::ResolveSpell` calls (`FindOrSpawn` then `RaiseFog`), in the same
+//  order, with ⛔ no bespoke spawn, ⛔ no raw field write and ⛔ no second copy of any policy — the
+//  `USiegeCheatManager` discipline applied to a console command. ⛔ A trigger that re-implemented
+//  the path would test the trigger, ⛔ not the game.
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+
+#if !UE_BUILD_SHIPPING
+
+namespace SiegeFogDevTrigger
+{
+	// ⛔⛔ EACH COMMAND NAME HAS ⛔ EXACTLY ONE HOME, and it is these three lines. ⛔ This is the
+	// house law the three floored console-variable names already obey (`FogRenderFloorCVar*`,
+	// declared once in the header and spelled once here), applied to a command: a name typed at
+	// BOTH the registration AND the log line is ⛔ TWO copies that can drift, and the drift is
+	// invisible — the command would still register, and the log would name a command that no
+	// longer exists.
+	static const TCHAR* const CommandNameRaise = TEXT("Siege.Fog.Raise");
+	static const TCHAR* const CommandNameClear = TEXT("Siege.Fog.Clear");
+	static const TCHAR* const CommandNameStatus = TEXT("Siege.Fog.Status");
+
+	/**
+	 *  Gate + disclosure for the two WRITING commands. Returns false when there is no world at
+	 *  all; returns true — after a loud `Warning` — when the world is an EDITOR world.
+	 *  ⛔ A trigger with no world is a ⛔ NO-OP THAT LOOKS LIKE A PULL, which is the whole class of
+	 *  defect this block exists to end. ⇒ it is `Warning`, it names the command, and it says what
+	 *  the operator must do differently. ⛔ Never silent.
+	 */
+	static bool IsWorldUsable(const TCHAR* CommandName, UWorld* World)
+	{
+		if (!World)
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("[%s] ⛔ NOTHING HAPPENED — the console resolved ⛔ NO WORLD for this command, so the fog path was ")
+				TEXT("never entered. This is the shape of a FALSE PASS: an empty log below this line means ⛔ 'not run', ")
+				TEXT("⛔ never 'ran clean'. Run it from a live PIE session, or from a commandlet that has opened a map."),
+				CommandName);
+			return false;
+		}
+
+		// ⛔⛔ THE EDITOR-WORLD HAZARD, SAID OUT LOUD RATHER THAN REFUSED. Spawning into the world
+		// the editor currently has open marks that MAP DIRTY, and this project's standing law is
+		// that `L_Arena` is ⛔ NEVER saved (`GFX-§11`). ⛔ Refusing here would be worse: it would
+		// make the ONE headless channel we have measured ourselves using — the editor commandlet,
+		// whose world is an editor world — dead on arrival, which is the very defect this block
+		// repairs. ⇒ ⛔ ACT, and make the consequence impossible to miss.
+		// ⭐ The visual itself carries `RF_Transient` (see `SpawnFogVisual`), so the box cannot be
+		// baked in even if somebody did save; the state actor is what would persist.
+		if (!World->IsGameWorld())
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("[%s] ⚠️⚠️ ACTING ON AN ⛔ EDITOR WORLD ('%s'), not a game/PIE world. The fog-state actor is spawned ")
+				TEXT("into the map you currently have OPEN, which ⛔ MARKS IT DIRTY. ⛔ DO NOT SAVE THE MAP (`GFX-§11`): ")
+				TEXT("discard, or close the editor without saving. Prefer PIE for anything you intend to look at."),
+				CommandName, *World->GetName());
+		}
+
+		return true;
+	}
+
+	/**
+	 *  ⭐⭐⭐ `Siege.Fog.Raise` — THE CARD'S OWN PATH, PULLED BY HAND.
+	 *  ⛔ `FindOrSpawn` then `RaiseFog`, which is character-for-character what the `FogCover` arm
+	 *  of `USpellLibrary::ResolveSpell` does. ⛔ It does NOT bypass `J-F19`: a `BrightSun` window
+	 *  refuses this exactly as it refuses the card, and the `false` is reported rather than
+	 *  swallowed — a trigger that could not be REFUSED would be a different code path.
+	 */
+	static void ExecRaiseFog(const TArray<FString>& Args, UWorld* World)
+	{
+		const TCHAR* const CommandName = CommandNameRaise;
+
+		if (!IsWorldUsable(CommandName, World))
+		{
+			return;
+		}
+
+		AFogVolume* const Volume = AFogVolume::FindOrSpawn(World);
+		if (!Volume)
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("[%s] ⛔ NOTHING HAPPENED — AFogVolume::FindOrSpawn returned null, so there is no fog-state actor to ")
+				TEXT("raise. This is the same refusal the card takes: the world declined the spawn."),
+				CommandName);
+			return;
+		}
+
+		const bool bRaised = Volume->RaiseFog();
+
+		// ⛔⛔ THE RETURN VALUE IS REPORTED, ⛔ NOT ASSUMED. `false` here is a LEGITIMATE outcome
+		// (`J-F19` — the prevention window refuses new fog, nothing is written, no gold moves), and
+		// an operator who could not tell it apart from a crash would learn the wrong thing.
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("[%s] AFogVolume::RaiseFog() executed on '%s' and returned %s. Fog is now %s. ")
+			TEXT("⛔ This line is the POSITIVE CONTROL for `SC-§113` cl. 3(c): its presence proves the fog path RAN. ")
+			TEXT("A `false` here is not a failure — it is the BrightSun refusal (J-F19), and the state is unchanged."),
+			CommandName, *GetNameSafe(Volume),
+			bRaised ? TEXT("TRUE") : TEXT("FALSE"),
+			Volume->IsFogActive() ? TEXT("UP") : TEXT("DOWN"));
+	}
+
+	/**
+	 *  ⭐ `Siege.Fog.Clear` — the match-reset door (`ResetFog`), i.e. exit (iii).
+	 *  ⛔ Deliberately `Find`, ⛔ never `FindOrSpawn`: creating a fog-state actor in order to tell
+	 *  it there is no fog would be inventing work, and it would put an actor in the world that the
+	 *  operator did not ask for.
+	 *  ⚠️ This is ⛔ NOT the `BrightSun` card — it opens ⛔ no prevention window. Use it to take the
+	 *  box down; use the card for the mechanic.
+	 */
+	static void ExecClearFog(const TArray<FString>& Args, UWorld* World)
+	{
+		const TCHAR* const CommandName = CommandNameClear;
+
+		if (!IsWorldUsable(CommandName, World))
+		{
+			return;
+		}
+
+		AFogVolume* const Volume = AFogVolume::Find(World);
+		if (!Volume)
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("[%s] There is no fog-state actor in this world, so there is nothing to clear — and no actor was ")
+				TEXT("created to say so. Nothing was written."),
+				CommandName);
+			return;
+		}
+
+		Volume->ResetFog();
+
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("[%s] AFogVolume::ResetFog() executed on '%s'. Fog is now %s and prevention is now %s. ")
+			TEXT("⛔ Both deadlines are ZEROED, which is the match-reset door (FOG-§10.3) — not the BrightSun card."),
+			CommandName, *GetNameSafe(Volume),
+			Volume->IsFogActive() ? TEXT("UP") : TEXT("DOWN"),
+			Volume->IsFogPrevented() ? TEXT("UP") : TEXT("DOWN"));
+	}
+
+	/**
+	 *  ⭐⭐ `Siege.Fog.Status` — ⛔ READ-ONLY, and it is the instrument, not a convenience.
+	 *  ⛔ It writes NOTHING and creates NOTHING, so it can be run BEFORE a raise as the
+	 *  before-picture (`SC-§107`) and after one as the read-back. ⛔ Every number is asked of the
+	 *  shipped accessors rather than recomputed here — a status command with its own arithmetic
+	 *  would be a second opinion about fog liveness, which `FOG-§10.1` forbids.
+	 */
+	static void ExecLogFogState(const TArray<FString>& Args, UWorld* World)
+	{
+		const TCHAR* const CommandName = CommandNameStatus;
+
+		if (!World)
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("[%s] ⛔ NO WORLD — nothing was read. An empty answer here means 'not run', never 'no fog'."),
+				CommandName);
+			return;
+		}
+
+		const AFogVolume* const Volume = AFogVolume::Find(World);
+		if (!Volume)
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("[%s] World '%s' holds NO fog-state actor. ⛔ That is 'the first cast has not happened yet', which is ")
+				TEXT("a DIFFERENT fact from 'the fog is down' — nothing has been created, so nothing can be asked."),
+				CommandName, *World->GetName());
+			return;
+		}
+
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("[%s] '%s' — fog %s, prevention %s (%.0f s of prevention remain). Read from the shipped accessors ")
+			TEXT("(IsFogActive / IsFogPrevented / GetFogPreventionSecondsRemaining), never recomputed here."),
+			CommandName, *GetNameSafe(Volume),
+			Volume->IsFogActive() ? TEXT("UP") : TEXT("DOWN"),
+			Volume->IsFogPrevented() ? TEXT("UP") : TEXT("DOWN"),
+			Volume->GetFogPreventionSecondsRemaining());
+	}
+}
+
+static FAutoConsoleCommandWithWorldAndArgs GSiegeFogRaiseCommand(
+	SiegeFogDevTrigger::CommandNameRaise,
+	TEXT("DEV: raises the siege fog through the card's own path (AFogVolume::FindOrSpawn then RaiseFog). Refused by a live BrightSun window, exactly as the card is."),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SiegeFogDevTrigger::ExecRaiseFog),
+	ECVF_Cheat);
+
+static FAutoConsoleCommandWithWorldAndArgs GSiegeFogClearCommand(
+	SiegeFogDevTrigger::CommandNameClear,
+	TEXT("DEV: takes the siege fog down through the match-reset door (AFogVolume::ResetFog). Opens no prevention window; this is not the BrightSun card."),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SiegeFogDevTrigger::ExecClearFog),
+	ECVF_Cheat);
+
+static FAutoConsoleCommandWithWorldAndArgs GSiegeFogStatusCommand(
+	SiegeFogDevTrigger::CommandNameStatus,
+	TEXT("DEV: read-only. Logs whether fog and BrightSun prevention are up, from the shipped accessors. Writes nothing and creates nothing."),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SiegeFogDevTrigger::ExecLogFogState),
+	ECVF_Cheat);
+
+#endif // !UE_BUILD_SHIPPING
+
 AFogVolume::AFogVolume()
 {
 	// No per-frame work and nothing to draw: the fog's liveness is a COMPARISON against the world
@@ -458,6 +686,76 @@ void AFogVolume::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	Super::EndPlay(EndPlayReason);
 }
+
+#if WITH_EDITOR
+
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+//  ⭐⭐ THE DEV TRIGGERS — DETAILS-PANEL LANE (`TASK-1173`; law `SC-§113` cl. 3(d), 4)
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+//
+//  ⛔ THESE ARE THE ⛔ WEAKEST AGENT LANE AND THE ⛔ ONLY 🧑 HUMAN ONE — said in that order because
+//  it is the honest ordering. ⛔ No agent in this pipeline can press a Details-panel button; the
+//  editor bridge has no click. ⇒ they exist because 🧑 he can press them ⛔ WITHOUT typing anything
+//  and without a console, while a match is running, on the actor he can already see in the
+//  outliner. That is independent value, ⛔ not a substitute for the console or the suite.
+//
+//  ⚠️⚠️ THE LIMITATION, ⛔ STATED SO NOBODY REPORTS IT AS A BUG: a button lives on an ⛔ INSTANCE.
+//  Before the first cast of a match there ⛔ IS no `AFogVolume` to select, so these buttons can
+//  ⛔ REFRESH and ⛔ CLEAR an existing fog-state actor but ⛔ CANNOT create one. ⇒ ⛔ to raise fog
+//  from nothing, use `Siege.Fog.Raise` (which goes through `FindOrSpawn`) or play the card.
+//
+//  ⛔ `#if WITH_EDITOR` ON ⛔ BOTH THE DECLARATION AND THE DEFINITION (`SC-§111` cl. 3(c)). This is
+//  the ⛔ PERMITTED case of that guard and not the forbidden one: what is guarded is ⛔ OUR OWN
+//  developer affordance, ⛔ symmetrically, in a file whose ⛔ MECHANISM is guarded nowhere. ⛔ It is
+//  ⛔ NOT an engine editor-only API called from a Runtime module — the defect `TASK-1166`
+//  BLOCKER-1 caught in ⛔ this same file ⛔ this same week.
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+
+void AFogVolume::DevRaiseFog()
+{
+	// ⛔ THE SAME DOOR THE CARD USES, on the actor already selected. ⛔ No spawn, no policy, no
+	// arithmetic: `RaiseFog` owns the refusal, the refresh-never-stack rule and the reconciler.
+	const bool bRaised = RaiseFog();
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("[%s] DevRaiseFog (Details-panel button) called AFogVolume::RaiseFog(), which returned %s. Fog is now %s. ")
+		TEXT("⛔ A FALSE is the BrightSun refusal (J-F19), not a broken button: nothing was written and no gold moved."),
+		*GetNameSafe(this),
+		bRaised ? TEXT("TRUE") : TEXT("FALSE"),
+		IsFogActive() ? TEXT("UP") : TEXT("DOWN"));
+}
+
+void AFogVolume::DevClearFog()
+{
+	// ⛔ The match-reset door, ⛔ not the BrightSun card: both deadlines are zeroed and ⛔ NO
+	// prevention window opens. Named `Clear` rather than `Reset` on the button so it reads as what
+	// the operator sees happen, and the log line says which mechanic it really is.
+	ResetFog();
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("[%s] DevClearFog (Details-panel button) called AFogVolume::ResetFog(). Fog is now %s and prevention is now %s. ")
+		TEXT("⛔ This is the match-reset door (FOG-§10.3) — it opens NO prevention window and is NOT the BrightSun card."),
+		*GetNameSafe(this),
+		IsFogActive() ? TEXT("UP") : TEXT("DOWN"),
+		IsFogPrevented() ? TEXT("UP") : TEXT("DOWN"));
+}
+
+void AFogVolume::DevLogFogState()
+{
+	// ⛔ READ-ONLY. Writes nothing, creates nothing, and asks the shipped accessors rather than
+	// recomputing — so it is safe to press before and after anything, which is what makes it a
+	// before-picture rather than a summary (`SC-§107`).
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("[%s] DevLogFogState (Details-panel button) — fog %s, prevention %s (%.0f s of prevention remain), ")
+		TEXT("visual actor %s. Read from IsFogActive / IsFogPrevented / GetFogPreventionSecondsRemaining."),
+		*GetNameSafe(this),
+		IsFogActive() ? TEXT("UP") : TEXT("DOWN"),
+		IsFogPrevented() ? TEXT("UP") : TEXT("DOWN"),
+		GetFogPreventionSecondsRemaining(),
+		IsValid(FogVisualActor.Get()) ? TEXT("PRESENT") : TEXT("ABSENT"));
+}
+
+#endif // WITH_EDITOR
 
 const FSoftClassPath& AFogVolume::FogVisualClassPath()
 {
