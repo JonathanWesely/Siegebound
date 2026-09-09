@@ -1,0 +1,1251 @@
+diff --git a/GitClaudeUnrealTest/Source/GitClaudeUnrealTest/Siegebound/FogVolume.cpp b/GitClaudeUnrealTest/Source/GitClaudeUnrealTest/Siegebound/FogVolume.cpp
+index 7e5cce4..d21a54b 100644
+--- a/GitClaudeUnrealTest/Source/GitClaudeUnrealTest/Siegebound/FogVolume.cpp
++++ b/GitClaudeUnrealTest/Source/GitClaudeUnrealTest/Siegebound/FogVolume.cpp
+@@ -3,15 +3,22 @@
+ #include "Siegebound/FogVolume.h"
+ 
+ #include "Components/ExponentialHeightFogComponent.h" // TASK-1147: SetVolumetricFog — the ONLY seam that reaches terms 6/7 of ShouldRenderVolumetricFog's six-term conjunction
++#include "Components/MeshComponent.h"                 // TASK-1165: the visual's mesh — the object whose APPLIED material the colour readback measures
+ #include "Engine/ExponentialHeightFog.h"               // TASK-1147: the actor the integrity floor writes IN MEMORY (⛔ never a map save — GFX-§11)
+ #include "Engine/World.h"
+ #include "EngineUtils.h" // TActorIterator — the ONE fog-state actor lookup (Find / FindOrSpawn) + the hero height sample + TASK-1147's height-fog lookup
+ #include "GitClaudeUnrealTest.h"
+ #include "HAL/IConsoleManager.h" // TASK-1147: the ECVF_SetByCode floor + Unset release (explicit IWYU — no compile verifies a transitive pull)
++#include "Materials/MaterialInstance.h"        // TASK-1165: UMaterialInstance::Parent — how the vendor's DYNAMIC instance is traced back to the ASSET it was built from
++#include "Materials/MaterialInstanceDynamic.h" // TASK-1165: the type that unwrap stops at; the vendor builds one per spawn
++#include "Materials/MaterialInterface.h"       // TASK-1165: the value type of the vendor's BoxMaterials map
+ #include "Math/UnrealMathUtility.h"
+ #include "Siegebound/HeroCharacter.h"  // TASK-982 (J-F15): the DURATION accessor samples the caster team's LIVING hero Z
+ #include "Siegebound/ScatterConfig.h"  // TASK-1068: USiegeScatterConfig::ArenaHalfExtent — the ONE owner of the arena extent the fog box is DERIVED from (SC-§34)
+ #include "TimerManager.h"              // TASK-1068: the visual-expiry WAKE-UP (⛔ not a second deadline — see FogVolume.h's one-way-door paragraph)
++#include "UObject/Class.h"             // TASK-1165: UEnum — the vendor's mode key is resolved BY NAME through it, never by ordinal
++#include "UObject/EnumProperty.h"      // TASK-1165: FEnumProperty — the OTHER shape a Blueprint enum key can take; it does NOT live in UnrealType.h
++#include "UObject/UnrealType.h"        // TASK-1165: FMapProperty / FScriptMapHelper / FindFProperty — the vendor's map is a Blueprint variable with no C++ header to include
+ #include "UObject/UObjectGlobals.h"    // TASK-1068: GetDefault<> and LoadClass<> (explicit IWYU — no compile verifies transitive pulls; the SessionMenuWidget.cpp precedent)
+ 
+ AFogVolume::AFogVolume()
+@@ -471,6 +478,22 @@ const FSoftClassPath& AFogVolume::FogVisualClassPath()
+ 	return VisualClassPath;
+ }
+ 
++const FSoftObjectPath& AFogVolume::FogVisualMaterialPath()
++{
++	// ⛔⛔ THE ONE PLACE THIS PATH IS WRITTEN IN THE PROJECT — the FogVisualClassPath() discipline
++	// applied to the material. Tests/SiegeFogVisualTest.cpp calls THIS function and asserts the
++	// package it names is really on disk, so renaming or moving the asset goes RED here instead of
++	// going quietly BEIGE in game. ⛔ Do not inline this string at a call site.
++	// ⚠️ THE OBJECT SUFFIX AFTER THE DOT IS LOAD-BEARING — the '_C' lesson in its second dress. An
++	// FSoftObjectPath is a PACKAGE NAME plus an ASSET NAME; drop '.MI_SiegeFog_Grey' and the path
++	// names a package and NO OBJECT, TryLoad() returns null, and the readback can never match.
++	// ⭐ The asset itself is the ARTIST'S (TASK-1154) — measured on pixels, saved, and CONSUMED
++	// here rather than re-authored. The colour lives in ITS vector parameters, so a retune is an
++	// asset edit and NOT a code change; what this line pins is WHICH material, never WHAT COLOUR.
++	static const FSoftObjectPath VisualMaterialPath{FString(TEXT("/Game/Materials/Instances/MI_SiegeFog_Grey.MI_SiegeFog_Grey"))};
++	return VisualMaterialPath;
++}
++
+ FTransform AFogVolume::FogVisualTransform(const FVector2D& ArenaHalfExtentUU, float GroundReferenceZUU)
+ {
+ 	// ⭐ HORIZONTAL: the arena's own half-extent (its ONE owner is USiegeScatterConfig) PLUS the
+@@ -532,6 +555,29 @@ bool AFogVolume::FogVisualScaleMatches(const FVector& RequestedScale3D, const FV
+ 	return AchievedScale3D.Equals(RequestedScale3D, static_cast<double>(FogVisualScaleTolerance));
+ }
+ 
++bool AFogVolume::FogVisualMaterialMatches(const FSoftObjectPath& RequestedMaterialPath, const FSoftObjectPath& AchievedMaterialPath)
++{
++	// ⛔⛔⛔ THE WHOLE POINT OF THIS FUNCTION IS THAT A TEST CAN RUN IT (`SC-§79`), exactly like the
++	// scale twin above. The comparison it makes is trivial; the fact that it is REACHABLE FROM A
++	// TEST is not — and the defect it guards (a colour that reads correct and renders wrong) has
++	// already been measured live on this very Blueprint. ⇒ Tests/SiegeFogVisualTest.cpp hands this
++	// the MEASURED vendor material this row replaces and asserts it answers NO.
++
++	// ⛔⛔ AN EMPTY PATH ON EITHER SIDE IS A MISMATCH, AND IT IS STATED RATHER THAN INHERITED.
++	// Path equality is a plain comparison, so TWO NOTHINGS COMPARE EQUAL: a visual with no mesh,
++	// or a material that failed to resolve, would report a MATCH and this predicate would CERTIFY
++	// THE EXACT SILENCE IT EXISTS TO BREAK. Written in the same `!(X)` form FogVisualScaleMatches
++	// uses for NaN, so the REASON lives on the page instead of resting on an operator's behaviour.
++	if (!RequestedMaterialPath.IsValid() || !AchievedMaterialPath.IsValid())
++	{
++		return false;
++	}
++
++	// ⛔ ACHIEVED against REQUESTED, in that order, because that is the direction the caller cares
++	// about: "is what the mesh is rendering with the thing we asked for?".
++	return AchievedMaterialPath == RequestedMaterialPath;
++}
++
+ void AFogVolume::RefreshFogVisual()
+ {
+ 	UWorld* const World = GetWorld();
+@@ -651,6 +697,33 @@ void AFogVolume::SpawnFogVisual()
+ 	// nothing; the asymmetry is deliberate.
+ 	SpawnParams.ObjectFlags |= RF_Transient;
+ 
++	// ⭐⭐⭐ CONSTRUCTION IS HELD BACK BY ⛔ EXACTLY ONE STATEMENT, AND THIS IS THE ⛔ WHOLE
++	// MECHANISM OF THE COLOUR (TASK-1165, 🧑 ask (C)). ⛔ IT IS NOT AN OPTIMISATION.
++	// The vendor's construction script builds its dynamic material instance from
++	// `BoxMaterials[Mode]` and pushes ask (B)'s scalars into it. ⇒ the ONLY moment at which our
++	// material can be in that map BEFORE the script reads it is ⛔ AFTER the object exists and
++	// ⛔ BEFORE construction runs — and `bDeferConstruction` is the engine's own name for exactly
++	// that window (World.h: *"WILL NOT run Construction Script of Blueprints to give caller an
++	// opportunity to set parameters beforehand"*).
++	// ⭐⭐⭐ AND THIS IS ⛔ WHY IT REPLACED A `RerunConstructionScripts()` CALL RATHER THAN JOINING
++	// ONE (TASK-1166 BLOCKER-1): ⛔ `AActor::RerunConstructionScripts()` IS `#if WITH_EDITOR`
++	// (Actor.h:3415-3418 declaration, ActorConstruction.cpp:253 definition) and this is a
++	// ⛔ RUNTIME module (GitClaudeUnrealTest.uproject: `"Type": "Runtime"`). ⛔ The EDITOR target
++	// compiles it green; the ⛔ COOKED target does not compile at all — so the defect would have
++	// been invisible to every gate we run and would have surfaced ⛔ ONLY in the packaged game.
++	// ⛔⛔ `FinishSpawning`/`ExecuteConstruction` carry ⛔ NO such guard: `FinishSpawning` is
++	// declared at Actor.h:3117 in a `public:` region with ⛔ zero enclosing `#if`, it calls
++	// `ExecuteConstruction` unconditionally at Actor.cpp:4415, and that in turn calls
++	// `ProcessUserConstructionScript()` at ActorConstruction.cpp:939 — where the `#if WITH_EDITOR`
++	// wraps ⛔ ONLY the "turn the editor CS off" config lookup, so in a cooked build the user
++	// script runs ⛔ ALWAYS. ⇒ ⭐ the same code, in both targets, ⛔ measured rather than hoped.
++	// ⚠️ THE PRICE, STATED: between this spawn and `FinishSpawning` below the actor has ⛔ NO ROOT
++	// COMPONENT (the SCS has not run), so ⛔ NOTHING may read or write its transform in that
++	// window, and `FinishSpawning` must be reached ⛔ UNCONDITIONALLY — an actor left unfinished
++	// is worse than beige fog. Both properties are asserted by the suite, and the one statement
++	// in the window is `void` and cannot refuse.
++	SpawnParams.bDeferConstruction = true;
++
+ 	AActor* const Spawned = World->SpawnActor<AActor>(VisualClass, SpawnTransform, SpawnParams);
+ 	if (!Spawned)
+ 	{
+@@ -661,29 +734,84 @@ void AFogVolume::SpawnFogVisual()
+ 		return;
+ 	}
+ 
++	// ⭐⭐⭐ THE COLOUR (TASK-1165, 🧑 ask (C)) — AND IT RUNS **BEFORE** CONSTRUCTION, WHICH IS THE
++	// ENTIRE POINT. The vendor's script reads `BoxMaterials[Mode]` to build its dynamic instance;
++	// written after that read, our material would arrive at a field nobody looks at again.
++	// ⚖️ It is void and it never refuses: every failure inside is an ART failure, and the fog
++	// MECHANIC keeps working — beige — with the reason in the log.
++	// ⛔⛔ AND IT EXECUTES ⛔ NO VENDOR CODE AND ⛔ NO GAMEPLAY CODE — it is property reflection plus
++	// one asset load — which is precisely why the line below needs no re-validation of `Spawned`.
++	// The vendor's code runs ⛔ INSIDE `FinishSpawning`, i.e. ⛔ AFTER this write, never during it.
++	ApplyFogVisualMaterial(Spawned);
++
++	// ⛔⛔⛔ UNCONDITIONAL, AND ⛔ ON THE STATEMENT IMMEDIATELY AFTER THE WRITE. Reaching
++	// `SpawnFogVisual`'s exit without this call would leave a spawned actor with ⛔ NO ROOT
++	// COMPONENT, ⛔ no BeginPlay and ⛔ no mesh, held forever by `FogVisualActor` — ⛔ strictly worse
++	// than the beige box this row exists to recolour. ⇒ ⛔ THERE IS NO BRANCH BETWEEN THE TWO
++	// LINES, the suite asserts that every `return` in this function is above them, and
++	// `ApplyFogVisualMaterial` is `void` so it has no way to demand one.
++	// ⭐⭐ `bIsDefaultTransform` IS SPELLED, ⛔ NEVER DEFAULTED, and it is the load-bearing argument:
++	// the non-deferred path hardcodes `true` (Actor.cpp:4358-4360), which is what sends
++	// SCS_Node.cpp:142-147 into substituting the vendor component template's own scale for ours —
++	// ⛔ the TASK-1071 defect, at its source. Passing `false` here is a literal in ⛔ OUR file, so
++	// it is the ⛔ SAME VALUE in the editor and in the packaged game and ⛔ cannot be the origin of
++	// a build-dependent difference. `OverrideRootScale` is likewise spelled rather than inherited:
++	// it is *"use the provided transform and ignore the root component"* (SCS_Node.cpp:135), and it
++	// is the method `SpawnActor` was already using.
++	// ⚠️ THE SCALE FORCE BELOW IS ⛔ KEPT ANYWAY. It is the shipped, playtested line, it is correct
++	// whatever construction did, and it is what the achieved-scale readback measures. ⛔ Do not
++	// delete it because this argument "should" make it redundant — "should" is what this fog has
++	// been wrong about four times.
++	Spawned->FinishSpawning(SpawnTransform, /*bIsDefaultTransform=*/ false, /*InstanceDataCache=*/ nullptr,
++		ESpawnActorScaleMethod::OverrideRootScale);
++
++	// ⭐⭐ MEASURE WHAT THE CONSTRUCTION JUST BUILT, adjacent to the construction that built it.
++	// ⛔ Taken before the line above it would read a mesh that does not exist yet and would report
++	// a mismatch on every single cast, forever.
++	VerifyFogVisualMaterial(Spawned);
++
+ 	// Derived ONCE and then referred to BY NAME three times — the set, the comparison and the log.
+ 	// ⛔ Re-spelling `SpawnTransform.GetScale3D()` at each of those sites is how the log below came
+ 	// to print the REQUEST in the first place, so the expression is spent here and never again.
+ 	const FVector RequestedScale3D = SpawnTransform.GetScale3D();
+ 
+ 	// ⛔⛔⛔ THE REPAIR, AND THIS ONE LINE IS WHY 🧑 JONATHAN COULD NOT SEE HIS FOG (TASK-1071).
+-	// The scale carried by the spawn transform above is ⛔ DISCARDED BY THE ENGINE before this
+-	// line runs: `BP_SiegeFog`'s root is the INHERITED SCS `Mesh` component rather than a native
+-	// root, so the non-deferred `SpawnActor` path reaches `SCS_Node.cpp:147` with
+-	// `bIsDefaultTransform == true` and substitutes the VENDOR component template's own
+-	// `RelativeScale3D`. ⇒ a world-sized fog box silently became a small slab parked thousands of
+-	// units above the battlefield, outside the volumetric froxel grid in every direction, and
+-	// rendered EXACTLY NOTHING for anyone, always.
++	// `BP_SiegeFog`'s root is the INHERITED SCS `Mesh` component rather than a native root, so the
++	// scale carried by the spawn transform is at the mercy of `SCS_Node.cpp:142-147`, which
++	// substitutes the VENDOR component template's own `RelativeScale3D` whenever
++	// `bIsDefaultTransform` is true. ⇒ a world-sized fog box silently became a small slab parked
++	// thousands of units above the battlefield, outside the volumetric froxel grid in every
++	// direction, and rendered EXACTLY NOTHING for anyone, always.
+ 	// ⛔⛔ DO NOT "SIMPLIFY" THIS TO `SpawnParams.TransformScaleMethod` — the substitution runs
+ 	// AFTER that switch is consulted and overwrites the scale whichever method was chosen. The
+ 	// artist checked it; the test file reds on that reach BY NAME.
+-	// ⛔⛔ AND DO NOT SWAP IT FOR `SpawnActorDeferred` + `FinishSpawning`, which also dodges the
+-	// clobber: the engine's own comment beside that line says `bIsDefaultTransform` is FALSE IN A
+-	// COOKED BUILD. ⇒ the deferred form behaves DIFFERENTLY in the editor and in the packaged
+-	// game, so this defect could return ONLY IN THE SHIPPED PRODUCT — where nobody is watching.
+-	// The explicit set is correct in BOTH, and that symmetry is the entire reason for the form.
+-	// ⛔ Scale only: the LOCATION survives the spawn intact (measured), and re-setting a transform
+-	// that arrived correctly would be inventing work whose failure nobody would notice.
++	// ⚠️⚠️ WHAT CHANGED 2026-09-08 (TASK-1165), STATED RATHER THAN LEFT FOR A READER TO DISCOVER:
++	// construction is now DEFERRED and finished explicitly above with `bIsDefaultTransform=false`,
++	// so on the path this function ACTUALLY TAKES the substitution branch is ⛔ NOT ENTERED and the
++	// requested scale arrives intact. ⇒ ⛔ THIS LINE IS NOW BELT-AND-BRACES RATHER THAN THE REPAIR,
++	// and it is ⛔ KEPT DELIBERATELY: it is correct whatever construction did, it is identical in
++	// the editor and in the packaged game, and it is the only reason the readback below is
++	// measuring a value somebody in THIS file actually asked for. ⛔ Deleting it would rest a
++	// four-times-wrong scale on an argument instead of on a statement.
++	// ⚖️ THE OLD FENCE HERE FORBADE `SpawnActorDeferred` + `FinishSpawning` ON A ⛔ FALSE ENGINE
++	// CLAIM, and the correction is recorded rather than quietly dropped. It said the engine's
++	// comment at `SCS_Node.cpp:144-146` makes `bIsDefaultTransform` FALSE IN A COOKED BUILD, so the
++	// deferred form would behave differently in the packaged game. ⛔ MEASURED: that comment sits
++	// on the `bIsDefaultTransform == TRUE` branch, i.e. it describes the ⛔ NON-DEFERRED path —
++	// which is the one `Actor.cpp:4358-4360` reaches by hardcoding `FinishSpawning(Transform,
++	// true)`. ⇒ the asymmetry it warns about belongs to the shape this file USED to have. The
++	// deferred form's value is a literal we spell ourselves, so it cannot vary by target at all.
++	// ⛔ THE ONE REAL HAZARD IN THE FENCE SURVIVES AND IS KEPT: `UWorld::SpawnActorDeferred` (the
++	// helper, World.h:3851-3869) defaults `TransformScaleMethod` to `MultiplyWithRoot`, which would
++	// MULTIPLY this world-sized scale by the vendor template's. ⛔ That helper is still banned by
++	// name in the suite; what runs here is `SpawnActor` with `bDeferConstruction`, keeping
++	// `OverrideRootScale`. ⛔ Law-text correction routed to the manager, NOT edited by me.
++	// ⛔ Scale only: the LOCATION survives construction intact (`ExecuteConstruction` writes the
++	// transform we hand it; `SCS_Node.cpp:147` substitutes `Scale3D` and nothing else), and
++	// re-setting a transform that arrived correctly would be inventing work whose failure nobody
++	// would notice. ⛔ The LOCATION is read back and PRINTED but not asserted, so a location
++	// regression would show as a wrong Z in the log rather than as a dedicated Error — that limit
++	// is stated so no green is mistaken for a check that exists.
+ 	Spawned->SetActorScale3D(RequestedScale3D);
+ 
+ 	// ⭐⭐⭐ NOW MEASURE WHAT WE GOT, ⛔ NEVER WHAT WE ASKED FOR — AND THIS IS THE MORE IMPORTANT
+@@ -712,12 +840,13 @@ void AFogVolume::SpawnFogVisual()
+ 			TEXT("[%s] ⛔⛔ THE FOG VISUAL IS AT THE WRONG SCALE — requested (%.3f, %.3f, %.3f), ACHIEVED (%.3f, %.3f, %.3f). ")
+ 			TEXT("This is the TASK-1071 defect: the visual's root is an INHERITED SCS component, so the engine substitutes the ")
+ 			TEXT("vendor component template's own scale for the one the spawn transform carries (SCS_Node.cpp, bIsDefaultTransform). ")
+-			TEXT("SpawnFogVisual corrects that with SetActorScale3D immediately after the spawn ⇒ SEEING THIS LINE MEANS THE ")
+-			TEXT("CORRECTION ITSELF FAILED, and the box on screen is the wrong size or nowhere to be seen. ")
++			TEXT("SpawnFogVisual corrects that with SetActorScale3D as the LAST mutation before this readback ⇒ SEEING THIS ")
++			TEXT("LINE MEANS THE CORRECTION ITSELF FAILED, and the box on screen is the wrong size or nowhere to be seen. ")
+ 			TEXT("The fog MECHANIC is unaffected and the card is NOT refused: every unit on both sides is still clamped to the ")
+ 			TEXT("fog vision ceiling, so the field will LOOK clearer than the army can see. ")
+-			TEXT("Check that the visual's root component still accepts a scale change, and that nothing on the Blueprint's own ")
+-			TEXT("BeginPlay or Tick writes the scale back after this line."),
++			TEXT("Check that the visual's root component still accepts a scale change, that nothing on the Blueprint's own ")
++			TEXT("BeginPlay or Tick writes the scale back after this line, and that FinishSpawning left a root component the ")
++			TEXT("actor can still be scaled through — construction is deferred here, so the root does not exist until it runs."),
+ 			*GetNameSafe(this),
+ 			RequestedScale3D.X, RequestedScale3D.Y, RequestedScale3D.Z,
+ 			AchievedScale3D.X, AchievedScale3D.Y, AchievedScale3D.Z);
+@@ -746,6 +875,277 @@ void AFogVolume::SpawnFogVisual()
+ 		FogVisualHorizontalMarginUU);
+ }
+ 
++void AFogVolume::ApplyFogVisualMaterial(AActor* const Visual)
++{
++	if (!IsValid(Visual))
++	{
++		// The only caller already logged whatever went wrong with the spawn. A second line about
++		// the same fact would be noise, and there is nothing here that could act on it.
++		return;
++	}
++
++	// ⛔⛔ THE VENDOR'S OWN FIELD NAMES, SPELLED EXACTLY ONCE EACH, FOR THE SAME REASON THE ASSET
++	// PATH IS: they are a CONTENT dependency. Rename the Blueprint variable or the enum entry and
++	// every line here still compiles, the fog still spawns, and the colour silently stops
++	// arriving. ⇒ each has one home, both are looked up BY NAME rather than by ordinal, and a miss
++	// is LOUD below rather than a quiet fall-through to the vendor's warm tint.
++	static const FName BoxMaterialsPropertyName(TEXT("BoxMaterials"));
++	static const TCHAR* const BaseModeEntryName = TEXT("Base");
++
++	// ── (1) THE MATERIAL ─────────────────────────────────────────────────────────────────────
++	// ⛔⛔ LOUD IN THE LOG, NEVER IN THE GAMEPLAY — the boundary the class loader above already
++	// holds, applied to the material. An art failure may NEVER refuse a 50-gold card.
++	UMaterialInterface* const RequestedMaterial = Cast<UMaterialInterface>(FogVisualMaterialPath().TryLoad());
++	if (!RequestedMaterial)
++	{
++		UE_LOG(LogGitClaudeUnrealTest, Error,
++			TEXT("[%s] ⛔ THE FOG VISUAL'S MATERIAL FAILED TO LOAD — '%s' (AFogVolume::FogVisualMaterialPath) resolved to nothing. ")
++			TEXT("The fog is UP and the MECHANIC is unaffected: the card is not refused and every unit on both sides is still ")
++			TEXT("clamped to the fog vision ceiling. What is on screen is the VENDOR's warm-tinted fog rather than the grey one. ")
++			TEXT("The asset is Content/Materials/Instances/MI_SiegeFog_Grey.uasset, and the path must keep the object name after ")
++			TEXT("the dot — a package name with no object resolves to nothing, and it does it silently."),
++			*GetNameSafe(this), *FogVisualMaterialPath().ToString());
++		return;
++	}
++
++	// ── (2) THE VENDOR'S MAP ─────────────────────────────────────────────────────────────────
++	// ⛔ Reflection rather than a cast, and it is not a preference: the visual's class is a
++	// BLUEPRINT one (its parent is the vendor's own Blueprint, not a C++ class), so there is no
++	// header anywhere that declares this field. ⛔ There is nothing to #include and nothing to
++	// cast to; the property system is the ONLY door.
++	FMapProperty* const BoxMaterialsProperty = FindFProperty<FMapProperty>(Visual->GetClass(), BoxMaterialsPropertyName);
++	FObjectPropertyBase* const MaterialValueProperty = BoxMaterialsProperty
++		? CastField<FObjectPropertyBase>(BoxMaterialsProperty->ValueProp)
++		: nullptr;
++	if (!MaterialValueProperty)
++	{
++		UE_LOG(LogGitClaudeUnrealTest, Error,
++			TEXT("[%s] ⛔ THE FOG VISUAL HAS NO MATERIAL MAP TO WRITE — '%s' on class '%s' is missing, or it is not a map of ")
++			TEXT("materials (AFogVolume::ApplyFogVisualMaterial). The fog is UP, the MECHANIC is unaffected and the card is not ")
++			TEXT("refused; the box will render in the VENDOR's warm tint. The field is a variable on the visual Blueprint's ")
++			TEXT("vendor parent, so a rename or a retype there is what reaches this line."),
++			*GetNameSafe(this), *BoxMaterialsPropertyName.ToString(), *GetNameSafe(Visual->GetClass()));
++		return;
++	}
++
++	// ── (2b) ⭐⭐ THE MAP MUST ⛔ ACCEPT WHAT WE ARE ABOUT TO PUT IN IT ─────────────────────────
++	// ⛔⛔ AND THIS CHECK IS ⛔ LOAD-BEARING RATHER THAN PEDANTIC, WHICH IS EASY TO GET BACKWARDS.
++	// `FObjectPropertyBase::SetObjectPropertyValue` (PropertyBaseObject.cpp) carries ⛔ NO type
++	// check — it guards nullability and nothing else. ⇒ if the vendor ever retypes this map's
++	// value (say to a texture or to a narrower material class), the write below would ⛔ SUCCEED,
++	// store a wrongly-typed object, and the readback further down would compare the ⛔ SAME
++	// POINTER against itself and report ⛔ GREEN. ⛔ A corrupt map that passes its own verification
++	// is the exact false-clean this whole function is built against, so the type is checked
++	// BEFORE the store rather than inferred from a comparison that cannot see it.
++	if (!MaterialValueProperty->PropertyClass || !RequestedMaterial->IsA(MaterialValueProperty->PropertyClass))
++	{
++		UE_LOG(LogGitClaudeUnrealTest, Error,
++			TEXT("[%s] ⛔ THE FOG VISUAL'S MATERIAL MAP WILL NOT ACCEPT THIS MATERIAL — '%s' stores '%s' and the material is a ")
++			TEXT("'%s' (AFogVolume::ApplyFogVisualMaterial). The fog is UP, the MECHANIC is unaffected and the card is not ")
++			TEXT("refused; the box will render in the VENDOR's warm tint. This is checked BEFORE the write because the engine's ")
++			TEXT("object-property setter performs no type check of its own, so a wrong-typed store would read back as the very ")
++			TEXT("pointer it was given and report success."),
++			*GetNameSafe(this), *BoxMaterialsPropertyName.ToString(),
++			*GetNameSafe(MaterialValueProperty->PropertyClass), *GetNameSafe(RequestedMaterial->GetClass()));
++		return;
++	}
++
++	// ── (3) THE KEY — RESOLVED BY NAME, ⛔ NEVER BY ORDINAL ───────────────────────────────────
++	// ⛔ The key is a BLUEPRINT enum, so its INTERNAL names are engine-generated placeholders and
++	// only its DISPLAY names read as the mode list a human sees. Both are checked, so this also
++	// works unchanged against a native enum. ⛔ A hardcoded index would compile, would be correct
++	// today, and would silently write the WRONG MODE's material the day the vendor reorders the
++	// list — which is the whole class of failure this row exists to stop happening quietly.
++	const FProperty* const KeyProperty = BoxMaterialsProperty->KeyProp;
++	const UEnum* KeyEnum = nullptr;
++	if (const FByteProperty* const KeyByteProperty = CastField<FByteProperty>(KeyProperty))
++	{
++		KeyEnum = KeyByteProperty->Enum;
++	}
++	else if (const FEnumProperty* const KeyEnumProperty = CastField<FEnumProperty>(KeyProperty))
++	{
++		KeyEnum = KeyEnumProperty->GetEnum();
++	}
++
++	// ⛔ A separate bool rather than a sentinel value: INDEX_NONE is a perfectly legal enum value
++	// in C++, and "not found" must never be spellable as "found something".
++	bool bResolvedBaseMode = false;
++	int64 BaseModeValue = 0;
++	if (KeyEnum)
++	{
++		for (int32 EnumIndex = 0; EnumIndex < KeyEnum->NumEnums(); ++EnumIndex)
++		{
++			if (KeyEnum->GetNameStringByIndex(EnumIndex) == BaseModeEntryName
++				|| KeyEnum->GetDisplayNameTextByIndex(EnumIndex).ToString() == BaseModeEntryName)
++			{
++				BaseModeValue = KeyEnum->GetValueByIndex(EnumIndex);
++				bResolvedBaseMode = true;
++				break;
++			}
++		}
++	}
++
++	if (!bResolvedBaseMode)
++	{
++		UE_LOG(LogGitClaudeUnrealTest, Error,
++			TEXT("[%s] ⛔ THE FOG VISUAL'S MATERIAL MODE '%s' NO LONGER EXISTS — '%s' is keyed by an enum that has no such entry ")
++			TEXT("(AFogVolume::ApplyFogVisualMaterial). The fog is UP, the MECHANIC is unaffected and the card is not refused; ")
++			TEXT("the box will render in the VENDOR's warm tint. The entry is looked up by name on purpose, so a renamed or ")
++			TEXT("reordered vendor mode arrives here instead of writing whichever mode happens to sit at the same index."),
++			*GetNameSafe(this), BaseModeEntryName, *BoxMaterialsPropertyName.ToString());
++		return;
++	}
++
++	// ── (4) THE WRITE — ON THE ⛔ SPAWNED INSTANCE, ⛔ NEVER ON THE ASSET ──────────────────────
++	// ⛔⛔ THIS TOUCHES NO .uasset AND NO .umap. The map is PER-INSTANCE memory, copied off the
++	// class default when the actor was created; writing it here changes THIS actor, which carries
++	// RF_Transient and dies with the fog. The visual Blueprint on disk is not opened, not dirtied
++	// and not saved — the never-save law covers the map, and this row holds the same line for the
++	// Blueprint. ⛔ Nothing in this function marks a package dirty, and nothing may start.
++	void* const MapMemory = BoxMaterialsProperty->ContainerPtrToValuePtr<void>(Visual);
++	FScriptMapHelper MapHelper(BoxMaterialsProperty, MapMemory);
++
++	// ⛔ The key buffer is SIZED AND INITIALISED BY THE PROPERTY ITSELF, never by a hand-typed
++	// integer type: the underlying width of a Blueprint enum is the property's business, not this
++	// call site's, and guessing it wrong would write a key nothing matches.
++	TArray<uint8> KeyStorage;
++	KeyStorage.SetNumZeroed(KeyProperty->GetElementSize());
++	KeyProperty->InitializeValue(KeyStorage.GetData());
++	if (const FByteProperty* const KeyByteProperty = CastField<FByteProperty>(KeyProperty))
++	{
++		KeyByteProperty->SetPropertyValue(KeyStorage.GetData(), static_cast<uint8>(BaseModeValue));
++	}
++	else if (const FEnumProperty* const KeyEnumProperty = CastField<FEnumProperty>(KeyProperty))
++	{
++		KeyEnumProperty->GetUnderlyingProperty()->SetIntPropertyValue(KeyStorage.GetData(), BaseModeValue);
++	}
++
++	// ⛔ FIND, never FindOrAdd. An ADD would manufacture the entry this function is supposed to be
++	// REPOINTING and turn "the vendor no longer has a Base material" into a silent success.
++	const int32 BaseEntryIndex = MapHelper.FindMapIndexWithKey(KeyStorage.GetData());
++	if (BaseEntryIndex == INDEX_NONE)
++	{
++		// ⛔⛔ ITS OWN MESSAGE, AND THAT IS THE POINT (TASK-1166 NIT-1). This case and the
++		// write-did-nothing case below are ⛔ DIFFERENT FACTS — *"there was nothing to write to"* vs
++		// *"the write changed nothing"* — and one sentence covering both would have described an
++		// attempt that never happened. ⛔ A log line that misreports which step failed sends the
++		// next reader to the wrong file.
++		KeyProperty->DestroyValue(KeyStorage.GetData());
++		UE_LOG(LogGitClaudeUnrealTest, Error,
++			TEXT("[%s] ⛔ THE FOG VISUAL HAS NO '%s[%s]' ENTRY TO REPOINT — the mode resolved, but the vendor's map holds no ")
++			TEXT("value under it (AFogVolume::ApplyFogVisualMaterial). ⛔ NOTHING WAS WRITTEN: the entry is FOUND rather than ")
++			TEXT("FIND-OR-ADDED on purpose, because manufacturing it here would turn a missing vendor field into a silent ")
++			TEXT("success that then verifies itself. The fog is UP, the MECHANIC is unaffected and the card is not refused; ")
++			TEXT("the box will render in the VENDOR's warm tint."),
++			*GetNameSafe(this), *BoxMaterialsPropertyName.ToString(), BaseModeEntryName);
++		return;
++	}
++
++	MaterialValueProperty->SetObjectPropertyValue(MapHelper.GetValuePtr(BaseEntryIndex), RequestedMaterial);
++
++	// ⭐⭐⭐ THE POST-WRITE READBACK, AND IT IS HERE BECAUSE ⛔ THIS EXACT WRITE HAS ALREADY BEEN SEEN
++	// TO SUCCEED AND DO NOTHING. TASK-1154 set this same map through the editor-scripting surface
++	// TWICE, in two payload shapes; BOTH CALLS RETURNED WITHOUT ERROR and BOTH READ BACK UNCHANGED.
++	// ⛔ The only thing standing between "a saved asset, a green handoff, a commit, and 🧑 him
++	// looking at the same beige while the board says grey shipped" and a caught defect was ONE
++	// READBACK. ⇒ this is not ceremony and it is not optional.
++	const int32 VerifiedEntryIndex = MapHelper.FindMapIndexWithKey(KeyStorage.GetData());
++	const UObject* const StoredMaterial = (VerifiedEntryIndex != INDEX_NONE)
++		? MaterialValueProperty->GetObjectPropertyValue(MapHelper.GetValuePtr(VerifiedEntryIndex))
++		: nullptr;
++	KeyProperty->DestroyValue(KeyStorage.GetData());
++
++	if (StoredMaterial != RequestedMaterial)
++	{
++		UE_LOG(LogGitClaudeUnrealTest, Error,
++			TEXT("[%s] ⛔⛔ THE FOG VISUAL'S MATERIAL WRITE DID NOT TAKE — '%s[%s]' still holds '%s' after being set to '%s' ")
++			TEXT("(AFogVolume::ApplyFogVisualMaterial). The fog is UP, the MECHANIC is unaffected and the card is not refused; ")
++			TEXT("the box will render in the VENDOR's warm tint. This is a WRITE THAT RETURNED WITHOUT ERROR AND CHANGED ")
++			TEXT("NOTHING — the same shape that made the colour route look finished once already, which is why it is checked ")
++			TEXT("here rather than assumed."),
++			*GetNameSafe(this), *BoxMaterialsPropertyName.ToString(), BaseModeEntryName,
++			*GetNameSafe(StoredMaterial), *GetNameSafe(RequestedMaterial));
++	}
++}
++
++void AFogVolume::VerifyFogVisualMaterial(const AActor* const Visual) const
++{
++	if (!IsValid(Visual))
++	{
++		return;
++	}
++
++	// ⭐⭐⭐ MEASURE WHAT THE MESH IS ACTUALLY RENDERING WITH, ⛔ NEVER WHAT WE ASKED FOR.
++	// `ApplyFogVisualMaterial`'s own readback proves the ⛔ FIELD holds our material. It proves
++	// ⛔ NOTHING about whether the vendor's construction script consulted that field — and this
++	// fog's entire history is values that read correct and rendered wrong (`FIELD-§7`, `SC-§94`).
++	// ⚠️ IT ALSO CATCHES, FOR FREE, A CASE NOTHING ELSE HERE LOOKS FOR: if the visual is running in
++	// any mode other than the one whose entry was written, the script builds from a DIFFERENT
++	// entry and the mesh wears the vendor's material ⇒ a mode mismatch arrives as a LOUD material
++	// mismatch instead of as silence.
++	// ⛔⛔ EVERY MESH, EVERY SLOT — ⛔ not `FindComponentByClass` + element 0 (TASK-1166 NIT-3). The
++	// vendor pack is content we do not own: the day it grows a second mesh component or a second
++	// material slot, a first-match-only probe would judge whichever one the component array
++	// happened to hold first, and it would do it ⛔ non-deterministically. Counting what was
++	// inspected also makes ⛔ "there was nothing to measure" a reportable state rather than a
++	// silent pass — a visual with zero mesh slots reaches the Error below saying so.
++	TInlineComponentArray<UMeshComponent*> MeshComponents;
++	Visual->GetComponents(MeshComponents);
++
++	int32 SlotsInspected = 0;
++	bool bWearingRequestedMaterial = false;
++	FString FirstAchievedPath(TEXT("<no mesh material slot on the actor>"));
++
++	for (const UMeshComponent* const Mesh : MeshComponents)
++	{
++		if (!Mesh)
++		{
++			continue;
++		}
++
++		const int32 SlotCount = Mesh->GetNumMaterials();
++		for (int32 SlotIndex = 0; SlotIndex < SlotCount; ++SlotIndex)
++		{
++			const UMaterialInterface* AppliedMaterial = Mesh->GetMaterial(SlotIndex);
++
++			// ⛔ Unwrap ONLY the transient DYNAMIC instance the vendor creates per spawn.
++			// `MI_SiegeFog_Grey` is ITSELF a material instance (a child of the vendor's box
++			// material), so unwrapping every UMaterialInstance would walk straight PAST the answer
++			// to the vendor's parent and report a mismatch that is not there.
++			while (const UMaterialInstanceDynamic* const AppliedDynamic = Cast<UMaterialInstanceDynamic>(AppliedMaterial))
++			{
++				AppliedMaterial = AppliedDynamic->Parent;
++			}
++
++			const FSoftObjectPath AchievedMaterialPath(AppliedMaterial);
++			if (SlotsInspected == 0)
++			{
++				FirstAchievedPath = AchievedMaterialPath.ToString();
++			}
++			++SlotsInspected;
++
++			if (FogVisualMaterialMatches(FogVisualMaterialPath(), AchievedMaterialPath))
++			{
++				bWearingRequestedMaterial = true;
++			}
++		}
++	}
++
++	if (!bWearingRequestedMaterial)
++	{
++		UE_LOG(LogGitClaudeUnrealTest, Error,
++			TEXT("[%s] ⛔⛔ THE FOG VISUAL IS RENDERING WITH THE WRONG MATERIAL — requested '%s', and none of the %d material ")
++			TEXT("slot(s) on its mesh components carries it (first ACHIEVED: '%s'), read back after FinishSpawning ran the ")
++			TEXT("vendor's construction script (AFogVolume::VerifyFogVisualMaterial). ")
++			TEXT("The map entry was verified written BEFORE construction, so reaching this line means the script did not build ")
++			TEXT("from it: either the vendor no longer sources its material from that map, or the visual is running in a ")
++			TEXT("material mode other than the entry that was written. ")
++			TEXT("The fog is UP, the MECHANIC is unaffected and the card is not refused — the box on screen is the vendor's ")
++			TEXT("warm tint, which is the ONE thing this whole path exists to change."),
++			*GetNameSafe(this), *FogVisualMaterialPath().ToString(), SlotsInspected, *FirstAchievedPath);
++	}
++}
++
+ void AFogVolume::DestroyFogVisual()
+ {
+ 	AActor* const Visual = FogVisualActor.Get();
+diff --git a/GitClaudeUnrealTest/Source/GitClaudeUnrealTest/Siegebound/FogVolume.h b/GitClaudeUnrealTest/Source/GitClaudeUnrealTest/Siegebound/FogVolume.h
+index d16aeb2..2eef5ae 100644
+--- a/GitClaudeUnrealTest/Source/GitClaudeUnrealTest/Siegebound/FogVolume.h
++++ b/GitClaudeUnrealTest/Source/GitClaudeUnrealTest/Siegebound/FogVolume.h
+@@ -603,6 +603,47 @@ public:
+ 	 */
+ 	static const FSoftClassPath& FogVisualClassPath();
+ 
++	/**
++	 *  ⭐⭐ THE **ONE** REFERENCE TO THE FOG VISUAL'S **MATERIAL** IN THE WHOLE PROJECT
++	 *  (`TASK-1165`, `FOG-§12.4a`), and it is a FUNCTION for the identical reason
++	 *  `FogVisualClassPath()` is: a hardcoded `/Game/` path is a ⛔ CONTENT DEPENDENCY NO TEST CAN
++	 *  SEE BREAK. ⇒ `Tests/SiegeFogVisualTest.cpp` calls THIS function and asserts the package it
++	 *  names is really on disk, so a rename goes ⛔ RED instead of going quietly beige in game.
++	 *
++	 *  ⛔⛔ WHY CODE OWNS THIS AT ALL, WHEN THE COLOUR IS PLAINLY AN ART DECISION — the reason is
++	 *  ⛔ TOOLING, and it is written down so nobody "corrects" it back into the asset:
++	 *  `MI_SiegeFog_Grey` is authored, measured on pixels and saved by the artist (`TASK-1154`),
++	 *  and the ⛔ ONE remaining field — the visual Blueprint's `BoxMaterials["Base"]` — could
++	 *  ⛔ NOT be written through the editor-scripting surface. `set_properties` on that `TMap`
++	 *  returned ⛔ WITHOUT ERROR ⛔ TWICE, in two payload shapes, and the read-back was ⛔ UNCHANGED
++	 *  both times; the Blueprint's own `Material` override slot ⛔ stores but is ⛔ IGNORED, because
++	 *  its construction script reads `BoxMaterials[Mode]` and never consults it.
++	 *  ⇒ ⛔ THE VALUE IS STILL ASSET-SIDE. ⛔ ONLY THE *WRITE* IS CODE.
++	 *
++	 *  ⭐ SO A RETUNE REMAINS ⛔ ZERO CODE CHANGE, which is the property `FOG-§12.4a` asks for: the
++	 *  ⛔ COLOUR lives in `MI_SiegeFog_Grey`'s own `Base Color` / `Emissive Color` vectors, and an
++	 *  artist moves it one notch warmer or cooler by editing ⛔ that asset. ⛔ Nothing here changes.
++	 *  ⛔ What this path pins is ⛔ WHICH MATERIAL, ⛔ never ⛔ WHAT COLOUR — and the two measured
++	 *  neighbours either side of the shipped value already exist for exactly that dial.
++	 *
++	 *  ⚠️ DECLARED DEPARTURE FROM `FOG-§12.4a`'s PINNED SHAPE, stated rather than glossed
++	 *  (`SC-§101` — a prescribed remedy is a claim): that law pins this accessor's ⛔ NAME and then
++	 *  asks for ⛔ *"`EditDefaultsOnly`"* in the same breath as ⛔ *"the existing
++	 *  `FogVisualClassPath()` house pattern"*, and the two are ⛔ MUTUALLY EXCLUSIVE — a ⛔ FUNCTION
++	 *  cannot carry a `UPROPERTY` specifier. ⛔ The house pattern is taken and the name is honoured.
++	 *  ⛔ The reason that pattern rejected `EditDefaultsOnly` in the first place applies here
++	 *  ⛔ VERBATIM (see the paragraph on `FogVisualClassPath()` above): it is ⛔ ARCHETYPE-ONLY,
++	 *  `AFogVolume` has ⛔ ZERO Blueprint children and no per-property `Config` specifier ⇒ ⛔ THERE
++	 *  IS NOWHERE FOR AN OVERRIDE TO LIVE. It would have bought ⛔ nothing and ⛔ ADDED a
++	 *  `CoreRedirects` obligation to this class.
++	 *
++	 *  ⚠️ THE OBJECT SUFFIX AFTER THE DOT IS LOAD-BEARING — the `_C` lesson in its second dress. An
++	 *  `FSoftObjectPath` is a ⛔ PACKAGE NAME ⛔ PLUS AN ⛔ ASSET NAME. Drop the trailing
++	 *  `.MI_SiegeFog_Grey` and the path names a package and ⛔ no object: `TryLoad()` returns
++	 *  ⛔ null and the readback below could ⛔ never match — ⛔ silently. The test pins the suffix.
++	 */
++	static const FSoftObjectPath& FogVisualMaterialPath();
++
+ 	/**
+ 	 *  ⭐⭐ THE SPAWN TRANSFORM, ⛔ DERIVED — a pure static so the RELATION can be asserted
+ 	 *  headlessly (the `BrightSunWindowSeconds` testability-seam precedent, followed on purpose).
+@@ -666,6 +707,33 @@ public:
+ 	 */
+ 	static bool FogVisualScaleMatches(const FVector& RequestedScale3D, const FVector& AchievedScale3D);
+ 
++	/**
++	 *  ⭐⭐⭐ THE **MATERIAL** READBACK PREDICATE (`TASK-1165`) — *"is the material the fog is
++	 *  actually rendering with the one we asked for?"* — a pure static for the identical reason
++	 *  `FogVisualScaleMatches` is: ⛔ A COMPARISON WRITTEN INLINE AT THE CALL SITE IS A COMPARISON
++	 *  ⛔ NO TEST CAN EXECUTE, and this file already paid for one of those.
++	 *
++	 *  ⛔⛔⛔ THE DEFECT IT DETECTS, ⛔ MEASURED ON PIXELS AND ⛔ NOT INFERRED (`TASK-1154`,
++	 *  `FOG-§12.4a`): the vendor Blueprint pushes every ⛔ SCALAR of its settings struct into the
++	 *  material instance it builds and pushes ⛔ NO COLOUR AT ALL. Its exposed `base Color` set to
++	 *  ⛔ PURE RED rendered a far-field blue/green ratio of ⛔ `0.890` against a baseline of
++	 *  ⛔ `0.891` — ⛔ IDENTICAL, on hue AND on brightness — while the property read back perfectly
++	 *  every single time. ⇒ the colour can only arrive as ⛔ THE MATERIAL ITSELF, and *"did it
++	 *  arrive"* is a question ⛔ ONLY A READBACK CAN ANSWER. ⛔ A value that reads correct and
++	 *  renders wrong is this class's oldest enemy (`SC-§94`, `FIELD-§7`, and the scale twin above).
++	 *
++	 *  ⭐ IT IS A PREDICATE, ⛔ NOT AN ASSERT AND ⛔ NOT A FIX: the caller decides what a mismatch
++	 *  means. Today the caller LOGS LOUDLY and carries on, because an art failure may ⛔ NEVER
++	 *  refuse a 50-gold card, consume-and-abort, or change one vision clamp.
++	 *
++	 *  ⛔⛔ AN EMPTY PATH ON EITHER SIDE IS A ⛔ MISMATCH, and it is ⛔ STATED rather than inherited.
++	 *  Path equality is a plain comparison, so ⛔ TWO NOTHINGS COMPARE EQUAL — a visual with no
++	 *  mesh, or a material that failed to resolve, would otherwise report a ⛔ MATCH and this
++	 *  predicate would ⛔ CERTIFY THE EXACT SILENCE IT EXISTS TO BREAK. Written in the same `!(X)`
++	 *  form `FogVisualScaleMatches` uses for NaN, so the REASON is on the page.
++	 */
++	static bool FogVisualMaterialMatches(const FSoftObjectPath& RequestedMaterialPath, const FSoftObjectPath& AchievedMaterialPath);
++
+ 	/**
+ 	 *  ⛔ THE MARGIN, AND IT IS **NOT** A DESIGN NUMBER — it is `L_Arena`'s `ExponentialHeightFog_0`
+ 	 *  `VolumetricFogDistance`, read live as `6000` under `TASK-841` §3.2. That is the radius
+@@ -1141,6 +1209,112 @@ private:
+ 	 */
+ 	void SpawnFogVisual();
+ 
++	/**
++	 *  ⭐⭐⭐ **THE COLOUR** (`TASK-1165`, ask (C) — 🧑 *"Lets also make the fog more of a grey
++	 *  instead of a yellow."*). Repoints the ⛔ SPAWNED visual's `BoxMaterials["Base"]` entry at
++	 *  `FogVisualMaterialPath()`, ⛔ BEFORE the vendor's construction script has run, so the vendor
++	 *  builds its ⛔ OWN dynamic material instance from our material on its ⛔ FIRST AND ONLY PASS.
++	 *
++	 *  🚨⛔⛔ WHY IT GOES THROUGH THE VENDOR'S PIPELINE AT ALL, AND IT IS THE ⛔ WHOLE DESIGN OF
++	 *  THIS FUNCTION RATHER THAN A DETAIL: the vendor construction script builds a dynamic material
++	 *  instance from `BoxMaterials[Mode]` ⛔ AND PUSHES ITS SCALARS INTO THAT INSTANCE — measured
++	 *  present: `Density`, `Base Noise Sharpness`, `Wind Speed`, i.e. ⛔ EVERY NUMBER THE UNIFORMITY
++	 *  FIX SHIPPED (`TASK-1152`, ask (B)). ⇒ ⛔ SWAPPING THE MESH'S MATERIAL ⛔ AFTER that push would
++	 *  ⛔ ORPHAN the tuned instance and hand 🧑 him a ⛔ GREY fog with the ⛔ OLD DENSITY BACK —
++	 *  ⛔ the colour fix silently REVERTING the uniformity fix, ⛔ with nothing in any log.
++	 *  ⭐ Letting the vendor's own pipeline read our value closes that ⛔ BY CONSTRUCTION: the same
++	 *  script that pushes the scalars pushes them into an instance built from ⛔ OUR material.
++	 *  ⛔ It also means ⛔ NO hand-copied vendor parameter list — the alternative shape, and the one
++	 *  that rots silently the first time the vendor pack adds a parameter nobody here knows about.
++	 *
++	 *  🚨⛔⛔⭐⭐⭐ WHY ⛔ NOT `RerunConstructionScripts()`, WHICH IS WHAT THIS FUNCTION FIRST DID:
++	 *  ⛔ `AActor::RerunConstructionScripts()` is ⛔ `#if WITH_EDITOR` (`Actor.h:3415-3418`
++	 *  declaration, `ActorConstruction.cpp:253` definition) and this module is ⛔ `"Type":
++	 *  "Runtime"`. ⇒ the ⛔ EDITOR target compiles it ⛔ GREEN and the ⛔ COOKED target ⛔ DOES NOT
++	 *  COMPILE — a defect ⛔ INVISIBLE to every gate this project runs, surfacing ⛔ ONLY in the
++	 *  packaged game. ⛔ AND A `WITH_EDITOR` GUARD IS ⛔ NOT THE REPAIR EITHER: the rebuild ⛔ IS the
++	 *  mechanism, so guarded, the shipped product gets ⛔ beige fog ⛔ plus an Error on every raise.
++	 *  ⭐ The seam that ⛔ genuinely runs in both is the one the engine ⛔ documents for exactly this
++	 *  purpose: ⛔ DEFER construction, write the parameter, then `FinishSpawning`
++	 *  (`World.h:3846-3849` — *"WILL NOT run Construction Script of Blueprints to give caller an
++	 *  opportunity to set parameters beforehand"*). ⛔ `FinishSpawning` (`Actor.h:3117`) carries
++	 *  ⛔ NO guard, calls `ExecuteConstruction` at `Actor.cpp:4415`, and that calls
++	 *  `ProcessUserConstructionScript()` at `ActorConstruction.cpp:939` where the `#if WITH_EDITOR`
++	 *  wraps ⛔ ONLY the *"turn the editor CS off"* config lookup ⇒ in a cooked build the vendor's
++	 *  script runs ⛔ ALWAYS. ⛔ There is ⛔ NO SECOND CONSTRUCTION PASS at all any more.
++	 *
++	 *  ⚠️⚠️ THE ORDERING IS ⛔ LOAD-BEARING AND IT IS NOT OBVIOUS: this must run ⛔ BETWEEN the
++	 *  deferred `SpawnActor` and `FinishSpawning`. ⛔ Earlier there is no object to write to;
++	 *  ⛔ later the script has already read the field and our value lands somewhere nobody looks
++	 *  again. ⇒ the caller holds ⛔ NO BRANCH between this call and `FinishSpawning`, and this
++	 *  function is ⛔ `void` precisely so it can never demand one: an actor left ⛔ UNFINISHED has
++	 *  ⛔ no root component, ⛔ no mesh and ⛔ no BeginPlay, which is ⛔ worse than beige fog.
++	 *  ⛔⛔ AND IT EXECUTES ⛔ NO VENDOR CODE — reflection plus one asset load — so the caller needs
++	 *  ⛔ no re-validation of the actor before finishing it.
++	 *
++	 *  ⚖️⛔ THE BOUNDARY, UNCHANGED FROM ITS TWO NEIGHBOURS: ⛔ LOUD IN THE LOG, ⛔ NEVER IN THE
++	 *  GAMEPLAY. Every failure in here is an ⛔ ART failure — it may ⛔ NOT refuse a 50-gold card,
++	 *  ⛔ not consume-and-abort and ⛔ not change one vision clamp. The fog stays up, it stays the
++	 *  vendor's warm tint, and the log says which step did not happen.
++	 *
++	 *  🚨⛔⛔⭐⭐⭐ **WHICH SURFACES THIS REACHES, AND WHICH IT CANNOT — ⛔ STATED, BECAUSE THE ANSWER
++	 *  IS *"NOT ALL OF THEM"* AND A READER WHO ASSUMED OTHERWISE WOULD JUDGE THIS ROW ON A PICTURE
++	 *  IT NEVER TOUCHED.**
++	 *  ✅ **COVERED — every surface a PLAYER can see, and it is covered by construction rather than
++	 *  by enumeration:** the visual has ⛔ EXACTLY ONE spawn site in the whole project
++	 *  (`SpawnFogVisual`, pinned by `Tests/SiegeFogVisualTest.cpp`), so PIE, Simulate, standalone
++	 *  and the packaged game all arrive here on the same line. ⭐ That is also ⛔ WHY this is a
++	 *  runtime call rather than an init-time one: there is ⛔ NO earlier moment — the visual does
++	 *  not exist until a fog card is played, and the only door into its class defaults belongs to
++	 *  the Blueprint, which is the write that could not be made.
++	 *  🚨⛔⛔ AND THE CLAIM IS ⛔ TWO CLAIMS, WHICH IS ⛔ EXACTLY HOW IT WAS ONCE HALF-FALSE: ⛔ that
++	 *  the ⛔ WRITE is reached on every surface, ⛔ AND that the ⛔ MECHANISM THAT MAKES THE WRITE
++	 *  VISIBLE exists on every surface. ⛔ The first was always true. ⛔ The second was ⛔ FALSE
++	 *  while this function ended in an ⛔ EDITOR-ONLY `RerunConstructionScripts()` (`TASK-1166`
++	 *  BLOCKER-1) — the packaged game would have shipped ⛔ BEIGE FOG and ⛔ would not have compiled
++	 *  at all. ⛔ Both halves are true ⛔ ONLY of the `FinishSpawning` route above, and only because
++	 *  ⛔ neither `FinishSpawning` nor `ExecuteConstruction` nor `ProcessUserConstructionScript` is
++	 *  editor-gated (cited by line above). ⛔ Do not re-assert the sentence for a different
++	 *  mechanism without re-checking the ⛔ SECOND half.
++	 *  ⛔ **NOT COVERED, AND ⛔ NOT COVERABLE FROM `Source/` AT ALL** — three ⛔ EDITOR-ONLY surfaces
++	 *  that read the visual Blueprint's ⛔ SAVED CLASS DEFAULT and never run a line of this class:
++	 *    • ⛔ the visual Blueprint's ⛔ OWN preview viewport,
++	 *    • ⛔ any hand-placed instance dragged into a map (there are ⛔ none, and `GFX-§11` forbids
++	 *      saving the map that could hold one),
++	 *    • ⛔ its content-browser thumbnail.
++	 *  ⛔⛔ THOSE THREE WILL STILL SHOW THE ⛔ VENDOR'S WARM TINT, and ⛔ NO C++ CHANGE CAN MOVE
++	 *  THEM: the visual is a ⛔ BLUEPRINT asset whose parent is the ⛔ VENDOR's Blueprint, ⛔ not a
++	 *  subclass of this class, so this class has ⛔ NO construction path into it. ⛔ The ⛔ ONLY
++	 *  repair for those three is the ⛔ ONE-FIELD ASSET EDIT this row exists ⛔ BECAUSE tooling could
++	 *  not make. ⇒ ⚖️ ⛔ IF THE FIX IS JUDGED BY OPENING THE BLUEPRINT RATHER THAN BY PLAYING THE
++	 *  CARD, IT WILL LOOK ⛔ UNCHANGED — ⛔ and that would be a correct observation about the ⛔ WRONG
++	 *  SURFACE. ⛔ Judge it ⛔ IN A MATCH.
++	 */
++	void ApplyFogVisualMaterial(AActor* Visual);
++
++	/**
++	 *  ⭐⭐⭐ **THE MEASUREMENT** (`TASK-1165`) — reads back what the visual's mesh components are
++	 *  ⛔ ACTUALLY RENDERING WITH, ⛔ AFTER `FinishSpawning` has run the vendor's construction
++	 *  script, and logs at `Error` if none of them wears `FogVisualMaterialPath()`.
++	 *
++	 *  ⛔⛔ IT IS A ⛔ SEPARATE FUNCTION FROM `ApplyFogVisualMaterial` FOR ⛔ ONE REASON, AND IT IS
++	 *  NOT TIDINESS: they run on ⛔ OPPOSITE SIDES OF CONSTRUCTION. The write must precede it (or
++	 *  the vendor never reads our value); the measurement must follow it (or there is ⛔ no mesh to
++	 *  read, and it would report a mismatch on ⛔ every cast, forever). ⛔ Folding them back
++	 *  together would force one of the two onto the wrong side.
++	 *
++	 *  ⭐⭐ WHY A SECOND READBACK AT ALL, when `ApplyFogVisualMaterial` already verified its write:
++	 *  that one proves the ⛔ FIELD holds our material. It proves ⛔ NOTHING about whether the
++	 *  vendor's script ⛔ CONSULTED that field — and this fog's whole history is values that read
++	 *  correct and rendered wrong (`FIELD-§7`, `SC-§94` cl. D). ⛔ A property read-back is
++	 *  ⛔ NECESSARY AND ⛔ INSUFFICIENT; only 🧑 his eye on the pixels closes it.
++	 *
++	 *  ⚖️⛔ SAME BOUNDARY AS ITS NEIGHBOURS: ⛔ LOUD IN THE LOG, ⛔ NEVER IN THE GAMEPLAY. It is
++	 *  `void` and `const`, it changes ⛔ nothing, and a wrong material may ⛔ never refuse a
++	 *  50-gold card, consume-and-abort, or move one vision clamp.
++	 */
++	void VerifyFogVisualMaterial(const AActor* Visual) const;
++
+ 	/**
+ 	 *  Destroys the visual if one is up, and clears the handle. ⛔ Idempotent and safe to call
+ 	 *  when nothing was ever spawned — which is why every exit can call it unconditionally.
+diff --git a/GitClaudeUnrealTest/Source/GitClaudeUnrealTest/Siegebound/Tests/SiegeFogVisualTest.cpp b/GitClaudeUnrealTest/Source/GitClaudeUnrealTest/Siegebound/Tests/SiegeFogVisualTest.cpp
+index fe86161..1cb22f9 100644
+--- a/GitClaudeUnrealTest/Source/GitClaudeUnrealTest/Siegebound/Tests/SiegeFogVisualTest.cpp
++++ b/GitClaudeUnrealTest/Source/GitClaudeUnrealTest/Siegebound/Tests/SiegeFogVisualTest.cpp
+@@ -91,6 +91,24 @@
+  *      end-to-end claim — play `Fog`, a box appears; wait 300 s, it goes — is ⛔ NOT EXECUTED by
+  *      this file and is ⛔ NOT executed by the suite.
+  *
++ *  ⚠️ THE LANE LIST ABOVE NAMES TESTS 1-7 AND ⛔ PREDATES THE ONES ADDED SINCE. ⭐ `TASK-1165` adds
++ *  ⛔ TEST 10 (⭐ LANE A, GENUINELY EXECUTED — it calls `AFogVolume::FogVisualMaterialPath` and
++ *  `AFogVolume::FogVisualMaterialMatches` and asserts on what comes back, including the ⛔ NO the
++ *  detector must give the ⛔ MEASURED vendor material it replaces) and ⛔ TEST 11 (⚠️ LANE B,
++ *  source-text structure).
++ *  ⛔⛔ AND THE LIMIT OF BOTH, STATED FIRST BECAUSE IT IS THE ⛔ ONE CLAIM A READER WILL WANT AND
++ *  ⛔ CANNOT HAVE: ⛔ NEITHER SAMPLES A PIXEL. Test 10 proves the material asset the shipped code
++ *  names ⛔ EXISTS and that the shipped predicate ⛔ REJECTS the vendor's; test 11 proves the colour
++ *  reaches the mesh through the ⛔ VENDOR'S OWN pipeline rather than around it, which is what keeps
++ *  ⭐ `TASK-1152`'s density alive. ⭐⭐ Test 11 ⛔ ALSO holds the ⛔ COOKED-BUILD fence, and that one
++ *  is worth more than it looks: the only compile this project runs is
++ *  `Build.bat GitClaudeUnrealTestEditor`, which defines `WITH_EDITOR=1` and goes ⛔ GREEN over an
++ *  editor-only construction API that the ⛔ PACKAGED GAME cannot build at all (`TASK-1166`
++ *  BLOCKER-1). ⇒ ⛔ a source-text probe is blind to a great deal, but it is ⛔ NOT blind to the one
++ *  defect class our own gate structurally cannot see. ⛔ NEITHER can say the fog ⛔ LOOKS GREY, and ⛔ neither can say
++ *  the uniformity numbers held — ⛔ those are ⛔ RENDERED-PIXEL claims (`FOG-§12.4`, `FIELD-§7`) and
++ *  ⛔ a green suite says ⛔ NOTHING about them.
++ *
+  *  ─── 🧑🚨 AND THE HONEST SCOPE OF EVERY GREEN THIS FILE CAN PRODUCE ──────────────────────────
+  *  ⛔⛔ **AN AUTOMATED TEST CAN PROVE THE SPAWN HAPPENS. ⛔ IT CANNOT PROVE THE FOG LOOKS RIGHT.**
+  *  🧑 Jonathan's eye is the ⛔ ONLY instrument for LEGIBILITY (`AS-§6 A(e)`), and the stake is
+@@ -134,6 +152,21 @@ namespace SiegeFogVisualFixture
+ 	const TCHAR* EnforceFogRenderFloorSignature = TEXT("void AFogVolume::EnforceFogRenderFloor()");
+ 	const TCHAR* ReleaseFogRenderFloorSignature = TEXT("void AFogVolume::ReleaseFogRenderFloor()");
+ 
++	//~ ⭐⭐⭐ TASK-1165 — the COLOUR route. ⛔ A stale signature FAILS (`SC-§38`).
++	const TCHAR* FogVisualMaterialPathSignature = TEXT("const FSoftObjectPath& AFogVolume::FogVisualMaterialPath()");
++	const TCHAR* ApplyFogVisualMaterialSignature = TEXT("void AFogVolume::ApplyFogVisualMaterial(AActor* const Visual)");
++	const TCHAR* VerifyFogVisualMaterialSignature = TEXT("void AFogVolume::VerifyFogVisualMaterial(const AActor* const Visual) const");
++
++	/**
++	 *  ⛔⛔ THE VENDOR MATERIAL THIS ROW REPLACES, TRANSCRIBED ONCE — ⛔ read live off the shipped
++	 *  visual Blueprint's class default under `TASK-1165` (`BoxMaterials["Base"]`), which is the
++	 *  value `TASK-1154` measured rendering the warm cast 🧑 he asked us to take out.
++	 *  ⛔ It exists ⛔ ONLY as a NEGATIVE fixture: the shipped detector is handed this and must
++	 *  answer ⛔ NO. ⛔ It is ⛔ NOT a path production code may ever name — the vendor pack is
++	 *  READ-ONLY (`FOG-§6`), and test 11 asserts `FogVolume.cpp` contains ⛔ zero of it.
++	 */
++	const TCHAR* VendorBoxMaterialPath = TEXT("/Game/FogArea/Materials/Base/MI_FogArea_Box.MI_FogArea_Box");
++
+ 	/** Reads a shipped project file. ⛔ A probe that cannot read its subject FAILS. */
+ 	static bool LoadProjectFile(FAutomationTestBase& Test, const TCHAR* RelativePath, FString& OutText)
+ 	{
+@@ -944,6 +977,12 @@ bool FSiegeFogVisualAchievedTransformTest::RunTest(const FString& Parameters)
+ 	// ── ⭐⭐⭐ (a) THE REPAIR ITSELF ───────────────────────────────────────────────────────────
+ 	// ⛔ Delete this line and the engine's substitution stands: the fog box goes back to being a
+ 	// small slab thousands of units above the field, invisible from every camera angle.
++	// ⚠️⚠️ PROSE NARROWED 2026-09-08 (`TASK-1165`/`TASK-1166`), ⛔ ASSERTION UNCHANGED: construction
++	// is now DEFERRED and finished with `bIsDefaultTransform=false`, so on the path the shipped
++	// code actually takes the `SCS_Node.cpp:142-147` substitution branch is ⛔ NOT ENTERED and this
++	// line is ⛔ BELT-AND-BRACES rather than the repair. ⛔ It is pinned anyway and deliberately:
++	// it is correct whatever construction did, it is identical in the editor and in the packaged
++	// game, and it is the only reason the readback below measures a value somebody asked for.
+ 	TestEqual(TEXT("⭐⭐⭐ THE REPAIR: the spawn site FORCES the derived scale onto the actor after spawning it, exactly once. ⛔ Without it the engine substitutes the vendor template's scale and there is NO FOG (TASK-1071)"),
+ 		CountOccurrencesInCode(SpawnBody, TEXT("Spawned->SetActorScale3D(RequestedScale3D);")), 1);
+ 
+@@ -1016,7 +1055,7 @@ bool FSiegeFogVisualAchievedTransformTest::RunTest(const FString& Parameters)
+ 	FString BeforeCorrection;
+ 	if (SubstringBefore(*this, SpawnBody, TEXT("Spawned->SetActorScale3D(RequestedScale3D);"), BeforeCorrection))
+ 	{
+-		TestEqual(TEXT("⭐ …and the SPAWN happens before the correction — the clobber is applied during SpawnActor, so a scale set any earlier is the value that gets discarded"),
++		TestEqual(TEXT("⭐ …and the SPAWN happens before the correction — there is no actor to scale any earlier, and the substitution (when it fires at all) happens during construction, so a scale set before that is the value that gets discarded"),
+ 			CountOccurrencesInCode(BeforeCorrection, TEXT("SpawnActor<AActor>(")), 1);
+ 	}
+ 
+@@ -1415,4 +1454,469 @@ bool FSiegeFogRenderFloorWiringTest::RunTest(const FString& Parameters)
+ 	return true;
+ }
+ 
++// ─────────────────────────────────────────────────────────────────────────────────────────────
++// ⭐ LANE A (EXECUTED) — TEST 10: THE GREY MATERIAL RESOLVES, AND THE DETECTOR REJECTS THE
++//                                 VENDOR MATERIAL IT REPLACES (`TASK-1165`)
++// ─────────────────────────────────────────────────────────────────────────────────────────────
++
++IMPLEMENT_SIMPLE_AUTOMATION_TEST(
++	FSiegeFogVisualMaterialPathTest,
++	"Siegebound.Fog.TheGreyMaterialIsOnDiskAndTheDetectorSaysNoToTheVendorMaterialItReplaces",
++	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
++
++bool FSiegeFogVisualMaterialPathTest::RunTest(const FString& Parameters)
++{
++	using namespace SiegeFogVisualFixture;
++
++	// ⛔⛔⛔ THE DEFECT THIS TEST EXISTS TO MAKE UNREPEATABLE (`TASK-1154`, `FOG-§12.4a`): the fog's
++	// warm cast was chased through a field that was ⛔ EXPOSED, ⛔ TYPED, ⛔ SETTABLE — and ⛔ WIRED
++	// TO NOTHING. `base Color` set to ⛔ PURE RED rendered a far-field blue/green ratio of ⛔ 0.890
++	// against a baseline of ⛔ 0.891: ⛔ IDENTICAL, on hue AND on brightness, while the property read
++	// back perfectly every time. ⛔ The vendor Blueprint pushes every SCALAR of its struct into the
++	// material it builds and ⛔ NO COLOUR AT ALL, so the value ⛔ NEVER ARRIVED.
++	// ⇒ the colour now arrives as ⛔ THE MATERIAL ITSELF, and the two things a headless test CAN
++	// answer about that are asserted here: ⛔ (a) does the asset the shipped code names really
++	// exist, and ⛔ (b) does the shipped detector actually say NO to the material being replaced.
++
++	const FSoftObjectPath& MaterialPath = AFogVolume::FogVisualMaterialPath();
++	const FString MaterialPathString = MaterialPath.ToString();
++
++	TestTrue(TEXT("⛔ The fog visual's material path is non-empty (an empty path loads nothing and says nothing)"), MaterialPath.IsValid());
++
++	// ⛔ Ours, in our own content root. A path that resolved into an engine or plugin root would
++	// mean the colour had been "fixed" somewhere this project does not own.
++	TestTrue(FString::Printf(TEXT("The fog material lives under /Game/ rather than in an engine or plugin root ('%s')"), *MaterialPathString),
++		MaterialPathString.StartsWith(TEXT("/Game/"), ESearchCase::CaseSensitive));
++
++	// ⛔⛔ THE VENDOR PACK IS READ-ONLY (`FOG-§6`). If this path ever pointed inside it, the grey
++	// would have been obtained by EDITING THE VENDOR — which is the one repair route this project
++	// has ruled out, and it would be invisible in a diff that only reads Source/.
++	TestFalse(FString::Printf(TEXT("⛔⛔ The fog material is NOT inside the read-only vendor pack — a path in there would mean the vendor asset had been edited ('%s')"), *MaterialPathString),
++		MaterialPathString.StartsWith(TEXT("/Game/FogArea/"), ESearchCase::CaseSensitive));
++
++	// ⚠️ THE OBJECT SUFFIX, AND IT IS THE '_C' LESSON IN ITS SECOND DRESS. An FSoftObjectPath is a
++	// PACKAGE NAME plus an ASSET NAME. A path that names the package and no object resolves to
++	// ⛔ NOTHING through TryLoad(), and it fails ⛔ silently — which for this row means the fog
++	// simply stays the colour he complained about.
++	const FString MaterialPackageName = MaterialPath.GetLongPackageName();
++	const FString MaterialAssetName = MaterialPath.GetAssetName();
++	TestFalse(TEXT("⭐⭐ The material path names an OBJECT, not merely a package — a package-only soft path loads NOTHING, silently"),
++		MaterialAssetName.IsEmpty());
++	TestEqual(TEXT("⭐ …and the object it names is the package's own asset, so the two halves cannot drift apart"),
++		MaterialAssetName, FPackageName::GetShortName(MaterialPackageName));
++
++	// ⭐ The house naming law for a material instance, asserted as a SHAPE rather than transcribed:
++	// re-typing the asset's name here would just be a second copy of the production literal.
++	TestTrue(FString::Printf(TEXT("⭐ The material follows the MI_ naming convention for a material instance ('%s')"), *MaterialAssetName),
++		MaterialAssetName.StartsWith(TEXT("MI_"), ESearchCase::CaseSensitive));
++
++	// ⭐⭐ THE CONTENT DEPENDENCY, MADE VISIBLE TO A TEST — the same instrument test 2 points at the
++	// visual Blueprint, in the same order and with the same negative control. ⛔ Rename or move the
++	// material and this goes RED, instead of the fog quietly going back to beige with a green suite.
++	// ⭐⭐ THE INSTRUMENT IS VALIDATED AGAINST THE FAILURE IT DETECTS, ⛔ NOT MERELY AGAINST SUCCESS
++	// (`SC-§39`, `SC-§79`): an existence probe that answered "yes" to everything would pass this
++	// file while proving nothing at all.
++	const FString DeliberatelyAbsentMaterialPackage = MaterialPackageName + TEXT("_ThisPackageDoesNotExist_NegativeControl");
++	TestFalse(TEXT("⭐ NEGATIVE CONTROL: the existence probe answers NO for a material package that is not there (so its YES below is evidence, not noise)"),
++		FPackageName::DoesPackageExist(DeliberatelyAbsentMaterialPackage));
++
++	// ⛔ EXISTENCE ONLY, and the narrowness is inherited from test 2 on purpose: this probe does
++	// ⛔ NOT LOAD the asset. `MI_SiegeFog_Grey` is parented to the VENDOR box material, and
++	// `TASK-841` §5.3 measured that loading a vendor package DIRTIES IT — which is how `FOG-§6`'s
++	// read-only rule gets broken by a test rather than by a person. ⇒ a failed LOAD at runtime is
++	// covered by the `Error` log in `AFogVolume::ApplyFogVisualMaterial`, which is where it belongs.
++	TestTrue(FString::Printf(TEXT("⭐⭐ The material package the shipped code names is really on disk: '%s'"), *MaterialPackageName),
++		FPackageName::DoesPackageExist(MaterialPackageName));
++
++	// And the `Content/…uasset` form — the half an ARTIST acts on — DERIVED from the same path
++	// rather than typed a second time.
++	FString ExpectedMaterialFilename;
++	if (FPackageName::TryConvertLongPackageNameToFilename(MaterialPackageName, ExpectedMaterialFilename, TEXT(".uasset")))
++	{
++		TestTrue(FString::Printf(TEXT("The material file exists where the package name says it does ('%s')"), *ExpectedMaterialFilename),
++			FPaths::FileExists(ExpectedMaterialFilename));
++	}
++	else
++	{
++		AddError(FString::Printf(TEXT("⛔ '%s' could not be converted to a filename — the path is malformed, so this FAILS rather than reporting safe."), *MaterialPackageName));
++	}
++
++	// ── ⭐⭐⭐ THE DETECTOR, EXERCISED — and the NO matters more than the YES ──────────────────
++	// ⛔ A detector nobody has ever seen say NO is not a detector. This is the FogVisualScaleMatches
++	// precedent applied to the colour: hand the shipped predicate the MEASURED thing it exists to
++	// reject, and assert it rejects it.
++	const FSoftObjectPath VendorMaterialPath{FString(VendorBoxMaterialPath)};
++
++	TestFalse(TEXT("⭐⭐⭐ THE DETECTOR SAYS NO to the VENDOR material this row replaces — the one read live off the shipped Blueprint's class default, and the one whose warm cast 🧑 he asked us to take out"),
++		AFogVolume::FogVisualMaterialMatches(MaterialPath, VendorMaterialPath));
++	TestTrue(TEXT("⭐⭐ …and YES to the material the shipped code asks for. ⛔ A predicate that never says YES is a constant, and a constant false would 'detect' everything forever"),
++		AFogVolume::FogVisualMaterialMatches(MaterialPath, MaterialPath));
++
++	// ⛔⛔ TWO NOTHINGS ARE NOT A MATCH. Path equality on its own says they are — so a visual with
++	// no mesh, or a material that failed to resolve, would be CERTIFIED CORRECT by the very
++	// predicate that exists to catch it. This is the false-clean in miniature, and it is the exact
++	// shape (`SC-§94`) that let a wrong value read as a right one three times in this file.
++	TestFalse(TEXT("⛔⛔ An EMPTY ACHIEVED path is a MISMATCH — a mesh rendering with nothing must never certify as correct"),
++		AFogVolume::FogVisualMaterialMatches(MaterialPath, FSoftObjectPath()));
++	TestFalse(TEXT("⛔⛔ …an EMPTY REQUESTED path is a MISMATCH too — a lost asset reference must not start matching everything"),
++		AFogVolume::FogVisualMaterialMatches(FSoftObjectPath(), MaterialPath));
++	TestFalse(TEXT("⛔⛔⛔ …and TWO EMPTIES are STILL a mismatch. ⛔ Plain path equality says they are EQUAL, which is why the guard is written rather than inherited"),
++		AFogVolume::FogVisualMaterialMatches(FSoftObjectPath(), FSoftObjectPath()));
++
++	// ⚠️ THE SIBLING'S HABIT IS NOT INHERITED: the fog visual's CLASS path carries a '_C' suffix
++	// because a generated class is not its Blueprint. A MATERIAL has no such twin, and pasting the
++	// habit across would name an object that does not exist. ⛔ It must not match.
++	const FSoftObjectPath GeneratedClassShapedPath{MaterialPackageName + TEXT(".") + MaterialAssetName + TEXT("_C")};
++	TestFalse(TEXT("⭐ A '_C'-suffixed variant of the same package does NOT match — the generated-class habit from FogVisualClassPath() must not leak onto a material"),
++		AFogVolume::FogVisualMaterialMatches(MaterialPath, GeneratedClassShapedPath));
++
++	return true;
++}
++
++// ─────────────────────────────────────────────────────────────────────────────────────────────
++// ⚠️ LANE B (SOURCE-TEXT) — TEST 11: the colour is applied through the VENDOR'S OWN pipeline,
++//                                    on the near side of a DEFERRED construction, measured on the
++//                                    far side of it, and every failure in it is LOUD
++// ⛔⛔ IT ALSO CARRIES THE COOKED-BUILD FENCE, which is the one thing a compile cannot tell us:
++// `Build.bat GitClaudeUnrealTestEditor` defines `WITH_EDITOR=1` and goes GREEN over an
++// editor-only construction API, while the packaged game would not build at all (`TASK-1166`
++// BLOCKER-1). A source-text probe is blind to a great deal, but it is ⛔ NOT blind to that.
++// ─────────────────────────────────────────────────────────────────────────────────────────────
++
++IMPLEMENT_SIMPLE_AUTOMATION_TEST(
++	FSiegeFogVisualMaterialWiringTest,
++	"Siegebound.Fog.TheColourGoesThroughTheVendorsOwnPipelineSoTheUniformityScalarsSurviveIt",
++	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
++
++bool FSiegeFogVisualMaterialWiringTest::RunTest(const FString& Parameters)
++{
++	using namespace SiegeFogVisualFixture;
++
++	FString FogCpp;
++	FString FogH;
++	if (!LoadProjectFile(*this, FogVolumeCpp, FogCpp) || !LoadProjectFile(*this, FogVolumeH, FogH))
++	{
++		return false;
++	}
++
++	// ── ⭐⭐ (a) THE CALL EXISTS, AND IT IS IN THE SPAWN PATH ─────────────────────────────────
++	FString SpawnBody;
++	if (ExtractFunctionBody(*this, FogCpp, SpawnFogVisualSignature, SpawnBody))
++	{
++		TestEqual(TEXT("⭐⭐⭐ THE COLOUR HAS A CALLER: the spawn site applies the material exactly once. ⛔ `MI_SiegeFog_Grey` already shipped once with ZERO callers — an asset with no caller is not a feature, it is a file (`SC-§36.1`)"),
++			CountOccurrencesInCode(SpawnBody, TEXT("ApplyFogVisualMaterial(Spawned);")), 1);
++
++		// ⭐⭐⭐ THE MECHANISM ITSELF, ASSERTED AS A STATE RATHER THAN AS A COMMENT (`SC-§104`).
++		// Construction is HELD BACK by one statement so the vendor's script reads OUR entry on its
++		// first and only pass. ⛔ Delete the defer and the script has already built its instance
++		// from the vendor's material by the time the write lands — the field right, the pixels
++		// wrong, which is this row's entire subject.
++		TestEqual(TEXT("⭐⭐⭐ CONSTRUCTION IS DEFERRED so the vendor's script reads OUR entry on its FIRST pass. ⛔ Without this the write lands after the script has already built its instance from the vendor's material"),
++			CountOccurrencesInCode(SpawnBody, TEXT("SpawnParams.bDeferConstruction = true;")), 1);
++		TestEqual(TEXT("⭐⭐⭐ …and construction is FINISHED, exactly once. ⛔ An actor left unfinished has no root component, no mesh and no BeginPlay — strictly worse than beige fog"),
++			CountOccurrencesInCode(SpawnBody, TEXT("Spawned->FinishSpawning(")), 1);
++
++		// 🚨⛔⛔⭐⭐⭐ THE COOKED-BUILD FENCE, AND IT IS THE ONE THIS ROW SHIPPED WRONG ONCE
++		// (`TASK-1166` BLOCKER-1). ⛔ `AActor::RerunConstructionScripts()` is `#if WITH_EDITOR`
++		// (`Actor.h:3415-3418`, `ActorConstruction.cpp:253`) and this is a RUNTIME module ⇒ the
++		// EDITOR target compiles it GREEN while the COOKED target does not compile at all. ⛔ THE
++		// GATE THAT RUNS NEXT CANNOT SEE THAT, which is precisely why it is pinned HERE, in a probe
++		// that reads TEXT rather than a compiler that reads one target.
++		TestEqual(TEXT("🚨⛔⛔ FogVolume.cpp reaches NO editor-only construction API — `RerunConstructionScripts()` is `#if WITH_EDITOR` and this is a RUNTIME module, so it compiles green in the editor and NOT AT ALL in the packaged game"),
++			CountOccurrencesInCode(FogCpp, TEXT("RerunConstructionScripts")), 0);
++
++		// ⭐⭐⭐ THE ORDERING, AND IT IS THE ROW'S ONE NON-OBVIOUS DECISION: the colour is written
++		// BETWEEN the deferred spawn and FinishSpawning. ⛔ Earlier there is no object to write to;
++		// ⛔ later the script has already read the field.
++		FString BeforeFinish;
++		if (SubstringBefore(*this, SpawnBody, TEXT("Spawned->FinishSpawning("), BeforeFinish))
++		{
++			TestEqual(TEXT("⭐⭐⭐ THE COLOUR IS WRITTEN **BEFORE** CONSTRUCTION FINISHES — written after, our material sits in a field the vendor's script has already read past"),
++				CountOccurrencesInCode(BeforeFinish, TEXT("ApplyFogVisualMaterial(")), 1);
++			TestEqual(TEXT("⭐⭐⭐ …and the MEASUREMENT is NOT — taken before construction there is no mesh to read, and it would report a mismatch on every cast, forever"),
++				CountOccurrencesInCode(BeforeFinish, TEXT("VerifyFogVisualMaterial(")), 0);
++			TestEqual(TEXT("⛔⛔ …and NOTHING touches the transform in that window — between the deferred spawn and FinishSpawning the actor has NO ROOT COMPONENT, so a scale set there is a silent no-op"),
++				CountOccurrencesInCode(BeforeFinish, TEXT("SetActorScale3D")), 0);
++		}
++
++		FString BeforeMaterial;
++		if (SubstringBefore(*this, SpawnBody, TEXT("ApplyFogVisualMaterial("), BeforeMaterial))
++		{
++			TestEqual(TEXT("⭐ …and the SPAWN happens before the colour — there is no actor to write a material onto any earlier"),
++				CountOccurrencesInCode(BeforeMaterial, TEXT("SpawnActor<AActor>(")), 1);
++
++			// 🚨⛔⛔⭐⭐⭐ `FinishSpawning` IS UNCONDITIONAL, ASSERTED STRUCTURALLY RATHER THAN BY
++			// READING THE CODE — and it takes ⛔ BOTH rows below, which is why they sit together
++			// rather than one of them leaning on a pin in another test. ⛔ THE COUNT BEFORE the
++			// colour call catches a `return` MOVED DOWN past it; ⛔ THE TOTAL catches a `return`
++			// ADDED between it and `FinishSpawning`. Either alone is green for the other's
++			// mutation. ⛔ A `return` in that gap strands a spawned actor with no root, no mesh and
++			// no BeginPlay, held forever by `FogVisualActor` — an invisible fog that the deadline
++			// still enforces, i.e. `TASK-1071`'s symptom arriving through a door nobody watches.
++			TestEqual(TEXT("🚨⛔⛔ EVERY EARLY RETURN IS ABOVE THE COLOUR CALL ⇒ FinishSpawning is UNCONDITIONAL. ⛔ A return between them strands a spawned actor with no root component and no mesh, held forever"),
++				CountOccurrencesInCode(BeforeMaterial, TEXT("return")), 3);
++			TestEqual(TEXT("🚨⛔⛔ …and the function has NO OTHER return anywhere — the pair is what proves it, because a return ADDED below the colour call leaves the row above untouched"),
++				CountOccurrencesInCode(SpawnBody, TEXT("return")), 3);
++		}
++
++		FString BeforeScaleRepair;
++		if (SubstringBefore(*this, SpawnBody, TEXT("Spawned->SetActorScale3D(RequestedScale3D);"), BeforeScaleRepair))
++		{
++			// ⛔ THE SCALE IS STILL FORCED **AFTER** CONSTRUCTION, and this row is kept even though
++			// the deferred path passes `bIsDefaultTransform=false` and should make the substitution
++			// unreachable. ⛔ "Should" is what this fog has been wrong about four times: the set is
++			// correct whatever construction did, and it is the only reason the achieved-scale
++			// readback below it is measuring a value somebody in this file actually asked for.
++			TestEqual(TEXT("⭐⭐ THE SCALE IS FORCED **AFTER** CONSTRUCTION — set before it, the SCS would overwrite it and the readback would measure a value nobody chose (`TASK-1071`)"),
++				CountOccurrencesInCode(BeforeScaleRepair, TEXT("Spawned->FinishSpawning(")), 1);
++
++			// ⭐⭐ `bIsDefaultTransform` IS SPELLED, NEVER DEFAULTED. It is the argument that decides
++			// whether `SCS_Node.cpp:142-147` substitutes the vendor component template's scale for
++			// ours, and the non-deferred path hardcodes `true` (`Actor.cpp:4358-4360`). A literal in
++			// OUR file is the SAME VALUE in the editor and in the packaged game.
++			TestEqual(TEXT("⭐⭐ …and `bIsDefaultTransform` is SPELLED rather than defaulted — it is the argument that decides whether the vendor template's scale is substituted for ours, and a literal here cannot vary by build target"),
++				CountOccurrencesInCode(SpawnBody, TEXT("/*bIsDefaultTransform=*/ false")), 1);
++		}
++	}
++
++	// ── ⭐⭐⭐ (b) THE HAZARD THIS ROW COULD MOST EASILY HAVE SHIPPED, AS AN EXECUTABLE BAN ────
++	// ⛔⛔ THE VENDOR CONSTRUCTION SCRIPT BUILDS ITS DYNAMIC MATERIAL INSTANCE FROM `BoxMaterials`
++	// ⛔ AND PUSHES ITS OWN SCALARS INTO THAT INSTANCE — density, noise sharpness and wind speed,
++	// i.e. ⛔ EVERY NUMBER ASK (B) SHIPPED (`TASK-1152`). ⇒ swapping the mesh's material AFTER that
++	// push ⛔ ORPHANS the tuned instance and 🧑 he gets a GREY fog with the ⛔ OLD DENSITY BACK —
++	// ⛔ the colour fix silently REVERTING the uniformity fix, with ⛔ nothing in any log.
++	// ⭐⭐⭐ THIS IS THE UNIFORMITY NON-REGRESSION IN THE ONLY FORM A HEADLESS TEST CAN HOLD: the
++	// production file must ⛔ NEVER set a material on a component and must ⛔ NEVER re-push a
++	// parameter itself. The scalars survive because the ⛔ VENDOR re-pushes them, and the day
++	// somebody "simplifies" this into a direct SetMaterial, these rows go RED instead of his fog
++	// quietly going back to `density 5`.
++	const TCHAR* ForbiddenMaterialShortcuts[] =
++	{
++		TEXT("SetMaterial("),                    // ⛔ swaps the material and orphans the vendor's tuned instance
++		TEXT("CreateDynamicMaterialInstance"),   // ⛔ a SECOND instance the vendor knows nothing about
++		TEXT("SetScalarParameterValue"),         // ⛔ a hand-copied vendor parameter list nothing keeps in sync
++		TEXT("SetVectorParameterValue"),         // ⛔ re-authoring the colour in code, away from the artist's asset
++		// ⛔ THE HELPER, NOT THE MECHANISM — and the distinction is measured, not verbal.
++		// `UWorld::SpawnActorDeferred` (World.h:3851-3869) defaults `TransformScaleMethod` to
++		// ⛔ `MultiplyWithRoot`, which would MULTIPLY this world-sized fog scale by the vendor
++		// component template's own. What the shipped path uses is `SpawnActor` with
++		// `bDeferConstruction`, which keeps `OverrideRootScale`.
++		// ⚖️ ⛔ THE BAN'S ORIGINAL STATED REASON WAS FALSE AND IS CORRECTED HERE RATHER THAN
++		// INHERITED: it claimed the engine comment at `SCS_Node.cpp:144-146` makes
++		// `bIsDefaultTransform` FALSE IN A COOKED BUILD, so any deferred form would differ between
++		// editor and packaged game. ⛔ That comment sits on the `bIsDefaultTransform == TRUE`
++		// branch, i.e. it describes the NON-deferred path — the one `Actor.cpp:4358-4360` reaches
++		// by hardcoding `FinishSpawning(Transform, true)`. Routed to the manager as a law-text
++		// correction; the ban survives on the scale-method hazard above, which is real.
++		TEXT("SpawnActorDeferred"),
++	};
++	for (const TCHAR* Shortcut : ForbiddenMaterialShortcuts)
++	{
++		TestEqual(FString::Printf(TEXT("⛔⛔ The colour goes through the VENDOR's own pipeline — no '%s' anywhere in FogVolume.cpp"), Shortcut),
++			CountOccurrencesInCode(FogCpp, Shortcut), 0);
++	}
++
++	// ── ⭐⭐ (c) THE APPLY SITE: WRITE, VERIFY, REBUILD, MEASURE — IN THAT ORDER ──────────────
++	FString ApplyBody;
++	if (ExtractFunctionBody(*this, FogCpp, ApplyFogVisualMaterialSignature, ApplyBody))
++	{
++		TestEqual(TEXT("⭐⭐ The map entry is written exactly once"),
++			CountOccurrencesInCode(ApplyBody, TEXT("SetObjectPropertyValue(")), 1);
++
++		// ⭐⭐⭐ THE POST-WRITE READBACK. `TASK-1154` set this same map through the editor-scripting
++		// surface TWICE, in two payload shapes; ⛔ BOTH CALLS RETURNED WITHOUT ERROR and ⛔ BOTH READ
++		// BACK UNCHANGED. The only thing between "a green handoff, a commit, and 🧑 him looking at
++		// the same beige" and a caught defect was ⛔ ONE READBACK (`SC-§94` cl. D).
++		TestEqual(TEXT("⭐⭐⭐ THE WRITE IS READ BACK — this exact write has already been seen to SUCCEED AND DO NOTHING, twice, without erroring"),
++			CountOccurrencesInCode(ApplyBody, TEXT("GetObjectPropertyValue(")), 1);
++
++		// 🚨⛔⛔⭐⭐ THE TYPE IS CHECKED **BEFORE** THE STORE, AND THAT ORDER IS THE WHOLE VALUE OF
++		// THE CHECK (`TASK-1166` NIT-2, upgraded on measurement). `SetObjectPropertyValue` carries
++		// ⛔ NO type check of its own, so a vendor retype of this map's value would let the write
++		// SUCCEED, store a wrongly-typed object, and let the readback compare ⛔ THE SAME POINTER
++		// AGAINST ITSELF and report ⛔ GREEN. ⇒ checked after the store it would be decoration;
++		// checked before it, it is the only thing that can see the fault at all.
++		FString BeforeWrite;
++		if (SubstringBefore(*this, ApplyBody, TEXT("SetObjectPropertyValue("), BeforeWrite))
++		{
++			TestEqual(TEXT("🚨⛔⛔ THE MAP'S VALUE TYPE IS CHECKED **BEFORE** THE STORE — the engine's setter has no type check, so a wrong-typed store reads back as the very pointer it was given and verifies itself GREEN"),
++				CountOccurrencesInCode(BeforeWrite, TEXT("RequestedMaterial->IsA(MaterialValueProperty->PropertyClass)")), 1);
++			TestEqual(TEXT("⭐ …and nothing is read back before there is anything to read back"),
++				CountOccurrencesInCode(BeforeWrite, TEXT("GetObjectPropertyValue(")), 0);
++		}
++
++		// ⛔⛔ THE MESH IS NEVER TOUCHED FROM THE WRITE SIDE. The apply step runs BEFORE the mesh
++		// exists at all (construction is deferred), so any material read here would be a read of
++		// nothing — and would report a mismatch on every single cast, forever. The measurement
++		// lives in `VerifyFogVisualMaterial`, on the OTHER side of `FinishSpawning`.
++		TestEqual(TEXT("⭐⭐⭐ THE WRITE SIDE READS NO MESH — it runs before construction, so there is no mesh yet; measuring here would report a mismatch on every cast, forever"),
++			CountOccurrencesInCode(ApplyBody, TEXT("GetMaterial(")), 0);
++		TestEqual(TEXT("⭐⭐ …and it judges nothing about what is rendered — that comparison belongs on the far side of construction"),
++			CountOccurrencesInCode(ApplyBody, TEXT("FogVisualMaterialMatches(")), 0);
++
++		// ⛔ FIND, never FIND-OR-ADD. An add would MANUFACTURE the entry this function is supposed
++		// to be repointing, turning "the vendor no longer has that entry" into a silent success —
++		// and the readback would then happily confirm the value we had just invented.
++		TestEqual(TEXT("⛔⛔ The map entry is FOUND, never FIND-OR-ADDED — an add would manufacture the entry being repointed and turn a missing vendor field into a silent success"),
++			CountOccurrencesInCode(ApplyBody, TEXT("FindOrAdd")), 0);
++
++		// ⛔ The vendor's mode key is resolved BY NAME, never by ordinal. A hardcoded index would
++		// compile, would be right today, and would write the WRONG MODE's material the day the
++		// vendor reorders its list — silently, and only for 🧑 him to notice on pixels.
++		TestTrue(TEXT("⛔ The map key is resolved through the enum BY NAME — a hardcoded ordinal writes the wrong mode the day the vendor reorders its list"),
++			CountOccurrencesInCode(ApplyBody, TEXT("GetDisplayNameTextByIndex(")) >= 1
++			&& CountOccurrencesInCode(ApplyBody, TEXT("GetNameStringByIndex(")) >= 1);
++
++		// ⚠️⚠️ THE ERROR-SITE COUNT IS DECLARED IN THE OPEN, exactly as `TASK-1072` declared its move
++		// from 2 to 3 on the spawn body (`TL-§5b`). ⛔ These sites could have been hidden from any
++		// census by collapsing them into one generic "something went wrong" line — and a counter
++		// that names them is precisely what stops that. ⚠️ IT MOVED 5 ⇒ 6 UNDER `TASK-1166`: the
++		// old site (4) covered TWO different facts in one sentence, and *"still holds None AFTER
++		// BEING SET TO …"* described an attempt that never happened when the entry was absent.
++		// ⛔ A log line that misreports WHICH step failed sends the next reader to the wrong file.
++		// THE SIX, in order:
++		//   (1) the material asset would not load
++		//   (2) the vendor's material map is missing or is not a map of objects
++		//   (3) ⭐ the map's value type will not accept a UMaterialInterface — checked BEFORE the
++		//       store, because the engine's setter has none and a wrong-typed store self-verifies
++		//   (4) the vendor's mode entry no longer exists under that name
++		//   (5) ⭐ the map holds NO entry under that key ⇒ nothing was written (⛔ FIND, not
++		//       FIND-OR-ADD — manufacturing it would make a missing vendor field a silent success)
++		//   (6) ⭐ THE WRITE RETURNED AND CHANGED NOTHING — the measured `TASK-1154` failure
++		// ⛔ The seventh way the colour can fail — the mesh rendering something else — lives on the
++		// far side of construction and is counted in `VerifyFogVisualMaterial` below.
++		TestEqual(TEXT("⭐⭐ Every way the WRITE can fail is announced at Error level, six times — the load, the missing map, a value type that will not accept the material, the missing mode entry, a missing entry to repoint, and a write that did nothing. ⛔ A silent fall-through to the vendor's tint is the exact false-clean this row exists to end"),
++			CountOccurrencesInCode(ApplyBody, TEXT("LogGitClaudeUnrealTest, Error,")), 6);
++
++		// ⛔⛔ FIND, NOT FIND-OR-ADD, AND THE MISS IS ITS OWN BRANCH RATHER THAN A SKIPPED WRITE.
++		// The earlier shape wrote only `if (BaseEntryIndex != INDEX_NONE)` and then fell into the
++		// readback, so a missing entry was reported by a sentence about a write nobody attempted.
++		TestEqual(TEXT("⭐⭐ A MISSING MAP ENTRY IS ITS OWN LOUD BRANCH — not a skipped write reported by a sentence about an attempt that never happened"),
++			CountOccurrencesInCode(ApplyBody, TEXT("if (BaseEntryIndex == INDEX_NONE)")), 1);
++
++		// ⚖️ AND THE BOUNDARY OF "LOUD", RESTATED FOR THE NEW SITE: an ART failure may NEVER refuse
++		// a 50-gold card, consume-and-abort, or change one vision clamp. The fog stays up, it stays
++		// the vendor's warm tint, and the log says which step did not happen.
++		TestEqual(TEXT("⚖️ ⛔ The colour path never returns a refusal — it is void, and an art failure may NEVER brick a 50-gold card"),
++			CountOccurrencesInCode(ApplyBody, TEXT("return false")), 0);
++		TestEqual(TEXT("⚖️ ⛔ …and it never touches a fog deadline, so a failed colour cannot change one clamp"),
++			CountOccurrencesInCode(ApplyBody, TEXT("FogActiveUntilTimeSeconds")), 0);
++		TestEqual(TEXT("⛔ …and it learns nothing about fog STATE — IsFogActive() is still the one predicate, and the reconciler already asked it"),
++			CountOccurrencesInCode(ApplyBody, TEXT("IsFogActive()")), 0);
++
++		// ⛔ No asset literal of its own: it asks the one accessor, exactly as the spawn site asks
++		// FogVisualClassPath().
++		TestEqual(TEXT("⛔ The apply site holds no /Game/ literal of its own — it asks FogVisualMaterialPath()"),
++			CountOccurrencesInCode(ApplyBody, TEXT("/Game/")), 0);
++		TestTrue(TEXT("⭐ …and it really consults that one function"),
++			CountOccurrencesInCode(ApplyBody, TEXT("FogVisualMaterialPath()")) >= 1);
++	}
++
++	// ── ⭐⭐⭐ (c2) THE FAR SIDE OF CONSTRUCTION: WHAT THE MESH IS ACTUALLY WEARING ────────────
++	FString VerifyBody;
++	if (ExtractFunctionBody(*this, FogCpp, VerifyFogVisualMaterialSignature, VerifyBody))
++	{
++		// ⭐⭐⭐ EVERY MESH, EVERY SLOT — ⛔ NOT `FindComponentByClass` + element 0 (`TASK-1166`
++		// NIT-3). The vendor pack is content we do not own: the day it grows a second mesh
++		// component or a second material slot, a first-match-only probe judges whichever one the
++		// component array happened to hold first, ⛔ non-deterministically. ⛔ `GetMaterial(0)` is
++		// banned by shape here, not merely discouraged in a comment.
++		TestEqual(TEXT("⭐⭐⭐ THE READBACK WALKS EVERY MESH AND EVERY SLOT — a vendor that grows a second mesh or a second slot must not make this probe non-deterministic"),
++			CountOccurrencesInCode(VerifyBody, TEXT("GetNumMaterials()")), 1);
++		TestEqual(TEXT("⛔⛔ …so the hardcoded element 0 is GONE — `GetMaterial(0)` assumes a slot count nobody here owns"),
++			CountOccurrencesInCode(VerifyBody, TEXT("GetMaterial(0)")), 0);
++		TestEqual(TEXT("⭐ …and the slot index it does read is the loop's, exactly once"),
++			CountOccurrencesInCode(VerifyBody, TEXT("GetMaterial(SlotIndex)")), 1);
++
++		// ⛔ Unwrap ONLY the transient DYNAMIC instance. `MI_SiegeFog_Grey` is ITSELF a material
++		// instance, so unwrapping every UMaterialInstance would walk straight PAST the answer to
++		// the vendor's parent material and report a mismatch that is not there.
++		TestEqual(TEXT("⛔⛔ The unwrap stops at the DYNAMIC instance — unwrapping every UMaterialInstance walks past our own answer to the vendor's parent and reports a mismatch that is not there"),
++			CountOccurrencesInCode(VerifyBody, TEXT("Cast<UMaterialInstanceDynamic>(")), 1);
++
++		// ⭐⭐ A DISAGREEMENT IS COMPARED, NOT MERELY PRINTED — the scale twin's rule. ⛔ And the
++		// branch that FIRES is the mismatch: a match must stay silent, or the loud case stops
++		// meaning anything.
++		TestEqual(TEXT("⭐⭐ The achieved material is COMPARED against the requested one in code, exactly once"),
++			CountOccurrencesInCode(VerifyBody, TEXT("FogVisualMaterialMatches(FogVisualMaterialPath(), AchievedMaterialPath)")), 1);
++		TestEqual(TEXT("⭐⭐ …and the MISMATCH is the branch that fires — a match stays silent, or the loud case means nothing"),
++			CountOccurrencesInCode(VerifyBody, TEXT("if (!bWearingRequestedMaterial)")), 1);
++		TestEqual(TEXT("⭐⭐ …announced at Error level exactly once — this is the seventh way the colour can fail, and the only one that can see PIXELS-adjacent state"),
++			CountOccurrencesInCode(VerifyBody, TEXT("LogGitClaudeUnrealTest, Error,")), 1);
++
++		// ⚖️ THE BOUNDARY AGAIN, ON THE NEW SITE: an ART failure may NEVER refuse a 50-gold card,
++		// consume-and-abort, or change one vision clamp.
++		TestEqual(TEXT("⚖️ ⛔ The measurement never returns a refusal — it is void and const, and an art failure may NEVER brick a 50-gold card"),
++			CountOccurrencesInCode(VerifyBody, TEXT("return false")), 0);
++		TestEqual(TEXT("⚖️ ⛔ …and it never touches a fog deadline"),
++			CountOccurrencesInCode(VerifyBody, TEXT("FogActiveUntilTimeSeconds")), 0);
++
++		// ⛔ IT MUTATES NOTHING. A "measurement" that repaired what it found would be a second
++		// answer to which material the fog is wearing, and the mismatch Error would then be
++		// reporting a state it had itself just changed.
++		TestEqual(TEXT("⛔⛔ The measurement REPAIRS NOTHING — a readback that fixed what it found would be reporting a state it had itself just changed"),
++			CountOccurrencesInCode(VerifyBody, TEXT("SetObjectPropertyValue(")), 0);
++	}
++
++	TestEqual(TEXT("⭐⭐ The measurement has ONE call site, on the far side of construction"),
++		CountOccurrencesInCode(FogCpp, TEXT("VerifyFogVisualMaterial(Spawned);")), 1);
++	TestEqual(TEXT("⭐ …declared once on the owner, const, because it changes nothing"),
++		CountOccurrencesInCode(FogH, TEXT("void VerifyFogVisualMaterial(const AActor* Visual) const;")), 1);
++
++	// ── ⭐⭐ (d) ONE ASSET REFERENCE, AND THE VENDOR PACK IS NEVER NAMED ──────────────────────
++	FString MaterialPathBody;
++	if (ExtractFunctionBody(*this, FogCpp, FogVisualMaterialPathSignature, MaterialPathBody))
++	{
++		// ⚠️ TWO, not one — the `BP_SiegeFog` precedent above: a single soft-object literal spells
++		// the asset twice, once as the PACKAGE and once as the OBJECT inside it. The claim is "one
++		// literal", and this is what one literal counts as.
++		TestEqual(TEXT("⭐⭐ The grey material is named in exactly ONE path literal in the whole project, inside AFogVolume::FogVisualMaterialPath"),
++			CountOccurrencesInCode(MaterialPathBody, TEXT("MI_SiegeFog_Grey")), 2);
++	}
++
++	TestEqual(TEXT("⛔ The material's /Game/ path appears on CODE lines of FogVolume.cpp only inside that one literal"),
++		CountOccurrencesInCode(FogCpp, TEXT("/Game/Materials/Instances/MI_SiegeFog_Grey")), 1);
++	TestEqual(TEXT("⛔ …and never on a code line of the header (the header names it in PROSE only, which is where a design note belongs)"),
++		CountOccurrencesInCode(FogH, TEXT("MI_SiegeFog_Grey")), 0);
++
++	// ⛔⛔ THE VENDOR PACK IS READ-ONLY (`FOG-§6`), AND THIS IS THE EXECUTABLE FORM OF THAT FENCE:
++	// production code names ZERO paths inside it. The vendor material is a NEGATIVE fixture in
++	// test 10 and it may never become a positive one here.
++	TestEqual(TEXT("⛔⛔ FogVolume.cpp names NOTHING inside the read-only vendor pack — the grey arrives as OUR child material, never as an edit to theirs"),
++		CountOccurrencesInCode(FogCpp, TEXT("/Game/FogArea")), 0);
++
++	// ── ⭐ (e) THE DETECTOR IS A REACHABLE SEAM, not an inline expression ─────────────────────
++	// ⛔⛔ THIS IS WHY TEST 10 CAN EXIST AT ALL — the FogVisualScaleMatches precedent, and the same
++	// reasoning: the same comparison written inline at the apply site would be a check NO TEST
++	// COULD EVER RUN, which is the defect one layer up.
++	TestEqual(TEXT("⭐⭐ The material comparison is a PUBLIC STATIC SEAM a test can execute. ⛔ Inlined at the call site it would be a check nothing could ever run"),
++		CountOccurrencesInCode(FogH, TEXT("static bool FogVisualMaterialMatches(const FSoftObjectPath& RequestedMaterialPath, const FSoftObjectPath& AchievedMaterialPath);")), 1);
++	TestEqual(TEXT("⭐ …declared once, defined once"),
++		CountOccurrencesInCode(FogCpp, TEXT("bool AFogVolume::FogVisualMaterialMatches(")), 1);
++	TestEqual(TEXT("⭐⭐ The asset reference is a function a test can hold, not a literal at a call site"),
++		CountOccurrencesInCode(FogH, TEXT("static const FSoftObjectPath& FogVisualMaterialPath();")), 1);
++	TestEqual(TEXT("⭐ …declared once, defined once"),
++		CountOccurrencesInCode(FogCpp, TEXT("const FSoftObjectPath& AFogVolume::FogVisualMaterialPath()")), 1);
++
++	// ⛔ AND THE ROW'S STANDING FENCES SURVIVE IT: the colour readback stores NOTHING. It is read,
++	// compared, logged and dropped inside one function — the TObjectPtr handle stays the only thing
++	// this class remembers about the visual.
++	// ⚠️ THE NEEDLE CARRIES ITS SEMICOLON for the same reason the scale twin's does:
++	// `AchievedMaterialPath` appears in the header as a PARAMETER NAME, so a bare needle would
++	// assert nothing it means. `AchievedMaterialPath;` is the shape a MEMBER FIELD takes and a
++	// parameter list can never wear.
++	TestEqual(TEXT("⛔ The colour readback introduces NO stored state — it is read, compared, logged and dropped inside one function"),
++		CountOccurrencesInCode(FogH, TEXT("AchievedMaterialPath;")), 0);
++
++	// ⛔ The colour is applied in exactly one place, by exactly one caller. A second call site would
++	// be a second answer to "which material is the fog wearing", which is the shape FOG-§10.1's
++	// one-source rule forbids everywhere else in this class.
++	TestEqual(TEXT("⭐⭐ The colour has ONE application site and ONE caller — a second would be a second answer to which material the fog is wearing"),
++		CountOccurrencesInCode(FogCpp, TEXT("ApplyFogVisualMaterial(Spawned);")), 1);
++	TestEqual(TEXT("⭐ …declared once on the owner, which is where the visual's whole lifetime already lives"),
++		CountOccurrencesInCode(FogH, TEXT("void ApplyFogVisualMaterial(AActor* Visual);")), 1);
++
++	return true;
++}
++
+ #endif // WITH_DEV_AUTOMATION_TESTS

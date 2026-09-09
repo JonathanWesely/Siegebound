@@ -1,5 +1,15 @@
 # TASK-1154 — [FOGGREY-ART] — art-director handoff
 
+> 🚨🚨🚨 **ANNOTATION BANNER — added 2026-09-08 by the manager. `SC-§114` cl. 4 propagation discharge. NOT ONE WORD OF THIS AUTHOR'S TEXT HAS BEEN CHANGED, AND THAT IS DELIBERATE.**
+>
+> **What this file got wrong, in one line:** its §3 measured `general Data.base Color` as **inert on pixels** (pure red ⇒ B/G `0.890` vs baseline `0.891`) and its §4 concluded **the vendor Blueprint never transports the colour**. `TASK-1172` §1a re-ran the *identical single-variable flip* and measured **B/G `0.6908` / sat `72.56 %`** against a same-session baseline of `0.8461` / `19.64 %` — a violent change where this file scored zero. `TASK-1167` §4.3(ii) then measured the vendor script pushing **both** colours onto its MID, causally, in both directions. **The field was live the whole time. The colour that finally shipped went in through exactly the field this file reports as dead.**
+>
+> **Why the text below is preserved verbatim rather than corrected:** it is the honest record of what a competent agent, running a controlled-looking experiment, actually observed — and it is the *evidence* for `SC-§114` (the null-result law). Rewriting it would destroy the only artefact that shows how a false null looks from the inside: confident, well-instrumented, internally consistent, and closing a door. `SC-§97` cl. 4 — **strike in place, keep history, never silently rewrite.**
+>
+> **What this file is NOT:** it is not incompetent and it is not dishonest. It ran a decisive falsification test *on purpose* (§3's "a null result deserves a decisive test rather than a shrug"), it refused to save a Blueprint whose write it could not verify (§5), and it flagged its own mechanism as a lead rather than a finding (§3's last subsection). The defect is a **missing positive control on its own driver** — one write it was never asked for. **Cause still NOT diagnosed;** the only lead on file is a wrong-world write (`/Game/Maps/L_Arena…` vs `/Game/Maps/UEDPIE_0_L_Arena…` are separate objects with separate MIDs) and nobody has tested it.
+>
+> **Reader's rule:** ⛔ **nine sites below carry the falsified claim and each is annotated inline.** Every number in §1, §2, §4's *"the material's colour parameters are alive"* table, §4's value-tuning table, §5's tooling findings and §6's fences **STANDS and is still cited**. The live rulings are `FOG-§12.4b` (the channel) and `SC-§114` (the law this file bought).
+
 **Trigger verdict: EXECUTED, for the named asset-side contributor.** `handoffs/TASK-1151-artist.md` §2 carries `CAUSE — ASSET-SIDE ✅ (ask C)` and names it: `BP_SiegeFog` → `general Data.base Color`, then `(1, 1, 1, 1)`. Its ask-(C) `CAUSE — ENGINE-SIDE` section is **absent and measured absent**, and it says explicitly *"this is NOT a mixed cause"* ⇒ `TASK-1155` does not fire and this row runs alone.
 
 Date 2026-09-08 · editor PID **14120** · ran **second**, in the same session as `TASK-1152`, on the same `.uasset`, per the mandated order (uniformity first — a density change moves the perceived hue, so colour is judged on the final density).
@@ -36,6 +46,8 @@ B/G agrees to **0.006**. `TASK-1151` reported (190, 181, 162) / R/G 1.05 / B/G 0
 
 ## 3. 🚨🚨 THE NAMED CONTRIBUTOR IS REFUTED ON PIXELS — `base Color` IS INERT
 
+> ⛔ **CARRIER 1 of 9 — this heading. ANNOTATION (manager, 2026-09-08, `SC-§114`):** the heading's claim is **false**. `base Color` is not inert and was never refuted; it is the field the shipped fix uses. Correct label for everything under this heading: **`NOT MEASURED — NULL WITH NO POSITIVE CONTROL`.** Measurer of the contrary result: `TASK-1172` §1a.
+
 I applied the computed correction and measured the result. **It did nothing.**
 
 | `general Data.base Color` | far-field sRGB | R/G | B/G |
@@ -48,9 +60,13 @@ I applied the computed correction and measured the result. **It did nothing.**
 
 Four frames, two positions, two times: **B/G moved from 0.891 to 0.890–0.898 — inside the frame-to-frame noise of the unchanged fog.** No shift at all.
 
+> ⛔ **CARRIER 2 of 9 — the correction table and "No shift at all". ANNOTATION (manager, 2026-09-08, `SC-§114`):** the same correction shape, driven through the same field, later moved the render decisively (`TASK-1172`: `0.8461 ⇒ 0.9772` in the tuning rig; `TASK-1167` rev-2 independently `⇒ 0.9372` on the ship path). **The four frames above are real frames of a fog that never received the write.** Note the shape of the trap: the spread quoted here (`0.890–0.898`) is *genuine frame-to-frame noise*, which is exactly what a disconnected lever produces — and it reads as a competent noise estimate.
+
 ### The falsification, because a null result deserves a decisive test rather than a shrug
 
 A small tint producing a small effect could be a *weak* lever. So I set `base Color` to the most extreme value available — **pure red `(1, 0, 0)`**:
+
+> ⛔ **CARRIER 3 of 9 — the pure-red falsification. ANNOTATION (manager, 2026-09-08, `SC-§114`):** this instinct is **exactly right** and `SC-§114` cl. 3(a) now mandates it project-wide — *drive the lever to an absurd value*. What it lacked was the second half: **the absurd value must be shown to move the picture, and when it does not, the conclusion is "my apparatus is broken", not "the lever is dead."** No material in this engine is invariant to its own base colour. This exact flip re-run by `TASK-1172` §1a: **sRGB `(202.9, 80.6, 55.7)`, B/G `0.6908`, sat `72.56 %`.**
 
 | | far-field sRGB | R/G | B/G | contrast |
 |---|---|---|---|---|
@@ -61,6 +77,8 @@ A small tint producing a small effect could be a *weak* lever. So I set `base Co
 
 ⇒ **`BP_SiegeFog` → `general Data.base Color` does not reach the rendered image at all.**
 
+> ⛔ **CARRIER 4 of 9 — "renders EXACTLY the same beige" / "does not reach the rendered image at all". ANNOTATION (manager, 2026-09-08, `SC-§114`):** **FALSE, and this is the single sentence that cost the lane.** It reaches the rendered image; it is the channel the shipped colour travels on (`FOG-§12.4b`, `FOG-§12.5` pinned colour fields). "The property read back correctly every time" is not corroboration — a driver writing the wrong object also reads back perfectly (`SC-§112` cl. 6). This sentence was inherited by `TASK-1165` → `1166` → `1167`: a material built, a C++ change written, compiled, QA'd, gated and reverted unshipped, **to route around a field that worked.**
+
 ### What this means for `TASK-1151`'s finding — stated precisely, because the diagnosis was otherwise excellent
 
 `TASK-1151` C-1 said the fog's colour is *"`BaseColor` × light"* and concluded *"one change on `BP_SiegeFog.general Data.base Color` moves 100 % of it… No partial shift, no round trip."* That was an **inference from the material's parameter census, not a measurement** — the handoff is honest that its instrument was a property read-back, and `SC-§94`/`FIELD-§7` name exactly this failure mode: **a value that reads correct and renders wrong.**
@@ -69,7 +87,11 @@ A small tint producing a small effect could be a *weak* lever. So I set `base Co
 
 ⚠️ **What is NOT refuted:** everything `TASK-1151` measured stands — the hue is real (I reproduce B/G 0.902 against his 0.896), it is single-sourced, it arrives with the fog and not from the battlefield (my no-fog control reads green, B/G 0.53), and no vendor or map colour field carries it. Only the **prescribed lever** is refuted.
 
+> ⛔ **CARRIER 5 of 9 — "Only the prescribed lever is refuted". ANNOTATION (manager, 2026-09-08, `SC-§114`):** the *"what is NOT refuted"* list is **entirely correct and still cited** — the hue is real, single-sourced, arrives with the fog, and no vendor/map field carries it. **The one item this paragraph does assert is the one that is false.** `TASK-1151`'s prescribed lever was right from the first row; the lane spent three rows proving otherwise. Read this paragraph as: *nothing was refuted.*
+
 ### Why it is plausibly inert — recorded as a lead, NOT as a finding
+
+> ⛔ **CARRIER 6 of 9 — the `BLEND_Additive` explanation. ANNOTATION (manager, 2026-09-08, `SC-§114`):** the lead is **withdrawn as unneeded, not as disproven** — there is nothing to explain, because the field is not inert. ✅ **The discipline in this subsection is the best thing in the file and it is now law:** it refused to assert an unmeasured mechanism. ⚠️ **And note the shape of the danger anyway:** a *plausible* mechanism attached to a false null is what makes the null credible. `FOG-§12.4a`'s struck construction-timing paragraph was my version of the same move, and mine was worse — I put it in the law.
 
 `TASK-1151` §5 note 8 observed that `MI_FogArea_Box` reports `blendMode = BLEND_Additive`. An additive surface contributes what it **adds**; a diffuse albedo term has nothing to multiply. That is consistent with `base Color` being unused in the `Base` mode this fog runs in — but I did **not** trace the material graph to prove it, and I am not going to assert a mechanism I did not measure. ⛔ **Lead, not finding.**
 
@@ -77,6 +99,8 @@ A small tint producing a small effect could be a *weak* lever. So I set `base Co
 ---
 
 ## 4. ⭐⭐ THE MECHANISM, FOUND — the vendor Blueprint never transports the colour
+
+> ⛔ **CARRIER 7 of 9 — this heading. ANNOTATION (manager, 2026-09-08, `SC-§114` + `SC-§110`):** **the vendor Blueprint DOES transport the colour.** `TASK-1167` §4.3(ii) measured it causally: `generalData.baseColor → (1,0,0)` and `emissiveColor → (0,0.9,0)` moved the MID's two parameters to exactly those values, and restoring moved them back — **in both directions, on the live MID.** ✅ **The scalar half of the table below is correct and still cited** (`Density` · `Base Noise Size` · `Base Noise Sharpness` · `Wind Speed` · `Mask Margin`), and the `Wind Speed` row's `0.5 (×0.01)` reading is the measurement that later closed `NIT-8` (`FOG-§12.4c`). **Only the two colour rows are wrong.**
 
 A null result is only half an answer, so I opened the live actor and read what the material actually receives. `BP_SiegeFog` runs `material Mode = Dynamic`: it builds a **`MaterialInstanceDynamic`** (`MID_MI_FogArea_Box_0`) from `boxMaterials[Base]` and writes the struct into it. I read that MID's parameter arrays directly, **while the BP struct held values I had just set**:
 
@@ -92,6 +116,8 @@ A null result is only half an answer, so I opened the live actor and read what t
 
 ⇒ ⭐⭐ **The vendor Blueprint pushes every SCALAR from the struct into the material and pushes NO COLOUR at all.** The colour fields it exposes on `S_FogAreaGeneral` are decorative: they read back perfectly, they are never transported, and nothing anywhere reports it. That is why `base Color` was inert — not because the material ignores colour, but because **the value never arrives.**
 
+> ⛔ **CARRIER 8 of 9 — "pushes NO COLOUR at all" / "the colour fields … are decorative" / "the value never arrives". ANNOTATION (manager, 2026-09-08, `SC-§110` propagation site 1 + `SC-§114`):** **all three are false.** The construction script writes `Base Color` **and** `Emissive Color` onto its MID from `generalData` on every construction. The fields are not decorative — they are the **only** working colour channel this fog has, and `Box Materials["Base"]` (which §4 goes on to recommend) is honoured but **colour-incapable**, because those same two parameters are the entire authored content of any MI you put there. ⚠️ **The MID read of `(0.05,0.05,0.05)` recorded in the table above is a real read of a real MID — of an actor that never received the struct write.** This paragraph propagated to 5 board sites and 4 `CONVENTIONS.md` sites; all are now annotated or struck.
+
 ### And the material's colour parameters are alive — proven by writing them directly
 
 I wrote the MID's own parameters at runtime and captured:
@@ -102,7 +128,9 @@ I wrote the MID's own parameters at runtime and captured:
 | **`Emissive Color` = (0, 0, 1)** | (184.7, 171.7, **199.9**) | — | **1.164** |
 | **`Base Color` = (1, 0, 0)** | (193.8, **55.2**, 44.6) | 3.508 | — |
 
-Both parameters move the render violently. ⇒ **the material is fine; the transport is the defect.** And the two levers do *different* jobs, which the fix depends on:
+Both parameters move the render violently. ⇒ **the material is fine; the transport is the defect.**
+
+> ⛔ **CARRIER 9 of 9 — "the material is fine; the transport is the defect", and the "why it is an MI rather than a struct edit" subsection that follows it. ANNOTATION (manager, 2026-09-08, `SC-§114`):** ✅ *"The material is fine"* **stands** — twice-measured (`TASK-1167` lane C rendered `MI_SiegeFog_Grey` directly at `0.947`/`7.0 %`). ⛔ *"The transport is the defect"* is **refuted**, and with it the MI rationale below: **a struct edit was always the right shape, and the MI route could not have worked** — the vendor script overwrites both colour parameters on whatever MID it builds, so a MID built from `MI_SiegeFog_Grey` is parameter-identical to one built from the vendor material. `MI_SiegeFog_Grey` is **kept and demoted** to a value reference and positive control, **unreachable by design, wired to nothing, and nothing may wire it** (`FOG-§12.4b`). ⚠️ **Its two values were updated 2026-09-08 to the landed pair `(0.86,1,1)` / `(0.05,0.07,0.325)`, so the `(0.88,1,1)` / `(0.05,0.08,0.26)` pair recorded in §4 and §5 below is HISTORICAL** — as is the `0.947`/`7.0 %` render bound to it. **Both remain the correct record of what this row built.** And the two levers do *different* jobs, which the fix depends on:
 - **`Base Color` is multiplicative** — it can pull the red down (it cannot add blue: ×1.26 on B produced no change).
 - **`Emissive Color` is additive** — it is the only way to *add* blue, and it cannot subtract.
 
