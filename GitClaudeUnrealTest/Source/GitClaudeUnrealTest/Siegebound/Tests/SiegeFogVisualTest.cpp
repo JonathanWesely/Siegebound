@@ -130,6 +130,10 @@ namespace SiegeFogVisualFixture
 	const TCHAR* FogVisualClassPathSignature = TEXT("const FSoftClassPath& AFogVolume::FogVisualClassPath()");
 	const TCHAR* EndPlaySignature = TEXT("void AFogVolume::EndPlay(const EEndPlayReason::Type EndPlayReason)");
 
+	//~ ⭐⭐⭐ TASK-1147 — the integrity floor's pair. ⛔ A stale signature FAILS (`SC-§38`).
+	const TCHAR* EnforceFogRenderFloorSignature = TEXT("void AFogVolume::EnforceFogRenderFloor()");
+	const TCHAR* ReleaseFogRenderFloorSignature = TEXT("void AFogVolume::ReleaseFogRenderFloor()");
+
 	/** Reads a shipped project file. ⛔ A probe that cannot read its subject FAILS. */
 	static bool LoadProjectFile(FAutomationTestBase& Test, const TCHAR* RelativePath, FString& OutText)
 	{
@@ -1037,6 +1041,376 @@ bool FSiegeFogVisualAchievedTransformTest::RunTest(const FString& Parameters)
 		CountOccurrencesInCode(FogH, TEXT("AchievedScale3D;")), 0);
 	TestEqual(TEXT("⛔ …and IsFogActive() is still the one predicate: the spawn site learns nothing about fog STATE from a scale"),
 		CountOccurrencesInCode(SpawnBody, TEXT("IsFogActive()")), 0);
+
+	return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// ⭐ LANE A (EXECUTED) — TEST 8: THE INTEGRITY FLOOR'S RE-ENTRANCE GUARD (`TASK-1147`)
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+//
+// ⛔⛔⛔ THE DEFECT THIS TEST EXISTS FOR, AND THE BOARD NAMED IT AS THE MOST LIKELY BUG IN THE ROW:
+// `RefreshFogVisual()` runs on ⛔ EVERY raise, ⛔ EVERY refresh and ⛔ EVERY timer wake-up. A
+// second enforce that RE-CAPTURED would read back the ⛔ ALREADY-FLOORED machine and record ⛔ THE
+// FLOOR ITSELF as the player's own choice ⇒ the release would then "restore" the floor, i.e.
+// become a ⛔ PERMANENT NO-OP, silently ⛔ UPGRADING a Low-settings player's shadows for the rest
+// of his session, with ⛔ nothing in any log.
+//
+// ⭐⭐⭐ `SC-§104`: EVERY ROW BELOW ASSERTS ⛔ STATE — ⛔ WHICH VALUE IS HELD — AND ⛔ NEVER A TALLY.
+// A call count here is ⛔ EQUAL ON BOTH BRANCHES by construction: the fixed build and the broken
+// build both call the capture ⛔ TWICE. The only thing that differs is ⛔ WHAT IS IN IT.
+// ⚠️ AND THE ROWS THAT DO ⛔ NOT DISCRIMINATE ARE ⛔ LABELLED RATHER THAN QUIETLY COUNTED
+// (`SC-§104` cl. 5a): the FIRST capture is ⛔ IDENTICAL on both branches, so every assertion about
+// it is a ⛔ FIXTURE SELF-CHECK, not evidence. The ⭐ rows are the ⛔ SECOND capture.
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeFogRenderFloorGuardTest,
+	"Siegebound.Fog.TheIntegrityFloorCannotRecordItsOwnFlooredValuesAsThePlayersChoice",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeFogRenderFloorGuardTest::RunTest(const FString& Parameters)
+{
+	// ⭐ A PLAYER AT SHADOWS=LOW WHO ARRIVED THERE FROM EPIC. Two facts in one fixture, and both
+	// are the real shipped situation rather than round numbers:
+	//   • the switch reads 0 — [ShadowQuality@0] wrote it, and that IS the bug he can exploit;
+	//   • the GRID still reads the EPIC figures, because @0 and @1 never RESET the grid and
+	//     scalability applies only a section's own lines. That is the hysteresis the floor's grid
+	//     clause exists for, and it is what makes these numbers distinguishable from the floor's.
+	FFogRenderFloorObservation PlayerAtLow;
+	PlayerAtLow.VolumetricFogEnabled = 0;
+	PlayerAtLow.GridPixelSize = 8;
+	PlayerAtLow.GridSizeZ = 128;
+	PlayerAtLow.bHeightFogVolumetricEnabled = true;
+	PlayerAtLow.bHeightFogFound = true;
+
+	// ⛔ THE SAME MACHINE, ONE REFRESH LATER, WITH THE FLOOR ALREADY ON IT. This is exactly what a
+	// re-entrant enforce would read back — and recording it would be the defect.
+	FFogRenderFloorObservation TheFlooredMachine;
+	TheFlooredMachine.VolumetricFogEnabled = AFogVolume::FogRenderFloorVolumetricFogOn;
+	TheFlooredMachine.GridPixelSize = AFogVolume::FogRenderFloorGridPixelSize;
+	TheFlooredMachine.GridSizeZ = AFogVolume::FogRenderFloorGridSizeZ;
+	TheFlooredMachine.bHeightFogVolumetricEnabled = true;
+	TheFlooredMachine.bHeightFogFound = true;
+
+	// ⛔ THE FIXTURE IS ONLY MEANINGFUL IF THE TWO OBSERVATIONS DISAGREE. If a future edit made the
+	// floor's grid equal the Epic grid, every ⭐ row below would go green on both branches and this
+	// test would silently stop measuring anything — the exact SC-§104 disease, arriving through
+	// the fixture instead of through the assertion.
+	TestNotEqual(TEXT("FIXTURE SELF-CHECK: the player's switch and the floor's switch DIFFER, or nothing below discriminates"),
+		PlayerAtLow.VolumetricFogEnabled, TheFlooredMachine.VolumetricFogEnabled);
+	TestNotEqual(TEXT("FIXTURE SELF-CHECK: the hysteresis grid and the floor's grid DIFFER too"),
+		PlayerAtLow.GridPixelSize, TheFlooredMachine.GridPixelSize);
+
+	// ── ⭐⭐ (a) THE RELEASED STATE IS THE NOT-ENGAGED ONE ────────────────────────────────────
+	// ⛔ Not a tautology: a release that forgot to reset would leave the guard UP, and then the
+	// NEXT match's enforce would hit it and never floor at all — the exploit back, one match
+	// later, with a green suite and nothing in any log.
+	const FFogRenderFloorPriorState Released = AFogVolume::ReleasedFogRenderFloorState();
+	TestFalse(TEXT("⭐⭐ A released floor is NOT engaged — so the next match can floor again. ⛔ Leave the guard up and the fog stops being floored for the rest of the session"),
+		AFogVolume::IsFogRenderFloorEngaged(Released));
+
+	// ── (b) THE FIRST CAPTURE — ⚠️ FIXTURE SELF-CHECKS, NOT EVIDENCE ─────────────────────────
+	// ⛔ IDENTICAL ON BOTH BRANCHES of the guard mutation, and said so here rather than counted as
+	// a red: with or without the early return, the FIRST capture records the observation.
+	const FFogRenderFloorPriorState AfterFirst = AFogVolume::CaptureFogRenderFloorPriorState(Released, PlayerAtLow);
+	TestTrue(TEXT("FIXTURE SELF-CHECK (equal on both branches): the first enforce engages the floor"),
+		AFogVolume::IsFogRenderFloorEngaged(AfterFirst));
+	TestEqual(TEXT("FIXTURE SELF-CHECK (equal on both branches): the first enforce records the PLAYER's switch"),
+		AfterFirst.Observed.VolumetricFogEnabled, PlayerAtLow.VolumetricFogEnabled);
+	TestEqual(TEXT("FIXTURE SELF-CHECK (equal on both branches): …and the grid it actually found, hysteresis and all"),
+		AfterFirst.Observed.GridPixelSize, PlayerAtLow.GridPixelSize);
+
+	// ── ⭐⭐⭐ (c) THE SECOND CAPTURE — ⛔ THIS IS THE WHOLE TEST ─────────────────────────────
+	// ⛔ BOTH BRANCHES, COMPUTED (SC-§104 cl. 5a): FIXED holds 0 / 8 / 128 (the player's);
+	// BROKEN holds 1 / 16 / 64 (the floor's). ⛔ NOT EQUAL ⇒ these are genuine reds.
+	const FFogRenderFloorPriorState AfterSecond = AFogVolume::CaptureFogRenderFloorPriorState(AfterFirst, TheFlooredMachine);
+	TestEqual(TEXT("⭐⭐⭐ A SECOND enforce does NOT re-capture: the recorded switch is STILL the player's, never the floor's. ⛔ Broken, the release restores the FLOOR and silently upgrades a Low-settings player's shadows for the rest of his session"),
+		AfterSecond.Observed.VolumetricFogEnabled, PlayerAtLow.VolumetricFogEnabled);
+	TestEqual(TEXT("⭐⭐ …and the recorded GRID is still the one the player arrived with, not the one the floor wrote"),
+		AfterSecond.Observed.GridPixelSize, PlayerAtLow.GridPixelSize);
+	TestEqual(TEXT("⭐⭐ …on the Z axis too"),
+		AfterSecond.Observed.GridSizeZ, PlayerAtLow.GridSizeZ);
+
+	// ⛔ A THIRD, FOURTH AND FIFTH CALL CHANGE NOTHING EITHER. The reconciler really is re-entered
+	// many times per fog window (raise, refresh, BrightSun refusal, wake-up), so "idempotent" has
+	// to mean idempotent, not "survives exactly one repeat".
+	FFogRenderFloorPriorState Repeated = AfterSecond;
+	for (int32 Index = 0; Index < 3; ++Index)
+	{
+		Repeated = AFogVolume::CaptureFogRenderFloorPriorState(Repeated, TheFlooredMachine);
+	}
+	TestEqual(TEXT("⭐⭐ …and it is still the player's value after five enforces — 'idempotent' means idempotent, not 'survives one repeat'"),
+		Repeated.Observed.VolumetricFogEnabled, PlayerAtLow.VolumetricFogEnabled);
+
+	// ── ⭐⭐ (d) RELEASE THEN RE-ENGAGE — the NEXT match must capture AFRESH ──────────────────
+	// ⛔ BOTH BRANCHES, COMPUTED: FIXED records the machine's live 1; a release that failed to
+	// reset returns a still-engaged state whose Observed is the default 0. ⛔ NOT EQUAL ⇒ a red.
+	const FFogRenderFloorPriorState AfterReRaise =
+		AFogVolume::CaptureFogRenderFloorPriorState(AFogVolume::ReleasedFogRenderFloorState(), TheFlooredMachine);
+	TestEqual(TEXT("⭐⭐ After a release, the NEXT fog captures the machine AFRESH rather than reusing a stale record"),
+		AfterReRaise.Observed.VolumetricFogEnabled, TheFlooredMachine.VolumetricFogEnabled);
+	TestTrue(TEXT("⭐ …and it is engaged again"),
+		AFogVolume::IsFogRenderFloorEngaged(AfterReRaise));
+
+	// ── ⛔ (e) A COMPONENT NEVER OBSERVED IS NEVER INVENTED ──────────────────────────────────
+	// ⛔ Without bHeightFogFound, the default-constructed `false` beside it would look like a
+	// genuine reading and the release would TURN OFF a fog nobody had turned on.
+	FFogRenderFloorObservation NoHeightFog;
+	NoHeightFog.VolumetricFogEnabled = 0;
+	NoHeightFog.bHeightFogFound = false;
+	NoHeightFog.bHeightFogVolumetricEnabled = false;
+	const FFogRenderFloorPriorState WithoutComponent =
+		AFogVolume::CaptureFogRenderFloorPriorState(AFogVolume::ReleasedFogRenderFloorState(), NoHeightFog);
+	TestFalse(TEXT("⛔ A level with no height fog is RECORDED as such, so the release cannot write a component it never read"),
+		WithoutComponent.Observed.bHeightFogFound);
+	TestTrue(TEXT("⛔ …and it still engages, because the CVAR half of the floor is real either way"),
+		AFogVolume::IsFogRenderFloorEngaged(WithoutComponent));
+
+	// ── ⛔ (f) THE FLOOR'S GRID IS THE CHEAPEST ONE THE ENGINE SHIPS FOG ON ──────────────────
+	// ⛔ Asserted as the ENGINE DEFAULTS rather than as literals typed twice: [ShadowQuality@2]
+	// writes 16 / 64 and GVolumetricFogGridPixelSize / GVolumetricFogGridSizeZ default to the
+	// same pair. ⛔ A finer grid here charges the cheap-PC player GFX-§8 was written for; a
+	// coarser one thins a fog the army is 87.8% blind behind.
+	TestEqual(TEXT("⛔ The floor runs fog on the [ShadowQuality@2] grid — the cheapest the engine ships it on, and the engine's own default"),
+		AFogVolume::FogRenderFloorGridPixelSize, 16);
+	TestEqual(TEXT("⛔ …on Z as well"),
+		AFogVolume::FogRenderFloorGridSizeZ, 64);
+
+	return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠️ LANE B (SOURCE-TEXT) — TEST 9: the floor is CALLED, from the ONE reconciler, on BOTH branches
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+//
+// ⛔⛔ `SC-§83`'s ADDENDUM: WHEN A FIX HAS A HELPER AND A CALL SITE, AT LEAST ONE MUTATION TARGETS
+// THE CALL SITE. Test 8 proves the guard is CORRECT; it cannot prove the floor is ⛔ REACHED.
+// ⭐ This project has already shipped a built, integration-checked, committed asset with ⛔ ZERO
+// CALLERS while nothing failed (`SC-§36.1`, and it is the very defect the rest of this file
+// exists for) — so a mutation set that only breaks the callee cannot detect that state.
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeFogRenderFloorWiringTest,
+	"Siegebound.Fog.TheIntegrityFloorIsEngagedAndReleasedByTheOneReconcilerAndByNothingElse",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeFogRenderFloorWiringTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeFogVisualFixture;
+
+	FString FogCpp;
+	FString FogH;
+	if (!LoadProjectFile(*this, FogVolumeCpp, FogCpp) || !LoadProjectFile(*this, FogVolumeH, FogH))
+	{
+		return false;
+	}
+
+	// ── ⭐⭐⭐ (a) THE CALL SITES: ONE ENFORCE, AND ⛔ TWO RELEASES ─────────────────────────────
+	// ⛔ `FOG-§12.5`: the floor is TAKEN from the ONE reconciler and from NOWHERE ELSE — a second
+	// enforce site is a second source of truth for a fact that has one, the same rule that makes
+	// RefreshFogVisual the only function allowed to spawn the visual.
+	// ⛔⛔ THE RELEASE IS NOT SYMMETRIC WITH IT, AND THE ASYMMETRY IS THE FINDING (TASK-1148
+	// BLOCKER-1): what the enforce takes hold of is PROCESS-WIDE and OUTLIVES THIS ACTOR, so the
+	// release has to run on every way this actor can stop holding it — the reconciler's
+	// fog-is-down branch AND teardown. ⭐ That is the same two-site shape DestroyFogVisual()
+	// already has, for the same reason, and the release's own doc has always claimed it.
+	TestEqual(TEXT("⭐⭐⭐ THE FLOOR IS CALLED: exactly one EnforceFogRenderFloor() call in the whole file. ⛔ Delete it and the fog's PRESENCE goes back to being a graphics option, with every other test in this suite still green"),
+		CountOccurrencesInCode(FogCpp, TEXT("EnforceFogRenderFloor();")), 1);
+	TestEqual(TEXT("⭐⭐⭐ …and exactly TWO ReleaseFogRenderFloor() calls — the reconciler's down branch AND teardown. ⛔ 'A seam that can be entered and not left is HALF A SEAM': at ONE site, leaving a match with fog up strands the player's console variables at SetByCode for the whole PROCESS"),
+		CountOccurrencesInCode(FogCpp, TEXT("ReleaseFogRenderFloor();")), 2);
+
+	// ⭐⭐⭐ AND THE ANALOGY THE DECLARATION MAKES IS NOW EXECUTABLE. `FogVolume.h` says the release
+	// is called "exactly like DestroyFogVisual()" — this row is what stops that sentence being
+	// prose. ⛔ It reddens the day a THIRD way out of this actor is added and only one of the two
+	// is let go there, which is precisely how BLOCKER-1 arrived: an exit nobody enumerated.
+	TestEqual(TEXT("⭐⭐⭐ THE PAIRING IS THE RULE: the release has exactly as many call sites as the despawn. ⛔ A new way out that takes the box down and leaves the FLOOR up is the defect this row shipped with, one loop ago"),
+		CountOccurrencesInCode(FogCpp, TEXT("ReleaseFogRenderFloor();")),
+		CountOccurrencesInCode(FogCpp, TEXT("DestroyFogVisual();")));
+
+	// ── ⭐⭐⭐ (a2) TEARDOWN — THE SITE THE FIRST DRAFT MISSED ─────────────────────────────────
+	// ⛔ EndPlay is NOT a fourth exit from FOGGED: the state does not change there, its OWNER
+	// ceases to exist — and that is exactly why it must release. Teardown never reaches the
+	// reconciler, so nothing else can. ⛔ Reachable in the shipped game, not hypothetically:
+	// SessionMenuWidget's Back → USiegeSessionSubsystem::LeaveMatch() → an ABSOLUTE OpenLevel to
+	// L_MainMenu, with fog still up ⇒ EndPlay(LevelTransition). And L_MainMenu is the ONLY place
+	// the graphics panel is reachable, so the stranded pin lands exactly where the player acts.
+	FString EndPlayBody;
+	if (ExtractFunctionBody(*this, FogCpp, EndPlaySignature, EndPlayBody))
+	{
+		TestEqual(TEXT("⭐⭐⭐ TEARDOWN LETS THE FLOOR GO: exactly one ReleaseFogRenderFloor() in EndPlay. ⛔ Without it, leaving a match (or stopping PIE) with fog up pins r.VolumetricFog and both grid axes at SetByCode for the rest of the PROCESS — the player's Shadows slider silently refused at the main menu while the panel prints 'ambient fog OFF'. ⛔ INVISIBLE: no release runs, so no Error line exists"),
+			CountOccurrencesInCode(EndPlayBody, TEXT("ReleaseFogRenderFloor();")), 1);
+		TestEqual(TEXT("⭐⭐ …beside the despawn, in the same order as the fog-is-down branch (release, then destroy), so the two exit sites read the same way"),
+			CountOccurrencesInCode(EndPlayBody, TEXT("DestroyFogVisual();")), 1);
+
+		// ⛔ TEARDOWN HOLDS NO POLICY EITHER — it does not re-decide anything, it lets go. An
+		// EnforceFogRenderFloor() here would floor the cvars of a world that is dying, and a
+		// RefreshFogVisual() here would take the fog-is-UP branch and re-spawn during teardown.
+		TestEqual(TEXT("⛔ Teardown NEVER enforces — flooring a dying world's cvars is the leak with the sign flipped"),
+			CountOccurrencesInCode(EndPlayBody, TEXT("EnforceFogRenderFloor();")), 0);
+		TestEqual(TEXT("⛔ …and never calls the reconciler, which would take the fog-is-UP branch and re-spawn the box mid-teardown"),
+			CountOccurrencesInCode(EndPlayBody, TEXT("RefreshFogVisual();")), 0);
+	}
+
+	FString RefreshBody;
+	if (ExtractFunctionBody(*this, FogCpp, RefreshFogVisualSignature, RefreshBody))
+	{
+		// ⛔ …and both of those single calls are inside the ONE reconciler, not merely somewhere.
+		TestEqual(TEXT("⭐⭐ The enforce lives in the ONE reconciler"),
+			CountOccurrencesInCode(RefreshBody, TEXT("EnforceFogRenderFloor();")), 1);
+		TestEqual(TEXT("⭐⭐ …and so does the release"),
+			CountOccurrencesInCode(RefreshBody, TEXT("ReleaseFogRenderFloor();")), 1);
+
+		// ── ⭐⭐ (b) EACH ON ITS OWN BRANCH, AND THE ORDER IS THE CLAIM ──────────────────────
+		// ⛔ Both on the fog-is-up branch would mean the floor is never released; both on the
+		// fog-is-down branch would mean it is never engaged. BOTH COMPILE AND BOTH REVIEW CLEAN.
+		// ⇒ the release must appear BEFORE the enforce in the source, because the down-branch
+		// returns early — and the enforce must appear BEFORE the spawn, so the first frames of
+		// every fog render through an already-floored path.
+		FString BeforeEnforce;
+		if (SubstringBefore(*this, RefreshBody, TEXT("EnforceFogRenderFloor();"), BeforeEnforce))
+		{
+			TestEqual(TEXT("⭐⭐ THE RELEASE IS ON THE FOG-IS-DOWN BRANCH: it sits before the enforce, i.e. inside the early-returning !IsFogActive() block"),
+				CountOccurrencesInCode(BeforeEnforce, TEXT("ReleaseFogRenderFloor();")), 1);
+			TestEqual(TEXT("⭐ …and that branch really does return before reaching the enforce (the no-world guard plus the fog-is-down exit)"),
+				CountOccurrencesInCode(BeforeEnforce, TEXT("return;")), 2);
+			TestEqual(TEXT("⭐⭐ THE ENFORCE PRECEDES THE SPAWN — floored after the box exists would leave the first frames of every fog looking exactly like the bug, and those are the frames 🧑 he watches for the card to take effect"),
+				CountOccurrencesInCode(BeforeEnforce, TEXT("SpawnFogVisual();")), 0);
+			TestEqual(TEXT("⭐ …and the release really is paired with the despawn on that same branch"),
+				CountOccurrencesInCode(BeforeEnforce, TEXT("DestroyFogVisual();")), 1);
+		}
+
+		// ⛔ THE RECONCILER STILL DECIDES NOTHING ITSELF. It does not read the tunable, does not
+		// touch a console variable and does not know a cvar name — it calls the pair, exactly as
+		// it calls Spawn/Destroy. A floor spelled inline here would be a second policy site.
+		TestEqual(TEXT("⛔ The reconciler holds no floor POLICY — it never reads the tunable"),
+			CountOccurrencesInCode(RefreshBody, TEXT("bEnforceFogRenderFloor")), 0);
+		TestEqual(TEXT("⛔ …and never touches a console variable itself"),
+			CountOccurrencesInCode(RefreshBody, TEXT("IConsoleManager")), 0);
+	}
+
+	// ── ⭐⭐⭐ (c) THE RELEASE IS **NOT** GATED ON THE TUNABLE, AND THAT IS A REAL FINDING ────
+	// ⛔ If the release honoured bEnforceFogRenderFloor, flipping the switch off while the floor
+	// was HELD would STRAND the console variables at code priority FOREVER — killing the Shadows
+	// slider's effect on fog for the rest of the session, silently. ⇒ a release must always be
+	// able to let go of something an earlier enforce took. ⛔ The symmetry is the bug here.
+	FString ReleaseBody;
+	if (ExtractFunctionBody(*this, FogCpp, ReleaseFogRenderFloorSignature, ReleaseBody))
+	{
+		TestEqual(TEXT("⭐⭐⭐ THE RELEASE NEVER READS bEnforceFogRenderFloor. ⛔ Gate it and flipping the switch off mid-fog pins the player's console variables at code priority for the rest of the session, with nothing in any log"),
+			CountOccurrencesInCode(ReleaseBody, TEXT("bEnforceFogRenderFloor")), 0);
+
+		// ⭐⭐ UNSET, NOT A CAPTURED-LITERAL WRITE-BACK — the row's one substantive departure from
+		// the shape FOG-§12.5 sketched, and the reason is that a Set-based restore leaves the
+		// variable pinned at code priority forever after.
+		TestEqual(TEXT("⭐⭐⭐ The release UNSETS the code layer on all three floored variables. ⛔ Set(prior, ECVF_SetByCode) instead would PIN them at code priority forever and silently kill the Shadows slider's effect on fog"),
+			CountOccurrencesInCode(ReleaseBody, TEXT("Unset(ECVF_SetByCode)")), 3);
+		TestEqual(TEXT("⛔ …and it never writes a console variable back by value — that is the failure mode Unset was chosen over"),
+			CountOccurrencesInCode(ReleaseBody, TEXT("->Set(")), 0);
+
+		// ⛔ THE COMPONENT HALF IS THE ONE THING THAT MUST RESTORE A CAPTURED VALUE, because a
+		// map-actor property has no priority stack to fall back through — and it is guarded by
+		// the observation, so a component we never read is never written.
+		TestEqual(TEXT("⭐⭐ The component half restores the CAPTURED value, never a literal — a map-actor property has no priority stack to fall back through"),
+			CountOccurrencesInCode(ReleaseBody, TEXT("SetVolumetricFog(Prior.bHeightFogVolumetricEnabled)")), 1);
+		TestEqual(TEXT("⛔ …and only when one was actually observed. Without this guard the default-constructed false would look like a reading and TURN OFF a fog nobody turned on"),
+			CountOccurrencesInCode(ReleaseBody, TEXT("Prior.bHeightFogFound")), 1);
+
+		// ⛔ AND THE GUARD IS RESET, ON EVERY PATH OUT. A release that reported a failure and kept
+		// the guard up would make the NEXT match's enforce a no-op — one bad session becoming
+		// every session after it.
+		TestEqual(TEXT("⭐⭐ The guard is reset exactly once, outside both log branches, so a failure path cannot leave the floor 'engaged' forever"),
+			CountOccurrencesInCode(ReleaseBody, TEXT("FogRenderFloorPriorState = ReleasedFogRenderFloorState();")), 1);
+	}
+
+	// ── ⭐⭐ (d) THE ENFORCE READS BEFORE IT WRITES, AND READS BACK AFTER (`SC-§94` cl. B) ────
+	FString EnforceBody;
+	if (ExtractFunctionBody(*this, FogCpp, EnforceFogRenderFloorSignature, EnforceBody))
+	{
+		// ⛔ THE OBSERVATION IS TAKEN BEFORE ANY WRITE. Taken afterwards it would record the
+		// floor's own values — the same defect as a second capture, arriving through ordering
+		// rather than through re-entry, and invisible to test 8.
+		FString BeforeFirstWrite;
+		if (SubstringBefore(*this, EnforceBody, TEXT("->Set("), BeforeFirstWrite))
+		{
+			TestTrue(TEXT("⭐⭐⭐ THE READ HAPPENS BEFORE THE FIRST WRITE — a capture taken afterwards records the FLOOR's values, which is the row's defect arriving through ORDERING instead of through re-entry"),
+				CountOccurrencesInCode(BeforeFirstWrite, TEXT("Observed.VolumetricFogEnabled = ")) == 1
+				&& CountOccurrencesInCode(BeforeFirstWrite, TEXT("CaptureFogRenderFloorPriorState(")) == 1);
+		}
+
+		// ⛔ THE TRANSITION GOES THROUGH THE PURE FUNCTION. Spelled inline, the guard would be a
+		// check NO TEST COULD RUN — which is exactly what FogVisualScaleMatches exists to avoid,
+		// one function up.
+		TestEqual(TEXT("⭐⭐ The guard is the PURE function a test can execute, called exactly once — inlined here it would be a check nothing could ever run"),
+			CountOccurrencesInCode(EnforceBody, TEXT("CaptureFogRenderFloorPriorState(")), 1);
+
+		// ⭐⭐⭐ AND THE INSTRUMENT MEASURES THE MACHINE, NEVER THE REQUEST. This is the half that
+		// let the fog stay invisible for three of 🧑 his reports, one function down.
+		TestTrue(TEXT("⭐⭐⭐ THE INSTRUMENT: the enforce READS THE VALUES BACK off the console after writing them. ⛔ A log that echoed the request would report a floor that a higher-priority console write had defeated"),
+			CountOccurrencesInCode(EnforceBody, TEXT("AchievedVolumetricFog")) >= 2);
+		TestTrue(TEXT("⭐⭐ …and it reads the height-fog component back too — half a readback is the same bug with better odds"),
+			CountOccurrencesInCode(EnforceBody, TEXT("bAchievedHeightFogVolumetric")) >= 2);
+
+		// ⛔ THE GRID GOES WITH THE SWITCH. Without it the floor makes the CHEAPEST setting run the
+		// MOST EXPENSIVE fog, because [ShadowQuality@0]/@1 never reset the grid.
+		TestEqual(TEXT("⭐⭐ The grid is floored alongside the switch — three writes, not one. ⛔ Switch-only, an Epic→Low player keeps the EPIC froxel grid and the floor bills him for it"),
+			CountOccurrencesInCode(EnforceBody, TEXT("->Set(")), 3);
+
+		// ⚖️ AND THE BOUNDARY OF "LOUD", INHERITED FROM THE SPAWN PATH: an integrity floor that
+		// fails is REPORTED, never a refusal. It may not change one clamp, refuse a 50-gold card
+		// or touch a deadline.
+		TestEqual(TEXT("⚖️ ⛔ The floor never touches a fog deadline — a rendering failure may NEVER change one vision clamp"),
+			CountOccurrencesInCode(EnforceBody, TEXT("FogActiveUntilTimeSeconds")), 0);
+		TestEqual(TEXT("⚖️ ⛔ …and never asks whether fog is up: the reconciler already decided that, and re-asking would be a second predicate"),
+			CountOccurrencesInCode(EnforceBody, TEXT("IsFogActive()")), 0);
+	}
+
+	// ── ⭐ (e) THE SEAMS ARE REACHABLE, AND THE CVAR NAMES ARE WRITTEN ONCE ──────────────────
+	// ⛔ The FogVisualClassPath discipline applied to a console variable: a name typed at a call
+	// site is a name no test can hold.
+	TestEqual(TEXT("⭐⭐ The state transition is a PUBLIC STATIC SEAM a test can execute"),
+		CountOccurrencesInCode(FogH, TEXT("static FFogRenderFloorPriorState CaptureFogRenderFloorPriorState(")), 1);
+	TestEqual(TEXT("⭐ …declared once, defined once"),
+		CountOccurrencesInCode(FogCpp, TEXT("FFogRenderFloorPriorState AFogVolume::CaptureFogRenderFloorPriorState(")), 1);
+	// ⛔ THE CVAR NAMES HAVE EXACTLY ONE HOME EACH, and it is a definition rather than a call site —
+	// the FogVisualClassPath discipline applied to a console variable. ⛔ A name typed at a call
+	// site is a name no test can hold, and a mistyped one floors a variable that does not exist
+	// while every read-back below reports the machine it failed to change.
+	TestEqual(TEXT("⭐ The three floored cvar names are DECLARED in the header, once each (the SettingsSlotName house pattern)"),
+		CountOccurrencesInCode(FogH, TEXT("static const TCHAR* FogRenderFloorCVar")), 3);
+	TestEqual(TEXT("⭐ …and each string literal is written exactly once, in the implementation"),
+		CountOccurrencesInCode(FogCpp, TEXT("TEXT(\"r.VolumetricFog")), 3);
+	if (!EnforceBody.IsEmpty())
+	{
+		TestEqual(TEXT("⛔ The ENFORCE holds no cvar-name literal of its own — it asks the named constants"),
+			CountOccurrencesInCode(EnforceBody, TEXT("TEXT(\"r.VolumetricFog")), 0);
+	}
+	if (!ReleaseBody.IsEmpty())
+	{
+		TestEqual(TEXT("⛔ …and neither does the RELEASE, so the two halves can never disagree about WHICH variable they own"),
+			CountOccurrencesInCode(ReleaseBody, TEXT("TEXT(\"r.VolumetricFog")), 0);
+	}
+
+	// ⛔ THE THREE FORBIDDEN SHORTCUTS (`FOG-§12.2`), AS AN EXECUTABLE BAN. Each looks like the
+	// obvious fix and each is a blocker at the gate rather than a nit.
+	const TCHAR* ForbiddenShortcuts[] =
+	{
+		TEXT("MarkPackageDirty"),   // ⛔ (i) the map is NEVER saved (GFX-§11)
+		TEXT("SavePackage"),        // ⛔ (i) likewise
+		TEXT("GConfig"),            // ⛔ (ii) an ini line scalability would overwrite at every quality change
+		TEXT("SetQualityLevels"),   // ⛔ (iii) clamping the Shadows group charges the cheap-PC player for the whole match
+		TEXT("ScalabilityQuality"), // ⛔ (iii) likewise
+	};
+	for (const TCHAR* Shortcut : ForbiddenShortcuts)
+	{
+		TestEqual(FString::Printf(TEXT("⛔⛔ FOG-§12.2's forbidden shortcuts stay refused — no '%s' anywhere in FogVolume.cpp"), Shortcut),
+			CountOccurrencesInCode(FogCpp, Shortcut), 0);
+	}
+
+	// ⛔ AND THE FOG MECHANIC IS UNTOUCHED BY THIS ROW: the floor makes the VISUAL match the
+	// MECHANIC, it does not retune either. The clamp lives behind FSiegeFogStatics and this class
+	// still asks it nothing.
+	TestEqual(TEXT("⛔ The integrity floor never reaches the fog MECHANIC — zero FSiegeFogStatics anywhere in FogVolume.cpp"),
+		CountOccurrencesInCode(FogCpp, TEXT("FSiegeFogStatics")), 0);
 
 	return true;
 }

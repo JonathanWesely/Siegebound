@@ -69,6 +69,10 @@
  *     • the "applies at the NEXT match" notice appearing on a group whose lever
  *       is immediate, or missing from the one whose lever is deferred
  *     • the Shadow row's volumetric-fog line not tracking ShouldEnableVolumetricFog()
+ *     • ⭐⭐⭐ TASK-1147: the Shadow row's hint still telling the player that
+ *       LOWERING SHADOWS TURNS THE SIEGE FOG OFF — a sentence that went FALSE the
+ *       instant the integrity floor landed, and whose live cost is that it
+ *       ADVERTISES AN EXPLOIT (GFX-§12's honest-disclosure clause)
  *     • a null subsystem that crashes, or that disables Back
  *
  *  ⛔ THEY CANNOT DETECT — AND THESE RUNGS ARE OWED ELSEWHERE:
@@ -982,6 +986,35 @@ bool FSiegeGraphicsMenuFogHintTest::RunTest(const FString& Parameters)
 		FogOn, FogOff);
 	TestTrue(TEXT("Both wordings name the Low/Medium boundary the ENGINE owns"),
 		FogOn.Contains(TEXT("Low and Medium")) && FogOff.Contains(TEXT("Low and Medium")));
+
+	// ── ⭐⭐⭐ TASK-1147 / GFX-§12's HONEST-DISCLOSURE CLAUSE ────────────────────────────────
+	// ⛔⛔ THE OLD STRING WAS TRUE WHEN IT WAS WRITTEN AND WENT FALSE THE INSTANT THE INTEGRITY
+	// FLOOR LANDED. Verbatim, it said: "Also drives volumetric fog, which the engine turns OFF at
+	// Low and Medium." ⇒ after AFogVolume::EnforceFogRenderFloor(), the Fog card's SIEGE fog is
+	// floored from code and appears at EVERY Shadows level, so that sentence told the player the
+	// opposite of what the game now does.
+	// ⭐ THE HALF THAT STAYED TRUE is the world's AMBIENT height fog, which nothing floors outside
+	// a fog window ⇒ the shipped string must DISTINGUISH THE TWO rather than drop the clause.
+	// ⚠️ AND THIS IS WHY IT IS ASSERTED HERE RATHER THAN LEFT TO REVIEW: a menu that contradicts
+	// the game teaches the player that the menu lies (SC-§94 pointed at him, GFX-§7's
+	// learnability clause) — and nothing else in this suite reads the WORDS.
+	TestTrue(TEXT("⭐⭐⭐ TASK-1147: BOTH wordings say that LOWERING SHADOWS does not remove the siege fog. ⛔ The pre-floor string claimed the opposite, i.e. it ADVERTISED an exploit in the game's own menu, to the one population that would act on it"),
+		FogOn.Contains(TEXT("Lowering Shadows does not remove the Fog card's siege fog"))
+		&& FogOff.Contains(TEXT("Lowering Shadows does not remove the Fog card's siege fog")));
+	// 🚨⛔⛔ THE REASON IS REVERSED, THE GUARD IS NOT (TASK-1163, measurer TASK-1160). The struck
+	// description read: ~~"TASK-1151 measured that BP_SiegeFog is a raymarched TRANSLUCENT MESH,
+	// not a froxel participant, so what Effects/Textures do to it is a DIFFERENT and UNMEASURED
+	// question"~~ — refuted, because TASK-1160 measured the Shadows route DELETING BP_SiegeFog.
+	// ⛔ THE CONCLUSION SURVIVES ON A DIFFERENT GROUND AND THE PREDICATE BELOW IS BYTE-UNCHANGED:
+	// TASK-1160 measured ONLY the Shadows route, so the other nine quality groups are STILL
+	// unmeasured. ⇒ a menu sentence saying "every setting" would still be wider than the
+	// measurement behind it. TASK-1149 cl. (4-R)(ii) leans on this row holding.
+	TestFalse(TEXT("🚨⭐⭐ …and it does NOT claim anything about the other nine quality groups. ⛔ REASON REVERSED 2026-09-08 (TASK-1163), CONCLUSION UNCHANGED: TASK-1160 measured the SHADOWS route deleting BP_SiegeFog on pixels, so the old ground ('outside the froxel grid') is refuted — this guard now rests on the ground that SURVIVES, that only the Shadows route was measured and the OTHER NINE quality groups never were. ⛔ A menu sentence wider than the measurement behind it is the same defect this row is correcting, one draft later"),
+		FogOn.Contains(TEXT("every setting")) || FogOff.Contains(TEXT("every setting")));
+	TestTrue(TEXT("⭐⭐ …and the Low/Medium clause is scoped to the AMBIENT height fog, which is the half that is still true. ⛔ An unqualified 'volumetric fog' claim is the false sentence this row exists to correct"),
+		FogOn.Contains(TEXT("ambient volumetric fog")) && FogOff.Contains(TEXT("ambient volumetric fog")));
+	TestTrue(TEXT("⭐ The live readout tracks the AMBIENT fog specifically — the engine answer ShouldEnableVolumetricFog() still describes, and still correctly"),
+		FogOn.Contains(TEXT("ambient fog ON")) && FogOff.Contains(TEXT("ambient fog OFF")));
 
 	// ⭐ AND IT IS A REAL CALLER (SC-§36.1). ShouldEnableVolumetricFog() shipped in
 	// TASK-1113 with no consumer; GFX-§9 rules THIS PANEL its read-only one, so a
@@ -2014,6 +2047,47 @@ bool FSiegeGraphicsMenuCountdownTextTest::RunTest(const FString& Parameters)
  *  COMPLETE: moving ConstructGraphicsTree() below Super::RebuildWidget()
  *  (GFX-§2(c)) reddens NOTHING in this file. It is a three-line code read at
  *  RebuildWidget() and a QA criterion on TASK-1116.
+ *  ═════════════════════════════════════════════════════════════════════════
+ *
+ *  ═════════════════════════════════════════════════════════════════════════
+ *  ⭐⭐⭐ TASK-1147 [FOGFLOOR] — THE HINT THAT WENT FALSE (M23)
+ *
+ *  ⛔ ADDENDUM B FORM, and ⭐ SC-§104 cl. 5(a): the asserted value is computed on
+ *  BOTH branches below, because a row equal on both measures nothing.
+ *
+ *  M23 ⭐⭐⭐ Restore the PRE-FLOOR wording of ShadowHintFogOn/ShadowHintFogOff —
+ *      i.e. put back, verbatim, "Also drives volumetric fog, which the engine
+ *      turns OFF at Low and Medium. Currently: fog ON." (and "… fog OFF.").
+ *      ⇒ RED: ≥ 3 rows, INCLUDING ShadowHintTracksVolumetricFog's TASK-1147
+ *      rows — the "Lowering Shadows does not remove…" row, the "ambient
+ *      volumetric fog" row and the "ambient fog ON/OFF" row.
+ *      BOTH BRANCHES, COMPUTED: fixed = Contains(...) is TRUE on all three;
+ *      broken = FALSE on all three. ⛔ NOT EQUAL ⇒ each is a genuine red.
+ *      ⚠️ The FOURTH TASK-1147 row — the TestFalse on "every setting" — is
+ *      GREEN ON BOTH BRANCHES of M23 (the old strings do not contain that
+ *      phrase either) and is therefore ⛔ STRUCK from this prediction, per
+ *      SC-§104 cl. 5(a). It guards a DIFFERENT mutation, named M24 below.
+ *  M24 ⭐⭐ Widen the shipped hint from "Lowering Shadows does not remove…" to
+ *      "The Fog card's siege fog always appears at every setting" — the draft
+ *      this row wrote first and then withdrew.
+ *      ⇒ RED: ≥ 2 rows, INCLUDING the "every setting" TestFalse row AND the
+ *      "Lowering Shadows does not remove…" row.
+ *      BOTH BRANCHES, COMPUTED: fixed = Contains("every setting") is FALSE;
+ *      broken = TRUE. ⛔ NOT EQUAL ⇒ a genuine red.
+ *      ⛔ WHY IT IS WORTH A MUTATION OF ITS OWN: that sentence is a claim about
+ *      all TEN quality groups, and only the Shadows group has been measured
+ *      (TASK-1151 + handoffs/TASK-1147-programmer.md §0). ⛔ Replacing a false
+ *      menu sentence with a WIDER unproven one is this row's own failure mode.
+ *      ⚠️ STRUCK FROM THIS PREDICTION, and named rather than silently omitted:
+ *      the TestNotEqual row and the "Low and Medium" row. The OLD strings ALSO
+ *      differ from each other and ALSO contain "Low and Medium" ⇒ both rows are
+ *      GREEN ON BOTH BRANCHES and measure nothing about this mutation. That is
+ *      precisely why M10 above could never have caught the false sentence: it
+ *      tests that the line MOVES, never that it is TRUE.
+ *      ⛔ THE LIVE COST OF THIS MUTATION IS NOT COSMETIC: the pre-floor string
+ *      tells a competitive player, in the game's own menu, that dropping Shadows
+ *      turns the fog off — i.e. it ADVERTISES the exploit TASK-1147 closes, to
+ *      the one population that would act on it.
  *  ═════════════════════════════════════════════════════════════════════════
  */
 

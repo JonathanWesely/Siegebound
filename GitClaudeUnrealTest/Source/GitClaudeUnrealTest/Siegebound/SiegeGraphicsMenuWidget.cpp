@@ -150,12 +150,205 @@ namespace SiegeGraphicsMenuText
 	 *  in [ShadowQuality@N] (0 at @0 and @1; on with a graduated froxel grid from
 	 *  @2). Naming the coupling is the difference between "Shadows=Low killed my
 	 *  fog" reading as a bug and reading as the setting doing its job.
+	 *
+	 *  ⛔⛔ RE-WORDED 2026-09-08 (TASK-1147, GFX-§12's honest-disclosure clause),
+	 *  IN THE SAME COMMIT AS THE FLOOR ITSELF. The OLD text was, verbatim:
+	 *      "Also drives volumetric fog, which the engine turns OFF at Low and
+	 *       Medium. Currently: fog ON."   (and "… fog OFF." on the other branch)
+	 *  ⛔⛔ CORRECTED 2026-09-08 (TASK-1161, from TASK-1148 WARN-7). THESE LINES USED
+	 *  TO SAY that the old text "became FALSE the instant EnforceFogRenderFloor()
+	 *  landed, because the Fog card's SIEGE fog is now floored from code at
+	 *  ECVF_SetByCode and appears at EVERY Shadows level". ⛔ THAT WAS FALSE TWICE:
+	 *    (a) ~~⛔ THE FLOOR DOES NOT REACH THE CARD'S FOG. It pins r.VolumetricFog and
+	 *        the two froxel-grid cvars at ECVF_SetByCode and forces the height-fog
+	 *        component's own bEnableVolumetricFog on (FogVolume.cpp:1004-1019) ⇒ what
+	 *        it holds up is the world's AMBIENT ExponentialHeightFog. BP_SiegeFog is a
+	 *        raymarched translucent mesh OUTSIDE the froxel grid, so no variable in
+	 *        that set governs it — which is exactly what the "What IS established"
+	 *        paragraph at :196-202 below says correctly, a few lines further down.~~
+	 *        🚨⛔⛔⛔ REVERSED 2026-09-08 (TASK-1162). STRUCK IN PLACE, NEVER SILENTLY
+	 *        DELETED: A COMMENT THAT RECORDS ITS OWN REVERSAL TEACHES THE NEXT READER
+	 *        THAT THIS QUESTION IS HARD; A CLEAN ONE TEACHES HIM IT WAS OBVIOUS, AND HE
+	 *        WILL MAKE THE SAME INFERENCE AGAIN. ⚠️ TASK-1161 WAS NOT SLOPPY — the
+	 *        struck premise was this project's best-supported position and a gate ruled
+	 *        it sound. Then TASK-1160 PUT A CAMERA ON IT, THE SAME DAY.
+	 *        ⛔ THE MEASUREMENT (handoffs/TASK-1160-artist.md §3-§4, 5 promoted PNGs at
+	 *        playtest-evidence/2026-09-08/): with a Fog card's BP_SiegeFog up and
+	 *        Shadows at LOW, THE CARD'S FOG DOES NOT RENDER — the frame IS the no-fog
+	 *        frame to within 0.2 % (far-field RGB 193→104, contrast 0.4-10 → 19.5,
+	 *        featureless 70-100 % → 2.4 %), and ground visibility goes from ≤464 uu to
+	 *        NO COLLAPSE ANYWHERE (enemy castle legible at ~43,000 uu) ⇒ a ≈93× lower
+	 *        bound against the ≈650 uu he asked for.
+	 *        ⭐ WHAT REPLACES THE STRUCK TEXT: (i) EnforceFogRenderFloor() pins
+	 *        r.VolumetricFog plus the two froxel-grid axes at ECVF_SetByCode
+	 *        (FogVolume.cpp:1004-1019); (ii) TASK-1160's 2×2 held Shadows FIXED IN BOTH
+	 *        DIRECTIONS and isolated the effect to that ONE cvar — EPIC + forced
+	 *        r.VolumetricFog 0 ⇒ the card's fog GONE; LOW + forced r.VolumetricFog 1 ⇒
+	 *        the card's fog BACK ⇒ the effect tracks r.VolumetricFog and is INDEPENDENT
+	 *        of sg.ShadowQuality; ⇒ (iii) THE FLOOR REACHES THE CARD'S FOG AND IS THE
+	 *        FIX FOR THE DEMONSTRATED EXPLOIT — not defensive depth over a different
+	 *        fog. TASK-1160's row D is a hand-simulation of this floor (Shadows at Low,
+	 *        cvar held at 1) and it restores the wash completely.
+	 *        ⚠️ (iv) AND THE HONEST BOUND: THE MECHANISM IS ISOLATED TO THE CVAR; THE
+	 *        COUPLING HAS NOT YET BEEN READ AT THE MATERIAL. ⛔ Do NOT write "because
+	 *        bUsedWithVolumetricFog" — that is a candidate NOBODY HAS OPENED, and
+	 *        starting a NEW unmeasured claim inside the fix for an OLD one is the exact
+	 *        defect this strike exists to remove (SC-§97).
+	 *        ⛔ The struck cross-reference ":196-202" is kept VERBATIM as struck
+	 *        history; that paragraph has since MOVED and now carries this same
+	 *        reversal — find it by its opening words, "What IS established".
+	 *    (b) ~~⛔ The old text never governed the card's fog in the first place, so
+	 *        nothing the floor did could have falsified it.~~
+	 *        ⚠️ ~~FLAGGED 2026-09-08 (TASK-1162), NOT REWRITTEN: (b) rests on the SAME
+	 *        refuted premise as (a) — if r.VolumetricFog drives BOTH fogs, then the old
+	 *        text's unqualified "volumetric fog" DID cover the card's, and the floor
+	 *        DOES bear on it. ⛔ TASK-1162's row names only (a) and the two paragraphs
+	 *        below, so I struck those and left (b) standing with this flag rather than
+	 *        adjudicate an unnamed sentence. ⇒ ROUTED TO THE MANAGER (SC-§82).~~
+	 *        🚨⛔⛔ STRUCK 2026-09-08 (TASK-1163) — THE FLAG WAS RIGHT AND THE MANAGER
+	 *        ADJUDICATED IT: (b) falls for exactly the reason the flag gave. MEASURER
+	 *        TASK-1160. ⭐ The flagging itself was CORRECT RESTRAINT (SC-§82/SC-§101),
+	 *        not a miss — TASK-1162's row named only (a), so naming (b) was the
+	 *        manager's to do, and this row is that naming.
+	 *    (b-R) ✅ WHAT REPLACES IT: r.VolumetricFog drives BOTH fogs, so the old text's
+	 *        unqualified "volumetric fog" DID cover the card's, and the floor DOES bear
+	 *        on it. Nothing about the old sentence was out of scope.
+	 *  ~~⭐ WHAT WAS ACTUALLY WRONG WITH THE OLD TEXT IS ITS NOUN: "volumetric fog",
+	 *  unqualified, on a panel a player reaches having just watched a Fog card's wash
+	 *  roll over the field — he reads it as the fog HE CAN SEE and concludes that
+	 *  Shadows=Low will delete it. This is a SCOPING repair, not the repair of a lie.~~
+	 *  🚨⛔⛔⭐⭐⭐ STRUCK 2026-09-08 (TASK-1163) — IT FELL WITH (b), WHICH WAS ITS ONLY
+	 *  SUPPORT: "a SCOPING repair" only makes sense if the old noun was too WIDE, and it
+	 *  was not. ⭐ THE REPLACEMENT, AND IT IS THE SHARPEST SENTENCE IN THIS LANE:
+	 *  THE OLD MENU STRING WAS NOT A LIE. It said "drives volumetric fog, which the
+	 *  engine turns OFF at Low and Medium", and that was ACCURATE — AND ITS ACCURACY WAS
+	 *  THE BUG. It correctly told the player how to TURN THE FOG OFF.
+	 *  ⇒ the repair was NEITHER a scoping fix NOR the correction of a lie: it REMOVED A
+	 *  TRUE SENTENCE WHOSE TRUTH WAS THE DEFECT, and then EnforceFogRenderFloor() MADE
+	 *  THE NEW SENTENCE TRUE. The string and the floor are one change in two files.
+	 *  ⛔ THE SUITE ALREADY SAID THIS IN PLAIN WORDS AND IT IS CITED, NOT RE-DERIVED —
+	 *  Tests/SiegeGraphicsMenuTest.cpp:1001: the pre-floor string "ADVERTISED an exploit
+	 *  in the game's own menu, to the one population that would act on it".
+	 *  ~~⛔⛔ AND THE CARD'S HALF IS STILL OPEN: no measured route deletes BP_SiegeFog
+	 *  (FOG-§12.1 AS CORRECTED; TASK-1147's 28-package scan, ruled sound by TASK-1148)
+	 *  and no frame of this game has ever been captured at Shadows=Low with a card up
+	 *  (TASK-1160) ⇒ the reported exploit is UNEXPLAINED — ⛔ NOT confirmed, ⛔ NOT
+	 *  refuted, ⛔ NOT CLOSED. ⛔ NO COMMIT MESSAGE, ROW, HANDOFF OR SLACK POST MAY
+	 *  SOURCE A "the exploit is fixed" SENTENCE FROM THIS BLOCK.~~
+	 *  🚨⛔⛔ SUPERSEDED 2026-09-08 (TASK-1162), MEASURER TASK-1160 — THE FRAME NOW
+	 *  EXISTS AND THE VERDICT FLIPPED: the exploit is DEMONSTRATED, not unexplained
+	 *  (FOG-§12.1 as corrected a SECOND time the same day; GFX-§9's reversal bullet).
+	 *  ⭐ WHAT SURVIVES THE STRIKE, INTACT AND IMPORTANT: TASK-1147's 28-package scan
+	 *  was NOT wrong. It enumerated DetailMode / QualitySwitch / draw-distance routes
+	 *  and correctly found NONE — the route was a FOURTH KIND NOBODY ENUMERATED. ⇒ an
+	 *  exhaustive search of an INCOMPLETE LIST is still an incomplete search, and its
+	 *  rigour is exactly what makes it read as exhaustive.
+	 *  🚨⛔ AND THE PROHIBITION IS NOT LIFTED, ONLY NARROWED — READ THE DIFFERENCE
+	 *  BEFORE COPYING A SENTENCE OUT OF HERE. A commit MAY now say "the floor is the
+	 *  fix for the demonstrated exploit". ⛔ NOTHING MAY SAY ASK (A) IS CLOSED. SEVEN
+	 *  conditions remain UNTESTED: (1) r.SceneColorFormat and (2)
+	 *  r.TranslucencyLightingVolume INDIVIDUALLY — the Effects GROUP is refuted only
+	 *  because [EffectsQuality@0] never moved either one in this project's config, so
+	 *  those two CVARS ARE NOT; (3) Shadows = MEDIUM (expected identical; expectation
+	 *  is not measurement); (4) the shipped MENU path (MCP has no input lane — only he
+	 *  can walk it, TASK-1159 cl. 1); (5) a PACKAGED build; (6) FRAME TIME, so nothing
+	 *  here says what the floor COSTS; (7) the material-level WHY. ⇒ ASK (A) NARROWS,
+	 *  IT DOES NOT CLOSE, AND HE CLOSES IT ON TASK-1159 — NOT FROM THIS FILE.
+	 *  ⭐ THE OLD TEXT stays TRUE of the world's AMBIENT height fog, which nothing
+	 *  floors outside a fog window ⇒ THE NEW STRING DISTINGUISHES THE TWO. A string that
+	 *  simply dropped the fog clause would have been honest and useless; a string
+	 *  left as it was would teach the player that the menu lies, which is SC-§94
+	 *  pointed at him and exactly what GFX-§7's learnability clause forbids.
+	 *  ⛔ ShouldEnableVolumetricFog() and its test VolumetricFogFollowsShadowNotEffects
+	 *  STAY: they describe the ENGINE, and the engine is unchanged. What changed is
+	 *  what that answer MEANS to a player, which is a sentence, not a predicate.
+	 *
+	 *  🚨⛔⛔ AND THE CLAIM IS SCOPED TO **SHADOWS**, DELIBERATELY AND NARROWLY —
+	 *  read handoffs/TASK-1147-programmer.md §0 before widening it. An earlier
+	 *  draft of this string said the siege fog "always appears at every setting",
+	 *  and that is a claim about all TEN quality groups that NOBODY HAS MEASURED.
+	 *  ⛔ Writing it would have replaced one false menu sentence with another —
+	 *  the exact failure this correction exists to fix, one draft later.
+	 *  ~~⭐ What IS established, and what this string therefore says: the Fog card's
+	 *  visual is BP_SiegeFog, a raymarched TRANSLUCENT MESH and NOT a froxel
+	 *  participant (TASK-1151, on pixels + a node census), so r.VolumetricFog —
+	 *  the one cvar the Shadows group owns here — does not govern it; and the
+	 *  AMBIENT half is floored from code while a fog is up
+	 *  (AFogVolume::EnforceFogRenderFloor). Both halves of the Shadows row are
+	 *  therefore covered, and no other row's is claimed.~~
+	 *  🚨⛔⛔ SUPERSEDED 2026-09-08 (TASK-1162), MEASURER TASK-1160 — AND STRUCK EVEN
+	 *  THOUGH NO GATE NAMED IT: TASK-1161 rewrote the block above to AGREE with this
+	 *  paragraph, so repairing only the half a gate named would leave this block
+	 *  SELF-CONTRADICTORY AGAIN, which is the very defect TASK-1161 existed to remove.
+	 *  ⭐ WHAT IS STILL TRUE IN IT: TASK-1151's node census stands as a DESCRIPTION OF
+	 *  THE ASSET — BP_SiegeFog is a raymarched translucent mesh and it is not a froxel
+	 *  participant. ⛔ WHAT WAS FALSE IS THE INFERENCE DRAWN FROM IT: being outside the
+	 *  froxel grid does NOT mean r.VolumetricFog leaves it alone. TASK-1160 measured
+	 *  that r.VolumetricFog ALONE decides whether BP_SiegeFog renders, with
+	 *  sg.ShadowQuality held fixed in BOTH directions.
+	 *  ⇒ ⭐ WHAT IS ESTABLISHED NOW, AND WHAT THIS STRING THEREFORE SAYS: ONE cvar
+	 *  governs BOTH fogs — the world's ambient froxel term AND the Fog card's mesh — so
+	 *  ONE floor (AFogVolume::EnforceFogRenderFloor) covers both halves of the Shadows
+	 *  row while a fog is up, and no other row's is claimed. ⚠️ THE MECHANISM IS
+	 *  ISOLATED TO THE CVAR; THE COUPLING HAS NOT YET BEEN READ AT THE MATERIAL.
+	 *  ⚖️ AND THE LESSON, WRITTEN WHERE THE MISTAKE WAS MADE: a CORRECT census of a
+	 *  material graph did not license a conclusion about what DELETES the thing it
+	 *  described. The census was right; the inference was not.
+	 *
+	 *  ⚠️⚠️ THE TWO FALSIFIERS OF THIS STRING, WRITTEN HERE RATHER THAN ONLY IN A
+	 *  HANDOFF, BECAUSE THIS IS WHERE THE SENTENCE LIVES (TASK-1148 WARN-1/WARN-6):
+	 *    (1) ~~⛔ "Lowering Shadows does not remove the Fog card's siege fog" is a
+	 *        claim to the PLAYER about a RENDERED OUTCOME, and NO FRAME OF THIS GAME
+	 *        HAS EVER BEEN CAPTURED AT SHADOWS=LOW WITH A FOG CARD UP. It rests on
+	 *        TASK-1151's node census plus pixels of the AMBIENT system. ⇒ if the
+	 *        capture owed to TASK-1149 shows the wash dying at Shadows=0, THIS
+	 *        SENTENCE IS FALSE and must be corrected in the same action — one false
+	 *        menu string replaced by another is this row's own failure mode.
+	 *        ⛔ TAKING THAT CAPTURE REQUIRES DEFEATING THE FLOOR ON PURPOSE
+	 *        (r.VolumetricFog 0 from the console outranks SetByCode) — otherwise the
+	 *        wash survives whether or not the exploit exists. See FogVolume.cpp.~~
+	 *        🚨⛔⛔⛔ THIS FALSIFIER FIRED 2026-09-08. TASK-1160 TOOK THE FRAME AND THE
+	 *        WASH DID DIE AT Shadows=LOW. ⭐ THE STRING SURVIVES ANYWAY, AND WHY IT
+	 *        SURVIVES IS THE MOST IMPORTANT SENTENCE BESIDE IT (TASK-1162 cl. 4):
+	 *        ⛔⛔ THE STRING IS TRUE **POST-FLOOR**, AND TRUE **ONLY BECAUSE
+	 *        EnforceFogRenderFloor() HOLDS r.VolumetricFog UP.** TASK-1160's row D is
+	 *        the hand-simulation of exactly that: Shadows at LOW with the cvar pinned
+	 *        at 1, and the card's fog renders in full.
+	 *        ⇒ 🚨 IF EnforceFogRenderFloor() IS EVER REVERTED, DISABLED
+	 *        (bEnableFogRenderFloor) OR OUT-RANKED (a console r.VolumetricFog 0 beats
+	 *        ECVF_SetByCode), THIS USER-FACING STRING BECOMES A LIE TO THE PLAYER —
+	 *        and that is MEASURED, not feared: pre-floor, at Shadows=Low, the card's
+	 *        fog is GONE and the frame is the no-fog frame to within 0.2 %.
+	 *        ⛔ SO THE STRING AND THE FLOOR SHIP TOGETHER AND REVERT TOGETHER. Anyone
+	 *        deleting or disabling the floor MUST delete this sentence in the SAME
+	 *        ACTION, exactly as this row deleted the premise it was justified on.
+	 *        ⚠️ TASK-1161 §5 RULED THIS STRING DEFENSIBLE AND THE RULING STANDS — BUT
+	 *        ITS REASON (3) IS REFUTED: it said the rule holds "because BP_SiegeFog is
+	 *        NOT a froxel participant, NOT because the floor protects it". THAT IS
+	 *        EXACTLY BACKWARDS. ⚖️ A CORRECT CONCLUSION FROM REFUTED PREMISES IS STILL
+	 *        A DEFECT, BECAUSE THE PREMISE IS WHAT THE NEXT CHANGE WILL BE REASONED
+	 *        FROM. ⛔ THE STRING ITSELF IS UNTOUCHED AND BYTE-IDENTICAL — cl. 4 is a
+	 *        RULING, not an edit.
+	 *        ⛔ ON THE STRUCK "REQUIRES DEFEATING THE FLOOR" LINE: it was FALSE FOR
+	 *        TASK-1160 AND IT IS TRUE FROM NOW ON. That capture ran on a PRE-floor
+	 *        binary (DLL built 09-08 01:32:13, FogVolume.cpp written 12 h 43 m later,
+	 *        zero Live Coding patches — and sg.ShadowQuality 0 DID drive
+	 *        r.VolumetricFog to 0, which a floored binary would have refused), so no
+	 *        defeat was needed. ⛔ ANY RE-CAPTURE AFTER TASK-1149 SHIPS DOES NEED THE
+	 *        DELIBERATE DEFEAT.
+	 *    (2) ⛔ The FIRST clause ("which the engine turns OFF at Low and Medium") is
+	 *        momentarily FALSE while a fog window is up, because the floor forces it
+	 *        ON. That is harmless TODAY for a measured reason: the panel is
+	 *        unreachable during a match (TASK-1146 cl. 3), so the clause is true at
+	 *        every instant a player can read it. ⛔ It goes false the day an in-match
+	 *        Settings entry ships — the same day named at FogVolume.cpp's scope
+	 *        deletion — and this string must then say "except while siege fog is up".
 	 */
 	static const TCHAR* ShadowHintFogOn =
-		TEXT("Also drives volumetric fog, which the engine turns OFF at Low and Medium. Currently: fog ON.");
+		TEXT("Also drives the world's ambient volumetric fog, which the engine turns OFF at Low and Medium. Currently: ambient fog ON. Lowering Shadows does not remove the Fog card's siege fog — its presence is a gameplay rule, not a graphics option.");
 
 	static const TCHAR* ShadowHintFogOff =
-		TEXT("Also drives volumetric fog, which the engine turns OFF at Low and Medium. Currently: fog OFF.");
+		TEXT("Also drives the world's ambient volumetric fog, which the engine turns OFF at Low and Medium. Currently: ambient fog OFF. Lowering Shadows does not remove the Fog card's siege fog — its presence is a gameplay rule, not a graphics option.");
 
 	/**
 	 *  ⛔ board cl. (5) / GFX-§9's "CONSEQUENCE THE UI MUST STATE IN WORDS".

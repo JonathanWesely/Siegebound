@@ -10,6 +10,76 @@
 #include "FogVolume.generated.h"
 
 /**
+ *  ⭐⭐ **WHAT THE MACHINE WAS FOUND HOLDING** — read back ⛔ BEFORE the integrity floor's first
+ *  write (`TASK-1147`, `GFX-§12`, `FOG-§12.2`). ⛔ Plain struct, ⛔ never a `USTRUCT`: it is
+ *  in-memory bookkeeping for one fog window and it must ⛔ never be serialised into anything.
+ *
+ *  ⚠️ IT IS THE ⛔ EXTENSION POINT, AND THAT IS DELIBERATE. `FOG-§12.2`'s sequencing law says
+ *  `TASK-1147` builds the seam and any later engine-side fog row ⛔ REUSES it: a new value is
+ *  ⛔ CAPTURED HERE and restored by the same discipline — ⛔ never by a second actor, a second
+ *  subsystem or a second reconciler.
+ *  ⚠️ STATUS, RECORDED SO NOBODY WAITS FOR A CALLER THAT IS NOT COMING: `TASK-1153` and
+ *  `TASK-1155` were the two rows written to reuse this, and ⛔ BOTH WERE CLOSED UNFIRED by
+ *  `TASK-1151`, which measured on pixels that the `ExponentialHeightFog` contributes ≈ 0 at the
+ *  player's vantage and that the siege fog's look is entirely `BP_SiegeFog`'s. ⇒ this struct has
+ *  ⛔ EXACTLY ONE consumer today, and that is the honest count.
+ */
+struct FFogRenderFloorObservation
+{
+	/** `r.VolumetricFog` as the console reported it before the floor wrote anything. */
+	int32 VolumetricFogEnabled = 0;
+
+	/** `r.VolumetricFog.GridPixelSize` — the ⛔ HYSTERESIS value; see `FogRenderFloorGridPixelSize`. */
+	int32 GridPixelSize = 0;
+
+	/** `r.VolumetricFog.GridSizeZ` — the same hysteresis, on the other axis. */
+	int32 GridSizeZ = 0;
+
+	/**
+	 *  `L_Arena`'s `ExponentialHeightFog` component's own `bEnableVolumetricFog` — ⛔ term 6 of
+	 *  `ShouldRenderVolumetricFog`'s six-term conjunction, and the property `FOG-§12.2` measured
+	 *  to have ⛔ NO CODE OWNER (zero occurrences in `Source/`, `Config/`, `Tools/`).
+	 */
+	bool bHeightFogVolumetricEnabled = false;
+
+	/**
+	 *  ⛔ Whether a height-fog actor was found at all. A release must ⛔ never invent a component
+	 *  it did not observe: without this flag the default-constructed `false` above would look like
+	 *  a genuine reading and the restore would ⛔ TURN OFF a fog nobody had turned on.
+	 */
+	bool bHeightFogFound = false;
+};
+
+/**
+ *  ⭐⭐⭐ **THE RECORDED PRE-FLOOR STATE** (`FOG-§12.5`'s pinned member `FogRenderFloorPriorState`
+ *  wears this type) — ⛔ AND ITS `bEngaged` FLAG ⛔ IS THE RE-ENTRANCE GUARD.
+ *
+ *  ⛔⛔⛔ THE DEFECT THIS SHAPE EXISTS TO MAKE ⛔ STRUCTURALLY IMPOSSIBLE, and the board named it
+ *  as the most likely bug in the row: the ⛔ ONE reconciler runs on ⛔ EVERY raise, ⛔ EVERY
+ *  refresh and ⛔ EVERY timer wake-up. A second enforce that re-captured would read back the
+ *  ⛔ ALREADY-FLOORED values and record ⛔ THE FLOOR ITSELF as the player's own choice ⇒ the
+ *  release would restore the floor, i.e. become a ⛔ PERMANENT NO-OP, silently ⛔ UPGRADING a
+ *  Low-settings player's shadows for the rest of the session with ⛔ nothing in any log.
+ *  ⭐ THE CURE IS THAT ⛔ THE GUARD AND THE CAPTURE ARE THE ⛔ SAME FACT: `bEngaged` is set by the
+ *  capture and tested by it, so *"capture twice"* is not a mistake this shape can express.
+ *
+ *  ⛔ IT IS ⛔ NOT A SECOND ANSWER TO *"IS FOG UP?"* and it is ⛔ NOT the companion `bool
+ *  bFogActive` this file bans by name. It answers a ⛔ DIFFERENT question — *"has a code-priority
+ *  layer been pushed onto the console variables?"* — which has ⛔ no other representation anywhere,
+ *  and which ⛔ CANNOT be derived from `IsFogActive()`: that predicate is ⛔ TRUE on the first
+ *  enforce ⛔ AND on the re-entrant one, so deriving the guard from it would guard nothing.
+ */
+struct FFogRenderFloorPriorState
+{
+	/** ⛔ `false` ⇒ NOTHING is captured and NOTHING is floored. ⭐ This is the guard. */
+	bool bEngaged = false;
+
+	/** ⛔ Meaningless unless `bEngaged`; the capture is the only writer. */
+	FFogRenderFloorObservation Observed;
+};
+
+
+/**
  *  Siegebound FOG STATE (TASK-998 + TASK-982; law `FOG-§6`, `FOG-§10.1`, `FOG-§10.3`,
  *  `FOG-§10.6`, `FOG-§10.7`) — the ONE authoritative answer to "is the battlefield fogged right
  *  now, is new fog PREVENTED right now, and until when in each case?".
@@ -281,6 +351,7 @@
  *  and for what that keeps open. ⛔ Named rather than left as *"the handoff"* (`TASK-1053`'s
  *  sweep): an unnamed cross-reference is a pointer the next reader cannot follow.
  */
+
 UCLASS()
 class GITCLAUDEUNREALTEST_API AFogVolume : public AActor
 {
@@ -647,6 +718,149 @@ public:
 	 */
 	static constexpr float FogVisualScaleTolerance = 0.01f;
 
+	//~ ─── ⭐⭐⭐ THE INTEGRITY FLOOR — `TASK-1147` (`GFX-§12` · `FOG-§12.2` · `FOG-§12.5`) ──────
+	//~
+	//~ 🧑 HIS WORDS, AND THEY ARE THE WHOLE ROW: *"players could get an advantage by turning
+	//~ their graphics down because now they will be able to see through a fog that they weren't
+	//~ meant to."*
+	//~
+	//~ ⛔⛔ THE ASYMMETRY, MEASURED (`TASK-1146` §1): the fog's ⛔ MECHANICAL penalty is
+	//~ `World->GetTimeSeconds() < FogActiveUntilTimeSeconds` and a default-constructed
+	//~ `FSiegeFogTuning` — ⛔ NO cvar, ⛔ NO `UGameUserSettings`, ⛔ NO viewer, team or controller
+	//~ on either input ⇒ it applies ⛔ IDENTICALLY at every graphics setting. The ⛔ VISUAL is
+	//~ deleted by `r.VolumetricFog=0` at `[ShadowQuality@0]`/`@1`. ⇒ at Shadows=Low the player
+	//~ ⛔ SEES through the fog ⛔ AND KEEPS HIS OPPONENT BLIND, ⛔ for free. A symmetric loss would
+	//~ be a tradeoff; ⛔ this is an EXPLOIT by `GFX-§12`'s own mechanical test.
+	//~
+	//~ ⚖️ `GFX-§12`: ⛔ ITS ⛔ COST MAY SCALE; ⛔ ITS ⛔ PRESENCE MAY NOT. ⛔ And a FLOOR is not a
+	//~ LEVER — the player cannot move it — so `GFX-§8`'s Tier D count ⛔ STAYS AT (1).
+	//~
+	//~ 🚨⛔⛔⛔ READ THIS BEFORE YOU BELIEVE THE PARAGRAPH ABOVE COVERS 🧑 HIS COMPLAINT — IT
+	//~ COVERS ⛔ ONE OF TWO FOGS, AND THE MEASUREMENT ARRIVED ⛔ AFTER THE LAW WAS WRITTEN.
+	//~ ⛔ `TASK-1151` established, ⛔ ON RENDERED PIXELS: with `L_Arena`'s `ExponentialHeightFog`
+	//~ live and `BP_SiegeFog` absent by construction, the enemy castle is ⛔ CRISP at ~50,000 uu
+	//~ with ⛔ no wash at any depth ⇒ ⛔ THE AMBIENT/FROXEL SYSTEM RENDERS ≈ NOTHING AT THE
+	//~ PLAYER'S VANTAGE. And `BP_SiegeFog` — the thing he actually sees when he plays the card —
+	//~ is a ⛔ RAYMARCHED TRANSLUCENT MESH computing its own density in `MF_Fog`, ⛔ NOT a froxel
+	//~ participant. ~~⇒ ⚖️ ***⛔ `r.VolumetricFog` GOVERNS THE AMBIENT FOG. ⛔ IT DOES NOT GOVERN
+	//~ THE CARD'S FOG.***
+	//~ ⇒ ⛔ THIS FLOOR IS ⛔ CORRECT FOR WHAT IT CLAIMS AND ⛔ INSUFFICIENT FOR WHAT HE ASKED, and
+	//~ that gap is declared by name in `handoffs/TASK-1147-programmer.md` §0 rather than papered
+	//~ over. ⛔ DO NOT report it as closing the exploit; ⛔ do not widen this seam on a hypothesis.~~
+	//~ 🚨⛔⛔⛔ REVERSED 2026-09-08 (⭐ `TASK-1162`), ⛔ MEASURER ⭐ `TASK-1160` — ⛔ STRUCK IN PLACE,
+	//~ ⛔ NEVER DELETED. ⛔ THE STRUCK CLAIM IS ⛔ FALSE ON PIXELS: with a Fog card's `BP_SiegeFog`
+	//~ up and Shadows at ⛔ LOW the card's fog ⛔ DOES NOT RENDER (⛔ the frame IS the no-fog frame
+	//~ to within `0.2 %`), and a ⛔ 2×2 holding Shadows ⛔ FIXED in ⛔ BOTH directions isolates the
+	//~ cause to ⛔ `r.VolumetricFog` ⛔ ALONE — ⛔ EPIC + forced `0` ⇒ ⛔ GONE, ⛔ LOW + forced `1`
+	//~ ⇒ ⛔ BACK. ⇒ ⚖️ ***⛔ `r.VolumetricFog` GOVERNS ⛔ BOTH FOGS ⇒ ⛔ THIS FLOOR ⛔ REACHES THE
+	//~ CARD'S FOG AND ⛔ IS THE FIX FOR 🧑 HIS COMPLAINT.***
+	//~ ⚠️ ⛔ THE ⛔ MECHANISM IS ⛔ ISOLATED TO THE ⛔ CVAR; ⛔ THE ⛔ COUPLING IS ⛔ NOT YET READ AT
+	//~ THE ⛔ MATERIAL (⭐ `SC-§97` — ⛔ `bUsedWithVolumetricFog` is a ⛔ candidate ⛔ nobody has
+	//~ opened). ⛔ AND ⛔ ASK (A) ⛔ STILL DOES ⛔ NOT CLOSE when this ships — ⛔ seven conditions
+	//~ remain untested (`FOG-§12.1` as corrected ⛔ twice); 🧑 ⛔ HE closes it on ⭐ `TASK-1159`.
+	//~ ⭐ ⛔ THE STRUCK TEXT WAS ⛔ RIGHT ON THE EVIDENCE IT HAD ⛔ AND A GATE RULED IT SOUND. ⚖️
+	//~ ***⛔ A CORRECT CONCLUSION FROM ⛔ REFUTED PREMISES IS ⛔ STILL A DEFECT — ⛔ BECAUSE THE
+	//~ PREMISE IS WHAT THE ⛔ NEXT CHANGE WILL BE ⛔ REASONED FROM.***
+	//~ ⚠️ WHAT WAS SEARCHED FOR AND ⛔ NOT FOUND (a name-table scan of all 27 vendor packages plus
+	//~ `BP_SiegeFog`, positive-controlled): ⛔ ZERO `DetailMode` overrides — so `r.DetailMode=0` at
+	//~ `[EffectsQuality@0]` cannot strip the mesh, since `ShouldComponentAddToScene` is
+	//~ `DetailMode <= r.DetailMode` (`SceneComponent.cpp:3552`) and the default is `DM_Low`;
+	//~ ⛔ ZERO `MaterialExpressionQualitySwitch` / `FeatureLevelSwitch` — so `r.MaterialQualityLevel=0`
+	//~ selects no cheaper raymarch; ⛔ ZERO draw-distance overrides.
+	//~ ~~⇒ ⛔ NO MEASURED ROUTE by which a graphics setting deletes the card's fog — which makes the
+	//~ ⛔ EXISTENCE of his exploit an ⛔ OPEN QUESTION, not a settled fact. ⛔ Nobody has yet
+	//~ rendered `BP_SiegeFog` at Shadows=Low or Effects=Low, and until somebody does, ⛔ every
+	//~ sentence about it — here, in the menu, or in a commit message — stays this narrow.~~
+	//~ 🚨⛔⛔ SUPERSEDED 2026-09-08 (⭐ `TASK-1162`) — ⭐ `TASK-1160` ⛔ RENDERED IT at Shadows=Low
+	//~ and the card's fog ⛔ WAS GONE ⇒ the exploit is ⛔ DEMONSTRATED, not open. ⭐ ⛔ THE SCAN
+	//~ ABOVE IS ⛔ NOT WITHDRAWN AND WAS ⛔ NOT WRONG — it enumerated `DetailMode` / `QualitySwitch`
+	//~ / draw-distance routes and ⛔ correctly found ⛔ none. ⛔ THE ROUTE WAS A ⛔ FOURTH KIND
+	//~ ⛔ NOBODY ENUMERATED: ⛔ `r.VolumetricFog` itself. ⚠️ ⛔ Effects=Low is ⛔ STILL untested at
+	//~ the ⛔ CVAR level (`r.SceneColorFormat` / `r.TranslucencyLightingVolume` individually — the
+	//~ ⛔ GROUP is refuted, ⛔ those two are ⛔ not) ⇒ ⛔ sentences about ⛔ THAT stay this narrow.
+
+	/**
+	 *  ⭐⭐⭐ **THE ONE STATE TRANSITION OF THE FLOOR, PURE SO A TEST CAN ⛔ EXECUTE IT** — the
+	 *  `FogVisualScaleMatches` precedent, and for the identical reason: ⛔ A GUARD WRITTEN INLINE
+	 *  AT THE CALL SITE IS A GUARD ⛔ NO TEST CAN RUN, and this row's most likely defect lives
+	 *  ⛔ exactly in that guard.
+	 *
+	 *  @return `Prior` ⛔ UNCHANGED whenever `Prior.bEngaged` is already `true`; otherwise
+	 *          `{ bEngaged = true, Observed }`.
+	 *
+	 *  ⛔⛔⛔ THE UNCHANGED RETURN ⛔ IS THE WHOLE FUNCTION. `Tests/SiegeFogVisualTest.cpp` hands
+	 *  it a first observation taken at ⛔ Shadows=Low (`r.VolumetricFog` == 0) and then a second
+	 *  one taken off the ⛔ ALREADY-FLOORED machine (== 1), and asserts the recorded value is
+	 *  ⛔ STILL 0 — i.e. that the floor was ⛔ NOT recorded as the player's own choice.
+	 *  ⛔ Delete the early return and that row reads 1 where it must read 0. ⭐ `SC-§104`: the
+	 *  assertion is on ⛔ STATE (which value is held), ⛔ never on how many times anything ran —
+	 *  a call tally here is ⛔ EQUAL on both branches, because both branches call it twice.
+	 */
+	static FFogRenderFloorPriorState CaptureFogRenderFloorPriorState(
+		const FFogRenderFloorPriorState& Prior, const FFogRenderFloorObservation& Observed);
+
+	/**
+	 *  ⭐ THE ⛔ ONE SPELLING of *"the floor is currently held"*. Both halves of the pair branch on
+	 *  this and nothing spells it a second way — a second spelling is a second source of truth for
+	 *  a fact that has one, which is the same rule `RefreshFogVisual()` is the ONE reconciler for.
+	 */
+	static bool IsFogRenderFloorEngaged(const FFogRenderFloorPriorState& State);
+
+	/**
+	 *  ⭐⭐ THE ⛔ RELEASED state — what the member must hold once the floor is let go.
+	 *  ⛔ IT MUST BE ⛔ NOT-ENGAGED, and that is a real assertion rather than a tautology: a release
+	 *  that forgot to reset would leave `bEngaged` up, and then the ⛔ NEXT match's enforce would
+	 *  hit the guard and ⛔ never floor at all — the exploit back, silently, one match later.
+	 */
+	static FFogRenderFloorPriorState ReleasedFogRenderFloorState();
+
+	/**
+	 *  ⛔ THE ON/OFF SWITCH THE FLOOR WRITES — `r.VolumetricFog`, owned by the ⛔ SHADOW group
+	 *  (`BaseScalability.ini` `[ShadowQuality@0]:143` and `@1:178` set it to ⛔ 0; `@2:213`,
+	 *  `@3:251`, `@Cine:289` set it to 1). ⛔ Named once here rather than typed at a call site, the
+	 *  `FogVisualClassPath()` discipline applied to a console variable.
+	 *  ⛔ DECLARED HERE, ⛔ DEFINED IN THE `.cpp` — the `USiegeSettingsSubsystem::SettingsSlotName`
+	 *  house pattern, and the same split `FogVisualClassPath()` uses for the asset path (this
+	 *  file's own include comment: *"the PATH itself lives in the .cpp"*). ⇒ the STRING has exactly
+	 *  one home and `Tests/SiegeFogVisualTest.cpp` asserts no call site re-types it.
+	 */
+	static const TCHAR* FogRenderFloorCVarVolumetricFog;
+
+	/** ⛔ The froxel grid's XY cell size — see `FogRenderFloorGridPixelSize` for why it is floored too. */
+	static const TCHAR* FogRenderFloorCVarGridPixelSize;
+
+	/** ⛔ The froxel grid's Z slice count — the same hysteresis, on the other axis. */
+	static const TCHAR* FogRenderFloorCVarGridSizeZ;
+
+	/**
+	 *  ⛔⛔ THE GRID THE FLOOR RUNS ON, AND IT IS A ⛔ COST DECISION, ⛔ NOT A RENDER ONE.
+	 *  ⭐ MEASURED (`TASK-1146` §2.1): `[ShadowQuality@0]`/`@1` write ⛔ ONLY the on/off switch —
+	 *  the grid lines are ⛔ ABSENT from those sections — and scalability applies ⛔ only a
+	 *  section's own lines (`Scalability.cpp:446`). ⇒ the widely-feared *"a floored switch on a
+	 *  DEGENERATE grid renders nothing"* trap is ⛔ FALSIFIED: the engine defaults are already
+	 *  `16` (`VolumetricFog.cpp:118`) and `64` (`:126`), identical to `[ShadowQuality@2]`.
+	 *
+	 *  ⚠️⚠️ BUT THE GRID BITES THE ⛔ OTHER WAY, AND THAT IS WHY THESE TWO LINES EXIST: because
+	 *  `@0`/`@1` never ⛔ RESET the grid, it ⛔ HYSTERESES. A player who was at ⛔ Epic (8 px /
+	 *  128 Z) and drops to ⛔ Low keeps the ⛔ EPIC grid, because nothing writes it back down.
+	 *  ⇒ with a switch-only floor, ⛔ THE CHEAPEST SETTING WOULD RUN THE MOST EXPENSIVE FOG —
+	 *  precisely inverting `GFX-§12`'s *"its cost may scale"*.
+	 *
+	 *  ⚠️ CONSEQUENCE (`HIGH-§1`): this is the froxel resolution every player pays for while a
+	 *  50-gold Fog card is up. ⛔ Lowering the number (a FINER grid) charges the cheap-PC player
+	 *  `GFX-§8` was written for; ⛔ raising it (a coarser grid) thins the fog he is mechanically
+	 *  87.8% blind behind, which walks back toward the very mismatch this row is closing.
+	 *  ⛔ It is the `[ShadowQuality@2]` figure on purpose: the ⛔ CHEAPEST grid the engine ships
+	 *  fog on, and the one the defaults already hold.
+	 */
+	static constexpr int32 FogRenderFloorGridPixelSize = 16;
+
+	/** ⛔ The Z half of the same decision — `[ShadowQuality@2]:215`, and the engine default. */
+	static constexpr int32 FogRenderFloorGridSizeZ = 64;
+
+	/** ⛔ The value the switch is floored TO. Named so the write reads as a floor, not a magic 1. */
+	static constexpr int32 FogRenderFloorVolumetricFogOn = 1;
+
 	/**
 	 *  ⛔⛔ TEARDOWN — THE FOURTH WAY OUT OF FOGGED, AND IT IS NOT A STATE TRANSITION.
 	 *  `TASK-1068` cl. 3a enumerates THREE exits from the fog STATE (expiry · `BrightSun` ·
@@ -708,6 +922,48 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Fog", meta = (ClampMin = "1.0"))
 	float FogDurationSeconds = 300.f;
+
+	/**
+	 *  ⭐⭐⭐ **THE INTEGRITY FLOOR'S ONE SWITCH** (`TASK-1147`, `FOG-§12.5`'s pinned tunable).
+	 *  ⛔ Default `true`, ⛔ arithmetic-free, and it is a ⛔ DEVELOPER switch — ⛔ NOT a player one.
+	 *
+	 *  ⚠️⚠️ CONSEQUENCE (`HIGH-§1`), AND IT IS A ⛔ COMPETITIVE-INTEGRITY CONSEQUENCE RATHER THAN A
+	 *  VISUAL ONE: set this `false` and the ⛔ AMBIENT volumetric fog's ⛔ PRESENCE becomes a
+	 *  graphics option again while a siege fog is up ⇒ a player who drops ⛔ Shadows to Low or
+	 *  Medium loses a layer of concealment his opponent still pays for, ⛔ for free. ⛔ Turning
+	 *  this off is ⛔ shipping that asymmetry; it exists so a profiling run can measure the floor's
+	 *  cost, ⛔ not so a build can decline to pay it.
+	 *  ~~🚨⛔ AND THE HONEST BOUND, BECAUSE THE OPPOSITE SENTENCE IS THE ONE THAT WILL BE COPIED
+	 *  INTO A COMMIT MESSAGE: ⛔ this switch does ⛔ NOT govern the Fog card's own visual. That is
+	 *  `BP_SiegeFog`, a raymarched mesh outside the froxel grid (`TASK-1151`, on pixels).
+	 *  ⇒ ⛔ turning this off does ⛔ not restore 🧑 the exploit he reported, and turning it on does
+	 *  ⛔ not by itself close it. See `handoffs/TASK-1147-programmer.md` §0.~~
+	 *  🚨⛔⛔⛔ REVERSED 2026-09-08 (⭐ `TASK-1162`), ⛔ MEASURER ⭐ `TASK-1160` — ⛔ AND THIS IS THE
+	 *  ⛔ MOST CONSEQUENTIAL OF THE FOUR STRIKES, BECAUSE IT IS ⛔ ATTACHED TO A ⛔ SWITCH SOMEBODY
+	 *  MIGHT ACTUALLY FLIP. ⛔ THE STRUCK TEXT IS ⛔ EXACTLY BACKWARDS: `r.VolumetricFog` governs
+	 *  ⛔ BOTH fogs (a ⛔ 2×2 with Shadows held ⛔ fixed in ⛔ both directions), so ⛔ SETTING THIS
+	 *  `false` ⛔ DOES RESTORE THE ⛔ DEMONSTRATED EXPLOIT — at Shadows=Low the card's fog stops
+	 *  rendering and the frame becomes the ⛔ no-fog frame to within `0.2 %`, while the ⛔ server-
+	 *  authoritative acquisition clamp keeps blinding the ⛔ opponent. ⇒ ⚖️ ⛔ THIS SWITCH IS A
+	 *  ⛔ PROFILING TOOL, ⛔ NEVER A SHIPPING CHOICE; ⛔ turning it off ⛔ SHIPS THE EXPLOIT.
+	 *  ⛔ AND IT ⛔ CARRIES A ⛔ USER-FACING STRING WITH IT: `SiegeGraphicsMenuWidget.cpp`'s Shadows
+	 *  hint tells the player *"Lowering Shadows does not remove the Fog card's siege fog"*, which
+	 *  is true ⛔ ONLY WHILE THIS FLOOR HOLDS `r.VolumetricFog` UP ⇒ ⛔ disabling the floor makes
+	 *  that string a ⛔ LIE TO THE PLAYER. ⚠️ ⛔ MECHANISM ISOLATED TO THE ⛔ CVAR; ⛔ COUPLING
+	 *  ⛔ NOT YET READ AT THE ⛔ MATERIAL.
+	 *
+	 *  ⛔⛔ IT GATES ⛔ ENGAGING AND ⛔ NEVER RELEASING, AND THE ASYMMETRY IS DELIBERATE. If the
+	 *  release honoured this switch too, flipping it to `false` while the floor was ⛔ HELD would
+	 *  ⛔ STRAND the console variables at code priority ⛔ FOREVER — killing the Shadows slider's
+	 *  effect on fog for the rest of the session, silently. ⇒ ⛔ a release must always be able to
+	 *  let go of something an earlier enforce took.
+	 *
+	 *  ⚠️ IT IS ⛔ NOT A `GFX-§8` TIER-D LEVER AND MUST ⛔ NEVER BE SURFACED IN THE GRAPHICS PANEL:
+	 *  `GFX-§12` — ⛔ a LEVER is a control the player MOVES, a ⛔ FLOOR is one he ⛔ CANNOT. Putting
+	 *  this on a menu re-opens the exact door the row closes.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Fog")
+	bool bEnforceFogRenderFloor = true;
 
 	//~ ─── ⭐⭐ `BrightSun` — THE PREVENTION WINDOW'S FOUR TUNABLES (`TASK-982`, `FOG-§10`) ───
 	//~ ⛔ All four `EditDefaultsOnly` with their `HIGH-§1` consequence written beside them, for the
@@ -890,6 +1146,134 @@ private:
 	 *  when nothing was ever spawned — which is why every exit can call it unconditionally.
 	 */
 	void DestroyFogVisual();
+
+	/**
+	 *  ⭐⭐⭐ **THE INTEGRITY FLOOR — ENGAGE.** Floors `r.VolumetricFog` (plus the two grid figures)
+	 *  at ⛔ `ECVF_SetByCode` and writes the level's `ExponentialHeightFog` component ⛔ IN MEMORY,
+	 *  so the ⛔ **AMBIENT** volumetric fog's ⛔ PRESENCE stops being a graphics option while a
+	 *  siege fog is up (`GFX-§12`, `FOG-§12.2`).
+	 *  ~~🚨⛔ SCOPE, NARROW AND DELIBERATE — see the `TASK-1151` paragraph in this class's integrity-
+	 *  floor block: this reaches the ⛔ AMBIENT/FROXEL system. It does ⛔ NOT reach `BP_SiegeFog`,
+	 *  which is a raymarched translucent mesh and not a froxel participant. ⛔ Do not widen this
+	 *  sentence without a measurement behind it.~~
+	 *  🚨⛔⛔ WIDENED 2026-09-08 (⭐ `TASK-1162`) — ⛔ AND ⛔ ONLY BECAUSE THE ⛔ MEASUREMENT THE
+	 *  STRUCK LINE ⛔ DEMANDED ⛔ ARRIVED (⭐ `TASK-1160`, ⛔ on pixels, ⛔ 5 promoted PNGs). ⛔ THE
+	 *  SCOPE IS ⛔ BOTH FOGS: this pins `r.VolumetricFog`, and a ⛔ 2×2 with `sg.ShadowQuality`
+	 *  held ⛔ fixed in ⛔ both directions shows that ⛔ ONE cvar decides whether `BP_SiegeFog`
+	 *  renders ⛔ AND whether the ambient froxel term renders. ⇒ ⛔ THIS FUNCTION ⛔ IS THE FIX FOR
+	 *  🧑 HIS COMPLAINT, ⛔ not defensive depth over a different fog.
+	 *  ⚠️ ⛔ STILL NARROW WHERE IT MUST BE: ⛔ THE MECHANISM IS ⛔ ISOLATED TO THE ⛔ CVAR; ⛔ THE
+	 *  COUPLING IS ⛔ NOT YET READ AT THE ⛔ MATERIAL, and ⛔ ask (A) ⛔ DOES NOT CLOSE when this
+	 *  ships (`FOG-§12.1` ⛔ as corrected ⛔ twice — ⛔ seven conditions untested).
+	 *
+	 *  ⛔⛔ CALLED FROM THE ⛔ ONE RECONCILER'S ⛔ FOG-IS-UP BRANCH AND FROM ⛔ NOWHERE ELSE
+	 *  (`FOG-§12.5`). A second call site would be a second source of truth for a fact that has one
+	 *  — the same rule that makes `RefreshFogVisual()` the only reconciler.
+	 *
+	 *  ⭐⭐ WHY ⛔ `ECVF_SetByCode` (`0x0E000000`) AND NOT A DELEGATE: it ⛔ OUTRANKS
+	 *  `ECVF_SetByScalability` (`0x02000000`), and `FConsoleVariableBase::CanChange` is
+	 *  `NewPri >= OldPri` ⇒ a later scalability apply is ⛔ REFUSED by the engine itself.
+	 *  *"Survives a settings change"* therefore costs ⛔ NO delegate, ⛔ NO poll and ⛔ NO tick —
+	 *  and the state actor's `bCanEverTick` stays `false`.
+	 *
+	 *  ⛔⛔ WHY THE COMPONENT WRITE IS ⛔ NOT OPTIONAL ALONGSIDE THE CVAR: `ShouldRenderVolumetricFog`
+	 *  (`VolumetricFog.cpp:1355`) is a ⛔ SIX-TERM CONJUNCTION. The cvar is ⛔ ONE term. Terms 5-7
+	 *  are `Scene->ExponentialFogs.Num() > 0`, that fog's `bEnableVolumetricFog` and its
+	 *  `VolumetricFogDistance > 0` — i.e. the property `FOG-§12.2` measured to have ⛔ NO CODE
+	 *  OWNER. A cvar-only floor is sufficient ⛔ TODAY only by ⛔ COINCIDENCE of an authored map
+	 *  value, and ⛔ one unrelated map edit would un-floor the fog while every cvar read-back
+	 *  stayed green — the `SC-§94` shape ⛔ one instrument down.
+	 *  ⛔ It writes ⛔ MEMORY ONLY: the PIE/game world's own instance, ⛔ never a package, ⛔ never a
+	 *  save, ⛔ never `MarkPackageDirty` ⇒ `GFX-§11`'s *"`L_Arena` is NEVER SAVED"* is intact.
+	 *
+	 *  ⛔ IDEMPOTENT ⛔ BY CONSTRUCTION: it captures through `CaptureFogRenderFloorPriorState`,
+	 *  whose guard makes a second capture ⛔ inexpressible. See that function and
+	 *  `FFogRenderFloorPriorState` for the defect this prevents.
+	 *  ⭐ `SC-§94` cl. B: it ⛔ READS BACK the ACHIEVED values and logs those, ⛔ never the request —
+	 *  `SpawnFogVisual`'s read-back is the house pattern and this is a clone of it.
+	 */
+	void EnforceFogRenderFloor();
+
+	/**
+	 *  ⛔ THE ⛔ ONE height-fog lookup, so the enforce and the release cannot ever disagree about
+	 *  ⛔ WHICH component they are talking to. ⛔ Returns `nullptr` when the level has no
+	 *  `ExponentialHeightFog` — which is not an error here, it is an ⛔ OBSERVATION the caller
+	 *  records (`FFogRenderFloorObservation::bHeightFogFound`).
+	 *  ⛔ It is looked up ⛔ AFRESH on both halves and ⛔ never cached across time: an actor handle
+	 *  held over a match boundary is a dangling pointer waiting for a level transition, and the
+	 *  ⛔ `FogVisualActor` handle is held only because `BP_SiegeFog` ⛔ cannot be re-found (it is
+	 *  not an `AFogVolume` subclass). ⛔ This one can.
+	 *  ⚠️ Like `AFogVolume::Find`, it answers the ⛔ FIRST valid hit. `L_Arena` holds exactly one
+	 *  height fog; a level holding two has a ⛔ rendering ambiguity of its own —
+	 *  `ShouldRenderVolumetricFog` reads `Scene->ExponentialFogs[0]` and nothing else.
+	 */
+	static class UExponentialHeightFogComponent* FindHeightFogComponent(const UWorld* World);
+
+	/**
+	 *  ⭐⭐⭐ **THE INTEGRITY FLOOR — RELEASE.** ⛔ Idempotent: ⛔ EVERY WAY OUT calls it
+	 *  unconditionally, ⛔ exactly like `DestroyFogVisual()`, and it is a no-op when nothing was
+	 *  ever engaged.
+	 *
+	 *  ⛔⛔ AND *"EXACTLY LIKE `DestroyFogVisual()`"* MEANS ⛔ THE SAME ⛔ TWO CALL SITES, ⛔ NOT ONE
+	 *  (⭐ `TASK-1148` BLOCKER-1 — the analogy was ⛔ written here and then ⛔ broken at the one
+	 *  site that would have made it true):
+	 *    • ⛔ `RefreshFogVisual()`'s ⛔ fog-is-down branch — the ⛔ THREE enumerated exits from
+	 *      FOGGED (expiry, BrightSun, match reset) ⛔ all land there, ⛔ beside the despawn;
+	 *    • ⛔ `EndPlay()` — ⛔ TEARDOWN, which is ⛔ NOT a fourth exit (the state does not change;
+	 *      its ⛔ OWNER ceases to exist) and is ⛔ therefore ⛔ exactly why it must be handled:
+	 *      ⛔ teardown ⛔ never reaches the reconciler, and ⛔ what this actor took hold of is
+	 *      ⛔ PROCESS-WIDE and ⛔ OUTLIVES IT. ⛔ Leaving a match with fog up (an ⛔ ABSOLUTE travel
+	 *      to `L_MainMenu`) or ⛔ stopping PIE with fog up would ⛔ STRAND all three cvars at
+	 *      `ECVF_SetByCode` ⛔ for the process — ⛔ silently refusing the player's Shadows slider
+	 *      ⛔ on the one screen he can reach it. ⛔ The full argument is at `EndPlay`'s definition.
+	 *  ⛔ A ⛔ THIRD call site is still ⛔ banned: these two are the ⛔ two ways this actor can stop
+	 *  holding the floor, and `Tests/SiegeFogVisualTest.cpp` pins the whole-file count at ⛔ 2.
+	 *
+	 *  ⭐⭐⭐ IT RELEASES BY ⛔ `IConsoleVariable::Unset(ECVF_SetByCode)`, ⛔ NOT by writing a
+	 *  captured literal back — and this is the row's ⛔ ONE substantive departure from the shape
+	 *  `FOG-§12.5` sketched. ⛔ GROUNDS, MEASURED:
+	 *    • ⛔ A `Set(prior, ECVF_SetByCode)` restore leaves the cvar ⛔ PINNED AT CODE PRIORITY
+	 *      ⛔ FOREVER AFTER, so ⛔ every subsequent scalability apply is silently refused: the
+	 *      player's Shadows slider would ⛔ STOP AFFECTING FOG for the rest of the session, with
+	 *      ⛔ nothing in any log. ⛔ That trades one integrity bug for a different one.
+	 *    • ⛔ A captured literal restores the value that was true ⛔ AT CAPTURE TIME. `Unset`
+	 *      removes ⛔ ONLY our layer and the cvar falls back to whatever ⛔ SCALABILITY LAST WROTE
+	 *      — i.e. the player's ⛔ LIVE choice, even if he changed it while the fog was up.
+	 *    • ⛔ AND IT IS ⛔ REACHABLE HERE, VERIFIED AT ENGINE SOURCE RATHER THAN ASSUMED:
+	 *      `r.VolumetricFog*` are `FAutoConsoleVariableRef` ⇒ `FConsoleVariableRef` ⇒
+	 *      `FConsoleVariableExtendedData`, which is the branch that ⛔ OWNS `PriorityHistory` and
+	 *      a ⛔ REAL `Unset` (`ConsoleManager.cpp:1191`). ⛔ `FDelegatedConsoleVariable::Unset` is
+	 *      the ⛔ no-op one (`:1526`) and ⛔ none of these three is that kind.
+	 *      ⛔ `Unset` returns early when `PriorityHistory == nullptr` — our ⛔ OWN `Set` allocates
+	 *      it (`TrackHistory`, `:1121`), so by the time a release can run, the history ⛔ exists.
+	 *
+	 *  ⚠️ THE COMPONENT HALF STILL RESTORES A ⛔ CAPTURED VALUE, because a map-actor property has
+	 *  ⛔ no priority stack to fall back through. That is why `FFogRenderFloorObservation` carries
+	 *  `bHeightFogFound`: ⛔ a component we never observed is ⛔ never written.
+	 *
+	 *  ⚠️ HONEST LIMIT, RECORDED RATHER THAN IMPLIED AWAY: ⛔ `ECVF_SetByConsole` (`0x10000000`)
+	 *  ⛔ OUTRANKS `ECVF_SetByCode`. A Development build's console can still type
+	 *  `r.VolumetricFog 0` and defeat this. ⛔ Not fixable at this seam.
+	 */
+	void ReleaseFogRenderFloor();
+
+	/**
+	 *  ⭐⭐⭐ **THE RECORDED PRE-FLOOR STATE** (`FOG-§12.5`'s pinned member) — ⛔ so the release
+	 *  restores what the ⛔ PLAYER chose and ⛔ never a hard-coded value, and so a ⛔ SECOND enforce
+	 *  ⛔ cannot record the floor as his choice. ⛔ The type's own doc holds the full argument.
+	 *
+	 *  ⛔ NOT a `UPROPERTY` and ⛔ NOT `VisibleInstanceOnly`, unlike the two deadlines beside it:
+	 *  the deadlines are ⛔ GAME STATE a designer inspects; this is ⛔ RENDER-PIPELINE bookkeeping
+	 *  for one fog window, it must ⛔ never be serialised, and exposing it would invite exactly the
+	 *  hand-edit that would ⛔ strand the console variables at code priority.
+	 *
+	 *  ⚠️ M8 RESIDUAL, DECLARED (`FogVolume.cpp:34` — *"REPLICATED WHEN M8 LANDS"*): console
+	 *  variables are ⛔ PER PROCESS, so this floors ⛔ whichever machine runs the reconciler. Today
+	 *  that is the same machine for everyone. ⛔ When replication lands, a client that never runs
+	 *  `RefreshFogVisual()` never floors its ⛔ OWN cvar — the floor ⛔ INHERITS the visual's
+	 *  existing M8 debt rather than adding a new one, and it is fixed in the ⛔ same action.
+	 */
+	FFogRenderFloorPriorState FogRenderFloorPriorState;
 
 	/**
 	 *  ⭐⭐ THE SPAWNED VISUAL — ⛔ **NOT A STATE DUPLICATE**, and the distinction is exactly the
