@@ -1,0 +1,13 @@
+﻿Log file open, 09/08/26 22:48:25
+LogWindows: Failed to load 'aqProf.dll' (GetLastError=126)
+LogWindows: File 'aqProf.dll' does not exist
+LogProfilingDebugging: Loading WinPixEventRuntime.dll for PIX profiling (from ../../../Engine/Binaries/ThirdParty/Windows/WinPixEventRuntime/x64).
+LogWindows: Failed to load 'VtuneApi.dll' (GetLastError=126)
+LogWindows: File 'VtuneApi.dll' does not exist
+[2026.09.09-05.48.32:329][  0]Cmd: Automation RunTests Siegebound
+[2026.09.09-05.48.32:330][  0]Automation: RunTests='Siegebound' Queued.
+[2026.09.09-05.48.32:645][  2]LogAutomationCommandLine: Display: Ready to start automation
+[2026.09.09-05.48.37:804][302]LogAutomationCommandLine: Display: Found 0 automation tests based on 'Siegebound'
+[2026.09.09-05.48.37:880][303]LogAutomationCommandLine: Display: ...Automation Test Queue Empty 0 tests performed.
+[2026.09.09-05.48.37:880][303]LogExit: Display: **** TestExit: Automation Test Queue Empty ****
+[2026.09.09-05.48.37:880][303]LogCore: Engine exit requested (reason: Win RequestExit)

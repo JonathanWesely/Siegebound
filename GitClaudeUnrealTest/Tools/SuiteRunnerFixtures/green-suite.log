@@ -1,0 +1,57 @@
+﻿Log file open, 09/08/26 22:48:25
+LogWindows: Failed to load 'aqProf.dll' (GetLastError=126)
+LogWindows: File 'aqProf.dll' does not exist
+LogProfilingDebugging: Loading WinPixEventRuntime.dll for PIX profiling (from ../../../Engine/Binaries/ThirdParty/Windows/WinPixEventRuntime/x64).
+LogWindows: Failed to load 'VtuneApi.dll' (GetLastError=126)
+LogWindows: File 'VtuneApi.dll' does not exist
+[2026.09.09-05.48.32:329][  0]Cmd: Automation RunTests Siegebound
+[2026.09.09-05.48.32:330][  0]Automation: RunTests='Siegebound' Queued.
+[2026.09.09-05.48.32:645][  2]LogAutomationCommandLine: Display: Ready to start automation
+
+[2026.09.09-05.48.37:804][302]LogAutomationCommandLine: Display: Found 20 automation tests based on 'Siegebound'
+[2026.09.09-05.48.37:812][303]LogAutomationController: Display: Test Started. Name={CreateLoginLogoutRoundTrip} Path={Siegebound.Account.CreateLoginLogoutRoundTrip}
+[2026.09.09-05.48.37:845][305]LogAutomationController: Display: Test Completed. Result={Success} Name={CreateLoginLogoutRoundTrip} Path={Siegebound.Account.CreateLoginLogoutRoundTrip}
+[2026.09.09-05.48.37:846][305]LogAutomationController: Display: Test Started. Name={CredentialHashContract} Path={Siegebound.Account.CredentialHashContract}
+[2026.09.09-05.48.37:895][308]LogAutomationController: Display: Test Completed. Result={Success} Name={CredentialHashContract} Path={Siegebound.Account.CredentialHashContract}
+[2026.09.09-05.48.37:896][308]LogAutomationController: Display: Test Started. Name={GuestFallbackIsBareConstants} Path={Siegebound.Account.GuestFallbackIsBareConstants}
+[2026.09.09-05.48.37:945][311]LogAutomationController: Display: Test Completed. Result={Success} Name={GuestFallbackIsBareConstants} Path={Siegebound.Account.GuestFallbackIsBareConstants}
+[2026.09.09-05.48.37:947][311]LogAutomationController: Display: Test Started. Name={ProfileSlotSuffix} Path={Siegebound.Account.ProfileSlotSuffix}
+[2026.09.09-05.48.37:979][313]LogAutomationController: Display: Test Completed. Result={Success} Name={ProfileSlotSuffix} Path={Siegebound.Account.ProfileSlotSuffix}
+[2026.09.09-05.48.37:980][313]LogAutomationController: Display: Test Started. Name={RejectionsPopulateOutReason} Path={Siegebound.Account.RejectionsPopulateOutReason}
+[2026.09.09-05.48.38:027][316]LogAutomationController: Display: Test Completed. Result={Success} Name={RejectionsPopulateOutReason} Path={Siegebound.Account.RejectionsPopulateOutReason}
+[2026.09.09-05.48.38:028][316]LogAutomationController: Display: Test Started. Name={SlotContract} Path={Siegebound.Account.SlotContract}
+[2026.09.09-05.48.38:078][319]LogAutomationController: Display: Test Completed. Result={Success} Name={SlotContract} Path={Siegebound.Account.SlotContract}
+[2026.09.09-05.48.38:079][319]LogAutomationController: Display: Test Started. Name={TwoProfilesDisjointSlots} Path={Siegebound.Account.TwoProfilesDisjointSlots}
+[2026.09.09-05.48.38:128][322]LogAutomationController: Display: Test Completed. Result={Success} Name={TwoProfilesDisjointSlots} Path={Siegebound.Account.TwoProfilesDisjointSlots}
+[2026.09.09-05.48.38:129][322]LogAutomationController: Display: Test Started. Name={AllNineEnumerationSitesRouteThroughTheFunnel} Path={Siegebound.Acquisition.AllNineEnumerationSitesRouteThroughTheFunnel}
+[2026.09.09-05.48.38:179][325]LogAutomationController: Display: Test Completed. Result={Success} Name={AllNineEnumerationSitesRouteThroughTheFunnel} Path={Siegebound.Acquisition.AllNineEnumerationSitesRouteThroughTheFunnel}
+[2026.09.09-05.48.38:180][325]LogAutomationController: Display: Test Started. Name={ApplyRadialDamageStillCannotFriendlyFire} Path={Siegebound.Acquisition.ApplyRadialDamageStillCannotFriendlyFire}
+[2026.09.09-05.48.38:211][327]LogAutomationController: Display: Test Completed. Result={Success} Name={ApplyRadialDamageStillCannotFriendlyFire} Path={Siegebound.Acquisition.ApplyRadialDamageStillCannotFriendlyFire}
+[2026.09.09-05.48.38:212][327]LogAutomationController: Display: Test Started. Name={BattleCryUsesTheFriendlyLaneNotTheHostileOne} Path={Siegebound.Acquisition.BattleCryUsesTheFriendlyLaneNotTheHostileOne}
+[2026.09.09-05.48.38:261][330]LogAutomationController: Display: Test Completed. Result={Success} Name={BattleCryUsesTheFriendlyLaneNotTheHostileOne} Path={Siegebound.Acquisition.BattleCryUsesTheFriendlyLaneNotTheHostileOne}
+[2026.09.09-05.48.38:262][330]LogAutomationController: Display: Test Started. Name={EverySitesOwnFilteringSurvivedTheLift} Path={Siegebound.Acquisition.EverySitesOwnFilteringSurvivedTheLift}
+[2026.09.09-05.48.38:311][333]LogAutomationController: Display: Test Completed. Result={Success} Name={EverySitesOwnFilteringSurvivedTheLift} Path={Siegebound.Acquisition.EverySitesOwnFilteringSurvivedTheLift}
+[2026.09.09-05.48.38:312][333]LogAutomationController: Display: Test Started. Name={GatherResetsOutAndIsNullWorldSafe} Path={Siegebound.Acquisition.GatherResetsOutAndIsNullWorldSafe}
+[2026.09.09-05.48.38:361][336]LogAutomationController: Display: Test Completed. Result={Success} Name={GatherResetsOutAndIsNullWorldSafe} Path={Siegebound.Acquisition.GatherResetsOutAndIsNullWorldSafe}
+[2026.09.09-05.48.38:362][336]LogAutomationController: Display: Test Started. Name={GetAllActorsWithInterfaceAppearsExactlyOnceInSource} Path={Siegebound.Acquisition.GetAllActorsWithInterfaceAppearsExactlyOnceInSource}
+[2026.09.09-05.48.38:630][338]LogAutomationController: Display: Test Completed. Result={Success} Name={GetAllActorsWithInterfaceAppearsExactlyOnceInSource} Path={Siegebound.Acquisition.GetAllActorsWithInterfaceAppearsExactlyOnceInSource}
+[2026.09.09-05.48.38:631][338]LogAutomationController: Display: Test Started. Name={IsHostileTeamIsExhaustiveAndDiscriminating} Path={Siegebound.Acquisition.IsHostileTeamIsExhaustiveAndDiscriminating}
+[2026.09.09-05.48.38:679][341]LogAutomationController: Display: Test Completed. Result={Success} Name={IsHostileTeamIsExhaustiveAndDiscriminating} Path={Siegebound.Acquisition.IsHostileTeamIsExhaustiveAndDiscriminating}
+[2026.09.09-05.48.38:680][341]LogAutomationController: Display: Test Started. Name={NoSiteRetainsItsOwnAcquisitionTeamFilter} Path={Siegebound.Acquisition.NoSiteRetainsItsOwnAcquisitionTeamFilter}
+[2026.09.09-05.48.38:735][344]LogAutomationController: Display: Test Completed. Result={Success} Name={NoSiteRetainsItsOwnAcquisitionTeamFilter} Path={Siegebound.Acquisition.NoSiteRetainsItsOwnAcquisitionTeamFilter}
+[2026.09.09-05.48.38:736][344]LogAutomationController: Display: Test Started. Name={VeilAndFogSuppressionLiveOnlyInTheFunnel} Path={Siegebound.Acquisition.VeilAndFogSuppressionLiveOnlyInTheFunnel}
+[2026.09.09-05.48.38:839][347]LogAutomationController: Display: Test Completed. Result={Success} Name={VeilAndFogSuppressionLiveOnlyInTheFunnel} Path={Siegebound.Acquisition.VeilAndFogSuppressionLiveOnlyInTheFunnel}
+[2026.09.09-05.48.38:840][347]LogAutomationController: Display: Test Started. Name={NeverPartiallyFills} Path={Siegebound.Assistant.Command.NeverPartiallyFills}
+[2026.09.09-05.48.38:889][350]LogAutomationController: Display: Test Completed. Result={Success} Name={NeverPartiallyFills} Path={Siegebound.Assistant.Command.NeverPartiallyFills}
+[2026.09.09-05.48.38:890][350]LogAutomationController: Display: Test Started. Name={Rejection} Path={Siegebound.Assistant.Command.Rejection}
+[2026.09.09-05.48.38:923][352]LogAutomationController: Display: Test Completed. Result={Success} Name={Rejection} Path={Siegebound.Assistant.Command.Rejection}
+[2026.09.09-05.48.38:923][352]LogAutomationController: Display: Test Started. Name={RoundTrip} Path={Siegebound.Assistant.Command.RoundTrip}
+[2026.09.09-05.48.38:972][355]LogAutomationController: Display: Test Completed. Result={Success} Name={RoundTrip} Path={Siegebound.Assistant.Command.RoundTrip}
+[2026.09.09-05.48.38:973][355]LogAutomationController: Display: Test Started. Name={SelectionInvariants} Path={Siegebound.Assistant.Command.SelectionInvariants}
+[2026.09.09-05.48.39:022][358]LogAutomationController: Display: Test Completed. Result={Success} Name={SelectionInvariants} Path={Siegebound.Assistant.Command.SelectionInvariants}
+[2026.09.09-05.49.07:880][892]LogAutomationCommandLine: Display: ...Automation Test Queue Empty 20 tests performed.
+[2026.09.09-05.49.07:880][893]LogExit: Display: **** TestExit: Automation Test Queue Empty ****
+[2026.09.09-05.49.07:880][893]LogWindows: FPlatformMisc::RequestExit(1, FEngineLoop::Tick.GScopedTestExit)
+[2026.09.09-05.49.07:880][893]LogWindows: FPlatformMisc::RequestExitWithStatus(1, 0, FEngineLoop::Tick.GScopedTestExit)
+[2026.09.09-05.49.07:880][893]LogCore: Engine exit requested (reason: Win RequestExit)
+
