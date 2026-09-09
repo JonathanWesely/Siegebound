@@ -767,7 +767,95 @@ function Get-LogMatches {
             $res += @(Select-String -LiteralPath $p -Pattern $Pattern -ErrorAction SilentlyContinue)
         }
     }
-    return $res
+    # TASK-1193: ALWAYS hand back an ARRAY.  A bare 'return $res' unrolls through
+    # the pipeline: zero hits reach the caller as $null and ONE hit as a bare
+    # MatchInfo, and under Set-StrictMode -Version Latest (:214) '.Count' THROWS
+    # on both (measured, PS 5.1.26100.9168).  That is what turned a GREEN suite
+    # into 'SHIP RESULT: STOP at UNEXPECTED-ERROR' at B2 - and 'Result={Fail}'
+    # matching NOTHING is the NORMAL path of a green run.  The unary comma wraps
+    # the array so it survives the pipeline whole: 0 / 1 / N hits => Object[] of
+    # Count 0 / 1 / N, every time, for every caller ($perf in B2 and $deckHits in
+    # C3 carried the same latent throw for a log with exactly one matching line).
+    return ,$res
+}
+
+# ------------------------------------------------------------------------------
+# TASK-1193: the B2-SUITE verdict, lifted out of the gate so it can be run against
+# a LOG without a cook.  SHIP-9c: a gate is validated against the failure it
+# exists to detect, on real artefacts - this one was, on the real green run's
+# automation.log (555/0 => PASS), Tools/SuiteRunnerFixtures/red-suite.log (18/2
+# => STOP) and result-absent.log (0/0 => STOP), by
+# Tools/Packaging/Fixtures/b2_verdict_check.ps1, which lifts THIS text out of
+# THIS file by AST and never retypes it (SHIP-0).  The gate prints exactly the
+# strings this returns.
+#
+# Two rules, and they are the whole point:
+#   1. The needles are LITERAL text matched with -Simple.  The original wrote
+#      the regex-escaped 'Result=\{Success\}' under -SimpleMatch, which looks
+#      for a BACKSLASH and matched 0 of 555 lines on every live run since the
+#      file was born.  The pattern and the matcher must agree.
+#   2. A ZERO IS A VERDICT - never a pass, never an exception.  0 Success AND
+#      0 Fail is exactly what a suite that never ran, or a parser pointed at
+#      the wrong file, produces (SC-114: a null is the one reading every broken
+#      apparatus returns) => a NAMED STOP, ruled here and not left to the
+#      baseline clause, so lowering the baseline can never turn it green.
+# Counts are the MAX per log, not the SUM: -abslog and the redirected stdout
+# carry the SAME lines, and a sum would report 1110 Success for a 555 suite.
+# ------------------------------------------------------------------------------
+function Get-SuiteVerdict {
+    param(
+        [Parameter(Mandatory=$true)][string[]] $Paths,
+        [Parameter(Mandatory=$true)][int]      $Baseline
+    )
+    $SUCCESS_NEEDLE = 'Result={Success}'
+    $FAIL_NEEDLE    = 'Result={Fail}'
+    $existing  = @($Paths | Where-Object { Test-Path -LiteralPath $_ })
+    $success   = 0
+    $fail      = 0
+    $performed = 0
+    $failNames = @()
+    # No @() around Get-LogMatches, deliberately: it already returns an array
+    # (the ',' in its return), and @() around a command that emits ONE array
+    # object NESTS it - zero hits would arrive as a 1-element array holding an
+    # empty array (Count 1, no .Line), i.e. a green suite would read Fail=1.
+    # Measured by b2_verdict_check.ps1 on this function's first run (rev 1).
+    foreach ($p in $existing) {
+        $s = Get-LogMatches -Paths @($p) -Pattern $SUCCESS_NEEDLE -Simple
+        $f = Get-LogMatches -Paths @($p) -Pattern $FAIL_NEEDLE    -Simple
+        if ($s.Count -gt $success) { $success = $s.Count }
+        if ($f.Count -gt $fail)    { $fail    = $f.Count }
+        foreach ($hit in $f) {
+            if ($hit.Line -match 'Name=\{([^}]*)\}') { $failNames += $Matches[1] }
+        }
+    }
+    $failNames = @($failNames | Select-Object -Unique)
+    $perf = Get-LogMatches -Paths $Paths -Pattern '(\d+)\s+tests?\s+performed'
+    if ($perf.Count -gt 0) { $performed = [int]$perf[$perf.Count - 1].Matches[0].Groups[1].Value }
+
+    $noResults = (($success -eq 0) -and ($fail -eq 0))
+    $ok = (-not $noResults) -and ($fail -eq 0) -and ($performed -ge $Baseline) -and ($success -ge $Baseline)
+    $logsRead = ('{0} of {1} logs read' -f $existing.Count, $Paths.Count)
+    $remedy = ''
+    if ($noResults) {
+        $evidence = ('NOT MEASURED - suite produced no results: 0 {0} and 0 {1} lines ({2} performed; {3})' -f `
+                     $SUCCESS_NEEDLE, $FAIL_NEEDLE, $performed, $logsRead)
+        $remedy   = 'A zero is not green. Either the suite never ran or this gate is reading the wrong file: check the -abslog path and read suite.out.log for a crash before the first test. There is no skip flag.'
+    } else {
+        $evidence = ('{0} performed / {1} Success / {2} Fail (baseline {3}; {4}; max per log)' -f `
+                     $performed, $success, $fail, $Baseline, $logsRead)
+        if ($failNames.Count -gt 0) { $evidence += (' - failing: ' + (@($failNames | Select-Object -First 8) -join ', ')) }
+        if ($fail -gt 0) {
+            $remedy = 'Any failing test STOPS the ship. Fix the test or the code - there is no skip flag.'
+        } elseif (-not $ok) {
+            $remedy = ('The suite ran below the {0}-test baseline. A shrunken suite is a STOP, not a pass; find the tests that went missing.' -f $Baseline)
+        }
+    }
+    return @{
+        Ok = $ok; NoResults = $noResults
+        Performed = $performed; Success = $success; Fail = $fail; FailNames = $failNames
+        LogsRead = $existing.Count; LogsGiven = $Paths.Count
+        Evidence = $evidence; Remedy = $remedy
+    }
 }
 
 function Get-Sha256OfString([string]$Text) {
@@ -2231,14 +2319,21 @@ if ($DryRun) {
     $r2 = Invoke-Tool -FilePath $EditorCmd -ArgumentString $SuiteCommandLine `
                       -LogBase (Join-Path $RunLogDir 'suite') -TimeoutMinutes $SUITE_TIMEOUT_MIN
     $slogs = @($suiteLog, $r2.Out, $r2.Err)
-    $perf = Get-LogMatches -Paths $slogs -Pattern '(\d+)\s+tests?\s+performed'
-    if ($perf.Count -gt 0) { $suiteTotal = [int]$perf[$perf.Count - 1].Matches[0].Groups[1].Value }
-    $successCount = (Get-LogMatches -Paths $slogs -Pattern 'Result=\{Success\}' -Simple).Count
-    $failLines    = Get-LogMatches -Paths $slogs -Pattern 'Result=\{Fail\}' -Simple
-    $ok2 = ($failLines.Count -eq 0) -and ($suiteTotal -ge $SUITE_BASELINE) -and ($successCount -ge $SUITE_BASELINE) -and (-not $r2.TimedOut)
+    # TASK-1193: the parse lives in Get-SuiteVerdict (beside Get-LogMatches) so
+    # it can be validated against a real log without a cook (SHIP-9c).  Literal
+    # needles under -Simple; a zero is a NAMED STOP, never a pass and never an
+    # UNEXPECTED-ERROR; counts are max-per-log because automation.log and
+    # suite.out.log carry the same lines.  Nothing below retypes the verdict.
+    $v2 = Get-SuiteVerdict -Paths $slogs -Baseline $SUITE_BASELINE
+    $suiteTotal = $v2.Performed
+    $ok2 = $v2.Ok -and (-not $r2.TimedOut)
+    $remedy2 = $v2.Remedy
+    if ($r2.TimedOut) {
+        $remedy2 = ('The suite did not finish inside {0} minutes and was killed, so these counts are PARTIAL. ' -f $SUITE_TIMEOUT_MIN) + $v2.Remedy
+    }
     Assert-Gate -Id 'B2-SUITE' -Ok $ok2 `
-        -Evidence ("{0} performed / {1} Success / {2} Fail (baseline {3})" -f $suiteTotal, $successCount, $failLines.Count, $SUITE_BASELINE) `
-        -Remedy 'Any failing test STOPS the ship. Fix the test or the code - there is no skip flag.' | Out-Null
+        -Evidence ("{0}; timedOut={1}" -f $v2.Evidence, $r2.TimedOut) `
+        -Remedy $remedy2 | Out-Null
 }
 
 # ------------------------------------------------------------------------------
