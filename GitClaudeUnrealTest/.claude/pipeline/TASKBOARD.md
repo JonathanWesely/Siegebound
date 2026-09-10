@@ -2221,7 +2221,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 #### TASK-1208 — [README-SAVED-PATH-FIX] ⚙️📝⛔ **ONE LINE IN `Docs/Packaging/README-source.md`: THE *Known notes* SAVE-LOCATION SENTENCE SAYS `%LOCALAPPDATA%\GitClaudeUnrealTest\Saved\`, ⛔ CITED TO THE MEASUREMENT AND TO THE ENGINE RULE THAT PUTS A STAGED BUILD'S `Saved` THERE — ⛔ THE ACTUAL LINE, ⛔ NOT A GUESS.** (gameplay-programmer) — ⭐ **NEW 2026-09-10, marker `TASK-1208-README-SAVED-PATH-FIX`** · ▶ **DISPATCHABLE NOW.**
 - assignee: gameplay-programmer
-- status: ready-for-qa
+- status: done (commit 8d05679) — 2026-09-10, hosted by `TASK-1210` (gated by `TASK-1209` PASS): the one-line fix + its citation rode `8d05679` by pathspec; the transferred check executed by the host read `1 file changed, 6 insertions(+), 3 deletions(-)`, LF, no BOM; README revision 2 rendered from it and `Siegebound-Win64-Shipping-2026-09-09.zip` replaced in place (`handoffs/TASK-1210-buildmaster.md`). Was: ready-for-qa
 - blocked-by: ⛔ **NONE** (⭐ `TASK-1193` = `done`; `c6fce42` is the base).
 - parallel-safe: ✅ **yes vs lane A (`TASK-1199`–`1201`) and every `Source/**` / `Tools/**` row** (⛔ `Docs/` only) · ⛔ **NO vs any `/ship` invocation** (Phase E reads this file) · ⛔ **NO vs any other writer of `Docs/Packaging/README-source.md`** (⛔ none boarded).
 - spec: >
@@ -2236,7 +2236,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 #### TASK-1209 — [README-SAVED-PATH-GATE] 🔍⛔ **THE GATE OVER ⭐ `TASK-1208` — A DIFF-READ: ⛔ EXACTLY ONE PROSE LINE MOVED, THE NEW SENTENCE STATES THE MEASURED LOCATION, AND THE ENGINE CITATION RESOLVES TO A LINE THAT SAYS WHAT THE COMMENT SAYS IT SAYS.** (qa-reviewer) — ⭐ **NEW 2026-09-10, marker `TASK-1209-README-SAVED-PATH-GATE`**
 - assignee: qa-reviewer
-- status: qa-passed — 2026-09-10, `qa/TASK-1209-report.md`: PASS, 0 BLOCKER · 2 WARN (manager leads) · 2 NIT; `TASK-1210` unblocked. Marker: TASK-1209-README-SAVED-PATH-GATE-QA-PASSED
+- status: done (commit 8d05679) — 2026-09-10, the report rode `8d05679` under the `TASK-1210` host; the duty it transferred (`SC-§71b`: the `git diff --stat` one-hunk check, LF/no-BOM, the stage marker's existence, the `Config/` grep) was executed by the host — all as declared. Was: qa-passed — 2026-09-10, `qa/TASK-1209-report.md`: PASS, 0 BLOCKER · 2 WARN (manager leads) · 2 NIT; `TASK-1210` unblocked. Marker: TASK-1209-README-SAVED-PATH-GATE-QA-PASSED
 - blocked-by: ⭐ **`TASK-1208`** (⛔ `handoffs/TASK-1208-programmer.md` on disk, `SC-§40` cl. 11).
 - parallel-safe: ⛔ **NO vs `TASK-1208`** (its subject) · ✅ **yes vs everything else** (read-only, no engine, no Git).
 - spec: >
@@ -2251,7 +2251,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 #### TASK-1210 — [README-SAVED-PATH-HOST] 🔧📦⛔⭐⭐ **THE HOST — RE-VERIFY THE STAGE UNCHANGED BY HASH, RE-RENDER THE README BY HAND FROM THE FIXED SOURCE, RE-ZIP FROM THE INTACT STAGE TO A `.partial`, READ IT BACK, REPLACE `Siegebound-Win64-Shipping-2026-09-09.zip` IN PLACE UNDER THE SAME NAME, STRIKE THE OLD HASH, COMMIT THE SOURCE FIX BY PATHSPEC. ⛔ NO RE-COOK. ⛔ NEVER PUSH.** (build-master) — ⭐ **NEW 2026-09-10, marker `TASK-1210-README-SAVED-PATH-HOST`**
 - assignee: build-master
-- status: backlog
+- status: done (commit 8d05679) — **2026-09-10 00:29–00:40 PDT: census zero (nothing closed) · `SHIP-§8d` stage MATCH ×4 by hash (exe · pak · ucas · utoc; 70 files, `Saved\` absent, no re-cook) · Phase E route (a): source re-rendered with the nine revision-1 values verbatim (round-trip proven byte-identical) + one r2 sentence — `diff` r1→r2 = the 1208 hunk (−3/+6) + one blank + one sentence, `{{SHIP:` 0 (control 15), click target once · Phase D per `PKG-§7b`: ZipArchive Create → `.partial`, `SHIP-§4` read-back 71 entries, sum exact, the four game entries hashed FROM INSIDE the archive MATCH ×4, every other entry the same compressed length as before, D2 delta 889 B = the README's compressed delta, then moved over the same name — old sha256 ~~`9CA197CB…D70F19`~~ (1,334,631,291 B) STRUCK, new `1CAF8DCD93FBFF07294A0F7650D360D8EF2B0163455858ECCA971E15833EA7F8` (1,334,632,180 B, 00:37:01 PDT); Development zip + `ship-state.json` untouched, nothing pruned · commit `8d05679` = 5 files by pathspec (EXISTS ×5, two `MISSING` controls red, fences empty), `main` 3 ahead, ⛔ NOT pushed · `L_Arena` `1f78419d…` unmoved · scripts kept at `packagedZIPofGame\.ship\20260910-073200-readme-r2\`. `handoffs/TASK-1210-buildmaster.md` (rides the next commit). 🙋 His extract-and-click now applies to the NEW archive.** Was: backlog
 - blocked-by: ⭐ **`TASK-1208`** ⛔ **AND** ⭐ **`TASK-1209` PASS**.
 - parallel-safe: ⛔ **NO vs any commit host** (⛔ one at a time — ⛔ and this chain runs BEFORE lane A's `TASK-1201`: the false sentence is in 🧑 Jonathan's hands) · ⛔⛔ **NO vs any compile/cook host or any `/ship` invocation** (`PKG-§6` — ⛔ a cook OVERWRITES the stage this row zips; the hash check would STOP it, but the point is not to race it) · ⛔ **NO vs any editor/MCP row** (nothing here needs the editor; a running editor is only noise in the census).
 - spec: >
