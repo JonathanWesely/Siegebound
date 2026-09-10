@@ -167,9 +167,12 @@ That route has not been exercised on a packaged Shipping build, so treat it as u
   <!-- src: .claude/pipeline/CONVENTIONS.md:7043 -->. It is also smaller than the Development
   package for the same reasons; whether a debug-symbol (`.pdb`) file shipped beside the binary
   is recorded in the size line at the top.
-- The game writes its save data (accounts, decks, settings) into
-  `Windows\GitClaudeUnrealTest\Saved\` next to the executable, so extract somewhere you have
-  write permission (not `C:\Program Files`).
+- The game writes its save data (accounts, decks, settings) into your Windows user profile, not
+  next to the executable: `%LOCALAPPDATA%\GitClaudeUnrealTest\Saved\` — normally
+  `C:\Users\<you>\AppData\Local\GitClaudeUnrealTest\Saved\` (typing `%LOCALAPPDATA%` into the
+  File Explorer address bar opens that `Local` folder). Your decks are in
+  `SaveGames\SiegeDecks.sav` and your settings in `Config\Windows\GameUserSettings.ini`; nothing
+  is written beside the executable. <!-- src: measured — .claude/pipeline/handoffs/TASK-1193-buildmaster.md:400-402 (PART 4 §5: two runs of the staged Shipping build, 2026-09-09 — SaveGames\SiegeDecks.sav 4,391 B 23:25:48 and Config\Windows\GameUserSettings.ini 1,378 B 23:27:44 under C:\Users\<user>\AppData\Local\GitClaudeUnrealTest\Saved\; Windows\GitClaudeUnrealTest\Saved\ absent). Engine rule — C:/Program Files/Epic Games/UE_5.8/Engine/Source/Runtime/Core/Private/Misc/Paths.cpp:183-192 (ShouldSaveToUserDir() = FApp::IsInstalled() || -SaveToUserDir || FPlatformProcess::ShouldSaveToUserDir() || -UserDir=), :451-473 (ProjectUserDir() = FPlatformProcess::UserSettingsDir() / FApp::GetProjectName() / when ShouldSaveToUserDir(), :466), :485-494 + :112-115 + :87 (ProjectSavedDir() = ProjectUserDir() + "Saved" + "/"); C:/Program Files/Epic Games/UE_5.8/Engine/Source/Runtime/Core/Private/Misc/App.cpp:212-242 (IsInstalled(): bIsInstalled = true under UE_BUILD_SHIPPING && PLATFORM_DESKTOP && !UE_SERVER, :218-219 — this package's reason; the other three disjuncts are false here: no such switch on the no-args launch, GenericPlatformProcess.cpp:98-102 returns false with no Windows override, Engine/Build/InstalledProjectBuild.txt absent from the stage); C:/Program Files/Epic Games/UE_5.8/Engine/Source/Runtime/Core/Private/Windows/WindowsPlatformProcess.cpp:1459-1476 (UserSettingsDir() = SHGetKnownFolderPath(FOLDERID_LocalAppData), :1467 = %LOCALAPPDATA%). Note: the stage's Engine/Config/StagedBuild_GitClaudeUnrealTest.ini (present 2026-09-10, 3 B) feeds FPaths::IsStaged() (Paths.cpp:161-181, probe at :174), which is NOT in the ShouldSaveToUserDir() chain; Config/DefaultGame.ini and Config/DefaultEngine.ini carry no SaveToUserDir/UserDir/SavedDir key (grep 2026-09-10, 0 hits) -->
 - Carried forward from the 2026-08-29 package: on that machine's first runs the audio device
   occasionally failed to open (`OpenAudioStream failed`). It did not stop the game from booting
   or playing; if you get no sound, that is the likely cause.
