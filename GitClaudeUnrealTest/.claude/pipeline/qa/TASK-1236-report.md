@@ -1,0 +1,31 @@
+# QA Report — TASK-1236
+subject: TASK-1225 ([AURA-CLAUDE-MD] — `CLAUDE.md`)
+Verdict: PASS
+Blockers: 0 · Warns: 2 · Nits: 2
+Reviewed: 2026-09-13 by qa-reviewer, text-level (`Read` + `Grep` only — no `Bash`, no git, no engine; `unreal_inspector` not applicable to a Markdown-only change and was not used).
+
+## Method / provenance
+- Subject file read in full: `C:\GitProjects\GitHub\GitClaudeUnrealTesting\GitClaudeUnrealTest\CLAUDE.md` (76 lines).
+- Baseline for the "nothing else touched" check: the pre-edit `CLAUDE.md` was present verbatim in this session's loaded project-instructions context (6-row table, old single-step rule 5, four hard-gate bullets). I compared the current file against that copy section by section. This is a read-side surrogate for `git diff`, which I cannot run; it is consistent with the handoff's four `@@` headers but is not itself a git measurement.
+- Inputs: board rows TASK-1225 (lines 2469–2478) and TASK-1236 (2588–2596), the section's standing constraints (2328–2339), plan item 9 (`look-into-a-new-moonlit-kernighan.md` line 56), handoff `handoffs/TASK-1225-programmer.md`.
+
+## Checks (dispatch items 1–6)
+1. **Two hard-gate sentences character-exact (`SC-§38a`)** — PASS. Full-line anchored `Grep` (`^- …\.$`) returns exactly one hit each: line 66 (`Nothing with a runtime acceptance criterion … not treated as a pass.`) and line 67 (`Aura verification drives PIE; … waits for a go.`). Both match the board spec (c) and plan item 9 verbatim, including the semicolon and trailing period.
+2. **Rule 5 → 5a/5b/5c, old line gone, 1–4/6/7 unchanged** — PASS. Lines 46–49 carry the header + 5a/5b/5c. `Grep` for `ready-for-integration` and for the old phrase `invoke \`build-master\` to compile, assemble, and commit` = 0 hits. The handoff quotes the removed line verbatim (acceptance (2) satisfied). Rules 1 (with its FR-§0.4 sub-bullet), 2, 3, 4, 6, 7 compared against baseline: byte-identical, numbering 1–7 intact. 5a/5b/5c content matches spec (b) clause by clause: `Result: Succeeded`, C++ relaunch on the graceful-quit lane / never Live Coding, status → `built`, no commit; runtime-criterion → `playtest-verifier`, `verify-failed` → programmer as a QA loop with the max-3-then-escalate; Blueprint/asset-only skip 5a; `verified` / `UNOBSERVABLE` / no criterion → build-master assembles + commits.
+3. **Team table = seven rows** — PASS. Lines 9–15; new row 15 is exactly spec (a): `| playtest-verifier | Runs Aura PIE verification, writes runtime evidence | Editing code/art, compiling, Git |`, placed after `footage-analyst`.
+4. **Diff confined to the four regions; hunk count matches** — PASS. Against baseline, changes are exactly: (a) +1 line at 15 (table); (d) +1 line at 25 (comms list); (b) −1/+4 at 46–49 (rule 5); (c) +2 at 66–67 (hard gates). That is 4 hunks, 8 insertions, 1 deletion — matches the handoff. Sections verified UNCHANGED against baseline: title + line 3; table header and the six pre-existing rows; the "How agents communicate" intro and its six pre-existing bullets; the whole "Slack mirror" section (paragraph + 5 bullets); routing rules 1–4, 6, 7; the whole "GDD mode" section (5 items); hard-gate bullets 1, 4, 5, 6 (pre-existing four); the "Build command" block.
+5. **Retired manager-proxy clause untouched (`SC-§100`)** — PASS. Line 36 ("All six agents hold direct-post grants … Corrected 2026-09-09 on Jonathan's approval; the retired clause said …") is byte-identical to baseline. No hunk in the Slack-mirror section.
+6. **`TASK-###-verify.md` comms bullet (spec (d))** — PASS. Line 25: `.claude/pipeline/qa/TASK-###-verify.md — runtime verification reports from \`playtest-verifier\` (\`VERIFIED\` / \`VERIFY-FAILED\` / \`UNOBSERVABLE\`; law: CONVENTIONS VER-§)`. Verdict vocabulary matches plan item 8. The handoff flagged a dispatch-vs-board discrepancy on (d); the board row is the contract and (d) is on it, so its presence is correct, not a scope excess.
+
+Also checked: spec's "reasoning not copied in — cite `VER-§`" — rule 5 header and the comms bullet cite `CONVENTIONS VER-§` and no rationale prose was added. `VER-§` now resolves: `Grep` finds 7 occurrences in `.claude/pipeline/CONVENTIONS.md` (TASK-1226's lane), so the forward reference is not dangling at gate time. Spec (e): the Status flow is not restated in `CLAUDE.md` (only `built` is named in 5a as a status, which is a reference, not a restatement).
+
+## Findings
+- [WARN] CLAUDE.md:3 — still reads "driven by a 6-agent team" while the table now has seven rows. Outside the four permitted regions, so correctly left alone by TASK-1225 (`SC-§100`); NOT a defect of this row. Needs a manager ruling / one-word follow-up edit. Same count appears inside the untouched line 36 ("All six agents hold direct-post grants") — that line is under the separate pending manager-proxy ruling, so any "seven" correction there must ride that ruling, not a drive-by.
+- [WARN] CLAUDE.md:48 vs :50 — the "counts as a QA loop" clause for verify failures lives inside 5b rather than in rule 6, so rule 6 still literally names only build failures. The programmer chose this to satisfy the dispatch's "rule 6 intact" instruction and the gate brief's "6 unchanged". Semantically complete (5b carries the loop cap explicitly); recorded so the manager knows the spec's "rule 6's wording extends to verify failures" was met by 5b's text, not by an edit to 6. No action required unless the manager wants it restated in 6.
+- [NIT] Slack prefix — handoff used `⚙️ GAMEPLAY-PROGRAMMER:` (SLACK.md registry form) where the dispatch said `⚙️ PROGRAMMER:`. Registry wins; not a defect.
+- [NIT] handoff — line-ending note (LF preserved, pre-existing autocrlf warning) is declared, not measured by me; harmless for a Markdown file.
+
+## Notes for build-master (host TASK-1241)
+- Commit `CLAUDE.md` by pathspec with the other wave-1 files per the host row; nothing under `Saved/` and no `.uproject` change rides this (the `Aura` plugin entry is already in Jonathan's `0399d1c`).
+- The two hard-gate lines and the 5a/5b/5c chain are now law for the orchestrator from this commit forward: a C++ row with a runtime criterion goes `qa-passed → built → verified → commit`, not straight to commit.
+- Line-3 "6-agent" wording is an open WARN for the manager, not a blocker on this commit.

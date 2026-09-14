@@ -37,6 +37,7 @@ Install/create these as you reach the chapter that needs them (chapter number in
 | 14 | **Xbox Game Bar** (or any screen recorder) | Capturing gameplay clips for the footage-analyst (Win+G / Win+Alt+R; preinstalled on Windows 11) | Microsoft Store (usually preinstalled) | 8 |
 | 15 | **Slack workspace + the Claude Slack connector** | The team's visibility mirror channel | slack.com; connector via claude.ai Settings → Connectors | 9 |
 | 16 | **Supabase account (free tier)** + the Claude Supabase MCP connector | Cloud account/save sync backend, driven through Claude's MCP tools | supabase.com; connector via claude.ai Settings → Connectors | 10 |
+| 17 | **Aura AI for Unreal account** (trial first → paid tier after the pilot measures credit-per-verification) | Play-In-Editor verification for the `playtest-verifier` agent (input simulation, live actor/UMG state, screenshots). No API key — it authenticates by account login. ⚠️ Decide the training toggle in its privacy settings BEFORE the first index (unlimited Auto Mode requires training ON) | tryaura.dev → account → dashboard installer for **5.8** | 11 |
 
 ### ⚠️ The antivirus reality (read BEFORE installing anything network-facing)
 
@@ -778,6 +779,148 @@ to the real ini, fill it from the dashboard (Project Settings → API), and conf
 
 ---
 
+## Chapter 11 — Aura (Play-In-Editor verification for the agent team)
+
+Aura AI for Unreal (tryaura.dev) is an in-editor assistant whose Verification Agent can
+launch PIE, simulate input, read live actor and UMG state, and screenshot/record the result —
+the one lane Chapter 4's MCP cannot provide ("no input injection", §4.4). It joins the team as
+a seventh agent, `playtest-verifier`, behind a new `verified` gate. Everything Aura does is
+in ADDITION to the existing setup: `unreal-mcp` on `:8000`, Blender on `9876`, the build
+command, and the Git law are all untouched.
+
+**Secrets law, unchanged:** Aura authenticates through its own account login — there is no
+API key to store anywhere. Nothing in this chapter is a secret; the paths below are paths.
+
+### 11.1 Account + install (engine level, one install per UE_5.8)
+
+1. **[You]** Create the Aura account (THE LIST row 17). The trial is free and card-less;
+   the paid tier is decided AFTER the pilot measures credit-per-verification (Appendix B).
+2. **[You]** ⚠️ **Decide the training toggle in Aura's privacy settings BEFORE the first
+   index.** Unlimited Auto Mode requires training ON; turning it OFF makes Auto Mode
+   rate-limited instead. This decides whether the GDD and the game's source are used for
+   training — it is a privacy call, and it is recorded on the board in one word.
+3. **[You]** Close the editor. From the Aura dashboard download the Windows installer and
+   select engine version **5.8**. It installs into the ENGINE (not the project), under
+   `<UE_5.8>/Engine/Plugins/Marketplace/Aura/`, so it is available to every 5.8 project;
+   re-run the installer after an engine upgrade.
+4. **[You]** Open the project → Edit → Plugins → search **Aura** → Enable → restart once.
+   The editor adds an `Aura` entry to the `.uproject` `Plugins` array (measured on the
+   original machine: `"Name": "Aura", "Enabled": true` plus a `SupportedTargetPlatforms`
+   list). That is a committed file — build-master commits it under a task like any config
+   change; no agent commits it on its own.
+5. **[You]** Click the **Aura** toolbar button and confirm the green 🟢 indicator, then ask
+   *"Tell me about this project"* — the answer must name THIS game's classes, not the
+   third-person template. If it cannot connect: `Aura.exe` must be running in the system
+   tray, nothing else may hold **local port 41200**, and the AV must not block loopback
+   (same class of problem as the TLS exclusions in THE LIST).
+6. **[You]** Optional: Editor Preferences → Aura Plugin Settings → uncheck *Open Aura in
+   Electron Window* to dock it. For unattended runs prefer the standalone app — crash
+   recovery only works there, and it does nothing for a Claude-driven session.
+
+### 11.2 Configure for the project
+
+1. **[You]** Aura Settings → **MCP Configuration → Set up Unreal MCP.** This lets Aura call
+   Epic's built-in editor tools alongside its own. It is Aura's OWN client connection to
+   Epic's MCP — our `unreal-mcp` block in `.mcp.json` (Chapter 4, `:8000`) is untouched.
+2. **[You]** Enable the **Filesystem Sandbox** (experimental, 5.8-only; the toggle lives in
+   Aura's settings — verify its exact location on first run). Every Aura asset mutation then
+   stages in `Intermediate/Sandboxes/AuraSandbox` for Accept/Reject, which gives `.uasset`
+   edits an undo that is not Git. ⚠️ It does **not** cover C++.
+
+### 11.3 The machine-local files under `Saved/.Aura` (regenerate, never commit)
+
+Aura reads two per-project files from `<Project>/Saved/.Aura/`: `INDEX_IGNORE.txt` (what
+the semantic index skips — the Fab packs put this project over Aura's ~30,000-file default
+cap, so this file must exist BEFORE the first index) and `project_memory.txt` (a short digest
+Aura injects every turn: the team table, the asset-prefix and texture-suffix tables, the
+build command, and the laws it is most likely to violate — never Live Coding, never write
+`Content/` from mesh generation, never run Git).
+
+`Saved/` is gitignored, so both are machine-local and would be lost on a fresh clone. The
+canonical, committed copies live in `Docs/`:
+
+| Canonical (committed) | Copied to (gitignored) |
+|---|---|
+| `Docs/AuraIndexIgnore.txt` | `Saved/.Aura/INDEX_IGNORE.txt` |
+| `Docs/AuraProjectMemory.md` | `Saved/.Aura/project_memory.txt` |
+
+**[Claude]** `Tools/aura_sync.ps1` copies both (idempotent). Run it as a **session-start
+step** on any machine, and again whenever either canonical changes. Edit the `Docs/` copies
+only — a hand edit under `Saved/.Aura` is overwritten by the next sync and is never staged
+(nothing under `Saved/` ever is). There is no skills mirror: `.claude/skills/` does not
+exist in this project, so that step from Aura's docs is dropped.
+
+### 11.4 The bridge into Claude Code — two stdio MCP servers, one config home
+
+1. **[You]** Aura Settings → **MCP Configuration → Add to Editor → Claude Code**, then
+   fully restart Claude Code. Paste the `command` and `args` shown on that settings page
+   into the chat — they are paths, not secrets.
+2. **What the one-click actually does (measured on the original machine):** Aura's own doc
+   says it writes `~/.claude/mcp.json` with a `"servers"` key. It does not. It writes the
+   two servers into **`~/.claude.json` under `mcpServers`** — Claude Code's USER scope — and
+   `~/.claude/mcp.json` is never created. That works, but it leaves the repo without its
+   source of truth, so:
+3. **[Claude]** ⭐ **House rule: the two blocks live in the project `.mcp.json`** under
+   `mcpServers`, next to `unreal-mcp` and `blender`, with both names added to
+   `enabledMcpjsonServers` in `.claude/settings.local.json` (Appendix D). Then the
+   user-scope copy in `~/.claude.json` is removed so there is exactly one definition, and
+   Claude Code is restarted (it does not hot-reload `.mcp.json`). The blocks as measured:
+
+   ```json
+   "unreal_inspector": {
+     "type": "stdio",
+     "command": "C:/Program Files/Epic Games/UE_5.8/Engine/Plugins/Marketplace/Aura/PortablePython/Windows/python.exe",
+     "args": ["C:/Program Files/Epic Games/UE_5.8/Engine/Plugins/Marketplace/Aura/MCP/unreal_inspector.py"]
+   },
+   "unreal_editor": {
+     "type": "stdio",
+     "command": "C:/Program Files/Epic Games/UE_5.8/Engine/Plugins/Marketplace/Aura/PortablePython/Windows/python.exe",
+     "args": ["C:/Program Files/Epic Games/UE_5.8/Engine/Plugins/Marketplace/Aura/MCP/unreal_editor.py"]
+   }
+   ```
+
+   Use Aura's own `PortablePython` — not the system Python 3.14 and not the art-pipeline uv
+   venv; Aura's scripts pin their own dependencies. `unreal_inspector` is **read-only**;
+   `unreal_editor` is the **mutating** server (it bundles PIE/verify/screenshot tools with
+   C++ authoring, Live Coding compile, and shell tools).
+4. **[Claude]** `/mcp` in the restarted session must list `unreal_inspector`,
+   `unreal_editor`, `unreal-mcp`, and `blender` as connected. Record every tool name the two
+   Aura servers expose — the next section and the verifier's `tools:` line are built from
+   that census, never from a guess.
+
+### 11.5 The allow-list law (Appendix D — merge, never replace)
+
+- `mcp__unreal_inspector__*` may be allowed **wholesale** — it is read-only.
+- `unreal_editor` tools are **enumerated by their real names** from the `/mcp` census: only
+  the PIE / verify / screenshot tools, in `permissions.allow` AND in any agent `tools:` line.
+- ⛔ **Never `mcp__unreal_editor__*`.** A wildcard there hands every agent C++ authoring,
+  Live Coding compile, and a shell — undoing the compile-belongs-to-build-master law and the
+  no-Live-Coding law in one line.
+
+### 11.6 The seventh agent — `playtest-verifier` and the `verified` gate
+
+`playtest-verifier` (`.claude/agents/playtest-verifier.md`) runs Aura's PIE verification
+against a task's acceptance lines AFTER build-master has compiled and relaunched the editor
+on the new binaries (PIE can only test binaries that exist, so it runs after QA, never
+before), one verification at a time, never concurrent with an assemble or an import, and
+announced first whenever the human is present because it takes over PIE. Every claim in its
+report (`.claude/pipeline/qa/TASK-###-verify.md`) carries a screenshot/video path or a
+quoted actor/widget value; the verdict is `VERIFIED`, `VERIFY-FAILED` (routes back to the
+programmer and counts as a QA loop), or `UNOBSERVABLE` (the honest answer for pure-data or
+editor-only tasks — recorded on the row, never treated as a pass). The hard gate: nothing
+with a runtime acceptance criterion is committed without a `VERIFIED` report. Aura output
+still passes `qa-reviewer`; the verifier is advisory until three of its verdicts match the
+human's own playtest, and the human decides when it becomes binding.
+
+### 11.7 Verify
+
+Appendix A rows 12–16. In one line: 🟢 + Siegebound classes named → `/mcp` shows all four
+servers → `Tools/aura_sync.ps1` leaves `git status` clean → the verifier returns `VERIFIED`
+on a known-good task AND `VERIFY-FAILED` on a deliberately broken one (a verifier that
+cannot fail is not a gate) → a Sandbox Reject leaves `Content/` unchanged.
+
+---
+
 ## Appendix A — The full verification checklist (run top to bottom on the new machine)
 
 | # | Probe | Expect |
@@ -793,6 +936,11 @@ to the real ini, fill it from the dashboard (Project Settings → API), and conf
 | 9 | Orchestrator posts + reads back a line in the Slack planning thread | connector live, registry recorded |
 | 10 | Supabase MCP `list_projects` | the game's project visible |
 | 11 | Ask Claude: "Show me the task board status" | the agent team scaffold answers from TASKBOARD.md |
+| 12 | Aura toolbar → 🟢 → "Tell me about this project" | Project summary that names `Siegebound` classes, not the template |
+| 13 | Claude Code `/mcp` | `unreal_inspector`, `unreal_editor`, `unreal-mcp`, `blender` all connected |
+| 14 | `playtest-verifier` on a known-good task | `Verdict: VERIFIED`, a video/screenshot path that exists, quoted widget values |
+| 15 | Same on a deliberately broken branch | `VERIFY-FAILED` with the failing observation — a verifier that cannot fail is not a gate |
+| 16 | Sandbox on → Aura edits a widget → Reject | Real `Content/` file unchanged (`git status` clean) |
 
 ## Appendix B — Things this guide could not verify from the record (check on the new machine)
 
@@ -809,6 +957,22 @@ to the real ini, fill it from the dashboard (Project Settings → API), and conf
   included a TLS-relaxation env var for Node; prefer fixing certificates properly (AV
   exclusions, Appendix/THE LIST) over disabling verification — treat that recorded line as
   a workaround of last resort, not a recommendation.
+- **Aura (Chapter 11) — the ⚠️ items no one has measured yet:**
+  - **The Fab "$150 upfront, lifetime MCP usage + one-year subscription" SKU** is
+    single-sourced (one press article; the Fab listing itself was never found). Verify it on
+    Fab before choosing it over the monthly tiers — if real, it dominates for a pipeline whose
+    main use is MCP.
+  - **Whether Aura's PIE input simulation drives OUR Enhanced Input mappings** (the
+    positional-layout keyboard law) or only default bindings — Aura's docs are silent; test
+    with one case that needs the positional layout during the pilot.
+  - **Whether enabling the Filesystem Sandbox adds a SECOND `.uproject` `Plugins` entry**
+    beside `Aura` — only the `Aura` entry was measured; check the diff after the toggle.
+  - **Credit per verification run** — the pilot's measurement, and the sole input to the
+    tier decision (Pro vs Indie vs the Fab SKU). Credit does not roll over.
+  - **The real `mcp__unreal_editor__*` tool names** — obtainable only from `/mcp` after the
+    bridge is live; the enumerated allow-list and the verifier's `tools:` line wait on them.
+  - **Whether Aura's verification can observe the game's C++ assistant-snapshot / cheat-manager
+    state directly** or only actors + UMG (its docs list actors, GAS, UMG, multiplayer).
 
 ## Appendix C — House laws worth carrying to any new machine (one line each)
 

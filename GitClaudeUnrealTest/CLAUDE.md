@@ -12,6 +12,7 @@ UE 5.8 C++ project driven by a 6-agent team. **You (the main session) are the or
 | qa-reviewer | Reviews code pre-compile, writes pass/fail reports | Editing code, engine, Git |
 | build-master | Compiles, assembles assets+code in scene via Unreal MCP, Git commits | Writing new code/art |
 | footage-analyst | Reviews gameplay videos in `testvideo/` via frame extraction, writes evidence-backed diagnosis reports (VID-###) | Editing code/art, engine access, Git |
+| playtest-verifier | Runs Aura PIE verification, writes runtime evidence | Editing code/art, compiling, Git |
 
 ## How agents communicate
 
@@ -21,6 +22,7 @@ Subagents can't talk to each other directly. They communicate through **shared f
 - `.claude/pipeline/CONVENTIONS.md` — naming law; guarantees artist asset names match programmer code references
 - `.claude/pipeline/handoffs/` — per-task completion notes passed downstream
 - `.claude/pipeline/qa/` — QA reports passed back to the programmer and forward to build-master
+- `.claude/pipeline/qa/TASK-###-verify.md` — runtime verification reports from `playtest-verifier` (`VERIFIED` / `VERIFY-FAILED` / `UNOBSERVABLE`; law: CONVENTIONS VER-§)
 - `.claude/pipeline/footage/` — footage diagnosis reports (VID-###) consumed by manager to board fixes (law: CONVENTIONS FR-§)
 - `.claude/pipeline/SLACK.md` — Slack mirror protocol: channel, threading law, posting matrix
 
@@ -41,7 +43,10 @@ Team channel `#siegeboundue5agentteam` (ID `C0BF0QZP3CN`) mirrors the pipeline f
 2. Dispatch tasks per the board: `gameplay-programmer` and `art-director` tasks marked `parallel-safe: yes` with no blockers should be launched **in parallel** (single message, multiple Agent calls).
 3. When a code task hits `ready-for-qa` → invoke `qa-reviewer`.
 4. `qa-failed` → send back to `gameplay-programmer` with the QA report path. Loop until `qa-passed` (max 3 loops, then escalate to the user).
-5. `qa-passed` + `ready-for-integration` → invoke `build-master` to compile, assemble, and commit.
+5. `qa-passed` → the compile/verify/commit chain (law: CONVENTIONS VER-§):
+   - **5a** `qa-passed` → `build-master` compiles (`Result: Succeeded` law) and, for C++ changes, relaunches the editor on the new binaries (graceful-quit lane, never Live Coding). Status → `built`. No commit yet.
+   - **5b** if the task's spec has a runtime acceptance criterion → invoke `playtest-verifier`. `verify-failed` → send back to `gameplay-programmer` with the verify report path; it counts as a QA loop (same max-3-then-escalate as rule 4). Blueprint/asset-only tasks skip 5a and go straight here.
+   - **5c** `verified` (or `UNOBSERVABLE`, or no runtime criterion) → invoke `build-master` to assemble and commit as today.
 6. Build failure → build-master appends errors to the QA report and you route back to `gameplay-programmer` (this counts as a QA loop).
 7. Report the outcome to the user with task IDs and commit hashes.
 
@@ -58,6 +63,8 @@ When the user says "build the GDD" / "read the GDD and build it" (or references 
 ## Hard gates
 
 - Nothing is committed to Git without a PASS QA report (code) or completed integration check (art).
+- Nothing with a runtime acceptance criterion is committed without a VERIFIED report; UNOBSERVABLE is recorded on the row, not treated as a pass.
+- Aura verification drives PIE; when Jonathan is present the dispatch announces it first and waits for a go.
 - Never push to remote unless the user explicitly asks.
 - The Unreal Editor must be running with the MCP server up (`http://127.0.0.1:8000/mcp`) for engine tasks; if unreachable, tell the user instead of faking results.
 - Gameplay videos are never committed (`testvideo/` is root-gitignored; `*.mp4` is an LFS pattern that would otherwise swallow them); only promoted evidence PNGs under `.claude/pipeline/playtest-evidence/` enter git.

@@ -144,6 +144,13 @@ Then, **under route `Pixel`, it ends at `ADJUDICATE C3` — go to §2b.** Under 
 - 🧑 **Jonathan can discharge the whole thing faster than any rig (`SHIP-§8b(7)`, and his eye wins):** double-click the staged shim, click **Play**, and report the four criteria.
 - ✅ **The CONTENT half is separately provable and unattended** (TASK-699's ratified method): a **UnrealPak listing** proves the `PKG-§5a` casualties are present and the `-COOKDIR` set landed, and the **Development exe pointed at this package's own cooked bytes** proves the content graph resolves. ⇒ **CONTENT is machine-provable; RENDERING is what the click adjudication buys.** ⛔ **Neither substitutes for the other.**
 
+#### 2b.1a — ⭐ OPTIONAL: the Aura pre-screen of `ADJUDICATE C3` (`playtest-verifier`) — more evidence for the adjudicator, ⛔ never the adjudication
+
+- **This step is optional.** When `playtest-verifier` is available (the Aura lane, TASKBOARD `## Aura integration`), then **once the run is suspended at `ADJUDICATE C3`** the orchestrator MAY dispatch it to drive **main menu → match → HUD-present** against the **SAME staged build** the run captured (`<stage>\Windows\<shim>.exe` — ⛔ never a different cook, never an editor session standing in for the stage) and attach to the suspension record, as **ADDITIONAL evidence for Jonathan**: the **screenshot/video path** it produced and its **quoted widget observations** (the deck slot values, the gold readout, the hero's presence — quoted values, ⛔ not a summary).
+- ⛔ **It does not adjudicate.** The verdict record of 2b.3 is still written by the adjudicator against the run's own pending capture — `SHIP-§8b` rule 9 (only the arena capture is the pending capture; a verifier screenshot is never bound as `capturePath`) — and 🧑 his eye wins (`SHIP-§8b(7)`). `SHIP-§8` is unchanged by this step: no fourth verdict, no `PASS` path that an agent walks alone, and the pre-screen's own verdict word (if it prints one) carries no weight here.
+- **Why the stop stays, in one sentence:** `PKG-§5a` — a build shipped with an empty deck, no HUD and no hero while a script said `PASS`, and better evidence is still evidence, not a verdict.
+- **Skipped ⇒ nothing changes.** With the pre-screen absent the procedure reads exactly as it did; `ship.ps1` knows nothing of this step and its verdict lines are untouched.
+
 #### 2b.2 — **LOOK** at the capture, and judge it against **the printed bar**
 
 The script prints the `PKG-§6a` criteria **verbatim** beside the capture path. ⛔ **Judge the written bar, not your own idea of "looks right" — an adjudication performed without the criteria in front of it is not one.** Read the image (the `Read` tool renders PNGs).

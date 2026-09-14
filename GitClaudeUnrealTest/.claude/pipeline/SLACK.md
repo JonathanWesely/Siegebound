@@ -48,6 +48,7 @@ Update (2026-07-03, M2 decomposition dispatch): manager direct posting PROVEN �
 | art-director tasks | 🎨 Art |
 | build-master compile/assemble/commit | 🔧 Build & Git |
 | footage-analyst reviews (VID-###) | 🎬 Footage Review |
+| playtest-verifier verdicts (`TASK-###-verify.md` path + `Verdict:` line; law `VER-§`) | ⚙️ Dev & QA (`1783116269.740549`) — the verdict is the runtime twin of QA's text verdict and lives beside it; `VER-§3`'s "PIE will be driven" announcement may be mirrored here or in 🚨 Blockers, but the wait ends only in Claude Code |
 | any `blocked` status, escalation to Jonathan | 🚨 Blockers (cross-post one line; details stay in the domain thread) |
 
 ## Who posts
@@ -60,7 +61,9 @@ Minimum duty per dispatch: at least one completion (or blocker) post in the agen
 
 All posts share one Slack account — **the prefix is the speaker.** Every post, top-level or in-thread, direct or proxied, starts with exactly one of:
 
-`📋 MANAGER:` · `🔍 QA:` · `⚙️ GAMEPLAY-PROGRAMMER:` · `🎨 ART-DIRECTOR:` · `🔧 BUILD-MASTER:` · `🎬 FOOTAGE-ANALYST:` · `ORCHESTRATOR:`
+`📋 MANAGER:` · `🔍 QA:` · `⚙️ GAMEPLAY-PROGRAMMER:` · `🎨 ART-DIRECTOR:` · `🔧 BUILD-MASTER:` · `🎬 FOOTAGE-ANALYST:` · `🎮 VERIFIER:` · `ORCHESTRATOR:`
+
+(`🎮 VERIFIER:` added 2026-09-13, `TASK-1226`, for `playtest-verifier` — ⛔ `🎮` is an IDENTITY prefix, not a status emoji; a verifier post still carries one of the status emoji below after it.)
 
 ## Task lifecycle inside a domain thread
 
@@ -77,8 +80,9 @@ All posts share one Slack account — **the prefix is the speaker.** Every post,
 | 🔧 | in progress / progress note |
 | 🧪 | ready-for-qa / under review |
 | ✅ | qa-passed / integrated / done |
-| ❌ | qa-failed or build failed (report path in the post) |
-| 📦 | integrating (compile + scene assembly + commit) |
+| ❌ | qa-failed, build failed, or **verify-failed** (report path in the post) |
+| 🎯 | **verified** — runtime evidence landed (`TASK-###-verify.md` path + line-1 verdict in the post; law `VER-§1`). An `UNOBSERVABLE` verdict posts as 🎯 with the word `UNOBSERVABLE` in the line — it is not a ✅ and never reads as one (`VER-§5`) |
+| 📦 | integrating (compile + scene assembly + commit) — also the **built** status (5a compile-only, no commit; `VER-§2` cl. 3) |
 | 🚧 | blocked — needs orchestrator or Jonathan |
 
 ## Legacy threads (grandfathered)
