@@ -46,7 +46,7 @@ Pipeline files: `.claude/pipeline/TASKBOARD.md` (tasks, statuses) · `.claude/pi
 
 `T_<Name>_D` base color · `T_<Name>_N` normal · `T_<Name>_R` roughness · `T_<Name>_M` metallic · `T_<Name>_E` emissive · `T_<Name>_ORM` packed Occlusion/Roughness/Metallic (LINEAR — sRGB off; added 2026-07-07, TRELLIS pipeline)
 
-C++ (Source/GitClaudeUnrealTest/): `A` actors, `U` UObjects/components, `F` structs, `E` enums, `I` interfaces; one class per header/cpp pair.
+C++ (Source/GitClaudeUnrealTest/): `A` actors, `U` UObjects/components, `F` structs, `E` enums, `I` interfaces; one class per header/cpp pair; exception: pure data types (enums, structs, UInterfaces) may share a header-only file when they form one concept (e.g., `TeamId.h`).
 
 ## Build command (build-master only; the editor must be CLOSED)
 

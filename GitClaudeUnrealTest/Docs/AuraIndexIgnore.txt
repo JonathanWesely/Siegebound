@@ -4,7 +4,7 @@
 # (*.ext, **/dir/**) are accepted; no negation (!) syntax exists, so keep-set paths are kept by
 # simply never matching them. Source: TASK-1217 (plan item 2 + Aura's own generated template).
 
-# ---- Plan item 2 excludes (22) --------------------------------------------------------
+# ---- Plan item 2 excludes (22 plan + 4 house) ------------------------------------------
 # Fab / marketplace packs (bulk of the .uasset count; nothing Siegebound-authored lives here)
 Content/Fab/
 Content/MedievalCastleEnvironmentAndSiegeWeaponProps/
@@ -15,6 +15,11 @@ Content/Tree_Pack_1/
 Content/sA_ArcheryVfxPack/
 Content/sA_StylizedWizardSet/
 Content/Prickly_Knight/
+# house additions (TASK-1244): vendor packs not in plan item 2
+Content/Fire_Magic/
+Content/Ice_Magic/
+Content/IceAttack/
+Content/MedievalWeaponsSFX/
 # Raw pipeline inputs + Epic template leftovers
 Content/RawAssets/
 Content/ThirdPerson/
@@ -30,9 +35,6 @@ DerivedDataCache/
 Tools/ArtPipeline/.venv/
 Tools/ArtPipeline/Cache/
 .claude/pipeline/playtest-evidence/
-# packagedZIPofGame/ lives at the GIT root (one level above the project root), so this line is
-# project-root-relative and matches nothing here; kept verbatim for parity with plan item 2.
-packagedZIPofGame/
 
 # ---- .claude/ — NOT ignored wholesale (keep-set needs .claude/pipeline/CONVENTIONS.md) ----
 # Heavy or agent-internal parts excluded individually instead.
@@ -55,7 +57,8 @@ Content/__ExternalObjects__/
 Content/Collections/
 Content/Art/
 
-Config/
+# gitignored cloud ini (publishable key) — never indexed; the rest of Config/ (DefaultInput.ini etc.) IS indexed
+Config/SiegeCloudDev.ini
 Content/FirstPersonArms/
 Content/StarterContent/
 
@@ -80,7 +83,6 @@ Plugins/node_modules/
 **/Binaries/**
 **__ExternalActors__**
 **__ExternalObjects__**
-**/*.Target.cs
 
 # Build results
 Build/
