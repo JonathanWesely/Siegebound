@@ -146,7 +146,7 @@ Slack: 🔧 Build & Git thread (`1783116286.945249`), `p1789423121483739` (🔧 
 3. `BP_MenuGameMode` focuses a non-focusable widget — now WARN-5 on the QA report; its row must delete `Tests/SiegeMenuInputTest.cpp:117-130` in the same diff (the pin at 1 reds the test when the error stops).
 4. NEW, small: the `Suppressed expected … N times` line is not printed for `GLog`-captured expectations — a future host reading a suite log for an occurrence count should count the `Verbose`-downgraded line, as above, not wait for a report line that never comes.
 
-## §3 — 5c commit leg — 2026-09-14 — ✅ `VERIFIED` (bare, the first BINDING verdict) ⇒ cl. (6) executed; commit `<hash — pending, back-referenced in commit 2 (SC-§103)>`
+## §3 — 5c commit leg — 2026-09-14 — ✅ `VERIFIED` (bare, the first BINDING verdict) ⇒ cl. (6) executed; commit ``158bb42``
 
 Entry condition read: `qa/TASK-1274-verify.md` line 1 `Verdict: VERIFIED`, 3/3 `pass` (deck builder `DeckBar` 10 children · sandbox Accept → `L_Arena` · Settings Accept → `SettingsMenuWidget_0`), 1 attempt, GUI editor PID 11576, `DIRTY_COUNT=0`, nothing saved. Lane A (no `1270`/`1271` diff in the tree, no word from 🧑). ⛔ No engine work in this leg — `tasklist` census: exactly one `UnrealEditor.exe`, PID **11576** (the §2 relaunch), untouched; no `-game` instance.
 
