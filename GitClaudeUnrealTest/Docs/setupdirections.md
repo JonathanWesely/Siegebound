@@ -842,10 +842,13 @@ build command, and the laws it is most likely to violate — never Live Coding, 
 
 ⚠️ **`INDEX_IGNORE.txt` shapes the semantic index — it is NOT a secret fence.** Aura's own
 file tools read the disk on demand regardless of the ignore list: on 2026-09-13 Aura reported
-the sections and key NAMES of the excluded `Config/SiegeCloudDev.ini` in one tool call
+the sections and key NAMES of the listed-for-exclusion `Config/SiegeCloudDev.ini` in one tool call
 (`TASK-1259`). Anything on the project tree is reachable by an in-editor assistant, and under
 a training-ON toggle may enter a chat turn. The house rule that follows is in §10.2: the
-config home holds the publishable pair and nothing else.
+config home holds the publishable pair and nothing else. ⚠️ And the exclusion itself is UNPROVEN:
+on 2026-09-14, asked from the index only with no tool call, Aura still named the file, its
+section and its key names (`TASK-1265`, ruling R16) — both ignore shapes were on the list when
+that index was built. Treat the list as best-effort hygiene, never as a guarantee.
 
 `Saved/` is gitignored, so both are machine-local and would be lost on a fresh clone. The
 canonical, committed copies live in `Docs/`:
