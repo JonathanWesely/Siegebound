@@ -13,4 +13,3 @@
 ;   Quotes are stripped on read; the client receives the bare URL.
 ProjectUrl="https://<project-ref>.supabase.co"
 AnonKey=<anon-or-publishable-key>
-; DbPassword=<optional custody comment line — the game NEVER reads this>
