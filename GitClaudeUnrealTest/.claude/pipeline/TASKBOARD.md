@@ -2319,6 +2319,346 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 ---
 
+## Aura integration (approved 2026-09-13) — **`TASK-1214` … `TASK-1242`. ⛔ BOARDING ONLY — ⛔ NOTHING HERE RUNS UNTIL 🧑 `TASK-1214` IS DISCHARGED.** (boarded 2026-09-13 by the manager from the APPROVED plan `C:\Users\wesel\.claude\plans\look-into-a-new-moonlit-kernighan.md` Part B; source doc `Docs/Aura AI for Unreal — Integration Plan.md`; ⛔ the plan's *"Corrections to the doc"* table OVERRIDES the source doc wherever they differ)
+
+**What this lane buys (plan Part C, one line):** a seventh agent, `playtest-verifier`, that runs Aura's Play-In-Editor verification and writes runtime evidence behind a new `verified` gate — the one lane `qa-passed` structurally cannot be (board header: *"a `qa-passed` is a TEXT-LEVEL VERIFICATION"*).
+
+**THE THREE 🧑 JONATHAN-OWNED GATES (he owes exactly these, nothing else):** ⭐ `TASK-1214` Phase 1 install + 🟢 + *"Tell me about this project"* names Siegebound classes — ⛔ **gates EVERY row below** · ⭐ `TASK-1215` three Phase 0 cases + their known answers (+ later, the tier decision) · ⭐ `TASK-1216` Phase 3 bridge (Add to Editor → Claude Code + the `command`/`args` paths) — stage B is the orchestrator's `/mcp` census.
+
+**Standing constraints carried by every row that touches them (cited on rows, stated once here):**
+- ⛔ **NEVER `mcp__unreal_editor__*` wholesale** in any `permissions.allow` or any agent `tools:` line — enumerate PIE / verify / screenshot tools by their real names from the census. `mcp__unreal_inspector__*` (read-only) MAY be granted wholesale.
+- ⛔ NEVER push · ⛔ NEVER Live Coding · ⛔ Aura mesh gen NEVER writes `Content/` (it re-enters via `Tools/ArtPipeline` Stage 2, `TL-§`).
+- `Saved/` is gitignored ⇒ canonical files are `Docs/AuraIndexIgnore.txt` + `Docs/AuraProjectMemory.md`; `Tools/aura_sync.ps1` copies them to `Saved/.Aura/INDEX_IGNORE.txt` + `Saved/.Aura/project_memory.txt`. ⛔ Nothing under `Saved/` is ever staged (STANDING EXCLUSION REGISTRY).
+- Verifier Slack: ⚙️ Dev & QA `1783116269.740549`, prefix `🎮 VERIFIER:` (⛔ the doc's "🧪 Dev & QA" is a status emoji, not a thread).
+- `Docs/setupdirections.md` and `C:\GitProjects\GitHub\MyObsidianVault\JonWesOBVault\GitClaudeUnrealsetupdirections.md` stay BYTE-IDENTICAL — acceptance = identical `sha256`, measured by the row that edits them and re-measured by the host (`SC-§68`).
+- ⛔ The draft verifier agent file (`TASK-1223`) carries a placeholder `tools:` line and is NEVER committed in that state — only `TASK-1224`'s finalized file is committed.
+- ⛔ `.claude/agents/*.md` edits are neither code nor art: each gets its OWN row (registry note, `qa-reviewer.md` cell) — `TASK-1224` and `TASK-1227` are those rows.
+
+**Rescopes vs the plan (`SC-§100` — said here, once):** (a) plan item 6's `/mcp` census is a Claude Code SESSION command — no subagent can run it ⇒ it is the orchestrator's, delivered as `handoffs/AURA-MCP-CENSUS.md`, and it can only run AFTER `TASK-1221` writes `.mcp.json` ⇒ `TASK-1216` is two-stage (A = Jonathan's paths, B = the census). (b) plan item 6's "record tool names into `AURA-PHASE0.md`" moves to `TASK-1222` (same assignee, same file, after the census exists). (c) item 8 is two rows (`1223` draft behind Phase 1, `1224` finalize behind the census). (d) `SLACK.md` needs the `🎮 VERIFIER:` prefix + a routing row — my file, folded into `TASK-1226`. (e) the board's own *Status flow* line needs `built` / `verified` / `verify-failed` — also `TASK-1226`. (f) the `.uproject` `Aura` plugin entry (plan Part A step 5) rides `TASK-1240`'s commit. (g) 🧑 gate rows carry `status: backlog` (board precedent `TASK-755`; WRITE-DISCIPLINE rule 7 — *"can I go?"* is read from `blocked-by`, never from `status`).
+
+**Dispatch order:** `1214` (🧑) → **wave 1, parallel:** `1217` ∥ `1218` ∥ `1219` ∥ `1223` ∥ `1225` ∥ `1226` ∥ `1227` ∥ `1228` ∥ `1229` → their gates `1232`..`1234`, `1236`..`1239` → hosts `1240`, `1241`. **Lane P0:** `1215` (🧑) → `1220`. **Lane P3:** `1216-A` (🧑) → `1221` → `1216-B` (orchestrator census) → `1222` ∥ `1224` → `1235` → `1242`. **Then** `1230` (pilot, 🧑 rules) → `1231`.
+
+---
+
+#### TASK-1214 — [AURA-GATE-P1] 🧑⛔ **PHASE 1 — INSTALL + 🟢 + "TELL ME ABOUT THIS PROJECT" NAMES SIEGEBOUND CLASSES. ⛔ GATES EVERY ROW IN THIS SECTION.** (Jonathan) — marker `TASK-1214-AURA-GATE-P1`
+- assignee: Jonathan
+- status: backlog
+- blocked-by: none
+- parallel-safe: n/a
+- spec: >
+    🧑 Plan Part A, Phase 0 steps 1–2 + Phase 1 steps 4–7 (his steps, not tasks): account + the training-toggle decision BEFORE the first index (plan Part A step 2 — unlimited Auto requires training ON; his privacy call, recorded here in one word) · close the editor · install for **5.8** · Edit → Plugins → Aura → Enable → restart · toolbar 🟢 · *"Tell me about this project"* names Siegebound classes, not the template.
+    **Acceptance (his words in Claude Code, or a Slack post from him — a Slack post is visibility, the Claude Code sentence is the discharge):** (1) "🟢" · (2) at least one Siegebound class name he saw in the answer · (3) whether training is ON or OFF · (4) whether `GitClaudeUnrealTest.uproject` now carries an `Aura` entry in `Plugins` (⛔ no agent commits it before `TASK-1240`).
+    ⛔ If it cannot connect: `Aura.exe` in tray · port 41200 free · AV not blocking loopback (same class as the Norton TLS exclusions, THE LIST). ⛔ No agent installs, enables or restarts anything on his behalf.
+    **Slack (orchestrator, on his behalf):** the ask goes once into 🚨 Blockers (`C0BF0QZP3CN`, thread `1783116296.221319`), prefix `ORCHESTRATOR:`, `🚧 TASK-1214`; his discharge is recorded on this row's `status:` line by the orchestrator, labelled as such.
+- names: > 🧑 **GATE ROW — produces no artefact.** Discharge = the four acceptance facts on this `status:` line. Unblocks: `TASK-1217`..`1229`, `1223`, `1226`. ✅ **GATE: n/a — this row IS a gate.** Law: plan Part A · `SC-§97` (his sentence is the fact; nothing is inferred from a screenshot).
+
+#### TASK-1215 — [AURA-GATE-P0] 🧑⛔ **PHASE 0 — THE THREE VERIFICATION CASES + THEIR KNOWN ANSWERS; LATER, THE TIER DECISION. ⛔ BOTH ARE HIS.** (Jonathan) — marker `TASK-1215-AURA-GATE-P0`
+- assignee: Jonathan
+- status: backlog
+- blocked-by: `TASK-1214`
+- parallel-safe: n/a
+- spec: >
+    🧑 Plan Part A step 3 + step 10: pick THREE cases from the `qa-passed` rows whose true runtime answer he already knows (suggested shape: one `TOWER-§` climb rule · one `SiegeFogVolume` behaviour · one `DECK-§` flow — his pick, not ours), and for each state the TASK-### and the expected outcome in one sentence. He runs them interactively in Aura's own chat (Phase 2, plan step 10) and reports per case: credit consumed · wall time · did the verdict match what he knows · plus ONE case that needs the positional keyboard layout (`KBD-§`) to answer the Enhanced-Input question.
+    **Stage A acceptance (unblocks `TASK-1220`):** three `TASK-###` + expected outcomes, in Claude Code.
+    **Stage B acceptance (recorded here after `TASK-1220` lands):** the tier decision — Trial → Pro / Indie / the Fab SKU if it exists — ⛔ **HIS, never an agent's; no row proceeds on a tier an agent inferred.**
+    **Slack (orchestrator):** one ask in 🚨 Blockers, `🚧 TASK-1215`; stage A/B discharges recorded on this row by the orchestrator, labelled.
+- names: > 🧑 **GATE ROW — produces no artefact.** Unblocks: `TASK-1220` (stage A) · `TASK-1230`'s tier line (stage B). ✅ **GATE: n/a — this row IS a gate.** Law: plan Part A Phase 0 + *Tier decision* · `SC-§97`.
+
+#### TASK-1216 — [AURA-GATE-P3] 🧑⛔ **PHASE 3 — THE BRIDGE: (A) 🧑 ADD TO EDITOR → CLAUDE CODE + THE `command`/`args` PATHS · (B) THE ORCHESTRATOR'S `/mcp` TOOL-NAME CENSUS.** (Jonathan; stage B orchestrator) — marker `TASK-1216-AURA-GATE-P3`
+- assignee: Jonathan (stage A) · orchestrator (stage B — `/mcp` is a session command no subagent can run)
+- status: backlog
+- blocked-by: `TASK-1214` (stage A) · `TASK-1221` (stage B — the census needs the servers in the project `.mcp.json` first; the one-click writes `~/.claude/mcp.json` with a `servers` key, which Claude Code does not read — plan *Corrections* row 2)
+- parallel-safe: n/a
+- spec: >
+    **Stage A (🧑, plan Part A step 11):** Aura Settings → MCP Configuration → **Add to Editor → Claude Code**; paste the `command` and `args` shown on that page into Claude Code (paths, not secrets) — the exact `python.exe` Aura installed (⛔ not `C:\Python314`, ⛔ not the uv venv). If the one-click created `~/.claude/mcp.json`, he deletes it when asked (one source of truth). **Acceptance A:** the two path strings, verbatim, on this row's `status:` line.
+    **Stage B (orchestrator, after `TASK-1221`):** fully restart Claude Code · run `/mcp` · confirm `unreal_inspector`, `unreal_editor`, `unreal-mcp`, `blender` all connected (plan Verification probe 2) · write `handoffs/AURA-MCP-CENSUS.md` = EVERY tool name under `unreal_inspector` and EVERY tool name under `unreal_editor`, verbatim, one per line, grouped by server, plus which `unreal_editor` names are PIE / verification / screenshot / input-simulation (the enumeration `TASK-1222` and `TASK-1224` consume). **Acceptance B:** the file exists with ≥1 name under each server and the four-servers-connected line; recorded on this row.
+    ⛔ No agent edits `.mcp.json` from this row (`TASK-1221` owns it). ⛔ The census is a NAME LIST, not a grant — nothing is allowed by writing it.
+    **Slack (orchestrator):** 🚨 Blockers ask for stage A (`🚧 TASK-1216`); stage B result one line in 🔧 Build & Git (`1783116286.945249`), `ORCHESTRATOR:` `✅ TASK-1216`.
+- names: > 🧑 **GATE ROW.** WRITES (stage B, orchestrator): `.claude/pipeline/handoffs/AURA-MCP-CENSUS.md` (⛔ NEW; committed by `TASK-1242`). Unblocks: `TASK-1221` (A) · `TASK-1222`, `TASK-1224` (B). ✅ **GATE: n/a — this row IS a gate.** Law: plan *Corrections* rows 2 + 5 · `SC-§97`.
+
+---
+
+#### TASK-1217 — [AURA-INDEX-IGNORE] ⚙️ **`Docs/AuraIndexIgnore.txt` — THE CANONICAL, COMMITTED INDEX EXCLUSION LIST (copied to `Saved/.Aura/INDEX_IGNORE.txt` by `TASK-1219`).** (gameplay-programmer) — marker `TASK-1217-AURA-INDEX-IGNORE`
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: `TASK-1214`
+- parallel-safe: yes (vs `1218` · `1219` · `1223` · `1225`..`1229`)
+- spec: >
+    Plan Part B item 2, verbatim list — ⛔ not restated here; read the plan. Corrections row 1 applies: the live location is `<Project>/Saved/.Aura/INDEX_IGNORE.txt`, ⛔ NOT project root (the source doc §4 Phase 2 step 3 is overridden).
+    **Acceptance:** (1) file exists at `Docs/AuraIndexIgnore.txt`, one pattern per line, EVERY exclude in plan item 2 present (the row's handoff carries a count = the plan's count) · (2) NONE of the keep-set (`Source/`, `Content/{Blueprints,UI,Data,Maps,Materials,VFX,Input,Characters,Meshes,Textures}`, `Docs/GDD.md`, `.claude/pipeline/CONVENTIONS.md`) is matched by any pattern — state the reasoning per keep entry · (3) `Content/Variant_*/` is a glob, say so · (4) a two-line header comment (if Aura's ignore syntax permits comments — verify against https://www.tryaura.dev/documentation/project-understanding/ first; if not, no header) naming `Tools/aura_sync.ps1` as the copy step · (5) ⛔ nothing written under `Saved/` from this row.
+    **Slack:** ⚙️ Dev & QA (`C0BF0QZP3CN`, thread `1783116269.740549`), prefix `⚙️ GAMEPLAY-PROGRAMMER:`, ≥1 post: pattern count + the comment-syntax finding, emoji + TASK-1217.
+- names: > **WRITES: `Docs/AuraIndexIgnore.txt` (⛔ NEW) · `handoffs/TASK-1217-programmer.md`** · ⛔ NEVER `Saved/**` · ✅ **GATE: `TASK-1232`** · ✅ **HOST: `TASK-1240`** · Law: plan item 2 + Corrections row 1 · `SC-§100`.
+
+#### TASK-1218 — [AURA-PROJECT-MEMORY] ⚙️ **`Docs/AuraProjectMemory.md` — THE ≤150-LINE ALWAYS-ON DIGEST AURA INJECTS EVERY TURN (copied to `Saved/.Aura/project_memory.txt` by `TASK-1219`).** (gameplay-programmer) — marker `TASK-1218-AURA-PROJECT-MEMORY`
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: `TASK-1214`
+- parallel-safe: yes (vs `1217` · `1219` · `1223` · `1225`..`1229`)
+- spec: >
+    Plan Part B item 3. Content, in this order: the seven-agent table (the six in `CLAUDE.md` + `playtest-verifier | Runs Aura PIE verification, writes runtime evidence | Editing code/art, compiling, Git`) · the asset-prefix table + the texture-suffix table COPIED from `CONVENTIONS.md` (cite the section names; ⛔ do not paraphrase a prefix) · the `Build.bat` command from `CLAUDE.md` verbatim · the three laws VERBATIM: *"Never compile via Live Coding — compilation belongs to build-master via Build.bat."* · *"Never write generated meshes into Content/ — they enter through Tools/ArtPipeline Stage 2."* · *"Never run Git."*
+    **Acceptance:** (1) ≤150 lines (quote the count) · (2) the three sentences appear character-exact (`SC-§38a`: `Read`, not `Grep`, is the instrument) · (3) every prefix row matches `CONVENTIONS.md` at your instant · (4) a one-line header saying it is the CANONICAL copy and `Tools/aura_sync.ps1` regenerates `Saved/.Aura/project_memory.txt` · (5) ⛔ no secrets, no keys, no URLs with tokens · (6) ⛔ nothing written under `Saved/`.
+    **Slack:** ⚙️ Dev & QA, prefix `⚙️ GAMEPLAY-PROGRAMMER:`, ≥1 post: line count + "three laws verbatim: yes", emoji + TASK-1218.
+- names: > **WRITES: `Docs/AuraProjectMemory.md` (⛔ NEW) · `handoffs/TASK-1218-programmer.md`** · READS: `CLAUDE.md` team table · `CONVENTIONS.md` "Asset prefixes" + "Texture suffixes" · ⛔ NEVER `Saved/**` · ✅ **GATE: `TASK-1233`** · ✅ **HOST: `TASK-1240`** · Law: plan item 3 · `SC-§38a`.
+
+#### TASK-1219 — [AURA-SYNC-SCRIPT] ⚙️ **`Tools/aura_sync.ps1` — ONE IDEMPOTENT SCRIPT THAT COPIES THE TWO CANONICAL FILES INTO `Saved/.Aura/`. ⛔ REPLACES THE DOC'S SKILLS-MIRROR STEP (nothing to mirror — `.claude/skills/` does not exist).** (gameplay-programmer) — marker `TASK-1219-AURA-SYNC-SCRIPT`
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: `TASK-1214`
+- parallel-safe: yes (vs `1217` · `1218` · `1223` · `1225`..`1229` — the two source paths are PINNED in `names:`, so this row does not wait for them to exist)
+- spec: >
+    Plan Part B item 4 + Corrections row 3. Copies `Docs/AuraIndexIgnore.txt` → `Saved/.Aura/INDEX_IGNORE.txt` and `Docs/AuraProjectMemory.md` → `Saved/.Aura/project_memory.txt`, creating `Saved/.Aura/` if absent. Project-root-relative via `$PSScriptRoot` (⛔ no hard-coded drive path). Idempotent: a second run changes nothing and says so. Prints each destination + byte count; exit 0 on success, non-zero with the missing source named if a source is absent (⛔ never writes a partial set).
+    **Acceptance (EXECUTED by you, `TL-§6` shape, no editor needed):** (1) run once → both files present, byte-identical to their sources (`sha256` pairs quoted) · (2) run twice → identical hashes, "no change" reported · (3) delete one source in a scratch copy → non-zero exit naming it, ⛔ the other destination untouched · (4) `git status --porcelain` after a run shows NOTHING under `Saved/` (`Saved/` is gitignored — quote the empty result) · (5) `-WhatIf` supported or explicitly declined in the header comment · (6) ⛔ no `Set-ExecutionPolicy`, no network, no `.claude/skills` reference.
+    **Slack:** ⚙️ Dev & QA, prefix `⚙️ GAMEPLAY-PROGRAMMER:`, ≥1 post: the six acceptance verdicts, emoji + TASK-1219.
+- names: > **WRITES: `Tools/aura_sync.ps1` (⛔ NEW) · `handoffs/TASK-1219-programmer.md`** · SOURCES (pinned): `Docs/AuraIndexIgnore.txt` · `Docs/AuraProjectMemory.md` · DESTINATIONS (pinned, gitignored): `Saved/.Aura/INDEX_IGNORE.txt` · `Saved/.Aura/project_memory.txt` · ✅ **GATE: `TASK-1234`** · ✅ **HOST: `TASK-1240`** · Law: plan item 4 + Corrections row 3 · `TL-§6` · `SC-§68`.
+
+#### TASK-1220 — [AURA-PHASE0-RECORD] 🔧 **`.claude/pipeline/qa/AURA-PHASE0.md` — THE MEASUREMENT RECORD OF 🧑 HIS THREE CASES. ⛔ RECORDS; DECIDES NOTHING.** (build-master) — marker `TASK-1220-AURA-PHASE0-RECORD`
+- assignee: build-master
+- status: backlog
+- blocked-by: `TASK-1214` · `TASK-1215` stage A + his three case reports (plan Part A step 10)
+- parallel-safe: yes (vs everything except `TASK-1222`, which appends to the same file later — ordering: this row FIRST)
+- spec: >
+    Plan Part B item 5. One table, one row per case: `TASK-###` · expected outcome (his words) · Aura's verdict · match Y/N · credit consumed · wall time · evidence he mentioned. Then: the Enhanced-Input finding (did Aura drive the positional `KBD-§` layout — his observation, verbatim) · a `## MCP tool census` heading left EMPTY with the line *"filled by TASK-1222 from handoffs/AURA-MCP-CENSUS.md"* · a `## Tier` heading left EMPTY with *"🧑 Jonathan's decision — recorded on TASK-1215 stage B, copied here verbatim by the orchestrator"*.
+    **Acceptance:** (1) every number is labelled `MEASURED BY JONATHAN (Aura chat, <date>)` — ⛔ no agent-derived number, no "about" (`SC-§97` cl. 3 labels) · (2) three rows, no more · (3) the two empty headings present, verbatim · (4) ⛔ no tier recommendation anywhere in the file — the plan's recommendation lives in the plan, not here · (5) ⛔ no compile, no editor, no commit from this row (commit = `TASK-1242`).
+    **Slack:** 🔧 Build & Git (`1783116286.945249`), prefix `🔧 BUILD-MASTER:`, ≥1 post: the three match verdicts + total credit, emoji + TASK-1220.
+- names: > **WRITES: `.claude/pipeline/qa/AURA-PHASE0.md` (⛔ NEW) · `handoffs/TASK-1220-buildmaster.md`** · ✅ **GATE: WAIVED — a record of 🧑 Jonathan-supplied measurements; no agent claim inside it can be reviewed against anything but his sentence; the host reads it back (`TASK-1242`).** · Law: plan item 5 · `SC-§97`.
+
+#### TASK-1221 — [AURA-MCP-JSON] 🔧 **THE TWO STDIO SERVER BLOCKS INTO THE PROJECT `.mcp.json` (`mcpServers`) + BOTH NAMES INTO `enabledMcpjsonServers`. ⛔ `unreal-mcp` AND `blender` UNTOUCHED.** (build-master) — marker `TASK-1221-AURA-MCP-JSON`
+- assignee: build-master
+- status: backlog
+- blocked-by: `TASK-1214` · `TASK-1216` stage A (the paths)
+- parallel-safe: yes (vs the wave-1 rows; ⛔ NO vs any other editor of `.mcp.json` / `settings.local.json` — none boarded)
+- spec: >
+    Plan Part B item 6 (the file half; the census half is `TASK-1216` stage B). Add `unreal_inspector` and `unreal_editor` under the EXISTING `"mcpServers"` key using the `command`/`args` from `TASK-1216`'s status line — the doc's `"servers"` shape is converted, ⛔ never copied. `command` = the `python.exe` Aura installed (⛔ not `C:\Python314`, ⛔ not `Tools/ArtPipeline/.venv`). Append both names to `enabledMcpjsonServers` in `.claude/settings.local.json` (merge, ⛔ never replace the array).
+    **Acceptance:** (1) `.mcp.json` parses (quote a `ConvertFrom-Json` success) and still contains `unreal-mcp` (http, `:8000`) and `blender` byte-for-byte as before — quote the unchanged blocks' hashes or a diff limited to the two new blocks · (2) `Test-Path` on the `command` and on each `args` script path = True, quoted · (3) `enabledMcpjsonServers` = exactly `["unreal-mcp","blender","unreal_inspector","unreal_editor"]` · (4) ⛔ NO `permissions.allow` change from this row (`TASK-1222` owns it) · (5) `~/.claude/mcp.json`: report present/absent; if present, ⛔ do not delete — ask 🧑 via the orchestrator (his file) · (6) ⛔ no restart of Claude Code from this row — the orchestrator restarts for `TASK-1216` stage B.
+    **Slack:** 🔧 Build & Git, prefix `🔧 BUILD-MASTER:`, ≥1 post: the two `Test-Path` results + the enabled array, emoji + TASK-1221.
+- names: > **WRITES: `.mcp.json` (tracked; committed by `TASK-1242`) · `.claude/settings.local.json` (⛔ gitignored, never staged) · `handoffs/TASK-1221-buildmaster.md`** · SERVER KEYS (pinned): `unreal_inspector` · `unreal_editor` · ✅ **GATE: WAIVED — config, verified live by `TASK-1216` stage B (`/mcp` shows both connected); the host re-parses the JSON (`TASK-1242`).** · Law: plan item 6 + Corrections row 2 · Appendix D (setup doc) merge-never-replace.
+
+#### TASK-1222 — [AURA-PERMISSIONS] 🔧⛔ **`permissions.allow` — `mcp__unreal_inspector__*` WHOLESALE + THE ENUMERATED `unreal_editor` PIE / VERIFY / SCREENSHOT NAMES FROM THE CENSUS. ⛔⛔ NEVER `mcp__unreal_editor__*`. ALSO: THE CENSUS INTO `AURA-PHASE0.md`.** (build-master) — marker `TASK-1222-AURA-PERMISSIONS`
+- assignee: build-master
+- status: backlog
+- blocked-by: `TASK-1221` · `TASK-1216` stage B (`handoffs/AURA-MCP-CENSUS.md`) · `TASK-1220` (same file, ordering)
+- parallel-safe: yes vs `TASK-1224` (different files; both read the census) · ⛔ NO vs any other `settings.local.json` editor
+- spec: >
+    Plan Part B item 7 + the moved half of item 6. (a) Merge into `.claude/settings.local.json` → `permissions.allow`: `mcp__unreal_inspector__*` and, ONE ENTRY PER TOOL, every `unreal_editor` name the census classifies as PIE / verification / screenshot / input-simulation. ⛔ **A `mcp__unreal_editor__*` wildcard anywhere in the array is a FAILED TASK** — it would grant C++ authoring, Live Coding compile and shell to every agent. ⛔ Exclude by name anything the census shows as C++ authoring / compile / Live Coding / shell / git. (b) Fill `AURA-PHASE0.md` → `## MCP tool census` with the census verbatim + the allow-list you wrote, so the record shows what was enumerable and what was granted.
+    **Acceptance:** (1) `grep -c 'mcp__unreal_editor__\*'` on `settings.local.json` = 0, quoted · (2) every granted `unreal_editor` name appears verbatim in `handoffs/AURA-MCP-CENSUS.md` (list the pairs) · (3) the pre-existing `permissions.allow` entries are all still present (count before = count after − additions, quoted) · (4) the JSON parses · (5) `AURA-PHASE0.md` census section filled, the two other sections untouched · (6) ⛔ no agent `tools:` line edited from this row (`TASK-1224`).
+    **Slack:** 🔧 Build & Git, prefix `🔧 BUILD-MASTER:`, ≥1 post: the wildcard grep = 0 line FIRST, then the granted-name count, emoji + TASK-1222.
+- names: > **WRITES: `.claude/settings.local.json` (⛔ gitignored, never staged) · `.claude/pipeline/qa/AURA-PHASE0.md` §MCP tool census · `handoffs/TASK-1222-buildmaster.md`** · READS: `handoffs/AURA-MCP-CENSUS.md` · ✅ **GATE: WAIVED — gitignored permissions file (no commit) + a verbatim census copy; the live test is `TASK-1224`'s agent loading and `TASK-1230`'s run.** · Law: plan item 7 · Appendix D · the ⛔ wholesale-`unreal_editor` constraint at this section's head.
+
+#### TASK-1223 — [AURA-VERIFIER-DRAFT] ⚙️ **`.claude/agents/playtest-verifier.md` — DRAFT: THE FULL BODY, WITH A PLACEHOLDER `tools:` LINE `⚠️ tool names pending /mcp census`. ⛔ NEVER COMMITTED IN THIS STATE.** (gameplay-programmer) — marker `TASK-1223-AURA-VERIFIER-DRAFT`
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: `TASK-1214`
+- parallel-safe: yes (vs `1217`..`1219` · `1225`..`1229`)
+- spec: >
+    Plan Part B item 8 + source doc §4 Phase 3 step 4 (frontmatter shape) + §6 *"Draft body for `playtest-verifier.md`"* (body — verbatim, then apply the plan's overrides): thread = ⚙️ Dev & QA `1783116269.740549` (⛔ not "🧪 Dev & QA"), prefix `🎮 VERIFIER:`, report `.claude/pipeline/qa/TASK-###-verify.md`, verdicts `VERIFIED | VERIFY-FAILED | UNOBSERVABLE`, one run at a time, tests only rows reading `built` (C++) or `qa-passed` (asset-only), evidence promoted to `.claude/pipeline/playtest-evidence/<date>/` with a `VER` prefix under `FR-§1` naming (`VER-###[-t<MM>m<SS>s]-<symptom>.png`, `###` = the TASK number). Frontmatter `name: playtest-verifier`, `description:` per §4 Phase 3 step 4, and `tools:` = the literal line `tools: ⚠️ tool names pending /mcp census — finalized by TASK-1224` (⛔ no MCP name guessed).
+    **Acceptance:** (1) file exists with the three frontmatter keys · (2) body carries the §6 draft with every override above applied — quote the six override sites · (3) the words "never edits code or assets, never compiles, never runs Git" present · (4) the `UNOBSERVABLE leaves the status at qa-passed and appends verify: unobservable` rule present · (5) ⛔ `git status` shows the file UNTRACKED and it stays so (⛔ no `git add` from anyone until `TASK-1242`) · (6) ⛔ no other agent file touched.
+    **Slack:** ⚙️ Dev & QA, prefix `⚙️ GAMEPLAY-PROGRAMMER:`, ≥1 post: "draft written, tools line = placeholder, untracked", emoji + TASK-1223.
+- names: > **WRITES: `.claude/agents/playtest-verifier.md` (⛔ NEW, ⛔ UNTRACKED until `TASK-1242`) · `handoffs/TASK-1223-programmer.md`** · ✅ **GATE: `TASK-1235` (reviews the FINAL file after `TASK-1224`; this draft is not separately gated)** · ✅ **HOST: `TASK-1242`** · Law: plan item 8 + Corrections row 4 · `FR-§1`.
+
+#### TASK-1224 — [AURA-VERIFIER-FINAL] ⚙️⛔ **`playtest-verifier.md` — REPLACE THE PLACEHOLDER `tools:` LINE WITH THE REAL NAMES FROM THE CENSUS. ⛔⛔ NEVER `mcp__unreal_editor__*`.** (gameplay-programmer) — marker `TASK-1224-AURA-VERIFIER-FINAL`
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: `TASK-1223` · `TASK-1216` stage B (the census)
+- parallel-safe: yes vs `TASK-1222` (different file)
+- spec: >
+    Plan Part B item 8's frontmatter: `tools: Read, Grep, Glob, Write, Edit, mcp__unreal_inspector__*, <every unreal_editor PIE/verify/screenshot/input-simulation name from handoffs/AURA-MCP-CENSUS.md, one per name>, mcp__claude_ai_Slack__slack_send_message, mcp__claude_ai_Slack__slack_read_thread`. ⛔ No `Bash`. ⛔ No `mcp__unreal-mcp__*`, no `mcp__blender__*` (the body already says it never touches them — the tools line must agree). ⛔ No `unreal_editor` name the census classifies as authoring / compile / Live Coding / shell / git.
+    **Acceptance:** (1) `grep -c 'unreal_editor__\*'` on the file = 0, quoted · (2) every `mcp__unreal_editor__<name>` in the line appears verbatim in the census (pairs listed) · (3) the set of granted `unreal_editor` names EQUALS the set `TASK-1222` allowed (a tool in the agent line but not in `permissions.allow` would prompt forever; one allowed but not in the line is fine — say which) · (4) body unchanged vs `TASK-1223` (hash before/after the frontmatter-only edit) · (5) still untracked.
+    **Slack:** ⚙️ Dev & QA, prefix `⚙️ GAMEPLAY-PROGRAMMER:`, ≥1 post: wildcard grep = 0 FIRST, then the name count, emoji + TASK-1224.
+- names: > **WRITES: `.claude/agents/playtest-verifier.md` (frontmatter `tools:` line ⛔ ONLY) · `handoffs/TASK-1224-programmer.md`** · READS: `handoffs/AURA-MCP-CENSUS.md` · `handoffs/TASK-1222-buildmaster.md` (the allow-list) · ✅ **GATE: `TASK-1235`** · ✅ **HOST: `TASK-1242`** · Law: plan item 8 · the ⛔ wholesale constraint.
+
+#### TASK-1225 — [AURA-CLAUDE-MD] ⚙️ **`CLAUDE.md` — THE `playtest-verifier` TEAM ROW · ROUTING RULE 5 → 5a/5b/5c · TWO HARD-GATE LINES. ⛔ ONE FILE, ONE OWNER.** (gameplay-programmer) — marker `TASK-1225-AURA-CLAUDE-MD`
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: `TASK-1214`
+- parallel-safe: yes (vs `1217`..`1219` · `1223` · `1226`..`1229`) · ⛔ sole editor of `CLAUDE.md` in this lane
+- spec: >
+    Plan Part B item 9 + source doc §4 Phase 3 step 5 (the reasoning, ⛔ not copied into CLAUDE.md — cite `VER-§`). (a) Team table row: `playtest-verifier | Runs Aura PIE verification, writes runtime evidence | Editing code/art, compiling, Git`. (b) Routing rule 5 becomes: **5a** `qa-passed` → build-master compiles (`Result: Succeeded`), for C++ relaunches the editor on the new binaries (graceful-quit lane, ⛔ never Live Coding), status → `built`, ⛔ no commit; **5b** if the row's spec has a runtime acceptance criterion → `playtest-verifier`; `verify-failed` → gameplay-programmer, counts as a QA loop (same max-3-then-escalate); Blueprint/asset-only rows skip 5a; **5c** `verified` / `UNOBSERVABLE` / no runtime criterion → build-master assembles + commits as today. Rule 6's "counts as a QA loop" wording extends to verify failures. (c) Hard gates gain, verbatim: *"Nothing with a runtime acceptance criterion is committed without a VERIFIED report; UNOBSERVABLE is recorded on the row, not treated as a pass."* and *"Aura verification drives PIE; when Jonathan is present the dispatch announces it first and waits for a go."* (d) The "How agents communicate" list gains `.claude/pipeline/qa/TASK-###-verify.md` (one line). (e) The "Status flow" is referenced, not restated — `TASK-1226` edits the board's own line.
+    **Acceptance:** (1) the two hard-gate sentences character-exact (`SC-§38a`) · (2) 5a/5b/5c present and rule 5's old single-step text gone (quote the old line in the handoff) · (3) team table = seven rows · (4) diff touches ONLY those four regions — hunk count quoted · (5) ⛔ the stale manager-proxy clause is NOT touched (separate ruling pending, memory: "CLAUDE.md's stale manager-proxy clause").
+    **Slack:** ⚙️ Dev & QA, prefix `⚙️ GAMEPLAY-PROGRAMMER:`, ≥1 post: hunk count + "two sentences verbatim", emoji + TASK-1225.
+- names: > **WRITES: `CLAUDE.md` · `handoffs/TASK-1225-programmer.md`** · ✅ **GATE: `TASK-1236`** · ✅ **HOST: `TASK-1241`** · Law: plan item 9 · `SC-§38a` · `SC-§100`.
+
+#### TASK-1226 — [AURA-VER-LAW] 📋 **`CONVENTIONS.md` → `VER-§` (THE VERIFICATION LANE), THE ARTEFACT NAMING PINS, `SLACK.md`'s `🎮 VERIFIER:` PREFIX + ROUTING ROW, AND THE BOARD'S OWN *STATUS FLOW* LINE. ⛔ ALL MANAGER-OWNED FILES.** (manager) — marker `TASK-1226-AURA-VER-LAW`
+- assignee: manager
+- status: backlog
+- blocked-by: `TASK-1214`
+- parallel-safe: yes (vs every wave-1 row; ⛔ sole editor of `CONVENTIONS.md` / `SLACK.md` / the board header)
+- spec: >
+    Plan Part B item 10. `VER-§` (measured 0 occurrences 2026-09-13): **§0** the lane in one paragraph + the "advisory until three matches" pilot clause (binding only on 🧑 `TASK-1230`'s ruling) · **§1** report shape = the §6 draft's output block (`Verdict:` line 1; acceptance→observation table; promoted evidence; hypotheses ≠ verdicts; not-examined) · **§2** serialization: ONE verification at a time, ⛔ never concurrent with a build-master assemble / compile (`QUIET-MODULE`) or an art-director import; the verifier stops if any row reads `integrating` · **§3** 🧑 present ⇒ the dispatch announces PIE will be driven and waits for "go" (extends `SC-§118`'s ask-and-wait posture) · **§4** evidence naming = `FR-§1` shape with the `VER` prefix, promoted only via copy-out of `Saved/` · **§5** `UNOBSERVABLE` semantics: honest answer for pure-data / editor-only rows; recorded as `verify: unobservable` on the row; ⛔ never a pass · **§6** what the verifier is NOT: no edits, no compile, no Git, no `unreal-mcp`/`blender`, ⛔ never `mcp__unreal_editor__*` wholesale · **§7** the tests-only-`built`-or-`qa-passed` rule (PIE can only test binaries that exist). Then: the "Non-`Content/` pipeline artefacts" table gains rows for `Docs/AuraIndexIgnore.txt` · `Docs/AuraProjectMemory.md` · `Tools/aura_sync.ps1` · `.claude/pipeline/qa/AURA-PHASE0.md` · `.claude/pipeline/qa/TASK-###-verify.md` · `.claude/agents/playtest-verifier.md` · `handoffs/AURA-MCP-CENSUS.md` (owning law `VER-§`). `SLACK.md`: add `🎮 VERIFIER:` to the identity prefixes, a routing row `playtest-verifier verdicts → ⚙️ Dev & QA`, and `🎮` is NOT a status emoji. TASKBOARD.md "Status flow": `qa-passed` → `built` (C++) → `verified` / `verify-failed` → `integrating` → `done` (asset rows: `qa-passed` → `verified`…). 
+    **Acceptance:** `VER-§0`..`§7` present · 7 artefact rows · SLACK.md three edits · board line edited by the smallest anchor · ⛔ no row's `spec:` restates `VER-§` (cite only).
+    **Slack:** 📢 Planning & Feedback (`1783116257.317519`), prefix `📋 MANAGER:`, one post: "VER-§ written", emoji + TASK-1226.
+- names: > **WRITES: `CONVENTIONS.md` (new `VER-§` section + 7 table rows) · `SLACK.md` · `TASKBOARD.md` Status-flow line** · ✅ **GATE: WAIVED — manager-owned law text (`SC-§82`); committed by the host after read-back.** · ✅ **HOST: `TASK-1241`** · Law: plan item 10 · `FR-§1` · `SC-§118` · `SC-§82`.
+
+#### TASK-1227 — [AURA-QA-INSPECTOR] ⚙️ **`.claude/agents/qa-reviewer.md` — ADD `mcp__unreal_inspector__*` TO `tools:` + ONE PARAGRAPH: MAY NOW INSPECT BLUEPRINT GRAPHS AND THE EDITOR LOG TO CHECK A DECLARATION (`SC-§71b`); NO-MUTATION POSTURE UNCHANGED.** (gameplay-programmer) — marker `TASK-1227-AURA-QA-INSPECTOR`
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: `TASK-1214`
+- parallel-safe: yes (vs `1217`..`1219` · `1223` · `1225` · `1226` · `1228` · `1229`) · ⛔ sole editor of `qa-reviewer.md`
+- spec: >
+    Plan Part B item 11. `tools:` gains exactly one entry, `mcp__unreal_inspector__*` (⛔ nothing from `unreal_editor`, ⛔ no `Bash`). One paragraph in the body, house voice: it may now READ a Blueprint graph / asset metadata / the editor log through `unreal_inspector` to check a claim it previously accepted as declared (`SC-§71b`); a `qa-passed` remains a text-level verdict for anything it did not inspect; it still edits nothing but `qa/` reports and its own row's `status:`; `unreal_inspector`'s "engine lifecycle (launch/recompile/shutdown)" tools are ⛔ NEVER invoked by QA even though the server is read-only-named — say so in the paragraph.
+    **Acceptance:** (1) the `tools:` line diff = one added token, quoted before/after · (2) the paragraph names `SC-§71b` and the lifecycle prohibition · (3) no other line changed (hunk count = 2) · (4) the file is TRACKED (registry: retired 2026-09-06) — stage normally at `TASK-1241`.
+    **Slack:** ⚙️ Dev & QA, prefix `⚙️ GAMEPLAY-PROGRAMMER:`, ≥1 post: the before/after tools line, emoji + TASK-1227.
+- names: > **WRITES: `.claude/agents/qa-reviewer.md` · `handoffs/TASK-1227-programmer.md`** · ✅ **GATE: `TASK-1237`** · ✅ **HOST: `TASK-1241`** · Law: plan item 11 · `SC-§71b` · `SC-§78` · registry note (own row for an agent-file edit).
+
+#### TASK-1228 — [AURA-SETUP-DOCS] ⚙️ **`Docs/setupdirections.md` + THE VAULT COPY — CHAPTER 11 — AURA · THE LIST ROW 17 · APPENDIX A ROWS 12–16 · APPENDIX B ⚠️ ENTRIES. ⛔ BOTH COPIES BYTE-IDENTICAL.** (gameplay-programmer) — marker `TASK-1228-AURA-SETUP-DOCS`
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: `TASK-1214`
+- parallel-safe: yes (vs `1217`..`1219` · `1223` · `1225`..`1227` · `1229`) · ⛔ sole editor of both setup-doc copies
+- spec: >
+    Plan Part B item 12 (measured 2026-09-13: last chapter = 10, THE LIST ends at row 16, Appendix A ends at row 11 — so the plan's numbers are right; re-verify at your instant). Chapter 11 — Aura: install (engine-level, 5.8, port 41200), Set up Unreal MCP, Filesystem Sandbox (5.8-only, C++ not covered), `Saved/.Aura` regeneration = `Tools/aura_sync.ps1` from the two `Docs/` canonicals, the two MCP servers in the project `.mcp.json` (⛔ not `~/.claude/mcp.json`), the allow-list rule (`unreal_inspector` wholesale, `unreal_editor` enumerated, ⛔ never wildcard), the training-toggle privacy note. THE LIST row 17: Aura account (paid; trial first). Appendix A rows 12–16 = the source doc §4 *Verification checklist* table verbatim. Appendix B: the ⚠️ unverified items from source doc §3 (Fab SKU) and §7 (tool names, one-click path, Enhanced Input, `.uproject` change, `USiegeAssistantSnapshot` observability). Write once, copy to the vault path.
+    **Acceptance:** (1) `sha256` of both files IDENTICAL, quoted (`SC-§68`) · (2) chapter/row numbers as above, quoted · (3) Appendix A rows 12–16 character-exact vs the source table · (4) ⛔ no other chapter edited (hunk list) · (5) ⛔ no secrets · (6) the vault copy path used VERBATIM from `names:`.
+    **Slack:** ⚙️ Dev & QA, prefix `⚙️ GAMEPLAY-PROGRAMMER:`, ≥1 post: the identical-hash line FIRST, emoji + TASK-1228.
+- names: > **WRITES: `Docs/setupdirections.md` · `C:\GitProjects\GitHub\MyObsidianVault\JonWesOBVault\GitClaudeUnrealsetupdirections.md` (⛔ outside the repo — never staged) · `handoffs/TASK-1228-programmer.md`** · ✅ **GATE: `TASK-1238`** · ✅ **HOST: `TASK-1241` (the `Docs/` copy only; re-measures the pair's hashes)** · Law: plan item 12 · `SC-§68`.
+
+#### TASK-1229 — [AURA-SHIP-PRESCREEN] ⚙️ **`.claude/commands/ship.md` (`SHIP-§8`) — THE OPTIONAL AURA PRE-SCREEN OF `ADJUDICATE C3`. ⛔ HUMAN ADJUDICATION STAYS; ⛔ `ship.ps1` VERDICT LINES UNTOUCHED.** (gameplay-programmer) — marker `TASK-1229-AURA-SHIP-PRESCREEN`
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: `TASK-1214`
+- parallel-safe: yes (vs `1217`..`1219` · `1223` · `1225`..`1228`) · ⛔ sole editor of `ship.md` in this lane (⛔ `TASK-1213`'s pending C3-crop-caveat strike is the manager's, not yours — leave that sentence alone)
+- spec: >
+    Plan Part B item 13 + source doc §4 Phase 3 step 7. In §2b (the pixel adjudication) add one OPTIONAL sub-step: when `playtest-verifier` is available, the orchestrator may dispatch it to run main menu → match → HUD-present against the STAGED shim and attach its screenshot path + quoted widget values to the `ADJUDICATE C3` suspension as EVIDENCE. ⛔ It does not adjudicate: `SHIP-§8b` rule 9 (only the arena capture is the pending capture) and `SHIP-§8b(7)` (his eye wins) are cited, and the text says in one sentence why (`PKG-§5a` — a build shipped with an empty deck, no HUD and no hero while a script said PASS).
+    **Acceptance:** (1) diff confined to §2b, hunk count quoted · (2) `ship.ps1` NOT touched (`git status` shows only `ship.md`) · (3) the words "optional" and "does not adjudicate" present · (4) the SHIP RESULT grammar table (line ~36) unchanged · (5) `SHIP-§8` cited, not restated.
+    **Slack:** ⚙️ Dev & QA, prefix `⚙️ GAMEPLAY-PROGRAMMER:`, ≥1 post: hunk count + "ship.ps1 untouched", emoji + TASK-1229.
+- names: > **WRITES: `.claude/commands/ship.md` (§2b ⛔ only) · `handoffs/TASK-1229-programmer.md`** · ⛔ NEVER `Tools/Packaging/ship.ps1` · ✅ **GATE: `TASK-1239`** · ✅ **HOST: `TASK-1241`** · Law: plan item 13 · `SHIP-§8`/`§8b` · `PKG-§5a` · `SC-§100`.
+
+#### TASK-1230 — [AURA-PILOT] 🔧🧑 **PHASE 4 PILOT — THE THREE PHASE-0 TASKS THROUGH `qa-passed → built → playtest-verifier → commit`; THE THREE `TASK-###-verify.md` AGAINST 🧑 HIS PLAYTEST NOTES. ⛔ HE DECIDES WHETHER `verified` BECOMES BINDING.** (build-master — tracking row for an orchestrator-run chain) — marker `TASK-1230-AURA-PILOT`
+- assignee: build-master (tracking + the compile/commit legs; the verify legs are `playtest-verifier` dispatches by the orchestrator)
+- status: backlog
+- blocked-by: `TASK-1240` · `TASK-1241` · `TASK-1242` (everything in items 5–13 landed) · `TASK-1215` stage A (the three cases)
+- parallel-safe: ⛔ NO — `VER-§2` serialization: no assemble, no import, no other compile while a verification runs
+- spec: >
+    Plan Part B item 14. For each of 🧑 his three cases (already `qa-passed` rows): build-master compiles/relaunches per CLAUDE.md 5a (status `built`; ⛔ never Live Coding) → orchestrator dispatches `playtest-verifier` ONE AT A TIME (🧑 present ⇒ announce and wait for "go", `VER-§3`) → `.claude/pipeline/qa/TASK-###-verify.md` × 3 → build-master commits per 5c. Plan Verification probes 4 + 5 are part of this row: one run on a known-good row must return `VERIFIED` with an evidence path that exists and quoted widget values; one run on a DELIBERATELY BROKEN working-tree state (a local, uncommitted breakage of one case, reverted after — say what and prove the revert by hash) must return `VERIFY-FAILED` with the failing observation — ⛔ a verifier that cannot fail is not a gate. Probe 6 (Sandbox reject → `git status` clean) if 🧑 enabled the Sandbox.
+    **Acceptance:** (1) three verify reports exist, verdict on line 1 each · (2) a table: case · Aura verdict · 🧑 his playtest answer · match Y/N · credit · wall time — appended to `AURA-PHASE0.md` §Pilot · (3) the `VERIFY-FAILED` exhibit with its observation quoted · (4) the tier line copied from `TASK-1215` stage B · (5) ⛔ `verified` stays ADVISORY on every row until he rules — his ruling recorded on THIS row's status by the orchestrator, labelled.
+    **Slack:** 🔧 Build & Git, prefix `🔧 BUILD-MASTER:`, ≥1 post per leg; the three-match summary + the failed-on-purpose exhibit in one closing post, emoji + TASK-1230. The ask for his ruling goes to 🚨 Blockers.
+- names: > **WRITES: `.claude/pipeline/qa/AURA-PHASE0.md` §Pilot · `handoffs/TASK-1230-buildmaster.md`** · READS: the three `qa/TASK-###-verify.md` (written by `playtest-verifier`) · ✅ **GATE: n/a — this row IS the integration check of the lane; each leg's own gate is the verify report.** · Law: plan item 14 + Verification probes 4–6 · `VER-§0`/`§2`/`§3` · `SC-§118` · `SC-§79` (say which failure class the probe detects).
+
+#### TASK-1231 — [AURA-VAULT-SYNC] ⚙️ **VAULT SYNC — THE AURA NOTE'S STATUS CALLOUT + `UE5 Agent Team System.md`: WHAT WAS INSTALLED, THE REAL TOOL NAMES, THE TIER, CREDIT-PER-VERIFICATION.** (gameplay-programmer) — marker `TASK-1231-AURA-VAULT-SYNC`
+- assignee: gameplay-programmer
+- status: backlog
+- blocked-by: `TASK-1230` (+ 🧑 his binding/advisory ruling on it)
+- parallel-safe: yes (outside the repo)
+- spec: >
+    Plan Part B item 15. (a) `Aura AI for Unreal — Integration Plan.md` (vault AND `Docs/` copy — keep them byte-identical, `sha256` quoted) Status callout: installed version, date, tier chosen, credit-per-verification (from `AURA-PHASE0.md`), the real `unreal_inspector`/`unreal_editor` tool names (from the census), the one-click-path finding, the Enhanced-Input answer, and 🧑 his binding/advisory ruling. (b) `UE5 Agent Team System.md`: tool-layer table gets an Aura row; roster gets `playtest-verifier`. ⛔ Numbers copied from `AURA-PHASE0.md` with their `MEASURED BY` labels, ⛔ never re-derived.
+    **Acceptance:** the two note diffs quoted · both plan-doc copies identical by hash · every number traceable to a line in `AURA-PHASE0.md`.
+    **Slack:** ⚙️ Dev & QA, prefix `⚙️ GAMEPLAY-PROGRAMMER:`, ≥1 post, emoji + TASK-1231.
+- names: > **WRITES: `C:\GitProjects\GitHub\MyObsidianVault\JonWesOBVault\Aura AI for Unreal — Integration Plan.md` · `C:\GitProjects\GitHub\MyObsidianVault\JonWesOBVault\UE5 Agent Team System.md` · `Docs/Aura AI for Unreal — Integration Plan.md` (repo twin) · `handoffs/TASK-1231-programmer.md`** · ✅ **GATE: WAIVED — vault notes outside the repo + a doc twin whose only change is a status callout; the `Docs/` twin is committed by the next host that runs, named in its pathspec.** · Law: plan item 15 · `SC-§97`.
+
+---
+
+#### TASK-1232 — [AURA-GATE-1217] 🔍 **THE GATE OVER `TASK-1217` — every plan-item-2 exclude present, no keep-set path matched, location law = `Saved/.Aura/`.** (qa-reviewer) — marker `TASK-1232-AURA-GATE-1217`
+- assignee: qa-reviewer
+- status: backlog
+- blocked-by: `TASK-1217`
+- parallel-safe: yes vs everything but its subject
+- spec: >
+    Read `Docs/AuraIndexIgnore.txt` against plan Part B item 2 (`Read`, not `Grep` — `SC-§38a`): (1) every exclude present, count = plan count · (2) each keep-set entry reasoned unmatched · (3) no `Saved/` write claimed · (4) the Corrections-row-1 location stated correctly in the handoff. ⛔ You hold no `Bash` (`SC-§71b`) — say so above the verdict. Write `.claude/pipeline/qa/TASK-1232-report.md` (`SC-§106`; `subject: TASK-1217`), verdict + blocker count on line 1.
+    **Slack:** ⚙️ Dev & QA, prefix `🔍 QA:`, ≥1 post: PASS/FAIL first word + report path, emoji + TASK-1232.
+- names: > **WRITES: `.claude/pipeline/qa/TASK-1232-report.md` ⛔ ONLY** · ✅ **HOST: `TASK-1240`** · Law: `SC-§38a` · `SC-§71b` · `SC-§106`.
+
+#### TASK-1233 — [AURA-GATE-1218] 🔍 **THE GATE OVER `TASK-1218` — ≤150 lines, the three laws character-exact, prefix tables match `CONVENTIONS.md`, no secrets.** (qa-reviewer) — marker `TASK-1233-AURA-GATE-1218`
+- assignee: qa-reviewer
+- status: backlog
+- blocked-by: `TASK-1218`
+- parallel-safe: yes vs everything but its subject
+- spec: >
+    `Read` `Docs/AuraProjectMemory.md`: (1) line count ≤150 · (2) the three sentences from plan item 3 character-exact (`SC-§38a`) · (3) every asset-prefix / texture-suffix row equals `CONVENTIONS.md`'s at your instant (name any drift) · (4) seven-agent table · (5) zero secrets/URLs-with-tokens. No `Bash` (`SC-§71b`). Write `.claude/pipeline/qa/TASK-1233-report.md` (`subject: TASK-1218`).
+    **Slack:** ⚙️ Dev & QA, prefix `🔍 QA:`, ≥1 post, emoji + TASK-1233.
+- names: > **WRITES: `.claude/pipeline/qa/TASK-1233-report.md` ⛔ ONLY** · ✅ **HOST: `TASK-1240`** · Law: `SC-§38a` · `SC-§71b` · `SC-§106`.
+
+#### TASK-1234 — [AURA-GATE-1219] 🔍 **THE GATE OVER `TASK-1219` — idempotent, root-relative, fails closed on a missing source, never touches git-tracked paths.** (qa-reviewer) — marker `TASK-1234-AURA-GATE-1219`
+- assignee: qa-reviewer
+- status: backlog
+- blocked-by: `TASK-1219`
+- parallel-safe: yes vs everything but its subject
+- spec: >
+    Read `Tools/aura_sync.ps1` + `handoffs/TASK-1219-programmer.md`: (1) both source and both destination paths equal `names:` on `TASK-1219` verbatim · (2) `$PSScriptRoot`-relative, no drive letter · (3) missing-source path exits non-zero BEFORE any copy · (4) no `Set-ExecutionPolicy`, no network, no `.claude/skills` · (5) the six EXECUTED acceptance verdicts are quoted with their hashes — ⛔ prose without strings is `NOT MEASURED`, say so. No `Bash` (`SC-§71b`) — execution duty transferred by name to `TASK-1240`. Write `.claude/pipeline/qa/TASK-1234-report.md` (`subject: TASK-1219`).
+    **Slack:** ⚙️ Dev & QA, prefix `🔍 QA:`, ≥1 post, emoji + TASK-1234.
+- names: > **WRITES: `.claude/pipeline/qa/TASK-1234-report.md` ⛔ ONLY** · ✅ **HOST: `TASK-1240`** · Law: `SC-§71b` · `SC-§106` · `TL-§6`.
+
+#### TASK-1235 — [AURA-GATE-1224] 🔍⛔ **THE GATE OVER THE FINAL `playtest-verifier.md` (`TASK-1223` + `TASK-1224`) — ⛔ NO `unreal_editor` WILDCARD; EVERY GRANTED NAME IN THE CENSUS AND IN THE ALLOW-LIST; BODY = THE §6 DRAFT WITH THE SIX OVERRIDES.** (qa-reviewer) — marker `TASK-1235-AURA-GATE-1224`
+- assignee: qa-reviewer
+- status: backlog
+- blocked-by: `TASK-1224`
+- parallel-safe: yes vs everything but its subject
+- spec: >
+    `Read` the whole file: (1) `tools:` contains NO `mcp__unreal_editor__*` token — a hit is a BLOCKER · (2) every `mcp__unreal_editor__<name>` appears verbatim in `handoffs/AURA-MCP-CENSUS.md` AND in `handoffs/TASK-1222-buildmaster.md`'s allow-list (list the triples) · (3) no `Bash`, no `mcp__unreal-mcp__`, no `mcp__blender__` · (4) body vs source doc §6 draft: the six overrides (thread ts, prefix, report path, verdict triple, `built`/`qa-passed` rule, `VER` evidence prefix) present; nothing else materially changed · (5) frontmatter parses (three keys, no stray placeholder text). No `Bash` (`SC-§71b`). Write `.claude/pipeline/qa/TASK-1235-report.md` (`subject: TASK-1224`).
+    **Slack:** ⚙️ Dev & QA, prefix `🔍 QA:`, ≥1 post: the wildcard verdict FIRST, emoji + TASK-1235.
+- names: > **WRITES: `.claude/pipeline/qa/TASK-1235-report.md` ⛔ ONLY** · ✅ **HOST: `TASK-1242`** · Law: `SC-§71b` · `SC-§106` · the ⛔ wholesale constraint.
+
+#### TASK-1236 — [AURA-GATE-1225] 🔍 **THE GATE OVER `TASK-1225` (`CLAUDE.md`) — 5a/5b/5c, seven-row table, the two hard-gate sentences character-exact, nothing else touched.** (qa-reviewer) — marker `TASK-1236-AURA-GATE-1225`
+- assignee: qa-reviewer
+- status: backlog
+- blocked-by: `TASK-1225`
+- parallel-safe: yes vs everything but its subject
+- spec: >
+    `Read` `CLAUDE.md`: the four regions per `TASK-1225` spec (a)–(d); the two sentences character-exact (`SC-§38a`); the old rule-5 text gone; the stale manager-proxy clause UNTOUCHED (a hunk there = scope BLOCKER, `SC-§100`); hunk count matches the handoff. No `Bash`. Write `.claude/pipeline/qa/TASK-1236-report.md` (`subject: TASK-1225`).
+    **Slack:** ⚙️ Dev & QA, prefix `🔍 QA:`, ≥1 post, emoji + TASK-1236.
+- names: > **WRITES: `.claude/pipeline/qa/TASK-1236-report.md` ⛔ ONLY** · ✅ **HOST: `TASK-1241`** · Law: `SC-§38a` · `SC-§71b` · `SC-§100` · `SC-§106`.
+
+#### TASK-1237 — [AURA-GATE-1227] 🔍 **THE GATE OVER `TASK-1227` (`qa-reviewer.md`) — exactly one added tools token, the paragraph names `SC-§71b` + the lifecycle prohibition, two hunks. ⛔ YOU ARE REVIEWING YOUR OWN FILE — YOU MAY NOT WIDEN IT.** (qa-reviewer) — marker `TASK-1237-AURA-GATE-1227`
+- assignee: qa-reviewer
+- status: backlog
+- blocked-by: `TASK-1227`
+- parallel-safe: yes vs everything but its subject
+- spec: >
+    `Read` `.claude/agents/qa-reviewer.md`: (1) `tools:` = the prior line + `mcp__unreal_inspector__*`, nothing else added (⛔ any `unreal_editor` token or `Bash` = BLOCKER) · (2) the paragraph's two required statements present · (3) hunk count = 2. ⛔ A reviewer may verify but never edit its own grant (`SC-§64a` family) — report only. Write `.claude/pipeline/qa/TASK-1237-report.md` (`subject: TASK-1227`).
+    **Slack:** ⚙️ Dev & QA, prefix `🔍 QA:`, ≥1 post, emoji + TASK-1237.
+- names: > **WRITES: `.claude/pipeline/qa/TASK-1237-report.md` ⛔ ONLY** · ✅ **HOST: `TASK-1241`** · Law: `SC-§71b` · `SC-§106`.
+
+#### TASK-1238 — [AURA-GATE-1228] 🔍 **THE GATE OVER `TASK-1228` (setup docs) — chapter/row numbers, Appendix A rows 12–16 verbatim, the hash pair quoted, no other chapter touched.** (qa-reviewer) — marker `TASK-1238-AURA-GATE-1228`
+- assignee: qa-reviewer
+- status: backlog
+- blocked-by: `TASK-1228`
+- parallel-safe: yes vs everything but its subject
+- spec: >
+    `Read` `Docs/setupdirections.md` + the handoff: Chapter 11 present with the eight topics of the `TASK-1228` spec; THE LIST row 17; Appendix A rows 12–16 character-exact vs source doc §4 table (`SC-§38a`); Appendix B entries; the handoff quotes TWO identical `sha256` values — ⛔ you cannot hash (`SC-§71b`), so the pair is ACCEPTED-AS-DECLARED and re-measured by `TASK-1241`; say so. Write `.claude/pipeline/qa/TASK-1238-report.md` (`subject: TASK-1228`).
+    **Slack:** ⚙️ Dev & QA, prefix `🔍 QA:`, ≥1 post, emoji + TASK-1238.
+- names: > **WRITES: `.claude/pipeline/qa/TASK-1238-report.md` ⛔ ONLY** · ✅ **HOST: `TASK-1241`** · Law: `SC-§38a` · `SC-§68` · `SC-§71b` · `SC-§106`.
+
+#### TASK-1239 — [AURA-GATE-1229] 🔍 **THE GATE OVER `TASK-1229` (`ship.md`) — §2b only, optional, does-not-adjudicate, `ship.ps1` untouched, SHIP RESULT grammar unchanged.** (qa-reviewer) — marker `TASK-1239-AURA-GATE-1229`
+- assignee: qa-reviewer
+- status: backlog
+- blocked-by: `TASK-1229`
+- parallel-safe: yes vs everything but its subject
+- spec: >
+    `Read` `.claude/commands/ship.md`: the five acceptance items of `TASK-1229`; a hunk outside §2b or any wording that lets the pre-screen stand in for the human verdict = BLOCKER (`SHIP-§8b(7)`); the C3 crop caveat sentence (the manager's pending strike) untouched. No `Bash`. Write `.claude/pipeline/qa/TASK-1239-report.md` (`subject: TASK-1229`).
+    **Slack:** ⚙️ Dev & QA, prefix `🔍 QA:`, ≥1 post, emoji + TASK-1239.
+- names: > **WRITES: `.claude/pipeline/qa/TASK-1239-report.md` ⛔ ONLY** · ✅ **HOST: `TASK-1241`** · Law: `SHIP-§8`/`§8b` · `SC-§71b` · `SC-§100` · `SC-§106`.
+
+---
+
+#### TASK-1240 — [AURA-HOST-A] 🔧📦 **HOST A — COMMIT THE TWO CANONICAL FILES + `aura_sync.ps1` (+ THE `.uproject` `Aura` PLUGIN ENTRY) BEHIND `1232`/`1233`/`1234` PASS; INTEGRATION CHECK = RUN `Tools/aura_sync.ps1` YOURSELF (plan Verification probe 3).** (build-master) — marker `TASK-1240-AURA-HOST-A`
+- assignee: build-master
+- status: backlog
+- blocked-by: `TASK-1217` + `TASK-1232` PASS · `TASK-1218` + `TASK-1233` PASS · `TASK-1219` + `TASK-1234` PASS · `TASK-1214` (the `.uproject` fact)
+- parallel-safe: ⛔ NO vs any other commit host
+- spec: >
+    **(0) `SC-§91`:** `HEAD` · porcelain · ahead/behind at your instant. **(1) THE COMMIT, pathspec anchored ONE LEVEL UP (`SC-§102`):** `GitClaudeUnrealTest/Docs/AuraIndexIgnore.txt` · `GitClaudeUnrealTest/Docs/AuraProjectMemory.md` · `GitClaudeUnrealTest/Tools/aura_sync.ps1` · `GitClaudeUnrealTest/GitClaudeUnrealTest.uproject` ⛔ ONLY IF its sole hunk is the `Aura` plugin entry (quote the hunk; any other hunk ⇒ leave it out and report) · the three handoffs · the three QA reports · `TASKBOARD.md`. `SC-§106` controls; verify the COMMIT, never the index. Message first line: *TASK-1217/1218/1219: Aura context files — the canonical INDEX_IGNORE + project memory under Docs/ and the aura_sync.ps1 copy step into the gitignored Saved/.Aura (Aura integration, plan Part B items 2–4; gated by TASK-1232/1233/1234)*. **(2) INTEGRATION CHECK, EXECUTED:** run `Tools/aura_sync.ps1` twice from the committed tree — quote both destination hashes vs their sources and the second run's "no change"; `git status --porcelain` after = nothing under `Saved/`, quoted. **(3) `SC-§103`:** four ids, four flips (`1217` · `1218` · `1219` · `1240`) + the three gate rows. **(4) FENCES:** ⛔ NEVER stage `Saved/**` · `.claude/settings.local.json` · `.claude/agents/playtest-verifier.md` (untracked by design until `1242`) · ⛔ NEVER PUSH · no compile owed.
+    **Slack:** 🔧 Build & Git, prefix `🔧 BUILD-MASTER:`, ≥1 post: hash + file list + the sync-run evidence, emoji + TASK-1240.
+- names: > **STAGES:** the paths in cl. (1) · **WRITES: `handoffs/TASK-1240-buildmaster.md`** · **RUNS: `Tools/aura_sync.ps1`** · ✅ **GATE: n/a — this row IS the integration check** · Law: `SC-§91` · `SC-§102` · `SC-§103` · `SC-§106` · `SC-§68` · registry.
+
+#### TASK-1241 — [AURA-HOST-B] 🔧📦 **HOST B — COMMIT THE DOC/CONFIG LANE (`CLAUDE.md` · `CONVENTIONS.md` `VER-§` + `SLACK.md` + the board line · `qa-reviewer.md` · `Docs/setupdirections.md` · `ship.md`) BEHIND `1236`..`1239` PASS; INTEGRATION CHECK = THE SETUP-DOC HASH PAIR RE-MEASURED.** (build-master) — marker `TASK-1241-AURA-HOST-B`
+- assignee: build-master
+- status: backlog
+- blocked-by: `TASK-1225` + `TASK-1236` PASS · `TASK-1226` (manager, waived gate) · `TASK-1227` + `TASK-1237` PASS · `TASK-1228` + `TASK-1238` PASS · `TASK-1229` + `TASK-1239` PASS
+- parallel-safe: ⛔ NO vs any other commit host
+- spec: >
+    **(0) `SC-§91`.** ⛔ If any listed row is not yet `qa-passed`/done at your instant, STOP and report which — this host commits the SET, not a subset (the rows finish independently; the commit waits for all five). **(1) THE COMMIT (`SC-§102`, anchored one level up):** `GitClaudeUnrealTest/CLAUDE.md` · `.claude/pipeline/CONVENTIONS.md` · `.claude/pipeline/SLACK.md` · `.claude/agents/qa-reviewer.md` (⛔ own-row rule satisfied by `TASK-1227`) · `Docs/setupdirections.md` · `.claude/commands/ship.md` · the handoffs · the QA reports · `TASKBOARD.md`. Message first line: *TASK-1225/1226/1227/1228/1229: the verification lane's law + routing — VER-§, CLAUDE.md 5a/5b/5c + the VERIFIED hard gate, qa-reviewer gains unreal_inspector (read-only), setup doc Chapter 11 — Aura, ship.md's optional C3 pre-screen (Aura integration, plan Part B items 9–13; gated by TASK-1236/1237/1238/1239)*. **(2) INTEGRATION CHECK, EXECUTED:** `sha256` of `Docs/setupdirections.md` vs `C:\GitProjects\GitHub\MyObsidianVault\JonWesOBVault\GitClaudeUnrealsetupdirections.md` — IDENTICAL, both quoted (`SC-§68`; a mismatch is a STOP, not a warning) · `grep -c 'mcp__unreal_editor__\*' .claude/agents/qa-reviewer.md` = 0, quoted. **(3) `SC-§103`:** six ids, six flips (`1225`..`1229` · `1241`) + the four gate rows. **(4) FENCES:** ⛔ NEVER stage `Saved/**` · `settings.local.json` · `playtest-verifier.md` · `.mcp.json` (that is `1242`'s) · ⛔ NEVER PUSH.
+    **Slack:** 🔧 Build & Git, prefix `🔧 BUILD-MASTER:`, ≥1 post: hash + the identical-sha line VERBATIM, emoji + TASK-1241.
+- names: > **STAGES:** the paths in cl. (1) · **WRITES: `handoffs/TASK-1241-buildmaster.md`** · ✅ **GATE: n/a — this row IS the integration check** · Law: `SC-§91` · `SC-§102` · `SC-§103` · `SC-§106` · `SC-§68`.
+
+#### TASK-1242 — [AURA-HOST-C] 🔧📦 **HOST C — COMMIT `.mcp.json` + THE FINAL `playtest-verifier.md` + `AURA-PHASE0.md` + THE CENSUS BEHIND `1235` PASS; INTEGRATION CHECK = THE JSON RE-PARSED + THE WILDCARD GREPS = 0 + THE ORCHESTRATOR'S `/mcp` FOUR-CONNECTED LINE RELAYED.** (build-master) — marker `TASK-1242-AURA-HOST-C`
+- assignee: build-master
+- status: backlog
+- blocked-by: `TASK-1221` · `TASK-1216` stage B · `TASK-1220` · `TASK-1222` · `TASK-1224` + `TASK-1235` PASS
+- parallel-safe: ⛔ NO vs any other commit host
+- spec: >
+    **(0) `SC-§91`.** **(1) THE COMMIT (`SC-§102`):** `GitClaudeUnrealTest/.mcp.json` · `.claude/agents/playtest-verifier.md` (⛔ the FIRST time this file is staged — confirm its `tools:` line has no placeholder text and no `unreal_editor__*` before staging; either ⇒ STOP) · `.claude/pipeline/qa/AURA-PHASE0.md` · `.claude/pipeline/handoffs/AURA-MCP-CENSUS.md` · the handoffs · `qa/TASK-1235-report.md` · `TASKBOARD.md`. Message first line: *TASK-1221/1224: the Aura bridge — unreal_inspector + unreal_editor in the project .mcp.json, the playtest-verifier agent with an enumerated (never wildcard) unreal_editor grant, and the Phase 0 measurement record (Aura integration, plan Part B items 5–8; gated by TASK-1235)*. **(2) INTEGRATION CHECK, EXECUTED:** `.mcp.json` parses and `unreal-mcp`/`blender` blocks are byte-identical to the pre-lane commit (quote) · `grep -c 'unreal_editor__\*'` = 0 on BOTH `playtest-verifier.md` and `settings.local.json`, quoted · the orchestrator's `/mcp` line ("four connected") relayed with its label `INHERITED — orchestrator-measured` (`SC-§97`). **(3) `SC-§103`:** flips for `1220` · `1221` · `1222` · `1223` · `1224` · `1235` · `1242`. **(4) FENCES:** ⛔ NEVER stage `settings.local.json` · `Saved/**` · ⛔ NEVER PUSH · no compile owed.
+    **Slack:** 🔧 Build & Git, prefix `🔧 BUILD-MASTER:`, ≥1 post: hash + both wildcard-grep lines VERBATIM, emoji + TASK-1242.
+- names: > **STAGES:** the paths in cl. (1) · **WRITES: `handoffs/TASK-1242-buildmaster.md`** · ✅ **GATE: n/a — this row IS the integration check** · Law: `SC-§91` · `SC-§97` · `SC-§102` · `SC-§103` · `SC-§106` · the ⛔ wholesale constraint.
+
+---
+
 ## 🚨⛔⛔⭐⭐⭐ THE ⛔ FOUR-STEP RECIPE'S ⛔ OTHER VICTIMS — **`TASK-1143` · `TASK-1144` · `TASK-1145`. ⛔ CONDITIONAL ROWS: ⛔ THEY EXIST ⛔ NOW SO THEY ⛔ CANNOT BE FORGOTTEN, AND THEY ⛔ CLOSE AS ⛔ UNNECESSARY IF THE COUNT IS ⛔ ZERO.** (boarded 2026-09-08 by the manager from ⭐ `TASK-1120` — law: ⭐ `SC-§105` cl. 4(d), `TL-§5e` cl. 8)
 
 > ### ⛔⛔ **⭐ `TASK-1120` PROVED THE *"HOW TO ADD SETTING"* RECIPE ⛔ SHIPS A SETTING THAT ⛔ NEVER PERSISTS. ⛔ THE ⛔ FIX TO THE RECIPE IS ⛔ DONE. ⛔ THE ⛔ CONSEQUENTIAL QUESTION IS ⛔ NOT: ⛔ WHICH ⛔ OTHER FIELDS WERE ADDED THE ⛔ SAME WAY, AND DO THEY ⛔ PERSIST?**
