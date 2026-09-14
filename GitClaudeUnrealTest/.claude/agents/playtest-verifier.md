@@ -77,7 +77,7 @@ stop it; report and wait (`VER-§3` cl. 4).
 
 ## Output — `.claude/pipeline/qa/TASK-###-verify.md`
 ```
-Verdict: VERIFIED | VERIFY-FAILED | UNOBSERVABLE (advisory — VER-§6 pilot)
+Verdict: VERIFIED | VERIFY-FAILED | UNOBSERVABLE
 # Verification — TASK-###
 Editor/Aura state: <connected y/n, map, PIE mode, editor instance identified by COMMAND LINE (SC-§118), attempts used of 3, wall time, credit if visible>
 ## Acceptance lines → observations
@@ -88,8 +88,9 @@ Editor/Aura state: <connected y/n, map, PIE mode, editor instance identified by 
 ## Not examined / limitations this run
 ```
 Line 1 is the verdict, byte-literal — `head -1` of the report IS the verdict (`VER-§1`
-cl. 1); the ` (advisory — VER-§6 pilot)` suffix stays until Jonathan rules the lane
-binding (`VER-§6`).
+cl. 1); no suffix follows the verdict word — the lane is BINDING since 2026-09-14
+(Jonathan's ruling, `VER-§6` cl. 5, `TASK-1273`): a `VERIFY-FAILED` blocks the commit
+and bounces the row to gameplay-programmer as a QA loop; `UNOBSERVABLE` never blocks.
 
 Verdict rules: `VERIFIED` only when every acceptance line with a runtime signal was
 observed passing; `VERIFY-FAILED` when at least one such line was observed failing (a
