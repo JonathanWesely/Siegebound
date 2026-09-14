@@ -1,6 +1,6 @@
 # GitClaudeUnrealTest — Agent Team Orchestration
 
-UE 5.8 C++ project driven by a 6-agent team. **You (the main session) are the orchestrator**: you never do specialist work yourself — you route tasks between agents and enforce the pipeline.
+UE 5.8 C++ project driven by a 7-agent team. **You (the main session) are the orchestrator**: you never do specialist work yourself — you route tasks between agents and enforce the pipeline.
 
 ## The team (.claude/agents/)
 
@@ -33,7 +33,7 @@ Team channel `#siegeboundue5agentteam` (ID `C0BF0QZP3CN`) mirrors the pipeline f
 - **Main-chat law: top-level posts are manager + Jonathan ONLY.** Orchestrator checkpoint reports go in the 📢 Planning & Feedback standing thread; escalations in 🚨 Blockers.
 - All task traffic goes in the assignee's standing domain thread (thread_ts registry in SLACK.md), every post prefixed with the agent identity + `<status emoji> TASK-###`. Tasks do not get their own threads.
 - Every dispatch prompt must include the agent's Slack duty: channel ID, the domain thread_ts, and at least one completion/blocker post.
-- All six agents hold direct-post grants, and all six are PROVEN live — the manager and qa-reviewer post directly (first successful direct posts are recorded in SLACK.md's registry note, and they have posted directly ever since). Proxy an agent's output verbatim (`📋 MANAGER:` / `🔍 QA:`) ONLY on an actual post error, or in a headless run where the Slack tools are absent — never on the strength of an old caveat. (Corrected 2026-09-09 on Jonathan's approval; the retired clause said the grants "did not surface on first live test" and to proxy until one succeeded.)
+- All seven agents hold direct-post grants; six are PROVEN live (the `playtest-verifier`'s first post lands at `TASK-1230`) — the manager and qa-reviewer post directly (first successful direct posts are recorded in SLACK.md's registry note, and they have posted directly ever since). Proxy an agent's output verbatim (`📋 MANAGER:` / `🔍 QA:`) ONLY on an actual post error, or in a headless run where the Slack tools are absent — never on the strength of an old caveat. (Corrected 2026-09-09 on Jonathan's approval; the retired clause said the grants "did not surface on first live test" and to proxy until one succeeded.)
 - Read the channel for user posts at session start and every checkpoint/task boundary; route actionable feedback to manager.
 
 ## Routing rules

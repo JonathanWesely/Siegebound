@@ -880,7 +880,9 @@ exist in this project, so that step from Aura's docs is dropped.
    ```
 
    Use Aura's own `PortablePython` — not the system Python 3.14 and not the art-pipeline uv
-   venv; Aura's scripts pin their own dependencies. `unreal_inspector` is **read-only**;
+   venv; Aura's scripts pin their own dependencies. `unreal_inspector` is MOSTLY read tools —
+   the census found 13 that are not (engine lifecycle incl. a recompile path, generation, plan
+   bookkeeping), so it is granted by NAME, 49 tools, never wholesale (`VER-§7` cl. 3, R10);
    `unreal_editor` is the **mutating** server (it bundles PIE/verify/screenshot tools with
    C++ authoring, Live Coding compile, and shell tools).
 4. **[Claude]** `/mcp` in the restarted session must list `unreal_inspector`,
@@ -890,7 +892,9 @@ exist in this project, so that step from Aura's docs is dropped.
 
 ### 11.5 The allow-list law (Appendix D — merge, never replace)
 
-- `mcp__unreal_inspector__*` may be allowed **wholesale** — it is read-only.
+- `mcp__unreal_inspector__*` is ⛔ **NEVER allowed wholesale** (R10, 2026-09-13 — the server
+  carries `recompile_unreal_project` and engine-lifecycle tools); the 49 read names are
+  enumerated in Appendix D.1.
 - `unreal_editor` tools are **enumerated by their real names** from the `/mcp` census: only
   the PIE / verify / screenshot tools, in `permissions.allow` AND in any agent `tools:` line.
 - ⛔ **Never `mcp__unreal_editor__*`.** A wildcard there hands every agent C++ authoring,
@@ -1046,10 +1050,100 @@ Merge into `permissions.allow` — never replace the array. Also set `enabledMcp
 
       // MCP surfaces used constantly
       "mcp__unreal-mcp__call_tool",
-      "mcp__claude_ai_Slack__slack_read_channel"
+      "mcp__claude_ai_Slack__slack_read_channel",
+
+      // Aura (Chapter 11 §11.5) — both servers ENUMERATED (VER-§7 cl. 1 + cl. 3, R10):
+      //   unreal_inspector = its 49 read tools (census §2 minus §2a), as TASK-1254
+      //                      granted them (handoffs/TASK-1254-buildmaster.md). The 13
+      //                      lifecycle / generation / plan names are granted to no agent.
+      //   unreal_editor    = the 32 PIE / verify / screenshot / input names, as TASK-1222
+      //                      granted them (handoffs/TASK-1222-buildmaster.md) — it also
+      //                      bundles C++ authoring, Live Coding compile, and a shell.
+      //   ⛔ Never a wildcard of either.
+      "mcp__unreal_inspector__execute_unreal_python_readonly",
+      "mcp__unreal_inspector__fetch_animation_skill",
+      "mcp__unreal_inspector__fetch_curve_best_practices",
+      "mcp__unreal_inspector__fetch_eqs_best_practices",
+      "mcp__unreal_inspector__fetch_gas_best_practices",
+      "mcp__unreal_inspector__fetch_level_design_skill",
+      "mcp__unreal_inspector__fetch_performance_best_practices",
+      "mcp__unreal_inspector__fetch_python_best_practices",
+      "mcp__unreal_inspector__fetch_timeline_best_practices",
+      "mcp__unreal_inspector__fetch_ui_best_practices",
+      "mcp__unreal_inspector__fetch_understandings",
+      "mcp__unreal_inspector__get_asset_graph",
+      "mcp__unreal_inspector__get_asset_meta",
+      "mcp__unreal_inspector__get_asset_structs",
+      "mcp__unreal_inspector__get_attribute_set",
+      "mcp__unreal_inspector__get_available_actors_in_level",
+      "mcp__unreal_inspector__get_blueprint_material_properties",
+      "mcp__unreal_inspector__get_blueprint_properties_specifiers",
+      "mcp__unreal_inspector__get_code_examples",
+      "mcp__unreal_inspector__get_enums",
+      "mcp__unreal_inspector__get_gameplay_tags",
+      "mcp__unreal_inspector__get_headless_status",
+      "mcp__unreal_inspector__get_text_file_contents",
+      "mcp__unreal_inspector__get_unreal_context",
+      "mcp__unreal_inspector__get_unreal_output_logs",
+      "mcp__unreal_inspector__grep",
+      "mcp__unreal_inspector__import_ActorComponentsAndSubobjects_understanding",
+      "mcp__unreal_inspector__import_AssetCreation_understanding",
+      "mcp__unreal_inspector__import_AssetRegistry_understanding",
+      "mcp__unreal_inspector__import_AssetType_Blueprint_understanding",
+      "mcp__unreal_inspector__import_AssetType_DataTable_understanding",
+      "mcp__unreal_inspector__import_AssetType_GameplayEffect_understanding",
+      "mcp__unreal_inspector__import_AssetType_Level_understanding",
+      "mcp__unreal_inspector__import_AssetType_NiagaraSystem_understanding",
+      "mcp__unreal_inspector__import_AssetType_UserWidget_understanding",
+      "mcp__unreal_inspector__import_AssetValidation_understanding",
+      "mcp__unreal_inspector__import_Color_understanding",
+      "mcp__unreal_inspector__import_CurveAsset_understanding",
+      "mcp__unreal_inspector__import_FileSystem_understanding",
+      "mcp__unreal_inspector__import_IncludeOrImportModules_understanding",
+      "mcp__unreal_inspector__import_Logs_understanding",
+      "mcp__unreal_inspector__import_PropertyModification_understanding",
+      "mcp__unreal_inspector__import_Subsystems_understanding",
+      "mcp__unreal_inspector__query_unreal_project_assets",
+      "mcp__unreal_inspector__quicksearch",
+      "mcp__unreal_inspector__read_datatable_keys",
+      "mcp__unreal_inspector__read_datatable_values",
+      "mcp__unreal_inspector__review_blueprint",
+      "mcp__unreal_inspector__search_geometry_scripts",
+      "mcp__unreal_editor__attach_pie_frames",
+      "mcp__unreal_editor__capture_pie_frame",
+      "mcp__unreal_editor__get_actor_by_name_in_pie",
+      "mcp__unreal_editor__get_actor_property_in_pie",
+      "mcp__unreal_editor__get_input_mapping_context_keys",
+      "mcp__unreal_editor__get_player_transform",
+      "mcp__unreal_editor__get_screenshot_of_objects_for_verification",
+      "mcp__unreal_editor__get_widget_property_in_pie",
+      "mcp__unreal_editor__inject_input_action",
+      "mcp__unreal_editor__is_pie_active",
+      "mcp__unreal_editor__load_level",
+      "mcp__unreal_editor__record_burst",
+      "mcp__unreal_editor__run_verification_sequence",
+      "mcp__unreal_editor__set_player_transform",
+      "mcp__unreal_editor__simulate_button_press",
+      "mcp__unreal_editor__simulate_key_press",
+      "mcp__unreal_editor__simulate_left_stick",
+      "mcp__unreal_editor__simulate_right_stick",
+      "mcp__unreal_editor__start_pie",
+      "mcp__unreal_editor__start_pie_recording",
+      "mcp__unreal_editor__start_state_recording",
+      "mcp__unreal_editor__stop_pie",
+      "mcp__unreal_editor__stop_pie_recording",
+      "mcp__unreal_editor__stop_state_recording",
+      "mcp__unreal_editor__survey_pie_scene",
+      "mcp__unreal_editor__take_editor_screenshot",
+      "mcp__unreal_editor__ui_perform",
+      "mcp__unreal_editor__ui_snapshot",
+      "mcp__unreal_editor__ui_wait_for",
+      "mcp__unreal_editor__verification_agent",
+      "mcp__unreal_editor__wait_pie_frames",
+      "mcp__unreal_editor__wait_pie_seconds"
     ]
   },
-  "enabledMcpjsonServers": ["unreal-mcp", "blender"]
+  "enabledMcpjsonServers": ["unreal-mcp", "blender", "unreal_inspector", "unreal_editor"]
 }
 ```
 
@@ -1076,7 +1170,7 @@ These are one-off operations the classifier stops. They recur because a prefix r
 ### D.4 Adjacent grants that are not permission rules
 
 - **MCP connectors** (Slack, Supabase) are authorized once in the Claude client, not here (Chapters 9–10).
-- **Local MCP servers** (`unreal-mcp`, `blender`) are trusted via `enabledMcpjsonServers` above (Chapters 4–5).
+- **Local MCP servers** (`unreal-mcp`, `blender`, `unreal_inspector`, `unreal_editor`) are trusted via `enabledMcpjsonServers` above (Chapters 4–5, 11). The two Aura stdio servers are defined in the project `.mcp.json` (§11.4); `unreal_inspector` is allowed only by its **49 enumerated read tools** (never wholesale — the census found 13 lifecycle / generation / plan names inside it, excluded per R10; the list is in D.1), `unreal_editor` is the **mutating** server (PIE/verify/screenshot tools bundled with C++ authoring, Live Coding compile, and shell tools) and is allowed only by the enumerated names in D.1 — never by wildcard (§11.5).
 - **Repo hooks** in `.claude/settings.json` (secret guard + generated-dir guard) run on every Edit/Write and are checked in for the team — a different mechanism from permissions, but part of the same safety story.
 - **The editor-close law is a human policy, not a permission**: when the human is present, closing the editor is his call. The rules above exist for unattended runs; they never override his hand.
 

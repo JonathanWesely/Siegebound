@@ -20,6 +20,22 @@
 				"PYTHONUTF8": "1",
 				"PYTHONIOENCODING": "utf-8"
 			}
+		},
+		"unreal_inspector":
+		{
+			"type": "stdio",
+			"command": "C:/Program Files/Epic Games/UE_5.8/Engine/Plugins/Marketplace/Aura/PortablePython/Windows/python.exe",
+			"args": [
+				"C:/Program Files/Epic Games/UE_5.8/Engine/Plugins/Marketplace/Aura/MCP/unreal_inspector.py"
+			]
+		},
+		"unreal_editor":
+		{
+			"type": "stdio",
+			"command": "C:/Program Files/Epic Games/UE_5.8/Engine/Plugins/Marketplace/Aura/PortablePython/Windows/python.exe",
+			"args": [
+				"C:/Program Files/Epic Games/UE_5.8/Engine/Plugins/Marketplace/Aura/MCP/unreal_editor.py"
+			]
 		}
 	}
 }

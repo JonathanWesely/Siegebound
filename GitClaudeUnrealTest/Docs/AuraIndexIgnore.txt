@@ -57,8 +57,9 @@ Content/__ExternalObjects__/
 Content/Collections/
 Content/Art/
 
-# gitignored cloud ini (publishable key) — never indexed; the rest of Config/ (DefaultInput.ini etc.) IS indexed
+# gitignored cloud ini (publishable key) — never indexed; the rest of Config/ (DefaultInput.ini etc.) IS indexed — **/ twin per R12: the bare dir/file shape is unproven
 Config/SiegeCloudDev.ini
+**/SiegeCloudDev.ini
 Content/FirstPersonArms/
 Content/StarterContent/
 

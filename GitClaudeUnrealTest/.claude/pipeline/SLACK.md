@@ -28,7 +28,7 @@ All work traffic lives in a fixed registry of threads, each rooted by one manage
 | Thread | thread_ts | Scope | Who posts |
 |---|---|---|---|
 | 📢 Planning & Feedback | 1783116257.317519 | Milestone plans and task breakdowns, playtest-feedback processing, orchestrator checkpoint reports | manager, orchestrator, Jonathan |
-| ⚙️ Dev & QA | 1783116269.740549 | Code task updates, QA verdicts (pass/fail + report path), code discussion | gameplay-programmer, qa-reviewer; manager/orchestrator as needed |
+| ⚙️ Dev & QA | 1783116269.740549 | Code task updates, QA verdicts (pass/fail + report path), runtime verification verdicts (`TASK-###-verify.md` path + `Verdict:` line), code discussion | gameplay-programmer, qa-reviewer, playtest-verifier (`🎮 VERIFIER:`, law `VER-§`); manager/orchestrator as needed |
 | 🎨 Art | 1783116278.693139 | Asset production updates, imports to Content/, integration handoffs (handoff file paths) | art-director; manager/orchestrator as needed |
 | 🔧 Build & Git | 1783116286.945249 | Compile results, scene assembly, commit hashes, integration checks | build-master; orchestrator as needed |
 | 🚨 Blockers | 1783116296.221319 | Anything needing Jonathan or the orchestrator: escalations, QA-loop limit reached, MCP/editor outages, hard-gate questions | any agent + orchestrator; Jonathan monitors |
@@ -53,7 +53,7 @@ Update (2026-07-03, M2 decomposition dispatch): manager direct posting PROVEN �
 
 ## Who posts
 
-All six agents post **directly** (manager and qa-reviewer granted direct Slack access 2026-07-03; the other three had it from v1). **Orchestrator proxying is the fallback**, not the norm: used only in headless runs where an agent's connector tools are absent. Proxied posts are verbatim, never edited beyond formatting.
+All seven agents post **directly** (manager and qa-reviewer granted direct Slack access 2026-07-03; gameplay-programmer, art-director and build-master had it from v1; footage-analyst since its 🎬 thread was rooted; `playtest-verifier`'s grant is written by `TASK-1224`, committed by `TASK-1242`, and its first PROVEN post is `TASK-1230`'s pilot — count updated 2026-09-13, manager, ruling R1 of the Aura section). **Orchestrator proxying is the fallback**, not the norm: used only in headless runs where an agent's connector tools are absent. Proxied posts are verbatim, never edited beyond formatting.
 
 Minimum duty per dispatch: at least one completion (or blocker) post in the agent's domain thread. Mid-task progress posts are optional.
 

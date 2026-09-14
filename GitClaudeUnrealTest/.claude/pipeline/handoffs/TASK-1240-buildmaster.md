@@ -70,4 +70,4 @@ Message note: the dispatch prompt's first line (`TASK-1240: the Aura canonical f
 One post in 🔧 Build & Git (`C0BF0QZP3CN`, thread `1783116286.945249`), `🔧 BUILD: ✅ TASK-1240` + hash + file list + the sync evidence.
 
 ## Commit
-- hash: _(appended after the commit — see below)_
+- hash: `11e9ea2` (`11e9ea2614917aa0deddd556845870c3dec13923`) — `git show --stat HEAD` = 12 files changed, 763 insertions(+), 19 deletions(-); verified on the COMMIT, not the index. Staged set = exactly the 12 pathspecs above (`git diff --cached --name-only` count 12 before the commit). Post-commit `git status --porcelain` = ` M .mcp.json` + untracked `playtest-verifier.md`, `handoffs/TASK-1221-buildmaster.md`, `handoffs/TASK-1223-programmer.md` (all TASK-1242's fenced paths) — plus this file and `TASKBOARD.md`, which carry the hash appended AFTER the commit (the recorded pattern; the next host sweeps them). `git status --porcelain -- Saved` after = EMPTY. `origin/main...HEAD` = `0 2` (ahead 2, unpushed).
