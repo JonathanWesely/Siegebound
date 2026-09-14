@@ -1,0 +1,146 @@
+# CANONICAL COPY (committed). Tools/aura_sync.ps1 copies this file over
+# <Project>/Saved/.Aura/INDEX_IGNORE.txt (Saved/ is gitignored; never hand-edit the live copy).
+# Rules: one pattern per line, relative to the project root; folders END WITH "/"; file globs
+# (*.ext, **/dir/**) are accepted; no negation (!) syntax exists, so keep-set paths are kept by
+# simply never matching them. Source: TASK-1217 (plan item 2 + Aura's own generated template).
+
+# ---- Plan item 2 excludes (22) --------------------------------------------------------
+# Fab / marketplace packs (bulk of the .uasset count; nothing Siegebound-authored lives here)
+Content/Fab/
+Content/MedievalCastleEnvironmentAndSiegeWeaponProps/
+Content/Megaplant_Library/
+Content/Realistic_Grass_and_plant/
+Content/Realistic_Rocks/
+Content/Tree_Pack_1/
+Content/sA_ArcheryVfxPack/
+Content/sA_StylizedWizardSet/
+Content/Prickly_Knight/
+# Raw pipeline inputs + Epic template leftovers
+Content/RawAssets/
+Content/ThirdPerson/
+# glob: Content/Variant_Combat/, Content/Variant_Platforming/, Content/Variant_SideScrolling/
+Content/Variant_*/
+Content/LevelPrototyping/
+# Local-only trees outside Content/ (Models/ is ~2.4 GB of generated meshes; never repo content)
+Models/
+Intermediate/
+Saved/
+Binaries/
+DerivedDataCache/
+Tools/ArtPipeline/.venv/
+Tools/ArtPipeline/Cache/
+.claude/pipeline/playtest-evidence/
+# packagedZIPofGame/ lives at the GIT root (one level above the project root), so this line is
+# project-root-relative and matches nothing here; kept verbatim for parity with plan item 2.
+packagedZIPofGame/
+
+# ---- .claude/ — NOT ignored wholesale (keep-set needs .claude/pipeline/CONVENTIONS.md) ----
+# Heavy or agent-internal parts excluded individually instead.
+.claude/pipeline/TASKBOARD.md
+**/TASKBOARD.md
+.claude/pipeline/qa/
+.claude/pipeline/handoffs/
+.claude/pipeline/footage/
+.claude/pipeline/fab/
+.claude/commands/
+.claude/agents/
+.claude/hooks/
+.claude/tmp/
+
+# ---- Aura's default template, carried forward (Content/Characters/ and the blanket .claude/
+# ---- + **/.claude/** lines are deliberately DROPPED: both are in the keep-set) -------------
+Content/3rdParty/
+Content/__ExternalActors__/
+Content/__ExternalObjects__/
+Content/Collections/
+Content/Art/
+
+Config/
+Content/FirstPersonArms/
+Content/StarterContent/
+
+Plugins/Aura/
+Plugins/AuraForUnity/
+Plugins/UnrealMCP/
+Plugins/Ramen/
+Plugins/node_modules/
+
+# Tooling scratch/config directories (never project content). A dev checkout
+# mounted as Plugins/ exposes these at Plugins/.tmp etc.; the files inside are
+# often UTF-16 (PowerShell output) and were indexed as NUL-riddled text.
+.tmp/
+**/.tmp/**
+.agents/
+**/.agents/**
+.git/
+**/.git/**
+
+# Unreal Engine specific
+**/Intermediate/**
+**/Binaries/**
+**__ExternalActors__**
+**__ExternalObjects__**
+**/*.Target.cs
+
+# Build results
+Build/
+Builds/
+*.generated.h
+*.generated.cpp
+
+.vscode/
+
+# Visual Studio
+.vs/
+.vsconfig
+*.sln
+*.slnx
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+*.user
+*.userosscache
+*.sln.docstates
+UpgradeLog.htm
+
+# IDEA
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Git
+.gitignore
+.gitattributes
+
+# Plastic
+.plastic/
+ignore.conf
+
+# SVN
+.svn/
+
+# OS specific
+.DS_Store
+Thumbs.db

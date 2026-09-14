@@ -38,7 +38,7 @@ Integration check (the row's cl. 2), the identical-sha line verbatim:
 ⚠️ `TASKBOARD.md` is a shared hub: its diff at my instant was 20 one-line hunks — the Status-flow line (line 7, `TASK-1226`) plus the `status:` lines of the wave-1 rows and their gates, INCLUDING Host A's lane (`1217`/`1218`/`1219`/`1221`/`1223` and gates `1232`..`1234`) and the `1214`/`1216` gate rows. Status lines are board state, not lane content; they ride this commit as every prior host commit carried the board. `TASK-1240`/`1242` commit the FILES those rows describe.
 
 ## Fences honoured (⛔ NOT staged, verified in `git show --stat HEAD`)
-`.mcp.json` (TASK-1242) · `Docs/AuraIndexIgnore.txt` · `Docs/AuraProjectMemory.md` · `Tools/aura_sync.ps1` (TASK-1240) · `.claude/agents/playtest-verifier.md` (untracked by law until 1242) · `handoffs/TASK-1217/1218/1219/1221/1223-*.md` · `qa/TASK-1232/1233-report.md` (Host A / Host C lanes) · `.claude/settings.local.json` (gitignored) · anything under `Saved/` · the vault copy (outside the repo). ⛔ No push. ⛔ No compile. ⛔ No Live Coding.
+`.mcp.json` (TASK-1242) · `Docs/AuraIndexIgnore.txt` · `Docs/AuraProjectMemory.md` · `Tools/aura_sync.ps1` (TASK-1240) · `.claude/agents/playtest-verifier.md` (untracked by law until 1242) · `handoffs/TASK-1217/1218/1219/1221/1223-*.md` · `qa/TASK-1232/1233/1234-report.md` (Host A / Host C lanes) · `.claude/settings.local.json` (gitignored) · anything under `Saved/` · the vault copy (outside the repo). ⛔ No push. ⛔ No compile. ⛔ No Live Coding.
 
 ## Message note
 The dispatch prompt's commit message (`TASK-1241: the Aura doc/config lane — …`) was used verbatim. The board row's cl. (1) proposed a different first line (`TASK-1225/1226/1227/1228/1229: the verification lane's law + routing — …`); the dispatch is the later instruction and names the same five rows and four gates, so no content is lost — noted for the orchestrator, not a defect.
@@ -53,4 +53,4 @@ The dispatch prompt's commit message (`TASK-1241: the Aura doc/config lane — �
 - `unreal-mcp :8000` was ConnectionRefused this session (editor not running) — irrelevant to this doc-only row, relevant to `TASK-1216-B`'s four-connected line.
 
 ## Commit
-- hash: _(appended after the commit — see below)_
+- hash: `1306efe` — `git show --stat HEAD` = 16 files changed, 754 insertions(+), 25 deletions(-); verified on the COMMIT, not the index (the UE Git plugin was not running). Post-commit `git status --short` = only the fenced Host A / Host C paths (`.mcp.json` M; untracked `playtest-verifier.md`, handoffs 1217/1218/1219/1221/1223, `qa/TASK-1232/1233/1234-report.md`, `Docs/AuraIndexIgnore.txt`, `Docs/AuraProjectMemory.md`, `Tools/aura_sync.ps1`) plus this file and `TASKBOARD.md`, which carry the hash appended AFTER the commit (the recorded "TASKBOARD-only dirt" pattern — the next host sweeps them).

@@ -2380,7 +2380,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 #### TASK-1217 — [AURA-INDEX-IGNORE] ⚙️ **`Docs/AuraIndexIgnore.txt` — THE CANONICAL, COMMITTED INDEX EXCLUSION LIST (copied to `Saved/.Aura/INDEX_IGNORE.txt` by `TASK-1219`).** (gameplay-programmer) — marker `TASK-1217-AURA-INDEX-IGNORE`
 - assignee: gameplay-programmer
-- status: qa-passed — PASS 2026-09-13 (TASK-1232), 0 blockers / 4 warn / 3 nit; 22/22 plan excludes verbatim, keep-set unmatched (one disclosed exception: Aura-default `**/*.Target.cs` reaches 2 build-rule files in `Source/` — WARN, manager's call); report `qa/TASK-1232-report.md`
+- status: done — committed by TASK-1240 host (hash appended post-commit in `handoffs/TASK-1240-buildmaster.md`); host re-measured 22/22 excludes, 0 blanket `.claude/` lines, 0 `Content/Characters/` pattern lines. Was: qa-passed — PASS 2026-09-13 (TASK-1232), 0 blockers / 4 warn / 3 nit; report `qa/TASK-1232-report.md`
 - blocked-by: `TASK-1214`
 - parallel-safe: yes (vs `1218` · `1219` · `1223` · `1225`..`1229`)
 - spec: >
@@ -2391,7 +2391,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 #### TASK-1218 — [AURA-PROJECT-MEMORY] ⚙️ **`Docs/AuraProjectMemory.md` — THE ≤150-LINE ALWAYS-ON DIGEST AURA INJECTS EVERY TURN (copied to `Saved/.Aura/project_memory.txt` by `TASK-1219`).** (gameplay-programmer) — marker `TASK-1218-AURA-PROJECT-MEMORY`
 - assignee: gameplay-programmer
-- status: qa-passed — TASK-1233 PASS 2026-09-13, 0 blockers / 1 warn (un-boarded C++ prefix line :49 drops the CONVENTIONS:55 exception) / 2 nits; 61 lines, three laws character-exact by Read, 21 prefix rows + suffix line identical to CONVENTIONS.md, seven-agent table identical to CLAUDE.md:9-15 — `qa/TASK-1233-report.md`
+- status: done — committed by TASK-1240 host (hash appended post-commit in `handoffs/TASK-1240-buildmaster.md`); host re-measured 61 lines, three laws `grep -cF` = 1/1/1, table/prefix/suffix/Build.bat re-diffs IDENTICAL. Was: qa-passed — TASK-1233 PASS 2026-09-13, 0 blockers / 1 warn / 2 nits — `qa/TASK-1233-report.md`
 - blocked-by: `TASK-1214`
 - parallel-safe: yes (vs `1217` · `1219` · `1223` · `1225`..`1229`)
 - spec: >
@@ -2402,7 +2402,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 #### TASK-1219 — [AURA-SYNC-SCRIPT] ⚙️ **`Tools/aura_sync.ps1` — ONE IDEMPOTENT SCRIPT THAT COPIES THE TWO CANONICAL FILES INTO `Saved/.Aura/`. ⛔ REPLACES THE DOC'S SKILLS-MIRROR STEP (nothing to mirror — `.claude/skills/` does not exist).** (gameplay-programmer) — marker `TASK-1219-AURA-SYNC-SCRIPT`
 - assignee: gameplay-programmer
-- status: qa-passed — TASK-1234 PASS 2026-09-13, 0 blockers / 3 warns (unreadable-2nd-source partial set; T0 "template" label vs `56da74eb` hash; hashes are the programmer's instant — host re-runs after TASK-1232) / 4 nits; text-level + declared evidence, NOT executed by QA (`SC-§71b`) — `qa/TASK-1234-report.md`
+- status: done — committed by TASK-1240 host (hash appended post-commit in `handoffs/TASK-1240-buildmaster.md`); host EXECUTED the script 3× from `%TEMP%` (exit 0/0/0, `0 copied, 2 unchanged`, `-WhatIf` clean), `Get-FileHash` src=dest `56da74eb…ec0e` + `2c195b8a…ece8b`, `Saved` porcelain empty. Was: qa-passed — TASK-1234 PASS 2026-09-13, 0 blockers / 3 warns / 4 nits — `qa/TASK-1234-report.md`
 - blocked-by: `TASK-1214`
 - parallel-safe: yes (vs `1217` · `1218` · `1223` · `1225`..`1229` — the two source paths are PINNED in `names:`, so this row does not wait for them to exist)
 - spec: >
@@ -2468,7 +2468,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 #### TASK-1225 — [AURA-CLAUDE-MD] ⚙️ **`CLAUDE.md` — THE `playtest-verifier` TEAM ROW · ROUTING RULE 5 → 5a/5b/5c · TWO HARD-GATE LINES. ⛔ ONE FILE, ONE OWNER.** (gameplay-programmer) — marker `TASK-1225-AURA-CLAUDE-MD`
 - assignee: gameplay-programmer
-- status: qa-passed — TASK-1236 PASS 2026-09-13, 0 blockers / 2 warns (`qa/TASK-1236-report.md`)
+- status: done — committed `1306efe` (host TASK-1241, 2026-09-13); qa-passed — TASK-1236 PASS 2026-09-13, 0 blockers / 2 warns (`qa/TASK-1236-report.md`)
 - blocked-by: `TASK-1214`
 - parallel-safe: yes (vs `1217`..`1219` · `1223` · `1226`..`1229`) · ⛔ sole editor of `CLAUDE.md` in this lane
 - spec: >
@@ -2479,7 +2479,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 #### TASK-1226 — [AURA-VER-LAW] 📋 **`CONVENTIONS.md` → `VER-§` (THE VERIFICATION LANE), THE ARTEFACT NAMING PINS, `SLACK.md`'s `🎮 VERIFIER:` PREFIX + ROUTING ROW, AND THE BOARD'S OWN *STATUS FLOW* LINE. ⛔ ALL MANAGER-OWNED FILES.** (manager) — marker `TASK-1226-AURA-VER-LAW`
 - assignee: manager
-- status: done (2026-09-13, manager; waived gate `SC-§82`, host `TASK-1241` commits) — `CONVENTIONS.md` `VER-§0`..`§7` appended at the file tail (marker `VER-LANE-2026-09-13`) + 7 artefact rows · `SLACK.md` 3 edits (prefix, routing row, emoji table) · Status-flow line edited on line 7 only. ⚠️ Section numbering follows the 2026-09-13 dispatch, which differs from this row's spec by two slots: the spec's *§6 what-the-verifier-is-NOT* lives in `VER-§7` cl. 4 (same subject as the tool-grant law) and the spec's *§7 tests-only-`built`-or-`qa-passed`* lives in `VER-§2` cl. 3 (it is a serialization precondition); `VER-§6` is the pilot clause. All eight subjects present.
+- status: done (2026-09-13, manager; waived gate `SC-§82`, host `TASK-1241` committed `1306efe`) — `CONVENTIONS.md` `VER-§0`..`§7` appended at the file tail (marker `VER-LANE-2026-09-13`) + 7 artefact rows · `SLACK.md` 3 edits (prefix, routing row, emoji table) · Status-flow line edited on line 7 only. ⚠️ Section numbering follows the 2026-09-13 dispatch, which differs from this row's spec by two slots: the spec's *§6 what-the-verifier-is-NOT* lives in `VER-§7` cl. 4 (same subject as the tool-grant law) and the spec's *§7 tests-only-`built`-or-`qa-passed`* lives in `VER-§2` cl. 3 (it is a serialization precondition); `VER-§6` is the pilot clause. All eight subjects present.
 - blocked-by: `TASK-1214`
 - parallel-safe: yes (vs every wave-1 row; ⛔ sole editor of `CONVENTIONS.md` / `SLACK.md` / the board header)
 - spec: >
@@ -2490,7 +2490,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 #### TASK-1227 — [AURA-QA-INSPECTOR] ⚙️ **`.claude/agents/qa-reviewer.md` — ADD `mcp__unreal_inspector__*` TO `tools:` + ONE PARAGRAPH: MAY NOW INSPECT BLUEPRINT GRAPHS AND THE EDITOR LOG TO CHECK A DECLARATION (`SC-§71b`); NO-MUTATION POSTURE UNCHANGED.** (gameplay-programmer) — marker `TASK-1227-AURA-QA-INSPECTOR`
 - assignee: gameplay-programmer
-- status: qa-passed 2026-09-13 (TASK-1237 — 0 BLOCKER / 1 WARN / 2 NIT; `qa/TASK-1237-report.md`; hunk count accepted as declared per `SC-§71b`, host re-measures)
+- status: done — committed `1306efe` (host TASK-1241, 2026-09-13; hunk count re-measured = 2, unreal_editor grep = 0); qa-passed 2026-09-13 (TASK-1237 — 0 BLOCKER / 1 WARN / 2 NIT; `qa/TASK-1237-report.md`; hunk count accepted as declared per `SC-§71b`, host re-measures)
 - blocked-by: `TASK-1214`
 - parallel-safe: yes (vs `1217`..`1219` · `1223` · `1225` · `1226` · `1228` · `1229`) · ⛔ sole editor of `qa-reviewer.md`
 - spec: >
@@ -2501,7 +2501,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 #### TASK-1228 — [AURA-SETUP-DOCS] ⚙️ **`Docs/setupdirections.md` + THE VAULT COPY — CHAPTER 11 — AURA · THE LIST ROW 17 · APPENDIX A ROWS 12–16 · APPENDIX B ⚠️ ENTRIES. ⛔ BOTH COPIES BYTE-IDENTICAL.** (gameplay-programmer) — marker `TASK-1228-AURA-SETUP-DOCS`
 - assignee: gameplay-programmer
-- status: qa-passed — TASK-1238 PASS 2026-09-13 (0 blockers, 1 warn: Appendix D.1/D.4 not yet listing the Aura servers — a follow-up row, not this one; hash pair accepted-as-declared, TASK-1241 re-measures) → `.claude/pipeline/qa/TASK-1238-report.md`
+- status: done — committed `1306efe` (host TASK-1241, 2026-09-13; hash pair RE-MEASURED identical `51d11239…a876` 67,374 B); qa-passed — TASK-1238 PASS 2026-09-13 (0 blockers, 1 warn: Appendix D.1/D.4 not yet listing the Aura servers — a follow-up row, not this one; hash pair accepted-as-declared, TASK-1241 re-measures) → `.claude/pipeline/qa/TASK-1238-report.md`
 - blocked-by: `TASK-1214`
 - parallel-safe: yes (vs `1217`..`1219` · `1223` · `1225`..`1227` · `1229`) · ⛔ sole editor of both setup-doc copies
 - spec: >
@@ -2512,7 +2512,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 #### TASK-1229 — [AURA-SHIP-PRESCREEN] ⚙️ **`.claude/commands/ship.md` (`SHIP-§8`) — THE OPTIONAL AURA PRE-SCREEN OF `ADJUDICATE C3`. ⛔ HUMAN ADJUDICATION STAYS; ⛔ `ship.ps1` VERDICT LINES UNTOUCHED.** (gameplay-programmer) — marker `TASK-1229-AURA-SHIP-PRESCREEN`
 - assignee: gameplay-programmer
-- status: qa-passed — `qa/TASK-1239-report.md` (0 BLOCKER · 2 WARN · 2 NIT; the "SAME staged build" clause RULED correct, WARN to add the reason + availability sentence)
+- status: done — committed `1306efe` (host TASK-1241, 2026-09-13; 1 hunk re-measured, ship.ps1 diff = 0); qa-passed — `qa/TASK-1239-report.md` (0 BLOCKER · 2 WARN · 2 NIT; the "SAME staged build" clause RULED correct, WARN to add the reason + availability sentence)
 - blocked-by: `TASK-1214`
 - parallel-safe: yes (vs `1217`..`1219` · `1223` · `1225`..`1228`) · ⛔ sole editor of `ship.md` in this lane (⛔ `TASK-1213`'s pending C3-crop-caveat strike is the manager's, not yours — leave that sentence alone)
 - spec: >
@@ -2547,7 +2547,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 #### TASK-1232 — [AURA-GATE-1217] 🔍 **THE GATE OVER `TASK-1217` — every plan-item-2 exclude present, no keep-set path matched, location law = `Saved/.Aura/`.** (qa-reviewer) — marker `TASK-1232-AURA-GATE-1217`
 - assignee: qa-reviewer
-- status: done — PASS 2026-09-13, 0 blockers / 4 warn / 3 nit; report `qa/TASK-1232-report.md`; TASK-1217 flipped to `qa-passed` by this row
+- status: done — PASS 2026-09-13, 0 blockers / 4 warn / 3 nit; report `qa/TASK-1232-report.md`; TASK-1217 flipped to `qa-passed` by this row; hosted + committed by TASK-1240 (hash in `handoffs/TASK-1240-buildmaster.md`)
 - blocked-by: `TASK-1217`
 - parallel-safe: yes vs everything but its subject
 - spec: >
@@ -2557,7 +2557,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 #### TASK-1233 — [AURA-GATE-1218] 🔍 **THE GATE OVER `TASK-1218` — ≤150 lines, the three laws character-exact, prefix tables match `CONVENTIONS.md`, no secrets.** (qa-reviewer) — marker `TASK-1233-AURA-GATE-1218`
 - assignee: qa-reviewer
-- status: done — PASS 2026-09-13, 0 blockers / 1 warn / 2 nits; report `qa/TASK-1233-report.md`; TASK-1218 flipped to `qa-passed` by this row
+- status: done — PASS 2026-09-13, 0 blockers / 1 warn / 2 nits; report `qa/TASK-1233-report.md`; TASK-1218 flipped to `qa-passed` by this row; hosted + committed by TASK-1240 (hash in `handoffs/TASK-1240-buildmaster.md`)
 - blocked-by: `TASK-1218`
 - parallel-safe: yes vs everything but its subject
 - spec: >
@@ -2567,7 +2567,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 #### TASK-1234 — [AURA-GATE-1219] 🔍 **THE GATE OVER `TASK-1219` — idempotent, root-relative, fails closed on a missing source, never touches git-tracked paths.** (qa-reviewer) — marker `TASK-1234-AURA-GATE-1219`
 - assignee: qa-reviewer
-- status: done — PASS 2026-09-13, 0 blockers / 3 warns / 4 nits; `qa/TASK-1234-report.md`; execution duty transferred to TASK-1240 (4 host re-run items listed in the report)
+- status: done — PASS 2026-09-13, 0 blockers / 3 warns / 4 nits; `qa/TASK-1234-report.md`; execution duty transferred to TASK-1240 — all 4 host re-run items EXECUTED by TASK-1240 (hash in `handoffs/TASK-1240-buildmaster.md`)
 - blocked-by: `TASK-1219`
 - parallel-safe: yes vs everything but its subject
 - spec: >
@@ -2587,7 +2587,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 #### TASK-1236 — [AURA-GATE-1225] 🔍 **THE GATE OVER `TASK-1225` (`CLAUDE.md`) — 5a/5b/5c, seven-row table, the two hard-gate sentences character-exact, nothing else touched.** (qa-reviewer) — marker `TASK-1236-AURA-GATE-1225`
 - assignee: qa-reviewer
-- status: done — PASS 2026-09-13, 0 blockers / 2 warns (line-3 "6-agent" wording → manager ruling); report `qa/TASK-1236-report.md`
+- status: done — PASS 2026-09-13 (subject committed `1306efe` by TASK-1241), 0 blockers / 2 warns (line-3 "6-agent" wording → manager ruling); report `qa/TASK-1236-report.md`
 - blocked-by: `TASK-1225`
 - parallel-safe: yes vs everything but its subject
 - spec: >
@@ -2597,7 +2597,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 #### TASK-1237 — [AURA-GATE-1227] 🔍 **THE GATE OVER `TASK-1227` (`qa-reviewer.md`) — exactly one added tools token, the paragraph names `SC-§71b` + the lifecycle prohibition, two hunks. ⛔ YOU ARE REVIEWING YOUR OWN FILE — YOU MAY NOT WIDEN IT.** (qa-reviewer) — marker `TASK-1237-AURA-GATE-1227`
 - assignee: qa-reviewer
-- status: done 2026-09-13 — PASS, 0 BLOCKER / 1 WARN / 2 NIT; `qa/TASK-1237-report.md`; inspector not connected this session (provenance limit, not a defect); TASK-1227 flipped `qa-passed`
+- status: done 2026-09-13 — PASS (subject committed `1306efe` by TASK-1241), 0 BLOCKER / 1 WARN / 2 NIT; `qa/TASK-1237-report.md`; inspector not connected this session (provenance limit, not a defect); TASK-1227 flipped `qa-passed`
 - blocked-by: `TASK-1227`
 - parallel-safe: yes vs everything but its subject
 - spec: >
@@ -2607,7 +2607,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 #### TASK-1238 — [AURA-GATE-1228] 🔍 **THE GATE OVER `TASK-1228` (setup docs) — chapter/row numbers, Appendix A rows 12–16 verbatim, the hash pair quoted, no other chapter touched.** (qa-reviewer) — marker `TASK-1238-AURA-GATE-1228`
 - assignee: qa-reviewer
-- status: done — PASS 2026-09-13, 0 blockers · `.claude/pipeline/qa/TASK-1238-report.md`
+- status: done — PASS 2026-09-13 (subject committed `1306efe` by TASK-1241), 0 blockers · `.claude/pipeline/qa/TASK-1238-report.md`
 - blocked-by: `TASK-1228`
 - parallel-safe: yes vs everything but its subject
 - spec: >
@@ -2617,7 +2617,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 #### TASK-1239 — [AURA-GATE-1229] 🔍 **THE GATE OVER `TASK-1229` (`ship.md`) — §2b only, optional, does-not-adjudicate, `ship.ps1` untouched, SHIP RESULT grammar unchanged.** (qa-reviewer) — marker `TASK-1239-AURA-GATE-1229`
 - assignee: qa-reviewer
-- status: done — PASS, `qa/TASK-1239-report.md`
+- status: done — PASS (subject committed `1306efe` by TASK-1241), `qa/TASK-1239-report.md`
 - blocked-by: `TASK-1229`
 - parallel-safe: yes vs everything but its subject
 - spec: >
@@ -2629,7 +2629,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 #### TASK-1240 — [AURA-HOST-A] 🔧📦 **HOST A — COMMIT THE TWO CANONICAL FILES + `aura_sync.ps1` (+ THE `.uproject` `Aura` PLUGIN ENTRY) BEHIND `1232`/`1233`/`1234` PASS; INTEGRATION CHECK = RUN `Tools/aura_sync.ps1` YOURSELF (plan Verification probe 3).** (build-master) — marker `TASK-1240-AURA-HOST-A`
 - assignee: build-master
-- status: backlog
+- status: done — 2026-09-13 host commit (hash appended post-commit in `handoffs/TASK-1240-buildmaster.md`); re-measured all three artefacts, ran `Tools/aura_sync.ps1` 3× from `%TEMP%` (0 copied / 2 unchanged / exit 0, `-WhatIf` clean), independent `Get-FileHash` EQUAL ×2, `Saved` porcelain EMPTY; `.uproject` rider MOOT (Jonathan's `0399d1c`), not touched
 - blocked-by: `TASK-1217` + `TASK-1232` PASS · `TASK-1218` + `TASK-1233` PASS · `TASK-1219` + `TASK-1234` PASS · `TASK-1214` (the `.uproject` fact)
 - parallel-safe: ⛔ NO vs any other commit host
 - spec: >
@@ -2639,7 +2639,7 @@ Art tasks skip QA: `backlog` → `in-progress` → `ready-for-integration` → `
 
 #### TASK-1241 — [AURA-HOST-B] 🔧📦 **HOST B — COMMIT THE DOC/CONFIG LANE (`CLAUDE.md` · `CONVENTIONS.md` `VER-§` + `SLACK.md` + the board line · `qa-reviewer.md` · `Docs/setupdirections.md` · `ship.md`) BEHIND `1236`..`1239` PASS; INTEGRATION CHECK = THE SETUP-DOC HASH PAIR RE-MEASURED.** (build-master) — marker `TASK-1241-AURA-HOST-B`
 - assignee: build-master
-- status: backlog
+- status: done — `1306efe` 2026-09-13 build-master; HEAD was `0399d1c` (pre-flight OK), 16 files +754 −25 verified on the COMMIT; integration check: setup-doc hash pair RE-MEASURED IDENTICAL `51d112392e25dcb5a9ea6ea0ac6ed7556c3ad22e1a9b41e79fbf12330ed9a876` (67,374 B both), `grep -c 'mcp__unreal_editor__\*' qa-reviewer.md` = 0; every declared hunk count re-measured (4 / 2 / 1, ship.ps1 0); ⛔ nothing of Host A/C staged, ⛔ no push. Handoff `handoffs/TASK-1241-buildmaster.md`
 - blocked-by: `TASK-1225` + `TASK-1236` PASS · `TASK-1226` (manager, waived gate) · `TASK-1227` + `TASK-1237` PASS · `TASK-1228` + `TASK-1238` PASS · `TASK-1229` + `TASK-1239` PASS
 - parallel-safe: ⛔ NO vs any other commit host
 - spec: >
