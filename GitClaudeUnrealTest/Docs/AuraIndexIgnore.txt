@@ -57,7 +57,7 @@ Content/__ExternalObjects__/
 Content/Collections/
 Content/Art/
 
-# gitignored cloud ini (publishable key) — never indexed; the rest of Config/ (DefaultInput.ini etc.) IS indexed — **/ twin per R12: the bare dir/file shape is unproven
+# gitignored cloud ini (publishable key) — excluded from the INDEX; ⛔ NOT a read fence, Aura's file tools reach it on demand (TASK-1259, R15); the rest of Config/ (DefaultInput.ini etc.) IS indexed — **/ twin per R12: the bare dir/file shape is unproven
 Config/SiegeCloudDev.ini
 **/SiegeCloudDev.ini
 Content/FirstPersonArms/

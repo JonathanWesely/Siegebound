@@ -742,7 +742,11 @@ the original project; the design rules are the transferable part.
   `Config/SiegeCloudDev.ini.example`; gitignore the real `Config/SiegeCloudDev.ini`
   (exact line in `.gitignore`). The real file carries `[SiegeCloud]` with `ProjectUrl=` and
   `AnonKey=` filled from the project dashboard. **Missing/unparsable config ⇒ cloud OFF and
-  the game behaves byte-identically to its offline build** — cloud gates nothing, ever.
+  the game behaves byte-identically to its offline build** — cloud gates nothing, ever. ⛔ The
+  real file holds `ProjectUrl` and `AnonKey` and NOTHING ELSE — no custody comment, no
+  password, no second key: it is readable by any in-editor assistant (Chapter 11 §11.3) and it
+  ships inside every pak by design, so its contents are bounded by law, not hidden (`ACC-§11`,
+  amended 2026-09-13).
 - ⚠️ **The quoted-URL law (a real shipped bug):** `ProjectUrl` MUST be double-quoted —
   `ProjectUrl="https://<project-ref>.supabase.co"` — because UE's ini parser swallows an
   unquoted `//` as an inline comment, silently truncating the URL to `https:` while the
@@ -836,6 +840,13 @@ Aura injects every turn: the team table, the asset-prefix and texture-suffix tab
 build command, and the laws it is most likely to violate — never Live Coding, never write
 `Content/` from mesh generation, never run Git).
 
+⚠️ **`INDEX_IGNORE.txt` shapes the semantic index — it is NOT a secret fence.** Aura's own
+file tools read the disk on demand regardless of the ignore list: on 2026-09-13 Aura reported
+the sections and key NAMES of the excluded `Config/SiegeCloudDev.ini` in one tool call
+(`TASK-1259`). Anything on the project tree is reachable by an in-editor assistant, and under
+a training-ON toggle may enter a chat turn. The house rule that follows is in §10.2: the
+config home holds the publishable pair and nothing else.
+
 `Saved/` is gitignored, so both are machine-local and would be lost on a fresh clone. The
 canonical, committed copies live in `Docs/`:
 
@@ -849,6 +860,11 @@ step** on any machine, and again whenever either canonical changes. Edit the `Do
 only — a hand edit under `Saved/.Aura` is overwritten by the next sync and is never staged
 (nothing under `Saved/` ever is). There is no skills mirror: `.claude/skills/` does not
 exist in this project, so that step from Aura's docs is dropped.
+
+**[You]** After any change to `INDEX_IGNORE.txt`, rebuild the index from the editor:
+**Editor Preferences → type `Index` in the search box → section "Aura - Index Settings" →
+Delete Previous Index, then Sync Files.** ⚠️ Searching for `aura` does NOT surface this
+section — search for `Index` (measured 2026-09-13).
 
 ### 11.4 The bridge into Claude Code — two stdio MCP servers, one config home
 
