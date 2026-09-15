@@ -146,6 +146,17 @@ public:
 	void OnCardRefusedMessage(const FString& Reason);
 
 	/**
+	 *  TASK-1270 loop 1 — READ-ONLY RECEIPT STATE for the refusal channel: how many messages
+	 *  HandleCardRefused has forwarded to OnCardRefusedMessage on THIS widget, and the last one.
+	 *  C++-only (⛔ not UFUNCTIONs, ⛔ no Blueprint surface, ⛔ never drives display). It exists
+	 *  because OnCardRefusedMessage is a BlueprintImplementableEvent with no C++ body: without
+	 *  it no offline test can prove a message REACHED the hand — and reaching the hand is
+	 *  exactly what TASK-1270's loop 0 got wrong (qa/TASK-1270-verify.md).
+	 */
+	int32 GetReceivedRefusalCount() const { return ReceivedRefusalCount; }
+	const FString& GetLastReceivedRefusal() const { return LastReceivedRefusal; }
+
+	/**
 	 *  Null-safe card-art resolver (TASK-079; CONVENTIONS "Card artwork (hand
 	 *  UI)"). CardID — the exact string OnHandSlotUpdated delivered — →
 	 *  DT_Cards row → CardArt soft path → loaded UTexture2D. The three hand
@@ -299,4 +310,10 @@ private:
 
 	/** True after the missing-table warning was logged (once-per-widget spam guard). */
 	bool bWarnedMissingTable = false;
+
+	/** TASK-1270 loop 1 — messages forwarded by HandleCardRefused on this widget (GetReceivedRefusalCount). */
+	int32 ReceivedRefusalCount = 0;
+
+	/** TASK-1270 loop 1 — the last message forwarded by HandleCardRefused (GetLastReceivedRefusal). Empty until the first. */
+	FString LastReceivedRefusal;
 };

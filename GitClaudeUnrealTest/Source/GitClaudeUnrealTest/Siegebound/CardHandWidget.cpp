@@ -88,6 +88,16 @@ void UCardHandWidget::InitForController(ASiegePlayerController* Controller)
 	}
 
 	ObservedController->OnCardRefused.AddUniqueDynamic(this, &UCardHandWidget::HandleCardRefused);
+
+	// TASK-1270 loop 1 — NOW THAT THE REFUSAL CHANNEL HAS A LISTENER, spend any notice the
+	// controller has been holding for one (the illegal-active-deck match-start notice).
+	// ⚠️ This is the moment the hand is sure to hear it: WBP_HUD creates this widget on its
+	// first widget Tick, after the controller's BeginPlay queued the notice and after the
+	// load frame's timers ran (qa/TASK-1270-verify.md). AFTER the bind, ⛔ never before —
+	// delivered first it would broadcast to nobody, which is the loop-0 defect. A no-op when
+	// nothing is held (a legal deck, a re-init, a second hand): the controller clears the
+	// notice on delivery, so it shows once per match start.
+	ObservedController->DeliverPendingMatchStartNotice();
 }
 
 void UCardHandWidget::RequestPlaySlot(int32 SlotIndex)
@@ -150,6 +160,13 @@ void UCardHandWidget::HandleCardRefused(const FString& Reason)
 {
 	// 1:1 pass-through — exactly one OnCardRefusedMessage per refused action
 	// (TASK-029 acceptance). The ~2 s show-then-hide lives in WBP_CardHand.
+	//
+	// TASK-1270 loop 1: record the receipt first — C++-readable state, because the
+	// BIE below has no C++ body and this is the only offline proof a message reached
+	// the hand (GetReceivedRefusalCount / GetLastReceivedRefusal).
+	++ReceivedRefusalCount;
+	LastReceivedRefusal = Reason;
+
 	OnCardRefusedMessage(Reason);
 }
 

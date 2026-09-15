@@ -92,11 +92,33 @@ public:
 	/**
 	 *  Right-click meaning (DECK-§3): mark fixed slot SlotIndex as the ACTIVE
 	 *  deck the next match uses. Delegates to the EXISTING strict SetActiveDeck
-	 *  path (kept byte-compatible, DECK-§4) — deck-exists check, ACC-§4
-	 *  call-time slot seam, persist, OnDeckModelChanged — never reimplemented.
-	 *  Out-of-range is refused (logged).
+	 *  path (kept byte-compatible, DECK-§4) — deck-exists check, the TASK-1270
+	 *  legality gate, ACC-§4 call-time slot seam, persist, OnDeckModelChanged —
+	 *  never reimplemented. Out-of-range is refused (logged). An ILLEGAL saved
+	 *  deck is refused too (TASK-1270): the orange rim does not move and
+	 *  ActiveDeckName is not written — see SetActiveDeck.
 	 */
 	UFUNCTION(BlueprintCallable, Category="Siegebound|Deck") void  SetActiveDeckBySlot(int32 SlotIndex);
+
+	/**
+	 *  TASK-1270 (DECK-§3 rider) — THE ACTIVATION GATE, the in-memory half of
+	 *  SetActiveDeck, factored out so it is assertable on STATE (SC-§104)
+	 *  without a widget, a world, a GameInstance or the player's real slot:
+	 *    (1) find the saved deck named Name in Save.SavedDecks (case-insensitive
+	 *        — the shipped M6 idiom); none ⇒ false, OutRefusalReason names it;
+	 *    (2) run UDeckLibrary::IsDeckLegal (THE one legality home — reused,
+	 *        never duplicated) on THAT deck against CardTable; illegal ⇒ false,
+	 *        OutRefusalReason = IsDeckLegal's OutReason VERBATIM;
+	 *    (3) legal ⇒ Save.ActiveDeckName = the deck's canonical stored name,
+	 *        OutCanonicalName = that name, returns true.
+	 *  On ANY false return Save is untouched (ActiveDeckName unchanged ⇒ the
+	 *  rim index GetActiveDeckIndex derives from it is unchanged) and
+	 *  OutCanonicalName is empty. Never touches disk — the CALLER persists
+	 *  (SetActiveDeck, through the ACC-§4 seam). A null CardTable is illegal by
+	 *  IsDeckLegal's own contract, so activation is refused with its reason.
+	 *  C++-only (raw pointer / reference params — the UDeckLibrary shape).
+	 */
+	static bool TryActivateSavedDeck(USiegeDeckSaveGame& Save, const UDataTable* CardTable, const FString& Name, FString& OutCanonicalName, FString& OutRefusalReason);
 
 	/**
 	 *  The 0-based fixed slot of the ACTIVE deck (ActiveDeckName resolved via
@@ -311,7 +333,13 @@ public:
 	 *  STRICT: only activates a deck that actually exists in the SaveGame, so
 	 *  ActiveDeckName never dangles — persist the working deck with SaveDeckAs
 	 *  FIRST, then SetActiveDeck. No-op + warn when the name has no saved match.
-	 *  Fires OnDeckModelChanged() on success.
+	 *  TASK-1270: ALSO only activates a LEGAL deck (UDeckLibrary::IsDeckLegal,
+	 *  via TryActivateSavedDeck) — an illegal one (e.g. 68 cards) is REFUSED:
+	 *  one Warning carrying IsDeckLegal's reason verbatim (the builder's
+	 *  refused-save idiom), OnDeckActivationRefused fired, ActiveDeckName NOT
+	 *  written, the orange rim NOT moved. Before this gate the match would have
+	 *  silently dealt the curated default while the rim sat on the illegal
+	 *  slot. Fires OnDeckModelChanged() on success only.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Deck")
 	void SetActiveDeck(const FString& Name);
@@ -336,6 +364,22 @@ public:
 	 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Siegebound|Deck")
 	void OnDeckSlotCountChanged(const FString& CardID, int32 Count);
+
+	/**
+	 *  TASK-1270: "activating DeckName was REFUSED — here is why." Fired by
+	 *  SetActiveDeck (and so by the right-click lane SetActiveDeckBySlot) on
+	 *  every refusal past the no-save-file check: no saved deck of that name,
+	 *  or the deck is illegal (Reason = UDeckLibrary::IsDeckLegal's OutReason
+	 *  verbatim, e.g. "Deck has 68 cards — a legal deck is exactly 50 (GDD
+	 *  3.4)."). Nothing changed when this fires: ActiveDeckName is unwritten,
+	 *  the rim is where it was, OnDeckModelChanged is deliberately NOT fired
+	 *  (broadcast-on-success-only). FString params only (the widget rule).
+	 *  ⚠️ Unbound in WBP_DeckBuilder as shipped by TASK-1270 (no asset edit
+	 *  this wave) — the Warning log line is the refusal's guaranteed surface;
+	 *  a WBP binding to this event is the zero-code way to show it on screen.
+	 */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Siegebound|Deck")
+	void OnDeckActivationRefused(const FString& DeckName, const FString& Reason);
 
 protected:
 

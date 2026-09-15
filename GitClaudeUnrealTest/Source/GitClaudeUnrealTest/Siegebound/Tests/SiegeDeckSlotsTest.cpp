@@ -4,13 +4,30 @@
 
 #include "Engine/DataTable.h"
 #include "Kismet/GameplayStatics.h"
+#include "Siegebound/CardHandWidget.h" // TASK-1270 loop 1: the REAL late listener (InitForController binds, then spends the held notice)
 #include "Siegebound/CardRow.h"
+#include "Siegebound/DeckBuilderWidget.h" // TASK-1270: UDeckBuilderWidget::TryActivateSavedDeck — the static activation gate
+#include "Siegebound/DeckComponent.h" // TASK-1270 loop 1: derives whether the world-free hand logs its no-deck Warning
 #include "Siegebound/DeckLibrary.h"
 #include "Siegebound/DeckTypes.h"
 #include "Siegebound/SiegeDeckSaveGame.h"
+#include "Siegebound/SiegePlayerController.h" // TASK-1270 loop 1: the match-start notice mailbox
+#include "UObject/StrongObjectPtr.h"
 #include "UObject/UObjectGlobals.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
+
+// ⛔ TASK-1270 — THE ONE COUPLING TO THE MATCH-START NOTICE COMPOSER. Declared,
+// never defined here: the definition is a free function with EXTERNAL LINKAGE
+// in SiegePlayerController.cpp (the SiegeboundCardGlossary::AppendSpellLines
+// precedent — the controller header is not on the row's write list). If the
+// signature moves, or the definition is "tidied" into an anonymous namespace,
+// this file fails to LINK — the intended failure mode, repaired at the
+// definition, ⛔ never by deleting this declaration.
+namespace SiegeboundDeckNotice
+{
+	FText MakeIllegalActiveDeckNoticeText(const FString& DeckName, int32 CardCount);
+}
 
 /**
  *  AUTOMATION TESTS for the ten-slot deck model (wave DECK-BUILDER 3-FIX,
@@ -49,6 +66,20 @@
  *  unknown-CardID and negative-Count refusals surviving. They run on a
  *  TRANSIENT in-test UDataTable (NewObject + FCardRow rows — ⛔ never the
  *  shipped DT_Cards asset; commandlet-safe, zero disk, ZERO network).
+ *
+ *  TASK-1270 (DECK-ILLEGAL-ACTIVE, the TASK-1230 R-DECK finding): the two
+ *  Siegebound.Deck.IllegalDeck* cases pin (a) the activation gate — an illegal
+ *  saved deck can NOT become the active deck (ActiveDeckName unchanged, hence
+ *  the rim index GetActiveDeckIndex derives from it unchanged), a legal one
+ *  can — asserted on STATE (SC-§104) through the static in-memory half
+ *  UDeckBuilderWidget::TryActivateSavedDeck (the widget's SetActiveDeck calls
+ *  exactly this, then persists on success only); and (b) the match-start HUD
+ *  notice's exact string. Same lane as everything above: in-memory save,
+ *  transient table, no widget instance, no world, no slot write — which is
+ *  precisely why the gate was factored to a static (driving the widget's
+ *  mutators would resolve the REAL seam, see the paragraph above). What this
+ *  lane can NOT assert is named in handoffs/TASK-1270-programmer.md: the
+ *  BeginPlay arm firing the broadcast once (PIE — the verifier's log line).
  */
 
 namespace SiegeDeckSlotsTestUtils
@@ -827,6 +858,349 @@ bool FSiegeDeckUncapNegativeCountStillIllegalTest::RunTest(const FString& Parame
 		UDeckLibrary::IsDeckLegal(Table, Deck, Reason));
 	TestTrue(TEXT("...for the negative-count reason (the reason names 'negative copy count')"),
 		Reason.Contains(TEXT("negative copy count")));
+
+	return true;
+}
+
+namespace SiegeDeckSlotsTestUtils
+{
+	/**
+	 *  TASK-1270: Jonathan's REAL deck1 shape as measured by the TASK-1230
+	 *  pilot (R-DECK: 8+28+3+3+8+6+6+6 = 68 across eight cards). Card names
+	 *  are scratch rows in the transient table, never the shipped DT_Cards.
+	 */
+	static void AddSixtyEightCardShape(FDeckList& Deck)
+	{
+		AddDeckEntry(Deck, TEXT("Footman"),    8);
+		AddDeckEntry(Deck, TEXT("Archer"),     28);
+		AddDeckEntry(Deck, TEXT("Cleric"),     3);
+		AddDeckEntry(Deck, TEXT("Catapult"),   3);
+		AddDeckEntry(Deck, TEXT("Knight"),     8);
+		AddDeckEntry(Deck, TEXT("Miner"),      6);
+		AddDeckEntry(Deck, TEXT("Fog"),        6);
+		AddDeckEntry(Deck, TEXT("WatchTower"), 6);
+	}
+
+	/** The eight scratch rows the 68-card shape resolves against (MaxCopies irrelevant post-uncap; set to the old cap so legality is proven to ignore it). */
+	static void AddSixtyEightShapeCards(UDataTable& Table)
+	{
+		AddScratchCard(Table, TEXT("Footman"),    12);
+		AddScratchCard(Table, TEXT("Archer"),     10);
+		AddScratchCard(Table, TEXT("Cleric"),     4);
+		AddScratchCard(Table, TEXT("Catapult"),   3);
+		AddScratchCard(Table, TEXT("Knight"),     8);
+		AddScratchCard(Table, TEXT("Miner"),      6);
+		AddScratchCard(Table, TEXT("Fog"),        6);
+		AddScratchCard(Table, TEXT("WatchTower"), 6);
+	}
+}
+
+/**
+ *  TASK-1270 CASE 1 (DECK-§3 rider; the TASK-1230 R-DECK finding): AN ILLEGAL
+ *  SAVED DECK CANNOT BECOME THE ACTIVE DECK; A LEGAL ONE CAN. Driven through
+ *  UDeckBuilderWidget::TryActivateSavedDeck — the exact in-memory step
+ *  SetActiveDeck (and so the right-click lane SetActiveDeckBySlot) takes
+ *  before it persists — on a migrated in-memory save with a transient table.
+ *
+ *  ⭐ STATE, NOT TALLIES (SC-§104): every refusal is asserted as
+ *  "ActiveDeckName is byte-identical to before" + "the rim index
+ *  (FindFixedDeckIndex of it — what GetActiveDeckIndex/RefreshDeckBarStates
+ *  derive the orange outline from) is unchanged" + "the whole save is deep-
+ *  equal to its pre-image" (nothing else moved either). Probes: a 51-card deck
+ *  (one over), Jonathan's real 68-card shape, an EMPTY slot, an unknown name,
+ *  a null table; then the 50-card deck DOES activate (case-insensitively, to
+ *  its canonical stored name), and a refusal AFTER a success leaves the NEW
+ *  state alone.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeDeckIllegalDeckCannotBecomeActiveTest,
+	"Siegebound.Deck.IllegalDeckCannotBecomeActive",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeDeckIllegalDeckCannotBecomeActiveTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeDeckSlotsTestUtils;
+
+	UDataTable* Table = MakeScratchCardTable();
+	if (!TestNotNull(TEXT("Scratch card table constructed"), Table))
+	{
+		return false;
+	}
+	AddSixtyEightShapeCards(*Table);
+
+	USiegeDeckSaveGame* Save = MakeSave();
+	if (!TestNotNull(TEXT("Save object constructed"), Save))
+	{
+		return false;
+	}
+	TestTrue(TEXT("Fresh save migrates to the ten slots (active = deck1, DECK-§2 clause 6)"),
+		USiegeDeckSaveGame::MigrateToFixedSlots(*Save));
+	if (Save->SavedDecks.Num() != USiegeDeckSaveGame::NumFixedDeckSlots)
+	{
+		return false;
+	}
+
+	// deck2 = 51 Footman (one over), deck3 = 50 Footman (legal), deck4 = the
+	// real 68-card shape, deck5 stays EMPTY (0 cards — the DECK-§1 empty slot)
+	AddDeckEntry(Save->SavedDecks[1], TEXT("Footman"), 51);
+	AddDeckEntry(Save->SavedDecks[2], TEXT("Footman"), 50);
+	AddSixtyEightCardShape(Save->SavedDecks[3]);
+	TestEqual(TEXT("deck4 is the measured 68-card shape"), Save->SavedDecks[3].TotalCount(), 68);
+
+	// the pre-image: deck1 active, rim index 0
+	TestEqualSensitive(TEXT("Pre-image: the active deck is \"deck1\""), Save->ActiveDeckName, FString(TEXT("deck1")));
+	TestEqual(TEXT("Pre-image: the rim index is 0"), USiegeDeckSaveGame::FindFixedDeckIndex(Save->ActiveDeckName), 0);
+	const TArray<FDeckList> DecksBefore = Save->SavedDecks;
+	const FString ActiveBefore = Save->ActiveDeckName;
+
+	// ---- refusal 1: the 51-card deck2 -------------------------------------
+	{
+		FString Canonical, Reason;
+		TestFalse(TEXT("REFUSED: a 51-card deck cannot become active"),
+			UDeckBuilderWidget::TryActivateSavedDeck(*Save, Table, TEXT("deck2"), Canonical, Reason));
+		TestTrue(TEXT("...with IsDeckLegal's exact-50 reason verbatim (names 'exactly 50')"), Reason.Contains(TEXT("exactly 50")));
+		TestTrue(TEXT("...and the reason names the 51 (it is the count clause, not another)"), Reason.Contains(TEXT("51 cards")));
+		TestTrue(TEXT("...and no canonical name is reported"), Canonical.IsEmpty());
+		TestEqualSensitive(TEXT("STATE: ActiveDeckName is still \"deck1\""), Save->ActiveDeckName, FString(TEXT("deck1")));
+		TestEqual(TEXT("STATE: the rim index is still 0"), USiegeDeckSaveGame::FindFixedDeckIndex(Save->ActiveDeckName), 0);
+		TestTrue(TEXT("STATE: the whole save is deep-equal to its pre-image (nothing moved)"), StatesEqual(DecksBefore, ActiveBefore, *Save));
+	}
+
+	// ---- refusal 2: Jonathan's 68-card deck4 (the shipped defect's exact input)
+	{
+		FString Canonical, Reason;
+		TestFalse(TEXT("REFUSED: the 68-card deck cannot become active"),
+			UDeckBuilderWidget::TryActivateSavedDeck(*Save, Table, TEXT("deck4"), Canonical, Reason));
+		TestTrue(TEXT("...with the reason naming '68 cards'"), Reason.Contains(TEXT("68 cards")));
+		TestEqualSensitive(TEXT("STATE: ActiveDeckName is still \"deck1\" after the 68-card refusal"), Save->ActiveDeckName, FString(TEXT("deck1")));
+		TestEqual(TEXT("STATE: the rim index is still 0 after the 68-card refusal"), USiegeDeckSaveGame::FindFixedDeckIndex(Save->ActiveDeckName), 0);
+		TestTrue(TEXT("STATE: deep-equal to the pre-image after the 68-card refusal"), StatesEqual(DecksBefore, ActiveBefore, *Save));
+	}
+
+	// ---- refusal 3: the EMPTY deck5 (0 cards — illegal, EmptySlotIllegal precedent)
+	{
+		FString Canonical, Reason;
+		TestFalse(TEXT("REFUSED: an empty slot cannot become active"),
+			UDeckBuilderWidget::TryActivateSavedDeck(*Save, Table, TEXT("deck5"), Canonical, Reason));
+		TestTrue(TEXT("...with the exact-50 reason"), Reason.Contains(TEXT("exactly 50")));
+		TestTrue(TEXT("STATE: deep-equal to the pre-image after the empty-slot refusal"), StatesEqual(DecksBefore, ActiveBefore, *Save));
+	}
+
+	// ---- refusal 4: a name that is not a saved deck (the shipped strict check survives)
+	{
+		FString Canonical, Reason;
+		TestFalse(TEXT("REFUSED: an unknown deck name cannot become active"),
+			UDeckBuilderWidget::TryActivateSavedDeck(*Save, Table, TEXT("deck11"), Canonical, Reason));
+		TestTrue(TEXT("...with the no-such-deck reason (names 'no saved deck')"), Reason.Contains(TEXT("no saved deck")));
+		TestTrue(TEXT("STATE: deep-equal to the pre-image after the unknown-name refusal"), StatesEqual(DecksBefore, ActiveBefore, *Save));
+	}
+
+	// ---- refusal 5: no card table — IsDeckLegal's own null contract (illegal, with a reason)
+	{
+		FString Canonical, Reason;
+		TestFalse(TEXT("REFUSED: with no card table even the 50-card deck is not activated"),
+			UDeckBuilderWidget::TryActivateSavedDeck(*Save, /*CardTable=*/ nullptr, TEXT("deck3"), Canonical, Reason));
+		TestFalse(TEXT("...and a reason is given (never a silent false)"), Reason.IsEmpty());
+		TestTrue(TEXT("STATE: deep-equal to the pre-image after the null-table refusal"), StatesEqual(DecksBefore, ActiveBefore, *Save));
+	}
+
+	// ---- SUCCESS: the 50-card deck3, addressed case-insensitively ------------
+	{
+		FString Canonical, Reason;
+		TestTrue(TEXT("ACTIVATED: a 50-card deck CAN become active (addressed as \"DECK3\")"),
+			UDeckBuilderWidget::TryActivateSavedDeck(*Save, Table, TEXT("DECK3"), Canonical, Reason));
+		TestTrue(TEXT("...with the reason cleared"), Reason.IsEmpty());
+		TestEqualSensitive(TEXT("...reporting the CANONICAL stored name \"deck3\""), Canonical, FString(TEXT("deck3")));
+		TestEqualSensitive(TEXT("STATE: ActiveDeckName is now \"deck3\" (canonical, not the caller's spelling)"), Save->ActiveDeckName, FString(TEXT("deck3")));
+		TestEqual(TEXT("STATE: the rim index moved to 2"), USiegeDeckSaveGame::FindFixedDeckIndex(Save->ActiveDeckName), 2);
+		TestFalse(TEXT("STATE: the save is no longer equal to the pre-image (exactly the activation changed it)"), StatesEqual(DecksBefore, ActiveBefore, *Save));
+		TestTrue(TEXT("STATE: ...and ONLY ActiveDeckName changed (the decks themselves are untouched)"), StatesEqual(DecksBefore, TEXT("deck3"), *Save));
+	}
+
+	// ---- a refusal AFTER a success leaves the NEW state alone ---------------
+	{
+		FString Canonical, Reason;
+		TestFalse(TEXT("REFUSED again: the 51-card deck2 after deck3 became active"),
+			UDeckBuilderWidget::TryActivateSavedDeck(*Save, Table, TEXT("deck2"), Canonical, Reason));
+		TestEqualSensitive(TEXT("STATE: ActiveDeckName stays \"deck3\" (the refusal did not revert or move it)"), Save->ActiveDeckName, FString(TEXT("deck3")));
+		TestEqual(TEXT("STATE: the rim index stays 2"), USiegeDeckSaveGame::FindFixedDeckIndex(Save->ActiveDeckName), 2);
+	}
+
+	return true;
+}
+
+/**
+ *  TASK-1270 CASE 2: THE MATCH-START HUD NOTICE. When the active saved deck is
+ *  illegal, ASiegePlayerController::BeginPlay's fallback arm broadcasts
+ *  SiegeboundDeckNotice::MakeIllegalActiveDeckNoticeText(name, count) through
+ *  the shipped BroadcastRefusal lane (loop 1: HELD on the controller until the
+ *  hand binds — the delivery is CASE 3 below, this case is the text). The
+ *  arm needs a world + the player's slot, so the unit lane pins the two things
+ *  it can: (a) the arm's CONDITION is taken on the measured input (the 68-card
+ *  shape is illegal by IsDeckLegal, with the count reason), and (b) the exact
+ *  player-facing STRING, character-for-character, for two different (name,
+ *  count) pairs — so a format failure ("{0}"/"{1}" leaking), a baked name or
+ *  a baked count all fail here. The once-per-match firing is the PIE
+ *  verifier's log line (handoffs/TASK-1270-programmer.md names it).
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeDeckIllegalActiveDeckMatchStartNoticeTest,
+	"Siegebound.Deck.IllegalActiveDeckMatchStartNotice",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeDeckIllegalActiveDeckMatchStartNoticeTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeDeckSlotsTestUtils;
+
+	// (a) the arm's condition on the measured input: IsDeckLegal refuses the
+	// 68-card shape for the count reason — that is the branch that broadcasts
+	UDataTable* Table = MakeScratchCardTable();
+	if (!TestNotNull(TEXT("Scratch card table constructed"), Table))
+	{
+		return false;
+	}
+	AddSixtyEightShapeCards(*Table);
+
+	FDeckList Deck1;
+	Deck1.DeckName = TEXT("deck1");
+	AddSixtyEightCardShape(Deck1);
+	TestEqual(TEXT("The measured deck1 totals 68"), Deck1.TotalCount(), 68);
+
+	FString LegalityReason;
+	TestFalse(TEXT("The fallback arm's condition holds: the 68-card deck1 is NOT legal"),
+		UDeckLibrary::IsDeckLegal(Table, Deck1, LegalityReason));
+	TestTrue(TEXT("...for the count reason (names '68 cards')"), LegalityReason.Contains(TEXT("68 cards")));
+
+	// (b) the exact string, the measured pair first
+	const FString Notice = SiegeboundDeckNotice::MakeIllegalActiveDeckNoticeText(Deck1.DeckName, Deck1.TotalCount()).ToString();
+	TestEqualSensitive(TEXT("The HUD notice for (\"deck1\", 68) is exactly the pinned text"),
+		Notice, FString(TEXT("Deck 'deck1' has 68 cards — playing the default deck")));
+	TestFalse(TEXT("...with no unformatted placeholder leaking ({0})"), Notice.Contains(TEXT("{0}")));
+	TestFalse(TEXT("...with no unformatted placeholder leaking ({1})"), Notice.Contains(TEXT("{1}")));
+
+	// a second pair — both arguments are interpolated, neither is baked
+	const FString OtherNotice = SiegeboundDeckNotice::MakeIllegalActiveDeckNoticeText(TEXT("deck7"), 49).ToString();
+	TestEqualSensitive(TEXT("The HUD notice for (\"deck7\", 49) interpolates both arguments"),
+		OtherNotice, FString(TEXT("Deck 'deck7' has 49 cards — playing the default deck")));
+	TestNotEqual(TEXT("The two notices differ (neither the name nor the count is baked)"), Notice, OtherNotice);
+
+	return true;
+}
+
+/**
+ *  TASK-1270 CASE 3 (LOOP 1): A LISTENER THAT SUBSCRIBES AFTER THE NOTICE WAS RAISED
+ *  STILL RECEIVES IT — EXACTLY ONCE.
+ *
+ *  What failed (qa/TASK-1270-verify.md, VERIFY-FAILED): loop 0 broadcast the notice on a
+ *  next-tick timer, which fired in the load frame's world tick; the channel's only
+ *  listener, WBP_CardHand, is created by WBP_HUD's first widget Tick and binds in
+ *  UCardHandWidget::InitForController — AFTER the broadcast. The slot stayed empty.
+ *  Loop 1 holds the notice on the controller (QueueMatchStartNotice) and spends it
+ *  (DeliverPendingMatchStartNotice) only when OnCardRefused has a listener; the hand
+ *  asks for it the moment it binds.
+ *
+ *  World-free, the house idiom (the NewObject<ASiegeGhostPawn> / NewObject<UCardHandWidget>
+ *  precedents): transient controllers and REAL UCardHandWidget listeners bound through the
+ *  shipped InitForController — no world, no BeginPlay, no save slot, zero disk. Every row
+ *  reads STATE (SC-§104): the controller's held notice (HasPending/GetPending),
+ *  OnCardRefused.IsBound(), and what each hand RECEIVED (GetReceivedRefusalCount +
+ *  GetLastReceivedRefusal — the receipt is recorded before the BIE).
+ *   (a) raised with NOBODY listening ⇒ held, not spent (the loop-0 moment);
+ *   (b) the hand subscribes AFTER ⇒ it receives the exact text, once, and the hold clears;
+ *   (c) a re-init, a second hand, a direct Deliver ⇒ nobody receives it again;
+ *   (d) the reverse order (hand first, then BeginPlay's Queue+Deliver pair) ⇒ received at once;
+ *   (e) nothing held (the legal-deck case) or an empty FText ⇒ nothing is received.
+ *  ⚠️ NOT assertable here, named: (1) the Blueprint half — WBP_CardHand's handler writing
+ *  RefusalText — the verifier observable is `WBP_CardHand_C_0.RefusalText` (`TextBlock_21`)
+ *  `Text` = the notice early in the arena; (2) the Log-verbosity line count — in UE 5.8
+ *  FAutomationTestMessageFilter::SerializeRecord matches expected messages on Warning/Error
+ *  records only (AutomationTest.cpp:305-323), so a Log-level expectation cannot be counted;
+ *  the verifier counts `HUD notice broadcast (TASK-1270)` = 1 per match start.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeDeckIllegalDeckNoticeReachesLateListenerOnceTest,
+	"Siegebound.Deck.IllegalDeckNoticeReachesALateListenerExactlyOnce",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeDeckIllegalDeckNoticeReachesLateListenerOnceTest::RunTest(const FString& Parameters)
+{
+	// The notice under test is the shipped composer's output for the verifier's measured save.
+	const FText Notice = SiegeboundDeckNotice::MakeIllegalActiveDeckNoticeText(TEXT("deck1"), 51);
+	const FString NoticeString = Notice.ToString();
+	TestEqualSensitive(TEXT("SELF-CHECK: the notice is the pinned text for (deck1, 51)"),
+		NoticeString, FString(TEXT("Deck 'deck1' has 51 cards — playing the default deck")));
+
+	TStrongObjectPtr<ASiegePlayerController> Controller(NewObject<ASiegePlayerController>(
+		GetTransientPackageAsObject(), ASiegePlayerController::StaticClass(), NAME_None, RF_Transient));
+	TStrongObjectPtr<ASiegePlayerController> ReverseController(NewObject<ASiegePlayerController>(
+		GetTransientPackageAsObject(), ASiegePlayerController::StaticClass(), NAME_None, RF_Transient));
+	TStrongObjectPtr<UCardHandWidget> LateHand(NewObject<UCardHandWidget>(GetTransientPackageAsObject()));
+	TStrongObjectPtr<UCardHandWidget> SecondHand(NewObject<UCardHandWidget>(GetTransientPackageAsObject()));
+	TStrongObjectPtr<UCardHandWidget> EarlyHand(NewObject<UCardHandWidget>(GetTransientPackageAsObject()));
+	if (!TestTrue(TEXT("SELF-CHECK: two world-free controllers and three hands were created"),
+		Controller.IsValid() && ReverseController.IsValid() && LateHand.IsValid() && SecondHand.IsValid() && EarlyHand.IsValid()))
+	{
+		return false;
+	}
+
+	// A world-free hand logs its DESIGNED Warnings on every InitForController: always the
+	// no-player-state one (no PlayerState outside a world), and the no-deck one only if the
+	// DeckComponent subobject is not discoverable world-free — derived here, not guessed.
+	// Four InitForController calls below.
+	const int32 InitCalls = 4;
+	AddExpectedMessagePlain(TEXT("has no ASiegePlayerState"), ELogVerbosity::Warning,
+		EAutomationExpectedMessageFlags::Contains, InitCalls);
+	if (Controller->FindComponentByClass<UDeckComponent>() == nullptr)
+	{
+		AddExpectedMessagePlain(TEXT("has no UDeckComponent"), ELogVerbosity::Warning,
+			EAutomationExpectedMessageFlags::Contains, InitCalls);
+	}
+
+	// PREMISE: a fresh controller holds nothing and has no listener.
+	TestFalse(TEXT("PREMISE: a fresh controller holds no notice"), Controller->HasPendingMatchStartNotice());
+	TestFalse(TEXT("PREMISE: a fresh controller's OnCardRefused has no listener"), Controller->OnCardRefused.IsBound());
+	TestFalse(TEXT("PREMISE: Deliver with nothing held spends nothing"), Controller->DeliverPendingMatchStartNotice());
+
+	// (a) RAISED WITH NOBODY LISTENING — BeginPlay's exact pair (Queue, then Deliver).
+	Controller->QueueMatchStartNotice(Notice);
+	const bool bSpentWithNoListener = Controller->DeliverPendingMatchStartNotice();
+	TestFalse(TEXT("(a) with no listener, Deliver does NOT spend the notice (loop 0 broadcast it to nobody here)"), bSpentWithNoListener);
+	TestTrue(TEXT("(a) STATE: the notice is still held"), Controller->HasPendingMatchStartNotice());
+	TestEqualSensitive(TEXT("(a) STATE: the held notice is the exact text"),
+		Controller->GetPendingMatchStartNotice().ToString(), NoticeString);
+
+	// (b) THE HAND SUBSCRIBES AFTER — through the shipped bind path.
+	TestEqual(TEXT("(b) PREMISE: the late hand has received nothing yet"), LateHand->GetReceivedRefusalCount(), 0);
+	LateHand->InitForController(Controller.Get());
+	TestTrue(TEXT("(b) the hand's bind put a listener on OnCardRefused"), Controller->OnCardRefused.IsBound());
+	TestEqual(TEXT("(b) STATE: the late-subscribing hand RECEIVED the notice exactly once"), LateHand->GetReceivedRefusalCount(), 1);
+	TestEqualSensitive(TEXT("(b) STATE: ...carrying the exact text"), LateHand->GetLastReceivedRefusal(), NoticeString);
+	TestFalse(TEXT("(b) STATE: the controller no longer holds it (spent on delivery)"), Controller->HasPendingMatchStartNotice());
+	TestTrue(TEXT("(b) STATE: the held text is empty"), Controller->GetPendingMatchStartNotice().IsEmpty());
+
+	// (c) EXACTLY ONCE — nothing re-delivers it.
+	LateHand->InitForController(Controller.Get());
+	TestEqual(TEXT("(c) a re-init of the same hand does not receive it again"), LateHand->GetReceivedRefusalCount(), 1);
+	SecondHand->InitForController(Controller.Get());
+	TestEqual(TEXT("(c) a second hand binding later receives nothing"), SecondHand->GetReceivedRefusalCount(), 0);
+	TestFalse(TEXT("(c) a direct Deliver afterwards spends nothing"), Controller->DeliverPendingMatchStartNotice());
+	TestEqual(TEXT("(c) STATE: the first hand's receipt count is still 1"), LateHand->GetReceivedRefusalCount(), 1);
+	TestEqual(TEXT("(c) STATE: the second hand's receipt count is still 0"), SecondHand->GetReceivedRefusalCount(), 0);
+
+	// (d) THE REVERSE ORDER — a hand already bound, then BeginPlay's pair.
+	EarlyHand->InitForController(ReverseController.Get());
+	TestEqual(TEXT("(d) PREMISE: binding with nothing held delivers nothing (the legal-deck case)"), EarlyHand->GetReceivedRefusalCount(), 0);
+	ReverseController->QueueMatchStartNotice(Notice);
+	TestTrue(TEXT("(d) with a listener already bound, Deliver spends the notice at once"), ReverseController->DeliverPendingMatchStartNotice());
+	TestEqual(TEXT("(d) STATE: the early hand received it exactly once"), EarlyHand->GetReceivedRefusalCount(), 1);
+	TestEqualSensitive(TEXT("(d) STATE: ...carrying the exact text"), EarlyHand->GetLastReceivedRefusal(), NoticeString);
+	TestFalse(TEXT("(d) STATE: nothing is held afterwards"), ReverseController->HasPendingMatchStartNotice());
+
+	// (e) AN EMPTY FText IS NOT A NOTICE.
+	ReverseController->QueueMatchStartNotice(FText::GetEmpty());
+	TestFalse(TEXT("(e) STATE: queueing an empty FText holds nothing"), ReverseController->HasPendingMatchStartNotice());
+	TestFalse(TEXT("(e) ...and Deliver spends nothing"), ReverseController->DeliverPendingMatchStartNotice());
+	TestEqual(TEXT("(e) STATE: the early hand's receipt count is still 1"), EarlyHand->GetReceivedRefusalCount(), 1);
 
 	return true;
 }

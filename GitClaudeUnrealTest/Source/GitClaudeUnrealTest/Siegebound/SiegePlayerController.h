@@ -231,6 +231,33 @@ public:
 	FOnCardRefused OnCardRefused;
 
 	/**
+	 *  ⭐ TASK-1270 loop 1 — THE MATCH-START NOTICE MAILBOX (the illegal-active-deck notice;
+	 *  qa/TASK-1270-verify.md VERIFY-FAILED ⇒ handoffs/TASK-1270-programmer.md "Loop 1 fix").
+	 *
+	 *  WHY IT EXISTS: OnCardRefused's only listener is UCardHandWidget, bound in
+	 *  InitForController from WBP_CardHand's Construct — and WBP_CardHand is created by
+	 *  WBP_HUD's FIRST widget Tick (Slate phase), which runs after BeginPlay AND after the load
+	 *  frame's world tick. A notice broadcast from BeginPlay, or from a next-tick timer, reaches
+	 *  nobody. So the notice is HELD here and spent when there is somebody to show it to.
+	 *
+	 *  CONTRACT (C++-only, ⛔ not UFUNCTIONs — no Blueprint surface):
+	 *  - QueueMatchStartNotice: holds ONE notice. An EMPTY FText is ignored. A second queue
+	 *    before delivery replaces the first (one match start ⇒ one arm ⇒ one queue today).
+	 *  - DeliverPendingMatchStartNotice: if a notice is held AND OnCardRefused has a listener,
+	 *    clears it, logs `HUD notice broadcast (TASK-1270): "<text>"` and sends it through
+	 *    BroadcastRefusal ONCE, returning true. Otherwise changes nothing and returns false.
+	 *    Called by BeginPlay right after queueing AND by UCardHandWidget::InitForController
+	 *    right after it binds ⇒ delivery lands at the LATER of the two, in either order,
+	 *    exactly once (cleared on delivery; later binds and re-inits find nothing).
+	 *  - HasPendingMatchStartNotice / GetPendingMatchStartNotice: read-only state (the offline
+	 *    test's observables). Empty = nothing held.
+	 */
+	void QueueMatchStartNotice(const FText& Notice);
+	bool DeliverPendingMatchStartNotice();
+	bool HasPendingMatchStartNotice() const;
+	const FText& GetPendingMatchStartNotice() const;
+
+	/**
 	 *  Fired by SetUnitCommand every time the player latches a new stance
 	 *  (Attack/Hold/Defend), carrying the new command as a byte (Shield Wall
 	 *  commands, W1 TASK-274). The HUD command indicator (TASK-276) binds here.
@@ -3448,6 +3475,9 @@ private:
 	/** HUD widget instance (created at BeginPlay when WBP_HUD exists). */
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> HUDWidget;
+
+	/** TASK-1270 loop 1 — the held match-start notice (QueueMatchStartNotice's mailbox). Empty = nothing pending. ⛔ Not a UPROPERTY: an FText holds no UObject reference, and it is never saved or replicated. */
+	FText PendingMatchStartNotice;
 
 	/**
 	 *  Assistant console instance (TASK-449). ⚠️ CREATED LAZILY ON THE FIRST

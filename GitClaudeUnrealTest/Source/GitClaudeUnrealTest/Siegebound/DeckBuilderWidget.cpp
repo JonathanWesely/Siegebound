@@ -1207,25 +1207,29 @@ void UDeckBuilderWidget::SetActiveDeck(const FString& Name)
 
 	// STRICT: only activate a deck that actually exists, and store its canonical
 	// name, so ActiveDeckName never dangles (TASK-114 reads it, then legality-checks
-	// and falls back to the DeckCount default null-safe if it ever fails to resolve)
+	// and falls back to the DeckCount default null-safe if it ever fails to resolve).
+	//
+	// TASK-1270 (DECK-§3 rider): ...and only a LEGAL one. The exists-check and
+	// the legality gate are ONE in-memory step (TryActivateSavedDeck — the
+	// same UDeckLibrary::IsDeckLegal the match reader runs, never a second
+	// rule), taken BEFORE anything is written: a refusal leaves ActiveDeckName
+	// exactly as it was, so the orange rim (derived from it by
+	// GetActiveDeckIndex) stays where it was, and no disk write happens.
+	// MEASURED CAUSE (qa/TASK-1068-verify.md, the TASK-1230 R-DECK ruling): a
+	// 68-card deck1 could be right-clicked active, and every match then dealt
+	// the curated default at Warning level with nothing on screen. Refusal
+	// surface = the builder's refused-save idiom (one Warning naming the
+	// reason) + OnDeckActivationRefused for a WBP that wants to show it.
 	FString CanonicalName;
-	for (const FDeckList& Deck : SaveObj->SavedDecks)
-	{
-		if (Deck.DeckName.Equals(Name, ESearchCase::IgnoreCase))
-		{
-			CanonicalName = Deck.DeckName;
-			break;
-		}
-	}
-
-	if (CanonicalName.IsEmpty())
+	FString RefusalReason;
+	if (!TryActivateSavedDeck(*SaveObj, ResolveCardTable(), Name, CanonicalName, RefusalReason))
 	{
 		UE_LOG(LogGitClaudeUnrealTest, Warning,
-			TEXT("UDeckBuilderWidget::SetActiveDeck('%s'): no saved deck with that name — save it first (SaveDeckAs)."), *Name);
+			TEXT("UDeckBuilderWidget::SetActiveDeck('%s'): %s — refused; the active deck stays '%s'."),
+			*Name, *RefusalReason, *SaveObj->ActiveDeckName);
+		OnDeckActivationRefused(Name, RefusalReason);
 		return;
 	}
-
-	SaveObj->ActiveDeckName = CanonicalName;
 
 	// TASK-602 (ACC-§4): resolved at call time — profile-scoped when logged in, guest otherwise
 	const FString DeckSlotName = ResolveDeckSlotName(GetGameInstance());
@@ -1247,6 +1251,48 @@ void UDeckBuilderWidget::SetActiveDeck(const FString& Name)
 	// the shipped D8 "Play with this deck" activation, so the orange follows
 	// both. Existing behavior above is untouched (DECK-§4 byte-compatibility).
 	RefreshDeckBarStates();
+}
+
+bool UDeckBuilderWidget::TryActivateSavedDeck(USiegeDeckSaveGame& Save, const UDataTable* CardTable, const FString& Name, FString& OutCanonicalName, FString& OutRefusalReason)
+{
+	// TASK-1270 — the activation gate (header: the three steps). Pure over the
+	// in-memory save: no disk, no seam, no widget state, so it is assertable
+	// on STATE from Tests/SiegeDeckSlotsTest.cpp (SC-§104) without touching
+	// the player's slot. Every false return leaves Save untouched.
+	OutCanonicalName.Reset();
+	OutRefusalReason.Reset();
+
+	// (1) the exists-check — the shipped M6 case-insensitive lookup, verbatim
+	const FDeckList* Found = nullptr;
+	for (const FDeckList& Deck : Save.SavedDecks)
+	{
+		if (Deck.DeckName.Equals(Name, ESearchCase::IgnoreCase))
+		{
+			Found = &Deck;
+			break;
+		}
+	}
+
+	if (!Found)
+	{
+		OutRefusalReason = TEXT("no saved deck with that name — save it first (SaveDeckAs)");
+		return false;
+	}
+
+	// (2) THE legality home (UNCAP-§3: IsDeckLegal is untouched — total exactly
+	// 50, every CardID resolvable, no negative count). The reason travels
+	// VERBATIM so the refusal names the actual violation ("Deck has 68 cards —
+	// a legal deck is exactly 50 (GDD 3.4).").
+	if (!UDeckLibrary::IsDeckLegal(CardTable, *Found, OutRefusalReason))
+	{
+		return false;
+	}
+
+	// (3) legal ⇒ the canonical STORED name becomes the active deck (in memory;
+	// the caller persists)
+	OutCanonicalName = Found->DeckName;
+	Save.ActiveDeckName = OutCanonicalName;
+	return true;
 }
 
 // ---------------------------------------------------------------------------

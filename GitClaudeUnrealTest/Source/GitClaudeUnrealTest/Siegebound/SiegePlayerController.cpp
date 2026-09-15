@@ -239,6 +239,32 @@ ASiegePlayerController::ASiegePlayerController()
 	ControlsHelpWidgetClass = TSoftClassPtr<USiegeControlsHelpWidget>(FSoftObjectPath(TEXT("/Game/UI/WBP_ControlsHelp.WBP_ControlsHelp_C")));       // `HELP-§3` RESERVED + UNAUTHORED — the code-authored tree renders the whole overlay without it
 }
 
+// ---------------------------------------------------------------------------
+// TASK-1270 — the match-start "your active deck is illegal" HUD notice.
+//
+// A free function with EXTERNAL LINKAGE (the SiegeboundCardGlossary::
+// AppendSpellLines precedent, TASK-999) rather than a static member: the
+// BeginPlay arm that fires it is the only site this row may touch in this
+// file, and the header is not on its write list — so the text is composed
+// HERE, and Tests/SiegeDeckSlotsTest.cpp forward-declares this signature to
+// assert the exact player-facing string (SC-§104: the string, not a tally).
+// ⛔ Not in the anonymous namespace: internal linkage would make it
+// unreachable from the test, and the gate would come back as a link error.
+//
+// Key + text are the row's pinned shape. The count is FText::AsNumber so a
+// 68 reads "68" (no culture surprise at two digits); the deck name is the
+// stored canonical name, verbatim.
+// ---------------------------------------------------------------------------
+namespace SiegeboundDeckNotice
+{
+	FText MakeIllegalActiveDeckNoticeText(const FString& DeckName, int32 CardCount)
+	{
+		return FText::Format(
+			NSLOCTEXT("Siegebound", "DeckNotice_IllegalActiveDeck", "Deck '{0}' has {1} cards — playing the default deck"),
+			FText::FromString(DeckName), FText::AsNumber(CardCount));
+	}
+}
+
 void ASiegePlayerController::BeginPlay()
 {
 	Super::BeginPlay();
@@ -310,6 +336,32 @@ void ASiegePlayerController::BeginPlay()
 						UE_LOG(LogGitClaudeUnrealTest, Warning,
 							TEXT("ASiegePlayerController '%s': active saved deck '%s' is not legal (%s) — falling back to the curated DeckCount default (M6 TASK-114)."),
 							*GetNameSafe(this), *ActiveName, LegalityReason.IsEmpty() ? TEXT("no reason") : *LegalityReason);
+
+						// TASK-1270 — SAY SO ON THE HUD (the TASK-1230 R-DECK finding:
+						// Jonathan played the default for days with the rim on a 68-card
+						// deck1 and only this Warning to show for it). Same M2 refusal
+						// surface every other notice uses (BroadcastRefusal →
+						// OnCardRefused → UCardHandWidget::OnCardRefusedMessage), no new
+						// path. The count is the deck's TotalCount (the row's pinned shape)
+						// — the Warning above carries the precise reason when it is not the
+						// count.
+						//
+						// ⚠️ LOOP 1 (qa/TASK-1270-verify.md VERIFY-FAILED): HELD, ⛔ NOT TIMED.
+						// Loop 0 broadcast on a next-tick timer; it fired in the load frame's
+						// WORLD tick (logged on the same GFrameCounter as LoadMap), but the
+						// channel's only listener is WBP_CardHand, which WBP_HUD creates on
+						// its FIRST widget Tick — the Slate phase, after the world tick — so
+						// the broadcast met an unbound OnCardRefused and the refusal slot
+						// stayed empty. Now the notice is queued on this controller and
+						// spent at the LATER of (queued here, a hand binds): the Deliver call
+						// below spends it only if a listener is already bound (never, in
+						// today's order), otherwise UCardHandWidget::InitForController spends
+						// it the moment it binds. Cleared on delivery ⇒ once per match start.
+						// The client PS-retry edge (qa/TASK-1287-report.md WARN-1) closes by
+						// the same mechanism: the notice waits however late the HUD is.
+						QueueMatchStartNotice(
+							SiegeboundDeckNotice::MakeIllegalActiveDeckNoticeText(ActiveName, ActiveDeck->TotalCount()));
+						DeliverPendingMatchStartNotice();
 					}
 				}
 				else
@@ -6095,6 +6147,65 @@ void ASiegePlayerController::RefuseCardPlay(FName CardID, const FText& Reason)
 void ASiegePlayerController::BroadcastRefusal(const FText& Reason)
 {
 	OnCardRefused.Broadcast(Reason.ToString());
+}
+
+// ---------------------------------------------------------------------------
+// TASK-1270 loop 1 — THE MATCH-START NOTICE MAILBOX (contract on the header
+// declaration). Queue holds one notice; Deliver spends it through the shipped
+// BroadcastRefusal lane only when OnCardRefused has a listener, clears it
+// first, and logs the line the verifier reads. Its two callers are BeginPlay's
+// illegal-deck arm (right after queueing) and UCardHandWidget::InitForController
+// (right after binding) — delivery lands at whichever comes LATER.
+// ---------------------------------------------------------------------------
+void ASiegePlayerController::QueueMatchStartNotice(const FText& Notice)
+{
+	// An empty FText is not a notice: ignoring it keeps "pending" meaning exactly
+	// "there is something the player has not been shown yet".
+	if (Notice.IsEmpty())
+	{
+		return;
+	}
+
+	PendingMatchStartNotice = Notice;
+}
+
+bool ASiegePlayerController::DeliverPendingMatchStartNotice()
+{
+	if (PendingMatchStartNotice.IsEmpty())
+	{
+		// nothing held: a legal deck, no save, or already delivered — silent
+		return false;
+	}
+
+	if (!OnCardRefused.IsBound())
+	{
+		// ⭐ THE LOOP-0 DEFECT, NOW A HOLD: nobody is listening yet (the hand is
+		// spawned by WBP_HUD's first widget Tick, after this controller's
+		// BeginPlay and after the load frame's timers). Keep the notice; the
+		// hand's InitForController asks again the moment it binds.
+		return false;
+	}
+
+	// Clear BEFORE broadcasting: a handler that re-enters here finds nothing, so
+	// the notice cannot double-fire.
+	const FText Notice = PendingMatchStartNotice;
+	PendingMatchStartNotice = FText::GetEmpty();
+
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASiegePlayerController '%s': HUD notice broadcast (TASK-1270): \"%s\""),
+		*GetNameSafe(this), *Notice.ToString());
+	BroadcastRefusal(Notice);
+	return true;
+}
+
+bool ASiegePlayerController::HasPendingMatchStartNotice() const
+{
+	return !PendingMatchStartNotice.IsEmpty();
+}
+
+const FText& ASiegePlayerController::GetPendingMatchStartNotice() const
+{
+	return PendingMatchStartNotice;
 }
 
 UInputAction* ASiegePlayerController::ResolveInputAction(const TObjectPtr<UInputAction>& HardSlot, const TSoftObjectPtr<UInputAction>& SoftAsset, const TCHAR* ActionName, const TCHAR* CreatedInTask) const
