@@ -954,9 +954,11 @@ private:
 	 *  being refused, because it would have bricked this ladder for EVERY later climber, hero
 	 *  and unit alike, for the rest of the match. ⛔ Both halves ship together or neither does.
 	 */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Tower|Debug")
 	TWeakObjectPtr<ACharacter> ActiveClimber;
 
 	/** The exact UPathFollowingComponent the link handed us for ActiveClimber — the one holding CurrentCustomLinkOb, so the handshake is closed against the right object even if the unit changed controller mid-climb. ⚠️ A CONTACT-started climb has no such handshake and leaves this null, deliberately. */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Tower|Debug")
 	TWeakObjectPtr<UObject> ActiveClimberPathComp;
 
 	/**
