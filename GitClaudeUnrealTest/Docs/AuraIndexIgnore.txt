@@ -57,7 +57,7 @@ Content/__ExternalObjects__/
 Content/Collections/
 Content/Art/
 
-# gitignored cloud ini (publishable key) — LISTED for exclusion; ⛔ exclusion UNPROVEN: index-visible measured 2026-09-14 (TASK-1265, R16 — path, section + key NAMES answered from the index with no tool call, with BOTH shapes below on the list at index-build time); ⛔ NOT a read fence either, Aura's file tools reach it on demand (TASK-1259, R15); the rest of Config/ (DefaultInput.ini etc.) IS indexed — both lines stay as belt-and-braces (R12 re-ruled by R16: the **/ twin is as unproven as the bare shape)
+# gitignored cloud ini (publishable key) — LISTED for exclusion; ⛔ but the exclusion was never the thing that mattered: MEASURED 2026-09-17 (TASK-1283, R17) Aura's "project index" is a CURATED MEMORY DOCUMENT (Saved/.Aura/project_memory.txt, 61 lines, copied verbatim by Tools/aura_sync.ps1 from our Docs canonicals) whose contents hold NO Config/ entry of any kind — not this file, not DefaultInput.ini — and the AnonKey VALUE is NOT in it; ⛔ NOT a read fence either: Aura's file tools read this file straight off the disk on demand (TASK-1259, R15 — re-proven 2026-09-17). THE INDEX IS CLEAN; THE DISK IS NOT. Both lines below stay as belt-and-braces, cost nil (R12 re-ruled by R16; R16's "index-visible" headline withdrawn by R17 — measure what an instrument COVERS before arguing about what it EXCLUDES, SC-§119)
 Config/SiegeCloudDev.ini
 **/SiegeCloudDev.ini
 Content/FirstPersonArms/

@@ -845,10 +845,22 @@ file tools read the disk on demand regardless of the ignore list: on 2026-09-13 
 the sections and key NAMES of the listed-for-exclusion `Config/SiegeCloudDev.ini` in one tool call
 (`TASK-1259`). Anything on the project tree is reachable by an in-editor assistant, and under
 a training-ON toggle may enter a chat turn. The house rule that follows is in §10.2: the
-config home holds the publishable pair and nothing else. ⚠️ And the exclusion itself is UNPROVEN:
-on 2026-09-14, asked from the index only with no tool call, Aura still named the file, its
-section and its key names (`TASK-1265`, ruling R16) — both ignore shapes were on the list when
-that index was built. Treat the list as best-effort hygiene, never as a guarantee.
+config home holds the publishable pair and nothing else. ⚠️ And the exclusion was never the
+thing that mattered. On 2026-09-17 the index was measured at source (`TASK-1283`, ruling R17):
+Aura's "project index" is a **curated memory document** — `Saved/.Aura/project_memory.txt`, 61
+lines, copied verbatim by `Tools/aura_sync.ps1` from the git-tracked,
+hand-authored `Docs/AuraProjectMemory.md` (the pair table below) — and it holds no `Config/`
+entry of any kind, so the `AnonKey` value is not in it. ⭐ And that is *why*: the index is
+bounded by one small hand-written file that a person maintains line by line, not by a
+summarisation pass over a large surface. The sync is a byte-for-byte copy, so it cannot sweep a
+`Config/` path in unless somebody types one into `Docs/AuraProjectMemory.md`. (An earlier reading
+on 2026-09-14 suggested the opposite; that headline is withdrawn — the 2026-09-17 answer is the
+one corroborated against the file on disk.) ⛔ None of that relaxes the paragraph above by one word:
+Aura's file tools still read this ini straight off the disk on demand, and did so again on
+2026-09-17 under an instruction forbidding all tools. **The index is clean; the disk is not.**
+Treat the ignore list as best-effort hygiene, never as a guarantee — and measure what an
+instrument covers before arguing about what it excludes (`SC-§119`). The law that actually bounds
+this file's contents is `ACC-§11`, amended the same day with all of the above.
 
 `Saved/` is gitignored, so both are machine-local and would be lost on a fresh clone. The
 canonical, committed copies live in `Docs/`:
