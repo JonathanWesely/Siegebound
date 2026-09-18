@@ -4,6 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "InputCoreTypes.h"    // TASK-1286: FKey — the card-focus key table (arrows/Enter/Delete/gamepad; ⛔ no letter, no digit)
+#include "Types/SlateEnums.h"  // TASK-1286: EUINavigation — the direction parameter of MoveCardFocus
 #include "UObject/SoftObjectPtr.h"
 #include "Siegebound/DeckTypes.h"
 #include "DeckBuilderWidget.generated.h"
@@ -162,6 +164,224 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Deck")
 	void RemoveCopy(FName CardID);
+
+	// --- TASK-1286: keyboard / gamepad card actions (the KEYBOARD twin of the
+	//     "+" / "−" MOUSE buttons — NOT of DECK-§3's right-click, which stays
+	//     mouse-only by ruling) --------------------------------------------------
+	//
+	//  🧑 HIS ASK (2026-09-14, boarded as TASK-1286; his go 2026-09-17): arrows to
+	//  move a focus outline across the CARDS, Enter to add a copy, Delete (or
+	//  gamepad B) to remove one, same rules as the mouse.
+	//
+	//  ⭐ THE ROUTE, AND THE MEASUREMENT THAT CHOSE IT (deliverable (0), SC-§101 —
+	//  a route asserted without its measurement is the failure this law names):
+	//
+	//   (a) WBP_DeckCardTile has NO design-time buttons. Its WidgetTree holds ONE
+	//       subobject, SizeBox_0; AddBtn / RemoveBtn / Btn_CardFace are BP
+	//       variables built by the tile's own Construct graph at runtime, so they
+	//       are created at UButton's CDO defaults — and UButton's CDO reads
+	//       is_focusable = TRUE (live editor read). No `bIsFocusable` property
+	//       name occurs anywhere in WBP_DeckCardTile.uasset / WBP_DeckBuilder.uasset
+	//       / WBP_MainMenu.uasset, so nothing unchecks it. ⇒ THE THREE BUTTONS ARE
+	//       FOCUSABLE. What is NOT focusable is the tile ROOT (the tile's own CDO
+	//       reads is_focusable = FALSE) — that is why the tile is not a focus stop.
+	//
+	//   (b) ⭐ SObjectWidget::SupportsKeyboardFocus() returns
+	//       WidgetObject->NativeSupportsKeyboardFocus() (SObjectWidget.cpp:175-182),
+	//       which is `return bIsFocusable;` (UserWidget.cpp:2411-2414) — ASKED LIVE
+	//       ON EVERY CALL, never baked into the Slate widget at construction. So
+	//       UUserWidget::SetIsFocusable(true) (UserWidget.cpp:2421-2425) takes
+	//       effect on an ALREADY-CONSTRUCTED tile. ⛔ The 5.2 deprecation note on
+	//       bIsFocusable ("only set at construction and is not modifiable at
+	//       runtime", UserWidget.h:1030) is true of UButton — which bakes its flag
+	//       into SButton at RebuildWidget — and FALSE of UUserWidget. Do not
+	//       "correct" this back.
+	//
+	//   (c) SWidget::Paint draws the dashed FocusRectangle for any widget with
+	//       bCanSupportFocus && SupportsKeyboardFocus() (SWidget.cpp:1746-1751);
+	//       bCanSupportFocus defaults TRUE (SWidget.cpp:217) and SObjectWidget::
+	//       Construct never clears it; PLATFORM_UI_NEEDS_FOCUS_OUTLINES = 1 on
+	//       Windows (HAL/Platform.h:539-540). ⇒ focusing the TILE ROOT wears
+	//       Slate's own outline around the WHOLE TILE — "the tile as the focus
+	//       unit" literally, and an outline on the tile border rather than one
+	//       buried inside card art.
+	//
+	//  ⇒ ROUTE (0)-A, SLATE-NATIVE: the tile is made focusable IN CODE at focus
+	//  time and focused with EFocusCause::Navigation. ⛔ NO IA_DeckAdd /
+	//  IA_DeckRemove, ⛔ no new .uasset, ⛔ not even the WBP_DeckCardTile focusable
+	//  flag edit the row permitted — this diff is C++ only.
+	//
+	//  ⛔ WHY NOT THE IA_ ROUTE, on a measured fact and not on taste:
+	//  handoffs/TASK-1274-programmer.md §7 measured that BP_MenuGameMode's
+	//  FInputModeUIOnly calls GameViewportClient::SetIgnoreInput(true), and
+	//  UGameViewportClient::InputKey returns early on IgnoreInput() — so on
+	//  L_MainMenu (which hosts this builder) a REAL key press never reaches
+	//  Enhanced Input at all. An IA_DeckAdd would have been reachable ONLY by the
+	//  verifier's inject_input_action: inert in Jonathan's hands, which is the
+	//  opposite of what he asked for. Slate's key route (SObjectWidget::OnKeyDown,
+	//  SObjectWidget.cpp:231-239) is unaffected by SetIgnoreInput and is the path
+	//  his own arrow keys already ran on this screen (his words, TASK-1274 status).
+	//
+	//  THE KEY TABLE — ⛔ no letter and ⛔ no digit anywhere, so KBD-§4's remap
+	//  table is NEVER entered (it tables all 26 letters and deliberately excludes
+	//  digits/punctuation/Enter/Escape BY DESIGN, CONVENTIONS:2519-2522); ⛔ Tab
+	//  untouched; every consumed key fires ONLY while a card tile actually holds
+	//  Slate focus, so nothing is consumed anywhere else on this screen:
+	//    move focus  Left/Right/Up/Down · Gamepad_DPad_* · Gamepad_LeftStick_*
+	//    enter grid  Down (the deck bar is a HORIZONTAL row — Down does nothing
+	//                there today, so nothing is taken away from DECK-§3's bar)
+	//    Accept      Enter · Virtual_Accept · Gamepad_FaceButton_Bottom → AddCopy
+	//    Remove      Delete · Gamepad_FaceButton_Left  (X)       → RemoveCopy
+	//    EXIT GRID   Gamepad_FaceButton_Right (B) · Virtual_Back
+	//                                                          → ExitCardGridFocus
+	//                ⛔ GAMEPAD-ONLY — Escape is NOT bound (AS-§6 A-2, below)
+	//
+	//  ⭐ 2026-09-17 AMENDMENT — 🧑 HIS RULING, ON QA's WARN-1/WARN-2
+	//  (qa/TASK-1290-report.md). The first cut bound REMOVE to
+	//  Gamepad_FaceButton_Right, which is Slate's universal BACK gesture
+	//  (EKeys::Virtual_Back = FPlatformInput::GetGamepadBackKey(),
+	//  InputCoreTypes.cpp:424 → GenericPlatformInput.h:32-35; mapped to
+	//  EUINavigationAction::Back at NavigationConfig.cpp:38) — so gamepad B
+	//  deleted a card, auto-saved, and there was no way out of the grid at all.
+	//  His words: "B stops being destructive and starts meaning Back, which is
+	//  what every other screen already does."
+	//    · Remove's gamepad half moved B → X. ⛔ The B→Remove binding is DELETED.
+	//      X is measured to carry no prior meaning: Slate's whole default table is
+	//      NavigationConfig.cpp:19-38 (only Accept and Back) and
+	//      Gamepad_FaceButton_Left does not appear in it; a project census returns
+	//      0 outside this file, on an instrument proven able to see B.
+	//    · EXIT THE GRID is NEW behaviour, and it is a NESTED Back, not a second
+	//      meaning: the grid consumes Back IFF a tile really holds focus AND the
+	//      exit changed state (ExitCardGridFocus's bool) — otherwise the key falls
+	//      straight through. ⇒ once leaves the GRID, again leaves the BUILDER.
+	//    · ⚠️ Tab is an INHERITED exit, ⛔ NEVER a bound key — the Tab key literal
+	//      appears zero times in this feature, deliberately (the census greps for
+	//      it). Tab falls through to Super and Slate's own `Next` navigation walks
+	//      the focus off the tile. Documented behaviour, ⛔ never implemented.
+	//
+	//  ⛔⛔ THE EXIT IS GAMEPAD-ONLY — Escape was DROPPED under AS-§6 A-2, and
+	//  that is the current, settled state of this class, not an omission. A-2
+	//  (CONVENTIONS ~:789, CLOSED 2026-08-04, cited as project-wide at
+	//  DeckSlotEntryWidget.h:60 and at CONVENTIONS:7519/:8316/:8595) says a Slate
+	//  FReply::Handled() on EKeys::Escape is an automatic QA FAIL. This row's
+	//  first cut bound Escape; the collision was FLAGGED rather than quietly
+	//  deviated from (SC-§97 forbids an agent substituting 🧑 his key choice), and
+	//  TASK-1286 amendment 2 (2026-09-17) dropped Escape BEFORE THIS EVER
+	//  COMPILED. ⛔ There is no FReply::Handled() on EKeys::Escape anywhere in
+	//  this class, and none may be added.
+	//  ⚠️ Whether A-2 also binds a MAIN-MENU deck builder is a genuine SCOPE
+	//  question, and it is 🧑 HIS — a reviewer's agreement cannot authorize it
+	//  (CONVENTIONS:2679 cl. 13). Boarded as TASK-1300; it blocks nothing. Until
+	//  he answers, A-2 is read at its WIDEST: nothing absorbs Escape, anywhere.
+	//  (The evidence that will be put to him, measured here: on THIS screen
+	//  Escape is handled by nothing today — no C++ NativeOnKeyDown, no BP
+	//  OnKeyDown in WBP_DeckBuilder / WBP_DeckCardTile / WBP_MainMenu /
+	//  BP_MenuGameMode, and A-2's protected cancel routes (placement, targeting,
+	//  group-pick) live in ASiegePlayerController gated on in-match state, so
+	//  none can be live on L_MainMenu. ⛔ That is evidence for HIS ruling, not a
+	//  ruling.) A-2 names Escape ONLY, so the gamepad half above — his headline
+	//  "B stops being destructive and starts meaning Back" — ships in full.
+	//  ⚠️ Consequence, so no reader files it as a bug: the keyboard has NO exit
+	//  key out of the grid. Tab's inherited Slate `Next` (above) and a mouse
+	//  click remain, exactly as before this feature existed.
+	//
+	//  ⛔ Accept and Remove call AddCopy / RemoveCopy — the SAME entry points the
+	//  "+" / "−" buttons call — so OnDeckSlotCountChanged and the DECK-§4 auto-save
+	//  funnel run unchanged. The "+" / "−" button bodies are NOT touched.
+
+	/**
+	 *  Grid-order index of the focused card within GetCollectionCardIDs(), or
+	 *  INDEX_NONE when the card grid is not focused. Model state only — it takes
+	 *  part in no deck mutation, no legality gate and no persistence.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Deck")
+	int32 GetFocusedCardIndex() const;
+
+	/** The focused card's DT_Cards row name, or NAME_None when nothing is focused (or the index no longer resolves). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Deck")
+	FName GetFocusedCardID() const;
+
+	/**
+	 *  Focus the card at CardIndex in grid order (GetCollectionCardIDs() order,
+	 *  which the WBP builds the WrapBox from). Any index outside [0, count) —
+	 *  INDEX_NONE included — CLEARS the focus. Best-effort on the visual side:
+	 *  when a live WBP_DeckCardTile exists for that card it is made focusable and
+	 *  given Slate focus with EFocusCause::Navigation (the dashed outline); with
+	 *  no live grid (an offline automation widget) the model still moves, which is
+	 *  exactly what the test asserts.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Deck")
+	void SetFocusedCardIndex(int32 CardIndex);
+
+	/**
+	 *  Step the card focus one tile in Direction, wrapping at BOTH ends (a ring
+	 *  over the flat grid order). From "nothing focused" it ARMS: Down/Right on
+	 *  the first tile, Up/Left on the last. Up/Down step by the live row width
+	 *  (ResolveGridColumns); when that cannot be measured — a WrapBox that has not
+	 *  painted yet, or no grid at all — the width is 1 and Up/Down behave as
+	 *  Left/Right, which is the honest degradation, never a guessed column count.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Deck")
+	void MoveCardFocus(EUINavigation Direction);
+
+	/**
+	 *  Accept on the focused tile = EXACTLY what left-clicking its "+" does:
+	 *  AddCopy(GetFocusedCardID()). Silent no-op when nothing is focused. Every
+	 *  AddCopy rule (the unknown-row refusal, OnDeckSlotCountChanged, the DECK-§4
+	 *  auto-save) is inherited, never re-implemented.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Deck")
+	void AcceptFocusedCard();
+
+	/**
+	 *  Remove on the focused tile = EXACTLY what left-clicking its "−" does:
+	 *  RemoveCopy(GetFocusedCardID()). Silent no-op when nothing is focused, and
+	 *  RemoveCopy's own remove-at-0 no-op (which saves nothing) is inherited.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Deck")
+	void RemoveFocusedCard();
+
+	/**
+	 *  LEAVE THE CARD GRID (🧑 his 2026-09-17 ruling — the gesture behind gamepad
+	 *  B / Virtual_Back. ⛔ NOT Escape: dropped under AS-§6 A-2, see the key-table
+	 *  block above). ⭐ THE ONE ENTRY POINT: the key handler and the
+	 *  automation suite both call THIS — there is deliberately no "test variant",
+	 *  the same principle that makes Accept/Remove call AddCopy/RemoveCopy.
+	 *
+	 *  Returns TRUE iff it actually left a focused grid, which is what makes the
+	 *  back-precedence ruling enforceable: NativeOnKeyDown returns
+	 *  FReply::Handled() ONLY on a true, so a Back press that changed no state
+	 *  falls through untouched to Slate and to whatever the screen already does.
+	 *
+	 *  After a TRUE, all four of the spec's exit conditions hold:
+	 *    (i)   GetFocusedCardIndex() == INDEX_NONE
+	 *    (ii)  no card tile holds Slate focus (HasAnyUserFocus /
+	 *          HasFocusedDescendants false for every tile CollectCardTiles returns)
+	 *    (iii) IsCardGridFocusLive() == false
+	 *    (iv)  the Slate focus LANDS somewhere named — the deck-bar entry's own
+	 *          SlotButton for EditingDeckIndex, else the first bar entry's, else
+	 *          the builder's own root widget. ⛔ Focus is never left nowhere.
+	 *  (i) is the suite's assertion; (ii) and (iii) close at the verify leg — see
+	 *  the SC-§39 note on the exit test, which is why (iii) is NOT asserted there.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Deck")
+	bool ExitCardGridFocus();
+
+	/**
+	 *  THE PURE RING STEP (the whole of MoveCardFocus's arithmetic, factored out
+	 *  so it is assertable with no world, no widget tree and no Slate —
+	 *  SC-§104 STATE). Returns the new flat grid index.
+	 *
+	 *  CardCount <= 0                  ⇒ INDEX_NONE (an empty collection has no focus)
+	 *  CurrentIndex outside [0,Count)  ⇒ ARM: Count-1 for Up/Left, 0 otherwise
+	 *  Left/Right                      ⇒ ±1,             wrapped modulo CardCount
+	 *  Up/Down                         ⇒ ∓/±ColumnsPerRow, wrapped modulo CardCount
+	 *  any other EUINavigation         ⇒ CurrentIndex unchanged
+	 *
+	 *  ColumnsPerRow is clamped into [1, CardCount] — a caller that cannot measure
+	 *  the live row width passes 1 and gets a plain 1-D ring.
+	 */
+	static int32 StepCardFocusIndex(int32 CurrentIndex, int32 CardCount, int32 ColumnsPerRow, EUINavigation Direction);
 
 	/**
 	 *  Seed the working deck from the curated DeckCount default column of
@@ -393,6 +613,31 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Deck")
 	TSoftObjectPtr<UDataTable> CardTableAsset;
 
+	/**
+	 *  TASK-1286: the card-tile class the WBP builds the browser grid from —
+	 *  /Game/UI/WBP_DeckCardTile (measured: WBP_DeckBuilder's graph loops
+	 *  GetCollectionCardIDs → CreateWidget(WBP_DeckCardTile) → AddChildToWrapBox).
+	 *  Used ONLY to recognise a tile while walking the live panel tree, so the
+	 *  keyboard focus can land on one. Soft + EditDefaultsOnly, resolved null-safe
+	 *  at use time (the CardTableAsset precedent): an unresolvable class costs one
+	 *  Warning and the VISUAL half only — the focus model, Accept and Remove keep
+	 *  working. ⛔ Never a crash, ⛔ never a hard reference into Content from code.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Siegebound|Deck")
+	TSoftClassPtr<UUserWidget> CardTileClass;
+
+	/**
+	 *  TASK-1286: THE ONE KEY DOOR for the card grid. Reached through Slate
+	 *  (SObjectWidget::OnKeyDown → NativeOnKeyDown, SObjectWidget.cpp:231-239) as
+	 *  the key event bubbles from the focused tile up through this widget — a path
+	 *  FInputModeUIOnly's SetIgnoreInput does NOT close, unlike Enhanced Input.
+	 *  Handles ONLY the key table above, and only in the states documented there;
+	 *  everything else falls through to Super so the WBP's own OnKeyDown and
+	 *  Slate's default navigation (the deck bar's existing Left/Right/Enter,
+	 *  DECK-§3) keep today's behaviour byte-for-byte.
+	 */
+	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
+
 private:
 
 	/** The deck currently being edited (in-memory model; every content mutation persists to the editing slot via PersistWorkingDeck — DECK-§4). */
@@ -450,8 +695,77 @@ private:
 	UPROPERTY(Transient)
 	FName SelectedDetailCardID;
 
+	/**
+	 *  TASK-1286: the keyboard/gamepad card focus — an index into
+	 *  GetCollectionCardIDs(), INDEX_NONE for "the grid is not focused". Focus
+	 *  state ONLY: like SelectedDetailCardID it never participates in the deck
+	 *  model, legality or persistence, and it is Transient because a focus ring
+	 *  is a per-session cursor, never something a save carries.
+	 */
+	UPROPERTY(Transient)
+	int32 FocusedCardIndex = INDEX_NONE;
+
+	/** True after the unresolvable-CardTileClass warning was logged (once-per-widget spam guard, the bWarnedMissingTable shape). */
+	mutable bool bWarnedMissingTileClass = false;
+
 	/** Index of CardID in WorkingDeck.Cards, or INDEX_NONE. */
 	int32 IndexOfCard(FName CardID) const;
+
+	// --- TASK-1286 card-focus internals (all null-safe, all no-ops without a live grid) ---
+
+	/**
+	 *  Every live WBP_DeckCardTile under this widget, in panel-tree order (which
+	 *  IS grid order: the WBP adds them to the WrapBox in GetCollectionCardIDs()
+	 *  order). Walks the LIVE panel hierarchy from GetRootWidget() rather than
+	 *  this->WidgetTree, deliberately: the tiles are created by the WBP's graph at
+	 *  runtime, so they are children of a panel but are NOT entries in any
+	 *  design-time widget tree. Descends into a nested UUserWidget's own root, and
+	 *  stops AT a tile (a tile's insides are never focus stops of ours). Empty —
+	 *  never an error — when the grid does not exist (an offline test widget).
+	 */
+	void CollectCardTiles(TArray<UUserWidget*>& OutTiles) const;
+
+	/**
+	 *  The live tile showing CardID. Matches on the tile's own CardID variable
+	 *  (read by reflection, the one fact the tile owns about itself) so the
+	 *  outline can never land on a different card than the one Accept would add;
+	 *  falls back to FallbackIndex ONLY when no tile exposes a readable CardID.
+	 *  nullptr when there is no grid.
+	 */
+	UUserWidget* FindTileForCard(FName CardID, int32 FallbackIndex) const;
+
+	/** Make the tile at CardIndex focusable and give it Slate focus with EFocusCause::Navigation (the dashed outline). False when there is nothing to focus. */
+	bool FocusCardTile(int32 CardIndex);
+
+	/** The live grid's row width, measured from the painted tiles' absolute Y. 1 when unmeasurable — ⛔ never a guessed column count. */
+	int32 ResolveGridColumns() const;
+
+	/**
+	 *  TASK-1286 (2026-09-17 amendment): where the Slate focus goes when the grid
+	 *  is left — spec block (D)(iv)'s "somewhere NAMED", resolved in one place so
+	 *  the preference order is readable rather than scattered:
+	 *    1. the deck-bar entry for EditingDeckIndex — its own SlotButton, found by
+	 *       walking the entry's root (⛔ the member is protected and that class is
+	 *       DECK-§5-pinned, so nothing there is touched);
+	 *    2. the first non-null deck-bar entry's SlotButton;
+	 *    3. this widget's own root widget — the declared fallback.
+	 *  Null only when this widget has no root at all, i.e. an offline automation
+	 *  widget, which the caller has already handled.
+	 */
+	class UWidget* ResolveGridExitFocusTarget() const;
+
+	/**
+	 *  True when the card grid really holds the focus right now — the model index
+	 *  is set AND (when Slate is up and a live tile exists) that tile has the user
+	 *  focus or a focused descendant. This is the guard that stops Accept/Remove
+	 *  and the arrow keys from stealing a meaning while the focus is on the deck
+	 *  bar, the Play button or Exit. With no Slate and no grid (automation) the
+	 *  model IS the truth.
+	 */
+	bool IsCardGridFocusLive() const;
+
+	/** The key table's direction mapping — arrows / D-pad / left stick ONLY. EUINavigation::Invalid for every other key (⛔ no letter, ⛔ no digit). */
+	static EUINavigation NavigationFromKey(const FKey& Key);
 
 	// --- GetCardDescription composers (TASK-268; all row-driven, never per card) ---
 

@@ -2,11 +2,17 @@
 
 #include "Siegebound/DeckBuilderWidget.h"
 
+#include "Components/Button.h"            // TASK-1286 (2026-09-17 amendment): UButton — the deck-bar entry's own SlotButton is where the grid exit puts the focus back
 #include "Components/HorizontalBox.h"     // TASK-671: the DeckBar container (DECK-§7)
 #include "Components/HorizontalBoxSlot.h" // TASK-671: per-entry slot rules on the bar row
+#include "Components/PanelWidget.h"       // TASK-1286: GetChildrenCount/GetChildAt — the live panel walk that finds the card tiles
+#include "Components/ScrollBox.h"         // TASK-1286: ScrollWidgetIntoView — DECK-§6, a focused tile below the fold must scroll into view
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h" // TASK-602: UGameInstance::GetSubsystem — resolve the ACC-§4 account seam at call time
+#include "Engine/LocalPlayer.h"  // TASK-1286: GetControllerId / GetSlateOperations — the TASK-1274 focus idiom, verbatim
 #include "Engine/Texture2D.h"
+#include "Framework/Application/SlateApplication.h" // TASK-1286: SetUserFocus(EFocusCause::Navigation) — the ONLY cause that paints a focus rectangle
+#include "GameFramework/PlayerController.h"         // TASK-1286: GetOwningPlayer()->GetLocalPlayer()
 #include "GitClaudeUnrealTest.h"
 #include "Kismet/GameplayStatics.h"
 #include "Siegebound/CardRow.h"
@@ -16,6 +22,7 @@
 #include "Siegebound/SiegeDeckSaveGame.h"
 #include "Siegebound/SpellLibrary.h"
 #include "Siegebound/SummonedUnit.h" // TASK-379: GetDefault<ASummonedUnit>() needs the COMPLETE type for the two Sorcerer boost getters
+#include "UObject/UnrealType.h" // TASK-1286: CastField<FNameProperty> — reads the tile's own CardID variable (the HeroCharacter.cpp:48 precedent)
 
 // ---------------------------------------------------------------------------
 // TASK-602 (ACC-§4 seam law): the deck save slot resolves AT CALL TIME through
@@ -521,6 +528,14 @@ UDeckBuilderWidget::UDeckBuilderWidget(const FObjectInitializer& ObjectInitializ
 	// card stat (MaxCopies/Cost/DisplayName/DeckCount) is read from rows here, NEVER
 	// hardcoded (§3.0) and never read in UMG.
 	CardTableAsset = TSoftObjectPtr<UDataTable>(FSoftObjectPath(TEXT("/Game/Data/DT_Cards.DT_Cards")));
+
+	// TASK-1286: the grid's tile class, soft and resolved null-safe at use time
+	// (same shape as CardTableAsset above — ⛔ no hard reference from code into
+	// Content). MEASURED, not assumed: WBP_DeckBuilder's graph loops
+	// GetCollectionCardIDs → CreateWidget(/Game/UI/WBP_DeckCardTile) →
+	// AddChildToWrapBox, so this is the class that walk has to recognise. The "_C"
+	// suffix is the generated class inside the WidgetBlueprint package.
+	CardTileClass = TSoftClassPtr<UUserWidget>(FSoftObjectPath(TEXT("/Game/UI/WBP_DeckCardTile.WBP_DeckCardTile_C")));
 }
 
 // ---------------------------------------------------------------------------
@@ -851,6 +866,696 @@ void UDeckBuilderWidget::RemoveCopy(FName CardID)
 	// DECK-§4 auto-save: a SUCCESSFUL remove persists immediately (the
 	// remove-at-0 no-op returned before any broadcast and saves nothing).
 	PersistWorkingDeck();
+}
+
+// ---------------------------------------------------------------------------
+// TASK-1286 — keyboard / gamepad card actions (ROUTE (0)-A, SLATE-NATIVE)
+//
+// The route and the measurement that chose it are written out in full at the
+// declarations in DeckBuilderWidget.h — ⛔ read them there before changing
+// anything here; the load-bearing one is that
+// SObjectWidget::SupportsKeyboardFocus() asks the UUserWidget LIVE on every
+// call, which is why SetIsFocusable(true) works on an already-built tile and
+// why this feature needs no .uasset edit and no IA_ asset.
+// ---------------------------------------------------------------------------
+
+namespace SiegeDeckCardFocus
+{
+	/** Guards the recursive panel walk against a pathological tree. A real builder is ~4 deep. */
+	static constexpr int32 MaxTreeDepth = 32;
+
+	/**
+	 *  The tile's own CardID, read by reflection off the WBP variable of that name
+	 *  (measured present on WBP_DeckCardTile_C: the tile's graph takes InCardID and
+	 *  feeds GetCardDisplayName / GetCardCost / GetCardArtTexture from it).
+	 *  NAME_None when the variable is absent or of an unexpected type — the caller
+	 *  then falls back to grid position rather than guessing.
+	 */
+	static FName ReadTileCardID(const UUserWidget* Tile)
+	{
+		if (Tile == nullptr)
+		{
+			return NAME_None;
+		}
+
+		static const FName CardIDPropertyName(TEXT("CardID"));
+		if (const FProperty* Prop = Tile->GetClass()->FindPropertyByName(CardIDPropertyName))
+		{
+			if (const FNameProperty* AsName = CastField<const FNameProperty>(Prop))
+			{
+				return AsName->GetPropertyValue_InContainer(Tile);
+			}
+			if (const FStrProperty* AsString = CastField<const FStrProperty>(Prop))
+			{
+				const FString Value = AsString->GetPropertyValue_InContainer(Tile);
+				return Value.IsEmpty() ? NAME_None : FName(*Value);
+			}
+		}
+
+		return NAME_None;
+	}
+
+	/** Depth-first walk in panel-child order; stops AT a tile and never descends into one. */
+	static void GatherTiles(UWidget* Widget, const UClass* TileClass, TArray<UUserWidget*>& OutTiles, int32 Depth)
+	{
+		if (Widget == nullptr || Depth > MaxTreeDepth)
+		{
+			return;
+		}
+
+		if (UUserWidget* AsUser = Cast<UUserWidget>(Widget))
+		{
+			if (TileClass != nullptr && AsUser->IsA(TileClass))
+			{
+				OutTiles.Add(AsUser);
+				return;
+			}
+
+			// A nested UUserWidget that is not a tile (the DECK-§5 deck-bar entries,
+			// say) is not a UPanelWidget — its children hang off its own root.
+			GatherTiles(AsUser->GetRootWidget(), TileClass, OutTiles, Depth + 1);
+			return;
+		}
+
+		if (UPanelWidget* AsPanel = Cast<UPanelWidget>(Widget))
+		{
+			const int32 NumChildren = AsPanel->GetChildrenCount();
+			for (int32 ChildIndex = 0; ChildIndex < NumChildren; ++ChildIndex)
+			{
+				GatherTiles(AsPanel->GetChildAt(ChildIndex), TileClass, OutTiles, Depth + 1);
+			}
+		}
+	}
+
+	/**
+	 *  TASK-1286 (2026-09-17 amendment): the first UButton in panel-child order
+	 *  under Widget, or null. Used to land the grid-exit focus on a deck-bar
+	 *  entry's own SlotButton.
+	 *
+	 *  ⛔ WHY A WALK AND NOT UDeckSlotEntryWidget::SlotButton: that member is
+	 *  `protected` (DeckSlotEntryWidget.h:120) and the entry's tree is
+	 *  code-authored (ConstructEntryTree: OutlineBorder (UBorder, the root) >
+	 *  SlotButton (UButton) > SlotLabelText). Reaching it by walking costs one
+	 *  UBorder hop and — decisively — touches NOTHING in that class, which
+	 *  DECK-§5 pins character-for-character and this row is forbidden to edit.
+	 */
+	static UButton* FindFirstButton(UWidget* Widget, int32 Depth)
+	{
+		if (Widget == nullptr || Depth > MaxTreeDepth)
+		{
+			return nullptr;
+		}
+
+		if (UButton* AsButton = Cast<UButton>(Widget))
+		{
+			return AsButton;
+		}
+
+		if (UUserWidget* AsUser = Cast<UUserWidget>(Widget))
+		{
+			return FindFirstButton(AsUser->GetRootWidget(), Depth + 1);
+		}
+
+		if (UPanelWidget* AsPanel = Cast<UPanelWidget>(Widget))
+		{
+			const int32 NumChildren = AsPanel->GetChildrenCount();
+			for (int32 ChildIndex = 0; ChildIndex < NumChildren; ++ChildIndex)
+			{
+				if (UButton* Found = FindFirstButton(AsPanel->GetChildAt(ChildIndex), Depth + 1))
+				{
+					return Found;
+				}
+			}
+		}
+
+		return nullptr;
+	}
+}
+
+void UDeckBuilderWidget::CollectCardTiles(TArray<UUserWidget*>& OutTiles) const
+{
+	OutTiles.Reset();
+
+	// Soft class, resolved at use time. An unresolvable class is NOT an error: it
+	// costs the visual half only (one Warning, once per widget), and the focus
+	// model / Accept / Remove keep working — which is also exactly the state an
+	// offline automation widget runs in.
+	UClass* TileClass = CardTileClass.LoadSynchronous();
+	if (TileClass == nullptr)
+	{
+		if (!bWarnedMissingTileClass)
+		{
+			bWarnedMissingTileClass = true;
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("UDeckBuilderWidget: card-tile class '%s' did not resolve — keyboard card focus keeps working but draws no outline."),
+				*CardTileClass.ToString());
+		}
+		return;
+	}
+
+	SiegeDeckCardFocus::GatherTiles(GetRootWidget(), TileClass, OutTiles, 0);
+}
+
+UUserWidget* UDeckBuilderWidget::FindTileForCard(FName CardID, int32 FallbackIndex) const
+{
+	TArray<UUserWidget*> Tiles;
+	CollectCardTiles(Tiles);
+	if (Tiles.Num() == 0)
+	{
+		return nullptr;
+	}
+
+	// Match on the tile's OWN CardID first. This is deliberately not an index
+	// zip: if the WBP ever filters or reorders the grid, a zip would light the
+	// wrong tile while Accept added the right card — the confusable-signal defect
+	// class DECK-§3 forbids. The index is only the last resort.
+	if (!CardID.IsNone())
+	{
+		for (UUserWidget* Tile : Tiles)
+		{
+			if (SiegeDeckCardFocus::ReadTileCardID(Tile) == CardID)
+			{
+				return Tile;
+			}
+		}
+	}
+
+	return Tiles.IsValidIndex(FallbackIndex) ? Tiles[FallbackIndex] : nullptr;
+}
+
+bool UDeckBuilderWidget::FocusCardTile(int32 CardIndex)
+{
+	if (!FSlateApplication::IsInitialized())
+	{
+		return false; // offline automation lane: the model is the whole feature there
+	}
+
+	const TArray<FName> Cards = GetCollectionCardIDs();
+	UUserWidget* Tile = FindTileForCard(Cards.IsValidIndex(CardIndex) ? Cards[CardIndex] : NAME_None, CardIndex);
+	if (Tile == nullptr)
+	{
+		return false;
+	}
+
+	// ⭐ THE ONE LINE THE WHOLE ROUTE RESTS ON, and the reason no .uasset is
+	// edited: SObjectWidget::SupportsKeyboardFocus() (SObjectWidget.cpp:175-182)
+	// returns WidgetObject->NativeSupportsKeyboardFocus(), which is
+	// `return bIsFocusable;` (UserWidget.cpp:2411-2414) — read LIVE, never cached
+	// into the Slate widget. So this DOES make an already-constructed tile
+	// focusable. ⛔ UserWidget.h:1030's "only set at construction and is not
+	// modifiable at runtime" describes UButton (which bakes its flag into SButton
+	// at RebuildWidget), NOT UUserWidget. Do not "fix" this into an asset edit.
+	if (!Tile->IsFocusable())
+	{
+		Tile->SetIsFocusable(true);
+	}
+
+	// DECK-§6 — "at ANY window size, every card tile is REACHABLE: the grid either
+	// fits or scrolls." UScrollBox defaults ScrollWhenFocusChanges to NoScroll
+	// (ScrollBox.cpp:31), so SScrollBox::OnFocusChanging (SScrollBox.cpp:1443-1452)
+	// will NOT bring the focused tile into view on its own — a tile below the fold
+	// would wear an outline nobody can see, which is exactly the present-but-
+	// unusable defect class DECK-§6 exists to forbid. So ask the nearest UScrollBox
+	// ancestor explicitly. ⛔ Deliberately NOT SetScrollWhenFocusChanges: that would
+	// rewrite a WBP-owned widget's configuration for every other focus change too.
+	for (UPanelWidget* Ancestor = Tile->GetParent(); Ancestor != nullptr; Ancestor = Ancestor->GetParent())
+	{
+		if (UScrollBox* GridScrollBox = Cast<UScrollBox>(Ancestor))
+		{
+			GridScrollBox->ScrollWidgetIntoView(Tile, /*AnimateScroll*/ true);
+			break;
+		}
+	}
+
+	const TSharedPtr<SWidget> SlateTile = Tile->GetCachedWidget();
+	APlayerController* PC = GetOwningPlayer();
+	ULocalPlayer* LocalPlayer = PC ? PC->GetLocalPlayer() : nullptr;
+	if (!SlateTile.IsValid() || LocalPlayer == nullptr)
+	{
+		return false;
+	}
+
+	// EFocusCause::Navigation, NOT UWidget::SetUserFocus's SetDirectly — the
+	// TASK-1274 idiom verbatim (handoffs/TASK-1274-programmer.md §4):
+	// FSlateApplication::SetUserFocus sets ShowFocus = (InCause == Navigation)
+	// (SlateApplication.cpp:3099), and SWidget::Paint only draws the focus brush
+	// when ShowUserFocus is true (SWidget.cpp:1746-1751). SetDirectly paints
+	// nothing, which would ship a focus ring nobody can see.
+	const int32 UserIndex = FSlateApplication::Get().GetUserIndexForController(LocalPlayer->GetControllerId());
+	if (FSlateApplication::Get().SetUserFocus(UserIndex, SlateTile, EFocusCause::Navigation))
+	{
+		return true;
+	}
+
+	// Refused this frame (the usual cause: the widget is not on a live focus path
+	// yet). Defer through the local player's Slate operations — the same fallback
+	// UWidget::SetUserFocus uses.
+	LocalPlayer->GetSlateOperations().SetUserFocus(SlateTile.ToSharedRef(), EFocusCause::Navigation);
+	return true;
+}
+
+int32 UDeckBuilderWidget::ResolveGridColumns() const
+{
+	TArray<UUserWidget*> Tiles;
+	CollectCardTiles(Tiles);
+	if (Tiles.Num() < 2)
+	{
+		return 1;
+	}
+
+	// Read the float components straight off the FVector2f the Slate accessors
+	// return — ⛔ deliberately NOT converted to FVector2D: FDeprecateVector2DResult
+	// derives from FVector2f AND offers an operator FVector2d, so an explicit
+	// FVector2D(...) construction is an ambiguity waiting to happen.
+	const FGeometry& FirstGeometry = Tiles[0]->GetCachedGeometry();
+	const float FirstHeight = FirstGeometry.GetAbsoluteSize().Y;
+	if (FirstHeight <= UE_KINDA_SMALL_NUMBER)
+	{
+		// Never painted (the frame the builder opens on, or a -nullrhi lane).
+		// ⛔ A guessed column count here would be an SC-§101 claim; 1 is the
+		// honest answer and degrades Up/Down to Left/Right.
+		return 1;
+	}
+
+	// Tiles on one WrapBox row share a top edge. Half a tile height is a
+	// generous tolerance that still cannot fold two rows together.
+	const float RowY = FirstGeometry.GetAbsolutePosition().Y;
+	const float Tolerance = FMath::Max(1.0f, FirstHeight * 0.5f);
+
+	int32 Columns = 0;
+	for (UUserWidget* Tile : Tiles)
+	{
+		const float TileY = Tile->GetCachedGeometry().GetAbsolutePosition().Y;
+		if (FMath::Abs(TileY - RowY) > Tolerance)
+		{
+			break;
+		}
+		++Columns;
+	}
+
+	return FMath::Max(1, Columns);
+}
+
+bool UDeckBuilderWidget::IsCardGridFocusLive() const
+{
+	if (FocusedCardIndex == INDEX_NONE)
+	{
+		return false;
+	}
+
+	if (!FSlateApplication::IsInitialized())
+	{
+		return true; // automation: there is no Slate focus to corroborate, so the model IS the truth
+	}
+
+	UUserWidget* Tile = FindTileForCard(GetFocusedCardID(), FocusedCardIndex);
+	if (Tile == nullptr)
+	{
+		// ⭐ TASK-1286, 2026-09-17 AMENDMENT — QA's WARN-3 (qa/TASK-1290-report.md)
+		// FOLDED, and the comment rewritten to say WHY rather than what.
+		//
+		// This used to `return true` on the reasoning "no live grid to corroborate
+		// against — an offline widget". That reasoning does not hold: Slate IS
+		// initialised here, because the check immediately above already claimed the
+		// offline lane. What is actually being described is a LIVE menu whose card
+		// grid did not build, or whose CardTileClass failed to resolve (one Warning,
+		// CollectCardTiles above).
+		//
+		// ⛔ WHY `false` MATTERS MORE NOW THAN IT DID: this predicate became the
+		// BACK-PRECEDENCE GUARD (NativeOnKeyDown below, spec block (C)). A wrong
+		// `true` no longer merely means "Delete removes a card with no outline on
+		// screen" — it means the grid EATS gamepad B in exactly the state
+		// where there is nothing on screen to go back FROM, so the player's Back
+		// press is swallowed by an invisible grid. The honest answer to "is a card
+		// tile holding Slate focus?" when no card tile exists is NO.
+		return false;
+	}
+
+	// The guard that keeps Accept/Remove and the arrows from taking a second
+	// meaning: once the player clicks or navigates away (the deck bar, Play,
+	// Exit), the focused tile no longer holds the focus and every key below
+	// falls straight through to Slate and to the WBP, unchanged.
+	return Tile->HasAnyUserFocus() || Tile->HasFocusedDescendants();
+}
+
+EUINavigation UDeckBuilderWidget::NavigationFromKey(const FKey& Key)
+{
+	// ⛔ NO LETTER and ⛔ NO DIGIT in this table — so KBD-§4's remap lane (which
+	// tables all 26 letters and deliberately excludes digits) is never entered,
+	// and USiegeKeyboardLayoutSubsystem has nothing to translate. ⛔ Tab absent.
+	if (Key == EKeys::Left || Key == EKeys::Gamepad_DPad_Left || Key == EKeys::Gamepad_LeftStick_Left)
+	{
+		return EUINavigation::Left;
+	}
+	if (Key == EKeys::Right || Key == EKeys::Gamepad_DPad_Right || Key == EKeys::Gamepad_LeftStick_Right)
+	{
+		return EUINavigation::Right;
+	}
+	if (Key == EKeys::Up || Key == EKeys::Gamepad_DPad_Up || Key == EKeys::Gamepad_LeftStick_Up)
+	{
+		return EUINavigation::Up;
+	}
+	if (Key == EKeys::Down || Key == EKeys::Gamepad_DPad_Down || Key == EKeys::Gamepad_LeftStick_Down)
+	{
+		return EUINavigation::Down;
+	}
+	return EUINavigation::Invalid;
+}
+
+int32 UDeckBuilderWidget::StepCardFocusIndex(int32 CurrentIndex, int32 CardCount, int32 ColumnsPerRow, EUINavigation Direction)
+{
+	if (CardCount <= 0)
+	{
+		return INDEX_NONE;
+	}
+
+	const int32 Columns = FMath::Clamp(ColumnsPerRow, 1, CardCount);
+
+	const bool bCardinal =
+		Direction == EUINavigation::Left || Direction == EUINavigation::Right ||
+		Direction == EUINavigation::Up   || Direction == EUINavigation::Down;
+
+	if (CurrentIndex < 0 || CurrentIndex >= CardCount)
+	{
+		if (!bCardinal)
+		{
+			// Nothing focused AND a direction this feature does not map ⇒ still
+			// nothing focused. ⛔ Arming here would let Next/Previous/Invalid open
+			// the grid by accident.
+			return INDEX_NONE;
+		}
+
+		// Arming from "nothing focused": walk INTO the grid from the side the key
+		// points at, so Up from below lands on the last tile rather than the first.
+		return (Direction == EUINavigation::Up || Direction == EUINavigation::Left) ? CardCount - 1 : 0;
+	}
+
+	int32 Delta = 0;
+	switch (Direction)
+	{
+	case EUINavigation::Left:  Delta = -1;       break;
+	case EUINavigation::Right: Delta = 1;        break;
+	case EUINavigation::Up:    Delta = -Columns; break;
+	case EUINavigation::Down:  Delta = Columns;  break;
+	default:                   return CurrentIndex; // Next/Previous/Invalid move nothing
+	}
+
+	// "Wrap at the ends" (the row's words) = a ring over the flat grid order.
+	// The double modulo keeps a negative step positive without a branch.
+	const int32 Stepped = CurrentIndex + Delta;
+	return ((Stepped % CardCount) + CardCount) % CardCount;
+}
+
+int32 UDeckBuilderWidget::GetFocusedCardIndex() const
+{
+	return FocusedCardIndex;
+}
+
+FName UDeckBuilderWidget::GetFocusedCardID() const
+{
+	const TArray<FName> Cards = GetCollectionCardIDs();
+	return Cards.IsValidIndex(FocusedCardIndex) ? Cards[FocusedCardIndex] : NAME_None;
+}
+
+void UDeckBuilderWidget::SetFocusedCardIndex(int32 CardIndex)
+{
+	const int32 CardCount = GetCollectionCardIDs().Num();
+	FocusedCardIndex = (CardIndex >= 0 && CardIndex < CardCount) ? CardIndex : INDEX_NONE;
+
+	if (FocusedCardIndex != INDEX_NONE)
+	{
+		FocusCardTile(FocusedCardIndex);
+	}
+}
+
+void UDeckBuilderWidget::MoveCardFocus(EUINavigation Direction)
+{
+	const int32 CardCount = GetCollectionCardIDs().Num();
+	SetFocusedCardIndex(StepCardFocusIndex(FocusedCardIndex, CardCount, ResolveGridColumns(), Direction));
+}
+
+void UDeckBuilderWidget::AcceptFocusedCard()
+{
+	const FName CardID = GetFocusedCardID();
+	if (CardID.IsNone())
+	{
+		return;
+	}
+
+	// THE SAME ENTRY POINT the "+" button calls — so the unknown-row refusal,
+	// OnDeckSlotCountChanged, OnDeckModelChanged and the DECK-§4 auto-save funnel
+	// all run unchanged. ⛔ Nothing about the add is re-implemented here.
+	AddCopy(CardID);
+
+	// Re-assert the outline: OnDeckModelChanged lets the WBP redraw, and a WBP
+	// that rebuilt the grid would otherwise drop Slate focus after a single
+	// Enter, leaving the player with an invisible cursor. No-op when the tile
+	// still holds focus, and no-op entirely without a live grid.
+	FocusCardTile(FocusedCardIndex);
+}
+
+void UDeckBuilderWidget::RemoveFocusedCard()
+{
+	const FName CardID = GetFocusedCardID();
+	if (CardID.IsNone())
+	{
+		return;
+	}
+
+	// THE SAME ENTRY POINT the "−" button calls, including its remove-at-0 no-op
+	// (which broadcasts nothing and saves nothing).
+	RemoveCopy(CardID);
+
+	FocusCardTile(FocusedCardIndex);
+}
+
+UWidget* UDeckBuilderWidget::ResolveGridExitFocusTarget() const
+{
+	// (D)(iv) PREFERRED — the deck bar. DeckBarEntries is this class's OWN member
+	// (DeckBuilderWidget.h:610, populated in NativeConstruct from the WBP-authored
+	// DeckBar container), so the bar is reachable here with NO tree walk and no
+	// knowledge of the WBP's layout: the entry for the deck currently being edited
+	// if there is one, otherwise the first entry on the bar.
+	const UDeckSlotEntryWidget* Entry = nullptr;
+	if (DeckBarEntries.IsValidIndex(EditingDeckIndex))
+	{
+		Entry = DeckBarEntries[EditingDeckIndex];
+	}
+	if (Entry == nullptr)
+	{
+		for (const TObjectPtr<UDeckSlotEntryWidget>& Candidate : DeckBarEntries)
+		{
+			if (Candidate != nullptr)
+			{
+				Entry = Candidate;
+				break;
+			}
+		}
+	}
+
+	if (Entry != nullptr)
+	{
+		// ⭐ Land on the entry's own SlotButton — the widget Slate's default
+		// navigation ALREADY stops on (it is a UButton, and UButton's CDO reads
+		// IsFocusable = true), and the widget SButton::OnKeyDown reads Accept from.
+		// ⇒ after an exit, Left/Right still walk the bar and Enter on a slot still
+		// reaches SelectDeckForEdit, BYTE-IDENTICALLY to before this row existed.
+		//
+		// ⛔ DELIBERATELY NOT the entry ROOT: focusing that would need
+		// SetIsFocusable(true) on a DECK-§5 widget (adding a focus stop that class
+		// never had) AND would park the focus on a widget SButton never sees,
+		// silently killing Enter-to-edit on the deck bar. The exit must not cost a
+		// shipped gesture.
+		// GetRootWidget() is const and hands back a non-const UWidget* (UserWidget.h:1420),
+		// so the walk needs no const_cast to run from this const method.
+		if (UButton* BarButton = SiegeDeckCardFocus::FindFirstButton(Entry->GetRootWidget(), 0))
+		{
+			return BarButton;
+		}
+	}
+
+	// (D)(iv) DECLARED FALLBACK — the builder's own root widget. ⛔ Never null when
+	// we got here from a live grid (a tile resolved, so a root exists), which is
+	// what makes "focus left nowhere" unreachable rather than merely unlikely.
+	return GetRootWidget();
+}
+
+bool UDeckBuilderWidget::ExitCardGridFocus()
+{
+	// ⛔ THE (C) RULING, AT ITS ONE ENFORCEMENT POINT: HANDLED-ONLY-IF-IT-ACTED.
+	// With nothing focused there is no grid to leave, so this changes no state and
+	// says so — and NativeOnKeyDown turns that `false` into FReply::Unhandled(),
+	// which is how a Back press aimed at the SCREEN falls through untouched.
+	if (FocusedCardIndex == INDEX_NONE)
+	{
+		return false;
+	}
+
+	// (D)(i) the MODEL index clears FIRST — before any Slate focus move — so that
+	// IsCardGridFocusLive() is already false for anything the focus change below
+	// might re-enter. ⛔ Written directly rather than through SetFocusedCardIndex:
+	// that mutator calls FocusCardTile on a valid index, and INDEX_NONE would make
+	// it a no-op that leaves Slate focus sitting on the tile.
+	FocusedCardIndex = INDEX_NONE;
+
+	if (!FSlateApplication::IsInitialized())
+	{
+		// Offline automation lane: there is no Slate focus to move, and the model
+		// IS the whole feature there. (D)(ii)/(iii) are vacuously true and are NOT
+		// asserted in the suite — see the SC-§39 note on the exit test.
+		return true;
+	}
+
+	// (D)(ii)+(iv) — focus must LAND SOMEWHERE NAMED, or the player's next arrow
+	// press goes nowhere and he is stranded in a NEW way rather than the old one.
+	// Moving the Slate focus off the tile is also what makes (ii) true: a tile that
+	// no longer holds focus reports false from both HasAnyUserFocus() and
+	// HasFocusedDescendants().
+	UWidget* Target = ResolveGridExitFocusTarget();
+	// ⛔ Written as a statement rather than a ternary on purpose: GetCachedWidget()
+	// returns TSharedPtr<SWidget> (Widget.h:857) and `cond ? TSharedPtr : nullptr`
+	// leans on an implicit conversion to find a common type. This form has none.
+	TSharedPtr<SWidget> SlateTarget;
+	if (Target != nullptr)
+	{
+		SlateTarget = Target->GetCachedWidget();
+	}
+	APlayerController* PC = GetOwningPlayer();
+	ULocalPlayer* LocalPlayer = PC ? PC->GetLocalPlayer() : nullptr;
+	if (!SlateTarget.IsValid() || LocalPlayer == nullptr)
+	{
+		// The model half is done either way — the grid is NOT live any more, so no
+		// further key is consumed by it. Logged because a menu that reaches here has
+		// a tree problem worth seeing, ⛔ but nothing in the acceptance reads a log.
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("UDeckBuilderWidget::ExitCardGridFocus: card focus cleared, but no Slate target was available to receive it."));
+		return true;
+	}
+
+	// The TASK-1274 idiom, same as FocusCardTile above: EFocusCause::Navigation is
+	// the ONLY cause that paints a focus rectangle (SlateApplication.cpp:3099 sets
+	// ShowFocus = (InCause == Navigation)), so the player can SEE where the focus
+	// landed instead of guessing. ⛔ FocusCardTile is deliberately not refactored
+	// into a shared helper here: it is code TASK-1290 already passed and spec
+	// block (H) does not re-open it.
+	const int32 UserIndex = FSlateApplication::Get().GetUserIndexForController(LocalPlayer->GetControllerId());
+	if (!FSlateApplication::Get().SetUserFocus(UserIndex, SlateTarget, EFocusCause::Navigation))
+	{
+		LocalPlayer->GetSlateOperations().SetUserFocus(SlateTarget.ToSharedRef(), EFocusCause::Navigation);
+	}
+
+	UE_LOG(LogGitClaudeUnrealTest, Verbose,
+		TEXT("UDeckBuilderWidget::ExitCardGridFocus: card focus cleared; Slate focus moved to '%s'."),
+		*Target->GetName());
+	return true;
+}
+
+FReply UDeckBuilderWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	const FKey Key = InKeyEvent.GetKey();
+	const bool bGridFocused = IsCardGridFocusLive();
+
+	// (1) Accept / Remove — ONLY while a card tile actually holds the focus, so
+	// neither key gains a second meaning anywhere else in this screen.
+	if (bGridFocused)
+	{
+		if (Key == EKeys::Enter || Key == EKeys::Virtual_Accept || Key == EKeys::Gamepad_FaceButton_Bottom)
+		{
+			AcceptFocusedCard();
+			return FReply::Handled();
+		}
+
+		// ⭐ REMOVE — 🧑 HIS 2026-09-17 RULING moved the gamepad half from B to X.
+		// It was Gamepad_FaceButton_Right, which QA measured IS Slate's universal
+		// Back gesture (EKeys::Virtual_Back = FPlatformInput::GetGamepadBackKey(),
+		// InputCoreTypes.cpp:424 → GenericPlatformInput.h:32-35; FNavigationConfig
+		// maps it to EUINavigationAction::Back, NavigationConfig.cpp:38) — so B was
+		// consuming the player's universal "get me out of here" for a DESTRUCTIVE,
+		// immediately auto-saved RemoveCopy. His words: "B stops being destructive
+		// and starts meaning Back, which is what every other screen already does."
+		// ⛔ The old B→Remove binding is DELETED, not shadowed and not kept as well.
+		//
+		// X carries no prior meaning, MEASURED both ways rather than assumed:
+		// Slate's entire default key table is NavigationConfig.cpp:19-38 and
+		// Gamepad_FaceButton_Left appears nowhere in it (the defaults have only
+		// Accept and Back); and a project census finds 0 occurrences outside this
+		// diff, on an instrument proven able to see Gamepad_FaceButton_Right.
+		// ⛔ Not a letter, ⛔ not a digit.
+		if (Key == EKeys::Delete || Key == EKeys::Gamepad_FaceButton_Left)
+		{
+			RemoveFocusedCard();
+			return FReply::Handled();
+		}
+
+		// ⭐ EXIT THE GRID — 🧑 his 2026-09-17 ruling, and the mirror of the defect
+		// it removes. Virtual_Back is bound ALONGSIDE the concrete face button, the
+		// same pair-shape Accept already uses above, so a platform that remaps its
+		// Back button still reaches this.
+		//
+		// ⚖️ THE BACK-PRECEDENCE RULING (spec block (C)) LIVES IN THESE FOUR LINES:
+		// the grid consumes Back IF AND ONLY IF a card tile really holds the focus
+		// (the bGridFocused guard) AND the exit actually changed state (the bool).
+		// Anything else falls out of this block to the Super tail below, UNTOUCHED.
+		// ⇒ B once leaves the GRID; again leaves the BUILDER, because the second
+		// press arrives with the grid unfocused and falls through BY CONSTRUCTION.
+		// ⛔ Returning Handled on a Back press that changed no state is precisely
+		// the defect this amendment exists to remove.
+		//
+		// ⛔⛔ THE EXIT IS GAMEPAD-ONLY, AND THAT IS DELIBERATE — AS-§6 RULING A-2
+		// (CONVENTIONS ~:789, closed 2026-08-04, cited as project-wide at
+		// DeckSlotEntryWidget.h:60, CONVENTIONS:7519, :8316, :8595): "any future
+		// task that absorbs Escape — ... a Slate FReply::Handled() on
+		// EKeys::Escape — is overturning a Jonathan ruling and is an automatic QA
+		// FAIL." TASK-1286's first cut bound Escape here; the collision was raised
+		// rather than quietly deviated from, and TASK-1286 amendment 2 (2026-09-17)
+		// DROPPED Escape before this ever compiled. ⛔ No FReply::Handled() on
+		// EKeys::Escape exists in this class, and none may be added here.
+		// ⚠️ Whether A-2 also binds a MAIN-MENU deck builder is a genuine scope
+		// question and it is 🧑 HIS, not a reviewer's (CONVENTIONS:2679 cl. 13) —
+		// boarded as TASK-1300, blocking nothing. Until he answers, A-2 is read at
+		// its widest: nothing absorbs Escape, anywhere. If he later scopes A-2 out,
+		// the re-add is `Key == EKeys::Escape ||` on the line below and nothing
+		// else — the tests drive ExitCardGridFocus() directly and need no change.
+		// ⛔ A-2 names Escape ONLY, so his headline ruling — "B stops being
+		// destructive and starts meaning Back" — ships here in full, untouched.
+		if (Key == EKeys::Gamepad_FaceButton_Right || Key == EKeys::Virtual_Back)
+		{
+			if (ExitCardGridFocus())
+			{
+				return FReply::Handled();
+			}
+		}
+	}
+
+	// (2) Directional movement.
+	const EUINavigation Direction = NavigationFromKey(Key);
+	if (Direction != EUINavigation::Invalid)
+	{
+		if (bGridFocused)
+		{
+			MoveCardFocus(Direction);
+			return FReply::Handled();
+		}
+
+		// Not in the grid yet. DOWN is the ONE entry key, and it takes nothing
+		// away: the deck bar is a HORIZONTAL row, so Slate's own navigation moves
+		// along it with Left/Right and Down does nothing there today (DECK-§3's
+		// bar contract is untouched — Left/Right/Enter on a slot still reach
+		// SelectDeckForEdit exactly as before).
+		if (Direction == EUINavigation::Down && GetCollectionCardIDs().Num() > 0)
+		{
+			SetFocusedCardIndex(0);
+			return FReply::Handled();
+		}
+	}
+
+	// Everything else falls through to the WBP's own OnKeyDown and then to Slate,
+	// UNTOUCHED — Tab (⛔ never bound here: its exit is Slate's own `Next`
+	// navigation, documented and deliberately not implemented), Left/Right/Up on
+	// the deck bar, every letter and every digit, gamepad B whenever the card grid
+	// is not focused (the (C) ruling's whole point), AND — per AS-§6 A-2, read at
+	// its widest pending TASK-1300 — Escape in EVERY state, always.
+	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
 }
 
 void UDeckBuilderWidget::LoadDefaultDeck()

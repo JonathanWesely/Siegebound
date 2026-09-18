@@ -1205,4 +1205,316 @@ bool FSiegeDeckIllegalDeckNoticeReachesLateListenerOnceTest::RunTest(const FStri
 	return true;
 }
 
+/**
+ *  TASK-1286 — THE KEYBOARD CARD ACTIONS (🧑 his deck-builder ask, his go
+ *  2026-09-17). Asserts STATE (SC-§104): a focused tile, Accept, the deck model
+ *  one copy heavier; Remove, the deck model back exactly where it was.
+ *
+ *  ⛔ WHY THIS ONE MAY DRIVE A REAL UDeckBuilderWidget WHEN THE FILE HEADER SAYS
+ *  DRIVING ITS MUTATORS "COULD WRITE THE PLAYER'S ACTUAL GUEST SLOT" — read this
+ *  before relaxing anything here. The header's warning is about a CONSTRUCTED
+ *  builder. This widget is NewObject'd and NativeConstruct NEVER RUNS, so
+ *  EditingDeckIndex stays INDEX_NONE, and THE ONE AUTO-SAVE FUNNEL refuses on
+ *  exactly that index (DeckBuilderWidget.cpp PersistWorkingDeck: "no editing slot
+ *  selected yet — mutation NOT auto-saved"). Nothing reaches SaveDeckAs, so the
+ *  ACC-§4 seam is never resolved and no slot — real, profile or guest — is
+ *  opened for writing. That is a MECHANICAL guarantee, not a convention, and it
+ *  is ASSERTED rather than assumed, two ways:
+ *    · the INDEX_NONE precondition is a TestEqual below, and
+ *    · the refusal Warning is pinned to EXACTLY 2 occurrences (one per successful
+ *      mutation) — AddExpectedMessagePlain with Occurrences > 0 fails the test on
+ *      0 or on 3+, so a future edit that makes PersistWorkingDeck actually write
+ *      turns this test RED instead of silently touching Jonathan's deck.
+ *  The FDeckScratchGuard below is the third belt: it deletes the scratch slot on
+ *  the way in and out, and the test asserts the scratch slot is never created.
+ *
+ *  Zero network, zero PIE, zero widget tree. The one asset touched is the shipped
+ *  /Game/Data/DT_Cards, READ through the widget's own soft pointer — the
+ *  SiegeCardRosterTest.cpp:378 / SiegeCardArtRosterTest.cpp:431 precedent for
+ *  this lane.
+ *
+ *  M8: adds no replicated property, no new replicated class, no RPC.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeDeckKeyboardFocusAcceptAndRemoveTest,
+	"Siegebound.Deck.KeyboardFocusedTileAcceptAddsOneCopyAndRemoveTakesItBack",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeDeckKeyboardFocusAcceptAndRemoveTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeDeckSlotsTestUtils;
+
+	FDeckScratchGuard ScratchGuard;
+
+	// ---------------------------------------------------------------------
+	// (0) THE PURE RING — StepCardFocusIndex is the whole of the movement
+	//     arithmetic, factored out so it is assertable with no world, no
+	//     widget tree and no Slate. "Wrap at the ends" is the row's wording.
+	// ---------------------------------------------------------------------
+	{
+		// A 28-card collection laid out 7 wide is the shipped shape.
+		const int32 Count = 28;
+		const int32 Columns = 7;
+
+		TestEqual(TEXT("(0) an empty collection has no focus at all"),
+			UDeckBuilderWidget::StepCardFocusIndex(0, 0, Columns, EUINavigation::Right), (int32)INDEX_NONE);
+		TestEqual(TEXT("(0) arming with Down lands on the FIRST tile"),
+			UDeckBuilderWidget::StepCardFocusIndex(INDEX_NONE, Count, Columns, EUINavigation::Down), 0);
+		TestEqual(TEXT("(0) arming with Right lands on the FIRST tile"),
+			UDeckBuilderWidget::StepCardFocusIndex(INDEX_NONE, Count, Columns, EUINavigation::Right), 0);
+		TestEqual(TEXT("(0) arming with Up lands on the LAST tile"),
+			UDeckBuilderWidget::StepCardFocusIndex(INDEX_NONE, Count, Columns, EUINavigation::Up), Count - 1);
+		TestEqual(TEXT("(0) arming with Left lands on the LAST tile"),
+			UDeckBuilderWidget::StepCardFocusIndex(INDEX_NONE, Count, Columns, EUINavigation::Left), Count - 1);
+		TestEqual(TEXT("(0) Right steps one along grid order"),
+			UDeckBuilderWidget::StepCardFocusIndex(3, Count, Columns, EUINavigation::Right), 4);
+		TestEqual(TEXT("(0) Left steps one back"),
+			UDeckBuilderWidget::StepCardFocusIndex(3, Count, Columns, EUINavigation::Left), 2);
+		TestEqual(TEXT("(0) Down steps one ROW (the measured column count)"),
+			UDeckBuilderWidget::StepCardFocusIndex(3, Count, Columns, EUINavigation::Down), 10);
+		TestEqual(TEXT("(0) Up steps one row back"),
+			UDeckBuilderWidget::StepCardFocusIndex(10, Count, Columns, EUINavigation::Up), 3);
+		TestEqual(TEXT("(0) WRAP: Right off the last tile returns to the first"),
+			UDeckBuilderWidget::StepCardFocusIndex(Count - 1, Count, Columns, EUINavigation::Right), 0);
+		TestEqual(TEXT("(0) WRAP: Left off the first tile returns to the last"),
+			UDeckBuilderWidget::StepCardFocusIndex(0, Count, Columns, EUINavigation::Left), Count - 1);
+		TestEqual(TEXT("(0) WRAP: Up from the top row wraps into the bottom, same column"),
+			UDeckBuilderWidget::StepCardFocusIndex(2, Count, Columns, EUINavigation::Up), 23);
+		TestEqual(TEXT("(0) WRAP: Down from the bottom row wraps into the top, same column"),
+			UDeckBuilderWidget::StepCardFocusIndex(23, Count, Columns, EUINavigation::Down), 2);
+		TestEqual(TEXT("(0) an UNMEASURABLE row width (1) degrades Down to Right — ⛔ never a guessed column count"),
+			UDeckBuilderWidget::StepCardFocusIndex(3, Count, 1, EUINavigation::Down), 4);
+		TestEqual(TEXT("(0) a nonsense row width is clamped, not trusted"),
+			UDeckBuilderWidget::StepCardFocusIndex(3, Count, -99, EUINavigation::Down), 4);
+		TestEqual(TEXT("(0) Next/Previous/Invalid move nothing (only the four cardinals are mapped)"),
+			UDeckBuilderWidget::StepCardFocusIndex(3, Count, Columns, EUINavigation::Next), 3);
+		TestEqual(TEXT("(0) ...Invalid likewise"),
+			UDeckBuilderWidget::StepCardFocusIndex(3, Count, Columns, EUINavigation::Invalid), 3);
+		TestEqual(TEXT("(0) ⛔ an unmapped direction can NOT arm the grid from nothing"),
+			UDeckBuilderWidget::StepCardFocusIndex(INDEX_NONE, Count, Columns, EUINavigation::Next), (int32)INDEX_NONE);
+		TestEqual(TEXT("(0) ...Invalid cannot arm it either"),
+			UDeckBuilderWidget::StepCardFocusIndex(INDEX_NONE, Count, Columns, EUINavigation::Invalid), (int32)INDEX_NONE);
+	}
+
+	// ---------------------------------------------------------------------
+	// (1) THE FEATURE, on a real widget with a real collection
+	// ---------------------------------------------------------------------
+	TStrongObjectPtr<UDeckBuilderWidget> Builder(NewObject<UDeckBuilderWidget>(GetTransientPackageAsObject()));
+	if (!TestTrue(TEXT("SELF-CHECK: a world-free deck builder was created"), Builder.IsValid()))
+	{
+		return false;
+	}
+
+	// ⛔ THE NO-WRITE PRECONDITION, ASSERTED. NativeConstruct never ran, so no
+	// editing slot was ever selected and PersistWorkingDeck refuses every
+	// mutation below before it can reach SaveDeckAs.
+	TestEqual(TEXT("PREMISE: no editing slot is selected — the auto-save funnel is mechanically closed"),
+		Builder->GetEditingDeckIndex(), (int32)INDEX_NONE);
+
+	// ...and pinned: EXACTLY 2 refusals, one per successful mutation (the Accept
+	// and the Remove below). 0 or 3+ fails this test, which is how a future edit
+	// that lets the funnel through announces itself instead of writing his deck.
+	AddExpectedMessagePlain(TEXT("PersistWorkingDeck: no editing slot selected yet"), ELogVerbosity::Warning,
+		EAutomationExpectedMessageFlags::Contains, /*Occurrences*/ 2);
+
+	const TArray<FName> Collection = Builder->GetCollectionCardIDs();
+	if (!TestTrue(TEXT("SELF-CHECK: the shipped DT_Cards collection resolved with at least two cards"), Collection.Num() >= 2))
+	{
+		return false;
+	}
+
+	// "Tile K" — deliberately a MIDDLE tile, so a bug that silently focuses index
+	// 0 (or the first tile it finds) cannot pass by coincidence.
+	const int32 TileK = Collection.Num() / 2;
+	const FName CardK = Collection[TileK];
+
+	TestEqual(TEXT("PREMISE: a fresh builder has nothing focused"), Builder->GetFocusedCardIndex(), (int32)INDEX_NONE);
+	TestTrue(TEXT("PREMISE: ...and GetFocusedCardID is None"), Builder->GetFocusedCardID().IsNone());
+
+	Builder->SetFocusedCardIndex(TileK);
+	TestEqual(TEXT("STATE: tile K is the focused tile"), Builder->GetFocusedCardIndex(), TileK);
+	TestEqual(TEXT("STATE: the focused card is DT_Cards row K, by name"), Builder->GetFocusedCardID(), CardK);
+
+	const int32 CountBefore = Builder->GetCountOf(CardK);
+	const int32 TotalBefore = Builder->GetTotalCount();
+
+	// (a) ACCEPT = what left-clicking "+" does.
+	Builder->AcceptFocusedCard();
+	TestEqual(TEXT("(a) STATE: Accept added EXACTLY one copy of card K"), Builder->GetCountOf(CardK), CountBefore + 1);
+	TestEqual(TEXT("(a) STATE: ...and the x/50 total is +1"), Builder->GetTotalCount(), TotalBefore + 1);
+	TestEqual(TEXT("(a) STATE: Accept did not move the focus"), Builder->GetFocusedCardIndex(), TileK);
+
+	// (b) REMOVE = what left-clicking "−" does — both back.
+	Builder->RemoveFocusedCard();
+	TestEqual(TEXT("(b) STATE: Remove took the copy back"), Builder->GetCountOf(CardK), CountBefore);
+	TestEqual(TEXT("(b) STATE: ...and the x/50 total is back"), Builder->GetTotalCount(), TotalBefore);
+	TestEqual(TEXT("(b) STATE: Remove did not move the focus"), Builder->GetFocusedCardIndex(), TileK);
+
+	// (c) WITH NOTHING FOCUSED BOTH ARE SILENT NO-OPS — the guard that stops the
+	//     keys meaning anything while the focus is on the deck bar, Play or Exit.
+	//     (These two calls must NOT add a third PersistWorkingDeck refusal.)
+	Builder->SetFocusedCardIndex(INDEX_NONE);
+	TestEqual(TEXT("(c) STATE: the focus cleared"), Builder->GetFocusedCardIndex(), (int32)INDEX_NONE);
+	Builder->AcceptFocusedCard();
+	Builder->RemoveFocusedCard();
+	TestEqual(TEXT("(c) STATE: with nothing focused, Accept/Remove changed no count"), Builder->GetCountOf(CardK), CountBefore);
+	TestEqual(TEXT("(c) STATE: ...and no total"), Builder->GetTotalCount(), TotalBefore);
+
+	// (d) AN OUT-OF-RANGE INDEX CLEARS RATHER THAN CLAMPS (⛔ never silently
+	//     focuses a neighbouring card).
+	Builder->SetFocusedCardIndex(Collection.Num());
+	TestEqual(TEXT("(d) STATE: an index past the end clears the focus"), Builder->GetFocusedCardIndex(), (int32)INDEX_NONE);
+	Builder->SetFocusedCardIndex(-7);
+	TestEqual(TEXT("(d) STATE: a negative index clears the focus"), Builder->GetFocusedCardIndex(), (int32)INDEX_NONE);
+
+	// (e) MoveCardFocus ARMS from nothing and then walks — driven through the
+	//     public mutator, not the static, so the widget's own wiring is covered.
+	Builder->MoveCardFocus(EUINavigation::Down);
+	TestEqual(TEXT("(e) STATE: Down from nothing arms on the first tile"), Builder->GetFocusedCardIndex(), 0);
+	Builder->MoveCardFocus(EUINavigation::Right);
+	TestEqual(TEXT("(e) STATE: Right walks to the second tile"), Builder->GetFocusedCardIndex(), 1);
+	Builder->MoveCardFocus(EUINavigation::Left);
+	Builder->MoveCardFocus(EUINavigation::Left);
+	TestEqual(TEXT("(e) STATE: Left off the first tile WRAPS to the last"), Builder->GetFocusedCardIndex(), Collection.Num() - 1);
+
+	// (f) THE REAL SAVE WAS NEVER OPENED — the scratch slot the guard owns was
+	//     never created either, so nothing in this test wrote a deck anywhere.
+	TestFalse(TEXT("(f) STATE: the scratch deck slot does not exist — this test wrote no save at all"),
+		UGameplayStatics::DoesSaveGameExist(ScratchDeckSlotName, USiegeDeckSaveGame::UserIndex));
+
+	return true;
+}
+
+/**
+ *  TASK-1286, 2026-09-17 AMENDMENT — LEAVING THE CARD GRID (🧑 his ruling: gamepad
+ *  B stops deleting cards and starts meaning Back). Asserts STATE (SC-§104): the
+ *  focused index is a real middle tile K, then INDEX_NONE.
+ *
+ *  ⛔⛔ THE EXIT IS GAMEPAD-ONLY — Gamepad_FaceButton_Right / Virtual_Back, and
+ *  NOTHING ELSE. The Escape key was DROPPED from this binding under AS-§6 A-2,
+ *  which at its current width leaves the Escape key permanently unabsorbed
+ *  project-wide: nothing in this project handles it. ⛔ Do NOT bind the Escape
+ *  key here to "complete" what a comment seems to describe — a Slate
+ *  FReply::Handled() on that key overturns a CLOSED Jonathan ruling and is an
+ *  automatic QA FAIL. (A-2's scope is his own open question at TASK-1300; until
+ *  he rules, A-2 stands at its widest and this lane stays gamepad-only.)
+ *
+ *  ⛔⛔ WHY THE ASSERTION IS THE INDEX AND ⛔ NOT IsCardGridFocusLive() — READ THIS
+ *  BEFORE "STRENGTHENING" THIS TEST (SC-§39, and the manager named this trap in
+ *  the row itself). The amendment folds QA's WARN-3, so IsCardGridFocusLive()
+ *  now returns FALSE in this lane BY CONSTRUCTION: FSlateApplication IS
+ *  initialised under EditorContext, and no WBP_DeckCardTile resolves for a
+ *  NewObject'd builder, which is exactly the live-Slate/no-tile branch that was
+ *  just changed to `return false`. ⇒ an assertion "IsCardGridFocusLive() is false
+ *  after the exit" ⛔ CANNOT FAIL, and a test that cannot fail is not evidence.
+ *  The index CAN report both values, and this test proves it does:
+ *    · the POSITIVE CONTROL — GetFocusedCardIndex() == K BEFORE the exit, so the
+ *      instrument is shown able to report a non-INDEX_NONE value at all; then
+ *    · GetFocusedCardIndex() == INDEX_NONE after.
+ *  Exit conditions (ii) "no tile holds Slate focus" and (iii) close at the VERIFY
+ *  leg on a real grid, ⛔ never here.
+ *
+ *  ⛔ NO EXPECTED-MESSAGE PIN IS ADDED, AND THAT IS MEASURED, NOT ASSUMED:
+ *  ExitCardGridFocus() mutates no deck — it clears an index and moves Slate focus
+ *  — so it reaches neither AddCopy nor RemoveCopy and therefore adds ZERO
+ *  PersistWorkingDeck refusals. The sibling test's Occurrences-2 pin lives in its
+ *  own RunTest scope and is untouched by this file's second test (an off-by-one
+ *  pin would be a RED for the wrong reason, which is why this is stated).
+ *
+ *  Same no-write architecture as the sibling: NewObject'd builder, NativeConstruct
+ *  never runs, EditingDeckIndex stays INDEX_NONE, the DECK-§4 auto-save funnel is
+ *  mechanically closed. Zero network, zero PIE, zero widget tree.
+ *
+ *  M8: adds no replicated property, no new replicated class, no RPC.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeDeckExitCardGridTest,
+	"Siegebound.Deck.ExitingCardGridClearsTheFocusedIndex",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeDeckExitCardGridTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeDeckSlotsTestUtils;
+
+	FDeckScratchGuard ScratchGuard;
+
+	TStrongObjectPtr<UDeckBuilderWidget> Builder(NewObject<UDeckBuilderWidget>(GetTransientPackageAsObject()));
+	if (!TestTrue(TEXT("SELF-CHECK: a world-free deck builder was created"), Builder.IsValid()))
+	{
+		return false;
+	}
+
+	// The same mechanical no-write guarantee the sibling test asserts.
+	TestEqual(TEXT("PREMISE: no editing slot is selected — the auto-save funnel is mechanically closed"),
+		Builder->GetEditingDeckIndex(), (int32)INDEX_NONE);
+
+	const TArray<FName> Collection = Builder->GetCollectionCardIDs();
+	if (!TestTrue(TEXT("SELF-CHECK: the shipped DT_Cards collection resolved with at least two cards"), Collection.Num() >= 2))
+	{
+		return false;
+	}
+
+	// Tile K is a MIDDLE tile again, so "the exit cleared it" cannot be confused
+	// with "it was 0 all along".
+	const int32 TileK = Collection.Num() / 2;
+
+	TestEqual(TEXT("PREMISE: a fresh builder has nothing focused"), Builder->GetFocusedCardIndex(), (int32)INDEX_NONE);
+
+	// Captured BEFORE anything runs, so (f) below compares against a value taken
+	// at a different time — ⛔ never against a second read of itself.
+	const int32 TotalBefore = Builder->GetTotalCount();
+	const int32 CountOfKBefore = Builder->GetCountOf(Collection[TileK]);
+
+	// (a) ⛔ THE (C) RULING'S OTHER HALF, ASSERTED FIRST: with nothing focused the
+	//     exit changes no state and REFUSES to claim the gesture. This is the
+	//     sentence that keeps a Back press aimed at the SCREEN falling through
+	//     instead of being silently swallowed — NativeOnKeyDown returns
+	//     FReply::Handled() only on a `true` from here.
+	TestFalse(TEXT("(a) STATE: with nothing focused the exit acts on nothing and reports false — the Back key is NOT consumed"),
+		Builder->ExitCardGridFocus());
+	TestEqual(TEXT("(a) STATE: ...and the focus is still nothing"), Builder->GetFocusedCardIndex(), (int32)INDEX_NONE);
+
+	// (b) THE POSITIVE CONTROL — the getter CAN report a real tile index. Without
+	//     this line the INDEX_NONE below would be indistinguishable from a getter
+	//     that never reports anything else.
+	Builder->SetFocusedCardIndex(TileK);
+	TestEqual(TEXT("(b) POSITIVE CONTROL: tile K is the focused tile BEFORE the exit"),
+		Builder->GetFocusedCardIndex(), TileK);
+
+	// (c) THE EXIT — it acted, so it claims the gesture...
+	TestTrue(TEXT("(c) STATE: exiting a focused grid reports true — the Back key IS consumed, exactly once"),
+		Builder->ExitCardGridFocus());
+	// ...and (D)(i), the assertion this test exists for.
+	TestEqual(TEXT("(c) STATE: the focused index is cleared to INDEX_NONE"),
+		Builder->GetFocusedCardIndex(), (int32)INDEX_NONE);
+	TestTrue(TEXT("(c) STATE: ...and GetFocusedCardID reports None with it"),
+		Builder->GetFocusedCardID().IsNone());
+
+	// (d) A SECOND PRESS FALLS THROUGH — the whole point of the nested-Back
+	//     ruling: gamepad B once leaves the grid, B again leaves the builder,
+	//     because the second press finds nothing to act on and does not claim the
+	//     key. ⛔ B ONLY (Gamepad_FaceButton_Right / Virtual_Back) — the Escape
+	//     key is NOT bound to either leg and must not be, per AS-§6 A-2.
+	TestFalse(TEXT("(d) STATE: a SECOND exit acts on nothing and does not consume the key"),
+		Builder->ExitCardGridFocus());
+
+	// (e) ⛔ THE EXIT MUST NOT BRICK THE GRID — re-entry still works, so a player
+	//     who leaves by mistake is not locked out of the cards.
+	Builder->MoveCardFocus(EUINavigation::Down);
+	TestEqual(TEXT("(e) STATE: Down re-arms the grid on the first tile after an exit"),
+		Builder->GetFocusedCardIndex(), 0);
+
+	// (f) ⛔ THE EXIT IS NOT A DECK MUTATION — it moves focus, never cards. A
+	//     regression that routed it through RemoveCopy (the binding it REPLACED on
+	//     gamepad B) would show up right here as a missing copy.
+	TestEqual(TEXT("(f) STATE: the x/50 total is untouched by three exits"),
+		Builder->GetTotalCount(), TotalBefore);
+	TestEqual(TEXT("(f) STATE: ...and card K still has exactly the copies it started with"),
+		Builder->GetCountOf(Collection[TileK]), CountOfKBefore);
+	TestFalse(TEXT("(f) STATE: the scratch deck slot does not exist — this test wrote no save at all"),
+		UGameplayStatics::DoesSaveGameExist(ScratchDeckSlotName, USiegeDeckSaveGame::UserIndex));
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
