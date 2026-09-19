@@ -3,8 +3,10 @@
     THE ONE SANCTIONED EXECUTOR of the Siegebound automation suite and of arbitrary
     editor console commands (TL-6). Bounded, self-instrumenting, and it can say NO.
 
-    *** SANCTIONED IS NOT EXERCISED. *** See the NOT EXECUTED block in .NOTES before
-    you quote this file's authority anywhere.
+    *** SANCTIONED IS EXERCISED ONLY IN PART. *** The LAUNCH path is measured and the
+    OVERALL bound has killed a real editor; the BOOT and STALL bounds have not. Read
+    the EXERCISED IN PART block in .NOTES before you quote this file's authority
+    anywhere.
 
 .DESCRIPTION
     This script is the EXECUTABLE FORM of SC-116's pinned invocation recipe. It exists
@@ -57,16 +59,117 @@
     the verdict.
 
     ---------------------------------------------------------------------------
-    !!! SANCTIONED IS NOT EXERCISED  --  LAUNCH PATH NOT EXECUTED AGAINST THE ENGINE
+    !!! EXERCISED IN PART  --  WHICH HALF IS MEASURED, AND WHICH HALF IS NOT
     ---------------------------------------------------------------------------
-    As of 2026-09-09 this script has NEVER launched UnrealEditor-Cmd.exe. Start-Process,
-    the .cmdline sidecar, the polling loop, boot detection on a growing log, Stop-Process
-    and the survivor check have been executed ONLY against a synthetic stand-in process
-    (TASK-1181 rev-2, which is how exit 6 was proven reachable) -- NOT against the engine.
-    Bound arithmetic is proven against synthetic clocks. No real editor has ever been
-    killed by this file. FIRST REAL OUTING: TASK-1183.
-    TL-6's 'NOT MEASURED' bullet (CONVENTIONS.md:5966-5969) stays until TASK-1183 reports,
-    and only the manager may strike it (SC-82). DELETE THIS BLOCK ONLY THEN.
+    CORRECTED 2026-09-19 by TASK-1310. What stood here from 2026-09-09 until today was,
+    verbatim:
+
+        "As of 2026-09-09 this script has NEVER launched UnrealEditor-Cmd.exe.
+         Start-Process, the .cmdline sidecar, the polling loop, boot detection on a
+         growing log, Stop-Process and the survivor check have been executed ONLY
+         against a synthetic stand-in process (TASK-1181 rev-2, which is how exit 6 was
+         proven reachable) -- NOT against the engine. Bound arithmetic is proven against
+         synthetic clocks. No real editor has ever been killed by this file.
+         FIRST REAL OUTING: TASK-1183."
+
+    That was FALSE ON THE DAY IT WAS WRITTEN, not merely stale: four of the launches
+    counted in (a) below are dated 2026-09-09 itself, and TASK-1183 -- named above as the
+    outing that had not happened yet -- had already happened. TL-6's matching law bullet
+    was struck by the manager on 2026-09-18 (SC-82 reserves that strike to him); this
+    block is the code-side half of the same correction.
+
+    (a) LAUNCH -- MEASURED. Start-Process has run against the real UnrealEditor-Cmd.exe,
+        and the receipt is the .cmdline sidecar, written one per launch immediately
+        BEFORE the launch it records. FIND BOTH SITES BY GREP, NOT BY LINE NUMBER --
+        EDITING THIS BLOCK MOVES THEM, which is how the previous revision went stale:
+            grep -n "Start-Process -FilePath"   -- the launch
+            grep -n "+ '.cmdline'"              -- the receipt
+        As this paragraph was last written (2026-09-19) they stood at :1680 (launch) and
+        :1677 (receipt), both RE-GREPPED against the finished file, never offset from a
+        diff: the revision before this one derived them by arithmetic (+69 where the
+        header's growth was +70) and both were wrong by one.
+        RE-DERIVE THE NUMBER, DO NOT INHERIT IT (SC-91):
+
+            Get-ChildItem Saved/Logs/*.cmdline | Measure-Object
+
+        Census taken 2026-09-19 for TASK-1310: 22 sidecars -- 21 suite lane + 1 command
+        lane -- spanning 20260909-045216 to 20260918-234424.
+        Earlier counts are THE SAME EVIDENCE AT EARLIER INSTANTS, not a dispute:
+            15 (TASK-1294: the 09-14..09-18 window only, omitting the four 09-09 runs)
+          +  4 (those four 09-09 runs)                                          = 19
+            19 (TASK-1295 and the manager, globbed 2026-09-18 16:xx)
+          +  3 (the 09-18 23:42..23:44 runs, which post-date that glob)          = 22
+        This count only ever GROWS. A larger one is not a contradiction; a SMALLER one
+        means somebody deleted evidence.
+
+    (b) COMMAND LANE -- MEASURED, exactly once, and the receipt is named so you can open
+        it: Saved/Logs/run_suite_bounded_command_20260909-045326.log.cmdline. The other
+        21 sidecars are suite lane.
+
+    (c) BOUNDS -- SPLIT, AND THE SPLIT IS THE POINT. TWO CLAIMS, TWO VERDICTS.
+
+        (c1) The OVERALL bound HAS killed a real editor -- MEASURED 2026-09-09 by
+             TASK-1183 section 6, which ran this script with -OverallSeconds 20 against a
+             suite that needs ~44 s. It printed
+                 BOUND TRIPPED: OVERALL bound 20s exceeded (elapsed 21s)
+             RUNNER_EXIT = 6, and UnrealEditor-Cmd.exe PID 13816 was confirmed gone three
+             independent ways (HasExited, Win32_Process, a fresh name census).
+             THE CORPSE IS STILL ON DISK -- re-read it without rerunning anything:
+             Saved/Logs/run_suite_bounded_suite_20260909-045537.log opens at 04:55:38,
+             its last line is 04:55:58 (20 s), it stops MID-TEST, and it holds 134 started
+             / 133 completed -- the exact partial counts TASK-1183 reports. The run beside
+             it, ...-045412.log, is a clean 555/555.
+
+        (c2) The BOOT and STALL bounds are NOT MEASURED — NULL WITH NO POSITIVE CONTROL.
+             -BootSeconds and -StallSeconds have tripped ONLY against the synthetic
+             stand-in of TASK-1181 rev-2; no real editor has ever been killed by either.
+             Of the 22 real runs in (a), 21 SELF-terminated (19 suite logs end at
+             "LogCore: Engine exit requested (reason: Win RequestExit)";
+             ...-20260917-211827.log ends two lines earlier inside the same orderly
+             shutdown; the command log ends at "Log file closed") and the 22nd is (c1)'s
+             OVERALL kill. A LAUNCH HAPPENING IS NOT A BOUND FIRING, and one bound firing
+             is not three.
+
+    !! RESOLVED 2026-09-19 -- THE LAW AND THIS BLOCK NOW AGREE. NOT A DIVERGENCE.
+    An earlier revision of this paragraph reported a live divergence: that TL-6 "still
+    reads, unstruck, NO BOUND HAS EVER KILLED A REAL PROCESS". That sentence was TRUE
+    when it was written and FALSE a few hours later, because the manager struck both of
+    the law's false sentences that same day (SC-82 reserves that strike to him; TASK-1310
+    flagged, and did not touch, CONVENTIONS.md). Nothing in this file changed; the file it
+    described did.
+
+    ANCHOR TO QUOTED TEXT, NEVER TO A LINE NUMBER OR TO "THE LAW STILL READS Y"
+    (SC-126 cl. 7, minted off exactly this event). This block has already cited
+    CONVENTIONS.md at :5966-5969 and then at :6172-6175, and BOTH rotted with nothing
+    going red -- a clean diff, a green parse and a false sentence. The strings below are
+    ASCII substrings that are IN the law today; grep for the substring, not for a whole
+    sentence (the law interleaves its own emphasis markers mid-phrase):
+
+        grep -n "FALSE SENTENCE 1" .claude/pipeline/CONVENTIONS.md
+
+        "STRUCK 2026-09-19 BY THE MANAGER" -- the strike, made as FALSE, not SUPERSEDED
+        "FALSE SENTENCE 1"  -- "NO BOUND HAS EVER KILLED A REAL PROCESS", false since
+                               2026-09-09; the evidence is (c1) above
+        "FALSE SENTENCE 2"  -- "every one of those 19 runs terminated normally",
+                               corrected to 21 of 22
+        "WHAT REPLACES THEM" -- the replacement, split by bound
+
+    What replaces them in the law is the SAME three-way split this block publishes, and
+    the law writes the two null verdicts in the words (c2) uses, verbatim:
+
+        -OverallSeconds = MEASURED  (TASK-1183: a real process, a real kill)
+        -BootSeconds    = NOT MEASURED — NULL WITH NO POSITIVE CONTROL
+        -StallSeconds   = NOT MEASURED — NULL WITH NO POSITIVE CONTROL
+
+    The law cites this header back by name, so the two are now coupled in both
+    directions. If a later edit makes them disagree again, report it where you find it --
+    do not quietly pick a side, and do not resolve it here: only the manager edits the
+    law.
+
+    DO NOT "TIDY" (c2) AWAY WHILE FIXING (a). Deleting the true sentence next to a false
+    one is how this block got wrong in the first place: "the file exists" was read as "the
+    tool runs" (CONVENTIONS.md:5093), and the correction that caught that then quietly
+    welded "runs" to "kills".
 
     THE PORCELAIN CONTRACT
       RUNNER_EXIT is the PROCESS EXIT CODE. They are the same variable by construction
