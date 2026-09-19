@@ -125,7 +125,7 @@
              stand-in of TASK-1181 rev-2; no real editor has ever been killed by either.
              Of the 22 real runs in (a), 21 SELF-terminated (19 suite logs end at
              "LogCore: Engine exit requested (reason: Win RequestExit)";
-             ...-20260917-211827.log ends two lines earlier inside the same orderly
+             ...-20260917-211827.log ends a few lines earlier inside the same orderly
              shutdown; the command log ends at "Log file closed") and the 22nd is (c1)'s
              OVERALL kill. A LAUNCH HAPPENING IS NOT A BOUND FIRING, and one bound firing
              is not three.
@@ -168,8 +168,14 @@
 
     DO NOT "TIDY" (c2) AWAY WHILE FIXING (a). Deleting the true sentence next to a false
     one is how this block got wrong in the first place: "the file exists" was read as "the
-    tool runs" (CONVENTIONS.md:5093), and the correction that caught that then quietly
-    welded "runs" to "kills".
+    tool runs", and the correction that caught that then quietly welded "runs" to "kills".
+    That law sentence is cited here the way everything else in this block is cited -- by
+    SUBSTRING, never by address. It earned that twice over: the address this line used to
+    carry was wrong on arrival (it pointed at a different section entirely), and the true
+    address then moved AGAIN, the same day, between the gate that measured it and the fix
+    that deleted it. A fourth number would have rotted too.
+
+        grep -n "THE FILE EXISTS" .claude/pipeline/CONVENTIONS.md    (one hit)
 
     THE PORCELAIN CONTRACT
       RUNNER_EXIT is the PROCESS EXIT CODE. They are the same variable by construction
