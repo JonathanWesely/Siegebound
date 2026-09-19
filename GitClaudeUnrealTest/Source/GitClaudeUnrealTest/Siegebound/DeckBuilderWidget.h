@@ -230,18 +230,22 @@ public:
 	//    move focus  Left/Right/Up/Down · Gamepad_DPad_* · Gamepad_LeftStick_*
 	//    enter grid  Down (the deck bar is a HORIZONTAL row — Down does nothing
 	//                there today, so nothing is taken away from DECK-§3's bar)
-	//    Accept      Enter · Virtual_Accept · Gamepad_FaceButton_Bottom → AddCopy
+	//    Accept      Enter · Virtual_Gamepad_Accept · Gamepad_FaceButton_Bottom
+	//                                                              → AddCopy
 	//    Remove      Delete · Gamepad_FaceButton_Left  (X)       → RemoveCopy
-	//    EXIT GRID   Gamepad_FaceButton_Right (B) · Virtual_Back
+	//    EXIT GRID   Escape · Gamepad_FaceButton_Right (B) · Virtual_Gamepad_Back
 	//                                                          → ExitCardGridFocus
-	//                ⛔ GAMEPAD-ONLY — Escape is NOT bound (AS-§6 A-2, below)
+	//                ⭐ Escape IS bound — but ONLY here and ONLY while the grid is
+	//                live (🧑 his 2026-09-18 A-2 SCOPE ruling, block below)
 	//
 	//  ⭐ 2026-09-17 AMENDMENT — 🧑 HIS RULING, ON QA's WARN-1/WARN-2
 	//  (qa/TASK-1290-report.md). The first cut bound REMOVE to
 	//  Gamepad_FaceButton_Right, which is Slate's universal BACK gesture
 	//  (EKeys::Virtual_Back = FPlatformInput::GetGamepadBackKey(),
 	//  InputCoreTypes.cpp:424 → GenericPlatformInput.h:32-35; mapped to
-	//  EUINavigationAction::Back at NavigationConfig.cpp:38) — so gamepad B
+	//  EUINavigationAction::Back at NavigationConfig.cpp:38 — that symbol is
+	//  UE_DEPRECATED(5.7) and the code now spells the SAME FKey
+	//  EKeys::Virtual_Gamepad_Back.GetVirtualKey(), TASK-1304 block C) — so B
 	//  deleted a card, auto-saved, and there was no way out of the grid at all.
 	//  His words: "B stops being destructive and starts meaning Back, which is
 	//  what every other screen already does."
@@ -259,31 +263,38 @@ public:
 	//      it). Tab falls through to Super and Slate's own `Next` navigation walks
 	//      the focus off the tile. Documented behaviour, ⛔ never implemented.
 	//
-	//  ⛔⛔ THE EXIT IS GAMEPAD-ONLY — Escape was DROPPED under AS-§6 A-2, and
-	//  that is the current, settled state of this class, not an omission. A-2
-	//  (CONVENTIONS ~:789, CLOSED 2026-08-04, cited as project-wide at
-	//  DeckSlotEntryWidget.h:60 and at CONVENTIONS:7519/:8316/:8595) says a Slate
-	//  FReply::Handled() on EKeys::Escape is an automatic QA FAIL. This row's
-	//  first cut bound Escape; the collision was FLAGGED rather than quietly
-	//  deviated from (SC-§97 forbids an agent substituting 🧑 his key choice), and
-	//  TASK-1286 amendment 2 (2026-09-17) dropped Escape BEFORE THIS EVER
-	//  COMPILED. ⛔ There is no FReply::Handled() on EKeys::Escape anywhere in
-	//  this class, and none may be added.
-	//  ⚠️ Whether A-2 also binds a MAIN-MENU deck builder is a genuine SCOPE
-	//  question, and it is 🧑 HIS — a reviewer's agreement cannot authorize it
-	//  (CONVENTIONS:2679 cl. 13). Boarded as TASK-1300; it blocks nothing. Until
-	//  he answers, A-2 is read at its WIDEST: nothing absorbs Escape, anywhere.
-	//  (The evidence that will be put to him, measured here: on THIS screen
-	//  Escape is handled by nothing today — no C++ NativeOnKeyDown, no BP
-	//  OnKeyDown in WBP_DeckBuilder / WBP_DeckCardTile / WBP_MainMenu /
-	//  BP_MenuGameMode, and A-2's protected cancel routes (placement, targeting,
-	//  group-pick) live in ASiegePlayerController gated on in-match state, so
-	//  none can be live on L_MainMenu. ⛔ That is evidence for HIS ruling, not a
-	//  ruling.) A-2 names Escape ONLY, so the gamepad half above — his headline
+	//  ⭐🧑 ESCAPE — BOUND BY A GRANT, NOT BY AN OVERSIGHT. AS-§6 A-2 IS SCOPED.
+	//  A-2 (CONVENTIONS ~:789, CLOSED 2026-08-04, cited as project-wide at
+	//  DeckSlotEntryWidget.h:60 and at CONVENTIONS:7519/:8316/:8595) names a Slate
+	//  FReply::Handled() on EKeys::Escape — and NativeOnPreviewKeyDown explicitly —
+	//  as an automatic QA FAIL. TASK-1286's first cut bound Escape here; the
+	//  collision was FLAGGED rather than quietly deviated from (SC-§97 forbids an
+	//  agent substituting 🧑 his key choice) and amendment 2 (2026-09-17) DROPPED
+	//  Escape before this ever compiled. The open half — does A-2 bind a
+	//  MAIN-MENU grid? — was boarded for him as TASK-1300.
+	//    🧑 HE RULED IT 2026-09-18, verbatim label:
+	//         "Scoped — Escape may exit the card grid"
+	//       — A-2 was about the assistant console and the in-match cancel routes,
+	//       NOT a menu-side grid. Recorded at TASK-1300; written into CONVENTIONS
+	//       AS-§6 as the "A-2 SCOPE" bullet (~:797), which SUPERSEDES the struck
+	//       "read at its widest" sentence above it (~:796).
+	//  ⇒ Escape is restored to the exit gesture at TASK-1304 block B ON HIS
+	//    AUTHORITY. ⛔ THE CITATION STAYS: it is now a GRANT record, not a
+	//    prohibition record — A-2 is permitted HERE, CONDITIONALLY, and NOWHERE
+	//    ELSE. Deleting the pointer would delete the only thing that caught this.
+	//  ⛔⛔ THE EDGE OF THE GRANT, AND IT IS NARROW: he scoped A-2 for a CARD
+	//    GRID, not for this widget generally. Escape reaches FReply::Handled()
+	//    IFF IsCardGridFocusLive() AND ExitCardGridFocus() returned true — the
+	//    IDENTICAL predicate the gamepad half already uses. Escape on the deck
+	//    bar, on a cold builder or anywhere on L_MainMenu falls straight through,
+	//    in the preview pass as well as the bubble. A-2 remains UNRELAXED for the
+	//    assistant console and for ASiegePlayerController's in-match cancel
+	//    routes (placement, spell targeting, group-pick) — untouched by this.
+	//  ⛔ A-2 names Escape ONLY, so the gamepad half above — his headline
 	//  "B stops being destructive and starts meaning Back" — ships in full.
-	//  ⚠️ Consequence, so no reader files it as a bug: the keyboard has NO exit
-	//  key out of the grid. Tab's inherited Slate `Next` (above) and a mouse
-	//  click remain, exactly as before this feature existed.
+	//  ⭐ Consequence, replacing the "no keyboard exit" note this block used to
+	//  carry: the keyboard NOW HAS an exit key out of the grid (Escape), beside
+	//  Tab's inherited Slate `Next` (above) and a mouse click.
 	//
 	//  ⛔ Accept and Remove call AddCopy / RemoveCopy — the SAME entry points the
 	//  "+" / "−" buttons call — so OnDeckSlotCountChanged and the DECK-§4 auto-save
@@ -343,15 +354,19 @@ public:
 
 	/**
 	 *  LEAVE THE CARD GRID (🧑 his 2026-09-17 ruling — the gesture behind gamepad
-	 *  B / Virtual_Back. ⛔ NOT Escape: dropped under AS-§6 A-2, see the key-table
-	 *  block above). ⭐ THE ONE ENTRY POINT: the key handler and the
+	 *  B / Virtual_Gamepad_Back — AND, since 🧑 his 2026-09-18 A-2 SCOPE ruling
+	 *  ("Scoped — Escape may exit the card grid", TASK-1300), the keyboard's
+	 *  Escape as well: see the key-table block above for the grant and its edge).
+	 *  ⭐ THE ONE ENTRY POINT: the key handler and the
 	 *  automation suite both call THIS — there is deliberately no "test variant",
 	 *  the same principle that makes Accept/Remove call AddCopy/RemoveCopy.
 	 *
 	 *  Returns TRUE iff it actually left a focused grid, which is what makes the
-	 *  back-precedence ruling enforceable: NativeOnKeyDown returns
-	 *  FReply::Handled() ONLY on a true, so a Back press that changed no state
-	 *  falls through untouched to Slate and to whatever the screen already does.
+	 *  back-precedence ruling enforceable — and, for Escape, what keeps the grant
+	 *  inside its scope: HandleCardGridKey returns FReply::Handled() ONLY on a
+	 *  true, on BOTH the preview and the bubble pass, so a Back/Escape press that
+	 *  changed no state falls through untouched to Slate and to whatever the
+	 *  screen already does.
 	 *
 	 *  After a TRUE, all four of the spec's exit conditions hold:
 	 *    (i)   GetFocusedCardIndex() == INDEX_NONE
@@ -627,7 +642,33 @@ protected:
 	TSoftClassPtr<UUserWidget> CardTileClass;
 
 	/**
-	 *  TASK-1286: THE ONE KEY DOOR for the card grid. Reached through Slate
+	 *  🚨⭐ TASK-1304 BLOCK A — THE PREVIEW (TUNNEL) DOOR, AND IT IS THE ONE THAT
+	 *  MAKES THE ARROWS REACHABLE AT ALL. ⛔ TASK-1286 shipped with only the
+	 *  bubble door below and was INERT, because the bubble starts at the FOCUSED
+	 *  LEAF (FEventRouter::FBubblePolicy, SlateApplication.cpp:388-406) and
+	 *  SWidget::OnKeyDown (SWidget.cpp:415-429) converts an arrow to NAVIGATION
+	 *  and returns Handled right there — so no ancestor ever saw a Down.
+	 *
+	 *  FSlateApplication::ProcessKeyDownEvent tunnels FIRST, root→leaf, over the
+	 *  SAME focus path (SlateApplication.cpp:5021-5044; FTunnelPolicy starts at
+	 *  index 0 and increments, :347-361), calling OnPreviewKeyDown on every
+	 *  enabled widget, and only runs the bubble `if (!Reply.IsEventHandled())`
+	 *  (:5046). SWidget::OnPreviewKeyDown is a bare `return FReply::Unhandled();`
+	 *  (SWidget.cpp:411-414) — ⛔ the preview pass does NO navigation conversion,
+	 *  which is precisely why an ancestor CAN win there and cannot win below.
+	 *  SObjectWidget::OnPreviewKeyDown (SObjectWidget.cpp:221-229) forwards to
+	 *  UUserWidget::NativeOnPreviewKeyDown (UserWidget.cpp:2500-2503).
+	 *
+	 *  ⛔ Both doors call the SAME HandleCardGridKey and so consume EXACTLY the
+	 *  same keys in exactly the same states — there is no second key table and no
+	 *  preview-only behaviour. Everything it does not claim returns Unhandled, so
+	 *  Slate's own navigation (the deck bar's Left/Right/Enter, DECK-§3; the main
+	 *  menu, which is not even on this focus path) is byte-for-byte unchanged.
+	 */
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
+
+	/**
+	 *  TASK-1286: THE BUBBLE KEY DOOR for the card grid. Reached through Slate
 	 *  (SObjectWidget::OnKeyDown → NativeOnKeyDown, SObjectWidget.cpp:231-239) as
 	 *  the key event bubbles from the focused tile up through this widget — a path
 	 *  FInputModeUIOnly's SetIgnoreInput does NOT close, unlike Enhanced Input.
@@ -635,6 +676,18 @@ protected:
 	 *  everything else falls through to Super so the WBP's own OnKeyDown and
 	 *  Slate's default navigation (the deck bar's existing Left/Right/Enter,
 	 *  DECK-§3) keep today's behaviour byte-for-byte.
+	 *
+	 *  ⭐ KEPT, NOT SUPERSEDED, and TASK-1304 measured why: when the BUILDER ITSELF
+	 *  is the focused widget (the state AcquireBuilderFocus establishes on open)
+	 *  it is the focus path's LEAF, so SObjectWidget::OnKeyDown calls this BEFORE
+	 *  it falls through to SCompoundWidget::OnKeyDown (SObjectWidget.cpp:231-239)
+	 *  — i.e. before the arrow is turned into navigation. The preview above wins
+	 *  first in practice; this door is the leaf-focused builder's route and must
+	 *  stay in step with it. Both delegate to HandleCardGridKey so they cannot
+	 *  drift apart. ⛔ No automation test drives either door: UUserWidget declares
+	 *  both handlers PROTECTED (UserWidget.h:1572 protected:, :1607-1608) and
+	 *  widening that for a test would be the test-only seam this class refuses
+	 *  everywhere else. ⇒ the routing claim is measured at RUNTIME, never here.
 	 */
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
@@ -766,6 +819,62 @@ private:
 
 	/** The key table's direction mapping — arrows / D-pad / left stick ONLY. EUINavigation::Invalid for every other key (⛔ no letter, ⛔ no digit). */
 	static EUINavigation NavigationFromKey(const FKey& Key);
+
+	/**
+	 *  ⭐ TASK-1304 BLOCK A — THE ONE DECISION FUNCTION BEHIND BOTH SLATE DOORS.
+	 *  NativeOnPreviewKeyDown (tunnel, root→leaf) and NativeOnKeyDown (bubble,
+	 *  leaf→root) both call THIS and nothing else, so the key table exists once
+	 *  and the two passes cannot diverge. It is the whole of TASK-1286's handler
+	 *  body, moved — ⛔ not rewritten: the gated logic, the guards and the
+	 *  precedence are byte-identical, only the two `return Super::...` tails moved
+	 *  out to the callers (each Super differs, which is exactly why they did).
+	 *
+	 *  Returns Handled ONLY for a key the table owns in a state the table names:
+	 *    · IsCardGridFocusLive()  ⇒ Accept · Remove · the exit gesture · the four
+	 *                               directions (movement inside the grid);
+	 *    · NOT live               ⇒ Down ALONE, and only with cards to enter —
+	 *                               the deck bar is horizontal (DECK-§3), so this
+	 *                               takes nothing Left/Right/Up/Enter ever had;
+	 *    · anything else          ⇒ FReply::Unhandled(), so Slate's navigation and
+	 *                               the WBP's own graph keep every other key.
+	 *  ⛔ The asymmetry above IS the fence on the preview: a preview that claimed
+	 *  arrows unconditionally would break the deck-bar and main-menu navigation 🧑
+	 *  he confirmed by hand on TASK-1274.
+	 */
+	FReply HandleCardGridKey(const FKeyEvent& InKeyEvent);
+
+	/**
+	 *  ⭐ TASK-1304 BLOCK A — PUT THIS WIDGET ON SLATE'S FOCUS PATH WHEN IT OPENS.
+	 *  ⛔ Without this, nothing else in this feature can run at ALL:
+	 *  FSlateApplication::ProcessKeyDownEvent routes a key ONLY along
+	 *  SlateUser->GetFocusPath() (SlateApplication.cpp:5015-5017), and TASK-1286
+	 *  measured that NativeConstruct and SelectDeckForEdit made ZERO focus calls
+	 *  while USiegeMenuInputSubsystem::ApplyInitialFocus refuses this widget BY
+	 *  DESIGN (its IsMenuUncovered() gate names the deck builder in its own
+	 *  comment, SiegeMenuInputSubsystem.cpp:191-193) ⇒ the builder was never on
+	 *  the path and NativeOnKeyDown could not fire on any route.
+	 *  ⛔ That subsystem is NOT touched here (it serves the shipped, hand-confirmed
+	 *  main menu); this widget acquires its own focus instead.
+	 *
+	 *  ⚠️ THE OTHER HALF IS AN ASSET PROPERTY, and it is load-bearing:
+	 *  FSlateApplication::SetUserFocus walks the path LEAF→ROOT and focuses the
+	 *  FIRST widget whose SupportsKeyboardFocus() is true (SlateApplication.cpp:
+	 *  3019-3036). SObjectWidget::SupportsKeyboardFocus() returns
+	 *  WidgetObject->NativeSupportsKeyboardFocus() (SObjectWidget.cpp:175-182) =
+	 *  `return bIsFocusable;` (UserWidget.cpp:2411-2414). With bIsFocusable false
+	 *  the walk skips this widget and lands on an ANCESTOR — which is what the
+	 *  live CDO read found (WBP_DeckBuilder_C is_focusable = False). TASK-1304
+	 *  flips that one property on Content/UI/WBP_DeckBuilder.uasset AND asserts it
+	 *  here at runtime, so an instance built before the asset edit still works.
+	 *
+	 *  Returns true when Slate took the focus this frame; false when the request
+	 *  was deferred to ULocalPlayer::GetSlateOperations() (the engine flushes it
+	 *  next frame in FEngineLoop::ProcessLocalPlayerSlateOperations,
+	 *  LaunchEngineLoop.cpp:5231) or when there is no Slate at all (automation).
+	 *  ⛔ A false is NOT a failure — it is the normal NativeConstruct case, because
+	 *  the widget is not yet parented into a live window when Construct runs.
+	 */
+	bool AcquireBuilderFocus();
 
 	// --- GetCardDescription composers (TASK-268; all row-driven, never per card) ---
 

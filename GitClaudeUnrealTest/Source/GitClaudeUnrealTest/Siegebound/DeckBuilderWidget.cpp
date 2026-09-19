@@ -649,6 +649,25 @@ void UDeckBuilderWidget::NativeConstruct()
 		UE_LOG(LogGitClaudeUnrealTest, Warning,
 			TEXT("UDeckBuilderWidget: no DeckBar container bound (WBP_DeckBuilder not updated yet?) - the deck bar is skipped this session."));
 	}
+
+	// ------------------------------------------------------------------------
+	// ⭐🚨 TASK-1304 BLOCK A — AND IT GOES LAST ON PURPOSE. This is the call site
+	// that puts the builder on Slate's focus path; without it EVERY key in this
+	// class is unreachable, because FSlateApplication::ProcessKeyDownEvent routes
+	// a key ONLY along SlateUser->GetFocusPath() (SlateApplication.cpp:5015-5017).
+	// TASK-1286 shipped with ZERO focus calls in this function and was INERT.
+	// ⛔ Last, after the deck bar exists, so that if the focus request is served
+	// immediately the bar's entries are already real widgets under us rather than
+	// an empty container. ⛔ Its return value is deliberately NOT treated as a
+	// failure: a false here is the ordinary case (Construct runs before this
+	// widget is parented into the window) and the request is simply served a
+	// frame later — see AcquireBuilderFocus's own comments.
+	// ⛔ USiegeMenuInputSubsystem::ApplyInitialFocus is NOT used and NOT edited:
+	// its IsMenuUncovered() gate refuses this widget BY DESIGN and names it in
+	// its own comment (SiegeMenuInputSubsystem.cpp:191-193). That subsystem
+	// serves the shipped, hand-confirmed main menu (TASK-1274) and is untouched.
+	// ------------------------------------------------------------------------
+	AcquireBuilderFocus();
 }
 
 void UDeckBuilderWidget::SelectDeckForEdit(int32 SlotIndex)
@@ -1450,7 +1469,97 @@ bool UDeckBuilderWidget::ExitCardGridFocus()
 	return true;
 }
 
-FReply UDeckBuilderWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+bool UDeckBuilderWidget::AcquireBuilderFocus()
+{
+	// (a) THE ASSET HALF, RE-ASSERTED IN CODE. Content/UI/WBP_DeckBuilder.uasset
+	// carries bIsFocusable = true from TASK-1304 (the ONE authorised .uasset
+	// property on this row, measured False on the live CDO before the edit).
+	// ⛔ This line is NOT a substitute for that edit and NOT a duplicate of it:
+	// the asset is the authored state a designer and a CDO read-back see; this is
+	// what a RUNNING instance guarantees, including the automation-constructed
+	// widgets in SiegeDeckSlotsTest.cpp, which have no Blueprint CDO behind them.
+	// It is read LIVE by SObjectWidget::SupportsKeyboardFocus()
+	// (SObjectWidget.cpp:175-182 → UserWidget.cpp:2411-2414), never cached —
+	// the same fact FocusCardTile already relies on for the tiles.
+	if (!IsFocusable())
+	{
+		SetIsFocusable(true);
+	}
+
+	if (!FSlateApplication::IsInitialized())
+	{
+		return false; // offline automation lane: there is no Slate focus to take
+	}
+
+	// GetCachedWidget() returns MyGCWidget — THE SObjectWidget — whenever it is
+	// valid (Widget.cpp:1102-1107), and MyGCWidget is assigned at :1022, BEFORE
+	// TakeWidget_Private calls OnWidgetRebuilt() at :1096, which is what calls
+	// NativeConstruct() (UserWidget.cpp:1234). ⇒ it is valid here. That is the
+	// widget whose SupportsKeyboardFocus() reads bIsFocusable, so it is the one
+	// the leaf→root walk below can actually stop on.
+	const TSharedPtr<SWidget> SelfSlate = GetCachedWidget();
+	APlayerController* PC = GetOwningPlayer();
+	ULocalPlayer* LocalPlayer = PC ? PC->GetLocalPlayer() : nullptr;
+	if (!SelfSlate.IsValid() || LocalPlayer == nullptr)
+	{
+		// Not a failure worth a Warning: this is the shape of a builder built
+		// outside a live player (the editor's widget preview, a test widget).
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("UDeckBuilderWidget::AcquireBuilderFocus: no Slate widget or no local player — the builder is not put on the focus path this session."));
+		return false;
+	}
+
+	// ⛔ EFocusCause::SetDirectly, and it is the DELIBERATE OPPOSITE of
+	// FocusCardTile's EFocusCause::Navigation. SetUserFocus sets
+	// ShowFocus = (InCause == Navigation) (SlateApplication.cpp:3099) and
+	// SWidget::Paint only draws the focus brush when ShowUserFocus is true
+	// (SWidget.cpp:1746-1751) ⇒ Navigation here would paint a focus rectangle
+	// around the WHOLE SCREEN. The outline belongs on a card tile and nowhere
+	// else, so the builder takes the focus invisibly and the tiles paint it.
+	const int32 UserIndex = FSlateApplication::Get().GetUserIndexForController(LocalPlayer->GetControllerId());
+	const bool bTookFocus = FSlateApplication::Get().SetUserFocus(UserIndex, SelfSlate, EFocusCause::SetDirectly);
+	if (bTookFocus)
+	{
+		// Nothing is left queued that could move the focus again next frame.
+		LocalPlayer->GetSlateOperations().CancelFocusRequest();
+	}
+	else
+	{
+		// ⛔ NOT AN ERROR — this is the EXPECTED NativeConstruct case. Construct
+		// runs from TakeWidget_Private BEFORE AddToViewport has parented this
+		// widget into the game window, so FindPathToWidget cannot build a path
+		// yet and SetUserFocus refuses. The engine's own answer is the deferred
+		// lane: FEngineLoop::ProcessLocalPlayerSlateOperations
+		// (LaunchEngineLoop.cpp:5231, ticked at :5918) flushes the local player's
+		// FReply through FSlateApplication::ProcessExternalReply (:3351) on the
+		// next frame, by which time the widget IS in the tree. This is the same
+		// fallback UWidget::SetUserFocus uses (Widget.cpp:742-750).
+		LocalPlayer->GetSlateOperations().SetUserFocus(SelfSlate.ToSharedRef(), EFocusCause::SetDirectly);
+	}
+
+	// ⛔ READ BACK WHICH WIDGET ACTUALLY HOLDS THE FOCUS — never assume it is the
+	// one we named. FSlateApplication::SetUserFocus walks the path LEAF→ROOT and
+	// stops on the FIRST widget whose SupportsKeyboardFocus() is true
+	// (SlateApplication.cpp:3019-3036): with bIsFocusable false it would SKIP this
+	// widget and land on an ancestor — which is exactly the state TASK-1286 was
+	// measured in, and why the asset property is load-bearing rather than tidy.
+	// ⛔ Log, ⛔ NOT Verbose, and that is a deliberate instrument decision: this
+	// line fires ONCE per builder open (never per frame), and a Verbose line that
+	// needs `Log LogGitClaudeUnrealTest Verbose` typed first prints NOTHING by
+	// default — and an empty log reads as a passing measurement. That failure mode
+	// has cost this project a false pass before; one Log line per open is cheap.
+	const TSharedPtr<SWidget> Focused = FSlateApplication::Get().GetUserFocusedWidget(UserIndex);
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("UDeckBuilderWidget::AcquireBuilderFocus: focus %s this frame; focused widget is '%s' (this builder's Slate widget is '%s'); IsFocusable()=%s."),
+		bTookFocus ? TEXT("TAKEN") : TEXT("DEFERRED to the next frame"),
+		Focused.IsValid() ? *Focused->GetTypeAsString() : TEXT("<none>"),
+		*SelfSlate->GetTypeAsString(),
+		IsFocusable() ? TEXT("true") : TEXT("false"));
+
+	return bTookFocus && Focused == SelfSlate;
+}
+
+FReply UDeckBuilderWidget::HandleCardGridKey(const FKeyEvent& InKeyEvent)
 {
 	const FKey Key = InKeyEvent.GetKey();
 	const bool bGridFocused = IsCardGridFocusLive();
@@ -1459,7 +1568,21 @@ FReply UDeckBuilderWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FK
 	// neither key gains a second meaning anywhere else in this screen.
 	if (bGridFocused)
 	{
-		if (Key == EKeys::Enter || Key == EKeys::Virtual_Accept || Key == EKeys::Gamepad_FaceButton_Bottom)
+		// ⚙️ TASK-1304 BLOCK C (spec = TASK-1301, authority = THE COMPILER, SC-§122):
+		// the CALL SHAPE changed, the BINDING did NOT. EKeys::Virtual_Accept is
+		// UE_DEPRECATED(5.7, "Use Virtual_Gamepad_Accept.GetVirtualKey() instead")
+		// at InputCoreTypes.h:744-745. Same FKey, proven at source:
+		//   EKeys::Virtual_Accept            = FPlatformInput::GetGamepadAcceptKey()   [InputCoreTypes.cpp:423]
+		//   EKeys::Virtual_Gamepad_Accept    is registered by
+		//     AddVirtualKey(FKeyDetails(..., FKeyDetails::Virtual, ...),
+		//                   FPlatformInput::GetGamepadAcceptKey())                     [InputCoreTypes.cpp:728]
+		//     which stores that key in the details' VirtualKeyValue               [:1031]
+		//   FKey::GetVirtualKey()            returns KeyDetails->GetVirtualKey()  [:1445-1449]
+		//   FKeyDetails::GetVirtualKey()     returns bIsVirtual ? VirtualKeyValue : Key
+		//                                                                   [InputCoreTypes.h:208]
+		// ⇒ both expressions resolve to FPlatformInput::GetGamepadAcceptKey().
+		// ⛔ Nothing is rebound: 🧑 his X/B ruling and the key table are untouched.
+		if (Key == EKeys::Enter || Key == EKeys::Virtual_Gamepad_Accept.GetVirtualKey() || Key == EKeys::Gamepad_FaceButton_Bottom)
 		{
 			AcceptFocusedCard();
 			return FReply::Handled();
@@ -1469,7 +1592,9 @@ FReply UDeckBuilderWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FK
 		// It was Gamepad_FaceButton_Right, which QA measured IS Slate's universal
 		// Back gesture (EKeys::Virtual_Back = FPlatformInput::GetGamepadBackKey(),
 		// InputCoreTypes.cpp:424 → GenericPlatformInput.h:32-35; FNavigationConfig
-		// maps it to EUINavigationAction::Back, NavigationConfig.cpp:38) — so B was
+		// maps it to EUINavigationAction::Back, NavigationConfig.cpp:38 — that
+		// symbol is UE_DEPRECATED(5.7) and the code below now spells the SAME FKey
+		// EKeys::Virtual_Gamepad_Back.GetVirtualKey(), TASK-1304 block C) — so B was
 		// consuming the player's universal "get me out of here" for a DESTRUCTIVE,
 		// immediately auto-saved RemoveCopy. His words: "B stops being destructive
 		// and starts meaning Back, which is what every other screen already does."
@@ -1488,7 +1613,8 @@ FReply UDeckBuilderWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FK
 		}
 
 		// ⭐ EXIT THE GRID — 🧑 his 2026-09-17 ruling, and the mirror of the defect
-		// it removes. Virtual_Back is bound ALONGSIDE the concrete face button, the
+		// it removes. The virtual Back key is bound ALONGSIDE the concrete face
+		// button (now spelled Virtual_Gamepad_Back.GetVirtualKey() — block C), the
 		// same pair-shape Accept already uses above, so a platform that remaps its
 		// Back button still reaches this.
 		//
@@ -1501,24 +1627,50 @@ FReply UDeckBuilderWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FK
 		// ⛔ Returning Handled on a Back press that changed no state is precisely
 		// the defect this amendment exists to remove.
 		//
-		// ⛔⛔ THE EXIT IS GAMEPAD-ONLY, AND THAT IS DELIBERATE — AS-§6 RULING A-2
-		// (CONVENTIONS ~:789, closed 2026-08-04, cited as project-wide at
-		// DeckSlotEntryWidget.h:60, CONVENTIONS:7519, :8316, :8595): "any future
-		// task that absorbs Escape — ... a Slate FReply::Handled() on
-		// EKeys::Escape — is overturning a Jonathan ruling and is an automatic QA
-		// FAIL." TASK-1286's first cut bound Escape here; the collision was raised
-		// rather than quietly deviated from, and TASK-1286 amendment 2 (2026-09-17)
-		// DROPPED Escape before this ever compiled. ⛔ No FReply::Handled() on
-		// EKeys::Escape exists in this class, and none may be added here.
-		// ⚠️ Whether A-2 also binds a MAIN-MENU deck builder is a genuine scope
-		// question and it is 🧑 HIS, not a reviewer's (CONVENTIONS:2679 cl. 13) —
-		// boarded as TASK-1300, blocking nothing. Until he answers, A-2 is read at
-		// its widest: nothing absorbs Escape, anywhere. If he later scopes A-2 out,
-		// the re-add is `Key == EKeys::Escape ||` on the line below and nothing
-		// else — the tests drive ExitCardGridFocus() directly and need no change.
+		// 🧑⚖️⭐ TASK-1304 BLOCK B — ESCAPE IS BOUND HERE ON 🧑 HIS DIRECT AUTHORITY,
+		// AND THE CITATION IS THE POINT, NOT A COURTESY (SC-§121 cl. 6: the register
+		// must show the exception was GRANTED, not MISSED).
+		//   AS-§6 RULING A-2 (CONVENTIONS ~:789, closed 2026-08-04, cited as
+		//   project-wide at DeckSlotEntryWidget.h:60, CONVENTIONS:7519, :8316,
+		//   :8595): "any future task that absorbs Escape — NativeOnKeyDown,
+		//   NativeOnPreviewKeyDown, ... a Slate FReply::Handled() on EKeys::Escape
+		//   — is overturning a Jonathan ruling and is an automatic QA FAIL."
+		//   TASK-1286's first cut bound Escape here; the collision was raised
+		//   rather than quietly deviated from, and amendment 2 (2026-09-17) DROPPED
+		//   Escape before this ever compiled. The scope half was boarded for him.
+		//   🧑 HE RULED IT 2026-09-18 (TASK-1300), verbatim label:
+		//        "Scoped — Escape may exit the card grid"
+		//      — A-2 was about the assistant console and the in-match cancel
+		//        routes, NOT a menu-side grid. CONVENTIONS AS-§6 now carries that
+		//        as its "A-2 SCOPE" bullet (~:797) and the old "read at its widest"
+		//        sentence (~:796) is STRUCK. ⛔ A row still enforcing the widest
+		//        reading is enforcing a struck sentence.
+		// ⇒ `Key == EKeys::Escape ||` is restored below ON HIS AUTHORITY, and the
+		//   A-2 pointer STAYS as a GRANT record: Escape is permitted HERE,
+		//   CONDITIONALLY, and NOWHERE ELSE in this project.
+		// ⛔⛔ THE EDGE OF THE GRANT — he scoped A-2 for a CARD GRID, not for this
+		//   widget. Escape is consumed IFF bGridFocused (this whole block) AND
+		//   ExitCardGridFocus() returned true — the IDENTICAL predicate the gamepad
+		//   half uses, and the same rule TASK-1286 (C) already enforces: a Handled
+		//   on a Back that changed NO state is the defect being removed, not a nit.
+		//   ⚠️ This matters more now than it did, because NativeOnPreviewKeyDown
+		//   also reaches this function and the preview runs root→leaf BEFORE the
+		//   bubble: an unfenced Escape there would be taken EARLIER and WIDER than
+		//   he granted. It is fenced by this very block, so Escape on the deck bar,
+		//   on a cold builder, or anywhere on L_MainMenu falls straight through on
+		//   BOTH passes. A-2 stays UNRELAXED for the assistant console and for
+		//   ASiegePlayerController's in-match cancel routes.
 		// ⛔ A-2 names Escape ONLY, so his headline ruling — "B stops being
 		// destructive and starts meaning Back" — ships here in full, untouched.
-		if (Key == EKeys::Gamepad_FaceButton_Right || Key == EKeys::Virtual_Back)
+		// ⚙️ AND THE SAME PHYSICAL LINE CARRIES TASK-1304 BLOCK C (authority: THE
+		// COMPILER). EKeys::Virtual_Back is UE_DEPRECATED(5.7, "Use
+		// Virtual_Gamepad_Back.GetVirtualKey() instead") at InputCoreTypes.h:746-747.
+		// Same FKey by the chain proved at the Accept site above, with
+		// GetGamepadBackKey in place of GetGamepadAcceptKey (InputCoreTypes.cpp:424
+		// and :729). ⇒ THREE tokens on one line, TWO authorities: `EKeys::Escape`
+		// is 🧑 HIS (block B); `Virtual_Gamepad_Back.GetVirtualKey()` is the
+		// compiler's (block C); `Gamepad_FaceButton_Right` is TASK-1286's, unmoved.
+		if (Key == EKeys::Escape || Key == EKeys::Gamepad_FaceButton_Right || Key == EKeys::Virtual_Gamepad_Back.GetVirtualKey())
 		{
 			if (ExitCardGridFocus())
 			{
@@ -1549,12 +1701,53 @@ FReply UDeckBuilderWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FK
 		}
 	}
 
-	// Everything else falls through to the WBP's own OnKeyDown and then to Slate,
-	// UNTOUCHED — Tab (⛔ never bound here: its exit is Slate's own `Next`
-	// navigation, documented and deliberately not implemented), Left/Right/Up on
-	// the deck bar, every letter and every digit, gamepad B whenever the card grid
-	// is not focused (the (C) ruling's whole point), AND — per AS-§6 A-2, read at
-	// its widest pending TASK-1300 — Escape in EVERY state, always.
+	// Everything else is NOT CLAIMED, on either Slate pass — it falls through to
+	// the WBP's own OnKeyDown / OnPreviewKeyDown and then to Slate, UNTOUCHED:
+	// Tab (⛔ never bound here: its exit is Slate's own `Next` navigation,
+	// documented and deliberately not implemented), Left/Right/Up while the grid
+	// is not focused, every letter and every digit, gamepad B whenever the card
+	// grid is not focused (the (C) ruling's whole point), AND — per 🧑 his
+	// 2026-09-18 A-2 SCOPE ruling, which grants Escape for the CARD GRID and for
+	// nothing else — Escape in every state BUT a live grid.
+	return FReply::Unhandled();
+}
+
+FReply UDeckBuilderWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	// ⭐ TASK-1304 BLOCK A — THE PASS THAT MAKES THE ARROWS REACHABLE.
+	// ProcessKeyDownEvent tunnels root→leaf over the focus path FIRST and only
+	// bubbles `if (!Reply.IsEventHandled())` (SlateApplication.cpp:5021-5046), and
+	// SWidget::OnPreviewKeyDown does NOT convert arrows to navigation
+	// (SWidget.cpp:411-414) — unlike SWidget::OnKeyDown (:415-429), which is what
+	// ate every Down before this row. So an ANCESTOR can win here, and only here.
+	// ⛔ THE FENCE: the SAME HandleCardGridKey decides, so the preview claims
+	// EXACTLY the keys the bubble claims, in EXACTLY the states the key table
+	// names — nothing is taken "just in case". Anything it does not claim returns
+	// Unhandled and Slate's own navigation runs untouched, which is what keeps
+	// 🧑 his hand-confirmed deck-bar and main-menu navigation (TASK-1274) intact.
+	const FReply Reply = HandleCardGridKey(InKeyEvent);
+	if (Reply.IsEventHandled())
+	{
+		return Reply;
+	}
+
+	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+}
+
+FReply UDeckBuilderWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	// The bubble door. Still live and still needed: when the BUILDER ITSELF holds
+	// the focus (the state AcquireBuilderFocus establishes on open) it is the
+	// path's leaf, and SObjectWidget::OnKeyDown calls NativeOnKeyDown BEFORE
+	// falling through to SCompoundWidget::OnKeyDown (SObjectWidget.cpp:231-239) —
+	// i.e. before SWidget::OnKeyDown can turn the arrow into navigation. That is
+	// the cold-start "Down enters the grid" route.
+	const FReply Reply = HandleCardGridKey(InKeyEvent);
+	if (Reply.IsEventHandled())
+	{
+		return Reply;
+	}
+
 	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
 }
 

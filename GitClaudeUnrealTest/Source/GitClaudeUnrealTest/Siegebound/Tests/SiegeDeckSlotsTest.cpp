@@ -1390,14 +1390,16 @@ bool FSiegeDeckKeyboardFocusAcceptAndRemoveTest::RunTest(const FString& Paramete
  *  B stops deleting cards and starts meaning Back). Asserts STATE (SC-§104): the
  *  focused index is a real middle tile K, then INDEX_NONE.
  *
- *  ⛔⛔ THE EXIT IS GAMEPAD-ONLY — Gamepad_FaceButton_Right / Virtual_Back, and
- *  NOTHING ELSE. The Escape key was DROPPED from this binding under AS-§6 A-2,
- *  which at its current width leaves the Escape key permanently unabsorbed
- *  project-wide: nothing in this project handles it. ⛔ Do NOT bind the Escape
- *  key here to "complete" what a comment seems to describe — a Slate
- *  FReply::Handled() on that key overturns a CLOSED Jonathan ruling and is an
- *  automatic QA FAIL. (A-2's scope is his own open question at TASK-1300; until
- *  he rules, A-2 stands at its widest and this lane stays gamepad-only.)
+ *  ⭐🧑 THE EXIT IS Escape · Gamepad_FaceButton_Right · Virtual_Gamepad_Back, AND
+ *  NOTHING ELSE. Escape was dropped from this binding under AS-§6 A-2 and is
+ *  RESTORED at TASK-1304 block B on 🧑 HIS OWN 2026-09-18 RULING (TASK-1300),
+ *  verbatim label: "Scoped — Escape may exit the card grid" — A-2 was about the
+ *  assistant console and the in-match cancel routes, not a menu-side grid.
+ *  ⛔ THE GRANT IS NARROW AND THE PRODUCTION CODE FENCES IT: Escape reaches
+ *  FReply::Handled() IFF the grid is live AND ExitCardGridFocus() returned true.
+ *  ⛔ Do NOT widen it — Escape claimed on a cold builder, on the deck bar or
+ *  anywhere else on L_MainMenu still overturns A-2 and is an automatic QA FAIL.
+ *  A-2 is UNRELAXED for the assistant console and the in-match cancel routes.
  *
  *  ⛔⛔ WHY THE ASSERTION IS THE INDEX AND ⛔ NOT IsCardGridFocusLive() — READ THIS
  *  BEFORE "STRENGTHENING" THIS TEST (SC-§39, and the manager named this trap in
@@ -1493,8 +1495,10 @@ bool FSiegeDeckExitCardGridTest::RunTest(const FString& Parameters)
 	// (d) A SECOND PRESS FALLS THROUGH — the whole point of the nested-Back
 	//     ruling: gamepad B once leaves the grid, B again leaves the builder,
 	//     because the second press finds nothing to act on and does not claim the
-	//     key. ⛔ B ONLY (Gamepad_FaceButton_Right / Virtual_Back) — the Escape
-	//     key is NOT bound to either leg and must not be, per AS-§6 A-2.
+	//     key. ⭐ Escape · Gamepad_FaceButton_Right · Virtual_Gamepad_Back all
+	//     share this ONE entry point, so this assertion covers the Escape leg
+	//     too: 🧑 his A-2 SCOPE grant (2026-09-18) is for LEAVING A LIVE GRID, and
+	//     a press that leaves nothing must not be claimed on any of the three.
 	TestFalse(TEXT("(d) STATE: a SECOND exit acts on nothing and does not consume the key"),
 		Builder->ExitCardGridFocus());
 
