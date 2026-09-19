@@ -2259,13 +2259,15 @@ void ASiegePlayerController::HandleMatchEnd(ETeamId Winner)
 	}
 
 	// UI-only input for the end screen (GDD §3.9)
+	// ⛔ NO FOCUS TARGET IS SET ON THIS INPUT MODE, AND THE ABSENCE IS DELIBERATE (TASK-1311).
+	// /Game/UI/WBP_VictoryScreen's CDO is bIsFocusable = False, so the engine's focus-target
+	// setter (PlayerController.cpp:6345, via SObjectWidget.cpp:175) logs an Error and focus
+	// never lands — asking for it was already a no-op, so not asking changes nothing a player
+	// sees. ⛔ Do not re-add it unless the widget root is made focusable first; whether Play
+	// Again should be key/pad-reachable at all is a product question owed to Jonathan.
 	bShowMouseCursor = true;
 	bEnableClickEvents = true;
 	FInputModeUIOnly InputMode;
-	if (VictoryWidget)
-	{
-		InputMode.SetWidgetToFocus(VictoryWidget->TakeWidget());
-	}
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 	SetInputMode(InputMode);
 

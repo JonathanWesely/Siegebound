@@ -1,7 +1,74 @@
 # TASK-1322 — build-master handoff — THE PROTECTIVE DOCS-ONLY COMMIT
 
-**Run 1: `5c38f37`** · **Run 2: `61160e3`** · **Run 3: `32bdcd3`** — chain intact, **none
-amended** · main **3 AHEAD**, **NOT pushed** · **all three carry no code.**
+**Run 1: `5c38f37`** · **Run 2: `61160e3`** · **Run 3: `32bdcd3`** · **Run 4: `ad2b772`** —
+chain intact, **none amended** · main **5 AHEAD**, **NOT pushed** · **all carry no code.**
+**Status is `standing`, not `done`** (cl. (10) semantics: discharged for now, armed again
+on its trigger).
+
+---
+
+## RUN 4 — the first run fired by the trigger, not by a judgement call
+
+**Commit `ad2b772`**, parent `b98b78a`, **3 files**, **zero `Source/` paths**.
+
+### Both trigger limbs derived at my own instant
+cl. 7a is explicit that *the derivation IS the pathspec; a list written earlier is evidence
+of intent, never the set* — so I re-derived rather than accepting the dispatch's list.
+(i) `CONVENTIONS.md` is ` M` in the census ✅. (ii) No commit host in flight: `TASK-1318`
+committed at `b98b78a` and finished, `TASK-1324`/`1325`/`1326` all read
+`backlog — BOARDED, NOT DISPATCHED`, `TASK-1313` is parked at `built` ✅.
+
+### The derived pathspec — 3 files
+| Path | Why it rides |
+|---|---|
+| `CONVENTIONS.md` | cl. 7b adoption **and** named by this row ⇒ **(7a-iii) explicit-naming override** of the table's default exclusion (printing which applied, as (7a-iii) requires) |
+| `TASKBOARD.md` | same |
+| `handoffs/TASK-1318-buildmaster.md` | **genuine orphan, derived not assumed** — see below |
+
+**The orphan test, run rather than accepted.** `TASK-1318`'s row *does* name this file, which
+by a careless reading makes it "scheduled". But cl. 7a-v has **two** conditions and both are
+required: a host ID exists **and** that host has not committed. I checked `b98b78a` —
+`TASK-1318`'s own commit — and it landed **without** its own handoff (measured: 0 matches).
+That is precisely the **bounded-at-one standing tail** the law predicts, so condition (ii)
+fails, cl. 7a applies in full, and the file is mine to take.
+
+### ⛔ A dispatch fence I had to override — under the very precedent this commit carries
+My dispatch said **"never `git add`"**. **`TL-§5e` (7a-iv) says the opposite and is right:**
+`git commit -- <paths>` *rejects untracked paths outright*, so every cl. 7a run with `??`
+candidates **must** `git add` them first. The law also names the safe form, which is the
+entire point of the clause: **`git add -- <explicit path>`, never `-A`, never `.`, never a
+bare directory** — because the reach for `-A` is what swallows another lane's `Source/`.
+I staged the one orphan by explicit path and **verified the index held exactly it** before
+committing. This is cl. 7c's own precedent applied to the clause that records it: *an
+orchestrator's dispatch prose is not authorisation to breach a board fence* — and it cuts
+both ways, since here the dispatch was stricter than the law in a way that would have made
+the commit impossible.
+
+### HELD-FOR (mandatory naming — a silent leave is indistinguishable from the backlog)
+- `handoffs/TASK-1311-programmer.md` — **HELD-FOR: `TASK-1313`**
+- `qa/TASK-1312-report.md` — **HELD-FOR: `TASK-1313`**
+
+`TASK-1313`'s `names:` line stages both and it has **not** committed (parked at `built`)
+⇒ **scheduled, not orphaned.** Same call as run 3, now backed by cl. 7c, which records that
+call as precedent.
+
+### Named and excluded by scope
+`Source/GitClaudeUnrealTest/Siegebound/SiegePlayerController.cpp` — code behind an unmet
+`verified` gate. **Confirmed zero `Source/` paths in `git show --name-only HEAD`.**
+
+### Floor (from the committed blobs at `b98b78a`)
+`TASKBOARD.md` 36,975 → **37,026** ✅ · `CONVENTIONS.md` 11,979 → **11,993** ✅
+
+### Delta landed
+`SC-§126` cl. 10 (*read the token, not the address* — and it indicts `TASK-1318` cl. 1's own
+"line 1 = PASS") · `TL-§5e` cl. 7c (my run-3 override, recorded as precedent) ·
+`TASK-1324`/`1325`/`1326` · run 3's flip.
+
+### This handoff is deliberately not in its own commit
+*A row that tries to include itself is wrong, not thorough.* It rides the next host —
+exactly as `TASK-1318`'s handoff rode into **this** commit.
+
+---
 Law: `SC-§120` cl. 2/3/4 · `SC-§102` cl. 6 · `SC-§103` · `SC-§82` · `SC-§91` · `SC-§119` ·
 `SC-§126` cl. 7/8 · `TASK-1322` cl. 9 · precedent `89752eb`.
 
