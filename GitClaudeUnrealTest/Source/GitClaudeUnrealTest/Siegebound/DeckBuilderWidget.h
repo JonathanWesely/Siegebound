@@ -224,7 +224,13 @@ public:
 	//
 	//  THE KEY TABLE — ⛔ no letter and ⛔ no digit anywhere, so KBD-§4's remap
 	//  table is NEVER entered (it tables all 26 letters and deliberately excludes
-	//  digits/punctuation/Enter/Escape BY DESIGN, CONVENTIONS:2519-2522); ⛔ Tab
+	//  digits/punctuation/Enter/Escape BY DESIGN — CONVENTIONS `KBD-§4`, SECOND
+	//  BULLET. ⛔ The SECTION is the citation; the line number is corroboration
+	//  only. This claim read CONVENTIONS:2519-2522 when the comment was written
+	//  and reads CONVENTIONS.md:2528 — ONE line, not a four-line range — on
+	//  2026-09-18, three inserts later in that same file on that same day. ⇒ a
+	//  `§` does not drift when the file grows; a line number drifts every
+	//  time); ⛔ Tab
 	//  untouched; every consumed key fires ONLY while a card tile actually holds
 	//  Slate focus, so nothing is consumed anywhere else on this screen:
 	//    move focus  Left/Right/Up/Down · Gamepad_DPad_* · Gamepad_LeftStick_*
@@ -691,6 +697,52 @@ protected:
 	 */
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
+	/**
+	 *  ⭐ TASK-1307 — THE ONLY MOMENT FROM WHICH THE FOCUS READ-BACK CAN TELL THE
+	 *  TRUTH. ⛔ This override exists for the INSTRUMENT and for nothing else: it
+	 *  changes WHEN AND HOW WE LOOK, never what happens. It reads no input,
+	 *  touches no deck, moves no focus.
+	 *
+	 *  ⛔ WHY NOT THE NEXT-TICK TIMER THE ROW OFFERED FIRST — MEASURED IN THE
+	 *  ENGINE LOOP, NOT ASSUMED. One FEngineLoop::Tick iteration runs, in order:
+	 *    (a) GEngine->Tick()                       LaunchEngineLoop.cpp:5859  <- world tick; FTimerManager, so SetTimerForNextTick lands HERE
+	 *    (b) ProcessLocalPlayerSlateOperations()   LaunchEngineLoop.cpp:5918  <- ⭐ THE FOCUS FLUSH
+	 *    (c) Slate Tick(PlatformAndInput)          LaunchEngineLoop.cpp:5921  <- a mouse click on the menu button runs HERE
+	 *    (d) Slate Tick(TimeAndWidgets)            LaunchEngineLoop.cpp:5991  <- ⭐ SObjectWidget::Tick -> NativeTick lands HERE
+	 *    (e) GFrameCounter++                       LaunchEngineLoop.cpp:6131  <- ⇒ (a)..(d) of one iteration ALL see the SAME counter
+	 *  ⇒ if the builder was opened from a Slate click, the focus op is queued at
+	 *  (c) of frame N and is flushed at (b) of frame N+1 — which a next-tick
+	 *  timer, firing at (a) of frame N+1, comes in BEFORE. ⛔ The timer route is
+	 *  pre-flush in exactly the case a human produces, so it would have shipped
+	 *  the same defect in a different frame.
+	 *  ✅ (d) of any frame STRICTLY LATER than the construct frame is post-flush
+	 *  in EVERY case, because (b) precedes both (c) and (d) within its own
+	 *  iteration. That, and only that, is what FocusRequestFrameCounter guards.
+	 *
+	 *  ⛔ NOT A NEW TICK COST: this widget already ticks. UUserWidget::
+	 *  UpdateCanTick sets bCanTick from WidgetBPClass->ClassRequiresNativeTick()
+	 *  (UserWidget.cpp:2360), and that flag is `!NativeParent->HasMetaData
+	 *  ("DisableNativeTick")` (WidgetBlueprint.cpp:1563) — UDeckBuilderWidget
+	 *  carries no such meta, and WBP_DeckBuilder's TickFrequency was read live on
+	 *  2026-09-18 as AUTO. ⇒ the tick was already happening; this adds one
+	 *  guarded branch while the builder is open, and nothing once it has fired.
+	 */
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+
+	/**
+	 *  ⭐ TASK-1307 — TEARDOWN SAFETY FOR THE DEFERRED READ-BACK, and it is a
+	 *  DISARM rather than a cancel. Choosing NativeTick over a timer means there
+	 *  is no handle to dangle and no lambda to outlive this UObject — a tick
+	 *  cannot be delivered to a destroyed widget — so the crash class the row
+	 *  warned about is removed STRUCTURALLY, not cleaned up after.
+	 *  ⛔ This override still exists, because a UUserWidget is REUSED across
+	 *  RemoveFromParent/AddToViewport: without the disarm, a builder torn down
+	 *  before its first post-flush tick would carry a stale armed flag into its
+	 *  NEXT open and log a read-back it never requested. ⇒ per-construct state,
+	 *  per DECK/TASK-1307 requirement (i), never per class.
+	 */
+	virtual void NativeDestruct() override;
+
 private:
 
 	/** The deck currently being edited (in-memory model; every content mutation persists to the editing slot via PersistWorkingDeck — DECK-§4). */
@@ -760,6 +812,47 @@ private:
 
 	/** True after the unresolvable-CardTileClass warning was logged (once-per-widget spam guard, the bWarnedMissingTable shape). */
 	mutable bool bWarnedMissingTileClass = false;
+
+	/**
+	 *  ⭐ TASK-1307 — THE ONCE-PER-OPEN ARM. Set by AcquireBuilderFocus (i.e. from
+	 *  NativeConstruct, so it re-arms on EVERY open of this instance), cleared by
+	 *  the first post-flush NativeTick that consumes it and by NativeDestruct.
+	 *  ⛔ Instrument state only: nothing reads it but the read-back, and no
+	 *  gameplay, focus or deck behaviour branches on it.
+	 *  ⛔ Deliberately NOT a UPROPERTY and NOT Transient-annotated: it is a plain
+	 *  per-instance bool with no reflection, serialization or Blueprint surface —
+	 *  the bWarnedMissingTileClass shape one field above.
+	 */
+	bool bFocusReadbackPending = false;
+
+	/**
+	 *  ⭐ TASK-1307 — GFrameCounter at the instant the focus request was made.
+	 *  ⛔ The guard is `GFrameCounter > FocusRequestFrameCounter`, i.e. STRICTLY
+	 *  LATER FRAME, never `>=`: within one FEngineLoop::Tick iteration the world
+	 *  tick, the focus flush, the input tick and the widget tick all observe the
+	 *  SAME counter (it is incremented once, at LaunchEngineLoop.cpp:6131), so a
+	 *  same-frame tick may still be pre-flush. See NativeTick's comment for the
+	 *  phase ordering this is derived from.
+	 */
+	uint64 FocusRequestFrameCounter = 0;
+
+	/**
+	 *  ⭐ TASK-1307 — THE LINE THAT ACTUALLY ANSWERS "did the builder end up with
+	 *  Slate focus?". Called from NativeTick EXACTLY ONCE per builder open, at a
+	 *  moment proven to be after ProcessLocalPlayerSlateOperations has flushed
+	 *  the deferred request.
+	 *  ⛔ The verdict is POINTER IDENTITY against GetCachedWidget(), never a type
+	 *  name: SNew(SObjectWidget, Widget) wraps EVERY UUserWidget (Widget.cpp:975
+	 *  and :980), SNew stringifies the type into SetDebugInfo (Declarative
+	 *  SyntaxSupport.h:37-38 -> :929), SetDebugInfo assigns TypeOfWidget
+	 *  (SWidget.cpp:1400) and GetTypeAsString returns it (SWidget.cpp:1116-1119)
+	 *  ⇒ "SObjectWidget" is the type string of every UMG widget in the tree and
+	 *  discriminates NOTHING. The type names stay in the line as context beside
+	 *  the verdict, never as the verdict.
+	 *  ⛔ Log verbosity, never Verbose: one line per open, and an empty log must
+	 *  read as "the call site was never reached", never as a quiet pass.
+	 */
+	void LogPostFlushFocusReadback();
 
 	/** Index of CardID in WorkingDeck.Cards, or INDEX_NONE. */
 	int32 IndexOfCard(FName CardID) const;
@@ -873,6 +966,16 @@ private:
 	 *  LaunchEngineLoop.cpp:5231) or when there is no Slate at all (automation).
 	 *  ⛔ A false is NOT a failure — it is the normal NativeConstruct case, because
 	 *  the widget is not yet parented into a live window when Construct runs.
+	 *
+	 *  ⭐🚨 TASK-1307 — WHERE THE ANSWER NOW COMES FROM. This function's own log
+	 *  line is PRE-FLUSH by construction and is labelled as such: it is taken in
+	 *  the same synchronous moment as the request, so in the deferred case it can
+	 *  only ever report the PRE-EXISTING focus holder. It arms
+	 *  LogPostFlushFocusReadback(), which NativeTick fires EXACTLY ONCE per open,
+	 *  in a frame strictly later than this one — past the flush — and THAT line
+	 *  carries the MATCH / NO-MATCH verdict, by pointer identity.
+	 *  ⛔ The return expression is UNCHANGED and always compared pointers; only
+	 *  the log was ever weaker than the return.
 	 */
 	bool AcquireBuilderFocus();
 

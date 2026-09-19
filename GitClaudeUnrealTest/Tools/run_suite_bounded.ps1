@@ -334,6 +334,61 @@ function New-EditorCommandLine {
     # 'Cmd: Automation' and a zero-started, zero-failed, perfectly green-looking run.
     # -SelfTest asserts BOTH that the return is [string] (not [string[]]) and that the
     # -ExecCmds token survives as one quoted unit.
+    #
+    # ---------------------------------------------------------------------------
+    # -DisablePlugins=Aura  --  TASK-1294. THIS IS THE FIX, NOT A FALLBACK.
+    # ---------------------------------------------------------------------------
+    # THE DEFECT. The Aura editor plugin starts its own client on editor boot and
+    # calls its indexing endpoint ~19-24 s later. Under -nullrhi there is no signed-in
+    # user, so the call comes back
+    #     LogAura: Error: Response code: 401
+    #     LogAura: Error: Response content: {"message":"User not authenticated",...}
+    #     LogAura: Warning: Indexing failed: Authentication required
+    # and the automation controller SOMETIMES attributes that Error line to whichever
+    # test's capture window happens to be open ~31 ms earlier. Measured landing in a
+    # DIFFERENT test on run after run while the tests themselves did not change: that
+    # is the signature of a TIME-BASED EXTERNAL fault, not a code fault.
+    #
+    # !! AND IT IS NASTIER THAN "IT REDS WHATEVER IS OPEN" (measured 2026-09-18,
+    # !! TASK-1306's 5a): the 401 landed squarely inside Deck.UncapFiftyOfOneCardLegal
+    # !! and that test STILL returned Success. PRESENCE and ABILITY-TO-RED are
+    # !! SEPARABLE. A run therefore has THREE states, not two:
+    # !!   (i) no 401 · (ii) 401 fired, no victim · (iii) 401 fired, a test reds.
+    # !! => a bare `grep -c 'Response code: 401'` CANNOT tell (i)-because-fixed from
+    # !! (i)-because-quiet-this-run, and it has returned 0 with NO fix applied (runs
+    # !! 20260917-212139 / -212229 / 20260918-161724). THE STRUCTURAL PROOF THAT THIS
+    # !! FLAG WORKED IS `grep -c LogAura <log>` == 0 -- TOTAL, not merely the 401 --
+    # !! PLUS the absence of `LogPluginManager: Mounting Engine plugin Aura`. Those
+    # !! same greps return 18-31 on every pre-change suite log, so they can fire.
+    #
+    # WHY THIS LEVER AND NOT ANOTHER (measured in UE 5.8's own sources, not memory):
+    #   * FPluginManager::ConfigureEnabledPlugins calls FindCommandLinePlugins FIRST
+    #     (PluginManager.cpp:2043), BEFORE FindTargetPlugins (:2049).
+    #   * FindCommandLinePlugins parses -DisablePlugins= (:1587), configures the name
+    #     as a DISABLED reference (:1592) and records it in ConfiguredPluginNames
+    #     (:1597). A disabled reference short-circuits at
+    #     FPluginReferenceDescriptor::IsEnabledForPlatform (PluginReferenceDescriptor
+    #     .cpp:41-47, "if(!bEnabled) return false"), so it never enters EnabledPlugins.
+    #   * EVERY later source is gated on !ConfiguredPluginNames.Contains(name): the
+    #     target receipt (:1636), the .uproject "Plugins" array (:1709, source
+    #     "Enabled plugins in .uproject for ...") and .uplugin EnabledByDefault (:1748).
+    #     => the command line OVERRIDES GitClaudeUnrealTest.uproject's Aura entry
+    #     (:55-56) for THIS PROCESS ONLY.
+    #   * That is the whole reason this lever was chosen: GitClaudeUnrealTest.uproject
+    #     is Jonathan's file (ruling R11) and no agent edits it, and editing it -- or
+    #     the engine-side Aura.uplugin -- would ALSO kill Aura for the GUI editor,
+    #     which VER-7's verifier lane and Aura's own MCP tooling depend on. This flag
+    #     is typed only here, so the GUI editor is untouched by construction.
+    #
+    # SCOPE: unconditional, BOTH lanes. The Command lane boots the same -nullrhi
+    # editor and inherits the same race, and nothing either lane runs needs Aura --
+    # the automation corpus references it exactly ONCE, in a COMMENT
+    # (SiegeMenuInputTest.cpp:35), across 47 files and 561 tests.
+    #
+    # DO NOT "simplify" this to an expected-error / log-suppression pin for the 401
+    # string. That fixes exactly one string and leaves the next LogAura Error line
+    # free to red a random test; it is the declared FALLBACK for this row and it was
+    # NOT taken, because this lever was reachable.
     $parts = @(
         ('"{0}"' -f $Uproject),
         ('-ExecCmds="{0}"' -f $ExecValue),
@@ -342,6 +397,7 @@ function New-EditorCommandLine {
         '-nopause',
         '-nosplash',
         '-NoLiveCoding',
+        '-DisablePlugins=Aura',
         '-log',
         ('-abslog="{0}"' -f $AbsLog)
     )
@@ -1177,6 +1233,46 @@ function Invoke-SelfTest {
         $ok = $false; $why += ('command lane token wrong -> ' + $cl2)
     }
     Add-SelfTestCase -Name 'command lane emits the COMMA form with QUIT_EDITOR' -Ok $ok -Detail ($why -join '; ')
+
+    # =======================================================================
+    # 5b. TASK-1294 -- the Aura plugin must be EXCLUDED from BOTH editor lanes.
+    #
+    # SC-39 / SHIP-9: a guard only ever seen PASSING is indistinguishable from no
+    # guard -- and this flag's absence is SILENT. The suite still boots, still runs
+    # 561 tests and still prints a total; it just goes back to rolling dice on the
+    # Aura 401. Nothing downstream would notice. So the SAME predicate that judges
+    # the real command line is run against synthetic degenerate ones and MUST refuse
+    # every one of them. The controls go THROUGH the predicate; none is asserted
+    # beside it.
+    # =======================================================================
+    Write-Head '5b. AURA EXCLUSION -- -DisablePlugins=Aura, both lanes (TASK-1294)'
+
+    # FParse::Value(FCommandLine::Get(), TEXT("DisablePlugins="), ...) takes the token
+    # immediately after '=' with NO space, then ParseIntoArray splits it on ','
+    # (PluginManager.cpp:1478-1479). Any other spelling silently yields an EMPTY
+    # plugin list -- and Aura loads exactly as before, with no warning anywhere.
+    $hasAuraFlag = { param([string] $Line) ($null -ne $Line) -and ($Line -cmatch '(^|\s)-DisablePlugins=Aura(\s|$)') }
+
+    $ok = $true; $why = @()
+    if (-not (& $hasAuraFlag $cl))  { $ok = $false; $why += ('SUITE lane is missing the flag -> ' + $cl) }
+    if (-not (& $hasAuraFlag $cl2)) { $ok = $false; $why += ('COMMAND lane is missing the flag -> ' + $cl2) }
+    Add-SelfTestCase -Name '-DisablePlugins=Aura present verbatim in BOTH lanes' -Ok $ok -Detail ($why -join '; ')
+
+    # THE FIRING CONTROL. Each entry is a real way this flag dies in a future edit.
+    $ok = $true; $why = @()
+    $degenerates = @(
+        @{ Why = 'flag deleted outright';                        Line = ($cl -creplace '\s-DisablePlugins=Aura', '') }
+        @{ Why = 'space after = (FParse reads an EMPTY list)';   Line = ($cl -creplace '-DisablePlugins=Aura', '-DisablePlugins= Aura') }
+        @{ Why = 'value emptied';                                Line = ($cl -creplace '-DisablePlugins=Aura', '-DisablePlugins=') }
+        @{ Why = 'plugin name mistyped';                         Line = ($cl -creplace '-DisablePlugins=Aura', '-DisablePlugins=AuraModelGenerator') }
+    )
+    foreach ($d in $degenerates) {
+        if (& $hasAuraFlag $d.Line) { $ok = $false; $why += ('ACCEPTED a degenerate line [' + $d.Why + '] -> ' + $d.Line) }
+    }
+    # ...and the predicate must still be able to say YES, or the four NOs above are
+    # just the answer of a needle that matches nothing (SC-39).
+    if (-not (& $hasAuraFlag $cl)) { $ok = $false; $why += 'the predicate no longer matches the REAL line -- the 4 refusals above prove NOTHING' }
+    Add-SelfTestCase -Name 'the flag guard REFUSES 4 degenerate lines, still accepts the real one' -Ok $ok -Detail ($why -join '; ')
 
     # =======================================================================
     # 6. THE BOUND MERGE -- B-2. A force-killed run may not read green.

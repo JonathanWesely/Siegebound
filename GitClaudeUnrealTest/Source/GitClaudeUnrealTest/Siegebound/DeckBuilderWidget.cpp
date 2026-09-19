@@ -1537,6 +1537,19 @@ bool UDeckBuilderWidget::AcquireBuilderFocus()
 		LocalPlayer->GetSlateOperations().SetUserFocus(SelfSlate.ToSharedRef(), EFocusCause::SetDirectly);
 	}
 
+	// ⭐🚨 TASK-1307 — ARM THE POST-FLUSH READ-BACK, AND THAT IS THE WHOLE ROW.
+	// Everything from here down is INSTRUMENT: it changes WHEN AND HOW WE LOOK,
+	// never what happens. The focus request above has already been made, by the
+	// same two branches, in the same order, with the same causes.
+	// ⛔ Armed HERE and not in NativeConstruct so that the arm cannot outlive its
+	// premise: the three early returns above (no Slate, no Slate widget, no local
+	// player) leave it DISARMED, and in those sessions the absence of a
+	// post-flush line is correct rather than a silent failure.
+	// ⛔ Re-armed on EVERY open of this instance (NativeConstruct is the only
+	// caller), which is requirement (i)'s "per construct, not per class".
+	bFocusReadbackPending = true;
+	FocusRequestFrameCounter = GFrameCounter;
+
 	// ⛔ READ BACK WHICH WIDGET ACTUALLY HOLDS THE FOCUS — never assume it is the
 	// one we named. FSlateApplication::SetUserFocus walks the path LEAF→ROOT and
 	// stops on the FIRST widget whose SupportsKeyboardFocus() is true
@@ -1548,11 +1561,52 @@ bool UDeckBuilderWidget::AcquireBuilderFocus()
 	// needs `Log LogGitClaudeUnrealTest Verbose` typed first prints NOTHING by
 	// default — and an empty log reads as a passing measurement. That failure mode
 	// has cost this project a false pass before; one Log line per open is cheap.
+	//
+	// ⭐🚨 TASK-1307 FAULT A — THIS LINE IS PRE-FLUSH, AND IT NOW SAYS SO IN ITS
+	// OWN TEXT. It is taken SYNCHRONOUSLY inside NativeConstruct, i.e. BEFORE the
+	// deferred lane the else-branch above just queued has been flushed by
+	// FEngineLoop::ProcessLocalPlayerSlateOperations. ⇒ in the ordinary (deferred)
+	// case it is STRUCTURALLY INCAPABLE of reporting this widget, on ANY run,
+	// healthy or broken. MEASURED: TASK-1306's verifier read '<none>' here on the
+	// very run where a post-flush ui_snapshot read WBP_DeckBuilder_C_0
+	// "focused": true THREE times (qa/TASK-1306-verify.md §1, §2).
+	// ⇒ ⛔ A NO-MATCH on THIS line is EXPECTED and is evidence of NOTHING. The
+	// POST-FLUSH line emitted by LogPostFlushFocusReadback() is the one that
+	// answers. The line is KEPT rather than deleted for two reasons: its ABSENCE
+	// still means "the call site was never reached" (the trap QA named at
+	// TASK-1305 (4)), and the bTookFocus==true branch genuinely IS answerable at
+	// this moment.
+	//
+	// ⛔ TASK-1307 FAULT B — THE VERDICT IS POINTER IDENTITY, NOT A TYPE NAME, and
+	// the type names survive only as context beside it. Every UUserWidget in the
+	// tree is wrapped by SNew(SObjectWidget, Widget) (Widget.cpp:975 and :980),
+	// SNew stringifies the type into SetDebugInfo (DeclarativeSyntaxSupport.h:
+	// 37-38 → :929), SetDebugInfo assigns TypeOfWidget (SWidget.cpp:1400) and
+	// GetTypeAsString returns it (SWidget.cpp:1116-1119) ⇒ 'SObjectWidget' is the
+	// type string of EVERY UMG widget on the path and discriminates NOTHING. The
+	// return at the bottom of this function has always compared pointers; the log
+	// was the weaker of the two, which is backwards for an instrument.
+	//
+	// ⛔ QA WARN-2 (qa/TASK-1305-report.md:469-480), RE-MEASURED AND CARRIED INTO
+	// THE TEXT: TAKEN/DEFERRED is diagnostic colour, NOT a pass signal.
+	// SetUserFocus returns FALSE when the widget is ALREADY focused —
+	// `if (WidgetToFocus.Widget == OldFocusedWidget) { return false; }`,
+	// SlateApplication.cpp:3028-3032 (re-read 2026-09-18) — so a perfectly
+	// focused re-entrant open prints DEFERRED. The word is labelled in the line
+	// as what it is so it cannot be read as a verdict a third time.
 	const TSharedPtr<SWidget> Focused = FSlateApplication::Get().GetUserFocusedWidget(UserIndex);
 	UE_LOG(LogGitClaudeUnrealTest, Log,
-		TEXT("UDeckBuilderWidget::AcquireBuilderFocus: focus %s this frame; focused widget is '%s' (this builder's Slate widget is '%s'); IsFocusable()=%s."),
+		TEXT("UDeckBuilderWidget::AcquireBuilderFocus PRE-FLUSH read-back: IDENTITY=%s ")
+		TEXT("(NOT the verdict - a NO-MATCH here is EXPECTED whenever the request was deferred); ")
+		TEXT("SetUserFocus returned %s (diagnostic colour only, never a pass signal); ")
+		TEXT("focused SWidget 0x%016llX ('%s') vs this builder's SWidget 0x%016llX ('%s'); ")
+		TEXT("IsFocusable()=%s. A second read-back line follows and carries the verdict; if none ")
+		TEXT("follows, this builder was torn down or stopped ticking before the flush."),
+		(Focused.IsValid() && Focused == SelfSlate) ? TEXT("MATCH") : TEXT("NO-MATCH"),
 		bTookFocus ? TEXT("TAKEN") : TEXT("DEFERRED to the next frame"),
+		static_cast<uint64>(reinterpret_cast<UPTRINT>(Focused.Get())),
 		Focused.IsValid() ? *Focused->GetTypeAsString() : TEXT("<none>"),
+		static_cast<uint64>(reinterpret_cast<UPTRINT>(SelfSlate.Get())),
 		*SelfSlate->GetTypeAsString(),
 		IsFocusable() ? TEXT("true") : TEXT("false"));
 
@@ -1749,6 +1803,114 @@ FReply UDeckBuilderWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FK
 	}
 
 	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
+}
+
+// ---------------------------------------------------------------------------
+// ⭐🚨 TASK-1307 — THE POST-FLUSH FOCUS READ-BACK. ⛔ INSTRUMENT ONLY: these three
+// functions change WHEN AND HOW WE LOOK and NEVER what happens. No key binding,
+// no focus call, no deck mutation, no .uasset dependency is added, moved or
+// removed by any line below. DECK-§9's key table is untouched by construction —
+// nothing here reads an FKey.
+//
+// ⛔ THEY ARE PLACED AFTER NativeOnKeyDown ON PURPOSE: every line DECK-§9 cites
+// by number lives above this point, so appending here moves no cited address in
+// the shipped key table.
+// ---------------------------------------------------------------------------
+
+void UDeckBuilderWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	// ⛔ STRICTLY-LATER-FRAME, never `>=`. Derived from the engine loop, not
+	// assumed — one FEngineLoop::Tick iteration runs world tick
+	// (LaunchEngineLoop.cpp:5859) → ProcessLocalPlayerSlateOperations, THE FLUSH
+	// (:5918) → Slate PlatformAndInput (:5921) → Slate TimeAndWidgets, i.e. THIS
+	// (:5991) → GFrameCounter++ (:6131). All four phases of one iteration read the
+	// SAME counter, so a tick in the CONSTRUCT frame can still be pre-flush (it is,
+	// whenever the builder was opened from a Slate click at :5921); a tick in any
+	// LATER frame cannot be, because that frame's :5918 has already run.
+	// ⛔ This is also why a next-tick timer was REJECTED: it fires at :5859 of
+	// frame N+1, which is BEFORE that frame's flush at :5918 — the same defect one
+	// frame along. The row offered it first; the engine loop refused it.
+	if (bFocusReadbackPending && GFrameCounter > FocusRequestFrameCounter)
+	{
+		// ⛔ CLEARED BEFORE THE LOG, not after: exactly one line per builder open
+		// no matter what the read-back does, including every early return inside
+		// it. A NativeTick route that logged per frame would be a regression, not
+		// a fix.
+		bFocusReadbackPending = false;
+		LogPostFlushFocusReadback();
+	}
+}
+
+void UDeckBuilderWidget::NativeDestruct()
+{
+	// ⛔ DISARM, not cancel — there is no timer handle and no lambda to dangle,
+	// because a tick cannot be delivered to a destroyed widget. What this guards
+	// is REUSE: a UUserWidget survives RemoveFromParent/AddToViewport, so a
+	// builder torn down before its first post-flush tick would otherwise carry a
+	// stale armed flag into its NEXT open and print a read-back for a request
+	// that open never made.
+	bFocusReadbackPending = false;
+
+	Super::NativeDestruct();
+}
+
+void UDeckBuilderWidget::LogPostFlushFocusReadback()
+{
+	// ⛔ Mirrors AcquireBuilderFocus's own preconditions rather than assuming they
+	// still hold: the local player can be gone, and the cached Slate widget can
+	// have been released, between the request and this tick.
+	if (!FSlateApplication::IsInitialized())
+	{
+		return; // offline automation lane: no Slate focus exists to read back
+	}
+
+	const TSharedPtr<SWidget> SelfSlate = GetCachedWidget();
+	APlayerController* PC = GetOwningPlayer();
+	ULocalPlayer* LocalPlayer = PC ? PC->GetLocalPlayer() : nullptr;
+	if (!SelfSlate.IsValid() || LocalPlayer == nullptr)
+	{
+		// ⛔ Log, not Verbose, and NOT silent: "I could not look" is a third
+		// answer and it must be distinguishable from both MATCH and NO-MATCH.
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("UDeckBuilderWidget::AcquireBuilderFocus POST-FLUSH read-back: IDENTITY=UNREADABLE - ")
+			TEXT("the builder no longer has a cached Slate widget (%s) or a local player (%s), so no ")
+			TEXT("comparison was possible. This is NOT a NO-MATCH."),
+			SelfSlate.IsValid() ? TEXT("valid") : TEXT("invalid"),
+			LocalPlayer ? TEXT("present") : TEXT("absent"));
+		return;
+	}
+
+	// ⛔ THE VERDICT IS POINTER IDENTITY — the same comparison AcquireBuilderFocus
+	// has always made in its RETURN, now made where it can actually be true. The
+	// two type names ride along as CONTEXT and are deliberately not the test:
+	// 'SObjectWidget' is the type string of every UUserWidget on the path
+	// (Widget.cpp:975/:980 → DeclarativeSyntaxSupport.h:37-38 → :929 →
+	// SWidget.cpp:1400 → :1116-1119), so a matching PAIR OF NAMES would not
+	// discriminate this builder from any other UMG widget in the tree.
+	const int32 UserIndex = FSlateApplication::Get().GetUserIndexForController(LocalPlayer->GetControllerId());
+	const TSharedPtr<SWidget> Focused = FSlateApplication::Get().GetUserFocusedWidget(UserIndex);
+	const bool bIsThisBuilder = Focused.IsValid() && Focused == SelfSlate;
+
+	// ⛔ 'MATCH' / 'NO-MATCH', hyphenated on purpose: a grep for the POSITIVE
+	// token must NOT be satisfiable by the negative one. "IDENTITY=NO-MATCH" does
+	// not contain "IDENTITY=MATCH", so the two are separable by plain substring
+	// search — which is how the playtest-verifier reads this line.
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("UDeckBuilderWidget::AcquireBuilderFocus POST-FLUSH read-back: IDENTITY=%s ")
+		TEXT("(THIS is the verdict - taken %d frame(s) after the request, past ")
+		TEXT("FEngineLoop::ProcessLocalPlayerSlateOperations); focused SWidget 0x%016llX ('%s') vs ")
+		TEXT("this builder's SWidget 0x%016llX ('%s'); IsFocusable()=%s. ")
+		TEXT("The two type names are context, never the test - 'SObjectWidget' is every ")
+		TEXT("UUserWidget's Slate type."),
+		bIsThisBuilder ? TEXT("MATCH") : TEXT("NO-MATCH"),
+		static_cast<int32>(GFrameCounter - FocusRequestFrameCounter),
+		static_cast<uint64>(reinterpret_cast<UPTRINT>(Focused.Get())),
+		Focused.IsValid() ? *Focused->GetTypeAsString() : TEXT("<none>"),
+		static_cast<uint64>(reinterpret_cast<UPTRINT>(SelfSlate.Get())),
+		*SelfSlate->GetTypeAsString(),
+		IsFocusable() ? TEXT("true") : TEXT("false"));
 }
 
 void UDeckBuilderWidget::LoadDefaultDeck()

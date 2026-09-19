@@ -114,21 +114,6 @@ bool FSiegeMenuInputDownTwiceThenAcceptOpensDeckBuilderTest::RunTest(const FStri
 {
 	using namespace SiegeMenuInputTestUtils;
 
-	// ⚠️ A STANDING ENGINE ERROR THE MAP HAS ALWAYS PRINTED, DECLARED SO THE FRAMEWORK DOES NOT RED
-	// THIS TEST ON IT (TASK-1274 loop 1 — `qa/TASK-1280-report.md` "Build errors (TASK-1281)").
-	// `BP_MenuGameMode` BeginPlay → `SetInputMode_UIOnlyEx(WidgetToFocus = WBP_MainMenu)` →
-	// `FInputModeUIOnly::SetWidgetToFocus` (`PlayerController.cpp:6345`, compiled only outside
-	// Shipping/Test) logs `LogPlayerController: Error: InputMode:UIOnly - Attempting to focus
-	// Non-Focusable widget SObjectWidget [Widget.cpp(976)]!` because `WBP_MainMenu`'s `SObjectWidget`
-	// is not focusable. It is on every `L_MainMenu` boot since before this diff; this test is merely
-	// the first to run PIE on the map inside an automation capture window. Occurrences pinned to
-	// EXACTLY 1 (the host measured one line per run, ×2): the test fails if the message is seen 0 or
-	// 2+ times, so when the Blueprint is fixed (the owed follow-up row) THIS LINE GOES WITH IT.
-	// Regex (default), `Contains`, case-insensitive; the `LogPlayerController:` category is NOT part
-	// of the compared string (`AutomationTest.cpp:294` passes the message body).
-	AddExpectedError(TEXT("InputMode:UIOnly - Attempting to focus Non-Focusable widget SObjectWidget"),
-		EAutomationExpectedErrorFlags::Contains, /*Occurrences*/ 1);
-
 	// The map the subsystem arms on — and nothing else; a wrong map fails at step 1 by name.
 	AutomationOpenMap(TEXT("/Game/Maps/L_MainMenu"));
 
