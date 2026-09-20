@@ -1142,22 +1142,30 @@ function Add-ThrowCase {
     their removal would destroy the thing they demonstrate. Those lines are removed from
     the corpus BEFORE any matching runs -- and if that substring is ever deleted or
     reworded the function REFUSES TO SCAN AT ALL rather than scanning without it, so no
-    failure this case can emit is capable of naming those two addresses UNDER ANY INPUT,
-    not merely under the happy one. Hard-coding that block's line number instead would
+    failure this case can emit is capable of naming those two addresses UNDER ANY INPUT
+    THAT DELETES OR REWORDS THE ANCHOR, not merely under the happy one. A REFLOW THAT
+    SPLITS THAT PARAGRAPH IS A DIFFERENT INPUT CLASS AND IS NOT COVERED: the downward walk
+    stops at the inserted blank, the address line falls outside the exemption and IS
+    scanned -- visibly, because the excluded-line count in the same ledger line drops.
+    Narrowing the exempt block to the marker line would make that case UNCONDITIONAL, so
+    it is ruled out, not overlooked. Hard-coding that block's line number instead would
     carry the exact defect this case guards: the block moved +3 under TASK-1327 (measured
-    across that commit, not quoted from a ledger), and the next edit that adds or removes
-    a line ABOVE it moves it again.
+    across that commit, not quoted from a ledger), and any edit that CHANGES THE LINE
+    COUNT above it moves it again.
 
     THE HEADER BOUNDARY IS DERIVED, NEVER HARDCODED. PowerShell's own parser is asked for
     the first block-comment token in the file, so nesting and same-line delimiters are the
-    language's problem and not this function's guess. NO BOUNDARY, COUNT OR OFFSET IS
-    WRITTEN DOWN IN THIS COMMENT: the derived value is printed in the ledger line on EVERY
-    run, pass or fail, which is the one place it cannot go stale. It moves with any edit
-    that adds or removes a line ABOVE it -- not with every edit to this file, and a number
-    recorded here would rot exactly as the hand-deleted citations above it did. A count in
-    a comment is an address wearing different clothes. (This paragraph may NOT quote those
-    two delimiters literally: a doc comment that spells its own closer CLOSES ITSELF there,
-    and the rest of the prose is then parsed as code. Measured while writing this function.)
+    language's problem and not this function's guess. THE DERIVED BOUNDARY IS NOWHERE
+    WRITTEN DOWN HERE, AND NO ADDRESS INTO THIS FILE SURVIVES IN THIS COMMENT AS A LIVE
+    CITATION: the only ones pointing into this file are quoted FROM THE DIFFS THAT DELETED
+    THEM, and the boundary itself is printed in the ledger line on EVERY RUN THAT DERIVES
+    ONE, pass or fail, which is the one place it cannot go stale. It moves with any edit
+    that CHANGES THE LINE COUNT above it -- not with every edit to this file, and a live
+    address recorded here would rot exactly as the hand-deleted citations above it did. A
+    count in a comment is an address wearing different clothes. (This paragraph may NOT
+    quote a block comment's own opener and closer literally: a doc comment that spells its
+    own closer CLOSES ITSELF there, and the rest is then parsed as code. Measured while
+    writing this function.)
 
     IT FAILS CLOSED AT ALL THREE OF ITS ENTRY CONDITIONS -- the parse, the header boundary
     and the exhibit anchor. A parse error, a missing leading block comment, or a missing
@@ -1635,12 +1643,20 @@ function Invoke-SelfTest {
 
     # =======================================================================
     # SC-126 cl. 7/9. The ONE thing six rows fixed by hand, now caught by construction.
-    # The detail line publishes the DERIVED boundary on a pass as well as on a fail, so a
-    # green ledger line is still evidence about where the header was measured to end.
+    # The detail line publishes the DERIVED boundary on a pass as well as on any fail that
+    # reached one, so a green ledger line is still evidence about where the header was
+    # measured to end. It is omitted where nothing was derived, because a boundary of
+    # "lines 0..0" is not a measurement. The omission keys off the BOUNDARY and never off
+    # the exempt count, so the "0 exhibit line(s) excluded" tripwire -- the meter that
+    # makes a defeated exemption visible -- still prints on the anchor-missing path.
     # =======================================================================
     $hdr = Get-HeaderRotProneAddress -Path $PSCommandPath
-    $hdrDetail = (@(('header derived as lines {0}..{1}; {2} exhibit line(s) excluded by substring, never by address' `
-                     -f $hdr.First, $hdr.Last, $hdr.Exempt)) + $hdr.Why) -join '; '
+    $hdrLead = @()
+    if ($hdr.Last -gt 0) {
+        $hdrLead = @(('header derived as lines {0}..{1}; {2} exhibit line(s) excluded by substring, never by address' `
+                      -f $hdr.First, $hdr.Last, $hdr.Exempt))
+    }
+    $hdrDetail = ($hdrLead + $hdr.Why) -join '; '
     Add-SelfTestCase -Name 'SC-126: header grows no rot-prone line address' -Ok $hdr.Ok -Detail $hdrDetail
 
     # =======================================================================

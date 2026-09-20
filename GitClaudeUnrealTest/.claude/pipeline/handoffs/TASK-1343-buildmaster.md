@@ -198,10 +198,44 @@ moved under me is the pipeline advancing.
 - 🧑 ⛔ **NOT PUSHED.** `origin/main` was 0/0 at my start (he pushed `c316929` himself); it is **1 behind local**
   after my commit, and it stays that way until he says otherwise.
 
-### 6.4 RESULT — filled in at 5c
+### 6.4 RESULT
 
-See the row's status line and §7 below for the hash, the `--numstat` file list and the post-commit re-probe of
-the other lane.
+**Commit `4e388d6`** · **parent `c316929`** (confirmed by `%p`) · ⛔ **not amended** · ⛔ **not pushed**
+(`origin/main` is **1 behind** local and stays there until 🧑 he says otherwise).
+
+`git show --numstat HEAD` (⭐ `SC-§128` — ⛔ never `--stat`) ⇒ **exactly 5 files**:
+
+| added | deleted | path |
+|---|---|---|
+| **29** | **0** | `GitClaudeUnrealTest/Source/…/SiegePlayerController.cpp` ⟵ the subject, comment-only |
+| 3 | 3 | `GitClaudeUnrealTest/.claude/pipeline/TASKBOARD.md` |
+| 206 | 0 | `GitClaudeUnrealTest/.claude/pipeline/handoffs/TASK-1341-programmer.md` |
+| 333 | 0 | `GitClaudeUnrealTest/.claude/pipeline/qa/TASK-1342-report.md` |
+| 246 | 0 | `GitClaudeUnrealTest/.claude/pipeline/handoffs/TASK-1343-buildmaster.md` |
+
+**Forbidden-shape probe over the STAGED SET, run BEFORE committing:** `.uasset` 0 · `.umap` 0 · `Saved/` 0 ·
+`Tools/` 0 · `run_suite_bounded.ps1` 0 · `TASK-1338` 0 · `TASK-1339` 0 · `.exe`/`.dll` 0.
+
+**Post-commit re-probe of the other lane** (`git status --porcelain -uall`, whole repo):
+
+```
+ M GitClaudeUnrealTest/Tools/run_suite_bounded.ps1
+?? GitClaudeUnrealTest/.claude/pipeline/handoffs/TASK-1338-programmer.md
+```
+
+⇒ ✅ **both STILL DIRTY and STILL UNSTAGED.** The lanes did not cross.
+
+### 6.5 THE RELAUNCH — DONE, AND PROVEN TO BE ON THE NEW BINARIES
+
+⛔ Nothing was **closed**: the census found no editor and no `-game` instance of his, so the graceful-quit lane
+had no subject. I launched a fresh GUI editor on the new binaries (⛔ never Live Coding, ⛔ never `Ctrl+Alt+F11`):
+
+- **PID `11856`**, `UnrealEditor.exe` on `GitClaudeUnrealTest.uproject`, process **created 10:39:21**.
+- `Binaries/Win64/UnrealEditor-GitClaudeUnrealTest.dll` **last written 10:35:06** — i.e. the module the compile
+  produced **predates the process by ~4 minutes**.
+
+⇒ the editor is **provably running the binaries this row built**, rather than that being assumed from the fact
+that a compile happened first.
 
 ---
 
