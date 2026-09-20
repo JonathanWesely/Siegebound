@@ -184,3 +184,43 @@ Pre-existing NITs from `TASK-1346`, ⛔ **not** this row's work, each needing it
    untouched** — the comment would still read true and would not be.
 2. The **TOCTOU-throw** case, which does **not** falsify the clause (recorded so it is not re-raised).
 3. A bare `(SC-§136)` provenance token on the modality line — zero lines, available to any future touch.
+
+---
+
+## 8. 5c — THE COMMIT (written AFTER it landed; this section is the tail)
+
+**`ce4947d2cce09300ffe1322e054f37b2111a66ba`** — short **`ce4947d`**.
+**Parent `d9a98d1`** confirmed by `%P` ⇒ built **on** `TASK-1340`, ⛔ **not amended**.
+`main` **2 ahead → 3 ahead**, ⛔ **LOCAL — NOT PUSHED** (`origin/main` still reads `c316929`).
+
+`git show --numstat HEAD` — **6 files**, 1104 insertions / 26 deletions:
+
+```
+2	2	GitClaudeUnrealTest/.claude/pipeline/TASKBOARD.md
+61	3	GitClaudeUnrealTest/.claude/pipeline/handoffs/TASK-1340-buildmaster.md
+405	0	GitClaudeUnrealTest/.claude/pipeline/handoffs/TASK-1345-programmer.md
+186	0	GitClaudeUnrealTest/.claude/pipeline/handoffs/TASK-1347-buildmaster.md
+405	0	GitClaudeUnrealTest/.claude/pipeline/qa/TASK-1346-report.md
+45	21	GitClaudeUnrealTest/Source/GitClaudeUnrealTest/Siegebound/SiegePlayerController.cpp
+```
+
+Verified on the **commit**, never the index. Immediately after it the whole worktree read **clean** —
+the fenced `TASK-1338`/`1344` lane re-measured clean both before and after.
+
+### 8.1 THE TAIL I LEAVE — BOUNDED AT TWO, AND IT HAS **NO BOARDED TAKER**
+
+1. `TASKBOARD.md:4731` — this row's `status:` final `done` state.
+2. `handoffs/TASK-1347-buildmaster.md` — **this section 8**.
+
+Both are dirty for exactly one reason: **a commit hash cannot exist before its commit.**
+
+🚨 Unlike `TASK-1340` — which named *me* as its taker and whose tail I duly swept in `ce4947d` — **I cannot
+name a successor**: `TASK-1347` was the **last boarded row in the wave**.
+
+⛔ I **declined** to fabricate a second, unboarded "ledger" commit to swallow my own tail. That regress does
+**not terminate**: the ledger commit's own hash cannot be inside itself either, so it would buy a clean tree
+by moving the same tail one commit further along while adding an unboarded commit to the history.
+
+⇒ **This needs a row from the manager**, or 🧑 Jonathan sweeps it into his own milestone commit (his
+documented habit). Flagged, not hidden — the alternative was leaving the board asserting
+`5c COMMIT RUNNING` after the commit had landed, which is the stale-line failure `SC-§134` exists to prevent.
