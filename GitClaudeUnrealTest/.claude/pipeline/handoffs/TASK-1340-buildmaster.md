@@ -19,9 +19,14 @@ as the law's first real discharge. Four details, each done on purpose:
    hoped-for outcome.
 2. ⛔ **I read the board back as STATE** after every edit (⭐ `SC-§104`), never assumed the `Edit` landed.
    Board line count after the first flip: **37,554** — i.e. not truncated (⭐ `SC-§120`'s failure mode).
-3. ⛔ **The earlier wording is KEPT VERBATIM** beside the later states. The row now carries **three** states in
-   one line — `PARSE CONTROL RUNNING` → the leg ledger → `SUITE COMPLETE, 5c PENDING` — each **appended**,
-   ⛔ **none overwritten**, *because deleting the early wording deletes the proof that the flip was early.*
+3. ⛔ **The earlier wording is KEPT VERBATIM** beside the later states. The row now carries ~~**three**~~
+   ⭐ **FOUR** states in one line — `PARSE CONTROL RUNNING` → the leg ledger → `SUITE COMPLETE, 5c PENDING` →
+   `done d9a98d1` — each **appended**, ⛔ **none overwritten**, *because deleting the early wording deletes the
+   proof that the flip was early.*
+   ⚖️ ⛔ **CORRECTED, STRUCK NOT DELETED (`SC-§126` · `SC-§136` cl. 6):** this line read *"three"* when it was
+   written at leg 1 and was **true then**; the 5c flip made it **false**. ⛔ **A count written before its
+   subject finished is the same species of claim this whole chain exists to catch** — so it is re-measured
+   here rather than left to read plausibly. Counted at my final instant: **4 states, each `grep -c` = 1.**
 4. ⛔ The original `backlog — BOARDED, NOT DISPATCHED` text is **struck, not deleted**.
 
 ⛔ **Anchor collision counts MEASURED at my own instant (⭐ `SC-§127`), never inherited:**
@@ -401,3 +406,56 @@ done it for my predecessor, so the pattern is proven, not hoped for.**
 ⛔ **Process state I leave:** the **editor is CLOSED** (0 `UnrealEditor*.exe`). ⛔ That is *helpful*, not
 neglectful: `TASK-1347`'s 5a **requires** a closed editor. ⛔ **MCP `:8000` is therefore DOWN** — any engine
 task must relaunch first. ⛔ **`main` stays LOCAL. Nothing pushed.**
+
+---
+
+### 6.4 RESULT
+
+**Commit `d9a98d1`** · **parent `4e388d6`** (confirmed by `%P`) · ⛔ **not amended** · ⛔ **not pushed**.
+`main` went **1 ahead → 2 ahead** of `origin/main` and **stays local** until 🧑 he says otherwise.
+
+`git show --numstat HEAD` (⭐ `SC-§128` — ⛔ **never `--stat`**) ⇒ **exactly 8 files**:
+
+| added | deleted | path |
+|---|---|---|
+| 40 | 2 | `.claude/pipeline/CONVENTIONS.md` ⟵ `SC-§136` · `SC-§137` · `SC-§134` cl. 7/8 · the `SHIP-§9i` correction |
+| 93 | 12 | `.claude/pipeline/TASKBOARD.md` |
+| **592** | 0 | `.claude/pipeline/handoffs/TASK-1338-programmer.md` |
+| **403** | 0 | `.claude/pipeline/handoffs/TASK-1340-buildmaster.md` ⟵ this file |
+| 37 | 3 | `.claude/pipeline/handoffs/TASK-1343-buildmaster.md` ⟵ ⛔ **the cl. 7a orphan** |
+| **492** | 0 | `.claude/pipeline/qa/TASK-1339-report.md` ⟵ the spent gate, shipped for the record |
+| **407** | 0 | `.claude/pipeline/qa/TASK-1344-report.md` ⟵ ⭐ **the PASSING re-gate** |
+| **32** | **16** | `Tools/run_suite_bounded.ps1` ⟵ ⭐ **the subject** |
+
+⭐ **Both QA reports ship together on purpose.** A chain that committed the **failing** gate's report and not
+the **passing** one would commit its own contradiction — the board says so, and it is right.
+
+### 6.5 ⛔ THE FENCE, RE-VERIFIED **AFTER** THE COMMIT — NOT MERELY INTENDED
+
+```
+$ git status --porcelain
+ M GitClaudeUnrealTest/Source/GitClaudeUnrealTest/Siegebound/SiegePlayerController.cpp
+?? GitClaudeUnrealTest/.claude/pipeline/handoffs/TASK-1345-programmer.md
+?? GitClaudeUnrealTest/.claude/pipeline/qa/TASK-1346-report.md
+```
+
+✅ ⛔ **`SiegePlayerController.cpp` is STILL ` M` — dirty, UNSTAGED, +45 / −21**, untouched by me.
+
+🚨 ⭐ **AND THE CENSUS EARNED ITS KEEP ONE LAST TIME: `qa/TASK-1346-report.md` DID NOT EXIST when I derived my
+pathspec.** It appeared **mid-row** — `TASK-1346`, the gate over `TASK-1345`, landing while I ran the suite.
+⛔ A host that had **inherited** a filename list instead of deriving one, and then swept *"whatever is
+untracked"* at commit time, would have **shipped an un-owned gate report into the wrong commit.**
+⇒ ⭐ **this is exactly the failure `SC-§133` predicts, observed live: the list is EXPECTED, NOT EXHAUSTIVE,
+and the tree moves under you.** All three paths are **HELD FOR `TASK-1347`** and **named**, not staged.
+
+### 6.6 THE TAIL, FINAL AND MEASURED
+
+⛔ **Two files, exactly as forecast in §8**, both dirty only because a commit hash cannot exist before its
+commit: **`TASKBOARD.md`** (my `done` flip, a **1-line** delta at `:4622` and nothing else — verified by
+`git diff --numstat` = `1 1` and a single hunk `@@ -4622 +4622 @@`) and **this handoff** (§6.4–§6.6).
+⛔ **TAKER: ⭐ `TASK-1347`.**
+
+⛔ **The row's status line now carries FOUR states in one line** — `PARSE CONTROL RUNNING` → the leg ledger →
+`SUITE COMPLETE, 5c PENDING` → `done d9a98d1` — **each appended, none overwritten**, each verified present
+exactly once after writing. ⭐ `SC-§134` cl. 8's *"the early line is EVIDENCE"* is the whole reason the first
+wording survives in a row that is now `done`.
