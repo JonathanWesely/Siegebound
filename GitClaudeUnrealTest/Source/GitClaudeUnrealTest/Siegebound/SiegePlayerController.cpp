@@ -2258,6 +2258,72 @@ void ASiegePlayerController::HandleMatchEnd(ETeamId Winner)
 			*GetNameSafe(this), *VictoryScreenClass.ToString());
 	}
 
+	// ⭐ TASK-1319 (SC-§50) — UI-ONLY IS NOT APPLIED WHEN THERE IS NO UI. Both branches above
+	// reach here with VictoryWidget still null — the class did not resolve, or CreateWidget
+	// returned null — and until now they fell straight through into the UI-only block below.
+	// ⛔ VictoryWidget != nullptr IS the "a screen is on the viewport" predicate, not a guess: it
+	// is assigned in exactly ONE place (the CreateWidget above), AddToViewport is the last and
+	// unconditional statement of that same branch, and HandleMatchReset nulls it again for the
+	// next match — so reaching this line with it null means nothing was put on screen.
+	//
+	// ⛔ qa/TASK-007-report.md DECLARED THIS, verbatim: "HandleMatchEnd switches to
+	// FInputModeUIOnly even when VictoryWidget is null ...: no UI exists to click and no game
+	// input remains — a soft-lock in the degraded state. Suggest applying UIOnly only when the
+	// widget was created (else keep GameAndUI + cursor so the session stays inspectable)."
+	// It was declared there, named a second time by TASK-1311 and a third time at this row's
+	// boarding, with no row against it until now (SC-§50: a declared gap with no row is an
+	// orphan, and it ships).
+	//
+	// ⛔ WHAT IT COSTS — MEASURED AT SOURCE, NOT ASSUMED: FInputModeUIOnly::ApplyInputMode calls
+	// GameViewportClient.SetIgnoreInput(true) (PlayerController.cpp:6384), and the first act of
+	// UGameViewportClient::InputKey under that flag is
+	//     if (IgnoreInput()) { return ViewportConsole ? ViewportConsole->InputKey(...) : false; }
+	// — every key is swallowed before Enhanced Input or this controller ever sees it, so with no
+	// widget on screen the ONLY surviving route is the developer console. ⛔ And that console does
+	// not exist in the packaged game: ViewportConsole is constructed under #if ALLOW_CONSOLE
+	// (GameViewportClient.cpp:2807-2809), and ALLOW_CONSOLE is ALLOW_CONSOLE_IN_SHIPPING == 0 in
+	// Shipping (Core/Public/Misc/Build.h). ⇒ in the shipped build the degraded state is a TOTAL
+	// soft-lock: no screen, no button, no key — only Alt+F4.
+	//
+	// ✅ THE FIX BINDS NOTHING AND INVENTS NOTHING (SC-§121 census: the set of keys this row makes
+	// live is EMPTY — it adds no key constant, no input action, no mapping context and no input
+	// binding of any kind, and the closed Escape ruling at AS-§6 A-2 is left exactly as it is).
+	// It hands back the posture this controller ALREADY uses for every cursor surface in-match —
+	// ApplyCursorInputState's GameAndUI arm, copied term for term — because "nothing on screen to
+	// receive input" is precisely the state in which GAME input must stay live:
+	// FInputModeGameAndUI::ApplyInputMode calls SetIgnoreInput(false) (PlayerController.cpp:6410),
+	// so the player keeps every route they had one second earlier instead of a viewport that eats
+	// all of them. ⛔ It opens no NEW route and is not meant to: the match-end refusals
+	// (CanOpenAssistantConsole / CanOpenWarMap / CanOpenControlsHelp all return !bMatchEnded && ...)
+	// are deliberately left exactly as they are.
+	// ⚠️ ApplyCursorInputState() CANNOT be reused here: it early-outs while bMatchEnded is latched
+	// (set above) BY DESIGN — HandleMatchEnd owns the end-of-match posture — so this arm states the
+	// same terms inline rather than calling a function that would return without doing anything.
+	if (!VictoryWidget)
+	{
+		bShowMouseCursor = true;
+		bEnableClickEvents = true;
+
+		FInputModeGameAndUI DegradedInputMode;
+		DegradedInputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		DegradedInputMode.SetHideCursorDuringCapture(false);
+		SetInputMode(DegradedInputMode);
+
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASiegePlayerController '%s': match ended with NO end screen — input left Game-and-UI with the cursor up instead of UI-only, because UI-only with nothing on screen swallows every key (qa/TASK-007-report.md WARN; TASK-1319)."),
+			*GetNameSafe(this));
+
+		// ⛔ THE SAME COMPLETION RECORD THE SUCCESS PATH WRITES BELOW, RE-EMITTED DELIBERATELY RATHER
+		// THAN SHARED: hoisting it above that block would re-order the success path's logs, and
+		// wrapping that block in an else would re-indent it — and TASK-1314 shipped it at 1d433ca on
+		// the promise that it stays BYTE-IDENTICAL (TASK-1320 check 1 measures exactly that). A
+		// duplicated three-line log is the cheaper of the two costs.
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("ASiegePlayerController '%s': match ended — winner %s."),
+			*GetNameSafe(this), Winner == ETeamId::Blue ? TEXT("Blue") : TEXT("Red"));
+		return;
+	}
+
 	// UI-only input for the end screen (GDD §3.9)
 	// 🧑 KEYBOARD REACHABILITY — ANSWERED 2026-09-19 (TASK-1314-PLAYAGAIN-KEY-REACHABLE).
 	// Jonathan ruled "yes, make Play Again keyboard reachable", closing the product question
