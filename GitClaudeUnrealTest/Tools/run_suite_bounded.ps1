@@ -84,10 +84,13 @@
         EDITING THIS BLOCK MOVES THEM, which is how the previous revision went stale:
             grep -n "Start-Process -FilePath"   -- the launch
             grep -n "+ '.cmdline'"              -- the receipt
-        As this paragraph was last written (2026-09-19) they stood at :1680 (launch) and
-        :1677 (receipt), both RE-GREPPED against the finished file, never offset from a
-        diff: the revision before this one derived them by arithmetic (+69 where the
-        header's growth was +70) and both were wrong by one.
+        The two addresses this paragraph used to carry were DELETED, not refreshed
+        (TASK-1327): they had been RE-GREPPED against the finished file, never offset
+        from a diff -- an earlier revision derived them by arithmetic (+69 where the
+        header's growth was +70) and both were wrong by one -- and they went stale
+        ANYWAY, displaced by this block's own next edit. A citation that every later
+        edit above it moves has no correct value to iterate toward; the two greps are
+        the entire remedy (SC-126 cl. 7).
         RE-DERIVE THE NUMBER, DO NOT INHERIT IT (SC-91):
 
             Get-ChildItem Saved/Logs/*.cmdline | Measure-Object
@@ -175,7 +178,8 @@
     address then moved AGAIN, the same day, between the gate that measured it and the fix
     that deleted it. A fourth number would have rotted too.
 
-        grep -n "THE FILE EXISTS" .claude/pipeline/CONVENTIONS.md    (one hit)
+        grep -n "THE FILE EXISTS" .claude/pipeline/CONVENTIONS.md
+            -- every hit is that sentence, or a later entry quoting it
 
     THE PORCELAIN CONTRACT
       RUNNER_EXIT is the PROCESS EXIT CODE. They are the same variable by construction
