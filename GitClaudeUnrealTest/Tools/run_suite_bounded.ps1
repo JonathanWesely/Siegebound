@@ -1086,6 +1086,119 @@ function Add-ThrowCase {
     Add-SelfTestCase -Name $Name -Ok $r.Ok -Detail $detail
 }
 
+<#
+    SC-126 cl. 7/9 -- THE HEADER MUST NOT GROW A ROT-PRONE ADDRESS.
+
+    Six consecutive rows each DELETED one line-number citation from this file's header BY
+    HAND. None of those citations was residue: every one was written FRESH by a careful
+    row and was false within days, because an edit ANYWHERE ABOVE a citation moves the
+    thing it points at while the citation itself stays put -- a clean diff, a green parse
+    and a false sentence. Fixing the last instance does not close a GENERATIVE failure
+    mode, so this case closes it by construction instead.
+
+    THE BAN LIST IS THE TWO SHAPES MEASURED TO HAVE ACTUALLY ROTTED IN THAT CHAIN, AND
+    NOTHING ELSE. Each is quoted from the diff that deleted it, by commit, because a
+    commit hash is the one reference in this comment that cannot rot:
+
+      (a) an address into a PIPELINE MARKDOWN file, in EITHER spelling. The second
+          spelling is not a variant -- it is the one that defeated a sweep once already:
+              f5697f3 (TASK-1324) deleted   tool runs" (CONVENTIONS.md:5093), and the ...
+              the header's own exhibit records  ... at :5966-5969 and then at :6172-6175
+      (b) a BARE self-address into this .ps1:
+              9d80505 (TASK-1327) deleted   they stood at :1680 (launch) and
+              9d80505 (TASK-1327) deleted   :1677 (receipt), both RE-GREPPED ...
+
+    DELIBERATELY OUT OF SCOPE, DECLARED SO A SKIPPED CLASS CANNOT READ AS A FORGOTTEN ONE:
+
+      * ENGINE-SOURCE addresses ('ParseExecCommands.cpp:29', 'EditorServer.cpp:5993').
+        They move on an ENGINE UPGRADE, not on an agent's edit, and banning them would gut
+        the -ExecCmds explanation this header exists to carry. NOTE THE TWO DIGITS in
+        ':29' -- a ':[0-9]{3,4}' ban would MISS A REAL ADDRESS. That is why shape (b) uses
+        '\d+' and discriminates on WHAT PRECEDES THE COLON, never on how long the number is.
+      * CLOCK TIMES ('23:42', '04:55:38', '04:55:58'). Not addresses at all. Shape (b)
+        refuses a colon preceded by a digit, so they are excluded BY CONSTRUCTION rather
+        than by a subtracted exception.
+
+    A third shape may be added ONLY by naming an instance that rotted. Speculative bans
+    are out: sweeping for "an address" and subtracting exceptions is the exact move that
+    produced both of the errors above.
+
+    THE EXHIBIT IS EXCLUDED BY SUBSTRING, NEVER BY AN ADDRESS. The header block introduced
+    by 'ANCHOR TO QUOTED TEXT' carries two dead addresses ON PURPOSE: they are there
+    BECAUSE they rotted. They are EVIDENCE, not citations, and a check that prescribed
+    their removal would destroy the thing they demonstrate. Those lines are removed from
+    the corpus BEFORE any matching runs, so no failure this case can emit is even capable
+    of naming them. Hard-coding that block's line number instead would carry the exact
+    defect this case guards -- it measured :146 today, it moved +3 under TASK-1327, and it
+    moves again under this very diff.
+
+    THE HEADER BOUNDARY IS DERIVED, NEVER HARDCODED. PowerShell's own parser is asked for
+    the first block-comment token in the file, so nesting and same-line delimiters are the
+    language's problem and not this function's guess. It measured lines 1..238 at this
+    writing, out of 13 block-comment delimiter pairs -- and it moves with every edit to
+    this file, including this one. (This paragraph may NOT quote those two delimiters
+    literally: a doc comment that spells its own closer CLOSES ITSELF there, and the rest
+    of the prose is then parsed as code. Measured while writing this function.)
+
+    IT FAILS CLOSED. If the header cannot be located, the case REDS. A guard that reports
+    "clean" when it could not find its subject is worse than no guard (SC-39).
+#>
+function Get-HeaderRotProneAddress {
+    param([Parameter(Mandatory)][string] $Path)
+
+    $tokens = $null
+    $errors = $null
+    $null = [System.Management.Automation.Language.Parser]::ParseFile($Path, [ref] $tokens, [ref] $errors)
+
+    $header = $null
+    foreach ($t in $tokens) {
+        if ($t.Kind -eq [System.Management.Automation.Language.TokenKind]::Comment -and $t.Text.StartsWith('<#')) {
+            $header = $t
+            break
+        }
+    }
+    if ($null -eq $header) {
+        return @{ Ok = $false; First = 0; Last = 0; Exempt = 0
+                  Why = @('FAIL-CLOSED: no leading block comment found by the parser, so the header could not be bounded') }
+    }
+
+    $first = $header.Extent.StartLineNumber
+    $last  = $header.Extent.EndLineNumber
+    $lines = [System.IO.File]::ReadAllLines($Path)
+
+    # The exhibit. Found by SUBSTRING and grown outward to its blank-line boundaries, so
+    # the exclusion survives every reflow of the paragraph that carries it. No address.
+    $exempt = @{}
+    for ($i = $first; $i -le $last; $i++) {
+        if ($lines[$i - 1] -notlike '*ANCHOR TO QUOTED TEXT*') { continue }
+        $a = $i
+        while ($a -gt $first -and $lines[$a - 2].Trim() -ne '') { $a-- }
+        $b = $i
+        while ($b -lt $last  -and $lines[$b].Trim()     -ne '') { $b++ }
+        for ($k = $a; $k -le $b; $k++) { $exempt[$k] = $true }
+    }
+
+    $shapes = @(
+        @{ What = 'pipeline-markdown address, either spelling (TASK-1324 shape)'
+           Rx   = '(?:CONVENTIONS|TASKBOARD)\.md(?:\s+at)?\s*:\s*\d+' },
+        @{ What = 'bare self-address into this .ps1 (TASK-1327 shape)'
+           Rx   = '(?<![0-9A-Za-z._/\\-]):\d+' }
+    )
+
+    $why = @()
+    for ($i = $first; $i -le $last; $i++) {
+        if ($exempt.ContainsKey($i)) { continue }
+        foreach ($s in $shapes) {
+            foreach ($m in [regex]::Matches($lines[$i - 1], $s.Rx)) {
+                $why += ('line {0} grew a {1}: "{2}" in >>{3}<< -- delete it or replace it with a grep anchor (SC-126 cl. 7)' `
+                         -f $i, $s.What, $m.Value, $lines[$i - 1].Trim())
+            }
+        }
+    }
+
+    return @{ Ok = ($why.Count -eq 0); First = $first; Last = $last; Exempt = $exempt.Count; Why = $why }
+}
+
 function Invoke-SelfTest {
     Reset-SelfTestLedger
 
@@ -1487,6 +1600,16 @@ function Invoke-SelfTest {
         if ($rewound.Lines.Count -eq 0) { $ok = $false; $why += 'an offset past EOF must rewind and re-read, not go blind' }
     } catch { $ok = $false; $why += ('THREW: ' + $_.Exception.Message) }
     Add-SelfTestCase -Name 'W-10: incremental log reader advances and never re-reads' -Ok $ok -Detail ($why -join '; ')
+
+    # =======================================================================
+    # SC-126 cl. 7/9. The ONE thing six rows fixed by hand, now caught by construction.
+    # The detail line publishes the DERIVED boundary on a pass as well as on a fail, so a
+    # green ledger line is still evidence about where the header was measured to end.
+    # =======================================================================
+    $hdr = Get-HeaderRotProneAddress -Path $PSCommandPath
+    $hdrDetail = (@(('header derived as lines {0}..{1}; {2} exhibit line(s) excluded by substring, never by address' `
+                     -f $hdr.First, $hdr.Last, $hdr.Exempt)) + $hdr.Why) -join '; '
+    Add-SelfTestCase -Name 'SC-126: header grows no rot-prone line address' -Ok $hdr.Ok -Detail $hdrDetail
 
     # =======================================================================
     Write-Head 'SELF TEST RESULT'
