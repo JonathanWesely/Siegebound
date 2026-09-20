@@ -2259,15 +2259,73 @@ void ASiegePlayerController::HandleMatchEnd(ETeamId Winner)
 	}
 
 	// UI-only input for the end screen (GDD §3.9)
-	// ⛔ NO FOCUS TARGET IS SET ON THIS INPUT MODE, AND THE ABSENCE IS DELIBERATE (TASK-1311).
-	// /Game/UI/WBP_VictoryScreen's CDO is bIsFocusable = False, so the engine's focus-target
-	// setter (PlayerController.cpp:6345, via SObjectWidget.cpp:175) logs an Error and focus
-	// never lands — asking for it was already a no-op, so not asking changes nothing a player
-	// sees. ⛔ Do not re-add it unless the widget root is made focusable first; whether Play
-	// Again should be key/pad-reachable at all is a product question owed to Jonathan.
+	// 🧑 KEYBOARD REACHABILITY — ANSWERED 2026-09-19 (TASK-1314-PLAYAGAIN-KEY-REACHABLE).
+	// Jonathan ruled "yes, make Play Again keyboard reachable", closing the product question
+	// TASK-1311 recorded as open at this very spot. THE TARGET IS THE BUTTON, NEVER THE ROOT:
+	// /Game/UI/WBP_VictoryScreen's CDO is bIsFocusable = False AND its DesiredFocusWidget is
+	// empty, so making the root focusable is necessary-but-NOT-sufficient — focus would sit on
+	// a UUserWidget root, which is not an SButton, and Accept would activate nothing.
+	// ⛔ Do not focus the root here. Focusing the BUTTON below bypasses DesiredFocusWidget
+	// entirely, because it hands Slate one specific SWidget instead of asking the widget where
+	// it wants focus. (Slate never discards a non-focusable target either — it re-homes UPWARD
+	// to the nearest ancestor supporting keyboard focus, i.e. SViewport, which already holds
+	// focus in-match. That, not a discard, is why TASK-1311's removed call was a true no-op.)
 	bShowMouseCursor = true;
 	bEnableClickEvents = true;
 	FInputModeUIOnly InputMode;
+
+	// TASK-1314: put Slate keyboard focus on the Play Again button so the button's OWN Accept
+	// path can reach it — Enter / SpaceBar / gamepad Accept → SButton::OnKeyDown (SButton.cpp:293,
+	// via FNavigationConfig's Accept rules at NavigationConfig.cpp:32-34) → ExecuteOnClick.
+	// ⛔ WE AUTHOR NO KEY BINDING AND MUST NOT: FInputModeUIOnly applies SetIgnoreInput(true)
+	// (PlayerController.cpp:6384), so Enhanced Input is deaf under this mode by design, and on
+	// L_Arena USiegeMenuInputSubsystem hard-returns before binding anything at all
+	// (SiegeMenuInputSubsystem.cpp:47). Slate's focus path is the ONLY live route to this
+	// screen, and the one thing it needs from us is a focused, focusABLE SButton.
+	if (VictoryWidget)
+	{
+		// Read back from the asset's widget tree 2026-09-19 — the template-inherited name is the
+		// SHIPPED one, so it is deliberately not "Btn_PlayAgain". WBP_VictoryScreen::Construct
+		// parents a "Play Again" TextBlock into this button and binds its OnClicked to
+		// RequestPlayAgain. ⛔ Renaming it in the asset silently breaks this lookup — the
+		// Warning below is the only thing that would ever say so.
+		static const FName PlayAgainButtonName(TEXT("Btn_Jump"));
+		if (UWidget* PlayAgainButton = VictoryWidget->GetWidgetFromName(PlayAgainButtonName))
+		{
+			// Cached by the AddToViewport above, so this is a lookup and not a rebuild
+			// (UWidget::TakeWidget_Private returns MyWidget when it is already valid).
+			const TSharedRef<SWidget> PlayAgainSlate = PlayAgainButton->TakeWidget();
+
+			// ⛔ THIS GUARD IS LOAD-BEARING, NOT DEFENSIVE PADDING. It asks the widget the EXACT
+			// predicate the engine's focus-target setter asks at PlayerController.cpp:6343
+			// (SWidget::SupportsKeyboardFocus), so this site is STRUCTURALLY INCAPABLE of
+			// re-emitting the "InputMode:UIOnly - Attempting to focus Non-Focusable widget"
+			// Error that TASK-1311 removed at 1c93610 — whatever the asset happens to say.
+			// ⚠️ AS MEASURED 2026-09-19 THE ASSET SAYS False: Btn_Jump carries an authored
+			// IsFocusable=False that overrides UButton's engine default of true (Button.cpp:48),
+			// and UButton exposes no runtime setter (InitIsFocusable is constructor-time only,
+			// Button.h:205-206). So until that ONE property is flipped in the Blueprint editor
+			// and hand-saved, this resolves, declines, and logs — and the end screen behaves
+			// exactly as it does today. That asset half is TASK-1314 Route K-2 (SC-§125).
+			if (PlayAgainSlate->SupportsKeyboardFocus())
+			{
+				InputMode.SetWidgetToFocus(PlayAgainSlate);
+			}
+			else
+			{
+				UE_LOG(LogGitClaudeUnrealTest, Warning,
+					TEXT("ASiegePlayerController '%s': victory screen button '%s' does not support keyboard focus (IsFocusable is False on it in WBP_VictoryScreen) — no focus target set, Play Again stays mouse-only (TASK-1314 Route K-2 is owed)."),
+					*GetNameSafe(this), *PlayAgainButtonName.ToString());
+			}
+		}
+		else
+		{
+			UE_LOG(LogGitClaudeUnrealTest, Warning,
+				TEXT("ASiegePlayerController '%s': victory screen has no widget named '%s' — no focus target set, Play Again is not keyboard-reachable (TASK-1314)."),
+				*GetNameSafe(this), *PlayAgainButtonName.ToString());
+		}
+	}
+
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 	SetInputMode(InputMode);
 
