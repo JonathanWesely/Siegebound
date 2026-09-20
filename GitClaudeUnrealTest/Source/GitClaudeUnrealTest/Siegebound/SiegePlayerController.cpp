@@ -2318,6 +2318,21 @@ void ASiegePlayerController::HandleMatchEnd(ETeamId Winner)
 		// wrapping that block in an else would re-indent it — and TASK-1314 shipped it at 1d433ca on
 		// the promise that it stays BYTE-IDENTICAL (TASK-1320 check 1 measures exactly that). A
 		// duplicated three-line log is the cheaper of the two costs.
+		//
+		// ⛔⭐ THE LITERAL BELOW IS A PUBLISHED INTERFACE, NOT AN INTERNAL LOG (SC-§135). The
+		// playtest-verifier lane greps this exact line as the runtime evidence behind a VERIFIED
+		// verdict — qa/TASK-1314-verify.md, qa/TASK-1311-verify.md and qa/TASK-1068-verify.md all
+		// quote it — and ⛔ NO census over Source/, Tools/ or the suite can see that reader, because
+		// it is an agent following VER-§, not a caller (SC-§50's orphan, inverted).
+		// ⛔ KEEP IT BYTE-IDENTICAL WITH THE SUCCESS PATH'S COPY at the end of this function: the
+		// return just below makes the two sites mutually exclusive, so a scraper gets exactly one hit
+		// per match end either way — a property preserved ONLY while the two strings match, which is
+		// the whole basis on which TASK-1320 TRADE 2 upheld the duplication. ⛔ Do not de-duplicate.
+		// ⛔ REWORD EITHER COPY AND THE VERIFIER'S GREP RETURNS ZERO ⇒ the lane reports UNOBSERVABLE,
+		// ⛔ NOT VERIFY-FAILED. It will not have observed a failure; it will have failed to observe —
+		// so the breakage announces itself as "could not observe", which reads at a glance like an
+		// ENVIRONMENT problem rather than a code change. That is a fail-silent in the one lane whose
+		// entire job is to be the runtime witness (SC-§132), and it is why this comment exists.
 		UE_LOG(LogGitClaudeUnrealTest, Log,
 			TEXT("ASiegePlayerController '%s': match ended — winner %s."),
 			*GetNameSafe(this), Winner == ETeamId::Blue ? TEXT("Blue") : TEXT("Red"));
@@ -2395,6 +2410,20 @@ void ASiegePlayerController::HandleMatchEnd(ETeamId Winner)
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 	SetInputMode(InputMode);
 
+	// ⛔⭐ THE LITERAL BELOW IS A PUBLISHED INTERFACE, NOT AN INTERNAL LOG (SC-§135). The
+	// playtest-verifier lane greps this exact line as the runtime evidence behind a VERIFIED
+	// verdict — qa/TASK-1314-verify.md, qa/TASK-1311-verify.md and qa/TASK-1068-verify.md all
+	// quote it — and ⛔ NO census over Source/, Tools/ or the suite can see that reader, because
+	// it is an agent following VER-§, not a caller (SC-§50's orphan, inverted).
+	// ⛔ KEEP IT BYTE-IDENTICAL WITH THE DEGRADED PATH'S COPY inside the !VictoryWidget block above:
+	// that block's early return makes the two sites mutually exclusive, so a scraper gets exactly one
+	// hit per match end either way — a property preserved ONLY while the two strings match, which is
+	// the whole basis on which TASK-1320 TRADE 2 upheld the duplication. ⛔ Do not de-duplicate.
+	// ⛔ REWORD EITHER COPY AND THE VERIFIER'S GREP RETURNS ZERO ⇒ the lane reports UNOBSERVABLE,
+	// ⛔ NOT VERIFY-FAILED. It will not have observed a failure; it will have failed to observe —
+	// so the breakage announces itself as "could not observe", which reads at a glance like an
+	// ENVIRONMENT problem rather than a code change. That is a fail-silent in the one lane whose
+	// entire job is to be the runtime witness (SC-§132), and it is why this comment exists.
 	UE_LOG(LogGitClaudeUnrealTest, Log,
 		TEXT("ASiegePlayerController '%s': match ended — winner %s."),
 		*GetNameSafe(this), Winner == ETeamId::Blue ? TEXT("Blue") : TEXT("Red"));
