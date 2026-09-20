@@ -1108,6 +1108,19 @@ function Add-ThrowCase {
               9d80505 (TASK-1327) deleted   they stood at :1680 (launch) and
               9d80505 (TASK-1327) deleted   :1677 (receipt), both RE-GREPPED ...
 
+    SHAPE (a) IS CASE-INSENSITIVE, SHAPE (b) IS NOT, AND THE ASYMMETRY IS DELIBERATE.
+    [regex]::Matches is CASE-SENSITIVE in .NET -- unlike PowerShell's own -match, and that
+    exact asymmetry defeated this row's FIRST control harness -- so a lowercase spelling of
+    the filename would have slipped shape (a) in silence. Shape (a) therefore carries (?i).
+    Shape (b) matches no letter at all outside its lookbehind, so case cannot reach it, and
+    an (?i) there would only be noise pretending to be rigour.
+
+    AND SHAPE (a) DEMANDS THE COLON TOUCH THE DIGIT. "see CONVENTIONS.md: 3 rows apply" is
+    ordinary English, not an address, and an earlier '\s*:\s*\d+' spelling would have RED
+    on it. A false red on this header is the failure with teeth: it invites the very
+    hand-edit this case exists to end, so the pattern errs toward letting prose through
+    (SHIP-9 -- validate against the failure that costs, not against success).
+
     DELIBERATELY OUT OF SCOPE, DECLARED SO A SKIPPED CLASS CANNOT READ AS A FORGOTTEN ONE:
 
       * ENGINE-SOURCE addresses ('ParseExecCommands.cpp:29', 'EditorServer.cpp:5993').
@@ -1127,21 +1140,31 @@ function Add-ThrowCase {
     by 'ANCHOR TO QUOTED TEXT' carries two dead addresses ON PURPOSE: they are there
     BECAUSE they rotted. They are EVIDENCE, not citations, and a check that prescribed
     their removal would destroy the thing they demonstrate. Those lines are removed from
-    the corpus BEFORE any matching runs, so no failure this case can emit is even capable
-    of naming them. Hard-coding that block's line number instead would carry the exact
-    defect this case guards -- it measured :146 today, it moved +3 under TASK-1327, and it
-    moves again under this very diff.
+    the corpus BEFORE any matching runs -- and if that substring is ever deleted or
+    reworded the function REFUSES TO SCAN AT ALL rather than scanning without it, so no
+    failure this case can emit is capable of naming those two addresses UNDER ANY INPUT,
+    not merely under the happy one. Hard-coding that block's line number instead would
+    carry the exact defect this case guards: the block moved +3 under TASK-1327 (measured
+    across that commit, not quoted from a ledger), and the next edit that adds or removes
+    a line ABOVE it moves it again.
 
     THE HEADER BOUNDARY IS DERIVED, NEVER HARDCODED. PowerShell's own parser is asked for
     the first block-comment token in the file, so nesting and same-line delimiters are the
-    language's problem and not this function's guess. It measured lines 1..238 at this
-    writing, out of 13 block-comment delimiter pairs -- and it moves with every edit to
-    this file, including this one. (This paragraph may NOT quote those two delimiters
-    literally: a doc comment that spells its own closer CLOSES ITSELF there, and the rest
-    of the prose is then parsed as code. Measured while writing this function.)
+    language's problem and not this function's guess. NO BOUNDARY, COUNT OR OFFSET IS
+    WRITTEN DOWN IN THIS COMMENT: the derived value is printed in the ledger line on EVERY
+    run, pass or fail, which is the one place it cannot go stale. It moves with any edit
+    that adds or removes a line ABOVE it -- not with every edit to this file, and a number
+    recorded here would rot exactly as the hand-deleted citations above it did. A count in
+    a comment is an address wearing different clothes. (This paragraph may NOT quote those
+    two delimiters literally: a doc comment that spells its own closer CLOSES ITSELF there,
+    and the rest of the prose is then parsed as code. Measured while writing this function.)
 
-    IT FAILS CLOSED. If the header cannot be located, the case REDS. A guard that reports
-    "clean" when it could not find its subject is worse than no guard (SC-39).
+    IT FAILS CLOSED AT ALL THREE OF ITS ENTRY CONDITIONS -- the parse, the header boundary
+    and the exhibit anchor. A parse error, a missing leading block comment, or a missing
+    exhibit anchor each RED the case with a FAIL-CLOSED sentence instead of scanning a
+    corpus this function could not bound. A guard that reports "clean" when it could not
+    find its subject is worse than no guard (SC-39) -- and a guard that fails closed at one
+    anchor while failing open at the next has only moved the hole.
 #>
 function Get-HeaderRotProneAddress {
     param([Parameter(Mandatory)][string] $Path)
@@ -1149,6 +1172,11 @@ function Get-HeaderRotProneAddress {
     $tokens = $null
     $errors = $null
     $null = [System.Management.Automation.Language.Parser]::ParseFile($Path, [ref] $tokens, [ref] $errors)
+
+    if ($errors -and $errors.Count -gt 0) {
+        return @{ Ok = $false; First = 0; Last = 0; Exempt = 0
+                  Why = @(('FAIL-CLOSED: the parser reported {0} error(s) on this file, so its token stream cannot be trusted to bound the header' -f $errors.Count)) }
+    }
 
     $header = $null
     foreach ($t in $tokens) {
@@ -1177,10 +1205,14 @@ function Get-HeaderRotProneAddress {
         while ($b -lt $last  -and $lines[$b].Trim()     -ne '') { $b++ }
         for ($k = $a; $k -le $b; $k++) { $exempt[$k] = $true }
     }
+    if ($exempt.Count -eq 0) {
+        return @{ Ok = $false; First = $first; Last = $last; Exempt = 0
+                  Why = @('FAIL-CLOSED: exhibit anchor not found inside the derived header, so the exhibit could not be excluded and NOTHING was scanned') }
+    }
 
     $shapes = @(
         @{ What = 'pipeline-markdown address, either spelling (TASK-1324 shape)'
-           Rx   = '(?:CONVENTIONS|TASKBOARD)\.md(?:\s+at)?\s*:\s*\d+' },
+           Rx   = '(?i)(?:CONVENTIONS|TASKBOARD)\.md(?:\s+at\s*)?:\d+' },
         @{ What = 'bare self-address into this .ps1 (TASK-1327 shape)'
            Rx   = '(?<![0-9A-Za-z._/\\-]):\d+' }
     )
