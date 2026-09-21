@@ -547,6 +547,76 @@ mcp__unreal_editor__wait_pie_seconds
 
 🧑 Jonathan's decision — recorded on TASK-1215 stage B, copied here verbatim by the orchestrator
 
+**Filled by:** build-master, 2026-09-21, under `TASK-1369`. **Source of every figure below:** `TASKBOARD.md` → `TASK-1215-AURA-GATE-P0` → `status:` line (stage B discharge, 2026-09-21) — **COPIED, not paraphrased.** ⛔ This row visited no web page, opened no pricing page, re-derived no price and estimated nothing. **This section RECORDS; it DECIDES NOTHING.**
+
+### 🚨 Read this before the table — this section breaks the file header's rule, and says so rather than doing it silently
+
+The header of this file promises: *"No agent-derived number appears below — every measurement is copied from Jonathan's own words."* That promise holds for every other section here. It does **not** hold for the price table below, and the difference is not cosmetic (`SC-§97` cl. 3 · `SC-§139` cl. 4(b)):
+
+- 🧑 **HIS WORDS — the decision, and the only thing in this section sourced to him.** Verbatim, in Claude Code, 2026-09-21:
+
+  > "I just upgraded to the Aura Pro subscription."
+
+  ⚠️ **Provenance, labelled as an ACCOUNT and NOT as a measurement (`SC-§139` cl. 4(b)):** his sentence reached `TASK-1215` through the **orchestrator lane**. ⛔ No agent on this project can measure who typed it (`SC-§139` cl. 2) and none claims to. ⛔ The **permission-class content here is nil** — this records a purchase he made; it authorises nothing.
+- 🌐 **NOT HIS WORDS — the price table.** It is an **account of a third-party page at a point in time**: Aura's own about page, **read 2026-09-21** by the orchestrator. ⛔ Not a measurement. ⛔ Not law. ⛔ Not re-measurable on this machine. ⛔ **It will go stale without telling anyone** — a price the vendor changes on their server changes nothing in this file, so a later reader must re-read the page rather than trust this table's age.
+
+### The decision
+
+**TIER = `Pro`. DECIDED 2026-09-21, by Jonathan.**
+
+### The three tiers — 🌐 THIRD-PARTY ACCOUNT (Aura's about page as read 2026-09-21) · ⛔ NOT a measurement · ⛔ NOT his words · ⛔ will go stale silently
+
+| tier | monthly | annual | premium credit | overage | other |
+|---|---|---|---|---|---|
+| Indie | $20/mo | $10/mo billed annually (yearly total: **OWED** — not on the source line) | $15 | ⛔ **NONE** | — |
+| **`Pro` ← CHOSEN** | **$40/mo** | **$360/yr** | **$60** | ✅ **PURCHASABLE** | higher rate limits · Super mode |
+| Ultimate | $200/mo | $1,800/yr | $335 | **OWED** — not on the source line (⛔ not inferred from the rows above) | highest limits |
+
+**All three tiers:** unlimited usage via **Auto Mode** + a **2-week trial** — 🌐 same third-party account, same 2026-09-21 reading.
+
+⚠️ Any cell the source line does not carry reads **OWED**, never an estimate — the same rule §The three cases and §Totals he supplied already follow for wall time and credit.
+
+### Why `Pro` and not `Ultimate` — recorded because a bare "Pro" loses the WHY
+
+- **Ultimate is 5× the price for ~5.6× the credit** ⇒ **NEAR-LINEAR.** ⚠️ Those two ratios are `TASK-1215`'s own words, copied; they are consistent with the third-party table above and **inherit its label** — ⛔ they are as good as that one reading and no better.
+- ⇒ Ultimate buys **HEADROOM, NOT EFFICIENCY.** You pay it to escape **rate limits**; you do not pay it to spend less per unit of work.
+- ⛔ **And nobody has measured this project's actual burn.** §Pilot below reads `credit: not visible` on **all five** legs — **absence of the field, NOT a zero.**
+- ⭐ **`Pro`'s decisive property is that overage is PURCHASABLE — the top-up is ITSELF the measurement.** If he buys overage every month, Ultimate becomes a **real question with a real number behind it**. Until then it is a guess wearing a price tag.
+
+### The Fab ~$150 lifetime SKU — ⛔ UNCONFIRMED, recorded as a NON-FINDING
+
+A Fab-marketplace **~$150 lifetime-MCP SKU** was carried in the orchestrator's notes as *"check this first"*. At the **2026-09-21** reading, **neither Aura's pricing-explained page nor its about page mentions it** (orchestrator's search, that date, those two pages). ⇒ **UNCONFIRMED / possibly never existed as recorded.** Stage B's *"the Fab SKU if it exists"* clause is **ANSWERED: NOT FOUND.**
+
+🚨 **It is written down here for one reason: so that nobody later re-derives it as a missed opportunity.** `SC-§39` — **absence of evidence is not refutation.** What this entry says is *two named pages did not mention it on one date*. That is ⛔ **not** *"the SKU does not exist"*, ⛔ **not** *"a cheaper option was passed over"*, and ⛔ **not** evidence of a mistake.
+
+### Cost characterisation — ⛔ STILL UNMEASURED
+
+🚨 **This subsection exists because a reader who sees a filled §Tier will assume the cost question is closed. It is not.**
+
+⚖️ **THE SPLIT, SAID PLAINLY AND ONCE: the TIER is KNOWN · the $-PER-VERIFICATION is UNMEASURED AND MAY STAY SO. ⛔ A DECIDED TIER IS NOT A CHARACTERISED COST. Two different things.**
+
+**Why it is unmeasured — the citation is this file's own §Pilot, below:**
+
+- §Pilot's table has **5 rows** (N1 · N3 · N2 · Probe 5 · N4) and its **`credit` column reads `not visible` in every one of them — 5/5.**
+- §Pilot's lane facts close with: *"**Credit:** not visible in any tool reply across all five legs."*
+- ⛔ **That is the absence of the FIELD in every tool reply. It is NOT a zero and must never be read as one.** No Aura tool reply carries a credit field at all, so there was nothing to record.
+- ⇒ This is an **instrument ceiling, not an omission.** Nobody failed to write a number down; the number was never emitted. The ceiling itself is enumerated in `CONVENTIONS.md` `VER-§8`, which is where it stays — restating a ceiling is how a ceiling quietly gets relaxed.
+
+**The only figure anyone has ever supplied, and what it is NOT:** §Totals he supplied records *"18% used context (90k of 500k tokens)"* across his three chat probes — 🧑 MEASURED BY JONATHAN (Aura chat, 2026-09-13). ⚠️ **That is Aura's CONTEXT-WINDOW gauge. It is not dollars and it is not credit**, and no arithmetic anywhere in this file converts it into either.
+
+**What would close this — and only these two:**
+
+1. 🧑 **Jonathan reading Aura's own account/usage page** and supplying the $-credit figure. ⛔ No agent can reach that page; it is a human dashboard read.
+2. 🧑 **An overage top-up purchase** — ⭐ **the top-up is itself the measurement.** A month in which he buys overage produces the first real number this project has ever had for Aura burn, and it arrives as a **receipt** rather than an estimate. (This is also exactly why `Pro` was the right tier to sit on: `Indie` has no overage to buy, so it could not have produced the measurement at all.)
+
+**Until one of those lands, the plan's `credit consumed` column stays `OWED`** — as §The three cases and §Totals he supplied already record it — and ⛔ is never filled with an estimate.
+
+**Consumers pointing at this subsection by name** (both shipped in commit `a9880b9` while it did not yet exist, both correctly hedged *"being written under `TASK-1369`"*): `Docs/Aura AI for Unreal — Integration Plan.md` (its *Credit per verification* row and its Phase 0 checklist item) · `Docs/setupdirections.md` §E.2 item 3. ⇒ **This row is what makes those two pointers resolve. It does not change what either document claims.**
+
+### ⛔ What this row did and did not do
+
+⛔ **`TASK-1369` DECIDES NOTHING AND RECORDS ONLY.** The tier was chosen by Jonathan before this row existed. The prices were read off a third-party page by the orchestrator. The `credit: not visible` cells were measured by the playtest-verifier. This row copied three already-existing records into one place and **labelled which is which**. It changed no §Pilot cell, no §MCP tool census line, no pinned sha256, no byte of the verbatim-copy region, no grant, and no decision.
+
 ## Pilot (TASK-1230) — 2026-09-14
 
 **Written by:** build-master, 2026-09-14, at the close of the `TASK-1230` five-leg pilot (`VER-§6` cl. 2 — the board-row legs, as distinct from the three chat probes above). **This section RECORDS; it DECIDES NOTHING.** Every number below is copied from the five verify reports (`qa/TASK-787-verify.md`, `qa/TASK-671-verify.md`, `qa/TASK-1068-verify.md`, `qa/TASK-1230-verify.md`, `qa/TASK-780-verify.md`) with their PIE times — MEASURED BY THE PLAYTEST-VERIFIER (Aura, PIE, 2026-09-14) unless labelled otherwise; nothing is re-derived here. The `match (manager)` column is the manager's adjudication on the `TASK-1230` board row, written concurrently — ⛔ no Y/N is invented here. `credit` reads `not visible` in every row because no tool reply carries a credit field (MEASURED BY THE PLAYTEST-VERIFIER — absence of the field, not a zero). Wall times are the verifier's own dispatch-to-report estimates. Order = execution order (N1 → N3 → N2 → Probe 5 → N4).
