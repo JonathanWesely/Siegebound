@@ -37,7 +37,7 @@ Install/create these as you reach the chapter that needs them (chapter number in
 | 14 | **Xbox Game Bar** (or any screen recorder) | Capturing gameplay clips for the footage-analyst (Win+G / Win+Alt+R; preinstalled on Windows 11) | Microsoft Store (usually preinstalled) | 8 |
 | 15 | **Slack workspace + the Claude Slack connector** | The team's visibility mirror channel | slack.com; connector via claude.ai Settings → Connectors | 9 |
 | 16 | **Supabase account (free tier)** + the Claude Supabase MCP connector | Cloud account/save sync backend, driven through Claude's MCP tools | supabase.com; connector via claude.ai Settings → Connectors | 10 |
-| 17 | **Aura AI for Unreal account** (trial first → paid tier after the pilot measures credit-per-verification) | Play-In-Editor verification for the `playtest-verifier` agent (input simulation, live actor/UMG state, screenshots). No API key — it authenticates by account login. ⚠️ Decide the training toggle in its privacy settings BEFORE the first index (unlimited Auto Mode requires training ON) | tryaura.dev → account → dashboard installer for **5.8** | 11 |
+| 17 | **Aura AI for Unreal account** (~~trial first → paid tier after the pilot measures credit-per-verification~~ — **corrected 2026-09-21, `TASK-1377`: §11.1 step 1 carries the dated correction and governs; do not restate it here**) | Play-In-Editor verification for the `playtest-verifier` agent (input simulation, live actor/UMG state, screenshots). No API key — it authenticates by account login. ⚠️ Decide the training toggle in its privacy settings BEFORE the first index (unlimited Auto Mode requires training ON) | tryaura.dev → account → dashboard installer for **5.8** | 11 |
 
 ### ⚠️ The antivirus reality (read BEFORE installing anything network-facing)
 
@@ -84,12 +84,17 @@ Windows rollback/reset wipes them.** After any system restore, re-check `HF_TOKE
        <ProjectName>.uproject
        .gitignore                   ← the full project-level ignore (the load-bearing one)
        CLAUDE.md                    ← orchestrator law (Chapter 3)
-       .claude/agents/              ← the six agent definitions (Chapter 3)
+       .claude/agents/              ← the seven agent definitions (Chapter 3)
        .claude/pipeline/            ← TASKBOARD / CONVENTIONS / handoffs / qa / SLACK
        Config/  Content/  Source/  Docs/  Tools/
      testvideo/                     ← gameplay clips (gitignored — Chapter 8)
      packagedZIPofGame/             ← cooked builds (gitignored)
    ```
+
+   *(The tree above read ~~`the six agent definitions`~~ until 2026-09-21 (`TASK-1377`); the
+   count is **seven** — `CLAUDE.md`'s own agent table is the source, and the seventh is
+   `playtest-verifier` (3.2, §11.6). Struck here in prose because a code fence renders
+   strikethrough literally.)*
 
    Why the wrapper level exists: it gives gitignored working areas (`testvideo/`, packaged
    builds, scratch folders) a home that is inside the repo folder but outside the Unreal
@@ -216,8 +221,10 @@ once in the editor and confirm it loads.
 
 ## Chapter 3 — The Claude agent team
 
-This is the heart of the system. One Claude Code session is the **orchestrator**; six
-specialist **subagents** do the actual work; they communicate only through **shared files**.
+This is the heart of the system. One Claude Code session is the **orchestrator**; ~~six~~
+**seven** specialist **subagents** do the actual work; they communicate only through **shared
+files**. (Corrected 2026-09-21, `TASK-1377` — source: `CLAUDE.md`'s agent table. The seventh
+is `playtest-verifier`, added with the `verified` gate; see 3.2 and §11.6.)
 A fresh Claude can re-scaffold all of it from this chapter.
 
 ### 3.1 The three layers
@@ -242,6 +249,11 @@ A fresh Claude can re-scaffold all of it from this chapter.
 | **qa-reviewer** | Reviews code BEFORE it compiles; writes pass/fail reports to `qa/` | Editing code, engine, Git | Read-only + report Write + Slack |
 | **build-master** | Compiles, assembles assets+code in scene via Unreal MCP, Git commits | Writing new code/art | Bash (Build.bat, git) + Unreal MCP |
 | **footage-analyst** | Extracts frames from gameplay videos; writes evidence-backed diagnosis reports | Editing anything, engine, Git | Bash/Read/Write + Slack (no MCP) |
+| **playtest-verifier** | Drives Play-In-Editor verification and writes the runtime evidence report `qa/TASK-###-verify.md` | Editing code/art, compiling, Git, editor lifecycle | Read/Write + Aura PIE MCP (ENUMERATED, never wholesale) + Slack |
+
+*(The `playtest-verifier` row was added 2026-09-21, `TASK-1377` — the table listed six agents
+while Appendix E, §11.6 and `CLAUDE.md`'s own table already carried seven. Its law is
+`CONVENTIONS.md` `VER-§`; its tool grant is enumerated from the `/mcp` census, `VER-§7`.)*
 
 ### 3.3 The pipeline files (how agents "talk")
 
@@ -261,8 +273,14 @@ Subagents cannot talk to each other. They communicate through files in
 - **`fab/FAB-REQUESTS.md`** — the marketplace lane: agents AUTHOR requests for Fab/UE
   marketplace packs; the human fulfills them in the Epic Launcher (agents can't).
 
-**Task lifecycle:** `backlog → in-progress → ready-for-qa → qa-passed/qa-failed →
-integrating → done` (art tasks skip QA: `ready-for-integration`).
+**Task lifecycle:** ~~`backlog → in-progress → ready-for-qa → qa-passed/qa-failed →
+integrating → done`~~ → `backlog → in-progress → ready-for-qa → qa-passed/qa-failed →
+built → verified/verify-failed → integrating → done` (art tasks skip QA:
+`ready-for-integration`). The two added tokens are 3.4's 5a and 5b: `built` = compiled, not
+yet committed (`VER-§2` cl. 3); `verified` = the runtime evidence report exists and passed.
+(Added 2026-09-21, `TASK-1377` — source: `CLAUDE.md` routing rule 5 + `CONVENTIONS.md`
+`VER-§`. The verdict vocabulary itself lives in `VER-§1` cl. 1 and is **not** restated here —
+a second copy drifts.)
 
 ### 3.4 The routing law (put this in CLAUDE.md verbatim, adapted)
 
@@ -275,14 +293,28 @@ integrating → done` (art tasks skip QA: `ready-for-integration`).
 3. Code task hits `ready-for-qa` → invoke `qa-reviewer`.
 4. `qa-failed` → back to the programmer with the QA report path. Loop until `qa-passed`
    (**max 3 loops, then escalate to the human**).
-5. `qa-passed` / `ready-for-integration` → `build-master` compiles, assembles, commits.
+5. ~~`qa-passed` / `ready-for-integration` → `build-master` compiles, assembles, commits.~~
+   **Corrected 2026-09-21 (`TASK-1377`) — one step became three when the `verified` gate
+   landed. Source: `CLAUDE.md` routing rule 5; the law itself is `CONVENTIONS.md` `VER-§`,
+   which this list POINTS AT and deliberately does not copy.**
+   - **5a** `qa-passed` → `build-master` compiles (`Result: Succeeded`) and, for C++ changes,
+     relaunches the editor on the new binaries. Status → `built`. **No commit yet.**
+   - **5b** if the task's spec has a runtime acceptance criterion → `playtest-verifier`
+     writes `qa/TASK-###-verify.md`. Its verdict vocabulary, routing effects and evidence
+     rules are `VER-§1` and `VER-§5` — read them there. `verify-failed` → back to the
+     programmer (counts as a QA loop, same max-3-then-escalate as 4). Blueprint/asset-only
+     tasks skip 5a and come straight here.
+   - **5c** a passing 5b (or no runtime criterion) → `build-master` assembles and commits.
 6. Build failure → build-master appends errors to the QA report; routed back to the
    programmer (counts as a QA loop).
 7. Report the outcome to the human with task IDs and commit hashes.
 
-**Hard gates:** nothing commits without a PASS QA report; the Unreal Editor + MCP server
-must actually be running for engine tasks — if unreachable, agents REPORT it, never fake
-results; never push unless asked.
+**Hard gates:** nothing commits without a PASS QA report; **nothing carrying a runtime
+acceptance criterion commits without a passing 5b report — and a report that could not
+observe is recorded on the row, never read as a pass (`VER-§5`)**; the Unreal Editor + MCP
+server must actually be running for engine tasks — if unreachable, agents REPORT it, never
+fake results; never push unless asked. (Second gate added 2026-09-21, `TASK-1377`; the
+paragraph named only the QA report.)
 
 ### 3.5 GDD mode (full automation from a design doc)
 
@@ -301,8 +333,9 @@ tests against them) and an explicit out-of-scope list (nobody gold-plates).
 ### 3.6 Scaffolding it on the new machine
 
 **[Claude]** Given this chapter, a fresh Claude Code session can recreate the skeleton:
-write `CLAUDE.md` (team table + routing law + hard gates + the build command), the six
-`.claude/agents/*.md` files (frontmatter + role body per 3.2's postures), and empty
+write `CLAUDE.md` (team table + routing law + hard gates + the build command), the ~~six~~
+**seven** `.claude/agents/*.md` files (frontmatter + role body per 3.2's postures; corrected
+2026-09-21, `TASK-1377`, source `CLAUDE.md`'s agent table), and empty
 `.claude/pipeline/` files (TASKBOARD with a task template, CONVENTIONS seeded with your
 naming table, empty handoffs/ and qa/ dirs, SLACK.md once Chapter 9 is done).
 
@@ -690,9 +723,13 @@ never authorization.**
   spans threads (code → QA → build).
 - **Identity prefixes are mandatory** — all posts share one Slack account, so the prefix IS
   the speaker: `📋 MANAGER:` · `🔍 QA:` · `⚙️ GAMEPLAY-PROGRAMMER:` · `🎨 ART-DIRECTOR:` ·
-  `🔧 BUILD-MASTER:` · `🎬 FOOTAGE-ANALYST:` · `ORCHESTRATOR:`, followed by a status emoji
+  `🔧 BUILD-MASTER:` · `🎬 FOOTAGE-ANALYST:` · `🎮 VERIFIER:` · `ORCHESTRATOR:`, followed by
+  a status emoji
   (🟦 dispatched · 🔧 in progress · 🧪 ready-for-qa · ✅ done · ❌ failed · 📦 integrating ·
-  🚧 blocked) + the TASK-###.
+  🚧 blocked) + the TASK-###. (`🎮 VERIFIER:` added here 2026-09-21, `TASK-1377` — the list
+  carried six speakers after the seventh agent joined; source `.claude/pipeline/SLACK.md`'s
+  prefix line, where it was minted 2026-09-13 by `TASK-1226`. ⛔ `🎮` is an IDENTITY prefix,
+  not a status emoji — a verifier post still carries one of the status emoji after it.)
 - **Every dispatch prompt includes the agent's Slack duty:** channel ID, its domain
   thread_ts, and at least one completion-or-blocker post.
 - **Slack does not wake agents.** The orchestrator reads the channel at session start and
