@@ -797,8 +797,12 @@ API key to store anywhere. Nothing in this chapter is a secret; the paths below 
 
 ### 11.1 Account + install (engine level, one install per UE_5.8)
 
-1. **[You]** Create the Aura account (THE LIST row 17). The trial is free and card-less;
-   the paid tier is decided AFTER the pilot measures credit-per-verification (Appendix B).
+1. **[You]** Create the Aura account (THE LIST row 17). The trial is free and card-less.
+   ~~The paid tier is decided AFTER the pilot measures credit-per-verification (Appendix B).~~
+   ⚠️ **Corrected 2026-09-21 — that is not what happened.** The tier was
+   decided **WITHOUT** that measurement (🧑 his call, recorded on `TASK-1215`
+   stage B), and credit-per-verification **remains unmade** — Appendix E.2 line 3. Budget
+   for a tier you pick on headroom, not on a $-per-run figure you do not have.
 2. **[You]** ⚠️ **Decide the training toggle in Aura's privacy settings BEFORE the first
    index.** Unlimited Auto Mode requires training ON; turning it OFF makes Auto Mode
    rate-limited instead. This decides whether the GDD and the game's source are used for
@@ -941,11 +945,16 @@ before), one verification at a time, never concurrent with an assemble or an imp
 announced first whenever the human is present because it takes over PIE. Every claim in its
 report (`.claude/pipeline/qa/TASK-###-verify.md`) carries a screenshot/video path or a
 quoted actor/widget value; the verdict is `VERIFIED`, `VERIFY-FAILED` (routes back to the
-programmer and counts as a QA loop), or `UNOBSERVABLE` (the honest answer for pure-data or
-editor-only tasks — recorded on the row, never treated as a pass). The hard gate: nothing
-with a runtime acceptance criterion is committed without a `VERIFIED` report. Aura output
-still passes `qa-reviewer`; the verifier is advisory until three of its verdicts match the
-human's own playtest, and the human decides when it becomes binding.
+programmer and counts as a QA loop), `UNOBSERVABLE` (the honest answer for pure-data or
+editor-only tasks — recorded on the row, never treated as a pass), or — added
+2026-09-20 — **`MEASURED`**, a fourth token whose point is its CELL RULE rather than its
+headline (`VER-§1` cl. 1 + cl. 3a — read cl. 3a before writing one). The hard gate:
+nothing with a runtime acceptance criterion is committed without a `VERIFIED` report. Aura
+output still passes `qa-reviewer`. ~~The verifier is advisory until three of its verdicts
+match the human's own playtest, and the human decides when it becomes binding.~~
+⚠️ **Discharged 2026-09-14 — 🧑 he ruled, and `verified` is
+BINDING** (`VER-§6` cl. 5): the pilot ran its five legs, he ruled in one word, and from
+that date a report's line-1 verdict governs with no advisory suffix.
 
 ### 11.7 Verify
 
@@ -992,20 +1001,34 @@ cannot fail is not a gate) → a Sandbox Reject leaves `Content/` unchanged.
   included a TLS-relaxation env var for Node; prefer fixing certificates properly (AV
   exclusions, Appendix/THE LIST) over disabling verification — treat that recorded line as
   a workaround of last resort, not a recommendation.
-- **Aura (Chapter 11) — the ⚠️ items no one has measured yet:**
+- **Aura (Chapter 11) — re-measured 2026-09-21. An ANSWERED item is struck in
+  place and moved to its answer, never deleted; an open one says what is still owed:**
   - **The Fab "$150 upfront, lifetime MCP usage + one-year subscription" SKU** is
-    single-sourced (one press article; the Fab listing itself was never found). Verify it on
-    Fab before choosing it over the monthly tiers — if real, it dominates for a pipeline whose
-    main use is MCP.
+    single-sourced (one press article; the Fab listing itself was never found). ⚠️ Still
+    **UNCONFIRMED** — nobody has looked since, so it is recorded as unconfirmed and ⛔
+    never as an option that was missed: an unverified SKU is not a cheaper path, it is an
+    unverified SKU. Verify it on Fab before choosing it over the monthly tiers.
   - **Whether Aura's PIE input simulation drives OUR Enhanced Input mappings** (the
-    positional-layout keyboard law) or only default bindings — Aura's docs are silent; test
-    with one case that needs the positional layout during the pilot.
+    positional-layout keyboard law) or only default bindings — ✅ **PARTLY ANSWERED**
+    (2026-09-14 pilot): our own input ACTIONS drive — `inject_input_action` on `IA_Card1`
+    and `IA_Move` played a card and walked the hero through `IMC_Hero`. ⚠️ **Still OWED:**
+    the positional `KBD-§` KEY layout — no physical-position keypress has ever been
+    driven, and `VER-§8` is why.
   - **Whether enabling the Filesystem Sandbox adds a SECOND `.uproject` `Plugins` entry**
-    beside `Aura` — only the `Aura` entry was measured; check the diff after the toggle.
-  - **Credit per verification run** — the pilot's measurement, and the sole input to the
-    tier decision (Pro vs Indie vs the Fab SKU). Credit does not roll over.
-  - **The real `mcp__unreal_editor__*` tool names** — obtainable only from `/mcp` after the
-    bridge is live; the enumerated allow-list and the verifier's `tools:` line wait on them.
+    beside `Aura` — ⚠️ **still OPEN**; only the `Aura` entry was measured; check the
+    diff after the toggle.
+  - ~~**Credit per verification run** — the pilot's measurement, and the sole input to the
+    tier decision (Pro vs Indie vs the Fab SKU).~~ ⚠️ **SPLIT 2026-09-21 — one bullet was
+    carrying two facts with different answers: the tier decision is MADE, and credit per
+    verification is STILL UNMEASURED.** Both halves, with their sources, are Appendix E.2
+    line 3. Credit does not roll over.
+  - ~~**The real `mcp__unreal_editor__*` tool names** — obtainable only from `/mcp` after the
+    bridge is live; the enumerated allow-list and the verifier's `tools:` line wait on them.~~
+    ✅ **ANSWERED** — the `/mcp` census exists (`.claude/pipeline/handoffs/AURA-MCP-CENSUS.md`,
+    copied verbatim into `qa/AURA-PHASE0.md`) and D.1's enumerated allow-list was built from
+    it. ⚠️ It is version-bound: a plugin update re-fires `VER-§7` cl. 2's re-census trigger,
+    which it did on `1.0.5` → `1.0.6` (re-census boarded as `TASK-1366`). A grant trusted
+    against a stale census fails quietly when a tool is RENAMED.
   - **Whether Aura's verification can observe the game's C++ assistant-snapshot / cheat-manager
     state directly** or only actors + UMG (its docs list actors, GAS, UMG, multiplayer).
 
@@ -1021,6 +1044,11 @@ cannot fail is not a gate) → a Sandbox Reject leaves `Content/` unchanged.
 - Nothing is imported unseen; nothing unverifiable is claimed — report outages instead of faking.
 - When the human is present, closing the editor is his call — never force-kill.
 - Numbers over adjectives in every spec; acceptance criteria per mechanic.
+- Verify the COMMIT (`git show --stat HEAD`), never the index — the editor stages files
+  nobody's pathspec named.
+- Verify an LFS asset by oid-vs-`sha256`, never by size — two different blobs can weigh the same.
+- A Blueprint compile does not dirty the package; a tool-side save returns true and writes
+  nothing — the hash must change (E.3).
 
 ---
 
@@ -1208,3 +1236,108 @@ These are one-off operations the classifier stops. They recur because a prefix r
 ### D.5 Fresh-machine order
 
 Install the tooling (Chapters 1–2) → clone → **write D.1's allow-list before the first agent chain**, or the first compile/cook will stall → run Appendix A's verification probes → grant D.2 items per session as they surface.
+
+---
+
+## Appendix E — Aura: the plan behind it, what the setup is FOR, and what neither file carries
+
+⛔ **Read this AFTER Chapter 11, never instead of it.** Chapter 11 is the HOW, end to end, and
+none of it is repeated below — two copies of one fact in one file drift apart. The gaps in E.3
+are the only reason this appendix exists.
+
+### E.1 The plan, referenced — and the hole the Aura setup was bought to close
+
+- **The plan:** `Docs/Aura AI for Unreal — Integration Plan.md` (and its Obsidian-vault twin of
+  the same name, kept byte-identical by copy; the repo copy is the source and the only one that
+  is ever staged). It is the **research + decision record** — written **2026-09-14, BEFORE any
+  of Chapter 11 was executed** — and amended since wherever execution measured something the
+  research had only guessed (`TASK-1231`, `TASK-1371`). Read the PLAN for *why this was chosen
+  and what was rejected*; read CHAPTER 11 for *how it is built*.
+- **What the setup is FOR.** Chapter 11's opening already names the ENGINE-side half of the hole
+  and cites §4.4 for it. The half neither one names is the PROCESS half: `qa-passed` is a verdict
+  over **text** — the reviewer reads a diff, it never watches the game — so before Aura a feature
+  could be written, reviewed, compiled and committed with nobody, human or agent, having ever
+  SEEN it happen. That is the runtime-verification hole, and Aura's PIE lane is the instrument
+  bought to close it.
+- ⇒ **Then stop: the HOW is Chapter 11** — install and tier §11.1 · project config §11.2 · the
+  `Saved/.Aura` pair and its sync §11.3 · the two stdio servers §11.4 · the allow-list law
+  §11.5 · the seventh agent and the gate §11.6 · verify §11.7.
+
+### E.2 The honest status — three lines, and the last two are what neither file says
+
+1. **The setup is DONE.** Seven agents, the bridge, the enumerated grants, and `verified`
+   **binding** since 2026-09-14 (`VER-§6` cl. 5; §11.6 carries the correction).
+2. **The ceilings are PERMANENT, and that is a different thing.** Slate/UMG un-actuable, the
+   confirm click a raw key poll, credit invisible: each one measured, dated and enumerated in
+   `.claude/pipeline/CONVENTIONS.md` `VER-§8`, which is where they stay — restating a ceiling is
+   how a ceiling quietly gets relaxed. ⇒ *A setup being finished and an instrument being complete
+   are two different claims, and only the first one is true here.*
+3. **The cost is UNCHARACTERISED.** The **tier is decided** (🧑 his call, `TASK-1215` stage B).
+   The **$-per-verification behind it is unmeasured**: no Aura tool reply carries a credit field,
+   so every pilot row records credit as *not visible* — an absent field, never a zero. Both halves
+   land in `.claude/pipeline/qa/AURA-PHASE0.md` §Tier (being written under `TASK-1369` at the time
+   of writing). ⛔ **A tier chosen is never a cost characterised.**
+
+### E.3 The gaps — facts in NEITHER file, with the law and what not knowing costs
+
+Each was measured on the original machine and then written into house law, and each was grepped
+against this whole guide on 2026-09-21 and found absent. What earns a line its place in a SETUP
+guide is the last clause: what it costs you to stand a machine up without it.
+
+- ⛔ **A UE5 Blueprint compile does NOT dirty the package.** `compile_blueprint` followed by a
+  named `save_assets` returns **true, and writes nothing** — sha256, byte count and mtime all
+  unchanged; only 🧑 the Blueprint editor's own Compile → `Ctrl+S` writes the package
+  unconditionally, so a row whose deliverable is a compiled Blueprint carries a human keystroke.
+  **The gate is that `sha256` must CHANGE**, never the return value (`SC-§125`; the same trap is
+  restated inside the grant itself at `VER-§7` cl. 7). **Cost, and this is the sharp half:** a
+  green test suite — *even a headless `-nullrhi` one* — **cannot** discriminate a stale on-disk
+  class, because PIE recompiles the Blueprint in memory before running it. **A cooked build does
+  not recompile on load.** The stale class therefore survives every pre-ship gate that called it
+  green, and ships as a real defect.
+- ⛔ **The UE editor's Git plugin auto-stages the index.** Under `Provider=Git` the editor runs
+  `git add` on every asset it saves or imports, so files nobody's pathspec named are already
+  staged. ⇒ **Commit by pathspec and verify THE COMMIT (`git show --stat HEAD`), never the
+  index.** The durable fix is `Provider=None`, which is 🧑 the human's call. **Cost:** a `git
+  status` that looks staged-and-correct about work no task authorized — and a commit that
+  silently carries it.
+- ⛔ **Verify an LFS asset by oid-vs-`sha256`, never by size.** §1.2's patterns get an asset INTO
+  LFS; what is absent is how to check that the right bytes went in — compare the pointer's `oid`
+  with the working file's `sha256`. **Cost, measured live:** a deliberately mutated `DT_Cards.uasset`
+  and the committed one were **both 46510 bytes**, so a size check passes on the wrong blob; only
+  the oid comparison proved the break existed, and then that it had been reverted.
+- ⛔ **The git root is ONE LEVEL UP** (`SC-§102`). §1.1 draws the two-level layout; the trap it
+  does not draw is what a command anchored at the wrong level does — **it answers with SILENCE.**
+  A mis-anchored pathspec matches nothing and prints nothing. **Cost:** empty output reads
+  *exactly* like "nothing to commit", so the work looks committed and is not. Anchor every
+  pathspec at the git root, and never read an empty result as a negative answer.
+- ⛔ **The editor-state PAIRING — CLOSED to compile, OPEN (+ MCP on `:8000`) to import.** Each
+  half is already in this guide (the editor-bounce, §2.2; the MCP hard gate, §4.5), but they are
+  opposite requirements, and the pairing is the thing a session actually has to sequence.
+  ⚠️ The usual escape hatch does not apply: **Live Coding cannot help when the diff adds a new
+  `UCLASS`** — a new type needs a full build, so the editor comes down regardless. **Cost:** a
+  chain that imports before it compiles, or that reaches for Live Coding on a new class, stalls
+  with an error that names neither cause.
+- ⚠️ **`mcp__unreal-mcp__call_tool` takes `toolset_name` AND `tool_name` as two separate
+  arguments**; the fully-qualified dotted single string returns `Tool not found` (`VER-§7` cl. 7).
+  **Cost:** one failed call per wrong guess, with an error that reads like a missing tool rather
+  than a wrong argument shape. ⛔ **Placement debt, declared rather than hidden:** this is a
+  Chapter 4 fact about the `:8000` bridge, not an Aura one. It sits here only because the row
+  that wrote this appendix was forbidden to edit Chapter 4 — move it to §4.3 when Chapter 4 is
+  next opened, and delete this bullet in the same edit.
+
+### E.4 The map — where the traps this guide ALREADY documents live
+
+Pointers only, deliberately. If you ever find yourself explaining one of these *here*, it
+belongs in the section named beside it instead.
+
+| Trap | Where it lives |
+|---|---|
+| Smart App Control / `0x800711C7` | §2.2, Gotcha 2 |
+| The `Build.bat` exit-code lie | §2.2 Gotcha 1 · Appendix A row 3 · Appendix C |
+| The canonical build command, verbatim | §2.2 |
+| Blender MCP: the one correct route and the two known-wrong ones | §5.1 |
+| Norton-class TLS interception · `UV_SYSTEM_CERTS` / `HF_TOKEN` · the HKCU wipe | THE LIST → *The antivirus reality* |
+| The LFS patterns · `testvideo/` · raw videos never enter git | §1.2–§1.3 |
+| Fab / marketplace imports are a 🧑 human step | THE LIST, row 4 |
+| Aura's index is not a secret fence | §11.3 |
+| The permissions law | Appendix D |
