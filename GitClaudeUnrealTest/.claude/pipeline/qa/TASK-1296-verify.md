@@ -114,10 +114,33 @@ and both were read back from that path afterwards — they exist:
   (`SiegePlayerController.cpp:2264-2270`). It is boarded as `TASK-1311`. **My zero is scoped to `L_MainMenu`;
   it is not a project-wide claim about this Error string.**
 - ⛔ **The boot command line was unreadable** (above) — classification rests on PID/log-header/`is_editor`.
-- ⛔ **No key was pressed by a human and none could be:** `FInputModeUIOnly::ApplyInputMode` calls
-  `SetIgnoreInput(true)`, so 🧑 Jonathan **cannot** drive Down/Enter on this map. Everything here went through
+- ⛔ **No key was pressed by a human ~~and none could be~~:** `FInputModeUIOnly::ApplyInputMode` calls
+  `SetIgnoreInput(true)`, so ~~🧑 Jonathan **cannot** drive Down/Enter on this map~~. Everything here went through
   `inject_input_action`, which bypasses the viewport. His pre-written hand check (the focus outline on
   `Play (vs Bot)`) remains **his**, and `TASK-1297` §G's NIT stands: a "yes" from him would confirm the row's
   *risk* (no focus-brush regression), **not** its *fix* (an engine Error no human can see).
+  - 🚨⛔ **CORRECTION 2026-09-22 (`TASK-1385`, law `VER-§8` cl. 11) — STRUCK, NOT DELETED. This was a FLAT
+    REFUTATION, not a scope slip.** Source: 🧑 Jonathan, 2026-09-21, verbatim — *"ok, I opened a match, I saw
+    the outline on the top menu option, hit the down arrow twice, and hit enter, and I was able to open the deck
+    builder, so that menu navigation seems to be working fine."* **He did it.** *"and none could be"* and
+    *"🧑 Jonathan **cannot** drive Down/Enter on this map"* were claims about **EVERY** layer of this engine's
+    input stack, written from **ONE** layer's measurement; both are refuted and struck above.
+  - ✅⛔ **WHAT STANDS, UNRELAXED — THE PREMISE.** `FInputModeUIOnly::ApplyInputMode` → `SetIgnoreInput(true)`
+    is **NOT** relaxed: a real key press on `L_MainMenu` still does not reach **Enhanced Input**, and nothing he
+    did either measures or refutes that. Only the human conclusion drawn from it was wrong.
+  - ✅⭐ **AND THE TRUE HALF THAT FOLLOWS IT IS KEPT, AND IS THE MODEL:** *"Everything here went through
+    `inject_input_action`, which bypasses the viewport"* — that sentence is **exactly right** and is **the shape
+    the struck clause should have had**. It names the lane **THIS RIG** used and claims nothing whatever about
+    his hands. *"I could not reach it"* is always writable; *"he cannot reach it"* almost never is
+    (`VER-§8` cl. 11's duty).
+  - ⛔ **WHAT I AM ENTITLED TO WRITE, AND NOTHING BROADER (`VER-§8` cl. 11):** *a real key press on `L_MainMenu`
+    **does** reach the menu; **which layer carried it is UNMEASURED**.* 🚨 **MECHANISM: UNMEASURED.** Two routes
+    predict his identical observable and his sentence discriminates **NEITHER** — **(i)** the focused `SButton` →
+    Slate's navigation config → `SButton::OnKeyDown`'s Accept path (the route `handoffs/TASK-1274-programmer.md:74`
+    predicted **in advance** and labelled unmeasured), and **(ii)** `USiegeMenuInputSubsystem`'s `IA_Menu*`
+    handlers — **which would mean the premise above is wrong.** ⛔ *"It reached Slate"* is **NOT** written here as
+    a finding; route (i) is the better-supported **HYPOTHESIS** and stays one (`SC-§101`).
+  - ⛔ **SCOPE OF THIS CORRECTION:** line 1's verdict is **byte-untouched**, and every observation, control,
+    hypothesis and other limitation in this report is **unaltered** — only the two struck clauses above changed.
 - ⛔ **Deck untouched** — see the net-zero block in `qa/TASK-1309-verify.md`; all five `.sav` files are
   byte-identical across this run, mtimes not even touched.
