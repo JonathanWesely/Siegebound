@@ -115,6 +115,39 @@ void USiegeMenuInputSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	// World.cpp UWorld::BeginPlay); the first button is focused on the next tick.
 	InWorld.GetTimerManager().SetTimerForNextTick(this, &USiegeMenuInputSubsystem::ApplyInitialFocus);
 
+	// ─── TASK-1400 (MENU-REENTRY-FOCUS): THE RE-ENTRY RE-ARM ────────────────────────────────
+	// 🧑 His words: "if you exit the deck builder and go back to the main menu, the outline is no
+	// longer there ... exiting to the main menu results in that outline appearing at the top
+	// option, not just when you start up the game."
+	//
+	// ⛔ The obvious fix -- re-fire against the menu we focused at boot -- WOULD NOT WORK, and that
+	// is measured, not feared. BOTH return paths REPLACE the widget rather than re-showing it:
+	//   • deck builder Exit  -- BP `CreateWidget(WBP_MainMenu_C) -> Is Valid ->
+	//     AddToViewport(ZOrder 0) -> RemoveFromParent(self)`, no focus node (TASK-1399 §5.3);
+	//   • `USessionMenuWidget::BackPressed` (`SessionMenuWidget.cpp:151-165`) -- the same shape.
+	// ⇒ a re-arm that re-fires against a remembered pointer passes every static read and works
+	// NOWHERE he actually goes.
+	//
+	// ⭐ WHY THIS SURVIVES A FRESH WIDGET: it holds no widget at all. `ApplyInitialFocus()` takes no
+	// argument and caches nothing; `IsMenuUncovered()`, `GetMenuButtons()` and
+	// `GetFocusedMenuButton()` each re-resolve through `GetAllWidgetsOfClass(..., TopLevelOnly)`
+	// matched on the CLASS PATH string and filtered by `IsInViewport()`. A `RemoveFromParent`'d
+	// instance drops out of that set; a freshly `AddToViewport`'d one appears in it. There is no
+	// pointer to go stale -- the trigger is pointer-free BY CONSTRUCTION.
+	//
+	// ⛔ AND IT CANNOT STEAL FOCUS: `ApplyInitialFocus`'s own `!GetFocusedMenuButton()` guard is
+	// LEFT EXACTLY AS IT WAS, so a repeat is a no-op whenever a menu button already holds focus,
+	// and `IsMenuUncovered()` is false for the whole time any sub-screen is up. The only state this
+	// poll ever acts in is "menu visible, uncovered, nothing on it focused" -- precisely 🧑 his gap.
+	// ⚠️ Keeping that guard is also what keeps us out of TASK-1446's trap: `SetUserFocus`
+	// early-returns false when the target is ALREADY focused (`SlateApplication.cpp:3028-3033`).
+	//
+	// ⛔ Armed HERE -- after the `L_MainMenu` map gate and the arming returns above -- so the timer
+	// does not exist on any other map.
+	InWorld.GetTimerManager().SetTimer(
+		FocusReentryPollTimerHandle, this, &USiegeMenuInputSubsystem::ApplyInitialFocus,
+		FocusReentryPollSeconds, /*bLoop=*/ true);
+
 	UE_LOG(LogSiegeMenuInput, Log,
 		TEXT("[USiegeMenuInputSubsystem] %s: IMC_MainMenu applied at priority %d on '%s'; IA_MenuUp / IA_MenuDown / IA_MenuAccept bound (Started)."),
 		MenuMapName, MenuMappingContextPriority, *PC->GetName());
@@ -125,6 +158,20 @@ void USiegeMenuInputSubsystem::Deinitialize()
 	// The world is going away with its controller, input component and applied contexts;
 	// nothing to unbind — the bindings live on the controller's component, the context on
 	// the local player's subsystem, both torn down by their owners.
+	//
+	// ⛔ TASK-1400: the re-entry poll is the ONE thing here that does NOT die with the world.
+	// `UWorld::GetTimerManager()` resolves to the OWNING GAME INSTANCE's manager, which survives
+	// the travel off `L_MainMenu`, so the looping timer is cleared explicitly. (The delegate is
+	// weak-bound to `this`, so a leaked loop could never call into a dead subsystem -- but it would
+	// still sit on the game instance's manager, and that is worth one line to avoid.)
+	// ⚠️ Safe here: `DoesSupportWorldType` admits Game | PIE only, so every world that reaches this
+	// point has an owning game instance; and `ClearTimer` on an unset handle is a no-op, which is
+	// the ordinary case (every map but the menu never armed it).
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(FocusReentryPollTimerHandle);
+	}
+
 	bArmed = false;
 	MenuMappingContext = nullptr;
 	MenuUpAction = nullptr;
@@ -298,6 +345,14 @@ void USiegeMenuInputSubsystem::HandleMenuUp()
 
 void USiegeMenuInputSubsystem::HandleMenuDown()
 {
+	// TASK-1394 instrument. FIRST STATEMENT, unconditional, before MoveFocus is called: this is
+	// the line that makes a SILENCE readable. Placed after any branch it would print nothing in
+	// exactly the cases a reader must tell apart -- "the handler never ran" (the action did not
+	// route here at all) vs "it ran and declined" (MoveFocus took an early exit). Same category
+	// and verbosity as the already-proven-live IA_MenuAccept line below.
+	UE_LOG(LogSiegeMenuInput, Log,
+		TEXT("[USiegeMenuInputSubsystem] IA_MenuDown -> HandleMenuDown() entered; calling MoveFocus(+1)."));
+
 	MoveFocus(+1);
 }
 
@@ -305,6 +360,11 @@ void USiegeMenuInputSubsystem::MoveFocus(int32 Delta)
 {
 	if (!IsMenuUncovered())
 	{
+		// TASK-1394 instrument. Delta rides on EVERY exit line because MoveFocus is SHARED with
+		// HandleMenuUp: a line that cannot tell Up from Down is not an instrument. The condition
+		// itself is untouched -- the log is the whole of the addition.
+		UE_LOG(LogSiegeMenuInput, Log,
+			TEXT("[USiegeMenuInputSubsystem] MoveFocus(%+d) declined: menu covered."), Delta);
 		return;
 	}
 
@@ -312,6 +372,9 @@ void USiegeMenuInputSubsystem::MoveFocus(int32 Delta)
 	GetMenuButtons(Buttons);
 	if (Buttons.Num() == 0)
 	{
+		// TASK-1394 instrument.
+		UE_LOG(LogSiegeMenuInput, Log,
+			TEXT("[USiegeMenuInputSubsystem] MoveFocus(%+d) declined: no menu buttons."), Delta);
 		return;
 	}
 
@@ -327,6 +390,13 @@ void USiegeMenuInputSubsystem::MoveFocus(int32 Delta)
 	const int32 Next = WrapIndex(Current, Delta, Buttons.Num());
 	if (Buttons.IsValidIndex(Next))
 	{
+		// TASK-1394 instrument. Reported from the index MoveFocus CHOSE, never from FocusButton's
+		// return value: FSlateApplication::SetUserFocus early-returns false when the target is
+		// ALREADY focused (SlateApplication.cpp:3028-3033), so a false there is NOT a failure and
+		// must never be logged as a refusal (TASK-1446).
+		UE_LOG(LogSiegeMenuInput, Log,
+			TEXT("[USiegeMenuInputSubsystem] MoveFocus(%+d): focus moved %d -> %d of %d ('%s')."),
+			Delta, Current, Next, Buttons.Num(), *Buttons[Next]->GetName());
 		FocusButton(Buttons[Next]);
 	}
 }
@@ -367,6 +437,34 @@ void USiegeMenuInputSubsystem::ApplyInitialFocus()
 	GetMenuButtons(Buttons);
 	if (Buttons.Num() > 0 && !GetFocusedMenuButton())
 	{
+		// ─── TASK-1400 deliverable (4) ──────────────────────────────────────────────────────
+		// ⛔ UNCONDITIONAL AT ITS POINT: inside the branch that places focus, before the call, so
+		// it reports the button this function CHOSE. It is never gated on `FocusButton`'s return
+		// -- TASK-1446 measured that `FSlateApplication::SetUserFocus` early-returns false when the
+		// target is ALREADY focused (`SlateApplication.cpp:3028-3033`), so a false there is not a
+		// failure and must never be logged as one. Same category and verbosity as the Accept line
+		// below, which TASK-1399 §3 proved live in 🧑 his own process.
+		//
+		// ⭐ WHY THE MENU INSTANCE NAME IS IN THE LINE, and it is the whole point of logging here:
+		// this row's central claim is that the return paths build a BRAND-NEW `WBP_MainMenu`. A
+		// boot placement therefore names one instance and a placement after an Exit names a
+		// DIFFERENT one. ⇒ 🧑 his own sitting discriminates "re-armed on the fresh widget" from
+		// "never re-armed" with no extra state and no instrumentation on his side -- two lines
+		// naming two instances IS the measurement.
+		//
+		// ⚠️ A REPEAT IS SIGNAL, NOT SPAM: the guard above means a successful placement silences
+		// the next poll. If this line repeats at the poll rate, the focus request is NOT taking --
+		// which is exactly what a reader needs to see, and could not see before.
+		//
+		// ⚠️ SHIPPING: `Log` verbosity is compiled out entirely under Shipping
+		// (`USE_LOGGING_IN_SHIPPING` = 0 => `NO_LOGGING` = 1; no Target.cs override in this
+		// project -- documented at `SiegeAssistantGrammar.cpp:226-270`). In a packaged build this
+		// line DOES NOT EXIST. The precedent Accept line shares the property; it is a precondition
+		// on the READER, never a reason to change the verbosity.
+		UE_LOG(LogSiegeMenuInput, Log,
+			TEXT("[USiegeMenuInputSubsystem] ApplyInitialFocus: focus placed on the TOP option '%s' (\"%s\"), index 0 of %d, in menu instance '%s'."),
+			*Buttons[0]->GetName(), *GetButtonLabel(Buttons[0]), Buttons.Num(), *GetNameSafe(FindMainMenuWidget()));
+
 		FocusButton(Buttons[0]);
 	}
 }

@@ -3,6 +3,10 @@
 #pragma once
 
 #include "CoreMinimal.h"
+// FTimerHandle lives in its own header (Engine/TimerHandle.h), NOT in CoreMinimal.h and NOT in
+// EngineTypes.h -- the same note SiegeKeyboardLayoutSubsystem.h:13-14 carries. Needed BY VALUE for
+// TASK-1400's re-entry poll handle below.
+#include "Engine/TimerHandle.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "SiegeMenuInputSubsystem.generated.h"
 
@@ -146,6 +150,27 @@ public:
 	/** Priority of `IMC_MainMenu`. Nothing else is applied on `L_MainMenu` (`applied_mapping_contexts: []`, TASK-671), so 0 is unambiguous. */
 	static constexpr int32 MenuMappingContextPriority = 0;
 
+	/**
+	 *  TASK-1400 (MENU-REENTRY-FOCUS): how often the re-entry poll re-checks the menu, in seconds.
+	 *
+	 *  WHY A POLL AND NOT AN EVENT -- the reason is a MEASUREMENT, not a preference: BOTH return
+	 *  paths to this menu emit NOTHING to subscribe to. The deck builder's `Exit` is a pure
+	 *  Blueprint chain `CreateWidget(WBP_MainMenu_C) -> Is Valid -> AddToViewport(ZOrder 0) ->
+	 *  RemoveFromParent(self)` with no focus node and no dispatcher (TASK-1399 §5.3), and
+	 *  `USessionMenuWidget::BackPressed` (`SessionMenuWidget.cpp:151-165`) is the SAME shape in
+	 *  C++. A Slate `OnFocusChanging` hook would be provably insufficient as well: TASK-1399's
+	 *  table read ALL nodes `focused:false` on the Settings / Login / Session panels, so closing
+	 *  those changes no focus and would fire no event. A tickable subsystem is this same poll at
+	 *  60+ Hz. ⇒ a low-rate look is the only mechanism that covers a transition that announces
+	 *  itself to nobody.
+	 *
+	 *  0.2 s is chosen so the focus is back before a returning player's hand reaches a key, while
+	 *  the cost stays negligible: the timer is armed ONLY on `L_MainMenu`, AFTER the map gate, so
+	 *  it does not exist on `L_Arena`; and each tick's early-out is `IsMenuUncovered()`, which is
+	 *  false for the whole time any sub-screen is open.
+	 */
+	static constexpr float FocusReentryPollSeconds = 0.2f;
+
 	//~ UWorldSubsystem
 	virtual bool DoesSupportWorldType(const EWorldType::Type WorldType) const override;
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
@@ -188,7 +213,17 @@ private:
 	/** Shared Up/Down body. */
 	void MoveFocus(int32 Delta);
 
-	/** Next-tick after BeginPlay: place the initial (visible) focus on the first button. */
+	/**
+	 *  Place the visible focus on the TOP button (`Buttons[0]`, "Play (vs Bot)") when the menu is
+	 *  uncovered and nothing on it holds focus. Idempotent, and it holds NO widget pointer -- every
+	 *  input is re-resolved from the live viewport on every call.
+	 *
+	 *  ⚠️ TWO CALLERS SINCE TASK-1400 (this comment said "next-tick after BeginPlay" and "fired
+	 *  once" while that was true; leaving it would have been a fail-silent):
+	 *    1. `SetTimerForNextTick` in `OnWorldBeginPlay` -- the INITIAL placement at level boot.
+	 *    2. the looping `FocusReentryPollTimerHandle` -- the RE-ENTRY re-arm (see that member).
+	 *  ⛔ It never RESTORES a remembered button: the target is always index 0, by 🧑 his own ask.
+	 */
 	void ApplyInitialFocus();
 
 	/**
@@ -215,6 +250,21 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<const UInputAction> MenuAcceptAction;
+
+	/**
+	 *  TASK-1400: the LOOPING re-entry poll's handle.
+	 *
+	 *  ⚠️ HEADER CHANGE, DECLARED LOUDLY (the row's (5) fence): this row needed NO new method --
+	 *  the poll calls the EXISTING `ApplyInitialFocus()`, unchanged -- but `FTimerManager::SetTimer`
+	 *  cannot arm or clear a looping timer without a stored handle, so this one member (plus its
+	 *  `Engine/TimerHandle.h` include and the `FocusReentryPollSeconds` constant) is unavoidable.
+	 *
+	 *  Armed in `OnWorldBeginPlay` AFTER the `L_MainMenu` map gate; cleared in `Deinitialize`.
+	 *  ⚠️ Clearing is NOT belt-and-braces: `UWorld::GetTimerManager()` resolves to the OWNING GAME
+	 *  INSTANCE's manager, which OUTLIVES this world, so an uncleared loop would survive the travel
+	 *  off the menu map.
+	 */
+	FTimerHandle FocusReentryPollTimerHandle;
 
 	bool bArmed = false;
 };

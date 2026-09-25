@@ -1158,7 +1158,11 @@ void AFogVolume::DestroyFogVisual()
 // ⚠️ SCOPE DELETION, MEASURED RATHER THAN ASSUMED (TASK-1146 §3.0), AND IT IS RECORDED HERE
 // BECAUSE THE DAY IT STOPS BEING TRUE IS THE DAY SOMEBODY MUST RE-READ THIS: the graphics panel
 // is reachable ONLY from WBP_MainMenu on /Game/Maps/L_MainMenu — a DIFFERENT MAP from L_Arena —
-// and USettingsMenuWidget::CreateAndAddToViewport has ZERO call sites. ⇒ THE PLAYER CANNOT OPEN
+// and USiegeGraphicsMenuWidget::CreateAndAddToViewport (SiegeGraphicsMenuWidget.h:330) has EXACTLY
+// ONE C++ caller — SettingsMenuWidget.cpp:555 — and carries no UFUNCTION at all, so it has no
+// DIRECT BP or Python entry point; the ONLY route in is USettingsMenuWidget::GraphicsPressed()
+// (SettingsMenuWidget.h:151), which IS BlueprintCallable but is a member of that same settings
+// screen. Citation corrected TASK-1411. ⇒ THE PLAYER CANNOT OPEN
 // THE GRAPHICS MENU DURING A MATCH, so nothing here is built for a mid-match settings change.
 // ⚠️ THOSE TWO FACTS ARE THE LOAD-BEARING ONES, AND THE ABSOLUTE SENTENCE THIS COMMENT USED TO
 // CARRY WAS NOT EXACT (TASK-1148 NIT-2): there IS an in-match menu — USessionMenuWidget — it just
