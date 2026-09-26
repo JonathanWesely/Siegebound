@@ -90,22 +90,11 @@ namespace SiegeControlsHelpText
 	 */
 	static const TCHAR* BackLabel = TEXT("Back to the controls list");
 
-	/**
-	 *  ⭐⭐ TASK-1484 — the scroll control's label.
-	 *
-	 *  ⛔ IT NAMES A ⛔ DIRECTION AND A ⛔ BEHAVIOUR, ⛔ NEVER A KEY (`HELP-§1` / `HELP-§4`): the
-	 *  control is reached with whatever key the menu vocabulary is bound to, and typing one here
-	 *  would be the identical hardcoded-key defect the chips exist to prevent.
-	 *  ⛔ THE WRAP IS STATED because the control WRAPS: one press past the end returns to the top, so
-	 *  ⛔ every offset on a page of any length is reachable from this one button. A control that
-	 *  silently teleported the reader to the top would be the surprise this sentence removes.
-	 *
-	 *  🚨 ⛔ IT MAY ⛔ NEVER BECOME THE BARE GLYPH `<` OR `>`. `USiegeMenuInputSubsystem::FindStepperPair`
-	 *  reads exactly those two glyphs as a STEPPER PAIR, and `DetailColumn` holds exactly two
-	 *  `UButton`s ⇒ a glyph label would make `IsNavFocusStop` ⛔ DROP one of them from the ring and
-	 *  make `IA_MenuLeft`/`IA_MenuRight` ⛔ PRESS the partner. See `DetailScrollButton`'s declaration.
-	 */
-	static const TCHAR* ScrollDownLabel = TEXT("Scroll down — back to the top at the end");
+	// ⭐ TASK-1496 — `ScrollDownLabel` (the scroll control's label, ⭐ `TASK-1484`) stood here and
+	// ⛔ went with its button at 🧑 his ruling of 2026-09-26. ⛔ Its own standing warning — ⛔ never
+	// the bare glyph `<` or `>`, because `FindStepperPair` reads those two as a STEPPER PAIR — is
+	// ⛔ NOT lost: it is re-stated at `DetailScrollButton`'s former declaration in the header,
+	// where it now reads as ⛔ what would make the hazard live again.
 
 	/** The heading over a detail page's related-controls blocks — Jonathan's "all the controls with it". */
 	static const TCHAR* RelatedHeader = TEXT("All the controls that go with it");
@@ -264,29 +253,15 @@ namespace
 	}
 
 	// ------------------------------------------------------------------------------------
-	//  ⭐⭐ TASK-1484 — THE TWO NUMBERS BEHIND ONE PRESS OF THE DETAIL PAGE'S SCROLL CONTROL.
+	//  ⭐ TASK-1496 — ⭐ `TASK-1484`'s TWO TUNING NUMBERS STOOD HERE AND ⛔ WENT WITH THE BUTTON.
+	//
+	//  ⛔ `DetailScrollPageFraction = 0.85f` (one press = that fraction of the box's OWN measured
+	//  height) and ⛔ `DetailScrollFallbackStep = 320.f` (the degradation used only while the box
+	//  had no cached geometry). ⛔ Recorded rather than deleted (`SC-§120`) because the ⛔ shape of
+	//  the answer is worth keeping if a page ever DOES overflow: ⛔ a fraction of the MEASURED
+	//  viewport, ⛔ never a pixel count, and ⛔ less than 1.0 so the reader keeps an overlapping
+	//  line. ⛔ As measured at ⭐ `TASK-1494`, ⛔ no page overflows, so nothing reads them.
 	// ------------------------------------------------------------------------------------
-
-	/**
-	 *  One press advances the body by this fraction of ITS OWN VISIBLE HEIGHT.
-	 *
-	 *  ⭐ A FRACTION OF THE MEASURED VIEWPORT, ⛔ NOT A PIXEL COUNT, and that is what makes it right
-	 *  on every resolution and every window size: the box asks its own cached geometry how tall it
-	 *  is. ⛔ Less than 1.0 ON PURPOSE — a full-height jump leaves the reader with no overlapping
-	 *  line to reattach to, which is why every document reader in the OS keeps a line or two.
-	 */
-	constexpr float DetailScrollPageFraction = 0.85f;
-
-	/**
-	 *  The step used ONLY while the box has no cached geometry yet — the frame it is first built, or
-	 *  a `-nullrhi` lane that never paints.
-	 *
-	 *  ⚠️ ⛔ IT IS A DEGRADATION, ⛔ NOT A TUNABLE: in every state a player or an agent can reach, the
-	 *  page is ON SCREEN and has been arranged, so the measured branch is the one that runs. A
-	 *  guessed number here is only ever the difference between "scrolled by something sensible" and
-	 *  "did nothing"; the clamp below keeps it honest either way.
-	 */
-	constexpr float DetailScrollFallbackStep = 320.f;
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════
@@ -2389,9 +2364,20 @@ void USiegeControlsDetailWidget::ConstructDetailTree()
 			// no focus change ⛔ within this box, ⛔ still nothing for a `SetScrollWhenFocusChanges`
 			// companion to do here, and the body is paged by an ⛔ EXPLICIT offset write
 			// (`AdvanceBodyScroll`) that can walk a page of ⛔ any length.
-			// ⛔⛔ AND THE THREE AUTHORED PROPERTIES ON THIS BOX ARE ⛔ UNTOUCHED BY THAT ROW —
+			//
+			// 🚨 ⭐ TASK-1496 — ⛔ THAT PREMISE EXPIRED IN TURN AND ⛔ THE CONCLUSION ⛔ STILL DID NOT.
+			// ⛔ 🧑 His ruling of 2026-09-26 removed `DetailScrollButton` and `AdvanceBodyScroll`, so
+			// ⛔ the page is back to ⛔ ONE stop (`BackButton`) — ⛔ which is a ⛔ SIBLING of this box
+			// exactly as the ⛔ original sentence above said. ⇒ ⛔ THE THREE READINGS ALL AGREE AND
+			// ⛔ ALWAYS DID: ⛔ still ⛔ no focus change ⛔ within this box, ⛔ still ⛔ nothing for a
+			// `SetScrollWhenFocusChanges` companion to do ⛔ HERE. 🚨 ⛔ DO NOT CONFUSE THIS WITH
+			// `RowScrollBox`'s ⛔ OWN `SetScrollWhenFocusChanges(InstantScroll)` — ⛔ that one is the
+			// ⛔ 28-ROW LIST's scroll-follows-focus, it has ⛔ 27 real focus changes inside it, and it
+			// ⛔ STAYS.
+			// ⛔⛔ AND THE THREE AUTHORED PROPERTIES ON THIS BOX WERE ⛔ UNTOUCHED BY ⛔ EITHER ROW —
 			// `SetAlwaysShowScrollbar(true)` above, this `SetIsFocusable(false)`, and the
-			// `WhenScrollingPossible` below: 🧑 THE WHEEL PATH IS ⛔ BYTE-FOR-BYTE WHAT SHIPPED.
+			// `WhenScrollingPossible` below: 🧑 THE WHEEL PATH IS ⛔ BYTE-FOR-BYTE WHAT SHIPPED, and
+			// ⛔ this box itself is ⛔ NOT part of what `TASK-1496` removed.
 			DetailScrollBox->SetIsFocusable(false);
 			DetailScrollBox->SetConsumeMouseWheel(EConsumeMouseWheel::WhenScrollingPossible);
 
@@ -2496,23 +2482,28 @@ void USiegeControlsDetailWidget::ConstructDetailTree()
 			//  `Source/` ⇒ `CLASS_Native` ⇒ `IsCodeAuthoredSubWidget` admits it ⇒ this tree ⛔ IS
 			//  walked into.
 			//
-			//  ⭐ ⛔ ~~EXACTLY ONE STOP~~ (⭐ `TASK-1484`: ⛔ **TWO** — see the amendment at the foot of
-			//  this block), ⛔ BY THE STRUCTURE OF `ConstructDetailTree` RATHER THAN BY A
+			//  ⭐ ⛔ EXACTLY ONE STOP (~~⭐ `TASK-1484`: ⛔ **TWO**~~ — ⛔ STRUCK at ⭐ `TASK-1496`; see
+			//  the amendment at the foot of this block), ⛔ BY THE STRUCTURE OF `ConstructDetailTree`
+			//  RATHER THAN BY A
 			//  TALLY — which is what makes the count survive a page whose content changes: this is
 			//  the ⛔ ONLY `UButton` this tree builds; `DetailScrollBox` is a `UScrollBox` (⛔ not an
 			//  admitted class and authored non-focusable besides); `RebuildRelatedBlocks` constructs
 			//  ⛔ only `UHorizontalBox` / `UBorder` / `UTextBlock` / `UVerticalBox`; everything else
-			//  is a border, a text block or a box. ⇒ ~~⛔ StopSet(detail) = `{ BackButton }`~~ for
+			//  is a border, a text block or a box. ⇒ ⛔ StopSet(detail) = `{ BackButton }` for
 			//  ⛔ every row, ⛔ every page, ⛔ however many related blocks it grows.
 			//
-			//  🚨🚨 ⭐⭐ TASK-1484 — ⛔ THE COUNT IS ⛔ TWO, AND ⛔ THE GENERATING RULE IS THE SAME ONE.
-			//  ⛔ `DetailScrollButton` is the ⛔ SECOND (and ⛔ last) `UButton` this tree builds ⇒
-			//  ⛔ **StopSet(detail) = `{ BackButton, DetailScrollButton }`**, ⛔ in that order, for
-			//  ⛔ every row and ⛔ every page — ⛔ still by STRUCTURE, ⛔ still immune to a page whose
-			//  content grows, because ⛔ nothing `RebuildRelatedBlocks` constructs is an admitted class.
-			//  ⛔ `BackButton` REMAINS ⛔ STOP 0 because the new button is added ⛔ LAST to
-			//  `DetailColumn` and `CollectNavStopsFromTree` walks depth-first ⛔ PRE-ORDER — which is
-			//  what keeps ⭐ `TASK-1478`'s *"the ring lands on `BackButton`"* true ⛔ unchanged.
+			//  🚨🚨 ⭐ TASK-1496 — ⛔ THE COUNT WENT ⛔ 1 → 2 → ⛔ **1**, AND ⛔ THE GENERATING RULE WAS
+			//  ⛔ THE SAME ONE AT EVERY VALUE ⇒ ⛔ state the ⛔ RULE, ⛔ never the integer (⚖️ *a gate
+			//  written in indices has an expiry date nobody printed on it*).
+			//  ⛔ ~~`DetailScrollButton` is the SECOND `UButton` this tree builds ⇒ StopSet(detail) =
+			//  `{ BackButton, DetailScrollButton }`~~ — ⛔ STRUCK, ⛔ not deleted (`SC-§120`): 🧑 he
+			//  ruled the control out on ⛔ 2026-09-26 after ⭐ `TASK-1494` measured that ⛔ no detail
+			//  page overflows, so ⛔ this is once more the ⛔ ONLY `UButton` `ConstructDetailTree`
+			//  builds ⇒ ⛔ **StopSet(detail) = `{ BackButton }`**, ⛔ for ⛔ every row and ⛔ every page.
+			//  ⛔ `BackButton` was ⛔ STOP 0 under ⛔ BOTH counts — under two, because the second button
+			//  was added ⛔ LAST to `DetailColumn` and `CollectNavStopsFromTree` walks depth-first
+			//  ⛔ PRE-ORDER; under one, because it is the ⛔ only member. ⇒ ⭐ `TASK-1478`'s *"the ring
+			//  lands on `BackButton`"* is ⛔ true across ⛔ all three values and was ⛔ never at risk.
 			//
 			// ═══ 🚨🚨🚨 ⛔ THE TRIP-WIRE (`qa/TASK-1433.md` WARN-L1) — PLANTED HERE BECAUSE ⛔ THIS
 			//  IS THE LINE THAT TRIPS IT, AND THE FAILURE IT GUARDS IS ⛔ SILENT ══════════════════
@@ -2577,111 +2568,37 @@ void USiegeControlsDetailWidget::ConstructDetailTree()
 			TEXT("[ControlsHelp] Detail view: could not construct BackButton - the page can only be left by closing the overlay."));
 	}
 
-	// ---- DetailScrollButton: the prose below the fold, reachable without a mouse ------------
+	// ═══ ⭐ TASK-1496 [DETAIL-SCROLL-BUTTON-REMOVAL] — ⛔ `DetailScrollButton` WAS CONSTRUCTED HERE
+	//  AND ⛔ IS GONE, 🧑 ON HIS RULING OF 2026-09-26 ═══════════════════════════════════════════
+	//  ⛔ **A scroll affordance was added at ⭐ `TASK-1484` and ⛔ REMOVED at 🧑 his ruling
+	//  ⛔ 2026-09-26 after ⛔ pixels measured that ⛔ NO DETAIL PAGE OVERFLOWS.** ⭐ `TASK-1494` took
+	//  the model's ⛔ LONGEST page (`Cards.PlacementResize`) and found its lowest painted text row
+	//  at ⛔ 516 of 615 with ⛔ 57 px of clear panel below it — ⛔ and that was ⛔ WITH the button
+	//  present. ⛔ Six pages, ⛔ six different bottom rows in the model's ⛔ exact rank order ⇒
+	//  ⛔ nothing is clipped and there is ⛔ no fold. ⇒ ⛔ the control was a ⛔ stop with ⛔ no work to
+	//  do, ⛔ costing ~74 px of prose per page. 🧑 He was told he had been asked ⛔ twice on premises
+	//  that ⛔ did not hold, and ruled ⛔ remove it. ⛔ The full record — what `TASK-1484` added and
+	//  ⛔ why its mechanism was sound — is in `USiegeControlsDetailWidget`'s class comment
+	//  (`SC-§120`: ⛔ struck, ⛔ not deleted).
 	//
-	// ═══ 🚨🚨🚨 ⭐⭐ TASK-1484 [CONTROLS-HELP-DETAIL-SCROLL] — 🧑 HIS RULING IN ONE WIDGET ═══════
-	//  🧑 *"It isn't navigable until an agent can scroll."* ⛔ Chosen over *"count it, name the
-	//  residual"*, ⛔ on the LITERAL reading of his own standing sentence and ⛔ NOT on a cost
-	//  argument. ⇒ this control is ⛔ not a convenience; it is the ⛔ acceptance.
+	// 🚨 ⛔ THE ⛔ THIRD TRIP-WIRE WENT WITH THIS BLOCK, AND ⛔ THAT IS ⛔ DELIBERATE — ⛔ SAID OUT
+	//  LOUD BECAUSE ⭐ *a trip-wire that vanishes without a sentence is indistinguishable from one
+	//  removed by accident.* ⛔ It read *"this button is focusable on the line below ⇒ this
+	//  screen's ring is correct ⛔ only because `ApplyActiveView` collapses the inactive
+	//  `ViewSwitcher` branch"*, and it guarded ⛔ exactly one line: `ApplyButtonFocusable(
+	//  DetailScrollButton)`. ⛔ THAT FLIP NO LONGER EXISTS ⇒ ⛔ the wire has ⛔ nothing to guard.
+	//  🚨 ⛔ THE OTHER ⛔ TWO WIRES ⛔ STAY, ⛔ UNTOUCHED AND ⛔ STILL LOAD-BEARING (⭐ `TASK-1479`
+	//  made their absence a ⛔ BLOCKER): one at `RowButton`'s flip in
+	//  `USiegeControlsHelpRowWidget::ConstructRowTree` (the switcher's ⛔ LIST branch) and one at
+	//  `BackButton`'s flip ⛔ directly above (the ⛔ DETAIL branch). ⛔ Do ⛔ NOT remove either by
+	//  analogy with this one: ⛔ their flips are ⛔ still here.
 	//
-	//  ⛔ WHY A BUTTON RATHER THAN A KEY, AND IT IS A ⛔ MEASUREMENT RATHER THAN A PREFERENCE:
-	//  `qa/TASK-1459-verify.md` measured the agent lane itself — `simulate_key_press` ⛔ delivers
-	//  into ENHANCED INPUT and ⛔ NOT into a Slate key event a focused `SButton` acts on (a
-	//  `SpaceBar` on a focused "Settings" button did ⛔ nothing while `inject_input_action
-	//  IA_MenuAccept` opened the screen, same button, same session, luma 193 → 50). ⇒ a
-	//  screen-side `NativeOnPreviewKeyDown` claim on a scroll KEY would be code an ⛔ AGENT CANNOT
-	//  REACH — it would satisfy a code path and ⛔ fail his sentence. ⛔ The vocabulary an agent
-	//  provably holds is the six `IA_Menu*` actions, and what those DO to a screen is: move the
-	//  ring (`MoveFocus`) and ⛔ press a focused `UButton` (`HandleMenuAccept` →
-	//  `Focused->OnClicked.Broadcast()`). ⇒ ⛔ A FOCUSABLE BUTTON IS THE ⛔ ONLY IN-FENCE SHAPE THE
-	//  ACCEPTANCE CAN BE ⛔ OBSERVED THROUGH.
-	//
-	//  ⛔ AND IT IS AN ⛔ ACTIVATION, ⛔ NOT A FOCUS, THAT SCROLLS — the one deviation from the
-	//  shape the board sketched, and the reason is arithmetic: a stop whose FOCUS scrolls (via
-	//  `ScrollWhenFocusChanges`) can only ever jump to ⛔ ONE place, so a page longer than two
-	//  screenfuls would have a ⛔ middle no agent could read. An activation pages ⛔ repeatedly, so
-	//  ⛔ the length of the prose stops mattering. ⛔ It costs ⛔ no extra capability: reaching the
-	//  stop is `IA_MenuDown`, pressing it is `IA_MenuAccept`, and both are already proven live.
-	//
-	// ═══ 🚨🚨🚨 ⛔ THE TRIP-WIRE, ⛔ PLANTED AGAIN HERE BECAUSE THIS IS A ⛔ SECOND LINE THAT TRIPS
-	//  IT AND THE FAILURE IS ⛔ SILENT ═══════════════════════════════════════════════════════════
-	//  ⛔ **THIS BUTTON IS FOCUSABLE ON THE LINE BELOW, SO — ⛔ EXACTLY AS FOR `BackButton` ABOVE —
-	//  THIS SCREEN'S RING IS CORRECT ⛔ ONLY BECAUSE `USiegeControlsHelpWidget::ApplyActiveView`
-	//  COLLAPSES WHICHEVER `ViewSwitcher` BRANCH IS INACTIVE. ⛔ Remove, bypass or mis-target that
-	//  collapse and this button becomes a ⛔ SECOND admitted-but-unfocusable stop that ⛔ SWALLOWS
-	//  THE RING every time the list is up — with every visibility flag green and nothing in any
-	//  log.** ⛔ The full mechanism (`SWidgetSwitcher::ValidatePathToChild` → `FindPathToWidget`
-	//  → `SetUserFocus` refuses, while `IsNavFocusStop` still admits) is written out at
-	//  `BackButton`'s flip above; ⛔ it is not repeated, it is ⛔ inherited unchanged.
-	//
-	// ═══ 🚨🚨 ⛔ THE STEPPER-PAIR HAZARD THIS BLOCK ⛔ CREATES AND ⛔ CLOSES IN THE SAME BREATH ═══
-	//  ⛔ `DetailColumn` now holds ⛔ EXACTLY TWO `UButton`s, which ⛔ SATISFIES the count guard in
-	//  `USiegeMenuInputSubsystem::FindStepperPair` (*"exactly two buttons in the immediate
-	//  parent"*). ⛔ What refuses the pair is its ⛔ TWO DISCRIMINATORS, ⛔ measured at source:
-	//    • ⛔ NAMES — a pair needs `<Base>PrevButton` + `<Base>NextButton` with an ⛔ EQUAL base.
-	//      `BackButton` and `DetailScrollButton` end in neither suffix. ⛔ Never rename either to
-	//      `…PrevButton` / `…NextButton`.
-	//    • ⛔ LABELS — a pair needs the bare glyphs `<` and `>`. Ours are sentences. ⛔ Never
-	//      shorten this button's label to an arrow glyph.
-	//  ⛔ IF EITHER WERE BROKEN, ⛔ TWO SILENT FAILURES LAND TOGETHER: `IsNavFocusStop` ⛔ DROPS the
-	//  `Next` member (the page would lose a stop, possibly `BackButton` itself), and
-	//  `StepFocusedStop` would make `IA_MenuLeft`/`IA_MenuRight` ⛔ PRESS the partner — an arrow key
-	//  that ⛔ LEAVES THE PAGE. ⭐ `USettingsMenuWidget`'s footer (`GraphicsButton` + `BackButton`)
-	//  is the shipped precedent for a two-button parent that is correctly refused.
+	// ⛔ AND THE ⛔ STEPPER-PAIR HAZARD ⭐ `TASK-1484` OPENED IS ⛔ CLOSED BY THIS REMOVAL:
+	//  `USiegeMenuInputSubsystem::FindStepperPair` needs ⛔ EXACTLY TWO buttons in the immediate
+	//  parent, and `DetailColumn` now holds ⛔ ONE ⇒ the ⛔ name and ⛔ glyph discriminators that
+	//  were load-bearing are ⛔ no longer reachable. 🚨 ⛔ Add a second `UButton` to `DetailColumn`
+	//  and ⛔ that guard is live again — ⛔ read `FindStepperPair` first.
 	// ═══════════════════════════════════════════════════════════════════════════════════════════
-	if (DetailScrollLabelText == nullptr)
-	{
-		DetailScrollLabelText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("DetailScrollLabelText"));
-		if (DetailScrollLabelText != nullptr)
-		{
-			DetailScrollLabelText->SetText(FText::FromString(FString(SiegeControlsHelpText::ScrollDownLabel)));
-			DetailScrollLabelText->SetFontSize(20.f);
-		}
-	}
-
-	if (DetailScrollButton == nullptr)
-	{
-		DetailScrollButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("DetailScrollButton"));
-		if (DetailScrollButton != nullptr)
-		{
-			// ⛔ IN THE CONSTRUCTION PASS, ⛔ never in `NativeConstruct`: `UButton::RebuildWidget`
-			// reads the field exactly once, so a later write would be a no-op that reviews clean.
-			ApplyButtonFocusable(DetailScrollButton);
-
-			if (DetailScrollLabelText != nullptr)
-			{
-				if (UButtonSlot* ScrollContentSlot = Cast<UButtonSlot>(DetailScrollButton->SetContent(DetailScrollLabelText)))
-				{
-					ScrollContentSlot->SetPadding(FMargin(28.f, 8.f, 28.f, 8.f));
-					ScrollContentSlot->SetHorizontalAlignment(HAlign_Center);
-					ScrollContentSlot->SetVerticalAlignment(VAlign_Center);
-				}
-			}
-
-			// ⛔⛔ ADDED ⛔ LAST, AND THAT IS THE ⛔ RING'S ORDER RATHER THAN THE LAYOUT'S TASTE:
-			// `CollectNavStopsFromTree` walks depth-first ⛔ PRE-ORDER, so a stop appended after
-			// `BackButton` leaves ⛔ STOP 0 = `BackButton` — which is what ⭐ `TASK-1478` declared,
-			// what `FocusFirstNavStop()` lands on when a detail page opens, and what three comments
-			// in this file already say. ⛔ Moving this `AddChildToVerticalBox` call earlier would
-			// change where the ring appears on ⛔ every detail page, ⛔ silently.
-			if (UVerticalBoxSlot* ScrollSlot = DetailColumn->AddChildToVerticalBox(DetailScrollButton))
-			{
-				ScrollSlot->SetPadding(FMargin(56.f, 0.f, 56.f, 34.f));
-				ScrollSlot->SetHorizontalAlignment(HAlign_Center);
-				ScrollSlot->SetVerticalAlignment(VAlign_Bottom);
-			}
-		}
-	}
-
-	if (DetailScrollButton == nullptr)
-	{
-		// ⚠️ `Warning`, ⛔ not `Error`, and the difference is honest: without this control the page
-		// is exactly as READABLE as it was before TASK-1484 for a 🧑 mouse (the wheel is untouched)
-		// and exactly as UNREADABLE as it was for a keyboard. ⛔ It is a lost capability, ⛔ not a
-		// stranded player — `BackButton` still exists and the page can still be left.
-		UE_LOG(LogSiegeControlsHelp, Warning,
-			TEXT("[ControlsHelp] Detail view: could not construct DetailScrollButton - the prose below the fold is mouse-wheel only on this page."));
-	}
 }
 
 void USiegeControlsDetailWidget::NativeConstruct()
@@ -2696,17 +2613,9 @@ void USiegeControlsDetailWidget::NativeConstruct()
 		BackButton->OnClicked.AddUniqueDynamic(this, &USiegeControlsDetailWidget::HandleBackButtonClicked);
 	}
 
-	// ⭐ TASK-1484 — the same timing and the same `AddUnique`, for the same reason: the
-	// code-authored children do not exist until RebuildWidget() has run, and this widget is
-	// constructed once and re-stamped many times.
-	// ⭐⭐ AND THIS BIND IS WHAT MAKES THE AGENT LANE REACH THE SCROLL AT ALL: `IA_MenuAccept` ends
-	// in `Focused->OnClicked.Broadcast()`, which is ⛔ the same delegate a mouse click fires
-	// (`UButton::SlateHandleClicked`). ⛔ Without this line the button would focus, log a press and
-	// ⛔ scroll nothing — the `SC-§36.1` shape, where the surface is perfect and the wire is absent.
-	if (DetailScrollButton != nullptr)
-	{
-		DetailScrollButton->OnClicked.AddUniqueDynamic(this, &USiegeControlsDetailWidget::HandleScrollButtonClicked);
-	}
+	// ⭐ TASK-1496 — ⭐ `TASK-1484`'s second `AddUniqueDynamic` (`DetailScrollButton->OnClicked` →
+	// `HandleScrollButtonClicked`) stood here and ⛔ went with its button. ⛔ `BackButton`'s bind
+	// above is ⛔ the only one this page has ever needed again.
 }
 
 void USiegeControlsDetailWidget::NativeDestruct()
@@ -2716,10 +2625,8 @@ void USiegeControlsDetailWidget::NativeDestruct()
 		BackButton->OnClicked.RemoveDynamic(this, &USiegeControlsDetailWidget::HandleBackButtonClicked);
 	}
 
-	if (DetailScrollButton != nullptr)
-	{
-		DetailScrollButton->OnClicked.RemoveDynamic(this, &USiegeControlsDetailWidget::HandleScrollButtonClicked);
-	}
+	// ⭐ TASK-1496 — the matching `RemoveDynamic` for `DetailScrollButton` stood here and ⛔ went
+	// with it. ⛔ The bind/unbind pair was removed ⛔ together, in ⛔ one diff.
 
 	Super::NativeDestruct();
 }
@@ -2729,96 +2636,18 @@ void USiegeControlsDetailWidget::HandleBackButtonClicked()
 	RequestBack();
 }
 
-void USiegeControlsDetailWidget::HandleScrollButtonClicked()
-{
-	// ⛔ THE RETURN VALUE IS DELIBERATELY DROPPED HERE AND ⛔ NOT SWALLOWED: `AdvanceBodyScroll()`
-	// has already logged BOTH offsets at `Log`, which is the reviewable artefact. A thunk that
-	// re-logged would double every line 5b reads.
-	AdvanceBodyScroll();
-}
-
-bool USiegeControlsDetailWidget::AdvanceBodyScroll()
-{
-	// ═══ 🚨🚨🚨 ⭐⭐ TASK-1484 — ⛔ THE ONE FUNCTION THAT MOVES THE PROSE ═══════════════════════
-	//  🧑 THE ACCEPTANCE IS ⛔ HIS SENTENCE, ⛔ NOT A CODE PATH: *"an agent can read the text below
-	//  the fold."* ⇒ ⛔ this function's claim is an ⛔ OFFSET THAT MOVED, and it is written so that
-	//  ⛔ IT CAN FAIL: both offsets are read off the live widget and ⛔ both are printed.
-	if (DetailScrollBox == nullptr)
-	{
-		// ⛔ `Warning`, and it is worth one: a page whose prose cannot be reached is the defect this
-		// row exists to remove, and a silent false here would read in 5b as "the key never arrived".
-		UE_LOG(LogSiegeControlsHelp, Warning,
-			TEXT("[ControlsHelp] Detail scroll refused for '%s': no DetailScrollBox on this page - nothing to scroll."),
-			*Content.ActionId.ToString());
-		return false;
-	}
-
-	// ⛔ THE STEP IS MEASURED OFF THE BOX ITSELF, ⛔ never assumed. `GetLocalSize()` is the same
-	// space the scroll offset lives in (`SScrollBox::GetScrollOffsetOfEnd` subtracts the scroll
-	// panel's own arranged size from the content size), so a fraction of it is a genuine
-	// "screenful" at any resolution and any window size.
-	// ⚠️ The float component is read straight off the Slate accessor — ⛔ deliberately not converted
-	// to `FVector2D` (the `UDeckBuilderWidget::GetTileColumnCount` note: `FDeprecateVector2DResult`
-	// derives from `FVector2f` AND offers an `operator FVector2d`, so an explicit construction is an
-	// ambiguity waiting to happen).
-	const float ViewHeight = DetailScrollBox->GetCachedGeometry().GetLocalSize().Y;
-	const bool bHasGeometry = (ViewHeight > UE_KINDA_SMALL_NUMBER);
-	const float Step = bHasGeometry
-		? (ViewHeight * DetailScrollPageFraction)
-		: DetailScrollFallbackStep;
-
-	// ⛔ READ BEFORE. `UScrollBox::GetScrollOffset()` forwards to `SScrollBox::GetScrollOffset()`,
-	// which returns `DesiredScrollOffset` — i.e. the value a write lands in, so the read-back below
-	// is ⛔ immediate and does ⛔ not wait for a layout pass.
-	const float OffsetBefore = DetailScrollBox->GetScrollOffset();
-
-	// ⛔ THE END IS ASKED, ⛔ NOT GUESSED: `GetScrollOffsetOfEnd()` is
-	// `max(ContentSize - ScrollPanelSize, 0)`. ⇒ on a page whose prose FITS it is ⛔ 0, the clamp
-	// below pins the target to 0, and this function honestly returns ⛔ false. ⛔ That is a real
-	// negative rather than a silence, and 5b must therefore choose a page that ⛔ overflows.
-	const float OffsetOfEnd = DetailScrollBox->GetScrollOffsetOfEnd();
-
-	// ⛔⛔ THE WRAP IS WHAT MAKES ⛔ ONE CONTROL SUFFICIENT FOR A PAGE OF ⛔ ANY LENGTH — and it is
-	// the reason no second ("scroll up") stop was added: from the end, the next press returns to the
-	// top, so ⛔ every offset is reachable by pressing this one button, and the detail page's stop
-	// count moves ⛔ 1 → 2 rather than 1 → 3.
-	// ⚠️ `>=` with a small tolerance rather than `==`: the offset is a float the engine also writes
-	// from wheel and drag paths, so an exact compare would leave a reader stuck one pixel short of
-	// the end with a button that appeared dead.
-	const bool bAtEnd = (OffsetBefore >= OffsetOfEnd - UE_KINDA_SMALL_NUMBER);
-
-	// ⛔ CLAMPED HERE AND ⛔ NOT BY THE ENGINE: `SScrollBox::SetScrollOffset` assigns
-	// `DesiredScrollOffset` ⛔ RAW (only `ScrollBy` clamps), so an unclamped target would be READ
-	// BACK verbatim and this function would report a move that the next layout pass silently undid.
-	// ⛔ That would be a log line that lies, which is the one outcome this instrument may not have.
-	const float Target = bAtEnd
-		? 0.f
-		: FMath::Clamp(OffsetBefore + Step, 0.f, OffsetOfEnd);
-
-	DetailScrollBox->SetScrollOffset(Target);
-
-	// ⛔ READ AFTER, off the ⛔ WIDGET — ⛔ never off `Target`. The claim is about what the box now
-	// holds, and asking the variable we just wrote would make the instrument agree with itself.
-	const float OffsetAfter = DetailScrollBox->GetScrollOffset();
-	const bool bMoved = !FMath::IsNearlyEqual(OffsetBefore, OffsetAfter);
-
-	// ⛔⛔ `Log`, ⛔ NOT `Verbose`. `LogSiegeControlsHelp` is declared `(…, Log, All)`, so this prints
-	// in Development with ⛔ no console verb typed first ⇒ ⛔ AN ABSENT LINE IS A ZERO AND A DEFECT
-	// SIGNATURE, ⛔ never "the verbosity was wrong". ⭐ BOTH offsets ride on ⛔ ONE line so a verdict
-	// cannot be assembled from two lines that might have come from two presses, and the page's own
-	// `ActionId` rides with them so the reading is ⛔ anchored to a page rather than to an index.
-	UE_LOG(LogSiegeControlsHelp, Log,
-		TEXT("[ControlsHelp] Detail scroll on '%s': offset %.1f -> %.1f (end %.1f, step %.1f, view %.1f%s) - %s."),
-		*Content.ActionId.ToString(),
-		OffsetBefore, OffsetAfter, OffsetOfEnd, Step, ViewHeight,
-		bHasGeometry ? TEXT("") : TEXT(", NO CACHED GEOMETRY - fallback step"),
-		bMoved
-			? (bAtEnd ? TEXT("WRAPPED to the top") : TEXT("MOVED"))
-			: TEXT("NO MOVEMENT - this page's prose already fits, or it is already at both ends"));
-
-	return bMoved;
-}
-
+// ═══ ⭐ TASK-1496 — `HandleScrollButtonClicked()` AND `AdvanceBodyScroll()` WERE DEFINED HERE ══
+//  ⛔ Both added at ⭐ `TASK-1484`; ⛔ both removed at 🧑 his ruling of 2026-09-26, ⛔ because the
+//  ⛔ fold they answered does ⛔ not exist (⭐ `TASK-1494`'s five captures across two PIE sessions).
+//  ⛔ `HandleScrollButtonClicked` was the `UFUNCTION` thunk — ⛔ the ⛔ ONE reflected symbol this
+//  removal takes out (⛔ exec set ⛔ 10 → 9, ⛔ single removal `execHandleScrollButtonClicked`,
+//  ⛔ zero additions). ⛔ `AdvanceBodyScroll` paged `DetailScrollBox` by a measured fraction of its
+//  own visible height and ⛔ wrapped at the end, reading the offset ⛔ before and ⛔ after and
+//  printing ⛔ both at `Log`. ⛔ Its instrument was ⛔ sound and its verdict was ⛔ honest — ⭐ that
+//  is precisely ⛔ HOW the fold was refuted: the function ⛔ reported `NO MOVEMENT` on pages whose
+//  prose ⛔ already fit, and ⭐ `TASK-1491`/`1494` then measured the pixels and agreed.
+//  ⚖️ *An instrument built to be able to fail is the one that can retire the feature it serves.*
+// ═══════════════════════════════════════════════════════════════════════════════════════════
 void USiegeControlsDetailWidget::RequestBack()
 {
 	// ⛔ DELIBERATELY UNFENCED — see the header. A row refuses to report a click before it knows
@@ -3606,9 +3435,11 @@ void USiegeControlsHelpWidget::ApplyOpenState(bool bOpen)
 	//
 	//  🚨 ⛔ (6) TASK-1478 — ⛔ THE INVARIANT IS ⛔ SIMPLER AGAIN, AND THIS FUNCTION IS ⛔ ONCE MORE
 	//  THE ⛔ ONLY PLACE A REGISTRATION IS ⛔ TAKEN OR ⛔ GIVEN BACK. ⛔ **registered ⟺ `bHelpOpen`.**
-	//  ⛔ The detail page now has a ring of its own (⭐ `TASK-1484`:
-	//  `{ BackButton, DetailScrollButton }` — ⛔ was `{ BackButton }`; ⛔ the count changed, ⛔ this
-	//  invariant did not), so there is ⛔ nothing left
+	//  ⛔ The detail page now has a ring of its own (~~⭐ `TASK-1484`:
+	//  `{ BackButton, DetailScrollButton }` — ⛔ was `{ BackButton }`~~ ⇒ ⭐ `TASK-1496`: ⛔ back to
+	//  ⛔ `{ BackButton }`, 🧑 his ruling 2026-09-26; ⛔ the count changed ⛔ TWICE, ⛔ this
+	//  invariant did ⛔ neither time — ⛔ **registered ⟺ `bHelpOpen`** is ⛔ untouched by this
+	//  removal and ⛔ must stay that way), so there is ⛔ nothing left
 	//  for a view switch to unregister; `ShowDetailForAction` and `ReturnToList` ⛔ REFRESH this
 	//  registration rather than ⛔ ending it, and the ring ⛔ follows the view. ⛔ Clause (5)'s
 	//  measurement of the switcher is ⛔ still exactly right — what answers it is now
@@ -4390,15 +4221,21 @@ void USiegeControlsHelpWidget::RegisterAsMenuNavTarget()
 	// rather than a number because `RefreshRows` rebuilds the list from the registry on every open:
 	//   • ⛔ LIST view up  ⇒ `{ RowButton of every live USiegeControlsHelpRowWidget, in RowScrollBox
 	//     slot order } ∪ { CloseButton }`, with `CloseButton` ⛔ LAST — i.e. ⛔ `RowWidgets.Num() + 1`.
-	//   • ⛔ DETAIL view up ⇒ ~~`{ DetailView->BackButton }` — ⛔ exactly one~~ ⭐ `TASK-1484`:
-	//     ⛔ `{ DetailView->BackButton, DetailView->DetailScrollButton }` — ⛔ exactly TWO, ⛔ in that
-	//     order, ⛔ still by the STRUCTURE of `ConstructDetailTree` (it builds ⛔ those two `UButton`s
-	//     and ⛔ no other admitted-class widget, ⛔ however many related blocks a page grows).
-	//     ⛔ `BackButton` is ⛔ STILL STOP 0 — the scroll control is `DetailColumn`'s ⛔ LAST child and
-	//     the walk is ⛔ PRE-ORDER — so ⛔ `FocusFirstNavStop()` still lands where TASK-1478 said.
-	//     ⛔ AND THE TWO ARE ⛔ NOT A STEPPER PAIR: `FindStepperPair`'s count guard passes on a
-	//     two-button parent, and ⛔ only the name/glyph discriminators refuse it (see that button's
-	//     declaration) — if either were broken, ⛔ this count would silently become ⛔ ONE again.
+	//   • ⛔ DETAIL view up ⇒ `{ DetailView->BackButton }` — ⛔ exactly ONE.
+	//     ⛔ ~~⭐ `TASK-1484`: `{ DetailView->BackButton, DetailView->DetailScrollButton }` — exactly
+	//     TWO~~ ⛔ STRUCK at ⭐ `TASK-1496` (🧑 his ruling 2026-09-26, on ⭐ `TASK-1494`'s pixels:
+	//     ⛔ no detail page overflows ⇒ the scroll control had ⛔ no work to do).
+	//     ⛔ ONE ⛔ still by the STRUCTURE of `ConstructDetailTree` (it builds ⛔ that one `UButton`
+	//     and ⛔ no other admitted-class widget, ⛔ however many related blocks a page grows) —
+	//     ⛔ state the ⛔ RULE, ⛔ not the integer: this count has now read ⛔ 1 → 2 → 1 and the
+	//     ⛔ generating rule was ⛔ correct at every value.
+	//     ⛔ `BackButton` is ⛔ STILL STOP 0 — it was under ⛔ two (the scroll control was
+	//     `DetailColumn`'s ⛔ LAST child and the walk is ⛔ PRE-ORDER) and it is under ⛔ one (it is
+	//     the ⛔ only member) — so ⛔ `FocusFirstNavStop()` still lands where TASK-1478 said.
+	//     ⛔ AND THE ⛔ STEPPER-PAIR HAZARD IS ⛔ GONE RATHER THAN ⛔ REFUSED: `FindStepperPair`'s
+	//     count guard needs ⛔ EXACTLY TWO buttons in the immediate parent and `DetailColumn` now
+	//     holds ⛔ ONE, so the name/glyph discriminators that used to be load-bearing are ⛔ no
+	//     longer reachable. 🚨 ⛔ Restore a second `UButton` there and the guard is ⛔ live again.
 	//   • ⛔ AND THE TWO ARE ⛔ DISJOINT AND ⛔ NEVER BOTH RETURNED: `ApplyActiveView` collapses the
 	//     inactive branch, so `HasVisibleSlateAncestry` drops the other page's buttons. ⛔ That
 	//     property is the ⛔ whole safety argument; see that function.
