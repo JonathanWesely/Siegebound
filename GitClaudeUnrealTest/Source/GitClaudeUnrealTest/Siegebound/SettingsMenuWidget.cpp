@@ -18,6 +18,10 @@
 // rather than at a .uasset because /Game/UI/WBP_GraphicsMenu is RESERVED and
 // UNAUTHORED (GFX-§2).
 #include "SiegeGraphicsMenuWidget.h"
+// TASK-1415 [MENU-NAV-SETTINGS]: complete type for RegisterMenuNavTarget /
+// UnregisterMenuNavTarget. ⛔ This screen CALLS that public API and never edits
+// it — USiegeMenuInputSubsystem is TASK-1406's file.
+#include "SiegeMenuInputSubsystem.h"
 #include "SiegeSettingsSubsystem.h"
 
 namespace SiegeSettingsMenuText
@@ -391,10 +395,57 @@ void USettingsMenuWidget::NativeConstruct()
 	// only ever show up as a dead check box in a build nobody could reproduce.
 	// One binding site covers BOTH paths.
 	SeedAndBind();
+
+	// ------------------------------------------------------------------------
+	// TASK-1415 [MENU-NAV-SETTINGS] — and it is AFTER SeedAndBind() ON PURPOSE,
+	// for one mechanical reason.
+	//
+	// RegisterMenuNavTarget does two things in one call: it makes this screen
+	// the nav target AND it logs the focus-stop count AND it places the ring on
+	// stop 0. All three read the tree's LIVE enabled/visible state. SeedAndBind
+	// is what settles that state — on the unhappy path it calls
+	// ShowRowUnavailable(), which disables ConfirmToggleCheckBox. Registering
+	// first would log a count of 3 for a screen that actually has 2 stops and
+	// could park the ring on a control that is disabled one line later.
+	//
+	// ⛔ NOTHING ELSE IS ADDED HERE. No NativeOnKeyDown, no focus call of our
+	// own, no navigation rules — USiegeMenuInputSubsystem owns Up/Down/Accept
+	// for the whole menu and this screen only tells it where to look.
+	//
+	// ⚠️ THE VIEWPORT ORDERING THIS DEPENDS ON, MEASURED IN THE 5.8 SOURCE
+	// RATHER THAN ASSUMED: UGameViewportSubsystem::AddToScreen sets
+	// `bIsManagedByGameViewportSubsystem = true` (GameViewportSubsystem.cpp:158)
+	// and `SlotInfo.FullScreenWidget = FullScreenCanvas` (:177) BEFORE it calls
+	// `RawSlot->AttachWidget(Widget->TakeWidget())` (:183) — and TakeWidget is
+	// what runs RebuildWidget → OnWidgetRebuilt → NativeConstruct. So by the
+	// time this line executes, IsInViewport() is ALREADY true (it is exactly
+	// those two facts: Widget.cpp:344 → GameViewportSubsystem.cpp:89) and
+	// IsVisible() is already true (MyGCWidget cached at Widget.cpp:1023,
+	// SynchronizeProperties at :1094, both ahead of OnWidgetRebuilt at :1096).
+	//
+	// That matters because GetRegisteredNavTarget() re-validates
+	// `IsInViewport() && IsVisible()` on EVERY read. Had either been false here,
+	// the registration would have been invisible to the very
+	// FocusFirstNavStop() that RegisterMenuNavTarget makes, the fallback would
+	// have fired, and the ring would have landed on WBP_MainMenu's stop 0 with
+	// the log line reporting the MAIN MENU's 7 stops instead of this screen's.
+	// ⇒ THE FALSIFIER IS ONE LINE OF LOG: a "registered" retarget naming
+	// anything but this widget, or reporting 7 stops, means that ordering
+	// changed.
+	// ------------------------------------------------------------------------
+	RegisterAsMenuNavTarget();
 }
 
 void USettingsMenuWidget::NativeDestruct()
 {
+	// TASK-1415: LIFO against NativeConstruct — navigation goes back before the
+	// delegates come down. This is the CATCH-ALL half of the pair: BackPressed
+	// unregisters on the ordinary exit, and this one covers every other way the
+	// panel can stop existing (level travel, viewport teardown, a caller that
+	// removes this widget without going through BackPressed). Both firing is
+	// the normal case and is safe — see UnregisterAsMenuNavTarget.
+	UnregisterAsMenuNavTarget();
+
 	UnbindAll();
 
 	Super::NativeDestruct();
@@ -505,6 +556,19 @@ void USettingsMenuWidget::BackPressed()
 	// would put navigation state in the leaf plus a soft asset path to get
 	// wrong, and would hand the player a menu that is not the object they left.
 	UE_LOG(LogSiegeSettings, Log, TEXT("[SettingsMenu] Back pressed - dismissing the settings panel only."));
+
+	// ⛔ TASK-1415: UNREGISTER BEFORE RemoveFromParent(), NOT AFTER, and the
+	// order is the subsystem's own stated contract
+	// (SiegeMenuInputSubsystem.cpp, UnregisterMenuNavTarget's closing comment:
+	// "an unregister runs from `BackPressed`, BEFORE `RemoveFromParent`").
+	// Unregistering while this widget is still in the viewport is what lets the
+	// subsystem see a coherent stack: it hands the ring to the next LIVE
+	// registered screen if there is one, and otherwise leaves the re-arm to
+	// TASK-1400's 0.2 s re-entry poll — the only path carrying the coverage
+	// check, so it cannot light up the main menu while this panel is still
+	// drawn.
+	UnregisterAsMenuNavTarget();
+
 	RemoveFromParent();
 }
 
@@ -564,6 +628,23 @@ void USettingsMenuWidget::GraphicsPressed()
 		return;
 	}
 
+	// ⛔ TASK-1415: THERE IS DELIBERATELY NO UnregisterAsMenuNavTarget() CALL ON
+	// THIS PATH, AND ITS ABSENCE IS LOAD-BEARING. This is not an exit — the
+	// panel is still on screen, still in the viewport, still alive; Graphics is
+	// merely stacked on top of it. USiegeMenuInputSubsystem's nav target is a
+	// STACK, so the correct shape is:
+	//      register(Settings)  -> [Settings]                ring on Settings
+	//      register(Graphics)  -> [Settings, Graphics]      ring on Graphics
+	//      unregister(Graphics)-> [Settings]                ring BACK on Settings
+	// Unregistering here would leave the stack holding only Graphics, and
+	// Graphics' Back would then drop navigation two layers down to
+	// WBP_MainMenu while this panel is still the thing 🧑 he is looking at.
+	//
+	// ⚠️ THE OTHER HALF OF THAT CONTRACT IS NOT IN THIS FILE: it is
+	// USiegeGraphicsMenuWidget registering ITSELF (TASK-1417). Until that row
+	// lands, opening Graphics leaves this screen registered and the ring stays
+	// on Settings underneath — navigable, wrong, and exactly the reachability
+	// debt the board records against TASK-1417 rather than a defect here.
 	UE_LOG(LogSiegeSettings, Log,
 		TEXT("[SettingsMenu] Graphics pressed - the graphics panel is open ON TOP of this one (ZOrder 20); this panel was NOT removed."));
 }
@@ -645,6 +726,66 @@ void USettingsMenuWidget::ShowRowUnavailable()
 	{
 		ConfirmToggleHintText->SetText(FText::FromString(FString(SiegeSettingsMenuText::ConfirmUnavailable)));
 	}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  TASK-1415 [MENU-NAV-SETTINGS] — THE SCREEN ANSWERS THE KEYBOARD.
+//
+//  Three short functions and no state. Everything that actually walks the tree,
+//  reads IsFocusable, places the ring and logs the count lives in
+//  USiegeMenuInputSubsystem (TASK-1406); this file's entire contribution is
+//  saying WHEN this screen is the one the player is looking at.
+//
+//  ⛔ WHAT IS NOT HERE, ON PURPOSE: no NativeOnKeyDown, no SetKeyboardFocus, no
+//  navigation rule table, no IsFocusable write. Each of those would put input
+//  handling back in the leaf widget, which is the defect the MENU-NAV epic is
+//  removing.
+// ═══════════════════════════════════════════════════════════════════════════
+
+void USettingsMenuWidget::RegisterAsMenuNavTarget()
+{
+	USiegeMenuInputSubsystem* MenuInput = ResolveMenuInputSubsystem();
+	if (MenuInput == nullptr)
+	{
+		// Log, not Warning: the honest reading of a null here is "this world has
+		// no menu input" (an Editor/designer world, or a cooked path where the
+		// subsystem declined), and a settings panel that warns every time it is
+		// previewed is a panel whose log nobody reads. The screen still works
+		// with the mouse exactly as it did before this row.
+		UE_LOG(LogSiegeSettings, Log,
+			TEXT("[SettingsMenu] No USiegeMenuInputSubsystem on this world - the settings panel is mouse-only (keyboard navigation is unavailable, not broken)."));
+		return;
+	}
+
+	// `this`, never a child and never a class default — the API takes the SCREEN
+	// and walks its own WidgetTree from there.
+	MenuInput->RegisterMenuNavTarget(this);
+}
+
+void USettingsMenuWidget::UnregisterAsMenuNavTarget()
+{
+	// ⛔ SILENT ON A NULL SUBSYSTEM, unlike Register. If there was no subsystem
+	// to register with there is nothing to give back, and the one place this is
+	// reached with a half-torn-down world is NativeDestruct — where a second log
+	// line would say nothing a reader could act on.
+	if (USiegeMenuInputSubsystem* MenuInput = ResolveMenuInputSubsystem())
+	{
+		// Idempotent by the subsystem's own contract: it removes by IDENTITY and
+		// logs (does not warn) when the screen was not on the stack, precisely so
+		// the BackPressed + NativeDestruct pairing below is safe to run twice.
+		MenuInput->UnregisterMenuNavTarget(this);
+	}
+}
+
+USiegeMenuInputSubsystem* USettingsMenuWidget::ResolveMenuInputSubsystem() const
+{
+	// Null-safe at every hop - the ResolveSettingsSubsystem shape, cloned, with
+	// ONE deliberate difference: this subsystem is a UWorldSubsystem, so it is
+	// reached through the WORLD and not through the game instance. It also
+	// declines Editor worlds outright (DoesSupportWorldType = Game | PIE only),
+	// which is why a null answer is ordinary rather than an error.
+	const UWorld* World = GetWorld();
+	return World ? World->GetSubsystem<USiegeMenuInputSubsystem>() : nullptr;
 }
 
 USiegeSettingsSubsystem* USettingsMenuWidget::ResolveSettingsSubsystem() const

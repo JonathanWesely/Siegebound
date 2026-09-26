@@ -21,7 +21,12 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/PlatformTime.h"   // FPlatformTime::Seconds — the other half of the window
+#include "Layout/WidgetPath.h"  // TASK-1417: FWidgetPath / FWeakWidgetPath for NativeOnFocusChanging
 #include "SiegeGraphicsSettingsSubsystem.h"
+// TASK-1417 [MENU-NAV-GRAPHICS]: complete type for RegisterMenuNavTarget /
+// UnregisterMenuNavTarget. ⛔ This screen CALLS that public API and never edits
+// it — USiegeMenuInputSubsystem is TASK-1406's / TASK-1409's file.
+#include "SiegeMenuInputSubsystem.h"
 #include "SiegeSettingsSubsystem.h" // the PROFILE-SCOPED store that owns bShowFrameRateCounter (GFX-§3's named exception)
 #include "TimerManager.h"
 
@@ -701,6 +706,14 @@ void USiegeGraphicsMenuWidget::ConstructGraphicsTree()
 	{
 		RootScrollBox = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("RootScrollBox"));
 	}
+
+	// ⭐ TASK-1417 [MENU-NAV-GRAPHICS]: 🧑 "scrollable with the outline". Set HERE,
+	// before Super::RebuildWidget() runs, because UScrollBox::RebuildWidget bakes
+	// ScrollWhenFocusChanges / NavigationDestination straight into the SNew()
+	// arguments (ScrollBox.cpp) — they are NOT re-pushed by SynchronizeProperties.
+	// It is re-asserted from NativeConstruct as well, which is what covers the
+	// condition-(b) asset-authored tree this function returns early for.
+	ConfigureScrollFollowsFocus();
 
 	// ---- RootPanel: the column ----------------------------------------------
 	if (RootPanel == nullptr)
@@ -1555,10 +1568,69 @@ void USiegeGraphicsMenuWidget::NativeConstruct()
 	// not while it is still being wired. No world (automation) ⇒ no timer, and the
 	// readout keeps its pending text — never a crash and never a fabricated number.
 	ArmFrameRateReadout();
+
+	// ------------------------------------------------------------------------
+	// ⭐ TASK-1417 [MENU-NAV-GRAPHICS]. Re-asserted here as well as in
+	// ConstructGraphicsTree() because that function returns EARLY, whole, on the
+	// GFX-§2 condition-(b) path (an asset-authored /Game/UI/WBP_GraphicsMenu). A
+	// future WBP that binds RootScrollBox by name would otherwise ship with the
+	// engine default, EScrollWhenFocusChanges::NoScroll, and the outline would
+	// walk off the bottom of the list. The setter forwards to the live
+	// MyScrollBox when one already exists (ScrollBox.cpp), so calling it twice is
+	// idempotent, not a conflict.
+	// ------------------------------------------------------------------------
+	ConfigureScrollFollowsFocus();
+
+	// ------------------------------------------------------------------------
+	// ⭐ TASK-1417 — AND IT IS **AFTER** SeedAndBind(), ON PURPOSE AND FOR A
+	// MECHANICAL REASON, not to match USettingsMenuWidget's shape.
+	//
+	// RegisterMenuNavTarget() does three things in one call: it makes this screen
+	// the nav target, it LOGS THE FOCUS-STOP COUNT, and it PLACES THE RING on
+	// stop 0. All three read the tree's LIVE enabled/visible state, and
+	// SeedAndBind() is what settles that state — on the null-facade path it calls
+	// ShowPanelUnavailable() -> SetAllControlsEnabled(false), which disables
+	// twenty-two of this screen's twenty-four stops. Registering first would log
+	// 24 for a screen that has 2, and could park the ring on a control that is
+	// disabled a few lines later.
+	//
+	// ⛔ It is after ArmFrameRateReadout() too. That call only opens a 0.5 s
+	// measurement window and pushes text — it enables and disables nothing — so
+	// the order between the two is free; last is simply the position from which
+	// no later line can invalidate the count.
+	//
+	// ⛔ NOTHING ELSE IS ADDED HERE: no NativeOnKeyDown, no focus call of our own,
+	// no navigation rules. USiegeMenuInputSubsystem owns Up/Down/Left/Right/
+	// Accept for the whole menu and this screen only tells it where to look.
+	//
+	// ⚠️ bSuppressRowEcho IS NOT A HAZARD ON THIS PATH, CHECKED RATHER THAN
+	// ASSUMED. That latch is raised at :1924 and lowered at :2063 (RE-MEASURED
+	// after this row's own insertions — the dispatch's :1852 / :1991 are the
+	// pre-edit numbers and are now stale), both inside
+	// RefreshAllRows(), whose only reachable caller from here is SeedAndBind() —
+	// a synchronous, non-re-entrant span that has RETURNED before this line runs.
+	// Nothing below can run between the set and the clear: the only callback this
+	// line can trigger is the focus change from FocusFirstNavStop(), and this
+	// screen's handler for that (NativeOnFocusChanging) asks the scroll box for a
+	// layout change and touches no row, no slider and no facade.
+	// ------------------------------------------------------------------------
+	RegisterAsMenuNavTarget();
 }
 
 void USiegeGraphicsMenuWidget::NativeDestruct()
 {
+	// ⭐ TASK-1417: LIFO against NativeConstruct — navigation goes back FIRST,
+	// before the delegates come down and before either timer is disarmed. This is
+	// the CATCH-ALL half of the pair: BackPressed() unregisters on the ordinary
+	// exit, and this one covers every other way the panel can stop existing
+	// (level travel, viewport teardown, a caller that removes this widget without
+	// going through BackPressed). Both firing is the normal case and is safe —
+	// UnregisterMenuNavTarget removes by IDENTITY and logs-not-warns the second
+	// call. ⛔ It REPLACES NOTHING below it: UnbindAll(), DisarmFrameRateReadout(),
+	// DisarmVideoModeCountdown() and DiscardStagedVideoMode() all still run, in
+	// their original order, for their original reasons.
+	UnregisterAsMenuNavTarget();
+
 	UnbindAll();
 
 	// ⭐ TASK-1120: stop the readout timer BEFORE anything else here, for the same
@@ -2047,6 +2119,26 @@ void USiegeGraphicsMenuWidget::BackPressed()
 	// it is in handoffs/TASK-1118-programmer.md.
 	DisarmVideoModeCountdown();
 	DiscardStagedVideoMode(ResolveGraphicsSubsystem());
+
+	// ⛔ TASK-1417 [MENU-NAV-GRAPHICS]: THE UNREGISTER GOES **BESIDE** THE TWO
+	// LINES ABOVE, ⛔ NEVER INSTEAD OF THEM — both of them still run, unchanged,
+	// first, and this row adds no third revert and no second facade call.
+	//
+	// ⛔ AND IT IS BEFORE RemoveFromParent(), NOT AFTER, which is the subsystem's
+	// own stated contract (SiegeMenuInputSubsystem.cpp, UnregisterMenuNavTarget's
+	// closing comment: "an unregister runs from `BackPressed`, BEFORE
+	// `RemoveFromParent`"). Unregistering while this panel is still in the
+	// viewport is what lets the subsystem see a coherent stack and hand the ring
+	// to the next LIVE registered screen.
+	//
+	// ⭐ AND THAT NEXT SCREEN IS THE SETTINGS PANEL, NOT THE MAIN MENU.
+	// USettingsMenuWidget::GraphicsPressed() deliberately does NOT unregister
+	// itself when it opens this one (TASK-1415, and its absence is load-bearing
+	// there), so the stack is [Settings, Graphics] and this call leaves
+	// [Settings]. TASK-1406's UnregisterMenuNavTarget re-places focus only when
+	// GetRegisteredNavTarget() is still non-null — exactly this case — so the
+	// ring lands back on the settings panel underneath, which was never removed.
+	UnregisterAsMenuNavTarget();
 
 	// ⛔ RemoveFromParent(self) AND NOTHING ELSE (GFX-§2(f), board cl. 2). The
 	// settings panel underneath was never removed, is already alive and already
@@ -3016,6 +3108,253 @@ void USiegeGraphicsMenuWidget::HandleSettingsChanged(FName SettingName)
 	}
 
 	RefreshFrameRateCounterRow();
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  ⭐⭐ TASK-1417 [MENU-NAV-GRAPHICS] — THE SCREEN ANSWERS THE KEYBOARD, AND THE
+//  LIST FOLLOWS THE RING.
+//
+//  Five short functions and NO state. Everything that actually walks the tree,
+//  reads IsFocusable, places the ring, steps a slider and logs the count lives in
+//  USiegeMenuInputSubsystem (TASK-1406 / TASK-1409). This file's whole
+//  contribution is saying WHEN this screen is the one the player is looking at,
+//  and keeping the focused row ON SCREEN once it is.
+//
+//  ⛔ WHAT IS NOT HERE, ON PURPOSE: no NativeOnKeyDown, no SetKeyboardFocus, no
+//  SetUserFocus, no navigation rule table, no IsFocusable write. Each of those
+//  would put input handling back in the leaf widget, which is the defect the
+//  MENU-NAV epic is removing.
+//
+//  🚨 ⛔ AND THE ONE THIS SCREEN IN PARTICULAR HAD TO AVOID: ⛔ THIS ROW ADDS NO
+//  SECOND FACADE WRITER. Every graphics slider here is TWO-PHASE — OnValueChanged
+//  is LABEL-ONLY and forbidden to write, and the single facade write hangs off
+//  OnMouseCaptureEnd + OnControllerCaptureEnd via Handle*SliderCommitted.
+//  ⚠️ LINE NUMBERS RE-MEASURED AFTER THIS ROW'S OWN INSERTIONS, because a stale
+//  citation is how a later reader concludes a control moved (qa/TASK-1416.md
+//  WARN-1): the three LABEL-ONLY bans now read :2516 / :2582 / :2630, and the
+//  six commit-edge bindings are :1721-1722, :1729-1730, :1736-1737.
+//  TASK-1409 already fires that commit edge for the keyboard path, and the SAME
+//  handler is bound to BOTH edges, so a second broadcast from here would write
+//  TWICE and break the single-broadcast guard QA verified. ⇒ nothing below
+//  calls USiegeGraphicsSettingsSubsystem at all: a grep of this section for
+//  `Graphics->`, `SetQuality`, `Apply`, `Save` or `Broadcast` returns nothing.
+// ═════════════════════════════════════════════════════════════════════════════
+
+void USiegeGraphicsMenuWidget::RegisterAsMenuNavTarget()
+{
+	USiegeMenuInputSubsystem* MenuInput = ResolveMenuInputSubsystem();
+	if (MenuInput == nullptr)
+	{
+		// Log, not Warning: the honest reading of a null here is "this world has
+		// no menu input" (an Editor/designer world, a bare NewObject widget in the
+		// suite, or a cooked path where the subsystem declined), and a graphics
+		// panel that warns every time it is previewed is a panel whose log nobody
+		// reads. The screen still works with the mouse exactly as it did before.
+		UE_LOG(LogSiegeGraphics, Log,
+			TEXT("[GraphicsMenu] No USiegeMenuInputSubsystem on this world - the graphics panel is mouse-only (keyboard navigation is unavailable, not broken)."));
+		return;
+	}
+
+	// `this`, never a child and never a class default — the API takes the SCREEN
+	// and walks its own WidgetTree from there.
+	MenuInput->RegisterMenuNavTarget(this);
+}
+
+void USiegeGraphicsMenuWidget::UnregisterAsMenuNavTarget()
+{
+	// ⛔ SILENT ON A NULL SUBSYSTEM, unlike Register. If there was no subsystem to
+	// register with there is nothing to give back, and the one place this is
+	// reached with a half-torn-down world is NativeDestruct — where a second log
+	// line would say nothing a reader could act on.
+	if (USiegeMenuInputSubsystem* MenuInput = ResolveMenuInputSubsystem())
+	{
+		// Idempotent by the subsystem's own contract: it removes by IDENTITY and
+		// logs (does not warn) when the screen was not on the stack, precisely so
+		// the BackPressed + NativeDestruct pairing is safe to run twice.
+		MenuInput->UnregisterMenuNavTarget(this);
+	}
+}
+
+USiegeMenuInputSubsystem* USiegeGraphicsMenuWidget::ResolveMenuInputSubsystem() const
+{
+	// Null-safe at every hop, with ONE deliberate difference from this file's two
+	// other resolvers: this subsystem is a UWorldSubsystem, so it is reached
+	// through the WORLD and not through the game instance. It also declines
+	// Editor worlds outright (DoesSupportWorldType = Game | PIE only), which is
+	// why a null answer is ordinary rather than an error.
+	//
+	// ⛔ NO automation override, deliberately: the suite drives this panel as a
+	// bare NewObject with no world, so there is nothing here for it to assert and
+	// a fourth override field would be a member that only ever reads null.
+	const UWorld* World = GetWorld();
+	return World ? World->GetSubsystem<USiegeMenuInputSubsystem>() : nullptr;
+}
+
+void USiegeGraphicsMenuWidget::ConfigureScrollFollowsFocus()
+{
+	if (RootScrollBox == nullptr)
+	{
+		// Degrades to the pre-TASK-1417 behaviour: the ring still walks every stop,
+		// the list simply does not follow it. Not worth a line of its own — the
+		// missing scroll box is already an Error from ConstructGraphicsTree.
+		return;
+	}
+
+	// ═════════════════════════════════════════════════════════════════════════
+	// 🚨 MEASURED AT ENGINE SOURCE, AND IT IS THE DIFFERENCE BETWEEN 🧑 "scrollable
+	//    with the outline" BEING TRUE AND BEING A COMMENT.
+	//
+	//    UScrollBox's constructor sets `ScrollWhenFocusChanges(NoScroll)`
+	//    (ScrollBox.cpp) — ⛔ THE ENGINE DEFAULT IS TO NOT FOLLOW FOCUS AT ALL.
+	//    With this flag raised, SScrollBox::OnFocusChanging (SScrollBox.cpp) calls
+	//    ScrollDescendantIntoView(NewWidgetPath.GetLastWidget(), ...) for every
+	//    focus change whose new path contains this scroll box — which is every
+	//    stop on this screen, because all 24 of them are its descendants.
+	//
+	//    ⛔ InstantScroll, ⛔ NOT AnimatedScroll (the enum has exactly three
+	//    members — NoScroll / InstantScroll / AnimatedScroll, SScrollBox.h:63):
+	//    the ring is driven one press at a time by IA_MenuUp / IA_MenuDown, and
+	//    an animated catch-up would lag a held key and leave the outline
+	//    off-screen for the frames that matter. It also makes the offset a
+	//    verifier reads DETERMINISTIC instead of a sample of an interpolation in
+	//    progress — SScrollBox::OnFocusChanging passes AnimateScroll = (mode ==
+	//    AnimatedScroll), so InstantScroll is byte-for-byte the same request as
+	//    ScrollFocusStopIntoView()'s explicit `AnimateScroll = false`.
+	//
+	//    ⛔ NavigationDestination is pinned to IntoView — already the engine
+	//    default, restated so that THIS call and ScrollFocusStopIntoView()'s
+	//    explicit one below ask for exactly the same destination. Two mechanisms
+	//    that scroll to different places would fight; two that agree are
+	//    idempotent whichever order Slate runs them in.
+	// ═════════════════════════════════════════════════════════════════════════
+	RootScrollBox->SetScrollWhenFocusChanges(EScrollWhenFocusChanges::InstantScroll);
+	RootScrollBox->SetNavigationDestination(EDescendantScrollDestination::IntoView);
+}
+
+void USiegeGraphicsMenuWidget::NativeOnFocusChanging(
+	const FWeakWidgetPath& PreviousFocusPath,
+	const FWidgetPath& NewWidgetPath,
+	const FFocusEvent& InFocusEvent)
+{
+	// ⛔ Super FIRST and unconditionally: UUserWidget::NativeOnFocusChanging is
+	// what raises NativeOnAddedToFocusPath / NativeOnRemovedFromFocusPath
+	// (UserWidget.cpp), and skipping it would silently break those for any future
+	// subclass or Blueprint override.
+	Super::NativeOnFocusChanging(PreviousFocusPath, NewWidgetPath, InFocusEvent);
+
+	// ⚠️ THIS FUNCTION IS A READER. It decides no navigation, consumes no input,
+	// returns nothing and writes no setting — it asks a scroll box for a layout
+	// change and logs. The keyboard itself is USiegeMenuInputSubsystem's.
+
+	if (RootScrollBox == nullptr || !NewWidgetPath.IsValid())
+	{
+		// ⛔ IsValid() FIRST: FWidgetPath::GetLastWidget() is `check(IsValid())`
+		// (WidgetPath.h), so reading the leaf of an empty path is a crash, not a
+		// null. An empty new path is the ordinary "focus went nowhere" case.
+		return;
+	}
+
+	// Only act when the ring landed INSIDE this panel's scroll region. This same
+	// override also fires for the OLD focus path — i.e. when focus LEAVES this
+	// screen for the settings panel underneath — and scrolling then would move a
+	// list the player is no longer looking at.
+	const TSharedPtr<SWidget> ScrollSlate = RootScrollBox->GetCachedWidget();
+	if (!ScrollSlate.IsValid() || !NewWidgetPath.ContainsWidget(ScrollSlate.Get()))
+	{
+		return;
+	}
+
+	UWidget* FocusedStop = FindOwnWidgetForSlateWidget(NewWidgetPath.GetLastWidget());
+	if (FocusedStop == nullptr)
+	{
+		// ⛔ NOT A FAILURE AND NOT A GAP, and it is worth saying why rather than
+		// hardening it: the focus leaf can be an INNER Slate widget with no UWidget
+		// of its own. SScrollBox::OnFocusChanging — which this same focus dispatch
+		// also delivers, because the scroll box is in the very path tested above —
+		// operates on that Slate widget DIRECTLY and cannot miss it. This override
+		// is the explicit, loggable half of the wiring; the engine's is the
+		// exhaustive half. They ask for the same destination (see
+		// ConfigureScrollFollowsFocus) so they cannot disagree.
+		return;
+	}
+
+	// ⚠️ SAMPLED BEFORE THE CALL, NOT AFTER IT, SO THE LABEL ON THE LOG LINE BELOW
+	// IS TRUE BY CONSTRUCTION RATHER THAN BY ARGUMENT. It would read the same
+	// either way — ScrollWidgetIntoView only QUEUES a request — but "the number is
+	// the pre-request offset because I read it first" is a fact, whereas "because
+	// the call is asynchronous" is a claim about engine internals that a future
+	// engine version could quietly falsify.
+	const float ScrollOffsetBeforeRequest = RootScrollBox->GetScrollOffset();
+
+	ScrollFocusStopIntoView(FocusedStop);
+
+	// ⚠️ THE OFFSET PRINTED IS THE ONE **BEFORE** THE REQUEST, AND IT IS LABELLED
+	// AS SUCH. UScrollBox::ScrollWidgetIntoView queues a request that SScrollBox
+	// services on its next Tick, once it has geometry — so a number read after it
+	// and reported as the result would be a fabricated measurement. The verifier's
+	// reading is the offset sampled on a LATER frame; this line only says which
+	// row was asked for, and from where.
+	UE_LOG(LogSiegeGraphics, Verbose,
+		TEXT("[GraphicsMenu] Focus moved to '%s' (%s) - asked RootScrollBox to scroll it into view (offset before the request: %.1f)."),
+		*FocusedStop->GetName(),
+		*FocusedStop->GetClass()->GetName(),
+		ScrollOffsetBeforeRequest);
+}
+
+void USiegeGraphicsMenuWidget::ScrollFocusStopIntoView(UWidget* FocusStop)
+{
+	if (RootScrollBox == nullptr || FocusStop == nullptr)
+	{
+		return;
+	}
+
+	// ⭐ THE HOOK THIS ROW WAS TOLD TO WIRE, AND IT IS THE SAME ONE
+	// ArmVideoModeCountdown() ALREADY USES for the revert prompt — one mechanism
+	// on this screen, not two. Headless-safe: UScrollBox::ScrollWidgetIntoView
+	// forwards to MyScrollBox only when that Slate widget is valid (ScrollBox.cpp),
+	// which is never in an automation run, so the suite sees a no-op rather than a
+	// crash.
+	//
+	// ⛔ AnimateScroll false and destination IntoView — deliberately IDENTICAL to
+	// what ConfigureScrollFollowsFocus() hands the engine's own hook, so the two
+	// requests are the same request and the result does not depend on which of
+	// them Slate services last.
+	RootScrollBox->ScrollWidgetIntoView(FocusStop, /*AnimateScroll*/ false,
+		EDescendantScrollDestination::IntoView, /*Padding*/ 0.0f);
+}
+
+UWidget* USiegeGraphicsMenuWidget::FindOwnWidgetForSlateWidget(const TSharedRef<SWidget>& SlateWidget) const
+{
+	if (WidgetTree == nullptr)
+	{
+		return nullptr;
+	}
+
+	const SWidget* const Target = &SlateWidget.Get();
+	UWidget* Found = nullptr;
+
+	// ⛔ ForEachWidget, ⛔ NOT ForEachWidgetUntil, and the reason is MEASURED
+	// rather than stylistic: WidgetTree.h declares ForEachWidget with UMG_API
+	// (:78) and ForEachWidgetUntil WITHOUT it (:96), so the early-out variant is
+	// not exported from the UMG module and calling it from here would compile
+	// cleanly and fail at LINK. The `Found != nullptr` guard below is the
+	// early-out, done by hand over a tree of ~90 widgets that is walked at most
+	// once per keypress.
+	WidgetTree->ForEachWidget([&Found, Target](UWidget* Widget)
+	{
+		if (Found != nullptr || Widget == nullptr)
+		{
+			return;
+		}
+
+		const TSharedPtr<SWidget> Cached = Widget->GetCachedWidget();
+		if (Cached.IsValid() && Cached.Get() == Target)
+		{
+			Found = Widget;
+		}
+	});
+
+	return Found;
 }
 
 void USiegeGraphicsMenuWidget::SetGraphicsSubsystemForAutomationTests(USiegeGraphicsSettingsSubsystem* InGraphics)

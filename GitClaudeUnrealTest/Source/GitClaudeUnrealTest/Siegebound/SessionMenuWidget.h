@@ -10,6 +10,9 @@ class UButton;
 class UEditableTextBox;
 class UTextBlock;
 class USiegeSessionSubsystem;
+// TASK-1425 [MENU-NAV-SESSION]: the world subsystem that OWNS menu navigation.
+// This screen only calls its public registration API; it never edits it.
+class USiegeMenuInputSubsystem;
 
 /**
  *  C++ base for /Game/UI/WBP_SessionMenu (TASK-354; the SIGNED TASK-353
@@ -132,6 +135,115 @@ protected:
 
 	/** Surfaces a WIDGET-LOCAL failure (subsystem unresolvable) through the same error path the subsystem uses: ErrorTextBlock + OnSessionErrorShown + log. */
 	void ShowLocalError(const FString& Message);
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	//  TASK-1425 [MENU-NAV-SESSION] — THE ACTIVE-NAV-TARGET HANDSHAKE, AND
+	//  NOTHING ELSE
+	//
+	//  This screen's ENTIRE contribution to keyboard / gamepad navigation is
+	//  saying WHEN it is the screen the player is looking at. Up / Down / Left /
+	//  Right / Accept / Back are owned by USiegeMenuInputSubsystem (TASK-1406 +
+	//  TASK-1409); the walker that enumerates stops, reads IsFocusable, places
+	//  the ring and logs the count lives THERE.
+	//
+	//  ⛔ WHAT IS DELIBERATELY NOT HERE: no NativeOnKeyDown, no
+	//  NativeOnPreviewKeyDown, no SetKeyboardFocus, no navigation rule table, no
+	//  IsFocusable write, no ISiegeMenuNavCloseTarget implementation. Each of
+	//  those would put input handling back in the leaf widget, which is the
+	//  defect the MENU-NAV epic is removing; spec (4) forbids a new key handler
+	//  outright, and the interface is TASK-1454's row by the subsystem header's
+	//  own words ("IMPLEMENTING THIS IS NOT THIS ROW'S WORK ... TASK-1454 wires
+	//  the screens"). ⇒ IA_MenuBack is inert on this screen today, exactly as it
+	//  is on Settings and Graphics.
+	//
+	//  ⭐ THE FOCUS-STOP CENSUS FOR /Game/UI/WBP_SessionMenu — READ OUT OF THE
+	//  ASSET ITSELF, not guessed: the package export table plus the root
+	//  UCanvasPanel's Slots array in Content/UI/WBP_SessionMenu.uasset. FOUR
+	//  stops, in UWidgetTree::ForEachWidget order (depth-first pre-order,
+	//  UPanelWidget children in GetChildAt(0..N-1) SLOT order):
+	//
+	//      stop 0   HostButton       UButton            asset-authored
+	//      stop 1   JoinButton       UButton            asset-authored
+	//      stop 2   BackButton       UButton            asset-authored
+	//      stop 3   AddressTextBox   UEditableTextBox   asset-authored
+	//
+	//  The eight non-stops, in the same walk: CanvasPanel (root, UCanvasPanel) ·
+	//  HostLabelText / JoinLabelText / BackLabelText (UTextBlock, each button's
+	//  own content, walked because UButton is a UContentWidget : UPanelWidget,
+	//  and correctly rejected) · StatusTextBlock / ErrorTextBlock / TitleText
+	//  (UTextBlock) · BackdropBorder (UBorder). None of the eight is one of the
+	//  four admitted classes. 12 widgets walked + this UUserWidget root = the 13
+	//  nodes TASK-1399 §2 row 6 counted live.
+	//
+	//  ⛔ THE COUNT IS FIXED AT FOUR, IN EVERY STATE. There is no runtime-
+	//  populated list on this screen: joining is a typed IPv4 address, not a
+	//  server browser, so there is no empty-list count distinct from a populated
+	//  one. Nothing here is ever collapsed, hidden or disabled by C++ — the two
+	//  status surfaces are UTextBlocks whose TEXT changes, never their
+	//  visibility — so the TASK-1418 hidden-panel hazard (IsNavFocusStop reads a
+	//  widget's OWN Slate visibility, never its ancestors') has no subject here.
+	//  ⇒ any reading other than FOUR is a defect, and the discriminator is the
+	//  NAME that is missing, not the number.
+	//
+	//  🚨 THE ONE THING A READER MUST NOT ASSUME, AND IT IS MEASURED: ring order
+	//  is SLOT order, and this tree's root is a UCanvasPanel whose children are
+	//  ABSOLUTELY POSITIONED — so slot order is arbitrary with respect to what
+	//  🧑 he sees. This is the exact caveat TASK-1406 declared at
+	//  SiegeMenuInputSubsystem.cpp's GetMenuFocusStops and that TASK-1415 dodged
+	//  by construction; this is the screen where it BITES. Measured slot order
+	//  is Host → Join → Back → Status → Error → Address → Backdrop → Title,
+	//  giving a ring of Host → Join → Back → AddressTextBox → (wrap), while the
+	//  panel READS top-to-bottom AddressTextBox → Host → Join → Back. All four
+	//  stops are reachable and the ring wraps; only the SEQUENCE is not visually
+	//  monotone, and the ring opens on Host rather than on the visually topmost
+	//  control. ⛔ NOT FIXED HERE: the fix is a slot reorder inside the .uasset,
+	//  and this row's fence is "SessionMenuWidget.{cpp,h} ONLY, never an asset".
+	//  Escalated by letter in handoffs/TASK-1425-programmer.md.
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	/**
+	 *  Hand menu navigation to THIS screen. Called from NativeConstruct, AFTER
+	 *  the subsystem delegates are bound, and paired with
+	 *  UnregisterAsMenuNavTarget on every exit.
+	 *
+	 *  ⭐ TASK-1406's RegisterMenuNavTarget also PLACES THE RING on stop 0, so
+	 *  the panel opens with HostButton already outlined and the FIRST Down moves
+	 *  to stop 1 (JoinButton), not to stop 0. A reader expecting stop 0 after one
+	 *  Down will mis-read a working screen as broken.
+	 *
+	 *  Null-safe: no world or no subsystem ⇒ one Log line and the screen behaves
+	 *  exactly as it did before this row (mouse-only). Never fatal.
+	 */
+	void RegisterAsMenuNavTarget();
+
+	/**
+	 *  Give menu navigation back. Called from BOTH BackPressed() — after the
+	 *  replacement main menu is in the viewport and after the failed-resolve
+	 *  early return, immediately before RemoveFromParent() — and
+	 *  NativeDestruct(). The double call is deliberate and safe:
+	 *  USiegeMenuInputSubsystem::UnregisterMenuNavTarget removes by IDENTITY and
+	 *  logs-not-warns a second call for a screen already gone.
+	 *
+	 *  ⛔ IT IS NOT CALLED ON THE LeaveMatch() LEG, AND THAT IS MEASURED RATHER
+	 *  THAN FORGOTTEN. USiegeSessionSubsystem::LeaveMatch
+	 *  (SiegeSessionSubsystem.cpp:130-153) is UGameplayStatics::OpenLevel with
+	 *  bAbsolute = true — a DEFERRED travel processed at the end of the tick,
+	 *  with NO RemoveFromParent on this panel. The panel therefore stays on
+	 *  screen, and rightly keeps the ring, for the rest of that frame and beyond;
+	 *  unregistering there would strand the ring on a screen 🧑 he is still
+	 *  looking at. The world — and this UWorldSubsystem with it — then tears
+	 *  down, and NativeDestruct is the honest hook for that path.
+	 */
+	void UnregisterAsMenuNavTarget();
+
+	/**
+	 *  Null-safe resolve of the menu-input subsystem. ⚠️ Unlike
+	 *  USiegeSessionSubsystem this one lives on the WORLD, not on the game
+	 *  instance, and it declines Editor worlds outright
+	 *  (DoesSupportWorldType = Game | PIE only), so a null answer is ordinary
+	 *  rather than an error.
+	 */
+	USiegeMenuInputSubsystem* ResolveMenuInputSubsystem() const;
 
 	/** OPTIONAL binding: the Host button. When bound, OnClicked auto-wires to HandleHostClicked. */
 	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|Session", meta = (BindWidgetOptional))

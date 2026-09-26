@@ -13,6 +13,7 @@ class UTextBlock;
 class UVerticalBox;
 class USiegeAccountSubsystem;
 class USiegeCloudClient;
+class USiegeMenuInputSubsystem;
 
 /**
  *  Internal mode machine for the account panel (ACC-§5).
@@ -307,6 +308,177 @@ protected:
 
 	/** Null-safe USiegeCloudClient resolve (P2). Null or unconfigured => the cloud block states it and disables (ACC-§11). */
 	USiegeCloudClient* ResolveCloudClient() const;
+
+	// ------------------------------------------------------------------------
+	// TASK-1419 [MENU-NAV-LOGIN] — 🧑 "we want to make sure everywhere in the
+	// menu can be scrollable with the outline and arrow keys such that an agent
+	// can navigate the entire menu."
+	//
+	// ⛔ THE WHOLE OF THIS ROW'S BEHAVIOUR IS THREE CALLS INTO TASK-1406's
+	// PUBLIC API. There is deliberately NO key handler added here — no
+	// NativeOnKeyDown, no NativeOnPreviewKeyDown, no FReply anywhere in this
+	// class — because USiegeMenuInputSubsystem owns Up / Down / Left / Right /
+	// Accept for the whole menu, and a per-screen key handler is the
+	// wrong-layer defect the MENU-NAV epic exists to remove. ⇒ THE CLASS
+	// COMMENT'S STANDING SENTENCE IS STILL TRUE CHARACTER-FOR-CHARACTER AFTER
+	// THIS ROW: "No key handling is overridden anywhere in this class - in
+	// particular `Escape` stays permanently unabsorbed, project-wide
+	// (AS-§6 A-2)."
+	//
+	// ────────────────────────────────────────────────────────────────────────
+	// ⛔ THE FOCUS STOPS THIS SCREEN OFFERS, IN `UWidgetTree::ForEachWidget`
+	//    ORDER (depth-first pre-order from BackdropBorder), PER MODE — because
+	//    this panel is MODE-SWITCHED and the stop set is therefore NOT ONE
+	//    LIST. Every stop below is constructed in C++ by ConstructAccountTree()
+	//    (construction route: C++; there is no /Game/UI/WBP_AccountMenu — it is
+	//    RESERVED and UNAUTHORED, condition (c) above), and the non-stops are
+	//    the UBorder, the UVerticalBox and the ten UTextBlocks, none of which
+	//    is one of TASK-1406's four admitted classes.
+	//
+	//      Chooser        (3): CreateAccountButton, LoginExistingButton,
+	//                          BackButton
+	//      CreateForm     (5): NameInputBox, PasswordInputBox,
+	//                          ConfirmPasswordInputBox, SubmitButton,
+	//                          BackButton
+	//      LoginForm      (4): NameInputBox, PasswordInputBox, SubmitButton,
+	//                          BackButton
+	//      CloudLinkForm  (5): EmailInputBox, PasswordInputBox,
+	//                          ConfirmPasswordInputBox, SubmitButton,
+	//                          BackButton
+	//      LoggedIn     (2/3): LogoutButton, [LinkCloudButton XOR
+	//                          SyncNowButton, only while the cloud is
+	//                          CONFIGURED — RefreshCloudBlock() disables the
+	//                          shown one when it is not, and a disabled widget
+	//                          is not a stop], BackButton
+	//
+	//    ⚠️ BackButton is in EVERY list: ApplyMode() never touches its
+	//    visibility and SetFormsEnabled() deliberately never touches its
+	//    enablement, because a panel you cannot leave is worse than a panel
+	//    that cannot log anyone in.
+	//
+	//    ⚠️ THE UNHAPPY PATH IS ONE (1): ShowUnavailable() → SetFormsEnabled
+	//    (false) kills the other two Chooser stops, leaving BackButton alone.
+	//    THE DISCRIMINATOR between a healthy 1 and the defect is the log line —
+	//    a 1 WITH "[AccountMenu] USiegeAccountSubsystem could not be resolved"
+	//    (Warning, LogSiegeAccount) is the ACC-§1 fail-safe working; a 1
+	//    WITHOUT it is a broken tree.
+	//
+	// ────────────────────────────────────────────────────────────────────────
+	// 🚨 THE TEXT-BOX RULE THIS SCREEN IMPLEMENTS, AND IT IS THE ENGINE'S OWN
+	//    (that is WHY no key handler is needed, and it is MEASURED, not hoped):
+	//
+	//      Up / Down  LEAVE the field.   Left / Right  STAY (caret).
+	//
+	//    • THE AGENT LANE (an injected IA_MenuUp/IA_MenuDown) never offers the
+	//      key to Slate at all — InjectInputForAction enters Enhanced Input
+	//      directly, HandleMenuDown() → MoveFocus(+1) → FSlateApplication::
+	//      SetUserFocus. A UEditableTextBox CANNOT absorb a key it is never
+	//      shown. Egress on this lane is structural.
+	//    • THE HUMAN LANE (a real key) is Slate's, and the engine already
+	//      implements exactly the recommended rule: SEditableText::OnKeyDown
+	//      → FSlateEditableTextLayout::HandleKeyDown (SlateEditableTextLayout
+	//      .cpp:994) routes Up/Down into MoveCursor(Cardinal, (0, ∓1)), and
+	//      MoveCursor at :2261-2266 hits `else { // Vertical movement not
+	//      supported on single-line editable text controls - return false so we
+	//      fallback to generic widget navigation \n return false; }`.
+	//      BoolToReply(false) is FReply::Unhandled() ⇒ Slate runs its own
+	//      directional navigation and the ring leaves the field. Left/Right go
+	//      through TranslatedLocation and report Handled ⇒ the caret keeps
+	//      them, which is the half a player would riot about losing.
+	//
+	// 🚨 AND THE DEFECT THIS ROW FOUND AND DID **NOT** FIX, BECAUSE THE FIX IS
+	//    IN A FENCED FILE (declared, never self-adjudicated — SC-§101/SC-§50):
+	//    SEditableTextBox::OnFocusReceived (SEditableTextBox.cpp:309-320)
+	//    FORWARDS keyboard focus to its inner SEditableText, so after the ring
+	//    lands on a UEditableTextBox the SWidget holding focus is the INNER
+	//    text, not the SEditableTextBox that UMG caches. UWidget::HasUserFocus
+	//    (Widget.cpp:641) is EXACT-widget (FSlateUser::HasFocus compares
+	//    GetFocusedWidget() == Widget, SlateUser.cpp:182-185), so
+	//    USiegeMenuInputSubsystem::GetFocusedNavStop() reads NULL while the
+	//    ring is visibly in a field ⇒ MoveFocus() computes from Current = 0 and
+	//    Down out of ANY text box always lands on stop 1. The named one-line
+	//    remedy is `|| Stop->HasUserFocusedDescendants(PC)` in
+	//    GetFocusedNavStop() (and the twin early-out in FocusFirstNavStop());
+	//    it is TASK-1406's file and this row does not write it.
+	//    ⛔ THIS FILE IS WRITTEN SO IT IS CORRECT EITHER WAY: the one place
+	//    that asks "does a live stop still hold the ring?" (RefreshMenuNavRing)
+	//    asks with HasUserFocus **or** HasUserFocusedDescendants, on this
+	//    screen's own children, which is entirely inside this row's fence.
+	// ------------------------------------------------------------------------
+
+	/**
+	 *  Hand menu navigation to THIS screen. Called from NativeConstruct AFTER
+	 *  RefreshModeFromSubsystem(), and paired with UnregisterAsMenuNavTarget()
+	 *  on every exit.
+	 *
+	 *  ⛔ THE "AFTER" IS LOAD-BEARING, and worse here than on the settings
+	 *  panel. RegisterMenuNavTarget() logs the focus-stop count AND places the
+	 *  ring on stop 0, both read from the tree's LIVE visible/enabled state —
+	 *  and RefreshModeFromSubsystem() is what settles that state: it runs
+	 *  ApplyMode(), which COLLAPSES ten of the thirteen possible children, and
+	 *  on the unhappy path it then runs ShowUnavailable() → SetFormsEnabled
+	 *  (false). Registering first would log 13 for a screen that has 3, and
+	 *  could park the ring on a control collapsed or disabled one line later.
+	 *
+	 *  ⭐ The ring is ALREADY ON at open ⇒ the first Down moves to stop 1, not
+	 *  to stop 0. A reader expecting stop 0 after one Down mis-reads a working
+	 *  screen as broken.
+	 *
+	 *  Null-safe: no world or no subsystem ⇒ one Log line and the panel behaves
+	 *  exactly as it did before this row (mouse-only). Never fatal.
+	 */
+	void RegisterAsMenuNavTarget();
+
+	/**
+	 *  Give menu navigation back. Called from BOTH BackPressed() (after this
+	 *  panel's own teardown, BEFORE RemoveFromParent) and NativeDestruct() (the
+	 *  first statement, LIFO against NativeConstruct). The double call is
+	 *  deliberate and safe: USiegeMenuInputSubsystem::UnregisterMenuNavTarget
+	 *  removes by IDENTITY and logs-not-warns a second call for a screen that
+	 *  is already gone.
+	 *
+	 *  ⛔ BackPressed() alone is not enough — this panel can also stop existing
+	 *  by level travel or viewport teardown, and a stranded registration would
+	 *  pin the ring to a dead tree.
+	 */
+	void UnregisterAsMenuNavTarget();
+
+	/**
+	 *  Re-place the ring when THIS SCREEN'S OWN STATE CHANGE dropped it.
+	 *
+	 *  ⛔ THIS IS THE ONE THING THE SETTINGS AND GRAPHICS PANELS DID NOT NEED
+	 *  AND THIS ONE CANNOT DO WITHOUT: those two screens have ONE stop set for
+	 *  their whole lifetime; this panel is a MODE MACHINE (Chooser →
+	 *  CreateForm → LoggedIn → CloudLinkForm) and every ApplyMode() collapses
+	 *  the row the ring is standing on. Accept on "Create Account" collapses
+	 *  CreateAccountButton itself ⇒ without this the ring vanishes on the very
+	 *  first thing a keyboard user does, which is 🧑 his complaint reproduced
+	 *  by the feature meant to fix it.
+	 *
+	 *  It is a NO-OP unless (a) this screen is the ACTIVE nav target — so it
+	 *  can never steal the ring from a screen stacked on top of it, and it is
+	 *  inert before registration and after unregistration — and (b) no LIVE
+	 *  focus stop of this screen still holds the ring. When both hold it calls
+	 *  RegisterMenuNavTarget(this) again, which re-tops the stack (no
+	 *  duplicate), logs the NEW stop count, and places the ring on the new
+	 *  mode's stop 0.
+	 *
+	 *  ⚠️ (b) IS ASKED WITH HasUserFocus **OR** HasUserFocusedDescendants, and
+	 *  the "or" is the whole point: a UEditableTextBox forwards keyboard focus
+	 *  to its inner SEditableText, so HasUserFocus alone reports FALSE for a
+	 *  field that is visibly wearing the ring — and this helper would then yank
+	 *  the ring back to stop 0 out from under a player who is typing.
+	 */
+	void RefreshMenuNavRing();
+
+	/**
+	 *  Null-safe resolve of the menu-input subsystem. ⚠️ Unlike
+	 *  USiegeAccountSubsystem and USiegeCloudClient this one lives on the
+	 *  WORLD, not the game instance, and it declines Editor worlds outright
+	 *  (DoesSupportWorldType = Game | PIE only), so a null answer is ordinary
+	 *  rather than an error.
+	 */
+	USiegeMenuInputSubsystem* ResolveMenuInputSubsystem() const;
 
 	/**
 	 *  Builds the code-authored tree. Called from RebuildWidget() BEFORE

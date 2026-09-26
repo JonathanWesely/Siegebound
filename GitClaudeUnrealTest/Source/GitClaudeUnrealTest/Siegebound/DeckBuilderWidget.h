@@ -14,6 +14,13 @@ class UDataTable;
 class UDeckSlotEntryWidget;
 class UTexture2D;
 class USiegeDeckSaveGame;
+// TASK-1423 [MENU-NAV-DECKBUILDER-RELAYER]: the IA_Menu* entry point's two
+// collaborators. ⛔ Forward declarations only — this header gains NO Enhanced
+// Input include, and the subsystem is CALLED (Register/Unregister + its public
+// asset-path constants), ⛔ NEVER edited: USiegeMenuInputSubsystem is
+// TASK-1406's / TASK-1409's file.
+class UInputAction;
+class USiegeMenuInputSubsystem;
 struct FCardRow;
 
 /**
@@ -933,6 +940,27 @@ private:
 	 *  ⛔ The asymmetry above IS the fence on the preview: a preview that claimed
 	 *  arrows unconditionally would break the deck-bar and main-menu navigation 🧑
 	 *  he confirmed by hand on TASK-1274.
+	 *
+	 *  ⭐⭐ TASK-1423 [MENU-NAV-DECKBUILDER-RELAYER] — THIS IS NOW THE ONE
+	 *  IMPLEMENTATION BEHIND **THREE** DOORS, NOT TWO, AND THE WHOLE POINT OF THAT
+	 *  ROW IS THAT THE THIRD DOOR ADDED **NO SECOND KEY TABLE**. The body below is
+	 *  byte-identical to what TASK-1304 shipped; the ONLY change is that the FKey
+	 *  now ARRIVES as the parameter instead of being extracted from an FKeyEvent on
+	 *  the first line — because the third door has no FKeyEvent to extract it from.
+	 *    · door 1  NativeOnPreviewKeyDown  (Slate tunnel, root→leaf)  — 🧑 his keys
+	 *    · door 2  NativeOnKeyDown         (Slate bubble, leaf→root)  — 🧑 his keys
+	 *    · door 3  RouteMenuNavKey         (Enhanced Input IA_Menu*)  — 🤖 the rig
+	 *  ⛔ A COPIED KEY TABLE WOULD BE THE DEFECT, NOT THE FIX: two tables WILL
+	 *  diverge, and a behaviour duplicated on two layers is exactly how the bug
+	 *  this epic removes was born in the first place.
+	 */
+	FReply HandleCardGridKey(const FKey& Key);
+
+	/**
+	 *  ⛔ TASK-1423: THE SLATE ADAPTER, AND IT IS DELIBERATELY ONE LINE. It exists
+	 *  so the two shipped Slate doors above keep calling
+	 *  `HandleCardGridKey(InKeyEvent)` BYTE-IDENTICALLY — the hand-confirmed Slate
+	 *  path is not edited at its call sites, only given a thinner floor.
 	 */
 	FReply HandleCardGridKey(const FKeyEvent& InKeyEvent);
 
@@ -978,6 +1006,182 @@ private:
 	 *  the log was ever weaker than the return.
 	 */
 	bool AcquireBuilderFocus();
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	//  ⭐⭐ TASK-1423 [MENU-NAV-DECKBUILDER-RELAYER] — THE THIRD DOOR.
+	//
+	//  ⛔ THE DIAGNOSIS FIRST, BECAUSE IT DICTATES THE SHAPE. TASK-1399 §2 row 2
+	//  measured FocusedCardIndex reading -1 → -1 → -1 across TWO injected
+	//  IA_MenuDown presses, and TASK-1306 measured the same -1 while the builder's
+	//  root demonstrably held Slate focus. The row asked which of the two failures
+	//  that is — "the handler ran and computed -1" or "the handler never ran". It
+	//  is THE SECOND, and it is provable from the call graph without any runtime:
+	//    inject_input_action
+	//      → UEnhancedInputLocalPlayerSubsystem::InjectInputForAction
+	//      → the PC's UEnhancedInputComponent's action bindings
+	//  and there is NO edge from that component into UUserWidget::NativeOnKeyDown
+	//  or NativeOnPreviewKeyDown — Slate key routing starts at
+	//  FSlateApplication::ProcessKeyDownEvent over SlateUser->GetFocusPath(), a
+	//  path an injected ACTION never enters. ⇒ HandleCardGridKey was never called
+	//  on that lane, on any run, healthy or broken. ⛔ The logic was never wrong;
+	//  ONLY THE ENTRY POINT WAS MISSING.
+	//
+	//  ⇒ THE FIX IS A RELAY, NOT A REWRITE: bind the six IA_Menu* actions on the
+	//  owning player's UEnhancedInputComponent and hand each one the FKey the
+	//  SHIPPED table already names. ⛔ No key gains a meaning it did not have, no
+	//  rule is re-stated, and Remove's Delete / Gamepad_FaceButton_Left stay
+	//  Slate-only because TASK-1408 authored no IA_ action for them (declared, not
+	//  smuggled in as a seventh binding).
+	//
+	//  ⛔ WHAT THIS DOES NOT TOUCH: NativeOnPreviewKeyDown and NativeOnKeyDown are
+	//  unchanged at their call sites and unchanged in behaviour, so 🧑 his REAL
+	//  arrow keys keep the route TASK-1304 hand-confirmed. That matters more here
+	//  than anywhere else in this epic, because BP_MenuGameMode's FInputModeUIOnly
+	//  calls SetIgnoreInput(true) ⇒ a real key NEVER reaches Enhanced Input on
+	//  L_MainMenu. The two lanes are not redundant; they are DISJOINT, and deleting
+	//  either one would ship a screen that works for exactly one of us.
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	/**
+	 *  Bind the six IA_Menu* actions on the owning player's UEnhancedInputComponent.
+	 *  Called from NativeConstruct AFTER the deck bar is built (TASK-1417's measured
+	 *  law: arm against the SEEDED tree, never the pre-seed one).
+	 *
+	 *  ⛔ DEGRADE OPEN, per-action, the TASK-1409 idiom: an IA_ asset that does not
+	 *  load makes ITS key inert with one line naming it and never takes the other
+	 *  five down with it. ⛔ No Enhanced Input mapping CONTEXT is added here — the
+	 *  keys are already mapped in IMC_MainMenu, which USiegeMenuInputSubsystem
+	 *  applied at OnWorldBeginPlay; this widget only listens.
+	 *  ⛔ It unbinds first, so a second NativeConstruct on a re-added instance
+	 *  cannot double-bind (a UUserWidget survives RemoveFromParent/AddToViewport —
+	 *  the same reuse fact TASK-1307's disarm already guards against).
+	 */
+	void BindMenuNavActions();
+
+	/**
+	 *  Remove exactly the bindings BindMenuNavActions added, by handle. Called as
+	 *  NativeDestruct's opening pair (LIFO against NativeConstruct) — ⛔ BESIDE the
+	 *  existing teardown, never instead of it.
+	 *  ⚠️ NOT belt-and-braces: the bindings live on the PLAYER CONTROLLER's input
+	 *  component, which OUTLIVES this widget. A builder closed without this would
+	 *  leave six bindings pointing at a dead UObject on the controller for the rest
+	 *  of the session — the exact shape of the leak TASK-1400's timer comment
+	 *  describes for the game instance's timer manager.
+	 */
+	void UnbindMenuNavActions();
+
+	/** IA_MenuUp    → the shipped table's EKeys::Up. */
+	void HandleMenuNavUp();
+	/** IA_MenuDown  → the shipped table's EKeys::Down (the ENTRY key into the grid). */
+	void HandleMenuNavDown();
+	/** IA_MenuLeft  → the shipped table's EKeys::Left. */
+	void HandleMenuNavLeft();
+	/** IA_MenuRight → the shipped table's EKeys::Right. */
+	void HandleMenuNavRight();
+	/** IA_MenuAccept→ the shipped table's EKeys::Enter (⇒ AcceptFocusedCard ⇒ AddCopy). */
+	void HandleMenuNavAccept();
+	/**
+	 *  IA_MenuBack → the shipped table's EKeys::Gamepad_FaceButton_Right, i.e. the
+	 *  EXIT-THE-GRID gesture, and nothing else.
+	 *  ⛔ NOT EKeys::Escape. 🧑 His A-2 SCOPE ruling grants Escape to the card grid
+	 *  CONDITIONALLY and "nowhere else in this project"; IA_MenuBack is authored on
+	 *  Backspace + Gamepad_FaceButton_Right (TASK-1408) and this row does not widen
+	 *  that by one key. ⛔ And it does NOT close the BUILDER: this widget implements
+	 *  no ISiegeMenuNavCloseTarget (see the (4) declaration in the handoff), so the
+	 *  two-press semantics 🧑 he already has are preserved exactly — once leaves
+	 *  the GRID, and the second press falls through with the grid unfocused.
+	 */
+	void HandleMenuNavBack();
+
+	/**
+	 *  ⭐ THE RELAY ITSELF — the ONE place the third door meets the one
+	 *  implementation. Everything above is six names for this call.
+	 *
+	 *  ⚠️ IT CARRIES ONE PRECONDITION REPAIR AND THAT REPAIR IS NOT A SECOND KEY
+	 *  RULE — say it out loud so a reviewer can hold it to that. HandleCardGridKey
+	 *  decides through IsCardGridFocusLive(), which asks SLATE whether the focused
+	 *  tile still holds focus. On this lane a competing focus setter can have run
+	 *  EARLIER IN THE SAME PRESS: USiegeMenuInputSubsystem binds its own
+	 *  IA_MenuDown at OnWorldBeginPlay, i.e. BEFORE this widget's NativeConstruct,
+	 *  so its delegate is earlier in the component's array and its MoveFocus(+1)
+	 *  runs FIRST. Once this screen is registered, that walker can place the ring
+	 *  on one of the builder's OWN UButtons and the model would then disagree with
+	 *  Slate for the rest of the press. ⇒ before dispatching, if the MODEL says the
+	 *  grid is armed and Slate disagrees, the tile's focus is re-asserted with the
+	 *  SAME FocusCardTile(FocusedCardIndex) call AcceptFocusedCard and
+	 *  RemoveFocusedCard already make for the WBP-rebuilt-the-grid case. It is the
+	 *  house idiom, already shipped, applied at a new moment — ⛔ never a new key,
+	 *  never a new state, and ⛔ deliberately NOT added to the Slate doors, whose
+	 *  behaviour must stay byte-identical.
+	 */
+	void RouteMenuNavKey(const FKey& Key, const TCHAR* ActionName);
+
+	/**
+	 *  TASK-1423 (1): tell USiegeMenuInputSubsystem that THIS screen owns menu
+	 *  navigation (the USettingsMenuWidget / USiegeGraphicsMenuWidget trio, cloned).
+	 *
+	 *  ⚠️ WHAT IT BUYS HERE IS DIFFERENT FROM WHAT IT BUYS ON SETTINGS, AND THE
+	 *  DIFFERENCE IS THE ONE THING A REVIEWER MUST CHECK. On Settings the
+	 *  subsystem's ring IS the screen's navigation. Here it is NOT: this screen
+	 *  navigates a 2-D grid of nested WBP_DeckCardTile UUserWidgets, which are not
+	 *  one of the walker's four admitted classes and are not even reached by it
+	 *  (UWidgetTree::ForEachWidget descends through UPanelWidget only). Registration
+	 *  is taken for the two things it DOES buy:
+	 *    (a) LogNavTargetRetarget prints THIS SCREEN'S focus-stop count — the
+	 *        instrument the EVENTGRAPH-CENSUS-GAP ruling (TASKBOARD marker
+	 *        EVENTGRAPH-CENSUS-GAP-RULED-2026-09-24) makes binding on every
+	 *        remaining screen row. Without a registration there is no count to
+	 *        falsify the handoff's stop list against, on any lane;
+	 *    (b) it is the seam TASK-1454 needs when it wires a real close target.
+	 *  ⛔ AND THE COST WAS DECLARED, NOT HIDDEN — AND IT HAS SINCE BEEN PAID OFF.
+	 *  ~~registration turns the subsystem's generic ring ON over a screen that
+	 *  drives itself. RouteMenuNavKey's repair above is what makes that
+	 *  composition converge on the grid every press; the clean fix is
+	 *  subsystem-side and is ESCALATED in the handoff rather than taken
+	 *  silently (SC-§50).~~
+	 *  ⛔ TASK-1474 (2026-09-25) — struck, not deleted (SC-§120). The escalation
+	 *  LANDED: TASK-1471 shipped the subsystem-side fix, and this class's
+	 *  RegisterAsMenuNavTarget now calls RegisterSelfDrivingMenuNavTarget
+	 *  (DeckBuilderWidget.cpp, the one statement that row changed here). ⇒ the
+	 *  generic ring is NOT turned on over this screen: Up/Down move no focus on
+	 *  it, Accept presses none of its buttons, Left/Right step none of its
+	 *  controls, and registration places no ring on its stop 0. RouteMenuNavKey's
+	 *  repair is KEPT as a net, not as the mechanism. ⚠️ What registration still
+	 *  buys is (a) and (b) above, unchanged — and (a) got sharper: TASK-1474's
+	 *  bounded descent means LogNavTargetRetarget's count now includes the deck
+	 *  bar's ten SlotButtons, so the number finally describes the whole screen.
+	 */
+	void RegisterAsMenuNavTarget();
+
+	/**
+	 *  Give menu navigation back. Called as NativeDestruct's FIRST statement.
+	 *  ⭐ THIS IS THE LEG 🧑 HIS OWN COMPLAINT RIDES ON — "if you exit the deck
+	 *  builder and go back to the main menu, the outline is no longer there."
+	 *  TASK-1400's 0.2 s re-entry poll re-arms the main menu, but only while
+	 *  IsMenuUncovered() is true, and TASK-1406's UnregisterMenuNavTarget re-places
+	 *  focus only when ANOTHER registered screen is taking over. A builder that
+	 *  registered and never unregistered would leave the stack holding it.
+	 *  ⛔ Reachable even though WBP_DeckBuilder's Exit is BP-opaque: that graph's
+	 *  RemoveFromParent(self) releases this widget's Slate resources, which is what
+	 *  runs NativeDestruct. ⛔ No Blueprint edit is authored by this row ((4)).
+	 *  ⚠️ And there is a NET underneath it, which is why a missed call degrades
+	 *  rather than sticks: GetRegisteredNavTarget() re-validates
+	 *  IsInViewport() && IsVisible() on EVERY read and skips a removed screen.
+	 */
+	void UnregisterAsMenuNavTarget();
+
+	/** The world's USiegeMenuInputSubsystem, or null (Editor world / no world). The USettingsMenuWidget::ResolveMenuInputSubsystem shape, cloned. */
+	USiegeMenuInputSubsystem* ResolveMenuInputSubsystem() const;
+
+	/**
+	 *  Handles of the IA_Menu* bindings this widget added to the owning player's
+	 *  input component, so UnbindMenuNavActions removes EXACTLY those and nothing
+	 *  else (the component is shared with USiegeMenuInputSubsystem, whose bindings
+	 *  ⛔ must survive this widget). Empty ⇒ nothing is bound.
+	 *  ⛔ Not a UPROPERTY: uint32 handles carry no object reference (the
+	 *  bFocusReadbackPending / FocusRequestFrameCounter shape above).
+	 */
+	TArray<uint32> MenuNavBindingHandles;
 
 	// --- GetCardDescription composers (TASK-268; all row-driven, never per card) ---
 

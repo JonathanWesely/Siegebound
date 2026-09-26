@@ -43,6 +43,7 @@
 #include "Siegebound/SiegeFeedbackLibrary.h" // M7 §6 audio hooks (TASK-179): card play/discard/spell/end-of-match
 #include "Siegebound/SiegeGameMode.h" // M8 (TASK-356): RequestPlayAgain resolves the server GameMode (doc §4.2)
 #include "Siegebound/SiegeGhostPawn.h" // ASiegeGhostPawn — complete type for the ONE IsA() the death-state gate is built on (TASK-750; the class is TASK-749's, landing in the same batch — the TASK-442 parallel-header precedent)
+#include "Siegebound/SiegeMenuInputSubsystem.h" // TASK-1482 [VICTORY-SCREEN-NAVIGABLE]: complete type for RegisterMenuNavTarget / UnregisterMenuNavTarget on the victory-screen open/close edges. ⛔ READ-ONLY DEPENDENCY: this controller CALLS that public API and never edits that file (it is a six-row queue).
 #include "Siegebound/SiegePlayerState.h"
 #include "Siegebound/SiegeSessionSubsystem.h" // LogSiegeNet (CONVENTIONS M8)
 #include "Siegebound/SiegeSpawnConstants.h"
@@ -2371,10 +2372,29 @@ void ASiegePlayerController::HandleMatchEnd(ETeamId Winner)
 	// path can reach it — Enter / SpaceBar / gamepad Accept → SButton::OnKeyDown (SButton.cpp:293,
 	// via FNavigationConfig's Accept rules at NavigationConfig.cpp:32-34) → ExecuteOnClick.
 	// ⛔ WE AUTHOR NO KEY BINDING AND MUST NOT: FInputModeUIOnly applies SetIgnoreInput(true)
-	// (PlayerController.cpp:6384), so Enhanced Input is deaf under this mode by design, and on
-	// L_Arena USiegeMenuInputSubsystem hard-returns before binding anything at all
-	// (SiegeMenuInputSubsystem.cpp:47). Slate's focus path is the ONLY live route to this
-	// screen, and the one thing it needs from us is a focused, focusABLE SButton.
+	// (PlayerController.cpp:6384), and the FIRST statement of UGameViewportClient::InputKey under
+	// that flag is an early return (GameViewportClient.cpp:767-770) — so Enhanced Input is deaf
+	// under this mode by design, ~~and on L_Arena USiegeMenuInputSubsystem hard-returns before
+	// binding anything at all (SiegeMenuInputSubsystem.cpp:47)~~. Slate's focus path is the ONLY
+	// live route to this screen, and the one thing it needs from us is a focused, focusABLE
+	// SButton.
+	// ⚠️ TASK-1482 CORRECTED THE STRUCK CLAUSE RATHER THAN DELETING IT (SC-§120): TASK-1429 made
+	// that subsystem arm ON DEMAND off the menu map, and TASK-1482's registration below is itself
+	// such a demand — so it no longer "binds nothing" on L_Arena. The old clause was a second,
+	// weaker argument for the same sentence, and it expired. (⚠️ Its line citation is quoted as it
+	// was written and has since rotted; anchor that subsystem BY TEXT — the menu-map early return
+	// in its Initialize() — per CITE-BY-TEXT-RULED-2026-09-24.)
+	// ⛔⛔ AND THE SURVIVING SENTENCE IS TRUE OF A REAL KEY ONLY — NARROWED BY qa/TASK-1483.md, AND
+	// THIS IS THE PREMISE THAT FAILED THIS ROW ONCE, SO IT IS CORRECTED WHERE IT WAS TAUGHT. The
+	// viewport swallows every REAL key before Enhanced Input under UIOnly, so a human's Enter
+	// reaches this button down Slate's focus path and by no other route. ⛔ BUT
+	// InjectInputForAction NEVER TOUCHES THE VIEWPORT — it enters at the UEnhancedInputComponent,
+	// DOWNSTREAM of that early return — so the armed IA_Menu* actions ARE live here for the agent
+	// lane, which holds no other input verb at all. SiegeMenuInputSubsystem.h says exactly this in
+	// a paragraph written about THIS screen; find it by text: "⚠️ THE ONE EXCEPTION, AND IT IS THE
+	// VICTORY SCREEN" … "Injection is unaffected (`InjectInputForAction` never touches the
+	// viewport)". ⇒ read "Slate's focus path is the ONLY live route" as "the only route a REAL key
+	// has"; the register block below is where the injected route is argued in full.
 	if (VictoryWidget)
 	{
 		// Read back from the asset's widget tree 2026-09-19 — the template-inherited name is the
@@ -2394,12 +2414,14 @@ void ASiegePlayerController::HandleMatchEnd(ETeamId Winner)
 			// (SWidget::SupportsKeyboardFocus), so this site is STRUCTURALLY INCAPABLE of
 			// re-emitting the "InputMode:UIOnly - Attempting to focus Non-Focusable widget"
 			// Error that TASK-1311 removed at 1c93610 — whatever the asset happens to say.
-			// ⚠️ AS MEASURED 2026-09-19 THE ASSET SAYS False: Btn_Jump carries an authored
-			// IsFocusable=False that overrides UButton's engine default of true (Button.cpp:48),
-			// and UButton exposes no runtime setter (InitIsFocusable is constructor-time only,
-			// Button.h:205-206). So until that ONE property is flipped in the Blueprint editor
-			// and hand-saved, this resolves, declines, and logs — and the end screen behaves
-			// exactly as it does today. That asset half is TASK-1314 Route K-2 (SC-§125).
+			// ⚠️ THE GUARD RESOLVES TRUE TODAY — AND THAT IS EXACTLY WHY IT STAYS. Btn_Jump once
+			// carried an authored IsFocusable=False that overrode UButton's engine default of
+			// true (Button.cpp:48), so the else-branch below was the live path. That property
+			// was flipped in the Blueprint editor and hand-saved, and 1d433ca shipped the
+			// asset; the package no longer serialises IsFocusable at all, which is how UE
+			// records "equal to the default". UButton still exposes no runtime setter
+			// (InitIsFocusable is constructor-time only, Button.h:205-206), so C++ cannot
+			// re-assert this if the asset regresses — the guard above is the only backstop.
 			if (PlayAgainSlate->SupportsKeyboardFocus())
 			{
 				InputMode.SetWidgetToFocus(PlayAgainSlate);
@@ -2407,7 +2429,7 @@ void ASiegePlayerController::HandleMatchEnd(ETeamId Winner)
 			else
 			{
 				UE_LOG(LogGitClaudeUnrealTest, Warning,
-					TEXT("ASiegePlayerController '%s': victory screen button '%s' does not support keyboard focus (IsFocusable is False on it in WBP_VictoryScreen) — no focus target set, Play Again stays mouse-only (TASK-1314 Route K-2 is owed)."),
+					TEXT("ASiegePlayerController '%s': victory screen button '%s' resolved, but its Slate widget reports SupportsKeyboardFocus() == false — no focus target set, Play Again stays mouse-only. Check that button's IsFocusable in WBP_VictoryScreen."),
 					*GetNameSafe(this), *PlayAgainButtonName.ToString());
 			}
 		}
@@ -2421,6 +2443,99 @@ void ASiegePlayerController::HandleMatchEnd(ETeamId Winner)
 
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 	SetInputMode(InputMode);
+
+	// ═══ ⭐ TASK-1482 [VICTORY-SCREEN-NAVIGABLE] — REGISTER ON OPEN ════════════════════════════
+	// ⛔ THE ONE THING THAT WAS MISSING IS A REGISTRATION, NOT A KEY. TASK-1314 (twenty lines
+	// above) already puts Slate focus on Btn_Jump and TASK-1431 already shipped that button's
+	// IsFocusable = True, so the screen was REACHABLE. What it was not is ENUMERABLE: nothing
+	// ever named it to USiegeMenuInputSubsystem, so GetActiveNavTarget() never pointed at it and
+	// LogNavTargetRetarget never printed a focus-stop count for it — the instrument the board's
+	// EVENTGRAPH-CENSUS-GAP ruling makes binding, and this call is the only path that emits it.
+	//
+	// 🚨 THE PLAIN RegisterMenuNavTarget — AND THE PREMISE THAT ONCE SAID OTHERWISE IS STRUCK HERE
+	// RATHER THAN DELETED (SC-§120), BECAUSE THE FALSE HALF OF IT IS SUBTLE AND WILL BE REACHED
+	// FOR AGAIN. This row first shipped RegisterSelfDrivingMenuNavTarget on this reasoning:
+	// ~~⇒ the subsystem's IA_Menu* handlers CANNOT fire on this screen, so three of the four
+	// behaviours the declaration suppresses — MoveFocus(±1), HandleMenuAccept() and
+	// StepFocusedStop(±1) — are already structurally unreachable here and declining them
+	// subtracts nothing that could ever have run.~~ ⛔ OVERRULED BY qa/TASK-1483.md, AND THE
+	// CORRECTION IS ONE WORD WIDE: FInputModeUIOnly's SetIgnoreInput(true)
+	// (PlayerController.cpp, "FInputModeUIOnly::ApplyInputMode" → SetIgnoreInput(true)) deafens
+	// this screen TO A REAL KEY ONLY. UGameViewportClient::InputKey does early-return under
+	// IgnoreInput() (GameViewportClient.cpp, the `if (IgnoreInput())` return, ABOVE the
+	// OnInputKeyEvent.Broadcast / player-routing block — not literally its first statement), but
+	// UEnhancedInputLocalPlayerSubsystem::InjectInputForAction NEVER TOUCHES THE VIEWPORT: it
+	// enters at the UEnhancedInputComponent, downstream of that return.
+	// ⛔ AND INJECTION IS THE ONLY INPUT VERB THE AGENT LANE HOLDS. SiegeMenuInputSubsystem.h says
+	// both things already, the second in a paragraph written about THIS screen — search it by
+	// text: "⚠️ THE ONE EXCEPTION, AND IT IS THE VICTORY SCREEN" … "Injection is unaffected
+	// (`InjectInputForAction` never touches the viewport)", and, earlier, "What DOES reach them:
+	// `UEnhancedInputLocalPlayerSubsystem::InjectInputForAction` (Aura's `inject_input_action`,
+	// and the automation test)" with "no real-input lane exists for an agent" alongside it.
+	// ⇒ under the flag an injected IA_MenuAccept returns at HandleMenuAccept's FIRST statement,
+	// DeclineIfActiveTargetSelfDriving(TEXT("IA_MenuAccept")), and nothing presses this button.
+	// Registered-but-declining is ENUMERABLE. It is not NAVIGABLE.
+	//
+	// ⭐ THE DISCRIMINATOR TO CARRY FORWARD, IN ONE SENTENCE: the flag declares "this screen
+	// DRIVES ITS OWN NAVIGATION", and THE VICTORY SCREEN HAS NO DRIVER. The deck builder holds
+	// the flag legitimately because it does — its own HandleMenuNavAccept → HandleCardGridKey →
+	// AcceptFocusedCard is a SEPARATE delegate on the same action, so gating the subsystem's
+	// Accept does not cost it its card-pick (qa/TASK-1472.md). ⛔ SELF-DRIVING WITHOUT A DRIVER IS
+	// JUST DEAF.
+	//
+	// ⛔ THE RACE THE FLAG WAS CHOSEN TO AVOID IS DETERMINATE AND CONVERGES — MEASURED IN
+	// qa/TASK-1483.md, NOT ARGUED. (a) The admitted-class population of this tree is the SINGLETON
+	// /Game/UI/WBP_VictoryScreen.WBP_VictoryScreen:WidgetTree.Btn_Jump — the two UI_Thumbstick_C
+	// riders are Collapsed, are not one of the four admitted classes, and are not descended into —
+	// so RegisterMenuNavTarget's closing FocusFirstNavStop() places the ring on stop 0, which IS
+	// the button SetWidgetToFocus named above, by construction and not by luck. (b) This call sits
+	// AFTER SetInputMode, which only DEFERS its focus request into the local player's FReply;
+	// FocusWidget then performs an IMMEDIATE FSlateApplication::SetUserFocus(..., Navigation) and
+	// either wins — whereupon FReply::CancelFocusRequest clears ONLY the focus fields, leaving the
+	// input mode's capture and lock operations intact — or loses and writes the same widget into
+	// the same FReply. ⭐ BOTH BRANCHES END ON THE SAME WIDGET WITH CAUSE Navigation.
+	// (c) ⛔ THAT IS WHY SetWidgetToFocus ABOVE STAYS AND MUST NOT BE REMOVED: on the degenerate
+	// zero-stop branch FocusFirstNavStop() returns false WITHOUT cancelling anything, and the
+	// by-name placement survives verbatim. It is the fallback, not a duplicate.
+	//
+	// ⭐ AND THE COST NOBODY HAD PRICED, WHICH IS 🧑 LITERALLY THE ASK THIS MILESTONE STARTED FROM:
+	// EFocusCause::Navigation is the ONLY cause that paints a ring. FSlateApplication::SetUserFocus
+	// computes ShowFocus = (InCause == EFocusCause::Navigation); UGameViewportClient::QueryShowFocus
+	// refuses any other cause under the ENGINE-DEFAULT ERenderFocusRule::NavigationOnly (not
+	// overridden anywhere in this project's Config/); SWidget::Paint draws GetFocusBrush() only when
+	// ShowUserFocus is true. And FInputModeDataBase::SetFocusAndLocking deposits SetWidgetToFocus's
+	// request with the DEFAULT cause, SetDirectly. ⇒ under the self-driving flag this button could
+	// NEVER wear the dashed FocusRectangle — the one screen of the ten with no outline, when the
+	// outline is the first clause of the sitting. The plain call is what restores it.
+	// ⭐ AND IT KEEPS EVERYTHING THE FLAG WAS KEEPING: the stack entry, the retarget line WITH THIS
+	// SCREEN'S FOCUS-STOP COUNT, and the in-match arm. Registering is what makes the screen
+	// enumerable; the PLAIN registration is what also makes it navigable by the agent lane.
+	//
+	// ⛔ ON OPEN — NOT IN A CONSTRUCTOR, AND NOT EARLIER IN THIS FUNCTION. qa/TASK-1430.md WARN-2
+	// measured the arming backstop as DISARM-ONLY, so a screen that registers while hidden never
+	// arms and NOTHING ERRORS. This site is past AddToViewport and past SetInputMode, so the
+	// IsInViewport() && IsVisible() re-read inside IsInMatchScreenOpen() sees the true post-open
+	// state and the retarget line cannot describe a screen the viewport has not got yet.
+	// ⛔ VictoryWidget is non-null by construction here: the !VictoryWidget block above RETURNS.
+	// ⛔ Paired with UnregisterMenuNavTarget(VictoryWidget) in HandleMatchReset — the only other
+	// site in this class that touches this pointer, and the only close path there is.
+	if (UWorld* World = GetWorld())
+	{
+		if (USiegeMenuInputSubsystem* MenuInput = World->GetSubsystem<USiegeMenuInputSubsystem>())
+		{
+			MenuInput->RegisterMenuNavTarget(VictoryWidget);
+		}
+		else
+		{
+			// Log, not Warning, on USettingsMenuWidget::RegisterAsMenuNavTarget's stated
+			// rationale: the honest reading of a null here is "this world has no menu input"
+			// (the subsystem declines Editor worlds outright, DoesSupportWorldType = Game | PIE),
+			// and the end screen still works with the mouse and with the Slate focus set above.
+			UE_LOG(LogGitClaudeUnrealTest, Log,
+				TEXT("ASiegePlayerController '%s': no USiegeMenuInputSubsystem on this world — the victory screen is not registered as a nav target (mouse and Slate keyboard focus are unaffected; no focus-stop count will be logged)."),
+				*GetNameSafe(this));
+		}
+	}
 
 	// ⛔⭐ THE TWO LINES BELOW ARE A PUBLISHED INTERFACE, NOT AN INTERNAL LOG (SC-§135). The
 	// playtest-verifier lane greps the emitted line as the runtime evidence behind a VERIFIED
@@ -2489,6 +2604,34 @@ void ASiegePlayerController::HandleMatchReset()
 		// idempotent with WBP_VictoryScreen's own RemoveFromParent (TASK-011)
 		if (VictoryWidget)
 		{
+			// ═══ ⭐ TASK-1482 — UNREGISTER ON CLOSE, AND **BEFORE** RemoveFromParent ═══════════
+			// The falling edge paired with HandleMatchEnd's RegisterMenuNavTarget. (qa/TASK-1483.md
+			// loop 1 changed that open edge from RegisterSelfDrivingMenuNavTarget to the plain
+			// call. UnregisterMenuNavTarget was already the correct pairing for BOTH, so not one
+			// character of the call below moved — only the count in the next sentence.)
+			// ⛔ TWO halves now, not three — struck in place (SC-§120): it drops the stack entry,
+			// ~~it drops the self-driving declaration (UnregisterMenuNavTarget clears the mark
+			// HERE and nowhere else, so the flag's lifetime is exactly the registration's),~~ and
+			// its ReconcileInMatchArming REMOVES IMC_MainMenu once no live registration is left —
+			// so the match gets its keys back on an EDGE instead of waiting up to
+			// InMatchDemandPollSeconds for the disarm-only backstop poll to notice.
+			// ⛔ BEFORE RemoveFromParent, on the subsystem's OWN stated shape — its unregister
+			// comment reads "an unregister runs from `BackPressed`, BEFORE `RemoveFromParent`".
+			// ⭐ Idempotent either way, which matters because WBP_VictoryScreen's graph may have
+			// already removed itself from the viewport on the Play Again click: in that case
+			// GetRegisteredNavTarget()'s IsInViewport() re-read has already dropped the entry,
+			// and this call removes by IDENTITY and LOGS — does not warn — that there was
+			// nothing to remove. Silent on a null subsystem, on
+			// USettingsMenuWidget::UnregisterAsMenuNavTarget's rationale: if there was no
+			// subsystem to register with there is nothing to give back.
+			if (UWorld* World = GetWorld())
+			{
+				if (USiegeMenuInputSubsystem* MenuInput = World->GetSubsystem<USiegeMenuInputSubsystem>())
+				{
+					MenuInput->UnregisterMenuNavTarget(VictoryWidget);
+				}
+			}
+
 			VictoryWidget->RemoveFromParent();
 			VictoryWidget = nullptr;
 		}

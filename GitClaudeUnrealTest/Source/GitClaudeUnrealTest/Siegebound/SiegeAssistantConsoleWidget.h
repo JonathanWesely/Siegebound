@@ -273,6 +273,102 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSiegeAssistantConsoleOpenChanged,
  *     Flagged in handoffs/TASK-444-programmer.md as a gap in the wave.
  *
  *  ---------------------------------------------------------------------------
+ *  5b. MENU NAVIGATION — ⛔ THIS SCREEN DELIBERATELY DOES **NOT** REGISTER A NAV
+ *      TARGET, AND THE REFUSAL IS MEASURED (TASK-1434, the MENU-NAV epic)
+ *  ---------------------------------------------------------------------------
+ *  Every other screen in that epic calls
+ *  USiegeMenuInputSubsystem::RegisterMenuNavTarget(this) so Up/Down/Accept/Back
+ *  drive a Slate focus ring across its controls. ⛔ THIS ONE DOES NOT. TASK-1434's
+ *  first duty was to establish whether it safely could; it cannot, and the four
+ *  measurements that decide it are recorded HERE so the next author meets a
+ *  RULING rather than an omission:
+ *
+ *   (a) ⛔ THE RING WOULD HAVE EXACTLY ONE STOP, AND IT IS THE TEXT BOX.
+ *       USiegeMenuInputSubsystem::IsNavFocusStop admits four classes — UButton,
+ *       UCheckBox, USlider, UEditableTextBox — and a UEditableTextBox
+ *       unconditionally. ConstructConsoleTree() builds RootPanel (UVerticalBox),
+ *       ConsoleTopSpacer (USpacer), ConsoleBackdrop (UBorder), ConsoleColumn
+ *       (UVerticalBox), TranscriptText + StatusText (UTextBlock) and InputBox
+ *       (UEditableTextBox) — and, since TASK-519, NO BUTTON AT ALL.
+ *       ⇒ ONE stop: InputBox.
+ *
+ *   (b) ⛔ NO NAV VERB HAS ANYTHING TO DO ON A ONE-STOP TEXT-BOX RING.
+ *       MoveFocus(±1) reads the index from Slate, wraps 0 -> 0 and re-focuses the
+ *       box it is already on; HandleMenuAccept gives a UEditableTextBox NO Accept
+ *       semantics ON PURPOSE (TASK-1409 (4b), verbatim: "a USlider and a
+ *       UEditableTextBox deliberately get NO Accept semantics") and logs a
+ *       decline; StepFocusedStop (Left/Right) declines for the same reason.
+ *       ⇒ the ONLY nav verb that could ever DO something on this screen is
+ *       IA_MenuBack — and that is (c).
+ *
+ *   (c) ⛔ THE ONE VERB THAT WOULD WORK IS THE ONE THAT MUST NOT. IA_MenuBack is
+ *       mapped to `Backspace` — the most-pressed key in a text box. It is inert
+ *       today ONLY because this class does not implement ISiegeMenuNavCloseTarget
+ *       (HandleMenuBack logs "implements no ISiegeMenuNavCloseTarget — Back is
+ *       INERT for it"), and TASK-1454 is boarded to wire that interface onto
+ *       screens. Registering here would put a FIFTH, UNENUMERATED CLOSE ROUTE one
+ *       row away, keyed to Backspace, against an AS-§6 A-2 list of exactly FOUR
+ *       routes that "IS the contract". ⛔ Do not implement that interface here.
+ *
+ *   (d) ⛔ AND REGISTRATION ARMS A MENU MAPPING CONTEXT OVER LIVE COMBAT FOR AS
+ *       LONG AS THE PLAYER IS TYPING. RegisterMenuNavTarget is the subsystem's
+ *       ONLY in-match rising edge (TASK-1429): it applies IMC_MainMenu and binds
+ *       six actions. ⚠️ AND `Up`/`Down` REACH ENHANCED INPUT EVEN WHILE THE BOX
+ *       HAS FOCUS — measured at the installed UE 5.8 source, not assumed:
+ *       FSlateEditableTextLayout::HandleKeyDown wraps the vertical arrows in
+ *       BoolToReply(MoveCursor(...)) (SlateEditableTextLayout.cpp:1040-1059), and
+ *       MoveCursor's single-line branch returns FALSE carrying the engine's own
+ *       comment — "Vertical movement not supported on single-line editable text
+ *       controls - return false so we fallback to generic widget navigation"
+ *       (:2262-2265). ⇒ Up/Down are UNHANDLED by the box, bubble past it to
+ *       SViewport and reach Enhanced Input. (Left/Right and Backspace do NOT:
+ *       MoveCursor's horizontal path returns true, and HandleBackspace returns
+ *       true unless the box is read-only, :1479-1534.)
+ *       ⛔ And with focus OUTSIDE the box — a state this file already documents at
+ *       NativeOnPreviewKeyDown, "if a player clicks the world and focus leaves the
+ *       box" — ALL of them reach it, so Up would YANK keyboard focus back into the
+ *       chat box on a key that does nothing in this game today.
+ *
+ *  ⇒ ⚖️ THE RULING: registration on this screen buys ZERO reachable navigation and
+ *    costs a menu context armed over live gameplay plus a latent Backspace close.
+ *    ⛔ Do not add it "for consistency" with the main-menu screens: those are modal
+ *    panels made of buttons, and this is a NON-MODAL TEXT BOX OVER A LIVE
+ *    BATTLEFIELD — §2 above is the law that difference comes from.
+ *  ✅ WHAT WOULD CHANGE THE ANSWER, stated so a later row need not re-derive it: a
+ *    WBP_AssistantConsole that supplies a ConfirmButton (ruling A(b)) gives the ring
+ *    a SECOND stop that DOES have Accept semantics, and registering is then worth
+ *    re-arguing — on (c) being answered, not on this paragraph being old.
+ *
+ *  ⭐ AND THE ACCEPT ROUTE IS ALREADY WIRED FOR THAT DAY — THAT IS TASK-1434'S
+ *    ACTUAL DIFF. USiegeMenuInputSubsystem::HandleMenuAccept fires the focused
+ *    UButton's OnClicked.Broadcast(), the SAME delegate a mouse click fires, so
+ *        IA_MenuAccept -> ConfirmButton::OnClicked -> HandleConfirmClicked()
+ *                      -> MenuAcceptPressed() -> ConfirmPressed()
+ *    is the menu Accept reaching this console's confirm with NO new input binding,
+ *    NO new key, NO subsystem change and NO second confirm. ⛔ ONE confirm
+ *    implementation (ConfirmPressed), TWO entry points: the positional `Z` in
+ *    NativeOnPreviewKeyDown, and MenuAcceptPressed().
+ *
+ *  ⚖️ 🧑 THE OPEN PRODUCT QUESTION THIS SCREEN IS PART OF, AND IT IS JONATHAN'S.
+ *    `Enter` is mapped BOTH to IA_MenuAccept (IMC_MainMenu) and to
+ *    IA_AssistantConsole (IMC_Hero) — the project's ONLY key collision
+ *    (qa/TASK-1430.md re-measured it live: intersection = {Enter}, eleven clean,
+ *    both actions bConsumeInput with no chords). Shipping today, IMC_MainMenu is
+ *    applied in-match at priority 0, BELOW IMC_Hero's 1, so `Enter` stays with THIS
+ *    console. ⛔ WHAT WOULD CHANGE FOR THIS WIDGET IF HE FLIPS THAT CONSTANT TO 2:
+ *      · With the console the only in-match screen open: ⛔ NOTHING. This screen
+ *        never registers, so it never arms the menu context, so a priority it never
+ *        applies cannot take a key from it.
+ *      · Enter-in-the-box — submit, and CLOSE ROUTE 4: ⛔ UNCHANGED under either
+ *        value. A focused editable box consumes Enter in Slate before the viewport
+ *        is ever offered it (SlateEditableTextLayout.cpp:1092, the qa/TASK-411
+ *        ruling), and priority only orders Enhanced Input's contexts.
+ *      · ⛔ THE ONE REAL CHANGE IS CROSS-SCREEN: while SOME OTHER in-match screen is
+ *        registered (so the context IS armed) and this console is CLOSED, `Enter`
+ *        would build as IA_MenuAccept instead, and the console's OPEN KEY would be
+ *        dead until that screen closes.
+ *
+ *  ---------------------------------------------------------------------------
  *  6. THIS CLASS REPLACES SiegeAssistantInputProbe.{h,cpp}, WHICH IT DELETES
  *  ---------------------------------------------------------------------------
  *  The probe was throwaway by construction and its question is now answered, so
@@ -364,6 +460,40 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Assistant")
 	void ConfirmPressed();
+
+	/**
+	 *  ⭐ THE MENU-NAV ACCEPT ENTRY POINT (TASK-1434). ⛔ AN ENTRY POINT, ⛔ NOT A
+	 *  SECOND CONFIRM: its entire body is ConfirmPressed(), so the ONE gate
+	 *  (bConfirmPromptVisible), the ONE "Accept ignored" refusal and the ONE
+	 *  OnConsoleConfirmed broadcast all stay in ONE place. ⛔ A gate of its own here
+	 *  would be a SECOND authority on "may this order execute" — CONVENTIONS §19's
+	 *  duplicated-authority defect, and the authority it would duplicate is the one
+	 *  the whole confirm step exists to be.
+	 *
+	 *  WHY A NAMED FUNCTION RATHER THAN A SECOND CALL TO ConfirmPressed(): the
+	 *  project's menu Accept arrives as USiegeMenuInputSubsystem::HandleMenuAccept
+	 *  -> the focused UButton's OnClicked.Broadcast() — i.e. through ConfirmButton
+	 *  -> HandleConfirmClicked(). Giving that route its own named door is what makes
+	 *  an accept produced by a MENU ACTION distinguishable in the log from one
+	 *  produced by the positional `Z`; two identical call sites into the same
+	 *  function cannot tell a verifier which door a press came through.
+	 *
+	 *  ⚠️ ITS REACHABILITY TODAY IS SMALL, AND SAYING SO IS THE POINT — the
+	 *  CancelPressed() precedent below, applied to a NEW entry point rather than a
+	 *  retired one. The v1 code-authored tree constructs NO ConfirmButton (TASK-519,
+	 *  Jonathan's ruling 3: `Z` accepts, closing discards) and this screen does not
+	 *  register a nav target (class comment §5b), so IA_MenuAccept cannot reach it
+	 *  in a match TODAY. It goes live the moment a /Game/UI/WBP_AssistantConsole
+	 *  supplies a child named ConfirmButton — ruling A(b)'s escape hatch — with ZERO
+	 *  further C++ change. ⛔ Do not "clean it up" on the strength of having no
+	 *  caller; that is the same mistake the CancelPressed() comment exists to stop.
+	 *
+	 *  ⛔ IT ADDS NO KEY AND NO INPUT BINDING. This widget still binds nothing to
+	 *  Enhanced Input (§5), and IA_MenuAccept's `Enter` mapping is shadowed in a
+	 *  match by IA_AssistantConsole in any case (qa/TASK-1430.md's census).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Assistant")
+	void MenuAcceptPressed();
 
 	/**
 	 *  Cancel. With a prompt up it lowers the prompt and broadcasts
@@ -738,6 +868,13 @@ protected:
 	 *  ⚠️ KEPT AND STILL WIRED even though the v1 tree no longer CONSTRUCTS a
 	 *  ConfirmButton: a future WBP_AssistantConsole that supplies one binds to
 	 *  this with zero C++ change (ruling A(b)). The `Z` key is the v1 route.
+	 *
+	 *  ⭐ TASK-1434: its body now forwards through MenuAcceptPressed() instead of
+	 *  calling ConfirmPressed() directly, so the menu-nav Accept route has ONE named
+	 *  door. ⛔ NOT A BEHAVIOUR CHANGE, and structurally so rather than by promise:
+	 *  the v1 tree constructs no ConfirmButton, so WireChildWidgets never makes this
+	 *  binding and NOTHING CALLS THIS FUNCTION in the shipped build. Same confirm,
+	 *  same gate, one extra log line naming the route — on a path with no caller.
 	 *
 	 *  ⛔ THE CANCEL THUNK THAT SAT HERE IS GONE, DELETED WITH ITS BUTTON
 	 *  (TASK-519 / AS-§6 ruling A, amended: "the CancelButton member, its

@@ -19,6 +19,9 @@ class USlider;
 class UTextBlock;
 class UVerticalBox;
 class USiegeGraphicsSettingsSubsystem;
+// TASK-1417 [MENU-NAV-GRAPHICS]: this screen CALLS TASK-1406's public registration
+// API and never edits it — USiegeMenuInputSubsystem is that row's file.
+class USiegeMenuInputSubsystem;
 class USiegeSettingsSubsystem;
 
 /**
@@ -789,6 +792,25 @@ protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+
+	/**
+	 *  ⭐ TASK-1417 [MENU-NAV-GRAPHICS] — 🧑 "scrollable with the outline".
+	 *
+	 *  ⛔ THIS IS A FOCUS HOOK, NOT A KEY HANDLER. It reads nothing from the
+	 *  keyboard, consumes nothing, returns nothing and decides no navigation:
+	 *  USiegeMenuInputSubsystem owns Up / Down / Left / Right / Accept for the
+	 *  whole menu (TASK-1406 / TASK-1409). All this override does is notice that
+	 *  the ring landed somewhere inside RootScrollBox and ask the scroll box to
+	 *  bring that row on screen. A `NativeOnKeyDown` here would be the
+	 *  wrong-layer relapse the MENU-NAV epic exists to remove; there is none.
+	 *
+	 *  See ScrollFocusStopIntoView() for why the engine's own
+	 *  `ScrollWhenFocusChanges` is ALSO set and which of the two actually fires.
+	 */
+	virtual void NativeOnFocusChanging(
+		const FWeakWidgetPath& PreviousFocusPath,
+		const FWidgetPath& NewWidgetPath,
+		const FFocusEvent& InFocusEvent) override;
 	//~ End UUserWidget interface
 
 	/** Null-safe resolve: the automation override first, then this widget's world's game instance. */
@@ -1225,6 +1247,178 @@ private:
 
 	/** ⛔ Automation only — see SetVideoModeCountdownDrivenManuallyForAutomationTests. */
 	bool bDriveVideoModeCountdownManuallyForAutomationTests = false;
+
+	// ════════════════════════════════════════════════════════════════════════
+	//  ⭐⭐ TASK-1417 [MENU-NAV-GRAPHICS] — THE SCREEN ANSWERS THE KEYBOARD, AND
+	//  THE LIST FOLLOWS THE RING.
+	//
+	//  🧑 "we want to make sure everywhere in the menu can be scrollable with the
+	//  outline and arrow keys such that an agent can navigate the entire menu."
+	//
+	//  ⛔ WHAT THIS ROW ADDS IS FOUR SHORT FUNCTIONS AND NO STATE. Everything that
+	//  walks the tree, reads IsFocusable, places the ring, steps a slider and logs
+	//  the count lives in USiegeMenuInputSubsystem (TASK-1406 / TASK-1409). This
+	//  file's entire contribution is (a) saying WHEN this screen is the one the
+	//  player is looking at and (b) keeping the focused row ON SCREEN.
+	//
+	//  ⛔ NO KEY HANDLER. ⛔ NO SetKeyboardFocus / SetUserFocus. ⛔ NO navigation
+	//  rule table. ⛔ NO IsFocusable write. ⛔ NO second facade writer — this row
+	//  adds ZERO calls to USiegeGraphicsSettingsSubsystem, zero quality-group
+	//  value changes, zero detent changes and zero apply/save calls.
+	//
+	//  ════════════════════════════════════════════════════════════════════════
+	//  ⛔ THE FOCUS STOPS THIS SCREEN OFFERS, IN WidgetTree TRAVERSAL ORDER
+	//  (`UWidgetTree::ForEachWidget` = depth-first PRE-ORDER, slot order; and on
+	//  this screen slot order == visual order BY CONSTRUCTION, because the whole
+	//  column is a UVerticalBox filled in reading order inside a vertical
+	//  UScrollBox). ⛔ ALL OF THEM ARE CONSTRUCTED IN C++ — there is NO
+	//  `/Game/UI/WBP_GraphicsMenu` asset at all (GFX-§2 reserves the path and
+	//  TASK-1461 measured it unauthored), so this screen cannot carry an
+	//  asset-authored `IsFocusable=False` and cannot carry an EventGraph node
+	//  that opts a control out. Every name below is route `C++`.
+	//
+	//     0. ShowFrameRateCounterCheckBox   UCheckBox   C++
+	//     1. AutoDetectButton               UButton     C++
+	//     2. OverallQualitySlider           USlider     C++
+	//     3. ViewDistanceQualitySlider      USlider     C++
+	//     4. AntiAliasingQualitySlider      USlider     C++
+	//     5. ShadowQualitySlider            USlider     C++
+	//     6. GlobalIlluminationQualitySlider USlider    C++
+	//     7. ReflectionQualitySlider        USlider     C++
+	//     8. PostProcessQualitySlider       USlider     C++
+	//     9. TextureQualitySlider           USlider     C++
+	//    10. EffectsQualitySlider           USlider     C++
+	//    11. FoliageQualitySlider           USlider     C++
+	//    12. ShadingQualitySlider           USlider     C++
+	//    13. ResolutionScaleSlider          USlider     C++
+	//    14. ScreenResolutionPrevButton     UButton     C++
+	//    15. ScreenResolutionNextButton     UButton     C++
+	//    16. WindowModePrevButton           UButton     C++
+	//    17. WindowModeNextButton           UButton     C++
+	//    18. KeepSettingsButton             UButton     C++   ⚠️ see below
+	//    19. RevertSettingsButton           UButton     C++   ⚠️ see below
+	//    20. VSyncCheckBox                  UCheckBox   C++
+	//    21. FrameRateLimitPrevButton       UButton     C++
+	//    22. FrameRateLimitNextButton       UButton     C++
+	//    23. BackButton                     UButton     C++
+	//
+	//  ⇒ TWENTY-FOUR on the healthy path. ⛔ The ten quality groups appear in
+	//  USiegeGraphicsSettingsSubsystem::GetQualityGroupNames() order, which is the
+	//  order this panel builds them in — the list is never re-decided here.
+	//
+	//  ⚠️ THE TWO STATE-DEPENDENT ENTRIES (18, 19), DECLARED RATHER THAN HOPED
+	//  PAST: KeepSettingsButton and RevertSettingsButton live inside
+	//  VideoModeConfirmBorder, which is ESlateVisibility::Collapsed whenever no
+	//  video-mode countdown is running (the 99 % case). ⛔ THE WALKER STILL
+	//  ADMITS THEM, and that is MEASURED, not assumed: IsNavFocusStop() tests
+	//  `Widget->IsVisible()`, and `UWidget::IsVisible()` returns
+	//  `GetCachedWidget()->GetVisibility().IsVisible()` — the widget's OWN slate
+	//  visibility (Widget.cpp), never its ancestors'. A Collapsed PARENT does not
+	//  change a child's own EVisibility::Visible. ⇒ the ring stops twice on rows
+	//  the player cannot see. ⛔ NOT FIXED HERE: the remedy is either the walker
+	//  learning ancestor visibility (TASK-1406's file, fenced from this row) or
+	//  mirroring the border's visibility onto the two buttons at the four
+	//  documented WRITER sites — which would add two writers to the countdown's
+	//  surface that spec (4) told this row to leave alone. ⛔ QA's call, not
+	//  mine; the four-line patch is named in handoffs/TASK-1417-programmer.md.
+	//
+	//  ⚠️ THE STEPPER DOUBLE-STOP IS EXPECTED AND IS NOT THIS ROW'S DEFECT:
+	//  each of the three stepper rows exposes BOTH its "<" and its ">" as
+	//  separate UButtons, so the ring stops twice per stepper row (6 of the 24).
+	//  qa/TASK-1410.md WARN-2 routes that to the walker.
+	//
+	//  ⚠️ THE UNHAPPY-PATH COUNT, so a low number is not mis-read as the defect:
+	//  with no USiegeGraphicsSettingsSubsystem, ShowPanelUnavailable() calls
+	//  SetAllControlsEnabled(false), which disables 12 of the names above
+	//  (OverallQuality + ResolutionScale + VSync + AutoDetect + the six display
+	//  stepper buttons + Keep + Revert) AND every group slider ⇒ 22 stops drop
+	//  out and only ShowFrameRateCounterCheckBox (a different store) and
+	//  BackButton (deliberately re-enabled) remain. ⛔ A count of 2 WITH the
+	//  "[GraphicsMenu] USiegeGraphicsSettingsSubsystem could not be resolved"
+	//  Warning in the same run is HEALTHY; a 2 WITHOUT it is the defect.
+	//  ════════════════════════════════════════════════════════════════════════
+
+	/**
+	 *  Hand menu navigation to THIS screen. Called from NativeConstruct, AFTER
+	 *  SeedAndBind() and ArmFrameRateReadout(), and paired with
+	 *  UnregisterAsMenuNavTarget() on every exit.
+	 *
+	 *  ⛔ THE "AFTER" IS LOAD-BEARING, NOT STYLISTIC — the USettingsMenuWidget
+	 *  hazard, only bigger here. RegisterMenuNavTarget() logs the stop count AND
+	 *  places the ring on stop 0, and both read the tree's LIVE enabled state.
+	 *  SeedAndBind() is what settles it: on the null-facade path it calls
+	 *  ShowPanelUnavailable() -> SetAllControlsEnabled(false). Registering first
+	 *  would log 24 for a screen that has 2 and could park the ring on a control
+	 *  disabled a few lines later.
+	 *
+	 *  ⭐ Register also PLACES THE RING on stop 0, so this panel opens with
+	 *  ShowFrameRateCounterCheckBox already outlined and the FIRST Down moves to
+	 *  stop 1 (AutoDetectButton), not to stop 0. A reader expecting stop 0 after
+	 *  one Down will mis-read a working screen as broken.
+	 *
+	 *  Null-safe: no world or no subsystem ⇒ one Log line and the panel behaves
+	 *  exactly as it did before this row. Never fatal.
+	 */
+	void RegisterAsMenuNavTarget();
+
+	/**
+	 *  Give menu navigation back. Called from BOTH BackPressed() (BEFORE
+	 *  RemoveFromParent, and BESIDE — never instead of —
+	 *  DisarmVideoModeCountdown() + DiscardStagedVideoMode()) AND
+	 *  NativeDestruct() (first statement, LIFO). The double call is deliberate
+	 *  and safe: UnregisterMenuNavTarget removes by IDENTITY and logs-not-warns
+	 *  a second call for a screen already gone.
+	 *
+	 *  ⭐ NESTING — THE HALF TASK-1415 DELIBERATELY LEFT FOR THIS ROW.
+	 *  USettingsMenuWidget::GraphicsPressed() does NOT unregister itself when it
+	 *  opens this panel, so the stack reads:
+	 *      register(Settings)   -> [Settings]             ring on Settings
+	 *      register(Graphics)   -> [Settings, Graphics]   ring on Graphics
+	 *      unregister(Graphics) -> [Settings]             ring BACK on Settings
+	 *  and TASK-1406's UnregisterMenuNavTarget re-places focus only when another
+	 *  registered screen is taking over, which is exactly this case. ⇒ Back here
+	 *  hands the ring to the SETTINGS panel underneath, ⛔ not to WBP_MainMenu
+	 *  two layers down.
+	 */
+	void UnregisterAsMenuNavTarget();
+
+	/**
+	 *  Null-safe resolve of the menu-input subsystem. ⚠️ Unlike the two settings
+	 *  stores this one lives on the WORLD, not the game instance, and it declines
+	 *  Editor worlds outright (DoesSupportWorldType = Game | PIE), so a null
+	 *  answer is ordinary rather than an error. ⛔ There is no automation
+	 *  override: a bare NewObject widget has no world, and the suite has nothing
+	 *  to assert here.
+	 */
+	USiegeMenuInputSubsystem* ResolveMenuInputSubsystem() const;
+
+	/**
+	 *  ⭐ 🧑 "scrollable with the outline" — THE WHOLE OF IT, IN TWO MECHANISMS
+	 *  THAT AGREE, wired at construction and re-asserted in NativeConstruct.
+	 *
+	 *  ⛔ WHY IT IS NEEDED AT ALL, MEASURED: UScrollBox's constructor sets
+	 *  `ScrollWhenFocusChanges(EScrollWhenFocusChanges::NoScroll)` (ScrollBox.cpp)
+	 *  — the ENGINE DEFAULT IS TO NOT FOLLOW FOCUS. With 24 stops in a column
+	 *  that does not fit 1080p, the ring would walk off the bottom and 🧑 he
+	 *  would see it vanish. A ring the player cannot see is indistinguishable
+	 *  from no ring.
+	 */
+	void ConfigureScrollFollowsFocus();
+
+	/**
+	 *  Asks RootScrollBox to bring FocusStop on screen. ⛔ Layout only — it
+	 *  writes no setting, touches no timer and cannot re-enter the row echo.
+	 *  Null-tolerant and headless-safe (UScrollBox::ScrollWidgetIntoView no-ops
+	 *  when its Slate widget is invalid, which is every automation run).
+	 */
+	void ScrollFocusStopIntoView(UWidget* FocusStop);
+
+	/**
+	 *  The UWidget in THIS widget's tree whose cached Slate widget is exactly
+	 *  SlateWidget, or null. Used to turn the focus path's leaf back into
+	 *  something UScrollBox::ScrollWidgetIntoView can take.
+	 */
+	UWidget* FindOwnWidgetForSlateWidget(const TSharedRef<SWidget>& SlateWidget) const;
 };
 
 /**

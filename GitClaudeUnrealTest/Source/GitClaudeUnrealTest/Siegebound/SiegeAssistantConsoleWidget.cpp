@@ -739,6 +739,35 @@ void USiegeAssistantConsoleWidget::ConfirmPressed()
 	OnConsoleConfirmed.Broadcast();
 }
 
+void USiegeAssistantConsoleWidget::MenuAcceptPressed()
+{
+	// ─────────────────────────────────────────────────────────────────────────
+	// ⭐ THE SECOND ENTRY POINT. ⛔ ONE CONFIRM IMPLEMENTATION, TWO DOORS.
+	// TASK-1434 (2). The other door is NativeOnPreviewKeyDown's positional `Z`,
+	// which is BYTE-UNCHANGED by this row.
+	// ─────────────────────────────────────────────────────────────────────────
+	// ⛔ THE BODY IS ONE CALL ON PURPOSE. ConfirmPressed() above owns the single
+	// gate (bConfirmPromptVisible), the single "Accept ignored: no confirm prompt
+	// is up" refusal and the single OnConsoleConfirmed broadcast. A gate, a
+	// refusal or a broadcast HERE would be a second authority on "may this order
+	// execute" — CONVENTIONS §19's duplicated-authority defect — and the two
+	// copies would be free to drift apart on the one question the confirm step
+	// exists to answer. ⛔ A COPIED CONFIRM IS THE FAILURE MODE THIS SHAPE AVOIDS.
+	//
+	// ⚠️ THE LOG NAMES THE ROUTE, NOT THE OUTCOME, AND IT IS DELIBERATELY *BEFORE*
+	// THE CALL. ConfirmPressed() prints its own outcome — "Accept pressed." on the
+	// live path, the Warning refusal otherwise — so a line here that claimed
+	// either would duplicate it in one case and contradict it in the other. What
+	// this line adds, and what nothing already in the file can supply, is WHICH
+	// DOOR the accept came through: two entry points ending in the same function
+	// are indistinguishable in a log, and that is precisely what a verifier is
+	// asked to tell apart.
+	UE_LOG(LogSiegeAssistant, Log,
+		TEXT("[AssistantConsole] Accept arrived through the MENU-NAV entry point (IA_MenuAccept -> ConfirmButton::OnClicked), not the positional `Z` key. The confirm below is the SAME one — this function adds no gate and no broadcast of its own."));
+
+	ConfirmPressed();
+}
+
 void USiegeAssistantConsoleWidget::CancelPressed()
 {
 	if (!bConfirmPromptVisible)
@@ -829,7 +858,19 @@ void USiegeAssistantConsoleWidget::HandleTextCommitted(const FText& CommittedTex
 
 void USiegeAssistantConsoleWidget::HandleConfirmClicked()
 {
-	ConfirmPressed();
+	// ⭐ TASK-1434: ROUTED THROUGH THE NAMED MENU-NAV DOOR rather than straight into
+	// ConfirmPressed(). ⛔ THIS IS NOT A BEHAVIOUR CHANGE, AND THE REASON IS
+	// STRUCTURAL RATHER THAN A PROMISE: the v1 code-authored tree constructs NO
+	// ConfirmButton (TASK-519), so `ConfirmButton` is null, so WireChildWidgets
+	// never makes the OnClicked binding and NOTHING CALLS THIS FUNCTION in the
+	// shipped build. The edit is observably inert today BY CONSTRUCTION.
+	//
+	// On the day a WBP_AssistantConsole supplies a ConfirmButton (ruling A(b)), this
+	// is exactly the path USiegeMenuInputSubsystem::HandleMenuAccept drives — it
+	// fires the focused UButton's OnClicked.Broadcast(), the SAME delegate a mouse
+	// click fires — so IA_MenuAccept and the mouse arrive at the same confirm
+	// through the same named door. See the class comment §5b.
+	MenuAcceptPressed();
 }
 
 // ⛔ HandleCancelClicked() STOOD HERE AND IS DELETED WITH ITS BUTTON (TASK-519 /

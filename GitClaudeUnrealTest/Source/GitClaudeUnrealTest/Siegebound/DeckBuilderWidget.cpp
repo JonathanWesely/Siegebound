@@ -11,15 +11,24 @@
 #include "Engine/GameInstance.h" // TASK-602: UGameInstance::GetSubsystem — resolve the ACC-§4 account seam at call time
 #include "Engine/LocalPlayer.h"  // TASK-1286: GetControllerId / GetSlateOperations — the TASK-1274 focus idiom, verbatim
 #include "Engine/Texture2D.h"
+#include "Engine/World.h"                // TASK-1423: UWorld::GetSubsystem — the menu-input subsystem is a UWorldSubsystem, reached through the WORLD (not the game instance)
+#include "EnhancedInputComponent.h"      // TASK-1423: UEnhancedInputComponent::BindAction / RemoveBindingByHandle — THE THIRD DOOR. The module is already a PublicDependency (EnhancedInput), added for the hero long before this row
 #include "Framework/Application/SlateApplication.h" // TASK-1286: SetUserFocus(EFocusCause::Navigation) — the ONLY cause that paints a focus rectangle
 #include "GameFramework/PlayerController.h"         // TASK-1286: GetOwningPlayer()->GetLocalPlayer()
 #include "GitClaudeUnrealTest.h"
+#include "InputAction.h"                 // TASK-1423: UInputAction — the complete type LoadObject<> needs for the six IA_Menu* assets
 #include "Kismet/GameplayStatics.h"
 #include "Siegebound/CardRow.h"
 #include "Siegebound/DeckLibrary.h"
 #include "Siegebound/DeckSlotEntryWidget.h" // TASK-671: the code-authored bar entry (DECK-§5)
 #include "Siegebound/SiegeAccountSubsystem.h" // TASK-602: USiegeAccountSubsystem — the ACC-§4 deck-slot seam (the class is TASK-600's, landing in the same batch — the TASK-442 parallel-header precedent)
 #include "Siegebound/SiegeDeckSaveGame.h"
+// TASK-1423 [MENU-NAV-DECKBUILDER-RELAYER]: complete type for RegisterMenuNavTarget /
+// UnregisterMenuNavTarget AND for the six public IA_ asset-path constants this row
+// loads by name. ⛔ This screen CALLS that public API and never edits it —
+// USiegeMenuInputSubsystem is TASK-1406's / TASK-1409's file. (The
+// USettingsMenuWidget.cpp:21-23 / USiegeGraphicsMenuWidget.cpp:26-28 note, cloned.)
+#include "Siegebound/SiegeMenuInputSubsystem.h"
 #include "Siegebound/SpellLibrary.h"
 #include "Siegebound/SummonedUnit.h" // TASK-379: GetDefault<ASummonedUnit>() needs the COMPLETE type for the two Sorcerer boost getters
 #include "UObject/UnrealType.h" // TASK-1286: CastField<FNameProperty> — reads the tile's own CardID variable (the HeroCharacter.cpp:48 precedent)
@@ -666,7 +675,46 @@ void UDeckBuilderWidget::NativeConstruct()
 	// its IsMenuUncovered() gate refuses this widget BY DESIGN and names it in
 	// its own comment (SiegeMenuInputSubsystem.cpp:191-193). That subsystem
 	// serves the shipped, hand-confirmed main menu (TASK-1274) and is untouched.
+	//
+	// ⚠️ TASK-1423 QUALIFIED THE LAST SENTENCE RATHER THAN DELETING IT, because it
+	// was true when written and a reader who remembers it must find its amendment
+	// here instead of concluding the file contradicts itself. The subsystem is
+	// STILL not edited — not one line of it — but it is now CALLED: this screen
+	// registers itself as the active nav target (TASK-1406's public API) and binds
+	// the six IA_Menu* actions TASK-1408 authored. What is untouched is that
+	// file; what changed is that this screen now announces itself to it.
 	// ------------------------------------------------------------------------
+
+	// ------------------------------------------------------------------------
+	// ⭐⭐ TASK-1423 [MENU-NAV-DECKBUILDER-RELAYER] — THE THIRD DOOR ARMS HERE, AND
+	// THE ORDER OF THESE THREE CALLS IS LOAD-BEARING IN BOTH DIRECTIONS.
+	//
+	// (1) BindMenuNavActions() — AFTER the deck bar is built. TASK-1417 measured
+	//     the general form of this law on the Graphics screen: arm against the
+	//     SEEDED tree, never the pre-seed one (it logged 24 stops for a screen that
+	//     had 2). Here the seeding is Super::NativeConstruct() at the top (which
+	//     fires the WBP's Event Construct, and THAT is what builds the card grid)
+	//     plus the bar loop above — both already done by this point.
+	//
+	// (2) RegisterAsMenuNavTarget() — AFTER (1) and BEFORE (3).
+	//     ⛔ Before (3) is the part worth reading twice. RegisterMenuNavTarget()
+	//     ends in FocusFirstNavStop(), which places the ring on this screen's stop
+	//     0 unless a stop already holds focus. The builder's ROOT is a UUserWidget
+	//     and therefore not a stop, so that guard cannot see the focus
+	//     AcquireBuilderFocus is about to take ⇒ registering AFTER (3) could move
+	//     the focus off this widget and paint a Navigation-cause rectangle around
+	//     whatever stop 0 turns out to be. Registering BEFORE (3) makes the
+	//     end-of-construct focus state BYTE-IDENTICAL to what shipped: whatever
+	//     FocusFirstNavStop did, AcquireBuilderFocus immediately re-takes the focus
+	//     onto this widget with EFocusCause::SetDirectly, exactly as before.
+	//     ⇒ THE FALSIFIER IS ONE LOG LINE: TASK-1307's POST-FLUSH read-back must
+	//     still print IDENTITY=MATCH. A NO-MATCH on this screen after this row is
+	//     this ordering being wrong, and nothing else.
+	//
+	// (3) AcquireBuilderFocus() — STILL LAST, for its own original reason.
+	// ------------------------------------------------------------------------
+	BindMenuNavActions();
+	RegisterAsMenuNavTarget();
 	AcquireBuilderFocus();
 }
 
@@ -1613,9 +1661,9 @@ bool UDeckBuilderWidget::AcquireBuilderFocus()
 	return bTookFocus && Focused == SelfSlate;
 }
 
-FReply UDeckBuilderWidget::HandleCardGridKey(const FKeyEvent& InKeyEvent)
+FReply UDeckBuilderWidget::HandleCardGridKey(const FKey& Key)
 {
-	const FKey Key = InKeyEvent.GetKey();
+	// ⭐ TASK-1423 — THE ONLY EDIT INSIDE THIS FUNCTION, AND IT IS THE SIGNATURE. `Key` used to be extracted here from an FKeyEvent; it now ARRIVES, because the third door (IA_Menu*) has no FKeyEvent to extract it from. ⛔ Every line below is byte-identical, deliberately including its addresses (DECK-§9 cites them by number).
 	const bool bGridFocused = IsCardGridFocusLive();
 
 	// (1) Accept / Remove — ONLY while a card tile actually holds the focus, so
@@ -1766,6 +1814,17 @@ FReply UDeckBuilderWidget::HandleCardGridKey(const FKeyEvent& InKeyEvent)
 	return FReply::Unhandled();
 }
 
+// ⛔ TASK-1423 — THE SLATE ADAPTER, ONE LINE, AND ITS ONE JOB IS THAT THE TWO
+// SHIPPED SLATE DOORS BELOW ARE NOT EDITED. They still read
+// `HandleCardGridKey(InKeyEvent)` character-for-character; only the floor under
+// them got thinner. ⛔ There is NO behaviour here to diverge from the FKey body —
+// the whole function is the extraction the FKey body used to do on its own first
+// line, moved up one frame so the third door can skip it.
+FReply UDeckBuilderWidget::HandleCardGridKey(const FKeyEvent& InKeyEvent)
+{
+	return HandleCardGridKey(InKeyEvent.GetKey());
+}
+
 FReply UDeckBuilderWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
 	// ⭐ TASK-1304 BLOCK A — THE PASS THAT MAKES THE ARROWS REACHABLE.
@@ -1803,6 +1862,323 @@ FReply UDeckBuilderWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FK
 	}
 
 	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  ⭐⭐ TASK-1423 [MENU-NAV-DECKBUILDER-RELAYER] — THE THIRD DOOR, AND IT IS A
+//  RELAY. Every line below routes an IA_Menu* action into HandleCardGridKey above.
+//  ⛔ There is no second key table here, no second navigator, no second focus
+//  model and no rule that is not already stated in the block at the top of
+//  HandleCardGridKey. If this section ever starts DECIDING something, it has
+//  become the defect this row exists to remove.
+//
+//  ⛔ WHY THE GRID CANNOT SIMPLY BE HANDED TO USiegeMenuInputSubsystem'S RING,
+//  STATED ONCE SO NOBODY RE-DERIVES IT (TASK-1423 (4b), corroborated at source):
+//    · GetMenuFocusStops() walks `Target->WidgetTree->ForEachWidget`, whose
+//      descent is a `UPanelWidget` cast (UWidgetTree::ForWidgetAndChildren) ⇒ a
+//      nested UUserWidget is VISITED but never DESCENDED INTO. The ten
+//      UDeckSlotEntryWidget bar entries and the N WBP_DeckCardTile tiles are
+//      nested UUserWidgets, so their inner UButtons are unreachable to it;
+//    · IsNavFocusStop() admits FOUR classes — UButton / UCheckBox / USlider /
+//      UEditableTextBox — and a tile is made focusable AS A UUserWidget
+//      (FocusCardTile above). ⇒ tree descent ALONE would still admit nothing;
+//    · and the ring here is TWO-DIMENSIONAL (ResolveGridColumns / StepCardFocusIndex),
+//      which a linear wrap over a flat stop list cannot express at all.
+//  ⇒ the correct general fix is subsystem-side and is ESCALATED in the handoff
+//  (SC-§50: a manager row, not a silent scope grab). This row moves the entry
+//  point, which is the half that fits inside the fence.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+void UDeckBuilderWidget::BindMenuNavActions()
+{
+	// ⛔ UNBIND FIRST. A UUserWidget survives RemoveFromParent/AddToViewport and
+	// NativeConstruct runs again on the SAME instance — the identical reuse fact
+	// TASK-1307's disarm guards against one field away. Without this, a second
+	// open would fire every key twice.
+	UnbindMenuNavActions();
+
+	APlayerController* PC = GetOwningPlayer();
+	UEnhancedInputComponent* EnhancedInputComp = PC ? Cast<UEnhancedInputComponent>(PC->InputComponent) : nullptr;
+	if (EnhancedInputComp == nullptr)
+	{
+		// Log, not Warning, and for the USettingsMenuWidget reason: the honest
+		// reading of a null here is "this builder is not running under a live local
+		// player" — the editor's widget preview, or the offline automation widget
+		// SiegeDeckSlotsTest.cpp builds. Both are ordinary. The Slate doors above
+		// are unaffected, so 🧑 his keyboard is unaffected.
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("UDeckBuilderWidget::BindMenuNavActions: no UEnhancedInputComponent on the owning player - the IA_Menu* lane is unavailable this session (the Slate key doors are unchanged, so real keys still work)."));
+		return;
+	}
+
+	// ⛔ THE ASSET NAMES ARE NOT RE-TYPED. They are read from the subsystem's own
+	// public constants, so this widget and USiegeMenuInputSubsystem can never bind
+	// two DIFFERENT assets that happen to share a name — the same reason TASK-1409
+	// quoted TASK-1408's literals character-for-character instead of retyping them.
+	// ⛔ LoadObject, not a UPROPERTY slot: WBP_DeckBuilder is authored art and this
+	// row may not touch a .uasset to add six soft pointers to it ((5)).
+	struct FMenuNavBinding
+	{
+		const TCHAR* AssetPath;
+		const TCHAR* ActionName;
+		void (UDeckBuilderWidget::*Handler)();
+	};
+	const FMenuNavBinding Bindings[] =
+	{
+		{ USiegeMenuInputSubsystem::MenuUpActionPath,     TEXT("IA_MenuUp"),     &UDeckBuilderWidget::HandleMenuNavUp     },
+		{ USiegeMenuInputSubsystem::MenuDownActionPath,   TEXT("IA_MenuDown"),   &UDeckBuilderWidget::HandleMenuNavDown   },
+		{ USiegeMenuInputSubsystem::MenuLeftActionPath,   TEXT("IA_MenuLeft"),   &UDeckBuilderWidget::HandleMenuNavLeft   },
+		{ USiegeMenuInputSubsystem::MenuRightActionPath,  TEXT("IA_MenuRight"),  &UDeckBuilderWidget::HandleMenuNavRight  },
+		{ USiegeMenuInputSubsystem::MenuAcceptActionPath, TEXT("IA_MenuAccept"), &UDeckBuilderWidget::HandleMenuNavAccept },
+		{ USiegeMenuInputSubsystem::MenuBackActionPath,   TEXT("IA_MenuBack"),   &UDeckBuilderWidget::HandleMenuNavBack   },
+	};
+
+	FString BoundNames;
+	FString MissingNames;
+	for (const FMenuNavBinding& Binding : Bindings)
+	{
+		// ⛔ DEGRADE OPEN, PER ACTION (the TASK-1409 idiom): a missing IA_MenuLeft
+		// makes LEFT inert and takes nothing else down with it. The absence is
+		// NAMED in the one line below rather than inferred from a dead key.
+		const UInputAction* Action = LoadObject<UInputAction>(nullptr, Binding.AssetPath);
+		if (Action == nullptr)
+		{
+			MissingNames += (MissingNames.IsEmpty() ? TEXT("") : TEXT(", "));
+			MissingNames += Binding.ActionName;
+			continue;
+		}
+
+		// ETriggerEvent::Started — byte-identical to the event
+		// USiegeMenuInputSubsystem binds these same six assets on
+		// (SiegeMenuInputSubsystem.cpp:180-199). A Boolean action with no explicit
+		// trigger fires Started ONCE on the actuation edge, so a held key or Aura's
+		// `hold_seconds` is ONE grid step, never a per-frame scroll. ⛔ Choosing a
+		// different event here would make the two lanes behave differently for the
+		// same press, which is the divergence this row exists to prevent.
+		MenuNavBindingHandles.Add(
+			EnhancedInputComp->BindAction(Action, ETriggerEvent::Started, this, Binding.Handler).GetHandle());
+
+		BoundNames += (BoundNames.IsEmpty() ? TEXT("") : TEXT(", "));
+		BoundNames += Binding.ActionName;
+	}
+
+	// ⛔ THE TWO SUMMARY STRINGS ARE MATERIALISED INTO NAMED LOCALS RATHER THAN
+	// BUILT IN THE UE_LOG ARGUMENT LIST, and that is the precedent this file
+	// already set at AcquireBuilderFocus (the `StopClassName` note): mixing
+	// `*FString` (a TCHAR*) with a `const TCHAR*` literal inside a ternary is legal
+	// but is exactly the shape a lifetime reader has to squint at. Here the values
+	// are complete before the call, so there is nothing to squint at.
+	if (BoundNames.IsEmpty())
+	{
+		BoundNames = TEXT("none");
+	}
+	const FString MissingClause = MissingNames.IsEmpty()
+		? FString(TEXT("; every IA_Menu* asset resolved"))
+		: FString::Printf(TEXT("; ABSENT, so THOSE keys are inert on this lane: %s"), *MissingNames);
+
+	// ⛔ Log, not Verbose. TASK-1307's own comment states the reason this file
+	// already obeys: a Verbose line that needs `Log LogGitClaudeUnrealTest Verbose`
+	// typed first prints NOTHING by default, and an EMPTY LOG READS AS A PASS. One
+	// line per builder open is cheap, and this is the line that discriminates "the
+	// relay never armed" from "it armed and the action did not arrive".
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("UDeckBuilderWidget::BindMenuNavActions: %d IA_Menu* action(s) bound (Started) on '%s' [%s]%s. ")
+		TEXT("Remove (Delete / Gamepad_FaceButton_Left) is NOT on this lane - TASK-1408 authored no IA_ action for it, so it stays Slate-only."),
+		MenuNavBindingHandles.Num(),
+		*PC->GetName(),
+		*BoundNames,
+		*MissingClause);
+}
+
+void UDeckBuilderWidget::UnbindMenuNavActions()
+{
+	if (MenuNavBindingHandles.Num() == 0)
+	{
+		return;
+	}
+
+	APlayerController* PC = GetOwningPlayer();
+	UEnhancedInputComponent* EnhancedInputComp = PC ? Cast<UEnhancedInputComponent>(PC->InputComponent) : nullptr;
+	if (EnhancedInputComp != nullptr)
+	{
+		// ⛔ BY HANDLE, never ClearActionBindings(): this component is SHARED with
+		// USiegeMenuInputSubsystem, which bound the same six assets on it at
+		// OnWorldBeginPlay. A blanket clear would silently kill main-menu
+		// navigation for the rest of the session and would look like a fix on the
+		// way past — the exact "wider than granted" shape TASK-1304 fenced Escape
+		// against.
+		for (const uint32 Handle : MenuNavBindingHandles)
+		{
+			EnhancedInputComp->RemoveBindingByHandle(Handle);
+		}
+	}
+
+	// Cleared even when the component was already gone (level teardown): the
+	// handles are meaningless without it, and leaving them would make a later
+	// UnbindMenuNavActions look like it had work to do.
+	MenuNavBindingHandles.Reset();
+}
+
+void UDeckBuilderWidget::HandleMenuNavUp()
+{
+	RouteMenuNavKey(EKeys::Up, TEXT("IA_MenuUp"));
+}
+
+void UDeckBuilderWidget::HandleMenuNavDown()
+{
+	RouteMenuNavKey(EKeys::Down, TEXT("IA_MenuDown"));
+}
+
+void UDeckBuilderWidget::HandleMenuNavLeft()
+{
+	RouteMenuNavKey(EKeys::Left, TEXT("IA_MenuLeft"));
+}
+
+void UDeckBuilderWidget::HandleMenuNavRight()
+{
+	RouteMenuNavKey(EKeys::Right, TEXT("IA_MenuRight"));
+}
+
+void UDeckBuilderWidget::HandleMenuNavAccept()
+{
+	RouteMenuNavKey(EKeys::Enter, TEXT("IA_MenuAccept"));
+}
+
+void UDeckBuilderWidget::HandleMenuNavBack()
+{
+	// ⛔ Gamepad_FaceButton_Right, ⛔ NOT EKeys::Escape. 🧑 His A-2 SCOPE ruling
+	// grants Escape to the card grid CONDITIONALLY and "nowhere else in this
+	// project"; IA_MenuBack is authored on Backspace + Gamepad_FaceButton_Right
+	// (TASK-1408) and this row widens that by exactly zero keys. The key chosen is
+	// one the SHIPPED table already names on the exit line, so no new gesture and
+	// no new state is introduced — it simply reaches the exit from the other lane.
+	RouteMenuNavKey(EKeys::Gamepad_FaceButton_Right, TEXT("IA_MenuBack"));
+}
+
+void UDeckBuilderWidget::RouteMenuNavKey(const FKey& Key, const TCHAR* ActionName)
+{
+	// ⚠️ READ ONCE AND HELD. IsCardGridFocusLive() walks the live panel tree
+	// (CollectCardTiles), so calling it from the log line, the guard below and
+	// HandleCardGridKey would be three walks per press. Two is the floor and it is
+	// deliberate: HandleCardGridKey MUST re-read it, because the repair below can
+	// legitimately change the answer between here and there. ⛔ Passing this bool
+	// down would be the start of a second decision path — the one thing this relay
+	// is forbidden to grow.
+	const bool bGridWasLive = IsCardGridFocusLive();
+
+	// ─── THE ENTRY INSTRUMENT, FIRST STATEMENT, UNCONDITIONAL ──────────────────
+	// TASK-1394's doctrine, applied to the door this row adds: placed after any
+	// branch it would print nothing in exactly the two cases a reader must tell
+	// apart — "the action never routed here" (no line at all) and "it ran and
+	// declined" (a line, then nothing changed). THAT ambiguity is what made
+	// TASK-1306 and TASK-1399 read `-1` three times without being able to say why.
+	// ⛔ Verbose, not Log, and the reason is that this one CAN fire per press while
+	// the builder is open; the once-per-open arm line above is the Log-level one a
+	// reader greps first, and it already proves the lane exists.
+	UE_LOG(LogGitClaudeUnrealTest, Verbose,
+		TEXT("UDeckBuilderWidget::RouteMenuNavKey: %s -> '%s' (FocusedCardIndex=%d, grid live=%s)."),
+		ActionName, *Key.ToString(), FocusedCardIndex,
+		bGridWasLive ? TEXT("yes") : TEXT("no"));
+
+	// ─── THE ONE PRECONDITION REPAIR. ⛔ NOT A KEY RULE. ────────────────────────
+	// USiegeMenuInputSubsystem binds its own IA_Menu* handlers at OnWorldBeginPlay,
+	// i.e. BEFORE this widget's NativeConstruct, so its delegate sits EARLIER in
+	// the component's binding array and runs FIRST on the very same press. Once
+	// this screen is registered its MoveFocus() is live over this tree and can put
+	// the ring on one of the builder's own UButtons — after which
+	// IsCardGridFocusLive() would read false and the grid would re-arm at index 0
+	// on every press instead of moving. ⇒ if the MODEL says the grid is armed and
+	// Slate disagrees, put the tile's focus back BEFORE dispatching.
+	// ⛔ It invents nothing: FocusCardTile(FocusedCardIndex) is the identical
+	// re-assert AcceptFocusedCard and RemoveFocusedCard already make for the
+	// WBP-rebuilt-the-grid case. ⛔ It is deliberately NOT added to the Slate doors:
+	// their behaviour must stay byte-identical to what TASK-1304 hand-confirmed.
+	// ⛔ And it cannot ARM the grid — FocusCardTile is a no-op on INDEX_NONE and
+	// this branch is not entered on INDEX_NONE at all, so "Down enters the grid"
+	// remains HandleCardGridKey's decision alone.
+	if (FocusedCardIndex != INDEX_NONE && !bGridWasLive)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("UDeckBuilderWidget::RouteMenuNavKey: model says card %d is focused but Slate disagrees - re-asserting the tile's focus before dispatch."),
+			FocusedCardIndex);
+		FocusCardTile(FocusedCardIndex);
+	}
+
+	// ⭐ THE ONE IMPLEMENTATION. The FReply is DISCARDED on purpose and the discard
+	// is meaningful rather than lazy: an FReply is Slate's "did a widget consume
+	// this event" currency, and an Enhanced Input action has no event to consume
+	// and no bubble to stop. Handled/Unhandled is already fully expressed here by
+	// whether the call changed anything — which is exactly what the verifier reads
+	// (FocusedCardIndex), not what a return value would have said.
+	HandleCardGridKey(Key);
+}
+
+void UDeckBuilderWidget::RegisterAsMenuNavTarget()
+{
+	USiegeMenuInputSubsystem* MenuInput = ResolveMenuInputSubsystem();
+	if (MenuInput == nullptr)
+	{
+		// Log, not Warning — the USettingsMenuWidget rationale, unchanged: a null
+		// here means "this world has no menu input" (an Editor/designer world, an
+		// offline test widget), and a builder that warns every time it is previewed
+		// is a builder whose log nobody reads.
+		UE_LOG(LogGitClaudeUnrealTest, Log,
+			TEXT("UDeckBuilderWidget::RegisterAsMenuNavTarget: no USiegeMenuInputSubsystem on this world - no nav-target registration and no focus-stop count this session (the card grid's own lanes are unaffected)."));
+		return;
+	}
+
+	// `this`, never a child and never a class default — the API takes the SCREEN
+	// and walks its own WidgetTree from there.
+	//
+	// ⭐⭐ TASK-1471 — THE ONLY EDIT THIS ROW MAKES TO THIS FILE, AND IT IS THIS
+	// ONE STATEMENT: the call moves from RegisterMenuNavTarget to
+	// RegisterSelfDrivingMenuNavTarget. ⛔ Nothing else in this class moves — no
+	// deck rule, no slot count, no auto-save, no right-click path, no key table,
+	// and ⛔ RouteMenuNavKey's precondition repair is NOT removed.
+	//
+	// ⚠️ WHAT IT DISCHARGES, MEASURED: qa/TASK-1427-verify.md read every
+	// IA_MenuDown pressed here moving the subsystem's GENERIC ring onto its stop 1
+	// — Overlay_19/VerticalBox_0/HorizontalBox_1/Button_1, the "Reset to Default"
+	// button, which WIPES 🧑 the player's deck and AUTO-SAVES the wipe — inside the
+	// press, before the repair pulled focus back to the tile. The repair converged
+	// every time and is kept as a net; this declaration removes the transit itself.
+	//
+	// ⛔ IT IS STILL A REGISTRATION, WHICH IS THE POINT AND NOT A DETAIL: the
+	// subsystem still stacks this screen, still logs LogNavTargetRetarget with THIS
+	// SCREEN'S focus-stop count (the EVENTGRAPH-CENSUS-GAP-RULED-2026-09-24
+	// instrument, and the reason RegisterAsMenuNavTarget exists at all — see this
+	// function's declaration comment), and still owns the in-match arm. What it
+	// stops doing is walking this tree with Up/Down, pressing its buttons with
+	// Accept, stepping its controls with Left/Right, and placing the ring on its
+	// stop 0 at registration. The six IA_Menu* bindings BindMenuNavActions() made
+	// are this widget's own and are untouched by the flag.
+	MenuInput->RegisterSelfDrivingMenuNavTarget(this);
+}
+
+void UDeckBuilderWidget::UnregisterAsMenuNavTarget()
+{
+	// ⛔ SILENT ON A NULL SUBSYSTEM, unlike Register (the USettingsMenuWidget
+	// asymmetry, and for the same reason): if there was nothing to register with
+	// there is nothing to give back, and the one place this is reached with a
+	// half-torn-down world is NativeDestruct, where a second line says nothing a
+	// reader could act on.
+	if (USiegeMenuInputSubsystem* MenuInput = ResolveMenuInputSubsystem())
+	{
+		// Idempotent by the subsystem's own contract: it removes by IDENTITY and
+		// LOGS (does not warn) when the screen was not on the stack.
+		MenuInput->UnregisterMenuNavTarget(this);
+	}
+}
+
+USiegeMenuInputSubsystem* UDeckBuilderWidget::ResolveMenuInputSubsystem() const
+{
+	// Null-safe at every hop — the USettingsMenuWidget::ResolveMenuInputSubsystem
+	// shape, cloned verbatim. ⛔ Reached through the WORLD, not the game instance:
+	// USiegeMenuInputSubsystem is a UWorldSubsystem, and it declines Editor worlds
+	// outright (DoesSupportWorldType = Game | PIE only), which is why a null answer
+	// is ordinary rather than an error.
+	const UWorld* World = GetWorld();
+	return World ? World->GetSubsystem<USiegeMenuInputSubsystem>() : nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -1845,6 +2221,43 @@ void UDeckBuilderWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTi
 
 void UDeckBuilderWidget::NativeDestruct()
 {
+	// ═══════════════════════════════════════════════════════════════════════════
+	//  ⭐⭐ TASK-1423 — THE EXIT LEG, AND IT IS THE LEG 🧑 HIS OWN COMPLAINT RIDES
+	//  ON: "if you exit the deck builder and go back to the main menu, the outline
+	//  is no longer there."
+	//
+	//  ⛔ FIRST STATEMENTS, LIFO against NativeConstruct's tail (register/bind go
+	//  last there, so they come back first here), and ⛔ BESIDE the existing
+	//  teardown below rather than instead of it — TASK-1417's measured law.
+	//
+	//  ⭐ WHY THIS IS REACHABLE AT ALL, WHICH IS THE (4) QUESTION THE ROW ASKED,
+	//  TRACED IN THE 5.8 SOURCE RATHER THAN ASSUMED: WBP_DeckBuilder's Exit path is
+	//  BP-opaque (there is no RemoveFromParent for the builder anywhere in Source/)
+	//  — but it does not need to be C++-VISIBLE, only C++-REACHED. The graph's
+	//  `RemoveFromParent(self)` drops the viewport's slot, which releases the last
+	//  reference to this widget's SObjectWidget; SObjectWidget::ResetWidget then
+	//  calls `WidgetObject->NativeDestruct()` (SObjectWidget.cpp:55-64, reached from
+	//  ~SObjectWidget at :52). ⇒ the unregister fires on the Blueprint exit WITHOUT
+	//  this row authoring one Blueprint node ((4): never author a BP edit inside a
+	//  code row). ⛔ What is NOT reachable from C++ is the CLOSE ITSELF, which is
+	//  why this widget deliberately implements no ISiegeMenuNavCloseTarget — see
+	//  the handoff's (4) declaration and the escalation to TASK-1454.
+	//
+	//  ⚠️ AND THE ONE HONEST WEAKNESS IN THAT CHAIN, NAMED RATHER THAN GLOSSED: it
+	//  is driven by a SHARED-POINTER release, so it is reachable but NOT guaranteed
+	//  to be SYNCHRONOUS with RemoveFromParent — anything else still holding a
+	//  TSharedPtr to that SObjectWidget defers it. ⇒ there is a window in which the
+	//  builder is out of the viewport and still on the nav stack.
+	//  ⭐ THAT WINDOW IS EXACTLY WHAT TASK-1406's NET COVERS, which is why the
+	//  weakness is a note and not a defect: GetRegisteredNavTarget() re-validates
+	//  IsInViewport() && IsVisible() on EVERY read and skips a removed screen, after
+	//  which IsNavTargetActionable() falls back to IsMenuUncovered() and TASK-1400's
+	//  0.2 s poll re-arms the main menu's top option — 🧑 his ask, unbroken even in
+	//  the deferred case. ⛔ A net is not a licence; the pair is still explicit.
+	// ═══════════════════════════════════════════════════════════════════════════
+	UnregisterAsMenuNavTarget();
+	UnbindMenuNavActions();
+
 	// ⛔ DISARM, not cancel — there is no timer handle and no lambda to dangle,
 	// because a tick cannot be delivered to a destroyed widget. What this guards
 	// is REUSE: a UUserWidget survives RemoveFromParent/AddToViewport, so a

@@ -18,6 +18,11 @@
 #include "SiegeAccountSubsystem.h"
 #include "SiegeCloudClient.h"
 #include "SiegeCloudSync.h"
+// TASK-1419 [MENU-NAV-LOGIN]: complete type for RegisterMenuNavTarget /
+// UnregisterMenuNavTarget / GetActiveNavTarget / GetMenuFocusStops. ⛔ This
+// screen CALLS that public API and never edits it — USiegeMenuInputSubsystem is
+// TASK-1406's file and is READ-ONLY to this row.
+#include "SiegeMenuInputSubsystem.h"
 
 namespace SiegeAccountMenuText
 {
@@ -478,10 +483,51 @@ void UAccountMenuWidget::NativeConstruct()
 	// in lands on LoggedIn (ACC-§5); guest lands on the Chooser; an
 	// unresolvable subsystem lands on the disabled fail-safe.
 	RefreshModeFromSubsystem();
+
+	// ------------------------------------------------------------------------
+	// TASK-1419 [MENU-NAV-LOGIN] — AFTER RefreshModeFromSubsystem() ON PURPOSE,
+	// and the reason is mechanical, not stylistic.
+	//
+	// RegisterMenuNavTarget() does three things in one call: it makes this
+	// screen the nav target, it LOGS the focus-stop count, and it PLACES the
+	// ring on stop 0. All three read the tree's live visible/enabled state, and
+	// RefreshModeFromSubsystem() is what settles that state — ApplyMode()
+	// collapses ten of the thirteen possible children, and its unhappy path
+	// then runs ShowUnavailable() → SetFormsEnabled(false). Registering first
+	// would log THIRTEEN focus stops for a screen that has THREE, and could
+	// park the ring on a control that is collapsed or disabled one line later.
+	// (The same ordering law TASK-1417 measured on the graphics panel, where
+	// registering early logged 24 for a screen that had 2.)
+	//
+	// ⛔ NOTHING ELSE IS ADDED HERE. No key handler, no focus call of our own,
+	// no navigation rules — USiegeMenuInputSubsystem owns Up/Down/Left/Right/
+	// Accept for the whole menu and this screen only tells it where to look.
+	//
+	// ⚠️ THE VIEWPORT ORDERING THIS DEPENDS ON was measured in the 5.8 source by
+	// TASK-1415 and is cited rather than re-derived: UGameViewportSubsystem::
+	// AddToScreen sets bIsManagedByGameViewportSubsystem and SlotInfo.
+	// FullScreenWidget BEFORE it calls TakeWidget() (GameViewportSubsystem.cpp
+	// :158/:177/:183), and TakeWidget is what runs RebuildWidget →
+	// OnWidgetRebuilt → NativeConstruct. ⇒ IsInViewport() and IsVisible() are
+	// ALREADY true on this line, which is what GetRegisteredNavTarget()
+	// re-validates on every read. THE FALSIFIER IS ONE LOG LINE: a "registered"
+	// retarget naming anything but this widget — or reporting the main menu's
+	// seven stops — means that ordering changed.
+	// ------------------------------------------------------------------------
+	RegisterAsMenuNavTarget();
 }
 
 void UAccountMenuWidget::NativeDestruct()
 {
+	// TASK-1419: FIRST STATEMENT, LIFO against NativeConstruct — navigation
+	// goes back before the delegates come down. This is the CATCH-ALL half of
+	// the pair: BackPressed() unregisters on the ordinary exit, and this one
+	// covers every other way the panel can stop existing (level travel,
+	// viewport teardown, a caller that removes this widget without going
+	// through BackPressed). Both firing is the normal case and is safe — see
+	// UnregisterAsMenuNavTarget.
+	UnregisterAsMenuNavTarget();
+
 	// Symmetric unbind (defensive - dynamic delegates tolerate dead objects,
 	// but a dismissed panel must not keep reacting to profile broadcasts).
 	if (USiegeAccountSubsystem* Account = ResolveAccountSubsystem())
@@ -665,6 +711,21 @@ void UAccountMenuWidget::BackPressed()
 	// underneath is already alive and already correct. Re-creating it would
 	// put navigation state in the leaf plus a soft asset path to get wrong.
 	UE_LOG(LogSiegeAccount, Log, TEXT("[AccountMenu] Back pressed - dismissing the account panel only."));
+
+	// ⛔ TASK-1419: UNREGISTER BEFORE RemoveFromParent(), NOT AFTER, and BESIDE
+	// this screen's own teardown rather than instead of it (there is none other
+	// than the log above — Back on this panel is deliberately RemoveFromParent
+	// and nothing else, ACC-§5, and that line below is untouched). The order is
+	// the subsystem's own stated contract (SiegeMenuInputSubsystem.cpp,
+	// UnregisterMenuNavTarget's closing comment: "an unregister runs from
+	// `BackPressed`, BEFORE `RemoveFromParent`"): unregistering while this
+	// widget is still in the viewport is what lets the subsystem see a coherent
+	// stack — it hands the ring to the next LIVE registered screen if there is
+	// one, and otherwise leaves the re-arm to TASK-1400's 0.2 s re-entry poll,
+	// the only path carrying the coverage check, so nothing can light up the
+	// main menu while this panel is still drawn.
+	UnregisterAsMenuNavTarget();
+
 	RemoveFromParent();
 }
 
@@ -709,6 +770,12 @@ void UAccountMenuWidget::HandleCloudStateChanged()
 	// sign-out, refresh). Only the cloud BLOCK re-derives - cloud state never
 	// changes the panel MODE and never gates a local flow (ACC-§11).
 	RefreshCloudBlock();
+
+	// TASK-1419: a cloud auth transition swaps LinkCloudButton for
+	// SyncNowButton (or disables whichever is shown), so an async broadcast can
+	// collapse the very stop the ring is on while the player is doing nothing.
+	// Guarded no-op unless that actually happened.
+	RefreshMenuNavRing();
 }
 
 void UAccountMenuWidget::HandleActiveProfileChanged()
@@ -835,6 +902,21 @@ void UAccountMenuWidget::ApplyMode(EAccountMenuMode NewMode)
 		// failure does NOT re-enter ApplyMode, so its error text survives.)
 		ShowCloudStatus(FString());
 	}
+
+	// ⛔ TASK-1419, AND IT IS THE LAST STATEMENT ON PURPOSE: every SetShown
+	// above, the SetFormsEnabled that may follow this call, and the
+	// RefreshCloudBlock() directly above it all move the focus-stop set, so the
+	// ring can only be re-placed once the new mode's tree has finished
+	// settling. ⚠️ THE CASE THIS EXISTS FOR IS THE FIRST THING A KEYBOARD USER
+	// DOES: the ring opens on CreateAccountButton (Chooser stop 0), Accept
+	// fires CreateAccountChosen() → ApplyMode(CreateForm), and CreateForm
+	// COLLAPSES CreateAccountButton — the widget the ring is standing on.
+	// Without this line the outline simply disappears, which is 🧑 his original
+	// complaint reproduced by the feature meant to fix it.
+	// ⛔ It is a guarded no-op in every other case (see RefreshMenuNavRing), so
+	// it costs one tree walk per mode change and emits no log line unless the
+	// ring actually fell off.
+	RefreshMenuNavRing();
 }
 
 void UAccountMenuWidget::ShowStatus(const FString& StatusMessage)
@@ -890,6 +972,13 @@ void UAccountMenuWidget::ShowUnavailable()
 
 	SetFormsEnabled(false);
 	ShowStatus(FString(SiegeAccountMenuText::Unavailable));
+
+	// TASK-1419: SetFormsEnabled(false) just took the Chooser from THREE stops
+	// to ONE (BackButton alone — it is deliberately absent from that list in
+	// both directions). If the ring was on one of the two it just killed, this
+	// moves it to Back; a panel whose only live control is unreachable by
+	// keyboard is the fail-safe failing safely in one direction only.
+	RefreshMenuNavRing();
 }
 
 void UAccountMenuWidget::SetFormsEnabled(bool bEnabled)
@@ -1365,6 +1454,14 @@ void UAccountMenuWidget::StartCloudRequest(const FString& BusyMessage)
 	SetEnabled(SubmitButton, false);
 	SetEnabled(LinkCloudButton, false);
 	SetEnabled(SyncNowButton, false);
+
+	// TASK-1419: the ring is very likely ON SubmitButton at this instant — a
+	// keyboard user reaches this lane by Accept-ing it — and the line above
+	// just disabled it, which removes it from the stop set. Move the ring to a
+	// live stop rather than leave it on a dead control for the length of an
+	// HTTP round trip. ⛔ Back is untouched here, as always, so there is always
+	// somewhere for it to go.
+	RefreshMenuNavRing();
 }
 
 void UAccountMenuWidget::FinishCloudRequest()
@@ -1379,6 +1476,11 @@ void UAccountMenuWidget::FinishCloudRequest()
 	// LoggedIn redraws its cloud rows (visibility + enables + steady text);
 	// outside LoggedIn this is a no-op and the async handler's own line stands.
 	RefreshCloudBlock();
+
+	// TASK-1419: the round trip is over and the stop set has grown back
+	// (SubmitButton re-enabled above, the cloud rows redrawn). Guarded no-op
+	// unless the ring came off during the request.
+	RefreshMenuNavRing();
 }
 
 void UAccountMenuWidget::ParseAuthPayload(const FString& Payload, FString& InOutUserId, FString& OutRefreshToken) const
@@ -1527,6 +1629,147 @@ void UAccountMenuWidget::HandleCloudRefreshResult(bool bOk, const FString& Paylo
 	// law orders none (Sync Now stays the player's lane, its pull now live per
 	// rider R2).
 	FinishCloudRequest();
+}
+
+// ============================================================================
+//  TASK-1419 [MENU-NAV-LOGIN] — THE SCREEN ANSWERS THE KEYBOARD.
+//
+//  Four short functions and NO new state. Everything that actually walks the
+//  tree, reads IsFocusable, places the ring and logs the count lives in
+//  USiegeMenuInputSubsystem (TASK-1406); this file's entire contribution is
+//  saying WHEN this screen is the one the player is looking at — and, because
+//  this panel is a MODE MACHINE rather than a fixed page, saying it again every
+//  time its own state change moves the row the ring is standing on.
+//
+//  ⛔ WHAT IS NOT HERE, ON PURPOSE: no NativeOnKeyDown, no
+//  NativeOnPreviewKeyDown, no SetKeyboardFocus, no navigation rule table, no
+//  IsFocusable write, no FReply anywhere. Each of those would put input
+//  handling back in the leaf widget, which is the defect the MENU-NAV epic is
+//  removing — and the first of them would absorb `Escape`, which AS-§6 A-2
+//  forbids project-wide and spec (4) forbids again by name.
+//
+//  ⛔ AND NOTHING BELOW TOUCHES A CREDENTIAL PATH (ACC-§2 / ACC-§11): no
+//  password, email, display name, hash, salt, token or SetCloudLink call is
+//  read or written here, and no box's text is read, set or cleared. The only
+//  thing these functions know about NameInputBox / PasswordInputBox /
+//  ConfirmPasswordInputBox / EmailInputBox is whether Slate focus is inside
+//  them — never what is in them.
+// ============================================================================
+
+void UAccountMenuWidget::RegisterAsMenuNavTarget()
+{
+	USiegeMenuInputSubsystem* MenuInput = ResolveMenuInputSubsystem();
+	if (MenuInput == nullptr)
+	{
+		// Log, not Warning: the honest reading of a null here is "this world has
+		// no menu input" (an Editor/designer world, or a cooked path where the
+		// subsystem declined), and an account panel that warns every time it is
+		// previewed is a panel whose log nobody reads. The screen still works
+		// with the mouse exactly as it did before this row — and ACC-§1 still
+		// holds either way: login gates nothing.
+		UE_LOG(LogSiegeAccount, Log,
+			TEXT("[AccountMenu] No USiegeMenuInputSubsystem on this world - the account panel is mouse-only (keyboard navigation is unavailable, not broken)."));
+		return;
+	}
+
+	// `this`, never a child and never a class default — the API takes the SCREEN
+	// and walks its own WidgetTree from there.
+	MenuInput->RegisterMenuNavTarget(this);
+}
+
+void UAccountMenuWidget::UnregisterAsMenuNavTarget()
+{
+	// ⛔ SILENT ON A NULL SUBSYSTEM, unlike Register. If there was no subsystem
+	// to register with there is nothing to give back, and the one place this is
+	// reached with a half-torn-down world is NativeDestruct — where a second log
+	// line would say nothing a reader could act on.
+	if (USiegeMenuInputSubsystem* MenuInput = ResolveMenuInputSubsystem())
+	{
+		// Idempotent by the subsystem's own contract: it removes by IDENTITY and
+		// logs (does not warn) when the screen was not on the stack, precisely so
+		// the BackPressed + NativeDestruct pairing is safe to run twice.
+		MenuInput->UnregisterMenuNavTarget(this);
+	}
+}
+
+void UAccountMenuWidget::RefreshMenuNavRing()
+{
+	USiegeMenuInputSubsystem* MenuInput = ResolveMenuInputSubsystem();
+	if (MenuInput == nullptr)
+	{
+		return;
+	}
+
+	// ─── GUARD 1: AM I STILL THE SCREEN THE PLAYER IS LOOKING AT? ────────────
+	// ⛔ This is what makes the five call sites safe to sprinkle. It is false
+	// BEFORE RegisterAsMenuNavTarget runs (so NativeConstruct's own
+	// RefreshModeFromSubsystem → ApplyMode cannot register early and defeat the
+	// ordering law above), false AFTER BackPressed unregisters (so a late HTTP
+	// completion landing on HandleCloudStateChanged cannot re-register a
+	// closing panel), and false whenever another screen is stacked on top of
+	// this one (so this helper can never steal the ring from it). A live read,
+	// never a cached bool — the same discipline the subsystem applies to focus.
+	if (MenuInput->GetActiveNavTarget() != this)
+	{
+		return;
+	}
+
+	APlayerController* PC = GetOwningPlayer();
+	if (PC == nullptr)
+	{
+		// No owning player ⇒ nothing can be asked about focus and nothing should
+		// be moved. Silent: the subsystem's own FocusWidget declines the same
+		// case the same way.
+		return;
+	}
+
+	// ─── GUARD 2: DOES A **LIVE** STOP STILL HOLD THE RING? ──────────────────
+	// The list is the subsystem's own walk of THIS screen (guard 1 established
+	// that GetActiveNavTarget() is this), so a stop that the mode change just
+	// collapsed or disabled is ALREADY GONE from it — which is exactly the
+	// discrimination this function needs and the reason it does not simply ask
+	// "is anything in my tree focused?" (a collapsed widget keeps Slate focus
+	// until something takes it away, so that question answers "yes" in the one
+	// case that matters).
+	TArray<UWidget*> Stops;
+	MenuInput->GetMenuFocusStops(Stops);
+	for (const UWidget* Stop : Stops)
+	{
+		// 🚨 THE `||` IS LOAD-BEARING AND IT IS MEASURED, NOT DEFENSIVE.
+		// UWidget::HasUserFocus is EXACT-widget (Widget.cpp:641 →
+		// FSlateUser::HasFocus, SlateUser.cpp:182-185: GetFocusedWidget() ==
+		// Widget), while SEditableTextBox::OnFocusReceived
+		// (SEditableTextBox.cpp:309-320) FORWARDS keyboard focus to its inner
+		// SEditableText. ⇒ a UEditableTextBox that is visibly wearing the ring
+		// reports HasUserFocus() == FALSE. With the first half alone this
+		// function would conclude "the ring fell off" every time the player is
+		// standing in a field and YANK IT BACK TO STOP 0 mid-typing — a
+		// regression manufactured by the fix. HasUserFocusedDescendants is the
+		// strict-descendant twin (SlateUser.cpp:192-195) and closes it.
+		if (Stop != nullptr && (Stop->HasUserFocus(PC) || Stop->HasUserFocusedDescendants(PC)))
+		{
+			return;
+		}
+	}
+
+	// The ring is on nothing this screen still offers. Re-registering is the
+	// whole remedy: RegisterMenuNavTarget removes-then-adds by identity (no
+	// duplicate entry), emits ONE retarget line carrying the NEW stop count —
+	// the count is the instrument, and a mode change is exactly when a reader
+	// wants it re-stated — and ends in FocusFirstNavStop(), which places the
+	// ring on the new mode's stop 0.
+	MenuInput->RegisterMenuNavTarget(this);
+}
+
+USiegeMenuInputSubsystem* UAccountMenuWidget::ResolveMenuInputSubsystem() const
+{
+	// Null-safe at every hop - the ResolveAccountSubsystem shape, cloned, with
+	// ONE deliberate difference: this subsystem is a UWorldSubsystem, so it is
+	// reached through the WORLD and not through the game instance. It also
+	// declines Editor worlds outright (DoesSupportWorldType = Game | PIE only),
+	// which is why a null answer is ordinary rather than an error.
+	const UWorld* World = GetWorld();
+	return World ? World->GetSubsystem<USiegeMenuInputSubsystem>() : nullptr;
 }
 
 USiegeAccountSubsystem* UAccountMenuWidget::ResolveAccountSubsystem() const

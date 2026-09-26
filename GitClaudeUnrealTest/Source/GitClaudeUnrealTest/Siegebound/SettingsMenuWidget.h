@@ -11,6 +11,7 @@ class UButton;
 class UCheckBox;
 class UTextBlock;
 class UVerticalBox;
+class USiegeMenuInputSubsystem;
 class USiegeSettingsSubsystem;
 
 /**
@@ -209,6 +210,71 @@ protected:
 
 	/** Null-safe subsystem resolve through this widget's world's game instance. */
 	USiegeSettingsSubsystem* ResolveSettingsSubsystem() const;
+
+	// ------------------------------------------------------------------------
+	// TASK-1415 [MENU-NAV-SETTINGS] — 🧑 "there also does not exist an outline
+	// that is scrollable with buttons in the setting menu either... we want to
+	// make sure everywhere in the menu can be scrollable with the outline and
+	// arrow keys such that an agent can navigate the entire menu."
+	//
+	// ⛔ THE WHOLE OF THIS ROW'S BEHAVIOUR IS TWO CALLS INTO TASK-1406's PUBLIC
+	// API. There is deliberately NO key handler here: USiegeMenuInputSubsystem
+	// owns Up / Down / Accept for the entire menu, and a NativeOnKeyDown on this
+	// widget would re-create the per-screen, wrong-layer input the MENU-NAV
+	// epic exists to remove. This screen does exactly one thing — it says "I am
+	// the screen the player is looking at" — and the subsystem does the rest.
+	//
+	// ⛔ THE FOCUS STOPS THIS SCREEN OFFERS, in WidgetTree traversal order:
+	//      0. ConfirmToggleCheckBox   (UCheckBox)
+	//      1. GraphicsButton          (UButton)
+	//      2. BackButton              (UButton)
+	//    i.e. THREE. BackdropBorder / RootPanel / TitleText /
+	//    ConfirmToggleLabelText / ConfirmToggleHintText / GraphicsLabelText /
+	//    BackLabelText are a UBorder, a UVerticalBox and five UTextBlocks —
+	//    none of them is one of the four admitted classes, so none is a stop.
+	//    ⚠️ The count drops to TWO in exactly one state: ShowRowUnavailable()
+	//    disables the check box when USiegeSettingsSubsystem cannot be resolved,
+	//    and a disabled widget is not a focus stop. That is correct — a dead row
+	//    should not eat a keypress — and it is why registration happens AFTER
+	//    SeedAndBind() rather than before it.
+	// ------------------------------------------------------------------------
+
+	/**
+	 *  Hand menu navigation to THIS screen. Called from NativeConstruct, after
+	 *  SeedAndBind, and paired with UnregisterAsMenuNavTarget on every exit.
+	 *
+	 *  ⭐ TASK-1406's RegisterMenuNavTarget also PLACES THE RING on stop 0, so
+	 *  the panel opens with the check box already outlined and the FIRST Down
+	 *  moves to stop 1 (GraphicsButton), not to stop 0. A reader expecting
+	 *  stop 0 after one Down will mis-read a working screen as broken.
+	 *
+	 *  Null-safe: no world or no subsystem ⇒ logged once at Log verbosity and
+	 *  the screen behaves exactly as it did before this row. Never fatal.
+	 */
+	void RegisterAsMenuNavTarget();
+
+	/**
+	 *  Give menu navigation back. Called from BOTH BackPressed() (before
+	 *  RemoveFromParent) and NativeDestruct() — the double call is deliberate
+	 *  and safe: USiegeMenuInputSubsystem::UnregisterMenuNavTarget removes by
+	 *  IDENTITY and logs-not-warns a second call for a screen already gone.
+	 *
+	 *  ⛔ IT IS NOT CALLED FROM GraphicsPressed(), AND THAT IS THE POINT.
+	 *  Registrations NEST (Settings @ ZOrder 10 → Graphics @ 20). Unregistering
+	 *  here when Graphics opens would drop navigation two layers down to
+	 *  WBP_MainMenu, so Graphics' Back would return the ring to the main menu
+	 *  instead of to this panel — which is still on screen and was never
+	 *  destroyed.
+	 */
+	void UnregisterAsMenuNavTarget();
+
+	/**
+	 *  Null-safe resolve of the menu-input subsystem. ⚠️ Unlike
+	 *  USiegeSettingsSubsystem this one lives on the WORLD, not the game
+	 *  instance, and it declines Editor worlds outright, so a null answer is
+	 *  ordinary rather than an error.
+	 */
+	USiegeMenuInputSubsystem* ResolveMenuInputSubsystem() const;
 
 	/**
 	 *  Builds the code-authored tree. Called from RebuildWidget() BEFORE

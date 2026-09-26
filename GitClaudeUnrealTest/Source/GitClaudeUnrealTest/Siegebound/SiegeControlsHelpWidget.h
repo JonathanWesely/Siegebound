@@ -23,6 +23,9 @@ class UWidgetSwitcher;
 class USiegeControlsDetailWidget;
 class USiegeControlsHelpRowWidget;
 class USiegeKeyboardLayoutSubsystem;
+// TASK-1432 — forward-declared, ⛔ never included here: the overlay talks to the menu-input
+// subsystem from exactly two call sites in the .cpp and this header stays free of it.
+class USiegeMenuInputSubsystem;
 
 /** The controls overlay's own log lane (the LogSiegeWarMap / LogSiegeAccount house shape). */
 DECLARE_LOG_CATEGORY_EXTERN(LogSiegeControlsHelp, Log, All);
@@ -548,8 +551,36 @@ private:
  *      order pages render PickMode.Confirm (the three circles, in order), PickMode.Resize and
  *      PickMode.Cancel underneath their own prose, each with its LIVE-DERIVED chip.
  *
+ *  ═══ 🚨🚨🚨 ⭐⭐ TASK-1484 [CONTROLS-HELP-DETAIL-SCROLL] — 🧑 HIS RULING, AND WHAT IT ADDED ═══
+ *  🧑 He was offered *"count the screen, name the residual"* and chose the STRICTER reading of his
+ *  own standing goal (*"the agent should do everything a human tester can"*): ⛔ **it is not
+ *  navigable until an agent can SCROLL.** A human WHEEL-SCROLLS this page to read it — the author
+ *  expects overflow (`AlwaysShowScrollbar` + `WhenScrollingPossible`) — and until this row there
+ *  was ⛔ no keyboard/agent route to the prose below the fold ⛔ at all.
+ *
+ *  ⛔ THE MECHANISM THAT WAS BROKEN, MEASURED BY `qa/TASK-1479.md` AND ⛔ NOT RE-DERIVED HERE: the
+ *  page presented ⛔ ONE stop (`BackButton`) ⇒ `MoveFocus` re-requested focus on the widget that
+ *  ⛔ ALREADY HELD IT ⇒ `SetUserFocus` early-returned on *"focus has not changed"* ⇒
+ *  `OnFocusChanging` ⛔ never fired ⇒ the `ScrollWidgetIntoView` hook had ⛔ no subject. ⛔ And
+ *  `BackButton` is a ⛔ SIBLING of `DetailScrollBox`, ⛔ never a descendant, so focusing it could not
+ *  drive the box either.
+ *
+ *  ⇒ ⛔ THE ANSWER IS A ⛔ SECOND STOP WHOSE ⛔ ACTIVATION PAGES THE BODY: `DetailScrollButton` →
+ *  `AdvanceBodyScroll()`. ⛔ It is reachable on the ⛔ SHIPPED, PROVEN vocabulary — `IA_MenuDown`
+ *  moves the ring onto it (a move that ⛔ now really changes focus, because there are ⛔ two stops),
+ *  and `IA_MenuAccept` broadcasts its `OnClicked` — so ⛔ no new key, ⛔ no new binding and ⛔ no
+ *  subsystem edit were needed. ⛔ The obvious "make the `UScrollBox` focusable" was ⛔ MEASURED both
+ *  ⛔ FORBIDDEN (⭐ `TASK-1432` (2)) and ⛔ INEFFECTIVE (a `UScrollBox` is not one of
+ *  `IsNavFocusStop`'s four admitted classes) ⇒ it would ⛔ break a rule to accomplish ⛔ zero.
+ *
+ *  🧑 ⛔ THE HUMAN PATH IS UNCHANGED BYTE-FOR-BYTE: the wheel still scrolls, the scrollbar still
+ *  shows, `WhenScrollingPossible` / `AlwaysShowScrollbar` / `SetIsFocusable(false)` on the box are
+ *  ⛔ untouched. ⛔ The ONLY visible delta is ⛔ one button below Back — ⛔ declared for 🧑 him rather
+ *  than adjudicated here (`AS-§6 A(e)` / `HELP-§6`).
+ *
  *  ⛔⛔ `Escape` IS UNTOUCHED HERE TOO (`AS-§6 A-2` — PERMANENT; `HELP-§5`). This class overrides
- *  NO key handler of any kind. It returns to the list on its own Back button; the OVERLAY closes
+ *  NO key handler of any kind — ⛔ still true after TASK-1484, which added a ⛔ BUTTON and ⛔ not a
+ *  key claim. It returns to the list on its own Back button; the OVERLAY closes
  *  on the toggle key or its Close button, and that is still the complete list.
  *
  *  ⛔ IT IS NOT A SECOND CURSOR OWNER. There is ⛔ no SetInputMode and ⛔ no bShowMouseCursor in
@@ -602,6 +633,36 @@ public:
 	 */
 	void RequestBack();
 
+	/**
+	 *  🚨🚨🚨 ⭐⭐ TASK-1484 [CONTROLS-HELP-DETAIL-SCROLL] — ⛔ THE PROSE BODY MOVES ⛔ ONE SCREENFUL,
+	 *  AND THIS IS THE ⛔ WHOLE OF THE FEATURE 🧑 HE RULED BLOCKING: *"it isn't navigable until an
+	 *  agent can scroll."*
+	 *
+	 *  Advances `DetailScrollBox` by `DetailScrollPageFraction` of its own VISIBLE height and
+	 *  ⛔ WRAPS TO THE TOP once it is already at the end, so ⛔ every offset on a page of ⛔ any
+	 *  length is reachable from ⛔ this one control. ⛔ Returns ⛔ TRUE IFF THE OFFSET ACTUALLY
+	 *  CHANGED — ⛔ never "the handler ran".
+	 *
+	 *  ⭐⭐ ⛔ THE RETURN VALUE AND THE LOG LINE ARE ⛔ THE 5b INSTRUMENT, AND THEY ARE ⛔ BUILT TO
+	 *  BE ABLE TO FAIL: the definition reads the offset ⛔ BEFORE and ⛔ AFTER the write and prints
+	 *  ⛔ BOTH at `Log` (⛔ not `Verbose` — an absent line is a ZERO and a defect signature, and
+	 *  `LogSiegeControlsHelp` is `(…, Log, All)`). ⛔ A page whose content FITS has
+	 *  `GetScrollOffsetOfEnd() == 0`, so both numbers read `0.0` and this returns ⛔ false — ⛔ a
+	 *  real negative, ⛔ not a silence. ⚖️ *An offset that moved is a claim about the SCREEN; a
+	 *  handler that ran is only a claim about the code.*
+	 *
+	 *  ⛔ PUBLIC AND PARAMETERLESS (`SC-§33` is structurally unreachable): the ⛔ ONE caller today is
+	 *  this page's own `DetailScrollButton` thunk, and it is public so a test or a later screen-side
+	 *  caller can drive the seam with ⛔ no viewport — the `RequestBack()` precedent, cloned.
+	 *
+	 *  ⛔ IT TOUCHES ⛔ NOTHING ELSE: ⛔ no focus call, ⛔ no visibility write, ⛔ no registration,
+	 *  ⛔ no input, ⛔ no `SetActiveWidgetIndex`, ⛔ no `Escape`, and ⛔ not one of the scroll box's
+	 *  AUTHORED properties (`AlwaysShowScrollbar`, `WhenScrollingPossible` and `IsFocusable(false)`
+	 *  are ⛔ read by nothing here and ⛔ written by nothing here) ⇒ 🧑 THE HUMAN WHEEL PATH IS
+	 *  ⛔ BYTE-FOR-BYTE WHAT SHIPPED.
+	 */
+	bool AdvanceBodyScroll();
+
 	/** ⭐ THE VIEW'S HALF OF THE BACK SEAM. Bound by the overlay; ⛔ nothing else may bind it. */
 	FOnSiegeControlsDetailBackRequested OnBackRequested;
 
@@ -616,6 +677,14 @@ protected:
 	/** OnClicked thunk for BackButton (a dynamic delegate needs a UFUNCTION). Forwards to RequestBack(). */
 	UFUNCTION()
 	void HandleBackButtonClicked();
+
+	/**
+	 *  ⭐ TASK-1484 — OnClicked thunk for `DetailScrollButton`. Forwards to `AdvanceBodyScroll()`.
+	 *  ⛔ A `UFUNCTION` for the same reason its neighbour is one: `UButton::OnClicked` is a DYNAMIC
+	 *  multicast delegate and will not bind a plain member.
+	 */
+	UFUNCTION()
+	void HandleScrollButtonClicked();
 
 	/** Builds the code-authored tree. Called from RebuildWidget() BEFORE Super — the order is load-bearing. */
 	void ConstructDetailTree();
@@ -634,7 +703,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|ControlsHelp", meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> DetailBackdrop;
 
-	/** header / summary / scrolling body / back. */
+	/** header / summary / scrolling body / back / scroll (⭐ TASK-1484 appended the last one, ⛔ last on purpose). */
 	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|ControlsHelp", meta = (BindWidgetOptional))
 	TObjectPtr<UVerticalBox> DetailColumn;
 
@@ -682,6 +751,39 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|ControlsHelp", meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> BackLabelText;
 
+	/**
+	 *  🚨🚨 ⭐⭐ TASK-1484 — ⛔ THE PAGE'S ⛔ SECOND FOCUS STOP, AND THE ⛔ ONLY REASON IT EXISTS IS
+	 *  THAT A ⛔ KEYBOARD/AGENT LANE ⛔ CANNOT REACH THE PROSE BELOW THE FOLD WITHOUT ONE.
+	 *
+	 *  ⛔ IT IS A `UButton` BECAUSE ⛔ THAT IS WHAT THE SHIPPED VOCABULARY CAN DRIVE, ⛔ not because a
+	 *  button is the prettiest affordance: `USiegeMenuInputSubsystem::IsNavFocusStop` admits ⛔ four
+	 *  classes (`UButton` / `UCheckBox` / `USlider` / `UEditableTextBox`) and `HandleMenuAccept`
+	 *  gives ⛔ exactly one of them a press (`Focused->OnClicked.Broadcast()`). ⇒ ⛔ a `UScrollBox`
+	 *  could never have been the answer (⭐ `TASK-1432` (2)'s standing ruling ⛔ AND the class list).
+	 *
+	 *  🚨 ⛔ IT IS THE ⛔ LAST CHILD OF `DetailColumn`, AND THE POSITION IS ⛔ LOAD-BEARING, ⛔ NOT
+	 *  LAYOUT TASTE: `GetMenuFocusStops` returns depth-first ⛔ PRE-ORDER, so a stop added ⛔ after
+	 *  `BackButton` leaves ⛔ STOP 0 = `BackButton` exactly where ⭐ `TASK-1478` declared it. ⛔ Put it
+	 *  earlier and the ring would land somewhere else the moment a detail page opens, and that
+	 *  sentence is ⛔ already written into three comments and one runtime expectation.
+	 *
+	 *  🚨🚨 ⛔ ITS NAME AND ITS LABEL ARE ⛔ BOTH SAFETY PROPERTIES — ⛔ DO NOT "TIDY" EITHER.
+	 *  `DetailColumn` now holds ⛔ EXACTLY TWO `UButton`s, which ⛔ PASSES the count guard in
+	 *  `USiegeMenuInputSubsystem::FindStepperPair`. ⛔ The only things that keep this pair from being
+	 *  read as a STEPPER are its ⛔ two discriminators: (i) neither name ends in `PrevButton` or
+	 *  `NextButton` with a shared base, and (ii) neither label is the bare glyph `<` or `>`.
+	 *  ⛔ BREAK EITHER AND TWO THINGS HAPPEN AT ONCE, ⛔ both silent: `IsNavFocusStop` ⛔ DROPS the
+	 *  `Next` member from the ring, and `StepFocusedStop` makes `IA_MenuLeft`/`IA_MenuRight` ⛔ PRESS
+	 *  the partner — i.e. an arrow key would ⛔ LEAVE THE PAGE. (`USettingsMenuWidget`'s footer is the
+	 *  shipped precedent for a two-button parent that is correctly refused.)
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|ControlsHelp", meta = (BindWidgetOptional))
+	TObjectPtr<UButton> DetailScrollButton;
+
+	/** ⭐ TASK-1484 — the scroll control's content text. ⛔ It names a DIRECTION, ⛔ never a key (`HELP-§1`/`HELP-§4`). */
+	UPROPERTY(BlueprintReadOnly, Category = "Siegebound|ControlsHelp", meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> DetailScrollLabelText;
+
 private:
 
 	/**
@@ -728,14 +830,36 @@ private:
  *  ---------------------------------------------------------------------------
  *  §2 ⛔⛔ `Escape` IS NEVER TOUCHED (`AS-§6 A-2`, `HELP-§5` — a PERMANENT Jonathan ruling)
  *  ---------------------------------------------------------------------------
- *  ALL THREE classes in this pair — this one, USiegeControlsHelpRowWidget and
- *  USiegeControlsDetailWidget — override NO key handler at all: no NativeOnKeyDown, no
- *  NativeOnPreviewKeyDown, no Enhanced Input action of their own, no Slate FReply::Handled()
- *  on any key, no viewport intercept. The token `Escape` appears in this file ONLY as
- *  documentation prose (the two cancel rows' data and their detail text), never in a handler.
+ *  ⛔⛔ CORRECTED 2026-09-25 BY TASK-1432 (`SC-§53` — the repair lands and the paragraph
+ *  describing the pre-repair state must NOT be left behind). ⛔ THE PREMISE BELOW CHANGED;
+ *  ⭐ THE CONCLUSION DID NOT, AND THE CHANGE IS WHAT KEEPS THE CONCLUSION TRUE.
+ *
+ *  ~~"ALL THREE classes … override NO key handler at all: no NativeOnKeyDown, no
+ *  NativeOnPreviewKeyDown, …"~~ ⇒ ⛔ NO LONGER TRUE OF THIS CLASS. `USiegeControlsHelpWidget`
+ *  now overrides ⛔ EXACTLY ONE handler — `NativeOnPreviewKeyDown` — and it answers to
+ *  ⛔ EXACTLY ONE key: the DERIVED `IA_ControlsHelp` toggle this screen already owned.
+ *  ✅ USiegeControlsHelpRowWidget and USiegeControlsDetailWidget still override NONE.
+ *  ✅ There is still no NativeOnKeyDown anywhere, no Enhanced Input action of this widget's
+ *  own, and no viewport intercept, in any of the three.
+ *
+ *  ⛔ WHY IT HAD TO EXIST, AND WHY IT IS NOT A WIDENING: TASK-1432 makes `CloseButton` a
+ *  keyboard focus stop so the overlay can be closed without the mouse. MEASURED at engine
+ *  source, the moment ANY widget here holds Slate focus, `Tab` is consumed as "focus next"
+ *  (`SWidget::OnKeyDown` → `FReply::Handled().SetNavigation`, with `bTabNavigation` true by
+ *  default) and ⛔ never reaches `SViewport` → Enhanced Input → IA_ControlsHelp — there is no
+ *  game-viewport fallback for an unhandled key. ⇒ WITHOUT this handler the toggle would have
+ *  ⛔ SILENTLY STOPPED CLOSING THE OVERLAY and the close list would have HALVED.
+ *  ⛔ The handler refuses `Escape` FIRST and unconditionally, and it derives its key rather
+ *  than naming one (`HELP-§1`/`HELP-§4`); it binds, maps and remaps NOTHING (`KBD-§1`/`§2`).
+ *
+ *  The token `Escape` appears in this file ONLY as documentation prose (the two cancel rows'
+ *  data and their detail text) and as that ONE refusal guard — ⛔ never as a claim on the key.
  *  ⇒ THE OVERLAY CLOSES ON TAB (the toggle) AND ON ITS OWN CLOSE BUTTON. That is the
  *  COMPLETE list, and it did NOT grow when the detail view landed: that view returns to the
  *  LIST on its own Back button, which is a different thing from closing (TASK-707).
+ *  ⛔ Nor did it grow with TASK-1432: BOTH shipped routes are preserved and the keyboard now
+ *  reaches both — `Enter`/`Space` on the focused Close button (Slate's own Accept path), and
+ *  the toggle key through the handler above.
  *  ⭐ AND IT IS WHY THAT CONTROL IS A BUTTON: the only key a "go back" affordance would
  *  naturally have claimed is `Escape`, and `Escape` is permanently unavailable.
  *  Every shipped cancel route — placement, spell targeting, the group-order pick — keeps
@@ -746,7 +870,11 @@ private:
  *  ---------------------------------------------------------------------------
  *  This widget contains ⛔ NO SetInputMode and ⛔ NO bShowMouseCursor write. It shows and
  *  hides itself; ASiegePlayerController::SetControlsHelpOpen owns the posture and is the
- *  SIXTH term in that one composition (SiegePlayerController.cpp:4357). A direct posture call
+ *  SIXTH term in that one composition (SiegePlayerController.cpp:6457 — ⛔ re-measured by
+ *  TASK-1432 under `SC-§53`/`HELP-§2`'s citation-rot bullet; the cited line had drifted to
+ *  :4357, which today lands in an unrelated formation comment. ⚠️ A LINE NUMBER IS A CITATION
+ *  THAT ROTS: the anchor that does not is the expression itself, `const bool bWantCursor = …`).
+ *  A direct posture call
  *  from a widget is the defect that booted the arena input-dead and cost a playtest (TASK-074).
  *  OnHelpOpenChanged exists so a Close-BUTTON close — a route the controller never sees —
  *  still releases the posture (the UWarMapWidget::OnMapOpenChanged precedent).
@@ -910,6 +1038,63 @@ protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+
+	/**
+	 *  ⭐⭐ TASK-1432 — THE ONE KEY THIS SCREEN ANSWERS, AND IT IS THE KEY IT ⛔ ALREADY OWNED.
+	 *
+	 *  🚨 WHY IT HAD TO EXIST THE MOMENT `CloseButton` BECAME A FOCUS STOP — ⛔ MEASURED AT
+	 *  ENGINE SOURCE, ⛔ NOT REASONED FROM THE DOCS:
+	 *    • `FNavigationConfig::GetNavigationDirectionFromKey` maps ⛔ `Tab` → `EUINavigation::Next`
+	 *      whenever `bTabNavigation` is set, which the default ctor sets ⛔ true
+	 *      (`Slate/Private/Framework/Application/NavigationConfig.cpp:9`, `:68-77`). This project
+	 *      installs ⛔ no custom navigation config (census: 0 `SetNavigationConfig` calls).
+	 *    • `SButton::OnKeyDown` forwards every non-Accept key to `SBorder`→`SWidget::OnKeyDown`
+	 *      (`Slate/Private/Widgets/Input/SButton.cpp:293-320`), and `SWidget::OnKeyDown` returns
+	 *      ⛔ `FReply::Handled().SetNavigation(...)` for any navigation key when the widget
+	 *      `SupportsKeyboardFocus()` (`SlateCore/Private/Widgets/SWidget.cpp:416-429`).
+	 *    • `FSlateApplication::ProcessKeyDownEvent` has ⛔ NO game-viewport fallback: an unhandled
+	 *      key goes to `UnhandledKeyDownEventHandler`, which is bound ⛔ only by the editor's main
+	 *      frame (`SlateApplication.cpp:5065-5069`; sole binder `MainFrameActions.cpp:97`).
+	 *  ⇒ ⛔ **ONCE ANYTHING IN THIS OVERLAY HOLDS SLATE FOCUS, `Tab` IS EATEN AS "FOCUS NEXT" AND
+	 *  ⛔ NEVER REACHES `SViewport` → Enhanced Input → `IA_ControlsHelp`.** Without this override
+	 *  the row would have shipped a screen that ⛔ silently lost one of its ⛔ TWO ways out.
+	 *
+	 *  ⛔ THAT IS A LAW-LEVEL BREAK, NOT A NICETY: `HELP-§5` states the close list is "the toggle
+	 *  key and/or its own on-screen Close button — that is the complete list", and the shipped
+	 *  R-24 detail prose tells the player so in as many words (`SiegeControlsHelpWidget.cpp`, the
+	 *  `Interface.ControlsHelp` row: *"It closes on {Interface.ControlsHelp} or its own Close
+	 *  button, and that is the complete list"*). ⛔ Halving the list would have made ⛔ shipped
+	 *  player-facing prose FALSE with every gate green — ⛔ `HELP-§2` mechanism 4's exact failure
+	 *  mode, on the one screen that can contradict the game to the player's face.
+	 *
+	 *  ⭐ PREVIEW (TUNNEL), ⛔ NOT `NativeOnKeyDown` (BUBBLE), AND THE CHOICE IS FORCED: the bubble
+	 *  starts at the ⛔ focused leaf, so `CloseButton`'s `SButton` would consume `Tab` before any
+	 *  ancestor saw it. The tunnel runs ⛔ root→leaf along the same focus path
+	 *  (`SlateApplication.cpp:5024-5041`), and `SObjectWidget::OnPreviewKeyDown` forwards here
+	 *  unconditionally (`UMG/Private/Slate/SObjectWidget.cpp:221-229`).
+	 *
+	 *  ⛔⛔ `Escape` IS REFUSED FIRST AND UNCONDITIONALLY. `HELP-§5` is a CLOSED 🧑 Jonathan
+	 *  ruling that names ⛔ `NativeOnPreviewKeyDown` ⛔ by name as a forbidden route for it.
+	 *
+	 *  ⛔ NOTHING IS BOUND, MAPPED OR REMAPPED HERE (`KBD-§1`/`§2`, `HELP-§1`'s read-only clause):
+	 *  this is a ⛔ READ of `QueryKeysMappedToAction` through the row registry — the ⛔ same
+	 *  accessor and the ⛔ same row the key chip and the hint line already read. ⛔ No key is
+	 *  typed, no context is mutated, no `MapKey`/`UnmapKey` exists on this path.
+	 *
+	 *  ⛔ NO DOUBLE-FIRE IS POSSIBLE, BY CONSTRUCTION: this runs only when the overlay is in the
+	 *  focus path, and in exactly that state the viewport is ⛔ not, so Enhanced Input's
+	 *  `IA_ControlsHelp` binding cannot also fire. The two lanes are ⛔ mutually exclusive.
+	 *
+	 *  🚨 ⭐ TASK-1478 — ⛔ THE FOCUSABLE SET GREW FROM ⛔ ONE BUTTON TO ⛔ `RowWidgets.Num()` + 2,
+	 *  AND THIS HANDLER IS ⛔ UNCHANGED — ⛔ a re-measurement, ⛔ not an omission. The sentence in
+	 *  bold above already says *"once ⛔ ANYTHING in this overlay holds Slate focus"*, and the cover
+	 *  is a property of the ⛔ TREE'S SHAPE rather than of which button is focusable: the preview
+	 *  phase runs along the focused widget's ⛔ ANCESTOR CHAIN, and ⛔ every `RowButton` and
+	 *  `BackButton` is a ⛔ DESCENDANT of this overlay ⇒ this widget is on that path ⛔ for all of
+	 *  them, ⛔ by construction. ⛔ The full re-derivation, including the new mouse-click-focuses-a-row
+	 *  case, is at the function's definition in the `.cpp`.
+	 */
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	//~ End UUserWidget interface
 
 	/**
@@ -920,6 +1105,30 @@ protected:
 	 *  overlay's ONE registration in ApplyCursorInputState() covers both views (TASK-074's law).
 	 *  ⛔ It claims no key. An unknown id, a missing switcher or a missing view all leave the
 	 *  LIST on screen and log — ⛔ never a blank page and ⛔ never a screen with no way out.
+	 *
+	 *  ⭐ TASK-1432 QA LOOP 1 — ⛔ IT ALSO ~~⛔ GIVES THE MENU RING BACK~~, and that is not a detail:
+	 *  this screen's only focus stop (`CloseButton`) lives in the switcher's ⛔ LIST slot, and a
+	 *  `SWidgetSwitcher` refuses focus to its inactive slot while ⛔ leaving every visibility flag
+	 *  alone — so a registration held across this call would report ⛔ 1 stop that ⛔ CANNOT take
+	 *  focus and would ⛔ SWALLOW the ring. Guarded on a real list→detail edge and on `bHelpOpen`.
+	 *  ⛔ The measurement and the three rejected alternatives are at the call site.
+	 *
+	 *  🚨 ⭐ TASK-1478 — ⛔ IT NOW ⛔ MOVES THE RING INSTEAD OF ⛔ SURRENDERING IT (`SC-§120`: the
+	 *  paragraph above is kept because its ⛔ measurement of the switcher is ⛔ still exactly right —
+	 *  what expired is ⛔ which remedies were available). ⛔ `BackButton` is now focusable and the
+	 *  walker now ⛔ descends into `DetailView`'s tree, so the detail page ⛔ HAS a ring of its own:
+	 *  ~~⛔ `{ BackButton }`, ⛔ exactly one, ⛔ by the structure of `ConstructDetailTree`.~~
+	 *  ⭐⭐ TASK-1484 — ⛔ **`{ BackButton, DetailScrollButton }`, ⛔ exactly TWO**, ⛔ still by the
+	 *  STRUCTURE of `ConstructDetailTree` rather than by a tally (it builds ⛔ those two `UButton`s
+	 *  and ⛔ no other admitted-class widget, ⛔ however many related blocks a page grows).
+	 *  ⛔ `BackButton` is ⛔ STILL STOP 0: the new stop is the ⛔ LAST child of `DetailColumn` and the
+	 *  walker is depth-first ⛔ PRE-ORDER ⇒ ⛔ every sentence in this file about WHERE the ring lands
+	 *  on a detail page is ⛔ unchanged. ⛔ This
+	 *  function therefore ⛔ RE-REGISTERS on the list→detail edge, and `RegisterMenuNavTarget`'s
+	 *  closing `FocusFirstNavStop()` ⛔ re-places the outline onto that button. ⛔ The inactive list
+	 *  branch is kept out of the ring by `ApplyActiveView`'s collapse, ⛔ not by an absent
+	 *  registration. ⇒ ⛔ **registered ⟺ `bHelpOpen`**, and this is ⛔ no longer a registration edge
+	 *  at all — it is a ⛔ REFRESH.
 	 */
 	virtual void ShowDetailForAction(FName InActionId);
 
@@ -927,8 +1136,53 @@ protected:
 	 *  ⭐ THE DETAIL VIEW'S "BACK TO THE LIST" (§7c, TASK-707). Idempotent and null-safe, which
 	 *  is why CloseHelp() can call it unconditionally on EVERY close — including a close that
 	 *  happened while the list was already up.
+	 *
+	 *  ⭐ TASK-1432 QA LOOP 1 — ⛔ IT ALSO ⛔ TAKES THE MENU RING BACK, but ⛔ ONLY on a ⛔ REAL
+	 *  detail→list edge ⛔ AND only while `bHelpOpen`: this function is called unconditionally by
+	 *  BOTH `OpenHelp()` (⛔ before the overlay is visible) and `CloseHelp()` (⛔ before it closes),
+	 *  and neither of those may register anything. ⛔ A list→list call registers ⛔ nothing.
+	 *  ⚠️ ⛔ ONE TRANSIENT `registered`→`unregistered` PAIR IS EXPECTED IN THE LOG on exactly one
+	 *  route — closing ⛔ from the detail page — and it is ⛔ declared at the call site so 5b does
+	 *  not read it as churn. ⛔ Both lines are true of states the program really passes through.
+	 *
+	 *  🚨 ⭐ TASK-1478 — ⛔ THE STOP IT LANDS ON MOVED, and it is declared here so 5b does not have
+	 *  to discover it: the list's stop 0 is now the ⛔ FIRST `RowButton`, ⛔ not `CloseButton`,
+	 *  because `RowScrollBox` precedes `CloseButton` in `RootPanel`'s slot order and the walker
+	 *  returns depth-first ⛔ PRE-ORDER. ⇒ ⛔ leaving a detail page puts the ring at the ⛔ TOP OF THE
+	 *  LIST rather than on the row the player came from. ⚖️ ⛔ Not fixed here, ⛔ on purpose: it
+	 *  would need per-screen focus memory plus a direct focus call, and `RegisterAsMenuNavTarget`'s
+	 *  own law forbids the second. ⛔ A usability note for 🧑 him, ⛔ not a severed ring.
 	 */
 	virtual void ReturnToList();
+
+	/**
+	 *  🚨🚨🚨 ⭐ TASK-1478 [CONTROLS-HELP-NAVIGABLE] — ⛔ THE ⛔ ONE WRITER of which view is up, and
+	 *  ⛔ THE ANSWER TO THE `SWidgetSwitcher` HAZARD THIS ROW'S TWO FOCUS FLIPS OPEN.
+	 *
+	 *  ⛔ IT DOES ⛔ THREE THINGS, ⛔ ALWAYS TOGETHER, ⛔ FROM ⛔ ONE PARAMETER: sets `PanelBorder`'s
+	 *  visibility, sets `DetailView`'s visibility, and sets `ViewSwitcher`'s active index. ⛔ The
+	 *  ⛔ INACTIVE branch is ⛔ COLLAPSED, which is what makes `HasVisibleSlateAncestry` — the
+	 *  ⛔ SHIPPED predicate, ⛔ unmodified — drop that branch's focusable `UButton`s from the ring.
+	 *  ⛔ Without it, a focusable button in an inactive switcher slot is ⛔ ADMITTED by the walker and
+	 *  ⛔ REFUSES focus (`SWidgetSwitcher::ValidatePathToChild`), and such a stop ⛔ SWALLOWS THE RING.
+	 *
+	 *  ⛔ IT IS A ⛔ PURE VIEW-STATE WRITER: ⛔ no registration, ⛔ no focus call, ⛔ no input, ⛔ no
+	 *  broadcast — which is what makes it safe to call from `ConstructHelpTree`, where registering
+	 *  anything would be the ⛔ never-arms defect `ApplyOpenState`'s block warns about.
+	 *
+	 *  ⛔ THE ACTIVE BRANCH IS RESTORED TO ITS ⛔ AUTHORED value (`PanelBorder` → `Visible`, which is
+	 *  ⛔ hit-test correctness rather than styling; `DetailView` → `Visible`, its untouched `UWidget`
+	 *  default), so ⛔ every frame the player actually sees is ⛔ byte-identical to what shipped.
+	 *  ⛔ Collapsing the inactive branch is ⛔ visually inert — the switcher already declined to
+	 *  arrange, render and hit-test it; ⛔ the only thing that was untrue of that branch was its
+	 *  visibility ⛔ ATTRIBUTE, which is ⛔ exactly what the predicate reads.
+	 *
+	 *  ⛔ THE FULL ARGUMENT — ⛔ the four shapes measured, ⛔ why registering `DetailView` instead is
+	 *  ⛔ MEASURED INERT (`UWidget::IsInViewport()`), and ⛔ how ⭐ `TASK-1432`'s REJECTED (b) two
+	 *  objections are answered ⛔ mechanically — lives at the definition in the `.cpp`. ⛔ Read it
+	 *  before adding a third branch, a fourth caller, or any other `SetActiveWidgetIndex` write.
+	 */
+	void ApplyActiveView(int32 InViewIndex);
 
 	/** The single row-click entry point (§7b). ⛔ Nothing else routes a row click. */
 	void HandleRowActivated(FName InActionId);
@@ -952,6 +1206,122 @@ protected:
 	/** Null-safe resolve of the layout subsystem through this widget's game instance. Null ⇒ the `KBD-§5` fail-safe. */
 	USiegeKeyboardLayoutSubsystem* ResolveKeyboardLayoutSubsystem() const;
 
+	// ═══════════════════════════════════════════════════════════════════════════════════════
+	//  ⭐ TASK-1432 [MENU-NAV-CONTROLS-HELP] — THE SCREEN ANSWERS THE KEYBOARD.
+	//
+	//  🚨🚨 THE ONE THING THAT WOULD MAKE THIS SCREEN SILENTLY INERT, WRITTEN WHERE THE NEXT
+	//  EDITOR WILL SEE IT: ⛔ THESE ARE CALLED FROM `ApplyOpenState` (⛔ and, since TASK-1432 QA
+	//  loop 1, from the two ⛔ VIEW-SWITCH edges as well — see `UnregisterAsMenuNavTarget`),
+	//  ⛔ NEVER FROM `NativeConstruct`. This overlay is added to the viewport ⛔ CLOSED
+	//  (`CreateAndAddToViewport` → `AddToViewport` → `NativeConstruct` collapses it), and the
+	//  subsystem's in-match arming backstop is ⛔ DISARM-ONLY with ⛔ NO RISING EDGE ON *SHOW*
+	//  (`qa/TASK-1430.md` WARN-2). `GetRegisteredNavTarget()` additionally requires
+	//  `IsVisible()`. ⇒ ⛔ A REGISTRATION TAKEN AT CONSTRUCTION WHILE COLLAPSED ⛔ NEVER ARMS,
+	//  and the screen would compile, review clean and ⛔ do nothing (`SC-§36.1`).
+	//
+	//  ⚠️ THIS ⛔ INVERTS THE FIVE MAIN-MENU SCREENS (TASK-1415/1417/1419/1425), which all
+	//  register in `NativeConstruct`. ⛔ They are layered over a menu that is already up; ⛔ this
+	//  one is created closed inside a live match. ⛔ Do not copy their shape here.
+	//
+	//  ⛔ WHAT IS DELIBERATELY ABSENT, the settings-lane list kept verbatim: no `SetInputMode`,
+	//  no `bShowMouseCursor`, no `SetKeyboardFocus`, no navigation rule table, no input binding.
+	//  ⚠️ The ⛔ ONE departure from that list is `NativeOnPreviewKeyDown` above, and it exists
+	//  ⛔ solely to keep a shipped close route alive — its argument is at its own declaration.
+	// ═══════════════════════════════════════════════════════════════════════════════════════
+
+	/**
+	 *  Tell the menu-input subsystem this overlay now owns menu navigation, and let it place the
+	 *  ring on the screen's first focus stop.
+	 *
+	 *  ⛔ CALLED FROM `ApplyOpenState(true)` AND ⛔ AFTER ITS `SetVisibility` — see the block
+	 *  comment above, and the call site's own note on why the order is load-bearing.
+	 *  ⛔ AND (TASK-1432 QA loop 1) FROM `ReturnToList` ON A ⛔ REAL detail→list EDGE, ⛔ also
+	 *  AFTER the switcher write, for the ⛔ same reason in a different coordinate: one line
+	 *  earlier `FindPathToWidget` still resolves through the ⛔ detail slot and the ring's focus
+	 *  request fails silently. See `UnregisterAsMenuNavTarget` below for the whole contract.
+	 *  Null subsystem ⇒ one `Log` line and the overlay stays exactly as mouse-driven as it was.
+	 */
+	void RegisterAsMenuNavTarget();
+
+	/**
+	 *  Give menu navigation back. Called from `ApplyOpenState(false)` AND from `NativeDestruct`
+	 *  — the double call is deliberate and safe: the subsystem removes by IDENTITY and
+	 *  logs-not-warns for a screen already gone.
+	 *
+	 *  🚨🚨 TASK-1432 QA LOOP 1 — ⛔ THE PARAGRAPH THAT STOOD HERE WAS ⛔ FALSE AT ENGINE SOURCE,
+	 *  AND IT IS ⛔ STRUCK RATHER THAN DELETED (`SC-§120`) because it was ⛔ load-bearing guidance
+	 *  telling the next editor why no unregister was needed on a view switch.
+	 *
+	 *  ⛔ WAS: ~~"IT IS NOT CALLED FROM `ShowDetailForAction`/`ReturnToList`. The detail page is a
+	 *  view of this same screen, not a second one: the switcher collapses the list branch, the
+	 *  walker's ancestor-visibility test drops `CloseButton` on its own, and the registration must
+	 *  survive so that returning to the list restores the ring with no re-registration."~~
+	 *
+	 *  ⛔ REFUTED, AND I RE-MEASURED IT MYSELF RATHER THAN ACCEPTING THE REPORT
+	 *  (`qa/TASK-1433.md` BLOCKER-1): ⛔ A `SWidgetSwitcher` DOES NOT COLLAPSE ITS INACTIVE
+	 *  BRANCH. `SWidgetSwitcher::OnArrangeChildren` arranges the ACTIVE slot only and the file
+	 *  ⛔ writes no child's `EVisibility` at all; `UWidgetSwitcher` forwards a clamped index and
+	 *  nothing else; `UWidget::IsVisible()` reads the widget's ⛔ OWN visibility. ⇒ every
+	 *  visibility flag along `CloseButton`'s chain stays visible with the detail page up, so
+	 *  `HasVisibleSlateAncestry` and therefore `IsNavFocusStop` ⛔ STILL ADMIT IT — while
+	 *  `FSlateApplication::SetUserFocus` ⛔ REFUSES it, because `FSlateWindowHelper::FindPathToWidget`
+	 *  calls `ValidatePathToChild`, which this widget overrides as
+	 *  `return InChild == GetActiveWidget().Get();` under the engine's own comment naming
+	 *  `SWidgetSwitcher` as the reason that check exists.
+	 *  ⇒ ⛔ THE OLD SHAPE WOULD HAVE LEFT ⛔ ONE ADMITTED-BUT-UNFOCUSABLE STOP, and the subsystem's
+	 *  own words are that such a stop ⛔ SWALLOWS THE RING rather than being skipped. ⛔ Reachable
+	 *  by 🧑 a mouse click on any row.
+	 *
+	 *  ⭐ THE CONTRACT ~~NOW~~ (⭐ `TASK-1432`), IN ONE LINE — ~~**registered ⟺ `bHelpOpen` ⛔ AND
+	 *  the list view is up.**~~
+	 *  ~~Called from `ApplyOpenState(false)`, from `ShowDetailForAction` (the list→detail edge), and
+	 *  from `NativeDestruct`.~~ ⛔ All three are safe together: the subsystem removes by ⛔ IDENTITY,
+	 *  measures "was registered" ⛔ before its purge, and ⛔ logs rather than warns for a screen
+	 *  that is already gone. The full argument, the four engine measurements and the ⛔ three
+	 *  rejected alternatives live at `ShowDetailForAction`'s call site in the `.cpp`.
+	 *
+	 *  🚨🚨 ⭐ TASK-1478 — ⛔ THE CONTRACT IS ⛔ SIMPLER AGAIN, AND ⛔ THIS FUNCTION HAS ⛔ TWO CALL
+	 *  SITES, ⛔ NOT THREE. ⛔ **registered ⟺ `bHelpOpen`.** ⛔ Called from `ApplyOpenState(false)`
+	 *  and from `NativeDestruct` — ⛔ `ShowDetailForAction` no longer calls it at all.
+	 *  ⛔ WHY: the detail page now ⛔ HAS a ring (⭐ `TASK-1484`: `{ BackButton, DetailScrollButton }`
+	 *  — ⛔ was `{ BackButton }`; the ⛔ COUNT changed, the ⛔ ARGUMENT did not), so there is ⛔ nothing to
+	 *  surrender on a view switch; the inactive branch is kept out of the ring by
+	 *  `ApplyActiveView`'s ⛔ collapse instead. ⇒ ⛔ THIS IS THE RESOLUTION OF `qa/TASK-1433.md`
+	 *  ⛔ WARN-L1, which ruled those two edges agreed with a switcher-aware predicate only ⛔ *"by a
+	 *  contingent authored fact"* and named ⛔ the `BackButton` flip as the counter-case: ⛔ the
+	 *  disagreement is removed by ⛔ deleting the edge, ⛔ not by hoping it stays agreed.
+	 *  ⛔ The `NativeDestruct` net is ⛔ unchanged and still earns its place.
+	 */
+	void UnregisterAsMenuNavTarget();
+
+	/**
+	 *  Null-safe resolve of the menu-input subsystem. ⛔ Through the WORLD, ⛔ not the game
+	 *  instance — `USiegeMenuInputSubsystem` is a `UWorldSubsystem` and declines Editor worlds
+	 *  outright, so a null answer here is ORDINARY rather than an error.
+	 */
+	USiegeMenuInputSubsystem* ResolveMenuInputSubsystem() const;
+
+	/**
+	 *  True when `InKey` is the key the player must physically press to toggle THIS overlay.
+	 *
+	 *  ⛔ DERIVED, ⛔ NEVER TYPED (`HELP-§1`, `HELP-§4`: *the menu documents its own key*). It
+	 *  reads the ⛔ same registry row and the ⛔ same accessor the R-24 key chip and the hint
+	 *  line already read, so the key this predicate answers to is ⛔ by construction the key the
+	 *  screen is telling the player to press — on QWERTY, on Dvorak, and after any remap. ⛔ No
+	 *  second copy of the truth exists here to drift (`HELP-§2` mechanism 1).
+	 *
+	 *  ⛔ APPLIED KEYS, ⛔ NOT DISPLAY KEYS, AND THE LANE IS THE WHOLE POINT (`HELP-§1`'s
+	 *  double-translate warning): `QueryAppliedKeysForRow` answers out of the ACTIVE,
+	 *  already-retargeted context, which is what `FKeyEvent::GetKey()` reports.
+	 *  `ResolveRowDisplayKeys` is the ⛔ LABEL lane and would be wrong here — on a fallback it
+	 *  answers the QWERTY REFERENCE key, not the pressed one.
+	 *
+	 *  ⚠️ An unresolved `IA_ControlsHelp`, no local player or a non-`MappedAction` lane all
+	 *  answer ⛔ false. That is the honest degradation and it costs nothing: in exactly those
+	 *  states the toggle key never opened the overlay either.
+	 */
+	bool IsOwnToggleKey(const FKey& InKey) const;
+
 	// ------------------------------------------------------------------------
 	// PINNED CHILDREN — all BindWidgetOptional, never BindWidget.
 	// ------------------------------------------------------------------------
@@ -969,6 +1339,19 @@ protected:
 	 *  exactly one child, so "the list is never behind the detail page" is STRUCTURAL. Two
 	 *  Collapsed/Visible writes would make it a pair of statements that can fall out of step,
 	 *  and the failure would be two screens of text on top of each other.
+	 *
+	 *  🚨 ⭐ TASK-1478 — ⛔ THAT RULING ⛔ STANDS AND IS ⛔ NARROWED, ⛔ NOT OVERTURNED, AND THE
+	 *  DISTINCTION IS THE WHOLE OF IT: ⛔ the switcher is ⛔ STILL what renders, ⛔ still the single
+	 *  source of truth (`IsDetailViewActive()` asks ⛔ it, never a mirrored bool), and this row
+	 *  ⛔ did ⛔ NOT replace it with two flags. ⛔ What was added is a ⛔ DERIVED SHADOW of the
+	 *  switcher's own state: `ApplyActiveView` writes ⛔ both branch visibilities ⛔ and the index
+	 *  from ⛔ one parameter in ⛔ one function, so they ⛔ cannot fall out of step — there is ⛔ no
+	 *  second state to forget, only one assignment per branch on ⛔ every call.
+	 *  ⛔ AND ITS ⛔ ONLY CONSUMER IS THE ⛔ FOCUS WALKER: `SWidgetSwitcher` already declines to
+	 *  arrange, render and hit-test the inactive branch, so the shadow changes ⛔ no pixel — it
+	 *  exists solely so `HasVisibleSlateAncestry` ⛔ stops being lied to about a branch the engine
+	 *  had already switched off. ⛔ The feared failure ("two screens of text on top of each other")
+	 *  is ⛔ still impossible, because the ⛔ renderer is still the switcher.
 	 *  ⭐ UWidgetSwitcher constructs itself SelfHitTestInvisible (WidgetSwitcher.cpp:18), so it
 	 *  changes nothing about §4's hit-test law — its CHILDREN keep deciding.
 	 */
