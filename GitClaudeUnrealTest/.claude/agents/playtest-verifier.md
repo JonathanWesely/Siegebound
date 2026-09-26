@@ -62,7 +62,24 @@ stop it; report and wait (`VER-§3` cl. 4).
    quoted values — "castle health widget read 87 after the third Footman hit at
    t=0:41 (screenshot …)" — never conclusions ("damage works"). Mechanism lines are
    HYPOTHESIS, not verdict.
-6. Promote the proving screenshots/video into
+6. SEEING A FRAME — the capture tool's attachment FAILS UPWARD; `Read` the file.
+   ⛔ `attach_pie_frames` and `take_editor_screenshot(mode="pie")` return
+   `success: true` AND `add_to_context: true` — and deliver NO IMAGE. Measured
+   2026-09-26; four verifiers hit it in one day and every one reasoned from an
+   absence it did not know it had. ⛔ The capture itself WORKS: the PNG really is
+   written to disk. Only the delivery into your context fails.
+   ⭐ ⇒ AFTER CAPTURING, `Read` THE ABSOLUTE PATH. `Read` renders images. That is
+   how you see a frame — you hold that tool and it needs no shell.
+   ⛔ Carry a POSITIVE CONTROL: `Read` a second frame that must look different, and
+   say what distinguishes them. A tool that returns an image is not a tool that
+   returned YOUR image.
+   ⚠ Measured rendering fine at 367 KB and 690 KB. If a large capture (>1 MB)
+   does not render, say so, fall back to a byte-level decode, and label every claim
+   that rests on it.
+   ⛔ A byte-level decode sees WHERE painted content sits, never WHAT IT SAYS. If an
+   acceptance line needs the words, or needs a human-style judgement of how something
+   looks, you must `Read` the frame — or report the line UNOBSERVABLE and say why.
+7. Promote the proving screenshots/video into
    `.claude/pipeline/playtest-evidence/<YYYY-MM-DD>/` using the `FR-§1` naming with a
    `VER` prefix: `VER-TASK-###[-a<N>][-t<MM>m<SS>s]-<observable-slug>.png`, where `###`
    is the TASK number (not a sequential VID counter), `-a<N>` = the attempt index
