@@ -137,6 +137,51 @@ public:
 	 */
 	UFUNCTION(BlueprintPure,     Category="Siegebound|Deck") int32 GetActiveDeckIndex() const;
 
+	// --- ⭐ TASK-1507 [DECK-KEYBOARD-SET-ACTIVE] — THE KEYBOARD ROUTE TO SET THE
+	//     ACTIVE DECK ---------------------------------------------------------------
+	//  🧑 HIS RULING (CONVENTIONS DECK-§3, marker DECK-3-KEYBOARD-SET-ACTIVE-RULED),
+	//  verbatim: "yes, add a keyboard route to set the active deck" — and his key,
+	//  picked the same sitting: Home + gamepad Y (EKeys::Home ·
+	//  EKeys::Gamepad_FaceButton_Top).
+	//  ⛔ THE KEY IS A SECOND DOOR TO THE RIGHT-CLICK CALL, NEVER A SECOND
+	//  IMPLEMENTATION: while a deck-bar slot holds focus it calls
+	//  SetActiveDeckBySlot(<that slot>) — the exact function right-click's
+	//  OnRightClicked is bound to in NativeConstruct — so the legality gate
+	//  (TASK-1270), the persist (DECK-§4), the orange-outline refresh and the
+	//  refusal surface are all inherited, none restated. Right-click STAYS.
+	//  ⛔ The decision lives in HandleCardGridKey (TASK-1423's one-implementation
+	//  law), reached by all THREE doors: the Slate tunnel + bubble (his real Home /
+	//  pad Y) and door 3 (IA_MenuSecondary → HandleMenuNavSecondary →
+	//  RouteMenuNavKey(EKeys::Home)). ⛔ Not a WasInputKeyJustPressed poll
+	//  (VER-§8 cl. 7 wall (a)).
+	//  ⛔ No letter, no digit, no Tab, no Escape: Home is unmapped in Slate's
+	//  default FNavigationConfig (neither a KeyEventRules nor a KeyActionRules
+	//  entry, NavigationConfig.cpp — the constructor), and so is
+	//  Gamepad_FaceButton_Top.
+
+	/**
+	 *  ⭐ TASK-1507 — THE PURE HALF OF THE KEY'S DECISION, factored out so it is
+	 *  assertable on STATE with no Slate, no widget tree and no save slot (the
+	 *  StepCardFocusIndex / TryActivateSavedDeck shape — SC-§104):
+	 *    Key is not Home / Gamepad_FaceButton_Top           ⇒ INDEX_NONE
+	 *    FocusedBarSlotIndex outside [0, NumFixedDeckSlots) ⇒ INDEX_NONE
+	 *                                   (INDEX_NONE = "no deck-bar slot holds focus")
+	 *    otherwise                                          ⇒ FocusedBarSlotIndex
+	 *  The returned slot is what HandleCardGridKey hands to SetActiveDeckBySlot;
+	 *  INDEX_NONE means the key is NOT claimed and falls through untouched.
+	 *  C++-only (FKey param — the StepCardFocusIndex shape; ⛔ no UFUNCTION).
+	 */
+	static int32 ResolveDeckBarActivationSlot(const FKey& Key, int32 FocusedBarSlotIndex);
+
+	/**
+	 *  ⭐ TASK-1507 — the SEVENTH IA_Menu* asset path, pinned on the TASK-1507 row
+	 *  and on DECK-§3 character-for-character (TASK-1508 authors the asset to this
+	 *  exact name; a typo is a silent null). ⛔ It lives HERE, on this class, and
+	 *  NOT in USiegeMenuInputSubsystem beside the six it resembles: that file is
+	 *  forbidden to this row (zero bytes), and the subsystem binds nothing for it.
+	 */
+	static const TCHAR* MenuSecondaryActionPath;
+
 	/**
 	 *  The deck-bar container (TASK-671; DECK-§5/§7): ONE horizontal row at the
 	 *  very top of WBP_DeckBuilder, authored THERE by TASK-672 — empty at
@@ -175,6 +220,11 @@ public:
 	// --- TASK-1286: keyboard / gamepad card actions (the KEYBOARD twin of the
 	//     "+" / "−" MOUSE buttons — NOT of DECK-§3's right-click, which stays
 	//     mouse-only by ruling) --------------------------------------------------
+	//  ⛔ 2026-09-26 (TASK-1507): the "mouse-only by ruling" clause above is
+	//  SUPERSEDED, not deleted (SC-§120) — 🧑 his DECK-§3 ruling (marker
+	//  DECK-3-KEYBOARD-SET-ACTIVE-RULED) added Home / gamepad Y on a focused
+	//  deck-bar slot as a SECOND door to the same SetActiveDeckBySlot call.
+	//  Right-click STAYS. See ResolveDeckBarActivationSlot below.
 	//
 	//  🧑 HIS ASK (2026-09-14, boarded as TASK-1286; his go 2026-09-17): arrows to
 	//  move a focus outline across the CARDS, Enter to add a copy, Delete (or
@@ -953,6 +1003,15 @@ private:
 	 *  ⛔ A COPIED KEY TABLE WOULD BE THE DEFECT, NOT THE FIX: two tables WILL
 	 *  diverge, and a behaviour duplicated on two layers is exactly how the bug
 	 *  this epic removes was born in the first place.
+	 *
+	 *  ⭐ TASK-1507 — ONE MORE ROW, APPENDED AFTER THE DIRECTIONAL BLOCK (so no
+	 *  line the table above names changes meaning, and none before it moves):
+	 *    · a DECK-BAR SLOT holds focus ⇒ Home · Gamepad_FaceButton_Top →
+	 *      SetActiveDeckBySlot(<that slot>), Handled — Handled even when the
+	 *      model REFUSES (an illegal deck), exactly as right-click's RMB reply is.
+	 *  Every other state leaves both keys unclaimed. Left/Right on a slot are
+	 *  STILL unclaimed here, byte-identically — Slate's own navigation walks the
+	 *  bar for a real key; door 3's walk is RelayDeckBarNavigationKeyToSlate.
 	 */
 	FReply HandleCardGridKey(const FKey& Key);
 
@@ -963,6 +1022,23 @@ private:
 	 *  path is not edited at its call sites, only given a thinner floor.
 	 */
 	FReply HandleCardGridKey(const FKeyEvent& InKeyEvent);
+
+	/** ⭐ TASK-1507 — THE key table row for set-active, stated ONCE: Home · Gamepad_FaceButton_Top (🧑 his pick). ResolveDeckBarActivationSlot and HandleCardGridKey's gate both read it — there is no second spelling of the pair. */
+	static bool IsDeckBarActivationKey(const FKey& Key);
+
+	/**
+	 *  ⭐ TASK-1507 — the 0-based fixed slot whose deck-bar entry holds Slate focus
+	 *  right now (the entry itself, or — the real case — its SlotButton, a
+	 *  descendant), or INDEX_NONE. The IsCardGridFocusLive tile test, cloned onto
+	 *  the bar: HasAnyUserFocus() || HasFocusedDescendants().
+	 *  ⛔ Array position == slot index — the correspondence NativeConstruct's bar
+	 *  loop builds and RefreshDeckBarStates / ResolveGridExitFocusTarget already
+	 *  rely on; one convention, not a second. INDEX_NONE with no Slate or no bar
+	 *  (an offline automation widget). Walks at most ten entries and is called
+	 *  ONLY for Home / pad Y (HandleCardGridKey) and Left / Right (door 3) — never
+	 *  on every key.
+	 */
+	int32 FindFocusedDeckBarSlot() const;
 
 	/**
 	 *  ⭐ TASK-1304 BLOCK A — PUT THIS WIDGET ON SLATE'S FOCUS PATH WHEN IT OPENS.
@@ -1055,6 +1131,12 @@ private:
 	 *  ⛔ It unbinds first, so a second NativeConstruct on a re-added instance
 	 *  cannot double-bind (a UUserWidget survives RemoveFromParent/AddToViewport —
 	 *  the same reuse fact TASK-1307's disarm already guards against).
+	 *
+	 *  ⭐ TASK-1507 — SEVEN, not six: IA_MenuSecondary (MenuSecondaryActionPath,
+	 *  THIS class's constant) → HandleMenuNavSecondary, added as one more row of
+	 *  the same table, so it inherits the same degrade-open (an absent asset makes
+	 *  ONLY that key inert and is named in the one summary line) and its handle
+	 *  lands in the same MenuNavBindingHandles array UnbindMenuNavActions drains.
 	 */
 	void BindMenuNavActions();
 
@@ -1092,6 +1174,13 @@ private:
 	 *  the GRID, and the second press falls through with the grid unfocused.
 	 */
 	void HandleMenuNavBack();
+	/**
+	 *  ⭐ TASK-1507 — IA_MenuSecondary → the set-active row's keyboard key,
+	 *  EKeys::Home (the HandleMenuNavAccept → EKeys::Enter shape: the action
+	 *  carries Home AND pad Y, the relay hands over the table's keyboard key).
+	 *  ⇒ HandleCardGridKey's TASK-1507 row decides; nothing is decided here.
+	 */
+	void HandleMenuNavSecondary();
 
 	/**
 	 *  ⭐ THE RELAY ITSELF — the ONE place the third door meets the one
@@ -1115,6 +1204,57 @@ private:
 	 *  behaviour must stay byte-identical.
 	 */
 	void RouteMenuNavKey(const FKey& Key, const TCHAR* ActionName);
+
+	/**
+	 *  ⭐ TASK-1507 (3) — DOOR 3 ON THE DECK BAR, AND IT ADDS NO NAVIGATOR.
+	 *
+	 *  ⛔ THE GAP, CONFIRMED AT SOURCE (the row asked for confirm-or-refute
+	 *  first): with the grid unfocused, HandleCardGridKey's directional block
+	 *  claims Down ALONE ("if (Direction == EUINavigation::Down &&
+	 *  GetCollectionCardIDs().Num() > 0)"), so an injected IA_MenuLeft /
+	 *  IA_MenuRight reaches "return FReply::Unhandled();" — and RouteMenuNavKey
+	 *  DISCARDS that reply. The subsystem's own IA_MenuLeft/Right handler returns
+	 *  at "if (DeclineIfActiveTargetSelfDriving(FString::Printf(TEXT(
+	 *  "StepFocusedStop(%+d)"), Direction)))" because this screen registers with
+	 *  RegisterSelfDrivingMenuNavTarget (TASK-1471). ⇒ an injected Left/Right on a
+	 *  deck-bar slot moved NOTHING, on any lane.
+	 *
+	 *  ⭐ THE FIX HANDS THE KEY TO SLATE'S OWN KEY ROUTE — the one a physical key
+	 *  takes — instead of re-deriving where a Left "should" land:
+	 *  FSlateApplication::ProcessKeyDownEvent, the function FSlateApplication::
+	 *  OnKeyDown calls for a real key (`return ProcessKeyDownEvent( KeyEvent );`),
+	 *  followed by ProcessKeyUpEvent (a press is a down AND an up — the
+	 *  UWidgetInteractionComponent::PressKey / ReleaseKey pair, engine precedent
+	 *  for exactly this call from game code). ⇒ the synthesized Left tunnels
+	 *  through NativeOnPreviewKeyDown → HandleCardGridKey (which still declines
+	 *  it, unchanged), bubbles to the focused SlotButton, whose SWidget::OnKeyDown
+	 *  turns it into navigation, and FSlateApplication::ProcessReply runs the
+	 *  SAME OnNavigation walk + AttemptNavigation a real Left runs. The landing
+	 *  slot is therefore Slate's own answer for every slot, both ends included,
+	 *  BY CONSTRUCTION — not by an argument about geometry.
+	 *
+	 *  ⛔ THE FEEDBACK GUARD, and why it is not optional: the relay runs ONLY when
+	 *  the active FNavigationConfig maps the key to a direction
+	 *  (GetNavigationDirectionFromKey != Invalid). Under that precondition the
+	 *  focused, focusable SlotButton's SWidget::OnKeyDown returns
+	 *  FReply::Handled().SetNavigation(...) (SWidget.cpp, `if (bCanSupportFocus &&
+	 *  SupportsKeyboardFocus())`), so the down event stops at the leaf and never
+	 *  reaches the SViewport → UGameViewportClient::InputKey → Enhanced Input
+	 *  chain that could re-fire IA_MenuLeft. (On L_MainMenu that chain is closed
+	 *  anyway — FInputModeUIOnly's SetIgnoreInput, TASK-1274 §7 — the guard closes
+	 *  it on ANY level, with ONE stated precondition: the focused SlotButton is
+	 *  ENABLED, because the bubble skips a disabled widget. UDeckSlotEntryWidget
+	 *  makes no SetIsEnabled call at all (census 0 in DeckSlotEntryWidget.cpp),
+	 *  and a widget that holds focus is by definition focusable.)
+	 *
+	 *  Returns true iff the key was dispatched into Slate (the caller then does
+	 *  nothing else); false ⇒ nothing was dispatched and the caller falls back to
+	 *  the shipped HandleCardGridKey(Key) call, byte-for-byte what ran before.
+	 *  ⛔ Door 3 ONLY. The Slate doors are not touched: HandleCardGridKey still
+	 *  returns Unhandled for Left/Right on a slot, so 🧑 his real arrows walk the
+	 *  bar exactly as before this row.
+	 */
+	bool RelayDeckBarNavigationKeyToSlate(const FKey& Key, const TCHAR* ActionName);
 
 	/**
 	 *  TASK-1423 (1): tell USiegeMenuInputSubsystem that THIS screen owns menu

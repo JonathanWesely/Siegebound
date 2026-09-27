@@ -3,6 +3,7 @@
 #include "Misc/AutomationTest.h"
 
 #include "Engine/DataTable.h"
+#include "InputCoreTypes.h" // TASK-1507: EKeys — the set-active key table (Home · Gamepad_FaceButton_Top) and the keys it must NOT claim
 #include "Kismet/GameplayStatics.h"
 #include "Siegebound/CardHandWidget.h" // TASK-1270 loop 1: the REAL late listener (InitForController binds, then spends the held notice)
 #include "Siegebound/CardRow.h"
@@ -1517,6 +1518,253 @@ bool FSiegeDeckExitCardGridTest::RunTest(const FString& Parameters)
 		Builder->GetCountOf(Collection[TileK]), CountOfKBefore);
 	TestFalse(TEXT("(f) STATE: the scratch deck slot does not exist — this test wrote no save at all"),
 		UGameplayStatics::DoesSaveGameExist(ScratchDeckSlotName, USiegeDeckSaveGame::UserIndex));
+
+	return true;
+}
+
+namespace SiegeDeckSlotsTestUtils
+{
+	/**
+	 *  TASK-1507 — ONE PRESS OF THE SET-ACTIVE KEY, composed from the SAME two halves
+	 *  the shipping route composes, in the same order:
+	 *    (1) UDeckBuilderWidget::ResolveDeckBarActivationSlot(Key, FocusedBarSlot) —
+	 *        the decision HandleCardGridKey's TASK-1507 row takes (it feeds this
+	 *        function FindFocusedDeckBarSlot(), which is INDEX_NONE for "no bar slot
+	 *        holds focus");
+	 *    (2) iff that is not INDEX_NONE: the in-memory step SetActiveDeckBySlot →
+	 *        SetActiveDeck takes — TryActivateSavedDeck on MakeFixedDeckName(slot).
+	 *  ⛔ THE ONE STEP NOT TAKEN HERE, named rather than skipped silently: SetActiveDeck's
+	 *  own SaveGameToSlot on the SEAM-RESOLVED slot. A test builder has no
+	 *  GameInstance, so that seam resolves the bare guest constant — 🧑 Jonathan's
+	 *  REAL guest slot — and no deck-slot automation seam exists to redirect it (the
+	 *  `SetSlotNameForAutomationTests` the row names lives on USiegeAccountSubsystem /
+	 *  USiegeSettingsSubsystem, and GetDeckSlotName never reads it). The test below
+	 *  persists to the SCRATCH slot instead; the production persist call is
+	 *  SetActiveDeck's unchanged line, and TASK-1511 A1's on-disk read carries it.
+	 *  Returns the resolved slot; bOutActivated / OutRefusal report step (2).
+	 */
+	static int32 PressSetActiveKey(USiegeDeckSaveGame& Save, const UDataTable* Table, const FKey& Key, int32 FocusedBarSlot,
+		bool& bOutActivated, FString& OutRefusal)
+	{
+		bOutActivated = false;
+		OutRefusal.Reset();
+
+		const int32 Slot = UDeckBuilderWidget::ResolveDeckBarActivationSlot(Key, FocusedBarSlot);
+		if (Slot == INDEX_NONE)
+		{
+			return INDEX_NONE; // not claimed ⇒ HandleCardGridKey makes no call at all
+		}
+
+		FString Canonical;
+		bOutActivated = UDeckBuilderWidget::TryActivateSavedDeck(
+			Save, Table, USiegeDeckSaveGame::MakeFixedDeckName(Slot), Canonical, OutRefusal);
+		return Slot;
+	}
+}
+
+/**
+ *  TASK-1507 [DECK-KEYBOARD-SET-ACTIVE] — 🧑 HIS DECK-§3 RULING (marker
+ *  DECK-3-KEYBOARD-SET-ACTIVE-RULED): "yes, add a keyboard route to set the active
+ *  deck", his key Home + gamepad Y. On a focused deck-bar slot the key does EXACTLY
+ *  what right-click does; with no slot focused it is not claimed and nothing moves.
+ *
+ *  ⭐ STATE, NOT TALLIES (SC-§104), in two parts:
+ *    (0) THE DECISION — ResolveDeckBarActivationSlot, the pure half HandleCardGridKey
+ *        calls: both keys on EVERY slot (both ends included) resolve to that slot;
+ *        "no slot focused" and out-of-range resolve to INDEX_NONE; every other key a
+ *        player could press on a focused slot — including Left/Right/Enter, which the
+ *        bar already owns, Escape, Tab, a letter and a digit — resolves to INDEX_NONE.
+ *        Plus the pinned asset-path constant, character-for-character.
+ *    (1) THE EFFECT — on a migrated in-memory save with a transient table (the
+ *        TASK-1270 idiom): (a) the key with NO slot focused changes nothing (deep-
+ *        equal); (b) the key on an EMPTY (illegal) slot is refused and changes
+ *        nothing; (c) the POSITIVE CONTROL — the same key on a focused LEGAL slot sets
+ *        ActiveDeckName and moves the rim index, and ONLY that; (d) it PERSISTS —
+ *        the post-press save round-trips through the scratch slot with the new
+ *        choice; (e)/(f) pad Y on the empty slot and the key with no slot focused,
+ *        AFTER the success, leave the NEW state alone.
+ *
+ *  ⛔ WHAT THIS LANE CANNOT HOST, AND WHAT CARRIES IT (never silently, per the row):
+ *    · Slate focus on a real bar entry — a NewObject'd builder never runs
+ *      NativeConstruct, so it has no bar and FindFocusedDeckBarSlot is INDEX_NONE BY
+ *      CONSTRUCTION (an assertion of that could not fail — SC-§39 — so none is made).
+ *      Carried by TASK-1511 A1 (the focused slot confirmed by ui_snapshot, then
+ *      IA_MenuSecondary) and A2 (the key with a card tile focused / cold open).
+ *    · SetActiveDeck's persist to the REAL seam-resolved slot — carried by A1's
+ *      on-disk read (the helper's comment above says why no test may make it).
+ *    · Door 3's bar walk (Left/Right handed to Slate) — runtime only: A1's
+ *      IA_MenuRight ×N with a ui_snapshot after each step.
+ *    · His real Home key — TASK-1511 A5, his hand check (VER-§8 cl. 1).
+ *
+ *  Zero network, zero PIE, zero widget; the one disk touch is the scratch slot,
+ *  asserted not to be the shipped guest slot and deleted on the way in and out.
+ *  M8: adds no replicated property, no new replicated class, no RPC.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeDeckKeyboardSetActiveOnFocusedBarSlotTest,
+	"Siegebound.Deck.KeyboardSetActiveOnAFocusedBarSlotDoesWhatRightClickDoes",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeDeckKeyboardSetActiveOnFocusedBarSlotTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeDeckSlotsTestUtils;
+
+	// ---------------------------------------------------------------------
+	// (0) THE DECISION — the pure half of HandleCardGridKey's TASK-1507 row
+	// ---------------------------------------------------------------------
+	TestEqualSensitive(TEXT("(0) PIN: MenuSecondaryActionPath is character-identical to the TASK-1507 / DECK-§3 pin"),
+		FString(UDeckBuilderWidget::MenuSecondaryActionPath),
+		FString(TEXT("/Game/Input/Actions/IA_MenuSecondary.IA_MenuSecondary")));
+
+	for (int32 SlotIndex = 0; SlotIndex < USiegeDeckSaveGame::NumFixedDeckSlots; ++SlotIndex)
+	{
+		TestEqual(*FString::Printf(TEXT("(0) Home on focused slot %d resolves to slot %d (both ends of the bar included)"), SlotIndex, SlotIndex),
+			UDeckBuilderWidget::ResolveDeckBarActivationSlot(EKeys::Home, SlotIndex), SlotIndex);
+		TestEqual(*FString::Printf(TEXT("(0) gamepad Y on focused slot %d resolves to slot %d"), SlotIndex, SlotIndex),
+			UDeckBuilderWidget::ResolveDeckBarActivationSlot(EKeys::Gamepad_FaceButton_Top, SlotIndex), SlotIndex);
+	}
+
+	TestEqual(TEXT("(0) Home with NO bar slot focused is not claimed"),
+		UDeckBuilderWidget::ResolveDeckBarActivationSlot(EKeys::Home, INDEX_NONE), (int32)INDEX_NONE);
+	TestEqual(TEXT("(0) gamepad Y with NO bar slot focused is not claimed"),
+		UDeckBuilderWidget::ResolveDeckBarActivationSlot(EKeys::Gamepad_FaceButton_Top, INDEX_NONE), (int32)INDEX_NONE);
+	TestEqual(TEXT("(0) a slot past the end is not claimed — ⛔ never clamped onto deck10"),
+		UDeckBuilderWidget::ResolveDeckBarActivationSlot(EKeys::Home, USiegeDeckSaveGame::NumFixedDeckSlots), (int32)INDEX_NONE);
+	TestEqual(TEXT("(0) a negative slot other than INDEX_NONE is not claimed — ⛔ never clamped onto deck1"),
+		UDeckBuilderWidget::ResolveDeckBarActivationSlot(EKeys::Home, -2), (int32)INDEX_NONE);
+
+	// Every key below is pressed on a FOCUSED slot (3), so a resolver that ignored
+	// the key and only checked the slot would fail here.
+	const FKey NotTheSetActiveKey[] =
+	{
+		EKeys::Enter, EKeys::SpaceBar,                       // Slate's Accept on the SlotButton ⇒ SelectDeckForEdit (DECK-§3) — must stay theirs
+		EKeys::Left, EKeys::Right, EKeys::Up, EKeys::Down,   // Slate's bar navigation / the grid entry key
+		EKeys::Escape, EKeys::Tab,                           // AS-§6 A-2's scoped grant · DECK-§9 cl. 4's deliberate absence
+		EKeys::Delete, EKeys::BackSpace, EKeys::End,         // Remove · IA_MenuBack's keyboard key · Home's neighbour
+		EKeys::Gamepad_FaceButton_Bottom, EKeys::Gamepad_FaceButton_Right, EKeys::Gamepad_FaceButton_Left, // A · B · X
+		EKeys::RightMouseButton,                             // right-click is DECK-§5's gesture, never a key-table row
+		EKeys::H, EKeys::One,                                // DECK-§9 cl. 3: no letter, no digit
+	};
+	for (const FKey& OtherKey : NotTheSetActiveKey)
+	{
+		TestEqual(*FString::Printf(TEXT("(0) '%s' on a focused slot is NOT the set-active key"), *OtherKey.ToString()),
+			UDeckBuilderWidget::ResolveDeckBarActivationSlot(OtherKey, 3), (int32)INDEX_NONE);
+	}
+
+	// ---------------------------------------------------------------------
+	// (1) THE EFFECT — on an in-memory ten-slot save
+	// ---------------------------------------------------------------------
+	TestNotEqual(TEXT("PREMISE: the scratch slot is NOT the shipped guest slot"),
+		FString(ScratchDeckSlotName), FString(USiegeDeckSaveGame::SlotName));
+	FDeckScratchGuard ScratchGuard;
+
+	UDataTable* Table = MakeScratchCardTable();
+	if (!TestNotNull(TEXT("SELF-CHECK: scratch card table constructed"), Table))
+	{
+		return false;
+	}
+	AddScratchCard(*Table, TEXT("Footman"), 12);
+
+	USiegeDeckSaveGame* Save = MakeSave();
+	if (!TestNotNull(TEXT("SELF-CHECK: save object constructed"), Save))
+	{
+		return false;
+	}
+	TestTrue(TEXT("SELF-CHECK: a fresh save migrates to the ten slots (active = deck1)"),
+		USiegeDeckSaveGame::MigrateToFixedSlots(*Save));
+	if (Save->SavedDecks.Num() != USiegeDeckSaveGame::NumFixedDeckSlots)
+	{
+		return false;
+	}
+
+	// deck4 (slot 3) = a LEGAL 50-card deck; deck5 (slot 4) stays EMPTY (illegal).
+	AddDeckEntry(Save->SavedDecks[3], TEXT("Footman"), 50);
+	TestEqual(TEXT("SELF-CHECK: deck4 holds exactly 50 cards"), Save->SavedDecks[3].TotalCount(), 50);
+	TestEqual(TEXT("SELF-CHECK: deck5 is empty"), Save->SavedDecks[4].TotalCount(), 0);
+
+	TestEqualSensitive(TEXT("PRE-IMAGE: the active deck is \"deck1\""), Save->ActiveDeckName, FString(TEXT("deck1")));
+	TestEqual(TEXT("PRE-IMAGE: the rim index is 0"), USiegeDeckSaveGame::FindFixedDeckIndex(Save->ActiveDeckName), 0);
+	const TArray<FDeckList> DecksBefore = Save->SavedDecks;
+	const FString ActiveBefore = Save->ActiveDeckName;
+
+	// (a) THE KEY WITH NO SLOT FOCUSED CHANGES NOTHING.
+	{
+		bool bActivated = true;
+		FString Refusal;
+		TestEqual(TEXT("(a) Home with no slot focused resolves to no slot"),
+			PressSetActiveKey(*Save, Table, EKeys::Home, INDEX_NONE, bActivated, Refusal), (int32)INDEX_NONE);
+		TestFalse(TEXT("(a) ...and activates nothing"), bActivated);
+		TestEqual(TEXT("(a) gamepad Y with no slot focused resolves to no slot"),
+			PressSetActiveKey(*Save, Table, EKeys::Gamepad_FaceButton_Top, INDEX_NONE, bActivated, Refusal), (int32)INDEX_NONE);
+		TestEqualSensitive(TEXT("(a) STATE: ActiveDeckName is still \"deck1\""), Save->ActiveDeckName, FString(TEXT("deck1")));
+		TestTrue(TEXT("(a) STATE: the whole save is deep-equal to its pre-image"), StatesEqual(DecksBefore, ActiveBefore, *Save));
+	}
+
+	// (b) THE KEY ON AN EMPTY (ILLEGAL) SLOT IS REFUSED — right-click's TASK-1270 gate.
+	{
+		bool bActivated = true;
+		FString Refusal;
+		TestEqual(TEXT("(b) Home on focused slot 4 (deck5, empty) resolves to slot 4 — the key IS claimed"),
+			PressSetActiveKey(*Save, Table, EKeys::Home, 4, bActivated, Refusal), 4);
+		TestFalse(TEXT("(b) ...and the activation is REFUSED"), bActivated);
+		TestTrue(TEXT("(b) ...with IsDeckLegal's exact-50 reason verbatim"), Refusal.Contains(TEXT("exactly 50")));
+		TestEqualSensitive(TEXT("(b) STATE: ActiveDeckName is still \"deck1\""), Save->ActiveDeckName, FString(TEXT("deck1")));
+		TestEqual(TEXT("(b) STATE: the rim index is still 0"), USiegeDeckSaveGame::FindFixedDeckIndex(Save->ActiveDeckName), 0);
+		TestTrue(TEXT("(b) STATE: the whole save is deep-equal to its pre-image"), StatesEqual(DecksBefore, ActiveBefore, *Save));
+	}
+
+	// (c) POSITIVE CONTROL — the SAME key on a focused LEGAL slot DOES set it. Without
+	//     this, (a) and (b) could not be told apart from a key that never does anything.
+	{
+		bool bActivated = false;
+		FString Refusal;
+		TestEqual(TEXT("(c) Home on focused slot 3 (deck4, 50 cards) resolves to slot 3"),
+			PressSetActiveKey(*Save, Table, EKeys::Home, 3, bActivated, Refusal), 3);
+		TestTrue(TEXT("(c) ...and the activation SUCCEEDS"), bActivated);
+		TestTrue(TEXT("(c) ...with no refusal reason"), Refusal.IsEmpty());
+		TestEqualSensitive(TEXT("(c) STATE: ActiveDeckName is now \"deck4\""), Save->ActiveDeckName, FString(TEXT("deck4")));
+		TestEqual(TEXT("(c) STATE: the rim index moved to 3 (the orange outline follows GetActiveDeckIndex)"),
+			USiegeDeckSaveGame::FindFixedDeckIndex(Save->ActiveDeckName), 3);
+		TestFalse(TEXT("(c) STATE: the save is no longer its pre-image"), StatesEqual(DecksBefore, ActiveBefore, *Save));
+		TestTrue(TEXT("(c) STATE: ...and ONLY ActiveDeckName changed — no deck's content moved"),
+			StatesEqual(DecksBefore, TEXT("deck4"), *Save));
+	}
+
+	// (d) IT PERSISTS — the post-press save written to the SCRATCH slot and read back
+	//     carries the new choice and every deck unchanged.
+	{
+		TestTrue(TEXT("(d) SaveGameToSlot(scratch) succeeds"),
+			UGameplayStatics::SaveGameToSlot(Save, ScratchDeckSlotName, USiegeDeckSaveGame::UserIndex));
+		const USiegeDeckSaveGame* Loaded = Cast<USiegeDeckSaveGame>(
+			UGameplayStatics::LoadGameFromSlot(ScratchDeckSlotName, USiegeDeckSaveGame::UserIndex));
+		if (TestNotNull(TEXT("(d) LoadGameFromSlot(scratch) returns a USiegeDeckSaveGame"), Loaded))
+		{
+			TestEqualSensitive(TEXT("(d) STATE ON DISK: ActiveDeckName read back is \"deck4\""),
+				Loaded->ActiveDeckName, FString(TEXT("deck4")));
+			TestTrue(TEXT("(d) STATE ON DISK: every deck read back is deep-equal to the pre-image"),
+				StatesEqual(DecksBefore, TEXT("deck4"), *Loaded));
+		}
+	}
+
+	// (e) gamepad Y on the empty slot AFTER the success is refused and leaves the NEW state.
+	{
+		bool bActivated = true;
+		FString Refusal;
+		TestEqual(TEXT("(e) gamepad Y on focused slot 4 resolves to slot 4"),
+			PressSetActiveKey(*Save, Table, EKeys::Gamepad_FaceButton_Top, 4, bActivated, Refusal), 4);
+		TestFalse(TEXT("(e) ...and is REFUSED"), bActivated);
+		TestEqualSensitive(TEXT("(e) STATE: ActiveDeckName stays \"deck4\" (the refusal neither reverts nor moves it)"),
+			Save->ActiveDeckName, FString(TEXT("deck4")));
+	}
+
+	// (f) the key with no slot focused AFTER the success changes nothing either.
+	{
+		bool bActivated = true;
+		FString Refusal;
+		PressSetActiveKey(*Save, Table, EKeys::Home, INDEX_NONE, bActivated, Refusal);
+		TestFalse(TEXT("(f) Home with no slot focused activates nothing"), bActivated);
+		TestTrue(TEXT("(f) STATE: the save is exactly the post-(c) state"), StatesEqual(DecksBefore, TEXT("deck4"), *Save));
+	}
 
 	return true;
 }
