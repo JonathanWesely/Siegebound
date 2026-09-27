@@ -174,6 +174,27 @@ public:
 	static int32 ResolveDeckBarActivationSlot(const FKey& Key, int32 FocusedBarSlotIndex);
 
 	/**
+	 *  ⭐ TASK-1521 [SET-ACTIVE-REPEAT-FILTER] — 🧑 HIS "fire once" ANSWER to
+	 *  qa/TASK-1509.md W1 (relayed; lane K2): a HELD Home / pad Y sets the active deck
+	 *  ONCE per physical press. This is the pure half of the Slate adapter's one
+	 *  divergence (HandleCardGridKey(const FKeyEvent&)), factored out the
+	 *  ResolveDeckBarActivationSlot way so it is assertable on STATE with no Slate focus:
+	 *    true  ⇔ InKeyEvent.IsRepeat()
+	 *            AND ResolveDeckBarActivationSlot(InKeyEvent.GetKey(), FocusedBarSlotIndex) != INDEX_NONE
+	 *  i.e. an auto-repeat of the pair while a deck-bar slot holds focus. The adapter
+	 *  answers true with FReply::Handled() and calls NOTHING: no SetActiveDeckBySlot, so
+	 *  no save, no outline redraw, no refusal Warning.
+	 *  ⛔ The claim half is the (3) row's OWN test (`BarSlot != INDEX_NONE`, same
+	 *  resolver), so a repeat is claimed in exactly the states the first press is.
+	 *  false ⇒ the event reaches the FKey body UNCHANGED: every first press, every other
+	 *  key's repeat (⛔ Enter → AddCopy still repeats, by design; his answer covered the
+	 *  set-active pair only), and a repeat with no bar slot focused.
+	 *  ⛔ No second key table: the pair is read through IsDeckBarActivationKey, inside
+	 *  the resolver. C++-only (FKeyEvent param; ⛔ no UFUNCTION).
+	 */
+	static bool IsHeldDeckBarActivationRepeat(const FKeyEvent& InKeyEvent, int32 FocusedBarSlotIndex);
+
+	/**
 	 *  ⭐ TASK-1507 — the SEVENTH IA_Menu* asset path, pinned on the TASK-1507 row
 	 *  and on DECK-§3 character-for-character (TASK-1508 authors the asset to this
 	 *  exact name; a typo is a silent null). ⛔ It lives HERE, on this class, and
@@ -1012,14 +1033,24 @@ private:
 	 *  Every other state leaves both keys unclaimed. Left/Right on a slot are
 	 *  STILL unclaimed here, byte-identically — Slate's own navigation walks the
 	 *  bar for a real key; door 3's walk is RelayDeckBarNavigationKeyToSlate.
+	 *  ⭐ TASK-1521 — a Slate key REPEAT of the pair on a focused bar slot (a HELD
+	 *  key) never reaches this row: the FKeyEvent adapter below claims it and calls
+	 *  nothing (🧑 his "fire once"). This body is unchanged by that row.
 	 */
 	FReply HandleCardGridKey(const FKey& Key);
 
 	/**
-	 *  ⛔ TASK-1423: THE SLATE ADAPTER, AND IT IS DELIBERATELY ONE LINE. It exists
-	 *  so the two shipped Slate doors above keep calling
-	 *  `HandleCardGridKey(InKeyEvent)` BYTE-IDENTICALLY — the hand-confirmed Slate
-	 *  path is not edited at its call sites, only given a thinner floor.
+	 *  ⛔ TASK-1423: THE SLATE ADAPTER. It exists so the two shipped Slate doors
+	 *  above keep calling `HandleCardGridKey(InKeyEvent)` BYTE-IDENTICALLY — the
+	 *  hand-confirmed Slate path is not edited at its call sites, only given a
+	 *  thinner floor.
+	 *  ⭐ TASK-1521 — it WAS one line with no behaviour of its own; it now has EXACTLY
+	 *  ONE divergence from the FKey body, and this is it: a key REPEAT of Home / pad Y
+	 *  while a deck-bar slot holds focus (IsHeldDeckBarActivationRepeat) is claimed
+	 *  (Handled) and calls nothing. Every other event runs the adapter's original line,
+	 *  `return HandleCardGridKey(InKeyEvent.GetKey());`, unchanged. It sits here
+	 *  because this is the last frame where FKeyEvent::IsRepeat() is still visible.
+	 *  Door 3 has no FKeyEvent and binds `Started` only, so it never repeats.
 	 */
 	FReply HandleCardGridKey(const FKeyEvent& InKeyEvent);
 

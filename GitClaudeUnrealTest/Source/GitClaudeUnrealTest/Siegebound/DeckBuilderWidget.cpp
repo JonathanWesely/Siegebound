@@ -1831,14 +1831,43 @@ FReply UDeckBuilderWidget::HandleCardGridKey(const FKey& Key)
 	return FReply::Unhandled();
 }
 
-// ⛔ TASK-1423 — THE SLATE ADAPTER, ONE LINE, AND ITS ONE JOB IS THAT THE TWO
-// SHIPPED SLATE DOORS BELOW ARE NOT EDITED. They still read
-// `HandleCardGridKey(InKeyEvent)` character-for-character; only the floor under
-// them got thinner. ⛔ There is NO behaviour here to diverge from the FKey body —
-// the whole function is the extraction the FKey body used to do on its own first
-// line, moved up one frame so the third door can skip it.
+// ⛔ TASK-1423 — THE SLATE ADAPTER, AND ITS ONE JOB IS THAT THE TWO SHIPPED SLATE
+// DOORS BELOW ARE NOT EDITED. They still read `HandleCardGridKey(InKeyEvent)`
+// character-for-character; only the floor under them got thinner. It began as the
+// extraction the FKey body used to do on its own first line, moved up one frame so
+// the third door can skip it, and its last line is still exactly that.
+// ⭐ TASK-1521 [SET-ACTIVE-REPEAT-FILTER] — the old sentence "there is NO behaviour
+// here to diverge from the FKey body" is NO LONGER TRUE. There is exactly ONE
+// divergence, and it is this: a key REPEAT (FKeyEvent::IsRepeat()) of Home / pad Y
+// while a deck-bar slot holds focus is CLAIMED and does NOTHING. 🧑 His answer to
+// qa/TASK-1509.md W1, "Yes, fire once": a held key sets the active deck once per
+// physical press, as right-click (which cannot repeat) always has. Before this, every
+// auto-repeat re-ran SetActiveDeckBySlot: an identical SaveGameToSlot on a legal
+// deck, one refusal Warning on an illegal one, ~30 a second.
+//   · WHY HERE: this is the last frame where IsRepeat() is visible. The FKey body
+//     only ever sees the key.
+//   · THE CLAIM IS THE FIRST PRESS'S CLAIM: IsHeldDeckBarActivationRepeat tests the
+//     (3) row's own `ResolveDeckBarActivationSlot(Key, FindFocusedDeckBarSlot()) !=
+//     INDEX_NONE`, and in that state the FKey body's reply to the pair is Handled.
+//     So a repeat is claimed in exactly the states the first press is claimed: no
+//     new fall-through, no new absorb.
+//   · EVERYTHING ELSE RUNS THE ORIGINAL LINE: every first press, every other key's
+//     repeat (⛔ Enter → AddCopy repeats by the same design, and his answer did not
+//     cover it), and a repeat with no bar slot focused.
+//   · Focus is read ONLY for a repeat of the pair, so FindFocusedDeckBarSlot keeps
+//     its header contract (Home / pad Y and door-3 Left / Right, never every key).
+//   · Door 3 needs nothing: IA_MenuSecondary is bound `Started` only and enters the
+//     FKey body directly, so it never carries a repeat.
 FReply UDeckBuilderWidget::HandleCardGridKey(const FKeyEvent& InKeyEvent)
 {
+	const int32 FocusedBarSlot = (InKeyEvent.IsRepeat() && IsDeckBarActivationKey(InKeyEvent.GetKey()))
+		? FindFocusedDeckBarSlot()
+		: INDEX_NONE;
+	if (IsHeldDeckBarActivationRepeat(InKeyEvent, FocusedBarSlot))
+	{
+		return FReply::Handled();
+	}
+
 	return HandleCardGridKey(InKeyEvent.GetKey());
 }
 
@@ -2192,6 +2221,16 @@ int32 UDeckBuilderWidget::ResolveDeckBarActivationSlot(const FKey& Key, int32 Fo
 	}
 
 	return FocusedBarSlotIndex;
+}
+
+bool UDeckBuilderWidget::IsHeldDeckBarActivationRepeat(const FKeyEvent& InKeyEvent, int32 FocusedBarSlotIndex)
+{
+	// ⭐ TASK-1521 — the Slate adapter's one divergence (header). ⛔ The claim half is
+	// the (3) row's own test through the same resolver, so the pair is still spelled
+	// once (IsDeckBarActivationKey, inside the resolver) and a repeat's claim cannot
+	// drift from the first press's.
+	return InKeyEvent.IsRepeat()
+		&& ResolveDeckBarActivationSlot(InKeyEvent.GetKey(), FocusedBarSlotIndex) != INDEX_NONE;
 }
 
 int32 UDeckBuilderWidget::FindFocusedDeckBarSlot() const

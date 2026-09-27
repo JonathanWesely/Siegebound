@@ -3,6 +3,7 @@
 #include "Misc/AutomationTest.h"
 
 #include "Engine/DataTable.h"
+#include "Input/Events.h" // TASK-1521: FKeyEvent — a Slate key event with its repeat bit, the set-active repeat filter's input
 #include "InputCoreTypes.h" // TASK-1507: EKeys — the set-active key table (Home · Gamepad_FaceButton_Top) and the keys it must NOT claim
 #include "Kismet/GameplayStatics.h"
 #include "Siegebound/CardHandWidget.h" // TASK-1270 loop 1: the REAL late listener (InitForController binds, then spends the held notice)
@@ -1764,6 +1765,376 @@ bool FSiegeDeckKeyboardSetActiveOnFocusedBarSlotTest::RunTest(const FString& Par
 		PressSetActiveKey(*Save, Table, EKeys::Home, INDEX_NONE, bActivated, Refusal);
 		TestFalse(TEXT("(f) Home with no slot focused activates nothing"), bActivated);
 		TestTrue(TEXT("(f) STATE: the save is exactly the post-(c) state"), StatesEqual(DecksBefore, TEXT("deck4"), *Save));
+	}
+
+	return true;
+}
+
+namespace SiegeDeckSlotsTestUtils
+{
+	/**
+	 *  TASK-1521 — a Slate key event built the way FSlateApplication::OnKeyDown builds
+	 *  one for a physical key (`FKeyEvent KeyEvent(Key, ..., GetUserIndexForKeyboard(),
+	 *  IsRepeat, CharacterCode, KeyCode)`), with the REPEAT BIT under the test's control.
+	 *  The user index is a uint32, so the (uint32 InUserIndex) constructor is an exact
+	 *  match: the shape the shipped relay uses.
+	 */
+	static FKeyEvent MakeSlateKeyEvent(const FKey& Key, bool bIsRepeat)
+	{
+		const uint32 SlateUserIndex = 0;
+		return FKeyEvent(Key, FModifierKeysState(), SlateUserIndex, bIsRepeat, /*InCharacterCode=*/ 0, /*InKeyCode=*/ 0);
+	}
+
+	/** TASK-1521 — what ONE Slate key event did on the set-active route. A per-event STATE, never a count. */
+	enum class ESetActiveKeyOutcome : uint8
+	{
+		NotClaimed,           // the set-active route declined it (the FKey body's tail: Unhandled)
+		ClaimedCalledNothing, // ⭐ the adapter's one divergence: Handled, SetActiveDeckBySlot NOT called
+		Refused,              // claimed; SetActiveDeckBySlot ran; the TASK-1270 gate refused (one Warning in the shipped route)
+		Activated,            // claimed; SetActiveDeckBySlot ran; ActiveDeckName set AND persisted
+	};
+
+	static FString SetActiveKeyOutcomeName(ESetActiveKeyOutcome Outcome)
+	{
+		switch (Outcome)
+		{
+		case ESetActiveKeyOutcome::NotClaimed:           return TEXT("NotClaimed");
+		case ESetActiveKeyOutcome::ClaimedCalledNothing: return TEXT("ClaimedCalledNothing");
+		case ESetActiveKeyOutcome::Refused:              return TEXT("Refused");
+		case ESetActiveKeyOutcome::Activated:            return TEXT("Activated");
+		}
+		return TEXT("<unknown outcome>");
+	}
+
+	/**
+	 *  TASK-1521 — ONE SLATE KEY EVENT through the set-active route, composed from the
+	 *  SAME halves the shipping route composes, in the same order:
+	 *    (1) the Slate adapter's one divergence,
+	 *        UDeckBuilderWidget::IsHeldDeckBarActivationRepeat(Event, FocusedBarSlot):
+	 *        true ⇒ Handled, and NOTHING is called;
+	 *    (2) otherwise the FKey body's (3) row: ResolveDeckBarActivationSlot, then, iff
+	 *        claimed, the in-memory step SetActiveDeckBySlot → SetActiveDeck takes
+	 *        (TryActivateSavedDeck on MakeFixedDeckName(slot)), then, on success only,
+	 *        SetActiveDeck's persist. ⛔ The persist is RE-POINTED AT THE SCRATCH SLOT,
+	 *        for the reason PressSetActiveKey's comment gives (the real seam resolves
+	 *        🧑 his guest slot).
+	 *  The adapter hands the filter the focus only for a repeat of the pair and
+	 *  INDEX_NONE otherwise. Passing the focus always is equivalent, because (0) asserts
+	 *  the filter answers false for every first press and every other key, whatever
+	 *  the focus.
+	 *  ⛔ The set-active route ONLY. A non-pair key's own row (e.g. Enter → AddCopy with
+	 *  a card focused) is not modelled here, so it is asserted in (0) and nowhere else.
+	 */
+	static ESetActiveKeyOutcome SendSetActiveKeyEvent(USiegeDeckSaveGame& Save, const UDataTable* Table,
+		const FKeyEvent& Event, int32 FocusedBarSlot, FString& OutRefusal)
+	{
+		OutRefusal.Reset();
+
+		if (UDeckBuilderWidget::IsHeldDeckBarActivationRepeat(Event, FocusedBarSlot))
+		{
+			return ESetActiveKeyOutcome::ClaimedCalledNothing;
+		}
+
+		const int32 Slot = UDeckBuilderWidget::ResolveDeckBarActivationSlot(Event.GetKey(), FocusedBarSlot);
+		if (Slot == INDEX_NONE)
+		{
+			return ESetActiveKeyOutcome::NotClaimed;
+		}
+
+		FString Canonical;
+		if (!UDeckBuilderWidget::TryActivateSavedDeck(Save, Table, USiegeDeckSaveGame::MakeFixedDeckName(Slot), Canonical, OutRefusal))
+		{
+			return ESetActiveKeyOutcome::Refused;
+		}
+
+		UGameplayStatics::SaveGameToSlot(&Save, ScratchDeckSlotName, USiegeDeckSaveGame::UserIndex);
+		return ESetActiveKeyOutcome::Activated;
+	}
+
+	/** TASK-1521 — ActiveDeckName as the SCRATCH slot holds it on disk right now. */
+	static FString ReadScratchActiveDeckName()
+	{
+		const USiegeDeckSaveGame* Loaded = Cast<USiegeDeckSaveGame>(
+			UGameplayStatics::LoadGameFromSlot(ScratchDeckSlotName, USiegeDeckSaveGame::UserIndex));
+		return Loaded ? Loaded->ActiveDeckName : FString(TEXT("<no scratch save>"));
+	}
+}
+
+/**
+ *  TASK-1521 [SET-ACTIVE-REPEAT-FILTER] — 🧑 HIS ANSWER to qa/TASK-1509.md W1, "Yes,
+ *  fire once": a HELD Home / pad Y sets the active deck ONCE per physical press. The
+ *  key's auto-repeats on a focused deck-bar slot are CLAIMED (so they fall through to
+ *  nothing the first press would not have reached) and call NOTHING: no save, no
+ *  outline redraw, no refusal Warning.
+ *
+ *  ⭐ STATE, NOT TALLIES (SC-§104), in two parts:
+ *    (0) THE DECISION — IsHeldDeckBarActivationRepeat, the pure half of the Slate
+ *        adapter's one divergence, on real FKeyEvents:
+ *        · both keys over the whole focus domain (INDEX_NONE, -2, every slot 0..9, 10):
+ *          a REPEAT is claimed by the filter IFF the first press is claimed by the (3)
+ *          row (ResolveDeckBarActivationSlot != INDEX_NONE). The claim set is equal:
+ *          never wider, never narrower;
+ *        · a FIRST press is never filtered, at any focus (it reaches the unchanged body);
+ *        · every other key, Enter first, is never filtered, repeat or not, at any focus.
+ *    (1) THE EFFECT — a held key on a migrated in-memory save, persisting to the
+ *        SCRATCH slot:
+ *        (a) holding Home on legal deck4 activates it on the press and on NO repeat.
+ *            This is shown by an INTERVENING change: a right-click on deck1 mid-hold,
+ *            which thirty repeats then leave standing in memory AND on disk. The
+ *            unfiltered route would have re-set deck4, and re-written it, on the first
+ *            repeat, so this state tells the two apart; a content-only check cannot,
+ *            because the repeated write is identical (W1: "no data is lost");
+ *        (b) a NEW press after the release activates again: once PER press, not once ever;
+ *        (c) holding pad Y on the empty deck5 gives ONE refusal on the press, and the
+ *            repeats carry no refusal at all (so no Warning, no OnDeckActivationRefused);
+ *        (d) holding Home with no slot focused: unclaimed on the press and on every
+ *            repeat (no new absorb), and nothing changes;
+ *        (e) pad Y's first press on a legal deck still activates it (the Y positive control).
+ *
+ *  ⛔ WHAT THIS LANE CANNOT HOST, AND WHAT CARRIES IT (never silently):
+ *    · A real Slate auto-repeat arriving through NativeOnPreviewKeyDown with a bar slot
+ *      focused. A NewObject'd builder has no bar, so FindFocusedDeckBarSlot is
+ *      INDEX_NONE by construction (an assertion of that could not fail, SC-§39), and no
+ *      rig on this project can generate a Slate key-repeat (VER-§8 cl. 1). Carried by
+ *      TASK-1524 A3, 🧑 his hand check (hold Home on deck5: one refusal line, not a run).
+ *    · The adapter's own wiring (that it calls this filter and returns Handled): QA's
+ *      read (TASK-1522). The helper above composes the halves and does not call the
+ *      adapter (the qa/TASK-1509.md N5 shape, declared).
+ *    · SetActiveDeck's persist to the REAL seam-resolved slot: PressSetActiveKey's comment.
+ *
+ *  Zero network, zero PIE, zero widget; the one disk touch is the scratch slot,
+ *  asserted not to be the shipped guest slot and deleted on the way in and out.
+ *  M8: adds no replicated property, no new replicated class, no RPC.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeDeckHeldSetActiveKeyFiresOncePerPressTest,
+	"Siegebound.Deck.HeldSetActiveKeyFiresOncePerPress",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeDeckHeldSetActiveKeyFiresOncePerPressTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeDeckSlotsTestUtils;
+
+	// SELF-CHECK: the events carry the bit the test thinks they carry. A constructor
+	// argument in the wrong position would make every assertion below vacuous.
+	{
+		const FKeyEvent HomeRepeat = MakeSlateKeyEvent(EKeys::Home, /*bIsRepeat=*/ true);
+		const FKeyEvent HomeFirst = MakeSlateKeyEvent(EKeys::Home, /*bIsRepeat=*/ false);
+		TestTrue(TEXT("SELF-CHECK: the repeat event reports IsRepeat() == true"), HomeRepeat.IsRepeat());
+		TestFalse(TEXT("SELF-CHECK: the first-press event reports IsRepeat() == false"), HomeFirst.IsRepeat());
+		TestTrue(TEXT("SELF-CHECK: the event carries the key it was built with (Home)"), HomeRepeat.GetKey() == EKeys::Home);
+	}
+
+	// ---------------------------------------------------------------------
+	// (0) THE DECISION — the pure half of the Slate adapter's one divergence
+	// ---------------------------------------------------------------------
+	TArray<int32> FocusDomain = { INDEX_NONE, -2, USiegeDeckSaveGame::NumFixedDeckSlots };
+	for (int32 SlotIndex = 0; SlotIndex < USiegeDeckSaveGame::NumFixedDeckSlots; ++SlotIndex)
+	{
+		FocusDomain.Add(SlotIndex);
+	}
+
+	const FKey SetActivePair[] = { EKeys::Home, EKeys::Gamepad_FaceButton_Top };
+	for (const FKey& PairKey : SetActivePair)
+	{
+		const FKeyEvent Repeat = MakeSlateKeyEvent(PairKey, /*bIsRepeat=*/ true);
+		const FKeyEvent FirstPress = MakeSlateKeyEvent(PairKey, /*bIsRepeat=*/ false);
+		const FString KeyName = PairKey.ToString();
+
+		for (const int32 Focus : FocusDomain)
+		{
+			const bool bBarSlotFocused = Focus >= 0 && Focus < USiegeDeckSaveGame::NumFixedDeckSlots;
+			const bool bFirstPressClaimed = UDeckBuilderWidget::ResolveDeckBarActivationSlot(PairKey, Focus) != INDEX_NONE;
+			const bool bRepeatFiltered = UDeckBuilderWidget::IsHeldDeckBarActivationRepeat(Repeat, Focus);
+
+			// The premise the equality leans on, pinned so it cannot pass vacuously
+			// (a resolver that claimed nothing would make both sides false everywhere).
+			TestTrue(*FString::Printf(TEXT("(0) PREMISE: the (3) row claims the first '%s' at focus %d iff a bar slot is focused (expected %s)"),
+				*KeyName, Focus, bBarSlotFocused ? TEXT("claimed") : TEXT("not claimed")),
+				bFirstPressClaimed == bBarSlotFocused);
+
+			// ⭐ THE CLAIM SET: a held key's repeat is claimed exactly where the first press is.
+			TestTrue(*FString::Printf(TEXT("(0) CLAIM SET: a '%s' REPEAT at focus %d is claimed by the filter iff the first press is claimed (first press %s, repeat %s)"),
+				*KeyName, Focus, bFirstPressClaimed ? TEXT("claimed") : TEXT("not claimed"), bRepeatFiltered ? TEXT("claimed") : TEXT("not claimed")),
+				bRepeatFiltered == bFirstPressClaimed);
+
+			// ⛔ The first press is never the filter's: it reaches the unchanged FKey body.
+			TestFalse(*FString::Printf(TEXT("(0) a FIRST '%s' press at focus %d is NOT filtered (it reaches the unchanged body)"), *KeyName, Focus),
+				UDeckBuilderWidget::IsHeldDeckBarActivationRepeat(FirstPress, Focus));
+		}
+	}
+
+	// Every other key, as a REPEAT and as a first press, at a focused slot (both ends
+	// and the middle) and at no focus: never filtered, so its repeat behaviour is
+	// exactly today's. ⛔ Enter leads: Enter → AddCopy repeats by the same design, and
+	// 🧑 his answer covered the set-active pair only.
+	const FKey NotTheSetActivePair[] =
+	{
+		EKeys::Enter, EKeys::SpaceBar,                       // AddCopy with a card focused · Slate's Accept on a SlotButton
+		EKeys::Left, EKeys::Right, EKeys::Up, EKeys::Down,   // card-focus movement / bar navigation / the grid entry key
+		EKeys::Escape, EKeys::Tab,                           // AS-§6 A-2's scoped grant · DECK-§9 cl. 4's deliberate absence
+		EKeys::Delete, EKeys::BackSpace, EKeys::End,         // Remove · IA_MenuBack's keyboard key · Home's neighbour
+		EKeys::Gamepad_FaceButton_Bottom, EKeys::Gamepad_FaceButton_Right, EKeys::Gamepad_FaceButton_Left, // A · B · X
+		EKeys::Gamepad_DPad_Down,                            // the pad's grid entry / card movement
+		EKeys::H, EKeys::One,                                // DECK-§9 cl. 3: no letter, no digit
+	};
+	const int32 FocusProbes[] = { INDEX_NONE, 0, 3, USiegeDeckSaveGame::NumFixedDeckSlots - 1 };
+	for (const FKey& OtherKey : NotTheSetActivePair)
+	{
+		const FKeyEvent Repeat = MakeSlateKeyEvent(OtherKey, /*bIsRepeat=*/ true);
+		const FKeyEvent FirstPress = MakeSlateKeyEvent(OtherKey, /*bIsRepeat=*/ false);
+		for (const int32 Focus : FocusProbes)
+		{
+			TestFalse(*FString::Printf(TEXT("(0) a '%s' REPEAT at focus %d is NOT filtered (its repeat behaviour is unchanged)"), *OtherKey.ToString(), Focus),
+				UDeckBuilderWidget::IsHeldDeckBarActivationRepeat(Repeat, Focus));
+			TestFalse(*FString::Printf(TEXT("(0) a first '%s' press at focus %d is NOT filtered"), *OtherKey.ToString(), Focus),
+				UDeckBuilderWidget::IsHeldDeckBarActivationRepeat(FirstPress, Focus));
+		}
+	}
+
+	// ---------------------------------------------------------------------
+	// (1) THE EFFECT — a held key on an in-memory ten-slot save, persisting to scratch
+	// ---------------------------------------------------------------------
+	TestNotEqual(TEXT("PREMISE: the scratch slot is NOT the shipped guest slot"),
+		FString(ScratchDeckSlotName), FString(USiegeDeckSaveGame::SlotName));
+	FDeckScratchGuard ScratchGuard;
+
+	UDataTable* Table = MakeScratchCardTable();
+	if (!TestNotNull(TEXT("SELF-CHECK: scratch card table constructed"), Table))
+	{
+		return false;
+	}
+	AddScratchCard(*Table, TEXT("Footman"), 12);
+
+	USiegeDeckSaveGame* Save = MakeSave();
+	if (!TestNotNull(TEXT("SELF-CHECK: save object constructed"), Save))
+	{
+		return false;
+	}
+	TestTrue(TEXT("SELF-CHECK: a fresh save migrates to the ten slots (active = deck1)"),
+		USiegeDeckSaveGame::MigrateToFixedSlots(*Save));
+	if (Save->SavedDecks.Num() != USiegeDeckSaveGame::NumFixedDeckSlots)
+	{
+		return false;
+	}
+
+	// deck1 (slot 0) and deck4 (slot 3) = LEGAL 50-card decks; deck5 (slot 4) stays EMPTY (illegal).
+	AddDeckEntry(Save->SavedDecks[0], TEXT("Footman"), 50);
+	AddDeckEntry(Save->SavedDecks[3], TEXT("Footman"), 50);
+	TestEqual(TEXT("SELF-CHECK: deck1 holds exactly 50 cards"), Save->SavedDecks[0].TotalCount(), 50);
+	TestEqual(TEXT("SELF-CHECK: deck4 holds exactly 50 cards"), Save->SavedDecks[3].TotalCount(), 50);
+	TestEqual(TEXT("SELF-CHECK: deck5 is empty"), Save->SavedDecks[4].TotalCount(), 0);
+	TestEqualSensitive(TEXT("PRE-IMAGE: the active deck is \"deck1\""), Save->ActiveDeckName, FString(TEXT("deck1")));
+	const TArray<FDeckList> DecksBefore = Save->SavedDecks;
+
+	// The file as it stands before any key: the pre-image, on the scratch slot.
+	TestTrue(TEXT("SETUP: the pre-image is written to the scratch slot"),
+		UGameplayStatics::SaveGameToSlot(Save, ScratchDeckSlotName, USiegeDeckSaveGame::UserIndex));
+	TestEqualSensitive(TEXT("SETUP: the scratch slot reads back \"deck1\""), ReadScratchActiveDeckName(), FString(TEXT("deck1")));
+
+	// W1's rate: ~30 OS auto-repeats in a one-second hold. It sizes the hold; ⛔ nothing
+	// below counts calls, every assertion is the state after (or of) an event.
+	constexpr int32 RepeatsInAOneSecondHold = 30;
+	constexpr int32 LegalDeck4Slot = 3;
+	constexpr int32 EmptyDeck5Slot = 4;
+	constexpr int32 LegalDeck1Slot = 0;
+
+	// (a) HOLD Home on legal deck4: the press activates; no repeat does.
+	{
+		FString Refusal;
+		const ESetActiveKeyOutcome PressOutcome = SendSetActiveKeyEvent(*Save, Table, MakeSlateKeyEvent(EKeys::Home, false), LegalDeck4Slot, Refusal);
+		TestEqual(TEXT("(a) the PRESS of Home on focused deck4 activates it"),
+			SetActiveKeyOutcomeName(PressOutcome), SetActiveKeyOutcomeName(ESetActiveKeyOutcome::Activated));
+		TestEqualSensitive(TEXT("(a) STATE: after the press, ActiveDeckName is \"deck4\""), Save->ActiveDeckName, FString(TEXT("deck4")));
+		TestEqualSensitive(TEXT("(a) STATE ON DISK: after the press, the scratch slot reads \"deck4\""), ReadScratchActiveDeckName(), FString(TEXT("deck4")));
+
+		// THE INTERVENING CHANGE, mid-hold: a right-click on deck1 (SetActiveDeckBySlot(0)'s
+		// in-memory step, then its persist, re-pointed at scratch) while Home is still down.
+		FString Canonical;
+		TestTrue(TEXT("(a) SETUP: a mid-hold right-click on deck1 activates it"),
+			UDeckBuilderWidget::TryActivateSavedDeck(*Save, Table, USiegeDeckSaveGame::MakeFixedDeckName(LegalDeck1Slot), Canonical, Refusal));
+		TestTrue(TEXT("(a) SETUP: ...and persists it to the scratch slot"),
+			UGameplayStatics::SaveGameToSlot(Save, ScratchDeckSlotName, USiegeDeckSaveGame::UserIndex));
+		TestEqualSensitive(TEXT("(a) SETUP: the scratch slot now reads \"deck1\" (the intervention took hold)"),
+			ReadScratchActiveDeckName(), FString(TEXT("deck1")));
+
+		const FKeyEvent HomeRepeat = MakeSlateKeyEvent(EKeys::Home, /*bIsRepeat=*/ true);
+		for (int32 RepeatNumber = 1; RepeatNumber <= RepeatsInAOneSecondHold; ++RepeatNumber)
+		{
+			const ESetActiveKeyOutcome RepeatOutcome = SendSetActiveKeyEvent(*Save, Table, HomeRepeat, LegalDeck4Slot, Refusal);
+			TestEqual(*FString::Printf(TEXT("(a) Home repeat #%d on focused deck4 is CLAIMED and calls nothing"), RepeatNumber),
+				SetActiveKeyOutcomeName(RepeatOutcome), SetActiveKeyOutcomeName(ESetActiveKeyOutcome::ClaimedCalledNothing));
+		}
+
+		// ⭐ THE DISCRIMINATING STATE. An unfiltered route re-sets deck4 on the FIRST
+		// repeat and writes it; the filtered one leaves the intervention standing.
+		TestEqualSensitive(TEXT("(a) STATE: after the hold, ActiveDeckName is still \"deck1\" (no repeat re-set deck4)"),
+			Save->ActiveDeckName, FString(TEXT("deck1")));
+		TestEqualSensitive(TEXT("(a) STATE ON DISK: after the hold, the scratch slot still reads \"deck1\" (no repeat wrote the file)"),
+			ReadScratchActiveDeckName(), FString(TEXT("deck1")));
+		TestTrue(TEXT("(a) STATE: no deck's content moved"), StatesEqual(DecksBefore, TEXT("deck1"), *Save));
+	}
+
+	// (b) RELEASE, then a NEW press: it activates again. Once per press, not once ever.
+	{
+		FString Refusal;
+		const ESetActiveKeyOutcome PressOutcome = SendSetActiveKeyEvent(*Save, Table, MakeSlateKeyEvent(EKeys::Home, false), LegalDeck4Slot, Refusal);
+		TestEqual(TEXT("(b) a NEW press of Home on focused deck4, after the release, activates it"),
+			SetActiveKeyOutcomeName(PressOutcome), SetActiveKeyOutcomeName(ESetActiveKeyOutcome::Activated));
+		TestEqualSensitive(TEXT("(b) STATE: ActiveDeckName is \"deck4\" again"), Save->ActiveDeckName, FString(TEXT("deck4")));
+		TestEqualSensitive(TEXT("(b) STATE ON DISK: the scratch slot reads \"deck4\" again"), ReadScratchActiveDeckName(), FString(TEXT("deck4")));
+	}
+
+	// (c) HOLD pad Y on the empty deck5: ONE refusal on the press, none on the repeats.
+	{
+		FString Refusal;
+		const ESetActiveKeyOutcome PressOutcome = SendSetActiveKeyEvent(*Save, Table, MakeSlateKeyEvent(EKeys::Gamepad_FaceButton_Top, false), EmptyDeck5Slot, Refusal);
+		TestEqual(TEXT("(c) the PRESS of pad Y on focused deck5 (empty) is claimed and REFUSED"),
+			SetActiveKeyOutcomeName(PressOutcome), SetActiveKeyOutcomeName(ESetActiveKeyOutcome::Refused));
+		TestTrue(TEXT("(c) ...with IsDeckLegal's exact-50 reason (the one refusal Warning of this hold)"), Refusal.Contains(TEXT("exactly 50")));
+
+		const FKeyEvent PadYRepeat = MakeSlateKeyEvent(EKeys::Gamepad_FaceButton_Top, /*bIsRepeat=*/ true);
+		for (int32 RepeatNumber = 1; RepeatNumber <= RepeatsInAOneSecondHold; ++RepeatNumber)
+		{
+			const ESetActiveKeyOutcome RepeatOutcome = SendSetActiveKeyEvent(*Save, Table, PadYRepeat, EmptyDeck5Slot, Refusal);
+			TestEqual(*FString::Printf(TEXT("(c) pad Y repeat #%d on focused deck5 is CLAIMED and calls nothing"), RepeatNumber),
+				SetActiveKeyOutcomeName(RepeatOutcome), SetActiveKeyOutcomeName(ESetActiveKeyOutcome::ClaimedCalledNothing));
+			TestTrue(*FString::Printf(TEXT("(c) STATE: pad Y repeat #%d carries NO refusal reason (so no Warning, no OnDeckActivationRefused)"), RepeatNumber),
+				Refusal.IsEmpty());
+		}
+
+		TestEqualSensitive(TEXT("(c) STATE: ActiveDeckName stays \"deck4\""), Save->ActiveDeckName, FString(TEXT("deck4")));
+		TestEqualSensitive(TEXT("(c) STATE ON DISK: the scratch slot still reads \"deck4\""), ReadScratchActiveDeckName(), FString(TEXT("deck4")));
+		TestTrue(TEXT("(c) STATE: the save is exactly the post-(b) state"), StatesEqual(DecksBefore, TEXT("deck4"), *Save));
+	}
+
+	// (d) HOLD Home with NO bar slot focused: unclaimed on the press AND on every repeat.
+	{
+		FString Refusal;
+		const ESetActiveKeyOutcome PressOutcome = SendSetActiveKeyEvent(*Save, Table, MakeSlateKeyEvent(EKeys::Home, false), INDEX_NONE, Refusal);
+		TestEqual(TEXT("(d) the PRESS of Home with no bar slot focused is NOT claimed"),
+			SetActiveKeyOutcomeName(PressOutcome), SetActiveKeyOutcomeName(ESetActiveKeyOutcome::NotClaimed));
+
+		const FKeyEvent HomeRepeat = MakeSlateKeyEvent(EKeys::Home, /*bIsRepeat=*/ true);
+		for (int32 RepeatNumber = 1; RepeatNumber <= RepeatsInAOneSecondHold; ++RepeatNumber)
+		{
+			const ESetActiveKeyOutcome RepeatOutcome = SendSetActiveKeyEvent(*Save, Table, HomeRepeat, INDEX_NONE, Refusal);
+			TestEqual(*FString::Printf(TEXT("(d) Home repeat #%d with no bar slot focused is NOT claimed either (no new absorb)"), RepeatNumber),
+				SetActiveKeyOutcomeName(RepeatOutcome), SetActiveKeyOutcomeName(ESetActiveKeyOutcome::NotClaimed));
+		}
+
+		TestTrue(TEXT("(d) STATE: the save is exactly the post-(b) state"), StatesEqual(DecksBefore, TEXT("deck4"), *Save));
+		TestEqualSensitive(TEXT("(d) STATE ON DISK: the scratch slot still reads \"deck4\""), ReadScratchActiveDeckName(), FString(TEXT("deck4")));
+	}
+
+	// (e) pad Y's FIRST press on a legal deck still activates it: the Y positive control.
+	{
+		FString Refusal;
+		const ESetActiveKeyOutcome PressOutcome = SendSetActiveKeyEvent(*Save, Table, MakeSlateKeyEvent(EKeys::Gamepad_FaceButton_Top, false), LegalDeck1Slot, Refusal);
+		TestEqual(TEXT("(e) the PRESS of pad Y on focused deck1 (legal) activates it"),
+			SetActiveKeyOutcomeName(PressOutcome), SetActiveKeyOutcomeName(ESetActiveKeyOutcome::Activated));
+		TestEqualSensitive(TEXT("(e) STATE: ActiveDeckName is \"deck1\""), Save->ActiveDeckName, FString(TEXT("deck1")));
+		TestEqualSensitive(TEXT("(e) STATE ON DISK: the scratch slot reads \"deck1\""), ReadScratchActiveDeckName(), FString(TEXT("deck1")));
 	}
 
 	return true;
