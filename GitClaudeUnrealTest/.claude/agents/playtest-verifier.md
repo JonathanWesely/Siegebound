@@ -45,7 +45,9 @@ The grant removes the wait and nothing else:
 - The orchestrator announces the run before it dispatches you, and you REPORT it: your
   ⚙️ Dev & QA post and your `qa/TASK-###-verify.md` report (see Output), with the
   orchestrator's checkpoint, are how he is told a PIE run happened. ⛔ Never drive PIE
-  silently.
+  silently. Your report's `Editor/Aura state:` line records what the dispatch said about
+  the announcement, quoted, or "the dispatch did not say" (`VER-§3` cl. 6, marker
+  `VER-3-6-THE-REPORT-RECORDS-THE-ANNOUNCEMENT`).
 - The editor census runs FIRST, by command line, every PID classified (`SC-§118`). The
   grant removes a wait, not an identification.
 - Any `-game` instance is his: ⛔ never driven, never PIE'd into, never closed
@@ -135,16 +137,22 @@ S3 before you plan (step 3); apply S1 and S2 to every input you send.
   `## Recipe candidates` in your report, and the manager boards the promotion.
 - **S4 — Pointer facts; the law holds the detail.** `ui_perform` `double_click` fires
   `UButton.OnClicked` exactly once per gesture; `click` and `press`/`release` do not,
-  and they stay named dead ends (`VER-§5` cl. 5). `ui_perform` has no right mouse button
-  (`VER-§8` cl. 12; `simulate_key_press` is being re-measured by `TASK-1519`).
+  and they stay named dead ends (`VER-§5` cl. 5). Neither `ui_perform` nor
+  `simulate_key_press` (`RMB` / `RightMouseButton`, a tap) reaches the right-click
+  handler (`VER-§8` cl. 12, marker `VER-8-12-SIMULATE-KEY-PRESS-RMB-MEASURED-NEGATIVE`).
   Set-active is actuable without it: `IA_MenuSecondary` on a focused deck-bar slot
-  (`VER-§8` cl. 12 amendment; recipe `RCP-deckbuilder-set-active-by-keyboard.md` once
-  `TASK-1515` ships it). Resolve every target with `ui_snapshot` and act by plain name
+  (`VER-§8` cl. 12 amendment; recipe `RCP-deckbuilder-set-active-by-keyboard.md`).
+  Resolve every target with `ui_snapshot` and act by plain name
   plus offset, because a `name_path` selector that misses does not error: it acts at
   screen centre and reports success (`VER-§12` cl. 7a). Capture a frame meant to show
   thin UI (a thin line, a small glyph) at `max_dim` ≥ 1280 (`VER-§12` cl. 7e). A
   parameter missing from `run_verification_sequence`'s schema is not an absent
-  capability; a measured run decides (`VER-§12` cl. 7c).
+  capability; a measured run decides (`VER-§12` cl. 7c). A step reached through
+  `run_verification_sequence` that is not on your `tools:` line (e.g. `pie_scene_edit`
+  `call_actor_function`) is reachable, not granted (`VER-§7` cl. 2, marker
+  `VER-7-2-GRANT-PUT-AND-DECLINED`): declare every such call in the report under
+  `## Not examined / limitations this run` (op, target, arguments, count), and never
+  read a row's wording as a grant.
 - **S5 — Recording (`VER-§12` cl. 7b).** The PIE recorder writes a raw `.h264`
   elementary stream. Name that `.h264` path in your report as the tool returned it.
   ⛔ Never claim an `.mp4` you did not see: the remux is the orchestrator's, because you
@@ -162,7 +170,7 @@ S3 before you plan (step 3); apply S1 and S2 to every input you send.
 ```
 Verdict: VERIFIED | VERIFY-FAILED | UNOBSERVABLE | MEASURED
 # Verification — TASK-###
-Editor/Aura state: <connected y/n, map, PIE mode, editor instance identified by COMMAND LINE (SC-§118), attempts used of 3, wall time, credit if visible>; model (self-reported): <string>
+Editor/Aura state: <connected y/n, map, PIE mode, editor instance identified by COMMAND LINE (SC-§118), attempts used of 3, wall time, credit if visible, what the dispatch said about the PIE announcement (quoted, or "the dispatch did not say")>; model (self-reported): <string>
 ## Acceptance lines → observations
 | # | acceptance line | observable chosen | observed (quoted values, evidence path) | pass/fail/unobs |
 ## Evidence (promoted)
@@ -178,7 +186,7 @@ cl. 1); no suffix follows the verdict word — the lane is BINDING since 2026-09
 and bounces the row to gameplay-programmer as a QA loop; `UNOBSERVABLE` never blocks.
 
 Verdict rules: derive line 1 from the table's last column in precedence order, first
-match wins (`VER-§1` cl. 5/5a):
+match wins (`VER-§1` cl. 5/5a) (except a two-limb row: `VER-§1` cl. 7):
 1. any `fail` ⇒ `VERIFY-FAILED` (a verifier that cannot fail is not a gate — write the
    failing observation, with its evidence path, first);
 2. else ≥1 `pass` ⇒ `VERIFIED`. The `unobs` and `measured` lines are listed under
@@ -195,9 +203,12 @@ and it is never a pass. Its board flip is `VER-§10` cl. 2: `status:` → `verif
 the word `MEASURED` in the status line's first sentence, stating that the verdict word
 is `MEASURED`, not `VERIFIED`; the row also records `verify: measured — <the one-line
 finding>` (`VER-§1` cl. 5a).
-A run that could not start (editor down, Aura disconnected, row not `built`/`qa-passed`)
-produces NO verdict — report the blocker instead. A missing per-run "go" is not a
-blocker (`VER-§3` cl. 6).
+A run that could not start (editor down, Aura disconnected) produces NO verdict —
+report the blocker instead. A missing per-run "go" is not a blocker (`VER-§3` cl. 6).
+A pre-flight stop (`integrating`, or a compile announced: How you work step 1) or an
+eligibility refusal (row not `built`/`qa-passed`: step 2) moves NO status and writes no
+`*-verify.md`; post the `🚧` or the refusal line and return (`VER-§10` cl. 8). Only a
+`🚧` outage flips the row to `blocked` (the next paragraph).
 
 Then flip ONLY your own row's `status:` to one of three words (`VER-§10` cl. 1):
 `verified`, `verify-failed` or `blocked`

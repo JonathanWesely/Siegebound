@@ -25,6 +25,7 @@ Provenance tags (`[M]`, `[S]`, `[D]`, `[L]`, `NOT MEASURED`, `HYPOTHESIS`) are d
   - `RCP-deckbuilder-set-active-by-keyboard.md`: makes the all-Unit deck active.
 - Boarded as `TASK-1515` by the manager on `TASK-1513` (3). Written by `TASK-1515`, 2026-09-26. Not re-verified since; a2 is the only run.
 - Amended by `TASK-1527`, 2026-09-26, on `qa/TASK-1518.md` W1–W3 and N4–N7 (W2: option (b), row 15a), and Precondition 2's wording (the active deck is read, never assumed).
+- Amended by `TASK-1533`, 2026-09-27, on `qa/TASK-1528.md` Q2: row 15a produces the `DrawPile` half of "the card left the hand" (row 15a, Step 4).
 
 ## Plugin version
 
@@ -68,7 +69,7 @@ Provenance tags (`[M]`, `[S]`, `[D]`, `[L]`, `NOT MEASURED`, `HYPOTHESIS`) are d
 | 13 | ghost reads: `GhostActor`, `GhostActor.bHidden`, `GhostActor.RootComponent.RelativeLocation` | t=33.79: `StaticMeshActor_34`, `bHidden false`, `RelativeLocation (X=-449.150572,Y=-1.707544,Z=0)`. The candidate says "this dotted path WORKS; it was measured non-null this run" `[M: 1512 A3; Recipe candidates step 6]` |
 | 14 | **CONFIRM:** `simulate_key_press LeftMouseButton` | t=33.80 → placed (log below) `[M: 1512 A3]` |
 | 15 | post-reads: gold, `GhostActor`, census | gold 32 (t=34.05); census 1 (t=34.09): `BP_Unit_Archer0` at `(-382.86, -1.58, 92)`; `GhostActor` → `None` `[M: 1512 A3]` |
-| 15a | post-play `DeckComponent` read, `["DrawPile"]`: the in-batch producer of "the card left the hand" (`qa/TASK-1518.md` W2, option (b)) | the read object is row 5's, measured in-batch at t=2.74 (`DrawPile` = 44× `"Archer"`) `[M: 1512 A1]`. **Its position here, after the play: `NOT MEASURED`.** a2 read `DrawPile` 43 after the play only at t≈55, outside the batch (Step 4) `[M: 1512 A3]` |
+| 15a | post-play `DeckComponent` read, `["DrawPile"]`: the in-batch producer of the `DrawPile` half of "the card left the hand" (`qa/TASK-1518.md` W2, option (b); `qa/TASK-1528.md` Q2) | the read object is row 5's, measured in-batch at t=2.74 (`DrawPile` = 44× `"Archer"`) `[M: 1512 A1]`. **Its position here, after the play: `NOT MEASURED`.** a2 read `DrawPile` 43 after the play only at t≈55, outside the batch (Step 4) `[M: 1512 A3]` |
 | 16 | control-interval reads (see the control below) | `CaptureOwner` `Blue` at t=34.59 and 35.30; census 1 at t=35.28 and 37.43; the batch ended at arena t=37.45 `[M: 1512 A2, ctl, Speed data]` |
 
 The action objects, copy-paste ready (rows 1–15, then row 15a last):
@@ -150,12 +151,12 @@ What in these objects is quoted and what is not:
 ```
 - ⛔ **Not the omitted-set confirm.** In a2 the press planned as that control placed the unit, because the ghost was already visible at a legal in-zone point. `[M: 1512 A3]`
 
-**Step 4 — the later call (optional, same session).** Everything here is a read; nothing depends on a set (`VER-§13` cl. 2). It is optional because row 15a produces "the card left the hand" inside the batch (`qa/TASK-1518.md` W2, option (b)). Step 4 is where a2 measured the values below, and it is the only producer of the control's `DrawPile` leg (Step 3).
+**Step 4 — the later call (optional, same session).** Everything here is a read; nothing depends on a set (`VER-§13` cl. 2). It is optional because row 15a produces the `DrawPile` half of "the card left the hand" inside the batch (`qa/TASK-1518.md` W2, option (b); `qa/TASK-1528.md` Q2). A 44 at row 15a is not a negative: its position is `NOT MEASURED`, and when the refill happens is unread, so a 44 there sends the run to Step 4. Step 4 adds `DiscardPile`. Step 4 is where a2 measured the values below, and it is the only producer of the control's `DrawPile` leg (Step 3).
 - The new unit's `Team` = `Blue` and `CardID` = `Archer` (read t=54.55; reader not named). `[M: 1512 A3]`
 - `CaptureOwner` (`Blue` at t=54.60). `[M: 1512 A2]`
 - `DrawPile` / `DiscardPile`: 43 / 1, read once through read-only editor Python on the PIE world ("to count `Hand`/`DrawPile`/`DiscardPile` = 6/43/1"). `[M: 1512 A3, Not examined]` The same `DrawPile` read inside the batch after the play is row 15a, at a position `NOT MEASURED`. The pre-play in-batch `DrawPile` read is measured (row 5). `DiscardPile` has no in-batch reader in this recipe.
 - Budget: a1's hero died ≈73 s after the arena opened, by log time `[M: 1512 Attempt 1]`. That it held the zone alone from ≈t=50 is `HYPOTHESIS` H2 (Fences). Land this call well inside that.
-  - By the law's planning rule this call does not fit inside the `t≈60 s` fence: budget a round trip at ≈70 s (`VER-§8` cl. 10(b), marker `VER-8-10B-THE-LOWER-END-IS-NOT-A-FLOOR`). a2's landed ≈17 s after its batch ended (Step 3). This is why "the card left the hand" has an in-batch producer (row 15a) and Step 4 stays optional.
+  - By the law's planning rule this call does not fit inside the `t≈60 s` fence: budget a round trip at ≈70 s (`VER-§8` cl. 10(b), marker `VER-8-10B-THE-LOWER-END-IS-NOT-A-FLOOR`). a2's landed ≈17 s after its batch ended (Step 3). This is why the `DrawPile` half of "the card left the hand" has an in-batch producer (row 15a), and why Step 4 stays optional unless row 15a reads 44 (above; `qa/TASK-1528.md` Q2).
 
 **Step 5 — the log, after the batch.** Category `LogGitClaudeUnrealTest`, except the `StartMatch` line. `1512` does not name its log reader: `NOT MEASURED`.
 - `[ASiegeGameMode::StartMatch] Main menu -> opening arena '/Game/Maps/L_Arena.L_Arena' into a fresh match vs the bot` `[M: 1512 Editor/Aura state]`
