@@ -1,11 +1,12 @@
 # RCP-deckbuilder-set-active-by-keyboard — make a deck the ACTIVE deck from the Deck Builder with injected menu actions only
 
-Provenance tags (`[M]`, `[S]`, `[D]`, `[L]`, `NOT MEASURED`, `HYPOTHESIS`) are defined in `README.md`. Run short names: `1511` = `.claude/pipeline/qa/TASK-1511-verify.md` (the run) · `1512` = `.claude/pipeline/qa/TASK-1512-verify.md` (downstream corroboration only) · `1509` = `.claude/pipeline/qa/TASK-1509.md` (the pre-compile code review of the route; its sentences are code reads, **not** runtime measurements, and are cited by finding number).
+Provenance tags (`[M]`, `[S]`, `[D]`, `[L]`, `NOT MEASURED`, `HYPOTHESIS`) are defined in `README.md`. Run short names: `1511` = `.claude/pipeline/qa/TASK-1511-verify.md` (the run) · `1512` = `.claude/pipeline/qa/TASK-1512-verify.md` (downstream corroboration only) · `1524` = `.claude/pipeline/qa/TASK-1524-verify.md` (a later use of this recipe: the open slot and the `IA_MenuLeft` variation) · `1509` = `.claude/pipeline/qa/TASK-1509.md` (the pre-compile code review of the route; its sentences are code reads, **not** runtime measurements, and are cited by finding number).
 
 > ⚠️ **Read this first.**
 > - **This recipe drives door 3 only:** `inject_input_action IA_MenuSecondary` on a focused deck-bar slot. It is **not** evidence for the real `Home` key or for gamepad Y. Those are code-proven, not runtime-proven. `[L: DECK-§9 cl. 10; VER-§8 cl. 1]`
 > - **It changes the player's REAL active deck, on disk, at the press.** `1511` read `ActiveDeckName=deck4` on disk while PIE was still running, right after the press. `[M: 1511 A1]` The run states the value before and after, and the orchestrator hashes the `.sav` files.
-> - **Measured once:** one run, one set-active (target slot 3), one refusal (slot 4, empty deck5). `[M: 1511 A1, A3]`
+> - **Measured in `1511`:** one set-active (target slot 3), one refusal (slot 4, empty deck5). `[M: 1511 A1, A3]` **Used again by `1524`**, which opened on slot 2, set slot 3 with one `IA_MenuRight`, and later walked back to slot 2 with `IA_MenuLeft` and set it (the variation after Step 5). `[M: 1524 A1, Recipes used]`
+> - **The walk counts from the slot the builder opened on** (`EditingDeckIndex`, the active deck's slot, `DECK-§3`), read at open and never assumed to be 0 (Precondition 4).
 
 ## Source
 
@@ -13,24 +14,31 @@ Provenance tags (`[M]`, `[S]`, `[D]`, `[L]`, `NOT MEASURED`, `HYPOTHESIS`) are d
   - *Editor/Aura state* · *Pre-registration* · *Acceptance lines* rows **0**, **A1**, **A2**, **A3** (A4/A5 are declared ceilings) · *Pixel note* · *Save hygiene* · *Hypotheses* · *Not examined / limitations* · *Speed data* · *Recipes used* · *Recipe candidates* (steps 1–5 + the Fences line).
 - The law:
   - `VER-§8` cl. 12, 2026-09-26 amendment (marker `VER-8-12-SET-ACTIVE-ACTUABLE-BY-IA-MENUSECONDARY`): the route, its fences, and what stays a ceiling.
-  - `DECK-§9` cl. 10 (marker `DECK-9-10-SET-ACTIVE-ROW`): the route's state label, what is not measured, and `1509` W1 recorded as open.
+  - `DECK-§9` cl. 10 (marker `DECK-9-10-SET-ACTIVE-ROW`): the route's state label and what is not measured. For the state of `1509` W1 (the held-key repeat), read that clause's W1 bullet (marker `DECK-9-10-W1-CLOSED-0500D51`); this recipe does not restate it (`SC-§126` cl. 7).
+  - `DECK-§3`: *"Opening the builder starts with the ACTIVE deck selected for editing"* (Precondition 4).
   - `VER-§12` cl. 7e: capture thin UI at `max_dim` ≥ 1280. `VER-§13` cl. 1, 2026-09-26 ruling: one tool call per batch.
 - Code review (`1509`), cited where the run could not see: N4 (a mouse click before the walk), W1 (a held key), and *For 5b* (an absent relay line).
-- Boarded as `TASK-1515` by the manager on `TASK-1513` (3). Written by `TASK-1515`, 2026-09-26. Not re-verified since; `1511` is the only run.
+- Boarded as `TASK-1515` by the manager on `TASK-1513` (3). Written by `TASK-1515`, 2026-09-26.
+- **Used by `1524`**, 2026-09-26, `Verdict: VERIFIED`, 1 PIE session: "Steps 1–5 … + Control C3 … re-verified in-run **y, with a mismatch**: Precondition 4 (`EditingDeckIndex = 0`) did not hold — it read 2 — and `IA_MenuBack` put focus on `DeckSlotEntryWidget_2`, consistent with the recipe's own rule … so T counted from slot 2 (one Right to slot 3). Everything else matched". `[M: 1524 Recipes used]` Cited here for: row 0, A1 (both legs), *Pre-registration*, *Hypotheses* H2, *Not examined*, *Recipe candidates* 1 and 3.
+- Amended by `TASK-1527`, 2026-09-26: Precondition 4 and the walk count (`1524`, `DECK-§3`), the `IA_MenuLeft` variation (`1524`), and `qa/TASK-1518.md` N1–N3 plus the `DECK-§9` cl. 10 pointers.
 
 ## Plugin version
 
-**Not read.** `1511` *Not examined*: "Aura plugin version not read." ⇒ the first use of this recipe re-verifies it in-run (`VER-§13` cl. 3, `VER-§8` cl. 5).
+**Not read.** `1511` *Not examined*: "Aura plugin version not read." `1524` did not read it either (same words, its *Not examined*). ⇒ the first use of this recipe re-verifies it in-run (`VER-§13` cl. 3, `VER-§8` cl. 5).
 
 ## Preconditions
 
 1. Level `/Game/Maps/L_MainMenu`, loaded by `load_level` (`discarded_unsaved: false`). PIE standalone, 1 client, 1280×720 requested → viewport **1280×725**, **DPI 0.6706**. `is_pie_active` read `false` before the run started. `[M: 1511 Editor/Aura state]`
-2. **The binaries carry `TASK-1507`'s route.** `DECK-§9` cl. 10 labels it working-tree only until `TASK-1514` commits; read that row's status line for the hash. `[L: DECK-§9 cl. 10]` Check it at runtime: read the builder-open bind line **after** the builder opens. `[M: 1511 row 0]`
+2. **The binaries carry `TASK-1507`'s route**, committed in `0a5b8a7` (`DECK-§9` cl. 10, marker `DECK-9-10-RELABELLED-0A5B8A7`). `[L: DECK-§9 cl. 10]` Check it at runtime: read the builder-open bind line **after** the builder opens. `[M: 1511 row 0]`
    > `UDeckBuilderWidget::BindMenuNavActions: 7 IA_Menu* action(s) bound (Started) on 'PlayerController_0' [IA_MenuUp, IA_MenuDown, IA_MenuLeft, IA_MenuRight, IA_MenuAccept, IA_MenuBack, IA_MenuSecondary]; every IA_Menu* asset resolved.`
 
    If the line names fewer than seven actions, or reports an unresolved asset, stop: the route is not in this build.
-3. **The builder is freshly open, reached by `RCP-menu-to-deckbuilder.md` Steps 0–4.** `1511` re-verified that recipe in the same run: `Button_0` focused at t=4.89; `IA_MenuDown` ×2 in ONE `run_verification_sequence` → `Button_2` `focused:true` at t=9.62; `IA_MenuAccept` at t=14.60 → `WBP_DeckBuilder_C_0`, `EditingDeckIndex=0`, `WorkingDeck` deck1 at t=15.14. `[M: 1511 Recipes used]`
-4. **`EditingDeckIndex = 0`.** After Step 2, focus lands on `DeckSlotEntryWidget_<EditingDeckIndex>` `[M: 1511 Recipe candidates step 2]`, so the walk counts from that slot. Only 0 was measured. Any other starting value: `NOT MEASURED`.
+3. **The builder is freshly open, reached by `RCP-menu-to-deckbuilder.md` Steps 0–4.** `1511` re-verified that recipe in the same run: `Button_0` focused at t=4.89; `IA_MenuDown` ×2 in ONE `run_verification_sequence` → `Button_2` `focused:true` at t=9.62; `IA_MenuAccept` at t=14.60 → `WBP_DeckBuilder_C_0`, `EditingDeckIndex=0`, `WorkingDeck` deck1 at t=15.14 (deck1 was active in that run, `1511` *Pre-registration*). `[M: 1511 Recipes used]` That recipe's Step 1 can land 1 of 2 Downs; its Step 2 reads focus and tops up (`1524`). `[M: 1524 Recipes used]`
+4. **Read `EditingDeckIndex` at open (`RCP-menu-to-deckbuilder.md` Step 4) and call it E. It is the ACTIVE deck's slot, not a fixed 0.** `DECK-§3`: *"Opening the builder starts with the ACTIVE deck selected for editing"*. `[L: DECK-§3]`
+   - Measured: E = `0` when deck1 was active (`1511`: `EditingDeckIndex=0` at t=15.14, `ActiveDeckName = deck1` in its Pre-registration) `[M: 1511 Recipes used, Pre-registration]`; E = `2` when deck3 was active (`1524`: "Builder open t=19.83: `WBP_DeckBuilder_C_0`, `EditingDeckIndex=2`", `ActiveDeckName = deck3` in its Pre-registration) `[M: 1524 row 0, Pre-registration]`. That the builder does this in general is `HYPOTHESIS` H2 in `1524` ("One observation; mechanism not read"). `[M: 1524 H2]`
+   - After Step 2, focus lands on `DeckSlotEntryWidget_<EditingDeckIndex>` `[M: 1511 Recipe candidates step 2]`. `1524`: "`IA_MenuBack` put focus on `DeckSlotEntryWidget_2`, consistent with the recipe's own rule". `[M: 1524 Recipes used]`
+   - ⇒ **The walk counts from E, never from an assumed 0:** `IA_MenuRight` × (T − E) when T > E. `1524` sent one Right from slot 2 to reach slot 3 ("T counted from slot 2 (one Right to slot 3)"). `[M: 1524 Recipes used]` T < E needs `IA_MenuLeft` (measured only as the variation after Step 5). At a fresh open, T = E is the active deck itself (`DECK-§3`; Fences: target already active).
+   - Starting values other than 0 and 2: `NOT MEASURED`.
 5. **No mouse input inside the builder before the walk.** `[L: VER-§8 cl. 12, 2026-09-26 amendment]` The reason is a code read: after a mouse click puts focus on a bar slot while `FocusedCardIndex` is still armed, injected `Home`/`Left`/`Right` act on the grid while a real key acts on the bar (`1509` N4). `1511` sent no mouse input at all. `[M: 1511 Not examined]`
 6. **The target is fixed before any batch is sent** (a batch cannot branch on its own result, `README.md` common hazards):
    - `T` = the target's 0-based bar slot, and its deck `deck<T+1>`.
@@ -63,7 +71,7 @@ Tool: `run_verification_sequence`.
 - **The envelope in the source:** this Down shared one batch with the tile-focused control press (Control C2). *Speed data*: "`IA_MenuDown` + tile-focused `IA_MenuSecondary` 2 sent, Down landed (`FocusedCardIndex=0`), Secondary changed nothing by design". `[M: 1511 Speed data]`
 - **Why this step cannot be skipped:** `IA_MenuBack` is routed as `Gamepad_FaceButton_Right`: `HandleMenuNavBack` calls `RouteMenuNavKey(EKeys::Gamepad_FaceButton_Right, TEXT("IA_MenuBack"))`. `[D]` That is the key on `DECK-§9`'s "Exit the grid" row, whose precondition is "a card tile holds Slate focus". `[L: DECK-§9 cl. 1 table]` At cold open `FocusedCardIndex` read `-1`, with no bar `SlotButton` focused. `[M: 1511 A2]` What `IA_MenuBack` does at cold open: `NOT MEASURED`.
 
-**Step 2 + Step 3 — ONE sequence: `IA_MenuBack`, then `IA_MenuRight` × T, with a `DeckBar` snapshot after each step.** Shown for T = 3, the measured case:
+**Step 2 + Step 3 — ONE sequence: `IA_MenuBack`, then `IA_MenuRight` × (T − E), with a `DeckBar` snapshot after each step.** E is the `EditingDeckIndex` read at open (Precondition 4). Shown for T = 3 from E = 0, `1511`'s case (three Rights). With E = 2, `1524` sent one Right `[M: 1524 Recipes used]`: send one Right/wait/snapshot triple per slot of T − E.
 ```json
 {"actions": [
   {"type": "inject_input_action", "params": {"action_path": "/Game/Input/Actions/IA_MenuBack.IA_MenuBack"}},
@@ -82,12 +90,13 @@ Tool: `run_verification_sequence`.
 ```
 Tool: `run_verification_sequence`.
 - **Source:** "`inject_input_action /Game/Input/Actions/IA_MenuBack.IA_MenuBack` → `ui_snapshot {"widget":"WBP_DeckBuilder","selector":{"by":"name","value":"DeckBar"},"max_depth":3}`; expect `DeckSlotEntryWidget_<EditingDeckIndex>/OutlineBorder/SlotButton focused:true`." `[M: 1511 Recipe candidates step 2]`
-- "`inject_input_action /Game/Input/Actions/IA_MenuRight.IA_MenuRight` × T, `wait_pie_seconds 0.3` + the same `DeckBar` snapshot after each … Steps 2–3 ran as ONE `run_verification_sequence` (4/4 landed)." `[M: 1511 Recipe candidates step 3]`
+- "`inject_input_action /Game/Input/Actions/IA_MenuRight.IA_MenuRight` × T, `wait_pie_seconds 0.3` + the same `DeckBar` snapshot after each … Steps 2–3 ran as ONE `run_verification_sequence` (4/4 landed)." `[M: 1511 Recipe candidates step 3]` In `1511` E was 0, so its "× T" is × (T − E) (Precondition 4).
 - **Measured stamps:** `IA_MenuBack` t=65.69 → only `DeckSlotEntryWidget_0/OutlineBorder/SlotButton` focused. Then `IA_MenuRight` t≈66.03 → `_1`, t≈66.36 → `_2`, t≈66.69 → `_3`, "exactly one `focused: true` per snapshot". `[M: 1511 A1]`
+- **From E = 2 (`1524`):** `IA_MenuBack` focused `DeckSlotEntryWidget_2` `[M: 1524 Recipes used]`; one Right then gave "focus on `DeckSlotEntryWidget_3/OutlineBorder/SlotButton` (snapshot t=26.60, relay line `…on deck-bar slot 2 ('deck3'); key-down handled=true; the focused bar slot is now 3 ('deck4')`)". `[M: 1524 A1]`
 - **The wait after `IA_MenuBack`:** not quoted. The stamps (t=65.69 → first Right t≈66.03) fit the same 0.3 s spacing.
 - **One relay log line per `IA_MenuRight`** (category `LogGitClaudeUnrealTest`), for example: `IA_MenuRight -> 'Right' handed to Slate's own key route on deck-bar slot 0 ('deck1'); key-down handled=true; the focused bar slot is now 1 ('deck2')`. `[M: 1511 A1]` The candidate text gives the line's prefix as `RelayDeckBarNavigationKeyToSlate:`. `[M: 1511 Recipe candidates step 3]` `1511`'s log census counts 4 relay lines for the whole session `[M: 1511 A2]`, which matches its 4 `IA_MenuRight` presses (3 in A1, 1 in A3). So `IA_MenuBack` printed no relay line. That is a reading from the count, not stated in words.
 
-**Step 4 — ONE sequence: before-reads, `IA_MenuSecondary`, wait 0.5 s, after-reads.** Shown for T = 3, with the active deck before the press on slot 0 (deck1):
+**Step 4 — ONE sequence: before-reads, `IA_MenuSecondary`, wait 0.5 s, after-reads.** Shown for T = 3, with the active deck before the press on slot 0 (deck1), as in `1511`:
 ```json
 {"actions": [
   {"type": "get_widget_property_in_pie", "params": {"widget": "WBP_DeckBuilder", "child": "DeckSlotEntryWidget_0", "properties": ["OutlineBorder.BrushColor"]}},
@@ -101,7 +110,7 @@ Tool: `run_verification_sequence`.
 Tool: `run_verification_sequence`.
 - **Source:** "`inject_input_action /Game/Input/Actions/IA_MenuSecondary.IA_MenuSecondary`, `wait_pie_seconds 0.5`, then in the SAME batch `get_widget_property_in_pie {"widget":"WBP_DeckBuilder","child":"DeckSlotEntryWidget_<T>","properties":["OutlineBorder.BrushColor"]}` → `(R=1,G=0.5,B=0,A=1)`; previous active slot → `(0,0,0,0)`". `[M: 1511 Recipe candidates step 4]`
 - **The before-reads:** "Before the press (t=80.80): slot 0 BrushColor `(R=1,G=0.5,B=0,A=1)`, slot 3 `(R=0,G=0,B=0,A=0)`". `IA_MenuSecondary` went in at t=80.87; after it, at t=81.40, slot 0 read `(R=0,G=0,B=0,A=0)` and slot 3 `(R=1,G=0.5,B=0,A=1)`. `[M: 1511 A1]`
-  - That the before-reads shared this batch is a reading from the stamps, not stated in words. 0.07 s separates the before-read from the press, while this run's separate calls were about 8.5 s or more apart (e.g. t=57.14 → 65.69).
+  - That the before-reads shared this batch is a reading from the stamps, not stated in words. 0.07 s separates the before-read from the press, while a boundary between two of this run's *Speed data* batches spans ≈8.5 s (e.g. t=57.14, the last read of the tile-focused control batch → t=65.69, the `IA_MenuBack` of the next). `[M: 1511 A1, A2, Speed data]` Not every stamp gap in `1511` is a call boundary (`qa/TASK-1518.md` N1).
 - **Which slot to read as "previous active":** the slot of the Step 0 `ActiveDeckName` (slot map in Precondition 6).
 - **The log line** for a legal target: `[00.13.13:066] UDeckBuilderWidget: active deck set to 'deck4' — the next match will use it.` `[M: 1511 A1]` The log reader `1511` used is `NOT MEASURED`.
 - **Frames (optional, corroboration only):** `capture_pie_frame` with layer `composited`, at `max_dim` ≥ 1280. `[L: VER-§12 cl. 7e]` `1511`'s before/after pair in this batch came back at the default 1086×615 (`c2` t=80.80, `c3` t=81.45). At that size the before-leg outline under deck1 could not be resolved by eye. `[M: 1511 Pixel note]`
@@ -109,6 +118,13 @@ Tool: `run_verification_sequence`.
   - How `1511` obtained its 1280×725 frames (`a1_after_fullres_t88.69s`, `c4` t=111.21) is not quoted.
 
 **Step 5 — read the save again: in PIE after the press, and after PIE.** Same call as Step 0. Source: "**Live disk read in PIE** (after the press): `ActiveDeckName=deck4`. **Disk after PIE stopped**: `ActiveDeckName=deck4`." `[M: 1511 A1]` Every deck's list and total was identical before PIE, in PIE after the press, and after PIE; the only change was `ActiveDeckName` `deck1` → `deck4`. `[M: 1511 Save hygiene]`
+
+**Variation — return to the previous active deck with `IA_MenuLeft` (after Step 5, same session).** Measured once, by `1524` (A1 leg 2). `[M: 1524 A1, Not examined, Recipe candidates 1]` Use it to restore the before-value, P = the slot of Step 0's `ActiveDeckName` (slot map in Precondition 6).
+- **The walk back:** from the slot that holds focus, F (the last snapshot's single `focused: true`), send `IA_MenuLeft` × (F − P) as ONE sequence with Step 3's shape: the action path `/Game/Input/Actions/IA_MenuLeft.IA_MenuLeft` in place of `IA_MenuRight`, a wait and a snapshot after each press.
+- **What `1524` measured:** from slot 4 (focused after the deck5 refusals), `IA_MenuLeft` ×2 → "slot 3 focused (t=62.63) then slot 2 focused, slot 3 not (t=62.96/62.98)", with relay lines "`…slot 4 ('deck5') … now 3 ('deck4')` and `…slot 3 ('deck4') … now 2 ('deck3')`". `[M: 1524 A1]` The two presses were at t=62.31 and 62.64, "relay line per step". `[M: 1524 Recipe candidates 1]` Sent vs landed: "`IA_MenuLeft` 2/2". `[M: 1524 Not examined]` So `IA_MenuLeft` moves one slot per press, as `IA_MenuRight` does.
+- **Then Step 4's batch with target P**, reading the slot this run set as the "previous active" slot. `1524`: before (t=68.43/68.44) slot 3 `(1,0.5,0,1)`, slot 2 `(0,0,0,0)`; `IA_MenuSecondary` t=68.46; after (t=68.98–69.01) slot 2 `(1,0.5,0,1)`, slot 3 `(0,0,0,0)`, slot 4 `(0,0,0,0)`; log `active deck set to 'deck3' — the next match will use it.`; `ActiveDeckName=deck3` on disk in PIE and after PIE, every deck's card list identical by field to the pre-registration read: "Restored: YES". `[M: 1524 A1]`
+- **Spellings and waits:** the action path is `[D]` (`Content/Input/Actions/IA_MenuLeft.uasset`; the bind line in Precondition 2 names `IA_MenuLeft`). `1524`'s candidate names "`wait_pie_seconds 0.3` + a `ui_snapshot` of the expected `DeckSlotEntryWidget_<k>` after each" `[M: 1524 Recipe candidates 1]`; the stamps fit that spacing (press t=62.31 → focus read t=62.63). The snapshot's params object is not quoted: Step 2's `DeckBar` snapshot, used here, is this recipe's substitution (`NOT MEASURED` after a Left).
+- **Save hygiene for a run that sets and then restores:** `VER-§3` cl. 6(c), marker `VER-3-6C-A-RESTORED-WRITE-PROVES-THE-PAYLOAD`. This recipe does not restate it.
 
 **Controls — measured by `1511`, optional, and named in the report if used.**
 - **C1, cold open** (A2). Send `IA_MenuSecondary` right after the builder opens, before Step 1. `1511` read `FocusedCardIndex=-1` at t=45.29 (no bar `SlotButton` focused per the t=34.56 `DeckBar` snapshot). Slot 0 stayed `(1,0.5,0,1)` and slot 3 stayed `(0,0,0,0)` at t=45.70; `EditingDeckIndex=0`. `[M: 1511 A2]` Speed data: "cold-open `IA_MenuSecondary` 1 sent, state unchanged by design". `[M: 1511 Speed data]`
@@ -125,12 +141,14 @@ Tool: `run_verification_sequence`.
 |---|---|---|
 | precondition | builder-open bind line: 7 `IA_Menu*` actions, every asset resolved | row 0, log `[00.12.06:863]` `[M: 1511 row 0]` |
 | 1 | `FocusedCardIndex` | `0` (t=56.67); `WBP_DeckCardTile_C_0 focused:true` `[M: 1511 A1, Recipe candidates step 1]` |
-| 2 | `DeckBar` `ui_snapshot`: exactly one `focused: true` | `DeckSlotEntryWidget_0/OutlineBorder/SlotButton` (t=65.69) `[M: 1511 A1]` |
+| 2 | `DeckBar` `ui_snapshot`: exactly one `focused: true`, on `DeckSlotEntryWidget_<E>` | `DeckSlotEntryWidget_0/OutlineBorder/SlotButton` (t=65.69; E = 0) `[M: 1511 A1]` · `DeckSlotEntryWidget_2` (E = 2) `[M: 1524 Recipes used]` |
 | 3 (each step) | `DeckBar` `ui_snapshot` + one relay log line | `_1`, `_2`, `_3` (t≈66.03, 66.36, 66.69); relay lines 0→1 ('deck2'), 1→2 ('deck3'), 2→3 ('deck4') `[M: 1511 A1]` |
 | 4 | `OutlineBorder.BrushColor`, target slot and previous active slot, before and after | slot 3 `(0,0,0,0)` → `(1,0.5,0,1)`; slot 0 `(1,0.5,0,1)` → `(0,0,0,0)` (t=80.80 → 81.40) `[M: 1511 A1]` |
 | 4 | log line | `active deck set to 'deck4' — the next match will use it.` `[M: 1511 A1]` |
 | 5 | `ActiveDeckName` on disk, in PIE and after PIE | `deck4` both times; every deck's contents unchanged `[M: 1511 A1, Save hygiene]` |
-| side effect, checked | `EditingDeckIndex`, `WorkingDeck` | unchanged: `EditingDeckIndex` stayed 0 and `WorkingDeck` stayed deck1's 51 cards ("set-active did not re-select for editing") `[M: 1511 A1]` |
+| side effect, checked | `EditingDeckIndex`, `WorkingDeck` | unchanged from the open value: `EditingDeckIndex` stayed 0 and `WorkingDeck` stayed deck1's 51 cards ("set-active did not re-select for editing") `[M: 1511 A1]` · `EditingDeckIndex` stayed 2 through both of `1524`'s set-actives `[M: 1524 A1]` |
+| variation (each Left) | `DeckBar` snapshot + one relay log line | slot 3 focused (t=62.63), then slot 2 focused and slot 3 not (t=62.96/62.98); relay `…slot 4 ('deck5') … now 3 ('deck4')`, `…slot 3 ('deck4') … now 2 ('deck3')` `[M: 1524 A1]` |
+| variation (restore) | Step 4's reads + Step 5's disk reads on target P | slot 2 `(0,0,0,0)` → `(1,0.5,0,1)`, slot 3 `(1,0.5,0,1)` → `(0,0,0,0)` (t=68.43 → 69.01); `active deck set to 'deck3'`; disk `ActiveDeckName=deck3` in PIE and after PIE `[M: 1524 A1]` |
 | downstream (another run) | the next match used the deck | `1512`'s match-start log: `active saved deck 'deck4' is legal (50 cards) — using it this match` `[M: 1512 A1]` |
 | corroboration only | a frame you `Read` at ≥ 1280 px | "a thin orange line along the bottom edge of the `deck4` tab and none under `deck1`" (1280×725, t=88.69) `[M: 1511 Pixel note]` |
 
@@ -138,17 +156,19 @@ The observable is the `BrushColor` read + the log line + the disk read. Pixels c
 
 ## Fences — not measured for
 
-- **One set-active target: slot 3 (deck4, a legal 50-card deck).** One refusal: slot 4 (deck5, 0 cards), reached by ONE more `IA_MenuRight` from slot 3 after the set-active, in a later batch, not by a four-step walk from slot 0. `[M: 1511 A3, Speed data]` Other `T`: `NOT MEASURED` as a set-active. The relay steps 0→1→2→3 and 3→4 are measured. `[L: VER-§8 cl. 12, 2026-09-26 amendment]`
-- **Illegal targets other than an empty deck.** deck1 (51 cards) and deck2 (80 cards) were not driven as targets. That the same gate refuses them rests on the refusal line's own text ("a legal deck is exactly 50"), not on a runtime press. `NOT MEASURED` here.
-- **`IA_MenuLeft` on the bar, and the bar's ends** (slot 0 Left, slot 9 Right): not driven. `[M: 1511 Not examined]`
+- **Set-active targets: slot 3 (deck4) and slot 2 (deck3), each a legal 50-card deck.** Slot 3 was set from E = 0 by `1511` and from E = 2 by `1524`; slot 2 was set by `1524` through the `IA_MenuLeft` variation. `[M: 1511 A1; 1524 A1]` Refusals: slot 4 (deck5, 0 cards), reached by ONE more `IA_MenuRight` from slot 3 after a set-active, in a later batch, not by a walk from the open slot. `1511` pressed it once `[M: 1511 A3, Speed data]`; `1524` pressed it twice `[M: 1524 A2]`. Other `T`: `NOT MEASURED` as a set-active. The relay steps 0→1→2→3 and 3→4 (`1511`) and 2→3, 3→4, 4→3, 3→2 (`1524`) are measured. `[L: VER-§8 cl. 12, 2026-09-26 amendment]` `[M: 1524 A1, A2, Not examined]`
+- **A target that is already the active deck: `NOT MEASURED`.** No run pressed `IA_MenuSecondary` on the slot that already held the orange outline. The Step 4 before/after reads could not tell a landed press from a dropped one there, because no `BrushColor` would move either way (this recipe's reading; `qa/TASK-1518.md` N3). Pick a target other than Step 0's `ActiveDeckName`.
+- **Illegal targets other than an empty deck.** deck1 (51 cards) and deck2 (80 cards) were not driven as targets. That the same gate refuses them rests on the refusal line's own text ("a legal deck is exactly 50"), not on a runtime press. `NOT MEASURED` here. The nearest record is `qa/TASK-1270-verify.md` row 2 (a right-click on a 68-card slot): `unobs` in that report and "carried by the state test `Siegebound.Deck.IllegalDeckCannotBecomeActive`". That is a state test, not a PIE press (`qa/TASK-1518.md` N2).
+- **`IA_MenuLeft` on the bar: measured by `1524`, one slot per press, 2 of 2** (4→3, 3→2), one relay line per step, a focus read after each (the variation after Step 5). `[M: 1524 A1, Not examined, Recipe candidates 1]` Left from other slots: `NOT MEASURED`.
+- **The bar's two ends** (slot 0 Left, slot 9 Right): not driven. `[M: 1511 Not examined]` Still `NOT MEASURED`: `1524` did not drive them either.
 - **Gamepad Y** (`Gamepad_FaceButton_Top`): not driven. `IA_MenuSecondary` was injected directly, so the IMC's key rows were not exercised. `[M: 1511 Not examined]`
 - **The real `Home` key** (the Slate doors): unobservable by this rig. It closes on 🧑 his hand check (`1511` A5), recorded beside the verdict and never merged into it. `[M: 1511 A5]`; `[L: DECK-§9 cl. 10; VER-§8 cl. 1, cl. 4]`
 - **Right-click** (`1511` A4): unobservable by construction through `ui_perform`. This recipe says nothing about right-click. `[L: VER-§8 cl. 12]`
 - **Any builder state after a mouse click** (`1509` N4): not reached, because no mouse input was sent. `[M: 1511 Not examined]`
-- **A held press.** Every injection here is a tap. `1509` W1 (code review) says door 3 is `Started`-only, so the rig cannot see the held-key repeat; the held real `Home`/Y repeat is recorded OPEN. `[L: DECK-§9 cl. 10]` `hold_seconds` on `IA_MenuSecondary`: `NOT MEASURED`.
+- **A held press.** Every injection here is a tap. `1509` W1 (code review) says door 3 is `Started`-only, so the rig cannot see the held-key repeat. For the held real `Home`/Y repeat, read `DECK-§9` cl. 10's W1 bullet (marker `DECK-9-10-W1-CLOSED-0500D51`); this recipe does not restate its state (`SC-§126` cl. 7). `[L: DECK-§9 cl. 10]` `hold_seconds` on `IA_MenuSecondary`: `NOT MEASURED`.
 - **Spacing:** 0.3 s only. "No drops observed at 0.3 s spacing with inject-only input." `[M: 1511 Speed data]` Other spacings: `NOT MEASURED`.
 - **That the relay walks the same user's focus as a physical key:** `HYPOTHESIS` in the source ("a physical key was not pressed, so equality with it is not measured"). `[M: 1511 Hypotheses]`
-- **Scope of the run:** `L_MainMenu`'s Deck Builder; standalone single client; one PIE session; starting `EditingDeckIndex` 0; profile slot `SiegeDecks_4E46A9EE49D3A7C91C583B8457E1EE34`.
+- **Scope of the runs:** `L_MainMenu`'s Deck Builder; standalone single client; one PIE session each; starting `EditingDeckIndex` 0 (`1511`) and 2 (`1524`), other starting values `NOT MEASURED`; profile slot `SiegeDecks_4E46A9EE49D3A7C91C583B8457E1EE34`. `[M: 1511 Editor/Aura state; 1524 Editor/Aura state, row 0, Pre-registration]`
 - Plugin version: not read.
 
 ## Coordinate/resolution-dependent values
@@ -168,8 +188,8 @@ Layout-dependent, not coordinate-dependent: the slot entry names `DeckSlotEntryW
 
 - **It writes the player's real save.** The active deck changes on disk at the press, not at PIE end. `[M: 1511 A1]`
   - `1511` left deck4 active, as its row required. `[M: 1511 Save hygiene]`
-  - Restoring a previous active deck means running this route again on that deck's slot, and the gate only accepts a legal (exactly 50) deck. `[M: 1511 A3]` deck1 read **51** cards before the run `[M: 1511 Pre-registration]`, so it cannot be made active again by this route until it reads 50. That the gate refuses a 51-card deck is the refusal text's reading here, not a press on deck1 (Fences).
-- **Set-active is not select-for-editing.** `EditingDeckIndex` stayed 0 and `WorkingDeck` stayed deck1's 51 cards after the press. `[M: 1511 A1]` Never read `WorkingDeck` as proof of set-active. The converse: a `double_click` on a slot selects it for editing and does not make it active (`RCP-deckbuilder-slot-and-card-edit.md` Step 2).
+  - Restoring a previous active deck means running this route again on that deck's slot (the `IA_MenuLeft` variation after Step 5, measured once by `1524`), and the gate only accepts a legal (exactly 50) deck. `[M: 1511 A3; 1524 A1]` deck1 read **51** cards before the run `[M: 1511 Pre-registration]`, so it cannot be made active again by this route until it reads 50. That the gate refuses a 51-card deck is the refusal text's reading here, not a press on deck1 (Fences; `qa/TASK-1270-verify.md` row 2's state test is a state test, not a PIE press).
+- **Set-active is not select-for-editing.** `EditingDeckIndex` stayed 0 and `WorkingDeck` stayed deck1's 51 cards after the press. `[M: 1511 A1]` In `1524`, `EditingDeckIndex` stayed 2 through both set-actives. `[M: 1524 A1]` Never read `WorkingDeck` as proof of set-active. The converse: a `double_click` on a slot selects it for editing and does not make it active (`RCP-deckbuilder-slot-and-card-edit.md` Step 2).
 - **An absent relay line means the relay never ran; it is not a zero** (`1509` *For 5b*, code review). The per-step proof is the snapshot's single `focused: true` plus the relay line. `[M: 1511 A1]`
 - **Mouse input before the walk** can split injected keys from real keys (`1509` N4; Precondition 5). Keep the builder mouse-free until Step 4 has landed.
 - **A batch cannot branch.** The walk runs to its end whatever the snapshots show, so `T` is fixed before sending. Judge each step from its snapshot after the batch returns. (`README.md` common hazards)

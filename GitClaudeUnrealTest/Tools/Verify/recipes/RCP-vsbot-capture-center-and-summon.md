@@ -1,6 +1,6 @@
 # RCP-vsbot-capture-center-and-summon — start a vs-bot match from the menu, walk the hero into `CaptureZone_Center`, capture it, and summon a Unit card inside it, in ONE batch
 
-Provenance tags (`[M]`, `[S]`, `[D]`, `[L]`, `NOT MEASURED`, `HYPOTHESIS`) are defined in `README.md`. Run short names: `1512` = `.claude/pipeline/qa/TASK-1512-verify.md` (the run; **a2** = its attempt 2, the measured route; **a1** = its attempt 1, the measured failure).
+Provenance tags (`[M]`, `[S]`, `[D]`, `[L]`, `NOT MEASURED`, `HYPOTHESIS`) are defined in `README.md`. Run short names: `1512` = `.claude/pipeline/qa/TASK-1512-verify.md` (the run; **a2** = its attempt 2, the measured route; **a1** = its attempt 1, the measured failure) · `1524` = `.claude/pipeline/qa/TASK-1524-verify.md` (Precondition 2 only).
 
 > ⚠️ **Read this first.**
 > - **The whole route is ONE `run_verification_sequence`:** menu → level travel → walk → capture → card entry → confirm → post-reads.
@@ -17,13 +17,14 @@ Provenance tags (`[M]`, `[S]`, `[D]`, `[L]`, `NOT MEASURED`, `HYPOTHESIS`) are d
   - `VER-§13` cl. 1, 2026-09-26 ruling: one tool call per batch, required whenever a batch mixes tools; it cites a1 vs a2 as the measured cost.
   - `VER-§12` cl. 7b amendment: a film armed before `start_pie` may not survive a level travel; arm a recorder after it.
   - `VER-§12` cl. 7c (a parameter missing from the schema is not an absent capability) and cl. 7e (the VRAM banner).
-  - `VER-§8` cl. 10(b): the `t≈60 s` fence.
+  - `VER-§8` cl. 10(b): the `t≈60 s` fence, and the round-trip budget (marker `VER-8-10B-THE-LOWER-END-IS-NOT-A-FLOOR`; Step 4).
   - `VER-§7` cl. 2: the grant declaration, if a run adds `pie_scene_edit`.
 - Recipes it touches:
   - `RCP-menu-to-deckbuilder.md` Step 0: the focus read. a2 used only that step. `[M: 1512 Recipes used]`
   - `RCP-play-unit-card-from-hand.md`: the entry and the confirm. `1512` used it in part and outside its aim fence; its control arm is amended by `TASK-1516`.
   - `RCP-deckbuilder-set-active-by-keyboard.md`: makes the all-Unit deck active.
 - Boarded as `TASK-1515` by the manager on `TASK-1513` (3). Written by `TASK-1515`, 2026-09-26. Not re-verified since; a2 is the only run.
+- Amended by `TASK-1527`, 2026-09-26, on `qa/TASK-1518.md` W1–W3 and N4–N7 (W2: option (b), row 15a), and Precondition 2's wording (the active deck is read, never assumed).
 
 ## Plugin version
 
@@ -32,9 +33,9 @@ Provenance tags (`[M]`, `[S]`, `[D]`, `[L]`, `NOT MEASURED`, `HYPOTHESIS`) are d
 ## Preconditions
 
 1. Editor world `/Game/Maps/L_MainMenu`; PIE standalone, 1 client, viewport **1280×725**, **DPI 0.6706**; `is_pie_active` = `false` before the start. `[M: 1512 Editor/Aura state]`
-2. **The active deck is an all-Unit, single-card, legal deck: deck4 = 50× `Archer`.** `1512` read it on disk before PIE: `ActiveDeckName = deck4`. `[M: 1512 Pre-registration]`
+2. **The active deck must be an all-Unit, single-card, legal deck: deck4 = 50× `Archer`.** `1512` read it on disk before PIE: `ActiveDeckName = deck4`. `[M: 1512 Pre-registration]`
    - A hand dealt from one Unit card has no type exposure (`RCP-play-unit-card-from-hand.md` Precondition 8).
-   - To make deck4 active, use `RCP-deckbuilder-set-active-by-keyboard.md`: `1511` set it and left it active, and `1512` read it there.
+   - To make deck4 active, use `RCP-deckbuilder-set-active-by-keyboard.md`: `1511` set it and left it active, and `1512` read it there. A later run's pre-registration read a different deck active `[M: 1524 Pre-registration]`, so Step 0's read decides, never this line.
    - Any other deck: `NOT MEASURED`.
 3. **A fresh PIE session on the main menu, with `Button_0` "Play (vs Bot)" focused.** a2 read that focus inside the batch (Step 1, row 1). `[M: 1512 A1]`
 4. **Gold needs no wait.** From t=2.8 to 33.6, gold rose 12 → 43 `[M: 1512 ctl]`. The Archer costs 12, per the entry line `placement mode entered for card 'Archer' (cost 12).` `[M: 1512 A3]` Gold at the card key was 43 (t=33.79). `[M: 1512 A3]`
@@ -67,9 +68,10 @@ Provenance tags (`[M]`, `[S]`, `[D]`, `[L]`, `NOT MEASURED`, `HYPOTHESIS`) are d
 | 13 | ghost reads: `GhostActor`, `GhostActor.bHidden`, `GhostActor.RootComponent.RelativeLocation` | t=33.79: `StaticMeshActor_34`, `bHidden false`, `RelativeLocation (X=-449.150572,Y=-1.707544,Z=0)`. The candidate says "this dotted path WORKS; it was measured non-null this run" `[M: 1512 A3; Recipe candidates step 6]` |
 | 14 | **CONFIRM:** `simulate_key_press LeftMouseButton` | t=33.80 → placed (log below) `[M: 1512 A3]` |
 | 15 | post-reads: gold, `GhostActor`, census | gold 32 (t=34.05); census 1 (t=34.09): `BP_Unit_Archer0` at `(-382.86, -1.58, 92)`; `GhostActor` → `None` `[M: 1512 A3]` |
+| 15a | post-play `DeckComponent` read, `["DrawPile"]`: the in-batch producer of "the card left the hand" (`qa/TASK-1518.md` W2, option (b)) | the read object is row 5's, measured in-batch at t=2.74 (`DrawPile` = 44× `"Archer"`) `[M: 1512 A1]`. **Its position here, after the play: `NOT MEASURED`.** a2 read `DrawPile` 43 after the play only at t≈55, outside the batch (Step 4) `[M: 1512 A3]` |
 | 16 | control-interval reads (see the control below) | `CaptureOwner` `Blue` at t=34.59 and 35.30; census 1 at t=35.28 and 37.43; the batch ended at arena t=37.45 `[M: 1512 A2, ctl, Speed data]` |
 
-The action objects, copy-paste ready (rows 1–15):
+The action objects, copy-paste ready (rows 1–15, then row 15a last):
 ```json
 {"actions": [
   {"type": "ui_snapshot", "params": {"widget": "WBP_MainMenu", "selector": {"by": "name", "value": "Button_0"}, "max_depth": 2}},
@@ -96,7 +98,8 @@ The action objects, copy-paste ready (rows 1–15):
   {"type": "get_actor_property_in_pie", "params": {"name": "SiegePlayerController0", "properties": ["GhostActor", "GhostActor.bHidden", "GhostActor.RootComponent.RelativeLocation"]}},
   {"type": "simulate_key_press", "params": {"key": "LeftMouseButton"}},
   {"type": "get_actor_property_in_pie", "params": {"name": "SiegePlayerController0", "properties": ["PlayerState.Gold", "GhostActor"]}},
-  {"type": "survey_pie_scene", "params": {"include": ["census"], "class_filter": "Archer"}}
+  {"type": "survey_pie_scene", "params": {"include": ["census"], "class_filter": "Archer"}},
+  {"type": "get_actor_property_in_pie", "params": {"name": "SiegePlayerController0", "component": "DeckComponent", "properties": ["DrawPile"]}}
 ]}
 ```
 What in these objects is quoted and what is not:
@@ -108,9 +111,10 @@ What in these objects is quoted and what is not:
 - **`[S]`:**
   - the envelope and every param name (`hold_seconds`, `x`, `y`, `key`, `class_filter`, `include`);
   - "non-blocking: the call returns at once and the hold persists across your following actions/waits" (`inject_input_action`'s schema). That agrees with a2's stamps: the walk ran from t≈2.8 to about t=32 while the sequence's waits advanced.
-  - The `name`/`component`/`properties` keys are not in the sequence's published parameter union; measured use says they are accepted inside a sequence. `[L: VER-§12 cl. 7c]`
+  - The `component`/`properties` keys are not in the sequence's published parameter union; measured use says they are accepted inside a sequence. `[L: VER-§12 cl. 7c]` `name` is in the validator's own "Valid params" list, `['client_index', 'component', 'name', 'properties']`. `[L: VER-§8 cl. 10(c)]`
 - **`NOT MEASURED`:**
-  - **The transform reader.** `1512` reports position and velocity but names neither the reader nor the field. `get_player_transform` is on the sequence whitelist and returns location and velocity by its schema `[S]`. It is not quoted as a2's reader.
+  - **The transform reader.** `1512` reports position and velocity but names neither the reader nor the field. `get_player_transform` is on the sequence whitelist and returns location and velocity by its schema `[S]`. It is not quoted as a2's reader. If the sequence validator rejects it, drop both `get_player_transform` objects; the walk does not depend on them (`handoffs/TASK-1515-programmer.md` flag 1; `qa/TASK-1518.md` N4).
+  - **Row 15a's position.** The `DrawPile` read object is row 5's, measured in-batch at t=2.74 `[M: 1512 A1]`. No run has read it after the play inside a batch.
   - **The `CurrentHP` read** (200 at t=32.33): the property name is quoted; the actor label and the reader are not.
   - **The `CaptureOwner` read at row 7.** a2 read it at t=16.79; whether the read shared row 7's slot in the batch is not stated.
   - **A wait between the confirm and the post-reads.** The press went in at t=33.80 and the post-reads landed at t=34.05 (gold) and t=34.09 (census). Whether a wait sat between them is not quoted, so none is written above.
@@ -128,12 +132,14 @@ What in these objects is quoted and what is not:
 **Step 3 — the no-play control: an equal interval with no card key.** `[M: 1512 ctl]`
 - **The measured control:** from t=34.05 to t=54.60 (≈20.5 s). It included a second `simulate_key_press LeftMouseButton` at t=34.72 with `GhostActor` `None`. Over it:
   - the `Archer` census stayed **1** (t=35.28, 37.43; the unit walked X 35.69 → 319.4 → 531.93);
-  - `DrawPile` stayed **43** (read at t≈55);
+  - `DrawPile` stayed **43** (read at t≈55, by Step 4's call; the tail below has no `DrawPile` read);
   - gold went 32 → 33 → 35 → 52, **only rising**;
   - no second `played card` line appeared.
 - **The pre-play half:** from t=2.8 to 33.6 gold rose 12 → 43, the census read 0 at t=33.59, and the hand did not change. `[M: 1512 ctl]`
 - **Where the reads ran:** the interval's reads up to t=37.43 were inside the batch, which ended at t=37.45. Its later reads (t≈54.55–55) came from a separate call `[M: 1512 A2, A3, ctl, Speed data]`. The first of them landed ≈17 s after the batch ended (arithmetic from the stamps). Putting the whole interval inside the batch is `NOT MEASURED`.
-- **The in-batch tail:** append these objects to the Step 1 `actions` array, after row 15. The waits between these reads are not quoted; a2's reads landed at t=34.59, 35.28, 35.30 and 37.43.
+- **The in-batch tail:** append these objects to the Step 1 `actions` array, after row 15a. The waits between these reads are not quoted; a2's reads landed at t=34.59, 35.28, 35.30 and 37.43.
+  - **The tail's ORDER is this recipe's composition, not a2's.** a2 read `CaptureOwner` at t=34.59, **before** its second `LeftMouseButton` at t=34.72 `[M: 1512 A2, ctl]`; the tail below sends the press first. (`qa/TASK-1518.md` N5)
+  - **The interval's length.** a2's in-batch half of the interval ran t=34.05 → 37.45 (≈3.4 s, arithmetic from the stamps) `[M: 1512 ctl, Speed data]`. This tail writes no waits, so its own length is `NOT MEASURED`. The report states the interval's length, from its own stamps, next to the treatment window (the ctl row asks for "an equal interval"). `[M: 1512 ctl]`
 ```json
 [
   {"type": "simulate_key_press", "params": {"key": "LeftMouseButton"}},
@@ -144,18 +150,19 @@ What in these objects is quoted and what is not:
 ```
 - ⛔ **Not the omitted-set confirm.** In a2 the press planned as that control placed the unit, because the ghost was already visible at a legal in-zone point. `[M: 1512 A3]`
 
-**Step 4 — the later call (optional, same session).** Everything here is a read; nothing depends on a set (`VER-§13` cl. 2).
+**Step 4 — the later call (optional, same session).** Everything here is a read; nothing depends on a set (`VER-§13` cl. 2). It is optional because row 15a produces "the card left the hand" inside the batch (`qa/TASK-1518.md` W2, option (b)). Step 4 is where a2 measured the values below, and it is the only producer of the control's `DrawPile` leg (Step 3).
 - The new unit's `Team` = `Blue` and `CardID` = `Archer` (read t=54.55; reader not named). `[M: 1512 A3]`
 - `CaptureOwner` (`Blue` at t=54.60). `[M: 1512 A2]`
-- `DrawPile` / `DiscardPile`: 43 / 1, read once through read-only editor Python on the PIE world ("to count `Hand`/`DrawPile`/`DiscardPile` = 6/43/1"). `[M: 1512 A3, Not examined]` An in-batch post-play `DrawPile` read is `NOT MEASURED`. The pre-play in-batch `DrawPile` read is measured (row 5).
-- Budget: a1's hero died at ≈t=73 holding the zone alone (Fences). Land this call well inside that.
+- `DrawPile` / `DiscardPile`: 43 / 1, read once through read-only editor Python on the PIE world ("to count `Hand`/`DrawPile`/`DiscardPile` = 6/43/1"). `[M: 1512 A3, Not examined]` The same `DrawPile` read inside the batch after the play is row 15a, at a position `NOT MEASURED`. The pre-play in-batch `DrawPile` read is measured (row 5). `DiscardPile` has no in-batch reader in this recipe.
+- Budget: a1's hero died ≈73 s after the arena opened, by log time `[M: 1512 Attempt 1]`. That it held the zone alone from ≈t=50 is `HYPOTHESIS` H2 (Fences). Land this call well inside that.
+  - By the law's planning rule this call does not fit inside the `t≈60 s` fence: budget a round trip at ≈70 s (`VER-§8` cl. 10(b), marker `VER-8-10B-THE-LOWER-END-IS-NOT-A-FLOOR`). a2's landed ≈17 s after its batch ended (Step 3). This is why "the card left the hand" has an in-batch producer (row 15a) and Step 4 stays optional.
 
 **Step 5 — the log, after the batch.** Category `LogGitClaudeUnrealTest`, except the `StartMatch` line. `1512` does not name its log reader: `NOT MEASURED`.
 - `[ASiegeGameMode::StartMatch] Main menu -> opening arena '/Game/Maps/L_Arena.L_Arena' into a fresh match vs the bot` `[M: 1512 Editor/Aura state]`
 - `active saved deck 'deck4' is legal (50 cards) — using it this match` · `built a 50-card draw pile from the pending OVERRIDE deck 'deck4' (1 entries)` `[M: 1512 A1]`
 - `placement mode entered for card 'Archer' (cost 12).` `[M: 1512 A3]`
 - `played card 'Archer' for 12 gold — spawned 'BP_Unit_Archer_C_0' at (-449, -2, 92).` `[M: 1512 A3]`
-- Exactly one `played card` line over the control interval. `[M: 1512 ctl]`
+- Exactly one `played card` line in the session, the play's (t≈33.80), and none after it through the control interval (`1512` ctl: "no second `played card` line"). `[M: 1512 A3, ctl]`
 
 **Step 6 — after PIE.** `stop_pie`, then `stop_pie_recording`. `stop_pie_recording`'s replies overflowed the tool limit in this run ("both `stop_pie_recording` replies"): read the head only. `[M: 1512 Not examined]`; `[L: VER-§12 cl. 7b amendment]` Find every film by directory listing and name it by path `[M: 1512 Recording]`; `[L: VER-§12 cl. 7b amendment]`. Re-read the save: expected unchanged. `[M: 1512 Save hygiene]`
 
@@ -167,15 +174,15 @@ What in these objects is quoted and what is not:
 | the match started, on the active deck | world `L_Arena`; `StartMatch` + deck log lines | the lines in Step 5 `[M: 1512 A1, Editor/Aura state]` |
 | the hand is all `Archer` | `DeckComponent` `Hand`/`DrawPile` (row 5) | 6× + 44× `"Archer"` = 50 (t=2.74) `[M: 1512 A1]` |
 | the zone box | row 5 | half extent (840, 840) about (0, 0, 0) ⇒ X,Y ∈ [−840, 840] `[M: 1512 A2]` |
-| the walk | transform reads (rows 7–8) | X −21007.8 (t=2.73) → −10710.2 at velocity 750 (t=16.79) → 250.89, stopped (t≤32.31); `CurrentHP 200` (t=32.33) `[M: 1512 A2]` |
+| the walk | transform reads (rows 7–8). The start value, X −21007.8 at t=2.73, was read by a2 beside the row-5 zone reads; no row of this recipe's JSON takes a transform read before row 7 (`qa/TASK-1518.md` N7) | X −21007.8 (t=2.73) → −10710.2 at velocity 750 (t=16.79) → 250.89, stopped (t≤32.31); `CurrentHP 200` (t=32.33) `[M: 1512 A2]` |
 | the capture | `CaptureOwner` (rows 7, 9) | `Neutral` (t=2.73, 16.79) → **`Blue`** (t=33.54) `[M: 1512 A2]` |
 | **entry (checked first)** | `GhostActor` `None` → non-`None` + the entry log line | `None` (t=33.58) → `StaticMeshActor_34` (t=33.79), `bHidden false`; `… 'Archer' (cost 12).` `[M: 1512 A3]` |
 | **ghost inside the zone before the press** | row 13, judged in Step 2 | (−449.150572, −1.707544, 0): inside `[M: 1512 A3]` |
 | gold spent | `PlayerState.Gold` | 43 (t=33.79) → 32 (t=34.05). The log's cost is 12, so the net −11 includes one +1 income tick; the report labels that "an inference" `[M: 1512 A3]` |
 | a new Blue Archer inside the zone | `survey_pie_scene` census; the unit's `Team`/`CardID` | 0 (t=33.59) → 1 (t=34.09), `BP_Unit_Archer0` at (−382.86, −1.58, 92); spawn log point (−449, −2); both inside `[M: 1512 A3]` |
-| the card left the hand | `DrawPile` / `DiscardPile` (NOT the `Hand` array) | `DrawPile` 44 → 43, `DiscardPile` 1 (t≈55) `[M: 1512 A3]` |
+| the card left the hand | `DrawPile` (NOT the `Hand` array): row 5 before, row 15a after (in-batch; row 15a's position `NOT MEASURED`). Step 4 re-reads `DrawPile` and adds `DiscardPile` | `DrawPile` 44 (t=2.74, row 5) → 43 and `DiscardPile` 1, both read at t≈55 by Step 4's call `[M: 1512 A1, A3]` |
 | placement exited | `GhostActor` | `None` after the confirm `[M: 1512 A3]` |
-| control | Step 3 | census stayed 1, `DrawPile` stayed 43, gold only rising, no second `played card` line `[M: 1512 ctl]` |
+| control | Step 3 (its `DrawPile` leg: Step 4) | census stayed 1, `DrawPile` stayed 43, gold only rising, no second `played card` line `[M: 1512 ctl]` |
 
 Pixels proved nothing here. In both a2 frames "The Archer is not identifiable by eye"; "The pixels do not prove the summon; the reads and log above do." `[M: 1512 Evidence]`
 
@@ -183,8 +190,9 @@ Pixels proved nothing here. In both a2 frames "The Archer is not identifiable by
 
 - **One run (a2), one summon.** No second run exists, so other days, map states and bot behaviours are untested.
 - **The hero alive and the zone uncontested at t≈33 s.** HP was 200 at t=32.33 and the zone read `Blue` from t=33.54 to at least 54.60. `[M: 1512 A2]`
-  - In a1 the hero reached the zone and held it alone from ≈t=50 to ≈t=73, then died. The ghost pawn spawned at (798, −0, 98), the zone read `Red` at t=83.41–85.28, and Red Cavalry, Knight, Footman and Archer were in the census. `[M: 1512 Attempt 1]`
-  - The killer was not read: `HYPOTHESIS` H2. `[M: 1512 H2]`
+  - In a1 the hero died ≈73 s after the arena opened, by log time, and the ghost pawn spawned at (798, −0, 98), inside the a2 box (arithmetic). The report's own fences sentence says it "died at ≈t=73 holding the zone". `[M: 1512 Recipe candidates Fences; Attempt 1]`
+  - **a1 never read the zone `Blue`.** `CaptureOwner` read `Neutral` at t=35.47 and 45.48, and `Red` at t=83.41, 84.57 and 85.28, with Red Cavalry, Knight, Footman and Archer in the census. `[M: 1512 Attempt 1]`
+  - That it held the zone **alone, from ≈t=50**, is `HYPOTHESIS` H2 ("it was there from ≈t=50 to ≈t=73"). The killer was not read. `[M: 1512 H2]`
   - Anything later than a2's timeline is `NOT MEASURED` for this route.
 - **No aim.** The ghost's in-zone location came from a cursor nobody set. `HYPOTHESIS` H1: the OS/Slate cursor sat near the horizontal centre of the PIE viewport; "MECHANISM NOT MEASURED: the cursor position was not read." `[M: 1512 H1]` An unset cursor is not a reproducible aim. `[M: 1512 Recipe candidates Fences]`
 - **A calibrated `SetMouseLocation` into the zone: `NOT MEASURED`.** a2's `(300,420)` and `(640,420)` ran after the placement had exited and aimed nothing. `[M: 1512 Not examined]` The play recipe's `(300,420)` was measured at the Blue spawn from the start camera, not from the zone.

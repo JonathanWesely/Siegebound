@@ -1,6 +1,6 @@
 # RCP-deckbuilder-slot-and-card-edit — select a deck slot and add/remove cards with `double_click`, batched, read back and topped up
 
-Provenance tags (`[M]`, `[S]`, `[D]`, `[L]`, `NOT MEASURED`, `HYPOTHESIS`) are defined in `README.md`. `archer50` = `.claude/pipeline/qa/PLAYTEST-archer50-verify.md`.
+Provenance tags (`[M]`, `[S]`, `[D]`, `[L]`, `NOT MEASURED`, `HYPOTHESIS`) are defined in `README.md`. `archer50` = `.claude/pipeline/qa/PLAYTEST-archer50-verify.md` · `1524` = `.claude/pipeline/qa/TASK-1524-verify.md` (Precondition 1 only).
 
 ## Source
 
@@ -11,7 +11,7 @@ Provenance tags (`[M]`, `[S]`, `[D]`, `[L]`, `NOT MEASURED`, `HYPOTHESIS`) are d
   - **§1(e)** — leaving the builder (optional Step 6);
   - *Not examined / limitations* — the `name_path` hazard and the frame-geometry note; *Hypotheses* H1/H2.
 - Run `PLAYTEST-archer50`, **2026-09-26**, `Verdict: MEASURED` (boarded afterwards as `TASK-1501`). Law that absorbed it: `VER-§5` cl. 5 (2026-09-26 narrowing), `VER-§12` cl. 7a, `VER-§13` cl. 1.
-- Seeded by `TASK-1502`, 2026-09-26. Revised the same day on QA loop 1 (`qa/TASK-1505.md` W1, N4). Not re-verified since.
+- Seeded by `TASK-1502`, 2026-09-26. Revised the same day on QA loop 1 (`qa/TASK-1505.md` W1, N4). Not re-verified since. Amended by `TASK-1527`, 2026-09-26: the set-active pointers (`qa/TASK-1518.md` CF-1) and Precondition 1 (`1524`, `DECK-§3`).
 - ⚠️ **The call envelope for the batched edits is `NOT MEASURED`.**
   - **What the source says:** the gesture and the tool. "`ui_perform`'s **`double_click` step FIRES `UButton.OnClicked`** … This is how all 100 deck edits were made." (*THE ANSWER FIRST*) §1(c) then reports runs of 49, 10, 30 and 28 gestures at a stated frame spacing. The one call whose error text it quotes carried the root `WBP_DeckBuilder`: "No widget in root 'WBP_DeckBuilder' matches…" (§1(b)).
   - **What it does not say:** the envelope. It could have been a standalone `ui_perform` whose `steps` array carried a whole run, or `ui_perform` steps inside `run_verification_sequence`. It also does not say how many calls one run took.
@@ -24,7 +24,10 @@ Provenance tags (`[M]`, `[S]`, `[D]`, `[L]`, `NOT MEASURED`, `HYPOTHESIS`) are d
 
 ## Preconditions
 
-1. The Deck Builder is open, reached by `RCP-menu-to-deckbuilder.md`; on open it read `EditingDeckIndex = 0`, `WorkingDeck = deck1`. `[M: archer50 §1(a)]`
+1. The Deck Builder is open, reached by `RCP-menu-to-deckbuilder.md`. **On open, `EditingDeckIndex` is the ACTIVE deck's slot; read it (that recipe's Step 4), never assume `0`.** `DECK-§3`: *"Opening the builder starts with the ACTIVE deck selected for editing"* `[L: DECK-§3]`.
+   - The source read `EditingDeckIndex = 0`, `WorkingDeck = deck1`, with deck1 active (`ActiveDeckName` read `deck1`, "unchanged", after the run). `[M: archer50 §1(a), Not-examined]`
+   - `1524` read `EditingDeckIndex=2` at open (t=19.83) when deck3 was active. `[M: 1524 row 0, Pre-registration, Recipes used]`
+   - That the builder does this in general is `HYPOTHESIS` H2 in that report ("One observation; mechanism not read"). `[M: 1524 H2]`
 2. Same PIE geometry as the source: viewport **1280×725**, **DPI 0.6706**. Every `abs_*` value below is only meaningful there. `[M: archer50 Editor/Aura state]`
 3. **Read the starting contents of every deck you will touch before editing.** The source read deck4 = `[{card_id: "Ogre", count: 50}]` before the run. `[M: archer50 A1]`
 4. **The builder auto-saves every landed edit.** The source's log carries one `saved deck 'deck4' (<n> cards)` line per change, a monotonic run ending "(39 cards) → (50 cards)". A mis-aimed or excess edit is therefore **on disk immediately**. `[M: archer50 A1 (iii)]` ⇒ the orchestrator hashes every `.sav` before the run (the verifier has no shell: *Not examined*, "`.sav` integrity: not hashed by me (no shell). The orchestrator holds the pre-run hashes"). `[M: archer50 Not-examined]`
@@ -49,7 +52,7 @@ Source for the method: "From then on I resolved targets by plain name and verifi
 Tool: `ui_perform`. Source (§1(b) table, last row): "**`double_click`**, offset dx −45 | 210.96 | `SButton` | down `true` / up `false` / **double_click `true` / up `true`** | **3**, `WorkingDeck = (DeckName="deck4",Cards=((CardID="Ogre",Count=50)))` (t=215.33)". `[M: archer50 §1(b)]`
 - Root `"WBP_DeckBuilder"`: the source's own error text names it ("No widget in root 'WBP_DeckBuilder' matches…"). `[M: archer50 §1(b)]`
 - Selector: the table names `DeckSlotEntryWidget_3` for the centre-click row; the dx −45 rows say only "offset dx −45 (button body, not label)". That they used the same selector is the natural reading, not a quoted fact. `dy`: `NOT MEASURED` (0 here is the author's fill). Step and offset spelling `[S]`.
-- This **selects the deck for editing**. It does **not** make it the active deck (right-click only; no route, `VER-§8` cl. 12).
+- This **selects the deck for editing**. It does not make it the active deck; set-active is `RCP-deckbuilder-set-active-by-keyboard.md` (`VER-§8` cl. 12, 2026-09-26 amendment).
 
 **Step 3 — calibrate: ONE `double_click` on the tile button, then read.**
 ```json
@@ -128,7 +131,7 @@ The `ui_perform` trace (`down true / up false / double_click true / up true`) co
 
 - Only deck4's `SlotButton` and two tile buttons (Ogre "−" on `WBP_DeckCardTile_C_12`, Archer "+" on `WBP_DeckCardTile_C_1`). Other slots and tiles are the same widget classes; that they behave the same is an inference.
 - Only `UButton.OnClicked` on `L_MainMenu`'s Deck Builder. Not measured: any non-`UButton` class (`UCheckBox`, sliders), a button that also binds a Slate double-click handler, any other map (`VER-§5` cl. 5 fences).
-- **Setting the active deck.** Right-click only, and `ui_perform` has no right button (`archer50` §1(d); `VER-§8` cl. 12). Pending: `TASK-1511`.
+- **Setting the active deck.** Not this recipe: see `RCP-deckbuilder-set-active-by-keyboard.md`. `ui_perform` has no right mouse button (`archer50` §1(d); `VER-§8` cl. 12 scope note).
 - Editing the deck that is currently active; editing a deck whose total is not 0 or 50; a deck total above 50; the "Reset to Default" and "Play" buttons; closing the card details panel. None was exercised.
 - **Why `double_click` works where `click` does not** is `HYPOTHESIS` H1 (the first synthetic up may not be routed to the capturing `SButton`; "MECHANISM NOT MEASURED"). `[M: archer50 Hypotheses]`
 - **Why batches drop gestures** is `HYPOTHESIS` H2 (coalescing inside the OS double-click interval; "Not measured"). `[M: archer50 Hypotheses]`
@@ -159,6 +162,6 @@ All measured at viewport **1280×725**, **DPI 0.6706**, standalone, 1 client. `[
 - **Rapid batches drop gestures** (Step 4 table). Never trust a batch blind: read back and top up. `[M: archer50 §1(c)]`; law `VER-§13` cl. 1.
 - **Overshoot.** The tile "+" greys only at the per-card 50 (the source read Ogre's "+" `enabled: false` at 50, which made overshoot on one card impossible). `[M: archer50 §1(c)]` The deck **total** has no cap by ruling. `[L: VER-§13 cl. 1; UNCAP-§4 U4]` ⇒ size every "+" batch to the measured shortfall, never more, and read the total.
 - **Edits persist immediately** through the auto-save (Precondition 4). A mis-aim is a disk change.
-- **No right mouse button.** `click` + `"button":"right"` and `press`/`release` + `"button":"RightMouseButton"`/`"mouse_button":"right"` were each delivered as a left press; the extra keys were silently ignored. `[M: archer50 §1(d)]`; law `VER-§8` cl. 12.
+- **No right mouse button through `ui_perform`.** `click` + `"button":"right"` and `press`/`release` + `"button":"RightMouseButton"`/`"mouse_button":"right"` were each delivered as a left press; the extra keys were silently ignored. `[M: archer50 §1(d)]`; law `VER-§8` cl. 12.
 - **`simulate_key_press` does not reach this screen's widgets.** `Tab` → "delivered to the player controller, but NOTHING BINDS IT"; no `SlotButton` focused; `FocusedCardIndex -1`. `[M: archer50 §1(b)]`
 - **After Exit, `WBP_MainMenu` matches two instances.** Observed, not diagnosed. `[M: archer50 Not-examined]`
