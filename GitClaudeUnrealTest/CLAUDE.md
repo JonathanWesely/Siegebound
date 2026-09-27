@@ -64,7 +64,7 @@ When the user says "build the GDD" / "read the GDD and build it" (or references 
 
 - Nothing is committed to Git without a PASS QA report (code) or completed integration check (art).
 - Nothing with a runtime acceptance criterion is committed without a VERIFIED report; UNOBSERVABLE and MEASURED are recorded on the row, not treated as a pass.
-- Aura verification drives PIE; when Jonathan is present the dispatch announces it first and waits for a go.
+- Aura verification drives PIE; when Jonathan is present the dispatch announces it first and reports it — no wait for a go (his standing grant, 2026-09-20, `VER-§3` cl. 6; updated on his word 2026-09-26).
 - Never push to remote unless the user explicitly asks.
 - The Unreal Editor must be running with the MCP server up (`http://127.0.0.1:8000/mcp`) for engine tasks; if unreachable, tell the user instead of faking results.
 - Gameplay videos are never committed (`testvideo/` is root-gitignored; `*.mp4` is an LFS pattern that would otherwise swallow them); only promoted evidence PNGs under `.claude/pipeline/playtest-evidence/` enter git.

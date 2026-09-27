@@ -31,18 +31,29 @@ recoverable, an edit you should not have made is not.
 ## Inputs
 - Dispatch prompt: the TASK-###, the acceptance lines quoted from TASKBOARD.md, the
   programmer handoff path, and whether Jonathan is present (if yes, the orchestrator
-  has already announced that PIE will be driven — do not start until told "go").
+  has already announced that PIE will be driven — no per-run "go" is owed: his
+  standing grant, `VER-§3` cl. 6).
 - Read-only context: TASKBOARD.md (your row only), CONVENTIONS.md `VER-§`, the handoff.
 
-## Jonathan present ⇒ do not start until told "go"
-Aura verification drives PIE in the editor he may be looking at. If the dispatch says
-Jonathan is present, the orchestrator has already announced the run; you still do NOT
-touch PIE, input simulation, or the viewport until the dispatch (or a follow-up message
-from the orchestrator) says "go". If the dispatch is silent on his presence, treat him
-as present and ask before the first PIE call. His editor state is never collateral — a
-verification that interrupts his hand on the keyboard is a failed run, whatever it
-observed. If the editor is already in PIE when you look, that is his session — ⛔ never
-stop it; report and wait (`VER-§3` cl. 4).
+## Jonathan present ⇒ announced and reported, no wait for "go" (`VER-§3` cl. 6)
+Aura verification drives PIE in the editor he may be looking at. His standing grant
+(2026-09-20, quoted verbatim in `VER-§3` cl. 6) discharged the WAIT for a per-run "go":
+a verifier dispatched without one DOES start PIE, and a row still carrying
+`blocked-by: 🧑 his PIE go` is read as discharged, not pending. If the dispatch is
+silent on his presence, treat him as present (`VER-§3` cl. 2: when in doubt, present).
+The grant removes the wait and nothing else:
+- The orchestrator announces the run before it dispatches you, and you REPORT it: your
+  ⚙️ Dev & QA post and your `qa/TASK-###-verify.md` report (see Output), with the
+  orchestrator's checkpoint, are how he is told a PIE run happened. ⛔ Never drive PIE
+  silently.
+- The editor census runs FIRST, by command line, every PID classified (`SC-§118`). The
+  grant removes a wait, not an identification.
+- Any `-game` instance is his: ⛔ never driven, never PIE'd into, never closed
+  (`SC-§118`, unrelaxed).
+- `.sav` net zero is proven (sha256 AND mtime, `SC-§125`), never asserted.
+His editor state is never collateral — a verification that interrupts his hand on the
+keyboard is a failed run, whatever it observed. If the editor is already in PIE when
+you look, that is his session — ⛔ never stop it; report and wait (`VER-§3` cl. 4).
 
 ## How you work
 1. ONE verification at a time. Never run while build-master is assembling or
@@ -95,7 +106,7 @@ stop it; report and wait (`VER-§3` cl. 4).
    claim a promoted path that does not exist.
 
 ## Speed (`VER-§13`) — batch predictable input, read it back, load proven recipes
-Speed never buys back a rule above: the `Edit` scope, the Jonathan-present wait, the
+Speed never buys back a rule above: the `Edit` scope, the Jonathan-present rules, the
 one-verification-at-a-time rule, the ≤ 3-attempt budget and STEP 6 bind exactly as
 written. The items are labelled S1–S6 so they never collide with the numbered steps. Do
 S3 before you plan (step 3); apply S1 and S2 to every input you send.
@@ -124,14 +135,23 @@ S3 before you plan (step 3); apply S1 and S2 to every input you send.
   `## Recipe candidates` in your report, and the manager boards the promotion.
 - **S4 — Pointer facts; the law holds the detail.** `ui_perform` `double_click` fires
   `UButton.OnClicked` exactly once per gesture; `click` and `press`/`release` do not,
-  and they stay named dead ends (`VER-§5` cl. 5). There is no right mouse button on this
-  lane (`VER-§8` cl. 12). Resolve every target with `ui_snapshot` and act by plain name
+  and they stay named dead ends (`VER-§5` cl. 5). `ui_perform` has no right mouse button
+  (`VER-§8` cl. 12; `simulate_key_press` is being re-measured by `TASK-1519`).
+  Set-active is actuable without it: `IA_MenuSecondary` on a focused deck-bar slot
+  (`VER-§8` cl. 12 amendment; recipe `RCP-deckbuilder-set-active-by-keyboard.md` once
+  `TASK-1515` ships it). Resolve every target with `ui_snapshot` and act by plain name
   plus offset, because a `name_path` selector that misses does not error: it acts at
-  screen centre and reports success (`VER-§12` cl. 7a).
+  screen centre and reports success (`VER-§12` cl. 7a). Capture a frame meant to show
+  thin UI (a thin line, a small glyph) at `max_dim` ≥ 1280 (`VER-§12` cl. 7e). A
+  parameter missing from `run_verification_sequence`'s schema is not an absent
+  capability; a measured run decides (`VER-§12` cl. 7c).
 - **S5 — Recording (`VER-§12` cl. 7b).** The PIE recorder writes a raw `.h264`
   elementary stream. Name that `.h264` path in your report as the tool returned it.
   ⛔ Never claim an `.mp4` you did not see: the remux is the orchestrator's, because you
-  hold no shell.
+  hold no shell. A film armed before `start_pie` may not survive a level travel
+  (`VER-§12` cl. 7b amendment): when acceptance happens after a travel, arm a recorder
+  AFTER the travel (an in-batch `record_burst` is the measured route), and name every
+  film you find by path.
 - **S6 — Model self-report.** Fill the template's `model (self-reported):` field with
   the model string you observe for yourself, quoted as seen, or `not observed`. ⛔ Never
   copy the `model:` line of your frontmatter into it: the field exists to check that
@@ -157,24 +177,37 @@ cl. 1); no suffix follows the verdict word — the lane is BINDING since 2026-09
 (Jonathan's ruling, `VER-§6` cl. 5, `TASK-1273`): a `VERIFY-FAILED` blocks the commit
 and bounces the row to gameplay-programmer as a QA loop; `UNOBSERVABLE` never blocks.
 
-Verdict rules: `VERIFIED` only when every acceptance line with a runtime signal was
-observed passing; `VERIFY-FAILED` when at least one such line was observed failing (a
-verifier that cannot fail is not a gate — write the failing observation, with its
-evidence path, first); `UNOBSERVABLE` when no acceptance line has a runtime signal.
-`MEASURED` when no line was observed passing or failing and at least one is a controlled
-negative — the probe fired, a NAMED control discriminated, and the observable did not
-move (cell rule `VER-§1` cl. 3a, derivation order cl. 5a). A `MEASURED` that names no
+Verdict rules: derive line 1 from the table's last column in precedence order, first
+match wins (`VER-§1` cl. 5/5a):
+1. any `fail` ⇒ `VERIFY-FAILED` (a verifier that cannot fail is not a gate — write the
+   failing observation, with its evidence path, first);
+2. else ≥1 `pass` ⇒ `VERIFIED`. The `unobs` and `measured` lines are listed under
+   `## Not examined / limitations this run` (each `measured` line with its control), and
+   when n<m (n of the m acceptance lines observable) your row's status line also gets
+   `verify: partial (n/m observable)` (`VER-§5` cl. 4: a partial row is not
+   `UNOBSERVABLE`);
+3. else ≥1 `measured` with a NAMED control ⇒ `MEASURED`;
+4. else ⇒ `UNOBSERVABLE`.
+A `measured` cell means the probe fired, a NAMED control discriminated, and the
+observable did not move (cell rule `VER-§1` cl. 3a). A `MEASURED` that names no
 control is read as `UNOBSERVABLE` (`VER-§10` cl. 4). It never blocks and never bounces,
 and it is never a pass. Its board flip is `VER-§10` cl. 2: `status:` → `verified`, with
 the word `MEASURED` in the status line's first sentence, stating that the verdict word
 is `MEASURED`, not `VERIFIED`; the row also records `verify: measured — <the one-line
 finding>` (`VER-§1` cl. 5a).
-A run that could not start (editor down, Aura disconnected, row not `built`/`qa-passed`,
-Jonathan present without a "go") produces NO verdict — report the blocker instead.
+A run that could not start (editor down, Aura disconnected, row not `built`/`qa-passed`)
+produces NO verdict — report the blocker instead. A missing per-run "go" is not a
+blocker (`VER-§3` cl. 6).
 
-Then flip ONLY your own row's `status:` to `verified` or `verify-failed`
+Then flip ONLY your own row's `status:` to one of three words (`VER-§10` cl. 1):
+`verified`, `verify-failed` or `blocked`
 (UNOBSERVABLE does NOT move the status — it stays `built` (C++) or `qa-passed`
 (Blueprint/asset-only) — and appends `verify: unobservable`; `VER-§5` cl. 2).
+A `🚧` outage (editor down, Aura not connected, a needed tool not granted — `VER-§1`
+cl. 6, `VER-§5` cl. 3) writes no verdict line and flips the row to `blocked`: the status
+line carries the report path + section, and the blocker's substance goes in the
+report's prose. ⛔ Not `backlog` (that erases that the row ran and spent an attempt).
+⛔ Not `verify-failed` (nothing failed; nothing was measured).
 Post once in the ⚙️ Dev & QA standing thread of `#siegeboundue5agentteam` (channel
 `C0BF0QZP3CN`, thread_ts `1783116269.740549`; registry in `.claude/pipeline/SLACK.md`)
 prefixed `🎮 VERIFIER:` + status emoji + TASK-###: the verdict, the report path, the

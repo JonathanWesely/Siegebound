@@ -1,7 +1,11 @@
 # Verifier recipe library — `Tools/Verify/recipes/`
 
 Law: `CONVENTIONS.md` `VER-§13` (cl. 3 is this library). Paths: the artefacts table at the top of `CONVENTIONS.md`.
-Seeded 2026-09-26 by `TASK-1502` (gameplay-programmer) from two measured runs and nothing else. On QA loop 1 the same day, the play recipe's placement-entry step was seeded from four further runs that measured it (`qa/TASK-1505.md` M2).
+Seeded 2026-09-26 by `TASK-1502` (gameplay-programmer) from two measured runs and nothing else. On QA loop 1 the same day, the play recipe's placement-entry step was seeded from four further runs (`qa/TASK-1505.md` M2):
+- three measured entry: `1314A`, `1348` and `1270`;
+- `1230` measured the call, path and reply on a refused press.
+
+The count was corrected per `qa/TASK-1502-loop1.md` W-L1-1. Two recipes were added the same day by `TASK-1515`, each from one measured run: `qa/TASK-1511-verify.md` and `qa/TASK-1512-verify.md`.
 
 ## What a recipe is
 
@@ -39,34 +43,45 @@ Seeded 2026-09-26 by `TASK-1502` (gameplay-programmer) from two measured runs an
 | `NOT MEASURED` | The source is silent. Do not treat the gap as either a yes or a no. |
 | `HYPOTHESIS` | Labelled a hypothesis in the source report; stays one here. |
 
-Run short names used in tags: `archer50` = `.claude/pipeline/qa/PLAYTEST-archer50-verify.md`; `1391` = `.claude/pipeline/qa/TASK-1391-verify.md`. For the play recipe's entry step only: `1230` = `qa/TASK-1230-verify.md`; `1270` = `qa/TASK-1270-verify.md`; `1314A` = `qa/TASK-1314-verify.md` LIMB A; `1348` = `qa/TASK-1348-verify.md`.
+Run short names used in tags: `archer50` = `.claude/pipeline/qa/PLAYTEST-archer50-verify.md`; `1391` = `.claude/pipeline/qa/TASK-1391-verify.md`. For the play recipe's entry step only: `1230` = `qa/TASK-1230-verify.md`; `1270` = `qa/TASK-1270-verify.md`; `1314A` = `qa/TASK-1314-verify.md` LIMB A; `1348` = `qa/TASK-1348-verify.md`. For the two recipes added by `TASK-1515`: `1511` = `qa/TASK-1511-verify.md`; `1512` = `qa/TASK-1512-verify.md`; `1509` = `qa/TASK-1509.md`. `1509` is a pre-compile code review, cited for code reads only and never as a runtime measurement.
 
 ## Recipes
 
 | file | what it does | source report + section | last verified |
 |---|---|---|---|
-| [`RCP-menu-to-deckbuilder.md`](RCP-menu-to-deckbuilder.md) | `L_MainMenu` → Deck Builder with injected menu actions (`IA_MenuDown` ×2, `IA_MenuAccept` on `Button_2`), with the focus and builder reads that confirm each step | `qa/PLAYTEST-archer50-verify.md` §1(a) | 2026-09-26 (source run; not re-verified since) |
+| [`RCP-menu-to-deckbuilder.md`](RCP-menu-to-deckbuilder.md) | `L_MainMenu` → Deck Builder with injected menu actions (`IA_MenuDown` ×2, `IA_MenuAccept` on `Button_2`), with the focus and builder reads that confirm each step | `qa/PLAYTEST-archer50-verify.md` §1(a) | 2026-09-26 (source run). **Re-verified in-run 2026-09-26 by `TASK-1511`**: Steps 0–4, and the batched `IA_MenuDown` ×2 landed 2/2 (`qa/TASK-1511-verify.md` *Recipes used*, *Speed data*). `TASK-1512` used Step 0 only. Recording that in the recipe itself is `TASK-1516`'s (its row, (3)). |
 | [`RCP-deckbuilder-slot-and-card-edit.md`](RCP-deckbuilder-slot-and-card-edit.md) | Select a deck slot for editing and add/remove cards with `ui_perform` `double_click`, batched, with the read-back / top-up loop; optional exit to the main menu | `qa/PLAYTEST-archer50-verify.md` §1(b), §1(c), A1; exit step §1(e) | 2026-09-26 (source run; not re-verified since) |
-| [`RCP-play-unit-card-from-hand.md`](RCP-play-unit-card-from-hand.md) | Play an `ECardType::Unit` card from hand on `L_Arena` in ONE batch that fits the `t≈60 s` fence: an in-batch hand read (documents the slot, does not select it), `IA_Card<N>` entry, an omitted-set control, then aim set + confirm + dependent reads. **The entry, the control, the aim and the confirm have never run together in one batch, so the first use measures it.** The two-call shape is kept as an alternative that does not fit the fence. | `qa/TASK-1391-verify.md` C2–C6, §3, §4; entry step: `qa/TASK-1230-verify.md` row 1, `qa/TASK-1270-verify.md` row 3, `qa/TASK-1314-verify.md` LIMB A ceiling 2, `qa/TASK-1348-verify.md` P4/P10 | 2026-09-22 (play source run; entry sources 2026-09-14…2026-09-20; not re-verified since) |
+| [`RCP-play-unit-card-from-hand.md`](RCP-play-unit-card-from-hand.md) | Play an `ECardType::Unit` card from hand on `L_Arena` in ONE batch that fits the `t≈60 s` fence: an in-batch hand read (documents the slot, does not select it), `IA_Card<N>` entry, an omitted-set control, then aim set + confirm + dependent reads. The two-call shape is kept as an alternative that does not fit the fence. ⚠️ **What `TASK-1512` measured with it:** the entry, the confirm and the post-reads ran together in one batch once, with **no aim set** (`qa/TASK-1512-verify.md` A3). The planned omitted-set control **placed the unit**, because the ghost was already visible at a legal point. The aim has still never run in one batch with the entry. The amendment to the recipe itself is `TASK-1516`'s (its row, (1)(a)–(b)). | `qa/TASK-1391-verify.md` C2–C6, §3, §4; entry step: `qa/TASK-1230-verify.md` row 1, `qa/TASK-1270-verify.md` row 3, `qa/TASK-1314-verify.md` LIMB A ceiling 2, `qa/TASK-1348-verify.md` P4/P10 | 2026-09-22 (play source run; entry sources 2026-09-14…2026-09-20). **Used in part 2026-09-26 by `TASK-1512`**, outside its aim fence; it re-verified the recipe "partly" (`qa/TASK-1512-verify.md` *Recipes used*). |
+| [`RCP-deckbuilder-set-active-by-keyboard.md`](RCP-deckbuilder-set-active-by-keyboard.md) | Make a deck the ACTIVE deck from a freshly opened Deck Builder, with injected actions only. The sequence: `IA_MenuDown` to arm the grid; then `IA_MenuBack` + `IA_MenuRight` × T in one batch, with a `DeckBar` snapshot per step; then `IA_MenuSecondary` + the `OutlineBorder.BrushColor` reads in one batch; then a disk read. It drives door 3 only: not the real `Home` key and not gamepad Y. **It changes the player's real save.** | `qa/TASK-1511-verify.md` rows 0, A1–A3; *Recipe candidates*; *Speed data*; *Pixel note*; *Save hygiene* | 2026-09-26 (source run; not re-verified since) |
+| [`RCP-vsbot-capture-center-and-summon.md`](RCP-vsbot-capture-center-and-summon.md) | From `L_MainMenu`, all in ONE `run_verification_sequence`: "Play (vs Bot)", walk the hero into `CaptureZone_Center`, capture it, then `IA_Card1` + confirm inside the zone. An in-batch `record_burst` after the level travel films the arena; the control is the no-play interval. **There is no aim step: the one measured summon placed where an unset cursor traced (H1).** | `qa/TASK-1512-verify.md` A1–A3, ctl; *Attempt 1*; *Recording*; *Recipe candidates* | 2026-09-26 (source run; not re-verified since) |
 
-"Last verified" is the date of the source run. No recipe here has been re-run since it was seeded.
+"Last verified" is the date of the source run, plus any in-run use that a later report records under its *Recipes used*. As of 2026-09-26:
+- `RCP-menu-to-deckbuilder.md` was re-verified in-run by `TASK-1511`;
+- `RCP-play-unit-card-from-hand.md` was used in part by `TASK-1512` (see the table);
+- the other three have not been re-run since they were seeded.
 
 ## Pending recipes — sequences not yet measured, and the rows that will measure them
 
 | sequence | why it is not a recipe yet | the row that will measure it |
 |---|---|---|
-| Set the active deck by keyboard (reach a deck slot with injected menu actions, then `IA_MenuSecondary`) | The route does not exist yet: it is being built by `TASK-1507`/`TASK-1508` (their status is on the board, not here). Today set-active is right-click only, and `ui_perform` has no right mouse button (`VER-§8` cl. 12; `archer50` §1(d)). | `TASK-1511` (5b for `TASK-1507`; its spec asks for the measured A1 sequence as a recipe candidate) |
-| vs-bot match on the active deck → `CaptureZone_Center` read → summon inside it | Never reached: `archer50` A2–A4 are `NOT REACHED` (blocked at set-active). | `TASK-1512` |
-| The whole play batch as composed in `RCP-play-unit-card-from-hand.md`: in-batch hand read → `IA_Card<N>` entry → omitted-set control → aim + confirm | Each half is measured on its own. The entry (`inject_input_action IA_Card<N>`) comes from `1230`/`1270`/`1314A`/`1348`, and the control + aim + confirm from `1391`. `1391` never names its entry, and no run has sent them together. `IA_Card2`…`IA_Card6` ↔ hand index is `[D]` only. | `TASK-1512` (its A3 uses the play recipe; its report should record the composed batch as a recipe candidate, with the key it used) |
+| A calibrated `SetMouseLocation` aim into a capture zone, i.e. a placement point inside the zone set on purpose, not left to the cursor | `TASK-1512`'s one in-zone summon was placed where an unset cursor traced (`qa/TASK-1512-verify.md` H1, "MECHANISM NOT MEASURED"). Its two `SetMouseLocation` calls ran after the placement had exited and aimed nothing (*Not examined*). The play recipe's own aim, `SetMouseLocation(300,420)` from `1391`, is measured only at the Blue spawn from the start camera. That aim has also never run in one batch with an `IA_Card<N>` entry: `TASK-1512` sent the entry and the confirm with no aim set. | no measuring row boarded |
+| The right mouse button through `simulate_key_press` (`RMB` / `RightMouseButton`) | `VER-§8` cl. 12 measured the right button absent through `ui_perform` only. `simulate_key_press`'s schema lists an `RMB` shorthand, which arms a re-measure and proves nothing (cl. 12's 2026-09-26 scope note). The prior, not a verdict: a negative is expected. | `TASK-1519` |
 
-Not pending, because they are ceilings rather than unmeasured sequences: right-click on any widget (`VER-§8` cl. 12); `click` and `press`/`release` on a `UButton` (named dead ends, `VER-§5` cl. 5).
+**Moved out 2026-09-26 (`TASK-1515`), and where each went:**
+- *Set the active deck by keyboard* → `RCP-deckbuilder-set-active-by-keyboard.md`, from `TASK-1511` (`VERIFIED`).
+- *vs-bot match on the active deck → `CaptureZone_Center` read → summon inside it* → `RCP-vsbot-capture-center-and-summon.md`, from `TASK-1512` (`VERIFIED`).
+- *The whole play batch as composed in `RCP-play-unit-card-from-hand.md`* → `TASK-1512` a2 ran the entry, the confirm and the post-reads in one batch once, with no aim and outside that recipe's aim fence. The recipe's labels are `TASK-1516`'s to amend.
+  - Its remaining gap, the aim composed with the entry, is folded into the first pending row above.
+  - Its other open point, `IA_Card2`…`IA_Card6` ↔ hand index (`[D]` only), stays a fence of that recipe.
+
+Not pending, because they are ceilings rather than unmeasured sequences: the right mouse button through `ui_perform` (`VER-§8` cl. 12; the `simulate_key_press` form is the pending row above); `click` and `press`/`release` on a `UButton` (named dead ends, `VER-§5` cl. 5).
 
 ## Hazards common to every recipe
 
 - **`start_pie`'s reply can exceed the tool-output limit.** Measured at 264,336 and 504,242 characters (`1391` Not-examined; `VER-§12` cl. 6). Read the head only; confirm the session with `is_pie_active` or the sequence's own `pie_time_seconds` stamps; rest no finding on the reply's contents.
 - **`binding_found` is never the observable** (`VER-§8` cl. 10). In `1391` it read `true` identically on the arm that placed and the arm that refused; in `archer50` it read `false` for a `Tab` that reached nothing. Likewise `ui_perform`'s `handled` trace fields corroborate at most.
 - **A batch cannot branch on its own result** (`1391` §4). Anything a later step depends on choosing (which card, which slot) must be known before the batch is sent. Otherwise the batch must tolerate whatever it meets and document it by read, which is the play recipe's primary shape (`VER-§8` cl. 10(b), 2026-09-22). A second call to learn it costs a round trip: ≈30–70 s of PIE clock, budget at the upper end (same clause).
-- **Plugin version was not read in either seed run** ⇒ the first use of every recipe after this date re-verifies in-run.
+- **Plugin version was not read in any source run**: not in `archer50` or `1391` (the first two seeds), and not in `1511` or `1512` (each report's *Not examined*: "Aura plugin version not read"). ⇒ the first use of every recipe after this date re-verifies in-run.
 
 ## Recording and the remux line (`VER-§12` cl. 7b)
 
@@ -77,3 +92,5 @@ ffmpeg -framerate 30 -i recording.h264 -c copy recording.mp4
 ```
 
 The `.mp4` stays in `Saved/` and is never staged. `recording_index.json` beside it maps frame ↔ game time ↔ video time. A report never claims an `.mp4` path it did not see.
+
+**A film armed before `start_pie` may not survive a level travel** (`VER-§12` cl. 7b, 2026-09-26 amendment; `HYPOTHESIS` H3 in `qa/TASK-1512-verify.md`). A run whose acceptance happens after a travel arms a recorder AFTER the travel, and names every film it finds by path. The measured route is an in-batch `record_burst`; see `RCP-vsbot-capture-center-and-summon.md`.
