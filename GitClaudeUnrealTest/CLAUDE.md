@@ -68,6 +68,7 @@ When the user says "build the GDD" / "read the GDD and build it" (or references 
 - Never push to remote unless the user explicitly asks.
 - The Unreal Editor must be running with the MCP server up (`http://127.0.0.1:8000/mcp`) for engine tasks; if unreachable, tell the user instead of faking results.
 - Gameplay videos are never committed (`testvideo/` is root-gitignored; `*.mp4` is an LFS pattern that would otherwise swallow them); only promoted evidence PNGs under `.claude/pipeline/playtest-evidence/` enter git.
+- Dispatch `playtest-verifier` without a `model` parameter: its model (`claude-opus-5-5[1m]`) and effort (`medium`) come from its frontmatter, and a per-invocation `model` would override the pin (Jonathan, 2026-09-26).
 
 ## Build command
 
