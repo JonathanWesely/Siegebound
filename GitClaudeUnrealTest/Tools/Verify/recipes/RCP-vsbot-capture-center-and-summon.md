@@ -23,7 +23,7 @@ Provenance tags (`[M]`, `[S]`, `[D]`, `[L]`, `NOT MEASURED`, `HYPOTHESIS`) are d
   - `RCP-menu-to-deckbuilder.md` Step 0: the focus read. a2 used only that step. `[M: 1512 Recipes used]`
   - `RCP-play-unit-card-from-hand.md`: the entry and the confirm. `1512` used it in part and outside its aim fence; its control arm is amended by `TASK-1516`.
   - `RCP-deckbuilder-set-active-by-keyboard.md`: makes the all-Unit deck active.
-- Boarded as `TASK-1515` by the manager on `TASK-1513` (3). Written by `TASK-1515`, 2026-09-26. Not re-verified since; a2 is the only run.
+- Boarded as `TASK-1515` by the manager on `TASK-1513` (3). Written by `TASK-1515`, 2026-09-26. ~~Not re-verified since; a2 is the only run.~~ **Used in part 2026-09-27 by `TASK-1493`**, re-verified in-run **y** for **Step 1 rows 1–4 only** ("the `Button_0` focus snapshot, `IA_MenuAccept`, `wait 3`, in-batch `record_burst {"seconds":1}`"): `Button_0` read `focused: true`, "Play (vs Bot)" at menu t=3.85; the travel to `L_Arena` landed (the game world read `UEDPIE_0_L_Arena` at t=6.02); the burst auto-started the arena film. "No walk, capture or summon was done." `[M: qa/TASK-1493-verify.md Recipes used]` Every other step and row has not been re-verified since; for them a2 is still the only run. The report states no run date: 2026-09-27 is the date of the marker it ran after, `TASK-1493-NOT-SETTLED-BY-1491-2026-09-27` (its line 10). Recorded by `TASK-1554`, 2026-09-27.
 - Amended by `TASK-1527`, 2026-09-26, on `qa/TASK-1518.md` W1–W3 and N4–N7 (W2: option (b), row 15a), and Precondition 2's wording (the active deck is read, never assumed).
 - Amended by `TASK-1533`, 2026-09-27, on `qa/TASK-1528.md` Q2: row 15a produces the `DrawPile` half of "the card left the hand" (row 15a, Step 4).
 

@@ -153,6 +153,17 @@ S3 before you plan (step 3); apply S1 and S2 to every input you send.
   `VER-7-2-GRANT-PUT-AND-DECLINED`): declare every such call in the report under
   `## Not examined / limitations this run` (op, target, arguments, count), and never
   read a row's wording as a grant.
+  ⛔ A `ui_perform` call clears Slate keyboard focus (`VER-§12` cl. 7f, marker
+  `VER-12-7F-UI-PERFORM-CLEARS-FOCUS`: 8 of 8 for its `type`, `scroll`, `move` and
+  1-frame `wait` steps, standalone and inside `run_verification_sequence`). A Slate
+  focus reading taken after one, with no focus-setting input in between, is void, and
+  so is every `focused` field in its own `before_snapshot` / `after_snapshot`.
+  Re-establish first (an injected `IA_MenuDown` / `IA_MenuAccept`; for the assistant
+  console, `IA_AssistantConsole` ×2), then read. An injected `Down` / `Accept` sent
+  straight after one may start from a focus you did not read (a sighting, same
+  clause). `ui_perform`'s other steps (`click`, `double_click`, `press`/`release`, `drag`,
+  `assert`, `wait_for`, `snapshot` as a step) are not measured, and the clause may not
+  be cited for them; its mechanism is a HYPOTHESIS.
 - **S5 — Recording (`VER-§12` cl. 7b).** The PIE recorder writes a raw `.h264`
   elementary stream. Name that `.h264` path in your report as the tool returned it.
   ⛔ Never claim an `.mp4` you did not see: the remux is the orchestrator's, because you
