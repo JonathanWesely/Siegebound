@@ -2519,6 +2519,21 @@ void ASiegePlayerController::HandleMatchEnd(ETeamId Winner)
 	// ⛔ VictoryWidget is non-null by construction here: the !VictoryWidget block above RETURNS.
 	// ⛔ Paired with UnregisterMenuNavTarget(VictoryWidget) in HandleMatchReset — the only other
 	// site in this class that touches this pointer, and the only close path there is.
+	//
+	// 🚨🚨 ⛔ TRIP-WIRE — TASK-1480 (g), from qa/TASK-1483.md NIT-5 (2026-09-27): ⛔ THE SAME FRAME,
+	// AFTER SetInputMode, IS LOAD-BEARING FOR THE RING, ⛔ NOT ONLY FOR THE ARMING RE-READ ABOVE.
+	// (b) holds only because SetInputMode's SetWidgetToFocus request is STILL DEFERRED in the local
+	// player's FReply when this registration runs: Btn_Jump does not hold focus yet, so the
+	// idempotence guard in USiegeMenuInputSubsystem::FocusFirstNavStop (the loop over the stops
+	// that, in its own comment's words, asks "is ANYTHING already focused?", just above its
+	// `return FocusWidget(Stops[0]);`) falls through,
+	// and FocusWidget applies EFocusCause::Navigation — the only cause that paints the ring.
+	// ⛔ MOVE THIS CALL OUT OF THIS FRAME — a timer, a next-tick, a delegate, anything that lets the
+	// FReply flush first — AND Btn_Jump IS ALREADY FOCUSED (cause SetDirectly) WHEN THE GUARD ASKS:
+	// FocusFirstNavStop returns false, RegisterMenuNavTarget discards that return, the guard logs
+	// nothing, and ⛔ THE SCREEN OPENS RINGLESS WITH NO LOG LINE SAYING WHY. The press still works
+	// (the by-name focus above stands); only the outline is lost. ⇒ keep this call in this
+	// function, after SetInputMode, with nothing deferred between them.
 	if (UWorld* World = GetWorld())
 	{
 		if (USiegeMenuInputSubsystem* MenuInput = World->GetSubsystem<USiegeMenuInputSubsystem>())

@@ -1059,6 +1059,9 @@ protected:
 	 *  `BackButton` is a ⛔ DESCENDANT of this overlay ⇒ this widget is on that path ⛔ for all of
 	 *  them, ⛔ by construction. ⛔ The full re-derivation, including the new mouse-click-focuses-a-row
 	 *  case, is at the function's definition in the `.cpp`.
+	 *  ⚠️ TASK-1480 (n), 2026-09-27 (`qa/TASK-1497.md` NIT): the `+ 2` is true today by ROUND TRIP,
+	 *  ⛔ not by upkeep — true at ⭐ `TASK-1478` (rows + `CloseButton` + `BackButton`), ⛔ FALSE (N + 3,
+	 *  `DetailScrollButton`) through ⭐ `TASK-1484`'s whole life, true again at ⭐ `TASK-1496`.
 	 */
 	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	//~ End UUserWidget interface

@@ -445,7 +445,12 @@ namespace SiegeMenuInputTestUtils
 	 *  `UButton` has NO `SetIsFocusable`, and `InitIsFocusable()` (`Button.h:206`) is `protected`
 	 *  (`CheckBox.h:155` likewise) — measured in the 5.8 headers, not assumed. The only route an
 	 *  outside caller has is the deprecated public field, which is EXACTLY what this project's own
-	 *  shipped opt-out does at `SiegeControlsHelpWidget.cpp:176-178`, pragmas and all. ⭐ Mirroring
+	 *  ~~shipped opt-out does at `SiegeControlsHelpWidget.cpp:176-178`~~ opt-out helper does —
+	 *  `ApplyButtonNotFocusable` in `SiegeControlsHelpWidget.cpp`, its
+	 *  `Button->IsFocusable = false;` field write, found BY TEXT (TASK-1480 (f), 2026-09-27: the
+	 *  `:176-178` number rotted twice in one wave, and "shipped" expired at TASK-1478, since when
+	 *  the helper has no live caller; it is retained on purpose, see its own comment) — pragmas
+	 *  and all. ⭐ Mirroring
 	 *  that call byte-for-byte is the point: the fixture opts out the way the codebase opts out,
 	 *  so what `IsNavFocusStop` is tested against is the authored shape and not a test-only one.
 	 *  ⛔ The pragmas are REQUIRED, not decorative: UBT builds with `-WarningsAsErrors`.
@@ -480,7 +485,9 @@ namespace SiegeMenuInputTestUtils
 		VocabSlider->IsFocusable = true;
 
 		// ⭐ THE AUTHORED OPT-OUT, COPIED FROM THE ONLY PLACE THIS PROJECT AUTHORS ONE
-		// (`SiegeControlsHelpWidget.cpp:176-178`). Same field, same pragmas, same order.
+		// (`ApplyButtonNotFocusable` in `SiegeControlsHelpWidget.cpp`, found BY TEXT; cited as
+		// `:176-178` until TASK-1480 (f) — no live caller since TASK-1478, retained on purpose).
+		// Same field, same pragmas, same order.
 		PRAGMA_DISABLE_DEPRECATION_WARNINGS
 		OptedOutButton->IsFocusable = false;
 		PRAGMA_ENABLE_DEPRECATION_WARNINGS

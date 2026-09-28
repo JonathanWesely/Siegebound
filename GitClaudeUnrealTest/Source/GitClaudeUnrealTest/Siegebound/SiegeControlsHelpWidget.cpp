@@ -175,6 +175,22 @@ namespace
 	 *  would add a fourth reflected class to a file pair `HELP-§3` pins to three, and the
 	 *  `BindWidgetOptional` members must stay typed `UButton` or an asset-authored
 	 *  WBP_ControlsHelpRow using a plain Button would stop binding (the `HELP-§3` escape hatch).
+	 *
+	 *  ⭐ TASK-1480 (o) (2026-09-27, `qa/TASK-1497.md` NIT, ⛔ RULED: RETAIN) — ⛔ DELIBERATELY
+	 *  KEPT WITH ⛔ ZERO LIVE CALLERS. `CloseButton`'s call was flipped at ⭐ `TASK-1432` and the
+	 *  last two (`RowButton`, `BackButton`) at ⭐ `TASK-1478`; since then every `UButton` this file
+	 *  builds goes through `ApplyButtonFocusable` below. ⛔ IT STAYS BECAUSE A TRIP-WIRE NAMES IT
+	 *  AS THE REVERT: the one at `RowButton`'s flip in `USiegeControlsHelpRowWidget::ConstructRowTree`
+	 *  (it opens "TRIP-WIRE — ⛔ READ `USiegeControlsHelpWidget::ApplyActiveView` BEFORE TOUCHING
+	 *  THIS LINE" and ends "THIS WRITE MUST GO BACK TO `ApplyButtonNotFocusable` ⛔ IN THE SAME
+	 *  DIFF"; both quotes span a line break in the source). ⛔ IT IS THE ONLY ONE THAT DOES:
+	 *  `BackButton`'s flip in `USiegeControlsDetailWidget::ConstructDetailTree` carries a
+	 *  trip-wire for the SAME collapse (it opens "THE TRIP-WIRE (`qa/TASK-1433.md` WARN-L1)") but
+	 *  names no revert and never mentions this helper, and the TASK-1478 switcher block above
+	 *  `USiegeControlsHelpWidget::ApplyActiveView` cites this comment only as a warning, in its
+	 *  rejected (γ) (TASK-1480 QA loop 1, 2026-09-27, `qa/TASK-1481.md` W1). ⛔ Do NOT delete it
+	 *  or fence it off as dead code: either is an executable change, and the revert the
+	 *  `RowButton` wire prescribes would have nothing left to call.
 	 */
 	void ApplyButtonNotFocusable(UButton* Button)
 	{
@@ -193,11 +209,17 @@ namespace
 	 *  IS ⛔ WRITTEN AT THE SITE RATHER THAN ⛔ INFERRED FROM AN ABSENCE.
 	 *
 	 *  ⚠️ `UButton::IsFocusable` ⛔ ALREADY DEFAULTS TO `true` (`Button.h:70`), so this write
-	 *  changes ⛔ no engine default — what it changes is the ⛔ READING of the call site. THREE
+	 *  changes ⛔ no engine default — what it changes is the ⛔ READING of the call site. ~~THREE
 	 *  buttons in this file are deliberately ⛔ NOT focus stops and each says so in one word;
-	 *  the fourth is deliberately the screen's ⛔ ONLY focus stop, and a ⛔ BLANK LINE there
+	 *  the fourth is deliberately the screen's ⛔ ONLY focus stop, and~~ a ⛔ BLANK LINE there
 	 *  would look exactly like somebody having forgotten the call. ⛔ A deliberate decision that
 	 *  is invisible in the diff is a decision the next editor will undo by accident.
+	 *  ⭐ TASK-1480 (o) (2026-09-27) — THE STRUCK COUNT EXPIRED AT ⭐ `TASK-1478`: every `UButton`
+	 *  this file builds (`RowButton`, `BackButton`, `CloseButton` — the whole census of its
+	 *  `ConstructWidget<UButton>` calls) now goes through THIS function and ⛔ none through its
+	 *  opposite number, which is retained with no live caller (see its own comment above). The
+	 *  reason for writing the call survives the count: a blank line at any of the three sites
+	 *  would still read as a forgotten call.
 	 *
 	 *  ⚠️ SAME DEPRECATION WRAPPING, ⛔ SAME MEASURED REASON — see the long comment directly
 	 *  above, which holds the whole audit: `InitIsFocusable` is `protected` (`Button.h:206`),
@@ -315,6 +337,15 @@ namespace
 //     numbers (its U-5 / D-6, the M7.7 lesson) and the names are carried through unchanged.
 //     The ONE number stated anywhere below is the war map's 30 gold, because Jonathan's own
 //     words are the source and 704 quoted them at the property (CommanderNpc.h:297-311).
+//  ⚠️ TASK-1480 (a) — A FILE-LEVEL DECLARATION, ADDED 2026-09-27 ON `qa/TASK-1433.md` WARN-L3,
+//     BECAUSE THE PER-BLOCK ONES TAUGHT THE WRONG LESSON: three blocks below (R-08, R-19, R-24)
+//     flag their remaining numbers ⛔ UNVERIFIED and the others say nothing, which reads as
+//     "an unflagged block is trustworthy". ⛔ IT IS NOT. Every `file:line` NUMBER in this file's
+//     `Citations (T1)` blocks is as of the row that wrote it and is ⛔ UNVERIFIED today, UNLESS
+//     its own block says it was anchored BY TEXT or BY SYMBOL (e.g. R-02's whole block since
+//     TASK-1480, and the one `bWantCursor` anchor each in R-08 / R-19 / R-24 since TASK-1432
+//     QA loop 1). Treat a bare number as a lead: find the target by its symbol or its quoted
+//     text, never by the digit (`CITE-BY-TEXT-RULED-2026-09-24`).
 // ════════════════════════════════════════════════════════════════════════════════════════════
 
 const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
@@ -365,12 +396,15 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			// positional-retarget contract = SiegeKeyboardLayoutStatics.h:53.
 			Row.Detail = FText::FromString(FString(
 				TEXT("Four separate bindings on one action — forward, back, strafe left, strafe right. ")
-				TEXT("The back and left rows carry Negate modifiers and the forward/back rows carry SwizzleAxis, ")
+				TEXT("The back and left rows carry a modifier that reverses the direction, and the forward and back rows carry one that turns the input onto the forward axis, ")
 				TEXT("which is why these four rows must never be rewritten as a block. ")
-				TEXT("Base walk speed is AHeroCharacter::WalkSpeed; the speed actually applied composes the Swift Boots ")
-				TEXT("upgrade on top and is GetEffectiveWalkSpeed() — the base is never mutated.\n\n")
+				TEXT("Your base walk speed is set on the hero; the speed you actually move at applies the Swift Boots ")
+				TEXT("upgrade on top of that base, and the base itself is never changed.\n\n")
 				TEXT("On a non-QWERTY layout these four keep their physical positions: the layout subsystem retargets ")
 				TEXT("the mapping context's keys, not your muscle memory.")));
+			// TASK-1541 (2026-09-27): player words replace the code names this prose used to print —
+			// the Negate and SwizzleAxis input modifiers, AHeroCharacter::WalkSpeed and
+			// AHeroCharacter::GetEffectiveWalkSpeed(). Cited by symbol; the claims are unchanged.
 		}
 
 		{
@@ -379,18 +413,39 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 				TEXT("Move the mouse to swing the camera."), ESiegeInputLane::MappedAction);
 			Row.Actions = { MakeActionRef(TEXT("IA_Look")) };
 			Row.QwertyReferenceKeys = { EKeys::Mouse2D };
-			// 704 §4 R-02 detail. Citations (T1): the Negate_2 binding = handoffs/TASK-568-artist.md:28
-			// and handoffs/TASK-399-artist.md:137 (X✗ Y✓ Z✗); the ignore-look pairing =
-			// SiegePlayerController.cpp:768-770 and :783-790; the GameAndUI/DoNotLock modes =
-			// SiegePlayerController.cpp:4361-4370.
+			// 704 §4 R-02 detail. Citations (T1) — ⛔ RE-ANCHORED BY TEXT, ⛔ NOT RENUMBERED, at
+			// TASK-1480 (a) (2026-09-27, `qa/TASK-1433.md` WARN-L3, `CITE-BY-TEXT-RULED-2026-09-24`);
+			// every anchor below was opened and read at source for that row:
+			//   the Negate_2 binding = handoffs/TASK-568-artist.md, its readback row naming `IA_Look`
+			//   and `modifiers: [InputModifierNegate_2]` (the row pads its columns with runs of
+			//   spaces, so grep either fragment, not the whole row), and
+			//   handoffs/TASK-399-artist.md, its "`InputModifierNegate_2` | `IA_Look` / Mouse2D" row
+			//   (X✗ Y✓ Z✗);
+			//   the ignore-look pairing = `ASiegePlayerController::SetupInputComponent`'s IA_UICursor
+			//   BindAction triple (Started → OnUICursorPressed; Completed AND Canceled →
+			//   OnUICursorReleased), `ASiegePlayerController::OnUICursorPressed`'s
+			//   `SetIgnoreLookInput(true);` ("paired 1:1 with ClearUICursorHold"), and
+			//   `ASiegePlayerController::ClearUICursorHold`'s guarded `SetIgnoreLookInput(false);`;
+			//   the GameAndUI/DoNotLock modes = `ASiegePlayerController::ApplyCursorInputState`'s
+			//   `if (bWantCursor)` branch (`FInputModeGameAndUI InputMode;` then
+			//   `SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock)`), where `bWantCursor`
+			//   composes bInPlacementMode, bInTargetingMode and GroupPickStage among its terms.
+			//   ⛔ WAS: `handoffs/TASK-568-artist.md:28` (that line is the IA_Move "3 S" row; the
+			//   IA_Look row sits three lines lower), `SiegePlayerController.cpp:768-770 and :783-790`
+			//   and `SiegePlayerController.cpp:4361-4370` — both controller ranges measured rotted by
+			//   `qa/TASK-1433.md` WARN-L3 and landing on unrelated code again today. Quoted, not
+			//   deleted, so a reader holding an older copy can still map them.
 			Row.Detail = FText::FromString(FString(
-				TEXT("Bound as a 2D mouse axis with a Negate_2 modifier on the Y channel. ")
-				TEXT("Look is suspended while you hold the interface-cursor key — OnUICursorPressed calls ")
-				TEXT("SetIgnoreLookInput(true), paired 1:1 with its release, so a click-drag on the HUD cannot ")
+				TEXT("Bound to the mouse's up-down and left-right movement, with a modifier that reverses the up-down direction. ")
+				TEXT("Look is suspended while you hold the interface-cursor key — pressing the key switches camera look off ")
+				TEXT("and its release switches it back on, one release for every press, so a click-drag on the HUD cannot ")
 				TEXT("nudge the camera.\n\n")
-				TEXT("It is not suspended in placement, targeting or a group pick: those modes use ")
-				TEXT("FInputModeGameAndUI with DoNotLock, so the mouse steers the cursor while movement keys ")
+				TEXT("It is not suspended in placement, targeting or a group pick: those modes let the game and the interface ")
+				TEXT("both take input without locking the mouse to the window, so the mouse steers the cursor while movement keys ")
 				TEXT("keep working.")));
+			// TASK-1541 (2026-09-27): player words replace the code names this prose used to print —
+			// Negate_2, OnUICursorPressed, SetIgnoreLookInput(true), FInputModeGameAndUI and DoNotLock,
+			// every one anchored by text in the citation block above. The claims are unchanged.
 		}
 
 		{
@@ -404,9 +459,11 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			// HeroCharacter.h:138-151.
 			Row.Detail = FText::FromString(FString(
 				TEXT("Inherited from the character template and bound on both press and release.\n\n")
-				TEXT("Falling out of the world is a death, not a despawn — AHeroCharacter::FellOutOfWorld ")
-				TEXT("deliberately does not call Super (which would Destroy() the pawn) and routes into the same ")
+				TEXT("Falling out of the world is a death, not a despawn — the hero deliberately skips the engine's ")
+				TEXT("default handling (which would delete your hero outright) and goes down the same ")
 				TEXT("path as lethal damage, so the standard respawn brings you back at your castle.")));
+			// TASK-1541 (2026-09-27): player words replace the code names this prose used to print —
+			// AHeroCharacter::FellOutOfWorld, its skipped Super call, and Destroy(). The claim is unchanged.
 		}
 
 		{
@@ -423,14 +480,18 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			// bDead guard + unguarded release = HeroCharacter.cpp:323-338; melee independence =
 			// HeroCharacter.cpp:340-360.
 			Row.Detail = FText::FromString(FString(
-				TEXT("Bound on Started, Completed and Canceled, so the sprint can never stick on if the press is ")
-				TEXT("interrupted. Pressing raises the max walk speed to SprintSpeed and releasing returns it to ")
-				TEXT("WalkSpeed; both compose the Swift Boots move-speed bonus live via GetEffectiveSprintSpeed() ")
-				TEXT("and GetEffectiveWalkSpeed() rather than mutating the base.\n\n")
-				TEXT("A dead hero cannot start a sprint — StartSprint early-outs on bDead — but StopSprint is ")
-				TEXT("unguarded so the state always releases.\n\n")
+				TEXT("It listens for the press, the release and a cancelled press, so the sprint can never stick on if the press is ")
+				TEXT("interrupted. Pressing raises your top speed to your sprint speed and releasing returns it to ")
+				TEXT("your walk speed; both include the Swift Boots move-speed bonus, worked out fresh each time, ")
+				TEXT("rather than changing either base speed.\n\n")
+				TEXT("A dead hero cannot start a sprint — starting checks for death first — but stopping has no such ")
+				TEXT("check, so the sprint always releases.\n\n")
 				TEXT("Sprinting and attacking are independent: sprint is a hold on one action, melee is a press on ")
-				TEXT("another, and nothing in DoMeleeAttack reads the sprint flag.")));
+				TEXT("another, and the melee swing never looks at whether you are sprinting.")));
+			// TASK-1541 (2026-09-27): player words replace the code names this prose used to print —
+			// the Started / Completed / Canceled trigger events, SprintSpeed, WalkSpeed,
+			// GetEffectiveSprintSpeed(), GetEffectiveWalkSpeed(), StartSprint's bDead early-out,
+			// StopSprint and DoMeleeAttack. Cited by symbol; the claims are unchanged.
 		}
 
 		{
@@ -445,15 +506,26 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			// no friendly fire = HeroCharacter.cpp:581-585; the melee-suppression API =
 			// HeroCharacter.h:162-167 + HeroCharacter.cpp:342-346, set at SiegePlayerController.cpp:
 			// 2723-2728 and released on every exit path at :3144-3148.
-			// ⛔ NO NUMBER RESTATED: the three tunables stay NAMED (704 U-5, the M7.7 lesson).
+			// ⛔ NO NUMBER RESTATED (704 U-5, the M7.7 lesson), and since TASK-1541 (2026-09-27) no
+			// code name either: the prose says "melee reach", "a cone in front of you" and "melee
+			// cooldown" where it printed MeleeRange, MeleeHalfAngleDegrees and MeleeCooldown, and it no
+			// longer prints GetEffectiveMeleeDamage(), SetMeleeSuppressed(true) or DoMeleeAttack.
+			// ⛔ THE TARGET SET IS NAMED KIND BY KIND ("every enemy unit, hero, building and castle")
+			// because those are exactly the team-agent kinds FSiegeCombatStatics::GatherHostileAgents
+			// hands the swing: ACastle, ABuilding and its subclasses, AHeroCharacter, and ASummonedUnit
+			// including miners. UTeamAgent is NotBlueprintable, so no asset can join the set. ⛔ NEVER
+			// widen it to "everything on the enemy team": the enemy commander HAS a team but
+			// deliberately does not implement ITeamAgent and names the melee cone among the sites it
+			// stays out of (ACommanderNpc's class doc), and AGoldNode opts out the same way. The
+			// "everything on the enemy team" wording was loop 0 of TASK-1541 and QA TASK-1546 B1 caught it.
 			Row.Detail = FText::FromString(FString(
-				TEXT("One swing damages all enemy team agents within MeleeRange and inside a ")
-				TEXT("±MeleeHalfAngleDegrees forward cone, rate-limited to one swing per MeleeCooldown seconds. ")
-				TEXT("Damage per swing is composed live — base plus the Sharpened Blade stacks — through ")
-				TEXT("GetEffectiveMeleeDamage(). No friendly fire.\n\n")
+				TEXT("One swing damages every enemy unit, hero, building and castle within your melee reach and inside a ")
+				TEXT("cone in front of you, and you can swing at most once per melee cooldown. ")
+				TEXT("Damage per swing is worked out fresh each time — the base damage plus the Sharpened Blade ")
+				TEXT("stacks. No friendly fire.\n\n")
 				TEXT("The same physical click confirms placement, spell targeting and every group-order stage — ")
 				TEXT("and when it does, melee is suppressed so the click does one thing only: ")
-				TEXT("SetMeleeSuppressed(true) makes DoMeleeAttack a no-op that does not even consume the cooldown.")));
+				TEXT("the swing is skipped entirely and does not even use up the cooldown.")));
 		}
 
 		{
@@ -467,12 +539,16 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			// broadcast = :525-529; RallyCooldown + OnRallyReady = :565, :568-572; the dead-hero
 			// guard = :508-511.
 			Row.Detail = FText::FromString(FString(
-				TEXT("Buffs every same-team ASummonedUnit within RallyRadius by RallySpeedBonus for ")
-				TEXT("RallyDuration seconds — units only, never the hero, never enemy units. Friendly miners are ")
-				TEXT("included, since AMinerUnit is a summoned-unit subclass.\n\n")
-				TEXT("On cooldown the press is a no-op but still broadcasts OnRallyStateChanged(false, remaining) ")
-				TEXT("so the HUD can flash the time left; the cooldown length is RallyCooldown and OnRallyReady ")
-				TEXT("re-broadcasts (true, 0) when it elapses. A dead hero cannot rally.")));
+				TEXT("Speeds up every friendly summoned unit within the rally radius by the rally speed bonus for ")
+				TEXT("the rally duration — units only, never the hero, never enemy units. Friendly miners are ")
+				TEXT("included, since a miner is a kind of summoned unit.\n\n")
+				TEXT("On cooldown the press does nothing, but it still tells the HUD how much cooldown is left ")
+				TEXT("so the HUD can flash it; when the rally cooldown runs out, the HUD is told ")
+				TEXT("that Rally is ready again. A dead hero cannot rally.")));
+			// TASK-1541 (2026-09-27): player words replace the code names this prose used to print —
+			// ASummonedUnit, RallyRadius, RallySpeedBonus, RallyDuration, AMinerUnit,
+			// OnRallyStateChanged(false, remaining), RallyCooldown, and OnRallyReady's (true, 0)
+			// re-broadcast. Cited by symbol; the claims are unchanged.
 		}
 
 		// ─── CATEGORY: CARDS ───────────────────────────────────────────────────────────────
@@ -532,15 +608,20 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			// today lands in an unrelated formation comment — the rot this file's `§3` warns about.
 			// ⚠️ SCOPE, DECLARED: ⛔ ONLY that anchor was re-measured in this pass. The line numbers
 			// above it are ⛔ UNVERIFIED here; a full re-anchoring of this file's `Citations (T1)`
-			// blocks is a real follow-up and ⛔ nobody has boarded it.
+			// blocks is a real follow-up ~~and ⛔ nobody has boarded it~~. ⭐ TASK-1480 (a)
+			// (2026-09-27): boarded, and answered with a FILE-LEVEL declaration at the TASK-707
+			// transfer rules near the top of this file plus R-02's re-anchor by text, ⛔ not a sweep
+			// of every block — so the numbers above are STILL unverified, now by a stated rule.
 			Row.Detail = FText::FromString(FString(
-				TEXT("A hold, not a toggle. Holding puts the game in GameAndUI with the cursor visible and camera ")
+				TEXT("A hold, not a toggle. Holding lets the game and the HUD both take input, with the cursor visible and camera ")
 				TEXT("look suspended, so a click-drag on the HUD cannot nudge the camera.\n\n")
-				TEXT("Bound on Completed and Canceled so the hold can never stick regardless of the action's ")
+				TEXT("The release fires on a normal release and on a cancelled press, so the hold can never stick regardless of the action's ")
 				TEXT("trigger setup, and the release is guarded so a double release cannot unbalance the ")
 				TEXT("ignore-look counter.\n\n")
 				TEXT("Releasing while placement mode is live leaves the cursor to placement mode — the two owners ")
 				TEXT("compose rather than fight.")));
+			// TASK-1541 (2026-09-27): player words replace the code names this prose used to print —
+			// the GameAndUI input mode and the Completed / Canceled trigger events. The claims are unchanged.
 		}
 
 		{
@@ -598,7 +679,9 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			//   • the fee property itself = SiegePlayerController.h:1479-1496;
 			//   • the key route = SiegePlayerController.cpp:235 (soft ref), :515 (resolve),
 			//     :650-652 (bind) — mapped, ⛔ never a raw poll.
-			// ⛔⛔ THE FEE IS NAMED AND NEVER TYPED. DiscardAllCost's own header comment pins this
+			// ⛔⛔ THE FEE IS NEVER TYPED — and since TASK-1541 (2026-09-27) it is not NAMED either: the
+			// prose says "a single set amount" where it printed DiscardAllCost, and the suite's pin
+			// moved with it to "charged once for the whole hand". DiscardAllCost's own header comment pins this
 			// rule for this very row ("if it is ever shown to the player it is READ from here,
 			// never typed") — a prose number rots the moment that line is retuned, which is the
 			// M7.7 "in 400"/AoERadius-700 lesson. ⇒ there is ⛔ not one digit character in the
@@ -610,7 +693,7 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 				TEXT("Pressing {Cards.Discard} bins every card in your hand in one gesture and deals a full ")
 				TEXT("replacement hand immediately: each card goes to the discard pile and its slot redraws in ")
 				TEXT("the same step, so you are never left holding an empty hand.\n\n")
-				TEXT("The fee is DiscardAllCost and it is charged once for the whole hand, flat. Dumping a ")
+				TEXT("The fee is a single set amount and it is charged once for the whole hand, flat. Dumping a ")
 				TEXT("single dead card costs exactly what dumping a full hand costs, because this prices a hand ")
 				TEXT("RESET rather than a per-card cycle — there is no longer any way to bin one card on its own ")
 				TEXT("at any price.\n\n")
@@ -720,10 +803,12 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			// reason is given ("it is the one you climb"); ⛔ no socket, ⛔ no rung plane and ⛔ no
 			// standoff appears anywhere on screen.
 			//
-			// ⛔ NO TUNABLE'S VALUE IS TYPED — MaxStackHeightMultiplier and StackHealthStep are
-			// NAMED, exactly as PickMode.Resize names its three radii (the M7.7 "in 400" lesson).
-			// ⚠️ The jargon cost F-3 already flags for that row applies here too and is declared in
-			// this task's handoff rather than solved by inventing a number.
+			// ⛔ NO TUNABLE'S VALUE IS TYPED — MaxStackHeightMultiplier and StackHealthStep were
+			// NAMED here, as PickMode.Resize named its three radii (the M7.7 "in 400" lesson), until
+			// TASK-1541 (2026-09-27) put both in player words: "a set maximum multiple" and "a set
+			// factor" (loop 1: "factor", not "step", because StackHealthStep compounds as a power of the
+			// upgrade count, and a step reads as an addition). ⚠️ The jargon cost F-3 flagged is paid by
+			// the wording, still without inventing a number.
 			FSiegeControlsHelpAction& Row = AddRow(TEXT("Cards.StackUpgrade"), CategoryCards, TEXT("Stack a tower taller"),
 				TEXT("While you are placing a building, hover one you already own of the same card: the outline turns blue and the click makes that one taller instead of building a new one."), ESiegeInputLane::RawNonLetter);
 			Row.QwertyReferenceKeys = { EKeys::LeftMouseButton };
@@ -737,8 +822,8 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 				TEXT("was built from the SAME card you are holding. An enemy building never turns blue — it stays red ")
 				TEXT("on the ordinary too-close-to-another-building rule, with the message it has always given.\n\n")
 				TEXT("WHAT AN UPGRADE BUYS. Height: each upgrade adds one more copy of the building's ORIGINAL ")
-				TEXT("height, and it stops at MaxStackHeightMultiplier times that original. Its width and length are ")
-				TEXT("not touched. Health: each upgrade multiplies the building's maximum health by StackHealthStep, ")
+				TEXT("height, and it stops at a set maximum multiple of that original. Its width and length are ")
+				TEXT("not touched. Health: each upgrade multiplies the building's maximum health by a set factor, ")
 				TEXT("compounding, and that half has no ceiling at all — it keeps climbing after the height has ")
 				TEXT("stopped. The health is GRANTED rather than repaired: a damaged tower stays exactly as damaged, ")
 				TEXT("it is simply damaged out of a bigger pool.\n\n")
@@ -820,8 +905,8 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 				TEXT("building's placement outline is on screen. While you are drawing an army order the same wheel ")
 				TEXT("resizes the order circles; on the war map it resizes one of your own map circles. One mode at a ")
 				TEXT("time, never two.\n\n")
-				TEXT("One notch changes the size by PlacementFootprintWheelStep, between PlacementFootprintMin and ")
-				TEXT("PlacementFootprintMax. It will not go below the floor: you can make a building bigger than it ")
+				TEXT("One notch changes the size by a set step, and the size always stays between a set floor and a set ")
+				TEXT("ceiling. It will not go below the floor: you can make a building bigger than it ")
 				TEXT("was drawn, never smaller. That is a decision rather than an oversight — shrinking would let a ")
 				TEXT("building hide in a gap its shape was never meant to fit, and it would shrink the ground the ")
 				TEXT("building blocks along with the art.\n\n")
@@ -837,6 +922,9 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 				TEXT("Unit and spell cards ignore the wheel completely. So does the one building you can climb: its ")
 				TEXT("ladder is fixed to the shape of the mesh, so it cannot be resized, and the wheel is simply dead ")
 				TEXT("on it rather than nagging you once per notch — that refusal speaks once, at the click.")));
+			// TASK-1541 (2026-09-27): player words replace the code names this prose used to print —
+			// PlacementFootprintWheelStep, PlacementFootprintMin and PlacementFootprintMax, all three
+			// cited by symbol above. Still no value typed.
 			// ⭐ THE TWO OTHER WHEEL MEANINGS, LINKED RATHER THAN RE-DESCRIBED (`HELP-§2`: one
 			// definition, two renderings), plus the other thing a placement outline can do. ⛔ This
 			// row's OWN outbound edges only (`HELP-§7`).
@@ -867,9 +955,11 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 				TEXT("destroyed re-assert its station for one tick.\n\n")
 				TEXT("Under Attack, units march the enemy castle, clearing defenders inside the enemy spawn box ")
 				TEXT("first; local self-defence aggro is unchanged. Ignored after match end.\n\n")
-				TEXT("The stance is latched — it persists until replaced — and bHasIssuedCommand flips true on ")
-				TEXT("your first command and stays true for the match, so the pre-command legacy behaviour never ")
+				TEXT("The stance is latched — it persists until replaced — and the game records your first command ")
+				TEXT("and keeps that record for the rest of the match, so the pre-command legacy behaviour never ")
 				TEXT("returns mid-match.")));
+			// TASK-1541 (2026-09-27): player words replace the code name this prose used to print —
+			// bHasIssuedCommand, cited above. The claim is unchanged.
 		}
 
 		{
@@ -890,10 +980,13 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 				TEXT("The exact mirror of Attack — same guard, same two calls, same order, same final latch, ")
 				TEXT("through the same one implementation. Units fall back toward your own castle and engage only ")
 				TEXT("enemies inside the defend band.\n\n")
-				TEXT("What \"the band\" means CHANGED: DefendRadius is no longer a disc centred on the castle — it ")
+				TEXT("What \"the band\" means CHANGED: the defend range is no longer a disc centred on the castle — it ")
 				TEXT("is the band past the castle's wall face, and the acquisition radius is derived at every ")
 				TEXT("decision from the castle's live colliding half-width plus that band, by ")
-				TEXT("ASummonedUnit::ResolveDefendEngagementRadius.")));
+				TEXT("each unit for itself.")));
+			// TASK-1541 (2026-09-27): player words replace the code names this prose used to print —
+			// DefendRadius and ASummonedUnit::ResolveDefendEngagementRadius, both cited above. The
+			// claim is unchanged.
 		}
 
 		{
@@ -1070,22 +1163,24 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			// colour claim (`AS-§6` A(e)). Flagged in the TASK-707 handoff.
 			// ⛔ T5 — "pushed through a material parameter named StageTint" is where a reader checks
 			// the claim, ⛔ not something a player can use; it is cited here instead.
-			// ⛔ NO RADIUS VALUE RESTATED: the three defaults stay NAMED (704 U-5, the M7.7 lesson).
+			// ⛔ NO RADIUS VALUE RESTATED (704 U-5, the M7.7 lesson). The three defaults were NAMED
+			// here until TASK-1541 (2026-09-27); the prose now says "its own default size" for each of
+			// GroupSelectRadiusDefault, GroupPositionRadiusDefault and GroupAttackRadiusDefault.
 			Row.Detail = FText::FromString(FString(
 				TEXT("Polled directly every frame while a pick is live, not bound to an input action. Your hero ")
 				TEXT("does not swing on that click — melee is suppressed for the whole pick.\n\n")
 				TEXT("THE THREE CIRCLES, IN ORDER — what each one actually does:\n\n")
-				TEXT("1. SELECT — opens at GroupSelectRadiusDefault. At confirm, every eligible unit inside it ")
+				TEXT("1. SELECT — opens at its own default size. At confirm, every eligible unit inside it ")
 				TEXT("(2D) joins the group. An empty circle is refused and you STAY in the stage — a different ")
 				TEXT("circle can still succeed — with \"No units in the circle\" on the HUD. The eligibility test ")
 				TEXT("differs by order: Hold and Ambush use the narrower zone-order predicate, while Follow is ")
 				TEXT("wider — it also admits the Support Cleric and the Miner — and both exclude Siege units ")
 				TEXT("(Ogre/Sapper) and the entire enemy side. This circle is a transient pick visual: it is ")
 				TEXT("destroyed at the final confirm and never becomes a marker. For FOLLOW the flow ENDS HERE.\n\n")
-				TEXT("2. POSITION — opens at GroupPositionRadiusDefault. This is the ground the squad stands on: ")
+				TEXT("2. POSITION — opens at its own default size. This is the ground the squad stands on: ")
 				TEXT("the station zone it spreads inside, and the second-priority engage disc. At the final ")
 				TEXT("confirm this circle stays on the map as the group's permanent position marker.\n\n")
-				TEXT("3. ATTACK — opens at GroupAttackRadiusDefault. This is the first-priority engage trigger: an ")
+				TEXT("3. ATTACK — opens at its own default size. This is the first-priority engage trigger: an ")
 				TEXT("enemy entering it is what the squad goes for first. It also stays as a permanent marker.\n\n")
 				TEXT("Both surviving markers die with the group.\n\n")
 				TEXT("The circle you are drawing traces to the surface under the cursor — flat floor, hill crown ")
@@ -1111,13 +1206,15 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			// and SiegePlayerController.cpp:2710, :2909, :2929; the in-place decal resize = :2808-2817;
 			// polled-not-bound and inert outside a pick = :2787-2791, call site :599; the
 			// no-material degradation = :2808-2810.
-			// ⛔ ALL THREE TUNABLES STAY NAMED, ⛔ never re-typed as numbers. This is 704's U-5 / D-6
+			// ⛔ NONE OF THE THREE TUNABLES IS ⛔ ever re-typed as a number. This is 704's U-5 / D-6
 			// applied verbatim and it is the M7.7 lesson: the shipped Notes column once said "in 400"
-			// while the real radius was 700. ⚠️ It reads as jargon on screen and I have FLAGGED that
-			// for Jonathan (F-3 in handoffs/TASK-707-programmer.md) rather than invent a number.
+			// while the real radius was 700. ⚠️ Naming them read as jargon on screen (F-3 in
+			// handoffs/TASK-707-programmer.md); TASK-1541 (2026-09-27) answered F-3 with player words
+			// ("a set step", "a set smallest and largest size") in place of GroupRadiusWheelStep,
+			// GroupRadiusMin and GroupRadiusMax — still without inventing a number.
 			Row.Detail = FText::FromString(FString(
-				TEXT("One notch changes the active circle's radius by GroupRadiusWheelStep, clamped between ")
-				TEXT("GroupRadiusMin and GroupRadiusMax. Each stage opens at its own default and resizing one ")
+				TEXT("One notch changes the active circle's radius by a set step, and the radius always stays between ")
+				TEXT("a set smallest and largest size. Each stage opens at its own default and resizing one ")
 				TEXT("circle never touches an earlier one. The decal resizes in place as you scroll.\n\n")
 				TEXT("The wheel is polled, not bound, and it is verified globally unbound elsewhere — it is inert ")
 				TEXT("everywhere except inside a pick.\n\n")
@@ -1202,8 +1299,8 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 				TEXT("range condition — Jonathan's ruling: \"the console still works anywhere\".\n\n")
 				TEXT("Sending: type and press Enter — only a genuine Enter commits; moving focus away or clearing ")
 				TEXT("the box does not submit a half-typed sentence.\n\n")
-				TEXT("CLOSING — the complete list: (1) press the open key again; (2) CancelPressed() — public API ")
-				TEXT("with no caller today, kept deliberately; (3) the fault latch SetConsoleEnabled(false); ")
+				TEXT("CLOSING — the complete list: (1) press the open key again; (2) a spare close route the game ")
+				TEXT("keeps on purpose, though nothing uses it today; (3) the box switching itself off when the assistant faults; ")
 				TEXT("(4) Enter on an empty box — Jonathan's directive: \"if you press enter without anything ")
 				TEXT("typed in the box then it will close\". Empty-Enter closes even with a confirm prompt up — ")
 				TEXT("that is the point of the feature.\n\n")
@@ -1214,6 +1311,10 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 				TEXT("assistant's own state machine may turn one into the other.\n\n")
 				TEXT("The console never sets the input mode itself; the controller owns that in one place. A ")
 				TEXT("faulted assistant disables this box and nothing else — no key, no card, no command changes.")));
+			// TASK-1541 (2026-09-27): player words replace the code names this prose used to print —
+			// USiegeAssistantConsoleWidget::CancelPressed() (close route 2) and SetConsoleEnabled(false)
+			// (route 3, the fault latch), per the enumerated close-route contract cited above. The
+			// claims are unchanged.
 			// The confirm step has NO buttons at all (704 R-20), so the accept key belongs on this page.
 			Row.RelatedActionIds = { FName(TEXT("Interface.AssistantAccept")) };
 		}
@@ -1348,7 +1449,7 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 				TEXT("your player state and never guessed: with no player state there is no honest answer and no ")
 				TEXT("commander is returned, because a wrong default on the wrong side would gate the map on the ")
 				TEXT("enemy's commander and price the reveal off the wrong actor. The distance test and its radius ")
-				TEXT("both belong to the commander — ACommanderNpc::IsPlayerInRange reading InteractRadius — and ")
+				TEXT("both belong to the commander — he checks whether you are inside his own interaction range — and ")
 				TEXT("the controller re-implements neither.\n\n")
 				TEXT("The gate is checked BEFORE the cursor posture is touched, deliberately, so an out-of-range ")
 				TEXT("press cannot be felt as a one-frame flicker mid-fight. Out of range you get one HUD line ")
@@ -1361,6 +1462,8 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 				TEXT("map closes, even one second after paying — that is the mechanic\". Escape closes it too, ")
 				TEXT("polled every frame; that poll exists because a marker click opens the chat box, whose focused ")
 				TEXT("text field would otherwise swallow the toggle key and type it into your sentence instead.")));
+			// TASK-1541 (2026-09-27): player words replace the code names this prose used to print —
+			// ACommanderNpc::IsPlayerInRange reading ACommanderNpc::InteractRadius. The claim is unchanged.
 			// Everything you can DO on the map, on the page for opening it (704 R-22, R-23).
 			// ⛔⛔ TASK-870 EDGE CHANGE, DECLARED (`HELP-§7`): Interface.MapMarks is APPENDED, and the
 			// two shipped ids are kept in their shipped order. ⭐ It is this row's OWN OUTBOUND edge —
@@ -1381,7 +1484,10 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 		{
 			// R-22. Lane D — the map's Reveal button. ⛔ NO NUMBER IN THE ONE-LINER: the price is
 			// ACommanderNpc::EnemyRevealCost (CommanderNpc.h:311) and TASK-707 renders it from
-			// the live property or leaves the name (`HELP-§2`, the M7.7 lesson).
+			// the live property or leaves the name (`HELP-§2`, the M7.7 lesson). Since TASK-1541
+			// (2026-09-27) the page leaves no name either: the one-liner types no number and names no
+			// property, and the detail calls the price "a fixed reveal fee" where it printed
+			// EnemyRevealCost (the amendment below records the same change).
 			FSiegeControlsHelpAction& Row = AddRow(TEXT("Interface.WarMapReveal"), CategoryInterface, TEXT("Reveal enemy positions"),
 				TEXT("Pay gold on the war map to reveal every enemy position — and they vanish again the moment you close it."), ESiegeInputLane::PointerOnly);
 			Row.bPointerOnly = true;
@@ -1395,11 +1501,12 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			// CommanderNpc.h:304-307.
 			// ⭐⭐ THE ONE NUMBER STATED IN THE WHOLE REGISTRY, AND IT IS STATED BECAUSE JONATHAN'S
 			// OWN WORDS ARE THE SOURCE AND 704 QUOTED THEM AT THE PROPERTY. Everywhere else a
-			// tunable is NAMED (704 U-5, the M7.7 "in 400"/AoERadius-700 lesson) — and note that the
-			// sentence around the quote still names EnemyRevealCost, so the mechanism, not the
-			// number, is what the page teaches.
+			// tunable is described, never typed (704 U-5, the M7.7 "in 400"/AoERadius-700 lesson; they
+			// were NAMED until TASK-1541, 2026-09-27) — and the sentence around the quote calls it "a
+			// fixed reveal fee" where it printed EnemyRevealCost, so the mechanism, not the number, is
+			// what the page teaches.
 			Row.Detail = FText::FromString(FString(
-				TEXT("The price is EnemyRevealCost — Jonathan's own number: \"You can pay 30 gold to reveal all ")
+				TEXT("The price is a fixed reveal fee — Jonathan's own number: \"You can pay 30 gold to reveal all ")
 				TEXT("enemy locations\". It is a mechanic rule, so it is a property default and never a card-table ")
 				TEXT("column, and the commander class only holds the number: it never reads a balance and never ")
 				TEXT("spends. The cost is read off your own team's commander at the moment of purchase and never ")
@@ -1494,7 +1601,8 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			//   • they are real places to the commander = USiegeAssistantSnapshot reading the mark
 			//     store and publishing FSiegeMapMark::MakeSymbol(Number) into the place list.
 			//
-			// ⛔ NO NUMBER IS TYPED: MaxMapMarks is NAMED. ⛔ And ⛔ no coordinate, radius or count
+			// ⛔ NO NUMBER IS TYPED: the cap is "a limited number" in the prose (it printed MaxMapMarks
+			// until TASK-1541, 2026-09-27, 🧑 his "plain words"). ⛔ And ⛔ no coordinate, radius or count
 			// is described — the airlock is a property of the feature, not something this page needs
 			// to explain.
 			FSiegeControlsHelpAction& Row = AddRow(TEXT("Interface.MapMarks"), CategoryInterface, TEXT("Draw circles on the map"),
@@ -1526,7 +1634,7 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 				TEXT("survivors keep their numbers. That is deliberate: the map writes a name into your input box and ")
 				TEXT("you send it in your own time, so renumbering would silently point a sentence you had already ")
 				TEXT("typed at different ground.\n\n")
-				TEXT("You can hold MaxMapMarks circles at once. At the limit a further click refuses out loud and ")
+				TEXT("You can hold a limited number of circles at once. At the limit a further click refuses out loud and ")
 				TEXT("tells you how many you are already holding, rather than doing nothing and looking broken.\n\n")
 				TEXT("The circles are yours alone. They live on your own machine, the enemy never sees them, they ")
 				TEXT("survive closing and re-opening the map, and they are cleared when the match resets. They are ")
@@ -1576,8 +1684,10 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 				TEXT("moves no gold.\n\n")
 				TEXT("It closes on {Interface.ControlsHelp} or its own Close button, and that is the complete ")
 				TEXT("list — it never claims Escape. Every shipped cancel route keeps firing while it is open.\n\n")
-				TEXT("Cursor posture is added to ApplyCursorInputState()'s one composition and nowhere else — the ")
+				TEXT("Its cursor is handled in the one place the game decides who owns the cursor, and nowhere else — the ")
 				TEXT("existing owners keep their exact shipped precedence.")));
+			// TASK-1541 (2026-09-27): player words replace the code name this prose used to print —
+			// ASiegePlayerController::ApplyCursorInputState(), cited by name above. The claim is unchanged.
 		}
 
 		return Rows;
@@ -4073,12 +4183,20 @@ void USiegeControlsHelpWidget::ReturnToList()
 	//
 	//  ⚠️ ONE TRANSIENT PAIR IS DECLARED RATHER THAN HIDDEN, because 5b will read it in the log:
 	//  closing ⛔ FROM the detail page runs `CloseHelp()` → `ReturnToList()` (registers, ring on
-	//  `CloseButton`) → `ApplyOpenState(false)` (unregisters) in one call stack, so that ⛔ ONE
+	//  ~~`CloseButton`~~) → `ApplyOpenState(false)` (unregisters) in one call stack, so that ⛔ ONE
 	//  route emits a `registered` line immediately followed by an `unregistered` line. ⛔ Both are
 	//  TRUE of states the program really passes through and the end state is correct.
 	//  ⛔ I did NOT reorder `CloseHelp` to suppress them: swapping a shipped close route's two
-	//  statements to make a log tidier trades a real risk for a cosmetic gain, and the transient
-	//  focus placement is onto the same button that already holds focus on the ordinary close.
+	//  statements to make a log tidier trades a real risk for a cosmetic gain~~, and the transient
+	//  focus placement is onto the same button that already holds focus on the ordinary close~~.
+	//  ⭐ TASK-1480 (e) (2026-09-27, `qa/TASK-1479.md` WARN-1) — ⛔ BOTH STRUCK HALVES EXPIRED AT
+	//  ⭐ `TASK-1478`, for the reason the twin at the top of this block already gives: stop 0 of the
+	//  list is now the ⛔ FIRST `RowButton`, so the transient registration rings ⛔ THAT button,
+	//  ⛔ not `CloseButton`, and it is ⛔ not in general the button that held focus before the close
+	//  (a list-view close leaves the ring wherever the player put it; this route lands it on row 1).
+	//  ⛔ THE DECISION NOT TO REORDER `CloseHelp` STANDS on the reason that survives: the pair is two
+	//  true log lines, the end state (overlay closed, screen unregistered) is still correct, and a
+	//  shipped close route is still not worth reordering for a tidier log.
 	// ═══════════════════════════════════════════════════════════════════════════════════════════
 	if (bWasOnDetail && bHelpOpen)
 	{

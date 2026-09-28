@@ -231,7 +231,9 @@ void USiegeMenuInputSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	// is measured, not feared. BOTH return paths REPLACE the widget rather than re-showing it:
 	//   • deck builder Exit  -- BP `CreateWidget(WBP_MainMenu_C) -> Is Valid ->
 	//     AddToViewport(ZOrder 0) -> RemoveFromParent(self)`, no focus node (TASK-1399 §5.3);
-	//   • `USessionMenuWidget::BackPressed` (`SessionMenuWidget.cpp:151-165`) -- the same shape.
+	//   • `USessionMenuWidget::BackPressed` (its standalone branch: the `LoadClass<UUserWidget>` of
+	//     `/Game/UI/WBP_MainMenu.WBP_MainMenu_C` → `CreateWidget` → `AddToViewport` swap; cited as
+	//     `SessionMenuWidget.cpp:151-165` until TASK-1480 (d)) -- the same shape.
 	// ⇒ a re-arm that re-fires against a remembered pointer passes every static read and works
 	// NOWHERE he actually goes.
 	//
@@ -347,7 +349,9 @@ UUserWidget* USiegeMenuInputSubsystem::FindMainMenuWidget() const
 	}
 
 	// Top-level only (IsInViewport): the SessionMenu's standalone Back re-creates
-	// WBP_MainMenu (SessionMenuWidget.cpp:151-164), so the instance is resolved LIVE on
+	// WBP_MainMenu (`USessionMenuWidget::BackPressed`'s `LoadClass<UUserWidget>` of
+	// `/Game/UI/WBP_MainMenu.WBP_MainMenu_C` → `CreateWidget`; cited as
+	// `SessionMenuWidget.cpp:151-164` until TASK-1480 (d)), so the instance is resolved LIVE on
 	// every call and never cached across inputs.
 	TArray<UUserWidget*> TopLevel;
 	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World, TopLevel, UUserWidget::StaticClass(), /*TopLevelOnly*/ true);
@@ -875,10 +879,20 @@ bool USiegeMenuInputSubsystem::IsNavFocusStop(const UWidget* Widget)
 
 	// ⛔ FENCE (c) — THE FOUR ADMITTED CLASSES (the measured control vocabulary, TASK-1398 §3 F4).
 	// ⛔ AN AUTHORED `IsFocusable == false` IS HONOURED, NEVER STOMPED: it is deliberate in this
-	// project — `SiegeControlsHelpWidget.cpp:177` sets it on the help overlay's CloseButton, and
-	// `:2240` / `:2787` set it on the two `UScrollBox`es (which this walker never admits anyway,
-	// a `UScrollBox` not being one of the four classes). Overriding an author's opt-out would be
-	// a regression wearing a widening's clothes.
+	// project — ~~`SiegeControlsHelpWidget.cpp:177` sets it on the help overlay's CloseButton, and~~
+	// `:2240` / `:2787` (⛔ WAS — `SiegeControlsHelpWidget.cpp` line numbers, cited so until
+	// TASK-1480; the by-text anchors are in the (m) note below) set it on the two `UScrollBox`es
+	// (which this walker never admits anyway, a `UScrollBox` not being one of the four classes).
+	// Overriding an author's opt-out would be a regression wearing a widening's clothes.
+	// ⭐ TASK-1480 (m) (2026-09-27, `qa/TASK-1497.md` WARN, "the dangerous half") — ⛔ THE STRUCK
+	// CLAUSE IS FALSE, NOT MERELY MIS-NUMBERED: `CloseButton` is FOCUSABLE — the
+	// `ApplyButtonFocusable(CloseButton);` in `USiegeControlsHelpWidget::ConstructHelpTree`, whose
+	// own comment dates the flip to TASK-1432 — and since TASK-1478 no `UButton` in that file is
+	// opted out at all (its `ApplyButtonNotFocusable` helper has no live caller). ⛔ THE TWO
+	// SCROLL-BOX OPT-OUTS STAND, re-anchored BY TEXT: `DetailScrollBox->SetIsFocusable(false);` in
+	// `USiegeControlsDetailWidget::ConstructDetailTree` and `RowScrollBox->SetIsFocusable(false);`
+	// in `USiegeControlsHelpWidget::ConstructHelpTree` — the `:2240` / `:2787` above, in that
+	// order, kept only so an older copy can map them.
 	if (const UButton* Button = Cast<const UButton>(Widget))
 	{
 		if (!Button->GetIsFocusable())

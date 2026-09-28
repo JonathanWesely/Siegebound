@@ -1843,7 +1843,11 @@ FReply UDeckBuilderWidget::HandleCardGridKey(const FKey& Key)
 // qa/TASK-1509.md W1, "Yes, fire once": a held key sets the active deck once per
 // physical press, as right-click (which cannot repeat) always has. Before this, every
 // auto-repeat re-ran SetActiveDeckBySlot: an identical SaveGameToSlot on a legal
-// deck, one refusal Warning on an illegal one, ~30 a second.
+// deck, one refusal Warning on an illegal one, at the OS / controller repeat rate
+// (TASK-1480 (l), 2026-09-27 — this said "~30 a second", which is the keyboard's
+// OS rate only; a pad's XInput repeat starts after 0.2 s and then fires every
+// 0.1 s, ≈10 a second: the XInputDevice plugin's InitialButtonRepeatDelay /
+// ButtonRepeatDelay defaults, which this project's Config/ does not override).
 //   · WHY HERE: this is the last frame where IsRepeat() is visible. The FKey body
 //     only ever sees the key.
 //   · THE CLAIM IS THE FIRST PRESS'S CLAIM: IsHeldDeckBarActivationRepeat tests the
@@ -2371,7 +2375,7 @@ void UDeckBuilderWidget::RegisterAsMenuNavTarget()
 	// function's declaration comment), and still owns the in-match arm. What it
 	// stops doing is walking this tree with Up/Down, pressing its buttons with
 	// Accept, stepping its controls with Left/Right, and placing the ring on its
-	// stop 0 at registration. The six IA_Menu* bindings BindMenuNavActions() made
+	// stop 0 at registration. The seven IA_Menu* bindings BindMenuNavActions() made
 	// are this widget's own and are untouched by the flag.
 	MenuInput->RegisterSelfDrivingMenuNavTarget(this);
 }
@@ -2941,9 +2945,15 @@ void UDeckBuilderWidget::SetActiveDeck(const FString& Name)
 
 	// TASK-671: the ACTIVE deck moved — the orange outline follows it
 	// (DECK-§3). Appended on the SUCCESS path only (the refusals above changed
-	// nothing); this one site covers SetActiveDeckBySlot's right-click lane AND
+	// nothing); this one site covers SetActiveDeckBySlot's right-click lane ~~AND
 	// the shipped D8 "Play with this deck" activation, so the orange follows
-	// both. Existing behavior above is untouched (DECK-§4 byte-compatibility).
+	// both~~. ⛔ TASK-1480 (j), 2026-09-27: per DECK-§4(c)'s ruling (2026-08-27)
+	// the Play button's SaveDeckAs("Active") / SetActiveDeck("Active") nodes were
+	// CUT and Play starts the match with the ACTIVE deck, so it activates nothing
+	// and there is no D8 lane here. (Not measured: this row did not open the WBP,
+	// so that is the ruling's word.) SetActiveDeckBySlot also carries TASK-1507's
+	// Home / pad Y key route, so the orange follows that too. Existing behavior
+	// above is untouched (DECK-§4 byte-compatibility).
 	RefreshDeckBarStates();
 }
 

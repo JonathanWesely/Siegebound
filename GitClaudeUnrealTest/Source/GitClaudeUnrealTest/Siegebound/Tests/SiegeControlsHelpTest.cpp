@@ -1815,8 +1815,8 @@ bool FSiegeControlsHelpDiscardAllLayoutTest::RunTest(const FString& Parameters)
 	const FString DiscardOneLine = FSiegeControlsHelpRegistry::ComposeOneLineForDisplay(*DiscardRow).ToString();
 	const FString DiscardDetail  = FSiegeControlsHelpRegistry::ComposeDetailForDisplay(*DiscardRow).ToString();
 
-	TestTrue(TEXT("⭐ The page NAMES its fee property instead of restating its value"),
-		DiscardDetail.Contains(TEXT("DiscardAllCost"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("⭐ The page states the flat-fee rule in words instead of restating its value"),
+		DiscardDetail.Contains(TEXT("charged once for the whole hand"), ESearchCase::CaseSensitive));
 
 	// ⛔ THE WRONG FEE, ASSERTED AGAINST DIRECTLY. "DiscardAllCost" does NOT contain the
 	// substring "DiscardCost" (the `C` never follows the `d`), so this is a real, independent

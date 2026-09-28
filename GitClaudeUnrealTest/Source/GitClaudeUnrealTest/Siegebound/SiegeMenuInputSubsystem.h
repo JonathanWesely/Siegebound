@@ -230,7 +230,14 @@ public:
  *  ship 🧑 his exact complaint. `GetMenuFocusStops()` therefore admits FOUR classes —
  *  `UButton`, `UCheckBox`, `USlider`, `UEditableTextBox` (the measured control types,
  *  TASK-1398 §3 F4) — and it HONOURS an authored `IsFocusable == false` as an opt-out rather
- *  than stomping it (deliberate in this project at `SiegeControlsHelpWidget.cpp:177`).
+ *  than stomping it (~~deliberate in this project at `SiegeControlsHelpWidget.cpp:177`~~
+ *  ⛔ TASK-1480 (c), 2026-09-27 — struck on BOTH counts: the number rotted twice in one wave, and
+ *  the present tense expired at TASK-1478. The authored shape is `SiegeControlsHelpWidget.cpp`'s
+ *  `ApplyButtonNotFocusable` helper, found by that name; since TASK-1478 it has NO live caller
+ *  and no `UButton` in `Source/` is opted out outside the test fixture (whose `OptedOutButton`
+ *  in `Tests/SiegeMenuInputTest.cpp` is authored `IsFocusable = false` to pin this rule). The
+ *  rule is kept because an author's opt-out, in C++ or in an asset, must still win when one
+ *  appears).
  *
  *  ─────────────────────────────────────────────────────────────────────────────────────────
  *  ⭐⭐ LEFT / RIGHT / BACK, AND WHAT THEY MEAN PER CONTROL TYPE (TASK-1409)
@@ -573,7 +580,10 @@ public:
 	 *  paths to this menu emit NOTHING to subscribe to. The deck builder's `Exit` is a pure
 	 *  Blueprint chain `CreateWidget(WBP_MainMenu_C) -> Is Valid -> AddToViewport(ZOrder 0) ->
 	 *  RemoveFromParent(self)` with no focus node and no dispatcher (TASK-1399 §5.3), and
-	 *  `USessionMenuWidget::BackPressed` (`SessionMenuWidget.cpp:151-165`) is the SAME shape in
+	 *  `USessionMenuWidget::BackPressed` (its standalone branch: the `LoadClass<UUserWidget>` of
+	 *  `/Game/UI/WBP_MainMenu.WBP_MainMenu_C` → `CreateWidget` → `AddToViewport` swap; ⛔ cited
+	 *  as `SessionMenuWidget.cpp:151-165` until TASK-1480 (d), a range TASK-1425's insert had
+	 *  moved off that code) is the SAME shape in
 	 *  C++. A Slate `OnFocusChanging` hook would be provably insufficient as well: TASK-1399's
 	 *  table read ALL nodes `focused:false` on the Settings / Login / Session panels, so closing
 	 *  those changes no focus and would fire no event. A tickable subsystem is this same poll at

@@ -505,7 +505,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Deck")
 	float GetAverageCost() const;
 
-	/** True iff the working deck is a legal exactly-50-card deck via UDeckLibrary::IsDeckLegal (gates "Play with this deck"; per-card caps abolished, CARD-UNCAP 2026-08-28). */
+	/**
+	 *  True iff the working deck is a legal exactly-50-card deck via UDeckLibrary::IsDeckLegal
+	 *  (per-card caps abolished, CARD-UNCAP 2026-08-28). Not a Play gate: per DECK-§4(c)'s
+	 *  ruling (2026-08-27) Play starts the match with the ACTIVE deck and its legality
+	 *  enable-gate was removed. No C++ caller reads this (TASK-1480 (j), 2026-09-27; until then
+	 *  this line said it gates "Play with this deck").
+	 */
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Deck")
 	bool IsCurrentDeckLegal() const;
 
@@ -556,7 +562,9 @@ public:
 	// calls SelectCardForDetails; the details panel reads GetCardDescription plus the
 	// existing GetCardDisplayName / GetCardCost / GetCardArtTexture. The "+"/"−"
 	// buttons, the x/50 counter, the average-cost guide and the exactly-50 play gate
-	// are untouched by everything in this block.
+	// (⛔ TASK-1480 (j): it no longer gates Play — per DECK-§4(c)'s ruling the Play
+	// button's enable-gate was removed; deck activation is still gated, see
+	// SetActiveDeck's doc) are untouched by everything in this block.
 
 	/**
 	 *  The player-facing "how this card works" body for CardID, GENERATED from the
@@ -624,7 +632,15 @@ public:
 	 *  Save the working deck under Name into USiegeDeckSaveGame (fixed slot,
 	 *  overwrite-on-collision by name, case-insensitive — M6 ruling 2). An empty/
 	 *  whitespace name is refused (logged). No legality gate here — the §8 guide
-	 *  never blocks saving; "Play with this deck" is the only 50-card gate. Fires
+	 *  never blocks saving. (TASK-1480 (j), 2026-09-27: this said "Play with this deck"
+	 *  was the only 50-card gate; per DECK-§4(c)'s ruling that button's enable-gate was
+	 *  removed, so Play no longer gates on 50 cards, and per the same ruling the "n/50"
+	 *  text is the builder's feedback and the match-side legality check the enforcement.
+	 *  Deck ACTIVATION is gated, though: since TASK-1270 SetActiveDeck refuses to activate
+	 *  an illegal deck, and right-click on a deck-bar slot, or Home / pad Y while one holds
+	 *  focus, reaches it through SetActiveDeckBySlot; that gate postdates the ruling's
+	 *  "no UI surface hard-enforces the 50-card rule". Scoped to Play at TASK-1480 QA
+	 *  loop 1, qa/TASK-1481.md B1.) Fires
 	 *  OnDeckModelChanged() on success (the saved-names list changed).
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Deck")
@@ -668,7 +684,9 @@ public:
 	/**
 	 *  "The deck model changed — re-read the getters." Fired after any mutation
 	 *  (add/remove/load/save/activate). WBP_DeckBuilder re-reads GetTotalCount
-	 *  (x/50), GetAverageCost (§8), IsCurrentDeckLegal (Play gate), and each
+	 *  (x/50), GetAverageCost (§8), IsCurrentDeckLegal (once the Play gate; DECK-§4(c)'s
+	 *  ruling removed that gate wiring, and whether the graph still reads it is not
+	 *  measured here — TASK-1480 (j)), and each
 	 *  cell's GetCountOf; it may re-read GetSavedDeckNames for the load list.
 	 *  Sufficient on its own for a full refresh (seed-then-bind law).
 	 */
@@ -857,8 +875,9 @@ private:
 	 *  and a silent no-op when the bar was never built (DeckBar null path /
 	 *  offline-test widgets). Called wherever either index can move: the bar
 	 *  build in NativeConstruct, SelectDeckForEdit, and SetActiveDeck's success
-	 *  path (which also covers SetActiveDeckBySlot and the D8 "Play with this
-	 *  deck" activation — the orange follows it).
+	 *  path (which also covers SetActiveDeckBySlot ~~and the D8 "Play with this
+	 *  deck" activation — the orange follows it~~; ⛔ TASK-1480 (j): per DECK-§4(c)'s
+	 *  ruling the Play button no longer activates a deck, so there is no D8 lane).
 	 */
 	void RefreshDeckBarStates(); // outline = active, fill tint = editing
 
@@ -1177,7 +1196,7 @@ private:
 	 *  existing teardown, never instead of it.
 	 *  ⚠️ NOT belt-and-braces: the bindings live on the PLAYER CONTROLLER's input
 	 *  component, which OUTLIVES this widget. A builder closed without this would
-	 *  leave six bindings pointing at a dead UObject on the controller for the rest
+	 *  leave seven bindings pointing at a dead UObject on the controller for the rest
 	 *  of the session — the exact shape of the leak TASK-1400's timer comment
 	 *  describes for the game instance's timer manager.
 	 */
@@ -1215,7 +1234,7 @@ private:
 
 	/**
 	 *  ⭐ THE RELAY ITSELF — the ONE place the third door meets the one
-	 *  implementation. Everything above is six names for this call.
+	 *  implementation. Everything above is seven names for this call.
 	 *
 	 *  ⚠️ IT CARRIES ONE PRECONDITION REPAIR AND THAT REPAIR IS NOT A SECOND KEY
 	 *  RULE — say it out loud so a reviewer can hold it to that. HandleCardGridKey
@@ -1277,6 +1296,18 @@ private:
 	 *  ENABLED, because the bubble skips a disabled widget. UDeckSlotEntryWidget
 	 *  makes no SetIsEnabled call at all (census 0 in DeckSlotEntryWidget.cpp),
 	 *  and a widget that holds focus is by definition focusable.)
+	 *  ⭐ TASK-1480 (i), 2026-09-27 (qa/TASK-1509.md N1) — AND THE KEY-UP, which the
+	 *  paragraph above covered for the DOWN only. SButton::OnKeyUp claims only the
+	 *  Accept action, so the synthesized ProcessKeyUpEvent(Left/Right) DOES bubble
+	 *  unhandled to SViewport → UGameViewportClient::InputKey. On L_MainMenu that
+	 *  Released edge is closed by UGameViewportClient::InputKey's IgnoreInput()
+	 *  early return (the `if (IgnoreInput())` return). Anywhere else it arrives as
+	 *  IE_Released, which cannot produce a Started edge — and every C++ binding of
+	 *  IA_MenuLeft / IA_MenuRight (USiegeMenuInputSubsystem's and this class's
+	 *  BindMenuNavActions table) is Started-only — while UPlayerInput::InputKey
+	 *  only records key state (action delegates evaluate on the next
+	 *  ProcessInputStack, so nothing re-enters RouteMenuNavKey synchronously).
+	 *  ⇒ no loop and no re-fire on the up event either.
 	 *
 	 *  Returns true iff the key was dispatched into Slate (the caller then does
 	 *  nothing else); false ⇒ nothing was dispatched and the caller falls back to
@@ -1296,7 +1327,11 @@ private:
 	 *  subsystem's ring IS the screen's navigation. Here it is NOT: this screen
 	 *  navigates a 2-D grid of nested WBP_DeckCardTile UUserWidgets, which are not
 	 *  one of the walker's four admitted classes and are not even reached by it
-	 *  (UWidgetTree::ForEachWidget descends through UPanelWidget only). Registration
+	 *  ~~(UWidgetTree::ForEachWidget descends through UPanelWidget only)~~ (they are
+	 *  Blueprint sub-widgets, which `USiegeMenuInputSubsystem::IsCodeAuthoredSubWidget`
+	 *  refuses to enter — the walker's descent boundary, TASK-1474). ⛔ TASK-1480 (b),
+	 *  2026-09-27: the struck parenthetical named the wrong mechanism while its
+	 *  conclusion held; the replacement is TASK-1474's handoff text, verbatim. Registration
 	 *  is taken for the two things it DOES buy:
 	 *    (a) LogNavTargetRetarget prints THIS SCREEN'S focus-stop count — the
 	 *        instrument the EVENTGRAPH-CENSUS-GAP ruling (TASKBOARD marker
