@@ -2783,8 +2783,19 @@ FReply UWarMapWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const
 //
 // ⇒ ⛔ NOT ONE LINE, ⛔ NOT ONE SYMBOL AND ⛔ NOT ONE FILE OF THE CONTROLLER'S
 // PATH IS TOUCHED, and its "inert outside the pick flow" property is LITERALLY
-// unchanged. ⛔ THE WHEEL NOW HAS EXACTLY TWO CONSUMERS AND ⛔ NO THIRD MAY BE
-// ADDED WITHOUT AMENDING MARK-§4 BY NAME.
+// unchanged. ⛔ MARK-§4 NAMES EVERY CONSUMER OF THE WHEEL, AND ⛔ A NEW ONE IS
+// ADDED ONLY BY AMENDING IT BY NAME.
+//
+// ⭐ TASK-1592 (2026-09-29), comment only: this block used to end "THE WHEEL NOW HAS
+// EXACTLY TWO CONSUMERS AND NO THIRD MAY BE ADDED WITHOUT AMENDING MARK-§4 BY NAME".
+// That clause did its job: STACK-§4 amended MARK-§4 by name, to three. MARK-§4 now reads
+// "the wheel has exactly THREE consumers — (1) the controller's group-pick poll · (2)
+// UWarMapWidget while the map is open and the cursor is over it · (3) the controller's
+// PLACEMENT-mode footprint poll (ApplyPlacementFootprintWheel, STACK-§4). It stays inert
+// everywhere else, and no FOURTH consumer may be added without amending this line again."
+// Consumers 1 and 3 are both controller polls, in sibling branches of PlayerTick that never
+// run in the same frame, so "inert outside the pick flow" above is true of consumer 1's poll
+// only. This widget's Slate event is still the one consumer outside the controller.
 // ---------------------------------------------------------------------------
 
 FReply UWarMapWidget::NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)

@@ -739,13 +739,23 @@ struct FSiegeWarMapMarkCircle
  *
  *  ── (e) ⛔ THE WHEEL LAW (`MARK-§4`) — AN AMENDMENT, AND ONE THIS FILE MUST NOT EXCEED ─────
  *
- *  ✅ **THE TWO CONSUMERS ARE STRUCTURALLY DIFFERENT MECHANISMS IN DIFFERENT LANES, VERIFIED
- *  AT THE SOURCE RATHER THAN ASSUMED:** the controller's is a **POLL** —
+ *  ✅ **THE CONTROLLER'S POLL AND THIS WIDGET'S EVENT ARE STRUCTURALLY DIFFERENT MECHANISMS IN
+ *  DIFFERENT LANES, VERIFIED AT THE SOURCE RATHER THAN ASSUMED:** the controller's is a **POLL** —
  *  `WasInputKeyJustPressed(EKeys::MouseScrollUp/Down)` inside `ApplyGroupPickWheel`, whose ONLY
  *  call site is `ASiegePlayerController::PlayerTick`'s `GroupPickStage != EGroupPickStage::None`
  *  branch (`SiegePlayerController.cpp:647-657`, `:2843-2876`). This one is a **SLATE EVENT** on
  *  a focused widget. ⇒ ⛔ **NOT ONE LINE OF THE CONTROLLER IS TOUCHED, no symbol is shared, and
  *  its "inert outside the pick flow" property is LITERALLY unchanged.**
+ *
+ *  ⭐ TASK-1592 (2026-09-29), comment only: this paragraph used to open "THE TWO CONSUMERS ARE
+ *  STRUCTURALLY DIFFERENT MECHANISMS", a count that went stale when `STACK-§4` amended
+ *  `MARK-§4` by name, to three. `MARK-§4` now reads "the wheel has exactly THREE consumers —
+ *  (1) the controller's group-pick poll · (2) `UWarMapWidget` while the map is open and the
+ *  cursor is over it · (3) the controller's PLACEMENT-mode footprint poll
+ *  (`ApplyPlacementFootprintWheel`, `STACK-§4`)". Consumers 1 and 3 are both controller polls,
+ *  in sibling branches of `PlayerTick` that never run in the same frame, so the contrast drawn
+ *  here holds for both of them against this widget's Slate event, and "inert outside the pick
+ *  flow" is true of consumer 1's poll only.
  *
  *  ⚠️ **AND THE ABSORB IS A DECISION, DECLARED:** while the map is OPEN this widget returns
  *  `Handled` for EVERY wheel event, including ones over empty map. ⚖️ **That is the same

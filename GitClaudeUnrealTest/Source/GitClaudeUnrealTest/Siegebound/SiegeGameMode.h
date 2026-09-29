@@ -277,6 +277,16 @@ public:
 	 */
 	static AHeroCharacter* ResolveHeroToRestore(APawn* PossessedPawn, AHeroCharacter* TrackedHero);
 
+	/**
+	 *  The hero class this mode spawns, as AUTHORED (HeroPawnClassAsset, the soft class of
+	 *  /Game/Blueprints/BP_HeroCharacter). Plain C++, not a UFUNCTION (TASK-1592, 2026-09-29):
+	 *  the Controls help reads the Attack and Rally numbers off the class the game spawns.
+	 *  ⚠️ This is the soft pointer, ⛔ not the resolution: ResolveHeroPawnClass stays private and
+	 *  unchanged, and it alone caches the class and falls back to the raw AHeroCharacter when
+	 *  the Blueprint is missing.
+	 */
+	const TSoftClassPtr<AHeroCharacter>& GetHeroPawnClassAsset() const { return HeroPawnClassAsset; }
+
 protected:
 
 	/** Binds OnCastleDestroyed on every ACastle in the level (all present at BeginPlay — placed at integration), then spawns the single Red bot opponent (SpawnBot, TASK-045). */

@@ -29,6 +29,16 @@
 #include "Siegebound/Building.h"
 #include "Siegebound/SiegeKeyboardLayoutSubsystem.h"
 #include "Siegebound/SiegeMapMarkSubsystem.h"
+// TASK-1594 (2026-09-29) — the owners of the numbers 🧑 his answer A and his "all of it" added,
+// read and never typed (`HELP-§2`), each through a PUBLIC member TASK-1592 added or made public:
+// the controller for the card table, the building-card rule, the card → class resolution and the
+// discard fee; the game mode for the hero class it spawns; the hero for the Rally and Attack
+// numbers. All READ-ONLY to this file; see the TASK-1594 half of the derived-number block below.
+#include "Engine/DataTable.h"
+#include "Siegebound/CardRow.h"
+#include "Siegebound/HeroCharacter.h"
+#include "Siegebound/SiegeGameMode.h"
+#include "Siegebound/SiegePlayerController.h"
 // TASK-1432 — the ONLY new dependency this row takes. The overlay CALLS this subsystem from two
 // places (open / close) and ⛔ never the other way round: `SiegeMenuInputSubsystem.{cpp,h}` is
 // READ-ONLY to this row and is not modified by it.
@@ -313,13 +323,17 @@ namespace
 	//  in place of the token. ⇒ a retune of the owner changes the page with ⛔ no text edit, and
 	//  ⛔ no digit of either value is typed anywhere in this file.
 	//
-	//  ⛔ READS GO THROUGH EXISTING PUBLIC MEMBERS ONLY (TASK-1576 spec (3)). The row's other
-	//  candidates (the discard fee, the four Rally values, the melee reach / cone / cooldown, and
-	//  each building's own height limit) are NOT here because reading them needs a new accessor in
-	//  an owner file: DiscardAllCost and the hero's Melee* / Rally* tunables are protected with no
-	//  public getter, and the card-to-building-class resolution the game uses
-	//  (ASiegePlayerController::ResolveCardActorClass / IsBuildingCard) is private. They are listed
-	//  in handoffs/TASK-1576-programmer.md for the manager to board; ⛔ none is typed instead.
+	//  ⛔ READS GO THROUGH PUBLIC MEMBERS ONLY (TASK-1576 spec (3)). ⭐ TASK-1594 (2026-09-29): the
+	//  row's other candidates (the discard fee, the four Rally values, the melee reach / cone /
+	//  cooldown, and each building's own height limit) are now HERE TOO, in the TASK-1594 half of
+	//  this block below. TASK-1592 made them readable: GetDiscardAllCost() and the seven
+	//  GetMelee* / GetRally* getters are public, ResolveCardActorClass and IsBuildingCard moved to
+	//  `public:` unchanged, and GetCardTableAsset() / ASiegeGameMode::GetHeroPawnClassAsset() are
+	//  new public reads. (Until TASK-1594 this paragraph said those candidates were NOT here
+	//  "because reading them needs a new accessor in an owner file: DiscardAllCost and the hero's
+	//  Melee* / Rally* tunables are protected with no public getter, and the card-to-building-class
+	//  resolution the game uses (ASiegePlayerController::ResolveCardActorClass / IsBuildingCard) is
+	//  private", which was true until TASK-1592.) ⛔ Still none is typed.
 	//
 	//  WHICH OBJECT EACH ENTRY READS, AND WHY (spec (2): the object the game uses, ⛔ never simply
 	//  the easiest one to reach):
@@ -401,11 +415,448 @@ namespace
 		return true;
 	}
 
+	// ════════════════════════════════════════════════════════════════════════════════════
+	//  ⭐⭐ TASK-1594 (2026-09-29) — THE REST OF THE ROW'S NUMBERS: 🧑 HIS ANSWER A TO
+	//  Q-STACK-CAP-2026-09-28 ("show the numbers": each building type's own height limit) AND HIS
+	//  "YES, ALL OF IT" (the discard fee, Rally's four values, Attack's three). The same `{#Name}`
+	//  tokens and the SAME splice as the two entries above (⛔ no second splice), and every read
+	//  goes through a PUBLIC member (TASK-1592) on the object the game uses.
+	//
+	//  WHICH OBJECT EACH ENTRY READS, AND WHY (TASK-1576 spec (2), carried by TASK-1594):
+	//    • the discard fee: ASiegePlayerController::GetDiscardAllCost() on the controller's CLASS
+	//      DEFAULT. The game's controller IS that native class: ASiegeGameMode's constructor sets
+	//      `PlayerControllerClass = ASiegePlayerController::StaticClass();` and no Blueprint
+	//      subclass of the controller exists (qa/TASK-1593.md ruling 2). DiscardAllCost is
+	//      EditDefaultsOnly with no Config specifier, no package stores a value for it
+	//      (qa/TASK-1593.md ruling 4), and nothing in Source/ writes it. ⇒ the live controller
+	//      cannot charge a different fee from the one read here.
+	//    • Rally's and Attack's numbers: the seven AHeroCharacter getters, on the class default of
+	//      the hero class the game SPAWNS, which ResolveHelpHeroDefaults finds through
+	//      ASiegeGameMode::GetHeroPawnClassAsset() on the game mode's class default (the arena
+	//      runs the native ASiegeGameMode through GlobalDefaultGameMode, and no Blueprint subclass
+	//      of it exists; handoffs/TASK-1592-programmer.md §2). That is BP_HeroCharacter today.
+	//      ⛔ NOT GetDefault<AHeroCharacter>(): a Blueprint child may override a native default,
+	//      and the class the game spawns is the one this page describes. (No package stores a
+	//      value for any of the seven, so BP_HeroCharacter inherits the native defaults today,
+	//      qa/TASK-1593.md ruling 4; reading ITS default is what keeps a later Blueprint retune
+	//      on the page.) The spawned hero holds its class default's values: the game spawns the
+	//      hero rather than placing one, and no C++ writes any of the seven
+	//      (handoffs/TASK-1592-programmer.md §1).
+	//    • each building type's height limit: ABuilding::GetMaxStackHeightMultiplier() on the
+	//      class default of EACH placeable building class, found by the game's OWN card → class
+	//      resolution on the controller's class default: the table GetCardTableAsset() names,
+	//      then IsBuildingCard, then ResolveCardActorClass. EnterPlacementMode asks IsBuildingCard
+	//      and TryConfirmPlacement spawns `ResolveCardActorClass(PendingCardID, PendingCardType)`,
+	//      so this set is the set the game places and it cannot drift from it. ⛔ NEVER one
+	//      base-class read for all of them (GetDefault<ABuilding>(), the pre-2026-09-03 bug shape
+	//      Building.cpp's StackHeightMultiplier note records): the ceiling is PER CLASS
+	//      (STACK-§10 cl. 2) and a Blueprint child may raise it. ⛔ No CardID or class-name compare
+	//      singles a building out (STACK-§2): the climbable tower lands in its own group only
+	//      because its read value differs. Each type is named by its card's DisplayName (FCardRow),
+	//      the name the deck shows the player.
+	//
+	//  ⚠️ LOADS, AND WHEN (qa/TASK-1593.md W1). ResolveCardActorClass loads a class on every call,
+	//  logs a Warning for a missing class and an ERROR for a card type that is not a placement
+	//  type; GetHeroPawnClassAsset().LoadSynchronous() loads the hero Blueprint. ⇒ both run ONLY
+	//  inside these entries, i.e. only when a page is COMPOSED (ComposeDetailForDisplay, which the
+	//  widget reaches once per page open through ShowDetailForAction → ComposeDetailContent: ⛔ never
+	//  per frame and ⛔ never from the row list), and ResolveCardActorClass is called ONLY for a card
+	//  IsBuildingCard accepts, so its Error branch cannot be reached from this file. Once a class is
+	//  in memory a later call finds it there.
+	// ════════════════════════════════════════════════════════════════════════════════════
+
+	/**
+	 *  The class default of the hero class the game spawns (the reason is in the block comment
+	 *  above), or null. ⭐ THE FALLBACK IS THE GAME'S OWN: ASiegeGameMode::ResolveHeroPawnClass
+	 *  returns the loaded HeroPawnClassAsset, and when `HeroPawnClassAsset.LoadSynchronous()` is
+	 *  null it returns `AHeroCharacter::StaticClass()`, the raw native hero. This does the same two
+	 *  steps in the same order, through the public GetHeroPawnClassAsset(). It does not cache and
+	 *  does not log: the game mode warns once about a missing Blueprint on its own spawn path.
+	 */
+	const AHeroCharacter* ResolveHelpHeroDefaults()
+	{
+		const ASiegeGameMode* const HeroModeDefaults = GetDefault<ASiegeGameMode>();
+		if (HeroModeDefaults == nullptr)
+		{
+			return nullptr;
+		}
+
+		UClass* HelpHeroClass = HeroModeDefaults->GetHeroPawnClassAsset().LoadSynchronous();
+		if (HelpHeroClass == nullptr)
+		{
+			HelpHeroClass = AHeroCharacter::StaticClass();
+		}
+
+		return Cast<AHeroCharacter>(HelpHeroClass->GetDefaultObject());
+	}
+
+	/**
+	 *  `{#Discard.Fee}` — the discard-all fee, e.g. "20 gold". Owner: ASiegePlayerController::
+	 *  DiscardAllCost, read through the public GetDiscardAllCost() on the controller's class
+	 *  default (TASK-1592); the reason is in the block comment above.
+	 */
+	bool ComposeHelpDiscardFee(FText& OutNumberText)
+	{
+		const ASiegePlayerController* const FeeDefaults = GetDefault<ASiegePlayerController>();
+		if (FeeDefaults == nullptr)
+		{
+			return false;
+		}
+
+		const int32 HelpDiscardFee = FeeDefaults->GetDiscardAllCost();
+
+		// Conversion: none. It is an amount of gold and DiscardAllCost is a whole number (int32),
+		// so it is shown with no fractional digits and followed by the word "gold".
+		FNumberFormattingOptions GoldOptions;
+		GoldOptions.SetMinimumFractionalDigits(0).SetMaximumFractionalDigits(0);
+
+		FFormatNamedArguments NumberArgs;
+		NumberArgs.Add(TEXT("Gold"), FText::AsNumber(HelpDiscardFee, &GoldOptions));
+		OutNumberText = FText::Format(FText::FromString(FString(TEXT("{Gold} gold"))), NumberArgs);
+		return true;
+	}
+
+	/**
+	 *  `{#Rally.Radius}` — how far Rally reaches from the hero, e.g. "6 metres". Owner:
+	 *  AHeroCharacter::RallyRadius, read through GetRallyRadius() (TASK-1592) on the spawned hero
+	 *  class's default. AHeroCharacter::Rally buffs a unit when `FVector::DistSquared(MyLocation,
+	 *  FriendlyUnit->GetActorLocation()) > RallyRadiusSquared` is false.
+	 */
+	bool ComposeHelpRallyRadius(FText& OutNumberText)
+	{
+		const AHeroCharacter* const RallyHeroDefaults = ResolveHelpHeroDefaults();
+		if (RallyHeroDefaults == nullptr)
+		{
+			return false;
+		}
+
+		const float HelpRallyRadiusMetres = RallyHeroDefaults->GetRallyRadius() / 100.f;
+
+		// Conversion: RallyRadius is in Unreal units (centimetres), so ÷ 100 gives metres. At most
+		// two fractional digits, no trailing zeros. The noun is chosen by the converted value.
+		FNumberFormattingOptions MetreOptions;
+		MetreOptions.SetMinimumFractionalDigits(0).SetMaximumFractionalDigits(2);
+
+		FFormatNamedArguments NumberArgs;
+		NumberArgs.Add(TEXT("Metres"), FText::AsNumber(HelpRallyRadiusMetres, &MetreOptions));
+		NumberArgs.Add(TEXT("PluralMetres"), HelpRallyRadiusMetres);
+		OutNumberText = FText::Format(
+			FText::FromString(FString(TEXT("{Metres} {PluralMetres}|plural(one=metre,other=metres)"))), NumberArgs);
+		return true;
+	}
+
+	/**
+	 *  `{#Rally.SpeedBonus}` — how much faster a rallied unit moves, e.g. "25%". Owner:
+	 *  AHeroCharacter::RallySpeedBonus, read through GetRallySpeedBonus() (TASK-1592) on the
+	 *  spawned hero class's default.
+	 */
+	bool ComposeHelpRallySpeedBonus(FText& OutNumberText)
+	{
+		const AHeroCharacter* const RallyHeroDefaults = ResolveHelpHeroDefaults();
+		if (RallyHeroDefaults == nullptr)
+		{
+			return false;
+		}
+
+		const float HelpRallyBonusPercent = RallyHeroDefaults->GetRallySpeedBonus() * 100.f;
+
+		// Conversion: RallySpeedBonus is the fraction AHeroCharacter::Rally adds to a unit's move
+		// speed (`const float SpeedMultiplier = 1.f + RallySpeedBonus;`), so × 100 gives the percent
+		// the speed rises by. At most one fractional digit, followed by a percent sign.
+		FNumberFormattingOptions PercentOptions;
+		PercentOptions.SetMinimumFractionalDigits(0).SetMaximumFractionalDigits(1);
+
+		FFormatNamedArguments NumberArgs;
+		NumberArgs.Add(TEXT("Percent"), FText::AsNumber(HelpRallyBonusPercent, &PercentOptions));
+		OutNumberText = FText::Format(FText::FromString(FString(TEXT("{Percent}%"))), NumberArgs);
+		return true;
+	}
+
+	/**
+	 *  `{#Rally.Duration}` — how long a rallied unit keeps the boost, e.g. "5 seconds". Owner:
+	 *  AHeroCharacter::RallyDuration (handed to ApplyMoveSpeedBuff), read through
+	 *  GetRallyDuration() (TASK-1592) on the spawned hero class's default.
+	 */
+	bool ComposeHelpRallyDuration(FText& OutNumberText)
+	{
+		const AHeroCharacter* const RallyHeroDefaults = ResolveHelpHeroDefaults();
+		if (RallyHeroDefaults == nullptr)
+		{
+			return false;
+		}
+
+		const float HelpRallyDurationSeconds = RallyHeroDefaults->GetRallyDuration();
+
+		// Conversion: none. RallyDuration is already in seconds. At most two fractional digits, no
+		// trailing zeros. The noun is chosen by the value.
+		FNumberFormattingOptions SecondOptions;
+		SecondOptions.SetMinimumFractionalDigits(0).SetMaximumFractionalDigits(2);
+
+		FFormatNamedArguments NumberArgs;
+		NumberArgs.Add(TEXT("Seconds"), FText::AsNumber(HelpRallyDurationSeconds, &SecondOptions));
+		NumberArgs.Add(TEXT("PluralSeconds"), HelpRallyDurationSeconds);
+		OutNumberText = FText::Format(
+			FText::FromString(FString(TEXT("{Seconds} {PluralSeconds}|plural(one=second,other=seconds)"))), NumberArgs);
+		return true;
+	}
+
+	/**
+	 *  `{#Rally.Cooldown}` — how long after a rally the next one waits, e.g. "20 seconds". Owner:
+	 *  AHeroCharacter::RallyCooldown (the `SinceLastRally < RallyCooldown` gate and the
+	 *  OnRallyReady timer), read through GetRallyCooldown() (TASK-1592) on the spawned hero
+	 *  class's default.
+	 */
+	bool ComposeHelpRallyCooldown(FText& OutNumberText)
+	{
+		const AHeroCharacter* const RallyHeroDefaults = ResolveHelpHeroDefaults();
+		if (RallyHeroDefaults == nullptr)
+		{
+			return false;
+		}
+
+		const float HelpRallyCooldownSeconds = RallyHeroDefaults->GetRallyCooldown();
+
+		// Conversion: none. RallyCooldown is already in seconds. At most two fractional digits, no
+		// trailing zeros. The noun is chosen by the value.
+		FNumberFormattingOptions SecondOptions;
+		SecondOptions.SetMinimumFractionalDigits(0).SetMaximumFractionalDigits(2);
+
+		FFormatNamedArguments NumberArgs;
+		NumberArgs.Add(TEXT("Seconds"), FText::AsNumber(HelpRallyCooldownSeconds, &SecondOptions));
+		NumberArgs.Add(TEXT("PluralSeconds"), HelpRallyCooldownSeconds);
+		OutNumberText = FText::Format(
+			FText::FromString(FString(TEXT("{Seconds} {PluralSeconds}|plural(one=second,other=seconds)"))), NumberArgs);
+		return true;
+	}
+
+	/**
+	 *  `{#Attack.Reach}` — how far one swing reaches, e.g. "1.5 metres". Owner:
+	 *  AHeroCharacter::MeleeRange (DoMeleeAttack skips a target when `Distance > MeleeRange`),
+	 *  read through GetMeleeRange() (TASK-1592) on the spawned hero class's default.
+	 */
+	bool ComposeHelpAttackReach(FText& OutNumberText)
+	{
+		const AHeroCharacter* const AttackHeroDefaults = ResolveHelpHeroDefaults();
+		if (AttackHeroDefaults == nullptr)
+		{
+			return false;
+		}
+
+		const float HelpAttackReachMetres = AttackHeroDefaults->GetMeleeRange() / 100.f;
+
+		// Conversion: MeleeRange is in Unreal units (centimetres), so ÷ 100 gives metres. At most
+		// two fractional digits, no trailing zeros. The noun is chosen by the converted value.
+		FNumberFormattingOptions MetreOptions;
+		MetreOptions.SetMinimumFractionalDigits(0).SetMaximumFractionalDigits(2);
+
+		FFormatNamedArguments NumberArgs;
+		NumberArgs.Add(TEXT("Metres"), FText::AsNumber(HelpAttackReachMetres, &MetreOptions));
+		NumberArgs.Add(TEXT("PluralMetres"), HelpAttackReachMetres);
+		OutNumberText = FText::Format(
+			FText::FromString(FString(TEXT("{Metres} {PluralMetres}|plural(one=metre,other=metres)"))), NumberArgs);
+		return true;
+	}
+
+	/**
+	 *  `{#Attack.ConeHalfAngle}` — how far to each side of the hero's facing the swing reaches,
+	 *  e.g. "30 degrees". Owner: AHeroCharacter::MeleeHalfAngleDegrees (DoMeleeAttack's
+	 *  `FMath::Cos(FMath::DegreesToRadians(MeleeHalfAngleDegrees))` cone test on the horizontal
+	 *  plane), read through GetMeleeHalfAngleDegrees() (TASK-1592) on the spawned hero class's
+	 *  default.
+	 */
+	bool ComposeHelpAttackConeHalfAngle(FText& OutNumberText)
+	{
+		const AHeroCharacter* const AttackHeroDefaults = ResolveHelpHeroDefaults();
+		if (AttackHeroDefaults == nullptr)
+		{
+			return false;
+		}
+
+		const float HelpAttackHalfAngleDegrees = AttackHeroDefaults->GetMeleeHalfAngleDegrees();
+
+		// Conversion: none. MeleeHalfAngleDegrees is already in degrees, measured from straight
+		// ahead to one edge of the cone. At most one fractional digit, no trailing zeros. The noun
+		// is chosen by the value.
+		FNumberFormattingOptions DegreeOptions;
+		DegreeOptions.SetMinimumFractionalDigits(0).SetMaximumFractionalDigits(1);
+
+		FFormatNamedArguments NumberArgs;
+		NumberArgs.Add(TEXT("Degrees"), FText::AsNumber(HelpAttackHalfAngleDegrees, &DegreeOptions));
+		NumberArgs.Add(TEXT("PluralDegrees"), HelpAttackHalfAngleDegrees);
+		OutNumberText = FText::Format(
+			FText::FromString(FString(TEXT("{Degrees} {PluralDegrees}|plural(one=degree,other=degrees)"))), NumberArgs);
+		return true;
+	}
+
+	/**
+	 *  `{#Attack.Cooldown}` — the shortest time between two swings, e.g. "0.5 seconds". Owner:
+	 *  AHeroCharacter::MeleeCooldown (DoMeleeAttack returns when `(Now - LastMeleeTime) <
+	 *  MeleeCooldown`), read through GetMeleeCooldown() (TASK-1592) on the spawned hero class's
+	 *  default.
+	 */
+	bool ComposeHelpAttackCooldown(FText& OutNumberText)
+	{
+		const AHeroCharacter* const AttackHeroDefaults = ResolveHelpHeroDefaults();
+		if (AttackHeroDefaults == nullptr)
+		{
+			return false;
+		}
+
+		const float HelpAttackCooldownSeconds = AttackHeroDefaults->GetMeleeCooldown();
+
+		// Conversion: none. MeleeCooldown is already in seconds. At most two fractional digits, no
+		// trailing zeros. The noun is chosen by the value.
+		FNumberFormattingOptions SecondOptions;
+		SecondOptions.SetMinimumFractionalDigits(0).SetMaximumFractionalDigits(2);
+
+		FFormatNamedArguments NumberArgs;
+		NumberArgs.Add(TEXT("Seconds"), FText::AsNumber(HelpAttackCooldownSeconds, &SecondOptions));
+		NumberArgs.Add(TEXT("PluralSeconds"), HelpAttackCooldownSeconds);
+		OutNumberText = FText::Format(
+			FText::FromString(FString(TEXT("{Seconds} {PluralSeconds}|plural(one=second,other=seconds)"))), NumberArgs);
+		return true;
+	}
+
+	/**
+	 *  The placeable building types that read the SAME height limit, in the order the card table
+	 *  first offers each value. ⭐ Built from the reads, ⛔ never from a typed list: a retune, a
+	 *  Blueprint override or a new building card moves a type between groups with no text edit.
+	 */
+	struct FSiegeHelpHeightLimitGroup
+	{
+		int32 HeightLimit = 0;
+		TArray<FString> BuildingNames;
+	};
+
+	/** "the A", "the A and B", "the A, B and C": one group's names as one list with one article. */
+	FString JoinHelpBuildingNames(const TArray<FString>& BuildingNames)
+	{
+		FString JoinedNames(TEXT("the "));
+		for (int32 NameIndex = 0; NameIndex < BuildingNames.Num(); ++NameIndex)
+		{
+			if (NameIndex > 0)
+			{
+				JoinedNames += (NameIndex == BuildingNames.Num() - 1) ? TEXT(" and ") : TEXT(", ");
+			}
+			JoinedNames += BuildingNames[NameIndex];
+		}
+		return JoinedNames;
+	}
+
+	/**
+	 *  `{#StackUpgrade.HeightLimits}` — 🧑 his answer A: every placeable building type's own
+	 *  height limit, e.g. "5 times that original height for the Arrow Tower, Wall … and Crystal
+	 *  Tower, and 2 times for the Watch Tower" at today's values. Owner: ABuilding::
+	 *  MaxStackHeightMultiplier, read through the public GetMaxStackHeightMultiplier() on EACH
+	 *  building class's OWN class default; the set, the object and the loads are in the block
+	 *  comment above.
+	 *
+	 *  ⭐ Every type is NAMED, grouped by equal value. ⛔ There is no "every other building": a type
+	 *  the enumeration dropped would then vanish from the page with no trace, and naming each one is
+	 *  what lets the suite prove every placeable type is covered exactly once (test 21's (c-cap)).
+	 *  ⛔ It gives no reason for any limit and never says a building cannot be stacked: each limit
+	 *  is stated positively, as how far it stacks (STACK-§10 cl. 2; qa/TASK-1586.md ruling 8).
+	 */
+	bool ComposeHelpStackHeightLimits(FText& OutNumberText)
+	{
+		const ASiegePlayerController* const CardRulesDefaults = GetDefault<ASiegePlayerController>();
+		if (CardRulesDefaults == nullptr)
+		{
+			return false;
+		}
+
+		const UDataTable* const HelpCardTable = CardRulesDefaults->GetCardTableAsset().LoadSynchronous();
+		if (HelpCardTable == nullptr || HelpCardTable->GetRowStruct() != FCardRow::StaticStruct())
+		{
+			return false;
+		}
+
+		TArray<FSiegeHelpHeightLimitGroup> HeightLimitGroups;
+		for (const FName& HelpCardID : HelpCardTable->GetRowNames())
+		{
+			const FCardRow* const HelpCardRow =
+				HelpCardTable->FindRow<FCardRow>(HelpCardID, TEXT("SiegeControlsHelp height limits"), /*bWarnIfRowMissing=*/ false);
+
+			// ⛔ qa/TASK-1593.md W1: ResolveCardActorClass is reached ONLY for a card the game's own
+			// building rule accepts, so its "not a placement type" Error can never fire from here.
+			if (HelpCardRow == nullptr || !CardRulesDefaults->IsBuildingCard(HelpCardID, HelpCardRow->CardType))
+			{
+				continue;
+			}
+
+			const UClass* const HelpBuildingClass = CardRulesDefaults->ResolveCardActorClass(HelpCardID, HelpCardRow->CardType);
+			const ABuilding* const HelpBuildingDefaults =
+				HelpBuildingClass != nullptr ? Cast<ABuilding>(HelpBuildingClass->GetDefaultObject()) : nullptr;
+			if (HelpBuildingDefaults == nullptr)
+			{
+				// The game refuses to play a card whose class does not resolve, and spends no gold,
+				// so that card places nothing and has no limit to show. ResolveCardActorClass has
+				// already logged the missing class.
+				continue;
+			}
+
+			// ⭐ THE READ: this building class's OWN class default, through the public accessor.
+			const int32 HelpHeightLimit = HelpBuildingDefaults->GetMaxStackHeightMultiplier();
+
+			FSiegeHelpHeightLimitGroup* MatchingGroup = HeightLimitGroups.FindByPredicate(
+				[HelpHeightLimit](const FSiegeHelpHeightLimitGroup& ExistingLimitGroup) { return ExistingLimitGroup.HeightLimit == HelpHeightLimit; });
+			if (MatchingGroup == nullptr)
+			{
+				MatchingGroup = &HeightLimitGroups.AddDefaulted_GetRef();
+				MatchingGroup->HeightLimit = HelpHeightLimit;
+			}
+			MatchingGroup->BuildingNames.Add(HelpCardRow->DisplayName);
+		}
+
+		if (HeightLimitGroups.Num() == 0)
+		{
+			return false;
+		}
+
+		// Conversion: none. MaxStackHeightMultiplier is already a whole multiple of the building's
+		// authored height (int32; StackHeightMultiplier caps the height at exactly that multiple),
+		// so it is shown with no fractional digits and followed by "time" or "times", chosen by
+		// the value.
+		FNumberFormattingOptions MultipleOptions;
+		MultipleOptions.SetMinimumFractionalDigits(0).SetMaximumFractionalDigits(0);
+
+		FString HeightLimitsClause;
+		for (int32 GroupIndex = 0; GroupIndex < HeightLimitGroups.Num(); ++GroupIndex)
+		{
+			const FSiegeHelpHeightLimitGroup& LimitGroup = HeightLimitGroups[GroupIndex];
+			if (GroupIndex > 0)
+			{
+				HeightLimitsClause += (GroupIndex == HeightLimitGroups.Num() - 1) ? TEXT(", and ") : TEXT(", ");
+			}
+
+			FFormatNamedArguments NumberArgs;
+			NumberArgs.Add(TEXT("Multiple"), FText::AsNumber(LimitGroup.HeightLimit, &MultipleOptions));
+			NumberArgs.Add(TEXT("PluralMultiple"), LimitGroup.HeightLimit);
+			HeightLimitsClause += FText::Format(FText::FromString(FString(GroupIndex == 0
+				? TEXT("{Multiple} {PluralMultiple}|plural(one=time,other=times) that original height for ")
+				: TEXT("{Multiple} {PluralMultiple}|plural(one=time,other=times) for "))), NumberArgs).ToString();
+			HeightLimitsClause += JoinHelpBuildingNames(LimitGroup.BuildingNames);
+		}
+
+		OutNumberText = FText::FromString(HeightLimitsClause);
+		return true;
+	}
+
 	/** Every number a page may show. ⛔ One entry per token; the prose names the token, this names the owner. */
 	const FSiegeHelpDerivedNumber HelpDerivedNumbers[] =
 	{
 		{ TEXT("{#MapMarks.Cap}"),              &ComposeHelpMapMarkCap },
-		{ TEXT("{#StackUpgrade.HealthFactor}"), &ComposeHelpStackHealthFactor }
+		{ TEXT("{#StackUpgrade.HealthFactor}"), &ComposeHelpStackHealthFactor },
+		// ⭐ TASK-1594 (2026-09-29):
+		{ TEXT("{#StackUpgrade.HeightLimits}"), &ComposeHelpStackHeightLimits },
+		{ TEXT("{#Discard.Fee}"),               &ComposeHelpDiscardFee },
+		{ TEXT("{#Rally.Radius}"),              &ComposeHelpRallyRadius },
+		{ TEXT("{#Rally.SpeedBonus}"),          &ComposeHelpRallySpeedBonus },
+		{ TEXT("{#Rally.Duration}"),            &ComposeHelpRallyDuration },
+		{ TEXT("{#Rally.Cooldown}"),            &ComposeHelpRallyCooldown },
+		{ TEXT("{#Attack.Reach}"),              &ComposeHelpAttackReach },
+		{ TEXT("{#Attack.ConeHalfAngle}"),      &ComposeHelpAttackConeHalfAngle },
+		{ TEXT("{#Attack.Cooldown}"),           &ComposeHelpAttackCooldown }
 	};
 
 	/**
@@ -513,7 +964,10 @@ namespace
 //     typed in the prose are names and list labels, not quantities: "Key 1", "stage-1", the
 //     "1." to "3." stage labels and the chat box's "(1)" to "(4)". (Until TASK-1576 this read
 //     "The ONE number stated anywhere below is the war map's 30 gold", which stopped being true
-//     the moment a page showed a derived number.)
+//     the moment a page showed a derived number.) ⭐ TASK-1594 (2026-09-29) added the rest the
+//     same way, still typing no digit: each building type's height limit on Cards.StackUpgrade,
+//     the discard fee on Cards.Discard, Rally's radius, bonus, duration and cooldown on
+//     Hero.Rally, and the melee reach, cone and cooldown on Hero.Attack.
 //  ⚠️ TASK-1480 (a) — A FILE-LEVEL DECLARATION, ADDED 2026-09-27 ON `qa/TASK-1433.md` WARN-L3,
 //     BECAUSE THE PER-BLOCK ONES TAUGHT THE WRONG LESSON: three blocks below (R-08, R-19, R-24)
 //     flag their remaining numbers ⛔ UNVERIFIED and the others say nothing, which reads as
@@ -714,9 +1168,21 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			// deliberately does not implement ITeamAgent and names the melee cone among the sites it
 			// stays out of (ACommanderNpc's class doc), and AGoldNode opts out the same way. The
 			// "everything on the enemy team" wording was loop 0 of TASK-1541 and QA TASK-1546 B1 caught it.
+			// ⭐ TASK-1594 (2026-09-29, 🧑 his "all of it"): the three numbers are now SHOWN, and still
+			// not typed. "within your melee reach", "inside a cone in front of you" and "once per melee
+			// cooldown" became the `{#Attack.Reach}`, `{#Attack.ConeHalfAngle}` and `{#Attack.Cooldown}`
+			// tokens, which ComposeDetailForDisplay replaces with MeleeRange in metres,
+			// MeleeHalfAngleDegrees in degrees and MeleeCooldown in seconds, each read through its
+			// TASK-1592 getter on the class default of the hero class the game spawns (the
+			// derived-number block near the top of this file says why that is the object). "to either
+			// side of where you face" is the cone test itself: the angle is measured on the horizontal
+			// plane from the hero's facing (DoMeleeAttack's `Facing` and `MinCosAngle`). At today's
+			// values it renders "within 1.5 metres of you", "30 degrees" and "0.5 seconds". Pinned by
+			// test 22 (DiscardRallyAndAttackNumbersAreReadFromTheirOwners).
 			Row.Detail = FText::FromString(FString(
-				TEXT("One swing damages every enemy unit, hero, building and castle within your melee reach and inside a ")
-				TEXT("cone in front of you, and you can swing at most once per melee cooldown. ")
+				TEXT("One swing damages every enemy unit, hero, building and castle within {#Attack.Reach} of you and inside a ")
+				TEXT("cone reaching {#Attack.ConeHalfAngle} to either side of where you face, and you can swing at most once ")
+				TEXT("every {#Attack.Cooldown}. ")
 				TEXT("Damage per swing is worked out fresh each time — the base damage plus the Sharpened Blade ")
 				TEXT("stacks. No friendly fire.\n\n")
 				TEXT("The same physical click confirms placement, spell targeting and every group-order stage — ")
@@ -735,16 +1201,29 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			// broadcast = :525-529; RallyCooldown + OnRallyReady = :565, :568-572; the dead-hero
 			// guard = :508-511.
 			Row.Detail = FText::FromString(FString(
-				TEXT("Speeds up every friendly summoned unit within the rally radius by the rally speed bonus for ")
-				TEXT("the rally duration — units only, never the hero, never enemy units. Friendly miners are ")
+				TEXT("Speeds up every friendly summoned unit within {#Rally.Radius} of your hero by {#Rally.SpeedBonus} for ")
+				TEXT("{#Rally.Duration} — units only, never the hero, never enemy units. Friendly miners are ")
 				TEXT("included, since a miner is a kind of summoned unit.\n\n")
-				TEXT("On cooldown the press does nothing, but it still tells the HUD how much cooldown is left ")
-				TEXT("so the HUD can flash it; when the rally cooldown runs out, the HUD is told ")
-				TEXT("that Rally is ready again. A dead hero cannot rally.")));
+				TEXT("After each rally there is a cooldown of {#Rally.Cooldown}. On cooldown the press does nothing, but it ")
+				TEXT("still tells the HUD how much cooldown is left so the HUD can flash it; when the cooldown runs out, ")
+				TEXT("the HUD is told that Rally is ready again. A dead hero cannot rally.")));
 			// TASK-1541 (2026-09-27): player words replace the code names this prose used to print —
 			// ASummonedUnit, RallyRadius, RallySpeedBonus, RallyDuration, AMinerUnit,
 			// OnRallyStateChanged(false, remaining), RallyCooldown, and OnRallyReady's (true, 0)
 			// re-broadcast. Cited by symbol; the claims are unchanged.
+			// ⭐ TASK-1594 (2026-09-29, 🧑 his "all of it"): the four numbers are now SHOWN, and still not
+			// typed. "within the rally radius", "by the rally speed bonus", "for the rally duration" and
+			// "when the rally cooldown runs out" became the `{#Rally.Radius}`, `{#Rally.SpeedBonus}`,
+			// `{#Rally.Duration}` and `{#Rally.Cooldown}` tokens, which ComposeDetailForDisplay
+			// replaces with RallyRadius in metres, RallySpeedBonus as a percent, and RallyDuration and
+			// RallyCooldown in seconds, each read through its TASK-1592 getter on the class default of
+			// the hero class the game spawns. "of your hero" is the range test itself: AHeroCharacter::
+			// Rally measures from the hero's own location (`MyLocation`) to each unit's. "After each
+			// rally there is a cooldown of" is the same cooldown the old sentence named: the rally sets
+			// `LastRallyTime = Now` and a press is refused while `SinceLastRally < RallyCooldown`; the
+			// sentence that followed now says "when the cooldown runs out" so the word is not repeated.
+			// At today's values it renders "within 6 metres of your hero by 25% for 5 seconds" and "a
+			// cooldown of 20 seconds". Pinned by test 22 (DiscardRallyAndAttackNumbersAreReadFromTheirOwners).
 		}
 
 		// ─── CATEGORY: CARDS ───────────────────────────────────────────────────────────────
@@ -905,11 +1384,21 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			// ⛔ AND THERE IS NO RIGHT-CLICK SENTENCE, nor the Alt-cursor caveat that would have
 			// travelled with it: nothing in this gesture needs a cursor, and a help page teaching a
 			// control that does not exist is the one defect this whole screen exists to remove.
+			// ⭐ TASK-1594 (2026-09-29, 🧑 his "all of it"): the fee is now SHOWN, and still not typed.
+			// "a single set amount" became the `{#Discard.Fee}` token, which ComposeDetailForDisplay
+			// replaces with GetDiscardAllCost() (TASK-1592) read off the controller's class default,
+			// the fee DiscardEntireHand charges (the derived-number block near the top of this file
+			// says why that is the object). That is DiscardAllCost's own header rule for this row: "IF
+			// IT IS EVER SHOWN TO THE PLAYER IT IS READ FROM HERE, NEVER TYPED". ⇒ the strings below still
+			// carry ⛔ not one digit character, and test 14 (e)'s digit check now reads that TYPED
+			// template (it read the composed page until TASK-1594); test 22 pins the shown fee against
+			// its owner. The pinned "charged once for the whole hand" sentence is untouched. At today's
+			// value it renders "The fee is 20 gold".
 			Row.Detail = FText::FromString(FString(
 				TEXT("Pressing {Cards.Discard} bins every card in your hand in one gesture and deals a full ")
 				TEXT("replacement hand immediately: each card goes to the discard pile and its slot redraws in ")
 				TEXT("the same step, so you are never left holding an empty hand.\n\n")
-				TEXT("The fee is a single set amount and it is charged once for the whole hand, flat. Dumping a ")
+				TEXT("The fee is {#Discard.Fee} and it is charged once for the whole hand, flat. Dumping a ")
 				TEXT("single dead card costs exactly what dumping a full hand costs, because this prices a hand ")
 				TEXT("RESET rather than a per-card cycle — there is no longer any way to bin one card on its own ")
 				TEXT("at any price.\n\n")
@@ -1051,19 +1540,25 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			// Cards.PlacementResize row). ⇒ the "REFUSES TO BE STACKED" paragraph, and the player's
 			// reason it gave ("it is the one you climb"), are DELETED by TASK-1585. The law that
 			// survives is the code's: a CardID string compare on the stack path is an automatic QA
-			// fail (STACK-§2), and ⛔ no building is named here. ⭐ TASK-1576 (2026-09-28): 🧑 Jonathan
-			// answered Q-STACK-CAP-2026-09-28 with A, "show the numbers" (TASK-1589), so the page is
-			// to show each building type's own height limit. ⛔ It does NOT show them yet, and the
-			// reason is access, not choice: each value must be read from the class the game really
-			// places for that card, found by the game's own card-to-class resolution, and that
-			// resolution (ASiegePlayerController::ResolveCardActorClass with IsBuildingCard, plus the
-			// BuildingEconomyCardIDs list it reads) is private to the controller. Reading it from here
-			// needs a new accessor in an owner file, which TASK-1576's fence forbids (its spec (3) and
-			// (8)), and a copy of the path rule here would be a second resolver that could drift. ⇒ the
-			// per-building limits are OWED on his answer A (handoffs/TASK-1576-programmer.md), and
-			// ⛔ this row still states no per-building limit. (Until TASK-1576 this sentence read
-			// "Whether the page shows each building's height limit as a number is Jonathan's open
-			// question Q-STACK-CAP-2026-09-28, owned by TASK-1576".)
+			// fail (STACK-§2), and ⛔ no building is named HERE, in code: the page names each type
+			// from its card's DisplayName, read at compose time (below). ⭐ TASK-1576 (2026-09-28): 🧑
+			// Jonathan answered Q-STACK-CAP-2026-09-28 with A, "show the numbers" (TASK-1589), so the
+			// page shows each building type's own height limit. ⭐ TASK-1594 (2026-09-29): IT DOES NOW.
+			// The `{#StackUpgrade.HeightLimits}` token is replaced by one clause that names every
+			// placeable building type under the value read off ITS OWN class default through
+			// GetMaxStackHeightMultiplier(), types with equal values grouped (the derived-number block
+			// near the top of this file). The set comes from the game's own card-to-class resolution,
+			// read through the controller's public members: GetCardTableAsset(), IsBuildingCard and
+			// ResolveCardActorClass (public since TASK-1592). BuildingEconomyCardIDs and CardTableAsset
+			// themselves are still protected; the page never reads either directly (IsBuildingCard
+			// reads the list, GetCardTableAsset() returns the pointer). No path rule is copied here.
+			// (Until TASK-1594 this note said the page did NOT show them yet because "that resolution
+			// (ASiegePlayerController::ResolveCardActorClass with IsBuildingCard, plus the
+			// BuildingEconomyCardIDs list it reads) is private to the controller", and that the limits
+			// were OWED on his answer A. That was true until TASK-1592, except that the list and the
+			// table pointer were protected rather than private, qa/TASK-1577.md N2. Before TASK-1576
+			// the sentence read "Whether the page shows each building's height limit as a number is
+			// Jonathan's open question Q-STACK-CAP-2026-09-28, owned by TASK-1576".)
 			//
 			// ⛔ NO TUNABLE'S VALUE IS TYPED — MaxStackHeightMultiplier and StackHealthStep were
 			// NAMED here, as PickMode.Resize named its three radii (the M7.7 "in 400" lesson), until
@@ -1078,10 +1573,26 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			// every upgrade, read off ABuilding's own class default for every building (the
 			// derived-number block near the top of this file says why that is the object the game
 			// uses). It renders "multiplies the building's maximum health by 1.5, compounding" at
-			// today's value. The height half keeps "a set maximum multiple" (the per-building limits
-			// are owed, above). Pinned by test 20 (ShownNumbersAreReadFromTheirOwners).
-			FSiegeControlsHelpAction& Row = AddRow(TEXT("Cards.StackUpgrade"), CategoryCards, TEXT("Stack a tower taller"),
-				TEXT("While you are placing a building, hover one you already own of the same card: the outline turns blue and the click makes that one taller instead of building a new one."), ESiegeInputLane::RawNonLetter);
+			// today's value. Pinned by test 20 (ShownNumbersAreReadFromTheirOwners).
+			// ⭐ TASK-1594 (2026-09-29): the height half is now SHOWN per building type too. "and it
+			// stops at a set maximum multiple of that original" became "up to its height limit:" + the
+			// `{#StackUpgrade.HeightLimits}` token, which renders "5 times that original height for the
+			// Arrow Tower, Wall, Bomb Tower, Ballista Tower, Barracks, Deep Mine and Crystal Tower, and 2
+			// times for the Watch Tower" at today's reads. Each limit is stated positively, as how far
+			// the building stacks: ⛔ no "cannot be stacked" (test 19; qa/TASK-1586.md ruling 8), ⛔ no
+			// reason for any limit and ⛔ no "balance" / "design" wording (STACK-§10 cl. 2). "Its width
+			// and length" became "The building's width and length", because after the new list "Its"
+			// would read as the last building named; the claim is unchanged. (Until TASK-1594 this note
+			// said "The height half keeps "a set maximum multiple" (the per-building limits are owed,
+			// above)".) Pinned by test 21 (EachBuildingTypeShowsItsOwnHeightLimit).
+			// ⭐ TASK-1594 (2026-09-29, qa/TASK-1586.md N2): the headline read "Stack a tower taller"
+			// and the one-liner "the click makes that one taller". Every building type stacks (not
+			// only towers), and a click on a building already at its height limit buys health only, so
+			// "taller" was false for that click. Both are building-neutral now: "Upgrade one of your
+			// buildings" and "the click upgrades that one". Test 16 needs only the three WHEEL rows'
+			// headlines distinct, and this row is not one of them.
+			FSiegeControlsHelpAction& Row = AddRow(TEXT("Cards.StackUpgrade"), CategoryCards, TEXT("Upgrade one of your buildings"),
+				TEXT("While you are placing a building, hover one you already own of the same card: the outline turns blue and the click upgrades that one instead of building a new one."), ESiegeInputLane::RawNonLetter);
 			Row.QwertyReferenceKeys = { EKeys::LeftMouseButton };
 			Row.Detail = FText::FromString(FString(
 				TEXT("Hover one of your OWN buildings while holding the card that built it and the placement outline ")
@@ -1093,7 +1604,7 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 				TEXT("was built from the SAME card you are holding. An enemy building never turns blue — it stays red ")
 				TEXT("on the ordinary too-close-to-another-building rule, with the message it has always given.\n\n")
 				TEXT("WHAT AN UPGRADE BUYS. Height: each upgrade adds one more copy of the building's ORIGINAL ")
-				TEXT("height, and it stops at a set maximum multiple of that original. Its width and length are ")
+				TEXT("height, up to its height limit: {#StackUpgrade.HeightLimits}. The building's width and length are ")
 				TEXT("not touched. Health: each upgrade multiplies the building's maximum health by {#StackUpgrade.HealthFactor}, ")
 				TEXT("compounding, and that half has no ceiling at all — it keeps climbing after the height has ")
 				TEXT("stopped. The health is GRANTED rather than repaired: a damaged tower stays exactly as damaged, ")
@@ -1125,7 +1636,11 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			// cap's number, if any, is TASK-1576's on 🧑 Q-STACK-CAP-2026-09-28; ⭐ TASK-1576,
 			// 2026-09-28: he answered A, "show the numbers", and the per-building limits are OWED
 			// rather than shown, because the class resolution they must be read through is private to
-			// ASiegePlayerController; see the TASK-1576 note in the citation block above). The sentence after
+			// ASiegePlayerController; see the TASK-1576 note in the citation block above; ⭐ TASK-1594,
+			// 2026-09-29: no longer owed and no longer private, the limits are SHOWN, each type named
+			// under its own read value, in "WHAT AN UPGRADE BUYS" above, not in this paragraph's place,
+			// and ⛔ still no building is singled out: see the TASK-1594 notes in the citation block
+			// above). The sentence after
 			// it read "A refusal of either kind costs nothing and leaves you in placement mode, so
 			// another building — or another patch of ground — still works." With the stack refusal
 			// gone, "either kind" pointed at nothing; and "another building or another patch of
@@ -1947,6 +2462,10 @@ const TArray<FSiegeControlsHelpAction>& FSiegeControlsHelpRegistry::GetActions()
 			// the page is composed, through a `{#Name}` token, and none is typed; this quoted 30 gold
 			// remains the one quantity typed into the registry. (It is quoted, not derived, and the
 			// reveal fee's owner, ACommanderNpc::EnemyRevealCost, was not a TASK-1576 candidate.)
+			// ⭐ TASK-1594 (2026-09-29): "Two pages" is now five (Cards.StackUpgrade, Cards.Discard,
+			// Hero.Rally, Hero.Attack and Interface.MapMarks), each still read from its owner through
+			// a `{#Name}` token; this quoted 30 gold is still the one quantity typed, and the reveal fee
+			// was not a TASK-1594 candidate either.
 			Row.Detail = FText::FromString(FString(
 				TEXT("The price is a fixed reveal fee — Jonathan's own number: \"You can pay 30 gold to reveal all ")
 				TEXT("enemy locations\". It is a rule of the game, so it is a fixed setting on the commander and never a line in the card ")

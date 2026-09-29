@@ -3501,9 +3501,17 @@ void ASiegePlayerController::ApplyPlacementFootprintWheel()
 	// flag was resolved once, in EnterPlacementMode, from the card class's CDO.
 	//
 	// ⚖️ INERT RATHER THAN REFUSED, deliberately: the wheel is a continuous adjustment,
-	// not a click, so a HUD line here would fire on every notch of an idle scroll. The
-	// WatchTower's refusal already has a voice — the RED ghost plus "That building cannot
-	// be stacked" on the click (TASK-813) — and this is the same exclusion speaking once.
+	// not a click, so a HUD line here would fire on every notch of an idle scroll.
+	// ⭐ TASK-1592 (2026-09-29), comment only: the sentence that ended this paragraph is
+	// DROPPED because it is false at source. It read: "The WatchTower's refusal already has a
+	// voice — the RED ghost plus "That building cannot be stacked" on the click (TASK-813) —
+	// and this is the same exclusion speaking once." Since STACK-§8 / STACK-§10 the height
+	// question has its own gate, CanStackHeight, which AClimbableTower answers true (its limit
+	// is a per-class height ceiling instead), so no shipped class produces the NotStackable
+	// state and no click says that line (the state's doc in SiegePlayerController.h: "NO
+	// SHIPPED CLASS PRODUCES THIS STATE"). The exclusion above is the wheel's own X/Y gate,
+	// CanScaleFootprint, a different rule from the stack. qa/TASK-1586.md W1: this sentence is
+	// the text Cards.PlacementResize's false clause was copied from.
 	if (!bPendingCardCanScaleFootprint)
 	{
 		return;
@@ -4276,10 +4284,16 @@ void ASiegePlayerController::UpdateGroupPickReticle()
 void ASiegePlayerController::ApplyGroupPickWheel()
 {
 	// POLLED wheel resize (CONVENTIONS wheel law: NO new InputAction — the wheel
-	// is verified globally unbound and must stay INERT outside the pick; this is
+	// is verified globally unbound, and THIS POLL is INERT outside the pick; it is
 	// only ever called from the pick branch of PlayerTick). One scroll notch =
 	// one GroupRadiusWheelStep on the ACTIVE circle, clamped to
 	// [GroupRadiusMin, GroupRadiusMax].
+	// ⭐ TASK-1592 (2026-09-29), comment only: "INERT outside the pick" is true of this poll,
+	// not of the wheel. The wheel has MARK-§4's three named consumers, in its words: "(1) the
+	// controller's group-pick poll · (2) UWarMapWidget while the map is open and the cursor is
+	// over it · (3) the controller's PLACEMENT-mode footprint poll (ApplyPlacementFootprintWheel,
+	// STACK-§4)". Until TASK-1592 the parenthesis read "the wheel is verified globally unbound
+	// and must stay INERT outside the pick", the wheel law's wording before MARK-§4 amended it.
 	float NewRadius = GroupPickRadius;
 	if (WasInputKeyJustPressed(EKeys::MouseScrollUp))
 	{

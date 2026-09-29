@@ -583,6 +583,39 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Hero")
 	bool IsDead() const { return bDead; }
 
+	//~ ─── THE CONTROLS HELP'S READS (TASK-1592, 2026-09-29) — one-line public getters, the
+	//~     GetRecallChannelSeconds() pattern. The Attack and Rally pages DERIVE these numbers
+	//~     from the hero class the game spawns rather than typing them. Each returns exactly
+	//~     the property its name says; the properties stay protected and unchanged. ───
+
+	/** Melee reach in uu (MeleeRange). The Controls help's Attack page derives its number from this (TASK-1592). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Combat")
+	float GetMeleeRange() const { return MeleeRange; }
+
+	/** Half-angle of the forward melee cone in degrees (MeleeHalfAngleDegrees). The Controls help's Attack page derives its number from this (TASK-1592). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Combat")
+	float GetMeleeHalfAngleDegrees() const { return MeleeHalfAngleDegrees; }
+
+	/** Minimum seconds between melee swings (MeleeCooldown). The Controls help's Attack page derives its number from this (TASK-1592). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Combat")
+	float GetMeleeCooldown() const { return MeleeCooldown; }
+
+	/** Rally's buff radius in uu (RallyRadius). The Controls help's Rally page derives its number from this (TASK-1592). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Combat")
+	float GetRallyRadius() const { return RallyRadius; }
+
+	/** Rally's fractional move-speed bonus per buffed unit (RallySpeedBonus). The Controls help's Rally page derives its number from this (TASK-1592). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Combat")
+	float GetRallySpeedBonus() const { return RallySpeedBonus; }
+
+	/** Seconds each friendly unit keeps Rally's buff (RallyDuration). The Controls help's Rally page derives its number from this (TASK-1592). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Combat")
+	float GetRallyDuration() const { return RallyDuration; }
+
+	/** Seconds before Rally can be used again (RallyCooldown). The Controls help's Rally page derives its number from this (TASK-1592). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Combat")
+	float GetRallyCooldown() const { return RallyCooldown; }
+
 	//~ ─── RECALL (TASK-748, `RECALL-§`) — the 10-second channel home ────────────────────────
 
 	/**

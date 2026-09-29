@@ -1654,6 +1654,49 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Siegebound|ControlsHelp")
 	USiegeControlsHelpWidget* GetControlsHelpWidget() const { return ControlsHelpWidget; }
 
+	//~ ─── THE CARD → CLASS RESOLUTION AND THE DISCARD FEE, PUBLIC FOR THE CONTROLS HELP
+	//~     (TASK-1592, 2026-09-29; qa/TASK-1577.md Ruling 1) ───
+	//~
+	//~ ⭐ The Controls help shows each building type's height limit and the discard fee as live
+	//~ numbers. It reads them through THESE members, so it resolves a card exactly the way the
+	//~ game does and cannot drift from it: there is no copy of the path rule outside this class.
+	//~ ResolveCardActorClass and IsBuildingCard moved here from `private:` with their signatures
+	//~ and bodies unchanged, and no caller changed; ResolveCardRow stays private.
+	//~ ⛔ Not FSiegeCardPathStatics: TASK-959 / TASK-970 keep their own scope.
+
+	/**
+	 *  Resolves the BP class to spawn for a card by its CardType (CONVENTIONS
+	 *  composed soft-class paths, TASK-030): Unit/Economy →
+	 *  /Game/Blueprints/Units/BP_Unit_<CardID> (must be an ASummonedUnit;
+	 *  TASK-010/034); Building → /Game/Blueprints/Buildings/
+	 *  BP_Building_<CardID> (must be an ABuilding; TASK-035). Missing or
+	 *  incompatible = nullptr — the caller refuses the play with NO gold spent
+	 *  (the M1 meshless-ASummonedUnit fallback is retired per the spec).
+	 *  ⭐ PUBLIC SINCE TASK-1592 (2026-09-29): the Controls help reads the game's own card → class resolution here.
+	 */
+	UClass* ResolveCardActorClass(FName CardID, ECardType CardType) const;
+
+	/**
+	 *  True when the card spawns an ABuilding: every Building card, plus Economy
+	 *  cards whose actor is a building (Deep Mine — CardType Economy, but ADeepMine
+	 *  under /Blueprints/Buildings/, TASK-057). The single source of truth for the
+	 *  confirm spawn branch, the §3.5 building-clearance rule, and the BP-class path
+	 *  (BuildingEconomyCardIDs drives the Economy exception — TASK-059).
+	 *  ⭐ PUBLIC SINCE TASK-1592 (2026-09-29): the Controls help reads the game's own building-card rule here.
+	 */
+	bool IsBuildingCard(FName CardID, ECardType CardType) const;
+
+	/**
+	 *  The card stat table every play resolves against (CardTableAsset, the soft pointer
+	 *  ResolveCardRow loads). Plain C++, not a UFUNCTION (TASK-1592, 2026-09-29): the Controls
+	 *  help walks the SAME table the game plays from, never a typed path.
+	 */
+	const TSoftObjectPtr<UDataTable>& GetCardTableAsset() const { return CardTableAsset; }
+
+	/** The discard-all fee (DiscardAllCost). The Controls help's Discard page derives its number from this rather than typing it (TASK-1592). */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Cards")
+	int32 GetDiscardAllCost() const { return DiscardAllCost; }
+
 protected:
 
 	/**
@@ -2541,10 +2584,16 @@ private:
 
 	/**
 	 *  POLLED wheel resize (CONVENTIONS wheel law: NO new InputAction — the
-	 *  wheel is globally unbound and must stay INERT outside the pick). Runs
+	 *  wheel is globally unbound, and THIS POLL is INERT outside the pick). Runs
 	 *  ONLY from the pick branch of PlayerTick: each MouseScrollUp/Down notch
 	 *  steps the ACTIVE circle's radius by GroupRadiusWheelStep, clamped to
 	 *  [GroupRadiusMin, GroupRadiusMax], and resizes its decal in place.
+	 *  ⭐ TASK-1592 (2026-09-29), comment only: "INERT outside the pick" is true of this poll,
+	 *  not of the wheel. The wheel has MARK-§4's three named consumers, in its words: "(1) the
+	 *  controller's group-pick poll · (2) UWarMapWidget while the map is open and the cursor is
+	 *  over it · (3) the controller's PLACEMENT-mode footprint poll (ApplyPlacementFootprintWheel,
+	 *  STACK-§4)". Until TASK-1592 the parenthesis read "the wheel is globally unbound and must
+	 *  stay INERT outside the pick", the wheel law's wording before MARK-§4 amended it.
 	 */
 	void ApplyGroupPickWheel();
 
@@ -2936,25 +2985,9 @@ private:
 	/** Finds the card's DT_Cards row (soft load, null-safe). On failure returns nullptr and fills OutError. */
 	const FCardRow* ResolveCardRow(FName CardID, FString& OutError) const;
 
-	/**
-	 *  Resolves the BP class to spawn for a card by its CardType (CONVENTIONS
-	 *  composed soft-class paths, TASK-030): Unit/Economy →
-	 *  /Game/Blueprints/Units/BP_Unit_<CardID> (must be an ASummonedUnit;
-	 *  TASK-010/034); Building → /Game/Blueprints/Buildings/
-	 *  BP_Building_<CardID> (must be an ABuilding; TASK-035). Missing or
-	 *  incompatible = nullptr — the caller refuses the play with NO gold spent
-	 *  (the M1 meshless-ASummonedUnit fallback is retired per the spec).
-	 */
-	UClass* ResolveCardActorClass(FName CardID, ECardType CardType) const;
-
-	/**
-	 *  True when the card spawns an ABuilding: every Building card, plus Economy
-	 *  cards whose actor is a building (Deep Mine — CardType Economy, but ADeepMine
-	 *  under /Blueprints/Buildings/, TASK-057). The single source of truth for the
-	 *  confirm spawn branch, the §3.5 building-clearance rule, and the BP-class path
-	 *  (BuildingEconomyCardIDs drives the Economy exception — TASK-059).
-	 */
-	bool IsBuildingCard(FName CardID, ECardType CardType) const;
+	//~ ResolveCardActorClass and IsBuildingCard were declared here until TASK-1592 (2026-09-29).
+	//~ They moved to `public:` with their docs, and their signatures and bodies are unchanged: see
+	//~ the card → class block at the end of the first `public:` section.
 
 	/**
 	 *  Resolves a HeroUpgrade/Utility Instant IMMEDIATELY (GDD §3.5/§3.10/§4,

@@ -2,8 +2,16 @@
 
 #include "Misc/AutomationTest.h"
 
+// TASK-1594 tests 21 and 22: the owners of the numbers his answer A and "all of it" added, read here
+// through the SAME public members the composer reads (TASK-1592's accessors on the controller, the
+// game mode and the hero), and the card table they walk.
+#include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
 #include "InputCoreTypes.h"
+#include "Siegebound/CardRow.h"
+#include "Siegebound/HeroCharacter.h"
+#include "Siegebound/SiegeGameMode.h"
+#include "Siegebound/SiegePlayerController.h"
 // TASK-1576 test 20: the two owners whose numbers the pages now show, read here from the SAME
 // objects the composer reads (ABuilding::StackHealthMultiplier, USiegeMapMarkSubsystem's defaults).
 #include "Siegebound/Building.h"
@@ -21,6 +29,13 @@
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
 
+#if WITH_EDITOR
+// TASK-1594 tests 21 and 22: each resolved Blueprint class's generating Blueprint and its status,
+// for the AddInfo lines TASK-1596 reads (UBlueprint::GetBlueprintFromClass / UBlueprint::Status,
+// both declared under WITH_EDITORONLY_DATA, which an editor target always builds with).
+#include "Engine/Blueprint.h"
+#endif
+
 #if WITH_DEV_AUTOMATION_TESTS
 
 /**
@@ -29,6 +44,15 @@
  *  Tests 9-13 = TASK-707: the full-screen detail view — its prose, its token-spliced keys, its
  *  related-controls blocks and its way back. ⛔ ONE FILE for the whole feature, by `HELP-§6`.
  *  Law: `HELP-§1`/`§2`/`§4`/`§5`/`§6`. QA gate: TASK-708. Compile + suite gate: TASK-709.
+ *
+ *  ⭐⭐ TESTS 21 AND 22 = TASK-1594 (2026-09-29), 🧑 his answer A and his "all of it": test 21
+ *  checks that Cards.StackUpgrade names every placeable building type exactly once, under the
+ *  height limit read from THAT class's own default; test 22 checks that the discard fee and the
+ *  Rally and Attack numbers are read from their owners, and that the Rally and Attack templates
+ *  type no digit. Both read their owners through the same public members the composer uses, and
+ *  both load the building and hero classes in the SUITE's process (never the GUI editor), logging
+ *  each class's value and Blueprint status. TASK-1594 also narrowed test 14 (e)'s detail digit
+ *  check to the TYPED template and added test 20's plural pin (qa/TASK-1577.md N3).
  *
  *  ⭐⭐ TEST 20 = TASK-1576: the numbers the pages SHOW (the map-circle cap and the stack health
  *  factor) are read from the properties that own them, in the same objects the composer reads,
@@ -1836,7 +1860,11 @@ bool FSiegeControlsHelpDiscardAllLayoutTest::RunTest(const FString& Parameters)
 	const FString DiscardOneLine = FSiegeControlsHelpRegistry::ComposeOneLineForDisplay(*DiscardRow).ToString();
 	const FString DiscardDetail  = FSiegeControlsHelpRegistry::ComposeDetailForDisplay(*DiscardRow).ToString();
 
-	TestTrue(TEXT("⭐ The page states the flat-fee rule in words instead of restating its value"),
+	// ⭐ TASK-1594 (2026-09-29): the page now SHOWS the fee beside this rule, read from its owner
+	// when the page is composed ("The fee is <GetDiscardAllCost()> gold and it is charged once for
+	// the whole hand"). The rule's pinned words are unchanged; only this label moved, because it
+	// said "instead of restating its value", and the value is now on the page (test 22 pins it).
+	TestTrue(TEXT("⭐ The page states the flat-fee rule in words: the fee is charged once for the whole hand"),
 		DiscardDetail.Contains(TEXT("charged once for the whole hand"), ESearchCase::CaseSensitive));
 
 	// ⛔ THE WRONG FEE, ASSERTED AGAINST DIRECTLY. "DiscardAllCost" does NOT contain the
@@ -1867,8 +1895,12 @@ bool FSiegeControlsHelpDiscardAllLayoutTest::RunTest(const FString& Parameters)
 		CarriesADigit(FString(TEXT("a fee of 20 gold"))));
 
 	TestFalse(TEXT("⛔ The discard-all one-liner types NO number"), CarriesADigit(DiscardOneLine));
-	TestFalse(TEXT("⛔ ...and neither does its detail page - the fee is read from DiscardAllCost, never typed"),
-		CarriesADigit(DiscardDetail));
+	// ⭐ NARROWED BY TASK-1594 (2026-09-29) to the TYPED template, as TASK-1576 narrowed test 15 (e):
+	// it read `CarriesADigit(DiscardDetail)`, the COMPOSED page, which now legitimately carries the
+	// fee read from GetDiscardAllCost(). A typed digit in the template still fails it; that the shown
+	// fee is the owner's is test 22's claim, not this one's.
+	TestFalse(TEXT("⛔ ...and neither does its detail TEMPLATE - the fee the page shows is read from DiscardAllCost when the page is composed, never typed"),
+		CarriesADigit(DiscardRow->Detail.ToString()));
 
 	// ── (f) ⛔ THE PAGE TEACHES THE KEY AND NOTHING ELSE ────────────────────────────────
 	// Jonathan cut the right-click route on 2026-09-03, BEFORE it was written. A surviving
@@ -2838,11 +2870,18 @@ bool FSiegeControlsHelpRefutedRulesTest::RunTest(const FString& Parameters)
  *       one template carries one (without it (d) would also hold on a registry that typed every
  *       number).
  *
+ *  (e)  ⭐ TASK-1594 (2026-09-29, qa/TASK-1577.md N3): the map-circle noun's PLURAL. (a) stops at
+ *       " circle" so it also holds at a cap of one, which left a swapped plural ("9 circle") green.
+ *       When the owner's cap is not one, the page must say "circles at once". The pin is
+ *       value-free on purpose, so arm 1576-D1 (a wrong VALUE) still reddens (a) and (a2) only.
+ *
  *  ⚠️ WHAT IT CANNOT PROVE (`SC-§32`): nothing here paints a page. That the numbers read well and
- *  that the pages still fit the panel is 5b's to measure and Jonathan's to judge. ⛔ And the rows'
- *  other candidates (the discard fee, the Rally values, the melee numbers and each building's own
- *  height limit) are ⛔ NOT shown yet, so nothing here asserts them; handoffs/TASK-1576-programmer.md
- *  lists why (each needs a new accessor in its owner's file).
+ *  that the pages still fit the panel is 5b's to measure and Jonathan's to judge. ⭐ The rows'
+ *  other candidates are shown since TASK-1594 (2026-09-29) and are pinned by their own tests:
+ *  each building type's height limit by test 21, and the discard fee, the Rally values and the
+ *  melee numbers by test 22. (Until TASK-1594 this paragraph said they were "NOT shown yet, so
+ *  nothing here asserts them", each needing a new accessor in its owner's file, which TASK-1592
+ *  then added.)
  */
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FSiegeControlsHelpDerivedNumbersTest,
@@ -2974,6 +3013,635 @@ bool FSiegeControlsHelpDerivedNumbersTest::RunTest(const FString& Parameters)
 
 	TestTrue(TEXT("At least one shipped template carries a number token, so (d) is a measurement and the mechanism is in use"),
 		TemplatesWithNumberTokens > 0);
+
+	// ── (e) ⭐ TASK-1594 (qa/TASK-1577.md N3): THE MAP-CIRCLE NOUN IS PLURAL WHEN THE CAP IS NOT ONE ──
+	// (a) stops at " circle" on purpose (a prefix of both forms), so a plural pattern with its two
+	// forms swapped rendered "9 circle at once" and passed. ⛔ VALUE-FREE: it checks the noun's form,
+	// not the number before it, so arm 1576-D1 (a wrong value, "250 circles") does not reach it and
+	// the new arm N3 (the forms swapped) reaches nothing else.
+	if (OwnerMapMarkCap != 1)
+	{
+		const FSiegeControlsHelpAction* const PluralMarksRow = FSiegeControlsHelpRegistry::FindAction(FName(TEXT("Interface.MapMarks")));
+		if (TestNotNull(TEXT("Row 'Interface.MapMarks' is in the registry, so the plural pin can be read"), PluralMarksRow))
+		{
+			TestTrue(TEXT("Row 'Interface.MapMarks' names the circles in the plural when the owner's cap is not one: ' circles at once'"),
+				FSiegeControlsHelpRegistry::ComposeDetailForDisplay(*PluralMarksRow).ToString().Contains(TEXT(" circles at once"), ESearchCase::CaseSensitive));
+		}
+	}
+	else
+	{
+		AddInfo(TEXT("The owner's map-circle cap is one today, so the plural pin (e) is not exercised; (a) still pins the value."));
+	}
+
+	return true;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════
+//  TESTS 21-22 — THE NUMBERS TASK-1594 ADDED (🧑 his answer A and his "all of it")
+//
+//  ⛔ `SC-§37`, as in test 20: every claim is made against the OWNER'S VALUE, read HERE through
+//  the same public member the composer reads and formatted HERE with the composer's fixed
+//  options, ⛔ never against a typed digit and ⛔ never against a string the composer supplies.
+//  ⚠️ `VER-§12` cl. 7g: both tests load classes (the card table, the eight building Blueprints,
+//  BP_HeroCharacter) in the SUITE's process, which is where this wave loads them before 5b;
+//  ⛔ never in the GUI editor. Each class, its value and its Blueprint status are logged with
+//  AddInfo under the prefix "[ControlsHelp]", and those lines are TASK-1596's Blueprint-override
+//  reading (TASK-1576 (2)).
+// ════════════════════════════════════════════════════════════════════════════════════════
+
+namespace SiegeControlsHelpNumbersTestUtils
+{
+	/** Every start index of Needle in Haystack, left to right, case-sensitive. */
+	static TArray<int32> FindEveryOccurrence(const FString& Haystack, const FString& Needle)
+	{
+		TArray<int32> Positions;
+		if (Needle.IsEmpty())
+		{
+			return Positions;
+		}
+
+		int32 SearchFrom = 0;
+		while (SearchFrom < Haystack.Len())
+		{
+			const int32 FoundAt = Haystack.Find(*Needle, ESearchCase::CaseSensitive, ESearchDir::FromStart, SearchFrom);
+			if (FoundAt == INDEX_NONE)
+			{
+				break;
+			}
+			Positions.Add(FoundAt);
+			SearchFrom = FoundAt + 1;
+		}
+		return Positions;
+	}
+
+	/**
+	 *  Every place Name stands WHOLE in a list: after a space, and followed by a comma, a space or
+	 *  the end. The left boundary is what stops a name matching inside a longer one that ends
+	 *  with it.
+	 */
+	static TArray<int32> FindWholeNameOccurrences(const FString& Haystack, const FString& Name)
+	{
+		TArray<int32> WholeAt;
+		for (const int32 FoundAt : FindEveryOccurrence(Haystack, Name))
+		{
+			const int32 AfterAt = FoundAt + Name.Len();
+			const bool bStartsWhole = FoundAt > 0 && Haystack[FoundAt - 1] == TEXT(' ');
+			const bool bEndsWhole = AfterAt == Haystack.Len() || Haystack[AfterAt] == TEXT(',') || Haystack[AfterAt] == TEXT(' ');
+			if (bStartsWhole && bEndsWhole)
+			{
+				WholeAt.Add(FoundAt);
+			}
+		}
+		return WholeAt;
+	}
+
+	/**
+	 *  The height-limit clause of a composed Cards.StackUpgrade page: the text after "up to its
+	 *  height limit: " and before the next ". ". Empty when the lead is absent.
+	 */
+	static FString ExtractHeightLimitClause(const FString& Page)
+	{
+		const FString Lead(TEXT("up to its height limit: "));
+		const int32 LeadAt = Page.Find(*Lead, ESearchCase::CaseSensitive);
+		if (LeadAt == INDEX_NONE)
+		{
+			return FString();
+		}
+
+		const int32 ClauseStart = LeadAt + Lead.Len();
+		const int32 ClauseEnd = Page.Find(TEXT(". "), ESearchCase::CaseSensitive, ESearchDir::FromStart, ClauseStart);
+		return ClauseEnd == INDEX_NONE ? Page.Mid(ClauseStart) : Page.Mid(ClauseStart, ClauseEnd - ClauseStart);
+	}
+
+	/** The nearest native class at or above Class: a Blueprint class's native parent, or the class itself. */
+	static const UClass* FindNativeAncestor(const UClass* Class)
+	{
+		const UClass* Walk = Class;
+		while (Walk != nullptr && !Walk->HasAnyClassFlags(CLASS_Native))
+		{
+			Walk = Walk->GetSuperClass();
+		}
+		return Walk;
+	}
+
+#if WITH_EDITOR
+	/**
+	 *  "<status> (Blueprint '<path>')" for a Blueprint-generated class, or "native (no generating
+	 *  Blueprint)". The engine calls: UBlueprint::GetBlueprintFromClass, then the transient
+	 *  UBlueprint::Status (Engine/Blueprint.h), spelled from the engine's own enumerators. A read
+	 *  only: ⛔ nothing here asserts on it (TASK-1592's test 2 owns the BS_Error assertion).
+	 */
+	static FString DescribeGeneratingBlueprint(const UClass* Class)
+	{
+		const UBlueprint* const Generator = UBlueprint::GetBlueprintFromClass(Class);
+		if (Generator == nullptr)
+		{
+			return FString(TEXT("native (no generating Blueprint)"));
+		}
+
+		const TCHAR* StatusName = TEXT("BS_(unlisted)");
+		switch (Generator->Status.GetValue())
+		{
+		case BS_Unknown:              StatusName = TEXT("BS_Unknown");              break;
+		case BS_Dirty:                StatusName = TEXT("BS_Dirty");                break;
+		case BS_Error:                StatusName = TEXT("BS_Error");                break;
+		case BS_UpToDate:             StatusName = TEXT("BS_UpToDate");             break;
+		case BS_BeingCreated:         StatusName = TEXT("BS_BeingCreated");         break;
+		case BS_UpToDateWithWarnings: StatusName = TEXT("BS_UpToDateWithWarnings"); break;
+		default:                                                                   break;
+		}
+		return FString::Printf(TEXT("%s (Blueprint '%s')"), StatusName, *Generator->GetPathName());
+	}
+#endif
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════
+//  TEST 21 — Siegebound.ControlsHelp.EachBuildingTypeShowsItsOwnHeightLimit   ⭐⭐
+// ════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ *  ⭐⭐ TASK-1594 (2026-09-29): 🧑 his answer A to Q-STACK-CAP-2026-09-28, "show the numbers".
+ *  Cards.StackUpgrade names every building type the player can place, each under the height limit
+ *  read from THAT class's own default (ABuilding::GetMaxStackHeightMultiplier), types with equal
+ *  values grouped. The set is enumerated HERE through the game's own card → class resolution on
+ *  the controller's class default (GetCardTableAsset(), IsBuildingCard, then ResolveCardActorClass,
+ *  public since TASK-1592), the same calls the composer makes and the game places through.
+ *
+ *  (a-cap)  per building type, the limit its name sits under is its OWN class default's value: the
+ *           nearest "<N> time" group head before its name, in the clause after "up to its height
+ *           limit: ". ⛔ Not merely its digit somewhere on the page.
+ *  (a2-cap) every rendering of the row (its own page and each related block that renders it,
+ *           found by walking every row) carries the same clause as its own page.
+ *  (c-cap)  completeness: every enumerated type has a player-facing name (FCardRow::DisplayName)
+ *           and is named EXACTLY ONCE in the clause. A type the composer dropped is named zero
+ *           times, which is why the composer names every type and never writes "every other".
+ *  (d-cap)  discrimination control: the reads hold at least two distinct values. ⛔ If they do not
+ *           (a retune, or a Blueprint override that makes every limit equal), a composer reading
+ *           one class for all would look right, (a-cap) could not tell, and arm cap-i could not go
+ *           red. The failure message says so.
+ *
+ *  ⚠️ WHAT IT CANNOT PROVE (`SC-§32`): nothing here paints a page; whether the list reads well
+ *  and still fits the panel is 5b's to measure and 🧑 his to judge.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeControlsHelpHeightLimitsTest,
+	"Siegebound.ControlsHelp.EachBuildingTypeShowsItsOwnHeightLimit",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeControlsHelpHeightLimitsTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeControlsHelpNumbersTestUtils;
+
+	// ── THE OWNERS, READ HERE THROUGH THE SAME PUBLIC SURFACE THE COMPOSER USES ────────────
+	const ASiegePlayerController* const PlacementRulesDefaults = GetDefault<ASiegePlayerController>();
+	if (!TestNotNull(TEXT("SELF-CHECK: the ASiegePlayerController class default resolves, so the game's card → class resolution can be asked"), PlacementRulesDefaults))
+	{
+		return false;
+	}
+
+	const TSoftObjectPtr<UDataTable>& PlacementCardTableAsset = PlacementRulesDefaults->GetCardTableAsset();
+	const UDataTable* const PlacementCardTable = PlacementCardTableAsset.LoadSynchronous();
+	if (PlacementCardTable == nullptr || PlacementCardTable->GetRowStruct() != FCardRow::StaticStruct())
+	{
+		AddError(FString::Printf(TEXT("⛔ The card table GetCardTableAsset() names ('%s') did not load as an FCardRow table, so no building type can be enumerated and every claim below would be vacuous."),
+			*PlacementCardTableAsset.ToString()));
+		return false;
+	}
+
+	struct FReadBuildingType
+	{
+		FString CardId;
+		FString DisplayName;
+		int32   HeightLimit = 0;
+	};
+
+	TArray<FReadBuildingType> ReadBuildingTypes;
+	TArray<int32> DistinctHeightLimits;
+
+	for (const FName& PlacementCardID : PlacementCardTable->GetRowNames())
+	{
+		const FCardRow* const PlacementCardRow =
+			PlacementCardTable->FindRow<FCardRow>(PlacementCardID, TEXT("SiegeControlsHelpTest height limits"), /*bWarnIfRowMissing=*/ false);
+
+		// ⛔ qa/TASK-1593.md W1: ResolveCardActorClass only for a card IsBuildingCard accepts, as the
+		// composer does, so its "not a placement type" Error can never fire from this test.
+		if (PlacementCardRow == nullptr || !PlacementRulesDefaults->IsBuildingCard(PlacementCardID, PlacementCardRow->CardType))
+		{
+			continue;
+		}
+
+		UClass* const PlacedClass = PlacementRulesDefaults->ResolveCardActorClass(PlacementCardID, PlacementCardRow->CardType);
+		const ABuilding* const PlacedClassDefaults = PlacedClass != nullptr ? Cast<ABuilding>(PlacedClass->GetDefaultObject()) : nullptr;
+		if (PlacedClassDefaults == nullptr)
+		{
+			// The game places nothing for a card whose class does not resolve (the play is refused
+			// with no gold spent), and the composer skips it for the same reason. Whether every
+			// building card resolves is TASK-1592's test 2's claim and the card roster's.
+			AddInfo(FString::Printf(TEXT("[ControlsHelp] height limit: building card '%s' did not resolve to an ABuilding class, so the game cannot place it and the page does not list it."),
+				*PlacementCardID.ToString()));
+			continue;
+		}
+
+		FReadBuildingType& ReadType = ReadBuildingTypes.AddDefaulted_GetRef();
+		ReadType.CardId      = PlacementCardID.ToString();
+		ReadType.DisplayName = PlacementCardRow->DisplayName;
+		ReadType.HeightLimit = PlacedClassDefaults->GetMaxStackHeightMultiplier();
+		DistinctHeightLimits.AddUnique(ReadType.HeightLimit);
+
+		// ⭐ THE BLUEPRINT-OVERRIDE READING (TASK-1576 (2), carried by TASK-1594 (5)): the value on
+		// this class's own default beside the value on its nearest NATIVE ancestor's default. A
+		// difference is a Blueprint override the page must follow; equal means none.
+		const UClass* const NativeAncestor = FindNativeAncestor(PlacedClass);
+		const ABuilding* const NativeAncestorDefaults =
+			NativeAncestor != nullptr ? Cast<ABuilding>(NativeAncestor->GetDefaultObject()) : nullptr;
+		const int32 NativeHeightLimit = NativeAncestorDefaults != nullptr ? NativeAncestorDefaults->GetMaxStackHeightMultiplier() : INDEX_NONE;
+#if WITH_EDITOR
+		const FString GeneratorText = DescribeGeneratingBlueprint(PlacedClass);
+#else
+		const FString GeneratorText(TEXT("(status not read: not an editor build)"));
+#endif
+		AddInfo(FString::Printf(TEXT("[ControlsHelp] height limit: card '%s' '%s' -> class '%s', GetMaxStackHeightMultiplier() = %d on its own class default; native parent '%s' = %d (%s); status %s"),
+			*ReadType.CardId, *ReadType.DisplayName, *PlacedClass->GetPathName(), ReadType.HeightLimit,
+			*GetNameSafe(NativeAncestor), NativeHeightLimit,
+			NativeHeightLimit == ReadType.HeightLimit ? TEXT("no Blueprint override") : TEXT("the Blueprint OVERRIDES the native value"),
+			*GeneratorText));
+	}
+
+	// ⛔ THE VACUITY GUARD: an enumeration that found nothing would make every claim below true.
+	if (!TestTrue(TEXT("At least one placeable building type was enumerated through the game's own resolution, so (a-cap) and (c-cap) are measurements"),
+		ReadBuildingTypes.Num() > 0))
+	{
+		return false;
+	}
+
+	// ── (d-cap) THE DISCRIMINATION CONTROL ───────────────────────────────────────────────
+	TestTrue(*FString::Printf(TEXT("(d-cap) The height limits read hold at least two distinct values (%d distinct among %d building types). If this is red, a retune or a Blueprint override has made every limit equal: a composer that read ONE class for all would then look right, (a-cap) could not tell, and arm cap-i could not go red."),
+		DistinctHeightLimits.Num(), ReadBuildingTypes.Num()), DistinctHeightLimits.Num() >= 2);
+
+	// ── THE PAGE ─────────────────────────────────────────────────────────────────────────
+	const FSiegeControlsHelpAction* const StackRow = FSiegeControlsHelpRegistry::FindAction(FName(TEXT("Cards.StackUpgrade")));
+	if (!TestNotNull(TEXT("Row 'Cards.StackUpgrade' is in the registry"), StackRow))
+	{
+		return false;
+	}
+
+	const FString OwnPage = FSiegeControlsHelpRegistry::ComposeDetailForDisplay(*StackRow).ToString();
+	const FString OwnClause = ExtractHeightLimitClause(OwnPage);
+	if (!TestFalse(TEXT("Row 'Cards.StackUpgrade' carries a height-limit clause after 'up to its height limit: '"), OwnClause.IsEmpty()))
+	{
+		return false;
+	}
+
+	// A leading space, so every name and every group head in the clause is preceded by one.
+	const FString SpacedClause = FString(TEXT(" ")) + OwnClause;
+
+	// FORMATTED HERE, TO THE COMPOSER'S FIXED FORMAT: a whole multiple with no fractional digits.
+	// ⛔ Written out here rather than asked of the composer. " <N> time" is a prefix of both "time"
+	// and "times", with the space that separates it from the list before it.
+	FNumberFormattingOptions MultipleFormat;
+	MultipleFormat.SetMinimumFractionalDigits(0).SetMaximumFractionalDigits(0);
+	auto GroupHeadFor = [&MultipleFormat](int32 HeightLimit) -> FString
+	{
+		return FString(TEXT(" ")) + FText::AsNumber(HeightLimit, &MultipleFormat).ToString() + FString(TEXT(" time"));
+	};
+
+	for (const FReadBuildingType& ReadType : ReadBuildingTypes)
+	{
+		// ── (c-cap) THE NAME IS PLAYER-FACING DATA, AND THE TYPE IS NAMED EXACTLY ONCE ──────
+		if (!TestFalse(*FString::Printf(TEXT("(c-cap) Building card '%s' has a player-facing name (FCardRow::DisplayName), so the page can name it"), *ReadType.CardId),
+			ReadType.DisplayName.IsEmpty()))
+		{
+			continue;
+		}
+
+		const TArray<int32> NamedAt = FindWholeNameOccurrences(SpacedClause, ReadType.DisplayName);
+		TestEqual(*FString::Printf(TEXT("(c-cap) Building type '%s' (card '%s') is named exactly once in Cards.StackUpgrade's height-limit clause"), *ReadType.DisplayName, *ReadType.CardId),
+			NamedAt.Num(), 1);
+
+		// (a-cap) needs exactly one place to look. A missing or repeated name is (c-cap)'s failure,
+		// ⛔ not a second one here.
+		if (NamedAt.Num() != 1)
+		{
+			continue;
+		}
+
+		// ── (a-cap) ITS OWN LIMIT: THE NEAREST GROUP HEAD BEFORE ITS NAME ────────────────────
+		int32 ShownHeightLimit = INDEX_NONE;
+		int32 NearestHeadAt = INDEX_NONE;
+		for (const int32 CandidateHeightLimit : DistinctHeightLimits)
+		{
+			for (const int32 HeadAt : FindEveryOccurrence(SpacedClause, GroupHeadFor(CandidateHeightLimit)))
+			{
+				if (HeadAt < NamedAt[0] && HeadAt > NearestHeadAt)
+				{
+					NearestHeadAt = HeadAt;
+					ShownHeightLimit = CandidateHeightLimit;
+				}
+			}
+		}
+
+		TestEqual(*FString::Printf(TEXT("(a-cap) Building type '%s' (card '%s') is listed under the height limit its OWN class default holds (the nearest '<N> time' before its name)"), *ReadType.DisplayName, *ReadType.CardId),
+			ShownHeightLimit, ReadType.HeightLimit);
+	}
+
+	// ── (a2-cap) EVERY RENDERING CARRIES THE SAME CLAUSE ─────────────────────────────────
+	// ⛔ Found by walking every row's composed page, never from a typed list of pages.
+	auto NoAppliedKeys = [](const FSiegeControlsHelpAction&) -> TArray<FKey> { return TArray<FKey>(); };
+	int32 Renderings = 0;
+	int32 RenderingsWithOwnClause = 0;
+	for (const FSiegeControlsHelpAction& PageRow : FSiegeControlsHelpRegistry::GetActions())
+	{
+		const FSiegeControlsDetailContent Page =
+			FSiegeControlsHelpRegistry::ComposeDetailContent(PageRow, nullptr, NoAppliedKeys);
+
+		if (PageRow.ActionId == StackRow->ActionId)
+		{
+			++Renderings;
+			RenderingsWithOwnClause += ExtractHeightLimitClause(Page.Body.ToString()) == OwnClause ? 1 : 0;
+		}
+
+		for (const FSiegeControlsDetailEntry& Entry : Page.Related)
+		{
+			if (Entry.ActionId == StackRow->ActionId)
+			{
+				++Renderings;
+				RenderingsWithOwnClause += ExtractHeightLimitClause(Entry.Body.ToString()) == OwnClause ? 1 : 0;
+			}
+		}
+	}
+
+	TestTrue(TEXT("Row 'Cards.StackUpgrade' is rendered somewhere, so (a2-cap) is a measurement"), Renderings > 0);
+	TestEqual(TEXT("(a2-cap) Every rendering of row 'Cards.StackUpgrade' carries the same height-limit clause as its own page"),
+		RenderingsWithOwnClause, Renderings);
+
+	AddInfo(FString::Printf(TEXT("[ControlsHelp] Cards.StackUpgrade height-limit clause as composed: '%s' (%d building type(s), %d distinct limit(s), %d of %d rendering(s) carry it)"),
+		*OwnClause, ReadBuildingTypes.Num(), DistinctHeightLimits.Num(), RenderingsWithOwnClause, Renderings));
+
+	return true;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════
+//  TEST 22 — Siegebound.ControlsHelp.DiscardRallyAndAttackNumbersAreReadFromTheirOwners   ⭐⭐
+// ════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ *  ⭐⭐ TASK-1594 (2026-09-29): 🧑 his "yes, all of it". Three pages now SHOW numbers, and this
+ *  test asserts each one IS its owner's value, read HERE through the same public getter
+ *  (TASK-1592) on the same object the composer reads:
+ *    • Cards.Discard, the fee: GetDiscardAllCost() on ASiegePlayerController's class default (the
+ *      game's controller is that native class), in gold;
+ *    • Hero.Rally, radius / bonus / duration / cooldown, and Hero.Attack, reach / cone half-angle /
+ *      cooldown: the seven AHeroCharacter getters on the class default of the hero class the game
+ *      spawns (GetHeroPawnClassAsset() on ASiegeGameMode's class default, or the raw AHeroCharacter
+ *      when it resolves nothing, which is ResolveHeroPawnClass's own fallback), converted to player
+ *      units exactly as TASK-1576 (3) fixes them: uu ÷ 100 = metres, the bonus × 100 = percent,
+ *      seconds and degrees as they are.
+ *
+ *  (a)  per number, the row's own composed detail carries the owner's value INSIDE its own clause
+ *       ("fee is <N> gold", "within <N> metre", "of your hero by <N>%", " for <N> second",
+ *       "a cooldown of <N> second", "cone reaching <N> degree", "at most once every <N> second");
+ *  (a2) per number, every rendering of that row carries it (its own page and each related block,
+ *       found by walking every row);
+ *  (b)  per number, a NEGATIVE CONTROL: the same clause from a different value is absent;
+ *  (e)  the Rally and Attack TEMPLATES type no digit (Cards.Discard's is test 14 (e)'s, narrowed by
+ *       TASK-1594; Cards.StackUpgrade's is test 15 (e)'s). A typed number that happens to equal the
+ *       owner passes (a) by design, and only (e) sees it.
+ *
+ *  The hero class, its seven values beside the native AHeroCharacter's (the override reading), its
+ *  Blueprint status and the fee are logged with AddInfo. ⚠️ `SC-§32`: nothing here paints a page.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeControlsHelpFeeAndHeroNumbersTest,
+	"Siegebound.ControlsHelp.DiscardRallyAndAttackNumbersAreReadFromTheirOwners",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeControlsHelpFeeAndHeroNumbersTest::RunTest(const FString& Parameters)
+{
+	using namespace SiegeControlsHelpNumbersTestUtils;
+
+	// ── THE OWNERS, READ FROM THE SAME OBJECTS THE COMPOSER READS ───────────────────────────
+	const ASiegePlayerController* const FeeOwnerDefaults = GetDefault<ASiegePlayerController>();
+	const ASiegeGameMode* const SpawningModeDefaults = GetDefault<ASiegeGameMode>();
+	if (!TestNotNull(TEXT("SELF-CHECK: the ASiegePlayerController class default resolves, so the discard fee can be read"), FeeOwnerDefaults)
+		|| !TestNotNull(TEXT("SELF-CHECK: the ASiegeGameMode class default resolves, so the hero class it spawns can be read"), SpawningModeDefaults))
+	{
+		return false;
+	}
+
+	// The hero class the game spawns: the loaded GetHeroPawnClassAsset(), or, when that resolves
+	// nothing, the raw AHeroCharacter (the two steps of ASiegeGameMode::ResolveHeroPawnClass).
+	const TSoftClassPtr<AHeroCharacter>& SpawnedHeroAsset = SpawningModeDefaults->GetHeroPawnClassAsset();
+	UClass* SpawnedHeroClass = SpawnedHeroAsset.LoadSynchronous();
+	const bool bSpawnedHeroFallback = SpawnedHeroClass == nullptr;
+	if (bSpawnedHeroFallback)
+	{
+		SpawnedHeroClass = AHeroCharacter::StaticClass();
+	}
+
+	const AHeroCharacter* const SpawnedHeroDefaults = Cast<AHeroCharacter>(SpawnedHeroClass->GetDefaultObject());
+	// ⚠️ The native default is the override reading's BASELINE only: ⛔ no expectation below is
+	// taken from it.
+	const AHeroCharacter* const NativeHeroDefaults = GetDefault<AHeroCharacter>();
+	if (!TestNotNull(TEXT("SELF-CHECK: the spawned hero class has an AHeroCharacter class default"), SpawnedHeroDefaults)
+		|| !TestNotNull(TEXT("SELF-CHECK: the native AHeroCharacter class default resolves (the override reading's baseline)"), NativeHeroDefaults))
+	{
+		return false;
+	}
+
+#if WITH_EDITOR
+	const FString SpawnedHeroGeneratorText = DescribeGeneratingBlueprint(SpawnedHeroClass);
+#else
+	const FString SpawnedHeroGeneratorText(TEXT("(status not read: not an editor build)"));
+#endif
+	AddInfo(FString::Printf(TEXT("[ControlsHelp] hero class '%s' -> '%s'%s, status %s"),
+		*SpawnedHeroAsset.ToString(), *SpawnedHeroClass->GetPathName(),
+		bSpawnedHeroFallback ? TEXT(" (the game's fallback: the soft class resolved nothing)") : TEXT(""),
+		*SpawnedHeroGeneratorText));
+
+	// ⭐ THE BLUEPRINT-OVERRIDE READING for the seven hero numbers (TASK-1576 (2)).
+	struct FHeroNumberRead
+	{
+		const TCHAR* GetterName;
+		float (AHeroCharacter::*Getter)() const;
+	};
+	const FHeroNumberRead HeroNumberReads[] =
+	{
+		{ TEXT("GetMeleeRange"),            &AHeroCharacter::GetMeleeRange },
+		{ TEXT("GetMeleeHalfAngleDegrees"), &AHeroCharacter::GetMeleeHalfAngleDegrees },
+		{ TEXT("GetMeleeCooldown"),         &AHeroCharacter::GetMeleeCooldown },
+		{ TEXT("GetRallyRadius"),           &AHeroCharacter::GetRallyRadius },
+		{ TEXT("GetRallySpeedBonus"),       &AHeroCharacter::GetRallySpeedBonus },
+		{ TEXT("GetRallyDuration"),         &AHeroCharacter::GetRallyDuration },
+		{ TEXT("GetRallyCooldown"),         &AHeroCharacter::GetRallyCooldown }
+	};
+	for (const FHeroNumberRead& HeroRead : HeroNumberReads)
+	{
+		const float SpawnedValue = (SpawnedHeroDefaults->*HeroRead.Getter)();
+		const float NativeValue  = (NativeHeroDefaults->*HeroRead.Getter)();
+		AddInfo(FString::Printf(TEXT("[ControlsHelp] hero %s() = %.6g on the spawned class's default; native AHeroCharacter = %.6g (%s)"),
+			HeroRead.GetterName, static_cast<double>(SpawnedValue), static_cast<double>(NativeValue),
+			SpawnedValue == NativeValue ? TEXT("no Blueprint override") : TEXT("the Blueprint OVERRIDES the native value")));
+	}
+
+	const int32 OwnerDiscardFee = FeeOwnerDefaults->GetDiscardAllCost();
+	AddInfo(FString::Printf(TEXT("[ControlsHelp] ASiegePlayerController::GetDiscardAllCost() = %d on the controller's class default (native; no Blueprint subclass)"),
+		OwnerDiscardFee));
+
+	// ── CONVERTED AND FORMATTED HERE, TO THE UNITS AND OPTIONS TASK-1576 (3) FIXES ─────────
+	// ⛔ Written out here rather than asked of the composer, so a composer that formats the WRONG
+	// value cannot also supply the expectation. Gold: whole. Metres and seconds: at most two
+	// fractional digits. Percent and degrees: at most one.
+	FNumberFormattingOptions WholeFormat;
+	WholeFormat.SetMinimumFractionalDigits(0).SetMaximumFractionalDigits(0);
+	FNumberFormattingOptions TwoPlaceFormat;
+	TwoPlaceFormat.SetMinimumFractionalDigits(0).SetMaximumFractionalDigits(2);
+	FNumberFormattingOptions OnePlaceFormat;
+	OnePlaceFormat.SetMinimumFractionalDigits(0).SetMaximumFractionalDigits(1);
+
+	auto FormatInPlayerUnits = [](float Value, const FNumberFormattingOptions& Format) -> FString
+	{
+		return FText::AsNumber(Value, &Format).ToString();
+	};
+
+	const float OwnerRallyRadiusMetres     = SpawnedHeroDefaults->GetRallyRadius() / 100.f;      // uu ÷ 100 = metres
+	const float OwnerRallyBonusPercent     = SpawnedHeroDefaults->GetRallySpeedBonus() * 100.f;  // fraction × 100 = percent
+	const float OwnerRallyDurationSeconds  = SpawnedHeroDefaults->GetRallyDuration();
+	const float OwnerRallyCooldownSeconds  = SpawnedHeroDefaults->GetRallyCooldown();
+	const float OwnerAttackReachMetres     = SpawnedHeroDefaults->GetMeleeRange() / 100.f;       // uu ÷ 100 = metres
+	const float OwnerAttackHalfAngle       = SpawnedHeroDefaults->GetMeleeHalfAngleDegrees();
+	const float OwnerAttackCooldownSeconds = SpawnedHeroDefaults->GetMeleeCooldown();
+
+	struct FShownHelpNumber
+	{
+		const TCHAR* ActionId;
+		const TCHAR* What;
+		FString      Clause;        // (a): the owner's value, inside its own clause
+		FString      WrongClause;   // (b): the same clause from a DIFFERENT value
+	};
+
+	const FShownHelpNumber ShownHelpNumbers[] =
+	{
+		{ TEXT("Cards.Discard"), TEXT("the discard fee (GetDiscardAllCost, controller class default, gold)"),
+			FString(TEXT("fee is ")) + FText::AsNumber(OwnerDiscardFee, &WholeFormat).ToString() + FString(TEXT(" gold")),
+			FString(TEXT("fee is ")) + FText::AsNumber(OwnerDiscardFee + 1, &WholeFormat).ToString() + FString(TEXT(" gold")) },
+		{ TEXT("Hero.Rally"), TEXT("the rally radius (GetRallyRadius, spawned hero class default, uu / 100 = metres)"),
+			FString(TEXT("within ")) + FormatInPlayerUnits(OwnerRallyRadiusMetres, TwoPlaceFormat) + FString(TEXT(" metre")),
+			FString(TEXT("within ")) + FormatInPlayerUnits(OwnerRallyRadiusMetres + 1.f, TwoPlaceFormat) + FString(TEXT(" metre")) },
+		{ TEXT("Hero.Rally"), TEXT("the rally speed bonus (GetRallySpeedBonus, spawned hero class default, x 100 = percent)"),
+			FString(TEXT("of your hero by ")) + FormatInPlayerUnits(OwnerRallyBonusPercent, OnePlaceFormat) + FString(TEXT("%")),
+			FString(TEXT("of your hero by ")) + FormatInPlayerUnits(OwnerRallyBonusPercent + 1.f, OnePlaceFormat) + FString(TEXT("%")) },
+		{ TEXT("Hero.Rally"), TEXT("the rally duration (GetRallyDuration, spawned hero class default, seconds)"),
+			FString(TEXT(" for ")) + FormatInPlayerUnits(OwnerRallyDurationSeconds, TwoPlaceFormat) + FString(TEXT(" second")),
+			FString(TEXT(" for ")) + FormatInPlayerUnits(OwnerRallyDurationSeconds + 1.f, TwoPlaceFormat) + FString(TEXT(" second")) },
+		{ TEXT("Hero.Rally"), TEXT("the rally cooldown (GetRallyCooldown, spawned hero class default, seconds)"),
+			FString(TEXT("a cooldown of ")) + FormatInPlayerUnits(OwnerRallyCooldownSeconds, TwoPlaceFormat) + FString(TEXT(" second")),
+			FString(TEXT("a cooldown of ")) + FormatInPlayerUnits(OwnerRallyCooldownSeconds + 1.f, TwoPlaceFormat) + FString(TEXT(" second")) },
+		{ TEXT("Hero.Attack"), TEXT("the melee reach (GetMeleeRange, spawned hero class default, uu / 100 = metres)"),
+			FString(TEXT("within ")) + FormatInPlayerUnits(OwnerAttackReachMetres, TwoPlaceFormat) + FString(TEXT(" metre")),
+			FString(TEXT("within ")) + FormatInPlayerUnits(OwnerAttackReachMetres + 1.f, TwoPlaceFormat) + FString(TEXT(" metre")) },
+		{ TEXT("Hero.Attack"), TEXT("the melee cone's half-angle (GetMeleeHalfAngleDegrees, spawned hero class default, degrees)"),
+			FString(TEXT("cone reaching ")) + FormatInPlayerUnits(OwnerAttackHalfAngle, OnePlaceFormat) + FString(TEXT(" degree")),
+			FString(TEXT("cone reaching ")) + FormatInPlayerUnits(OwnerAttackHalfAngle + 1.f, OnePlaceFormat) + FString(TEXT(" degree")) },
+		{ TEXT("Hero.Attack"), TEXT("the melee cooldown (GetMeleeCooldown, spawned hero class default, seconds)"),
+			FString(TEXT("at most once every ")) + FormatInPlayerUnits(OwnerAttackCooldownSeconds, TwoPlaceFormat) + FString(TEXT(" second")),
+			FString(TEXT("at most once every ")) + FormatInPlayerUnits(OwnerAttackCooldownSeconds + 1.f, TwoPlaceFormat) + FString(TEXT(" second")) }
+	};
+
+	// The pure composer's own fallback lane, as in tests 13 and 20: no layout subsystem, no applied keys.
+	auto NoAppliedKeys = [](const FSiegeControlsHelpAction&) -> TArray<FKey> { return TArray<FKey>(); };
+
+	for (const FShownHelpNumber& Shown : ShownHelpNumbers)
+	{
+		// FIXTURE SELF-CHECK: the negative control really is a different clause. (A claim about
+		// the FIXTURE, ⛔ not about a page.)
+		TestNotEqual(*FString::Printf(TEXT("FIXTURE SELF-CHECK: the negative control for %s is a different clause, so (b) means something"), Shown.What),
+			Shown.Clause, Shown.WrongClause);
+
+		const FSiegeControlsHelpAction* const Row = FSiegeControlsHelpRegistry::FindAction(FName(Shown.ActionId));
+		if (!TestNotNull(*FString::Printf(TEXT("Row '%s' is in the registry"), Shown.ActionId), Row))
+		{
+			continue;
+		}
+
+		// ── (a) THE ROW'S OWN COMPOSED DETAIL SHOWS THE OWNER'S VALUE, IN ITS CLAUSE ─────────
+		const FString OwnPage = FSiegeControlsHelpRegistry::ComposeDetailForDisplay(*Row).ToString();
+		TestTrue(*FString::Printf(TEXT("Row '%s' shows %s as its owner holds it: '%s'"), Shown.ActionId, Shown.What, *Shown.Clause),
+			OwnPage.Contains(Shown.Clause, ESearchCase::CaseSensitive));
+
+		// ── (b) NEGATIVE CONTROL: A DIFFERENT VALUE IS NOT WHAT THE PAGE SHOWS ───────────────
+		TestFalse(*FString::Printf(TEXT("NEGATIVE CONTROL: row '%s' does not show a different value ('%s'), so (a) tells numbers apart"), Shown.ActionId, *Shown.WrongClause),
+			OwnPage.Contains(Shown.WrongClause, ESearchCase::CaseSensitive));
+
+		// ── (a2) EVERY RENDERING OF THE ROW SHOWS IT ─────────────────────────────────────────
+		int32 Renderings = 0;
+		int32 RenderingsShowingIt = 0;
+		for (const FSiegeControlsHelpAction& PageRow : FSiegeControlsHelpRegistry::GetActions())
+		{
+			const FSiegeControlsDetailContent Page =
+				FSiegeControlsHelpRegistry::ComposeDetailContent(PageRow, nullptr, NoAppliedKeys);
+
+			if (PageRow.ActionId == Row->ActionId)
+			{
+				++Renderings;
+				RenderingsShowingIt += Page.Body.ToString().Contains(Shown.Clause, ESearchCase::CaseSensitive) ? 1 : 0;
+			}
+
+			for (const FSiegeControlsDetailEntry& Entry : Page.Related)
+			{
+				if (Entry.ActionId == Row->ActionId)
+				{
+					++Renderings;
+					RenderingsShowingIt += Entry.Body.ToString().Contains(Shown.Clause, ESearchCase::CaseSensitive) ? 1 : 0;
+				}
+			}
+		}
+
+		// ⛔ THE VACUITY GUARD: a walk that found no rendering at all would make the next line 0 == 0.
+		TestTrue(*FString::Printf(TEXT("Row '%s' is rendered somewhere, so (a2) is a measurement"), Shown.ActionId),
+			Renderings > 0);
+		TestEqual(*FString::Printf(TEXT("Every rendering of row '%s' shows %s (its own page and each related block that renders it)"), Shown.ActionId, Shown.What),
+			RenderingsShowingIt, Renderings);
+
+		AddInfo(FString::Printf(TEXT("Row '%s': '%s' shown on %d of %d rendering(s)."),
+			Shown.ActionId, *Shown.Clause, RenderingsShowingIt, Renderings));
+	}
+
+	// ── (e) ⛔ THE RALLY AND ATTACK TEMPLATES TYPE NO DIGIT ─────────────────────────────────
+	// ⭐ The typed-digit half: the template (Row->Detail, before ComposeDetailForDisplay replaces its
+	// `{#Name}` tokens) carries no digit at all. A number typed in place of a token that happens to
+	// equal its owner passes (a) and (a2); only this sees it.
+	auto TemplateCarriesADigit = [](const FString& Prose) -> bool
+	{
+		for (const TCHAR Character : Prose)
+		{
+			if (FChar::IsDigit(Character))
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+
+	// FIXTURE SELF-CHECK: a scanner that can never answer true would make (e) vacuous. (A claim
+	// about the SCANNER, ⛔ not about the prose.)
+	TestTrue(TEXT("FIXTURE SELF-CHECK: the digit scanner finds a digit when one is present"),
+		TemplateCarriesADigit(FString(TEXT("a cooldown of 20 seconds"))));
+
+	const TCHAR* const TemplateRowIds[] = { TEXT("Hero.Rally"), TEXT("Hero.Attack") };
+	for (const TCHAR* const TemplateRowId : TemplateRowIds)
+	{
+		const FSiegeControlsHelpAction* const TemplateRow = FSiegeControlsHelpRegistry::FindAction(FName(TemplateRowId));
+		if (!TestNotNull(*FString::Printf(TEXT("Row '%s' is in the registry"), TemplateRowId), TemplateRow))
+		{
+			continue;
+		}
+
+		const FString TemplateProse = TemplateRow->Detail.ToString();
+		TestFalse(*FString::Printf(TEXT("⛔ Row '%s' detail TEMPLATE types NO number - every number the page shows is read from its owner when the page is composed"), TemplateRowId),
+			TemplateCarriesADigit(TemplateProse));
+		TestTrue(*FString::Printf(TEXT("Row '%s' detail TEMPLATE carries number tokens, so the check above is not vacuous"), TemplateRowId),
+			TemplateProse.Contains(TEXT("{#"), ESearchCase::CaseSensitive));
+	}
 
 	return true;
 }

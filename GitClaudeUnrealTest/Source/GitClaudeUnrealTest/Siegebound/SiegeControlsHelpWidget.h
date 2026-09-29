@@ -172,13 +172,13 @@ struct FSiegeControlsHelpAction
 	 *  (GroupRadiusWheelStep, MeleeCooldown, EnemyRevealCost …) instead of restating numbers
 	 *  (704 U-5; the M7.7 "in 400"/AoERadius-700 lesson). TASK-707 kept those names in the
 	 *  prose; since TASK-1541 (2026-09-27) the prose describes each one in plain words ("a set
-	 *  step", "once per melee cooldown", "a fixed reveal fee") and the code name sits in the
+	 *  step", "a fixed reveal fee") or shows its value derived, and the code name sits in the
 	 *  C++ comment beside its string, still with no number typed. The ONE
 	 *  number typed as a quantity in the whole registry is the war map's 30 gold, because
 	 *  Jonathan's own words are the source and they are quoted at the property
-	 *  (CommanderNpc.h:297-311); every other number a page shows is derived at runtime from the
+	 *  (CommanderNpc.h:297-311); every other quantity a page shows is derived at runtime from the
 	 *  property that owns it, through a `{#Name}` token that ComposeDetailForDisplay replaces
-	 *  (TASK-1576, 2026-09-28).
+	 *  (TASK-1576, 2026-09-28; TASK-1594, 2026-09-29: "number" became "quantity" here).
 	 */
 	UPROPERTY()
 	FText Detail;
@@ -363,7 +363,7 @@ struct GITCLAUDEUNREALTEST_API FSiegeControlsHelpRegistry
 	/** The row's one-liner, or the pinned "(undocumented — TODO)" when it is empty (`HELP-§2`). */
 	static FText ComposeOneLineForDisplay(const FSiegeControlsHelpAction& Row);
 
-	/** The detail prose, or the same pinned TODO string. The detail renderer reads THIS, ⛔ never Row.Detail directly. */
+	/** The detail prose with every `{#Name}` number token replaced by the number read from its owner at this call (the .cpp's derived-number block; TASK-1576, named here by TASK-1594), or the same pinned TODO string. The detail renderer reads THIS, ⛔ never Row.Detail directly. */
 	static FText ComposeDetailForDisplay(const FSiegeControlsHelpAction& Row);
 
 	/** The group header for a Category FName. An unknown category renders its own name rather than nothing. */
