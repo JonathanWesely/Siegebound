@@ -304,9 +304,13 @@ namespace
 //     "in 400" / AoERadius 700 lesson).
 //
 //  ════════ TASK-707: THE `Detail` COLUMN, AND THE FIVE RULES ITS TRANSFER FOLLOWED ════════
-//  Every detail string below is handoffs/TASK-704-programmer.md §4's prose for that row. 704
-//  cited EVERY factual sentence at a file:line it had personally read; ⛔ nothing here was
-//  re-authored, re-derived or invented, and where I disagreed with a sentence I FLAGGED it in
+//  TASK-707 filled each original row's detail string from handoffs/TASK-704-programmer.md
+//  §4's prose for that row. Not every string below is still 704's words: TASK-823 wrote its
+//  three appended rows at source, and later rows rewrote others, among them TASK-821
+//  (Cards.Discard, in place), TASK-870 (Interface.WarMap) and TASK-1541 (2026-09-27: the code
+//  names the prose printed, put into plain words). 704 cited EVERY factual sentence at a
+//  file:line it had personally read; ⛔ TASK-707's transfer re-authored, re-derived and
+//  invented nothing, and where I disagreed with a sentence I FLAGGED it in
 //  handoffs/TASK-707-programmer.md rather than "improving" it silently.
 //
 //  The five transfer rules, stated once so a reviewer can check any row in one reading. Each
@@ -334,7 +338,9 @@ namespace
 //        into the comment beside the string, and any connective left dangling by a T1/T5
 //        removal gets the MINIMUM grammatical repair. Every instance is listed in the handoff.
 //  ⛔ NO TUNABLE'S VALUE IS RE-TYPED. 704 §4 deliberately NAMES tunables instead of restating
-//     numbers (its U-5 / D-6, the M7.7 lesson) and the names are carried through unchanged.
+//     numbers (its U-5 / D-6, the M7.7 lesson). TASK-707 carried those names into the prose;
+//     since TASK-1541 (2026-09-27) the prose describes each tunable in plain words ("a set
+//     step", "the rally radius") and its code name sits in the comment beside the string.
 //     The ONE number stated anywhere below is the war map's 30 gold, because Jonathan's own
 //     words are the source and 704 quoted them at the property (CommanderNpc.h:297-311).
 //  ⚠️ TASK-1480 (a) — A FILE-LEVEL DECLARATION, ADDED 2026-09-27 ON `qa/TASK-1433.md` WARN-L3,

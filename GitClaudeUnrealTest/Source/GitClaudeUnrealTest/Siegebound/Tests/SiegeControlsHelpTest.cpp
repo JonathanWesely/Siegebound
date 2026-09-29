@@ -1111,7 +1111,7 @@ bool FSiegeControlsHelpAuthoredDetailTest::RunTest(const FString& Parameters)
 	const TCHAR* ForbiddenInPlayerProse[] =
 	{
 		TEXT(".cpp:"), TEXT(".h:"), TEXT("handoffs/"), TEXT("TASK-"), TEXT("SPC:"),
-		TEXT("**"), TEXT("`"), TEXT("§")
+		TEXT("**"), TEXT("`"), TEXT("§"), TEXT("::"), TEXT("()")
 	};
 
 	for (const FSiegeControlsHelpAction& Row : FSiegeControlsHelpRegistry::GetActions())
@@ -1799,14 +1799,15 @@ bool FSiegeControlsHelpDiscardAllLayoutTest::RunTest(const FString& Parameters)
 
 	// ⛔ AND THE DIFFERENCE IS THE TOKEN MECHANISM, NOT AN ACCIDENT — asserted at the source
 	// rather than by hunting the composed letter in the output. ⚠️ A `Body.Contains("D")` here
-	// would be VACUOUS: the prose also names DiscardAllCost, so that letter is present whatever
-	// the implementation does. The claim that can actually fail is that the RAW prose names the
-	// key as a {ActionId} token — i.e. that no letter was typed into the sentence at all.
+	// would be VACUOUS: the prose carries a capital D of its own ("Dumping a single dead card"),
+	// so that letter is present whatever the implementation does. The claim that can actually
+	// fail is that the RAW prose names the key as a {ActionId} token — i.e. that no letter was
+	// typed into the sentence at all.
 	TestTrue(TEXT("⛔ The page names its own key as a {ActionId} token, never as a typed letter (HELP-§1 in the detail lane)"),
 		DiscardRow->Detail.ToString().Contains(
 			FSiegeControlsHelpRegistry::MakeActionToken(DiscardRow->ActionId), ESearchCase::CaseSensitive));
 
-	// ── (e) ⛔ THE FEE IS NAMED, ⛔ NEVER TYPED (`HELP-§2`'s M7.7 rule) ──────────────────
+	// ── (e) ⛔ THE FEE IS PUT IN WORDS, ⛔ NEVER TYPED (`HELP-§2`'s M7.7 rule) ───────────
 	// ⚠️ SCOPED TO THIS ROW ON PURPOSE: other rows legitimately carry digits in prose (Cards.Play
 	// names key 1's legacy quirk, and a digit provably cannot move). The claim here is narrower
 	// and exact — the discard-all fee has ONE definition, DiscardAllCost, and this page must not
@@ -2055,7 +2056,7 @@ bool FSiegeControlsHelpTowerRowsTest::RunTest(const FString& Parameters)
 		TestFalse(*FString::Printf(TEXT("Row '%s' composes a non-empty key chip"), Expected.ActionId), Chip.IsEmpty());
 
 		// ── (e) ⛔ NO TUNABLE'S VALUE IS TYPED INTO THIS PROSE (see the scanner above) ───
-		TestFalse(*FString::Printf(TEXT("⛔ Row '%s' one-liner types NO number - the tunables are NAMED"), Expected.ActionId),
+		TestFalse(*FString::Printf(TEXT("⛔ Row '%s' one-liner types NO number - the tunables are described in plain words"), Expected.ActionId),
 			CarriesADigit(OneLine));
 		TestFalse(*FString::Printf(TEXT("⛔ Row '%s' detail page types NO number either"), Expected.ActionId),
 			CarriesADigit(Detail));

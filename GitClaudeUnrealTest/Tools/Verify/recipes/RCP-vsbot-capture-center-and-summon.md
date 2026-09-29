@@ -1,13 +1,13 @@
 # RCP-vsbot-capture-center-and-summon — start a vs-bot match from the menu, walk the hero into `CaptureZone_Center`, capture it, and summon a Unit card inside it, in ONE batch
 
-Provenance tags (`[M]`, `[S]`, `[D]`, `[L]`, `NOT MEASURED`, `HYPOTHESIS`) are defined in `README.md`. Run short names: `1512` = `.claude/pipeline/qa/TASK-1512-verify.md` (the run; **a2** = its attempt 2, the measured route; **a1** = its attempt 1, the measured failure) · `1524` = `.claude/pipeline/qa/TASK-1524-verify.md` (Precondition 2 only).
+Provenance tags (`[M]`, `[S]`, `[D]`, `[L]`, `NOT MEASURED`, `HYPOTHESIS`) are defined in `README.md`. Run short names: `1512` = `.claude/pipeline/qa/TASK-1512-verify.md` (the run; **a2** = its attempt 2, the measured route; **a1** = its attempt 1, the measured failure) · `1524` = `.claude/pipeline/qa/TASK-1524-verify.md` (Precondition 2 only). Added 2026-09-28 by `TASK-1564`: `1493` = `.claude/pipeline/qa/TASK-1493-verify.md` (Step 1 rows 1–4 and the second H3 sighting only). That report states no run date; its own status flip on `TASKBOARD.md` (`#### TASK-1493`) does: "H1 HOLDS (2026-09-27, playtest-verifier; marker `TASK-1493-H1-HOLDS-2026-09-27`)".
 
 > ⚠️ **Read this first.**
 > - **The whole route is ONE `run_verification_sequence`:** menu → level travel → walk → capture → card entry → confirm → post-reads.
 >   - a1 split it across 3 calls. Its round trips (≈20 s and ≈36 s of PIE clock) put the play at t≈83 s, after the hero had died, and the summon was refused. a2 ran it as one 48-action sequence and summoned at t=33.80. `[M: 1512 Attempt 1, Speed data]`; `[L: VER-§13 cl. 1, 2026-09-26 ruling]`
 > - **There is NO aim step. The one measured summon placed wherever the unset cursor traced.** Why the cursor traced into the zone is `HYPOTHESIS` H1 and not reproducible. The in-batch ghost read taken **before** the confirm documents where the confirm will place. The batch cannot branch on that read, so it is judged after the batch returns.
 > - **The control is the no-play interval.** The omitted-set confirm is **not** a control here: in a2 it placed the unit. `[M: 1512 A3, ctl]`
-> - **Measured once:** one run, one summon.
+> - ~~**Measured once:** one run, one summon.~~ Corrected 2026-09-28 by `TASK-1564`: **One summon. The walk, the capture, the summon and every step and row except Step 1 rows 1–4 were measured once** (a2, 2026-09-26). Step 1 rows 1–4 (the `Button_0` focus snapshot, `IA_MenuAccept`, `wait 3`, the in-batch `record_burst {"seconds":1}`) have a second run, `1493` (2026-09-27), which re-verified them in-run **y** and did no walk, capture or summon. `[M: 1493 Recipes used]`
 
 ## Source
 
@@ -41,7 +41,7 @@ Provenance tags (`[M]`, `[S]`, `[D]`, `[L]`, `NOT MEASURED`, `HYPOTHESIS`) are d
 3. **A fresh PIE session on the main menu, with `Button_0` "Play (vs Bot)" focused.** a2 read that focus inside the batch (Step 1, row 1). `[M: 1512 A1]`
 4. **Gold needs no wait.** From t=2.8 to 33.6, gold rose 12 → 43 `[M: 1512 ctl]`. The Archer costs 12, per the entry line `placement mode entered for card 'Archer' (cost 12).` `[M: 1512 A3]` Gold at the card key was 43 (t=33.79). `[M: 1512 A3]`
 5. **Recording.**
-   - a2 armed a film before `start_pie`. It held the main menu only (2.54 MB). `HYPOTHESIS` H3: it ended at the level travel. `[M: 1512 Recording, H3]`
+   - a2 armed a film before `start_pie`. It held the main menu only (2.54 MB). `HYPOTHESIS` H3: it ended at the level travel. `[M: 1512 Recording, H3]` A second sighting: in `1493`, "A second film, armed at `start_pie`, holds the menu only". `[M: 1493 Recording]` Two sightings and no control: H3 stays `HYPOTHESIS`.
    - The arena was filmed only because an in-batch `record_burst` after the travel auto-started a new film (Step 1, row 4). `[M: 1512 Recording]`; `[L: VER-§12 cl. 7b amendment]`
 6. **Save hygiene:** the orchestrator hashes the `.sav` files before and after. Expected: no change. `1512` observed none (all ten decks identical, `ActiveDeckName = deck4` both times). `[M: 1512 Save hygiene]`
 7. Property paths are the ones a2 used. Address the player's controller by its exact label, `SiegePlayerController0`: the bot's controller also carries a `DeckComponent` (`RCP-play-unit-card-from-hand.md` Precondition 5, `[D]`).
@@ -54,10 +54,10 @@ Provenance tags (`[M]`, `[S]`, `[D]`, `[L]`, `NOT MEASURED`, `HYPOTHESIS`) are d
 
 | row | action | source |
 |---|---|---|
-| 1 | `ui_snapshot` of `Button_0` on `WBP_MainMenu` | a2 menu t=20.42 → `Button_0` `focused: true`, text `"Play (vs Bot)"` `[M: 1512 A1; Recipe candidates step 1]` |
-| 2 | `inject_input_action IA_MenuAccept` | menu t=20.44 → world `L_Arena`; the arena clock restarts `[M: 1512 A1]` |
-| 3 | `wait_pie_seconds 3` | `[M: 1512 Recipe candidates step 2]` |
-| 4 | `record_burst {"seconds": 1}` | the arena film was "auto-started by an in-batch `record_burst` at arena t=2.69 s" `[M: 1512 Recording]` |
+| 1 | `ui_snapshot` of `Button_0` on `WBP_MainMenu` | a2 menu t=20.42 → `Button_0` `focused: true`, text `"Play (vs Bot)"` `[M: 1512 A1; Recipe candidates step 1]` · `1493` menu t=3.85 → `Button_0` `focused: true`, "Play (vs Bot)" `[M: 1493 Recipes used]` |
+| 2 | `inject_input_action IA_MenuAccept` | menu t=20.44 → world `L_Arena`; the arena clock restarts `[M: 1512 A1]` · `1493`: the travel to `L_Arena` landed; the game world read `UEDPIE_0_L_Arena` at t=6.02 `[M: 1493 Recipes used]` |
+| 3 | `wait_pie_seconds 3` | `[M: 1512 Recipe candidates step 2]` · `1493`: run ("`wait 3`"), no value quoted `[M: 1493 Recipes used]` |
+| 4 | `record_burst {"seconds": 1}` | the arena film was "auto-started by an in-batch `record_burst` at arena t=2.69 s" `[M: 1512 Recording]` · `1493`: "the burst auto-started the arena film" `[M: 1493 Recipes used]` |
 | 5 | reads: `CaptureZone_Center` (`CaptureOwner`, `ZoneHalfExtent`, `RootComponent.RelativeLocation`); `DeckComponent` `Hand`/`DrawPile`; `PlayerState.Gold`, `GhostActor` | t=2.73–2.74: `Neutral`; `ZoneHalfExtent (X=840.000000,Y=840.000000)`, `RelativeLocation (X=0,Y=0,Z=0)`; `Hand` = 6× `"Archer"`, `DrawPile` = 44× `"Archer"` `[M: 1512 A1, A2; Recipe candidates step 3]` |
 | 6 | `inject_input_action IA_Sprint`, `hold_seconds 29` + `inject_input_action IA_Move`, `x 0, y -1, hold_seconds 28.5` | "Sprint+Move 2/2 (X −21007.8 → 250.9, velocity 750)" `[M: 1512 Recipe candidates step 4; Speed data]` |
 | 7 | `wait_pie_seconds 14`, transform read, `CaptureOwner` read | t=16.79: hero X=−10710.2, velocity 750; `Neutral` `[M: 1512 A2; Recipe candidates step 4]` |
@@ -189,7 +189,7 @@ Pixels proved nothing here. In both a2 frames "The Archer is not identifiable by
 
 ## Fences — not measured for
 
-- **One run (a2), one summon.** No second run exists, so other days, map states and bot behaviours are untested.
+- ~~**One run (a2), one summon.** No second run exists, so other days, map states and bot behaviours are untested.~~ Corrected 2026-09-28 by `TASK-1564`: **One run (a2, 2026-09-26) of the walk, the capture, the summon and every step and row except Step 1 rows 1–4; one summon.** No second run of them exists, so for them other days, map states and bot behaviours are untested. Step 1 rows 1–4 have a second run on another day, `1493` (2026-09-27), re-verified in-run **y** for those rows only; it did no walk, capture or summon. `[M: 1493 Recipes used]`
 - **The hero alive and the zone uncontested at t≈33 s.** HP was 200 at t=32.33 and the zone read `Blue` from t=33.54 to at least 54.60. `[M: 1512 A2]`
   - In a1 the hero died ≈73 s after the arena opened, by log time, and the ghost pawn spawned at (798, −0, 98), inside the a2 box (arithmetic). The report's own fences sentence says it "died at ≈t=73 holding the zone". `[M: 1512 Recipe candidates Fences; Attempt 1]`
   - **a1 never read the zone `Blue`.** `CaptureOwner` read `Neutral` at t=35.47 and 45.48, and `Red` at t=83.41, 84.57 and 85.28, with Red Cavalry, Knight, Footman and Archer in the census. `[M: 1512 Attempt 1]`
@@ -201,7 +201,7 @@ Pixels proved nothing here. In both a2 frames "The Archer is not identifiable by
 - **Deck, card and key:** deck4 (50× `Archer`) only; `IA_Card1` only; one `ECardType::Unit` card at cost 12. Mixed hands, other cards and other keys: `NOT MEASURED` here.
 - **The walk:** from the spawn (−21007.8, 0) at the spawn camera (yaw 180); `IA_Move` `y -1` with `IA_Sprint`; one hold length (28.5 s); straight along Y≈0; stopped at X=250.89. `[M: 1512 A2, Attempt 1, Recipe candidates step 4]` Other start points, cameras, hold lengths and stop points: `NOT MEASURED`. How the camera or hero rotation changed during the walk was not read.
 - **`CaptureZone_Center` only**, in a vs-bot match. Other zones and Sandbox (No Bot): `NOT MEASURED` for this route.
-- **Films:** the arena film came from the in-batch `record_burst`. That a pre-start film ends at the travel is `HYPOTHESIS` H3. `[M: 1512 H3]`
+- **Films:** the arena film came from the in-batch `record_burst`. That a pre-start film ends at the travel is `HYPOTHESIS` H3. `[M: 1512 H3]` A second sighting: `1493`'s "A second film, armed at `start_pie`, holds the menu only" `[M: 1493 Recording]`. Two sightings and no control: still `HYPOTHESIS`.
 - **Scope:** `L_Arena` reached from `L_MainMenu` by the menu; standalone single client; the one profile `SiegeDecks_4E46A9EE49D3A7C91C583B8457E1EE34`.
 - Plugin version: not read.
 
@@ -226,14 +226,14 @@ Where the confirm places depends on the cursor, the camera and the hero's positi
 
 - **Splitting the route kills it.** a1's round trips cost ≈20 s and ≈36 s of PIE clock, and the play landed at t≈83 on a dead hero: `PlayHandSlot(0) refused — the hero is dead and the ghost cannot play cards (GHOST-§ G-5).` `GhostActor` stayed `None`, and gold and hand did not change. `[M: 1512 Attempt 1]` a2's first post-batch read landed ≈17 s after the batch ended (t=37.45 → 54.55, arithmetic from the stamps). Put every observable the verdict needs inside the batch. `[L: VER-§13 cl. 1; VER-§8 cl. 10(b)]`
 - **A batch cannot branch.** The focus read (row 1), the `CaptureOwner` read (row 9) and the ghost read (row 13) only document; the Accept, the card key and the confirm go in whatever they show. Judge after (Step 2).
-  - Checking focus first in a separate call is `RCP-menu-to-deckbuilder.md` Step 0. That step was measured on its own (`qa/PLAYTEST-archer50-verify.md` §1(a), t=4.84) and again in-run by `qa/TASK-1511-verify.md` (t=4.89). The extra call is spent on the menu clock, because the arena clock restarts at the travel. `[M: 1512 A1]` Doing it in this route is `NOT MEASURED`.
+  - Checking focus first in a separate call is `RCP-menu-to-deckbuilder.md` Step 0. That step was measured on its own (`qa/PLAYTEST-archer50-verify.md` §1(a), t=4.84) and again in-run by `qa/TASK-1511-verify.md` (t=4.89). The extra call is spent on the menu clock, because the arena clock restarts at the travel. `[M: 1512 A1]` Doing it in this route is `NOT MEASURED`. Step 0 was also run by two later runs, each inside the menu recipe's Steps 0–4: `qa/TASK-1524-verify.md` (Steps 0–4, re-verified in-run "y, with a mismatch"; the mismatches were at Steps 1 and 4) and `qa/TASK-1519-verify.md` (Step 0 `Button_0` focused, t=6.70), each under its *Recipes used*.
 - **The omitted-set confirm places a unit** when the ghost is visible at a legal point. `[M: 1512 A3]` Never use it as the control here.
 - **Someone else's mouse can be the aim.** "If Jonathan's mouse was over the PIE window, the aim came from his cursor." `HYPOTHESIS` H1. `[M: 1512 H1]` Check the pre-press ghost read, never the intent.
 - **`LeftMouseButton` outside placement mode is the hero's attack** (the second press; "the second `LeftMouseButton` = `IA_Attack`"). It places nothing. `[M: 1512 Evidence, ctl]`
 - **An all-Archer hand refills to an identical array.** "The card leaves the hand" rests on `DrawPile` −1 and `DiscardPile` +1, never on `Hand`. `[M: 1512 A3, Not examined]`
 - **Gold can straddle an income tick** (+≈1/s). Assert "went down", and take the cost from the `played card` line. `[M: 1512 A3, ctl]`
 - **Films.**
-  - The film armed before `start_pie` held the menu only (H3), and `stop_pie_recording` did not collect it; the verifier found it by directory listing. `[M: 1512 Recording]`
+  - The film armed before `start_pie` held the menu only (H3), and `stop_pie_recording` did not collect it; the verifier found it by directory listing. `[M: 1512 Recording]` A second sighting of H3: in `1493`, "A second film, armed at `start_pie`, holds the menu only" `[M: 1493 Recording]`. Two sightings and no control: H3 stays `HYPOTHESIS`.
   - The output is raw `.h264`, remuxed by the orchestrator. `[L: VER-§12 cl. 7b]`
   - a1's arena play is on no film. `[M: 1512 Recording]`
 - **Reply overflow:** the a1 walk batch reply and both `stop_pie_recording` replies overflowed the tool limit and were read by grep/head only. `start_pie`'s replies were short that run. `[M: 1512 Not examined]`

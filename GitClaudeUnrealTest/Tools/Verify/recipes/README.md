@@ -102,4 +102,4 @@ ffmpeg -framerate 30 -i recording.h264 -c copy recording.mp4
 
 The `.mp4` stays in `Saved/` and is never staged. `recording_index.json` beside it maps frame ↔ game time ↔ video time. A report never claims an `.mp4` path it did not see.
 
-**A film armed before `start_pie` may not survive a level travel** (`VER-§12` cl. 7b, 2026-09-26 amendment; `HYPOTHESIS` H3 in `qa/TASK-1512-verify.md`). A run whose acceptance happens after a travel arms a recorder AFTER the travel, and names every film it finds by path. The measured route is an in-batch `record_burst`; see `RCP-vsbot-capture-center-and-summon.md`.
+**A film armed before `start_pie` may not survive a level travel** (`VER-§12` cl. 7b, 2026-09-26 amendment; `HYPOTHESIS` H3 in `qa/TASK-1512-verify.md`). A run whose acceptance happens after a travel arms a recorder AFTER the travel, and names every film it finds by path. The measured route is an in-batch `record_burst`; see `RCP-vsbot-capture-center-and-summon.md`. A second sighting of H3: "A second film, armed at `start_pie`, holds the menu only" (`qa/TASK-1493-verify.md` *Recording*). Two sightings and no control: H3 stays `HYPOTHESIS`.

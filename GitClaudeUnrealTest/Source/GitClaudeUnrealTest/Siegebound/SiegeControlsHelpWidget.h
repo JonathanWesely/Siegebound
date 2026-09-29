@@ -160,8 +160,11 @@ struct FSiegeControlsHelpAction
 	 *  fixed, a silent omission does not).
 	 *
 	 *  ⛔ NO TUNABLE'S VALUE IS RE-TYPED HERE. TASK-704 §4 deliberately NAMES tunables
-	 *  (GroupRadiusWheelStep, MeleeCooldown, EnemyRevealCost …) instead of restating numbers,
-	 *  and this task keeps that (704 U-5; the M7.7 "in 400"/AoERadius-700 lesson). The ONE
+	 *  (GroupRadiusWheelStep, MeleeCooldown, EnemyRevealCost …) instead of restating numbers
+	 *  (704 U-5; the M7.7 "in 400"/AoERadius-700 lesson). TASK-707 kept those names in the
+	 *  prose; since TASK-1541 (2026-09-27) the prose describes each one in plain words ("a set
+	 *  step", "once per melee cooldown", "a fixed reveal fee") and the code name sits in the
+	 *  C++ comment beside its string, still with no number typed. The ONE
 	 *  stated number in the whole registry is the war map's 30 gold, because Jonathan's own
 	 *  words are the source and they are quoted at the property (CommanderNpc.h:297-311).
 	 */
