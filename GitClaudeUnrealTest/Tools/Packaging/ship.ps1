@@ -858,6 +858,132 @@ function Get-SuiteVerdict {
     }
 }
 
+# ------------------------------------------------------------------------------
+# TASK-1567: the C2-COOK-BP-ERRORS verdict, lifted out of the gate in the
+# Get-SuiteVerdict shape (TASK-1193) so it can be run against a LOG without a
+# cook.  Tools/Packaging/Fixtures/check_cook_bp_verdict.ps1 lifts THIS text out
+# of THIS file by AST and never retypes it (SHIP-0), and runs it three-sided on
+# tracked fixtures (SHIP-9c cl. 6): cook-bp-green.log => PASS,
+# cook-bp-error-red.log => STOP BLUEPRINT-ERROR, empty.log => STOP
+# SUMMARY-ABSENT.  A PAIR case (TASK-1587; not the owed "fourth side" below)
+# runs the red and green captures together => STOP BLUEPRINT-ERROR with a
+# summary present, so a broken needle or a summary-first order flips that
+# case's VERDICT to PASS (SHIP-9).  The gate prints exactly the strings this
+# returns.
+#
+# THE GAP IT CLOSES (PKG-14): anything inside a COOKDIR cooks whether or not a
+# map references it, A7-COOKDIRS only proves the folders exist, and C2-UAT-LOG
+# reads only BUILD SUCCESSFUL / BUILD FAILED.  Nothing read a Blueprint compile
+# error line in the cook - but see THE PREMISE, RECONCILED, below.
+#
+# THE PREMISE, RECONCILED (TASK-1587, qa/TASK-1568.md WARN-1).  This is a
+# READING of the UE 5.8 engine source, NOT a measurement:
+#   - An Error-level Blueprint compile error in the cook is counted as an
+#     error, so the commandlet prints 'Failure - N error(s), M warning(s)' and
+#     its exit code is forced to 1 (LaunchEngineLoop.cpp: "Return an non-zero
+#     code if errors were logged and UseCommandletResultAsExitCode is false").
+#     UAT then throws "Cook failed." (CookCommand.Automation.cs; this recipe
+#     does not pass -IgnoreCookErrors), never prints BUILD SUCCESSFUL, and
+#     C2-UAT-LOG STOPs before this gate runs.
+#   - So in today's recipe the BLUEPRINT-ERROR branch is DEFENCE IN DEPTH, for
+#     a cook failure that gets swallowed.  The branches reachable live are
+#     PASS and SUMMARY-ABSENT, and the SUMMARY-ABSENT branch is coverage of its
+#     own: no other gate asks whether the cook log carries a summary at all.
+#   - A Blueprint that logs nothing at Error level is invisible to both gates.
+#   - TRIP-WIRE: if -IgnoreCookErrors is ever added to the recipe, or UAT's
+#     cook exit policy changes, this gate becomes the only guard: gate the
+#     summary's error count then (deferred 2026-09-28, TASK-1584).
+#
+# UE's THREE summary shapes (LaunchEngineLoop.cpp, all 'LogInit: Display:'):
+#   "Success - %d error(s), %d warning(s)"  - the commandlet returned 0, no errors
+#   "Failure - %d error(s), %d warning(s)"  - the commandlet returned 0, errors
+#   "With %d error(s), %d warning(s)"       - "Commandlet->Main return this
+#                                              error code: %d" printed first
+# SUMMARY_PATTERN matches the first two only.  The third reads SUMMARY-ABSENT,
+# which fails CLOSED (a STOP); by the reading above its non-zero exit makes
+# C2-UAT-LOG STOP first anyway.
+#
+# The order is the rule, and each step is a verdict:
+#   1. Any line holding the LITERAL text 'LogBlueprint: Error', matched with
+#      -Simple (the pattern and the matcher agree - the TASK-1193 rule above)
+#      => STOP BLUEPRINT-ERROR, quoting up to the first 5 hits.
+#   2. Otherwise, no 'Success - ...' or 'Failure - ...' summary line
+#      => STOP SUMMARY-ABSENT.  A log that cannot say is not a log that said
+#      "clean": a cook that died before its summary, a summary in the third
+#      shape, and a gate reading the wrong file all land here (SC-114: a zero
+#      is a verdict, never a pass).
+#   3. Otherwise PASS NO-BLUEPRINT-ERROR, quoting the summary line.
+# The summary's error count is PRINTED, NOT GATED: this gate is scoped to
+# Blueprint compile errors, and that count covers every log category (see the
+# TRIP-WIRE above for when that must change).
+#
+# WHAT IS NOT MEASURED (SC-101) - read this before reading the gate as more:
+#   - The red fixture is an EDITOR log (BP_Basic_Movement's compile errors,
+#     editor PID 3108, 2026-09-28).  That the COOKER writes the same
+#     'LogBlueprint: Error' line for a BS_ERROR Blueprint inside a COOKDIR is
+#     NOT measured.  It cannot be without a broken asset in a cook folder, and
+#     no broken asset is ever committed to get a fixture (VER-12 cl. 7g).
+#   - No real cook log on disk carries a LogBlueprint line of ANY verbosity.
+#     The UAT-side stdout this reads holds Display / Warning / Error lines only
+#     (ship 20260910-063540: 882 lines, 0 at Log verbosity).  What IS measured
+#     there: other categories' Warning lines reach it inline AND again in its
+#     'Warning/Error Summary (Unique only)' block.
+#   - OWED, NOT DONE: the fourth side is the next real /ship.  Its
+#     C2-COOK-BP-ERRORS line must read PASS with the summary line quoted.
+# ------------------------------------------------------------------------------
+function Get-CookBlueprintVerdict {
+    param(
+        [Parameter(Mandatory=$true)][string[]] $Paths
+    )
+    $BP_ERROR_NEEDLE = 'LogBlueprint: Error'
+    $SUMMARY_PATTERN = '(Success|Failure) - (\d+) error\(s\), (\d+) warning\(s\)'
+    $QUOTE_MAX       = 5
+    $existing = @($Paths | Where-Object { Test-Path -LiteralPath $_ })
+    $logsRead = ('{0} of {1} logs read' -f $existing.Count, $Paths.Count)
+    $logList  = ($Paths -join ' + ')
+    # No @() around Get-LogMatches (see Get-SuiteVerdict): it already returns an
+    # array for 0 / 1 / N hits, and @() around it would nest that array.
+    $bpHits  = Get-LogMatches -Paths $Paths -Pattern $BP_ERROR_NEEDLE -Simple
+    $sumHits = Get-LogMatches -Paths $Paths -Pattern $SUMMARY_PATTERN
+    $summary       = 'absent'
+    $summaryErrors = -1
+    if ($sumHits.Count -gt 0) {
+        $last          = $sumHits[$sumHits.Count - 1]
+        $summary       = ('[{0}:{1}] {2}' -f (Split-Path -Leaf $last.Path), $last.LineNumber, $last.Line.Trim())
+        $summaryErrors = [int]$last.Matches[0].Groups[2].Value
+    }
+    $quoted = @()
+    if ($bpHits.Count -gt 0) {
+        $quoted = @($bpHits | Select-Object -First $QUOTE_MAX | ForEach-Object {
+            '[{0}:{1}] {2}' -f (Split-Path -Leaf $_.Path), $_.LineNumber, $_.Line.Trim()
+        })
+        $verdict  = 'STOP'
+        $reason   = 'BLUEPRINT-ERROR'
+        $evidence = ("verdict=STOP reason=BLUEPRINT-ERROR - {0} '{1}' line(s) ({2}); first {3}: {4}; cook summary: {5}" -f `
+                     $bpHits.Count, $BP_ERROR_NEEDLE, $logsRead, $quoted.Count, ($quoted -join ' | '), $summary)
+        $remedy   = ("A Blueprint failed to compile in this cook. Inside a COOKDIR it ships whether or not a map references it (PKG-14). Open each Blueprint quoted above, fix the compile error or delete the asset, then re-run the ship. The same BS_ERROR Blueprint also wedges PIE in the editor (VER-12 cl. 7g). Log: {0}. There is no skip flag." -f $logList)
+    } elseif ($sumHits.Count -eq 0) {
+        $verdict  = 'STOP'
+        $reason   = 'SUMMARY-ABSENT'
+        $evidence = ("verdict=STOP reason=SUMMARY-ABSENT - NOT MEASURED: 0 '{0}' lines and no cook summary line matching '{1}' ({2}); a log that cannot say is not a clean log" -f `
+                     $BP_ERROR_NEEDLE, $SUMMARY_PATTERN, $logsRead)
+        $remedy   = ("The cook log carries no 'Success/Failure - N error(s), M warning(s)' summary line, so it cannot say whether a Blueprint failed to compile. A zero is not green. Possible causes: the cook commandlet died before its summary; it returned a non-zero code and printed UE's third summary shape, 'With N error(s), M warning(s)', which this gate does not read as a summary (look for 'Commandlet->Main return this error code' just above it); or this gate is reading the wrong file. Read: {0}. A BS_ERROR Blueprint in the editor also wedges PIE (VER-12 cl. 7g). There is no skip flag." -f $logList)
+    } else {
+        $verdict  = 'PASS'
+        $reason   = 'NO-BLUEPRINT-ERROR'
+        $evidence = ("verdict=PASS reason=NO-BLUEPRINT-ERROR - 0 '{0}' lines ({1}); cook summary {2} (its error count {3} is printed, not gated)" -f `
+                     $BP_ERROR_NEEDLE, $logsRead, $summary, $summaryErrors)
+        $remedy   = ''
+    }
+    return @{
+        Ok = ($verdict -eq 'PASS'); Verdict = $verdict; Reason = $reason
+        BpErrorCount = $bpHits.Count; Quoted = $quoted
+        SummaryLine = $summary; SummaryErrors = $summaryErrors; SummaryCount = $sumHits.Count
+        LogsRead = $existing.Count; LogsGiven = $Paths.Count
+        Evidence = $evidence; Remedy = $remedy
+    }
+}
+
 function Get-Sha256OfString([string]$Text) {
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try {
@@ -2352,6 +2478,7 @@ Say ''
 if ($DryRun) {
     Note-Skipped 'C1-COOK'         'dry run: not executed'
     Note-Skipped 'C2-UAT-LOG'      'dry run: not executed'
+    Note-Skipped 'C2-COOK-BP-ERRORS' 'dry run: not executed'
     Note-Skipped 'C3-BOOT-ARENA'   ("dry run: not executed (instrument would be: {0})" -f $BootEvidence)
     Note-Skipped 'C4-NO-MODELS'    'dry run: not executed'
     Note-Skipped 'C2-STAGE-MANIFESTS' 'dry run: not evaluated'
@@ -2433,6 +2560,7 @@ if ($DryRun) {
 } elseif ($reuse) {
     Note-Skipped 'C1-COOK'       'reused - identical build input already cooked and proven'
     Note-Skipped 'C2-UAT-LOG'    'reused'
+    Note-Skipped 'C2-COOK-BP-ERRORS' 'reused'
     $st = Get-Content -LiteralPath $StateFile -Raw | ConvertFrom-Json
     Note-Skipped 'C3-BOOT-ARENA' $(if ($AdjPass) {
         'reused - PIXEL-ADJUDICATED PASS, bindings RE-MEASURED this run at C3-VERDICT-BINDING'
@@ -2561,6 +2689,13 @@ if ($DryRun) {
     Assert-Gate -Id 'C2-UAT-LOG' -Ok ($uatOk -and -not $uatBad) `
         -Evidence ("UAT's own verdict lines: BUILD SUCCESSFUL={0} BUILD FAILED={1} (exit code deliberately ignored)" -f $uatOk, $uatBad) `
         -Remedy ("Read {0}." -f $r3.Out) | Out-Null
+    # TASK-1567: the SAME $clogs, read for a Blueprint compile error in the cook
+    # (PKG-14).  Verdict, reason, quoted lines and remedy all come from
+    # Get-CookBlueprintVerdict - see there for what this gate does NOT measure.
+    $vbp = Get-CookBlueprintVerdict -Paths $clogs
+    Assert-Gate -Id 'C2-COOK-BP-ERRORS' -Ok $vbp.Ok `
+        -Evidence $vbp.Evidence `
+        -Remedy $vbp.Remedy | Out-Null
     $cookVerdict = 'PASS'
 
     # The cook has just written FRESH manifests.  Re-resolve the game binary

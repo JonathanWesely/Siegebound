@@ -1,0 +1,24 @@
+LogCook: Display: ---- Finalisation: End ----
+LogCook: Display: Done!
+LogSavePackage: Display: Took 0.001276s to verify the EDL loading graph.
+LogInit: Display:
+LogInit: Display: Warning/Error Summary (Unique only)
+LogInit: Display: -----------------------------------
+LogInit: Display: LogModelContextProtocol: Warning: Data transmitted via this plugin to your connected LLM service is Licensed Technology under the UE EULA. You are responsible for ensuring your LLM provider does not use it as training input. See Section 6(e) of the UE EULA for full terms.
+LogInit: Display: LogNavigation: Warning: FPImplRecastNavMesh::Serialize Navmesh RecastNavMesh-Default will be loaded empty because it has been built with different navmesh settings than the current settings. If possible, this will trigger a navmesh rebuild. The mismatch was detected on stored quantization factor 0.052632 (expected: 0.031250) for CellSize 32.000000 (resolution: 1).
+LogInit: Display: LogNavigation: Warning: FPImplRecastNavMesh::Serialize Navmesh RecastNavMesh-Default will be loaded empty because it has been built with different navmesh settings than the current settings. If possible, this will trigger a navmesh rebuild, else you should rebuild it manually.The mismatch was detected on tile size 988.000000 (expected: 1984.000000) for CellSize 32.000000, NavmeshOwnerTileSize 2000.000000.
+LogInit: Display:
+LogInit: Display: Success - 0 error(s), 3 warning(s)
+LogInit: Display:
+
+Execution of commandlet took:  17.16 seconds, PeakPhysMemoryMB=4590 MB, PeakVirtMemoryMB=4623 MB
+LogToolsetRegistry: Display: Unregistering Toolset ToolsetRegistry.AgentSkillToolset
+LogAssetRegistry: Display: CleanupOrphanedCacheFiles (PostWrite): 1 .ref files found, 1 referenced binaries
+LogAssetRegistry: Display: CleanupOrphanedCacheFiles: 1 total binaries, 1 referenced (kept), 0 old-style pre-migration (kept), 0 orphans deleted, 0 orphans locked (kept)
+LogStreaming: Display: ============ Loader Stats ============
+LogStreaming: Display: Unique Partial Flushes: 0
+LogStreaming: Display: ============ Loader Stats End ============
+LogShaderCompilers: Display: Exiting ShaderCompilingThread
+Took 23.98s to run UnrealEditor-Cmd.exe, ExitCode=0
+Cook command time: 24.07 s
+********** COOK COMMAND COMPLETED **********

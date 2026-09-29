@@ -795,8 +795,13 @@ void ASiegePlayerController::PlayerTick(float DeltaTime)
 	// Group-order 3-stage pick (TASK-344) — the third cursor mode on the SAME
 	// input surface as placement/targeting. Mutually exclusive with the other
 	// two, so at most one of the three branches runs. Polled RMB/Esc full-flow
-	// cancel + POLLED wheel resize (the CONVENTIONS wheel law: the wheel is
-	// inert everywhere but inside this branch) + per-frame trace + polled LMB
+	// cancel + POLLED wheel resize (the CONVENTIONS wheel law, MARK-§4 as amended
+	// by STACK-§4: "the wheel has exactly THREE consumers — (1) the controller's
+	// group-pick poll · (2) UWarMapWidget while the map is open and the cursor is
+	// over it · (3) the controller's PLACEMENT-mode footprint poll
+	// (ApplyPlacementFootprintWheel, STACK-§4). It stays inert everywhere else";
+	// this branch is consumer 1. TASK-1585, 2026-09-28: this read "the wheel is
+	// inert everywhere but inside this branch") + per-frame trace + polled LMB
 	// stage confirm — the targeting-branch shape.
 	if (GroupPickStage != EGroupPickStage::None)
 	{

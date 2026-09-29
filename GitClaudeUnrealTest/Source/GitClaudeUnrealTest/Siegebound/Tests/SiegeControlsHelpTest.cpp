@@ -4,6 +4,9 @@
 
 #include "Engine/GameInstance.h"
 #include "InputCoreTypes.h"
+// TASK-1576 test 20: the two owners whose numbers the pages now show, read here from the SAME
+// objects the composer reads (ABuilding::StackHealthMultiplier, USiegeMapMarkSubsystem's defaults).
+#include "Siegebound/Building.h"
 #include "Siegebound/SiegeControlsHelpWidget.h"
 // TASK-821 test 14: FSiegeKeyboardLayoutStatics::GetQwertyLetterScanCodes() +
 // FSiegePositionalKeyProbe. The digit-holds half is asserted against the SHIPPED positional
@@ -12,6 +15,7 @@
 // fact instead of from the fixture's silence about digits.
 #include "Siegebound/SiegeKeyboardLayoutStatics.h"
 #include "Siegebound/SiegeKeyboardLayoutSubsystem.h"
+#include "Siegebound/SiegeMapMarkSubsystem.h"
 #include "UObject/Class.h"
 #include "UObject/StrongObjectPtr.h"
 #include "UObject/UObjectGlobals.h"
@@ -25,6 +29,17 @@
  *  Tests 9-13 = TASK-707: the full-screen detail view — its prose, its token-spliced keys, its
  *  related-controls blocks and its way back. ⛔ ONE FILE for the whole feature, by `HELP-§6`.
  *  Law: `HELP-§1`/`§2`/`§4`/`§5`/`§6`. QA gate: TASK-708. Compile + suite gate: TASK-709.
+ *
+ *  ⭐⭐ TEST 20 = TASK-1576: the numbers the pages SHOW (the map-circle cap and the stack health
+ *  factor) are read from the properties that own them, in the same objects the composer reads,
+ *  on every page that renders them; and no number token is left unresolved. Test 15 (e)'s
+ *  "types NO number" detail check was narrowed by the same task to the TYPED template, so a
+ *  derived number passes it and a typed digit still fails it.
+ *
+ *  ⭐⭐ TEST 19 = TASK-1585: `HELP-§2` mechanism 4's pins for the two false rules the pages taught
+ *  until 2026-09-28 — that a building refuses to be stacked, and that the wheel is inert outside
+ *  a pick. Registry-wide negative scans, plus a positive pin that the pick-resize page names the
+ *  wheel's two other jobs.
  *
  *  ⭐⭐ TEST 18 = TASK-852: the `RelatedActionIds` GRAPH INTEGRITY WALK — every row's outbound
  *  edges resolve to real rows, with the negative control that proves it can go red. ⛔ IT IS AN
@@ -1087,8 +1102,12 @@ bool FSiegeControlsHelpChipTest::RunTest(const FString& Parameters)
  *  reviewer should be able to tell "no page is blank" from "no page is a placeholder".
  *
  *  ⭐ IT ALSO MACHINE-CHECKS THE TRANSFER RULES from handoffs/TASK-704-programmer.md §4 that a
- *  human would otherwise have to eyeball across 24 strings: ⛔ no `file:line` citation and ⛔ no
- *  markdown markup may reach the player's screen (rules T1 and T2). Those live in C++ comments.
+ *  human would otherwise have to eyeball across every row's string (twenty-seven rows as of
+ *  TASK-1585, 2026-09-28; it read "24 strings" until TASK-823 appended three, and the loop walks
+ *  GetActions(), so it covers whatever the registry holds): ⛔ no `file:line` citation, ⛔ no
+ *  markdown markup and ⛔ no C++ fragment (`::`, `()`) may reach the player's screen (rules T1
+ *  and T2, and rule T5's "a C++ fragment" in the widget's T-rule list). Those live in C++
+ *  comments.
  *
  *  ⛔⛔ WHAT THIS TEST NO LONGER DOES, ⛔ SAID IN THE DOCSTRING BECAUSE THE DOCSTRING IS WHERE THE
  *  LAST TWO READERS LOOKED AND FOUND NOTHING: it used to ALSO carry the registry-wide
@@ -1106,8 +1125,9 @@ bool FSiegeControlsHelpAuthoredDetailTest::RunTest(const FString& Parameters)
 	const FString UndocumentedString(FSiegeControlsHelpRegistry::GetUndocumentedText());
 
 	// ⛔ Fragments that mark prose written for a DEVELOPER rather than for a player. Every one of
-	// these belongs in a C++ comment beside the string (TASK-704 §4's citations, rule T1) or is
-	// markdown that only means something in a .md file (rule T2).
+	// these belongs in a C++ comment beside the string (TASK-704 §4's citations, rule T1; `::` and
+	// `()`, which are rule T5's "a C++ fragment" in the widget's T-rule list) or is markdown that
+	// only means something in a .md file (rule T2).
 	const TCHAR* ForbiddenInPlayerProse[] =
 	{
 		TEXT(".cpp:"), TEXT(".h:"), TEXT("handoffs/"), TEXT("TASK-"), TEXT("SPC:"),
@@ -1135,7 +1155,7 @@ bool FSiegeControlsHelpAuthoredDetailTest::RunTest(const FString& Parameters)
 
 		for (const TCHAR* Forbidden : ForbiddenInPlayerProse)
 		{
-			TestFalse(*FString::Printf(TEXT("Row '%s' detail carries no developer-only fragment '%s' (T1/T2: citations and markup live in comments)"),
+			TestFalse(*FString::Printf(TEXT("Row '%s' detail carries no developer-only fragment '%s' (T1/T2/T5: citations, markup and C++ fragments live in comments)"),
 				*RowName, Forbidden), Detail.Contains(Forbidden, ESearchCase::CaseSensitive));
 		}
 
@@ -1951,6 +1971,13 @@ bool FSiegeControlsHelpTowerRowsTest::RunTest(const FString& Parameters)
 	// exact: the height cap, the health step, the wheel step, the wheel's two ends and the mark
 	// cap have ONE definition each, and these pages must not hold a second copy of any VALUE. A
 	// typed number rots the moment one is retuned, and neither the compiler nor a reviewer notices.
+	// ⭐ TASK-1576 (2026-09-28): two of these pages now SHOW a number (the map-circle cap on
+	// Interface.MapMarks, the health factor on Cards.StackUpgrade), each READ from its owner when
+	// the page is composed. ⇒ (e)'s DETAIL check is narrowed to what is TYPED: the row's source
+	// template (Row->Detail, before ComposeDetailForDisplay replaces its `{#Name}` tokens). A
+	// derived number passes it and a typed digit still fails it; that the shown number is the
+	// owner's is test 20's claim, not this one's. The one-liner check is unchanged (no one-liner
+	// shows a number).
 	auto CarriesADigit = [](const FString& Prose) -> bool
 	{
 		for (const TCHAR Character : Prose)
@@ -2058,8 +2085,10 @@ bool FSiegeControlsHelpTowerRowsTest::RunTest(const FString& Parameters)
 		// ── (e) ⛔ NO TUNABLE'S VALUE IS TYPED INTO THIS PROSE (see the scanner above) ───
 		TestFalse(*FString::Printf(TEXT("⛔ Row '%s' one-liner types NO number - the tunables are described in plain words"), Expected.ActionId),
 			CarriesADigit(OneLine));
-		TestFalse(*FString::Printf(TEXT("⛔ Row '%s' detail page types NO number either"), Expected.ActionId),
-			CarriesADigit(Detail));
+		// ⭐ NARROWED BY TASK-1576 to the typed template (see the scanner's note above): it read
+		// `CarriesADigit(Detail)`, the COMPOSED page, which now legitimately carries derived digits.
+		TestFalse(*FString::Printf(TEXT("⛔ Row '%s' detail TEMPLATE types NO number either - a number the page shows is read from its owner when the page is composed"), Expected.ActionId),
+			CarriesADigit(Row->Detail.ToString()));
 
 		// ── (f) EVERY OUTBOUND EDGE RESOLVES (`HELP-§7`) ────────────────────────────────
 		// ⚠️ SCOPED TO THIS TASK'S OWN ROWS. The registry-wide walk with its negative control is
@@ -2618,6 +2647,333 @@ bool FSiegeControlsHelpRelatedEdgeIntegrityTest::RunTest(const FString& Paramete
 	// into the very section that exists to prove an assertion CAN fail.
 	TestEqual(TEXT("⛔ The negative control left the registry untouched (row count unchanged from the snapshot taken before it ran)"),
 		FSiegeControlsHelpRegistry::GetActions().Num(), RowCountBefore);
+
+	return true;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════
+//  TEST 19 — Siegebound.ControlsHelp.NoPageTeachesARefutedStackOrWheelRule   ⭐⭐
+// ════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ *  ⭐⭐ TASK-1585 (2026-09-28). `HELP-§2` MECHANISM 4 FOR THE TWO FALSE RULES THE HELP PAGES
+ *  TAUGHT, and each pin is shaped so the OLD text fails it and the new text passes (`TASK-974`
+ *  (3)'s test: a pin the old sentence would pass pins nothing).
+ *
+ *  (A) `Cards.StackUpgrade` taught that one kind of building "REFUSES TO BE STACKED" and that
+ *      hovering one shows RED with "That building cannot be stacked". FALSE at source:
+ *      AClimbableTower answers CanStackHeight() true (`STACK-§10`, `J-13`, TASK-944), the
+ *      NotStackable state's doc in SiegePlayerController.h reads "NO SHIPPED CLASS PRODUCES THIS
+ *      STATE", and SiegePlacementTest asserts an own-team, same-card, affordable climbable tower
+ *      resolves to Ready (blue). The fix was a DELETION ⇒ the pin is NEGATIVE: neither phrase
+ *      may appear in any row's one-liner or detail.
+ *  (B) `PickMode.Resize` taught that the wheel "is inert everywhere except inside a pick". FALSE
+ *      since the war-map wheel (TASK-745) and the placement wheel (TASK-815): `MARK-§4` names
+ *      three consumers. The fix was a REWRITE ⇒ the pin is BOTH: the refuted phrase may appear
+ *      on no page, AND the pick-resize page must name the wheel's other two jobs.
+ *
+ *  ⛔ REGISTRY-WIDE, ON EACH ROW'S OWN COMPOSED TEXT (ComposeOneLineForDisplay /
+ *  ComposeDetailForDisplay). That covers every RENDERING as well: a related block is some row's
+ *  own detail, read by ComposeDetailContent and never re-worded, so the stack row under
+ *  Cards.PlacementResize and the pick-resize row under the order pages are scanned here once,
+ *  at their source.
+ *
+ *  ⚠️ `HELP-§2` mechanism 4's own caveat binds this test: the pins make the prose HARD TO CHANGE,
+ *  ⛔ not TRUE. The truth came from reading the code (mechanism 3; the TASK-1585 notes beside both
+ *  strings in SiegeControlsHelpWidget.cpp carry the reads). This test only makes a later edit
+ *  that brings either rule back go red. Like every test in this file it paints nothing (`SC-§32`).
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeControlsHelpRefutedRulesTest,
+	"Siegebound.ControlsHelp.NoPageTeachesARefutedStackOrWheelRule",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeControlsHelpRefutedRulesTest::RunTest(const FString& Parameters)
+{
+	// ⭐ ONE PREDICATE for every scan below, fixtures included, so "the scan can go red" is a claim
+	// about the code that actually scans (`SC-§39`). Case-insensitive on purpose: the shipped false
+	// sentence was in capitals.
+	auto CarriesPhrase = [](const FString& Prose, const TCHAR* Phrase) -> bool
+	{
+		return Prose.Contains(Phrase, ESearchCase::IgnoreCase);
+	};
+
+	// ⭐ EACH PHRASE IS THE ONE THAT CARRIES ITS CLAIM (mechanism 4: "never a decorative
+	// fragment"), paired with why it is refuted, which a failure line prints.
+	struct FRefutedPhrase
+	{
+		const TCHAR* Phrase;
+		const TCHAR* Refutation;
+	};
+
+	const FRefutedPhrase RefutedPhrases[] =
+	{
+		{ TEXT("refuses to be stacked"), TEXT("TASK-1585 (A): no shipped building refuses the stack, STACK-§10") },
+		{ TEXT("cannot be stacked"),     TEXT("TASK-1585 (A): no shipped building refuses the stack, STACK-§10") },
+		{ TEXT("inert everywhere"),      TEXT("TASK-1585 (B): the wheel has three jobs, MARK-§4") }
+	};
+
+	// ⭐ (B)'s POSITIVE HALF: the wheel's two other jobs, which the pick-resize page must name —
+	// the placement footprint (ApplyPlacementFootprintWheel) and the war map's own circles
+	// (UWarMapWidget::NativeOnMouseWheel).
+	const TCHAR* OtherWheelJobs[] = { TEXT("placing a building"), TEXT("war map") };
+
+	// ── (a) FIXTURE SELF-CHECK: THE OLD TEXT FAILS EVERY PIN ─────────────────────────────
+	// ⭐ The refuted prose, copied literal for literal from qa/TASK-1575.md's bytes of
+	// SiegeControlsHelpWidget.cpp (sha256 419cefc8…3764): the whole stack paragraph TASK-1585
+	// deleted, and the whole pick-resize page as it stood before TASK-1585. ⛔ Without this, the
+	// zeros in (b) would be indistinguishable from a scanner that matches nothing, and a green (c)
+	// from a page that always carried the words. (Claims about the SCANNER against the OLD prose,
+	// ⛔ not about the registry.)
+	const FString OldStackParagraph(
+		TEXT("ONE KIND OF BUILDING REFUSES TO BE STACKED, AND IT IS THE ONE YOU CAN CLIMB. Its ladder is ")
+		TEXT("fixed to the building's exact shape, so stretching the building would take the ladder with it and ")
+		TEXT("the climb would stop working. The game therefore asks each building whether it may be scaled at ")
+		TEXT("all, rather than checking it against a list of names — so any climbable building added later is ")
+		TEXT("protected by the same one rule. Hovering one shows RED with \"That building cannot be ")
+		TEXT("stacked\".\n\n"));
+	const FString OldResizePage(
+		TEXT("One notch changes the active circle's radius by a set step, and the radius always stays between ")
+		TEXT("a set smallest and largest size. Each stage opens at its own default and resizing one ")
+		TEXT("circle never touches an earlier one. The circle on the ground resizes in place as you scroll.\n\n")
+		TEXT("The game reads the wheel directly rather than through its control setup, and it was checked that no control anywhere else is set to the wheel — it is inert ")
+		TEXT("everywhere except inside a pick.\n\n")
+		TEXT("If the circle's graphics are missing the radius still changes and the confirm still uses it — ")
+		TEXT("you just cannot see the circle."));
+
+	TestTrue(TEXT("FIXTURE SELF-CHECK (A): the scan finds 'refuses to be stacked' in the stack paragraph as it shipped"),
+		CarriesPhrase(OldStackParagraph, RefutedPhrases[0].Phrase));
+	TestTrue(TEXT("FIXTURE SELF-CHECK (A): ...and 'cannot be stacked'"),
+		CarriesPhrase(OldStackParagraph, RefutedPhrases[1].Phrase));
+	TestTrue(TEXT("FIXTURE SELF-CHECK (B): the scan finds 'inert everywhere' on the pick-resize page as it shipped"),
+		CarriesPhrase(OldResizePage, RefutedPhrases[2].Phrase));
+	for (const TCHAR* Job : OtherWheelJobs)
+	{
+		TestFalse(*FString::Printf(TEXT("FIXTURE SELF-CHECK (B): the pick-resize page as it shipped does NOT name '%s', so (c) would have been red on it"), Job),
+			CarriesPhrase(OldResizePage, Job));
+	}
+
+	// ── (b) ⛔ THE NEGATIVE PINS: NO ROW, ONE-LINER OR DETAIL, TEACHES A REFUTED RULE ──────
+	// ⛔ Every row from GetActions(), never a hand-typed list (`SC-§37`), so a refuted sentence
+	// pasted onto a row added later is caught too.
+	int32 RowsScanned = 0;
+	for (const FSiegeControlsHelpAction& Row : FSiegeControlsHelpRegistry::GetActions())
+	{
+		++RowsScanned;
+
+		const FString RowName = Row.ActionId.ToString();
+		const FString OneLine = FSiegeControlsHelpRegistry::ComposeOneLineForDisplay(Row).ToString();
+		const FString Detail  = FSiegeControlsHelpRegistry::ComposeDetailForDisplay(Row).ToString();
+
+		for (const FRefutedPhrase& Refuted : RefutedPhrases)
+		{
+			TestFalse(*FString::Printf(TEXT("Row '%s' one-liner teaches the refuted rule '%s' (%s)"),
+				*RowName, Refuted.Phrase, Refuted.Refutation), CarriesPhrase(OneLine, Refuted.Phrase));
+			TestFalse(*FString::Printf(TEXT("Row '%s' detail teaches the refuted rule '%s' (%s)"),
+				*RowName, Refuted.Phrase, Refuted.Refutation), CarriesPhrase(Detail, Refuted.Phrase));
+		}
+	}
+
+	// ⛔ THE VACUITY GUARD: a walk over zero rows is green and proves nothing.
+	TestTrue(TEXT("The walk scanned at least one registry row, so (b) is a measurement and not a loop over an empty list"),
+		RowsScanned > 0);
+
+	// ── (c) ⭐ THE POSITIVE PIN FOR (B): THE PICK-RESIZE PAGE NAMES THE WHEEL'S OTHER JOBS ───
+	const FSiegeControlsHelpAction* const ResizeRow =
+		FSiegeControlsHelpRegistry::FindAction(FName(TEXT("PickMode.Resize")));
+
+	if (!TestNotNull(TEXT("The pick-resize row is in the registry (it is (B)'s subject, and test 1 names it in RequiredIds)"), ResizeRow))
+	{
+		return false;
+	}
+
+	const FString ResizeDetail = FSiegeControlsHelpRegistry::ComposeDetailForDisplay(*ResizeRow).ToString();
+	int32 JobsNamed = 0;
+	for (const TCHAR* Job : OtherWheelJobs)
+	{
+		const bool bNamed = CarriesPhrase(ResizeDetail, Job);
+		if (bNamed)
+		{
+			++JobsNamed;
+		}
+		TestTrue(*FString::Printf(TEXT("PickMode.Resize names the wheel's other job '%s' (TASK-1585 (B): MARK-§4's three consumers)"), Job),
+			bNamed);
+	}
+
+	AddInfo(FString::Printf(TEXT("Scanned the one-liner and detail of %d registry row(s) for every refuted phrase; the pick-resize page names %d of the wheel's other jobs."),
+		RowsScanned, JobsNamed));
+
+	return true;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════
+//  TEST 20 — Siegebound.ControlsHelp.ShownNumbersAreReadFromTheirOwners   ⭐⭐
+// ════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ *  ⭐⭐ TASK-1576 (2026-09-28). `HELP-§2`: "NO NUMBER IS RESTATED IN PROSE IF IT CAN BE READ FROM
+ *  DATA ... Prefer deriving." Two pages now SHOW a number, and this test asserts that each shown
+ *  number IS its owner's value, read here from the same object the composer reads:
+ *    • Interface.MapMarks, the map-circle cap: USiegeMapMarkSubsystem's MaxMapMarks on the class
+ *      default object (the game's store is built from that class, and the property has no config,
+ *      no asset, no writer and no Blueprint child; the composer's block comment says so in full);
+ *    • Cards.StackUpgrade, the health factor: ABuilding::StackHealthMultiplier at ONE upgrade, the
+ *      factor ApplyStackUpgrade multiplies MaxHP by, read off ABuilding's class default for every
+ *      building.
+ *
+ *  ⛔ `SC-§37`: every claim is made against the OWNER'S VALUE, formatted here, ⛔ never against a
+ *  typed digit. A `Contains(TEXT("9"))` would pass on a page that typed the 9, which is the exact
+ *  defect the derivation removes. (A typed digit that happens to equal the owner today passes this
+ *  test by design; test 15 (e) catches it, on the typed template.)
+ *
+ *  (a)  per number, the row's own composed detail carries the owner's value INSIDE its own clause
+ *       ("hold up to <cap> circle", "maximum health by <factor>, compounding"), not merely as a
+ *       digit somewhere on the page;
+ *  (a2) per number, EVERY rendering of that row carries it: its own page body and each related
+ *       block that renders it on another page, found by walking every row's composed page (never
+ *       a typed list of pages);
+ *  (b)  per number, a NEGATIVE CONTROL: the same clause built from a DIFFERENT value is absent, so
+ *       (a) tells a wrong number from the right one rather than matching any number;
+ *  (d)  no `{#…}` number token survives on any composed page, with a vacuity guard that at least
+ *       one template carries one (without it (d) would also hold on a registry that typed every
+ *       number).
+ *
+ *  ⚠️ WHAT IT CANNOT PROVE (`SC-§32`): nothing here paints a page. That the numbers read well and
+ *  that the pages still fit the panel is 5b's to measure and Jonathan's to judge. ⛔ And the rows'
+ *  other candidates (the discard fee, the Rally values, the melee numbers and each building's own
+ *  height limit) are ⛔ NOT shown yet, so nothing here asserts them; handoffs/TASK-1576-programmer.md
+ *  lists why (each needs a new accessor in its owner's file).
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSiegeControlsHelpDerivedNumbersTest,
+	"Siegebound.ControlsHelp.ShownNumbersAreReadFromTheirOwners",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSiegeControlsHelpDerivedNumbersTest::RunTest(const FString& Parameters)
+{
+	// ── THE OWNERS, READ FROM THE SAME OBJECTS THE COMPOSER READS ────────────────────────
+	const USiegeMapMarkSubsystem* const MarkStoreDefaults = GetDefault<USiegeMapMarkSubsystem>();
+	if (!TestNotNull(TEXT("The map-mark store's class default object resolves, so the cap can be read"), MarkStoreDefaults))
+	{
+		return false;
+	}
+
+	const int32 OwnerMapMarkCap        = MarkStoreDefaults->MaxMapMarks;
+	const float OwnerStackHealthFactor = ABuilding::StackHealthMultiplier(1);
+
+	// ── FORMATTED HERE, TO THE FORMAT TASK-1576 FIXES ────────────────────────────────────
+	// The cap is a count of circles: a whole number, no fractional digits. The health factor is a
+	// plain multiplier: at most two fractional digits. ⛔ Written out here rather than asked of the
+	// composer, so a composer that formatted the WRONG value cannot also supply the expectation.
+	FNumberFormattingOptions CountOptions;
+	CountOptions.SetMinimumFractionalDigits(0).SetMaximumFractionalDigits(0);
+	FNumberFormattingOptions FactorOptions;
+	FactorOptions.SetMinimumFractionalDigits(0).SetMaximumFractionalDigits(2);
+
+	auto CapClause = [&CountOptions](int32 Cap) -> FString
+	{
+		// "circle" is a prefix of both noun forms, so the clause also holds for a cap of one.
+		return FString(TEXT("hold up to ")) + FText::AsNumber(Cap, &CountOptions).ToString() + FString(TEXT(" circle"));
+	};
+	auto FactorClause = [&FactorOptions](float Factor) -> FString
+	{
+		return FString(TEXT("maximum health by ")) + FText::AsNumber(Factor, &FactorOptions).ToString() + FString(TEXT(", compounding"));
+	};
+
+	struct FShownNumber
+	{
+		const TCHAR* ActionId;
+		const TCHAR* What;
+		FString      Clause;        // (a): the owner's value, inside its own clause
+		FString      WrongClause;   // (b): the same clause from a DIFFERENT value
+	};
+
+	const FShownNumber ShownNumbers[] =
+	{
+		{ TEXT("Interface.MapMarks"), TEXT("the map-circle cap (the map-mark store's MaxMapMarks, class default)"),
+			CapClause(OwnerMapMarkCap), CapClause(OwnerMapMarkCap + 1) },
+		{ TEXT("Cards.StackUpgrade"), TEXT("the stack health factor (StackHealthMultiplier at one upgrade)"),
+			FactorClause(OwnerStackHealthFactor), FactorClause(OwnerStackHealthFactor + 1.f) }
+	};
+
+	// The pure composer's own fallback lane, as in test 13: no layout subsystem, no applied keys.
+	auto NoAppliedKeys = [](const FSiegeControlsHelpAction&) -> TArray<FKey> { return TArray<FKey>(); };
+
+	for (const FShownNumber& Shown : ShownNumbers)
+	{
+		// FIXTURE SELF-CHECK: the negative control really is a different clause. (A claim about the
+		// FIXTURE, ⛔ not about a page.)
+		TestNotEqual(*FString::Printf(TEXT("FIXTURE SELF-CHECK: the negative control for %s is a different clause, so (b) means something"), Shown.What),
+			Shown.Clause, Shown.WrongClause);
+
+		const FSiegeControlsHelpAction* const Row = FSiegeControlsHelpRegistry::FindAction(FName(Shown.ActionId));
+		if (!TestNotNull(*FString::Printf(TEXT("Row '%s' is in the registry"), Shown.ActionId), Row))
+		{
+			continue;
+		}
+
+		// ── (a) THE ROW'S OWN COMPOSED DETAIL SHOWS THE OWNER'S VALUE, IN ITS CLAUSE ─────
+		const FString OwnPage = FSiegeControlsHelpRegistry::ComposeDetailForDisplay(*Row).ToString();
+		TestTrue(*FString::Printf(TEXT("Row '%s' shows %s as its owner holds it: '%s'"), Shown.ActionId, Shown.What, *Shown.Clause),
+			OwnPage.Contains(Shown.Clause, ESearchCase::CaseSensitive));
+
+		// ── (b) NEGATIVE CONTROL: A DIFFERENT VALUE IS NOT WHAT THE PAGE SHOWS ───────────
+		TestFalse(*FString::Printf(TEXT("NEGATIVE CONTROL: row '%s' does not show a different value ('%s'), so (a) tells numbers apart"), Shown.ActionId, *Shown.WrongClause),
+			OwnPage.Contains(Shown.WrongClause, ESearchCase::CaseSensitive));
+
+		// ── (a2) EVERY RENDERING OF THE ROW SHOWS IT ─────────────────────────────────────
+		// ⛔ Found by walking every row's composed page, never from a typed list: the row's own page
+		// body, plus every related block on any page that renders it.
+		int32 Renderings = 0;
+		int32 RenderingsShowingIt = 0;
+		for (const FSiegeControlsHelpAction& PageRow : FSiegeControlsHelpRegistry::GetActions())
+		{
+			const FSiegeControlsDetailContent Page =
+				FSiegeControlsHelpRegistry::ComposeDetailContent(PageRow, nullptr, NoAppliedKeys);
+
+			if (PageRow.ActionId == Row->ActionId)
+			{
+				++Renderings;
+				RenderingsShowingIt += Page.Body.ToString().Contains(Shown.Clause, ESearchCase::CaseSensitive) ? 1 : 0;
+			}
+
+			for (const FSiegeControlsDetailEntry& Entry : Page.Related)
+			{
+				if (Entry.ActionId == Row->ActionId)
+				{
+					++Renderings;
+					RenderingsShowingIt += Entry.Body.ToString().Contains(Shown.Clause, ESearchCase::CaseSensitive) ? 1 : 0;
+				}
+			}
+		}
+
+		// ⛔ THE VACUITY GUARD: a walk that found no rendering at all would make the next line 0 == 0.
+		TestTrue(*FString::Printf(TEXT("Row '%s' is rendered somewhere, so (a2) is a measurement"), Shown.ActionId),
+			Renderings > 0);
+		TestEqual(*FString::Printf(TEXT("Every rendering of row '%s' shows %s (its own page and each related block that renders it)"), Shown.ActionId, Shown.What),
+			RenderingsShowingIt, Renderings);
+
+		AddInfo(FString::Printf(TEXT("Row '%s': '%s' shown on %d of %d rendering(s)."),
+			Shown.ActionId, *Shown.Clause, RenderingsShowingIt, Renderings));
+	}
+
+	// ── (d) NO NUMBER TOKEN SURVIVES ON ANY COMPOSED PAGE ──────────────────────────────────
+	// ⚠️ A token naming nothing is LEFT VISIBLE by the composer (`HELP-§2` mechanism 2), so this
+	// is the check that stops a misspelled `{#…}` reaching the screen.
+	int32 TemplatesWithNumberTokens = 0;
+	for (const FSiegeControlsHelpAction& PageRow : FSiegeControlsHelpRegistry::GetActions())
+	{
+		if (PageRow.Detail.ToString().Contains(TEXT("{#"), ESearchCase::CaseSensitive))
+		{
+			++TemplatesWithNumberTokens;
+		}
+
+		TestFalse(*FString::Printf(TEXT("Row '%s' leaves no unresolved number token in its composed detail"), *PageRow.ActionId.ToString()),
+			FSiegeControlsHelpRegistry::ComposeDetailForDisplay(PageRow).ToString().Contains(TEXT("{#"), ESearchCase::CaseSensitive));
+	}
+
+	TestTrue(TEXT("At least one shipped template carries a number token, so (d) is a measurement and the mechanism is in use"),
+		TemplatesWithNumberTokens > 0);
 
 	return true;
 }

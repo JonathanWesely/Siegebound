@@ -138,13 +138,22 @@ struct FSiegeControlsHelpAction
 	UPROPERTY()
 	FText DisplayName;
 
-	/** The one-line description shown on the row (TASK-704 §4, verbatim). */
+	/**
+	 *  The one-line description shown on the row. For the original row set it is TASK-704 §4's
+	 *  text verbatim, except Cards.Discard's, which TASK-821 rewrote in place; rows 25-27
+	 *  (Cards.StackUpgrade, Cards.PlacementResize, Interface.MapMarks) are TASK-823's own prose,
+	 *  authored at source.
+	 */
 	UPROPERTY()
 	FText OneLine;
 
 	/**
-	 *  ⭐ THE FULL-SCREEN DETAIL PROSE. FILLED BY TASK-707 from
-	 *  handoffs/TASK-704-programmer.md §4 — ⛔ transferred, ⛔ never re-authored. §4's
+	 *  ⭐ THE FULL-SCREEN DETAIL PROSE. TASK-707 filled each original row's detail string from
+	 *  handoffs/TASK-704-programmer.md §4's prose for that row. Not every string is still 704's
+	 *  words: TASK-823 wrote its three appended rows at source, and later rows rewrote others,
+	 *  among them TASK-821 (Cards.Discard, in place), TASK-870 (Interface.WarMap) and TASK-1541
+	 *  (2026-09-27: the code names the prose printed, put into plain words); ⛔ TASK-707's
+	 *  transfer re-authored, re-derived and invented nothing. §4's
 	 *  `file:line` citations ride in a C++ COMMENT above each string rather than in the
 	 *  player-facing prose (`HELP-§2`'s own instruction for an unavoidable literal; the route
 	 *  TASK-706 §4(e) assigned to this task).
@@ -165,8 +174,11 @@ struct FSiegeControlsHelpAction
 	 *  prose; since TASK-1541 (2026-09-27) the prose describes each one in plain words ("a set
 	 *  step", "once per melee cooldown", "a fixed reveal fee") and the code name sits in the
 	 *  C++ comment beside its string, still with no number typed. The ONE
-	 *  stated number in the whole registry is the war map's 30 gold, because Jonathan's own
-	 *  words are the source and they are quoted at the property (CommanderNpc.h:297-311).
+	 *  number typed as a quantity in the whole registry is the war map's 30 gold, because
+	 *  Jonathan's own words are the source and they are quoted at the property
+	 *  (CommanderNpc.h:297-311); every other number a page shows is derived at runtime from the
+	 *  property that owns it, through a `{#Name}` token that ComposeDetailForDisplay replaces
+	 *  (TASK-1576, 2026-09-28).
 	 */
 	UPROPERTY()
 	FText Detail;
