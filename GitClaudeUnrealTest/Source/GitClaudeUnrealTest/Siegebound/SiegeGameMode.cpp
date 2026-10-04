@@ -1666,6 +1666,15 @@ void ASiegeGameMode::StartSandboxMatch(const UObject* WorldContextObject)
 //~ ban-shaped helper. Per-player restore is parameterized; team-keyed resolves
 //~ use ASiegePlayerController::FindControllerForTeam.
 
+ASiegeBotController* ASiegeGameMode::GetBotController() const
+{
+	// TASK-1600: the one read door onto the private BotController member. Raw pointer out
+	// of the TObjectPtr; null before SpawnBot, in Sandbox / networked matches, and when the
+	// spawn failed — callers null-check (SiegeBotController.h is included above, so the
+	// conversion sees the complete type).
+	return BotController;
+}
+
 void ASiegeGameMode::SpawnBot()
 {
 	// M8 networked-match gate (TASK-356 doc §2.2/D2 — retires audit §1b#3's

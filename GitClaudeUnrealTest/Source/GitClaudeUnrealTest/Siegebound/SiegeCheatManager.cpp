@@ -680,3 +680,24 @@ void USiegeCheatManager::DumpAssistantPrompt(FString Utterance)
 		*Utterance);
 #endif // !UE_BUILD_SHIPPING
 }
+
+void USiegeCheatManager::SetBotEnabled(bool bEnabled)
+{
+#if !UE_BUILD_SHIPPING
+	// Forwarder only (TASK-1600). The controller's SetBotEnabled owns the bot resolve and
+	// its one-Warning-and-return when no bot exists; the bot owns the switch itself.
+	ASiegePlayerController* SiegePC = Cast<ASiegePlayerController>(GetOuterAPlayerController());
+	if (!SiegePC)
+	{
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("USiegeCheatManager::SetBotEnabled — no owning ASiegePlayerController; nothing changed."));
+		return;
+	}
+
+	SiegePC->SetBotEnabled(bEnabled);
+#else
+	// Shipping: the switch does not exist (and neither does this cheat manager). No-op.
+	(void)bEnabled;
+	return;
+#endif // !UE_BUILD_SHIPPING
+}

@@ -1697,6 +1697,45 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Siegebound|Cards")
 	int32 GetDiscardAllCost() const { return DiscardAllCost; }
 
+	//~ ─── THE DEV-ONLY BOT SWITCH — THE REACH (TASK-1600; CONVENTIONS "Dev / test tooling") ───
+	//~
+	//~ The ONE implementation is ASiegeBotController::SetBotEnabled; these two forward to it
+	//~ through ASiegeGameMode::GetBotController(). WHY THEY LIVE ON THE PLAYER CONTROLLER AND
+	//~ NOT ONLY ON THE CHEAT MANAGER: the Aura verifier's already-granted
+	//~ `pie_scene_edit → call_actor_function` verb needs a BlueprintCallable UFUNCTION on an
+	//~ actor it can find in the PIE world — and this controller is that actor (the cheat
+	//~ manager is a UObject it cannot find). `Exec` additionally makes `SetBotEnabled 0` /
+	//~ `SetBotEnabled 1` typeable at the console; the console resolves a controller's own
+	//~ exec before the cheat manager's, so USiegeCheatManager::SetBotEnabled's duplicate
+	//~ name is harmless. ⛔ NON-SHIPPING BY CONSTRUCTION: the declarations are unconditional
+	//~ (UHT does not honour an arbitrary #if around a UFUNCTION) and the SetBotEnabled BODY
+	//~ is `#if !UE_BUILD_SHIPPING … #else return; #endif` — it does nothing and logs
+	//~ nothing in a Shipping build.
+
+	/**
+	 *  Switches the match's Red bot's DECISIONS off (false) or on (true) — the dev-only
+	 *  bot switch (TASK-1600). Forwards to ASiegeBotController::SetBotEnabled on the bot
+	 *  resolved through ASiegeGameMode::GetBotController(). When no bot is resolvable —
+	 *  no authority (a client), no ASiegeGameMode, a Sandbox or networked match, or
+	 *  before SpawnBot — it prints ONE LogGitClaudeUnrealTest Warning naming the reason
+	 *  and returns; never a crash. Console: `SetBotEnabled 0` / `SetBotEnabled 1`.
+	 *  Verifier: call_actor_function on this actor, function SetBotEnabled, arg bEnabled.
+	 *  The bot's own LogSiegeBot transition line is the proof the call landed; the
+	 *  IsBotEnabled readback below is corroboration. Shipping: a no-op (see above).
+	 */
+	UFUNCTION(Exec, BlueprintCallable, Category = "Siegebound|Dev")
+	void SetBotEnabled(bool bEnabled);
+
+	/**
+	 *  The forwarded readback of the bot's EFFECTIVE switch state (TASK-1600):
+	 *  ASiegeBotController::IsBotEnabled() on the resolved bot, or false when there is
+	 *  no bot to ask (Sandbox, networked, pre-spawn, client). Pure, silent: no log on
+	 *  either branch (a getter a widget could poll must not warn per call). In a
+	 *  Shipping build a resolvable bot answers true — the bot's own Shipping answer.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Dev")
+	bool IsBotEnabled() const;
+
 protected:
 
 	/**

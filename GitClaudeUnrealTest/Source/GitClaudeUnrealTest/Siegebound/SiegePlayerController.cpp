@@ -35,6 +35,7 @@
 #include "Siegebound/SiegeAccountSubsystem.h" // TASK-602: USiegeAccountSubsystem — the ACC-§4 deck-slot seam (the class is TASK-600's, landing in the same batch — the TASK-442 parallel-header precedent)
 #include "Siegebound/SiegeAssistantComponent.h" // USiegeAssistantComponent — complete type for the constructor's CreateDefaultSubobject (TASK-440; the class BODY is TASK-442's, so this header does not exist until that task lands — see the handoff's compile-order note)
 #include "Siegebound/SiegeAssistantConsoleWidget.h" // USiegeAssistantConsoleWidget — complete type for CreateAndAddToViewport / Open / Close / the OnConsoleOpenChanged binding (TASK-449; the widget itself is TASK-444's)
+#include "Siegebound/SiegeBotController.h" // TASK-1600: ASiegeBotController::SetBotEnabled / IsBotEnabled — complete type for the two forwarded calls of the dev-only bot switch (SiegeGameMode.h, for GetBotController, is already included below)
 #include "Siegebound/SiegeCheatManager.h" // TASK-121 — CheatClass complete-type (constructor assignment below)
 #include "Siegebound/SiegeCombatStatics.h" // TASK-1132 (WITCH-§8): FSiegeCombatStatics — the ONE shipped veil predicate, consulted by the 30-gold enemy-reveal survey. ⛔ READ ONLY: this controller adds no rule and owns none.
 #include "Siegebound/SiegeControlsHelpWidget.h" // USiegeControlsHelpWidget — complete type for CreateAndAddToViewport / OpenHelp / CloseHelp / the OnHelpOpenChanged binding (TASK-706, `HELP-§3`)
@@ -7786,4 +7787,90 @@ void ASiegePlayerController::ClientReceiveEnemyReveal_Implementation(const TArra
 	}
 
 	WarMapWidget->ReceiveEnemyReveal(EnemyWorldXY);
+}
+
+// ─── TASK-1600: THE DEV-ONLY BOT SWITCH — THE PLAYER-CONTROLLER REACH ───────────────────
+//  Forwarders only. The ONE implementation is ASiegeBotController::SetBotEnabled.
+
+namespace
+{
+	/**
+	 *  Resolves the match's single bot for the dev-only switch (TASK-1600), or nullptr with
+	 *  OutReason naming WHY in plain words — the Warning the caller prints quotes it. Every
+	 *  step is null-safe and read-only: authority first (a client has no server game mode
+	 *  to ask), then the world, then the ASiegeGameMode, then its GetBotController() (null
+	 *  before SpawnBot, in a Sandbox match, in a networked 1v1, or after a failed spawn —
+	 *  the mode keeps those latches private, so they are named together here). A free
+	 *  function in this TU's anonymous namespace: no member, no shadow, no header change.
+	 */
+	ASiegeBotController* ResolveBotForDevSwitch(const ASiegePlayerController& SiegeController, const TCHAR*& OutReason)
+	{
+		OutReason = nullptr;
+
+		if (!SiegeController.HasAuthority())
+		{
+			OutReason = TEXT("this controller has no authority — a client cannot reach the server's bot");
+			return nullptr;
+		}
+
+		const UWorld* World = SiegeController.GetWorld();
+		if (!World)
+		{
+			OutReason = TEXT("no world");
+			return nullptr;
+		}
+
+		const ASiegeGameMode* SiegeMode = Cast<ASiegeGameMode>(World->GetAuthGameMode());
+		if (!SiegeMode)
+		{
+			OutReason = TEXT("no ASiegeGameMode is running — not an arena match");
+			return nullptr;
+		}
+
+		ASiegeBotController* Bot = SiegeMode->GetBotController();
+		if (!Bot)
+		{
+			OutReason = TEXT("no bot controller is spawned in this match — a Sandbox or networked match, a failed spawn, or SpawnBot has not run yet");
+			return nullptr;
+		}
+
+		return Bot;
+	}
+}
+
+void ASiegePlayerController::SetBotEnabled(bool bEnabled)
+{
+#if !UE_BUILD_SHIPPING
+	const TCHAR* Reason = nullptr;
+	ASiegeBotController* Bot = ResolveBotForDevSwitch(*this, Reason);
+	if (!Bot)
+	{
+		// ONE Warning naming the reason, then return — never a crash (the row's law).
+		UE_LOG(LogGitClaudeUnrealTest, Warning,
+			TEXT("ASiegePlayerController '%s': SetBotEnabled(%s) did nothing — %s."),
+			*GetNameSafe(this), bEnabled ? TEXT("true") : TEXT("false"), Reason ? Reason : TEXT("no bot resolvable"));
+		return;
+	}
+
+	// One generic-category line per call so a verifier can see the call LANDED on a bot;
+	// the decision-trace proof stays the bot's own LogSiegeBot transition line, which it
+	// prints only on an effective change (this line is not on LogSiegeBot, by law).
+	UE_LOG(LogGitClaudeUnrealTest, Log,
+		TEXT("ASiegePlayerController '%s': SetBotEnabled(%s) — forwarding to bot '%s' (dev-only switch, TASK-1600)."),
+		*GetNameSafe(this), bEnabled ? TEXT("true") : TEXT("false"), *GetNameSafe(Bot));
+
+	Bot->SetBotEnabled(bEnabled);
+#else
+	// Shipping: the switch does not exist. No resolve, no state change, nothing logged.
+	(void)bEnabled;
+	return;
+#endif // !UE_BUILD_SHIPPING
+}
+
+bool ASiegePlayerController::IsBotEnabled() const
+{
+	// Pure, silent readback: no log on either branch. False when there is no bot to ask.
+	const TCHAR* UnusedReason = nullptr;
+	const ASiegeBotController* Bot = ResolveBotForDevSwitch(*this, UnusedReason);
+	return Bot ? Bot->IsBotEnabled() : false;
 }

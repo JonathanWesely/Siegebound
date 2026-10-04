@@ -169,4 +169,19 @@ public:
 	 */
 	UFUNCTION(exec)
 	void DumpAssistantPrompt(FString Utterance);
+
+	/**
+	 *  THE DEV-ONLY BOT SWITCH, cheat-manager reach (TASK-1600) — `SetBotEnabled 0` /
+	 *  `SetBotEnabled 1` at the console. Forwards to the owning
+	 *  ASiegePlayerController::SetBotEnabled (which resolves the match's bot through
+	 *  ASiegeGameMode::GetBotController() and forwards again to the ONE implementation,
+	 *  ASiegeBotController::SetBotEnabled). Same name as the controller's own Exec on
+	 *  purpose and harmless: the console resolves a controller's exec before its cheat
+	 *  manager's, and this class only exists in non-shipping builds with cheats enabled
+	 *  ("Dev / test tooling" law). Null-safe: no owning ASiegePlayerController ⇒ one
+	 *  Warning, nothing changed. The BODY is `#if !UE_BUILD_SHIPPING … #else return;
+	 *  #endif` like its two siblings — a no-op that logs nothing in Shipping.
+	 */
+	UFUNCTION(exec)
+	void SetBotEnabled(bool bEnabled);
 };

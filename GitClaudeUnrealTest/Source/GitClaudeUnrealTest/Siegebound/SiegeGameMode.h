@@ -228,6 +228,19 @@ public:
 	virtual bool HasMatchEnded() const override { return bMatchEnded; }
 
 	/**
+	 *  The single Red bot opponent of this match (TASK-1600) — the private BotController
+	 *  member, read-only. nullptr before SpawnBot has run, in a Sandbox match (no AI
+	 *  opponent, TASK-071), in a networked 1v1 (the Red seat is human, M8 doc §2.2), on a
+	 *  client (no authority game mode), or when the spawn failed. Every caller must
+	 *  null-check. Added for the dev-only bot switch: ASiegePlayerController::SetBotEnabled
+	 *  resolves the bot through this and forwards; the mode itself still reaches the bot
+	 *  through the member. Defined in the .cpp (which holds the complete
+	 *  ASiegeBotController type) rather than inline against the forward declaration.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Bot")
+	ASiegeBotController* GetBotController() const;
+
+	/**
 	 *  ⭐⭐ THE ONE DEATH-LIFECYCLE PREDICATE (TASK-750, GHOST-§2 / GHOST-§3) — PURE,
 	 *  STATIC, ⛔ no world, ⛔ no actors, ⛔ no member state. It answers ONE question
 	 *  for BOTH halves of the death transition: does this death put the player into

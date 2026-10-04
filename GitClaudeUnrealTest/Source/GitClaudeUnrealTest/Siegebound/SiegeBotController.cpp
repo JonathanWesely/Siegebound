@@ -9,6 +9,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GitClaudeUnrealTest.h"
+#include "HAL/IConsoleManager.h" // TASK-1600: TAutoConsoleVariable for siege.BotEnabled, the console half of the dev-only bot switch (non-shipping only)
 #include "NavigationSystem.h"
 #include "TimerManager.h"
 #include "UObject/SoftObjectPtr.h"
@@ -29,6 +30,42 @@
 #include "Siegebound/Tower.h"
 
 DEFINE_LOG_CATEGORY(LogSiegeBot);
+
+#if !UE_BUILD_SHIPPING
+namespace SiegeBotCVars
+{
+	/**
+	 *  `siege.BotEnabled` — the console half of the dev-only bot switch (TASK-1600;
+	 *  CONVENTIONS "Dev / test tooling"; naming per the `siege.<Thing>` family the repo's
+	 *  first console variable pinned — mirrors `siege.Input.LayoutPollEnabled` in
+	 *  SiegeKeyboardLayoutSubsystem.cpp). int32, default 1 (the bot decides), ECVF_Cheat.
+	 *
+	 *  The EFFECTIVE switch state is ASiegeBotController::bBotEnabled && (this != 0), so
+	 *  the function and the console variable compose with AND: either one can hold the
+	 *  bot off, and both must be on for it to decide. Read at BeginPlay (so
+	 *  -ExecCmds="siege.BotEnabled 0" gives a bot that is off from match start, with the
+	 *  disabled line printed once there) and polled at the top of every EvaluateDecisions
+	 *  tick (so a runtime console change lands within one DecisionIntervalSeconds, and
+	 *  its transition is announced once too — RefreshBotEnabledTransition is driven by
+	 *  the EFFECTIVE state, not by which input moved).
+	 *
+	 *  ⛔ ECVF_Cheat + this `#if !UE_BUILD_SHIPPING`: the variable does not exist in a
+	 *  Shipping binary at all (nothing to type, nothing to read, nothing to -ExecCmds).
+	 *  In Development the engine's DISABLE_CHEAT_CVARS is false, so the console and
+	 *  -ExecCmds can set it; the cheat flag is the engine's own marker for a dev lever.
+	 *  ⛔ Help text in plain words — no `::`, no `()` (the TASK-1560 register).
+	 */
+	static TAutoConsoleVariable<int32> CVarSiegeBotEnabled(
+		TEXT("siege.BotEnabled"),
+		1,
+		TEXT("1 is the default: the Red bot makes its decisions as normal. ")
+		TEXT("0 stops the bot deciding: no card play, no discard, no spell cast, no gold spent. ")
+		TEXT("Its gold, miners and the units already on the field carry on as before. ")
+		TEXT("Read at match start and again before every decision, so a change lands within one decision interval. ")
+		TEXT("Dev and test lever only. It does not exist in a Shipping build."),
+		ECVF_Cheat);
+}
+#endif // !UE_BUILD_SHIPPING
 
 namespace
 {
@@ -343,6 +380,14 @@ void ASiegeBotController::BeginPlay()
 			*GetNameSafe(this));
 	}
 
+#if !UE_BUILD_SHIPPING
+	// TASK-1600: read siege.BotEnabled at match start, so -ExecCmds="siege.BotEnabled 0"
+	// yields a bot that is OFF from t0 — and announce it here, once, on LogSiegeBot
+	// (RefreshBotEnabledTransition prints only on an effective change; a default-1
+	// variable prints nothing). The cvar and this read share the one Shipping guard.
+	RefreshBotEnabledTransition();
+#endif // !UE_BUILD_SHIPPING
+
 	// Start the §4 decision cadence. EvaluateDecisions is a no-op in this shell
 	// (TASK-045); TASK-046 fills it. ASiegeGameMode tags this controller's
 	// PlayerState Team=Red right after spawning it — that identity is set before
@@ -388,6 +433,21 @@ void ASiegeBotController::StopDecisionTimer()
 
 void ASiegeBotController::EvaluateDecisions()
 {
+#if !UE_BUILD_SHIPPING
+	// (00) THE DEV-ONLY BOT SWITCH (TASK-1600) — polled FIRST, before the match gate and
+	// before any §4 rule, so while the switch is off NOTHING below runs: no play, no
+	// discard, no spell cast, no SpendGold. The timer that called us keeps ticking (a
+	// re-enable lands on the next beat); income, miners and live units are not ours to
+	// touch and are untouched. The poll also re-reads siege.BotEnabled, so a runtime
+	// console change is picked up within one DecisionIntervalSeconds and announced once.
+	// Compiled out of Shipping: the Shipping decision path is byte-for-byte today's.
+	RefreshBotEnabledTransition();
+	if (!IsBotEnabled())
+	{
+		return;
+	}
+#endif // !UE_BUILD_SHIPPING
+
 	// (0) MATCH-ACTIVE GATE (TASK-045 forward-dep / GDD §3.9): never act under the
 	// Victory screen. TASK-047 ALSO calls StopDecisionTimer() in the match-end
 	// freeze — this is the bot-internal half of that belt-and-suspenders.
@@ -1827,7 +1887,85 @@ void ASiegeBotController::ResetBot()
 	// match logs once (the bLoggedMineLockout latch self-heals on the first rule-2 tick of the match).
 	bRule2SpawnFailureLogged = false;
 
+	// TASK-1600: bBotEnabled (the dev-only bot switch) and its log latch are deliberately
+	// NOT reset here — the switch lives for the life of the world, so a bot switched off
+	// stays off across Play Again until SetBotEnabled(true). ResetBot owns match state;
+	// the switch is not match state.
+
 	// 3) A clean decision cadence for the new match (clears any running/stale handle
 	//    first). TASK-047 stops the timer at match end; Play Again restarts it here.
 	StartDecisionTimer();
+}
+
+// ─── TASK-1600: THE DEV-ONLY BOT SWITCH ──────────────────────────────────────────────────
+//  The ONE implementation lives here; ASiegePlayerController::SetBotEnabled and
+//  USiegeCheatManager::SetBotEnabled only forward to it. Three bodies, one law: the
+//  declarations are unconditional (UHT), the bodies are `#if !UE_BUILD_SHIPPING`.
+
+void ASiegeBotController::SetBotEnabled(bool bEnabled)
+{
+#if !UE_BUILD_SHIPPING
+	if (bBotEnabled == bEnabled)
+	{
+		// Same value as the flag already holds: nothing changes and nothing goes on
+		// LogSiegeBot (the one-line-per-transition law). Verbose on the generic category
+		// only, so a repeated call is traceable without polluting the decision trace.
+		UE_LOG(LogGitClaudeUnrealTest, Verbose,
+			TEXT("ASiegeBotController '%s': SetBotEnabled(%s) repeats the current flag — no change."),
+			*GetNameSafe(this), bEnabled ? TEXT("true") : TEXT("false"));
+	}
+	else
+	{
+		bBotEnabled = bEnabled;
+	}
+
+	// Announce the EFFECTIVE transition, if there is one. The flag may have flipped while
+	// the console variable still holds the bot off (or vice versa) — then the effective
+	// state did not move and this prints nothing, which is exactly the law.
+	RefreshBotEnabledTransition();
+#else
+	// Shipping: the switch does not exist. No state changes, nothing is logged, and
+	// bBotEnabled therefore never leaves true in a Shipping build.
+	(void)bEnabled;
+	return;
+#endif // !UE_BUILD_SHIPPING
+}
+
+bool ASiegeBotController::IsBotEnabled() const
+{
+#if !UE_BUILD_SHIPPING
+	// Effective state = the function half AND the console half. GetValueOnGameThread:
+	// every caller (timer tick, Exec, call_actor_function, the offline tests) is on the
+	// game thread.
+	return bBotEnabled && (SiegeBotCVars::CVarSiegeBotEnabled.GetValueOnGameThread() != 0);
+#else
+	// Shipping: no switch, so the bot is always enabled — today's behaviour.
+	return true;
+#endif // !UE_BUILD_SHIPPING
+}
+
+void ASiegeBotController::RefreshBotEnabledTransition()
+{
+#if !UE_BUILD_SHIPPING
+	const bool bEffectiveEnabled = IsBotEnabled();
+	if (bEffectiveEnabled == bLastLoggedEffectiveBotEnabled)
+	{
+		// No effective change — nothing on LogSiegeBot (exactly once per transition).
+		return;
+	}
+	bLastLoggedEffectiveBotEnabled = bEffectiveEnabled;
+
+	// The two switch lines admitted to LogSiegeBot by the category comment in the header
+	// (TASK-1600). Character-for-character per the row: the prefix "[Bot <name>] " and
+	// then "bot disabled by SetBotEnabled" / "bot enabled by SetBotEnabled" — the same
+	// wording whether the function or siege.BotEnabled drove the transition.
+	if (bEffectiveEnabled)
+	{
+		UE_LOG(LogSiegeBot, Log, TEXT("[Bot %s] bot enabled by SetBotEnabled"), *GetNameSafe(this));
+	}
+	else
+	{
+		UE_LOG(LogSiegeBot, Log, TEXT("[Bot %s] bot disabled by SetBotEnabled"), *GetNameSafe(this));
+	}
+#endif // !UE_BUILD_SHIPPING
 }

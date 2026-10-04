@@ -44,6 +44,7 @@ Tools/ArtPipeline/Cache/
 .claude/pipeline/handoffs/
 .claude/pipeline/footage/
 .claude/pipeline/fab/
+.claude/pipeline/archive/
 .claude/commands/
 .claude/agents/
 .claude/hooks/

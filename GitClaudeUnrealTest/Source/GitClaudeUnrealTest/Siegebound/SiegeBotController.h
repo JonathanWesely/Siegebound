@@ -20,8 +20,18 @@ class UDeckComponent;
  *  GDD §4 "logged decision trace" acceptance is grep-able. Declared here (the
  *  bot is its only user) and defined in SiegeBotController.cpp — TASK-046. All
  *  non-decision diagnostics (missing BP, no valid spawn point this tick) stay on
- *  LogGitClaudeUnrealTest so this category holds exactly one line per actual
- *  play/discard.
+ *  LogGitClaudeUnrealTest.
+ *
+ *  THREE NON-RULE LINES ALSO LIVE ON THIS CATEGORY, BY DESIGN, AND THIS LIST IS THE
+ *  WHOLE SET (TASK-1600 amended this comment to match the code — a comment that
+ *  contradicts the code is a defect, the TASK-1560 lesson):
+ *    - the deck-select line at BeginPlay ("[Bot <name>] Deck select: ..."), ONE per
+ *      match start (M6 TASK-114);
+ *    - "[Bot <name>] bot disabled by SetBotEnabled" and "[Bot <name>] bot enabled by
+ *      SetBotEnabled" (TASK-1600, the dev-only bot switch) — ONE line per EFFECTIVE
+ *      transition of the switch (whether the function or the siege.BotEnabled console
+ *      variable drove it), never on a same-value repeat, and compiled out of Shipping.
+ *  Every other line on this category is one fired play / discard / spell cast.
  */
 DECLARE_LOG_CATEGORY_EXTERN(LogSiegeBot, Log, All);
 
@@ -111,6 +121,8 @@ public:
 	 *       the new match (clears any running/stale handle first, so it never
 	 *       stacks). This is the "resets the timer" in the acceptance: after a
 	 *       Play Again the bot resumes deciding at a clean 2 s beat.
+	 *  ⛔ NOT RESET HERE (TASK-1600): the dev-only switch flag bBotEnabled — it lives for
+	 *  the life of the world, so a bot switched off stays off across Play Again.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Bot")
 	void ResetBot();
@@ -123,6 +135,43 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Siegebound|Bot")
 	void StopDecisionTimer();
+
+	/**
+	 *  THE DEV-ONLY BOT SWITCH (TASK-1600; CONVENTIONS "Dev / test tooling"). Stops and
+	 *  restarts THIS bot's DECISIONS — nothing else:
+	 *    - while the switch is off, EvaluateDecisions() returns before any §4 rule runs:
+	 *      no play, no discard, no spell cast, no SpendGold;
+	 *    - everything else is untouched: the decision timer keeps ticking (so a
+	 *      re-enable is picked up on the very next beat), the income timer, miners and
+	 *      gold accrual run exactly as today, Red units already on the field keep
+	 *      fighting, and the deck and hand are not touched.
+	 *  The EFFECTIVE state is bBotEnabled && (siege.BotEnabled != 0) — see IsBotEnabled();
+	 *  this function owns the flag half, the console variable owns the other half.
+	 *  ⚠ THE FLAG LIVES FOR THE LIFE OF THE WORLD: ResetBot() (Play Again) does NOT reset
+	 *  it — a verifier who switched the bot off keeps it off across a Play Again until
+	 *  it calls SetBotEnabled(true). A same-value call changes nothing and prints nothing
+	 *  on LogSiegeBot (Verbose on LogGitClaudeUnrealTest only); an effective transition
+	 *  prints exactly one LogSiegeBot line (see the category comment above).
+	 *  ⛔ NON-SHIPPING BY CONSTRUCTION: the declaration is unconditional (UHT does not
+	 *  honour an arbitrary #if around a UFUNCTION), the BODY is `#if !UE_BUILD_SHIPPING`
+	 *  … `#else return; #endif`, so in a Shipping build this call does nothing, logs
+	 *  nothing, and bBotEnabled never leaves true. Reached from the console and
+	 *  -ExecCmds through siege.BotEnabled, from ASiegePlayerController::SetBotEnabled
+	 *  (an Exec + the verifier's call_actor_function surface) and from
+	 *  USiegeCheatManager::SetBotEnabled.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Siegebound|Bot")
+	void SetBotEnabled(bool bEnabled);
+
+	/**
+	 *  The EFFECTIVE switch state (TASK-1600): bBotEnabled && (siege.BotEnabled != 0).
+	 *  Pure read, no side effects, no log — the transition line is printed by the poll
+	 *  points (BeginPlay, each EvaluateDecisions tick, SetBotEnabled), not by this
+	 *  getter. Always true in a Shipping build (the console variable does not exist
+	 *  there and the flag cannot be written).
+	 */
+	UFUNCTION(BlueprintPure, Category = "Siegebound|Bot")
+	bool IsBotEnabled() const;
 
 protected:
 
@@ -763,4 +812,40 @@ private:
 	 *  exposed. Transient — reset state, never serialized.
 	 */
 	bool bRule2SpawnFailureLogged = false;
+
+	// --- TASK-1600: the dev-only bot switch (CONVENTIONS "Dev / test tooling") ---
+
+	/**
+	 *  The function half of the dev-only bot switch (TASK-1600): written ONLY by
+	 *  SetBotEnabled, read by IsBotEnabled (ANDed with the siege.BotEnabled console
+	 *  variable). Default true = the bot decides, today's behaviour. VisibleInstanceOnly
+	 *  + Transient so the inspector can read it on the live bot and nothing ever
+	 *  serializes it. Lives for the life of the world — ResetBot does NOT touch it.
+	 *  ⛔ In a Shipping build SetBotEnabled's body is compiled out, so this never leaves
+	 *  true there.
+	 */
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Siegebound|Bot")
+	bool bBotEnabled = true;
+
+	/**
+	 *  The last EFFECTIVE switch state that was announced on LogSiegeBot (TASK-1600).
+	 *  RefreshBotEnabledTransition compares the live effective state against this and
+	 *  prints the one "bot disabled / enabled by SetBotEnabled" line only when they
+	 *  differ — that is what makes the log exactly once per transition for BOTH inputs
+	 *  (the function and the console variable) and silent on a same-value repeat.
+	 *  Starts true because a fresh bot is effectively enabled. Not a UPROPERTY: a log
+	 *  latch, not state anyone inspects. Not reset by ResetBot (neither is the flag).
+	 */
+	bool bLastLoggedEffectiveBotEnabled = true;
+
+	/**
+	 *  The ONE place the switch's transition line is printed (TASK-1600). Recomputes the
+	 *  effective state (IsBotEnabled) and, iff it differs from
+	 *  bLastLoggedEffectiveBotEnabled, updates the latch and prints exactly one
+	 *  LogSiegeBot line. Called at BeginPlay (so -ExecCmds="siege.BotEnabled 0" announces
+	 *  a from-the-start disable once), at the top of every EvaluateDecisions tick (so a
+	 *  runtime console change is picked up within one DecisionIntervalSeconds), and from
+	 *  SetBotEnabled. Body is `#if !UE_BUILD_SHIPPING` — a no-op in Shipping.
+	 */
+	void RefreshBotEnabledTransition();
 };
