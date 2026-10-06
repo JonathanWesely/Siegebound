@@ -7,7 +7,7 @@ argument-hint: "[Shipping|Development] (default Shipping)"
 
 **Jonathan's standing instruction, verbatim:** *"anytime we make any changes, I can say 'ship' to you and you will update the zip file and any other documentation with all the current changes to the game."*
 
-**Law:** `.claude/pipeline/CONVENTIONS.md` → **`SHIP-§0..§10`** and **`PKG-§1..§12`** (plus **`SC-§118`** — a `-game` session is Jonathan's, never the pipeline's). Read `SHIP-§` before running this if you have not this session. **The script `Tools/Packaging/ship.ps1` is the authority on the RECIPE; this file is the authority on the PROCEDURE AND ITS REFUSALS.** Neither may contradict `PKG-§`; where they seem to, **`PKG-§` wins and the divergence is a defect** you report rather than paper over.
+**Law:** `.claude/pipeline/law/SHIP.md` (**`SHIP-§0..§10`**) and `.claude/pipeline/law/PKG.md` (**`PKG-§1..§14`**) — moved out of `CONVENTIONS.md` on 2026-10-04; its `## Law index` maps every tag to its file (plus **`SC-§118`** — a `-game` session is Jonathan's, never the pipeline's). Read `SHIP-§` before running this if you have not this session. **The script `Tools/Packaging/ship.ps1` is the authority on the RECIPE; this file is the authority on the PROCEDURE AND ITS REFUSALS.** Neither may contradict `PKG-§`; where they seem to, **`PKG-§` wins and the divergence is a defect** you report rather than paper over.
 
 ⚠️ **If you read only one new thing before your first `/ship`, read §2b below.** A Shipping run does **not** complete in one invocation: it ends at **`ADJUDICATE C3`** and waits for you to *look at a screenshot* and record what you saw. That is `SHIP-§8`, and it is the step no script can do for you.
 
@@ -257,7 +257,7 @@ Then re-invoke with the exact line the script printed:
 ### 4 — Second invocation (packages, verifies, prunes, commits)
 
 ```powershell
-& "...\ship.ps1" -CommitPaths "GitClaudeUnrealTest/Docs/setupdirections.md", "GitClaudeUnrealTest/.claude/pipeline/..." 
+& "...\ship.ps1" -CommitPaths "GitClaudeUnrealTest/Docs/GameDevSetup.md", "GitClaudeUnrealTest/.claude/pipeline/..." 
 ```
 
 PHASE A re-runs (cheap). **PHASE B and C are reused only if a state file proves they ran for a byte-identical build input** — same HEAD, same build-relevant working tree, same configuration, same recipe, same staged exe. **Any difference re-runs the compile, the suite and the cook in full.** The summary says which happened, loudly. ⚠️ **If you changed `Source/`, `Content/`, `Config/` or `Plugins/` between the two invocations, expect — and accept — a full re-cook.** That is the gate working.
@@ -285,7 +285,7 @@ PHASE A re-runs (cheap). **PHASE B and C are reused only if a state file proves 
 |---|---|---|
 | **`packagedZIPofGame/README.md`** | ⛔ **MANDATORY** | Rewritten every ship (step 3 above). Records the last shipped commit |
 | **`CLAUDE.md`** | ✅ **once, at setup only** | The routing line for the bare word *"ship"*. ⛔ **Not rewritten per ship** |
-| **`Docs/setupdirections.md`** | 🙋 **NARROW YES** | Updated **only** when this ship changed something that doc *asserts* (e.g. the packaging chapter, a config it documents). ⛔ **Never a blanket rewrite** — it is a hand-authored guide and a release procedure has no business restructuring it. If nothing it asserts changed, **touch nothing and say so** |
+| **`Docs/GameDevSetup.md`** (formerly `Docs/setupdirections.md`, renamed 2026-10-03) | 🙋 **NARROW YES** | Updated **only** when this ship changed something that doc *asserts* (e.g. the packaging chapter, a config it documents). ⛔ **Never a blanket rewrite** — it is a hand-authored guide and a release procedure has no business restructuring it. If nothing it asserts changed, **touch nothing and say so** |
 | **`Docs/GDD.md` change log** | ⛔ **NO (default)** | ⚖️ **A release procedure must not edit the DESIGN document.** The GDD is Jonathan's design intent; writing build results into it conflates *what we meant to build* with *what we packaged* |
 | **`TASKBOARD.md` / `CONVENTIONS.md`** | ⛔ **NO** | Pipeline law is the manager's, ⛔ never a build script's |
 

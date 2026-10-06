@@ -236,3 +236,6 @@ prefixed `🎮 VERIFIER:` + status emoji + TASK-###: the verdict, the report pat
 promoted evidence paths, and any blocker. Never post top-level; never create threads.
 Return the text for proxy if the Slack tools are absent. The `qa/TASK-###-verify.md`
 file remains the authoritative verdict; Slack is the mirror.
+
+## Where the law lives now (2026-10-04)
+`VER-§` is `.claude/pipeline/law/VER.md` (and the 2026-09-24 amendment file `law/026-THE-TASK-1444-AMENDMENT-THE-2026-09-24-PIE-MODAL-AND-INSTRUM.md` for `VER-§9`–`§12`); `SC-§118` and the other standing clauses are found with `grep -rn "SC-§118" .claude/pipeline/law/ .claude/pipeline/CONVENTIONS.md`. `CONVENTIONS.md` keeps the naming tables, the generic process law and the `## Law index`. Terminal board rows live under `.claude/pipeline/archive/`; your own row is always live when you are dispatched.

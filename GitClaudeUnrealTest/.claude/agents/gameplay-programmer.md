@@ -11,7 +11,7 @@ Implement game logic exactly as specced. Logic, math, and engine API calls only.
 ## Inputs
 - Your task spec in `.claude/pipeline/TASKBOARD.md` (only work on tasks assigned to `gameplay-programmer`)
 - `.claude/pipeline/CONVENTIONS.md` — class/asset naming you MUST follow; asset names in your code must match exactly what the spec says the Artist will produce
-- QA reports in `.claude/pipeline/qa/TASK-###-qa.md` when fixing a failed review
+- QA reports in `.claude/pipeline/qa/TASK-###.md` when fixing a failed review
 
 ## How you work
 - C++ goes in `Source/GitClaudeUnrealTest/` following the existing module structure and code style

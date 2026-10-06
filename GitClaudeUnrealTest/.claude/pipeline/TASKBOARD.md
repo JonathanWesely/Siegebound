@@ -206,7 +206,7 @@ Last run 2026-10-04: 103 archive files, 904 rows (TASK-0012..TASK-1599).
 
 #### TASK-1600 — [BOT-SWITCH-CODE] `SetBotEnabled` — a dev-only switch that stops and restarts the Red bot's decisions, reachable from the console, the cheat manager, `-ExecCmds`, and the verifier's `call_actor_function` (gameplay-programmer) — marker `TASK-1600-BOT-SWITCH-CODE`
 - assignee: gameplay-programmer
-- status: verified 2026-10-04 (`TASK-1603-VERIFIED-1600`) — 5b `TASK-1603` `Verdict: VERIFIED`, report `.claude/pipeline/qa/TASK-1603-verify.md` (P1–P7 pass, ARM B control fired: bot off 137.7 s arena / 142.6 s wall with 0 `LogSiegeBot` lines, Red gold 10→144 rising, hero 200 HP at +135 s; re-enable → first play in 0.37 s); 3 frames + 5 `.h264` films owed promotion/remux by the 5c host (report *Evidence*, *Recording*); next = 5c commit. Prior: built 2026-10-04 (`TASK-1600-BOT-SWITCH-CODE`) — 5a `TASK-1602`: `Result: Succeeded` (23 actions, 0 diagnostics), suite **575 / 575** green (+2 / −0 by name vs the 573 baseline: `Siegebound.Bot.SetBotEnabled.FlagRoundTrip` · `Siegebound.Bot.SetBotEnabled.CVarComposes`), editor relaunched **PID 30480** on DLL `fd938813…241ec8` (`LAUNCH_EDITOR: PID=30480 SECONDS=17`), handoff `.claude/pipeline/handoffs/TASK-1602-buildmaster.md`; **no commit yet** (5c after `TASK-1603`). QA `TASK-1601` PASS (0 BLOCKER · 1 WARN · 4 NIT), report `.claude/pipeline/qa/TASK-1601.md`; programmer handoff `.claude/pipeline/handoffs/TASK-1600-programmer.md`; nine files (8 edited + `Tests/SiegeBotSwitchTest.cpp` new), all nine at their handoff §0 sha256 when compiled; gate `TASK-1601`.
+- status: done — COMMITTED d8ff31c (`TASK-1600-BOT-SWITCH-5C`, 2026-10-04, host handoff `handoffs/TASK-1600-buildmaster.md`); was: verified 2026-10-04 (`TASK-1603-VERIFIED-1600`) — 5b `TASK-1603` `Verdict: VERIFIED`, report `.claude/pipeline/qa/TASK-1603-verify.md` (P1–P7 pass, ARM B control fired: bot off 137.7 s arena / 142.6 s wall with 0 `LogSiegeBot` lines, Red gold 10→144 rising, hero 200 HP at +135 s; re-enable → first play in 0.37 s); 3 frames + 5 `.h264` films owed promotion/remux by the 5c host (report *Evidence*, *Recording*); next = 5c commit. Prior: built 2026-10-04 (`TASK-1600-BOT-SWITCH-CODE`) — 5a `TASK-1602`: `Result: Succeeded` (23 actions, 0 diagnostics), suite **575 / 575** green (+2 / −0 by name vs the 573 baseline: `Siegebound.Bot.SetBotEnabled.FlagRoundTrip` · `Siegebound.Bot.SetBotEnabled.CVarComposes`), editor relaunched **PID 30480** on DLL `fd938813…241ec8` (`LAUNCH_EDITOR: PID=30480 SECONDS=17`), handoff `.claude/pipeline/handoffs/TASK-1602-buildmaster.md`; **no commit yet** (5c after `TASK-1603`). QA `TASK-1601` PASS (0 BLOCKER · 1 WARN · 4 NIT), report `.claude/pipeline/qa/TASK-1601.md`; programmer handoff `.claude/pipeline/handoffs/TASK-1600-programmer.md`; nine files (8 edited + `Tests/SiegeBotSwitchTest.cpp` new), all nine at their handoff §0 sha256 when compiled; gate `TASK-1601`.
 - blocked-by: none
 - parallel-safe: yes vs text and asset rows · ⛔ NO vs any compile gate or any other writer in `Source/GitClaudeUnrealTest/` (QUIET-MODULE)
 - spec: >
@@ -224,7 +224,7 @@ Last run 2026-10-04: 103 archive files, 904 rows (TASK-0012..TASK-1599).
 
 #### TASK-1601 — [BOT-SWITCH-QA] The QA gate for `TASK-1600` (qa-reviewer) — marker `TASK-1601-BOT-SWITCH-QA`
 - assignee: qa-reviewer
-- status: done 2026-10-04 (`TASK-1601-BOT-SWITCH-QA`) — PASS on `TASK-1600` (0 BLOCKER · 1 WARN · 4 NIT), report `.claude/pipeline/qa/TASK-1601.md`; `TASK-1600` flipped to `qa-passed`.
+- status: done 2026-10-04 (`TASK-1601-BOT-SWITCH-QA`) — COMMITTED d8ff31c — PASS on `TASK-1600` (0 BLOCKER · 1 WARN · 4 NIT), report `.claude/pipeline/qa/TASK-1601.md`; `TASK-1600` flipped to `qa-passed`.
 - blocked-by: `TASK-1600` at `ready-for-qa`
 - parallel-safe: yes
 - spec: >
@@ -234,7 +234,7 @@ Last run 2026-10-04: 103 archive files, 904 rows (TASK-0012..TASK-1599).
 
 #### TASK-1602 — [BOT-SWITCH-5A] Compile + relaunch host for `TASK-1600` — `built`, no commit (build-master) — marker `TASK-1602-BOT-SWITCH-5A`
 - assignee: build-master
-- status: done 2026-10-04 (`TASK-1602-BOT-SWITCH-5A`) — `Result: Succeeded` (23 actions, 24.51 s, 0 diagnostics, UHT 9 files) · suite **575 / 575** green, +2 / −0 by name · `stop_editor.ps1`: PID 10976 terminated by PID, `L_Arena.umap` hash MATCH · `launch_editor.ps1`: `LAUNCH_EDITOR: PID=30480 SECONDS=17` · DLL `fd938813…241ec8` (10,207,232 B) · `TASK-1600` → `built` · **no commit** (5c after `TASK-1603`) · handoff `.claude/pipeline/handoffs/TASK-1602-buildmaster.md` · ⚠ FINDING for the manager: `Tools/stop_editor.ps1` exits 7 on an EMPTY field (its `Show-Census` parameter turns the empty census into `$null`; `@($null).Count` is 1; StrictMode throws on `.Created`) — the kill, the hash proof and every non-empty census are unaffected, `launch_editor.ps1` is unaffected (measured); the field was read as 0 by the allow-listed `Get-CimInstance Win32_Process` each time.
+- status: done 2026-10-04 (`TASK-1602-BOT-SWITCH-5A`) — COMMITTED d8ff31c — `Result: Succeeded` (23 actions, 24.51 s, 0 diagnostics, UHT 9 files) · suite **575 / 575** green, +2 / −0 by name · `stop_editor.ps1`: PID 10976 terminated by PID, `L_Arena.umap` hash MATCH · `launch_editor.ps1`: `LAUNCH_EDITOR: PID=30480 SECONDS=17` · DLL `fd938813…241ec8` (10,207,232 B) · `TASK-1600` → `built` · **no commit** (5c after `TASK-1603`) · handoff `.claude/pipeline/handoffs/TASK-1602-buildmaster.md` · ⚠ FINDING for the manager: `Tools/stop_editor.ps1` exits 7 on an EMPTY field (its `Show-Census` parameter turns the empty census into `$null`; `@($null).Count` is 1; StrictMode throws on `.Created`) — the kill, the hash proof and every non-empty census are unaffected, `launch_editor.ps1` is unaffected (measured); the field was read as 0 by the allow-listed `Get-CimInstance Win32_Process` each time.
 - blocked-by: `TASK-1601` PASS (`TASK-1600` at `qa-passed`) · QUIET-MODULE (no `Source/GitClaudeUnrealTest/` row in flight — re-check at your own instant) · no PIE, verification or import live (`VER-§2` cl. 1)
 - parallel-safe: ⛔ NO vs any `Source/` row, any verification, any import
 - spec: >
@@ -244,7 +244,7 @@ Last run 2026-10-04: 103 archive files, 904 rows (TASK-0012..TASK-1599).
 
 #### TASK-1603 — [BOT-SWITCH-5B] 🎮 The runtime verification: with the bot switched off at t≈5 s the Red team plays nothing for ≥120 s while its gold still rises; switched back on, it plays within 30 s; the control run plays within 30 s as today (playtest-verifier) — marker `TASK-1603-BOT-SWITCH-5B`
 - assignee: playtest-verifier
-- status: done 2026-10-04 (`TASK-1603-VERIFIED-1600`) — `Verdict: VERIFIED`, report `.claude/pipeline/qa/TASK-1603-verify.md`; 1 attempt of 3 (2 PIE sessions, ARM A + ARM B) on PID 30480; 2 declared `call_actor_function SetBotEnabled` ops; `.sav` net zero (sha256 + mtime); promotion of 3 frames and remux of 5 `.h264` films owed to the 5c host; `## Recipe candidates` 1 = `RCP-vsbot-bot-disabled-run.md` for the manager to mint; `TASK-1600` → `verified`.
+- status: done 2026-10-04 (`TASK-1603-VERIFIED-1600`) — COMMITTED d8ff31c (3 frames promoted to `.claude/pipeline/playtest-evidence/2026-10-04/`) — `Verdict: VERIFIED`, report `.claude/pipeline/qa/TASK-1603-verify.md`; 1 attempt of 3 (2 PIE sessions, ARM A + ARM B) on PID 30480; 2 declared `call_actor_function SetBotEnabled` ops; `.sav` net zero (sha256 + mtime); promotion of 3 frames and remux of 5 `.h264` films owed to the 5c host; `## Recipe candidates` 1 = `RCP-vsbot-bot-disabled-run.md` for the manager to mint; `TASK-1600` → `verified`.
 - blocked-by: `TASK-1602` at `done` (`TASK-1600` at `built`; the editor runs the new binaries on the PID in `handoffs/TASK-1602-buildmaster.md`, identified by command line at your own instant) · 🧑 Jonathan present + the announce-and-report grant (`VER-§3` cl. 6) · no other verification, compile or import live (`VER-§2` cl. 1/2)
 - parallel-safe: ⛔ NO vs any verification, compile or import · yes vs text rows
 - spec: >
@@ -279,7 +279,7 @@ Last run 2026-10-04: 103 archive files, 904 rows (TASK-0012..TASK-1599).
 
 #### TASK-1604 — [RULE-CHANGE-TOOLING-QA] The QA gate over `Tools/stop_editor.ps1` · `launch_editor.ps1` · `sync_mirrors.ps1` · `archive_board.py` · `split_conventions.py` (qa-reviewer) — marker `TASK-1604-RULE-CHANGE-TOOLING-QA`
 - assignee: qa-reviewer
-- status: done 2026-10-04 (`TASK-1604-RULE-CHANGE-TOOLING-QA`) — **FAIL (2 BLOCKER / 6 WARN / 11 NIT)** — report `.claude/pipeline/qa/TASK-1604.md`. BLOCKER 1: `Tools/archive_board.py` is not re-run safe (per-run `NNN` numbering + `write_bytes` overwrites an existing `TASKBOARD-rows-NNN-<slug>.md`, `INDEX.md` is rebuilt from the current run only, a second `## Archive` section is inserted) — its sanity check cannot see any of it. BLOCKER 2: `Tools/split_conventions.py`'s exit-2 sanity check is a tautology over the in-memory partition (unreachable; law files are written before it; `--reindex` has no check at all). The three `.ps1` carry no BLOCKER: the empty-census fix (`,$rows` + `Show-Census` normalisation) is confirmed at all three sites and the shape is absent elsewhere; PS 5.1 clean, ASCII-only measured (rg, with a positive control). WARN-1: `KEEP_PREFIXES` lacks `⚖️ LAW MAINTENANCE`, so the next `--apply` would move `SC-§143` out of the core — ⛔ do not run `--apply` until fixed (`--reindex` is unaffected). ⛔ None of the five is committable before a fix row + re-gate (QA nominates; the manager boards, `TL-§5e` cl. 8).
+- status: done 2026-10-04 (`TASK-1604-RULE-CHANGE-TOOLING-QA`) — COMMITTED d8ff31c — **FAIL (2 BLOCKER / 6 WARN / 11 NIT)** — report `.claude/pipeline/qa/TASK-1604.md`. BLOCKER 1: `Tools/archive_board.py` is not re-run safe (per-run `NNN` numbering + `write_bytes` overwrites an existing `TASKBOARD-rows-NNN-<slug>.md`, `INDEX.md` is rebuilt from the current run only, a second `## Archive` section is inserted) — its sanity check cannot see any of it. BLOCKER 2: `Tools/split_conventions.py`'s exit-2 sanity check is a tautology over the in-memory partition (unreachable; law files are written before it; `--reindex` has no check at all). The three `.ps1` carry no BLOCKER: the empty-census fix (`,$rows` + `Show-Census` normalisation) is confirmed at all three sites and the shape is absent elsewhere; PS 5.1 clean, ASCII-only measured (rg, with a positive control). WARN-1: `KEEP_PREFIXES` lacks `⚖️ LAW MAINTENANCE`, so the next `--apply` would move `SC-§143` out of the core — ⛔ do not run `--apply` until fixed (`--reindex` is unaffected). ⛔ None of the five is committable before a fix row + re-gate (QA nominates; the manager boards, `TL-§5e` cl. 8).
 - blocked-by: none (the five files are on disk; no code row precedes this gate)
 - parallel-safe: yes vs `TASK-1603` and every other row (read-only; see the NEVER list in `names:`)
 - spec: >
@@ -301,7 +301,7 @@ Last run 2026-10-04: 103 archive files, 904 rows (TASK-0012..TASK-1599).
 
 #### TASK-1605 — [RULE-CHANGE-TOOLING-FIX] Fix the five tools per `qa/TASK-1604.md` — the two BLOCKERs (re-run safety of `archive_board.py`; a sanity check in `split_conventions.py` that can fail), WARNs 1–2 and 4–6, the cheap `.ps1` NITs; re-run safety proven on a scratch-tree copy, never on the live board (gameplay-programmer) — marker `TASK-1605-RULE-CHANGE-TOOLING-FIX`
 - assignee: gameplay-programmer
-- status: qa-passed — `qa/TASK-1606.md` PASS (0 BLOCKER · 2 WARN · 8 NIT), 2026-10-04 (`TASK-1606-RULE-CHANGE-TOOLING-REGATE`)
+- status: done — COMMITTED d8ff31c (2026-10-04, host handoff `handoffs/TASK-1600-buildmaster.md`); was: qa-passed — `qa/TASK-1606.md` PASS (0 BLOCKER · 2 WARN · 8 NIT), 2026-10-04 (`TASK-1606-RULE-CHANGE-TOOLING-REGATE`)
 - blocked-by: none (`qa/TASK-1604.md` is on disk; `TASK-1604` is done)
 - parallel-safe: yes vs `TASK-1607` / `TASK-1608` (disjoint files) and every text row · ⛔ this row is the ONLY writer of the five tools while it is in flight, and nobody runs the two `.py` in a writing mode or `sync_mirrors.ps1` without `-WhatIf` against the live tree until `TASK-1606` is PASS
 - spec: >
@@ -318,7 +318,7 @@ Last run 2026-10-04: 103 archive files, 904 rows (TASK-0012..TASK-1599).
 
 #### TASK-1606 — [RULE-CHANGE-TOOLING-REGATE] The re-gate over the five fixed tools — the same (a)–(i) checklist, plus the BLOCKER properties checked against the code AND the scratch-tree evidence (qa-reviewer) — marker `TASK-1606-RULE-CHANGE-TOOLING-REGATE`
 - assignee: qa-reviewer
-- status: done 2026-10-04 (`TASK-1606-RULE-CHANGE-TOOLING-REGATE`) — **PASS (0 BLOCKER / 2 WARN / 8 NIT)** — report `.claude/pipeline/qa/TASK-1606.md`. Both `TASK-1604` BLOCKERs fixed in code and evidenced by the rig (sha256 of the five tools, the rig copies, the five rig archive bodies and the live `--reindex` pair all MEASURED from disk through the read-only inspector); WARN-1: `split_conventions.py:301` NNN clash check unreachable by construction and undeclared; WARN-2: the handoff's CRLF claim is false for the three `.ps1` (LF-only, measured twice) — handoff addendum owed, no code change. `TASK-1605` → `qa-passed`; the HELD BOT SWITCH 5c dispatch is released.
+- status: done 2026-10-04 (`TASK-1606-RULE-CHANGE-TOOLING-REGATE`) — COMMITTED d8ff31c — **PASS (0 BLOCKER / 2 WARN / 8 NIT)** — report `.claude/pipeline/qa/TASK-1606.md`. Both `TASK-1604` BLOCKERs fixed in code and evidenced by the rig (sha256 of the five tools, the rig copies, the five rig archive bodies and the live `--reindex` pair all MEASURED from disk through the read-only inspector); WARN-1: `split_conventions.py:301` NNN clash check unreachable by construction and undeclared; WARN-2: the handoff's CRLF claim is false for the three `.ps1` (LF-only, measured twice) — handoff addendum owed, no code change. `TASK-1605` → `qa-passed`; the HELD BOT SWITCH 5c dispatch is released.
 - blocked-by: `TASK-1605` at `ready-for-qa`
 - parallel-safe: yes (read-only; see NEVER)
 - spec: >
@@ -335,7 +335,7 @@ Last run 2026-10-04: 103 archive files, 904 rows (TASK-0012..TASK-1599).
 
 #### TASK-1607 — [RECIPE-BOT-DISABLED-RUN] Write `Tools/Verify/recipes/RCP-vsbot-bot-disabled-run.md` from `qa/TASK-1603-verify.md`, plus its README table row and run short name (gameplay-programmer) — marker `TASK-1607-RECIPE-BOT-DISABLED-RUN`
 - assignee: gameplay-programmer
-- status: qa-passed — `qa/TASK-1608.md` PASS (0 BLOCKER · 2 WARN · 3 NIT), 2026-10-04
+- status: done — COMMITTED d8ff31c (2026-10-04, host handoff `handoffs/TASK-1600-buildmaster.md`); was: qa-passed — `qa/TASK-1608.md` PASS (0 BLOCKER · 2 WARN · 3 NIT), 2026-10-04
 - blocked-by: none — READY NOW (one new file + the README; no editor, no PIE, no compile)
 - parallel-safe: yes vs `TASK-1605` / `TASK-1606` (disjoint files) and every other row · this row alone owns `Tools/Verify/recipes/README.md` while in flight
 - spec: >
@@ -350,7 +350,7 @@ Last run 2026-10-04: 103 archive files, 904 rows (TASK-0012..TASK-1599).
 
 #### TASK-1608 — [RECIPE-BOT-DISABLED-RUN-QA] The QA gate for `TASK-1607` — every `[M: 1603 …]` traced to the sentence that measured it (qa-reviewer) — marker `TASK-1608-RECIPE-BOT-DISABLED-RUN-QA`
 - assignee: qa-reviewer
-- status: done — PASS, `qa/TASK-1608.md` (0 BLOCKER · 2 WARN · 3 NIT), 2026-10-04
+- status: done — COMMITTED d8ff31c — PASS, `qa/TASK-1608.md` (0 BLOCKER · 2 WARN · 3 NIT), 2026-10-04
 - blocked-by: `TASK-1607` at `ready-for-qa`
 - parallel-safe: yes
 - spec: >

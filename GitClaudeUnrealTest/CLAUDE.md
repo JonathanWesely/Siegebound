@@ -18,8 +18,8 @@ UE 5.8 C++ project driven by a 7-agent team. **You (the main session) are the or
 
 Subagents can't talk to each other directly. They communicate through **shared files** (and you relay between them):
 
-- `.claude/pipeline/TASKBOARD.md` — task specs, assignees, statuses (the hub)
-- `.claude/pipeline/CONVENTIONS.md` — naming law; guarantees artist asset names match programmer code references
+- `.claude/pipeline/TASKBOARD.md` — task specs, assignees, statuses (the hub). Finished rows and sections are moved to `.claude/pipeline/archive/` by `Tools/archive_board.py --apply --rows` at every milestone checkpoint; a `TASK-###` missing from the board is looked up there (`grep -rn "TASK-###" .claude/pipeline/archive/`) before anyone concludes it does not exist
+- `.claude/pipeline/CONVENTIONS.md` — naming law + generic process law; guarantees artist asset names match programmer code references. Its `## Law index` maps every namespace tag to `.claude/pipeline/law/<NAMESPACE>.md`, where the feature-wave and namespace law (`VER-§`, `SHIP-§`, `PKG-§`, `FR-§`, `ACC-§`, `TL-§`, …) lives whole. Cite by tag as before; find a clause with `grep -rn "VER-§3" .claude/pipeline/law/ .claude/pipeline/CONVENTIONS.md`. A law clause is rewritten cleanly with a dated changelog line, never struck through forever (2026-10-04)
 - `.claude/pipeline/handoffs/` — per-task completion notes passed downstream
 - `.claude/pipeline/qa/` — QA reports passed back to the programmer and forward to build-master
 - `.claude/pipeline/qa/TASK-###-verify.md` — runtime verification reports from `playtest-verifier` (`VERIFIED` / `VERIFY-FAILED` / `UNOBSERVABLE` / `MEASURED`; law: CONVENTIONS VER-§)
@@ -44,11 +44,12 @@ Team channel `#siegeboundue5agentteam` (ID `C0BF0QZP3CN`) mirrors the pipeline f
 3. When a code task hits `ready-for-qa` → invoke `qa-reviewer`.
 4. `qa-failed` → send back to `gameplay-programmer` with the QA report path. Loop until `qa-passed` (max 3 loops, then escalate to the user).
 5. `qa-passed` → the compile/verify/commit chain (law: CONVENTIONS VER-§):
-   - **5a** `qa-passed` → `build-master` compiles (`Result: Succeeded` law) and, for C++ changes, relaunches the editor on the new binaries (graceful-quit lane, never Live Coding). Status → `built`. No commit yet.
+   - **5a** `qa-passed` → `build-master` compiles (`Result: Succeeded` law) and, for C++ changes, relaunches the editor on the new binaries (editor closed with `Tools/stop_editor.ps1` and relaunched with `Tools/launch_editor.ps1`; never Live Coding, never a raw `Stop-Process`). Status → `built`. No commit yet.
    - **5b** if the task's spec has a runtime acceptance criterion → invoke `playtest-verifier`. `verify-failed` → send back to `gameplay-programmer` with the verify report path; it counts as a QA loop (same max-3-then-escalate as rule 4). Blueprint/asset-only tasks skip 5a and go straight here.
-   - **5c** `verified` (or `UNOBSERVABLE`, or `MEASURED`, or no runtime criterion) → invoke `build-master` to assemble and commit as today. `MEASURED` routes *like* `UNOBSERVABLE` but is **not** it: it never blocks and never bounces, and it is earned by a control that discriminated (a controlled negative), whereas `UNOBSERVABLE` means the lane could not see at all.
+   - **5c** `verified` (or `UNOBSERVABLE`, or `MEASURED`, or no runtime criterion) → invoke `build-master` to assemble and commit as today. A commit needs no board row of its own (2026-10-04): the build-master records the hash on the `status:` line of every row it ships and in its handoff. `MEASURED` routes *like* `UNOBSERVABLE` but is **not** it: it never blocks and never bounces, and it is earned by a control that discriminated (a controlled negative), whereas `UNOBSERVABLE` means the lane could not see at all.
 6. Build failure → build-master appends errors to the QA report and you route back to `gameplay-programmer` (this counts as a QA loop).
 7. Report the outcome to the user with task IDs and commit hashes.
+8. The bare word **"ship"** from the user → run `/ship` (`.claude/commands/ship.md`; law `SHIP-§` in `.claude/pipeline/law/SHIP.md`). Every gate is a STOP; an `ADJUDICATE` is not a ship.
 
 ## GDD mode
 
@@ -66,6 +67,8 @@ When the user says "build the GDD" / "read the GDD and build it" (or references 
 - Nothing with a runtime acceptance criterion is committed without a VERIFIED report; UNOBSERVABLE and MEASURED are recorded on the row, not treated as a pass.
 - Aura verification drives PIE; when Jonathan is present the dispatch announces it first and reports it — no wait for a go (his standing grant, 2026-09-20, `VER-§3` cl. 6; updated on his word 2026-09-26).
 - Never push to remote unless the user explicitly asks.
+- The editor is closed and relaunched only through `Tools/stop_editor.ps1` and `Tools/launch_editor.ps1`: census by command line, kill by PID, never by name; a `-game` instance is Jonathan's and is never touched (`SC-§118`). The permission file grants those two scripts and no raw `Stop-Process`.
+- Session start runs `powershell -NoProfile -File Tools/sync_mirrors.ps1` (vault twins of `Docs/GameDevSetup.md` and the Aura plan, plus the `Saved/.Aura` pair).
 - The Unreal Editor must be running with the MCP server up (`http://127.0.0.1:8000/mcp`) for engine tasks; if unreachable, tell the user instead of faking results.
 - Gameplay videos are never committed (`testvideo/` is root-gitignored; `*.mp4` is an LFS pattern that would otherwise swallow them); only promoted evidence PNGs under `.claude/pipeline/playtest-evidence/` enter git.
 - Dispatch `playtest-verifier` without a `model` parameter: its model (`claude-opus-5-5[1m]`) and effort (`medium`) come from its frontmatter, and a per-invocation `model` would override the pin (Jonathan, 2026-09-26).

@@ -16,11 +16,27 @@ aliases:
 
 # Aura AI for Unreal — Integration Plan
 
-What Aura is, where it actually improves the [[UE5 Agent Team System]], where it does **not** beat what is already built, and the exact setup to bolt it onto `GitClaudeUnrealTesting` without breaking the house laws in [[GitClaudeUnrealsetupdirections]].
+What Aura is, where it actually improves the [[UE5 Agent Team System]], where it does **not** beat what is already built, and the exact setup to bolt it onto `GitClaudeUnrealTesting` without breaking the house laws in [[GameDevSetup]] (formerly `GitClaudeUnrealsetupdirections`, retired 2026-10-03).
 
 > [!info] Status — as researched (historical)
 > **Researched 2026-09-14** against the live repo (`CLAUDE.md`, `.claude/agents/*`, `.mcp.json`, `settings.local.json`, `Tools/`, the task board at TASK-1213) and Aura's official docs at the **Aura 1.0** release (2026-09-09). ~~Nothing is installed yet.~~ → **superseded: installed 2026-09-13; see the *Installed* callout below.** Every price and feature below has a source in [[#Sources]]; anything I could not confirm is marked ⚠️ unverified. The 8.6 MB `TASKBOARD.md` and 2.9 MB `CONVENTIONS.md` were sampled (headers, milestone lines, status counts), not read end to end — a fresh session should grep them for `PIE`, `playtest`, `Automation` and `SiegeCheatManager` before writing `VER-§`, because there are 162 / 93 / 52 / 11 existing mentions to stay consistent with.
 > ~~**Next step:** §6 is the handoff for a fresh Claude Code session — it contains the kickoff prompt to paste.~~ → **SPENT** — §6 ran as `TASK-1213`..`TASK-1273`; the outcome is the callout below.
+
+> [!tip] Current state — 2026-10-03 (consolidation pass; the live procedure is now `Docs/GameDevSetup.md` **Part 12**, vault twin [[GameDevSetup]])
+> This plan is the **research and decision record** (written 2026-09-14, amended in place through 2026-09-21). It is kept as history; nothing below is the live procedure any more. What changed after its last amendment, dated:
+>
+> | Date | Change |
+> |---|---|
+> | 2026-09-22 | Plugin 1.0.5 → **1.0.6** (`Version 74`); re-census of both servers: 62 inspector + 114 editor names, **zero** added/removed/renamed; the `ui_perform` click ceiling re-measured and it HELD (`TASK-1390`, `MEASURED`) |
+> | 2026-09-22 | A Unit card was **played from hand** inside one batched `run_verification_sequence` (`SetMouseLocation` aim + `simulate_key_press "LeftMouseButton"`), twice, with omitted-set controls (`TASK-1391`) — the "the fix is a tool, not a row" claim was struck; the verb was already granted and unenumerated |
+> | 2026-09-23 | The `call_actor_function` grant question was put to Jonathan and **declined**: declared per row, never granted (`VER-§7` cl. 2) |
+> | 2026-09-24 | `VER-§9` (a log-line absence needs the build configuration named), `VER-§10` (a 🚧 flips the row to `blocked`; `MEASURED` flips to `verified` with the word in the status line), `VER-§11` (focus-ring pixel recipe), `VER-§12` (the instrument register), `PKG-§14` (cook-recipe clause) |
+> | 2026-09-25 | MENU-NAV-PARITY shipped: the whole main menu is keyboard/gamepad/`IA_Menu*`-navigable; 8 of 10 screens `VERIFIED`, 2 `MEASURED` as instrument limits |
+> | 2026-09-26 | `VER-§13` **speed law** (batch into ONE sequence, read back and top up because rapid batches drop gestures, recipe library `Tools/Verify/recipes/RCP-*.md`); `ui_perform` **`double_click` fires `UButton.OnClicked`** (the UMG blind spot narrowed); verifier model pinned `claude-opus-5-5[1m]` / `effort: medium` (dispatch without a `model` parameter); **every PIE run records** and the orchestrator remuxes `recording.h264` → `.mp4` with `ffmpeg -framerate 30 -i recording.h264 -c copy recording.mp4`; the keyboard set-active door (`IA_MenuSecondary`) + held-key repeat filter |
+> | 2026-09-27 | `ui_perform` **clears Slate keyboard focus** — the call, not the step (`VER-§12` cl. 7f); `simulate_key_press` RMB measured negative; the report records what the dispatch said about the PIE announcement |
+> | 2026-09-28/29 | `VER-§12` cl. 7g: a Blueprint in `BS_ERROR` anywhere in editor memory raises a blocking modal at PIE start (the archery-pack demo trio was deleted, `ab57522`); Jonathan's Down+Enter sitting landed `MEASURED` (real keys route through Slate's own focus navigation, not the `IA_Menu*` handlers); help-page numbers now read from their owner classes, `VERIFIED`; last Aura-lane commits `dcfadb9`, `5a2f5de` ("finally done with Aura") |
+>
+> **Still open on 2026-10-03:** credit per verification (visible in no tool reply; closes only by a dashboard read or an overage receipt) · `TASK-1368` (the sequence runner's step-vocabulary census with schema text) · the positional `KBD-§` key layout under injection · whether the Filesystem Sandbox was ever enabled · the Fab SKU non-finding. The design lessons for a NEW game (give every action an Input Action door, focus the button not the root, deterministic PIE start, reflected state, grep-able log lines, declare ceilings at boarding) are written up once in `Docs/GameDevSetup.md` **Part 13**.
 
 > [!success] Installed — status as of 2026-09-21 (`TASK-1231`, amended `TASK-1371`)
 > **The lane is live and the gate is binding.** Every number below is copied from `.claude/pipeline/qa/AURA-PHASE0.md` with the `MEASURED BY` label it carries there, or re-measured on disk and labelled as such — ⛔ nothing here is re-derived, and a column nobody measured reads **OWED**, never an estimate.
@@ -136,7 +152,7 @@ Supported clients: **Claude Code**, Cursor, Visual Studio, Rider (VS Code manual
 
 ## 4. Setup — step by step
 
-Same convention as [[GitClaudeUnrealsetupdirections]]: **[You]** = human clicks/accounts, **[Claude]** = a Claude Code session in the project root. Secrets law unchanged: no keys in files, chat or handoffs — Aura authenticates through its own account login, so there is no API key to store at all.
+Same convention as [[GameDevSetup]]: **[You]** = human clicks/accounts, **[Claude]** = a Claude Code session in the project root. Secrets law unchanged: no keys in files, chat or handoffs — Aura authenticates through its own account login, so there is no API key to store at all.
 
 ### Phase 0 — Trial and measure (before any money)
 
@@ -252,7 +268,7 @@ Per-seat, with a monthly **premium credit** billed by tokens (input, output, cac
 
 ## 6. Handoff — what the next Claude Code session should do
 
-> [!done] ⛔ **SPENT — THIS SECTION IS HISTORICAL (marked 2026-09-21, `TASK-1371`).** The 16-item list below ran as `TASK-1213`..`TASK-1273` and the outcome is the *Installed* callout at the top of this note. ⛔ **Do not execute it as a checklist**; read it as the record of what was planned. Only the items that would be **actively harmful** if pasted are struck individually below — ⛔ the rest are left exactly as written, because annotating sixteen spent items is bloat, not accuracy. The live procedure is `Docs/setupdirections.md` **Chapter 11**.
+> [!done] ⛔ **SPENT — THIS SECTION IS HISTORICAL (marked 2026-09-21, `TASK-1371`).** The 16-item list below ran as `TASK-1213`..`TASK-1273` and the outcome is the *Installed* callout at the top of this note. ⛔ **Do not execute it as a checklist**; read it as the record of what was planned. Only the items that would be **actively harmful** if pasted are struck individually below — ⛔ the rest are left exactly as written, because annotating sixteen spent items is bloat, not accuracy. The live procedure is `Docs/GameDevSetup.md` **Part 12** (it replaced `Docs/setupdirections.md` Chapter 11 on 2026-10-03).
 
 > [!todo] Paste this as the first message of a fresh `claude` session in `C:\GitProjects\GitHub\GitClaudeUnrealTesting\GitClaudeUnrealTest`
 > *"Read `C:\GitProjects\GitHub\MyObsidianVault\JonWesOBVault\Aura AI for Unreal — Integration Plan.md` end to end. It is the plan for adding Aura AI (tryaura.dev) to this pipeline. Jonathan will do every **[You]** step himself; you own every **[Claude]** step in §4 and every item in §6 below, in order. Tell me which step you are on before you start it, and stop at each ⛔ STOP. Do not install anything, do not push, and do not change any agent's tool grants beyond what the plan names."*
@@ -350,8 +366,8 @@ TASK-### (thread_ts in SLACK.md; return the text for proxy if the tools are abse
 
 ## Related Notes
 
+- [[GameDevSetup]] — the master setup document; Part 12 is the live Aura procedure, Part 13 the verifier-friendly design rules
 - [[UE5 Agent Team System]]
-- [[GitClaudeUnrealsetupdirections]]
 - [[Claude + Git Setup in Unreal Engine 5]]
 - [[Siegebound - Game Concept]]
 - [[UE5 AI Art Pipeline]]

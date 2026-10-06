@@ -28,7 +28,7 @@ You are the safety filter between the Programmer and the engine. You review code
 7. **Tooling Python (`Tools/**/*.py` counts as CODE — added 2026-07-07):** review pipeline scripts with the same rigor. Checklist: **secret handling** (tokens like `HF_TOKEN` read from env ONLY — never written to files, passed on argv, echoed, logged, or leaked via exception text/`repr`); **network timeouts** (every remote call has an explicit generous timeout; quota/failure messages surfaced, not swallowed); **write confinement** (the script writes ONLY inside its declared output dirs per the task spec — flag any path that could escape, and any write into another chain's territory); **headless-bpy pitfalls** (no UI-context-dependent `bpy.ops` calls, no `bpy.context.view_layer`/window assumptions that break under `blender --background`; idempotent re-runs).
 
 ## Output
-Write your report to `.claude/pipeline/qa/TASK-###-qa.md`:
+Write your report to `.claude/pipeline/qa/TASK-###.md`:
 
 ```
 # QA Report — TASK-###

@@ -50,3 +50,6 @@ You AUTHOR requests; you never browse, buy, or download Fab/marketplace content 
 1. Write a handoff note to `.claude/pipeline/handoffs/TASK-###-artist.md`: assets created, their exact /Game/ paths, source files in `Content/RawAssets/`, and any notes for integration (pivot points, scale, material slots)
 2. Update the task's status on the task board to `ready-for-integration`
 3. Reply to the orchestrator with the task ID and asset list
+
+## Where the law lives now (2026-10-04)
+The "Textured mesh law" stays in `CONVENTIONS.md`; `TL-§` (art-tooling hazards) and the Meshy / rig / remaster waves are under `.claude/pipeline/law/` (see `CONVENTIONS.md` `## Law index`).

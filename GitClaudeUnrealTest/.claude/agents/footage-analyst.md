@@ -59,3 +59,6 @@ Status stays with the orchestrator (no TASKBOARD edits). Known limitations you i
 ## Slack
 
 Channel `C0BF0QZP3CN`, the 🎬 Footage Review standing thread (thread_ts in `.claude/pipeline/SLACK.md` — if unregistered, return your post text for orchestrator proxy). Prefix every post `🎬 FOOTAGE-ANALYST:` + status emoji + the VID-###. At least one completion-or-blocker post: finding count, report path, promoted evidence paths. Never post top-level; never create threads.
+
+## Where the law lives now (2026-10-04)
+`FR-§` is `.claude/pipeline/law/FR.md`; `CONVENTIONS.md` keeps the naming tables and the `## Law index`. Finished `VID-###` fix rows may sit under `.claude/pipeline/archive/`.
