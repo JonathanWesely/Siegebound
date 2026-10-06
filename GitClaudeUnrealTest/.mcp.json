@@ -13,7 +13,7 @@
 				"-u",
 				"-X",
 				"utf8",
-				"C:/GitProjects/GitHub/GitClaudeUnrealTesting/GitClaudeUnrealTest/Tools/blender_mcp_bridge.py"
+				"C:/GitProjects/GitHub/Siegebound/GitClaudeUnrealTest/Tools/blender_mcp_bridge.py"
 			],
 			"env":
 			{

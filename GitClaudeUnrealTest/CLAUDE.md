@@ -76,5 +76,5 @@ When the user says "build the GDD" / "read the GDD and build it" (or references 
 ## Build command
 
 ```
-"C:/Program Files/Epic Games/UE_5.8/Engine/Build/BatchFiles/Build.bat" GitClaudeUnrealTestEditor Win64 Development -project="C:/GitProjects/GitHub/GitClaudeUnrealTesting/GitClaudeUnrealTest/GitClaudeUnrealTest.uproject" -waitmutex
+"C:/Program Files/Epic Games/UE_5.8/Engine/Build/BatchFiles/Build.bat" GitClaudeUnrealTestEditor Win64 Development -project="C:/GitProjects/GitHub/Siegebound/GitClaudeUnrealTest/GitClaudeUnrealTest.uproject" -waitmutex
 ```
