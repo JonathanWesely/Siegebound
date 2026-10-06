@@ -1,2 +1,2 @@
 # GitClaudeUnrealTesting
-Im trying to test some stuff for git and claude integration with my unreal project.
+This is Siegebound, my first game created using Claude, a third person castle attack and defense game
